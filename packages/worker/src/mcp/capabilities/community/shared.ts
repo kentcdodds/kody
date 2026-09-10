@@ -52,13 +52,13 @@ export const communityListingStatusSchema = z.enum(['active', 'delisted'])
 export const communityPublicUrlSchema = z
 	.string()
 	.describe(
-		'Canonical shareable user URL ({base}/@{username}/{kody_id}); share this URL with humans.',
+		'Canonical shareable user URL ({base}/@{username}/{package_name}); share this URL with humans.',
 	)
 
 export const communityListingSummarySchema = z.object({
 	listing_id: z.string(),
 	name: z.string(),
-	kody_id: z.string(),
+	package_name: z.string(),
 	description: z.string(),
 	category: z.enum(communityListingCategories),
 	license: z.string(),
@@ -95,7 +95,7 @@ export const communitySearchMatchSchema =
 	communityListingAggregatesSchema.extend({
 		listing_id: z.string(),
 		name: z.string(),
-		kody_id: z.string(),
+		package_name: z.string(),
 		description: z.string(),
 		tags: z.array(z.string()),
 		category: z.enum(communityListingCategories),
@@ -136,7 +136,7 @@ export const communityActivityItemSchema = z.object({
 	actor_avatar_url: z.string().nullable(),
 	listing_id: z.string(),
 	listing_name: z.string(),
-	listing_kody_id: z.string(),
+	listing_package_name: z.string(),
 	created_at: z.string(),
 	public_url: communityPublicUrlSchema,
 })
@@ -164,7 +164,7 @@ export function toCommunityListingSummaryOutput(
 	return {
 		listing_id: listing.id,
 		name: listing.name,
-		kody_id: listing.kodyId,
+		package_name: listing.kodyId,
 		description: listing.description,
 		category: listing.category,
 		license: listing.license,
@@ -195,7 +195,7 @@ export function toCommunityActivityItemOutput(
 		actor_avatar_url: avatarPath ? `${baseUrl}${avatarPath}` : null,
 		listing_id: item.listingId,
 		listing_name: item.listingName,
-		listing_kody_id: item.listingKodyId,
+		listing_package_name: item.listingKodyId,
 		created_at: item.createdAt,
 		public_url: buildCommunityPublicUrl(baseUrl, {
 			listingId: item.listingId,

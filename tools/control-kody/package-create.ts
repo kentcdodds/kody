@@ -20,7 +20,7 @@ export default async function main(input = {}) {
 	try {
 		remote = await kody.packageGetGitRemote({
 			create: true,
-			kody_id: input.kodyId,
+			package_name: input.kodyId,
 			...(input.description ? { description: input.description } : {}),
 		})
 	} catch (error) {
@@ -28,7 +28,7 @@ export default async function main(input = {}) {
 	}
 	const listed = await kody.packageList({})
 	const match = (listed.packages ?? []).find(
-		(pkg) => pkg.kody_id === input.kodyId,
+		(pkg) => pkg.package_name === input.kodyId,
 	)
 	const packageId = remote?.package_id ?? match?.package_id
 	if (!packageId) {
@@ -86,7 +86,11 @@ export type PackageCreateConnection = {
 }
 
 export function isLowerKebabKodyId(value: string) {
-	return kodyIdPattern.test(value)
+	const trimmed = value.trim()
+	const leaf = trimmed.includes('/')
+		? trimmed.slice(trimmed.lastIndexOf('/') + 1)
+		: trimmed
+	return kodyIdPattern.test(leaf)
 }
 
 export function isProductionKodyOrigin(origin: string) {
@@ -136,7 +140,7 @@ export async function createPreviewPackage(input: {
 	}
 	if (!isLowerKebabKodyId(input.kodyId)) {
 		throw new Error(
-			'--kody-id must be a lower-kebab-case slug (for example "preview-pkg")',
+			'--package-name must be a lower-kebab-case leaf or @scope/leaf (for example "preview-pkg")',
 		)
 	}
 
@@ -221,7 +225,7 @@ export type GitAuthorIdentity = {
 
 export type GitRemoteResult = {
 	package_id: string
-	kody_id: string
+	package_name: string
 	created?: boolean
 	authenticated_remote: string
 	git_author: GitAuthorIdentity
@@ -230,7 +234,7 @@ export type GitRemoteResult = {
 
 export async function pushHeadAheadCommit(remote: GitRemoteResult) {
 	const parent = await mkdtemp(path.join(tmpdir(), 'control-kody-pkg-'))
-	const cloneDir = path.join(parent, remote.kody_id)
+	const cloneDir = path.join(parent, remote.package_name)
 	try {
 		const identity = gitIdentityFromRemote(remote)
 		runGit(['clone', '--quiet', remote.authenticated_remote, cloneDir])
@@ -336,9 +340,7 @@ function readCreatedPackage(toolResult: unknown) {
 	const packageId = remote
 		? readRequiredString(remote, 'package_id')
 		: readRequiredString(detail, 'package_id')
-	const kodyId = remote
-		? readRequiredString(remote, 'kody_id')
-		: readRequiredString(detail, 'kody_id')
+	const kodyId = remote ? readPackageName(remote) : readPackageName(detail)
 	const name = readRequiredString(detail, 'name')
 	const remoteError =
 		typeof remoteErrorValue === 'string' && remoteErrorValue.length > 0
@@ -366,7 +368,7 @@ function readGitRemoteResult(
 	const gitAuthor = gitAuthorValue as Record<string, unknown>
 	return {
 		package_id: packageId,
-		kody_id: kodyId,
+		package_name: kodyId,
 		created: remote.created === true,
 		authenticated_remote: readRequiredString(remote, 'authenticated_remote'),
 		git_author: {
@@ -409,6 +411,14 @@ function executeErrorText(record: CallToolResult, error: unknown) {
 	if (typeof error === 'string' && error.length > 0) return error
 	if (error !== undefined) return JSON.stringify(error)
 	return 'unknown execute error'
+}
+
+function readPackageName(record: Record<string, unknown>) {
+	const value = record['package_name'] ?? record['kody_id']
+	if (typeof value !== 'string' || value.length === 0) {
+		throw new Error('Expected "package_name" to be a non-empty string.')
+	}
+	return value
 }
 
 function readRequiredString(record: Record<string, unknown>, key: string) {

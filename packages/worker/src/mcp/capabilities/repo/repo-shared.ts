@@ -17,11 +17,11 @@ const repoTargetShapeSchema = z.union([
 	}),
 	z.object({
 		kind: z.literal('package'),
-		kody_id: z
+		package_name: z
 			.string()
 			.min(1)
 			.describe(
-				'Saved package kody id to open or edit by user-facing identity.',
+				'Package name leaf (`my-package`) or scoped name (`@owner/my-package`) to open or edit.',
 			),
 	}),
 	z.object({
@@ -55,9 +55,17 @@ function normalizeRepoTargetAliases(value: unknown) {
 		normalized['package_id'] = record['packageId']
 		delete normalized['packageId']
 	}
-	if (normalized['kody_id'] === undefined && 'kodyId' in record) {
-		normalized['kody_id'] = record['kodyId']
-		delete normalized['kodyId']
+	if (normalized['package_name'] === undefined) {
+		if ('packageName' in record) {
+			normalized['package_name'] = record['packageName']
+			delete normalized['packageName']
+		} else if ('kody_id' in record) {
+			normalized['package_name'] = record['kody_id']
+			delete normalized['kody_id']
+		} else if ('kodyId' in record) {
+			normalized['package_name'] = record['kodyId']
+			delete normalized['kodyId']
+		}
 	}
 	if (normalized['repo_id'] === undefined && 'repoId' in record) {
 		normalized['repo_id'] = record['repoId']
@@ -82,7 +90,7 @@ export const repoResolvedTargetSchema = z.union([
 		kind: z.literal('package'),
 		source_id: z.string(),
 		package_id: z.string(),
-		kody_id: z.string(),
+		package_name: z.string(),
 		name: z.string(),
 	}),
 	z.object({
@@ -542,7 +550,7 @@ export const repoRunChecksOutputSchema = z.object({
 	manifest: z
 		.object({
 			name: z.string(),
-			kody_id: z.string(),
+			package_name: z.string(),
 			description: z.string(),
 			has_app: z.boolean(),
 		})
@@ -565,7 +573,7 @@ type RepoManifestSummaryInput = {
 
 type RepoManifestSummary = {
 	name: string
-	kody_id: string
+	package_name: string
 	description: string
 	has_app: boolean
 }
@@ -587,8 +595,9 @@ export function normalizeRepoManifestSummary(
 			: typeof manifest.title === 'string'
 				? manifest.title
 				: 'package'
-	const kodyId =
-		typeof manifest.kody?.id === 'string' ? manifest.kody.id : packageName
+	const packageSlug = packageName.includes('/')
+		? packageName.slice(packageName.indexOf('/') + 1)
+		: packageName
 	const description =
 		typeof manifest.kody?.description === 'string'
 			? manifest.kody.description
@@ -597,7 +606,7 @@ export function normalizeRepoManifestSummary(
 				: ''
 	return {
 		name: packageName,
-		kody_id: kodyId,
+		package_name: packageSlug,
 		description,
 		has_app: manifest.kody?.app !== undefined,
 	}

@@ -1,46 +1,51 @@
 import { z } from 'zod'
+import { applyPackageNameAliases } from '#worker/package-registry/package-name.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { resolveOwnedPackageSource } from '#mcp/capabilities/packages/resolve-package-source.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import { getEntitySourceByIdForUser } from '#worker/repo/entity-sources.ts'
 import {
 	kodyPublishGitNoteSchema,
 	readPublishGitNoteFromArtifactsRepo,
 } from '#worker/repo/publish-git-notes.ts'
 
-const inputSchema = z
-	.object({
-		source_id: z
-			.string()
-			.min(1)
-			.optional()
-			.describe('Shared entity source id for any repo-backed entity.'),
-		package_id: z.string().min(1).optional(),
-		kody_id: z.string().min(1).optional(),
-		commit: z
-			.string()
-			.min(1)
-			.optional()
-			.describe(
-				'Commit oid to inspect. Defaults to the source published_commit.',
-			),
-	})
-	.superRefine((value, ctx) => {
-		const count =
-			(value.source_id !== undefined ? 1 : 0) +
-			(value.package_id !== undefined ? 1 : 0) +
-			(value.kody_id !== undefined ? 1 : 0)
-		if (count !== 1) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				path: ['source_id'],
-				message:
-					'Provide exactly one of `source_id`, `package_id`, or `kody_id`.',
-			})
-		}
-	})
+const inputSchema = z.preprocess(
+	applyPackageNameAliases,
+	z
+		.object({
+			source_id: z
+				.string()
+				.min(1)
+				.optional()
+				.describe('Shared entity source id for any repo-backed entity.'),
+			package_id: z.string().min(1).optional(),
+			package_name: z.string().min(1).optional(),
+			commit: z
+				.string()
+				.min(1)
+				.optional()
+				.describe(
+					'Commit oid to inspect. Defaults to the source published_commit.',
+				),
+		})
+		.superRefine((value, ctx) => {
+			const count =
+				(value.source_id !== undefined ? 1 : 0) +
+				(value.package_id !== undefined ? 1 : 0) +
+				(value.package_name !== undefined ? 1 : 0)
+			if (count !== 1) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ['source_id'],
+					message:
+						'Provide exactly one of `source_id`, `package_id`, or `package_name`.',
+				})
+			}
+		}),
+)
 
 const outputSchema = z.object({
 	found: z.boolean(),
@@ -73,6 +78,7 @@ export const repoShowPublishNoteCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			const ownerScope = await getMcpUserPackageScope(ctx.env.APP_DB, user)
 			const source =
 				args.source_id !== undefined
 					? await getEntitySourceByIdForUser(ctx.env.APP_DB, {
@@ -83,9 +89,10 @@ export const repoShowPublishNoteCapability = defineDomainCapability(
 							await resolveOwnedPackageSource({
 								db: ctx.env.APP_DB,
 								userId: user.userId,
+								ownerScope,
 								args: {
 									package_id: args.package_id,
-									kody_id: args.kody_id,
+									package_name: args.package_name,
 								},
 							})
 						).source

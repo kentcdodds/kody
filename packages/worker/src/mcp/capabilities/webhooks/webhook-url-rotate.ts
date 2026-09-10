@@ -4,7 +4,9 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { rotateWebhookUrlForUser } from '#worker/webhooks/service.ts'
 import {
+	applyWebhookPackageRefAliases,
 	mintedWebhookHandleSchema,
+	readWebhookPackageName,
 	requirePackageRef,
 	toMintedWebhookCapability,
 	webhookPackageRefSchema,
@@ -20,23 +22,26 @@ export const webhookUrlRotateCapability = defineDomainCapability(
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
-		inputSchema: z
-			.object({
-				...webhookPackageRefSchema,
-				webhookName: z.string().min(1),
-			})
-			.superRefine((input, ctx) => {
-				try {
-					requirePackageRef(input)
-				} catch (error) {
-					ctx.addIssue({
-						code: 'custom',
-						path: ['packageId'],
-						message:
-							error instanceof Error ? error.message : 'Invalid package ref.',
-					})
-				}
-			}),
+		inputSchema: z.preprocess(
+			applyWebhookPackageRefAliases,
+			z
+				.object({
+					...webhookPackageRefSchema,
+					webhookName: z.string().min(1),
+				})
+				.superRefine((input, ctx) => {
+					try {
+						requirePackageRef(input)
+					} catch (error) {
+						ctx.addIssue({
+							code: 'custom',
+							path: ['packageId'],
+							message:
+								error instanceof Error ? error.message : 'Invalid package ref.',
+						})
+					}
+				}),
+		),
 		outputSchema: z.object({
 			webhook: mintedWebhookHandleSchema,
 		}),
@@ -48,7 +53,7 @@ export const webhookUrlRotateCapability = defineDomainCapability(
 				email: user.email,
 				username: user.username,
 				packageId: args.packageId,
-				kodyId: args.kodyId,
+				kodyId: readWebhookPackageName(args),
 				webhookName: args.webhookName,
 				requestUrl: ctx.callerContext.baseUrl,
 			})

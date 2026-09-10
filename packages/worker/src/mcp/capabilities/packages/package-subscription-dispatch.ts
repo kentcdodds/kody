@@ -29,6 +29,13 @@ import {
 	getSavedPackageByKodyId,
 } from '#worker/package-registry/repo.ts'
 import {
+	applyPackageNameAliases,
+	normalizePackageNameInput,
+	packageIdInputSchema,
+	packageIdentityChoiceDescription,
+	packageNameInputSchema,
+} from '#worker/package-registry/package-name.ts'
+import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
@@ -128,58 +135,61 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 		readOnly: false,
 		idempotent: false,
 		destructive: true,
-		inputSchema: z
-			.object({
-				package_id: z.string().min(1).optional(),
-				kody_id: z.string().min(1).optional(),
-				topic: z
-					.string()
-					.min(1)
-					.describe(
-						'Exact subscription topic declared in package.json#kody.subscriptions.',
-					),
-				package_scope: z
-					.string()
-					.min(1)
-					.optional()
-					.describe(packageScopeInputDescription),
-				email_message_id: z
-					.string()
-					.min(1)
-					.optional()
-					.describe(
-						'Replay a stored inbound email by id. Builds the same metadata-first receipt envelope as real email dispatch, then marks it synthetic with replay_of.',
-					),
-				params: z
-					.record(z.string(), z.unknown())
-					.optional()
-					.describe(
-						'Custom subscription envelope object. Caller-supplied synthetic/replay_of fields are ignored; the platform adds synthetic: true.',
-					),
-			})
-			.superRefine((value, ctx) => {
-				const packageIdentityCount =
-					(value.package_id !== undefined ? 1 : 0) +
-					(value.kody_id !== undefined ? 1 : 0)
-				if (packageIdentityCount !== 1) {
-					ctx.addIssue({
-						code: 'custom',
-						message: 'Provide exactly one of `package_id` or `kody_id`.',
-					})
-				}
-				const dispatchModeCount =
-					(value.email_message_id !== undefined ? 1 : 0) +
-					(value.params !== undefined ? 1 : 0)
-				if (dispatchModeCount !== 1) {
-					ctx.addIssue({
-						code: 'custom',
-						message: 'Provide exactly one of `email_message_id` or `params`.',
-					})
-				}
-			}),
+		inputSchema: z.preprocess(
+			applyPackageNameAliases,
+			z
+				.object({
+					package_id: packageIdInputSchema.optional(),
+					package_name: packageNameInputSchema.optional(),
+					topic: z
+						.string()
+						.min(1)
+						.describe(
+							'Exact subscription topic declared in package.json#kody.subscriptions.',
+						),
+					package_scope: z
+						.string()
+						.min(1)
+						.optional()
+						.describe(packageScopeInputDescription),
+					email_message_id: z
+						.string()
+						.min(1)
+						.optional()
+						.describe(
+							'Replay a stored inbound email by id. Builds the same metadata-first receipt envelope as real email dispatch, then marks it synthetic with replay_of.',
+						),
+					params: z
+						.record(z.string(), z.unknown())
+						.optional()
+						.describe(
+							'Custom subscription envelope object. Caller-supplied synthetic/replay_of fields are ignored; the platform adds synthetic: true.',
+						),
+				})
+				.superRefine((value, ctx) => {
+					const packageIdentityCount =
+						(value.package_id !== undefined ? 1 : 0) +
+						(value.package_name !== undefined ? 1 : 0)
+					if (packageIdentityCount !== 1) {
+						ctx.addIssue({
+							code: 'custom',
+							message: packageIdentityChoiceDescription,
+						})
+					}
+					const dispatchModeCount =
+						(value.email_message_id !== undefined ? 1 : 0) +
+						(value.params !== undefined ? 1 : 0)
+					if (dispatchModeCount !== 1) {
+						ctx.addIssue({
+							code: 'custom',
+							message: 'Provide exactly one of `email_message_id` or `params`.',
+						})
+					}
+				}),
+		),
 		outputSchema: z.object({
 			package_id: z.string(),
-			kody_id: z.string(),
+			package_name: z.string(),
 			topic: z.string(),
 			idempotency_key: z.string(),
 			source: z.literal('synthetic'),
@@ -204,6 +214,14 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 				user,
 				args.package_scope,
 			)
+			const packageName =
+				args.package_name === undefined
+					? undefined
+					: normalizePackageNameInput({
+							value: args.package_name,
+							ownerScope: owner.ownerScope,
+							action: 'resolve',
+						})
 			const savedPackage =
 				args.package_id !== undefined
 					? await getSavedPackageById(ctx.env.APP_DB, {
@@ -212,10 +230,10 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 						})
 					: await getSavedPackageByKodyId(ctx.env.APP_DB, {
 							userId: owner.ownerUserId,
-							kodyId: args.kody_id ?? '',
+							kodyId: packageName ?? '',
 						})
 			if (!savedPackage) {
-				const missingId = args.package_id ?? args.kody_id
+				const missingId = args.package_id ?? args.package_name
 				throw new McpCallerError(`Saved package "${missingId}" was not found.`)
 			}
 			const loaded = await loadPackageManifestBySourceId({
@@ -307,7 +325,7 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 			const body = response.body as Record<string, unknown>
 			return {
 				package_id: savedPackage.id,
-				kody_id: savedPackage.kodyId,
+				package_name: savedPackage.kodyId,
 				topic,
 				idempotency_key: idempotencyKey,
 				source: 'synthetic' as const,

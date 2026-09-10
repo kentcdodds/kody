@@ -13,7 +13,7 @@ export function buildPackageTestHints(input: {
 	packageScope?: string
 }): PackageTestHints | undefined {
 	const packageIdentity = [
-		`kody_id: ${JSON.stringify(input.kodyId)}`,
+		`package_name: ${JSON.stringify(input.kodyId)}`,
 		...(input.packageScope
 			? [`package_scope: ${JSON.stringify(input.packageScope)}`]
 			: []),

@@ -20,7 +20,11 @@ export const packageFileSchema = z.object({
 
 export const packageSummarySchema = z.object({
 	package_id: z.string(),
-	kody_id: z.string(),
+	package_name: z
+		.string()
+		.describe(
+			'Package name leaf (URL slug). The scoped package.json name is `name`.',
+		),
 	name: z.string(),
 	description: z.string(),
 	tags: z.array(z.string()),
@@ -35,7 +39,7 @@ export const packageSummarySchema = z.object({
 		.string()
 		.nullable()
 		.describe(
-			'When set, publishes require a website click at /@{username}/{kodyId}/approve-publish. Agents may lock via packageUpdate (`changes.locked: true`). Unlocking is website-only at /@{username}/{kodyId}/settings.',
+			'When set, publishes require a website click at /@{username}/{package_name}/approve-publish. Agents may lock via packageUpdate (`changes.locked: true`). Unlocking is website-only at /@{username}/{package_name}/settings.',
 		),
 	source_id: z.string(),
 	created_at: z.string(),
@@ -56,11 +60,11 @@ export const packageSummaryWithCommunityProvenanceSchema =
 			.describe(
 				'Whether the source community listing id currently resolves to an active listing, or null for a self-authored package.',
 			),
-		listing_kody_id: z
+		listing_package_name: z
 			.string()
 			.nullable()
 			.describe(
-				'Original community listing kody.id recorded when this package was forked, or null for a self-authored package.',
+				'Original community listing package name leaf recorded when this package was forked, or null for a self-authored package.',
 			),
 		listing_name: z
 			.string()
@@ -97,7 +101,9 @@ export const packageSummaryWithCommunityProvenanceSchema =
 export const pendingPackageSecretApprovalsSchema = z
 	.object({
 		package_id: z.string().describe('Saved package id that needs approvals.'),
-		kody_id: z.string().describe('Package kody.id that needs approvals.'),
+		package_name: z
+			.string()
+			.describe('Package name leaf that needs approvals.'),
 		secrets: z
 			.array(
 				z.object({
@@ -123,7 +129,7 @@ export const pendingPackageSecretApprovalsSchema = z
 export function toPackageSummary(savedPackage: SavedPackageRecord) {
 	return {
 		package_id: savedPackage.id,
-		kody_id: savedPackage.kodyId,
+		package_name: savedPackage.kodyId,
 		name: savedPackage.name,
 		description: savedPackage.description,
 		tags: savedPackage.tags,
@@ -146,7 +152,7 @@ export function toPackageSummaryWithCommunityProvenance(
 		...toPackageSummary(savedPackage),
 		source_listing_id: savedPackage.sourceListingId,
 		listing_current: savedPackage.listingCurrent,
-		listing_kody_id: savedPackage.listingKodyId,
+		listing_package_name: savedPackage.listingKodyId,
 		listing_name: savedPackage.listingName,
 		origin_commit: savedPackage.originCommit,
 		listing_pinned_commit: savedPackage.listingPinnedCommit,

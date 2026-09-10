@@ -14,7 +14,7 @@ const inputSchema = z.object({
 
 const outputSchema = z.object({
 	package_id: z.string(),
-	kody_id: z.string(),
+	package_name: z.string(),
 	sessions: z.array(packageRealtimeSessionRecordSchema),
 })
 
@@ -43,7 +43,7 @@ export const sessionListCapability = defineDomainCapability(
 			const sessions = Array.isArray(result?.sessions) ? result.sessions : []
 			return {
 				package_id: realtimeContext.savedPackage.id,
-				kody_id: realtimeContext.savedPackage.kodyId,
+				package_name: realtimeContext.savedPackage.kodyId,
 				sessions,
 			}
 		},

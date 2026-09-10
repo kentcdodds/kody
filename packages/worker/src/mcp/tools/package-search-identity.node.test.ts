@@ -52,10 +52,26 @@ test('package identity parser accepts exact ids and current-origin URLs and reje
 	expect(
 		parsePackageSearchIdentity({ ...common, query: 'daily-notes' }),
 	).toEqual({
-		kind: 'kody-id',
+		kind: 'package-name',
 		value: 'daily-notes',
 		authoritative: false,
 	})
+	expect(
+		parsePackageSearchIdentity({
+			...common,
+			query: '@user/daily-notes',
+		}),
+	).toEqual({
+		kind: 'package-name',
+		value: 'daily-notes',
+		authoritative: true,
+	})
+	expect(
+		parsePackageSearchIdentity({
+			...common,
+			query: '@other/daily-notes',
+		}),
+	).toEqual({ kind: 'not-package-identity' })
 	expect(
 		parsePackageSearchIdentity({
 			...common,
@@ -82,7 +98,7 @@ test('package identity parser accepts exact ids and current-origin URLs and reje
 			query: '/@user/packages/daily-notes',
 		}),
 	).toEqual({
-		kind: 'kody-id',
+		kind: 'package-name',
 		value: 'daily-notes',
 		authoritative: true,
 	})
@@ -92,7 +108,7 @@ test('package identity parser accepts exact ids and current-origin URLs and reje
 			query: 'https://heykody.dev/@user/packages/daily-notes',
 		}),
 	).toEqual({
-		kind: 'kody-id',
+		kind: 'package-name',
 		value: 'daily-notes',
 		authoritative: true,
 	})
@@ -115,13 +131,13 @@ test('package identity parser accepts exact ids and current-origin URLs and reje
 			...hosted,
 			query: 'https://kody.run/@user/packages/daily-notes',
 		}),
-	).toEqual({ kind: 'kody-id', value: 'daily-notes', authoritative: true })
+	).toEqual({ kind: 'package-name', value: 'daily-notes', authoritative: true })
 	expect(
 		parsePackageSearchIdentity({
 			...hosted,
 			query: 'https://kodyapps.dev/@user/packages/daily-notes',
 		}),
-	).toEqual({ kind: 'kody-id', value: 'daily-notes', authoritative: true })
+	).toEqual({ kind: 'package-name', value: 'daily-notes', authoritative: true })
 	// A deep link inside a running app is not a package identity — unchanged from
 	// how the app origin already treated `/@user/packages/x/<rest>`.
 	expect(
@@ -138,13 +154,13 @@ test('package identity parser accepts exact ids and current-origin URLs and reje
 			...hosted,
 			query: 'https://user.kody.run/packages/daily-notes?tab=source#top',
 		}),
-	).toEqual({ kind: 'kody-id', value: 'daily-notes', authoritative: true })
+	).toEqual({ kind: 'package-name', value: 'daily-notes', authoritative: true })
 	expect(
 		parsePackageSearchIdentity({
 			...hosted,
 			query: 'https://user.kodyapps.dev/packages/daily-notes?tab=source#top',
 		}),
-	).toEqual({ kind: 'kody-id', value: 'daily-notes', authoritative: true })
+	).toEqual({ kind: 'package-name', value: 'daily-notes', authoritative: true })
 	expect(
 		parsePackageSearchIdentity({
 			...hosted,
@@ -171,7 +187,7 @@ test('package identity parser accepts exact ids and current-origin URLs and reje
 			...hosted,
 			query: 'https://heykody.dev/@user/packages/daily-notes',
 		}),
-	).toEqual({ kind: 'kody-id', value: 'daily-notes', authoritative: true })
+	).toEqual({ kind: 'package-name', value: 'daily-notes', authoritative: true })
 	expect(
 		parsePackageSearchIdentity({
 			...hosted,

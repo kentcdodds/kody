@@ -229,7 +229,7 @@ const getGitRemoteCreateCode = `import { kody } from 'kody:runtime'
 
 export default async function main() {
 	return await kody.packageGetGitRemote({
-		kody_id: 'kody-bot-shipped',
+		package_name: 'kody-bot-shipped',
 		create: true,
 		description: 'What kody-bot shipped since you last asked.',
 	})
@@ -239,7 +239,7 @@ const publishExternalPushCode = `import { kody } from 'kody:runtime'
 
 export default async function main() {
 	return await kody.packagePublishExternalPush({
-		kody_id: 'kody-bot-shipped',
+		package_name: 'kody-bot-shipped',
 	})
 }`
 
@@ -256,7 +256,7 @@ const redactedBearer = 'Authorization: Bearer [REDACTED SECRET]'
 function gitRemoteCreateReturn() {
 	return {
 		package_id: 'pkg_kody_bot_shipped',
-		kody_id: 'kody-bot-shipped',
+		package_name: 'kody-bot-shipped',
 		created: true,
 		remote: artifactsRemote,
 		authenticated_remote: '[REDACTED SECRET]',
@@ -328,7 +328,7 @@ const dailyDigest = ${asEmbeddedTemplateLiteral(dailyDigestSource)}
 
 export default async function main() {
 	const session = await kody.repoOpenSession({
-		target: { kind: 'package', kody_id: 'kody-bot-shipped' },
+		target: { kind: 'package', package_name: 'kody-bot-shipped' },
 		conversation_id: '${notifyConversationId}',
 	})
 	await kody.repoEditFiles({
@@ -384,7 +384,7 @@ const enableDailyJobSessionCode = `import { kody } from 'kody:runtime'
 
 export default async function main() {
 	const session = await kody.repoOpenSession({
-		target: { kind: 'package', kody_id: 'kody-bot-shipped' },
+		target: { kind: 'package', package_name: 'kody-bot-shipped' },
 		conversation_id: '${notifyConversationId}',
 	})
 	await kody.repoEditFiles({
@@ -420,7 +420,7 @@ function repoSessionPublishReturn(publishedCommit: string) {
 			],
 			manifest: {
 				name: '@you/kody-bot-shipped',
-				kody_id: 'kody-bot-shipped',
+				package_name: 'kody-bot-shipped',
 				description: 'What kody-bot shipped since you last asked.',
 				has_app: false,
 			},

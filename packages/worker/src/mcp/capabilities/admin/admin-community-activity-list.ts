@@ -15,7 +15,7 @@ const commonActivityFields = {
 	id: z.string(),
 	listing_id: z.string(),
 	listing_name: z.string(),
-	listing_kody_id: z.string(),
+	listing_package_name: z.string(),
 	acting_username: z.string().nullable(),
 	occurred_at: z.string(),
 }
@@ -38,7 +38,7 @@ function formatCommunityActivity(activity: CommunityActivityRecord) {
 		id: activity.id,
 		listing_id: activity.listingId,
 		listing_name: activity.listingName,
-		listing_kody_id: activity.listingKodyId,
+		listing_package_name: activity.listingKodyId,
 		acting_username: activity.actingUsername,
 		occurred_at: activity.occurredAt,
 	}

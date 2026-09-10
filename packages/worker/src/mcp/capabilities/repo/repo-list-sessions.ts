@@ -43,7 +43,7 @@ async function resolveListSessionTarget(input: {
 				kind: 'package',
 				source_id: input.source.id,
 				package_id: savedPackage.id,
-				kody_id: savedPackage.kodyId,
+				package_name: savedPackage.kodyId,
 				name: savedPackage.name,
 			}
 		}

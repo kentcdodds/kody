@@ -1,5 +1,6 @@
 import { type z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { getPackageNameLeaf } from '#worker/package-registry/package-name.ts'
 import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
@@ -57,13 +58,13 @@ async function requirePackageTarget(input: {
 				})
 			: await getSavedPackageByKodyId(input.db, {
 					userId: input.userId,
-					kodyId: input.target.kody_id,
+					kodyId: getPackageNameLeaf(input.target.package_name),
 				})
 	if (!savedPackage) {
 		const missingId =
 			'package_id' in input.target
 				? input.target.package_id
-				: input.target.kody_id
+				: input.target.package_name
 		throw new McpCallerError(`Saved package "${missingId}" was not found.`)
 	}
 	const source = await requireOwnedEntitySource({
@@ -77,7 +78,7 @@ async function requirePackageTarget(input: {
 			kind: 'package',
 			source_id: source.id,
 			package_id: savedPackage.id,
-			kody_id: savedPackage.kodyId,
+			package_name: savedPackage.kodyId,
 			name: savedPackage.name,
 		},
 	}
@@ -190,7 +191,7 @@ export async function resolveRepoTargetFromSource(input: {
 				kind: 'package',
 				source_id: source.id,
 				package_id: savedPackage.id,
-				kody_id: savedPackage.kodyId,
+				package_name: savedPackage.kodyId,
 				name: savedPackage.name,
 			}
 		}

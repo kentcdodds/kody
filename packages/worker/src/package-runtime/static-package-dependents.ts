@@ -13,7 +13,7 @@ const defaultStaticDependentArtifactsPerPackageLimit = 5
  */
 export type StaticDependentPackageSummaryItem = {
 	package_id: string
-	kody_id: string
+	package_name: string
 	name: string
 	source_id: string
 	published_commit: string | null
@@ -50,7 +50,7 @@ type BuildStaticPackageDependentsSummaryInput = {
 
 type StaticDependentPackageAccumulator = {
 	package_id: string
-	kody_id: string
+	package_name: string
 	name: string
 	source_id: string
 	published_commit: string | null
@@ -84,7 +84,7 @@ function createAccumulator(
 ): StaticDependentPackageAccumulator {
 	return {
 		package_id: row.packageId,
-		kody_id: row.packageKodyId,
+		package_name: row.packageKodyId,
 		name: row.packageName,
 		source_id: row.sourceId,
 		published_commit: row.publishedCommit,
@@ -142,7 +142,7 @@ export function buildStaticPackageDependentsSummary(
 		(item) =>
 			({
 				package_id: item.package_id,
-				kody_id: item.kody_id,
+				package_name: item.package_name,
 				name: item.name,
 				source_id: item.source_id,
 				published_commit: item.published_commit,

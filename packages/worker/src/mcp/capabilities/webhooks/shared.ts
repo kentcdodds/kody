@@ -1,16 +1,39 @@
 import { z } from 'zod'
+import { applyPackageNameAliases } from '#worker/package-registry/package-name.ts'
+
+export function applyWebhookPackageRefAliases(value: unknown) {
+	const aliased = applyPackageNameAliases(value)
+	if (
+		typeof aliased !== 'object' ||
+		aliased === null ||
+		Array.isArray(aliased)
+	) {
+		return aliased
+	}
+	const record = { ...(aliased as Record<string, unknown>) }
+	if (
+		record['packageName'] === undefined &&
+		record['package_name'] !== undefined
+	) {
+		record['packageName'] = record['package_name']
+		delete record['package_name']
+	}
+	return record
+}
 
 export const webhookPackageRefSchema = {
 	packageId: z
 		.string()
 		.min(1)
 		.optional()
-		.describe('Saved package id. Provide packageId or kodyId.'),
-	kodyId: z
+		.describe('Saved package id. Provide packageId or packageName.'),
+	packageName: z
 		.string()
 		.min(1)
 		.optional()
-		.describe('Saved package kody id. Provide packageId or kodyId.'),
+		.describe(
+			'Package name leaf or scoped `@owner/leaf`. Provide packageId or packageName.',
+		),
 }
 
 export const webhookVerificationPublicSchema = z
@@ -37,7 +60,6 @@ export const webhookReplayPublicSchema = z
 
 export const listedWebhookSchema = z.object({
 	package_id: z.string(),
-	package_kody_id: z.string(),
 	package_name: z.string(),
 	name: z.string(),
 	export_name: z.string(),
@@ -70,7 +92,7 @@ export const listedWebhookSchema = z.object({
 
 export const mintedWebhookHandleSchema = z.object({
 	package_id: z.string(),
-	package_kody_id: z.string(),
+	package_name: z.string(),
 	name: z.string(),
 	handle: z
 		.string()
@@ -106,11 +128,19 @@ export const webhookDeliverySchema = z.object({
 
 export function requirePackageRef(input: {
 	packageId?: string
+	packageName?: string
 	kodyId?: string
 }) {
-	if (!input.packageId && !input.kodyId) {
-		throw new Error('Provide packageId or kodyId.')
+	if (!input.packageId && !input.packageName && !input.kodyId) {
+		throw new Error('Provide packageId or packageName.')
 	}
+}
+
+export function readWebhookPackageName(input: {
+	packageName?: string
+	kodyId?: string
+}) {
+	return input.packageName ?? input.kodyId
 }
 
 export function toListedWebhookCapability(webhook: {
@@ -134,8 +164,7 @@ export function toListedWebhookCapability(webhook: {
 }) {
 	return {
 		package_id: webhook.packageId,
-		package_kody_id: webhook.packageKodyId,
-		package_name: webhook.packageName,
+		package_name: webhook.packageKodyId,
 		name: webhook.name,
 		export_name: webhook.exportName,
 		description: webhook.description,
@@ -165,7 +194,7 @@ export function toMintedWebhookCapability(minted: {
 }) {
 	return {
 		package_id: minted.packageId,
-		package_kody_id: minted.packageKodyId,
+		package_name: minted.packageKodyId,
 		name: minted.name,
 		handle: minted.handle,
 		url_host: minted.urlHost,

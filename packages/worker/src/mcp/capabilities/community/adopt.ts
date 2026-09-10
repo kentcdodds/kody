@@ -3,6 +3,13 @@ import { adoptCommunityFork } from '#worker/community/service.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	applyPackageNameAliases,
+	normalizePackageNameInput,
+	packageIdentityInputShape,
+	refineExactlyOnePackageIdentity,
+} from '#worker/package-registry/package-name.ts'
+import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 
 export const communityForkAdoptCapability = defineDomainCapability(
 	capabilityDomainNames.community,
@@ -22,51 +29,52 @@ export const communityForkAdoptCapability = defineDomainCapability(
 		readOnly: false,
 		idempotent: true,
 		destructive: false,
-		inputSchema: z.object({
-			package_id: z
-				.string()
-				.min(1)
-				.optional()
-				.describe(
-					'Saved package id (UUID). Provide exactly one of package_id or kody_id.',
-				),
-			kody_id: z
-				.string()
-				.min(1)
-				.optional()
-				.describe(
-					'Package kody id in your account. Provide exactly one of package_id or kody_id.',
-				),
-			review_summary: z
-				.string()
-				.min(10)
-				.describe(
-					'What you reviewed in the forked code and why it is trusted enough to treat as your own for user-secret read/use.',
-				),
-		}),
+		inputSchema: z.preprocess(
+			applyPackageNameAliases,
+			z
+				.object({
+					...packageIdentityInputShape,
+					review_summary: z
+						.string()
+						.min(10)
+						.describe(
+							'What you reviewed in the forked code and why it is trusted enough to treat as your own for user-secret read/use.',
+						),
+				})
+				.superRefine(refineExactlyOnePackageIdentity),
+		),
 		outputSchema: z.object({
 			adopted: z.literal(true),
 			already_adopted: z.boolean(),
 			package_id: z.string(),
-			kody_id: z.string(),
+			package_name: z.string(),
 			listing_id: z.string(),
 			origin_commit: z.string(),
 			adopted_at: z.string(),
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			const ownerScope = await getMcpUserPackageScope(ctx.env.APP_DB, user)
+			const packageName =
+				args.package_name === undefined
+					? undefined
+					: normalizePackageNameInput({
+							value: args.package_name,
+							ownerScope,
+							action: 'resolve',
+						})
 			const result = await adoptCommunityFork({
 				env: ctx.env,
 				userId: user.userId,
 				packageId: args.package_id,
-				kodyId: args.kody_id,
+				kodyId: packageName,
 				reviewSummary: args.review_summary,
 			})
 			return {
 				adopted: true as const,
 				already_adopted: result.alreadyAdopted,
 				package_id: result.packageId,
-				kody_id: result.kodyId,
+				package_name: result.kodyId,
 				listing_id: result.listingId,
 				origin_commit: result.originCommit,
 				adopted_at: result.adoptedAt,

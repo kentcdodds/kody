@@ -22,7 +22,7 @@ export const communityProfileOutputSchema = z.object({
 export const communityProfilePackageSchema = z.object({
 	package_id: z.string().optional(),
 	name: z.string(),
-	kody_id: z.string(),
+	package_name: z.string(),
 	description: z.string(),
 	tags: z.array(z.string()),
 	updated_at: z
@@ -85,7 +85,7 @@ export function toCommunityProfilePackageOutput(
 	const output: {
 		package_id?: string
 		name: string
-		kody_id: string
+		package_name: string
 		description: string
 		tags: Array<string>
 		updated_at: string
@@ -95,7 +95,7 @@ export function toCommunityProfilePackageOutput(
 		is_private?: boolean
 	} = {
 		name: pkg.name,
-		kody_id: pkg.kodyId,
+		package_name: pkg.kodyId,
 		description: pkg.description,
 		tags: pkg.tags,
 		updated_at: pkg.updatedAt,

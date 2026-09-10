@@ -8,6 +8,11 @@ import { type SearchMatch } from '#mcp/tools/search-format.ts'
 import { readListingAheadFlag } from '#universal/community-listing-ahead.ts'
 import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
 import {
+	getPackageNameLeaf,
+	getPackageNameScope,
+	isScopedPackageName,
+} from '#worker/package-registry/package-name.ts'
+import {
 	getSavedPackageWithCommunityProvenanceById,
 	getSavedPackageWithCommunityProvenanceByKodyId,
 } from '#worker/package-registry/repo.ts'
@@ -26,7 +31,7 @@ type PackageIdentityLookup =
 			authoritative: boolean
 	  }
 	| {
-			kind: 'kody-id'
+			kind: 'package-name'
 			value: string
 			authoritative: boolean
 	  }
@@ -110,7 +115,7 @@ function parsePackageUrl(input: {
 			) {
 				return { kind: 'invalid-package-identity' }
 			}
-			return { kind: 'kody-id', value: kodyId, authoritative: true }
+			return { kind: 'package-name', value: kodyId, authoritative: true }
 		}
 	}
 	const isAccountPackagePath =
@@ -147,7 +152,7 @@ function parsePackageUrl(input: {
 	) {
 		return { kind: 'invalid-package-identity' }
 	}
-	return { kind: 'kody-id', value: kodyId, authoritative: true }
+	return { kind: 'package-name', value: kodyId, authoritative: true }
 }
 
 function listSearchPackageAppOrigins(input: {
@@ -193,7 +198,26 @@ export function parsePackageSearchIdentity(input: {
 		return { kind: 'package-id', value: query, authoritative: true }
 	}
 	if (kodyPackageIdPattern.test(query)) {
-		return { kind: 'kody-id', value: query, authoritative: false }
+		return { kind: 'package-name', value: query, authoritative: false }
+	}
+	if (isScopedPackageName(query)) {
+		const scope = getPackageNameScope(query)
+		const leaf = getPackageNameLeaf(query)
+		if (!leaf || !kodyPackageIdPattern.test(leaf)) {
+			return { kind: 'not-package-identity' }
+		}
+		if (
+			input.username &&
+			scope &&
+			scope.toLowerCase() !== input.username.toLowerCase()
+		) {
+			return { kind: 'not-package-identity' }
+		}
+		return {
+			kind: 'package-name',
+			value: leaf,
+			authoritative: Boolean(input.username),
+		}
 	}
 	return { kind: 'not-package-identity' }
 }

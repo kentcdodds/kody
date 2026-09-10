@@ -134,7 +134,7 @@ export function buildPackageSaveNextSteps(input: {
 }) {
 	const steps = [
 		'Coding agents with local filesystem/git access should use the git lane for further edits instead of re-sending full file sets:',
-		`call packageGetGitRemote({ kody_id: ${JSON.stringify(input.kodyId)} }), run the returned setup_commands to clone into a temporary directory, edit and push normally, then publish with packagePublishExternalPush.`,
+		`call packageGetGitRemote({ package_name: ${JSON.stringify(input.kodyId)} }), run the returned setup_commands to clone into a temporary directory, edit and push normally, then publish with packagePublishExternalPush.`,
 		'Binary assets and multi-file refactors are only supported through that git lane.',
 		'Tool-only agents without local git can continue with packageSave or repo sessions.',
 	]
@@ -148,16 +148,16 @@ export function buildPackageSaveNextSteps(input: {
 /**
  * Per-user `saved_packages` uniqueness is on (user_id, name) and
  * (user_id, kody_id). packageSave resolves "existing" by package_id when
- * provided, otherwise by kody_id. A wrong/new package_id must not skip the
- * kody_id check and fall into INSERT — that surfaces as a raw D1 UNIQUE on
- * name (KODY-CLOUDFLARE-5J).
+ * provided, otherwise by the package name leaf. A wrong/new package_id must
+ * not skip the leaf check and fall into INSERT — that surfaces as a raw D1
+ * UNIQUE on name (KODY-CLOUDFLARE-5J).
  */
 export function buildSavedPackageNameCollisionMessage(input: {
 	name: string
 	existingKodyId: string
 	existingPackageId: string
 }) {
-	return `A saved package named "${input.name}" already exists (kody_id "${input.existingKodyId}", package_id "${input.existingPackageId}"). Change package.json#name, or call packageSave with package_id "${input.existingPackageId}" to update that package (set confirm_destructive_overwrite: true only after the user explicitly approves overwriting).`
+	return `A saved package named "${input.name}" already exists (package_name "${input.existingKodyId}", package_id "${input.existingPackageId}"). Change package.json#name, or call packageSave with package_id "${input.existingPackageId}" to update that package (set confirm_destructive_overwrite: true only after the user explicitly approves overwriting).`
 }
 
 export function buildSavedPackageIdMismatchMessage(input: {
@@ -165,7 +165,7 @@ export function buildSavedPackageIdMismatchMessage(input: {
 	existingKodyId: string
 	existingPackageId: string
 }) {
-	return `package_id "${input.requestedPackageId}" was not found. A saved package with kody_id "${input.existingKodyId}" already exists as package_id "${input.existingPackageId}". Omit package_id or pass package_id "${input.existingPackageId}" to update it (set confirm_destructive_overwrite: true only after the user explicitly approves overwriting).`
+	return `package_id "${input.requestedPackageId}" was not found. A saved package with package_name "${input.existingKodyId}" already exists as package_id "${input.existingPackageId}". Omit package_id or pass package_id "${input.existingPackageId}" to update it (set confirm_destructive_overwrite: true only after the user explicitly approves overwriting).`
 }
 
 function isSavedPackageUniqueConstraintMessage(message: string) {
@@ -181,7 +181,7 @@ function buildSavedPackageUniqueConstraintCallerMessage(input: {
 	message: string
 }) {
 	if (/saved_packages\.kody_id/i.test(input.message)) {
-		return `A saved package with kody id "${input.kodyId}" already exists. Call packageSave with that package's package_id to update it, or change package.json#kody.id.`
+		return `A saved package with package name "${input.kodyId}" already exists. Call packageSave with that package's package_id to update it, or change package.json#name.`
 	}
 	return `A saved package named "${input.name}" already exists. Change package.json#name, or call packageSave with that package's package_id to update it.`
 }
@@ -476,7 +476,7 @@ export const savePackageCapability = defineDomainCapability(
 			})
 			return {
 				package_id: saved.id,
-				kody_id: saved.kodyId,
+				package_name: saved.kodyId,
 				name: saved.name,
 				description: saved.description,
 				tags: saved.tags,

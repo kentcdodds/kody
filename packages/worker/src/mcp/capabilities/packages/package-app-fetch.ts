@@ -8,6 +8,13 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import { resolveDisplayName } from '#worker/identity/username.ts'
 import {
+	applyPackageNameAliases,
+	normalizePackageNameInput,
+	packageIdInputSchema,
+	packageNameInputSchema,
+	refineExactlyOnePackageIdentity,
+} from '#worker/package-registry/package-name.ts'
+import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
@@ -257,12 +264,12 @@ async function resolveOwnedSavedPackage(input: {
 	db: D1Database
 	userId: string
 	packageId?: string
-	kodyId?: string
+	packageName?: string
 }) {
-	const packageIdOrKodyId = input.packageId ?? input.kodyId ?? ''
+	const packageIdOrName = input.packageId ?? input.packageName ?? ''
 	return await resolveSavedPackageWithFreshnessCache({
 		userId: input.userId,
-		packageIdOrKodyId,
+		packageIdOrKodyId: packageIdOrName,
 		load: async () => {
 			if (input.packageId !== undefined) {
 				return await getSavedPackageById(input.db, {
@@ -272,7 +279,7 @@ async function resolveOwnedSavedPackage(input: {
 			}
 			return await getSavedPackageByKodyId(input.db, {
 				userId: input.userId,
-				kodyId: input.kodyId ?? '',
+				kodyId: input.packageName ?? '',
 			})
 		},
 	})
@@ -298,46 +305,42 @@ export const packageAppFetchCapability = defineDomainCapability(
 		readOnly: false,
 		idempotent: false,
 		destructive: true,
-		inputSchema: z
-			.object({
-				package_id: z.string().min(1).optional(),
-				kody_id: z.string().min(1).optional(),
-				package_scope: z
-					.string()
-					.min(1)
-					.optional()
-					.describe(packageScopeInputDescription),
-				path: z
-					.string()
-					.optional()
-					.describe(
-						'Path after the app mount that the handler sees. Defaults to /.',
-					),
-				method: z.string().optional().describe('HTTP method. Defaults to GET.'),
-				headers: z
-					.record(z.string(), z.string())
-					.optional()
-					.describe(
-						'Extra request headers. Credential, internal, upgrade, and Kody-Synthetic headers are stripped.',
-					),
-				body: z
-					.string()
-					.optional()
-					.describe(
-						'Raw request body string for POST, PUT, or PATCH. Capped at about 100 KB.',
-					),
-			})
-			.superRefine((value, ctx) => {
-				const identityCount =
-					(value.package_id !== undefined ? 1 : 0) +
-					(value.kody_id !== undefined ? 1 : 0)
-				if (identityCount !== 1) {
-					ctx.addIssue({
-						code: 'custom',
-						message: 'Provide exactly one of `package_id` or `kody_id`.',
-					})
-				}
-			}),
+		inputSchema: z.preprocess(
+			applyPackageNameAliases,
+			z
+				.object({
+					package_id: packageIdInputSchema.optional(),
+					package_name: packageNameInputSchema.optional(),
+					package_scope: z
+						.string()
+						.min(1)
+						.optional()
+						.describe(packageScopeInputDescription),
+					path: z
+						.string()
+						.optional()
+						.describe(
+							'Path after the app mount that the handler sees. Defaults to /.',
+						),
+					method: z
+						.string()
+						.optional()
+						.describe('HTTP method. Defaults to GET.'),
+					headers: z
+						.record(z.string(), z.string())
+						.optional()
+						.describe(
+							'Extra request headers. Credential, internal, upgrade, and Kody-Synthetic headers are stripped.',
+						),
+					body: z
+						.string()
+						.optional()
+						.describe(
+							'Raw request body string for POST, PUT, or PATCH. Capped at about 100 KB.',
+						),
+				})
+				.superRefine(refineExactlyOnePackageIdentity),
+		),
 		outputSchema: z.object({
 			status: z.number().int(),
 			headers: z.record(z.string(), z.string()),
@@ -384,12 +387,20 @@ export const packageAppFetchCapability = defineDomainCapability(
 				user,
 				args.package_scope,
 			)
-			const lookupId = args.package_id ?? args.kody_id ?? ''
+			const packageName =
+				args.package_name === undefined
+					? undefined
+					: normalizePackageNameInput({
+							value: args.package_name,
+							ownerScope: owner.ownerScope,
+							action: 'resolve',
+						})
+			const lookupId = args.package_id ?? packageName ?? ''
 			const savedPackage = await resolveOwnedSavedPackage({
 				db: ctx.env.APP_DB,
 				userId: owner.ownerUserId,
 				packageId: args.package_id,
-				kodyId: args.kody_id,
+				packageName,
 			})
 			if (!savedPackage) {
 				const plainRepo = await findPlainRepoPromotionHint(ctx.env.APP_DB, {

@@ -67,8 +67,8 @@ export function compactCapabilityInputTypeDefinition(
 
 export function buildPackageMaintainSnippets(kodyId: string) {
 	return {
-		gitLane: `packageGetGitRemote({ kody_id: ${JSON.stringify(kodyId)} })`,
-		publish: `packagePublishExternalPush({ kody_id: ${JSON.stringify(kodyId)} })`,
+		gitLane: `packageGetGitRemote({ package_name: ${JSON.stringify(kodyId)} })`,
+		publish: `packagePublishExternalPush({ package_name: ${JSON.stringify(kodyId)} })`,
 	}
 }
 

@@ -111,14 +111,14 @@ test('control-kody parses commands, maps every required route, and drives a seed
 		}),
 	)
 	expect(usageLines.join('\n')).toMatch(/package-create/)
-	expect(usageLines.join('\n')).toMatch(/--kody-id/)
+	expect(usageLines.join('\n')).toMatch(/--package-name/)
 	expect(usageLines.join('\n')).toMatch(/--head-ahead/)
 	expect(() => parseControlArgs(['nope'])).toThrow(/Unknown command/)
 	await expect(
 		runCommand(
 			parseControlArgs(['package-create', '--origin', 'http://127.0.0.1:9']),
 		),
-	).rejects.toThrow(/requires --kody-id/)
+	).rejects.toThrow(/requires --package-name/)
 	await expect(
 		runCommand(
 			parseControlArgs([

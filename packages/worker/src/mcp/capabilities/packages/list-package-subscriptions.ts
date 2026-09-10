@@ -7,7 +7,7 @@ import { loadPackageManifestBySourceId } from '#worker/package-registry/source.t
 
 const packageSubscriptionSchema = z.object({
 	package_id: z.string(),
-	kody_id: z.string(),
+	package_name: z.string(),
 	name: z.string(),
 	topic: z.string(),
 	handler: z.string(),
@@ -132,7 +132,7 @@ export const listPackageSubscriptionsCapability = defineDomainCapability(
 					if (args.topic && args.topic !== topic) continue
 					subscriptions.push({
 						package_id: savedPackage.id,
-						kody_id: savedPackage.kodyId,
+						package_name: savedPackage.kodyId,
 						name: savedPackage.name,
 						topic,
 						handler: definition.handler,
@@ -145,7 +145,7 @@ export const listPackageSubscriptionsCapability = defineDomainCapability(
 				subscriptions: subscriptions.sort((left, right) => {
 					return (
 						left.topic.localeCompare(right.topic) ||
-						left.kody_id.localeCompare(right.kody_id)
+						left.package_name.localeCompare(right.package_name)
 					)
 				}),
 			}

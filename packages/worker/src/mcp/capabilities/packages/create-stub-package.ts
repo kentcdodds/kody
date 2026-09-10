@@ -1,13 +1,11 @@
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { buildSavedPackageEmbedText } from '#worker/package-registry/embed.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
+import { normalizePackageNameInput } from '#worker/package-registry/package-name.ts'
 import { type PackageOwnerContext } from '#worker/package-registry/package-owner.ts'
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
-import {
-	assertKodyDescriptionLength,
-	kodyPackageIdPattern,
-} from '#worker/package-registry/types.ts'
+import { assertKodyDescriptionLength } from '#worker/package-registry/types.ts'
 import { upsertSavedPackageVector } from '#worker/package-registry/vectorize.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
@@ -17,7 +15,6 @@ export const defaultStubPackageDescription =
 
 export function buildStubPackageFiles(input: {
 	name: string
-	kodyId: string
 	description: string
 }): Record<string, string> {
 	const packageJson = {
@@ -25,7 +22,6 @@ export function buildStubPackageFiles(input: {
 		private: true,
 		exports: { '.': './src/index.ts' },
 		kody: {
-			id: input.kodyId,
 			description: input.description,
 		},
 	}
@@ -75,25 +71,24 @@ export async function createStubSavedPackage(input: {
 	env: Env
 	baseUrl: string
 	owner: PackageOwnerContext
-	kodyId: string
+	packageName: string
 	description?: string
 }) {
-	const kodyId = input.kodyId.trim()
-	if (!kodyPackageIdPattern.test(kodyId)) {
-		throw new Error(
-			`Cannot create package: kody_id "${input.kodyId}" must be lower-kebab-case (for example "my-package").`,
-		)
-	}
+	const packageSlug = normalizePackageNameInput({
+		value: input.packageName,
+		ownerScope: input.owner.ownerScope,
+		action: 'create',
+	})
 	await assertWithinEntitlement({
 		db: input.env.APP_DB,
 		userId: input.owner.ownerUserId,
 		email: input.owner.ownerEmail,
 		resource: 'saved_packages',
 	})
-	const name = `@${input.owner.ownerScope}/${kodyId}`
+	const name = `@${input.owner.ownerScope}/${packageSlug}`
 	const description = input.description?.trim() || defaultStubPackageDescription
 	assertKodyDescriptionLength(description)
-	const files = buildStubPackageFiles({ name, kodyId, description })
+	const files = buildStubPackageFiles({ name, description })
 	const packageJsonContent = files['package.json']
 	if (!packageJsonContent) {
 		throw new Error('Stub package files are missing package.json.')
@@ -150,5 +145,9 @@ export async function createStubSavedPackage(input: {
 		packageId,
 		sourceId: ensuredSource.id,
 	})
-	return { packageId, kodyId: manifest.kody.id, name: manifest.name }
+	return {
+		packageId,
+		packageName: manifest.kody.id,
+		name: manifest.name,
+	}
 }

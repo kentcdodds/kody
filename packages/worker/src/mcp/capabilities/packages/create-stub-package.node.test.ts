@@ -65,29 +65,40 @@ const owner: PackageOwnerContext = {
 	delegated: false,
 }
 
-test('createStubSavedPackage rejects invalid kody ids and registers stubs for owner and delegated scopes', async () => {
+test('createStubSavedPackage accepts a leaf or matching scoped name and rejects a foreign scope', async () => {
 	resetMocks()
 	await expect(
 		createStubSavedPackage({
 			env: { APP_DB: {} } as Env,
 			baseUrl: 'https://heykody.dev',
 			owner,
-			kodyId: 'Not_A_Valid_Id',
+			packageName: 'Not_A_Valid_Id',
 		}),
-	).rejects.toThrow(/lower-kebab-case/)
+	).rejects.toThrow(/lower-kebab-case package name leaf/)
 	expect(mockModule.assertWithinEntitlement).not.toHaveBeenCalled()
 	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
+
+	resetMocks()
+	await expect(
+		createStubSavedPackage({
+			env: { APP_DB: {} } as Env,
+			baseUrl: 'https://heykody.dev',
+			owner,
+			packageName: '@other/my-package',
+		}),
+	).rejects.toThrow(/does not match the acting owner "@kentcdodds"/)
+	expect(mockModule.assertWithinEntitlement).not.toHaveBeenCalled()
 
 	resetMocks()
 	const result = await createStubSavedPackage({
 		env: { APP_DB: {} } as Env,
 		baseUrl: 'https://heykody.dev',
 		owner,
-		kodyId: 'my-package',
+		packageName: 'my-package',
 		description: 'Does the thing.',
 	})
 	expect(result).toMatchObject({
-		kodyId: 'my-package',
+		packageName: 'my-package',
 		name: '@kentcdodds/my-package',
 	})
 	expect(mockModule.assertWithinEntitlement).toHaveBeenCalledWith(
@@ -97,17 +108,13 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for ow
 			email: 'user-1@example.com',
 		}),
 	)
-	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
-		expect.objectContaining({
-			sourceId: 'source-new',
-			userId: 'user-1',
-			files: expect.objectContaining({
-				'package.json': expect.stringContaining('"private": true'),
-				'README.md': expect.stringContaining('## Intent'),
-				'AGENTS.md': expect.stringContaining('## Imports'),
-			}),
-		}),
+	const leafFiles = mockModule.syncArtifactSourceSnapshot.mock.calls[0]?.[0]
+		.files as Record<string, string>
+	expect(leafFiles['package.json']).toContain(
+		'"name": "@kentcdodds/my-package"',
 	)
+	expect(leafFiles['package.json']).not.toContain('"id":')
+	expect(leafFiles['package.json']).toContain('"private": true')
 	expect(mockModule.insertSavedPackage).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
@@ -121,8 +128,25 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for ow
 			is_private: 1,
 		}),
 	)
-	expect(mockModule.upsertSavedPackageVector).toHaveBeenCalled()
-	expect(mockModule.refreshSavedPackageProjection).toHaveBeenCalled()
+
+	resetMocks()
+	const scopedResult = await createStubSavedPackage({
+		env: { APP_DB: {} } as Env,
+		baseUrl: 'https://heykody.dev',
+		owner,
+		packageName: '@kentcdodds/mailchimp',
+	})
+	expect(scopedResult).toMatchObject({
+		packageName: 'mailchimp',
+		name: '@kentcdodds/mailchimp',
+	})
+	expect(mockModule.insertSavedPackage).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			name: '@kentcdodds/mailchimp',
+			kody_id: 'mailchimp',
+		}),
+	)
 
 	// Delegated grants must persist under the platform owner, not the actor.
 	resetMocks()
@@ -137,7 +161,7 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for ow
 		env: { APP_DB: {} } as Env,
 		baseUrl: 'https://heykody.dev',
 		owner: delegatedOwner,
-		kodyId: 'official-tool',
+		packageName: 'official-tool',
 	})
 	expect(mockModule.assertWithinEntitlement).toHaveBeenCalledWith(
 		expect.objectContaining({

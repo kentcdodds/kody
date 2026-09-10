@@ -20,6 +20,12 @@ import {
 	type StaticPackageDependentsSummary,
 } from '#worker/package-runtime/static-package-dependents.ts'
 import {
+	applyPackageNameAliases,
+	packageIdInputSchema,
+	packageNameInputSchema,
+	refineExactlyOnePackageIdentity,
+} from '#worker/package-registry/package-name.ts'
+import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
@@ -53,21 +59,26 @@ import {
 	type McpReportProgress,
 } from '#mcp/progress.ts'
 
-const inputSchema = z.object({
-	package_id: z.string().min(1).optional(),
-	kody_id: z.string().min(1).optional(),
-	package_scope: z
-		.string()
-		.min(1)
-		.optional()
-		.describe(packageScopeInputDescription),
-	allow_force: z.boolean().optional().default(false),
-	confirm_destructive_overwrite: z
-		.boolean()
-		.optional()
-		.default(false)
-		.describe(destructiveOverwriteConfirmationDescription),
-})
+const inputSchema = z.preprocess(
+	applyPackageNameAliases,
+	z
+		.object({
+			package_id: packageIdInputSchema.optional(),
+			package_name: packageNameInputSchema.optional(),
+			package_scope: z
+				.string()
+				.min(1)
+				.optional()
+				.describe(packageScopeInputDescription),
+			allow_force: z.boolean().optional().default(false),
+			confirm_destructive_overwrite: z
+				.boolean()
+				.optional()
+				.default(false)
+				.describe(destructiveOverwriteConfirmationDescription),
+		})
+		.superRefine(refineExactlyOnePackageIdentity),
+)
 
 const externalPublishRetryDelaysMs = [100, 500] as const
 
@@ -161,9 +172,9 @@ const staticDependentItemSchema = z
 		package_id: z
 			.string()
 			.describe('Saved package id of the dependent package.'),
-		kody_id: z
+		package_name: z
 			.string()
-			.describe('User-scoped kody.id of the dependent package.'),
+			.describe('Package name leaf of the dependent package.'),
 		name: z
 			.string()
 			.describe('Scoped package.json name of the dependent package.'),
@@ -917,9 +928,10 @@ export const publishExternalPushCapability = defineDomainCapability(
 				await resolveOwnedPackageSource({
 					db: ctx.env.APP_DB,
 					userId: owner.ownerUserId,
+					ownerScope: owner.ownerScope,
 					args: {
 						package_id: args.package_id,
-						kody_id: args.kody_id,
+						package_name: args.package_name,
 					},
 				})
 			const head = await resolveArtifactSourceHead(ctx.env, source.repo_id)
@@ -963,7 +975,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 			} satisfies ExternalPublishSemanticInput
 			const durableParams = {
 				...(args.package_id ? { package_id: args.package_id } : {}),
-				...(args.kody_id ? { kody_id: args.kody_id } : {}),
+				...(args.package_name ? { package_name: args.package_name } : {}),
 				...(args.package_scope ? { package_scope: args.package_scope } : {}),
 				allow_force: args.allow_force,
 				confirm_destructive_overwrite: args.confirm_destructive_overwrite,
