@@ -494,9 +494,10 @@ expands the scope.
 Use:
 
 - `packageGetGitRemote` and `packagePublishExternalPush` when you have a normal
-  git client: mint a remote (pass `create: true` with the new `@scope/leaf` name
-  to register a stub package first), clone, edit, push, and then ask Kody to
-  reconcile the pushed Artifacts HEAD. Existing packages use `package_id`.
+  git client: mint a remote (pass `create: true` with leftover `kody_id` set to
+  the new `@scope/leaf` name to register a stub package first), clone, edit,
+  push, and then ask Kody to reconcile the pushed Artifacts HEAD. Existing
+  packages use `package_id`.
 - `packageSave` to create or replace a saved package from a complete UTF-8 text
   file set when no local git client is available
 - `packageGet` and `packageList` to inspect saved packages
@@ -657,12 +658,14 @@ publish checks run.
    `user.name` from `git_author`. Use that identity for commits; do not invent
    an email.
 
-   To start a **new** package in this lane, pass `create: true` with the new
-   package name leaf or `@owner/leaf` (and an optional `description`):
+   To start a **new** package in this lane, pass `create: true` with leftover
+   `kody_id` set to the new package name leaf or `@owner/leaf` (and an optional
+   `description`):
 
    ```json
    {
    	"create": true,
+   	"kody_id": "my-package",
    	"description": "What this package is for"
    }
    ```

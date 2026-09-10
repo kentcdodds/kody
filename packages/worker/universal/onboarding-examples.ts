@@ -121,7 +121,7 @@ export function buildOnboardingPackageAuthoringPrompt(kodyId: string): string {
 	return [
 		`Help me change my Kody package "${kodyId}" or create a new package.`,
 		'First open search({ entity: ["package_authoring:guide", "package_lifecycle:guide"] }).',
-		`Then call packageGetGitRemote({ create: true }) with the package name leaf ${JSON.stringify(kodyId)} (or "@you/${kodyId}") so we can work in the package repository.`,
+		`Then call packageGetGitRemote({ create: true, kody_id: ${JSON.stringify(kodyId)} }) so we can work in the package repository.`,
 		'Ask what I want the package to do, then follow the guides.',
 	].join(' ')
 }

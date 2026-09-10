@@ -39,7 +39,11 @@ test('factory transcript covers ask, invoke, and a quiet daily email', () => {
 	).toBe(true)
 	expect(
 		tools.some((tool) =>
-			tool.inputs.some((input) => input.value.includes('packageGetGitRemote')),
+			tool.inputs.some(
+				(input) =>
+					input.value.includes('packageGetGitRemote') &&
+					input.value.includes("kody_id: '@you/kody-bot-shipped'"),
+			),
 		),
 	).toBe(true)
 	expect(

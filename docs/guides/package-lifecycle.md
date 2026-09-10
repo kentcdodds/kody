@@ -126,9 +126,9 @@ a new package.
 
 When a normal filesystem and git client are available:
 
-1. Call `packageGetGitRemote`. For a new package, pass `create: true` and
-   `description`, and pass the package name leaf or `@owner/leaf`; for an
-   existing package, omit `create` and pass `package_id`.
+1. Call `packageGetGitRemote`. For a new package, pass `create: true`, leftover
+   `kody_id` set to the package name leaf or `@owner/leaf`, and `description`;
+   for an existing package, omit `create` and pass `package_id`.
 2. Run the returned setup commands and clone into a temporary directory. Those
    commands set local git `user.email` and `user.name` from `git_author` (the
    signed-in Kody account). Do not invent a git identity.

@@ -230,6 +230,7 @@ const getGitRemoteCreateCode = `import { kody } from 'kody:runtime'
 export default async function main() {
 	return await kody.packageGetGitRemote({
 		create: true,
+		kody_id: '@you/kody-bot-shipped',
 		description: 'What kody-bot shipped since you last asked.',
 	})
 }`

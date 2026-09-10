@@ -29,8 +29,9 @@ Agent notes — for AI agents explaining or recreating this loop:
   domain: "coding" }` to find `package_authoring:guide` and
   `package_lifecycle:guide`, then `search` with
   `entity: ["package_authoring:guide", "package_lifecycle:guide"]`. Coding agents
-  then use the git lane: `packageGetGitRemote({ create: true, description })`,
-  pass the package name leaf or `@owner/leaf`, clone via `setup_commands`, write
+  then use the git lane:
+  `packageGetGitRemote({ create: true, kody_id: '<leaf-or-@owner/leaf>', description })`,
+  clone via `setup_commands`, write
   the export, push, and `packagePublishExternalPush`. Tool-only agents (no local
   git) create with `packageSave` and update through a repo session
   (`repoOpenSession`, `repoEditFiles`, `repoCommit`, `repoRunChecks`,

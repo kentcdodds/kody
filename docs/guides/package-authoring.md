@@ -34,10 +34,11 @@ There are two lanes for writing package source. Pick based on whether you have
 local filesystem and git access:
 
 - **Git lane (coding agents — preferred).** Call
-  `packageGetGitRemote({ create: true, description })` and pass the package name
-  leaf or `@owner/leaf` to register a stub saved package and mint a short-lived
-  authenticated remote in one call (for existing packages, omit `create` and
-  pass `package_id`). Run the returned `setup_commands` to clone into a
+  `packageGetGitRemote({ create: true, kody_id: '<leaf-or-@owner/leaf>', description })`
+  to register a stub saved package and mint a short-lived authenticated remote
+  in one call (for existing packages, omit `create` and pass `package_id`).
+  Leftover `kody_id` is the package name leaf or matching `@owner/leaf`, not
+  first-class identity. Run the returned `setup_commands` to clone into a
   temporary directory — they set local `git config user.email` / `user.name`
   from `git_author` (the signed-in Kody account). Do not invent or guess a git
   identity. Edit normally — binary assets, multi-file refactors, and local
