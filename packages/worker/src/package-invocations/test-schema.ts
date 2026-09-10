@@ -1,6 +1,7 @@
 /**
- * Workers-unit D1 does not apply migrations. Suites that call packageGet
- * (which lists tokens) need this table.
+ * Workers-unit D1 does not apply migrations. Suites that still read
+ * package invocation token metadata need this table. packageGet secret
+ * FYI metadata uses `#worker/secrets-test-schema`.
  */
 export async function ensurePackageInvocationTokensTestSchema(db: D1Database) {
 	await db
