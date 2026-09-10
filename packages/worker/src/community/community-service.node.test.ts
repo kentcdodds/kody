@@ -22,6 +22,7 @@ const mockModule = vi.hoisted(() => ({
 	getCommunityListingByOwnerAndKodyId: vi.fn(),
 	getCommunityListingById: vi.fn(),
 	listCommunityListingCandidates: vi.fn(),
+	listCommunityIndexOverviewCandidates: vi.fn(),
 	countActiveCommunityListingsByCategory: vi.fn(),
 	getCommunityRatingAggregatesByListingIds: vi.fn(),
 	countCommunityForksByListingIds: vi.fn(),
@@ -142,6 +143,8 @@ vi.mock('./repo.ts', async (importOriginal) => {
 			mockModule.getCommunityListingById(...args),
 		listCommunityListingCandidates: (...args: Array<unknown>) =>
 			mockModule.listCommunityListingCandidates(...args),
+		listCommunityIndexOverviewCandidates: (...args: Array<unknown>) =>
+			mockModule.listCommunityIndexOverviewCandidates(...args),
 		countActiveCommunityListingsByCategory: (...args: Array<unknown>) =>
 			mockModule.countActiveCommunityListingsByCategory(...args),
 		getCommunityRatingAggregatesByListingIds: (...args: Array<unknown>) =>
@@ -714,7 +717,11 @@ test('searchCommunityListings falls back to unfiltered candidates when LIKE pref
 	)
 })
 
-test('listCommunityIndexOverview queries only populated categories and uses SQL totals', async () => {
+test('listCommunityIndexOverview batches populated categories and uses SQL totals', async () => {
+	mockModule.listCommunityListingCandidates.mockClear()
+	mockModule.listCommunityIndexOverviewCandidates.mockClear()
+	mockModule.getCommunityRatingAggregatesByListingIds.mockClear()
+	mockModule.countCommunityForksByListingIds.mockClear()
 	const integrationListings = Array.from({ length: 8 }, (_, index) =>
 		sampleListing({
 			id: `listing-integration-${index}`,
@@ -738,13 +745,10 @@ test('listCommunityIndexOverview queries only populated categories and uses SQL 
 		utilities: 2,
 		other: 0,
 	})
-	mockModule.listCommunityListingCandidates.mockImplementation(
-		async (_db: unknown, input: { category?: string | null }) => {
-			if (input.category === 'integrations') return integrationListings
-			if (input.category === 'utilities') return [utilityListing]
-			throw new Error(`unexpected category ${String(input.category)}`)
-		},
-	)
+	mockModule.listCommunityIndexOverviewCandidates.mockResolvedValue([
+		...integrationListings,
+		utilityListing,
+	])
 	mockModule.getCommunityRatingAggregatesByListingIds.mockResolvedValue({})
 	mockModule.countCommunityForksByListingIds.mockResolvedValue({})
 
@@ -753,23 +757,21 @@ test('listCommunityIndexOverview queries only populated categories and uses SQL 
 		sort: 'newest',
 	})
 
-	expect(mockModule.listCommunityListingCandidates).toHaveBeenCalledTimes(2)
-	expect(mockModule.listCommunityListingCandidates).toHaveBeenCalledWith(
+	expect(mockModule.listCommunityListingCandidates).not.toHaveBeenCalled()
+	expect(mockModule.listCommunityIndexOverviewCandidates).toHaveBeenCalledTimes(
+		1,
+	)
+	expect(mockModule.listCommunityIndexOverviewCandidates).toHaveBeenCalledWith(
 		expect.anything(),
 		{
-			includeDelisted: false,
-			limit: communityIndexOverviewCandidateLimitPerCategory,
-			category: 'integrations',
+			limitPerCategory: communityIndexOverviewCandidateLimitPerCategory,
+			categories: ['integrations', 'utilities'],
 		},
 	)
-	expect(mockModule.listCommunityListingCandidates).toHaveBeenCalledWith(
-		expect.anything(),
-		{
-			includeDelisted: false,
-			limit: communityIndexOverviewCandidateLimitPerCategory,
-			category: 'utilities',
-		},
-	)
+	expect(
+		mockModule.getCommunityRatingAggregatesByListingIds,
+	).toHaveBeenCalledTimes(1)
+	expect(mockModule.countCommunityForksByListingIds).toHaveBeenCalledTimes(1)
 	expect(overview.groups.map((group) => [group.category, group.total])).toEqual(
 		[
 			['integrations', 40],

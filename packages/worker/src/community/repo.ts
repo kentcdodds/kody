@@ -637,6 +637,49 @@ export async function listCommunityListingCandidates(
 	return (rows.results ?? []).map(mapCommunityListingRow)
 }
 
+/**
+ * Unfiltered `/community` overview candidates: one windowed read of the
+ * newest `limitPerCategory` active listings per category. Optional
+ * `categories` keeps the window on populated shelves only.
+ */
+export async function listCommunityIndexOverviewCandidates(
+	db: D1Database,
+	input: {
+		limitPerCategory: number
+		categories?: ReadonlyArray<CommunityListingCategory>
+	},
+): Promise<Array<CommunityListingRecord>> {
+	const categories = input.categories ?? []
+	const categoryFilter =
+		categories.length > 0
+			? `AND community_listings.category IN (${categories.map(() => '?').join(', ')})`
+			: ''
+	const rows = await db
+		.prepare(
+			`WITH ranked AS (
+				SELECT
+					id,
+					ROW_NUMBER() OVER (
+						PARTITION BY category
+						ORDER BY published_at DESC
+					) AS category_rank
+				FROM community_listings
+				WHERE status = 'active'
+					${categoryFilter}
+			)
+			SELECT ${communityListingSelectColumns}
+			FROM community_listings
+			${communityListingSourceJoin}
+			INNER JOIN ranked
+				ON ranked.id = community_listings.id
+			WHERE ranked.category_rank <= ?
+			ORDER BY community_listings.published_at DESC`,
+		)
+		.bind(...categories, input.limitPerCategory)
+		.all<Record<string, unknown>>()
+	return (rows.results ?? []).map(mapCommunityListingRow)
+}
+
 export async function deleteCommunityListing(
 	db: D1Database,
 	input: {

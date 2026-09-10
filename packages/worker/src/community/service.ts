@@ -87,6 +87,7 @@ import {
 	insertCommunityReport,
 	countActiveCommunityListingsByCategory,
 	extractCommunityListingLikeTokens,
+	listCommunityIndexOverviewCandidates,
 	listCommunityListingCandidates,
 	listCommunityReports as listCommunityReportsFromDb,
 	listFeaturedCommunityListings as listFeaturedCommunityListingsFromDb,
@@ -152,10 +153,11 @@ export const COMMUNITY_SEARCH_MIN_RELEVANCE = 0.2
 
 // Community search/browse never scores more than this many listings in
 // memory; candidates are pre-filtered (including stored category) and
-// recency-ordered in SQL. Unfiltered All uses per-category overview
-// queries instead of this global window. Filtered browse ranks within
-// the newest 500 of that category. Revisit with a materialized score
-// column if a single category approaches this size.
+// recency-ordered in SQL. Unfiltered All uses one windowed overview
+// query (newest N per populated category) instead of this global
+// window. Filtered browse ranks within the newest 500 of that
+// category. Revisit with a materialized score column if a single
+// category approaches this size.
 export const COMMUNITY_SEARCH_CANDIDATE_LIMIT = 500
 
 function normalizeCommunityActivityPage(value: number | undefined) {
@@ -972,29 +974,41 @@ export async function listCommunityIndexOverview(input: {
 	const populated = communityListingCategories.filter(
 		(category) => categoryCounts[category] > 0,
 	)
-	const groups = await Promise.all(
-		populated.map(async (category) => {
-			const rows = await listCommunityListingCandidates(input.env.APP_DB, {
-				includeDelisted: false,
-				limit: communityIndexOverviewCandidateLimitPerCategory,
-				category,
-			})
-			const withAggregates = await attachListingAggregatesBatch(
-				input.env.APP_DB,
-				rows,
-			)
-			const visible = withAggregates
-				.sort((left, right) =>
-					compareCommunityListingsForSort(left, right, sort),
-				)
-				.slice(0, communityIndexOverviewLimitPerCategory)
-			return {
-				category,
-				listings: visible,
-				total: categoryCounts[category],
-			}
-		}),
+	if (populated.length === 0) {
+		return {
+			listings: [],
+			groups: [],
+			categoryCounts,
+		}
+	}
+	const rows = await listCommunityIndexOverviewCandidates(input.env.APP_DB, {
+		limitPerCategory: communityIndexOverviewCandidateLimitPerCategory,
+		categories: populated,
+	})
+	const withAggregates = await attachListingAggregatesBatch(
+		input.env.APP_DB,
+		rows,
 	)
+	const byCategory = new Map<
+		CommunityListingCategory,
+		Array<CommunityListingWithAggregates>
+	>()
+	for (const listing of withAggregates) {
+		const group = byCategory.get(listing.category) ?? []
+		group.push(listing)
+		byCategory.set(listing.category, group)
+	}
+	const groups = populated.map((category) => {
+		const candidates = byCategory.get(category) ?? []
+		const visible = candidates
+			.sort((left, right) => compareCommunityListingsForSort(left, right, sort))
+			.slice(0, communityIndexOverviewLimitPerCategory)
+		return {
+			category,
+			listings: visible,
+			total: categoryCounts[category],
+		}
+	})
 	return {
 		listings: groups.flatMap((group) => group.listings),
 		groups,
