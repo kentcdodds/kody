@@ -218,8 +218,11 @@ const paneCss = {
 const tableScrollerCss = {
 	width: '100%',
 	minWidth: 0,
-	overflowX: 'auto' as const,
-	WebkitOverflowScrolling: 'touch' as const,
+	overflowX: 'hidden' as const,
+	'@container (max-width: 400px)': {
+		overflowX: 'auto' as const,
+		WebkitOverflowScrolling: 'touch' as const,
+	},
 }
 
 const toolbarCss = {
@@ -250,7 +253,7 @@ const countCss = {
 
 const tableCss = {
 	width: '100%',
-	minWidth: '100%',
+	tableLayout: 'fixed' as const,
 	borderCollapse: 'collapse' as const,
 	fontSize: typography.fontSize.sm,
 }
@@ -276,14 +279,17 @@ const cellCss = {
 	borderBottom: `1px solid ${colors.border}`,
 	verticalAlign: 'middle' as const,
 	color: colors.text,
+	overflow: 'hidden',
+	textOverflow: 'ellipsis',
 }
 
 /**
  * Below 620px the same `<table>` becomes a list of cards — no duplicate DOM.
  * Cells carry their own label from `data-label`; the primary cell is the
- * card's heading and keeps none. Column `drop` priorities shed fields first;
- * when nowrap content still overflows the pane, the table scroller takes over
- * with horizontal overflow rather than clipping under `overflow: hidden`.
+ * card's heading and keeps none. Column `drop` priorities shed fields first.
+ * `table-layout: fixed` keeps the table in the pane at normal widths; the
+ * scroller only allows horizontal overflow on a very narrow container
+ * (unbreakable leftovers, not five readable columns fighting for 26ch each).
  */
 const cardFallbackCss = {
 	'@container (max-width: 620px)': {
@@ -339,12 +345,9 @@ const primaryCellCss = {
 	...cellCss,
 	fontWeight: 620,
 	whiteSpace: 'nowrap' as const,
-	// Let the cell shrink so sibling columns and the scroller can claim width
-	// instead of the primary name forcing the whole table past the pane.
-	maxWidth: '28rem',
 	'@container (max-width: 620px)': {
 		whiteSpace: 'normal',
-		maxWidth: 'none',
+		overflow: 'visible',
 	},
 }
 
@@ -367,6 +370,9 @@ const recordRowCss = {
 		backgroundColor: colors.background,
 		boxShadow: `inset 3px 0 0 ${colors.primary}`,
 		borderBottom: `1px solid ${colors.border}`,
+		// The editor (datetime-local, combobox, long help text) must not
+		// contribute min-content width back into the table.
+		minWidth: 0,
 	},
 }
 
@@ -383,6 +389,7 @@ export const recordBodyCss = {
 	display: 'grid',
 	gap: spacing.lg,
 	minWidth: 0,
+	maxWidth: '100%',
 }
 
 const footerCss = {
