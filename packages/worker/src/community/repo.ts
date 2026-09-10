@@ -810,6 +810,7 @@ export async function listOrphanedCommunityForks(
 	} = {},
 ): Promise<Array<OrphanedCommunityForkRow>> {
 	const uniqueForkIds = [...new Set(input.forkIds ?? [])]
+	if (input.forkIds !== undefined && uniqueForkIds.length === 0) return []
 	const orphans: Array<OrphanedCommunityForkRow> = []
 	const idChunks =
 		uniqueForkIds.length === 0

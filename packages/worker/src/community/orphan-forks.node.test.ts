@@ -123,6 +123,20 @@ test('orphan fork cleanup and package delete drop leftover community_forks witho
 		'listing-plaid': 3,
 	})
 
+	const emptyFilter = await cleanupOrphanedCommunityForks({
+		env,
+		apply: true,
+		forkIds: [],
+	})
+	expect(emptyFilter).toEqual({
+		applied: true,
+		deletedCount: 0,
+		orphans: [],
+	})
+	expect(await countCommunityForksByListingIds(db, ['listing-plaid'])).toEqual({
+		'listing-plaid': 3,
+	})
+
 	const preview = await cleanupOrphanedCommunityForks({
 		env,
 		apply: false,
