@@ -6,6 +6,7 @@ const mockModule = vi.hoisted(() => ({
 	getPackageInvocationTokenById: vi.fn(),
 	getSavedPackageById: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
+	resolvePackageOwnerContext: vi.fn(),
 }))
 
 vi.mock('#worker/package-invocations/repo.ts', () => ({
@@ -20,6 +21,11 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 		mockModule.getSavedPackageById(...args),
 	getSavedPackageByKodyId: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageByKodyId(...args),
+}))
+
+vi.mock('#worker/package-registry/package-owner.ts', () => ({
+	resolvePackageOwnerContext: (...args: Array<unknown>) =>
+		mockModule.resolvePackageOwnerContext(...args),
 }))
 
 const { packageInvocationTokenListCapability } =
@@ -60,6 +66,14 @@ test('package invocation token capabilities return package-scoped metadata witho
 	mockModule.getPackageInvocationTokenById.mockReset()
 	mockModule.getSavedPackageById.mockReset()
 	mockModule.getSavedPackageByKodyId.mockReset()
+	mockModule.resolvePackageOwnerContext.mockReset()
+	mockModule.resolvePackageOwnerContext.mockResolvedValue({
+		ownerUserId: 'user-1',
+		ownerScope: 'user',
+		ownerEmail: 'user@example.com',
+		actorUserId: 'user-1',
+		delegated: false,
+	})
 	mockModule.getSavedPackageById.mockResolvedValue({
 		id: 'package-1',
 		kodyId: 'discord-gateway',
@@ -165,4 +179,25 @@ test('package invocation token capabilities return package-scoped metadata witho
 			context,
 		),
 	).rejects.toThrow(/not found/i)
+
+	mockModule.getSavedPackageById.mockResolvedValue(null)
+	mockModule.getSavedPackageByKodyId.mockResolvedValue({
+		id: 'package-1',
+		kodyId: 'discord-gateway',
+	})
+	await packageInvocationTokenListCapability.handler(
+		{ package_id: '@user/discord-gateway' },
+		context,
+	)
+	expect(mockModule.getSavedPackageByKodyId).toHaveBeenLastCalledWith(
+		expect.anything(),
+		{ userId: 'user-1', kodyId: 'discord-gateway' },
+	)
+
+	await expect(
+		packageInvocationTokenListCapability.handler(
+			{ package_id: '@other/discord-gateway' },
+			context,
+		),
+	).rejects.toThrow(/does not match the acting owner/)
 })
