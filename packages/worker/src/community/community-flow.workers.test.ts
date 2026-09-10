@@ -264,7 +264,7 @@ test('public package flow works end-to-end through capability handlers', async (
 	)
 	expect(publishResult).toMatchObject({
 		name: `@usera/${kodyId}`,
-		kody_id: kodyId,
+		package_name: kodyId,
 		license: '',
 		version: '1.0.4',
 		status: 'active',
