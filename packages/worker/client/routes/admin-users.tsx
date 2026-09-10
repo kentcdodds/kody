@@ -33,6 +33,7 @@ import {
 	nextAdminUsersWindowAfterCreate,
 	nextAdminUsersWindowAfterMutation,
 	parseSelectedStableUserId,
+	shouldReseedAdminUsersWindow,
 	readFilterState,
 } from './admin-users-shared.ts'
 import {
@@ -145,10 +146,9 @@ export function AdminUsersRoute(handle: Handle) {
 		availableRoles = payload.availableRoles
 		availablePlans = payload.availablePlans
 		const listKey = getListKey(href)
-		// Selection-only navigations deep in the scroll window keep the
-		// already-loaded pages; anything else reseeds from page one so
-		// filter changes and plain revisits always show fresh data.
-		if (listKey !== lastLoadedListKey || loadedThroughPage <= 1) {
+		// Filter changes reseed. Selection-only navigations keep the window
+		// so a created row prepended off page one does not vanish.
+		if (shouldReseedAdminUsersWindow(listKey, lastLoadedListKey)) {
 			loadedThroughPage = payload.page
 			// reset() invalidates any in-flight load-more so a stale page
 			// fetched for the previous filters can never append into the

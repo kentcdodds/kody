@@ -116,18 +116,27 @@ export function nextAdminUsersWindowAfterCreate(input: {
 		!alreadyListed &&
 		input.payload.createdUserInFilteredList === true
 	const items = canInsert ? [created, ...baseItems] : baseItems
-	if (input.payload.listRefreshFailed) {
-		return {
-			items,
-			hasMore: input.currentHasMore,
-			totalCount: canInsert ? input.currentTotal + 1 : input.currentTotal,
-		}
-	}
+	const totalCount = input.payload.listRefreshFailed
+		? canInsert
+			? input.currentTotal + 1
+			: input.currentTotal
+		: input.payload.total
 	return {
 		items,
-		hasMore: input.payload.page * input.payload.pageSize < input.payload.total,
-		totalCount: input.payload.total,
+		hasMore:
+			input.payload.listRefreshFailed && !canInsert
+				? input.currentHasMore
+				: items.length < totalCount,
+		totalCount,
 	}
+}
+
+/** Filter changes reseed; selection-only navigations keep the loaded window. */
+export function shouldReseedAdminUsersWindow(
+	listKey: string,
+	lastLoadedListKey: string,
+) {
+	return listKey !== lastLoadedListKey
 }
 
 /**
