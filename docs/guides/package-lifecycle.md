@@ -126,9 +126,10 @@ a new package.
 
 When a normal filesystem and git client are available:
 
-1. Call `packageGetGitRemote`. For a new package, pass `create: true`, leftover
-   `kody_id` set to the package name leaf or `@owner/leaf`, and `description`;
-   for an existing package, omit `create` and pass `package_id`.
+1. Call `packageGetGitRemote`. For a new package, pass `create: true`, the
+   `@owner/leaf` name (or the name leaf), and `description`; for an existing
+   package, omit `create` and pass the scoped name, or `package_id` when the
+   name is not known.
 2. Run the returned setup commands and clone into a temporary directory. Those
    commands set local git `user.email` and `user.name` from `git_author` (the
    signed-in Kody account). Do not invent a git identity.
@@ -225,9 +226,9 @@ explicitly asked to delete that package.
    secrets, tokens, the public listing if one exists, and Artifacts repos.
    Existing forks keep their copies. This cannot be undone.
 3. Wait for the owner to type the package name.
-4. Call `packageDelete` with `package_id` and `confirm_name` matching that name
-   exactly. The capability refuses and names the expected value when
-   `confirm_name` is missing or wrong.
+4. Call `packageDelete` with the scoped name (or `package_id` when the name is
+   not known) and `confirm_name` matching that name exactly. The capability
+   refuses and names the expected value when `confirm_name` is missing or wrong.
 
 People can delete from `/@username/{package-name}/settings`: choose **Delete
 package**, then type the package name in the modal.

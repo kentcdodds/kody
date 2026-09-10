@@ -25,7 +25,11 @@ import {
 	trustedSyntheticSubscriptionDispatch,
 } from '#worker/package-invocations/subscription-envelope.ts'
 import { listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
-import { normalizePackageNameInput } from '#worker/package-registry/package-name.ts'
+import {
+	normalizePackageNameInput,
+	packageIdLookupDescription,
+	packageNameLookupDescription,
+} from '#worker/package-registry/package-name.ts'
 import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
@@ -132,14 +136,16 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 		destructive: true,
 		inputSchema: z
 			.object({
-				package_id: z.string().min(1).optional(),
+				package_id: z
+					.string()
+					.min(1)
+					.optional()
+					.describe(packageIdLookupDescription),
 				kody_id: z
 					.string()
 					.min(1)
 					.optional()
-					.describe(
-						'Package name leaf or `@owner/leaf`. Prefer `package_id` when you have the UUID.',
-					),
+					.describe(packageNameLookupDescription),
 				topic: z
 					.string()
 					.min(1)

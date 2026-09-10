@@ -13,9 +13,10 @@ Kody-specific metadata.
 Use `package.json` as the canonical source of truth for saved package metadata.
 
 - `name` — npm-valid scoped package name (`@scope/<leaf>`). This is package
-  identity together with the saved-package UUID `package_id`. The leaf after `/`
-  is the URL slug. MCP tools take `package_id` for an existing package. Create
-  flows pass the package name leaf or `@owner/leaf`.
+  identity. Look up a package by that scoped name (or the name leaf). Use the
+  saved-package UUID `package_id` only when the name is not known, or for a
+  stable ref. Never pass both. The leaf after `/` is the URL slug. Create flows
+  pass the `@owner/leaf` name or the name leaf.
 - `exports` — authoritative import/export map
 - `private` — leftover npm-style field; ignored for catalog listing. Visibility
   is a repo setting (`packageUpdate` `changes.visibility`), default private
@@ -297,7 +298,7 @@ the host-owned `kody:runtime` module.
 
 The built-in `packageSubscriptionsList` capability is the generic discovery
 surface for declared subscriptions. It reads the signed-in user's saved package
-manifests and returns `package_id`, scoped package `name`, topic, handler,
+manifests and returns scoped package `name`, `package_id`, topic, handler,
 description, and filters, optionally narrowed by exact topic.
 
 For user-owned inbound email, `email.message.received` dispatches after an

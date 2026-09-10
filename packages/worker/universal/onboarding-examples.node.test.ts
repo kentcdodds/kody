@@ -126,6 +126,6 @@ test('example prompt searches the user-owned scoped package and statically impor
 	)
 	expect(prompt).toContain('not a platform "kody:@kody/')
 	expect(buildOnboardingPackageAuthoringPrompt('hn-pulse')).toContain(
-		'packageGetGitRemote({ create: true, kody_id: "hn-pulse" })',
+		'packageGetGitRemote({ create: true }) with the package name leaf "hn-pulse"',
 	)
 })

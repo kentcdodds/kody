@@ -74,7 +74,7 @@ subscriptions:
 }
 ```
 
-The result lists `package_id`, scoped package `name`, topic, handler,
+The result lists scoped package `name`, `package_id`, topic, handler,
 description, and filters. Use this before debugging event dispatch, building
 fan-out, or deciding whether a package already subscribes to a topic.
 

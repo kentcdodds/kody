@@ -66,7 +66,7 @@ export const searchCapability = defineDomainCapability(
 				.min(1)
 				.optional()
 				.describe(
-					'Natural language description, or an exact saved-package UUID (`package_id`), scoped `@owner/leaf` name, current-origin account package URL, or owner-matching hosted package URL. Optional when "domain" is provided.',
+					'Natural language description, or a scoped `@owner/leaf` name, current-origin account package URL, owner-matching hosted package URL, or an exact saved-package UUID (`package_id`) when the name is not known. Optional when "domain" is provided.',
 				),
 			domain: z
 				.string()

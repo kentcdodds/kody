@@ -69,9 +69,11 @@ hand-crafting hunks.
 ## Opening by package identity
 
 `repoOpenSession` can open repo-backed packages by user-facing identity instead
-of requiring the internal `source_id`.
+of requiring the internal `source_id`. Prefer the scoped `@owner/leaf` name (or
+the name leaf). Use `package_id` only when the name is not known, or for a
+stable ref.
 
-Example:
+Example (fallback when the scoped name is not known):
 
 ```json
 { "target": { "kind": "package", "package_id": "…" } }

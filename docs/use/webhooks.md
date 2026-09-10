@@ -80,8 +80,8 @@ Use the MCP `webhooks` domain:
 1. Save/publish the package with `kody.webhooks`.
 2. Store the HMAC secret with `secretSet` under the name used in
    `verification.secretName` (for example `sentryWebhookSecret`).
-3. Call `webhookUrlMint` with `package_id` (or the package name leaf) and
-   `webhookName`.
+3. Call `webhookUrlMint` with the scoped package name (or `package_id` when the
+   name is not known) and `webhookName`.
 4. Call `webhookUrlApply` with the returned `handle` and a first-class
    destination. GitHub repository hooks use the connected `github` integration
    (or a host-approved GitHub token).

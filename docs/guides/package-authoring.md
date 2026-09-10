@@ -34,19 +34,19 @@ There are two lanes for writing package source. Pick based on whether you have
 local filesystem and git access:
 
 - **Git lane (coding agents — preferred).** Call
-  `packageGetGitRemote({ create: true, kody_id: '<leaf-or-@owner/leaf>', description })`
-  to register a stub saved package and mint a short-lived authenticated remote
-  in one call (for existing packages, omit `create` and pass `package_id`).
-  Leftover `kody_id` is the package name leaf or matching `@owner/leaf`, not
-  first-class identity. Run the returned `setup_commands` to clone into a
-  temporary directory — they set local `git config user.email` / `user.name`
-  from `git_author` (the signed-in Kody account). Do not invent or guess a git
-  identity. Edit normally — binary assets, multi-file refactors, and local
-  build/test loops all work — commit, push, then publish with
-  `packagePublishExternalPush`. If that tool returns `locked`, open the returned
-  `approval_url` so the owner can promote the named commit. Do not treat HEAD as
-  live until `published_commit` moves. When the OAuth token is coarser than the
-  export (Gmail drafts without send), lock after the first publish — see
+  `packageGetGitRemote({ create: true, description })` with the new
+  `@owner/leaf` name (or the name leaf) to register a stub saved package and
+  mint a short-lived authenticated remote in one call (for existing packages,
+  omit `create` and pass the scoped name, or `package_id` when the name is not
+  known). Run the returned `setup_commands` to clone into a temporary directory
+  — they set local `git config user.email` / `user.name` from `git_author` (the
+  signed-in Kody account). Do not invent or guess a git identity. Edit normally
+  — binary assets, multi-file refactors, and local build/test loops all work —
+  commit, push, then publish with `packagePublishExternalPush`. If that tool
+  returns `locked`, open the returned `approval_url` so the owner can promote
+  the named commit. Do not treat HEAD as live until `published_commit` moves.
+  When the OAuth token is coarser than the export (Gmail drafts without send),
+  lock after the first publish — see
   [locked-gmail-drafts.md](./locked-gmail-drafts.md).
 - **Tool-only lane.** Without local filesystem/git access, create with
   `packageSave` (complete UTF-8 text file set; no binary files) and edit through
@@ -342,14 +342,16 @@ irreversible-side-effect guard when a smoke test should stay safe.
    `kody:@scope/package/export` from `execute` against a read-only export or
    package-supported dry-run input that exercises approved secrets (see
    [Secret-using packages](#secret-using-packages) above).
-3. **Package apps** — `packageAppFetch({ package_id })` with the path, method,
-   and body your handler needs. Confirm `{ status, headers, body, truncated }`
-   and any `packageStorage()` side effects. See
+3. **Package apps** — `packageAppFetch` with the scoped name (or `package_id`
+   when the name is not known), plus the path, method, and body your handler
+   needs. Confirm `{ status, headers, body, truncated }` and any
+   `packageStorage()` side effects. See
    [Package app fetch](../use/package-app-fetch.md) and the
    [Package apps](./package-apps.md) playbook (`package_apps:guide`).
-4. **Subscriptions** — `packageSubscriptionDispatch({ package_id, topic, … })`
-   with exactly one of `params` (fixture) or `email_message_id` (stored-mail
-   replay) for each declared topic. See
+4. **Subscriptions** — `packageSubscriptionDispatch` with the scoped name (or
+   `package_id` when the name is not known), `topic`, and exactly one of
+   `params` (fixture) or `email_message_id` (stored-mail replay) for each
+   declared topic. See
    [Synthetic event dispatch](../use/synthetic-event-dispatch.md) and the
    [package subscriptions guide](./package-subscriptions.md#synthetic-dispatch).
 5. Optional UI checks — open `hosted_app_url` when the publish response includes
