@@ -8,6 +8,7 @@ import {
 	formatPackageCreateReport,
 	headAheadFileName,
 	isLowerKebabKodyId,
+	matchesCreatedPackage,
 	isProductionKodyOrigin,
 	pushHeadAheadCommit,
 	usernameFromPackageName,
@@ -20,6 +21,27 @@ test('package-create builds preview URLs, reports JSON shape, and can leave HEAD
 	expect(isLowerKebabKodyId('Not-A-Slug')).toBe(false)
 	expect(isLowerKebabKodyId('other/preview-pkg')).toBe(false)
 	expect(isLowerKebabKodyId('///preview-pkg')).toBe(false)
+	expect(
+		matchesCreatedPackage({
+			requested: 'preview-pkg',
+			kodyId: 'preview-pkg',
+			name: '@user-me/preview-pkg',
+		}),
+	).toBe(true)
+	expect(
+		matchesCreatedPackage({
+			requested: '@user-me/preview-pkg',
+			kodyId: 'preview-pkg',
+			name: '@user-me/preview-pkg',
+		}),
+	).toBe(true)
+	expect(
+		matchesCreatedPackage({
+			requested: '@other/preview-pkg',
+			kodyId: 'preview-pkg',
+			name: '@user-me/preview-pkg',
+		}),
+	).toBe(false)
 	expect(isProductionKodyOrigin('https://kody.codes')).toBe(true)
 	expect(isProductionKodyOrigin('https://www.kody.codes')).toBe(true)
 	expect(isProductionKodyOrigin('https://kody.codes.')).toBe(true)
@@ -54,10 +76,7 @@ test('package-create builds preview URLs, reports JSON shape, and can leave HEAD
 					expect(args.code).toContain('packageGetGitRemote')
 					expect(args.code).toContain('packageGet')
 					expect(args.code).toContain(
-						"requested.slice(requested.lastIndexOf('/') + 1)",
-					)
-					expect(args.code).toContain(
-						"!requested.includes('/') && kodyId === leaf",
+						'kodyId === requested || pkg.name === requested',
 					)
 					expect(args.params).toEqual({
 						kodyId: 'preview-pkg',
@@ -158,7 +177,7 @@ test('package-create builds preview URLs, reports JSON shape, and can leave HEAD
 					}
 					expect(args.params.kodyId).toBe('@user-me/preview-pkg')
 					expect(args.code).toContain(
-						"!requested.includes('/') && kodyId === leaf",
+						'kodyId === requested || pkg.name === requested',
 					)
 					return {
 						isError: false,

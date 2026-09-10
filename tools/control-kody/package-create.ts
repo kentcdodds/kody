@@ -18,9 +18,6 @@ export const headAheadFileName = 'preview-head-ahead.txt'
 const packageCreateExecuteCode = `import { kody } from 'kody:runtime'
 export default async function main(input = {}) {
 	const requested = String(input.kodyId ?? '').trim()
-	const leaf = requested.includes('/')
-		? requested.slice(requested.lastIndexOf('/') + 1)
-		: requested
 	let remote = null
 	let remoteError = null
 	try {
@@ -35,8 +32,7 @@ export default async function main(input = {}) {
 	const listed = await kody.packageList({})
 	const match = (listed.packages ?? []).find((pkg) => {
 		const kodyId = pkg.kody_id ?? pkg.kodyId
-		if (kodyId === requested || pkg.name === requested) return true
-		return !requested.includes('/') && kodyId === leaf
+		return kodyId === requested || pkg.name === requested
 	})
 	const packageId = remote?.package_id ?? match?.package_id ?? match?.id
 	if (!packageId) {
@@ -98,6 +94,15 @@ export function isLowerKebabKodyId(value: string) {
 	if (kodyIdPattern.test(trimmed)) return true
 	const scoped = trimmed.match(scopedPackageNamePattern)
 	return Boolean(scoped && kodyIdPattern.test(scoped[2] ?? ''))
+}
+
+export function matchesCreatedPackage(input: {
+	requested: string
+	kodyId?: string
+	name?: string
+}) {
+	const requested = input.requested.trim()
+	return input.kodyId === requested || input.name === requested
 }
 
 export function isProductionKodyOrigin(origin: string) {
