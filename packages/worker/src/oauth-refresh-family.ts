@@ -16,10 +16,12 @@ import {
  * current tokens without rotating, even when the stored access token is near
  * expiry. A one-hour replay of the consumed token returns that same current
  * family while the hash still matches. Tokens outside that family do not
- * mint. Refresh grants for one user/grant pair run one at a time in this
- * isolate so overlapping first-use siblings re-read the snapshot after the
- * first rotation. See
- * `docs/contributing/architecture/authentication.md`.
+ * mint. Previous-token reuse and matching replay are read-only and skip the
+ * isolate lock so a current-token rotation cannot invalidate a sibling that
+ * still holds the previous token. Provider rotation for one user/grant pair
+ * runs one at a time in this isolate; waiters retry reuse from an in-memory
+ * snapshot written on persist so they do not depend on Workers KV seeing the
+ * new keys. See `docs/contributing/architecture/authentication.md`.
  */
 
 const mcpOAuthRefreshFamilyReplayTtlSeconds = 60 * 60
@@ -138,8 +140,98 @@ export function decideRefreshFamilyAction(input: {
 
 const refreshFamilyGrantLocks = new Map<string, Promise<void>>()
 
+type RefreshFamilyMemoryRecord = {
+	snapshot: RefreshFamilySnapshot
+	grant: RefreshFamilyGrantIds
+	replays: Map<string, RefreshFamilySnapshot>
+}
+
+const refreshFamilyMemory = new Map<string, RefreshFamilyMemoryRecord>()
+
 function refreshFamilyGrantLockKey(userId: string, grantId: string) {
 	return `${userId}:${grantId}`
+}
+
+function rememberRefreshFamily(
+	snapshot: RefreshFamilySnapshot,
+	presentedHash: string | null,
+) {
+	const key = refreshFamilyGrantLockKey(snapshot.userId, snapshot.grantId)
+	const existing = refreshFamilyMemory.get(key)
+	const replays = new Map(existing?.replays)
+	if (presentedHash) {
+		replays.set(presentedHash, snapshot)
+	}
+	refreshFamilyMemory.set(key, {
+		snapshot,
+		grant: {
+			currentRefreshTokenHash: snapshot.currentRefreshTokenHash,
+			previousRefreshTokenHash:
+				presentedHash ?? existing?.grant.previousRefreshTokenHash,
+		},
+		replays,
+	})
+}
+
+function resolveRefreshFamilyViews(input: {
+	presentedHash: string
+	memory: RefreshFamilyMemoryRecord | null
+	kvGrant: RefreshFamilyGrantIds | null
+	kvSnapshot: RefreshFamilySnapshot | null
+	kvReplay: RefreshFamilySnapshot | null
+}) {
+	const memory = input.memory
+	if (!memory) {
+		return {
+			grant: input.kvGrant,
+			snapshot: input.kvSnapshot,
+			replay: input.kvReplay,
+		}
+	}
+	const memoryReplay = memory.replays.get(input.presentedHash) ?? null
+	if (!input.kvGrant) {
+		return {
+			grant: memory.grant,
+			snapshot: memory.snapshot,
+			replay: memoryReplay ?? input.kvReplay,
+		}
+	}
+	if (
+		memory.grant.currentRefreshTokenHash ===
+		input.kvGrant.currentRefreshTokenHash
+	) {
+		return {
+			grant: input.kvGrant,
+			snapshot: memory.snapshot,
+			replay: memoryReplay ?? input.kvReplay,
+		}
+	}
+	if (
+		memory.grant.currentRefreshTokenHash ===
+		input.kvGrant.previousRefreshTokenHash
+	) {
+		return {
+			grant: input.kvGrant,
+			snapshot: input.kvSnapshot,
+			replay: input.kvReplay,
+		}
+	}
+	if (
+		input.kvGrant.currentRefreshTokenHash ===
+			memory.grant.previousRefreshTokenHash ||
+		input.kvGrant.currentRefreshTokenHash === input.presentedHash
+	) {
+		return {
+			grant: memory.grant,
+			snapshot: memory.snapshot,
+			replay: memoryReplay ?? input.kvReplay,
+		}
+	}
+	return {
+		grant: input.kvGrant,
+		snapshot: input.kvSnapshot,
+		replay: input.kvReplay,
+	}
 }
 
 async function withRefreshFamilyGrantLock<T>(
@@ -183,6 +275,16 @@ export async function handleMcpOAuthTokenRequest(input: {
 		const presented = readFormString(formData.get('refresh_token'))
 		const parsed = presented ? parseOAuthRefreshToken(presented) : null
 		if (parsed) {
+			const reuseResponse = await tryRefreshFamilyReuse({
+				env: input.env,
+				formData,
+			})
+			if (reuseResponse) {
+				return {
+					response: addOAuthTokenCorsHeaders(reuseResponse, input.request),
+					grantType,
+				}
+			}
 			return withRefreshFamilyGrantLock(parsed.userId, parsed.grantId, () =>
 				completeMcpOAuthTokenRequest(input, formData, grantType),
 			)
@@ -202,10 +304,8 @@ async function completeMcpOAuthTokenRequest(
 ) {
 	if (grantType === 'refresh_token' && formData) {
 		const reuseResponse = await tryRefreshFamilyReuse({
-			request: input.request,
 			env: input.env,
 			formData,
-			fetchProvider: input.fetchProvider,
 		})
 		if (reuseResponse) {
 			return {
@@ -232,18 +332,17 @@ function readFormString(value: FormDataEntryValue | null | undefined) {
 	return typeof value === 'string' && value.length > 0 ? value : null
 }
 
-async function tryRefreshFamilyReuse(input: {
-	request: Request
-	env: Env
-	formData: FormData
-	fetchProvider: (request: Request) => Promise<Response>
-}) {
+async function tryRefreshFamilyReuse(input: { env: Env; formData: FormData }) {
 	const presented = readFormString(input.formData.get('refresh_token'))
 	if (!presented) return null
 	const parsed = parseOAuthRefreshToken(presented)
 	if (!parsed) return null
 	const presentedHash = await hashOAuthToken(presented)
-	const replay = await readRefreshFamilySnapshotAtKey(
+	const memory =
+		refreshFamilyMemory.get(
+			refreshFamilyGrantLockKey(parsed.userId, parsed.grantId),
+		) ?? null
+	const kvReplay = await readRefreshFamilySnapshotAtKey(
 		input.env,
 		mcpOAuthRefreshFamilyReplayKey(
 			parsed.userId,
@@ -252,16 +351,23 @@ async function tryRefreshFamilyReuse(input: {
 		),
 		parsed,
 	)
-	const snapshot = await readRefreshFamilySnapshot(
+	const kvSnapshot = await readRefreshFamilySnapshot(
 		input.env,
 		parsed.userId,
 		parsed.grantId,
 	)
-	const grant = await readGrantRefreshIds(
+	const kvGrant = await readGrantRefreshIds(
 		input.env,
 		parsed.userId,
 		parsed.grantId,
 	)
+	const { grant, snapshot, replay } = resolveRefreshFamilyViews({
+		presentedHash,
+		memory,
+		kvGrant,
+		kvSnapshot,
+		kvReplay,
+	})
 	const action = decideRefreshFamilyAction({
 		presentedHash,
 		grant,
@@ -301,7 +407,6 @@ async function persistRefreshFamilyFromTokenResponse(input: {
 	response: Response
 	presentedRefreshToken: string | null
 }) {
-	if (!canPersistRefreshFamily(input.env)) return
 	const body = (await input.response
 		.clone()
 		.json()
@@ -327,13 +432,14 @@ async function persistRefreshFamilyFromTokenResponse(input: {
 		scope: typeof body.scope === 'string' ? body.scope : '',
 		resource: typeof body.resource === 'string' ? body.resource : undefined,
 	}
+	const presentedHash = input.presentedRefreshToken
+		? await hashOAuthToken(input.presentedRefreshToken)
+		: null
+	rememberRefreshFamily(snapshot, presentedHash)
+	if (!canPersistRefreshFamily(input.env)) return
 	await writeRefreshFamilySnapshot(input.env, snapshot)
-	if (input.presentedRefreshToken) {
-		await writeRefreshFamilyReplay(
-			input.env,
-			snapshot,
-			await hashOAuthToken(input.presentedRefreshToken),
-		)
+	if (presentedHash) {
+		await writeRefreshFamilyReplay(input.env, snapshot, presentedHash)
 	}
 }
 

@@ -712,11 +712,14 @@ intercepts `POST /oauth/token` refresh grants:
   mint. Stolen refresh tokens therefore cannot walk the family forever; they
   work only while they remain the current or previous token, or while a replay
   still matches the grant's current hash.
-- Refresh grants for one `userId`/`grantId` pair are serialized in the handling
-  isolate so two overlapping first-use refreshes re-read the snapshot after the
-  first rotation. That is isolate-local, not a cross-isolate Durable Object
-  lock. Two current-token refreshes that land on different isolates can still
-  race the provider before a snapshot is visible.
+- Previous-token reuse and matching replay skip the isolate lock so a
+  current-token rotation cannot turn a still-valid previous token into
+  `invalid_grant`. Provider rotation for one `userId`/`grantId` pair is
+  serialized in the handling isolate. After a rotation the isolate remembers the
+  new family in memory so a waiter can reuse it even when Workers KV still
+  serves the pre-rotation miss. That is isolate-local, not a cross-isolate
+  Durable Object lock. Two current-token refreshes that land on different
+  isolates can still race the provider before a snapshot is visible.
 - Encrypted snapshots live in `BUNDLE_ARTIFACTS_KV` under
   `derived-cache:v1:mcp-oauth-refresh-family:` / `-replay:` with KV TTLs of two
   hours and one hour. Retention is the TTL, so account deletion does not sweep

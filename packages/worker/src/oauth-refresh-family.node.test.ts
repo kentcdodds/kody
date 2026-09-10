@@ -120,6 +120,46 @@ test('refresh family returns current tokens on previous reuse and rejects stale 
 	).toEqual({ kind: 'pass-through' })
 })
 
+function refreshTokenRequest(refreshToken: string) {
+	return new Request('https://heykody.dev/oauth/token', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: new URLSearchParams({
+			grant_type: 'refresh_token',
+			refresh_token: refreshToken,
+		}),
+	})
+}
+
+function mintedTokens(refreshToken: string, accessToken: string) {
+	return {
+		access_token: accessToken,
+		refresh_token: refreshToken,
+		token_type: 'bearer',
+		expires_in: 3600,
+		scope: 'profile email',
+	}
+}
+
+function missingKvEnv() {
+	return {
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		BUNDLE_ARTIFACTS_KV: {
+			async get() {
+				return null
+			},
+			async put() {
+				return undefined
+			},
+		},
+		OAUTH_KV: {
+			async get() {
+				return null
+			},
+		},
+	} as unknown as Env
+}
+
 test('refresh family persist failures still return provider-minted tokens', async () => {
 	const minted = {
 		access_token: 'user-1:grant-1:at2',
@@ -161,4 +201,130 @@ test('refresh family persist failures still return provider-minted tokens', asyn
 	})
 	expect(response.status).toBe(200)
 	await expect(response.json()).resolves.toEqual(minted)
+})
+
+test('refresh family reuses isolate memory when KV still misses after the first rotation', async () => {
+	const env = missingKvEnv()
+	const first = mintedTokens('user-mem:grant-mem:rt2', 'user-mem:grant-mem:at2')
+	let providerCalls = 0
+	const fetchProvider = async () => {
+		providerCalls += 1
+		if (providerCalls === 1) {
+			return new Response(JSON.stringify(first), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json' },
+			})
+		}
+		return new Response(JSON.stringify({ error: 'invalid_grant' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json' },
+		})
+	}
+
+	const [left, right] = await Promise.all([
+		handleMcpOAuthTokenRequest({
+			request: refreshTokenRequest('user-mem:grant-mem:rt1'),
+			env,
+			fetchProvider,
+		}),
+		handleMcpOAuthTokenRequest({
+			request: refreshTokenRequest('user-mem:grant-mem:rt1'),
+			env,
+			fetchProvider,
+		}),
+	])
+	expect(left.response.status).toBe(200)
+	expect(right.response.status).toBe(200)
+	await expect(left.response.json()).resolves.toMatchObject({
+		access_token: first.access_token,
+		refresh_token: first.refresh_token,
+	})
+	await expect(right.response.json()).resolves.toMatchObject({
+		access_token: first.access_token,
+		refresh_token: first.refresh_token,
+	})
+	expect(providerCalls).toBe(1)
+
+	const reused = await handleMcpOAuthTokenRequest({
+		request: refreshTokenRequest('user-mem:grant-mem:rt1'),
+		env,
+		fetchProvider,
+	})
+	expect(reused.response.status).toBe(200)
+	await expect(reused.response.json()).resolves.toMatchObject({
+		access_token: first.access_token,
+		refresh_token: first.refresh_token,
+	})
+	expect(providerCalls).toBe(1)
+})
+
+test('refresh family previous reuse does not wait for a current-token rotation', async () => {
+	const env = missingKvEnv()
+	const family = mintedTokens(
+		'user-lock:grant-lock:rt2',
+		'user-lock:grant-lock:at2',
+	)
+	const rotated = mintedTokens(
+		'user-lock:grant-lock:rt3',
+		'user-lock:grant-lock:at3',
+	)
+	let releaseCurrentRefresh = () => {}
+	const currentRefreshHeld = new Promise<void>((resolve) => {
+		releaseCurrentRefresh = resolve
+	})
+	let currentRefreshStarted = () => {}
+	const currentRefreshEntered = new Promise<void>((resolve) => {
+		currentRefreshStarted = resolve
+	})
+	const fetchProvider = async (request: Request) => {
+		const formData = await request.clone().formData()
+		const presented = formData.get('refresh_token')
+		if (presented === 'user-lock:grant-lock:rt1') {
+			return new Response(JSON.stringify(family), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json' },
+			})
+		}
+		if (presented === 'user-lock:grant-lock:rt2') {
+			currentRefreshStarted()
+			await currentRefreshHeld
+			return new Response(JSON.stringify(rotated), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json' },
+			})
+		}
+		return new Response(JSON.stringify({ error: 'invalid_grant' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json' },
+		})
+	}
+
+	const seeded = await handleMcpOAuthTokenRequest({
+		request: refreshTokenRequest('user-lock:grant-lock:rt1'),
+		env,
+		fetchProvider,
+	})
+	expect(seeded.response.status).toBe(200)
+	await expect(seeded.response.json()).resolves.toEqual(family)
+
+	const currentRefresh = handleMcpOAuthTokenRequest({
+		request: refreshTokenRequest('user-lock:grant-lock:rt2'),
+		env,
+		fetchProvider,
+	})
+	await currentRefreshEntered
+	const previousReuse = await handleMcpOAuthTokenRequest({
+		request: refreshTokenRequest('user-lock:grant-lock:rt1'),
+		env,
+		fetchProvider,
+	})
+	expect(previousReuse.response.status).toBe(200)
+	await expect(previousReuse.response.json()).resolves.toMatchObject({
+		access_token: family.access_token,
+		refresh_token: family.refresh_token,
+	})
+	releaseCurrentRefresh()
+	const currentRefreshResult = await currentRefresh
+	expect(currentRefreshResult.response.status).toBe(200)
+	await expect(currentRefreshResult.response.json()).resolves.toEqual(rotated)
 })
