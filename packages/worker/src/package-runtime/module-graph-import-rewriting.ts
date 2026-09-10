@@ -49,6 +49,7 @@ import {
 	createPackageRuntimeModuleSource,
 	createRuntimeModuleSource,
 	iterateModuleSourceTexts,
+	refreshKodyRuntimeModules,
 } from './runtime-source-modules.ts'
 import { collectModuleExportNames } from './module-export-names.ts'
 import { materializePublishedArtifactModules } from './module-graph-artifacts.ts'
@@ -544,7 +545,7 @@ export async function prepareKodyGraphFiles(input: {
 		})
 	}
 	return {
-		files,
+		files: refreshKodyRuntimeModules(files) as Record<string, string>,
 		packages: state.packages,
 	}
 }

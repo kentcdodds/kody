@@ -5,7 +5,10 @@ import { pathToFileURL } from 'node:url'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { expect, test } from 'vitest'
 import { createKodyRemoteProxy } from '#mcp/executor.ts'
-import { createRuntimeModuleSource } from './module-graph.ts'
+import {
+	createRuntimeModuleReexportSource,
+	createRuntimeModuleSource,
+} from './module-graph.ts'
 
 // The kody:runtime virtual module captures its named exports statically
 // when it evaluates inside the surrounding AsyncLocalStorage context. The
@@ -27,6 +30,7 @@ type RuntimeModule = {
 		callback: () => Promise<T>,
 	) => Promise<T>
 	__kodyMeterStaticPackageExport: <T>(packageId: string, exportValue: T) => T
+	__kodyGetSecretAuthority: () => string | null
 	kody: { tool_call: (args: unknown) => Promise<unknown> } | undefined
 	codemode?: unknown
 	capabilities?: unknown
@@ -39,17 +43,33 @@ type RuntimeModule = {
 	}
 }
 
-function readSecretAuthority() {
-	const getSecretAuthority = (
-		globalThis as unknown as Record<symbol, () => string | null>
-	)[Symbol.for('kody.getSecretAuthority')]
-	return typeof getSecretAuthority === 'function' ? getSecretAuthority() : null
-}
-
 function resetRuntimeStorageSymbol() {
 	const globalAny = globalThis as unknown as Record<symbol, unknown>
 	delete globalAny[Symbol.for('kody.runtimeStorage')]
 	delete globalAny[Symbol.for('kody.secretAuthorityStorage')]
+}
+
+async function writeHydratedRuntimeFiles(
+	cleanupCallbacks: Array<() => Promise<void>>,
+) {
+	const dir = await mkdtemp(join(tmpdir(), 'kody-runtime-isolation-'))
+	const rootPath = join(dir, '.__kody_virtual__/runtime.js')
+	const siblingVirtualPath =
+		'.__kody_packages__/pkg/.__published_bundle__/2e/.__kody_virtual__/runtime.js'
+	const siblingPath = join(dir, siblingVirtualPath)
+	await mkdir(dirname(rootPath), { recursive: true })
+	await mkdir(dirname(siblingPath), { recursive: true })
+	await writeFile(rootPath, runtimeSource, 'utf8')
+	await writeFile(
+		siblingPath,
+		createRuntimeModuleReexportSource(siblingVirtualPath),
+		'utf8',
+	)
+	cleanupCallbacks.push(() => rm(dir, { recursive: true, force: true }))
+	return {
+		rootUrl: pathToFileURL(rootPath).href,
+		siblingUrl: pathToFileURL(siblingPath).href,
+	}
 }
 
 async function writeRuntimeFile(cleanupCallbacks: Array<() => Promise<void>>) {
@@ -64,6 +84,10 @@ async function writeRuntimeFile(cleanupCallbacks: Array<() => Promise<void>>) {
 async function withRuntimeIsolationCleanup<T>(
 	callback: (helpers: {
 		writeRuntimeFile: () => Promise<string>
+		writeHydratedRuntimeFiles: () => Promise<{
+			rootUrl: string
+			siblingUrl: string
+		}>
 	}) => Promise<T>,
 ) {
 	resetRuntimeStorageSymbol()
@@ -71,6 +95,8 @@ async function withRuntimeIsolationCleanup<T>(
 	try {
 		return await callback({
 			writeRuntimeFile: () => writeRuntimeFile(cleanupCallbacks),
+			writeHydratedRuntimeFiles: () =>
+				writeHydratedRuntimeFiles(cleanupCallbacks),
 		})
 	} finally {
 		while (cleanupCallbacks.length > 0) {
@@ -522,34 +548,51 @@ test('kody.mcp tool calls stay callable when the current run throws on Get', asy
 })
 
 test('secret-authority stamps stay visible across hydrated runtime.js copies', async () => {
-	await withRuntimeIsolationCleanup(async ({ writeRuntimeFile }) => {
-		const firstCopy = (await import(await writeRuntimeFile())) as RuntimeModule
-		const secondCopy = (await import(await writeRuntimeFile())) as RuntimeModule
+	await withRuntimeIsolationCleanup(async ({ writeHydratedRuntimeFiles }) => {
+		const { rootUrl, siblingUrl } = await writeHydratedRuntimeFiles()
+		const rootCopy = (await import(rootUrl)) as RuntimeModule
+		const siblingCopy = (await import(siblingUrl)) as RuntimeModule
 
-		const stamped = secondCopy.__kodyMeterStaticPackageExport(
+		expect(
+			(globalThis as unknown as Record<symbol, unknown>)[
+				Symbol.for('kody.secretAuthorityStorage')
+			],
+		).toBeUndefined()
+
+		const peek = siblingCopy.__kodyGetSecretAuthority
+		const stamped = siblingCopy.__kodyMeterStaticPackageExport(
 			'pkg-artifact',
-			() => readSecretAuthority(),
+			() => peek(),
 		)
 		expect(stamped()).toBe('pkg-artifact')
-		expect(readSecretAuthority()).toBeNull()
+		expect(peek()).toBeNull()
 
-		const stampedOnFirst = firstCopy.__kodyMeterStaticPackageExport(
+		const stampedOnRoot = rootCopy.__kodyMeterStaticPackageExport(
 			'pkg-root',
-			() => readSecretAuthority(),
+			() => rootCopy.__kodyGetSecretAuthority(),
 		)
-		expect(stampedOnFirst()).toBe('pkg-root')
+		expect(stampedOnRoot()).toBe('pkg-root')
 
 		class ArtifactClass {
 			authority: string | null
 			constructor() {
-				this.authority = readSecretAuthority()
+				this.authority = peek()
 			}
 		}
-		const Wrapped = secondCopy.__kodyMeterStaticPackageExport(
+		const Wrapped = siblingCopy.__kodyMeterStaticPackageExport(
 			'pkg-ctor',
 			ArtifactClass,
 		)
 		expect(new Wrapped().authority).toBe('pkg-ctor')
-		expect(readSecretAuthority()).toBeNull()
+		expect(peek()).toBeNull()
+
+		;(globalThis as unknown as Record<symbol, unknown>)[
+			Symbol.for('kody.secretAuthorityStorage')
+		] = {
+			getStore: () => 'pkg-forged',
+			run: (_packageId: string, callback: () => string) => callback(),
+		}
+		expect(stamped()).toBe('pkg-artifact')
+		expect(peek()).toBeNull()
 	})
 })
