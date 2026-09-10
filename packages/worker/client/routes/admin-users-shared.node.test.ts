@@ -1,5 +1,9 @@
 import { expect, test } from 'vitest'
 
+import {
+	createInfiniteList,
+	type InfiniteListSnapshot,
+} from '#client/infinite-list.ts'
 import { type AdminUserListItem } from '#universal/loader-data.ts'
 import { roleNames } from '#universal/permissions.ts'
 import { planNames } from '#universal/plans.ts'
@@ -169,4 +173,61 @@ test('create reseeds from the refreshed page and prepends a user that paging omi
 		href: '/admin/users',
 	})
 	expect(patchedWindow.items).toEqual([rolePatched])
+})
+
+test('failed create refresh keeps the current window when reset runs after the snapshot is read', () => {
+	const existing = user({
+		stableUserId: stableUserId(1),
+		username: 'existing',
+	})
+	const created = user({
+		stableUserId: stableUserId(9),
+		username: 'created',
+	})
+	let snapshot: InfiniteListSnapshot<AdminUserListItem> = {
+		items: [],
+		hasMore: false,
+		totalCount: 0,
+		error: null,
+		isLoadingInitial: false,
+		isLoadingMore: false,
+	}
+	const list = createInfiniteList<AdminUserListItem>({
+		mergeDirection: 'append',
+		getKey: (item) => item.stableUserId,
+		onSnapshot: (next) => {
+			snapshot = next
+		},
+	})
+	list.replaceWindow({
+		items: [existing],
+		hasMore: true,
+		totalCount: 20,
+	})
+	const nextWindow = nextAdminUsersWindowAfterCreate({
+		currentItems: snapshot.items,
+		currentHasMore: snapshot.hasMore,
+		currentTotal: snapshot.totalCount,
+		payload: {
+			ok: true,
+			selectedUser: null,
+			page: 1,
+			pageSize: 20,
+			availableRoles: [...roleNames],
+			availablePlans: [...planNames],
+			updatedUser: created,
+			users: [],
+			total: 0,
+			listRefreshFailed: true,
+			createdUserInFilteredList: true,
+		},
+	})
+	list.reset()
+	list.replaceWindow(nextWindow)
+	expect(snapshot.items.map((item) => item.username)).toEqual([
+		'created',
+		'existing',
+	])
+	expect(snapshot.totalCount).toBe(21)
+	expect(snapshot.hasMore).toBe(true)
 })

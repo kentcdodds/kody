@@ -315,15 +315,15 @@ export function AdminUsersRoute(handle: Handle) {
 		selectedUserFallback = payload.listRefreshFailed
 			? keepFallback
 			: (payload.selectedUser ?? keepFallback)
+		// reset() emits an empty snapshot; read the current window first.
+		const nextWindow = nextAdminUsersWindowAfterCreate({
+			currentItems: usersSnapshot.items,
+			currentHasMore: usersSnapshot.hasMore,
+			currentTotal: usersSnapshot.totalCount,
+			payload,
+		})
 		userList.reset()
-		userList.replaceWindow(
-			nextAdminUsersWindowAfterCreate({
-				currentItems: usersSnapshot.items,
-				currentHasMore: usersSnapshot.hasMore,
-				currentTotal: usersSnapshot.totalCount,
-				payload,
-			}),
-		)
+		userList.replaceWindow(nextWindow)
 		resetPlanDraft()
 	}
 
