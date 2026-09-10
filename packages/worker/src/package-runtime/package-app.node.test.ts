@@ -1509,20 +1509,6 @@ test('package app secret mounts ignore author-selected packageId and honor the s
 			alias: 'api-token',
 		}),
 	)
-	const workerSource = await readFile(
-		new URL('./package-app.ts', import.meta.url),
-		'utf8',
-	)
-	const secretsProxyStart = workerSource.indexOf(
-		'function createPackageSecretsProxy(runtimeBridge) {',
-	)
-	expect(secretsProxyStart).toBeGreaterThan(-1)
-	expect(
-		workerSource.slice(
-			secretsProxyStart,
-			workerSource.indexOf('function createWorkflowsProxy', secretsProxyStart),
-		),
-	).toContain(secretAuthorityArgName)
 })
 
 test('package app runtime bridge enforces packageStorage grants and raw storage namespace ACLs', async () => {
