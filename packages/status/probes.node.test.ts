@@ -1,5 +1,9 @@
 import { expect, test } from 'vitest'
-import { jobsProbeOrigin, runAllProbes } from './probes.ts'
+import {
+	fetchExecuteEvidenceLastSuccessAt,
+	jobsProbeOrigin,
+	runAllProbes,
+} from './probes.ts'
 import { statusComponentIds } from './status-types.ts'
 
 type FakeRoute = {
@@ -209,6 +213,9 @@ test('probe failures isolate to the affected component and map error details', a
 				{ id: 'kv', ok: true, latencyMs: 2 },
 				{ id: 'assets', ok: true, latencyMs: 9 },
 			],
+			executeEvidence: {
+				lastSuccessAt: '2026-09-10T22:23:29.243Z',
+			},
 		},
 	}
 	const componentOutcomes = await probe(components)
@@ -218,7 +225,9 @@ test('probe failures isolate to the affected component and map error details', a
 	})
 	expect(outcome(componentOutcomes, 'kv')?.ok).toBe(true)
 	expect(outcome(componentOutcomes, 'assets')?.ok).toBe(true)
-	expect(componentOutcomes.executeLastSuccessAt).toBeNull()
+	expect(componentOutcomes.executeLastSuccessAt).toBe(
+		Date.parse('2026-09-10T22:23:29.243Z'),
+	)
 
 	const unreachable = healthyRoutes()
 	unreachable[`${primaryOrigin}/health`] = { error: 'connection refused' }
@@ -244,4 +253,49 @@ test('probe failures isolate to the affected component and map error details', a
 			detail: `HTTP ${String(status)}`,
 		})
 	}
+})
+
+test('public execute-evidence refresh reads lastSuccessAt without following a failed storage card', async () => {
+	const requested: Array<{ url: string; cacheControl: string | null }> = []
+	const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+		const url = typeof input === 'string' ? input : input.toString()
+		const headers = new Headers(init?.headers)
+		requested.push({
+			url,
+			cacheControl: headers.get('Cache-Control'),
+		})
+		return new Response(
+			JSON.stringify({
+				ok: false,
+				components: [{ id: 'app_db', ok: false, error: 'timeout' }],
+				executeEvidence: {
+					lastSuccessAt: '2026-09-10T22:23:29.243Z',
+				},
+			}),
+			{ status: 503 },
+		)
+	}) as typeof fetch
+
+	await expect(
+		fetchExecuteEvidenceLastSuccessAt({
+			primaryOrigin,
+			fetcher,
+		}),
+	).resolves.toBe(Date.parse('2026-09-10T22:23:29.243Z'))
+	expect(requested).toEqual([
+		{
+			url: `${primaryOrigin}/health/components`,
+			cacheControl: 'no-cache',
+		},
+	])
+
+	const failingFetcher = (async () => {
+		throw new Error('origin down')
+	}) as typeof fetch
+	await expect(
+		fetchExecuteEvidenceLastSuccessAt({
+			primaryOrigin,
+			fetcher: failingFetcher,
+		}),
+	).resolves.toBeNull()
 })

@@ -66,7 +66,10 @@ async function timedFetch(
 		const response = await fetcher(url, {
 			redirect: 'manual',
 			signal: AbortSignal.timeout(probeTimeoutMs),
-			headers: { 'User-Agent': 'kody-status-prober' },
+			headers: {
+				'User-Agent': 'kody-status-prober',
+				'Cache-Control': 'no-cache',
+			},
 		})
 		return { response, latencyMs: Date.now() - startedAt }
 	} catch (error) {
@@ -322,12 +325,43 @@ async function probeStorageComponents(
 	}
 }
 
+const executeEvidenceRefreshTimeoutMs = 2_000
+
 function parseExecuteLastSuccessAt(
 	value: string | null | undefined,
 ): number | null {
 	if (!value) return null
 	const parsed = Date.parse(value)
 	return Number.isFinite(parsed) ? parsed : null
+}
+
+/**
+ * Cheap origin executeEvidence read. Never starts MCP execute. Used by
+ * public status snapshots when stored last-success is already stale, and
+ * shares the same parser as the minute cron.
+ */
+export async function fetchExecuteEvidenceLastSuccessAt(input: {
+	primaryOrigin: string
+	fetcher?: typeof fetch
+	timeoutMs?: number
+}): Promise<number | null> {
+	const fetcher = input.fetcher ?? fetch
+	try {
+		const response = await fetcher(`${input.primaryOrigin}/health/components`, {
+			redirect: 'manual',
+			signal: AbortSignal.timeout(
+				input.timeoutMs ?? executeEvidenceRefreshTimeoutMs,
+			),
+			headers: {
+				'User-Agent': 'kody-status-prober',
+				'Cache-Control': 'no-cache',
+			},
+		})
+		const body = await readJsonBody<HealthComponentsBody>(response)
+		return parseExecuteLastSuccessAt(body?.executeEvidence?.lastSuccessAt)
+	} catch {
+		return null
+	}
 }
 
 export type ProbeRunResult = {

@@ -106,7 +106,10 @@ Requests are handled in this order:
      the traffic-backed heartbeat plus the hourly
      `POST /__maintenance/mcp-execute-health` fallback (legacy `/mcp` execute
      with a dedicated canary token). Public health and status GETs do not run
-     that probe.
+     that probe. A stale status-page snapshot may re-read origin
+     `GET /health/components` `executeEvidence` (never execute) so organic
+     last-success is not one cron tick behind the live heartbeat. Persist merges
+     with any newer timestamp written while that fetch was in flight.
 7. Public `@username` ingress handled in `packages/worker/src/index.ts` before
    the OAuth provider / app router (needs `ExecutionContext` for background
    work). Production forwards package-invocation and package-app paths to

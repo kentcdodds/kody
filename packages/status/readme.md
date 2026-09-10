@@ -15,13 +15,18 @@ deploys, code, or database are broken (see decision record 0004).
     `status: "ok"`; an apex 302 is not up)
   - jobs-worker `GET /health` and `GET /health/components` over a service
     binding (no public jobs hostname; JOBS_DB rides on the Jobs component)
-  - MCP execute evidence: a successful authenticated execute completion in the
+  -     MCP execute evidence: a successful authenticated execute completion in the
     previous minute (read cheaply from `/health/components`) skips a synthetic.
     Otherwise the worker runs at most one authenticated
     `POST /__maintenance/mcp-execute-health` per rolling hour. Failed attempts
-    consume that budget. Public `/`, `/status.json`, and `/health` never trigger
-    that execute. Missing or stale telemetry is unknown, not an outage, and does
-    not change overall status or hide other incidents.
+    consume that budget. Public `/` and `/status.json` never trigger that
+    execute. When the Durable Object's last-success timestamp is already outside
+    the one-minute organic window, those public reads refresh `executeEvidence`
+    from origin `GET /health/components` (same cheap timestamp-only field the
+    cron uses; a down origin fails open to stored state; persist and cron
+    synthetic writes merge with any newer timestamp written during those
+    fetches). Missing or stale telemetry is unknown, not an outage, and does not
+    change overall status or hide other incidents.
 - Public storage cards are the main-worker bindings that take the product down
   (`app_db`, `kv`, `assets`). Operator `GET /health/components` reports
   `audit_db` as well; it is not a public card and does not open incidents or
