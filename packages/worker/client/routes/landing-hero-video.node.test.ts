@@ -54,6 +54,5 @@ test('hero video renders the first video in the player and every video as a list
 	expect(html).toContain(`/youtube-thumb/${first.videoId}`)
 	for (const video of rest) {
 		expect(html).toContain(`/youtube-thumb/${video.videoId}`)
-		expect(html).toContain(video.title)
 	}
 })

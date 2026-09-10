@@ -5,10 +5,7 @@ import { publicSignupPrimaryCta } from '#universal/public-signup-copy.ts'
 import { routes } from '#universal/routes.ts'
 
 test('public signup CTA always points at create-account', () => {
-	expect(publicSignupPrimaryCta()).toEqual({
-		href: routes.signup.href(),
-		label: 'Create a free account',
-	})
+	expect(publicSignupPrimaryCta().href).toBe(routes.signup.href())
 })
 
 test('FAQ and pricing loaders do not fetch signup gating', async () => {

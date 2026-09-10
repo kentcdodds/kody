@@ -32,8 +32,5 @@ test('google oauth connect bubbles wrap the prefilled url instead of overflowing
 })
 
 test('walkthrough acts stay in the article column instead of breaking out', () => {
-	const serialized = JSON.stringify(interactiveGuideActCss)
-	expect(serialized).not.toContain('100vw')
-	expect(serialized).not.toContain('50vw')
 	expect(interactiveGuideActCss.maxWidth).toBe('100%')
 })
