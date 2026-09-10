@@ -12,17 +12,13 @@ Kody-specific metadata.
 
 Use `package.json` as the canonical source of truth for saved package metadata.
 
-- `name` — npm-valid scoped package name (`@scope/<leaf>`); the leaf segment is
-  the URL slug. Together with UUID `package_id`, this is package identity. MCP
-  tools take `package_id` and/or `package_name` (leaf or `@owner/leaf`). Pass
-  the package name leaf (or `@owner/leaf`), not a separate kody.id.
+- `name` — npm-valid scoped package name (`@scope/<leaf>`). This is package
+  identity together with the saved-package UUID `package_id`. The leaf after `/`
+  is the URL slug. MCP tools take `package_id` for an existing package. Create
+  flows pass the package name leaf or `@owner/leaf`.
 - `exports` — authoritative import/export map
 - `private` — leftover npm-style field; ignored for catalog listing. Visibility
   is a repo setting (`packageUpdate` `changes.visibility`), default private
-- `kody.id` — optional; omit it. If present it must match the package name leaf.
-  When it matches, load succeeds and the slug still comes from `name`. When it
-  does not match, parse rejects with
-  `package.json kody.id is not package identity; if present it must match the name leaf "…" (found "…"). Omit kody.id and use package.json name "…"`.
 - `kody.description` — short public tagline for search/detail (max 200)
 - `kody.tags` — search tags
 - `kody.category` — optional community browse category (`integrations`,
@@ -301,8 +297,8 @@ the host-owned `kody:runtime` module.
 
 The built-in `packageSubscriptionsList` capability is the generic discovery
 surface for declared subscriptions. It reads the signed-in user's saved package
-manifests and returns `package_id`, `package_name`, scoped package name, topic,
-handler, description, and filters, optionally narrowed by exact topic.
+manifests and returns `package_id`, scoped package `name`, topic, handler,
+description, and filters, optionally narrowed by exact topic.
 
 For user-owned inbound email, `email.message.received` dispatches after an
 accepted routed message is stored. Quarantined inbound mail dispatches

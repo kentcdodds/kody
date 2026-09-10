@@ -35,7 +35,7 @@ Search the `packages` domain, then call `packageSubscriptionDispatch`:
 
 ```json
 {
-	"package_name": "email-automation",
+	"package_id": "550e8400-e29b-41d4-a716-446655440000",
 	"topic": "email.message.received",
 	"params": {}
 }
@@ -45,8 +45,7 @@ Fields:
 
 | Field              | Required | Meaning                                                                 |
 | ------------------ | -------- | ----------------------------------------------------------------------- |
-| `package_name`     | one of   | Package name leaf (`email-automation`) or scoped `@owner/leaf`          |
-| `package_id`       | one of   | Saved-package UUID; provide this or `package_name`, not both            |
+| `package_id`       | yes      | Saved-package UUID                                                      |
 | `package_scope`    | no       | Owner scope for delegated packages; preserve it from publish test hints |
 | `topic`            | yes      | Exact topic key from `kody.subscriptions`                               |
 | `params`           | one of   | Handler input fixture — use `{}` only when the handler tolerates empty  |
@@ -57,9 +56,8 @@ top-level request `idempotency_key` — the platform generates it. A
 package-emitted event fixture can still include its production
 `params.idempotency_key` inside the nested event envelope.
 
-Pass the package name leaf (or `@owner/leaf`), not a separate kody.id. Preserve
-`package_scope` when it appears in a publish test hint so dispatch resolves the
-intended owner-scoped package.
+Look up the package with `package_id`. Preserve `package_scope` when it appears
+in a publish test hint so dispatch resolves the intended owner-scoped package.
 
 ### Fixture input (`params`)
 
@@ -81,7 +79,7 @@ Example minimal `run.error.recorded` fixture:
 
 ```json
 {
-	"package_name": "failure-notifier",
+	"package_id": "550e8400-e29b-41d4-a716-446655440000",
 	"topic": "run.error.recorded",
 	"params": {
 		"event": "run.error.recorded",
@@ -114,7 +112,7 @@ Example minimal `integration.auth.failed` fixture:
 
 ```json
 {
-	"package_name": "event-notifier",
+	"package_id": "550e8400-e29b-41d4-a716-446655440000",
 	"topic": "integration.auth.failed",
 	"params": {
 		"event": "integration.auth.failed",
@@ -147,7 +145,7 @@ Example minimal `integration.auth.succeeded` fixture:
 
 ```json
 {
-	"package_name": "event-notifier",
+	"package_id": "550e8400-e29b-41d4-a716-446655440000",
 	"topic": "integration.auth.succeeded",
 	"params": {
 		"event": "integration.auth.succeeded",
@@ -170,7 +168,7 @@ Example minimal `mcp.server.disconnected` fixture:
 
 ```json
 {
-	"package_name": "home-watch",
+	"package_id": "550e8400-e29b-41d4-a716-446655440000",
 	"topic": "mcp.server.disconnected",
 	"params": {
 		"event": "mcp.server.disconnected",
@@ -194,7 +192,7 @@ For email topics, pass a stored message id instead of hand-building metadata:
 
 ```json
 {
-	"package_name": "email-automation",
+	"package_id": "550e8400-e29b-41d4-a716-446655440000",
 	"topic": "email.message.received",
 	"email_message_id": "00000000000000000000000000000001"
 }

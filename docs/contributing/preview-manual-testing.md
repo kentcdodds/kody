@@ -93,8 +93,8 @@ the product JSON APIs (`/account/*.json` in
 `packages/worker/universal/routes.ts`) or, for a saved package,
 `npm run control-kody -- package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]`.
 Those JSON endpoints are the same ones the UI posts to. Package creation is
-MCP-only (`packageGetGitRemote({ create: true, package_name })`); there is no
-create action on `POST /account/packages.json`.
+MCP-only (`packageGetGitRemote({ create: true })`; pass the package name leaf or
+`@owner/leaf`); there is no create action on `POST /account/packages.json`.
 
 `/mcp` stays OAuth-protected; an unauthenticated GET is 401 by design. Logged-in
 preview testing does not require agents to hand-roll an MCP OAuth dance — the

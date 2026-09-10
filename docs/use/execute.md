@@ -163,8 +163,7 @@ module-oriented runtime model:
 
 - saved packages persist repo-backed source rooted at `package.json`
 - package identity is the scoped `package.json.name` (`@scope/leaf`) plus the
-  UUID `package_id`; the leaf is the URL slug. Omit `kody.id`. If present it
-  must match that leaf or parse rejects it as not identity
+  UUID `package_id`; the leaf is the URL slug
 - package exports are defined by standard `package.json.exports`
 - package-specific metadata lives under `package.json#kody`
 - package jobs are schedules declared under `package.json#kody.jobs`

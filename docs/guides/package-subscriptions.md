@@ -74,9 +74,9 @@ subscriptions:
 }
 ```
 
-The result lists `package_id`, `package_name`, scoped package name, topic,
-handler, description, and filters. Use this before debugging event dispatch,
-building fan-out, or deciding whether a package already subscribes to a topic.
+The result lists `package_id`, scoped package `name`, topic, handler,
+description, and filters. Use this before debugging event dispatch, building
+fan-out, or deciding whether a package already subscribes to a topic.
 
 ## Synthetic dispatch
 
@@ -87,7 +87,7 @@ waiting for production fan-out.
 
 ```json
 {
-	"package_name": "email-automation",
+	"package_id": "550e8400-e29b-41d4-a716-446655440000",
 	"package_scope": "kody",
 	"topic": "email.message.received",
 	"params": {}
@@ -98,7 +98,7 @@ For stored inbound mail, replay with `email_message_id` instead of `params`:
 
 ```json
 {
-	"package_name": "email-automation",
+	"package_id": "550e8400-e29b-41d4-a716-446655440000",
 	"package_scope": "kody",
 	"topic": "email.message.received",
 	"email_message_id": "00000000000000000000000000000001"

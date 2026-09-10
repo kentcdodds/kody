@@ -33,14 +33,15 @@ Package README and AGENTS.md files do not repeat that cost model.
 There are two lanes for writing package source. Pick based on whether you have
 local filesystem and git access:
 
-- **Git lane (coding agents — preferred).** Call `packageGetGitRemote` with
-  `create: true` and a new `package_name` (leaf or `@scope/leaf`) to register a
-  stub saved package and mint a short-lived authenticated remote in one call
-  (for existing packages, omit `create`). Run the returned `setup_commands` to
-  clone into a temporary directory — they set local `git config user.email` /
-  `user.name` from `git_author` (the signed-in Kody account). Do not invent or
-  guess a git identity. Edit normally — binary assets, multi-file refactors, and
-  local build/test loops all work — commit, push, then publish with
+- **Git lane (coding agents — preferred).** Call
+  `packageGetGitRemote({ create: true, description })` and pass the package name
+  leaf or `@owner/leaf` to register a stub saved package and mint a short-lived
+  authenticated remote in one call (for existing packages, omit `create` and
+  pass `package_id`). Run the returned `setup_commands` to clone into a
+  temporary directory — they set local `git config user.email` / `user.name`
+  from `git_author` (the signed-in Kody account). Do not invent or guess a git
+  identity. Edit normally — binary assets, multi-file refactors, and local
+  build/test loops all work — commit, push, then publish with
   `packagePublishExternalPush`. If that tool returns `locked`, open the returned
   `approval_url` so the owner can promote the named commit. Do not treat HEAD as
   live until `published_commit` moves. When the OAuth token is coarser than the
@@ -247,11 +248,6 @@ the field is omitted, Kody infers a category from well-known tags such as
 `github` or `zero-auth`, or files the listing under Other. Tags stay freeform
 search keywords; do not use `kody.tags` as a second category vocabulary.
 
-Omit `package.json#kody.id`. If present it must match the package name leaf (the
-URL slug). When it matches, load succeeds and the slug still comes from `name`.
-When it does not match, parse rejects with
-`package.json kody.id is not package identity; if present it must match the name leaf "…" (found "…"). Omit kody.id and use package.json name "…"`.
-
 ## Package visibility
 
 New packages are always **private**. Visibility is a repo setting
@@ -345,12 +341,12 @@ irreversible-side-effect guard when a smoke test should stay safe.
    `kody:@scope/package/export` from `execute` against a read-only export or
    package-supported dry-run input that exercises approved secrets (see
    [Secret-using packages](#secret-using-packages) above).
-3. **Package apps** — `packageAppFetch({ package_name })` with the path, method,
+3. **Package apps** — `packageAppFetch({ package_id })` with the path, method,
    and body your handler needs. Confirm `{ status, headers, body, truncated }`
    and any `packageStorage()` side effects. See
    [Package app fetch](../use/package-app-fetch.md) and the
    [Package apps](./package-apps.md) playbook (`package_apps:guide`).
-4. **Subscriptions** — `packageSubscriptionDispatch({ package_name, topic, … })`
+4. **Subscriptions** — `packageSubscriptionDispatch({ package_id, topic, … })`
    with exactly one of `params` (fixture) or `email_message_id` (stored-mail
    replay) for each declared topic. See
    [Synthetic event dispatch](../use/synthetic-event-dispatch.md) and the

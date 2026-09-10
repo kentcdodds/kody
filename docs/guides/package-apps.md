@@ -82,7 +82,7 @@ Typical first probe:
 
 ```json
 {
-	"package_name": "my-app",
+	"package_id": "550e8400-e29b-41d4-a716-446655440000",
 	"path": "/"
 }
 ```
@@ -241,7 +241,7 @@ confirm the card matches intent:
 | `description`   | Short tagline (`kody.description`)                                 |
 | `tags`          | Search keywords                                                    |
 | `category`      | `integrations`, `examples`, `productivity`, `apps`, or `utilities` |
-| `package_name`  | Package name leaf (URL slug)                                       |
+| `name`          | Scoped package name (`@username/leaf`)                             |
 | `public_url`    | `/@username/{package-name}` (share this URL with people)           |
 | `version`       | `package.json#version` when you set one                            |
 

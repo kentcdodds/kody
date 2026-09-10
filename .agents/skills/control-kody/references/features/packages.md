@@ -17,10 +17,10 @@ come from `/@username/:kodyId/raw/:ref/…` (same authz as the tree). Legacy
 ## Drive it
 
 Preview seed has **no** packages until you create one. Package creation is
-MCP-only (`packageGetGitRemote({ create: true, package_name })`). There is no
-create action on `POST /account/packages.json`. Use the CLI — logged-in preview
-testing does not require agents to hand-roll an MCP OAuth dance — the CLI does
-it for them:
+MCP-only (`packageGetGitRemote({ create: true })`; pass the package name leaf or
+`@owner/leaf`). There is no create action on `POST /account/packages.json`. Use
+the CLI — logged-in preview testing does not require agents to hand-roll an MCP
+OAuth dance — the CLI does it for them:
 
 ```bash
 npm run control-kody -- package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]

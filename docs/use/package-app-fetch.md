@@ -35,7 +35,7 @@ Search the `packages` domain, then call `packageAppFetch`:
 
 ```json
 {
-	"package_name": "my-app"
+	"package_id": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
 
@@ -53,7 +53,7 @@ Example POST with JSON:
 
 ```json
 {
-	"package_name": "my-app",
+	"package_id": "550e8400-e29b-41d4-a716-446655440000",
 	"path": "/api/items",
 	"method": "POST",
 	"headers": { "content-type": "application/json" },
@@ -61,10 +61,9 @@ Example POST with JSON:
 }
 ```
 
-Pass the package name leaf (or `@owner/leaf`), not a separate kody.id. Either
-`package_id` or `package_name` identifies the package. When `test_hints.app`
-includes `package_scope`, preserve that exact owner scope so the probe cannot
-resolve an unrelated same-named package in the caller's personal scope.
+Look up the package with `package_id`. When `test_hints.app` includes
+`package_scope`, preserve that exact owner scope so the probe cannot resolve an
+unrelated same-named package in the caller's personal scope.
 
 Websocket upgrade requests (`Upgrade: websocket`, `Connection: Upgrade`, or
 equivalent) are rejected.
