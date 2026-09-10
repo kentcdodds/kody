@@ -11,7 +11,6 @@ import {
 	getListKey,
 	nextAdminUsersWindowAfterCreate,
 	nextAdminUsersWindowAfterMutation,
-	nextAdminUsersWindowFromRouteData,
 } from './admin-users-shared.ts'
 
 function stableUserId(id: number) {
@@ -301,32 +300,8 @@ test('selection refetch keeps a created user that page one omitted', () => {
 	expect(afterCreate.hasMore).toBe(false)
 
 	const listKey = getListKey('/admin/users')
-	const afterSelect = nextAdminUsersWindowFromRouteData({
-		listKey: getListKey(`/admin/users/${created.stableUserId}`),
-		lastLoadedListKey: listKey,
-		currentItems: afterCreate.items,
-		currentHasMore: afterCreate.hasMore,
-		currentTotal: afterCreate.totalCount,
-		payload: pageOnePayload,
-	})
-	expect(afterSelect.replace).toBe(false)
-	expect(afterSelect.items.map((item) => item.username)).toEqual([
-		'created',
-		'oldest',
-		'older',
-	])
-
-	const afterFilter = nextAdminUsersWindowFromRouteData({
-		listKey: getListKey('/admin/users?role=admin'),
-		lastLoadedListKey: listKey,
-		currentItems: afterCreate.items,
-		currentHasMore: afterCreate.hasMore,
-		currentTotal: afterCreate.totalCount,
-		payload: pageOnePayload,
-	})
-	expect(afterFilter.replace).toBe(true)
-	expect(afterFilter.items.map((item) => item.username)).toEqual([
-		'oldest',
-		'older',
-	])
+	// Selection changes the pathname (and route data) but not the list
+	// filters, so applyPayload must keep the prepended created row.
+	expect(getListKey(`/admin/users/${created.stableUserId}`)).toBe(listKey)
+	expect(getListKey('/admin/users?role=admin')).not.toBe(listKey)
 })

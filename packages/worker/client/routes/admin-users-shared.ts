@@ -134,33 +134,12 @@ export function nextAdminUsersWindowAfterCreate(input: {
 	}
 }
 
-/**
- * Route data refetches when the selected pathname changes, but the list
- * window only depends on filters. Keep the loaded window so a created
- * row prepended off page one is not wiped by a page-one reseed.
- */
-export function nextAdminUsersWindowFromRouteData(input: {
-	listKey: string
-	lastLoadedListKey: string
-	currentItems: Array<AdminUserListItem>
-	currentHasMore: boolean
-	currentTotal: number
-	payload: Pick<AdminUsersLoaderData, 'users' | 'page' | 'pageSize' | 'total'>
-}) {
-	if (input.listKey === input.lastLoadedListKey) {
-		return {
-			replace: false as const,
-			items: input.currentItems,
-			hasMore: input.currentHasMore,
-			totalCount: input.currentTotal,
-		}
-	}
-	return {
-		replace: true as const,
-		items: input.payload.users,
-		hasMore: input.payload.page * input.payload.pageSize < input.payload.total,
-		totalCount: input.payload.total,
-	}
+/** Filter changes reseed; selection-only navigations keep the loaded window. */
+export function shouldReseedAdminUsersWindow(
+	listKey: string,
+	lastLoadedListKey: string,
+) {
+	return listKey !== lastLoadedListKey
 }
 
 /**

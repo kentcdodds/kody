@@ -32,8 +32,8 @@ import {
 	getSelection,
 	nextAdminUsersWindowAfterCreate,
 	nextAdminUsersWindowAfterMutation,
-	nextAdminUsersWindowFromRouteData,
 	parseSelectedStableUserId,
+	shouldReseedAdminUsersWindow,
 	readFilterState,
 } from './admin-users-shared.ts'
 import {
@@ -146,26 +146,18 @@ export function AdminUsersRoute(handle: Handle) {
 		availableRoles = payload.availableRoles
 		availablePlans = payload.availablePlans
 		const listKey = getListKey(href)
-		// Filter changes reseed. Selection-only navigations keep the
-		// window so a created row prepended off page one does not vanish.
-		const nextWindow = nextAdminUsersWindowFromRouteData({
-			listKey,
-			lastLoadedListKey,
-			currentItems: usersSnapshot.items,
-			currentHasMore: usersSnapshot.hasMore,
-			currentTotal: usersSnapshot.totalCount,
-			payload,
-		})
-		if (nextWindow.replace) {
+		// Filter changes reseed. Selection-only navigations keep the window
+		// so a created row prepended off page one does not vanish.
+		if (shouldReseedAdminUsersWindow(listKey, lastLoadedListKey)) {
 			loadedThroughPage = payload.page
 			// reset() invalidates any in-flight load-more so a stale page
 			// fetched for the previous filters can never append into the
 			// fresh window.
 			userList.reset()
 			userList.replaceWindow({
-				items: nextWindow.items,
-				hasMore: nextWindow.hasMore,
-				totalCount: nextWindow.totalCount,
+				items: payload.users,
+				hasMore: payload.page * payload.pageSize < payload.total,
+				totalCount: payload.total,
 			})
 			lastLoadedListKey = listKey
 		}
