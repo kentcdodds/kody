@@ -1,13 +1,8 @@
-export const packageShareStatuses = [
-	'pending',
-	'accepted',
-	'revoked',
-	'left',
-] as const
+const packageShareStatuses = ['pending', 'accepted', 'revoked', 'left'] as const
 
-export type PackageShareStatus = (typeof packageShareStatuses)[number]
+type PackageShareStatus = (typeof packageShareStatuses)[number]
 
-export const packageShareTrustLevels = ['follow', 'pin'] as const
+const packageShareTrustLevels = ['follow', 'pin'] as const
 
 export type PackageShareTrustLevel = (typeof packageShareTrustLevels)[number]
 

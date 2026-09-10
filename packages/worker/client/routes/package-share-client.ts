@@ -2,7 +2,7 @@ import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
 import { routes } from '#universal/routes.ts'
 import { readJson } from './account-approval-shared.ts'
 
-export type PackageShareActionIntent =
+type PackageShareActionIntent =
 	| 'invite'
 	| 'accept'
 	| 'revoke'
