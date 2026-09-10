@@ -266,6 +266,25 @@ test('package app kody.mcp supports calls, advertises connected servers, and ded
 		{ name: 'mcp:home:set_pin', args: { pin: '2' } },
 		{ name: 'mcp:home:set_pin', args: { pin: '3' } },
 	])
+
+	const authoritySymbol = Symbol.for('kody.getSecretAuthority')
+	Object.defineProperty(globalThis, authoritySymbol, {
+		value: () => 'pkg-stamped',
+		configurable: true,
+		writable: true,
+	})
+	try {
+		await openGetHome.set_pin({
+			pin: '4',
+			[secretAuthorityArgName]: 'pkg-forged',
+		})
+		expect(calls.at(-1)).toEqual({
+			name: 'mcp:home:set_pin',
+			args: { pin: '4', [secretAuthorityArgName]: 'pkg-stamped' },
+		})
+	} finally {
+		delete (globalThis as unknown as Record<symbol, unknown>)[authoritySymbol]
+	}
 })
 
 test('package app workflows proxy validates input and forwards to the runtime bridge', async () => {

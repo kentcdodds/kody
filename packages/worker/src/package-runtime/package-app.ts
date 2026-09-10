@@ -213,11 +213,27 @@ function createKodyProxy(runtimeBridge, mcpServerNames) {
 				};
 			},
 		});
+	function attachSecretAuthorityArgs(args) {
+		const getSecretAuthority = globalThis[Symbol.for('kody.getSecretAuthority')];
+		const authority =
+			typeof getSecretAuthority === 'function'
+				? String(getSecretAuthority() ?? '').trim()
+				: '';
+		if (args == null || typeof args !== 'object' || Array.isArray(args)) {
+			return args;
+		}
+		const next = { ...args };
+		delete next['__kodySecretAuthorityPackageId'];
+		if (authority) {
+			next['__kodySecretAuthorityPackageId'] = authority;
+		}
+		return next;
+	}
 	const mcp = createMcpServerNamespaceProxy((serverName) =>
 		createOpenNamespaceProxy((toolName) => async (args = {}) =>
 			await runtimeBridge.callCapability({
 				name: \`mcp:\${serverName}:\${toolName}\`,
-				args,
+				args: attachSecretAuthorityArgs(args),
 			}),
 		),
 	);
@@ -233,22 +249,7 @@ function createKodyProxy(runtimeBridge, mcpServerNames) {
 			return async (args = {}) =>
 				await runtimeBridge.callCapability({
 					name: property,
-					args: (() => {
-						const getSecretAuthority = globalThis[Symbol.for('kody.getSecretAuthority')];
-						const authority =
-							typeof getSecretAuthority === 'function'
-								? String(getSecretAuthority() ?? '').trim()
-								: '';
-						if (args == null || typeof args !== 'object' || Array.isArray(args)) {
-							return args;
-						}
-						const next = { ...args };
-						delete next['__kodySecretAuthorityPackageId'];
-						if (authority) {
-							next['__kodySecretAuthorityPackageId'] = authority;
-						}
-						return next;
-					})(),
+					args: attachSecretAuthorityArgs(args),
 				});
 		},
 		has(_target, property) {

@@ -515,13 +515,17 @@ function __kodyRecordStaticPackageCall(packageId, startedAtMs, outcome) {
 // pass through unchanged; function exports keep their identity semantics
 // (arguments, this, return values, thrown errors, properties, construct)
 // behind a transparent Proxy whose only addition is a non-blocking usage
-// event per call. Only [[Call]] is trapped: every other internal method,
-// including [[Construct]], forwards to the target per the Proxy spec, so
-// \`new WrappedClass()\` constructs the real class (construction is not
-// metered).
+// event per call. [[Call]] records usage. [[Construct]] is not metered
+// (construction stays a transparent \`new\`), but it still runs under the
+// stamp ALS so constructor-side fetch / kody.* keep the imported identity.
 export function __kodyMeterStaticPackageExport(packageId, exportValue) {
 	if (typeof exportValue !== 'function') return exportValue;
 	return new Proxy(exportValue, {
+		construct(target, argumentsList, newTarget) {
+			return __kodyRunWithSecretAuthority(packageId, () =>
+				Reflect.construct(target, argumentsList, newTarget),
+			);
+		},
 		apply(target, thisArg, argumentsList) {
 			const invoke = () => {
 				const startedAtMs = Date.now();

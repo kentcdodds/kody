@@ -538,5 +538,18 @@ test('secret-authority stamps stay visible across hydrated runtime.js copies', a
 			() => readSecretAuthority(),
 		)
 		expect(stampedOnFirst()).toBe('pkg-root')
+
+		class ArtifactClass {
+			authority: string | null
+			constructor() {
+				this.authority = readSecretAuthority()
+			}
+		}
+		const Wrapped = secondCopy.__kodyMeterStaticPackageExport(
+			'pkg-ctor',
+			ArtifactClass,
+		)
+		expect(new Wrapped().authority).toBe('pkg-ctor')
+		expect(readSecretAuthority()).toBeNull()
 	})
 })
