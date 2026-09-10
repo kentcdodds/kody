@@ -24,7 +24,10 @@ import {
 } from '#worker/usage/dynamic-worker-day-surface.ts'
 import { type RawFetchHostSink } from '#mcp/raw-fetch-host-nudge.ts'
 import { resolvePackageMountedSecret } from '#mcp/secrets/package-access.ts'
-import { resolveSecretAuthorityPackageId } from '#mcp/secrets/secret-authority.ts'
+import {
+	getSecretAuthorityScope,
+	resolveSecretAuthorityPackageId,
+} from '#mcp/secrets/secret-authority.ts'
 import {
 	createExecutionSecretRedactor,
 	type ExecutionSecretRedactor,
@@ -186,11 +189,13 @@ function createPackageSecretTools(input: {
 	grantedPackageIds: ReadonlySet<string>
 }): PackageSecretToolOptions {
 	const resolveAuthorityPackageId = (requestedPackageId?: string | null) => {
-		// Stamp identity only (hidden ALS / capability field). Author-visible
-		// `packageId` on kody.packageSecretGet|Has is ignored by the tool
-		// wrapper so a granted dependency id is not a steal primitive.
+		// Stamp identity only. The executor peels the hidden capability field
+		// into host ALS before this tool runs, so a second peel of args is
+		// empty. Author-visible `packageId` is ignored so a granted
+		// dependency id is not a steal primitive.
+		const scope = getSecretAuthorityScope()
 		const authorityPackageId = resolveSecretAuthorityPackageId({
-			requestedPackageId,
+			requestedPackageId: requestedPackageId ?? scope?.currentPackageId,
 			grantedPackageIds: input.grantedPackageIds,
 			runPackageId: input.runPackageId,
 		})

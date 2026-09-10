@@ -4,6 +4,7 @@ import {
 	attachSecretAuthorityToCapabilityArgs,
 	readSecretAuthorityHeader,
 	resolveSecretAuthorityPackageId,
+	getSecretAuthorityScope,
 	runWithCurrentSecretAuthority,
 	runWithSecretAuthorityScope,
 	secretAuthorityArgName,
@@ -78,6 +79,13 @@ test('fetch header and capability args carry stamp identity and drop forgeries',
 			'pkg-a',
 		),
 	).toEqual({ name: 'token', [secretAuthorityArgName]: 'pkg-a' })
+})
+
+test('runWithCurrentSecretAuthority installs current without a parent scope', () => {
+	runWithCurrentSecretAuthority('pkg-a', () => {
+		expect(getSecretAuthorityScope()?.currentPackageId).toBe('pkg-a')
+	})
+	expect(getSecretAuthorityScope()).toBeNull()
 })
 
 test('caller secret authority uses the host ALS current stamp when granted', () => {

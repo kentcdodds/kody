@@ -41,7 +41,13 @@ export function runWithCurrentSecretAuthority<T>(
 	fn: () => T,
 ): T {
 	const current = secretAuthorityStorage.getStore()
-	if (!current) return fn()
+	if (!current) {
+		if (!packageId) return fn()
+		return secretAuthorityStorage.run(
+			{ grantedPackageIds: new Set(), currentPackageId: packageId },
+			fn,
+		)
+	}
 	return secretAuthorityStorage.run(
 		{ ...current, currentPackageId: packageId },
 		fn,
