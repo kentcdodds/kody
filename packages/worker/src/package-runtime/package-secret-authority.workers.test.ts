@@ -549,7 +549,7 @@ test(
 		)
 		expect(runAsBRequestA.error).toBeUndefined()
 		expect(runAsBRequestA.result).toEqual({
-			stamped: { token: 'wake-secret-value' },
+			stamped: { token: 'wake-secret-value', authority: wake.packageId },
 			error: expect.stringMatching(/not allowed for package/i),
 		})
 
