@@ -84,14 +84,20 @@ export function AccountSharedRoute(handle: Handle) {
 			handle.update()
 			return
 		}
-		const response = await fetch(sharedApiPath, {
-			headers: { Accept: 'application/json' },
-			credentials: 'include',
-		})
-		const next = await readJson<AccountSharedLoaderData>(response)
-		if (response.ok && next?.ok) payload = next
-		busy = false
-		handle.update()
+		try {
+			const response = await fetch(sharedApiPath, {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+			})
+			const next = await readJson<AccountSharedLoaderData>(response)
+			if (response.ok && next?.ok) payload = next
+			else message = 'Unable to refresh shared packages.'
+		} catch {
+			message = 'Unable to refresh shared packages.'
+		} finally {
+			busy = false
+			handle.update()
+		}
 	}
 
 	return () => {

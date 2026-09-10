@@ -6,7 +6,6 @@ import {
 	getPillButtonCss,
 } from '#universal/styles/style-primitives.ts'
 import { colors, spacing } from '#universal/styles/tokens.ts'
-import { postPackageShareAction } from './package-share-client.ts'
 
 type PackageShareSettingsProps = {
 	username: string

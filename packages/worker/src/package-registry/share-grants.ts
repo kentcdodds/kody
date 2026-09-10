@@ -554,7 +554,7 @@ export async function requireHydratedPackageShareGrantView(input: {
 	return view
 }
 
-function grantIsAddressedToGuest(
+export function grantIsAddressedToGuest(
 	grant: PackageShareGrantRow,
 	guestUserId: string,
 	guestEmail: string | null,

@@ -8,6 +8,7 @@ import {
 	acknowledgePackageShareUpdate,
 	defaultPackageShareTrustLevel,
 	getPackageShareGrantById,
+	grantIsAddressedToGuest,
 	hydratePackageShareGrantViews,
 	requireHydratedPackageShareGrantView,
 	invitePackageShare,
@@ -24,6 +25,7 @@ import {
 	getSavedPackageById,
 	getSavedPackageByName,
 } from '#worker/package-registry/repo.ts'
+import { normalizeEmailAddress } from '#worker/email/address.ts'
 import { sendPackageShareInviteEmail } from '#worker/package-registry/share-invite-email.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
@@ -359,7 +361,11 @@ export const packageShareInspectCapability = defineDomainCapability(
 			if (
 				!grant ||
 				(grant.ownerUserId !== user.userId &&
-					grant.granteeUserId !== user.userId)
+					!grantIsAddressedToGuest(
+						grant,
+						user.userId,
+						normalizeEmailAddress(user.email ?? ''),
+					))
 			) {
 				throw new McpCallerError('Share grant not found for this user.')
 			}

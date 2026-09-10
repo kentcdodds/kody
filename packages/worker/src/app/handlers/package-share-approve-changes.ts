@@ -6,7 +6,10 @@ import { loadPackagePage } from '#app/package-page.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { packageShareAccessErrorMessage } from '#worker/package-registry/share-grants.ts'
+import {
+	PackageShareAccessError,
+	packageShareAccessErrorMessage,
+} from '#worker/package-registry/share-grants.ts'
 import { type routes } from '#universal/routes.ts'
 
 async function loadApproveChangesForPage(input: {
@@ -103,6 +106,12 @@ export function createCommunityPackageApproveChangesApiHandler(env: Env) {
 					}
 					return jsonResponse(payload)
 				} catch (error) {
+					if (!(error instanceof PackageShareAccessError)) {
+						return jsonResponse(
+							{ ok: false, error: 'Unable to load package changes.' },
+							500,
+						)
+					}
 					return jsonResponse(
 						{ ok: false, error: packageShareAccessErrorMessage(error) },
 						400,
