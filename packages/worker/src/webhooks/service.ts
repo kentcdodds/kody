@@ -25,6 +25,7 @@ import {
 	hashWebhookUrlSecret,
 	webhookUrlSecretMatches,
 } from './crypto.ts'
+import { WebhookEndpointIdRaceError } from './errors.ts'
 import {
 	formatWebhookUrlHandle,
 	parseWebhookUrlHandle,
@@ -278,7 +279,12 @@ export async function mintWebhookUrlForUser(input: {
 			})
 			break
 		} catch (error) {
-			if (attempt > 0 || !getUniqueConstraintField(error)) throw error
+			if (attempt > 0) throw error
+			if (error instanceof WebhookEndpointIdRaceError) {
+				endpointId = error.existingId
+				continue
+			}
+			if (!getUniqueConstraintField(error)) throw error
 			const raced = await getWebhookEndpointByKey({
 				db: input.env.APP_DB,
 				userId: input.userId,
