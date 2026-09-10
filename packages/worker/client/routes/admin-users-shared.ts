@@ -93,15 +93,36 @@ export function getDataKey(href: string) {
 }
 
 /**
- * Create responses carry a refreshed first page. Use that window instead of
- * patching existing rows — `updatedUser` is null and a new id cannot be
- * mapped into the current snapshot.
+ * Create reseeds from the refreshed first page, then prepends the created
+ * row when oldest-first paging left it off page one. A failed refresh
+ * keeps the current window and still splices that row in when present.
  */
-export function nextAdminUsersWindowAfterCreate(payload: AdminUsersLoaderData) {
+export function nextAdminUsersWindowAfterCreate(input: {
+	currentItems: Array<AdminUserListItem>
+	currentHasMore: boolean
+	currentTotal: number
+	payload: AdminUsersMutationData
+}) {
+	const created = input.payload.updatedUser
+	const baseItems = input.payload.listRefreshFailed
+		? input.currentItems
+		: input.payload.users
+	const alreadyListed =
+		created != null &&
+		baseItems.some((item) => item.stableUserId === created.stableUserId)
+	const items = created && !alreadyListed ? [created, ...baseItems] : baseItems
+	if (input.payload.listRefreshFailed) {
+		return {
+			items,
+			hasMore: input.currentHasMore,
+			totalCount:
+				created && !alreadyListed ? input.currentTotal + 1 : input.currentTotal,
+		}
+	}
 	return {
-		items: payload.users,
-		hasMore: payload.page * payload.pageSize < payload.total,
-		totalCount: payload.total,
+		items,
+		hasMore: input.payload.page * input.payload.pageSize < input.payload.total,
+		totalCount: input.payload.total,
 	}
 }
 

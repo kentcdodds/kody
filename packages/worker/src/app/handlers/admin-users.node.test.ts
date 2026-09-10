@@ -1247,8 +1247,18 @@ test('create_user action returns setup link, logs audit, maps duplicate email to
 	}
 	mockModule.adminCreateUserWithPasswordSetup.mockResolvedValueOnce(createdUser)
 	const env = createAdminTestEnv({
-		users: [],
-		userRoles: [],
+		users: [
+			{
+				id: 9,
+				username: 'new-user',
+				email: 'new-user@example.com',
+				email_verified_at: '2026-09-10T00:00:00.000Z',
+				plan: 'free',
+				created_at: '2026-09-10 00:00:00',
+				updated_at: '2026-09-10 00:00:00',
+			},
+		],
+		userRoles: [{ user_id: 9, role_name: 'user' }],
 	})
 	const handler = createAdminUsersApiHandler(env as unknown as Env)
 	async function postCreateUser(body: Record<string, unknown>) {
@@ -1280,7 +1290,16 @@ test('create_user action returns setup link, logs audit, maps duplicate email to
 		setupLink: createdUser.setupLink,
 		setupTokenExpiresAt: createdUser.setupTokenExpiresAt,
 	})
-	expect(createdPayload.updatedUser).toBeNull()
+	expect(createdPayload.updatedUser).toEqual(
+		expect.objectContaining({
+			stableUserId: createdUser.stableUserId,
+			username: createdUser.username,
+			email: createdUser.email,
+		}),
+	)
+	expect(createdPayload.users).toEqual([
+		expect.objectContaining({ stableUserId: createdUser.stableUserId }),
+	])
 	expect(mockModule.scheduleUserCreatedEvent).toHaveBeenCalledWith({
 		env,
 		user: {
@@ -1334,6 +1353,12 @@ test('create_user action returns setup link, logs audit, maps duplicate email to
 			setupLink: createdUser.setupLink,
 			setupTokenExpiresAt: createdUser.setupTokenExpiresAt,
 		})
+		expect(refreshFailedPayload.updatedUser).toEqual(
+			expect.objectContaining({
+				stableUserId: createdUser.stableUserId,
+				username: createdUser.username,
+			}),
+		)
 		expect(consoleWarn).toHaveBeenCalledWith(
 			'admin-users-create-list-refresh-failed',
 			expect.any(Error),

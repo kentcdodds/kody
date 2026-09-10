@@ -682,11 +682,14 @@ async function handleCreateUserAction(input: {
 		})
 
 		const { userId: _userId, ...boundaryUser } = createdUser
+		const createdListItem = await loadAdminUserByTarget(input.env.APP_DB, {
+			stableUserId: createdUser.stableUserId,
+		}).catch(() => null)
 		try {
 			const payload = await loadAdminUsersData(input.env, input.request.url)
 			return jsonResponse({
 				...payload,
-				updatedUser: null,
+				updatedUser: createdListItem,
 				createdUser: boundaryUser,
 			})
 		} catch (error) {
@@ -702,7 +705,7 @@ async function handleCreateUserAction(input: {
 				total: 0,
 				availableRoles: [...roleNames],
 				availablePlans: [...planNames],
-				updatedUser: null,
+				updatedUser: createdListItem,
 				createdUser: boundaryUser,
 				listRefreshFailed: true,
 			})

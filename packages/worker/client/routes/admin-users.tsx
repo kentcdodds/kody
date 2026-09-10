@@ -302,15 +302,24 @@ export function AdminUsersRoute(handle: Handle) {
 		payload: AdminUsersMutationData,
 		href: string,
 	) {
-		if (payload.listRefreshFailed) return
-		availableRoles = payload.availableRoles
-		availablePlans = payload.availablePlans
-		const nextWindow = nextAdminUsersWindowAfterCreate(payload)
-		loadedThroughPage = payload.page
+		if (payload.listRefreshFailed && !payload.updatedUser) return
+		const nextWindow = nextAdminUsersWindowAfterCreate({
+			currentItems: usersSnapshot.items,
+			currentHasMore: usersSnapshot.hasMore,
+			currentTotal: usersSnapshot.totalCount,
+			payload,
+		})
+		if (!payload.listRefreshFailed) {
+			availableRoles = payload.availableRoles
+			availablePlans = payload.availablePlans
+			loadedThroughPage = payload.page
+			lastLoadedListKey = getListKey(href)
+			selectedUserFallback = payload.selectedUser ?? payload.updatedUser
+		} else if (payload.updatedUser) {
+			selectedUserFallback = payload.updatedUser
+		}
 		userList.reset()
 		userList.replaceWindow(nextWindow)
-		lastLoadedListKey = getListKey(href)
-		selectedUserFallback = payload.selectedUser
 		resetPlanDraft()
 	}
 

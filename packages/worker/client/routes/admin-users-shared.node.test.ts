@@ -51,7 +51,7 @@ function user(
 	}
 }
 
-test('create reseeds from the refreshed page; mutation cannot insert a new user', () => {
+test('create reseeds from the refreshed page and prepends a user that paging omitted', () => {
 	const existing = user({
 		stableUserId: stableUserId(1),
 		username: 'existing',
@@ -60,31 +60,72 @@ test('create reseeds from the refreshed page; mutation cannot insert a new user'
 		stableUserId: stableUserId(9),
 		username: 'created',
 	})
-	const refreshedPage = {
+	const basePayload = {
 		ok: true as const,
-		users: [existing, created],
 		selectedUser: null,
 		page: 1,
 		pageSize: 20,
-		total: 2,
 		availableRoles: [...roleNames],
 		availablePlans: [...planNames],
-		updatedUser: null,
+		updatedUser: created,
 	}
 
-	const createdWindow = nextAdminUsersWindowAfterCreate(refreshedPage)
-	expect(createdWindow.items.map((item) => item.username)).toEqual([
+	const onPage = nextAdminUsersWindowAfterCreate({
+		currentItems: [existing],
+		currentHasMore: false,
+		currentTotal: 1,
+		payload: {
+			...basePayload,
+			users: [existing, created],
+			total: 2,
+		},
+	})
+	expect(onPage.items.map((item) => item.username)).toEqual([
 		'existing',
 		'created',
 	])
-	expect(createdWindow.totalCount).toBe(2)
-	expect(createdWindow.hasMore).toBe(false)
+	expect(onPage.totalCount).toBe(2)
+	expect(onPage.hasMore).toBe(false)
+
+	const omittedFromPageOne = nextAdminUsersWindowAfterCreate({
+		currentItems: [existing],
+		currentHasMore: true,
+		currentTotal: 20,
+		payload: {
+			...basePayload,
+			users: [existing],
+			total: 21,
+		},
+	})
+	expect(omittedFromPageOne.items.map((item) => item.username)).toEqual([
+		'created',
+		'existing',
+	])
+	expect(omittedFromPageOne.totalCount).toBe(21)
+	expect(omittedFromPageOne.hasMore).toBe(true)
+
+	const refreshFailed = nextAdminUsersWindowAfterCreate({
+		currentItems: [existing],
+		currentHasMore: false,
+		currentTotal: 1,
+		payload: {
+			...basePayload,
+			users: [],
+			total: 0,
+			listRefreshFailed: true,
+		},
+	})
+	expect(refreshFailed.items.map((item) => item.username)).toEqual([
+		'created',
+		'existing',
+	])
+	expect(refreshFailed.totalCount).toBe(2)
 
 	const mutationWindow = nextAdminUsersWindowAfterMutation({
 		currentItems: [existing],
 		payload: {
-			...refreshedPage,
-			updatedUser: created,
+			...basePayload,
+			users: [existing],
 			total: 2,
 		},
 		href: '/admin/users',
@@ -101,7 +142,7 @@ test('create reseeds from the refreshed page; mutation cannot insert a new user'
 	const patchedWindow = nextAdminUsersWindowAfterMutation({
 		currentItems: [existing],
 		payload: {
-			...refreshedPage,
+			...basePayload,
 			users: [rolePatched],
 			updatedUser: rolePatched,
 			total: 1,
