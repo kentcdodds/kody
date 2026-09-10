@@ -10,6 +10,7 @@ import { planNames } from '#universal/plans.ts'
 import {
 	nextAdminUsersWindowAfterCreate,
 	nextAdminUsersWindowAfterMutation,
+	shouldReseedAdminUsersWindow,
 } from './admin-users-shared.ts'
 
 function stableUserId(id: number) {
@@ -109,6 +110,30 @@ test('create reseeds from the refreshed page and prepends a user that paging omi
 	])
 	expect(omittedFromPageOne.totalCount).toBe(21)
 	expect(omittedFromPageOne.hasMore).toBe(true)
+
+	const omittedLastRow = nextAdminUsersWindowAfterCreate({
+		currentItems: [existing],
+		currentHasMore: true,
+		currentTotal: 20,
+		payload: {
+			...basePayload,
+			users: [existing],
+			total: 2,
+			createdUserInFilteredList: true,
+		},
+	})
+	expect(omittedLastRow.items.map((item) => item.username)).toEqual([
+		'created',
+		'existing',
+	])
+	expect(omittedLastRow.hasMore).toBe(false)
+	expect(shouldReseedAdminUsersWindow('q=&role=&verification=', '')).toBe(true)
+	expect(
+		shouldReseedAdminUsersWindow(
+			'q=&role=&verification=',
+			'q=&role=&verification=',
+		),
+	).toBe(false)
 
 	const refreshFailed = nextAdminUsersWindowAfterCreate({
 		currentItems: [existing],
