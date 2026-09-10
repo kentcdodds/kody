@@ -59,7 +59,6 @@ import {
 import {
 	runWithCurrentSecretAuthority,
 	runWithSecretAuthorityScope,
-	secretAuthorityArgName,
 	secretAuthorityHeaderName,
 	takeSecretAuthorityFromCapabilityArgs,
 } from '#mcp/secrets/secret-authority.ts'
@@ -238,15 +237,18 @@ function createKodyProxy(runtimeBridge, mcpServerNames) {
 				await runtimeBridge.callCapability({
 					name: property,
 					args: (() => {
-						const authority = __kodyRuntimeStorage.getStore()?.secretAuthorityPackageId;
+						const store = globalThis[Symbol.for('kody.runtimeStorage')]?.getStore?.();
+						const authority =
+							typeof store?.secretAuthorityPackageId === 'string'
+								? store.secretAuthorityPackageId.trim()
+								: '';
 						if (
-							typeof authority === 'string' &&
-							authority.trim() &&
+							authority &&
 							args != null &&
 							typeof args === 'object' &&
 							!Array.isArray(args)
 						) {
-							return { ...args, ${JSON.stringify(secretAuthorityArgName)}: authority.trim() };
+							return { ...args, '__kodySecretAuthorityPackageId': authority };
 						}
 						return args;
 					})(),

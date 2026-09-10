@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test, vi } from 'vitest'
+import { secretAuthorityArgName } from '#mcp/secrets/secret-authority.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 import { buildPackageStorageId } from '#worker/storage-ids.ts'
 import { createPackageStorageAccessDeniedMessage } from '#worker/storage-runner.ts'
@@ -203,6 +204,10 @@ test('package app kody.mcp supports calls, advertises connected servers, and ded
 			return { ok: true }
 		},
 	}
+
+	expect(await extractCreateKodyProxySource()).toContain(
+		`'${secretAuthorityArgName}'`,
+	)
 
 	const withoutNames = await createKodyProxyForTest(runtimeBridge)
 	await expect(
