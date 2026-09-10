@@ -1,27 +1,10 @@
 import { routes } from '#universal/routes.ts'
-
-const profilePackageVisibilities = ['all', 'public', 'private'] as const
-const profilePackageListings = [
-	'all',
-	'published',
-	'unpublished',
-	'ahead',
-] as const
-const profilePackageHiddenFilters = ['all', 'yes', 'no'] as const
-
-export type ProfilePackageVisibilityFilter =
-	(typeof profilePackageVisibilities)[number]
-export type ProfilePackageListingFilter =
-	(typeof profilePackageListings)[number]
-export type ProfilePackageHiddenFilter =
-	(typeof profilePackageHiddenFilters)[number]
-
-export type ProfilePackageFilters = {
-	query: string
-	visibility: ProfilePackageVisibilityFilter
-	listing: ProfilePackageListingFilter
-	hidden: ProfilePackageHiddenFilter
-}
+import {
+	type ProfilePackageFilters,
+	type ProfilePackageHiddenFilter,
+	type ProfilePackageListingFilter,
+	type ProfilePackageVisibilityFilter,
+} from '#universal/community-public-types.ts'
 
 const defaultProfilePackageFilters = {
 	query: '',

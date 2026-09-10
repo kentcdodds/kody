@@ -1,5 +1,8 @@
 import {
 	type OnboardingFeaturedListing,
+	type ProfilePackageHiddenFilter,
+	type ProfilePackageListingFilter,
+	type ProfilePackageVisibilityFilter,
 	type ProfileVisibility,
 	type PublicCommunityActivityItem,
 	type PublicCommunityListing,
@@ -19,11 +22,6 @@ import {
 	type CommunityListingCategory,
 } from '#universal/community-categories.ts'
 import { type CommunityListingSort } from '#universal/community-search.ts'
-import {
-	type ProfilePackageHiddenFilter,
-	type ProfilePackageListingFilter,
-	type ProfilePackageVisibilityFilter,
-} from '#universal/profile-search.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { type PackageFilesContentKind } from '#universal/package-file-media.ts'
 import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'

@@ -9,6 +9,10 @@ import {
 import { formatCommunityPublishedDate } from '#universal/community-display.ts'
 import { renderCommunityListingName } from '#universal/community-listing-name.tsx'
 import {
+	type ProfilePackageFilters,
+	type ProfilePackageHiddenFilter,
+	type ProfilePackageListingFilter,
+	type ProfilePackageVisibilityFilter,
 	type PublicCommunityActivityItem,
 	type PublicCommunityProfile,
 	type PublicProfilePackageItem,
@@ -17,10 +21,6 @@ import { getCommunityListingHref } from '#universal/community-links.ts'
 import {
 	buildProfileHref,
 	profilePackageFiltersAreActive,
-	type ProfilePackageFilters,
-	type ProfilePackageHiddenFilter,
-	type ProfilePackageListingFilter,
-	type ProfilePackageVisibilityFilter,
 } from '#universal/profile-search.ts'
 import { routes } from '#universal/routes.ts'
 import { UserAvatar } from '#universal/user-avatar.tsx'

@@ -6,11 +6,11 @@ import {
 } from '#app/data-cache.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { ensureCommunityFlowSchema } from './community-flow-test-schema.ts'
+import { listPublicProfilePackages } from './profile-package-list.ts'
 import { insertCommunityActivityEvent } from './profile-repo.ts'
 import {
 	getCommunityProfileByUsername,
 	getProfileActivity,
-	listPublicProfilePackages,
 	updateCommunityProfile,
 } from './profile-service.ts'
 

@@ -20,6 +20,9 @@ vi.mock('#worker/community/profile-service.ts', () => ({
 		mockModule.getCommunityProfileByUsername(...args),
 	getProfileActivity: (...args: Array<unknown>) =>
 		mockModule.getProfileActivity(...args),
+}))
+
+vi.mock('#worker/community/profile-package-list.ts', () => ({
 	listPublicProfilePackages: (...args: Array<unknown>) =>
 		mockModule.listPublicProfilePackages(...args),
 }))

@@ -140,6 +140,8 @@ export function ProfileRoute(handle: Handle) {
 		const href = readCurrentRouterHref(handle)
 		if (!isProfilePathname(new URL(href, 'http://localhost').pathname)) return
 
+		handle.update()
+
 		const frame = handle.frames.get(PROFILE_TARGET)
 		if (!frame) return
 
@@ -153,12 +155,6 @@ export function ProfileRoute(handle: Handle) {
 	return () => {
 		const username = getCurrentUsername(handle)
 		const currentHref = readCurrentRouterHref(handle)
-		// The frame decides which filters the viewer may use; the shell only
-		// carries whatever is in the URL forward when a new search is submitted.
-		const filters = readProfilePackageFiltersFromHref(currentHref, {
-			allowOwnerFilters: true,
-		})
-		const searchQuery = filters.query
 
 		if (!username) {
 			return (
@@ -205,6 +201,12 @@ export function ProfileRoute(handle: Handle) {
 			shell != null && shell.ok && shellLoadedForUsername === username
 				? shell
 				: null
+		// The frame decides which filters the viewer may use; the shell only
+		// carries owner-only params forward when this is the signed-in owner.
+		const filters = readProfilePackageFiltersFromHref(currentHref, {
+			allowOwnerFilters: readyShell?.isSelf === true,
+		})
+		const searchQuery = filters.query
 
 		if (showUnavailable) {
 			return (

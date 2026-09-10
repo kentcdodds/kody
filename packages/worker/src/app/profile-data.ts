@@ -11,10 +11,10 @@ import {
 import { type ProfileLoaderData } from '#universal/loader-data.ts'
 import { readProfilePackageFiltersFromUrl } from '#universal/profile-search.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
+import { listPublicProfilePackages } from '#worker/community/profile-package-list.ts'
 import {
 	getCommunityProfileByUsername,
 	getProfileActivity,
-	listPublicProfilePackages,
 } from '#worker/community/profile-service.ts'
 
 const defaultProfilePackageLimit = 50

@@ -110,6 +110,22 @@ export type PublicProfilePackageItem = {
 	hidden?: boolean
 }
 
+/** GET query contract for the `/@username` package list. */
+export type ProfilePackageVisibilityFilter = 'all' | 'public' | 'private'
+export type ProfilePackageListingFilter =
+	| 'all'
+	| 'published'
+	| 'unpublished'
+	| 'ahead'
+export type ProfilePackageHiddenFilter = 'all' | 'yes' | 'no'
+
+export type ProfilePackageFilters = {
+	query: string
+	visibility: ProfilePackageVisibilityFilter
+	listing: ProfilePackageListingFilter
+	hidden: ProfilePackageHiddenFilter
+}
+
 export type CommunityActivityEventType =
 	| 'listing_published'
 	| 'listing_updated'
