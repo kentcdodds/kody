@@ -91,13 +91,17 @@ let stream = renderToStream(<App />, {
 			throw new Error(`Unable to resolve client entry export for ${entryId}`)
 		}
 
-		return {
-			href: await assetServer.getHref(entryId),
-			exportName,
-		}
+		let { href, importMap, preloads } =
+			await assetServer.getScriptEntry(entryId)
+		return { href, importMap, exportName, preloads }
 	},
 })
 ```
+
+`importMap` is optional. Return it when the asset server rewrites imports
+through import maps (`remix/assets`); Kody's origin bundles with Vite, so
+`resolveOriginClientEntry` (`packages/worker/src/app/ssr-render.tsx`) returns
+only `href`, `exportName`, and `preloads`.
 
 If the module export name differs from the component function name, include
 `#ExportName` in the entry ID or return the exact export name from
@@ -148,6 +152,18 @@ app.addEventListener('error', (event) => {
 
 await app.ready()
 ```
+
+`resolveFrame` is optional. The default fetches `src` with `Accept: text/html`,
+sends form bodies for non-GET methods, and renders HTML responses with `3xx` and
+`4xx` status codes inside the frame (validation errors, not-found pages) while
+throwing on `5xx` or non-HTML failures. Only pass your own resolver when you
+need more than that — Kody's (`packages/worker/client/entry.tsx`) adds the
+`x-remix-target` header the frame registry keys on, serves prefetched frame
+HTML, and retries idempotent fetches on transient network errors.
+
+`run()` degrades to full document navigation in browsers without the Navigation
+API or without `NavigateEvent.sourceElement`; no stub or polyfill is required
+before booting.
 
 ### `run` options
 
@@ -278,11 +294,10 @@ let html = await renderToString(<App />)
 
 ### Script elements in SSR
 
-Remix rc.1 requires a single string child for server-rendered `<script>`
-content. Non-string children render empty and report an error. Pass the source
-as a string (Kody's scroll-restoration inline script) or keep the element empty
-and set `src`. Script-tag sequences that could terminate the element stay
-escaped.
+Server-rendered `<script>` content must be a single string child. Non-string
+children render empty and report an error. Pass the source as a string (Kody's
+scroll-restoration inline script) or keep the element empty and set `src`.
+Script-tag sequences that could terminate the element stay escaped.
 
 ### CSS in SSR
 
