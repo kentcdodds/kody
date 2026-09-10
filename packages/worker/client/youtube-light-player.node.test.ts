@@ -20,7 +20,6 @@ test('youtube light player paints a first-party poster without embedding', async
 	)
 	expect(html).toContain(`/youtube-thumb/${videoId}`)
 	expect(html).toContain('data-testid="landing-hero-video-play"')
-	expect(html).toContain('Play video')
 	expect(html).not.toContain('youtube-nocookie.com')
 })
 

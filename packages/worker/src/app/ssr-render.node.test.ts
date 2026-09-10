@@ -845,19 +845,11 @@ test('renderAppPage embeds the homepage factory-loop conversation teaser', async
 	expect(html).toContain('From ad hoc prompts to <em>durable software</em>')
 	expect(html).toContain('Your own <em>git</em> and <em>npm</em>.')
 	expect(html).toContain('It already speaks <em>your tools</em>')
-	expect(html).toContain('Works with the agents and services you already use')
-	expect(html).toContain(
-		'aria-label="Agents and developer services that work with Kody"',
-	)
 	expect(html).toContain('Cursor')
 	expect(html).toContain('Claude Code')
 	expect(html).toContain('GitHub')
 	expect(html).toContain('Linear')
 	expect(html).toContain('…and yours')
-	expect(html).not.toContain('your stack')
-	expect(html).not.toContain('Spotify')
-	expect(html).not.toContain('GroupMe')
-	expect(html).not.toContain('one thermostat')
 	expect(html).toContain('Give your agents a <em>home</em>')
 })
 

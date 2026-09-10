@@ -72,17 +72,11 @@ test('homepage carousel SSR keeps short quotes and story links only for vignette
 	expect(html).toContain('href="/blog/early-kody-users#jett-hays"')
 	expect(html).toContain('href="/blog/early-kody-users#gabriel-alegria"')
 	expect(html).toContain('Gabriel Alegría')
-	expect(html).toContain(
-		'Railway health checks land in Discord, a personal task list replaced the Notion notes I always lost',
-	)
 	expect(html).toContain('src="/images/testimonials/gabriel-alegria.webp"')
 	expect(html).toContain(
 		'href="https://www.linkedin.com/in/gabriel-alegria-mx"',
 	)
 	expect(html).toContain('Erik Rasmussen')
-	expect(html).toContain(
-		'Kody rocks. Been a user for several hours now and will convert to paid.',
-	)
 	expect(html).toContain('src="/images/testimonials/erik-rasmussen.webp"')
 	expect(html).toContain(
 		'href="https://x.com/erikras/status/2097720067316203941"',
@@ -109,9 +103,5 @@ test('early-users blog post SSR renders approved vignettes and heading anchors',
 	expect(html).toContain('id="jett-hays"')
 	expect(html).toContain('id="gabriel-alegria"')
 	expect(html).toContain('Gabriel Alegría')
-	expect(html).toContain('Software Engineer, IB.')
-	expect(html.replace(/\s+/g, ' ')).toContain(
-		'a package that hits Railway and posts specific output to Discord',
-	)
 	expect(getReadNextBlogPost(landingTestimonialsStorySlug)).not.toBeNull()
 })

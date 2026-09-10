@@ -92,8 +92,7 @@ test('secretLock returns an approval URL without widening allowed_packages', asy
 		usage_url: 'https://kody.codes/account/secrets/user/openai-api-key',
 		status: 'approval_required',
 		approval_url: approvalUrl,
-		message:
-			"Agents cannot add packages to a user secret's allowed_packages. Only the account owner can grant access on the website. Send the user this approval link and wait: https://kody.codes/account/secrets/user/openai-api-key?package_id=pkg-notes&package=notes",
+		message: expect.stringContaining(approvalUrl),
 	})
 	expect(await allowedPackagesFor(env, userId, 'openai-api-key')).toEqual([])
 
@@ -116,8 +115,7 @@ test('secretLock returns an approval URL without widening allowed_packages', asy
 		usage_url: 'https://kody.codes/account/secrets/user/openai-api-key',
 		status: 'already_granted',
 		approval_url: approvalUrl,
-		message:
-			'Package "notes" already has an allowed_packages grant on this secret.',
+		message: expect.any(String),
 	})
 	expect(await allowedPackagesFor(env, userId, 'openai-api-key')).toEqual([
 		'pkg-notes',

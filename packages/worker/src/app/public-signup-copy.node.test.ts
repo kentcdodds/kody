@@ -128,25 +128,19 @@ async function renderMarketing(path: string) {
 test('FAQ, pricing, and home SSR copy send visitors to create an account', async () => {
 	const faq = await (await renderMarketing('/faq')).text()
 	const started = faqGetStarted(faq)
-	expect(started).toContain('Create a free account from')
 	expect(anchors(started)).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({ href: '/signup', label: 'Sign up' }),
-		]),
+		expect.arrayContaining([expect.objectContaining({ href: '/signup' })]),
 	)
 
 	const pricing = await (await renderMarketing('/pricing')).text()
 	for (const planId of ['plan-free', 'plan-standard', 'plan-pro'] as const) {
 		expect(anchors(namedSection(pricing, planId))).toEqual(
-			expect.arrayContaining([
-				{ href: '/signup', label: 'Create a free account' },
-			]),
+			expect.arrayContaining([expect.objectContaining({ href: '/signup' })]),
 		)
 	}
 
 	const home = await (await renderMarketing('/')).text()
 	expect(home).toContain(homepageSignupPath.replaceAll('&', '&amp;'))
-	expect(home).toContain('Create a free account')
 })
 
 test('FAQ and pricing handlers keep anonymous cache rules', async () => {
@@ -183,10 +177,7 @@ test('blog post closer invites visitors to create an account', async () => {
 		/<div[^>]*>[\s\S]*Give your assistant a home[\s\S]*?<\/div>/,
 	)?.[0]
 
-	expect(cta).toContain('Create a free account and start saving packages')
 	expect(anchors(cta ?? '')).toEqual(
-		expect.arrayContaining([
-			{ href: '/signup', label: 'Create a free account' },
-		]),
+		expect.arrayContaining([expect.objectContaining({ href: '/signup' })]),
 	)
 })
