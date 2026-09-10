@@ -700,23 +700,26 @@ token and invalidate the sibling. `packages/worker/src/oauth-refresh-family.ts`
 intercepts `POST /oauth/token` refresh grants:
 
 - Reuse of the current family's previous refresh token returns the stored
-  current access and refresh tokens when the access token has at least 60
-  seconds left. The grant does not rotate again.
-- The same reuse, when the stored access token is too close to expiry, refreshes
-  once through the stored _current_ refresh token and records a replay for the
-  presented previous token so overlapping siblings converge on that result.
+  current access and refresh tokens. The grant does not rotate again, even when
+  that access token is near expiry — only presenting the current refresh token
+  rotates. The sibling can then refresh with the current token.
 - A one-hour replay record keyed by the consumed refresh-token hash returns that
-  same current family when the hash still matches the grant's current token.
-  After the next rotation the old replay no longer matches and the consumed
-  token is `invalid_grant`.
+  same current family when the hash still matches the grant's current token,
+  even when the stored access token is near expiry. After the next rotation the
+  old replay no longer matches and the consumed token is `invalid_grant`. The
+  one-hour TTL is maximum retention, not guaranteed acceptance.
 - Tokens that are neither current, previous, nor a still-matching replay do not
   mint. Stolen refresh tokens therefore cannot walk the family forever; they
-  work only while they remain the current or previous token, or during the
-  one-hour replay window of the rotation that consumed them.
+  work only while they remain the current or previous token, or while a replay
+  still matches the grant's current hash.
+- Two hosts that present the same current refresh token at the same instant can
+  still race the provider before a snapshot exists. The interceptor does not
+  serialize those current-token refreshes.
 - Encrypted snapshots live in `BUNDLE_ARTIFACTS_KV` under
   `derived-cache:v1:mcp-oauth-refresh-family:` / `-replay:` with KV TTLs of two
   hours and one hour. Retention is the TTL, so account deletion does not sweep
-  those keys.
+  those keys. Snapshot writes are best-effort: a KV or encrypt failure does not
+  replace the provider's minted response.
 
 `/mcp` is protected by `packages/worker/src/mcp-auth.ts`:
 

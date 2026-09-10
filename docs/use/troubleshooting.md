@@ -24,9 +24,10 @@ the expired access token, get a 401, and ask for a full browser login instead.
 
 Concurrent MCP hosts that share one stored Kody OAuth client can refresh at the
 same time. Reusing the previous refresh token returns the current family tokens
-instead of minting a new one that invalidates siblings. A refresh token older
-than the current/previous pair (and outside the one-hour replay window) is
-`invalid_grant` and needs a new browser login.
+instead of minting a new one that invalidates siblings. A consumed token's
+one-hour replay is the maximum retention, not a guarantee: after the next
+rotation that replay no longer matches and is `invalid_grant`. Tokens outside
+the current/previous pair and that window also need a new browser login.
 
 Try this first:
 

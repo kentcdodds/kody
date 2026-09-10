@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/cloudflare'
 import {
 	decryptSecretValue,
 	encryptSecretValue,
@@ -12,14 +13,12 @@ import {
  *
  * Kody keeps an encrypted snapshot of the current family tokens and treats
  * reuse of the immediately previous refresh token as idempotent: return the
- * current tokens when the access token is still usable, and rotate at most
- * once (via the stored current refresh token) when it is not. A one-hour
- * replay of the consumed token returns that same current family while the
- * hash still matches. Tokens outside that family do not mint. See
- * `docs/contributing/architecture/authentication.md`.
+ * current tokens without rotating, even when the stored access token is near
+ * expiry. A one-hour replay of the consumed token returns that same current
+ * family while the hash still matches. Tokens outside that family do not
+ * mint. See `docs/contributing/architecture/authentication.md`.
  */
 
-const mcpOAuthRefreshFamilyMinAccessRemainingSeconds = 60
 const mcpOAuthRefreshFamilyReplayTtlSeconds = 60 * 60
 const mcpOAuthRefreshFamilySnapshotTtlSeconds = 60 * 60 * 2
 
@@ -31,7 +30,6 @@ const refreshFamilyReplayKeyPrefix =
 export type RefreshFamilyActionKind =
 	| 'return-snapshot'
 	| 'return-replay'
-	| 'refresh-stored-current'
 	| 'pass-through'
 
 export type RefreshFamilyAction = { kind: RefreshFamilyActionKind }
@@ -112,21 +110,12 @@ export function decideRefreshFamilyAction(input: {
 	grant: RefreshFamilyGrantIds | null
 	snapshot: RefreshFamilySnapshot | null
 	replay: RefreshFamilySnapshot | null
-	nowSeconds: number
-	minAccessRemainingSeconds?: number
 }): RefreshFamilyAction {
-	const minRemaining =
-		input.minAccessRemainingSeconds ??
-		mcpOAuthRefreshFamilyMinAccessRemainingSeconds
 	const replayIsCurrentFamily =
 		input.replay !== null &&
 		input.grant !== null &&
 		input.replay.currentRefreshTokenHash === input.grant.currentRefreshTokenHash
-	if (
-		replayIsCurrentFamily &&
-		input.replay &&
-		input.replay.accessExpiresAt - input.nowSeconds >= minRemaining
-	) {
+	if (replayIsCurrentFamily) {
 		return { kind: 'return-replay' }
 	}
 	if (!input.grant || !input.snapshot) {
@@ -138,16 +127,10 @@ export function decideRefreshFamilyAction(input: {
 	if (!snapshotMatchesCurrent) {
 		return { kind: 'pass-through' }
 	}
-	const isPrevious =
-		input.presentedHash === input.grant.previousRefreshTokenHash
-	if (!isPrevious) {
-		return { kind: 'pass-through' }
-	}
-	const accessRemaining = input.snapshot.accessExpiresAt - input.nowSeconds
-	if (accessRemaining >= minRemaining) {
+	if (input.presentedHash === input.grant.previousRefreshTokenHash) {
 		return { kind: 'return-snapshot' }
 	}
-	return { kind: 'refresh-stored-current' }
+	return { kind: 'pass-through' }
 }
 
 export async function handleMcpOAuthTokenRequest(input: {
@@ -176,7 +159,7 @@ export async function handleMcpOAuthTokenRequest(input: {
 	}
 	const response = await input.fetchProvider(input.request)
 	if (response.ok) {
-		await persistRefreshFamilyFromTokenResponse({
+		await persistRefreshFamilyBestEffort({
 			env: input.env,
 			response,
 			presentedRefreshToken:
@@ -227,32 +210,12 @@ async function tryRefreshFamilyReuse(input: {
 		grant,
 		snapshot,
 		replay,
-		nowSeconds: Math.floor(Date.now() / 1000),
 	})
 	switch (action.kind) {
 		case 'return-replay':
 			return replay ? createFamilyTokenResponse(replay) : null
 		case 'return-snapshot':
 			return snapshot ? createFamilyTokenResponse(snapshot) : null
-		case 'refresh-stored-current': {
-			if (!snapshot) return null
-			const providerResponse = await input.fetchProvider(
-				rewriteRefreshTokenRequest(
-					input.request,
-					input.formData,
-					snapshot.refreshToken,
-				),
-			)
-			if (providerResponse.ok) {
-				await persistRefreshFamilyFromTokenResponse({
-					env: input.env,
-					response: providerResponse,
-					presentedRefreshToken: presented,
-					alsoReplayToken: snapshot.refreshToken,
-				})
-			}
-			return providerResponse
-		}
 		case 'pass-through':
 			return null
 		default: {
@@ -262,11 +225,24 @@ async function tryRefreshFamilyReuse(input: {
 	}
 }
 
+async function persistRefreshFamilyBestEffort(input: {
+	env: Env
+	response: Response
+	presentedRefreshToken: string | null
+}) {
+	try {
+		await persistRefreshFamilyFromTokenResponse(input)
+	} catch (error) {
+		// Snapshot writes are best-effort. The provider already minted tokens;
+		// a KV or encrypt failure must not hide that response.
+		Sentry.captureException(error)
+	}
+}
+
 async function persistRefreshFamilyFromTokenResponse(input: {
 	env: Env
 	response: Response
 	presentedRefreshToken: string | null
-	alsoReplayToken?: string
 }) {
 	if (!canPersistRefreshFamily(input.env)) return
 	const body = (await input.response
@@ -295,15 +271,11 @@ async function persistRefreshFamilyFromTokenResponse(input: {
 		resource: typeof body.resource === 'string' ? body.resource : undefined,
 	}
 	await writeRefreshFamilySnapshot(input.env, snapshot)
-	const replayTokens = [
-		input.presentedRefreshToken,
-		input.alsoReplayToken,
-	].filter((token): token is string => typeof token === 'string')
-	for (const token of replayTokens) {
+	if (input.presentedRefreshToken) {
 		await writeRefreshFamilyReplay(
 			input.env,
 			snapshot,
-			await hashOAuthToken(token),
+			await hashOAuthToken(input.presentedRefreshToken),
 		)
 	}
 }
@@ -433,25 +405,6 @@ async function writeRefreshFamilyReplay(
 
 function refreshFamilySecretContext(userId: string, grantId: string) {
 	return `mcp-oauth-refresh-family:${userId}:${grantId}`
-}
-
-function rewriteRefreshTokenRequest(
-	request: Request,
-	formData: FormData,
-	refreshToken: string,
-) {
-	const params = new URLSearchParams()
-	for (const [key, value] of formData.entries()) {
-		if (typeof value === 'string') {
-			params.append(key, value)
-		}
-	}
-	params.set('refresh_token', refreshToken)
-	return new Request(request.url, {
-		method: request.method,
-		headers: request.headers,
-		body: params,
-	})
 }
 
 function createFamilyTokenResponse(snapshot: RefreshFamilySnapshot) {
