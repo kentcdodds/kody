@@ -32,4 +32,5 @@ export type PackageShareFileChange = {
 	change: 'added' | 'removed' | 'modified'
 	accepted: string | null
 	current: string | null
+	truncated: boolean
 }

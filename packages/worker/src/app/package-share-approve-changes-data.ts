@@ -2,7 +2,7 @@ import { type PackageShareApproveChangesLoaderData } from '#universal/loader-dat
 import { diffPublishedSourceFiles } from '#app/package-share-diff.ts'
 import {
 	getPackageShareGrantById,
-	hydratePackageShareGrantView,
+	requireHydratedPackageShareGrantView,
 	PackageShareAccessError,
 	toPackageShareGrantLoaderView,
 } from '#worker/package-registry/share-grants.ts'
@@ -33,7 +33,7 @@ export async function loadPackageShareApproveChangesData(input: {
 			'Share grant does not match this package.',
 		)
 	}
-	const view = await hydratePackageShareGrantView({
+	const view = await requireHydratedPackageShareGrantView({
 		db: input.env.APP_DB,
 		grant,
 	})
@@ -67,14 +67,19 @@ export async function loadPackageShareApproveChangesData(input: {
 			publishedCommit: currentCommit,
 		}),
 	])
+	if (!acceptedSnapshot || !currentSnapshot) {
+		throw new PackageShareAccessError(
+			'Published package source could not be loaded for comparison.',
+		)
+	}
 	return {
 		ok: true,
 		grant: toPackageShareGrantLoaderView(view),
 		acceptedCommit,
 		currentCommit,
 		files: diffPublishedSourceFiles(
-			acceptedSnapshot?.files ?? {},
-			currentSnapshot?.files ?? {},
+			acceptedSnapshot.files,
+			currentSnapshot.files,
 		),
 	}
 }

@@ -48,6 +48,7 @@ export function AccountSharedRoute(handle: Handle) {
 	let message: string | null = null
 	let busy = false
 	let payload: AccountSharedLoaderData | null = null
+	let appliedSnapshot: AccountSharedLoaderData | null = null
 	const sharedData = createRouteData({
 		key: 'accountShared',
 		async load(_href, signal) {
@@ -96,7 +97,8 @@ export function AccountSharedRoute(handle: Handle) {
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
 		const snapshot = sharedData.read(handle, currentHref)
-		if (snapshot.data && snapshot.data !== payload) {
+		if (snapshot.data && snapshot.data !== appliedSnapshot) {
+			appliedSnapshot = snapshot.data
 			payload = snapshot.data
 		}
 		const data = payload

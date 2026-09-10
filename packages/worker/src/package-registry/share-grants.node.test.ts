@@ -10,6 +10,7 @@ import {
 	assertPackageShareUseAllowed,
 	attachPendingPackageShareInvitesForEmail,
 	authorizeSharedPackagePermission,
+	hydratePackageShareGrantViews,
 	invitePackageShare,
 	isShareGrantedForeignPackage,
 	leavePackageShare,
@@ -160,7 +161,8 @@ test('invite, accept, revoke, and leave follow paid and accept-required rules', 
 	})
 	expect(invited.status).toBe('pending')
 	expect(invited.granteeUserId).toBe(guestUserId)
-	expect(invited.inviteeEmail).toBe('jesse@example.com')
+	expect(invited.inviteeEmail).toBeNull()
+	expect(invited.inviteeUsername).toBe('jesse')
 
 	await expect(
 		invitePackageShare({
@@ -447,5 +449,119 @@ test('outbound and inbound lists separate owner and guest views', async () => {
 		email: 'jesse@example.com',
 	})
 	expect(inbound).toHaveLength(1)
-	expect(inbound[0]?.inviteeEmail).toBe('jesse@example.com')
+	expect(inbound[0]?.inviteeEmail).toBeNull()
+	expect(inbound[0]?.inviteeUsername).toBe('jesse')
+})
+
+test('username invites do not expose the invitee email to the owner', async () => {
+	const { db, packageId } = await createHarness()
+	const invited = await invitePackageShare({
+		db,
+		owner: {
+			userId: ownerUserId,
+			email: 'alice@example.com',
+			displayName: 'Alice',
+			username: 'alice',
+		},
+		packageId,
+		invitee: { username: 'jesse' },
+	})
+	expect(invited.inviteeEmail).toBeNull()
+	const views = await hydratePackageShareGrantViews(db, [invited])
+	expect(views[0]?.inviteeEmail).toBeNull()
+	expect(views[0]?.inviteeUsername).toBe('jesse')
+})
+
+test('a later owner of an invite email cannot steal a bound grant', async () => {
+	const { db, packageId } = await createHarness()
+	const invited = await invitePackageShare({
+		db,
+		owner: {
+			userId: ownerUserId,
+			email: 'alice@example.com',
+			displayName: 'Alice',
+			username: 'alice',
+		},
+		packageId,
+		invitee: { email: 'steal@example.com' },
+	})
+	expect(invited.granteeUserId).toBeNull()
+	await attachPendingPackageShareInvitesForEmail({
+		db,
+		userId: guestUserId,
+		email: 'steal@example.com',
+		username: 'jesse',
+	})
+	await db
+		.prepare(`UPDATE users SET email = ? WHERE stable_user_id = ?`)
+		.bind('jesse-released@example.com', guestUserId)
+		.run()
+	const attackerUserId = 'dd'.repeat(32)
+	await insertUser(db, {
+		username: 'attacker',
+		email: 'steal@example.com',
+		userId: attackerUserId,
+		plan: 'standard',
+	})
+	const inbound = await listInboundPackageShareGrants(db, {
+		userId: attackerUserId,
+		email: 'steal@example.com',
+		emailVerified: true,
+	})
+	expect(inbound.some((grant) => grant.id === invited.id)).toBe(false)
+	await expect(
+		acceptPackageShare({
+			db,
+			guest: {
+				userId: attackerUserId,
+				email: 'steal@example.com',
+				displayName: 'Attacker',
+				username: 'attacker',
+			},
+			grantId: invited.id,
+		}),
+	).rejects.toThrow('not addressed')
+})
+
+test('unverified email does not reveal unbound email invites', async () => {
+	const { db, packageId } = await createHarness()
+	await invitePackageShare({
+		db,
+		owner: {
+			userId: ownerUserId,
+			email: 'alice@example.com',
+			displayName: 'Alice',
+			username: 'alice',
+		},
+		packageId,
+		invitee: { email: 'unverified@example.com' },
+	})
+	const inbound = await listInboundPackageShareGrants(db, {
+		userId: guestUserId,
+		email: 'unverified@example.com',
+		emailVerified: false,
+	})
+	expect(inbound).toHaveLength(0)
+})
+
+test('hydrate skips grants whose saved package is gone', async () => {
+	const { db, packageId } = await createHarness()
+	await invitePackageShare({
+		db,
+		owner: {
+			userId: ownerUserId,
+			email: 'alice@example.com',
+			displayName: 'Alice',
+			username: 'alice',
+		},
+		packageId,
+		invitee: { username: 'jesse' },
+	})
+	await db
+		.prepare(`DELETE FROM saved_packages WHERE id = ?`)
+		.bind(packageId)
+		.run()
+	const outbound = await listOutboundPackageShareGrants(db, ownerUserId)
+	expect(outbound).toHaveLength(1)
+	expect(await hydratePackageShareGrantViews(db, outbound)).toEqual([])
 })

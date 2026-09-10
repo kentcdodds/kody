@@ -897,17 +897,24 @@ export async function runBundledModuleWithRegistry(
 			dependencies: bundle.dependencies ?? [],
 			dynamicDependencyPackageIds,
 		})
-		const storageOwnerByPackageId = collectShareOwnedStorageOwners({
+		const artifactOwners = collectShareOwnedStorageOwners({
 			dependencies: bundle.dependencies ?? [],
 		})
+		const storageOwnerByPackageId = new Map<string, string>()
 		if (callerContext.user?.userId) {
 			const shareOwners = await collectShareStorageOwners({
 				db: env.APP_DB,
 				callerUserId: callerContext.user.userId,
 				packageIds: grantedPackageStorageIds,
 			})
+			const allowedOwners = new Set(shareOwners.values())
 			for (const [packageId, ownerUserId] of shareOwners) {
 				storageOwnerByPackageId.set(packageId, ownerUserId)
+			}
+			for (const [packageId, ownerUserId] of artifactOwners) {
+				if (shareOwners.has(packageId) || allowedOwners.has(ownerUserId)) {
+					storageOwnerByPackageId.set(packageId, ownerUserId)
+				}
 			}
 		}
 		// Static package export calls report through a sandbox bridge with a

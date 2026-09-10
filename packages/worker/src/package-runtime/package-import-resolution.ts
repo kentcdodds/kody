@@ -104,6 +104,24 @@ export async function resolveSavedPackageImport(input: {
 			? parseKodyPackageSpecifier(input.specifier)
 			: input.specifier
 
+	if (
+		input.nestedShareOwnerUserId &&
+		input.nestedShareOwnerUserId !== input.userId
+	) {
+		const ownerOwned = await getSavedPackageByName(input.db, {
+			userId: input.nestedShareOwnerUserId,
+			name: parsed.packageName,
+		})
+		if (ownerOwned) {
+			return {
+				row: ownerOwned,
+				sourceOwnerUserId: input.nestedShareOwnerUserId,
+				platformScope: null,
+				shareOwned: true,
+				storageOwnerUserId: input.nestedShareOwnerUserId,
+			}
+		}
+	}
 	const own = await getSavedPackageByName(input.db, {
 		userId: input.userId,
 		name: parsed.packageName,
@@ -127,24 +145,6 @@ export async function resolveSavedPackageImport(input: {
 			platformScope: null,
 			shareOwned: true,
 			storageOwnerUserId: shared.sourceOwnerUserId,
-		}
-	}
-	if (
-		input.nestedShareOwnerUserId &&
-		input.nestedShareOwnerUserId !== input.userId
-	) {
-		const ownerOwned = await getSavedPackageByName(input.db, {
-			userId: input.nestedShareOwnerUserId,
-			name: parsed.packageName,
-		})
-		if (ownerOwned) {
-			return {
-				row: ownerOwned,
-				sourceOwnerUserId: input.nestedShareOwnerUserId,
-				platformScope: null,
-				shareOwned: true,
-				storageOwnerUserId: input.nestedShareOwnerUserId,
-			}
 		}
 	}
 	if (input.allowPlatformScopes !== true) return null

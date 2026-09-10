@@ -126,12 +126,17 @@ export async function loadPackageShareGrants(input: {
 			signal: input.signal,
 		},
 	)
-	if (!response.ok) return []
+	if (!response.ok) {
+		throw new Error('Unable to load share grants.')
+	}
 	const payload = (await response.json()) as {
 		ok?: boolean
 		grants?: Array<PackageShareGrantLoaderView>
 	}
-	return payload.ok ? (payload.grants ?? []) : []
+	if (!payload.ok) {
+		throw new Error('Unable to load share grants.')
+	}
+	return payload.grants ?? []
 }
 
 const sectionCss = {

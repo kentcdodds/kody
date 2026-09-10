@@ -268,6 +268,7 @@ export function CommunityDetailRoute(handle: Handle) {
 
 	async function submitShareAccept(trustLevel: 'follow' | 'pin') {
 		if (!shareGrant || shareBusy) return
+		const pathname = readRouterPathname(handle)
 		shareBusy = true
 		shareMessage = null
 		handle.update()
@@ -278,6 +279,7 @@ export function CommunityDetailRoute(handle: Handle) {
 			grantId: shareGrant.id,
 			trustLevel,
 		})
+		if (readRouterPathname(handle) !== pathname) return
 		shareBusy = false
 		if (result.status === 'unauthorized') {
 			window.location.assign('/login')
@@ -294,6 +296,7 @@ export function CommunityDetailRoute(handle: Handle) {
 
 	async function submitShareLeave() {
 		if (!shareGrant || shareBusy) return
+		const pathname = readRouterPathname(handle)
 		shareBusy = true
 		shareMessage = null
 		handle.update()
@@ -303,6 +306,7 @@ export function CommunityDetailRoute(handle: Handle) {
 			kodyId,
 			grantId: shareGrant.id,
 		})
+		if (readRouterPathname(handle) !== pathname) return
 		shareBusy = false
 		if (result.status === 'unauthorized') {
 			window.location.assign('/login')

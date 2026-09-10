@@ -117,6 +117,7 @@ export function PackageShareApproveChangesRoute(handle: Handle) {
 			payload = snapshot.data
 		}
 		const pending = snapshot.kind === 'pending'
+		const reviewBlocked = payload?.files.some((file) => file.truncated) === true
 
 		return (
 			<AccountManagementShell busy={pending && payload !== null}>
@@ -135,10 +136,17 @@ export function PackageShareApproveChangesRoute(handle: Handle) {
 							<code>{payload.acceptedCommit.slice(0, 7)}</code> → current{' '}
 							<code>{payload.currentCommit.slice(0, 7)}</code>
 						</p>
+						{reviewBlocked ? (
+							<AccountManagementMessage>
+								One or more files were truncated, so this pin cannot be approved
+								here. Switch the grant to follow, or ask the owner to split the
+								source.
+							</AccountManagementMessage>
+						) : null}
 						<div mix={css(actionsCss)}>
 							<button
 								type="button"
-								disabled={busy}
+								disabled={busy || reviewBlocked}
 								mix={[
 									css(getPillButtonCss()),
 									on('click', () => void approve(false)),
@@ -148,7 +156,7 @@ export function PackageShareApproveChangesRoute(handle: Handle) {
 							</button>
 							<button
 								type="button"
-								disabled={busy}
+								disabled={busy || reviewBlocked}
 								mix={[
 									css(getGhostButtonCss()),
 									on('click', () => void approve(true)),
@@ -165,16 +173,23 @@ export function PackageShareApproveChangesRoute(handle: Handle) {
 								<section key={file.path} mix={css(fileCss)}>
 									<h2>
 										{file.change} · {file.path}
+										{file.truncated ? ' · truncated' : ''}
 									</h2>
 									{file.accepted ? (
-										<pre>
-											<code>{file.accepted}</code>
-										</pre>
+										<>
+											<h3>Accepted version</h3>
+											<pre>
+												<code>{file.accepted}</code>
+											</pre>
+										</>
 									) : null}
 									{file.current ? (
-										<pre>
-											<code>{file.current}</code>
-										</pre>
+										<>
+											<h3>Current version</h3>
+											<pre>
+												<code>{file.current}</code>
+											</pre>
+										</>
 									) : null}
 								</section>
 							))
@@ -211,6 +226,11 @@ const fileCss = {
 	'& h2': {
 		margin: `0 0 ${spacing.sm}`,
 		fontSize: '1rem',
+	},
+	'& h3': {
+		margin: `${spacing.md} 0 ${spacing.xs}`,
+		fontSize: '0.88rem',
+		color: colors.textMuted,
 	},
 	'& pre': {
 		overflow: 'auto',

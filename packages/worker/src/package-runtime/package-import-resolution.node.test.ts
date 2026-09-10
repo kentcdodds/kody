@@ -271,3 +271,45 @@ test('resolveSavedPackageImport resolves accepted share grants and not pending o
 	})
 	expect(resolved?.row.id).toBe(packageId)
 })
+
+test('nested shared imports prefer the owner package over the guest name collision', async () => {
+	const { db } = await createHarness()
+	const ownerUserId = 'aa'.repeat(32)
+	const guestUserId = 'bb'.repeat(32)
+	await db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
+			VALUES (?, ?, 'x', CURRENT_TIMESTAMP, ?, ?)`,
+		)
+		.bind('alice', 'alice@example.com', ownerUserId, 'standard')
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
+			VALUES (?, ?, 'x', CURRENT_TIMESTAMP, ?, ?)`,
+		)
+		.bind('jesse', 'jesse@example.com', guestUserId, 'standard')
+		.run()
+	const ownerHelperId = await seedPackage(db, {
+		userId: ownerUserId,
+		name: '@alice/helper',
+		kodyId: 'helper',
+		isPrivate: true,
+	})
+	const guestHelperId = await seedPackage(db, {
+		userId: guestUserId,
+		name: '@alice/helper',
+		kodyId: 'helper',
+		isPrivate: true,
+	})
+	const resolved = await resolveSavedPackageImport({
+		db,
+		userId: guestUserId,
+		specifier: 'kody:@alice/helper',
+		nestedShareOwnerUserId: ownerUserId,
+	})
+	expect(resolved?.row.id).toBe(ownerHelperId)
+	expect(resolved?.shareOwned).toBe(true)
+	expect(resolved?.storageOwnerUserId).toBe(ownerUserId)
+	expect(guestHelperId).not.toBe(ownerHelperId)
+})

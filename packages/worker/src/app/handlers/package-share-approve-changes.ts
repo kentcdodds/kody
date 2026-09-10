@@ -123,6 +123,29 @@ export function createCommunityPackageApproveChangesApiHandler(env: Env) {
 			if (page.kind !== 'page' || !page.shareGrant) {
 				return jsonResponse({ ok: false, error: 'Not found.' }, 404)
 			}
+			try {
+				const review = await loadPackageShareApproveChangesData({
+					env,
+					granteeUserId: user.mcpUser.userId,
+					grantId: page.shareGrant.id,
+					packageId: page.shareGrant.packageId,
+				})
+				if (review.files.some((file) => file.truncated)) {
+					return jsonResponse(
+						{
+							ok: false,
+							error:
+								'Published source is truncated, so this pin cannot be approved without a complete review.',
+						},
+						400,
+					)
+				}
+			} catch (error) {
+				return jsonResponse(
+					{ ok: false, error: packageShareAccessErrorMessage(error) },
+					400,
+				)
+			}
 			const body = await request.json().catch(() => null)
 			const result = await applyPackageShareMutation({
 				env,

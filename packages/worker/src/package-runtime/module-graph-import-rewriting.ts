@@ -203,7 +203,9 @@ async function ensurePackageLoaded(
 	nestedShareOwnerUserId?: string,
 ): Promise<LoadedKodyGraphPackage> {
 	const parsed = parseKodyPackageSpecifier(specifier)
-	const packageKey = parsed.packageName
+	const packageKey = nestedShareOwnerUserId
+		? `${parsed.packageName}#${nestedShareOwnerUserId}`
+		: parsed.packageName
 	const existing = state.packages.get(packageKey)
 	if (existing) return existing
 	const resolution = await resolveSavedPackageImport({

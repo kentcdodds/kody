@@ -319,6 +319,9 @@ export const packageSearchEntityPlugin = {
 						hasApp: entry.record.hasApp,
 						hidden: entry.record.hidden,
 						platformScope: entry.platformScope ?? null,
+						ownerUsername: entry.shareGranted
+							? (entry.record.name.replace(/^@/, '').split('/')[0] ?? null)
+							: null,
 						readmeSnippet: entry.readmeSnippet ?? null,
 						actionMatches,
 						...(entry.listingAhead === true
@@ -470,7 +473,8 @@ export const packageSearchEntityPlugin = {
 			// Platform package apps are hosted under the platform account's
 			// username, not the caller's.
 			hostedUrl: (() => {
-				const hostedUsername = match.platformScope ?? username
+				const hostedUsername =
+					match.platformScope ?? match.ownerUsername ?? username
 				return match.hasApp && hostedUsername
 					? buildPackageHostedUrl({
 							packageAppBaseUrl: packageAppBaseUrl ?? null,

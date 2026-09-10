@@ -4,7 +4,7 @@ import { applyPackageShareMutation } from '#app/package-share-actions.ts'
 import { loadPackagePage } from '#app/package-page.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
-	hydratePackageShareGrantView,
+	hydratePackageShareGrantViews,
 	listPackageShareGrantsByPackageId,
 	toPackageShareGrantLoaderView,
 } from '#worker/package-registry/share-grants.ts'
@@ -47,11 +47,7 @@ export function createCommunityPackageShareApiHandler(env: Env) {
 						env.APP_DB,
 						packageId,
 					)
-					const views = await Promise.all(
-						grants.map((grant) =>
-							hydratePackageShareGrantView({ db: env.APP_DB, grant }),
-						),
-					)
+					const views = await hydratePackageShareGrantViews(env.APP_DB, grants)
 					return jsonResponse({
 						ok: true,
 						grants: views.map(toPackageShareGrantLoaderView),

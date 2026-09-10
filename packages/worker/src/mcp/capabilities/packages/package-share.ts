@@ -8,7 +8,8 @@ import {
 	acknowledgePackageShareUpdate,
 	defaultPackageShareTrustLevel,
 	getPackageShareGrantById,
-	hydratePackageShareGrantView,
+	hydratePackageShareGrantViews,
+	requireHydratedPackageShareGrantView,
 	invitePackageShare,
 	leavePackageShare,
 	listInboundPackageShareGrants,
@@ -68,9 +69,7 @@ async function hydrateGrants(
 	db: D1Database,
 	grants: Array<PackageShareGrantRow>,
 ): Promise<Array<PackageShareGrantView>> {
-	return await Promise.all(
-		grants.map((grant) => hydratePackageShareGrantView({ db, grant })),
-	)
+	return await hydratePackageShareGrantViews(db, grants)
 }
 
 function throwShareError(error: unknown): never {
@@ -120,7 +119,7 @@ export const packageShareInviteCapability = defineDomainCapability(
 				})
 				return {
 					grant: toPackageShareGrantPayload(
-						await hydratePackageShareGrantView({
+						await requireHydratedPackageShareGrantView({
 							db: ctx.env.APP_DB,
 							grant,
 						}),
@@ -172,7 +171,7 @@ export const packageShareAcceptCapability = defineDomainCapability(
 				})
 				return {
 					grant: toPackageShareGrantPayload(
-						await hydratePackageShareGrantView({
+						await requireHydratedPackageShareGrantView({
 							db: ctx.env.APP_DB,
 							grant,
 						}),
@@ -209,7 +208,7 @@ export const packageShareRevokeCapability = defineDomainCapability(
 				})
 				return {
 					grant: toPackageShareGrantPayload(
-						await hydratePackageShareGrantView({
+						await requireHydratedPackageShareGrantView({
 							db: ctx.env.APP_DB,
 							grant,
 						}),
@@ -246,7 +245,7 @@ export const packageShareLeaveCapability = defineDomainCapability(
 				})
 				return {
 					grant: toPackageShareGrantPayload(
-						await hydratePackageShareGrantView({
+						await requireHydratedPackageShareGrantView({
 							db: ctx.env.APP_DB,
 							grant,
 						}),
@@ -366,7 +365,7 @@ export const packageShareInspectCapability = defineDomainCapability(
 			}
 			return {
 				grant: toPackageShareGrantPayload(
-					await hydratePackageShareGrantView({
+					await requireHydratedPackageShareGrantView({
 						db: ctx.env.APP_DB,
 						grant,
 					}),
@@ -402,7 +401,7 @@ export const packageShareAcknowledgeUpdateCapability = defineDomainCapability(
 				})
 				return {
 					grant: toPackageShareGrantPayload(
-						await hydratePackageShareGrantView({
+						await requireHydratedPackageShareGrantView({
 							db: ctx.env.APP_DB,
 							grant,
 						}),

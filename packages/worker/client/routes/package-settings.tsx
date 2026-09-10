@@ -179,10 +179,18 @@ export function PackageSettingsRoute(handle: Handle) {
 		const key = `${nextUsername}/${nextKodyId}`
 		if (!nextUsername || !nextKodyId || shareLoadedFor === key) return
 		shareLoadedFor = key
-		shareGrants = await loadPackageShareGrants({
-			username: nextUsername,
-			kodyId: nextKodyId,
-		})
+		try {
+			const grants = await loadPackageShareGrants({
+				username: nextUsername,
+				kodyId: nextKodyId,
+			})
+			if (`${username}/${kodyId}` !== key) return
+			shareGrants = grants
+		} catch {
+			if (`${username}/${kodyId}` !== key) return
+			shareLoadedFor = ''
+			shareMessage = 'Unable to load who this package is shared with.'
+		}
 		handle.update()
 	}
 

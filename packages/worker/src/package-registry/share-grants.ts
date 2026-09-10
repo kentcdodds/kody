@@ -3,6 +3,7 @@ import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import { normalizeEmailAddress } from '#worker/email/address.ts'
 import { getUserPlan } from '#worker/entitlements/service.ts'
 import {
+	findPublicUserIdentityByStableUserId,
 	findPublicUserIdentityByUsername,
 	type PublicUserIdentity,
 } from '#worker/identity/user-lookup.ts'
@@ -330,18 +331,29 @@ export async function listOutboundPackageShareGrants(
 
 export async function listInboundPackageShareGrants(
 	db: D1Database,
-	input: { userId: string; email?: string | null },
+	input: {
+		userId: string
+		email?: string | null
+		emailVerified?: boolean
+	},
 ): Promise<Array<PackageShareGrantRow>> {
 	if (!canPrepareAppDb(db)) return []
 	return await queryShareGrantsOrEmpty(async () => {
-		const email = input.email ? normalizeEmailAddress(input.email) : null
+		const email =
+			input.emailVerified === true && input.email
+				? normalizeEmailAddress(input.email)
+				: null
 		const rows = email
 			? await db
 					.prepare(
 						`SELECT ${grantSelectColumns}
 					FROM package_share_grants
 					WHERE grantee_user_id = ?
-						OR (invitee_email = ? AND status = 'pending')
+						OR (
+							invitee_email = ?
+							AND status = 'pending'
+							AND grantee_user_id IS NULL
+						)
 					ORDER BY updated_at DESC`,
 					)
 					.bind(input.userId, email)
@@ -389,7 +401,8 @@ export async function findActivePackageShareGrant(input: {
 			FROM package_share_grants
 			WHERE package_id = ?
 				AND invitee_email = ?
-				AND status IN ('pending', 'accepted')
+				AND status = 'pending'
+				AND grantee_user_id IS NULL
 			LIMIT 1`,
 		)
 		.bind(input.packageId, email)
@@ -474,72 +487,27 @@ function grantAllowsPermission(
 export async function hydratePackageShareGrantView(input: {
 	db: D1Database
 	grant: PackageShareGrantRow
-}): Promise<PackageShareGrantView> {
+}): Promise<PackageShareGrantView | null> {
 	const savedPackage = await getSavedPackageById(input.db, {
 		userId: input.grant.ownerUserId,
 		packageId: input.grant.packageId,
 	})
-	if (!savedPackage) {
-		throw new PackageShareAccessError(
-			'Shared package was not found for this grant.',
-		)
-	}
+	if (!savedPackage) return null
 	const [owner, grantee, publishedCommit] = await Promise.all([
-		findPublicUserIdentityByUsername({
+		findPublicUserIdentityByStableUserId({
 			db: input.db,
-			username: savedPackage.name.replace(/^@/, '').split('/')[0] ?? '',
-		}).then(async (fromName) => {
-			if (fromName) return fromName
-			const row = await input.db
-				.prepare(
-					`SELECT id, username, email, stable_user_id
-					FROM users
-					WHERE stable_user_id = ?`,
-				)
-				.bind(input.grant.ownerUserId)
-				.first<{
-					id: number
-					username: string
-					email: string
-					stable_user_id: string
-				}>()
-			return row
-				? {
-						userId: row.id,
-						username: row.username,
-						email: row.email,
-						mcpUserId: row.stable_user_id,
-					}
-				: null
+			userId: input.grant.ownerUserId,
 		}),
 		input.grant.granteeUserId
-			? input.db
-					.prepare(
-						`SELECT id, username, email, stable_user_id
-						FROM users
-						WHERE stable_user_id = ?`,
-					)
-					.bind(input.grant.granteeUserId)
-					.first<{
-						id: number
-						username: string
-						email: string
-						stable_user_id: string
-					}>()
-					.then((row) =>
-						row
-							? {
-									userId: row.id,
-									username: row.username,
-									email: row.email,
-									mcpUserId: row.stable_user_id,
-								}
-							: null,
-					)
+			? findPublicUserIdentityByStableUserId({
+					db: input.db,
+					userId: input.grant.granteeUserId,
+				})
 			: Promise.resolve(null),
 		getPublishedCommitForPackage(input.db, savedPackage),
 	])
-	const ownerUsername = owner?.username ?? savedPackage.name.split('/')[0] ?? ''
+	const ownerUsername = owner?.username
+	if (!ownerUsername) return null
 	const pinAhead =
 		input.grant.status === 'accepted' &&
 		input.grant.trustLevel === 'pin' &&
@@ -561,6 +529,45 @@ export async function hydratePackageShareGrantView(input: {
 				})
 			: null,
 	}
+}
+
+export async function hydratePackageShareGrantViews(
+	db: D1Database,
+	grants: Array<PackageShareGrantRow>,
+): Promise<Array<PackageShareGrantView>> {
+	const views = await Promise.all(
+		grants.map((grant) => hydratePackageShareGrantView({ db, grant })),
+	)
+	return views.filter((view): view is PackageShareGrantView => view != null)
+}
+
+export async function requireHydratedPackageShareGrantView(input: {
+	db: D1Database
+	grant: PackageShareGrantRow
+}): Promise<PackageShareGrantView> {
+	const view = await hydratePackageShareGrantView(input)
+	if (!view) {
+		throw new PackageShareAccessError(
+			'Shared package was not found for this grant.',
+		)
+	}
+	return view
+}
+
+function grantIsAddressedToGuest(
+	grant: PackageShareGrantRow,
+	guestUserId: string,
+	guestEmail: string | null,
+) {
+	if (grant.granteeUserId) {
+		return grant.granteeUserId === guestUserId
+	}
+	return (
+		grant.status === 'pending' &&
+		grant.inviteeEmail != null &&
+		guestEmail != null &&
+		grant.inviteeEmail === guestEmail
+	)
 }
 
 export async function assertPackageShareUseAllowed(input: {
@@ -806,9 +813,8 @@ export async function invitePackageShare(input: {
 	if (!invitee && emailInput) {
 		invitee = await findPersonUserByEmail(input.db, emailInput)
 	}
-	const inviteeEmail =
-		normalizeEmailAddress(invitee?.email ?? emailInput) ?? null
-	if (!inviteeEmail) {
+	const inviteeEmail = emailInput ? normalizeEmailAddress(emailInput) : null
+	if (emailInput && !inviteeEmail) {
 		throw new PackageShareAccessError('Invite email address is invalid.')
 	}
 	if (invitee && invitee.mcpUserId === ownerUserId) {
@@ -816,7 +822,10 @@ export async function invitePackageShare(input: {
 			'You cannot share a package with yourself.',
 		)
 	}
-	if (inviteeEmail === normalizeEmailAddress(input.owner.email ?? '')) {
+	if (
+		inviteeEmail &&
+		inviteeEmail === normalizeEmailAddress(input.owner.email ?? '')
+	) {
 		throw new PackageShareAccessError(
 			'You cannot share a package with yourself.',
 		)
@@ -895,10 +904,7 @@ export async function acceptPackageShare(input: {
 		)
 	}
 	const guestEmail = normalizeEmailAddress(input.guest.email ?? '')
-	const isInvitee =
-		grant.granteeUserId === guestUserId ||
-		(grant.inviteeEmail != null && grant.inviteeEmail === guestEmail)
-	if (!isInvitee) {
+	if (!grantIsAddressedToGuest(grant, guestUserId, guestEmail)) {
 		throw new PackageShareAccessError(
 			'This invitation is not addressed to the signed-in account.',
 		)
@@ -1161,6 +1167,15 @@ export async function loadViewerPackageShare(input: {
 		inviteeEmail: input.viewer.email,
 	})
 	if (!grant) return null
+	if (
+		!grantIsAddressedToGuest(
+			grant,
+			input.viewer.userId ?? '',
+			input.viewer.email ? normalizeEmailAddress(input.viewer.email) : null,
+		)
+	) {
+		return null
+	}
 	return await hydratePackageShareGrantView({ db: input.db, grant })
 }
 

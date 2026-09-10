@@ -2,7 +2,7 @@ import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
 import {
 	defaultPackageShareTrustLevel,
-	hydratePackageShareGrantView,
+	requireHydratedPackageShareGrantView,
 	packageShareAccessErrorMessage,
 	PackageShareAccessError,
 	acceptPackageShare,
@@ -90,7 +90,7 @@ export async function applyPackageShareMutation(input: {
 				return {
 					ok: true,
 					grant: toPackageShareGrantLoaderView(
-						await hydratePackageShareGrantView({
+						await requireHydratedPackageShareGrantView({
 							db: input.env.APP_DB,
 							grant,
 						}),
@@ -111,7 +111,7 @@ export async function applyPackageShareMutation(input: {
 				return {
 					ok: true,
 					grant: toPackageShareGrantLoaderView(
-						await hydratePackageShareGrantView({
+						await requireHydratedPackageShareGrantView({
 							db: input.env.APP_DB,
 							grant,
 						}),
@@ -130,7 +130,7 @@ export async function applyPackageShareMutation(input: {
 				return {
 					ok: true,
 					grant: toPackageShareGrantLoaderView(
-						await hydratePackageShareGrantView({
+						await requireHydratedPackageShareGrantView({
 							db: input.env.APP_DB,
 							grant,
 						}),
@@ -149,7 +149,7 @@ export async function applyPackageShareMutation(input: {
 				return {
 					ok: true,
 					grant: toPackageShareGrantLoaderView(
-						await hydratePackageShareGrantView({
+						await requireHydratedPackageShareGrantView({
 							db: input.env.APP_DB,
 							grant,
 						}),
@@ -169,7 +169,7 @@ export async function applyPackageShareMutation(input: {
 				return {
 					ok: true,
 					grant: toPackageShareGrantLoaderView(
-						await hydratePackageShareGrantView({
+						await requireHydratedPackageShareGrantView({
 							db: input.env.APP_DB,
 							grant,
 						}),

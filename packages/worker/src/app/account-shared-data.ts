@@ -1,7 +1,7 @@
 import { type AccountSharedLoaderData } from '#universal/loader-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
-	hydratePackageShareGrantView,
+	hydratePackageShareGrantViews,
 	listInboundPackageShareGrants,
 	listOutboundPackageShareGrants,
 	toPackageShareGrantLoaderView,
@@ -21,19 +21,12 @@ export async function loadAccountSharedData(input: {
 		listInboundPackageShareGrants(input.env.APP_DB, {
 			userId,
 			email: input.user.email,
+			emailVerified: input.user.emailVerified,
 		}),
 	])
 	const [outbound, inbound] = await Promise.all([
-		Promise.all(
-			outboundRows.map((grant) =>
-				hydratePackageShareGrantView({ db: input.env.APP_DB, grant }),
-			),
-		),
-		Promise.all(
-			inboundRows.map((grant) =>
-				hydratePackageShareGrantView({ db: input.env.APP_DB, grant }),
-			),
-		),
+		hydratePackageShareGrantViews(input.env.APP_DB, outboundRows),
+		hydratePackageShareGrantViews(input.env.APP_DB, inboundRows),
 	])
 	return {
 		ok: true,

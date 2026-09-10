@@ -2,10 +2,18 @@ import { type PackageShareFileChange } from '#universal/package-share.ts'
 
 const maxDiffFileChars = 40_000
 
-function clipFileText(value: string | null) {
-	if (value == null) return null
-	if (value.length <= maxDiffFileChars) return value
-	return `${value.slice(0, maxDiffFileChars)}\n\n… truncated for review …`
+function clipFileText(value: string | null): {
+	text: string | null
+	truncated: boolean
+} {
+	if (value == null) return { text: null, truncated: false }
+	if (value.length <= maxDiffFileChars) {
+		return { text: value, truncated: false }
+	}
+	return {
+		text: `${value.slice(0, maxDiffFileChars)}\n\n… truncated for review …`,
+		truncated: true,
+	}
 }
 
 export function diffPublishedSourceFiles(
@@ -27,11 +35,14 @@ export function diffPublishedSourceFiles(
 				: currentText == null
 					? 'removed'
 					: 'modified'
+		const acceptedClip = clipFileText(acceptedText)
+		const currentClip = clipFileText(currentText)
 		changes.push({
 			path,
 			change,
-			accepted: clipFileText(acceptedText),
-			current: clipFileText(currentText),
+			accepted: acceptedClip.text,
+			current: currentClip.text,
+			truncated: acceptedClip.truncated || currentClip.truncated,
 		})
 	}
 	return changes
