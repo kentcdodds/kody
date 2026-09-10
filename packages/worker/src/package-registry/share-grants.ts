@@ -41,6 +41,25 @@ function canPrepareAppDb(db: D1Database | null | undefined): db is D1Database {
 	return typeof db?.prepare === 'function'
 }
 
+function isMissingShareGrantsTable(error: unknown) {
+	const message = getErrorMessage(error)
+	return (
+		/no such table/i.test(message) && message.includes('package_share_grants')
+	)
+}
+
+async function queryShareGrantsOrEmpty<T>(
+	query: () => Promise<T>,
+	empty: T,
+): Promise<T> {
+	try {
+		return await query()
+	} catch (error) {
+		if (isMissingShareGrantsTable(error)) return empty
+		throw error
+	}
+}
+
 export type PackageShareGrantRow = {
 	id: string
 	packageId: string
@@ -314,28 +333,30 @@ export async function listInboundPackageShareGrants(
 	input: { userId: string; email?: string | null },
 ): Promise<Array<PackageShareGrantRow>> {
 	if (!canPrepareAppDb(db)) return []
-	const email = input.email ? normalizeEmailAddress(input.email) : null
-	const rows = email
-		? await db
-				.prepare(
-					`SELECT ${grantSelectColumns}
+	return await queryShareGrantsOrEmpty(async () => {
+		const email = input.email ? normalizeEmailAddress(input.email) : null
+		const rows = email
+			? await db
+					.prepare(
+						`SELECT ${grantSelectColumns}
 					FROM package_share_grants
 					WHERE grantee_user_id = ?
 						OR (invitee_email = ? AND status = 'pending')
 					ORDER BY updated_at DESC`,
-				)
-				.bind(input.userId, email)
-				.all<Record<string, unknown>>()
-		: await db
-				.prepare(
-					`SELECT ${grantSelectColumns}
+					)
+					.bind(input.userId, email)
+					.all<Record<string, unknown>>()
+			: await db
+					.prepare(
+						`SELECT ${grantSelectColumns}
 					FROM package_share_grants
 					WHERE grantee_user_id = ?
 					ORDER BY updated_at DESC`,
-				)
-				.bind(input.userId)
-				.all<Record<string, unknown>>()
-	return (rows.results ?? []).map(mapGrantRow)
+					)
+					.bind(input.userId)
+					.all<Record<string, unknown>>()
+		return (rows.results ?? []).map(mapGrantRow)
+	}, [])
 }
 
 export async function findActivePackageShareGrant(input: {
@@ -382,18 +403,20 @@ export async function findAcceptedPackageShareGrant(input: {
 	granteeUserId: string
 }): Promise<PackageShareGrantRow | null> {
 	if (!canPrepareAppDb(input.db)) return null
-	const row = await input.db
-		.prepare(
-			`SELECT ${grantSelectColumns}
-			FROM package_share_grants
-			WHERE package_id = ?
-				AND grantee_user_id = ?
-				AND status = 'accepted'
-			LIMIT 1`,
-		)
-		.bind(input.packageId, input.granteeUserId)
-		.first<Record<string, unknown>>()
-	return row ? mapGrantRow(row) : null
+	return await queryShareGrantsOrEmpty(async () => {
+		const row = await input.db
+			.prepare(
+				`SELECT ${grantSelectColumns}
+				FROM package_share_grants
+				WHERE package_id = ?
+					AND grantee_user_id = ?
+					AND status = 'accepted'
+				LIMIT 1`,
+			)
+			.bind(input.packageId, input.granteeUserId)
+			.first<Record<string, unknown>>()
+		return row ? mapGrantRow(row) : null
+	}, null)
 }
 
 export async function findAcceptedPackageShareGrantByName(input: {
@@ -405,27 +428,29 @@ export async function findAcceptedPackageShareGrantByName(input: {
 	savedPackage: SavedPackageRecord
 } | null> {
 	if (!canPrepareAppDb(input.db)) return null
-	const row = await input.db
-		.prepare(
-			`SELECT ${grantSelectColumns}
-			FROM package_share_grants
-			WHERE package_id IN (
-				SELECT id FROM saved_packages WHERE name = ?
+	return await queryShareGrantsOrEmpty(async () => {
+		const row = await input.db
+			.prepare(
+				`SELECT ${grantSelectColumns}
+				FROM package_share_grants
+				WHERE package_id IN (
+					SELECT id FROM saved_packages WHERE name = ?
+				)
+					AND grantee_user_id = ?
+					AND status = 'accepted'
+				LIMIT 1`,
 			)
-				AND grantee_user_id = ?
-				AND status = 'accepted'
-			LIMIT 1`,
-		)
-		.bind(input.packageName, input.granteeUserId)
-		.first<Record<string, unknown>>()
-	if (!row) return null
-	const grant = mapGrantRow(row)
-	const savedPackage = await getSavedPackageById(input.db, {
-		userId: grant.ownerUserId,
-		packageId: grant.packageId,
-	})
-	if (!savedPackage) return null
-	return { grant, savedPackage }
+			.bind(input.packageName, input.granteeUserId)
+			.first<Record<string, unknown>>()
+		if (!row) return null
+		const grant = mapGrantRow(row)
+		const savedPackage = await getSavedPackageById(input.db, {
+			userId: grant.ownerUserId,
+			packageId: grant.packageId,
+		})
+		if (!savedPackage) return null
+		return { grant, savedPackage }
+	}, null)
 }
 
 export async function getPublishedCommitForPackage(
@@ -712,23 +737,25 @@ export async function collectShareStorageOwners(input: {
 		),
 	]
 	if (packageIds.length === 0) return owners
-	const placeholders = packageIds.map(() => '?').join(', ')
-	const rows = await input.db
-		.prepare(
-			`SELECT package_id, owner_user_id
-			FROM package_share_grants
-			WHERE grantee_user_id = ?
-				AND status = 'accepted'
-				AND package_id IN (${placeholders})`,
-		)
-		.bind(input.callerUserId, ...packageIds)
-		.all<{ package_id: string; owner_user_id: string }>()
-	for (const row of rows.results ?? []) {
-		if (row.owner_user_id && row.owner_user_id !== input.callerUserId) {
-			owners.set(row.package_id, row.owner_user_id)
+	return await queryShareGrantsOrEmpty(async () => {
+		const placeholders = packageIds.map(() => '?').join(', ')
+		const rows = await input.db
+			.prepare(
+				`SELECT package_id, owner_user_id
+				FROM package_share_grants
+				WHERE grantee_user_id = ?
+					AND status = 'accepted'
+					AND package_id IN (${placeholders})`,
+			)
+			.bind(input.callerUserId, ...packageIds)
+			.all<{ package_id: string; owner_user_id: string }>()
+		for (const row of rows.results ?? []) {
+			if (row.owner_user_id && row.owner_user_id !== input.callerUserId) {
+				owners.set(row.package_id, row.owner_user_id)
+			}
 		}
-	}
-	return owners
+		return owners
+	}, owners)
 }
 
 export async function invitePackageShare(input: {
@@ -1047,20 +1074,25 @@ export async function attachPendingPackageShareInvitesForEmail(input: {
 }) {
 	const email = normalizeEmailAddress(input.email)
 	if (!email || !canPrepareAppDb(input.db)) return { attached: 0 }
-	const username = input.username ? normalizeUsername(input.username) : null
-	const result = await input.db
-		.prepare(
-			`UPDATE package_share_grants
-			SET grantee_user_id = ?,
-				invitee_username = COALESCE(?, invitee_username),
-				updated_at = ?
-			WHERE invitee_email = ?
-				AND status = 'pending'
-				AND grantee_user_id IS NULL`,
-		)
-		.bind(input.userId, username, nowIso(), email)
-		.run()
-	return { attached: result.meta.changes ?? 0 }
+	return await queryShareGrantsOrEmpty(
+		async () => {
+			const username = input.username ? normalizeUsername(input.username) : null
+			const result = await input.db
+				.prepare(
+					`UPDATE package_share_grants
+				SET grantee_user_id = ?,
+					invitee_username = COALESCE(?, invitee_username),
+					updated_at = ?
+				WHERE invitee_email = ?
+					AND status = 'pending'
+					AND grantee_user_id IS NULL`,
+				)
+				.bind(input.userId, username, nowIso(), email)
+				.run()
+			return { attached: result.meta.changes ?? 0 }
+		},
+		{ attached: 0 },
+	)
 }
 
 export async function attachPendingPackageShareInvitesSafely(input: {
