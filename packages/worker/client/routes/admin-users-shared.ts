@@ -116,15 +116,48 @@ export function nextAdminUsersWindowAfterCreate(input: {
 		!alreadyListed &&
 		input.payload.createdUserInFilteredList === true
 	const items = canInsert ? [created, ...baseItems] : baseItems
-	if (input.payload.listRefreshFailed) {
+	const totalCount = input.payload.listRefreshFailed
+		? canInsert
+			? input.currentTotal + 1
+			: input.currentTotal
+		: input.payload.total
+	return {
+		items,
+		// page * pageSize < total stays true after prepending the one
+		// omitted newest row, even when the window already holds every
+		// filtered account. Follow the actual window length instead.
+		hasMore:
+			input.payload.listRefreshFailed && !canInsert
+				? input.currentHasMore
+				: items.length < totalCount,
+		totalCount,
+	}
+}
+
+/**
+ * Route data refetches when the selected pathname changes, but the list
+ * window only depends on filters. Keep the loaded window so a created
+ * row prepended off page one is not wiped by a page-one reseed.
+ */
+export function nextAdminUsersWindowFromRouteData(input: {
+	listKey: string
+	lastLoadedListKey: string
+	currentItems: Array<AdminUserListItem>
+	currentHasMore: boolean
+	currentTotal: number
+	payload: Pick<AdminUsersLoaderData, 'users' | 'page' | 'pageSize' | 'total'>
+}) {
+	if (input.listKey === input.lastLoadedListKey) {
 		return {
-			items,
+			replace: false as const,
+			items: input.currentItems,
 			hasMore: input.currentHasMore,
-			totalCount: canInsert ? input.currentTotal + 1 : input.currentTotal,
+			totalCount: input.currentTotal,
 		}
 	}
 	return {
-		items,
+		replace: true as const,
+		items: input.payload.users,
 		hasMore: input.payload.page * input.payload.pageSize < input.payload.total,
 		totalCount: input.payload.total,
 	}
