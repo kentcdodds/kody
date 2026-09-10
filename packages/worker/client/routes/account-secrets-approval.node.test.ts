@@ -48,6 +48,19 @@ test('package secret approval hrefs and already-granted checks match host-approv
 		false,
 	)
 	expect(isPackageApprovalHref('/account/secrets')).toBe(false)
+	expect(
+		isPackageApprovalHref(
+			'/account/secrets/new?package_id=pkg-notes&package=notes&name=openai-api-key',
+		),
+	).toBe(false)
+	expect(isPackageApprovalHref('/account/secrets?package_id=pkg-notes')).toBe(
+		false,
+	)
+	expect(
+		isPackageApprovalHref(
+			'/account/secrets/package/pkg-notes/signingSecret?package_id=pkg-notes',
+		),
+	).toBe(false)
 
 	expect(
 		isPackageSecretApprovalAlreadyGranted({

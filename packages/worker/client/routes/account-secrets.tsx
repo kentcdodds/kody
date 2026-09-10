@@ -528,6 +528,8 @@ export function AccountSecretsRoute(handle: Handle) {
 
 		if (isPackageApprovalHref(currentHref)) {
 			const approvalError = appliedPayload?.approvalError ?? null
+			const pageApprovalError =
+				approvalError ?? (status === 'error' ? message : null)
 			const alreadyGranted =
 				approval != null &&
 				completedPackageApproval !== 'reject' &&
@@ -537,12 +539,12 @@ export function AccountSecretsRoute(handle: Handle) {
 				})
 			return renderPackageSecretApprovalPage({
 				approval,
-				approvalError: approvalError ?? (status === 'error' ? message : null),
+				approvalError: pageApprovalError,
 				packagesById,
 				completed: completedPackageApproval,
 				alreadyGranted,
 				submittingAction: submittingApprovalAction,
-				message: message && message !== approvalError ? message : null,
+				message: message && message !== pageApprovalError ? message : null,
 				onSubmit: (action) => {
 					void submitApproval(action)
 				},

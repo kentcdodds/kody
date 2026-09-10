@@ -1,4 +1,5 @@
 import { type AccountSecretsLoaderData } from '#universal/loader-data.ts'
+import { parseAccountSecretPath } from '@kody-internal/shared/account-secret-route.ts'
 import { css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import {
@@ -342,7 +343,8 @@ const packageApprovalSecondaryButtonCss = getSecondaryButtonCss({
 export function isPackageApprovalHref(href: string) {
 	const url = new URL(href, 'http://localhost')
 	if (url.pathname === routes.accountSecretsApprove.href()) return true
-	return Boolean(url.searchParams.get('package_id')?.trim())
+	if (!url.searchParams.get('package_id')?.trim()) return false
+	return parseAccountSecretPath(url.pathname)?.scope === 'user'
 }
 
 export function isPackageSecretApprovalAlreadyGranted(input: {
