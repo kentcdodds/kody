@@ -165,8 +165,9 @@ fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
   `mcpServerReconnect`, `mcpServerRefresh`, `mcpServerRemove`,
   `mcpServerSetEnabled`, `mcpServerLock`). `mcpServerAdd` accepts optional
   `bearerToken`. `mcpServerLock` grants a package; unlock is website-only.
-  Integration connections and user secrets use the same tighten-only shape
-  (`integrationLock`, `secretLock`).
+  Integration connections use the same tighten-only shape (`integrationLock`).
+  User-secret package grants are website-only; `secretLock` returns an approval
+  URL and does not add `allowed_packages`.
 
 ## Isolation and lifecycle
 

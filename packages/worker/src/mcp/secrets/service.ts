@@ -1066,17 +1066,26 @@ export async function setSecretAllowedPackages(input: {
 	})
 }
 
+type UserSecretPackageGrantState = {
+	secret: SecretMetadata
+	savedPackage: {
+		id: string
+		kodyId: string
+	}
+	alreadyGranted: boolean
+}
+
 /**
- * Tighten-only package grant on a user secret. Adds `packageId` to
- * `allowed_packages`. Additional grants accumulate. Removing a grant is
- * website-only. User-scope only — package secrets do not have this grant.
+ * Read-only lookup for a user secret + saved package grant. Does not mutate
+ * `allowed_packages`. MCP `secretLock` uses this; applying a grant is
+ * website-only via `lockSecretToPackage` / `setSecretAllowedPackages`.
  */
-export async function lockSecretToPackage(input: {
+export async function inspectUserSecretPackageGrant(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 	name: string
 	packageId: string
-}): Promise<SecretMetadata> {
+}): Promise<UserSecretPackageGrantState> {
 	const packageId = input.packageId.trim()
 	if (!packageId) {
 		throw new Error('Package id is required.')
@@ -1106,8 +1115,8 @@ export async function lockSecretToPackage(input: {
 		throw new Error('Secret not found for this scope.')
 	}
 	const currentPackages = parseAllowedPackages(existingEntry.allowed_packages)
-	if (currentPackages.includes(packageId)) {
-		return toSecretMetadata({
+	return {
+		secret: toSecretMetadata({
 			name: input.name.trim(),
 			scope: 'user',
 			description: existingEntry.description,
@@ -1120,14 +1129,38 @@ export async function lockSecretToPackage(input: {
 				existingEntry.expires_at,
 				bucket.expires_at,
 			),
-		})
+		}),
+		savedPackage: {
+			id: savedPackage.id,
+			kodyId: savedPackage.kodyId,
+		},
+		alreadyGranted: currentPackages.includes(packageId),
+	}
+}
+
+/**
+ * Tighten-only package grant on a user secret. Adds `packageId` to
+ * `allowed_packages`. Additional grants accumulate. Removing a grant is
+ * website-only. User-scope only — package secrets do not have this grant.
+ * Account secret editor and `/account/secrets/approve` apply grants through
+ * `setSecretAllowedPackages` (or this helper). MCP `secretLock` must not.
+ */
+export async function lockSecretToPackage(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	name: string
+	packageId: string
+}): Promise<SecretMetadata> {
+	const state = await inspectUserSecretPackageGrant(input)
+	if (state.alreadyGranted) {
+		return state.secret
 	}
 	return setSecretAllowedPackages({
 		env: input.env,
 		userId: input.userId,
 		name: input.name,
 		scope: 'user',
-		allowedPackages: [...currentPackages, packageId],
+		allowedPackages: [...state.secret.allowedPackages, state.savedPackage.id],
 	})
 }
 

@@ -64,11 +64,14 @@ so the user can paste immediately.
 
 Self-authored packages and adopted community forks (`communityForkAdopt`) can
 read and use the user's secrets without an `allowed_packages` grant; updating or
-deleting a user secret from package code still requires that grant. Agents can
-add a package to that grant with `secretLock`; removing a grant is website-only.
-When an **unadopted community-forked** package needs access to one or more
-**existing** user secrets, either adopt it after reviewing the source or send
-the user an approval link — do not ask them to recreate the secrets.
+deleting a user secret from package code still requires that grant. Only the
+account owner can add a package to that grant on the secret editor or
+`/account/secrets/approve` — a focused Allow page like `/connect/secrets`.
+`secretLock` returns that approval URL; it does not apply the grant. Send the
+link and wait. Removing a grant is also website-only. When an **unadopted
+community-forked** package needs access to one or more **existing** user
+secrets, either adopt it after reviewing the source or send the user an approval
+link — do not ask them to recreate the secrets.
 
 - Single secret:
   `/account/secrets/user/{secretName}?package_id={savedPackageId}&package={kodyId}`

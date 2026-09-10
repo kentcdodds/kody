@@ -89,9 +89,10 @@ grant is website-only at `/account/integrations/:name`.
 
 A connected MCP server uses the same tighten-only shape: lock the **server** to
 a package so execute and other packages cannot call `kody.mcp["name"]`. See
-[Lock an MCP server to a package](./locked-mcp-server.md). User secrets use
-`secretLock` to add a package to `allowed_packages`; removing that grant is
-website-only at `/account/secrets/user/:name`.
+[Lock an MCP server to a package](./locked-mcp-server.md). User secrets require
+a website grant on `allowed_packages`. `secretLock` returns the approval URL and
+does not apply the grant. Removing a grant is website-only at
+`/account/secrets/user/:name`.
 
 Usage detail: [Packages → Publish lock](../use/packages.md#publish-lock).
 

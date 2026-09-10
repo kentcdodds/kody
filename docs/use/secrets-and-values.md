@@ -138,12 +138,14 @@ packages the user authored themselves and adopted community forks
 packages need explicit **package** approval (`allowed_packages`) before those
 read/use paths. Updating or deleting a user secret from package code
 (`secretSet`, `secretDelete`) always needs the grant, including for
-self-authored and adopted packages. Agents can add a package to that grant with
-**`secretLock`**. Removing a grant is website-only on
-`/account/secrets/user/:name`. `secretSet` cannot change `allowed_packages`.
-Official OAuth token rotation (`createAuthenticatedFetch` 401 retry via
-`integrationTokenRefresh`) persists host-side and does not need that write
-grant.
+self-authored and adopted packages. Only the account owner can add a package to
+that grant on `/account/secrets/user/:name` or `/account/secrets/approve`.
+**`secretLock`** returns an approval URL for the owner to click (one-click
+Allow, same spirit as `/connect/secrets`); it does not change
+`allowed_packages`. Send the link and wait. Removing a grant is also
+website-only. `secretSet` cannot change `allowed_packages`. Official OAuth token
+rotation (`createAuthenticatedFetch` 401 retry via `integrationTokenRefresh`)
+persists host-side and does not need that write grant.
 
 **Host approval is separate and is never automatic**, including for
 self-authored and adopted packages. An empty host allowlist blocks
