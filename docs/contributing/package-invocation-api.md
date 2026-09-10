@@ -1,7 +1,7 @@
 # External package invocation API
 
 Inbound [webhooks](../use/webhooks.md) are the advertised external HTTP knock
-(`inputMode: "params"`, `Idempotency-Key`, minted URL, no Bearer). This page
+(`inputMode: "params"`, `Idempotency-Key`, minted handle, no Bearer). This page
 documents the unadvertised invocation-token drain that leftover callers still
 hit.
 
@@ -14,7 +14,7 @@ A stable webhook proxy is a representative leftover caller:
    package storage, and normal secret/capability rules
 
 Kody is the package runtime and storage brain. The external service owns the
-provider lifecycle. New first-party callers mint a webhook URL instead.
+provider lifecycle. New first-party callers mint a webhook handle instead.
 
 ## Endpoint
 

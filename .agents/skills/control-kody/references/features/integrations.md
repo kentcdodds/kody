@@ -24,3 +24,5 @@ node tools/control-kody.ts request GET /account/integrations.json
 - Cloud Agents cannot complete a third-party OAuth dance without credentials in
   the environment. HTTP list/empty-state is the usual proof.
 - `/docs/connect` is the public how-to, not the account page.
+- OAuth access/refresh tokens and app client secrets live as AES-GCM ciphertext
+  on `user_integrations` / `user_oauth_apps`, not as user secret-store rows.

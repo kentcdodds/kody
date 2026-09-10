@@ -605,8 +605,10 @@ blast radius:
   `email_delivery_alert` cron fans `email.delivery.burst` on a platform-wide
   spike (see above) without replacing this per-user pause.
 - **Compute quotas.** `execute_calls_per_day` and `outbound_fetches_per_day`
-  entitlements bound sandbox compute and egress volume per user per day (see
-  [`architecture/entitlements.md`](./architecture/entitlements.md)).
+  entitlements bound sandbox compute and egress per user per UTC day, with
+  public-ladder weekly hard caps on the same meters (Monday–Sunday; whichever
+  window hits first blocks). See
+  [`architecture/entitlements.md`](./architecture/entitlements.md).
 
 ## Accepted residual risks and out-of-scope items
 

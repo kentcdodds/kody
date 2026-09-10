@@ -50,7 +50,7 @@ const sharedDeferredGuideSources = [
  * `tools/build-guide-catalog-modules.ts`. Checked for every bundle,
  * independent of `forbiddenSources`: origin legitimately imports
  * `guides/catalog.ts` (its own doc source, not the generated module) for the
- * synchronous web `/guides` pages, so it can't just forbid every
+ * synchronous web `/docs` pages, so it can't just forbid every
  * guide-related source the way platform/runtime do.
  */
 const guideCatalogGeneratedModuleSourcePath =

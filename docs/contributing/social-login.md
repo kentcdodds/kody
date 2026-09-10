@@ -19,9 +19,9 @@ Routes (see `packages/worker/src/app/handlers/auth-provider.ts` and
 - `GET /auth/providers.json` — enabled providers (drives the login buttons; a
   provider only appears when both its client id and secret env vars are set)
 - `POST /auth/:provider` — starts the flow (signed `kody_oauth_login` state
-  cookie with CSRF state + PKCE verifier + optional `inviteCode` query for
-  production social signup). With `Accept: application/json` it returns
-  `{ authorizeUrl }` for client-side navigation; otherwise it 302s.
+  cookie with CSRF state + PKCE verifier + optional `inviteCode` query). With
+  `Accept: application/json` it returns `{ authorizeUrl }` for client-side
+  navigation; otherwise it 302s.
 - `GET /auth/:provider/callback` — completes the flow
 - `GET /discord` / `GET /discord.json` — public Discord page (**Connect
   Discord** joins the official server and links the account; signed-in visitors
@@ -55,12 +55,12 @@ Callback resolution order:
    other connections / reset tokens cleared) so a squatted password signup
    cannot keep access. The provider also marks the account email verified, since
    it asserted ownership of the same address.
-4. Otherwise a new account is created. Production requires a valid invite code
-   carried in the signed OAuth state cookie (the invite signup panel passes
-   `inviteCode` into `POST /auth/:provider`). Non-production stays open without
-   an invite, but still consumes and validates a code when one is supplied —
-   same posture as password signup. Missing or invalid invites redirect to
-   `/login?oauthError=invite-*`.
+4. Otherwise a new account is created. Signup is open in every environment. An
+   optional invite code in the signed OAuth state cookie (from `?code=` /
+   `?invite=` or the signup form, passed as `inviteCode` into
+   `POST /auth/:provider`) is consumed when present and can grant the invite's
+   stored plan. Invalid or exhausted codes redirect to
+   `/login?oauthError=invite-*`. Signup without a code creates a free account.
 
 X frequently does not share an email (it requires the "Request email from users"
 app permission and a confirmed email), in which case only paths 1 and 2 work:

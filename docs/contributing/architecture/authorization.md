@@ -209,10 +209,10 @@ Client checks are cosmetic only; every mutation is re-checked server-side.
 ## Signup and seeding
 
 Every new account receives the `user` role in the signup transaction
-(`packages/worker/src/app/handlers/auth.ts` via `assignUserRole`) after any
-required production invite has been atomically consumed. If role assignment
-fails, the user row is rolled back and the invite use is released so signup can
-be retried.
+(`packages/worker/src/app/handlers/auth.ts` via `assignUserRole`). If an
+optional invite code was supplied, it is consumed in that same transaction. If
+role assignment fails, the user row is rolled back and any consumed invite use
+is released so signup can be retried.
 
 Admins can also create a pre-verified account by email from `/admin/invites`.
 That action is guarded by `requireUserWithRole('admin')`, uses the shared

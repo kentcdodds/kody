@@ -3,8 +3,8 @@ id: platform_efficiency
 title: Runtime and efficiency
 summary:
   How unique Dynamic Worker days work across execute, jobs, package exports, and
-  other surfaces, and how a stable module graph reuses one isolate for the UTC
-  day.
+  other surfaces, and how the acting user plus a stable module graph reuse one
+  isolate per UTC day.
 category: platform
 ---
 

@@ -24,9 +24,14 @@ node tools/control-kody.ts request GET /docs.json --skip-login --origin https://
 ```
 
 Anonymous HTML on `/` and several marketing routes is short-CDN-cached. Weekly
-site-perf owns landing budgets. `/?youtubeId=<id>` opens the site-wide
-allowlisted YouTube overlay on those routes; unknown or disallowed ids do not
-open the player. Enabled site banners can appear in the first HTML.
+site-perf owns landing budgets. The `/` hero is a two-column layout: headline
+plus signup CTAs (anonymous sessions) beside a first-party YouTube light player
+with a horizontal video chooser; the lantern/agent orbit sits below that row.
+Signed-in visitors still see the player and chooser. Hero demo ids are on the
+YouTube allowlist without a banner or `?youtubeId=` param. `/?youtubeId=<id>`
+opens the site-wide allowlisted YouTube overlay on those routes; unknown or
+disallowed ids do not open the player. Enabled site banners can appear in the
+first HTML.
 
 ## APIs
 

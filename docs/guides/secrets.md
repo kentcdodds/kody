@@ -4,9 +4,10 @@ title: Secrets
 summary:
   How Kody lets your agent use your API keys, tokens, and private keys without
   ever reading them: the no-secret_get rule, `{{secret:name}}` placeholders
-  resolved at the network boundary, host approval, package approval and locks,
-  expiry, and where each kind of credential lives. Load this when someone asks
-  how credentials work or whether the agent can see a key.
+  resolved at the network boundary, host approval, package approval (website
+  Allow links via `secretLock`), expiry, and where each kind of credential
+  lives. Load this when someone asks how credentials work or whether the agent
+  can see a key.
 category: platform
 ---
 
@@ -19,9 +20,11 @@ that uses a secret. It can never read one.
 ## The rule: there is no `secret_get`
 
 The secrets capabilities are `secretList`, `secretSet`, `secretSetMany`,
-`secretLock`, `secretDelete`, and `secretJwtSign`. Nothing returns a value.
-`secretList` returns metadata only: names, descriptions, approved hosts, expiry,
-and remaining time to live.
+`secretLock`, `secretDelete`, and `secretJwtSign`. No capability returns a
+secret value. `secretList` returns metadata only: names, descriptions, approved
+hosts, expiry, and remaining time to live. `secretLock` returns grant-status
+metadata and an `approval_url` for the owner to click; it does not apply the
+grant.
 
 This is why you can hand an agent a job that needs your GitHub token without the
 token ever entering the prompt, the transcript, or the model provider's logs.
