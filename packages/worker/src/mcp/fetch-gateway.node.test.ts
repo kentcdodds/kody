@@ -385,6 +385,137 @@ test('fetch gateway requires package approval before resolving user secrets', as
 	}
 })
 
+test('fetch gateway authorizes {{secret}} as the stamped package, not the importing run', async () => {
+	const request = (authorityPackageId?: string) => {
+		const headers = new Headers({
+			Authorization: 'Bearer {{secret:userToken|scope=user}}',
+		})
+		if (authorityPackageId) {
+			headers.set('x-kody-secret-authority', authorityPackageId)
+		}
+		return new Request('https://example.com/api', { headers })
+	}
+	const runProps = {
+		...props,
+		storageContext: {
+			sessionId: null,
+			appId: 'pkg-b',
+			packageId: 'pkg-b',
+			storageId: 'pkg-b',
+		},
+		grantedSecretAuthorityPackageIds: ['pkg-a', 'pkg-b'],
+	}
+	const packageSpy = vi
+		.spyOn(packageRepo, 'getSavedPackageById')
+		.mockImplementation(async (_db, input) => {
+			if (input.packageId === 'pkg-a') {
+				return {
+					id: 'pkg-a',
+					userId: 'user-123',
+					kodyId: 'wake-owner',
+					name: '@user/wake-owner',
+					description: '',
+					tags: [],
+					searchText: null,
+					hasApp: false,
+					hidden: false,
+					isPrivate: false,
+					sourceId: 'source-a',
+					createdAt: '2026-01-01T00:00:00.000Z',
+					updatedAt: '2026-01-01T00:00:00.000Z',
+				}
+			}
+			return {
+				id: 'pkg-b',
+				userId: 'user-123',
+				kodyId: 'importer',
+				name: '@user/importer',
+				description: '',
+				tags: [],
+				searchText: null,
+				hasApp: false,
+				hidden: false,
+				isPrivate: false,
+				sourceId: 'source-b',
+				createdAt: '2026-01-01T00:00:00.000Z',
+				updatedAt: '2026-01-01T00:00:00.000Z',
+			}
+		})
+	const forkSpy = vi
+		.spyOn(communityRepo, 'getCommunityForkByForkedPackageId')
+		.mockImplementation(async (_db, input) => ({
+			id: 'fork-1',
+			listingId: 'listing-1',
+			forkerUserId: 'user-123',
+			originCommit: 'abc123',
+			forkedPackageId: input.forkedPackageId,
+			forkedSourceId: 'source-1',
+			targetKodyId:
+				input.forkedPackageId === 'pkg-a' ? 'wake-owner' : 'importer',
+			createdAt: '2026-01-01T00:00:00.000Z',
+			adoptedAt: null,
+			adoptionNote: null,
+		}))
+	const resolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockResolvedValue({
+			found: true,
+			value: 'secret-value',
+			scope: 'user',
+			allowedHosts: ['example.com'],
+			allowedPackages: ['pkg-a'],
+		})
+
+	try {
+		await expect(
+			expandSecretPlaceholders({
+				request: request(),
+				props: runProps,
+				env,
+			}),
+		).rejects.toSatisfy((error: unknown) => {
+			const parsed = parsePackageAccessRequiredMessage(getErrorMessage(error))
+			return parsed?.packageName === 'importer'
+		})
+		const stamped = await expandSecretPlaceholders({
+			request: request('pkg-a'),
+			props: runProps,
+			env,
+		})
+		expect(stamped.headers.get('Authorization')).toBe('Bearer secret-value')
+		expect(stamped.headers.get('x-kody-secret-authority')).toBeNull()
+		await expect(
+			expandSecretPlaceholders({
+				request: request('pkg-unrelated'),
+				props: runProps,
+				env,
+			}),
+		).rejects.toSatisfy((error: unknown) => {
+			const parsed = parsePackageAccessRequiredMessage(getErrorMessage(error))
+			return parsed?.packageName === 'importer'
+		})
+		// Empty provenance is an installed empty grant set, not "no set":
+		// a forged stamp must not authorize as that package.
+		await expect(
+			expandSecretPlaceholders({
+				request: request('pkg-a'),
+				props: {
+					...runProps,
+					grantedSecretAuthorityPackageIds: [],
+				},
+				env,
+			}),
+		).rejects.toSatisfy((error: unknown) => {
+			const parsed = parsePackageAccessRequiredMessage(getErrorMessage(error))
+			return parsed?.packageName === 'importer'
+		})
+	} finally {
+		packageSpy.mockRestore()
+		forkSpy.mockRestore()
+		resolveSpy.mockRestore()
+	}
+})
+
 test('fetch gateway gates integration-owned token names by the connection grant, not secret allowed_packages', async () => {
 	const request = () =>
 		new Request('https://example.com/api', {

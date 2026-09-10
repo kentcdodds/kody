@@ -31,6 +31,13 @@ import { resolveSecret, type ResolvedSecret } from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
 import {
+	grantedSecretAuthorityPackageIdSet,
+	readSecretAuthorityHeader,
+	resolveSecretAuthorityPackageId,
+	secretAuthorityHeaderName,
+	storageContextWithSecretAuthority,
+} from '#mcp/secrets/secret-authority.ts'
+import {
 	createMissingIntegrationAccessTokenMessage,
 	resolveIntegrationAccessToken,
 } from '#worker/integrations/credentials.ts'
@@ -55,6 +62,12 @@ type FetchGatewayProps = {
 	 */
 	email: string | null
 	storageContext: StorageContext | null
+	/**
+	 * Bundler/host provenance ids that may be named as secret authority
+	 * (run package plus static/dynamic deps). Same set as
+	 * `collectPackageStorageGrantIds`. Omitted outside bundled runs.
+	 */
+	grantedSecretAuthorityPackageIds?: ReadonlyArray<string>
 	/**
 	 * Per-sandbox outbound fetch deadline. Execute keeps the 60s default
 	 * (30s under the 90s sandbox). Long-lived surfaces such as workflows
@@ -329,6 +342,22 @@ export async function expandSecretPlaceholders(input: {
 	if (!baseUrl) {
 		throw new Error('Fetch gateway requires a non-empty baseUrl in props.')
 	}
+	const grantedSecretAuthorityPackageIds = grantedSecretAuthorityPackageIdSet(
+		input.props.grantedSecretAuthorityPackageIds,
+	)
+	const authorityPackageId = resolveSecretAuthorityPackageId({
+		requestedPackageId: readSecretAuthorityHeader(
+			headers,
+			grantedSecretAuthorityPackageIds,
+		),
+		grantedPackageIds: grantedSecretAuthorityPackageIds,
+		runPackageId: input.props.storageContext?.packageId,
+	})
+	const storageContext = storageContextWithSecretAuthority(
+		input.props.storageContext,
+		authorityPackageId,
+	)
+	headers.delete(secretAuthorityHeaderName)
 	const requestBody = await readRequestBody(input.request)
 	if (readSecretResolutionMode(headers) === 'off') {
 		return new Request(
@@ -394,7 +423,7 @@ export async function expandSecretPlaceholders(input: {
 				userId,
 				name: referenced.name,
 				scope: referenced.scope,
-				storageContext: input.props.storageContext,
+				storageContext,
 			})
 			if (!resolved.found || typeof resolved.value !== 'string') {
 				throw new Error(
@@ -403,7 +432,7 @@ export async function expandSecretPlaceholders(input: {
 						userId,
 						name: referenced.name,
 						scope: referenced.scope,
-						storageContext: input.props.storageContext,
+						storageContext,
 						baseUrl: input.props.baseUrl,
 					}),
 				)
@@ -412,7 +441,8 @@ export async function expandSecretPlaceholders(input: {
 				env: input.env,
 				baseUrl: input.props.baseUrl,
 				userId,
-				storageContext: input.props.storageContext,
+				storageContext,
+				authorityPackageId,
 				secretName: referenced.name,
 				resolved,
 			})

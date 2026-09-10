@@ -58,7 +58,7 @@ style, tests, MCP capabilities, and runtime architecture.
 ## Packages and MCP
 
 - [Packages and manifests](./packages-and-manifests.md)
-- [`packageStorage()` grants and caller-owned packages](./package-storage-static-imports.md)
+- [`packageStorage()` grants and stamp-aligned secrets](./package-storage-static-imports.md)
   (stamp/grant model under fork-only official packages and no author-facing
   invoke)
 - [Package codemods](./package-codemods.md)

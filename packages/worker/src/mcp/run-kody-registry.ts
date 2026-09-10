@@ -24,6 +24,7 @@ import {
 } from '#worker/usage/dynamic-worker-day-surface.ts'
 import { type RawFetchHostSink } from '#mcp/raw-fetch-host-nudge.ts'
 import { resolvePackageMountedSecret } from '#mcp/secrets/package-access.ts'
+import { resolveSecretAuthorityPackageId } from '#mcp/secrets/secret-authority.ts'
 import {
 	createExecutionSecretRedactor,
 	type ExecutionSecretRedactor,
@@ -181,24 +182,42 @@ function isPackageSecretAvailabilityError(error: unknown) {
 function createPackageSecretTools(input: {
 	env: Env
 	callerContext: McpCallerContext
-	packageId: string
+	runPackageId: string | null
+	grantedPackageIds: ReadonlySet<string>
 }): PackageSecretToolOptions {
+	const resolveAuthorityPackageId = (requestedPackageId?: string) => {
+		const authorityPackageId = resolveSecretAuthorityPackageId({
+			requestedPackageId,
+			grantedPackageIds: input.grantedPackageIds,
+			runPackageId: input.runPackageId,
+		})
+		if (
+			!authorityPackageId ||
+			!input.grantedPackageIds.has(authorityPackageId)
+		) {
+			throw new Error(
+				'Package secret access requires a matching server-side package runtime context.',
+			)
+		}
+		return authorityPackageId
+	}
 	return {
-		get: async (alias: string) =>
+		runPackageId: input.runPackageId,
+		get: async (alias: string, packageId?: string) =>
 			(
 				await resolvePackageMountedSecret({
 					env: input.env,
 					callerContext: input.callerContext,
-					packageId: input.packageId,
+					packageId: resolveAuthorityPackageId(packageId),
 					alias,
 				})
 			).value,
-		has: async (alias: string) => {
+		has: async (alias: string, packageId?: string) => {
 			try {
 				await resolvePackageMountedSecret({
 					env: input.env,
 					callerContext: input.callerContext,
-					packageId: input.packageId,
+					packageId: resolveAuthorityPackageId(packageId),
 					alias,
 				})
 				return true
@@ -624,12 +643,13 @@ export async function runModuleWithRegistry(
 }
 
 /**
- * `packageStorage()` grant set for one bundled run, from bundler/host
- * controlled provenance only: the run's own package context, the saved
- * packages recorded in the bundle's static dependency metadata, and the
- * published artifacts installed for literal dynamic package imports during
- * hydration. Sandbox-supplied strings never extend this set, which is what
- * keeps a malicious module from claiming another installed package's bucket.
+ * Provenance grant set for one bundled run, from bundler/host controlled
+ * metadata only: the run's own package context, the saved packages recorded
+ * in the bundle's static dependency metadata, and the published artifacts
+ * installed for literal dynamic package imports during hydration.
+ * `packageStorage()` and stamp-aligned secret authority both use this set.
+ * Sandbox-supplied strings never extend it, which is what keeps a malicious
+ * module from claiming another installed package's bucket or secret grants.
  */
 export function collectPackageStorageGrantIds(input: {
 	packageContext: PackageContextOptions
@@ -879,6 +899,7 @@ export async function runBundledModuleWithRegistry(
 				userId: callerContext.user?.userId ?? null,
 				email: callerContext.user?.email ?? null,
 				storageContext: normalizedStorageContext,
+				grantedSecretAuthorityPackageIds: [...grantedPackageStorageIds],
 			},
 			modules: hydratedModules,
 			// Package-context runs are saved-package code; do not count their fetch hosts.
@@ -917,11 +938,12 @@ export async function runBundledModuleWithRegistry(
 					writable: !closedWorldRetrieverRuntime,
 				}
 			: undefined
-		const packageSecretTools = options?.packageContext
+		const packageSecretTools = callerContext.user?.userId
 			? createPackageSecretTools({
 					env,
 					callerContext,
-					packageId: options.packageContext.packageId,
+					runPackageId: options?.packageContext?.packageId ?? null,
+					grantedPackageIds: grantedPackageStorageIds,
 				})
 			: undefined
 		const provider = await buildKodyProvider(env, callerContext, {
@@ -990,6 +1012,7 @@ ${runtimeHelperPreludeSource}
     kody,
 ${runtimeHelperRuntimePropertySource}
     packageContext: ${JSON.stringify(options?.packageContext ?? null)},
+    secretAuthorityPackageId: ${JSON.stringify(options?.packageContext?.packageId ?? null)},
   };
   try {
     return await __kodyRuntimeStorage.run(__kodyRuntime, async () => {

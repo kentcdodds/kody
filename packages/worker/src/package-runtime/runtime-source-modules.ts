@@ -430,6 +430,30 @@ export function __kodyCreatePackageBoundStorage(packageId) {
 	};
 }
 
+function __kodyResolvePackageSecrets(packageId) {
+	const currentRuntime = __kodyRuntimeStorage.getStore();
+	const factory = currentRuntime?.__kodyPackageSecrets;
+	if (typeof factory !== 'function') {
+		throw new Error(
+			'packageSecrets is not available in this execution context. It is bound for stamped saved-package modules (including static kody:@ imports) and for saved-package runtime contexts with an authenticated user.',
+		);
+	}
+	return factory(packageId);
+}
+
+// Factory for the bundler's per-package virtual runtime modules: each module
+// that originates from a saved package imports 'kody:runtime' through a
+// module whose packageSecrets closes over that package's immutable id (see
+// createPackageRuntimeModuleSource). The host independently validates the
+// id against the run's provenance grants, so this stamp routes secret
+// authority without being a security boundary.
+export function __kodyCreatePackageBoundSecrets(packageId) {
+	return {
+		get: async (alias) => __kodyResolvePackageSecrets(packageId).get(alias),
+		has: async (alias) => __kodyResolvePackageSecrets(packageId).has(alias),
+	};
+}
+
 function __kodyRecordStaticPackageCall(packageId, startedAtMs, outcome) {
 	// Metering must never block or throw into the call path: reporting is a
 	// synchronous buffer push into the current run's meter (the surrounding
@@ -464,31 +488,39 @@ export function __kodyMeterStaticPackageExport(packageId, exportValue) {
 	if (typeof exportValue !== 'function') return exportValue;
 	return new Proxy(exportValue, {
 		apply(target, thisArg, argumentsList) {
-			const startedAtMs = Date.now();
-			let result;
-			try {
-				result = Reflect.apply(target, thisArg, argumentsList);
-			} catch (error) {
-				__kodyRecordStaticPackageCall(packageId, startedAtMs, 'error');
-				throw error;
-			}
-			// Deliberately only native promises: subscribing to an arbitrary
-			// user thenable would invoke its then() from the metering path,
-			// which can trigger lazy side effects (query-builder style
-			// thenables execute when first awaited) — a behavior change the
-			// wrapper must never cause. All modules run in one isolate, so
-			// async exports always return same-realm native promises;
-			// non-promise thenables record at return time instead of
-			// settlement.
-			if (result instanceof Promise) {
-				result.then(
-					() => __kodyRecordStaticPackageCall(packageId, startedAtMs, 'success'),
-					() => __kodyRecordStaticPackageCall(packageId, startedAtMs, 'error'),
-				);
+			const currentRuntime = __kodyRuntimeStorage.getStore();
+			const invoke = () => {
+				const startedAtMs = Date.now();
+				let result;
+				try {
+					result = Reflect.apply(target, thisArg, argumentsList);
+				} catch (error) {
+					__kodyRecordStaticPackageCall(packageId, startedAtMs, 'error');
+					throw error;
+				}
+				// Deliberately only native promises: subscribing to an arbitrary
+				// user thenable would invoke its then() from the metering path,
+				// which can trigger lazy side effects (query-builder style
+				// thenables execute when first awaited) — a behavior change the
+				// wrapper must never cause. All modules run in one isolate, so
+				// async exports always return same-realm native promises;
+				// non-promise thenables record at return time instead of
+				// settlement.
+				if (result instanceof Promise) {
+					result.then(
+						() => __kodyRecordStaticPackageCall(packageId, startedAtMs, 'success'),
+						() => __kodyRecordStaticPackageCall(packageId, startedAtMs, 'error'),
+					);
+					return result;
+				}
+				__kodyRecordStaticPackageCall(packageId, startedAtMs, 'success');
 				return result;
-			}
-			__kodyRecordStaticPackageCall(packageId, startedAtMs, 'success');
-			return result;
+			};
+			if (currentRuntime == null) return invoke();
+			return __kodyRuntimeStorage.run(
+				{ ...currentRuntime, secretAuthorityPackageId: packageId },
+				invoke,
+			);
 		},
 	});
 }
@@ -627,21 +659,29 @@ export function createPackageRuntimeModuleSource(packageId: string) {
 	const baseRuntimeSpecifier = '../runtime.js'
 	return `
 export * from ${JSON.stringify(baseRuntimeSpecifier)};
-import __kodyBaseRuntimeDefault, { __kodyCreatePackageBoundStorage } from ${JSON.stringify(
+import __kodyBaseRuntimeDefault, { __kodyCreatePackageBoundStorage, __kodyCreatePackageBoundSecrets } from ${JSON.stringify(
 		baseRuntimeSpecifier,
 	)};
 export const packageStorage = __kodyCreatePackageBoundStorage(${JSON.stringify(
 		packageId,
 	)});
+export const packageSecrets = __kodyCreatePackageBoundSecrets(${JSON.stringify(
+		packageId,
+	)});
 // The default export mirrors the shared runtime default but resolves
-// packageStorage to this package's bound variant.
+// packageStorage / packageSecrets to this package's bound variants.
 export default new Proxy(__kodyBaseRuntimeDefault, {
 	get(target, property, receiver) {
 		if (property === 'packageStorage') return packageStorage;
+		if (property === 'packageSecrets') return packageSecrets;
 		return Reflect.get(target, property, receiver);
 	},
 	has(target, property) {
-		return property === 'packageStorage' || Reflect.has(target, property);
+		return (
+			property === 'packageStorage' ||
+			property === 'packageSecrets' ||
+			Reflect.has(target, property)
+		);
 	},
 });
 `.trim()

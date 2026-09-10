@@ -12,6 +12,7 @@ import { createUnresolvedSecretMessage } from './unresolved-secret.ts'
 import { resolveSecret, type ResolvedSecret } from './service.ts'
 import { type SecretScope } from './types.ts'
 import { type StorageContext } from '#mcp/storage.ts'
+import { resolveCallerSecretAuthority } from './secret-authority.ts'
 import { getCommunityForkByForkedPackageId } from '#worker/community/repo.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
@@ -128,8 +129,16 @@ export async function assertPackageCanAccessResolvedSecret(input: {
 	resolved: ResolvedSecret
 	/** Default `'use'` (read/resolve). `'mutate'` always requires allowed_packages. */
 	intent?: 'use' | 'mutate'
+	/**
+	 * Stamp / call-site package id. When omitted, the bundled-run ALS or
+	 * `storageContext.packageId` (the run) is used.
+	 */
+	authorityPackageId?: string | null
 }) {
-	const packageId = input.storageContext?.packageId?.trim()
+	const { authorityPackageId: packageId } = resolveCallerSecretAuthority({
+		storageContext: input.storageContext,
+		authorityPackageId: input.authorityPackageId,
+	})
 	if (!packageId || input.resolved.scope !== 'user') return
 	if (input.resolved.allowedPackages.includes(packageId)) return
 
@@ -164,7 +173,7 @@ export async function assertPackageCanAccessResolvedSecret(input: {
 		storageContext: {
 			sessionId: input.storageContext?.sessionId ?? null,
 			appId: input.storageContext?.appId ?? null,
-			packageId: input.storageContext?.packageId ?? null,
+			packageId,
 			storageId: input.storageContext?.storageId ?? null,
 		},
 	})
@@ -204,17 +213,18 @@ export async function assertCanSetSecrets(input: {
 				storageId: input.storageContext.storageId ?? null,
 			}
 		: null
-	const packageId = storageContext?.packageId?.trim() ?? ''
+	const { authorityPackageId, storageContext: authorityStorageContext } =
+		resolveCallerSecretAuthority({ storageContext })
 	for (const secret of input.secrets) {
 		const name = secret.name.trim()
 		if (!name) throw new Error('Secret name is required.')
-		if (secret.scope === 'user' && packageId) {
+		if (secret.scope === 'user' && authorityPackageId) {
 			const resolved = await resolveSecret({
 				env: input.env,
 				userId: input.userId,
 				name,
 				scope: 'user',
-				storageContext,
+				storageContext: authorityStorageContext,
 			})
 			if (!resolved.found) {
 				throw new McpCallerError(
@@ -225,7 +235,8 @@ export async function assertCanSetSecrets(input: {
 				env: input.env,
 				baseUrl: input.baseUrl,
 				userId: input.userId,
-				storageContext,
+				storageContext: authorityStorageContext,
+				authorityPackageId,
 				secretName: name,
 				resolved,
 				intent: 'mutate',
@@ -280,8 +291,8 @@ export async function resolvePackageMountedSecret(input: {
 	packageId: string
 	alias: string
 }) {
-	const packageContext = input.callerContext.storageContext?.packageId
-	if (!packageContext || packageContext !== input.packageId) {
+	const packageId = input.packageId.trim()
+	if (!packageId) {
 		throw new Error(
 			'Package secret access requires a matching server-side package runtime context.',
 		)
@@ -296,7 +307,7 @@ export async function resolvePackageMountedSecret(input: {
 		env: input.env,
 		baseUrl: input.callerContext.baseUrl,
 		userId,
-		packageId: input.packageId,
+		packageId,
 	})
 	const mount = packageInfo.mounts[input.alias]
 	if (!mount) {
@@ -304,17 +315,18 @@ export async function resolvePackageMountedSecret(input: {
 			`Package "${packageInfo.savedPackage.kodyId}" does not declare secret mount "${input.alias}".`,
 		)
 	}
+	const storageContext = {
+		sessionId: input.callerContext.storageContext?.sessionId ?? null,
+		appId: input.callerContext.storageContext?.appId ?? null,
+		packageId,
+		storageId: input.callerContext.storageContext?.storageId ?? null,
+	}
 	const resolved = await resolveSecret({
 		env: input.env,
 		userId,
 		name: mount.name,
 		scope: mount.scope,
-		storageContext: {
-			sessionId: input.callerContext.storageContext?.sessionId ?? null,
-			appId: input.callerContext.storageContext?.appId ?? null,
-			packageId: input.callerContext.storageContext?.packageId ?? null,
-			storageId: input.callerContext.storageContext?.storageId ?? null,
-		},
+		storageContext,
 	})
 	if (!resolved.found || typeof resolved.value !== 'string') {
 		throw new PackageSecretMissingError(
@@ -323,12 +335,7 @@ export async function resolvePackageMountedSecret(input: {
 				userId,
 				name: mount.name,
 				scope: mount.scope,
-				storageContext: {
-					sessionId: input.callerContext.storageContext?.sessionId ?? null,
-					appId: input.callerContext.storageContext?.appId ?? null,
-					packageId: input.callerContext.storageContext?.packageId ?? null,
-					storageId: input.callerContext.storageContext?.storageId ?? null,
-				},
+				storageContext,
 				baseUrl: input.callerContext.baseUrl,
 			}),
 		)
@@ -337,7 +344,8 @@ export async function resolvePackageMountedSecret(input: {
 		env: input.env,
 		baseUrl: input.callerContext.baseUrl,
 		userId,
-		storageContext: input.callerContext.storageContext,
+		storageContext,
+		authorityPackageId: packageId,
 		secretName: mount.name,
 		resolved,
 	})

@@ -318,8 +318,9 @@ When a package will use user-scoped secrets (`{{secret:name}}` placeholders or
    with a static `kody:@scope/package/export` import. Use a read-only export or
    a package-supported dry-run input that actually reads the approved secret
    (for example an authenticated read-only API call), so the smoke test proves
-   secret access without external side effects. Secret mounts bind in the
-   package's own surfaces (jobs, apps, subscriptions, HTTP invocation).
+   secret access without external side effects. Dependents compose the same way:
+   they statically import the export; the stamp uses the owning package's grants
+   and `kody.secretMounts` without adding the dependent to `allowed_packages`.
 5. Only then treat the package as ready to run.
 
 Host approval (from an earlier ad hoc `execute` smoke test) is separate from

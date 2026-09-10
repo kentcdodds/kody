@@ -215,11 +215,12 @@ module-oriented runtime model:
 Static saved-package imports from ad hoc **execute** run under the ad hoc
 execute runtime. That means imported package modules can share exported helpers,
 but `packageContext` remains **`null`** because the imported module has not been
-entered as its own package runtime. This is fine for most reuse — packages
-backed by user-scope secrets (for example `github`) work fully through plain
-static imports because `{{secret:...}}` placeholders resolve at the fetch
-gateway under the calling user. Imported modules keep stamped
-`packageStorage()`. `packageContext` stays `null` on ad hoc execute.
+entered as its own package runtime. Imported modules keep stamped
+`packageStorage()` and stamp-aligned secret authority: A's export may use
+secrets locked to A (or A's `kody.secretMounts`) without granting those secrets
+to the execute entry. Unstamped execute entry code can still use **your** user
+secrets through `{{secret:...}}` placeholders; it cannot use A's mounts.
+`packageContext` stays `null` on ad hoc execute.
 
 When you need to edit saved source, prefer the repo-backed workflow in
 [Repo-backed editing sessions](./repo-sessions.md). Open by package identity

@@ -5,6 +5,7 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
+import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
 import {
 	resolveSecret,
 	saveSecret,
@@ -82,14 +83,12 @@ export const secretSetCapability = defineDomainCapability(
 		async handler(args, ctx: CapabilityContext) {
 			const parsed = secretSetInputSchema.parse(args)
 			const user = requireMcpUser(ctx.callerContext)
-			const storageContext = {
-				sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
-				appId: ctx.callerContext.storageContext?.appId ?? null,
-				packageId: ctx.callerContext.storageContext?.packageId ?? null,
-				storageId: ctx.callerContext.storageContext?.storageId ?? null,
-			}
+			const { authorityPackageId, storageContext } =
+				resolveCallerSecretAuthority({
+					storageContext: ctx.callerContext.storageContext,
+				})
 			let saved
-			if (parsed.scope === 'user' && storageContext.packageId) {
+			if (parsed.scope === 'user' && authorityPackageId) {
 				if (parsed.expires_at !== undefined) {
 					throw new McpCallerError(
 						'Package runtimes cannot change user secret expiry. Set expires_at from the account page or secretSet outside a package.',
@@ -117,6 +116,7 @@ export const secretSetCapability = defineDomainCapability(
 					baseUrl: ctx.callerContext.baseUrl,
 					userId: user.userId,
 					storageContext,
+					authorityPackageId,
 					secretName: parsed.name,
 					resolved: existing,
 					intent: 'mutate',
@@ -125,7 +125,7 @@ export const secretSetCapability = defineDomainCapability(
 					env: ctx.env,
 					userId: user.userId,
 					userEmail: user.email,
-					packageId: storageContext.packageId,
+					packageId: authorityPackageId,
 					name: parsed.name,
 					value: parsed.value,
 					description: parsed.description,

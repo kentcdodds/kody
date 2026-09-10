@@ -41,8 +41,14 @@ export type PackageStorageToolOptions = {
 }
 
 export type PackageSecretToolOptions = {
-	get: (alias: string) => Promise<string>
-	has: (alias: string) => Promise<boolean>
+	get: (alias: string, packageId?: string) => Promise<string>
+	has: (alias: string, packageId?: string) => Promise<boolean>
+	/**
+	 * Run package id for the unstamped `packageSecrets` binding. Null on
+	 * ad hoc execute so unstamped entry code stays unbound while stamped
+	 * imports still reach the factory.
+	 */
+	runPackageId?: string | null
 }
 
 export type EmailToolOptions = {
@@ -164,15 +170,15 @@ export type RuntimeHelperKodyToolSet = {
 	tools: AdditionalKodyTools
 }
 
-function createPackageSecretsHelperPrelude() {
+function createPackageSecretsFactoryPrelude() {
 	return `
-const packageSecrets = {
+const __kodyPackageSecrets = (packageId) => ({
   get: async (alias) => {
     const normalizedAlias = typeof alias === 'string' ? alias.trim() : '';
     if (!normalizedAlias) {
       throw new Error('packageSecrets.get requires a non-empty alias.')
     }
-    const result = await kody.packageSecretGet({ alias: normalizedAlias });
+    const result = await kody.packageSecretGet({ alias: normalizedAlias, packageId });
     return typeof result?.value === 'string' ? result.value : '';
   },
   has: async (alias) => {
@@ -180,10 +186,17 @@ const packageSecrets = {
     if (!normalizedAlias) {
       throw new Error('packageSecrets.has requires a non-empty alias.')
     }
-    const result = await kody.packageSecretHas({ alias: normalizedAlias });
+    const result = await kody.packageSecretHas({ alias: normalizedAlias, packageId });
     return result?.has === true;
   },
-};
+});
+	`.trim()
+}
+
+function createPackageSecretsBindingPrelude(input: { runPackageId: string }) {
+	const runPackageIdJson = JSON.stringify(input.runPackageId)
+	return `
+const packageSecrets = __kodyPackageSecrets(${runPackageIdJson});
 	`.trim()
 }
 
@@ -310,8 +323,12 @@ function createPackageSecretKodyTools(
 				typeof args === 'object' && args !== null && 'alias' in args
 					? String((args as { alias: unknown }).alias ?? '')
 					: ''
+			const packageId =
+				typeof args === 'object' && args !== null && 'packageId' in args
+					? String((args as { packageId: unknown }).packageId ?? '').trim()
+					: ''
 			return {
-				value: await packageSecretTools.get(alias),
+				value: await packageSecretTools.get(alias, packageId),
 			}
 		},
 		packageSecretHas: async (args: unknown) => {
@@ -319,8 +336,12 @@ function createPackageSecretKodyTools(
 				typeof args === 'object' && args !== null && 'alias' in args
 					? String((args as { alias: unknown }).alias ?? '')
 					: ''
+			const packageId =
+				typeof args === 'object' && args !== null && 'packageId' in args
+					? String((args as { packageId: unknown }).packageId ?? '').trim()
+					: ''
 			return {
-				has: await packageSecretTools.has(alias),
+				has: await packageSecretTools.has(alias, packageId),
 			}
 		},
 	}
@@ -475,15 +496,28 @@ const runtimeHelperManifest: Array<RuntimeHelperManifestEntry> = [
 		},
 	},
 	{
-		runtimeName: 'packageSecrets',
-		runtimeBindings: [{ runtimeName: 'packageSecrets', absentValue: 'null' }],
-		unboundNames: ['packageSecrets'],
+		runtimeName: 'packageSecretsFactory',
+		runtimeBindings: [
+			{ runtimeName: '__kodyPackageSecrets', absentValue: 'undefined' },
+		],
+		unboundNames: [],
 		isBound: (context) => Boolean(context.packageSecretTools),
-		createPrelude: () => createPackageSecretsHelperPrelude(),
+		createPrelude: () => createPackageSecretsFactoryPrelude(),
 		createKodyTools: (context) =>
 			context.packageSecretTools
 				? createPackageSecretKodyTools(context.packageSecretTools)
 				: {},
+	},
+	{
+		runtimeName: 'packageSecrets',
+		runtimeBindings: [{ runtimeName: 'packageSecrets', absentValue: 'null' }],
+		unboundNames: ['packageSecrets'],
+		isBound: (context) => Boolean(context.packageSecretTools?.runPackageId),
+		createPrelude: (context) => {
+			const runPackageId = context.packageSecretTools?.runPackageId
+			if (!runPackageId) return ''
+			return createPackageSecretsBindingPrelude({ runPackageId })
+		},
 	},
 	{
 		runtimeName: 'email',
@@ -552,6 +586,7 @@ const runtimeHelperRuntimeBindingOrder: Array<string> = [
 	'storage',
 	'packageStorage',
 	'execute',
+	'packageSecretsFactory',
 	'packageSecrets',
 	'email',
 	'workflows',

@@ -779,6 +779,7 @@ test('package runtime module paths round-trip stamped package ids', () => {
 	const moduleSource = createPackageRuntimeModuleSource(packageId)
 	expect(moduleSource).toContain(JSON.stringify(packageId))
 	expect(moduleSource).toContain('__kodyCreatePackageBoundStorage')
+	expect(moduleSource).toContain('__kodyCreatePackageBoundSecrets')
 	expect(moduleSource).toContain('../runtime.js')
 })
 
