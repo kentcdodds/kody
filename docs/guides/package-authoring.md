@@ -23,10 +23,10 @@ surface). Publish checks fail when either file is missing or empty.
 Already-published packages keep running as published; the next author-driven
 publish requires both files.
 
-Unique Dynamic Worker days and how a stable module graph reuses one isolate are
-documented once in [Platform efficiency](./platform-efficiency.md)
-(`platform_efficiency:guide`). Package README and AGENTS.md files do not repeat
-that cost model.
+Unique Dynamic Worker days and how the acting user plus a stable module graph
+reuse one isolate per UTC day are documented once in
+[Platform efficiency](./platform-efficiency.md) (`platform_efficiency:guide`).
+Package README and AGENTS.md files do not repeat that cost model.
 
 ## Choose an authoring lane
 

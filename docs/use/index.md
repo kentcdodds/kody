@@ -61,7 +61,8 @@ MCP-level reference detail those docs link into.
 - [Workflows](./workflows.md)
 - [Packages](./packages.md)
 - [Runtime and efficiency](../guides/platform-efficiency.md) — unique Dynamic
-  Worker days by surface, and how a stable module graph reuses one isolate
+  Worker days by surface, and how the acting user plus a stable module graph
+  reuse one isolate per UTC day
 - [Offload work that does not fit a Worker isolate](../guides/heavy-work-offload.md)
   — large npm graphs (PDF.js-class libraries) stay out of the package isolate;
   the owner operates a container or machine and the package calls it

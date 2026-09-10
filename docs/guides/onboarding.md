@@ -132,8 +132,9 @@ bring-your-own.
 
 ## Secrets
 
-Packages use secrets. The agent never reads the value. List, set, lock, delete,
-and sign — there is no get.
+Packages use secrets. The agent never reads the value. List, set, delete, and
+sign — there is no get. `secretLock` returns a website Allow link for package
+access and does not change `allowed_packages`.
 
 Small win: name a credential they already have and store it as a secret, or skip
 if they have none.

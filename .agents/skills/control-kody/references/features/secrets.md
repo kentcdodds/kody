@@ -30,3 +30,6 @@ https://kody.codes/account/secrets” note with no body is not proof.
 - `/connect/secrets` rejects hosts that are not hostname-shaped (truncated
   tokens, paths, empty values). Those must not appear as a successful Allow
   target, and they must not land in `allowedHosts`.
+- Package grants on user secrets are website-only (`/account/secrets/approve` or
+  the secret editor). `secretLock` returns an approval URL; it does not add
+  `allowed_packages`.

@@ -1,9 +1,11 @@
 # Inbound webhooks
 
 Kody inbound webhooks are **package-centered**: you declare them in
-`package.json#kody.webhooks`, mint a per-user credential URL, then point a
-provider (Sentry, GitHub, Stripe, or any generic sender) at that URL. Each
-delivery invokes the bound package export.
+`package.json#kody.webhooks`, mint an opaque handle with `webhookUrlMint`, then
+register the credential with `webhookUrlApply` (GitHub repository hooks today)
+or configure another provider through a website-only path. MCP and execute never
+return the credential URL or `url_secret`. Each delivery invokes the bound
+package export.
 
 This is the HTTP sibling of [email primitives](./email-primitives.md). Webhooks
 are the external HTTP knock: vendor providers (Sentry, GitHub, Stripe) and
@@ -71,7 +73,7 @@ Rules:
 
 Declaring a webhook does **not** open ingress by itself.
 
-## Mint the URL
+## Mint a handle
 
 Use the MCP `webhooks` domain:
 

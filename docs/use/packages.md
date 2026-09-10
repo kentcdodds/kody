@@ -93,8 +93,8 @@ Important fields:
   handlers
 - `kody.emits` — optional package-emitted event topic declarations
 - `kody.webhooks` — optional inbound webhook declarations bound to package
-  exports (mint a credential URL separately; see
-  [Inbound webhooks](./webhooks.md))
+  exports (mint a handle with `webhookUrlMint` and register it with
+  `webhookUrlApply`; see [Inbound webhooks](./webhooks.md))
 - `kody.jobs` — optional package-owned schedules
 - `kody.retrievers` — optional package-owned search/context retrievers
 
@@ -446,8 +446,8 @@ payloads and the distinction between live HEAD and package publish.
 ## Package webhooks
 
 Inbound HTTP webhooks are declared under `package.json#kody.webhooks` and bound
-to a package export. Declaring a webhook does not open ingress — mint a URL with
-`webhookUrlMint` first, then `webhookUrlApply` to register a first-class
+to a package export. Declaring a webhook does not open ingress — mint a handle
+with `webhookUrlMint` first, then `webhookUrlApply` to register a first-class
 destination (GitHub repository hooks). Full contract, signature examples, and
 payload shape: [Inbound webhooks](./webhooks.md).
 

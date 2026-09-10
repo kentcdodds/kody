@@ -19,17 +19,6 @@ test('keeps an explicit APP_BASE_URL and does not invent Cloudflare vars', () =>
 	})
 })
 
-test('copies SIGNUP_MODE so local vite can override the Wrangler default', () => {
-	expect(
-		collectLocalOriginDevVars({
-			SIGNUP_MODE: 'open',
-		}),
-	).toEqual({
-		WRANGLER_IS_LOCAL_DEV: 'true',
-		SIGNUP_MODE: 'open',
-	})
-})
-
 test('does not serialize Worker secrets or a live Cloudflare token', () => {
 	expect(
 		collectLocalOriginDevVars({

@@ -95,15 +95,16 @@ work is a job, not a workflow that reschedules itself.
 
 ## Inbound webhooks — the external HTTP knock
 
-A webhook gives a package a public, credentialed URL. A provider POSTs to it and
-Kody dispatches the validated request to the package export that owns it.
+A webhook gives a package a credentialed ingress URL (the credential stays out
+of MCP tool output). A provider POSTs to it and Kody dispatches the validated
+request to the package export that owns it.
 
 1. Declare it under `package.json#kody.webhooks`: a `name`, the `export` it
    binds to, and (for vendor senders) `verification` — HMAC header, encoding,
    and the **name** of the signing secret in your secret store. One webhook name
    binds one export; there is no wildcard.
 2. Store the signing secret with `secretSet` under that name.
-3. Mint the URL with `webhookUrlMint` (returns a `handle`, not the credential)
+3. Mint a handle with `webhookUrlMint` (returns a `handle`, not the credential)
    and register it with `webhookUrlApply`. Treat the URL as a credential; tool
    output never includes it.
 

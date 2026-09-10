@@ -87,7 +87,7 @@ request so cookie signing and verification are available to handlers.
 ### Signup posture and invites
 
 Anyone can create an account from `/signup` (password or social). An optional
-operator-minted invite code can still be supplied (`?code=` / `?invite=` or the
+operator-minted invite code can be supplied (`?code=` / `?invite=` or the
 optional field on the form); when present it is consumed and can grant the
 invite's stored plan. Referral share links (`?ref=`) are a separate growth
 program and do not use the `invites` table.
@@ -617,9 +617,9 @@ token. The member role is assigned on connect; Standard and Pro roles follow
   first (unusable password sentinel, `password_changed_at` lockout, TOTP /
   passkeys / other `oauth_connections` / reset tokens cleared) so a squatted
   password signup cannot keep access after the real owner signs in with the
-  provider; otherwise account creation follows the signup posture (resolved mode
-  other than `open` requires a valid invite code carried from the invite signup
-  panel; the `test` env remains open without one unless a KV override is set)
+  provider; otherwise a new account is created. Signup is open; an optional
+  invite code from the OAuth state cookie or signup form is consumed when
+  present and can grant the invite's stored plan
 - Buttons only render for providers whose client id/secret env vars are set;
   `MOCK_`-prefixed client ids activate an in-worker mock flow on non-production
   runtimes for dev and E2E tests
@@ -760,5 +760,5 @@ Token lifetimes are set on the `OAuthProvider` in
   verification tokens and resends
 - `packages/worker/src/app/handlers/account-secrets.ts` for owner-scoped secret
   reveal
-- `packages/worker/src/app/deployment-env.ts` for the production/non-production
-  gate shared by signup and developer-only routes
+- `packages/worker/src/app/deployment-env.ts` for non-production runtime
+  detection (developer-only routes, mock OAuth)
