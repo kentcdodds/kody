@@ -14,8 +14,8 @@ such as **`package`**) returns **metadata only**: names, descriptions, allowed
 hosts, **`package_id`** for package-scoped secrets, **`expires_at`**, and
 remaining **`ttl_ms`** — not plaintext values. Explicit listing includes
 caller-owned package-scoped metadata even without a package runtime; using a
-package secret still requires package context. **search** does not automatically
-surface package-scoped secrets. Expired secrets stay in the list with
+package secret still requires package context. **search** does not return or
+rank package-scoped secret references. Expired secrets stay in the list with
 **`ttl_ms: 0`**. Fetch placeholders and **`resolve`** treat them as missing so
 Kody stops sending the value.
 

@@ -2,8 +2,9 @@
 
 The **search** tool finds **built-in capabilities**, **official guides**,
 **saved packages**, **saved integrations**, and **user secret references**
-(metadata only, not secret values). Package-scoped secrets are not
-auto-surfaced; call **`secretList`** or **`packageGet`** for that metadata.
+(metadata only, not secret values). Search does not return or rank
+package-scoped secret references; call **`secretList`** or **`packageGet`** for
+that metadata.
 
 **Public package listings** are not included. Use the `community` domain
 (`communitySearch`, `communityGet`) or the public `/community` pages. See
@@ -215,7 +216,8 @@ Use **search** as the default way to discover whether an integration or
 user-scoped secret already exists before switching to **execute**. Runtime code
 inside **execute** can call **`kody.secretList(...)`** when it needs secret
 metadata, including caller-owned package-scoped rows with **`package_id`**.
-**search** does not automatically rank package-scoped secrets.
+**search** does not return or rank package-scoped secret references; use
+**`secretList`** or **`packageGet`** for that metadata.
 
 Saved integrations and the `integration_*` capabilities live in the
 **integrations** domain (`integrationList`, `integrationGet`, `integrationSave`,
