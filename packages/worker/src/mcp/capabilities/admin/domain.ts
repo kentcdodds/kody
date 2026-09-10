@@ -2,6 +2,7 @@ import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { adminAuditLogQueryCapability } from './admin-audit-log-query.ts'
 import { adminCommunityActivityListCapability } from './admin-community-activity-list.ts'
+import { adminCommunityOrphanForksCleanupCapability } from './admin-community-orphan-forks-cleanup.ts'
 import { adminFeatureFlagListCapability } from './admin-feature-flag-list.ts'
 import { adminFeatureFlagOverrideCapability } from './admin-feature-flag-override.ts'
 import { adminFeatureFlagSetCapability } from './admin-feature-flag-set.ts'
@@ -67,6 +68,7 @@ export const adminDomain = defineDomain({
 		'system email',
 		'platform feedback',
 		'community activity',
+		'orphan forks',
 		'platform accounts',
 		'platform oauth apps',
 		'provider marks',
@@ -138,5 +140,6 @@ export const adminDomain = defineDomain({
 		adminPlatformFeedbackGetCapability,
 		adminPlatformFeedbackUpdateCapability,
 		adminCommunityActivityListCapability,
+		adminCommunityOrphanForksCleanupCapability,
 	],
 })

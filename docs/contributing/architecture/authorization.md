@@ -355,6 +355,11 @@ rating notes, private package source, and all unrelated account content. Fork
 rows snapshot the public listing name and kody id so intentional listing
 deletion does not erase retained fork provenance; legacy orphan rows whose
 listing identity cannot be recovered use explicit deleted/unknown placeholders.
+`adminCommunityOrphanForksCleanup` is a separate audited maintenance mutation
+that previews or deletes leftover `community_forks` rows whose entity source and
+saved package are both gone. It can name those fork, package, and source ids
+because operators need them to confirm the row. Healthy inert forks (source
+present, no `saved_packages` row) are not orphans.
 
 New fork and rating writes enqueue an opaque activity id for durable
 `community.activity.recorded` package-subscription delivery. The Queue consumer
