@@ -718,11 +718,13 @@ intercepts `POST /oauth/token` refresh grants:
   serialized in the handling isolate. After a rotation the isolate remembers the
   new family in memory so a waiter can reuse it even when Workers KV still
   serves the pre-rotation miss. Isolate memory keeps only the current replay
-  entry and is dropped when the handling isolate revokes that grant. That is
-  isolate-local, not a cross-isolate Durable Object lock. Two current-token
-  refreshes that land on different isolates can still race the provider before a
-  snapshot is visible. A revoke that lands on another isolate can leave residual
-  memory until that isolate exits.
+  entry and is dropped when the handling isolate revokes that grant. Revoke
+  waits for any in-flight persist, then marks the grant forgotten so a later
+  remember cannot rewrite deleted-grant tokens. That is isolate-local, not a
+  cross-isolate Durable Object lock. Two current-token refreshes that land on
+  different isolates can still race the provider before a snapshot is visible. A
+  revoke that lands on another isolate can leave residual memory until that
+  isolate exits.
 - Encrypted snapshots live in `BUNDLE_ARTIFACTS_KV` under
   `derived-cache:v1:mcp-oauth-refresh-family:` / `-replay:` with KV TTLs of two
   hours and one hour. Retention is the TTL, so account deletion does not sweep

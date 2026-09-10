@@ -357,7 +357,7 @@ test('refresh family isolate memory does not survive grant revoke', async () => 
 		fetchProvider,
 	})
 	expect(seeded.response.status).toBe(200)
-	forgetRefreshFamilyGrant('user-rev', 'grant-rev')
+	await forgetRefreshFamilyGrant('user-rev', 'grant-rev')
 
 	const afterRevoke = await handleMcpOAuthTokenRequest({
 		request: refreshTokenRequest('user-rev:grant-rev:rt1'),
@@ -369,4 +369,79 @@ test('refresh family isolate memory does not survive grant revoke', async () => 
 		error: 'invalid_grant',
 	})
 	expect(providerCalls).toBe(2)
+})
+
+test('refresh family forget wins over an in-flight persist', async () => {
+	const env = missingKvEnv()
+	const family = mintedTokens(
+		'user-race:grant-race:rt2',
+		'user-race:grant-race:at2',
+	)
+	const rotated = mintedTokens(
+		'user-race:grant-race:rt3',
+		'user-race:grant-race:at3',
+	)
+	let releaseCurrentRefresh = () => {}
+	const currentRefreshHeld = new Promise<void>((resolve) => {
+		releaseCurrentRefresh = resolve
+	})
+	let currentRefreshStarted = () => {}
+	const currentRefreshEntered = new Promise<void>((resolve) => {
+		currentRefreshStarted = resolve
+	})
+	let seededFirstRefresh = false
+	let rotatedCurrentOnce = false
+	const fetchProvider = async (request: Request) => {
+		const formData = await request.clone().formData()
+		const presented = formData.get('refresh_token')
+		if (presented === 'user-race:grant-race:rt1' && !seededFirstRefresh) {
+			seededFirstRefresh = true
+			return new Response(JSON.stringify(family), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json' },
+			})
+		}
+		if (presented === 'user-race:grant-race:rt2' && !rotatedCurrentOnce) {
+			rotatedCurrentOnce = true
+			currentRefreshStarted()
+			await currentRefreshHeld
+			return new Response(JSON.stringify(rotated), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json' },
+			})
+		}
+		return new Response(JSON.stringify({ error: 'invalid_grant' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json' },
+		})
+	}
+
+	const seeded = await handleMcpOAuthTokenRequest({
+		request: refreshTokenRequest('user-race:grant-race:rt1'),
+		env,
+		fetchProvider,
+	})
+	expect(seeded.response.status).toBe(200)
+
+	const currentRefresh = handleMcpOAuthTokenRequest({
+		request: refreshTokenRequest('user-race:grant-race:rt2'),
+		env,
+		fetchProvider,
+	})
+	await currentRefreshEntered
+	const forget = forgetRefreshFamilyGrant('user-race', 'grant-race')
+	releaseCurrentRefresh()
+	const currentRefreshResult = await currentRefresh
+	expect(currentRefreshResult.response.status).toBe(200)
+	await forget
+
+	const afterRevoke = await handleMcpOAuthTokenRequest({
+		request: refreshTokenRequest('user-race:grant-race:rt2'),
+		env,
+		fetchProvider,
+	})
+	expect(afterRevoke.response.status).toBe(400)
+	await expect(afterRevoke.response.json()).resolves.toEqual({
+		error: 'invalid_grant',
+	})
 })

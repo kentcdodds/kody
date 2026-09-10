@@ -80,7 +80,7 @@ export async function revokeOAuthGrant(
 	userId: string,
 ) {
 	const result = await helpers.revokeGrant(grantId, userId)
-	forgetRefreshFamilyGrant(userId, grantId)
+	await forgetRefreshFamilyGrant(userId, grantId)
 	return result
 }
 
