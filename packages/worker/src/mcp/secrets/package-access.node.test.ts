@@ -84,6 +84,8 @@ const userSecretResolved = {
 }
 
 beforeEach(() => {
+	mockModule.getSavedPackageById.mockReset()
+	mockModule.findAcceptedPackageShareGrant.mockReset()
 	mockModule.isShareGrantedForeignPackage.mockResolvedValue(false)
 })
 
@@ -628,4 +630,65 @@ test('shared package code cannot use the guest user secrets even when allowed_pa
 			}),
 		),
 	).rejects.toBeInstanceOf(PackageSecretAccessDeniedError)
+})
+
+test('shared package mounts resolve secrets as the owner, not the guest', async () => {
+	mockModule.getSavedPackageById.mockImplementation(
+		async (_db: unknown, input: { userId: string }) =>
+			input.userId === 'owner-1' ? savedPackage : null,
+	)
+	mockModule.findAcceptedPackageShareGrant.mockResolvedValue({
+		ownerUserId: 'owner-1',
+		packageId: 'pkg-1',
+	})
+	mockModule.loadPackageManifestBySourceId.mockResolvedValueOnce({
+		manifest: {
+			name: '@alice/shared-notes',
+			exports: { '.': './src/index.ts' },
+			kody: {
+				id: 'shared-notes',
+				description: 'notes',
+				secretMounts: {
+					notesToken: { name: 'ownerNotesToken', scope: 'package' },
+				},
+			},
+		},
+	})
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'owner-token',
+		scope: 'package',
+		allowedPackages: [],
+	})
+	await expect(
+		resolvePackageMountedSecret({
+			env: { APP_DB: {} as D1Database } as Env,
+			packageId: 'pkg-1',
+			alias: 'notesToken',
+			callerContext: {
+				baseUrl: 'https://example.com',
+				user: {
+					userId: 'guest-1',
+					email: 'guest@example.com',
+					displayName: 'Guest',
+				},
+				repoContext: null,
+				storageContext: {
+					sessionId: null,
+					packageId: 'pkg-1',
+					storageId: 'pkg-1',
+				},
+			},
+		}),
+	).resolves.toMatchObject({
+		alias: 'notesToken',
+		value: 'owner-token',
+		scope: 'package',
+	})
+	expect(mockModule.loadPackageManifestBySourceId).toHaveBeenCalledWith(
+		expect.objectContaining({ userId: 'owner-1' }),
+	)
+	expect(mockModule.resolveSecret).toHaveBeenCalledWith(
+		expect.objectContaining({ userId: 'owner-1' }),
+	)
 })

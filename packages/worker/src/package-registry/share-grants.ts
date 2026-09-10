@@ -37,6 +37,10 @@ export type PackageShareTrustLevel = (typeof packageShareTrustLevels)[number]
 
 export const defaultPackageShareTrustLevel: PackageShareTrustLevel = 'pin'
 
+function canPrepareAppDb(db: D1Database | null | undefined): db is D1Database {
+	return typeof db?.prepare === 'function'
+}
+
 export type PackageShareGrantRow = {
 	id: string
 	packageId: string
@@ -309,6 +313,7 @@ export async function listInboundPackageShareGrants(
 	db: D1Database,
 	input: { userId: string; email?: string | null },
 ): Promise<Array<PackageShareGrantRow>> {
+	if (!canPrepareAppDb(db)) return []
 	const email = input.email ? normalizeEmailAddress(input.email) : null
 	const rows = email
 		? await db
@@ -376,6 +381,7 @@ export async function findAcceptedPackageShareGrant(input: {
 	packageId: string
 	granteeUserId: string
 }): Promise<PackageShareGrantRow | null> {
+	if (!canPrepareAppDb(input.db)) return null
 	const row = await input.db
 		.prepare(
 			`SELECT ${grantSelectColumns}
@@ -398,6 +404,7 @@ export async function findAcceptedPackageShareGrantByName(input: {
 	grant: PackageShareGrantRow
 	savedPackage: SavedPackageRecord
 } | null> {
+	if (!canPrepareAppDb(input.db)) return null
 	const row = await input.db
 		.prepare(
 			`SELECT ${grantSelectColumns}
@@ -664,11 +671,6 @@ export async function isShareGrantedForeignPackage(input: {
 	callerUserId: string
 	packageId: string
 }) {
-	const own = await getSavedPackageById(input.db, {
-		userId: input.callerUserId,
-		packageId: input.packageId,
-	})
-	if (own) return false
 	const grant = await findAcceptedPackageShareGrant({
 		db: input.db,
 		packageId: input.packageId,
@@ -682,10 +684,12 @@ export async function resolvePackageStorageOwnerUserId(input: {
 	callerUserId: string
 	packageId: string
 }) {
-	const own = await getSavedPackageById(input.db, {
-		userId: input.callerUserId,
-		packageId: input.packageId,
-	})
+	const own = canPrepareAppDb(input.db)
+		? await getSavedPackageById(input.db, {
+				userId: input.callerUserId,
+				packageId: input.packageId,
+			})
+		: null
 	if (own) return input.callerUserId
 	const grant = await findAcceptedPackageShareGrant({
 		db: input.db,
@@ -701,14 +705,27 @@ export async function collectShareStorageOwners(input: {
 	packageIds: Iterable<string>
 }): Promise<Map<string, string>> {
 	const owners = new Map<string, string>()
-	for (const packageId of input.packageIds) {
-		const ownerUserId = await resolvePackageStorageOwnerUserId({
-			db: input.db,
-			callerUserId: input.callerUserId,
-			packageId,
-		})
-		if (ownerUserId !== input.callerUserId) {
-			owners.set(packageId, ownerUserId)
+	if (!canPrepareAppDb(input.db)) return owners
+	const packageIds = [
+		...new Set(
+			[...input.packageIds].filter((packageId) => packageId.length > 0),
+		),
+	]
+	if (packageIds.length === 0) return owners
+	const placeholders = packageIds.map(() => '?').join(', ')
+	const rows = await input.db
+		.prepare(
+			`SELECT package_id, owner_user_id
+			FROM package_share_grants
+			WHERE grantee_user_id = ?
+				AND status = 'accepted'
+				AND package_id IN (${placeholders})`,
+		)
+		.bind(input.callerUserId, ...packageIds)
+		.all<{ package_id: string; owner_user_id: string }>()
+	for (const row of rows.results ?? []) {
+		if (row.owner_user_id && row.owner_user_id !== input.callerUserId) {
+			owners.set(row.package_id, row.owner_user_id)
 		}
 	}
 	return owners
@@ -1029,7 +1046,7 @@ export async function attachPendingPackageShareInvitesForEmail(input: {
 	username?: string | null
 }) {
 	const email = normalizeEmailAddress(input.email)
-	if (!email) return { attached: 0 }
+	if (!email || !canPrepareAppDb(input.db)) return { attached: 0 }
 	const username = input.username ? normalizeUsername(input.username) : null
 	const result = await input.db
 		.prepare(

@@ -1,7 +1,6 @@
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { buildPackageShareInviteEmail } from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
-import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import {
 	buildPackageShareAcceptPath,
 	hydratePackageShareGrantView,
@@ -49,10 +48,7 @@ export async function sendPackageShareInviteEmail(input: {
 			text: email.text,
 		},
 	)
-	if (
-		!sendResult.ok &&
-		!(sendResult.skipped && isNonProductionRuntime(input.env))
-	) {
+	if (!sendResult.ok && !sendResult.skipped) {
 		console.error('package-share-invite-email-failed', sendResult.error)
 	}
 	return { sent: sendResult.ok === true }

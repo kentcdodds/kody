@@ -17,12 +17,6 @@ test('diffPublishedSourceFiles reports added, removed, and modified files', () =
 		),
 	).toEqual([
 		{
-			path: 'README.md',
-			change: 'modified',
-			accepted: '# old',
-			current: '# new',
-		},
-		{
 			path: 'added.ts',
 			change: 'added',
 			accepted: null,
@@ -33,6 +27,12 @@ test('diffPublishedSourceFiles reports added, removed, and modified files', () =
 			change: 'removed',
 			accepted: 'export const gone = 1',
 			current: null,
+		},
+		{
+			path: 'README.md',
+			change: 'modified',
+			accepted: '# old',
+			current: '# new',
 		},
 	])
 })

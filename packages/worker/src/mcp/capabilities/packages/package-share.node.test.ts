@@ -10,7 +10,7 @@ import {
 	packageShareListCapability,
 } from './package-share.ts'
 
-const migrationsDirectory = new URL('../../../migrations/', import.meta.url)
+const migrationsDirectory = new URL('../../../../migrations/', import.meta.url)
 const ownerUserId = 'aa'.repeat(32)
 const guestUserId = 'bb'.repeat(32)
 
