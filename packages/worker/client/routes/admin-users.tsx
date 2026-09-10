@@ -12,7 +12,6 @@ import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors } from '#universal/styles/tokens.ts'
 import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
-import { isStalledEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { type RoleName } from '#universal/permissions.ts'
 import {
 	type AdminCreatedUserSetup,
@@ -31,6 +30,8 @@ import {
 	getDataKey,
 	getListKey,
 	getSelection,
+	nextAdminUsersWindowAfterCreate,
+	nextAdminUsersWindowAfterMutation,
 	parseSelectedStableUserId,
 	readFilterState,
 } from './admin-users-shared.ts'
@@ -276,45 +277,17 @@ export function AdminUsersRoute(handle: Handle) {
 	function applyMutationPayload(payload: AdminUsersMutationData, href: string) {
 		availableRoles = payload.availableRoles
 		availablePlans = payload.availablePlans
-		const updatedUser = payload.updatedUser
-		const { role, verification } = readFilterState(href)
-		// The server ignores unknown role values, so only a known role counts
-		// as an active filter — otherwise every mutation would wrongly remove
-		// its target from the list.
-		const activeRoleFilter = (availableRoles as Array<string>).includes(role)
-			? role
-			: ''
-		const matchesRoleFilter =
-			!updatedUser ||
-			!activeRoleFilter ||
-			(updatedUser.roles as Array<string>).includes(activeRoleFilter)
-		const matchesVerificationFilter =
-			!updatedUser ||
-			verification !== 'stalled' ||
-			isStalledEmailVerificationDelivery({
-				emailVerified: updatedUser.email_verified,
-				delivery: updatedUser.email_verification_delivery,
-			})
-		const matchesActiveFilters = matchesRoleFilter && matchesVerificationFilter
-		const currentItems = usersSnapshot.items
-		const nextItems = updatedUser
-			? matchesActiveFilters
-				? currentItems.map((item) =>
-						item.stableUserId === updatedUser.stableUserId ? updatedUser : item,
-					)
-				: currentItems.filter(
-						(item) => item.stableUserId !== updatedUser.stableUserId,
-					)
-			: currentItems
+		const nextWindow = nextAdminUsersWindowAfterMutation({
+			currentItems: usersSnapshot.items,
+			payload,
+			href,
+		})
 		// reset() invalidates any in-flight load-more so a page fetched before
 		// the mutation cannot merge stale rows or counts back in afterward.
 		userList.reset()
-		userList.replaceWindow({
-			items: nextItems,
-			hasMore: nextItems.length < payload.total,
-			totalCount: payload.total,
-		})
+		userList.replaceWindow(nextWindow)
 		const selectedStableUserId = getSelectedStableUserIdFromHref(href)
+		const updatedUser = payload.updatedUser
 		selectedUserFallback =
 			payload.selectedUser ??
 			(updatedUser &&
@@ -322,6 +295,22 @@ export function AdminUsersRoute(handle: Handle) {
 			updatedUser.stableUserId === selectedStableUserId
 				? updatedUser
 				: selectedUserFallback)
+		resetPlanDraft()
+	}
+
+	function applyCreateUserPayload(
+		payload: AdminUsersMutationData,
+		href: string,
+	) {
+		if (payload.listRefreshFailed) return
+		availableRoles = payload.availableRoles
+		availablePlans = payload.availablePlans
+		const nextWindow = nextAdminUsersWindowAfterCreate(payload)
+		loadedThroughPage = payload.page
+		userList.reset()
+		userList.replaceWindow(nextWindow)
+		lastLoadedListKey = getListKey(href)
+		selectedUserFallback = payload.selectedUser
 		resetPlanDraft()
 	}
 
@@ -561,7 +550,7 @@ export function AdminUsersRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to create user.')
 			}
-			applyMutationPayload(payload, href)
+			applyCreateUserPayload(payload, href)
 			createdUser = payload.createdUser ?? createdUser
 			message = 'User created. Copy the setup link below.'
 			actionState = 'idle'

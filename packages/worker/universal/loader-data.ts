@@ -345,6 +345,11 @@ export type AdminUsersMutationData = AdminUsersLoaderData & {
 	verifyUrl?: string | null
 	verifyUrlExpiresAt?: number | null
 	createdUser?: AdminCreatedUserSetup
+	/**
+	 * Create succeeded but `loadAdminUsersData` failed. The client must keep
+	 * the current list window and still show `createdUser` / the setup link.
+	 */
+	listRefreshFailed?: boolean
 }
 
 type AdminRoleListItem = {

@@ -30,6 +30,7 @@ import {
 } from '#worker/identity/email-verification-admin.ts'
 import {
 	parsePlanName,
+	planNames,
 	resolvePlanWrite,
 	type PlanName,
 } from '#universal/plans.ts'
@@ -681,12 +682,31 @@ async function handleCreateUserAction(input: {
 		})
 
 		const { userId: _userId, ...boundaryUser } = createdUser
-		const payload = await loadAdminUsersData(input.env, input.request.url)
-		return jsonResponse({
-			...payload,
-			updatedUser: null,
-			createdUser: boundaryUser,
-		})
+		try {
+			const payload = await loadAdminUsersData(input.env, input.request.url)
+			return jsonResponse({
+				...payload,
+				updatedUser: null,
+				createdUser: boundaryUser,
+			})
+		} catch (error) {
+			// The account and one-time setup link already exist. A list refresh
+			// failure must not become a 500 that drops that link.
+			console.warn('admin-users-create-list-refresh-failed', error)
+			return jsonResponse({
+				ok: true,
+				users: [],
+				selectedUser: null,
+				page: 1,
+				pageSize: 20,
+				total: 0,
+				availableRoles: [...roleNames],
+				availablePlans: [...planNames],
+				updatedUser: null,
+				createdUser: boundaryUser,
+				listRefreshFailed: true,
+			})
+		}
 	} catch (error) {
 		const message =
 			error instanceof Error ? error.message : 'Unable to create user.'
