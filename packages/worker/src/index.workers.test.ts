@@ -20,6 +20,15 @@ const mocks = vi.hoisted(() => ({
 		count: 0,
 	})),
 	aggregateUsageRollups: vi.fn(async () => ({ skipped: true })),
+	refreshAdminInsightsRunLogSnapshot: vi.fn(async () => ({
+		complete: true,
+		snapshotUpdatedAt: '2026-09-10T00:00:00.000Z',
+		usersWithRunLog: 0,
+		usersMissingRunLog: 0,
+		runs: 0,
+		medianRunDurationMs: null,
+		hours: [],
+	})),
 	backfillStorageBucketEstimates: vi.fn(async () => ({
 		scanned: 0,
 		updated: 0,
@@ -63,6 +72,10 @@ vi.mock('#app/auth-denial-alerts.ts', () => ({
 
 vi.mock('#worker/usage/aggregate-rollups.ts', () => ({
 	aggregateUsageRollups: mocks.aggregateUsageRollups,
+}))
+
+vi.mock('#worker/admin/insights-runlog-snapshot.ts', () => ({
+	refreshAdminInsightsRunLogSnapshot: mocks.refreshAdminInsightsRunLogSnapshot,
 }))
 
 vi.mock('#worker/storage-buckets/estimate-backfill.ts', () => ({
@@ -123,6 +136,9 @@ test('platform lanes execute with their expected inputs and jobs-owned lanes are
 		expect.objectContaining({ blobs: env.EMAIL_BLOBS }),
 	)
 	expect(mocks.aggregateUsageRollups).toHaveBeenCalledWith(env, scheduledAt)
+	expect(mocks.refreshAdminInsightsRunLogSnapshot).toHaveBeenCalledWith(
+		expect.objectContaining({ now: scheduledAt }),
+	)
 	expect(mocks.checkAuthDenialBurstAndNotify).toHaveBeenCalledWith(
 		expect.objectContaining({ now: scheduledAt }),
 	)
