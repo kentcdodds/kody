@@ -7,8 +7,6 @@ import { listRunRecords } from '#worker/run-records/service.ts'
 import { type RunRecord } from '#worker/run-records/types.ts'
 import { getWebhookEndpointByKey } from '#worker/webhooks/repo.ts'
 import {
-	applyWebhookPackageRefAliases,
-	readWebhookPackageName,
 	requirePackageRef,
 	toDeliveryCapability,
 	webhookDeliverySchema,
@@ -92,38 +90,31 @@ export const webhookDeliveryListCapability = defineDomainCapability(
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
-		inputSchema: z.preprocess(
-			applyWebhookPackageRefAliases,
-			z
-				.object({
-					...webhookPackageRefSchema,
-					webhookName: z.string().min(1),
-					limit: z.number().int().min(1).max(50).optional(),
-				})
-				.superRefine((input, ctx) => {
-					try {
-						requirePackageRef(input)
-					} catch (error) {
-						ctx.addIssue({
-							code: 'custom',
-							path: ['packageId'],
-							message:
-								error instanceof Error ? error.message : 'Invalid package ref.',
-						})
-					}
-				}),
-		),
+		inputSchema: z
+			.object({
+				...webhookPackageRefSchema,
+				webhookName: z.string().min(1),
+				limit: z.number().int().min(1).max(50).optional(),
+			})
+			.superRefine((input, ctx) => {
+				try {
+					requirePackageRef(input)
+				} catch (error) {
+					ctx.addIssue({
+						code: 'custom',
+						path: ['packageId'],
+						message:
+							error instanceof Error ? error.message : 'Invalid package ref.',
+					})
+				}
+			}),
 		outputSchema: z.object({
 			deliveries: z.array(webhookDeliverySchema),
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
 			const webhookName = args.webhookName.trim()
-			const packageIdOrKodyId = (
-				args.packageId ??
-				readWebhookPackageName(args) ??
-				''
-			).trim()
+			const packageIdOrKodyId = (args.packageId ?? args.kodyId ?? '').trim()
 			const savedPackage = await resolveSavedPackage({
 				db: ctx.env.APP_DB,
 				userId: user.userId,

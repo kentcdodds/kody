@@ -264,7 +264,7 @@ test('public package flow works end-to-end through capability handlers', async (
 	)
 	expect(publishResult).toMatchObject({
 		name: `@usera/${kodyId}`,
-		package_name: kodyId,
+		kody_id: kodyId,
 		license: '',
 		version: '1.0.4',
 		status: 'active',
@@ -771,7 +771,7 @@ test('one-click install publishes clean listings and keeps unresolvable forks in
 	expect(installedPackage).toMatchObject({
 		source_listing_id: cleanListing.listing_id,
 		listing_current: true,
-		listing_package_name: cleanKodyId,
+		listing_kody_id: cleanKodyId,
 	})
 	const installerPackages = await listPackagesCapability.handler(
 		{},
@@ -783,7 +783,7 @@ test('one-click install publishes clean listings and keeps unresolvable forks in
 				package_id: installed.packageId,
 				source_listing_id: cleanListing.listing_id,
 				listing_current: true,
-				listing_package_name: cleanKodyId,
+				listing_kody_id: cleanKodyId,
 			}),
 		]),
 	)
@@ -849,7 +849,7 @@ test('one-click install publishes clean listings and keeps unresolvable forks in
 	expect(packageAfterUnpublish).toMatchObject({
 		source_listing_id: cleanListing.listing_id,
 		listing_current: false,
-		listing_package_name: cleanKodyId,
+		listing_kody_id: cleanKodyId,
 	})
 
 	const republishedListing = await communityPublishCapability.handler(
@@ -865,7 +865,7 @@ test('one-click install publishes clean listings and keeps unresolvable forks in
 	expect(packageAfterRepublish).toMatchObject({
 		source_listing_id: republishedListing.listing_id,
 		listing_current: true,
-		listing_package_name: cleanKodyId,
+		listing_kody_id: cleanKodyId,
 	})
 	await communityRateCapability.handler(
 		{

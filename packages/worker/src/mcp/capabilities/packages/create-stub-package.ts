@@ -15,6 +15,7 @@ export const defaultStubPackageDescription =
 
 export function buildStubPackageFiles(input: {
 	name: string
+	kodyId: string
 	description: string
 }): Record<string, string> {
 	const packageJson = {
@@ -22,6 +23,7 @@ export function buildStubPackageFiles(input: {
 		private: true,
 		exports: { '.': './src/index.ts' },
 		kody: {
+			id: input.kodyId,
 			description: input.description,
 		},
 	}
@@ -71,11 +73,11 @@ export async function createStubSavedPackage(input: {
 	env: Env
 	baseUrl: string
 	owner: PackageOwnerContext
-	packageName: string
+	kodyId: string
 	description?: string
 }) {
-	const packageSlug = normalizePackageNameInput({
-		value: input.packageName,
+	const kodyId = normalizePackageNameInput({
+		value: input.kodyId,
 		ownerScope: input.owner.ownerScope,
 		action: 'create',
 	})
@@ -85,10 +87,10 @@ export async function createStubSavedPackage(input: {
 		email: input.owner.ownerEmail,
 		resource: 'saved_packages',
 	})
-	const name = `@${input.owner.ownerScope}/${packageSlug}`
+	const name = `@${input.owner.ownerScope}/${kodyId}`
 	const description = input.description?.trim() || defaultStubPackageDescription
 	assertKodyDescriptionLength(description)
-	const files = buildStubPackageFiles({ name, description })
+	const files = buildStubPackageFiles({ name, kodyId, description })
 	const packageJsonContent = files['package.json']
 	if (!packageJsonContent) {
 		throw new Error('Stub package files are missing package.json.')
@@ -145,9 +147,5 @@ export async function createStubSavedPackage(input: {
 		packageId,
 		sourceId: ensuredSource.id,
 	})
-	return {
-		packageId,
-		packageName: manifest.kody.id,
-		name: manifest.name,
-	}
+	return { packageId, kodyId: manifest.kody.id, name: manifest.name }
 }

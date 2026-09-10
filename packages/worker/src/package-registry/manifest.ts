@@ -3,11 +3,6 @@ import { listJsonSchemaSubsetProblems } from '@kody-internal/shared/json-schema-
 import { z } from 'zod'
 import { parseModuleSource, type ModuleAstNode } from '#worker/module-source.ts'
 import {
-	getPackageNameLeaf,
-	getPackageNameScope,
-	isScopedPackageName,
-} from './package-name.ts'
-import {
 	authoredPackageJsonSchema,
 	webhookDefaultRateLimitPerMinute,
 	type AuthoredPackageJson,
@@ -18,6 +13,29 @@ import {
 const packageManifestPath = 'package.json'
 const customPackageEventTopicPattern =
 	/^@[a-z0-9][a-z0-9._-]*\/[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)+$/
+
+function isScopedPackageName(name: string) {
+	const trimmed = name.trim()
+	if (!trimmed.startsWith('@')) {
+		return false
+	}
+
+	const separator = trimmed.indexOf('/')
+	return separator > 1 && separator < trimmed.length - 1
+}
+
+function getExpectedKodyName(name: string) {
+	const trimmed = name.trim()
+	const separator = trimmed.indexOf('/')
+	return separator === -1 ? trimmed : trimmed.slice(separator + 1)
+}
+
+function getPackageNameScope(name: string) {
+	const trimmed = name.trim()
+	const separator = trimmed.indexOf('/')
+	if (separator <= 1) return null
+	return trimmed.slice(1, separator)
+}
 
 function assertPackageEmittedEventTopics(input: {
 	manifest: AuthoredPackageJson
@@ -99,17 +117,16 @@ export function parseAuthoredPackageJson(input: {
 	const manifest = result.data
 	if (!isScopedPackageName(manifest.name)) {
 		throw new Error(
-			`Invalid ${input.manifestPath ?? packageManifestPath}:\npackage.json name "${manifest.name}" must be a scoped package name like "@scope/${getPackageNameLeaf(manifest.name) || 'name'}".`,
+			`Invalid ${input.manifestPath ?? packageManifestPath}:\npackage.json name "${manifest.name}" must be a scoped package name like "@scope/${getExpectedKodyName(manifest.name) || 'name'}".`,
 		)
 	}
-	const packageSlug = getPackageNameLeaf(manifest.name)
-	if (manifest.kody.id !== undefined && packageSlug !== manifest.kody.id) {
+	const expectedKodyId = getExpectedKodyName(manifest.name)
+	if (manifest.kody.id !== undefined && expectedKodyId !== manifest.kody.id) {
 		throw new Error(
-			`Invalid ${input.manifestPath ?? packageManifestPath}:\npackage.json kody.id is not package identity; if present it must match the name leaf "${packageSlug}" (found "${manifest.kody.id}"). Omit kody.id and use package.json name "${manifest.name}".`,
+			`Invalid ${input.manifestPath ?? packageManifestPath}:\npackage.json name "${manifest.name}" must use a leaf package name that matches kody.id "${manifest.kody.id}".`,
 		)
 	}
-	// Derived slug for internal callers. Authored kody.id is not identity.
-	manifest.kody.id = packageSlug
+	manifest.kody.id = expectedKodyId
 	const authored = manifest as AuthoredPackageJson
 	if (input.expectedPackageScope !== undefined) {
 		assertAuthoredPackageJsonNameScope({

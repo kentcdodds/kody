@@ -81,7 +81,7 @@ export const getPackageCapability = defineDomainCapability(
 			)
 			return {
 				package_id: saved.id,
-				package_name: saved.kodyId,
+				kody_id: saved.kodyId,
 				name: saved.name,
 				description: saved.description,
 				tags: saved.tags,
@@ -94,7 +94,7 @@ export const getPackageCapability = defineDomainCapability(
 				source_id: saved.sourceId,
 				source_listing_id: saved.sourceListingId,
 				listing_current: saved.listingCurrent,
-				listing_package_name: saved.listingKodyId,
+				listing_kody_id: saved.listingKodyId,
 				listing_name: saved.listingName,
 				origin_commit: saved.originCommit,
 				listing_pinned_commit: saved.listingPinnedCommit,

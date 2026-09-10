@@ -1170,7 +1170,7 @@ test('forkCommunityListing rejects stale array-shaped kody.dependencies as Commu
 	expect(mockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 })
 
-test('forkCommunityListing rejects repeat fork without a new package_name', async () => {
+test('forkCommunityListing rejects repeat fork without a new kody_id', async () => {
 	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
 	mockModule.readCommunitySnapshot.mockResolvedValue({
 		version: 1,
@@ -1205,13 +1205,13 @@ test('forkCommunityListing rejects repeat fork without a new package_name', asyn
 			listingId: 'listing-1',
 		}),
 	).rejects.toThrow(
-		'You already forked this listing as package name "discord-gateway". Resume the existing fork with source_id "fork-source-1" (package_id "package-fork-1") via repoOpenSession, or pass a different package_name to fork again.',
+		'You already forked this listing as package name "discord-gateway". Resume the existing fork with source_id "fork-source-1" (package_id "package-fork-1") via repoOpenSession, or pass a different package name leaf to fork again.',
 	)
 
 	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
 })
 
-test('forkCommunityListing allows repeat fork with a different package_name', async () => {
+test('forkCommunityListing allows repeat fork with a different kody_id', async () => {
 	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
 	mockModule.readCommunitySnapshot.mockResolvedValue({
 		version: 1,

@@ -347,14 +347,15 @@ grant access to private package source or unrelated account content.
 
 **Admins can inspect activity metadata for public community listings.** The
 `adminCommunityActivityList` capability returns a paginated, newest-first feed
-of fork and rating rows with listing id/name/kody id, acting username,
+of fork and rating rows with listing id/name/package name leaf, acting username,
 timestamp, and rating scores. Existing storage does not distinguish a one-click
 install from an ordinary fork, so both appear as `fork`. The capability omits
-stable user ids, forked package/source ids, origin commits, target kody ids,
-rating notes, private package source, and all unrelated account content. Fork
-rows snapshot the public listing name and kody id so intentional listing
-deletion does not erase retained fork provenance; legacy orphan rows whose
-listing identity cannot be recovered use explicit deleted/unknown placeholders.
+stable user ids, forked package/source ids, origin commits, target package name
+leaves, rating notes, private package source, and all unrelated account content.
+Fork rows snapshot the public listing name and package name leaf so intentional
+listing deletion does not erase retained fork provenance; legacy orphan rows
+whose listing identity cannot be recovered use explicit deleted/unknown
+placeholders.
 
 New fork and rating writes enqueue an opaque activity id for durable
 `community.activity.recorded` package-subscription delivery. The Queue consumer
@@ -393,9 +394,9 @@ combined error rate rises, Kody fans `fleet.package_error_rate.elevated` only to
 packages whose owners hold the admin role at dispatch time. The event contains
 window bounds, per-metric counts and rates, the public status URL, and the
 insights URL. When one account or a few accounts own the recent-window errors,
-it also names those usernames and package kody ids. It omits user ids, package
-UUIDs, emails, error strings, logs, and unrelated account content. This is
-operator telemetry about kody itself, not a user-data exception. Delivery is
+it also names those usernames and package name leaves. It omits user ids,
+package UUIDs, emails, error strings, logs, and unrelated account content. This
+is operator telemetry about kody itself, not a user-data exception. Delivery is
 best-effort (no Queue). A six-hour cooldown suppresses repeat pages. A
 concentrated spike still pages the fleet; it does not reroute as a per-user
 storm.

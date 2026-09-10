@@ -3,12 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { setWebhookEnabledForUser } from '#worker/webhooks/service.ts'
-import {
-	applyWebhookPackageRefAliases,
-	readWebhookPackageName,
-	requirePackageRef,
-	webhookPackageRefSchema,
-} from './shared.ts'
+import { requirePackageRef, webhookPackageRefSchema } from './shared.ts'
 
 export const webhookEnableCapability = defineDomainCapability(
 	capabilityDomainNames.webhooks,
@@ -20,26 +15,23 @@ export const webhookEnableCapability = defineDomainCapability(
 		readOnly: false,
 		idempotent: true,
 		destructive: false,
-		inputSchema: z.preprocess(
-			applyWebhookPackageRefAliases,
-			z
-				.object({
-					...webhookPackageRefSchema,
-					webhookName: z.string().min(1),
-				})
-				.superRefine((input, ctx) => {
-					try {
-						requirePackageRef(input)
-					} catch (error) {
-						ctx.addIssue({
-							code: 'custom',
-							path: ['packageId'],
-							message:
-								error instanceof Error ? error.message : 'Invalid package ref.',
-						})
-					}
-				}),
-		),
+		inputSchema: z
+			.object({
+				...webhookPackageRefSchema,
+				webhookName: z.string().min(1),
+			})
+			.superRefine((input, ctx) => {
+				try {
+					requirePackageRef(input)
+				} catch (error) {
+					ctx.addIssue({
+						code: 'custom',
+						path: ['packageId'],
+						message:
+							error instanceof Error ? error.message : 'Invalid package ref.',
+					})
+				}
+			}),
 		outputSchema: z.object({
 			package_id: z.string(),
 			webhook_name: z.string(),
@@ -51,7 +43,7 @@ export const webhookEnableCapability = defineDomainCapability(
 				env: ctx.env,
 				userId: user.userId,
 				packageId: args.packageId,
-				kodyId: readWebhookPackageName(args),
+				kodyId: args.kodyId,
 				webhookName: args.webhookName,
 				enabled: true,
 			})

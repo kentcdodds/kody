@@ -170,7 +170,7 @@ test('repo open session workflow and conversation conflict guard', async () => {
 		kind: 'package',
 		source_id: 'source-package-1',
 		package_id: 'package-1',
-		package_name: 'triage-github-pr',
+		kody_id: 'triage-github-pr',
 		name: '@kody/triage-github-pr',
 	})
 	expect(openRpc.openSession).toHaveBeenCalledWith(

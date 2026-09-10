@@ -84,7 +84,7 @@ export const communitySearchCapability = defineDomainCapability(
 				matches: listings.map((listing) => ({
 					listing_id: listing.id,
 					name: listing.name,
-					package_name: listing.kodyId,
+					kody_id: listing.kodyId,
 					description: listing.description,
 					tags: listing.tags,
 					category: listing.category,

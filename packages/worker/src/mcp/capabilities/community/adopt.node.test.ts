@@ -28,7 +28,7 @@ function createContext(userId = 'user-alice') {
 	}
 }
 
-test('communityForkAdopt adopts by package_id or package_name and rejects invalid reviews', async () => {
+test('communityForkAdopt adopts by package_id or kody_id and rejects invalid reviews', async () => {
 	mocks.adoptCommunityFork.mockResolvedValue({
 		packageId: 'pkg-1',
 		kodyId: 'demo-fork',
@@ -50,7 +50,7 @@ test('communityForkAdopt adopts by package_id or package_name and rejects invali
 		adopted: true,
 		already_adopted: false,
 		package_id: 'pkg-1',
-		package_name: 'demo-fork',
+		kody_id: 'demo-fork',
 		listing_id: 'listing-1',
 		origin_commit: 'commit-1',
 		adopted_at: '2026-07-21T12:00:00.000Z',
@@ -82,7 +82,7 @@ test('communityForkAdopt adopts by package_id or package_name and rejects invali
 	).resolves.toMatchObject({
 		adopted: true,
 		already_adopted: true,
-		package_name: 'demo-fork',
+		kody_id: 'demo-fork',
 	})
 
 	mocks.adoptCommunityFork.mockRejectedValueOnce(

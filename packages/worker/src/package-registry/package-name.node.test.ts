@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest'
 import {
-	applyPackageNameAliases,
 	getPackageNameLeaf,
 	getPackageNameScope,
 	invalidPackageNameMessage,
@@ -47,13 +46,6 @@ test('normalizePackageNameInput accepts a leaf, strips a matching scope, and rej
 
 	expect(() =>
 		normalizePackageNameInput({
-			value: '@grant/mailchimp',
-			ownerScope: 'kentcdodds',
-		}),
-	).toThrow(/does not match the acting owner "@kentcdodds"/)
-
-	expect(() =>
-		normalizePackageNameInput({
 			value: 'Not_A_Valid_Id',
 			ownerScope: 'grant',
 			action: 'create',
@@ -66,24 +58,10 @@ test('normalizePackageNameInput accepts a leaf, strips a matching scope, and rej
 		}),
 	)
 
-	expect(() =>
-		normalizePackageNameInput({
-			value: '@grant/Not_Valid',
-			ownerScope: 'grant',
-			action: 'create',
-		}),
-	).toThrow(/lower-kebab-case package name leaf/)
-
 	expect(getPackageNameLeaf('@kentcdodds/cursor-cloud-agents')).toBe(
 		'cursor-cloud-agents',
 	)
 	expect(getPackageNameScope('@kentcdodds/cursor-cloud-agents')).toBe(
 		'kentcdodds',
 	)
-	expect(applyPackageNameAliases({ kody_id: 'legacy-slug' })).toEqual({
-		package_name: 'legacy-slug',
-	})
-	expect(
-		applyPackageNameAliases({ package_name: 'kept', kody_id: 'ignored' }),
-	).toEqual({ package_name: 'kept' })
 })

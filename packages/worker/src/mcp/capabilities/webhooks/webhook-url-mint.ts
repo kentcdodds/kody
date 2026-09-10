@@ -4,9 +4,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { mintWebhookUrlForUser } from '#worker/webhooks/service.ts'
 import {
-	applyWebhookPackageRefAliases,
 	mintedWebhookHandleSchema,
-	readWebhookPackageName,
 	requirePackageRef,
 	toMintedWebhookCapability,
 	webhookPackageRefSchema,
@@ -22,29 +20,26 @@ export const webhookUrlMintCapability = defineDomainCapability(
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
-		inputSchema: z.preprocess(
-			applyWebhookPackageRefAliases,
-			z
-				.object({
-					...webhookPackageRefSchema,
-					webhookName: z
-						.string()
-						.min(1)
-						.describe('Webhook name from package.json#kody.webhooks[].name.'),
-				})
-				.superRefine((input, ctx) => {
-					try {
-						requirePackageRef(input)
-					} catch (error) {
-						ctx.addIssue({
-							code: 'custom',
-							path: ['packageId'],
-							message:
-								error instanceof Error ? error.message : 'Invalid package ref.',
-						})
-					}
-				}),
-		),
+		inputSchema: z
+			.object({
+				...webhookPackageRefSchema,
+				webhookName: z
+					.string()
+					.min(1)
+					.describe('Webhook name from package.json#kody.webhooks[].name.'),
+			})
+			.superRefine((input, ctx) => {
+				try {
+					requirePackageRef(input)
+				} catch (error) {
+					ctx.addIssue({
+						code: 'custom',
+						path: ['packageId'],
+						message:
+							error instanceof Error ? error.message : 'Invalid package ref.',
+					})
+				}
+			}),
 		outputSchema: z.object({
 			webhook: mintedWebhookHandleSchema,
 		}),
@@ -56,7 +51,7 @@ export const webhookUrlMintCapability = defineDomainCapability(
 				email: user.email,
 				username: user.username,
 				packageId: args.packageId,
-				kodyId: readWebhookPackageName(args),
+				kodyId: args.kodyId,
 				webhookName: args.webhookName,
 				requestUrl: ctx.callerContext.baseUrl,
 			})

@@ -7,13 +7,13 @@ export type PackageTestHints = {
 }
 
 export function buildPackageTestHints(input: {
-	kodyId: string
+	packageId: string
 	hasApp: boolean
 	subscriptionTopics: ReadonlyArray<string>
 	packageScope?: string
 }): PackageTestHints | undefined {
 	const packageIdentity = [
-		`package_name: ${JSON.stringify(input.kodyId)}`,
+		`package_id: ${JSON.stringify(input.packageId)}`,
 		...(input.packageScope
 			? [`package_scope: ${JSON.stringify(input.packageScope)}`]
 			: []),

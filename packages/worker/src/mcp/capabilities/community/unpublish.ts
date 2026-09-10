@@ -29,7 +29,7 @@ export const communityUnpublishCapability = defineDomainCapability(
 				.string()
 				.min(1)
 				.describe(
-					'Must equal the package slug (URL name / kody id). Confirm with the user first: going private 404s public URLs and unlists the catalog; existing forks keep their copies.',
+					'Must equal the package name leaf (URL slug). Confirm with the user first: going private 404s public URLs and unlists the catalog; existing forks keep their copies.',
 				),
 			package_scope: z
 				.string()

@@ -18,7 +18,7 @@ export const listPackagesCapability = defineDomainCapability(
 	{
 		name: 'packageList',
 		description:
-			'List saved packages for the signed-in user, including community-fork source listing provenance, so agents can discover package_id and package.json name for later execution, editing, or UI opening.',
+			'List saved packages for the signed-in user, including community-fork source listing provenance, so agents can discover package_id and scoped package.json name for later execution, editing, or UI opening.',
 		keywords: ['package', 'list', 'saved packages'],
 		readOnly: true,
 		idempotent: true,

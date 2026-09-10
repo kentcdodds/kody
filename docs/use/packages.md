@@ -69,16 +69,11 @@ Important fields:
 
 - `name` — npm-valid scoped package name (`@scope/<leaf>`). This is package
   identity together with the saved-package UUID `package_id`. The leaf after `/`
-  is the URL slug. MCP tools take `package_id` and/or `package_name` (leaf
-  `mailchimp` or scoped `@owner/mailchimp`). Pass the package name leaf (or
-  `@owner/leaf`), not a separate kody.id.
+  is the URL slug. MCP tools take `package_id` for an existing package. Create
+  flows use the name leaf (or `@owner/leaf`).
 - `private` — leftover npm-style field; ignored for catalog listing. Visibility
   is a repo setting (`packageUpdate` `changes.visibility`), default private.
 - `exports` — authoritative import/export map
-- `kody.id` — optional; omit it. If present it must match the package name leaf.
-  When it matches, load succeeds and the slug still comes from `name`. When it
-  does not match, parse rejects with
-  `package.json kody.id is not package identity; if present it must match the name leaf "…" (found "…"). Omit kody.id and use package.json name "…"`.
 - `kody.description` — short public tagline for search, detail, community
   listings, and share cards (~80–120 characters ideal; max 200). Prefer outcome
   phrasing (“Send transactional email via Resend”) over feature lists; put API
@@ -107,15 +102,13 @@ Important fields:
 `package.json` is the manifest.
 
 For predictable package resolution, saved packages must use a scoped
-`package.json.name`. The leaf segment is the URL slug. Omit `kody.id`. If you
-set `"kody": { "id": "my-package" }` on `@scope/my-package`, load succeeds only
-when that id matches the name leaf; the slug always comes from `name`. The scope
-is the account username. Changing your username on `/account` rewrites every
-saved package to the new `@{username}/…` name (including same-account `kody:@`
-imports and `kody.dependencies`), publishes an automatic update commit per
-package, and republishes any community listing that was already pinned to that
-package's latest commit. Third-party integrations and dynamic invocations that
-hard-code a previous `@{username}` scope need updates from their owners.
+`package.json.name`. The leaf segment is the URL slug. The scope is the account
+username. Changing your username on `/account` rewrites every saved package to
+the new `@{username}/…` name (including same-account `kody:@` imports and
+`kody.dependencies`), publishes an automatic update commit per package, and
+republishes any community listing that was already pinned to that package's
+latest commit. Third-party integrations and dynamic invocations that hard-code a
+previous `@{username}` scope need updates from their owners.
 
 ### npm dependencies
 
@@ -501,9 +494,9 @@ expands the scope.
 Use:
 
 - `packageGetGitRemote` and `packagePublishExternalPush` when you have a normal
-  git client: mint a remote (pass `create: true` with a new `package_name` —
-  leaf or `@scope/leaf` — to register a stub package first), clone, edit, push,
-  and then ask Kody to reconcile the pushed Artifacts HEAD
+  git client: mint a remote (pass `create: true` with the new `@scope/leaf` name
+  to register a stub package first), clone, edit, push, and then ask Kody to
+  reconcile the pushed Artifacts HEAD. Existing packages use `package_id`.
 - `packageSave` to create or replace a saved package from a complete UTF-8 text
   file set when no local git client is available
 - `packageGet` and `packageList` to inspect saved packages
@@ -617,13 +610,13 @@ package instead:
 ## Community fork provenance
 
 **`packageList`** and **`packageGet`** return community-fork provenance on each
-package summary (`source_listing_id`, `listing_current`, `listing_package_name`,
-`listing_name`, `origin_commit`, `listing_pinned_commit`,
-`listing_published_at`, `listing_ahead`). Those fields are `null` for
-self-authored packages. `listing_ahead` is true only when the listing pin is not
-an ancestor of the fork tip. When `listing_ahead` is true, the owner profile,
-the listing page, package search, and `{package-name}:package` entity detail
-surface a **Fork outdated** / absorb next step. Full workflow:
+package summary (`source_listing_id`, `listing_current`, `listing_name`,
+`origin_commit`, `listing_pinned_commit`, `listing_published_at`,
+`listing_ahead`). Those fields are `null` for self-authored packages.
+`listing_ahead` is true only when the listing pin is not an ancestor of the fork
+tip. When `listing_ahead` is true, the owner profile, the listing page, package
+search, and `{package-name}:package` entity detail surface a **Fork outdated** /
+absorb next step. Full workflow:
 [Public packages → Forking a listing](./community-packages.md#forking-a-listing).
 
 ## Author a saved package via direct git push
@@ -655,9 +648,8 @@ publish checks run.
    }
    ```
 
-   Call `packageGetGitRemote` with either `package_id` or `package_name`. Pass
-   the package name leaf (or `@owner/leaf`), not a separate kody.id. The result
-   includes the plain remote URL, an authenticated one-line clone URL, an
+   Call `packageGetGitRemote` with `package_id` for an existing package. The
+   result includes the plain remote URL, an authenticated one-line clone URL, an
    `Authorization: Bearer ...` extra header, `git_author` (the signed-in Kody
    account email and display name), and setup commands that use
    `git -c http.extraHeader=...` so the token does not need to be saved in shell
@@ -666,11 +658,10 @@ publish checks run.
    an email.
 
    To start a **new** package in this lane, pass `create: true` with the new
-   `package_name` (and an optional `description`):
+   package name leaf or `@owner/leaf` (and an optional `description`):
 
    ```json
    {
-   	"package_name": "my-package",
    	"create": true,
    	"description": "What this package is for"
    }

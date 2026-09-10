@@ -963,7 +963,7 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 				id: 'dynwf-123',
 				source_type: 'inline',
 				package_id: null,
-				package_name: null,
+				kody_id: null,
 				source_id: null,
 				workflow_name: 'inline-code',
 				export_name: null,

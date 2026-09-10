@@ -75,7 +75,7 @@ test('parseAuthoredPackageJson validates scoped package names against kody.id', 
 			manifestPath: 'package.json',
 		}),
 	).toThrow(
-		/kody\.id is not package identity; if present it must match the name leaf "cursor-cloud-agents"/,
+		/must use a leaf package name that matches kody\.id "follow-up-on-pr-agent"/,
 	)
 
 	expect(() =>

@@ -3,12 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { listWebhooksForUser } from '#worker/webhooks/service.ts'
-import {
-	applyWebhookPackageRefAliases,
-	listedWebhookSchema,
-	readWebhookPackageName,
-	toListedWebhookCapability,
-} from './shared.ts'
+import { listedWebhookSchema, toListedWebhookCapability } from './shared.ts'
 
 export const webhookListCapability = defineDomainCapability(
 	capabilityDomainNames.webhooks,
@@ -26,13 +21,10 @@ export const webhookListCapability = defineDomainCapability(
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
-		inputSchema: z.preprocess(
-			applyWebhookPackageRefAliases,
-			z.object({
-				packageId: z.string().min(1).optional(),
-				packageName: z.string().min(1).optional(),
-			}),
-		),
+		inputSchema: z.object({
+			packageId: z.string().min(1).optional(),
+			kodyId: z.string().min(1).optional(),
+		}),
 		outputSchema: z.object({
 			webhooks: z.array(listedWebhookSchema),
 		}),
@@ -43,7 +35,7 @@ export const webhookListCapability = defineDomainCapability(
 				baseUrl: ctx.callerContext.baseUrl,
 				userId: user.userId,
 				packageId: args.packageId,
-				kodyId: readWebhookPackageName(args),
+				kodyId: args.kodyId,
 			})
 			return { webhooks: webhooks.map(toListedWebhookCapability) }
 		},

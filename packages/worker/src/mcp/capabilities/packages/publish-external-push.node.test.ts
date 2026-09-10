@@ -560,7 +560,7 @@ test('publishExternalPush handles already_published branches, stale dependents, 
 		items: [
 			{
 				package_id: 'package-b',
-				package_name: 'package-b',
+				kody_id: 'package-b',
 				name: '@kentcdodds/package-b',
 				source_id: 'source-b',
 				published_commit: 'commit-b',

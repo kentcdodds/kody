@@ -55,7 +55,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 		outputSchema: z.object({
 			status: z.literal('promoted'),
 			package_id: z.string(),
-			package_name: z.string(),
+			kody_id: z.string(),
 			name: z.string(),
 			published_commit: z.string(),
 			message: z.string().optional(),
@@ -116,7 +116,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 			})
 			if (kodyIdCollision) {
 				throw new McpCallerError(
-					`A saved package with package name "${manifest.kody.id}" already exists. Change the package.json name leaf in the repo before promoting.`,
+					`A saved package with name leaf "${manifest.kody.id}" already exists. Change package.json#name in the repo before promoting.`,
 				)
 			}
 			await assertWithinEntitlement({
@@ -250,7 +250,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 			return {
 				status: 'promoted' as const,
 				package_id: packageId,
-				package_name: manifest.kody.id,
+				kody_id: manifest.kody.id,
 				name: manifest.name,
 				published_commit: publishResult.publishedCommit,
 				...(listingMessage ? { message: listingMessage } : {}),

@@ -7,18 +7,12 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import { resolveDisplayName } from '#worker/identity/username.ts'
-import {
-	applyPackageNameAliases,
-	normalizePackageNameInput,
-	packageIdInputSchema,
-	packageNameInputSchema,
-	refineExactlyOnePackageIdentity,
-} from '#worker/package-registry/package-name.ts'
+import { resolveSavedPackageWithFreshnessCache } from '#worker/package-invocations/invoke-contract-cache.ts'
+import { getPackageNameLeaf } from '#worker/package-registry/package-name.ts'
 import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
-import { resolveSavedPackageWithFreshnessCache } from '#worker/package-invocations/invoke-contract-cache.ts'
 import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
@@ -264,12 +258,12 @@ async function resolveOwnedSavedPackage(input: {
 	db: D1Database
 	userId: string
 	packageId?: string
-	packageName?: string
+	kodyId?: string
 }) {
-	const packageIdOrName = input.packageId ?? input.packageName ?? ''
+	const packageIdOrKodyId = input.packageId ?? input.kodyId ?? ''
 	return await resolveSavedPackageWithFreshnessCache({
 		userId: input.userId,
-		packageIdOrKodyId: packageIdOrName,
+		packageIdOrKodyId,
 		load: async () => {
 			if (input.packageId !== undefined) {
 				return await getSavedPackageById(input.db, {
@@ -279,7 +273,7 @@ async function resolveOwnedSavedPackage(input: {
 			}
 			return await getSavedPackageByKodyId(input.db, {
 				userId: input.userId,
-				kodyId: input.packageName ?? '',
+				kodyId: getPackageNameLeaf(input.kodyId ?? ''),
 			})
 		},
 	})
@@ -305,42 +299,53 @@ export const packageAppFetchCapability = defineDomainCapability(
 		readOnly: false,
 		idempotent: false,
 		destructive: true,
-		inputSchema: z.preprocess(
-			applyPackageNameAliases,
-			z
-				.object({
-					package_id: packageIdInputSchema.optional(),
-					package_name: packageNameInputSchema.optional(),
-					package_scope: z
-						.string()
-						.min(1)
-						.optional()
-						.describe(packageScopeInputDescription),
-					path: z
-						.string()
-						.optional()
-						.describe(
-							'Path after the app mount that the handler sees. Defaults to /.',
-						),
-					method: z
-						.string()
-						.optional()
-						.describe('HTTP method. Defaults to GET.'),
-					headers: z
-						.record(z.string(), z.string())
-						.optional()
-						.describe(
-							'Extra request headers. Credential, internal, upgrade, and Kody-Synthetic headers are stripped.',
-						),
-					body: z
-						.string()
-						.optional()
-						.describe(
-							'Raw request body string for POST, PUT, or PATCH. Capped at about 100 KB.',
-						),
-				})
-				.superRefine(refineExactlyOnePackageIdentity),
-		),
+		inputSchema: z
+			.object({
+				package_id: z.string().min(1).optional(),
+				kody_id: z
+					.string()
+					.min(1)
+					.optional()
+					.describe(
+						'Package name leaf or `@owner/leaf`. Prefer `package_id` when you have the UUID.',
+					),
+				package_scope: z
+					.string()
+					.min(1)
+					.optional()
+					.describe(packageScopeInputDescription),
+				path: z
+					.string()
+					.optional()
+					.describe(
+						'Path after the app mount that the handler sees. Defaults to /.',
+					),
+				method: z.string().optional().describe('HTTP method. Defaults to GET.'),
+				headers: z
+					.record(z.string(), z.string())
+					.optional()
+					.describe(
+						'Extra request headers. Credential, internal, upgrade, and Kody-Synthetic headers are stripped.',
+					),
+				body: z
+					.string()
+					.optional()
+					.describe(
+						'Raw request body string for POST, PUT, or PATCH. Capped at about 100 KB.',
+					),
+			})
+			.superRefine((value, ctx) => {
+				const identityCount =
+					(value.package_id !== undefined ? 1 : 0) +
+					(value.kody_id !== undefined ? 1 : 0)
+				if (identityCount !== 1) {
+					ctx.addIssue({
+						code: 'custom',
+						message:
+							'Provide exactly one of `package_id` or the package name leaf.',
+					})
+				}
+			}),
 		outputSchema: z.object({
 			status: z.number().int(),
 			headers: z.record(z.string(), z.string()),
@@ -387,20 +392,12 @@ export const packageAppFetchCapability = defineDomainCapability(
 				user,
 				args.package_scope,
 			)
-			const packageName =
-				args.package_name === undefined
-					? undefined
-					: normalizePackageNameInput({
-							value: args.package_name,
-							ownerScope: owner.ownerScope,
-							action: 'resolve',
-						})
-			const lookupId = args.package_id ?? packageName ?? ''
+			const lookupId = args.package_id ?? args.kody_id ?? ''
 			const savedPackage = await resolveOwnedSavedPackage({
 				db: ctx.env.APP_DB,
 				userId: owner.ownerUserId,
 				packageId: args.package_id,
-				packageName,
+				kodyId: args.kody_id,
 			})
 			if (!savedPackage) {
 				const plainRepo = await findPlainRepoPromotionHint(ctx.env.APP_DB, {

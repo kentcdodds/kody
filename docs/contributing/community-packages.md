@@ -223,10 +223,11 @@ stable user ids, and package source. Rating rows use `updated_at`, so the feed
 shows the latest value for each user/listing rating. Since one-click install and
 agent fork both persist through `community_forks`, historical data cannot
 distinguish them and reports both as `fork`. Fork writes snapshot the public
-listing name and kody id, preserving readable fork provenance after a later hard
-delete. Rows without recoverable listing identity use explicit deleted/unknown
-placeholders. Actor usernames resolve through the unique `users.stable_user_id`
-index; neither email nor stable user id enters the feed or event.
+listing name and package name leaf, preserving readable fork provenance after a
+later hard delete. Rows without recoverable listing identity use explicit
+deleted/unknown placeholders. Actor usernames resolve through the unique
+`users.stable_user_id` index; neither email nor stable user id enters the feed
+or event.
 
 `installCommunityListing` (one-click install) composes `forkCommunityListing`
 with `runRepoChecks` over the fork's rewritten snapshot files and, when checks
@@ -363,8 +364,8 @@ cross-scope static imports or foreign `kody.dependencies` entries
 
 `searchCommunityListings` ranks **active** listings only:
 
-1. Build a search document from name, kody id, description, tags, search text,
-   and a README snippet. Category filters apply after scoring.
+1. Build a search document from name, package name leaf, description, tags,
+   search text, and a README snippet. Category filters apply after scoring.
 2. Score with the same lexical + deterministic-embedding blend used for
    capability search (`blendLexicalAndVectorScore`, `deterministicEmbedding`).
 3. Multiply by a **Bayesian average** of star ratings:

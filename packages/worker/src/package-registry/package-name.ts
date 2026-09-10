@@ -1,16 +1,9 @@
-import { z } from 'zod'
 import { kodyPackageIdPattern } from './types.ts'
 
 export const packageNameLeafPattern = kodyPackageIdPattern
 
 const scopedPackageNamePattern =
 	/^@([a-z0-9][a-z0-9._-]*)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/i
-
-export const packageNameInputDescription =
-	'Package name leaf (`my-package`) or scoped name (`@owner/my-package`). When scoped, the owner must match the acting package scope. Prefer `package_id` when you already have the UUID.'
-
-export const packageIdentityChoiceDescription =
-	'Provide exactly one of `package_id` or `package_name`.'
 
 export function getPackageNameLeaf(name: string) {
 	const trimmed = name.trim()
@@ -39,7 +32,7 @@ export function invalidPackageNameMessage(input: {
 }) {
 	const exampleScope = (input.ownerScope ?? 'owner').replace(/^@/, '')
 	const action =
-		input.action === 'create' ? 'Cannot create package' : 'Invalid package_name'
+		input.action === 'create' ? 'Cannot create package' : 'Invalid package name'
 	return `${action}: ${JSON.stringify(input.value)} must be a lower-kebab-case package name leaf (for example "my-package") or a scoped name for this account (for example "@${exampleScope}/my-package").`
 }
 
@@ -50,7 +43,7 @@ export function mismatchedPackageScopeMessage(input: {
 }) {
 	const owner = input.ownerScope.replace(/^@/, '')
 	const requested = input.requestedScope.replace(/^@/, '')
-	return `Cannot use package_name ${JSON.stringify(input.value)}: scope "@${requested}" does not match the acting owner "@${owner}". Use the leaf after "/" or "@${owner}/…".`
+	return `Cannot use package name ${JSON.stringify(input.value)}: scope "@${requested}" does not match the acting owner "@${owner}". Use the leaf after "/" or "@${owner}/…".`
 }
 
 /**
@@ -119,70 +112,4 @@ export function normalizePackageNameInput(input: {
 		)
 	}
 	return value
-}
-
-/**
- * Map leftover `kody_id` / `kodyId` onto `package_name` so in-flight agent
- * transcripts keep working. Public schemas do not advertise the old field.
- */
-export function applyPackageNameAliases(value: unknown) {
-	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-		return value
-	}
-	const record = value as Record<string, unknown>
-	const normalized: Record<string, unknown> = { ...record }
-	if (normalized['package_name'] === undefined) {
-		if ('packageName' in record) {
-			normalized['package_name'] = record['packageName']
-			delete normalized['packageName']
-		} else if ('kody_id' in record) {
-			normalized['package_name'] = record['kody_id']
-			delete normalized['kody_id']
-		} else if ('kodyId' in record) {
-			normalized['package_name'] = record['kodyId']
-			delete normalized['kodyId']
-		}
-	} else {
-		delete normalized['kody_id']
-		delete normalized['kodyId']
-		delete normalized['packageName']
-	}
-	return normalized
-}
-
-export function countPackageIdentityFields(input: {
-	package_id?: string
-	package_name?: string
-}) {
-	return (
-		(input.package_id !== undefined ? 1 : 0) +
-		(input.package_name !== undefined ? 1 : 0)
-	)
-}
-
-export const packageIdInputSchema = z
-	.string()
-	.min(1)
-	.describe('Saved package UUID.')
-
-export const packageNameInputSchema = z
-	.string()
-	.min(1)
-	.describe(packageNameInputDescription)
-
-export const packageIdentityInputShape = {
-	package_id: packageIdInputSchema.optional(),
-	package_name: packageNameInputSchema.optional(),
-}
-
-export function refineExactlyOnePackageIdentity(
-	value: { package_id?: string; package_name?: string },
-	ctx: z.RefinementCtx,
-) {
-	if (countPackageIdentityFields(value) !== 1) {
-		ctx.addIssue({
-			code: 'custom',
-			message: packageIdentityChoiceDescription,
-		})
-	}
 }

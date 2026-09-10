@@ -61,7 +61,7 @@ test('package-create builds preview URLs, reports JSON shape, and can leave HEAD
 							result: {
 								remote: {
 									package_id: 'pkg-1',
-									package_name: 'preview-pkg',
+									kody_id: 'preview-pkg',
 									created: true,
 									authenticated_remote:
 										'https://x:token@artifacts.example/git/pkg-1',
@@ -120,7 +120,7 @@ test('package-create builds preview URLs, reports JSON shape, and can leave HEAD
 								remoteError: 'account not found',
 								detail: {
 									package_id: 'pkg-1',
-									package_name: 'preview-pkg',
+									kody_id: 'preview-pkg',
 									name: '@user-me/preview-pkg',
 								},
 							},
@@ -206,7 +206,7 @@ test('package-create builds preview URLs, reports JSON shape, and can leave HEAD
 
 		await pushHeadAheadCommit({
 			package_id: 'pkg-1',
-			package_name: 'preview-pkg',
+			kody_id: 'preview-pkg',
 			authenticated_remote: bare,
 			git_author: { name: 'Me', email: 'me@example.com' },
 			setup_commands: [
@@ -228,7 +228,7 @@ test('package-create builds preview URLs, reports JSON shape, and can leave HEAD
 
 		await pushHeadAheadCommit({
 			package_id: 'pkg-1',
-			package_name: 'preview-pkg',
+			kody_id: 'preview-pkg',
 			authenticated_remote: bare,
 			git_author: { name: 'Me', email: 'me@example.com' },
 			setup_commands: [

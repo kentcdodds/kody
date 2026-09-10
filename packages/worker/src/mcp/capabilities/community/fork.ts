@@ -3,10 +3,7 @@ import { forkCommunityListing } from '#worker/community/service.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import {
-	applyPackageNameAliases,
-	normalizePackageNameInput,
-} from '#worker/package-registry/package-name.ts'
+import { normalizePackageNameInput } from '#worker/package-registry/package-name.ts'
 import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import {
 	communityContentWarning,
@@ -20,29 +17,26 @@ export const communityForkCapability = defineDomainCapability(
 	{
 		name: 'communityFork',
 		description:
-			'Fork a community listing into an inert package source in your scope. The fork cannot run until you review the code and publish through a repo session. Pass `package_name` when you already have a package with the same name leaf.',
+			'Fork a community listing into an inert package source in your scope. The fork cannot run until you review the code and publish through a repo session. Pass a package name leaf (or `@owner/leaf`) when you already have a package with the same leaf.',
 		keywords: ['community', 'fork', 'copy', 'listing', 'package', 'import'],
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
-		inputSchema: z.preprocess(
-			applyPackageNameAliases,
-			z.object({
-				listing_id: z.string().min(1).describe('Community listing id to fork.'),
-				package_name: z
-					.string()
-					.min(1)
-					.optional()
-					.describe(
-						'Optional package name leaf (or scoped `@owner/leaf`) when the caller already has a package with the same leaf.',
-					),
-			}),
-		),
+		inputSchema: z.object({
+			listing_id: z.string().min(1).describe('Community listing id to fork.'),
+			kody_id: z
+				.string()
+				.min(1)
+				.optional()
+				.describe(
+					'Optional package name leaf (or `@owner/leaf`) when the caller already has a package with the same leaf.',
+				),
+		}),
 		outputSchema: z.object({
 			fork_id: z.string(),
 			package_id: z.string(),
 			source_id: z.string(),
-			target_package_name: z.string(),
+			target_kody_id: z.string(),
 			target_name: z.string(),
 			origin_commit: z.string(),
 			files_count: z.number().int().nonnegative(),
@@ -73,11 +67,11 @@ export const communityForkCapability = defineDomainCapability(
 				message:
 					'Forking the community listing into your scope — photocopy whirring…',
 			})
-			const packageName =
-				args.package_name === undefined
+			const kodyId =
+				args.kody_id === undefined
 					? undefined
 					: normalizePackageNameInput({
-							value: args.package_name,
+							value: args.kody_id,
 							ownerScope: expectedPackageScope,
 							action: 'create',
 						})
@@ -87,7 +81,7 @@ export const communityForkCapability = defineDomainCapability(
 				userId: user.userId,
 				expectedPackageScope,
 				listingId: args.listing_id,
-				kodyId: packageName,
+				kodyId,
 				actor: 'agent',
 			})
 			await reportCapabilityProgress(ctx.reportProgress, {
@@ -100,7 +94,7 @@ export const communityForkCapability = defineDomainCapability(
 				fork_id: result.forkId,
 				package_id: result.packageId,
 				source_id: result.sourceId,
-				target_package_name: result.targetKodyId,
+				target_kody_id: result.targetKodyId,
 				target_name: result.targetName,
 				origin_commit: result.originCommit,
 				files_count: result.filesCount,

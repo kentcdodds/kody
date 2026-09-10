@@ -162,7 +162,7 @@ Admin-configured notification packages may also receive a metadata-only
 `fleet.package_error_rate.elevated` event when package-runtime error rates rise
 (window bounds, per-metric counts and rates, public status URL, insights URL,
 and — when one account or a few accounts own the recent-window errors — those
-usernames and package kody ids). That event omits user ids, package UUIDs,
+usernames and package name leaves). That event omits user ids, package UUIDs,
 emails, error strings, logs, and unrelated account content. Admin-configured
 notification packages may also receive a metadata-only
 `fleet.entitlement.crossed` event when a swept account first crosses 80% or 100%

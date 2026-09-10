@@ -37,7 +37,7 @@ export const communityGetCapability = defineDomainCapability(
 		outputSchema: communityListingAggregatesSchema.extend({
 			listing_id: z.string(),
 			name: z.string(),
-			package_name: z.string(),
+			kody_id: z.string(),
 			description: z.string(),
 			tags: z.array(z.string()),
 			category: z.enum(communityListingCategories),
@@ -82,7 +82,7 @@ export const communityGetCapability = defineDomainCapability(
 			return {
 				listing_id: listing.id,
 				name: listing.name,
-				package_name: listing.kodyId,
+				kody_id: listing.kodyId,
 				description: listing.description,
 				tags: listing.tags,
 				category: listing.category,

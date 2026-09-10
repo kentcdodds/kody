@@ -166,7 +166,7 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 
 	expect(withUsername).toMatchObject({
 		package_id: 'package-1',
-		package_name: 'discord-gateway',
+		kody_id: 'discord-gateway',
 		name: '@kentcdodds/discord-gateway',
 		description: 'Discord helpers',
 		tags: ['discord'],
@@ -175,7 +175,7 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 		source_id: 'source-1',
 		source_listing_id: 'listing-1',
 		listing_current: true,
-		listing_package_name: 'upstream-discord-gateway',
+		listing_kody_id: 'upstream-discord-gateway',
 		listing_ahead: false,
 		created_at: '2026-04-25T00:00:00.000Z',
 		updated_at: '2026-04-26T00:00:00.000Z',

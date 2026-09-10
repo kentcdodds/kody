@@ -55,6 +55,7 @@ import {
 } from '#worker/server-timing.ts'
 import { KODY_DESCRIPTION_MAX_LENGTH } from '#worker/package-registry/types.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
+import { getPackageNameLeaf } from '#worker/package-registry/package-name.ts'
 import { enqueueCommunityActivityDispatch } from './activity-dispatch-queue-producer.ts'
 import { assertNotCommunityBanned } from './assert-not-community-banned.ts'
 import { CommunityActionError } from './errors.ts'
@@ -305,7 +306,7 @@ function buildRepeatForkErrorMessage(input: {
 	forkedSourceId: string
 	forkedPackageId: string
 }) {
-	return `You already forked this listing as package name "${input.targetKodyId}". Resume the existing fork with source_id "${input.forkedSourceId}" (package_id "${input.forkedPackageId}") via repoOpenSession, or pass a different package_name to fork again.`
+	return `You already forked this listing as package name "${input.targetKodyId}". Resume the existing fork with source_id "${input.forkedSourceId}" (package_id "${input.forkedPackageId}") via repoOpenSession, or pass a different package name leaf to fork again.`
 }
 
 async function cleanupFailedCommunityFork(input: {
@@ -1373,7 +1374,7 @@ export async function prepareCommunityFork(
 	])
 	if (existingByKody || existingByName) {
 		throw new CommunityActionError(
-			`You already have a saved package named "${targetKodyId}". Pass a different package_name to fork this listing.`,
+			`You already have a saved package named "${targetKodyId}". Pass a different package name leaf to fork this listing.`,
 		)
 	}
 
@@ -1598,7 +1599,7 @@ export async function adoptCommunityFork(input: {
 		(input.kodyId !== undefined ? 1 : 0)
 	if (packageIdCount !== 1) {
 		throw new CommunityActionError(
-			'Provide exactly one of `package_id` or `package_name`.',
+			'Provide exactly one of `package_id` or the package name leaf.',
 		)
 	}
 
@@ -1617,11 +1618,11 @@ export async function adoptCommunityFork(input: {
 				})
 			: await getSavedPackageByKodyId(input.env.APP_DB, {
 					userId: input.userId,
-					kodyId: input.kodyId ?? '',
+					kodyId: getPackageNameLeaf(input.kodyId ?? ''),
 				})
 	if (!savedPackage) {
 		const missingId = input.packageId ?? input.kodyId
-		// Missing / mistyped package_id or package_name is caller-clearable.
+		// Missing / mistyped package_id or name leaf is caller-clearable.
 		// CommunityActionError keeps these on mcp-event lines and out of Sentry.
 		throw new CommunityActionError(
 			`Saved package "${missingId}" was not found. Confirm the id with search({ domain: "packages" }).`,
@@ -1691,7 +1692,7 @@ export async function absorbCommunityForkUpstream(input: {
 		(input.kodyId !== undefined ? 1 : 0)
 	if (packageIdCount !== 1) {
 		throw new CommunityActionError(
-			'Provide exactly one of `package_id` or `package_name`.',
+			'Provide exactly one of `package_id` or the package name leaf.',
 		)
 	}
 
@@ -1703,7 +1704,7 @@ export async function absorbCommunityForkUpstream(input: {
 				})
 			: await getSavedPackageByKodyId(input.env.APP_DB, {
 					userId: input.userId,
-					kodyId: input.kodyId ?? '',
+					kodyId: getPackageNameLeaf(input.kodyId ?? ''),
 				})
 	if (!savedPackage) {
 		const missingId = input.packageId ?? input.kodyId

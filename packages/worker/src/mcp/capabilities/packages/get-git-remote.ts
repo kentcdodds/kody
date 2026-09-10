@@ -8,12 +8,7 @@ import {
 	gitAuthorSetupCommands,
 	shellQuote,
 } from '#worker/identity/git-author-identity.ts'
-import {
-	applyPackageNameAliases,
-	normalizePackageNameInput,
-	packageIdInputSchema,
-	packageNameInputSchema,
-} from '#worker/package-registry/package-name.ts'
+import { normalizePackageNameInput } from '#worker/package-registry/package-name.ts'
 import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
@@ -31,39 +26,42 @@ import {
 import { createStubSavedPackage } from './create-stub-package.ts'
 import { resolveOwnedPackageSource } from './resolve-package-source.ts'
 
-const getGitRemoteInputSchema = z.preprocess(
-	applyPackageNameAliases,
-	z.object({
-		package_id: packageIdInputSchema.optional(),
-		package_name: packageNameInputSchema.optional(),
-		package_scope: z
-			.string()
-			.min(1)
-			.optional()
-			.describe(packageScopeInputDescription),
-		create: z
-			.boolean()
-			.optional()
-			.default(false)
-			.describe(
-				'Set true with `package_name` to register a new stub saved package (private, minimal scaffold) when none exists yet, then mint its remote in the same call. Existing packages are reused as-is.',
-			),
-		description: z
-			.string()
-			.min(1)
-			.optional()
-			.describe(
-				'Package description used when `create: true` registers a new stub package. Ignored for existing packages.',
-			),
-		scope: z.enum(['read', 'write']).default('write'),
-		ttl_seconds: z.number().int().min(60).max(86_400).default(14_400),
-	}),
-)
+const getGitRemoteInputSchema = z.object({
+	package_id: z.string().min(1).optional(),
+	kody_id: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(
+			'Package name leaf (`my-package`) or scoped `@owner/my-package`. Prefer `package_id` when you already have the UUID.',
+		),
+	package_scope: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(packageScopeInputDescription),
+	create: z
+		.boolean()
+		.optional()
+		.default(false)
+		.describe(
+			'Set true with the new package name leaf or `@scope/leaf` to register a new stub saved package (private, minimal scaffold) when none exists yet, then mint its remote in the same call. Existing packages are reused as-is. Prefer `package_id` once the saved package exists.',
+		),
+	description: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(
+			'Package description used when `create: true` registers a new stub package. Ignored for existing packages.',
+		),
+	scope: z.enum(['read', 'write']).default('write'),
+	ttl_seconds: z.number().int().min(60).max(86_400).default(14_400),
+})
 
 const outputSchema = z.toJSONSchema(
 	z.object({
 		package_id: z.string(),
-		package_name: z.string(),
+		kody_id: z.string(),
 		created: z
 			.boolean()
 			.describe(
@@ -84,7 +82,7 @@ export const getGitRemoteCapability = defineDomainCapability(
 	{
 		name: 'packageGetGitRemote',
 		description:
-			'Start or continue the git lane for saved packages: mint a short-lived Cloudflare Artifacts git remote so coding agents with local filesystem/git access can clone into a temporary directory, edit normally (including binary assets), push, and publish with packagePublishExternalPush. Pass `create: true` with a new `package_name` (leaf or `@scope/leaf`) to register a stub saved package and mint its remote in one call, so new packages can be authored via clone-edit-push instead of packageSave file blobs. The result includes `git_author` (signed-in Kody account email and display name) and `setup_commands` that set local `user.email` / `user.name` to that identity — never invent a git email. Write access verifies the current package source has a restorable backup snapshot before clone/edit/publish. Individual files may be at most 10 MiB (10,485,760 stored bytes; UTF-8 for text, raw for binary): publish rejects anything larger with external-hosting guidance (commit a link or pointer instead), and the Artifacts remote itself fails pushes above ~32 MiB of pack content with a raw HTTP 413.',
+			'Start or continue the git lane for saved packages: mint a short-lived Cloudflare Artifacts git remote so coding agents with local filesystem/git access can clone into a temporary directory, edit normally (including binary assets), push, and publish with packagePublishExternalPush. Pass `create: true` with a new package name leaf (or `@scope/leaf`) to register a stub saved package and mint its remote in one call, so new packages can be authored via clone-edit-push instead of packageSave file blobs. Prefer `package_id` for existing packages. The result includes `git_author` (signed-in Kody account email and display name) and `setup_commands` that set local `user.email` / `user.name` to that identity — never invent a git email. Write access verifies the current package source has a restorable backup snapshot before clone/edit/publish. Individual files may be at most 10 MiB (10,485,760 stored bytes; UTF-8 for text, raw for binary): publish rejects anything larger with external-hosting guidance (commit a link or pointer instead), and the Artifacts remote itself fails pushes above ~32 MiB of pack content with a raw HTTP 413.',
 		keywords: [
 			'package',
 			'create',
@@ -111,47 +109,44 @@ export const getGitRemoteCapability = defineDomainCapability(
 				user,
 				args.package_scope,
 			)
-			const requestedPackageName = args.package_name?.trim() || undefined
-			const packageSlug =
-				requestedPackageName === undefined
+			const requestedKodyId =
+				args.kody_id === undefined || args.kody_id.trim() === ''
 					? undefined
 					: normalizePackageNameInput({
-							value: requestedPackageName,
+							value: args.kody_id,
 							ownerScope: owner.ownerScope,
 							action: args.create ? 'create' : 'resolve',
 						})
 			let created = false
 			if (args.create) {
-				if (packageSlug === undefined || args.package_id !== undefined) {
+				if (requestedKodyId === undefined || args.package_id !== undefined) {
 					throw new Error(
-						'`create: true` requires `package_name` (without `package_id`); new package ids are generated by Kody.',
+						'`create: true` requires a package name leaf or `@scope/leaf` (without `package_id`); new package ids are generated by Kody.',
 					)
 				}
 				const existing = await getSavedPackageByKodyId(ctx.env.APP_DB, {
 					userId: owner.ownerUserId,
-					kodyId: packageSlug,
+					kodyId: requestedKodyId,
 				})
 				if (!existing) {
 					await createStubSavedPackage({
 						env: ctx.env,
 						baseUrl: ctx.callerContext.baseUrl,
 						owner,
-						packageName: packageSlug,
+						kodyId: requestedKodyId,
 						description: args.description,
 					})
 					created = true
 				}
 			}
-			const { source, packageId, packageName } =
-				await resolveOwnedPackageSource({
-					db: ctx.env.APP_DB,
-					userId: owner.ownerUserId,
-					ownerScope: owner.ownerScope,
-					args: {
-						package_id: args.package_id,
-						package_name: packageSlug,
-					},
-				})
+			const { source, packageId, kodyId } = await resolveOwnedPackageSource({
+				db: ctx.env.APP_DB,
+				userId: owner.ownerUserId,
+				args: {
+					package_id: args.package_id,
+					kody_id: requestedKodyId,
+				},
+			})
 			const headPromise = assertPublishedPackageSourceRepoHead({
 				env: ctx.env,
 				source,
@@ -202,7 +197,7 @@ export const getGitRemoteCapability = defineDomainCapability(
 			const cloneDirectory = source.entity_id
 			return {
 				package_id: packageId,
-				package_name: packageName,
+				kody_id: kodyId,
 				created,
 				remote: sourceHead.remote,
 				authenticated_remote: buildAuthenticatedArtifactsRemote({

@@ -43,7 +43,6 @@ function createContext(userId = 'user-1') {
 				userId,
 				email: `${userId}@example.com`,
 				displayName: userId,
-				username: 'kent',
 			},
 			storageContext: null,
 			repoContext: null,

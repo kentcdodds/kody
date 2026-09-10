@@ -114,7 +114,7 @@ test('listPackageSubscriptionsCapability filters, sorts, and skips broken manife
 		subscriptions: [
 			{
 				package_id: 'package-1',
-				package_name: 'discord-general-chat',
+				kody_id: 'discord-general-chat',
 				name: '@kentcdodds/discord-general-chat',
 				topic: 'discord.message.created',
 				handler: './src/handle-discord-message-created.ts',
@@ -203,7 +203,7 @@ test('listPackageSubscriptionsCapability filters, sorts, and skips broken manife
 		subscriptions: [
 			{
 				package_id: 'package-2',
-				package_name: 'a-package',
+				kody_id: 'a-package',
 				name: '@kentcdodds/a-package',
 				topic: 'discord.message.created',
 				handler: './src/message.ts',
@@ -212,7 +212,7 @@ test('listPackageSubscriptionsCapability filters, sorts, and skips broken manife
 			},
 			{
 				package_id: 'package-1',
-				package_name: 'z-package',
+				kody_id: 'z-package',
 				name: '@kentcdodds/z-package',
 				topic: 'discord.reaction.created',
 				handler: './src/reaction.ts',
@@ -286,7 +286,7 @@ test('listPackageSubscriptionsCapability filters, sorts, and skips broken manife
 			subscriptions: [
 				{
 					package_id: 'package-1',
-					package_name: 'ok-package',
+					kody_id: 'ok-package',
 					name: '@kentcdodds/ok-package',
 					topic: 'discord.message.created',
 					handler: './src/message.ts',

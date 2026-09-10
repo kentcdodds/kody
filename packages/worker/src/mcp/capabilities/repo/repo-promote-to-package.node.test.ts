@@ -248,7 +248,7 @@ test('repoPromoteToPackage seeds published_commit from the opened session base s
 
 	expect(result).toMatchObject({
 		status: 'promoted',
-		package_name: 'brave-search',
+		kody_id: 'brave-search',
 		name: '@user/brave-search',
 		published_commit: 'commit-1',
 	})
@@ -388,7 +388,7 @@ test('repoPromoteToPackage still finishes when community listing publish fails',
 
 	expect(result).toMatchObject({
 		status: 'promoted',
-		package_name: 'brave-search',
+		kody_id: 'brave-search',
 		published_commit: 'commit-1',
 	})
 	expect(result.message).toContain('listing failed')

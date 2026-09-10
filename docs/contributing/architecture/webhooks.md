@@ -131,8 +131,8 @@ consumer's 15-minute wall-clock limit before later messages are acknowledged.
 
 - Every D1 row carries `user_id`. Capabilities always bind
   `requireMcpUser(...).userId`.
-- Ingress may look up by username + kody id + webhook name, then immediately
-  re-scopes by the owning user.
+- Ingress may look up by username + package name leaf + webhook name, then
+  immediately re-scopes by the owning user.
 - Account deletion/export include `webhook_endpoints` (minted URL state).
   Delivery history lives in run records and is covered with the rest of `RunLog`
   export/deletion. Export redacts `url_secret_hash` and `url_secret_encrypted`.

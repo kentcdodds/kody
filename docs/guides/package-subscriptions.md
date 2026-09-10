@@ -721,10 +721,10 @@ type RepoPushedEvent = {
 ```
 
 `repo_id` is the Artifacts repo name (also stored on `entity_sources.repo_id`).
-`name` is the user-facing plain-repo name or package npm name when known;
-`kody_id` is set for packages. For `entity_kind: 'package' | 'job'`, a push
-updates live HEAD but does not mean the package/job published commit advanced —
-use publish / external-push / reconcile for activation.
+`name` is the user-facing plain-repo name or package npm name when known; The
+package name leaf is set for packages. For `entity_kind: 'package' | 'job'`, a
+push updates live HEAD but does not mean the package/job published commit
+advanced — use publish / external-push / reconcile for activation.
 
 Idempotency keys include the after commit, ref, and subscriber package id, so
 Queue redelivery is safe.
@@ -1040,7 +1040,7 @@ type FleetPackageErrorRateElevatedEvent = {
 dashboard. Counts are fleet-wide and weighted by Analytics Engine
 `_sample_interval`. `concentration` is present when the elevation query
 succeeds. `owners` is populated only for `one_account` and `few_accounts` after
-D1 resolves usernames and package kody ids. The event omits user ids, package
+D1 resolves usernames and package name leaves. The event omits user ids, package
 UUIDs, emails, error strings, logs, and unrelated account content. Idempotency
 keys include the topic, event id, and subscriber package id.
 

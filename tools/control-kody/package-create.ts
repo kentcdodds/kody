@@ -20,7 +20,7 @@ export default async function main(input = {}) {
 	try {
 		remote = await kody.packageGetGitRemote({
 			create: true,
-			package_name: input.kodyId,
+			kody_id: input.kodyId,
 			...(input.description ? { description: input.description } : {}),
 		})
 	} catch (error) {
@@ -28,7 +28,7 @@ export default async function main(input = {}) {
 	}
 	const listed = await kody.packageList({})
 	const match = (listed.packages ?? []).find(
-		(pkg) => pkg.package_name === input.kodyId,
+		(pkg) => pkg.kody_id === input.kodyId,
 	)
 	const packageId = remote?.package_id ?? match?.package_id
 	if (!packageId) {
@@ -225,7 +225,7 @@ export type GitAuthorIdentity = {
 
 export type GitRemoteResult = {
 	package_id: string
-	package_name: string
+	kody_id: string
 	created?: boolean
 	authenticated_remote: string
 	git_author: GitAuthorIdentity
@@ -234,7 +234,7 @@ export type GitRemoteResult = {
 
 export async function pushHeadAheadCommit(remote: GitRemoteResult) {
 	const parent = await mkdtemp(path.join(tmpdir(), 'control-kody-pkg-'))
-	const cloneDir = path.join(parent, remote.package_name)
+	const cloneDir = path.join(parent, remote.kody_id)
 	try {
 		const identity = gitIdentityFromRemote(remote)
 		runGit(['clone', '--quiet', remote.authenticated_remote, cloneDir])
@@ -340,7 +340,9 @@ function readCreatedPackage(toolResult: unknown) {
 	const packageId = remote
 		? readRequiredString(remote, 'package_id')
 		: readRequiredString(detail, 'package_id')
-	const kodyId = remote ? readPackageName(remote) : readPackageName(detail)
+	const kodyId = remote
+		? readRequiredString(remote, 'kody_id')
+		: readRequiredString(detail, 'kody_id')
 	const name = readRequiredString(detail, 'name')
 	const remoteError =
 		typeof remoteErrorValue === 'string' && remoteErrorValue.length > 0
@@ -368,7 +370,7 @@ function readGitRemoteResult(
 	const gitAuthor = gitAuthorValue as Record<string, unknown>
 	return {
 		package_id: packageId,
-		package_name: kodyId,
+		kody_id: kodyId,
 		created: remote.created === true,
 		authenticated_remote: readRequiredString(remote, 'authenticated_remote'),
 		git_author: {
@@ -411,14 +413,6 @@ function executeErrorText(record: CallToolResult, error: unknown) {
 	if (typeof error === 'string' && error.length > 0) return error
 	if (error !== undefined) return JSON.stringify(error)
 	return 'unknown execute error'
-}
-
-function readPackageName(record: Record<string, unknown>) {
-	const value = record['package_name'] ?? record['kody_id']
-	if (typeof value !== 'string' || value.length === 0) {
-		throw new Error('Expected "package_name" to be a non-empty string.')
-	}
-	return value
 }
 
 function readRequiredString(record: Record<string, unknown>, key: string) {

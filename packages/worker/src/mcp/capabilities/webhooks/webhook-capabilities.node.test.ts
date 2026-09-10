@@ -178,7 +178,6 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 	const listed = await webhookListCapability.handler({}, ctx)
 	expect(listed.webhooks[0]?.minted).toBe(true)
 	expect(listed.webhooks[0]?.handle).toBe('whh_ep-1')
-	expect(listed.webhooks[0]?.package_name).toBe('sentry-bridge')
 	expect(JSON.stringify(listed)).not.toContain('secret-once')
 
 	const minted = await webhookUrlMintCapability.handler(
@@ -186,7 +185,6 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 		ctx,
 	)
 	expect(minted.webhook.handle).toBe('whh_ep-1')
-	expect(minted.webhook.package_name).toBe('sentry-bridge')
 	expect(minted.webhook.url_host).toBe('heykody.dev')
 	expect(minted.webhook).not.toHaveProperty('url')
 	expect(minted.webhook).not.toHaveProperty('url_secret')

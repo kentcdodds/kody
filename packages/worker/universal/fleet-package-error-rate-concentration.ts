@@ -28,7 +28,7 @@ type FleetPackageErrorRateConcentrationOwner = {
 
 /**
  * Operator-facing concentration of a fleet error-rate elevation.
- * Names usernames and package kody ids only — no emails, user ids, or
+ * Names usernames and package name leaves only — no emails, user ids, or
  * package UUIDs.
  */
 export type FleetPackageErrorRateConcentration = {

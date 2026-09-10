@@ -20,12 +20,6 @@ import {
 	type StaticPackageDependentsSummary,
 } from '#worker/package-runtime/static-package-dependents.ts'
 import {
-	applyPackageNameAliases,
-	packageIdInputSchema,
-	packageNameInputSchema,
-	refineExactlyOnePackageIdentity,
-} from '#worker/package-registry/package-name.ts'
-import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
@@ -59,26 +53,21 @@ import {
 	type McpReportProgress,
 } from '#mcp/progress.ts'
 
-const inputSchema = z.preprocess(
-	applyPackageNameAliases,
-	z
-		.object({
-			package_id: packageIdInputSchema.optional(),
-			package_name: packageNameInputSchema.optional(),
-			package_scope: z
-				.string()
-				.min(1)
-				.optional()
-				.describe(packageScopeInputDescription),
-			allow_force: z.boolean().optional().default(false),
-			confirm_destructive_overwrite: z
-				.boolean()
-				.optional()
-				.default(false)
-				.describe(destructiveOverwriteConfirmationDescription),
-		})
-		.superRefine(refineExactlyOnePackageIdentity),
-)
+const inputSchema = z.object({
+	package_id: z.string().min(1).optional(),
+	kody_id: z.string().min(1).optional(),
+	package_scope: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(packageScopeInputDescription),
+	allow_force: z.boolean().optional().default(false),
+	confirm_destructive_overwrite: z
+		.boolean()
+		.optional()
+		.default(false)
+		.describe(destructiveOverwriteConfirmationDescription),
+})
 
 const externalPublishRetryDelaysMs = [100, 500] as const
 
@@ -172,9 +161,7 @@ const staticDependentItemSchema = z
 		package_id: z
 			.string()
 			.describe('Saved package id of the dependent package.'),
-		package_name: z
-			.string()
-			.describe('Package name leaf of the dependent package.'),
+		kody_id: z.string().describe('Package name leaf of the dependent package.'),
 		name: z
 			.string()
 			.describe('Scoped package.json name of the dependent package.'),
@@ -403,7 +390,7 @@ function buildPublishPhaseTimings(input: {
 
 function readPackageTestHintsFromManifest(input: {
 	manifest: unknown
-	kodyId: string
+	packageId: string
 	packageScope?: string
 }): PackageTestHints | undefined {
 	const { manifest } = input
@@ -414,7 +401,7 @@ function readPackageTestHintsFromManifest(input: {
 	if (!kody || typeof kody !== 'object' || Array.isArray(kody)) return undefined
 	const subscriptions = Reflect.get(kody, 'subscriptions')
 	return buildPackageTestHints({
-		kodyId: input.kodyId,
+		packageId: input.packageId,
 		...(input.packageScope ? { packageScope: input.packageScope } : {}),
 		hasApp: Reflect.get(kody, 'app') !== undefined,
 		subscriptionTopics:
@@ -430,7 +417,7 @@ async function getPublishedPackageTestHints(input: {
 	env: Env
 	userId: string
 	sourceId: string
-	kodyId: string
+	packageId: string
 	packageScope?: string
 }) {
 	try {
@@ -443,7 +430,7 @@ async function getPublishedPackageTestHints(input: {
 		if (!packageJson) return undefined
 		return readPackageTestHintsFromManifest({
 			manifest: JSON.parse(packageJson),
-			kodyId: input.kodyId,
+			packageId: input.packageId,
 			...(input.packageScope ? { packageScope: input.packageScope } : {}),
 		})
 	} catch {
@@ -689,7 +676,7 @@ async function runExternalPublishAttempt(input: {
 								env: input.env,
 								userId: input.ownerUserId,
 								sourceId: input.source.id,
-								kodyId: input.kodyId,
+								packageId: input.packageId,
 								...(input.testHintPackageScope
 									? { packageScope: input.testHintPackageScope }
 									: {}),
@@ -818,7 +805,7 @@ async function runExternalPublishAttempt(input: {
 					async () => {
 						const testHints = readPackageTestHintsFromManifest({
 							manifest: result.manifest,
-							kodyId: input.kodyId,
+							packageId: input.packageId,
 							...(input.testHintPackageScope
 								? { packageScope: input.testHintPackageScope }
 								: {}),
@@ -928,10 +915,9 @@ export const publishExternalPushCapability = defineDomainCapability(
 				await resolveOwnedPackageSource({
 					db: ctx.env.APP_DB,
 					userId: owner.ownerUserId,
-					ownerScope: owner.ownerScope,
 					args: {
 						package_id: args.package_id,
-						package_name: args.package_name,
+						kody_id: args.kody_id,
 					},
 				})
 			const head = await resolveArtifactSourceHead(ctx.env, source.repo_id)
@@ -975,7 +961,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 			} satisfies ExternalPublishSemanticInput
 			const durableParams = {
 				...(args.package_id ? { package_id: args.package_id } : {}),
-				...(args.package_name ? { package_name: args.package_name } : {}),
+				...(args.kody_id ? { kody_id: args.kody_id } : {}),
 				...(args.package_scope ? { package_scope: args.package_scope } : {}),
 				allow_force: args.allow_force,
 				confirm_destructive_overwrite: args.confirm_destructive_overwrite,
