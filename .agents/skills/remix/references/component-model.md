@@ -145,8 +145,8 @@ directly in the handler or the queued task.
 ### `handle.signal`
 
 An `AbortSignal` aborted when the component disconnects. Use for cleanup. Listen
-with native `target.addEventListener(type, listener, { signal })` —
-`addEventListeners()` was removed in Remix 3.0.0-rc.1.
+with native `target.addEventListener(type, listener, { signal })` — there is no
+`addEventListeners()` helper.
 
 ```tsx
 function Clock(handle: Handle) {
