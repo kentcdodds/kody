@@ -23,6 +23,7 @@ import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { reconcileArtifactsPushes } from '#worker/jobs/reconcile-artifacts-pushes.ts'
 import { cleanupRepoSessionBranches } from '#worker/repo/repo-session-cleanup.ts'
 import { backfillStorageBucketEstimates } from '#worker/storage-buckets/estimate-backfill.ts'
+import { refreshAdminInsightsRunLogSnapshot } from '#worker/admin/insights-runlog-snapshot.ts'
 import { aggregateUsageRollups } from '#worker/usage/aggregate-rollups.ts'
 import { runComputeOverageBilling } from '#worker/billing/compute-overage-invoices.ts'
 
@@ -129,7 +130,18 @@ export async function runScheduledLane(input: {
 					reason: 'query_failed',
 				}
 			}
-			return { ...result, fleetPackageErrorRate }
+			let runLogSnapshot: { status: 'ok' | 'failed' }
+			try {
+				await refreshAdminInsightsRunLogSnapshot({
+					env: input.env,
+					now: input.scheduledAt,
+				})
+				runLogSnapshot = { status: 'ok' }
+			} catch (error) {
+				console.warn('admin-insights-run-log-snapshot-lane-failed', error)
+				runLogSnapshot = { status: 'failed' }
+			}
+			return { ...result, fleetPackageErrorRate, runLogSnapshot }
 		}
 		case 'compute_overage_billing':
 			return runComputeOverageBilling({

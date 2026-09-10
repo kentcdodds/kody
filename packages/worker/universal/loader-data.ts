@@ -669,6 +669,55 @@ export type AdminInsightsPlanSlice = {
 	count: number
 }
 
+export type AdminInsightsLaunchFunnelStep = {
+	step:
+		| 'signed_up'
+		| 'email_verified'
+		| 'first_mcp'
+		| 'first_search'
+		| 'first_execute'
+		| 'first_saved_package'
+	users: number
+}
+
+export type AdminInsightsPaidSlice = {
+	plan: 'standard' | 'pro'
+	interval: 'month' | 'year' | 'unknown'
+	subscribers: number
+	/** Monthly-equivalent list revenue in USD cents. Zero when the price is unknown. */
+	mrrUsdCents: number
+}
+
+export type AdminInsightsMcpClientSlice = {
+	kind: string | null
+	label: string
+	count: number
+}
+
+export type AdminInsightsLaunchSignals = {
+	openedAt: string
+	openedDay: string
+	mrrUsdCents: number
+	/** Paid Stripe Standard/Pro rows. Gift/referral overlays are not included. */
+	paidSubscribers: number
+	unpricedPaidSubscribers: number
+	paidSlices: Array<AdminInsightsPaidSlice>
+	manualPlans: Array<AdminInsightsPlanSlice>
+	stripePlans: Array<AdminInsightsPlanSlice>
+	effectivePlans: Array<AdminInsightsPlanSlice>
+	/** Effective Standard from an active gift or referral while manual+Stripe stay free. */
+	overlayStandard: number
+	entitlementLadders: { public: number; legacy: number }
+	paidEntitlementLadders: { public: number; legacy: number }
+	activeUsers: { hours24: number; hours48: number; days7: number }
+	activation: {
+		overall: Array<AdminInsightsLaunchFunnelStep>
+		sinceOpen: Array<AdminInsightsLaunchFunnelStep>
+	}
+	mcpClients: Array<AdminInsightsMcpClientSlice>
+	openPlatformFeedback: number
+}
+
 export type AdminInsightsWorkflowStatus = {
 	status: string
 	count: number
@@ -711,11 +760,13 @@ export type AdminInsightsActivation = {
 	medianHoursToActivation: number | null
 }
 
-/** Content-free fanout status for per-user RunLog snapshot reads. */
+/** Content-free status for the hourly RunLog snapshot that insights reads. */
 export type AdminInsightsRunLogCompleteness = {
 	usersAttempted: number
 	usersLoaded: number
 	complete: boolean
+	/** When the hourly snapshot was written. Null until the first refresh. */
+	snapshotUpdatedAt: string | null
 }
 
 export type AdminInsightsDurationConsumer = {
@@ -829,6 +880,7 @@ export type AdminInsightsLoaderData = {
 	workflowStatuses: Array<AdminInsightsWorkflowStatus>
 	jobHealth: AdminInsightsJobHealth
 	activation: AdminInsightsActivation
+	launchSignals: AdminInsightsLaunchSignals
 	runLogCompleteness: AdminInsightsRunLogCompleteness
 	topRuntimeDurationConsumers: Array<AdminInsightsDurationConsumer>
 	topEventCountConsumers: Array<AdminInsightsEventCountConsumer>

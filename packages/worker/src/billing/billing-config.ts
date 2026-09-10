@@ -6,7 +6,7 @@ import {
 } from '#universal/plans.ts'
 import { type StripeSubscription } from './stripe-client.ts'
 
-type BillingEnv = {
+export type BillingEnv = {
 	STRIPE_SECRET_KEY?: string
 	STRIPE_STANDARD_PRICE_ID?: string
 	STRIPE_STANDARD_YEARLY_PRICE_ID?: string
@@ -57,8 +57,10 @@ export function subscriptionHasPrice(
  * standard/pro so existing subscriptions do not drop to free.
  * Standard $5 (`price_1Tv3W2…`) has one customer through 2026-09-08.
  */
-const retiredStandardPriceIds = ['price_1Tv3W2LAQpAnsYszSr4PGBkE'] as const
-const retiredProPriceIds = [
+export const retiredStandardPriceIds = [
+	'price_1Tv3W2LAQpAnsYszSr4PGBkE',
+] as const
+export const retiredProPriceIds = [
 	'price_1U1AISLAQpAnsYszIQvRJNhl',
 	'price_1U3sg6LAQpAnsYszlVpEIFGx',
 	'price_1U3sg7LAQpAnsYszpozAEFUi',

@@ -254,6 +254,19 @@ export function labelInboundMcpClient(
 	return { kind: null, label: truncateClientIdLabel(clientId) }
 }
 
+export function classifyMcpClientName(clientName: string | null): {
+	kind: McpClientKind | null
+	label: string
+} {
+	const kind = kindFromClientName(clientName)
+	if (kind) {
+		return { kind, label: mcpClientById(kind).label }
+	}
+	const trimmed = clientName?.trim() || ''
+	if (trimmed) return { kind: null, label: trimmed }
+	return { kind: null, label: 'Unknown' }
+}
+
 function kindFromClientName(clientName: string | null): McpClientKind | null {
 	if (!clientName) return null
 	const normalized = clientName.toLowerCase()

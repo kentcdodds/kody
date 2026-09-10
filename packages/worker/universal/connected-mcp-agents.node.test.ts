@@ -6,6 +6,7 @@ import {
 	type ConnectedMcpAgent,
 	connectedAgentConnectionLabel,
 	connectedAgentIconName,
+	classifyMcpClientName,
 	countUniqueOAuthClientIds,
 	groupConnectedAgents,
 	hasSecondConnectedMcpClient,
@@ -77,6 +78,19 @@ test('inbound labels prefer a known kind, then clientName, then hostname, then a
 			clientName: 'Claude Code',
 		}),
 	).toEqual({ kind: 'claude-code', label: 'Claude Code' })
+
+	expect(classifyMcpClientName('Cursor')).toEqual({
+		kind: 'cursor',
+		label: 'Cursor',
+	})
+	expect(classifyMcpClientName('Claude Code')).toEqual({
+		kind: 'claude-code',
+		label: 'Claude Code',
+	})
+	expect(classifyMcpClientName(null)).toEqual({
+		kind: null,
+		label: 'Unknown',
+	})
 
 	expect(
 		labelInboundMcpClient({

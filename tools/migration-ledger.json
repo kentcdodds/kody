@@ -235,6 +235,10 @@
 		{
 			"filename": "0058-drop-invites.sql",
 			"sha256": "0ae9a24f67abb537a08403fe01f0c3ac745bd973c4cfc2e049df9af708120d6b"
+		},
+		{
+			"filename": "0059-admin-insights-launch-indexes.sql",
+			"sha256": "be5d99a7d97f0d7a304ac3154f619294dc08a3b2edbda1fbafc000ff414b2bb6"
 		}
 	]
 }

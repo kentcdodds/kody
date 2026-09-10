@@ -8,7 +8,9 @@ Operator tools. Seed and preview users are **not** admin.
 `/admin/reserved-usernames`, `/admin/feature-flags`, `/admin/banners`,
 `/admin/platform-integrations`, `/admin/provider-marks`, `/admin/codemods`,
 `/admin/community-reports`, `/admin/insights`, `/admin/platform-feedback`,
-`/admin/system-email`).
+`/admin/system-email`). `/admin/insights` shows launch MRR, paid mix, the
+stamp-based activation funnel (overall and since 2026-09-10), active-user
+windows, MCP client mix, entitlement ladders, and open platform feedback.
 
 ## Drive it
 

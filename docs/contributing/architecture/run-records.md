@@ -459,16 +459,19 @@ cursors remain valid.
 
 ### Admin insights RunLog reads
 
-The role-gated `/admin/insights` dashboard loads workflow status totals and job
-success/error totals, plus activation funnel/latency, from **bounded,
-content-free per-user RunLog point reads** (`getAdminInsightsSnapshot`;
-concurrency capped by `adminInsightsRunLogConcurrency`). Each snapshot returns
-aggregate workflow statuses, job outcome counts, and activation milestone
-timestamps/ids only — never workflow or job names, errors, logs, or other
-user-authored content. The page exposes `runLogCompleteness` (`usersAttempted`,
-`usersLoaded`, `complete`) so partial fanout degrades run-derived charts with an
-explicit warning instead of failing the whole dashboard. D1 supplies only job
-schedule totals (`totalJobs` and `enabledJobs`) on that path.
+The role-gated `/admin/insights` dashboard does **not** fan out per-user RunLog
+reads on the request path. The hourly `usage_aggregation` lane writes a
+content-free KV snapshot (`admin-insights-runlog:v1`) from bounded
+`getAdminInsightsSnapshot` point reads (concurrency capped by
+`adminInsightsRunLogConcurrency`). Each snapshot holds aggregate workflow
+statuses, job outcome counts, and activation milestone timestamps/ids only —
+never workflow or job names, errors, logs, or other user-authored content. The
+page reads that snapshot and exposes `runLogCompleteness` (`usersAttempted`,
+`usersLoaded`, `complete`, `snapshotUpdatedAt`) so a missing or partial snapshot
+degrades run-derived charts with an explicit warning instead of failing the
+whole dashboard. D1 supplies only job schedule totals (`totalJobs` and
+`enabledJobs`) on that path. Launch funnels (signup through first saved package)
+come from indexed `users` stamp columns, not RunLog.
 
 ## Related
 
