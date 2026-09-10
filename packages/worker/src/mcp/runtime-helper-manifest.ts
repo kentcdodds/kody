@@ -181,7 +181,6 @@ const __kodyPackageSecrets = (packageId) => ({
     }
     const result = await kody.packageSecretGet({
       alias: normalizedAlias,
-      packageId,
     });
     return typeof result?.value === 'string' ? result.value : '';
   },
@@ -192,7 +191,6 @@ const __kodyPackageSecrets = (packageId) => ({
     }
     const result = await kody.packageSecretHas({
       alias: normalizedAlias,
-      packageId,
     });
     return result?.has === true;
   },
@@ -321,46 +319,31 @@ const __kodyStaticCallMeter = {
 	`.trim()
 }
 
+function readPackageSecretToolInput(args: unknown) {
+	const { args: peeled, requestedPackageId } =
+		takeSecretAuthorityFromCapabilityArgs([args])
+	const first = peeled[0]
+	const alias =
+		typeof first === 'object' && first !== null && 'alias' in first
+			? String((first as { alias: unknown }).alias ?? '')
+			: ''
+	return { alias, requestedPackageId }
+}
+
 function createPackageSecretKodyTools(
 	packageSecretTools: PackageSecretToolOptions,
 ): AdditionalKodyTools {
 	return {
 		packageSecretGet: async (args: unknown) => {
-			const { args: peeled, requestedPackageId } =
-				takeSecretAuthorityFromCapabilityArgs([args])
-			const first = peeled[0]
-			const alias =
-				typeof first === 'object' && first !== null && 'alias' in first
-					? String((first as { alias: unknown }).alias ?? '')
-					: ''
-			const boundPackageId =
-				typeof first === 'object' && first !== null && 'packageId' in first
-					? String((first as { packageId: unknown }).packageId ?? '').trim()
-					: ''
+			const { alias, requestedPackageId } = readPackageSecretToolInput(args)
 			return {
-				value: await packageSecretTools.get(
-					alias,
-					requestedPackageId || boundPackageId || null,
-				),
+				value: await packageSecretTools.get(alias, requestedPackageId),
 			}
 		},
 		packageSecretHas: async (args: unknown) => {
-			const { args: peeled, requestedPackageId } =
-				takeSecretAuthorityFromCapabilityArgs([args])
-			const first = peeled[0]
-			const alias =
-				typeof first === 'object' && first !== null && 'alias' in first
-					? String((first as { alias: unknown }).alias ?? '')
-					: ''
-			const boundPackageId =
-				typeof first === 'object' && first !== null && 'packageId' in first
-					? String((first as { packageId: unknown }).packageId ?? '').trim()
-					: ''
+			const { alias, requestedPackageId } = readPackageSecretToolInput(args)
 			return {
-				has: await packageSecretTools.has(
-					alias,
-					requestedPackageId || boundPackageId || null,
-				),
+				has: await packageSecretTools.has(alias, requestedPackageId),
 			}
 		},
 	}

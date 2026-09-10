@@ -31,11 +31,13 @@ the grant is the security boundary.
    - each static dependency `packageId` where `platformOwned !== true`
    - dynamic-import artifact ids installed during hydration
 3. **Enforce.** `createPackageStorageKodyTools` rejects any sandbox-supplied
-   `packageId` outside that set. Secret reads and mounts use the same set: a
-   requested stamp id is honored only when it is in the grant set, then
-   `allowed_packages` / implicit read checks run as that package. The
-   StorageRunner name is `(callerUserId, package:{packageId})`, so a granted id
-   is always a **per-caller** bucket, never another account's data.
+   `packageId` outside that set. Secret mounts (`packageSecrets`) do not take an
+   author-selected package id on `kody.packageSecretGet` / `Has`. The host
+   honors only the stamp identity (hidden ALS / capability field) or the run
+   package, and only when that id is in the grant set. Then `allowed_packages` /
+   implicit read checks run as that package. The StorageRunner name is
+   `(callerUserId, package:{packageId})`, so a granted id is always a
+   **per-caller** bucket, never another account's data.
 
 When the bundler would resolve `kody:@kody/…` live, it records
 `platformOwned: true` on that `BundleArtifactDependency`

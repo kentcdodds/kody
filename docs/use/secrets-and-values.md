@@ -18,8 +18,9 @@ Expired secrets stay in the list with **`ttl_ms: 0`**. Fetch placeholders and
 Package-scoped secrets belong to one saved package. User-scoped secrets follow
 the bundler stamp: code that originates from package A authorizes as A,
 including when B statically imports A's export. B's own code still cannot read a
-secret locked only to A. Access rules are covered in
-[Package approval](#package-approval).
+secret locked only to A — including by passing A's id to `kody.packageSecretGet`
+/ `Has`. Only A's stamped `packageSecrets` binding carries that authority.
+Access rules are covered in [Package approval](#package-approval).
 
 **`kody.secretSet(...)`** persists a value that is already available inside
 execution (for example an API key the package just minted). It does not return

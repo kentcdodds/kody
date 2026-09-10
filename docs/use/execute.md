@@ -218,7 +218,9 @@ but `packageContext` remains **`null`** because the imported module has not been
 entered as its own package runtime. Imported modules keep stamped
 `packageStorage()` and stamp-aligned secret authority: A's export may use
 secrets locked to A (or A's `kody.secretMounts`) without granting those secrets
-to the execute entry. Unstamped execute entry code can still use **your** user
+to the execute entry. The execute entry cannot select A's id on
+`kody.packageSecretGet` / `Has`; only A's stamped `packageSecrets` binding
+carries that authority. Unstamped execute entry code can still use **your** user
 secrets through `{{secret:...}}` placeholders; it cannot use A's mounts.
 `packageContext` stays `null` on ad hoc execute.
 

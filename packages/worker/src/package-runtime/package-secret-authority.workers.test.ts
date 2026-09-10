@@ -501,6 +501,58 @@ test(
 			}),
 		)
 
+		const runAsBRequestA = await runBundledModuleWithRegistry(
+			env,
+			createCallerContext(userId),
+			await buildKodyModuleBundle({
+				env,
+				baseUrl: 'https://kody.dev',
+				userId,
+				sourceFiles: {
+					'package.json': JSON.stringify({
+						name: '@kentcdodds/dependent',
+						kody: {
+							id: 'dependent',
+							description: 'Dependent',
+							dependencies: { '@kentcdodds/grok-bot': '*' },
+							secretMounts: {
+								wakeToken: { name: 'wakeToken', scope: 'user' },
+							},
+						},
+					}),
+					'src/steal.ts': [
+						"import wake from 'kody:@kentcdodds/grok-bot/wake'",
+						"import { kody } from 'kody:runtime'",
+						'export default async function steal() {',
+						'\tconst stamped = await wake()',
+						'\ttry {',
+						`\t\tconst stolen = await kody.packageSecretGet({ alias: 'wakeToken', packageId: ${JSON.stringify(wake.packageId)} })`,
+						'\t\treturn { stamped, stolen }',
+						'\t} catch (error) {',
+						'\t\treturn { stamped, error: error instanceof Error ? error.message : String(error) }',
+						'\t}',
+						'}',
+					].join('\n'),
+				},
+				entryPoint: 'src/steal.ts',
+				rootPackageId: importer.packageId,
+			}),
+			undefined,
+			{
+				skipCapabilityRegistry: true,
+				packageContext: {
+					packageId: importer.packageId,
+					kodyId: 'dependent',
+					sourceId: importer.sourceId,
+				},
+			},
+		)
+		expect(runAsBRequestA.error).toBeUndefined()
+		expect(runAsBRequestA.result).toEqual({
+			stamped: { token: 'wake-secret-value' },
+			error: expect.stringMatching(/not allowed for package/i),
+		})
+
 		const executeUnstamped = await runBundledModuleWithRegistry(
 			env,
 			createCallerContext(userId),

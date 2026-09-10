@@ -291,7 +291,8 @@ User secrets follow the same stamp. An export that reads a secret locked to its
 declaring package (or declared in that package's `kody.secretMounts`) keeps that
 authority when another package or ad hoc execute statically imports it. The
 importer does not need its own `allowed_packages` grant. The importer's own code
-still cannot read that secret. See
+still cannot read that secret, including by passing the declaring package's id
+to `kody.packageSecretGet` / `Has`. See
 [Package approval](./secrets-and-values.md#package-approval).
 
 ### Ambient `storage` is not a `kody:runtime` export

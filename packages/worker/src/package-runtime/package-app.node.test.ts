@@ -1474,6 +1474,57 @@ test('package app runtime bridge redacts secrets in finish payload and merges me
 	expect(finishInput.error.message).not.toContain(thrownSecretValue)
 })
 
+test('package app secret mounts ignore author-selected packageId and honor the stamp field', async () => {
+	resetPackageAppRuntimeMocks()
+	packageAppRuntimeMock.resolvePackageMountedSecret.mockResolvedValue({
+		value: 'pkg-app-secret-value',
+	})
+	const { bridge } = createPackageAppRuntimeBridgeForTest({
+		packageStorageGrantIds: ['package-1', 'pkg-a'],
+	})
+	await expect(
+		bridge.packageSecretGet({ alias: 'api-token', packageId: 'pkg-a' }),
+	).resolves.toEqual({ value: 'pkg-app-secret-value' })
+	expect(
+		packageAppRuntimeMock.resolvePackageMountedSecret,
+	).toHaveBeenCalledWith(
+		expect.objectContaining({
+			packageId: 'package-1',
+			alias: 'api-token',
+		}),
+	)
+	packageAppRuntimeMock.resolvePackageMountedSecret.mockClear()
+	await expect(
+		bridge.packageSecretGet({
+			alias: 'api-token',
+			packageId: 'package-1',
+			[secretAuthorityArgName]: 'pkg-a',
+		}),
+	).resolves.toEqual({ value: 'pkg-app-secret-value' })
+	expect(
+		packageAppRuntimeMock.resolvePackageMountedSecret,
+	).toHaveBeenCalledWith(
+		expect.objectContaining({
+			packageId: 'pkg-a',
+			alias: 'api-token',
+		}),
+	)
+	const workerSource = await readFile(
+		new URL('./package-app.ts', import.meta.url),
+		'utf8',
+	)
+	const secretsProxyStart = workerSource.indexOf(
+		'function createPackageSecretsProxy(runtimeBridge) {',
+	)
+	expect(secretsProxyStart).toBeGreaterThan(-1)
+	expect(
+		workerSource.slice(
+			secretsProxyStart,
+			workerSource.indexOf('function createWorkflowsProxy', secretsProxyStart),
+		),
+	).toContain(secretAuthorityArgName)
+})
+
 test('package app runtime bridge enforces packageStorage grants and raw storage namespace ACLs', async () => {
 	const { bridge } = createPackageAppRuntimeBridgeForTest({
 		packageStorageGrantIds: ['package-1', 'dep-package'],

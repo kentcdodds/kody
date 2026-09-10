@@ -57,8 +57,10 @@ import {
 	resolvePackageMountedSecret,
 } from '#mcp/secrets/package-access.ts'
 import {
+	resolveSecretAuthorityPackageId,
 	runWithCurrentSecretAuthority,
 	runWithSecretAuthorityScope,
+	secretAuthorityArgName,
 	secretAuthorityHeaderName,
 	takeSecretAuthorityFromCapabilityArgs,
 } from '#mcp/secrets/secret-authority.ts'
@@ -297,7 +299,19 @@ function createRealtimeProxy(runtimeBridge) {
 	};
 }
 
-function createPackageSecretsProxy(runtimeBridge, packageId) {
+function createPackageSecretsProxy(runtimeBridge) {
+	const secretArgs = (alias) => {
+		const getSecretAuthority = globalThis[Symbol.for('kody.getSecretAuthority')];
+		const authority =
+			typeof getSecretAuthority === 'function'
+				? String(getSecretAuthority() ?? '').trim()
+				: '';
+		const args = { alias };
+		if (authority) {
+			args[${JSON.stringify(secretAuthorityArgName)}] = authority;
+		}
+		return args;
+	};
 	return {
 		get: async (alias) => {
 			const normalizedAlias =
@@ -305,10 +319,9 @@ function createPackageSecretsProxy(runtimeBridge, packageId) {
 			if (!normalizedAlias) {
 				throw new Error('packageSecrets.get requires a non-empty alias.')
 			}
-			const result = await runtimeBridge.packageSecretGet({
-				alias: normalizedAlias,
-				packageId,
-			})
+			const result = await runtimeBridge.packageSecretGet(
+				secretArgs(normalizedAlias),
+			)
 			if (typeof result?.value !== 'string') {
 				throw new Error(
 					'packageSecretGet returned invalid response for alias "' +
@@ -324,10 +337,9 @@ function createPackageSecretsProxy(runtimeBridge, packageId) {
 			if (!normalizedAlias) {
 				throw new Error('packageSecrets.has requires a non-empty alias.')
 			}
-			const result = await runtimeBridge.packageSecretHas({
-				alias: normalizedAlias,
-				packageId,
-			})
+			const result = await runtimeBridge.packageSecretHas(
+				secretArgs(normalizedAlias),
+			)
 			if (typeof result?.has !== 'boolean') {
 				throw new Error(
 					'packageSecretHas returned invalid response for alias "' +
@@ -996,6 +1008,24 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		return normalizedPackageId
 	}
 
+	private resolvePackageSecretAuthorityPackageId(input: unknown) {
+		const { requestedPackageId } = takeSecretAuthorityFromCapabilityArgs([
+			input ?? {},
+		])
+		const grantedPackageIds = new Set(this.ctx.props.packageStorageGrantIds)
+		const authorityPackageId = resolveSecretAuthorityPackageId({
+			requestedPackageId,
+			grantedPackageIds,
+			runPackageId: this.ctx.props.packageId,
+		})
+		if (!authorityPackageId) {
+			throw new Error(
+				'packageSecrets requires a matching server-side package runtime context.',
+			)
+		}
+		return this.assertPackageStorageGranted(authorityPackageId)
+	}
+
 	private getRealtimeSessionRpc() {
 		return packageRealtimeSessionRpc({
 			env: this.env,
@@ -1315,9 +1345,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	}
 
 	async packageSecretGet(input: { alias: string; packageId?: string }) {
-		const packageId = this.assertPackageStorageGranted(
-			input.packageId?.trim() || this.ctx.props.packageId,
-		)
+		const packageId = this.resolvePackageSecretAuthorityPackageId(input)
 		const callerContext = await this.createCallerContext(
 			this.ctx.props.packageId,
 		)
@@ -1334,9 +1362,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	}
 
 	async packageSecretHas(input: { alias: string; packageId?: string }) {
-		const packageId = this.assertPackageStorageGranted(
-			input.packageId?.trim() || this.ctx.props.packageId,
-		)
+		const packageId = this.resolvePackageSecretAuthorityPackageId(input)
 		const callerContext = await this.createCallerContext(
 			this.ctx.props.packageId,
 		)

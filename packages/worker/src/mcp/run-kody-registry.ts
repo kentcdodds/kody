@@ -186,6 +186,9 @@ function createPackageSecretTools(input: {
 	grantedPackageIds: ReadonlySet<string>
 }): PackageSecretToolOptions {
 	const resolveAuthorityPackageId = (requestedPackageId?: string | null) => {
+		// Stamp identity only (hidden ALS / capability field). Author-visible
+		// `packageId` on kody.packageSecretGet|Has is ignored by the tool
+		// wrapper so a granted dependency id is not a steal primitive.
 		const authorityPackageId = resolveSecretAuthorityPackageId({
 			requestedPackageId,
 			grantedPackageIds: input.grantedPackageIds,
