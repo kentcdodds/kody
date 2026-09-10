@@ -28,7 +28,7 @@ Agent notes — for AI agents explaining or recreating this loop:
   saved_packages.locked_at via packageUpdate { locked: true } or the
   website lock icon.
 - Agents can lock. Agents cannot unlock. Unlock is website-only at
-  /@{username}/{kodyId}. packageUpdate { locked: false } is
+  /@{username}/{package-name}. packageUpdate { locked: false } is
   rejected and returns that URL.
 - Publish lock does not shrink the OAuth token. It holds the published
   tree of this package. That is the grant for jobs and named exports.
@@ -39,7 +39,7 @@ Agent notes — for AI agents explaining or recreating this loop:
   change usageMode. The one-click /account/integrations/approve grant is
   a no-op while usage is still any context.
 - Do not lock a full @kody/google fork if it exports send. Author a thin
-  drafts-only package (new kody.id). The fork can stay for Calendar/Drive
+  drafts-only package (own package name leaf). The fork can stay for Calendar/Drive
   or raw helpers; this package is the Gmail write surface.
 - Connect with the narrowest token that can create drafts: gmail.compose.
   Add gmail.readonly only when the agent must read the inbox to propose
@@ -52,7 +52,7 @@ Agent notes — for AI agents explaining or recreating this loop:
 - After the first successful publish, packageUpdate { locked: true },
   then integrationLock with the connection name and saved package_id.
   Later publishes return locked with approval_url
-  /@username/:kodyId/approve-publish?commit=SHA. The owner
+  /@username/:name/approve-publish?commit=SHA. The owner
   clicks Promote this commit. Promoting does not unlock.
 -->
 
@@ -76,7 +76,7 @@ The Google token stays as wide as Google issued it.
 **Publish lock** (`locked_at` on the saved package) keeps serving that published
 tree. Agents and the five-minute reconcile job cannot advance
 `published_commit`. `packageUpdate` accepts `changes: { locked: true }`. Agents
-cannot unlock; send the owner to `/@{username}/{kodyId}`.
+cannot unlock; send the owner to `/@{username}/{package-name}`.
 
 Publish lock does **not** revoke send on the token. It stops _this_ package's
 jobs and exports from silently becoming a sender.
@@ -113,16 +113,16 @@ Usage detail: [Packages → Publish lock](../use/packages.md#publish-lock).
    `users.drafts.create` from `execute` (example below). Confirm a draft appears
    in Gmail. Do not call `users.messages.send` or `users.drafts.send`.
 4. **Save a thin drafts-only package.** Follow `package_authoring` and
-   `package_lifecycle`. Give it its own `kody.id` (for example `gmail-drafts`).
-   Do not lock a full `@kody/google` fork if that fork exports send — keep send
-   off this package's published surface. Search Purpose must say the export
-   creates a draft and does not send.
+   `package_lifecycle`. Give it its own package name leaf (for example
+   `gmail-drafts`). Do not lock a full `@kody/google` fork if that fork exports
+   send — keep send off this package's published surface. Search Purpose must
+   say the export creates a draft and does not send.
 5. **Publish, then lock.** After checks pass and `published_commit` moves, call
    `packageUpdate` with `changes: { locked: true }` (or the lock icon on
-   `/@{username}/{kodyId}`). Then call `integrationLock` with the connection
-   name and this package's saved `package_id` so execute cannot use the token.
-   Say so in chat so the owner knows later publishes need their **Promote this
-   commit** click, and that unlocking usage is a website click on
+   `/@{username}/{package-name}`). Then call `integrationLock` with the
+   connection name and this package's saved `package_id` so execute cannot use
+   the token. Say so in chat so the owner knows later publishes need their
+   **Promote this commit** click, and that unlocking usage is a website click on
    `/account/integrations/:name`.
 
 ## Draft-create export
@@ -214,12 +214,12 @@ this export only. It does not grow a send path "for convenience."
 ## Later publishes
 
 Pushes still land on Artifacts HEAD. Publish tools return `locked` with
-`approval_url` `/@username/:kodyId/approve-publish?commit=<sha>`. The owner
-opens that URL and clicks **Promote this commit**. Promoting one commit does not
+`approval_url` `/@username/:name/approve-publish?commit=<sha>`. The owner opens
+that URL and clicks **Promote this commit**. Promoting one commit does not
 unlock the package.
 
 If an agent needs the lock off, it sends the owner to
-`/@{username}/{kodyId}/settings`. It does not pass `locked: false`.
+`/@{username}/{package-name}/settings`. It does not pass `locked: false`.
 
 ## Same pattern on other coarse tokens
 

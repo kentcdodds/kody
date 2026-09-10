@@ -92,7 +92,7 @@ package apps guide.
 
 `communityFork` copies **HEAD** into your account as an **inert** source:
 
-- `package.json` `name` and `kody.id` are rewritten to your username scope.
+- `package.json` `name` is rewritten to your username scope (`@you/<leaf>`).
 - **No saved package row is created**, so nothing runs yet — no imports, jobs,
   subscriptions, or package app.
 

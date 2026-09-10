@@ -39,7 +39,6 @@ event topic:
 		".": "./src/index.ts"
 	},
 	"kody": {
-		"id": "email-automation",
 		"description": "Automates stored inbound email.",
 		"subscriptions": {
 			"email.message.received": {
@@ -75,9 +74,9 @@ subscriptions:
 }
 ```
 
-The result lists package id, `kody.id`, package name, topic, handler,
-description, and filters. Use this before debugging event dispatch, building
-fan-out, or deciding whether a package already subscribes to a topic.
+The result lists `package_id`, `package_name`, scoped package name, topic,
+handler, description, and filters. Use this before debugging event dispatch,
+building fan-out, or deciding whether a package already subscribes to a topic.
 
 ## Synthetic dispatch
 
@@ -88,7 +87,7 @@ waiting for production fan-out.
 
 ```json
 {
-	"kody_id": "email-automation",
+	"package_name": "email-automation",
 	"package_scope": "kody",
 	"topic": "email.message.received",
 	"params": {}
@@ -99,7 +98,7 @@ For stored inbound mail, replay with `email_message_id` instead of `params`:
 
 ```json
 {
-	"kody_id": "email-automation",
+	"package_name": "email-automation",
 	"package_scope": "kody",
 	"topic": "email.message.received",
 	"email_message_id": "00000000000000000000000000000001"
@@ -164,7 +163,6 @@ the emitting package's npm scope:
 {
 	"name": "@kentcdodds/discord-gateway",
 	"kody": {
-		"id": "discord-gateway",
 		"description": "Discord gateway.",
 		"emits": {
 			"@kentcdodds/discord.message.created": {
@@ -897,9 +895,10 @@ type CommunityListingPublishedEvent = {
 }
 ```
 
-`public_url` is the canonical shareable URL (`{base}/@{username}/{kody_id}`),
-never `/community/{listing_id}`. The event omits stable user ids, email, package
-source, secrets, and unrelated account content.
+`public_url` is the canonical shareable URL
+(`{base}/@{username}/{package-name}`), never `/community/{listing_id}`. The
+event omits stable user ids, email, package source, secrets, and unrelated
+account content.
 
 Queue messages contain only `{ eventId, listingId }`. Dispatch reloads the
 metadata projection after admin subscriber discovery. Missing, delisted, or

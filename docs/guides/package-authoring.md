@@ -34,13 +34,13 @@ There are two lanes for writing package source. Pick based on whether you have
 local filesystem and git access:
 
 - **Git lane (coding agents — preferred).** Call `packageGetGitRemote` with
-  `create: true` and a new `kody_id` to register a stub saved package and mint a
-  short-lived authenticated remote in one call (for existing packages, omit
-  `create`). Run the returned `setup_commands` to clone into a temporary
-  directory — they set local `git config user.email` / `user.name` from
-  `git_author` (the signed-in Kody account). Do not invent or guess a git
-  identity. Edit normally — binary assets, multi-file refactors, and local
-  build/test loops all work — commit, push, then publish with
+  `create: true` and a new `package_name` (leaf or `@scope/leaf`) to register a
+  stub saved package and mint a short-lived authenticated remote in one call
+  (for existing packages, omit `create`). Run the returned `setup_commands` to
+  clone into a temporary directory — they set local `git config user.email` /
+  `user.name` from `git_author` (the signed-in Kody account). Do not invent or
+  guess a git identity. Edit normally — binary assets, multi-file refactors, and
+  local build/test loops all work — commit, push, then publish with
   `packagePublishExternalPush`. If that tool returns `locked`, open the returned
   `approval_url` so the owner can promote the named commit. Do not treat HEAD as
   live until `published_commit` moves. When the OAuth token is coarser than the
@@ -192,12 +192,13 @@ forks are the [Package apps](./package-apps.md) playbook (`package_apps:guide`).
 This section is the mount-prefix recipe those pages share.
 
 Production-hosted package apps live at
-`https://{username}.kody.run/packages/<kody-id>/<path>` (the username is in the
-hostname; the path mount is `/packages/<kody-id>`). Confirmed non-production
-runtimes may serve inline on the app origin at
-`/@username/packages/<kody-id>/<path>` instead. The app receives only `/<path>`
-in its fetch request in both cases. Root-relative links such as `/audio/123`
-therefore escape the mount and are not routed back to the package app.
+`https://{username}.kody.run/packages/<package-name>/<path>` (the username is in
+the hostname; the path mount is `/packages/<package-name>`). Confirmed
+non-production runtimes may serve inline on the app origin at
+`/@username/packages/<package-name>/<path>` instead. The app receives only
+`/<path>` in its fetch request in both cases. Root-relative links such as
+`/audio/123` therefore escape the mount and are not routed back to the package
+app.
 
 Import `packageContext` from `kody:runtime` and build every in-app link,
 redirect, share/email URL, and OAuth callback against its public base:
@@ -217,11 +218,11 @@ const audioUrl = new URL(
 
 - `packageContext.hostedUrl` is the full public URL of the app mount.
 - `packageContext.appBasePath` is the origin-relative mount path
-  (`/packages/<kody-id>` on a subdomain, `/@username/packages/<kody-id>` when
-  inline).
+  (`/packages/<package-name>` on a subdomain,
+  `/@username/packages/<package-name>` when inline).
 
-Kody derives both fields from the package's current serving username and
-`kody.id`, including after a rename or fork. Do not hard-code either path
+Kody derives both fields from the package's current serving username and package
+name leaf, including after a rename or fork. Do not hard-code either path
 segment.
 
 ## `kody.description` (short public tagline)
@@ -246,8 +247,10 @@ the field is omitted, Kody infers a category from well-known tags such as
 `github` or `zero-auth`, or files the listing under Other. Tags stay freeform
 search keywords; do not use `kody.tags` as a second category vocabulary.
 
-`package.json#kody.id` is optional. If present it must match the package name
-leaf (the URL slug). Prefer omitting it and letting the leaf be the slug.
+Omit `package.json#kody.id`. If present it must match the package name leaf (the
+URL slug). When it matches, load succeeds and the slug still comes from `name`.
+When it does not match, parse rejects with
+`package.json kody.id is not package identity; if present it must match the name leaf "…" (found "…"). Omit kody.id and use package.json name "…"`.
 
 ## Package visibility
 
@@ -342,14 +345,14 @@ irreversible-side-effect guard when a smoke test should stay safe.
    `kody:@scope/package/export` from `execute` against a read-only export or
    package-supported dry-run input that exercises approved secrets (see
    [Secret-using packages](#secret-using-packages) above).
-3. **Package apps** — `packageAppFetch({ kody_id })` with the path, method, and
-   body your handler needs. Confirm `{ status, headers, body, truncated }` and
-   any `packageStorage()` side effects. See
+3. **Package apps** — `packageAppFetch({ package_name })` with the path, method,
+   and body your handler needs. Confirm `{ status, headers, body, truncated }`
+   and any `packageStorage()` side effects. See
    [Package app fetch](../use/package-app-fetch.md) and the
    [Package apps](./package-apps.md) playbook (`package_apps:guide`).
-4. **Subscriptions** — `packageSubscriptionDispatch({ kody_id, topic, … })` with
-   exactly one of `params` (fixture) or `email_message_id` (stored-mail replay)
-   for each declared topic. See
+4. **Subscriptions** — `packageSubscriptionDispatch({ package_name, topic, … })`
+   with exactly one of `params` (fixture) or `email_message_id` (stored-mail
+   replay) for each declared topic. See
    [Synthetic event dispatch](../use/synthetic-event-dispatch.md) and the
    [package subscriptions guide](./package-subscriptions.md#synthetic-dispatch).
 5. Optional UI checks — open `hosted_app_url` when the publish response includes

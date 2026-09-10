@@ -66,17 +66,17 @@ unknown id returns an error listing the available domains. The `search` meta
 capability (usable inside **execute**) accepts the same `domain` argument
 alongside `query`.
 
-An entire saved-package UUID or `kody.id` is treated as an exact package
+An entire saved-package UUID or package name leaf is treated as an exact package
 identity when it resolves for the signed-in user, except when that identity also
 names a synthesized provider; that query participates in ranking so the package
 and provider card can appear together. Kody also recognizes current-origin
 `/account/packages/:packageId` URLs (which redirect to the package page),
-owner-matching `/@username/:kodyId` package pages, and per-user package-app
-subdomain URLs (`https://{username}.<package-app host>/packages/:kodyId`) — so a
+owner-matching `/@username/:name` package pages, and per-user package-app
+subdomain URLs (`https://{username}.<package-app host>/packages/:name`) — so a
 URL copied from an open app resolves too. Exact package identities never compete
 with semantic capability results. Hidden exact query matches still require
-`includeHiddenPackages: true`; exact `entity` lookup by UUID or `kody.id`
-ignores the hidden discovery preference.
+`includeHiddenPackages: true`; exact `entity` lookup by UUID or package name
+leaf ignores the hidden discovery preference.
 
 Ranked `search({ query })` calls may include relevant long-term memory metadata
 in structured content. Entity lookups, domain listings, empty/broad discovery,
@@ -158,9 +158,9 @@ For synthesized MCP provider capabilities, capability detail reports the
 
 Integration entity detail may include a small set of **related package
 suggestions** for the same provider (the user's packages first; otherwise
-community listings whose name, kody id, or tags mention that provider, capped).
-Ranked query results stay lean and do not run community lookup or expand those
-suggestions.
+community listings whose name, package name leaf, or tags mention that provider,
+capped). Ranked query results stay lean and do not run community lookup or
+expand those suggestions.
 
 Package entity detail is a slim index: summary, export subpaths with one-line
 purposes, job and retriever names, and the README `Intent` section. Structured

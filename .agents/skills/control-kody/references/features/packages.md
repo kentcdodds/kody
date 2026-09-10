@@ -5,25 +5,25 @@ Repo-backed saved packages: list, detail, files, approve-publish.
 ## How to get there
 
 `/@username` lists your packages, including private and unpublished packages
-when you view your own profile. Each package lives at `/@username/:kodyId`
-(README), `/@username/:kodyId/tree/:ref` (files), `/@username/:kodyId/assets/…`
-(README-relative images from the published or pinned commit),
-`/@username/:kodyId/settings` (lock, visibility, delete), and
-`/@username/:kodyId/approve-publish` (published-vs-HEAD review). Opening an
-allowlisted image or video in the tree renders a preview; the bytes come from
-`/@username/:kodyId/raw/:ref/…` (same authz as the tree). Legacy
+when you view your own profile. Each package lives at `/@username/:kodyId` (the
+URL slug is the package name leaf; README), `/@username/:kodyId/tree/:ref`
+(files), `/@username/:kodyId/assets/…` (README-relative images from the
+published or pinned commit), `/@username/:kodyId/settings` (lock, visibility,
+delete), and `/@username/:kodyId/approve-publish` (published-vs-HEAD review).
+Opening an allowlisted image or video in the tree renders a preview; the bytes
+come from `/@username/:kodyId/raw/:ref/…` (same authz as the tree). Legacy
 `/account/packages` HTML URLs only redirect to these canonical pages.
 
 ## Drive it
 
 Preview seed has **no** packages until you create one. Package creation is
-MCP-only (`packageGetGitRemote({ create: true, kody_id })`). There is no create
-action on `POST /account/packages.json`. Use the CLI — logged-in preview testing
-does not require agents to hand-roll an MCP OAuth dance — the CLI does it for
-them:
+MCP-only (`packageGetGitRemote({ create: true, package_name })`). There is no
+create action on `POST /account/packages.json`. Use the CLI — logged-in preview
+testing does not require agents to hand-roll an MCP OAuth dance — the CLI does
+it for them:
 
 ```bash
-npm run control-kody -- package-create --origin <preview> --kody-id <slug> [--head-ahead]
+npm run control-kody -- package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]
 ```
 
 Then assert the pages:
@@ -35,11 +35,12 @@ node tools/control-kody.ts preview -- \
 ```
 
 `--head-ahead` pushes one unpublished commit so the Code tab can show **HEAD
-ahead of published**. It needs a minted Artifacts write remote. If
+ahead of published**. That flag needs a minted Artifacts write remote. If
 `packageGetGitRemote` fails with source-safety `account not found`, the stub
 package still exists (check `/@username/:kodyId`) but HEAD-ahead cannot be
-pushed on that preview. To prove delete, create a package with `package-create`,
-then delete it and assert the empty state.
+pushed on that preview. `--kody-id` is an alias for `--package-name`. To prove
+delete, create a package with `package-create`, then delete it and assert the
+empty state.
 
 ## APIs
 

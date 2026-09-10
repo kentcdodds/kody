@@ -101,7 +101,7 @@ export type PublicProfilePackageItem = {
 	tags: Array<string>
 	updatedAt: string
 	communityListingId: string | null
-	/** The listing's `kody.id`, which can lag the package's until republish. */
+	/** The listing's package name leaf, which can lag the package's until republish. */
 	communityListingKodyId: string | null
 	communityPublishedAt: string | null
 	/** Present on the owner's own profile list; omitted for other viewers. */

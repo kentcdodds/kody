@@ -19,9 +19,10 @@ node tools/control-kody.ts request GET /account/waiting.json
 node tools/control-kody.ts map waiting
 node tools/control-kody.ts health --sha <merge-sha>
 node tools/control-kody.ts preview -- --request 'GET /account/waiting.json' --check /account/waiting
-node tools/control-kody.ts package-create --origin <preview> --kody-id <slug> [--head-ahead]
+node tools/control-kody.ts package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]
 ```
 
+`--kody-id` is an alias for `--package-name`.
 `npm run control-kody -- <command>` is the same entry.
 
 ## Feature Map

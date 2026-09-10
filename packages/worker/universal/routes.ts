@@ -198,7 +198,7 @@ export const routes = route({
 	communityInstallApiPost: post('/community/:listingId/install.json'),
 	profile: '/@:username',
 	// Canonical public URL for a published package, keyed by its owner and
-	// `kody.id` (`/@kentcdodds/devin`) rather than the listing uuid. Deeper
+	// package name leaf (`/@kentcdodds/devin`) rather than the listing uuid. Deeper
 	// package routes use a third-segment noun (`/files`) so they do not collide
 	// with `/@:username/{packages,connectors,webhooks,api}` ingress.
 	communityPackage: '/@:username/:kodyId',

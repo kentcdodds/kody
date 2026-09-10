@@ -13,12 +13,16 @@ Kody-specific metadata.
 Use `package.json` as the canonical source of truth for saved package metadata.
 
 - `name` — npm-valid scoped package name (`@scope/<leaf>`); the leaf segment is
-  the URL slug
+  the URL slug. Together with UUID `package_id`, this is package identity. MCP
+  tools take `package_id` and/or `package_name` (leaf or `@owner/leaf`). Pass
+  the package name leaf (or `@owner/leaf`), not a separate kody.id.
 - `exports` — authoritative import/export map
 - `private` — leftover npm-style field; ignored for catalog listing. Visibility
   is a repo setting (`packageUpdate` `changes.visibility`), default private
-- `kody.id` — optional; if present must match the package name leaf. Prefer
-  omitting it and letting the leaf be the slug
+- `kody.id` — optional; omit it. If present it must match the package name leaf.
+  When it matches, load succeeds and the slug still comes from `name`. When it
+  does not match, parse rejects with
+  `package.json kody.id is not package identity; if present it must match the name leaf "…" (found "…"). Omit kody.id and use package.json name "…"`.
 - `kody.description` — short public tagline for search/detail (max 200)
 - `kody.tags` — search tags
 - `kody.category` — optional community browse category (`integrations`,
@@ -297,8 +301,8 @@ the host-owned `kody:runtime` module.
 
 The built-in `packageSubscriptionsList` capability is the generic discovery
 surface for declared subscriptions. It reads the signed-in user's saved package
-manifests and returns package id, `kody.id`, package name, topic, handler,
-description, and filters, optionally narrowed by exact topic.
+manifests and returns `package_id`, `package_name`, scoped package name, topic,
+handler, description, and filters, optionally narrowed by exact topic.
 
 For user-owned inbound email, `email.message.received` dispatches after an
 accepted routed message is stored. Quarantined inbound mail dispatches
@@ -505,8 +509,8 @@ In package runtime contexts (package jobs, subscription handlers, package apps),
 [Workflows](../use/workflows.md) for the full runtime reference, including the
 inline `code` shape.
 
-Kody stores workflow payloads as routing metadata (`userId`, package id,
-`kody.id`, source id, workflow name, export name, idempotency key, `runAt`/plan
+Kody stores workflow payloads as routing metadata (`userId`, package id, package
+name leaf, source id, workflow name, export name, idempotency key, `runAt`/plan
 date, and small non-secret params). Do not place secrets, OAuth tokens, full
 integration configuration, or full device action payloads in workflow params or
 metadata. The package export should look up current secrets/configuration from
@@ -663,11 +667,11 @@ Saved packages carry a user-scoped **`hidden`** flag in `saved_packages` (set
 via **`packageUpdate`** with `changes.hidden`). Ranked search excludes hidden
 packages by default. The public MCP **search** tool and the **meta** domain
 **search** capability both accept **`includeHiddenPackages`**. Exact package
-queries recognize user-owned UUIDs, `kody.id` values, current-origin account
+queries recognize user-owned UUIDs, package name leaves, current-origin account
 package URLs, and owner-matching hosted package URLs without mixing in semantic
 capability results. Hidden exact query matches require the opt-in; known-id
-entity lookup by UUID or `kody.id`, **`packageList`**, **`packageGet`**, and
-context-scope package retrievers are unaffected. Hiding is not deletion,
+entity lookup by UUID or package name leaf, **`packageList`**, **`packageGet`**,
+and context-scope package retrievers are unaffected. Hiding is not deletion,
 community delisting, or entitlement exclusion. Deletion is `packageDelete`
 (agents, `confirm_name` matching the package name) or **Delete package** on the
 package page (type the package name).

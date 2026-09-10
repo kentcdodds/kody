@@ -61,9 +61,9 @@ For non-trivial or integration-backed apps, prefer this split:
 ## Session handoff
 
 Production-hosted apps live at
-`https://{username}.kody.run/packages/<kody-id>/…`. Opening the app from the
-signed-in kody.codes origin (**Open app**, the publish `hosted_app_url`, or the
-equivalent package page control) attaches a short-lived session, then the
+`https://{username}.kody.run/packages/<package-name>/…`. Opening the app from
+the signed-in kody.codes origin (**Open app**, the publish `hosted_app_url`, or
+the equivalent package page control) attaches a short-lived session, then the
 subdomain loads. Plan QA around that path: signed-in origin first, then confirm
 the app on `*.kody.run/packages/…`.
 
@@ -82,7 +82,7 @@ Typical first probe:
 
 ```json
 {
-	"kody_id": "my-app",
+	"package_name": "my-app",
 	"path": "/"
 }
 ```
@@ -127,8 +127,8 @@ callback from `packageContext.appBasePath` plus `hostedUrl` (or
 `new URL(path, origin)` with a trailing-slash-safe origin). Kody strips the
 mount before the handler runs, so the fetch sees `/<path>` only. Absolute
 `/audio/123` links leave the mount; mount-prefixed URLs stay under
-`/packages/<kody-id>/…` (or `/@username/packages/<kody-id>/…` when served
-inline).
+`/packages/<package-name>/…` (or `/@username/packages/<package-name>/…` when
+served inline).
 
 ```ts
 import { packageContext } from 'kody:runtime'
@@ -149,9 +149,9 @@ const callback = appUrl('oauth/callback')
 ```
 
 `hostedUrl` is the public mount URL. `appBasePath` is the origin-relative mount
-(`/packages/<kody-id>` on a subdomain). Both come from the current serving
-username and `kody.id`, including after a rename or fork. When you pass a
-relative path to `new URL(path, origin)`, give `origin` a trailing slash so
+(`/packages/<package-name>` on a subdomain). Both come from the current serving
+username and package name leaf, including after a rename or fork. When you pass
+a relative path to `new URL(path, origin)`, give `origin` a trailing slash so
 `assets/sprite.png` stays under the mount.
 
 ## Same-origin proxy
@@ -241,8 +241,8 @@ confirm the card matches intent:
 | `description`   | Short tagline (`kody.description`)                                 |
 | `tags`          | Search keywords                                                    |
 | `category`      | `integrations`, `examples`, `productivity`, `apps`, or `utilities` |
-| `kody_id`       | Package slug                                                       |
-| `public_url`    | `/@username/kody-id` (share this URL with people)                  |
+| `package_name`  | Package name leaf (URL slug)                                       |
+| `public_url`    | `/@username/{package-name}` (share this URL with people)           |
 | `version`       | `package.json#version` when you set one                            |
 
 Share `public_url` with humans. Hygiene before going public stays in

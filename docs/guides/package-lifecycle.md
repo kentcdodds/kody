@@ -127,7 +127,8 @@ a new package.
 When a normal filesystem and git client are available:
 
 1. Call `packageGetGitRemote`. For a new package, pass `create: true` and a new
-   `kody_id`; for an existing package, omit `create`.
+   `package_name` (leaf or `@scope/leaf`); for an existing package, omit
+   `create`.
 2. Run the returned setup commands and clone into a temporary directory. Those
    commands set local git `user.email` and `user.name` from `git_author` (the
    signed-in Kody account). Do not invent a git identity.
@@ -228,7 +229,7 @@ explicitly asked to delete that package.
    exactly. The capability refuses and names the expected value when
    `confirm_name` is missing or wrong.
 
-People can delete from `/@username/{kodyId}/settings`: choose **Delete
+People can delete from `/@username/{package-name}/settings`: choose **Delete
 package**, then type the package name in the modal.
 
 Hiding (`packageUpdate` `changes.hidden`) and making a package private are not

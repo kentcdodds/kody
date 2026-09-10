@@ -74,7 +74,7 @@ of requiring the internal `source_id`.
 Examples:
 
 ```json
-{ "target": { "kind": "package", "kody_id": "my-package" } }
+{ "target": { "kind": "package", "package_name": "my-package" } }
 ```
 
 ```json
@@ -82,7 +82,8 @@ Examples:
 ```
 
 Pass `source_id` when you already have it, but most callers should prefer
-`target`.
+`target`. Pass the package name leaf (or `@owner/leaf`) as `package_name`, not a
+separate kody.id.
 
 Pass `conversation_id` to resume that conversation's active session for the same
 source. Omitting `conversation_id` always mints a new session:
@@ -153,7 +154,7 @@ It only mutates the live session overlay. Pair it with `repoCommit`,
 
 ```ts
 const session = await kody.repoOpenSession({
-	target: { kind: 'package', kody_id: 'my-package' },
+	target: { kind: 'package', package_name: 'my-package' },
 })
 
 await kody.repoEditFiles({
