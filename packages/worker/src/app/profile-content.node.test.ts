@@ -130,3 +130,87 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 	expect(ownEmptyHtml).toContain('You have no packages yet.')
 	expect(ownEmptyHtml).not.toContain('No public packages to take yet.')
 })
+
+test('profile package filters render owner-only pills, keep other filters in each href, and explain an empty filtered list', async () => {
+	const ownHtml = await renderProfileContentHtml({
+		profile,
+		packages: [listedPackage, unpublishedPackage],
+		activity: [],
+		query: 'fathom',
+		visibility: 'private',
+		listing: 'all',
+		hidden: 'all',
+		isSelf: true,
+	})
+
+	expect(ownHtml).toContain('data-testid="profile-package-filters"')
+	expect(ownHtml).toContain('data-testid="profile-package-filter-visibility"')
+	expect(ownHtml).toContain('data-testid="profile-package-filter-listing"')
+	expect(ownHtml).toContain('data-testid="profile-package-filter-hidden"')
+	// The selected pill is marked; sibling pills in the same group are not.
+	expect(ownHtml).toContain(
+		'href="/@kody?q=fathom&amp;visibility=private" aria-current="page"',
+	)
+	expect(ownHtml).toContain('href="/@kody?q=fathom&amp;visibility=public"')
+	expect(ownHtml).not.toContain(
+		'href="/@kody?q=fathom&amp;visibility=public" aria-current="page"',
+	)
+	// Switching one axis keeps the query and the other active filters.
+	expect(ownHtml).toContain(
+		'href="/@kody?q=fathom&amp;visibility=private&amp;listing=ahead"',
+	)
+	expect(ownHtml).toContain(
+		'href="/@kody?q=fathom&amp;visibility=private&amp;hidden=yes"',
+	)
+	// The visibility "All" pill drops only its own param and is not current.
+	expect(ownHtml).toMatch(/<a href="\/@kody\?q=fathom" class=/)
+	expect(ownHtml).toContain('Needs republish')
+
+	// Guests see the same packages with only the listing axis.
+	const guestHtml = await renderProfileContentHtml({
+		profile,
+		packages: [listedPackage, unpublishedPackage],
+		activity: [],
+		query: null,
+		listing: 'published',
+		isSelf: false,
+	})
+	expect(guestHtml).toContain('data-testid="profile-package-filters"')
+	expect(guestHtml).toContain('data-testid="profile-package-filter-listing"')
+	expect(guestHtml).toContain(
+		'href="/@kody?listing=published" aria-current="page"',
+	)
+	expect(guestHtml).toContain('href="/@kody?listing=unpublished"')
+	expect(guestHtml).not.toContain(
+		'data-testid="profile-package-filter-visibility"',
+	)
+	expect(guestHtml).not.toContain('data-testid="profile-package-filter-hidden"')
+	expect(guestHtml).not.toContain('visibility=private')
+	expect(guestHtml).not.toContain('listing=ahead')
+
+	// A guest profile with nothing to show has nothing to filter either.
+	const guestEmptyHtml = await renderProfileContentHtml({
+		profile,
+		packages: [],
+		activity: [],
+		query: null,
+		isSelf: false,
+	})
+	expect(guestEmptyHtml).not.toContain('data-testid="profile-package-filters"')
+
+	// Owners keep the toolbar when a filter empties the list so they can back out.
+	const ownFilteredEmptyHtml = await renderProfileContentHtml({
+		profile,
+		packages: [],
+		activity: [],
+		query: null,
+		visibility: 'private',
+		isSelf: true,
+	})
+	expect(ownFilteredEmptyHtml).toContain(
+		'data-testid="profile-package-filters"',
+	)
+	expect(ownFilteredEmptyHtml).toContain('No packages matched these filters.')
+	expect(ownFilteredEmptyHtml).toContain('href="/@kody"')
+	expect(ownFilteredEmptyHtml).not.toContain('You have no packages yet.')
+})

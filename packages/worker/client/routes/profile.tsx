@@ -22,7 +22,7 @@ import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { on } from '#client/event-mixin.ts'
-import { readProfileSearchQueryFromHref } from '#client/routes/profile-search.ts'
+import { readProfilePackageFiltersFromHref } from '#universal/profile-search.ts'
 import { renderProfileIdentity } from '#client/routes/profile-identity.tsx'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
@@ -153,7 +153,12 @@ export function ProfileRoute(handle: Handle) {
 	return () => {
 		const username = getCurrentUsername(handle)
 		const currentHref = readCurrentRouterHref(handle)
-		const searchQuery = readProfileSearchQueryFromHref(currentHref)
+		// The frame decides which filters the viewer may use; the shell only
+		// carries whatever is in the URL forward when a new search is submitted.
+		const filters = readProfilePackageFiltersFromHref(currentHref, {
+			allowOwnerFilters: true,
+		})
+		const searchQuery = filters.query
 
 		if (!username) {
 			return (
@@ -245,10 +250,23 @@ export function ProfileRoute(handle: Handle) {
 							data-rmx-history="push"
 							mix={css(searchFormCss)}
 						>
+							{filters.visibility !== 'all' ? (
+								<input
+									type="hidden"
+									name="visibility"
+									value={filters.visibility}
+								/>
+							) : null}
+							{filters.listing !== 'all' ? (
+								<input type="hidden" name="listing" value={filters.listing} />
+							) : null}
+							{filters.hidden !== 'all' ? (
+								<input type="hidden" name="hidden" value={filters.hidden} />
+							) : null}
 							<label mix={css(searchFieldCss)}>
 								<span mix={css(fieldLabelCss)}>Search packages</span>
 								<input
-									key={searchQuery}
+									key={`${searchQuery}:${filters.visibility}:${filters.listing}:${filters.hidden}`}
 									type="search"
 									name="q"
 									defaultValue={searchQuery}
