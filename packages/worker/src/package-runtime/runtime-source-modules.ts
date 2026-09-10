@@ -75,40 +75,31 @@ const __kodyRuntimeStorage =
 	__globalAny[__kodyRuntimeStorageSymbol] ??
 	(__globalAny[__kodyRuntimeStorageSymbol] = new AsyncLocalStorage());
 if (typeof __globalAny[__kodyGetSecretAuthoritySymbol] !== 'function') {
-	const __kodySecretAuthorityAls = new AsyncLocalStorage();
-	const __kodyReadSecretAuthority = () => {
-		const current = __kodySecretAuthorityAls.getStore();
-		return typeof current === 'string' && current.trim()
-			? current.trim()
-			: null;
+	const als = new AsyncLocalStorage();
+	const get = () => {
+		const current = als.getStore();
+		return typeof current === 'string' && current.trim() ? current.trim() : null;
 	};
 	Object.defineProperty(__globalAny, __kodyGetSecretAuthoritySymbol, {
-		value: __kodyReadSecretAuthority,
+		value: get,
 		writable: false,
 		configurable: false,
 		enumerable: false,
 	});
-	Object.defineProperty(
-		__kodyReadSecretAuthority,
-		__kodyRunSecretAuthoritySymbol,
-		{
-			value: (packageId, callback) =>
-				__kodySecretAuthorityAls.run(packageId, callback),
-			writable: false,
-			configurable: false,
-			enumerable: false,
-		},
-	);
+	Object.defineProperty(get, __kodyRunSecretAuthoritySymbol, {
+		value: (packageId, callback) => als.run(packageId, callback),
+		writable: false,
+		configurable: false,
+		enumerable: false,
+	});
 }
 export function __kodyGetSecretAuthority() {
 	const get = __globalAny[__kodyGetSecretAuthoritySymbol];
 	return typeof get === 'function' ? get() : null;
 }
 function __kodyRunWithSecretAuthority(packageId, callback) {
-	const get = __globalAny[__kodyGetSecretAuthoritySymbol];
-	const run = get?.[__kodyRunSecretAuthoritySymbol];
-	if (typeof run !== 'function') return callback();
-	return run(packageId, callback);
+	const run = __globalAny[__kodyGetSecretAuthoritySymbol]?.[__kodyRunSecretAuthoritySymbol];
+	return typeof run === 'function' ? run(packageId, callback) : callback();
 }
 
 export function __kodyRunInRuntime(runtime, callback) {
