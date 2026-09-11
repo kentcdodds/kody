@@ -1,10 +1,10 @@
 # Search
 
 The **search** tool finds **built-in capabilities**, **official guides**,
-**saved packages**, **saved integrations**, and **user secret references**
-(metadata only, not secret values). Search does not return or rank
-package-scoped secret references; call **`secretList`** or **`packageGet`** for
-that metadata.
+**saved packages**, **saved integrations**, **connected MCP servers**, and
+**user secret references** (metadata only, not secret values). Search does not
+return or rank package-scoped secret references; call **`secretList`** or
+**`packageGet`** for that metadata.
 
 **Public package listings** are not included. Use the `community` domain
 (`communitySearch`, `communityGet`) or the public `/community` pages. See
@@ -40,14 +40,18 @@ Task-specific queries ("send an email to Kent") keep returning ranked results.
 `metaListCapabilities()` returns the same domain index;
 `metaListCapabilities({ domain })` lists that domain.
 
-### Packages before synthesized providers
+### MCP servers, not every remote tool
 
-When a saved package's id, name, tags, or README matches a connected MCP
-provider, the package ranks before the provider's raw operations. General
-provider discovery returns one provider card with its operation count, runtime
-call pattern, and matching wrapper package instead of flooding the result with
-operations. Search an exact operation/tool name or pass the provider's `domain`
-to resolve raw operations directly.
+Connected MCP servers appear in ranked `search({ query })` as **mcp-server**
+hits: name, description, and server instructions when the remote server sent
+them. Individual tools (`mcp:home:set_pin`) do not fill unscoped results.
+Inspect the server with `search({ entity: "home:mcp-server" })` (or
+`search({ domain: "mcp:home" })`) to list tools, then call
+`kody.mcp["home"].tool_name(args)`. Known tool entity refs such as
+`mcp:home:set_pin:capability` still resolve.
+
+When a saved package's id, name, tags, or README matches a connected MCP server,
+the package ranks with that server so a wrapper workflow stays visible.
 
 ### Domain scoping
 
@@ -70,8 +74,8 @@ alongside `query`.
 
 An entire saved-package UUID or package name leaf is treated as an exact package
 identity when it resolves for the signed-in user, except when that identity also
-names a synthesized provider; that query participates in ranking so the package
-and provider card can appear together. Kody also recognizes current-origin
+names a connected MCP server; that query participates in ranking so the package
+and MCP server can appear together. Kody also recognizes current-origin
 `/account/packages/:packageId` URLs (which redirect to the package page),
 owner-matching `/@username/:name` package pages, and per-user package-app
 subdomain URLs (`https://{username}.<package-app host>/packages/:name`) — so a
@@ -112,12 +116,12 @@ a tight size budget does not drop them.
 
 To inspect one hit, call **search** again with **`entity`** set to
 `"{id}:{type}"` where **`type`** is `capability`, `guide`, `integration`,
-`package`, or `secret`. Guide entities return the official markdown (the same
-bundled body as the web `/docs` pages) when it fits the search response budget.
-Oversized guides return a table of contents instead of truncating mid-document.
-Open one heading with `"{id}:guide#{slug}"` (for example
-`package_subscriptions:guide#repo.pushed`). Official guide headings themselves
-must fit the remaining budget after the search entity header
+`mcp-server`, `package`, or `secret`. Guide entities return the official
+markdown (the same bundled body as the web `/docs` pages) when it fits the
+search response budget. Oversized guides return a table of contents instead of
+truncating mid-document. Open one heading with `"{id}:guide#{slug}"` (for
+example `package_subscriptions:guide#repo.pushed`). Official guide headings
+themselves must fit the remaining budget after the search entity header
 (`kody-custom/no-oversized-guide-section`). Capability entities additionally
 include a ready-to-run **execute** snippet plus `inputTypeDefinition` /
 `outputTypeDefinition`.
@@ -136,6 +140,8 @@ Examples:
 - `codingGuideGet:capability`
 - `["mcp:linear:create_issue:capability", "mcp:linear:get_issue:capability"]`
 - `github:integration`
+- `home:mcp-server`
+- `mcp:home:mcp-server`
 - `my-package:package`
 - `550e8400-e29b-41d4-a716-446655440000:package`
 - `spotify:integration`
@@ -155,8 +161,9 @@ Top-level ranked result cards include an explicit entity ref for each hit when
 applicable, using that same `"{id}:{type}"` format, so you can immediately copy
 the ref into a follow-up `entity` lookup when needed.
 
-For synthesized MCP provider capabilities, capability detail reports the
-**related operation count**. Use `search({ domain })` to list siblings.
+For synthesized MCP server tools, capability detail reports the **related
+operation count**. Use `search({ entity: "<name>:mcp-server" })` or
+`search({ domain })` to list siblings.
 
 Integration entity detail may include a small set of **related package
 suggestions** for the same provider (the user's packages first; otherwise

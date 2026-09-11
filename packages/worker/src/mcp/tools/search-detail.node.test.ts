@@ -155,17 +155,17 @@ test('resolveEntityDetail reports unresolvable entity refs as caller errors', as
 		['nope:capability', 'Capability not found.'],
 		[
 			'user:missing-value:value',
-			'Entity type must be one of: capability, guide, integration, package, or secret.',
+			'Entity type must be one of: capability, guide, integration, mcp-server, package, or secret.',
 		],
 		['notion:integration', 'Saved integration not found for this user.'],
 		['API_KEY:secret', 'Secret not found for this user.'],
 		[
 			'not-a-ref',
-			'Entity must use the format "{id}:{type}" where type is capability, guide, integration, package, or secret.',
+			'Entity must use the format "{id}:{type}" where type is capability, guide, integration, mcp-server, package, or secret.',
 		],
 		[
 			'thing:widget',
-			'Entity type must be one of: capability, guide, integration, package, or secret.',
+			'Entity type must be one of: capability, guide, integration, mcp-server, package, or secret.',
 		],
 	] as const
 
@@ -174,6 +174,76 @@ test('resolveEntityDetail reports unresolvable entity refs as caller errors', as
 		await expect(detail).rejects.toThrow(McpCallerError)
 		await expect(detail).rejects.toThrow(message)
 	}
+})
+
+test('resolveEntityDetail lists MCP server tools from the synthesized registry', async () => {
+	const agent = createAgent()
+	const detail = await resolveEntityDetail({
+		agent,
+		callerContext: agent.getCallerContext(),
+		userId: 'user-1',
+		username: 'user',
+		entity: 'home:mcp-server',
+		searchRows: {
+			...emptySearchRows(),
+			registry: {
+				capabilityDomains: [
+					{
+						name: 'mcp:home',
+						description: 'Use set_pin after unlocking the island router.',
+					},
+				],
+				capabilitySpecs: {
+					'mcp:home:set_pin': {
+						name: 'mcp:home:set_pin',
+						description: 'Set the island router PIN.',
+						domain: 'mcp:home',
+						keywords: ['pin'],
+						inputFields: ['pin'],
+						requiredInputFields: ['pin'],
+						outputFields: [],
+						readOnly: false,
+						idempotent: true,
+						destructive: false,
+						source: 'mcp-server',
+						mcpServer: {
+							serverId: 'server-home',
+							serverName: 'home',
+							kodyName: 'home',
+							mcpToolName: 'set_pin',
+							toolName: 'set_pin',
+						},
+						inputSchema: { type: 'object', properties: {} },
+						inputTypeDefinition: 'type SetPinInput = { pin: string }',
+					},
+				},
+			},
+		} as never,
+	})
+
+	expect(detail).toMatchObject({
+		type: 'mcp-server',
+		id: 'home',
+		instructions: 'Use set_pin after unlocking the island router.',
+		tools: [
+			expect.objectContaining({
+				name: 'mcp:home:set_pin',
+				entityRef: 'mcp:home:set_pin:capability',
+				toolName: 'set_pin',
+			}),
+		],
+	})
+
+	await expect(
+		resolveEntityDetail({
+			agent,
+			callerContext: agent.getCallerContext(),
+			userId: 'user-1',
+			username: 'user',
+			entity: 'missing:mcp-server',
+			searchRows: emptySearchRows() as never,
+		}),
+	).rejects.toThrow('MCP server not found.')
 })
 
 test('resolveEntityDetail loads official guides without a signed-in user', async () => {

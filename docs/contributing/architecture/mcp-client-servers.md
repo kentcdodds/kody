@@ -142,7 +142,11 @@ fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
   `synthesizeMcpServerToolDomain`
   (`packages/worker/src/mcp/capabilities/mcp-server/index.ts`) creates a
   `mcp:<server-name>` domain with a capability per discovered tool
-  (`mcp:<server-name>:<tool>`), marked `source: 'mcp-server'`.
+  (`mcp:<server-name>:<tool>`), marked `source: 'mcp-server'`. Unscoped
+  `search({ query })` ranks the **server** (name, description, and remote
+  instructions) as an `mcp-server` entity, not every tool. List tools with
+  `search({ entity: "<name>:mcp-server" })` or
+  `search({ domain: "mcp:<name>" })`.
 - Execute: the `kody.mcp` proxy exposes tools as
   `kody.mcp["<server-name>"].<tool>(input)` and never as flat `kody.*`
   functions. Search capability detail returns the exact accessor.

@@ -36,9 +36,10 @@ This page is the playbook for those two calls. The same tools drive the loop in
 ## Search
 
 **search** finds built-in capabilities, official guides, saved packages, saved
-integrations, and secret references (names and metadata — never secret values).
-Public community listings live in the `community` domain (`communitySearch`,
-`communityGet`); see [Public packages](../use/community-packages.md).
+integrations, connected MCP servers, and secret references (names and metadata —
+never secret values). Public community listings live in the `community` domain
+(`communitySearch`, `communityGet`); see
+[Public packages](../use/community-packages.md).
 
 ### What search enables
 
@@ -59,11 +60,14 @@ Three useful shapes:
   with `{ "domain": "email" }` to list that domain, or
   `{ "query": "…", "domain": "email" }` to rank only there. Domain ids include
   builtins (`email`, `jobs`, `packages`) and connected MCP servers
-  (`mcp:linear`, `mcp:home`).
+  (`mcp:linear`, `mcp:home`). Ranked search surfaces those servers as
+  **mcp-server** hits (name and instructions), not every remote tool. Open
+  `{ "entity": "home:mcp-server" }` to list tools, then call
+  `kody.mcp["home"].tool_name(args)`.
 - **Entity lookup** — `{ "entity": "{id}:{type}" }` opens one hit. `type` is
-  `capability`, `guide`, `integration`, `package`, or `secret`. Pass an array of
-  1–10 refs to load related details in one call. Guide refs accept `#{heading}`
-  to open one section.
+  `capability`, `guide`, `integration`, `mcp-server`, `package`, or `secret`.
+  Pass an array of 1–10 refs to load related details in one call. Guide refs
+  accept `#{heading}` to open one section.
 
 Capability detail includes a ready-to-run **execute** snippet plus input and
 output types. Guide detail is the official markdown when it fits the response
@@ -169,7 +173,11 @@ Open a capability (returns the execute snippet):
 { "entity": "emailSend:capability" }
 ```
 
-Open a saved integration, package, or secret reference:
+Open a connected MCP server, saved integration, package, or secret reference:
+
+```json
+{ "entity": "home:mcp-server" }
+```
 
 ```json
 { "entity": "github:integration" }

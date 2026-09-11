@@ -18,6 +18,13 @@ import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 
 import { collectIntegrationPackageSuggestions } from './integration-package-suggestions.ts'
 import { parseEntityRef } from './search-format.ts'
+import {
+	buildMcpServerToolIndex,
+	findSynthesizedMcpServer,
+	findWrappingPackageForMcpServer,
+	listSynthesizedMcpServers,
+	mcpServerUsage,
+} from './search-mcp-servers.ts'
 import { countRelatedCapabilityOperations } from './search-related-capabilities.ts'
 import { type SearchRowsAndRegistry } from './search-types.ts'
 
@@ -35,6 +42,33 @@ export async function resolveEntityDetail(input: {
 			'Section fragments are only supported on guide entities. Use "{id}:guide#{heading}".',
 		)
 	}
+	if (ref.type === 'mcp-server') {
+		const server = findSynthesizedMcpServer(
+			listSynthesizedMcpServers(input.searchRows.registry),
+			ref.id,
+		)
+		if (!server) {
+			throw new McpCallerError('MCP server not found.')
+		}
+		return {
+			type: 'mcp-server' as const,
+			id: server.kodyName,
+			title: server.serverName,
+			description: server.description,
+			domain: server.domain,
+			kodyName: server.kodyName,
+			serverName: server.serverName,
+			serverId: server.serverId,
+			instructions: server.instructions,
+			usage: mcpServerUsage(server.kodyName),
+			tools: buildMcpServerToolIndex(server),
+			wrappingPackage: findWrappingPackageForMcpServer(
+				server,
+				input.searchRows.packageRows,
+			),
+		}
+	}
+
 	if (ref.type === 'capability') {
 		const spec = input.searchRows.registry.capabilitySpecs[ref.id]
 		if (!spec) {

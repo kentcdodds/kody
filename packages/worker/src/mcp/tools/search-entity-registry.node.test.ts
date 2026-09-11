@@ -103,10 +103,10 @@ test('descriptor seam follows registry order and preserves integration affinity'
 		'guide',
 		'package',
 		'integration',
+		'mcp-server',
 		'secret',
 		'retriever_result',
 		'domain',
-		'provider',
 	])
 
 	const descriptors = buildSearchableEntityDescriptors({

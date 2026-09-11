@@ -24,14 +24,15 @@ This is the inverse of [connecting your agent to Kody](./connect-your-agent.md)
    only in your private MCP client hub and is never returned later.
 3. If the server needs OAuth, Kody returns an authorization link. Open it, sign
    in at the provider, and approve access.
-4. Confirm with `mcpServerList` (or refresh the account page). Connected tools
-   show up in `search` under a `mcp:<name>` domain. If the identity provider
-   approved access but tools never appear, Status on
-   `/account/mcp-servers/:serverId` shows the last sanitized settle error
-   (phase, HTTP status, URLs, and an attempt id). The same durable error is
-   written when add, reconnect, or refresh times out still discovering tools
-   after Kody has also retried the older MCP handshake. Reconnect from that
-   page.
+4. Confirm with `mcpServerList` (or refresh the account page). The connected
+   server shows up in `search` as an **mcp-server** hit (name and server
+   instructions). List its tools with `search({ entity: "<name>:mcp-server" })`
+   or `search({ domain: "mcp:<name>" })`. If the identity provider approved
+   access but tools never appear, Status on `/account/mcp-servers/:serverId`
+   shows the last sanitized settle error (phase, HTTP status, URLs, and an
+   attempt id). The same durable error is written when add, reconnect, or
+   refresh times out still discovering tools after Kody has also retried the
+   older MCP handshake. Reconnect from that page.
 
 If a server is authenticating, failed, or disconnected, [Waiting](./waiting.md)
 lists it and links to `/account/mcp-servers/:id`. `waitingSummary` returns the

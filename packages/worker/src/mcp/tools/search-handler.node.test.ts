@@ -1463,7 +1463,7 @@ test('empty discovery returns a counted domain index without memory enrichment',
 	expect(mockModule.runPackageRetrievers).not.toHaveBeenCalled()
 })
 
-test('provider-name search ranks a wrapping package and provider card without an operation flood', async () => {
+test('provider-name search ranks a wrapping package and MCP server without an operation flood', async () => {
 	vi.clearAllMocks()
 	const mcpSpec = (name: string, toolName: string, description: string) => ({
 		name,
@@ -1564,14 +1564,32 @@ test('provider-name search ranks a wrapping package and provider card without an
 		result.matches
 			.filter((match) => match.type !== 'guide')
 			.map((match) => match.type),
-	).toEqual(['package', 'provider'])
+	).toEqual(['package', 'mcp-server'])
 	expect(
-		result.matches.find((match) => match.type === 'provider'),
+		result.matches.find((match) => match.type === 'mcp-server'),
 	).toMatchObject({
-		type: 'provider',
+		type: 'mcp-server',
+		entityRef: 'github:mcp-server',
 		wrappingPackage: { kodyId: 'github' },
 	})
 	expect(
 		result.matches.filter((match) => match.type === 'capability'),
 	).toHaveLength(0)
+
+	const entityResponse = await handler({
+		entity: 'github:mcp-server',
+		conversationId: 'conv-provider-entity',
+	})
+	expect(entityResponse.isError).toBeUndefined()
+	expect(entityResponse.structuredContent.result).toMatchObject({
+		kind: 'entity',
+		type: 'mcp-server',
+		id: 'github',
+		entityRef: 'github:mcp-server',
+		capabilityCount: 2,
+		tools: [
+			expect.objectContaining({ name: 'mcp:github:listrepositories' }),
+			expect.objectContaining({ name: 'mcp:github:createrepository' }),
+		],
+	})
 })

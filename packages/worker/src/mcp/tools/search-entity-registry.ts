@@ -2,8 +2,8 @@ import { capabilitySearchEntityPlugin } from './search-entity-plugins/capability
 import { domainSearchEntityPlugin } from './search-entity-plugins/domain.ts'
 import { guideSearchEntityPlugin } from './search-entity-plugins/guide.ts'
 import { integrationSearchEntityPlugin } from './search-entity-plugins/integration.ts'
+import { mcpServerSearchEntityPlugin } from './search-entity-plugins/mcp-server.ts'
 import { packageSearchEntityPlugin } from './search-entity-plugins/package.ts'
-import { providerSearchEntityPlugin } from './search-entity-plugins/provider.ts'
 import { retrieverResultSearchEntityPlugin } from './search-entity-plugins/retriever-result.ts'
 import { secretSearchEntityPlugin } from './search-entity-plugins/secret.ts'
 import {
@@ -16,10 +16,10 @@ export const searchEntityPlugins = [
 	guideSearchEntityPlugin,
 	packageSearchEntityPlugin,
 	integrationSearchEntityPlugin,
+	mcpServerSearchEntityPlugin,
 	secretSearchEntityPlugin,
 	retrieverResultSearchEntityPlugin,
 	domainSearchEntityPlugin,
-	providerSearchEntityPlugin,
 ] as const
 
 type RegisteredSearchEntityPlugin = (typeof searchEntityPlugins)[number]

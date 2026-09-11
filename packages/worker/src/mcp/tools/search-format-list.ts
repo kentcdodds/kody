@@ -72,11 +72,12 @@ function formatMatchListItem(match: SearchMatch, index: number) {
 				: ''
 		return `${String(index + 1)}. **domain** ${formatMarkdownInlineCode(match.name)} (${String(match.capabilityCount)} ${match.capabilityCount === 1 ? 'capability' : 'capabilities'}) — ${escapeMarkdownText(formatOneLineSentence(match.description, domainOverviewDescriptionMaxLength))}${sample}`
 	}
-	if (match.type === 'provider') {
+	if (match.type === 'mcp-server') {
+		const entityRef = buildEntityRef(match.kodyName, 'mcp-server')
 		const packageSuffix = match.wrappingPackage
 			? ` Wrapping package: ${formatMarkdownInlineCode(match.wrappingPackage.name)} (Entity: ${formatMarkdownInlineCode(match.wrappingPackage.entityRef)}).`
 			: ''
-		return `${String(index + 1)}. **provider** ${escapeMarkdownText(match.title)} (${formatMarkdownInlineCode(match.domain)}, ${String(match.capabilityCount)} operations) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Call via ${formatMarkdownInlineCode(match.usage)}.${packageSuffix}`
+		return `${String(index + 1)}. **mcp-server** ${escapeMarkdownText(match.title)} (${formatMarkdownInlineCode(match.domain)}, ${String(match.capabilityCount)} tools) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}. List tools with \`search({ entity: ${JSON.stringify(entityRef)} })\`. Call via ${formatMarkdownInlineCode(match.usage)}.${packageSuffix}`
 	}
 	if (match.type === 'capability') {
 		const entityRef = buildEntityRef(match.name, 'capability')

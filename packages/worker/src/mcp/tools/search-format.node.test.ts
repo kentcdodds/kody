@@ -83,6 +83,10 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 		id: 'github',
 		type: 'integration',
 	})
+	expect(parseEntityRef('home:mcp-server')).toEqual({
+		id: 'home',
+		type: 'mcp-server',
+	})
 	expect(parseEntityRef('package_authoring:guide')).toEqual({
 		id: 'package_authoring',
 		type: 'guide',
@@ -1119,6 +1123,65 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 		'required fields: verified_by_agent',
 	)
 
+	const mcpServerListMarkdown = formatSearchMarkdown({
+		matches: [
+			{
+				type: 'mcp-server',
+				id: 'home',
+				title: 'home',
+				description:
+					'Control lights, locks, and the island router PIN on the home LAN.',
+				domain: 'mcp:home',
+				source: 'mcp-server',
+				kodyName: 'home',
+				serverName: 'home',
+				serverId: 'server-home',
+				instructions:
+					'Control lights, locks, and the island router PIN on the home LAN.',
+				capabilityCount: 168,
+				sampleCapabilities: ['mcp:home:set_pin'],
+				usage: 'kody.mcp["home"].tool_name(args)',
+				wrappingPackage: null,
+			},
+		],
+		includePreamble: false,
+	})
+	expect(mcpServerListMarkdown).toContain('**mcp-server** home')
+	expect(mcpServerListMarkdown).toContain('home:mcp-server')
+	expect(mcpServerListMarkdown).toContain('168 tools')
+	expect(mcpServerListMarkdown).not.toContain('mcp:home:set_pin:capability')
+
+	const [slimMcpServer] = toSlimStructuredMatches({
+		baseUrl: 'http://localhost',
+		matches: [
+			{
+				type: 'mcp-server',
+				id: 'home',
+				title: 'home',
+				description:
+					'Control lights, locks, and the island router PIN on the home LAN.',
+				domain: 'mcp:home',
+				source: 'mcp-server',
+				kodyName: 'home',
+				serverName: 'home',
+				serverId: 'server-home',
+				instructions:
+					'Control lights, locks, and the island router PIN on the home LAN.',
+				capabilityCount: 168,
+				sampleCapabilities: ['mcp:home:set_pin'],
+				usage: 'kody.mcp["home"].tool_name(args)',
+				wrappingPackage: null,
+			},
+		],
+	})
+	expect(slimMcpServer).toMatchObject({
+		type: 'mcp-server',
+		entityRef: 'home:mcp-server',
+		capabilityCount: 168,
+		instructions:
+			'Control lights, locks, and the island router PIN on the home LAN.',
+	})
+
 	const listMarkdown = formatSearchMarkdown({
 		matches: [
 			{
@@ -1256,8 +1319,9 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 		relatedOperationCount: 2,
 	})
 	expect(mcpDetail.markdown).toContain(
-		'Related operations from this provider: 2',
+		'Related operations from this MCP server: 2',
 	)
+	expect(mcpDetail.markdown).toContain('widgets:mcp-server')
 	expect(mcpDetail.markdown).not.toContain('mcp:widgets:listwidgets:capability')
 	expect(mcpDetail.structured).toMatchObject({
 		type: 'capability',

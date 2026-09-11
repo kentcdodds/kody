@@ -92,8 +92,8 @@ resource and expose that server through a protected public HTTPS route. The
 [home MCP guide](./local-mcp-tunnels.md) describes the Cloudflare Tunnel and
 Access pattern and points at
 [home-mcp-starter](https://github.com/kody-bot/home-mcp-starter). Then connect
-its URL as a [remote MCP server](../use/mcp-client-servers.md), and its tools
-appear in search under `mcp:<name>`.
+its URL as a [remote MCP server](../use/mcp-client-servers.md). Search ranks the
+server; `search({ entity: "<name>:mcp-server" })` lists its tools.
 
 Work that does not fit a Worker isolate — a large npm graph, native code, or
 multi-minute CPU — follows the same split: the saved package orchestrates, and
