@@ -42,11 +42,12 @@ test('prose headings with ids expose permalink anchors and scroll margin', async
 			mix: css(proseCss),
 			children: jsx('h2', {
 				id: 'example',
+				'aria-label': 'Example section',
 				children: [
 					jsx('a', {
 						href: '#example',
 						'data-heading-permalink': '',
-						'aria-label': 'Example section',
+						'aria-label': 'Link to this section',
 						children: jsx('span', {
 							'data-heading-anchor': '',
 							'aria-hidden': 'true',

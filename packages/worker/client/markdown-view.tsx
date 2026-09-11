@@ -375,12 +375,12 @@ function renderToken(
 			}
 			const headingId = nextHeadingId(options.headingSlugCounts, token.text)
 			return (
-				<Tag key={key} id={headingId}>
-					{renderMarkdownHeadingAnchor(
-						key,
-						headingId,
-						headingPermalinkLabel(token.text, headingId),
-					)}
+				<Tag
+					key={key}
+					id={headingId}
+					aria-label={headingPermalinkLabel(token.text, headingId)}
+				>
+					{renderMarkdownHeadingAnchor(key, headingId)}
 					<span data-heading-text="">{children}</span>
 				</Tag>
 			)

@@ -223,17 +223,25 @@ test('first-party headingIds emit unique kebab-case heading ids', async () => {
 			),
 		}),
 	)
-	expect(html).toContain('<h2 id="josh-tomaino">')
+	expect(html).toContain('<h2 id="josh-tomaino" aria-label="Josh Tomaino">')
 	expect(html).toContain('href="#josh-tomaino"')
 	expect(html).toContain('data-heading-permalink=""')
-	expect(html).toContain('aria-label="Josh Tomaino"')
+	expect(html).toContain('aria-label="Link to this section"')
 	expect(html).toContain('data-heading-anchor=""')
 	expect(html).toContain('data-heading-text=""')
 	expect(html).toContain('<span data-heading-text="">Josh Tomaino</span>')
-	expect(html).toContain('<h2 id="josh-tomaino-2">')
+	const joshPermalink = html.match(
+		/<a href="#josh-tomaino"[^>]*>[\s\S]*?<\/a>/,
+	)?.[0]
+	expect(joshPermalink).toBeDefined()
+	expect(joshPermalink).toContain('aria-label="Link to this section"')
+	expect(joshPermalink).not.toContain('aria-label="Josh Tomaino"')
+	expect(html).toContain('<h2 id="josh-tomaino-2" aria-label="Josh Tomaino">')
 	expect(html).toContain('href="#josh-tomaino-2"')
-	expect(html).toContain('<h2 id="jett-hays">')
-	expect(html).toContain('<h2 id="gabriel-alegria">')
+	expect(html).toContain('<h2 id="jett-hays" aria-label="Jett Hays">')
+	expect(html).toContain(
+		'<h2 id="gabriel-alegria" aria-label="Gabriel Alegría">',
+	)
 })
 
 test('heading permalinks stay beside inline heading links instead of wrapping them', async () => {
@@ -245,14 +253,17 @@ test('heading permalinks stay beside inline heading links instead of wrapping th
 			),
 		}),
 	)
-	expect(html).toContain('id="read-the-guide-https-example.com-guide"')
+	expect(html).toContain(
+		'id="read-the-guide-https-example.com-guide" aria-label="Read the guide"',
+	)
 	expect(html).toContain('href="#read-the-guide-https-example.com-guide"')
-	expect(html).toContain('aria-label="Read the guide"')
 	expect(html).toContain('href="https://example.com/guide"')
 	const permalink = html.match(
 		/<a href="#read-the-guide-https-example.com-guide"[^>]*>[\s\S]*?<\/a>/,
 	)?.[0]
 	expect(permalink).toBeDefined()
+	expect(permalink).toContain('aria-label="Link to this section"')
+	expect(permalink).not.toContain('aria-label="Read the guide"')
 	expect(permalink?.match(/<a /g)).toHaveLength(1)
 })
 
