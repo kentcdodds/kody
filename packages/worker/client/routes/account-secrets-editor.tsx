@@ -3,7 +3,7 @@ import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { type AccountSecretDetail } from '#universal/loader-data.ts'
 import { type createDoubleCheck } from '#client/double-check.ts'
-import { Combobox } from '#client/combobox.tsx'
+import { Combobox, type ComboboxOption } from '#client/combobox.tsx'
 import {
 	colors,
 	mq,
@@ -41,16 +41,8 @@ export type SecretEditorProps = {
 	editorState: EditorState
 	setEditorState: (next: EditorState) => void
 	packageOptions: Array<{ id: string }>
-	packageSelectOptions: Array<{
-		id: string
-		label: string
-		description: string
-	}>
-	availableAllowedPackageOptions: Array<{
-		id: string
-		label: string
-		description: string
-	}>
+	packageSelectOptions: Array<ComboboxOption>
+	availableAllowedPackageOptions: Array<ComboboxOption>
 	packagesById: ReadonlyMap<string, { kodyId: string; name: string }>
 	canCreatePackageSecrets: boolean
 	isMutating: boolean

@@ -20,7 +20,7 @@ import {
 	readJson,
 	submitApprovalRequest,
 } from '#client/routes/account-approval-shared.ts'
-import { Combobox } from '#client/combobox.tsx'
+import { Combobox, type ComboboxOption } from '#client/combobox.tsx'
 import { colors } from '#universal/styles/tokens.ts'
 import { getPillButtonCss } from '#universal/styles/style-primitives.ts'
 import { getNewSecretValueAutofocusKey } from './new-secret-query.ts'
@@ -69,6 +69,17 @@ import {
 export { accountSecretsRouteLoader }
 
 const clampedCellCss = css(recordCellClamp(26))
+
+/**
+ * A fixed measure that fits a package name beside the scope select on a wide
+ * row. On a narrow container it takes a row of its own: sharing one with the
+ * select squeezed both below their labels ("All sco…").
+ */
+const packageFilterSlotCss = {
+	flex: '0 1 15rem',
+	minWidth: '9rem',
+	'@container (max-width: 620px)': { flex: '1 1 100%' },
+}
 
 export function AccountSecretsRoute(handle: Handle) {
 	let packageOptions: Array<PackageOption> = []
@@ -496,23 +507,21 @@ export function AccountSecretsRoute(handle: Handle) {
 
 		const filters = readFilterState(currentHref, packageOptions)
 		const filteredSecrets = filterSecrets(secrets, filters, packagesById)
-		const packageSelectOptions = packageOptions.map((packageOption) => {
-			const metadata = packagesById.get(packageOption.id)
-			return {
-				id: packageOption.id,
-				label: metadata?.kodyId ?? packageOption.title,
-				description: packageOption.id,
-			}
-		})
+		const packageSelectOptions: Array<ComboboxOption> = packageOptions.map(
+			(packageOption) => {
+				const metadata = packagesById.get(packageOption.id)
+				return {
+					id: packageOption.id,
+					label: metadata?.kodyId ?? packageOption.title,
+					keywords: [packageOption.id],
+				}
+			},
+		)
 		const availableAllowedPackageOptions = packageSelectOptions.filter(
 			(option) => !editorState.allowedPackages.includes(option.id),
 		)
-		const filterPackageOptions = [
-			{
-				id: '',
-				label: 'All packages',
-				description: 'Show secrets across every package',
-			},
+		const filterPackageOptions: Array<ComboboxOption> = [
+			{ id: '', label: 'All packages' },
 			...packageSelectOptions,
 		]
 
@@ -664,12 +673,13 @@ export function AccountSecretsRoute(handle: Handle) {
 								<option value="package">Package</option>
 							</RecordTableSelect>
 							{packageOptions.length > 0 ? (
-								<span mix={css({ flex: '1 1 14rem', minWidth: '10rem' })}>
+								<span mix={css(packageFilterSlotCss)}>
 									<Combobox
 										key={`secret-package-filter:${filters.packageId}`}
 										id="secret-package-filter"
-										label="Package filter"
-										placeholder="Filter by package"
+										label="Filter secrets by package"
+										hideLabel
+										placeholder="All packages"
 										value={filters.scope === 'user' ? '' : filters.packageId}
 										disabled={filters.scope === 'user'}
 										options={filterPackageOptions}
