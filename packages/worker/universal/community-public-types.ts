@@ -104,6 +104,11 @@ export type PublicProfilePackageItem = {
 	/** The listing's package name leaf, which can lag the package's until republish. */
 	communityListingKodyId: string | null
 	communityPublishedAt: string | null
+	/**
+	 * True when the listing pin is behind the package published commit.
+	 * Owners use this for the "Needs republish" filter and date reminder.
+	 */
+	needsRepublish: boolean
 	/** Present on the owner's own profile list; omitted for other viewers. */
 	isPrivate?: boolean
 	/** Present on the owner's own profile list; omitted for other viewers. */

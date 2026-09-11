@@ -82,6 +82,7 @@ const packageFixture = [
 		communityListingId: 'listing-1',
 		communityListingKodyId: 'helper',
 		communityPublishedAt: '2026-07-01T00:00:00.000Z',
+		needsRepublish: false,
 		isPrivate: false,
 		hidden: false,
 	},

@@ -69,6 +69,7 @@ export function toPublicProfilePackageItem(
 		communityListingId: pkg.communityListingId,
 		communityListingKodyId: pkg.communityListingKodyId,
 		communityPublishedAt: pkg.communityPublishedAt,
+		needsRepublish: pkg.needsRepublish,
 		...(options?.includeOwnerVisibility
 			? { isPrivate: pkg.isPrivate, hidden: pkg.hidden }
 			: {}),

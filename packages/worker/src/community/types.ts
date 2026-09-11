@@ -133,6 +133,12 @@ export type PublicProfilePackage = {
 	communityListingKodyId: string | null
 	/** published_at of the active community listing, when the package has one. */
 	communityPublishedAt: string | null
+	/**
+	 * True when the active listing pin is behind the package published
+	 * commit. False with no listing, or when the pin matches. Not derived
+	 * from `updated_at` vs `published_at`.
+	 */
+	needsRepublish: boolean
 	/** Owner-only: repo visibility. Always false on public profile lists. */
 	isPrivate: boolean
 	/** Owner-only: hidden from ranked search. Always false on public profile lists. */

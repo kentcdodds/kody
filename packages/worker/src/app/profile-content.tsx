@@ -75,8 +75,9 @@ function renderForkIcon() {
 /**
  * Package cards carry two unrelated timestamps: the community listing's
  * published_at and the owner's local saved-package edit time. Only the
- * published date lines up with the activity feed, so unpublished edits are
- * labelled as edits and shown to the owner alone as a republish reminder.
+ * published date lines up with the activity feed. Owners see a republish
+ * reminder when the listing pin is behind the package published commit,
+ * not when `updated_at` lands after `published_at` from the same publish.
  */
 function renderProfilePackageDates(
 	pkg: PublicProfilePackageItem,
@@ -86,8 +87,7 @@ function renderProfilePackageDates(
 		return `Edited ${formatCommunityPublishedDate(pkg.updatedAt)}`
 	}
 	const published = `Published ${formatCommunityPublishedDate(pkg.communityPublishedAt)}`
-	const hasUnpublishedEdits = pkg.updatedAt > pkg.communityPublishedAt
-	if (!options.isSelf || !hasUnpublishedEdits) return published
+	if (!options.isSelf || !pkg.needsRepublish) return published
 	return `${published} · edited ${formatCommunityPublishedDate(pkg.updatedAt)}, not republished`
 }
 
@@ -153,7 +153,8 @@ function renderProfilePackageFilters(input: {
 		listingChoices.push({
 			value: 'ahead',
 			label: 'Needs republish',
-			title: 'Published packages edited since their last publish',
+			title:
+				'Published packages whose listing pin is behind the latest published commit',
 		})
 	}
 	return (

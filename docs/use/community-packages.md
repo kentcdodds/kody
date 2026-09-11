@@ -206,6 +206,9 @@ not `package.json#private`:
 - Public packages on the profile are catalog listings: they carry a listing
   signifier and a fork affordance (same inert-fork rules as
   [forking a listing](#forking-a-listing)).
+- The owner’s own profile can filter **Needs republish** when the listing pin is
+  behind the package published commit. `communityPublish` also bumps
+  `updated_at` after `published_at`; that timestamp order is not this signal.
 
 ### Private mode
 

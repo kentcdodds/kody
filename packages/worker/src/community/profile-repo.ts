@@ -3,6 +3,7 @@ import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import { normalizeStableUserId } from '#worker/user-id.ts'
+import { listingNeedsRepublish } from './listing-needs-republish.ts'
 import { extractCommunityListingLikeTokens } from './repo.ts'
 import {
 	type CommunityActivityEventType,
@@ -376,6 +377,7 @@ export async function listPublicProfilePackages(
 		communityListingId: null as string | null,
 		communityListingKodyId: null as string | null,
 		communityPublishedAt: null as string | null,
+		needsRepublish: false,
 		isPrivate: Number(row['is_private']) === 1,
 		hidden: Number(row['hidden']) === 1,
 	}))
@@ -387,17 +389,32 @@ export async function listPublicProfilePackages(
 	// so it is the id the public URL actually resolves under.
 	const listingByPackageId = new Map<
 		string,
-		{ id: string; kodyId: string | null; publishedAt: string }
+		{
+			id: string
+			kodyId: string | null
+			publishedAt: string
+			pinnedCommit: string
+			sourcePublishedCommit: string | null
+		}
 	>()
 	for (const idChunk of chunkArray(packageIds, maxSqlBindingsPerChunk)) {
 		const placeholders = idChunk.map(() => '?').join(', ')
 		const listingRows = await db
 			.prepare(
-				`SELECT id, package_id, kody_id, published_at
-				FROM community_listings
-				WHERE owner_user_id = ?
-					AND status = 'active'
-					AND package_id IN (${placeholders})`,
+				`SELECT cl.id, cl.package_id, cl.kody_id, cl.published_at, cl.pinned_commit,
+					es.published_commit AS source_published_commit
+				FROM community_listings AS cl
+				JOIN saved_packages AS sp
+					ON sp.id = cl.package_id
+					AND sp.user_id = cl.owner_user_id
+				LEFT JOIN entity_sources AS es
+					ON es.id = sp.source_id
+					AND es.user_id = sp.user_id
+					AND es.entity_kind = 'package'
+					AND es.entity_id = sp.id
+				WHERE cl.owner_user_id = ?
+					AND cl.status = 'active'
+					AND cl.package_id IN (${placeholders})`,
 			)
 			.bind(input.ownerStableUserId, ...idChunk)
 			.all<{
@@ -405,12 +422,19 @@ export async function listPublicProfilePackages(
 				package_id: string
 				kody_id: string | null
 				published_at: string
+				pinned_commit: string
+				source_published_commit: string | null
 			}>()
 		for (const listingRow of listingRows.results ?? []) {
 			listingByPackageId.set(listingRow.package_id, {
 				id: listingRow.id,
 				kodyId: listingRow.kody_id,
 				publishedAt: String(listingRow.published_at),
+				pinnedCommit: String(listingRow.pinned_commit),
+				sourcePublishedCommit:
+					listingRow.source_published_commit == null
+						? null
+						: String(listingRow.source_published_commit),
 			})
 		}
 	}
@@ -422,6 +446,10 @@ export async function listPublicProfilePackages(
 			communityListingId: listing?.id ?? null,
 			communityListingKodyId: listing?.kodyId ?? null,
 			communityPublishedAt: listing?.publishedAt ?? null,
+			needsRepublish: listingNeedsRepublish({
+				listingPinnedCommit: listing?.pinnedCommit,
+				sourcePublishedCommit: listing?.sourcePublishedCommit,
+			}),
 		}
 	})
 }
