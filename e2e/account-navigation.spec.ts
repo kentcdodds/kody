@@ -74,6 +74,7 @@ test('account section switches keep the current page on screen (no loading flash
 			{ link: 'Secrets', heading: 'Secrets' },
 			{ link: 'Connections', heading: 'Connections' },
 			{ link: 'Workflows', heading: 'Workflows' },
+			{ link: 'Webhooks', heading: 'Webhooks' },
 			{ link: 'Overview', heading: 'Account' },
 			{ link: 'Jobs', heading: 'Jobs' },
 		],

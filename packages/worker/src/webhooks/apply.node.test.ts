@@ -170,7 +170,7 @@ test('webhookUrlApply registers a GitHub hook from a handle without exposing the
 		env,
 		userId,
 		username: 'owner',
-		handle: minted.handle,
+		target: { handle: minted.handle },
 	})
 	mockGithubIntegration()
 

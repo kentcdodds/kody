@@ -1176,6 +1176,77 @@ export type AccountConnectedAgentsLoaderData = {
 	mcpServerUrl: string
 }
 
+type AccountWebhookVerification = {
+	type: 'hmac-sha256' | 'hmac-sha1'
+	header: string
+	secretName: string
+	encoding: 'hex' | 'base64'
+	prefix?: string
+	signedPayload?: 'body' | 'timestamp.body'
+} | null
+
+type AccountWebhookReplay = {
+	timestampHeader?: string
+	timestampFormat?:
+		| 'unix-seconds'
+		| 'unix-millis'
+		| 'iso-8601'
+		| 'stripe-signature'
+	toleranceSeconds?: number
+	deliveryIdHeader?: string
+} | null
+
+/**
+ * One declared package webhook joined with its minted URL state. Never
+ * carries the credential URL or `url_secret`: the page fetches those on
+ * demand through the `reveal` intent so they are not embedded in SSR HTML
+ * or the list payload.
+ */
+export type AccountWebhookListItem = {
+	/** `${packageKodyId}/${name}` — the detail route segments. */
+	id: string
+	packageId: string
+	packageKodyId: string
+	packageName: string
+	name: string
+	exportName: string
+	description: string | null
+	responseMode: 'ack' | 'sync'
+	inputMode: 'request' | 'params'
+	rateLimitPerMinute: number
+	verification: AccountWebhookVerification
+	replay: AccountWebhookReplay
+	minted: boolean
+	handle: string | null
+	urlHost: string | null
+	enabled: boolean | null
+	/**
+	 * False for mints that predate encrypted secret storage. The UI offers
+	 * Rotate instead of Reveal for those, since the hash cannot rebuild the
+	 * URL.
+	 */
+	urlRecoverable: boolean
+	createdAt: string | null
+	rotatedAt: string | null
+}
+
+export type AccountWebhooksLoaderData = {
+	ok: true
+	username: string
+	webhooks: Array<AccountWebhookListItem>
+}
+
+/** Owner-only reveal result attached to mint / rotate / reveal responses. */
+export type AccountWebhookRevealedUrl = {
+	id: string
+	handle: string
+	url: string
+}
+
+export type AccountWebhooksActionPayload = AccountWebhooksLoaderData & {
+	revealed?: AccountWebhookRevealedUrl
+}
+
 export type PendingVerificationLoaderData = {
 	ok: true
 	email: string
@@ -2003,6 +2074,7 @@ export type AppLoaderData = {
 	accountProfile?: AccountProfileLoaderData
 	accountConnections?: AccountConnectionsLoaderData
 	accountConnectedAgents?: AccountConnectedAgentsLoaderData
+	accountWebhooks?: AccountWebhooksLoaderData
 	onboarding?: OnboardingLoaderData
 	connectOauth?: ConnectOauthLoaderData
 	pendingVerification?: PendingVerificationLoaderData

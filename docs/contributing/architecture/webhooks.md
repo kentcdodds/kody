@@ -137,9 +137,28 @@ consumer's 15-minute wall-clock limit before later messages are acknowledged.
   Delivery history lives in run records and is covered with the rest of `RunLog`
   export/deletion. Export redacts `url_secret_hash` and `url_secret_encrypted`.
 - Plaintext URL secrets and verification secrets are never logged. URL secrets
-  are hashed for ingress and stored encrypted for `webhookUrlApply`. MCP mint,
-  rotate, list, and apply never return the credential URL. Verification secrets
-  stay in the secrets primitive.
+  are hashed for ingress and stored encrypted for `webhookUrlApply` and the
+  owner reveal on `/account/webhooks`. MCP mint, rotate, list, and apply never
+  return the credential URL. Verification secrets stay in the secrets primitive.
+
+## Owner UI
+
+`/account/webhooks` (`packages/worker/client/routes/account-webhooks.tsx`,
+handlers in `packages/worker/src/app/handlers/account-webhooks.ts`) is the
+signed-in owner's surface for minted URLs. `GET /account/webhooks.json` returns
+`listWebhooksForUser` joined with `urlRecoverable` and never the URL. `POST`
+intents `mint`, `rotate`, and `reveal` return the refreshed list plus a
+`revealed` entry built by `revealWebhookUrlForWebsite` (decrypt
+`url_secret_encrypted`, rebuild the ingress path from the request origin);
+`enable` / `disable` return the list only. Every intent writes an `account`
+audit event (`webhook_url_mint`, `webhook_url_rotate`, `webhook_url_reveal`,
+`webhook_enable`, `webhook_disable`). `mint` refuses an already-minted webhook
+so a stray click cannot rotate a provider's URL; `reveal` refuses mints without
+`url_secret_encrypted` and points at Rotate. The client keeps revealed URLs in
+memory only and drops them on row navigation or Hide.
+
+`revealWebhookUrlForWebsite` is website-only: no MCP capability, execute
+binding, or apply result may return the credential URL.
 
 ## Storage
 
