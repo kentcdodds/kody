@@ -56,7 +56,7 @@ export function renderOnboardingBanner(options?: OnboardingBannerOptions) {
 					marginBottom: '-0.9rem',
 				})}
 			/>
-			<div mix={css({ flex: 1, minWidth: '16rem' })}>
+			<div mix={css({ flex: 1, minWidth: 0 })}>
 				<h2
 					mix={css({
 						margin: 0,

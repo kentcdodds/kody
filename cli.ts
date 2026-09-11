@@ -292,6 +292,7 @@ async function restartDev(
 			PORT: String(workerPort),
 			WRANGLER_IS_LOCAL_DEV: 'true',
 			X_LOCAL_EXPLORER: process.env.X_LOCAL_EXPLORER ?? 'false',
+			CLOUDFLARE_ENV: process.env.CLOUDFLARE_ENV?.trim() || 'production',
 			...mockEnv,
 		},
 		{

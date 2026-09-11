@@ -370,7 +370,7 @@ const postCtaCss = {
 	},
 	'& p': {
 		flex: 1,
-		minWidth: '16rem',
+		minWidth: 0,
 		margin: 0,
 		color: colors.textMuted,
 		fontSize: '0.98rem',

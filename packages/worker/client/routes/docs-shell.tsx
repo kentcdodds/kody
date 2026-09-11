@@ -289,9 +289,10 @@ const docsMobileMenuCss = {
 	background: colors.surface,
 	'& > summary': {
 		display: 'flex',
-		alignItems: 'baseline',
+		alignItems: 'center',
 		gap: '0.6rem',
-		padding: '0.8rem 1rem',
+		minHeight: '44px',
+		padding: '0.7rem 1rem',
 		cursor: 'pointer',
 		fontWeight: 650,
 		color: colors.text,
@@ -305,8 +306,19 @@ const docsMobileMenuCss = {
 		fontSize: '0.95rem',
 	},
 	'& > nav': {
-		padding: '0.4rem 1rem 1rem 1.6rem',
+		padding: '0.4rem 0.6rem 0.7rem',
 		borderTop: `1px solid ${colors.border}`,
+	},
+	'& h2 a': {
+		display: 'inline-flex',
+		alignItems: 'center',
+		minHeight: '44px',
+	},
+	'& li a': {
+		display: 'flex',
+		alignItems: 'center',
+		minHeight: '44px',
+		paddingBlock: '0.55rem',
 	},
 	[mq.tablet]: {
 		display: 'block',

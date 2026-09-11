@@ -94,6 +94,11 @@ test('inline link nav stays in flow and is not a second account rail', async () 
 	)
 	expect(railHtml).toContain('data-account-nav')
 	expect(readRulesFor(railHtml, 'nav')).toContain('position: absolute')
+	expect(railHtml).toContain('<details')
+	expect(railHtml).toContain('>Admin sections</span>')
+	expect(railHtml).toContain('>Open</span>')
+	expect(railHtml).toContain('min-height: 44px')
+	expect(railHtml).toContain('@media (max-width: 860px)')
 
 	const inlineHtml = await renderToString(
 		jsx(AccountManagementInlineLinkNav, {

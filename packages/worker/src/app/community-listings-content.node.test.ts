@@ -67,6 +67,7 @@ test('community listings render sort controls, categories, empty states, and for
 	)
 	expect(listingsHtml).toContain('href="/community?sort=newest"')
 	expect(listingsHtml).toContain('href="/community"')
+	expect(listingsHtml).toContain('min-height: 44px')
 	expect(listingsHtml).toContain('data-testid="community-listings-categories"')
 	expect(listingsHtml).toContain(
 		'href="/community?sort=newest&amp;category=integrations"',

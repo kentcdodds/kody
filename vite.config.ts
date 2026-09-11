@@ -17,7 +17,15 @@ import { markdownAsText } from './tools/vite-markdown-as-text.ts'
 import { workerWholeGraphReload } from './tools/vite-worker-whole-graph-reload.ts'
 
 const root = path.dirname(fileURLToPath(import.meta.url))
-const envName = process.env.CLOUDFLARE_ENV ?? 'production'
+// `@cloudflare/vite-plugin` reads `CLOUDFLARE_ENV` itself (not this
+// file's `envName`) to pick `env.production` / `env.test` bindings. Local
+// `npm run dev` does not set the variable, so without this default the
+// plugin loads the top-level wrangler config (no D1/DO/KV) and origin
+// `/health` fails with Missing APP_DB.
+const envName = process.env.CLOUDFLARE_ENV?.trim() || 'production'
+if (!process.env.CLOUDFLARE_ENV?.trim()) {
+	process.env.CLOUDFLARE_ENV = envName
+}
 const persistPath = process.env.WRANGLER_PERSIST_TO ?? '.wrangler/state'
 const wranglerConfigPath =
 	process.env.KODY_WRANGLER_CONFIG ?? 'packages/worker/wrangler.jsonc'

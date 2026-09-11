@@ -479,6 +479,9 @@ const categoryNavCss = {
 	alignItems: 'center',
 	gap: '0.4rem',
 	'& a': {
+		display: 'inline-flex',
+		alignItems: 'center',
+		minHeight: '44px',
 		backgroundColor: colors.surface,
 		border: `1.5px solid ${colors.border}`,
 		borderRadius: '999px',
@@ -554,7 +557,7 @@ const sortLinkCss = {
 	display: 'inline-flex',
 	alignItems: 'center',
 	justifyContent: 'center',
-	minHeight: '2rem',
+	minHeight: '44px',
 	padding: '0.3rem 0.95rem',
 	borderRadius: '999px',
 	color: colors.textMuted,
