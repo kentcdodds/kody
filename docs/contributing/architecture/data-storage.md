@@ -425,7 +425,12 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   account UI
 - `community_listings`, `community_forks`, `community_ratings`,
   `community_reports`, `community_bans`: public package listings and moderation
-  (see [Public packages](../community-packages.md))
+  (see [Public packages](../community-packages.md)). `community_forks` rows for
+  a saved package are removed on package delete (`packageDelete` / account
+  package delete) and by D1 `AFTER DELETE` triggers on `saved_packages` and
+  `entity_sources` (`0061-community-forks-package-delete-cascade.sql`). Inert
+  forks keep an `entity_sources` row and no `saved_packages` row, so a foreign
+  key from `forked_package_id` cannot be declared.
 - `community_activity_events`: stored `listing_published` / `listing_updated`
   profile activity events (`actor_user_id` + `listing_id`); public forks are
   derived at read time from `community_forks`

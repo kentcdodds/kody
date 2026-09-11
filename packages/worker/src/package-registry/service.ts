@@ -516,6 +516,23 @@ export async function deleteSavedPackageProjection(input: {
 						listingId: listing.id,
 					})
 				}
+			}
+			// Drop fork metadata before later cleanup so a later failure cannot
+			// leave "Fork outdated" on community listings after the package is
+			// gone. D1 triggers on saved_packages / entity_sources are the
+			// cascade backstop if a future path skips this call.
+			const deletedForks = await deleteCommunityForksForPackage(
+				input.env.APP_DB,
+				{
+					userId: input.userId,
+					packageId: input.packageId,
+					sourceId: savedPackage?.sourceId,
+				},
+			)
+			if (deletedForks > 0) {
+				invalidateCommunityPublicCache()
+			}
+			if (savedPackage) {
 				await cleanupArtifactReposForPackage({
 					env: input.env,
 					userId: input.userId,
@@ -628,17 +645,6 @@ export async function deleteSavedPackageProjection(input: {
 				userId: input.userId,
 				packageId: input.packageId,
 			})
-			const deletedForks = await deleteCommunityForksForPackage(
-				input.env.APP_DB,
-				{
-					userId: input.userId,
-					packageId: input.packageId,
-					sourceId: savedPackage?.sourceId,
-				},
-			)
-			if (deletedForks > 0) {
-				invalidateCommunityPublicCache()
-			}
 			try {
 				await removePackageRetrieverManifestCacheEntries({
 					env: input.env,

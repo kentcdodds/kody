@@ -397,9 +397,15 @@ browse intentionally ranks only the newest 500 candidates. The reported
 production mismatch for `@kentcdodds/github` was therefore consistent with a
 data snapshot/cache artifact rather than a defect in the aggregate SQL; the
 worker integration test pins that a successful fork increments the surfaced
-count. Failed fork cleanup, `packageDelete` of the forked copy, and
-`adminCommunityOrphanForksCleanup` remove the matching `community_forks` row, so
-the live count drops without a separate recount.
+count. Failed fork cleanup and `packageDelete` of the forked copy remove the
+matching `community_forks` row (application delete plus D1 `AFTER DELETE`
+triggers on `saved_packages` and `entity_sources` in
+`0061-community-forks-package-delete-cascade.sql`), so the live count drops
+without a separate recount and the viewer overlay cannot keep showing **Fork
+outdated** for a package that is gone. Healthy inert forks keep their
+`entity_sources` row and are not dropped. `adminCommunityOrphanForksCleanup`
+remains a backstop for leftover rows whose source and saved package are both
+already gone.
 
 `computeCommunityBayesianScore` in `service.ts` implements the prior so a few
 5-star ratings do not beat many good ratings.
