@@ -1,6 +1,6 @@
 import { type RemixNode } from 'remix/ui'
 
-/** Inline link icon for prose heading permalinks (decorative). */
+/** Decorative link icon for prose heading permalinks. */
 function renderHeadingAnchorIcon() {
 	return (
 		<svg
@@ -21,18 +21,22 @@ function renderHeadingAnchorIcon() {
 	)
 }
 
+/**
+ * Wraps a heading's contents in the section permalink so the heading text
+ * (not just the icon) is the `#slug` control. The icon is decorative and
+ * hangs beside the text via `proseCss`.
+ */
 export function renderMarkdownHeadingAnchor(
 	key: number,
 	headingId: string,
+	children: RemixNode,
 ): RemixNode {
 	return (
-		<a
-			key={`anchor-${key}`}
-			href={`#${headingId}`}
-			data-heading-anchor=""
-			aria-label="Link to this section"
-		>
-			{renderHeadingAnchorIcon()}
+		<a key={`anchor-${key}`} href={`#${headingId}`} data-heading-permalink="">
+			<span data-heading-anchor="" aria-hidden="true">
+				{renderHeadingAnchorIcon()}
+			</span>
+			<span data-heading-text="">{children}</span>
 		</a>
 	)
 }

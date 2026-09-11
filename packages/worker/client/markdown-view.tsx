@@ -371,8 +371,7 @@ function renderToken(
 			const headingId = nextHeadingId(options.headingSlugCounts, token.text)
 			return (
 				<Tag key={key} id={headingId}>
-					{renderMarkdownHeadingAnchor(key, headingId)}
-					<span data-heading-text="">{children}</span>
+					{renderMarkdownHeadingAnchor(key, headingId, children)}
 				</Tag>
 			)
 		}
