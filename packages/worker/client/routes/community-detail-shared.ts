@@ -234,7 +234,9 @@ export async function communityDetailRouteLoader(
 		if (movedTo) {
 			return routeLoaderRedirect(packageMoveDestination(url.pathname, movedTo))
 		}
-		throw new Error('Community listing not found.')
+		return {
+			communityDetailShell: { ok: false, notFound: true },
+		}
 	}
 	if (!response.ok || !payload?.ok) {
 		throw new Error('Unable to load public package.')

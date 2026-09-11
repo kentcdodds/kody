@@ -1,4 +1,5 @@
 import { type Handle, type RemixNode, css } from 'remix/ui'
+import { NotFoundPage } from '#client/not-found-page.tsx'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { type DocDetailLoaderData } from '#universal/loader-data.ts'
 import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'
@@ -216,25 +217,7 @@ export function DocDetailRoute(handle: Handle) {
 		const snapshot = docData.read(handle, currentHref)
 
 		if (snapshot.kind === 'not-found') {
-			return renderDocsShell({
-				current: slug,
-				children: (
-					<article mix={css(docPageCss)}>
-						<header mix={css(docHeadCss)}>
-							<p mix={css(docEyebrowCss)}>
-								<a href={routes.docs.href()}>Docs</a>
-							</p>
-							<h1 data-docs-heading tabIndex={-1}>
-								Doc not found
-							</h1>
-							<p mix={css(docMetaCss)}>
-								That page does not exist or may have moved. Start from{' '}
-								<a href={routes.docs.href()}>What is Kody?</a>.
-							</p>
-						</header>
-					</article>
-				),
-			})
+			return <NotFoundPage />
 		}
 
 		if (snapshot.kind === 'error') {

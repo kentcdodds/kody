@@ -74,7 +74,7 @@ test('public route hardening rejects retired connector paths, unknown paths, and
 	)
 	expect(namespaceLookalikeResponse.status).toBe(404)
 	await expect(namespaceLookalikeResponse.text()).resolves.toContain(
-		'Public package not found',
+		"This doesn't quite connect.",
 	)
 
 	// Real maintenance routes from index.ts share handleSecretMaintenanceRequest:

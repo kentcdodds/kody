@@ -13,6 +13,7 @@ import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { on } from '#client/event-mixin.ts'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
+import { NotFoundPage } from '#client/not-found-page.tsx'
 import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
@@ -87,6 +88,7 @@ export function CommunityDetailRoute(handle: Handle) {
 	let shareGrant: PackageShareGrantLoaderView | null = null
 	let shareBusy = false
 	let shareMessage: string | null = null
+	let shellNotFound = false
 
 	// Re-lexing markdown on every handle.update() would be wasted work; cache
 	// the rendered README per markdown string (same policy as MarkdownView).
@@ -145,6 +147,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		reportState = 'idle'
 		reportMessage = null
 		shellUnauthorized = false
+		shellNotFound = false
 		shellLoadedForPathname = pathname
 		shellStatus = 'ready'
 	}
@@ -184,7 +187,9 @@ export function CommunityDetailRoute(handle: Handle) {
 					return
 				}
 				shellLoadedForPathname = ref.pathname
-				shellStatus = 'error'
+				shellNotFound = true
+				shellUnauthorized = false
+				shellStatus = 'ready'
 				handle.update()
 				return
 			}
@@ -487,7 +492,16 @@ export function CommunityDetailRoute(handle: Handle) {
 	) {
 		if (!routeData) return false
 		if (!routeData.ok) {
-			shellUnauthorized = true
+			if ('unauthorized' in routeData) {
+				shellUnauthorized = true
+				shellNotFound = false
+			} else if ('notFound' in routeData) {
+				shellNotFound = true
+				shellUnauthorized = false
+			} else {
+				const exhaustive: never = routeData
+				throw new Error(`Unhandled community shell: ${String(exhaustive)}`)
+			}
 			shellLoadedForPathname = pathname
 			shellStatus = 'ready'
 			return true
@@ -519,7 +533,7 @@ export function CommunityDetailRoute(handle: Handle) {
 			applyRouteShellData(routeData, pathname, listingId)
 		}
 		if (
-			(routeData && !routeData.ok) ||
+			(routeData && !routeData.ok && 'unauthorized' in routeData) ||
 			(shellUnauthorized && shellLoadedForPathname === pathname)
 		) {
 			return renderMissingListing(
@@ -528,11 +542,12 @@ export function CommunityDetailRoute(handle: Handle) {
 			)
 		}
 
-		if (!ref) {
-			return renderMissingListing(
-				'Public package not found',
-				'This listing is unavailable.',
-			)
+		if (
+			(routeData && !routeData.ok && 'notFound' in routeData) ||
+			(shellNotFound && shellLoadedForPathname === pathname) ||
+			!ref
+		) {
+			return <NotFoundPage />
 		}
 
 		const appliedShellData = applyRouteShellData(routeData, pathname, listingId)

@@ -235,6 +235,11 @@ type CommunityPackageUnauthorizedLoaderData = {
 	unauthorized: true
 }
 
+type CommunityPackageNotFoundLoaderData = {
+	ok: false
+	notFound: true
+}
+
 export type ProfileLoaderData = {
 	ok: true
 	profile: PublicCommunityProfile
@@ -1972,6 +1977,7 @@ export type AppLoaderData = {
 	communityDetailShell?:
 		| CommunityDetailShellLoaderData
 		| CommunityPackageUnauthorizedLoaderData
+		| CommunityPackageNotFoundLoaderData
 	packageFiles?: PackageFilesLoaderData
 	profileShell?: ProfileShellLoaderData | ProfileUnavailableLoaderData
 	adminUsers?: AdminUsersLoaderData

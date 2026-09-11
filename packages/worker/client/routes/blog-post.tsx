@@ -1,4 +1,5 @@
 import { type Handle, type RemixNode, css } from 'remix/ui'
+import { NotFoundPage } from '#client/not-found-page.tsx'
 import {
 	BLOG_AUTHOR_NAME,
 	BLOG_PLACEHOLDER_CALLOUT,
@@ -131,19 +132,7 @@ export function BlogPostRoute(handle: Handle) {
 		const signedOutCta = publicSignupPrimaryCta()
 
 		if (snapshot.kind === 'not-found') {
-			return (
-				<article mix={css(postCss)}>
-					<a href={routes.blog.href()} mix={css(postBackCss)}>
-						← All posts
-					</a>
-					<header mix={css(postHeadCss)}>
-						<h1>Post not found</h1>
-						<p mix={css(postMetaCss)}>
-							That post does not exist or may have been removed.
-						</p>
-					</header>
-				</article>
-			)
+			return <NotFoundPage />
 		}
 
 		const post = snapshot.data

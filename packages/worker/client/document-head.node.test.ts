@@ -136,3 +136,12 @@ test('doc artwork and blog posts route Open Graph cards through generated paths'
 		'https://kody.codes/blog/your-assistants-home/og.png',
 	)
 })
+
+test('a missing public package uses the shared not-found title', () => {
+	expect(
+		resolveDocumentTitle('/@bad/bad-404', {
+			communityDetailShell: { ok: false, notFound: true },
+		}),
+	).toBe(NOT_FOUND_DOCUMENT_TITLE)
+	expect(resolveDocumentTitle('/@bad/bad-404')).toBe('Package')
+})

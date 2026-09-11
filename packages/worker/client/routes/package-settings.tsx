@@ -12,6 +12,7 @@ import {
 } from '#client/route-data.tsx'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
+import { NotFoundPage } from '#client/not-found-page.tsx'
 import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
 import { type AccountPackageDetail } from '#universal/loader-data.ts'
 import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
@@ -79,7 +80,9 @@ export function PackageSettingsRoute(handle: Handle) {
 				href,
 			)
 			if (!routeData) return null
-			if (!routeData.ok) return { kind: 'unauthorized' }
+			if (!routeData.ok) {
+				return 'unauthorized' in routeData ? { kind: 'unauthorized' } : null
+			}
 			const pathname = new URL(href, 'http://localhost').pathname
 			if (routeData.listingId) {
 				rememberListingId(pathname, routeData.listingId)
@@ -259,10 +262,7 @@ export function PackageSettingsRoute(handle: Handle) {
 		)?.params
 
 		if (!ref) {
-			return renderMissingListing(
-				'Package settings not found',
-				'This package is unavailable.',
-			)
+			return <NotFoundPage />
 		}
 
 		const snapshot = settingsData.read(handle, currentHref)
@@ -287,7 +287,7 @@ export function PackageSettingsRoute(handle: Handle) {
 			)
 		}
 		if (snapshot.kind === 'not-found') {
-			return renderMissingListing('Not Found', 'We could not find that page.')
+			return <NotFoundPage />
 		}
 
 		const pending = snapshot.kind === 'pending'

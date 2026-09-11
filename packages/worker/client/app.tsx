@@ -14,6 +14,7 @@ import {
 	listenToRouterMutations,
 	listenToRouterNavigation,
 	listenToRouterNavigationEnd,
+	matchRoute,
 	navigate,
 	registerClientRoutes,
 	registerRouteLoaders,
@@ -46,6 +47,7 @@ import { isProfilePathname } from '#universal/profile-path.ts'
 import { userHasRole } from '#universal/permissions.ts'
 import { buildAuthLink } from './auth-links.ts'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
+import { NotFoundPage } from './not-found-page.tsx'
 import { SiteBanner } from './site-banner.tsx'
 import { YouTubeWatchOverlay } from './youtube-watch-overlay.tsx'
 import { scheduleConsumeAccountCreatedFathomSignal } from './fathom-events.ts'
@@ -227,7 +229,10 @@ export function App(handle: Handle<AppProps>) {
 		// stacks on the route's own and pushes it in past the site header. Kept
 		// separate from the marketing predicate: only the padding changes, the
 		const routeOwnsItsGutters =
-			isRedesignedMarketingPath || isPackageFilesPathname(currentPathname)
+			handle.props.notFound ||
+			isRedesignedMarketingPath ||
+			isPackageFilesPathname(currentPathname) ||
+			matchRoute(currentPathname, clientRoutes) == null
 
 		return (
 			<AppLoaderDataProvider loaderData={handle.props.loaderData}>
@@ -334,28 +339,7 @@ export function App(handle: Handle<AppProps>) {
 								loaderData={handle.props.loaderData}
 								notFound={handle.props.notFound}
 								unauthorized={handle.props.unauthorized}
-								fallback={
-									<section>
-										<h1
-											mix={css({
-												fontSize: typography.fontSize.lg,
-												fontWeight: typography.fontWeight.semibold,
-												marginBottom: spacing.sm,
-												color: colors.text,
-											})}
-										>
-											Not Found
-										</h1>
-										<p mix={css({ color: colors.textMuted })}>
-											We could not find that page.
-										</p>
-										<p>
-											<a href="/" mix={css(primaryLinkCss)}>
-												Go home
-											</a>
-										</p>
-									</section>
-								}
+								fallback={<NotFoundPage />}
 								unauthorizedFallback={
 									<section>
 										<h1

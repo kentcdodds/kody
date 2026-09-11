@@ -589,7 +589,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	})
 	expect(notFoundResponse.status).toBe(404)
 	const notFoundHtml = await readResponseText(notFoundResponse)
-	expect(notFoundHtml).toContain('Not Found')
+	expect(notFoundHtml).toContain("This doesn't quite connect.")
 	expect(readAppRootProps(notFoundHtml).notFound).toBe(true)
 
 	const resetConfirmResponse = await runHtmlHandler(
