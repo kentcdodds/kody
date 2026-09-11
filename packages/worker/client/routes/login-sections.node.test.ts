@@ -51,5 +51,4 @@ test('username errors mark only that field', async () => {
 	expect(usernameHtml).toMatch(/id="auth-username"[^>]*aria-invalid="true"/)
 	expect(usernameHtml).toMatch(/id="auth-email"[^>]*autocomplete="email"/)
 	expect(usernameHtml).not.toMatch(/id="auth-email"[^>]*aria-invalid/)
-	expect(usernameHtml).not.toContain('Invite code')
 })

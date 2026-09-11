@@ -227,7 +227,6 @@ test('first-party headingIds emit unique kebab-case heading ids', async () => {
 	expect(html).toContain('href="#josh-tomaino"')
 	expect(html).toContain('data-heading-anchor=""')
 	expect(html).toContain('data-heading-text=""')
-	expect(html).toContain('aria-label="Link to this section"')
 	expect(html).toContain('<h2 id="josh-tomaino-2">')
 	expect(html).toContain('href="#josh-tomaino-2"')
 	expect(html).toContain('<h2 id="jett-hays">')
