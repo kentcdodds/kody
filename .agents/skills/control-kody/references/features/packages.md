@@ -14,8 +14,8 @@ the package name leaf; README), `/@username/:kodyId/tree/:ref` (files),
 `/@username/:kodyId/assets/…` (README-relative images from the published or
 pinned commit), `/@username/:kodyId/settings` (lock, visibility, share, delete),
 `/@username/:kodyId/approve-publish` (published-vs-HEAD review), and
-`/@username/:kodyId/approve-changes` (guest pin-ahead published diff). Opening an
-allowlisted image or video in the tree renders a preview; the bytes come from
+`/@username/:kodyId/approve-changes` (guest pin-ahead published diff). Opening
+an allowlisted image or video in the tree renders a preview; the bytes come from
 `/@username/:kodyId/raw/:ref/…` (same authz as the tree). Legacy
 `/account/packages` HTML URLs only redirect to these canonical pages.
 
