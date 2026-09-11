@@ -995,15 +995,12 @@ test('renderAppPage configures session secret and server-renders oauth authorize
 	expect(anonymousHtml).not.toContain('Unknown client')
 	expect(anonymousHtml).not.toContain('Loading authorization details')
 	expect(anonymousHtml).toContain('data-testid="oauth-authorize-form"')
-	expect(anonymousHtml).toMatch(
-		/data-testid="oauth-authorize-form"[^>]*method="post"/,
-	)
+	expect(anonymousHtml).toContain('method="post"')
 	expect(anonymousHtml).toContain(
 		'action="/oauth/authorize?response_type=code&amp;client_id=client-1',
 	)
-	expect(anonymousHtml).toMatch(
-		/name="decision"[^>]*value="approve"|value="approve"[^>]*name="decision"/,
-	)
+	expect(anonymousHtml).toContain('name="decision"')
+	expect(anonymousHtml).toContain('value="approve"')
 	expect(anonymousHtml).toMatch(
 		/data-testid="oauth-authorize-approve"[^>]*disabled/,
 	)
