@@ -16,6 +16,7 @@ import { reveal, revealPop } from '#client/reveal.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { landingWorldBrands } from '#universal/landing-world-brands.ts'
 import { homepageSignupPath } from '#universal/first-touch-attribution.ts'
+import { routes } from '#universal/routes.ts'
 import {
 	landingHeroCopyPromptLabel,
 	landingHeroHeadlineAccent,
@@ -51,53 +52,56 @@ import { WalkthroughHostIntro } from './walkthrough-host-intro.tsx'
  * emit a per-node `<style data-rmx>` tag for every marketing block.
  */
 
+const factoryPathSteps = [
+	{
+		kicker: 'Today',
+		title: 'Ad hoc prompt',
+		note: 'Same question. More tokens.',
+	},
+	{
+		kicker: 'Save it',
+		title: 'A package',
+		note: 'Durable software you own.',
+	},
+	{
+		kicker: 'Trigger it',
+		title: 'No inference',
+		note: 'Cron, webhook, email, or event.',
+	},
+] as const
+
 const factoryBeats = [
-	{
-		trigger: 'Cron',
-		title: 'Flake Hunter',
-		icon: 'target',
-		copy: 'Nightly scan of yesterday’s CI. Obvious flakes trigger an agent to look into it.',
-	},
-	{
-		trigger: 'Webhook',
-		title: 'Sentry Issues',
-		icon: 'alert',
-		copy: 'A Sentry issue hits the webhook. Your package fingerprints repeats and triggers an agent to triage.',
-	},
-	{
-		trigger: 'Email',
-		title: 'Agent inbox',
-		icon: 'envelope',
-		copy: 'you@inbox.kody.codes. You send an email and your package saves it, routes it to an agent, or triggers anything else.',
-	},
-	{
-		trigger: 'Event',
-		title: 'Purchase thanks',
-		icon: 'gift',
-		copy: 'A purchase lands. Your package wakes an agent to look up past conversations with them and draft a contextual thank-you note.',
-	},
+	{ trigger: 'Cron', title: 'Flake Hunter', icon: 'target' },
+	{ trigger: 'Webhook', title: 'Sentry Issues', icon: 'alert' },
+	{ trigger: 'Email', title: 'Agent inbox', icon: 'envelope' },
+	{ trigger: 'Event', title: 'Purchase thanks', icon: 'gift' },
 ] as const
 
 type FactoryBeatIcon = (typeof factoryBeats)[number]['icon']
 
-const honestRows = [
+const ecosystemPathSteps = [
 	{
-		from: 'Ask again tomorrow',
-		to: 'A saved export. No model in the loop.',
+		kicker: 'Repos',
+		title: 'Your git',
+		note: 'Isolated, agent-written.',
 	},
 	{
-		from: 'A key in chat or a .env',
-		to: 'A secret the agent never sees.',
+		kicker: 'Registry',
+		title: 'Your npm',
+		note: 'Packages you can run.',
 	},
 	{
-		from: 'Re-run the agent on a timer',
-		to: 'A job that runs while you are offline.',
-	},
-	{
-		from: 'Context stuck in one host',
-		to: 'Memories that follow the account.',
+		kicker: 'Share',
+		title: 'Community',
+		note: 'Fork public, publish yours.',
 	},
 ] as const
+
+const ecosystemTriggers = ['Webhook', 'Cron', 'HTTP', 'App'] as const
+
+const kodyGithubUrl = 'https://github.com/kentcdodds/kody'
+const secretsDocsHref = routes.docDetail.href({ slug: 'secrets' })
+const communityHref = routes.community.href()
 
 function isHomePath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/'
@@ -224,58 +228,35 @@ export function HomeRoute(handle: Handle) {
 					<LandingHeroAgents hosts={walkthroughHosts ?? undefined} />
 				</section>
 
-				<section aria-labelledby="pitch-title" class="landing-pitch">
-					<h2 id="pitch-title" class="landing-pitch-title">
-						<em>Nothing</em> new <br />
-						to learn
-					</h2>
-					<div>
-						<p class="landing-pitch-lead">
-							Kody isn&apos;t another assistant to talk to. It plugs into the
-							agent you already use, so the same conversation you&apos;re having
-							today can now reach your real accounts.
-						</p>
-						<p class="landing-pitch-body">
-							Because your agent does the thinking,{' '}
-							<strong>Kody gets better every time your agent does.</strong>
-						</p>
-					</div>
-				</section>
-
 				<section aria-labelledby="factory-title" class="landing-factory">
 					<h2 id="factory-title" class="landing-section-heading">
 						From ad hoc prompts to <em>durable software</em>
 					</h2>
 					<p class="landing-factory-lead">
-						Stop burning your tokens on the same thing over and over again. Turn
-						any process into <strong>durable software</strong> you can trigger
-						on a schedule, notification, or anything else{' '}
-						<strong>without expensive inference</strong>.
+						Stop re-paying for the same answer. Save the process, then trigger
+						it <strong>without expensive inference</strong>.
 					</p>
-					<img
-						{...landingArtAttrs('kody-compounding-capabilities')}
-						alt="Kody tending glowing package pods on a small plant"
-						class="landing-factory-art"
-						mix={reveal()}
-					/>
-					<p class="landing-factory-beat-trigger landing-factory-kicker">
-						For example
-					</p>
-					<div class="landing-factory-beats">
-						{factoryBeats.map((beat, index) => (
-							<article
-								key={beat.title}
-								class="landing-factory-beat"
-								mix={reveal(index * 90)}
-							>
-								<p class="landing-factory-beat-trigger">{beat.trigger}</p>
-								<h3 class="landing-factory-beat-title">
-									{renderFactoryBeatIcon(beat.icon)}
-									{beat.title}
-								</h3>
-								<p>{beat.copy}</p>
-							</article>
-						))}
+					<div class="landing-path">
+						{renderLandingPathSteps(
+							factoryPathSteps,
+							'From ad hoc prompt to trigger',
+						)}
+						<div class="landing-path-stem" aria-hidden="true"></div>
+						<ul class="landing-path-fan" aria-label="Example triggers">
+							{factoryBeats.map((beat, index) => (
+								<li
+									key={beat.title}
+									class="landing-path-fan-item"
+									mix={reveal(index * 70)}
+								>
+									<p class="landing-path-kicker">{beat.trigger}</p>
+									<p class="landing-path-fan-title">
+										{renderFactoryBeatIcon(beat.icon)}
+										{beat.title}
+									</p>
+								</li>
+							))}
+						</ul>
 					</div>
 					<p class="landing-factory-ritual">
 						<span>Ask once.</span> <span>Save it.</span>{' '}
@@ -326,47 +307,36 @@ export function HomeRoute(handle: Handle) {
 					<LandingTestimonialsCarousel />
 				</section>
 
-				<section aria-labelledby="honest-title" class="landing-honest">
-					<h2 id="honest-title" class="landing-section-heading">
-						The agent reasons.
-						<br />
-						Kody keeps it <em>honest</em>.
-					</h2>
-					<p class="landing-honest-lead">
-						Your agent does the thinking. Kody holds the result so it does not
-						have to think it again.
-					</p>
-					<dl class="landing-honest-rows">
-						{honestRows.map((row, index) => (
-							<div
-								key={row.from}
-								class="landing-honest-row"
-								mix={reveal(index * 70)}
-							>
-								<dt>{row.from}</dt>
-								<dd>{row.to}</dd>
-							</div>
-						))}
-					</dl>
-				</section>
-
 				<section aria-labelledby="ecosystem-title" class="landing-ecosystem">
 					<div>
 						<h2 id="ecosystem-title" class="landing-section-heading">
 							Your own <em>git</em> and <em>npm</em>.
 						</h2>
 						<p class="landing-split-copy">
-							Kody gives you a <strong>personal software ecosystem</strong>.
-							Your agent creates repositories and publishes packages, all in
-							your own isolated environment. You can also publish your package
-							to the community to allow others to fork and you can even use
-							public packages on npm as well!
+							A personal software ecosystem: isolated repos, packages you
+							publish, then trigger what you save.
 						</p>
-						<p class="landing-split-copy">
-							Then your agents can use your packages to streamline ad hoc work
-							or you can trigger a package to execute in response to a webhook,
-							cron, authenticated HTTP call, or even a Kody-hosted application.
-						</p>
+						<div class="landing-path landing-path-split">
+							{renderLandingPathSteps(
+								ecosystemPathSteps,
+								'From your git to the community',
+							)}
+							<div class="landing-path-stem" aria-hidden="true"></div>
+							<ul
+								class="landing-path-fan landing-path-fan-chips"
+								aria-label="Ways to trigger a package"
+							>
+								{ecosystemTriggers.map((trigger, index) => (
+									<li
+										key={trigger}
+										class="landing-chip"
+										mix={revealPop(index * 40)}
+									>
+										{trigger}
+									</li>
+								))}
+							</ul>
+						</div>
 					</div>
 					<img
 						{...landingArtAttrs('kody-community-packages')}
@@ -390,14 +360,11 @@ export function HomeRoute(handle: Handle) {
 						<LandingByokDemo hosts={walkthroughHosts ?? undefined} />
 						<p class="landing-split-copy">
 							<strong>Encrypted keys the agent never sees.</strong> You create
-							the connection yourself, with your agent walking you through it:
-							your app, your scopes, revocable anytime. Secrets never enter the
-							prompt (as opposed to the .env file your agent happily reads).
-						</p>
-						<p class="landing-split-copy">
-							Need your own scopes, or a provider we don&apos;t host? Your agent
-							registers the app with you. No shared app sits between you and
-							your accounts.
+							the connection; secrets stay out of the prompt.{' '}
+							<a href={secretsDocsHref} class="landing-inline-link">
+								How secrets work
+							</a>
+							.
 						</p>
 					</div>
 				</section>
@@ -411,7 +378,7 @@ export function HomeRoute(handle: Handle) {
 						packages, fork them with your agent, and make them yours.
 					</p>
 					<ul
-						aria-label="Agents and developer services that work with Kody"
+						aria-label="Agents, developer services, and community packages that work with Kody"
 						class="landing-world-cloud"
 					>
 						{landingWorldBrands.map((brand, index) => (
@@ -424,11 +391,14 @@ export function HomeRoute(handle: Handle) {
 								{brand.label}
 							</li>
 						))}
-						<li
-							class="landing-chip landing-chip-muted"
-							mix={revealPop(landingWorldBrands.length * 35)}
-						>
-							…and yours
+						<li class="landing-world-link-item">
+							<a
+								href={communityHref}
+								class="landing-chip landing-chip-muted landing-chip-link"
+								mix={revealPop(landingWorldBrands.length * 35)}
+							>
+								Community packages
+							</a>
 						</li>
 					</ul>
 				</section>
@@ -438,16 +408,8 @@ export function HomeRoute(handle: Handle) {
 						Check out Kody&apos;s Source on GitHub
 					</h2>
 					<p>
-						Kody&apos;s{' '}
-						<a
-							href="https://github.com/kentcdodds/kody"
-							target="_blank"
-							rel="noreferrer noopener"
-							class="landing-inline-link"
-						>
-							source is open
-						</a>{' '}
-						— read it, fork it, self-host it.
+						Kody&apos;s {renderGithubRepoLink('source is open')} — read it, fork
+						it, self-host it, and {renderGithubRepoLink('star the repo')}.
 					</p>
 				</section>
 
@@ -495,6 +457,45 @@ export function HomeRoute(handle: Handle) {
 			</div>
 		)
 	}
+}
+
+type LandingPathStep = {
+	kicker: string
+	title: string
+	note: string
+}
+
+function renderLandingPathSteps(
+	steps: ReadonlyArray<LandingPathStep>,
+	label: string,
+) {
+	return (
+		<ol class="landing-path-rail" aria-label={label}>
+			{steps.map((step, index) => (
+				<li key={step.title} class="landing-path-step" mix={reveal(index * 80)}>
+					<span class="landing-path-node" aria-hidden="true">
+						{index + 1}
+					</span>
+					<p class="landing-path-kicker">{step.kicker}</p>
+					<h3 class="landing-path-label">{step.title}</h3>
+					<p class="landing-path-note">{step.note}</p>
+				</li>
+			))}
+		</ol>
+	)
+}
+
+function renderGithubRepoLink(label: string) {
+	return (
+		<a
+			href={kodyGithubUrl}
+			target="_blank"
+			rel="noreferrer noopener"
+			class="landing-inline-link"
+		>
+			{label}
+		</a>
+	)
 }
 
 function factoryBeatIconSvg(paths: RemixNode) {
