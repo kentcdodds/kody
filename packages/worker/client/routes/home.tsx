@@ -113,18 +113,23 @@ function isHomePath(href: string) {
 const landingHeroVideosApiPath = routes.landingHeroVideosApi.href()
 
 async function fetchLandingHeroVideos(signal: AbortSignal) {
-	const response = await fetch(landingHeroVideosApiPath, {
-		headers: { Accept: 'application/json' },
-		signal,
-	})
-	const payload = await readJson<{
-		ok?: boolean
-		videos?: Array<LandingHeroVideoItem>
-	}>(response)
-	if (!response.ok || !payload?.ok || !Array.isArray(payload.videos)) {
+	try {
+		const response = await fetch(landingHeroVideosApiPath, {
+			headers: { Accept: 'application/json' },
+			signal,
+		})
+		const payload = await readJson<{
+			ok?: boolean
+			videos?: Array<LandingHeroVideoItem>
+		}>(response)
+		if (!response.ok || !payload?.ok || !Array.isArray(payload.videos)) {
+			return []
+		}
+		return payload.videos.filter(isLandingHeroVideo)
+	} catch (error) {
+		if (signal.aborted) throw error
 		return []
 	}
-	return payload.videos.filter(isLandingHeroVideo)
 }
 
 function chipIconStyle(icon: string) {

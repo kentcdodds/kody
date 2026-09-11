@@ -93,10 +93,19 @@ export function parseYoutubePlaylistBrowseJson(payload: unknown): {
 		return { videos: [], continuation: null }
 	}
 	const contents = (payload as { contents?: unknown }).contents
+	const walkRoot = playlistBrowseWalkRoot(contents)
 	return {
-		videos: collectBrowseVideos(contents),
-		continuation: readContinuationToken(contents),
+		videos: collectBrowseVideos(walkRoot),
+		continuation: readContinuationToken(walkRoot),
 	}
+}
+
+function playlistBrowseWalkRoot(contents: unknown): unknown {
+	if (typeof contents !== 'object' || contents === null) return contents
+	const twoColumn = (contents as { twoColumnBrowseResultsRenderer?: unknown })
+		.twoColumnBrowseResultsRenderer
+	if (twoColumn !== undefined && twoColumn !== null) return twoColumn
+	return contents
 }
 
 function readPlaylistItemsApiVideo(item: unknown): LandingHeroVideo | null {

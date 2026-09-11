@@ -133,6 +133,60 @@ test('Innertube browse JSON also reads playlistVideoRenderer rows', () => {
 	expect(parsed.videos).toEqual([first])
 })
 
+test('Innertube browse JSON ignores sidebar lockups outside the playlist column', () => {
+	const parsed = parseYoutubePlaylistBrowseJson({
+		contents: {
+			twoColumnBrowseResultsRenderer: {
+				tabs: [
+					{
+						tabRenderer: {
+							content: {
+								sectionListRenderer: {
+									contents: [
+										{
+											itemSectionRenderer: {
+												contents: [
+													{
+														lockupViewModel: {
+															contentId: first.videoId,
+															contentType: 'LOCKUP_CONTENT_TYPE_VIDEO',
+															metadata: {
+																lockupMetadataViewModel: {
+																	title: { content: first.title },
+																},
+															},
+														},
+													},
+												],
+											},
+										},
+									],
+								},
+							},
+						},
+					},
+				],
+			},
+			secondaryContents: {
+				lockupViewModel: {
+					contentId: second.videoId,
+					contentType: 'LOCKUP_CONTENT_TYPE_VIDEO',
+					metadata: {
+						lockupMetadataViewModel: {
+							title: { content: second.title },
+						},
+					},
+				},
+				continuationItemViewModel: {
+					continuationCommand: { token: 'sidebar-token' },
+				},
+			},
+		},
+	})
+	expect(parsed.videos).toEqual([first])
+	expect(parsed.continuation).toBeNull()
+})
+
 test('uniqueLandingHeroVideos drops duplicates and invalid rows', () => {
 	expect(
 		uniqueLandingHeroVideos([

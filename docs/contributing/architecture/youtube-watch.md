@@ -61,20 +61,21 @@ the homepage chooser source.
 Failed playlist fetches fail open: env extra ids and banner hrefs still work. A
 failed homepage playlist fetch fails open to an empty chooser.
 
-SSR documents without `?youtubeId=` skip both the overlay Atom fetch and the
-homepage hero playlist fetch. They still merge env extras, the sample id, and
-enabled-banner hrefs (from the same `listEnabledSiteBanners` read as the
-site-banner loader). Home starts that shared banner read next to auth so
+SSR documents other than `/` without `?youtubeId=` skip both the overlay Atom
+fetch and the homepage hero playlist fetch. They still merge env extras, the
+sample id, and enabled-banner hrefs (from the same `listEnabledSiteBanners` read
+as the site-banner loader). Home starts that shared banner read next to auth so
 signed-in `/` (always `no-store`) does not wait for banners only after those
 finish. `?youtubeId=` HTML and `/youtube-thumb/:videoId` still load playlists
 (including hero chooser ids). Shared watch links are full document loads, so
 they still resolve playlist ids.
 
-Homepage `/` also loads the chooser playlist for SSR (and
-`GET /landing-hero-videos.json` for client navigations). That path prefers an
-optional origin-only `YOUTUBE_DATA_API_KEY` (`playlistItems`, playlist order)
-and falls back to YouTube's public Innertube browse endpoint so local and
-preview work without a key.
+Homepage `/` always loads the chooser playlist for SSR (and
+`GET /landing-hero-videos.json` for client navigations), even when the request
+has no `youtubeId`. That path prefers an optional origin-only
+`YOUTUBE_DATA_API_KEY` (`playlistItems`, playlist order) and falls back to
+YouTube's public Innertube browse endpoint so local and preview work without a
+key.
 
 ## Code
 
