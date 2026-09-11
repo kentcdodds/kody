@@ -92,6 +92,7 @@ export const docsNav: ReadonlyArray<DocsNavSection> = [
 				label: 'Lifecycle: reuse, execute, fork, create',
 			},
 			{ slug: 'package-authoring', label: 'Authoring' },
+			{ slug: 'package-sharing', label: 'Sharing a package' },
 			{ slug: 'package-apps', label: 'Package apps' },
 			{ slug: 'package-subscriptions', label: 'Subscriptions and events' },
 			{ slug: 'heavy-work-offload', label: 'Offload heavy work' },

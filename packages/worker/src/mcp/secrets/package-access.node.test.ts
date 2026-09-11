@@ -1,4 +1,4 @@
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	parsePackageAccessRequiredBatchMessage,
@@ -11,6 +11,8 @@ const mockModule = vi.hoisted(() => ({
 	getCommunityForkByForkedPackageId: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
 	resolveSecret: vi.fn(),
+	isShareGrantedForeignPackage: vi.fn(),
+	findAcceptedPackageShareGrant: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -35,6 +37,13 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 
 vi.mock('./service.ts', () => ({
 	resolveSecret: (...args: Array<unknown>) => mockModule.resolveSecret(...args),
+}))
+
+vi.mock('#worker/package-registry/share-grants.ts', () => ({
+	isShareGrantedForeignPackage: (...args: Array<unknown>) =>
+		mockModule.isShareGrantedForeignPackage(...args),
+	findAcceptedPackageShareGrant: (...args: Array<unknown>) =>
+		mockModule.findAcceptedPackageShareGrant(...args),
 }))
 
 const {
@@ -74,6 +83,12 @@ const userSecretResolved = {
 	allowedPackages: [] as Array<string>,
 }
 
+beforeEach(() => {
+	mockModule.getSavedPackageById.mockReset()
+	mockModule.findAcceptedPackageShareGrant.mockReset()
+	mockModule.isShareGrantedForeignPackage.mockResolvedValue(false)
+})
+
 function accessInput(
 	overrides: Partial<
 		Parameters<typeof assertPackageCanAccessResolvedSecret>[0]
@@ -103,6 +118,7 @@ function expectAccessDenied(error: unknown, secretName = 'userToken') {
 }
 
 test('package secret access grants cover owned, self-authored, forked, adopted, and mutate intents', async () => {
+	mockModule.isShareGrantedForeignPackage.mockResolvedValue(false)
 	await expect(
 		assertPackageCanAccessResolvedSecret(
 			accessInput({
@@ -600,4 +616,79 @@ test('package approval helpers parse structured messages and skip trusted packag
 		kodyId: 'discord-gateway',
 	})
 	expect(mockModule.loadPackageManifestBySourceId).not.toHaveBeenCalled()
+})
+
+test('shared package code cannot use the guest user secrets even when allowed_packages lists it', async () => {
+	mockModule.isShareGrantedForeignPackage.mockResolvedValueOnce(true)
+	await expect(
+		assertPackageCanAccessResolvedSecret(
+			accessInput({
+				resolved: {
+					...userSecretResolved,
+					allowedPackages: ['pkg-1'],
+				},
+			}),
+		),
+	).rejects.toBeInstanceOf(PackageSecretAccessDeniedError)
+})
+
+test('shared package mounts resolve secrets as the owner, not the guest', async () => {
+	mockModule.getSavedPackageById.mockImplementation(
+		async (_db: unknown, input: { userId: string }) =>
+			input.userId === 'owner-1' ? savedPackage : null,
+	)
+	mockModule.findAcceptedPackageShareGrant.mockResolvedValue({
+		ownerUserId: 'owner-1',
+		packageId: 'pkg-1',
+	})
+	mockModule.loadPackageManifestBySourceId.mockResolvedValueOnce({
+		manifest: {
+			name: '@alice/shared-notes',
+			exports: { '.': './src/index.ts' },
+			kody: {
+				id: 'shared-notes',
+				description: 'notes',
+				secretMounts: {
+					notesToken: { name: 'ownerNotesToken', scope: 'package' },
+				},
+			},
+		},
+	})
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'owner-token',
+		scope: 'package',
+		allowedPackages: [],
+	})
+	await expect(
+		resolvePackageMountedSecret({
+			env: { APP_DB: {} as D1Database } as Env,
+			packageId: 'pkg-1',
+			alias: 'notesToken',
+			callerContext: {
+				baseUrl: 'https://example.com',
+				user: {
+					userId: 'guest-1',
+					email: 'guest@example.com',
+					displayName: 'Guest',
+				},
+				repoContext: null,
+				storageContext: {
+					sessionId: null,
+					packageId: 'pkg-1',
+					storageId: 'pkg-1',
+				},
+			},
+		}),
+	).resolves.toMatchObject({
+		alias: 'notesToken',
+		value: 'owner-token',
+		scope: 'package',
+	})
+	expect(mockModule.loadPackageManifestBySourceId).toHaveBeenCalledWith(
+		expect.objectContaining({ userId: 'owner-1' }),
+	)
+	expect(mockModule.resolveSecret).toHaveBeenCalledWith(
+		expect.objectContaining({ userId: 'owner-1' }),
+	)
 })

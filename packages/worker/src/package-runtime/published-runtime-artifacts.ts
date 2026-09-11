@@ -27,6 +27,16 @@ export type BundleArtifactDependency = {
 	 */
 	platformOwned?: boolean
 	/**
+	 * True when the dependency resolved through a person-to-person share
+	 * grant (or a nested owner package of that grant). Share-owned ids stay
+	 * in `packageStorage()` grants, but the StorageRunner user id is the
+	 * owner's — guests write the owner's shared bucket, and the owner pays
+	 * storage entitlement.
+	 */
+	shareOwned?: boolean
+	/** Owner user id when `shareOwned` is true. */
+	storageOwnerUserId?: string
+	/**
 	 * Immutable saved-package UUID of the dependency, recorded at bundle time
 	 * from the resolved saved-package row. This is bundler-controlled
 	 * provenance: `packageStorage()` grants (see `createPackageStorageKodyTools`

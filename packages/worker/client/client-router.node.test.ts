@@ -111,6 +111,21 @@ test('package approve-publish is not swallowed by the package detail route', () 
 	).toBe(approvePublishRoute)
 })
 
+test('package approve-changes is not swallowed by the package detail route', () => {
+	const packageDetailRoute = 'package-detail-route' as unknown as JSX.Element
+	const approveChangesRoute = 'approve-changes-route' as unknown as JSX.Element
+	const packageRoutes = {
+		[routePattern(routes.communityPackage)]: packageDetailRoute,
+		[routePattern(routes.communityPackageApproveChanges)]: approveChangesRoute,
+	}
+	expect(matchRoute('/@kentcdodds/pkg-1', packageRoutes)).toBe(
+		packageDetailRoute,
+	)
+	expect(matchRoute('/@kentcdodds/pkg-1/approve-changes', packageRoutes)).toBe(
+		approveChangesRoute,
+	)
+})
+
 test('view transitions skip shell tab switches, including when from-path was never recorded', () => {
 	// Tab switching inside a persistent shell (account/admin rail, docs
 	// sidebar): the chrome is unchanged and full-height, so a snapshot

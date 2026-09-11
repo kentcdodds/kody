@@ -58,6 +58,9 @@ style, tests, MCP capabilities, and runtime architecture.
 ## Packages and MCP
 
 - [Packages and manifests](./packages-and-manifests.md)
+- [Package sharing](../guides/package-sharing.md) (person-to-person use grants;
+  not platform scope grants —
+  [0050](./decisions/0050-package-share-grants-are-not-scope-grants.md))
 - [`packageStorage()` grants and stamp-aligned secrets](./package-storage-static-imports.md)
   (stamp/grant model under fork-only official packages and no author-facing
   invoke)

@@ -23,6 +23,12 @@ export type PackageSearchRow = {
 	 * fails closed for any other foreign row.
 	 */
 	platformScope?: string | null
+	/**
+	 * True when the row is an accepted person-to-person share grant, not a
+	 * caller-owned or platform-scope package. The package plugin admits these
+	 * foreign rows the same way it admits platformScope.
+	 */
+	shareGranted?: boolean
 	hydrate?: () => Promise<{
 		projection: PackageSearchProjection
 		readmeSnippet: PackageReadmeSnippet | null

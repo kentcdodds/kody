@@ -259,6 +259,8 @@ registerPreloadPatterns(
 		routePattern(routes.accountBillingSuccess),
 		routePattern(routes.accountUsage),
 		routePattern(routes.accountWaiting),
+		routePattern(routes.accountShared),
+		routePattern(routes.communityPackageApproveChanges),
 		routePattern(routes.accountIntegrations),
 		routePattern(routes.accountOauthAppDetail),
 		routePattern(routes.accountIntegrationsApprove),

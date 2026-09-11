@@ -28,6 +28,7 @@ import lockedMcpServer from '../../../../docs/guides/locked-mcp-server.md'
 import oauth from '../../../../docs/guides/oauth.md'
 import openapiIntegrations from '../../../../docs/guides/openapi-integrations.md'
 import packageAuthoring from '../../../../docs/guides/package-authoring.md'
+import packageSharing from '../../../../docs/guides/package-sharing.md'
 import packageApps from '../../../../docs/guides/package-apps.md'
 import packageLifecycle from '../../../../docs/guides/package-lifecycle.md'
 import platformEfficiency from '../../../../docs/guides/platform-efficiency.md'
@@ -77,6 +78,7 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'platform-efficiency', raw: platformEfficiency },
 	{ slug: 'package-lifecycle', raw: packageLifecycle },
 	{ slug: 'package-authoring', raw: packageAuthoring },
+	{ slug: 'package-sharing', raw: packageSharing },
 	{ slug: 'package-apps', raw: packageApps },
 	{ slug: 'package-subscriptions', raw: packageSubscriptions },
 	{ slug: 'heavy-work-offload', raw: heavyWorkOffload },

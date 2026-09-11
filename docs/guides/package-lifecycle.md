@@ -52,9 +52,27 @@ package `dryRun` and fresh user confirmation before a live mutation.
 
 ### Fork a close public package before creating
 
+<details>
+<summary>What's the difference between forking and sharing?</summary>
+
+**Fork** copies a public package into the other person's account. They own that
+copy: they can edit, publish, schedule jobs, and keep their own storage. Use a
+fork when they should adapt the behavior or run it independently.
+
+**Share** leaves the package in the owner's account. After the guest accepts,
+they can read source and invoke it, but they cannot publish or write it. Storage
+stays with the owner. Use a share when you want one live package — a household
+tool, a private package that should not be public, or a source of truth that
+should stay in sync. See [Share a package](/docs/package-sharing).
+
+Both people need a paid plan to share. Forking a public listing does not.
+
+</details>
+
 Community listings are excluded from general `search`. When you need durable
 reusable behavior and nothing in the user's account fits, call `communitySearch`
-for a close public package.
+for a close public package. If the other person should use your live package
+instead of their own copy, [share it](/docs/package-sharing).
 
 If a listing is close to the user's goal:
 

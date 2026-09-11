@@ -14,6 +14,7 @@ function createFlagMap(enabled: boolean): CallerFeatureFlags {
 		'demo-indicator': enabled,
 		'compact-mcp-server-instructions': false,
 		'compute-overage-charging': true,
+		'package-share-grants': false,
 	}
 }
 

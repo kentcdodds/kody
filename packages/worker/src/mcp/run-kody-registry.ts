@@ -43,6 +43,10 @@ import {
 } from '#mcp/kody-remote-types.ts'
 import { assertPersonOwnedPackageMayNotRunPlatformDependencies } from '#worker/package-registry/platform-package-policy.ts'
 import {
+	collectShareStorageOwners,
+	retainAuthorizedPackageStorageGrantIds,
+} from '#worker/package-registry/share-grants.ts'
+import {
 	createRuntimeHelperExtraProviders,
 	createRuntimeHelperKodyToolSets,
 	createRuntimeHelperPreludes,
@@ -879,6 +883,28 @@ export async function runBundledModuleWithRegistry(
 			dependencies: bundle.dependencies ?? [],
 			dynamicDependencyPackageIds,
 		})
+		const storageOwnerByPackageId = new Map<string, string>()
+		let authorizedPackageStorageIds = new Set(grantedPackageStorageIds)
+		if (callerContext.user?.userId) {
+			const shareOwners = await collectShareStorageOwners({
+				db: env.APP_DB,
+				callerUserId: callerContext.user.userId,
+				packageIds: grantedPackageStorageIds,
+			})
+			for (const [packageId, ownerUserId] of shareOwners) {
+				storageOwnerByPackageId.set(packageId, ownerUserId)
+			}
+			authorizedPackageStorageIds =
+				await retainAuthorizedPackageStorageGrantIds({
+					db: env.APP_DB,
+					callerUserId: callerContext.user.userId,
+					packageIds: grantedPackageStorageIds,
+					storageOwnerByPackageId,
+				})
+			if (runningPackageId && grantedPackageStorageIds.has(runningPackageId)) {
+				authorizedPackageStorageIds.add(runningPackageId)
+			}
+		}
 		// Static package export calls report through a sandbox bridge with a
 		// bundler-stamped callee package id; only ids recorded as *static*
 		// bundle dependencies at build time are accepted (mismatches are
@@ -907,7 +933,7 @@ export async function runBundledModuleWithRegistry(
 				userId: callerContext.user?.userId ?? null,
 				email: callerContext.user?.email ?? null,
 				storageContext: normalizedStorageContext,
-				grantedSecretAuthorityPackageIds: [...grantedPackageStorageIds],
+				grantedSecretAuthorityPackageIds: [...authorizedPackageStorageIds],
 			},
 			modules: hydratedModules,
 			// Package-context runs are saved-package code; do not count their fetch hosts.
@@ -942,8 +968,9 @@ export async function runBundledModuleWithRegistry(
 		// missing-capability TypeError.
 		const packageStorageTools = callerContext.user?.userId
 			? {
-					grantedPackageIds: grantedPackageStorageIds,
+					grantedPackageIds: authorizedPackageStorageIds,
 					writable: !closedWorldRetrieverRuntime,
+					storageOwnerByPackageId,
 				}
 			: undefined
 		const packageSecretTools = callerContext.user?.userId
@@ -951,7 +978,7 @@ export async function runBundledModuleWithRegistry(
 					env,
 					callerContext,
 					runPackageId: options?.packageContext?.packageId ?? null,
-					grantedPackageIds: grantedPackageStorageIds,
+					grantedPackageIds: authorizedPackageStorageIds,
 				})
 			: undefined
 		const provider = await buildKodyProvider(env, callerContext, {

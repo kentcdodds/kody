@@ -86,6 +86,13 @@ override still dry-runs that account while global is on. A percentage rollout is
 still globally on — in-bucket users charge. D1 evaluation failures fail closed
 (all flags off, so no charges).
 
+`package-share-grants` is a rollout kill switch for person-to-person package
+shares (invite, accept, UI, MCP, and runtime use). Registry default is **off**
+so invite email cannot go live until an operator enables it at
+`/admin/feature-flags` (or `adminFeatureFlagSet`). Evaluation failures fail
+closed. No `successMetric`: this is not an experiment. Remove the flag and every
+gate site after general availability.
+
 ## Success metrics
 
 Every flag exists to move something; the `successMetric` field on a registry

@@ -16,6 +16,10 @@ import { resolveCallerSecretAuthority } from './secret-authority.ts'
 import { getCommunityForkByForkedPackageId } from '#worker/community/repo.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
+	findAcceptedPackageShareGrant,
+	isShareGrantedForeignPackage,
+} from '#worker/package-registry/share-grants.ts'
+import {
 	loadPackageManifestBySourceId,
 	type LoadedPackageManifest,
 } from '#worker/package-registry/source.ts'
@@ -60,20 +64,50 @@ export function isPackageSecretAccessUnavailableError(error: unknown) {
 }
 
 /**
- * Resolve the package whose runtime is asking for a user secret.
+ * Resolve the package whose runtime is asking for a secret.
  *
- * Person accounts only run caller-owned packages (decision 0036), so this
- * lookup is caller-owned `saved_packages` only.
+ * Caller-owned packages stay on the caller's stamp. Share-granted packages
+ * load as the owner so mounts and package-scoped secrets stay on the
+ * owner's stamp. Shared code never receives the guest's other user secrets.
  */
 async function resolvePackageRecordForSecretAccess(input: {
 	db: D1Database
 	userId: string
 	packageId: string
 }): Promise<SavedPackageRecord | null> {
-	return await getSavedPackageById(input.db, {
+	const own = await getSavedPackageById(input.db, {
 		userId: input.userId,
 		packageId: input.packageId,
 	})
+	if (own) return own
+	const grant = await findAcceptedPackageShareGrant({
+		db: input.db,
+		packageId: input.packageId,
+		granteeUserId: input.userId,
+	})
+	if (!grant) return null
+	return await getSavedPackageById(input.db, {
+		userId: grant.ownerUserId,
+		packageId: grant.packageId,
+	})
+}
+
+async function resolveSecretStampUserId(input: {
+	db: D1Database
+	callerUserId: string
+	packageId: string
+}) {
+	const own = await getSavedPackageById(input.db, {
+		userId: input.callerUserId,
+		packageId: input.packageId,
+	})
+	if (own) return input.callerUserId
+	const grant = await findAcceptedPackageShareGrant({
+		db: input.db,
+		packageId: input.packageId,
+		granteeUserId: input.callerUserId,
+	})
+	return grant?.ownerUserId ?? input.callerUserId
 }
 
 /**
@@ -87,8 +121,7 @@ export async function packageHasImplicitUserSecretReadAccess(input: {
 	userId: string
 	packageId: string
 }): Promise<boolean> {
-	const savedPackage = await resolvePackageRecordForSecretAccess({
-		db: input.env.APP_DB,
+	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
 		userId: input.userId,
 		packageId: input.packageId,
 	})
@@ -140,6 +173,17 @@ export async function assertPackageCanAccessResolvedSecret(input: {
 		authorityPackageId: input.authorityPackageId,
 	})
 	if (!packageId || input.resolved.scope !== 'user') return
+	if (
+		await isShareGrantedForeignPackage({
+			db: input.env.APP_DB,
+			callerUserId: input.userId,
+			packageId,
+		})
+	) {
+		throw new PackageSecretAccessDeniedError(
+			`Shared package code cannot use the guest's user secrets, including "${input.secretName}". Pass explicit inputs or use package-scoped mounts on the shared package.`,
+		)
+	}
 	if (input.resolved.allowedPackages.includes(packageId)) return
 
 	const savedPackage = await resolvePackageRecordForSecretAccess({
@@ -260,17 +304,23 @@ export async function loadPackageSecretMounts(input: {
 	manifest: LoadedPackageManifest['manifest']
 	mounts: Record<string, SecretMountDefinition>
 }> {
-	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
+	const savedPackage = await resolvePackageRecordForSecretAccess({
+		db: input.env.APP_DB,
 		userId: input.userId,
 		packageId: input.packageId,
 	})
 	if (!savedPackage) {
 		throw new Error(`Saved package "${input.packageId}" was not found.`)
 	}
+	const stampUserId = await resolveSecretStampUserId({
+		db: input.env.APP_DB,
+		callerUserId: input.userId,
+		packageId: input.packageId,
+	})
 	const loaded = await loadPackageManifestBySourceId({
 		env: input.env,
 		baseUrl: input.baseUrl,
-		userId: input.userId,
+		userId: stampUserId,
 		sourceId: savedPackage.sourceId,
 	})
 	return {
@@ -315,6 +365,11 @@ export async function resolvePackageMountedSecret(input: {
 			`Package "${packageInfo.savedPackage.kodyId}" does not declare secret mount "${input.alias}".`,
 		)
 	}
+	const stampUserId = await resolveSecretStampUserId({
+		db: input.env.APP_DB,
+		callerUserId: userId,
+		packageId,
+	})
 	const storageContext = {
 		sessionId: input.callerContext.storageContext?.sessionId ?? null,
 		appId: input.callerContext.storageContext?.appId ?? null,
@@ -323,7 +378,7 @@ export async function resolvePackageMountedSecret(input: {
 	}
 	const resolved = await resolveSecret({
 		env: input.env,
-		userId,
+		userId: stampUserId,
 		name: mount.name,
 		scope: mount.scope,
 		storageContext,
@@ -332,7 +387,7 @@ export async function resolvePackageMountedSecret(input: {
 		throw new PackageSecretMissingError(
 			await createUnresolvedSecretMessage({
 				env: input.env,
-				userId,
+				userId: stampUserId,
 				name: mount.name,
 				scope: mount.scope,
 				storageContext,
@@ -343,7 +398,7 @@ export async function resolvePackageMountedSecret(input: {
 	await assertPackageCanAccessResolvedSecret({
 		env: input.env,
 		baseUrl: input.callerContext.baseUrl,
-		userId,
+		userId: stampUserId,
 		storageContext,
 		authorityPackageId: packageId,
 		secretName: mount.name,

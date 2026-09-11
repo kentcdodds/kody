@@ -118,10 +118,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Listing-only helpers live in the shared secrets service module
 		// (resolveSecretListScopeOrder / listSecretBucketsByScope). Runtime
 		// does not call them, but they sit in the same module as resolve
-		// and add a few KB. Raised from 3_620_000 for package-secret list
-		// discovery; split the listing path out of service.ts if this
-		// budget is raised again.
-		maxEntryBytes: 3_630_000,
+		// and add a few KB. Share-grant import/storage routing added more.
+		// Raised from 3_620_000; split listing out of service.ts or the
+		// share-grant runtime path if this budget is raised again.
+		maxEntryBytes: 3_700_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',

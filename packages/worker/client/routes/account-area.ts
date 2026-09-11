@@ -14,6 +14,14 @@ export {
 	accountWaitingRouteLoader,
 } from './account-waiting.tsx'
 export {
+	AccountSharedRoute,
+	accountSharedRouteLoader,
+} from './account-shared.tsx'
+export {
+	PackageShareApproveChangesRoute,
+	packageShareApproveChangesRouteLoader,
+} from './package-share-approve-changes.tsx'
+export {
 	AccountIntegrationsRoute,
 	accountIntegrationsRouteLoader,
 } from './account-integrations.tsx'

@@ -285,6 +285,11 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'user_repos' },
 	{ kind: 'user_id', table: 'saved_packages' },
 	{
+		kind: 'user_columns',
+		table: 'package_share_grants',
+		columns: ['owner_user_id', 'grantee_user_id'],
+	},
+	{
 		kind: 'user_id',
 		table: 'saved_package_search_index_debt',
 		includeInExport: false,
@@ -791,6 +796,7 @@ export const accountExportForeignUserIdColumnsByTable: Readonly<
 		'grantee_user_id',
 		'created_by_user_id',
 	],
+	package_share_grants: ['owner_user_id', 'grantee_user_id'],
 	referrals: ['referrer_stable_user_id', 'referee_stable_user_id'],
 }
 

@@ -70,9 +70,18 @@ export const featureFlagDefinitions = [
 				'A stub that fits in a 2048-character head cut makes agents reach for Kody execute more often from vague prompts.',
 		},
 	},
+	{
+		key: 'package-share-grants',
+		defaultEnabled: false,
+		description:
+			'Person-to-person package share grants: invite, accept, UI, MCP, and runtime use of a shared package. Off by default so invite email cannot go live until an operator enables it. No success metric: this is a rollout kill switch, not an experiment.',
+	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
 export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']
+
+export const packageShareGrantsFlagKey =
+	'package-share-grants' satisfies FeatureFlagKey
 
 export const featureFlagKeys: ReadonlyArray<FeatureFlagKey> =
 	featureFlagDefinitions.map((definition) => definition.key)
