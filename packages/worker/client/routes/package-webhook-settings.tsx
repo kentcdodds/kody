@@ -88,8 +88,10 @@ export function createPackageWebhooksController(handle: Handle) {
 
 	/**
 	 * Fetch the section for `ref` once per package. Rendering queues this on
-	 * every pass; the key check makes repeat calls free. A failed load clears
-	 * the key so the next pass retries.
+	 * every pass; the key check makes repeat calls free. A failed load keeps
+	 * the key (and reports the error) rather than clearing it: the render
+	 * that shows the error would otherwise queue the same fetch again and
+	 * spin on a persistent failure.
 	 */
 	async function ensureLoaded(ref: PackageRef) {
 		const key = keyFor(ref)
@@ -113,7 +115,6 @@ export function createPackageWebhooksController(handle: Handle) {
 			status = 'ready'
 		} catch (error) {
 			if (loadedFor !== key) return
-			loadedFor = ''
 			status = 'error'
 			setMessage(
 				error instanceof Error ? error.message : 'Unable to load webhooks.',

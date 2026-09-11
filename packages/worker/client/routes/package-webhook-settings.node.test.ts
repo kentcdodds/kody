@@ -263,6 +263,25 @@ test('the settings section reports a failed intent and keeps the rows', async ()
 	expect(html).toContain('id="webhook-run"')
 })
 
+test('a failed load reports the error once and does not refetch on the re-render it triggers', async () => {
+	const calls = stubFetch(() => ({
+		status: 500,
+		body: { ok: false, error: 'boom' },
+	}))
+	const { handle } = createStubHandle()
+	const controller = createPackageWebhooksController(handle)
+	await controller.ensureLoaded(ref)
+	// The settings route queues ensureLoaded on every render, including the
+	// one the failure's update() causes; that pass must be a no-op.
+	await controller.ensureLoaded(ref)
+	await controller.ensureLoaded(ref)
+	expect(calls).toHaveLength(1)
+	const html = await renderToString(controller.render(ref))
+	expect(html).toContain('role="alert"')
+	expect(html).toContain('Unable to load webhooks.')
+	expect(html).not.toContain('Loading webhooks…')
+})
+
 test('the settings section shows the empty state for a package without webhooks', async () => {
 	stubFetch(() => ({ status: 200, body: listPayload([]) }))
 	const { handle } = createStubHandle()
