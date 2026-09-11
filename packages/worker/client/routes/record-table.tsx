@@ -563,7 +563,7 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 			>
 				<div mix={[css(paneCss), css(cardFallbackCss)]}>
 					{handle.props.toolbar || handle.props.countLabel ? (
-						<div mix={css(toolbarCss)}>
+						<div key="record-table-toolbar" mix={css(toolbarCss)}>
 							{handle.props.toolbar}
 							{handle.props.countLabel ? (
 								<p
@@ -583,26 +583,35 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 							</span>
 						</div>
 					) : null}
-					{rows.length === 0 ? (
-						<p mix={css(emptyCss)}>
-							{handle.props.emptyLabel ?? 'Nothing to show yet.'}
-						</p>
-					) : (
-						<div
-							mix={css({
-								...tableScrollerCss,
-								...(capped
-									? {
-											maxHeight:
-												handle.props.scrollHeight ?? defaultScrollHeight,
-											overflowY: 'auto' as const,
-										}
-									: null),
-							})}
-						>
-							{table}
-						</div>
-					)}
+					{/*
+					 * Keep a stable keyed host around the collection so filtering
+					 * from some rows to none (or the reverse) replaces only the
+					 * inner empty copy / table, not a sibling of the toolbar. An
+					 * unkeyed type swap next to the search field remounts it and
+					 * drops focus on the keystroke that emptied the list.
+					 */}
+					<div key="record-table-collection">
+						{rows.length === 0 ? (
+							<p mix={css(emptyCss)}>
+								{handle.props.emptyLabel ?? 'Nothing to show yet.'}
+							</p>
+						) : (
+							<div
+								mix={css({
+									...tableScrollerCss,
+									...(capped
+										? {
+												maxHeight:
+													handle.props.scrollHeight ?? defaultScrollHeight,
+												overflowY: 'auto' as const,
+											}
+										: null),
+								})}
+							>
+								{table}
+							</div>
+						)}
+					</div>
 					{handle.props.footer ? (
 						<div mix={css(footerCss)}>{handle.props.footer}</div>
 					) : null}

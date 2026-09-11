@@ -384,8 +384,10 @@ export function AdminReservedUsernamesRoute(handle: Handle) {
 						<span mix={css(fieldLabelCss)}>Search</span>
 						<input
 							data-field-ring
-							type="search"
-							value={builtInQuery}
+							type="text"
+							role="searchbox"
+							inputMode="search"
+							autoComplete="off"
 							placeholder="autodiscover"
 							mix={[
 								on('input', (event) => {

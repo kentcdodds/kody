@@ -492,6 +492,7 @@ export function AdminProviderMarksRoute(handle: Handle) {
 				) : null}
 				{status === 'loading' ? <p>Loading provider marks…</p> : null}
 				<RecordTableSearch
+					key="provider-marks-search"
 					label="Filter marks"
 					placeholder="Filter marks"
 					value={search}
