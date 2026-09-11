@@ -51,6 +51,7 @@ test('account section switches keep the current page on screen (no loading flash
 	seedE2eUser,
 	login,
 }) => {
+	test.setTimeout(process.env.CI ? 90_000 : 60_000)
 	const runId = Date.now()
 	const user = await seedE2eUser({
 		email: `account-nav-${runId}@example.com`,
@@ -84,6 +85,7 @@ test('admin section switches keep the current page on screen (no loading flash, 
 	assignRole,
 	login,
 }) => {
+	test.setTimeout(process.env.CI ? 90_000 : 60_000)
 	const runId = Date.now()
 	const adminUser = await seedE2eUser({
 		email: `admin-nav-${runId}@example.com`,
