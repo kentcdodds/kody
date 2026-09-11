@@ -80,20 +80,25 @@ export async function readFleetExecuteLastSuccess(input: {
 	}
 }
 
-export function scheduleFleetExecuteLastSuccess(input: {
+export async function scheduleFleetExecuteLastSuccess(input: {
 	waitUntil?: ((promise: Promise<unknown>) => void) | undefined
 	kv?: FleetExecuteHeartbeatKv | null
 	now?: number
 	memory?: FleetExecuteHeartbeatMemory
-}): void {
+}): Promise<void> {
+	const work = recordFleetExecuteLastSuccess({
+		kv: input.kv,
+		now: input.now,
+		memory: input.memory,
+	})
 	try {
-		input.waitUntil?.(
-			recordFleetExecuteLastSuccess({
-				kv: input.kv,
-				now: input.now,
-				memory: input.memory,
-			}),
-		)
+		if (input.waitUntil) {
+			input.waitUntil(work)
+			return
+		}
+		// No Durable Object waitUntil: finish the fail-open write before the
+		// execute handler returns so the isolate cannot drop it.
+		await work
 	} catch (error) {
 		console.warn(
 			'fleet-execute-heartbeat-schedule-failed',

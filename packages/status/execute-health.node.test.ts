@@ -6,6 +6,7 @@ import {
 	decideExecuteHealthProbe,
 	deriveExecuteHealthView,
 	executeHealthOrganicFreshMs,
+	executeHealthRecentMs,
 	executeHealthSyntheticCooldownMs,
 	mergeExecuteLastSuccess,
 	readExecuteHealthSyntheticResult,
@@ -14,6 +15,7 @@ import {
 } from './execute-health.ts'
 
 const hourMs = executeHealthSyntheticCooldownMs
+const recentMs = executeHealthRecentMs
 const minuteMs = executeHealthOrganicFreshMs
 const start = Date.parse('2026-09-07T17:00:00.000Z')
 
@@ -143,7 +145,7 @@ test('stale or missing telemetry is unknown, not an outage or a fresh healthy si
 	expect(missing.detail).not.toMatch(/operational|down|outage confirmed/i)
 
 	const stale = deriveExecuteHealthView({
-		now: start + 10 * minuteMs,
+		now: start + recentMs,
 		lastSuccessAt: start,
 		lastSyntheticAttemptAt: null,
 		lastSyntheticSuccessAt: null,
@@ -153,8 +155,39 @@ test('stale or missing telemetry is unknown, not an outage or a fresh healthy si
 	expect(stale.status).toBe('unknown')
 	expect(stale.source).toBe('organic')
 	expect(stale.lastVerifiedAt).toBe(new Date(start).toISOString())
-	expect(stale.freshnessMs).toBe(10 * minuteMs)
+	expect(stale.freshnessMs).toBe(recentMs)
 	expect(stale.detail).toMatch(/not recently exercised/i)
+})
+
+test('minutes-old organic success stays recent even when synthetic is unconfigured', () => {
+	const aFewMinutesOld = deriveExecuteHealthView({
+		now: start + 173_132,
+		lastSuccessAt: start,
+		lastSyntheticAttemptAt: null,
+		lastSyntheticSuccessAt: null,
+		lastSyntheticError: null,
+		syntheticConfigured: false,
+	})
+	expect(aFewMinutesOld.status).toBe('recent')
+	expect(aFewMinutesOld.source).toBe('organic')
+	expect(aFewMinutesOld.lastVerifiedAt).toBe(new Date(start).toISOString())
+	expect(aFewMinutesOld.freshnessMs).toBe(173_132)
+	expect(aFewMinutesOld.detail).toMatch(/organic/i)
+	expect(aFewMinutesOld.detail).toMatch(/2m ago/)
+	expect(aFewMinutesOld.detail).not.toMatch(/not recently exercised/i)
+	expect(aFewMinutesOld.detail).not.toMatch(/not configured/i)
+
+	const almostHourOld = deriveExecuteHealthView({
+		now: start + recentMs - 1,
+		lastSuccessAt: start,
+		lastSyntheticAttemptAt: null,
+		lastSyntheticSuccessAt: null,
+		lastSyntheticError: null,
+		syntheticConfigured: false,
+	})
+	expect(almostHourOld.status).toBe('recent')
+	expect(almostHourOld.source).toBe('organic')
+	expect(almostHourOld.detail).toMatch(/organic/i)
 })
 
 test('caller failures are not automatically a global outage, and one organic success does not hide other incidents', () => {
@@ -171,7 +204,7 @@ test('caller failures are not automatically a global outage, and one organic suc
 	expect(failedSynthetic.detail).toMatch(/caller-code errors/i)
 
 	const staleOrganicAfterFailedSynthetic = deriveExecuteHealthView({
-		now: start + 2 * minuteMs,
+		now: start + recentMs,
 		lastSuccessAt: start,
 		lastSyntheticAttemptAt: start + minuteMs,
 		lastSyntheticSuccessAt: null,
@@ -234,8 +267,23 @@ test('synthetic success plus heartbeat echo stays synthetic; later organic is or
 		syntheticConfigured: true,
 	})
 	expect(laterOrganic.source).toBe('organic')
+	expect(laterOrganic.status).toBe('recent')
 	expect(laterOrganic.lastVerifiedAt).toBe(
 		new Date(start + 2 * minuteMs).toISOString(),
+	)
+
+	const syntheticStillRecent = deriveExecuteHealthView({
+		now: start + 30 * minuteMs,
+		lastSuccessAt: heartbeatEchoAt,
+		lastSyntheticAttemptAt: start,
+		lastSyntheticSuccessAt: syntheticAt,
+		lastSyntheticError: null,
+		syntheticConfigured: true,
+	})
+	expect(syntheticStillRecent.status).toBe('recent')
+	expect(syntheticStillRecent.source).toBe('synthetic')
+	expect(syntheticStillRecent.detail).toMatch(
+		/hourly authenticated MCP execute probe/i,
 	)
 })
 

@@ -40,14 +40,16 @@ owns the `MCP` Durable Object (`kody-platform`). Origin
 `proves: "origin-kody-fetch-gateway"`, and `notMcpExecute: true`. A passing
 smoke does not prove MCP execute health. Authenticated MCP execute evidence is a
 timestamp-only fleet heartbeat from successful execute completion, shown on
-`status.kody.codes` with source and last-verified time. When no organic success
-landed in the previous minute, the status worker runs at most one authenticated
-`POST /__maintenance/mcp-execute-health` per hour. Public status reads never
-trigger that execute. When the status Durable Object's last-success timestamp is
-already stale, `/` and `/status.json` refresh `executeEvidence` from origin
-`GET /health/components` and persist a newer timestamp (merged with whatever
-cron or another snapshot wrote during that fetch) so the next cron can skip the
-synthetic.
+`status.kody.codes` with source and last-verified time. The public card is
+recent when that evidence is younger than one hour. Organic traffic alone keeps
+the card green. When no organic success landed in the previous minute, the
+status worker runs at most one authenticated
+`POST /__maintenance/mcp-execute-health` per hour (optional fallback). Public
+status reads never trigger that execute. When the status Durable Object's
+last-success timestamp is already outside the one-minute skip window, `/` and
+`/status.json` refresh `executeEvidence` from origin `GET /health/components`
+and persist a newer timestamp (merged with whatever cron or another snapshot
+wrote during that fetch) so the next cron can skip the synthetic.
 
 ## Core docs
 
