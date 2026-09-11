@@ -6,6 +6,7 @@ import {
 	internalErrorPageImageAlt,
 	internalErrorPageImageSrc,
 } from '#universal/internal-error-page.ts'
+import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import {
 	getGhostButtonCss,
 	getPillButtonCss,
@@ -25,7 +26,7 @@ import { readRouterUrl } from './router-location.tsx'
  * the same copy and art is the fallback when even the shell cannot render.
  */
 export function InternalErrorPage(handle: Handle) {
-	const retryHref = readRouterUrl(handle)
+	const retryHref = normalizeRedirectTo(readRouterUrl(handle)) ?? '/'
 
 	return () => (
 		<section

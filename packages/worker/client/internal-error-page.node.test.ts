@@ -26,3 +26,16 @@ test('internal-error page shows the zapped illustration and recovery destination
 	expect(html).toContain('Try again')
 	expect(html).toContain('Go home')
 })
+
+test('internal-error Try again stays same-origin for protocol-relative URLs', async () => {
+	const html = await renderToString(
+		jsx(RouterLocationProvider, {
+			url: '//evil.example',
+			children: jsx(InternalErrorPage, {}),
+		}),
+	)
+
+	expect(html).toContain('Try again')
+	expect(html).not.toContain('href="//evil.example"')
+	expect(html).toContain('href="/"')
+})
