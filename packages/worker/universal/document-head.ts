@@ -178,6 +178,7 @@ const routeDocumentHeads = {
 	[routePattern(routes.accountBillingSuccess)]: titleOnly("You're in"),
 	[routePattern(routes.accountUsage)]: titleOnly('Usage'),
 	[routePattern(routes.accountWaiting)]: titleOnly('Waiting'),
+	[routePattern(routes.accountConnections)]: titleOnly('Connections'),
 	[routePattern(routes.accountShared)]: titleOnly('Shared packages'),
 	[routePattern(routes.accountIntegrations)]: titleOnly('Integrations'),
 	[routePattern(routes.accountOauthAppDetail)]: titleOnly('Integrations'),

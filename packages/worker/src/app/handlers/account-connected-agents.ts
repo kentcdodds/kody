@@ -7,6 +7,8 @@ import {
 	logAuditEvent,
 } from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
+import { renderAppPage } from '#app/ssr-render.tsx'
 import { hasSecondConnectedMcpClient } from '#universal/connected-mcp-agents.ts'
 import {
 	loadInboundMcpConnectionState,
@@ -18,22 +20,30 @@ import {
 	type OAuthGrantHelpers,
 	type OAuthGrantListHelpers,
 } from '#worker/oauth-grants.ts'
+import { buildMcpServerUrl } from '#worker/onboarding-prompts.ts'
 import { type AccountConnectedAgentsLoaderData } from '#universal/loader-data.ts'
 import { type routes } from '#universal/routes.ts'
 
+type ConnectedAgentsUser = {
+	mcpUser: { userId: string }
+	emailVerified: boolean
+}
+
 export async function loadAccountConnectedAgentsData(input: {
 	env: Env
-	stableUserId: string
+	requestUrl: string | URL
+	user: ConnectedAgentsUser
 }): Promise<AccountConnectedAgentsLoaderData> {
+	const stableUserId = input.user.mcpUser.userId
 	const helpers = await resolveOAuthHelpers<OAuthGrantListHelpers>(input.env)
-	const state = await loadInboundMcpConnectionState(helpers, input.stableUserId)
+	const state = await loadInboundMcpConnectionState(helpers, stableUserId)
 	if (
 		!state.listingFailed &&
 		hasSecondConnectedMcpClient(state.uniqueClientCount)
 	) {
 		await maybeEvaluateSecondAgentStandardGift({
 			db: input.env.APP_DB,
-			stableUserId: input.stableUserId,
+			stableUserId,
 			uniqueClientCount: state.uniqueClientCount,
 			listingFailed: state.listingFailed,
 		})
@@ -41,7 +51,34 @@ export async function loadAccountConnectedAgentsData(input: {
 	return {
 		ok: true,
 		agents: state.agents,
+		mcpServerUrl: input.user.emailVerified
+			? buildMcpServerUrl({ env: input.env, requestUrl: input.requestUrl })
+			: '',
 	}
+}
+
+export function createAccountConnectionsHandler(env: Env) {
+	return {
+		middleware: [],
+		async handler({ request }) {
+			const user = await requireAuthenticatedPageUser(request, env)
+			if (user instanceof Response) {
+				return user
+			}
+
+			const accountConnectedAgents = await loadAccountConnectedAgentsData({
+				env,
+				requestUrl: request.url,
+				user,
+			})
+			return renderAppPage({
+				request,
+				env,
+				title: 'Connections',
+				loaderData: { accountConnectedAgents },
+			})
+		},
+	} satisfies Action<typeof routes.accountConnections>
 }
 
 export function createAccountConnectedAgentsApiHandler(env: Env) {
@@ -57,7 +94,8 @@ export function createAccountConnectedAgentsApiHandler(env: Env) {
 				return jsonResponse(
 					await loadAccountConnectedAgentsData({
 						env,
-						stableUserId: user.mcpUser.userId,
+						requestUrl: request.url,
+						user,
 					}),
 				)
 			}
@@ -105,7 +143,8 @@ export function createAccountConnectedAgentsApiHandler(env: Env) {
 			return jsonResponse(
 				await loadAccountConnectedAgentsData({
 					env,
-					stableUserId: user.mcpUser.userId,
+					requestUrl: request.url,
+					user,
 				}),
 			)
 		},

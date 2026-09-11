@@ -90,6 +90,7 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 	}
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
 		email: userOneSession.email,
+		emailVerified: true,
 		mcpUser: { userId: userOneSession.stableUserId },
 	})
 	const cookie = await createAuthCookie(userOneSession, false)
@@ -105,12 +106,39 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 	const listBody = (await listed.json()) as {
 		ok: true
 		agents: Array<{ clientId: string; label: string; kind: string | null }>
+		mcpServerUrl: string
 	}
 	expect(listBody.ok).toBe(true)
 	expect(listBody.agents.map((agent) => agent.label)).toEqual([
 		'ChatGPT.com',
 		'Cursor',
 	])
+	// The Connections page pastes this into a new host; it comes from the
+	// request origin so preview and local deployments show their own URL.
+	expect(listBody.mcpServerUrl).toBe('https://example.com/mcp')
+
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		email: userOneSession.email,
+		emailVerified: false,
+		mcpUser: { userId: userOneSession.stableUserId },
+	})
+	const unverified = await runHandler(
+		handler,
+		new Request('https://example.com/account/connected-agents.json', {
+			headers: { Cookie: cookie, Accept: 'application/json' },
+		}),
+	)
+	expect(unverified.status).toBe(200)
+	// Same gate as the onboarding payload: no MCP URL until the email is
+	// verified, so the page cannot push a user into the authorize → 403 loop.
+	expect(
+		((await unverified.json()) as { mcpServerUrl: string }).mcpServerUrl,
+	).toBe('')
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		email: userOneSession.email,
+		emailVerified: true,
+		mcpUser: { userId: userOneSession.stableUserId },
+	})
 
 	const revoked = await runHandler(
 		handler,

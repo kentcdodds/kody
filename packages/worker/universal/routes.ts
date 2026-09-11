@@ -85,6 +85,11 @@ export const routes = route({
 	accountEmail: '/account/email',
 	accountEmailDetail: '/account/email/:messageId',
 	accountEmailApi: '/account/email.json',
+	// The Connections page is the home for inbound MCP hosts (connected
+	// agents): MCP URL, setup guides, and per-host revoke. Its data twin is
+	// `/account/connected-agents.json`; `/account/connections.json` is the
+	// older sign-in provider (GitHub, Google, …) list on the Overview page.
+	accountConnections: '/account/connections',
 	accountConnectionsApi: '/account/connections.json',
 	accountConnectionsApiPost: post('/account/connections.json'),
 	accountConnectedAgentsApi: '/account/connected-agents.json',

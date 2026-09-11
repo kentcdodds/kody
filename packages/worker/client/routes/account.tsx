@@ -10,6 +10,7 @@ import {
 	type ProfileVisibility,
 } from '#universal/loader-data.ts'
 import { acceptedEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
+import { routes } from '#universal/routes.ts'
 import {
 	colors,
 	radius,
@@ -53,7 +54,6 @@ import {
 	createAccountConnections,
 	readConnectionCallbackMessage,
 } from '#client/routes/account-connections-panel.tsx'
-import { createAccountConnectedAgents } from '#client/routes/account-connected-agents-panel.tsx'
 import { renderOnboardingBanner } from '#client/routes/onboarding-banner.tsx'
 import { shouldShowOnboardingChecklist } from '#client/routes/onboarding-checklist.tsx'
 import {
@@ -96,7 +96,6 @@ export function AccountRoute(handle: Handle) {
 	let messageTone: 'error' | 'info' = 'info'
 	let usernameSaveError: string | null = null
 	const accountConnections = createAccountConnections(handle)
-	const accountConnectedAgents = createAccountConnectedAgents(handle)
 	const accountEmailClaims = createAccountEmailClaims(handle)
 	let consumedCallbackMessage = false
 	let needsOnboarding = false
@@ -119,17 +118,10 @@ export function AccountRoute(handle: Handle) {
 				href,
 			)
 			if (!accountConnections) return null
-			const accountConnectedAgents = tryConsumeRouteLoaderData(
-				handle,
-				'accountConnectedAgents',
-				href,
-			)
-			if (!accountConnectedAgents) return null
 			const onboarding = tryConsumeRouteLoaderData(handle, 'onboarding', href)
 			return {
 				accountProfile,
 				accountConnections,
-				accountConnectedAgents,
 				onboarding: onboarding ?? null,
 			}
 		},
@@ -150,12 +142,10 @@ export function AccountRoute(handle: Handle) {
 		const {
 			accountProfile: payload,
 			accountConnections: connectionsPayload,
-			accountConnectedAgents: connectedAgentsPayload,
 			onboarding,
 		} = payloads
 		applyOnboardingPayload(onboarding)
 		accountConnections.applyPayload(connectionsPayload)
-		accountConnectedAgents.applyPayload(connectedAgentsPayload)
 		email = payload.email
 		emailVerified = payload.emailVerified
 		emailVerificationDelivery = payload.emailVerificationDelivery ?? null
@@ -639,7 +629,20 @@ export function AccountRoute(handle: Handle) {
 							}}
 						/>
 						{accountConnections.render()}
-						{accountConnectedAgents.render()}
+						<AccountManagementPanel
+							title="Connections"
+							description="The agents that have authorized against this account, the MCP URL for connecting another, and per-host revoke live on the Connections page."
+						>
+							<div mix={css(accountActionsCss)}>
+								<a
+									href={routes.accountConnections.href()}
+									data-testid="account-connections-link"
+									mix={css(compactGhostButtonCss)}
+								>
+									Manage connections
+								</a>
+							</div>
+						</AccountManagementPanel>
 						<AccountManagementPanel
 							title="Your data"
 							description="Download a portable JSON export of your Kody account data for backup or migration. Secret values are never included; secret entries export metadata such as names, hosts, and allowlists only."
@@ -651,19 +654,6 @@ export function AccountRoute(handle: Handle) {
 									mix={css(compactGhostButtonCss)}
 								>
 									Download account export
-								</a>
-							</div>
-						</AccountManagementPanel>
-						<AccountManagementPanel
-							title="Advanced"
-							description="Optional tools for hosts that cannot finish dynamic OAuth on their own. This is not the list of agents already connected to your account."
-						>
-							<div mix={css(accountActionsCss)}>
-								<a
-									href="/account/mcp-oauth-clients"
-									mix={css(compactGhostButtonCss)}
-								>
-									MCP OAuth clients
 								</a>
 							</div>
 						</AccountManagementPanel>

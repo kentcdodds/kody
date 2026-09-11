@@ -108,6 +108,22 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		],
 	},
 	{
+		id: 'connections',
+		question: 'What is a connection?',
+		match: accountSection(routes.accountConnections.href()),
+		paragraphs: [
+			'A connection is an AI host — Cursor, Claude, ChatGPT, Codex, a CLI — that has authorized against this Kody account over MCP. Every connected host reaches the same memories, secrets, packages, jobs, and email; Kody is the home they share, not a gateway.',
+			'Copy the MCP URL here to connect another host, open the per-host setup guides, and revoke a host you no longer use. Sign-in providers such as GitHub and Google stay on Overview. Remote MCP servers Kody calls on your behalf live on MCP servers.',
+		],
+		learnMore: [
+			{
+				href: docHref('connect-your-agent'),
+				label: 'Connect your agent',
+			},
+			packagesIntegrationsMcpGuide,
+		],
+	},
+	{
 		id: 'mcp-servers',
 		question: 'What is an MCP server?',
 		match: accountSection(routes.accountMcpServers.href()),
