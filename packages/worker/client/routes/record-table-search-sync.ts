@@ -53,3 +53,11 @@ export function reconcileRecordTableSearchExternalValue(
 		applyValue: nextValue,
 	}
 }
+
+/** Write a programmatic filter string into an uncontrolled live-search field. */
+export function writeUncontrolledSearchInput(
+	input: HTMLInputElement | null,
+	value: string,
+) {
+	if (input) input.value = value
+}

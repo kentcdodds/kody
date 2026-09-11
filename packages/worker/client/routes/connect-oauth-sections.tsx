@@ -1,6 +1,6 @@
 import { type ConnectOauthExistingConnection } from '#universal/loader-data.ts'
 import { docHref } from '#universal/docs-nav.ts'
-import { css } from 'remix/ui'
+import { css, ref } from 'remix/ui'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { buildIncompleteConnectOauthPrompt } from '#universal/oauth-scopes.ts'
 import { isConnectOauthCallbackUrl } from '#universal/oauth-connect.ts'
@@ -109,6 +109,7 @@ export function renderChooser(input: {
 	chooserOptions: Array<ConnectOauthChooserOption>
 	chooserFilter: string
 	onFilterChange: (value: string) => void
+	onFilterInput?: (node: HTMLInputElement | null) => void
 }) {
 	const showFilter =
 		input.chooserOptions.length > connectOauthChooserFilterMinOptions
@@ -134,6 +135,14 @@ export function renderChooser(input: {
 					data-testid="connect-oauth-chooser-filter"
 					mix={[
 						css(inputCss),
+						ref((node, signal) => {
+							if (node instanceof HTMLInputElement) {
+								input.onFilterInput?.(node)
+							}
+							signal.addEventListener('abort', () => {
+								input.onFilterInput?.(null)
+							})
+						}),
 						on('input', (event) => {
 							const target = event.currentTarget
 							if (target instanceof HTMLInputElement) {

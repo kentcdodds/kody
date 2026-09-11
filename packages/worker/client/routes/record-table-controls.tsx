@@ -13,6 +13,7 @@ import {
 import {
 	acknowledgeRecordTableSearchInput,
 	reconcileRecordTableSearchExternalValue,
+	writeUncontrolledSearchInput,
 	type RecordTableSearchSync,
 } from './record-table-search-sync.ts'
 
@@ -53,7 +54,7 @@ export function RecordTableSearch(
 	}
 
 	function applyExternalValue(nextValue: string) {
-		if (input) input.value = nextValue
+		writeUncontrolledSearchInput(input, nextValue)
 		sync = acknowledgeRecordTableSearchInput(nextValue)
 	}
 

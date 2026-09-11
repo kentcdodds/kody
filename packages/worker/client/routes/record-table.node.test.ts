@@ -11,6 +11,7 @@ import {
 import {
 	acknowledgeRecordTableSearchInput,
 	reconcileRecordTableSearchExternalValue,
+	writeUncontrolledSearchInput,
 } from '#client/routes/record-table-search-sync.ts'
 
 const columns: Array<RecordTableColumn> = [
@@ -300,6 +301,13 @@ test('record table search defers focused URL updates and drops a stale pending s
 		state: empty,
 		applyValue: '',
 	})
+})
+
+test('programmatic live-search resets write the uncontrolled input', () => {
+	const input = { value: 'src/auth' } as HTMLInputElement
+	writeUncontrolledSearchInput(input, '')
+	expect(input.value).toBe('')
+	writeUncontrolledSearchInput(null, 'ignored')
 })
 
 test('record table search stays an uncontrolled searchbox outside the filtered rows', async () => {

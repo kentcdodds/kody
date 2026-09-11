@@ -12,6 +12,7 @@ import { isConnectOauthCallbackUrl } from '#universal/oauth-connect.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { submitApprovalRequest } from '#client/routes/account-approval-shared.ts'
+import { writeUncontrolledSearchInput } from '#client/routes/record-table-search-sync.ts'
 import { ProviderMark } from '#client/provider-icons.tsx'
 import {
 	pageDescriptionCss,
@@ -96,6 +97,7 @@ export function ConnectOauthRoute(handle: Handle) {
 	let replaceConfirmed = false
 	let chooserOptions: Array<ConnectOauthChooserOption> = []
 	let chooserFilter = ''
+	let chooserFilterInput: HTMLInputElement | null = null
 	let requestedProvider: string | null = null
 	/**
 	 * Scope checkboxes stay on this list while the user unchecks. BYO has no
@@ -135,6 +137,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		replaceConfirmed = false
 		chooserOptions = []
 		chooserFilter = ''
+		writeUncontrolledSearchInput(chooserFilterInput, '')
 		requestedProvider = null
 		offeredScopeMenu = []
 		hostApprovalLinks = []
@@ -679,6 +682,9 @@ export function ConnectOauthRoute(handle: Handle) {
 									onFilterChange: (value) => {
 										chooserFilter = value
 										update()
+									},
+									onFilterInput: (node) => {
+										chooserFilterInput = node
 									},
 								})}
 				</section>

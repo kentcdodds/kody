@@ -1,6 +1,7 @@
 // remix-skill: Handle-based files explorer (tree + blob). Must be a Handle
 // component so Remix can mount it from the shared /files route.
-import { type Handle, type RemixNode, css } from 'remix/ui'
+import { type Handle, type RemixNode, css, ref } from 'remix/ui'
+import { writeUncontrolledSearchInput } from '#client/routes/record-table-search-sync.ts'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
 import { matchesSearchQuery } from '#client/search-filter.ts'
@@ -67,6 +68,7 @@ export function PackageFilesExplorer(
 	const expanded = new Set<string>()
 	let openedFor: string | null = null
 	let query = ''
+	let filterInput: HTMLInputElement | null = null
 
 	// Opening a directory opens it in the tree too, the way GitHub's sidebar
 	// does — the row navigates *and* unfolds, rather than only doing one.
@@ -74,6 +76,10 @@ export function PackageFilesExplorer(
 		if (openedFor === selectedPath) return
 		openedFor = selectedPath
 		query = ''
+		// The filter is uncontrolled so keystrokes do not remount it. Navigation
+		// still has to wipe the DOM string, or the tree shows every file while
+		// the box keeps the previous query.
+		writeUncontrolledSearchInput(filterInput, '')
 		for (const directory of ancestorDirectories(selectedPath)) {
 			expanded.add(directory)
 		}
@@ -174,6 +180,12 @@ export function PackageFilesExplorer(
 									aria-label="Filter files"
 									mix={[
 										css(filterInputCss),
+										ref((node, signal) => {
+											filterInput = node as HTMLInputElement
+											signal.addEventListener('abort', () => {
+												if (filterInput === node) filterInput = null
+											})
+										}),
 										on('input', (event) => {
 											const target = event.target
 											if (target instanceof HTMLInputElement) {
