@@ -337,15 +337,17 @@ Without that secret, alert sends are skipped and logged.
 
 MCP execute evidence on the status page is a timestamp-only last-success
 heartbeat from real authenticated execute completions, plus at most one hourly
-synthetic when the last organic success is older than a minute. Public status
-GETs and origin `GET /health` never trigger that execute. When the status
-worker's stored last-success is already older than a minute, public `/` and
-`/status.json` re-read origin `GET /health/components` `executeEvidence` so the
-card can stay "recent · organic" under live traffic without waiting for the next
-cron write. The optional origin Worker secret
-`MCP_EXECUTE_HEALTH_CANARY_ACCESS_TOKEN` is a dedicated canary OAuth access
-token for the synthetic; when it is unset the fallback stays unknown rather than
-impersonating a customer.
+synthetic when the last organic success is older than a minute. The public card
+is "recent · organic" when that heartbeat is younger than one hour — organic
+traffic alone keeps it green. Public status GETs and origin `GET /health` never
+trigger that execute. When the status worker's stored last-success is already
+older than a minute, public `/` and `/status.json` re-read origin
+`GET /health/components` `executeEvidence` so the card can pick up a newer
+heartbeat without waiting for the next cron write. The optional origin Worker
+secret `MCP_EXECUTE_HEALTH_CANARY_ACCESS_TOKEN` is a dedicated canary OAuth
+access token for the synthetic; when it is unset the fallback stays unknown
+rather than impersonating a customer, and the card still stays recent from
+organic traffic within the hour.
 
 An optional Worker secret `STATUS_INCIDENT_EVENT_SECRET` (synced from the
 same-named GitHub Actions secret when present) is shared with the main worker.

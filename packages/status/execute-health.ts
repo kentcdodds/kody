@@ -6,13 +6,19 @@
  * synthetic. Otherwise the status worker runs at most one authenticated
  * MCP execute per rolling hour. Failed attempts consume that budget.
  *
- * Missing or stale telemetry is unknown / not recently exercised — not an
- * outage and not proof the path is freshly healthy. One organic success
- * does not override other measured component incidents.
+ * The public card uses the hourly window, not the one-minute skip window:
+ * organic or synthetic success within that hour is "recently verified".
+ * Organic traffic alone keeps the card green; the synthetic is an optional
+ * fallback when traffic is quiet. Missing or stale telemetry is unknown /
+ * not recently exercised — not an outage and not proof the path is freshly
+ * healthy. One organic success does not override other measured component
+ * incidents.
  */
 
 export const executeHealthOrganicFreshMs = 60_000
 export const executeHealthSyntheticCooldownMs = 60 * 60 * 1000
+/** Public "recently verified" window. Matches the hourly synthetic cadence. */
+export const executeHealthRecentMs = executeHealthSyntheticCooldownMs
 
 type ExecuteHealthSource = 'organic' | 'synthetic'
 type ExecuteHealthStatus = 'recent' | 'unknown'
@@ -206,8 +212,7 @@ export function deriveExecuteHealthView(
 	const source = executeHealthSource(input, lastVerifiedAtMs)
 	const freshnessMs =
 		lastVerifiedAtMs === null ? null : Math.max(0, input.now - lastVerifiedAtMs)
-	const recent =
-		freshnessMs !== null && freshnessMs < executeHealthOrganicFreshMs
+	const recent = freshnessMs !== null && freshnessMs < executeHealthRecentMs
 	return {
 		status: recent ? 'recent' : 'unknown',
 		source: lastVerifiedAtMs === null ? null : source,
