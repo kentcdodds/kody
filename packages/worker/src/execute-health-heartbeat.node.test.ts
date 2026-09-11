@@ -99,6 +99,17 @@ test('heartbeat coalesces writes and stays fail-open so customer execute is not 
 		'fleet-execute-heartbeat-schedule-failed',
 		'waitUntil exploded',
 	)
+
+	const fallbackStore = kv(null)
+	const fallbackNow = now + 180_000
+	await scheduleFleetExecuteLastSuccess({
+		kv: fallbackStore,
+		now: fallbackNow,
+		memory: memory(),
+	})
+	await expect(
+		readFleetExecuteLastSuccess({ kv: fallbackStore }),
+	).resolves.toEqual({ at: fallbackNow })
 })
 
 test('public evidence reads stay cheap and treat missing or invalid telemetry as unknown', async () => {
