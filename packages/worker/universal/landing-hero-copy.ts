@@ -26,6 +26,10 @@ export const landingHeroDemoVideos: ReadonlyArray<{
 		title: 'Build a PR-ready check in Cursor, then run it from Claude',
 	},
 	{
+		videoId: 'o5L5OprLhBg',
+		title: 'Kody fixes a Stripe webhook after we renamed the domain',
+	},
+	{
 		videoId: 'QA0xYMAMjEg',
 		title: 'Introducing Kody: Your Personal Software Factory',
 	},

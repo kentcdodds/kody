@@ -55,4 +55,15 @@ test('hero video renders the first video in the player and every video as a list
 	for (const video of rest) {
 		expect(html).toContain(`/youtube-thumb/${video.videoId}`)
 	}
+
+	const optionThumbs = [
+		...html.matchAll(
+			/role="option"[\s\S]*?\/youtube-thumb\/([A-Za-z0-9_-]{11})/g,
+		),
+	].map((match) => match[1])
+	expect(optionThumbs[0]).toBe(first.videoId)
+	expect(optionThumbs[1]).toBe('o5L5OprLhBg')
+	expect(html).toContain(
+		'Kody fixes a Stripe webhook after we renamed the domain',
+	)
 })
