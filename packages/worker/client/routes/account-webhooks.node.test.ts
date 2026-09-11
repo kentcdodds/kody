@@ -114,8 +114,10 @@ test('webhooks page lists declared webhooks with status and links each row to it
 	expect(html).toContain('>No URL yet<')
 	expect(html).toContain('URL secret only')
 	expect(html).toContain('hmac-sha256 · sentry-hook-signature')
-	// The rail marks this page current; no cold-path loading copy with SSR data.
+	// The rail marks this page current and the section explainer is the
+	// webhooks one; no cold-path loading copy with SSR data.
 	expect(html).toMatch(/href="\/account\/webhooks"[^>]*aria-current="page"/)
+	expect(html).toContain('data-entity-explainer="webhooks"')
 	expect(html).not.toContain('Loading webhooks')
 	// Nothing on the list page resembles a credential path.
 	expect(html).not.toContain('/@jane/webhooks/')

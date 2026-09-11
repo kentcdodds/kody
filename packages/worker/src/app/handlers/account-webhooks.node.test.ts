@@ -1,6 +1,9 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
-import { createAccountWebhooksApiHandler } from '#app/handlers/account-webhooks.ts'
+import {
+	createAccountWebhooksApiHandler,
+	createAccountWebhooksHandler,
+} from '#app/handlers/account-webhooks.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -11,11 +14,22 @@ import {
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
+	requireAuthenticatedPageUser: vi.fn(),
+	renderAppPage: vi.fn(),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
 	readAuthenticatedAppUser: (...args: Array<unknown>) =>
 		mockModule.readAuthenticatedAppUser(...args),
+}))
+
+vi.mock('#app/page-auth.ts', () => ({
+	requireAuthenticatedPageUser: (...args: Array<unknown>) =>
+		mockModule.requireAuthenticatedPageUser(...args),
+}))
+
+vi.mock('#app/ssr-render.tsx', () => ({
+	renderAppPage: (...args: Array<unknown>) => mockModule.renderAppPage(...args),
 }))
 
 const savedPackage = {
@@ -338,6 +352,49 @@ test('account webhooks API mints, reveals, rotates, and toggles a declared webho
 			result: 'failure',
 		}),
 	)
+})
+
+test('account webhooks page handler embeds the declared list (never a URL) and redirects anonymous visitors', async () => {
+	const userId = await createStableUserIdFromEmail('owner@example.com')
+	const { env } = createEnv()
+	const handler = createAccountWebhooksHandler(env)
+	mockModule.requireAuthenticatedPageUser.mockResolvedValue({
+		email: 'owner@example.com',
+		username: 'owner',
+		mcpUser: { userId },
+	})
+	mockModule.renderAppPage.mockImplementation(async () => new Response('ok'))
+
+	const page = await runHandler(
+		handler,
+		new Request('https://kody.example/account/webhooks/sentry-bridge/sentry'),
+	)
+	expect(page.status).toBe(200)
+	expect(mockModule.renderAppPage).toHaveBeenCalledTimes(1)
+	const renderInput = mockModule.renderAppPage.mock.calls[0]?.[0] as {
+		title: string
+		loaderData: { accountWebhooks: AccountWebhooksLoaderData }
+	}
+	expect(renderInput.title).toBe('Webhooks')
+	expect(renderInput.loaderData.accountWebhooks.username).toBe('owner')
+	expect(
+		renderInput.loaderData.accountWebhooks.webhooks.map(
+			(webhook) => webhook.id,
+		),
+	).toEqual(['sentry-bridge/launcher', 'sentry-bridge/sentry'])
+	expect(JSON.stringify(renderInput.loaderData)).not.toContain('"url"')
+
+	const redirect = new Response(null, {
+		status: 302,
+		headers: { Location: '/login' },
+	})
+	mockModule.requireAuthenticatedPageUser.mockResolvedValue(redirect)
+	const anonymous = await runHandler(
+		handler,
+		new Request('https://kody.example/account/webhooks'),
+	)
+	expect(anonymous.status).toBe(302)
+	expect(mockModule.renderAppPage).toHaveBeenCalledTimes(1)
 })
 
 test('account webhooks API rejects unknown webhooks, bad bodies, and anonymous callers', async () => {

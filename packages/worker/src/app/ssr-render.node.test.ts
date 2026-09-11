@@ -12,7 +12,6 @@ import { createAccountPasskeysHandler } from '#app/handlers/account-passkeys.ts'
 import { createAccountMcpOauthClientsHandler } from '#app/handlers/account-mcp-oauth-clients.ts'
 import { createAccountTwoFactorHandler } from '#app/handlers/account-two-factor.ts'
 import { createAccountWaitingHandler } from '#app/handlers/account-waiting.ts'
-import { createAccountWebhooksHandler } from '#app/handlers/account-webhooks.ts'
 import { createCommunityHandler } from '#app/handlers/community.tsx'
 import {
 	createCommunityDetailHandler,
@@ -567,30 +566,6 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		}),
 	)
 	expect(unknownAgentResponse.status).toBe(404)
-
-	// The Webhooks page embeds the declared-webhook list (empty here: the
-	// fixture owns no packages) and never a credential URL.
-	const webhooksResponse = await runHtmlHandler(
-		createAccountWebhooksHandler(env),
-		new Request('https://example.com/account/webhooks', {
-			headers: { Cookie: accountCookie },
-		}),
-	)
-	expect(webhooksResponse.status).toBe(200)
-	const webhooksHtml = await readResponseText(webhooksResponse)
-	expect(webhooksHtml).toContain('<title>Webhooks')
-	expect(webhooksHtml).toContain('>Webhooks</h1>')
-	expect(webhooksHtml).toMatch(
-		/href="\/account\/webhooks"[^>]*aria-current="page"/,
-	)
-	expect(webhooksHtml).toContain('aria-label="Webhooks"')
-	expect(webhooksHtml).toContain('data-entity-explainer="webhooks"')
-	expect(webhooksHtml).toContain('declares a webhook yet')
-	expect(readAppRootProps(webhooksHtml).loaderData?.accountWebhooks).toEqual({
-		ok: true,
-		username: 'account-user',
-		webhooks: [],
-	})
 
 	const mcpOauthClientsResponse = await runHtmlHandler(
 		createAccountMcpOauthClientsHandler(env),
