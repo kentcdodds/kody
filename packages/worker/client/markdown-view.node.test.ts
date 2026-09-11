@@ -223,10 +223,14 @@ test('first-party headingIds emit unique kebab-case heading ids', async () => {
 			),
 		}),
 	)
-	expect(html).toContain('<h2 id="josh-tomaino">Josh Tomaino</h2>')
-	expect(html).toContain('<h2 id="josh-tomaino-2">Josh Tomaino</h2>')
-	expect(html).toContain('<h2 id="jett-hays">Jett Hays</h2>')
-	expect(html).toContain('<h2 id="gabriel-alegria">Gabriel Alegría</h2>')
+	expect(html).toContain('<h2 id="josh-tomaino">')
+	expect(html).toContain('href="#josh-tomaino"')
+	expect(html).toContain('data-heading-anchor=""')
+	expect(html).toContain('aria-label="Link to this section"')
+	expect(html).toContain('<h2 id="josh-tomaino-2">')
+	expect(html).toContain('href="#josh-tomaino-2"')
+	expect(html).toContain('<h2 id="jett-hays">')
+	expect(html).toContain('<h2 id="gabriel-alegria">')
 })
 
 test('getSafeMarkdownLinkHref allowlists protocols and blocks user-scope paths', () => {

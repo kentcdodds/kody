@@ -33,6 +33,7 @@
 import { lexer, type Token, type Tokens } from 'marked'
 import { type Handle, type RemixNode, css } from 'remix/ui'
 import { CopyCodeBlock } from '#client/copy-code-block.tsx'
+import { renderMarkdownHeadingAnchor } from '#client/markdown-heading-anchor.tsx'
 import {
 	coalesceFirstPartyDetails,
 	firstPartyAlertKind,
@@ -367,11 +368,10 @@ function renderToken(
 			if (!options.headingIds) {
 				return <Tag key={key}>{children}</Tag>
 			}
+			const headingId = nextHeadingId(options.headingSlugCounts, token.text)
 			return (
-				<Tag
-					key={key}
-					id={nextHeadingId(options.headingSlugCounts, token.text)}
-				>
+				<Tag key={key} id={headingId}>
+					{renderMarkdownHeadingAnchor(key, headingId)}
 					{children}
 				</Tag>
 			)

@@ -542,6 +542,47 @@ export const proseCss = {
 		letterSpacing: '-0.018em',
 		lineHeight: 1.15,
 	},
+	'& h2[id], & h3[id], & h4[id], & h5[id], & h6[id]': {
+		display: 'flex',
+		alignItems: 'baseline',
+		columnGap: '0.35rem',
+		scrollMarginTop: '5.5rem',
+		'&:focus-within [data-heading-anchor]': {
+			opacity: 0.85,
+		},
+		[hoverMq]: {
+			'&:hover [data-heading-anchor]': {
+				opacity: 0.85,
+			},
+		},
+	},
+	'& [data-heading-anchor]': {
+		display: 'inline-flex',
+		alignItems: 'center',
+		justifyContent: 'center',
+		flex: 'none',
+		width: '2.75rem',
+		height: '2.75rem',
+		margin: '-0.65rem 0 -0.65rem -0.65rem',
+		padding: '0.5rem',
+		color: colors.textMuted,
+		opacity: 0.45,
+		textDecoration: 'none',
+		borderRadius: radius.sm,
+		transition: 'opacity 120ms ease, color 120ms ease',
+		'&:hover, &:focus-visible': {
+			opacity: 1,
+			color: colors.primaryText,
+			outline: 'none',
+		},
+		'&:focus-visible': {
+			boxShadow: `0 0 0 2px ${colors.primaryText}`,
+		},
+		'& svg': {
+			width: '1rem',
+			height: '1rem',
+		},
+	},
 	'& h2 + p': {
 		marginTop: '1rem',
 	},
