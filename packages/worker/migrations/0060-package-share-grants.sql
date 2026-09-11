@@ -3,7 +3,10 @@
 -- scope). These rows are invitations to *use* one saved package: read
 -- source + invoke, never publish/write. Invite-before-signup keeps a
 -- pending row keyed by email until the guest accepts.
-CREATE TABLE package_share_grants (
+-- IF NOT EXISTS: this PR's preview D1 already created the table when the
+-- file was numbered 0059-package-share-grants.sql. Main took 0059 for
+-- 0059-admin-insights-launch-indexes.sql, so this file is 0060.
+CREATE TABLE IF NOT EXISTS package_share_grants (
 	id TEXT PRIMARY KEY NOT NULL,
 	package_id TEXT NOT NULL,
 	owner_user_id TEXT NOT NULL,
@@ -24,22 +27,22 @@ CREATE TABLE package_share_grants (
 	CHECK (invitee_email IS NOT NULL OR grantee_user_id IS NOT NULL)
 );
 
-CREATE INDEX idx_package_share_grants_package_id
+CREATE INDEX IF NOT EXISTS idx_package_share_grants_package_id
 ON package_share_grants(package_id);
 
-CREATE INDEX idx_package_share_grants_owner_user_id
+CREATE INDEX IF NOT EXISTS idx_package_share_grants_owner_user_id
 ON package_share_grants(owner_user_id);
 
-CREATE INDEX idx_package_share_grants_grantee_user_id
+CREATE INDEX IF NOT EXISTS idx_package_share_grants_grantee_user_id
 ON package_share_grants(grantee_user_id);
 
-CREATE INDEX idx_package_share_grants_invitee_email
+CREATE INDEX IF NOT EXISTS idx_package_share_grants_invitee_email
 ON package_share_grants(invitee_email);
 
-CREATE UNIQUE INDEX idx_package_share_grants_active_email
+CREATE UNIQUE INDEX IF NOT EXISTS idx_package_share_grants_active_email
 ON package_share_grants(package_id, invitee_email)
 WHERE status IN ('pending', 'accepted') AND invitee_email IS NOT NULL;
 
-CREATE UNIQUE INDEX idx_package_share_grants_active_grantee
+CREATE UNIQUE INDEX IF NOT EXISTS idx_package_share_grants_active_grantee
 ON package_share_grants(package_id, grantee_user_id)
 WHERE status IN ('pending', 'accepted') AND grantee_user_id IS NOT NULL;
