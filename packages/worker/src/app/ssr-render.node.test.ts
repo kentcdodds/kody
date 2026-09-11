@@ -967,8 +967,10 @@ test('renderAppPage configures session secret and server-renders oauth authorize
 		]),
 	)
 
+	const anonymousAuthorizeUrl =
+		'https://example.com/oauth/authorize?response_type=code&client_id=client-1&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=profile'
 	const anonymousResponse = await renderAppPage({
-		request: new Request('https://example.com/oauth/authorize', {
+		request: new Request(anonymousAuthorizeUrl, {
 			headers: { Cookie: 'kody_session=stale-or-unsigned; other=1' },
 		}),
 		env,
@@ -992,6 +994,21 @@ test('renderAppPage configures session secret and server-renders oauth authorize
 	expect(anonymousHtml).toContain('<code>email</code>')
 	expect(anonymousHtml).not.toContain('Unknown client')
 	expect(anonymousHtml).not.toContain('Loading authorization details')
+	expect(anonymousHtml).toContain('data-testid="oauth-authorize-form"')
+	expect(anonymousHtml).toMatch(
+		/data-testid="oauth-authorize-form"[^>]*method="post"/,
+	)
+	expect(anonymousHtml).toContain(
+		'action="/oauth/authorize?response_type=code&amp;client_id=client-1',
+	)
+	expect(anonymousHtml).toMatch(
+		/name="decision"[^>]*value="approve"|value="approve"[^>]*name="decision"/,
+	)
+	expect(anonymousHtml).toMatch(
+		/data-testid="oauth-authorize-approve"[^>]*disabled/,
+	)
+	expect(anonymousHtml).toContain('aria-busy="true"')
+	expect(anonymousHtml).toContain('available after the page finishes loading')
 
 	setAuthSessionSecret(testCookieSecret)
 	const cookie = await createAuthCookie(

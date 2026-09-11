@@ -41,6 +41,14 @@ skipping refresh. Cursor and Claude Code stay logged in. Email
 [`support@kody.codes`](mailto:support@kody.codes) with your Codex version and
 how often it asks again if you want us to look.
 
+## Authorize says the request is missing its original connection details
+
+The authorize page needs the original OAuth query (`client_id`, `state`, PKCE).
+Clicking Approve before that page finishes loading can replace those parameters
+with an empty honeypot field, and the server then asks you to start over. Use
+the browser Back button when the previous history entry still has `client_id` in
+the URL, or start the connection again from your client.
+
 ## The host never opens the Kody authorize window
 
 Dynamic OAuth needs the host to open `/oauth/authorize`. If Admin add-connection
