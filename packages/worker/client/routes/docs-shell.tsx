@@ -187,6 +187,15 @@ export function renderDocListItem(doc: DocSummaryLoaderData, index: number) {
 }
 
 const sidebarWidth = '15.5rem'
+/** Hang so nav-link pills sit left of the section heading text. */
+const docsNavLinkHang = '0.6rem'
+/**
+ * Global `:focus-visible` is 2.5px outline + 3px offset. `overflow-y: auto`
+ * on the sidebar computes overflow-x to auto, which would clip that ring and
+ * the hanging pills. Keep this much extra padding on the scroller.
+ */
+const docsNavFocusGutter = '8px'
+const docsNavScrollerInset = `calc(${docsNavLinkHang} + ${docsNavFocusGutter})`
 
 const docsLayoutCss = {
 	display: 'grid',
@@ -212,6 +221,7 @@ const docsSidebarCss = {
 	overflowY: 'auto' as const,
 	overflowAnchor: 'none' as const,
 	paddingBlock: 'clamp(2.5rem, 6vw, 4rem) 2rem',
+	paddingLeft: docsNavScrollerInset,
 	paddingRight: '0.5rem',
 	borderRight: `1px solid ${colors.border}`,
 	scrollbarWidth: 'thin' as const,
@@ -257,8 +267,8 @@ const docsNavSectionCss = {
 	},
 	'& li a': {
 		display: 'block',
-		padding: '0.32rem 0.6rem',
-		marginLeft: '-0.6rem',
+		padding: `0.32rem ${docsNavLinkHang}`,
+		marginLeft: `-${docsNavLinkHang}`,
 		borderRadius: '0.45rem',
 		color: colors.textMuted,
 		textDecoration: 'none',
@@ -305,8 +315,11 @@ const docsMobileMenuCss = {
 		color: colors.textMuted,
 		fontSize: '0.95rem',
 	},
+	overflow: 'visible' as const,
 	'& > nav': {
-		padding: '0.4rem 0.6rem 0.7rem',
+		paddingBlock: '0.4rem 0.7rem',
+		paddingRight: '0.6rem',
+		paddingLeft: docsNavScrollerInset,
 		borderTop: `1px solid ${colors.border}`,
 	},
 	'& h2 a': {

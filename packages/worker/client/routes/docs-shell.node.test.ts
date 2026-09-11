@@ -31,6 +31,23 @@ test('docs shell marks the sidebar and highlights the open page', async () => {
 	)
 })
 
+test('docs sidebar and mobile menu leave room for hanging nav-link focus rings', async () => {
+	const html = await renderToString(
+		renderDocsShell({
+			current: 'text-your-agent',
+			children: jsx('p', { children: 'Article' }),
+		}),
+	)
+
+	// `overflow-y: auto` computes overflow-x to auto, which clips outlines.
+	// Links hang 0.6rem left so their pill aligns with heading text; the
+	// scroller must pad that hang plus the global 2.5px + 3px focus ring.
+	expect(html).toContain('overflow-y: auto')
+	expect(html).toContain('padding-left: calc(0.6rem + 8px)')
+	expect(html).toContain('margin-left: -0.6rem')
+	expect(html).toContain('overflow: visible')
+})
+
 test('docs shell treats /docs/connect as the providers section', async () => {
 	const html = await renderToString(
 		renderDocsShell({
