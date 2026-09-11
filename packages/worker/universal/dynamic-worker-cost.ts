@@ -41,7 +41,11 @@ export function adminCostRiskNoneStatus(input: {
 	estimatedGrossUsd: number
 	estimatedPaidUsdCents: number
 }): 'above cost' | 'within included allotment' | 'not flagged' {
-	if (input.estimatedPaidUsdCents > 0) return 'above cost'
+	if (input.estimatedPaidUsdCents > 0) {
+		return input.estimatedGrossUsd > input.estimatedPaidUsdCents / 100
+			? 'not flagged'
+			: 'above cost'
+	}
 	return input.estimatedGrossUsd >= fleetFreeDynamicWorkerNearAllotmentUsd()
 		? 'not flagged'
 		: 'within included allotment'

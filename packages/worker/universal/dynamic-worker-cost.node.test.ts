@@ -48,4 +48,10 @@ test('toAdminDynamicWorkerCost truncates to a non-negative integer day count', (
 			estimatedPaidUsdCents: 1_200,
 		}),
 	).toBe('above cost')
+	expect(
+		adminCostRiskNoneStatus({
+			estimatedGrossUsd: 14,
+			estimatedPaidUsdCents: 1_200,
+		}),
+	).toBe('not flagged')
 })

@@ -58,9 +58,7 @@ export function estimatePaidListMrrUsdCents(input: {
 export function isOperatorCostNoise(input: {
 	username?: string | null | undefined
 	manualPlan?: string | null | undefined
-	isOperator?: boolean
 }): boolean {
-	if (input.isOperator) return true
 	const username = input.username?.trim().toLowerCase()
 	if (username && operatorNoiseUsernames.has(username)) return true
 	return parsePlanName(input.manualPlan) === 'max'
@@ -87,6 +85,10 @@ export function classifyAdminCostRisk(input: {
 	if (stripePlan === 'standard' || stripePlan === 'pro') {
 		return 'missing_price_id'
 	}
+
+	// Admin-role dogfooding stays out of the unpaid warn bucket. Catalog-paid
+	// admins over list MRR still count as paid_underwater above.
+	if (input.isOperator) return 'none'
 
 	const freeAlertUsd = fleetDynamicWorkerCostAlertUsd('free')
 	if (

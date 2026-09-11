@@ -164,6 +164,9 @@ test('toAdminCostVsPay buckets real risk instead of every unpaid penny', () => {
 		isOperatorCostNoise({ username: 'kentcdodds', manualPlan: 'free' }),
 	).toBe(true)
 	expect(
+		isOperatorCostNoise({ username: 'ops-admin', manualPlan: 'free' }),
+	).toBe(false)
+	expect(
 		classifyAdminCostRisk({
 			estimatedGrossUsd: 4,
 			estimatedPaidUsdCents: 0,
@@ -182,6 +185,29 @@ test('toAdminCostVsPay buckets real risk instead of every unpaid penny', () => {
 			manualPlan: 'free',
 			username: 'ops-admin',
 			isOperator: true,
+		}),
+	).toBe('none')
+
+	const paidOperatorUnderwater = toAdminCostVsPay({
+		uniqueWorkerDays: 7_000,
+		stripePlan: 'standard',
+		stripePriceId: 'price_standard',
+		catalog,
+		manualPlan: 'free',
+		username: 'ops-admin',
+		isOperator: true,
+	})
+	expect(paidOperatorUnderwater.risk).toBe('paid_underwater')
+	expect(paidOperatorUnderwater.underwater).toBe(true)
+
+	expect(
+		classifyAdminCostRisk({
+			estimatedGrossUsd: 14,
+			estimatedPaidUsdCents: 1_200,
+			paidSource: 'stripe_catalog',
+			stripePlan: 'standard',
+			manualPlan: 'free',
+			username: 'kentcdodds',
 		}),
 	).toBe('none')
 })
@@ -249,17 +275,38 @@ test('rankRiskCostConsumers ranks within buckets and drops pennies and operator 
 				catalog,
 				manualPlan: 'max',
 			}),
+			toAdminCostVsPayConsumer({
+				stableUserId: 'paid-admin-deficit',
+				username: 'ops-admin',
+				uniqueWorkerDays: 7_000,
+				stripePlan: 'standard',
+				stripePriceId: 'price_standard',
+				catalog,
+				isOperator: true,
+			}),
+			toAdminCostVsPayConsumer({
+				stableUserId: 'unpaid-admin-heavy',
+				username: 'ops-admin-free',
+				uniqueWorkerDays: 1_200,
+				stripePlan: null,
+				stripePriceId: null,
+				catalog,
+				manualPlan: 'free',
+				isOperator: true,
+			}),
 		],
 		10,
 	)
 	expect(ranked.map((row) => row.stableUserId)).toEqual([
 		'paid-big-deficit',
+		'paid-admin-deficit',
 		'paid-small-deficit',
 		'free-past',
 		'free-near',
 		'missing-price',
 	])
 	expect(ranked.map((row) => row.risk)).toEqual([
+		'paid_underwater',
 		'paid_underwater',
 		'paid_underwater',
 		'free_near_allotment',

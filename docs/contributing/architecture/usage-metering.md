@@ -547,10 +547,12 @@ WHERE timestamp > NOW() - INTERVAL '1' HOUR
   consumers (bounded scan) and a Risk panel: catalog-paid accounts over list
   MRR, unpaid accounts at ≥$1 / 500 unique days (50% of the $2 / 1,000
   unique-day included-bucket alert), and Standard/Pro rows whose
-  `stripe_price_id` is missing or not in the catalog. Free pennies and
-  max/operator accounts are not tagged underwater. The 5-minute insights KV
-  cache (`admin-insights:v11`) covers the assembled page; RunLog-derived charts
-  come from the hourly RunLog KV snapshot.
+  `stripe_price_id` is missing or not in the catalog. Free pennies, max, and
+  `kentcdodds` are not tagged. Admin-role accounts stay out of the unpaid
+  near-allotment warn bucket; catalog-paid admins over list MRR still appear as
+  paid underwater. The 5-minute insights KV cache (`admin-insights:v11`) covers
+  the assembled page; RunLog-derived charts come from the hourly RunLog KV
+  snapshot.
 - **Proactive alerts** (`usage_entitlement_alert` scheduled lane in
   `packages/worker/src/app/usage-entitlement-alerts.ts`): hourly sweep of the
   same ~15-user bound. Emits `fleet.entitlement.crossed` to admin-owned packages
