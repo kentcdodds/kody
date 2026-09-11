@@ -884,7 +884,7 @@ export async function runBundledModuleWithRegistry(
 			dynamicDependencyPackageIds,
 		})
 		const storageOwnerByPackageId = new Map<string, string>()
-		let authorizedPackageStorageIds = grantedPackageStorageIds
+		let authorizedPackageStorageIds = new Set(grantedPackageStorageIds)
 		if (callerContext.user?.userId) {
 			const shareOwners = await collectShareStorageOwners({
 				db: env.APP_DB,
@@ -901,6 +901,9 @@ export async function runBundledModuleWithRegistry(
 					packageIds: grantedPackageStorageIds,
 					storageOwnerByPackageId,
 				})
+			if (runningPackageId && grantedPackageStorageIds.has(runningPackageId)) {
+				authorizedPackageStorageIds.add(runningPackageId)
+			}
 		}
 		// Static package export calls report through a sandbox bridge with a
 		// bundler-stamped callee package id; only ids recorded as *static*
