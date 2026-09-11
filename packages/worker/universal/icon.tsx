@@ -4,7 +4,6 @@ import { type Handle, type RemixNode } from 'remix/ui'
 import { iconGlyphs, type IconName } from './icon-glyphs.tsx'
 
 export type { IconName } from './icon-glyphs.tsx'
-export { iconNames } from './icon-glyphs.tsx'
 
 /**
  * Iconic draws in a 24×24 viewBox with ~4.75 units of padding so the 1.5px
@@ -13,7 +12,7 @@ export { iconNames } from './icon-glyphs.tsx'
  */
 export const iconicGlyphViewBox = '3.75 3.75 16.5 16.5'
 
-export const defaultIconSize = '1em'
+const defaultIconSize = '1em'
 
 export type IconProps = {
 	name: IconName
