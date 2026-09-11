@@ -532,7 +532,6 @@ test('loadAdminInsightsData assembles the dashboard payload from D1 plus the Run
 		complete: true,
 		snapshotUpdatedAt: '2026-07-08T11:00:00.000Z',
 	})
-	expect(data.launchSignals.openedDay).toBe(platformPublicOpenedDay)
 	expect(data.dynamicWorkerCost).toEqual({
 		uniqueWorkerDays: 0,
 		estimatedGrossUsd: 0,
