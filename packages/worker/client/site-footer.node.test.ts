@@ -17,6 +17,7 @@ test('site footer nav uses a two-row five-column grid, then stacked auto-fit', a
 		'repeat(auto-fit, minmax(min(100%, 7.5rem), max-content))',
 	)
 	expect(html).toContain('@media (max-width: 900px)')
+	expect(html).toContain('min-height: 44px')
 
 	const loggedOut = await renderToString(
 		jsx(SiteFooter, { loggedIn: false, loginHref: '/login?next=%2Fsupport' }),

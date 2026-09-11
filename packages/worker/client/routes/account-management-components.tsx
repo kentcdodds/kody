@@ -21,6 +21,17 @@ import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
 import { renderRoutePendingStatus } from '#client/route-data.tsx'
 import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
 import { EntityExplainer, resolveEntityExplainer } from './entity-explainer.tsx'
+import {
+	AccountManagementInlineLinkNav,
+	AccountManagementLinkNav,
+	accountManagementNarrowMq,
+} from './account-management-link-nav.tsx'
+
+export {
+	AccountManagementInlineLinkNav,
+	AccountManagementLinkNav,
+	accountManagementNarrowMq,
+} from './account-management-link-nav.tsx'
 
 /*
  * Account-area visual language, ported from the redesign prototype
@@ -119,6 +130,9 @@ export const accountDisclosureCss = {
 		fontWeight: 600,
 		color: colors.primaryText,
 		width: 'fit-content',
+		minHeight: '44px',
+		boxSizing: 'border-box' as const,
+		paddingBlock: '0.55rem',
 		transition: `color ${transitions.fast}`,
 	},
 	[hoverMq]: {
@@ -138,12 +152,6 @@ export const accountDisclosureCss = {
 
 type AccountManagementSlot = RemixNode
 
-type AccountManagementLinkNavItem = {
-	href: string
-	label: string
-	active: boolean
-}
-
 type AccountManagementShellProps = {
 	/**
 	 * Optional cap on the content column (not the whole grid). Useful for
@@ -160,10 +168,6 @@ type AccountManagementShellProps = {
 	busy?: boolean
 	children: AccountManagementSlot
 }
-
-/** Account nav collapses to a wrapping row below this width (prototype 860px). */
-export const accountManagementNarrowMq = '@media (max-width: 860px)'
-const accountNavMq = accountManagementNarrowMq
 
 /** Prototype `.account` section rhythm: margin between blocks in the content column. */
 const accountSectionGap = 'clamp(2rem, 4vw, 2.75rem)'
@@ -218,7 +222,7 @@ export function AccountManagementShell(
 								},
 							}
 						: {}),
-					[accountNavMq]: {
+					[accountManagementNarrowMq]: {
 						paddingLeft: pageGutter,
 						minHeight: 0,
 						gap: spacing.xl,
@@ -340,121 +344,6 @@ const adminNavItems = [
 		paths: ['/admin/system-email'],
 	},
 ] as const
-
-type AccountManagementLinkNavProps = {
-	label: string
-	items: Array<AccountManagementLinkNavItem>
-}
-
-/** `.account-nav a` — quiet link pills; only the current one goes green. */
-const accountNavLinkCss = {
-	padding: '0.5rem 0.9rem',
-	borderRadius: '10px',
-	color: colors.textMuted,
-	fontWeight: 550,
-	fontSize: '0.98rem',
-	textDecoration: 'none',
-	transition: `color ${transitions.fast}, background-color ${transitions.fast}`,
-	[hoverMq]: {
-		'&:hover': { color: colors.text, backgroundColor: colors.surface },
-	},
-	'&[aria-current]': {
-		color: colors.primaryText,
-		backgroundColor: colors.primarySoft,
-	},
-}
-
-export function AccountManagementLinkNav(
-	handle: Handle<AccountManagementLinkNavProps>,
-) {
-	return () => (
-		<nav
-			aria-label={handle.props.label}
-			data-account-nav
-			mix={css({
-				// Prototype `.account-nav`: a 200px rail beside the content.
-				// The nav fills the shell's absolute left track (full height,
-				// so the sticky inner column has the whole page to stick
-				// through); below 860px it returns to flow as a wrapping row.
-				// Named so a view transition lifts it out of `<main>` / `page`.
-				// Intra-shell tab clicks skip VT. Leaving/entering the shell
-				// fades this name (styles.css) so the old rail is not pinned
-				// as a ghost on the destination. The group stays still so
-				// account↔admin (rail on both sides) does not morph.
-				position: 'absolute',
-				left: pageGutter,
-				top: 0,
-				bottom: 0,
-				width: '200px',
-				viewTransitionName: 'account-nav',
-				[accountNavMq]: {
-					position: 'static',
-					width: 'auto',
-				},
-			})}
-		>
-			<div
-				mix={css({
-					position: 'sticky',
-					top: '5rem',
-					display: 'flex',
-					flexDirection: 'column',
-					gap: '0.15rem',
-					[accountNavMq]: {
-						position: 'static',
-						flexDirection: 'row',
-						flexWrap: 'wrap',
-						gap: '0.3rem',
-					},
-				})}
-			>
-				{handle.props.items.map((item) => (
-					<a
-						key={item.href}
-						href={item.href}
-						aria-current={item.active ? 'page' : undefined}
-						mix={css(accountNavLinkCss)}
-					>
-						{item.label}
-					</a>
-				))}
-			</div>
-		</nav>
-	)
-}
-
-/**
- * In-flow pill row for filters and other secondary link sets. Do not use
- * `AccountManagementLinkNav` for this — that component is the unique
- * `[data-account-nav]` rail the shell absolutely positions, so a second
- * instance stacks on top of the admin/account sections.
- */
-export function AccountManagementInlineLinkNav(
-	handle: Handle<AccountManagementLinkNavProps>,
-) {
-	return () => (
-		<nav
-			aria-label={handle.props.label}
-			mix={css({
-				display: 'flex',
-				flexWrap: 'wrap',
-				alignItems: 'center',
-				gap: '0.3rem',
-			})}
-		>
-			{handle.props.items.map((item) => (
-				<a
-					key={item.href}
-					href={item.href}
-					aria-current={item.active ? 'page' : undefined}
-					mix={css(accountNavLinkCss)}
-				>
-					{item.label}
-				</a>
-			))}
-		</nav>
-	)
-}
 
 const accountNavItems = [
 	{ href: '/account', label: 'Overview' },

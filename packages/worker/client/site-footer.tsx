@@ -85,6 +85,7 @@ const brandCss = {
 	display: 'inline-flex',
 	alignItems: 'center',
 	gap: '0.6rem',
+	minHeight: '44px',
 	font: `700 1.25rem/1 ${typography.fontFamilyDisplay}`,
 	color: colors.text,
 	textDecoration: 'none',
@@ -139,9 +140,8 @@ const footerNavCss = {
 		'& a': {
 			display: 'flex',
 			alignItems: 'center',
-			justifyContent: 'center',
-			minHeight: '40px',
-			paddingInline: '0.75rem',
+			minHeight: '44px',
+			padding: '0.55rem 0.75rem',
 		},
 	},
 }

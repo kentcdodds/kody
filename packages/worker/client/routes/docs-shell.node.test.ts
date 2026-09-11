@@ -14,6 +14,9 @@ test('docs shell marks the sidebar and highlights the open page', async () => {
 
 	expect(html).toContain('data-docs-shell')
 	expect(html).toContain('data-docs-nav')
+	expect(html).toContain('<details')
+	expect(html).toContain('>OAuth (bring your own app)</span>')
+	expect(html).toContain('min-height: 44px')
 	expect(html).toContain('href="/docs/oauth"')
 	expect(html).toContain('aria-current="page"')
 	expect(html).toContain('data-section-current="true"')

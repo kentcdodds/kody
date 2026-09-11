@@ -4,7 +4,6 @@ import { createMatcher } from 'remix/route-pattern/match'
 import { readAppSession } from '#client/app-session-context.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import {
 	createRouteData,
 	renderRoutePendingStatus,
@@ -12,6 +11,7 @@ import {
 } from '#client/route-data.tsx'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
+import { NotFoundPage } from '#client/not-found-page.tsx'
 import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
 import { type AccountPackageDetail } from '#universal/loader-data.ts'
 import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
@@ -20,6 +20,8 @@ import { routes } from '#universal/routes.ts'
 import {
 	type CommunityDetailApiPayload,
 	type CommunityPackageMovedPayload,
+	type PackageSettingsShell,
+	consumePackageSettingsShell,
 	getPackageSettingsPageRef,
 	packageMoveDestination,
 	postPackageLock,
@@ -38,19 +40,6 @@ import {
 import { postPackageShareAction } from './package-share-client.ts'
 
 const settingsMatcher = createMatcher(routes.communityPackageSettings.pattern)
-
-/** Shell payload for the settings page, normalized from either source. */
-type PackageSettingsShell =
-	| { kind: 'unauthorized' }
-	| {
-			kind: 'owner'
-			ownerPackage: AccountPackageDetail
-			username: string
-			kodyId: string
-			isPrivate: boolean
-			/** Only the detail API reports this; SSR shell data leaves it as is. */
-			ownerProfilePublic?: boolean
-	  }
 
 export function PackageSettingsRoute(handle: Handle) {
 	let ownerPackage: AccountPackageDetail | null = null
@@ -72,27 +61,7 @@ export function PackageSettingsRoute(handle: Handle) {
 		'communityDetailShell',
 		PackageSettingsShell
 	>({
-		consume(routeHandle, href) {
-			const routeData = tryConsumeRouteLoaderData(
-				routeHandle,
-				'communityDetailShell',
-				href,
-			)
-			if (!routeData) return null
-			if (!routeData.ok) return { kind: 'unauthorized' }
-			const pathname = new URL(href, 'http://localhost').pathname
-			if (routeData.listingId) {
-				rememberListingId(pathname, routeData.listingId)
-			}
-			if (!routeData.ownerPackage || !routeData.viewerIsOwner) return null
-			return {
-				kind: 'owner',
-				ownerPackage: routeData.ownerPackage,
-				username: routeData.username,
-				kodyId: routeData.kodyId || routeData.ownerPackage.kodyId,
-				isPrivate: routeData.isPrivate,
-			}
-		},
+		consume: consumePackageSettingsShell,
 		async load(href, signal) {
 			const ref = getPackageSettingsPageRef(
 				new URL(href, 'http://localhost').pathname,
@@ -113,7 +82,7 @@ export function PackageSettingsRoute(handle: Handle) {
 						packageMoveDestination(ref.pathname, movedTo),
 					)
 				}
-				return null
+				return { kind: 'not-found' }
 			}
 			if (
 				!response.ok ||
@@ -121,7 +90,7 @@ export function PackageSettingsRoute(handle: Handle) {
 				!payload.ownerPackage ||
 				!payload.viewerIsOwner
 			) {
-				return null
+				return { kind: 'not-found' }
 			}
 			if (payload.listing) {
 				rememberListingId(ref.pathname, payload.listing.id)
@@ -259,24 +228,30 @@ export function PackageSettingsRoute(handle: Handle) {
 		)?.params
 
 		if (!ref) {
-			return renderMissingListing(
-				'Package settings not found',
-				'This package is unavailable.',
-			)
+			return <NotFoundPage />
 		}
 
 		const snapshot = settingsData.read(handle, currentHref)
 		if (snapshot.data && snapshot.data !== appliedShell) {
 			appliedShell = snapshot.data
-			if (snapshot.data.kind === 'owner') {
-				ownerPackage = snapshot.data.ownerPackage
-				username = snapshot.data.username
-				kodyId = snapshot.data.kodyId
-				isPrivate = snapshot.data.isPrivate
-				if (snapshot.data.ownerProfilePublic !== undefined) {
-					ownerProfilePublic = snapshot.data.ownerProfilePublic
+			switch (snapshot.data.kind) {
+				case 'owner':
+					ownerPackage = snapshot.data.ownerPackage
+					username = snapshot.data.username
+					kodyId = snapshot.data.kodyId
+					isPrivate = snapshot.data.isPrivate
+					if (snapshot.data.ownerProfilePublic !== undefined) {
+						ownerProfilePublic = snapshot.data.ownerProfilePublic
+					}
+					ownerDetailsMessage = null
+					break
+				case 'unauthorized':
+				case 'not-found':
+					break
+				default: {
+					const exhaustive: never = snapshot.data
+					throw new Error(`Unhandled settings shell: ${String(exhaustive)}`)
 				}
-				ownerDetailsMessage = null
 			}
 		}
 
@@ -286,8 +261,11 @@ export function PackageSettingsRoute(handle: Handle) {
 				'You are not allowed to view this page.',
 			)
 		}
-		if (snapshot.kind === 'not-found') {
-			return renderMissingListing('Not Found', 'We could not find that page.')
+		if (
+			(snapshot.data?.kind === 'not-found' && !snapshot.stale) ||
+			snapshot.kind === 'not-found'
+		) {
+			return <NotFoundPage />
 		}
 
 		const pending = snapshot.kind === 'pending'

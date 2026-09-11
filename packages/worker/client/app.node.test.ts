@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { type Handle } from 'remix/ui'
-import { App } from './app.tsx'
+import { App, appMainOwnsItsGutters } from './app.tsx'
 import * as clientRouter from './client-router.tsx'
 import { RouterLocationProvider } from './router-location.tsx'
 import * as session from './session.ts'
@@ -142,4 +142,27 @@ test('App skips the post-hydration /session fetch when the document embedded a s
 		globalThis.document = previousDocument
 		globalThis.window = previousWindow
 	}
+})
+
+test('navigating away from a 404 restores main gutters on pages that still use them', () => {
+	// SSR 404: the shared not-found page owns its padding, so `<main>`
+	// must not add another inset.
+	expect(
+		appMainOwnsItsGutters({
+			pathname: '/missing-page',
+			notFound: true,
+			onSsrUrl: true,
+		}),
+	).toBe(true)
+
+	// Support is a matched route that still relies on `<main>` padding.
+	// After SPA navigation the document still has notFound: true, but we
+	// are no longer on the URL the server rendered.
+	expect(
+		appMainOwnsItsGutters({
+			pathname: '/support',
+			notFound: true,
+			onSsrUrl: false,
+		}),
+	).toBe(false)
 })

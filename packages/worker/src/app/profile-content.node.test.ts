@@ -144,6 +144,7 @@ test('profile package filters render owner-only pills, keep other filters in eac
 	})
 
 	expect(ownHtml).toContain('data-testid="profile-package-filters"')
+	expect(ownHtml).toContain('min-height: 44px')
 	expect(ownHtml).toContain('data-testid="profile-package-filter-visibility"')
 	expect(ownHtml).toContain('data-testid="profile-package-filter-listing"')
 	expect(ownHtml).toContain('data-testid="profile-package-filter-hidden"')

@@ -156,7 +156,7 @@ function renderPackageNotFoundPage(input: { request: Request; env: Env }) {
 	return renderAppPage({
 		request: input.request,
 		env: input.env,
-		title: 'Public package not found',
+		title: 'Not found',
 		notFound: true,
 		status: 404,
 	})

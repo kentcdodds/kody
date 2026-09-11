@@ -283,6 +283,7 @@ const brandCss = {
 	display: 'inline-flex',
 	alignItems: 'center',
 	gap: '0.6rem',
+	minHeight: '44px',
 	font: `700 1.25rem/1 ${typography.fontFamilyDisplay}`,
 	color: colors.text,
 	textDecoration: 'none',

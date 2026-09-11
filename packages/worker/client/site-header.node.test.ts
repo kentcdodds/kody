@@ -63,6 +63,7 @@ test('logged-in header shows Account to the left of the profile avatar', async (
 	)
 	expect(desktopAccountTag).toContain('href="/account"')
 	expect(desktopAccountTag).toContain('aria-current="page"')
+	expect(html).toContain('min-height: 44px')
 })
 
 test('logged-out header shows Log in without an Account link', async () => {

@@ -2,6 +2,7 @@
 // Handle-based explorer component and a dedicated lazy area so listing chunks
 // do not pull Shiki.
 import { type Handle, css } from 'remix/ui'
+import { NotFoundPage } from '#client/not-found-page.tsx'
 import { createMatcher } from 'remix/route-pattern/match'
 import { PackageFilesExplorer } from '#client/package-files-explorer.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -205,13 +206,11 @@ export function PackageFilesRoute(handle: Handle) {
 		// A miss or a failure replaces the explorer — there is nothing to keep
 		// showing, and the visitor has to be told.
 		if (snapshot.kind === 'not-found' || snapshot.kind === 'error') {
-			return (
+			return snapshot.kind === 'not-found' ? (
+				<NotFoundPage />
+			) : (
 				<article mix={css(messageCss)}>
-					<p>
-						{snapshot.kind === 'not-found'
-							? 'Those files were not found.'
-							: 'Unable to load package files.'}
-					</p>
+					<p>Unable to load package files.</p>
 				</article>
 			)
 		}

@@ -94,6 +94,9 @@ function communityListingHead({
 }: DocumentHeadContext): DocumentHeadDescriptor {
 	const shell = loaderData?.communityDetailShell
 	if (!shell?.ok) {
+		if (shell && 'notFound' in shell) {
+			return titleOnly(NOT_FOUND_DOCUMENT_TITLE)
+		}
 		return titleOnly('Package')
 	}
 	const title = shell.listingId
@@ -288,7 +291,12 @@ const routeDocumentHeads = {
 		pathname,
 	}) => {
 		const shell = loaderData?.communityDetailShell
-		if (!shell?.ok) return titleOnly('Package settings')
+		if (!shell?.ok) {
+			if (shell && 'notFound' in shell) {
+				return titleOnly(NOT_FOUND_DOCUMENT_TITLE)
+			}
+			return titleOnly('Package settings')
+		}
 		return {
 			title: `${shell.name} settings`,
 			canonicalPath: pathname,

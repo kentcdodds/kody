@@ -795,6 +795,9 @@ export const nativeDisclosureCss = {
 		fontWeight: 600,
 		color: colors.primaryText,
 		width: 'fit-content',
+		minHeight: '44px',
+		boxSizing: 'border-box' as const,
+		paddingBlock: '0.55rem',
 		transition: `color ${transitions.fast}`,
 	},
 	[hoverMq]: {
