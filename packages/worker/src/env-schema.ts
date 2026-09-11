@@ -268,6 +268,10 @@ export const EnvSchema = object({
 	// first-party thumbnail proxy, in addition to playlist items and ids
 	// extracted from enabled banner hrefs.
 	YOUTUBE_ALLOWED_VIDEO_IDS: optionalNonEmptyStringSchema,
+	// Optional YouTube Data API key for the homepage hero playlist (playlist
+	// order). When unset, the Worker reads the same unlisted playlist through
+	// YouTube's public browse endpoint so local/preview still work.
+	YOUTUBE_DATA_API_KEY: optionalNonEmptyStringSchema,
 	WRANGLER_IS_LOCAL_DEV: optionalNonEmptyStringSchema,
 	GITHUB_CLIENT_ID: optionalNonEmptyStringSchema,
 	GITHUB_CLIENT_SECRET: optionalNonEmptyStringSchema,

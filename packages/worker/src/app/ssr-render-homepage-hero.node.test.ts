@@ -3,10 +3,7 @@ import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { resetDataCacheForTests } from '#app/data-cache.ts'
 import { loadHomePageOnboardingData } from '#app/onboarding-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import {
-	landingHeroDemoVideoId,
-	landingHeroDemoVideos,
-} from '#universal/landing-hero-copy.ts'
+import { landingHeroDemoPlaylistId } from '#universal/landing-hero-copy.ts'
 import { createMemoryKv } from '#worker/test-support/auth-provider-harness.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 import { testOidcSigningEnv } from '#worker/test-support/oidc-signing-env.ts'
@@ -83,6 +80,21 @@ function landingHeroMarkup(html: string) {
 	return match?.[0] ?? ''
 }
 
+const homepageHeroVideos = [
+	{
+		videoId: 'iGMkgjXc8Ho',
+		title: 'Build in Cursor, then run it from Claude Code or ChatGPT',
+	},
+	{
+		videoId: 'QA0xYMAMjEg',
+		title: 'Introducing Kody: Your Personal Software Factory',
+	},
+	{
+		videoId: 'o5L5OprLhBg',
+		title: 'Kody fixes a Stripe webhook after we renamed the domain',
+	},
+] as const
+
 function homepageOnboardingFixture(
 	env: Env,
 	requestUrl: string,
@@ -106,6 +118,7 @@ test('homepage hero headline and session-aware CTAs', async () => {
 		env,
 		loaderData: {
 			onboarding: homepageOnboardingFixture(env, requestUrl, false),
+			landingHeroVideos: [...homepageHeroVideos],
 		},
 	})
 	expect(anonymous.status).toBe(200)
@@ -116,11 +129,22 @@ test('homepage hero headline and session-aware CTAs', async () => {
 	expect(anonymousHero).toContain('Copy the discovery prompt')
 	expect(anonymousHero).toContain('landing-hero-top')
 	expect(anonymousHero).toContain('landing-hero-video')
-	expect(anonymousHero).toContain(`/youtube-thumb/${landingHeroDemoVideoId}`)
+	expect(anonymousHero).toContain(
+		`/youtube-thumb/${homepageHeroVideos[0].videoId}`,
+	)
 	expect(anonymousHero).toContain('role="listbox"')
-	for (const video of landingHeroDemoVideos) {
+	const optionThumbs = [
+		...anonymousHero.matchAll(
+			/role="option"[\s\S]*?\/youtube-thumb\/([A-Za-z0-9_-]{11})/g,
+		),
+	].map((match) => match[1])
+	expect(optionThumbs).toEqual(homepageHeroVideos.map((video) => video.videoId))
+	for (const video of homepageHeroVideos) {
 		expect(anonymousHero).toContain(`/youtube-thumb/${video.videoId}`)
 	}
+	expect(anonymousHero).toContain(
+		`data-embed-playlist="${landingHeroDemoPlaylistId}"`,
+	)
 	expect(anonymousHero).toContain('landing-hero-agents')
 	expect(anonymousHero.indexOf('landing-hero-top')).toBeLessThan(
 		anonymousHero.indexOf('landing-hero-agents'),
@@ -131,6 +155,7 @@ test('homepage hero headline and session-aware CTAs', async () => {
 		env,
 		loaderData: {
 			onboarding: homepageOnboardingFixture(env, requestUrl, true),
+			landingHeroVideos: [...homepageHeroVideos],
 		},
 	})
 	expect(signedIn.status).toBe(200)

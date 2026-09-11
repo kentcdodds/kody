@@ -6,7 +6,22 @@ import {
 	LandingHeroVideo,
 	nextChooserIndex,
 } from './landing-hero-video.tsx'
-import { landingHeroDemoVideos } from '#universal/landing-hero-copy.ts'
+import { landingHeroDemoPlaylistId } from '#universal/landing-hero-copy.ts'
+
+const fixtureVideos = [
+	{
+		videoId: 'iGMkgjXc8Ho',
+		title: 'Build in Cursor, then run it from Claude Code or ChatGPT',
+	},
+	{
+		videoId: 'QA0xYMAMjEg',
+		title: 'Introducing Kody: Your Personal Software Factory',
+	},
+	{
+		videoId: 'o5L5OprLhBg',
+		title: 'Kody fixes a Stripe webhook after we renamed the domain',
+	},
+] as const
 
 test('nextChooserIndex moves along the strip, wraps at the ends, ignores other keys', () => {
 	expect(nextChooserIndex(0, 'ArrowRight', 3)).toBe(1)
@@ -36,10 +51,11 @@ test('chooserOverflow only reports an edge when there is content past it', () =>
 	expect(chooserOverflow(nearlyEnd)).toEqual({ start: true, end: false })
 })
 
-test('hero video renders the first video in the player and every video as a listbox option', async () => {
-	const html = await renderToString(jsx(LandingHeroVideo, {}))
-	const [first, ...rest] = landingHeroDemoVideos
-	if (!first) throw new Error('expected at least one hero video')
+test('hero video renders playlist order in the player and listbox', async () => {
+	const html = await renderToString(
+		jsx(LandingHeroVideo, { videos: fixtureVideos }),
+	)
+	const [first, ...rest] = fixtureVideos
 
 	// Poster, not an embed, until the visitor clicks.
 	expect(html).not.toContain('youtube-nocookie.com')
@@ -47,9 +63,7 @@ test('hero video renders the first video in the player and every video as a list
 
 	expect(html).toContain('role="listbox"')
 	expect(html).toContain('tabindex="0"')
-	expect(html.match(/role="option"/g)).toHaveLength(
-		landingHeroDemoVideos.length,
-	)
+	expect(html.match(/role="option"/g)).toHaveLength(fixtureVideos.length)
 	expect(html.match(/aria-selected="true"/g)).toHaveLength(1)
 	expect(html).toContain(`/youtube-thumb/${first.videoId}`)
 	for (const video of rest) {
@@ -61,9 +75,13 @@ test('hero video renders the first video in the player and every video as a list
 			/role="option"[\s\S]*?\/youtube-thumb\/([A-Za-z0-9_-]{11})/g,
 		),
 	].map((match) => match[1])
-	expect(optionThumbs[0]).toBe(first.videoId)
-	expect(optionThumbs[1]).toBe('o5L5OprLhBg')
-	expect(html).toContain(
-		'Kody fixes a Stripe webhook after we renamed the domain',
-	)
+	expect(optionThumbs).toEqual(fixtureVideos.map((video) => video.videoId))
+	expect(html).toContain(first.title)
+	expect(html).toContain(rest[1]?.title)
+	expect(html).toContain(`data-embed-playlist="${landingHeroDemoPlaylistId}"`)
+})
+
+test('hero video is omitted when the playlist is empty', async () => {
+	const html = await renderToString(jsx(LandingHeroVideo, { videos: [] }))
+	expect(html).toBe('')
 })

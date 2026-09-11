@@ -5,6 +5,7 @@ import {
 	withAgentDiscoveryLinkHeaders,
 } from '#app/agent-discovery.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { loadLandingHeroVideos } from '#app/landing-hero-videos.ts'
 import {
 	markdownResponse,
 	prefersMarkdown,
@@ -29,9 +30,10 @@ export function createHomeHandler(env: Env) {
 			}
 
 			const walkthroughHosts = pickWalkthroughHosts()
-			// Start the banner list with auth so signed-in / (always
-			// no-store) does not pay that D1 after those finish.
+			// Start the banner list and hero playlist with auth so signed-in
+			// / (always no-store) does not pay those after auth finishes.
 			const listedBanners = loadEnabledSiteBannersForSsr(env)
+			const landingHeroVideos = loadLandingHeroVideos({ env })
 			const user = await readAuthenticatedAppUser(request, env, {
 				prefetchFeatureFlags: true,
 			})
@@ -48,6 +50,7 @@ export function createHomeHandler(env: Env) {
 						loaderData: {
 							onboarding,
 							walkthroughHosts,
+							landingHeroVideos: await landingHeroVideos,
 						},
 						listedBanners,
 					}),

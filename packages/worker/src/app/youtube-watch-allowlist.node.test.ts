@@ -1,5 +1,4 @@
 import { expect, test } from 'vitest'
-import { landingHeroDemoVideoIds } from '#universal/landing-hero-copy.ts'
 import { youtubeWatchSampleVideoId } from '#universal/youtube-watch.ts'
 import {
 	loadPlaylistVideoIds,
@@ -7,7 +6,7 @@ import {
 } from './youtube-watch-allowlist.ts'
 
 const videoId = youtubeWatchSampleVideoId
-const builtInVideoIds = [...new Set([videoId, ...landingHeroDemoVideoIds])]
+const builtInVideoIds = [videoId]
 const playlistId = 'PLV5CVI1eNcJhP4nrJt85L7PxHjebFpDfY'
 
 test('loadPlaylistVideoIds parses the Atom feed and caches the xml', async () => {
