@@ -48,6 +48,8 @@ type RouterSetup = {
 	notFound?: boolean
 	unauthorized?: boolean
 	unauthorizedFallback?: JSX.Element
+	internalError?: boolean
+	internalErrorFallback?: JSX.Element
 }
 
 type FormMethod = 'get' | 'post'
@@ -1170,6 +1172,9 @@ export function Router(handle: RouterHandle) {
 		// after SPA navigation, match routes normally again.
 		if (handle.props.unauthorized && isOnSsrUrl(handle)) {
 			return handle.props.unauthorizedFallback ?? handle.props.fallback ?? null
+		}
+		if (handle.props.internalError && isOnSsrUrl(handle)) {
+			return handle.props.internalErrorFallback ?? handle.props.fallback ?? null
 		}
 		if (handle.props.notFound && isOnSsrUrl(handle)) {
 			return handle.props.fallback ?? null

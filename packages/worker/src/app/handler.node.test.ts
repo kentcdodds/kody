@@ -63,8 +63,11 @@ test('handleRequest serves multiple requests from the same env object', async ()
 	await expect(second.json()).resolves.toMatchObject({ ok: true })
 })
 
-test('uncaught handler failures return an HTML 500 with a document title, lang, and CSP', async () => {
-	silenceExpectedConsoleErrors(['Remix server handler failed:'])
+test('uncaught handler failures return an illustrated HTML 500 with a document title, lang, and CSP', async () => {
+	silenceExpectedConsoleErrors([
+		'Remix server handler failed:',
+		'Illustrated 500 shell failed:',
+	])
 	const response = await handleRequest(
 		new Request('https://example.com/health'),
 		createEnv({ SENTRY_ENVIRONMENT: 'production' }),
@@ -75,7 +78,11 @@ test('uncaught handler failures return an HTML 500 with a document title, lang, 
 	expect(response.headers.get('content-type')).toMatch(/text\/html/)
 	expect(body).toContain('lang="en"')
 	expect(body).toContain('<title>Something went wrong — kody</title>')
-	expect(body).toMatch(/<h1>\s*Something went wrong\s*<\/h1>/)
+	expect(body).toContain('data-testid="internal-error-page"')
+	expect(body).toContain('We got a little zapped.')
+	expect(body).toContain('src="/images/kody-500-zapped.png"')
+	expect(body).toContain('Try again')
+	expect(body).toContain('href="/"')
 	expect(response.headers.get('Content-Security-Policy')).toBe(
 		firstPartySecurityHeaders['Content-Security-Policy'],
 	)

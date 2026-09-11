@@ -1,7 +1,11 @@
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { runWithDeferredWork } from '#worker/deferred-work.ts'
 import { getEnv } from '#app/env.ts'
-import { renderInternalServerErrorPage } from '#app/internal-error-page.ts'
+import { renderIllustratedInternalErrorPage } from '#app/handlers/error-pages.ts'
+import {
+	renderInternalServerErrorPage,
+	retryHrefFromRequest,
+} from '#app/internal-error-page.ts'
 import { createAppRouter } from '#app/router.ts'
 import { runWithRequestContext } from '#worker/request-context.ts'
 
@@ -26,6 +30,18 @@ function getAppRouterBundle(env: Env): AppRouterBundle {
 	return bundle
 }
 
+async function recoverFromUncaughtHandlerFailure(input: {
+	request: Request
+	env: Env
+}) {
+	try {
+		return await renderIllustratedInternalErrorPage(input)
+	} catch (error) {
+		console.error('Illustrated 500 shell failed:', error)
+		return renderInternalServerErrorPage(retryHrefFromRequest(input.request))
+	}
+}
+
 export async function handleRequest(
 	request: Request,
 	env: Env,
@@ -40,6 +56,6 @@ export async function handleRequest(
 		)
 	} catch (error) {
 		console.error('Remix server handler failed:', error)
-		return renderInternalServerErrorPage()
+		return recoverFromUncaughtHandlerFailure({ request, env })
 	}
 }

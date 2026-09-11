@@ -2,6 +2,8 @@ import { post, route } from 'remix/routes'
 
 export const routes = route({
 	home: '/',
+	notFoundPage: '/404',
+	internalErrorPage: '/500',
 	robotsTxt: '/robots.txt',
 	sitemap: '/sitemap.xml',
 	authMarkdown: '/auth.md',

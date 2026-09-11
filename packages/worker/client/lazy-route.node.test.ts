@@ -17,6 +17,8 @@ import { routes } from '#universal/routes.ts'
 
 const eagerPatterns = new Set([
 	routePattern(routes.home),
+	routePattern(routes.notFoundPage),
+	routePattern(routes.internalErrorPage),
 	routePattern(routes.profile),
 	oauthPaths.callback,
 ])

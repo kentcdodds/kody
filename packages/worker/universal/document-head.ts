@@ -10,6 +10,7 @@ import { publicOgPages, type PublicOgPageId } from '#universal/og-pages.ts'
 
 const DEFAULT_DOCUMENT_TITLE = 'kody'
 export const NOT_FOUND_DOCUMENT_TITLE = 'Not found'
+export const INTERNAL_ERROR_DOCUMENT_TITLE = 'Something went wrong'
 
 /** Stable marker so SPA navigation can upsert/remove managed head tags. */
 export const DOCUMENT_HEAD_ATTR = 'data-kody-head'
@@ -368,6 +369,10 @@ const routeDocumentHeads = {
 			},
 		}
 	},
+	[routePattern(routes.notFoundPage)]: titleOnly(NOT_FOUND_DOCUMENT_TITLE),
+	[routePattern(routes.internalErrorPage)]: titleOnly(
+		INTERNAL_ERROR_DOCUMENT_TITLE,
+	),
 	[routePattern(routes.login)]: publicPageHead('login', DEFAULT_DOCUMENT_TITLE),
 	[routePattern(routes.signup)]: publicPageHead(
 		'signup',

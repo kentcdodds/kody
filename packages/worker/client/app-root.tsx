@@ -10,6 +10,7 @@ export type AppRootProps = {
 	loaderData?: AppLoaderData
 	notFound?: boolean
 	unauthorized?: boolean
+	internalError?: boolean
 }
 
 // `clientEntry()` throws when the entry ID is empty. Vite and Node keep the
@@ -26,6 +27,7 @@ export const AppRoot: EntryComponent<AppRootProps> = clientEntry(
 					loaderData={handle.props.loaderData}
 					notFound={handle.props.notFound === true}
 					unauthorized={handle.props.unauthorized === true}
+					internalError={handle.props.internalError === true}
 				/>
 			</RouterLocationProvider>
 		)

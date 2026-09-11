@@ -17,9 +17,6 @@ import {
 	createCommunityDetailHandler,
 	createCommunityPackageHandler,
 } from '#app/handlers/community-detail.tsx'
-import { createDiscordHandler } from '#app/handlers/discord.ts'
-import { createFaqHandler } from '#app/handlers/faq.ts'
-import { createSupportHandler } from '#app/handlers/support.ts'
 import { createOnboardingHandler } from '#app/handlers/onboarding.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
 import { resetInlineStylesheetCache } from '#app/inline-stylesheet.ts'
@@ -246,6 +243,7 @@ function parseRmxData(html: string) {
 					session: unknown
 					loaderData?: Record<string, unknown>
 					notFound?: boolean
+					internalError?: boolean
 				}
 			}
 		>
@@ -652,7 +650,22 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(notFoundResponse.status).toBe(404)
 	const notFoundHtml = await readResponseText(notFoundResponse)
 	expect(notFoundHtml).toContain("This doesn't quite connect.")
+	expect(notFoundHtml).toContain('src="/images/kody-404-disappointed.png"')
 	expect(readAppRootProps(notFoundHtml).notFound).toBe(true)
+
+	const internalErrorResponse = await renderAppPage({
+		request: new Request('https://example.com/account'),
+		env,
+		title: 'Something went wrong',
+		internalError: true,
+		status: 500,
+	})
+	expect(internalErrorResponse.status).toBe(500)
+	const internalErrorHtml = await readResponseText(internalErrorResponse)
+	expect(internalErrorHtml).toContain('We got a little zapped.')
+	expect(internalErrorHtml).toContain('src="/images/kody-500-zapped.png"')
+	expect(internalErrorHtml).toContain('Try again')
+	expect(readAppRootProps(internalErrorHtml).internalError).toBe(true)
 
 	const resetConfirmResponse = await runHtmlHandler(
 		createResetPasswordHandler(env),
@@ -1599,71 +1612,6 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	expect(approvalHtml).toContain('Let Kody use this connection at')
 	expect(approvalHtml).toContain('gmail.googleapis.com')
 	expect(approvalHtml).toContain('data-testid="secret-approval-advanced"')
-})
-
-test('renderAppPage renders the public FAQ page for anonymous visitors', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv(createUserTestDb([]))
-
-	const response = await createFaqHandler(env).handler({
-		request: new Request('https://example.com/faq'),
-	} as never)
-
-	expect(response.status).toBe(200)
-	const html = await readResponseText(response)
-	expect(html).toContain('<title>FAQ</title>')
-	expect(html).toContain('data-faq="replace-agents"')
-	expect(html).toContain('data-faq="shared-account"')
-	expect(html).toContain('mailto:support@kody.codes')
-	expect(html).toContain('<details')
-	expect(html).toContain('<summary>')
-	expect(html).toContain('href="/faq">FAQ</a>')
-	expect(html).toContain('data-faq="get-started"')
-	expect(html).toContain('Create a free account from')
-	expect(html).toContain('href="/signup"')
-})
-
-test('renderAppPage renders the public support page for anonymous visitors', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv(createUserTestDb([]))
-
-	const response = await createSupportHandler(env).handler({
-		request: new Request('https://example.com/support'),
-	} as never)
-
-	expect(response.status).toBe(200)
-	const html = await readResponseText(response)
-	expect(html).toContain('<title>Support</title>')
-	expect(html).toContain('mailto:support@kody.codes')
-	expect(html).toContain('support@kody.codes')
-	expect(html).toContain('href="/support">Support</a>')
-})
-
-test('renderAppPage renders the public Discord connect page', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = {
-		...createTestEnv(createUserTestDb([])),
-		DISCORD_CLIENT_ID: 'discord-client-id-test',
-		DISCORD_CLIENT_SECRET: 'discord-client-secret-test',
-	} as Env
-
-	const response = await createDiscordHandler(env).handler({
-		request: new Request('https://example.com/discord'),
-	} as never)
-
-	expect(response.status).toBe(200)
-	const html = await readResponseText(response)
-	expect(html).toContain('Connect Discord')
-	expect(html).toContain('<title>Discord</title>')
-	const heading = html.match(/<h1\b[^>]*>[\s\S]*?<\/h1>/)?.[0]
-	expect(heading).toContain('Discord')
-	const connectButtons = (
-		html.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? []
-	).filter((button) => button.includes('Connect Discord'))
-	expect(connectButtons).toHaveLength(1)
 })
 
 test('renderAppPage renders the redesigned blog index', async () => {

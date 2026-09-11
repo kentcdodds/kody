@@ -166,3 +166,40 @@ test('navigating away from a 404 restores main gutters on pages that still use t
 		}),
 	).toBe(false)
 })
+
+test('SSR 500 pages own main gutters the same way 404s do', () => {
+	expect(
+		appMainOwnsItsGutters({
+			pathname: '/account',
+			notFound: false,
+			internalError: true,
+			onSsrUrl: true,
+		}),
+	).toBe(true)
+	expect(
+		appMainOwnsItsGutters({
+			pathname: '/support',
+			notFound: false,
+			internalError: true,
+			onSsrUrl: false,
+		}),
+	).toBe(false)
+})
+
+test('explicit /404 and /500 pages own main gutters after SPA navigation', () => {
+	expect(
+		appMainOwnsItsGutters({
+			pathname: '/404',
+			notFound: false,
+			onSsrUrl: false,
+		}),
+	).toBe(true)
+	expect(
+		appMainOwnsItsGutters({
+			pathname: '/500',
+			notFound: false,
+			internalError: false,
+			onSsrUrl: false,
+		}),
+	).toBe(true)
+})

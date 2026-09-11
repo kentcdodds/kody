@@ -248,6 +248,11 @@ import {
 	createSitemapHandler,
 } from '#app/handlers/agent-discovery.ts'
 import { createHomeHandler } from '#app/handlers/home.ts'
+import {
+	createInternalErrorPageHandler,
+	createNotFoundPageHandler,
+	renderIllustratedNotFoundPage,
+} from '#app/handlers/error-pages.ts'
 import { createLoginHandler } from '#app/handlers/login.ts'
 import { createOgPageImageHandler } from '#app/handlers/og-page-image.ts'
 import {
@@ -284,7 +289,6 @@ import {
 } from '#app/handlers/password-reset.ts'
 import { createSessionHandler } from '#app/handlers/session.ts'
 import { createSignupHandler } from '#app/handlers/signup.ts'
-import { renderAppPage } from '#app/ssr-render.tsx'
 import { routes } from '#universal/routes.ts'
 import { createAccountWriteLeaseMiddleware } from '#app/account-write-lease-middleware.ts'
 import { remixCrossOriginProtection } from '#app/cross-origin-protection.ts'
@@ -297,19 +301,15 @@ export function createAppRouter(env: Env) {
 			createAccountWriteLeaseMiddleware(env),
 		],
 		async defaultHandler({ request }) {
-			return renderAppPage({
-				request,
-				env,
-				title: 'Not found',
-				notFound: true,
-				status: 404,
-			})
+			return renderIllustratedNotFoundPage({ request, env })
 		},
 	})
 
 	router.map(routes, {
 		actions: {
 			home: createHomeHandler(env),
+			notFoundPage: createNotFoundPageHandler(env),
+			internalErrorPage: createInternalErrorPageHandler(env),
 			robotsTxt: createRobotsTxtHandler(env),
 			sitemap: createSitemapHandler(env),
 			authMarkdown: createAuthMarkdownHandler(env),

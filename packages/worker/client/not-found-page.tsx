@@ -3,12 +3,17 @@ import { routes } from '#universal/routes.ts'
 import {
 	getGhostButtonCss,
 	getPillButtonCss,
-	layoutMaxWidths,
-	pageGutter,
 } from '#universal/styles/style-primitives.ts'
-import { colors, typography } from '#universal/styles/tokens.ts'
+import {
+	illustratedErrorActionsCss,
+	illustratedErrorCopyCss,
+	illustratedErrorHeadingCss,
+	illustratedErrorImageCss,
+	illustratedErrorPageCss,
+} from './illustrated-error-page.ts'
 
 export const notFoundPageHeading = "This doesn't quite connect."
+export const notFoundPageImageSrc = '/images/kody-404-disappointed.png'
 
 /**
  * Shared HTML 404. Generic misses and matched-route misses (a public
@@ -17,20 +22,20 @@ export const notFoundPageHeading = "This doesn't quite connect."
  */
 export function NotFoundPage(_handle: Handle) {
 	return () => (
-		<section data-testid="not-found-page" mix={css(pageCss)}>
+		<section data-testid="not-found-page" mix={css(illustratedErrorPageCss)}>
 			<img
-				src="/images/kody-404-mismatch.jpg"
-				alt="Kody looking sad while trying to plug two connectors that do not fit"
-				width={1024}
-				height={1024}
-				mix={css(imageCss)}
+				src={notFoundPageImageSrc}
+				alt="Kody looking disappointed, holding an Ethernet plug and a USB-C cable that do not match"
+				width={1254}
+				height={1254}
+				mix={css(illustratedErrorImageCss)}
 			/>
-			<h1 mix={css(headingCss)}>{notFoundPageHeading}</h1>
-			<p mix={css(copyCss)}>
+			<h1 mix={css(illustratedErrorHeadingCss)}>{notFoundPageHeading}</h1>
+			<p mix={css(illustratedErrorCopyCss)}>
 				That address isn't a page we have. It may have moved, never existed, or
 				the package was unpublished.
 			</p>
-			<nav aria-label="What to try next" mix={css(actionsCss)}>
+			<nav aria-label="What to try next" mix={css(illustratedErrorActionsCss)}>
 				<a href={routes.home.href()} mix={css(getPillButtonCss())}>
 					Go home
 				</a>
@@ -43,47 +48,4 @@ export function NotFoundPage(_handle: Handle) {
 			</nav>
 		</section>
 	)
-}
-
-const pageCss = {
-	boxSizing: 'border-box' as const,
-	width: '100%',
-	maxWidth: layoutMaxWidths.narrow,
-	marginInline: 'auto',
-	padding: `clamp(2rem, 6vw, 4rem) ${pageGutter} clamp(3rem, 8vw, 5rem)`,
-	display: 'grid',
-	justifyItems: 'center',
-	textAlign: 'center' as const,
-	gap: '1rem',
-}
-
-const imageCss = {
-	width: 'min(18rem, 72vw)',
-	height: 'auto',
-	display: 'block',
-}
-
-const headingCss = {
-	margin: '0.4rem 0 0',
-	font: `700 clamp(1.6rem, 4vw, 2.1rem)/1.15 ${typography.fontFamilyDisplay}`,
-	letterSpacing: '-0.02em',
-	color: colors.text,
-	textWrap: 'balance' as const,
-}
-
-const copyCss = {
-	margin: 0,
-	maxWidth: '36rem',
-	color: colors.textMuted,
-	fontSize: '1.02rem',
-	lineHeight: 1.5,
-	textWrap: 'pretty' as const,
-}
-
-const actionsCss = {
-	display: 'flex',
-	flexWrap: 'wrap' as const,
-	justifyContent: 'center',
-	gap: '0.7rem',
-	marginTop: '0.6rem',
 }

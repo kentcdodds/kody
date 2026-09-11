@@ -13,6 +13,7 @@ export type AppRootProps = {
 	loaderData?: AppLoaderData
 	notFound?: boolean
 	unauthorized?: boolean
+	internalError?: boolean
 }
 
 export const AppRoot = null as unknown as EntryComponent<AppRootProps>
