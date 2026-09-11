@@ -20,15 +20,30 @@ import {
 
 export * from '@playwright/test'
 
+// Cold Vite compile of a lazy route area (account-area, admin-area) happens
+// after `page-init.js` marks `html.js.is-settled`. A first `/account/jobs`
+// load on this VM reached `data-hydrated` ~6s after `goto` returned (~16s
+// from navigation start); a colder first attempt exceeded 15s. CI shares
+// the runner with unit + MCP, so keep the larger budget there.
+const hydrationTimeoutMs = process.env.CI ? 30_000 : 20_000
+
 /**
  * Wait until Remix client hydration has bound event handlers.
  *
  * `entry.tsx` preloads the route chunk before `run()`, so SSR headings and
  * buttons are visible while `on('click')` / `on('submit')` mixins are still
  * unbound. Clicking a `type="button"` control in that gap is a silent no-op.
+ *
+ * Do not use Playwright's 5s default: `is-settled` only means the document
+ * loaded, not that `app.ready()` finished.
  */
 export async function waitForClientHydration(page: Page) {
-	await expect(page.locator('html')).toHaveAttribute('data-hydrated', 'true')
+	await expect(
+		page.locator('html'),
+		'Remix boot sets html[data-hydrated=true] after preload + run + ready',
+	).toHaveAttribute('data-hydrated', 'true', {
+		timeout: hydrationTimeoutMs,
+	})
 }
 
 const authRetryBudgetMs = 15_000
