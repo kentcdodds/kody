@@ -32,7 +32,9 @@ Sharing is not:
 ## Invite, accept, use, leave
 
 1. Owner invites by **username or email** (`packageShareInvite`). The invite
-   email links to `@{owner}/{packageName}` with an Accept banner.
+   email links to `@{owner}/{packageName}` with an Accept banner. Email invites
+   bind to an existing account only when that mailbox is verified; otherwise the
+   row stays pending until the guest verifies.
 2. Guest **must accept** (`packageShareAccept`). Nothing attaches silently.
 3. Invite-before-signup: a pending invite is held. The email explains Kody, what
    is shared, and that the guest creates an account, pays, then accepts.

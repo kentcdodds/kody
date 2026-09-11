@@ -663,6 +663,79 @@ test('re-inviting an accepted email grant fails with a conflict, not a unique-in
 	).rejects.toThrow('already has an accepted share grant')
 })
 
+test('email invite of an unverified existing account stays unbound', async () => {
+	const { db, packageId } = await createHarness()
+	const unverifiedExistingId = 'ff'.repeat(32)
+	await insertUser(db, {
+		username: 'unverified-existing',
+		email: 'unverified-existing@example.com',
+		userId: unverifiedExistingId,
+		plan: 'standard',
+		emailVerified: false,
+	})
+	const invited = await invitePackageShare({
+		db,
+		owner: {
+			userId: ownerUserId,
+			email: 'alice@example.com',
+			displayName: 'Alice',
+			username: 'alice',
+		},
+		packageId,
+		invitee: { email: 'unverified-existing@example.com' },
+	})
+	expect(invited.granteeUserId).toBeNull()
+	const inbound = await listInboundPackageShareGrants(db, {
+		userId: unverifiedExistingId,
+		email: 'unverified-existing@example.com',
+		emailVerified: false,
+	})
+	expect(inbound).toHaveLength(0)
+	await expect(
+		acceptPackageShare({
+			db,
+			guest: {
+				userId: unverifiedExistingId,
+				email: 'unverified-existing@example.com',
+				displayName: 'Unverified existing',
+				username: 'unverified-existing',
+			},
+			grantId: invited.id,
+		}),
+	).rejects.toThrow('not addressed')
+})
+
+test('username invite conflicts with an unbound pending email invite for that person', async () => {
+	const { db, packageId } = await createHarness()
+	const owner = {
+		userId: ownerUserId,
+		email: 'alice@example.com',
+		displayName: 'Alice',
+		username: 'alice',
+	}
+	await invitePackageShare({
+		db,
+		owner,
+		packageId,
+		invitee: { email: 'later-jesse@example.com' },
+	})
+	const laterUserId = '11'.repeat(32)
+	await insertUser(db, {
+		username: 'later-jesse',
+		email: 'later-jesse@example.com',
+		userId: laterUserId,
+		plan: 'standard',
+	})
+	await expect(
+		invitePackageShare({
+			db,
+			owner,
+			packageId,
+			invitee: { username: 'later-jesse' },
+		}),
+	).rejects.toThrow('already pending')
+})
+
 test('unverified email cannot attach or accept an unbound invite', async () => {
 	const { db, packageId } = await createHarness()
 	const owner = {

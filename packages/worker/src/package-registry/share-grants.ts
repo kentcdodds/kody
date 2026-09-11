@@ -878,7 +878,15 @@ export async function invitePackageShare(input: {
 		}
 	}
 	if (!invitee && emailInput) {
-		invitee = await findPersonUserByEmail(input.db, emailInput)
+		const foundByEmail = await findPersonUserByEmail(input.db, emailInput)
+		if (foundByEmail) {
+			const emailVerified = await isAccountEmailVerified({
+				db: input.db,
+				email: foundByEmail.email,
+				stableUserId: foundByEmail.mcpUserId,
+			})
+			if (emailVerified) invitee = foundByEmail
+		}
 	}
 	const inviteeEmail = emailInput ? normalizeEmailAddress(emailInput) : null
 	if (emailInput && !inviteeEmail) {
@@ -901,7 +909,7 @@ export async function invitePackageShare(input: {
 		db: input.db,
 		packageId: savedPackage.id,
 		granteeUserId: invitee?.mcpUserId,
-		inviteeEmail,
+		inviteeEmail: inviteeEmail ?? invitee?.email,
 	})
 	if (existing) {
 		throw new PackageShareAccessError(
