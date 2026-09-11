@@ -1,6 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
-import { platformFeedbackContentWarning } from '#worker/platform-feedback/content-warning.ts'
 import { platformFeedbackTestSchemaSql } from '#worker/platform-feedback/test-schema.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { loadAdminPlatformFeedbackData } from './admin-platform-feedback-data.ts'
@@ -103,7 +102,6 @@ test('admin platform feedback data lists safely and uses stored submitter snapsh
 		total: 1,
 		page: 1,
 		pageSize: 20,
-		content_warning: platformFeedbackContentWarning,
 		statusFilter: 'open',
 		categoryFilter: 'suggestion',
 		selectedFeedback: null,
