@@ -51,6 +51,14 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(m) => m.accountConnectionsRouteLoader,
 	),
+	[routePattern(routes.accountConnectionNew)]: lazyRouteLoader(
+		accountArea,
+		(m) => m.accountConnectionsRouteLoader,
+	),
+	[routePattern(routes.accountConnectionNewAgent)]: lazyRouteLoader(
+		accountArea,
+		(m) => m.accountConnectionsRouteLoader,
+	),
 	[routePattern(routes.accountShared)]: lazyRouteLoader(
 		accountArea,
 		(m) => m.accountSharedRouteLoader,
@@ -380,6 +388,12 @@ export const clientRoutes = {
 		<LazyAccountRoute render={(m) => <m.AccountWaitingRoute />} />
 	),
 	[routePattern(routes.accountConnections)]: (
+		<LazyAccountRoute render={(m) => <m.AccountConnectionsRoute />} />
+	),
+	[routePattern(routes.accountConnectionNew)]: (
+		<LazyAccountRoute render={(m) => <m.AccountConnectionsRoute />} />
+	),
+	[routePattern(routes.accountConnectionNewAgent)]: (
 		<LazyAccountRoute render={(m) => <m.AccountConnectionsRoute />} />
 	),
 	[routePattern(routes.accountShared)]: (

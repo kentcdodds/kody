@@ -1,5 +1,7 @@
 import { createMultiMatcher } from 'remix/route-pattern/match'
+import { isAccountConnectionAgent } from '#universal/account-connections.ts'
 import { type AppLoaderData } from '#universal/loader-data.ts'
+import { onboardingAgentLabel } from '#universal/onboarding-mcp-clients.ts'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { routePattern } from '#universal/route-pattern.ts'
 import { routes } from '#universal/routes.ts'
@@ -179,6 +181,15 @@ const routeDocumentHeads = {
 	[routePattern(routes.accountUsage)]: titleOnly('Usage'),
 	[routePattern(routes.accountWaiting)]: titleOnly('Waiting'),
 	[routePattern(routes.accountConnections)]: titleOnly('Connections'),
+	[routePattern(routes.accountConnectionNew)]: titleOnly('Add connection'),
+	[routePattern(routes.accountConnectionNewAgent)]: ({ params }) => {
+		const agent = params.agent
+		return titleOnly(
+			isAccountConnectionAgent(agent)
+				? `Connect ${onboardingAgentLabel(agent)}`
+				: 'Add connection',
+		)
+	},
 	[routePattern(routes.accountShared)]: titleOnly('Shared packages'),
 	[routePattern(routes.accountIntegrations)]: titleOnly('Integrations'),
 	[routePattern(routes.accountOauthAppDetail)]: titleOnly('Integrations'),

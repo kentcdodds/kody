@@ -418,7 +418,13 @@ export function OnboardingMcpClientTabs(
 	}
 }
 
-function AgentSurfaceInstructions(
+/**
+ * One host's install path: desktop and phone surfaces both render and CSS
+ * shows the one that matches the viewport, followed by the help link, any
+ * host caveat, and the authenticate callout. Shared with Add connection on
+ * `/account/connections`.
+ */
+export function AgentSurfaceInstructions(
 	handle: Handle<{
 		agent: McpClientKind
 		mcpServerUrl: string
@@ -463,20 +469,26 @@ function AgentSurfaceInstructions(
 	)
 }
 
-function AgentPickerGrid(
+/**
+ * The client wall. Entries given as bare ids follow the onboarding
+ * viewport split (desktop-only hosts hide on a phone); pass
+ * `{ id, viewport: 'both' }` entries to show every card everywhere, which
+ * is what Add connection on `/account/connections` does.
+ */
+export function AgentPickerGrid(
 	handle: Handle<{
 		ids:
 			| Array<McpClientKind>
 			| Array<{ id: McpClientKind; viewport: OnboardingAgentViewport }>
 		labelledBy: string
-		search: string
+		search?: string
 		agentHref: (agent: McpClientKind | null, search?: string) => string
-		greyedAgents: ReadonlyArray<McpClientKind>
-		greyedReasons: Partial<
+		greyedAgents?: ReadonlyArray<McpClientKind>
+		greyedReasons?: Partial<
 			Record<McpClientKind, OnboardingSecondAgentDisableReason>
 		>
-		greyedTitles: Partial<Record<McpClientKind, string>>
-		greyedReason: string | null
+		greyedTitles?: Partial<Record<McpClientKind, string>>
+		greyedReason?: string | null
 	}>,
 ) {
 	return () => (
@@ -488,9 +500,13 @@ function AgentPickerGrid(
 						? onboardingAgentViewport(id)
 						: entry.viewport
 				const shown = viewport === 'none' ? 'both' : viewport
-				const greyed = handle.props.greyedAgents.includes(id)
-				const reason = handle.props.greyedReasons[id] ?? 'same-ecosystem'
-				const title = handle.props.greyedTitles[id] ?? handle.props.greyedReason
+				const greyedAgents = handle.props.greyedAgents ?? []
+				const greyedReasons = handle.props.greyedReasons ?? {}
+				const greyedTitles = handle.props.greyedTitles ?? {}
+				const search = handle.props.search ?? ''
+				const greyed = greyedAgents.includes(id)
+				const reason = greyedReasons[id] ?? 'same-ecosystem'
+				const title = greyedTitles[id] ?? handle.props.greyedReason ?? null
 				return (
 					<li key={id} mix={css(onboardingViewportCss(shown, 'list-item'))}>
 						{greyed ? (
@@ -512,7 +528,7 @@ function AgentPickerGrid(
 							</span>
 						) : (
 							<a
-								href={handle.props.agentHref(id, handle.props.search)}
+								href={handle.props.agentHref(id, search)}
 								data-testid={`onboarding-agent-${id}`}
 								data-prevent-scroll-reset=""
 								mix={css(pickerCardCss)}

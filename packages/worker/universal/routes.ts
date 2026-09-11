@@ -90,6 +90,9 @@ export const routes = route({
 	// `/account/connected-agents.json`; `/account/connections.json` is the
 	// older sign-in provider (GitHub, Google, …) list on the Overview page.
 	accountConnections: '/account/connections',
+	// Add connection: the full client grid, then one host's install steps.
+	accountConnectionNew: '/account/connections/new',
+	accountConnectionNewAgent: '/account/connections/new/:agent',
 	accountConnectionsApi: '/account/connections.json',
 	accountConnectionsApiPost: post('/account/connections.json'),
 	accountConnectedAgentsApi: '/account/connected-agents.json',

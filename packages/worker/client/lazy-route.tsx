@@ -260,6 +260,8 @@ registerPreloadPatterns(
 		routePattern(routes.accountUsage),
 		routePattern(routes.accountWaiting),
 		routePattern(routes.accountConnections),
+		routePattern(routes.accountConnectionNew),
+		routePattern(routes.accountConnectionNewAgent),
 		routePattern(routes.accountShared),
 		routePattern(routes.communityPackageApproveChanges),
 		routePattern(routes.accountIntegrations),
