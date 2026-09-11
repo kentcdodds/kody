@@ -101,7 +101,7 @@ export function Combobox(handle: Handle<ComboboxProps>) {
 											css(comboboxOptionCss),
 											combobox.option({
 												label: option.label,
-												searchValue: [option.label, ...(option.keywords ?? [])],
+												searchValue: getOptionSearchValues(option),
 												value: option.label,
 											}),
 										]}
@@ -132,6 +132,16 @@ export function Combobox(handle: Handle<ComboboxProps>) {
 			</div>
 		)
 	}
+}
+
+/**
+ * Remix matches a typed query as a prefix of any search value, so a label's
+ * later words join the list: "discord" then finds `kody-discord` and
+ * "notifier" finds `platform-feedback-discord-notifier`.
+ */
+function getOptionSearchValues(option: ComboboxOption) {
+	const words = option.label.split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+	return [option.label, ...words.slice(1), ...(option.keywords ?? [])]
 }
 
 const comboboxFieldCss = {
