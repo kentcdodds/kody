@@ -50,18 +50,19 @@ agent answers with your preferences, calendars, and packages in mind.
 
 Prefer an agent-native channel. The agent stays the brain; Kody stays the tools.
 
-- **OpenClaw** - local Mac bridge via the `imsg` CLI. The gateway talks to
-  Messages through `imsg rpc` (JSON-RPC over stdio), reads
-  `~/Library/Messages/chat.db` (needs Full Disk Access), and can send through
-  Messages Automation. Richer features may need the `imsg launch` helper.
-  BlueBubbles support was removed from OpenClaw; migrate to `imsg` only. See
-  [OpenClaw iMessage](https://docs.openclaw.ai/channels/imessage) and
-  [`imsg`](https://github.com/openclaw/imsg).
+- **OpenClaw** - the
+  [`@openclaw/imessage`](https://www.npmjs.com/package/@openclaw/imessage)
+  plugin plus the [`imsg`](https://github.com/openclaw/imsg) CLI. The gateway
+  talks to Messages through `imsg rpc` (JSON-RPC over stdio) on a Mac signed
+  into Messages, or through an SSH wrapper that runs `imsg` on that Mac. It
+  reads `~/Library/Messages/chat.db` (needs Full Disk Access) and can send
+  through Messages Automation. Richer features may need the `imsg launch`
+  helper. See [OpenClaw iMessage](https://docs.openclaw.ai/channels/imessage).
 - **Bezalel** - hosted capability plane over MCP (URL + bearer). iMessage shows
   up as a paired line; inbound events wake agents through an event router.
-  Texting is processed via Photon Spectrum rather than driving your personal
-  Messages.app Mini. See [Bezalel docs](https://bezalel.sh/docs.md) and
-  [privacy](https://bezalel.sh/privacy.md).
+  Texting goes through Photon Spectrum: managed iMessage lines in the cloud, so
+  no personal Mac is required. See [Bezalel docs](https://bezalel.sh/docs.md)
+  and [privacy](https://bezalel.sh/privacy.md).
 - **Grok Bot / Cursor (and similar hosts)** - same architecture on a different
   surface. In the official Kody Discord, `@Kody` / a grok-bot wake hands the
   message to an agent; the agent replies in-channel. See
@@ -90,15 +91,15 @@ agent should act with your credentials without ever reading them.
 
 If your chosen brain does not already own iMessage, you still need a bridge:
 
-| Approach                                                             | Fit                                   | Notes                                                                                                |
-| -------------------------------------------------------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| **BlueBubbles** (Mac signed into Messages -> REST/webhooks)          | Best classic "events into Kody" shape | Good when you want webhook ingress into a package later                                              |
-| **AirMessage / DIY Mac helper** (Shortcuts, AppleScript, `chat.db`)  | Fragile                               | Works until an OS update; treat as temporary                                                         |
-| **Photon Spectrum** (managed lines; optional local `chat.db` helper) | Hosted-line model                     | Similar to Bezalel's paired-line idea; see [Photon iMessage](https://photon.codes/platform/imessage) |
-| **Pure cloud "just works"**                                          | Not available                         | Something always bridges or hosts a line                                                             |
+| Approach                                                            | Fit                                  | Notes                                                                                                     |
+| ------------------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| **Photon Spectrum** (managed iMessage lines in the cloud)           | Hosted-line model, no personal Mac   | What Bezalel-style setups and adapters use; see [Photon iMessage](https://photon.codes/platform/imessage) |
+| **BlueBubbles** (self-hosted on a Mac you control)                  | Historical / self-hosted alternative | REST/webhooks into your own agent or a Kody package if you already run a BlueBubbles Mac.                 |
+| **AirMessage / DIY Mac helper** (Shortcuts, AppleScript, `chat.db`) | Fragile                              | Works until an OS update; treat as temporary                                                              |
+| **Pure cloud "just works"**                                         | Not available                        | Something always bridges or hosts a line                                                                  |
 
-A later optional Kody package could wrap BlueBubbles or Photon webhooks the way
-Discord and AgentMail packages do. Prefer agent-native channels first unless you
+A later optional Kody package could wrap Photon webhooks the way Discord and
+AgentMail packages do. Prefer agent-native channels first unless you
 specifically want events landing in Kody packages with no model in the loop
 ([Jobs, workflows, and webhooks](./triggers.md)).
 
@@ -139,8 +140,9 @@ Same split as iMessage. Different surface. See
 
 **Optional later**
 
-- A Kody package that normalizes BlueBubbles or Photon webhooks into the same
-  event shape Discord already uses, so jobs can run with no model in the loop.
+- A Kody package that normalizes Photon webhooks (or a self-hosted BlueBubbles
+  server) into the same event shape Discord already uses, so jobs can run with
+  no model in the loop.
 
 ## Where to go next
 
