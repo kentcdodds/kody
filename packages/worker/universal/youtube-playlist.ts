@@ -9,8 +9,8 @@ const skippedPlaylistTitles = new Set(['Private video', 'Deleted video'])
 export const youtubePlaylistItemsApiOrigin = 'https://www.googleapis.com'
 export const youtubePlaylistBrowseUrl =
 	'https://www.youtube.com/youtubei/v1/browse'
-export const youtubeWebClientName = 'WEB'
-export const youtubeWebClientVersion = '2.20260911.01.00'
+const youtubeWebClientName = 'WEB'
+const youtubeWebClientVersion = '2.20260911.01.00'
 export const youtubePlaylistBrowseMaxPages = 10
 /** workerd sends no User-Agent; YouTube rejects those browse calls. */
 export const youtubePlaylistUserAgent = 'kody-agent/1.0'

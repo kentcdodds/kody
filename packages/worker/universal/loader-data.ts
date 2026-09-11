@@ -442,8 +442,6 @@ export type YoutubeWatchLoaderData = {
 	allowedVideoIds: Array<string>
 }
 
-export type LandingHeroVideosLoaderData = Array<LandingHeroVideo>
-
 /**
  * Operator view of one platform (built-in) OAuth app. Never carries secret
  * values — `hasClientSecret` is the only trace of the encrypted credential.
@@ -2068,7 +2066,7 @@ export type AppLoaderData = {
 	adminBanners?: AdminBannersLoaderData
 	siteBanner?: SiteBannerLoaderData
 	youtubeWatch?: YoutubeWatchLoaderData
-	landingHeroVideos?: LandingHeroVideosLoaderData
+	landingHeroVideos?: Array<LandingHeroVideo>
 	adminPlatformIntegrations?: AdminPlatformIntegrationsLoaderData
 	adminProviderMarks?: AdminProviderMarksLoaderData
 	adminCodemods?: AdminCodemodsLoaderData
