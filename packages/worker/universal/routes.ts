@@ -69,6 +69,13 @@ export const routes = route({
 	accountWorkflowDetail: '/account/workflows/:workflowId',
 	accountWorkflowsApi: '/account/workflows.json',
 	accountWorkflowsApiPost: post('/account/workflows.json'),
+	// Owner-only home for minted webhook URLs: list, mint, reveal + copy,
+	// rotate, enable / disable. The credential URL only ever leaves the
+	// server through this page's `reveal` intent, never through MCP.
+	accountWebhooks: '/account/webhooks',
+	accountWebhookDetail: '/account/webhooks/:packageKodyId/:webhookName',
+	accountWebhooksApi: '/account/webhooks.json',
+	accountWebhooksApiPost: post('/account/webhooks.json'),
 	accountActivity: '/account/activity',
 	accountActivityDetail: '/account/activity/:runId',
 	accountActivityApi: '/account/activity.json',

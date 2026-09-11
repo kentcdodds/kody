@@ -35,6 +35,7 @@ Then drive the surface with `login`, `request`, `preview`, and `health`. See the
 - [mcp-servers](./mcp-servers.md) — `/account/mcp-servers`
 - [jobs](./jobs.md) — `/account/jobs`
 - [workflows](./workflows.md) — `/account/workflows`
+- [webhooks](./webhooks.md) — `/account/webhooks`
 - [activity](./activity.md) — `/account/activity`
 - [waiting](./waiting.md) — `/account/waiting`
 - [memories](./memories.md) — `/account/memories`

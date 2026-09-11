@@ -174,6 +174,13 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		apis: ['/account/workflows.json'],
 	},
 	{
+		id: 'webhooks',
+		title: 'Webhooks (minted URLs)',
+		file: 'webhooks.md',
+		paths: ['/account/webhooks'],
+		apis: ['/account/webhooks.json'],
+	},
+	{
 		id: 'activity',
 		title: 'Activity',
 		file: 'activity.md',

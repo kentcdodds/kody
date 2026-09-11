@@ -287,6 +287,8 @@ registerPreloadPatterns(
 		routePattern(routes.accountJobDetail),
 		routePattern(routes.accountWorkflows),
 		routePattern(routes.accountWorkflowDetail),
+		routePattern(routes.accountWebhooks),
+		routePattern(routes.accountWebhookDetail),
 		routePattern(routes.accountActivity),
 		routePattern(routes.accountActivityDetail),
 		routePattern(routes.accountMemories),

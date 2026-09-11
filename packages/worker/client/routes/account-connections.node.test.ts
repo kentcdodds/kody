@@ -227,6 +227,7 @@ test('account rail lists Connections and Packages at the same level as the other
 		'Activity',
 		'Jobs',
 		'Workflows',
+		'Webhooks',
 		'Secrets',
 		'Integrations',
 		'MCP servers',

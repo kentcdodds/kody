@@ -80,6 +80,10 @@ import {
 	createAccountWorkflowsHandler,
 } from '#app/handlers/account-workflows.ts'
 import {
+	createAccountWebhooksApiHandler,
+	createAccountWebhooksHandler,
+} from '#app/handlers/account-webhooks.ts'
+import {
 	createAccountMcpServersApiHandler,
 	createAccountMcpServersHandler,
 	createAccountMcpServersOauthCallbackHandler,
@@ -470,6 +474,10 @@ export function createAppRouter(env: Env) {
 			accountWorkflowDetail: createAccountWorkflowsHandler(env),
 			accountWorkflowsApi: createAccountWorkflowsApiHandler(env),
 			accountWorkflowsApiPost: createAccountWorkflowsApiHandler(env),
+			accountWebhooks: createAccountWebhooksHandler(env),
+			accountWebhookDetail: createAccountWebhooksHandler(env),
+			accountWebhooksApi: createAccountWebhooksApiHandler(env),
+			accountWebhooksApiPost: createAccountWebhooksApiHandler(env),
 			accountActivity: createAccountActivityHandler(env),
 			accountActivityDetail: createAccountActivityHandler(env),
 			accountActivityApi: createAccountActivityApiHandler(env),

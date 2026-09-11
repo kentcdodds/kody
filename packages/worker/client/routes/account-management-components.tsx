@@ -377,6 +377,7 @@ export function accountNavItemsFor(input: {
 		{ href: '/account/activity', label: 'Activity' },
 		{ href: '/account/jobs', label: 'Jobs' },
 		{ href: '/account/workflows', label: 'Workflows' },
+		{ href: routes.accountWebhooks.href(), label: 'Webhooks' },
 		{ href: '/account/secrets', label: 'Secrets' },
 		{ href: '/account/integrations', label: 'Integrations' },
 		{ href: '/account/mcp-servers', label: 'MCP servers' },

@@ -146,6 +146,7 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 	})
 	expect(listedBefore).toHaveLength(1)
 	expect(listedBefore[0]?.minted).toBe(false)
+	expect(listedBefore[0]?.urlRecoverable).toBe(false)
 	expect(listedBefore[0]?.verification?.secretName).toBe('sentryWebhookSecret')
 	expect(listedBefore[0]?.inputMode).toBe('request')
 	expect(listedBefore[0]?.rateLimitPerMinute).toBe(60)
@@ -168,10 +169,20 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 		env,
 		userId,
 		username: 'owner',
-		handle: minted.handle,
+		target: { handle: minted.handle },
 	})
 	expect(revealed.url).toContain('/@owner/webhooks/sentry-bridge/sentry/')
 	expect(revealed.urlHost).toBe('heykody.dev')
+	// The account UI addresses a webhook by package + name rather than by
+	// handle; both paths resolve the same minted URL.
+	const revealedByName = await revealWebhookUrlForWebsite({
+		env,
+		userId,
+		username: 'owner',
+		target: { kodyId: 'sentry-bridge', webhookName: 'sentry' },
+	})
+	expect(revealedByName.url).toBe(revealed.url)
+	expect(revealedByName.handle).toBe(minted.handle)
 
 	const listed = await listWebhooksForUser({
 		env,
@@ -182,6 +193,7 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 	expect(listed[0]?.enabled).toBe(true)
 	expect(listed[0]?.handle).toBe(minted.handle)
 	expect(listed[0]?.urlHost).toBe('heykody.dev')
+	expect(listed[0]?.urlRecoverable).toBe(true)
 	expect(listed[0]).not.toHaveProperty('url')
 	expect(JSON.stringify(listed)).not.toContain(revealed.url)
 	expect(JSON.stringify(listed)).not.toContain(
