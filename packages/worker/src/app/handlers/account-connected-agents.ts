@@ -21,6 +21,7 @@ import {
 	type OAuthGrantListHelpers,
 } from '#worker/oauth-grants.ts'
 import { buildMcpServerUrl } from '#worker/onboarding-prompts.ts'
+import { parseAccountConnectionsPathname } from '#universal/account-connections.ts'
 import { type AccountConnectedAgentsLoaderData } from '#universal/loader-data.ts'
 import { type routes } from '#universal/routes.ts'
 
@@ -57,6 +58,11 @@ export async function loadAccountConnectedAgentsData(input: {
 	}
 }
 
+/**
+ * `/account/connections`, `/account/connections/new`, and
+ * `/account/connections/new/:agent` share one payload; the client renders
+ * the view from the pathname. An unknown agent segment is a 404 page.
+ */
 export function createAccountConnectionsHandler(env: Env) {
 	return {
 		middleware: [],
@@ -66,19 +72,37 @@ export function createAccountConnectionsHandler(env: Env) {
 				return user
 			}
 
+			const view = parseAccountConnectionsPathname(
+				new URL(request.url).pathname,
+			)
+			if (!view) {
+				return renderAppPage({
+					request,
+					env,
+					title: 'Connection not found',
+					notFound: true,
+					status: 404,
+				})
+			}
+
 			const accountConnectedAgents = await loadAccountConnectedAgentsData({
 				env,
 				requestUrl: request.url,
 				user,
 			})
+			// Titles come from the document-head registry so SPA navigation
+			// between the list, grid, and per-agent views agrees with SSR.
 			return renderAppPage({
 				request,
 				env,
-				title: 'Connections',
 				loaderData: { accountConnectedAgents },
 			})
 		},
-	} satisfies Action<typeof routes.accountConnections>
+	} satisfies Action<
+		| typeof routes.accountConnections
+		| typeof routes.accountConnectionNew
+		| typeof routes.accountConnectionNewAgent
+	>
 }
 
 export function createAccountConnectedAgentsApiHandler(env: Env) {

@@ -411,6 +411,8 @@ export function createAppRouter(env: Env) {
 			accountPackagesApi: createAccountPackagesApiHandler(env),
 			accountPackagesApiPost: createAccountPackagesApiHandler(env),
 			accountConnections: createAccountConnectionsHandler(env),
+			accountConnectionNew: createAccountConnectionsHandler(env),
+			accountConnectionNewAgent: createAccountConnectionsHandler(env),
 			accountConnectionsApi: createAccountConnectionsApiHandler(env),
 			accountConnectionsApiPost: createAccountConnectionsApiHandler(env),
 			accountConnectedAgentsApi: createAccountConnectedAgentsApiHandler(env),

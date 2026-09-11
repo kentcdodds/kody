@@ -113,7 +113,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		match: accountSection(routes.accountConnections.href()),
 		paragraphs: [
 			'A connection is an AI host — Cursor, Claude, ChatGPT, Codex, a CLI — that has authorized against this Kody account over MCP. Every connected host reaches the same memories, secrets, packages, jobs, and email; Kody is the home they share, not a gateway.',
-			'Copy the MCP URL here to connect another host, open the per-host setup guides, and revoke a host you no longer use. Sign-in providers such as GitHub and Google stay on Overview. Remote MCP servers Kody calls on your behalf live on MCP servers.',
+			'Add connection lists every agent Kody knows how to connect and shows that host’s install steps; the MCP URL works for any other host that speaks MCP. Revoke a host you no longer use from the connected list. Sign-in providers such as GitHub and Google stay on Overview. Remote MCP servers Kody calls on your behalf live on MCP servers.',
 		],
 		learnMore: [
 			{

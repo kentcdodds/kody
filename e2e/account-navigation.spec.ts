@@ -89,6 +89,68 @@ test('account section switches keep the current page on screen (no loading flash
 	).toHaveAttribute('href', `/@${user.username}`)
 })
 
+test('Add connection opens the full client wall and a host step without refetching the connections payload', async ({
+	page,
+	seedE2eUser,
+	login,
+}) => {
+	test.setTimeout(process.env.CI ? 90_000 : 60_000)
+	const runId = Date.now()
+	const user = await seedE2eUser({
+		email: `connections-${runId}@example.com`,
+		username: `connections-${runId}`,
+		password: 'connections-password',
+	})
+	await login({ email: user.email, password: user.password, mode: 'login' })
+	await page.goto('/account/connections')
+	await waitForClientHydration(page)
+	await expect(
+		page.getByRole('heading', { level: 1, name: 'Connections' }),
+	).toBeVisible()
+
+	const requests = collectJsonRequests(page)
+	await observeMainTransitions(page)
+	await page.getByTestId('account-connections-add').click()
+	await expect(page).toHaveURL(/\/account\/connections\/new$/)
+	const grid = page.getByTestId('account-connections-agent-grid')
+	await expect(grid).toBeVisible()
+	// The heading never leaves the screen: the grid is a view of the same page.
+	await page.waitForTimeout(250)
+	expectSingleCommitTransition(await readMainTransitions(page), {
+		fromHeading: 'Connections',
+		toHeading: 'Connections',
+	})
+	expect(requests.duplicates(), requests.paths.join(', ')).toEqual([])
+	requests.reset()
+	// Every named client is a card and none is greyed or hidden by viewport.
+	await expect(grid.getByRole('link')).toHaveCount(14)
+	await expect(grid.locator('[data-greyed="true"]')).toHaveCount(0)
+	await expect(page.getByTestId('onboarding-agent-claude-code')).toBeVisible()
+	await expect(page.getByTestId('onboarding-agent-grok')).toBeVisible()
+
+	await page.getByTestId('onboarding-agent-claude-code').click()
+	await expect(page).toHaveURL(/\/account\/connections\/new\/claude-code$/)
+	await expect(
+		page.getByRole('heading', { level: 2, name: 'Connect Claude Code' }),
+	).toBeVisible()
+	await expect(
+		page.getByTestId('account-connections-agent-instructions'),
+	).toBeVisible()
+	// Connections stays current in the rail on the nested views.
+	await expect(
+		page
+			.getByRole('navigation', { name: 'Account sections' })
+			.getByRole('link', { name: 'Connections', exact: true }),
+	).toHaveAttribute('aria-current', 'page')
+
+	expect(requests.duplicates(), requests.paths.join(', ')).toEqual([])
+	requests.reset()
+
+	await page.getByTestId('account-connections-change-agent').click()
+	await expect(grid).toBeVisible()
+	expect(requests.duplicates(), requests.paths.join(', ')).toEqual([])
+})
+
 async function markSearchNode(search: Locator) {
 	await search.evaluate((element) => {
 		;(element as HTMLElement).dataset.kodySearchMount = '1'

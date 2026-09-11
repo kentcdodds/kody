@@ -529,7 +529,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		/href="\/account\/connections"[^>]*aria-current="page"/,
 	)
 	expect(connectionsHtml).toContain('aria-label="Connected agents"')
-	expect(connectionsHtml).toContain('aria-label="Connect an agent"')
+	expect(connectionsHtml).toContain('aria-label="MCP URL"')
 	expect(connectionsHtml).toContain(
 		'data-testid="account-connections-verify-note"',
 	)
@@ -542,6 +542,30 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		agents: [],
 		mcpServerUrl: '',
 	})
+	expect(connectionsHtml).toContain('data-testid="account-connections-add"')
+
+	// Add connection and the per-agent step share the handler and payload;
+	// an unknown agent segment is a 404 page, not an empty grid.
+	const addConnectionResponse = await runHtmlHandler(
+		createAccountConnectionsHandler(env),
+		new Request('https://example.com/account/connections/new/cursor', {
+			headers: { Cookie: accountCookie },
+		}),
+	)
+	expect(addConnectionResponse.status).toBe(200)
+	const addConnectionHtml = await readResponseText(addConnectionResponse)
+	expect(addConnectionHtml).toContain('<title>Connect Cursor')
+	expect(addConnectionHtml).toContain('aria-label="Connect Cursor"')
+	expect(addConnectionHtml).toMatch(
+		/href="\/account\/connections"[^>]*aria-current="page"/,
+	)
+	const unknownAgentResponse = await runHtmlHandler(
+		createAccountConnectionsHandler(env),
+		new Request('https://example.com/account/connections/new/not-a-client', {
+			headers: { Cookie: accountCookie },
+		}),
+	)
+	expect(unknownAgentResponse.status).toBe(404)
 
 	const mcpOauthClientsResponse = await runHtmlHandler(
 		createAccountMcpOauthClientsHandler(env),

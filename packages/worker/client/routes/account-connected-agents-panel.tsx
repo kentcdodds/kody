@@ -1,10 +1,11 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, type RemixNode, css } from 'remix/ui'
 import { createDoubleCheck } from '#client/double-check.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { connectedAgentsApiPath } from '#client/routes/account-page-data.ts'
 import {
 	AccountManagementPanel,
 	TimestampValue,
+	accountActionsCss,
 } from '#client/routes/account-management-components.tsx'
 import {
 	connectedAgentConnectionLabel,
@@ -86,7 +87,8 @@ export function createAccountConnectedAgents(handle: Handle) {
 
 	return {
 		applyPayload,
-		render() {
+		/** `actions` renders under the list (the Connections page puts Add connection there). */
+		render(options?: { actions?: RemixNode }) {
 			const groups = groupConnectedAgents(agents)
 			return (
 				<AccountManagementPanel
@@ -257,6 +259,9 @@ export function createAccountConnectedAgents(handle: Handle) {
 							MCP host.
 						</p>
 					)}
+					{options?.actions ? (
+						<div mix={css(accountActionsCss)}>{options.actions}</div>
+					) : null}
 				</AccountManagementPanel>
 			)
 		},
