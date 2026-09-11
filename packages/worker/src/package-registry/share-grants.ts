@@ -866,6 +866,7 @@ export async function invitePackageShare(input: {
 		)
 	}
 	let invitee: PublicUserIdentity | null = null
+	let bindInvitee = false
 	if (username) {
 		invitee = await findPublicUserIdentityByUsername({
 			db: input.db,
@@ -876,6 +877,7 @@ export async function invitePackageShare(input: {
 				`User "${username}" was not found. Invite by email to send an invite-before-signup.`,
 			)
 		}
+		if (invitee) bindInvitee = true
 	}
 	if (!invitee && emailInput) {
 		const foundByEmail = await findPersonUserByEmail(input.db, emailInput)
@@ -885,7 +887,8 @@ export async function invitePackageShare(input: {
 				email: foundByEmail.email,
 				stableUserId: foundByEmail.mcpUserId,
 			})
-			if (emailVerified) invitee = foundByEmail
+			invitee = foundByEmail
+			bindInvitee = emailVerified
 		}
 	}
 	const inviteeEmail = emailInput ? normalizeEmailAddress(emailInput) : null
@@ -933,8 +936,10 @@ export async function invitePackageShare(input: {
 				savedPackage.id,
 				ownerUserId,
 				inviteeEmail,
-				invitee?.username ?? (username || null),
-				invitee?.mcpUserId ?? null,
+				bindInvitee
+					? (invitee?.username ?? (username || null))
+					: username || null,
+				bindInvitee ? (invitee?.mcpUserId ?? null) : null,
 				defaultPackageShareRole,
 				invitedAt,
 				invitedAt,

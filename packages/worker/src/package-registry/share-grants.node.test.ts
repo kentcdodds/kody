@@ -705,6 +705,39 @@ test('email invite of an unverified existing account stays unbound', async () =>
 	).rejects.toThrow('not addressed')
 })
 
+test('email invite of an unverified account conflicts with their username invite', async () => {
+	const { db, packageId } = await createHarness()
+	const unverifiedExistingId = '22'.repeat(32)
+	const owner = {
+		userId: ownerUserId,
+		email: 'alice@example.com',
+		displayName: 'Alice',
+		username: 'alice',
+	}
+	await insertUser(db, {
+		username: 'unverified-named',
+		email: 'unverified-named@example.com',
+		userId: unverifiedExistingId,
+		plan: 'standard',
+		emailVerified: false,
+	})
+	const invited = await invitePackageShare({
+		db,
+		owner,
+		packageId,
+		invitee: { username: 'unverified-named' },
+	})
+	expect(invited.granteeUserId).toBe(unverifiedExistingId)
+	await expect(
+		invitePackageShare({
+			db,
+			owner,
+			packageId,
+			invitee: { email: 'unverified-named@example.com' },
+		}),
+	).rejects.toThrow('already pending')
+})
+
 test('username invite conflicts with an unbound pending email invite for that person', async () => {
 	const { db, packageId } = await createHarness()
 	const owner = {
