@@ -543,44 +543,62 @@ export const proseCss = {
 		lineHeight: 1.15,
 	},
 	'& h2[id], & h3[id], & h4[id], & h5[id], & h6[id]': {
-		display: 'flex',
-		alignItems: 'baseline',
-		columnGap: '0.35rem',
+		position: 'relative' as const,
 		scrollMarginTop: '5.5rem',
 		'&:focus-within [data-heading-anchor]': {
-			opacity: 0.85,
+			opacity: 1,
+			color: colors.primaryText,
 		},
 		[hoverMq]: {
 			'&:hover [data-heading-anchor]': {
-				opacity: 0.85,
+				opacity: 1,
+				color: colors.primaryText,
 			},
+		},
+	},
+	'& a[data-heading-permalink]': {
+		color: 'inherit',
+		textDecoration: 'none',
+		// Stretch over the heading so clicking the text hits `#slug`
+		// without wrapping heading children (which may themselves be links).
+		'&::after': {
+			content: '""',
+			position: 'absolute' as const,
+			inset: 0,
+		},
+		'&:hover, &:focus, &:focus-visible': {
+			color: 'inherit',
+			textDecoration: 'none',
+			outline: 'none',
+		},
+		'&:focus-visible [data-heading-anchor]': {
+			boxShadow: `0 0 0 2px ${colors.primaryText}`,
 		},
 	},
 	'& [data-heading-text]': {
 		minWidth: 0,
+		'& a': {
+			position: 'relative' as const,
+			zIndex: 1,
+		},
 	},
 	'& [data-heading-anchor]': {
+		// Hang the 44px control to the left of the heading so the text stays
+		// aligned with the body; `flex-end` keeps the 16px icon close to it.
+		position: 'absolute' as const,
+		right: '100%',
+		top: '50%',
+		transform: 'translateY(-50%)',
 		display: 'inline-flex',
 		alignItems: 'center',
-		justifyContent: 'center',
-		flex: 'none',
+		justifyContent: 'flex-end',
 		width: '2.75rem',
 		height: '2.75rem',
-		margin: '-0.65rem 0 -0.65rem -0.65rem',
-		padding: '0.5rem',
+		marginRight: '0.15rem',
 		color: colors.textMuted,
-		opacity: 0.45,
-		textDecoration: 'none',
+		opacity: 0,
 		borderRadius: radius.sm,
 		transition: 'opacity 120ms ease, color 120ms ease',
-		'&:hover, &:focus-visible': {
-			opacity: 1,
-			color: colors.primaryText,
-			outline: 'none',
-		},
-		'&:focus-visible': {
-			boxShadow: `0 0 0 2px ${colors.primaryText}`,
-		},
 		'& svg': {
 			width: '1rem',
 			height: '1rem',

@@ -42,19 +42,32 @@ test('prose headings with ids expose permalink anchors and scroll margin', async
 			mix: css(proseCss),
 			children: jsx('h2', {
 				id: 'example',
+				'aria-label': 'Example section',
 				children: [
 					jsx('a', {
 						href: '#example',
-						'data-heading-anchor': '',
-						children: 'link',
+						'data-heading-permalink': '',
+						'aria-label': 'Link to this section',
+						children: jsx('span', {
+							'data-heading-anchor': '',
+							'aria-hidden': 'true',
+							children: 'link',
+						}),
 					}),
-					'Example section',
+					jsx('span', {
+						'data-heading-text': '',
+						children: 'Example section',
+					}),
 				],
 			}),
 		}),
 	)
 
 	expect(html).toContain('scroll-margin-top: 5.5rem')
+	expect(html).toContain('[data-heading-permalink]')
 	expect(html).toContain('[data-heading-anchor]')
-	expect(html).toContain('display: flex')
+	expect(html).toContain('position: absolute')
+	expect(html).toContain('opacity: 0')
+	expect(html).toContain('h2[id]')
+	expect(html).not.toContain('h1[id]')
 })

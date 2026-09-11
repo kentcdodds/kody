@@ -224,6 +224,59 @@ function slugifyMarkdownHeading(text: string): string {
 		.replace(/^-+|-+$/g, '')
 }
 
+/**
+ * Accessible name for a heading that also hosts a permalink. Built from
+ * parsed inline tokens so emphasis, code, images, and links contribute
+ * visible text instead of markdown source.
+ */
+function headingPermalinkLabel(
+	tokens: Array<Token> | undefined,
+	headingId: string,
+): string {
+	const visible = inlineTokensAccessibleName(tokens).replace(/\s+/g, ' ').trim()
+	return visible || headingId
+}
+
+function inlineTokensAccessibleName(tokens: Array<Token> | undefined): string {
+	if (!tokens) return ''
+	let name = ''
+	for (const token of tokens) {
+		name += inlineTokenAccessibleName(token)
+	}
+	return name
+}
+
+function inlineTokenAccessibleName(token: Token): string {
+	switch (token.type) {
+		case 'text': {
+			const textToken = token as Tokens.Text
+			if (textToken.tokens?.length) {
+				return inlineTokensAccessibleName(textToken.tokens)
+			}
+			return decodeCharacterReferences(textToken.text)
+		}
+		case 'strong':
+		case 'em':
+		case 'del':
+		case 'link':
+			return inlineTokensAccessibleName(token.tokens)
+		case 'image':
+			return decodeCharacterReferences(token.text)
+		case 'codespan':
+		case 'escape':
+			return token.text
+		case 'br':
+			return ' '
+		case 'html':
+			return ''
+		default:
+			if ('tokens' in token && Array.isArray(token.tokens)) {
+				return inlineTokensAccessibleName(token.tokens)
+			}
+			return ''
+	}
+}
+
 function nextHeadingId(used: Map<string, number>, text: string): string {
 	const base = slugifyMarkdownHeading(text) || 'section'
 	const seen = used.get(base) ?? 0
@@ -370,7 +423,11 @@ function renderToken(
 			}
 			const headingId = nextHeadingId(options.headingSlugCounts, token.text)
 			return (
-				<Tag key={key} id={headingId}>
+				<Tag
+					key={key}
+					id={headingId}
+					aria-label={headingPermalinkLabel(token.tokens, headingId)}
+				>
 					{renderMarkdownHeadingAnchor(key, headingId)}
 					<span data-heading-text="">{children}</span>
 				</Tag>
