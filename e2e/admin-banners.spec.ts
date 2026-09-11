@@ -1,6 +1,11 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, test, type Page } from './playwright-utils.ts'
+import {
+	expect,
+	test,
+	type Page,
+	waitForClientHydration,
+} from './playwright-utils.ts'
 
 const screenshotDir = process.env.SITE_BANNER_SCREENSHOT_DIR ?? null
 
@@ -76,9 +81,7 @@ test('admin can create a site banner and preview launch looks', async ({
 	await expect(
 		page.getByRole('heading', { name: 'Admin banners' }),
 	).toBeVisible({ timeout: 20_000 })
-	await expect(page.locator('html')).toHaveAttribute('data-hydrated', 'true', {
-		timeout: 15_000,
-	})
+	await waitForClientHydration(page)
 	await expect(page.getByRole('heading', { name: 'New banner' })).toBeVisible()
 	await expect(page.getByTestId('site-banner-preview-promo')).toBeVisible()
 	await expect(page.getByLabel('Title', { exact: true })).toBeVisible()
@@ -138,9 +141,7 @@ test('admin can create a site banner and preview launch looks', async ({
 	await expect(page.getByRole('heading', { name: 'New banner' })).toBeVisible({
 		timeout: 20_000,
 	})
-	await expect(page.locator('html')).toHaveAttribute('data-hydrated', 'true', {
-		timeout: 15_000,
-	})
+	await waitForClientHydration(page)
 	await page.getByLabel('Title', { exact: true }).fill(title)
 	await page.getByLabel('Body').fill('Watch the launch video.')
 	await page.getByLabel('CTA URL').fill('https://example.com/kody-launch-video')

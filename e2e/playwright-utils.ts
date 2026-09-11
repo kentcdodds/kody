@@ -20,15 +20,28 @@ import {
 
 export * from '@playwright/test'
 
+const hydrationTimeoutMs = 15_000
+
 /**
  * Wait until Remix client hydration has bound event handlers.
  *
  * `entry.tsx` preloads the route chunk before `run()`, so SSR headings and
  * buttons are visible while `on('click')` / `on('submit')` mixins are still
  * unbound. Clicking a `type="button"` control in that gap is a silent no-op.
+ *
+ * Boot (`preloadClientRouteModules` + `run` + `app.ready`) can exceed
+ * Playwright's 5s default on a cold Vite compile — `html` already has
+ * `js is-settled` from `page-init.js` while `data-hydrated` is still
+ * missing. Account/admin navigation has flaked that way on CI; keep this
+ * budget aligned with the admin-banners cold-start wait.
  */
 export async function waitForClientHydration(page: Page) {
-	await expect(page.locator('html')).toHaveAttribute('data-hydrated', 'true')
+	await expect(
+		page.locator('html'),
+		'Remix boot sets html[data-hydrated=true] after preload + run + ready',
+	).toHaveAttribute('data-hydrated', 'true', {
+		timeout: hydrationTimeoutMs,
+	})
 }
 
 const authRetryBudgetMs = 15_000
