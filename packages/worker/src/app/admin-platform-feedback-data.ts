@@ -4,7 +4,6 @@ import {
 	type AdminPlatformFeedbackListItem,
 	type AdminPlatformFeedbackLoaderData,
 } from '#universal/loader-data.ts'
-import { platformFeedbackContentWarning } from '#worker/platform-feedback/content-warning.ts'
 import {
 	getPlatformFeedbackForAdmin,
 	listPlatformFeedbackForAdmin,
@@ -123,7 +122,6 @@ export async function loadAdminPlatformFeedbackData(
 		ok: true,
 		feedback: list.items.map(formatListItem),
 		selectedFeedback: selectedRecord ? formatDetail(selectedRecord) : null,
-		content_warning: platformFeedbackContentWarning,
 		page: list.page,
 		pageSize: list.pageSize,
 		total: list.total,

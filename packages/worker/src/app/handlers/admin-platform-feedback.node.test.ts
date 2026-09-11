@@ -1,6 +1,5 @@
 import { expect, test, vi } from 'vitest'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
-import { platformFeedbackContentWarning } from '#worker/platform-feedback/content-warning.ts'
 import { type AdminPlatformFeedbackLoaderData } from '#universal/loader-data.ts'
 import type * as AdminPlatformFeedbackData from '#app/admin-platform-feedback-data.ts'
 import type * as AuditLog from '#worker/audit-log.ts'
@@ -38,7 +37,6 @@ const listPayload = {
 	ok: true,
 	feedback: [],
 	selectedFeedback: null,
-	content_warning: platformFeedbackContentWarning,
 	page: 1,
 	pageSize: 20,
 	total: 0,
