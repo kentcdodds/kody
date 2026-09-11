@@ -18,6 +18,7 @@ import {
 	createCommunityPackageHandler,
 } from '#app/handlers/community-detail.tsx'
 import { createOnboardingHandler } from '#app/handlers/onboarding.ts'
+import { createPendingVerificationHandler } from '#app/handlers/pending-verification.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
 import { resetInlineStylesheetCache } from '#app/inline-stylesheet.ts'
 import { renderAppPage, resolveOriginClientEntry } from '#app/ssr-render.tsx'
@@ -432,7 +433,11 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	// package list, so the nav links there rather than the `/account/packages`
 	// redirect).
 	expect(accountHtml).toContain('>Connections</a>')
-	expect(accountHtml).toMatch(/href="\/@account-user"[^>]*>Packages<\/a>/)
+	expect(accountHtml).toContain('data-icon="link"')
+	expect(accountHtml).toMatch(
+		/href="\/@account-user"[^>]*>[\s\S]*?Packages<\/a>/,
+	)
+	expect(accountHtml).toContain('data-icon="box"')
 	expect(accountProps.loaderData?.onboarding).toEqual({
 		ok: true,
 		loggedIn: true,
@@ -465,6 +470,29 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(accountHtml).toContain('action="/logout"')
 	expect(accountHtml).toContain('Log out')
 	expect(accountHtml).toContain('aria-label="Session"')
+
+	const pendingVerificationResponse = await runHtmlHandler(
+		createPendingVerificationHandler(env),
+		new Request('https://example.com/pending-verification', {
+			headers: { Cookie: accountCookie },
+		}),
+	)
+	expect(pendingVerificationResponse.status).toBe(200)
+	const pendingVerificationHtml = await readResponseText(
+		pendingVerificationResponse,
+	)
+	expect(pendingVerificationHtml).toContain('Check your email')
+	expect(pendingVerificationHtml).toContain('src="/images/kody-envelope.png"')
+	expect(pendingVerificationHtml).toContain(
+		'data-testid="pending-verification-page"',
+	)
+	expect(
+		readAppRootProps(pendingVerificationHtml).loaderData?.pendingVerification,
+	).toEqual({
+		ok: true,
+		email: 'user@example.com',
+		emailVerificationDelivery: null,
+	})
 
 	// Two-factor and passkeys embed the same payload their .json endpoints
 	// serve, so the page server-renders its real state instead of a loading
@@ -967,8 +995,10 @@ test('renderAppPage configures session secret and server-renders oauth authorize
 		]),
 	)
 
+	const anonymousAuthorizeUrl =
+		'https://example.com/oauth/authorize?response_type=code&client_id=client-1&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=profile'
 	const anonymousResponse = await renderAppPage({
-		request: new Request('https://example.com/oauth/authorize', {
+		request: new Request(anonymousAuthorizeUrl, {
 			headers: { Cookie: 'kody_session=stale-or-unsigned; other=1' },
 		}),
 		env,
@@ -992,6 +1022,18 @@ test('renderAppPage configures session secret and server-renders oauth authorize
 	expect(anonymousHtml).toContain('<code>email</code>')
 	expect(anonymousHtml).not.toContain('Unknown client')
 	expect(anonymousHtml).not.toContain('Loading authorization details')
+	expect(anonymousHtml).toContain('data-testid="oauth-authorize-form"')
+	expect(anonymousHtml).toContain('method="post"')
+	expect(anonymousHtml).toContain(
+		'action="/oauth/authorize?response_type=code&amp;client_id=client-1',
+	)
+	expect(anonymousHtml).toContain('name="decision"')
+	expect(anonymousHtml).toContain('value="approve"')
+	expect(anonymousHtml).toMatch(
+		/data-testid="oauth-authorize-approve"[^>]*disabled/,
+	)
+	expect(anonymousHtml).toContain('aria-busy="true"')
+	expect(anonymousHtml).toContain('available after the page finishes loading')
 
 	setAuthSessionSecret(testCookieSecret)
 	const cookie = await createAuthCookie(
@@ -1022,6 +1064,9 @@ test('renderAppPage configures session secret and server-renders oauth authorize
 	const signedInHtml = await readResponseText(signedInResponse)
 	expect(signedInHtml).toContain('aria-label="Email verification status"')
 	expect(signedInHtml).not.toContain('Approve connection')
+	expect(signedInHtml).toMatch(
+		/data-testid="oauth-authorize-email-verify-deny"[^>]*disabled/,
+	)
 })
 
 test('renderAppPage server-renders connect-oauth provider visits without a loading flash', async () => {

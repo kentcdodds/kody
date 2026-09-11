@@ -5,6 +5,7 @@ import { css } from 'remix/ui'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
 import { ProviderIcon } from '#client/provider-icons.tsx'
+import { renderIcon } from '#universal/icon.tsx'
 import { renderByokExplainer } from '#client/routes/byok-explainer.tsx'
 import { recordBodyCss } from '#client/routes/record-table.tsx'
 import {
@@ -35,24 +36,7 @@ const providerCatalogGridCss = {
 }
 
 function PlugIcon() {
-	return (
-		<svg
-			viewBox="0 0 24 24"
-			width="1.25em"
-			height="1.25em"
-			aria-hidden="true"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="2"
-			stroke-linecap="round"
-			stroke-linejoin="round"
-		>
-			<path d="M12 22v-5" />
-			<path d="M9 8V2" />
-			<path d="M15 8V2" />
-			<path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z" />
-		</svg>
-	)
+	return renderIcon('plug', { size: '1.25em' })
 }
 
 export function renderApprovalCard(props: {

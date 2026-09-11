@@ -15,6 +15,7 @@ import {
 	type AccountConnectedAgentListItem,
 	type AccountConnectedAgentsLoaderData,
 } from '#universal/loader-data.ts'
+import { renderIcon } from '#universal/icon.tsx'
 import {
 	colors,
 	radius,
@@ -284,17 +285,7 @@ function ConnectedAgentMark(handle: Handle<{ icon: string | null }>) {
 						color: colors.textMuted,
 					})}
 				>
-					<svg
-						viewBox="0 0 24 24"
-						width="18"
-						height="18"
-						fill="currentColor"
-						aria-hidden="true"
-					>
-						<circle cx="6" cy="12" r="1.6" />
-						<circle cx="12" cy="12" r="1.6" />
-						<circle cx="18" cy="12" r="1.6" />
-					</svg>
+					{renderIcon('dots-horizontal', { size: '18' })}
 				</span>
 			)
 		}

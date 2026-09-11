@@ -10,6 +10,7 @@ import {
 	resolveDocsNavSection,
 	type DocsNavSection,
 } from '#universal/docs-nav.ts'
+import { renderIcon } from '#universal/icon.tsx'
 import { routes } from '#universal/routes.ts'
 import { colors, mq, transitions } from '#universal/styles/tokens.ts'
 import {
@@ -56,6 +57,7 @@ export function renderDocsShell(input: {
 				]}
 			>
 				<summary>
+					{renderIcon('menu', { size: '1.05em' })}
 					<span>Docs</span>
 					<span mix={css(docsMobileMenuCurrentCss)}>
 						{docsCurrentPageLabel(current)}
@@ -310,10 +312,9 @@ const docsMobileMenuCss = {
 	},
 	'& > summary::-webkit-details-marker': { display: 'none' },
 	'& > summary::marker': { content: '""' },
-	'& > summary::before': {
-		content: '"☰"',
+	'& > summary [data-icon]': {
+		flex: 'none',
 		color: colors.textMuted,
-		fontSize: '0.95rem',
 	},
 	overflow: 'visible' as const,
 	'& > nav': {

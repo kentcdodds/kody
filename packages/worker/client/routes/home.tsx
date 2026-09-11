@@ -1,4 +1,4 @@
-import { type Handle, type RemixNode } from 'remix/ui'
+import { type Handle } from 'remix/ui'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -15,6 +15,7 @@ import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { reveal, revealPop } from '#client/reveal.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { landingWorldBrands } from '#universal/landing-world-brands.ts'
+import { renderIcon, type IconName } from '#universal/icon.tsx'
 import { homepageSignupPath } from '#universal/first-touch-attribution.ts'
 import { routes } from '#universal/routes.ts'
 import {
@@ -72,12 +73,14 @@ const factoryPathSteps = [
 
 const factoryBeats = [
 	{ trigger: 'Cron', title: 'Flake Hunter', icon: 'target' },
-	{ trigger: 'Webhook', title: 'Sentry Issues', icon: 'alert' },
-	{ trigger: 'Email', title: 'Agent inbox', icon: 'envelope' },
-	{ trigger: 'Event', title: 'Purchase thanks', icon: 'gift' },
-] as const
-
-type FactoryBeatIcon = (typeof factoryBeats)[number]['icon']
+	{ trigger: 'Webhook', title: 'Sentry Issues', icon: 'warning-triangle' },
+	{ trigger: 'Email', title: 'Agent inbox', icon: 'mail' },
+	{ trigger: 'Event', title: 'Purchase thanks', icon: 'heart' },
+] as const satisfies ReadonlyArray<{
+	trigger: string
+	title: string
+	icon: IconName
+}>
 
 const ecosystemPathSteps = [
 	{
@@ -251,7 +254,7 @@ export function HomeRoute(handle: Handle) {
 								>
 									<p class="landing-path-kicker">{beat.trigger}</p>
 									<p class="landing-path-fan-title">
-										{renderFactoryBeatIcon(beat.icon)}
+										{renderIcon(beat.icon, { size: '22' })}
 										{beat.title}
 									</p>
 								</li>
@@ -496,63 +499,4 @@ function renderGithubRepoLink(label: string) {
 			{label}
 		</a>
 	)
-}
-
-function factoryBeatIconSvg(paths: RemixNode) {
-	return (
-		<svg
-			viewBox="0 0 24 24"
-			width="22"
-			height="22"
-			aria-hidden="true"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="1.5"
-			stroke-linecap="round"
-			stroke-linejoin="round"
-		>
-			{paths}
-		</svg>
-	)
-}
-
-function renderFactoryBeatIcon(icon: FactoryBeatIcon) {
-	switch (icon) {
-		case 'target':
-			return factoryBeatIconSvg(
-				<>
-					<circle cx="12" cy="12" r="8" />
-					<circle cx="12" cy="12" r="3.25" />
-					<path d="M12 2.5v2.75M12 18.75V21.5M2.5 12h2.75M18.75 12H21.5" />
-				</>,
-			)
-		case 'alert':
-			return factoryBeatIconSvg(
-				<>
-					<path d="M12 4 21 19.5H3L12 4Z" />
-					<path d="M12 10v4.25" />
-					<circle cx="12" cy="16.75" r="0.75" fill="currentColor" />
-				</>,
-			)
-		case 'envelope':
-			return factoryBeatIconSvg(
-				<>
-					<rect x="3.5" y="6" width="17" height="12" rx="2" />
-					<path d="m4.2 7.6 7.8 5.2 7.8-5.2" />
-				</>,
-			)
-		case 'gift':
-			return factoryBeatIconSvg(
-				<>
-					<rect x="3.5" y="8" width="17" height="4" rx="1" />
-					<rect x="5" y="12" width="14" height="8.5" rx="1" />
-					<path d="M12 8v12.5" />
-					<path d="M12 8c-2.4-3.4-6-2.4-6 0 0 1.4 1.9 2.4 6 2.8 4.1-.4 6-1.4 6-2.8 0-2.4-3.6-3.4-6 0" />
-				</>,
-			)
-		default: {
-			const exhaustive: never = icon
-			return exhaustive
-		}
-	}
 }

@@ -12,6 +12,7 @@ import {
 	ForkAheadLink,
 	ForkOutdatedCopyButton,
 } from '#universal/fork-outdated-copy-button.tsx'
+import { renderIcon } from '#universal/icon.tsx'
 import {
 	getAccentCalloutCss,
 	getGhostButtonCss,
@@ -366,27 +367,7 @@ export function AccountPackageOwnerDetails(
 }
 
 function packageLockGlyph(locked: boolean) {
-	return (
-		<svg
-			viewBox="0 0 16 16"
-			width="1em"
-			height="1em"
-			aria-hidden="true"
-			focusable={false}
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="1.5"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-		>
-			{locked ? (
-				<path d="M5.2 7.4V5.8a2.8 2.8 0 0 1 5.6 0v1.6" />
-			) : (
-				<path d="M5.2 7.4V5.6a2.8 2.8 0 0 1 5.2-1.4" />
-			)}
-			<rect x="3.6" y="7.4" width="8.8" height="6.4" rx="1.3" />
-		</svg>
-	)
+	return renderIcon(locked ? 'lock' : 'lock-unlocked', { size: '1em' })
 }
 
 const packageLockToggleCss = {

@@ -86,7 +86,8 @@ test('connections page renders the connected list with Add connection, the MCP U
 	expect(html).not.toContain('Loading connections')
 	// The rail marks this page current and links Packages to the profile.
 	expect(html).toMatch(/href="\/account\/connections"[^>]*aria-current="page"/)
-	expect(html).toMatch(/href="\/@jane"[^>]*>Packages<\/a>/)
+	expect(html).toMatch(/href="\/@jane"[^>]*>[\s\S]*?Packages<\/a>/)
+	expect(html).toContain('data-icon="box"')
 })
 
 test('Add connection shows every named client on every viewport with none greyed or folded away', async () => {
@@ -246,4 +247,26 @@ test('account rail lists Connections and Packages at the same level as the other
 		'/@jane',
 	)
 	expect(accountPackagesNavHref(null)).toBe('/account/packages')
+})
+
+test('account rail items carry Iconic glyph names', () => {
+	const items = accountNavItemsFor({ username: 'jane', showShared: true })
+	expect(items.map((item) => [item.label, item.icon])).toEqual([
+		['Overview', 'home'],
+		['Waiting', 'clock'],
+		['Connections', 'link'],
+		['Packages', 'box'],
+		['Shared', 'share'],
+		['Billing', 'wallet'],
+		['Usage', 'chart'],
+		['Activity', 'trending-up'],
+		['Jobs', 'briefcase'],
+		['Workflows', 'refresh'],
+		['Webhooks', 'cloud'],
+		['Secrets', 'key'],
+		['Integrations', 'plug'],
+		['MCP servers', 'server'],
+		['Memories', 'book'],
+		['Email', 'mail'],
+	])
 })

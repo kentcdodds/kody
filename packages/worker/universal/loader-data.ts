@@ -1021,7 +1021,6 @@ export type AdminPlatformFeedbackLoaderData = {
 	ok: true
 	feedback: Array<AdminPlatformFeedbackListItem>
 	selectedFeedback: AdminPlatformFeedbackDetail | null
-	content_warning: string
 	page: number
 	pageSize: number
 	total: number

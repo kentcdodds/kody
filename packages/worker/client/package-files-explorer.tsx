@@ -21,6 +21,7 @@ import {
 } from '#universal/package-files.ts'
 import { directoryOfPackageFilePath } from '#universal/package-readme-images.ts'
 import { renderPackageRepoChrome } from '#universal/package-repo-nav.tsx'
+import { renderIcon } from '#universal/icon.tsx'
 import { type PackageFilesLoaderData } from '#universal/loader-data.ts'
 import {
 	colors,
@@ -502,96 +503,23 @@ function renderFilePreview(
 }
 
 function arrowLeftIcon() {
-	return (
-		<svg
-			viewBox="0 0 24 24"
-			width="14"
-			height="14"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="2"
-			stroke-linecap="round"
-			stroke-linejoin="round"
-			aria-hidden="true"
-		>
-			<path d="M19 12H5" />
-			<path d="m12 19-7-7 7-7" />
-		</svg>
-	)
+	return renderIcon('arrow-left', { size: '14' })
 }
 
 function chevronIcon() {
-	return (
-		<svg
-			viewBox="0 0 24 24"
-			width="12"
-			height="12"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="2.5"
-			stroke-linecap="round"
-			stroke-linejoin="round"
-			aria-hidden="true"
-		>
-			<path d="m9 18 6-6-6-6" />
-		</svg>
-	)
+	return renderIcon('chevron-right', { size: '12' })
 }
 
 function directoryIcon() {
-	return (
-		<svg
-			viewBox="0 0 24 24"
-			width="15"
-			height="15"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="1.8"
-			stroke-linecap="round"
-			stroke-linejoin="round"
-			aria-hidden="true"
-		>
-			<path d="M4 20V6a1 1 0 0 1 1-1h4.6a1 1 0 0 1 .8.4l1.2 1.6H19a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1Z" />
-		</svg>
-	)
+	return renderIcon('folder', { size: '15' })
 }
 
 function fileIcon() {
-	return (
-		<svg
-			viewBox="0 0 24 24"
-			width="15"
-			height="15"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="1.8"
-			stroke-linecap="round"
-			stroke-linejoin="round"
-			aria-hidden="true"
-		>
-			<path d="M14 3v5h5" />
-			<path d="M15 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6Z" />
-		</svg>
-	)
+	return renderIcon('file', { size: '15' })
 }
 
 function searchIcon() {
-	return (
-		<svg
-			viewBox="0 0 24 24"
-			width="14"
-			height="14"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="2"
-			stroke-linecap="round"
-			stroke-linejoin="round"
-			aria-hidden="true"
-		>
-			<circle cx="11" cy="11" r="7" />
-			<path d="m21 21-4.3-4.3" />
-		</svg>
-	)
+	return renderIcon('search', { size: '14' })
 }
 
 // Same box as the site header (`navCss`): `layoutMaxWidths.extended` centered,
