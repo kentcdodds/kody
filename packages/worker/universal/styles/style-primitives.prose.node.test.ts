@@ -35,3 +35,26 @@ test('prose tables keep column layout instead of wrapping the last cell to a sli
 	expect(html).toContain('display: table')
 	expect(html).toContain('[data-markdown-table-compact-last]')
 })
+
+test('prose headings with ids expose permalink anchors and scroll margin', async () => {
+	const html = await renderToString(
+		jsx('div', {
+			mix: css(proseCss),
+			children: jsx('h2', {
+				id: 'example',
+				children: [
+					jsx('a', {
+						href: '#example',
+						'data-heading-anchor': '',
+						children: 'link',
+					}),
+					'Example section',
+				],
+			}),
+		}),
+	)
+
+	expect(html).toContain('scroll-margin-top: 5.5rem')
+	expect(html).toContain('[data-heading-anchor]')
+	expect(html).toContain('display: flex')
+})
