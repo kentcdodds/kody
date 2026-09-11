@@ -16,6 +16,7 @@ export function oauthAuthorizeConsentFormAttrs(href: string) {
 	}
 }
 
+/** `hydrated` is post-hydrate interactivity, not `typeof document`. */
 export function oauthAuthorizeActionsDisabled(input: {
 	hydrated: boolean
 	statusReady: boolean

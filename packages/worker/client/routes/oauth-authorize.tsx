@@ -193,6 +193,9 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	let resendStatus: 'idle' | 'sending' = 'idle'
 	let resendMessage: string | null = null
 	let resendTone: 'error' | 'info' = 'info'
+	// Stay false through SSR and the first client render so hydrate matches
+	// the disabled form. Flip after queueTask, once submit handlers are bound.
+	let consentInteractive = false
 
 	function setMessage(next: OAuthAuthorizeMessage | null) {
 		message = next
@@ -512,7 +515,14 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		const showResetClientCard = allowClientReset && !resetCompleted
 		const showAuthorizeForm =
 			!resetCompleted && !needsEmailVerification && status !== 'error'
-		const hydrated = typeof document !== 'undefined'
+		if (typeof document !== 'undefined' && !consentInteractive) {
+			handle.queueTask(() => {
+				if (consentInteractive) return
+				consentInteractive = true
+				handle.update()
+			})
+		}
+		const hydrated = consentInteractive
 		const consentForm = oauthAuthorizeConsentFormAttrs(currentHref)
 		const actionsDisabled = oauthAuthorizeActionsDisabled({
 			hydrated,
