@@ -10,6 +10,7 @@ import {
 	assertPackageShareUseAllowed,
 	attachPendingPackageShareInvitesForEmail,
 	authorizeSharedPackagePermission,
+	collectShareStorageOwners,
 	grantIsAddressedToGuest,
 	hydratePackageShareGrantViews,
 	invitePackageShare,
@@ -21,6 +22,7 @@ import {
 	PackageSharePaidRequiredError,
 	PackageSharePinAheadError,
 	resolvePackageStorageOwnerUserId,
+	retainAuthorizedPackageStorageGrantIds,
 	resolveShareGrantedPackageImport,
 	revokePackageShare,
 } from './share-grants.ts'
@@ -223,6 +225,28 @@ test('invite, accept, revoke, and leave follow paid and accept-required rules', 
 			packageId,
 		}),
 	).toBe(ownerUserId)
+	const shareOwners = await collectShareStorageOwners({
+		db,
+		callerUserId: guestUserId,
+		packageIds: [packageId],
+	})
+	expect(shareOwners.get(packageId)).toBe(ownerUserId)
+	expect(
+		await retainAuthorizedPackageStorageGrantIds({
+			db,
+			callerUserId: guestUserId,
+			packageIds: [packageId],
+			storageOwnerByPackageId: shareOwners,
+		}),
+	).toEqual(new Set([packageId]))
+	expect(
+		await retainAuthorizedPackageStorageGrantIds({
+			db,
+			callerUserId: guestUserId,
+			packageIds: [packageId],
+			storageOwnerByPackageId: new Map(),
+		}),
+	).toEqual(new Set())
 
 	const sourceRead = await authorizeSharedPackagePermission({
 		db,

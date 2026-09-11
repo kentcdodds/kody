@@ -643,10 +643,15 @@ export async function assertPackageShareUseAllowed(input: {
 	if (input.grant.acceptedPublishedCommit === publishedCommit) {
 		return publishedCommit
 	}
-	const ownerUsername =
-		input.savedPackage.name.replace(/^@/, '').split('/')[0] ?? ''
+	const owner = await findPublicUserIdentityByStableUserId({
+		db: input.db,
+		userId: input.grant.ownerUserId,
+	})
+	if (!owner?.username) {
+		throw new PackageShareAccessError('Shared package owner was not found.')
+	}
 	const approveChangesPath = buildPackageShareApproveChangesPath({
-		ownerUsername,
+		ownerUsername: owner.username,
 		kodyId: input.savedPackage.kodyId,
 	})
 	throw new PackageSharePinAheadError(
@@ -796,6 +801,31 @@ export async function collectShareStorageOwners(input: {
 		}
 		return owners
 	}, owners)
+}
+
+export async function retainAuthorizedPackageStorageGrantIds(input: {
+	db: D1Database
+	callerUserId: string
+	packageIds: Iterable<string>
+	storageOwnerByPackageId: ReadonlyMap<string, string>
+}): Promise<Set<string>> {
+	const retained = new Set<string>()
+	for (const packageId of new Set(
+		[...input.packageIds].filter((id) => id.length > 0),
+	)) {
+		if (input.storageOwnerByPackageId.has(packageId)) {
+			retained.add(packageId)
+			continue
+		}
+		const own = canPrepareAppDb(input.db)
+			? await getSavedPackageById(input.db, {
+					userId: input.callerUserId,
+					packageId,
+				})
+			: null
+		if (own) retained.add(packageId)
+	}
+	return retained
 }
 
 export async function invitePackageShare(input: {

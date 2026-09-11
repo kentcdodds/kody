@@ -26,8 +26,12 @@ export function diffPublishedSourceFiles(
 	paths.sort((left, right) => left.localeCompare(right))
 	const changes: Array<PackageShareFileChange> = []
 	for (const path of paths) {
-		const acceptedText = accepted[path] ?? null
-		const currentText = current[path] ?? null
+		const acceptedText = Object.hasOwn(accepted, path)
+			? (accepted[path] ?? null)
+			: null
+		const currentText = Object.hasOwn(current, path)
+			? (current[path] ?? null)
+			: null
 		if (acceptedText === currentText) continue
 		const change =
 			acceptedText == null

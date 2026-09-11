@@ -58,6 +58,18 @@ test('diffPublishedSourceFiles marks truncated files', () => {
 	])
 })
 
+test('diffPublishedSourceFiles treats inherited Object keys as absent', () => {
+	expect(diffPublishedSourceFiles({ toString: 'old' }, {})).toEqual([
+		{
+			path: 'toString',
+			change: 'removed',
+			accepted: 'old',
+			current: null,
+			truncated: false,
+		},
+	])
+})
+
 test('pin acknowledge stays blocked on truncated files unless switching to follow', () => {
 	expect(
 		pinAcknowledgeBlockedByTruncatedReview([{ truncated: true }], false),

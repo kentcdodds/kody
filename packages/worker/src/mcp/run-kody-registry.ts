@@ -42,7 +42,10 @@ import {
 	type KodyResolvedProvider,
 } from '#mcp/kody-remote-types.ts'
 import { assertPersonOwnedPackageMayNotRunPlatformDependencies } from '#worker/package-registry/platform-package-policy.ts'
-import { collectShareStorageOwners } from '#worker/package-registry/share-grants.ts'
+import {
+	collectShareStorageOwners,
+	retainAuthorizedPackageStorageGrantIds,
+} from '#worker/package-registry/share-grants.ts'
 import {
 	createRuntimeHelperExtraProviders,
 	createRuntimeHelperKodyToolSets,
@@ -881,6 +884,7 @@ export async function runBundledModuleWithRegistry(
 			dynamicDependencyPackageIds,
 		})
 		const storageOwnerByPackageId = new Map<string, string>()
+		let authorizedPackageStorageIds = grantedPackageStorageIds
 		if (callerContext.user?.userId) {
 			const shareOwners = await collectShareStorageOwners({
 				db: env.APP_DB,
@@ -890,6 +894,13 @@ export async function runBundledModuleWithRegistry(
 			for (const [packageId, ownerUserId] of shareOwners) {
 				storageOwnerByPackageId.set(packageId, ownerUserId)
 			}
+			authorizedPackageStorageIds =
+				await retainAuthorizedPackageStorageGrantIds({
+					db: env.APP_DB,
+					callerUserId: callerContext.user.userId,
+					packageIds: grantedPackageStorageIds,
+					storageOwnerByPackageId,
+				})
 		}
 		// Static package export calls report through a sandbox bridge with a
 		// bundler-stamped callee package id; only ids recorded as *static*
@@ -919,7 +930,7 @@ export async function runBundledModuleWithRegistry(
 				userId: callerContext.user?.userId ?? null,
 				email: callerContext.user?.email ?? null,
 				storageContext: normalizedStorageContext,
-				grantedSecretAuthorityPackageIds: [...grantedPackageStorageIds],
+				grantedSecretAuthorityPackageIds: [...authorizedPackageStorageIds],
 			},
 			modules: hydratedModules,
 			// Package-context runs are saved-package code; do not count their fetch hosts.
@@ -954,7 +965,7 @@ export async function runBundledModuleWithRegistry(
 		// missing-capability TypeError.
 		const packageStorageTools = callerContext.user?.userId
 			? {
-					grantedPackageIds: grantedPackageStorageIds,
+					grantedPackageIds: authorizedPackageStorageIds,
 					writable: !closedWorldRetrieverRuntime,
 					storageOwnerByPackageId,
 				}
@@ -964,7 +975,7 @@ export async function runBundledModuleWithRegistry(
 					env,
 					callerContext,
 					runPackageId: options?.packageContext?.packageId ?? null,
-					grantedPackageIds: grantedPackageStorageIds,
+					grantedPackageIds: authorizedPackageStorageIds,
 				})
 			: undefined
 		const provider = await buildKodyProvider(env, callerContext, {
