@@ -23,6 +23,10 @@ block and MCP URL, and `/.well-known/mcp/server-card.json` for the server card.
    then approve access. Approving gives that agent full access to this Kody
    account — not a limited permission set.
 
+Once signed in, Account → Connections (`/account/connections`) is the durable
+home for this: it shows the MCP URL with a copy button, links back to these
+per-host guides, lists every agent that has authorized, and lets you revoke one.
+
 Your account email must be verified before authorize can finish or MCP can run.
 If authorize asks you to verify, keep that tab open, finish verification (from
 the email link or `/pending-verification`), then continue. You do not need to
@@ -109,10 +113,10 @@ you only have the MCP URL.
   in a chat must open the Kody authorize window. If that window never opens on
   one browser or device, retry from another. Hosts that need a pre-registered
   confidential client can use **OAuth 2.1 (Static)** with a client minted at
-  Account → Advanced → MCP OAuth clients. Register the exact Open WebUI callback
-  (`{open-webui}/oauth/clients/mcp:{connection-id}/callback`) and set OAuth
-  Server URL to this deployment’s origin when discovery from the MCP URL is not
-  enough.
+  Account → Connections → Advanced → MCP OAuth clients. Register the exact Open
+  WebUI callback (`{open-webui}/oauth/clients/mcp:{connection-id}/callback`) and
+  set OAuth Server URL to this deployment’s origin when discovery from the MCP
+  URL is not enough.
 
 ### Coding vs non-coding agents
 

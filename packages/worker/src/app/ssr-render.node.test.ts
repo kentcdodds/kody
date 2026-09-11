@@ -7,6 +7,7 @@ import {
 	type AuthSession,
 } from '#app/auth-session.ts'
 import { createAccountHandler } from '#app/handlers/account.ts'
+import { createAccountConnectionsHandler } from '#app/handlers/account-connected-agents.ts'
 import { createAccountPasskeysHandler } from '#app/handlers/account-passkeys.ts'
 import { createAccountMcpOauthClientsHandler } from '#app/handlers/account-mcp-oauth-clients.ts'
 import { createAccountTwoFactorHandler } from '#app/handlers/account-two-factor.ts'
@@ -424,10 +425,16 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		availableProviders: [],
 		canSyncDiscordRoles: false,
 	})
-	expect(accountProps.loaderData?.accountConnectedAgents).toEqual({
-		ok: true,
-		agents: [],
-	})
+	// Connected agents moved to `/account/connections`; Overview only links there.
+	expect(accountProps.loaderData?.accountConnectedAgents).toBeUndefined()
+	expect(accountHtml).toContain('data-testid="account-connections-link"')
+	expect(accountHtml).toContain('href="/account/connections"')
+	expect(accountHtml).not.toContain('aria-label="Connected agents"')
+	// The rail carries Connections and Packages (the profile is the canonical
+	// package list, so the nav links there rather than the `/account/packages`
+	// redirect).
+	expect(accountHtml).toContain('>Connections</a>')
+	expect(accountHtml).toMatch(/href="\/@account-user"[^>]*>Packages<\/a>/)
 	expect(accountProps.loaderData?.onboarding).toEqual({
 		ok: true,
 		loggedIn: true,
@@ -503,6 +510,37 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(readAppRootProps(waitingHtml).loaderData?.accountWaiting).toEqual({
 		ok: true,
 		items: expect.any(Array),
+	})
+
+	// The Connections page embeds the connected-agents payload. The MCP URL is
+	// gated on email verification (this fixture is unverified), so the page
+	// server-renders the verify note instead of a copy card.
+	const connectionsResponse = await runHtmlHandler(
+		createAccountConnectionsHandler(env),
+		new Request('https://example.com/account/connections', {
+			headers: { Cookie: accountCookie },
+		}),
+	)
+	expect(connectionsResponse.status).toBe(200)
+	const connectionsHtml = await readResponseText(connectionsResponse)
+	expect(connectionsHtml).toContain('>Connections<')
+	expect(connectionsHtml).toContain('aria-label="Account sections"')
+	expect(connectionsHtml).toMatch(
+		/href="\/account\/connections"[^>]*aria-current="page"/,
+	)
+	expect(connectionsHtml).toContain('aria-label="Connected agents"')
+	expect(connectionsHtml).toContain('aria-label="Connect an agent"')
+	expect(connectionsHtml).toContain(
+		'data-testid="account-connections-verify-note"',
+	)
+	expect(connectionsHtml).toContain('href="/account/mcp-oauth-clients"')
+	expect(connectionsHtml).toContain('data-entity-explainer="connections"')
+	expect(
+		readAppRootProps(connectionsHtml).loaderData?.accountConnectedAgents,
+	).toEqual({
+		ok: true,
+		agents: [],
+		mcpServerUrl: '',
 	})
 
 	const mcpOauthClientsResponse = await runHtmlHandler(

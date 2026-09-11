@@ -120,7 +120,7 @@ payment-adjacent.
 `resolveEffectivePlanWithSecondAgentGift` while `expires_at` is in the future
 and the base rank is still below Standard. The gift never lowers a paid or
 manual grant. Expiry is read-time (no sweeper). Authorize completion and
-grant-list pages (onboarding payload, Account → Connected agents) call
+grant-list pages (onboarding payload, Account → Connections) call
 `maybeEvaluateSecondAgentStandardGift`, which skips the write when unique
 clients are below 2 or listing failed, but still reads the persisted ledger so
 `/onboarding.json` does not hide an already-granted gift. Missing

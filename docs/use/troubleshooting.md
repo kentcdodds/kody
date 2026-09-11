@@ -49,8 +49,9 @@ another browser or device. That is a host or environment issue, not a failed
 Kody registration. In Open WebUI, do not set an OAuth MCP tool as a model
 default or pre-enabled tool — enable it in the chat so the host can open the
 authorize window. Hosts that require a pre-registered Client ID and Client
-Secret can mint one at Account → Advanced → MCP OAuth clients and use the host’s
-static OAuth mode. Static mode runs authorize and token exchange.
+Secret can mint one at Account → Connections → Advanced → MCP OAuth clients
+(`/account/mcp-oauth-clients`) and use the host’s static OAuth mode. Static mode
+runs authorize and token exchange.
 
 ## Adding a remote MCP server fails with `Invalid origin uri` or redirect URI errors
 

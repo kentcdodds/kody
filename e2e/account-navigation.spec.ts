@@ -72,12 +72,21 @@ test('account section switches keep the current page on screen (no loading flash
 		[
 			{ link: 'Memories', heading: 'Memories' },
 			{ link: 'Secrets', heading: 'Secrets' },
+			{ link: 'Connections', heading: 'Connections' },
 			{ link: 'Workflows', heading: 'Workflows' },
 			{ link: 'Overview', heading: 'Account' },
 			{ link: 'Jobs', heading: 'Jobs' },
 		],
 		'Jobs',
 	)
+
+	// Packages sits in the rail at the same level as the other sections and
+	// points at the profile, which is the canonical package list.
+	await expect(
+		page
+			.getByRole('navigation', { name: 'Account sections' })
+			.getByRole('link', { name: 'Packages', exact: true }),
+	).toHaveAttribute('href', `/@${user.username}`)
 })
 
 async function markSearchNode(search: Locator) {

@@ -37,11 +37,11 @@ weeks." Step 3 copy advertises "Connect a second agent and get Standard free for
 2 weeks." Same-ecosystem greying stays picker UX only. `/onboarding` resumes at
 that step instead of always opening the Step 1 picker, and every wizard step
 still lists already-connected hosts so a return visit cannot hide Cursor or
-Claude Desktop. Account → Connected agents lists those inbound hosts grouped by
-display name, with public logos for known kinds, newest-first sort, best-effort
-labels, and per-`clientId` revoke. That list is not `users.mcp_client_name`
-(first-touch) and not `/account/mcp-oauth-clients` (user-minted confidential
-clients).
+Claude Desktop. Account → Connections (`/account/connections`) lists those
+inbound hosts grouped by display name, with public logos for known kinds,
+newest-first sort, best-effort labels, and per-`clientId` revoke. That list is
+not `users.mcp_client_name` (first-touch) and not `/account/mcp-oauth-clients`
+(user-minted confidential clients).
 
 `first-win` is not a wizard step and is not a checklist item. Signed-in
 `/onboarding` does not probe Mailbox for that loop. MCP registers

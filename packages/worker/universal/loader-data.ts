@@ -1168,6 +1168,12 @@ export type AccountConnectedAgentListItem = ConnectedMcpAgent & {
 export type AccountConnectedAgentsLoaderData = {
 	ok: true
 	agents: Array<AccountConnectedAgentListItem>
+	/**
+	 * This deployment's MCP URL for connecting another host. Empty until the
+	 * account email is verified, matching the onboarding payload, so the page
+	 * cannot send an unverified user into the authorize → 403 loop.
+	 */
+	mcpServerUrl: string
 }
 
 export type PendingVerificationLoaderData = {

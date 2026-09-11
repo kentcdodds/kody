@@ -9,6 +9,7 @@ test('connected agents panel groups same-name hosts, shows logos, and keeps revo
 	} as Handle)
 	panel.applyPayload({
 		ok: true,
+		mcpServerUrl: 'https://kody.example/mcp',
 		agents: [
 			{
 				clientId: 'cursor-old',

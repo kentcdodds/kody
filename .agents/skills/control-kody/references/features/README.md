@@ -27,6 +27,7 @@ Then drive the surface with `login`, `request`, `preview`, and `health`. See the
 - [two-factor](./two-factor.md) — `/account/two-factor`
 - [passkeys](./passkeys.md) — `/account/passkeys`
 - [account](./account.md) — `/account`
+- [connections](./connections.md) — `/account/connections`
 - [packages](./packages.md) — `/@username`
 - [shared](./shared.md) — `/account/shared`
 - [secrets](./secrets.md) — `/account/secrets`

@@ -345,21 +345,45 @@ const adminNavItems = [
 	},
 ] as const
 
-const accountNavItems = [
-	{ href: '/account', label: 'Overview' },
-	{ href: '/account/waiting', label: 'Waiting' },
-	{ href: '/account/shared', label: 'Shared' },
-	{ href: '/account/billing', label: 'Billing' },
-	{ href: '/account/usage', label: 'Usage' },
-	{ href: '/account/activity', label: 'Activity' },
-	{ href: '/account/jobs', label: 'Jobs' },
-	{ href: '/account/workflows', label: 'Workflows' },
-	{ href: '/account/secrets', label: 'Secrets' },
-	{ href: '/account/integrations', label: 'Integrations' },
-	{ href: '/account/mcp-servers', label: 'MCP servers' },
-	{ href: '/account/memories', label: 'Memories' },
-	{ href: '/account/email', label: 'Email' },
-] as const
+/**
+ * Packages live on the signed-in user's public profile (`/@username`);
+ * `/account/packages` only 302s there. Link straight to the canonical page
+ * when the session knows the username and let the redirect cover the rare
+ * case where it does not, so the rail never points at a dead route.
+ */
+export function accountPackagesNavHref(username: string | null | undefined) {
+	return username
+		? routes.profile.href({ username })
+		: routes.accountPackages.href()
+}
+
+type AccountNavItem = { href: string; label: string }
+
+/** Account rail items in display order for the signed-in session. */
+export function accountNavItemsFor(input: {
+	username: string | null | undefined
+	showShared: boolean
+}): Array<AccountNavItem> {
+	return [
+		{ href: '/account', label: 'Overview' },
+		{ href: '/account/waiting', label: 'Waiting' },
+		{ href: routes.accountConnections.href(), label: 'Connections' },
+		{ href: accountPackagesNavHref(input.username), label: 'Packages' },
+		...(input.showShared
+			? [{ href: routes.accountShared.href(), label: 'Shared' }]
+			: []),
+		{ href: '/account/billing', label: 'Billing' },
+		{ href: '/account/usage', label: 'Usage' },
+		{ href: '/account/activity', label: 'Activity' },
+		{ href: '/account/jobs', label: 'Jobs' },
+		{ href: '/account/workflows', label: 'Workflows' },
+		{ href: '/account/secrets', label: 'Secrets' },
+		{ href: '/account/integrations', label: 'Integrations' },
+		{ href: '/account/mcp-servers', label: 'MCP servers' },
+		{ href: '/account/memories', label: 'Memories' },
+		{ href: '/account/email', label: 'Email' },
+	]
+}
 
 function isAccountNavItemActive(itemHref: string, currentPath: string) {
 	if (itemHref === '/account') return currentPath === '/account'
@@ -382,17 +406,16 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 	return () => {
 		const currentPath = new URL(handle.props.currentHref, 'http://localhost')
 			.pathname
-		const showShared = isFeatureFlagEnabled(
-			readAppSession(handle)?.session,
-			packageShareGrantsFlagKey,
-		)
+		const session = readAppSession(handle)?.session ?? null
+		const showShared = isFeatureFlagEnabled(session, packageShareGrantsFlagKey)
 		const explainer =
 			!showShared && currentPath === routes.accountShared.href()
 				? null
 				: resolveEntityExplainer(currentPath)
-		const navItems = showShared
-			? accountNavItems
-			: accountNavItems.filter((item) => item.href !== '/account/shared')
+		const navItems = accountNavItemsFor({
+			username: session?.username,
+			showShared,
+		})
 
 		return (
 			<>
