@@ -173,6 +173,17 @@ test('toAdminCostVsPay buckets real risk instead of every unpaid penny', () => {
 			username: 'kentcdodds',
 		}),
 	).toBe('none')
+	expect(
+		classifyAdminCostRisk({
+			estimatedGrossUsd: 4,
+			estimatedPaidUsdCents: 0,
+			paidSource: 'none',
+			stripePlan: null,
+			manualPlan: 'free',
+			username: 'ops-admin',
+			isOperator: true,
+		}),
+	).toBe('none')
 })
 
 test('rankRiskCostConsumers ranks within buckets and drops pennies and operator noise', () => {

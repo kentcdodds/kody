@@ -1,7 +1,10 @@
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { chartColor } from '#client/charts/chart-theme.ts'
 import { monthShortNames } from '#client/charts/usage-metric-series.ts'
-import { fleetDynamicWorkerCostAlertUsd } from '#universal/dynamic-worker-cost.ts'
+import {
+	adminCostRiskNoneStatus,
+	fleetDynamicWorkerCostAlertUsd,
+} from '#universal/dynamic-worker-cost.ts'
 import {
 	type AdminCostRiskKind,
 	type AdminInsightsLoaderData,
@@ -114,6 +117,17 @@ export function formatAdminCostRiskLabel(
 			throw new Error(`Unknown cost risk: ${String(exhaustive)}`)
 		}
 	}
+}
+
+export function formatAdminCostRiskStatus(input: {
+	risk: AdminCostRiskKind
+	estimatedGrossUsd: number
+	estimatedPaidUsdCents: number
+}) {
+	return (
+		formatAdminCostRiskLabel(input.risk, input.estimatedGrossUsd) ??
+		adminCostRiskNoneStatus(input)
+	)
 }
 
 /** Null when run-derived totals are complete; otherwise a user-facing warning. */

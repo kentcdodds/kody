@@ -352,7 +352,7 @@ async function queryDynamicWorkerCost(
 	currentMonth: string,
 ): Promise<AdminInsightsDynamicWorkerCost> {
 	const catalog = resolveStripePriceCatalog(env)
-	const [totalRow, consumerRows] = await Promise.all([
+	const [totalRow, consumerRows, adminUserIds] = await Promise.all([
 		db
 			.prepare(
 				`SELECT COALESCE(SUM(event_count), 0) AS unique_worker_days
@@ -383,6 +383,7 @@ async function queryDynamicWorkerCost(
 				stripe_price_id: string | null
 				event_count: number
 			}>(),
+		listAdminStableUserIds(db),
 	])
 	const uniqueWorkerDays = Number(totalRow?.unique_worker_days ?? 0)
 	const scanned = (consumerRows.results ?? []).map((row) =>
@@ -394,6 +395,7 @@ async function queryDynamicWorkerCost(
 			stripePriceId: row.stripe_price_id,
 			catalog,
 			manualPlan: row.plan,
+			isOperator: adminUserIds.has(row.stable_user_id),
 		}),
 	)
 	return {

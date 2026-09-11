@@ -94,7 +94,7 @@ export async function loadAdminUserUsageData(
 		? createKvCachifiedCache(env.BUNDLE_ARTIFACTS_KV)
 		: null
 
-	const [monthRows, entitlementConsumption] = await Promise.all([
+	const [monthRows, entitlementConsumption, isOperator] = await Promise.all([
 		loadUserMonthRollups({
 			db: env.APP_DB,
 			cache: rollupCache,
@@ -108,6 +108,7 @@ export async function loadAdminUserUsageData(
 			ladder,
 			now,
 		}),
+		userHasAdminRole(env.APP_DB, usageUserId),
 	])
 
 	const monthUsage = toMonthUsage(monthRows, currentMonth)
@@ -127,6 +128,7 @@ export async function loadAdminUserUsageData(
 		catalog: resolveStripePriceCatalog(env),
 		manualPlan: row.plan,
 		username: row.username,
+		isOperator,
 	})
 
 	return {
@@ -147,6 +149,22 @@ export async function loadAdminUserUsageData(
 		}),
 		costVsPay,
 	}
+}
+
+async function userHasAdminRole(db: D1Database, stableUserId: string) {
+	const row = await db
+		.prepare(
+			`SELECT 1 AS present
+			 FROM users u
+			 INNER JOIN user_roles ur ON ur.user_id = u.id
+			 INNER JOIN roles r ON r.id = ur.role_id
+			 WHERE u.stable_user_id = ?
+				AND r.name = 'admin'
+				AND u.deleting_at IS NULL`,
+		)
+		.bind(stableUserId)
+		.first<{ present: number }>()
+	return row != null
 }
 
 async function loadUserMonthRollups(input: {

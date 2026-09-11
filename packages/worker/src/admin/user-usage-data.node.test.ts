@@ -153,6 +153,12 @@ function createAdminUserUsageTestDb(input: {
 							null) as T | null
 					}
 					if (
+						normalizedQuery.includes("r.name = 'admin'") &&
+						normalizedQuery.includes('stable_user_id')
+					) {
+						return null
+					}
+					if (
 						normalizedQuery.includes(
 							'select 1 as present from users where stable_user_id = ?',
 						)

@@ -34,11 +34,12 @@ const riskBucketCopy: Record<
 	free_near_allotment: {
 		title: 'Unpaid near included allotment',
 		emptyText:
-			'No unpaid accounts are approaching the $2 included-bucket alert.',
+			'No unpaid accounts are at ≥$1 / 500 unique days (50% of the $2 included-bucket alert).',
 	},
 	missing_price_id: {
 		title: 'Paid unknown / missing price id',
-		emptyText: 'No paid-looking plans are missing a catalog price id.',
+		emptyText:
+			'No Standard/Pro stripe_plan rows are missing a catalog price id.',
 	},
 }
 

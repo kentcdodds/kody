@@ -38,7 +38,7 @@ import {
 	formatDynamicWorkerUsd,
 } from '#universal/dynamic-worker-cost.ts'
 import {
-	formatAdminCostRiskLabel,
+	formatAdminCostRiskStatus,
 	formatUsdFromCents,
 } from './admin-insights-shared.ts'
 import {
@@ -555,13 +555,13 @@ export function renderAdminUserDetail(props: AdminUserDetailProps) {
 													: colors.textMuted,
 									})}
 								>
-									{formatAdminCostRiskLabel(
-										selectedUsage.costVsPay.risk,
-										selectedUsage.costVsPay.estimatedGrossUsd,
-									) ??
-										(selectedUsage.costVsPay.estimatedPaidUsdCents > 0
-											? 'above cost'
-											: 'within included allotment')}
+									{formatAdminCostRiskStatus({
+										risk: selectedUsage.costVsPay.risk,
+										estimatedGrossUsd:
+											selectedUsage.costVsPay.estimatedGrossUsd,
+										estimatedPaidUsdCents:
+											selectedUsage.costVsPay.estimatedPaidUsdCents,
+									})}
 								</span>{' '}
 								({formatIntegerNumber(selectedUsage.costVsPay.uniqueWorkerDays)}{' '}
 								unique worker-days)

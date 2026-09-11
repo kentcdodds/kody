@@ -9,6 +9,7 @@
 
 import {
 	fleetDynamicWorkerCostAlertUsd,
+	fleetFreeDynamicWorkerNearAllotmentFraction,
 	toAdminDynamicWorkerCost,
 } from '#universal/dynamic-worker-cost.ts'
 import {
@@ -25,13 +26,6 @@ import {
 
 export const adminFleetCostVsPayScanLimit = 25
 export const adminFleetCostVsPayDisplayLimit = 10
-
-/**
- * Unpaid accounts enter the warn bucket at this fraction of the Free fleet
- * alert ($2 / 1,000 unique days). Half ($1 / 500 days) is "climbing toward"
- * the included allotment without tagging every $0.01 user.
- */
-export const freeNearAllotmentAlertFraction = 0.5
 
 const operatorNoiseUsernames = new Set(['kentcdodds'])
 
@@ -64,7 +58,9 @@ export function estimatePaidListMrrUsdCents(input: {
 export function isOperatorCostNoise(input: {
 	username?: string | null | undefined
 	manualPlan?: string | null | undefined
+	isOperator?: boolean
 }): boolean {
+	if (input.isOperator) return true
 	const username = input.username?.trim().toLowerCase()
 	if (username && operatorNoiseUsernames.has(username)) return true
 	return parsePlanName(input.manualPlan) === 'max'
@@ -77,6 +73,7 @@ export function classifyAdminCostRisk(input: {
 	stripePlan: string | null | undefined
 	manualPlan?: string | null | undefined
 	username?: string | null | undefined
+	isOperator?: boolean
 }): AdminCostRiskKind {
 	if (isOperatorCostNoise(input)) return 'none'
 
@@ -94,7 +91,8 @@ export function classifyAdminCostRisk(input: {
 	const freeAlertUsd = fleetDynamicWorkerCostAlertUsd('free')
 	if (
 		freeAlertUsd != null &&
-		input.estimatedGrossUsd >= freeAlertUsd * freeNearAllotmentAlertFraction
+		input.estimatedGrossUsd >=
+			freeAlertUsd * fleetFreeDynamicWorkerNearAllotmentFraction
 	) {
 		return 'free_near_allotment'
 	}
@@ -109,6 +107,7 @@ export function toAdminCostVsPay(input: {
 	catalog: Map<string, StripePriceCatalogEntry>
 	manualPlan?: string | null | undefined
 	username?: string | null | undefined
+	isOperator?: boolean
 }): AdminCostVsPay {
 	const cost = toAdminDynamicWorkerCost(input.uniqueWorkerDays)
 	const paid = estimatePaidListMrrUsdCents(input)
@@ -120,6 +119,7 @@ export function toAdminCostVsPay(input: {
 		stripePlan: input.stripePlan,
 		manualPlan: input.manualPlan,
 		username: input.username,
+		isOperator: input.isOperator,
 	})
 	return {
 		...cost,
@@ -139,6 +139,7 @@ export function toAdminCostVsPayConsumer(input: {
 	stripePriceId: string | null | undefined
 	catalog: Map<string, StripePriceCatalogEntry>
 	manualPlan?: string | null | undefined
+	isOperator?: boolean
 }): AdminInsightsDynamicWorkerCostConsumer {
 	const costVsPay = toAdminCostVsPay(input)
 	return {

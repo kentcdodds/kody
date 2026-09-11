@@ -24,6 +24,29 @@ const fleetDynamicWorkerCostAlertUsdByPlan = {
 	pro: 49,
 } as const
 
+/**
+ * Unpaid accounts enter the insights warn bucket at this fraction of the
+ * Free fleet alert ($2 / 1,000 unique days). Half is $1 / 500 days.
+ */
+export const fleetFreeDynamicWorkerNearAllotmentFraction = 0.5
+
+export function fleetFreeDynamicWorkerNearAllotmentUsd(): number {
+	return (
+		fleetDynamicWorkerCostAlertUsdByPlan.free *
+		fleetFreeDynamicWorkerNearAllotmentFraction
+	)
+}
+
+export function adminCostRiskNoneStatus(input: {
+	estimatedGrossUsd: number
+	estimatedPaidUsdCents: number
+}): 'above cost' | 'within included allotment' | 'not flagged' {
+	if (input.estimatedPaidUsdCents > 0) return 'above cost'
+	return input.estimatedGrossUsd >= fleetFreeDynamicWorkerNearAllotmentUsd()
+		? 'not flagged'
+		: 'within included allotment'
+}
+
 export function fleetDynamicWorkerCostAlertUsd(plan: PlanName): number | null {
 	switch (plan) {
 		case 'free':
@@ -81,4 +104,4 @@ export const dynamicWorkerCostFootnote =
 	'Gross estimate: unique Dynamic Worker ids × $0.002 per UTC day. Cloudflare includes 1,000 unique worker-days per account per month, so this is not a net bill share.'
 
 export const costVsPayFootnote =
-	'Cost is a Cloudflare list-rate estimate on unique Dynamic Worker days only (gross, not a net bill share). The account-wide 1,000 unique days (~$2) included bucket is not subtracted per user. Paid is catalog list MRR from stored stripe_price_id. Gift, referral, max, and manual-only access count as $0. Risk is paid accounts over that list pay, unpaid accounts approaching the $2 included-bucket alert, and paid-looking plans with a missing catalog price id — not every free user with pennies of usage. Not invoice-perfect: no tax, coupons, overage invoices, email, or storage.'
+	'Cost is a Cloudflare list-rate estimate on unique Dynamic Worker days only (gross, not a net bill share). The account-wide 1,000 unique days (~$2) included bucket is not subtracted per user. Paid is catalog list MRR from stored stripe_price_id. Gift, referral, max, and manual-only access count as $0. Risk is paid accounts over that list pay, unpaid accounts at ≥$1 / 500 unique days (50% of the $2 included-bucket alert), and Standard/Pro stripe_plan rows whose stripe_price_id is missing or not in the catalog — not every free user with pennies of usage. Not invoice-perfect: no tax, coupons, overage invoices, email, or storage.'
