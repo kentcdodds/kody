@@ -7,7 +7,9 @@
  *   used. Output is built exclusively from JSX text and an allowlist of token
  *   types, so every string goes through the framework's escaping.
  * - Raw HTML tokens (block and inline) are rendered as escaped literal text,
- *   never as markup.
+ *   never as markup. First-party guides (`linkPolicy: 'first-party'`) may
+ *   additionally emit allowlisted `<details>` / `<summary>` and GitHub-style
+ *   `> [!TIP]` callouts; untrusted markdown never takes that path.
  * - Fenced code paints pre-tokenized highlight data as JSX text and
  *   inline styles — never `innerHTML` — so highlighting cannot introduce
  *   markup. Missing tokens fall back to escaped plaintext.
@@ -31,19 +33,28 @@
 import { lexer, type Token, type Tokens } from 'marked'
 import { type Handle, type RemixNode, css } from 'remix/ui'
 import { CopyCodeBlock } from '#client/copy-code-block.tsx'
+import {
+	coalesceFirstPartyDetails,
+	firstPartyAlertKind,
+	firstPartyAlertLabel,
+	isFirstPartyDetailsToken,
+	stripFirstPartyAlertMarker,
+} from '#client/markdown-first-party.ts'
 import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
 import {
 	plainHighlightedCode,
 	type HighlightedCode,
 } from '#universal/highlighted-code.ts'
 import {
-	markdownTableCss,
-	mergeCss,
-} from '#universal/styles/style-primitives.ts'
-import {
 	joinPackageReadmeImageHref,
 	resolvePackageReadmeImagePath,
 } from '#universal/package-readme-images.ts'
+import {
+	getAccentCalloutCss,
+	markdownTableCss,
+	mergeCss,
+	nativeDisclosureCss,
+} from '#universal/styles/style-primitives.ts'
 import {
 	colors,
 	radius,
@@ -332,6 +343,14 @@ function renderToken(
 	key: number,
 	options: ResolvedRenderOptions,
 ): RemixNode {
+	if (isFirstPartyDetailsToken(token)) {
+		return (
+			<details key={key} data-doc-disclosure="" mix={css(firstPartyDetailsCss)}>
+				<summary>{token.summary}</summary>
+				<div>{renderTokens(token.tokens, options)}</div>
+			</details>
+		)
+	}
 	switch (token.type) {
 		case 'space':
 		case 'def':
@@ -359,10 +378,33 @@ function renderToken(
 		}
 		case 'paragraph':
 			return <p key={key}>{renderTokens(token.tokens, options)}</p>
-		case 'blockquote':
+		case 'blockquote': {
+			if (options.linkPolicy === 'first-party') {
+				const alertKind = firstPartyAlertKind(token)
+				if (alertKind) {
+					const accentColor =
+						alertKind === 'WARNING' || alertKind === 'IMPORTANT'
+							? colors.danger
+							: undefined
+					return (
+						<aside
+							key={key}
+							data-doc-callout={alertKind.toLowerCase()}
+							mix={css({
+								...getAccentCalloutCss({ accentColor }),
+								...firstPartyCalloutBoxCss,
+							})}
+						>
+							<strong>{firstPartyAlertLabel(alertKind)}</strong>
+							{renderTokens(stripFirstPartyAlertMarker(token.tokens), options)}
+						</aside>
+					)
+				}
+			}
 			return (
 				<blockquote key={key}>{renderTokens(token.tokens, options)}</blockquote>
 			)
+		}
 		case 'hr':
 			return <hr key={key} />
 		case 'code': {
@@ -490,7 +532,11 @@ function renderTokens(
 	options: ResolvedRenderOptions,
 ): Array<RemixNode> {
 	if (!tokens) return []
-	return tokens.map((token, index) => renderToken(token, index, options))
+	const resolved =
+		options.linkPolicy === 'first-party'
+			? coalesceFirstPartyDetails(tokens, lexer)
+			: tokens
+	return resolved.map((token, index) => renderToken(token, index, options))
 }
 
 function takeFence(
@@ -516,6 +562,25 @@ export function renderMarkdownNodes(
 		fenceCursor: { index: 0 },
 		headingSlugCounts: new Map(),
 	})
+}
+
+const firstPartyCalloutBoxCss = {
+	margin: '0 0 1.4rem',
+	maxWidth: '62ch',
+	'& > strong': {
+		fontSize: '0.92rem',
+		color: colors.text,
+	},
+	'& > p': {
+		margin: 0,
+		color: colors.text,
+	},
+}
+
+const firstPartyDetailsCss = {
+	...nativeDisclosureCss,
+	margin: '1.4rem 0 0',
+	maxWidth: '62ch',
 }
 
 export type MarkdownViewProps = { markdown: string }

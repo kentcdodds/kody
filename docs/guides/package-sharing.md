@@ -11,8 +11,31 @@ audience: agents
 
 # Share a package with another person
 
+> [!TIP] Prefer a
+> [fork](/docs/package-lifecycle#fork-a-close-public-package-before-creating)
+> for most use cases. Share when someone should use **your** live package
+> without getting their own copy.
+
+<details>
+<summary>What's the difference between forking and sharing?</summary>
+
+**Fork** copies a public package into the other person's account. They own that
+copy: they can edit, publish, schedule jobs, and keep their own storage. Use a
+fork when they should adapt the behavior or run it independently.
+
+**Share** leaves the package in your account. After the guest accepts, they can
+read source and invoke it, but they cannot publish or write it. Storage stays
+yours. Use a share when you want one live package — a household tool, a private
+package that should not be public, or a source of truth that should stay in
+sync.
+
+Both people need a paid plan to share. Forking a public listing does not.
+
+</details>
+
 Use this guide when one person should **use** another person's package without
-sharing a login. Search `packageShareInvite` / `packageShareAccept` first; open
+sharing a login. Sharing is behind the `package-share-grants` feature flag (off
+by default). Search `packageShareInvite` / `packageShareAccept` first; open
 capability detail for the exact call shape.
 
 ## What sharing is
@@ -24,7 +47,10 @@ shared package and read its source.
 Sharing is not:
 
 - Giving someone your password or MCP token
-- A community fork (the guest does not get their own copy of the source repo)
+- A community fork (the guest does not get their own copy of the source repo;
+  prefer a
+  [fork](/docs/package-lifecycle#fork-a-close-public-package-before-creating)
+  when they should own a copy)
 - A platform scope grant (`package_scope_grants`). Those are admin-minted,
   platform-account only, and grant full authoring under a platform scope. Person
   accounts never own that table.
