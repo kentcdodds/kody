@@ -139,8 +139,8 @@ export function PackageShareApproveChangesRoute(handle: Handle) {
 						{reviewBlocked ? (
 							<AccountManagementMessage>
 								One or more files were truncated, so this pin cannot be approved
-								here. Switch the grant to follow, or ask the owner to split the
-								source.
+								here. You can still switch the grant to follow, or ask the owner
+								to split the source.
 							</AccountManagementMessage>
 						) : null}
 						<div mix={css(actionsCss)}>
@@ -156,7 +156,7 @@ export function PackageShareApproveChangesRoute(handle: Handle) {
 							</button>
 							<button
 								type="button"
-								disabled={busy || reviewBlocked}
+								disabled={busy}
 								mix={[
 									css(getGhostButtonCss()),
 									on('click', () => void approve(true)),

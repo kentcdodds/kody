@@ -565,3 +565,37 @@ test('hydrate skips grants whose saved package is gone', async () => {
 	expect(outbound).toHaveLength(1)
 	expect(await hydratePackageShareGrantViews(db, outbound)).toEqual([])
 })
+
+test('re-inviting an accepted email grant fails with a conflict, not a unique-index 500', async () => {
+	const { db, packageId } = await createHarness()
+	const owner = {
+		userId: ownerUserId,
+		email: 'alice@example.com',
+		displayName: 'Alice',
+		username: 'alice',
+	}
+	const invited = await invitePackageShare({
+		db,
+		owner,
+		packageId,
+		invitee: { email: 'jesse@example.com' },
+	})
+	await acceptPackageShare({
+		db,
+		guest: {
+			userId: guestUserId,
+			email: 'jesse@example.com',
+			displayName: 'Jesse',
+			username: 'jesse',
+		},
+		grantId: invited.id,
+	})
+	await expect(
+		invitePackageShare({
+			db,
+			owner,
+			packageId,
+			invitee: { email: 'jesse@example.com' },
+		}),
+	).rejects.toThrow('already has an accepted share grant')
+})

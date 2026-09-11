@@ -136,3 +136,90 @@ test('packageShareInvite and packageShareAccept use pin by default', async () =>
 	expect(listed.grants).toHaveLength(1)
 	expect(listed.grants[0]).toMatchObject({ status: 'accepted' })
 })
+
+test('MCP inbound list and accept-by-name see unbound verified email invites', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyRepositoryMigrations(sqlite, migrationsDirectory)
+	const db = createD1FromSqlite(sqlite)
+	await insertUser(db, {
+		username: 'alice',
+		email: 'alice@example.com',
+		userId: ownerUserId,
+	})
+	const packageId = crypto.randomUUID()
+	const sourceId = `source-${packageId}`
+	const now = new Date().toISOString()
+	await insertSavedPackage(db, {
+		id: packageId,
+		user_id: ownerUserId,
+		name: '@alice/shared-notes',
+		kody_id: 'shared-notes',
+		description: 'notes',
+		tags_json: '[]',
+		search_text: null,
+		source_id: sourceId,
+		has_app: 0,
+		hidden: 0,
+		is_private: 1,
+	})
+	await insertEntitySource(db, {
+		id: sourceId,
+		user_id: ownerUserId,
+		entity_kind: 'package',
+		entity_id: packageId,
+		repo_id: `repo-${sourceId}`,
+		published_commit: 'commit-1',
+		indexed_commit: null,
+		manifest_path: 'package.json',
+		source_root: '/',
+		last_external_check_at: null,
+		external_check_until: null,
+		created_at: now,
+		updated_at: now,
+	})
+
+	await packageShareInviteCapability.handler(
+		{ name: '@alice/shared-notes', email: 'jesse@example.com' },
+		callerContext({
+			db,
+			userId: ownerUserId,
+			email: 'alice@example.com',
+			username: 'alice',
+		}),
+	)
+
+	await insertUser(db, {
+		username: 'jesse',
+		email: 'jesse@example.com',
+		userId: guestUserId,
+	})
+
+	const listed = await packageShareListCapability.handler(
+		{ scope: 'inbound' },
+		callerContext({
+			db,
+			userId: guestUserId,
+			email: 'jesse@example.com',
+			username: 'jesse',
+		}),
+	)
+	expect(listed.grants).toHaveLength(1)
+	expect(listed.grants[0]).toMatchObject({
+		status: 'pending',
+		package_name: '@alice/shared-notes',
+	})
+
+	const accepted = await packageShareAcceptCapability.handler(
+		{ name: '@alice/shared-notes' },
+		callerContext({
+			db,
+			userId: guestUserId,
+			email: 'jesse@example.com',
+			username: 'jesse',
+		}),
+	)
+	expect(accepted.grant).toMatchObject({
+		status: 'accepted',
+		trust_level: 'pin',
+	})
+})

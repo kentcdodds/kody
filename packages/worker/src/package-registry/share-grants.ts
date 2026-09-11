@@ -410,6 +410,36 @@ export async function findActivePackageShareGrant(input: {
 	return byEmail ? mapGrantRow(byEmail) : null
 }
 
+export async function findConflictingPackageShareGrant(input: {
+	db: D1Database
+	packageId: string
+	granteeUserId?: string | null
+	inviteeEmail?: string | null
+}): Promise<PackageShareGrantRow | null> {
+	const byGuest = await findActivePackageShareGrant({
+		db: input.db,
+		packageId: input.packageId,
+		granteeUserId: input.granteeUserId,
+	})
+	if (byGuest) return byGuest
+	const email = input.inviteeEmail
+		? normalizeEmailAddress(input.inviteeEmail)
+		: null
+	if (!email) return null
+	const byEmail = await input.db
+		.prepare(
+			`SELECT ${grantSelectColumns}
+			FROM package_share_grants
+			WHERE package_id = ?
+				AND invitee_email = ?
+				AND status IN ('pending', 'accepted')
+			LIMIT 1`,
+		)
+		.bind(input.packageId, email)
+		.first<Record<string, unknown>>()
+	return byEmail ? mapGrantRow(byEmail) : null
+}
+
 export async function findAcceptedPackageShareGrant(input: {
 	db: D1Database
 	packageId: string
@@ -830,7 +860,7 @@ export async function invitePackageShare(input: {
 			'You cannot share a package with yourself.',
 		)
 	}
-	const existing = await findActivePackageShareGrant({
+	const existing = await findConflictingPackageShareGrant({
 		db: input.db,
 		packageId: savedPackage.id,
 		granteeUserId: invitee?.mcpUserId,
@@ -845,26 +875,35 @@ export async function invitePackageShare(input: {
 	}
 	const invitedAt = nowIso()
 	const id = crypto.randomUUID()
-	await input.db
-		.prepare(
-			`INSERT INTO package_share_grants (
+	try {
+		await input.db
+			.prepare(
+				`INSERT INTO package_share_grants (
 				id, package_id, owner_user_id, invitee_email, invitee_username,
 				grantee_user_id, status, role, invited_at, created_at, updated_at
 			) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
-		)
-		.bind(
-			id,
-			savedPackage.id,
-			ownerUserId,
-			inviteeEmail,
-			invitee?.username ?? (username || null),
-			invitee?.mcpUserId ?? null,
-			defaultPackageShareRole,
-			invitedAt,
-			invitedAt,
-			invitedAt,
-		)
-		.run()
+			)
+			.bind(
+				id,
+				savedPackage.id,
+				ownerUserId,
+				inviteeEmail,
+				invitee?.username ?? (username || null),
+				invitee?.mcpUserId ?? null,
+				defaultPackageShareRole,
+				invitedAt,
+				invitedAt,
+				invitedAt,
+			)
+			.run()
+	} catch (error) {
+		if (/UNIQUE constraint failed/i.test(getErrorMessage(error))) {
+			throw new PackageShareAccessError(
+				'An invitation for that person is already pending or accepted.',
+			)
+		}
+		throw error
+	}
 	const created = await getPackageShareGrantById(input.db, id)
 	if (!created) {
 		throw new Error('Package share invite was not persisted.')

@@ -26,6 +26,7 @@ import {
 	getSavedPackageByName,
 } from '#worker/package-registry/repo.ts'
 import { normalizeEmailAddress } from '#worker/email/address.ts'
+import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
 import { sendPackageShareInviteEmail } from '#worker/package-registry/share-invite-email.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
@@ -72,6 +73,21 @@ async function hydrateGrants(
 	grants: Array<PackageShareGrantRow>,
 ): Promise<Array<PackageShareGrantView>> {
 	return await hydratePackageShareGrantViews(db, grants)
+}
+
+async function inboundShareGrantLookup(
+	db: D1Database,
+	user: ReturnType<typeof requireMcpUser>,
+) {
+	return {
+		userId: user.userId,
+		email: user.email,
+		emailVerified: await isAccountEmailVerified({
+			db,
+			email: user.email,
+			stableUserId: user.userId,
+		}),
+	}
 }
 
 function throwShareError(error: unknown): never {
@@ -157,8 +173,7 @@ export const packageShareAcceptCapability = defineDomainCapability(
 				let packageId = args.package_id
 				if (!args.grant_id && !packageId && args.name) {
 					const inbound = await listInboundPackageShareGrants(ctx.env.APP_DB, {
-						userId: user.userId,
-						email: user.email,
+						...(await inboundShareGrantLookup(ctx.env.APP_DB, user)),
 					})
 					const views = await hydrateGrants(ctx.env.APP_DB, inbound)
 					const match = views.find((view) => view.packageName === args.name)
@@ -301,8 +316,7 @@ export const packageShareListCapability = defineDomainCapability(
 								await hydrateGrants(
 									ctx.env.APP_DB,
 									await listInboundPackageShareGrants(ctx.env.APP_DB, {
-										userId: user.userId,
-										email: user.email,
+										...(await inboundShareGrantLookup(ctx.env.APP_DB, user)),
 									}),
 								)
 							).map(toPackageShareGrantPayload),

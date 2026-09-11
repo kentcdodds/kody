@@ -132,6 +132,12 @@ export function createCommunityPackageApproveChangesApiHandler(env: Env) {
 			if (page.kind !== 'page' || !page.shareGrant) {
 				return jsonResponse({ ok: false, error: 'Not found.' }, 404)
 			}
+			const body = await request.json().catch(() => null)
+			const bodyRecord =
+				body && typeof body === 'object' && !Array.isArray(body)
+					? (body as Record<string, unknown>)
+					: null
+			const switchToFollow = bodyRecord?.switchToFollow === true
 			try {
 				const review = await loadPackageShareApproveChangesData({
 					env,
@@ -139,12 +145,12 @@ export function createCommunityPackageApproveChangesApiHandler(env: Env) {
 					grantId: page.shareGrant.id,
 					packageId: page.shareGrant.packageId,
 				})
-				if (review.files.some((file) => file.truncated)) {
+				if (review.files.some((file) => file.truncated) && !switchToFollow) {
 					return jsonResponse(
 						{
 							ok: false,
 							error:
-								'Published source is truncated, so this pin cannot be approved without a complete review.',
+								'Published source is truncated, so this pin cannot be approved without a complete review. Switch the grant to follow, or ask the owner to split the source.',
 						},
 						400,
 					)
@@ -155,18 +161,16 @@ export function createCommunityPackageApproveChangesApiHandler(env: Env) {
 					400,
 				)
 			}
-			const body = await request.json().catch(() => null)
 			const result = await applyPackageShareMutation({
 				env,
 				user,
-				body:
-					body && typeof body === 'object' && !Array.isArray(body)
-						? {
-								...body,
-								intent: 'acknowledge',
-								grantId: page.shareGrant.id,
-							}
-						: { intent: 'acknowledge', grantId: page.shareGrant.id },
+				body: bodyRecord
+					? {
+							...bodyRecord,
+							intent: 'acknowledge',
+							grantId: page.shareGrant.id,
+						}
+					: { intent: 'acknowledge', grantId: page.shareGrant.id },
 				requestUrl: request.url,
 			})
 			if (!result.ok) {
