@@ -1,5 +1,3 @@
-import { css } from 'remix/ui'
-import { mq, spacing } from '#universal/styles/tokens.ts'
 import { AreaChart } from '#client/charts/area-chart.tsx'
 import { ChartLegend } from '#client/charts/chart-legend.tsx'
 import { DonutChart } from '#client/charts/donut-chart.tsx'
@@ -31,6 +29,8 @@ import { renderCostVsPay } from './admin-insights-cost.tsx'
 import { renderLaunchSignals } from './admin-insights-launch.tsx'
 import {
 	ChartCard,
+	ChartGrid,
+	StatGrid,
 	activationSubtitle,
 	renderActivationFunnel,
 	renderDurationByMetric,
@@ -71,16 +71,8 @@ export function renderDashboard(data: AdminInsightsLoaderData) {
 				</AccountManagementMessage>
 			) : null}
 			{renderLaunchSignals(data.launchSignals)}
-			{renderCostVsPay(data.dynamicWorkerCost)}
-			<div
-				mix={css({
-					display: 'grid',
-					gap: spacing.md,
-					gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-					[mq.tablet]: { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' },
-					[mq.mobile]: { gridTemplateColumns: 'minmax(0, 1fr)' },
-				})}
-			>
+			<ChartGrid>{renderCostVsPay(data.dynamicWorkerCost)}</ChartGrid>
+			<StatGrid>
 				<StatCard
 					id="stat-users"
 					label="Users"
@@ -145,16 +137,9 @@ export function renderDashboard(data: AdminInsightsLoaderData) {
 					sub={`${formatIntegerNumber(data.totals.passkeys)} passkeys · ${formatIntegerNumber(data.totals.oauthConnections)} social links`}
 					color={chartColor.fuchsia}
 				/>
-			</div>
+			</StatGrid>
 
-			<div
-				mix={css({
-					display: 'grid',
-					gap: spacing.lg,
-					gridTemplateColumns: 'repeat(12, minmax(0, 1fr))',
-					[mq.tablet]: { gridTemplateColumns: 'minmax(0, 1fr)' },
-				})}
-			>
+			<ChartGrid>
 				<ChartCard
 					title="Package activation"
 					sub={activationSubtitle(data.activation)}
@@ -545,7 +530,7 @@ export function renderDashboard(data: AdminInsightsLoaderData) {
 						]}
 					/>
 				</ChartCard>
-			</div>
+			</ChartGrid>
 		</>
 	)
 }

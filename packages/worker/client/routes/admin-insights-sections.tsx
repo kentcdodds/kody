@@ -55,25 +55,12 @@ function renderConsumerTable(input: {
 		>
 			<thead>
 				<tr>
-					<th
-						scope="col"
-						mix={css({
-							textAlign: 'left',
-							padding: `${spacing.xs} ${spacing.sm}`,
-							color: colors.textMuted,
-							fontWeight: typography.fontWeight.medium,
-						})}
-					>
+					<th scope="col" mix={css({ ...tableHeadCellCss, textAlign: 'left' })}>
 						User
 					</th>
 					<th
 						scope="col"
-						mix={css({
-							textAlign: 'right',
-							padding: `${spacing.xs} ${spacing.sm}`,
-							color: colors.textMuted,
-							fontWeight: typography.fontWeight.medium,
-						})}
+						mix={css({ ...tableHeadCellCss, textAlign: 'right' })}
 					>
 						{input.valueHeader}
 					</th>
@@ -82,7 +69,12 @@ function renderConsumerTable(input: {
 			<tbody>
 				{input.rows.map((row) => (
 					<tr key={row.key}>
-						<td mix={css({ padding: `${spacing.xs} ${spacing.sm}` })}>
+						<td
+							mix={css({
+								padding: `${spacing.xs} ${spacing.sm}`,
+								overflowWrap: 'anywhere',
+							})}
+						>
 							<a
 								href={adminUserDetailHref(row.stableUserId)}
 								mix={css({ color: colors.text, textDecoration: 'none' })}
@@ -92,10 +84,11 @@ function renderConsumerTable(input: {
 						</td>
 						<td
 							mix={css({
-								padding: `${spacing.xs} ${spacing.sm}`,
-								textAlign: 'right',
+								...tableNumericCellCss,
+								// Multi-part values ("$1.20 (600) · underwater") may
+								// wrap at their separators on a phone.
+								whiteSpace: 'normal',
 								color: colors.textMuted,
-								fontVariantNumeric: 'tabular-nums',
 							})}
 						>
 							{row.value}
@@ -410,13 +403,34 @@ export function renderPackageErrorRate(rate: AdminInsightsPackageErrorRate) {
 				</caption>
 				<thead>
 					<tr>
-						<th mix={css({ textAlign: 'left', padding: spacing.xs })}>
+						<th
+							scope="col"
+							mix={css({
+								textAlign: 'left',
+								padding: spacing.xs,
+								whiteSpace: 'nowrap',
+							})}
+						>
 							Metric
 						</th>
-						<th mix={css({ textAlign: 'right', padding: spacing.xs })}>
+						<th
+							scope="col"
+							mix={css({
+								textAlign: 'right',
+								padding: spacing.xs,
+								whiteSpace: 'nowrap',
+							})}
+						>
 							Last 24h
 						</th>
-						<th mix={css({ textAlign: 'right', padding: spacing.xs })}>
+						<th
+							scope="col"
+							mix={css({
+								textAlign: 'right',
+								padding: spacing.xs,
+								whiteSpace: 'nowrap',
+							})}
+						>
 							Previous 24h
 						</th>
 					</tr>
@@ -431,6 +445,7 @@ export function renderPackageErrorRate(rate: AdminInsightsPackageErrorRate) {
 								mix={css({
 									textAlign: 'right',
 									padding: spacing.xs,
+									whiteSpace: 'nowrap',
 									fontVariantNumeric: 'tabular-nums',
 								})}
 							>
@@ -440,6 +455,7 @@ export function renderPackageErrorRate(rate: AdminInsightsPackageErrorRate) {
 								mix={css({
 									textAlign: 'right',
 									padding: spacing.xs,
+									whiteSpace: 'nowrap',
 									fontVariantNumeric: 'tabular-nums',
 									color: colors.textMuted,
 								})}
@@ -514,7 +530,13 @@ export function renderActivationFunnel(activation: AdminInsightsActivation) {
 							})}
 						>
 							<span>{activationStepLabels[entry.step]}</span>
-							<span mix={css({ color: colors.textMuted })}>
+							<span
+								mix={css({
+									color: colors.textMuted,
+									whiteSpace: 'nowrap',
+									fontVariantNumeric: 'tabular-nums',
+								})}
+							>
 								{formatIntegerNumber(entry.users)} · {formatPercentShare(share)}
 							</span>
 						</div>
@@ -546,6 +568,103 @@ export function renderActivationFunnel(activation: AdminInsightsActivation) {
 	)
 }
 
+/**
+ * KPI tile row. Four across on wide screens, two on tablets, and as many
+ * ~9.5rem tiles as fit on a phone so a 320px viewport stacks while a 390px+
+ * one still pairs them up.
+ */
+export function StatGrid(handle: Handle<{ children: RemixNode }>) {
+	return () => (
+		<div
+			mix={css({
+				display: 'grid',
+				gap: spacing.md,
+				gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+				[mq.tablet]: { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' },
+				[mq.mobile]: {
+					gap: spacing.sm,
+					gridTemplateColumns: 'repeat(auto-fill, minmax(9.5rem, 1fr))',
+				},
+			})}
+		>
+			{handle.props.children}
+		</div>
+	)
+}
+
+/**
+ * Twelve-column card grid that `ChartCard` spans into. Every card must live
+ * inside one of these: a spanning card dropped straight into the page shell
+ * turns the shell's single column into twelve implicit tracks and scatters
+ * its siblings across them.
+ */
+export function ChartGrid(handle: Handle<{ children: RemixNode }>) {
+	return () => (
+		<div
+			mix={css({
+				display: 'grid',
+				gap: spacing.lg,
+				gridTemplateColumns: 'repeat(12, minmax(0, 1fr))',
+				[mq.mobile]: {
+					gap: spacing.md,
+					gridTemplateColumns: 'minmax(0, 1fr)',
+				},
+			})}
+		>
+			{handle.props.children}
+		</div>
+	)
+}
+
+/**
+ * Horizontal scroll wrapper for tables that are wider than a phone. Tables
+ * inside keep `width: 100%` and use `nowrap` numeric cells, so they only
+ * overflow (and scroll) when the content really cannot fit.
+ */
+export function TableScroller(handle: Handle<{ children: RemixNode }>) {
+	return () => (
+		<div
+			mix={css({
+				minWidth: 0,
+				maxWidth: '100%',
+				overflowX: 'auto',
+				WebkitOverflowScrolling: 'touch',
+			})}
+		>
+			{handle.props.children}
+		</div>
+	)
+}
+
+/** Header cell styles shared by the insight tables. */
+export const tableHeadCellCss = {
+	padding: `${spacing.xs} ${spacing.sm}`,
+	color: colors.textMuted,
+	fontWeight: typography.fontWeight.medium,
+	whiteSpace: 'nowrap' as const,
+}
+
+/** Right-aligned numeric cell that never wraps mid-number. */
+export const tableNumericCellCss = {
+	padding: `${spacing.xs} ${spacing.sm}`,
+	textAlign: 'right' as const,
+	whiteSpace: 'nowrap' as const,
+	fontVariantNumeric: 'tabular-nums',
+}
+
+/**
+ * Pins the first column while a `TableScroller` scrolls the numbers, so the
+ * row label stays readable on a phone. Opaque background hides the cells
+ * sliding underneath. A no-op when the table fits.
+ */
+export const tableStickyColumnCss = {
+	position: 'sticky' as const,
+	left: 0,
+	zIndex: 1,
+	backgroundColor: colors.surface,
+	textAlign: 'left' as const,
+}
+
 type ChartCardProps = {
 	title: string
 	sub?: string
@@ -556,42 +675,52 @@ type ChartCardProps = {
 }
 
 export function ChartCard(handle: Handle<ChartCardProps>) {
-	return () => (
-		<section
-			aria-label={handle.props.title}
-			mix={css({
-				...cardCss,
-				gridColumn: `span ${handle.props.span ?? 12}`,
-				alignContent: 'start',
-				minWidth: 0,
-				[mq.tablet]: { gridColumn: 'span 12' },
-			})}
-		>
-			<div mix={css({ display: 'grid', gap: spacing.xs })}>
-				<h2
-					mix={css({
-						margin: 0,
-						fontSize: typography.fontSize.base,
-						fontWeight: typography.fontWeight.semibold,
-						color: colors.text,
-					})}
-				>
-					{handle.props.title}
-				</h2>
-				{handle.props.sub ? (
-					<p
+	return () => {
+		const span = handle.props.span ?? 12
+		return (
+			<section
+				aria-label={handle.props.title}
+				mix={css({
+					...cardCss,
+					gridColumn: `span ${span}`,
+					alignContent: 'start',
+					minWidth: 0,
+					// Tablets keep a two-up rhythm: wide cards take the row, the
+					// rest pair off. Phones stack everything.
+					[mq.tablet]: { gridColumn: span >= 8 ? '1 / -1' : 'span 6' },
+					[mq.mobile]: {
+						gridColumn: '1 / -1',
+						padding: spacing.md,
+						gap: spacing.sm,
+					},
+				})}
+			>
+				<div mix={css({ display: 'grid', gap: spacing.xs })}>
+					<h2
 						mix={css({
 							margin: 0,
-							color: colors.textMuted,
-							fontSize: typography.fontSize.sm,
+							fontSize: typography.fontSize.base,
+							fontWeight: typography.fontWeight.semibold,
+							color: colors.text,
 						})}
 					>
-						{handle.props.sub}
-					</p>
-				) : null}
-			</div>
-			{handle.props.legend ?? null}
-			{handle.props.children}
-		</section>
-	)
+						{handle.props.title}
+					</h2>
+					{handle.props.sub ? (
+						<p
+							mix={css({
+								margin: 0,
+								color: colors.textMuted,
+								fontSize: typography.fontSize.sm,
+							})}
+						>
+							{handle.props.sub}
+						</p>
+					) : null}
+				</div>
+				{handle.props.legend ?? null}
+				{handle.props.children}
+			</section>
+		)
+	}
 }

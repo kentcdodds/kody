@@ -1,5 +1,5 @@
 import { css } from 'remix/ui'
-import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
+import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import { DonutChart } from '#client/charts/donut-chart.tsx'
 import { StatCard } from '#client/charts/stat-card.tsx'
 import {
@@ -12,7 +12,15 @@ import {
 	type AdminInsightsLaunchSignals,
 } from '#universal/loader-data.ts'
 import { formatPlanLabel, formatUsdFromCents } from './admin-insights-shared.ts'
-import { ChartCard } from './admin-insights-sections.tsx'
+import {
+	ChartCard,
+	ChartGrid,
+	StatGrid,
+	TableScroller,
+	tableHeadCellCss,
+	tableNumericCellCss,
+	tableStickyColumnCss,
+} from './admin-insights-sections.tsx'
 
 const launchFunnelLabels: Record<
 	AdminInsightsLaunchFunnelStep['step'],
@@ -66,7 +74,13 @@ function renderLaunchFunnel(input: {
 							})}
 						>
 							<span>{launchFunnelLabels[entry.step]}</span>
-							<span mix={css({ color: colors.textMuted })}>
+							<span
+								mix={css({
+									color: colors.textMuted,
+									whiteSpace: 'nowrap',
+									fontVariantNumeric: 'tabular-nums',
+								})}
+							>
 								{formatIntegerNumber(entry.users)} · {formatPercentShare(share)}
 							</span>
 						</div>
@@ -110,90 +124,90 @@ function renderPlanTable(input: {
 		input.rows.flatMap((row) => row.slices.map((slice) => slice.plan)),
 	)
 	const columns = plans.filter((plan) => present.has(plan))
+	const descriptionId = 'admin-insights-plan-sources-description'
 	return (
-		<table
-			aria-label={input.ariaLabel}
-			mix={css({
-				width: '100%',
-				borderCollapse: 'collapse',
-				fontSize: typography.fontSize.sm,
-			})}
-		>
-			<caption
+		<div mix={css({ display: 'grid', gap: spacing.xs })}>
+			{/*
+			 * Kept outside the table (not a <caption>) so it wraps at the card
+			 * width instead of stretching with the table when the plan
+			 * columns scroll horizontally on a phone.
+			 */}
+			<p
+				id={descriptionId}
 				mix={css({
-					captionSide: 'top',
-					textAlign: 'left',
+					margin: 0,
 					color: colors.textMuted,
-					paddingBottom: spacing.xs,
+					fontSize: typography.fontSize.sm,
 				})}
 			>
 				Manual `plan` is the admin grant. `stripePlan` is the paid Stripe
 				subscription. `effectivePlan` is the entitlement after overlays.
-			</caption>
-			<thead>
-				<tr>
-					<th
-						scope="col"
-						mix={css({
-							textAlign: 'left',
-							padding: `${spacing.xs} ${spacing.sm}`,
-							color: colors.textMuted,
-							fontWeight: typography.fontWeight.medium,
-						})}
-					>
-						Source
-					</th>
-					{columns.map((plan) => (
-						<th
-							key={plan}
-							scope="col"
-							mix={css({
-								textAlign: 'right',
-								padding: `${spacing.xs} ${spacing.sm}`,
-								color: colors.textMuted,
-								fontWeight: typography.fontWeight.medium,
-							})}
-						>
-							{formatPlanLabel(plan)}
-						</th>
-					))}
-				</tr>
-			</thead>
-			<tbody>
-				{input.rows.map((row) => {
-					const byPlan = new Map(
-						row.slices.map((slice) => [slice.plan, slice.count]),
-					)
-					return (
-						<tr key={row.label}>
+			</p>
+			<TableScroller>
+				<table
+					aria-label={input.ariaLabel}
+					aria-describedby={descriptionId}
+					mix={css({
+						width: '100%',
+						borderCollapse: 'collapse',
+						fontSize: typography.fontSize.sm,
+					})}
+				>
+					<thead>
+						<tr>
 							<th
-								scope="row"
-								mix={css({
-									textAlign: 'left',
-									padding: `${spacing.xs} ${spacing.sm}`,
-									fontWeight: typography.fontWeight.medium,
-								})}
+								scope="col"
+								mix={css({ ...tableHeadCellCss, ...tableStickyColumnCss })}
 							>
-								{row.label}
+								Source
 							</th>
 							{columns.map((plan) => (
-								<td
+								<th
 									key={plan}
-									mix={css({
-										textAlign: 'right',
-										padding: `${spacing.xs} ${spacing.sm}`,
-										fontVariantNumeric: 'tabular-nums',
-										color: colors.textMuted,
-									})}
+									scope="col"
+									mix={css({ ...tableHeadCellCss, textAlign: 'right' })}
 								>
-									{formatIntegerNumber(byPlan.get(plan) ?? 0)}
-								</td>
+									{formatPlanLabel(plan)}
+								</th>
 							))}
 						</tr>
-					)
-				})}
-			</tbody>
-		</table>
+					</thead>
+					<tbody>
+						{input.rows.map((row) => {
+							const byPlan = new Map(
+								row.slices.map((slice) => [slice.plan, slice.count]),
+							)
+							return (
+								<tr key={row.label}>
+									<th
+										scope="row"
+										mix={css({
+											...tableStickyColumnCss,
+											padding: `${spacing.xs} ${spacing.sm}`,
+											fontWeight: typography.fontWeight.medium,
+											whiteSpace: 'nowrap',
+										})}
+									>
+										{row.label}
+									</th>
+									{columns.map((plan) => (
+										<td
+											key={plan}
+											mix={css({
+												...tableNumericCellCss,
+												color: colors.textMuted,
+											})}
+										>
+											{formatIntegerNumber(byPlan.get(plan) ?? 0)}
+										</td>
+									))}
+								</tr>
+							)
+						})}
+					</tbody>
+				</table>
+			</TableScroller>
+		</div>
 	)
 }
 
@@ -208,15 +222,7 @@ export function renderLaunchSignals(signals: AdminInsightsLaunchSignals) {
 
 	return (
 		<>
-			<div
-				mix={css({
-					display: 'grid',
-					gap: spacing.md,
-					gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-					[mq.tablet]: { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' },
-					[mq.mobile]: { gridTemplateColumns: 'minmax(0, 1fr)' },
-				})}
-			>
+			<StatGrid>
 				<StatCard
 					id="stat-mrr"
 					label="Rough MRR"
@@ -250,16 +256,9 @@ export function renderLaunchSignals(signals: AdminInsightsLaunchSignals) {
 					sub="Open items in Platform feedback"
 					color={chartColor.amber}
 				/>
-			</div>
+			</StatGrid>
 
-			<div
-				mix={css({
-					display: 'grid',
-					gap: spacing.lg,
-					gridTemplateColumns: 'repeat(12, minmax(0, 1fr))',
-					[mq.tablet]: { gridTemplateColumns: 'minmax(0, 1fr)' },
-				})}
-			>
+			<ChartGrid>
 				<ChartCard
 					title="Launch activation"
 					sub="Signup through first saved package from user stamps. Not effective-plan overlays and not RunLog package-activation."
@@ -305,34 +304,19 @@ export function renderLaunchSignals(signals: AdminInsightsLaunchSignals) {
 								<tr>
 									<th
 										scope="col"
-										mix={css({
-											textAlign: 'left',
-											padding: `${spacing.xs} ${spacing.sm}`,
-											color: colors.textMuted,
-											fontWeight: typography.fontWeight.medium,
-										})}
+										mix={css({ ...tableHeadCellCss, textAlign: 'left' })}
 									>
 										Plan
 									</th>
 									<th
 										scope="col"
-										mix={css({
-											textAlign: 'right',
-											padding: `${spacing.xs} ${spacing.sm}`,
-											color: colors.textMuted,
-											fontWeight: typography.fontWeight.medium,
-										})}
+										mix={css({ ...tableHeadCellCss, textAlign: 'right' })}
 									>
 										Subs
 									</th>
 									<th
 										scope="col"
-										mix={css({
-											textAlign: 'right',
-											padding: `${spacing.xs} ${spacing.sm}`,
-											color: colors.textMuted,
-											fontWeight: typography.fontWeight.medium,
-										})}
+										mix={css({ ...tableHeadCellCss, textAlign: 'right' })}
 									>
 										MRR
 									</th>
@@ -344,20 +328,12 @@ export function renderLaunchSignals(signals: AdminInsightsLaunchSignals) {
 										<td mix={css({ padding: `${spacing.xs} ${spacing.sm}` })}>
 											{formatPlanLabel(slice.plan)} · {slice.interval}
 										</td>
-										<td
-											mix={css({
-												padding: `${spacing.xs} ${spacing.sm}`,
-												textAlign: 'right',
-												fontVariantNumeric: 'tabular-nums',
-											})}
-										>
+										<td mix={css(tableNumericCellCss)}>
 											{formatIntegerNumber(slice.subscribers)}
 										</td>
 										<td
 											mix={css({
-												padding: `${spacing.xs} ${spacing.sm}`,
-												textAlign: 'right',
-												fontVariantNumeric: 'tabular-nums',
+												...tableNumericCellCss,
 												color: colors.textMuted,
 											})}
 										>
@@ -431,7 +407,7 @@ export function renderLaunchSignals(signals: AdminInsightsLaunchSignals) {
 						]}
 					/>
 				</ChartCard>
-			</div>
+			</ChartGrid>
 		</>
 	)
 }

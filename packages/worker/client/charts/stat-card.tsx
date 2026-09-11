@@ -1,6 +1,7 @@
 import { css, type Handle } from 'remix/ui'
 import {
 	colors,
+	mq,
 	radius,
 	spacing,
 	typography,
@@ -49,6 +50,11 @@ export function StatCard(handle: Handle<StatCardProps>) {
 					backgroundColor: colors.surface,
 					backgroundImage: `linear-gradient(140deg, ${softColor(color, 10)}, transparent 55%)`,
 					minHeight: '6.5rem',
+					minWidth: 0,
+					[mq.mobile]: {
+						padding: spacing.md,
+						paddingBottom: hasSparkline ? '2.5rem' : spacing.md,
+					},
 				})}
 			>
 				<span
