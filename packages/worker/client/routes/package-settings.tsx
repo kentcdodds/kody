@@ -1,7 +1,9 @@
 // remix-skill: owner settings for a package (`/@user/name/settings`).
 import { type Handle, css } from 'remix/ui'
 import { createMatcher } from 'remix/route-pattern/match'
+import { readAppSession } from '#client/app-session-context.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import {
 	createRouteData,
@@ -10,6 +12,7 @@ import {
 } from '#client/route-data.tsx'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
+import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
 import { type AccountPackageDetail } from '#universal/loader-data.ts'
 import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
 import { renderPackageRepoChrome } from '#universal/package-repo-nav.tsx'
@@ -346,7 +349,12 @@ export function PackageSettingsRoute(handle: Handle) {
 							},
 						})
 					: null}
-				{showReady && ownerPackage
+				{showReady &&
+				ownerPackage &&
+				isFeatureFlagEnabled(
+					readAppSession(handle)?.session,
+					packageShareGrantsFlagKey,
+				)
 					? renderPackageShareSettings({
 							username,
 							kodyId,

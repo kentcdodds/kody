@@ -4,10 +4,15 @@ import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { insertEntitySource } from '#worker/repo/entity-sources.ts'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { enablePackageShareGrantsForTests } from '#worker/package-registry/share-flag.ts'
 import {
 	packageShareAcceptCapability,
+	packageShareAcknowledgeUpdateCapability,
+	packageShareInspectCapability,
 	packageShareInviteCapability,
+	packageShareLeaveCapability,
 	packageShareListCapability,
+	packageShareRevokeCapability,
 } from './package-share.ts'
 
 const migrationsDirectory = new URL('../../../../migrations/', import.meta.url)
@@ -49,10 +54,25 @@ function callerContext(input: {
 	}
 }
 
+test('package share capabilities declare the package-share-grants flag', () => {
+	for (const capability of [
+		packageShareInviteCapability,
+		packageShareAcceptCapability,
+		packageShareRevokeCapability,
+		packageShareLeaveCapability,
+		packageShareListCapability,
+		packageShareInspectCapability,
+		packageShareAcknowledgeUpdateCapability,
+	]) {
+		expect(capability.featureFlag).toBe('package-share-grants')
+	}
+})
+
 test('packageShareInvite and packageShareAccept use pin by default', async () => {
 	const sqlite = new DatabaseSync(':memory:')
 	applyRepositoryMigrations(sqlite, migrationsDirectory)
 	const db = createD1FromSqlite(sqlite)
+	await enablePackageShareGrantsForTests(db)
 	await insertUser(db, {
 		username: 'alice',
 		email: 'alice@example.com',
@@ -141,6 +161,7 @@ test('MCP inbound list and accept-by-name see unbound verified email invites', a
 	const sqlite = new DatabaseSync(':memory:')
 	applyRepositoryMigrations(sqlite, migrationsDirectory)
 	const db = createD1FromSqlite(sqlite)
+	await enablePackageShareGrantsForTests(db)
 	await insertUser(db, {
 		username: 'alice',
 		email: 'alice@example.com',

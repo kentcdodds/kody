@@ -2,15 +2,18 @@ import { Frame, type Handle, type RemixNode, css } from 'remix/ui'
 import { routes } from '#universal/routes.ts'
 import { getPackageTreeHref } from '#universal/package-files.ts'
 import { COMMUNITY_DETAIL_TARGET } from '#universal/community-frame-constants.ts'
+import { readAppSession } from '#client/app-session-context.tsx'
 import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
+import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { on } from '#client/event-mixin.ts'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
+import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { decideCommunityInstallClick } from '#client/routes/community-detail-install.ts'
@@ -584,7 +587,11 @@ export function CommunityDetailRoute(handle: Handle) {
 			>
 				<Frame name={COMMUNITY_DETAIL_TARGET} src={frameSrc} />
 
-				{showShellReady
+				{showShellReady &&
+				isFeatureFlagEnabled(
+					readAppSession(handle)?.session,
+					packageShareGrantsFlagKey,
+				)
 					? renderPackageShareBanners({
 							shareGrant,
 							loggedIn,

@@ -10,6 +10,7 @@ import {
 	acceptPackageShare,
 	invitePackageShare,
 } from '#worker/package-registry/share-grants.ts'
+import { enablePackageShareGrantsForTests } from '#worker/package-registry/share-flag.ts'
 import { resolveSavedPackageImport } from './package-import-resolution.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
@@ -18,6 +19,7 @@ async function createHarness() {
 	const sqlite = new DatabaseSync(':memory:')
 	applyRepositoryMigrations(sqlite, migrationsDirectory)
 	const db = createD1FromSqlite(sqlite)
+	await enablePackageShareGrantsForTests(db)
 	const platform = await createPlatformAccount({
 		db,
 		email: 'kody@example.com',

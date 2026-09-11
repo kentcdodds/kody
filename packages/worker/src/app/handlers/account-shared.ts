@@ -5,7 +5,15 @@ import { applyPackageShareMutation } from '#app/package-share-actions.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import { isPackageShareGrantsEnabled } from '#worker/package-registry/share-flag.ts'
 import { type routes } from '#universal/routes.ts'
+
+async function packageShareGrantsUnavailable(userId: number, env: Env) {
+	return !(await isPackageShareGrantsEnabled({
+		db: env.APP_DB,
+		userId,
+	}))
+}
 
 export function createAccountSharedHandler(env: Env) {
 	return {
@@ -14,6 +22,9 @@ export function createAccountSharedHandler(env: Env) {
 			const user = await requireAuthenticatedPageUser(request, env)
 			if (user instanceof Response) {
 				return user
+			}
+			if (await packageShareGrantsUnavailable(user.userId, env)) {
+				return new Response('Not found.', { status: 404 })
 			}
 
 			const accountShared = await loadAccountSharedData({ env, user })
@@ -34,6 +45,9 @@ export function createAccountSharedApiHandler(env: Env) {
 			const user = await readAuthenticatedAppUser(request, env)
 			if (!user) {
 				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
+			}
+			if (await packageShareGrantsUnavailable(user.userId, env)) {
+				return jsonResponse({ ok: false, error: 'Not found.' }, 404)
 			}
 
 			if (request.method === 'GET') {

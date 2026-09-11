@@ -11,6 +11,7 @@ import {
 	PackageShareAccessError,
 	packageShareAccessErrorMessage,
 } from '#worker/package-registry/share-grants.ts'
+import { isPackageShareGrantsEnabled } from '#worker/package-registry/share-flag.ts'
 import { type routes } from '#universal/routes.ts'
 
 async function loadApproveChangesForPage(input: {
@@ -44,6 +45,20 @@ export function createCommunityPackageApproveChangesHandler(env: Env) {
 			const user = await requireAuthenticatedPageUser(request, env)
 			if (user instanceof Response) {
 				return user
+			}
+			if (
+				!(await isPackageShareGrantsEnabled({
+					db: env.APP_DB,
+					userId: user.userId,
+				}))
+			) {
+				return renderAppPage({
+					request,
+					env,
+					title: 'Approve shared package changes',
+					notFound: true,
+					status: 404,
+				})
 			}
 			try {
 				const packageShareApproveChanges = await loadApproveChangesForPage({

@@ -28,6 +28,7 @@ import {
 import { normalizeEmailAddress } from '#worker/email/address.ts'
 import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
 import { sendPackageShareInviteEmail } from '#worker/package-registry/share-invite-email.ts'
+import { packageShareGrantsFlagKey } from '#worker/package-registry/share-flag.ts'
 import { assertSharePinAcknowledgeReview } from '#worker/package-registry/share-pin-review.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
@@ -99,6 +100,7 @@ export const packageShareInviteCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageShareInvite',
+		featureFlag: packageShareGrantsFlagKey,
 		description:
 			'Invite a person by username or email to use one of your saved packages. They must accept before the package is attached. Guests can read source and invoke; they cannot publish or write. Both accounts must be on a paid plan.',
 		keywords: ['share', 'invite', 'package share', 'guest', 'collaborate'],
@@ -155,6 +157,7 @@ export const packageShareAcceptCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageShareAccept',
+		featureFlag: packageShareGrantsFlagKey,
 		description:
 			'Accept a pending package share invitation. Default trust_level is pin (safer): use and import fail closed if the owner publishes ahead until you approve the diff. follow auto-accepts future publishes.',
 		keywords: ['share', 'accept', 'invite', 'pin', 'follow'],
@@ -206,6 +209,7 @@ export const packageShareRevokeCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageShareRevoke',
+		featureFlag: packageShareGrantsFlagKey,
 		description:
 			'Revoke a package share grant you own. New invokes and imports fail immediately. In-flight worker isolates may finish.',
 		keywords: ['share', 'revoke', 'unshare'],
@@ -243,6 +247,7 @@ export const packageShareLeaveCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageShareLeave',
+		featureFlag: packageShareGrantsFlagKey,
 		description:
 			'Leave a package that was shared with you. Your own packages keep existing imports, but the next call into the left package fails.',
 		keywords: ['share', 'leave', 'unshare'],
@@ -280,6 +285,7 @@ export const packageShareListCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageShareList',
+		featureFlag: packageShareGrantsFlagKey,
 		description:
 			'List package share grants: outbound (what you shared), inbound (shared with you, including pending email invites), or by one owned package.',
 		keywords: ['share', 'list', 'shared with me', 'invitations'],
@@ -357,6 +363,7 @@ export const packageShareInspectCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageShareInspect',
+		featureFlag: packageShareGrantsFlagKey,
 		description:
 			'Inspect one package share grant you own or that is addressed to you, including pin-ahead state and the approve-changes path.',
 		keywords: ['share', 'inspect', 'grant', 'pin'],
@@ -411,6 +418,7 @@ export const packageShareAcknowledgeUpdateCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageShareAcknowledgeUpdate',
+		featureFlag: packageShareGrantsFlagKey,
 		description:
 			'Approve one reviewed published commit of a pin-trust shared package after inspecting the accepted-to-current diff. Pin approval requires published_commit. Optionally switch to follow.',
 		keywords: ['share', 'approve', 'acknowledge', 'pin', 'follow'],

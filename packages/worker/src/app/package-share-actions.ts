@@ -14,6 +14,7 @@ import {
 	type PackageShareTrustLevel,
 } from '#worker/package-registry/share-grants.ts'
 import { assertSharePinAcknowledgeReview } from '#worker/package-registry/share-pin-review.ts'
+import { isPackageShareGrantsEnabled } from '#worker/package-registry/share-flag.ts'
 import { sendPackageShareInviteEmail } from '#worker/package-registry/share-invite-email.ts'
 
 const shareIntents = [
@@ -61,6 +62,14 @@ export async function applyPackageShareMutation(input: {
 	const intent = readString(body, 'intent')
 	if (!isShareIntent(intent)) {
 		return { ok: false, error: 'Unknown share action.', status: 400 }
+	}
+	if (
+		!(await isPackageShareGrantsEnabled({
+			db: input.env.APP_DB,
+			userId: input.user.userId,
+		}))
+	) {
+		return { ok: false, error: 'Not found.', status: 404 }
 	}
 	const grantId = readString(body, 'grantId')
 	const packageId = input.packageId || readString(body, 'packageId')

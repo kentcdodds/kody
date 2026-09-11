@@ -16,7 +16,10 @@ import {
 	layoutMaxWidths,
 	pageGutter,
 } from '#universal/styles/style-primitives.ts'
+import { readAppSession } from '#client/app-session-context.tsx'
+import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
 import { renderRoutePendingStatus } from '#client/route-data.tsx'
+import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
 import { EntityExplainer, resolveEntityExplainer } from './entity-explainer.tsx'
 
 /*
@@ -490,7 +493,17 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 	return () => {
 		const currentPath = new URL(handle.props.currentHref, 'http://localhost')
 			.pathname
-		const explainer = resolveEntityExplainer(currentPath)
+		const showShared = isFeatureFlagEnabled(
+			readAppSession(handle)?.session,
+			packageShareGrantsFlagKey,
+		)
+		const explainer =
+			!showShared && currentPath === routes.accountShared.href()
+				? null
+				: resolveEntityExplainer(currentPath)
+		const navItems = showShared
+			? accountNavItems
+			: accountNavItems.filter((item) => item.href !== '/account/shared')
 
 		return (
 			<>
@@ -502,7 +515,7 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 				{explainer ? <EntityExplainer copy={explainer} /> : null}
 				<AccountManagementLinkNav
 					label="Account sections"
-					items={accountNavItems.map((item) => ({
+					items={navItems.map((item) => ({
 						href: item.href,
 						label: item.label,
 						active: isAccountNavItemActive(item.href, currentPath),

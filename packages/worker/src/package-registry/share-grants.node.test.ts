@@ -27,6 +27,10 @@ import {
 	revokePackageShare,
 } from './share-grants.ts'
 import { packageShareRoleAllows } from './share-rbac.ts'
+import {
+	disablePackageShareGrantsForTests,
+	enablePackageShareGrantsForTests,
+} from './share-flag.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
@@ -106,6 +110,7 @@ async function createHarness() {
 	const sqlite = new DatabaseSync(':memory:')
 	applyRepositoryMigrations(sqlite, migrationsDirectory)
 	const db = createD1FromSqlite(sqlite)
+	await enablePackageShareGrantsForTests(db)
 	await insertUser(db, {
 		username: 'alice',
 		email: 'alice@example.com',
@@ -131,6 +136,109 @@ async function createHarness() {
 	})
 	return { db, ...seeded }
 }
+
+test('invite fails closed when package-share-grants is off', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyRepositoryMigrations(sqlite, migrationsDirectory)
+	const db = createD1FromSqlite(sqlite)
+	await insertUser(db, {
+		username: 'alice',
+		email: 'alice@example.com',
+		userId: ownerUserId,
+		plan: 'standard',
+	})
+	const seeded = await seedPublishedPackage(db, {
+		userId: ownerUserId,
+		name: '@alice/shared-notes',
+		kodyId: 'shared-notes',
+	})
+	await expect(
+		invitePackageShare({
+			db,
+			owner: {
+				userId: ownerUserId,
+				email: 'alice@example.com',
+				displayName: 'Alice',
+				username: 'alice',
+			},
+			packageId: seeded.packageId,
+			invitee: { username: 'jesse' },
+		}),
+	).rejects.toThrow('Package sharing is not enabled for this account.')
+})
+
+test('turning package-share-grants off cuts accepted runtime access', async () => {
+	const { db, packageId } = await createHarness()
+	const owner = {
+		userId: ownerUserId,
+		email: 'alice@example.com',
+		displayName: 'Alice',
+		username: 'alice',
+	}
+	const guest = {
+		userId: guestUserId,
+		email: 'jesse@example.com',
+		displayName: 'Jesse',
+		username: 'jesse',
+	}
+	const invited = await invitePackageShare({
+		db,
+		owner,
+		packageId,
+		invitee: { username: 'jesse' },
+	})
+	await acceptPackageShare({ db, guest, grantId: invited.id })
+	await disablePackageShareGrantsForTests(db)
+
+	await expect(
+		resolveShareGrantedPackageImport({
+			db,
+			granteeUserId: guestUserId,
+			granteeEmail: guest.email,
+			packageName: '@alice/shared-notes',
+		}),
+	).resolves.toBeNull()
+	await expect(
+		authorizeSharedPackagePermission({
+			db,
+			packageId,
+			granteeUserId: guestUserId,
+			granteeEmail: guest.email,
+			permission: 'invoke',
+		}),
+	).resolves.toBeNull()
+	await expect(
+		listAcceptedInboundSharedPackages({
+			db,
+			granteeUserId: guestUserId,
+		}),
+	).resolves.toEqual([])
+	await expect(
+		collectShareStorageOwners({
+			db,
+			callerUserId: guestUserId,
+			packageIds: [packageId],
+		}),
+	).resolves.toEqual(new Map())
+	await expect(
+		listInboundPackageShareGrants(db, {
+			userId: guestUserId,
+			email: guest.email,
+			emailVerified: true,
+		}),
+	).resolves.toEqual([])
+	await expect(
+		listOutboundPackageShareGrants(db, ownerUserId),
+	).resolves.toEqual([])
+	await expect(
+		invitePackageShare({
+			db,
+			owner,
+			packageId,
+			invitee: { username: 'freeuser' },
+		}),
+	).rejects.toThrow('Package sharing is not enabled for this account.')
+})
 
 test('use role allows read_source and invoke only', () => {
 	expect(packageShareRoleAllows('use', 'read_source')).toBe(true)

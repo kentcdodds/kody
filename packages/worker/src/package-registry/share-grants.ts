@@ -16,6 +16,10 @@ import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { normalizeStableUserId } from '#worker/user-id.ts'
 import { getSavedPackageById } from './repo.ts'
 import {
+	isPackageShareGrantsEnabled,
+	packageShareGrantsDisabledMessage,
+} from './share-flag.ts'
+import {
 	defaultPackageShareRole,
 	isPackageShareRole,
 	packageShareRoleAllows,
@@ -100,6 +104,15 @@ export class PackageShareAccessError extends Error {
 	constructor(message: string) {
 		super(message)
 		this.name = 'PackageShareAccessError'
+	}
+}
+
+async function assertShareGrantsFlagEnabled(
+	db: D1Database,
+	stableUserId?: string | null,
+) {
+	if (!(await isPackageShareGrantsEnabled({ db, stableUserId }))) {
+		throw new PackageShareAccessError(packageShareGrantsDisabledMessage)
 	}
 }
 
@@ -318,6 +331,9 @@ export async function listOutboundPackageShareGrants(
 	db: D1Database,
 	ownerUserId: string,
 ): Promise<Array<PackageShareGrantRow>> {
+	if (!(await isPackageShareGrantsEnabled({ db, stableUserId: ownerUserId }))) {
+		return []
+	}
 	const rows = await db
 		.prepare(
 			`SELECT ${grantSelectColumns}
@@ -339,6 +355,11 @@ export async function listInboundPackageShareGrants(
 	},
 ): Promise<Array<PackageShareGrantRow>> {
 	if (!canPrepareAppDb(db)) return []
+	if (
+		!(await isPackageShareGrantsEnabled({ db, stableUserId: input.userId }))
+	) {
+		return []
+	}
 	return await queryShareGrantsOrEmpty(async () => {
 		const email =
 			input.emailVerified === true && input.email
@@ -447,6 +468,14 @@ export async function findAcceptedPackageShareGrant(input: {
 	granteeUserId: string
 }): Promise<PackageShareGrantRow | null> {
 	if (!canPrepareAppDb(input.db)) return null
+	if (
+		!(await isPackageShareGrantsEnabled({
+			db: input.db,
+			stableUserId: input.granteeUserId,
+		}))
+	) {
+		return null
+	}
 	return await queryShareGrantsOrEmpty(async () => {
 		const row = await input.db
 			.prepare(
@@ -673,6 +702,14 @@ export async function resolveShareGrantedPackageImport(input: {
 	sourceOwnerUserId: string
 	grant: PackageShareGrantRow
 } | null> {
+	if (
+		!(await isPackageShareGrantsEnabled({
+			db: input.db,
+			stableUserId: input.granteeUserId,
+		}))
+	) {
+		return null
+	}
 	const found = await findAcceptedPackageShareGrantByName({
 		db: input.db,
 		packageName: input.packageName,
@@ -702,6 +739,14 @@ export async function authorizeSharedPackagePermission(input: {
 	grant: PackageShareGrantRow
 	savedPackage: SavedPackageRecord
 } | null> {
+	if (
+		!(await isPackageShareGrantsEnabled({
+			db: input.db,
+			stableUserId: input.granteeUserId,
+		}))
+	) {
+		return null
+	}
 	const grant = await findAcceptedPackageShareGrant({
 		db: input.db,
 		packageId: input.packageId,
@@ -776,6 +821,14 @@ export async function collectShareStorageOwners(input: {
 }): Promise<Map<string, string>> {
 	const owners = new Map<string, string>()
 	if (!canPrepareAppDb(input.db)) return owners
+	if (
+		!(await isPackageShareGrantsEnabled({
+			db: input.db,
+			stableUserId: input.callerUserId,
+		}))
+	) {
+		return owners
+	}
 	const packageIds = [
 		...new Set(
 			[...input.packageIds].filter((packageId) => packageId.length > 0),
@@ -842,6 +895,7 @@ export async function invitePackageShare(input: {
 	if (!ownerUserId) {
 		throw new PackageShareAccessError('Owner user id is required.')
 	}
+	await assertShareGrantsFlagEnabled(input.db, ownerUserId)
 	await assertPaidPlanForPackageShare(input.db, {
 		userId: ownerUserId,
 		email: input.owner.email,
@@ -972,6 +1026,7 @@ export async function acceptPackageShare(input: {
 	if (!guestUserId) {
 		throw new PackageShareAccessError('Guest user id is required.')
 	}
+	await assertShareGrantsFlagEnabled(input.db, guestUserId)
 	await assertPaidPlanForPackageShare(input.db, {
 		userId: guestUserId,
 		email: input.guest.email,
@@ -1062,6 +1117,7 @@ export async function revokePackageShare(input: {
 	ownerUserId: string
 	grantId: string
 }): Promise<PackageShareGrantRow> {
+	await assertShareGrantsFlagEnabled(input.db, input.ownerUserId)
 	const grant = await getPackageShareGrantById(input.db, input.grantId)
 	if (!grant || grant.ownerUserId !== input.ownerUserId) {
 		throw new PackageShareAccessError(
@@ -1090,6 +1146,7 @@ export async function leavePackageShare(input: {
 	granteeUserId: string
 	grantId: string
 }): Promise<PackageShareGrantRow> {
+	await assertShareGrantsFlagEnabled(input.db, input.granteeUserId)
 	const grant = await getPackageShareGrantById(input.db, input.grantId)
 	if (!grant || grant.granteeUserId !== input.granteeUserId) {
 		throw new PackageShareAccessError(
@@ -1120,6 +1177,7 @@ export async function acknowledgePackageShareUpdate(input: {
 	switchToFollow?: boolean
 	expectedPublishedCommit?: string
 }): Promise<PackageShareGrantRow> {
+	await assertShareGrantsFlagEnabled(input.db, input.granteeUserId)
 	const grant = await getPackageShareGrantById(input.db, input.grantId)
 	if (
 		!grant ||
@@ -1188,6 +1246,14 @@ export async function attachPendingPackageShareInvitesForEmail(input: {
 }) {
 	const email = normalizeEmailAddress(input.email)
 	if (!email || !canPrepareAppDb(input.db)) return { attached: 0 }
+	if (
+		!(await isPackageShareGrantsEnabled({
+			db: input.db,
+			stableUserId: input.userId,
+		}))
+	) {
+		return { attached: 0 }
+	}
 	const emailVerified = await isAccountEmailVerified({
 		db: input.db,
 		email,
@@ -1278,6 +1344,14 @@ export async function loadViewerPackageShare(input: {
 	} | null
 }): Promise<PackageShareGrantView | null> {
 	if (!input.viewer?.userId && !input.viewer?.email) return null
+	if (
+		!(await isPackageShareGrantsEnabled({
+			db: input.db,
+			stableUserId: input.viewer.userId,
+		}))
+	) {
+		return null
+	}
 	const grant = await findActivePackageShareGrant({
 		db: input.db,
 		packageId: input.packageId,
@@ -1302,6 +1376,14 @@ export async function listAcceptedInboundSharedPackages(input: {
 	db: D1Database
 	granteeUserId: string
 }): Promise<Array<SavedPackageRecord>> {
+	if (
+		!(await isPackageShareGrantsEnabled({
+			db: input.db,
+			stableUserId: input.granteeUserId,
+		}))
+	) {
+		return []
+	}
 	const grants = await listInboundPackageShareGrants(input.db, {
 		userId: input.granteeUserId,
 	})

@@ -8,6 +8,7 @@ import {
 	listPackageShareGrantsByPackageId,
 	toPackageShareGrantLoaderView,
 } from '#worker/package-registry/share-grants.ts'
+import { isPackageShareGrantsEnabled } from '#worker/package-registry/share-flag.ts'
 import { type routes } from '#universal/routes.ts'
 
 export function createCommunityPackageShareApiHandler(env: Env) {
@@ -17,6 +18,14 @@ export function createCommunityPackageShareApiHandler(env: Env) {
 			const user = await readAuthenticatedAppUser(request, env)
 			if (!user) {
 				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
+			}
+			if (
+				!(await isPackageShareGrantsEnabled({
+					db: env.APP_DB,
+					userId: user.userId,
+				}))
+			) {
+				return jsonResponse({ ok: false, error: 'Not found.' }, 404)
 			}
 
 			const page = await loadPackagePage({

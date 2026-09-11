@@ -285,6 +285,7 @@ test('isFeatureEnabled falls back to registry default when no DB state exists', 
 		'demo-indicator': false,
 		'compact-mcp-server-instructions': false,
 		'compute-overage-charging': true,
+		'package-share-grants': false,
 	})
 })
 
@@ -459,6 +460,7 @@ test('user override wins over global off and global on; clear restores evaluatio
 		'demo-indicator': true,
 		'compact-mcp-server-instructions': false,
 		'compute-overage-charging': true,
+		'package-share-grants': false,
 	})
 
 	await setFeatureFlagGlobalState(db, {
@@ -492,6 +494,7 @@ test('getFeatureFlagEvaluationsForUser reports assignment sources', async () => 
 		'demo-indicator': { enabled: false, source: 'default' },
 		'compact-mcp-server-instructions': { enabled: false, source: 'default' },
 		'compute-overage-charging': { enabled: true, source: 'default' },
+		'package-share-grants': { enabled: false, source: 'default' },
 	})
 
 	await setFeatureFlagGlobalState(db, {
@@ -577,7 +580,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 	})
 
 	const listed = await listFeatureFlagsForAdmin(db)
-	expect(listed).toHaveLength(5)
+	expect(listed).toHaveLength(6)
 
 	const charging = listed.find(
 		(flag) => flag.key === 'compute-overage-charging',
@@ -586,6 +589,14 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 		key: 'compute-overage-charging',
 		stale: false,
 		defaultEnabled: true,
+		successMetric: null,
+	})
+
+	const sharing = listed.find((flag) => flag.key === 'package-share-grants')
+	expect(sharing).toMatchObject({
+		key: 'package-share-grants',
+		stale: false,
+		defaultEnabled: false,
 		successMetric: null,
 	})
 

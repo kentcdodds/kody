@@ -180,6 +180,7 @@ test('authenticated home SSR prefetches flags while loading page data', async ()
 		'demo-indicator': true,
 		'compact-mcp-server-instructions': true,
 		'compute-overage-charging': true,
+		'package-share-grants': false,
 	})
 	expect(counts.batchSizes).toEqual([2, 2])
 	expect(loadOnboardingData).not.toHaveBeenCalled()

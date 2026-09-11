@@ -350,6 +350,7 @@ test('authenticated account SSR batches user/role and flag reads into two round 
 		'demo-indicator': true,
 		'compact-mcp-server-instructions': true,
 		'compute-overage-charging': true,
+		'package-share-grants': false,
 	})
 	// Before: 4 sequential prepares (users, roles, flags, overrides).
 	// After: those same 4 prepares run as two 2-statement batches.
