@@ -50,8 +50,9 @@ At accept, the guest chooses a trust level. The Accept UI defaults to `pin`.
 - `pin` — accept the current published commit only. If the owner publishes
   ahead, use and import fail closed with a link to
   `/@{owner}/{packageName}/approve-changes`. That page shows the accepted →
-  current published source diff. Approve updates the snapshot. Approve and
-  follow switches trust to `follow`.
+  current published source diff. Approve updates the snapshot only for the
+  commit that was reviewed; a later owner publish requires a fresh review.
+  Approve and follow switches trust to `follow`.
 - `follow` — accept the current published commit and auto-accept later owner
   publishes.
 

@@ -1071,6 +1071,7 @@ export async function acknowledgePackageShareUpdate(input: {
 	granteeUserId: string
 	grantId: string
 	switchToFollow?: boolean
+	expectedPublishedCommit?: string
 }): Promise<PackageShareGrantRow> {
 	const grant = await getPackageShareGrantById(input.db, input.grantId)
 	if (
@@ -1097,6 +1098,19 @@ export async function acknowledgePackageShareUpdate(input: {
 		throw new PackageShareAccessError(
 			`Shared package ${savedPackage.name} has no published commit to approve.`,
 		)
+	}
+	if (input.switchToFollow !== true) {
+		const expectedPublishedCommit = input.expectedPublishedCommit?.trim() ?? ''
+		if (!expectedPublishedCommit) {
+			throw new PackageShareAccessError(
+				'Pin approval must name the published commit that was reviewed.',
+			)
+		}
+		if (publishedCommit !== expectedPublishedCommit) {
+			throw new PackageShareAccessError(
+				'The published package changed since this review. Reload and approve the current commit.',
+			)
+		}
 	}
 	const trustLevel =
 		input.switchToFollow === true ? 'follow' : (grant.trustLevel ?? 'pin')

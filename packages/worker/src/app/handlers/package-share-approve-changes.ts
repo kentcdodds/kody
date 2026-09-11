@@ -158,28 +158,33 @@ export function createCommunityPackageApproveChangesApiHandler(env: Env) {
 						400,
 					)
 				}
+				const result = await applyPackageShareMutation({
+					env,
+					user,
+					body: bodyRecord
+						? {
+								...bodyRecord,
+								intent: 'acknowledge',
+								grantId: page.shareGrant.id,
+								publishedCommit: review.currentCommit,
+							}
+						: {
+								intent: 'acknowledge',
+								grantId: page.shareGrant.id,
+								publishedCommit: review.currentCommit,
+							},
+					requestUrl: request.url,
+				})
+				if (!result.ok) {
+					return jsonResponse(result, result.status)
+				}
+				return jsonResponse({ ok: true, grant: result.grant })
 			} catch (error) {
 				return jsonResponse(
 					{ ok: false, error: packageShareAccessErrorMessage(error) },
 					400,
 				)
 			}
-			const result = await applyPackageShareMutation({
-				env,
-				user,
-				body: bodyRecord
-					? {
-							...bodyRecord,
-							intent: 'acknowledge',
-							grantId: page.shareGrant.id,
-						}
-					: { intent: 'acknowledge', grantId: page.shareGrant.id },
-				requestUrl: request.url,
-			})
-			if (!result.ok) {
-				return jsonResponse(result, result.status)
-			}
-			return jsonResponse({ ok: true, grant: result.grant })
 		},
 	} satisfies Action<typeof routes.communityPackageApproveChangesApi>
 }

@@ -162,18 +162,22 @@ export async function applyPackageShareMutation(input: {
 					return { ok: false, error: 'grantId is required.', status: 400 }
 				}
 				const switchToFollow = body['switchToFollow'] === true
+				const expectedPublishedCommit =
+					readString(body, 'publishedCommit') || undefined
 				await assertSharePinAcknowledgeReview({
 					env: input.env,
 					db: input.env.APP_DB,
 					granteeUserId: input.user.mcpUser.userId,
 					grantId,
 					switchToFollow,
+					expectedPublishedCommit,
 				})
 				const grant = await acknowledgePackageShareUpdate({
 					db: input.env.APP_DB,
 					granteeUserId: input.user.mcpUser.userId,
 					grantId,
 					switchToFollow,
+					expectedPublishedCommit,
 				})
 				return {
 					ok: true,

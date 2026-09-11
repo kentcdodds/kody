@@ -21,6 +21,7 @@ export async function assertSharePinAcknowledgeReview(input: {
 	grantId: string
 	packageId?: string
 	switchToFollow?: boolean
+	expectedPublishedCommit?: string
 }) {
 	if (input.switchToFollow === true) return
 	const grant = await getPackageShareGrantById(input.db, input.grantId)
@@ -42,6 +43,7 @@ export async function assertSharePinAcknowledgeReview(input: {
 		env: input.env,
 		db: input.db,
 		grant,
+		expectedPublishedCommit: input.expectedPublishedCommit,
 	})
 }
 
@@ -49,6 +51,7 @@ async function assertGrantSnapshotsAllowPinAcknowledge(input: {
 	env: Env
 	db: D1Database
 	grant: PackageShareGrantRow
+	expectedPublishedCommit?: string
 }) {
 	const acceptedCommit = input.grant.acceptedPublishedCommit
 	if (!acceptedCommit) {
@@ -68,6 +71,17 @@ async function assertGrantSnapshotsAllowPinAcknowledge(input: {
 	if (!currentCommit) {
 		throw new PackageShareAccessError(
 			`Shared package ${savedPackage.name} has no published commit to approve.`,
+		)
+	}
+	const expectedPublishedCommit = input.expectedPublishedCommit?.trim() ?? ''
+	if (!expectedPublishedCommit) {
+		throw new PackageShareAccessError(
+			'Pin approval must name the published commit that was reviewed.',
+		)
+	}
+	if (currentCommit !== expectedPublishedCommit) {
+		throw new PackageShareAccessError(
+			'The published package changed since this review. Reload and approve the current commit.',
 		)
 	}
 	const [acceptedSnapshot, currentSnapshot] = await Promise.all([

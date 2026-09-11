@@ -312,10 +312,32 @@ test('pin fails closed when the owner publishes ahead; follow does not', async (
 		}),
 	).rejects.toBeInstanceOf(PackageSharePinAheadError)
 
+	await expect(
+		acknowledgePackageShareUpdate({
+			db,
+			granteeUserId: guestUserId,
+			grantId: invited.id,
+		}),
+	).rejects.toMatchObject({
+		message: 'Pin approval must name the published commit that was reviewed.',
+	})
+	await expect(
+		acknowledgePackageShareUpdate({
+			db,
+			granteeUserId: guestUserId,
+			grantId: invited.id,
+			expectedPublishedCommit: 'commit-stale',
+		}),
+	).rejects.toMatchObject({
+		message:
+			'The published package changed since this review. Reload and approve the current commit.',
+	})
+
 	const acknowledged = await acknowledgePackageShareUpdate({
 		db,
 		granteeUserId: guestUserId,
 		grantId: invited.id,
+		expectedPublishedCommit: 'commit-2',
 	})
 	expect(acknowledged.acceptedPublishedCommit).toBe('commit-2')
 	await expect(

@@ -412,13 +412,14 @@ export const packageShareAcknowledgeUpdateCapability = defineDomainCapability(
 	{
 		name: 'packageShareAcknowledgeUpdate',
 		description:
-			'Approve the current published commit of a pin-trust shared package after reviewing the accepted-to-current diff. Optionally switch to follow.',
+			'Approve one reviewed published commit of a pin-trust shared package after inspecting the accepted-to-current diff. Pin approval requires published_commit. Optionally switch to follow.',
 		keywords: ['share', 'approve', 'acknowledge', 'pin', 'follow'],
 		readOnly: false,
 		idempotent: true,
 		destructive: false,
 		inputSchema: z.object({
 			grant_id: z.string().min(1),
+			published_commit: z.string().min(1).optional(),
 			switch_to_follow: z.boolean().optional(),
 		}),
 		outputSchema: z.object({ grant: packageShareGrantSchema }),
@@ -431,12 +432,14 @@ export const packageShareAcknowledgeUpdateCapability = defineDomainCapability(
 					granteeUserId: user.userId,
 					grantId: args.grant_id,
 					switchToFollow: args.switch_to_follow,
+					expectedPublishedCommit: args.published_commit,
 				})
 				const grant = await acknowledgePackageShareUpdate({
 					db: ctx.env.APP_DB,
 					granteeUserId: user.userId,
 					grantId: args.grant_id,
 					switchToFollow: args.switch_to_follow,
+					expectedPublishedCommit: args.published_commit,
 				})
 				return {
 					grant: toPackageShareGrantPayload(
