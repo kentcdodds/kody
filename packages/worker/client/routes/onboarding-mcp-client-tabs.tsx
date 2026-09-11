@@ -17,6 +17,7 @@ import {
 	openClawMcpLoginCommand,
 	openCodeMcpAuthCommand,
 } from '#client/routes/onboarding-mcp-clients.ts'
+import { renderIcon } from '#universal/icon.tsx'
 import {
 	type OnboardingSecondAgentDisableReason,
 	onboardingSecondAgentDisableHint,
@@ -62,20 +63,9 @@ function AgentMarkIcon(
 	return () => {
 		const inline = handle.props.size === 'inline'
 		if (!handle.props.icon) {
-			return (
-				<svg
-					viewBox="0 0 24 24"
-					width={inline ? undefined : 22}
-					height={inline ? undefined : 22}
-					fill="currentColor"
-					aria-hidden="true"
-					mix={inline ? css(pickerIconImgInlineCss) : undefined}
-				>
-					<circle cx="6" cy="12" r="1.6" />
-					<circle cx="12" cy="12" r="1.6" />
-					<circle cx="18" cy="12" r="1.6" />
-				</svg>
-			)
+			return renderIcon('dots-horizontal', {
+				size: inline ? '1cap' : '22',
+			})
 		}
 		return (
 			<img

@@ -11,6 +11,7 @@ import {
 	type WalkthroughHostPick,
 } from '#universal/walkthrough-hosts.ts'
 import { type TranscriptLine } from './interactive-guide-transcript.ts'
+import { renderIcon } from '#universal/icon.tsx'
 import { fetchLandingLoopHighlights } from './landing-loop-highlights.ts'
 import {
 	createLandingLoopPlayer,
@@ -532,47 +533,11 @@ function renderTeaser(hosts?: WalkthroughHostPick) {
 function renderLoopToggleIcon(label: LandingLoopToggleLabel) {
 	switch (label) {
 		case 'Pause':
-			return (
-				<svg
-					viewBox="0 0 24 24"
-					width="1em"
-					height="1em"
-					aria-hidden="true"
-					fill="currentColor"
-				>
-					<rect x="6" y="5" width="4.5" height="14" rx="1" />
-					<rect x="13.5" y="5" width="4.5" height="14" rx="1" />
-				</svg>
-			)
+			return renderIcon('pause', { size: '1em' })
 		case 'Play':
-			return (
-				<svg
-					viewBox="0 0 24 24"
-					width="1em"
-					height="1em"
-					aria-hidden="true"
-					fill="currentColor"
-				>
-					<path d="M8 5.5v13l11-6.5-11-6.5Z" />
-				</svg>
-			)
+			return renderIcon('play', { size: '1em' })
 		case 'Restart':
-			return (
-				<svg
-					viewBox="0 0 24 24"
-					width="1em"
-					height="1em"
-					aria-hidden="true"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-				>
-					<path d="M9 14 4 9l5-5" />
-					<path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5 5.5 5.5 0 0 1-5.5 5.5H11" />
-				</svg>
-			)
+			return renderIcon('redo', { size: '1em' })
 		default: {
 			const exhaustive: never = label
 			return exhaustive
@@ -581,20 +546,5 @@ function renderLoopToggleIcon(label: LandingLoopToggleLabel) {
 }
 
 function renderLoopSkipIcon() {
-	return (
-		<svg
-			viewBox="0 0 24 24"
-			width="1em"
-			height="1em"
-			aria-hidden="true"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="2"
-			stroke-linecap="round"
-			stroke-linejoin="round"
-		>
-			<path d="M12 5v14" />
-			<path d="m19 12-7 7-7-7" />
-		</svg>
-	)
+	return renderIcon('chevron-down', { size: '1em' })
 }

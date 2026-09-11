@@ -8,6 +8,7 @@ import {
 	testimonialStoryHref,
 	type LandingTestimonial,
 } from '#universal/landing-testimonials.ts'
+import { renderIcon } from '#universal/icon.tsx'
 import {
 	TESTIMONIALS_LAP_MS,
 	appendFlickSample,
@@ -566,22 +567,9 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 }
 
 function renderChevron(direction: 'prev' | 'next') {
-	const path = direction === 'prev' ? 'M15 6 9 12l6 6' : 'M9 6l6 6-6 6'
-	return (
-		<svg
-			viewBox="0 0 24 24"
-			width="1em"
-			height="1em"
-			aria-hidden="true"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="2.2"
-			stroke-linecap="round"
-			stroke-linejoin="round"
-		>
-			<path d={path} />
-		</svg>
-	)
+	return renderIcon(direction === 'prev' ? 'chevron-left' : 'chevron-right', {
+		size: '1em',
+	})
 }
 
 function renderTestimonialIdentity(item: LandingTestimonial) {

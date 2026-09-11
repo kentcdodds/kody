@@ -78,11 +78,17 @@ test('metadata band auto-fits columns and keeps id/timestamp values copyable and
 
 test('inline link nav stays in flow and is not a second account rail', async () => {
 	const items = [
-		{ href: '/admin/community-reports', label: 'Open', active: true },
+		{
+			href: '/admin/community-reports',
+			label: 'Open',
+			active: true,
+			icon: 'warning-triangle' as const,
+		},
 		{
 			href: '/admin/community-reports?status=resolved',
 			label: 'Resolved',
 			active: false,
+			icon: 'check' as const,
 		},
 	]
 
@@ -96,7 +102,10 @@ test('inline link nav stays in flow and is not a second account rail', async () 
 	expect(readRulesFor(railHtml, 'nav')).toContain('position: absolute')
 	expect(railHtml).toContain('<details')
 	expect(railHtml).toContain('>Admin sections</span>')
+	expect(railHtml).toContain('data-icon="menu"')
+	expect(railHtml).toContain('data-icon="warning-triangle"')
 	expect(railHtml).toContain('>Open</span>')
+	expect(railHtml).toContain('>Open</a>')
 	expect(railHtml).toContain('min-height: 44px')
 	expect(railHtml).toContain('@media (max-width: 860px)')
 

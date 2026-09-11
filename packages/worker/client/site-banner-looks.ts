@@ -1,3 +1,4 @@
+import { type IconName } from '#universal/icon.tsx'
 import {
 	hoverMq,
 	layoutMaxWidths,
@@ -76,16 +77,16 @@ export function defaultSiteBannerIcon(look: SiteBannerLook): SiteBannerIcon {
 	}
 }
 
-export function siteBannerIconGlyph(icon: SiteBannerIcon) {
+export function siteBannerIconName(icon: SiteBannerIcon): IconName {
 	switch (icon) {
 		case 'play':
-			return '▶'
+			return 'play'
 		case 'megaphone':
-			return '📣'
+			return 'announcement'
 		case 'sparkle':
-			return '✦'
+			return 'star'
 		case 'info':
-			return 'ℹ'
+			return 'information'
 		default: {
 			const exhaustive: never = icon
 			return exhaustive

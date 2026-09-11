@@ -4,6 +4,7 @@ import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { type ProfileVisibility } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
 import { UserAvatar } from '#universal/user-avatar.tsx'
+import { renderIcon } from '#universal/icon.tsx'
 import { colors, radius, shadows, spacing } from '#universal/styles/tokens.ts'
 import {
 	getGhostButtonCss,
@@ -440,20 +441,5 @@ const avatarEditAffordanceCss = {
 }
 
 function avatarEditIcon() {
-	return (
-		<svg
-			viewBox="0 0 24 24"
-			width="16"
-			height="16"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="2"
-			stroke-linecap="round"
-			stroke-linejoin="round"
-			aria-hidden="true"
-		>
-			<path d="M12 20h9" />
-			<path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-		</svg>
-	)
+	return renderIcon('edit', { size: '16' })
 }

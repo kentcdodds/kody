@@ -247,3 +247,25 @@ test('account rail lists Connections and Packages at the same level as the other
 	)
 	expect(accountPackagesNavHref(null)).toBe('/account/packages')
 })
+
+test('account rail items carry Iconic glyph names', () => {
+	const items = accountNavItemsFor({ username: 'jane', showShared: true })
+	expect(items.map((item) => [item.label, item.icon])).toEqual([
+		['Overview', 'home'],
+		['Waiting', 'clock'],
+		['Connections', 'link'],
+		['Packages', 'box'],
+		['Shared', 'share'],
+		['Billing', 'wallet'],
+		['Usage', 'chart'],
+		['Activity', 'trending-up'],
+		['Jobs', 'briefcase'],
+		['Workflows', 'refresh'],
+		['Webhooks', 'cloud'],
+		['Secrets', 'key'],
+		['Integrations', 'plug'],
+		['MCP servers', 'server'],
+		['Memories', 'book'],
+		['Email', 'mail'],
+	])
+})

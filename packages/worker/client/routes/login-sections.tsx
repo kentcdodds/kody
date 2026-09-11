@@ -6,6 +6,7 @@ import {
 } from '#client/form-error-fields.ts'
 import { HeroStage } from '#client/hero-stage.tsx'
 import { renderHoneypot } from '#client/honeypot-field.tsx'
+import { renderIcon } from '#universal/icon.tsx'
 import { turnstileWidgetClassName } from '#client/public-form-protection.ts'
 import { colors, transitions, typography } from '#universal/styles/tokens.ts'
 import {
@@ -280,20 +281,7 @@ export function renderAuthForm(
 					disabled={props.isSubmitting}
 					mix={[css(ghostButtonCss), on('click', props.onPasskeySignIn)]}
 				>
-					<svg
-						viewBox="0 0 24 24"
-						width="17"
-						height="17"
-						aria-hidden="true"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z" />
-						<circle cx="16.5" cy="7.5" r="0.5" fill="currentColor" />
-					</svg>
+					{renderIcon('key', { size: '17' })}
 					Sign in with a passkey
 				</button>
 			) : null}
