@@ -243,6 +243,10 @@
 		{
 			"filename": "0060-package-share-grants.sql",
 			"sha256": "4a58a86dc879782b745bf58cb6ad4d812f5b54507e042c24c6e258d3bfd03c0f"
+		},
+		{
+			"filename": "0061-community-forks-package-delete-cascade.sql",
+			"sha256": "d3701812617f097a85c49f45899b1290c0d5bdc697d6db66408333981ff321ae"
 		}
 	]
 }

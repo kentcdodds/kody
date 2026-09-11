@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { communityForksDeleteCascadeStatements } from './community-forks-delete-cascade.ts'
 import {
 	countCommunityForksByListingIds,
 	deleteCommunityForksForPackage,
@@ -52,6 +53,7 @@ function createOrphanForkDb() {
 			actor TEXT,
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 		);
+		${communityForksDeleteCascadeStatements.join(';\n')}
 	`)
 	return { sqlite, db: createD1FromSqlite(sqlite) }
 }

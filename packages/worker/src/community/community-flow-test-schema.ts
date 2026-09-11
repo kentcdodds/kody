@@ -2,6 +2,7 @@ import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test-schema.ts'
 import { ensurePackageInvocationTokensTestSchema } from '#worker/package-invocations/test-schema.ts'
 import { ensureSecretBucketsTestSchema } from '#worker/secrets-test-schema.ts'
+import { communityForksDeleteCascadeStatements } from './community-forks-delete-cascade.ts'
 
 /**
  * Community flow workers-unit schema. Adds the community tables and the
@@ -143,6 +144,7 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_community_forks_forked_package_id
 			ON community_forks(forked_package_id)`,
+		...communityForksDeleteCascadeStatements,
 		`CREATE TABLE IF NOT EXISTS community_ratings (
 			id TEXT PRIMARY KEY NOT NULL,
 			listing_id TEXT NOT NULL,
