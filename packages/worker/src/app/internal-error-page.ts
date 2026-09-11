@@ -7,6 +7,7 @@ import {
 	internalErrorPageImageAlt,
 	internalErrorPageImageSrc,
 } from '#universal/internal-error-page.ts'
+import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import {
 	layoutMaxWidths,
 	pageGutter,
@@ -118,5 +119,5 @@ export function renderInternalServerErrorPage(retryHref = '/') {
 
 export function retryHrefFromRequest(request: Request) {
 	const url = new URL(request.url)
-	return `${url.pathname}${url.search}` || '/'
+	return normalizeRedirectTo(`${url.pathname}${url.search}`) ?? '/'
 }
