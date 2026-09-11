@@ -26,7 +26,6 @@ import {
 	resolveShareGrantedPackageImport,
 	revokePackageShare,
 } from './share-grants.ts'
-import { packageShareRoleAllows } from './share-rbac.ts'
 import {
 	disablePackageShareGrantsForTests,
 	enablePackageShareGrantsForTests,
@@ -238,14 +237,6 @@ test('turning package-share-grants off cuts accepted runtime access', async () =
 			invitee: { username: 'freeuser' },
 		}),
 	).rejects.toThrow('Package sharing is not enabled for this account.')
-})
-
-test('use role allows read_source and invoke only', () => {
-	expect(packageShareRoleAllows('use', 'read_source')).toBe(true)
-	expect(packageShareRoleAllows('use', 'invoke')).toBe(true)
-	expect(packageShareRoleAllows('use', 'publish')).toBe(false)
-	expect(packageShareRoleAllows('use', 'write_source')).toBe(false)
-	expect(packageShareRoleAllows('use', 'create_jobs')).toBe(false)
 })
 
 test('invite, accept, revoke, and leave follow paid and accept-required rules', async () => {

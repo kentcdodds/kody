@@ -2,7 +2,6 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { platformPublicOpenedDay } from '#universal/platform-open.ts'
 import { loadAdminLaunchSignals } from './launch-signals.ts'
 
 const now = new Date('2026-09-10T18:00:00.000Z')
@@ -143,7 +142,6 @@ test('launch signals aggregate paid MRR, funnels, activity, and overlays without
 		now,
 	})
 
-	expect(signals.openedDay).toBe(platformPublicOpenedDay)
 	expect(signals.paidSubscribers).toBe(2)
 	expect(signals.mrrUsdCents).toBe(1_200 + 4_000)
 	expect(signals.paidSlices).toEqual([

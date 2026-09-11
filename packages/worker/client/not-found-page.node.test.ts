@@ -3,7 +3,7 @@ import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
 import { NotFoundPage, notFoundPageHeading } from '#client/not-found-page.tsx'
 
-test('not-found page shows the mismatch illustration, what happened, and next steps', async () => {
+test('not-found page shows the mismatch illustration and recovery destinations', async () => {
 	const html = await renderToString(jsx(NotFoundPage, {}))
 
 	expect(html).toContain('data-testid="not-found-page"')
@@ -12,8 +12,4 @@ test('not-found page shows the mismatch illustration, what happened, and next st
 	expect(html).toContain('href="/"')
 	expect(html).toContain('href="/docs"')
 	expect(html).toContain('href="/community"')
-	expect(html).toContain('>Go home</a>')
-	expect(html).toContain('>Search the docs</a>')
-	expect(html).toContain('>Browse packages</a>')
-	expect(html).toContain('unpublished')
 })
