@@ -684,23 +684,6 @@ export function collectPackageStorageGrantIds(input: {
 	return grantedPackageIds
 }
 
-export function collectShareOwnedStorageOwners(input: {
-	dependencies: Array<BundleArtifactDependency>
-	dynamicDependencyPackageIds?: Array<string>
-}): Map<string, string> {
-	const owners = new Map<string, string>()
-	for (const dependency of input.dependencies) {
-		if (
-			dependency.packageId &&
-			dependency.shareOwned === true &&
-			dependency.storageOwnerUserId
-		) {
-			owners.set(dependency.packageId, dependency.storageOwnerUserId)
-		}
-	}
-	return owners
-}
-
 export async function runBundledModuleWithRegistry(
 	env: Env,
 	callerContext: McpCallerContext,
@@ -897,9 +880,6 @@ export async function runBundledModuleWithRegistry(
 			dependencies: bundle.dependencies ?? [],
 			dynamicDependencyPackageIds,
 		})
-		const artifactOwners = collectShareOwnedStorageOwners({
-			dependencies: bundle.dependencies ?? [],
-		})
 		const storageOwnerByPackageId = new Map<string, string>()
 		if (callerContext.user?.userId) {
 			const shareOwners = await collectShareStorageOwners({
@@ -907,14 +887,8 @@ export async function runBundledModuleWithRegistry(
 				callerUserId: callerContext.user.userId,
 				packageIds: grantedPackageStorageIds,
 			})
-			const allowedOwners = new Set(shareOwners.values())
 			for (const [packageId, ownerUserId] of shareOwners) {
 				storageOwnerByPackageId.set(packageId, ownerUserId)
-			}
-			for (const [packageId, ownerUserId] of artifactOwners) {
-				if (shareOwners.has(packageId) || allowedOwners.has(ownerUserId)) {
-					storageOwnerByPackageId.set(packageId, ownerUserId)
-				}
 			}
 		}
 		// Static package export calls report through a sandbox bridge with a

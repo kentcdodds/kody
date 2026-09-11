@@ -1,5 +1,8 @@
 import { expect, test } from 'vitest'
-import { diffPublishedSourceFiles } from './package-share-diff.ts'
+import {
+	diffPublishedSourceFiles,
+	pinAcknowledgeBlockedByTruncatedReview,
+} from './share-diff.ts'
 
 test('diffPublishedSourceFiles reports added, removed, and modified files', () => {
 	expect(
@@ -53,4 +56,16 @@ test('diffPublishedSourceFiles marks truncated files', () => {
 			truncated: true,
 		},
 	])
+})
+
+test('pin acknowledge stays blocked on truncated files unless switching to follow', () => {
+	expect(
+		pinAcknowledgeBlockedByTruncatedReview([{ truncated: true }], false),
+	).toBe(true)
+	expect(
+		pinAcknowledgeBlockedByTruncatedReview([{ truncated: true }], true),
+	).toBe(false)
+	expect(
+		pinAcknowledgeBlockedByTruncatedReview([{ truncated: false }], false),
+	).toBe(false)
 })

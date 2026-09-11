@@ -6,6 +6,7 @@ import { loadPackagePage } from '#app/package-page.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import { pinAcknowledgeBlockedByTruncatedReview } from '#worker/package-registry/share-diff.ts'
 import {
 	PackageShareAccessError,
 	packageShareAccessErrorMessage,
@@ -145,7 +146,9 @@ export function createCommunityPackageApproveChangesApiHandler(env: Env) {
 					grantId: page.shareGrant.id,
 					packageId: page.shareGrant.packageId,
 				})
-				if (review.files.some((file) => file.truncated) && !switchToFollow) {
+				if (
+					pinAcknowledgeBlockedByTruncatedReview(review.files, switchToFollow)
+				) {
 					return jsonResponse(
 						{
 							ok: false,

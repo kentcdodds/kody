@@ -160,7 +160,11 @@ async function loadPackagePageUncached(input: {
 				db: input.env.APP_DB,
 				packageId: target.savedPackage.id,
 				viewer: user
-					? { userId: user.mcpUser.userId, email: user.email }
+					? {
+							userId: user.mcpUser.userId,
+							email: user.email,
+							emailVerified: user.emailVerified,
+						}
 					: null,
 			})
 		: null

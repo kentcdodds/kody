@@ -47,3 +47,10 @@ export function diffPublishedSourceFiles(
 	}
 	return changes
 }
+
+export function pinAcknowledgeBlockedByTruncatedReview(
+	files: ReadonlyArray<{ truncated: boolean }>,
+	switchToFollow: boolean,
+) {
+	return switchToFollow !== true && files.some((file) => file.truncated)
+}

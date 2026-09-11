@@ -1,6 +1,7 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import { normalizeEmailAddress } from '#worker/email/address.ts'
+import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
 import { getUserPlan } from '#worker/entitlements/service.ts'
 import {
 	findPublicUserIdentityByStableUserId,
@@ -588,12 +589,14 @@ export function grantIsAddressedToGuest(
 	grant: PackageShareGrantRow,
 	guestUserId: string,
 	guestEmail: string | null,
+	emailVerified = false,
 ) {
 	if (grant.granteeUserId) {
 		return grant.granteeUserId === guestUserId
 	}
 	return (
 		grant.status === 'pending' &&
+		emailVerified === true &&
 		grant.inviteeEmail != null &&
 		guestEmail != null &&
 		grant.inviteeEmail === guestEmail
@@ -943,7 +946,12 @@ export async function acceptPackageShare(input: {
 		)
 	}
 	const guestEmail = normalizeEmailAddress(input.guest.email ?? '')
-	if (!grantIsAddressedToGuest(grant, guestUserId, guestEmail)) {
+	const emailVerified = await isAccountEmailVerified({
+		db: input.db,
+		email: input.guest.email,
+		stableUserId: guestUserId,
+	})
+	if (!grantIsAddressedToGuest(grant, guestUserId, guestEmail, emailVerified)) {
 		throw new PackageShareAccessError(
 			'This invitation is not addressed to the signed-in account.',
 		)
@@ -1119,6 +1127,12 @@ export async function attachPendingPackageShareInvitesForEmail(input: {
 }) {
 	const email = normalizeEmailAddress(input.email)
 	if (!email || !canPrepareAppDb(input.db)) return { attached: 0 }
+	const emailVerified = await isAccountEmailVerified({
+		db: input.db,
+		email,
+		stableUserId: input.userId,
+	})
+	if (!emailVerified) return { attached: 0 }
 	return await queryShareGrantsOrEmpty(
 		async () => {
 			const username = input.username ? normalizeUsername(input.username) : null
@@ -1196,7 +1210,11 @@ export function packageShareAccessErrorMessage(error: unknown) {
 export async function loadViewerPackageShare(input: {
 	db: D1Database
 	packageId: string
-	viewer?: { userId?: string | null; email?: string | null } | null
+	viewer?: {
+		userId?: string | null
+		email?: string | null
+		emailVerified?: boolean
+	} | null
 }): Promise<PackageShareGrantView | null> {
 	if (!input.viewer?.userId && !input.viewer?.email) return null
 	const grant = await findActivePackageShareGrant({
@@ -1211,6 +1229,7 @@ export async function loadViewerPackageShare(input: {
 			grant,
 			input.viewer.userId ?? '',
 			input.viewer.email ? normalizeEmailAddress(input.viewer.email) : null,
+			input.viewer.emailVerified === true,
 		)
 	) {
 		return null
@@ -1232,7 +1251,20 @@ export async function listAcceptedInboundSharedPackages(input: {
 			userId: grant.ownerUserId,
 			packageId: grant.packageId,
 		})
-		if (saved) packages.push(saved)
+		if (!saved) continue
+		if (grant.trustLevel === 'pin') {
+			const publishedCommit = await getPublishedCommitForPackage(
+				input.db,
+				saved,
+			)
+			if (
+				!publishedCommit ||
+				grant.acceptedPublishedCommit !== publishedCommit
+			) {
+				continue
+			}
+		}
+		packages.push(saved)
 	}
 	return packages
 }

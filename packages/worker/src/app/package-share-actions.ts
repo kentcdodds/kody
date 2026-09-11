@@ -13,6 +13,7 @@ import {
 	toPackageShareGrantLoaderView,
 	type PackageShareTrustLevel,
 } from '#worker/package-registry/share-grants.ts'
+import { assertSharePinAcknowledgeReview } from '#worker/package-registry/share-pin-review.ts'
 import { sendPackageShareInviteEmail } from '#worker/package-registry/share-invite-email.ts'
 
 const shareIntents = [
@@ -160,11 +161,19 @@ export async function applyPackageShareMutation(input: {
 				if (!grantId) {
 					return { ok: false, error: 'grantId is required.', status: 400 }
 				}
+				const switchToFollow = body['switchToFollow'] === true
+				await assertSharePinAcknowledgeReview({
+					env: input.env,
+					db: input.env.APP_DB,
+					granteeUserId: input.user.mcpUser.userId,
+					grantId,
+					switchToFollow,
+				})
 				const grant = await acknowledgePackageShareUpdate({
 					db: input.env.APP_DB,
 					granteeUserId: input.user.mcpUser.userId,
 					grantId,
-					switchToFollow: body['switchToFollow'] === true,
+					switchToFollow,
 				})
 				return {
 					ok: true,

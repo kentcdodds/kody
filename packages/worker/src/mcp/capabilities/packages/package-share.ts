@@ -28,6 +28,7 @@ import {
 import { normalizeEmailAddress } from '#worker/email/address.ts'
 import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
 import { sendPackageShareInviteEmail } from '#worker/package-registry/share-invite-email.ts'
+import { assertSharePinAcknowledgeReview } from '#worker/package-registry/share-pin-review.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
 	packageShareGrantSchema,
@@ -368,28 +369,39 @@ export const packageShareInspectCapability = defineDomainCapability(
 		outputSchema: z.object({ grant: packageShareGrantSchema }),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			const grant = await getPackageShareGrantById(
-				ctx.env.APP_DB,
-				args.grant_id,
-			)
-			if (
-				!grant ||
-				(grant.ownerUserId !== user.userId &&
-					!grantIsAddressedToGuest(
-						grant,
-						user.userId,
-						normalizeEmailAddress(user.email ?? ''),
-					))
-			) {
-				throw new McpCallerError('Share grant not found for this user.')
-			}
-			return {
-				grant: toPackageShareGrantPayload(
-					await requireHydratedPackageShareGrantView({
-						db: ctx.env.APP_DB,
-						grant,
-					}),
-				),
+			try {
+				const grant = await getPackageShareGrantById(
+					ctx.env.APP_DB,
+					args.grant_id,
+				)
+				const emailVerified = await isAccountEmailVerified({
+					db: ctx.env.APP_DB,
+					email: user.email,
+					stableUserId: user.userId,
+				})
+				if (
+					!grant ||
+					(grant.ownerUserId !== user.userId &&
+						!grantIsAddressedToGuest(
+							grant,
+							user.userId,
+							normalizeEmailAddress(user.email ?? ''),
+							emailVerified,
+						))
+				) {
+					throw new McpCallerError('Share grant not found for this user.')
+				}
+				return {
+					grant: toPackageShareGrantPayload(
+						await requireHydratedPackageShareGrantView({
+							db: ctx.env.APP_DB,
+							grant,
+						}),
+					),
+				}
+			} catch (error) {
+				if (error instanceof McpCallerError) throw error
+				throwShareError(error)
 			}
 		},
 	},
@@ -413,6 +425,13 @@ export const packageShareAcknowledgeUpdateCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
 			try {
+				await assertSharePinAcknowledgeReview({
+					env: ctx.env,
+					db: ctx.env.APP_DB,
+					granteeUserId: user.userId,
+					grantId: args.grant_id,
+					switchToFollow: args.switch_to_follow,
+				})
 				const grant = await acknowledgePackageShareUpdate({
 					db: ctx.env.APP_DB,
 					granteeUserId: user.userId,

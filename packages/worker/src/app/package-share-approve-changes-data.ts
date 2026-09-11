@@ -1,5 +1,5 @@
 import { type PackageShareApproveChangesLoaderData } from '#universal/loader-data.ts'
-import { diffPublishedSourceFiles } from '#app/package-share-diff.ts'
+import { diffPublishedSourceFiles } from '#worker/package-registry/share-diff.ts'
 import {
 	getPackageShareGrantById,
 	requireHydratedPackageShareGrantView,

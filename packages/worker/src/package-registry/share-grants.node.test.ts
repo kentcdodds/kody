@@ -10,9 +10,11 @@ import {
 	assertPackageShareUseAllowed,
 	attachPendingPackageShareInvitesForEmail,
 	authorizeSharedPackagePermission,
+	grantIsAddressedToGuest,
 	hydratePackageShareGrantViews,
 	invitePackageShare,
 	isShareGrantedForeignPackage,
+	listAcceptedInboundSharedPackages,
 	leavePackageShare,
 	listInboundPackageShareGrants,
 	listOutboundPackageShareGrants,
@@ -37,14 +39,21 @@ async function insertUser(
 		email: string
 		userId: string
 		plan: 'free' | 'standard' | 'pro'
+		emailVerified?: boolean
 	},
 ) {
 	await db
 		.prepare(
 			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
-			VALUES (?, ?, 'x', CURRENT_TIMESTAMP, ?, ?)`,
+			VALUES (?, ?, 'x', ?, ?, ?)`,
 		)
-		.bind(input.username, input.email, input.userId, input.plan)
+		.bind(
+			input.username,
+			input.email,
+			input.emailVerified === false ? null : new Date().toISOString(),
+			input.userId,
+			input.plan,
+		)
 		.run()
 }
 
@@ -354,6 +363,10 @@ test('invite-before-signup attaches on account create without auto-accept', asyn
 	expect(invited.status).toBe('pending')
 	expect(invited.granteeUserId).toBeNull()
 
+	await db
+		.prepare(`UPDATE users SET email = ? WHERE stable_user_id = ?`)
+		.bind('newguest@example.com', guestUserId)
+		.run()
 	const attached = await attachPendingPackageShareInvitesForEmail({
 		db,
 		userId: guestUserId,
@@ -486,6 +499,10 @@ test('a later owner of an invite email cannot steal a bound grant', async () => 
 		invitee: { email: 'steal@example.com' },
 	})
 	expect(invited.granteeUserId).toBeNull()
+	await db
+		.prepare(`UPDATE users SET email = ? WHERE stable_user_id = ?`)
+		.bind('steal@example.com', guestUserId)
+		.run()
 	await attachPendingPackageShareInvitesForEmail({
 		db,
 		userId: guestUserId,
@@ -598,4 +615,98 @@ test('re-inviting an accepted email grant fails with a conflict, not a unique-in
 			invitee: { email: 'jesse@example.com' },
 		}),
 	).rejects.toThrow('already has an accepted share grant')
+})
+
+test('unverified email cannot attach or accept an unbound invite', async () => {
+	const { db, packageId } = await createHarness()
+	const owner = {
+		userId: ownerUserId,
+		email: 'alice@example.com',
+		displayName: 'Alice',
+		username: 'alice',
+	}
+	const invited = await invitePackageShare({
+		db,
+		owner,
+		packageId,
+		invitee: { email: 'unverified-claim@example.com' },
+	})
+	const attackerUserId = 'ee'.repeat(32)
+	await insertUser(db, {
+		username: 'unverified',
+		email: 'unverified-claim@example.com',
+		userId: attackerUserId,
+		plan: 'standard',
+		emailVerified: false,
+	})
+	const attached = await attachPendingPackageShareInvitesForEmail({
+		db,
+		userId: attackerUserId,
+		email: 'unverified-claim@example.com',
+		username: 'unverified',
+	})
+	expect(attached.attached).toBe(0)
+	expect(invited.granteeUserId).toBeNull()
+	expect(
+		grantIsAddressedToGuest(
+			invited,
+			attackerUserId,
+			'unverified-claim@example.com',
+			false,
+		),
+	).toBe(false)
+	await expect(
+		acceptPackageShare({
+			db,
+			guest: {
+				userId: attackerUserId,
+				email: 'unverified-claim@example.com',
+				displayName: 'Unverified',
+				username: 'unverified',
+			},
+			grantId: invited.id,
+		}),
+	).rejects.toThrow('not addressed')
+})
+
+test('search skips pin-ahead shared packages until the guest approves', async () => {
+	const { db, packageId, sourceId } = await createHarness()
+	const invited = await invitePackageShare({
+		db,
+		owner: {
+			userId: ownerUserId,
+			email: 'alice@example.com',
+			displayName: 'Alice',
+			username: 'alice',
+		},
+		packageId,
+		invitee: { username: 'jesse' },
+	})
+	await acceptPackageShare({
+		db,
+		guest: {
+			userId: guestUserId,
+			email: 'jesse@example.com',
+			displayName: 'Jesse',
+			username: 'jesse',
+		},
+		grantId: invited.id,
+		trustLevel: 'pin',
+	})
+	expect(
+		await listAcceptedInboundSharedPackages({
+			db,
+			granteeUserId: guestUserId,
+		}),
+	).toHaveLength(1)
+	await db
+		.prepare(`UPDATE entity_sources SET published_commit = ? WHERE id = ?`)
+		.bind('commit-ahead', sourceId)
+		.run()
+	expect(
+		await listAcceptedInboundSharedPackages({
+			db,
+			granteeUserId: guestUserId,
+		}),
+	).toHaveLength(0)
 })
