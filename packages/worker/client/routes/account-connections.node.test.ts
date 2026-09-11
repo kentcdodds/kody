@@ -86,7 +86,8 @@ test('connections page renders the connected list with Add connection, the MCP U
 	expect(html).not.toContain('Loading connections')
 	// The rail marks this page current and links Packages to the profile.
 	expect(html).toMatch(/href="\/account\/connections"[^>]*aria-current="page"/)
-	expect(html).toMatch(/href="\/@jane"[^>]*>Packages<\/a>/)
+	expect(html).toMatch(/href="\/@jane"[^>]*>[\s\S]*?Packages<\/a>/)
+	expect(html).toContain('data-icon="box"')
 })
 
 test('Add connection shows every named client on every viewport with none greyed or folded away', async () => {
