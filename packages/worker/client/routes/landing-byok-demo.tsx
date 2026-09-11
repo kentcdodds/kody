@@ -1,5 +1,6 @@
 import { type Handle, ref } from 'remix/ui'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
+import { renderIcon } from '#universal/icon.tsx'
 import {
 	listCodingWalkthroughHosts,
 	walkthroughHostMarkUrl,
@@ -346,20 +347,7 @@ export function LandingByokDemo(
 							{...passwordManagerIgnoreProps}
 						/>
 						<span class="landing-byok-eye">
-							<svg
-								viewBox="0 0 24 24"
-								width="22"
-								height="22"
-								aria-hidden="true"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="1.5"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-							>
-								<path d="M2.6 12s3.4-6.4 9.4-6.4S21.4 12 21.4 12s-3.4 6.4-9.4 6.4S2.6 12 2.6 12Z" />
-								<circle cx="12" cy="12" r="2.7" />
-							</svg>
+							{renderIcon('eye', { size: '22' })}
 						</span>
 					</div>
 					<span class="landing-byok-cursor">

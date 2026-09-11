@@ -1,5 +1,6 @@
 import { css, ref, type Handle } from 'remix/ui'
 import { routerEvents } from '#client/client-router.tsx'
+import { renderIcon, type IconName } from '#universal/icon.tsx'
 import { colors, transitions } from '#universal/styles/tokens.ts'
 import { hoverMq, pageGutter } from '#universal/styles/style-primitives.ts'
 
@@ -10,6 +11,7 @@ type AccountManagementLinkNavItem = {
 	href: string
 	label: string
 	active: boolean
+	icon?: IconName
 }
 
 type AccountManagementLinkNavProps = {
@@ -19,13 +21,19 @@ type AccountManagementLinkNavProps = {
 
 /** `.account-nav a` — quiet link pills; only the current one goes green. */
 const accountNavLinkCss = {
-	padding: '0.5rem 0.9rem',
+	display: 'flex',
+	alignItems: 'center',
+	gap: '0.5rem',
+	padding: '0.5rem 0.7rem',
 	borderRadius: '10px',
 	color: colors.textMuted,
 	fontWeight: 550,
 	fontSize: '0.98rem',
 	textDecoration: 'none',
 	transition: `color ${transitions.fast}, background-color ${transitions.fast}`,
+	'& [data-icon]': {
+		flex: 'none',
+	},
 	[hoverMq]: {
 		'&:hover': { color: colors.text, backgroundColor: colors.surface },
 	},
@@ -62,10 +70,9 @@ const accountMobileMenuCss = {
 	},
 	'& > summary::-webkit-details-marker': { display: 'none' },
 	'& > summary::marker': { content: '""' },
-	'& > summary::before': {
-		content: '"☰"',
+	'& > summary [data-icon]': {
+		flex: 'none',
 		color: colors.textMuted,
-		fontSize: '0.95rem',
 	},
 	'& > nav': {
 		display: 'grid',
@@ -95,6 +102,7 @@ function renderAccountNavLinks(
 			aria-current={item.active ? 'page' : undefined}
 			mix={css(linkCss)}
 		>
+			{item.icon ? renderIcon(item.icon, { size: '1.05em' }) : null}
 			{item.label}
 		</a>
 	))
@@ -159,6 +167,7 @@ export function AccountManagementLinkNav(
 					]}
 				>
 					<summary>
+						{renderIcon('menu', { size: '1.05em' })}
 						<span>{handle.props.label}</span>
 						{current ? (
 							<span mix={css(accountMobileMenuCurrentCss)}>

@@ -2,6 +2,7 @@ import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { accountInputCss } from '#client/routes/account-management-components.tsx'
 import { type BannerDraft } from '#client/routes/admin-banners-shared.ts'
+import { renderIcon } from '#universal/icon.tsx'
 import { resolveSiteBannerImageUrl } from '#universal/youtube-watch.ts'
 import {
 	fieldLabelCss,
@@ -24,7 +25,7 @@ import {
 	siteBannerBodyCss,
 	siteBannerCopyCss,
 	siteBannerDismissCss,
-	siteBannerIconGlyph,
+	siteBannerIconName,
 	siteBannerIconWellCss,
 	siteBannerImageCss,
 	siteBannerImagePixelSize,
@@ -165,7 +166,9 @@ export function SiteBannerEditor(
 								aria-hidden="true"
 								mix={css(siteBannerIconWellCss(look, tone))}
 							>
-								{siteBannerIconGlyph(draft.icon || defaultSiteBannerIcon(look))}
+								{renderIcon(
+									siteBannerIconName(draft.icon || defaultSiteBannerIcon(look)),
+								)}
 							</span>
 						)}
 						<div mix={css(siteBannerCopyCss(look))}>

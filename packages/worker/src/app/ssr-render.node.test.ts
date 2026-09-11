@@ -432,7 +432,11 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	// package list, so the nav links there rather than the `/account/packages`
 	// redirect).
 	expect(accountHtml).toContain('>Connections</a>')
-	expect(accountHtml).toMatch(/href="\/@account-user"[^>]*>Packages<\/a>/)
+	expect(accountHtml).toContain('data-icon="link"')
+	expect(accountHtml).toMatch(
+		/href="\/@account-user"[^>]*>[\s\S]*?Packages<\/a>/,
+	)
+	expect(accountHtml).toContain('data-icon="box"')
 	expect(accountProps.loaderData?.onboarding).toEqual({
 		ok: true,
 		loggedIn: true,

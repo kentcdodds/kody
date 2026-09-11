@@ -20,9 +20,9 @@ import { readAppSession } from '#client/app-session-context.tsx'
 import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
 import { renderRoutePendingStatus } from '#client/route-data.tsx'
 import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
+import { type IconName } from '#universal/icon.tsx'
 import { EntityExplainer, resolveEntityExplainer } from './entity-explainer.tsx'
 import {
-	AccountManagementInlineLinkNav,
 	AccountManagementLinkNav,
 	accountManagementNarrowMq,
 } from './account-management-link-nav.tsx'
@@ -295,55 +295,84 @@ export function AccountManagementHeader(
 }
 
 const adminNavItems = [
-	{ href: '/admin/users', label: 'Users', paths: ['/admin', '/admin/users'] },
-	{ href: '/admin/insights', label: 'Insights', paths: ['/admin/insights'] },
+	{
+		href: '/admin/users',
+		label: 'Users',
+		icon: 'users',
+		paths: ['/admin', '/admin/users'],
+	},
+	{
+		href: '/admin/insights',
+		label: 'Insights',
+		icon: 'pie-chart',
+		paths: ['/admin/insights'],
+	},
 	{
 		href: '/admin/reserved-usernames',
 		label: 'Reserved usernames',
+		icon: 'user-cross',
 		paths: ['/admin/reserved-usernames'],
 	},
 	{
 		href: '/admin/feature-flags',
 		label: 'Feature flags',
+		icon: 'flag',
 		paths: ['/admin/feature-flags'],
 	},
 	{
 		href: '/admin/banners',
 		label: 'Banners',
+		icon: 'announcement',
 		paths: ['/admin/banners'],
 	},
 	{
 		href: '/admin/platform-integrations',
 		label: 'Platform integrations',
+		icon: 'globe',
 		paths: ['/admin/platform-integrations'],
 	},
 	{
 		href: '/admin/provider-marks',
 		label: 'Provider marks',
+		icon: 'photo',
 		paths: ['/admin/provider-marks'],
 	},
 	{
 		href: '/admin/codemods',
 		label: 'Codemods',
+		icon: 'code',
 		paths: ['/admin/codemods'],
 	},
-	{ href: '/admin/roles', label: 'Roles', paths: ['/admin/roles'] },
+	{
+		href: '/admin/roles',
+		label: 'Roles',
+		icon: 'shield',
+		paths: ['/admin/roles'],
+	},
 	{
 		href: '/admin/community-reports',
 		label: 'Community reports',
+		icon: 'warning-triangle',
 		paths: ['/admin/community-reports'],
 	},
 	{
 		href: routes.adminPlatformFeedback.href(),
 		label: 'Platform feedback',
+		icon: 'message',
 		paths: [routes.adminPlatformFeedback.href()],
 	},
 	{
 		href: '/admin/system-email',
 		label: 'System email',
+		icon: 'inbox',
 		paths: ['/admin/system-email'],
 	},
-] as const
+] as const satisfies ReadonlyArray<{
+	href: string
+	label: string
+	icon: IconName
+	paths: ReadonlyArray<string>
+}>
 
 /**
  * Packages live on the signed-in user's public profile (`/@username`);
@@ -357,7 +386,7 @@ export function accountPackagesNavHref(username: string | null | undefined) {
 		: routes.accountPackages.href()
 }
 
-type AccountNavItem = { href: string; label: string }
+type AccountNavItem = { href: string; label: string; icon: IconName }
 
 /** Account rail items in display order for the signed-in session. */
 export function accountNavItemsFor(input: {
@@ -365,24 +394,38 @@ export function accountNavItemsFor(input: {
 	showShared: boolean
 }): Array<AccountNavItem> {
 	return [
-		{ href: '/account', label: 'Overview' },
-		{ href: '/account/waiting', label: 'Waiting' },
-		{ href: routes.accountConnections.href(), label: 'Connections' },
-		{ href: accountPackagesNavHref(input.username), label: 'Packages' },
+		{ href: '/account', label: 'Overview', icon: 'home' },
+		{ href: '/account/waiting', label: 'Waiting', icon: 'clock' },
+		{
+			href: routes.accountConnections.href(),
+			label: 'Connections',
+			icon: 'link',
+		},
+		{
+			href: accountPackagesNavHref(input.username),
+			label: 'Packages',
+			icon: 'box',
+		},
 		...(input.showShared
-			? [{ href: routes.accountShared.href(), label: 'Shared' }]
+			? [
+					{
+						href: routes.accountShared.href(),
+						label: 'Shared',
+						icon: 'share' as const,
+					},
+				]
 			: []),
-		{ href: '/account/billing', label: 'Billing' },
-		{ href: '/account/usage', label: 'Usage' },
-		{ href: '/account/activity', label: 'Activity' },
-		{ href: '/account/jobs', label: 'Jobs' },
-		{ href: '/account/workflows', label: 'Workflows' },
-		{ href: routes.accountWebhooks.href(), label: 'Webhooks' },
-		{ href: '/account/secrets', label: 'Secrets' },
-		{ href: '/account/integrations', label: 'Integrations' },
-		{ href: '/account/mcp-servers', label: 'MCP servers' },
-		{ href: '/account/memories', label: 'Memories' },
-		{ href: '/account/email', label: 'Email' },
+		{ href: '/account/billing', label: 'Billing', icon: 'wallet' },
+		{ href: '/account/usage', label: 'Usage', icon: 'chart' },
+		{ href: '/account/activity', label: 'Activity', icon: 'trending-up' },
+		{ href: '/account/jobs', label: 'Jobs', icon: 'briefcase' },
+		{ href: '/account/workflows', label: 'Workflows', icon: 'refresh' },
+		{ href: routes.accountWebhooks.href(), label: 'Webhooks', icon: 'cloud' },
+		{ href: '/account/secrets', label: 'Secrets', icon: 'key' },
+		{ href: '/account/integrations', label: 'Integrations', icon: 'plug' },
+		{ href: '/account/mcp-servers', label: 'MCP servers', icon: 'server' },
+		{ href: '/account/memories', label: 'Memories', icon: 'book' },
+		{ href: '/account/email', label: 'Email', icon: 'mail' },
 	]
 }
 
@@ -431,6 +474,7 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 					items={navItems.map((item) => ({
 						href: item.href,
 						label: item.label,
+						icon: item.icon,
 						active: isAccountNavItemActive(item.href, currentPath),
 					}))}
 				/>
@@ -461,6 +505,7 @@ export function AdminPageHeader(handle: Handle<AdminPageHeaderProps>) {
 					items={adminNavItems.map((item) => ({
 						href: item.href,
 						label: item.label,
+						icon: item.icon,
 						// Prefix-aware like account nav so `/admin/users/42`
 						// keeps Users highlighted. `/admin` stays exact-only
 						// so sibling pages (`/admin/roles`, …) are unaffected.

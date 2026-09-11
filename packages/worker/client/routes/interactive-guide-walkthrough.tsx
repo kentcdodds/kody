@@ -4,6 +4,7 @@ import {
 	type HighlightedCode,
 	highlightSnippetKey,
 } from '#universal/highlighted-code.ts'
+import { renderIcon } from '#universal/icon.tsx'
 import {
 	walkthroughHostForAct,
 	walkthroughHostMarkUrl,
@@ -260,22 +261,7 @@ function isKodyToolName(name: string) {
 }
 
 function renderUserIcon() {
-	return (
-		<svg
-			viewBox="0 0 24 24"
-			width="1em"
-			height="1em"
-			aria-hidden="true"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="2"
-			stroke-linecap="round"
-			stroke-linejoin="round"
-		>
-			<circle cx="12" cy="8" r="3.5" />
-			<path d="M5 19.5c.7-3.2 3.4-5 7-5s6.3 1.8 7 5" />
-		</svg>
-	)
+	return renderIcon('user', { size: '1em' })
 }
 
 function renderAgentMark(host: WalkthroughHost) {
@@ -289,22 +275,7 @@ function renderAgentMark(host: WalkthroughHost) {
 }
 
 function renderEmailIcon() {
-	return (
-		<svg
-			viewBox="0 0 24 24"
-			width="1em"
-			height="1em"
-			aria-hidden="true"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="2"
-			stroke-linecap="round"
-			stroke-linejoin="round"
-		>
-			<rect x="3.5" y="6" width="17" height="12" rx="2" />
-			<path d="m4.2 7.6 7.8 5.2 7.8-5.2" />
-		</svg>
-	)
+	return renderIcon('mail', { size: '1em' })
 }
 
 function renderAgentIcon() {
@@ -339,23 +310,7 @@ function renderNotedText(note: string) {
 }
 
 function renderInfoIcon() {
-	return (
-		<svg
-			viewBox="0 0 24 24"
-			width="1em"
-			height="1em"
-			aria-hidden="true"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="2"
-			stroke-linecap="round"
-			stroke-linejoin="round"
-		>
-			<circle cx="12" cy="12" r="9" />
-			<path d="M12 11v5" />
-			<circle cx="12" cy="8" r="0.75" fill="currentColor" />
-		</svg>
-	)
+	return renderIcon('information', { size: '1em' })
 }
 
 function renderKodyMark() {

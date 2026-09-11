@@ -1,5 +1,6 @@
 import { type Handle, css } from 'remix/ui'
 import * as combobox from 'remix/ui/combobox/primitives'
+import { renderIcon } from '#universal/icon.tsx'
 import {
 	colors,
 	radius,
@@ -106,20 +107,9 @@ export function Combobox(handle: Handle<ComboboxProps>) {
 											}),
 										]}
 									>
-										<svg
-											aria-hidden="true"
-											viewBox="0 0 16 16"
-											mix={css(comboboxCheckCss)}
-										>
-											<path
-												d="M3 8.5l3 3 7-7"
-												fill="none"
-												stroke="currentColor"
-												stroke-width="2"
-												stroke-linecap="round"
-												stroke-linejoin="round"
-											/>
-										</svg>
+										<span mix={css(comboboxCheckCss)}>
+											{renderIcon('check', { size: '1rem' })}
+										</span>
 										<span mix={css(comboboxOptionLabelCss)}>
 											{option.label}
 										</span>

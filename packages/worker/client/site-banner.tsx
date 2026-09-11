@@ -4,6 +4,7 @@ import {
 	readRouterPathname,
 	readRouterSearch,
 } from '#client/router-location.tsx'
+import { renderIcon } from '#universal/icon.tsx'
 import { type SiteBannerLoaderData } from '#universal/loader-data.ts'
 import {
 	isSiteBannerId,
@@ -21,7 +22,7 @@ import {
 	siteBannerBodyCss,
 	siteBannerCopyCss,
 	siteBannerDismissCss,
-	siteBannerIconGlyph,
+	siteBannerIconName,
 	siteBannerIconWellCss,
 	siteBannerImageCss,
 	siteBannerImagePixelSize,
@@ -186,7 +187,9 @@ function renderMedia(
 	}
 	return (
 		<span aria-hidden="true" mix={css(siteBannerIconWellCss(look, tone))}>
-			{siteBannerIconGlyph(banner.icon ?? defaultSiteBannerIcon(look))}
+			{renderIcon(
+				siteBannerIconName(banner.icon ?? defaultSiteBannerIcon(look)),
+			)}
 		</span>
 	)
 }

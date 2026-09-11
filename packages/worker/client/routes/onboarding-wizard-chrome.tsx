@@ -6,6 +6,7 @@ import {
 	type OnboardingWizardStepNumber,
 } from '#universal/onboarding-process.ts'
 import { createOnboardingNextConfirmation } from '#client/routes/onboarding-next-confirmation.ts'
+import { renderIcon } from '#universal/icon.tsx'
 import {
 	colors,
 	radius,
@@ -260,22 +261,7 @@ export function connectStatusContent(input: {
 }
 
 function connectedCheckIcon() {
-	return (
-		<svg
-			viewBox="0 0 16 16"
-			width="14"
-			height="14"
-			aria-hidden="true"
-			focusable={false}
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="1.8"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-		>
-			<path d="M3.4 8.2 6.5 11.2 12.6 4.8" />
-		</svg>
-	)
+	return renderIcon('check', { size: '14' })
 }
 
 /* Connection status pill: dashed while the product polls for the grant,
