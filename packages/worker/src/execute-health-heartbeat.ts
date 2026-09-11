@@ -80,7 +80,7 @@ export async function readFleetExecuteLastSuccess(input: {
 	}
 }
 
-export function scheduleFleetExecuteLastSuccess(input: {
+export async function scheduleFleetExecuteLastSuccess(input: {
 	waitUntil?: ((promise: Promise<unknown>) => void) | undefined
 	kv?: FleetExecuteHeartbeatKv | null
 	now?: number
@@ -94,16 +94,15 @@ export function scheduleFleetExecuteLastSuccess(input: {
 	try {
 		if (input.waitUntil) {
 			input.waitUntil(work)
-			return work
+			return
 		}
-		// MCP tool success still counts when the agent has no Durable Object
-		// waitUntil. recordFleetExecuteLastSuccess is fail-open.
-		return work
+		// No Durable Object waitUntil: finish the fail-open write before the
+		// execute handler returns so the isolate cannot drop it.
+		await work
 	} catch (error) {
 		console.warn(
 			'fleet-execute-heartbeat-schedule-failed',
 			error instanceof Error ? error.message : String(error),
 		)
-		return work
 	}
 }

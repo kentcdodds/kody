@@ -595,7 +595,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 								)
 					const isError = passthrough?.isError ?? false
 					if (!isError) {
-						scheduleFleetExecuteLastSuccess({
+						await scheduleFleetExecuteLastSuccess({
 							waitUntil,
 							kv: env.BUNDLE_ARTIFACTS_KV,
 						})
@@ -650,7 +650,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					: limitedResult
 				const isError = markerOnlyPassthrough?.isError ?? false
 				if (!isError) {
-					scheduleFleetExecuteLastSuccess({
+					await scheduleFleetExecuteLastSuccess({
 						waitUntil,
 						kv: env.BUNDLE_ARTIFACTS_KV,
 					})
