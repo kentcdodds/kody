@@ -1,7 +1,9 @@
+import { type Handle } from 'remix/ui'
 import { createMatcher } from 'remix/route-pattern/match'
 import { routes } from '#universal/routes.ts'
 import { COMMUNITY_DETAIL_TARGET } from '#universal/community-frame-constants.ts'
 import { prefetchFrame } from '#client/frame-prefetch.ts'
+import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -15,6 +17,7 @@ import {
 import {
 	type AccountPackageDetail,
 	type AccountPackagesLoaderData,
+	type AppLoaderData,
 } from '#universal/loader-data.ts'
 import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
 
@@ -182,6 +185,61 @@ function getPackageDetailApiRef(pathname: string): ListingPageRef | null {
 
 export function packageMoveDestination(pathname: string, movedTo: string) {
 	return getPackageSettingsPageRef(pathname) ? `${movedTo}/settings` : movedTo
+}
+
+/** Shell payload for the settings page, normalized from either source. */
+export type PackageSettingsShell =
+	| { kind: 'unauthorized' }
+	| { kind: 'not-found' }
+	| {
+			kind: 'owner'
+			ownerPackage: AccountPackageDetail
+			username: string
+			kodyId: string
+			isPrivate: boolean
+			/** Only the detail API reports this; SSR shell data leaves it as is. */
+			ownerProfilePublic?: boolean
+	  }
+
+export function toPackageSettingsShell(
+	routeData: NonNullable<AppLoaderData['communityDetailShell']>,
+): PackageSettingsShell | null {
+	if (!routeData.ok) {
+		if ('unauthorized' in routeData) return { kind: 'unauthorized' }
+		if ('notFound' in routeData) return { kind: 'not-found' }
+		const exhaustive: never = routeData
+		throw new Error(`Unhandled community shell: ${String(exhaustive)}`)
+	}
+	if (!routeData.ownerPackage || !routeData.viewerIsOwner) return null
+	return {
+		kind: 'owner',
+		ownerPackage: routeData.ownerPackage,
+		username: routeData.username,
+		kodyId: routeData.kodyId || routeData.ownerPackage.kodyId,
+		isPrivate: routeData.isPrivate,
+	}
+}
+
+/**
+ * Consume the shared community loader payload for settings. A completed
+ * miss (`notFound`) must stay a payload so `createRouteData` does not treat
+ * it as missing data and start a fallback fetch.
+ */
+export function consumePackageSettingsShell(
+	handle: Handle,
+	href: string,
+): PackageSettingsShell | null {
+	const routeData = tryConsumeRouteLoaderData(
+		handle,
+		'communityDetailShell',
+		href,
+	)
+	if (!routeData) return null
+	const pathname = new URL(href, 'http://localhost').pathname
+	if (routeData.ok && routeData.listingId) {
+		rememberListingId(pathname, routeData.listingId)
+	}
+	return toPackageSettingsShell(routeData)
 }
 
 /**

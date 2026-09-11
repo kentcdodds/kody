@@ -146,3 +146,21 @@ test('listing loader treats a missing package as a not-found shell', async () =>
 	})
 	vi.unstubAllGlobals()
 })
+
+test('settings loader treats a missing package as a not-found shell', async () => {
+	vi.stubGlobal(
+		'fetch',
+		vi.fn(async () =>
+			jsonResponse({ ok: false, error: 'Community listing not found.' }, 404),
+		),
+	)
+	await expect(
+		communityDetailRouteLoader(
+			new URL('https://example.com/@bad/bad-404/settings'),
+			new AbortController().signal,
+		),
+	).resolves.toEqual({
+		communityDetailShell: { ok: false, notFound: true },
+	})
+	vi.unstubAllGlobals()
+})
