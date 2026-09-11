@@ -3,6 +3,7 @@ import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
 import {
 	RecordTable,
+	RecordTableSearch,
 	recordTableCreateId,
 	resolveRecordTableSelection,
 	type RecordTableColumn,
@@ -299,6 +300,52 @@ test('record table search defers focused URL updates and drops a stale pending s
 		state: empty,
 		applyValue: '',
 	})
+})
+
+test('record table search stays an uncontrolled searchbox outside the filtered rows', async () => {
+	const toolbar = jsx(RecordTableSearch, {
+		label: 'Search secrets',
+		placeholder: 'Search secrets',
+		value: '',
+		onInput: () => {},
+	})
+	const withRows = await renderToString(
+		jsx(RecordTable, {
+			mode: 'none',
+			ariaLabel: 'Secrets',
+			columns,
+			rows,
+			toolbar,
+			countLabel: '2 of 2 shown',
+		}),
+	)
+	const filteredEmpty = await renderToString(
+		jsx(RecordTable, {
+			mode: 'none',
+			ariaLabel: 'Secrets',
+			columns,
+			rows: [],
+			toolbar,
+			countLabel: '0 of 2 shown',
+			emptyLabel: 'No secrets match the current filters.',
+		}),
+	)
+
+	for (const html of [withRows, filteredEmpty]) {
+		expect(html).toContain('role="searchbox"')
+		expect(html).toContain('aria-label="Search secrets"')
+		expect(html).toContain('type="text"')
+		expect(html).toContain('inputmode="search"')
+		expect(html).not.toContain('type="search"')
+	}
+	expect(withRows.indexOf('role="searchbox"')).toBeLessThan(
+		withRows.indexOf('<tbody'),
+	)
+
+	expect(withRows).toContain('<table')
+	expect(filteredEmpty).not.toContain('<table')
+	expect(filteredEmpty).toContain('No secrets match the current filters.')
+	expect(filteredEmpty).toContain('0 of 2 shown')
 })
 
 test('record table empty and busy states keep toolbar layout stable', async () => {

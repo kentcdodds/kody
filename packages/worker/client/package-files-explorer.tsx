@@ -166,8 +166,10 @@ export function PackageFilesExplorer(
 							<div mix={css(filterFieldCss)}>
 								<span mix={css(filterIconCss)}>{searchIcon()}</span>
 								<input
-									type="search"
-									value={query}
+									type="text"
+									role="searchbox"
+									inputMode="search"
+									autoComplete="off"
 									placeholder="Go to file"
 									aria-label="Filter files"
 									mix={[

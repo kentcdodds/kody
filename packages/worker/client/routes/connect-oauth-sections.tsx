@@ -125,8 +125,10 @@ export function renderChooser(input: {
 			</p>
 			{showFilter ? (
 				<input
-					type="search"
-					value={input.chooserFilter}
+					type="text"
+					role="searchbox"
+					inputMode="search"
+					autoComplete="off"
 					placeholder="Filter services"
 					aria-label="Filter services"
 					data-testid="connect-oauth-chooser-filter"

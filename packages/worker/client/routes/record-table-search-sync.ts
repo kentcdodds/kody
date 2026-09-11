@@ -16,8 +16,11 @@ export function acknowledgeRecordTableSearchInput(
 
 /**
  * Reconcile an incoming `value` prop (URL / back-button) with the last
- * applied or typed string. Focused changes wait for blur; a return to the
- * last applied value clears a stale pending string instead of keeping it.
+ * applied or typed string. `focused` is a focus/blur latch on the field —
+ * not `document.activeElement` during render, which Remix's selection
+ * capture often leaves pointing at body. Focused changes wait for blur; a
+ * return to the last applied value clears a stale pending string instead of
+ * keeping it.
  */
 export function reconcileRecordTableSearchExternalValue(
 	state: RecordTableSearchSync,

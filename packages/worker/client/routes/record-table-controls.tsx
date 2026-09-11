@@ -27,34 +27,15 @@ type Slot = RemixNode
 /**
  * Live filter fields write the query into the URL on every keystroke. A
  * Remix-controlled `value` lets the first character schedule a restore of the
- * previous (empty) query, and WebKit's search cancel control appears on that
- * same keystroke — either one drops focus and the reader has to click back in.
- * The field stays uncontrolled. URL/back-button updates apply immediately
- * when it is not focused, and on blur if they arrived while it was. A
- * keystroke records the typed string as the last applied value so a later
- * render that returns `q` to that value (clear, or back to the same query)
- * cannot leave a stale pending string for blur to write back.
+ * previous (empty) query, which drops focus. `type="search"` is worse: the
+ * native cancel control appears on that same keystroke and steals focus even
+ * when CSS tries to hide it. The field stays uncontrolled `type="text"` with
+ * `role="searchbox"`. URL/back-button updates apply immediately when it is not
+ * focused, and on blur if they arrived while it was. Focus is tracked from
+ * focus/blur, not `document.activeElement` during render — Remix captures
+ * selection before the render phase, so the input is often not active then
+ * and a racy read would write the URL string back over the keystroke.
  */
-const searchCancelHiddenCss = {
-	'&::-webkit-search-decoration': {
-		WebkitAppearance: 'none',
-		appearance: 'none',
-	},
-	'&::-webkit-search-cancel-button': {
-		WebkitAppearance: 'none',
-		appearance: 'none',
-		display: 'none',
-	},
-	'&::-webkit-search-results-button': {
-		WebkitAppearance: 'none',
-		appearance: 'none',
-	},
-	'&::-webkit-search-results-decoration': {
-		WebkitAppearance: 'none',
-		appearance: 'none',
-	},
-} as const
-
 export function RecordTableSearch(
 	handle: Handle<{
 		label: string
@@ -65,6 +46,7 @@ export function RecordTableSearch(
 ) {
 	let input: HTMLInputElement | null = null
 	const initialValue = handle.props.value
+	let focused = false
 	let sync: RecordTableSearchSync = {
 		lastExternalValue: initialValue,
 		pendingExternalValue: null,
@@ -77,18 +59,23 @@ export function RecordTableSearch(
 
 	return () => {
 		const nextValue = handle.props.value
-		const focused = Boolean(input && document.activeElement === input)
 		const reconciled = reconcileRecordTableSearchExternalValue(
 			sync,
 			nextValue,
 			focused,
 		)
 		sync = reconciled.state
-		if (reconciled.applyValue !== null)
+		if (reconciled.applyValue !== null) {
 			applyExternalValue(reconciled.applyValue)
+		}
 		return (
 			<input
-				type="search"
+				type="text"
+				role="searchbox"
+				inputMode="search"
+				autoComplete="off"
+				autoCorrect="off"
+				spellCheck="false"
 				data-field-ring
 				defaultValue={initialValue}
 				placeholder={handle.props.placeholder}
@@ -100,22 +87,27 @@ export function RecordTableSearch(
 							if (input === node) input = null
 						})
 					}),
+					on('focus', () => {
+						focused = true
+					}),
 					on('input', (event) => {
 						const value = (event.currentTarget as HTMLInputElement).value
 						sync = acknowledgeRecordTableSearchInput(value)
 						handle.props.onInput(value)
 					}),
 					on('blur', () => {
+						focused = false
 						if (sync.pendingExternalValue !== null) {
 							applyExternalValue(sync.pendingExternalValue)
 						}
 					}),
 					css({
 						...getAuthInputCss(),
+						appearance: 'none',
+						WebkitAppearance: 'none',
 						flex: '1 1 12rem',
 						minWidth: '7rem',
 						width: 'auto',
-						...searchCancelHiddenCss,
 					}),
 				]}
 			/>
