@@ -11,6 +11,20 @@ export function resolveSecretScopeOrder(storageContext: StorageContext | null) {
 	)
 }
 
+/**
+ * Listing can discover caller-owned package-bucket metadata without a package
+ * runtime binding. Resolve/use still go through `resolveSecretScopeOrder` and
+ * require `packageId`. Session secrets stay session-bound.
+ */
+export function resolveSecretListScopeOrder(
+	storageContext: StorageContext | null,
+) {
+	return defaultSecretLookupOrder.filter((scope) => {
+		if (scope === 'package') return true
+		return getSecretBindingKey(scope, storageContext) != null
+	})
+}
+
 export function getSecretBindingKey(
 	scope: SecretScope,
 	storageContext: StorageContext | null,

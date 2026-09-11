@@ -1,7 +1,11 @@
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 import { type SecretMetadata } from '#mcp/secrets/types.ts'
+import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { secretListCapability } from './secret-list.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -95,6 +99,12 @@ test('secretList matches implicit user-secret read access and still lists packag
 		'GrantedSearch',
 		'packageToken',
 	])
+	expect(
+		executeListed.secrets.find((secret) => secret.name === 'packageToken'),
+	).toMatchObject({
+		scope: 'package',
+		package_id: 'pkg-1',
+	})
 	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
 
 	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
@@ -143,4 +153,52 @@ test('secretList matches implicit user-secret read access and still lists packag
 	])
 	expect(listSecretsSpy).toHaveBeenCalled()
 	listSecretsSpy.mockRestore()
+})
+
+test('secretList from execute returns caller-owned package metadata with package_id', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyRepositoryMigrations(
+		sqlite,
+		new URL('../../../../migrations/', import.meta.url),
+	)
+	const env = {
+		APP_DB: createD1FromSqlite(sqlite),
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		...createInMemoryUserMeterEnv().env,
+	} as Env
+	const userId = 'user-execute-list'
+	await secretService.saveSecret({
+		env,
+		userId,
+		scope: 'package',
+		name: 'discordBotToken',
+		value: 'package-only-value',
+		storageContext: {
+			sessionId: null,
+			appId: null,
+			packageId: 'pkg-discord',
+			storageId: 'pkg-discord',
+		},
+	})
+
+	const listed = await secretListCapability.handler(
+		{ scope: 'package' },
+		{
+			env,
+			callerContext: createMcpCallerContext({
+				baseUrl: 'https://example.com',
+				user: { userId },
+			}),
+		},
+	)
+
+	expect(listed.secrets).toEqual([
+		expect.objectContaining({
+			name: 'discordBotToken',
+			scope: 'package',
+			package_id: 'pkg-discord',
+		}),
+	])
+	expect(listed.secrets[0]).not.toHaveProperty('value')
+	expect(JSON.stringify(listed)).not.toContain('package-only-value')
 })

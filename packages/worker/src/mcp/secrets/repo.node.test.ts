@@ -3,7 +3,10 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { listPackageScopeSecretMetadata } from './repo.ts'
+import {
+	listPackageScopeSecretMetadata,
+	listSecretBucketsByScope,
+} from './repo.ts'
 
 function createSecretsDb(options?: { maxBindings?: number }) {
 	const sqlite = new DatabaseSync(':memory:')
@@ -78,6 +81,37 @@ test('listPackageScopeSecretMetadata chunks package ids to stay within the D1 bi
 			name: 'zeta-token',
 			binding_key: 'package-100',
 			scope: 'package',
+		}),
+	])
+})
+
+test('listSecretBucketsByScope returns caller-owned package buckets only', async () => {
+	const { sqlite, db } = createSecretsDb()
+	insertPackageSecret(sqlite, {
+		bucketId: 'bucket-owned',
+		userId: 'user-1',
+		packageId: 'package-owned',
+		name: 'owned-token',
+	})
+	insertPackageSecret(sqlite, {
+		bucketId: 'bucket-other',
+		userId: 'user-2',
+		packageId: 'package-other',
+		name: 'other-token',
+	})
+
+	const buckets = await listSecretBucketsByScope({
+		db,
+		userId: 'user-1',
+		scope: 'package',
+		now: '2026-08-31T00:00:00.000Z',
+	})
+
+	expect(buckets).toEqual([
+		expect.objectContaining({
+			user_id: 'user-1',
+			scope: 'package',
+			binding_key: 'package-owned',
 		}),
 	])
 })

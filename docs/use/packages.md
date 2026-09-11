@@ -195,7 +195,8 @@ exhaustive.
   that imports `kody:@scope/id/export` and calls it). When helpful, point the
   export at a `types` file and put the JSDoc there. Package search detail and
   `packageGet` surface package descriptions, export descriptions, function
-  signatures, JSDoc, and type definitions.
+  signatures, JSDoc, type definitions, and FYI metadata for associated
+  package-scoped secrets (names and `package_id`, never values).
 
 ### Package reuse
 

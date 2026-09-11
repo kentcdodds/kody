@@ -4,6 +4,7 @@ const mockModule = vi.hoisted(() => ({
 	getSavedPackageWithCommunityProvenanceById: vi.fn(),
 	loadPackageSourceBySourceId: vi.fn(),
 	resolvePackageOwnerContext: vi.fn(),
+	listPackageSecretsByPackageIds: vi.fn(async () => new Map()),
 }))
 
 vi.mock('#worker/community/fork-listing-relation.ts', () => ({
@@ -28,6 +29,11 @@ vi.mock('#worker/package-registry/package-owner.ts', () => ({
 	packageScopeInputDescription: 'package scope',
 	resolvePackageOwnerContext: (...args: Array<unknown>) =>
 		mockModule.resolvePackageOwnerContext(...args),
+}))
+
+vi.mock('#mcp/secrets/service.ts', () => ({
+	listPackageSecretsByPackageIds: (...args: Array<unknown>) =>
+		mockModule.listPackageSecretsByPackageIds(...args),
 }))
 
 const { getPackageCapability } = await import('./get-package.ts')
@@ -263,6 +269,73 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 	expect(delegated.exports[0]).toMatchObject({
 		subpath: './post-message',
 		import_specifier: 'kody:@kody/discord-gateway/post-message',
+	})
+	expect(withUsername.package_secrets).toEqual([])
+	expect(delegated.package_secrets).toEqual([])
+})
+
+test('getPackageCapability includes package-scoped secret metadata as FYI', async () => {
+	mockModule.getSavedPackageWithCommunityProvenanceById.mockReset()
+	mockModule.loadPackageSourceBySourceId.mockReset()
+	stubSavedPackage()
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		source: { id: 'source-1' },
+		manifest: {
+			name: '@kentcdodds/discord-gateway',
+			exports: { '.': './src/index.ts' },
+			kody: {
+				id: 'discord-gateway',
+				description: 'Discord helpers',
+			},
+		},
+		files: {},
+	})
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(
+		new Map([
+			[
+				'package-1',
+				[
+					{
+						name: 'discordBotToken',
+						scope: 'package',
+						description: 'Bot token for this package',
+						packageId: 'package-1',
+						allowedHosts: ['discord.com'],
+						allowedPackages: [],
+						createdAt: '2026-04-25T00:00:00.000Z',
+						updatedAt: '2026-04-26T00:00:00.000Z',
+						expiresAt: null,
+						ttlMs: null,
+					},
+				],
+			],
+		]),
+	)
+
+	const result = await getPackageCapability.handler(
+		{ package_id: 'package-1' },
+		createCallerContext(),
+	)
+
+	expect(result.package_secrets).toEqual([
+		{
+			name: 'discordBotToken',
+			scope: 'package',
+			description: 'Bot token for this package',
+			package_id: 'package-1',
+			allowed_hosts: ['discord.com'],
+			allowed_packages: [],
+			created_at: '2026-04-25T00:00:00.000Z',
+			updated_at: '2026-04-26T00:00:00.000Z',
+			expires_at: null,
+			ttl_ms: null,
+		},
+	])
+	expect(result.package_secrets[0]).not.toHaveProperty('value')
+	expect(mockModule.listPackageSecretsByPackageIds).toHaveBeenCalledWith({
+		env: expect.objectContaining({ APP_DB: expect.anything() }),
+		userId: 'user-1',
+		packageIds: ['package-1'],
 	})
 })
 

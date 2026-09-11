@@ -11,6 +11,7 @@ import {
 import {
 	listPackageSecretsByPackageIds,
 	listSecrets,
+	listUserSecretsForSearch,
 	resolveSecret,
 	saveSecret,
 	setSecretAllowedPackages,
@@ -139,7 +140,8 @@ function createSecretTestDb(
 								normalizedQuery.startsWith(
 									'select id, user_id, scope, binding_key',
 								) &&
-								normalizedQuery.includes('from secret_buckets')
+								normalizedQuery.includes('from secret_buckets') &&
+								normalizedQuery.includes('binding_key = ?')
 							) {
 								const [userId, scope, bindingKey, now] = params as Array<string>
 								const bucket =
@@ -166,6 +168,26 @@ function createSecretTestDb(
 							return null
 						},
 						async all<T>() {
+							if (
+								normalizedQuery.startsWith(
+									'select id, user_id, scope, binding_key',
+								) &&
+								normalizedQuery.includes('from secret_buckets') &&
+								normalizedQuery.includes('order by binding_key')
+							) {
+								const [userId, scope, now] = params as Array<string>
+								const results = Array.from(buckets.values())
+									.filter(
+										(bucket) =>
+											bucket.user_id === userId &&
+											bucket.scope === scope &&
+											(bucket.expires_at == null || bucket.expires_at > now),
+									)
+									.sort((left, right) =>
+										left.binding_key.localeCompare(right.binding_key),
+									)
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
 							if (
 								normalizedQuery.includes('from secret_buckets b') &&
 								normalizedQuery.includes('join secret_entries e') &&
@@ -205,6 +227,44 @@ function createSecretTestDb(
 											left.scope.localeCompare(right.scope) ||
 											left.binding_key.localeCompare(right.binding_key),
 									)
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
+							if (
+								normalizedQuery.includes('from secret_buckets b') &&
+								normalizedQuery.includes("b.scope = 'user'")
+							) {
+								const [userId, now] = params as Array<string>
+								const results = Array.from(entries.values())
+									.flatMap((entry) => {
+										const bucket = Array.from(buckets.values()).find(
+											(candidate) => candidate.id === entry.bucket_id,
+										)
+										if (
+											!bucket ||
+											bucket.user_id !== userId ||
+											bucket.scope !== 'user'
+										) {
+											return []
+										}
+										if (bucket.expires_at != null && bucket.expires_at <= now) {
+											return []
+										}
+										return [
+											{
+												scope: bucket.scope,
+												binding_key: bucket.binding_key,
+												name: entry.name,
+												description: entry.description,
+												allowed_hosts: entry.allowed_hosts,
+												allowed_packages: entry.allowed_packages,
+												created_at: entry.created_at,
+												updated_at: entry.updated_at,
+												entry_expires_at: entry.expires_at,
+												bucket_expires_at: bucket.expires_at,
+											},
+										]
+									})
+									.sort((left, right) => left.name.localeCompare(right.name))
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							if (
@@ -566,6 +626,198 @@ test('saveSecret rejects unavailable scoped storage as McpCallerError', async ()
 			error.message ===
 				'Secret scope "package" is unavailable in this context.',
 	)
+})
+
+test('listSecrets from execute lists caller-owned package metadata without weakening resolve', async () => {
+	const testDb = createSecretTestDb()
+	const env = {
+		APP_DB: testDb.db,
+		COOKIE_SECRET: 'test-cookie-secret',
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		...createInMemoryUserMeterEnv().env,
+	}
+	const userId = 'user-123'
+	const otherUserId = 'user-other'
+	const executeContext = {
+		sessionId: null,
+		appId: null,
+		packageId: null,
+		storageId: null,
+	}
+	await saveSecret({
+		env,
+		userId,
+		scope: 'user',
+		name: 'accountToken',
+		value: 'user-value',
+	})
+	await saveSecret({
+		env,
+		userId,
+		scope: 'package',
+		name: 'discordBotToken',
+		value: 'package-only-value',
+		storageContext: {
+			sessionId: null,
+			appId: null,
+			packageId: 'pkg-discord',
+			storageId: 'pkg-discord',
+		},
+	})
+	await saveSecret({
+		env,
+		userId,
+		scope: 'package',
+		name: 'notesToken',
+		value: 'notes-only-value',
+		storageContext: {
+			sessionId: null,
+			appId: null,
+			packageId: 'pkg-notes',
+			storageId: 'pkg-notes',
+		},
+	})
+	await saveSecret({
+		env,
+		userId,
+		scope: 'session',
+		name: 'sessionToken',
+		value: 'session-only-value',
+		storageContext: {
+			sessionId: 'session-abc',
+			appId: null,
+			packageId: null,
+			storageId: null,
+		},
+		sessionExpiresAt: '2099-01-01T00:00:00.000Z',
+	})
+	await saveSecret({
+		env,
+		userId: otherUserId,
+		scope: 'package',
+		name: 'foreignToken',
+		value: 'other-user-value',
+		storageContext: {
+			sessionId: null,
+			appId: null,
+			packageId: 'pkg-foreign',
+			storageId: 'pkg-foreign',
+		},
+	})
+
+	const listedAll = await listSecrets({
+		env,
+		userId,
+		storageContext: executeContext,
+	})
+	expect(listedAll).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				name: 'accountToken',
+				scope: 'user',
+				packageId: null,
+			}),
+			expect.objectContaining({
+				name: 'discordBotToken',
+				scope: 'package',
+				packageId: 'pkg-discord',
+			}),
+			expect.objectContaining({
+				name: 'notesToken',
+				scope: 'package',
+				packageId: 'pkg-notes',
+			}),
+		]),
+	)
+	expect(listedAll.map((secret) => secret.name)).not.toContain('sessionToken')
+	expect(listedAll.map((secret) => secret.name)).not.toContain('foreignToken')
+	expect(
+		listedAll.find((secret) => secret.name === 'discordBotToken'),
+	).not.toHaveProperty('value')
+
+	const listedPackageScope = await listSecrets({
+		env,
+		userId,
+		scope: 'package',
+		storageContext: executeContext,
+	})
+	expect(listedPackageScope).toEqual([
+		expect.objectContaining({
+			name: 'discordBotToken',
+			scope: 'package',
+			packageId: 'pkg-discord',
+		}),
+		expect.objectContaining({
+			name: 'notesToken',
+			scope: 'package',
+			packageId: 'pkg-notes',
+		}),
+	])
+
+	const listedOnePackage = await listSecrets({
+		env,
+		userId,
+		scope: 'package',
+		storageContext: {
+			sessionId: null,
+			appId: null,
+			packageId: 'pkg-discord',
+			storageId: 'pkg-discord',
+		},
+	})
+	expect(listedOnePackage).toEqual([
+		expect.objectContaining({
+			name: 'discordBotToken',
+			scope: 'package',
+			packageId: 'pkg-discord',
+		}),
+	])
+
+	const searchRows = await listUserSecretsForSearch({ env, userId })
+	expect(searchRows).toEqual([
+		expect.objectContaining({
+			name: 'accountToken',
+			scope: 'user',
+			packageId: null,
+		}),
+	])
+	expect(searchRows.map((row) => row.name)).not.toContain('discordBotToken')
+	expect(searchRows.map((row) => row.name)).not.toContain('notesToken')
+
+	await expect(
+		resolveSecret({
+			env,
+			userId,
+			name: 'discordBotToken',
+			storageContext: executeContext,
+		}),
+	).resolves.toMatchObject({ found: false, value: null })
+	await expect(
+		resolveSecret({
+			env,
+			userId,
+			name: 'discordBotToken',
+			scope: 'package',
+			storageContext: executeContext,
+		}),
+	).resolves.toMatchObject({ found: false, value: null })
+	await expect(
+		resolveSecret({
+			env,
+			userId,
+			name: 'discordBotToken',
+			storageContext: {
+				sessionId: null,
+				appId: null,
+				packageId: 'pkg-discord',
+				storageId: 'pkg-discord',
+			},
+		}),
+	).resolves.toMatchObject({
+		found: true,
+		value: 'package-only-value',
+		scope: 'package',
+	})
 })
 
 test('listPackageSecretsByPackageIds groups package-owned secrets', async () => {

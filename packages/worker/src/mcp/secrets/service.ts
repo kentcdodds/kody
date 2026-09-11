@@ -24,6 +24,7 @@ import {
 import { assertSecretNameAllowed, isReservedSecretName } from './name-guards.ts'
 import {
 	getSecretBindingKey,
+	resolveSecretListScopeOrder,
 	resolveSecretScopeOrder,
 } from './secret-bindings.ts'
 import { type StorageContext } from '#mcp/storage.ts'
@@ -32,6 +33,7 @@ import {
 	getSecretBucket,
 	getSecretEntry,
 	listPackageScopeSecretMetadata,
+	listSecretBucketsByScope,
 	listSecretMetadataForBucket,
 	listUserScopeSecretMetadata,
 	updateApprovedUserSecretEntriesForPackageAtomically,
@@ -836,10 +838,10 @@ async function getAccessibleBuckets(input: {
 }) {
 	const scopes = input.scope
 		? [input.scope]
-		: resolveSecretScopeOrder(input.storageContext)
+		: resolveSecretListScopeOrder(input.storageContext)
 	const buckets = await Promise.all(
 		scopes.map((scope) =>
-			getExistingBucketForScope({
+			listAccessibleBucketsForScope({
 				db: input.db,
 				userId: input.userId,
 				scope,
@@ -847,9 +849,30 @@ async function getAccessibleBuckets(input: {
 			}),
 		),
 	)
-	return buckets.filter(
-		(bucket): bucket is NonNullable<typeof bucket> => bucket != null,
-	)
+	return buckets.flat()
+}
+
+async function listAccessibleBucketsForScope(input: {
+	db: D1Database
+	userId: string
+	scope: SecretScope
+	storageContext: StorageContext | null
+}) {
+	if (
+		input.scope === 'package' &&
+		getSecretBindingKey('package', input.storageContext) == null
+	) {
+		// Listing-only: discover caller-owned package buckets without a
+		// package runtime binding. Resolve/use still go through
+		// getExistingBucketForScope and require packageId.
+		return listSecretBucketsByScope({
+			db: input.db,
+			userId: input.userId,
+			scope: 'package',
+		})
+	}
+	const bucket = await getExistingBucketForScope(input)
+	return bucket ? [bucket] : []
 }
 
 async function getExistingBucketForScope(input: {

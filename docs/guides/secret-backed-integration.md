@@ -122,8 +122,11 @@ const response = await fetch('https://api.example.com/v1/me', {
 
 Rules:
 
-- `kody.secretList({})` returns metadata only (names, allowed hosts) — use it to
-  find the right secret name, then reference that name in a placeholder.
+- `kody.secretList({})` returns metadata only (names, allowed hosts, and
+  `package_id` for package-scoped secrets) — use it to find the right secret
+  name, then reference that name in a placeholder. Search does not return or
+  rank package-scoped secret references; using them still requires package
+  context.
 - Placeholders only resolve in secret-aware `fetch` paths; they are not general
   string interpolation.
 - Never echo a resolvable literal placeholder into chat, logs, issue bodies, or
