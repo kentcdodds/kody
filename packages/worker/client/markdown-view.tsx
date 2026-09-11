@@ -224,9 +224,57 @@ function slugifyMarkdownHeading(text: string): string {
 		.replace(/^-+|-+$/g, '')
 }
 
-function headingPermalinkLabel(text: string, headingId: string): string {
-	const visible = text.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').trim()
+/**
+ * Accessible name for a heading that also hosts a permalink. Built from
+ * parsed inline tokens so emphasis, code, images, and links contribute
+ * visible text instead of markdown source.
+ */
+function headingPermalinkLabel(
+	tokens: Array<Token> | undefined,
+	headingId: string,
+): string {
+	const visible = inlineTokensAccessibleName(tokens).replace(/\s+/g, ' ').trim()
 	return visible || headingId
+}
+
+function inlineTokensAccessibleName(tokens: Array<Token> | undefined): string {
+	if (!tokens) return ''
+	let name = ''
+	for (const token of tokens) {
+		name += inlineTokenAccessibleName(token)
+	}
+	return name
+}
+
+function inlineTokenAccessibleName(token: Token): string {
+	switch (token.type) {
+		case 'text': {
+			const textToken = token as Tokens.Text
+			if (textToken.tokens?.length) {
+				return inlineTokensAccessibleName(textToken.tokens)
+			}
+			return decodeCharacterReferences(textToken.text)
+		}
+		case 'strong':
+		case 'em':
+		case 'del':
+		case 'link':
+			return inlineTokensAccessibleName(token.tokens)
+		case 'image':
+			return decodeCharacterReferences(token.text)
+		case 'codespan':
+		case 'escape':
+			return token.text
+		case 'br':
+			return ' '
+		case 'html':
+			return ''
+		default:
+			if ('tokens' in token && Array.isArray(token.tokens)) {
+				return inlineTokensAccessibleName(token.tokens)
+			}
+			return ''
+	}
 }
 
 function nextHeadingId(used: Map<string, number>, text: string): string {
@@ -378,7 +426,7 @@ function renderToken(
 				<Tag
 					key={key}
 					id={headingId}
-					aria-label={headingPermalinkLabel(token.text, headingId)}
+					aria-label={headingPermalinkLabel(token.tokens, headingId)}
 				>
 					{renderMarkdownHeadingAnchor(key, headingId)}
 					<span data-heading-text="">{children}</span>

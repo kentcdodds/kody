@@ -267,6 +267,34 @@ test('heading permalinks stay beside inline heading links instead of wrapping th
 	expect(permalink?.match(/<a /g)).toHaveLength(1)
 })
 
+test('heading accessible names come from parsed inline tokens, not markdown source', async () => {
+	const html = await renderToString(
+		jsx('div', {
+			children: renderMarkdownNodes(
+				[
+					'## **Install** `CLI`',
+					'',
+					'## Read [the guide](https://example.com/guide(nested)/path)',
+					'',
+					'## Heading with ![logo](https://img.example/logo.png) icon',
+				].join('\n'),
+				{ headingOffset: 0, headingIds: true },
+			),
+		}),
+	)
+	expect(html).toContain('aria-label="Install CLI"')
+	expect(html).not.toContain('aria-label="**Install**')
+	expect(html).toContain('aria-label="Read the guide"')
+	expect(html).not.toContain('aria-label="Read [the guide]')
+	expect(html).toContain('aria-label="Heading with logo icon"')
+	expect(html).not.toContain('aria-label="Heading with ![logo]')
+	const formattedPermalink = html.match(
+		/<a href="#install-cli"[^>]*>[\s\S]*?<\/a>/,
+	)?.[0]
+	expect(formattedPermalink).toContain('aria-label="Link to this section"')
+	expect(formattedPermalink).not.toContain('aria-label="Install CLI"')
+})
+
 test('getSafeMarkdownLinkHref allowlists protocols and blocks user-scope paths', () => {
 	expect(getSafeMarkdownLinkHref('https://example.com/a')).toBe(
 		'https://example.com/a',
