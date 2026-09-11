@@ -65,6 +65,11 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 			page.getByRole('heading', { name: 'Check your email' }),
 		).toBeVisible()
 		await expect(
+			page.getByRole('img', {
+				name: 'Kody holding a sealed envelope with a green wax K stamp',
+			}),
+		).toBeVisible()
+		await expect(
 			page.getByRole('region', { name: 'Email verification status' }),
 		).toBeVisible()
 		await expect(page.getByText(email, { exact: false })).toBeVisible()

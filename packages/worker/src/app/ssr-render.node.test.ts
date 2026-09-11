@@ -18,6 +18,7 @@ import {
 	createCommunityPackageHandler,
 } from '#app/handlers/community-detail.tsx'
 import { createOnboardingHandler } from '#app/handlers/onboarding.ts'
+import { createPendingVerificationHandler } from '#app/handlers/pending-verification.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
 import { resetInlineStylesheetCache } from '#app/inline-stylesheet.ts'
 import { renderAppPage, resolveOriginClientEntry } from '#app/ssr-render.tsx'
@@ -465,6 +466,29 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(accountHtml).toContain('action="/logout"')
 	expect(accountHtml).toContain('Log out')
 	expect(accountHtml).toContain('aria-label="Session"')
+
+	const pendingVerificationResponse = await runHtmlHandler(
+		createPendingVerificationHandler(env),
+		new Request('https://example.com/pending-verification', {
+			headers: { Cookie: accountCookie },
+		}),
+	)
+	expect(pendingVerificationResponse.status).toBe(200)
+	const pendingVerificationHtml = await readResponseText(
+		pendingVerificationResponse,
+	)
+	expect(pendingVerificationHtml).toContain('Check your email')
+	expect(pendingVerificationHtml).toContain('src="/images/kody-envelope.png"')
+	expect(pendingVerificationHtml).toContain(
+		'data-testid="pending-verification-page"',
+	)
+	expect(
+		readAppRootProps(pendingVerificationHtml).loaderData?.pendingVerification,
+	).toEqual({
+		ok: true,
+		email: 'user@example.com',
+		emailVerificationDelivery: null,
+	})
 
 	// Two-factor and passkeys embed the same payload their .json endpoints
 	// serve, so the page server-renders its real state instead of a loading

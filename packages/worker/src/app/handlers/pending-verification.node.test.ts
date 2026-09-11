@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { expect, test, vi } from 'vitest'
 import { RequestContext } from 'remix/router'
 import {
@@ -163,4 +165,12 @@ test('pending verification requires a live session, preserves redirectTo after v
 	expect(verifiedRejectsOpenRedirect.headers.get('Location')).toBe(
 		'https://example.com/onboarding',
 	)
+})
+
+test('pending verification envelope illustration is published under public/images', () => {
+	expect(
+		existsSync(
+			join(import.meta.dirname, '../../../public/images/kody-envelope.png'),
+		),
+	).toBe(true)
 })
