@@ -67,7 +67,7 @@ export function AdminInsightsRoute(handle: Handle) {
 			>
 				<AdminPageHeader
 					title="Admin insights"
-					description="Launch signals, paid mix, and platform activity. Aggregated account metadata only — user content is never shown."
+					description="Launch signals, paid mix, cost vs pay, and platform activity. Aggregated account metadata only — user content is never shown."
 					currentHref={currentHref}
 				/>
 				{status === 'loading' ? (

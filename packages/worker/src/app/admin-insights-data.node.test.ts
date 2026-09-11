@@ -45,6 +45,7 @@ const fleetUsageMocks = vi.hoisted(() => ({
 			usdPerUniqueDay: 0.002,
 			includedPerAccountMonth: 1000,
 			topConsumers: [],
+			underwaterConsumers: [],
 		},
 	})),
 	loadFleetPackageErrorRateSnapshot: vi.fn(async () => null),
@@ -538,6 +539,7 @@ test('loadAdminInsightsData assembles the dashboard payload from D1 plus the Run
 		usdPerUniqueDay: 0.002,
 		includedPerAccountMonth: 1000,
 		topConsumers: [],
+		underwaterConsumers: [],
 	})
 })
 

@@ -592,6 +592,20 @@ export type AdminUserUsageLoaderData = {
 	warnings: Array<AdminUsageEntitlementConsumption>
 	dynamicWorkerCost: AdminDynamicWorkerCost
 	durableObjectDuration: AdminDurableObjectDuration
+	costVsPay: AdminCostVsPay
+}
+
+export type AdminPaidSource = 'stripe_catalog' | 'none'
+
+/**
+ * Operator estimate: gross unique-worker-day cost vs catalog list MRR.
+ * Not an invoice and not a net Cloudflare bill share.
+ */
+export type AdminCostVsPay = AdminDynamicWorkerCost & {
+	estimatedPaidUsdCents: number
+	estimatedMarginUsd: number
+	underwater: boolean
+	paidSource: AdminPaidSource
 }
 
 export type AdminInsightsTotals = {
@@ -795,15 +809,20 @@ type AdminDurableObjectDuration = {
 	memoryGb: number
 }
 
-type AdminInsightsDynamicWorkerCostConsumer = {
+export type AdminInsightsDynamicWorkerCostConsumer = {
 	stableUserId: string
 	username: string
 	uniqueWorkerDays: number
 	estimatedGrossUsd: number
+	estimatedPaidUsdCents: number
+	estimatedMarginUsd: number
+	underwater: boolean
+	paidSource: AdminPaidSource
 }
 
 export type AdminInsightsDynamicWorkerCost = AdminDynamicWorkerCost & {
 	topConsumers: Array<AdminInsightsDynamicWorkerCostConsumer>
+	underwaterConsumers: Array<AdminInsightsDynamicWorkerCostConsumer>
 }
 
 export type AdminInsightsMetricDurationConsumers = {

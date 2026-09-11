@@ -277,6 +277,22 @@ test('loadFleetUsageInsights returns bounded consumer rankings and pressure pane
 				username: 'cara',
 				uniqueWorkerDays: 90,
 				estimatedGrossUsd: 0.18,
+				estimatedPaidUsdCents: 0,
+				estimatedMarginUsd: -0.18,
+				underwater: true,
+				paidSource: 'none',
+			},
+		],
+		underwaterConsumers: [
+			{
+				stableUserId: 'user-c',
+				username: 'cara',
+				uniqueWorkerDays: 90,
+				estimatedGrossUsd: 0.18,
+				estimatedPaidUsdCents: 0,
+				estimatedMarginUsd: -0.18,
+				underwater: true,
+				paidSource: 'none',
 			},
 		],
 	})

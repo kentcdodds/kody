@@ -543,8 +543,10 @@ WHERE timestamp > NOW() - INTERVAL '1' HOUR
   $120 and $49 / $480, plus retired list prices) and never calls Stripe
   or pages the user table. `plan`, `stripe_plan`, and overlay-aware
   `effectivePlan` stay separate so gift/referral Standard does not look like
-  paid MRR. The 5-minute insights KV cache (`admin-insights:v9`) covers the
-  assembled page; RunLog-derived charts come from the hourly RunLog KV snapshot.
+  paid MRR. Cost-vs-pay ranks the current month's top unique-worker-day
+  consumers (bounded scan) against that same catalog list MRR. The 5-minute
+  insights KV cache (`admin-insights:v10`) covers the assembled page; RunLog-
+  derived charts come from the hourly RunLog KV snapshot.
 - **Proactive alerts** (`usage_entitlement_alert` scheduled lane in
   `packages/worker/src/app/usage-entitlement-alerts.ts`): hourly sweep of the
   same ~15-user bound. Emits `fleet.entitlement.crossed` to admin-owned packages

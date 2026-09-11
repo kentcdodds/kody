@@ -79,3 +79,6 @@ export function formatDynamicWorkerUsd(amount: number): string {
 
 export const dynamicWorkerCostFootnote =
 	'Gross estimate: unique Dynamic Worker ids × $0.002 per UTC day. Cloudflare includes 1,000 unique worker-days per account per month, so this is not a net bill share.'
+
+export const costVsPayFootnote =
+	'Cost is a Cloudflare list-rate estimate on unique Dynamic Worker days only (gross, not a net bill share). Paid is catalog list MRR from stored stripe_price_id. Gift, referral, and manual-only access count as $0. Not invoice-perfect: no tax, coupons, overage invoices, email, or storage.'

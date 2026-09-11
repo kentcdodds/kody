@@ -27,6 +27,7 @@ import {
 	planColors,
 	workflowStatusColors,
 } from './admin-insights-shared.ts'
+import { renderCostVsPay } from './admin-insights-cost.tsx'
 import { renderLaunchSignals } from './admin-insights-launch.tsx'
 import {
 	ChartCard,
@@ -70,6 +71,7 @@ export function renderDashboard(data: AdminInsightsLoaderData) {
 				</AccountManagementMessage>
 			) : null}
 			{renderLaunchSignals(data.launchSignals)}
+			{renderCostVsPay(data.dynamicWorkerCost)}
 			<div
 				mix={css({
 					display: 'grid',

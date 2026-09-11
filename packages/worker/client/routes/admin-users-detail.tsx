@@ -34,9 +34,10 @@ import {
 import { describeEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { formatUsageLimit, formatUsagePercent } from './admin-users-shared.ts'
 import {
-	dynamicWorkerCostFootnote,
+	costVsPayFootnote,
 	formatDynamicWorkerUsd,
 } from '#universal/dynamic-worker-cost.ts'
+import { formatUsdFromCents } from './admin-insights-shared.ts'
 import {
 	durableObjectDurationFootnote,
 	formatDurableObjectGbSeconds,
@@ -534,12 +535,25 @@ export function renderAdminUserDetail(props: AdminUserDetailProps) {
 								})}
 							>
 								{formatDynamicWorkerUsd(
-									selectedUsage.dynamicWorkerCost.estimatedGrossUsd,
+									selectedUsage.costVsPay.estimatedGrossUsd,
 								)}{' '}
-								gross this month (
-								{formatIntegerNumber(
-									selectedUsage.dynamicWorkerCost.uniqueWorkerDays,
+								est. cost ·{' '}
+								{formatUsdFromCents(
+									selectedUsage.costVsPay.estimatedPaidUsdCents,
 								)}{' '}
+								list pay ·{' '}
+								<span
+									mix={css({
+										color: selectedUsage.costVsPay.underwater
+											? colors.danger
+											: undefined,
+									})}
+								>
+									{selectedUsage.costVsPay.underwater
+										? 'underwater'
+										: 'above cost'}
+								</span>{' '}
+								({formatIntegerNumber(selectedUsage.costVsPay.uniqueWorkerDays)}{' '}
 								unique worker-days)
 							</p>
 							<p
@@ -549,7 +563,7 @@ export function renderAdminUserDetail(props: AdminUserDetailProps) {
 									fontSize: typography.fontSize.xs,
 								})}
 							>
-								{dynamicWorkerCostFootnote}
+								{costVsPayFootnote}
 							</p>
 						</div>
 						<div mix={css({ display: 'grid', gap: spacing.sm })}>
