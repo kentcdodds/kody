@@ -49,6 +49,7 @@ import { userHasRole } from '#universal/permissions.ts'
 import { buildAuthLink } from './auth-links.ts'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
 import { NotFoundPage } from './not-found-page.tsx'
+import { InternalErrorPage } from './internal-error-page.tsx'
 import { SiteBanner } from './site-banner.tsx'
 import { YouTubeWatchOverlay } from './youtube-watch-overlay.tsx'
 import { scheduleConsumeAccountCreatedFathomSignal } from './fathom-events.ts'
@@ -66,6 +67,7 @@ type AppProps = {
 	loaderData?: AppLoaderData
 	notFound?: boolean
 	unauthorized?: boolean
+	internalError?: boolean
 }
 
 function isRedesignedMarketingPath(pathname: string) {
@@ -85,18 +87,19 @@ function isRedesignedMarketingPath(pathname: string) {
 }
 
 /**
- * `<main>` padding is skipped when the route (or the SSR 404 for this URL)
- * owns its own gutters. The server's `notFound` flag is sticky on the
- * document for the session, so it only applies while we are still on the
- * URL the server rendered — same rule as `Router`.
+ * `<main>` padding is skipped when the route (or the SSR 404 / 500 for this
+ * URL) owns its own gutters. The server's `notFound` / `internalError` flags
+ * are sticky on the document for the session, so they only apply while we
+ * are still on the URL the server rendered — same rule as `Router`.
  */
 export function appMainOwnsItsGutters(input: {
 	pathname: string
 	notFound: boolean
+	internalError?: boolean
 	onSsrUrl: boolean
 }) {
 	return (
-		(input.notFound && input.onSsrUrl) ||
+		((input.notFound || input.internalError === true) && input.onSsrUrl) ||
 		isRedesignedMarketingPath(input.pathname) ||
 		isPackageFilesPathname(input.pathname) ||
 		matchRoute(input.pathname, clientRoutes) == null
@@ -250,6 +253,7 @@ export function App(handle: Handle<AppProps>) {
 		const routeOwnsItsGutters = appMainOwnsItsGutters({
 			pathname: currentPathname,
 			notFound: handle.props.notFound === true,
+			internalError: handle.props.internalError === true,
 			onSsrUrl: isOnSsrUrl(handle),
 		})
 
@@ -358,7 +362,9 @@ export function App(handle: Handle<AppProps>) {
 								loaderData={handle.props.loaderData}
 								notFound={handle.props.notFound}
 								unauthorized={handle.props.unauthorized}
+								internalError={handle.props.internalError}
 								fallback={<NotFoundPage />}
+								internalErrorFallback={<InternalErrorPage />}
 								unauthorizedFallback={
 									<section>
 										<h1

@@ -287,6 +287,7 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 						loaderData={handle.props.loaderData}
 						notFound={handle.props.notFound}
 						unauthorized={handle.props.unauthorized}
+						internalError={handle.props.internalError}
 					/>
 				</div>
 				{/* Blocking classic script (not type=module): restores the

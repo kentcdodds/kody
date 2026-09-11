@@ -246,6 +246,7 @@ function parseRmxData(html: string) {
 					session: unknown
 					loaderData?: Record<string, unknown>
 					notFound?: boolean
+					internalError?: boolean
 				}
 			}
 		>
@@ -628,7 +629,22 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(notFoundResponse.status).toBe(404)
 	const notFoundHtml = await readResponseText(notFoundResponse)
 	expect(notFoundHtml).toContain("This doesn't quite connect.")
+	expect(notFoundHtml).toContain('src="/images/kody-404-disappointed.png"')
 	expect(readAppRootProps(notFoundHtml).notFound).toBe(true)
+
+	const internalErrorResponse = await renderAppPage({
+		request: new Request('https://example.com/account'),
+		env,
+		title: 'Something went wrong',
+		internalError: true,
+		status: 500,
+	})
+	expect(internalErrorResponse.status).toBe(500)
+	const internalErrorHtml = await readResponseText(internalErrorResponse)
+	expect(internalErrorHtml).toContain('We got a little zapped.')
+	expect(internalErrorHtml).toContain('src="/images/kody-500-zapped.png"')
+	expect(internalErrorHtml).toContain('Try again')
+	expect(readAppRootProps(internalErrorHtml).internalError).toBe(true)
 
 	const resetConfirmResponse = await runHtmlHandler(
 		createResetPasswordHandler(env),

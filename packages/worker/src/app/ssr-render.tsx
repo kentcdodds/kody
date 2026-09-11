@@ -74,6 +74,7 @@ export type RenderAppPageInput = {
 	loaderData?: AppLoaderData
 	notFound?: boolean
 	unauthorized?: boolean
+	internalError?: boolean
 	status?: number
 	extraSetCookies?: Array<string>
 	/** Loader phases already recorded for this request; session + ssr append. */
@@ -92,6 +93,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		loaderData,
 		notFound,
 		unauthorized,
+		internalError,
 		status,
 		extraSetCookies,
 	} = input
@@ -173,6 +175,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 					loaderData={pageLoaderData}
 					notFound={notFound}
 					unauthorized={unauthorized}
+					internalError={internalError}
 					clientEntryHref={clientEntryHref}
 					stylesheetHref={stylesheetHref}
 					modulePreloadHrefs={modulePreloadHrefs}
