@@ -47,6 +47,10 @@ import {
 } from '#app/account-mcp-oauth-clients.ts'
 import { mcpOauthScopes } from '#worker/mcp-oauth-scopes.ts'
 import {
+	isOAuthAuthorizeClobberedResubmit,
+	oauthAuthorizeClobberedResubmitMessage,
+} from '#worker/oauth-authorize-clobber.ts'
+import {
 	evaluateOidcAuthorizeGate,
 	isOidcAuthorizeParamsParseError,
 	parseOidcAuthorizeParams,
@@ -734,6 +738,20 @@ export async function loadOAuthAuthorizeData(
 	request: Request,
 	env: Env,
 ): Promise<OAuthAuthorizeDataResult> {
+	if (
+		isOAuthAuthorizeClobberedResubmit({
+			searchParams: new URL(request.url).searchParams,
+		})
+	) {
+		return {
+			data: {
+				ok: false,
+				error: oauthAuthorizeClobberedResubmitMessage,
+				allowClientReset: false,
+			},
+			setCookie: null,
+		}
+	}
 	const oidcParamsOrError = parseOidcAuthorizeParams(request)
 	if (isOidcAuthorizeParamsParseError(oidcParamsOrError)) {
 		return {
@@ -1155,6 +1173,17 @@ export async function handleAuthorizeRequest(
 	const formData = await request.formData().catch(() => null)
 	if (!formData) {
 		return respondAuthorizeError(request, 'Invalid form data')
+	}
+	if (
+		isOAuthAuthorizeClobberedResubmit({
+			searchParams: new URL(request.url).searchParams,
+			formData,
+		})
+	) {
+		return respondAuthorizeError(
+			request,
+			oauthAuthorizeClobberedResubmitMessage,
+		)
 	}
 	const decision = String(formData.get('decision') ?? 'approve')
 	if (decision === 'reset-client') {

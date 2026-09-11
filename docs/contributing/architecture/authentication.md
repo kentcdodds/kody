@@ -211,7 +211,13 @@ assistant features:
   (`403 email_verification_required`). The authorize HTML is server-rendered
   with client/scopes from `/oauth/authorize-info` and the signed-in app session
   from the SSR shell, so first paint already shows approve, inline login, or
-  verify-email instead of a client `/session` loading state. The authorize UI
+  verify-email instead of a client `/session` loading state. Approve stays
+  disabled until client hydration so a native GET cannot replace the OAuth query
+  with the honeypot field; the consent form POSTs to the current pathname+search
+  with a hidden `decision=approve` if it is submitted before handlers bind. A
+  `/oauth/authorize` request that has no `client_id` but includes `kody_hp` is
+  treated as that interrupted resubmit and returns a recoverable "start the
+  connection again" message instead of `client_id is required`. The authorize UI
   keeps inline verification/resend controls and the original OAuth query so
   verification in another tab can resume without restarting the host connection.
 - **MCP requests**: `handleMcpRequest` in `packages/worker/src/mcp-auth.ts` is
@@ -676,7 +682,8 @@ routed from `packages/worker/src/index.ts`.
   email link is opened elsewhere, so the original OAuth query remains resumable.
   Signed-in vs signed-out chrome on that page comes from the SSR-embedded app
   session; the route does not wait on a separate browser `/session` fetch before
-  rendering approve or login.
+  rendering approve or login. The approve control stays inert until hydration so
+  the visible button cannot submit a GET that drops `client_id`.
 - Approval is rejected before `completeAuthorization` when the account email is
   unverified, so no grant/token is created until verification succeeds.
 

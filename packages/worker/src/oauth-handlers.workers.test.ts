@@ -16,6 +16,8 @@ import {
 } from '#app/auth-session.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { invalidClientIdMismatchMessage } from '@kody-internal/shared/oauth-messages.ts'
+import { honeypotFieldName } from '#universal/public-form-protection.ts'
+import { oauthAuthorizeClobberedResubmitMessage } from './oauth-authorize-clobber.ts'
 import {
 	handleAuthorizeInfo,
 	handleAuthorizeRequest,
@@ -1662,4 +1664,57 @@ test('malformed max_age does not redirect authorize GET to itself', async () => 
 		/max_age must be a non-negative integer/i,
 	)
 	expect(silentRedirect.searchParams.get('state')).toBe('demo')
+})
+
+test('authorize recovers when a pre-hydration submit clobbers the OAuth query', async () => {
+	const helpers = createHelpers({
+		parseAuthRequest: async () => {
+			throw new Error('client_id is required')
+		},
+	})
+	const envWithHelpers = createEnv(helpers)
+	const clobberedUrl = `https://example.com/oauth/authorize?${honeypotFieldName}=`
+
+	const htmlResponse = await handleAuthorizeRequest(
+		new Request(clobberedUrl),
+		envWithHelpers,
+	)
+	expect(htmlResponse.status).toBe(200)
+	const html = await htmlResponse.text()
+	expect(html).toContain(oauthAuthorizeClobberedResubmitMessage)
+	expect(html).not.toContain('client_id is required')
+	expect(html).not.toContain('data-testid="oauth-authorize-approve"')
+
+	const infoResponse = await handleAuthorizeInfo(
+		new Request(
+			`https://example.com/oauth/authorize-info?${honeypotFieldName}=`,
+		),
+		envWithHelpers,
+	)
+	expect(infoResponse.status).toBe(400)
+	await expect(infoResponse.json()).resolves.toEqual({
+		ok: false,
+		error: oauthAuthorizeClobberedResubmitMessage,
+		allowClientReset: false,
+	})
+
+	const postResponse = await handleAuthorizeRequest(
+		new Request('https://example.com/oauth/authorize', {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/x-www-form-urlencoded',
+			},
+			body: new URLSearchParams({
+				decision: 'approve',
+				[honeypotFieldName]: '',
+			}),
+		}),
+		envWithHelpers,
+	)
+	expect(postResponse.status).toBe(400)
+	await expect(postResponse.json()).resolves.toMatchObject({
+		ok: false,
+		error: oauthAuthorizeClobberedResubmitMessage,
+	})
 })

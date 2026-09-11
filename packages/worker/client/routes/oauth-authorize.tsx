@@ -21,6 +21,13 @@ import {
 	requestResendVerification,
 } from '#client/routes/email-verification-prompt.tsx'
 import { resolveAuthorizeEmailVerified } from '#client/routes/oauth-authorize-email-verified.ts'
+import {
+	oauthAuthorizeActionsDisabled,
+	oauthAuthorizeApproveAriaLabel,
+	oauthAuthorizeConsentDecision,
+	oauthAuthorizeConsentFormAttrs,
+	oauthAuthorizeEmailVerificationDenyDisabled,
+} from '#client/routes/oauth-authorize-form.ts'
 import { resolveAuthorizeSession } from '#client/routes/oauth-authorize-session.ts'
 import {
 	fetchSessionInfo,
@@ -48,6 +55,7 @@ import {
 	pageTitleCss,
 	sectionTitleCss,
 	stackedPageCss,
+	visuallyHiddenCss,
 } from '#universal/styles/style-primitives.ts'
 
 type OAuthAuthorizeInfo = {
@@ -186,6 +194,9 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	let resendStatus: 'idle' | 'sending' = 'idle'
 	let resendMessage: string | null = null
 	let resendTone: 'error' | 'info' = 'info'
+	// Stay false through SSR and the first client render so hydrate matches
+	// the disabled form. Flip after queueTask, once submit handlers are bound.
+	let consentInteractive = false
 
 	function setMessage(next: OAuthAuthorizeMessage | null) {
 		message = next
@@ -503,21 +514,37 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		})
 		const needsEmailVerification = isLoggedIn && !emailVerified
 		const showResetClientCard = allowClientReset && !resetCompleted
-		const showAuthorizeForm = !resetCompleted && !needsEmailVerification
-		const actionsDisabled =
-			status !== 'ready' ||
-			Boolean(submittingDecision) ||
-			isSessionLoading ||
-			needsEmailVerification
+		const showAuthorizeForm =
+			!resetCompleted && !needsEmailVerification && status !== 'error'
+		if (typeof document !== 'undefined' && !consentInteractive) {
+			handle.queueTask(() => {
+				if (consentInteractive) return
+				consentInteractive = true
+				handle.update()
+			})
+		}
+		const hydrated = consentInteractive
+		const consentForm = oauthAuthorizeConsentFormAttrs(currentHref)
+		const actionsDisabled = oauthAuthorizeActionsDisabled({
+			hydrated,
+			statusReady: status === 'ready',
+			submitting: Boolean(submittingDecision),
+			sessionLoading: isSessionLoading,
+			needsEmailVerification,
+		})
 		const resetClientDisabled =
 			Boolean(submittingDecision) || isSessionLoading || !isLoggedIn
-		const formReady = status === 'ready' && !isSessionLoading
+		const formReady = hydrated && status === 'ready' && !isSessionLoading
 		const accessLead = oauthAuthorizeAccessLead(status, clientLabel)
 		const authorizeLabel = submittingDecision
 			? 'Submitting...'
 			: isLoggedIn
 				? 'Approve connection'
 				: 'Authorize'
+		const approveAriaLabel = oauthAuthorizeApproveAriaLabel({
+			hydrated,
+			label: authorizeLabel,
+		})
 		const resetClientLabel =
 			submittingDecision === 'reset-client'
 				? 'Resetting this connection...'
@@ -577,7 +604,16 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 					<div mix={css({ marginBottom: spacing.md })}>
 						<button
 							type="button"
-							disabled={Boolean(submittingDecision) || isSessionLoading}
+							data-testid="oauth-authorize-email-verify-deny"
+							disabled={oauthAuthorizeEmailVerificationDenyDisabled({
+								hydrated,
+								submitting: Boolean(submittingDecision),
+								sessionLoading: isSessionLoading,
+							})}
+							aria-label={oauthAuthorizeApproveAriaLabel({
+								hydrated,
+								label: 'Deny',
+							})}
 							mix={[
 								on('click', () => submitDecision('deny')),
 								css(secondaryButtonCss),
@@ -623,6 +659,10 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				) : null}
 				{showAuthorizeForm ? (
 					<form
+						method={consentForm.method}
+						action={consentForm.action}
+						data-testid="oauth-authorize-form"
+						aria-busy={hydrated ? undefined : 'true'}
 						mix={[
 							css({
 								...cardCss,
@@ -631,6 +671,17 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 							on('submit', handleSubmit),
 						]}
 					>
+						{hydrated ? null : (
+							<p role="status" mix={css(visuallyHiddenCss)}>
+								Connection approval is available after the page finishes
+								loading.
+							</p>
+						)}
+						<input
+							type="hidden"
+							name="decision"
+							value={oauthAuthorizeConsentDecision}
+						/>
 						{renderHoneypot()}
 						{!isLoggedIn && isSessionReady ? (
 							<>
@@ -668,7 +719,9 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 						>
 							<button
 								type="submit"
+								data-testid="oauth-authorize-approve"
 								disabled={actionsDisabled}
+								aria-label={approveAriaLabel}
 								mix={css(primaryButtonCss)}
 							>
 								{authorizeLabel}
@@ -676,6 +729,10 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 							<button
 								type="button"
 								disabled={actionsDisabled}
+								aria-label={oauthAuthorizeApproveAriaLabel({
+									hydrated,
+									label: 'Deny',
+								})}
 								mix={[
 									on('click', () => submitDecision('deny')),
 									css(secondaryButtonCss),
