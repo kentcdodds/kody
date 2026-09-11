@@ -686,6 +686,9 @@ export function ConnectOauthRoute(handle: Handle) {
 									onFilterInput: (node) => {
 										chooserFilterInput = node
 									},
+									onFilterDetach: (node) => {
+										if (chooserFilterInput === node) chooserFilterInput = null
+									},
 								})}
 				</section>
 			)

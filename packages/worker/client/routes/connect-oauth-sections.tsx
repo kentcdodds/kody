@@ -109,7 +109,8 @@ export function renderChooser(input: {
 	chooserOptions: Array<ConnectOauthChooserOption>
 	chooserFilter: string
 	onFilterChange: (value: string) => void
-	onFilterInput?: (node: HTMLInputElement | null) => void
+	onFilterInput?: (node: HTMLInputElement) => void
+	onFilterDetach?: (node: HTMLInputElement) => void
 }) {
 	const showFilter =
 		input.chooserOptions.length > connectOauthChooserFilterMinOptions
@@ -136,11 +137,10 @@ export function renderChooser(input: {
 					mix={[
 						css(inputCss),
 						ref((node, signal) => {
-							if (node instanceof HTMLInputElement) {
-								input.onFilterInput?.(node)
-							}
+							if (!(node instanceof HTMLInputElement)) return
+							input.onFilterInput?.(node)
 							signal.addEventListener('abort', () => {
-								input.onFilterInput?.(null)
+								input.onFilterDetach?.(node)
 							})
 						}),
 						on('input', (event) => {
