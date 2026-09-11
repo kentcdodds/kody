@@ -38,6 +38,7 @@ import {
 	renderPackageShareSettings,
 } from './package-share-settings.tsx'
 import { postPackageShareAction } from './package-share-client.ts'
+import { createPackageWebhooksController } from './package-webhook-settings.tsx'
 
 const settingsMatcher = createMatcher(routes.communityPackageSettings.pattern)
 
@@ -57,6 +58,7 @@ export function PackageSettingsRoute(handle: Handle) {
 	let shareBusy = false
 	let shareMessage: string | null = null
 	let shareLoadedFor = ''
+	const webhooks = createPackageWebhooksController(handle)
 	const settingsData = createRouteData<
 		'communityDetailShell',
 		PackageSettingsShell
@@ -281,6 +283,9 @@ export function PackageSettingsRoute(handle: Handle) {
 		) {
 			handle.queueTask(() => refreshShareGrants(username, kodyId))
 		}
+		if (showReady && username && kodyId && typeof document !== 'undefined') {
+			handle.queueTask(() => webhooks.ensureLoaded({ username, kodyId }))
+		}
 		const showError = snapshot.kind === 'error'
 		const statusMessage = showError
 			? 'Unable to load package settings.'
@@ -326,6 +331,9 @@ export function PackageSettingsRoute(handle: Handle) {
 								}
 							},
 						})
+					: null}
+				{showReady && ownerPackage
+					? webhooks.render({ username, kodyId })
 					: null}
 				{showReady &&
 				ownerPackage &&

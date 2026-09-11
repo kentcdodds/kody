@@ -81,7 +81,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		match: accountSection(routes.accountWebhooks.href()),
 		paragraphs: [
 			'A webhook is an inbound HTTP endpoint a package declares in package.json#kody.webhooks. Each name binds one export; when a provider such as GitHub, Stripe, or Sentry (or your own trusted client) POSTs to the minted URL, Kody runs that export.',
-			'The URL is a credential. Mint, reveal, copy, rotate, and disable it here. Agents connected over MCP can mint an opaque handle and apply it to GitHub on your behalf, but the URL itself only ever shows on this page.',
+			"The URL is a credential and belongs to the package that declares it. This list shows every webhook across your packages; open one to mint, reveal, copy, rotate, or disable its URL in that package's settings. Agents connected over MCP can mint an opaque handle and apply it to GitHub on your behalf, but the URL itself only ever shows in package settings.",
 		],
 		learnMore: [
 			{

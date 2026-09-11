@@ -169,10 +169,6 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(m) => m.accountWebhooksRouteLoader,
 	),
-	[routePattern(routes.accountWebhookDetail)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountWebhooksRouteLoader,
-	),
 	[routePattern(routes.accountActivity)]: lazyRouteLoader(
 		accountArea,
 		(m) => m.accountActivityRouteLoader,
@@ -487,9 +483,6 @@ export const clientRoutes = {
 		<LazyAccountRoute render={(m) => <m.AccountWorkflowsRoute />} />
 	),
 	[routePattern(routes.accountWebhooks)]: (
-		<LazyAccountRoute render={(m) => <m.AccountWebhooksRoute />} />
-	),
-	[routePattern(routes.accountWebhookDetail)]: (
 		<LazyAccountRoute render={(m) => <m.AccountWebhooksRoute />} />
 	),
 	[routePattern(routes.accountActivity)]: (

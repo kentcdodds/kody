@@ -391,11 +391,13 @@ primitives:
       - packages/worker/src/webhooks/
       - packages/worker/src/mcp/capabilities/webhooks/
       - packages/worker/src/app/handlers/webhook-ingress.ts
+      - packages/worker/src/app/handlers/package-webhooks.ts
       - packages/worker/src/app/handlers/account-webhooks.ts
-      - packages/worker/src/app/account-webhooks-data.ts
+      - packages/worker/src/app/package-webhooks-data.ts
+      - packages/worker/client/routes/package-webhook-settings.tsx
+      - packages/worker/client/routes/package-webhook-card.tsx
       - packages/worker/client/routes/account-webhooks.tsx
-      - packages/worker/client/routes/account-webhooks-detail.tsx
-      - packages/worker/client/routes/account-webhooks-shared.ts
+      - packages/worker/client/routes/webhooks-shared.ts
       - packages/worker/src/package-registry/
     docs:
       - docs/use/webhooks.md

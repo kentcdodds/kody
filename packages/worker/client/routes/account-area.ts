@@ -36,7 +36,7 @@ export {
 	accountWorkflowsRouteLoader,
 } from './account-workflows.tsx'
 export { AccountWebhooksRoute } from './account-webhooks.tsx'
-export { accountWebhooksRouteLoader } from './account-webhooks-shared.ts'
+export { accountWebhooksRouteLoader } from './webhooks-shared.ts'
 export { AccountActivityRoute } from './account-activity.tsx'
 export { accountActivityRouteLoader } from './account-activity-shared.ts'
 export {

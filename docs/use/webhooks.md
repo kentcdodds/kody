@@ -3,9 +3,9 @@
 Kody inbound webhooks are **package-centered**: you declare them in
 `package.json#kody.webhooks`, mint an opaque handle with `webhookUrlMint`, then
 register the credential with `webhookUrlApply` (GitHub repository hooks today)
-or copy the URL yourself from the
-[Webhooks](#manage-webhook-urls-in-the-account-ui) account page. MCP and execute
-never return the credential URL or `url_secret`. Each delivery invokes the bound
+or copy the URL yourself from the package's
+[settings page](#manage-webhook-urls-in-package-settings). MCP and execute never
+return the credential URL or `url_secret`. Each delivery invokes the bound
 package export.
 
 This is the HTTP sibling of [email primitives](./email-primitives.md). Webhooks
@@ -18,10 +18,10 @@ There is no `*` / multi-export URL. One declared webhook name binds one export.
 
 Treat every minted URL as a **credential**. Mint and rotate return an opaque
 `handle` (and `url_host`), never the URL or `url_secret`. Register the URL with
-`webhookUrlApply` so the credential stays inside Kody, or open
-[`/account/webhooks`](#manage-webhook-urls-in-the-account-ui) and copy it
-yourself for providers without an apply adapter. MCP and execute never return
-the URL; the owner does that from the account UI.
+`webhookUrlApply` so the credential stays inside Kody, or open the package's
+[settings page](#manage-webhook-urls-in-package-settings) and copy it yourself
+for providers without an apply adapter. MCP and execute never return the URL;
+the owner does that from package settings.
 
 ## Declare a webhook in the package manifest
 
@@ -88,8 +88,9 @@ Use the MCP `webhooks` domain:
 4. Call `webhookUrlApply` with the returned `handle` and a first-class
    destination. GitHub repository hooks use the connected `github` integration
    (or a host-approved GitHub token). For any other provider, tell the owner to
-   copy the URL from
-   [`/account/webhooks`](#manage-webhook-urls-in-the-account-ui).
+   copy the URL from the package's
+   [settings page](#manage-webhook-urls-in-package-settings)
+   (`/@<username>/<packageKodyId>/settings#webhooks`).
 
 Other capabilities: `webhookList` (declarations joined with minted handle /
 enabled state), `webhookUrlRotate`, `webhookEnable`, `webhookDisable`, and
@@ -98,11 +99,13 @@ delivery history also appears under [Activity](./activity.md)
 (`/account/activity` and the `runs` capabilities). List, mint, rotate, and apply
 never return the credential URL.
 
-## Manage webhook URLs in the account UI
+## Manage webhook URLs in package settings
 
-The signed-in owner manages webhook URLs at `/account/webhooks` (account rail →
-Webhooks). It lists every webhook declared by a saved package, joined with its
-minted state, and expands one row at a time:
+Webhooks belong to the package that declares them, so the signed-in owner
+manages their URLs on that package's settings page:
+`/@<username>/<packageKodyId>/settings`, **Webhooks** section (for example
+`/@kentcdodds/raycast/settings#webhooks`). The section lists every webhook the
+package declares, joined with its minted state, one card per webhook:
 
 - **Mint URL** issues the first credential for a declared webhook and shows the
   URL once so you can paste it into the provider.
@@ -116,8 +119,12 @@ minted state, and expands one row at a time:
 
 The URL is the human path. Agents get the handle and `url_host` through MCP and
 either apply the handle to a supported destination or ask the owner to copy the
-URL here. Mints that predate encrypted secret storage cannot be shown; the page
-offers Rotate for those.
+URL from package settings. Mints that predate encrypted secret storage cannot be
+shown; the card offers Rotate for those.
+
+`/account/webhooks` (account rail → Webhooks) is a read-only index of every
+webhook across your packages. Each row links to the owning package's Webhooks
+section; nothing is minted or revealed from the index.
 
 ### Apply a handle to a destination
 
@@ -145,7 +152,7 @@ Authorize with the user's GitHub OAuth integration (default `github`) or a
 host-approved GitHub token (`secretName`). Additional vendor adapters can follow
 the same pattern (known host + known API). Other providers still POST to the
 minted ingress URL; apply does not register them — the owner copies the URL from
-`/account/webhooks` instead.
+the package's settings page instead.
 
 Returns `{ ok, url_host, http_status, remote_id, error }`. Remote bodies that
 echo the hook URL are stripped.
@@ -327,7 +334,8 @@ ingress (unknown name → 404). Disable with `webhookDisable` without deleting t
 mint; re-enable with `webhookEnable`. Rotate the URL secret with
 `webhookUrlRotate` when a credential may have leaked, then call
 `webhookUrlApply` again with the same handle so providers get the new URL. The
-same disable, enable, and rotate actions are on `/account/webhooks`.
+same disable, enable, and rotate actions are in the package's settings Webhooks
+section.
 
 ## Related
 

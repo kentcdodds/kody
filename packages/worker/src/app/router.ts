@@ -154,6 +154,7 @@ import {
 	createAccountSharedHandler,
 } from '#app/handlers/account-shared.ts'
 import { createCommunityPackageShareApiHandler } from '#app/handlers/package-share.ts'
+import { createCommunityPackageWebhooksApiHandler } from '#app/handlers/package-webhooks.ts'
 import {
 	createCommunityPackageApproveChangesApiHandler,
 	createCommunityPackageApproveChangesHandler,
@@ -410,6 +411,10 @@ export function createAppRouter(env: Env) {
 				createCommunityPackageApproveChangesApiHandler(env),
 			communityPackageShareApi: createCommunityPackageShareApiHandler(env),
 			communityPackageShareApiPost: createCommunityPackageShareApiHandler(env),
+			communityPackageWebhooksApi:
+				createCommunityPackageWebhooksApiHandler(env),
+			communityPackageWebhooksApiPost:
+				createCommunityPackageWebhooksApiHandler(env),
 			accountPackageFiles: createAccountPackageFilesHandler(env),
 			accountPackageFilesApi: createAccountPackageFilesApiHandler(env),
 			accountPackagesApi: createAccountPackagesApiHandler(env),
@@ -475,9 +480,7 @@ export function createAppRouter(env: Env) {
 			accountWorkflowsApi: createAccountWorkflowsApiHandler(env),
 			accountWorkflowsApiPost: createAccountWorkflowsApiHandler(env),
 			accountWebhooks: createAccountWebhooksHandler(env),
-			accountWebhookDetail: createAccountWebhooksHandler(env),
 			accountWebhooksApi: createAccountWebhooksApiHandler(env),
-			accountWebhooksApiPost: createAccountWebhooksApiHandler(env),
 			accountActivity: createAccountActivityHandler(env),
 			accountActivityDetail: createAccountActivityHandler(env),
 			accountActivityApi: createAccountActivityApiHandler(env),

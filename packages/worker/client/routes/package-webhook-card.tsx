@@ -6,20 +6,20 @@ import {
 	IdValue,
 	MetadataGrid,
 	TimestampValue,
+	noticeCardCss,
 } from '#client/routes/account-management-components.tsx'
 import {
+	packageWebhookCardId,
+	type WebhookIntent,
 	webhookDeliveriesHref,
 	webhookModeLabel,
 	webhookStatusColor,
 	webhookStatusLabel,
 	webhooksDocHref,
-} from '#client/routes/account-webhooks-shared.ts'
+} from '#client/routes/webhooks-shared.ts'
 import { CopyCard } from '#client/routes/onboarding-mcp-client-cards.tsx'
-import { recordBodyCss } from '#client/routes/record-table.tsx'
-import { type AccountWebhookListItem } from '#universal/loader-data.ts'
-import { routes } from '#universal/routes.ts'
+import { type PackageWebhookListItem } from '#universal/loader-data.ts'
 import {
-	cardTitleCss,
 	descriptionCss,
 	fieldCss,
 	fieldLabelCss,
@@ -35,26 +35,38 @@ const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 const dangerButtonCss = getDangerPillCss({ size: 'sm' })
 
-export type WebhookIntent = 'mint' | 'rotate' | 'reveal' | 'enable' | 'disable'
-
 type DoubleCheck = ReturnType<typeof createDoubleCheck>
 
-function packageValue(username: string, webhook: AccountWebhookListItem) {
-	if (!username) return webhook.packageName
-	return (
-		<a
-			href={routes.communityPackage.href({
-				username,
-				kodyId: webhook.packageKodyId,
-			})}
-			mix={css(primaryLinkCss)}
-		>
-			{webhook.packageName}
-		</a>
-	)
+const cardCss = {
+	...noticeCardCss,
+	// The card is a hash target from the account index; give the jump some
+	// breathing room above the heading.
+	scrollMarginTop: spacing.xl,
 }
 
-function verificationValue(webhook: AccountWebhookListItem) {
+const cardHeadCss = {
+	display: 'flex',
+	alignItems: 'baseline',
+	justifyContent: 'space-between',
+	gap: spacing.md,
+	flexWrap: 'wrap' as const,
+}
+
+const cardTitleCss = {
+	margin: 0,
+	fontSize: typography.fontSize.lg,
+	fontWeight: typography.fontWeight.semibold,
+	color: colors.text,
+	fontFamily: 'monospace',
+}
+
+const statusPillCss = {
+	fontSize: typography.fontSize.sm,
+	fontWeight: typography.fontWeight.semibold,
+	whiteSpace: 'nowrap' as const,
+}
+
+function verificationValue(webhook: PackageWebhookListItem) {
 	const verification = webhook.verification
 	if (!verification) return 'URL secret only (no HMAC)'
 	return (
@@ -73,7 +85,7 @@ function verificationValue(webhook: AccountWebhookListItem) {
 	)
 }
 
-function replayValue(webhook: AccountWebhookListItem) {
+function replayValue(webhook: PackageWebhookListItem) {
 	const replay = webhook.replay
 	if (!replay) return 'Not configured'
 	const parts: Array<string> = []
@@ -88,27 +100,13 @@ function replayValue(webhook: AccountWebhookListItem) {
 	return parts.length > 0 ? parts.join(' · ') : 'Not configured'
 }
 
-export function renderWebhookDetailPlaceholder(title: string, body: string) {
-	return (
-		<div mix={css({ ...recordBodyCss, gap: spacing.sm })}>
-			<h2
-				mix={css({
-					margin: 0,
-					fontSize: typography.fontSize.lg,
-					fontWeight: typography.fontWeight.semibold,
-					color: colors.text,
-				})}
-			>
-				{title}
-			</h2>
-			<p mix={css({ margin: 0, color: colors.textMuted })}>{body}</p>
-		</div>
-	)
-}
-
-export function renderAccountWebhookDetail(input: {
-	username: string
-	webhook: AccountWebhookListItem
+/**
+ * One declared webhook on package settings: metadata, the URL slot (Mint /
+ * Reveal + Copy / Hide), and the Rotate and Enable / Disable actions. The
+ * card never renders a URL it did not just receive from a reveal.
+ */
+export function renderPackageWebhookCard(input: {
+	webhook: PackageWebhookListItem
 	revealedUrl: string | null
 	isMutating: boolean
 	rotateCheck: DoubleCheck
@@ -117,7 +115,6 @@ export function renderAccountWebhookDetail(input: {
 	onHideUrl: () => void
 }) {
 	const {
-		username,
 		webhook,
 		revealedUrl,
 		isMutating,
@@ -127,34 +124,37 @@ export function renderAccountWebhookDetail(input: {
 		onHideUrl,
 	} = input
 	const webhookLabel = `${webhook.packageKodyId}/${webhook.name}`
+	const titleId = `${packageWebhookCardId(webhook.name)}-title`
 	return (
-		<section
-			mix={css(recordBodyCss)}
-			data-testid="account-webhook-detail"
+		<article
+			id={packageWebhookCardId(webhook.name)}
+			aria-labelledby={titleId}
+			mix={css(cardCss)}
+			data-testid="package-webhook-card"
 			data-webhook-id={webhook.id}
 		>
 			<div mix={css({ display: 'grid', gap: spacing.xs })}>
-				<h2 mix={css(cardTitleCss)}>{webhook.name}</h2>
+				<div mix={css(cardHeadCss)}>
+					<h3 id={titleId} mix={css(cardTitleCss)}>
+						{webhook.name}
+					</h3>
+					<span
+						mix={css({ ...statusPillCss, color: webhookStatusColor(webhook) })}
+					>
+						{webhookStatusLabel(webhook)}
+					</span>
+				</div>
 				<p mix={css(descriptionCss)}>
 					{webhook.description ??
-						`Declared by ${webhook.packageName}. Each delivery runs the bound export.`}
+						`Each delivery runs the bound export ${webhook.exportName}.`}
 				</p>
 			</div>
 
 			<MetadataGrid
 				items={[
-					{ label: 'Package', value: packageValue(username, webhook) },
 					{
 						label: 'Export',
 						value: <code>{webhook.exportName}</code>,
-					},
-					{
-						label: 'Status',
-						value: (
-							<span mix={css({ color: webhookStatusColor(webhook) })}>
-								{webhookStatusLabel(webhook)}
-							</span>
-						),
 					},
 					{ label: 'Mode', value: webhookModeLabel(webhook) },
 					{
@@ -183,7 +183,7 @@ export function renderAccountWebhookDetail(input: {
 				]}
 			/>
 
-			<div mix={css(fieldCss)} data-testid="account-webhook-url">
+			<div mix={css(fieldCss)} data-testid="package-webhook-url">
 				<span mix={css(fieldLabelCss)}>Webhook URL</span>
 				{renderUrlSection({
 					webhook,
@@ -264,20 +264,22 @@ export function renderAccountWebhookDetail(input: {
 				</AccountManagementMessage>
 			) : null}
 
-			<p mix={css(descriptionCss)}>
-				Disabling answers 404 without deleting the mint; enabling restores the
-				same URL. Removing the declaration from the package manifest retires the
-				ingress.{' '}
-				<a href={webhooksDocHref} mix={css(primaryLinkCss)}>
-					Inbound webhooks docs
-				</a>
-			</p>
-		</section>
+			{webhook.minted ? (
+				<p mix={css(descriptionCss)}>
+					Disabling answers 404 without deleting the mint; enabling restores the
+					same URL. Removing the declaration from the package manifest retires
+					the ingress.{' '}
+					<a href={webhooksDocHref} mix={css(primaryLinkCss)}>
+						Inbound webhooks docs
+					</a>
+				</p>
+			) : null}
+		</article>
 	)
 }
 
 function renderUrlSection(input: {
-	webhook: AccountWebhookListItem
+	webhook: PackageWebhookListItem
 	revealedUrl: string | null
 	isMutating: boolean
 	onIntent: (intent: WebhookIntent) => void
@@ -296,7 +298,8 @@ function renderUrlSection(input: {
 					<button
 						type="button"
 						disabled={isMutating}
-						data-testid="account-webhook-mint"
+						aria-label={`Mint URL for ${webhook.packageKodyId}/${webhook.name}`}
+						data-testid="package-webhook-mint"
 						mix={[css(primaryButtonCss), on('click', () => onIntent('mint'))]}
 					>
 						Mint URL
@@ -317,7 +320,8 @@ function renderUrlSection(input: {
 				<div>
 					<button
 						type="button"
-						data-testid="account-webhook-hide-url"
+						aria-label={`Hide URL for ${webhook.packageKodyId}/${webhook.name}`}
+						data-testid="package-webhook-hide-url"
 						mix={[css(secondaryButtonCss), on('click', onHideUrl)]}
 					>
 						Hide URL
@@ -345,7 +349,8 @@ function renderUrlSection(input: {
 				<button
 					type="button"
 					disabled={isMutating}
-					data-testid="account-webhook-reveal"
+					aria-label={`Reveal URL for ${webhook.packageKodyId}/${webhook.name}`}
+					data-testid="package-webhook-reveal"
 					mix={[css(secondaryButtonCss), on('click', () => onIntent('reveal'))]}
 				>
 					Reveal URL

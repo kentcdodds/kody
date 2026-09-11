@@ -225,7 +225,6 @@ const routeDocumentHeads = {
 	[routePattern(routes.accountWorkflows)]: titleOnly('Workflows'),
 	[routePattern(routes.accountWorkflowDetail)]: titleOnly('Workflows'),
 	[routePattern(routes.accountWebhooks)]: titleOnly('Webhooks'),
-	[routePattern(routes.accountWebhookDetail)]: titleOnly('Webhooks'),
 	[routePattern(routes.accountActivity)]: titleOnly('Activity'),
 	[routePattern(routes.accountActivityDetail)]: titleOnly('Activity'),
 	[routePattern(routes.accountMemories)]: titleOnly('Memories'),
