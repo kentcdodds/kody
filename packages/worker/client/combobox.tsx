@@ -219,11 +219,10 @@ const comboboxOptionCss = {
 	'&[data-highlighted="true"]': {
 		backgroundColor: colors.primarySoft,
 	},
+	'--combobox-check-opacity': '0',
 	'&[aria-selected="true"]': {
 		fontWeight: typography.fontWeight.medium,
-	},
-	'&[aria-selected="true"] > svg': {
-		opacity: 1,
+		'--combobox-check-opacity': '1',
 	},
 	'&[aria-disabled="true"]': {
 		opacity: 0.5,
@@ -236,7 +235,7 @@ const comboboxCheckCss = {
 	width: '1rem',
 	height: '1rem',
 	color: colors.primary,
-	opacity: 0,
+	opacity: 'var(--combobox-check-opacity)',
 }
 
 const comboboxOptionLabelCss = {
