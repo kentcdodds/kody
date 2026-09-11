@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import { type RunLogAdminInsightsSnapshot } from '#worker/run-records/admin-insights-snapshot.ts'
 import {
 	adminInsightsRunLogConcurrency,
+	adminInsightsRunLogMaxUsersPerTick,
 	adminInsightsRunLogSnapshotKvKey,
 	foldRunLogSnapshots,
 	readAdminInsightsRunLogSnapshot,
@@ -53,7 +54,10 @@ function createUsersDb(
 ) {
 	return {
 		prepare(query: string) {
-			return {
+			const statement = {
+				bind() {
+					return statement
+				},
 				async all<T>() {
 					if (
 						query.includes('stable_user_id') &&
@@ -64,6 +68,7 @@ function createUsersDb(
 					throw new Error(`Unsupported query: ${query}`)
 				},
 			}
+			return statement
 		},
 	} as unknown as D1Database
 }
@@ -144,6 +149,75 @@ test('readAdminInsightsRunLogSnapshot degrades when KV is missing or empty', asy
 			snapshotUpdatedAt: null,
 		},
 	)
+})
+
+test('refreshAdminInsightsRunLogSnapshot throws when BUNDLE_ARTIFACTS_KV is missing', async () => {
+	await expect(
+		refreshAdminInsightsRunLogSnapshot({
+			env: {
+				APP_DB: createUsersDb([
+					{
+						stable_user_id: 'user-a',
+						email_verified_at: '2026-09-01T00:00:00.000Z',
+					},
+				]),
+			} as Env,
+			now: new Date('2026-09-10T18:00:00.000Z'),
+		}),
+	).rejects.toThrow(/BUNDLE_ARTIFACTS_KV is required/)
+})
+
+test('refreshAdminInsightsRunLogSnapshot throws when the KV write fails', async () => {
+	runLogMocks.getAdminInsightsSnapshot.mockResolvedValue(emptySnapshot())
+	const kv = createMemoryKv()
+	kv.put = async () => {
+		throw new Error('kv write failed')
+	}
+	await expect(
+		refreshAdminInsightsRunLogSnapshot({
+			env: {
+				APP_DB: createUsersDb([
+					{
+						stable_user_id: 'user-a',
+						email_verified_at: '2026-09-01T00:00:00.000Z',
+					},
+				]),
+				BUNDLE_ARTIFACTS_KV: kv,
+			} as Env,
+			now: new Date('2026-09-10T18:00:00.000Z'),
+		}),
+	).rejects.toThrow(/kv write failed/)
+})
+
+test('refreshAdminInsightsRunLogSnapshot caps per-tick fanout and marks the snapshot incomplete', async () => {
+	runLogMocks.getAdminInsightsSnapshot.mockReset()
+	runLogMocks.getAdminInsightsSnapshot.mockResolvedValue(emptySnapshot())
+	const kv = createMemoryKv()
+	const users = Array.from(
+		{ length: adminInsightsRunLogMaxUsersPerTick + 1 },
+		(_, index) => ({
+			stable_user_id: `user-${String(index + 1).padStart(4, '0')}`,
+			email_verified_at: '2026-09-01T00:00:00.000Z',
+		}),
+	)
+	const snapshot = await refreshAdminInsightsRunLogSnapshot({
+		env: {
+			APP_DB: createUsersDb(users),
+			BUNDLE_ARTIFACTS_KV: kv,
+		} as Env,
+		now: new Date('2026-09-10T18:00:00.000Z'),
+	})
+
+	expect(snapshot.complete).toBe(false)
+	expect(snapshot.usersAttempted).toBe(adminInsightsRunLogMaxUsersPerTick)
+	expect(runLogMocks.getAdminInsightsSnapshot).toHaveBeenCalledTimes(
+		adminInsightsRunLogMaxUsersPerTick,
+	)
+	const stored = JSON.parse(
+		kv.store.get(adminInsightsRunLogSnapshotKvKey) ?? '{}',
+	) as { complete: boolean; usersAttempted: number }
+	expect(stored.complete).toBe(false)
+	expect(stored.usersAttempted).toBe(adminInsightsRunLogMaxUsersPerTick)
 })
 
 test('foldRunLogSnapshots still reports partial fanout without user content', () => {

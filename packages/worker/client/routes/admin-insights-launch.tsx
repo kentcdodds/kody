@@ -228,7 +228,7 @@ export function renderLaunchSignals(signals: AdminInsightsLaunchSignals) {
 					id="stat-active"
 					label="Active users"
 					value={formatIntegerNumber(signals.activeUsers.hours24)}
-					sub={`${formatIntegerNumber(signals.activeUsers.hours48)} in 48h · ${formatIntegerNumber(signals.activeUsers.days7)} in 7d`}
+					sub={`${formatIntegerNumber(signals.activeUsers.hours48)} in 48h · ${formatIntegerNumber(signals.activeUsers.days7)} in 7d · UTC days from last_active_at`}
 					color={chartColor.blue}
 					sparkValues={[
 						signals.activeUsers.hours24,

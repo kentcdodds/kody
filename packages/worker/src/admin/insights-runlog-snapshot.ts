@@ -13,10 +13,13 @@ import {
 export const adminInsightsRunLogSnapshotKvKey = 'admin-insights-runlog:v1'
 
 /**
- * Per-user RunLog point-reads for workflow/activation aggregates. Bound so a
- * large user table cannot open unbounded DO RPCs on one scheduled tick.
+ * Per-user RunLog point-reads for workflow/activation aggregates. Concurrent
+ * RPCs stay at 8. Each hourly tick also caps how many users it fans out to
+ * so the scheduled invocation cannot exhaust the Worker subrequest budget.
+ * Overflow marks the snapshot incomplete instead of paging across ticks.
  */
 export const adminInsightsRunLogConcurrency = 8
+export const adminInsightsRunLogMaxUsersPerTick = 1_500
 
 const hourMs = 60 * 60 * 1000
 
@@ -93,7 +96,9 @@ export async function refreshAdminInsightsRunLogSnapshot(input: {
 	env: Env
 	now?: Date
 }): Promise<AggregatedRunLogInsights> {
-	const users = await listNonDeletingInsightsUsers(input.env.APP_DB)
+	const { users, truncated } = await listNonDeletingInsightsUsers(
+		input.env.APP_DB,
+	)
 	const aggregated = await aggregateRunLogInsights({
 		env: input.env,
 		users,
@@ -101,39 +106,49 @@ export async function refreshAdminInsightsRunLogSnapshot(input: {
 	const snapshot: AdminInsightsRunLogSnapshot = {
 		version: 1,
 		...aggregated,
+		complete: aggregated.complete && !truncated,
 		snapshotUpdatedAt: (input.now ?? new Date()).toISOString(),
 	}
-	if (input.env.BUNDLE_ARTIFACTS_KV) {
-		try {
-			await input.env.BUNDLE_ARTIFACTS_KV.put(
-				adminInsightsRunLogSnapshotKvKey,
-				JSON.stringify(snapshot),
-			)
-		} catch (error) {
-			console.warn('admin-insights-run-log-snapshot-write-failed', { error })
-		}
+	if (!input.env.BUNDLE_ARTIFACTS_KV) {
+		throw new Error('BUNDLE_ARTIFACTS_KV is required for RunLog snapshots.')
 	}
+	await input.env.BUNDLE_ARTIFACTS_KV.put(
+		adminInsightsRunLogSnapshotKvKey,
+		JSON.stringify(snapshot),
+	)
 	return {
 		...aggregated,
+		complete: snapshot.complete,
 		snapshotUpdatedAt: snapshot.snapshotUpdatedAt,
 	}
 }
 
-async function listNonDeletingInsightsUsers(
-	db: D1Database,
-): Promise<Array<InsightsUserRow>> {
+async function listNonDeletingInsightsUsers(db: D1Database): Promise<{
+	users: Array<InsightsUserRow>
+	truncated: boolean
+}> {
 	const rows = await db
 		.prepare(
 			`SELECT stable_user_id, email_verified_at
 			 FROM users
 			 WHERE deleting_at IS NULL
-			   AND stable_user_id IS NOT NULL`,
+			   AND stable_user_id IS NOT NULL
+			 ORDER BY stable_user_id
+			 LIMIT ?`,
 		)
+		.bind(adminInsightsRunLogMaxUsersPerTick + 1)
 		.all<InsightsUserRow>()
-	return (rows.results ?? []).filter(
+	const eligible = (rows.results ?? []).filter(
 		(row) =>
 			typeof row.stable_user_id === 'string' && row.stable_user_id !== '',
 	)
+	const truncated = eligible.length > adminInsightsRunLogMaxUsersPerTick
+	return {
+		users: truncated
+			? eligible.slice(0, adminInsightsRunLogMaxUsersPerTick)
+			: eligible,
+		truncated,
+	}
 }
 
 async function aggregateRunLogInsights(input: {

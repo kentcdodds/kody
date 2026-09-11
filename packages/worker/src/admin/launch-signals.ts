@@ -3,6 +3,7 @@
  * GROUP BY — the page never pages users or fans out per-account reads.
  */
 
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { classifyMcpClientName } from '#universal/connected-mcp-agents.ts'
 import {
 	type AdminInsightsLaunchFunnelStep,
@@ -103,9 +104,14 @@ export async function loadAdminLaunchSignals(input: {
 	now: Date
 }): Promise<AdminInsightsLaunchSignals> {
 	const nowIso = input.now.toISOString()
-	const active24h = new Date(input.now.getTime() - dayMs).toISOString()
-	const active48h = new Date(input.now.getTime() - 2 * dayMs).toISOString()
-	const active7d = new Date(input.now.getTime() - 7 * dayMs).toISOString()
+	// last_active_at is a UTC-day stamp (first activity that day). Rolling
+	// hour cutoffs drop users whose stamp is earlier the same calendar day
+	// they were last actually active. Compare date() to UTC day keys so 24h
+	// includes yesterday, 48h the day before that, and 7d the last 8 days
+	// inclusive of today.
+	const active24hDay = utcDayKey(new Date(input.now.getTime() - dayMs))
+	const active48hDay = utcDayKey(new Date(input.now.getTime() - 2 * dayMs))
+	const active7dDay = utcDayKey(new Date(input.now.getTime() - 7 * dayMs))
 	const catalog = resolveStripePriceCatalog(input.env)
 
 	const [totals, paidRows, effectiveRows, clientRows, openFeedback] =
@@ -125,9 +131,9 @@ export async function loadAdminLaunchSignals(input: {
 						SUM(CASE WHEN created_at >= ? AND first_search_at IS NOT NULL THEN 1 ELSE 0 END) AS first_search_since_open,
 						SUM(CASE WHEN created_at >= ? AND first_execute_at IS NOT NULL THEN 1 ELSE 0 END) AS first_execute_since_open,
 						SUM(CASE WHEN created_at >= ? AND first_saved_package_at IS NOT NULL THEN 1 ELSE 0 END) AS first_saved_package_since_open,
-						SUM(CASE WHEN last_active_at >= ? THEN 1 ELSE 0 END) AS active_24h,
-						SUM(CASE WHEN last_active_at >= ? THEN 1 ELSE 0 END) AS active_48h,
-						SUM(CASE WHEN last_active_at >= ? THEN 1 ELSE 0 END) AS active_7d,
+						SUM(CASE WHEN date(last_active_at) >= date(?) THEN 1 ELSE 0 END) AS active_24h,
+						SUM(CASE WHEN date(last_active_at) >= date(?) THEN 1 ELSE 0 END) AS active_48h,
+						SUM(CASE WHEN date(last_active_at) >= date(?) THEN 1 ELSE 0 END) AS active_7d,
 						SUM(CASE WHEN plan = 'free' OR plan IS NULL THEN 1 ELSE 0 END) AS manual_free,
 						SUM(CASE WHEN plan = 'standard' THEN 1 ELSE 0 END) AS manual_standard,
 						SUM(CASE WHEN plan = 'pro' THEN 1 ELSE 0 END) AS manual_pro,
@@ -156,9 +162,9 @@ export async function loadAdminLaunchSignals(input: {
 					platformPublicOpenedDay,
 					platformPublicOpenedDay,
 					platformPublicOpenedDay,
-					active24h,
-					active48h,
-					active7d,
+					active24hDay,
+					active48hDay,
+					active7dDay,
 					nowIso,
 					nowIso,
 				)

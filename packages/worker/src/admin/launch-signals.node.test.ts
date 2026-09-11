@@ -177,9 +177,9 @@ test('launch signals aggregate paid MRR, funnels, activity, and overlays without
 	expect(signals.entitlementLadders).toEqual({ public: 2, legacy: 1 })
 	expect(signals.paidEntitlementLadders).toEqual({ public: 1, legacy: 1 })
 	expect(signals.activeUsers).toEqual({
-		hours24: 1,
+		hours24: 2,
 		hours48: 2,
-		days7: 2,
+		days7: 3,
 	})
 	expect(signals.activation.overall).toEqual([
 		{ step: 'signed_up', users: 3 },
@@ -202,4 +202,31 @@ test('launch signals aggregate paid MRR, funnels, activity, and overlays without
 		{ kind: 'cursor', label: 'Cursor', count: 1 },
 	])
 	expect(signals.openPlatformFeedback).toBe(1)
+})
+
+test('active windows count last_active_at UTC days, not a rolling ISO-hour cutoff', async () => {
+	const { sqlite, db } = createLaunchSignalsDb()
+	insertUser(sqlite, {
+		username: 'yesterday-early',
+		stableUserId: 'user-yesterday-early',
+		lastActiveAt: '2026-09-10T01:00:00.000Z',
+		createdAt: '2026-09-01T00:00:00.000Z',
+	})
+
+	const signals = await loadAdminLaunchSignals({
+		db,
+		env: {
+			STRIPE_STANDARD_PRICE_ID: 'price_standard',
+			STRIPE_STANDARD_YEARLY_PRICE_ID: 'price_standard_yearly',
+			STRIPE_PRO_PRICE_ID: 'price_pro',
+			STRIPE_PRO_YEARLY_PRICE_ID: 'price_pro_yearly',
+		},
+		now: new Date('2026-09-11T02:00:00.000Z'),
+	})
+
+	expect(signals.activeUsers).toEqual({
+		hours24: 1,
+		hours48: 1,
+		days7: 1,
+	})
 })
