@@ -604,14 +604,26 @@ export type AdminUserUsageLoaderData = {
 export type AdminPaidSource = 'stripe_catalog' | 'none'
 
 /**
+ * Operator cost-vs-pay risk. `underwater` is only paid catalog list MRR
+ * exceeded by estimated Dynamic Worker cost — not unpaid pennies.
+ */
+export type AdminCostRiskKind =
+	| 'none'
+	| 'paid_underwater'
+	| 'free_near_allotment'
+	| 'missing_price_id'
+
+/**
  * Operator estimate: gross unique-worker-day cost vs catalog list MRR.
  * Not an invoice and not a net Cloudflare bill share.
  */
 export type AdminCostVsPay = AdminDynamicWorkerCost & {
 	estimatedPaidUsdCents: number
 	estimatedMarginUsd: number
+	/** True only for catalog-backed paid accounts over list MRR. */
 	underwater: boolean
 	paidSource: AdminPaidSource
+	risk: AdminCostRiskKind
 }
 
 export type AdminInsightsTotals = {
@@ -822,13 +834,15 @@ export type AdminInsightsDynamicWorkerCostConsumer = {
 	estimatedGrossUsd: number
 	estimatedPaidUsdCents: number
 	estimatedMarginUsd: number
+	/** True only for catalog-backed paid accounts over list MRR. */
 	underwater: boolean
 	paidSource: AdminPaidSource
+	risk: AdminCostRiskKind
 }
 
 export type AdminInsightsDynamicWorkerCost = AdminDynamicWorkerCost & {
 	topConsumers: Array<AdminInsightsDynamicWorkerCostConsumer>
-	underwaterConsumers: Array<AdminInsightsDynamicWorkerCostConsumer>
+	riskConsumers: Array<AdminInsightsDynamicWorkerCostConsumer>
 }
 
 export type AdminInsightsMetricDurationConsumers = {

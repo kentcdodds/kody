@@ -15,7 +15,7 @@ import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
 import {
 	adminFleetCostVsPayDisplayLimit,
 	adminFleetCostVsPayScanLimit,
-	rankUnderwaterCostConsumers,
+	rankRiskCostConsumers,
 	toAdminCostVsPayConsumer,
 } from '#worker/admin/cost-vs-pay.ts'
 import { resolveStripePriceCatalog } from '#worker/billing/stripe-price-catalog.ts'
@@ -364,8 +364,8 @@ async function queryDynamicWorkerCost(
 			.first<{ unique_worker_days: number }>(),
 		db
 			.prepare(
-				`SELECT u.stable_user_id, u.username, u.stripe_plan, u.stripe_price_id,
-					r.event_count
+				`SELECT u.stable_user_id, u.username, u.plan, u.stripe_plan,
+					u.stripe_price_id, r.event_count
 				 FROM usage_rollups r
 				 INNER JOIN users u ON u.stable_user_id = r.user_id
 				 WHERE r.month = ?
@@ -378,6 +378,7 @@ async function queryDynamicWorkerCost(
 			.all<{
 				stable_user_id: string
 				username: string
+				plan: string
 				stripe_plan: string | null
 				stripe_price_id: string | null
 				event_count: number
@@ -392,12 +393,13 @@ async function queryDynamicWorkerCost(
 			stripePlan: row.stripe_plan,
 			stripePriceId: row.stripe_price_id,
 			catalog,
+			manualPlan: row.plan,
 		}),
 	)
 	return {
 		...toAdminDynamicWorkerCost(uniqueWorkerDays),
 		topConsumers: scanned.slice(0, adminFleetCostVsPayDisplayLimit),
-		underwaterConsumers: rankUnderwaterCostConsumers(scanned),
+		riskConsumers: rankRiskCostConsumers(scanned),
 	}
 }
 

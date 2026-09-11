@@ -37,7 +37,10 @@ import {
 	costVsPayFootnote,
 	formatDynamicWorkerUsd,
 } from '#universal/dynamic-worker-cost.ts'
-import { formatUsdFromCents } from './admin-insights-shared.ts'
+import {
+	formatAdminCostRiskLabel,
+	formatUsdFromCents,
+} from './admin-insights-shared.ts'
 import {
 	durableObjectDurationFootnote,
 	formatDurableObjectGbSeconds,
@@ -544,14 +547,21 @@ export function renderAdminUserDetail(props: AdminUserDetailProps) {
 								list pay ·{' '}
 								<span
 									mix={css({
-										color: selectedUsage.costVsPay.underwater
-											? colors.danger
-											: undefined,
+										color:
+											selectedUsage.costVsPay.risk === 'paid_underwater'
+												? colors.danger
+												: selectedUsage.costVsPay.risk === 'free_near_allotment'
+													? colors.warningText
+													: colors.textMuted,
 									})}
 								>
-									{selectedUsage.costVsPay.underwater
-										? 'underwater'
-										: 'above cost'}
+									{formatAdminCostRiskLabel(
+										selectedUsage.costVsPay.risk,
+										selectedUsage.costVsPay.estimatedGrossUsd,
+									) ??
+										(selectedUsage.costVsPay.estimatedPaidUsdCents > 0
+											? 'above cost'
+											: 'within included allotment')}
 								</span>{' '}
 								({formatIntegerNumber(selectedUsage.costVsPay.uniqueWorkerDays)}{' '}
 								unique worker-days)

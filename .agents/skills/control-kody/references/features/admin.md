@@ -11,9 +11,10 @@ Operator tools. Seed and preview users are **not** admin.
 `/admin/system-email`). `/admin/insights` shows launch MRR, paid mix, the
 stamp-based activation funnel (overall and since 2026-09-10), active-user
 windows, MCP client mix, entitlement ladders, open platform feedback, and
-estimated Dynamic Worker cost vs catalog list pay (underwater users).
-`/admin/users/:stableUserId` shows the same cost-vs-pay estimate for one
-account.
+estimated Dynamic Worker cost vs catalog list pay, with a Risk panel for
+paid-underwater accounts, unpaid users approaching the included-bucket alert,
+and missing catalog price ids. `/admin/users/:stableUserId` shows the same
+cost-vs-pay estimate for one account.
 
 ## Drive it
 

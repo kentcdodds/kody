@@ -1,14 +1,23 @@
 /**
  * Operator cost vs list-pay estimates. Unique worker-days and stored Stripe
  * price ids only — no Stripe API and no per-user usage fan-out.
+ *
+ * Risk is not "any unpaid usage." Free/gift/max/referral/manual-only count as
+ * $0 paid, so pennies of Dynamic Worker usage used to look underwater. The
+ * risk buckets below match what operators should actually look at.
  */
 
-import { toAdminDynamicWorkerCost } from '#universal/dynamic-worker-cost.ts'
 import {
+	fleetDynamicWorkerCostAlertUsd,
+	toAdminDynamicWorkerCost,
+} from '#universal/dynamic-worker-cost.ts'
+import {
+	type AdminCostRiskKind,
 	type AdminCostVsPay,
 	type AdminInsightsDynamicWorkerCostConsumer,
 	type AdminPaidSource,
 } from '#universal/loader-data.ts'
+import { parsePlanName, parseStripePlanName } from '#universal/plans.ts'
 import {
 	monthlyRecurringRevenueUsdCents,
 	type StripePriceCatalogEntry,
@@ -16,6 +25,22 @@ import {
 
 export const adminFleetCostVsPayScanLimit = 25
 export const adminFleetCostVsPayDisplayLimit = 10
+
+/**
+ * Unpaid accounts enter the warn bucket at this fraction of the Free fleet
+ * alert ($2 / 1,000 unique days). Half ($1 / 500 days) is "climbing toward"
+ * the included allotment without tagging every $0.01 user.
+ */
+export const freeNearAllotmentAlertFraction = 0.5
+
+const operatorNoiseUsernames = new Set(['kentcdodds'])
+
+const riskBucketPriority: Record<AdminCostRiskKind, number> = {
+	paid_underwater: 0,
+	free_near_allotment: 1,
+	missing_price_id: 2,
+	none: 3,
+}
 
 export function estimatePaidListMrrUsdCents(input: {
 	stripePlan: string | null | undefined
@@ -36,21 +61,73 @@ export function estimatePaidListMrrUsdCents(input: {
 	}
 }
 
+export function isOperatorCostNoise(input: {
+	username?: string | null | undefined
+	manualPlan?: string | null | undefined
+}): boolean {
+	const username = input.username?.trim().toLowerCase()
+	if (username && operatorNoiseUsernames.has(username)) return true
+	return parsePlanName(input.manualPlan) === 'max'
+}
+
+export function classifyAdminCostRisk(input: {
+	estimatedGrossUsd: number
+	estimatedPaidUsdCents: number
+	paidSource: AdminPaidSource
+	stripePlan: string | null | undefined
+	manualPlan?: string | null | undefined
+	username?: string | null | undefined
+}): AdminCostRiskKind {
+	if (isOperatorCostNoise(input)) return 'none'
+
+	if (input.paidSource === 'stripe_catalog') {
+		return input.estimatedGrossUsd > input.estimatedPaidUsdCents / 100
+			? 'paid_underwater'
+			: 'none'
+	}
+
+	const stripePlan = parseStripePlanName(input.stripePlan)
+	if (stripePlan === 'standard' || stripePlan === 'pro') {
+		return 'missing_price_id'
+	}
+
+	const freeAlertUsd = fleetDynamicWorkerCostAlertUsd('free')
+	if (
+		freeAlertUsd != null &&
+		input.estimatedGrossUsd >= freeAlertUsd * freeNearAllotmentAlertFraction
+	) {
+		return 'free_near_allotment'
+	}
+
+	return 'none'
+}
+
 export function toAdminCostVsPay(input: {
 	uniqueWorkerDays: number
 	stripePlan: string | null | undefined
 	stripePriceId: string | null | undefined
 	catalog: Map<string, StripePriceCatalogEntry>
+	manualPlan?: string | null | undefined
+	username?: string | null | undefined
 }): AdminCostVsPay {
 	const cost = toAdminDynamicWorkerCost(input.uniqueWorkerDays)
 	const paid = estimatePaidListMrrUsdCents(input)
 	const paidUsd = paid.cents / 100
+	const risk = classifyAdminCostRisk({
+		estimatedGrossUsd: cost.estimatedGrossUsd,
+		estimatedPaidUsdCents: paid.cents,
+		paidSource: paid.source,
+		stripePlan: input.stripePlan,
+		manualPlan: input.manualPlan,
+		username: input.username,
+	})
 	return {
 		...cost,
 		estimatedPaidUsdCents: paid.cents,
 		estimatedMarginUsd: paidUsd - cost.estimatedGrossUsd,
-		underwater: cost.estimatedGrossUsd > paidUsd,
+		underwater: risk === 'paid_underwater',
 		paidSource: paid.source,
+		risk,
 	}
 }
 
@@ -61,6 +138,7 @@ export function toAdminCostVsPayConsumer(input: {
 	stripePlan: string | null | undefined
 	stripePriceId: string | null | undefined
 	catalog: Map<string, StripePriceCatalogEntry>
+	manualPlan?: string | null | undefined
 }): AdminInsightsDynamicWorkerCostConsumer {
 	const costVsPay = toAdminCostVsPay(input)
 	return {
@@ -72,20 +150,45 @@ export function toAdminCostVsPayConsumer(input: {
 		estimatedMarginUsd: costVsPay.estimatedMarginUsd,
 		underwater: costVsPay.underwater,
 		paidSource: costVsPay.paidSource,
+		risk: costVsPay.risk,
 	}
 }
 
-export function rankUnderwaterCostConsumers(
+function adminCostRiskScore(
+	consumer: Pick<
+		AdminInsightsDynamicWorkerCostConsumer,
+		'risk' | 'estimatedGrossUsd' | 'estimatedPaidUsdCents'
+	>,
+): number {
+	switch (consumer.risk) {
+		case 'paid_underwater':
+			return consumer.estimatedGrossUsd - consumer.estimatedPaidUsdCents / 100
+		case 'free_near_allotment': {
+			const freeAlertUsd = fleetDynamicWorkerCostAlertUsd('free') ?? 0
+			return freeAlertUsd > 0 ? consumer.estimatedGrossUsd / freeAlertUsd : 0
+		}
+		case 'missing_price_id':
+			return consumer.estimatedGrossUsd
+		case 'none':
+			return 0
+		default: {
+			const exhaustive: never = consumer.risk
+			throw new Error(`Unknown cost risk: ${String(exhaustive)}`)
+		}
+	}
+}
+
+export function rankRiskCostConsumers(
 	consumers: ReadonlyArray<AdminInsightsDynamicWorkerCostConsumer>,
 	limit = adminFleetCostVsPayDisplayLimit,
 ) {
 	return consumers
-		.filter((consumer) => consumer.underwater)
-		.toSorted(
-			(left, right) =>
-				right.estimatedGrossUsd -
-				right.estimatedPaidUsdCents / 100 -
-				(left.estimatedGrossUsd - left.estimatedPaidUsdCents / 100),
-		)
+		.filter((consumer) => consumer.risk !== 'none')
+		.toSorted((left, right) => {
+			const bucket =
+				riskBucketPriority[left.risk] - riskBucketPriority[right.risk]
+			if (bucket !== 0) return bucket
+			return adminCostRiskScore(right) - adminCostRiskScore(left)
+		})
 		.slice(0, limit)
 }

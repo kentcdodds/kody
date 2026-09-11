@@ -125,6 +125,8 @@ export async function loadAdminUserUsageData(
 		stripePlan: row.stripe_plan,
 		stripePriceId: row.stripe_price_id,
 		catalog: resolveStripePriceCatalog(env),
+		manualPlan: row.plan,
+		username: row.username,
 	})
 
 	return {
