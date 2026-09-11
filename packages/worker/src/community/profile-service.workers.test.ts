@@ -66,6 +66,7 @@ async function insertListing(input: {
 	name: string
 	kodyId: string
 	publishedAt?: string
+	pinnedCommit?: string
 }) {
 	const publishedAt = input.publishedAt ?? new Date().toISOString()
 	await runSql(
@@ -82,10 +83,31 @@ async function insertListing(input: {
 		`${input.kodyId} description`,
 		JSON.stringify(['catalog']),
 		'MIT',
-		'commit-1',
+		input.pinnedCommit ?? 'commit-1',
 		publishedAt,
 		publishedAt,
 		publishedAt,
+	)
+}
+
+async function insertEntitySource(input: {
+	packageId: string
+	userId: string
+	publishedCommit: string
+}) {
+	const now = '2026-07-01T00:00:00.000Z'
+	await runSql(
+		`INSERT INTO entity_sources (
+			id, user_id, entity_kind, entity_id, repo_id, published_commit,
+			indexed_commit, manifest_path, source_root, created_at, updated_at
+		) VALUES (?, ?, 'package', ?, ?, ?, NULL, 'package.json', '/', ?, ?)`,
+		`source-${input.packageId}`,
+		input.userId,
+		input.packageId,
+		`repo-${input.packageId}`,
+		input.publishedCommit,
+		now,
+		now,
 	)
 }
 
@@ -329,6 +351,12 @@ test('listPublicProfilePackages filters private/hidden packages and supports que
 		name: `@${owner.username}/public-notes`,
 		kodyId: 'public-notes',
 		publishedAt: '2026-06-01T00:00:00.000Z',
+		pinnedCommit: 'commit-listed',
+	})
+	await insertEntitySource({
+		packageId: publicNotesId,
+		userId: owner.userId,
+		publishedCommit: 'commit-ahead',
 	})
 
 	const published = await listPublicProfilePackages({
@@ -404,6 +432,90 @@ test('listPublicProfilePackages filters private/hidden packages and supports que
 		},
 	})
 	expect(ahead.map((pkg) => pkg.kodyId)).toEqual(['public-notes'])
+	expect(ahead[0]?.needsRepublish).toBe(true)
+})
+
+test('listPublicProfilePackages ahead filter ignores post-publish updated_at skew when the pin matches published_commit', async () => {
+	const owner = await insertUser({
+		email: `skew-${crypto.randomUUID()}@example.com`,
+		username: `skew${crypto.randomUUID().slice(0, 8)}`,
+	})
+	const syncedId = `synced-${crypto.randomUUID()}`
+	const behindId = `behind-${crypto.randomUUID()}`
+	await insertSavedPackage({
+		id: syncedId,
+		userId: owner.userId,
+		name: `@${owner.username}/grok-bot`,
+		kodyId: 'grok-bot',
+		isPrivate: false,
+		// communityPublish writes listing.published_at first, then
+		// updateSavedPackage bumps updated_at ~0.8–3s later.
+		updatedAt: '2026-09-11T17:41:55.588Z',
+	})
+	await insertSavedPackage({
+		id: behindId,
+		userId: owner.userId,
+		name: `@${owner.username}/skills`,
+		kodyId: 'skills',
+		isPrivate: false,
+		updatedAt: '2026-09-11T17:41:55.588Z',
+	})
+	await insertListing({
+		id: `listing-${syncedId}`,
+		ownerUserId: owner.userId,
+		packageId: syncedId,
+		name: `@${owner.username}/grok-bot`,
+		kodyId: 'grok-bot',
+		publishedAt: '2026-09-11T17:41:54.544Z',
+		pinnedCommit: 'commit-head',
+	})
+	await insertListing({
+		id: `listing-${behindId}`,
+		ownerUserId: owner.userId,
+		packageId: behindId,
+		name: `@${owner.username}/skills`,
+		kodyId: 'skills',
+		publishedAt: '2026-09-11T17:41:54.544Z',
+		pinnedCommit: 'commit-listed',
+	})
+	await insertEntitySource({
+		packageId: syncedId,
+		userId: owner.userId,
+		publishedCommit: 'commit-head',
+	})
+	await insertEntitySource({
+		packageId: behindId,
+		userId: owner.userId,
+		publishedCommit: 'commit-head',
+	})
+
+	const listed = await listPublicProfilePackages({
+		env,
+		ownerStableUserId: owner.userId,
+		limit: 10,
+		includePrivate: true,
+	})
+	expect(listed.find((pkg) => pkg.kodyId === 'grok-bot')?.needsRepublish).toBe(
+		false,
+	)
+	expect(listed.find((pkg) => pkg.kodyId === 'skills')?.needsRepublish).toBe(
+		true,
+	)
+
+	const ahead = await listPublicProfilePackages({
+		env,
+		ownerStableUserId: owner.userId,
+		limit: 10,
+		includePrivate: true,
+		filters: {
+			query: '',
+			visibility: 'all',
+			listing: 'ahead',
+			hidden: 'all',
+		},
+	})
+	expect(ahead.map((pkg) => pkg.kodyId)).toEqual(['skills'])
+	expect(ahead[0]?.needsRepublish).toBe(true)
 })
 
 test('profile activity includes own private publishes and hides them from public reads', async () => {

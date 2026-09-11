@@ -25,6 +25,7 @@ const listedPackage = {
 	communityListingId: 'listing-1',
 	communityListingKodyId: 'fathom-analytics',
 	communityPublishedAt: '2026-07-28T00:00:00.000Z',
+	needsRepublish: true,
 } satisfies PublicProfilePackageItem
 
 const unpublishedPackage = {
@@ -36,6 +37,7 @@ const unpublishedPackage = {
 	communityListingId: null,
 	communityListingKodyId: null,
 	communityPublishedAt: null,
+	needsRepublish: false,
 } satisfies PublicProfilePackageItem
 
 test('profile packages link listings, prefer listing kody ids, and separate published dates from local edits', async () => {
@@ -99,8 +101,27 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 	})
 
 	expect(ownHtml).toContain('@kody')
-	// Owners also see that the listing is behind their local edits.
+	// Owners also see that the listing pin is behind the published commit.
 	expect(ownHtml).toContain('edited August 7, 2026, not republished')
+
+	// communityPublish bumps updated_at after published_at even when the pin
+	// already matches HEAD / published_commit. That skew is not republish.
+	const ownPublishSkewHtml = await renderProfileContentHtml({
+		profile,
+		packages: [
+			{
+				...listedPackage,
+				updatedAt: '2026-07-28T00:00:01.044Z',
+				communityPublishedAt: '2026-07-28T00:00:00.000Z',
+				needsRepublish: false,
+			},
+		],
+		activity: [],
+		query: null,
+		isSelf: true,
+	})
+	expect(ownPublishSkewHtml).toContain('Published July 28, 2026')
+	expect(ownPublishSkewHtml).not.toContain('not republished')
 
 	const ownInventoryHtml = await renderProfileContentHtml({
 		profile,

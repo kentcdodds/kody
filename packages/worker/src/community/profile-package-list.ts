@@ -1,4 +1,5 @@
 import { type ProfilePackageFilters } from '#universal/community-public-types.ts'
+import { listingNeedsRepublishSql } from './listing-needs-republish.ts'
 import { listPublicProfilePackages as listPublicProfilePackagesFromDb } from './profile-repo.ts'
 import { type PublicProfilePackage } from './types.ts'
 
@@ -7,14 +8,6 @@ const activeListingExistsSql = `EXISTS (
 	WHERE cl.owner_user_id = saved_packages.user_id
 		AND cl.status = 'active'
 		AND cl.package_id = saved_packages.id
-)`
-
-const listingAheadSql = `EXISTS (
-	SELECT 1 FROM community_listings AS cl
-	WHERE cl.owner_user_id = saved_packages.user_id
-		AND cl.status = 'active'
-		AND cl.package_id = saved_packages.id
-		AND saved_packages.updated_at > cl.published_at
 )`
 
 function profilePackageFilterWhereSql(
@@ -59,7 +52,7 @@ function profilePackageFilterWhereSql(
 			conditions.push(`NOT ${activeListingExistsSql}`)
 			break
 		case 'ahead':
-			conditions.push(listingAheadSql)
+			conditions.push(listingNeedsRepublishSql)
 			break
 		default: {
 			const exhaustive: never = filters.listing

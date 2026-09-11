@@ -37,6 +37,11 @@ export const communityProfilePackageSchema = z.object({
 		.describe(
 			'Last time the package was published to its community listing, or null when it has no active listing.',
 		),
+	needs_republish: z
+		.boolean()
+		.describe(
+			'True when the active community listing pin is behind the package published commit. False when there is no listing, or the pin matches. Do not derive this from updated_at versus published_at.',
+		),
 	hidden: z
 		.boolean()
 		.optional()
@@ -91,6 +96,7 @@ export function toCommunityProfilePackageOutput(
 		updated_at: string
 		community_listing_id: string | null
 		community_published_at: string | null
+		needs_republish: boolean
 		hidden?: boolean
 		is_private?: boolean
 	} = {
@@ -101,6 +107,7 @@ export function toCommunityProfilePackageOutput(
 		updated_at: pkg.updatedAt,
 		community_listing_id: pkg.communityListingId,
 		community_published_at: pkg.communityPublishedAt,
+		needs_republish: pkg.needsRepublish,
 	}
 	if (options.includePackageId) {
 		output.package_id = pkg.packageId
