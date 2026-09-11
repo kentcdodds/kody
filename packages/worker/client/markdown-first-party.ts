@@ -5,12 +5,7 @@ import { type Token } from 'marked'
  * parsers — raw HTML stays escaped there.
  */
 
-export const firstPartyAlertKinds = [
-	'NOTE',
-	'TIP',
-	'IMPORTANT',
-	'WARNING',
-] as const
+const firstPartyAlertKinds = ['NOTE', 'TIP', 'IMPORTANT', 'WARNING'] as const
 
 export type FirstPartyAlertKind = (typeof firstPartyAlertKinds)[number]
 
@@ -36,7 +31,7 @@ function stripTags(value: string): string {
 	return value.replace(/<[^>]+>/g, '').trim()
 }
 
-export function parseFirstPartyDetails(
+function parseFirstPartyDetails(
 	raw: string,
 ): { summary: string; body: string } | null {
 	const trimmed = raw.trim()
