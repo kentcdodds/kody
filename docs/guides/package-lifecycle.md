@@ -55,17 +55,11 @@ package `dryRun` and fresh user confirmation before a live mutation.
 <details>
 <summary>What's the difference between forking and sharing?</summary>
 
-**Fork** copies a public package into the other person's account. They own that
-copy: they can edit, publish, schedule jobs, and keep their own storage. Use a
-fork when they should adapt the behavior or run it independently.
-
-**Share** leaves the package in the owner's account. After the guest accepts,
-they can read source and invoke it, but they cannot publish or write it. Storage
-stays with the owner. Use a share when you want one live package — a household
-tool, a private package that should not be public, or a source of truth that
-should stay in sync. See [Share a package](/docs/package-sharing).
-
-Both people need a paid plan to share. Forking a public listing does not.
+**Fork** copies a public package so the other person owns and adapts that copy.
+**Share** leaves one live package in the owner's account; the guest accepts,
+then reads source and invokes it. Paid plans are required to share. See
+[Share a package](/docs/package-sharing) for invite, pin/follow, and guest
+limits.
 
 </details>
 

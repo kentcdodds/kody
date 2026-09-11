@@ -60,6 +60,8 @@ plus a package when you want owned helpers, jobs, or a stable export.
 ## Next
 
 - [Package lifecycle](./package-lifecycle.md) — when to save vs execute vs fork
+- [Share a package](./package-sharing.md) — invite another paid account to use a
+  package without getting a copy
 - [Integration bootstrap](./integration-bootstrap.md) — connect and smoke-test
   first
 - [Connect your agent](../use/connect-your-agent.md) — Kody as the MCP server

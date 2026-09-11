@@ -90,8 +90,7 @@ At accept, the guest chooses a trust level. The Accept UI defaults to `pin`.
 
 ## What a guest can and cannot do
 
-The v1 role is `use`: `read_source` + `invoke`. Future `collaborate` / `write`
-roles can add more permissions without changing the grant table.
+The guest role is `use`: `read_source` + `invoke`.
 
 Guests can:
 
@@ -159,8 +158,8 @@ Approve a pin-ahead publish, optionally switching to follow:
 ```
 
 Use `packageShareInspect` for one grant, `packageShareRevoke` as the owner, and
-`packageShareLeave` as the guest. Prefer scoped package `name` over leftover
-`kody_id` in examples.
+`packageShareLeave` as the guest. Prefer scoped package `name`; `kody_id` is the
+fallback.
 
 UI: package settings share controls, `/account/shared`, and the Accept / Approve
 changes banners on `@{owner}/{packageName}`.

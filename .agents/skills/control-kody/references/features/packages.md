@@ -1,6 +1,6 @@
 # Packages
 
-Repo-backed saved packages: list, detail, files, approve-publish.
+Repo-backed saved packages: list, detail, files, share, approve-publish.
 
 ## How to get there
 

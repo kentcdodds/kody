@@ -29,8 +29,9 @@ Packages are the saved-entity unit across search, execute, repo editing, and UI
 hosting. Browse files at `/@username/:name/tree/:ref` — the same URL whether the
 package is public or private. Visibility, not a separate account files path, is
 what keeps private source off the public web. Owner controls (lock, visibility,
-delete) live at `/@username/:name/settings`. Inbound HTTP uses
-[webhooks](./webhooks.md).
+share, delete) live at `/@username/:name/settings`. Inbound HTTP uses
+[webhooks](./webhooks.md). To let another paid account use a package without
+getting a copy, [share it](../guides/package-sharing.md).
 
 ## Package state model
 
@@ -230,10 +231,11 @@ with `webhookUrlMint`, register it with `webhookUrlApply` when a provider needs
 the URL, and POST JSON (`inputMode: "params"` and `Idempotency-Key` for
 first-party clients). See [Inbound webhooks](./webhooks.md).
 
-Scoped resolution is exact: `kody:@kentcdodds/google` selects the caller's
-package under that person scope. A person scope never grants access to another
-user's packages. A platform specifier such as `kody:@kody/google` is not
-runnable in a person account — `communityFork` it first.
+Scoped resolution is exact: `kody:@kentcdodds/google` selects a package under
+that person scope that the caller owns or has an accepted
+[share grant](../guides/package-sharing.md) to use. A platform specifier such as
+`kody:@kody/google` is not runnable in a person account — `communityFork` it
+first.
 
 ## Package storage
 
@@ -261,10 +263,13 @@ bucket no matter where the code runs:
   run-scoped state in that bucket under run-scoped keys.
 - When the module is statically imported (`kody:@scope/package/export`) into an
   ad hoc `execute` call or into another package, each module reads and writes
-  the bucket of the package it came from, under the calling user's account.
-  Grants are per-bundle, not per-module: statically importing a package grants
-  the whole bundle read/write access to that package's bucket, so treat static
-  imports of unadopted community forks as a trust decision (adopt after review).
+  the bucket of the package it came from. For caller-owned packages that is the
+  calling user's account. For an accepted
+  [share grant](../guides/package-sharing.md), `packageStorage()` uses the
+  owner's bucket so guests share one package state. Grants are per-bundle, not
+  per-module: statically importing a package grants the whole bundle read/write
+  access to that package's bucket, so treat static imports of unadopted
+  community forks as a trust decision (adopt after review).
 
 ```ts
 import { packageStorage } from 'kody:runtime'
