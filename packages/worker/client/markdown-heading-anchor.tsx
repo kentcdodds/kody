@@ -22,21 +22,25 @@ function renderHeadingAnchorIcon() {
 }
 
 /**
- * Wraps a heading's contents in the section permalink so the heading text
- * (not just the icon) is the `#slug` control. The icon is decorative and
- * hangs beside the text via `proseCss`.
+ * Section permalink that sits beside heading text (not around it) so an
+ * inline markdown link in the heading cannot nest inside this `<a>`.
+ * `proseCss` stretches the control over the heading and hangs the icon.
  */
 export function renderMarkdownHeadingAnchor(
 	key: number,
 	headingId: string,
-	children: RemixNode,
+	headingLabel: string,
 ): RemixNode {
 	return (
-		<a key={`anchor-${key}`} href={`#${headingId}`} data-heading-permalink="">
+		<a
+			key={`anchor-${key}`}
+			href={`#${headingId}`}
+			data-heading-permalink=""
+			aria-label={headingLabel}
+		>
 			<span data-heading-anchor="" aria-hidden="true">
 				{renderHeadingAnchorIcon()}
 			</span>
-			<span data-heading-text="">{children}</span>
 		</a>
 	)
 }

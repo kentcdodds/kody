@@ -224,6 +224,11 @@ function slugifyMarkdownHeading(text: string): string {
 		.replace(/^-+|-+$/g, '')
 }
 
+function headingPermalinkLabel(text: string, headingId: string): string {
+	const visible = text.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').trim()
+	return visible || headingId
+}
+
 function nextHeadingId(used: Map<string, number>, text: string): string {
 	const base = slugifyMarkdownHeading(text) || 'section'
 	const seen = used.get(base) ?? 0
@@ -371,7 +376,12 @@ function renderToken(
 			const headingId = nextHeadingId(options.headingSlugCounts, token.text)
 			return (
 				<Tag key={key} id={headingId}>
-					{renderMarkdownHeadingAnchor(key, headingId, children)}
+					{renderMarkdownHeadingAnchor(
+						key,
+						headingId,
+						headingPermalinkLabel(token.text, headingId),
+					)}
+					<span data-heading-text="">{children}</span>
 				</Tag>
 			)
 		}

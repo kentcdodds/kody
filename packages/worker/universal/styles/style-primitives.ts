@@ -559,6 +559,13 @@ export const proseCss = {
 	'& a[data-heading-permalink]': {
 		color: 'inherit',
 		textDecoration: 'none',
+		// Stretch over the heading so clicking the text hits `#slug`
+		// without wrapping heading children (which may themselves be links).
+		'&::after': {
+			content: '""',
+			position: 'absolute' as const,
+			inset: 0,
+		},
 		'&:hover, &:focus, &:focus-visible': {
 			color: 'inherit',
 			textDecoration: 'none',
@@ -570,6 +577,10 @@ export const proseCss = {
 	},
 	'& [data-heading-text]': {
 		minWidth: 0,
+		'& a': {
+			position: 'relative' as const,
+			zIndex: 1,
+		},
 	},
 	'& [data-heading-anchor]': {
 		// Hang the 44px control to the left of the heading so the text stays

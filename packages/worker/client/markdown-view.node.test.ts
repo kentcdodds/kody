@@ -226,15 +226,34 @@ test('first-party headingIds emit unique kebab-case heading ids', async () => {
 	expect(html).toContain('<h2 id="josh-tomaino">')
 	expect(html).toContain('href="#josh-tomaino"')
 	expect(html).toContain('data-heading-permalink=""')
+	expect(html).toContain('aria-label="Josh Tomaino"')
 	expect(html).toContain('data-heading-anchor=""')
 	expect(html).toContain('data-heading-text=""')
-	expect(html).toMatch(
-		/<a href="#josh-tomaino" data-heading-permalink="">[\s\S]*Josh Tomaino/,
-	)
+	expect(html).toContain('<span data-heading-text="">Josh Tomaino</span>')
 	expect(html).toContain('<h2 id="josh-tomaino-2">')
 	expect(html).toContain('href="#josh-tomaino-2"')
 	expect(html).toContain('<h2 id="jett-hays">')
 	expect(html).toContain('<h2 id="gabriel-alegria">')
+})
+
+test('heading permalinks stay beside inline heading links instead of wrapping them', async () => {
+	const html = await renderToString(
+		jsx('div', {
+			children: renderMarkdownNodes(
+				'## Read [the guide](https://example.com/guide)',
+				{ headingOffset: 0, headingIds: true },
+			),
+		}),
+	)
+	expect(html).toContain('id="read-the-guide-https-example.com-guide"')
+	expect(html).toContain('href="#read-the-guide-https-example.com-guide"')
+	expect(html).toContain('aria-label="Read the guide"')
+	expect(html).toContain('href="https://example.com/guide"')
+	const permalink = html.match(
+		/<a href="#read-the-guide-https-example.com-guide"[^>]*>[\s\S]*?<\/a>/,
+	)?.[0]
+	expect(permalink).toBeDefined()
+	expect(permalink?.match(/<a /g)).toHaveLength(1)
 })
 
 test('getSafeMarkdownLinkHref allowlists protocols and blocks user-scope paths', () => {
