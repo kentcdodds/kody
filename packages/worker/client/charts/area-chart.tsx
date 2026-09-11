@@ -9,6 +9,8 @@ import {
 import {
 	chartAxisTextCss,
 	chartGridStroke,
+	chartScrollerNewestFirstCss,
+	chartSvgCss,
 	formatCompactNumber,
 	formatIntegerNumber,
 	softColor,
@@ -68,119 +70,121 @@ export function AreaChart(handle: Handle<AreaChartProps>) {
 			handle.props.xTickEvery ?? Math.max(1, Math.ceil(pointCount / 6))
 
 		return (
-			<svg
-				viewBox={`0 0 ${width} ${height}`}
-				role="img"
-				aria-label={ariaLabel}
-				mix={css({ width: '100%', height: 'auto', display: 'block' })}
-			>
-				<defs>
-					{series.map((entry, seriesIndex) => (
-						<linearGradient
-							key={entry.label}
-							id={`${id}-grad-${seriesIndex}`}
-							x1="0"
-							y1="0"
-							x2="0"
-							y2="1"
-						>
-							<stop offset="0%" stopColor={entry.color} stopOpacity="0.32" />
-							<stop offset="100%" stopColor={entry.color} stopOpacity="0" />
-						</linearGradient>
-					))}
-				</defs>
-				{ticks.map((tick) => (
-					<g key={tick}>
-						<line
-							x1={pad.left}
-							y1={yAt(tick)}
-							x2={width - pad.right}
-							y2={yAt(tick)}
-							stroke={chartGridStroke}
-							strokeWidth="1"
-							strokeDasharray={tick === 0 ? undefined : '3 5'}
-						/>
-						<text
-							x={pad.left - 8}
-							y={yAt(tick) + 3.5}
-							textAnchor="end"
-							mix={css(chartAxisTextCss)}
-						>
-							{formatCompactNumber(tick)}
-						</text>
-					</g>
-				))}
-				{xLabels.map((label, index) =>
-					index % xTickEvery === 0 ? (
-						<text
-							key={`${label}-${index}`}
-							x={xAt(index)}
-							y={height - 8}
-							textAnchor="middle"
-							mix={css(chartAxisTextCss)}
-						>
-							{label}
-						</text>
-					) : null,
-				)}
-				{series.map((entry, seriesIndex) => {
-					const points = seriesPoints[seriesIndex] ?? []
-					const lastPoint = points[points.length - 1]
-					return (
-						<g key={entry.label}>
-							<path
-								d={buildSmoothAreaPath(points, baselineY)}
-								fill={`url(#${id}-grad-${seriesIndex})`}
+			<div mix={css(chartScrollerNewestFirstCss)}>
+				<svg
+					viewBox={`0 0 ${width} ${height}`}
+					role="img"
+					aria-label={ariaLabel}
+					mix={css(chartSvgCss(width))}
+				>
+					<defs>
+						{series.map((entry, seriesIndex) => (
+							<linearGradient
+								key={entry.label}
+								id={`${id}-grad-${seriesIndex}`}
+								x1="0"
+								y1="0"
+								x2="0"
+								y2="1"
+							>
+								<stop offset="0%" stopColor={entry.color} stopOpacity="0.32" />
+								<stop offset="100%" stopColor={entry.color} stopOpacity="0" />
+							</linearGradient>
+						))}
+					</defs>
+					{ticks.map((tick) => (
+						<g key={tick}>
+							<line
+								x1={pad.left}
+								y1={yAt(tick)}
+								x2={width - pad.right}
+								y2={yAt(tick)}
+								stroke={chartGridStroke}
+								strokeWidth="1"
+								strokeDasharray={tick === 0 ? undefined : '3 5'}
 							/>
-							<path
-								d={buildSmoothLinePath(points)}
-								fill="none"
-								stroke={entry.color}
-								strokeWidth="2.5"
-								strokeLinecap="round"
-								strokeLinejoin="round"
-							/>
-							{lastPoint ? (
-								<circle
-									cx={lastPoint.x}
-									cy={lastPoint.y}
-									r="4"
-									fill={entry.color}
-									stroke={colors.surface}
-									strokeWidth="1.5"
-								/>
-							) : null}
+							<text
+								x={pad.left - 8}
+								y={yAt(tick) + 3.5}
+								textAnchor="end"
+								mix={css(chartAxisTextCss)}
+							>
+								{formatCompactNumber(tick)}
+							</text>
 						</g>
-					)
-				})}
-				{xLabels.map((label, index) => (
-					<rect
-						key={`hover-${label}-${index}`}
-						x={
-							pointCount <= 1
-								? pad.left
-								: xAt(index) - plotWidth / (pointCount - 1) / 2
-						}
-						y={pad.top}
-						width={pointCount <= 1 ? plotWidth : plotWidth / (pointCount - 1)}
-						height={plotHeight}
-						fill="transparent"
-						mix={css({
-							'&:hover': { fill: softColor(colors.primary, 7) },
-						})}
-					>
-						<title>
-							{[
-								label,
-								...series.map(
-									(entry) =>
-										`${entry.label}: ${formatIntegerNumber(entry.values[index] ?? 0)}`,
-								),
-							].join('\n')}
-						</title>
-					</rect>
-				))}
-			</svg>
+					))}
+					{xLabels.map((label, index) =>
+						index % xTickEvery === 0 ? (
+							<text
+								key={`${label}-${index}`}
+								x={xAt(index)}
+								y={height - 8}
+								textAnchor="middle"
+								mix={css(chartAxisTextCss)}
+							>
+								{label}
+							</text>
+						) : null,
+					)}
+					{series.map((entry, seriesIndex) => {
+						const points = seriesPoints[seriesIndex] ?? []
+						const lastPoint = points[points.length - 1]
+						return (
+							<g key={entry.label}>
+								<path
+									d={buildSmoothAreaPath(points, baselineY)}
+									fill={`url(#${id}-grad-${seriesIndex})`}
+								/>
+								<path
+									d={buildSmoothLinePath(points)}
+									fill="none"
+									stroke={entry.color}
+									strokeWidth="2.5"
+									strokeLinecap="round"
+									strokeLinejoin="round"
+								/>
+								{lastPoint ? (
+									<circle
+										cx={lastPoint.x}
+										cy={lastPoint.y}
+										r="4"
+										fill={entry.color}
+										stroke={colors.surface}
+										strokeWidth="1.5"
+									/>
+								) : null}
+							</g>
+						)
+					})}
+					{xLabels.map((label, index) => (
+						<rect
+							key={`hover-${label}-${index}`}
+							x={
+								pointCount <= 1
+									? pad.left
+									: xAt(index) - plotWidth / (pointCount - 1) / 2
+							}
+							y={pad.top}
+							width={pointCount <= 1 ? plotWidth : plotWidth / (pointCount - 1)}
+							height={plotHeight}
+							fill="transparent"
+							mix={css({
+								'&:hover': { fill: softColor(colors.primary, 7) },
+							})}
+						>
+							<title>
+								{[
+									label,
+									...series.map(
+										(entry) =>
+											`${entry.label}: ${formatIntegerNumber(entry.values[index] ?? 0)}`,
+									),
+								].join('\n')}
+							</title>
+						</rect>
+					))}
+				</svg>
+			</div>
 		)
 	}
 }
