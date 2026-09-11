@@ -20,7 +20,7 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 import { fetchSessionInfo } from '#client/session.ts'
-import { colors } from '#universal/styles/tokens.ts'
+import { colors, mq, spacing } from '#universal/styles/tokens.ts'
 import { layoutMaxWidths } from '#universal/styles/style-primitives.ts'
 import { readRouterSearch } from '#client/router-location.tsx'
 import {
@@ -29,6 +29,10 @@ import {
 } from '#universal/email-verification-delivery.ts'
 import { type PendingVerificationLoaderData } from '#universal/loader-data.ts'
 import { buildAuthLink } from '#client/auth-links.ts'
+
+const pendingVerificationImageSrc = '/images/kody-envelope.png'
+const pendingVerificationImageAlt =
+	'Kody holding a sealed envelope with a green wax K stamp'
 
 function readPendingRedirectTo(handle: Handle) {
 	return normalizeRedirectTo(
@@ -210,43 +214,88 @@ export function PendingVerificationRoute(handle: Handle) {
 				maxWidth={layoutMaxWidths.content}
 				busy={pending && appliedPayload !== null}
 			>
-				<AccountManagementHeader
-					title="Check your email"
-					description="Your Kody account is ready. Verify your email before connecting an AI agent or using MCP."
-				/>
+				<div
+					data-testid="pending-verification-page"
+					mix={css(pendingVerificationLayoutCss)}
+				>
+					<img
+						src={pendingVerificationImageSrc}
+						alt={pendingVerificationImageAlt}
+						width={686}
+						height={1305}
+						mix={css(pendingVerificationImageCss)}
+					/>
+					<div mix={css(pendingVerificationCopyCss)}>
+						<AccountManagementHeader
+							title="Check your email"
+							description="Your Kody account is ready. Verify your email before connecting an AI agent or using MCP."
+						/>
 
-				{status === 'loading' ? (
-					<p mix={css({ color: colors.textMuted, margin: 0 })}>
-						Loading verification…
-					</p>
-				) : null}
-				{message ? (
-					<AccountManagementMessage tone="error">
-						{message}
-					</AccountManagementMessage>
-				) : null}
+						{status === 'loading' ? (
+							<p mix={css({ color: colors.textMuted, margin: 0 })}>
+								Loading verification…
+							</p>
+						) : null}
+						{message ? (
+							<AccountManagementMessage tone="error">
+								{message}
+							</AccountManagementMessage>
+						) : null}
 
-				{status === 'ready'
-					? renderEmailVerificationPrompt({
-							email,
-							description:
-								'We sent a verification link to your inbox. MCP access stays locked until you verify. Keep this browser signed in so you can resend the email or continue once the link works.',
-							delivery: emailVerificationDelivery,
-							resendStatus,
-							resendMessage,
-							resendTone,
-							onResend: () => {
-								void handleResend()
-							},
-							continueLabel: "I've verified - continue",
-							onContinue: () => {
-								void handleContinue()
-							},
-							secondaryHref: '/account',
-							secondaryLabel: 'Account settings',
-						})
-					: null}
+						{status === 'ready'
+							? renderEmailVerificationPrompt({
+									email,
+									description:
+										'We sent a verification link to your inbox. MCP access stays locked until you verify. Keep this browser signed in so you can resend the email or continue once the link works.',
+									delivery: emailVerificationDelivery,
+									resendStatus,
+									resendMessage,
+									resendTone,
+									onResend: () => {
+										void handleResend()
+									},
+									continueLabel: "I've verified - continue",
+									onContinue: () => {
+										void handleContinue()
+									},
+									secondaryHref: '/account',
+									secondaryLabel: 'Account settings',
+								})
+							: null}
+					</div>
+				</div>
 			</AccountManagementShell>
 		)
 	}
+}
+
+const pendingVerificationLayoutCss = {
+	display: 'grid',
+	gridTemplateColumns: 'auto minmax(0, 1fr)',
+	gap: spacing.xl,
+	alignItems: 'center',
+	[mq.mobile]: {
+		gridTemplateColumns: 'minmax(0, 1fr)',
+		justifyItems: 'center',
+		gap: spacing.lg,
+	},
+}
+
+const pendingVerificationImageCss = {
+	width: 'min(16rem, 36vw)',
+	maxHeight: 'min(28rem, 70vh)',
+	height: 'auto',
+	objectFit: 'contain' as const,
+	display: 'block',
+	[mq.mobile]: {
+		width: 'min(12rem, 58vw)',
+		maxHeight: 'min(18rem, 38vh)',
+	},
+}
+
+const pendingVerificationCopyCss = {
+	display: 'grid',
+	gap: spacing.lg,
+	minWidth: 0,
+	width: '100%',
 }
