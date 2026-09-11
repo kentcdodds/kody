@@ -817,13 +817,17 @@ export async function retainAuthorizedPackageStorageGrantIds(input: {
 			retained.add(packageId)
 			continue
 		}
-		const own = canPrepareAppDb(input.db)
-			? await getSavedPackageById(input.db, {
-					userId: input.callerUserId,
-					packageId,
-				})
-			: null
-		if (own) retained.add(packageId)
+		try {
+			const own = canPrepareAppDb(input.db)
+				? await getSavedPackageById(input.db, {
+						userId: input.callerUserId,
+						packageId,
+					})
+				: null
+			if (own) retained.add(packageId)
+		} catch (error) {
+			if (!/no such table/i.test(getErrorMessage(error))) throw error
+		}
 	}
 	return retained
 }
