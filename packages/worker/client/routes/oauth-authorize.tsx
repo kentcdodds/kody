@@ -510,7 +510,8 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		})
 		const needsEmailVerification = isLoggedIn && !emailVerified
 		const showResetClientCard = allowClientReset && !resetCompleted
-		const showAuthorizeForm = !resetCompleted && !needsEmailVerification
+		const showAuthorizeForm =
+			!resetCompleted && !needsEmailVerification && status !== 'error'
 		const hydrated = typeof document !== 'undefined'
 		const consentForm = oauthAuthorizeConsentFormAttrs(currentHref)
 		const actionsDisabled = oauthAuthorizeActionsDisabled({

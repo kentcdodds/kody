@@ -1683,6 +1683,7 @@ test('authorize recovers when a pre-hydration submit clobbers the OAuth query', 
 	const html = await htmlResponse.text()
 	expect(html).toContain(oauthAuthorizeClobberedResubmitMessage)
 	expect(html).not.toContain('client_id is required')
+	expect(html).not.toContain('data-testid="oauth-authorize-approve"')
 
 	const infoResponse = await handleAuthorizeInfo(
 		new Request(
