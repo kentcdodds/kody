@@ -556,6 +556,9 @@ export const proseCss = {
 			},
 		},
 	},
+	'& [data-heading-text]': {
+		minWidth: 0,
+	},
 	'& [data-heading-anchor]': {
 		display: 'inline-flex',
 		alignItems: 'center',

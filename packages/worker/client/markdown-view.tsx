@@ -372,7 +372,7 @@ function renderToken(
 			return (
 				<Tag key={key} id={headingId}>
 					{renderMarkdownHeadingAnchor(key, headingId)}
-					{children}
+					<span data-heading-text="">{children}</span>
 				</Tag>
 			)
 		}
