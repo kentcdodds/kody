@@ -14,12 +14,13 @@ import {
 	youtubePlaylistBrowseMaxPages,
 	youtubePlaylistBrowseUrl,
 	youtubePlaylistItemsApiUrl,
+	youtubePlaylistUserAgent,
 } from '#universal/youtube-playlist.ts'
 
 const heroVideosTtlMs = 5 * 60 * 1000
 const heroVideosStaleWhileRevalidateMs = 60 * 60 * 1000
 const youtubeFetchTimeoutMs = 2_500
-export const landingHeroVideosCacheKeyPrefix = 'landing-hero-videos:v1:'
+export const landingHeroVideosCacheKeyPrefix = 'landing-hero-videos:v3:'
 
 type YoutubeFetch = (input: string, init?: RequestInit) => Promise<Response>
 
@@ -50,31 +51,38 @@ export async function loadLandingHeroVideos(input: {
 }): Promise<Array<LandingHeroVideo>> {
 	const playlistId = input.playlistId ?? landingHeroSourcePlaylistId
 	if (!shouldFetchYoutubePlaylist(input.fetchImpl)) return []
-	const fetchImpl = input.fetchImpl ?? fetch
-	const kv = input.env.BUNDLE_ARTIFACTS_KV
-	if (!kv) {
-		return await fetchLandingHeroVideos({
-			env: input.env,
-			playlistId,
-			fetchImpl,
-		})
-	}
-	return await cachified({
-		key: buildLandingHeroVideosCacheKey(playlistId),
-		cache: createKvCachifiedCache(kv),
-		ttl: heroVideosTtlMs,
-		staleWhileRevalidate: heroVideosStaleWhileRevalidateMs,
-		checkValue: isLandingHeroVideoList,
-		getFreshValue: () =>
-			fetchLandingHeroVideos({
+	// workerd's `fetch` is not a bound function; assigning it and calling
+	// `fetchImpl(...)` throws Illegal invocation.
+	const fetchImpl = input.fetchImpl ?? fetch.bind(globalThis)
+	try {
+		const kv = input.env.BUNDLE_ARTIFACTS_KV
+		if (!kv) {
+			return await fetchLandingHeroVideos({
 				env: input.env,
 				playlistId,
 				fetchImpl,
-			}),
-		waitUntil(promise) {
-			void deferWork('landing-hero-videos-refresh', () => promise)
-		},
-	})
+			})
+		}
+		return await cachified({
+			key: buildLandingHeroVideosCacheKey(playlistId),
+			cache: createKvCachifiedCache(kv),
+			ttl: heroVideosTtlMs,
+			staleWhileRevalidate: heroVideosStaleWhileRevalidateMs,
+			checkValue: isLandingHeroVideoList,
+			getFreshValue: () =>
+				fetchLandingHeroVideos({
+					env: input.env,
+					playlistId,
+					fetchImpl,
+				}),
+			waitUntil(promise) {
+				void deferWork('landing-hero-videos-refresh', () => promise)
+			},
+		})
+	} catch (error) {
+		console.warn('landing-hero-videos', error)
+		return []
+	}
 }
 
 async function fetchLandingHeroVideos(input: {
@@ -112,7 +120,10 @@ async function fetchPlaylistItemsApi(input: {
 					apiKey: input.apiKey,
 					pageToken,
 				}),
-				{ signal: AbortSignal.timeout(youtubeFetchTimeoutMs) },
+				{
+					headers: { 'User-Agent': youtubePlaylistUserAgent },
+					signal: AbortSignal.timeout(youtubeFetchTimeoutMs),
+				},
 			)
 			if (!response.ok) return uniqueLandingHeroVideos(videos)
 			const parsed = parseYoutubePlaylistItemsApi(await response.json())
@@ -136,7 +147,10 @@ async function fetchPlaylistBrowse(input: {
 		for (let page = 0; page < youtubePlaylistBrowseMaxPages; page += 1) {
 			const response = await input.fetchImpl(youtubePlaylistBrowseUrl, {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: {
+					'Content-Type': 'application/json',
+					'User-Agent': youtubePlaylistUserAgent,
+				},
 				body: JSON.stringify(
 					youtubePlaylistBrowseBody({
 						playlistId: input.playlistId,
@@ -145,7 +159,10 @@ async function fetchPlaylistBrowse(input: {
 				),
 				signal: AbortSignal.timeout(youtubeFetchTimeoutMs),
 			})
-			if (!response.ok) return uniqueLandingHeroVideos(videos)
+			if (!response.ok) {
+				if (videos.length > 0) return uniqueLandingHeroVideos(videos)
+				throw new Error(`youtube browse ${String(response.status)}`)
+			}
 			const parsed = parseYoutubePlaylistBrowseJson(await response.json())
 			const before = videos.length
 			videos.push(...parsed.videos)
@@ -159,7 +176,8 @@ async function fetchPlaylistBrowse(input: {
 			continuation = parsed.continuation
 		}
 		return uniqueLandingHeroVideos(videos)
-	} catch {
-		return uniqueLandingHeroVideos(videos)
+	} catch (error) {
+		if (videos.length > 0) return uniqueLandingHeroVideos(videos)
+		throw error
 	}
 }

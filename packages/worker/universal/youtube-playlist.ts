@@ -12,6 +12,8 @@ export const youtubePlaylistBrowseUrl =
 export const youtubeWebClientName = 'WEB'
 export const youtubeWebClientVersion = '2.20260911.01.00'
 export const youtubePlaylistBrowseMaxPages = 10
+/** workerd sends no User-Agent; YouTube rejects those browse calls. */
+export const youtubePlaylistUserAgent = 'kody-agent/1.0'
 
 export function youtubePlaylistBrowseId(playlistId: string) {
 	return `VL${playlistId}`

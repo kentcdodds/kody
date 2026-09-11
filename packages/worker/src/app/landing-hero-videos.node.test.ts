@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { createMemoryKv } from '#worker/test-support/auth-provider-harness.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	landingHeroSourcePlaylistId,
 	type LandingHeroVideo,
@@ -48,6 +49,9 @@ test('loadLandingHeroVideos reads Innertube browse order and serves SWR from KV'
 		fetches += 1
 		expect(input).toBe(youtubePlaylistBrowseUrl)
 		expect(init?.method).toBe('POST')
+		expect(init?.headers).toMatchObject({
+			'User-Agent': 'kody-agent/1.0',
+		})
 		return Response.json(browsePayload([first, second]))
 	}
 	const env = { BUNDLE_ARTIFACTS_KV: createMemoryKv() } as Env
@@ -57,7 +61,7 @@ test('loadLandingHeroVideos reads Innertube browse order and serves SWR from KV'
 	expect(cached).toEqual([first, second])
 	expect(fetches).toBe(1)
 	expect(buildLandingHeroVideosCacheKey(landingHeroSourcePlaylistId)).toBe(
-		`landing-hero-videos:v1:${landingHeroSourcePlaylistId}`,
+		`landing-hero-videos:v3:${landingHeroSourcePlaylistId}`,
 	)
 })
 
@@ -110,6 +114,7 @@ test('loadLandingHeroVideos falls back to Innertube when the Data API fails', as
 })
 
 test('loadLandingHeroVideos fails open when YouTube is unreachable', async () => {
+	consoleWarn.mockImplementation(() => {})
 	await expect(
 		loadLandingHeroVideos({
 			env: {} as Env,
@@ -118,8 +123,25 @@ test('loadLandingHeroVideos fails open when YouTube is unreachable', async () =>
 			},
 		}),
 	).resolves.toEqual([])
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'landing-hero-videos',
+		expect.any(Error),
+	)
 })
 
 test('loadLandingHeroVideos stays offline in unit tests without a fetch impl', async () => {
 	await expect(loadLandingHeroVideos({ env: {} as Env })).resolves.toEqual([])
+})
+
+test('loadLandingHeroVideos does not cache a failed YouTube fetch', async () => {
+	consoleWarn.mockImplementation(() => {})
+	let fetches = 0
+	const fetchImpl = async () => {
+		fetches += 1
+		return new Response('no', { status: 503 })
+	}
+	const env = { BUNDLE_ARTIFACTS_KV: createMemoryKv() } as Env
+	await expect(loadLandingHeroVideos({ env, fetchImpl })).resolves.toEqual([])
+	await expect(loadLandingHeroVideos({ env, fetchImpl })).resolves.toEqual([])
+	expect(fetches).toBe(2)
 })
