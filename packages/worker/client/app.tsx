@@ -11,6 +11,7 @@ import { clientRouteLoaders, clientRoutes } from './routes/index.tsx'
 import { getSlugFromPathname } from './routes/blog-post-path.ts'
 import { isCommunityListingPathname } from './routes/community-detail-shared.ts'
 import {
+	isOnSsrUrl,
 	listenToRouterMutations,
 	listenToRouterNavigation,
 	listenToRouterNavigationEnd,
@@ -65,6 +66,41 @@ type AppProps = {
 	loaderData?: AppLoaderData
 	notFound?: boolean
 	unauthorized?: boolean
+}
+
+function isRedesignedMarketingPath(pathname: string) {
+	return (
+		pathname === '/' ||
+		pathname === '/pricing' ||
+		pathname === '/faq' ||
+		pathname === '/blog' ||
+		pathname === '/community' ||
+		pathname === '/onboarding' ||
+		pathname.startsWith('/onboarding/step-') ||
+		isDocsPagePath(pathname) ||
+		isProfilePathname(pathname) ||
+		isCommunityListingPathname(pathname) ||
+		getSlugFromPathname(pathname) !== null
+	)
+}
+
+/**
+ * `<main>` padding is skipped when the route (or the SSR 404 for this URL)
+ * owns its own gutters. The server's `notFound` flag is sticky on the
+ * document for the session, so it only applies while we are still on the
+ * URL the server rendered — same rule as `Router`.
+ */
+export function appMainOwnsItsGutters(input: {
+	pathname: string
+	notFound: boolean
+	onSsrUrl: boolean
+}) {
+	return (
+		(input.notFound && input.onSsrUrl) ||
+		isRedesignedMarketingPath(input.pathname) ||
+		isPackageFilesPathname(input.pathname) ||
+		matchRoute(input.pathname, clientRoutes) == null
+	)
 }
 
 export function App(handle: Handle<AppProps>) {
@@ -205,34 +241,17 @@ export function App(handle: Handle<AppProps>) {
 		// Redesigned pages own their own layout (gutters, measures, max-width
 		// container), so `<main>` must not add its generic padding on top. The
 		// landing page also owns its own signup close (the "Give your agents
-		// a home" section).
-		const isRedesignedMarketingPath =
-			currentPathname === '/' ||
-			currentPathname === '/pricing' ||
-			currentPathname === '/faq' ||
-			currentPathname === '/blog' ||
-			currentPathname === '/community' ||
-			currentPathname === '/onboarding' ||
-			currentPathname.startsWith('/onboarding/step-') ||
-			isDocsPagePath(currentPathname) ||
-			isProfilePathname(currentPathname) ||
-			isCommunityListingPathname(currentPathname) ||
-			getSlugFromPathname(currentPathname) !== null
-		// The redesigned auth screens (login/signup) are a standalone
-		// two-panel canvas with their own brand link, theme toggle, and "back"
-		// corner — the prototype renders them without the site chrome, so the
-		// header/footer stand down entirely there.
+		// a home" section). The redesigned auth screens (login/signup) are a
+		// standalone two-panel canvas with their own brand link, theme toggle,
+		// and "back" corner — the prototype renders them without the site
+		// chrome, so the header/footer stand down entirely there.
 		const isAuthShellPath =
 			currentPathname === '/login' || currentPathname === '/signup'
-		// The files explorer owns its gutters too (it hangs off a listing page
-		// that already does), so `<main>` must not pad it — the generic padding
-		// stacks on the route's own and pushes it in past the site header. Kept
-		// separate from the marketing predicate: only the padding changes, the
-		const routeOwnsItsGutters =
-			handle.props.notFound ||
-			isRedesignedMarketingPath ||
-			isPackageFilesPathname(currentPathname) ||
-			matchRoute(currentPathname, clientRoutes) == null
+		const routeOwnsItsGutters = appMainOwnsItsGutters({
+			pathname: currentPathname,
+			notFound: handle.props.notFound === true,
+			onSsrUrl: isOnSsrUrl(handle),
+		})
 
 		return (
 			<AppLoaderDataProvider loaderData={handle.props.loaderData}>

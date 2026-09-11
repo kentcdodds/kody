@@ -1200,7 +1200,7 @@ function normalizeHref(href: string) {
 	return `${url.pathname}${url.search}${url.hash}`
 }
 
-function isOnSsrUrl(handle: Pick<Handle, 'context'>) {
+export function isOnSsrUrl(handle: Pick<Handle, 'context'>) {
 	return (
 		normalizeHref(readRouterUrl(handle)) ===
 		normalizeHref(readSsrRouterUrl(handle))
