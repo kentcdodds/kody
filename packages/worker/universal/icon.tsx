@@ -8,7 +8,9 @@ export type { IconName } from './icon-glyphs.tsx'
 /**
  * Iconic draws in a 24×24 viewBox with ~4.75 units of padding so the 1.5px
  * stroke never clips. That reads small next to type. Crop to the glyph the
- * same way `provider-icons` crops padded brand marks.
+ * same way `provider-icons` crops padded brand marks. Glyphs carry their own
+ * stroke and fill — do not stamp stroke on the `<svg>` or fill-only marks
+ * inherit it and bloat.
  */
 export const iconicGlyphViewBox = '3.75 3.75 16.5 16.5'
 
@@ -36,10 +38,6 @@ export function renderIcon(
 			width={size}
 			height={size}
 			fill="none"
-			stroke="currentColor"
-			stroke-width="1.5"
-			stroke-linecap="round"
-			stroke-linejoin="round"
 			aria-hidden={labelled ? undefined : 'true'}
 			role={labelled ? 'img' : undefined}
 			aria-label={options.title}
