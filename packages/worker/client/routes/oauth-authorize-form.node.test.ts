@@ -3,6 +3,7 @@ import {
 	oauthAuthorizeActionsDisabled,
 	oauthAuthorizeApproveAriaLabel,
 	oauthAuthorizeConsentFormAttrs,
+	oauthAuthorizeEmailVerificationDenyDisabled,
 } from './oauth-authorize-form.ts'
 
 test('authorize consent form defaults preserve the OAuth query on native submit', () => {
@@ -59,4 +60,26 @@ test('authorize consent form defaults preserve the OAuth query on native submit'
 			label: 'Approve connection',
 		}),
 	).toBeUndefined()
+
+	expect(
+		oauthAuthorizeEmailVerificationDenyDisabled({
+			hydrated: false,
+			submitting: false,
+			sessionLoading: false,
+		}),
+	).toBe(true)
+	expect(
+		oauthAuthorizeEmailVerificationDenyDisabled({
+			hydrated: true,
+			submitting: false,
+			sessionLoading: false,
+		}),
+	).toBe(false)
+	expect(
+		oauthAuthorizeEmailVerificationDenyDisabled({
+			hydrated: true,
+			submitting: true,
+			sessionLoading: false,
+		}),
+	).toBe(true)
 })

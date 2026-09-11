@@ -1036,6 +1036,9 @@ test('renderAppPage configures session secret and server-renders oauth authorize
 	const signedInHtml = await readResponseText(signedInResponse)
 	expect(signedInHtml).toContain('aria-label="Email verification status"')
 	expect(signedInHtml).not.toContain('Approve connection')
+	expect(signedInHtml).toMatch(
+		/data-testid="oauth-authorize-email-verify-deny"[^>]*disabled/,
+	)
 })
 
 test('renderAppPage server-renders connect-oauth provider visits without a loading flash', async () => {

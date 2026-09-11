@@ -26,6 +26,7 @@ import {
 	oauthAuthorizeApproveAriaLabel,
 	oauthAuthorizeConsentDecision,
 	oauthAuthorizeConsentFormAttrs,
+	oauthAuthorizeEmailVerificationDenyDisabled,
 } from '#client/routes/oauth-authorize-form.ts'
 import { resolveAuthorizeSession } from '#client/routes/oauth-authorize-session.ts'
 import {
@@ -603,7 +604,16 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 					<div mix={css({ marginBottom: spacing.md })}>
 						<button
 							type="button"
-							disabled={Boolean(submittingDecision) || isSessionLoading}
+							data-testid="oauth-authorize-email-verify-deny"
+							disabled={oauthAuthorizeEmailVerificationDenyDisabled({
+								hydrated,
+								submitting: Boolean(submittingDecision),
+								sessionLoading: isSessionLoading,
+							})}
+							aria-label={oauthAuthorizeApproveAriaLabel({
+								hydrated,
+								label: 'Deny',
+							})}
 							mix={[
 								on('click', () => submitDecision('deny')),
 								css(secondaryButtonCss),

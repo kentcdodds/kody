@@ -40,3 +40,12 @@ export function oauthAuthorizeApproveAriaLabel(input: {
 	if (input.hydrated) return undefined
 	return `${input.label} (available after the page finishes loading)`
 }
+
+/** Standalone verify-email Deny is outside the consent form, so it cannot use `actionsDisabled`. */
+export function oauthAuthorizeEmailVerificationDenyDisabled(input: {
+	hydrated: boolean
+	submitting: boolean
+	sessionLoading: boolean
+}) {
+	return !input.hydrated || input.submitting || input.sessionLoading
+}
