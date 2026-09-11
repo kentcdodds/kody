@@ -13,12 +13,6 @@ import {
 } from '#universal/styles/style-primitives.ts'
 
 /**
- * Local / preview / test only. Production never serves this path; uncaught
- * handler failures still render the illustrated 500 through the catch.
- */
-export const internalErrorPreviewPath = '/__internal-error'
-
-/**
  * Minimal first-party HTML for uncaught handler failures. The catch that
  * calls this may have come from rendering the app shell, so this document
  * is static: no client entry, no inline scripts.

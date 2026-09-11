@@ -18,6 +18,8 @@ import {
 	onboardingArea,
 	packageFilesArea,
 } from '#client/lazy-route.tsx'
+import { InternalErrorPage } from '#client/internal-error-page.tsx'
+import { NotFoundPage } from '#client/not-found-page.tsx'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { routePattern } from '#universal/route-pattern.ts'
 import { routes } from '#universal/routes.ts'
@@ -364,6 +366,8 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 
 export const clientRoutes = {
 	[routePattern(routes.home)]: <HomeRoute />,
+	[routePattern(routes.notFoundPage)]: <NotFoundPage />,
+	[routePattern(routes.internalErrorPage)]: <InternalErrorPage />,
 	[routePattern(routes.account)]: (
 		<LazyAccountRoute render={(m) => <m.AccountRoute />} />
 	),

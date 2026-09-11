@@ -2,10 +2,13 @@ import { expect, test } from 'vitest'
 import { clientRoutes } from '#client/routes/index.tsx'
 import {
 	absolutizeDocumentHead,
+	INTERNAL_ERROR_DOCUMENT_TITLE,
 	NOT_FOUND_DOCUMENT_TITLE,
 	resolveDocumentHead,
 	resolveDocumentTitle,
 } from '#universal/document-head.ts'
+import { routePattern } from '#universal/route-pattern.ts'
+import { routes } from '#universal/routes.ts'
 
 /**
  * SPA navigations sync `<title>` from `document-head.ts` only. SSR can still
@@ -29,6 +32,18 @@ function concretePathForPattern(pattern: string) {
 test('every client route resolves a document title other than Not found', () => {
 	const missing: Array<string> = []
 	for (const pattern of Object.keys(clientRoutes)) {
+		if (pattern === routePattern(routes.notFoundPage)) {
+			expect(resolveDocumentTitle(concretePathForPattern(pattern))).toBe(
+				NOT_FOUND_DOCUMENT_TITLE,
+			)
+			continue
+		}
+		if (pattern === routePattern(routes.internalErrorPage)) {
+			expect(resolveDocumentTitle(concretePathForPattern(pattern))).toBe(
+				INTERNAL_ERROR_DOCUMENT_TITLE,
+			)
+			continue
+		}
 		const pathname = concretePathForPattern(pattern)
 		const title = resolveDocumentTitle(pathname)
 		if (title === NOT_FOUND_DOCUMENT_TITLE) {

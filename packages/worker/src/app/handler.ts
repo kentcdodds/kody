@@ -1,14 +1,12 @@
 import { setAuthSessionSecret } from '#app/auth-session.ts'
-import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { runWithDeferredWork } from '#worker/deferred-work.ts'
 import { getEnv } from '#app/env.ts'
+import { renderIllustratedInternalErrorPage } from '#app/handlers/error-pages.ts'
 import {
-	internalErrorPreviewPath,
 	renderInternalServerErrorPage,
 	retryHrefFromRequest,
 } from '#app/internal-error-page.ts'
 import { createAppRouter } from '#app/router.ts'
-import { renderAppPage } from '#app/ssr-render.tsx'
 import { runWithRequestContext } from '#worker/request-context.ts'
 
 type AppRouterBundle = {
@@ -32,19 +30,6 @@ function getAppRouterBundle(env: Env): AppRouterBundle {
 	return bundle
 }
 
-function renderIllustratedInternalErrorPage(input: {
-	request: Request
-	env: Env
-}) {
-	return renderAppPage({
-		request: input.request,
-		env: input.env,
-		title: 'Something went wrong',
-		internalError: true,
-		status: 500,
-	})
-}
-
 async function recoverFromUncaughtHandlerFailure(input: {
 	request: Request
 	env: Env
@@ -65,12 +50,6 @@ export async function handleRequest(
 	try {
 		const { appEnv, router } = getAppRouterBundle(env)
 		setAuthSessionSecret(appEnv.COOKIE_SECRET)
-		if (
-			isNonProductionRuntime(appEnv) &&
-			new URL(request.url).pathname === internalErrorPreviewPath
-		) {
-			return await renderIllustratedInternalErrorPage({ request, env })
-		}
 		return await runWithDeferredWork(
 			ctx ? (promise) => ctx.waitUntil(promise) : undefined,
 			() => runWithRequestContext(request, () => router.fetch(request)),

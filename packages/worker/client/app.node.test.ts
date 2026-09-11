@@ -185,3 +185,21 @@ test('SSR 500 pages own main gutters the same way 404s do', () => {
 		}),
 	).toBe(false)
 })
+
+test('explicit /404 and /500 pages own main gutters after SPA navigation', () => {
+	expect(
+		appMainOwnsItsGutters({
+			pathname: '/404',
+			notFound: false,
+			onSsrUrl: false,
+		}),
+	).toBe(true)
+	expect(
+		appMainOwnsItsGutters({
+			pathname: '/500',
+			notFound: false,
+			internalError: false,
+			onSsrUrl: false,
+		}),
+	).toBe(true)
+})

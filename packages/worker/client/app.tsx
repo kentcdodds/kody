@@ -45,6 +45,7 @@ import { isDocsPagePath } from '#universal/docs-nav.ts'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 import { isPackageFilesPathname } from '#universal/package-files.ts'
 import { isProfilePathname } from '#universal/profile-path.ts'
+import { routes } from '#universal/routes.ts'
 import { userHasRole } from '#universal/permissions.ts'
 import { buildAuthLink } from './auth-links.ts'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
@@ -86,11 +87,20 @@ function isRedesignedMarketingPath(pathname: string) {
 	)
 }
 
+function isIllustratedErrorPath(pathname: string) {
+	return (
+		pathname === routes.notFoundPage.href() ||
+		pathname === routes.internalErrorPage.href()
+	)
+}
+
 /**
  * `<main>` padding is skipped when the route (or the SSR 404 / 500 for this
  * URL) owns its own gutters. The server's `notFound` / `internalError` flags
  * are sticky on the document for the session, so they only apply while we
- * are still on the URL the server rendered — same rule as `Router`.
+ * are still on the URL the server rendered — same rule as `Router`. Explicit
+ * `/404` and `/500` own gutters on SPA navigation too: they are matched
+ * routes, so they would otherwise pick up `<main>` padding.
  */
 export function appMainOwnsItsGutters(input: {
 	pathname: string
@@ -100,6 +110,7 @@ export function appMainOwnsItsGutters(input: {
 }) {
 	return (
 		((input.notFound || input.internalError === true) && input.onSsrUrl) ||
+		isIllustratedErrorPath(input.pathname) ||
 		isRedesignedMarketingPath(input.pathname) ||
 		isPackageFilesPathname(input.pathname) ||
 		matchRoute(input.pathname, clientRoutes) == null

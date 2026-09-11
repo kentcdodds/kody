@@ -18,6 +18,10 @@ import {
 	createCommunityPackageHandler,
 } from '#app/handlers/community-detail.tsx'
 import { createDiscordHandler } from '#app/handlers/discord.ts'
+import {
+	createInternalErrorPageHandler,
+	createNotFoundPageHandler,
+} from '#app/handlers/error-pages.ts'
 import { createFaqHandler } from '#app/handlers/faq.ts'
 import { createSupportHandler } from '#app/handlers/support.ts'
 import { createOnboardingHandler } from '#app/handlers/onboarding.ts'
@@ -1591,6 +1595,36 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	expect(approvalHtml).toContain('Let Kody use this connection at')
 	expect(approvalHtml).toContain('gmail.googleapis.com')
 	expect(approvalHtml).toContain('data-testid="secret-approval-advanced"')
+})
+
+test('GET /404 and /500 are explicit illustrated error routes', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(createUserTestDb([]))
+
+	const notFoundResponse = await runHtmlHandler(
+		createNotFoundPageHandler(env),
+		new Request('https://example.com/404'),
+	)
+	expect(notFoundResponse.status).toBe(404)
+	const notFoundHtml = await readResponseText(notFoundResponse)
+	expect(notFoundHtml).toContain('<title>Not found</title>')
+	expect(notFoundHtml).toContain("This doesn't quite connect.")
+	expect(notFoundHtml).toContain('src="/images/kody-404-disappointed.png"')
+	expect(notFoundHtml).toContain('data-testid="not-found-page"')
+	expect(readAppRootProps(notFoundHtml).notFound).toBe(true)
+
+	const internalErrorResponse = await runHtmlHandler(
+		createInternalErrorPageHandler(env),
+		new Request('https://example.com/500'),
+	)
+	expect(internalErrorResponse.status).toBe(500)
+	const internalErrorHtml = await readResponseText(internalErrorResponse)
+	expect(internalErrorHtml).toContain('<title>Something went wrong</title>')
+	expect(internalErrorHtml).toContain('We got a little zapped.')
+	expect(internalErrorHtml).toContain('src="/images/kody-500-zapped.png"')
+	expect(internalErrorHtml).toContain('data-testid="internal-error-page"')
+	expect(readAppRootProps(internalErrorHtml).internalError).toBe(true)
 })
 
 test('renderAppPage renders the public FAQ page for anonymous visitors', async () => {
