@@ -80,11 +80,7 @@ export function listSynthesizedMcpServers(
 			description,
 			instructions,
 			specs: [spec],
-			identityFields: [
-				spec.mcpServer.serverName,
-				spec.mcpServer.kodyName,
-				spec.domain,
-			],
+			identityFields: [spec.mcpServer.serverName, spec.mcpServer.kodyName],
 			operationIdentityFields: [
 				spec.name,
 				spec.mcpServer.mcpToolName,
