@@ -83,19 +83,26 @@ secrets.
 Placeholders are **not** general-purpose string interpolation. They only work in
 secret-aware **`fetch`** paths.
 
-## Signing JWTs with saved private keys
+## Signing JWTs with saved secrets
 
-Use **`kody.secretJwtSign(...)`** when a workflow needs a JWT signed by a
-private key stored in a saved secret. The primitive returns
-**`{ jwt, algorithm }`**: use **`result.jwt`** as the compact JWT and
-**`result.algorithm`** for the signing algorithm. It never returns private key
-material.
+Use **`kody.secretJwtSign(...)`** when a workflow needs a JWT signed by a key
+stored in a saved secret. The primitive returns **`{ jwt, algorithm }`**: use
+**`result.jwt`** as the compact JWT and **`result.algorithm`** for the signing
+algorithm. It never returns key material.
 
 The caller supplies the JWT header and claims, then performs any provider-
-specific token exchange with ordinary **`fetch`**. For service-account JSON
-secrets, pass **`private_key_json_field: "private_key"`** to sign with that
-field. Supported algorithms are **`RS256`** (default) and **`EdDSA`** (Ed25519
-PKCS#8 keys, used by Cursor Origin app JWTs).
+specific token exchange with ordinary **`fetch`**. Pass the saved secret as
+**`private_key_secret_name`** (the signing-key secret: PKCS#8 PEM for asymmetric
+algorithms, HMAC key material for HS*). For service-account JSON secrets, pass
+**`private_key_json_field: "private_key"`** to sign with that field. Supported
+algorithms:
+
+- **HMAC:** `HS256`, `HS384`, `HS512` — **`key_encoding`** is **`base64`**
+  (default, DoorDash Drive `signing_secret`), **`utf8`**, or **`base64url`**
+- **RSA PKCS#1:** `RS256` (default), `RS384`, `RS512`
+- **RSA-PSS:** `PS256`, `PS384`, `PS512`
+- **ECDSA:** `ES256`, `ES384`, `ES512`
+- **EdDSA:** Ed25519 PKCS#8 keys (Cursor Origin app JWTs)
 
 ## Mentioning placeholders without resolving them
 

@@ -44,8 +44,11 @@ boundary, on the final serialized request, and only for hosts you approved.
 - **Derived headers** — when an API wants Basic Auth built from two secrets,
   `secretHeaders.basic({ usernameSecret, passwordSecret })` from `kody:runtime`
   produces the header without exposing either half.
-- **Signed JWTs** — `secretJwtSign` signs a JWT with a stored private key (RS256
-  or EdDSA) and returns the compact token, never the key.
+- **Signed JWTs** — `secretJwtSign` signs a JWT with a stored key and returns
+  the compact token, never the key. HMAC (`HS256` / `HS384` / `HS512`) reads key
+  material from the saved secret (`key_encoding` defaults to `base64`). `RS*`,
+  `PS*`, `ES*`, and `EdDSA` use a PKCS#8 PEM private key. Pass the secret as
+  `private_key_secret_name`.
 
 Placeholders are live tokens. Do not paste one into an issue body, a comment, a
 log line, or a returned string — write `{{secret:<name>}}` with angle brackets
