@@ -86,7 +86,7 @@ export async function loadAdminInsightsData(
 		: null
 	if (!cache) return await queryAdminInsights(env, now)
 	return await cachified({
-		key: 'admin-insights:v10',
+		key: 'admin-insights:v11',
 		cache,
 		ttl: insightsCacheTtlMs,
 		getFreshValue: () => queryAdminInsights(env, now),

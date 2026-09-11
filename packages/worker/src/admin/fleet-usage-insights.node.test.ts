@@ -96,6 +96,7 @@ function createFleetDb(input: {
 					}
 					if (
 						normalized.includes('u.plan') &&
+						normalized.includes('entitlement_ladder') &&
 						normalized.includes('event_count')
 					) {
 						return {
@@ -279,22 +280,12 @@ test('loadFleetUsageInsights returns bounded consumer rankings and pressure pane
 				estimatedGrossUsd: 0.18,
 				estimatedPaidUsdCents: 0,
 				estimatedMarginUsd: -0.18,
-				underwater: true,
+				underwater: false,
 				paidSource: 'none',
+				risk: 'none',
 			},
 		],
-		underwaterConsumers: [
-			{
-				stableUserId: 'user-c',
-				username: 'cara',
-				uniqueWorkerDays: 90,
-				estimatedGrossUsd: 0.18,
-				estimatedPaidUsdCents: 0,
-				estimatedMarginUsd: -0.18,
-				underwater: true,
-				paidSource: 'none',
-			},
-		],
+		riskConsumers: [],
 	})
 })
 

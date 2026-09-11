@@ -1,7 +1,9 @@
 import { expect, test } from 'vitest'
 import {
+	adminCostRiskNoneStatus,
 	estimateDynamicWorkerUsd,
 	fleetDynamicWorkerCostAlertUsd,
+	fleetFreeDynamicWorkerNearAllotmentUsd,
 	formatDynamicWorkerUsd,
 	toAdminDynamicWorkerCost,
 } from './dynamic-worker-cost.ts'
@@ -27,4 +29,29 @@ test('toAdminDynamicWorkerCost truncates to a non-negative integer day count', (
 	expect(fleetDynamicWorkerCostAlertUsd('standard')).toBe(12)
 	expect(fleetDynamicWorkerCostAlertUsd('pro')).toBe(49)
 	expect(fleetDynamicWorkerCostAlertUsd('max')).toBeNull()
+	expect(fleetFreeDynamicWorkerNearAllotmentUsd()).toBe(1)
+	expect(
+		adminCostRiskNoneStatus({
+			estimatedGrossUsd: 0.18,
+			estimatedPaidUsdCents: 0,
+		}),
+	).toBe('within included allotment')
+	expect(
+		adminCostRiskNoneStatus({
+			estimatedGrossUsd: 40,
+			estimatedPaidUsdCents: 0,
+		}),
+	).toBe('not flagged')
+	expect(
+		adminCostRiskNoneStatus({
+			estimatedGrossUsd: 0.18,
+			estimatedPaidUsdCents: 1_200,
+		}),
+	).toBe('above cost')
+	expect(
+		adminCostRiskNoneStatus({
+			estimatedGrossUsd: 14,
+			estimatedPaidUsdCents: 1_200,
+		}),
+	).toBe('not flagged')
 })

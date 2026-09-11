@@ -2,6 +2,11 @@ import { readJson } from '#client/routes/account-approval-shared.ts'
 import { chartColor } from '#client/charts/chart-theme.ts'
 import { monthShortNames } from '#client/charts/usage-metric-series.ts'
 import {
+	adminCostRiskNoneStatus,
+	fleetDynamicWorkerCostAlertUsd,
+} from '#universal/dynamic-worker-cost.ts'
+import {
+	type AdminCostRiskKind,
 	type AdminInsightsLoaderData,
 	type AdminInsightsRunLogCompleteness,
 	type AdminUsageMetric,
@@ -88,6 +93,41 @@ export function formatUsdFromCents(cents: number) {
 		currency: 'USD',
 		maximumFractionDigits: cents % 100 === 0 ? 0 : 2,
 	}).format(cents / 100)
+}
+
+export function formatAdminCostRiskLabel(
+	risk: AdminCostRiskKind,
+	estimatedGrossUsd = 0,
+): string | null {
+	switch (risk) {
+		case 'none':
+			return null
+		case 'paid_underwater':
+			return 'paid underwater'
+		case 'free_near_allotment': {
+			const freeAlertUsd = fleetDynamicWorkerCostAlertUsd('free') ?? 2
+			return estimatedGrossUsd >= freeAlertUsd
+				? 'past included allotment'
+				: 'near included allotment'
+		}
+		case 'missing_price_id':
+			return 'paid unknown'
+		default: {
+			const exhaustive: never = risk
+			throw new Error(`Unknown cost risk: ${String(exhaustive)}`)
+		}
+	}
+}
+
+export function formatAdminCostRiskStatus(input: {
+	risk: AdminCostRiskKind
+	estimatedGrossUsd: number
+	estimatedPaidUsdCents: number
+}) {
+	return (
+		formatAdminCostRiskLabel(input.risk, input.estimatedGrossUsd) ??
+		adminCostRiskNoneStatus(input)
+	)
 }
 
 /** Null when run-derived totals are complete; otherwise a user-facing warning. */

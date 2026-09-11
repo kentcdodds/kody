@@ -22,11 +22,22 @@ import {
 } from '#universal/loader-data.ts'
 import {
 	adminUserDetailHref,
+	formatAdminCostRiskLabel,
 	formatDurationHours,
 	formatPlanLabel,
 	formatPressurePercent,
 	runtimeDurationMetricLabels,
 } from './admin-insights-shared.ts'
+
+function formatAdminCostRiskSuffix(
+	consumer: AdminInsightsDynamicWorkerCost['topConsumers'][number],
+) {
+	const label = formatAdminCostRiskLabel(
+		consumer.risk,
+		consumer.estimatedGrossUsd,
+	)
+	return label ? ` · ${label}` : ''
+}
 
 function renderConsumerTable(input: {
 	ariaLabel: string
@@ -149,7 +160,7 @@ export function renderDynamicWorkerCost(cost: AdminInsightsDynamicWorkerCost) {
 					key: consumer.stableUserId,
 					username: consumer.username,
 					stableUserId: consumer.stableUserId,
-					value: `${formatDynamicWorkerUsd(consumer.estimatedGrossUsd)} (${formatIntegerNumber(consumer.uniqueWorkerDays)})${consumer.underwater ? ' · underwater' : ''}`,
+					value: `${formatDynamicWorkerUsd(consumer.estimatedGrossUsd)} (${formatIntegerNumber(consumer.uniqueWorkerDays)})${formatAdminCostRiskSuffix(consumer)}`,
 				})),
 			})}
 		</div>

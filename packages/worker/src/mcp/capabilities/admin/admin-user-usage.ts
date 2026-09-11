@@ -108,6 +108,12 @@ const outputSchema = z.object({
 				estimatedMarginUsd: z.number(),
 				underwater: z.boolean(),
 				paidSource: z.enum(['stripe_catalog', 'none']),
+				risk: z.enum([
+					'none',
+					'paid_underwater',
+					'free_near_allotment',
+					'missing_price_id',
+				]),
 			}),
 			durableObjectDuration: z.object({
 				gbSeconds: z.number().nonnegative(),

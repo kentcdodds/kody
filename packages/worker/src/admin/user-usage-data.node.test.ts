@@ -153,6 +153,12 @@ function createAdminUserUsageTestDb(input: {
 							null) as T | null
 					}
 					if (
+						normalizedQuery.includes("r.name = 'admin'") &&
+						normalizedQuery.includes('stable_user_id')
+					) {
+						return null
+					}
+					if (
 						normalizedQuery.includes(
 							'select 1 as present from users where stable_user_id = ?',
 						)
@@ -277,6 +283,7 @@ test('loadAdminUserUsageData returns null for unknown users and zeroed usage for
 		estimatedMarginUsd: 0,
 		underwater: false,
 		paidSource: 'none',
+		risk: 'none',
 	})
 	expect(data?.durableObjectDuration).toEqual({
 		gbSeconds: 0,
@@ -323,8 +330,9 @@ test('loadAdminUserUsageData estimates Dynamic Worker cost from unique worker-da
 		usdPerUniqueDay: 0.002,
 		includedPerAccountMonth: 1000,
 	})
-	expect(data?.costVsPay.underwater).toBe(true)
+	expect(data?.costVsPay.underwater).toBe(false)
 	expect(data?.costVsPay.estimatedPaidUsdCents).toBe(0)
+	expect(data?.costVsPay.risk).toBe('none')
 	expect(data?.durableObjectDuration.rpcCount).toBe(0)
 })
 
@@ -369,6 +377,7 @@ test('loadAdminUserUsageData compares catalog list MRR to estimated cost', async
 	expect(data?.costVsPay.estimatedMarginUsd).toBeCloseTo(11.82)
 	expect(data?.costVsPay.underwater).toBe(false)
 	expect(data?.costVsPay.paidSource).toBe('stripe_catalog')
+	expect(data?.costVsPay.risk).toBe('none')
 })
 
 test('loadAdminUserUsageData converts Durable Object RPC duration to observe-only GB-s', async () => {

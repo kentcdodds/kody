@@ -1106,61 +1106,6 @@ html.is-settled {
 	}
 }
 
-.landing-pitch {
-	max-width: 72rem;
-	margin-inline: auto;
-	padding: clamp(4rem, 9vw, 7.5rem) clamp(1.25rem, 4vw, 2.5rem)
-		clamp(2rem, 4vw, 3rem);
-	display: grid;
-	grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
-	gap: clamp(2rem, 5vw, 4.5rem);
-	align-items: start;
-}
-
-.landing-pitch-title {
-	margin: 0;
-	font-size: clamp(2rem, 4.2vw, 3.2rem);
-	font-weight: 740;
-	letter-spacing: -0.026em;
-	line-height: 1.04;
-}
-
-.landing-pitch-title em {
-	font-style: normal;
-	color: var(--color-primary-text);
-}
-
-.landing-pitch-lead {
-	margin: 0;
-	font-size: clamp(1.15rem, 1.8vw, 1.35rem);
-	line-height: 1.5;
-	color: var(--color-text);
-	max-width: 44ch;
-	text-wrap: pretty;
-}
-
-.landing-pitch-body {
-	margin: 1.2rem 0 0;
-	color: var(--color-text-muted);
-	font-size: 1.05rem;
-	max-width: 48ch;
-	text-wrap: pretty;
-}
-
-.landing-pitch-body strong {
-	font-weight: 700;
-	color: var(--color-text);
-}
-
-.landing-pitch-hosts {
-	list-style: none;
-	margin: 1.8rem 0 0;
-	padding: 0;
-	display: flex;
-	flex-wrap: wrap;
-	gap: 0.6rem;
-}
-
 /* Hero stage: Kody with the host agents tethered to his lantern. Tethers are
    drawn over him so they visibly reach the globe; balls of lantern light
    travel them (frame-driven, shown only with JS + motion OK). */
@@ -1406,10 +1351,30 @@ html.is-settled {
 	-webkit-mask-repeat: no-repeat;
 }
 
+.landing-chip-link {
+	text-decoration: none;
+	cursor: pointer;
+}
+
+.landing-chip-link:hover {
+	color: var(--color-text);
+	border-color: color-mix(
+		in oklch,
+		var(--color-primary) 40%,
+		var(--color-border)
+	);
+	background-color: color-mix(in oklch, var(--color-primary) 8%, transparent);
+}
+
+.landing-world-link-item {
+	display: flex;
+}
+
 .landing-factory {
 	max-width: 72rem;
 	margin-inline: auto;
-	padding: clamp(2rem, 4vw, 3.5rem) clamp(1.25rem, 4vw, 2.5rem);
+	padding: clamp(3.5rem, 8vw, 6.5rem) clamp(1.25rem, 4vw, 2.5rem)
+		clamp(2rem, 4vw, 3.5rem);
 	text-align: center;
 }
 
@@ -1426,26 +1391,69 @@ html.is-settled {
 	color: var(--color-text);
 }
 
-.landing-factory-art {
-	width: min(70%, 400px);
-	max-width: 100%;
-	height: auto;
-	aspect-ratio: 1;
-	display: block;
-	margin-inline: auto;
-	margin-top: clamp(1.5rem, 3vw, 2.5rem);
+.landing-path {
+	margin: clamp(1.75rem, 4vw, 2.75rem) auto 0;
+	max-width: 48rem;
 }
 
-.landing-factory-beats {
-	display: grid;
-	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: clamp(1.75rem, 4vw, 2.5rem) clamp(1.5rem, 3vw, 2.5rem);
-	margin-top: 1.15rem;
-	text-align: left;
+.landing-path-split {
+	margin-inline: 0;
+	max-width: none;
 }
 
-.landing-factory-beat-trigger {
+.landing-path-rail {
+	list-style: none;
 	margin: 0;
+	padding: 0;
+	display: flex;
+	align-items: flex-start;
+	justify-content: center;
+	gap: 0;
+	position: relative;
+}
+
+.landing-path-rail::before {
+	content: '';
+	position: absolute;
+	top: 1.15rem;
+	left: 16.67%;
+	right: 16.67%;
+	height: 2px;
+	background: color-mix(
+		in oklab,
+		var(--color-primary) 45%,
+		var(--color-border)
+	);
+	pointer-events: none;
+}
+
+.landing-path-step {
+	flex: 1 1 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.45rem;
+	position: relative;
+	z-index: 1;
+	min-width: 0;
+	padding: 0 0.65rem;
+	text-align: center;
+}
+
+.landing-path-node {
+	display: grid;
+	place-items: center;
+	width: 2.3rem;
+	height: 2.3rem;
+	border-radius: 50%;
+	border: 2px solid var(--color-primary);
+	background: var(--color-surface);
+	color: var(--color-primary-text);
+	font: 700 0.95rem/1 var(--font-display);
+}
+
+.landing-path-kicker {
+	margin: 0.35rem 0 0;
 	font-size: 0.78rem;
 	font-weight: 600;
 	letter-spacing: 0.12em;
@@ -1453,35 +1461,84 @@ html.is-settled {
 	color: var(--color-primary-text);
 }
 
-.landing-factory-kicker {
-	margin: clamp(2rem, 4vw, 3rem) 0 0;
+.landing-path-label {
+	margin: 0;
 	font-size: 1.15rem;
-}
-
-.landing-factory-beat-title {
-	display: flex;
-	align-items: center;
-	flex-wrap: nowrap;
-	gap: 0.5rem;
-	margin: 0.45rem 0 0;
-	font-size: 1.35rem;
 	font-weight: 700;
 	letter-spacing: -0.015em;
+	line-height: 1.2;
 }
 
-.landing-factory-beat-title svg {
-	flex: 0 0 22px;
-	width: 22px;
-	height: 22px;
+.landing-path-note {
+	margin: 0;
+	color: var(--color-text-muted);
+	font-size: 0.92rem;
+	max-width: 16ch;
+	text-wrap: pretty;
+}
+
+.landing-path-stem {
+	width: 2px;
+	height: 1.15rem;
+	margin: 0.45rem auto 0;
+	background: color-mix(
+		in oklab,
+		var(--color-primary) 45%,
+		var(--color-border)
+	);
+}
+
+.landing-path-fan {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 0.85rem;
+}
+
+.landing-path-fan-item {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.35rem;
+	padding: 0.85rem 0.6rem;
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: 16px;
+	text-align: center;
+	min-width: 0;
+}
+
+.landing-path-fan-item .landing-path-kicker {
+	margin: 0;
+}
+
+.landing-path-fan-title {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-wrap: wrap;
+	gap: 0.4rem;
+	margin: 0;
+	font-size: 0.98rem;
+	font-weight: 700;
+	letter-spacing: -0.01em;
+	line-height: 1.25;
+}
+
+.landing-path-fan-title svg {
+	flex: 0 0 18px;
+	width: 18px;
+	height: 18px;
 	color: var(--color-primary-text);
 }
 
-.landing-factory-beat p:last-child {
-	margin: 0.7rem 0 0;
-	color: var(--color-text-muted);
-	font-size: 0.98rem;
-	max-width: 38ch;
-	text-wrap: pretty;
+.landing-path-fan-chips {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 0.55rem;
 }
 
 .landing-factory-ritual {
@@ -2067,52 +2124,6 @@ html.is-settled {
 	}
 }
 
-.landing-honest {
-	max-width: 44rem;
-	margin-inline: auto;
-	padding: clamp(2.5rem, 6vw, 5rem) clamp(1.25rem, 4vw, 2.5rem);
-	text-align: center;
-}
-
-.landing-honest-lead {
-	margin: 1.1rem auto 0;
-	color: var(--color-text-muted);
-	font-size: 1.08rem;
-	max-width: 42ch;
-	text-wrap: pretty;
-}
-
-.landing-honest-rows {
-	margin: clamp(1.8rem, 4vw, 2.4rem) 0 0;
-	text-align: left;
-}
-
-.landing-honest-row {
-	display: grid;
-	grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
-	gap: 0.75rem 1.5rem;
-	padding: 0.95rem 0;
-	border-top: 1px solid var(--color-border);
-}
-
-.landing-honest-row:last-child {
-	border-bottom: 1px solid var(--color-border);
-}
-
-.landing-honest-row dt {
-	margin: 0;
-	color: var(--color-text-muted);
-	font-size: 0.98rem;
-	text-wrap: pretty;
-}
-
-.landing-honest-row dd {
-	margin: 0;
-	font-size: 0.98rem;
-	font-weight: 550;
-	text-wrap: pretty;
-}
-
 .landing-ecosystem,
 .landing-byok {
 	max-width: 72rem;
@@ -2282,74 +2293,66 @@ html.is-settled {
 		font-size: 2rem;
 	}
 
-	.landing-pitch {
-		grid-template-columns: 1fr;
-		text-align: center;
-		padding: 3.25rem 1.25rem 1.75rem;
-	}
-
-	.landing-pitch-title {
-		font-size: 2rem;
-	}
-
-	.landing-pitch-title br {
-		display: none;
-	}
-
-	.landing-pitch-lead {
-		font-size: 1.125rem;
-		margin-inline: auto;
-		max-width: 40ch;
-	}
-
-	.landing-pitch-body {
-		font-size: 1rem;
-		margin-inline: auto;
-		max-width: 46ch;
-	}
-
-	.landing-pitch-hosts {
-		justify-content: center;
-	}
-
 	.landing-factory {
-		padding: 1.75rem 1.25rem;
-	}
-
-	.landing-factory-art {
-		width: min(60%, 300px);
+		padding: 3.25rem 1.25rem 1.75rem;
 	}
 
 	.landing-loop-chat {
 		height: min(26rem, 65vh);
 	}
 
-	.landing-factory-beats {
-		text-align: center;
+	.landing-path-rail {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0;
 	}
 
-	.landing-factory-beat-title {
-		justify-content: center;
+	.landing-path-rail::before {
+		top: 1.15rem;
+		bottom: 1.15rem;
+		left: 1.15rem;
+		right: auto;
+		width: 2px;
+		height: auto;
 	}
 
-	.landing-factory-beat p:last-child {
-		font-size: 1rem;
-		max-width: 46ch;
-		margin-inline: auto;
+	.landing-path-step {
+		flex-direction: row;
+		flex-wrap: wrap;
+		justify-content: flex-start;
+		align-items: center;
+		gap: 0.35rem 0.85rem;
+		text-align: left;
+		padding: 0 0 1.5rem 0;
 	}
 
-	.landing-honest {
-		padding: 1.75rem 1.25rem;
+	.landing-path-step:last-child {
+		padding-bottom: 0;
+	}
+
+	.landing-path-kicker {
+		margin: 0;
+		flex: 1 1 auto;
+	}
+
+	.landing-path-label,
+	.landing-path-note {
+		flex: 1 1 100%;
+		padding-left: 3.15rem;
+		max-width: none;
+	}
+
+	.landing-path-stem {
+		display: none;
+	}
+
+	.landing-path-fan {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		margin-top: 1.15rem;
 	}
 
 	.landing-testimonials {
 		padding: 1.75rem 1.25rem;
-	}
-
-	.landing-honest-row {
-		grid-template-columns: 1fr;
-		gap: 0.3rem;
-		text-align: center;
 	}
 
 	.landing-ecosystem,
@@ -2398,7 +2401,7 @@ html.is-settled {
 }
 
 @media (max-width: 560px) {
-	.landing-factory-beats {
+	.landing-path-fan {
 		grid-template-columns: 1fr;
 	}
 }
