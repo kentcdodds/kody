@@ -27,6 +27,8 @@ import {
 	planColors,
 	workflowStatusColors,
 } from './admin-insights-shared.ts'
+import { renderCostVsPay } from './admin-insights-cost.tsx'
+import { renderLaunchSignals } from './admin-insights-launch.tsx'
 import {
 	ChartCard,
 	activationSubtitle,
@@ -68,6 +70,8 @@ export function renderDashboard(data: AdminInsightsLoaderData) {
 					{runLogWarning}
 				</AccountManagementMessage>
 			) : null}
+			{renderLaunchSignals(data.launchSignals)}
+			{renderCostVsPay(data.dynamicWorkerCost)}
 			<div
 				mix={css({
 					display: 'grid',
@@ -152,7 +156,7 @@ export function renderDashboard(data: AdminInsightsLoaderData) {
 				})}
 			>
 				<ChartCard
-					title="Activation funnel"
+					title="Package activation"
 					sub={activationSubtitle(data.activation)}
 					span={8}
 				>
@@ -284,7 +288,7 @@ export function renderDashboard(data: AdminInsightsLoaderData) {
 				</ChartCard>
 				<ChartCard
 					title="Entitlement pressure"
-					sub="Accounts above 80% of a plan limit among the ~15 most active users this month."
+					sub="Accounts above 80% of a plan limit among the ~15 most active users this month. Bounded usage_rollups sweep — not a full user scan."
 					span={6}
 				>
 					{renderEntitlementPressure(data.entitlementPressure)}
@@ -330,7 +334,7 @@ export function renderDashboard(data: AdminInsightsLoaderData) {
 				</ChartCard>
 				<ChartCard
 					title="Users by plan"
-					sub="Current plan distribution."
+					sub="Manual grant (`plan`) only — not Stripe or overlays. See Plan sources above."
 					span={4}
 				>
 					<DonutChart

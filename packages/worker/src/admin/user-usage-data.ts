@@ -1,13 +1,5 @@
 import { cachified, type Cache } from '@epic-web/cachified'
 import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
-import {
-	parseEntitlementLadder,
-	parseStoredPlanName,
-	resolveEffectivePlan,
-} from '#universal/plans.ts'
-import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consumption.ts'
-import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
 import { toAdminDynamicWorkerCost } from '#universal/dynamic-worker-cost.ts'
 import { toAdminDurableObjectDuration } from '#universal/durable-object-duration.ts'
 import {
@@ -16,6 +8,16 @@ import {
 	type AdminUsageRollup,
 	type AdminUserUsageLoaderData,
 } from '#universal/loader-data.ts'
+import {
+	parseEntitlementLadder,
+	parseStoredPlanName,
+	resolveEffectivePlan,
+} from '#universal/plans.ts'
+import { toAdminCostVsPay } from '#worker/admin/cost-vs-pay.ts'
+import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consumption.ts'
+import { resolveStripePriceCatalog } from '#worker/billing/stripe-price-catalog.ts'
+import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
+import { resolveUserStableId } from '#worker/user-id.ts'
 
 export const adminUsageMetrics = [
 	'execute',
@@ -44,6 +46,7 @@ type AdminUserUsageUserRow = {
 	email: string
 	plan: string
 	stripe_plan: string | null
+	stripe_price_id: string | null
 	entitlement_ladder: string | null
 	stable_user_id: string
 }
@@ -71,7 +74,7 @@ export async function loadAdminUserUsageData(
 	now: Date = new Date(),
 ): Promise<AdminUserUsageLoaderData | null> {
 	const row = await env.APP_DB.prepare(
-		`SELECT id, username, email, plan, stripe_plan, entitlement_ladder, stable_user_id FROM users WHERE stable_user_id = ?`,
+		`SELECT id, username, email, plan, stripe_plan, stripe_price_id, entitlement_ladder, stable_user_id FROM users WHERE stable_user_id = ?`,
 	)
 		.bind(stableUserId)
 		.first<AdminUserUsageUserRow>()
@@ -117,6 +120,12 @@ export async function loadAdminUserUsageData(
 	const durableObjectUsage = currentMonthUsage.find(
 		(row) => row.metric === 'durable_object_gb_seconds',
 	)
+	const costVsPay = toAdminCostVsPay({
+		uniqueWorkerDays,
+		stripePlan: row.stripe_plan,
+		stripePriceId: row.stripe_price_id,
+		catalog: resolveStripePriceCatalog(env),
+	})
 
 	return {
 		ok: true,
@@ -134,6 +143,7 @@ export async function loadAdminUserUsageData(
 			durationMs: durableObjectUsage?.totalDurationMs ?? 0,
 			rpcCount: durableObjectUsage?.eventCount ?? 0,
 		}),
+		costVsPay,
 	}
 }
 

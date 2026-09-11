@@ -85,6 +85,7 @@ type UserRow = {
 	email: string
 	plan: string
 	stripe_plan?: string | null
+	stripe_price_id?: string | null
 	stable_user_id: string
 }
 
@@ -145,7 +146,7 @@ function createAdminUserUsageTestDb(input: {
 				async first<T>() {
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, plan, stripe_plan, entitlement_ladder, stable_user_id from users where stable_user_id = ?',
+							'select id, username, email, plan, stripe_plan, stripe_price_id, entitlement_ladder, stable_user_id from users where stable_user_id = ?',
 						)
 					) {
 						return (users.find((user) => user.stable_user_id === params[0]) ??
@@ -267,6 +268,16 @@ test('loadAdminUserUsageData returns null for unknown users and zeroed usage for
 		usdPerUniqueDay: 0.002,
 		includedPerAccountMonth: 1000,
 	})
+	expect(data?.costVsPay).toEqual({
+		uniqueWorkerDays: 0,
+		estimatedGrossUsd: 0,
+		usdPerUniqueDay: 0.002,
+		includedPerAccountMonth: 1000,
+		estimatedPaidUsdCents: 0,
+		estimatedMarginUsd: 0,
+		underwater: false,
+		paidSource: 'none',
+	})
 	expect(data?.durableObjectDuration).toEqual({
 		gbSeconds: 0,
 		durationMs: 0,
@@ -312,7 +323,52 @@ test('loadAdminUserUsageData estimates Dynamic Worker cost from unique worker-da
 		usdPerUniqueDay: 0.002,
 		includedPerAccountMonth: 1000,
 	})
+	expect(data?.costVsPay.underwater).toBe(true)
+	expect(data?.costVsPay.estimatedPaidUsdCents).toBe(0)
 	expect(data?.durableObjectDuration.rpcCount).toBe(0)
+})
+
+test('loadAdminUserUsageData compares catalog list MRR to estimated cost', async () => {
+	const email = 'dw-paid@example.com'
+	const usageUserId = await createStableUserIdFromEmail(email)
+	const db = createAdminUserUsageTestDb({
+		users: [
+			{
+				id: 31,
+				username: 'dwpaid',
+				email,
+				plan: 'free',
+				stripe_plan: 'standard',
+				stripe_price_id: 'price_standard',
+				stable_user_id: usageUserId,
+			},
+		],
+		usageRollups: [
+			usageRow({
+				user_id: usageUserId,
+				metric: 'dynamic_worker_day',
+				month: '2026-07',
+				event_count: 90,
+			}),
+		],
+		resourceCounts: { [usageUserId]: {} },
+	})
+
+	const data = await loadAdminUserUsageData(
+		withUserMeter({
+			APP_DB: db,
+			STRIPE_STANDARD_PRICE_ID: 'price_standard',
+		}) as Env,
+		usageUserId,
+		new Date('2026-07-05T12:00:00.000Z'),
+	)
+
+	expect(data?.costVsPay.uniqueWorkerDays).toBe(90)
+	expect(data?.costVsPay.estimatedGrossUsd).toBeCloseTo(0.18)
+	expect(data?.costVsPay.estimatedPaidUsdCents).toBe(1_200)
+	expect(data?.costVsPay.estimatedMarginUsd).toBeCloseTo(11.82)
+	expect(data?.costVsPay.underwater).toBe(false)
+	expect(data?.costVsPay.paidSource).toBe('stripe_catalog')
 })
 
 test('loadAdminUserUsageData converts Durable Object RPC duration to observe-only GB-s', async () => {

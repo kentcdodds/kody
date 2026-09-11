@@ -535,6 +535,18 @@ WHERE timestamp > NOW() - INTERVAL '1' HOUR
   `users.entitlement_ladder` so legacy Standard/Pro is scored against
   `legacyPlanLimits`. Queries are `LIMIT`-bounded; entitlement reads run with
   modest concurrency.
+- **Launch signals** (`/admin/insights`, loader in
+  `packages/worker/src/admin/launch-signals.ts`): COUNT / GROUP BY over indexed
+  `users` columns and `platform_feedback.status`. Rough MRR maps
+  `users.stripe_price_id` through the known Standard/Pro catalog (public
+  $12 /
+  $120 and $49 / $480, plus retired list prices) and never calls Stripe
+  or pages the user table. `plan`, `stripe_plan`, and overlay-aware
+  `effectivePlan` stay separate so gift/referral Standard does not look like
+  paid MRR. Cost-vs-pay ranks the current month's top unique-worker-day
+  consumers (bounded scan) against that same catalog list MRR. The 5-minute
+  insights KV cache (`admin-insights:v10`) covers the assembled page; RunLog-
+  derived charts come from the hourly RunLog KV snapshot.
 - **Proactive alerts** (`usage_entitlement_alert` scheduled lane in
   `packages/worker/src/app/usage-entitlement-alerts.ts`): hourly sweep of the
   same ~15-user bound. Emits `fleet.entitlement.crossed` to admin-owned packages

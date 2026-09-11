@@ -156,7 +156,7 @@ export function renderDynamicWorkerCost(cost: AdminInsightsDynamicWorkerCost) {
 					key: consumer.stableUserId,
 					username: consumer.username,
 					stableUserId: consumer.stableUserId,
-					value: `${formatDynamicWorkerUsd(consumer.estimatedGrossUsd)} (${formatIntegerNumber(consumer.uniqueWorkerDays)})`,
+					value: `${formatDynamicWorkerUsd(consumer.estimatedGrossUsd)} (${formatIntegerNumber(consumer.uniqueWorkerDays)})${consumer.underwater ? ' · underwater' : ''}`,
 				})),
 			})}
 		</div>

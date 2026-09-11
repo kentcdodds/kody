@@ -99,6 +99,16 @@ const outputSchema = z.object({
 				usdPerUniqueDay: z.number().nonnegative(),
 				includedPerAccountMonth: z.number().int().nonnegative(),
 			}),
+			costVsPay: z.object({
+				uniqueWorkerDays: z.number().int().nonnegative(),
+				estimatedGrossUsd: z.number().nonnegative(),
+				usdPerUniqueDay: z.number().nonnegative(),
+				includedPerAccountMonth: z.number().int().nonnegative(),
+				estimatedPaidUsdCents: z.number().int().nonnegative(),
+				estimatedMarginUsd: z.number(),
+				underwater: z.boolean(),
+				paidSource: z.enum(['stripe_catalog', 'none']),
+			}),
 			durableObjectDuration: z.object({
 				gbSeconds: z.number().nonnegative(),
 				durationMs: z.number().nonnegative(),
@@ -115,7 +125,7 @@ export const adminUserUsageCapability = defineDomainCapability(
 		...adminCapabilityAccess,
 		name: 'adminUserUsage',
 		description:
-			'Read usage rollups, entitlement counters, plan-limit consumption, estimated Cloudflare Dynamic Worker cost, and observe-only Durable Object duration (GB-s) for one user account by stable user id, email, or username. Admin-only; never returns user content.',
+			'Read usage rollups, entitlement counters, plan-limit consumption, estimated Cloudflare Dynamic Worker cost vs catalog list MRR, and observe-only Durable Object duration (GB-s) for one user account by stable user id, email, or username. Admin-only; never returns user content.',
 		keywords: [
 			'admin',
 			'usage',

@@ -18,6 +18,7 @@ export const planColors: Record<string, string> = {
 	pro: chartColor.violet,
 	free: chartColor.blue,
 	standard: chartColor.emerald,
+	max: chartColor.rose,
 	none: chartColor.cyan,
 }
 
@@ -81,11 +82,22 @@ export const runtimeDurationMetricLabels: Record<AdminUsageMetric, string> = {
 	durable_object_rows_read: 'Durable Object rows read',
 }
 
+export function formatUsdFromCents(cents: number) {
+	return new Intl.NumberFormat('en-US', {
+		style: 'currency',
+		currency: 'USD',
+		maximumFractionDigits: cents % 100 === 0 ? 0 : 2,
+	}).format(cents / 100)
+}
+
 /** Null when run-derived totals are complete; otherwise a user-facing warning. */
 export function formatRunLogCompletenessWarning(
 	completeness: AdminInsightsRunLogCompleteness,
 ): string | null {
 	if (completeness.complete) return null
+	if (completeness.snapshotUpdatedAt == null) {
+		return 'Workflow and package-activation totals refresh hourly off this page. No snapshot yet.'
+	}
 	return `Workflow and activation totals are partial — loaded RunLog snapshots for ${completeness.usersLoaded} of ${completeness.usersAttempted} users.`
 }
 

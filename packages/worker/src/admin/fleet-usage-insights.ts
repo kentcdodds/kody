@@ -12,6 +12,13 @@ import {
 	type PlanName,
 } from '#universal/plans.ts'
 import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
+import {
+	adminFleetCostVsPayDisplayLimit,
+	adminFleetCostVsPayScanLimit,
+	rankUnderwaterCostConsumers,
+	toAdminCostVsPayConsumer,
+} from '#worker/admin/cost-vs-pay.ts'
+import { resolveStripePriceCatalog } from '#worker/billing/stripe-price-catalog.ts'
 import { adminUsageMetrics } from '#worker/admin/user-usage-data.ts'
 import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consumption.ts'
 import {
@@ -144,7 +151,7 @@ export async function loadFleetUsageInsights(input: {
 		queryTopEventCountConsumers(input.db, currentMonth),
 		queryTopDurationConsumersByMetric(input.db, currentMonth),
 		buildEntitlementPressurePanel(input),
-		queryDynamicWorkerCost(input.db, currentMonth),
+		queryDynamicWorkerCost(input.db, input.env, currentMonth),
 	])
 	return {
 		topRuntimeDurationConsumers,
@@ -341,8 +348,10 @@ async function queryTopEventCountConsumers(
 
 async function queryDynamicWorkerCost(
 	db: D1Database,
+	env: Env,
 	currentMonth: string,
 ): Promise<AdminInsightsDynamicWorkerCost> {
+	const catalog = resolveStripePriceCatalog(env)
 	const [totalRow, consumerRows] = await Promise.all([
 		db
 			.prepare(
@@ -355,7 +364,8 @@ async function queryDynamicWorkerCost(
 			.first<{ unique_worker_days: number }>(),
 		db
 			.prepare(
-				`SELECT u.stable_user_id, u.username, r.event_count
+				`SELECT u.stable_user_id, u.username, u.stripe_plan, u.stripe_price_id,
+					r.event_count
 				 FROM usage_rollups r
 				 INNER JOIN users u ON u.stable_user_id = r.user_id
 				 WHERE r.month = ?
@@ -364,25 +374,30 @@ async function queryDynamicWorkerCost(
 				 ORDER BY r.event_count DESC
 				 LIMIT ?`,
 			)
-			.bind(currentMonth, adminFleetTopConsumersLimit)
+			.bind(currentMonth, adminFleetCostVsPayScanLimit)
 			.all<{
 				stable_user_id: string
 				username: string
+				stripe_plan: string | null
+				stripe_price_id: string | null
 				event_count: number
 			}>(),
 	])
 	const uniqueWorkerDays = Number(totalRow?.unique_worker_days ?? 0)
+	const scanned = (consumerRows.results ?? []).map((row) =>
+		toAdminCostVsPayConsumer({
+			stableUserId: row.stable_user_id,
+			username: row.username,
+			uniqueWorkerDays: Number(row.event_count),
+			stripePlan: row.stripe_plan,
+			stripePriceId: row.stripe_price_id,
+			catalog,
+		}),
+	)
 	return {
 		...toAdminDynamicWorkerCost(uniqueWorkerDays),
-		topConsumers: (consumerRows.results ?? []).map((row) => {
-			const days = Number(row.event_count)
-			return {
-				stableUserId: row.stable_user_id,
-				username: row.username,
-				uniqueWorkerDays: days,
-				estimatedGrossUsd: estimateDynamicWorkerUsd(days),
-			}
-		}),
+		topConsumers: scanned.slice(0, adminFleetCostVsPayDisplayLimit),
+		underwaterConsumers: rankUnderwaterCostConsumers(scanned),
 	}
 }
 
