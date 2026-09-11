@@ -14,6 +14,7 @@ import {
 } from '#app/auth-session.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { maybeTagKitSubscriberOnSignup } from '#app/kit-signup.ts'
+import { attachPendingPackageShareInvitesSafely } from '#worker/package-registry/share-grants.ts'
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { getAvailableUsernameFromBase } from '#worker/identity/generated-username.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
@@ -791,6 +792,12 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				await rollbackNewUser(newUser.id)
 				return fail('account-error', 'connection_create_failed')
 			}
+			await attachPendingPackageShareInvitesSafely({
+				db: env.APP_DB,
+				userId: newUser.stable_user_id,
+				email,
+				username,
+			})
 			await completeDiscordGuildLogin({
 				provider,
 				userId: newUser.id,

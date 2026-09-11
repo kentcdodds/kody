@@ -302,6 +302,57 @@ test('getSafeMarkdownLinkHref allowlists protocols and blocks user-scope paths',
 	).toBe('https://github.com/orgs/example/packages')
 })
 
+test('first-party guides render tip callouts and details; untrusted markdown stays escaped', async () => {
+	const markdown = [
+		'> [!TIP]',
+		'> Prefer a [fork](/docs/package-lifecycle) for most use cases.',
+		'',
+		'<details>',
+		'<summary>What is the difference between forking and sharing?</summary>',
+		'',
+		'**Fork** copies the package. **Share** leaves it in your account.',
+		'',
+		'</details>',
+		'',
+		'<details onclick="alert(1)">',
+		'<summary>Bad</summary>',
+		'',
+		'Nope',
+		'',
+		'</details>',
+	].join('\n')
+
+	const firstParty = await renderToString(
+		jsx('div', {
+			children: renderMarkdownNodes(markdown, {
+				linkPolicy: 'first-party',
+				headingOffset: 0,
+			}),
+		}),
+	)
+	expect(firstParty).toContain('data-doc-callout="tip"')
+	expect(firstParty).toContain('<strong>Tip</strong>')
+	expect(firstParty).toContain('href="/docs/package-lifecycle"')
+	expect(firstParty).not.toContain('[!TIP]')
+	expect(firstParty).toContain('<details')
+	expect(firstParty).toContain('data-doc-disclosure')
+	expect(firstParty).toContain(
+		'<summary>What is the difference between forking and sharing?</summary>',
+	)
+	expect(firstParty).toContain('<strong>Fork</strong>')
+	expect(firstParty).toContain('<strong>Share</strong>')
+	expect(firstParty).toContain('&lt;details onclick="alert(1)"&gt;')
+	expect(firstParty).not.toContain('<details onclick')
+
+	const untrusted = await renderMarkdown(markdown)
+	expect(untrusted).toContain('<blockquote>')
+	expect(untrusted).toContain('[!TIP]')
+	expect(untrusted).not.toContain('data-doc-callout')
+	expect(untrusted).not.toContain('<details')
+	expect(untrusted).toContain('&lt;details')
+	expect(untrusted).toContain('&lt;summary')
+})
+
 test('markdown tables keep last-column nowrap only when every last cell is a short label', async () => {
 	const compact = await renderMarkdown(
 		[

@@ -498,6 +498,44 @@ export function buildPasswordResetEmail(input: {
 	})
 }
 
+export function buildPackageShareInviteEmail(input: {
+	appBaseUrl: string
+	ownerUsername: string
+	packageName: string
+	acceptUrl: string
+	existingAccount: boolean
+}) {
+	const owner = `@${input.ownerUsername}`
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: `${owner} shared ${input.packageName} with you on Kody`,
+		preheader: input.existingAccount
+			? `Accept the invitation to use ${input.packageName}.`
+			: `Create a Kody account, choose a paid plan, then accept ${input.packageName}.`,
+		heading: `${owner} shared a package with you`,
+		body: input.existingAccount
+			? [
+					`${owner} invited you to use ${input.packageName} on their Kody account.`,
+					'Accepting lets you read the package source and invoke it from your own packages. You cannot publish or write to the shared package. Raw secret values stay hidden.',
+					'Both of you need a paid Kody plan to accept and to use the shared package.',
+				]
+			: [
+					'Kody is the home your AI assistant keeps — memory, keys, code, and automations.',
+					`${owner} invited you to use ${input.packageName}. This is an invitation, not an automatic attach.`,
+					'Create a Kody account with this email, choose a paid plan, then open the package page and accept. You will be able to read the source and invoke the package; you will not be able to publish or see raw secrets.',
+				],
+		action: {
+			label: input.existingAccount
+				? 'Review and accept'
+				: 'Create an account, then accept',
+			url: input.acceptUrl,
+		},
+		afterAction: [
+			'If you did not expect this invitation, you can ignore this email.',
+		],
+	})
+}
+
 export function buildPasswordResetConfirmedEmail(input: {
 	appBaseUrl: string
 	accountUrl: string

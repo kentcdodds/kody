@@ -1,4 +1,5 @@
 import { getSavedPackageByName } from '#worker/package-registry/repo.ts'
+import { resolveShareGrantedPackageImport } from '#worker/package-registry/share-grants.ts'
 import { getPlatformAccountByUsername } from '#worker/package-registry/scope-grants.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 
@@ -25,11 +26,18 @@ export type KodyPackageSpecifier = {
  * account composing with another platform scope (decision 0036). Person
  * accounts — ad hoc execute and saved packages — must `communityFork`
  * into the caller's scope. The caller's own copy always wins.
+ *
+ * Person-to-person share grants are a separate lane: an accepted grant
+ * lets the guest resolve the owner's published package for invoke and
+ * source read. `shareOwned` marks that the storage/secret stamp stays
+ * on the owner, not the guest.
  */
 export type ResolvedPackageImport = {
 	row: SavedPackageRecord
 	sourceOwnerUserId: string
 	platformScope: string | null
+	shareOwned?: boolean
+	storageOwnerUserId?: string
 }
 
 function unsupportedSpecifierError(specifier: string) {
@@ -83,12 +91,37 @@ export async function resolveSavedPackageImport(input: {
 	 * it opts out and reports a teaching error instead.
 	 */
 	allowPlatformScopes?: boolean
+	/**
+	 * When rewriting imports inside a share-granted package, resolve the
+	 * owner's other published packages as that owner — the guest never
+	 * independently imports those helpers unless the owner's published
+	 * graph does.
+	 */
+	nestedShareOwnerUserId?: string
 }): Promise<ResolvedPackageImport | null> {
 	const parsed =
 		typeof input.specifier === 'string'
 			? parseKodyPackageSpecifier(input.specifier)
 			: input.specifier
 
+	if (
+		input.nestedShareOwnerUserId &&
+		input.nestedShareOwnerUserId !== input.userId
+	) {
+		const ownerOwned = await getSavedPackageByName(input.db, {
+			userId: input.nestedShareOwnerUserId,
+			name: parsed.packageName,
+		})
+		if (ownerOwned) {
+			return {
+				row: ownerOwned,
+				sourceOwnerUserId: input.nestedShareOwnerUserId,
+				platformScope: null,
+				shareOwned: true,
+				storageOwnerUserId: input.nestedShareOwnerUserId,
+			}
+		}
+	}
 	const own = await getSavedPackageByName(input.db, {
 		userId: input.userId,
 		name: parsed.packageName,
@@ -98,6 +131,20 @@ export async function resolveSavedPackageImport(input: {
 			row: own,
 			sourceOwnerUserId: input.userId,
 			platformScope: null,
+		}
+	}
+	const shared = await resolveShareGrantedPackageImport({
+		db: input.db,
+		granteeUserId: input.userId,
+		packageName: parsed.packageName,
+	})
+	if (shared) {
+		return {
+			row: shared.row,
+			sourceOwnerUserId: shared.sourceOwnerUserId,
+			platformScope: null,
+			shareOwned: true,
+			storageOwnerUserId: shared.sourceOwnerUserId,
 		}
 	}
 	if (input.allowPlatformScopes !== true) return null

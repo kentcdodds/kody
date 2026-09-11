@@ -518,6 +518,8 @@ export type SearchMatch =
 			hidden: boolean
 			/** Platform (built-in) scope username when owned by a platform account. */
 			platformScope?: string | null
+			/** Owner username for person-to-person share-grant rows. */
+			ownerUsername?: string | null
 			readmeSnippet?: {
 				path: string
 				snippet: string

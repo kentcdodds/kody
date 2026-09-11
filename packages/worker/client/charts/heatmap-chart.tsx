@@ -1,5 +1,11 @@
 import { css, type Handle } from 'remix/ui'
-import { chartAxisTextCss, chartEmptyFill, softColor } from './chart-theme.ts'
+import {
+	chartAxisTextCss,
+	chartEmptyFill,
+	chartScrollerCss,
+	chartSvgCss,
+	softColor,
+} from './chart-theme.ts'
 
 type HeatmapCell = {
 	/** 0 = Sunday through 6 = Saturday, matching `Date#getUTCDay`. */
@@ -44,61 +50,65 @@ export function HeatmapChart(handle: Handle<HeatmapChartProps>) {
 		}
 
 		return (
-			<svg
-				viewBox={`0 0 ${width} ${height}`}
-				role="img"
-				aria-label={ariaLabel}
-				mix={css({ width: '100%', height: 'auto', display: 'block' })}
-			>
-				{weekdayRows.map((weekday, rowIndex) => (
-					<text
-						key={weekday}
-						x={leftPad - 8}
-						y={topPad + rowIndex * (cellHeight + cellGap) + cellHeight / 2 + 4}
-						textAnchor="end"
-						mix={css(chartAxisTextCss)}
-					>
-						{weekdayLabels[weekday]}
-					</text>
-				))}
-				{Array.from({ length: 24 }, (_, hour) =>
-					hour % 6 === 0 ? (
+			<div mix={css(chartScrollerCss)}>
+				<svg
+					viewBox={`0 0 ${width} ${height}`}
+					role="img"
+					aria-label={ariaLabel}
+					mix={css(chartSvgCss(width))}
+				>
+					{weekdayRows.map((weekday, rowIndex) => (
 						<text
-							key={hour}
-							x={leftPad + hour * (cellWidth + cellGap) + cellWidth / 2}
-							y={height - 4}
-							textAnchor="middle"
+							key={weekday}
+							x={leftPad - 8}
+							y={
+								topPad + rowIndex * (cellHeight + cellGap) + cellHeight / 2 + 4
+							}
+							textAnchor="end"
 							mix={css(chartAxisTextCss)}
 						>
-							{String(hour).padStart(2, '0')}:00
+							{weekdayLabels[weekday]}
 						</text>
-					) : null,
-				)}
-				{weekdayRows.map((weekday, rowIndex) =>
-					Array.from({ length: 24 }, (_, hour) => {
-						const count = countByCell.get(`${weekday}:${hour}`) ?? 0
-						const intensity =
-							maxCount > 0 && count > 0
-								? 12 + Math.round((count / maxCount) * 78)
-								: 0
-						return (
-							<rect
-								key={`${weekday}-${hour}`}
-								x={leftPad + hour * (cellWidth + cellGap)}
-								y={topPad + rowIndex * (cellHeight + cellGap)}
-								width={cellWidth}
-								height={cellHeight}
-								rx="3.5"
-								fill={
-									intensity > 0 ? softColor(color, intensity) : chartEmptyFill
-								}
+					))}
+					{Array.from({ length: 24 }, (_, hour) =>
+						hour % 6 === 0 ? (
+							<text
+								key={hour}
+								x={leftPad + hour * (cellWidth + cellGap) + cellWidth / 2}
+								y={height - 4}
+								textAnchor="middle"
+								mix={css(chartAxisTextCss)}
 							>
-								<title>{`${weekdayLabels[weekday]} ${String(hour).padStart(2, '0')}:00 UTC — ${count} ${unitLabel}`}</title>
-							</rect>
-						)
-					}),
-				)}
-			</svg>
+								{String(hour).padStart(2, '0')}:00
+							</text>
+						) : null,
+					)}
+					{weekdayRows.map((weekday, rowIndex) =>
+						Array.from({ length: 24 }, (_, hour) => {
+							const count = countByCell.get(`${weekday}:${hour}`) ?? 0
+							const intensity =
+								maxCount > 0 && count > 0
+									? 12 + Math.round((count / maxCount) * 78)
+									: 0
+							return (
+								<rect
+									key={`${weekday}-${hour}`}
+									x={leftPad + hour * (cellWidth + cellGap)}
+									y={topPad + rowIndex * (cellHeight + cellGap)}
+									width={cellWidth}
+									height={cellHeight}
+									rx="3.5"
+									fill={
+										intensity > 0 ? softColor(color, intensity) : chartEmptyFill
+									}
+								>
+									<title>{`${weekdayLabels[weekday]} ${String(hour).padStart(2, '0')}:00 UTC — ${count} ${unitLabel}`}</title>
+								</rect>
+							)
+						}),
+					)}
+				</svg>
+			</div>
 		)
 	}
 }

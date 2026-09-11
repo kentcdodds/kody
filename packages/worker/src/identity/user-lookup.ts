@@ -8,6 +8,36 @@ export type PublicUserIdentity = {
 	mcpUserId: string
 }
 
+export async function findPublicUserIdentityByStableUserId(input: {
+	db: D1Database
+	userId: string
+}): Promise<PublicUserIdentity | null> {
+	const userId = input.userId.trim()
+	if (!userId) return null
+
+	const userRecord = await input.db
+		.prepare(
+			`SELECT id, username, email, stable_user_id
+				FROM users
+				WHERE stable_user_id = ?`,
+		)
+		.bind(userId)
+		.first<{
+			id: number
+			username: string
+			email: string
+			stable_user_id: string
+		}>()
+	if (!userRecord) return null
+
+	return {
+		userId: userRecord.id,
+		username: userRecord.username,
+		email: userRecord.email,
+		mcpUserId: resolveUserStableId(userRecord),
+	}
+}
+
 export async function findPublicUserIdentityByUsername(input: {
 	db: D1Database
 	username: string

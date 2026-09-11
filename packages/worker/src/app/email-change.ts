@@ -11,6 +11,7 @@ import {
 	isEmailReservedForOtherAccount,
 } from '#worker/identity/email-claims.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
+import { attachPendingPackageShareInvitesSafely } from '#worker/package-registry/share-grants.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 
 const emailChangeTokenBytes = 32
@@ -233,6 +234,11 @@ export async function verifyEmailChangeToken(input: {
 		userId: record.user_id,
 		email: newEmail,
 		now,
+	})
+	await attachPendingPackageShareInvitesSafely({
+		db: input.db,
+		userId: stableUserId,
+		email: newEmail,
 	})
 
 	return {

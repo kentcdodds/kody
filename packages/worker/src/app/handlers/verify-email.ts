@@ -13,6 +13,7 @@ import { type routes } from '#universal/routes.ts'
 import { waitUntil } from 'cloudflare:workers'
 import { maybeRewardHeldReferralAfterEmailVerified } from '#worker/entitlements/referral-program.ts'
 import { latestReferrerPaidPeriodEnd } from '#worker/billing/stripe-webhooks.ts'
+import { attachPendingPackageShareInvitesSafely } from '#worker/package-registry/share-grants.ts'
 
 function getVerifyEmailError(
 	reason: 'missing_token' | 'invalid_token' | 'expired_token',
@@ -73,6 +74,11 @@ export function createVerifyEmailHandler(env: Env) {
 				email: result.email,
 				ip: requestIp,
 				path: url.pathname,
+			})
+			await attachPendingPackageShareInvitesSafely({
+				db: env.APP_DB,
+				userId: result.stableUserId,
+				email: result.email,
 			})
 			if (result.newlyVerified) {
 				void sendConnectAgentEmail({

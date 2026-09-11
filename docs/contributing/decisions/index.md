@@ -103,6 +103,9 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0049 — No MCP capability OAuth scopes](./0049-no-mcp-capability-oauth-scopes.md)
   — connecting an agent is one grant; `openid` / `profile` / `email` stay
   identity claims, not a permission menu
+- [0050 — Package share grants are not platform scope grants](./0050-package-share-grants-are-not-scope-grants.md)
+  — person-to-person `package_share_grants` stay separate from admin-minted
+  platform `package_scope_grants`; grant `pin` is not an import specifier pin
 
 ## Historical / UI / implementation
 

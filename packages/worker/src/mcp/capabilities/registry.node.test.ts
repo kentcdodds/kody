@@ -6,20 +6,14 @@ import {
 	getStaticRegistry,
 } from '#mcp/capabilities/registry.ts'
 
-test('getCapabilityRegistryForContext returns the static registry when no dynamic sources are attached', async () => {
+test('getCapabilityRegistryForContext hides flag-gated capabilities when the flag is off', async () => {
 	clearCapabilityRegistryCacheForTests()
-	const prepare = vi.fn((query: string) => {
-		const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
+	const prepare = vi.fn(() => {
 		return {
 			bind() {
 				return this
 			},
 			async all() {
-				if (normalized.includes('feature_flag')) {
-					throw new Error(
-						'Feature-flag queries must not run when no capability declares featureFlag',
-					)
-				}
 				return { results: [], meta: { changes: 0 } }
 			},
 			async first() {
@@ -49,13 +43,13 @@ test('getCapabilityRegistryForContext returns the static registry when no dynami
 		env,
 		callerContext,
 	})
+	const staticRegistry = await getStaticRegistry()
 
-	expect(
-		prepare.mock.calls.some(([query]) =>
-			String(query).toLowerCase().includes('feature_flag'),
-		),
-	).toBe(false)
-	expect(registry.capabilityMap).toBe((await getStaticRegistry()).capabilityMap)
+	expect(registry).not.toBe(staticRegistry)
+	expect(registry.capabilityMap).not.toBe(staticRegistry.capabilityMap)
+	expect(staticRegistry.capabilityMap).toHaveProperty('packageShareInvite')
+	expect(registry.capabilityMap).not.toHaveProperty('packageShareInvite')
+	expect(registry.capabilityMap).toHaveProperty('search')
 })
 
 test('getStaticRegistry memoizes the builtin registry', async () => {

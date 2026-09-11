@@ -172,6 +172,7 @@ test('session handler only renews remembered sessions after the renewal window',
 					'demo-indicator': false,
 					'compact-mcp-server-instructions': false,
 					'compute-overage-charging': true,
+					'package-share-grants': false,
 				},
 			},
 		})

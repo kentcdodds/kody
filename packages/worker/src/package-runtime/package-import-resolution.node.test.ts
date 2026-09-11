@@ -5,6 +5,12 @@ import { createPlatformAccount } from '#worker/identity/platform-account-creatio
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { insertEntitySource } from '#worker/repo/entity-sources.ts'
+import {
+	acceptPackageShare,
+	invitePackageShare,
+} from '#worker/package-registry/share-grants.ts'
+import { enablePackageShareGrantsForTests } from '#worker/package-registry/share-flag.ts'
 import { resolveSavedPackageImport } from './package-import-resolution.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
@@ -13,6 +19,7 @@ async function createHarness() {
 	const sqlite = new DatabaseSync(':memory:')
 	applyRepositoryMigrations(sqlite, migrationsDirectory)
 	const db = createD1FromSqlite(sqlite)
+	await enablePackageShareGrantsForTests(db)
 	const platform = await createPlatformAccount({
 		db,
 		email: 'kody@example.com',
@@ -182,4 +189,129 @@ test('platform-owned dependencies are excluded from packageStorage grants', () =
 		'own-dep-id',
 		'own-package-id',
 	])
+})
+
+test('resolveSavedPackageImport resolves accepted share grants and not pending ones', async () => {
+	const { db } = await createHarness()
+	const ownerUserId = 'aa'.repeat(32)
+	const guestUserId = 'bb'.repeat(32)
+	await db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
+			VALUES (?, ?, 'x', CURRENT_TIMESTAMP, ?, ?)`,
+		)
+		.bind('alice', 'alice@example.com', ownerUserId, 'standard')
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
+			VALUES (?, ?, 'x', CURRENT_TIMESTAMP, ?, ?)`,
+		)
+		.bind('jesse', 'jesse@example.com', guestUserId, 'standard')
+		.run()
+	const packageId = await seedPackage(db, {
+		userId: ownerUserId,
+		name: '@alice/shared-notes',
+		kodyId: 'shared-notes',
+		isPrivate: true,
+	})
+	await insertEntitySource(db, {
+		id: `source-${packageId}`,
+		user_id: ownerUserId,
+		entity_kind: 'package',
+		entity_id: packageId,
+		repo_id: `repo-${packageId}`,
+		published_commit: 'commit-1',
+		indexed_commit: null,
+		manifest_path: 'package.json',
+		source_root: '/',
+		last_external_check_at: null,
+		external_check_until: null,
+		created_at: new Date().toISOString(),
+		updated_at: new Date().toISOString(),
+	})
+	const owner = {
+		userId: ownerUserId,
+		email: 'alice@example.com',
+		displayName: 'Alice',
+		username: 'alice',
+	}
+	const guest = {
+		userId: guestUserId,
+		email: 'jesse@example.com',
+		displayName: 'Jesse',
+		username: 'jesse',
+	}
+	await invitePackageShare({
+		db,
+		owner,
+		packageId,
+		invitee: { username: 'jesse' },
+	})
+	await expect(
+		resolveSavedPackageImport({
+			db,
+			userId: guestUserId,
+			specifier: 'kody:@alice/shared-notes/notes',
+		}),
+	).resolves.toBeNull()
+	await acceptPackageShare({
+		db,
+		guest,
+		packageId,
+		trustLevel: 'follow',
+	})
+	const resolved = await resolveSavedPackageImport({
+		db,
+		userId: guestUserId,
+		specifier: 'kody:@alice/shared-notes/notes',
+	})
+	expect(resolved).toMatchObject({
+		sourceOwnerUserId: ownerUserId,
+		shareOwned: true,
+		storageOwnerUserId: ownerUserId,
+	})
+	expect(resolved?.row.id).toBe(packageId)
+})
+
+test('nested shared imports prefer the owner package over the guest name collision', async () => {
+	const { db } = await createHarness()
+	const ownerUserId = 'aa'.repeat(32)
+	const guestUserId = 'bb'.repeat(32)
+	await db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
+			VALUES (?, ?, 'x', CURRENT_TIMESTAMP, ?, ?)`,
+		)
+		.bind('alice', 'alice@example.com', ownerUserId, 'standard')
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
+			VALUES (?, ?, 'x', CURRENT_TIMESTAMP, ?, ?)`,
+		)
+		.bind('jesse', 'jesse@example.com', guestUserId, 'standard')
+		.run()
+	const ownerHelperId = await seedPackage(db, {
+		userId: ownerUserId,
+		name: '@alice/helper',
+		kodyId: 'helper',
+		isPrivate: true,
+	})
+	const guestHelperId = await seedPackage(db, {
+		userId: guestUserId,
+		name: '@alice/helper',
+		kodyId: 'helper',
+		isPrivate: true,
+	})
+	const resolved = await resolveSavedPackageImport({
+		db,
+		userId: guestUserId,
+		specifier: 'kody:@alice/helper',
+		nestedShareOwnerUserId: ownerUserId,
+	})
+	expect(resolved?.row.id).toBe(ownerHelperId)
+	expect(resolved?.shareOwned).toBe(true)
+	expect(resolved?.storageOwnerUserId).toBe(ownerUserId)
+	expect(guestHelperId).not.toBe(ownerHelperId)
 })

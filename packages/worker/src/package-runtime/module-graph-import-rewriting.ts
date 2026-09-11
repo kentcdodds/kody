@@ -77,6 +77,8 @@ export type LoadedKodyGraphPackage = LoadedPackageSource & {
 	sourceOwnerUserId: string
 	/** Platform scope username when resolved live (e.g. "kody"), else null. */
 	platformScope: string | null
+	shareOwned?: boolean
+	storageOwnerUserId?: string
 }
 
 export type LoadedKodyGraphPackages = Map<string, LoadedKodyGraphPackage>
@@ -169,6 +171,19 @@ function applyReplacements(
 	return nextSource
 }
 
+function nestedShareOwnerUserIdFor(
+	state: RewriteState,
+	sourcePackageId: string | null,
+) {
+	if (!sourcePackageId) return undefined
+	for (const loaded of state.packages.values()) {
+		if (loaded.row.id === sourcePackageId && loaded.shareOwned === true) {
+			return loaded.storageOwnerUserId ?? loaded.sourceOwnerUserId
+		}
+	}
+	return undefined
+}
+
 function assertReplacementsDoNotOverlap(
 	replacements: Array<RewriteReplacement>,
 ) {
@@ -185,9 +200,12 @@ function assertReplacementsDoNotOverlap(
 async function ensurePackageLoaded(
 	state: RewriteState,
 	specifier: string,
+	nestedShareOwnerUserId?: string,
 ): Promise<LoadedKodyGraphPackage> {
 	const parsed = parseKodyPackageSpecifier(specifier)
-	const packageKey = parsed.packageName
+	const packageKey = nestedShareOwnerUserId
+		? `${parsed.packageName}#${nestedShareOwnerUserId}`
+		: parsed.packageName
 	const existing = state.packages.get(packageKey)
 	if (existing) return existing
 	const resolution = await resolveSavedPackageImport({
@@ -195,6 +213,7 @@ async function ensurePackageLoaded(
 		userId: state.userId,
 		specifier: parsed,
 		allowPlatformScopes: state.allowPlatformScopes,
+		nestedShareOwnerUserId,
 	})
 	if (!resolution) {
 		if (!state.allowPlatformScopes) {
@@ -220,6 +239,8 @@ async function ensurePackageLoaded(
 		prefix: joinPath(packageSourcePrefix, packageKey),
 		sourceOwnerUserId: resolution.sourceOwnerUserId,
 		platformScope: resolution.platformScope,
+		shareOwned: resolution.shareOwned,
+		storageOwnerUserId: resolution.storageOwnerUserId,
 	}
 	state.packages.set(packageKey, entry)
 	for (const [filePath, content] of Object.entries(loaded.files)) {
@@ -242,6 +263,7 @@ async function ensurePackageLoaded(
 async function ensurePackageProxy(
 	state: RewriteState,
 	specifier: string,
+	nestedShareOwnerUserId?: string,
 ): Promise<string> {
 	const existing = state.proxies.get(specifier)
 	if (existing) return existing
@@ -262,7 +284,11 @@ async function ensurePackageProxy(
 					}),
 				)
 			: await (async () => {
-					const loaded = await ensurePackageLoaded(state, specifier)
+					const loaded = await ensurePackageLoaded(
+						state,
+						specifier,
+						nestedShareOwnerUserId,
+					)
 					calleePackageId = loaded.row.id
 					return (
 						(await maybeEnsurePublishedArtifactTarget({
@@ -416,7 +442,11 @@ async function rewriteKodyImports(input: {
 		if (node.kind === 'dynamic') {
 			continue
 		}
-		const proxyPath = await ensurePackageProxy(input.state, node.specifier)
+		const proxyPath = await ensurePackageProxy(
+			input.state,
+			node.specifier,
+			nestedShareOwnerUserIdFor(input.state, input.sourcePackageId),
+		)
 		replacements.push({
 			start: node.start,
 			end: node.end,

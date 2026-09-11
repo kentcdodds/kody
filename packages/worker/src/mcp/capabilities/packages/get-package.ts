@@ -18,6 +18,10 @@ import {
 	buildPlainRepoPromotionErrorMessage,
 	findPlainRepoPromotionHint,
 } from '#worker/repo/user-repos.ts'
+import {
+	authorizeSharedPackagePermission,
+	packageShareAccessErrorMessage,
+} from '#worker/package-registry/share-grants.ts'
 import { packageDetailSchema } from './shared.ts'
 
 export const getPackageCapability = defineDomainCapability(
@@ -46,6 +50,7 @@ export const getPackageCapability = defineDomainCapability(
 				user,
 				args.package_scope,
 			)
+			let sourceOwnerUserId = owner.ownerUserId
 			const loadedRecord = await getSavedPackageWithCommunityProvenanceById(
 				ctx.env.APP_DB,
 				{
@@ -53,12 +58,39 @@ export const getPackageCapability = defineDomainCapability(
 					packageId: args.package_id,
 				},
 			)
-			const [saved] = loadedRecord
+			let [saved] = loadedRecord
 				? await applySavedPackageForkListingAncestry({
 						env: ctx.env,
 						records: [loadedRecord],
 					})
 				: [null]
+			if (!saved && !owner.delegated) {
+				try {
+					const shared = await authorizeSharedPackagePermission({
+						db: ctx.env.APP_DB,
+						packageId: args.package_id,
+						granteeUserId: user.userId,
+						granteeEmail: user.email,
+						permission: 'read_source',
+					})
+					if (shared) {
+						sourceOwnerUserId = shared.grant.ownerUserId
+						const sharedRecord =
+							await getSavedPackageWithCommunityProvenanceById(ctx.env.APP_DB, {
+								userId: shared.grant.ownerUserId,
+								packageId: shared.savedPackage.id,
+							})
+						;[saved] = sharedRecord
+							? await applySavedPackageForkListingAncestry({
+									env: ctx.env,
+									records: [sharedRecord],
+								})
+							: [null]
+					}
+				} catch (error) {
+					throw new McpCallerError(packageShareAccessErrorMessage(error))
+				}
+			}
 			if (!saved) {
 				const plainRepo = await findPlainRepoPromotionHint(ctx.env.APP_DB, {
 					userId: owner.ownerUserId,
@@ -74,7 +106,7 @@ export const getPackageCapability = defineDomainCapability(
 			const loaded = await loadPackageSourceBySourceId({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
-				userId: owner.ownerUserId,
+				userId: sourceOwnerUserId,
 				sourceId: saved.sourceId,
 			})
 			const projection = buildPackageSearchProjection(

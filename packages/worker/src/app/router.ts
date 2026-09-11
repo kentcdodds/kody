@@ -142,6 +142,15 @@ import {
 	createAccountWaitingApiHandler,
 	createAccountWaitingHandler,
 } from '#app/handlers/account-waiting.ts'
+import {
+	createAccountSharedApiHandler,
+	createAccountSharedHandler,
+} from '#app/handlers/account-shared.ts'
+import { createCommunityPackageShareApiHandler } from '#app/handlers/package-share.ts'
+import {
+	createCommunityPackageApproveChangesApiHandler,
+	createCommunityPackageApproveChangesHandler,
+} from '#app/handlers/package-share-approve-changes.ts'
 import { createAccountResendVerificationHandler } from '#app/handlers/account-resend-verification.ts'
 import { createPendingVerificationHandler } from '#app/handlers/pending-verification.ts'
 import {
@@ -388,6 +397,12 @@ export function createAppRouter(env: Env) {
 				createAccountPackageApprovePublishHandler(env),
 			communityPackageApprovePublishApi:
 				createAccountPackageApprovePublishApiHandler(env),
+			communityPackageApproveChanges:
+				createCommunityPackageApproveChangesHandler(env),
+			communityPackageApproveChangesApi:
+				createCommunityPackageApproveChangesApiHandler(env),
+			communityPackageShareApi: createCommunityPackageShareApiHandler(env),
+			communityPackageShareApiPost: createCommunityPackageShareApiHandler(env),
 			accountPackageFiles: createAccountPackageFilesHandler(env),
 			accountPackageFilesApi: createAccountPackageFilesApiHandler(env),
 			accountPackagesApi: createAccountPackagesApiHandler(env),
@@ -421,6 +436,9 @@ export function createAppRouter(env: Env) {
 			accountUsageApi: createAccountUsageApiHandler(env),
 			accountWaiting: createAccountWaitingHandler(env),
 			accountWaitingApi: createAccountWaitingApiHandler(env),
+			accountShared: createAccountSharedHandler(env),
+			accountSharedApi: createAccountSharedApiHandler(env),
+			accountSharedApiPost: createAccountSharedApiHandler(env),
 			accountEmailChange: createAccountEmailChangeHandler(env),
 			accountEmailClaimRelease: createAccountEmailClaimReleaseHandler(env),
 			accountPassword: createAccountPasswordHandler(env),

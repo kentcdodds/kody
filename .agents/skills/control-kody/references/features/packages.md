@@ -12,9 +12,10 @@ local edits not republished), and `hidden=yes|no`. Guests can use
 Search stays `q=`. Each package lives at `/@username/:kodyId` (the URL slug is
 the package name leaf; README), `/@username/:kodyId/tree/:ref` (files),
 `/@username/:kodyId/assets/…` (README-relative images from the published or
-pinned commit), `/@username/:kodyId/settings` (lock, visibility, delete), and
-`/@username/:kodyId/approve-publish` (published-vs-HEAD review). Opening an
-allowlisted image or video in the tree renders a preview; the bytes come from
+pinned commit), `/@username/:kodyId/settings` (lock, visibility, share, delete),
+`/@username/:kodyId/approve-publish` (published-vs-HEAD review), and
+`/@username/:kodyId/approve-changes` (guest pin-ahead published diff). Opening
+an allowlisted image or video in the tree renders a preview; the bytes come from
 `/@username/:kodyId/raw/:ref/…` (same authz as the tree). Legacy
 `/account/packages` HTML URLs only redirect to these canonical pages.
 
@@ -54,6 +55,8 @@ empty state.
 - `GET /profiles/:username/packages/:kodyId/files.json`
 - `GET /@:username/:kodyId/raw/:ref(/*relativePath)` (allowlisted media bytes)
 - `GET /profiles/:username/packages/:kodyId/approve-publish.json`
+- `GET|POST /profiles/:username/packages/:kodyId/share.json`
+- `GET|POST /profiles/:username/packages/:kodyId/approve-changes.json`
 - `GET /account/packages/:packageId/files.json` (404 + `redirectTo` the tree)
 - `GET|POST /account/packages/:packageId/approve-publish.json`
 

@@ -15,7 +15,13 @@ import {
 	formatAdminCostRiskLabel,
 	formatUsdFromCents,
 } from './admin-insights-shared.ts'
-import { ChartCard } from './admin-insights-sections.tsx'
+import {
+	ChartCard,
+	TableScroller,
+	tableHeadCellCss,
+	tableNumericCellCss,
+	tableStickyColumnCss,
+} from './admin-insights-sections.tsx'
 
 const riskBucketOrder = [
 	'paid_underwater',
@@ -73,6 +79,7 @@ function renderRiskBadge(row: AdminInsightsDynamicWorkerCostConsumer) {
 	return (
 		<span
 			mix={css({
+				display: 'inline-block',
 				marginLeft: spacing.xs,
 				color: riskInk(row.risk),
 				fontSize: typography.fontSize.xs,
@@ -94,114 +101,93 @@ function renderCostVsPayTable(input: {
 		)
 	}
 	return (
-		<table
-			aria-label={input.ariaLabel}
-			mix={css({
-				width: '100%',
-				borderCollapse: 'collapse',
-				fontSize: typography.fontSize.sm,
-			})}
-		>
-			<thead>
-				<tr>
-					<th
-						scope="col"
-						mix={css({
-							textAlign: 'left',
-							padding: `${spacing.xs} ${spacing.sm}`,
-							color: colors.textMuted,
-							fontWeight: typography.fontWeight.medium,
-						})}
-					>
-						User
-					</th>
-					<th
-						scope="col"
-						mix={css({
-							textAlign: 'right',
-							padding: `${spacing.xs} ${spacing.sm}`,
-							color: colors.textMuted,
-							fontWeight: typography.fontWeight.medium,
-						})}
-					>
-						Est. cost
-					</th>
-					<th
-						scope="col"
-						mix={css({
-							textAlign: 'right',
-							padding: `${spacing.xs} ${spacing.sm}`,
-							color: colors.textMuted,
-							fontWeight: typography.fontWeight.medium,
-						})}
-					>
-						Paid
-					</th>
-					<th
-						scope="col"
-						mix={css({
-							textAlign: 'right',
-							padding: `${spacing.xs} ${spacing.sm}`,
-							color: colors.textMuted,
-							fontWeight: typography.fontWeight.medium,
-						})}
-					>
-						Margin
-					</th>
-				</tr>
-			</thead>
-			<tbody>
-				{input.rows.map((row) => (
-					<tr key={row.stableUserId}>
-						<td mix={css({ padding: `${spacing.xs} ${spacing.sm}` })}>
-							<a
-								href={adminUserDetailHref(row.stableUserId)}
-								mix={css({ color: colors.text, textDecoration: 'none' })}
-							>
-								{row.username}
-							</a>
-							{renderRiskBadge(row)}
-						</td>
-						<td
-							mix={css({
-								padding: `${spacing.xs} ${spacing.sm}`,
-								textAlign: 'right',
-								fontVariantNumeric: 'tabular-nums',
-							})}
+		<TableScroller>
+			<table
+				aria-label={input.ariaLabel}
+				mix={css({
+					width: '100%',
+					borderCollapse: 'collapse',
+					fontSize: typography.fontSize.sm,
+				})}
+			>
+				<thead>
+					<tr>
+						<th
+							scope="col"
+							mix={css({ ...tableHeadCellCss, ...tableStickyColumnCss })}
 						>
-							{formatDynamicWorkerUsd(row.estimatedGrossUsd)}
-							<span mix={css({ color: colors.textMuted })}>
-								{' '}
-								({formatIntegerNumber(row.uniqueWorkerDays)})
-							</span>
-						</td>
-						<td
-							mix={css({
-								padding: `${spacing.xs} ${spacing.sm}`,
-								textAlign: 'right',
-								color: colors.textMuted,
-								fontVariantNumeric: 'tabular-nums',
-							})}
+							User
+						</th>
+						<th
+							scope="col"
+							mix={css({ ...tableHeadCellCss, textAlign: 'right' })}
 						>
-							{formatUsdFromCents(row.estimatedPaidUsdCents)}
-						</td>
-						<td
-							mix={css({
-								padding: `${spacing.xs} ${spacing.sm}`,
-								textAlign: 'right',
-								color:
-									row.risk === 'paid_underwater'
-										? colors.danger
-										: colors.textMuted,
-								fontVariantNumeric: 'tabular-nums',
-							})}
+							Est. cost
+						</th>
+						<th
+							scope="col"
+							mix={css({ ...tableHeadCellCss, textAlign: 'right' })}
 						>
-							{formatMarginUsd(row.estimatedMarginUsd)}
-						</td>
+							Paid
+						</th>
+						<th
+							scope="col"
+							mix={css({ ...tableHeadCellCss, textAlign: 'right' })}
+						>
+							Margin
+						</th>
 					</tr>
-				))}
-			</tbody>
-		</table>
+				</thead>
+				<tbody>
+					{input.rows.map((row) => (
+						<tr key={row.stableUserId}>
+							<td
+								mix={css({
+									...tableStickyColumnCss,
+									padding: `${spacing.xs} ${spacing.sm}`,
+									// Long usernames wrap inside a bounded column instead
+									// of pushing every number off a phone screen.
+									minWidth: '7rem',
+									maxWidth: '12rem',
+									overflowWrap: 'anywhere',
+								})}
+							>
+								<a
+									href={adminUserDetailHref(row.stableUserId)}
+									mix={css({ color: colors.text, textDecoration: 'none' })}
+								>
+									{row.username}
+								</a>
+								{renderRiskBadge(row)}
+							</td>
+							<td mix={css(tableNumericCellCss)}>
+								{formatDynamicWorkerUsd(row.estimatedGrossUsd)}
+								<span mix={css({ color: colors.textMuted })}>
+									{' '}
+									({formatIntegerNumber(row.uniqueWorkerDays)})
+								</span>
+							</td>
+							<td
+								mix={css({ ...tableNumericCellCss, color: colors.textMuted })}
+							>
+								{formatUsdFromCents(row.estimatedPaidUsdCents)}
+							</td>
+							<td
+								mix={css({
+									...tableNumericCellCss,
+									color:
+										row.risk === 'paid_underwater'
+											? colors.danger
+											: colors.textMuted,
+								})}
+							>
+								{formatMarginUsd(row.estimatedMarginUsd)}
+							</td>
+						</tr>
+					))}
+				</tbody>
+			</table>
+		</TableScroller>
 	)
 }
 
@@ -256,6 +242,7 @@ export function renderCostVsPay(cost: AdminInsightsDynamicWorkerCost) {
 					display: 'grid',
 					gap: spacing.lg,
 					gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+					alignItems: 'start',
 					[mq.tablet]: {
 						gridTemplateColumns: 'minmax(0, 1fr)',
 					},
