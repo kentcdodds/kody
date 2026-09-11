@@ -134,6 +134,20 @@ test('Innertube browse JSON also reads playlistVideoRenderer rows', () => {
 })
 
 test('Innertube browse JSON ignores sidebar lockups outside the playlist column', () => {
+	const sidebarLockup = {
+		lockupViewModel: {
+			contentId: second.videoId,
+			contentType: 'LOCKUP_CONTENT_TYPE_VIDEO',
+			metadata: {
+				lockupMetadataViewModel: {
+					title: { content: second.title },
+				},
+			},
+		},
+		continuationItemViewModel: {
+			continuationCommand: { token: 'sidebar-token' },
+		},
+	}
 	const parsed = parseYoutubePlaylistBrowseJson({
 		contents: {
 			twoColumnBrowseResultsRenderer: {
@@ -166,21 +180,9 @@ test('Innertube browse JSON ignores sidebar lockups outside the playlist column'
 						},
 					},
 				],
+				secondaryContents: sidebarLockup,
 			},
-			secondaryContents: {
-				lockupViewModel: {
-					contentId: second.videoId,
-					contentType: 'LOCKUP_CONTENT_TYPE_VIDEO',
-					metadata: {
-						lockupMetadataViewModel: {
-							title: { content: second.title },
-						},
-					},
-				},
-				continuationItemViewModel: {
-					continuationCommand: { token: 'sidebar-token' },
-				},
-			},
+			secondaryContents: sidebarLockup,
 		},
 	})
 	expect(parsed.videos).toEqual([first])

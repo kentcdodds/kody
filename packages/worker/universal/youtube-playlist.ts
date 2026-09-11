@@ -216,7 +216,10 @@ function walk(node: unknown, visit: (value: unknown) => void) {
 		return
 	}
 	if (typeof node !== 'object' || node === null) return
-	for (const value of Object.values(node)) walk(value, visit)
+	for (const [key, value] of Object.entries(node)) {
+		if (key === 'secondaryContents') continue
+		walk(value, visit)
+	}
 }
 
 export function uniqueLandingHeroVideos(
