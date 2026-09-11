@@ -89,7 +89,7 @@ test('account section switches keep the current page on screen (no loading flash
 	).toHaveAttribute('href', `/@${user.username}`)
 })
 
-test('Add connection opens the full client wall and a host step without refetching the connections payload', async ({
+test('Add connection opens the full client wall and a host step in place (no loading flash, no double fetch)', async ({
 	page,
 	seedE2eUser,
 	login,
@@ -120,6 +120,9 @@ test('Add connection opens the full client wall and a host step without refetchi
 		fromHeading: 'Connections',
 		toHeading: 'Connections',
 	})
+	// Like every router hop, the destination loader (or its intent prefetch)
+	// fetches the payload once before commit; the contract here is that the
+	// route never asks for the same payload a second time.
 	expect(requests.duplicates(), requests.paths.join(', ')).toEqual([])
 	requests.reset()
 	// Every named client is a card and none is greyed or hidden by viewport.
