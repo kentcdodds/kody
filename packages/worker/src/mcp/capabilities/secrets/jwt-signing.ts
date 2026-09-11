@@ -89,7 +89,32 @@ export function extractSecretMaterial(input: {
 	return value
 }
 
+function hmacMinKeyByteLength(algorithm: HmacJwtAlgorithm) {
+	switch (algorithm) {
+		case 'HS256':
+			return 32
+		case 'HS384':
+			return 48
+		case 'HS512':
+			return 64
+		default: {
+			const exhaustive: never = algorithm
+			throw new Error(`Unsupported JWT algorithm: ${exhaustive}`)
+		}
+	}
+}
+
 export function decodeHmacKeyMaterial(input: {
+	secretValue: string
+	encoding: JwtKeyEncoding
+	algorithm: HmacJwtAlgorithm
+}) {
+	const bytes = decodeHmacKeyBytes(input)
+	assertHmacKeyLength(bytes, input.algorithm)
+	return bytes
+}
+
+function decodeHmacKeyBytes(input: {
 	secretValue: string
 	encoding: JwtKeyEncoding
 }) {
@@ -112,6 +137,18 @@ export function decodeHmacKeyMaterial(input: {
 			const exhaustive: never = input.encoding
 			throw new Error(`Unsupported HMAC key encoding: ${exhaustive}`)
 		}
+	}
+}
+
+function assertHmacKeyLength(
+	hmacKeyBytes: Uint8Array,
+	algorithm: HmacJwtAlgorithm,
+) {
+	const minBytes = hmacMinKeyByteLength(algorithm)
+	if (hmacKeyBytes.byteLength < minBytes) {
+		throw new Error(
+			`HMAC signing key for ${algorithm} must be at least ${minBytes} bytes.`,
+		)
 	}
 }
 
@@ -154,6 +191,7 @@ async function importHmacKey(
 	hmacKeyBytes: Uint8Array,
 	algorithm: HmacJwtAlgorithm,
 ) {
+	assertHmacKeyLength(hmacKeyBytes, algorithm)
 	try {
 		return await crypto.subtle.importKey(
 			'raw',

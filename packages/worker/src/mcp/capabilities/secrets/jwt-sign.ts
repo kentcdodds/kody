@@ -135,6 +135,7 @@ export const jwtSignCapability = defineDomainCapability(
 						hmacKeyBytes: decodeHmacKeyMaterial({
 							secretValue: secretMaterial,
 							encoding: args.key_encoding ?? 'base64',
+							algorithm: args.algorithm,
 						}),
 						header: args.header,
 						claims: args.claims,

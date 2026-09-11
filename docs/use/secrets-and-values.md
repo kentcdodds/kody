@@ -98,7 +98,8 @@ algorithms, HMAC key material for HS*). For service-account JSON secrets, pass
 algorithms:
 
 - **HMAC:** `HS256`, `HS384`, `HS512` — **`key_encoding`** is **`base64`**
-  (default, DoorDash Drive `signing_secret`), **`utf8`**, or **`base64url`**
+  (default, DoorDash Drive `signing_secret`), **`utf8`**, or **`base64url`**.
+  After decoding, the key must be at least 32, 48, or 64 bytes (JWA)
 - **RSA PKCS#1:** `RS256` (default), `RS384`, `RS512`
 - **RSA-PSS:** `PS256`, `PS384`, `PS512`
 - **ECDSA:** `ES256`, `ES384`, `ES512`

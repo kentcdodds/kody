@@ -238,8 +238,9 @@ function createEcKeyPair(namedCurve: 'prime256v1' | 'secp384r1' | 'secp521r1') {
 }
 
 test('secretJwtSign signs HMAC JWTs from encoded secrets', async () => {
-	const hmacKey = Buffer.from('doordash-test-signing-key-32b!!')
-	const utf8Secret = 'door-dash-utf8-hmac-secret'
+	const hmacKey = Buffer.from('doordash-test-signing-key-32byte')
+	const utf8Secret = 'door-dash-utf8-hmac-secret-padded-to-48-bytes!!!'
+	const hs512Key = Buffer.alloc(64, 7)
 	const resolveSecretSpy = vi.spyOn(secretService, 'resolveSecret')
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
@@ -327,7 +328,7 @@ test('secretJwtSign signs HMAC JWTs from encoded secrets', async () => {
 
 		resolveSecretSpy.mockResolvedValue({
 			found: true,
-			value: hmacKey.toString('base64url'),
+			value: hs512Key.toString('base64url'),
 			scope: 'user',
 			allowedHosts: [],
 			allowedPackages: [],
@@ -342,7 +343,52 @@ test('secretJwtSign signs HMAC JWTs from encoded secrets', async () => {
 			{ env, callerContext },
 		)
 		expect(base64urlSigned.algorithm).toBe('HS512')
-		expect(verifyHmacJwt(base64urlSigned.jwt, hmacKey, 'sha512')).toBe(true)
+		expect(verifyHmacJwt(base64urlSigned.jwt, hs512Key, 'sha512')).toBe(true)
+
+		const shortHs256Secret = 'too-short-for-hs256'
+		resolveSecretSpy.mockResolvedValue({
+			found: true,
+			value: Buffer.from(shortHs256Secret).toString('base64'),
+			scope: 'user',
+			allowedHosts: [],
+			allowedPackages: [],
+		})
+		await expect(
+			jwtSignCapability.handler(
+				{
+					private_key_secret_name: 'shortHmacSecret',
+					algorithm: 'HS256',
+					claims: { aud: 'doordash' },
+				},
+				{ env, callerContext },
+			),
+		).rejects.toSatisfy((error: unknown) => {
+			const message = error instanceof Error ? error.message : String(error)
+			return (
+				message.includes(
+					'HMAC signing key for HS256 must be at least 32 bytes.',
+				) && !message.includes(shortHs256Secret)
+			)
+		})
+
+		resolveSecretSpy.mockResolvedValue({
+			found: true,
+			value: hmacKey.toString('utf8'),
+			scope: 'user',
+			allowedHosts: [],
+			allowedPackages: [],
+		})
+		await expect(
+			jwtSignCapability.handler(
+				{
+					private_key_secret_name: 'hs256KeyUsedAsHs512',
+					algorithm: 'HS512',
+					key_encoding: 'utf8',
+					claims: { aud: 'example' },
+				},
+				{ env, callerContext },
+			),
+		).rejects.toThrow('HMAC signing key for HS512 must be at least 64 bytes.')
 
 		resolveSecretSpy.mockResolvedValue({
 			found: true,
@@ -590,12 +636,14 @@ test('secretJwtSign signs RS, PS, and ES JWTs from PKCS#8 PEM secrets', async ()
 })
 
 test('decodeHmacKeyMaterial accepts encodings and rejects invalid input without leaking the key', () => {
-	const hmacKey = Buffer.from('doordash-test-signing-key-32b!!')
+	const hmacKey = Buffer.from('doordash-test-signing-key-32byte')
+	const utf8Secret = 'plain-hmac-secret-32-bytes-long!'
 	expect(
 		Buffer.from(
 			decodeHmacKeyMaterial({
 				secretValue: hmacKey.toString('base64'),
 				encoding: 'base64',
+				algorithm: 'HS256',
 			}),
 		),
 	).toEqual(hmacKey)
@@ -604,6 +652,7 @@ test('decodeHmacKeyMaterial accepts encodings and rejects invalid input without 
 			decodeHmacKeyMaterial({
 				secretValue: ` ${hmacKey.toString('base64')}\n`,
 				encoding: 'base64',
+				algorithm: 'HS256',
 			}),
 		),
 	).toEqual(hmacKey)
@@ -612,30 +661,55 @@ test('decodeHmacKeyMaterial accepts encodings and rejects invalid input without 
 			decodeHmacKeyMaterial({
 				secretValue: hmacKey.toString('base64url'),
 				encoding: 'base64url',
+				algorithm: 'HS256',
 			}),
 		),
 	).toEqual(hmacKey)
 	expect(
 		Buffer.from(
 			decodeHmacKeyMaterial({
-				secretValue: 'plain-hmac-secret',
+				secretValue: utf8Secret,
 				encoding: 'utf8',
+				algorithm: 'HS256',
 			}),
 		),
-	).toEqual(Buffer.from('plain-hmac-secret'))
+	).toEqual(Buffer.from(utf8Secret))
 
 	const invalid = '%%%not-valid-base64%%%'
 	expect(() =>
-		decodeHmacKeyMaterial({ secretValue: invalid, encoding: 'base64' }),
+		decodeHmacKeyMaterial({
+			secretValue: invalid,
+			encoding: 'base64',
+			algorithm: 'HS256',
+		}),
 	).toThrow('HMAC signing key secret is not valid base64.')
 	expect(() =>
-		decodeHmacKeyMaterial({ secretValue: invalid, encoding: 'base64url' }),
+		decodeHmacKeyMaterial({
+			secretValue: invalid,
+			encoding: 'base64url',
+			algorithm: 'HS256',
+		}),
 	).toThrow('HMAC signing key secret is not valid base64url.')
 	expect(() =>
-		decodeHmacKeyMaterial({ secretValue: '', encoding: 'utf8' }),
+		decodeHmacKeyMaterial({
+			secretValue: '',
+			encoding: 'utf8',
+			algorithm: 'HS256',
+		}),
 	).toThrow('HMAC signing key secret must be a non-empty string.')
+	expect(() =>
+		decodeHmacKeyMaterial({
+			secretValue: hmacKey.toString('base64'),
+			encoding: 'base64',
+			algorithm: 'HS384',
+		}),
+	).toThrow('HMAC signing key for HS384 must be at least 48 bytes.')
 	try {
-		decodeHmacKeyMaterial({ secretValue: invalid, encoding: 'base64' })
+		decodeHmacKeyMaterial({
+			secretValue: invalid,
+			encoding: 'base64',
+			algorithm: 'HS256',
+		})
 		throw new Error('expected decodeHmacKeyMaterial to throw')
 	} catch (error) {
 		expect(error).toBeInstanceOf(Error)
