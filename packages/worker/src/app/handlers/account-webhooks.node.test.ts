@@ -404,7 +404,7 @@ test('account webhooks API rejects unknown webhooks, bad bodies, and anonymous c
 		username: 'owner',
 		mcpUser: { userId },
 	})
-	const { env } = createEnv()
+	const { env, db } = createEnv()
 	const handler = createAccountWebhooksApiHandler(env)
 
 	const undeclared = await runHandler(
@@ -451,6 +451,33 @@ test('account webhooks API rejects unknown webhooks, bad bodies, and anonymous c
 		new Request(apiUrl, { method: 'DELETE' }),
 	)
 	expect(wrongMethod.status).toBe(405)
+
+	// Infrastructure failures are audited with their detail but reach the
+	// browser only as the generic per-intent message.
+	await db.prepare('DROP TABLE webhook_endpoints').run()
+	const consoleError = vi
+		.spyOn(console, 'error')
+		.mockImplementation(() => undefined)
+	const broken = await runHandler(
+		handler,
+		postRequest({
+			intent: 'mint',
+			packageKodyId: 'sentry-bridge',
+			webhookName: 'sentry',
+		}),
+	)
+	consoleError.mockRestore()
+	expect(broken.status).toBe(500)
+	const brokenBody = (await broken.json()) as { error: string }
+	expect(brokenBody.error).toBe('Unable to mint the webhook URL.')
+	expect(brokenBody.error).not.toContain('no such table')
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			action: 'webhook_url_mint',
+			result: 'failure',
+			reason: expect.stringContaining('no such table'),
+		}),
+	)
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	const unauthorized = await runHandler(handler, getRequest())

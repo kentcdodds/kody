@@ -109,7 +109,7 @@ async function resolveOwnedPackage(input: {
 }): Promise<SavedPackageRecord> {
 	const packageIdOrKodyId = (input.packageId ?? input.kodyId ?? '').trim()
 	if (!packageIdOrKodyId) {
-		throw new Error('packageId or kodyId is required.')
+		throw new McpCallerError('packageId or kodyId is required.')
 	}
 	const savedPackage = await resolveSavedPackage({
 		db: input.db,
@@ -117,7 +117,7 @@ async function resolveOwnedPackage(input: {
 		packageIdOrKodyId,
 	})
 	if (!savedPackage) {
-		throw new Error(
+		throw new McpCallerError(
 			`Saved package "${packageIdOrKodyId}" was not found for this user.`,
 		)
 	}
@@ -141,7 +141,7 @@ async function loadDeclaredWebhook(input: {
 		(webhook) => webhook.name === input.webhookName,
 	)
 	if (!declared) {
-		throw new Error(
+		throw new McpCallerError(
 			`Package "${input.savedPackage.kodyId}" does not declare webhook "${input.webhookName}".`,
 		)
 	}
@@ -235,7 +235,7 @@ export async function mintWebhookUrlForUser(input: {
 	activate?: boolean
 }): Promise<MintedWebhookHandle> {
 	const webhookName = input.webhookName.trim()
-	if (!webhookName) throw new Error('webhookName is required.')
+	if (!webhookName) throw new McpCallerError('webhookName is required.')
 	const activate = input.activate !== false
 	const baseUrl = getAppBaseUrl({
 		env: input.env,
@@ -326,7 +326,7 @@ export async function isWebhookUrlMinted(input: {
 	webhookName: string
 }) {
 	const webhookName = input.webhookName.trim()
-	if (!webhookName) throw new Error('webhookName is required.')
+	if (!webhookName) throw new McpCallerError('webhookName is required.')
 	const savedPackage = await resolveOwnedPackage({
 		db: input.env.APP_DB,
 		userId: input.userId,
@@ -353,7 +353,7 @@ export async function rotateWebhookUrlForUser(input: {
 	requestUrl?: string | null
 }): Promise<MintedWebhookHandle> {
 	const webhookName = input.webhookName.trim()
-	if (!webhookName) throw new Error('webhookName is required.')
+	if (!webhookName) throw new McpCallerError('webhookName is required.')
 	const savedPackage = await resolveOwnedPackage({
 		db: input.env.APP_DB,
 		userId: input.userId,
@@ -367,7 +367,7 @@ export async function rotateWebhookUrlForUser(input: {
 		webhookName,
 	})
 	if (!existing) {
-		throw new Error(
+		throw new McpCallerError(
 			'Webhook URL has not been minted. Call webhookUrlMint first.',
 		)
 	}
@@ -386,7 +386,7 @@ export async function setWebhookEnabledForUser(input: {
 	enabled: boolean
 }): Promise<WebhookEndpointRecord> {
 	const webhookName = input.webhookName.trim()
-	if (!webhookName) throw new Error('webhookName is required.')
+	if (!webhookName) throw new McpCallerError('webhookName is required.')
 	const savedPackage = await resolveOwnedPackage({
 		db: input.env.APP_DB,
 		userId: input.userId,
@@ -401,7 +401,7 @@ export async function setWebhookEnabledForUser(input: {
 		enabled: input.enabled,
 	})
 	if (!updated) {
-		throw new Error(
+		throw new McpCallerError(
 			'Webhook URL has not been minted. Call webhookUrlMint first.',
 		)
 	}
@@ -517,7 +517,7 @@ async function resolveRevealHandle(input: {
 }) {
 	if ('handle' in input.target) return input.target.handle
 	const webhookName = input.target.webhookName.trim()
-	if (!webhookName) throw new Error('webhookName is required.')
+	if (!webhookName) throw new McpCallerError('webhookName is required.')
 	const savedPackage = await resolveOwnedPackage({
 		db: input.db,
 		userId: input.userId,
@@ -531,7 +531,7 @@ async function resolveRevealHandle(input: {
 		webhookName,
 	})
 	if (!existing) {
-		throw new Error('Webhook URL has not been minted yet.')
+		throw new McpCallerError('Webhook URL has not been minted yet.')
 	}
 	return formatWebhookUrlHandle(existing.id)
 }

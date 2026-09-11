@@ -7,6 +7,7 @@ import {
 } from '#app/account-webhooks-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
+import { isMcpCallerError, McpCallerError } from '#mcp/caller-error.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import {
 	auditDatabaseFromEnv,
@@ -161,10 +162,25 @@ export function createAccountWebhooksApiHandler(env: Env) {
 				}
 				return jsonResponse(payload)
 			} catch (error) {
-				const message =
+				const detail =
 					error instanceof Error ? error.message : failureMessageFor(intent)
-				audit('failure', message)
-				return jsonResponse({ ok: false, error: message }, 400)
+				audit('failure', detail)
+				// Caller mistakes (unknown package, undeclared webhook, not minted,
+				// legacy secret) carry safe messages. Anything else is an
+				// infrastructure failure whose text must not reach the browser.
+				if (isMcpCallerError(error)) {
+					return jsonResponse({ ok: false, error: detail }, 400)
+				}
+				console.error('account webhooks action failed', {
+					intent,
+					packageKodyId,
+					webhookName,
+					error,
+				})
+				return jsonResponse(
+					{ ok: false, error: failureMessageFor(intent) },
+					500,
+				)
 			}
 		},
 	} satisfies Action<typeof routes.accountWebhooksApi>
@@ -193,7 +209,7 @@ async function runWebhookAction(input: {
 			// Mint on an existing row would silently rotate (and re-enable) the
 			// credential; make the owner choose Rotate for that.
 			if (await isWebhookUrlMinted(shared)) {
-				throw new Error(
+				throw new McpCallerError(
 					'This webhook already has a URL. Rotate it to issue a new one.',
 				)
 			}
