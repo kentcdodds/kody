@@ -9,10 +9,16 @@ import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
 import {
-	extractPrivateKeyPem,
-	jwtAlgorithmSchema,
+	decodeHmacKeyMaterial,
+	extractSecretMaterial,
+	isHmacJwtAlgorithm,
+	jwtAlgorithms,
+	jwtKeyEncodings,
 	signJwt,
 } from './jwt-signing.ts'
+
+const jwtAlgorithmSchema = z.enum(jwtAlgorithms)
+const jwtKeyEncodingSchema = z.enum(jwtKeyEncodings)
 
 const jwtClaimsSchema = z.record(z.string(), z.unknown())
 
@@ -20,7 +26,9 @@ const jwtSignInputSchema = z.object({
 	private_key_secret_name: z
 		.string()
 		.min(1)
-		.describe('Name of the saved secret containing a PEM key or JSON object.'),
+		.describe(
+			'Name of the saved signing-key secret: PKCS#8 PEM for RS*, PS*, ES*, and EdDSA, or HMAC key material for HS*.',
+		),
 	private_key_secret_scope: z
 		.enum(secretScopeValues)
 		.optional()
@@ -32,9 +40,14 @@ const jwtSignInputSchema = z.object({
 		.min(1)
 		.optional()
 		.describe(
-			'Optional JSON object field containing the private key, for example "private_key" for service-account JSON.',
+			'Optional JSON object field containing the signing key, for example "private_key" for service-account JSON.',
 		),
 	algorithm: jwtAlgorithmSchema.default('RS256'),
+	key_encoding: jwtKeyEncodingSchema
+		.optional()
+		.describe(
+			'HMAC key encoding when algorithm is HS256, HS384, or HS512. Defaults to base64 (DoorDash Drive signing_secret). Not valid for RS*, PS*, ES*, or EdDSA.',
+		),
 	header: z
 		.record(z.string(), z.unknown())
 		.optional()
@@ -49,16 +62,23 @@ export const jwtSignCapability = defineDomainCapability(
 	{
 		name: 'secretJwtSign',
 		description:
-			'Sign a JWT with a private key stored in a saved secret without revealing the private key. This generic primitive only signs caller-provided header and claims; package or execute code should perform any OAuth token exchange separately.',
+			'Sign a JWT with a key stored in a saved secret without revealing the key. HMAC algorithms (HS256, HS384, HS512) use key material from the secret; RS*, PS*, ES*, and EdDSA use a PKCS#8 PEM private key. This generic primitive only signs caller-provided header and claims; package or execute code should perform any OAuth token exchange separately.',
 		keywords: [
 			'jwt',
 			'sign',
+			'signing key',
 			'private key',
-			'service account',
-			'oauth',
+			'hmac',
+			'hs256',
 			'rs256',
+			'ps256',
+			'es256',
+			'ecdsa',
 			'eddsa',
 			'ed25519',
+			'service account',
+			'oauth',
+			'doordash',
 		],
 		readOnly: true,
 		idempotent: true,
@@ -103,15 +123,37 @@ export const jwtSignCapability = defineDomainCapability(
 				resolved,
 			})
 
-			const privateKeyPem = extractPrivateKeyPem({
+			const secretMaterial = extractSecretMaterial({
 				secretValue: resolved.value,
 				jsonField: args.private_key_json_field,
 			})
 
+			if (isHmacJwtAlgorithm(args.algorithm)) {
+				return {
+					jwt: await signJwt({
+						algorithm: args.algorithm,
+						hmacKeyBytes: decodeHmacKeyMaterial({
+							secretValue: secretMaterial,
+							encoding: args.key_encoding ?? 'base64',
+							algorithm: args.algorithm,
+						}),
+						header: args.header,
+						claims: args.claims,
+					}),
+					algorithm: args.algorithm,
+				}
+			}
+
+			if (args.key_encoding !== undefined) {
+				throw new Error(
+					'key_encoding is only valid when algorithm is HS256, HS384, or HS512.',
+				)
+			}
+
 			return {
 				jwt: await signJwt({
 					algorithm: args.algorithm,
-					privateKeyPem,
+					privateKeyPem: secretMaterial,
 					header: args.header,
 					claims: args.claims,
 				}),

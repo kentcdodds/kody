@@ -119,8 +119,9 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// (resolveSecretListScopeOrder / listSecretBucketsByScope). Runtime
 		// does not call them, but they sit in the same module as resolve
 		// and add a few KB. Share-grant import/storage routing added more.
-		// Raised from 3_620_000; split listing out of service.ts or the
-		// share-grant runtime path if this budget is raised again.
+		// secretJwtSign JWA families (HMAC/PSS/ES plus extra RSA hashes)
+		// add ~0.5KB. Split listing out of service.ts or the share-grant
+		// runtime path if this budget is raised again.
 		maxEntryBytes: 3_700_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
