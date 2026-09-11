@@ -12,10 +12,13 @@ import {
 	decodeHmacKeyMaterial,
 	extractSecretMaterial,
 	isHmacJwtAlgorithm,
-	jwtAlgorithmSchema,
-	jwtKeyEncodingSchema,
+	jwtAlgorithms,
+	jwtKeyEncodings,
 	signJwt,
 } from './jwt-signing.ts'
+
+const jwtAlgorithmSchema = z.enum(jwtAlgorithms)
+const jwtKeyEncodingSchema = z.enum(jwtKeyEncodings)
 
 const jwtClaimsSchema = z.record(z.string(), z.unknown())
 

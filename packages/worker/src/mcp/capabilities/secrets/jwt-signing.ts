@@ -4,9 +4,8 @@ import {
 	bytesToBase64Url,
 	utf8ToBase64Url,
 } from '@kody-internal/shared/base64.ts'
-import { z } from 'zod'
 
-export const jwtAlgorithmSchema = z.enum([
+export const jwtAlgorithms = [
 	'RS256',
 	'RS384',
 	'RS512',
@@ -20,12 +19,12 @@ export const jwtAlgorithmSchema = z.enum([
 	'HS256',
 	'HS384',
 	'HS512',
-])
-export const jwtKeyEncodingSchema = z.enum(['base64', 'utf8', 'base64url'])
+] as const
+export const jwtKeyEncodings = ['base64', 'utf8', 'base64url'] as const
 export const hmacJwtAlgorithms = ['HS256', 'HS384', 'HS512'] as const
 
-export type JwtAlgorithm = z.infer<typeof jwtAlgorithmSchema>
-export type JwtKeyEncoding = z.infer<typeof jwtKeyEncodingSchema>
+export type JwtAlgorithm = (typeof jwtAlgorithms)[number]
+export type JwtKeyEncoding = (typeof jwtKeyEncodings)[number]
 export type HmacJwtAlgorithm = (typeof hmacJwtAlgorithms)[number]
 export type AsymmetricJwtAlgorithm = Exclude<JwtAlgorithm, HmacJwtAlgorithm>
 
