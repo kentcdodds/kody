@@ -294,7 +294,7 @@ let githubProvider = createGitHubAuthProvider({
 })
 ```
 
-Atmosphere/atproto is no longer a built-in Remix auth provider. Use
+There is no built-in Atmosphere/atproto Remix auth provider. Use
 `createOAuthProvider()` in a separate package if you need that protocol.
 
 ### OAuth controller

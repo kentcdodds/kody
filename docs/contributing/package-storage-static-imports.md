@@ -66,11 +66,11 @@ otherwise as the run.
 Person accounts fork `@kody/*` and then only run **their** copy. Three facts,
 one rule each:
 
-| Thing              | Identity                         | Rule                                                                                                     |
-| ------------------ | -------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `packageStorage()` | declaring module (bundler stamp) | A's code always hits `(callerUserId, package:{A.id})` when granted                                       |
-| `packageContext`   | the run                          | one ambient; A only when the run _is_ A                                                                  |
-| Secrets            | declaring module (bundler stamp) | user-secret `allowed_packages` and `packageSecrets` mounts check the stamp when the call site is stamped |
+| Thing              | Identity                         | Rule                                                                                                      |
+| ------------------ | -------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `packageStorage()` | declaring module (bundler stamp) | A's code hits `(callerUserId, package:{A.id})` when granted; accepted share grants use the owner's bucket |
+| `packageContext`   | the run                          | one ambient; A only when the run _is_ A                                                                   |
+| Secrets            | declaring module (bundler stamp) | user-secret `allowed_packages` and `packageSecrets` mounts check the stamp when the call site is stamped  |
 
 **Composition:** static `import` when the name is known (library in this
 isolate). Computed `import(specifier)` when the name is data (caller-owned /

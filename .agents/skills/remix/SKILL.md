@@ -363,9 +363,8 @@ full examples.
   `remix/session`
 - `remix/auth` — credentials, OAuth, and OIDC providers. Use to define how
   identity is verified, start/finish external login, and refresh stored
-  OAuth/OIDC token bundles with `refreshExternalAuth(...)`. Use `OAuthTokens`
-  (not the removed `OAuthStandardTokens`). Atmosphere/atproto is no longer a
-  built-in provider.
+  OAuth/OIDC token bundles with `refreshExternalAuth(...)`. Use `OAuthTokens`.
+  There is no built-in Atmosphere/atproto provider.
 - `remix/middleware/auth` — `auth({ schemes })`, `requireAuth`, the `Auth`
   context key. Use to resolve identity into the request context and to gate
   routes
