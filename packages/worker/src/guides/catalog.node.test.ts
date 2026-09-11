@@ -58,6 +58,12 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 		title: 'Package apps',
 	})
 
+	expect(getGuideById('text_your_agent')).toMatchObject({
+		slug: 'text-your-agent',
+		title: 'Text your agent',
+		category: 'platform',
+	})
+
 	expect(getGuideById('values')?.unadvertised).toBe(true)
 	expect(listGuides().some((guide) => guide.id === 'values')).toBe(false)
 	expect(getGuideById('package_invocation_token_setup')?.unadvertised).toBe(

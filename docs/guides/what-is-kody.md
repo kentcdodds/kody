@@ -188,6 +188,9 @@ Concrete examples that combine the blocks:
   [Shared memory](./memory.md), [Secrets](./secrets.md),
   [Packages, integrations, and MCP servers](./packages-integrations-mcp.md), and
   [Jobs, workflows, and webhooks](./triggers.md).
+- **Text a familiar surface** — [Text your agent](./text-your-agent.md) is the
+  iMessage, SMS, and Discord worked example: humans talk to your agent; that
+  agent uses Kody for tools and memory.
 - **Build** — [Package lifecycle](./package-lifecycle.md) decides when to save;
   [Package authoring](./package-authoring.md) shows how.
 

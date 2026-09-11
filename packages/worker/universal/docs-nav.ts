@@ -78,6 +78,7 @@ export const docsNav: ReadonlyArray<DocsNavSection> = [
 				slug: 'packages-integrations-mcp',
 				label: 'Packages vs integrations vs MCP',
 			},
+			{ slug: 'text-your-agent', label: 'Text your agent' },
 			{ slug: 'triggers', label: 'Jobs, workflows, and webhooks' },
 			{ slug: 'platform-efficiency', label: 'Runtime and efficiency' },
 		],
