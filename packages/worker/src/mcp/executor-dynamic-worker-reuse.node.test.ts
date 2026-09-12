@@ -136,6 +136,7 @@ test('createExecuteExecutor records privacy-safe Dynamic Worker reuse on every L
 		{},
 		null,
 		'not-an-object',
+		[1, 2],
 	]
 	for (const params of emptyParamsCases) {
 		const loader = createFakeWorkerLoader()
@@ -158,7 +159,7 @@ test('createExecuteExecutor records privacy-safe Dynamic Worker reuse on every L
 
 	expect(
 		dataPoints.filter((point) => point.blobs?.[1] === 'dynamic_worker_invoke'),
-	).toHaveLength(6)
+	).toHaveLength(7)
 
 	const serialized = JSON.stringify(dataPoints)
 	expect(serialized).not.toContain(sourceMarker)

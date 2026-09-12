@@ -219,8 +219,8 @@ claim, `hit` on later claims of that id the same day. The event also carries
 of the module-graph text hashed into the id), `surface`, `executeShape` when the
 run classified one, and `paramsChars` (character length of a key-sorted JSON
 serialization of `params`; **0** when `params` is omitted, `null`, a non-object,
-or empty `{}` — not 2 from stringifying `{}`). Payloads never include source,
-param keys or values, package names, or worker ids.
+an array, or empty `{}` — not 2 from stringifying `{}`). Payloads never include
+source, param keys or values, package names, or worker ids.
 
 APP_LOADER package-app isolates record `dynamic_worker_day` only; they do not
 emit `dynamic_worker_invoke`.
@@ -236,9 +236,9 @@ SELECT
   if(blob8 = '', 'unknown', blob8) AS cache_reuse,
   if(blob6 = '', 'unknown', blob6) AS surface,
   sum(_sample_interval) AS invokes,
-  avg(double1) AS avg_duration_ms,
-  avg(double4) AS avg_code_chars,
-  avg(double5) AS avg_params_chars
+  sum(double1 * _sample_interval) / sum(_sample_interval) AS avg_duration_ms,
+  sum(double4 * _sample_interval) / sum(_sample_interval) AS avg_code_chars,
+  sum(double5 * _sample_interval) / sum(_sample_interval) AS avg_params_chars
 FROM kody_usage_events
 WHERE timestamp >= toDateTime('2026-09-01 00:00:00')
   AND timestamp < toDateTime('2026-10-01 00:00:00')
@@ -325,7 +325,7 @@ export does not list them.
      hourly rollups can recover `event_count`. `codeChars` is double4
      (module-graph text length on `dynamic_worker_invoke`). `paramsChars` is
      double5 (key-sorted JSON length of evaluate `params`; **0** when `params`
-     is omitted, `null`, a non-object, or empty `{}`).
+     is omitted, `null`, a non-object, an array, or empty `{}`).
 
    Analytics Engine is the analysis store (sampling-tolerant, high cardinality).
    Do not build enforcement on it.

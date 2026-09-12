@@ -11,14 +11,16 @@ import { type ExecuteThinGlueClass } from './execute-thin-glue.ts'
 const workerModuleTextKeys = ['js', 'cjs', 'text'] as const
 
 function hasNonEmptyParamsObject(params: unknown): boolean {
-	if (params === null || typeof params !== 'object') return false
+	if (params === null || typeof params !== 'object' || Array.isArray(params)) {
+		return false
+	}
 	return Object.keys(params).length > 0
 }
 
 /**
  * Character length of a key-sorted JSON serialization of `params`.
- * Returns 0 for null, undefined, non-objects, and empty `{}` (not 2
- * from stringifying `{}`). Never returns the JSON itself.
+ * Returns 0 for null, undefined, non-objects, arrays, and empty `{}`
+ * (not 2 from stringifying `{}`). Never returns the JSON itself.
  */
 export function countEvaluateInvocationParamsChars(params: unknown): number {
 	if (!hasNonEmptyParamsObject(params)) return 0

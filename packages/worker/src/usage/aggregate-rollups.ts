@@ -104,9 +104,9 @@ SELECT
 	if(blob8 = '', 'unknown', blob8) AS cache_reuse,
 	if(blob6 = '', 'unknown', blob6) AS surface,
 	sum(_sample_interval) AS invokes,
-	avg(double1) AS avg_duration_ms,
-	avg(double4) AS avg_code_chars,
-	avg(double5) AS avg_params_chars
+	sum(double1 * _sample_interval) / sum(_sample_interval) AS avg_duration_ms,
+	sum(double4 * _sample_interval) / sum(_sample_interval) AS avg_code_chars,
+	sum(double5 * _sample_interval) / sum(_sample_interval) AS avg_params_chars
 FROM ${dataset}
 WHERE timestamp >= toDateTime('${bounds.monthStart}')
 	AND timestamp < toDateTime('${bounds.nextMonthStart}')

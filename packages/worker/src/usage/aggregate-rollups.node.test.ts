@@ -782,8 +782,15 @@ test('buildDynamicWorkerInvokeReuseQuery groups hits and misses by surface', () 
 	expect(query).toContain('blob8')
 	expect(query).toContain('AS cache_reuse')
 	expect(query).toContain('AS surface')
-	expect(query).toContain('avg(double4) AS avg_code_chars')
-	expect(query).toContain('avg(double5) AS avg_params_chars')
+	expect(query).toContain(
+		'sum(double1 * _sample_interval) / sum(_sample_interval) AS avg_duration_ms',
+	)
+	expect(query).toContain(
+		'sum(double4 * _sample_interval) / sum(_sample_interval) AS avg_code_chars',
+	)
+	expect(query).toContain(
+		'sum(double5 * _sample_interval) / sum(_sample_interval) AS avg_params_chars',
+	)
 })
 
 test('buildDynamicWorkerReuseRatioQuery compares unique days to invokes and execute', () => {
