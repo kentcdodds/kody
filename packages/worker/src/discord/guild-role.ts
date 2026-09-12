@@ -15,6 +15,13 @@
 
 import { parseStripePlanName, type PlanName } from '#universal/plans.ts'
 
+export {
+	readOfficialDiscordGuildMembership,
+	readOfficialDiscordMembershipForUser,
+	type DiscordGuildMembershipResult,
+	type DiscordGuildMembershipSkipReason,
+} from './guild-membership.ts'
+
 export const DISCORD_MEMBER_ROLE_REQUEST_TIMEOUT_MS = 8_000
 
 export const discordPlanRoles = ['standard', 'pro'] as const

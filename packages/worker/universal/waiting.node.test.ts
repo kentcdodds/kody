@@ -1,9 +1,12 @@
 import { expect, test } from 'vitest'
+import { onboardingChecklistItems } from './onboarding-process.ts'
 import {
 	buildWaitingItems,
 	isElevatedUserErrorRate,
 	isUnexpiredEpochMs,
 	isWaitingMcpServerState,
+	waitingFirstUseIds,
+	type WaitingFirstUseId,
 	type WaitingSignals,
 } from './waiting.ts'
 
@@ -19,6 +22,7 @@ const emptySignals: WaitingSignals = {
 	pendingEmailChange: null,
 	errorRate: null,
 	entitlementCaps: [],
+	firstUseMissing: [],
 }
 
 test('waiting items are a current-state you-queue and skip noise', () => {
@@ -76,6 +80,7 @@ test('waiting items are a current-state you-queue and skip noise', () => {
 		pendingEmailChange: 'new@example.com',
 		errorRate: { errorCount: 12, eventCount: 20 },
 		entitlementCaps: [{ resource: 'saved_packages', label: 'Saved packages' }],
+		firstUseMissing: [],
 	})
 
 	expect(items.map((item) => item.id)).toEqual([
@@ -195,4 +200,79 @@ test('waiting items are a current-state you-queue and skip noise', () => {
 		href: '/connect/oauth?provider=google&loginHint=kent%40gmail.com',
 		severity: 'block',
 	})
+})
+
+test('waiting first-use cards are discrete, skip coarse checklist ids, and ignore dismiss', () => {
+	expect(
+		onboardingChecklistItems.some((item) =>
+			(waitingFirstUseIds as ReadonlyArray<string>).includes(item.id),
+		),
+	).toBe(false)
+
+	const allMissing = buildWaitingItems({
+		...emptySignals,
+		onboardingDismissed: true,
+		onboardingRemaining: ['give-access', 'install-starter', 'connect-agent'],
+		firstUseMissing: [...waitingFirstUseIds],
+	})
+	expect(allMissing.map((item) => item.id)).toEqual([
+		'first-use:search',
+		'first-use:memory',
+		'first-use:execute',
+		'first-use:package',
+		'first-use:job',
+		'first-use:integration',
+		'first-use:secret',
+		'first-use:discord',
+	])
+	expect(allMissing.every((item) => item.kind === 'first-use')).toBe(true)
+	expect(allMissing.every((item) => item.severity === 'setup')).toBe(true)
+	expect(allMissing.find((item) => item.id === 'onboarding:give-access')).toBe(
+		undefined,
+	)
+	expect(
+		allMissing.find((item) => item.id === 'onboarding:install-starter'),
+	).toBe(undefined)
+	expect(
+		allMissing.find((item) => item.id === 'onboarding:connect-agent'),
+	).toBe(undefined)
+
+	const wizardResume = buildWaitingItems({
+		...emptySignals,
+		onboardingDismissed: false,
+		onboardingRemaining: [
+			'connect-agent',
+			'give-access',
+			'connect-second-agent',
+			'install-starter',
+		],
+		firstUseMissing: ['search', 'discord'],
+	})
+	expect(wizardResume.map((item) => item.id)).toEqual([
+		'onboarding:connect-second-agent',
+		'onboarding:connect-agent',
+		'first-use:search',
+		'first-use:discord',
+	])
+
+	const discord = wizardResume.find((item) => item.id === 'first-use:discord')
+	expect(discord).toMatchObject({
+		title: 'Join the Kody Discord',
+		doLabel: 'Join Discord',
+		href: '/discord',
+		severity: 'setup',
+	})
+
+	const presentClearsCard: Array<WaitingFirstUseId> = [...waitingFirstUseIds]
+	for (const id of presentClearsCard) {
+		const remaining = presentClearsCard.filter((candidate) => candidate !== id)
+		const items = buildWaitingItems({
+			...emptySignals,
+			firstUseMissing: remaining,
+		})
+		expect(items.find((item) => item.id === `first-use:${id}`)).toBe(undefined)
+		expect(items.map((item) => item.id)).toEqual(
+			remaining.map((candidate) => `first-use:${candidate}`),
+		)
+	}
 })

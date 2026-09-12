@@ -60,7 +60,9 @@ wrote during that fetch) so the next cron can skip the synthetic.
   cache for anonymous marketing HTML.
 - [Onboarding process](./onboarding.md): wizard steps, derived checklist, and
   the optional first-win guide (aligned by
-  `packages/worker/universal/onboarding-process.ts`).
+  `packages/worker/universal/onboarding-process.ts`). Waiting first-use cards
+  (search, memory, execute, package, job, integration, secret, Discord) are not
+  wizard steps; see [Waiting](../../use/waiting.md).
 - [Authentication](./authentication.md): app session auth and OAuth-protected
   MCP auth.
 - [Platform accounts](./platform-accounts.md): operator-provisioned platform
