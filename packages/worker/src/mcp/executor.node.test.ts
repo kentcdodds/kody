@@ -1751,6 +1751,17 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		kind: 'runtime_helper_unbound',
 		helperName: 'secretHeaders',
 	})
+	expect(
+		getExecutionErrorDetails(
+			new Error(
+				'kody:runtime export "packageSecrets" is not available in this execution context.',
+			),
+		),
+	).toMatchObject({
+		kind: 'runtime_helper_unbound',
+		helperName: 'packageSecrets',
+		suggestedAction: { type: 'fix_code' },
+	})
 	// The bare TypeError alone stays unhinted: without the rewrite marker the
 	// undefined value may be any user-code bug.
 	expect(
