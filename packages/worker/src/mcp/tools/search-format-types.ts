@@ -11,6 +11,7 @@ export const searchEntityRefTypes = [
 	'capability',
 	'guide',
 	'integration',
+	'mcp-server',
 	'package',
 	'secret',
 ] as const
@@ -25,7 +26,7 @@ type SearchMatchType =
 	| 'secret'
 	| 'retriever_result'
 	| 'domain'
-	| 'provider'
+	| 'mcp-server'
 
 export type PackageActionMatch = {
 	subpath: string
@@ -154,12 +155,16 @@ export type SlimSearchMatch =
 			usage: string
 	  }
 	| {
-			type: 'provider'
+			type: 'mcp-server'
 			id: string
+			entityRef: string
 			title: string
 			description: string
 			domain: string
 			source: 'mcp-server'
+			kodyName: string
+			serverName: string
+			instructions: string | null
 			capabilityCount: number
 			sampleCapabilities: Array<string>
 			usage: string
@@ -407,6 +412,33 @@ export type SearchEntityDetailStructured =
 			authorization: IntegrationConfig['authorization'] | null
 			relatedPackageSuggestions?: Array<RelatedIntegrationPackageSuggestion>
 	  }
+	| {
+			kind: 'entity'
+			type: 'mcp-server'
+			id: string
+			entityRef: string
+			title: string
+			description: string
+			usage: string
+			domain: string
+			kodyName: string
+			serverName: string
+			serverId: string
+			instructions: string | null
+			capabilityCount: number
+			tools: Array<{
+				name: string
+				entityRef: string
+				description: string
+				toolName: string
+				usage: string
+			}>
+			wrappingPackage: {
+				kodyId: string
+				name: string
+				entityRef: string
+			} | null
+	  }
 
 export type SearchEntityDetail =
 	| {
@@ -460,6 +492,30 @@ export type SearchEntityDetail =
 			config: IntegrationConfig
 			relatedPackageSuggestions?: Array<RelatedIntegrationPackageSuggestion>
 	  }
+	| {
+			type: 'mcp-server'
+			id: string
+			title: string
+			description: string
+			domain: string
+			kodyName: string
+			serverName: string
+			serverId: string
+			instructions: string | null
+			usage: string
+			tools: Array<{
+				name: string
+				entityRef: string
+				description: string
+				toolName: string
+				usage: string
+			}>
+			wrappingPackage: {
+				kodyId: string
+				name: string
+				entityRef: string
+			} | null
+	  }
 
 export type SearchMatch =
 	| {
@@ -471,12 +527,16 @@ export type SearchMatch =
 			sampleCapabilities: Array<string>
 	  }
 	| {
-			type: 'provider'
+			type: 'mcp-server'
 			id: string
 			title: string
 			description: string
 			domain: string
 			source: 'mcp-server'
+			kodyName: string
+			serverName: string
+			serverId: string
+			instructions: string | null
 			capabilityCount: number
 			sampleCapabilities: Array<string>
 			usage: string

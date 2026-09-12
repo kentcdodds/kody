@@ -15,8 +15,8 @@ ogImage: /images/kody-home-nas-og.jpg
 Kody runs on Cloudflare Workers. It cannot open `localhost` on your laptop, read
 a vault on disk, or talk to a device that exists only on your home network. Put
 a small MCP server beside that resource, give the server a protected public
-HTTPS URL, and add the URL as a user MCP server. The tools then appear under
-`mcp:<name>`.
+HTTPS URL, and add the URL as a user MCP server. Search ranks that server;
+`search({ entity: "<name>:mcp-server" })` lists its tools.
 
 The [home-mcp-starter](https://github.com/kody-bot/home-mcp-starter) repository
 is a complete, forkable implementation: Streamable HTTP MCP, CIMD-only OAuth,
@@ -146,8 +146,9 @@ Follow [Connect remote MCP servers to Kody](../use/mcp-client-servers.md):
    public HTTPS MCP URL. Create a separate connection for each Kody account.
 3. Open the returned authorization link, pass Cloudflare Access, and approve the
    MCP server's OAuth request.
-4. Confirm with `mcpServerList`, then search the synthesized domain such as
-   `mcp:home`.
+4. Confirm with `mcpServerList`, then search for the server (for example `home`)
+   and open `search({ entity: "home:mcp-server" })` or
+   `search({ domain: "mcp:home" })` to list tools.
 5. Invoke a read-only tool first (`home_get_metadata` on the starter) and
    confirm the request reaches the expected local resource.
 

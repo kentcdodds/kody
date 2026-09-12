@@ -484,8 +484,11 @@ alias/deprecation machinery for a cleanup pass.
 - Raw JSON Schema inputs are an escape hatch. If a capability cannot use Zod,
   the handler must validate the args explicitly before reading them.
 - MCP server capability entity ids use `mcp:<name>:<tool>` (for example
-  `mcp:home:set_pin`). In execute/runtime code, MCP tools are not flat
-  functions. Use `kody.mcp["<name>"].<tool>(input)`, for example
+  `mcp:home:set_pin`). The connected server itself is
+  `search({ entity: "<name>:mcp-server" })` (for example `home:mcp-server`).
+  Unscoped search ranks that server, not every discovered tool. In
+  execute/runtime code, MCP tools are not flat functions. Use
+  `kody.mcp["<name>"].<tool>(input)`, for example
   `kody.mcp["home"].set_pin({ pin })`.
 - MCP server descriptions, keywords, schemas, and annotations cross a trust
   boundary from the remote server into Kody search and execute. Keep them

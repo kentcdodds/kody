@@ -11,11 +11,11 @@ export const searchTool = {
 	name: 'search',
 	title: 'Search Capabilities, Guides, Packages, Integrations, and Secrets',
 	description: `
-Find built-in capabilities, official guides, saved packages, integrations, and secret references (metadata only) before \`execute\`.
+Find built-in capabilities, official guides, saved packages, integrations, connected MCP servers, and secret references (metadata only) before \`execute\`.
 
-**query** — compact ranked markdown + structured matches. Empty or broad queries return a domain index; search again with a more specific query. Domain ids appear on capability hits.
+**query** — compact ranked markdown + structured matches. Empty or broad queries return a domain index; search again with a more specific query. Domain ids appear on capability hits. Connected MCP servers appear as server hits (name, instructions); do not expect every remote tool in unscoped results.
 
-**entity: "{id}:{type}"** — detail for one hit (\`capability\` | \`guide\` | \`integration\` | \`package\` | \`secret\`), or 1–10 refs. Guide detail is the full markdown when it fits the response budget; oversized guides return a table of contents. Open a heading with \`{id}:guide#{slug}\` (for example \`package_subscriptions:guide#repo.pushed\`). Capability detail includes an execute snippet.
+**entity: "{id}:{type}"** — detail for one hit (\`capability\` | \`guide\` | \`integration\` | \`mcp-server\` | \`package\` | \`secret\`), or 1–10 refs. Guide detail is the full markdown when it fits the response budget; oversized guides return a table of contents. Open a heading with \`{id}:guide#{slug}\` (for example \`package_subscriptions:guide#repo.pushed\`). Capability detail includes an execute snippet. MCP server detail lists discovered tools; after that, call \`kody.mcp["name"].tool_name(args)\`.
 
 Example arguments:
 - \`{ "query": "send a message" }\`
@@ -49,7 +49,7 @@ export const searchToolInputSchema = {
 		])
 		.optional()
 		.describe(
-			'Optional exact entity reference "{id}:{type}" (capability, guide, integration, package, or secret), or an array of 1–10 refs to batch related detail lookups. Guide refs accept "#{heading}" to open one section.',
+			'Optional exact entity reference "{id}:{type}" (capability, guide, integration, mcp-server, package, or secret), or an array of 1–10 refs to batch related detail lookups. Guide refs accept "#{heading}" to open one section. Use "{name}:mcp-server" to list tools on a connected MCP server.',
 		),
 	domain: z
 		.string()

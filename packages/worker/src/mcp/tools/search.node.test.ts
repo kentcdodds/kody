@@ -1224,6 +1224,7 @@ test('searchUnified inlines call shapes for the top three capability matches onl
 		env: {} as Env,
 		query: 'create widget export job',
 		limit: 10,
+		domain: 'mcp:widgets',
 		registry,
 		optionalRows: emptyOptionalSearchRows,
 	})
@@ -1261,6 +1262,7 @@ test('searchUnified inlines call shapes for the top three capability matches onl
 		env: {} as Env,
 		query: 'list widget export jobs',
 		limit: 10,
+		domain: 'mcp:widgets',
 		registry,
 		optionalRows: emptyOptionalSearchRows,
 	})

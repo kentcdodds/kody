@@ -101,29 +101,36 @@ export const capabilitySearchEntityPlugin = {
 	type: 'capability',
 	candidateTimingKey: 'capabilityCandidatesMs',
 	buildDescriptors(input) {
-		return Object.values(input.registry.capabilitySpecs).map((spec) => ({
-			type: 'capability',
-			id: spec.name,
-			title: spec.name,
-			primaryAliases: [spec.name],
-			secondaryAliases: [
-				spec.domain,
-				spec.description,
-				...(spec.keywords ?? []),
-			],
-			tertiaryAliases: [
-				...(spec.inputFields ?? []),
-				...(spec.outputFields ?? []),
-			],
-		}))
+		return Object.values(input.registry.capabilitySpecs)
+			.filter((spec) => spec.source !== 'mcp-server' || Boolean(input.domain))
+			.map((spec) => ({
+				type: 'capability' as const,
+				id: spec.name,
+				title: spec.name,
+				primaryAliases: [spec.name],
+				secondaryAliases: [
+					spec.domain,
+					spec.description,
+					...(spec.keywords ?? []),
+				],
+				tertiaryAliases: [
+					...(spec.inputFields ?? []),
+					...(spec.outputFields ?? []),
+				],
+			}))
 	},
 	async buildCandidates(input) {
+		const specs = Object.fromEntries(
+			Object.entries(input.registry.capabilitySpecs).filter(
+				([, spec]) => spec.source !== 'mcp-server' || Boolean(input.domain),
+			),
+		)
 		const capabilitySearch = await searchCapabilities({
 			env: input.env,
 			query: input.query,
-			limit: Math.max(1, Object.keys(input.registry.capabilitySpecs).length),
+			limit: Math.max(1, Object.keys(specs).length),
 			detail: false,
-			specs: input.registry.capabilitySpecs,
+			specs,
 			...(input.sharedQueryVector
 				? { queryVector: input.sharedQueryVector }
 				: {}),
@@ -131,7 +138,7 @@ export const capabilitySearchEntityPlugin = {
 
 		return capabilitySearch.matches
 			.map((match) => {
-				const spec = input.registry.capabilitySpecs[match.name]
+				const spec = specs[match.name]
 				if (!spec || spec.name !== match.name) {
 					throw new Error(
 						`Capability search result "${match.name}" did not map to a registry spec by name.`,
@@ -210,7 +217,7 @@ export const capabilitySearchEntityPlugin = {
 		if (relatedOperationCount > 0) {
 			lines.push(
 				'',
-				`- Related operations from this provider: ${String(relatedOperationCount)}. Use ${formatMarkdownInlineCode(`search({ domain: ${JSON.stringify(detail.spec.domain)} })`)} to list them.`,
+				`- Related operations from this MCP server: ${String(relatedOperationCount)}. Use ${formatMarkdownInlineCode(`search({ entity: ${JSON.stringify(buildEntityRef(detail.spec.mcpServer?.kodyName ?? detail.spec.domain, 'mcp-server'))} })`)} or ${formatMarkdownInlineCode(`search({ domain: ${JSON.stringify(detail.spec.domain)} })`)} to list them.`,
 			)
 		}
 		return {

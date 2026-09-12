@@ -69,6 +69,9 @@ export function buildRecommendedNextStep(
 			? `Inspect package detail with \`search({ entity: "${topMatch.kodyId}:package" })\` to review exports, jobs, and the hosted app URL.`
 			: `Inspect package detail with \`search({ entity: "${topMatch.kodyId}:package" })\` to review exports, then import the right entry from \`${buildPackageImportSpecifier(topMatch.name, '.')}\` or a subpath export.`
 	}
+	if (topMatch?.type === 'mcp-server') {
+		return `Inspect the connected MCP server with \`search({ entity: "${topMatch.kodyName}:mcp-server" })\` to list its tools, then call \`kody.mcp[${JSON.stringify(topMatch.kodyName)}].tool_name(args)\`.`
+	}
 	if (topMatch?.type === 'integration') {
 		return `Inspect integration detail with \`search({ entity: "${topMatch.integrationName}:integration" })\` and then run a minimal authenticated \`execute\` smoke test before building or calling integration-backed code.`
 	}

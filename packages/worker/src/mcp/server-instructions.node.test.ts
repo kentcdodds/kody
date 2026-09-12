@@ -76,7 +76,7 @@ test('domain instructions list builtins and summarize connected bindings', () =>
 	expect(line!.length).toBeLessThan(130)
 	expect(line).toContain('...')
 	expect(instructions).toContain(
-		'2 connected MCP bindings; `search({ domain })` to list.',
+		'2 connected MCP bindings; search finds the server, then `search({ entity: "<name>:mcp-server" })` lists tools.',
 	)
 	expect(instructions).not.toContain('`mcp:canva`')
 	expect(instructions).not.toContain('Canva Connect API')
