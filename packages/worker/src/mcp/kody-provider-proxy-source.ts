@@ -1,4 +1,3 @@
-import { type KodyMcpServerMetadata } from '#mcp/kody-remote-types.ts'
 import {
 	assertGeneratedExecutorSourceIsBundleSafe,
 	kodyRemoteProxyFactorySource,
@@ -9,9 +8,25 @@ import {
 	kodyCapabilityNamespaceConfigs,
 } from '#mcp/kody-capability-accessors.ts'
 
-// Keep only fields the sandbox proxy reads so inlined executor scripts stay
-// smaller and volatile status prose does not churn the stable worker-ID hash.
-function projectKodyRemoteProxyMetadata(
+export type KodyRemoteProxyEvaluateMetadata = {
+	name: string
+	status: {
+		connected: boolean
+		toolCount: number
+		unavailableMessage: string
+	}
+	capabilities: Array<{
+		name: string
+		dispatchName: string
+	}>
+}
+
+/**
+ * Fields the sandbox MCP proxy reads. Live `connected` / `toolCount` /
+ * `unavailableMessage` travel on `evaluate` RPC so they do not remint
+ * WorkerCode.
+ */
+export function projectKodyRemoteProxyMetadata(
 	entries: ReadonlyArray<{
 		name: string
 		status: {
@@ -24,7 +39,7 @@ function projectKodyRemoteProxyMetadata(
 			dispatchName: string
 		}>
 	}>,
-) {
+): Array<KodyRemoteProxyEvaluateMetadata> {
 	return entries.map((entry) => ({
 		name: entry.name,
 		status: {
@@ -39,13 +54,7 @@ function projectKodyRemoteProxyMetadata(
 	}))
 }
 
-export function createKodyProviderProxySource(input: {
-	providerName: string
-	mcpServers?: Array<KodyMcpServerMetadata>
-}) {
-	const mcpMetadataJson = JSON.stringify(
-		projectKodyRemoteProxyMetadata(input.mcpServers ?? []),
-	)
+export function createKodyProviderProxySource(input: { providerName: string }) {
 	const mcpFlatNameMessage = buildKodyFlatCapabilityUnavailableMessage({
 		namespace: 'mcp',
 		flatToolName: '${normalizedToolName}',
@@ -75,7 +84,7 @@ export function createKodyProviderProxySource(input: {
       return data.result;
     };
     const __kodyMcp = __kodyCreateRemoteProxy({
-      entries: ${mcpMetadataJson},
+      entries: Array.isArray(__invocation.mcpServers) ? __invocation.mcpServers : [],
       entityLabel: "MCP server",
       shortEntityLabel: "MCP server",
       capabilityLabel: "MCP tool",

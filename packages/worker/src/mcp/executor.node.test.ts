@@ -43,9 +43,10 @@ type FakeWorkerOptions = Record<string, unknown>
 function createFakeWorkerLoader() {
 	const ids: Array<string> = []
 	const createdOptions = new Map<string, FakeWorkerOptions>()
-	const evaluations: Array<
-		Record<string, { call: typeof ToolDispatcherCall }>
-	> = []
+	const evaluations: Array<{
+		dispatchers: Record<string, { call: typeof ToolDispatcherCall }>
+		invocation: unknown
+	}> = []
 	let factoryCallCount = 0
 	const loader = {
 		get(id: string, factory: () => FakeWorkerOptions) {
@@ -61,8 +62,9 @@ function createFakeWorkerLoader() {
 					return {
 						async evaluate(
 							dispatchers: Record<string, { call: typeof ToolDispatcherCall }>,
+							invocation?: unknown,
 						) {
-							evaluations.push(dispatchers)
+							evaluations.push({ dispatchers, invocation })
 							return {
 								result: id,
 								logs: [],
@@ -242,98 +244,22 @@ test('kody namespaced proxy enumerates advertised tools on a disconnected server
 	)
 })
 
-test('generated kody provider source projects namespaced proxy metadata', () => {
+test('generated kody provider source reads MCP metadata from evaluate invocation', () => {
 	const source = createKodyProviderProxySource({
 		providerName: 'kody',
-		mcpServers: [
-			{
-				name: 'docs',
-				serverId: 'docs-server',
-				status: {
-					state: 'connected',
-					connected: true,
-					toolCount: 2,
-					message: 'The MCP server "docs" is connected.',
-					unavailableMessage: 'The MCP server "docs" is connected.',
-				},
-				capabilities: [
-					{
-						name: 'search',
-						dispatchName: 'mcpdocssearch',
-					},
-				],
-			},
-			{
-				name: 'home',
-				serverId: 'home-server',
-				status: {
-					state: 'connected',
-					connected: true,
-					toolCount: 1,
-					message: 'The MCP server "home" is connected.',
-					unavailableMessage: 'The MCP server "home" is connected.',
-				},
-				capabilities: [
-					{
-						name: 'set_pin',
-						dispatchName: 'mcphomeset_pin',
-					},
-				],
-			},
-		],
 	})
 
-	expect(source).toContain('"unavailableMessage":')
-	expect(source).toContain('"toolCount":')
-	expect(source).toContain('"dispatchName":"mcphomeset_pin"')
-	expect(source).toContain('"dispatchName":"mcpdocssearch"')
-})
-
-test('generated kody provider source ignores volatile metadata fields for script identity', () => {
-	const baseServers = [
-		{
-			name: 'home',
-			serverId: 'home-a',
-			status: {
-				state: 'connected' as const,
-				connected: true,
-				toolCount: 1,
-				message: 'status prose A',
-				unavailableMessage: 'The MCP server "home" is connected.',
-			},
-			capabilities: [
-				{
-					name: 'set_pin',
-					dispatchName: 'mcphomeset_pin',
-				},
-			],
-		},
-	]
-	const first = createKodyProviderProxySource({
-		providerName: 'kody',
-		mcpServers: [...baseServers],
-	})
-	const second = createKodyProviderProxySource({
-		providerName: 'kody',
-		mcpServers: [
-			{
-				...baseServers[0]!,
-				serverId: 'home-b',
-				status: {
-					...baseServers[0]!.status,
-					state: 'degraded',
-					message: 'status prose B — different volatile text',
-				},
-			},
-		],
-	})
-	expect(second).toBe(first)
+	expect(source).toContain('__invocation.mcpServers')
+	expect(source).toBe(
+		createKodyProviderProxySource({
+			providerName: 'kody',
+		}),
+	)
 })
 
 test('generated kody provider and executor module sources stay bundle-safe', () => {
 	const source = createKodyProviderProxySource({
 		providerName: 'kody',
-		mcpServers: [],
 	})
 	assertGeneratedExecutorSourceIsBundleSafe(source)
 
@@ -354,6 +280,11 @@ test('generated kody provider and executor module sources stay bundle-safe', () 
 	expect(moduleSource).toContain('.call("recordFetch", "[]")')
 	expect(moduleSource).toContain('const __kodyMcp =')
 	expect(moduleSource).toContain('getOwnPropertyDescriptor')
+	expect(moduleSource).toContain(
+		'async evaluate(__dispatchers = {}, __invocation = {})',
+	)
+	expect(moduleSource).toContain(')(__invocation)')
+	expect(moduleSource).toContain('__invocation.mcpServers')
 })
 
 test('closed-world executor module rejects fetch in the sandbox before outbound RPC', () => {
@@ -390,34 +321,39 @@ test('generated kody provider source wires mcp proxy dispatch', async () => {
 	const calls: Array<{ name: string; argsJson: string }> = []
 	const source = createKodyProviderProxySource({
 		providerName: 'kody',
-		mcpServers: [
-			{
-				name: 'home',
-				serverId: 'home',
-				status: {
-					state: 'connected',
-					connected: true,
-					toolCount: 1,
-					message: 'The MCP server "home" is connected.',
-					unavailableMessage: 'The MCP server "home" is connected.',
-				},
-				capabilities: [
-					{
-						name: 'set_pin',
-						dispatchName: 'mcphomeset_pin',
-					},
-				],
-			},
-		],
 	})
-	const kody = new Function('__dispatchers', `${source}; return kody;`)({
-		kody: {
-			async call(name: string, argsJson: string) {
-				calls.push({ name, argsJson })
-				return JSON.stringify({ result: { ok: true } })
+	const kody = new Function(
+		'__dispatchers',
+		'__invocation',
+		`${source}; return kody;`,
+	)(
+		{
+			kody: {
+				async call(name: string, argsJson: string) {
+					calls.push({ name, argsJson })
+					return JSON.stringify({ result: { ok: true } })
+				},
 			},
 		},
-	}) as {
+		{
+			mcpServers: [
+				{
+					name: 'home',
+					status: {
+						connected: true,
+						toolCount: 1,
+						unavailableMessage: 'The MCP server "home" is connected.',
+					},
+					capabilities: [
+						{
+							name: 'set_pin',
+							dispatchName: 'mcphomeset_pin',
+						},
+					],
+				},
+			],
+		},
+	) as {
 		mcp: Record<string, Record<string, (args: unknown) => Promise<unknown>>>
 		[key: string]: unknown
 	}
@@ -908,6 +844,139 @@ test('createExecuteExecutor reuses stable dynamic worker ids until binding conte
 	expect(nonHashableModuleLoader.ids).toHaveLength(2)
 	expect(new Set(nonHashableModuleLoader.ids).size).toBe(2)
 	expect(nonHashableModuleLoader.factoryCallCount).toBe(2)
+
+	const invocationLoader = createFakeWorkerLoader()
+	const invocationEnv = createExecutorTestEnv(invocationLoader.loader)
+	const invocationCode = 'async (__invocation = {}) => __invocation.params'
+	for (const invocation of [
+		{ params: { room: 'office' } },
+		{ params: { room: 'kitchen' } },
+		{
+			params: { room: 'office' },
+			packageContext: { packageId: 'pkg-1', kodyId: 'bot' },
+		},
+	] as const) {
+		await createExecuteExecutor({
+			env: invocationEnv,
+			exports,
+			gatewayProps: createGatewayProps('user-1'),
+		}).execute(invocationCode, scopedProviders, invocation)
+	}
+	expect(invocationLoader.ids).toHaveLength(3)
+	expect(new Set(invocationLoader.ids).size).toBe(1)
+	expect(invocationLoader.factoryCallCount).toBe(1)
+	expect(invocationLoader.evaluations.map((entry) => entry.invocation)).toEqual(
+		[
+			{
+				params: { room: 'office' },
+				packageContext: null,
+				mcpServers: [],
+			},
+			{
+				params: { room: 'kitchen' },
+				packageContext: null,
+				mcpServers: [],
+			},
+			{
+				params: { room: 'office' },
+				packageContext: { packageId: 'pkg-1', kodyId: 'bot' },
+				mcpServers: [],
+			},
+		],
+	)
+
+	const otherCode = await createExecuteExecutor({
+		env: invocationEnv,
+		exports,
+		gatewayProps: createGatewayProps('user-1'),
+	}).execute('async () => "other"', scopedProviders)
+	expect(otherCode.result).not.toBe(invocationLoader.ids[0])
+	expect(new Set(invocationLoader.ids).size).toBe(2)
+
+	const mcpStatusLoader = createFakeWorkerLoader()
+	const mcpStatusEnv = createExecutorTestEnv(mcpStatusLoader.loader)
+	const connectedHome = {
+		name: 'home',
+		serverId: 'home',
+		status: {
+			state: 'connected' as const,
+			connected: true,
+			toolCount: 1,
+			message: 'The MCP server "home" is connected.',
+			unavailableMessage: 'The MCP server "home" is connected.',
+		},
+		capabilities: [{ name: 'set_pin', dispatchName: 'mcphomeset_pin' }],
+	}
+	await createExecuteExecutor({
+		env: mcpStatusEnv,
+		exports,
+		gatewayProps: createGatewayProps('user-1'),
+	}).execute(invocationCode, [
+		{
+			name: 'kody',
+			fns: {},
+			kodyMcpServers: [connectedHome],
+		} as never,
+	])
+	await createExecuteExecutor({
+		env: mcpStatusEnv,
+		exports,
+		gatewayProps: createGatewayProps('user-1'),
+	}).execute(invocationCode, [
+		{
+			name: 'kody',
+			fns: {},
+			kodyMcpServers: [
+				{
+					...connectedHome,
+					status: {
+						state: 'disconnected',
+						connected: false,
+						toolCount: 0,
+						message: 'The MCP server "home" is not connected.',
+						unavailableMessage:
+							'The MCP server "home" is not connected. Kody cannot use this server until it reconnects.',
+					},
+				},
+			],
+		} as never,
+	])
+	expect(mcpStatusLoader.ids).toHaveLength(2)
+	expect(new Set(mcpStatusLoader.ids).size).toBe(1)
+	expect(mcpStatusLoader.factoryCallCount).toBe(1)
+	expect(mcpStatusLoader.evaluations.map((entry) => entry.invocation)).toEqual([
+		{
+			params: undefined,
+			packageContext: null,
+			mcpServers: [
+				{
+					name: 'home',
+					status: {
+						connected: true,
+						toolCount: 1,
+						unavailableMessage: 'The MCP server "home" is connected.',
+					},
+					capabilities: [{ name: 'set_pin', dispatchName: 'mcphomeset_pin' }],
+				},
+			],
+		},
+		{
+			params: undefined,
+			packageContext: null,
+			mcpServers: [
+				{
+					name: 'home',
+					status: {
+						connected: false,
+						toolCount: 0,
+						unavailableMessage:
+							'The MCP server "home" is not connected. Kody cannot use this server until it reconnects.',
+					},
+					capabilities: [{ name: 'set_pin', dispatchName: 'mcphomeset_pin' }],
+				},
+			],
+		},
+	])
 })
 
 test('createExecuteExecutor records one usage event per sandbox run with duration and outcome', async () => {
@@ -1239,7 +1308,7 @@ test('createExecuteExecutor disables dispatchers after execution completes', asy
 			},
 		},
 	])
-	const dispatchers = fakeLoader.evaluations[0]
+	const dispatchers = fakeLoader.evaluations[0]?.dispatchers
 	const result = await dispatchers?.kody?.call('search', '{}')
 
 	expect(JSON.parse(result ?? '{}')).toEqual({
@@ -1681,6 +1750,17 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 	).toMatchObject({
 		kind: 'runtime_helper_unbound',
 		helperName: 'secretHeaders',
+	})
+	expect(
+		getExecutionErrorDetails(
+			new Error(
+				'kody:runtime export "packageSecrets" is not available in this execution context.',
+			),
+		),
+	).toMatchObject({
+		kind: 'runtime_helper_unbound',
+		helperName: 'packageSecrets',
+		suggestedAction: { type: 'fix_code' },
 	})
 	// The bare TypeError alone stays unhinted: without the rewrite marker the
 	// undefined value may be any user-code bug.

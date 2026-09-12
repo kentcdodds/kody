@@ -564,7 +564,7 @@ test(
 					'entry.ts': [
 						"import { packageSecrets } from 'kody:runtime'",
 						'export default async function main() {',
-						'\treturn { bound: packageSecrets != null }',
+						'\treturn { bound: "get" in packageSecrets }',
 						'}',
 					].join('\n'),
 				},

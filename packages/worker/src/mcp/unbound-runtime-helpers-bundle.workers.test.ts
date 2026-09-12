@@ -55,3 +55,46 @@ test(
 		expect(parseUnboundRuntimeHelperMessage(result.error ?? '')).toBe('email')
 	},
 )
+
+test(
+	'guard-less unbound packageSecrets access in a real bundle gets the bound-context hint',
+	{ timeout: 60_000 },
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		const callerContext = createMcpCallerContext({
+			baseUrl: 'https://kody.dev',
+			user: {
+				userId: 'user-unbound-secrets',
+				email: 'secrets@example.com',
+				displayName: 'Secrets',
+			},
+		})
+		const bundle = await buildKodyModuleBundle({
+			env,
+			baseUrl: 'https://kody.dev',
+			userId: 'user-unbound-secrets',
+			sourceFiles: {
+				'entry.ts': [
+					"import { packageSecrets } from 'kody:runtime'",
+					'export default async function main() {',
+					"\treturn await packageSecrets.get('token')",
+					'}',
+				].join('\n'),
+			},
+			entryPoint: 'entry.ts',
+		})
+		const result = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			bundle,
+			undefined,
+			{ skipCapabilityRegistry: true },
+		)
+		expect(result.error).toContain(
+			'kody:runtime export "packageSecrets" is not available in this execution context.',
+		)
+		expect(parseUnboundRuntimeHelperMessage(result.error ?? '')).toBe(
+			'packageSecrets',
+		)
+	},
+)

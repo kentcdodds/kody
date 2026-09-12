@@ -30,6 +30,8 @@ const notAFunctionErrorPattern =
 
 const unboundRuntimeHelperMessagePattern =
 	/The optional kody:runtime export "([\w$]+)" is not bound in this execution context/
+const lateBoundUnavailableExportPattern =
+	/kody:runtime export "([\w$]+)" is not available in this execution context/
 
 export function createUnboundRuntimeHelperMessage(input: {
 	originalMessage: string
@@ -47,7 +49,11 @@ export function createUnboundRuntimeHelperMessage(input: {
 }
 
 export function parseUnboundRuntimeHelperMessage(message: string) {
-	return unboundRuntimeHelperMessagePattern.exec(message)?.[1] ?? null
+	return (
+		unboundRuntimeHelperMessagePattern.exec(message)?.[1] ??
+		lateBoundUnavailableExportPattern.exec(message)?.[1] ??
+		null
+	)
 }
 
 /**
@@ -62,6 +68,15 @@ export function findUnboundRuntimeHelperAccess(input: {
 	unboundHelperNames: ReadonlySet<string>
 }): UnboundRuntimeHelperAccess | null {
 	if (input.unboundHelperNames.size === 0) return null
+	const lateBoundExport = lateBoundUnavailableExportPattern.exec(
+		input.errorMessage,
+	)?.[1]
+	if (lateBoundExport && input.unboundHelperNames.has(lateBoundExport)) {
+		return {
+			helperName: lateBoundExport,
+			reference: lateBoundExport,
+		}
+	}
 	const propertyName =
 		propertyReadErrorPattern.exec(input.errorMessage)?.[1] ?? null
 	const calledExpression = propertyName

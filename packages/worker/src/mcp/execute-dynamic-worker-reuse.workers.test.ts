@@ -114,3 +114,189 @@ test(
 		})
 	},
 )
+
+test(
+	'sequential executes with the same code and different params reuse the isolate and deliver params',
+	{ timeout: 60_000 },
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		const bundle = await buildKodyModuleBundle({
+			env: reuseEnv,
+			baseUrl: 'https://kody.dev',
+			userId: 'user-reuse-test',
+			sourceFiles: {
+				'entry.ts': [
+					"import { kody, packageContext, packageSecrets } from 'kody:runtime'",
+					'export default async function main(params) {',
+					'\treturn {',
+					'\t\tparams,',
+					'\t\tpackageId: packageContext?.packageId ?? null,',
+					'\t\tsecretsBound: "get" in packageSecrets,',
+					'\t\tping: await kody.ping_capability({ query: params.room }),',
+					'\t}',
+					'}',
+				].join('\n'),
+			},
+			entryPoint: 'entry.ts',
+		})
+
+		const runOnce = async (
+			label: string,
+			params: { room: string },
+			packageContext?: { packageId: string; kodyId: string },
+		) =>
+			await runBundledModuleWithRegistry(
+				reuseEnv,
+				createCaller(),
+				{
+					mainModule: bundle.mainModule,
+					modules: bundle.modules,
+				},
+				params,
+				{
+					skipCapabilityRegistry: true,
+					...(packageContext ? { packageContext } : {}),
+					additionalTools: {
+						ping_capability: async (args: unknown) => ({
+							ok: true,
+							label,
+							args,
+						}),
+					},
+				},
+			)
+
+		const first = await runOnce('first', { room: 'office' })
+		expect(first.error).toBeUndefined()
+		expect(first.result).toEqual({
+			params: { room: 'office' },
+			packageId: null,
+			secretsBound: false,
+			ping: { ok: true, label: 'first', args: { query: 'office' } },
+		})
+
+		const second = await runOnce('second', { room: 'kitchen' })
+		expect(second.error).toBeUndefined()
+		expect(second.result).toEqual({
+			params: { room: 'kitchen' },
+			packageId: null,
+			secretsBound: false,
+			ping: { ok: true, label: 'second', args: { query: 'kitchen' } },
+		})
+
+		const third = await runOnce(
+			'third',
+			{ room: 'office' },
+			{ packageId: 'pkg-reuse', kodyId: 'bot-reuse' },
+		)
+		expect(third.error).toBeUndefined()
+		expect(third.result).toEqual({
+			params: { room: 'office' },
+			packageId: 'pkg-reuse',
+			secretsBound: true,
+			ping: { ok: true, label: 'third', args: { query: 'office' } },
+		})
+	},
+)
+
+test(
+	'module-scope packageContext capture still late-binds across evaluate reuse',
+	{ timeout: 60_000 },
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		const bundle = await buildKodyModuleBundle({
+			env: reuseEnv,
+			baseUrl: 'https://kody.dev',
+			userId: 'user-reuse-test',
+			sourceFiles: {
+				'entry.ts': [
+					"import { packageContext } from 'kody:runtime'",
+					'const capturedContext = packageContext',
+					'export default async function main() {',
+					'\treturn { packageId: capturedContext?.packageId ?? null }',
+					'}',
+				].join('\n'),
+			},
+			entryPoint: 'entry.ts',
+		})
+
+		const runOnce = async (packageContext: {
+			packageId: string
+			kodyId: string
+		}) =>
+			await runBundledModuleWithRegistry(
+				reuseEnv,
+				createCaller(),
+				{
+					mainModule: bundle.mainModule,
+					modules: bundle.modules,
+				},
+				undefined,
+				{
+					skipCapabilityRegistry: true,
+					packageContext,
+				},
+			)
+
+		const first = await runOnce({ packageId: 'pkg-a', kodyId: 'bot-a' })
+		const second = await runOnce({ packageId: 'pkg-b', kodyId: 'bot-b' })
+		expect(first.error).toBeUndefined()
+		expect(second.error).toBeUndefined()
+		expect(first.result).toEqual({ packageId: 'pkg-a' })
+		expect(second.result).toEqual({ packageId: 'pkg-b' })
+	},
+)
+
+test(
+	'mutating packageContext.packageId cannot retarget unstamped packageSecrets',
+	{ timeout: 60_000 },
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		const bundle = await buildKodyModuleBundle({
+			env: reuseEnv,
+			baseUrl: 'https://kody.dev',
+			userId: 'user-reuse-test',
+			sourceFiles: {
+				'entry.ts': [
+					"import { packageContext, packageSecrets } from 'kody:runtime'",
+					'export default async function main() {',
+					'\tlet mutationError = null',
+					'\ttry {',
+					"\t\tpackageContext.packageId = 'pkg-attacker'",
+					'\t} catch (error) {',
+					'\t\tmutationError = error instanceof Error ? error.message : String(error)',
+					'\t}',
+					'\treturn {',
+					'\t\tpackageId: packageContext?.packageId ?? null,',
+					'\t\tsecretsBound: "get" in packageSecrets,',
+					'\t\tmutationError,',
+					'\t}',
+					'}',
+				].join('\n'),
+			},
+			entryPoint: 'entry.ts',
+		})
+
+		const result = await runBundledModuleWithRegistry(
+			reuseEnv,
+			createCaller(),
+			{
+				mainModule: bundle.mainModule,
+				modules: bundle.modules,
+			},
+			undefined,
+			{
+				skipCapabilityRegistry: true,
+				packageContext: { packageId: 'pkg-trusted', kodyId: 'bot-trusted' },
+			},
+		)
+		expect(result.error).toBeUndefined()
+		expect(result.result).toEqual({
+			packageId: 'pkg-trusted',
+			secretsBound: true,
+			mutationError: expect.stringMatching(
+				/trap returned falsish|cannot assign|read.only|frozen/i,
+			),
+		})
+	},
+)

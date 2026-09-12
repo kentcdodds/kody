@@ -1032,10 +1032,22 @@ export async function runBundledModuleWithRegistry(
 			createUnboundOptionalRuntimeHelperNames(runtimeHelperContext)
 		const runtimeHelperRuntimePropertySource =
 			createRuntimeHelperRuntimePropertySource()
-		const entrypointInputJson = JSON.stringify(params)
-		const entrypointInputSource =
-			entrypointInputJson === undefined ? 'undefined' : entrypointInputJson
-		const wrapped = `async () => {
+		const wrapped = `async (__invocation = {}) => {
+  const __kodyTrustedPackageContext = (() => {
+    const incoming = __invocation.packageContext;
+    if (incoming == null || typeof incoming !== 'object') return null;
+    const snapshot = {
+      packageId: incoming.packageId,
+      kodyId: incoming.kodyId,
+    };
+    if ('sourceId' in incoming) snapshot.sourceId = incoming.sourceId;
+    return Object.freeze(snapshot);
+  })();
+  const __kodyTrustedPackageId =
+    typeof __kodyTrustedPackageContext?.packageId === 'string' &&
+    __kodyTrustedPackageContext.packageId.trim() !== ''
+      ? __kodyTrustedPackageContext.packageId
+      : null;
 ${runtimeHelperPreludeSource}
   const { AsyncLocalStorage: __KodyAsyncLocalStorage } = await import('node:async_hooks');
   const __kodyRuntimeStorageSymbol = Symbol.for('kody.runtimeStorage');
@@ -1046,7 +1058,7 @@ ${runtimeHelperPreludeSource}
   const __kodyRuntime = {
     kody,
 ${runtimeHelperRuntimePropertySource}
-    packageContext: ${JSON.stringify(options?.packageContext ?? null)},
+    packageContext: __kodyTrustedPackageContext,
   };
   try {
     return await __kodyRuntimeStorage.run(__kodyRuntime, async () => {
@@ -1055,7 +1067,7 @@ ${runtimeHelperRuntimePropertySource}
       if (typeof __kodyEntrypoint !== 'function') {
         throw new Error('Kody execute modules must default export a function.');
       }
-      return await __kodyEntrypoint(${entrypointInputSource});
+      return await __kodyEntrypoint(__invocation.params);
     });
   } finally {
     // Deliver buffered static package export call usage events while the
@@ -1086,7 +1098,11 @@ ${runtimeHelperRuntimePropertySource}
 			let result: ExecuteResult
 			try {
 				result = await runWithTransientDurableObjectResetRetry({
-					operation: () => executor.execute(wrapped, providers),
+					operation: () =>
+						executor.execute(wrapped, providers, {
+							params,
+							packageContext: options?.packageContext ?? null,
+						}),
 					retryableResultError: (executeResult) => executeResult.error ?? null,
 					shouldRetry: ({ result: executeResult }) =>
 						!evaluationHasHostMediatedSideEffects(

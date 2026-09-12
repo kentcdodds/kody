@@ -154,6 +154,23 @@ export default async () => await runtime.oauthClientCredentials({})`,
 		helperName: 'oauthClientCredentials',
 		reference: 'oauthClientCredentials',
 	})
+
+	// Late-bound optional exports (packageSecrets) throw this instead of a
+	// null-property TypeError when the evaluate store omits the helper.
+	expect(
+		findUnboundRuntimeHelperAccess({
+			errorMessage:
+				'kody:runtime export "packageSecrets" is not available in this execution context.',
+			modules: {
+				'entry.js': `import { packageSecrets } from 'kody:runtime'
+export default async () => await packageSecrets.get('token')`,
+			},
+			unboundHelperNames: allOptionalHelperNames,
+		}),
+	).toEqual({
+		helperName: 'packageSecrets',
+		reference: 'packageSecrets',
+	})
 })
 
 test('findUnboundRuntimeHelperAccess leaves unrelated errors and bound helpers unhinted', () => {
@@ -212,6 +229,18 @@ export default async () => (await storage.sql('select 1')).rows`,
 			unboundHelperNames: allOptionalHelperNames,
 		}),
 	).toBeNull()
+
+	expect(
+		findUnboundRuntimeHelperAccess({
+			errorMessage:
+				'kody:runtime export "packageSecrets" is not available in this execution context.',
+			modules: {
+				'entry.js': `import { packageSecrets } from 'kody:runtime'
+export default async () => await packageSecrets.get('token')`,
+			},
+			unboundHelperNames: new Set(['email']),
+		}),
+	).toBeNull()
 })
 
 test('createUnboundRuntimeHelperMessage round-trips through parseUnboundRuntimeHelperMessage', () => {
@@ -236,4 +265,10 @@ test('createUnboundRuntimeHelperMessage round-trips through parseUnboundRuntimeH
 			"Cannot read properties of undefined (reading 'sql')",
 		),
 	).toBeNull()
+
+	expect(
+		parseUnboundRuntimeHelperMessage(
+			'kody:runtime export "packageSecrets" is not available in this execution context.',
+		),
+	).toBe('packageSecrets')
 })

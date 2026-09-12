@@ -43,3 +43,30 @@ test('packages helper forwards string-first invoke and rejects the removed objec
 	).rejects.toThrow('Object-only packages.invoke was removed')
 	expect(invoke).toHaveBeenCalledTimes(2)
 })
+
+test('packageSecrets prelude reads the run package id from evaluate invocation', () => {
+	const first = createRuntimeHelperPreludes({
+		env: {} as Env,
+		callerContext: { user: { userId: 'user-1' } } as never,
+		capabilityMap: {},
+		packageSecretTools: {
+			get: async () => '',
+			has: async () => false,
+			runPackageId: 'pkg-a',
+		},
+	}).join('\n')
+	const second = createRuntimeHelperPreludes({
+		env: {} as Env,
+		callerContext: { user: { userId: 'user-1' } } as never,
+		capabilityMap: {},
+		packageSecretTools: {
+			get: async () => '',
+			has: async () => false,
+			runPackageId: 'pkg-b',
+		},
+	}).join('\n')
+	expect(first).toBe(second)
+	expect(first).toContain('__kodyTrustedPackageId')
+	expect(first).toContain('__kodyPackageSecrets(__kodyTrustedPackageId)')
+	expect(first).not.toContain('__invocation.packageContext')
+})

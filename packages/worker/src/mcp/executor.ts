@@ -53,7 +53,11 @@ import {
 	type KodyMcpServerMetadata,
 	type KodyResolvedProvider,
 } from '#mcp/kody-remote-types.ts'
-import { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
+import {
+	createKodyProviderProxySource,
+	projectKodyRemoteProxyMetadata,
+	type KodyRemoteProxyEvaluateMetadata,
+} from '#mcp/kody-provider-proxy-source.ts'
 import {
 	grantedSecretAuthorityPackageIdSet,
 	runWithCurrentSecretAuthority,
@@ -98,6 +102,7 @@ const dynamicWorkerMainModule = 'executor.js'
 const hostEvaluationDrainGraceMs = 100
 const reservedProviderNames = new Set([
 	'__dispatchers',
+	'__invocation',
 	'__logs',
 	hostSideEffectProviderName,
 ])
@@ -187,13 +192,56 @@ type DynamicWorkerExecutorInput = {
 	waitUntil?: (promise: Promise<unknown>) => void
 }
 
+export type DynamicWorkerEvaluatePackageContext = {
+	packageId: string
+	kodyId: string
+	sourceId?: string | null
+} | null
+
+/**
+ * Per-evaluate payload. Must stay out of WorkerCode so LOADER ids reuse
+ * across different `params` / `packageContext` / live MCP status.
+ */
+export type DynamicWorkerEvaluateInvocation = {
+	params?: unknown
+	packageContext?: DynamicWorkerEvaluatePackageContext
+	mcpServers?: Array<KodyRemoteProxyEvaluateMetadata>
+}
+
 type DynamicWorkerEntrypoint = {
-	evaluate(dispatchers: Record<string, ToolDispatcher>): Promise<{
+	evaluate(
+		dispatchers: Record<string, ToolDispatcher>,
+		invocation?: DynamicWorkerEvaluateInvocation,
+	): Promise<{
 		result: unknown
 		error?: string
 		logs?: Array<string>
 		rawFetchHosts?: Array<string>
 	}>
+}
+
+function cloneEvaluateJsonValue<T>(value: T): T {
+	if (value === undefined) return value
+	return JSON.parse(JSON.stringify(value)) as T
+}
+
+function resolveEvaluateInvocation(
+	providers: Array<ResolvedProvider>,
+	invocation?: DynamicWorkerEvaluateInvocation,
+): DynamicWorkerEvaluateInvocation {
+	const kodyProvider = providers.find(
+		(provider) => provider.name === 'kody',
+	) as KodyResolvedProvider | undefined
+	const packageContext =
+		cloneEvaluateJsonValue(invocation?.packageContext ?? null) ?? null
+	return {
+		params: cloneEvaluateJsonValue(invocation?.params),
+		packageContext:
+			packageContext == null ? null : Object.freeze({ ...packageContext }),
+		mcpServers: projectKodyRemoteProxyMetadata(
+			invocation?.mcpServers ?? kodyProvider?.kodyMcpServers ?? [],
+		),
+	}
 }
 
 export type ExecuteResultWithHostSideEffects = ExecuteResult & {
@@ -542,6 +590,7 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 		async execute(
 			code: string,
 			providers: Array<ResolvedProvider>,
+			invocation?: DynamicWorkerEvaluateInvocation,
 		): Promise<ExecuteResultWithHostSideEffects> {
 			const sideEffects = createEvaluationSideEffectTracker()
 			const validationError = validateProviders(providers)
@@ -555,6 +604,10 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				)
 			}
 			const excludedHostname = readBaseUrlHostname(input.gatewayProps.baseUrl)
+			const evaluateInvocation = resolveEvaluateInvocation(
+				providers,
+				invocation,
+			)
 			const executorModule = createExecutorModule({
 				code,
 				providers,
@@ -610,7 +663,8 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 									grantedSecretAuthorityPackageIdSet(
 										input.gatewayProps.grantedSecretAuthorityPackageIds,
 									)
-								const evaluate = () => entrypoint.evaluate(dispatchers)
+								const evaluate = () =>
+									entrypoint.evaluate(dispatchers, evaluateInvocation)
 								return grantedSecretAuthorityPackageIds
 									? await runWithSecretAuthorityScope(
 											grantedSecretAuthorityPackageIds,
@@ -830,9 +884,9 @@ function createExecutorModule(input: {
 		? [
 				'        (async (globalThis, self, global) => (',
 				normalized,
-				')())(__kodySandboxGlobal, __kodySandboxGlobal, __kodySandboxGlobal),',
+				')(__invocation))(__kodySandboxGlobal, __kodySandboxGlobal, __kodySandboxGlobal),',
 			]
-		: ['        (', normalized, ')(),']
+		: ['        (', normalized, ')(__invocation),']
 	return [
 		'import { WorkerEntrypoint } from "cloudflare:workers";',
 		'import { AsyncLocalStorage } from "node:async_hooks";',
@@ -854,7 +908,7 @@ function createExecutorModule(input: {
 		'}',
 		'',
 		'export default class CodeExecutor extends WorkerEntrypoint {',
-		'  async evaluate(__dispatchers = {}) {',
+		'  async evaluate(__dispatchers = {}, __invocation = {}) {',
 		'    const __logs = [];',
 		'    const __kodyRawFetchHosts = [];',
 		`    const __kodyExcludedFetchHost = ${excludedHostname};`,
@@ -909,11 +963,9 @@ export function createExecutorModuleSource(input: {
 }
 
 function createProviderProxySource(provider: ResolvedProvider) {
-	const kodyProvider = provider as KodyResolvedProvider
 	if (provider.name === 'kody') {
 		return createKodyProviderProxySource({
 			providerName: provider.name,
-			mcpServers: kodyProvider.kodyMcpServers ?? [],
 		})
 	}
 	return `    const ${provider.name} = new Proxy({}, {\n      get: (_, toolName) => async (...args) => {\n        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args));\n        const data = JSON.parse(resJson);\n        if (data.error) throw new Error(data.error);\n        return data.result;\n      }\n    });`
@@ -1510,7 +1562,7 @@ const unboundRuntimeHelperNextSteps: Record<string, string> = {
 	events:
 		"`events` is only bound in saved-package runtime contexts that can dispatch package events; statically import the owning package's export so it runs in that context, or guard with `if (events) { ... }`.",
 	packageSecrets:
-		"`packageSecrets` is bound on stamped saved-package modules (including static `kody:@` imports) and in saved-package runtime contexts. Ad hoc execute entry code stays unbound; import the owning package's export so its stamp reads the mounts, or guard with `if (packageSecrets) { ... }`.",
+		"`packageSecrets` is bound on stamped saved-package modules (including static `kody:@` imports) and in saved-package runtime contexts. Ad hoc execute entry code stays unbound; import the owning package's export so its stamp reads the mounts, or guard with `'get' in packageSecrets` / `packageContext?.packageId` (the late-bound export is always a proxy).",
 	email:
 		'`email` is only bound for email-triggered runs; guard with `if (email) { ... }` when the code can also run outside an email context.',
 }

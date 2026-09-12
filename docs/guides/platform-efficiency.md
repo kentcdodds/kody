@@ -50,7 +50,8 @@ The same meter is tagged with the surface that minted the isolate:
 
 Saved packages, jobs, and other durable surfaces reuse a stable isolate when the
 published module graph stays the same. Ad hoc `execute` identity follows the
-module graph of that execute run — put varying args in `params`, not literals in
+acting user plus the module graph of that execute run. Varying `params` and
+`packageContext` reuse that isolate — put args in `params`, not literals in
 `code`:
 
 ```ts
