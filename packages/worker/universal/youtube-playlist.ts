@@ -15,7 +15,7 @@ export const youtubePlaylistBrowseMaxPages = 10
 /** workerd sends no User-Agent; YouTube rejects those browse calls. */
 export const youtubePlaylistUserAgent = 'kody-agent/1.0'
 
-export function youtubePlaylistBrowseId(playlistId: string) {
+function youtubePlaylistBrowseId(playlistId: string) {
 	return `VL${playlistId}`
 }
 

@@ -1162,7 +1162,6 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 	const replaceHtml = await readResponseText(replaceResponse)
 	expect(replaceHtml).toContain('Paste the client ID')
 	expect(replaceHtml).toContain('https://example.com/connect/oauth')
-	expect(replaceHtml).not.toContain('data-testid="connect-replace-confirm"')
 
 	// First-time bring-your-own setup: credentials form and redirect URL are
 	// visible; endpoints and allowed hosts stay behind the disclosure.

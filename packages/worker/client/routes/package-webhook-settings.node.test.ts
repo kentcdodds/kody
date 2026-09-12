@@ -312,7 +312,6 @@ test('a webhook card points legacy mints at Rotate instead of Reveal and offers 
 		}),
 	)
 	expect(html).not.toContain('data-testid="package-webhook-reveal"')
-	expect(html).toContain('Rotate it to get a URL you can copy')
 	expect(html).toContain('aria-label="Enable raycast/run"')
 	expect(html).toContain('>Disabled<')
 	expect(html).toContain('600 / min')

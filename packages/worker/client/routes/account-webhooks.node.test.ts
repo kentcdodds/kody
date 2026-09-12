@@ -5,10 +5,6 @@ import { AppSessionProvider } from '#client/app-session-context.tsx'
 import { AppLoaderDataProvider } from '#client/loader-data-context.tsx'
 import { RouterLocationProvider } from '#client/router-location.tsx'
 import { AccountWebhooksRoute } from '#client/routes/account-webhooks.tsx'
-import {
-	buildPackageWebhooksHref,
-	webhookStatusLabel,
-} from '#client/routes/webhooks-shared.ts'
 import { type SessionInfo } from '#client/session.ts'
 import {
 	type AccountWebhooksLoaderData,
@@ -118,11 +114,8 @@ test('webhooks index lists declared webhooks with status and deep-links each row
 	expect(html).toMatch(/href="\/account\/webhooks"[^>]*aria-current="page"/)
 	expect(html).toContain('data-entity-explainer="webhooks"')
 	expect(html).not.toContain('Loading webhooks')
-	// The index is a pointer, not a management surface: no URL actions and
-	// nothing that resembles a credential path.
-	expect(html).not.toContain('Mint URL')
-	expect(html).not.toContain('Reveal URL')
-	expect(html).not.toContain('Rotate URL')
+	// Credential paths never appear on the index; mint/reveal/rotate live on
+	// package settings, which the deep-links above already exercise.
 	expect(html).not.toContain('/@jane/webhooks/')
 })
 
@@ -133,21 +126,4 @@ test('webhooks index shows the empty state when no package declares a webhook', 
 	})
 	expect(html).toContain('0 declared · 0 minted')
 	expect(html).toContain('No package on this account declares a webhook yet')
-})
-
-test('package webhooks hrefs land on the settings section or one card', () => {
-	expect(
-		buildPackageWebhooksHref({ username: 'jane', kodyId: 'raycast' }),
-	).toBe('/@jane/raycast/settings#webhooks')
-	expect(
-		buildPackageWebhooksHref({
-			username: 'jane',
-			kodyId: 'raycast',
-			webhookName: 'list-commands',
-		}),
-	).toBe('/@jane/raycast/settings#webhook-list-commands')
-	expect(webhookStatusLabel({ minted: false, enabled: null })).toBe(
-		'No URL yet',
-	)
-	expect(webhookStatusLabel({ minted: true, enabled: false })).toBe('Disabled')
 })

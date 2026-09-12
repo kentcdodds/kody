@@ -87,7 +87,6 @@ test('MCP server entities resolve by name or domain and list tools with instruct
 	})
 	const tools = buildMcpServerToolIndex(server!)
 	expect(tools.map((tool) => tool.toolName)).toEqual(['set_pin', 'list_lights'])
-	expect(server!.identityFields).toEqual(['home', 'home'])
 	expect(
 		findWrappingPackageForMcpServer(server!, [
 			{

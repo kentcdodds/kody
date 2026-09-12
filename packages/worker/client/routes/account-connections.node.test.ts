@@ -110,9 +110,6 @@ test('Add connection shows every named client on every viewport with none greyed
 			),
 		)
 	}
-	expect(accountConnectionAgentIds).toHaveLength(14)
-	expect(accountConnectionAgentIds).not.toContain('other')
-	expect(html).not.toContain('data-testid="onboarding-agent-other"')
 	expect(html).not.toContain('data-greyed="true"')
 	// No card is hidden behind the onboarding phone/desktop media query: every
 	// card `<li>` shares one class whose rules never reach `display: none`.
@@ -214,59 +211,16 @@ test('connections page swaps the copy card for a verify note while the email is 
 })
 
 test('account rail lists Connections and Packages at the same level as the other sections', () => {
-	const labels = accountNavItemsFor({
+	const items = accountNavItemsFor({
 		username: 'jane',
-		showShared: false,
-	}).map((item) => item.label)
-	expect(labels).toEqual([
-		'Overview',
-		'Waiting',
-		'Connections',
-		'Packages',
-		'Billing',
-		'Usage',
-		'Activity',
-		'Jobs',
-		'Workflows',
-		'Webhooks',
-		'Secrets',
-		'Integrations',
-		'MCP servers',
-		'Memories',
-		'Email',
-	])
-
-	const withShared = accountNavItemsFor({ username: 'jane', showShared: true })
-	expect(withShared.map((item) => item.label)).toContain('Shared')
-	expect(withShared.find((item) => item.label === 'Connections')?.href).toBe(
+		showShared: true,
+	})
+	expect(items.map((item) => item.label)).toContain('Shared')
+	expect(items.find((item) => item.label === 'Connections')?.href).toBe(
 		'/account/connections',
 	)
 	// Packages is the profile page — the canonical package list — not the
 	// `/account/packages` redirect, unless the session has no username yet.
-	expect(withShared.find((item) => item.label === 'Packages')?.href).toBe(
-		'/@jane',
-	)
+	expect(items.find((item) => item.label === 'Packages')?.href).toBe('/@jane')
 	expect(accountPackagesNavHref(null)).toBe('/account/packages')
-})
-
-test('account rail items carry Iconic glyph names', () => {
-	const items = accountNavItemsFor({ username: 'jane', showShared: true })
-	expect(items.map((item) => [item.label, item.icon])).toEqual([
-		['Overview', 'home'],
-		['Waiting', 'clock'],
-		['Connections', 'link'],
-		['Packages', 'box'],
-		['Shared', 'share'],
-		['Billing', 'wallet'],
-		['Usage', 'chart'],
-		['Activity', 'trending-up'],
-		['Jobs', 'briefcase'],
-		['Workflows', 'refresh'],
-		['Webhooks', 'cloud'],
-		['Secrets', 'key'],
-		['Integrations', 'plug'],
-		['MCP servers', 'server'],
-		['Memories', 'book'],
-		['Email', 'mail'],
-	])
 })

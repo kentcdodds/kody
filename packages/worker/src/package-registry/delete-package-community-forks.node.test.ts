@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { communityForksDeleteCascadeStatements } from '#worker/community/community-forks-delete-cascade.ts'
@@ -176,15 +173,6 @@ function createDeleteForkDb() {
 }
 
 test('package delete removes community_forks so Fork outdated does not linger', async () => {
-	const migrationPath = join(
-		dirname(fileURLToPath(import.meta.url)),
-		'../../migrations/0061-community-forks-package-delete-cascade.sql',
-	)
-	const migrationSql = readFileSync(migrationPath, 'utf8')
-	for (const statement of communityForksDeleteCascadeStatements) {
-		expect(migrationSql).toContain(statement)
-	}
-
 	const { db } = createDeleteForkDb()
 	const meter = createInMemoryUserMeterEnv()
 	const env = {

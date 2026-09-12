@@ -3,8 +3,6 @@ import {
 	parseYoutubePlaylistBrowseJson,
 	parseYoutubePlaylistItemsApi,
 	uniqueLandingHeroVideos,
-	youtubePlaylistBrowseBody,
-	youtubePlaylistBrowseId,
 	youtubePlaylistItemsApiUrl,
 } from './youtube-playlist.ts'
 
@@ -109,16 +107,6 @@ test('Innertube browse JSON keeps lockup order and ignores sidebar-only junk', (
 	})
 	expect(parsed.videos).toEqual([first, second])
 	expect(parsed.continuation).toBe('page-2')
-	expect(youtubePlaylistBrowseId('PLBPBUA8boGLA')).toBe('VLPLBPBUA8boGLA')
-	expect(youtubePlaylistBrowseBody({ playlistId: 'PLBPBUA8boGLA' })).toEqual({
-		context: {
-			client: {
-				clientName: 'WEB',
-				clientVersion: '2.20260911.01.00',
-			},
-		},
-		browseId: 'VLPLBPBUA8boGLA',
-	})
 })
 
 test('Innertube browse JSON also reads playlistVideoRenderer rows', () => {

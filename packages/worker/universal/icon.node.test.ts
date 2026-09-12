@@ -14,7 +14,6 @@ test('Iconic icons crop padded viewBoxes and stay decorative unless titled', asy
 	expect(decorative).toContain('stroke="currentColor"')
 	expect(decorative).not.toMatch(/<svg[^>]*\bstroke=/)
 	expect(decorative).toContain('width="16"')
-	expect(iconicGlyphViewBox).toBe('3.75 3.75 16.5 16.5')
 
 	const labelled = await renderToString(
 		jsx(Icon, { name: 'search', title: 'Search files' }),

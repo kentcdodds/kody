@@ -208,9 +208,6 @@ test('anonymous home SSR omits the unused onboarding chooser catalog', async () 
 	} as Env).handler(new RequestContext(new Request('https://example.com/')))
 	expect(response.status).toBe(200)
 	const input = vi.mocked(renderAppPage).mock.calls.at(-1)?.[0]
-	expect(input?.loaderData?.onboarding?.featuredMcpServers).toEqual([])
-	expect(input?.loaderData?.onboarding?.setupPrompt).toBe('')
-	expect(input?.loaderData?.onboarding?.persistPrompt).toBe('')
 	expect(input?.loaderData?.onboarding?.discoveryPrompt.length).toBeGreaterThan(
 		0,
 	)

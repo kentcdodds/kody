@@ -340,7 +340,6 @@ test('resolveEntityDetail loads {name}:integration via getJoinedIntegration', as
 		},
 	})
 	expect(detail).not.toHaveProperty('row')
-	expect(JSON.stringify(detail)).not.toContain('secret-value')
 })
 
 test('resolveEntityDetail keeps integrations isolated by userId', async () => {

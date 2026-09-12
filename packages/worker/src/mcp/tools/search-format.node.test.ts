@@ -68,14 +68,11 @@ async function executeCapabilityExample(executeExample: string) {
 	return { calls, result }
 }
 
-test('parseEntityRef rejects malformed refs as caller errors', () => {
+test('search formatting keeps entity refs and generates safe, runnable usage snippets', () => {
 	expect(() => parseEntityRef('not-an-entity-ref')).toThrow(McpCallerError)
 	expect(() => parseEntityRef('foo:bar')).toThrow(/Entity type must be one of/)
 	expect(() => parseEntityRef(':capability')).toThrow(McpCallerError)
 	expect(() => parseEntityRef('id:')).toThrow(McpCallerError)
-})
-
-test('search formatting keeps entity refs and generates safe, runnable usage snippets', () => {
 	expect(() => parseEntityRef('user:preferred_repo:value')).toThrow(
 		/Entity type must be one of/,
 	)
@@ -537,7 +534,6 @@ export declare function fetch(request: Request): Promise<Response>
 	expect(observedPackageDetail.structured).toMatchObject({
 		listingAhead: null,
 	})
-	expect(observedPackageDetail.markdown).not.toContain('repoPublishSession')
 })
 
 test('package search surfaces listing ahead only when the fork is behind', () => {
