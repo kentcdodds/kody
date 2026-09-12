@@ -31,6 +31,31 @@ export async function webhookUrlSecretMatches(input: {
 	return timingSafeEqualString(candidateHash, input.storedHash)
 }
 
+/**
+ * Compare the path secret against current and previous hashes. Both hashes
+ * are compared when a previous hash is present so timing does not reveal
+ * which generation matched.
+ */
+export async function matchWebhookIngressUrlSecret(input: {
+	candidate: string
+	currentHash: string
+	previousHash: string | null
+}): Promise<'current' | 'previous' | null> {
+	const currentMatches = await webhookUrlSecretMatches({
+		candidate: input.candidate,
+		storedHash: input.currentHash,
+	})
+	const previousMatches = input.previousHash
+		? await webhookUrlSecretMatches({
+				candidate: input.candidate,
+				storedHash: input.previousHash,
+			})
+		: false
+	if (currentMatches) return 'current'
+	if (previousMatches) return 'previous'
+	return null
+}
+
 function hmacHashName(algorithm: WebhookHmacAlgorithm) {
 	switch (algorithm) {
 		case 'hmac-sha256':

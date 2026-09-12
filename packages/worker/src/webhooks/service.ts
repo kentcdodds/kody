@@ -39,7 +39,10 @@ import {
 	setWebhookEndpointEnabled,
 	upsertWebhookEndpointSecret,
 } from './repo.ts'
-import { type WebhookEndpointRecord } from './types.ts'
+import {
+	isWebhookPreviousUrlLive,
+	type WebhookEndpointRecord,
+} from './types.ts'
 
 export type ListedWebhook = {
 	packageId: string
@@ -64,6 +67,8 @@ export type ListedWebhook = {
 	urlRecoverable: boolean
 	createdAt: string | null
 	rotatedAt: string | null
+	/** ISO timestamp while the previous URL still accepts deliveries. */
+	previousUrlActiveUntil: string | null
 }
 
 export type MintedWebhookHandle = {
@@ -75,6 +80,7 @@ export type MintedWebhookHandle = {
 	enabled: boolean
 	createdAt: string
 	rotatedAt: string
+	previousUrlActiveUntil: string | null
 }
 
 export type {
@@ -211,6 +217,10 @@ export async function listWebhooksForUser(input: {
 				urlRecoverable: mint?.urlSecretEncrypted != null,
 				createdAt: mint?.createdAt ?? null,
 				rotatedAt: mint?.rotatedAt ?? null,
+				previousUrlActiveUntil:
+					mint && isWebhookPreviousUrlLive(mint)
+						? mint.previousUrlSecretExpiresAt
+						: null,
 			})
 		}
 	}
@@ -314,6 +324,9 @@ export async function mintWebhookUrlForUser(input: {
 		enabled: stored.enabled,
 		createdAt: stored.createdAt,
 		rotatedAt: stored.rotatedAt,
+		previousUrlActiveUntil: isWebhookPreviousUrlLive(stored)
+			? stored.previousUrlSecretExpiresAt
+			: null,
 	}
 }
 

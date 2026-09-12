@@ -45,9 +45,38 @@ export type WebhookEndpointRecord = {
 	webhookName: string
 	urlSecretHash: string
 	urlSecretEncrypted: string | null
+	previousUrlSecretHash: string | null
+	previousUrlSecretExpiresAt: string | null
 	enabled: boolean
 	createdAt: string
 	rotatedAt: string
+}
+
+/**
+ * Rotate overlap fallback. Ack-queue spilled payloads already live for 24h
+ * (`webhookDispatchPayloadTtlSeconds`); GitHub-style provider retries cover
+ * about the same window. The first accepted POST on the new URL retires the
+ * previous secret earlier.
+ */
+export const webhookUrlRotationGraceMs = 24 * 60 * 60 * 1000
+
+export function webhookUrlRotationGraceExpiresAt(now: Date | string) {
+	const nowMs = typeof now === 'string' ? Date.parse(now) : now.getTime()
+	return new Date(nowMs + webhookUrlRotationGraceMs).toISOString()
+}
+
+export function isWebhookPreviousUrlLive(
+	endpoint: {
+		previousUrlSecretHash: string | null
+		previousUrlSecretExpiresAt: string | null
+	},
+	now: Date | string = new Date(),
+) {
+	if (!endpoint.previousUrlSecretHash || !endpoint.previousUrlSecretExpiresAt) {
+		return false
+	}
+	const nowMs = typeof now === 'string' ? Date.parse(now) : now.getTime()
+	return Date.parse(endpoint.previousUrlSecretExpiresAt) > nowMs
 }
 
 export type WebhookDeliveryOutcome = 'delivered' | 'rejected' | 'failed'

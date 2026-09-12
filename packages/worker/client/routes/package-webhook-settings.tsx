@@ -189,8 +189,9 @@ export function createPackageWebhooksController(handle: Handle) {
 					Inbound webhook URLs this package declares in{' '}
 					<code>package.json#kody.webhooks</code>. Mint a URL here, copy it into
 					the provider that will POST to it, and rotate or disable it when it
-					leaks or goes unused. Agents connected over MCP can mint and apply
-					handles but never see these URLs.
+					leaks or goes unused. Rotate keeps the previous URL live for a short
+					overlap so providers can finish switching. Agents connected over MCP
+					can mint and apply handles but never see these URLs.
 				</p>
 
 				{showLoading ? (

@@ -1228,6 +1228,8 @@ export type PackageWebhookListItem = {
 	urlRecoverable: boolean
 	createdAt: string | null
 	rotatedAt: string | null
+	/** ISO timestamp while the previous URL still accepts deliveries after rotate. */
+	previousUrlActiveUntil: string | null
 }
 
 /** `/account/webhooks.json`: every declared webhook across the owner's packages. */

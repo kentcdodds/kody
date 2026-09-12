@@ -159,6 +159,8 @@ async function ensureSchema(db: D1Database) {
 				webhook_name TEXT NOT NULL,
 				url_secret_hash TEXT NOT NULL,
 				url_secret_encrypted TEXT,
+				previous_url_secret_hash TEXT,
+				previous_url_secret_expires_at TEXT,
 				enabled INTEGER NOT NULL DEFAULT 1,
 				created_at TEXT NOT NULL,
 				rotated_at TEXT NOT NULL
@@ -173,6 +175,18 @@ async function ensureSchema(db: D1Database) {
 			.run()
 	} catch {
 		// Column already present on newer schemas.
+	}
+	for (const column of [
+		'previous_url_secret_hash',
+		'previous_url_secret_expires_at',
+	]) {
+		try {
+			await db
+				.prepare(`ALTER TABLE webhook_endpoints ADD COLUMN ${column} TEXT`)
+				.run()
+		} catch {
+			// Column already present on newer schemas.
+		}
 	}
 }
 
@@ -204,19 +218,26 @@ async function mintWebhook(input: {
 	urlSecret: string
 	enabled?: boolean
 	id?: string
+	previousUrlSecret?: string
+	previousExpiresAt?: string
 }) {
 	const now = '2026-07-24T00:00:00.000Z'
 	await env.APP_DB.prepare(
 		`INSERT INTO webhook_endpoints (
 			id, user_id, package_id, webhook_name, url_secret_hash,
+			previous_url_secret_hash, previous_url_secret_expires_at,
 			enabled, created_at, rotated_at
-		) VALUES (?, ?, 'pkg-1', ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, 'pkg-1', ?, ?, ?, ?, ?, ?, ?)`,
 	)
 		.bind(
 			input.id ?? crypto.randomUUID(),
 			input.userId,
 			input.webhookName,
 			await hashWebhookUrlSecret(input.urlSecret),
+			input.previousUrlSecret
+				? await hashWebhookUrlSecret(input.previousUrlSecret)
+				: null,
+			input.previousExpiresAt ?? null,
 			input.enabled === false ? 0 : 1,
 			now,
 			now,
@@ -1262,4 +1283,85 @@ test('first-party trusted webhooks accept Idempotency-Key, params mode, and a hi
 	expect(vendorCall.request.params.request.json).toEqual({
 		ref: 'refs/heads/main',
 	})
+})
+
+test('rotate overlap accepts the previous URL until the new URL is used or the grace expires', async () => {
+	silenceExpectedConsoleWarns(['activation-run-record-failed'])
+	await ensureSchema(env.APP_DB)
+	await env.APP_DB.prepare(`DELETE FROM webhook_endpoints`).run()
+	await env.APP_DB.prepare(`DELETE FROM saved_packages`).run()
+	await env.APP_DB.prepare(`DELETE FROM users`).run()
+
+	const userId = await seedOwner()
+	await clearRunRecords({ env, userId })
+	const previousSecret = 'previous-url-secret'
+	const currentSecret = 'current-url-secret'
+	await mintWebhook({
+		userId,
+		webhookName: 'overlap',
+		urlSecret: currentSecret,
+		previousUrlSecret: previousSecret,
+		previousExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+		id: 'mint-overlap',
+	})
+	declareWebhook({ name: 'overlap' })
+	mocks.enqueueWebhookDispatch.mockReset()
+	mocks.enqueueWebhookDispatch.mockResolvedValue(undefined)
+
+	const previousDuringGrace = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'overlap',
+		urlSecret: previousSecret,
+	})
+	expect(previousDuringGrace.status).toBe(202)
+	const stillOverlapping = await env.APP_DB.prepare(
+		`SELECT previous_url_secret_hash FROM webhook_endpoints WHERE id = 'mint-overlap'`,
+	).first<{ previous_url_secret_hash: string | null }>()
+	expect(stillOverlapping?.previous_url_secret_hash).toBeTruthy()
+
+	const confirmedOnNew = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'overlap',
+		urlSecret: currentSecret,
+	})
+	expect(confirmedOnNew.status).toBe(202)
+	const retired = await env.APP_DB.prepare(
+		`SELECT previous_url_secret_hash, previous_url_secret_expires_at
+		FROM webhook_endpoints WHERE id = 'mint-overlap'`,
+	).first<{
+		previous_url_secret_hash: string | null
+		previous_url_secret_expires_at: string | null
+	}>()
+	expect(retired?.previous_url_secret_hash).toBeNull()
+	expect(retired?.previous_url_secret_expires_at).toBeNull()
+
+	const previousAfterConfirm = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'overlap',
+		urlSecret: previousSecret,
+	})
+	expect(previousAfterConfirm.status).toBe(404)
+
+	await env.APP_DB.prepare(`DELETE FROM webhook_endpoints`).run()
+	await mintWebhook({
+		userId,
+		webhookName: 'expired',
+		urlSecret: currentSecret,
+		previousUrlSecret: previousSecret,
+		previousExpiresAt: '2026-07-23T00:00:00.000Z',
+		id: 'mint-expired',
+	})
+	declareWebhook({ name: 'expired' })
+	const previousAfterExpiry = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'expired',
+		urlSecret: previousSecret,
+	})
+	expect(previousAfterExpiry.status).toBe(404)
+	const currentAfterExpiry = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'expired',
+		urlSecret: currentSecret,
+	})
+	expect(currentAfterExpiry.status).toBe(202)
 })

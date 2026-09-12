@@ -97,6 +97,8 @@ function createEnv(userId: string) {
 			webhook_name TEXT NOT NULL,
 			url_secret_hash TEXT NOT NULL,
 			url_secret_encrypted TEXT,
+			previous_url_secret_hash TEXT,
+			previous_url_secret_expires_at TEXT,
 			enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
 			created_at TEXT NOT NULL,
 			rotated_at TEXT NOT NULL
@@ -219,7 +221,9 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 	expect(rotated).not.toHaveProperty('url')
 	const stored = await db
 		.prepare(
-			`SELECT id, url_secret_hash, url_secret_encrypted FROM webhook_endpoints
+			`SELECT id, url_secret_hash, url_secret_encrypted,
+				previous_url_secret_hash, previous_url_secret_expires_at
+			FROM webhook_endpoints
 			WHERE user_id = ? AND package_id = 'pkg-1' AND webhook_name = 'sentry'`,
 		)
 		.bind(userId)
@@ -227,6 +231,8 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 			id: string
 			url_secret_hash: string
 			url_secret_encrypted: string
+			previous_url_secret_hash: string
+			previous_url_secret_expires_at: string
 		}>()
 	expect(stored?.id).toBe(parseWebhookUrlHandle(rotated.handle))
 	expect(stored?.url_secret_encrypted).toBeTruthy()
@@ -241,6 +247,23 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 	expect(rotatedSecret).not.toBe(
 		revealed.url.slice(revealed.url.lastIndexOf('/') + 1),
 	)
+	const previousSecret = revealed.url.slice(revealed.url.lastIndexOf('/') + 1)
+	expect(stored?.previous_url_secret_hash).toBe(
+		await hashWebhookUrlSecret(previousSecret),
+	)
+	expect(stored?.previous_url_secret_expires_at).toEqual(expect.any(String))
+	const listedAfterRotate = await listWebhooksForUser({
+		env,
+		baseUrl: 'https://heykody.dev',
+		userId,
+	})
+	expect(listedAfterRotate[0]?.previousUrlActiveUntil).toBe(
+		stored?.previous_url_secret_expires_at,
+	)
+	const overlapUntil = Date.parse(stored!.previous_url_secret_expires_at)
+	const overlapExpected = Date.now() + 24 * 60 * 60 * 1000
+	expect(overlapUntil).toBeGreaterThan(overlapExpected - 10_000)
+	expect(overlapUntil).toBeLessThan(overlapExpected + 10_000)
 
 	const disabled = await setWebhookEnabledForUser({
 		env,

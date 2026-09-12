@@ -15,9 +15,9 @@ import {
 	buildWebhookTimestampBodyPayload,
 	isWebhookTimestampWithinTolerance,
 	parseWebhookReplayTimestamp,
+	matchWebhookIngressUrlSecret,
 	providedWebhookHmacValues,
 	verifyWebhookHmacSignature,
-	webhookUrlSecretMatches,
 } from './crypto.ts'
 import {
 	dispatchWebhookInvocation,
@@ -42,8 +42,12 @@ import {
 	readWebhookCallerIdempotencyKey,
 	resolveWebhookParamsModeFirstArg,
 } from './params.ts'
-import { getWebhookEndpointByKey } from './repo.ts'
 import {
+	clearWebhookEndpointPreviousUrlSecret,
+	getWebhookEndpointByKey,
+} from './repo.ts'
+import {
+	isWebhookPreviousUrlLive,
 	webhookDefaultReplayToleranceSeconds,
 	webhookIdempotencyKeyHeader,
 	webhookMaxPayloadBytes,
@@ -306,14 +310,25 @@ export async function handleWebhookIngressRequest(
 		return notFoundResponse()
 	}
 
-	const secretMatches = await webhookUrlSecretMatches({
+	const secretMatch = await matchWebhookIngressUrlSecret({
 		candidate: route.urlSecret,
-		storedHash: endpoint.urlSecretHash,
+		currentHash: endpoint.urlSecretHash,
+		previousHash: endpoint.previousUrlSecretHash,
 	})
+	const previousLive = isWebhookPreviousUrlLive(endpoint, receivedAt)
 	// Wrong secret: no delivery row (avoids log-flush DoS) and no rate-limit
 	// side channel that would distinguish minted names from unknown ones.
-	if (!secretMatches) {
+	// An expired previous hash is treated as unknown.
+	if (secretMatch === null || (secretMatch === 'previous' && !previousLive)) {
 		return notFoundResponse()
+	}
+	// First accepted POST on the new URL retires the previous secret early.
+	if (secretMatch === 'current' && endpoint.previousUrlSecretHash) {
+		await clearWebhookEndpointPreviousUrlSecret({
+			db: env.APP_DB,
+			userId: endpoint.userId,
+			endpointId: endpoint.id,
+		})
 	}
 
 	const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })

@@ -109,8 +109,10 @@ request to the package export that owns it.
    output never includes it. For a provider apply does not cover, the owner
    copies the URL from the package's settings page
    (`/@<username>/<packageKodyId>/settings`, Webhooks section), where they can
-   also reveal, rotate, disable, or enable it. `/account/webhooks` lists every
-   webhook across packages and links to those sections.
+   also reveal, rotate, disable, or enable it. Rotate keeps the previous URL
+   live for 24 hours, or until a delivery arrives on the new URL.
+   `/account/webhooks` lists every webhook across packages and links to those
+   sections.
 
 Declaring a webhook does not open ingress; minting does. Deliveries are
 rate-limited per webhook (default 60 per minute, at most 600), and body-only

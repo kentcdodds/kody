@@ -46,6 +46,9 @@ node tools/control-kody.ts request GET /account/webhooks.json
   hash deep links wait for it.
 - `mint` on an already-minted webhook is a 400 (“Rotate it”); the card only
   shows Mint for unminted rows. Rotate and Disable are double-check buttons.
+  Rotate keeps the previous URL active for 24 hours, or until a delivery arrives
+  on the new URL; the card shows “Previous URL active until …” during that
+  overlap.
 - `reveal` on a legacy mint without `url_secret_encrypted` is a 400; the card
   offers Rotate instead.
 - Every intent writes an `account` audit event (`webhook_url_reveal`, …).

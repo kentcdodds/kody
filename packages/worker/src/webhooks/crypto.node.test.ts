@@ -6,6 +6,7 @@ import {
 	generateWebhookUrlSecret,
 	hashWebhookUrlSecret,
 	isWebhookTimestampWithinTolerance,
+	matchWebhookIngressUrlSecret,
 	parseWebhookReplayTimestamp,
 	providedWebhookHmacValues,
 	verifyWebhookHmacSignature,
@@ -25,6 +26,30 @@ test('webhook URL secrets hash for storage and compare in constant time', async 
 			storedHash: hash,
 		}),
 	).toBe(false)
+
+	const previous = await generateWebhookUrlSecret()
+	const previousHash = await hashWebhookUrlSecret(previous)
+	expect(
+		await matchWebhookIngressUrlSecret({
+			candidate: secret,
+			currentHash: hash,
+			previousHash,
+		}),
+	).toBe('current')
+	expect(
+		await matchWebhookIngressUrlSecret({
+			candidate: previous,
+			currentHash: hash,
+			previousHash,
+		}),
+	).toBe('previous')
+	expect(
+		await matchWebhookIngressUrlSecret({
+			candidate: `${secret}x`,
+			currentHash: hash,
+			previousHash,
+		}),
+	).toBeNull()
 })
 
 test('HMAC signatures cover GitHub-style prefixed hex and raw hex', async () => {

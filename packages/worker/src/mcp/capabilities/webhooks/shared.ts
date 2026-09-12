@@ -62,6 +62,12 @@ export const listedWebhookSchema = z.object({
 		.describe('Null when not minted; otherwise the mint enabled flag.'),
 	created_at: z.string().nullable(),
 	rotated_at: z.string().nullable(),
+	previous_url_active_until: z
+		.string()
+		.nullable()
+		.describe(
+			'ISO timestamp while the previous URL still accepts deliveries after rotate. Null when there is no live overlap.',
+		),
 })
 
 export const mintedWebhookHandleSchema = z.object({
@@ -79,6 +85,12 @@ export const mintedWebhookHandleSchema = z.object({
 	enabled: z.boolean(),
 	created_at: z.string(),
 	rotated_at: z.string(),
+	previous_url_active_until: z
+		.string()
+		.nullable()
+		.describe(
+			'ISO timestamp while the previous URL still accepts deliveries after rotate. Null on first mint.',
+		),
 })
 
 export const webhookUrlApplyResultSchema = z.object({
@@ -127,6 +139,7 @@ export function toListedWebhookCapability(webhook: {
 	enabled: boolean | null
 	createdAt: string | null
 	rotatedAt: string | null
+	previousUrlActiveUntil: string | null
 }) {
 	return {
 		package_id: webhook.packageId,
@@ -146,6 +159,7 @@ export function toListedWebhookCapability(webhook: {
 		enabled: webhook.enabled,
 		created_at: webhook.createdAt,
 		rotated_at: webhook.rotatedAt,
+		previous_url_active_until: webhook.previousUrlActiveUntil,
 	}
 }
 
@@ -158,6 +172,7 @@ export function toMintedWebhookCapability(minted: {
 	enabled: boolean
 	createdAt: string
 	rotatedAt: string
+	previousUrlActiveUntil: string | null
 }) {
 	return {
 		package_id: minted.packageId,
@@ -168,6 +183,7 @@ export function toMintedWebhookCapability(minted: {
 		enabled: minted.enabled,
 		created_at: minted.createdAt,
 		rotated_at: minted.rotatedAt,
+		previous_url_active_until: minted.previousUrlActiveUntil,
 	}
 }
 

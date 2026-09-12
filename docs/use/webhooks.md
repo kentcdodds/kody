@@ -111,9 +111,10 @@ package declares, joined with its minted state, one card per webhook:
   URL once so you can paste it into the provider.
 - **Reveal URL** shows a minted URL again, with a copy button. Each reveal is
   written to the account audit log.
-- **Rotate URL** replaces the secret. The previous URL stops working
-  immediately; rerun `webhookUrlApply` (same handle) or paste the new URL into
-  the provider.
+- **Rotate URL** replaces the secret. The previous URL stays active for **24
+  hours**, or until a delivery arrives on the new URL. Rerun `webhookUrlApply`
+  (same handle) or paste the new URL into the provider. The card shows “Previous
+  URL active until …” during that overlap.
 - **Disable** / **Enable** toggle ingress without deleting the mint. Disabled
   webhooks answer 404.
 
@@ -334,8 +335,9 @@ ingress (unknown name → 404). Disable with `webhookDisable` without deleting t
 mint; re-enable with `webhookEnable`. Rotate the URL secret with
 `webhookUrlRotate` when a credential may have leaked, then call
 `webhookUrlApply` again with the same handle so providers get the new URL. The
-same disable, enable, and rotate actions are in the package's settings Webhooks
-section.
+previous URL stays active for 24 hours, or until a delivery arrives on the new
+URL. The same disable, enable, and rotate actions are in the package's settings
+Webhooks section.
 
 ## Related
 

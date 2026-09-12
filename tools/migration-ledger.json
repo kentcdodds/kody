@@ -247,6 +247,10 @@
 		{
 			"filename": "0061-community-forks-package-delete-cascade.sql",
 			"sha256": "d3701812617f097a85c49f45899b1290c0d5bdc697d6db66408333981ff321ae"
+		},
+		{
+			"filename": "0062-webhook-url-rotation-grace.sql",
+			"sha256": "7b399500a63898a5af7985b1131e6a8e760af77d5f7abdc709ded16402bacbf0"
 		}
 	]
 }

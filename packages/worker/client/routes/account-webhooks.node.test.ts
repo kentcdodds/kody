@@ -48,6 +48,7 @@ const unminted: PackageWebhookListItem = {
 	urlRecoverable: false,
 	createdAt: null,
 	rotatedAt: null,
+	previousUrlActiveUntil: null,
 }
 
 const minted: PackageWebhookListItem = {
@@ -70,6 +71,7 @@ const minted: PackageWebhookListItem = {
 	urlRecoverable: true,
 	createdAt: '2026-09-01T10:00:00.000Z',
 	rotatedAt: '2026-09-05T10:00:00.000Z',
+	previousUrlActiveUntil: null,
 }
 
 function renderWebhooksPage(
