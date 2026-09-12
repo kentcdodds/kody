@@ -20,9 +20,8 @@ memory, secrets, packages, jobs, and webhooks. Once you keep those three layers
 straight, "text my robot" stops being a product feature request and becomes a
 wiring problem you can solve with tools that already exist.
 
-This page is the practical guide. The FAQ line in
-[What is Kody?](./what-is-kody.md) still holds. What was missing is the worked
-example.
+This page is the practical guide and the worked example for the FAQ line in
+[What is Kody?](./what-is-kody.md).
 
 ## The three layers
 

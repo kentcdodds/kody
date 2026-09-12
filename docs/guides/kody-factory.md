@@ -16,8 +16,9 @@ Kody is a hosted factory for capabilities your assistant can discover, combine,
 and keep running. Your assistant connects to Kody over MCP and starts with two
 tools:
 
-- **`search`** finds available capabilities, connected services, saved packages,
-  official guides, and relevant memories. Search before building so the
+- **`search`** finds capabilities, official guides, saved packages,
+  integrations, connected MCP servers, and relevant memories. Unscoped results
+  rank the MCP server, not every remote tool. Search before building so the
   assistant can reuse what you already have.
 - **`execute`** runs a temporary TypeScript module on Kody's servers. It can
   compose discovered capabilities, call connected services, and import exports

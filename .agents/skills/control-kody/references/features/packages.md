@@ -7,16 +7,17 @@ Repo-backed saved packages: list, detail, files, share, approve-publish.
 `/@username` lists your packages, including private and unpublished packages
 when you view your own profile. Own-profile GET filters:
 `visibility=public|private`, `listing=published|unpublished|ahead` (ahead =
-local edits not republished), and `hidden=yes|no`. Guests can use
+**Needs republish**: the listing pin is behind `published_commit`, not
+HEAD-ahead-of-published), and `hidden=yes|no`. Guests can use
 `listing=published|unpublished` only; owner-only params are ignored for them.
 Search stays `q=`. Each package lives at `/@username/:kodyId` (the URL slug is
 the package name leaf; README), `/@username/:kodyId/tree/:ref` (files),
 `/@username/:kodyId/assets/…` (README-relative images from the published or
-pinned commit), `/@username/:kodyId/settings` (lock, visibility, share, delete),
-`/@username/:kodyId/approve-publish` (published-vs-HEAD review), and
-`/@username/:kodyId/approve-changes` (guest pin-ahead published diff). Opening
-an allowlisted image or video in the tree renders a preview; the bytes come from
-`/@username/:kodyId/raw/:ref/…` (same authz as the tree). Legacy
+pinned commit), `/@username/:kodyId/settings` (lock, visibility, share,
+webhooks, delete), `/@username/:kodyId/approve-publish` (published-vs-HEAD
+review), and `/@username/:kodyId/approve-changes` (guest pin-ahead published
+diff). Opening an allowlisted image or video in the tree renders a preview; the
+bytes come from `/@username/:kodyId/raw/:ref/…` (same authz as the tree). Legacy
 `/account/packages` HTML URLs only redirect to these canonical pages.
 
 ## Drive it
@@ -76,3 +77,7 @@ empty state.
   **HEAD ahead of published**. Owners click that badge to review the diff and
   publish HEAD on `/@username/:kodyId/approve-publish`. Publish checks require
   non-empty root `README.md` and `AGENTS.md`.
+- Own-profile **Needs republish** (`listing=ahead`) is listing pin behind
+  `published_commit`. It is not HEAD-ahead-of-published and not `updated_at`
+  after `published_at` (community publish bumps that timestamp even when the pin
+  already matches).

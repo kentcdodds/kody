@@ -2,8 +2,8 @@
 
 Kody inbound webhooks are **package-centered**: you declare them in
 `package.json#kody.webhooks`, mint an opaque handle with `webhookUrlMint`, then
-register the credential with `webhookUrlApply` (GitHub repository hooks today)
-or copy the URL yourself from the package's
+register the credential with `webhookUrlApply` (GitHub repository hooks) or copy
+the URL yourself from the package's
 [settings page](#manage-webhook-urls-in-package-settings). MCP and execute never
 return the credential URL or `url_secret`. Each delivery invokes the bound
 package export.
