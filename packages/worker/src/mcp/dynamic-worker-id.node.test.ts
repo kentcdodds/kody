@@ -35,7 +35,7 @@ async function mintId(input: {
 	})
 }
 
-test('createStableDynamicWorkerId is stable for the same modules, user, and storage context', async () => {
+test('createStableDynamicWorkerId is stable for the same modules, user, and storage context and ignores evaluate-time params', async () => {
 	const modules = {
 		'executor.js': 'export default class Executor { evaluate() { return 1 } }',
 	}
@@ -49,6 +49,8 @@ test('createStableDynamicWorkerId is stable for the same modules, user, and stor
 	const second = await mintId({ modules, storageContext })
 	expect(first).toBe(second)
 	expect(first).toMatch(/^kody-[A-Za-z0-9_-]{43}$/)
+	// Same modules + user + storage mint one id. Evaluate-time params and
+	// packageContext are not hash inputs; they must not appear in `modules`.
 
 	expect(await mintId({ modules, storageContext, userId: 'user-1' })).toBe(
 		first,

@@ -216,10 +216,12 @@ contract changes), the `LOADER` binding name, the acting `userId` and
 graph (agent code plus the generated executor harness).
 
 Timeout, `allowOutboundFetch`, and the excluded fetch hostname are baked into
-that harness text, so they are not hashed again. Deploy SHA (`APP_COMMIT_SHA`),
-email, and other request-only `gatewayProps` fields are not part of the key: a
-parent deploy remints ids only when the harness or module graph actually
-changes.
+that harness text, so they are not hashed again. Execute `params`,
+`packageContext`, and live MCP connect/tool metadata arrive on `evaluate` RPC
+and are not part of the key: the same user and module graph reuse one isolate
+when only those per-call values change. Deploy SHA (`APP_COMMIT_SHA`), email,
+and other request-only `gatewayProps` fields are also omitted, so a parent
+deploy remints ids only when the harness or module graph actually changes.
 
 `userId` and `storageContext` stay in the key because `LOADER.get` reuses the
 first factory's WorkerCode for a given id, including the `KodyFetchGateway`

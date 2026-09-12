@@ -114,3 +114,83 @@ test(
 		})
 	},
 )
+
+test(
+	'sequential executes with the same code and different params reuse the isolate and deliver params',
+	{ timeout: 60_000 },
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		const bundle = await buildKodyModuleBundle({
+			env: reuseEnv,
+			baseUrl: 'https://kody.dev',
+			userId: 'user-reuse-test',
+			sourceFiles: {
+				'entry.ts': [
+					"import { kody, packageContext } from 'kody:runtime'",
+					'export default async function main(params) {',
+					'\treturn {',
+					'\t\tparams,',
+					'\t\tpackageId: packageContext?.packageId ?? null,',
+					'\t\tping: await kody.ping_capability({ query: params.room }),',
+					'\t}',
+					'}',
+				].join('\n'),
+			},
+			entryPoint: 'entry.ts',
+		})
+
+		const runOnce = async (
+			label: string,
+			params: { room: string },
+			packageContext?: { packageId: string; kodyId: string },
+		) =>
+			await runBundledModuleWithRegistry(
+				reuseEnv,
+				createCaller(),
+				{
+					mainModule: bundle.mainModule,
+					modules: bundle.modules,
+				},
+				params,
+				{
+					skipCapabilityRegistry: true,
+					...(packageContext ? { packageContext } : {}),
+					additionalTools: {
+						ping_capability: async (args: unknown) => ({
+							ok: true,
+							label,
+							args,
+						}),
+					},
+				},
+			)
+
+		const first = await runOnce('first', { room: 'office' })
+		expect(first.error).toBeUndefined()
+		expect(first.result).toEqual({
+			params: { room: 'office' },
+			packageId: null,
+			ping: { ok: true, label: 'first', args: { query: 'office' } },
+		})
+
+		const second = await runOnce('second', { room: 'kitchen' })
+		expect(second.error).toBeUndefined()
+		expect(second.result).toEqual({
+			params: { room: 'kitchen' },
+			packageId: null,
+			ping: { ok: true, label: 'second', args: { query: 'kitchen' } },
+		})
+
+		const third = await runOnce(
+			'third',
+			{ room: 'office' },
+			{ packageId: 'pkg-reuse', kodyId: 'bot-reuse' },
+		)
+		expect(third.error).toBeUndefined()
+		expect(third.result).toEqual({
+			params: { room: 'office' },
+			packageId: 'pkg-reuse',
+			ping: { ok: true, label: 'third', args: { query: 'office' } },
+		})
+	},
+)

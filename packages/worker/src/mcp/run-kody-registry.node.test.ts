@@ -1170,3 +1170,135 @@ export default async function main() { return await whatShipped({}) }`
 		recordSpy.mockRestore()
 	}
 })
+
+test('runModuleWithRegistry keeps WorkerCode stable across params and packageContext', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://app.example.com',
+		user: {
+			userId: 'user-1',
+			email: 'me@example.com',
+			displayName: 'Me',
+		},
+		storageContext: null,
+	})
+	const getRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockResolvedValue({
+			capabilityHandlers: {},
+			capabilityMap: {},
+			toolSets: {},
+			capabilityPreludes: {},
+		} as never)
+	const wrappedSources: Array<string> = []
+	const invocations: Array<unknown> = []
+	const executorModules: Array<Record<string, string>> = []
+	const createExecuteExecutorSpy = vi
+		.spyOn(mcpExecutor, 'createExecuteExecutor')
+		.mockImplementation((input) => {
+			executorModules.push(input.modules as Record<string, string>)
+			return {
+				async execute(wrapped, _providers, invocation) {
+					wrappedSources.push(String(wrapped))
+					invocations.push(invocation)
+					return { result: 'ok', logs: [] }
+				},
+			} as never
+		})
+	const bundleSpy = vi
+		.mocked(buildKodyModuleBundle)
+		.mockImplementation(async (input) => ({
+			mainModule: 'entry.js',
+			modules: {
+				'entry.js':
+					input.sourceFiles['entry.ts'] ??
+					'export default async function main() { return null }',
+			},
+		}))
+
+	try {
+		const code = `import { kody } from 'kody:runtime'
+export default async function main(params) { return params }`
+		const firstParams = { sentinel: 'param-sentinel-9f3-office' }
+		const secondParams = { sentinel: 'param-sentinel-9f3-kitchen' }
+		const packageContext = { packageId: 'pkg-9f3', kodyId: 'bot-9f3' }
+
+		await runModuleWithRegistry(env, callerContext, code, firstParams)
+		await runModuleWithRegistry(env, callerContext, code, secondParams)
+		await runModuleWithRegistry(env, callerContext, code, firstParams, {
+			packageContext,
+		})
+
+		expect(wrappedSources).toHaveLength(3)
+		expect(wrappedSources[1]).toBe(wrappedSources[0])
+		expect(wrappedSources[2]).toBe(wrappedSources[0])
+		expect(executorModules[1]).toEqual(executorModules[0])
+		expect(executorModules[2]).toEqual(executorModules[0])
+		expect(wrappedSources[0]).toContain('__invocation.params')
+		expect(wrappedSources[0]).toContain('__invocation.packageContext')
+		expect(JSON.stringify(wrappedSources[0])).not.toContain(
+			firstParams.sentinel,
+		)
+		expect(JSON.stringify(wrappedSources[0])).not.toContain(
+			secondParams.sentinel,
+		)
+		expect(JSON.stringify(wrappedSources[0])).not.toContain(
+			packageContext.packageId,
+		)
+		expect(invocations).toEqual([
+			{ params: firstParams, packageContext: null },
+			{ params: secondParams, packageContext: null },
+			{ params: firstParams, packageContext },
+		])
+
+		const otherCode = `import { kody } from 'kody:runtime'
+export default async function main(params) { return { other: true, ...params } }`
+		await runModuleWithRegistry(env, callerContext, otherCode, firstParams)
+		expect(executorModules[3]).not.toEqual(executorModules[0])
+
+		const { createExecutorModuleSource } = mcpExecutor
+		const { createStableDynamicWorkerId } =
+			await import('#mcp/dynamic-worker-id.ts')
+		const { createDynamicWorkerCompatibilityOptions } =
+			await import('#worker/dynamic-worker-compatibility.ts')
+		const mintFromRun = async (
+			wrapped: string,
+			modules: Record<string, string>,
+		) =>
+			await createStableDynamicWorkerId({
+				userId: 'user-1',
+				storageContext: null,
+				workerOptions: {
+					...createDynamicWorkerCompatibilityOptions(),
+					mainModule: 'executor.js',
+					modules: {
+						...modules,
+						'executor.js': createExecutorModuleSource({
+							code: wrapped,
+							providers: [{ name: 'kody', fns: {} }],
+							shadowGlobalThis: false,
+							timeoutMs: 1_000,
+						}),
+					},
+				},
+			})
+		const firstId = await mintFromRun(wrappedSources[0]!, executorModules[0]!)
+		expect(await mintFromRun(wrappedSources[1]!, executorModules[1]!)).toBe(
+			firstId,
+		)
+		expect(await mintFromRun(wrappedSources[2]!, executorModules[2]!)).toBe(
+			firstId,
+		)
+		expect(await mintFromRun(wrappedSources[3]!, executorModules[3]!)).not.toBe(
+			firstId,
+		)
+	} finally {
+		bundleSpy.mockRestore()
+		createExecuteExecutorSpy.mockRestore()
+		getRegistrySpy.mockRestore()
+	}
+})

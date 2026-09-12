@@ -9,7 +9,7 @@ export const dynamicWorkerIdPrefix = 'kody-'
  * Sandbox-contract / cache-key version. Bump only when the executor harness
  * or LOADER identity contract changes — not on every parent commit.
  */
-export const dynamicWorkerCacheKeyVersion = 5
+export const dynamicWorkerCacheKeyVersion = 6
 
 export type DynamicWorkerIdOptions = {
 	compatibilityDate: string
@@ -25,8 +25,9 @@ export type DynamicWorkerIdOptions = {
  * knobs, an explicit contract version, and the acting-user facets bound on
  * `globalOutbound` (`userId`, `storageContext`). `LOADER.get` reuses the
  * first factory's WorkerCode for a given id, including that gateway stub, so
- * those facets stay in the key. Deploy SHA, email, and other request-only
- * gateway fields do not.
+ * those facets stay in the key. Deploy SHA, email, execute `params`,
+ * `packageContext`, live MCP connect/tool metadata, and other request-only
+ * fields do not — those arrive on `evaluate` RPC.
  *
  * UUID fallback when modules are not deterministically hashable.
  */
