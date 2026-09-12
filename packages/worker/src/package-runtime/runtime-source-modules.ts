@@ -58,6 +58,9 @@ export function createRuntimeModuleSource() {
 	// Helper *presence* is decided by the generated wrapper source, which is
 	// part of the worker id hash, so presence observed on the first in-run
 	// evaluation is identical for every later run of the same worker.
+	// \`packageContext\` is the exception on *value*: the same wrapper is reused
+	// across evaluate calls, and the current package id arrives on evaluate
+	// RPC, so the export must re-read AsyncLocalStorage on each access.
 	//
 	// \`kody\` is always exported as a late-bound proxy: every
 	// execute/package runtime provides it, and Worker module loaders may
@@ -443,6 +446,48 @@ function __kodyOptionalRuntimeFunctionExport(exportName) {
 	return __kodyCreateRuntimeFunctionExport(exportName);
 }
 
+function __kodyCreateRuntimeRecordExport(exportName) {
+	return new Proxy({}, {
+		get(_target, property) {
+			if (__kodyIsRuntimeProxyInspectionProperty(property)) {
+				return __kodyRuntimeProxyInspectionValue(exportName, property);
+			}
+			const currentRuntime = __kodyRuntimeStorage.getStore();
+			const value = currentRuntime?.[exportName] ?? null;
+			if (value == null) return undefined;
+			return value[property];
+		},
+		has(_target, property) {
+			if (__kodyIsRuntimeProxyInspectionProperty(property)) return false;
+			const currentRuntime = __kodyRuntimeStorage.getStore();
+			const value = currentRuntime?.[exportName] ?? null;
+			return value != null && property in value;
+		},
+		ownKeys() {
+			const currentRuntime = __kodyRuntimeStorage.getStore();
+			const value = currentRuntime?.[exportName] ?? null;
+			return value == null ? [] : Reflect.ownKeys(value);
+		},
+		getOwnPropertyDescriptor(_target, property) {
+			if (__kodyIsRuntimeProxyInspectionProperty(property)) return undefined;
+			const currentRuntime = __kodyRuntimeStorage.getStore();
+			const value = currentRuntime?.[exportName] ?? null;
+			if (value == null) return undefined;
+			const descriptor = Reflect.getOwnPropertyDescriptor(value, property);
+			if (descriptor !== undefined) {
+				return { ...descriptor, configurable: true };
+			}
+			if (!(property in value)) return undefined;
+			return {
+				configurable: true,
+				enumerable: true,
+				writable: true,
+				value: value[property],
+			};
+		},
+	});
+}
+
 function __kodyResolvePackageStorage(packageId) {
 	const currentRuntime = __kodyRuntimeStorage.getStore();
 	const factory = currentRuntime?.__kodyPackageStorage;
@@ -595,7 +640,7 @@ export const kody =
 export const createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport('createAuthenticatedFetch');
 export const secretHeaders = __kodyOptionalRuntimeObjectExport('secretHeaders', undefined);
 export const oauthClientCredentials = __kodyOptionalRuntimeFunctionExport('oauthClientCredentials');
-export const packageContext = __kodyInitialRuntime?.packageContext ?? null;
+export const packageContext = __kodyCreateRuntimeRecordExport('packageContext');
 export const packageSecrets = __kodyOptionalRuntimeObjectExport('packageSecrets', null);
 export const email = __kodyOptionalRuntimeObjectExport('email', null);
 export const workflows = __kodyOptionalRuntimeObjectExport('workflows', null);

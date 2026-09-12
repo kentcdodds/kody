@@ -162,6 +162,13 @@ type RuntimeHelperManifestEntry = {
 	runtimeBindings: Array<RuntimeHelperRuntimeBinding>
 	unboundNames: Array<string>
 	isBound: (context: RuntimeHelperManifestContext) => boolean
+	/**
+	 * When set, overrides `!isBound` for the host-side unbound-helper rewrite.
+	 * Use when a prelude is always emitted (stable WorkerCode) but the helper
+	 * is still unbound for this run — for example `packageSecrets` on ad hoc
+	 * execute, where the package id arrives on evaluate RPC.
+	 */
+	unboundWhen?: (context: RuntimeHelperManifestContext) => boolean
 	createPrelude?: (context: RuntimeHelperManifestContext) => string
 	createKodyTools?: (
 		context: RuntimeHelperManifestContext,
@@ -203,10 +210,11 @@ const __kodyPackageSecrets = (packageId) => ({
 	`.trim()
 }
 
-function createPackageSecretsBindingPrelude(input: { runPackageId: string }) {
-	const runPackageIdJson = JSON.stringify(input.runPackageId)
+function createPackageSecretsBindingPrelude() {
 	return `
-const packageSecrets = __kodyPackageSecrets(${runPackageIdJson});
+const packageSecrets = __invocation.packageContext?.packageId
+  ? __kodyPackageSecrets(__invocation.packageContext.packageId)
+  : null;
 	`.trim()
 }
 
@@ -520,12 +528,9 @@ const runtimeHelperManifest: Array<RuntimeHelperManifestEntry> = [
 		runtimeName: 'packageSecrets',
 		runtimeBindings: [{ runtimeName: 'packageSecrets', absentValue: 'null' }],
 		unboundNames: ['packageSecrets'],
-		isBound: (context) => Boolean(context.packageSecretTools?.runPackageId),
-		createPrelude: (context) => {
-			const runPackageId = context.packageSecretTools?.runPackageId
-			if (!runPackageId) return ''
-			return createPackageSecretsBindingPrelude({ runPackageId })
-		},
+		isBound: (context) => Boolean(context.packageSecretTools),
+		unboundWhen: (context) => !context.packageSecretTools?.runPackageId,
+		createPrelude: () => createPackageSecretsBindingPrelude(),
 	},
 	{
 		runtimeName: 'email',
@@ -652,9 +657,12 @@ export function createUnboundOptionalRuntimeHelperNames(
 	context: RuntimeHelperManifestContext,
 ) {
 	return new Set(
-		runtimeHelperManifest.flatMap((entry) =>
-			entry.isBound(context) ? [] : entry.unboundNames,
-		),
+		runtimeHelperManifest.flatMap((entry) => {
+			const unbound = entry.unboundWhen
+				? entry.unboundWhen(context)
+				: !entry.isBound(context)
+			return unbound ? entry.unboundNames : []
+		}),
 	)
 }
 

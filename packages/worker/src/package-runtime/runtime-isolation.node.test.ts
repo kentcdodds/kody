@@ -191,6 +191,7 @@ test('optional runtime exports stay falsy when the wrapper omits them', async ()
 		] = sharedStorage
 
 		let captured: RuntimeModule | null = null
+		let observedPackageContext: Record<string, unknown> | null = null
 		await sharedStorage.run(
 			// Intentionally omit `email`, `kody` from the runtime payload to
 			// mirror an execute call that did not bind any of those helpers.
@@ -198,6 +199,9 @@ test('optional runtime exports stay falsy when the wrapper omits them', async ()
 			async () => {
 				const url = await writeRuntimeFile()
 				captured = (await import(url)) as RuntimeModule
+				observedPackageContext = {
+					...(captured as RuntimeModule).packageContext,
+				}
 			},
 		)
 
@@ -212,8 +216,8 @@ test('optional runtime exports stay falsy when the wrapper omits them', async ()
 		expect(Boolean(mod.kody)).toBe(false)
 		expect(Boolean(mod.codemode)).toBe(false)
 		expect(Boolean(mod.capabilities)).toBe(false)
-		// Provided exports survive.
-		expect(mod.packageContext).toEqual({ packageId: 'pkg-1' })
+		// packageContext is late-bound; read it inside the store run.
+		expect(observedPackageContext).toEqual({ packageId: 'pkg-1' })
 	})
 })
 
@@ -269,6 +273,22 @@ test('preloaded kody exports resolve from the active runtime store', async () =>
 			ok: true,
 			args: { value: 'default-active-store' },
 		})
+
+		const firstPackageId = await sharedStorage.run(
+			{ packageContext: { packageId: 'pkg-a' } },
+			() => mod.packageContext?.packageId ?? null,
+		)
+		const secondPackageId = await sharedStorage.run(
+			{ packageContext: { packageId: 'pkg-b' } },
+			() => mod.packageContext?.packageId ?? null,
+		)
+		const absentPackageId = await sharedStorage.run(
+			{ packageContext: null },
+			() => mod.packageContext?.packageId ?? null,
+		)
+		expect(firstPackageId).toBe('pkg-a')
+		expect(secondPackageId).toBe('pkg-b')
+		expect(absentPackageId).toBeNull()
 	})
 })
 

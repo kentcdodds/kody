@@ -286,7 +286,7 @@ test('ad hoc execute runtime exposes only packages.invoke', async () => {
 				'\t\tremovedObjectInvoke = String(error?.message ?? error);',
 				'\t}',
 				'\treturn {',
-				'\t\tpackageContextIsNull: packageContext === null,',
+				'\t\tpackageContextIsNull: packageContext?.packageId == null,',
 				'\t\tdirectKodyInvokeChecked,',
 				'\t\tremovedObjectInvoke,',
 				'\t\tinvoked: await packages?.invoke(',
@@ -503,7 +503,8 @@ test(
 			targetMarkerVisible: boolean
 		}
 		// The target ran in its own runtime (packageContext bound to the target
-		// package) and each key-less invoke got a fresh isolate.
+		// package). Same user + published graph reuse one isolate; params arrive
+		// on evaluate RPC, so the second invoke sees the module-level counter.
 		expect(payload.first).toEqual({
 			marker: 'first',
 			isolateCallCount: 1,
@@ -512,7 +513,7 @@ test(
 		})
 		expect(payload.second).toEqual({
 			marker: 'second',
-			isolateCallCount: 1,
+			isolateCallCount: 2,
 			targetKodyId: 'lean-target',
 			callerMarkerVisible: false,
 		})
