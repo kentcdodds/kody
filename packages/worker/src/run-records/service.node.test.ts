@@ -13,6 +13,12 @@ const mocks = vi.hoisted(() => ({
 		activationMilestones: [],
 		jobRunCounts: { success: 0, error: 0 },
 	})),
+	getSqlBillingStats: vi.fn(async () => ({
+		databaseSize: 0,
+		rowsReadTotal: 0,
+		rowsWrittenTotal: 0,
+		ops: [],
+	})),
 }))
 
 vi.mock('./package-subscriptions.ts', () => ({
@@ -23,6 +29,7 @@ const {
 	beginRunRecord,
 	finishRunRecord,
 	getAdminInsightsSnapshot,
+	getSqlBillingStats,
 	listActivationMilestones,
 	listPackageRunSuccesses,
 	recordRunRecord,
@@ -38,6 +45,7 @@ function createEnv(overrides: Partial<Env> = {}) {
 				listPackageRunSuccesses: mocks.listPackageRunSuccesses,
 				listActivationMilestones: mocks.listActivationMilestones,
 				getAdminInsightsSnapshot: mocks.getAdminInsightsSnapshot,
+				getSqlBillingStats: mocks.getSqlBillingStats,
 			}),
 		},
 		APP_DB: {},
@@ -294,5 +302,25 @@ test('getAdminInsightsSnapshot requires RUN_LOG and forwards the RPC', async () 
 				packageId: 'pkg-1',
 			},
 		],
+	})
+})
+
+test('getSqlBillingStats requires RUN_LOG and forwards the RPC', async () => {
+	await expect(
+		getSqlBillingStats({ env: {} as Env, userId: 'user-1' }),
+	).rejects.toThrow('RUN_LOG Durable Object binding is not configured.')
+
+	mocks.getSqlBillingStats.mockResolvedValueOnce({
+		databaseSize: 4096,
+		rowsReadTotal: 12,
+		rowsWrittenTotal: 3,
+		ops: [{ op: 'listRuns', rowsRead: 12, rowsWritten: 0, calls: 1 }],
+	})
+	const env = createEnv()
+	await expect(getSqlBillingStats({ env, userId: 'user-1' })).resolves.toEqual({
+		databaseSize: 4096,
+		rowsReadTotal: 12,
+		rowsWrittenTotal: 3,
+		ops: [{ op: 'listRuns', rowsRead: 12, rowsWritten: 0, calls: 1 }],
 	})
 })
