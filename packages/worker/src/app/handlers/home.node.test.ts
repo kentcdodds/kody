@@ -214,4 +214,5 @@ test('anonymous home SSR omits the unused onboarding chooser catalog', async () 
 	expect(input?.loaderData?.onboarding?.discoveryPrompt.length).toBeGreaterThan(
 		0,
 	)
+	expect(input?.loaderData?.landingHeroVideos).toEqual([])
 })

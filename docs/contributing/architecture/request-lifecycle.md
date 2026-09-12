@@ -214,12 +214,13 @@ response is bounded to one minute. They are shared only when the document is a
 `200` (a `401` or `404` to a stranger stays `no-store` so making a package
 public takes effect at once) and, for JSON, when the request has no session
 cookie and the payload carries no viewer state. JSON companions are not stored
-in the Cache API (the store is HTML-only). Anonymous `/onboarding.json` uses the
-marketing policy. `/docs/:slug.json` is publicly cacheable without a cookie vary
-(the payload is identical for every visitor). The response stays `no-store` when
-the request carries a `kody_session` cookie, `loadSessionInfo` resolves a
-session, or the response sets a cookie. Auth, OAuth, account, and every other
-HTML path stay `no-store`.
+in the Cache API (the store is HTML-only). Anonymous `/onboarding.json` and
+`/landing-hero-videos.json` use the marketing policy (the playlist payload is
+also KV-cached with SWR). `/docs/:slug.json` is publicly cacheable without a
+cookie vary (the payload is identical for every visitor). The response stays
+`no-store` when the request carries a `kody_session` cookie, `loadSessionInfo`
+resolves a session, or the response sets a cookie. Auth, OAuth, account, and
+every other HTML path stay `no-store`.
 
 ## Request context
 

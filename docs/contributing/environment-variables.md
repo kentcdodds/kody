@@ -103,8 +103,17 @@ Optional Wrangler vars (public, non-secret; see
   offline. Production and preview set Kent's public playlist in
   `packages/worker/wrangler.jsonc`.
 - `YOUTUBE_ALLOWED_VIDEO_IDS` — comma-separated extra video ids, merged with
-  playlist items, the look-preview sample id, and ids extracted from enabled
-  banner hrefs.
+  playlist items, the look-preview sample id, homepage hero chooser ids, and ids
+  extracted from enabled banner hrefs.
+
+Optional origin-only Worker secret (see `packages/worker/src/env-schema.ts` and
+[architecture/youtube-watch.md](./architecture/youtube-watch.md)):
+
+- `YOUTUBE_DATA_API_KEY` — YouTube Data API key for the homepage hero chooser
+  (`playlistItems`, playlist order). When unset, the Worker reads the same
+  unlisted playlist through YouTube's public browse endpoint. Production deploy
+  syncs it onto origin only (`--set-from-env-optional YOUTUBE_DATA_API_KEY`).
+  Platform, runtime, and jobs workers do not read it.
 
 The overlay itself is `/?youtubeId=<id>`. Thumbnails are proxied at
 `/youtube-thumb/<id>` so `img-src` can stay first-party.

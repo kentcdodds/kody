@@ -1,4 +1,5 @@
-import { landingHeroDemoVideoIds } from '#universal/landing-hero-copy.ts'
+import { loadLandingHeroVideos } from '#app/landing-hero-videos.ts'
+import { landingHeroSourcePlaylistId } from '#universal/landing-hero-copy.ts'
 import {
 	mergeYoutubeWatchAllowlist,
 	parseYoutubePlaylistFeedXml,
@@ -30,9 +31,9 @@ export async function resolveYoutubeWatchAllowedVideoIds(input: {
 		| Promise<ReadonlyArray<YoutubeWatchBannerHrefs>>
 		| ReadonlyArray<YoutubeWatchBannerHrefs>
 	/**
-	 * Playlist Atom fetch. Default true for thumbs and `?youtubeId=` SSR.
-	 * Plain documents skip it: env extras, the sample id, the homepage hero
-	 * demo id, and banner hrefs still allow Watch CTAs and look-preview.
+	 * Playlist Atom fetch plus the homepage hero chooser ids. Default true
+	 * for thumbs and `?youtubeId=` SSR. Plain documents skip both: env extras,
+	 * the sample id, and banner hrefs still allow Watch CTAs and look-preview.
 	 */
 	loadPlaylists?: boolean
 }): Promise<Array<string>> {
@@ -43,7 +44,7 @@ export async function resolveYoutubeWatchAllowedVideoIds(input: {
 		input.env.YOUTUBE_ALLOWED_VIDEO_IDS,
 	)
 	const loadPlaylists = input.loadPlaylists !== false
-	const [playlistVideoIds, hrefs] = await Promise.all([
+	const [playlistVideoIds, hrefs, heroVideos] = await Promise.all([
 		loadPlaylists
 			? loadPlaylistVideoIds({
 					playlistIds,
@@ -52,13 +53,19 @@ export async function resolveYoutubeWatchAllowedVideoIds(input: {
 				})
 			: Promise.resolve([]),
 		listEnabledBannerWatchHrefs(input.env, input.listedBanners),
+		loadPlaylists
+			? loadLandingHeroVideos({
+					env: input.env,
+					playlistId: landingHeroSourcePlaylistId,
+				})
+			: Promise.resolve([]),
 	])
 	return mergeYoutubeWatchAllowlist({
 		playlistVideoIds,
 		extraVideoIds: [
 			...extraVideoIds,
 			youtubeWatchSampleVideoId,
-			...landingHeroDemoVideoIds,
+			...heroVideos.map((video) => video.videoId),
 		],
 		hrefs,
 	})

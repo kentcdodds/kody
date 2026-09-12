@@ -1,3 +1,5 @@
+import { isYoutubeVideoId } from '#universal/youtube-watch.ts'
+
 /**
  * Homepage hero headline. The live H1 and the home OG card both read these
  * parts so a wording change cannot update one surface and miss the other.
@@ -10,42 +12,39 @@ export const landingHeroHeadline = `${landingHeroHeadlineLead} ${landingHeroHead
 
 export const landingHeroCopyPromptLabel = 'Copy the discovery prompt'
 
-/**
- * Videos offered by the homepage hero, in display order. The first one loads
- * in the lite player; the rest sit in the thumbnail chooser under it. The
- * watch allowlist always includes every id here so the first-party thumb
- * proxy works without extra env. `landingHeroDemoPlaylistId` is passed on the
- * embed so end-of-video recommendations stay in that playlist.
- */
-export const landingHeroDemoVideos: ReadonlyArray<{
+export type LandingHeroVideo = {
 	videoId: string
 	title: string
-}> = [
-	{
-		videoId: 'iGMkgjXc8Ho',
-		title: 'Build a PR-ready check in Cursor, then run it from Claude',
-	},
-	{
-		videoId: 'o5L5OprLhBg',
-		title: 'Kody fixes a Stripe webhook after we renamed the domain',
-	},
-	{
-		videoId: 'QA0xYMAMjEg',
-		title: 'Introducing Kody: Your Personal Software Factory',
-	},
-	{
-		videoId: 'OZKDO9Pzmo0',
-		title:
-			'Shade automation from an INTENT.md — deterministic code, no model in the loop',
-	},
-	{
-		videoId: 'aySqbxQo9lM',
-		title: 'Kody enables awesome triage-to-production workflows',
-	},
-]
-export const landingHeroDemoVideoIds = landingHeroDemoVideos.map(
-	(video) => video.videoId,
-)
-export const landingHeroDemoVideoId = landingHeroDemoVideoIds[0] ?? ''
+}
+
+/**
+ * Unlisted playlist that owns the homepage chooser: order and membership.
+ * Kent adds videos by putting them on this playlist; the Worker reads it at
+ * request time (KV SWR). Embeds still use `landingHeroDemoPlaylistId`.
+ */
+export const landingHeroSourcePlaylistId = 'PLBPBUA8boGLA'
+
+/**
+ * Public playlist passed on the lite-player embed so end-of-video
+ * recommendations stay in that catalog (more videos than the home chooser).
+ */
 export const landingHeroDemoPlaylistId = 'PLXa53KPj2nlE'
+
 export const landingHeroChooserLabel = 'More Kody videos'
+
+export function isLandingHeroVideo(value: unknown): value is LandingHeroVideo {
+	if (typeof value !== 'object' || value === null) return false
+	const video = value as Record<string, unknown>
+	return (
+		typeof video.videoId === 'string' &&
+		isYoutubeVideoId(video.videoId) &&
+		typeof video.title === 'string' &&
+		video.title.trim().length > 0
+	)
+}
+
+export function isLandingHeroVideoList(
+	value: unknown,
+): value is Array<LandingHeroVideo> {
+	return Array.isArray(value) && value.every(isLandingHeroVideo)
+}

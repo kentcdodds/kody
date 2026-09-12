@@ -23,6 +23,7 @@ import {
 } from '#app/handlers/admin-banners.ts'
 import { createSiteBannerDismissHandler } from '#app/handlers/site-banner-dismiss.ts'
 import { createYoutubeThumbHandler } from '#app/handlers/youtube-thumb.ts'
+import { createLandingHeroVideosApiHandler } from '#app/handlers/landing-hero-videos.ts'
 import {
 	createAdminPlatformIntegrationsApiHandler,
 	createAdminPlatformIntegrationsHandler,
@@ -312,6 +313,7 @@ export function createAppRouter(env: Env) {
 	router.map(routes, {
 		actions: {
 			home: createHomeHandler(env),
+			landingHeroVideosApi: createLandingHeroVideosApiHandler(env),
 			notFoundPage: createNotFoundPageHandler(env),
 			internalErrorPage: createInternalErrorPageHandler(env),
 			robotsTxt: createRobotsTxtHandler(env),

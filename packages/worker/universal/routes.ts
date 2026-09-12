@@ -2,6 +2,7 @@ import { post, route } from 'remix/routes'
 
 export const routes = route({
 	home: '/',
+	landingHeroVideosApi: '/landing-hero-videos.json',
 	notFoundPage: '/404',
 	internalErrorPage: '/500',
 	robotsTxt: '/robots.txt',

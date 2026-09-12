@@ -455,6 +455,10 @@ automatically:
   [environment-variables.md](./environment-variables.md))
 - `YOUTUBE_ALLOWED_VIDEO_IDS` (optional public Wrangler var; extra YouTube video
   ids allowed by the overlay and `/youtube-thumb/:videoId` proxy)
+- `YOUTUBE_DATA_API_KEY` (optional origin-only Worker secret; YouTube Data API
+  key for the homepage hero chooser playlist order. When unset, origin reads the
+  unlisted playlist through YouTube's public browse endpoint — see
+  [environment-variables.md](./environment-variables.md))
 - `APP_COMMIT_SHA` (used as the Sentry **release** when present, in addition to
   `/health` versioning)
 - `CLOUDFLARE_API_BASE_URL` (optional; defaults to `https://api.cloudflare.com`.
@@ -558,6 +562,9 @@ Configure these GitHub Actions secrets and variables for workflows:
   routing for Workers AI embeddings)
 - `SENTRY_DSN` (optional; create a JavaScript/Cloudflare project in Sentry and
   paste the DSN; syncs to the Worker as a secret when set in GitHub Actions)
+- `YOUTUBE_DATA_API_KEY` (optional origin-only; YouTube Data API key for the
+  homepage hero chooser. Unset is fine: origin falls back to public Innertube
+  browse. Store as a GitHub Actions secret so production deploy can sync it.)
 - `CAPABILITY_REINDEX_SECRET` (strongly recommended for production; optional
   locally and for previews; authenticates post-deploy maintenance calls such as
   capability reindex — CI skips those calls when it is unset)

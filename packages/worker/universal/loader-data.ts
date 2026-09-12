@@ -25,6 +25,7 @@ import { type CommunityListingSort } from '#universal/community-search.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { type PackageFilesContentKind } from '#universal/package-file-media.ts'
 import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'
+import { type LandingHeroVideo } from '#universal/landing-hero-copy.ts'
 import { type ConnectedMcpAgent } from '#universal/connected-mcp-agents.ts'
 import { type ReferralProgramSummary } from '#universal/referral-program.ts'
 import { type SecondAgentStandardGiftState } from '#universal/second-agent-standard-gift.ts'
@@ -2064,6 +2065,7 @@ export type AppLoaderData = {
 	adminBanners?: AdminBannersLoaderData
 	siteBanner?: SiteBannerLoaderData
 	youtubeWatch?: YoutubeWatchLoaderData
+	landingHeroVideos?: Array<LandingHeroVideo>
 	adminPlatformIntegrations?: AdminPlatformIntegrationsLoaderData
 	adminProviderMarks?: AdminProviderMarksLoaderData
 	adminCodemods?: AdminCodemodsLoaderData

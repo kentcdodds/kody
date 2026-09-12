@@ -288,7 +288,12 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 			'/blog',
 			'/discord',
 		],
-		apis: ['/docs.json', '/blog.json', '/discord.json'],
+		apis: [
+			'/docs.json',
+			'/blog.json',
+			'/discord.json',
+			'/landing-hero-videos.json',
+		],
 	},
 ]
 

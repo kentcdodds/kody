@@ -4,7 +4,7 @@ import { YouTubeLightPlayer } from '#client/youtube-light-player.tsx'
 import {
 	landingHeroChooserLabel,
 	landingHeroDemoPlaylistId,
-	landingHeroDemoVideos,
+	type LandingHeroVideo,
 } from '#universal/landing-hero-copy.ts'
 import { youtubeThumbPath } from '#universal/youtube-watch.ts'
 
@@ -69,8 +69,9 @@ function prefersReducedMotion() {
  * it (see `.landing-hero-chooser*` in styles.css). Choosing moves focus to the
  * player.
  */
-export function LandingHeroVideo(handle: Handle) {
-	const videos = landingHeroDemoVideos
+export function LandingHeroVideo(
+	handle: Handle<{ videos: ReadonlyArray<LandingHeroVideo> }>,
+) {
 	let selectedIndex = 0
 	let activeIndex = 0
 	let chosen = false
@@ -119,7 +120,7 @@ export function LandingHeroVideo(handle: Handle) {
 		})
 	}
 
-	function choose(index: number) {
+	function choose(index: number, videos: ReadonlyArray<LandingHeroVideo>) {
 		if (index < 0 || index >= videos.length) return
 		selectedIndex = index
 		activeIndex = index
@@ -145,6 +146,9 @@ export function LandingHeroVideo(handle: Handle) {
 	}
 
 	return () => {
+		const videos = handle.props.videos
+		if (selectedIndex >= videos.length) selectedIndex = 0
+		if (activeIndex >= videos.length) activeIndex = 0
 		const selected = videos[selectedIndex]
 		if (!selected) return null
 
@@ -155,6 +159,7 @@ export function LandingHeroVideo(handle: Handle) {
 					data-rise
 					style={{ '--rise': '1' }}
 					class="landing-hero-video"
+					data-embed-playlist={landingHeroDemoPlaylistId}
 				>
 					<YouTubeLightPlayer
 						videoId={selected.videoId}
@@ -195,7 +200,7 @@ export function LandingHeroVideo(handle: Handle) {
 								}
 								if (event.key === 'Enter' || event.key === ' ') {
 									event.preventDefault()
-									choose(activeIndex)
+									choose(activeIndex, videos)
 								}
 							}),
 						]}
@@ -208,7 +213,7 @@ export function LandingHeroVideo(handle: Handle) {
 								aria-selected={index === selectedIndex ? 'true' : 'false'}
 								data-active={index === activeIndex ? '' : undefined}
 								class="landing-hero-chooser-option"
-								mix={on('click', () => choose(index))}
+								mix={on('click', () => choose(index, videos))}
 							>
 								<span class="landing-hero-chooser-thumb">
 									<img

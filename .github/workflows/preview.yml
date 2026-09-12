@@ -478,6 +478,7 @@ jobs:
           PREVIEW_URL: ${{ steps.deploy_preview.outputs.url }}
           AI_GATEWAY_ID: ${{ secrets.AI_GATEWAY_ID_PREVIEW }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          YOUTUBE_DATA_API_KEY: ${{ secrets.YOUTUBE_DATA_API_KEY }}
         run: |
           set -euo pipefail
           ENV_FILE="packages/worker/.env.example"
@@ -504,7 +505,7 @@ jobs:
 
           # Intentionally omit KIT_API_KEY so preview/E2E do not write to
           # production Kit.
-          node tools/ci/sync-worker-secrets.ts --env "" --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env-optional AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --include-empty "${extra_args[@]}"
+          node tools/ci/sync-worker-secrets.ts --env "" --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env-optional AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --set-from-env-optional YOUTUBE_DATA_API_KEY --include-empty "${extra_args[@]}"
           # The runtime worker intentionally reuses the same dotenv-based sync
           # here (unlike production, which uses a strict runtime-lane
           # allowlist): the preview values are .env.example placeholders plus

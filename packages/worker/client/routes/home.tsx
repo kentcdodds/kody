@@ -23,6 +23,8 @@ import {
 	landingHeroHeadlineAccent,
 	landingHeroHeadlineLead,
 	landingHeroHeadlineRest,
+	isLandingHeroVideo,
+	type LandingHeroVideo as LandingHeroVideoItem,
 } from '#universal/landing-hero-copy.ts'
 import { publicCreateAccountLabel } from '#universal/public-signup-copy.ts'
 import {
@@ -31,6 +33,7 @@ import {
 } from '#universal/walkthrough-hosts.ts'
 import { LandingHeroAgents } from '#client/routes/landing-hero-agents.tsx'
 import { LandingHeroVideo } from '#client/routes/landing-hero-video.tsx'
+import { readJson } from '#client/routes/account-approval-shared.ts'
 import { LandingByokDemo } from './landing-byok-demo.tsx'
 import { LandingTestimonialsCarousel } from './landing-testimonials-carousel.tsx'
 import { LandingLoopPlayer } from './landing-loop-player.tsx'
@@ -110,6 +113,28 @@ function isHomePath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/'
 }
 
+const landingHeroVideosApiPath = routes.landingHeroVideosApi.href()
+
+async function fetchLandingHeroVideos(signal: AbortSignal) {
+	try {
+		const response = await fetch(landingHeroVideosApiPath, {
+			headers: { Accept: 'application/json' },
+			signal,
+		})
+		const payload = await readJson<{
+			ok?: boolean
+			videos?: Array<LandingHeroVideoItem>
+		}>(response)
+		if (!response.ok || !payload?.ok || !Array.isArray(payload.videos)) {
+			return []
+		}
+		return payload.videos.filter(isLandingHeroVideo)
+	} catch (error) {
+		if (signal.aborted) throw error
+		return []
+	}
+}
+
 function chipIconStyle(icon: string) {
 	return { '--chip-icon': `url("/images/icons/${icon}.svg")` }
 }
@@ -118,22 +143,28 @@ export async function homeRouteLoader(
 	_url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const onboarding = await fetchOnboardingPayload(signal)
+	const [onboarding, landingHeroVideos] = await Promise.all([
+		fetchOnboardingPayload(signal),
+		fetchLandingHeroVideos(signal),
+	])
 	const result: RouteLoaderResult = {}
 	if (onboarding) result.onboarding = onboarding
 	result.walkthroughHosts = pickWalkthroughHosts()
+	result.landingHeroVideos = landingHeroVideos
 	return result
 }
 
 type HomePagePayloads = {
 	onboarding: OnboardingPayload | null
 	walkthroughHosts?: WalkthroughHostPick
+	landingHeroVideos: Array<LandingHeroVideoItem>
 }
 
 export function HomeRoute(handle: Handle) {
 	let loggedIn = false
 	let discoveryPrompt = ''
 	let walkthroughHosts: WalkthroughHostPick | null = null
+	let landingHeroVideos: Array<LandingHeroVideoItem> = []
 	/** Payload last applied to the closure state above. */
 	let appliedPayload: HomePagePayloads | null = null
 	const homeData = createRouteData<'onboarding', HomePagePayloads>({
@@ -141,20 +172,31 @@ export function HomeRoute(handle: Handle) {
 			if (!isHomePath(href)) return null
 			const onboarding = tryConsumeRouteLoaderData(handle, 'onboarding', href)
 			const hosts = tryConsumeRouteLoaderData(handle, 'walkthroughHosts', href)
+			const videos = tryConsumeRouteLoaderData(
+				handle,
+				'landingHeroVideos',
+				href,
+			)
 			// Optional keys stand on their own; apply them even when the
 			// required onboarding key is missing and the fallback fetch runs.
 			if (hosts) walkthroughHosts = hosts
+			if (videos) landingHeroVideos = videos
 			if (!onboarding) return null
 			return {
 				onboarding,
 				walkthroughHosts: hosts,
+				landingHeroVideos: videos ?? landingHeroVideos,
 			}
 		},
 		async load(_href, signal) {
-			const onboarding = await fetchOnboardingPayload(signal)
+			const [onboarding, videos] = await Promise.all([
+				fetchOnboardingPayload(signal),
+				fetchLandingHeroVideos(signal),
+			])
 			return {
 				onboarding,
 				walkthroughHosts: walkthroughHosts ?? pickWalkthroughHosts(),
+				landingHeroVideos: videos,
 			}
 		},
 	})
@@ -166,6 +208,7 @@ export function HomeRoute(handle: Handle) {
 
 	function applyHomePayload(payload: HomePagePayloads) {
 		if (payload.walkthroughHosts) walkthroughHosts = payload.walkthroughHosts
+		landingHeroVideos = payload.landingHeroVideos
 		applyOnboardingPayload(payload.onboarding)
 	}
 
@@ -226,7 +269,7 @@ export function HomeRoute(handle: Handle) {
 								</div>
 							)}
 						</div>
-						<LandingHeroVideo />
+						<LandingHeroVideo videos={landingHeroVideos} />
 					</div>
 					<LandingHeroAgents hosts={walkthroughHosts ?? undefined} />
 				</section>
