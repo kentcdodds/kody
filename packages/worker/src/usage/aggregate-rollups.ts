@@ -90,6 +90,57 @@ FORMAT JSON
 `.trim()
 }
 
+/**
+ * Analytics Engine SQL for Dynamic Worker invoke reuse this UTC month,
+ * grouped by `blob8` cache reuse (`hit` / `miss`) and `blob6` surface.
+ * Weight by `_sample_interval`. Empty blob8 is an unset reuse tag.
+ */
+export function buildDynamicWorkerInvokeReuseQuery(
+	dataset: string,
+	bounds: { monthStart: string; nextMonthStart: string },
+) {
+	return `
+SELECT
+	if(blob8 = '', 'unknown', blob8) AS cache_reuse,
+	if(blob6 = '', 'unknown', blob6) AS surface,
+	sum(_sample_interval) AS invokes,
+	sum(double1 * _sample_interval) / sum(_sample_interval) AS avg_duration_ms,
+	sum(double4 * _sample_interval) / sum(_sample_interval) AS avg_code_chars,
+	sum(double5 * _sample_interval) / sum(_sample_interval) AS avg_params_chars
+FROM ${dataset}
+WHERE timestamp >= toDateTime('${bounds.monthStart}')
+	AND timestamp < toDateTime('${bounds.nextMonthStart}')
+	AND blob2 = 'dynamic_worker_invoke'
+GROUP BY cache_reuse, surface
+ORDER BY invokes DESC
+FORMAT JSON
+`.trim()
+}
+
+/**
+ * Analytics Engine SQL for fleet reuse ratios this UTC month: unique
+ * worker days over invokes and over execute calls, plus invoke hit/miss
+ * counts. Weight by `_sample_interval`.
+ */
+export function buildDynamicWorkerReuseRatioQuery(
+	dataset: string,
+	bounds: { monthStart: string; nextMonthStart: string },
+) {
+	return `
+SELECT
+	sumIf(_sample_interval, blob2 = 'dynamic_worker_day') AS unique_worker_days,
+	sumIf(_sample_interval, blob2 = 'dynamic_worker_invoke') AS invokes,
+	sumIf(_sample_interval, blob2 = 'execute') AS execute_calls,
+	sumIf(_sample_interval, blob2 = 'dynamic_worker_invoke' AND blob8 = 'hit') AS invoke_hits,
+	sumIf(_sample_interval, blob2 = 'dynamic_worker_invoke' AND blob8 = 'miss') AS invoke_misses
+FROM ${dataset}
+WHERE timestamp >= toDateTime('${bounds.monthStart}')
+	AND timestamp < toDateTime('${bounds.nextMonthStart}')
+	AND blob2 IN ('dynamic_worker_day', 'dynamic_worker_invoke', 'execute')
+FORMAT JSON
+`.trim()
+}
+
 const upsertBatchSize = 50
 
 /**

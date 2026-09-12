@@ -4,8 +4,8 @@
  * One event schema covers every metered chokepoint (execute runs, package
  * export invocations, statically imported package export calls, job runs,
  * workflow runs, realtime websocket sessions, gateway fetches, email sends and
- * receives, unique Dynamic Worker days, and observe-only Durable Object
- * duration).
+ * receives, unique Dynamic Worker days, observe-only Dynamic Worker
+ * invokes, and observe-only Durable Object duration).
  *
  * The write path depends on the environment:
  *
@@ -87,7 +87,28 @@ export type UsageEvent = {
 	 * on `execute` events. Never used for billing and not shown to agents.
 	 */
 	executeShape?: ExecuteThinGlueClass | null
+	/**
+	 * Billing-aligned Dynamic Worker reuse. Written to Analytics Engine
+	 * blob8 on `dynamic_worker_invoke`. `miss` when this worker id was
+	 * first claimed today; `hit` on later claims the same UTC day.
+	 */
+	cacheReuse?: DynamicWorkerCacheReuse | null
+	/**
+	 * Character length of the hashable module-graph text used for the
+	 * Dynamic Worker id. Written to Analytics Engine double4. Number only.
+	 */
+	codeChars?: number | null
+	/**
+	 * Character length of a stable JSON serialization of evaluate
+	 * `params`. 0 when `params` is null, undefined, a non-object, or
+	 * empty `{}`. Written to Analytics Engine double5. Number only —
+	 * never the JSON.
+	 */
+	paramsChars?: number | null
 }
+
+export const dynamicWorkerCacheReuses = ['hit', 'miss'] as const
+export type DynamicWorkerCacheReuse = (typeof dynamicWorkerCacheReuses)[number]
 
 /** Analytics Engine blob positions for `USAGE_EVENTS` data points. */
 export const usageEventBlobIndexes = {
@@ -98,15 +119,30 @@ export const usageEventBlobIndexes = {
 	timestamp: 4,
 	surface: 5,
 	executeShape: 6,
+	cacheReuse: 7,
+} as const
+
+export const usageEventDoubleIndexes = {
+	durationMs: 0,
+	cpuMs: 1,
+	bytesOrCoalescedCount: 2,
+	codeChars: 3,
+	paramsChars: 4,
 } as const
 
 export function usageEventBlobs(
 	event: Pick<
 		UsageEvent,
-		'userId' | 'eventType' | 'entityId' | 'outcome' | 'surface' | 'executeShape'
+		| 'userId'
+		| 'eventType'
+		| 'entityId'
+		| 'outcome'
+		| 'surface'
+		| 'executeShape'
+		| 'cacheReuse'
 	>,
 	timestamp: string,
-): [string, string, string, string, string, string, string] {
+): [string, string, string, string, string, string, string, string] {
 	return [
 		event.userId,
 		event.eventType,
@@ -115,6 +151,7 @@ export function usageEventBlobs(
 		timestamp,
 		event.surface ?? '',
 		event.executeShape ?? '',
+		event.cacheReuse ?? '',
 	]
 }
 
@@ -218,6 +255,15 @@ function emitUsageSpan(event: UsageEvent) {
 			if (event.executeShape) {
 				span.setAttribute('kody.execute_shape', event.executeShape)
 			}
+			if (event.cacheReuse) {
+				span.setAttribute('kody.cache_reuse', event.cacheReuse)
+			}
+			if (event.codeChars != null) {
+				span.setAttribute('kody.code_chars', event.codeChars)
+			}
+			if (event.paramsChars != null) {
+				span.setAttribute('kody.params_chars', event.paramsChars)
+			}
 		})
 	} catch (error) {
 		console.debug('usage-span-failed', error)
@@ -240,6 +286,8 @@ function writeUsageDataPoint(
 				isCoalescedCountUsageEventType(event.eventType)
 					? usageEventCount(event)
 					: (event.bytes ?? 0),
+				event.codeChars ?? 0,
+				event.paramsChars ?? 0,
 			],
 		})
 	} catch (error) {

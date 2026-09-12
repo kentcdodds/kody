@@ -11,27 +11,30 @@ test('recordUniqueDynamicWorkerDay records the first claim and skips repeats', a
 	const meter = createInMemoryUserMeterEnv()
 	const now = new Date('2026-09-01T12:00:00.000Z')
 
-	await recordUniqueDynamicWorkerDay({
+	const first = await recordUniqueDynamicWorkerDay({
 		env: meter.env,
 		userId: 'user-1',
 		workerId: 'kody-worker-a',
 		surface: 'execute',
 		now,
 	})
-	await recordUniqueDynamicWorkerDay({
+	const repeat = await recordUniqueDynamicWorkerDay({
 		env: meter.env,
 		userId: 'user-1',
 		workerId: 'kody-worker-a',
 		surface: 'job',
 		now,
 	})
-	await recordUniqueDynamicWorkerDay({
+	const other = await recordUniqueDynamicWorkerDay({
 		env: meter.env,
 		userId: 'user-1',
 		workerId: 'kody-worker-b',
 		surface: 'package_export',
 		now,
 	})
+	expect(first).toEqual({ created: true })
+	expect(repeat).toEqual({ created: false })
+	expect(other).toEqual({ created: true })
 
 	expect(recordUsageSpy).toHaveBeenCalledTimes(2)
 	expect(recordUsageSpy.mock.calls[0]?.[1]).toEqual({
@@ -57,7 +60,7 @@ test('recordUniqueDynamicWorkerDay skips when USER_METER is missing', async () =
 	const usageModule = await import('#worker/usage/record-usage.ts')
 	const spy = vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
 
-	await recordUniqueDynamicWorkerDay({
+	const claimed = await recordUniqueDynamicWorkerDay({
 		env: {},
 		userId: 'user-1',
 		workerId: 'kody-worker-a',
@@ -65,6 +68,7 @@ test('recordUniqueDynamicWorkerDay skips when USER_METER is missing', async () =
 		now: new Date('2026-09-01T12:00:00.000Z'),
 	})
 
+	expect(claimed).toBeUndefined()
 	expect(spy).not.toHaveBeenCalled()
 	spy.mockRestore()
 })

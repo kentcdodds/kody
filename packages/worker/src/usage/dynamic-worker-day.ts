@@ -19,7 +19,9 @@ export type DynamicWorkerDayEnv = UsageEnv & UserMeterEnv
  * first claim's surface is the one stored.
  *
  * Never throws. Missing `USER_METER` skips the write so local/tests without
- * the binding cannot overcount unique days.
+ * the binding cannot overcount unique days. Returns the claim result so
+ * callers can record a `dynamic_worker_invoke` hit or miss; `undefined`
+ * when the claim did not run.
  */
 export async function recordUniqueDynamicWorkerDay(input: {
 	env: DynamicWorkerDayEnv
@@ -27,7 +29,7 @@ export async function recordUniqueDynamicWorkerDay(input: {
 	workerId: string
 	surface: DynamicWorkerDaySurface
 	now?: Date
-}): Promise<void> {
+}): Promise<{ created: boolean } | undefined> {
 	try {
 		if (!input.userId) return
 		if (!userMeterNamespace(input.env)) return
@@ -40,15 +42,17 @@ export async function recordUniqueDynamicWorkerDay(input: {
 			day: utcDayKey(now),
 			createdAt: now.toISOString(),
 		})
-		if (!claimed.created) return
-		await recordUsage(input.env, {
-			userId: input.userId,
-			eventType: 'dynamic_worker_day',
-			entityId: input.workerId,
-			outcome: 'success',
-			timestamp: now.toISOString(),
-			surface: input.surface,
-		})
+		if (claimed.created) {
+			await recordUsage(input.env, {
+				userId: input.userId,
+				eventType: 'dynamic_worker_day',
+				entityId: input.workerId,
+				outcome: 'success',
+				timestamp: now.toISOString(),
+				surface: input.surface,
+			})
+		}
+		return claimed
 	} catch (error) {
 		console.warn('dynamic-worker-day-record-failed', error)
 	}

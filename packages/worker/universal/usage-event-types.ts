@@ -18,6 +18,7 @@ export const usageEventTypes = [
 	'email_send',
 	'email_received',
 	'dynamic_worker_day',
+	'dynamic_worker_invoke',
 	'durable_object_gb_seconds',
 	'durable_object_rows_read',
 ] as const
@@ -32,6 +33,7 @@ export type UsageEventType = (typeof usageEventTypes)[number]
  * is never billed.
  */
 export const observeOnlyUsageEventTypes = [
+	'dynamic_worker_invoke',
 	'durable_object_gb_seconds',
 	'durable_object_rows_read',
 ] as const satisfies ReadonlyArray<UsageEventType>

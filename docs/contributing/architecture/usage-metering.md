@@ -33,6 +33,9 @@ type UsageEvent = {
 	timestamp?: string // ISO 8601; defaults to time of recording
 	surface?: string | null // closed UWD surface; AE blob6
 	executeShape?: string | null // execute thin/glue class; AE blob7
+	cacheReuse?: 'hit' | 'miss' | null // billing-aligned LOADER reuse; AE blob8
+	codeChars?: number | null // module-graph text length; AE double4
+	paramsChars?: number | null // stable JSON length of params; AE double5
 }
 ```
 
@@ -59,6 +62,7 @@ events for the admin on/off cohort readout.
 | `email_send`                | one outbound email send attempt                                                                                                                                                                                                 | `packages/worker/src/email/outbound.ts` (`sendOutboundEmail`)                                                                                                                                                                                                                                                                                                                                                       | email message id               |
 | `email_received`            | one inbound receive attempt for a routed inbox                                                                                                                                                                                  | `packages/worker/src/email/inbound.ts` (`handleInboundEmail`, after inbox resolution)                                                                                                                                                                                                                                                                                                                               | email message id (when stored) |
 | `dynamic_worker_day`        | first use of one Dynamic Worker id on a UTC day                                                                                                                                                                                 | `packages/worker/src/mcp/executor.ts` after `createStableDynamicWorkerId` (sandbox surfaces) and `packages/worker/src/package-runtime/package-app.ts` (`APP_LOADER` with a stable id); uniqueness via `UserMeter.claimDynamicWorkerDay`. Each event carries `surface` (Analytics Engine blob6).                                                                                                                     | worker id                      |
+| `dynamic_worker_invoke`     | one LOADER evaluate (hit or miss) on the execute-sandbox path                                                                                                                                                                   | `packages/worker/src/mcp/executor.ts` after `claimDynamicWorkerDay`, on every signed-in sandbox surface (execute, job, package_export, workflow, …). Observe-only. `cacheReuse` is `miss` when `claimDynamicWorkerDay.created === true` and `hit` otherwise. Also carries `codeChars`, `paramsChars`, `durationMs`, `surface`, and `executeShape` when known. No worker id, source, params, or package names.       | none                           |
 | `durable_object_gb_seconds` | one typed per-user Durable Object RPC burst (wall-clock in `durationMs`; admin converts to GB-s at 128 MB). Same-outcome RPCs in one request coalesce into a single Analytics Engine point whose `eventCount` is the RPC count. | `createMeteredDurableObjectStub` on `storageRunnerRpc` when `USAGE_EVENTS` is bound. Other per-user RPC factories can adopt the same helper; UserMeter, Mailbox, RunLog, and RepoSessionIndex stay unwrapped so admin usage reads do not inflate the metric. Observe-only / unmetered: excluded from fleet event-count rankings, entitlement-pressure candidate selection, and customer usage emails. Never billed. | DO class name                  |
 | `durable_object_rows_read`  | StorageRunner SQLite `rowsRead` from one `sqlQuery` (skipped when `rowsRead < 1`). Same-outcome bursts coalesce; hourly rollups recover the unit count from Analytics Engine `double3`.                                         | `recordDurableObjectRowsRead` in `StorageRunner.sqlQuery` when `USAGE_EVENTS` is bound. Other customer Durable Objects are not instrumented, so this meter undercounts rather than overcharges. Observe-only for fleet event-count rankings and entitlement-pressure selection; monthly overage math and compute-include warning emails still read the rollup.                                                      | DO class name                  |
 
@@ -152,7 +156,10 @@ metric answers its own question (`execute` is ad-hoc execute-tool volume;
 `job_run` is job activity; `package_export` is saved-package entrypoints;
 `package_static_call` is per-callee reuse). `dynamic_worker_day` is the
 Cloudflare bill unit: one unique Dynamic Worker id per user per UTC day, on
-every sandbox surface that creates a worker.
+every sandbox surface that creates a worker. `dynamic_worker_invoke` is the
+observe-only reuse meter: one event per execute-sandbox LOADER evaluate,
+including later claims of the same id on the same UTC day. Do not add it to
+entitlements or fleet event-count rankings.
 `PlanLimits.maxUniqueWorkerDaysPerMonth` is the public included allotment shown
 on `/pricing`. It is not in `entitlementResources` and does not replace the hard
 daily `execute` / `job_run` caps, or the public-ladder weekly execute and
@@ -201,6 +208,52 @@ Ad hoc execute events may also carry `executeShape` on blob7
 (`thin_single_export` | `thin_few_exports` | `glue`): a host-side best-effort
 class of the caller-authored source string. It is not used for billing and is
 not shown to agents. Unparseable source omits the field.
+
+### Dynamic Worker reuse (hit vs miss)
+
+Every execute-sandbox LOADER evaluate records `dynamic_worker_invoke` after
+`claimDynamicWorkerDay`, including when the claim returns `created: false`.
+`cacheReuse` is billing-aligned: `miss` on the first `(user, workerId, UTC day)`
+claim, `hit` on later claims of that id the same day. The event also carries
+`durationMs` (sandbox evaluate wall-clock), `codeChars` (total character length
+of the module-graph text hashed into the id), `surface`, `executeShape` when the
+run classified one, and `paramsChars` (character length of a key-sorted JSON
+serialization of `params`; **0** when `params` is omitted, `null`, a non-object,
+an array, or empty `{}` — not 2 from stringifying `{}`). Payloads never include
+source, param keys or values, package names, or worker ids.
+
+APP_LOADER package-app isolates record `dynamic_worker_day` only; they do not
+emit `dynamic_worker_invoke`.
+
+D1 `usage_rollups` for `dynamic_worker_invoke` is the monthly invoke count (and
+summed duration). Hit rate and average `paramsChars` are Analytics Engine
+queries. Use `buildDynamicWorkerInvokeReuseQuery` and
+`buildDynamicWorkerReuseRatioQuery` in
+`packages/worker/src/usage/aggregate-rollups.ts`:
+
+```sql
+SELECT
+  if(blob8 = '', 'unknown', blob8) AS cache_reuse,
+  if(blob6 = '', 'unknown', blob6) AS surface,
+  sum(_sample_interval) AS invokes,
+  sum(double1 * _sample_interval) / sum(_sample_interval) AS avg_duration_ms,
+  sum(double4 * _sample_interval) / sum(_sample_interval) AS avg_code_chars,
+  sum(double5 * _sample_interval) / sum(_sample_interval) AS avg_params_chars
+FROM kody_usage_events
+WHERE timestamp >= toDateTime('2026-09-01 00:00:00')
+  AND timestamp < toDateTime('2026-10-01 00:00:00')
+  AND blob2 = 'dynamic_worker_invoke'
+GROUP BY cache_reuse, surface
+ORDER BY invokes DESC
+```
+
+Fleet hit rate is
+`sumIf(_sample_interval, blob8 = 'hit') / sum(_sample_interval)` on
+`blob2 = 'dynamic_worker_invoke'`. Unique-day yield is
+`dynamic_worker_day / dynamic_worker_invoke` (or `/ execute` for execute-tool
+volume). Same-user same-graph executes that vary only `params` reuse one worker
+id; execute-surface hit rate and unique-day yield are the fleet readouts for
+that reuse.
 
 APP_LOADER package-app isolates record UWD when the worker id is stable
 (`app_fetch` / `app_realtime`). One-off `APP_LOADER.load()` without a hashed id
@@ -262,12 +315,17 @@ export does not list them.
    fetch, email, jobs, ...) on D1's single writer. Data point layout:
    - `indexes`: `[userId]`
    - `blobs`:
-     `[userId, eventType, entityId ?? '', outcome, timestamp, surface ?? '', executeShape ?? '']`
-     (`surface` is blob6, `executeShape` is blob7; both empty when unset)
-   - `doubles`: `[durationMs ?? 0, cpuMs ?? 0, bytes ?? 0]`. Coalesced
-     `durable_object_gb_seconds` and `durable_object_rows_read` points store the
-     coalesced unit count in the third double instead of bytes so hourly rollups
-     can recover `event_count`.
+     `[userId, eventType, entityId ?? '', outcome, timestamp, surface ?? '', executeShape ?? '', cacheReuse ?? '']`
+     (`surface` is blob6, `executeShape` is blob7, `cacheReuse` is blob8; all
+     empty when unset)
+   - `doubles`:
+     `[durationMs ?? 0, cpuMs ?? 0, bytes ?? 0, codeChars ?? 0, paramsChars ?? 0]`.
+     Coalesced `durable_object_gb_seconds` and `durable_object_rows_read` points
+     store the coalesced unit count in the third double instead of bytes so
+     hourly rollups can recover `event_count`. `codeChars` is double4
+     (module-graph text length on `dynamic_worker_invoke`). `paramsChars` is
+     double5 (key-sorted JSON length of evaluate `params`; **0** when `params`
+     is omitted, `null`, a non-object, an array, or empty `{}`).
 
    Analytics Engine is the analysis store (sampling-tolerant, high cardinality).
    Do not build enforcement on it.
@@ -533,12 +591,12 @@ WHERE timestamp > NOW() - INTERVAL '1' HOUR
   `packages/worker/src/admin/fleet-usage-insights.ts`): bounded SQL over
   `usage_rollups` for the current UTC month — top-10 combined runtime duration
   (execute + job_run + workflow_run), top-10 event counts (excluding
-  observe-only `durable_object_gb_seconds`), per-metric duration leaders, and an
-  entitlement-pressure panel that reuses `readAdminEntitlementConsumption` for
-  the top ~15 users by those same customer event counts, passing each row's
-  `users.entitlement_ladder` so legacy Standard/Pro is scored against
-  `legacyPlanLimits`. Queries are `LIMIT`-bounded; entitlement reads run with
-  modest concurrency.
+  observe-only `dynamic_worker_invoke` and Durable Object meters), per-metric
+  duration leaders, and an entitlement-pressure panel that reuses
+  `readAdminEntitlementConsumption` for the top ~15 users by those same customer
+  event counts, passing each row's `users.entitlement_ladder` so legacy
+  Standard/Pro is scored against `legacyPlanLimits`. Queries are
+  `LIMIT`-bounded; entitlement reads run with modest concurrency.
 - **Launch signals** (`/admin/insights`, loader in
   `packages/worker/src/admin/launch-signals.ts`): COUNT / GROUP BY over indexed
   `users` columns and `platform_feedback.status`. Rough MRR maps

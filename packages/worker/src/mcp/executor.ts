@@ -23,6 +23,11 @@ import {
 import { extractMcpPassthrough } from '#mcp/downstream-mcp-result.ts'
 import { recordUsage, type UsageEnv } from '#worker/usage/record-usage.ts'
 import { recordUniqueDynamicWorkerDay } from '#worker/usage/dynamic-worker-day.ts'
+import {
+	countDynamicWorkerModuleGraphChars,
+	countEvaluateInvocationParamsChars,
+	recordDynamicWorkerInvoke,
+} from '#worker/usage/dynamic-worker-invoke.ts'
 import { type DynamicWorkerDaySurface } from '#worker/usage/dynamic-worker-day-surface.ts'
 import { type ExecuteThinGlueClass } from '#worker/usage/execute-thin-glue.ts'
 import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
@@ -630,15 +635,22 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				storageContext: input.gatewayProps.storageContext,
 				workerOptions,
 			})
+			const claimedDay = recordUniqueDynamicWorkerDay({
+				env: input.usageEnv,
+				userId: input.gatewayProps.userId,
+				workerId,
+				surface: input.surface ?? 'execute',
+			})
 			await runExecuteBookkeeping(
-				recordUniqueDynamicWorkerDay({
-					env: input.usageEnv,
-					userId: input.gatewayProps.userId,
-					workerId,
-					surface: input.surface ?? 'execute',
-				}),
+				claimedDay,
 				input.waitUntil,
 				'dynamic-worker-day-record-failed',
+			)
+			const codeChars = countDynamicWorkerModuleGraphChars(
+				workerOptions.modules,
+			)
+			const paramsChars = countEvaluateInvocationParamsChars(
+				evaluateInvocation.params,
 			)
 			const executionState = { active: true }
 			const startedAtMs = Date.now()
@@ -745,13 +757,35 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				throw error
 			} finally {
 				executionState.active = false
+				const durationMs = Date.now() - startedAtMs
+				if (input.gatewayProps.userId) {
+					await runExecuteBookkeeping(
+						claimedDay.then(async (claimed) => {
+							if (!claimed) return
+							await recordDynamicWorkerInvoke({
+								env: input.usageEnv,
+								userId: input.gatewayProps.userId,
+								durationMs,
+								outcome,
+								surface: input.surface ?? 'execute',
+								cacheReuse: claimed.created ? 'miss' : 'hit',
+								codeChars,
+								paramsChars,
+								executeShape: input.executeShape,
+								waitUntil: input.waitUntil,
+							})
+						}),
+						input.waitUntil,
+						'dynamic-worker-invoke-record-failed',
+					)
+				}
 				if (input.recordExecuteUsage !== false && input.gatewayProps.userId) {
 					await recordUsage(
 						input.usageEnv,
 						{
 							userId: input.gatewayProps.userId,
 							eventType: 'execute',
-							durationMs: Date.now() - startedAtMs,
+							durationMs,
 							outcome,
 							surface: 'execute',
 							...(input.executeShape

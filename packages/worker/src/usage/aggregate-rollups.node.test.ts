@@ -2,6 +2,8 @@ import { expect, test, vi } from 'vitest'
 import {
 	aggregateUsageRollups,
 	analyticsEngineSqlRetryMaxAttempts,
+	buildDynamicWorkerInvokeReuseQuery,
+	buildDynamicWorkerReuseRatioQuery,
 	resolveUsageEventsDataset,
 	shouldRunUsageAggregationCron,
 } from './aggregate-rollups.ts'
@@ -769,4 +771,38 @@ test('aggregateUsageRollups retries transient Analytics Engine SQL failures and 
 	// Both month queries may start in parallel, but neither retries a 400.
 	expect(clientError.mock.calls.length).toBeLessThanOrEqual(2)
 	expect(noRetryDb.batches).toHaveLength(0)
+})
+
+test('buildDynamicWorkerInvokeReuseQuery groups hits and misses by surface', () => {
+	const query = buildDynamicWorkerInvokeReuseQuery('kody_usage_events', {
+		monthStart: '2026-09-01 00:00:00',
+		nextMonthStart: '2026-10-01 00:00:00',
+	})
+	expect(query).toContain("blob2 = 'dynamic_worker_invoke'")
+	expect(query).toContain('blob8')
+	expect(query).toContain('AS cache_reuse')
+	expect(query).toContain('AS surface')
+	expect(query).toContain(
+		'sum(double1 * _sample_interval) / sum(_sample_interval) AS avg_duration_ms',
+	)
+	expect(query).toContain(
+		'sum(double4 * _sample_interval) / sum(_sample_interval) AS avg_code_chars',
+	)
+	expect(query).toContain(
+		'sum(double5 * _sample_interval) / sum(_sample_interval) AS avg_params_chars',
+	)
+})
+
+test('buildDynamicWorkerReuseRatioQuery compares unique days to invokes and execute', () => {
+	const query = buildDynamicWorkerReuseRatioQuery('kody_usage_events', {
+		monthStart: '2026-09-01 00:00:00',
+		nextMonthStart: '2026-10-01 00:00:00',
+	})
+	expect(query).toContain("blob2 = 'dynamic_worker_day'")
+	expect(query).toContain("blob2 = 'dynamic_worker_invoke'")
+	expect(query).toContain("blob2 = 'execute'")
+	expect(query).toContain("blob8 = 'hit'")
+	expect(query).toContain("blob8 = 'miss'")
+	expect(query).toContain('AS unique_worker_days')
+	expect(query).toContain('AS execute_calls')
 })

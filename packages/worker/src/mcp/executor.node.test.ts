@@ -1154,9 +1154,11 @@ test('createExecuteExecutor records one unique Dynamic Worker day per worker id'
 
 	expect(dataPoints.map((point) => point.blobs?.[1])).toEqual([
 		'dynamic_worker_day',
+		'dynamic_worker_invoke',
 	])
 	expect(dataPoints[0]?.indexes).toEqual(['usage-user-dw'])
 	expect(dataPoints[0]?.blobs?.[5]).toBe('execute')
+	expect(dataPoints[1]?.blobs?.[7]).toBe('miss')
 
 	const secondLoader = createFakeWorkerLoader()
 	await createExecuteExecutor({
@@ -1169,7 +1171,12 @@ test('createExecuteExecutor records one unique Dynamic Worker day per worker id'
 		recordExecuteUsage: false,
 	}).execute('async () => "ok"', providers)
 
-	expect(dataPoints).toHaveLength(1)
+	expect(dataPoints.map((point) => point.blobs?.[1])).toEqual([
+		'dynamic_worker_day',
+		'dynamic_worker_invoke',
+		'dynamic_worker_invoke',
+	])
+	expect(dataPoints[2]?.blobs?.[7]).toBe('hit')
 })
 
 test('createExecuteExecutor defers unique-worker-day and first-execute stamp via waitUntil', async () => {
@@ -1221,6 +1228,7 @@ test('createExecuteExecutor defers unique-worker-day and first-execute stamp via
 	expect(activationStampWrites).toHaveLength(1)
 	expect(dataPoints.map((point) => point.blobs?.[1]).sort()).toEqual([
 		'dynamic_worker_day',
+		'dynamic_worker_invoke',
 		'execute',
 	])
 })
