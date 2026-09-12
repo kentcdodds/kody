@@ -11,12 +11,7 @@ import {
 	type RouteLoaderResult,
 	routeLoaderRedirect,
 } from '#client/route-loader.ts'
-import {
-	colors,
-	radius,
-	spacing,
-	typography,
-} from '#universal/styles/tokens.ts'
+import { colors, typography } from '#universal/styles/tokens.ts'
 import {
 	cardCss,
 	getPrimaryButtonCss,
@@ -535,30 +530,3 @@ export const connectOauthSecondaryButtonCss = getSecondaryButtonCss({
 	size: 'lg',
 	weight: 'semibold',
 })
-
-export const connectOauthSuggestionHeaderCss = {
-	display: 'flex',
-	flexWrap: 'wrap' as const,
-	alignItems: 'center',
-	gap: spacing.sm,
-}
-
-export const connectOauthSuggestionActionsCss = {
-	display: 'flex',
-	flexWrap: 'wrap' as const,
-	alignItems: 'center',
-	gap: spacing.sm,
-	marginTop: spacing.sm,
-}
-
-export const connectOauthTrustedBadgeCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	justifyContent: 'center',
-	padding: `0.15rem ${spacing.sm}`,
-	borderRadius: radius.md,
-	backgroundColor: colors.primarySoftest,
-	color: colors.primaryText,
-	fontSize: typography.fontSize.xs,
-	fontWeight: typography.fontWeight.semibold,
-}

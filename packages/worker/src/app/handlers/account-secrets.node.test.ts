@@ -17,7 +17,6 @@ const mockModule = vi.hoisted(() => ({
 		},
 	})),
 	readAuthSessionResult: async () => ({ session: null, setCookie: null }),
-	getAppBaseUrl: () => 'https://example.com',
 	saveSecret: vi.fn(async () => ({
 		name: 'githubAccessToken',
 		scope: 'user',
@@ -80,7 +79,6 @@ const mockModule = vi.hoisted(() => ({
 			updatedAt: new Date(0).toISOString(),
 		}),
 	),
-	searchCommunityListings: vi.fn(async () => []),
 	getAvailablePlatformApp: vi.fn(async () => null),
 	upsertPlatformIntegration: vi.fn(
 		async (input: { platformAppSlug: string; name?: string | null }) => ({
@@ -107,11 +105,6 @@ vi.mock('#app/authenticated-user.ts', () => ({
 		mockModule.readAuthenticatedAppUser(...args),
 }))
 
-vi.mock('#worker/community/service.ts', () => ({
-	searchCommunityListings: (...args: Array<unknown>) =>
-		mockModule.searchCommunityListings(...args),
-}))
-
 vi.mock('#app/auth-session.ts', () => ({
 	readAuthSessionResult: (...args: Array<unknown>) =>
 		mockModule.readAuthSessionResult(...args),
@@ -123,10 +116,6 @@ vi.mock('#app/auth-redirect.ts', () => ({
 
 vi.mock('#app/ssr-render.tsx', () => ({
 	renderAppPage: async () => new Response('ok'),
-}))
-
-vi.mock('#worker/app-base-url.ts', () => ({
-	getAppBaseUrl: (...args: Array<unknown>) => mockModule.getAppBaseUrl(...args),
 }))
 
 vi.mock('#mcp/secrets/allowed-hosts.ts', async (importOriginal) => {
@@ -364,13 +353,10 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 		hostApprovalLinks: [],
 		integrationName: 'github',
 		nextSteps: {
-			integrationName: 'github',
-			guidance: expect.any(String),
-			suggestions: [],
-			createHelpersCta: {
-				label: 'Create helpers package',
-				prompt: expect.any(String),
-			},
+			service: 'github',
+			connectionName: 'github',
+			prompt:
+				'I just connected to github with github. What should we do next? Is there a community package we can fork or one we can build to make using this integration easier?',
 		},
 	})
 	expect(mockModule.buildSecretHostApprovalUrl).not.toHaveBeenCalled()
@@ -1539,93 +1525,6 @@ test('oauth_exchange resolves secrets, maps provider failures, and forwards exch
 test('connect oauth persists usePkce for confidential + PKCE providers like Canva', async () => {
 	mockModule.saveValue.mockClear()
 	mockModule.deleteSecret.mockClear()
-	mockModule.searchCommunityListings.mockClear()
-	mockModule.searchCommunityListings.mockResolvedValueOnce([
-		{
-			id: 'unrelated-cursor',
-			ownerUserId: 'owner',
-			packageId: 'pkg-cursor',
-			sourceId: 'src-cursor',
-			kodyId: 'cursor',
-			name: '@kody/cursor',
-			description: 'Cursor API SDK for cloud agents.',
-			tags: ['cursor', 'cloud-agents'],
-			searchText: null,
-			readmeContent: null,
-			license: 'MIT',
-			pinnedCommit: 'aaa',
-			iconCommit: 'aaa',
-			status: 'active',
-			trustedCommit: 'aaa',
-			trustedAt: '2026-01-01T00:00:00.000Z',
-			trusted: true,
-			featuredAt: null,
-			featured: false,
-			createdAt: '2026-01-01T00:00:00.000Z',
-			updatedAt: '2026-01-01T00:00:00.000Z',
-			publishedAt: '2026-01-01T00:00:00.000Z',
-			averageStars: 5,
-			ratingCount: 1,
-			averageAdaptationEffort: 1,
-			forkCount: 9,
-		},
-		{
-			id: 'canva-untrusted',
-			ownerUserId: 'owner',
-			packageId: 'pkg',
-			sourceId: 'src',
-			kodyId: 'canva-extra',
-			name: '@owner/canva-extra',
-			description: 'Untrusted canva helpers',
-			tags: [],
-			searchText: null,
-			readmeContent: null,
-			license: 'MIT',
-			pinnedCommit: 'abc',
-			iconCommit: 'abc',
-			status: 'active',
-			trustedCommit: null,
-			trustedAt: null,
-			trusted: false,
-			featuredAt: null,
-			featured: false,
-			createdAt: '2026-01-01T00:00:00.000Z',
-			updatedAt: '2026-01-01T00:00:00.000Z',
-			publishedAt: '2026-01-01T00:00:00.000Z',
-			averageStars: null,
-			ratingCount: 0,
-			averageAdaptationEffort: null,
-			forkCount: 0,
-		},
-		{
-			id: 'canva-trusted',
-			ownerUserId: 'owner',
-			packageId: 'pkg-2',
-			sourceId: 'src-2',
-			kodyId: 'canva-helpers',
-			name: '@owner/canva-helpers',
-			description: 'Trusted canva helpers',
-			tags: ['canva'],
-			searchText: null,
-			readmeContent: null,
-			license: 'MIT',
-			pinnedCommit: 'def',
-			iconCommit: 'def',
-			status: 'active',
-			trustedCommit: 'def',
-			trustedAt: '2026-01-01T00:00:00.000Z',
-			trusted: true,
-			featuredAt: null,
-			featured: false,
-			createdAt: '2026-01-01T00:00:00.000Z',
-			updatedAt: '2026-01-01T00:00:00.000Z',
-			publishedAt: '2026-01-01T00:00:00.000Z',
-			averageStars: 5,
-			ratingCount: 2,
-			averageAdaptationEffort: 1,
-			forkCount: 3,
-		},
-	])
 	const handler = createAccountSecretsApiHandler(createEnv())
 
 	const canvaResponse = await handler.handler({
@@ -1665,32 +1564,11 @@ test('connect oauth persists usePkce for confidential + PKCE providers like Canv
 		refreshTokenSaved: true,
 		integrationName: 'canva',
 		nextSteps: {
-			integrationName: 'canva',
-			guidance: expect.any(String),
-			createHelpersCta: {
-				label: 'Create helpers package',
-				prompt: expect.any(String),
-			},
+			service: 'canva',
+			connectionName: 'canva',
+			prompt:
+				'I just connected to canva with canva. What should we do next? Is there a community package we can fork or one we can build to make using this integration easier?',
 		},
-	})
-	expect(canvaPayload.nextSteps.suggestions).toHaveLength(2)
-	expect(
-		canvaPayload.nextSteps.suggestions.map(
-			(entry: { listingId: string }) => entry.listingId,
-		),
-	).toEqual(['canva-untrusted', 'canva-trusted'])
-	expect(canvaPayload.nextSteps.suggestions[0]).toMatchObject({
-		listingId: 'canva-untrusted',
-		name: '@owner/canva-extra',
-		trusted: false,
-		publicUrl: 'https://example.com/@owner/canva-extra',
-		forkPrompt: expect.stringContaining('canva-extra'),
-	})
-	expect(mockModule.searchCommunityListings).toHaveBeenCalledWith({
-		env: expect.anything(),
-		query: 'canva',
-		limit: 12,
-		resultFilter: expect.any(Function),
 	})
 	expect(mockModule.deleteSecret).not.toHaveBeenCalled()
 	expect(mockModule.upsertIntegration).toHaveBeenCalledWith(

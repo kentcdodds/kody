@@ -4,8 +4,8 @@ title: Integration bootstrap
 summary:
   START HERE when a third-party integration must work before saving a
   dependent package or package app: inspect integration/secret state, stop
-  for setup, run an authenticated smoke test, then use connect nextSteps or
-  communitySearch before building from scratch.
+  for setup, run an authenticated smoke test, then communitySearch before
+  building from scratch.
 category: platform
 audience: agents
 ---
@@ -99,10 +99,11 @@ If those conditions are not met, stop and fix the integration first.
    - Remember: a saved integration is auth credentials only. The durable
      agent-facing surface is a helpers package (or package app), not the
      integration record itself.
-   - If the user just finished `/connect/oauth`, read `nextSteps` from the
-     connect success payload/UI first: it already includes same-provider
-     community helpers suggestions (listing name, package name leaf, or tags
-     must mention the connected provider) and a create-helpers prompt.
+   - If the user just finished `/connect/oauth`, they can copy the success
+     page's **What's next?** prompt into chat. You should still
+     `communitySearch` for a close helpers package (listing name, package name
+     leaf, or tags must mention the connected provider) and a create-helpers
+     path when none fits.
    - `search({ entity: "<provider>:integration" })` may already surface a small
      same-provider package suggestion set (user packages first, else community
      listings). Use those when present.

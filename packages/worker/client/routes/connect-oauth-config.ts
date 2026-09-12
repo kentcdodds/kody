@@ -123,24 +123,10 @@ export type ConnectOauthHostApprovalLink = {
 	approvalUrl: string
 }
 
-type ConnectOauthPackageSuggestion = {
-	listingId: string
-	name: string
-	kodyId: string
-	description: string
-	trusted: boolean
-	publicUrl: string
-	forkPrompt: string
-}
-
 export type ConnectOauthNextSteps = {
-	guidance: string
-	integrationName: string
-	suggestions: Array<ConnectOauthPackageSuggestion>
-	createHelpersCta: {
-		label: string
-		prompt: string
-	}
+	service: string
+	connectionName: string
+	prompt: string
 }
 
 export function parseScopes(raw: string | null) {
@@ -737,56 +723,16 @@ export function parseConnectOauthNextSteps(
 	if (!raw || typeof raw !== 'object') return null
 	const record = raw as Record<string, unknown>
 	if (
-		typeof record.guidance !== 'string' ||
-		typeof record.integrationName !== 'string' ||
-		!record.createHelpersCta ||
-		typeof record.createHelpersCta !== 'object' ||
-		!Array.isArray(record.suggestions)
+		typeof record.service !== 'string' ||
+		typeof record.connectionName !== 'string' ||
+		typeof record.prompt !== 'string'
 	) {
 		return null
 	}
-	const createHelpersCta = record.createHelpersCta as Record<string, unknown>
-	if (
-		typeof createHelpersCta.label !== 'string' ||
-		typeof createHelpersCta.prompt !== 'string'
-	) {
-		return null
-	}
-	const suggestions = record.suggestions.flatMap((entry) => {
-		if (!entry || typeof entry !== 'object') return []
-		const suggestion = entry as Record<string, unknown>
-		if (
-			typeof suggestion.listingId !== 'string' ||
-			typeof suggestion.name !== 'string' ||
-			typeof suggestion.kodyId !== 'string' ||
-			typeof suggestion.description !== 'string' ||
-			typeof suggestion.trusted !== 'boolean' ||
-			typeof suggestion.publicUrl !== 'string' ||
-			typeof suggestion.forkPrompt !== 'string' ||
-			!isSafeExternalUrl(suggestion.publicUrl)
-		) {
-			return []
-		}
-		return [
-			{
-				listingId: suggestion.listingId,
-				name: suggestion.name,
-				kodyId: suggestion.kodyId,
-				description: suggestion.description,
-				trusted: suggestion.trusted,
-				publicUrl: suggestion.publicUrl,
-				forkPrompt: suggestion.forkPrompt,
-			} satisfies ConnectOauthPackageSuggestion,
-		]
-	})
 	return {
-		guidance: record.guidance,
-		integrationName: record.integrationName,
-		suggestions,
-		createHelpersCta: {
-			label: createHelpersCta.label,
-			prompt: createHelpersCta.prompt,
-		},
+		service: record.service,
+		connectionName: record.connectionName,
+		prompt: record.prompt,
 	}
 }
 
