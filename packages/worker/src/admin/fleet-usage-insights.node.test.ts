@@ -242,7 +242,11 @@ test('loadFleetUsageInsights returns bounded consumer rankings and pressure pane
 		},
 	])
 	expect(eventCountBinds.length).toBeGreaterThan(0)
-	expect(eventCountBinds[0]?.[1]).toBe('durable_object_gb_seconds')
+	expect(eventCountBinds[0]?.slice(1, 4)).toEqual([
+		'dynamic_worker_invoke',
+		'durable_object_gb_seconds',
+		'durable_object_rows_read',
+	])
 	expect(data.topDurationConsumersByMetric).toHaveLength(3)
 	expect(data.topDurationConsumersByMetric[0]?.consumers).toEqual([
 		{

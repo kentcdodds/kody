@@ -785,8 +785,9 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   email-derived `stable_user_id` can be reused by a later signup. Account export
   emits a sanitized `deletionState` without raw token/holder.
 - `dynamic_worker_days` — first-seen Dynamic Worker ids per UTC day
-  (`worker_id`, `day`, `created_at`; PK `(day, worker_id)`). Used only to emit
-  one `dynamic_worker_day` usage event per unique Cloudflare bill unit. Not an
+  (`worker_id`, `day`, `created_at`; PK `(day, worker_id)`). Used to emit one
+  `dynamic_worker_day` usage event per unique Cloudflare bill unit, and to
+  classify observe-only `dynamic_worker_invoke` as hit or miss. Not an
   entitlement counter and not included in `exportCounters`.
 
 Retention is self-enforced inside the DO: every read/write path
