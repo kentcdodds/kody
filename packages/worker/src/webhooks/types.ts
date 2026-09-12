@@ -55,8 +55,8 @@ export type WebhookEndpointRecord = {
 /**
  * Rotate overlap fallback. Ack-queue spilled payloads already live for 24h
  * (`webhookDispatchPayloadTtlSeconds`); GitHub-style provider retries cover
- * about the same window. The first accepted POST on the new URL retires the
- * previous secret earlier.
+ * about the same window. The first POST on the new URL that is accepted for
+ * dispatch retires the previous secret earlier.
  */
 export const webhookUrlRotationGraceMs = 24 * 60 * 60 * 1000
 

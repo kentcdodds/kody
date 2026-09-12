@@ -82,8 +82,10 @@ Route: `POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
    channels).
 4. Constant-time compare the URL secret against `url_secret_hash` (SHA-256) and,
    during rotate overlap, the previous hash. The previous URL stays active for
-   24 hours or until the first accepted POST on the new URL, whichever comes
-   first. An expired previous hash is treated as unknown.
+   24 hours or until the first POST on the new URL that is accepted for dispatch
+   (ack enqueue or sync invoke), whichever comes first. HMAC, rate limit,
+   payload, and declaration rejects do not retire the previous URL. An expired
+   previous hash is treated as unknown.
 5. After a matching URL secret, enforce per-webhook rate limit (declared
    `rateLimitPerMinute` when the name is still live, otherwise the default 60,
    max 600) → **429** (no delivery history on the limited path). Missing

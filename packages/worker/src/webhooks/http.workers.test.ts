@@ -1319,10 +1319,48 @@ test('rotate overlap accepts the previous URL until the new URL is used or the g
 	).first<{ previous_url_secret_hash: string | null }>()
 	expect(stillOverlapping?.previous_url_secret_hash).toBeTruthy()
 
+	declareWebhook({
+		name: 'overlap',
+		verification: {
+			type: 'hmac-sha256',
+			header: 'x-hub-signature-256',
+			secretName: 'githubWebhookSecret',
+			encoding: 'hex',
+			prefix: 'sha256=',
+		},
+	})
+	mocks.resolveSecret.mockResolvedValue({
+		found: true,
+		value: 'hmac-shared-secret',
+		scope: 'user',
+		allowedHosts: [],
+		allowedPackages: [],
+	})
+	const rejectedOnNew = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'overlap',
+		urlSecret: currentSecret,
+	})
+	expect(rejectedOnNew.status).toBe(401)
+	const stillOverlappingAfterReject = await env.APP_DB.prepare(
+		`SELECT previous_url_secret_hash FROM webhook_endpoints WHERE id = 'mint-overlap'`,
+	).first<{ previous_url_secret_hash: string | null }>()
+	expect(stillOverlappingAfterReject?.previous_url_secret_hash).toBeTruthy()
+
+	const confirmBody = JSON.stringify({ event: 'push' })
+	const confirmSignature = await computeWebhookHmacSignature({
+		algorithm: 'hmac-sha256',
+		secret: 'hmac-shared-secret',
+		body: encodeBody(confirmBody),
+		encoding: 'hex',
+		prefix: 'sha256=',
+	})
 	const confirmedOnNew = await postWebhook({
 		packageKodyId: 'sentry-bridge',
 		webhookName: 'overlap',
 		urlSecret: currentSecret,
+		body: confirmBody,
+		headers: { 'x-hub-signature-256': confirmSignature },
 	})
 	expect(confirmedOnNew.status).toBe(202)
 	const retired = await env.APP_DB.prepare(

@@ -85,6 +85,29 @@ export function isWebhookIngressRequest(pathname: string) {
 	return parseWebhookIngressPath(pathname) !== null
 }
 
+/** Retire rotate-overlap only after the new URL is accepted for dispatch. */
+async function retirePreviousWebhookUrlIfConfirmed(input: {
+	env: Env
+	endpoint: {
+		id: string
+		userId: string
+		previousUrlSecretHash: string | null
+	}
+	secretMatch: 'current' | 'previous'
+}) {
+	if (
+		input.secretMatch !== 'current' ||
+		!input.endpoint.previousUrlSecretHash
+	) {
+		return
+	}
+	await clearWebhookEndpointPreviousUrlSecret({
+		db: input.env.APP_DB,
+		userId: input.endpoint.userId,
+		endpointId: input.endpoint.id,
+	})
+}
+
 function notFoundResponse() {
 	return jsonResponse(
 		{
@@ -321,14 +344,6 @@ export async function handleWebhookIngressRequest(
 	// An expired previous hash is treated as unknown.
 	if (secretMatch === null || (secretMatch === 'previous' && !previousLive)) {
 		return notFoundResponse()
-	}
-	// First accepted POST on the new URL retires the previous secret early.
-	if (secretMatch === 'current' && endpoint.previousUrlSecretHash) {
-		await clearWebhookEndpointPreviousUrlSecret({
-			db: env.APP_DB,
-			userId: endpoint.userId,
-			endpointId: endpoint.id,
-		})
 	}
 
 	const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
@@ -707,10 +722,20 @@ export async function handleWebhookIngressRequest(
 			})
 			return dispatchUnavailableResponse()
 		}
+		await retirePreviousWebhookUrlIfConfirmed({
+			env,
+			endpoint,
+			secretMatch,
+		})
 		return jsonResponse({ ok: true }, { status: 202 })
 	}
 
 	try {
+		await retirePreviousWebhookUrlIfConfirmed({
+			env,
+			endpoint,
+			secretMatch,
+		})
 		const response = await runWithTimeout(
 			dispatchWebhookInvocation({
 				env,
