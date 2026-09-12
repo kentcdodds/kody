@@ -89,6 +89,7 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 			enabled: true,
 			createdAt: '2026-07-24T00:00:00.000Z',
 			rotatedAt: '2026-07-24T00:00:00.000Z',
+			previousUrlActiveUntil: null,
 		},
 	])
 	mockModule.mintWebhookUrlForUser.mockResolvedValue({
@@ -100,6 +101,7 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 		enabled: true,
 		createdAt: '2026-07-24T00:00:00.000Z',
 		rotatedAt: '2026-07-24T00:00:00.000Z',
+		previousUrlActiveUntil: null,
 	})
 	mockModule.rotateWebhookUrlForUser.mockResolvedValue({
 		packageId: 'pkg-1',
@@ -110,6 +112,7 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 		enabled: true,
 		createdAt: '2026-07-24T00:00:00.000Z',
 		rotatedAt: '2026-07-24T01:00:00.000Z',
+		previousUrlActiveUntil: '2026-07-25T01:00:00.000Z',
 	})
 	mockModule.setWebhookEnabledForUser.mockImplementation(
 		async (input: { enabled: boolean }) => ({
@@ -178,6 +181,7 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 	const listed = await webhookListCapability.handler({}, ctx)
 	expect(listed.webhooks[0]?.minted).toBe(true)
 	expect(listed.webhooks[0]?.handle).toBe('whh_ep-1')
+	expect(listed.webhooks[0]?.previous_url_active_until).toBeNull()
 	expect(JSON.stringify(listed)).not.toContain('secret-once')
 
 	const minted = await webhookUrlMintCapability.handler(
@@ -194,6 +198,9 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 		ctx,
 	)
 	expect(rotated.webhook.handle).toBe('whh_ep-1')
+	expect(rotated.webhook.previous_url_active_until).toBe(
+		'2026-07-25T01:00:00.000Z',
+	)
 	expect(rotated.webhook).not.toHaveProperty('url_secret')
 
 	mockModule.applyWebhookUrlForUser.mockResolvedValue({

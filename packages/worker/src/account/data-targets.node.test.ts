@@ -194,7 +194,11 @@ test('every accountUserDataTargets kind has a shared match builder and export gu
 		expect.arrayContaining(['client_secret_encrypted']),
 	)
 	expect(accountExportRedactedColumnsByTable.webhook_endpoints).toEqual(
-		expect.arrayContaining(['url_secret_hash', 'url_secret_encrypted']),
+		expect.arrayContaining([
+			'url_secret_hash',
+			'url_secret_encrypted',
+			'previous_url_secret_hash',
+		]),
 	)
 	expect(
 		accountExportForeignUserIdColumnsByTable.community_activity_events,

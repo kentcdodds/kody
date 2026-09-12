@@ -1,5 +1,8 @@
 import { WebhookEndpointIdRaceError } from './errors.ts'
-import { type WebhookEndpointRecord } from './types.ts'
+import {
+	type WebhookEndpointRecord,
+	webhookUrlRotationGraceExpiresAt,
+} from './types.ts'
 
 type WebhookEndpointRow = {
 	id: string
@@ -8,6 +11,8 @@ type WebhookEndpointRow = {
 	webhook_name: string
 	url_secret_hash: string
 	url_secret_encrypted?: string | null
+	previous_url_secret_hash?: string | null
+	previous_url_secret_expires_at?: string | null
 	enabled: number
 	created_at: string
 	rotated_at: string
@@ -21,6 +26,8 @@ function mapEndpointRow(row: WebhookEndpointRow): WebhookEndpointRecord {
 		webhookName: row.webhook_name,
 		urlSecretHash: row.url_secret_hash,
 		urlSecretEncrypted: row.url_secret_encrypted ?? null,
+		previousUrlSecretHash: row.previous_url_secret_hash ?? null,
+		previousUrlSecretExpiresAt: row.previous_url_secret_expires_at ?? null,
 		enabled: row.enabled === 1,
 		createdAt: row.created_at,
 		rotatedAt: row.rotated_at,
@@ -34,6 +41,9 @@ function mapEndpointRow(row: WebhookEndpointRow): WebhookEndpointRecord {
  *
  * When `updateEnabledOnConflict` is true (mint/activate), updates also set
  * `enabled`. Rotate passes false so disable state sticks.
+ *
+ * On update, the outgoing hash becomes the previous secret for the rotate
+ * overlap window (`previousExpiresAt`, default 24h from `now`).
  */
 export async function upsertWebhookEndpointSecret(input: {
 	db: D1Database
@@ -46,6 +56,7 @@ export async function upsertWebhookEndpointSecret(input: {
 	enabled?: boolean
 	updateEnabledOnConflict?: boolean
 	now?: string
+	previousExpiresAt?: string
 }): Promise<WebhookEndpointRecord> {
 	const now = input.now ?? new Date().toISOString()
 	const enabled = input.enabled === false ? 0 : 1
@@ -59,14 +70,22 @@ export async function upsertWebhookEndpointSecret(input: {
 		if (existing.id !== input.id) {
 			throw new WebhookEndpointIdRaceError(existing.id)
 		}
+		const previousExpiresAt =
+			input.previousExpiresAt ?? webhookUrlRotationGraceExpiresAt(now)
 		const result = input.updateEnabledOnConflict
 			? await input.db
 					.prepare(
 						`UPDATE webhook_endpoints
-						SET url_secret_hash = ?, url_secret_encrypted = ?, rotated_at = ?, enabled = ?
+						SET previous_url_secret_hash = url_secret_hash,
+							previous_url_secret_expires_at = ?,
+							url_secret_hash = ?,
+							url_secret_encrypted = ?,
+							rotated_at = ?,
+							enabled = ?
 						WHERE user_id = ? AND id = ?`,
 					)
 					.bind(
+						previousExpiresAt,
 						input.urlSecretHash,
 						input.urlSecretEncrypted,
 						now,
@@ -78,10 +97,15 @@ export async function upsertWebhookEndpointSecret(input: {
 			: await input.db
 					.prepare(
 						`UPDATE webhook_endpoints
-						SET url_secret_hash = ?, url_secret_encrypted = ?, rotated_at = ?
+						SET previous_url_secret_hash = url_secret_hash,
+							previous_url_secret_expires_at = ?,
+							url_secret_hash = ?,
+							url_secret_encrypted = ?,
+							rotated_at = ?
 						WHERE user_id = ? AND id = ?`,
 					)
 					.bind(
+						previousExpiresAt,
 						input.urlSecretHash,
 						input.urlSecretEncrypted,
 						now,
@@ -203,4 +227,22 @@ export async function setWebhookEndpointEnabled(input: {
 		packageId: input.packageId,
 		webhookName: input.webhookName,
 	})
+}
+
+/** Drop the rotate-overlap previous secret (confirmed on the new URL, or expired). */
+export async function clearWebhookEndpointPreviousUrlSecret(input: {
+	db: D1Database
+	userId: string
+	endpointId: string
+	urlSecretHash: string
+}) {
+	await input.db
+		.prepare(
+			`UPDATE webhook_endpoints
+			SET previous_url_secret_hash = NULL,
+				previous_url_secret_expires_at = NULL
+			WHERE user_id = ? AND id = ? AND url_secret_hash = ?`,
+		)
+		.bind(input.userId, input.endpointId, input.urlSecretHash)
+		.run()
 }

@@ -33,6 +33,7 @@ const listCommands: PackageWebhookListItem = {
 	urlRecoverable: false,
 	createdAt: null,
 	rotatedAt: null,
+	previousUrlActiveUntil: null,
 }
 
 const run: PackageWebhookListItem = {
@@ -55,6 +56,7 @@ const run: PackageWebhookListItem = {
 	urlRecoverable: true,
 	createdAt: '2026-09-01T10:00:00.000Z',
 	rotatedAt: '2026-09-05T10:00:00.000Z',
+	previousUrlActiveUntil: null,
 }
 
 const secretUrl =
@@ -148,6 +150,7 @@ test('the settings section loads one package’s webhooks, then mints, reveals, 
 				urlHost: 'kody.example',
 				createdAt: '2026-09-11T10:00:00.000Z',
 				rotatedAt: '2026-09-11T10:00:00.000Z',
+				previousUrlActiveUntil: null,
 			}
 			const payload: PackageWebhooksActionPayload = {
 				...listPayload([listCommandsState, run]),
@@ -317,4 +320,45 @@ test('a webhook card points legacy mints at Rotate instead of Reveal and offers 
 	expect(html).toContain('600 / min')
 	expect(html).toContain('delivery id X-Delivery-Id')
 	expect(html).toContain('surface=webhook')
+})
+
+test('a webhook card shows previous URL overlap until the grace timestamp', async () => {
+	const { handle } = createStubHandle()
+	const until = '2026-09-13T15:04:05.000Z'
+	const overlapping: PackageWebhookListItem = {
+		...run,
+		previousUrlActiveUntil: until,
+	}
+	const html = await renderToString(
+		renderPackageWebhookCard({
+			webhook: overlapping,
+			revealedUrl: null,
+			isMutating: false,
+			rotateCheck: createDoubleCheck(handle),
+			disableCheck: createDoubleCheck(handle),
+			onIntent: () => {},
+			onHideUrl: () => {},
+		}),
+	)
+	expect(html).toContain('Previous URL')
+	expect(html).toContain('active until')
+	expect(html).toContain(new Date(until).toLocaleString())
+
+	const disabledOverlap: PackageWebhookListItem = {
+		...overlapping,
+		enabled: false,
+	}
+	const disabledHtml = await renderToString(
+		renderPackageWebhookCard({
+			webhook: disabledOverlap,
+			revealedUrl: null,
+			isMutating: false,
+			rotateCheck: createDoubleCheck(handle),
+			disableCheck: createDoubleCheck(handle),
+			onIntent: () => {},
+			onHideUrl: () => {},
+		}),
+	)
+	expect(disabledHtml).not.toContain('Previous URL')
+	expect(disabledHtml).toContain('>Disabled<')
 })

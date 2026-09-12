@@ -180,6 +180,19 @@ export function renderPackageWebhookCard(input: {
 						label: 'Rotated',
 						value: <TimestampValue value={webhook.rotatedAt} />,
 					},
+					...(webhook.enabled && webhook.previousUrlActiveUntil
+						? [
+								{
+									label: 'Previous URL',
+									value: (
+										<span>
+											active until{' '}
+											<TimestampValue value={webhook.previousUrlActiveUntil} />
+										</span>
+									),
+								},
+							]
+						: []),
 				]}
 			/>
 
@@ -259,8 +272,8 @@ export function renderPackageWebhookCard(input: {
 
 			{rotateCheck.doubleCheck ? (
 				<AccountManagementMessage tone="info">
-					Rotating replaces the secret immediately. The current URL stops
-					working and every provider that posts to it needs the new one.
+					Rotating mints a new URL. The previous URL stays active for 24 hours,
+					or until a delivery arrives on the new one.
 				</AccountManagementMessage>
 			) : null}
 

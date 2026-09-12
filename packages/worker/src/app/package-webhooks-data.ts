@@ -43,6 +43,7 @@ function toPackageWebhookListItem(
 		urlRecoverable: webhook.urlRecoverable,
 		createdAt: webhook.createdAt,
 		rotatedAt: webhook.rotatedAt,
+		previousUrlActiveUntil: webhook.previousUrlActiveUntil,
 	}
 }
 

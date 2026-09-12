@@ -55,6 +55,9 @@ This file is intentionally brief. Detailed instructions live in focused docs:
   - [docs/contributing/architecture/index.md](./docs/contributing/architecture/index.md)
     (production worker fleet, request lifecycle, authentication, data storage,
     and the rest of the architecture leaves)
+  - Inbound webhooks (rotate keeps the previous URL live briefly):
+    [docs/use/webhooks.md](./docs/use/webhooks.md) and
+    [docs/contributing/architecture/webhooks.md](./docs/contributing/architecture/webhooks.md)
   - [docs/contributing/architecture/primitives.yaml](./docs/contributing/architecture/primitives.yaml)
     (stable taxonomy, not a feature changelog — see the architecture index for
     the classify/check workflow)

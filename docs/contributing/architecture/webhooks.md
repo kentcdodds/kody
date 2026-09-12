@@ -80,7 +80,12 @@ Route: `POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
    URL-secret mismatch → **404** (indistinguishable). URL-secret mismatches do
    **not** record delivery history (avoids log-flush DoS and rate-limit side
    channels).
-4. Constant-time compare the URL secret against `url_secret_hash` (SHA-256).
+4. Constant-time compare the URL secret against `url_secret_hash` (SHA-256) and,
+   during rotate overlap, the previous hash. The previous URL stays active for
+   24 hours or until the first POST on the new URL that is accepted for dispatch
+   (ack enqueue or sync invoke), whichever comes first. HMAC, rate limit,
+   payload, and declaration rejects do not retire the previous URL. An expired
+   previous hash is treated as unknown.
 5. After a matching URL secret, enforce per-webhook rate limit (declared
    `rateLimitPerMinute` when the name is still live, otherwise the default 60,
    max 600) → **429** (no delivery history on the limited path). Missing
@@ -135,7 +140,8 @@ consumer's 15-minute wall-clock limit before later messages are acknowledged.
   immediately re-scopes by the owning user.
 - Account deletion/export include `webhook_endpoints` (minted URL state).
   Delivery history lives in run records and is covered with the rest of `RunLog`
-  export/deletion. Export redacts `url_secret_hash` and `url_secret_encrypted`.
+  export/deletion. Export redacts `url_secret_hash`, `url_secret_encrypted`, and
+  `previous_url_secret_hash`.
 - Plaintext URL secrets and verification secrets are never logged. URL secrets
   are hashed for ingress and stored encrypted for `webhookUrlApply` and the
   owner reveal in package settings. MCP mint, rotate, list, and apply never
@@ -151,15 +157,15 @@ Webhooks belong to the package that declares them, so the owner surface is the
 (`packages/worker/src/app/handlers/package-webhooks.ts`). The handler is
 owner-only: the signed-in user must be `:username` and own `:kodyId`, otherwise
 it answers 404 without naming the package or its webhooks. `GET` returns
-`listWebhooksForUser` filtered to the package and joined with `urlRecoverable`,
-never the URL. `POST { intent, webhookName }` intents `mint`, `rotate`, and
-`reveal` return the refreshed list plus a `revealed` entry built by
-`revealWebhookUrlForWebsite` (decrypt `url_secret_encrypted`, rebuild the
-ingress path from the request origin); `enable` / `disable` return the list
-only. Every intent writes an `account` audit event (`webhook_url_mint`,
-`webhook_url_rotate`, `webhook_url_reveal`, `webhook_enable`,
-`webhook_disable`). `mint` refuses an already-minted webhook so a stray click
-cannot rotate a provider's URL; `reveal` refuses mints without
+`listWebhooksForUser` filtered to the package and joined with `urlRecoverable`
+and `previousUrlActiveUntil`, never the URL. `POST { intent, webhookName }`
+intents `mint`, `rotate`, and `reveal` return the refreshed list plus a
+`revealed` entry built by `revealWebhookUrlForWebsite` (decrypt
+`url_secret_encrypted`, rebuild the ingress path from the request origin);
+`enable` / `disable` return the list only. Every intent writes an `account`
+audit event (`webhook_url_mint`, `webhook_url_rotate`, `webhook_url_reveal`,
+`webhook_enable`, `webhook_disable`). `mint` refuses an already-minted webhook
+so a stray click cannot rotate a provider's URL; `reveal` refuses mints without
 `url_secret_encrypted` and points at Rotate. The client keeps revealed URLs in
 memory only and drops them on Hide or when the settings page changes package.
 
@@ -176,12 +182,15 @@ binding, or apply result may return the credential URL.
 
 Minted endpoint state lives in the D1 `webhook_endpoints` table defined by
 `packages/worker/migrations/0001-squashed-init.sql`, with `url_secret_encrypted`
-added in `0057-webhook-url-secret-encrypted.sql`. `webhookUrlMint` /
-`webhookUrlRotate` return an opaque `handle` (`whh_<id>`) and `url_host`.
-`webhookUrlApply` resolves the handle inside Kody and registers the URL through
-a first-class destination adapter (GitHub repository hooks via the user GitHub
-integration or a host-approved GitHub token). The credential is injected into
-the provider API field; apply does not accept an arbitrary outbound URL.
-Delivery history is in the per-user `RunLog` Durable Object (`webhook` surface),
-not in D1. See [Data storage](./data-storage.md) and
-[Run records](./run-records.md).
+added in `0057-webhook-url-secret-encrypted.sql` and rotate-overlap columns in
+`0062-webhook-url-rotation-grace.sql`. Rotate copies the outgoing hash to
+`previous_url_secret_hash` with `previous_url_secret_expires_at` 24 hours out.
+The previous ciphertext is not stored: reveal and apply always rebuild the
+current URL. `webhookUrlMint` / `webhookUrlRotate` return an opaque `handle`
+(`whh_<id>`) and `url_host`. `webhookUrlApply` resolves the handle inside Kody
+and registers the URL through a first-class destination adapter (GitHub
+repository hooks via the user GitHub integration or a host-approved GitHub
+token). The credential is injected into the provider API field; apply does not
+accept an arbitrary outbound URL. Delivery history is in the per-user `RunLog`
+Durable Object (`webhook` surface), not in D1. See
+[Data storage](./data-storage.md) and [Run records](./run-records.md).

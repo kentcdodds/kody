@@ -87,7 +87,7 @@ export function webhookSuccessMessage(intent: WebhookIntent) {
 		case 'mint':
 			return 'Webhook URL minted. Copy it now and paste it into the provider.'
 		case 'rotate':
-			return 'Webhook URL rotated. The previous URL no longer works.'
+			return 'Webhook URL rotated. The previous URL stays active until the new one receives a delivery, or for 24 hours.'
 		case 'reveal':
 			return null
 		case 'enable':

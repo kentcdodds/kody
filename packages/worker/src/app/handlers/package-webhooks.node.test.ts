@@ -94,6 +94,8 @@ function createEnv() {
 			webhook_name TEXT NOT NULL,
 			url_secret_hash TEXT NOT NULL,
 			url_secret_encrypted TEXT,
+			previous_url_secret_hash TEXT,
+			previous_url_secret_expires_at TEXT,
 			enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
 			created_at TEXT NOT NULL,
 			rotated_at TEXT NOT NULL
@@ -282,6 +284,11 @@ test('package webhooks API mints, reveals, rotates, and toggles a declared webho
 	)!
 	// Rotate keeps the disabled state; only Enable flips it back.
 	expect(rotatedLauncher.enabled).toBe(false)
+	expect(rotatedLauncher.previousUrlActiveUntil).toEqual(expect.any(String))
+	const overlapUntil = Date.parse(rotatedLauncher.previousUrlActiveUntil!)
+	const overlapExpected = Date.now() + 24 * 60 * 60 * 1000
+	expect(overlapUntil).toBeGreaterThan(overlapExpected - 10_000)
+	expect(overlapUntil).toBeLessThan(overlapExpected + 10_000)
 
 	const enabled = await runHandler(
 		handler,

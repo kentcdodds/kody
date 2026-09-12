@@ -15,9 +15,9 @@ import {
 	buildWebhookTimestampBodyPayload,
 	isWebhookTimestampWithinTolerance,
 	parseWebhookReplayTimestamp,
+	matchWebhookIngressUrlSecret,
 	providedWebhookHmacValues,
 	verifyWebhookHmacSignature,
-	webhookUrlSecretMatches,
 } from './crypto.ts'
 import {
 	dispatchWebhookInvocation,
@@ -42,8 +42,12 @@ import {
 	readWebhookCallerIdempotencyKey,
 	resolveWebhookParamsModeFirstArg,
 } from './params.ts'
-import { getWebhookEndpointByKey } from './repo.ts'
 import {
+	clearWebhookEndpointPreviousUrlSecret,
+	getWebhookEndpointByKey,
+} from './repo.ts'
+import {
+	isWebhookPreviousUrlLive,
 	webhookDefaultReplayToleranceSeconds,
 	webhookIdempotencyKeyHeader,
 	webhookMaxPayloadBytes,
@@ -79,6 +83,31 @@ export function parseWebhookIngressPath(pathname: string) {
 
 export function isWebhookIngressRequest(pathname: string) {
 	return parseWebhookIngressPath(pathname) !== null
+}
+
+/** Retire rotate-overlap only after the new URL is accepted for dispatch. */
+async function retirePreviousWebhookUrlIfConfirmed(input: {
+	env: Env
+	endpoint: {
+		id: string
+		userId: string
+		urlSecretHash: string
+		previousUrlSecretHash: string | null
+	}
+	secretMatch: 'current' | 'previous'
+}) {
+	if (
+		input.secretMatch !== 'current' ||
+		!input.endpoint.previousUrlSecretHash
+	) {
+		return
+	}
+	await clearWebhookEndpointPreviousUrlSecret({
+		db: input.env.APP_DB,
+		userId: input.endpoint.userId,
+		endpointId: input.endpoint.id,
+		urlSecretHash: input.endpoint.urlSecretHash,
+	})
 }
 
 function notFoundResponse() {
@@ -306,13 +335,16 @@ export async function handleWebhookIngressRequest(
 		return notFoundResponse()
 	}
 
-	const secretMatches = await webhookUrlSecretMatches({
+	const secretMatch = await matchWebhookIngressUrlSecret({
 		candidate: route.urlSecret,
-		storedHash: endpoint.urlSecretHash,
+		currentHash: endpoint.urlSecretHash,
+		previousHash: endpoint.previousUrlSecretHash,
 	})
+	const previousLive = isWebhookPreviousUrlLive(endpoint, receivedAt)
 	// Wrong secret: no delivery row (avoids log-flush DoS) and no rate-limit
 	// side channel that would distinguish minted names from unknown ones.
-	if (!secretMatches) {
+	// An expired previous hash is treated as unknown.
+	if (secretMatch === null || (secretMatch === 'previous' && !previousLive)) {
 		return notFoundResponse()
 	}
 
@@ -692,10 +724,20 @@ export async function handleWebhookIngressRequest(
 			})
 			return dispatchUnavailableResponse()
 		}
+		await retirePreviousWebhookUrlIfConfirmed({
+			env,
+			endpoint,
+			secretMatch,
+		})
 		return jsonResponse({ ok: true }, { status: 202 })
 	}
 
 	try {
+		await retirePreviousWebhookUrlIfConfirmed({
+			env,
+			endpoint,
+			secretMatch,
+		})
 		const response = await runWithTimeout(
 			dispatchWebhookInvocation({
 				env,
