@@ -63,7 +63,7 @@ vi.mock('#worker/jobs/jobs-data.ts', () => ({
 	}),
 }))
 
-vi.mock('#worker/discord/guild-role.ts', () => ({
+vi.mock('#worker/discord/guild-membership.ts', () => ({
 	readOfficialDiscordMembershipForUser: (...args: Array<unknown>) =>
 		mockModule.readOfficialDiscordMembershipForUser(...args),
 }))

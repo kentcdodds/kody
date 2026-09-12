@@ -16,7 +16,7 @@ import { getUserEntitlement } from '#worker/entitlements/service.ts'
 import { isSavedPackageLocked } from '#worker/package-registry/package-publish-lock.ts'
 import { listJoinedIntegrations } from '#worker/integrations/service.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
-import { readOfficialDiscordMembershipForUser } from '#worker/discord/guild-role.ts'
+import { readOfficialDiscordMembershipForUser } from '#worker/discord/guild-membership.ts'
 import { summarizeRunRecords } from '#worker/run-records/service.ts'
 import { accountActivitySummaryWindowMs } from '#universal/account-activity-filters.ts'
 import {

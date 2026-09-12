@@ -104,10 +104,11 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		packageDir: 'packages/platform-worker',
 		entryFile: 'platform-worker.js',
 		bundler: 'wrangler',
-		// CI merge with current main is a deterministic 4_975_017 bytes
-		// (17 over the previous ratchet) on two Static runs. This PR does
-		// not touch platform-worker.
-		maxEntryBytes: 4_980_000,
+		// Waiting first-use probes (search, memory, execute, package, job,
+		// integration, secret, Discord membership) ship on platform because
+		// waitingSummary runs in the MCP Durable Object. Local dry-run after
+		// that change is 4_983_088 bytes.
+		maxEntryBytes: 4_990_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,

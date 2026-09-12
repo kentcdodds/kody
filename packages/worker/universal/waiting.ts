@@ -52,7 +52,7 @@ export type WaitingFirstUseId = (typeof waitingFirstUseIds)[number]
  * Coarse checklist ids that would duplicate the broken-out first-use cards.
  * The wizard still uses them; Waiting does not emit those onboarding cards.
  */
-export const onboardingWaitingCoarseIds = [
+const onboardingWaitingCoarseIds = [
 	'give-access',
 	'install-starter',
 ] as const satisfies ReadonlyArray<OnboardingChecklistItemId>
