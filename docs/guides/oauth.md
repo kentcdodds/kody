@@ -4,8 +4,8 @@ title: OAuth: bring your own app
 summary:
   START HERE for third-party OAuth: hosted /connect/oauth, the exact
   redirect URI (https://kody.codes/connect/oauth), required query params,
-  PKCE vs confidential, post-connect nextSteps with community
-  helpers suggestions, and how it differs from MCP OAuth.
+  PKCE vs confidential, the post-connect copyable agent prompt, and how
+  it differs from MCP OAuth.
 category: platform
 ---
 
@@ -200,20 +200,16 @@ routes) are for clients authenticating to Kody itself.
 A saved OAuth integration is **auth credentials only**. It is not an
 agent-callable package API.
 
-The `/connect/oauth` success response (and success UI) includes `nextSteps`:
-
-- clear guidance that the integration stores credentials, while a helpers
-  package is the durable agent-facing surface
-- up to three public package suggestions that mention the connected provider in
-  their listing name, package name leaf, or tags, plus fork prompts / listing
-  links. Listings that only mention the provider in README or description prose
-  are omitted
-- a create-helpers CTA/prompt when no suitable listing exists (and as a fallback
-  when suggestions do not fit)
+The `/connect/oauth` success page shows a **What's next?** prompt the user can
+copy into their agent. The prompt names the resolved provider and the saved
+connection (for example `google` / `google-work`) and asks whether to fork a
+community package or build a helpers package. The same prompt is in the
+`nextSteps` JSON on the connect success response.
 
 Do not treat connect success as “the Google/GitHub/etc. package is ready.” Next
-step is smoke-test auth, then fork a close community helpers package or create a
-thin helpers package.
+step is smoke-test auth, then `communitySearch` (preferring `trusted`) or create
+a thin helpers package. `search({ entity: "<provider>:integration" })` may
+already surface same-provider package suggestions.
 
 ## Agent checklist
 
@@ -227,10 +223,9 @@ thin helpers package.
 5. Run the authenticated smoke test from `integration_bootstrap`
    (`createAuthenticatedFetch`). Do not persist access or refresh tokens with
    `secretSet` / `secretSetMany`.
-6. Use the connect success `nextSteps` (or `communitySearch`, preferring
-   `trusted`) to fork/adapt a helpers package, or create a thin helpers package
-   when none fits. Continue with dependent package apps only after that surface
-   exists and the smoke test passes.
+6. Use `communitySearch` (preferring `trusted`) to fork/adapt a helpers package,
+   or create a thin helpers package when none fits. Continue with dependent
+   package apps only after that surface exists and the smoke test passes.
 
 ## Package-first recommendation for OAuth integrations
 
@@ -238,7 +233,7 @@ For OAuth integrations with a successful hosted `/connect/oauth` flow and
 passing smoke test:
 
 - treat the saved integration as credentials; put agent-facing calls in a
-  helpers package (prefer a close public package from `nextSteps`)
+  helpers package (prefer a close public package from `communitySearch`)
 - build a package app when the integration needs a hosted UI
 - keep provider API calls in package-owned backend code
 - keep reusable automation in package exports

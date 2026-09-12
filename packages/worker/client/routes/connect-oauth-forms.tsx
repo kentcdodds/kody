@@ -1,10 +1,12 @@
 import { type Handle, css } from 'remix/ui'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
+import { CopyCard } from '#client/routes/onboarding-mcp-client-cards.tsx'
 import {
 	buildChangeIntegrationScopesPrompt,
 	formatOauthScopeDisclosureLabel,
 	resolveOauthScopeMenu,
 } from '#universal/oauth-scopes.ts'
+import { buildConnectOauthWhatsNextPrompt } from '#universal/connect-oauth-whats-next.ts'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
@@ -33,9 +35,6 @@ import {
 	connectOauthAdvancedDetailsCss,
 	connectOauthPrimaryButtonCss,
 	connectOauthSecondaryButtonCss,
-	connectOauthSuggestionActionsCss,
-	connectOauthSuggestionHeaderCss,
-	connectOauthTrustedBadgeCss,
 } from './connect-oauth-shared.ts'
 
 function renderScopePicker(input: {
@@ -317,61 +316,26 @@ export function renderSuccessCard(input: {
 					</button>
 				</div>
 			) : null}
-			{input.nextSteps ? (
-				<div mix={css(insetCardCss)}>
-					<h2 mix={css(cardTitleCss)}>What to do next</h2>
-					<p mix={css(descriptionCss)}>{input.nextSteps.guidance}</p>
-					{input.nextSteps.suggestions.length > 0 ? (
-						<ul mix={css(listCss)}>
-							{input.nextSteps.suggestions.map((suggestion) => (
-								<li key={suggestion.listingId}>
-									<div mix={css(connectOauthSuggestionHeaderCss)}>
-										<a
-											href={suggestion.publicUrl}
-											target="_blank"
-											rel="noreferrer noopener"
-											mix={css(primaryLinkCss)}
-										>
-											{suggestion.name}
-										</a>
-										{suggestion.trusted ? (
-											<span mix={css(connectOauthTrustedBadgeCss)}>
-												Trusted
-											</span>
-										) : null}
-									</div>
-									<p mix={css(descriptionCss)}>{suggestion.description}</p>
-									<div mix={css(connectOauthSuggestionActionsCss)}>
-										<a
-											href={suggestion.publicUrl}
-											target="_blank"
-											rel="noreferrer noopener"
-											mix={css(primaryLinkCss)}
-										>
-											View listing
-										</a>
-										<CopyTextButton
-											value={suggestion.forkPrompt}
-											idleLabel="Copy fork prompt"
-											variant="secondary"
-										/>
-									</div>
-								</li>
-							))}
-						</ul>
-					) : null}
-					<div mix={css(connectOauthSuggestionActionsCss)}>
-						<strong mix={css(detailValueCss)}>
-							{input.nextSteps.createHelpersCta.label}
-						</strong>
-						<CopyTextButton
-							value={input.nextSteps.createHelpersCta.prompt}
-							idleLabel="Copy create prompt"
-							variant="secondary"
-						/>
-					</div>
-				</div>
-			) : null}
+			<div
+				data-testid="connect-oauth-whats-next"
+				mix={css({ ...insetCardCss, display: 'grid', gap: spacing.sm })}
+			>
+				<h2 mix={css(cardTitleCss)}>What's next?</h2>
+				<p mix={css(descriptionCss)}>
+					Not sure what to do next? Ask your agent:
+				</p>
+				<CopyCard
+					label="Prompt"
+					value={
+						input.nextSteps?.prompt ??
+						buildConnectOauthWhatsNextPrompt({
+							service: input.config.providerKey,
+							connectionName: input.config.providerKey,
+						})
+					}
+					copyLabel="Copy prompt"
+				/>
+			</div>
 			<a
 				href={routes.accountIntegrationDetail.href({
 					integrationName: input.config.providerKey,

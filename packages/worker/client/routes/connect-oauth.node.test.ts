@@ -1,4 +1,5 @@
 import { utf8ToBase64Url } from '@kody-internal/shared/base64.ts'
+import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
 import {
 	createCodeChallenge,
@@ -20,6 +21,7 @@ import {
 	parseStoredIntegrationConfig,
 	summarizeStoredSetupState,
 } from './connect-oauth-config.ts'
+import { renderSuccessCard } from './connect-oauth-forms.tsx'
 
 test('connect OAuth helpers parse stored integrations, merge reconnect configs, and derive provider defaults', () => {
 	const parsed = parseStoredIntegrationConfig(
@@ -796,83 +798,32 @@ test('session config parsing is strict: usePkce and clientId are required and st
 	).toBeNull()
 })
 
-test('parseConnectOauthNextSteps accepts suggestion payload and drops unsafe URLs', () => {
+test('parseConnectOauthNextSteps accepts the copyable prompt payload', () => {
 	const parsed = parseConnectOauthNextSteps({
-		guidance: 'Connected. Auth credentials only.',
-		integrationName: 'google',
-		suggestions: [
-			{
-				listingId: 'listing-1',
-				name: '@owner/google-helpers',
-				kodyId: 'google-helpers',
-				description: 'Trusted google helpers',
-				trusted: true,
-				publicUrl: 'https://example.com/@owner/google-helpers',
-				forkPrompt: 'Fork google-helpers',
-			},
-			{
-				listingId: 'bad',
-				name: 'bad',
-				kodyId: '@owner/bad',
-				description: 'bad',
-				trusted: false,
-				publicUrl: 'javascript:alert(1)',
-				forkPrompt: 'bad',
-			},
-		],
-		createHelpersCta: {
-			label: 'Create helpers package',
-			prompt: 'Create a thin helpers package for google',
-		},
+		service: 'google',
+		connectionName: 'google-work',
+		prompt:
+			'I just connected to google with google-work. What should we do next? Is there a community package we can fork or one we can build to make using this integration easier?',
 	})
 	expect(parsed).toEqual({
-		guidance: 'Connected. Auth credentials only.',
-		integrationName: 'google',
-		suggestions: [
-			{
-				listingId: 'listing-1',
-				name: '@owner/google-helpers',
-				kodyId: 'google-helpers',
-				description: 'Trusted google helpers',
-				trusted: true,
-				publicUrl: 'https://example.com/@owner/google-helpers',
-				forkPrompt: 'Fork google-helpers',
-			},
-		],
-		createHelpersCta: {
-			label: 'Create helpers package',
-			prompt: 'Create a thin helpers package for google',
-		},
+		service: 'google',
+		connectionName: 'google-work',
+		prompt:
+			'I just connected to google with google-work. What should we do next? Is there a community package we can fork or one we can build to make using this integration easier?',
 	})
 	expect(parseConnectOauthNextSteps(null)).toBeNull()
 	expect(parseConnectOauthNextSteps({ guidance: 'x' })).toBeNull()
 	expect(
 		parseConnectOauthNextSteps({
-			guidance: 'g',
-			integrationName: 'x',
-			suggestions: 'not-an-array',
-			createHelpersCta: { label: 'a', prompt: 'b' },
+			service: 'google',
+			connectionName: 'google',
 		}),
 	).toBeNull()
 	expect(
 		parseConnectOauthNextSteps({
-			guidance: 'g',
-			integrationName: 'x',
-			suggestions: [{ listingId: 1 }],
-			createHelpersCta: { label: 'a', prompt: 'b' },
-		}),
-	).toEqual({
-		guidance: 'g',
-		integrationName: 'x',
-		suggestions: [],
-		createHelpersCta: { label: 'a', prompt: 'b' },
-	})
-	expect(
-		parseConnectOauthNextSteps({
-			guidance: 'g',
-			integrationName: 'x',
-			suggestions: [],
-			createHelpersCta: { label: 1, prompt: 'b' },
+			service: 1,
+			connectionName: 'google',
+			prompt: 'x',
 		}),
 	).toBeNull()
 })
@@ -981,4 +932,62 @@ test('browser fetch network TypeErrors map to a stable in-page status (KODY-CLOU
 		),
 	).toBe('Unable to save secret.')
 	expect(formatConnectOauthCaughtError('nope', 'fallback')).toBe('fallback')
+})
+
+test('success card shows a copyable whats-next prompt for the connected connection', async () => {
+	const config = mergeConnectOauthConfig({
+		queryConfig: {
+			provider: 'google-work',
+			providerKey: 'google-work',
+			authorizeHost: 'accounts.google.com',
+			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+			tokenUrl: 'https://oauth2.googleapis.com/token',
+			apiBaseUrl: 'https://www.googleapis.com',
+			scopes: ['openid'],
+			flow: 'confidential',
+			usePkce: null,
+			tokenExchangeStyle: null,
+			scopeSeparator: ' ',
+			extraAuthorizeParams: {},
+			providerSetupInstructions: null,
+			dashboardUrl: null,
+			allowedHosts: ['www.googleapis.com'],
+		},
+		storedIntegration: null,
+	})
+	const prompt =
+		'I just connected to google with google-work. What should we do next? Is there a community package we can fork or one we can build to make using this integration easier?'
+	const html = await renderToString(
+		renderSuccessCard({
+			config,
+			hostApprovalLinks: [],
+			nextSteps: {
+				service: 'google',
+				connectionName: 'google-work',
+				prompt,
+			},
+			approvingAllHosts: false,
+			onApproveAllHosts() {},
+		}),
+	)
+	expect(html).toContain('data-testid="connect-oauth-whats-next"')
+	expect(html).toContain("What's next?")
+	expect(html).toContain('Not sure what to do next? Ask your agent:')
+	expect(html).toContain(prompt)
+	expect(html).toContain('Copy prompt')
+	expect(html).toContain('/account/integrations/google-work')
+
+	const fallbackHtml = await renderToString(
+		renderSuccessCard({
+			config,
+			hostApprovalLinks: [],
+			nextSteps: null,
+			approvingAllHosts: false,
+			onApproveAllHosts() {},
+		}),
+	)
+	expect(fallbackHtml).toContain('data-testid="connect-oauth-whats-next"')
+	expect(fallbackHtml).toContain(
+		'I just connected to google-work with google-work. What should we do next? Is there a community package we can fork or one we can build to make using this integration easier?',
+	)
 })

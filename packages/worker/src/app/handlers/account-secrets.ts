@@ -17,9 +17,8 @@ import {
 	resolveApprovalRequest,
 	toPackageOptions,
 } from '#app/account-secrets-data.ts'
-import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { loadConnectOauthNextSteps } from '#app/connect-oauth-next-steps.ts'
+import { buildConnectOauthNextSteps } from '#app/connect-oauth-next-steps.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { normalizeBulkPackageSecretApprovalNames } from '#mcp/secrets/package-approval-url.ts'
 import {
@@ -438,13 +437,8 @@ async function handleConnectOauthAction(input: {
 	}
 	const hostApprovalLinks: Array<ConnectOauthHostApprovalLink> = []
 
-	const nextSteps = await loadConnectOauthNextSteps({
-		env: input.env,
+	const nextSteps = buildConnectOauthNextSteps({
 		integrationName,
-		baseUrl: getAppBaseUrl({
-			env: input.env,
-			requestUrl: input.request.url,
-		}),
 		integration: {
 			name: integrationName,
 			tokenUrl,
