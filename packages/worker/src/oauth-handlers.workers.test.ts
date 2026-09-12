@@ -340,6 +340,22 @@ function getCookiePair(setCookie: string) {
 	return setCookie.split(';', 1)[0] ?? setCookie
 }
 
+function expectClientAuthorizationRedirect(
+	redirectTo: string,
+	expected: {
+		originPath: string
+		params: Record<string, string>
+		iss: string
+	},
+) {
+	const redirectUrl = new URL(redirectTo)
+	expect(redirectUrl.origin + redirectUrl.pathname).toBe(expected.originPath)
+	for (const [key, value] of Object.entries(expected.params)) {
+		expect(redirectUrl.searchParams.get(key)).toBe(value)
+	}
+	expect(redirectUrl.searchParams.get('iss')).toBe(expected.iss)
+}
+
 test('authorize info, denial, approval, and default scopes follow the OAuth workflow', async () => {
 	const successResponse = await handleAuthorizeInfo(
 		new Request(
@@ -403,12 +419,11 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 	expect(denyResponse.status).toBe(302)
 	const location = denyResponse.headers.get('Location')
 	expect(location).toBeTruthy()
-	const redirectUrl = new URL(location as string)
-	const expectedRedirect = new URL(baseAuthRequest.redirectUri)
-	expect(redirectUrl.origin).toBe(expectedRedirect.origin)
-	expect(redirectUrl.pathname).toBe(expectedRedirect.pathname)
-	expect(redirectUrl.searchParams.get('error')).toBe('access_denied')
-	expect(redirectUrl.searchParams.get('state')).toBe('demo')
+	expectClientAuthorizationRedirect(location as string, {
+		originPath: 'https://example.com/callback',
+		params: { error: 'access_denied', state: 'demo' },
+		iss: 'https://example.com',
+	})
 
 	const missingPasswordResponse = await handleAuthorizeRequest(
 		createFormRequest(
@@ -451,12 +466,18 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 	)
 
 	expect(sessionResponse.status).toBe(200)
-	const sessionPayload = await sessionResponse.json()
-	expect(sessionPayload).toEqual({
-		ok: true,
-		redirectTo: 'https://example.com/callback?code=session',
+	const sessionPayload = (await sessionResponse.json()) as {
+		ok: boolean
+		redirectTo: string
+	}
+	expect(sessionPayload.ok).toBe(true)
+	expectClientAuthorizationRedirect(sessionPayload.redirectTo, {
+		originPath: 'https://example.com/callback',
+		params: { code: 'session' },
+		iss: 'https://example.com',
 	})
 	expect(capturedOptions).not.toBeNull()
+	expect(capturedOptions?.request.issuer).toBe('https://example.com')
 
 	let resolveCapturedOptions:
 		| ((value: CompleteAuthorizationOptions) => void)
@@ -487,11 +508,71 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 	)
 
 	expect(defaultScopeResponse.status).toBe(302)
-	expect(defaultScopeResponse.headers.get('Location')).toBe(
-		'https://example.com/callback?code=ok',
+	expectClientAuthorizationRedirect(
+		defaultScopeResponse.headers.get('Location') ?? '',
+		{
+			originPath: 'https://example.com/callback',
+			params: { code: 'ok' },
+			iss: 'https://example.com',
+		},
 	)
 	const defaultScopeOptions = await capturedOptionsPromise
 	expect(defaultScopeOptions.scope).toEqual(oauthScopes)
+	expect(defaultScopeOptions.request.issuer).toBe('https://example.com')
+})
+
+test('authorize success and deny redirects include RFC 9207 iss for the kody.codes issuer', async () => {
+	const authorizeUrl =
+		'https://kody.codes/oauth/authorize?response_type=code&client_id=client-123&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=profile&state=demo'
+	const helpers = createHelpers({
+		async completeAuthorization() {
+			return { redirectTo: 'https://example.com/callback?code=codex' }
+		},
+	})
+	const approveResponse = await handleAuthorizeRequest(
+		new Request(authorizeUrl, {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/x-www-form-urlencoded',
+			},
+			body: new URLSearchParams({
+				decision: 'approve',
+				email: 'user@example.com',
+				password: 'password123',
+			}),
+		}),
+		createEnv(helpers, await createDatabase('password123')),
+	)
+	expect(approveResponse.status).toBe(200)
+	const approvePayload = (await approveResponse.json()) as {
+		ok: boolean
+		redirectTo: string
+	}
+	expect(approvePayload.ok).toBe(true)
+	expectClientAuthorizationRedirect(approvePayload.redirectTo, {
+		originPath: 'https://example.com/callback',
+		params: { code: 'codex' },
+		iss: 'https://kody.codes',
+	})
+
+	const denyResponse = await handleAuthorizeRequest(
+		new Request(authorizeUrl, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: new URLSearchParams({ decision: 'deny' }),
+		}),
+		createEnv(createHelpers()),
+	)
+	expect(denyResponse.status).toBe(302)
+	expectClientAuthorizationRedirect(
+		denyResponse.headers.get('Location') ?? '',
+		{
+			originPath: 'https://example.com/callback',
+			params: { error: 'access_denied', state: 'demo' },
+			iss: 'https://kody.codes',
+		},
+	)
 })
 
 test('Claude-shaped authorize requests render and approve without throwing', async () => {
@@ -540,13 +621,22 @@ test('Claude-shaped authorize requests render and approve without throwing', asy
 	)
 
 	expect(postResponse.status).toBe(200)
-	await expect(postResponse.json()).resolves.toEqual({
-		ok: true,
-		redirectTo:
-			'https://claude.ai/api/mcp/auth_callback?code=demo&state=x5z9jORTCRNTmZ5_fiH7tdVWDVbiPujOHtUkyHzBvmc',
+	const claudePayload = (await postResponse.json()) as {
+		ok: boolean
+		redirectTo: string
+	}
+	expect(claudePayload.ok).toBe(true)
+	expectClientAuthorizationRedirect(claudePayload.redirectTo, {
+		originPath: 'https://claude.ai/api/mcp/auth_callback',
+		params: {
+			code: 'demo',
+			state: 'x5z9jORTCRNTmZ5_fiH7tdVWDVbiPujOHtUkyHzBvmc',
+		},
+		iss: 'https://heykody.dev',
 	})
 	expect(capturedOptions?.request.resource).toBe('https://heykody.dev/mcp')
 	expect(capturedOptions?.request.scope).toEqual(['profile', 'email'])
+	expect(capturedOptions?.request.issuer).toBe('https://heykody.dev')
 })
 
 test('Gemini-shaped authorize requests default resource to /mcp when omitted', async () => {
@@ -580,10 +670,16 @@ test('Gemini-shaped authorize requests default resource to /mcp when omitted', a
 	)
 
 	expect(postResponse.status).toBe(200)
-	await expect(postResponse.json()).resolves.toEqual({
-		ok: true,
-		redirectTo:
-			'https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-106664623666703652842-heykody_dev?code=demo&state=gemini-demo-state',
+	const geminiPayload = (await postResponse.json()) as {
+		ok: boolean
+		redirectTo: string
+	}
+	expect(geminiPayload.ok).toBe(true)
+	expectClientAuthorizationRedirect(geminiPayload.redirectTo, {
+		originPath:
+			'https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-106664623666703652842-heykody_dev',
+		params: { code: 'demo', state: 'gemini-demo-state' },
+		iss: 'https://heykody.dev',
 	})
 	expect(capturedOptions?.request.resource).toBe('https://heykody.dev/mcp')
 	expect(geminiAuthRequestWithoutResource.resource).toBeUndefined()
@@ -618,9 +714,15 @@ test('session approval uses stable user id when cookie email is stale', async ()
 	)
 
 	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toEqual({
-		ok: true,
-		redirectTo: 'https://example.com/callback?code=stale-session',
+	const stalePayload = (await response.json()) as {
+		ok: boolean
+		redirectTo: string
+	}
+	expect(stalePayload.ok).toBe(true)
+	expectClientAuthorizationRedirect(stalePayload.redirectTo, {
+		originPath: 'https://example.com/callback',
+		params: { code: 'stale-session' },
+		iss: 'https://example.com',
 	})
 	expect(capturedOptions?.metadata).toMatchObject({ email: currentEmail })
 	expect(capturedOptions?.props).toMatchObject({ email: currentEmail })
@@ -728,9 +830,15 @@ test('authorize rejects unverified accounts before creating a grant', async () =
 		createEnv(helpers, await createDatabase('password123')),
 	)
 	expect(verifiedResponse.status).toBe(200)
-	await expect(verifiedResponse.json()).resolves.toEqual({
-		ok: true,
-		redirectTo: 'https://example.com/callback?code=verified-ok',
+	const verifiedPayload = (await verifiedResponse.json()) as {
+		ok: boolean
+		redirectTo: string
+	}
+	expect(verifiedPayload.ok).toBe(true)
+	expectClientAuthorizationRedirect(verifiedPayload.redirectTo, {
+		originPath: 'https://example.com/callback',
+		params: { code: 'verified-ok' },
+		iss: 'https://example.com',
 	})
 	expect(completeAuthorization).toHaveBeenCalledTimes(1)
 })
@@ -883,10 +991,14 @@ test('worker entrypoint advertises MCP resource metadata on both RFC 9728 paths'
 	)
 	expect(discovery.status).toBe(200)
 	const metadata = (await discovery.json()) as {
+		issuer?: string
+		authorization_response_iss_parameter_supported?: boolean
 		client_id_metadata_document_supported?: boolean
 		code_challenge_methods_supported?: Array<string>
 		token_endpoint_auth_methods_supported?: Array<string>
 	}
+	expect(metadata.issuer).toBe('https://heykody.dev')
+	expect(metadata.authorization_response_iss_parameter_supported).toBe(true)
 	expect(metadata.client_id_metadata_document_supported).toBe(true)
 	expect(metadata.code_challenge_methods_supported).toEqual(['S256'])
 	expect(metadata.token_endpoint_auth_methods_supported).toContain('none')
@@ -1664,6 +1776,7 @@ test('malformed max_age does not redirect authorize GET to itself', async () => 
 		/max_age must be a non-negative integer/i,
 	)
 	expect(silentRedirect.searchParams.get('state')).toBe('demo')
+	expect(silentRedirect.searchParams.get('iss')).toBe('https://example.com')
 })
 
 test('authorize recovers when a pre-hydration submit clobbers the OAuth query', async () => {

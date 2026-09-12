@@ -672,8 +672,17 @@ routed from `packages/worker/src/index.ts`.
   `env.OAUTH_PROVIDER` there (or on UserInfo/logout, which run before
   `oauthProvider.fetch`), so those OIDC helpers come from `resolveOAuthHelpers`
   over `OAUTH_KV`. Implicit and Hybrid response types are not advertised or
-  accepted. Kody is not OpenID Certified. `/api/me` remains the OAuth-protected
-  JSON helper for grant props; it is not the OIDC UserInfo endpoint.
+  accepted. Authorization responses that send the client back to `redirect_uri`
+  (successful `code` redirects and OAuth/OIDC error redirects) include RFC 9207
+  `iss` equal to the discovery issuer (`getAppBaseUrl`). Authorization-server
+  metadata advertises `authorization_response_iss_parameter_supported: true`.
+  `@cloudflare/workers-oauth-provider` adds `iss` on success only when
+  `AuthRequest.issuer` is set; Kody assigns that field from `getAppBaseUrl` and
+  stamps `iss` on every outbound client redirect so a missing provider field
+  cannot omit it. Local HTML or JSON authorize errors that do not redirect to
+  the client do not include `iss`. Kody is not OpenID Certified. `/api/me`
+  remains the OAuth-protected JSON helper for grant props; it is not the OIDC
+  UserInfo endpoint.
 - On `/oauth/authorize`, unauthenticated users can log in inline or via top-nav
   auth links; those links preserve the full authorize URL in `redirectTo` so
   successful login returns to the original OAuth request. Password signup lands

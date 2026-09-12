@@ -33,6 +33,7 @@ import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import { getPkceValidationError } from '#worker/oauth-pkce.ts'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { stampAuthorizationResponseIssuer } from '#worker/oauth-authorization-response.ts'
 import { mcpResourcePath } from './mcp-auth.ts'
 import {
 	listUserOAuthGrantsForClient,
@@ -311,6 +312,13 @@ async function resolveAuthRequest(
 			return { error: 'Unknown OAuth client.' }
 		}
 		defaultMcpResourceForAuthRequest(authRequest, request, env)
+		// RFC 9207: completeAuthorization only adds `iss` when this field is
+		// set. Always use the discovery issuer (`getAppBaseUrl`) so it cannot
+		// drift from `/.well-known/openid-configuration`.
+		authRequest.issuer = getAppBaseUrl({
+			env,
+			requestUrl: request.url,
+		})
 		return { authRequest, client }
 	} catch (error) {
 		if (isCimdMetadataResolutionError(error)) {
@@ -605,20 +613,38 @@ async function handleResetClientRequest(
 	}
 }
 
-function createAccessDeniedRedirectUrl(request: AuthRequest) {
-	if (!request.redirectUri) {
+function stampClientAuthorizationRedirect(
+	redirectTo: string,
+	request: Request,
+	env: Env,
+) {
+	return stampAuthorizationResponseIssuer(redirectTo, {
+		env,
+		requestUrl: request.url,
+	})
+}
+
+function createAccessDeniedRedirectUrl(
+	authRequest: AuthRequest,
+	request: Request,
+	env: Env,
+) {
+	if (!authRequest.redirectUri) {
 		return null
 	}
-	const redirectUrl = new URL(request.redirectUri)
+	const redirectUrl = new URL(authRequest.redirectUri)
 	redirectUrl.searchParams.set('error', 'access_denied')
-	if (request.state) redirectUrl.searchParams.set('state', request.state)
-	return redirectUrl.toString()
+	if (authRequest.state)
+		redirectUrl.searchParams.set('state', authRequest.state)
+	return stampClientAuthorizationRedirect(redirectUrl.toString(), request, env)
 }
 
 function createOidcClientErrorRedirectUrl(
 	authRequest: AuthRequest,
 	errorCode: string,
 	description: string,
+	request: Request,
+	env: Env,
 ) {
 	if (!authRequest.redirectUri) return null
 	const redirectUrl = new URL(authRequest.redirectUri)
@@ -626,7 +652,7 @@ function createOidcClientErrorRedirectUrl(
 	redirectUrl.searchParams.set('error_description', description)
 	if (authRequest.state)
 		redirectUrl.searchParams.set('state', authRequest.state)
-	return redirectUrl.toString()
+	return stampClientAuthorizationRedirect(redirectUrl.toString(), request, env)
 }
 
 function createAuthorizeErrorRedirect(
@@ -921,12 +947,25 @@ async function tryHandleSilentOidcAuthorize(
 			.filter(Boolean) ?? []
 	if (!prompts.includes('none')) return null
 
+	const oidcClientErrorRedirect = (
+		authRequest: AuthRequest,
+		errorCode: string,
+		description: string,
+	) =>
+		createOidcClientErrorRedirectUrl(
+			authRequest,
+			errorCode,
+			description,
+			request,
+			env,
+		)
+
 	const oidcParamsOrError = parseOidcAuthorizeParams(request)
 	if (isOidcAuthorizeParamsParseError(oidcParamsOrError)) {
 		const helpers = getOAuthHelpers(env)
 		const resolution = await resolveAuthRequest(helpers, request, env)
 		if (!('error' in resolution)) {
-			const redirectTo = createOidcClientErrorRedirectUrl(
+			const redirectTo = oidcClientErrorRedirect(
 				resolution.authRequest,
 				oidcParamsOrError.errorCode,
 				oidcParamsOrError.error,
@@ -964,7 +1003,7 @@ async function tryHandleSilentOidcAuthorize(
 		env,
 	})
 	if (!oidcGate.ok) {
-		const redirectTo = createOidcClientErrorRedirectUrl(
+		const redirectTo = oidcClientErrorRedirect(
 			authRequest,
 			oidcGate.errorCode,
 			oidcGate.error,
@@ -984,7 +1023,7 @@ async function tryHandleSilentOidcAuthorize(
 		codeChallengeMethod: authRequest.codeChallengeMethod,
 	})
 	if (pkceError) {
-		const redirectTo = createOidcClientErrorRedirectUrl(
+		const redirectTo = oidcClientErrorRedirect(
 			authRequest,
 			'invalid_request',
 			pkceError,
@@ -994,7 +1033,7 @@ async function tryHandleSilentOidcAuthorize(
 	}
 
 	if (!authorizeSession.email || !authorizeSession.stableUserId) {
-		const redirectTo = createOidcClientErrorRedirectUrl(
+		const redirectTo = oidcClientErrorRedirect(
 			authRequest,
 			'login_required',
 			'Login required.',
@@ -1013,7 +1052,7 @@ async function tryHandleSilentOidcAuthorize(
 		where: { stable_user_id: authorizeSession.stableUserId },
 	})
 	if (!userRecord) {
-		const redirectTo = createOidcClientErrorRedirectUrl(
+		const redirectTo = oidcClientErrorRedirect(
 			authRequest,
 			'login_required',
 			'Signed-in user not found.',
@@ -1023,7 +1062,7 @@ async function tryHandleSilentOidcAuthorize(
 	}
 	const username = getValidOAuthUsername(userRecord.username)
 	if (!username) {
-		const redirectTo = createOidcClientErrorRedirectUrl(
+		const redirectTo = oidcClientErrorRedirect(
 			authRequest,
 			'interaction_required',
 			'Username is required.',
@@ -1040,7 +1079,7 @@ async function tryHandleSilentOidcAuthorize(
 		stableUserId: approvedUserId,
 	})
 	if (!emailVerified) {
-		const redirectTo = createOidcClientErrorRedirectUrl(
+		const redirectTo = oidcClientErrorRedirect(
 			authRequest,
 			'interaction_required',
 			oauthEmailVerificationRequiredMessage,
@@ -1056,7 +1095,7 @@ async function tryHandleSilentOidcAuthorize(
 
 	const resolvedScopes = resolveScopes(authRequest.scope)
 	if (!Array.isArray(resolvedScopes)) {
-		const redirectTo = createOidcClientErrorRedirectUrl(
+		const redirectTo = oidcClientErrorRedirect(
 			authRequest,
 			'invalid_scope',
 			resolvedScopes.error,
@@ -1074,7 +1113,7 @@ async function tryHandleSilentOidcAuthorize(
 		resolvedScopes.every((scope) => grant.scope.includes(scope)),
 	)
 	if (!hasMatchingConsent) {
-		const redirectTo = createOidcClientErrorRedirectUrl(
+		const redirectTo = oidcClientErrorRedirect(
 			authRequest,
 			'consent_required',
 			'Consent is required for this client.',
@@ -1091,23 +1130,29 @@ async function tryHandleSilentOidcAuthorize(
 	const authTime = authorizeSession.issuedAt
 		? Math.floor(authorizeSession.issuedAt / 1000)
 		: Math.floor(Date.now() / 1000)
-	const { redirectTo } = await helpers.completeAuthorization({
-		request: authRequest,
-		userId: approvedUserId,
-		metadata: {
-			email: approvedEmail,
-			clientId: authRequest.clientId,
-		},
-		scope: resolvedScopes,
-		props: {
+	const { redirectTo: providerRedirectTo } =
+		await helpers.completeAuthorization({
+			request: authRequest,
 			userId: approvedUserId,
-			email: approvedEmail,
-			username,
-			displayName: username,
-			authTime,
-			...(oidcParams.nonce ? { nonce: oidcParams.nonce } : {}),
-		},
-	})
+			metadata: {
+				email: approvedEmail,
+				clientId: authRequest.clientId,
+			},
+			scope: resolvedScopes,
+			props: {
+				userId: approvedUserId,
+				email: approvedEmail,
+				username,
+				displayName: username,
+				authTime,
+				...(oidcParams.nonce ? { nonce: oidcParams.nonce } : {}),
+			},
+		})
+	const redirectTo = stampClientAuthorizationRedirect(
+		providerRedirectTo,
+		request,
+		env,
+	)
 	void logAuditEvent({
 		db: auditDatabaseFromEnv(env),
 		category: 'oauth',
@@ -1219,7 +1264,7 @@ export async function handleAuthorizeRequest(
 	}
 
 	if (decision === 'deny') {
-		const redirectTo = createAccessDeniedRedirectUrl(authRequest)
+		const redirectTo = createAccessDeniedRedirectUrl(authRequest, request, env)
 		if (!redirectTo) {
 			return respondAuthorizeError(
 				request,
@@ -1421,23 +1466,29 @@ export async function handleAuthorizeRequest(
 			: authorizeSession.issuedAt
 				? Math.floor(authorizeSession.issuedAt / 1000)
 				: Math.floor(Date.now() / 1000)
-		const { redirectTo } = await helpers.completeAuthorization({
-			request: authRequest,
-			userId,
-			metadata: {
-				email: approvedEmail,
-				clientId: authRequest.clientId,
-			},
-			scope: resolvedScopes,
-			props: {
+		const { redirectTo: providerRedirectTo } =
+			await helpers.completeAuthorization({
+				request: authRequest,
 				userId,
-				email: approvedEmail,
-				username: approvedUsername,
-				displayName,
-				authTime,
-				...(oidcParams.nonce ? { nonce: oidcParams.nonce } : {}),
-			},
-		})
+				metadata: {
+					email: approvedEmail,
+					clientId: authRequest.clientId,
+				},
+				scope: resolvedScopes,
+				props: {
+					userId,
+					email: approvedEmail,
+					username: approvedUsername,
+					displayName,
+					authTime,
+					...(oidcParams.nonce ? { nonce: oidcParams.nonce } : {}),
+				},
+			})
+		const redirectTo = stampClientAuthorizationRedirect(
+			providerRedirectTo,
+			request,
+			env,
+		)
 		void logAuditEvent({
 			db: auditDatabaseFromEnv(env),
 			category: 'oauth',
