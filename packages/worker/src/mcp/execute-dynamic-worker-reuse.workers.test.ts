@@ -126,11 +126,12 @@ test(
 			userId: 'user-reuse-test',
 			sourceFiles: {
 				'entry.ts': [
-					"import { kody, packageContext } from 'kody:runtime'",
+					"import { kody, packageContext, packageSecrets } from 'kody:runtime'",
 					'export default async function main(params) {',
 					'\treturn {',
 					'\t\tparams,',
 					'\t\tpackageId: packageContext?.packageId ?? null,',
+					'\t\tsecretsBound: "get" in packageSecrets,',
 					'\t\tping: await kody.ping_capability({ query: params.room }),',
 					'\t}',
 					'}',
@@ -170,6 +171,7 @@ test(
 		expect(first.result).toEqual({
 			params: { room: 'office' },
 			packageId: null,
+			secretsBound: false,
 			ping: { ok: true, label: 'first', args: { query: 'office' } },
 		})
 
@@ -178,6 +180,7 @@ test(
 		expect(second.result).toEqual({
 			params: { room: 'kitchen' },
 			packageId: null,
+			secretsBound: false,
 			ping: { ok: true, label: 'second', args: { query: 'kitchen' } },
 		})
 
@@ -190,6 +193,7 @@ test(
 		expect(third.result).toEqual({
 			params: { room: 'office' },
 			packageId: 'pkg-reuse',
+			secretsBound: true,
 			ping: { ok: true, label: 'third', args: { query: 'office' } },
 		})
 	},

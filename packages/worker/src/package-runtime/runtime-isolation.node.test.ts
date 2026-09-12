@@ -36,6 +36,7 @@ type RuntimeModule = {
 	capabilities?: unknown
 	email: { getMessage: (id: string) => Promise<unknown> } | null
 	packageContext: Record<string, unknown> | null
+	packageSecrets: { get: (alias: string) => Promise<string> } | null
 	default: {
 		kody?: { tool_call: (args: unknown) => Promise<unknown> }
 		codemode?: unknown
@@ -289,6 +290,45 @@ test('preloaded kody exports resolve from the active runtime store', async () =>
 		expect(firstPackageId).toBe('pkg-a')
 		expect(secondPackageId).toBe('pkg-b')
 		expect(absentPackageId).toBeNull()
+
+		const firstSecretsBound = await sharedStorage.run(
+			{
+				packageSecrets: {
+					async get(alias: string) {
+						return `a:${alias}`
+					},
+				},
+			},
+			() => 'get' in mod.packageSecrets,
+		)
+		const firstSecretValue = await sharedStorage.run(
+			{
+				packageSecrets: {
+					async get(alias: string) {
+						return `a:${alias}`
+					},
+				},
+			},
+			() => mod.packageSecrets.get('token'),
+		)
+		const secondSecretValue = await sharedStorage.run(
+			{
+				packageSecrets: {
+					async get(alias: string) {
+						return `b:${alias}`
+					},
+				},
+			},
+			() => mod.packageSecrets.get('token'),
+		)
+		const absentSecretsBound = await sharedStorage.run(
+			{ packageSecrets: null },
+			() => 'get' in mod.packageSecrets,
+		)
+		expect(firstSecretsBound).toBe(true)
+		expect(firstSecretValue).toBe('a:token')
+		expect(secondSecretValue).toBe('b:token')
+		expect(absentSecretsBound).toBe(false)
 	})
 })
 

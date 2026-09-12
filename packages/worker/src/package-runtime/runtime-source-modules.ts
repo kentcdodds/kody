@@ -52,15 +52,18 @@ export function createRuntimeModuleSource() {
 	// instead late-bound: it re-reads the current AsyncLocalStorage store on
 	// each property access / call.
 	//
-	// Optional helpers (\`email\`, \`packageSecrets\`, ...) still preserve their
+	// Optional helpers (\`email\`, \`workflows\`, ...) still preserve their
 	// absent value (\`undefined\` / \`null\`) so \`if (email) { ... }\`
 	// guards stay falsy when a wrapper intentionally omits that export.
 	// Helper *presence* is decided by the generated wrapper source, which is
 	// part of the worker id hash, so presence observed on the first in-run
 	// evaluation is identical for every later run of the same worker.
-	// \`packageContext\` is the exception on *value*: the same wrapper is reused
-	// across evaluate calls, and the current package id arrives on evaluate
-	// RPC, so the export must re-read AsyncLocalStorage on each access.
+	// \`packageContext\` and unstamped \`packageSecrets\` are the exceptions:
+	// the same wrapper is reused across evaluate calls, and the current
+	// package id arrives on evaluate RPC, so those exports must re-read
+	// AsyncLocalStorage on each access. \`if (packageSecrets)\` is therefore
+	// always truthy on the late-bound export; presence is \`'get' in
+	// packageSecrets\` or \`packageContext?.packageId\`.
 	//
 	// \`kody\` is always exported as a late-bound proxy: every
 	// execute/package runtime provides it, and Worker module loaders may
@@ -641,7 +644,7 @@ export const createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport('cre
 export const secretHeaders = __kodyOptionalRuntimeObjectExport('secretHeaders', undefined);
 export const oauthClientCredentials = __kodyOptionalRuntimeFunctionExport('oauthClientCredentials');
 export const packageContext = __kodyCreateRuntimeRecordExport('packageContext');
-export const packageSecrets = __kodyOptionalRuntimeObjectExport('packageSecrets', null);
+export const packageSecrets = __kodyCreateRuntimeObjectProxy('packageSecrets');
 export const email = __kodyOptionalRuntimeObjectExport('email', null);
 export const workflows = __kodyOptionalRuntimeObjectExport('workflows', null);
 export const packages = __kodyOptionalRuntimeObjectExport('packages', null);

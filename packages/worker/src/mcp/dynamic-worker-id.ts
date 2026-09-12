@@ -9,7 +9,7 @@ export const dynamicWorkerIdPrefix = 'kody-'
  * Sandbox-contract / cache-key version. Bump only when the executor harness
  * or LOADER identity contract changes — not on every parent commit.
  */
-export const dynamicWorkerCacheKeyVersion = 6
+export const dynamicWorkerCacheKeyVersion = 7
 
 export type DynamicWorkerIdOptions = {
 	compatibilityDate: string

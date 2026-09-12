@@ -1560,7 +1560,7 @@ const unboundRuntimeHelperNextSteps: Record<string, string> = {
 	events:
 		"`events` is only bound in saved-package runtime contexts that can dispatch package events; statically import the owning package's export so it runs in that context, or guard with `if (events) { ... }`.",
 	packageSecrets:
-		"`packageSecrets` is bound on stamped saved-package modules (including static `kody:@` imports) and in saved-package runtime contexts. Ad hoc execute entry code stays unbound; import the owning package's export so its stamp reads the mounts, or guard with `if (packageSecrets) { ... }`.",
+		"`packageSecrets` is bound on stamped saved-package modules (including static `kody:@` imports) and in saved-package runtime contexts. Ad hoc execute entry code stays unbound; import the owning package's export so its stamp reads the mounts, or guard with `'get' in packageSecrets` / `packageContext?.packageId` (the late-bound export is always a proxy).",
 	email:
 		'`email` is only bound for email-triggered runs; guard with `if (email) { ... }` when the code can also run outside an email context.',
 }
