@@ -6,6 +6,7 @@ import { type RepoSessionRow } from './types.ts'
 import {
 	deleteEntitySource,
 	externalReconcileGraceMs,
+	listEntitySourcesByIds,
 	listEntitySourcesForExternalReconcile,
 	markEntitySourcePendingExternalReconcile,
 } from './entity-sources.ts'
@@ -190,4 +191,61 @@ test('external reconcile selects token-pending packages and the daily backstop c
 		includeAll: true,
 	})
 	expect(dailyBackstop.map((row) => row.id)).toEqual(['dormant', 'pending'])
+})
+
+test('listEntitySourcesByIds batches ids into IN queries and skips missing rows', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	sqlite.exec(`
+		CREATE TABLE entity_sources (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			entity_kind TEXT NOT NULL,
+			entity_id TEXT NOT NULL,
+			repo_id TEXT NOT NULL,
+			published_commit TEXT,
+			indexed_commit TEXT,
+			manifest_path TEXT NOT NULL,
+			source_root TEXT NOT NULL,
+			last_external_check_at TEXT,
+			external_check_until TEXT,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+	`)
+	for (const id of ['source-a', 'source-b', 'source-c']) {
+		sqlite
+			.prepare(
+				`INSERT INTO entity_sources VALUES
+					(?, 'user-1', 'package', ?, ?, 'commit-1', NULL,
+					'package.json', '/', NULL, NULL,
+					'2026-09-10T00:00:00.000Z', '2026-09-10T00:00:00.000Z')`,
+			)
+			.run(id, `package-${id}`, `repo-${id}`)
+	}
+
+	const queries: Array<string> = []
+	const db = createD1FromSqlite(sqlite, { queries, maxBindings: 100 })
+
+	expect(await listEntitySourcesByIds(db, [])).toEqual([])
+	expect(queries).toEqual([])
+
+	const loaded = await listEntitySourcesByIds(db, [
+		'source-b',
+		'source-missing',
+		'source-a',
+		'source-b',
+	])
+	expect(loaded.map((row) => row.id).sort()).toEqual(['source-a', 'source-b'])
+	expect(loaded.find((row) => row.id === 'source-a')?.entity_id).toBe(
+		'package-source-a',
+	)
+	expect(queries).toEqual([
+		'SELECT * FROM entity_sources WHERE id IN (?, ?, ?)',
+	])
+
+	const manyIds = Array.from({ length: 101 }, (_, index) => `missing-${index}`)
+	await listEntitySourcesByIds(db, manyIds)
+	expect(
+		queries.filter((query) => query.includes('WHERE id IN (')).length,
+	).toBe(3)
 })

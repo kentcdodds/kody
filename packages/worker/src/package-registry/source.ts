@@ -1,5 +1,8 @@
 import { runD1WithRetry } from '#worker/d1-retry.ts'
-import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import {
+	getEntitySourceById,
+	listEntitySourcesByIds,
+} from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import {
 	loadPublishedEntityManifest,
@@ -93,25 +96,126 @@ function canResolveRepoBackedPackageSource(env: Env) {
 	)
 }
 
+type PendingPackageSourceRowRequest = {
+	sourceId: string
+	userId: string
+	resolve: (source: EntitySourceRow) => void
+	reject: (error: unknown) => void
+}
+
+const pendingPackageSourceRowBatches = new WeakMap<
+	D1Database,
+	Array<PendingPackageSourceRowRequest>
+>()
+
+/**
+ * Fresh D1 read of the entity-source rows for `sourceIds`, omitting ids that
+ * are missing or owned by a different user. Used by queue subscription
+ * discovery after `listSavedPackagesByUserId` so one `IN (…)` replaces an
+ * N+1 of `SELECT * FROM entity_sources WHERE id = ?`.
+ */
+export async function loadPackageSourceRowsForUser(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	sourceIds: ReadonlyArray<string>
+}): Promise<Map<string, EntitySourceRow>> {
+	const uniqueIds = [...new Set(input.sourceIds)]
+	if (uniqueIds.length === 0) return new Map()
+	const [singleId] = uniqueIds
+	const rows = await runD1WithRetry(async () => {
+		if (uniqueIds.length === 1 && singleId) {
+			const row = await getEntitySourceById(input.env.APP_DB, singleId)
+			return row ? [row] : []
+		}
+		return await listEntitySourcesByIds(input.env.APP_DB, uniqueIds)
+	})
+	const byId = new Map<string, EntitySourceRow>()
+	for (const row of rows) {
+		if (row.user_id === input.userId) byId.set(row.id, row)
+	}
+	return byId
+}
+
 /**
  * Loads the entity-source row for a saved package, rejecting rows owned by a
  * different user. Always a fresh D1 read: publish and rebuild flows depend on
  * observing the current `published_commit`. Invocation hot paths that can
  * tolerate a bounded-staleness row wrap this in the invoke contract cache
  * instead (see `#worker/package-invocations/invoke-contract-cache.ts`).
+ *
+ * Concurrent calls against the same `APP_DB` in one isolate turn share one
+ * batched `IN (…)` read (KODY-7H). A lone lookup still uses
+ * {@link getEntitySourceById}.
  */
 export async function loadPackageSourceRowForUser(input: {
 	env: Env
 	userId: string
 	sourceId: string
 }) {
-	const source = await runD1WithRetry(() =>
-		getEntitySourceById(input.env.APP_DB, input.sourceId),
-	)
-	if (!source || source.user_id !== input.userId) {
-		throw new Error(`Saved package source "${input.sourceId}" was not found.`)
+	const db = input.env.APP_DB
+	return await new Promise<EntitySourceRow>((resolve, reject) => {
+		const pending = pendingPackageSourceRowBatches.get(db)
+		if (pending) {
+			pending.push({
+				sourceId: input.sourceId,
+				userId: input.userId,
+				resolve,
+				reject,
+			})
+			return
+		}
+		pendingPackageSourceRowBatches.set(db, [
+			{
+				sourceId: input.sourceId,
+				userId: input.userId,
+				resolve,
+				reject,
+			},
+		])
+		queueMicrotask(() => {
+			void flushPackageSourceRowBatch(db)
+		})
+	})
+}
+
+async function flushPackageSourceRowBatch(db: D1Database) {
+	const pending = pendingPackageSourceRowBatches.get(db)
+	pendingPackageSourceRowBatches.delete(db)
+	if (!pending || pending.length === 0) return
+
+	const uniqueIds = [...new Set(pending.map((request) => request.sourceId))]
+	const uniqueUserIds = [...new Set(pending.map((request) => request.userId))]
+	const [singleUserId] = uniqueUserIds
+	try {
+		const rowsById =
+			uniqueUserIds.length === 1 && singleUserId
+				? await loadPackageSourceRowsForUser({
+						env: { APP_DB: db },
+						userId: singleUserId,
+						sourceIds: uniqueIds,
+					})
+				: new Map(
+						(
+							await runD1WithRetry(() => listEntitySourcesByIds(db, uniqueIds))
+						).map((row) => [row.id, row]),
+					)
+		for (const request of pending) {
+			const source = rowsById.get(request.sourceId)
+			if (!source || source.user_id !== request.userId) {
+				request.reject(
+					new Error(
+						`Saved package source "${request.sourceId}" was not found.`,
+					),
+				)
+				continue
+			}
+			request.resolve(source)
+		}
+	} catch (error) {
+		for (const request of pending) {
+			request.reject(error)
+		}
 	}
-	return source
 }
 
 function createPackageSourceCacheKey(input: {

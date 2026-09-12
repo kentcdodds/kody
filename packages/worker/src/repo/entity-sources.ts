@@ -1,3 +1,7 @@
+import {
+	chunkArray,
+	maxD1BoundParameters,
+} from '@kody-internal/shared/chunk.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import {
 	repoSessionIndexNamespace,
@@ -75,6 +79,26 @@ export async function getEntitySourceById(
 		.bind(id)
 		.first<Record<string, unknown>>()
 	return result ? mapEntitySourceRow(result) : null
+}
+
+export async function listEntitySourcesByIds(
+	db: D1Database,
+	ids: ReadonlyArray<string>,
+): Promise<Array<EntitySourceRow>> {
+	if (ids.length === 0) return []
+	const uniqueIds = [...new Set(ids)]
+	const sources: Array<EntitySourceRow> = []
+	for (const idChunk of chunkArray(uniqueIds, maxD1BoundParameters)) {
+		const placeholders = idChunk.map(() => '?').join(', ')
+		const { results } = await db
+			.prepare(`SELECT * FROM entity_sources WHERE id IN (${placeholders})`)
+			.bind(...idChunk)
+			.all<Record<string, unknown>>()
+		for (const row of results ?? []) {
+			sources.push(mapEntitySourceRow(row))
+		}
+	}
+	return sources
 }
 
 export async function getEntitySourceByIdForUser(
