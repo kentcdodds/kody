@@ -50,3 +50,5 @@ node tools/control-kody.ts request GET /community.json --skip-login
   the fork tip, or **Fork ahead** when that pin is already in the fork history
   (website UI only). SHA inequality alone is not enough. That is separate from
   **HEAD ahead of published** on the package Code tab.
+- Own-profile **Needs republish** (`listing=ahead`) is listing pin behind
+  `published_commit`. Guests do not see that filter.

@@ -1,11 +1,10 @@
 # Connections
 
-Inbound MCP hosts (connected agents). The connected list is the same grouped
-panel with per-`clientId` revoke that Overview used to host. **Add connection**
-opens the full client wall from onboarding Step 1 — every named agent, on every
-device, none folded under Not listed — then one host's install steps. The MCP
-URL card covers any other host that speaks MCP. Also links the Advanced MCP
-OAuth clients page.
+Inbound MCP hosts (connected agents). The connected list is a grouped panel with
+per-`clientId` revoke. **Add connection** opens the full client wall from
+onboarding Step 1 — every named agent, on every device, none folded under Not
+listed — then one host's install steps. The MCP URL card covers any other host
+that speaks MCP. Also links the Advanced MCP OAuth clients page.
 
 ## How to get there
 

@@ -12,7 +12,7 @@ banner stay external and do not get rewritten to `/?youtubeId=`.
 - **Homepage hero**: `/` two-column player + video chooser
   (`landing-hero-video.tsx`). The chooser list and order come from the unlisted
   playlist `landingHeroSourcePlaylistId` (`PLBPBUA8boGLA`), loaded at request
-  time and KV-cached with SWR. Embeds still pass the public catalog playlist
+  time and KV-cached with SWR. Embeds pass the public catalog playlist
   `landingHeroDemoPlaylistId` (`PLXa53KPj2nlE`) so end-of-video recommendations
   stay in that larger set. Chooser ids are allowlisted when thumbs or
   `?youtubeId=` load playlists, so `/youtube-thumb/:id` works for those videos

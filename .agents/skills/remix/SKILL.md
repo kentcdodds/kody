@@ -272,7 +272,7 @@ full examples.
 - `remix/router` — the router itself. Use for `createRouter`, controller and
   middleware types, and registering routes. A URL that matches a route pattern
   but not the request method gets `405 Method Not Allowed` with an `Allow`
-  header (it no longer reaches `defaultHandler`); register an `ANY` route for a
+  header (it does not reach `defaultHandler`); register an `ANY` route for a
   per-URL catch-all. `GET` routes also serve `HEAD` with the same status and
   headers and an empty body — do not add explicit `HEAD` routes just for that
 - `remix/routes` — declarative route builders. Use for `route`, `get`, `post`,

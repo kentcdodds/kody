@@ -29,11 +29,11 @@ plus signup CTAs (anonymous sessions) beside a first-party YouTube light player
 with a horizontal video chooser; the lantern/agent orbit sits below that row.
 Signed-in visitors still see the player and chooser. Chooser membership and
 order come from the unlisted playlist `PLBPBUA8boGLA`. Client navigations load
-`GET /landing-hero-videos.json`. Embeds still include the public catalog
-playlist. Chooser ids are on the YouTube allowlist for `/youtube-thumb` without
-a banner. `/?youtubeId=<id>` opens the site-wide allowlisted YouTube overlay on
-those routes; unknown or disallowed ids do not open the player. Enabled site
-banners can appear in the first HTML.
+`GET /landing-hero-videos.json`. Embeds include the public catalog playlist.
+Chooser ids are on the YouTube allowlist for `/youtube-thumb` without a banner.
+`/?youtubeId=<id>` opens the site-wide allowlisted YouTube overlay on those
+routes; unknown or disallowed ids do not open the player. Enabled site banners
+can appear in the first HTML.
 
 ## APIs
 
