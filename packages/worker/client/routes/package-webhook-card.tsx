@@ -180,7 +180,7 @@ export function renderPackageWebhookCard(input: {
 						label: 'Rotated',
 						value: <TimestampValue value={webhook.rotatedAt} />,
 					},
-					...(webhook.previousUrlActiveUntil
+					...(webhook.enabled && webhook.previousUrlActiveUntil
 						? [
 								{
 									label: 'Previous URL',

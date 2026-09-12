@@ -234,14 +234,15 @@ export async function clearWebhookEndpointPreviousUrlSecret(input: {
 	db: D1Database
 	userId: string
 	endpointId: string
+	urlSecretHash: string
 }) {
 	await input.db
 		.prepare(
 			`UPDATE webhook_endpoints
 			SET previous_url_secret_hash = NULL,
 				previous_url_secret_expires_at = NULL
-			WHERE user_id = ? AND id = ?`,
+			WHERE user_id = ? AND id = ? AND url_secret_hash = ?`,
 		)
-		.bind(input.userId, input.endpointId)
+		.bind(input.userId, input.endpointId, input.urlSecretHash)
 		.run()
 }

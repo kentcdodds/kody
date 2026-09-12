@@ -343,4 +343,22 @@ test('a webhook card shows previous URL overlap until the grace timestamp', asyn
 	expect(html).toContain('Previous URL')
 	expect(html).toContain('active until')
 	expect(html).toContain(new Date(until).toLocaleString())
+
+	const disabledOverlap: PackageWebhookListItem = {
+		...overlapping,
+		enabled: false,
+	}
+	const disabledHtml = await renderToString(
+		renderPackageWebhookCard({
+			webhook: disabledOverlap,
+			revealedUrl: null,
+			isMutating: false,
+			rotateCheck: createDoubleCheck(handle),
+			disableCheck: createDoubleCheck(handle),
+			onIntent: () => {},
+			onHideUrl: () => {},
+		}),
+	)
+	expect(disabledHtml).not.toContain('Previous URL')
+	expect(disabledHtml).toContain('>Disabled<')
 })

@@ -91,6 +91,7 @@ async function retirePreviousWebhookUrlIfConfirmed(input: {
 	endpoint: {
 		id: string
 		userId: string
+		urlSecretHash: string
 		previousUrlSecretHash: string | null
 	}
 	secretMatch: 'current' | 'previous'
@@ -105,6 +106,7 @@ async function retirePreviousWebhookUrlIfConfirmed(input: {
 		db: input.env.APP_DB,
 		userId: input.endpoint.userId,
 		endpointId: input.endpoint.id,
+		urlSecretHash: input.endpoint.urlSecretHash,
 	})
 }
 

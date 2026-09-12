@@ -295,6 +295,105 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 	expect(reminted).not.toHaveProperty('urlSecret')
 })
 
+test('clearing rotate overlap ignores a stale current-hash snapshot', async () => {
+	const userId = await createStableUserIdFromEmail('overlap-race@example.com')
+	const { env, db } = createEnv(userId)
+	await db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, stable_user_id)
+			VALUES ('racer', 'overlap-race@example.com', 'hash', ?)`,
+		)
+		.bind(userId)
+		.run()
+
+	await mintWebhookUrlForUser({
+		env,
+		userId,
+		username: 'racer',
+		kodyId: 'sentry-bridge',
+		webhookName: 'sentry',
+	})
+	await rotateWebhookUrlForUser({
+		env,
+		userId,
+		username: 'racer',
+		kodyId: 'sentry-bridge',
+		webhookName: 'sentry',
+	})
+	const afterFirstRotate = await db
+		.prepare(
+			`SELECT id, url_secret_hash, previous_url_secret_hash
+			FROM webhook_endpoints
+			WHERE user_id = ? AND webhook_name = 'sentry'`,
+		)
+		.bind(userId)
+		.first<{
+			id: string
+			url_secret_hash: string
+			previous_url_secret_hash: string
+		}>()
+	expect(afterFirstRotate?.previous_url_secret_hash).toBeTruthy()
+
+	await rotateWebhookUrlForUser({
+		env,
+		userId,
+		username: 'racer',
+		kodyId: 'sentry-bridge',
+		webhookName: 'sentry',
+	})
+	const afterSecondRotate = await db
+		.prepare(
+			`SELECT url_secret_hash, previous_url_secret_hash
+			FROM webhook_endpoints WHERE id = ?`,
+		)
+		.bind(afterFirstRotate!.id)
+		.first<{
+			url_secret_hash: string
+			previous_url_secret_hash: string
+		}>()
+	expect(afterSecondRotate?.url_secret_hash).not.toBe(
+		afterFirstRotate?.url_secret_hash,
+	)
+	expect(afterSecondRotate?.previous_url_secret_hash).toBe(
+		afterFirstRotate?.url_secret_hash,
+	)
+
+	await webhookRepo.clearWebhookEndpointPreviousUrlSecret({
+		db,
+		userId,
+		endpointId: afterFirstRotate!.id,
+		urlSecretHash: afterFirstRotate!.url_secret_hash,
+	})
+	const ignoredStaleClear = await db
+		.prepare(
+			`SELECT previous_url_secret_hash FROM webhook_endpoints WHERE id = ?`,
+		)
+		.bind(afterFirstRotate!.id)
+		.first<{ previous_url_secret_hash: string | null }>()
+	expect(ignoredStaleClear?.previous_url_secret_hash).toBe(
+		afterSecondRotate?.previous_url_secret_hash,
+	)
+
+	await webhookRepo.clearWebhookEndpointPreviousUrlSecret({
+		db,
+		userId,
+		endpointId: afterFirstRotate!.id,
+		urlSecretHash: afterSecondRotate!.url_secret_hash,
+	})
+	const retired = await db
+		.prepare(
+			`SELECT previous_url_secret_hash, previous_url_secret_expires_at
+			FROM webhook_endpoints WHERE id = ?`,
+		)
+		.bind(afterFirstRotate!.id)
+		.first<{
+			previous_url_secret_hash: string | null
+			previous_url_secret_expires_at: string | null
+		}>()
+	expect(retired?.previous_url_secret_hash).toBeNull()
+	expect(retired?.previous_url_secret_expires_at).toBeNull()
+})
+
 test('first mint that loses the id race retries with the persisted endpoint id', async () => {
 	const userId = await createStableUserIdFromEmail('race@example.com')
 	const { env, db } = createEnv(userId)
