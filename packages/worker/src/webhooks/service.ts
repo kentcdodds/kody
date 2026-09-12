@@ -537,9 +537,10 @@ async function resolveRevealHandle(input: {
 }
 
 /**
- * Owner-only reveal for the signed-in account UI (`/account/webhooks`). The
- * credential URL is the human path: do not expose this through MCP or
- * execute, and do not return it from mint / rotate / list capabilities.
+ * Owner-only reveal for the signed-in package settings UI (the Webhooks
+ * section of `/@:username/:kodyId/settings`). The credential URL is the human
+ * path: do not expose this through MCP or execute, and do not return it from
+ * mint / rotate / list capabilities.
  */
 export async function revealWebhookUrlForWebsite(input: {
 	env: Env

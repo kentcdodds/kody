@@ -107,8 +107,10 @@ request to the package export that owns it.
 3. Mint a handle with `webhookUrlMint` (returns a `handle`, not the credential)
    and register it with `webhookUrlApply`. Treat the URL as a credential; tool
    output never includes it. For a provider apply does not cover, the owner
-   copies the URL from `/account/webhooks` (account rail → Webhooks), where they
-   can also reveal, rotate, disable, or enable it.
+   copies the URL from the package's settings page
+   (`/@<username>/<packageKodyId>/settings`, Webhooks section), where they can
+   also reveal, rotate, disable, or enable it. `/account/webhooks` lists every
+   webhook across packages and links to those sections.
 
 Declaring a webhook does not open ingress; minting does. Deliveries are
 rate-limited per webhook (default 60 per minute, at most 600), and body-only

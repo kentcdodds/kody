@@ -414,7 +414,7 @@ const shellStatusCss = {
 }
 
 /* Quiet sections in the `.pkg-fork` voice: display-face h2, muted lede. */
-const detailSectionCss = {
+export const detailSectionCss = {
 	marginTop: 'clamp(2.4rem, 5vw, 3.2rem)',
 	'& h2': {
 		margin: 0,

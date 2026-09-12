@@ -177,8 +177,11 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		id: 'webhooks',
 		title: 'Webhooks (minted URLs)',
 		file: 'webhooks.md',
-		paths: ['/account/webhooks'],
-		apis: ['/account/webhooks.json'],
+		paths: ['/@:username/:kodyId/settings', '/account/webhooks'],
+		apis: [
+			'/profiles/:username/packages/:kodyId/webhooks.json',
+			'/account/webhooks.json',
+		],
 	},
 	{
 		id: 'activity',

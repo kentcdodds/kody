@@ -1176,7 +1176,7 @@ export type AccountConnectedAgentsLoaderData = {
 	mcpServerUrl: string
 }
 
-type AccountWebhookVerification = {
+type PackageWebhookVerification = {
 	type: 'hmac-sha256' | 'hmac-sha1'
 	header: string
 	secretName: string
@@ -1185,7 +1185,7 @@ type AccountWebhookVerification = {
 	signedPayload?: 'body' | 'timestamp.body'
 } | null
 
-type AccountWebhookReplay = {
+type PackageWebhookReplay = {
 	timestampHeader?: string
 	timestampFormat?:
 		| 'unix-seconds'
@@ -1198,12 +1198,12 @@ type AccountWebhookReplay = {
 
 /**
  * One declared package webhook joined with its minted URL state. Never
- * carries the credential URL or `url_secret`: the page fetches those on
- * demand through the `reveal` intent so they are not embedded in SSR HTML
- * or the list payload.
+ * carries the credential URL or `url_secret`: the settings section fetches
+ * those on demand through the `reveal` intent so they are not embedded in
+ * SSR HTML or any list payload.
  */
-export type AccountWebhookListItem = {
-	/** `${packageKodyId}/${name}` — the detail route segments. */
+export type PackageWebhookListItem = {
+	/** `${packageKodyId}/${name}` — stable across list and reveal payloads. */
 	id: string
 	packageId: string
 	packageKodyId: string
@@ -1214,8 +1214,8 @@ export type AccountWebhookListItem = {
 	responseMode: 'ack' | 'sync'
 	inputMode: 'request' | 'params'
 	rateLimitPerMinute: number
-	verification: AccountWebhookVerification
-	replay: AccountWebhookReplay
+	verification: PackageWebhookVerification
+	replay: PackageWebhookReplay
 	minted: boolean
 	handle: string | null
 	urlHost: string | null
@@ -1230,21 +1230,30 @@ export type AccountWebhookListItem = {
 	rotatedAt: string | null
 }
 
+/** `/account/webhooks.json`: every declared webhook across the owner's packages. */
 export type AccountWebhooksLoaderData = {
 	ok: true
 	username: string
-	webhooks: Array<AccountWebhookListItem>
+	webhooks: Array<PackageWebhookListItem>
+}
+
+/** `/profiles/:username/packages/:kodyId/webhooks.json`: one package's webhooks. */
+export type PackageWebhooksLoaderData = {
+	ok: true
+	username: string
+	kodyId: string
+	webhooks: Array<PackageWebhookListItem>
 }
 
 /** Owner-only reveal result attached to mint / rotate / reveal responses. */
-export type AccountWebhookRevealedUrl = {
+export type PackageWebhookRevealedUrl = {
 	id: string
 	handle: string
 	url: string
 }
 
-export type AccountWebhooksActionPayload = AccountWebhooksLoaderData & {
-	revealed?: AccountWebhookRevealedUrl
+export type PackageWebhooksActionPayload = PackageWebhooksLoaderData & {
+	revealed?: PackageWebhookRevealedUrl
 }
 
 export type PendingVerificationLoaderData = {

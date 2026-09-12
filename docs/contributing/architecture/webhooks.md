@@ -138,24 +138,36 @@ consumer's 15-minute wall-clock limit before later messages are acknowledged.
   export/deletion. Export redacts `url_secret_hash` and `url_secret_encrypted`.
 - Plaintext URL secrets and verification secrets are never logged. URL secrets
   are hashed for ingress and stored encrypted for `webhookUrlApply` and the
-  owner reveal on `/account/webhooks`. MCP mint, rotate, list, and apply never
+  owner reveal in package settings. MCP mint, rotate, list, and apply never
   return the credential URL. Verification secrets stay in the secrets primitive.
 
 ## Owner UI
 
-`/account/webhooks` (`packages/worker/client/routes/account-webhooks.tsx`,
-handlers in `packages/worker/src/app/handlers/account-webhooks.ts`) is the
-signed-in owner's surface for minted URLs. `GET /account/webhooks.json` returns
-`listWebhooksForUser` joined with `urlRecoverable` and never the URL. `POST`
-intents `mint`, `rotate`, and `reveal` return the refreshed list plus a
-`revealed` entry built by `revealWebhookUrlForWebsite` (decrypt
-`url_secret_encrypted`, rebuild the ingress path from the request origin);
-`enable` / `disable` return the list only. Every intent writes an `account`
-audit event (`webhook_url_mint`, `webhook_url_rotate`, `webhook_url_reveal`,
-`webhook_enable`, `webhook_disable`). `mint` refuses an already-minted webhook
-so a stray click cannot rotate a provider's URL; `reveal` refuses mints without
+Webhooks belong to the package that declares them, so the owner surface is the
+**Webhooks** section of package settings (`/@:username/:kodyId/settings`,
+`packages/worker/client/routes/package-webhook-settings.tsx` with one
+`package-webhook-card.tsx` per declared webhook). Its JSON companion is
+`/profiles/:username/packages/:kodyId/webhooks.json`
+(`packages/worker/src/app/handlers/package-webhooks.ts`). The handler is
+owner-only: the signed-in user must be `:username` and own `:kodyId`, otherwise
+it answers 404 without naming the package or its webhooks. `GET` returns
+`listWebhooksForUser` filtered to the package and joined with `urlRecoverable`,
+never the URL. `POST { intent, webhookName }` intents `mint`, `rotate`, and
+`reveal` return the refreshed list plus a `revealed` entry built by
+`revealWebhookUrlForWebsite` (decrypt `url_secret_encrypted`, rebuild the
+ingress path from the request origin); `enable` / `disable` return the list
+only. Every intent writes an `account` audit event (`webhook_url_mint`,
+`webhook_url_rotate`, `webhook_url_reveal`, `webhook_enable`,
+`webhook_disable`). `mint` refuses an already-minted webhook so a stray click
+cannot rotate a provider's URL; `reveal` refuses mints without
 `url_secret_encrypted` and points at Rotate. The client keeps revealed URLs in
-memory only and drops them on row navigation or Hide.
+memory only and drops them on Hide or when the settings page changes package.
+
+`/account/webhooks` (`packages/worker/client/routes/account-webhooks.tsx`,
+`packages/worker/src/app/handlers/account-webhooks.ts`) is a thin cross-package
+index. `GET /account/webhooks.json` lists every declared webhook (never a URL)
+and each row deep-links to `/@:username/:kodyId/settings#webhook-<name>`. The
+account API has no mutating intents.
 
 `revealWebhookUrlForWebsite` is website-only: no MCP capability, execute
 binding, or apply result may return the credential URL.

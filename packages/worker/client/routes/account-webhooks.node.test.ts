@@ -6,14 +6,13 @@ import { AppLoaderDataProvider } from '#client/loader-data-context.tsx'
 import { RouterLocationProvider } from '#client/router-location.tsx'
 import { AccountWebhooksRoute } from '#client/routes/account-webhooks.tsx'
 import {
-	buildWebhookDetailHref,
-	readWebhookSelection,
+	buildPackageWebhooksHref,
 	webhookStatusLabel,
-} from '#client/routes/account-webhooks-shared.ts'
+} from '#client/routes/webhooks-shared.ts'
 import { type SessionInfo } from '#client/session.ts'
 import {
-	type AccountWebhookListItem,
 	type AccountWebhooksLoaderData,
+	type PackageWebhookListItem,
 } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
 
@@ -28,7 +27,7 @@ const session: SessionInfo = {
 	featureFlags: {} as SessionInfo['featureFlags'],
 }
 
-const unminted: AccountWebhookListItem = {
+const unminted: PackageWebhookListItem = {
 	id: 'sentry-bridge/sentry',
 	packageId: 'pkg-1',
 	packageKodyId: 'sentry-bridge',
@@ -55,13 +54,13 @@ const unminted: AccountWebhookListItem = {
 	rotatedAt: null,
 }
 
-const minted: AccountWebhookListItem = {
-	id: 'raycast-bridge/launch',
+const minted: PackageWebhookListItem = {
+	id: 'raycast/run',
 	packageId: 'pkg-2',
-	packageKodyId: 'raycast-bridge',
-	packageName: '@jane/raycast-bridge',
-	name: 'launch',
-	exportName: './dispatch-launch',
+	packageKodyId: 'raycast',
+	packageName: '@jane/raycast',
+	name: 'run',
+	exportName: './run',
 	description: null,
 	responseMode: 'sync',
 	inputMode: 'params',
@@ -102,14 +101,14 @@ const payload: AccountWebhooksLoaderData = {
 	webhooks: [minted, unminted],
 }
 
-test('webhooks page lists declared webhooks with status and links each row to its detail route', async () => {
+test('webhooks index lists declared webhooks with status and deep-links each row into its package settings card', async () => {
 	const html = await renderWebhooksPage(routes.accountWebhooks.href(), payload)
 
 	expect(html).toContain('>Webhooks</h1>')
 	expect(html).toContain('aria-label="Webhooks"')
 	expect(html).toContain('2 declared · 1 minted')
-	expect(html).toContain(`href="${buildWebhookDetailHref(minted)}"`)
-	expect(html).toContain(`href="${buildWebhookDetailHref(unminted)}"`)
+	expect(html).toContain('href="/@jane/raycast/settings#webhook-run"')
+	expect(html).toContain('href="/@jane/sentry-bridge/settings#webhook-sentry"')
 	expect(html).toContain('>Active<')
 	expect(html).toContain('>No URL yet<')
 	expect(html).toContain('URL secret only')
@@ -119,79 +118,34 @@ test('webhooks page lists declared webhooks with status and links each row to it
 	expect(html).toMatch(/href="\/account\/webhooks"[^>]*aria-current="page"/)
 	expect(html).toContain('data-entity-explainer="webhooks"')
 	expect(html).not.toContain('Loading webhooks')
-	// Nothing on the list page resembles a credential path.
+	// The index is a pointer, not a management surface: no URL actions and
+	// nothing that resembles a credential path.
+	expect(html).not.toContain('Mint URL')
+	expect(html).not.toContain('Reveal URL')
+	expect(html).not.toContain('Rotate URL')
 	expect(html).not.toContain('/@jane/webhooks/')
 })
 
-test('webhooks detail offers Mint for an unminted webhook and Reveal, Rotate, and Disable for a minted one — never the URL itself', async () => {
-	const unmintedHtml = await renderWebhooksPage(
-		buildWebhookDetailHref(unminted),
-		payload,
-	)
-	expect(unmintedHtml).toContain('data-webhook-id="sentry-bridge/sentry"')
-	expect(unmintedHtml).toContain('data-testid="account-webhook-mint"')
-	expect(unmintedHtml).toContain('Forward Sentry alerts into automations')
-	expect(unmintedHtml).toContain('secret <code>sentryWebhookSecret</code>')
-	expect(unmintedHtml).not.toContain('data-testid="account-webhook-reveal"')
-	expect(unmintedHtml).not.toContain('Rotate URL')
-
-	const mintedHtml = await renderWebhooksPage(
-		buildWebhookDetailHref(minted),
-		payload,
-	)
-	expect(mintedHtml).toContain('data-webhook-id="raycast-bridge/launch"')
-	expect(mintedHtml).toContain('data-testid="account-webhook-reveal"')
-	expect(mintedHtml).toContain(
-		'aria-label="Rotate URL for raycast-bridge/launch"',
-	)
-	expect(mintedHtml).toContain('aria-label="Disable raycast-bridge/launch"')
-	expect(mintedHtml).toContain('whh_11111111-1111-1111-1111-111111111111')
-	expect(mintedHtml).toContain('600 / min')
-	expect(mintedHtml).toContain('delivery id X-Delivery-Id')
-	expect(mintedHtml).toContain('surface=webhook')
-	expect(mintedHtml).not.toContain('data-testid="account-webhook-mint"')
-	// The credential is fetched on Reveal, so SSR HTML has no URL to embed.
-	expect(mintedHtml).not.toContain('Copy webhook URL')
-	expect(mintedHtml).not.toContain('/@jane/webhooks/')
-})
-
-test('webhooks detail points legacy mints at Rotate instead of Reveal', async () => {
-	const legacy: AccountWebhookListItem = {
-		...minted,
-		urlRecoverable: false,
-		enabled: false,
-	}
-	const html = await renderWebhooksPage(buildWebhookDetailHref(legacy), {
+test('webhooks index shows the empty state when no package declares a webhook', async () => {
+	const html = await renderWebhooksPage(routes.accountWebhooks.href(), {
 		...payload,
-		webhooks: [legacy, unminted],
+		webhooks: [],
 	})
-	expect(html).not.toContain('data-testid="account-webhook-reveal"')
-	expect(html).toContain('Rotate it to get a URL you can copy')
-	expect(html).toContain('aria-label="Enable raycast-bridge/launch"')
-	expect(html).toContain('>Disabled<')
+	expect(html).toContain('0 declared · 0 minted')
+	expect(html).toContain('No package on this account declares a webhook yet')
 })
 
-test('webhooks detail route renders a not-found record for an undeclared webhook', async () => {
-	const html = await renderWebhooksPage(
-		routes.accountWebhookDetail.href({
-			packageKodyId: 'sentry-bridge',
-			webhookName: 'missing',
-		}),
-		payload,
-	)
-	expect(html).toContain('Webhook not found')
-})
-
-test('webhook selection round-trips through the two-segment detail route', () => {
-	expect(readWebhookSelection('/account/webhooks')).toBeNull()
-	expect(readWebhookSelection('/account/webhooks/only-one')).toBeNull()
-	expect(readWebhookSelection('/account/webhooks/a/b/c')).toBeNull()
-	expect(readWebhookSelection(buildWebhookDetailHref(minted))).toBe(minted.id)
+test('package webhooks hrefs land on the settings section or one card', () => {
 	expect(
-		readWebhookSelection(
-			buildWebhookDetailHref({ packageKodyId: 'my.pkg', name: 'hook' }),
-		),
-	).toBe('my.pkg/hook')
+		buildPackageWebhooksHref({ username: 'jane', kodyId: 'raycast' }),
+	).toBe('/@jane/raycast/settings#webhooks')
+	expect(
+		buildPackageWebhooksHref({
+			username: 'jane',
+			kodyId: 'raycast',
+			webhookName: 'list-commands',
+		}),
+	).toBe('/@jane/raycast/settings#webhook-list-commands')
 	expect(webhookStatusLabel({ minted: false, enabled: null })).toBe(
 		'No URL yet',
 	)

@@ -38,6 +38,7 @@ import {
 	renderPackageShareSettings,
 } from './package-share-settings.tsx'
 import { postPackageShareAction } from './package-share-client.ts'
+import { createPackageWebhooksController } from './package-webhook-settings.tsx'
 
 const settingsMatcher = createMatcher(routes.communityPackageSettings.pattern)
 
@@ -57,6 +58,7 @@ export function PackageSettingsRoute(handle: Handle) {
 	let shareBusy = false
 	let shareMessage: string | null = null
 	let shareLoadedFor = ''
+	const webhooks = createPackageWebhooksController(handle)
 	const settingsData = createRouteData<
 		'communityDetailShell',
 		PackageSettingsShell
@@ -160,7 +162,10 @@ export function PackageSettingsRoute(handle: Handle) {
 			shareGrants = grants
 		} catch {
 			if (`${username}/${kodyId}` !== key) return
-			shareLoadedFor = ''
+			// Keep the key: the update below re-renders, and a cleared key
+			// would queue this same fetch again, looping on a persistent
+			// failure (for example the 404 the API answers when share grants
+			// are disabled). Invite / revoke clear it explicitly to refetch.
 			shareMessage = 'Unable to load who this package is shared with.'
 		}
 		handle.update()
@@ -272,14 +277,24 @@ export function PackageSettingsRoute(handle: Handle) {
 		// The previous package's settings (`snapshot.stale`) stay on screen
 		// while a fallback fetch runs; the loading copy is for the cold path.
 		const showReady = snapshot.data?.kind === 'owner'
+		const shareEnabled = isFeatureFlagEnabled(
+			readAppSession(handle)?.session,
+			packageShareGrantsFlagKey,
+		)
+		// The share API answers 404 while the flag is off, so only the
+		// rendered Share section asks for its grants.
 		if (
 			showReady &&
+			shareEnabled &&
 			username &&
 			kodyId &&
 			shareLoadedFor !== `${username}/${kodyId}` &&
 			typeof document !== 'undefined'
 		) {
 			handle.queueTask(() => refreshShareGrants(username, kodyId))
+		}
+		if (showReady && username && kodyId && typeof document !== 'undefined') {
+			handle.queueTask(() => webhooks.ensureLoaded({ username, kodyId }))
 		}
 		const showError = snapshot.kind === 'error'
 		const statusMessage = showError
@@ -327,12 +342,10 @@ export function PackageSettingsRoute(handle: Handle) {
 							},
 						})
 					: null}
-				{showReady &&
-				ownerPackage &&
-				isFeatureFlagEnabled(
-					readAppSession(handle)?.session,
-					packageShareGrantsFlagKey,
-				)
+				{showReady && ownerPackage
+					? webhooks.render({ username, kodyId })
+					: null}
+				{showReady && ownerPackage && shareEnabled
 					? renderPackageShareSettings({
 							username,
 							kodyId,

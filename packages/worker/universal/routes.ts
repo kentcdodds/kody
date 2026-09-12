@@ -70,13 +70,11 @@ export const routes = route({
 	accountWorkflowDetail: '/account/workflows/:workflowId',
 	accountWorkflowsApi: '/account/workflows.json',
 	accountWorkflowsApiPost: post('/account/workflows.json'),
-	// Owner-only home for minted webhook URLs: list, mint, reveal + copy,
-	// rotate, enable / disable. The credential URL only ever leaves the
-	// server through this page's `reveal` intent, never through MCP.
+	// Thin cross-package index of declared webhooks. Each row deep-links into
+	// the owning package's settings (`communityPackageSettings#webhooks`),
+	// which is where mint / reveal / rotate / enable-disable live.
 	accountWebhooks: '/account/webhooks',
-	accountWebhookDetail: '/account/webhooks/:packageKodyId/:webhookName',
 	accountWebhooksApi: '/account/webhooks.json',
-	accountWebhooksApiPost: post('/account/webhooks.json'),
 	accountActivity: '/account/activity',
 	accountActivityDetail: '/account/activity/:runId',
 	accountActivityApi: '/account/activity.json',
@@ -243,6 +241,16 @@ export const routes = route({
 	communityPackageShareApi: '/profiles/:username/packages/:kodyId/share.json',
 	communityPackageShareApiPost: post(
 		'/profiles/:username/packages/:kodyId/share.json',
+	),
+	// Owner-only webhook URL management for one package (the Webhooks section
+	// of package settings): GET lists declared webhooks with minted state,
+	// POST mints / rotates / reveals / enables / disables one. The credential
+	// URL only ever leaves the server through this route's `reveal` intent,
+	// never through MCP.
+	communityPackageWebhooksApi:
+		'/profiles/:username/packages/:kodyId/webhooks.json',
+	communityPackageWebhooksApiPost: post(
+		'/profiles/:username/packages/:kodyId/webhooks.json',
 	),
 	profileApi: '/profiles/:username.json',
 	// `.` is a Remix route delimiter, so the filename must be `:hash.:ext`
