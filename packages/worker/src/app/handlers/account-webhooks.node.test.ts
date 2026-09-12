@@ -218,6 +218,7 @@ test('account webhooks API lists across packages and is read-only: mutations bel
 		}),
 	)
 	expect(post.status).toBe(405)
+	expect(post.headers.get('Allow')).toBe('GET')
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	const unauthorized = await runHandler(handler, new Request(apiUrl))

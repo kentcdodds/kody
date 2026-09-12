@@ -435,6 +435,7 @@ test('package webhooks API rejects unknown webhooks, bad bodies, and anonymous c
 		new Request(apiUrl, { method: 'DELETE' }),
 	)
 	expect(wrongMethod.status).toBe(405)
+	expect(wrongMethod.headers.get('Allow')).toBe('GET, POST')
 
 	// Infrastructure failures are audited with their detail but reach the
 	// browser only as the generic per-intent message.

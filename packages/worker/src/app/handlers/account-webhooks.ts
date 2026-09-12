@@ -48,7 +48,10 @@ export function createAccountWebhooksApiHandler(env: Env) {
 				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
 			}
 			if (request.method !== 'GET') {
-				return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
+				return jsonResponse(
+					{ ok: false, error: 'Method not allowed.' },
+					{ status: 405, headers: { Allow: 'GET' } },
+				)
 			}
 			return jsonResponse(
 				await loadAccountWebhooksData({

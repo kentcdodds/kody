@@ -97,7 +97,10 @@ export function createCommunityPackageWebhooksApiHandler(env: Env) {
 			}
 
 			if (request.method !== 'POST') {
-				return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
+				return jsonResponse(
+					{ ok: false, error: 'Method not allowed.' },
+					{ status: 405, headers: { Allow: 'GET, POST' } },
+				)
 			}
 
 			const body = await request.json().catch(() => null)

@@ -7,7 +7,7 @@ the credential URL.
 
 ## How to get there
 
-`/@:username/:kodyId/settings#webhooks` (package page → Settings → Webhooks
+`/@<username>/<kodyId>/settings#webhooks` (package page → Settings → Webhooks
 section) renders one card per declared webhook; `#webhook-<name>` targets one
 card.
 
