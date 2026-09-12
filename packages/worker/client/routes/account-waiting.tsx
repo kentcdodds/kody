@@ -101,7 +101,7 @@ function renderWaitingBody(items: Array<WaitingItem>) {
 		return (
 			<AccountManagementPanel
 				title="Nothing is waiting on you"
-				description="Onboarding is done, connections are healthy, and no publishes or grants need a click."
+				description="Connections are healthy, first-use setup is done, and no publishes or grants need a click."
 			>
 				<p mix={css({ margin: 0, color: colors.textMuted })}>
 					<a href={routes.accountActivity.href()}>Activity</a> is run history.{' '}

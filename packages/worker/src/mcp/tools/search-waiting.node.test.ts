@@ -59,6 +59,13 @@ test('search waiting markdown omits setup and caps then points at waitingSummary
 			severity: 'setup',
 			href: '/onboarding',
 		}),
+		item({
+			id: 'first-use:discord',
+			kind: 'first-use',
+			title: 'Join the Kody Discord',
+			severity: 'setup',
+			href: '/discord',
+		}),
 	]
 	expect(selectSearchWaitingItems(items).map((row) => row.id)).toEqual([
 		'integration-auth:google',

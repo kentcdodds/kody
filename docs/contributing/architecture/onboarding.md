@@ -48,6 +48,15 @@ not `users.mcp_client_name` (first-touch) and not `/account/mcp-oauth-clients`
 `onboarding_first_win` and `search({ entity: "first_win:guide" })` serves the
 guide.
 
+Waiting (`/account/waiting` and `waitingSummary`) does not mirror the coarse
+checklist. It keeps wizard-resume cards for `connect-agent` and
+`connect-second-agent` unless the checklist is dismissed or complete, and it
+shows discrete first-use cards for search, memory, execute, package, job,
+integration, secret, and official Discord membership. Those first-use items are
+not wizard steps and are not checklist ids. Coarse `give-access` /
+`install-starter` checklist ids do not emit Waiting cards because they duplicate
+the broken-out first-use items. See [Waiting](../../use/waiting.md).
+
 ## Alignment check
 
 `packages/worker/universal/onboarding-process.node.test.ts` (part of

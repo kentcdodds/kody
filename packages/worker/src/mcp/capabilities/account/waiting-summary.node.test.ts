@@ -80,15 +80,20 @@ test('waitingSummary requires auth and stays self-scoped', async () => {
 		),
 	).rejects.toThrow(/Authenticated MCP user/)
 
-	const empty = await waitingSummaryCapability.handler(
+	const dismissed = await waitingSummaryCapability.handler(
 		{},
 		{ env, callerContext },
 	)
-	expect(empty).toEqual({
-		count: 0,
-		waiting_url: 'https://example.com/account/waiting',
-		items: [],
-	})
+	expect(dismissed.waiting_url).toBe('https://example.com/account/waiting')
+	expect(dismissed.items.every((item) => item.kind === 'first-use')).toBe(true)
+	expect(dismissed.items.map((item) => item.id)).toEqual([
+		'first-use:memory',
+		'first-use:job',
+		'first-use:integration',
+		'first-use:secret',
+		'first-use:discord',
+	])
+	expect(dismissed.count).toBe(dismissed.items.length)
 
 	const unverifiedDb = createWaitingTestDb({
 		email,
@@ -102,7 +107,6 @@ test('waitingSummary requires auth and stays self-scoped', async () => {
 			callerContext,
 		},
 	)
-	expect(unverified.count).toBe(1)
 	expect(unverified.items[0]).toMatchObject({
 		id: 'verify-email',
 		kind: 'verify-email',
@@ -111,6 +115,12 @@ test('waitingSummary requires auth and stays self-scoped', async () => {
 		href: 'https://example.com/pending-verification',
 		severity: 'block',
 	})
+	expect(unverified.count).toBe(1 + dismissed.count)
+	expect(
+		unverified.items
+			.filter((item) => item.kind === 'first-use')
+			.map((item) => item.id),
+	).toEqual(dismissed.items.map((item) => item.id))
 
 	const missing = await waitingSummaryCapability.handler(
 		{},

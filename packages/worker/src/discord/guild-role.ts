@@ -45,6 +45,16 @@ export type DiscordGuildJoinResult =
 	| { status: 'forbidden' }
 	| { status: 'error'; message: string }
 
+export type DiscordGuildMembershipSkipReason =
+	| 'not-configured'
+	| 'invalid-user-id'
+
+export type DiscordGuildMembershipResult =
+	| { status: 'member' }
+	| { status: 'not-in-guild' }
+	| { status: 'skipped'; reason: DiscordGuildMembershipSkipReason }
+	| { status: 'error'; message: string }
+
 export type DiscordMemberRoleSyncResult =
 	| { status: 'skipped'; reason: DiscordMemberRoleSkipReason }
 	| { status: 'assigned' }
@@ -146,6 +156,98 @@ function memberRoleUrl(guildId: string, discordUserId: string, roleId: string) {
 
 function guildMemberUrl(guildId: string, discordUserId: string) {
 	return `${discordApiBaseUrl}/guilds/${guildId}/members/${discordUserId}`
+}
+
+/**
+ * Read whether the Discord user is currently in the official guild. Failures
+ * are classified and never thrown. Callers treat `skipped` / `error` as
+ * unknown so a bot or network blip cannot invent a Waiting card.
+ */
+export async function readOfficialDiscordGuildMembership(input: {
+	env: DiscordGuildRoleEnv
+	discordUserId: string
+	fetchImpl?: typeof fetch
+	timeoutMs?: number
+}): Promise<DiscordGuildMembershipResult> {
+	if (!isDiscordSnowflake(input.discordUserId)) {
+		return { status: 'skipped', reason: 'invalid-user-id' }
+	}
+	const config = getDiscordGuildBotConfig(input.env)
+	if (!config) {
+		return { status: 'skipped', reason: 'not-configured' }
+	}
+
+	const fetchImpl = input.fetchImpl ?? fetch
+	const timeoutMs = input.timeoutMs ?? DISCORD_MEMBER_ROLE_REQUEST_TIMEOUT_MS
+	try {
+		const response = await fetchImpl(
+			guildMemberUrl(config.guildId, input.discordUserId),
+			{
+				method: 'GET',
+				headers: {
+					Authorization: `Bot ${config.botToken}`,
+					'User-Agent': 'kody',
+				},
+				signal: AbortSignal.timeout(timeoutMs),
+			},
+		)
+		if (response.ok) {
+			return { status: 'member' }
+		}
+		if (response.status === 404) {
+			return { status: 'not-in-guild' }
+		}
+		return {
+			status: 'error',
+			message: `Discord guild membership lookup failed (${response.status}).`,
+		}
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		return { status: 'error', message }
+	}
+}
+
+/**
+ * Official-guild membership as Kody can see it: Discord social login plus a
+ * live member read. `false` means we know they have not linked Discord (or
+ * the bot confirmed they are not in the guild). `null` is unknown — bot
+ * unset, API blip, or a storage error — so Waiting must not invent a card.
+ */
+export async function readOfficialDiscordMembershipForUser(input: {
+	env: DiscordGuildRoleEnv & { APP_DB: D1Database }
+	userId: number
+	fetchImpl?: typeof fetch
+	timeoutMs?: number
+}): Promise<boolean | null> {
+	try {
+		const discordUserId = await readDiscordConnectionUserId(
+			input.env.APP_DB,
+			input.userId,
+		)
+		if (!discordUserId) return false
+		const membership = await readOfficialDiscordGuildMembership({
+			env: input.env,
+			discordUserId,
+			fetchImpl: input.fetchImpl,
+			timeoutMs: input.timeoutMs,
+		})
+		switch (membership.status) {
+			case 'member':
+				return true
+			case 'not-in-guild':
+				return false
+			case 'skipped':
+			case 'error':
+				return null
+			default: {
+				const exhaustive: never = membership
+				void exhaustive
+				return null
+			}
+		}
+	} catch {
+		return null
+	}
 }
 
 /**

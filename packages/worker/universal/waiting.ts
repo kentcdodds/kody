@@ -22,6 +22,7 @@ export const waitingItemKinds = [
 	'entitlement',
 	'error-rate',
 	'onboarding',
+	'first-use',
 ] as const
 
 type WaitingItemKind = (typeof waitingItemKinds)[number]
@@ -29,6 +30,36 @@ type WaitingItemKind = (typeof waitingItemKinds)[number]
 export const waitingSeverities = ['block', 'degraded', 'setup'] as const
 
 export type WaitingSeverity = (typeof waitingSeverities)[number]
+
+/**
+ * Discrete first-use gates on Waiting only. These are not `/onboarding`
+ * wizard steps and are not checklist ids.
+ */
+export const waitingFirstUseIds = [
+	'search',
+	'memory',
+	'execute',
+	'package',
+	'job',
+	'integration',
+	'secret',
+	'discord',
+] as const
+
+export type WaitingFirstUseId = (typeof waitingFirstUseIds)[number]
+
+/**
+ * Coarse checklist ids that would duplicate the broken-out first-use cards.
+ * The wizard still uses them; Waiting does not emit those onboarding cards.
+ */
+export const onboardingWaitingCoarseIds = [
+	'give-access',
+	'install-starter',
+] as const satisfies ReadonlyArray<OnboardingChecklistItemId>
+
+const onboardingWaitingCoarseIdSet = new Set<OnboardingChecklistItemId>(
+	onboardingWaitingCoarseIds,
+)
 
 /**
  * A current-state item the signed-in human can clear. Not a notification:
@@ -102,6 +133,11 @@ export type WaitingSignals = {
 	/** Open (untriaged) Activity errors vs runs in the Activity window. */
 	errorRate: { errorCount: number; eventCount: number } | null
 	entitlementCaps: Array<WaitingEntitlementCapSignal>
+	/**
+	 * First-use gates we know are still open. Unknown probes are omitted so
+	 * a storage blip cannot invent a card.
+	 */
+	firstUseMissing: Array<WaitingFirstUseId>
 }
 
 const severityRank: Record<WaitingSeverity, number> = {
@@ -120,7 +156,12 @@ const kindRank: Record<WaitingItemKind, number> = {
 	entitlement: 6,
 	'error-rate': 7,
 	onboarding: 8,
+	'first-use': 9,
 }
+
+const firstUseRank = Object.fromEntries(
+	waitingFirstUseIds.map((id, index) => [id, index]),
+) as Record<WaitingFirstUseId, number>
 
 const mcpHumanStates = new Set(['authenticating', 'failed', 'disconnected'])
 
@@ -264,6 +305,7 @@ export function buildWaitingItems(signals: WaitingSignals): Array<WaitingItem> {
 	if (!signals.onboardingDismissed) {
 		for (const step of signals.onboardingRemaining) {
 			if (step === 'verify-email' && !signals.emailVerified) continue
+			if (onboardingWaitingCoarseIdSet.has(step)) continue
 			items.push({
 				id: `onboarding:${step}`,
 				kind: 'onboarding',
@@ -277,15 +319,95 @@ export function buildWaitingItems(signals: WaitingSignals): Array<WaitingItem> {
 		}
 	}
 
+	for (const id of signals.firstUseMissing) {
+		items.push(buildFirstUseWaitingItem(id))
+	}
+
 	return items.sort((left, right) => {
 		const severity = severityRank[left.severity] - severityRank[right.severity]
 		if (severity !== 0) return severity
 		const kind = kindRank[left.kind] - kindRank[right.kind]
 		if (kind !== 0) return kind
+		if (left.kind === 'first-use' && right.kind === 'first-use') {
+			return firstUseItemRank(left.id) - firstUseItemRank(right.id)
+		}
 		if (left.id === 'secret-expired-more') return 1
 		if (right.id === 'secret-expired-more') return -1
 		return left.title.localeCompare(right.title)
 	})
+}
+
+function firstUseItemRank(itemId: string) {
+	const id = itemId.slice('first-use:'.length) as WaitingFirstUseId
+	return firstUseRank[id] ?? waitingFirstUseIds.length
+}
+
+function buildFirstUseWaitingItem(id: WaitingFirstUseId): WaitingItem {
+	const copy = waitingFirstUseCopy[id]
+	return {
+		id: `first-use:${id}`,
+		kind: 'first-use',
+		title: copy.title,
+		why: copy.why,
+		who: 'you',
+		doLabel: copy.doLabel,
+		href: copy.href,
+		severity: 'setup',
+	}
+}
+
+const waitingFirstUseCopy: Record<
+	WaitingFirstUseId,
+	{ title: string; why: string; doLabel: string; href: string }
+> = {
+	search: {
+		title: 'Try your first search',
+		why: 'Search is how your agent looks things up in Kody — capabilities, guides, packages, and more.',
+		doLabel: 'Read how search works',
+		href: routes.docDetail.href({ slug: 'search-and-execute' }),
+	},
+	memory: {
+		title: 'Save your first memory',
+		why: 'Memories persist facts your agents can reuse across hosts.',
+		doLabel: 'Open Memories',
+		href: routes.accountMemories.href(),
+	},
+	execute: {
+		title: 'Run your first execute',
+		why: 'Execute is how your agent does work in Kody — tools, packages, and jobs.',
+		doLabel: 'Read how execute works',
+		href: routes.docDetail.href({ slug: 'search-and-execute' }),
+	},
+	package: {
+		title: 'Persist your first package',
+		why: 'A saved package is reusable code your agents can keep and share.',
+		doLabel: 'Open Packages',
+		href: routes.accountPackages.href(),
+	},
+	job: {
+		title: 'Create your first job',
+		why: 'Jobs run on a schedule so your agents can keep working without you.',
+		doLabel: 'Open Jobs',
+		href: routes.accountJobs.href(),
+	},
+	integration: {
+		title: 'Connect your first integration',
+		why: 'An integration grant lets your agents call a connected third-party account.',
+		doLabel: 'Open Integrations',
+		href: routes.accountIntegrations.href(),
+	},
+	secret: {
+		title: 'Add your first secret',
+		why: 'User-scope secrets stay out of chat. Add one so your agents can use credentials safely.',
+		doLabel: 'Open Secrets',
+		href: routes.accountSecrets.href(),
+	},
+	discord: {
+		title: 'Join the Kody Discord',
+		why: 'Connect Discord to join the official server and pick up your member role.',
+		doLabel: 'Join Discord',
+		href: routes.discord.href(),
+	},
 }
 
 function buildMcpServerWaitingItem(

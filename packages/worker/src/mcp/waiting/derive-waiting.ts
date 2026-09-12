@@ -2,6 +2,7 @@ import {
 	deriveOnboardingChecklist,
 	readOnboardingChecklistDismissed,
 } from '#mcp/onboarding-checklist.ts'
+import { listMemoriesByUserId } from '#mcp/memory/repo.ts'
 import { listSecrets } from '#mcp/secrets/service.ts'
 import { getCachedMcpClientHubServers } from '#worker/mcp-client/hub-client.ts'
 import { type McpClientHubSnapshot } from '#worker/mcp-client/types.ts'
@@ -14,13 +15,17 @@ import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapsho
 import { getUserEntitlement } from '#worker/entitlements/service.ts'
 import { isSavedPackageLocked } from '#worker/package-registry/package-publish-lock.ts'
 import { listJoinedIntegrations } from '#worker/integrations/service.ts'
+import { jobsData } from '#worker/jobs/jobs-data.ts'
+import { readOfficialDiscordMembershipForUser } from '#worker/discord/guild-role.ts'
 import { summarizeRunRecords } from '#worker/run-records/service.ts'
 import { accountActivitySummaryWindowMs } from '#universal/account-activity-filters.ts'
 import {
 	buildWaitingItems,
 	isUnexpiredEpochMs,
 	isWaitingMcpServerState,
+	waitingFirstUseIds,
 	type WaitingExpiredSecretSignal,
+	type WaitingFirstUseId,
 	type WaitingIntegrationAuthSignal,
 	type WaitingItem,
 	type WaitingMcpServerSignal,
@@ -47,6 +52,7 @@ export async function deriveWaitingItems(input: {
 	env: WaitingEnv
 	user: DeriveWaitingUser
 	now?: Date
+	fetchImpl?: typeof fetch
 }): Promise<Array<WaitingItem>> {
 	const signals = await collectWaitingSignals(input)
 	return buildWaitingItems(signals)
@@ -93,6 +99,7 @@ export async function collectWaitingSignals(input: {
 	env: WaitingEnv
 	user: DeriveWaitingUser
 	now?: Date
+	fetchImpl?: typeof fetch
 }): Promise<WaitingSignals> {
 	const now = input.now ?? new Date()
 	const { env, user } = input
@@ -101,12 +108,18 @@ export async function collectWaitingSignals(input: {
 		onboardingDismissed,
 		hasMcpClient,
 		mcpServers,
-		integrationAuth,
-		expiredSecrets,
-		lockedPackages,
+		integrationsProbe,
+		secretsProbe,
+		packagesProbe,
 		pendingEmailChange,
 		errorRate,
 		entitlementCaps,
+		firstSearch,
+		firstExecute,
+		firstPackageStamp,
+		firstMemory,
+		firstJob,
+		discordJoined,
 	] = await Promise.all([
 		readOnboardingChecklistDismissed({
 			env,
@@ -114,12 +127,32 @@ export async function collectWaitingSignals(input: {
 		}).catch(() => true),
 		userHasMcpOAuthGrants(env, user.stableUserId),
 		collectMcpServerSignals(env, user.stableUserId),
-		collectIntegrationAuthSignals(env, user.stableUserId),
-		collectExpiredSecretSignals(env, user.stableUserId),
-		collectLockedPackageSignals(env, user.stableUserId),
+		probe(() => listJoinedIntegrations({ env, userId: user.stableUserId })),
+		probe(() =>
+			listSecrets({
+				env,
+				userId: user.stableUserId,
+				scope: 'user',
+			}),
+		),
+		probe(() =>
+			listSavedPackagesByUserId(env.APP_DB, {
+				userId: user.stableUserId,
+			}),
+		),
 		collectPendingEmailChange(env, user.userId, now),
 		collectErrorRate(env, user.stableUserId, now),
 		collectEntitlementCaps(env, user, now),
+		probeActivationStamp(env.APP_DB, user.stableUserId, 'search'),
+		probeActivationStamp(env.APP_DB, user.stableUserId, 'execute'),
+		probeActivationStamp(env.APP_DB, user.stableUserId, 'package'),
+		probeHasMemory(env.APP_DB, user.stableUserId),
+		probeHasJob(env, user.stableUserId),
+		readOfficialDiscordMembershipForUser({
+			env,
+			userId: user.userId,
+			fetchImpl: input.fetchImpl,
+		}),
 	])
 
 	const checklist = await deriveOnboardingChecklist({
@@ -141,13 +174,59 @@ export async function collectWaitingSignals(input: {
 			.filter((item) => !item.done)
 			.map((item) => item.id),
 		mcpServers,
-		integrationAuth,
-		expiredSecrets,
-		lockedPackages,
+		integrationAuth: integrationsProbe.ok
+			? reconnectableIntegrationAuth(integrationsProbe.value)
+			: [],
+		expiredSecrets: secretsProbe.ok
+			? expiredUserSecrets(secretsProbe.value)
+			: [],
+		lockedPackages: packagesProbe.ok
+			? lockedSavedPackages(packagesProbe.value)
+			: [],
 		pendingEmailChange,
 		errorRate,
 		entitlementCaps,
+		firstUseMissing: collectFirstUseMissing({
+			search: firstSearch,
+			memory: firstMemory,
+			execute: firstExecute,
+			package: combineFirstPackage(firstPackageStamp, packagesProbe),
+			job: firstJob,
+			integration: integrationsProbe.ok
+				? integrationsProbe.value.length > 0
+				: null,
+			secret: secretsProbe.ok ? secretsProbe.value.length > 0 : null,
+			discord: discordJoined,
+		}),
 	}
+}
+
+type Probe<T> = { ok: true; value: T } | { ok: false }
+
+async function probe<T>(fn: () => Promise<T>): Promise<Probe<T>> {
+	try {
+		return { ok: true, value: await fn() }
+	} catch {
+		return { ok: false }
+	}
+}
+
+function collectFirstUseMissing(
+	signals: Record<WaitingFirstUseId, boolean | null>,
+): Array<WaitingFirstUseId> {
+	return waitingFirstUseIds.filter((id) => signals[id] === false)
+}
+
+function combineFirstPackage(
+	stamp: boolean | null,
+	packagesProbe: Probe<Array<{ lockedAt: string | null }>>,
+): boolean | null {
+	const hasSavedPackage = packagesProbe.ok && packagesProbe.value.length > 0
+	if (stamp === true || hasSavedPackage) return true
+	if (stamp === false && packagesProbe.ok && packagesProbe.value.length === 0) {
+		return false
+	}
+	return null
 }
 
 /**
@@ -205,13 +284,9 @@ async function collectMcpServerSignals(
 	return items
 }
 
-async function collectIntegrationAuthSignals(
-	env: Env,
-	userId: string,
-): Promise<Array<WaitingIntegrationAuthSignal>> {
-	const rows = await listJoinedIntegrations({ env, userId }).catch(
-		() => [] as Awaited<ReturnType<typeof listJoinedIntegrations>>,
-	)
+function reconnectableIntegrationAuth(
+	rows: Awaited<ReturnType<typeof listJoinedIntegrations>>,
+): Array<WaitingIntegrationAuthSignal> {
 	const items: Array<WaitingIntegrationAuthSignal> = []
 	for (const joined of rows) {
 		const failure = joined.connection.lastAuthFailure
@@ -226,24 +301,17 @@ async function collectIntegrationAuthSignals(
 	return items
 }
 
-async function collectExpiredSecretSignals(
-	env: Env,
-	userId: string,
-): Promise<Array<WaitingExpiredSecretSignal>> {
-	const secrets = await listSecrets({
-		env,
-		userId,
-		scope: 'user',
-	}).catch(() => [] as Awaited<ReturnType<typeof listSecrets>>)
+function expiredUserSecrets(
+	secrets: Awaited<ReturnType<typeof listSecrets>>,
+): Array<WaitingExpiredSecretSignal> {
 	return secrets
 		.filter((secret) => secret.ttlMs != null && secret.ttlMs <= 0)
 		.map((secret) => ({ name: secret.name }))
 }
 
-async function collectLockedPackageSignals(env: Env, userId: string) {
-	const packages = await listSavedPackagesByUserId(env.APP_DB, {
-		userId,
-	}).catch(() => [] as Awaited<ReturnType<typeof listSavedPackagesByUserId>>)
+function lockedSavedPackages(
+	packages: Awaited<ReturnType<typeof listSavedPackagesByUserId>>,
+) {
 	return packages
 		.filter((pkg) => isSavedPackageLocked(pkg.lockedAt))
 		.map((pkg) => ({
@@ -251,6 +319,64 @@ async function collectLockedPackageSignals(env: Env, userId: string) {
 			name: pkg.name,
 			kodyId: pkg.kodyId,
 		}))
+}
+
+type ActivationStamp = 'search' | 'execute' | 'package'
+
+function activationStampColumn(stamp: ActivationStamp) {
+	switch (stamp) {
+		case 'search':
+			return 'first_search_at'
+		case 'execute':
+			return 'first_execute_at'
+		case 'package':
+			return 'first_saved_package_at'
+		default: {
+			const exhaustive: never = stamp
+			throw new Error(`Unknown activation stamp: ${String(exhaustive)}`)
+		}
+	}
+}
+
+async function probeActivationStamp(
+	db: D1Database,
+	userId: string,
+	stamp: ActivationStamp,
+): Promise<boolean | null> {
+	const column = activationStampColumn(stamp)
+	try {
+		const row = await db
+			.prepare(
+				`SELECT ${column}
+				 FROM users
+				 WHERE stable_user_id = ?
+				 LIMIT 1`,
+			)
+			.bind(userId)
+			.first<Record<string, string | null>>()
+		if (!row) return null
+		return Boolean(row[column])
+	} catch {
+		return null
+	}
+}
+
+async function probeHasMemory(db: D1Database, userId: string) {
+	try {
+		const rows = await listMemoriesByUserId(db, userId, { limit: 1 })
+		return rows.length > 0
+	} catch {
+		return null
+	}
+}
+
+async function probeHasJob(env: WaitingEnv, userId: string) {
+	try {
+		const count = await jobsData(env).countJobsForUser({ userId })
+		return count > 0
+	} catch {
+		return null
+	}
 }
 
 async function collectPendingEmailChange(env: Env, userId: number, now: Date) {

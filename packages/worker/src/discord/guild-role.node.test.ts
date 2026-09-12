@@ -15,6 +15,8 @@ import {
 	maybeRemoveDiscordMemberRole,
 	maybeSyncDiscordGuildRolesForUser,
 	maybeSyncDiscordPlanRoles,
+	readOfficialDiscordGuildMembership,
+	readOfficialDiscordMembershipForUser,
 	removeDiscordMemberRole,
 	summarizeDiscordGuildRoleSync,
 	syncDiscordPlanRoles,
@@ -171,6 +173,121 @@ test('guild join uses the ephemeral access token once and classifies outcomes', 
 		status: 'error',
 		message: 'Discord guild join failed (500).',
 	})
+})
+
+test('official guild membership lookup classifies member, absent, and fail-open', async () => {
+	const calls: Array<{ url: string; method: string; authorization: string }> =
+		[]
+
+	async function fetchImpl(input: RequestInfo | URL, init?: RequestInit) {
+		calls.push({
+			url: String(input),
+			method: init?.method ?? 'GET',
+			authorization: new Headers(init?.headers).get('Authorization') ?? '',
+		})
+		return jsonResponse(200, { user: { id: discordUserId } })
+	}
+
+	expect(
+		await readOfficialDiscordGuildMembership({
+			env: configuredEnv,
+			discordUserId,
+			fetchImpl,
+		}),
+	).toEqual({ status: 'member' })
+	expect(calls).toEqual([
+		{
+			url: memberUrl(),
+			method: 'GET',
+			authorization: 'Bot bot-token-test',
+		},
+	])
+	expect(
+		await readOfficialDiscordGuildMembership({
+			env: configuredEnv,
+			discordUserId,
+			fetchImpl: async () => jsonResponse(404),
+		}),
+	).toEqual({ status: 'not-in-guild' })
+	expect(
+		await readOfficialDiscordGuildMembership({
+			env: {},
+			discordUserId,
+			fetchImpl,
+		}),
+	).toEqual({ status: 'skipped', reason: 'not-configured' })
+	expect(
+		await readOfficialDiscordGuildMembership({
+			env: configuredEnv,
+			discordUserId: 'mock-discord-user-1',
+			fetchImpl,
+		}),
+	).toEqual({ status: 'skipped', reason: 'invalid-user-id' })
+	expect(
+		await readOfficialDiscordGuildMembership({
+			env: configuredEnv,
+			discordUserId,
+			fetchImpl: async () => jsonResponse(500),
+		}),
+	).toEqual({
+		status: 'error',
+		message: 'Discord guild membership lookup failed (500).',
+	})
+
+	const sqlite = new DatabaseSync(':memory:')
+	sqlite.exec(`
+		CREATE TABLE oauth_connections (
+			user_id INTEGER NOT NULL,
+			provider_name TEXT NOT NULL,
+			provider_id TEXT NOT NULL
+		)
+	`)
+	const db = createD1FromSqlite(sqlite)
+	expect(
+		await readOfficialDiscordMembershipForUser({
+			env: { ...configuredEnv, APP_DB: db },
+			userId: 11,
+			fetchImpl,
+		}),
+	).toBe(false)
+
+	await db
+		.prepare(
+			`INSERT INTO oauth_connections (user_id, provider_name, provider_id)
+			 VALUES (?, 'discord', ?)`,
+		)
+		.bind(11, discordUserId)
+		.run()
+	expect(
+		await readOfficialDiscordMembershipForUser({
+			env: { ...configuredEnv, APP_DB: db },
+			userId: 11,
+			fetchImpl,
+		}),
+	).toBe(true)
+	expect(
+		await readOfficialDiscordMembershipForUser({
+			env: { ...configuredEnv, APP_DB: db },
+			userId: 11,
+			fetchImpl: async () => jsonResponse(404),
+		}),
+	).toBe(false)
+	expect(
+		await readOfficialDiscordMembershipForUser({
+			env: { APP_DB: db },
+			userId: 11,
+			fetchImpl,
+		}),
+	).toBeNull()
+	expect(
+		await readOfficialDiscordMembershipForUser({
+			env: { ...configuredEnv, APP_DB: db },
+			userId: 11,
+			fetchImpl: async () => {
+				throw new Error('discord down')
+			},
+		}),
+	).toBeNull()
 })
 
 test('assign and remove call the Discord member-role routes and classify outcomes', async () => {
