@@ -94,20 +94,15 @@ export type UsageEvent = {
 	 */
 	cacheReuse?: DynamicWorkerCacheReuse | null
 	/**
-	 * Whether evaluate `params` is a non-null object with at least one
-	 * own property. Empty `{}`, null, undefined, and non-objects are
-	 * false. Written to Analytics Engine blob9. Empty when unset.
-	 */
-	hadParams?: boolean | null
-	/**
 	 * Character length of the hashable module-graph text used for the
 	 * Dynamic Worker id. Written to Analytics Engine double4. Number only.
 	 */
 	codeChars?: number | null
 	/**
 	 * Character length of a stable JSON serialization of evaluate
-	 * `params`. 0 when `hadParams` is false. Written to Analytics Engine
-	 * double5. Number only — never the JSON.
+	 * `params`. 0 when `params` is null, undefined, a non-object, or
+	 * empty `{}`. Written to Analytics Engine double5. Number only —
+	 * never the JSON.
 	 */
 	paramsChars?: number | null
 }
@@ -125,7 +120,6 @@ export const usageEventBlobIndexes = {
 	surface: 5,
 	executeShape: 6,
 	cacheReuse: 7,
-	hadParams: 8,
 } as const
 
 export const usageEventDoubleIndexes = {
@@ -146,10 +140,9 @@ export function usageEventBlobs(
 		| 'surface'
 		| 'executeShape'
 		| 'cacheReuse'
-		| 'hadParams'
 	>,
 	timestamp: string,
-): [string, string, string, string, string, string, string, string, string] {
+): [string, string, string, string, string, string, string, string] {
 	return [
 		event.userId,
 		event.eventType,
@@ -159,13 +152,7 @@ export function usageEventBlobs(
 		event.surface ?? '',
 		event.executeShape ?? '',
 		event.cacheReuse ?? '',
-		usageEventHadParamsBlob(event.hadParams),
 	]
-}
-
-function usageEventHadParamsBlob(hadParams: boolean | null | undefined) {
-	if (hadParams == null) return ''
-	return hadParams ? 'true' : 'false'
 }
 
 export type UsageEnv = {
@@ -273,9 +260,6 @@ function emitUsageSpan(event: UsageEvent) {
 			}
 			if (event.codeChars != null) {
 				span.setAttribute('kody.code_chars', event.codeChars)
-			}
-			if (event.hadParams != null) {
-				span.setAttribute('kody.had_params', event.hadParams)
 			}
 			if (event.paramsChars != null) {
 				span.setAttribute('kody.params_chars', event.paramsChars)

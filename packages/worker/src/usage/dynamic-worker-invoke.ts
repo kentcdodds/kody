@@ -10,22 +10,18 @@ import { type ExecuteThinGlueClass } from './execute-thin-glue.ts'
 
 const workerModuleTextKeys = ['js', 'cjs', 'text'] as const
 
-/**
- * `hadParams` is true only when `params` is a non-null object with at
- * least one own property. Empty `{}`, null, undefined, and non-objects
- * are false. Never inspects keys or values beyond that count.
- */
-export function evaluateInvocationHadParams(params: unknown): boolean {
+function hasNonEmptyParamsObject(params: unknown): boolean {
 	if (params === null || typeof params !== 'object') return false
 	return Object.keys(params).length > 0
 }
 
 /**
  * Character length of a key-sorted JSON serialization of `params`.
- * Returns 0 when `hadParams` is false. Never returns the JSON itself.
+ * Returns 0 for null, undefined, non-objects, and empty `{}` (not 2
+ * from stringifying `{}`). Never returns the JSON itself.
  */
 export function countEvaluateInvocationParamsChars(params: unknown): number {
-	if (!evaluateInvocationHadParams(params)) return 0
+	if (!hasNonEmptyParamsObject(params)) return 0
 	try {
 		return JSON.stringify(canonicalizeJson(params)).length
 	} catch {
@@ -83,7 +79,6 @@ export async function recordDynamicWorkerInvoke(input: {
 	cacheReuse: DynamicWorkerCacheReuse
 	codeChars: number
 	executeShape?: ExecuteThinGlueClass | null
-	hadParams?: boolean
 	paramsChars?: number
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<void> {
@@ -100,7 +95,6 @@ export async function recordDynamicWorkerInvoke(input: {
 				cacheReuse: input.cacheReuse,
 				codeChars: input.codeChars,
 				paramsChars: input.paramsChars ?? 0,
-				...(input.hadParams != null ? { hadParams: input.hadParams } : {}),
 				...(input.executeShape ? { executeShape: input.executeShape } : {}),
 			},
 			{ waitUntil: input.waitUntil },

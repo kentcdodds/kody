@@ -97,7 +97,7 @@ test('createExecuteExecutor records privacy-safe Dynamic Worker reuse on every L
 	expect(miss?.blobs?.[5]).toBe('job')
 	expect(miss?.blobs?.[6]).toBe('glue')
 	expect(miss?.blobs?.[7]).toBe('miss')
-	expect(miss?.blobs?.[8]).toBe('true')
+	expect(miss?.blobs).toHaveLength(8)
 	expect(miss?.doubles?.[0]).toBeGreaterThanOrEqual(0)
 	expect(miss?.doubles?.[3]).toBeGreaterThan(0)
 	expect(miss?.doubles?.[usageEventDoubleIndexes.paramsChars]).toBe(
@@ -125,7 +125,7 @@ test('createExecuteExecutor records privacy-safe Dynamic Worker reuse on every L
 	)
 	expect(invokes).toHaveLength(2)
 	expect(invokes[1]?.blobs?.[7]).toBe('hit')
-	expect(invokes[1]?.blobs?.[8]).toBe('true')
+	expect(invokes[1]?.blobs).toHaveLength(8)
 	expect(invokes[1]?.doubles?.[3]).toBe(missCodeChars)
 	expect(invokes[1]?.doubles?.[usageEventDoubleIndexes.paramsChars]).toBe(
 		countEvaluateInvocationParamsChars({ token: `${paramMarker}-2` }),
@@ -150,7 +150,7 @@ test('createExecuteExecutor records privacy-safe Dynamic Worker reuse on every L
 			surface: 'job',
 		}).execute(source, providers, params === undefined ? undefined : { params })
 		expect(dataPoints.at(-1)?.blobs?.[1]).toBe('dynamic_worker_invoke')
-		expect(dataPoints.at(-1)?.blobs?.[8]).toBe('false')
+		expect(dataPoints.at(-1)?.blobs).toHaveLength(8)
 		expect(
 			dataPoints.at(-1)?.doubles?.[usageEventDoubleIndexes.paramsChars],
 		).toBe(0)

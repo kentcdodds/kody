@@ -3,25 +3,8 @@ import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	countDynamicWorkerModuleGraphChars,
 	countEvaluateInvocationParamsChars,
-	evaluateInvocationHadParams,
 	recordDynamicWorkerInvoke,
 } from './dynamic-worker-invoke.ts'
-
-test('evaluateInvocationHadParams is true only for a non-empty own-property object', () => {
-	expect(evaluateInvocationHadParams({ token: 'x' })).toBe(true)
-	expect(evaluateInvocationHadParams({ nested: { n: 1 } })).toBe(true)
-
-	expect(evaluateInvocationHadParams({})).toBe(false)
-	expect(evaluateInvocationHadParams(null)).toBe(false)
-	expect(evaluateInvocationHadParams(undefined)).toBe(false)
-	expect(evaluateInvocationHadParams([])).toBe(false)
-	expect(evaluateInvocationHadParams(1)).toBe(false)
-	expect(evaluateInvocationHadParams('params')).toBe(false)
-	expect(evaluateInvocationHadParams(true)).toBe(false)
-	expect(evaluateInvocationHadParams(Object.create({ inherited: 1 }))).toBe(
-		false,
-	)
-})
 
 test('countEvaluateInvocationParamsChars is the key-sorted JSON length or 0', () => {
 	expect(countEvaluateInvocationParamsChars({ token: 'x' })).toBe(
@@ -37,6 +20,7 @@ test('countEvaluateInvocationParamsChars is the key-sorted JSON length or 0', ()
 		'{"a":0,"z":{"a":2,"b":1}}'.length,
 	)
 
+	expect(JSON.stringify({}).length).toBe(2)
 	expect(countEvaluateInvocationParamsChars({})).toBe(0)
 	expect(countEvaluateInvocationParamsChars(null)).toBe(0)
 	expect(countEvaluateInvocationParamsChars(undefined)).toBe(0)
@@ -75,7 +59,6 @@ test('recordDynamicWorkerInvoke writes numbers and closed enums only', async () 
 		cacheReuse: 'miss',
 		codeChars: 40,
 		executeShape: 'thin_few_exports',
-		hadParams: true,
 		paramsChars: 13,
 	})
 
@@ -89,7 +72,6 @@ test('recordDynamicWorkerInvoke writes numbers and closed enums only', async () 
 		cacheReuse: 'miss',
 		codeChars: 40,
 		paramsChars: 13,
-		hadParams: true,
 		executeShape: 'thin_few_exports',
 	})
 	recordUsageSpy.mockRestore()

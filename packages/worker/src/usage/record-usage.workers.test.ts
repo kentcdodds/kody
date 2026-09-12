@@ -80,7 +80,6 @@ test('recordUsage writes only Analytics Engine data points when USAGE_EVENTS is 
 			'',
 			'',
 			'',
-			'',
 		],
 		doubles: [120, 0, 0, 0, 0],
 	})
@@ -92,7 +91,6 @@ test('recordUsage writes only Analytics Engine data points when USAGE_EVENTS is 
 			'pkg-1',
 			'error',
 			'2026-07-05T11:00:00.000Z',
-			'',
 			'',
 			'',
 			'',
@@ -108,7 +106,6 @@ test('recordUsage writes only Analytics Engine data points when USAGE_EVENTS is 
 			'StorageRunner',
 			'success',
 			'2026-07-05T12:30:00.000Z',
-			'',
 			'',
 			'',
 			'',
@@ -314,7 +311,6 @@ test('recordUsage writes surface and executeShape as trailing Analytics Engine b
 		'job',
 		'',
 		'',
-		'',
 	])
 	expect(dataPoints[1]?.blobs).toEqual([
 		userId,
@@ -325,11 +321,10 @@ test('recordUsage writes surface and executeShape as trailing Analytics Engine b
 		'execute',
 		'thin_single_export',
 		'',
-		'',
 	])
 })
 
-test('recordUsage writes cacheReuse, hadParams, codeChars, and paramsChars on invoke events', async () => {
+test('recordUsage writes cacheReuse, codeChars, and paramsChars on invoke events', async () => {
 	const userId = `usage-invoke-${crypto.randomUUID()}`
 	const dataPoints: Array<AnalyticsEngineDataPoint> = []
 	const usageEnv = {
@@ -349,7 +344,6 @@ test('recordUsage writes cacheReuse, hadParams, codeChars, and paramsChars on in
 		surface: 'execute',
 		executeShape: 'glue',
 		cacheReuse: 'hit',
-		hadParams: true,
 		codeChars: 1280,
 		paramsChars: 17,
 	})
@@ -365,12 +359,10 @@ test('recordUsage writes cacheReuse, hadParams, codeChars, and paramsChars on in
 			'execute',
 			'glue',
 			'hit',
-			'true',
 		],
 		doubles: [42, 0, 0, 1280, 17],
 	})
 	expect(dataPoints[0]?.blobs?.[usageEventBlobIndexes.cacheReuse]).toBe('hit')
-	expect(dataPoints[0]?.blobs?.[usageEventBlobIndexes.hadParams]).toBe('true')
 	expect(dataPoints[0]?.doubles?.[usageEventDoubleIndexes.codeChars]).toBe(1280)
 	expect(dataPoints[0]?.doubles?.[usageEventDoubleIndexes.paramsChars]).toBe(17)
 })
