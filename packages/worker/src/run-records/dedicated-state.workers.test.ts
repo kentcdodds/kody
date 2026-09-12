@@ -18,6 +18,7 @@ import {
 	getAdminInsightsSnapshot,
 	getJobRunObservability,
 	getJobRunObservabilityBatch,
+	getSqlBillingStats,
 	getWorkflowProjection,
 	listActivationMilestones,
 	listPackageRunSuccesses,
@@ -1184,8 +1185,8 @@ function jobRunObservabilityColumnNames(state: DurableObjectState) {
 		.map((row) => String(row.name))
 }
 
-test('fresh schema v10 creates the final job_run_observability contract', async () => {
-	const userId = uniqueUserId('schema-v10-fresh')
+test('fresh schema v11 creates the final runs and job_run_observability contract', async () => {
+	const userId = uniqueUserId('schema-v11-fresh')
 	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
 	await runInDurableObject(stub, async (instance: RunLog, state) => {
 		expect(instance).toBeInstanceOf(RunLog)
@@ -1194,7 +1195,7 @@ test('fresh schema v10 creates the final job_run_observability contract', async 
 				`SELECT value FROM run_log_meta WHERE key = 'schema_version' LIMIT 1`,
 			)
 			.toArray()[0]
-		expect(Number(version?.value)).toBe(10)
+		expect(Number(version?.value)).toBe(11)
 
 		expect(jobRunObservabilityColumnNames(state)).toEqual([
 			'job_id',
@@ -1218,6 +1219,7 @@ test('fresh schema v10 creates the final job_run_observability contract', async 
 				'triage_note',
 				'triaged_at',
 				'triaged_by',
+				'log_count',
 			]),
 		)
 	})
@@ -1242,7 +1244,7 @@ test('fresh schema v10 creates the final job_run_observability contract', async 
 	})
 })
 
-test('warm schema v7 and v8 objects upgrade to v10 without losing job data', async () => {
+test('warm schema v7 and v8 objects upgrade to v11 without losing job data', async () => {
 	const retiredColumn = ['legacy', 'seeded'].join('_')
 	for (const installedVersion of [7, 8]) {
 		const userId = uniqueUserId(`schema-v${installedVersion}-warm`)
@@ -1302,7 +1304,7 @@ test('warm schema v7 and v8 objects upgrade to v10 without losing job data', asy
 					`SELECT value FROM run_log_meta WHERE key = 'schema_version' LIMIT 1`,
 				)
 				.toArray()[0]
-			expect(Number(version?.value)).toBe(10)
+			expect(Number(version?.value)).toBe(11)
 			expect(jobRunObservabilityColumnNames(state)).toEqual([
 				'job_id',
 				'last_run_at',
@@ -1351,7 +1353,7 @@ test('warm schema v7 and v8 objects upgrade to v10 without losing job data', asy
 	}
 })
 
-test('warm schema v9 objects upgrade to v10 with error triage columns', async () => {
+test('warm schema v9 objects upgrade to v11 with error triage and log_count columns', async () => {
 	const userId = uniqueUserId('schema-v9-warm-triage')
 	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
 	await runInDurableObject(stub, async (instance: RunLog, state) => {
@@ -1422,7 +1424,7 @@ test('warm schema v9 objects upgrade to v10 with error triage columns', async ()
 				`SELECT value FROM run_log_meta WHERE key = 'schema_version' LIMIT 1`,
 			)
 			.toArray()[0]
-		expect(Number(version?.value)).toBe(10)
+		expect(Number(version?.value)).toBe(11)
 		expect(
 			state.storage.sql
 				.exec<{ name: string }>(`PRAGMA table_info(runs)`)
@@ -1434,12 +1436,13 @@ test('warm schema v9 objects upgrade to v10 with error triage columns', async ()
 				'triage_note',
 				'triaged_at',
 				'triaged_by',
+				'log_count',
 			]),
 		)
 		expect(
 			state.storage.sql
 				.exec<Record<string, SqlStorageValue>>(
-					`SELECT id, status, error_message, error_triage, triage_note
+					`SELECT id, status, error_message, error_triage, triage_note, log_count
 					FROM runs WHERE id = ?`,
 					'run-warm-v9',
 				)
@@ -1450,8 +1453,115 @@ test('warm schema v9 objects upgrade to v10 with error triage columns', async ()
 			error_message: 'preserved',
 			error_triage: null,
 			triage_note: null,
+			log_count: 0,
 		})
 	})
+})
+
+test('warm schema v10 objects backfill denormalized log_count on upgrade to v11', async () => {
+	const userId = uniqueUserId('schema-v10-warm-log-count')
+	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	await runInDurableObject(stub, async (instance: RunLog, state) => {
+		expect(instance).toBeInstanceOf(RunLog)
+		await state.storage.deleteAll()
+
+		state.storage.sql.exec(`
+			CREATE TABLE run_log_meta (
+				key TEXT PRIMARY KEY NOT NULL,
+				value INTEGER NOT NULL
+			)
+		`)
+		state.storage.sql.exec(
+			`INSERT INTO run_log_meta (key, value) VALUES ('schema_version', 10)`,
+		)
+		state.storage.sql.exec(`
+			CREATE TABLE runs (
+				id TEXT PRIMARY KEY NOT NULL,
+				surface TEXT NOT NULL,
+				status TEXT NOT NULL,
+				name TEXT,
+				package_id TEXT,
+				package_kody_id TEXT,
+				source_id TEXT,
+				published_commit TEXT,
+				storage_id TEXT,
+				job_id TEXT,
+				workflow_id TEXT,
+				invocation_id TEXT,
+				session_id TEXT,
+				idempotency_key TEXT,
+				parent_run_id TEXT,
+				started_at TEXT NOT NULL,
+				finished_at TEXT,
+				duration_ms INTEGER,
+				error_name TEXT,
+				error_message TEXT,
+				metadata_json TEXT NOT NULL DEFAULT '{}',
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL,
+				error_triage TEXT,
+				triage_note TEXT,
+				triaged_at TEXT,
+				triaged_by TEXT
+			)
+		`)
+		state.storage.sql.exec(`
+			CREATE TABLE run_logs (
+				run_id TEXT NOT NULL,
+				sequence INTEGER NOT NULL,
+				level TEXT NOT NULL,
+				message TEXT NOT NULL,
+				fields_json TEXT,
+				PRIMARY KEY (run_id, sequence)
+			)
+		`)
+		state.storage.sql.exec(
+			`INSERT INTO runs (
+				id, surface, status, name, started_at, finished_at, duration_ms,
+				error_name, error_message, metadata_json, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, '{}', ?, ?)`,
+			'run-warm-v10',
+			'execute',
+			'success',
+			'warm-v10',
+			'2026-07-01T00:00:00.000Z',
+			'2026-07-01T00:00:01.000Z',
+			1000,
+			'2026-07-01T00:00:00.000Z',
+			'2026-07-01T00:00:01.000Z',
+		)
+		state.storage.sql.exec(
+			`INSERT INTO run_logs (run_id, sequence, level, message, fields_json)
+			VALUES (?, 0, 'info', 'a', NULL), (?, 1, 'info', 'b', NULL), (?, 2, 'info', 'c', NULL)`,
+			'run-warm-v10',
+			'run-warm-v10',
+			'run-warm-v10',
+		)
+
+		const proto = Object.getPrototypeOf(instance) as {
+			initializeSchema: () => void
+		}
+		proto.initializeSchema.call(instance)
+
+		const version = state.storage.sql
+			.exec<{ value: number }>(
+				`SELECT value FROM run_log_meta WHERE key = 'schema_version' LIMIT 1`,
+			)
+			.toArray()[0]
+		expect(Number(version?.value)).toBe(11)
+		expect(
+			state.storage.sql
+				.exec<{ log_count: number }>(
+					`SELECT log_count FROM runs WHERE id = ?`,
+					'run-warm-v10',
+				)
+				.one(),
+		).toEqual({ log_count: 3 })
+	})
+
+	const page = await listRunRecords({ env, userId })
+	expect(page.runs).toHaveLength(1)
+	expect(page.runs[0]?.logCount).toBe(3)
 })
 
 test('getAdminInsightsSnapshot returns content-free workflow, job, and activation aggregates', async () => {
@@ -1590,4 +1700,40 @@ test('getAdminInsightsSnapshot returns content-free workflow, job, and activatio
 			'reachedAt',
 		])
 	}
+})
+
+test('getSqlBillingStats tracks listRuns rowsRead after denormalized log_count reads', async () => {
+	const userId = uniqueUserId('sql-billing')
+	const pending: Array<Promise<unknown>> = []
+	const handle = beginRunRecord({
+		env,
+		userId,
+		context: {
+			surface: 'job',
+			name: 'billing-job',
+			jobId: 'job-billing',
+		},
+		waitUntil: (promise) => {
+			pending.push(promise)
+		},
+	})
+	expect(handle).not.toBeNull()
+	await Promise.all(pending)
+	await finishRunRecord({
+		env,
+		handle,
+		status: 'success',
+		logs: ['one', 'two'],
+	})
+	await listRunRecords({ env, userId })
+
+	const stats = await getSqlBillingStats({ env, userId })
+	expect(stats.databaseSize).toBeGreaterThan(0)
+	expect(stats.rowsReadTotal).toBeGreaterThan(0)
+	expect(stats.ops.some((op) => op.op === 'listRuns' && op.calls >= 1)).toBe(
+		true,
+	)
+	expect(stats.ops.some((op) => op.op === 'finishRun' && op.calls >= 1)).toBe(
+		true,
+	)
 })

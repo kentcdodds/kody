@@ -18,6 +18,7 @@ import {
 	type RunLogEntryInput,
 	type RunLogRowInput,
 	type RunLogRpc,
+	type RunLogSqlBillingStats,
 } from './run-log-do.ts'
 import {
 	type WorkflowProjectionRecord,
@@ -1108,6 +1109,23 @@ export async function getAdminInsightsSnapshot(input: {
 		env: input.env,
 		userId: input.userId,
 	}).getAdminInsightsSnapshot()
+}
+
+/**
+ * RunLog-only SQLite rowsRead/rowsWritten counters for cost diagnosis.
+ * Propagates binding/RPC errors. Never returns user content.
+ */
+export async function getSqlBillingStats(input: {
+	env: Env
+	userId: string
+}): Promise<RunLogSqlBillingStats> {
+	if (!runLogBinding(input.env)) {
+		throw new Error('RUN_LOG Durable Object binding is not configured.')
+	}
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).getSqlBillingStats()
 }
 
 export async function getJobRunObservabilityBatch(input: {

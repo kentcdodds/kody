@@ -290,6 +290,18 @@ test('logs round-trip in sequence order and keep only the newest 200', async () 
 	expect(detail?.logs.at(-1)?.sequence).toBe(runRecordMaxLogEntriesPerRun - 1)
 	expect(detail?.logs.at(-1)?.message).toBe(`log-${totalLogs - 1}`)
 	expect(detail?.run.logCount).toBe(runRecordMaxLogEntriesPerRun)
+
+	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	await runInDurableObject(stub, async (_instance: RunLog, state) => {
+		expect(
+			state.storage.sql
+				.exec<{ log_count: number }>(
+					`SELECT log_count FROM runs WHERE id = ?`,
+					handle!.id,
+				)
+				.one(),
+		).toEqual({ log_count: runRecordMaxLogEntriesPerRun })
+	})
 })
 
 test('listRunRecords filters by surface/status/jobId/name and paginates with cursors', async () => {

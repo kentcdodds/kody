@@ -76,7 +76,53 @@ const metaRunCountKey = 'run_count'
 const metaFinishesSinceRetentionKey = 'finishes_since_retention'
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema's DDL set changes; warm objects skip DDL. */
-const runLogSchemaVersion = 10
+const runLogSchemaVersion = 11
+
+type RunLogSqlBillingOp =
+	| 'listRuns'
+	| 'getRun'
+	| 'summarize'
+	| 'enforceRetention'
+	| 'reconcileStaleRunning'
+	| 'finishRun'
+	| 'exportRuns'
+	| 'findRunByIdempotencyKey'
+	| 'healStaleRunning'
+	| 'updateRunErrorTriage'
+
+const runLogSqlBillingOps = [
+	'listRuns',
+	'getRun',
+	'summarize',
+	'enforceRetention',
+	'reconcileStaleRunning',
+	'finishRun',
+	'exportRuns',
+	'findRunByIdempotencyKey',
+	'healStaleRunning',
+	'updateRunErrorTriage',
+] as const satisfies ReadonlyArray<RunLogSqlBillingOp>
+
+function sqlBillingMetaKey(
+	op: RunLogSqlBillingOp,
+	kind: 'rr' | 'rw' | 'n',
+): string {
+	return `sql_${kind}_${op}`
+}
+
+export type RunLogSqlBillingOpStats = {
+	op: RunLogSqlBillingOp
+	rowsRead: number
+	rowsWritten: number
+	calls: number
+}
+
+export type RunLogSqlBillingStats = {
+	databaseSize: number
+	rowsReadTotal: number
+	rowsWrittenTotal: number
+	ops: Array<RunLogSqlBillingOpStats>
+}
 
 /**
  * Cursor namespaces for `exportRuns` phases after the raw run-id phase.
@@ -542,6 +588,15 @@ class RunLogBase extends DurableObject<Env> {
 	 */
 	private runCountCache: number | null = null
 	private finishesSinceRetentionCache: number | null = null
+	/**
+	 * Per-op SqlStorageCursor.rowsRead/rowsWritten accumulators for this
+	 * isolate. Durable totals use atomic run_log_meta increments (no new AE
+	 * dataset; USAGE_EVENTS would inflate billed overage).
+	 */
+	private sqlBillingByOp = new Map<
+		RunLogSqlBillingOp,
+		{ rowsRead: number; rowsWritten: number; calls: number }
+	>()
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env)
@@ -597,7 +652,8 @@ class RunLogBase extends DurableObject<Env> {
 				error_triage TEXT,
 				triage_note TEXT,
 				triaged_at TEXT,
-				triaged_by TEXT
+				triaged_by TEXT,
+				log_count INTEGER NOT NULL DEFAULT 0
 			)
 		`)
 		if (installedVersion != null && installedVersion < 10) {
@@ -645,6 +701,10 @@ class RunLogBase extends DurableObject<Env> {
 				PRIMARY KEY (run_id, sequence)
 			)
 		`)
+		// After run_logs exists: warm objects need the column + one-time backfill.
+		if (installedVersion != null && installedVersion < 11) {
+			this.migrateRunsLogCountForV11()
+		}
 		// Keyed package-invocation idempotency ledger (migrated from the D1
 		// package_invocations table). No user_id column: the DO identity is the
 		// user. The unique index is the exactly-once claim scope; unlike D1's
@@ -803,6 +863,27 @@ class RunLogBase extends DurableObject<Env> {
 		}
 	}
 
+	/**
+	 * Denormalized `runs.log_count` so list/get/export stop paying a correlated
+	 * `COUNT(*)` over `run_logs` per row (production rows-read hotspot).
+	 * One-time backfill may scan `run_logs`; afterward reads use the column.
+	 */
+	private migrateRunsLogCountForV11() {
+		try {
+			this.ctx.storage.sql.exec(
+				`ALTER TABLE runs ADD COLUMN log_count INTEGER NOT NULL DEFAULT 0`,
+			)
+		} catch {
+			// Column already present on a partially migrated object.
+		}
+		this.ctx.storage.sql.exec(
+			`UPDATE runs
+			SET log_count = (
+				SELECT COUNT(*) FROM run_logs l WHERE l.run_id = runs.id
+			)`,
+		)
+	}
+
 	private getMeta(key: string): number | null {
 		const row = this.ctx.storage.sql
 			.exec<{ value: number }>(
@@ -823,6 +904,74 @@ class RunLogBase extends DurableObject<Env> {
 		if (key === metaRunCountKey) this.runCountCache = value
 		if (key === metaFinishesSinceRetentionKey) {
 			this.finishesSinceRetentionCache = value
+		}
+	}
+
+	/** Atomic increment — no prior SELECT, so instrumentation stays cheap. */
+	private adjustMeta(key: string, delta: number) {
+		if (delta === 0) return
+		this.ctx.storage.sql.exec(
+			`INSERT INTO run_log_meta (key, value) VALUES (?, ?)
+			ON CONFLICT(key) DO UPDATE SET value = value + excluded.value`,
+			key,
+			delta,
+		)
+	}
+
+	private recordSqlBilling(
+		op: RunLogSqlBillingOp,
+		cursor: Pick<
+			SqlStorageCursor<Record<string, SqlStorageValue>>,
+			'rowsRead' | 'rowsWritten'
+		>,
+	) {
+		const rowsRead = Number(cursor.rowsRead) || 0
+		const rowsWritten = Number(cursor.rowsWritten) || 0
+		const prev = this.sqlBillingByOp.get(op) ?? {
+			rowsRead: 0,
+			rowsWritten: 0,
+			calls: 0,
+		}
+		prev.rowsRead += rowsRead
+		prev.rowsWritten += rowsWritten
+		prev.calls += 1
+		this.sqlBillingByOp.set(op, prev)
+		this.adjustMeta(sqlBillingMetaKey(op, 'rr'), rowsRead)
+		this.adjustMeta(sqlBillingMetaKey(op, 'rw'), rowsWritten)
+		this.adjustMeta(sqlBillingMetaKey(op, 'n'), 1)
+	}
+
+	/**
+	 * Run a SQL statement and attribute its cursor rowsRead/rowsWritten to `op`
+	 * after the cursor is consumed. Mutations that return no rows still expose
+	 * billing counters on the cursor after exec.
+	 */
+	private execSqlTracked<T extends Record<string, SqlStorageValue>>(
+		op: RunLogSqlBillingOp,
+		query: string,
+		...bindings: Array<SqlStorageValue>
+	): {
+		toArray: () => Array<T>
+		one: () => T
+		run: () => void
+	} {
+		const cursor = this.ctx.storage.sql.exec<T>(query, ...bindings)
+		return {
+			toArray: () => {
+				const rows = cursor.toArray()
+				this.recordSqlBilling(op, cursor)
+				return rows
+			},
+			one: () => {
+				const row = cursor.one()
+				this.recordSqlBilling(op, cursor)
+				return row
+			},
+			run: () => {
+				// Drain so rowsWritten/rowsRead settle for write statements.
+				cursor.toArray()
+				this.recordSqlBilling(op, cursor)
+			},
 		}
 	}
 
@@ -904,17 +1053,15 @@ class RunLogBase extends DurableObject<Env> {
 			clauses.push('r.surface = ?')
 			params.push(input.surface)
 		}
-		const row = this.ctx.storage.sql
-			.exec<Record<string, SqlStorageValue>>(
-				`SELECT r.*,
-					(SELECT COUNT(*) FROM run_logs l WHERE l.run_id = r.id) AS log_count
-				FROM runs r
-				WHERE ${clauses.join(' AND ')}
-				ORDER BY (r.status = 'running') DESC, r.started_at DESC, r.id DESC
-				LIMIT 1`,
-				...params,
-			)
-			.toArray()[0]
+		const row = this.execSqlTracked<Record<string, SqlStorageValue>>(
+			'findRunByIdempotencyKey',
+			`SELECT r.*
+			FROM runs r
+			WHERE ${clauses.join(' AND ')}
+			ORDER BY (r.status = 'running') DESC, r.started_at DESC, r.id DESC
+			LIMIT 1`,
+			...params,
+		).toArray()[0]
 		if (!row) return null
 		return mapRunRow(row, Number(row['log_count'] ?? 0) || 0)
 	}
@@ -1041,15 +1188,21 @@ class RunLogBase extends DurableObject<Env> {
 	}
 
 	private replaceLogs(runId: string, logs: Array<RunLogEntryInput>) {
-		this.ctx.storage.sql.exec(`DELETE FROM run_logs WHERE run_id = ?`, runId)
+		this.execSqlTracked(
+			'finishRun',
+			`DELETE FROM run_logs WHERE run_id = ?`,
+			runId,
+		).run()
 		const kept = logs.slice(-runRecordMaxLogEntriesPerRun)
+		let insertRowsRead = 0
+		let insertRowsWritten = 0
 		for (const [index, log] of kept.entries()) {
 			const message = truncateUtf8(String(log.message), runRecordMaxTextBytes)
 			const fieldsJson =
 				log.fieldsJson == null
 					? null
 					: clampMetadataJson(String(log.fieldsJson))
-			this.ctx.storage.sql.exec(
+			const cursor = this.ctx.storage.sql.exec(
 				`INSERT INTO run_logs (run_id, sequence, level, message, fields_json)
 				VALUES (?, ?, ?, ?, ?)`,
 				runId,
@@ -1058,7 +1211,22 @@ class RunLogBase extends DurableObject<Env> {
 				message,
 				fieldsJson,
 			)
+			cursor.toArray()
+			insertRowsRead += Number(cursor.rowsRead) || 0
+			insertRowsWritten += Number(cursor.rowsWritten) || 0
 		}
+		if (kept.length > 0) {
+			this.recordSqlBilling('finishRun', {
+				rowsRead: insertRowsRead,
+				rowsWritten: insertRowsWritten,
+			})
+		}
+		this.execSqlTracked(
+			'finishRun',
+			`UPDATE runs SET log_count = ? WHERE id = ?`,
+			kept.length,
+			runId,
+		).run()
 	}
 
 	private deleteRunsByIds(ids: Array<string>) {
@@ -1153,28 +1321,27 @@ class RunLogBase extends DurableObject<Env> {
 		const longLivedCutoff = new Date(
 			nowMs - runRecordStaleRunningTtlMsForSurface('workflow'),
 		).toISOString()
-		const candidates = this.ctx.storage.sql
-			.exec<{
-				id: string
-				started_at: string
-				surface: RunSurface
-				idempotency_key: string | null
-			}>(
-				`SELECT id, started_at, surface, idempotency_key FROM runs
-				WHERE status = 'running' AND (
-					(surface IN ('execute', 'export', 'retriever', 'webhook', 'subscription', 'app_fetch', 'app_realtime')
-						AND started_at < ?)
-					OR (surface = 'job' AND started_at < ?)
-					OR (surface = 'workflow' AND started_at < ?)
-				)
-				ORDER BY started_at ASC
-				LIMIT ?`,
-				shortLivedCutoff,
-				jobCutoff,
-				longLivedCutoff,
-				maxStaleRunningReconcilesPerPass,
+		const candidates = this.execSqlTracked<{
+			id: string
+			started_at: string
+			surface: RunSurface
+			idempotency_key: string | null
+		}>(
+			'reconcileStaleRunning',
+			`SELECT id, started_at, surface, idempotency_key FROM runs
+			WHERE status = 'running' AND (
+				(surface IN ('execute', 'export', 'retriever', 'webhook', 'subscription', 'app_fetch', 'app_realtime')
+					AND started_at < ?)
+				OR (surface = 'job' AND started_at < ?)
+				OR (surface = 'workflow' AND started_at < ?)
 			)
-			.toArray()
+			ORDER BY started_at ASC
+			LIMIT ?`,
+			shortLivedCutoff,
+			jobCutoff,
+			longLivedCutoff,
+			maxStaleRunningReconcilesPerPass,
+		).toArray()
 		let reconciled = 0
 		for (const row of candidates) {
 			if (
@@ -1219,16 +1386,14 @@ class RunLogBase extends DurableObject<Env> {
 			idempotencyKey: run.idempotencyKey,
 			startedAt: run.startedAt,
 		})
-		const healed = this.ctx.storage.sql
-			.exec<Record<string, SqlStorageValue>>(
-				`SELECT r.*,
-					(SELECT COUNT(*) FROM run_logs l WHERE l.run_id = r.id) AS log_count
-				FROM runs r
-				WHERE r.id = ?
-				LIMIT 1`,
-				run.id,
-			)
-			.toArray()[0]
+		const healed = this.execSqlTracked<Record<string, SqlStorageValue>>(
+			'healStaleRunning',
+			`SELECT r.*
+			FROM runs r
+			WHERE r.id = ?
+			LIMIT 1`,
+			run.id,
+		).toArray()[0]
 		if (!healed) return run
 		return mapRunRow(healed, Number(healed['log_count'] ?? 0) || 0)
 	}
@@ -1375,15 +1540,15 @@ class RunLogBase extends DurableObject<Env> {
 		this.reconcileStaleRunning()
 
 		const cutoff = new Date(Date.now() - retentionMs).toISOString()
-		const expired = this.ctx.storage.sql
-			.exec<{ id: string }>(
-				`SELECT id FROM runs
-				WHERE started_at < ? AND status != 'running'
-				ORDER BY started_at ASC
-				LIMIT ?`,
-				cutoff,
-				maxAgeDeletesPerFinish,
-			)
+		const expired = this.execSqlTracked<{ id: string }>(
+			'enforceRetention',
+			`SELECT id FROM runs
+			WHERE started_at < ? AND status != 'running'
+			ORDER BY started_at ASC
+			LIMIT ?`,
+			cutoff,
+			maxAgeDeletesPerFinish,
+		)
 			.toArray()
 			.map((row) => row.id)
 		this.deleteRunsByIds(expired)
@@ -2530,6 +2695,36 @@ class RunLogBase extends DurableObject<Env> {
 		}
 	}
 
+	/**
+	 * RunLog-only SQLite billing counters (SqlStorageCursor.rowsRead /
+	 * rowsWritten) for hot ops. Durable totals live in run_log_meta; the
+	 * isolate map is a fast path for the current lifetime.
+	 */
+	async getSqlBillingStats(): Promise<RunLogSqlBillingStats> {
+		const ops: Array<RunLogSqlBillingOpStats> = []
+		let rowsReadTotal = 0
+		let rowsWrittenTotal = 0
+		for (const op of runLogSqlBillingOps) {
+			const cached = this.sqlBillingByOp.get(op)
+			const rowsRead =
+				this.getMeta(sqlBillingMetaKey(op, 'rr')) ?? cached?.rowsRead ?? 0
+			const rowsWritten =
+				this.getMeta(sqlBillingMetaKey(op, 'rw')) ?? cached?.rowsWritten ?? 0
+			const calls =
+				this.getMeta(sqlBillingMetaKey(op, 'n')) ?? cached?.calls ?? 0
+			if (rowsRead === 0 && rowsWritten === 0 && calls === 0) continue
+			ops.push({ op, rowsRead, rowsWritten, calls })
+			rowsReadTotal += rowsRead
+			rowsWrittenTotal += rowsWritten
+		}
+		return {
+			databaseSize: this.ctx.storage.sql.databaseSize,
+			rowsReadTotal,
+			rowsWrittenTotal,
+			ops,
+		}
+	}
+
 	private getJobRunObservabilitySync(
 		jobId: string,
 	): JobRunObservabilityRecord | null {
@@ -2641,17 +2836,15 @@ class RunLogBase extends DurableObject<Env> {
 			}
 		}
 		params.push(limit + 1)
-		const rows = this.ctx.storage.sql
-			.exec<Record<string, SqlStorageValue>>(
-				`SELECT r.*,
-					(SELECT COUNT(*) FROM run_logs l WHERE l.run_id = r.id) AS log_count
-				FROM runs r
-				WHERE ${clauses.join(' AND ')}
-				ORDER BY r.started_at DESC, r.id DESC
-				LIMIT ?`,
-				...params,
-			)
-			.toArray()
+		const rows = this.execSqlTracked<Record<string, SqlStorageValue>>(
+			'listRuns',
+			`SELECT r.*
+			FROM runs r
+			WHERE ${clauses.join(' AND ')}
+			ORDER BY r.started_at DESC, r.id DESC
+			LIMIT ?`,
+			...params,
+		).toArray()
 		const hasMore = rows.length > limit
 		const pageRows = hasMore ? rows.slice(0, limit) : rows
 		const runs = pageRows.map((row) =>
@@ -2671,25 +2864,23 @@ class RunLogBase extends DurableObject<Env> {
 	async getRun(input: {
 		runId: string
 	}): Promise<{ run: RunRecord; logs: Array<RunRecordLog> } | null> {
-		const row = this.ctx.storage.sql
-			.exec<Record<string, SqlStorageValue>>(
-				`SELECT r.*,
-					(SELECT COUNT(*) FROM run_logs l WHERE l.run_id = r.id) AS log_count
-				FROM runs r
-				WHERE r.id = ?
-				LIMIT 1`,
-				input.runId,
-			)
-			.toArray()[0]
+		const row = this.execSqlTracked<Record<string, SqlStorageValue>>(
+			'getRun',
+			`SELECT r.*
+			FROM runs r
+			WHERE r.id = ?
+			LIMIT 1`,
+			input.runId,
+		).toArray()[0]
 		if (!row) return null
 		const run = this.healStaleRunningRecord(
 			mapRunRow(row, Number(row['log_count'] ?? 0) || 0),
 		)
-		const logs = this.ctx.storage.sql
-			.exec<Record<string, SqlStorageValue>>(
-				`SELECT * FROM run_logs WHERE run_id = ? ORDER BY sequence ASC`,
-				input.runId,
-			)
+		const logs = this.execSqlTracked<Record<string, SqlStorageValue>>(
+			'getRun',
+			`SELECT * FROM run_logs WHERE run_id = ? ORDER BY sequence ASC`,
+			input.runId,
+		)
 			.toArray()
 			.map(mapLogRow)
 		return {
@@ -2701,44 +2892,46 @@ class RunLogBase extends DurableObject<Env> {
 	async summarize(input: { since: string }): Promise<RunRecordSummary> {
 		this.reconcileStaleRunning()
 		const since = input.since
-		const totals = this.ctx.storage.sql
-			.exec<{
-				total: number
-				errors: number
-				ignored: number
-				resolved: number
-				running: number
-			}>(
-				`SELECT
-					COUNT(*) AS total,
-					SUM(CASE
-						WHEN status = 'error' AND error_triage IS NULL THEN 1
-						ELSE 0
-					END) AS errors,
-					SUM(CASE WHEN error_triage = 'ignored' THEN 1 ELSE 0 END) AS ignored,
-					SUM(CASE WHEN error_triage = 'resolved' THEN 1 ELSE 0 END) AS resolved,
-					SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running
-				FROM runs
-				WHERE started_at >= ?`,
-				since,
-			)
-			.one()
-		const bySurfaceRows = this.ctx.storage.sql
-			.exec<{ surface: string; total: number; errors: number }>(
-				`SELECT
-					surface,
-					COUNT(*) AS total,
-					SUM(CASE
-						WHEN status = 'error' AND error_triage IS NULL THEN 1
-						ELSE 0
-					END) AS errors
-				FROM runs
-				WHERE started_at >= ?
-				GROUP BY surface
-				ORDER BY surface ASC`,
-				since,
-			)
-			.toArray()
+		const totals = this.execSqlTracked<{
+			total: number
+			errors: number
+			ignored: number
+			resolved: number
+			running: number
+		}>(
+			'summarize',
+			`SELECT
+				COUNT(*) AS total,
+				SUM(CASE
+					WHEN status = 'error' AND error_triage IS NULL THEN 1
+					ELSE 0
+				END) AS errors,
+				SUM(CASE WHEN error_triage = 'ignored' THEN 1 ELSE 0 END) AS ignored,
+				SUM(CASE WHEN error_triage = 'resolved' THEN 1 ELSE 0 END) AS resolved,
+				SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running
+			FROM runs
+			WHERE started_at >= ?`,
+			since,
+		).one()
+		const bySurfaceRows = this.execSqlTracked<{
+			surface: string
+			total: number
+			errors: number
+		}>(
+			'summarize',
+			`SELECT
+				surface,
+				COUNT(*) AS total,
+				SUM(CASE
+					WHEN status = 'error' AND error_triage IS NULL THEN 1
+					ELSE 0
+				END) AS errors
+			FROM runs
+			WHERE started_at >= ?
+			GROUP BY surface
+			ORDER BY surface ASC`,
+			since,
+		).toArray()
 		return {
 			since,
 			total: Number(totals.total ?? 0) || 0,
@@ -2766,16 +2959,14 @@ class RunLogBase extends DurableObject<Env> {
 	async updateRunErrorTriage(
 		input: UpdateRunErrorTriageInput,
 	): Promise<UpdateRunErrorTriageResult> {
-		const existing = this.ctx.storage.sql
-			.exec<Record<string, SqlStorageValue>>(
-				`SELECT r.*,
-					(SELECT COUNT(*) FROM run_logs l WHERE l.run_id = r.id) AS log_count
-				FROM runs r
-				WHERE r.id = ?
-				LIMIT 1`,
-				input.runId,
-			)
-			.toArray()[0]
+		const existing = this.execSqlTracked<Record<string, SqlStorageValue>>(
+			'updateRunErrorTriage',
+			`SELECT r.*
+			FROM runs r
+			WHERE r.id = ?
+			LIMIT 1`,
+			input.runId,
+		).toArray()[0]
 		if (!existing) return { ok: false, reason: 'not_found' }
 
 		const current = mapRunRow(existing, Number(existing['log_count'] ?? 0) || 0)
@@ -2829,16 +3020,14 @@ class RunLogBase extends DurableObject<Env> {
 			input.runId,
 		)
 
-		const updated = this.ctx.storage.sql
-			.exec<Record<string, SqlStorageValue>>(
-				`SELECT r.*,
-					(SELECT COUNT(*) FROM run_logs l WHERE l.run_id = r.id) AS log_count
-				FROM runs r
-				WHERE r.id = ?
-				LIMIT 1`,
-				input.runId,
-			)
-			.toArray()[0]
+		const updated = this.execSqlTracked<Record<string, SqlStorageValue>>(
+			'updateRunErrorTriage',
+			`SELECT r.*
+			FROM runs r
+			WHERE r.id = ?
+			LIMIT 1`,
+			input.runId,
+		).toArray()[0]
 		if (!updated) return { ok: false, reason: 'not_found' }
 		return {
 			ok: true,
@@ -3266,9 +3455,9 @@ class RunLogBase extends DurableObject<Env> {
 			case 'runs': {
 				const rows = (
 					input.startAfterId
-						? this.ctx.storage.sql.exec<Record<string, SqlStorageValue>>(
-								`SELECT r.*,
-									(SELECT COUNT(*) FROM run_logs l WHERE l.run_id = r.id) AS log_count
+						? this.execSqlTracked<Record<string, SqlStorageValue>>(
+								'exportRuns',
+								`SELECT r.*
 								FROM runs r
 								WHERE r.id > ?
 								ORDER BY r.id ASC
@@ -3276,9 +3465,9 @@ class RunLogBase extends DurableObject<Env> {
 								input.startAfterId,
 								limit + 1,
 							)
-						: this.ctx.storage.sql.exec<Record<string, SqlStorageValue>>(
-								`SELECT r.*,
-									(SELECT COUNT(*) FROM run_logs l WHERE l.run_id = r.id) AS log_count
+						: this.execSqlTracked<Record<string, SqlStorageValue>>(
+								'exportRuns',
+								`SELECT r.*
 								FROM runs r
 								ORDER BY r.id ASC
 								LIMIT ?`,
@@ -3292,11 +3481,11 @@ class RunLogBase extends DurableObject<Env> {
 				)
 				const logs: Array<RunRecordLog> = []
 				for (const run of runs) {
-					const runLogs = this.ctx.storage.sql
-						.exec<Record<string, SqlStorageValue>>(
-							`SELECT * FROM run_logs WHERE run_id = ? ORDER BY sequence ASC`,
-							run.id,
-						)
+					const runLogs = this.execSqlTracked<Record<string, SqlStorageValue>>(
+						'exportRuns',
+						`SELECT * FROM run_logs WHERE run_id = ? ORDER BY sequence ASC`,
+						run.id,
+					)
 						.toArray()
 						.map(mapLogRow)
 					logs.push(...runLogs)
@@ -3437,6 +3626,7 @@ class RunLogBase extends DurableObject<Env> {
 		this.retentionIdleConfirmed = true
 		this.runCountCache = null
 		this.finishesSinceRetentionCache = null
+		this.sqlBillingByOp.clear()
 		this.initializeSchema()
 		this.setMeta(metaRunCountKey, 0)
 		this.setMeta(metaFinishesSinceRetentionKey, 0)
@@ -3538,6 +3728,7 @@ export type RunLogRpc = DurableObjectPitrRpc & {
 		jobIds: Array<string>
 	}) => Promise<Array<JobRunObservabilityRecord>>
 	getAdminInsightsSnapshot: () => Promise<RunLogAdminInsightsSnapshot>
+	getSqlBillingStats: () => Promise<RunLogSqlBillingStats>
 	listPackageRunSuccesses: () => Promise<Array<PackageRunSuccessRecord>>
 	listActivationMilestones: () => Promise<Array<ActivationMilestoneRecord>>
 	summarize: (input: { since: string }) => Promise<RunRecordSummary>
