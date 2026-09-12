@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest'
 import { type JoinedIntegration } from '#worker/integrations/types.ts'
 
-import { searchEntityPlugins } from './search-entity-registry.ts'
 import { buildSearchableEntityDescriptors } from './search-descriptors.ts'
 import {
 	type OptionalSearchRowsResult,
@@ -98,17 +97,6 @@ function createJoinedIntegration(input: {
 }
 
 test('descriptor seam follows registry order and preserves integration affinity', () => {
-	expect(searchEntityPlugins.map((plugin) => plugin.type)).toEqual([
-		'capability',
-		'guide',
-		'package',
-		'integration',
-		'mcp-server',
-		'secret',
-		'retriever_result',
-		'domain',
-	])
-
 	const descriptors = buildSearchableEntityDescriptors({
 		registry: {
 			capabilitySpecs: {

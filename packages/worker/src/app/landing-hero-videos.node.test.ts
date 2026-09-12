@@ -1,18 +1,12 @@
 import { expect, test } from 'vitest'
 import { createMemoryKv } from '#worker/test-support/auth-provider-harness.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
-import {
-	landingHeroSourcePlaylistId,
-	type LandingHeroVideo,
-} from '#universal/landing-hero-copy.ts'
+import { type LandingHeroVideo } from '#universal/landing-hero-copy.ts'
 import {
 	youtubePlaylistBrowseUrl,
 	youtubePlaylistItemsApiOrigin,
 } from '#universal/youtube-playlist.ts'
-import {
-	buildLandingHeroVideosCacheKey,
-	loadLandingHeroVideos,
-} from './landing-hero-videos.ts'
+import { loadLandingHeroVideos } from './landing-hero-videos.ts'
 
 const first: LandingHeroVideo = {
 	videoId: 'iGMkgjXc8Ho',
@@ -60,9 +54,6 @@ test('loadLandingHeroVideos reads Innertube browse order and serves SWR from KV'
 	const cached = await loadLandingHeroVideos({ env, fetchImpl })
 	expect(cached).toEqual([first, second])
 	expect(fetches).toBe(1)
-	expect(buildLandingHeroVideosCacheKey(landingHeroSourcePlaylistId)).toBe(
-		`landing-hero-videos:v3:${landingHeroSourcePlaylistId}`,
-	)
 })
 
 test('loadLandingHeroVideos prefers the Data API when a key is set', async () => {

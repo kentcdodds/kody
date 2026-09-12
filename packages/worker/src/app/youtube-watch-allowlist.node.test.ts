@@ -53,29 +53,27 @@ test('loadPlaylistVideoIds fails open when YouTube is unreachable', async () => 
 	).resolves.toEqual([])
 })
 
-test('resolveYoutubeWatchAllowedVideoIds uses extra ids when playlists are none', async () => {
-	const ids = await resolveYoutubeWatchAllowedVideoIds({
+test('resolveYoutubeWatchAllowedVideoIds always includes the look-preview sample id and env extras', async () => {
+	const extraVideoId = 'dQw4w9wgvcQ'
+	const fetchImpl = async () => {
+		throw new Error('playlist fetch should not run')
+	}
+	const sampleOnly = await resolveYoutubeWatchAllowedVideoIds({
 		env: {
 			YOUTUBE_ALLOWED_PLAYLIST_IDS: 'none',
-			YOUTUBE_ALLOWED_VIDEO_IDS: videoId,
 		} as Env,
-		fetchImpl: async () => {
-			throw new Error('playlist fetch should not run')
-		},
+		fetchImpl,
 	})
-	expect(ids).toEqual(builtInVideoIds)
-})
+	expect(sampleOnly).toEqual(builtInVideoIds)
 
-test('resolveYoutubeWatchAllowedVideoIds always includes the look-preview sample id', async () => {
-	const ids = await resolveYoutubeWatchAllowedVideoIds({
+	const withExtra = await resolveYoutubeWatchAllowedVideoIds({
 		env: {
 			YOUTUBE_ALLOWED_PLAYLIST_IDS: 'none',
+			YOUTUBE_ALLOWED_VIDEO_IDS: extraVideoId,
 		} as Env,
-		fetchImpl: async () => {
-			throw new Error('playlist fetch should not run')
-		},
+		fetchImpl,
 	})
-	expect(ids).toEqual(builtInVideoIds)
+	expect(withExtra).toEqual([extraVideoId, ...builtInVideoIds])
 })
 
 test('resolveYoutubeWatchAllowedVideoIds skips playlist fetch when loadPlaylists is false', async () => {

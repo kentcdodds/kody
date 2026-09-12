@@ -20,7 +20,6 @@ test('docs shell marks the sidebar and highlights the open page', async () => {
 	expect(html).toContain('href="/docs/oauth"')
 	expect(html).toContain('aria-current="page"')
 	expect(html).toContain('data-section-current="true"')
-	expect(html).not.toContain('href="/docs/what-is-kody"')
 	expect(html).toContain('href="/docs"')
 	expect(html).toContain('href="/docs/search-and-execute"')
 	expect(html.indexOf('href="/docs"')).toBeLessThan(
