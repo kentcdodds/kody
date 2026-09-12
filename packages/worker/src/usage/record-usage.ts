@@ -94,8 +94,9 @@ export type UsageEvent = {
 	 */
 	cacheReuse?: DynamicWorkerCacheReuse | null
 	/**
-	 * Whether the evaluate invocation carried `params` (boolean only).
-	 * Written to Analytics Engine blob9. Empty when unset.
+	 * Whether evaluate `params` is a non-null object with at least one
+	 * own property. Empty `{}`, null, undefined, and non-objects are
+	 * false. Written to Analytics Engine blob9. Empty when unset.
 	 */
 	hadParams?: boolean | null
 	/**

@@ -25,6 +25,7 @@ import { recordUsage, type UsageEnv } from '#worker/usage/record-usage.ts'
 import { recordUniqueDynamicWorkerDay } from '#worker/usage/dynamic-worker-day.ts'
 import {
 	countDynamicWorkerModuleGraphChars,
+	evaluateInvocationHadParams,
 	recordDynamicWorkerInvoke,
 } from '#worker/usage/dynamic-worker-invoke.ts'
 import { type DynamicWorkerDaySurface } from '#worker/usage/dynamic-worker-day-surface.ts'
@@ -648,7 +649,7 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 			const codeChars = countDynamicWorkerModuleGraphChars(
 				workerOptions.modules,
 			)
-			const hadParams = evaluateInvocation.params !== undefined
+			const hadParams = evaluateInvocationHadParams(evaluateInvocation.params)
 			const executionState = { active: true }
 			const startedAtMs = Date.now()
 			let outcome: 'success' | 'error' = 'success'

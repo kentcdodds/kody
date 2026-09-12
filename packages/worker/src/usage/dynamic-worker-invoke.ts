@@ -11,6 +11,16 @@ import { type ExecuteThinGlueClass } from './execute-thin-glue.ts'
 const workerModuleTextKeys = ['js', 'cjs', 'text'] as const
 
 /**
+ * `hadParams` is true only when `params` is a non-null object with at
+ * least one own property. Empty `{}`, null, undefined, and non-objects
+ * are false. Never inspects keys or values beyond that count.
+ */
+export function evaluateInvocationHadParams(params: unknown): boolean {
+	if (params === null || typeof params !== 'object') return false
+	return Object.keys(params).length > 0
+}
+
+/**
  * Character length of the module-graph text that participates in the
  * Dynamic Worker id. Counts string modules and `js` / `cjs` / `text`
  * fields only — never names, params, or binary payloads.

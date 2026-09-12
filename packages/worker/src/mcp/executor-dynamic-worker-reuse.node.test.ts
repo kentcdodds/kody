@@ -123,26 +123,36 @@ test('createExecuteExecutor records privacy-safe Dynamic Worker reuse on every L
 	expect(invokes[1]?.blobs?.[8]).toBe('true')
 	expect(invokes[1]?.doubles?.[3]).toBe(missCodeChars)
 
-	const thirdLoader = createFakeWorkerLoader()
-	await createExecuteExecutor({
-		env: {
-			...createExecutorTestEnv(thirdLoader.loader),
-			...usageBindings,
-		} as Env,
-		exports,
-		gatewayProps: createGatewayProps('usage-user-reuse'),
-		recordExecuteUsage: false,
-		surface: 'job',
-	}).execute(source, providers)
+	const emptyParamsCases: Array<unknown> = [
+		undefined,
+		{},
+		null,
+		'not-an-object',
+	]
+	for (const params of emptyParamsCases) {
+		const loader = createFakeWorkerLoader()
+		await createExecuteExecutor({
+			env: {
+				...createExecutorTestEnv(loader.loader),
+				...usageBindings,
+			} as Env,
+			exports,
+			gatewayProps: createGatewayProps('usage-user-reuse'),
+			recordExecuteUsage: false,
+			surface: 'job',
+		}).execute(source, providers, params === undefined ? undefined : { params })
+		expect(dataPoints.at(-1)?.blobs?.[1]).toBe('dynamic_worker_invoke')
+		expect(dataPoints.at(-1)?.blobs?.[8]).toBe('false')
+	}
 
 	expect(
 		dataPoints.filter((point) => point.blobs?.[1] === 'dynamic_worker_invoke'),
-	).toHaveLength(3)
-	expect(dataPoints.at(-1)?.blobs?.[7]).toBe('hit')
-	expect(dataPoints.at(-1)?.blobs?.[8]).toBe('false')
+	).toHaveLength(6)
 
 	const serialized = JSON.stringify(dataPoints)
 	expect(serialized).not.toContain(sourceMarker)
 	expect(serialized).not.toContain(paramMarker)
 	expect(serialized).not.toContain(source)
+	expect(serialized).not.toContain('token')
+	expect(serialized).not.toContain('not-an-object')
 })

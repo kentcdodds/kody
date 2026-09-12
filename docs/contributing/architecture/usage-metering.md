@@ -34,7 +34,7 @@ type UsageEvent = {
 	surface?: string | null // closed UWD surface; AE blob6
 	executeShape?: string | null // execute thin/glue class; AE blob7
 	cacheReuse?: 'hit' | 'miss' | null // billing-aligned LOADER reuse; AE blob8
-	hadParams?: boolean | null // evaluate carried params; AE blob9
+	hadParams?: boolean | null // non-empty params object; AE blob9
 	codeChars?: number | null // module-graph text length; AE double4
 }
 ```
@@ -217,9 +217,10 @@ Every execute-sandbox LOADER evaluate records `dynamic_worker_invoke` after
 claim, `hit` on later claims of that id the same day. The event also carries
 `durationMs` (sandbox evaluate wall-clock), `codeChars` (total character length
 of the module-graph text hashed into the id), `surface`, `executeShape` when the
-run classified one, and `hadParams` (whether the evaluate invocation included
-`params` — boolean only). Payloads never include source, params, package names,
-or worker ids.
+run classified one, and `hadParams` (true only when `params` is a non-null
+object with at least one own property — boolean only; empty `{}`, null,
+undefined, and non-objects are false). Payloads never include source, params,
+package names, or worker ids.
 
 APP_LOADER package-app isolates record `dynamic_worker_day` only; they do not
 emit `dynamic_worker_invoke`.

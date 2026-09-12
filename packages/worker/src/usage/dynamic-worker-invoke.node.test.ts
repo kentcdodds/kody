@@ -2,8 +2,25 @@ import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	countDynamicWorkerModuleGraphChars,
+	evaluateInvocationHadParams,
 	recordDynamicWorkerInvoke,
 } from './dynamic-worker-invoke.ts'
+
+test('evaluateInvocationHadParams is true only for a non-empty own-property object', () => {
+	expect(evaluateInvocationHadParams({ token: 'x' })).toBe(true)
+	expect(evaluateInvocationHadParams({ nested: { n: 1 } })).toBe(true)
+
+	expect(evaluateInvocationHadParams({})).toBe(false)
+	expect(evaluateInvocationHadParams(null)).toBe(false)
+	expect(evaluateInvocationHadParams(undefined)).toBe(false)
+	expect(evaluateInvocationHadParams([])).toBe(false)
+	expect(evaluateInvocationHadParams(1)).toBe(false)
+	expect(evaluateInvocationHadParams('params')).toBe(false)
+	expect(evaluateInvocationHadParams(true)).toBe(false)
+	expect(evaluateInvocationHadParams(Object.create({ inherited: 1 }))).toBe(
+		false,
+	)
+})
 
 test('countDynamicWorkerModuleGraphChars sums text only and ignores names', () => {
 	expect(
