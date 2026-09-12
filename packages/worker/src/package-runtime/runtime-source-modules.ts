@@ -488,6 +488,15 @@ function __kodyCreateRuntimeRecordExport(exportName) {
 				value: value[property],
 			};
 		},
+		set() {
+			return false;
+		},
+		defineProperty() {
+			return false;
+		},
+		deleteProperty() {
+			return false;
+		},
 	});
 }
 

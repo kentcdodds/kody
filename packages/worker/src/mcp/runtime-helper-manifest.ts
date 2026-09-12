@@ -212,8 +212,8 @@ const __kodyPackageSecrets = (packageId) => ({
 
 function createPackageSecretsBindingPrelude() {
 	return `
-const packageSecrets = __invocation.packageContext?.packageId
-  ? __kodyPackageSecrets(__invocation.packageContext.packageId)
+const packageSecrets = __kodyTrustedPackageId
+  ? __kodyPackageSecrets(__kodyTrustedPackageId)
   : null;
 	`.trim()
 }

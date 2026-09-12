@@ -232,10 +232,12 @@ function resolveEvaluateInvocation(
 	const kodyProvider = providers.find(
 		(provider) => provider.name === 'kody',
 	) as KodyResolvedProvider | undefined
+	const packageContext =
+		cloneEvaluateJsonValue(invocation?.packageContext ?? null) ?? null
 	return {
 		params: cloneEvaluateJsonValue(invocation?.params),
 		packageContext:
-			cloneEvaluateJsonValue(invocation?.packageContext ?? null) ?? null,
+			packageContext == null ? null : Object.freeze({ ...packageContext }),
 		mcpServers: projectKodyRemoteProxyMetadata(
 			invocation?.mcpServers ?? kodyProvider?.kodyMcpServers ?? [],
 		),

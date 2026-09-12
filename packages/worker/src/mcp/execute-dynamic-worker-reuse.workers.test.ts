@@ -198,3 +198,105 @@ test(
 		})
 	},
 )
+
+test(
+	'module-scope packageContext capture still late-binds across evaluate reuse',
+	{ timeout: 60_000 },
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		const bundle = await buildKodyModuleBundle({
+			env: reuseEnv,
+			baseUrl: 'https://kody.dev',
+			userId: 'user-reuse-test',
+			sourceFiles: {
+				'entry.ts': [
+					"import { packageContext } from 'kody:runtime'",
+					'const capturedContext = packageContext',
+					'export default async function main() {',
+					'\treturn { packageId: capturedContext?.packageId ?? null }',
+					'}',
+				].join('\n'),
+			},
+			entryPoint: 'entry.ts',
+		})
+
+		const runOnce = async (packageContext: {
+			packageId: string
+			kodyId: string
+		}) =>
+			await runBundledModuleWithRegistry(
+				reuseEnv,
+				createCaller(),
+				{
+					mainModule: bundle.mainModule,
+					modules: bundle.modules,
+				},
+				undefined,
+				{
+					skipCapabilityRegistry: true,
+					packageContext,
+				},
+			)
+
+		const first = await runOnce({ packageId: 'pkg-a', kodyId: 'bot-a' })
+		const second = await runOnce({ packageId: 'pkg-b', kodyId: 'bot-b' })
+		expect(first.error).toBeUndefined()
+		expect(second.error).toBeUndefined()
+		expect(first.result).toEqual({ packageId: 'pkg-a' })
+		expect(second.result).toEqual({ packageId: 'pkg-b' })
+	},
+)
+
+test(
+	'mutating packageContext.packageId cannot retarget unstamped packageSecrets',
+	{ timeout: 60_000 },
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		const bundle = await buildKodyModuleBundle({
+			env: reuseEnv,
+			baseUrl: 'https://kody.dev',
+			userId: 'user-reuse-test',
+			sourceFiles: {
+				'entry.ts': [
+					"import { packageContext, packageSecrets } from 'kody:runtime'",
+					'export default async function main() {',
+					'\tlet mutationError = null',
+					'\ttry {',
+					"\t\tpackageContext.packageId = 'pkg-attacker'",
+					'\t} catch (error) {',
+					'\t\tmutationError = error instanceof Error ? error.message : String(error)',
+					'\t}',
+					'\treturn {',
+					'\t\tpackageId: packageContext?.packageId ?? null,',
+					'\t\tsecretsBound: "get" in packageSecrets,',
+					'\t\tmutationError,',
+					'\t}',
+					'}',
+				].join('\n'),
+			},
+			entryPoint: 'entry.ts',
+		})
+
+		const result = await runBundledModuleWithRegistry(
+			reuseEnv,
+			createCaller(),
+			{
+				mainModule: bundle.mainModule,
+				modules: bundle.modules,
+			},
+			undefined,
+			{
+				skipCapabilityRegistry: true,
+				packageContext: { packageId: 'pkg-trusted', kodyId: 'bot-trusted' },
+			},
+		)
+		expect(result.error).toBeUndefined()
+		expect(result.result).toEqual({
+			packageId: 'pkg-trusted',
+			secretsBound: true,
+			mutationError: expect.stringMatching(
+				/trap returned falsish|cannot assign|read.only|frozen/i,
+			),
+		})
+	},
+)

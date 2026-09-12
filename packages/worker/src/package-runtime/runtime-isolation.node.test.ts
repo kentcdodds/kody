@@ -36,7 +36,7 @@ type RuntimeModule = {
 	capabilities?: unknown
 	email: { getMessage: (id: string) => Promise<unknown> } | null
 	packageContext: Record<string, unknown> | null
-	packageSecrets: { get: (alias: string) => Promise<string> } | null
+	packageSecrets: { get: (alias: string) => Promise<string> }
 	default: {
 		kody?: { tool_call: (args: unknown) => Promise<unknown> }
 		codemode?: unknown

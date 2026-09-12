@@ -66,8 +66,7 @@ test('packageSecrets prelude reads the run package id from evaluate invocation',
 		},
 	}).join('\n')
 	expect(first).toBe(second)
-	expect(first).toContain('__invocation.packageContext?.packageId')
-	expect(first).toContain(
-		'__kodyPackageSecrets(__invocation.packageContext.packageId)',
-	)
+	expect(first).toContain('__kodyTrustedPackageId')
+	expect(first).toContain('__kodyPackageSecrets(__kodyTrustedPackageId)')
+	expect(first).not.toContain('__invocation.packageContext')
 })

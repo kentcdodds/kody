@@ -1239,7 +1239,8 @@ export default async function main(params) { return params }`
 		expect(executorModules[1]).toEqual(executorModules[0])
 		expect(executorModules[2]).toEqual(executorModules[0])
 		expect(wrappedSources[0]).toContain('__invocation.params')
-		expect(wrappedSources[0]).toContain('__invocation.packageContext')
+		expect(wrappedSources[0]).toContain('__kodyTrustedPackageId')
+		expect(wrappedSources[0]).toContain('Object.freeze')
 		expect(JSON.stringify(wrappedSources[0])).not.toContain(
 			firstParams.sentinel,
 		)

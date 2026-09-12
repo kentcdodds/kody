@@ -1033,6 +1033,21 @@ export async function runBundledModuleWithRegistry(
 		const runtimeHelperRuntimePropertySource =
 			createRuntimeHelperRuntimePropertySource()
 		const wrapped = `async (__invocation = {}) => {
+  const __kodyTrustedPackageContext = (() => {
+    const incoming = __invocation.packageContext;
+    if (incoming == null || typeof incoming !== 'object') return null;
+    const snapshot = {
+      packageId: incoming.packageId,
+      kodyId: incoming.kodyId,
+    };
+    if ('sourceId' in incoming) snapshot.sourceId = incoming.sourceId;
+    return Object.freeze(snapshot);
+  })();
+  const __kodyTrustedPackageId =
+    typeof __kodyTrustedPackageContext?.packageId === 'string' &&
+    __kodyTrustedPackageContext.packageId.trim() !== ''
+      ? __kodyTrustedPackageContext.packageId
+      : null;
 ${runtimeHelperPreludeSource}
   const { AsyncLocalStorage: __KodyAsyncLocalStorage } = await import('node:async_hooks');
   const __kodyRuntimeStorageSymbol = Symbol.for('kody.runtimeStorage');
@@ -1043,7 +1058,7 @@ ${runtimeHelperPreludeSource}
   const __kodyRuntime = {
     kody,
 ${runtimeHelperRuntimePropertySource}
-    packageContext: __invocation.packageContext ?? null,
+    packageContext: __kodyTrustedPackageContext,
   };
   try {
     return await __kodyRuntimeStorage.run(__kodyRuntime, async () => {
