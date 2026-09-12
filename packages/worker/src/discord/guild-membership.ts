@@ -39,16 +39,20 @@ function guildMemberUrl(guildId: string, discordUserId: string) {
 	return `${discordApiBaseUrl}/guilds/${guildId}/members/${discordUserId}`
 }
 
-async function readDiscordConnectionUserId(db: D1Database, userId: number) {
-	const row = await db
+async function readDiscordConnectionUserIds(db: D1Database, userId: number) {
+	const result = await db
 		.prepare(
 			`SELECT provider_id FROM oauth_connections
 			 WHERE user_id = ? AND provider_name = 'discord'`,
 		)
 		.bind(userId)
-		.first<{ provider_id: string }>()
-	const providerId = row?.provider_id?.trim()
-	return providerId && providerId.length > 0 ? providerId : null
+		.all<{ provider_id: string }>()
+	const ids: Array<string> = []
+	for (const row of result.results ?? []) {
+		const providerId = row.provider_id?.trim()
+		if (providerId) ids.push(providerId)
+	}
+	return ids
 }
 
 /**
@@ -102,9 +106,10 @@ export async function readOfficialDiscordGuildMembership(input: {
 
 /**
  * Official-guild membership as Kody can see it: Discord social login plus a
- * live member read. `false` means we know they have not linked Discord (or
- * the bot confirmed they are not in the guild). `null` is unknown — bot
- * unset, API blip, or a storage error — so Waiting must not invent a card.
+ * live member read. A user can have more than one Discord identity. `true`
+ * means any linked identity is in the guild. `false` means none are linked,
+ * or every linked identity is confirmed out. `null` is unknown — bot unset,
+ * API blip, or a storage error — so Waiting must not invent a card.
  */
 export async function readOfficialDiscordMembershipForUser(input: {
 	env: DiscordMembershipEnv & { APP_DB: D1Database }
@@ -113,31 +118,36 @@ export async function readOfficialDiscordMembershipForUser(input: {
 	timeoutMs?: number
 }): Promise<boolean | null> {
 	try {
-		const discordUserId = await readDiscordConnectionUserId(
+		const discordUserIds = await readDiscordConnectionUserIds(
 			input.env.APP_DB,
 			input.userId,
 		)
-		if (!discordUserId) return false
-		const membership = await readOfficialDiscordGuildMembership({
-			env: input.env,
-			discordUserId,
-			fetchImpl: input.fetchImpl,
-			timeoutMs: input.timeoutMs,
-		})
-		switch (membership.status) {
-			case 'member':
-				return true
-			case 'not-in-guild':
-				return false
-			case 'skipped':
-			case 'error':
-				return null
-			default: {
-				const exhaustive: never = membership
-				void exhaustive
-				return null
+		if (discordUserIds.length === 0) return false
+		let sawUnknown = false
+		for (const discordUserId of discordUserIds) {
+			const membership = await readOfficialDiscordGuildMembership({
+				env: input.env,
+				discordUserId,
+				fetchImpl: input.fetchImpl,
+				timeoutMs: input.timeoutMs,
+			})
+			switch (membership.status) {
+				case 'member':
+					return true
+				case 'not-in-guild':
+					break
+				case 'skipped':
+				case 'error':
+					sawUnknown = true
+					break
+				default: {
+					const exhaustive: never = membership
+					void exhaustive
+					sawUnknown = true
+				}
 			}
 		}
+		return sawUnknown ? null : false
 	} catch {
 		return null
 	}

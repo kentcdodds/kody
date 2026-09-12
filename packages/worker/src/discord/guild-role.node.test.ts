@@ -288,6 +288,52 @@ test('official guild membership lookup classifies member, absent, and fail-open'
 			},
 		}),
 	).toBeNull()
+
+	const secondDiscordUserId = '555555555555555555'
+	await db
+		.prepare(
+			`INSERT INTO oauth_connections (user_id, provider_name, provider_id)
+			 VALUES (?, 'discord', ?)`,
+		)
+		.bind(11, secondDiscordUserId)
+		.run()
+	const multiCalls: Array<string> = []
+	expect(
+		await readOfficialDiscordMembershipForUser({
+			env: { ...configuredEnv, APP_DB: db },
+			userId: 11,
+			fetchImpl: async (input) => {
+				const url = String(input)
+				multiCalls.push(url)
+				if (url.includes(secondDiscordUserId)) {
+					return jsonResponse(200, { user: { id: secondDiscordUserId } })
+				}
+				return jsonResponse(404)
+			},
+		}),
+	).toBe(true)
+	expect(multiCalls.some((url) => url.includes(discordUserId))).toBe(true)
+	expect(multiCalls.some((url) => url.includes(secondDiscordUserId))).toBe(true)
+	expect(
+		await readOfficialDiscordMembershipForUser({
+			env: { ...configuredEnv, APP_DB: db },
+			userId: 11,
+			fetchImpl: async () => jsonResponse(404),
+		}),
+	).toBe(false)
+	expect(
+		await readOfficialDiscordMembershipForUser({
+			env: { ...configuredEnv, APP_DB: db },
+			userId: 11,
+			fetchImpl: async (input) => {
+				const url = String(input)
+				if (url.includes(secondDiscordUserId)) {
+					return jsonResponse(500)
+				}
+				return jsonResponse(404)
+			},
+		}),
+	).toBeNull()
 })
 
 test('assign and remove call the Discord member-role routes and classify outcomes', async () => {
