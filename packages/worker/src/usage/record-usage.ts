@@ -104,6 +104,12 @@ export type UsageEvent = {
 	 * Dynamic Worker id. Written to Analytics Engine double4. Number only.
 	 */
 	codeChars?: number | null
+	/**
+	 * Character length of a stable JSON serialization of evaluate
+	 * `params`. 0 when `hadParams` is false. Written to Analytics Engine
+	 * double5. Number only — never the JSON.
+	 */
+	paramsChars?: number | null
 }
 
 export const dynamicWorkerCacheReuses = ['hit', 'miss'] as const
@@ -127,6 +133,7 @@ export const usageEventDoubleIndexes = {
 	cpuMs: 1,
 	bytesOrCoalescedCount: 2,
 	codeChars: 3,
+	paramsChars: 4,
 } as const
 
 export function usageEventBlobs(
@@ -270,6 +277,9 @@ function emitUsageSpan(event: UsageEvent) {
 			if (event.hadParams != null) {
 				span.setAttribute('kody.had_params', event.hadParams)
 			}
+			if (event.paramsChars != null) {
+				span.setAttribute('kody.params_chars', event.paramsChars)
+			}
 		})
 	} catch (error) {
 		console.debug('usage-span-failed', error)
@@ -293,6 +303,7 @@ function writeUsageDataPoint(
 					? usageEventCount(event)
 					: (event.bytes ?? 0),
 				event.codeChars ?? 0,
+				event.paramsChars ?? 0,
 			],
 		})
 	} catch (error) {

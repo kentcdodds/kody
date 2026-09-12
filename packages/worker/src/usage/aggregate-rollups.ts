@@ -105,7 +105,8 @@ SELECT
 	if(blob6 = '', 'unknown', blob6) AS surface,
 	sum(_sample_interval) AS invokes,
 	avg(double1) AS avg_duration_ms,
-	avg(double4) AS avg_code_chars
+	avg(double4) AS avg_code_chars,
+	avg(double5) AS avg_params_chars
 FROM ${dataset}
 WHERE timestamp >= toDateTime('${bounds.monthStart}')
 	AND timestamp < toDateTime('${bounds.nextMonthStart}')

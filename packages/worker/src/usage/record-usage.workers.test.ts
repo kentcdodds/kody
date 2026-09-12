@@ -82,7 +82,7 @@ test('recordUsage writes only Analytics Engine data points when USAGE_EVENTS is 
 			'',
 			'',
 		],
-		doubles: [120, 0, 0, 0],
+		doubles: [120, 0, 0, 0, 0],
 	})
 	expect(dataPoints[1]).toEqual({
 		indexes: [userA],
@@ -97,7 +97,7 @@ test('recordUsage writes only Analytics Engine data points when USAGE_EVENTS is 
 			'',
 			'',
 		],
-		doubles: [80, 0, 512, 0],
+		doubles: [80, 0, 512, 0, 0],
 	})
 	expect(dataPoints[2]?.indexes).toEqual([userB])
 	expect(dataPoints[3]).toEqual({
@@ -113,7 +113,7 @@ test('recordUsage writes only Analytics Engine data points when USAGE_EVENTS is 
 			'',
 			'',
 		],
-		doubles: [10_000, 0, 8, 0],
+		doubles: [10_000, 0, 8, 0, 0],
 	})
 
 	// Production path: usage_rollups is a derived aggregate recomputed by the
@@ -329,7 +329,7 @@ test('recordUsage writes surface and executeShape as trailing Analytics Engine b
 	])
 })
 
-test('recordUsage writes cacheReuse, hadParams, and codeChars on invoke events', async () => {
+test('recordUsage writes cacheReuse, hadParams, codeChars, and paramsChars on invoke events', async () => {
 	const userId = `usage-invoke-${crypto.randomUUID()}`
 	const dataPoints: Array<AnalyticsEngineDataPoint> = []
 	const usageEnv = {
@@ -351,6 +351,7 @@ test('recordUsage writes cacheReuse, hadParams, and codeChars on invoke events',
 		cacheReuse: 'hit',
 		hadParams: true,
 		codeChars: 1280,
+		paramsChars: 17,
 	})
 
 	expect(dataPoints[0]).toEqual({
@@ -366,9 +367,10 @@ test('recordUsage writes cacheReuse, hadParams, and codeChars on invoke events',
 			'hit',
 			'true',
 		],
-		doubles: [42, 0, 0, 1280],
+		doubles: [42, 0, 0, 1280, 17],
 	})
 	expect(dataPoints[0]?.blobs?.[usageEventBlobIndexes.cacheReuse]).toBe('hit')
 	expect(dataPoints[0]?.blobs?.[usageEventBlobIndexes.hadParams]).toBe('true')
 	expect(dataPoints[0]?.doubles?.[usageEventDoubleIndexes.codeChars]).toBe(1280)
+	expect(dataPoints[0]?.doubles?.[usageEventDoubleIndexes.paramsChars]).toBe(17)
 })

@@ -21,6 +21,30 @@ export function evaluateInvocationHadParams(params: unknown): boolean {
 }
 
 /**
+ * Character length of a key-sorted JSON serialization of `params`.
+ * Returns 0 when `hadParams` is false. Never returns the JSON itself.
+ */
+export function countEvaluateInvocationParamsChars(params: unknown): number {
+	if (!evaluateInvocationHadParams(params)) return 0
+	try {
+		return JSON.stringify(canonicalizeJson(params)).length
+	} catch {
+		return 0
+	}
+}
+
+function canonicalizeJson(value: unknown): unknown {
+	if (value === null || typeof value !== 'object') return value
+	if (Array.isArray(value)) return value.map((entry) => canonicalizeJson(entry))
+	const record = value as Record<string, unknown>
+	return Object.fromEntries(
+		Object.keys(record)
+			.sort((left, right) => left.localeCompare(right))
+			.map((key) => [key, canonicalizeJson(record[key])]),
+	)
+}
+
+/**
  * Character length of the module-graph text that participates in the
  * Dynamic Worker id. Counts string modules and `js` / `cjs` / `text`
  * fields only — never names, params, or binary payloads.
@@ -60,6 +84,7 @@ export async function recordDynamicWorkerInvoke(input: {
 	codeChars: number
 	executeShape?: ExecuteThinGlueClass | null
 	hadParams?: boolean
+	paramsChars?: number
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<void> {
 	try {
@@ -74,6 +99,7 @@ export async function recordDynamicWorkerInvoke(input: {
 				surface: input.surface,
 				cacheReuse: input.cacheReuse,
 				codeChars: input.codeChars,
+				paramsChars: input.paramsChars ?? 0,
 				...(input.hadParams != null ? { hadParams: input.hadParams } : {}),
 				...(input.executeShape ? { executeShape: input.executeShape } : {}),
 			},

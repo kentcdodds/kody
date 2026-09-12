@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	countDynamicWorkerModuleGraphChars,
+	countEvaluateInvocationParamsChars,
 	evaluateInvocationHadParams,
 	recordDynamicWorkerInvoke,
 } from './dynamic-worker-invoke.ts'
@@ -20,6 +21,32 @@ test('evaluateInvocationHadParams is true only for a non-empty own-property obje
 	expect(evaluateInvocationHadParams(Object.create({ inherited: 1 }))).toBe(
 		false,
 	)
+})
+
+test('countEvaluateInvocationParamsChars is the key-sorted JSON length or 0', () => {
+	expect(countEvaluateInvocationParamsChars({ token: 'x' })).toBe(
+		'{"token":"x"}'.length,
+	)
+	expect(countEvaluateInvocationParamsChars({ z: 1, a: 2 })).toBe(
+		countEvaluateInvocationParamsChars({ a: 2, z: 1 }),
+	)
+	expect(countEvaluateInvocationParamsChars({ z: 1, a: 2 })).toBe(
+		'{"a":2,"z":1}'.length,
+	)
+	expect(countEvaluateInvocationParamsChars({ z: { b: 1, a: 2 }, a: 0 })).toBe(
+		'{"a":0,"z":{"a":2,"b":1}}'.length,
+	)
+
+	expect(countEvaluateInvocationParamsChars({})).toBe(0)
+	expect(countEvaluateInvocationParamsChars(null)).toBe(0)
+	expect(countEvaluateInvocationParamsChars(undefined)).toBe(0)
+	expect(countEvaluateInvocationParamsChars([])).toBe(0)
+	expect(countEvaluateInvocationParamsChars(1)).toBe(0)
+	expect(countEvaluateInvocationParamsChars('params')).toBe(0)
+	expect(countEvaluateInvocationParamsChars(true)).toBe(0)
+	expect(
+		countEvaluateInvocationParamsChars(Object.create({ inherited: 1 })),
+	).toBe(0)
 })
 
 test('countDynamicWorkerModuleGraphChars sums text only and ignores names', () => {
@@ -49,6 +76,7 @@ test('recordDynamicWorkerInvoke writes numbers and closed enums only', async () 
 		codeChars: 40,
 		executeShape: 'thin_few_exports',
 		hadParams: true,
+		paramsChars: 13,
 	})
 
 	expect(recordUsageSpy).toHaveBeenCalledTimes(1)
@@ -60,6 +88,7 @@ test('recordDynamicWorkerInvoke writes numbers and closed enums only', async () 
 		surface: 'execute',
 		cacheReuse: 'miss',
 		codeChars: 40,
+		paramsChars: 13,
 		hadParams: true,
 		executeShape: 'thin_few_exports',
 	})
