@@ -441,7 +441,6 @@ export async function servePackageAppRequest(input: {
 				env,
 				userId: owner.userId,
 				manifest: packageManifest.manifest,
-				source: packageManifest.source,
 				savedPackage: {
 					id: savedPackage.id,
 					kodyId: savedPackage.kodyId,

@@ -188,12 +188,14 @@ TypeScript source instead of checked-in `.js`:
   **browser** (ESM, `es2022`, relative imports and `package.json` npm
   dependencies inlined). The output is served at
   `<appBasePath>/_assets/client.<hash>.js` with
-  `Cache-Control: public, max-age=31536000, immutable`; the hash changes with
-  the content, so never hardcode the file name.
+  `Cache-Control: private, max-age=31536000, immutable` (browser-cached for a
+  year; `private` because the owner's session gates every package-app response);
+  the hash changes with the content, so never hardcode the file name.
 - `assets` — a subdirectory of static files served as-is at
   `<appBasePath>/_assets/<path inside the directory>` with a content type
-  inferred from the extension (`.css`, `.png`, `.wasm`, `.woff2`, …) and a
-  commit-scoped `ETag`. No TypeScript compile, no bundling.
+  inferred from the extension (`.css`, `.png`, `.wasm`, `.woff2`, …), a
+  commit-scoped `ETag`, and `Cache-Control: private, max-age=300`. No TypeScript
+  compile, no bundling.
 
 Read the URLs from `packageContext` in the fetch handler:
 

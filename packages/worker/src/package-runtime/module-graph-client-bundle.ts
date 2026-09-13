@@ -62,8 +62,15 @@ function buildPackageAppClientModuleName(hash: string) {
 	return `client.${hash}.js`
 }
 
-export const packageAppClientModuleNamePattern =
-	/^client\.[A-Za-z0-9_-]{8,}\.js$/
+/**
+ * Exactly the shape `buildPackageAppClientModuleName` produces (base64url
+ * SHA-256 prefix of fixed length), so the serve path can recognise a client
+ * module request without shadowing static assets such as
+ * `client.production.js`.
+ */
+export const packageAppClientModuleNamePattern = new RegExp(
+	`^client\\.[A-Za-z0-9_-]{${clientModuleHashLength}}\\.js$`,
+)
 
 type ClientGraphProblem = {
 	modulePath: string

@@ -61,7 +61,10 @@ test('validatePackageAppAssetsDirectory accepts populated subdirectories and rej
 			assetsDirectory,
 			sourceFiles,
 		})
-		expect(result.ok, assetsDirectory).toBe(false)
+		expect({ assetsDirectory, ok: result.ok }).toEqual({
+			assetsDirectory,
+			ok: false,
+		})
 		expect(result.message).toContain('must name a subdirectory')
 	}
 	const missing = validatePackageAppAssetsDirectory({

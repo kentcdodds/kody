@@ -239,6 +239,7 @@ function seedClientAndAssets() {
 			'src/client.ts': 'export const hello = "hi"',
 			'public/styles.css': 'body { color: red }',
 			'public/img/dot.png': '\u0089PNG\r\n\u001a\n',
+			'public/client.production.js': 'console.log("static, not the bundle")',
 		},
 	})
 	return fixture
@@ -283,7 +284,7 @@ test('/_assets/ serves the fingerprinted client module with immutable caching an
 		'text/javascript; charset=utf-8',
 	)
 	expect(response.headers.get('Cache-Control')).toBe(
-		'public, max-age=31536000, immutable',
+		'private, max-age=31536000, immutable',
 	)
 	expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff')
 	expect(response.headers.get('ETag')).toBe(`"${clientModuleName}"`)
@@ -303,6 +304,19 @@ test('/_assets/ serves the fingerprinted client module with immutable caching an
 	})
 	expect(stale.status).toBe(404)
 	expect(stale.headers.get('Cache-Control')).toBe('no-store')
+
+	// A static file whose name merely resembles a client module is not
+	// shadowed by the fingerprinted-module fast path.
+	const lookalike = await serveHelloWorld({
+		kodyId: clientAppKodyId,
+		restPath: '/_assets/client.production.js',
+	})
+	expect(lookalike.status).toBe(200)
+	expect(lookalike.headers.get('Content-Type')).toBe(
+		'text/javascript; charset=utf-8',
+	)
+	expect(lookalike.headers.get('Cache-Control')).toBe('private, max-age=300')
+	expect(await lookalike.text()).toBe('console.log("static, not the bundle")')
 })
 
 test('/_assets/ serves files from the declared assets directory with inferred content types', async () => {
@@ -315,7 +329,7 @@ test('/_assets/ serves files from the declared assets directory with inferred co
 	})
 	expect(css.status).toBe(200)
 	expect(css.headers.get('Content-Type')).toBe('text/css; charset=utf-8')
-	expect(css.headers.get('Cache-Control')).toBe('public, max-age=300')
+	expect(css.headers.get('Cache-Control')).toBe('private, max-age=300')
 	expect(css.headers.get('ETag')).toBe(
 		`"${fixture.source.published_commit}:public/styles.css"`,
 	)
@@ -376,12 +390,26 @@ test('/_assets/ serves files from the declared assets directory with inferred co
 	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
 })
 
-test('/_assets/ repairs a missing published client artifact from source and persists it', async () => {
+test('/_assets/ repairs a missing published client artifact from fresh source and persists it under the fresh row', async () => {
 	const repairKodyId = 'repair-app'
 	const fixture = seedFixture({
 		kodyId: repairKodyId,
 		app: { entry: './src/app.ts', client: './src/client.ts' },
 	})
+	// The cached manifest still says ./src/client.ts; the source files (and
+	// the D1 row) have moved on to a republish that renamed the entry.
+	const freshSource = { ...fixture.source, published_commit: 'commit-2' }
+	const freshManifestContent = JSON.stringify({
+		...JSON.parse(fixture.manifestContent),
+		kody: {
+			...JSON.parse(fixture.manifestContent).kody,
+			app: { entry: './src/app.ts', client: './src/browser.ts' },
+		},
+	})
+	mockModule.getEntitySourceById.mockImplementation(
+		async (_db: unknown, sourceId: string) =>
+			sourceId === fixture.source.id ? freshSource : null,
+	)
 	mockModule.loadPublishedBundleArtifactByIdentity.mockReset()
 	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(null)
 	mockModule.persistPublishedBundleArtifact.mockReset()
@@ -393,12 +421,12 @@ test('/_assets/ repairs a missing published client artifact from source and pers
 	})
 	mockModule.loadPackageSourceBySourceId.mockReset()
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
-		source: fixture.source,
-		manifest: JSON.parse(fixture.manifestContent),
+		source: freshSource,
+		manifest: JSON.parse(freshManifestContent),
 		files: {
-			'package.json': fixture.manifestContent,
+			'package.json': freshManifestContent,
 			'src/app.ts': 'export default { fetch() { return new Response("ok") } }',
-			'src/client.ts': 'console.log("rebuilt")',
+			'src/browser.ts': 'console.log("rebuilt")',
 		},
 	})
 
@@ -410,12 +438,15 @@ test('/_assets/ repairs a missing published client artifact from source and pers
 	// page render can hand out the fresh URL.
 	expect(probe.status).toBe(404)
 	expect(mockModule.createWorker).toHaveBeenCalledTimes(1)
+	expect(mockModule.createWorker).toHaveBeenCalledWith(
+		expect.objectContaining({ entryPoint: 'src/browser.ts' }),
+	)
 	expect(mockModule.persistPublishedBundleArtifact).toHaveBeenCalledWith(
 		expect.objectContaining({
 			kind: 'app-client',
 			artifactName: null,
-			entryPoint: 'src/client.ts',
-			source: fixture.source,
+			entryPoint: 'src/browser.ts',
+			source: freshSource,
 			mainModule: expect.stringMatching(/^client\.[A-Za-z0-9_-]{16}\.js$/),
 		}),
 	)
@@ -433,6 +464,42 @@ test('/_assets/ repairs a missing published client artifact from source and pers
 	expect(
 		mockModule.loadPublishedBundleArtifactByIdentity,
 	).toHaveBeenCalledTimes(1)
+})
+
+test('/_assets/ treats a client entry removed by a republish as no client', async () => {
+	const removedKodyId = 'removed-client-app'
+	const fixture = seedFixture({
+		kodyId: removedKodyId,
+		app: { entry: './src/app.ts', client: './src/client.ts' },
+	})
+	const freshManifestContent = JSON.stringify({
+		...JSON.parse(fixture.manifestContent),
+		kody: {
+			...JSON.parse(fixture.manifestContent).kody,
+			app: { entry: './src/app.ts' },
+		},
+	})
+	mockModule.loadPublishedBundleArtifactByIdentity.mockReset()
+	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(null)
+	mockModule.persistPublishedBundleArtifact.mockReset()
+	mockModule.createWorker.mockReset()
+	mockModule.loadPackageSourceBySourceId.mockReset()
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		source: fixture.source,
+		manifest: JSON.parse(freshManifestContent),
+		files: {
+			'package.json': freshManifestContent,
+			'src/app.ts': 'export default { fetch() { return new Response("ok") } }',
+		},
+	})
+
+	const response = await serveHelloWorld({
+		kodyId: removedKodyId,
+		restPath: '/_assets/client.0000000000000000.js',
+	})
+	expect(response.status).toBe(404)
+	expect(mockModule.createWorker).not.toHaveBeenCalled()
+	expect(mockModule.persistPublishedBundleArtifact).not.toHaveBeenCalled()
 })
 
 test('/_assets/ is a 404 for apps without client or assets and author fetch still handles other paths', async () => {

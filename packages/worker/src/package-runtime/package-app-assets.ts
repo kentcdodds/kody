@@ -2,6 +2,7 @@ import { snapshotStringToBytes } from '#universal/package-file-media.ts'
 import {
 	getPackageAppAssetsDirectory,
 	getPackageAppClientEntryPath,
+	parseAuthoredPackageJson,
 } from '#worker/package-registry/manifest.ts'
 import {
 	createPublishedPackageCacheKey,
@@ -9,7 +10,6 @@ import {
 } from '#worker/package-registry/published-package-cache.ts'
 import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
-import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import {
 	buildKodyAppClientBundle,
@@ -32,15 +32,19 @@ import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './publishe
  * author's fetch handler runs:
  *
  * - `client.<hash>.js` — the browser ESM built from `kody.app.client`,
- *   served with immutable caching because the hash is in the URL.
+ *   served with immutable caching because the hash is in the URL. Only the
+ *   current artifact's exact name matches; anything else falls through.
  * - any other path — a file from the `kody.app.assets` directory, read from
  *   the published source snapshot and served as-is.
  */
 
 const packageAppAssetsPathSegment = '_assets'
 const packageAppAssetsPathPrefix = `/${packageAppAssetsPathSegment}/`
-const clientModuleCacheControl = 'public, max-age=31536000, immutable'
-const staticAssetCacheControl = 'public, max-age=300'
+// `private`: the owner's session gates these responses, so a shared cache in
+// front of the Worker must never answer for another visitor. Browsers still
+// cache them, and the content hash keeps the client module immutable.
+const clientModuleCacheControl = 'private, max-age=31536000, immutable'
+const staticAssetCacheControl = 'private, max-age=300'
 
 export type PackageAppClientArtifact = {
 	mainModule: string
@@ -57,7 +61,7 @@ type PackageAppAssetSavedPackage = {
 }
 
 const packageAppClientArtifactCache =
-	new PromiseLruCache<PackageAppClientArtifact>()
+	new PromiseLruCache<PackageAppClientArtifact | null>()
 
 /**
  * `/_assets/<relative>` → `<relative>` (percent-decoded), or `null` when the
@@ -85,20 +89,43 @@ export function buildPackageAppClientModuleUrl(input: {
 	return `${buildPackageAppAssetBasePath(input.hostedUrl)}/${input.mainModule}`
 }
 
-async function resolvePersistablePackageSource(input: {
+/**
+ * Always a fresh D1 read: the caller's source row may come from the
+ * freshness-cached invoke contract and trail a republish, and a rebuilt
+ * artifact must be persisted under the commit actually being built.
+ */
+async function loadFreshPersistablePackageSource(input: {
 	env: Env
 	userId: string
-	source?: EntitySourceRow
 	sourceId: string
 }) {
-	if (input.source?.user_id === input.userId && input.source.repo_id) {
-		return input.source
-	}
 	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
 	if (!source || source.user_id !== input.userId) {
 		throw new Error(`Saved package source "${input.sourceId}" was not found.`)
 	}
 	return source
+}
+
+/**
+ * The client entry as declared by the source files being built, not by a
+ * possibly stale cached manifest. `null` when the current source declares no
+ * `kody.app.client` (for example a republish that removed it).
+ */
+function resolveClientEntryFromSourceFiles(input: {
+	sourceFiles: Record<string, string>
+	manifestPath: string
+}) {
+	const manifestContent =
+		input.sourceFiles[input.manifestPath] ?? input.sourceFiles['package.json']
+	if (!manifestContent) {
+		throw new Error('Saved package is missing package.json.')
+	}
+	return getPackageAppClientEntryPath(
+		parseAuthoredPackageJson({
+			content: manifestContent,
+			manifestPath: input.manifestPath,
+		}),
+	)
 }
 
 async function loadSourceFilesOrThrow(input: {
@@ -118,11 +145,10 @@ async function resolvePackageAppClientArtifactUncached(input: {
 	env: Env
 	userId: string
 	clientEntry: string
-	source?: EntitySourceRow
 	savedPackage: PackageAppAssetSavedPackage
 	loadSourceFiles?: () => Promise<Record<string, string>>
 	sourceFiles?: Record<string, string>
-}): Promise<PackageAppClientArtifact> {
+}): Promise<PackageAppClientArtifact | null> {
 	if (input.savedPackage.publishedCommit) {
 		const loaded = await loadPublishedBundleArtifactByIdentity({
 			env: input.env,
@@ -139,22 +165,28 @@ async function resolvePackageAppClientArtifactUncached(input: {
 			}
 		}
 	}
+	// Publish normally persists this artifact; a miss means a rebuild was
+	// interrupted (or the manifest is fresher than the artifact row), so
+	// repair it the way the Worker bundle does: from the current source
+	// files, with the entry re-derived from those files.
 	const sourceFiles = await loadSourceFilesOrThrow(input)
+	const rebuildEntry = resolveClientEntryFromSourceFiles({
+		sourceFiles,
+		manifestPath: input.savedPackage.manifestPath,
+	})
+	if (!rebuildEntry) return null
 	assertPublishedSourceCanRebuildWithoutInstallingDeps({
 		sourceFiles,
 		bundleLabel: `Saved package app client "${input.savedPackage.kodyId}"`,
 	})
 	const compiled = await buildKodyAppClientBundle({
 		sourceFiles,
-		entryPoint: input.clientEntry,
+		entryPoint: rebuildEntry,
 	})
 	if (input.savedPackage.publishedCommit) {
-		// Publish normally persists this artifact; a miss here means a rebuild
-		// was interrupted, so repair it the same way the Worker bundle does.
-		const persistableSource = await resolvePersistablePackageSource({
+		const persistableSource = await loadFreshPersistablePackageSource({
 			env: input.env,
 			userId: input.userId,
-			source: input.source,
 			sourceId: input.savedPackage.sourceId,
 		})
 		await persistPublishedBundleArtifact({
@@ -163,7 +195,7 @@ async function resolvePackageAppClientArtifactUncached(input: {
 			source: persistableSource,
 			kind: 'app-client',
 			artifactName: null,
-			entryPoint: input.clientEntry,
+			entryPoint: rebuildEntry,
 			mainModule: compiled.mainModule,
 			modules: compiled.modules,
 			dependencies: compiled.dependencies,
@@ -187,7 +219,6 @@ export async function resolvePackageAppClientArtifact(input: {
 	env: Env
 	userId: string
 	manifest: AuthoredPackageJson
-	source?: EntitySourceRow
 	savedPackage: PackageAppAssetSavedPackage
 	loadSourceFiles?: () => Promise<Record<string, string>>
 	sourceFiles?: Record<string, string>
@@ -276,7 +307,6 @@ export async function servePackageAppAssetRequest(input: {
 	env: Env
 	userId: string
 	manifest: AuthoredPackageJson
-	source?: EntitySourceRow
 	savedPackage: PackageAppAssetSavedPackage
 	loadSourceFiles: () => Promise<Record<string, string>>
 	relativePath: string
@@ -284,27 +314,30 @@ export async function servePackageAppAssetRequest(input: {
 	if (input.request.method !== 'GET' && input.request.method !== 'HEAD') {
 		return methodNotAllowed()
 	}
-	if (packageAppClientModuleNamePattern.test(input.relativePath)) {
+	if (
+		getPackageAppClientEntryPath(input.manifest) &&
+		packageAppClientModuleNamePattern.test(input.relativePath)
+	) {
 		const artifact = await resolvePackageAppClientArtifact(input)
 		const source = artifact
 			? readModuleSource(artifact.modules[artifact.mainModule])
 			: null
 		if (
-			!artifact ||
-			source == null ||
-			input.relativePath !== artifact.mainModule
+			artifact &&
+			source != null &&
+			input.relativePath === artifact.mainModule
 		) {
-			// A stale hash from a previous publish; the page must re-read
-			// packageContext.clientModuleUrl rather than get a wrong module.
-			return assetNotFound()
+			return createAssetResponse({
+				request: input.request,
+				body: source,
+				contentType: 'text/javascript; charset=utf-8',
+				cacheControl: clientModuleCacheControl,
+				etag: `"${artifact.mainModule}"`,
+			})
 		}
-		return createAssetResponse({
-			request: input.request,
-			body: source,
-			contentType: 'text/javascript; charset=utf-8',
-			cacheControl: clientModuleCacheControl,
-			etag: `"${artifact.mainModule}"`,
-		})
+		// A hash from an earlier publish never gets a wrong module: fall
+		// through to the assets directory, which normally 404s, so the page
+		// re-reads packageContext.clientModuleUrl.
 	}
 	const assetsDirectory = getPackageAppAssetsDirectory(input.manifest)
 	if (!assetsDirectory) return assetNotFound()

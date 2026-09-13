@@ -1865,7 +1865,6 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 			env: input.env,
 			userId: input.userId,
 			manifest,
-			source: input.source,
 			savedPackage: input.savedPackage,
 			loadSourceFiles: input.loadSourceFiles,
 			sourceFiles: input.sourceFiles,
