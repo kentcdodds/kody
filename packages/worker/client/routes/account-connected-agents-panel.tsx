@@ -32,7 +32,7 @@ import {
 
 export function createAccountConnectedAgents(handle: Handle) {
 	let agents: Array<AccountConnectedAgentListItem> = []
-	let busy = false
+	const pendingRevokes = new Set<string>()
 	const revokeChecks = new Map<string, ReturnType<typeof createDoubleCheck>>()
 
 	function getRevokeCheck(clientId: string) {
@@ -43,19 +43,23 @@ export function createAccountConnectedAgents(handle: Handle) {
 		return created
 	}
 
+	function visibleAgents(next: Array<AccountConnectedAgentListItem>) {
+		if (pendingRevokes.size === 0) return next
+		return next.filter((agent) => !pendingRevokes.has(agent.clientId))
+	}
+
 	function applyPayload(payload: AccountConnectedAgentsLoaderData) {
-		agents = payload.agents
+		agents = visibleAgents(payload.agents)
 	}
 
 	async function revokeAgent(clientId: string) {
-		const previous = agents
-		const remaining = agents.filter((agent) => agent.clientId !== clientId)
-		if (remaining.length === agents.length) return
+		const removed = agents.find((agent) => agent.clientId === clientId)
+		if (!removed) return
 
-		agents = remaining
+		agents = agents.filter((agent) => agent.clientId !== clientId)
 		revokeChecks.get(clientId)?.reset()
 		revokeChecks.delete(clientId)
-		busy = true
+		pendingRevokes.add(clientId)
 		handle.update()
 		try {
 			const response = await fetch(connectedAgentsApiPath, {
@@ -77,15 +81,21 @@ export function createAccountConnectedAgents(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to revoke this agent.')
 			}
-			agents = payload.agents
+			pendingRevokes.delete(clientId)
+			agents = visibleAgents(
+				payload.agents.filter((agent) => agent.clientId !== clientId),
+			)
 			toast.success('Agent disconnected.')
 		} catch (error) {
-			agents = previous
+			pendingRevokes.delete(clientId)
+			if (!agents.some((agent) => agent.clientId === clientId)) {
+				agents = [...agents, removed]
+			}
 			toast.error(
 				error instanceof Error ? error.message : 'Unable to revoke this agent.',
 			)
 		} finally {
-			busy = false
+			pendingRevokes.delete(clientId)
 			handle.update()
 		}
 	}
@@ -104,7 +114,6 @@ export function createAccountConnectedAgents(handle: Handle) {
 				>
 					{groups.length > 0 ? (
 						<ul
-							aria-busy={busy ? 'true' : undefined}
 							mix={css({
 								listStyle: 'none',
 								padding: 0,
@@ -230,7 +239,6 @@ export function createAccountConnectedAgents(handle: Handle) {
 														</span>
 														<button
 															type="button"
-															disabled={busy}
 															aria-label={
 																revokeCheck.doubleCheck
 																	? `Confirm revoke ${revokeName}`

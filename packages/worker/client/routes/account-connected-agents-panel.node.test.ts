@@ -73,6 +73,29 @@ function cssRulesForClass(html: string, className: string) {
 	return html.slice(rulesStart, html.indexOf('</style>', rulesStart))
 }
 
+function revokeButtonHtml(html: string, clientId: string) {
+	const rowStart = html.indexOf(`data-client-id="${clientId}"`)
+	expect(rowStart).toBeGreaterThan(-1)
+	const buttonStart = html.indexOf('<button', rowStart)
+	expect(buttonStart).toBeGreaterThan(-1)
+	const buttonEnd = html.indexOf('>', buttonStart) + 1
+	return html.slice(buttonStart, buttonEnd)
+}
+
+function expectRevokeEnabled(html: string, clientId: string) {
+	const button = revokeButtonHtml(html, clientId)
+	expect(button).toContain('type="button"')
+	expect(button).toContain('aria-label="Revoke ')
+	expect(button).not.toMatch(/\sdisabled(?:[=>\s]|$)/)
+}
+
+function jsonResponse(body: Record<string, unknown>, status: number): Response {
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: { 'Content-Type': 'application/json' },
+	})
+}
+
 test('connected agents panel groups same-name hosts, shows logos, and keeps revoke inside details', async () => {
 	const panel = createAccountConnectedAgents({
 		update() {},
@@ -150,18 +173,16 @@ test('confirming revoke removes the row immediately and restores it with an erro
 		expect(pendingHtml).not.toContain('data-agent-label="Acme Agent"')
 		expect(pendingHtml).toContain('data-agent-label="Cursor"')
 		expect(pendingHtml).toContain('data-agent-label="ChatGPT.com"')
-		expect(pendingHtml).toContain('aria-busy="true"')
+		expectRevokeEnabled(pendingHtml, cursorOld.clientId)
+		expectRevokeEnabled(pendingHtml, cursorNew.clientId)
 
 		resolveRevoke!(
-			new Response(
-				JSON.stringify({
+			jsonResponse(
+				{
 					ok: false,
 					error: 'Connected agent not found.',
-				}),
-				{
-					status: 404,
-					headers: { 'Content-Type': 'application/json' },
 				},
+				404,
 			),
 		)
 		await revokePromise
@@ -169,7 +190,7 @@ test('confirming revoke removes the row immediately and restores it with an erro
 		const restoredHtml = await renderToString(panel.render())
 		expect(restoredHtml).toContain(`data-client-id="${acme.clientId}"`)
 		expect(restoredHtml).toContain('data-agent-label="Acme Agent"')
-		expect(restoredHtml).not.toContain('aria-busy="true"')
+		expectRevokeEnabled(restoredHtml, acme.clientId)
 		expect(listToasts()).toEqual([
 			expect.objectContaining({
 				message: 'Connected agent not found.',
@@ -214,16 +235,13 @@ test('confirming revoke removes the row immediately and restores it with an erro
 		expect(cursorAfterRevoke).toContain('aria-label="Revoke Cursor"')
 
 		resolveSuccess!(
-			new Response(
-				JSON.stringify({
+			jsonResponse(
+				{
 					ok: true,
 					mcpServerUrl: listedAgents.mcpServerUrl,
 					agents: [cursorNew, chatgptOld, chatgptNew, acme],
-				}),
-				{
-					status: 200,
-					headers: { 'Content-Type': 'application/json' },
 				},
+				200,
 			),
 		)
 		await successPromise
@@ -239,6 +257,115 @@ test('confirming revoke removes the row immediately and restores it with an erro
 				tone: 'success',
 			}),
 		])
+	} finally {
+		toast.dismiss()
+		globalThis.fetch = originalFetch
+	}
+})
+
+test('each row revokes on its own: another in-flight request does not lock remaining Revoke controls', async () => {
+	toast.dismiss()
+	const { handle } = createStubHandle()
+	const panel = createAccountConnectedAgents(handle)
+	panel.applyPayload(listedAgents)
+
+	const resolveByClientId = new Map<string, (response: Response) => void>()
+	globalThis.fetch = vi.fn((_input, init) => {
+		const body = JSON.parse(String(init?.body)) as { clientId: string }
+		return new Promise<Response>((resolve) => {
+			resolveByClientId.set(body.clientId, resolve)
+		})
+	}) as typeof fetch
+
+	try {
+		const acmePromise = panel.revokeAgent(acme.clientId)
+		const afterAcme = await renderToString(panel.render())
+		expect(afterAcme).not.toContain(`data-client-id="${acme.clientId}"`)
+		expectRevokeEnabled(afterAcme, cursorOld.clientId)
+		expectRevokeEnabled(afterAcme, cursorNew.clientId)
+		expectRevokeEnabled(afterAcme, chatgptNew.clientId)
+
+		const cursorPromise = panel.revokeAgent(cursorOld.clientId)
+		panel.applyPayload(listedAgents)
+		const bothPending = await renderToString(panel.render())
+		expect(bothPending).not.toContain(`data-client-id="${acme.clientId}"`)
+		expect(bothPending).not.toContain(`data-client-id="${cursorOld.clientId}"`)
+		expectRevokeEnabled(bothPending, cursorNew.clientId)
+		expect(bothPending).toContain('data-agent-label="Cursor"')
+		expect(bothPending).toContain('data-agent-label="ChatGPT.com"')
+
+		resolveByClientId.get(acme.clientId)!(
+			jsonResponse(
+				{
+					ok: true,
+					mcpServerUrl: listedAgents.mcpServerUrl,
+					agents: [cursorOld, cursorNew, chatgptOld, chatgptNew],
+				},
+				200,
+			),
+		)
+		await acmePromise
+
+		const afterAcmeCommit = await renderToString(panel.render())
+		expect(afterAcmeCommit).not.toContain(`data-client-id="${acme.clientId}"`)
+		expect(afterAcmeCommit).not.toContain(
+			`data-client-id="${cursorOld.clientId}"`,
+		)
+		expectRevokeEnabled(afterAcmeCommit, cursorNew.clientId)
+		expect(listToasts()).toEqual([
+			expect.objectContaining({
+				message: 'Agent disconnected.',
+				tone: 'success',
+			}),
+		])
+
+		resolveByClientId.get(cursorOld.clientId)!(
+			jsonResponse(
+				{
+					ok: false,
+					error: 'Unable to revoke this agent.',
+				},
+				500,
+			),
+		)
+		await cursorPromise
+
+		const afterCursorFail = await renderToString(panel.render())
+		expect(afterCursorFail).not.toContain(`data-client-id="${acme.clientId}"`)
+		expect(afterCursorFail).toContain(`data-client-id="${cursorOld.clientId}"`)
+		expectRevokeEnabled(afterCursorFail, cursorOld.clientId)
+		expectRevokeEnabled(afterCursorFail, cursorNew.clientId)
+		expect(listToasts()).toEqual([
+			expect.objectContaining({
+				message: 'Agent disconnected.',
+				tone: 'success',
+			}),
+			expect.objectContaining({
+				message: 'Unable to revoke this agent.',
+				tone: 'error',
+			}),
+		])
+		expect(globalThis.fetch).toHaveBeenCalledTimes(2)
+		expect(globalThis.fetch).toHaveBeenCalledWith(
+			connectedAgentsApiPath,
+			expect.objectContaining({
+				method: 'POST',
+				body: JSON.stringify({
+					intent: 'revoke',
+					clientId: acme.clientId,
+				}),
+			}),
+		)
+		expect(globalThis.fetch).toHaveBeenCalledWith(
+			connectedAgentsApiPath,
+			expect.objectContaining({
+				method: 'POST',
+				body: JSON.stringify({
+					intent: 'revoke',
+					clientId: cursorOld.clientId,
+				}),
+			}),
+		)
 	} finally {
 		toast.dismiss()
 		globalThis.fetch = originalFetch
