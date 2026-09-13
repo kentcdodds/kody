@@ -303,8 +303,11 @@ primitives:
     summary: Optional package-declared hosted UI surfaces.
     code:
       - packages/worker/src/package-runtime/package-app.ts
+      - packages/worker/src/package-runtime/package-app-assets.ts
+      - packages/worker/src/package-runtime/module-graph-client-bundle.ts
     docs:
       - docs/use/packages.md
+      - docs/guides/package-apps.md
 
   - id: jobs
     group: assistant

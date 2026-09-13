@@ -1,4 +1,5 @@
 import {
+	getPackageAppClientEntryPath,
 	getPackageAppEntryPath,
 	listPackageSubscriptions,
 	normalizePackageWorkspacePath,
@@ -14,7 +15,7 @@ export type PublishedPackageArtifactBuildTarget = {
 	kind: BundleArtifactKind
 	artifactName?: string | null
 	entryPoint: string
-	bundleKind: 'app' | 'module' | 'importable-module'
+	bundleKind: 'app' | 'app-client' | 'module' | 'importable-module'
 }
 
 function resolvePackageExportRuntimeEntryPoint(target: PackageExportTarget) {
@@ -34,6 +35,14 @@ export function collectPublishedPackageArtifactTargets(
 				kind: 'app',
 				entryPoint,
 				bundleKind: 'app',
+			})
+		}
+		const clientEntryPoint = getPackageAppClientEntryPath(manifest)
+		if (clientEntryPoint) {
+			targets.push({
+				kind: 'app-client',
+				entryPoint: clientEntryPoint,
+				bundleKind: 'app-client',
 			})
 		}
 	}

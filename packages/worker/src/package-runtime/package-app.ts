@@ -85,6 +85,11 @@ import {
 	packageAppSyntheticHeaderName,
 	packageAppSyntheticHeaderValue,
 } from './package-app-synthetic.ts'
+import {
+	buildPackageAppAssetBasePath,
+	buildPackageAppClientModuleUrl,
+	resolvePackageAppClientArtifact,
+} from './package-app-assets.ts'
 import { recordUniqueDynamicWorkerDay } from '#worker/usage/dynamic-worker-day.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
@@ -1845,16 +1850,39 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 		sourceFiles: input.sourceFiles,
 		savedPackage: input.savedPackage,
 	})
-	const bundled = await resolvePackageAppBundledArtifact({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.userId,
-		source: input.source,
-		manifest,
-		savedPackage: input.savedPackage,
-		loadSourceFiles: input.loadSourceFiles,
-		sourceFiles: input.sourceFiles,
-	})
+	const [bundled, clientArtifact] = await Promise.all([
+		resolvePackageAppBundledArtifact({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			source: input.source,
+			manifest,
+			savedPackage: input.savedPackage,
+			loadSourceFiles: input.loadSourceFiles,
+			sourceFiles: input.sourceFiles,
+		}),
+		resolvePackageAppClientArtifact({
+			env: input.env,
+			userId: input.userId,
+			manifest,
+			source: input.source,
+			savedPackage: input.savedPackage,
+			loadSourceFiles: input.loadSourceFiles,
+			sourceFiles: input.sourceFiles,
+		}),
+	])
+	// Platform-served static surface. The client module URL carries the
+	// content hash, so pages read it from packageContext instead of
+	// hardcoding a file name that changes on every publish.
+	const assetContext = {
+		assetBasePath: buildPackageAppAssetBasePath(publicContext.appBasePath),
+		clientModuleUrl: clientArtifact
+			? buildPackageAppClientModuleUrl({
+					hostedUrl: publicContext.hostedUrl,
+					mainModule: clientArtifact.mainModule,
+				})
+			: null,
+	}
 	await assertPersonOwnedPackageMayNotRunPlatformDependencies({
 		db: input.env.APP_DB,
 		userId: input.userId,
@@ -1912,6 +1940,7 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 				sourceId: input.savedPackage.sourceId,
 				publishedCommit: input.savedPackage.publishedCommit,
 				...publicContext,
+				...assetContext,
 			},
 		},
 		globalOutbound: workerExports?.KodyFetchGateway

@@ -1,5 +1,6 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
+	getPackageAppAssetsDirectory,
 	listPackageRetrievers,
 	listPackageSubscriptions,
 	normalizePackageWorkspacePath,
@@ -23,9 +24,11 @@ import {
 } from '#worker/package-registry/types.ts'
 import {
 	buildKodyAppBundle,
+	buildKodyAppClientBundle,
 	buildKodyImportableModuleBundle,
 	buildKodyModuleBundle,
 } from '#worker/package-runtime/module-graph.ts'
+import { validatePackageAppAssetsDirectory } from '#worker/package-runtime/package-app-assets-directory.ts'
 import {
 	collectPublishedPackageArtifactTargets,
 	type PublishedPackageArtifactBuildTarget,
@@ -423,6 +426,8 @@ declare module "kody:runtime" {
     kodyId: string;
     appBasePath?: string;
     hostedUrl?: string;
+    assetBasePath?: string;
+    clientModuleUrl?: string | null;
   } | null;
   export const packages: KodyPackagesRuntime | null;
   export function packageStorage(): KodyStorageRuntime;
@@ -441,7 +446,7 @@ declare module "kody:runtime" {
 
 export type PackageBundleTarget = {
 	path: string
-	bundleKind: 'app' | 'callable' | 'importable'
+	bundleKind: 'app' | 'client' | 'callable' | 'importable'
 }
 
 export type PackageCallableTypecheckTarget = {
@@ -464,6 +469,8 @@ function toPackageBundleKind(target: PublishedPackageArtifactBuildTarget) {
 	switch (target.bundleKind) {
 		case 'app':
 			return 'app'
+		case 'app-client':
+			return 'client'
 		case 'module':
 			return 'callable'
 		case 'importable-module':
@@ -647,6 +654,11 @@ export async function validatePackageBundles(input: {
 					sourceFiles: input.sourceFiles,
 					entryPoint: target.path,
 					cacheKey: null,
+				})
+			} else if (target.bundleKind === 'client') {
+				await buildKodyAppClientBundle({
+					sourceFiles: input.sourceFiles,
+					entryPoint: target.path,
 				})
 			} else if (target.bundleKind === 'callable') {
 				await buildKodyModuleBundle({
@@ -1236,6 +1248,22 @@ export async function runRepoChecks(input: {
 		})
 	}
 	const sourceFiles = sourceWalk.collected
+	const assetsDirectoryCheck = validatePackageAppAssetsDirectory({
+		assetsDirectory: getPackageAppAssetsDirectory(manifest),
+		sourceFiles,
+	})
+	if (!assetsDirectoryCheck.ok) {
+		results.push({
+			kind: 'bundle',
+			ok: false,
+			message: assetsDirectoryCheck.message,
+		})
+		return toRepoCheckRunResult({
+			results,
+			manifest,
+			sourceFiles,
+		})
+	}
 	if (input.requirePackageDocs !== false) {
 		const docsCheck = validateRequiredPackageDocs(sourceFiles)
 		results.push({

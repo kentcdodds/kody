@@ -31,7 +31,17 @@ export const packageJobDefinitionSchema = z.object({
 export type PackageJobDefinition = z.infer<typeof packageJobDefinitionSchema>
 
 export const packageAppDefinitionSchema = z.object({
+	/** Worker fetch entry bundled for the package-app isolate. */
 	entry: z.string().min(1),
+	/**
+	 * Browser entry (`.ts`/`.tsx`/`.js`/`.jsx`) the platform bundles to a
+	 * fingerprinted ESM module served under `<appBasePath>/_assets/`.
+	 */
+	client: z.string().min(1).optional(),
+	/**
+	 * Directory of static files served as-is under `<appBasePath>/_assets/`
+	 * (no bundling; content types inferred from the extension).
+	 */
 	assets: z.string().min(1).optional(),
 })
 

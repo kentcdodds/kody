@@ -1037,6 +1037,8 @@ test('package app worker exposes its public mount and records fetch query and re
 		publishedCommit: 'commit-1',
 		appBasePath: '/@serving-owner/packages/renamed-app',
 		hostedUrl: 'https://packages.kody.test/@serving-owner/packages/renamed-app',
+		assetBasePath: '/@serving-owner/packages/renamed-app/_assets',
+		clientModuleUrl: null,
 	})
 
 	const queryParamNames = await collectQueryParamNamesForTest(
@@ -1045,6 +1047,96 @@ test('package app worker exposes its public mount and records fetch query and re
 		),
 	)
 	expect(queryParamNames).toEqual(['audio', 'code', 'state'])
+})
+
+test('package app worker exposes the fingerprinted client module URL when kody.app.client is declared', async () => {
+	resetPackageAppRuntimeMocks()
+	const { env } = createPackageAppTestEnv()
+	const appArtifact = {
+		row: { id: 'artifact-row-app', artifactName: null, entryPoint: 'app.js' },
+		artifact: {
+			mainModule: 'dist/app.js',
+			modules: {
+				'dist/app.js':
+					'export default { fetch() { return new Response("ok") } }',
+			},
+			dependencies: [],
+			dynamicDependencies: [],
+		},
+	}
+	const clientArtifact = {
+		row: {
+			id: 'artifact-row-client',
+			artifactName: null,
+			entryPoint: 'client.ts',
+		},
+		artifact: {
+			mainModule: 'client.abcdefgh12345678.js',
+			modules: {
+				'client.abcdefgh12345678.js': 'console.log("hi")',
+			},
+			dependencies: [],
+			dynamicDependencies: [],
+		},
+	}
+	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockImplementation(
+		async (input: { kind: string }) =>
+			input.kind === 'app-client' ? clientArtifact : appArtifact,
+	)
+	const baseManifest = createPackageAppTestManifest()
+	const manifest = {
+		...baseManifest,
+		kody: {
+			...baseManifest.kody,
+			app: { entry: 'app.js', client: './client.ts' },
+		},
+	}
+
+	await buildPackageAppWorker({
+		env,
+		baseUrl: 'https://app.kody.test',
+		userId: 'user-client-context',
+		savedPackage: {
+			id: 'package-client-context',
+			kodyId: 'client-app',
+			name: '@current-owner/client-app',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+			manifestPath: 'package.json',
+			sourceRoot: '/',
+		},
+		source: createPackageAppTestSource(),
+		manifest,
+		runtime: {
+			callerContext: {
+				user: { email: 'owner@example.com', displayName: 'Owner' },
+			} as never,
+			servingUsername: 'serving-owner',
+			hostedOrigin: 'https://serving-owner.kody.run',
+			mount: 'user-subdomain',
+		},
+	})
+
+	expect(
+		packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity,
+	).toHaveBeenCalledWith(
+		expect.objectContaining({
+			kind: 'app-client',
+			artifactName: null,
+			entryPoint: 'client.ts',
+		}),
+	)
+	const loader = env.APP_LOADER as unknown as { get: ReturnType<typeof vi.fn> }
+	const factory = loader.get.mock.calls[0]?.[1] as
+		| (() => { env: Record<string, unknown> })
+		| undefined
+	expect(factory?.().env['__kodyPackageContext']).toMatchObject({
+		appBasePath: '/packages/client-app',
+		hostedUrl: 'https://serving-owner.kody.run/packages/client-app',
+		assetBasePath: '/packages/client-app/_assets',
+		clientModuleUrl:
+			'https://serving-owner.kody.run/packages/client-app/_assets/client.abcdefgh12345678.js',
+	})
 })
 
 test('createPackageAppWorkerId changes when compatibility settings change', async () => {

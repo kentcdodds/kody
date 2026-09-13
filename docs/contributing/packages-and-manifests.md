@@ -249,6 +249,17 @@ Treat package apps like Worker-style modules:
 
 - package app code belongs to the package repo
 - package app entry is declared by `kody.app.entry`
+- `kody.app.client` (optional) is a browser entry; publish builds it with
+  `buildKodyAppClientBundle` into the `app-client` artifact kind (esbuild
+  browser platform, `kody:` / `cloudflare:` / `node:` imports rejected) and
+  `package-app-assets.ts` serves it under
+  `<appBasePath>/_assets/client.<hash>.js` with immutable caching before author
+  code runs
+- `kody.app.assets` (optional) is a static directory served as-is from the
+  published source snapshot under `<appBasePath>/_assets/`; publish checks
+  require it to be a populated subdirectory
+- `packageContext.assetBasePath` and `packageContext.clientModuleUrl` expose
+  those URLs to the fetch handler
 - durable package data uses `packageStorage()` (same
   `buildPackageStorageId(packageId)` bucket as other package surfaces)
 - Durable Objects / facets are app-only realtime/coordination buckets under the

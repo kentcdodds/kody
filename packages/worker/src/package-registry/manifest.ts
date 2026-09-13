@@ -251,6 +251,27 @@ export function getPackageAppEntryPath(manifest: AuthoredPackageJson) {
 	return normalizePackageWorkspacePath(appEntry)
 }
 
+export function getPackageAppClientEntryPath(manifest: AuthoredPackageJson) {
+	const clientEntry = manifest.kody.app?.client?.trim()
+	if (!clientEntry) return null
+	return normalizePackageWorkspacePath(clientEntry)
+}
+
+/**
+ * Workspace-relative static asset directory declared by `kody.app.assets`,
+ * without leading `./` or trailing slashes. `null` when the app declares no
+ * assets directory.
+ */
+export function getPackageAppAssetsDirectory(manifest: AuthoredPackageJson) {
+	const assetsDirectory = manifest.kody.app?.assets?.trim()
+	if (!assetsDirectory) return null
+	const normalized = normalizePackageWorkspacePath(assetsDirectory).replace(
+		/\/+$/,
+		'',
+	)
+	return normalized.length > 0 ? normalized : null
+}
+
 export function listPackageSubscriptions(manifest: AuthoredPackageJson) {
 	return Object.entries(manifest.kody.subscriptions ?? {})
 		.map(([topic, subscription]) => ({

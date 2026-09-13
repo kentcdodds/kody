@@ -5,7 +5,9 @@ summary:
   Give a package a hosted HTTP and browser surface. Covers the default app shape
   after an integration smoke test, session handoff to the `*.kody.run`
   subdomain, smoke tests with packageAppFetch, absolute asset URLs, the
-  same-origin proxy, lean forks, compiled clients, and listing verification.
+  platform-built browser client (`kody.app.client`) and static assets directory
+  (`kody.app.assets`), the same-origin proxy, lean forks, compiled clients, and
+  listing verification.
 category: platform
 ---
 
@@ -50,6 +52,12 @@ For non-trivial or integration-backed apps, prefer this split:
 
 - **app entry** — a Worker-style fetch surface declared by
   `package.json#kody.app.entry`
+- **browser client** — one TypeScript/JSX entry declared by
+  `package.json#kody.app.client`; Kody bundles it for the browser on publish and
+  serves it as a fingerprinted module (see
+  [Browser client and static assets](#browser-client-and-static-assets))
+- **static assets** — an optional directory declared by
+  `package.json#kody.app.assets`, served as-is
 - **exports** — reusable modules and callable default exports declared in
   `package.json#exports`
 - **durable data** — `packageStorage()` for the shared package bucket
@@ -154,6 +162,79 @@ username and package name leaf, including after a rename or fork. When you pass
 a relative path to `new URL(path, origin)`, give `origin` a trailing slash so
 `assets/sprite.png` stays under the mount.
 
+Files the platform serves for you (the bundled browser client and the
+`kody.app.assets` directory) live under `packageContext.assetBasePath`; see the
+next section.
+
+## Browser client and static assets
+
+Declare a browser entry and Kody compiles it on publish, so the repo holds
+TypeScript source instead of checked-in `.js`:
+
+```json
+{
+	"kody": {
+		"app": {
+			"entry": "./app.ts",
+			"client": "./client.ts",
+			"assets": "./public"
+		}
+	}
+}
+```
+
+- `entry` — the Worker fetch handler (unchanged).
+- `client` — one `.ts`, `.tsx`, `.js`, or `.jsx` file bundled for the
+  **browser** (ESM, `es2022`, relative imports and `package.json` npm
+  dependencies inlined). The output is served at
+  `<appBasePath>/_assets/client.<hash>.js` with
+  `Cache-Control: public, max-age=31536000, immutable`; the hash changes with
+  the content, so never hardcode the file name.
+- `assets` — a subdirectory of static files served as-is at
+  `<appBasePath>/_assets/<path inside the directory>` with a content type
+  inferred from the extension (`.css`, `.png`, `.wasm`, `.woff2`, …) and a
+  commit-scoped `ETag`. No TypeScript compile, no bundling.
+
+Read the URLs from `packageContext` in the fetch handler:
+
+```ts
+import { packageContext } from 'kody:runtime'
+
+export default {
+	async fetch() {
+		const { assetBasePath, clientModuleUrl } = packageContext ?? {}
+		return new Response(
+			`<!doctype html>
+<link rel="stylesheet" href="${assetBasePath}/styles.css" />
+<div id="app"></div>
+<script type="module" src="${clientModuleUrl}"></script>`,
+			{ headers: { 'content-type': 'text/html; charset=utf-8' } },
+		)
+	},
+}
+```
+
+- `packageContext.assetBasePath` — origin-relative `<appBasePath>/_assets`,
+  mount-aware like `appBasePath`.
+- `packageContext.clientModuleUrl` — absolute URL of the current fingerprinted
+  client module, or `null` when the manifest declares no `client`.
+
+`/_assets/*` is reserved: the platform answers it before the fetch handler runs,
+and the handler never sees those paths. A client hash from an older publish
+returns 404 rather than a stale module, so always render the URL from
+`packageContext`.
+
+The client graph must be browser-safe. Publish fails, naming the file, when the
+client (or anything it imports) pulls in `kody:runtime`, a `kody:@…` package
+import, `cloudflare:*`, or `node:*`; keep those in `entry` and expose data over
+fetch or the realtime facet. `import './styles.css'` is rejected too — put CSS
+in the assets directory and link it. Full `https://` URL imports stay external
+and load in the browser as written.
+
+Checked-in browser-ready `.js` served from the fetch handler with an explicit
+`Content-Type` still works; `client` is the pit-of-success path for source you
+want compiled.
+
 ## Same-origin proxy
 
 When the browser needs third-party bytes reliably (WASM, media, a vendor
@@ -194,10 +275,11 @@ was unchanged. Lean the tree, then fork again.
 
 ## Compiled clients
 
-When the app ships a compiled engine (WASM plus JS glue), read the **shipped**
-glue and match its startup contract. Typical Emscripten-style glue accepts
-`Module.arguments` plus a normal `run()`, and `wasmBinary` or `instantiateWasm`
-when you supply the bytes:
+This section is about third-party compiled engines, not the `kody.app.client`
+bundle above. When the app ships a compiled engine (WASM plus JS glue), read the
+**shipped** glue and match its startup contract. Typical Emscripten-style glue
+accepts `Module.arguments` plus a normal `run()`, and `wasmBinary` or
+`instantiateWasm` when you supply the bytes:
 
 ```js
 const Module = {

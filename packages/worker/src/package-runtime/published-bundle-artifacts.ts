@@ -57,6 +57,12 @@ type PublishedPackageArtifactBuilders = {
 		dependencies: Array<BundleArtifactDependency>
 		dynamicDependencies?: Array<BundleArtifactDynamicDependency>
 	}>
+	buildAppClientBundle: (args: { entryPoint: string }) => Promise<{
+		mainModule: string
+		modules: WorkerLoaderModules
+		dependencies: Array<BundleArtifactDependency>
+		dynamicDependencies?: Array<BundleArtifactDynamicDependency>
+	}>
 	buildModuleBundle: (args: { entryPoint: string }) => Promise<{
 		mainModule: string
 		modules: WorkerLoaderModules
@@ -477,6 +483,28 @@ function publishedArtifactCreatedAtIsAtLeast(
 	return typeof createdAt === 'string' && createdAt >= cutoff
 }
 
+async function buildPublishedPackageArtifactTargetBundle(
+	input: {
+		target: PublishedPackageArtifactBuildTarget
+	} & PublishedPackageArtifactBuilders,
+) {
+	const { entryPoint } = input.target
+	switch (input.target.bundleKind) {
+		case 'app':
+			return await input.buildAppBundle({ entryPoint })
+		case 'app-client':
+			return await input.buildAppClientBundle({ entryPoint })
+		case 'importable-module':
+			return await input.buildImportableModuleBundle({ entryPoint })
+		case 'module':
+			return await input.buildModuleBundle({ entryPoint })
+		default: {
+			const bundleKind: never = input.target.bundleKind
+			throw new Error(`Unhandled package artifact bundle kind: ${bundleKind}`)
+		}
+	}
+}
+
 export async function persistPublishedPackageArtifactTarget(
 	input: {
 		env: Env
@@ -486,16 +514,7 @@ export async function persistPublishedPackageArtifactTarget(
 		target: PublishedPackageArtifactBuildTarget
 	} & PublishedPackageArtifactBuilders,
 ) {
-	const bundle =
-		input.target.bundleKind === 'app'
-			? await input.buildAppBundle({ entryPoint: input.target.entryPoint })
-			: input.target.bundleKind === 'importable-module'
-				? await input.buildImportableModuleBundle({
-						entryPoint: input.target.entryPoint,
-					})
-				: await input.buildModuleBundle({
-						entryPoint: input.target.entryPoint,
-					})
+	const bundle = await buildPublishedPackageArtifactTargetBundle(input)
 	return await persistPublishedBundleArtifact({
 		env: input.env,
 		userId: input.userId,
@@ -584,6 +603,7 @@ export async function rebuildPublishedPackageArtifacts(
 				savedPackage: input.savedPackage,
 				target,
 				buildAppBundle: input.buildAppBundle,
+				buildAppClientBundle: input.buildAppClientBundle,
 				buildModuleBundle: input.buildModuleBundle,
 				buildImportableModuleBundle: input.buildImportableModuleBundle,
 			})

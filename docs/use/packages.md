@@ -354,6 +354,12 @@ Treat package apps like Worker-style modules:
 
 - app code lives in the package repo
 - the entry module is declared by `kody.app.entry`
+- an optional browser entry is declared by `kody.app.client`; Kody bundles it
+  for the browser on publish and serves it as a fingerprinted module under
+  `<appBasePath>/_assets/`, with the URL on `packageContext.clientModuleUrl`
+- an optional static directory is declared by `kody.app.assets` and served as-is
+  under `packageContext.assetBasePath` (see
+  [Browser client and static assets](../guides/package-apps.md#browser-client-and-static-assets))
 - durable package data uses `packageStorage()` — the same shared package bucket
   as exports and jobs
 - internal Durable Objects or facets are app-only realtime/coordination details

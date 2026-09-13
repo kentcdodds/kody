@@ -435,6 +435,7 @@ test('refreshSavedPackageProjection syncs the job manager only when package jobs
 		}),
 		manifest,
 		buildAppBundle: expect.any(Function),
+		buildAppClientBundle: expect.any(Function),
 		buildModuleBundle: expect.any(Function),
 		buildImportableModuleBundle: expect.any(Function),
 	})
