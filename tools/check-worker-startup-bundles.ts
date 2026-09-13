@@ -111,7 +111,7 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// 4_992_191). Keep last-used on this class; do not add a second DO.
 		// Package-app `kody.app.client` browser bundling and `/_assets/*`
 		// serving (publish rebuild and packageAppFetch both run here) add
-		// ~19 KB on top: local dry-run 5_010_889 bytes.
+		// ~12 KB on top: local dry-run 5_004_707 bytes.
 		maxEntryBytes: 5_020_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
@@ -129,8 +129,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// and add a few KB. Share-grant import/storage routing added more.
 		// secretJwtSign JWA families (HMAC/PSS/ES plus extra RSA hashes)
 		// add ~0.5KB. Split listing out of service.ts or the share-grant
-		// runtime path if this budget is raised again.
-		maxEntryBytes: 3_700_000,
+		// runtime path if this budget is raised again. Package-app
+		// `/_assets/*` serving (fingerprinted client module, static assets
+		// directory) runs here: local dry-run 3_701_307 bytes.
+		maxEntryBytes: 3_710_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',
