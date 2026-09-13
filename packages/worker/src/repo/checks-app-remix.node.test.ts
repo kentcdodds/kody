@@ -162,7 +162,7 @@ test('runRepoChecks bundles a router app and a fetch handler without a runtime f
 	const fetchBundle = fetchResult.results.find(
 		(entry) => entry.kind === 'bundle',
 	)
-	expect(fetchBundle?.message).toBe('Bundled 2 package target(s) successfully.')
+	expect(fetchBundle?.message).toBe('Bundled 3 package target(s) successfully.')
 })
 
 test('runRepoChecks rejects @remix-run/* npm dependencies and points at remix/<subpath>', async () => {
