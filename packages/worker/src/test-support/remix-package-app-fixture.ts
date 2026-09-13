@@ -17,6 +17,9 @@ export function createRemixPackageAppFiles(input: {
 		name: `@${input.username}/${input.kodyId}`,
 		private: true,
 		exports: { '.': './src/index.ts' },
+		// Types only: publish installs `dependencies`, never `devDependencies`,
+		// so the platform copy of remix is what the bundle uses.
+		devDependencies: { remix: '3.0.0-rc.2' },
 		kody: {
 			id: input.kodyId,
 			description: 'Remix mini-app fixture: routes, action, middleware, SSR',
@@ -214,7 +217,25 @@ export function render(
 	return createHtmlResponse(stream, init)
 }
 `,
+		'app/ui/layout.tsx': `import type { Handle, RemixNode } from 'remix/ui'
+import { routes } from '../routes.ts'
+
+// Server-only: imports the route contract (and so kody:runtime). Islands must
+// not import this module; they receive hrefs as props.
+export function Layout(handle: Handle<{ children?: RemixNode }>) {
+	return () => (
+		<div class="layout">
+			<nav id="nav">
+				<a href={routes.home.href()}>Home</a>
+				<a href={routes.notes.index.href()}>Notes</a>
+			</nav>
+			{handle.props.children}
+		</div>
+	)
+}
+`,
 		'app/ui/document.tsx': `import type { Handle, RemixNode } from 'remix/ui'
+import { Layout } from './layout.tsx'
 
 export function Document(
 	handle: Handle<{
@@ -236,7 +257,7 @@ export function Document(
 				/>
 			</head>
 			<body>
-				{handle.props.children}
+				<Layout>{handle.props.children}</Layout>
 				{handle.props.clientModuleUrl ? (
 					<script type="module" src={handle.props.clientModuleUrl}></script>
 				) : null}

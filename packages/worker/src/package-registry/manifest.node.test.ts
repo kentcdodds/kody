@@ -159,7 +159,7 @@ test('parseAuthoredPackageJson accepts kody.app.runtime as remix or fetch and le
 		{ entry: './src/app.ts', client: { entry: '\t' } },
 		{ entry: './src/app.ts', assets: '  ' },
 	]) {
-		expect(() => parse(app)).toThrow()
+		expect(() => parse(app)).toThrow(/app/)
 	}
 })
 
