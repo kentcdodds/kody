@@ -635,9 +635,10 @@ declaration (`KodyRuntime`, `packageContext`, `packageStorage`, …).
   `FormData` is not a Remix export. Drop the import and use the global:
   `context.get(FormData)`.
 - **Publish fails with
-  `imports server-only modules that cannot run in the browser (app/ui/layout.tsx: "kody:runtime")`**
-  (or `app/routes.ts`) — an island or the browser entry imports a layout/nav
-  module that imports `routes`. Keep that module server-side and pass the hrefs
+  `imports server-only modules that cannot run in the browser (app/routes.ts: "kody:runtime")`**
+  — an island or the browser entry imports `app/routes.ts`, usually through a
+  layout/nav module that renders `routes.x.href()` (the check names the file
+  that imports `kody:runtime`). Keep that module server-side and pass the hrefs
   it needs to the island as props.
 - **Publish fails with `unresolved bare package imports … "remix/assets"`** — a
   Node-only subpath. Serve files from `kody.app.assets` instead.
