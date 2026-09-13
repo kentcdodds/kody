@@ -151,6 +151,16 @@ test('parseAuthoredPackageJson accepts kody.app.runtime as remix or fetch and le
 	expect(() => parse({ runtime: 'vite', entry: './src/app.ts' })).toThrow(
 		/runtime/,
 	)
+	// Whitespace-only paths are rejected up front instead of trimming to an
+	// empty entry that publish would then silently skip.
+	for (const app of [
+		{ entry: '  ' },
+		{ entry: './src/app.ts', client: ' ' },
+		{ entry: './src/app.ts', client: { entry: '\t' } },
+		{ entry: './src/app.ts', assets: '  ' },
+	]) {
+		expect(() => parse(app)).toThrow()
+	}
 })
 
 test('parseAuthoredPackageJson validates scoped package names against kody.id', () => {

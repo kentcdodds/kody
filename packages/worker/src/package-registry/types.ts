@@ -53,7 +53,7 @@ export const packageAppClientExternalSchema = z
 
 export const packageAppClientDefinitionSchema = z.object({
 	/** Browser entry (`.ts`/`.tsx`/`.js`/`.jsx`). */
-	entry: z.string().min(1),
+	entry: z.string().trim().min(1),
 	/**
 	 * Bare specifiers kept as external `import`s in the bundled module so an
 	 * import map on the page resolves them. Matches the specifier and its
@@ -83,20 +83,20 @@ export const packageAppDefinitionSchema = z.object({
 	 * Server entry bundled for the package-app isolate: the Remix router
 	 * module or the Worker fetch handler, depending on `runtime`.
 	 */
-	entry: z.string().min(1),
+	entry: z.string().trim().min(1),
 	/**
 	 * Browser entry the platform bundles to a fingerprinted ESM module served
 	 * under `<appBasePath>/_assets/`. A path string, or an object when the
 	 * client needs `externals` for an import map.
 	 */
 	client: z
-		.union([z.string().min(1), packageAppClientDefinitionSchema])
+		.union([z.string().trim().min(1), packageAppClientDefinitionSchema])
 		.optional(),
 	/**
 	 * Directory of static files served as-is under `<appBasePath>/_assets/`
 	 * (no bundling; content types inferred from the extension).
 	 */
-	assets: z.string().min(1).optional(),
+	assets: z.string().trim().min(1).optional(),
 })
 
 export type PackageAppDefinition = z.infer<typeof packageAppDefinitionSchema>

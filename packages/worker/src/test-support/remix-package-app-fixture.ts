@@ -10,7 +10,7 @@
 export function createRemixPackageAppFiles(input: {
 	username: string
 	kodyId: string
-	/** Set `kody.app.runtime` explicitly; omit to exercise inference. */
+	/** Declares `kody.app.runtime` (default `true`); pass `false` to exercise inference. */
 	declareRuntime?: boolean
 }): Record<string, string> {
 	const packageJson = {
