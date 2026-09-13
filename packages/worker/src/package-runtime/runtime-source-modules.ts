@@ -953,6 +953,14 @@ export default async function __kodyExecuteEntrypoint(input) {
 `.trim()
 }
 
+/**
+ * Named export older app bootstraps added so the wrapper could remount Remix
+ * routers. New bootstraps remount themselves from export shape and do not emit
+ * this export. The wrapper still remounts when a persisted artifact exports
+ * `'remix'`.
+ */
+export const packageAppRuntimeMarkerExportName = '__kodyPackageAppRuntime'
+
 export function createAppEntrypointSource(input: { modulePath: string }) {
 	return `
 import * as userModule from ${JSON.stringify(input.modulePath)};
