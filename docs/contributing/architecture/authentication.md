@@ -619,11 +619,14 @@ routed from `packages/worker/src/index.ts`.
   from `listUserGrants` (paged) joined with `lookupClient` for a best-effort
   label, authorized time, and revoke. The account UI groups those unique
   `clientId`s by display name, shows a public icon when the host kind already
-  has an SVG, and sorts newest-first. Timestamps are grant `createdAt`
-  (connected time). The provider grant summary has no last-used / last-accessed
-  field, and recording MCP activity per connection would need new persistence,
-  so the page does not invent a last-heard time. Onboarding Step 3 completion is
-  unique `clientId`s ≥ 2, not raw grant count and not `users.mcp_client_name`.
+  has an SVG, and sorts last-used newest-first, then connected time. Timestamps
+  are grant `createdAt` (connected time) plus last-used from UserMeter
+  `inbound_mcp_connection_last_used` (successful `/mcp` bearer validation, keyed
+  by inbound OAuth `clientId`, 5-minute Durable Object debounce, `waitUntil` so
+  it is not on the awaited hot path). Unknown last-used renders as "never" and
+  is the revoke signal; Connected remains grant `createdAt`. Revoke deletes the
+  last-used row with the grant. Onboarding Step 3 completion is unique
+  `clientId`s ≥ 2, not raw grant count and not `users.mcp_client_name`.
   `user_mcp_oauth_clients` stores the account-owned metadata. The provider
   stores the secret hash in `OAUTH_KV` via `env.OAUTH_PROVIDER.createClient()`.
   List and revoke are scoped to the owning `user_id`. The plaintext secret is

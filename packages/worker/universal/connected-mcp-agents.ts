@@ -29,6 +29,7 @@ export type ConnectedMcpAgent = {
 	label: string
 	kind: McpClientKind | null
 	connectedAt: string | null
+	lastUsedAt: string | null
 }
 
 export type ConnectedAgentGroup<
@@ -38,6 +39,7 @@ export type ConnectedAgentGroup<
 	kind: McpClientKind | null
 	icon: string | null
 	connectedAt: string | null
+	lastUsedAt: string | null
 	members: Array<T>
 }
 
@@ -194,6 +196,9 @@ export function groupConnectedAgents<T extends ConnectedMcpAgent>(
 			connectedAt: latestConnectedAt(
 				sortedMembers.map((member) => member.connectedAt),
 			),
+			lastUsedAt: latestConnectedAt(
+				sortedMembers.map((member) => member.lastUsedAt),
+			),
 			members: sortedMembers,
 		})
 	}
@@ -216,6 +221,8 @@ function compareConnectedAgentMembers(
 	left: ConnectedMcpAgent,
 	right: ConnectedMcpAgent,
 ) {
+	const byLastUsed = compareNewestFirst(left.lastUsedAt, right.lastUsedAt)
+	if (byLastUsed !== 0) return byLastUsed
 	const byTime = compareNewestFirst(left.connectedAt, right.connectedAt)
 	if (byTime !== 0) return byTime
 	return left.clientId.localeCompare(right.clientId)
@@ -225,6 +232,8 @@ function compareConnectedAgentGroups(
 	left: ConnectedAgentGroup,
 	right: ConnectedAgentGroup,
 ) {
+	const byLastUsed = compareNewestFirst(left.lastUsedAt, right.lastUsedAt)
+	if (byLastUsed !== 0) return byLastUsed
 	const byTime = compareNewestFirst(left.connectedAt, right.connectedAt)
 	if (byTime !== 0) return byTime
 	return left.label.localeCompare(right.label)

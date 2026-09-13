@@ -167,12 +167,14 @@ test('client /onboarding resume follows payload progress, not always step 1', as
 				label: 'Cursor',
 				kind: 'cursor' as const,
 				connectedAt: '2026-09-08T17:00:00.000Z',
+				lastUsedAt: null,
 			},
 			{
 				clientId: 'claude-desktop-client',
 				label: 'Claude Desktop',
 				kind: 'claude-desktop' as const,
 				connectedAt: '2026-09-08T18:00:00.000Z',
+				lastUsedAt: null,
 			},
 		],
 	} satisfies OnboardingPayload

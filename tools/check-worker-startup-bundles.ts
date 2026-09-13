@@ -106,11 +106,13 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		bundler: 'wrangler',
 		// Waiting first-use probes (search, memory, execute, package, job,
 		// integration, secret, Discord membership) ship on platform because
-		// waitingSummary runs in the MCP Durable Object. Local dry-run after
-		// that change is 4_983_088 bytes. Package-app `kody.app.client`
-		// browser bundling and `/_assets/*` serving (publish rebuild and
-		// packageAppFetch both run here) add ~19 KB: 5_001_786 bytes.
-		maxEntryBytes: 5_010_000,
+		// waitingSummary runs in the MCP Durable Object. UserMeter schema
+		// v12 inbound MCP last-used RPCs add a few KB (CI dry-run
+		// 4_992_191). Keep last-used on this class; do not add a second DO.
+		// Package-app `kody.app.client` browser bundling and `/_assets/*`
+		// serving (publish rebuild and packageAppFetch both run here) add
+		// ~19 KB on top: local dry-run 5_010_889 bytes.
+		maxEntryBytes: 5_020_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,

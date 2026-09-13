@@ -158,6 +158,12 @@ export function createAccountConnectedAgents(handle: Handle) {
 													fontSize: typography.fontSize.sm,
 												})}
 											>
+												Last used{' '}
+												<TimestampValue
+													value={group.lastUsedAt}
+													fallback="never"
+												/>
+												{' · '}
 												Connected{' '}
 												<TimestampValue
 													value={group.connectedAt}
@@ -210,6 +216,18 @@ export function createAccountConnectedAgents(handle: Handle) {
 															>
 																{connectionLabel}
 															</code>
+															<span
+																mix={css({
+																	color: colors.textMuted,
+																	fontSize: typography.fontSize.sm,
+																})}
+															>
+																Last used{' '}
+																<TimestampValue
+																	value={agent.lastUsedAt}
+																	fallback="never"
+																/>
+															</span>
 															<span
 																mix={css({
 																	color: colors.textMuted,

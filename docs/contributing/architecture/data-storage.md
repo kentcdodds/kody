@@ -239,17 +239,18 @@ migration-safe chunked interface:
   StorageRunner `exportStorage({ pageSize, startAfter })` RPC as the dedicated
   storage export capability. User meter counters use `section: "user_meter"` and
   the `UserMeter.exportCounters` RPC (daily counters plus authoritative
-  `storageBytesState` and sanitized `deletionState` on the first page only when
-  present). Mailbox metadata uses `section: "mailbox"` and the
-  `Mailbox.exportMailbox` RPC. R2 raw MIME, attachment, avatar, and icon objects
-  use `section: "r2_object"`; each response contains at most one 256 KiB base64
-  chunk and an opaque cursor. Each request uses bounded `LIMIT 1` ownership
-  queries rather than reconstructing inventory. Continuation cursors bind the
-  source row, object key, size, and ETag; ownership/key mutations and object
-  overwrites are reported instead of mixing generations. Missing objects are
-  represented explicitly. R2 cursor version 1 is unsupported by the current
-  Mailbox-authoritative traversal because translation could duplicate bytes;
-  callers must restart the `r2_object` section without `startAfter`.
+  `storageBytesState`, sanitized `deletionState`, and
+  `inboundConnectionLastUsed` on the first page only when present). Mailbox
+  metadata uses `section: "mailbox"` and the `Mailbox.exportMailbox` RPC. R2 raw
+  MIME, attachment, avatar, and icon objects use `section: "r2_object"`; each
+  response contains at most one 256 KiB base64 chunk and an opaque cursor. Each
+  request uses bounded `LIMIT 1` ownership queries rather than reconstructing
+  inventory. Continuation cursors bind the source row, object key, size, and
+  ETag; ownership/key mutations and object overwrites are reported instead of
+  mixing generations. Missing objects are represented explicitly. R2 cursor
+  version 1 is unsupported by the current Mailbox-authoritative traversal
+  because translation could duplicate bytes; callers must restart the
+  `r2_object` section without `startAfter`.
 
 D1 manifest counts use bounded SQL `COUNT(*)` queries. D1 section rows are read
 with SQL-level keyset pagination: every query orders by the table's `rowid`,
@@ -278,12 +279,12 @@ Durable Object export behavior:
   [Run records](./run-records.md).
 - `UserMeter` exports daily entitlement counter rows through the `user_meter`
   section (`exportCounters` RPC; keyset pagination by UTC `day` and `resource`).
-  The same RPC returns authoritative `storageBytesState` and sanitized
-  `deletionState` on the first page only (`startAfter` absent; `null` on later
-  pages). Section totals count each state inventory once when present. The
-  storage-byte counter lives only in UserMeter. Retention is self-enforced
-  inside the DO (seven UTC days of counter and inbound-delivery-claim rows);
-  storage-byte state is not time-pruned. See
+  The same RPC returns authoritative `storageBytesState`, sanitized
+  `deletionState`, and `inboundConnectionLastUsed` on the first page only
+  (`startAfter` absent; `null` on later pages). Section totals count each state
+  inventory once when present. The storage-byte counter lives only in UserMeter.
+  Retention is self-enforced inside the DO (seven UTC days of counter and
+  inbound-delivery-claim rows); storage-byte state is not time-pruned. See
   [Entitlements](./entitlements.md#usermeter).
 - `Mailbox` is the sole authoritative USER email graph export. It exports
   threads, messages, attachments, and delivery events through the account-export
@@ -755,7 +756,7 @@ Naming matches `RunLog` and `JobManager`: one object per untrimmed stable MCP
 column inside the DO because the object identity is the user.
 
 SQLite ownership (schema version tracked in `user_meter_meta`; current version
-**11**):
+**12**):
 
 - `daily_counters` — authoritative UTC-day counters for `email_sends_per_day`,
   `email_receives_per_day`, `execute_calls_per_day`, and
@@ -789,6 +790,12 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   `dynamic_worker_day` usage event per unique Cloudflare bill unit, and to
   classify observe-only `dynamic_worker_invoke` as hit or miss. Not an
   entitlement counter and not included in `exportCounters`.
+- `inbound_mcp_connection_last_used` — last successful MCP bearer validation per
+  inbound OAuth `clientId` (`client_id` PK, `last_used_at`). Account →
+  Connections joins this as last-used next to Revoke.
+  `ON CONFLICT … WHERE last_used_at < cutoff` debounce writes to five minutes.
+  Not time-pruned; revoke and `purge()` remove the row. Account export emits
+  `inboundConnectionLastUsed` on the first `exportCounters` page only.
 
 Retention is self-enforced inside the DO: every read/write path
 opportunistically deletes counter, inbound-claim, and unique-worker-day rows
@@ -808,13 +815,14 @@ or day index. `adminUserMeterParity` reports meter-only daily counts. See
 D1 for enforcement.
 
 Account deletion calls `UserMeter.purge()` (one RPC per user, no D1 id scan;
-`deleteAll` clears counters, claims, storage bytes, and write leases while
-preserving an existing deleting tombstone during cleanup). After the D1 user row
-is removed, origin drops that tombstone so a later signup with the same email
-can use the hashed `stable_user_id` again. Account export pages
-`UserMeter.exportCounters` through the `user_meter` manifest section /
-`accountExportSection` (daily counters plus authoritative `storageBytesState`
-and sanitized `deletionState` on the first page only when present).
+`deleteAll` clears counters, claims, storage bytes, write leases, and inbound
+MCP last-used rows while preserving an existing deleting tombstone during
+cleanup). After the D1 user row is removed, origin drops that tombstone so a
+later signup with the same email can use the hashed `stable_user_id` again.
+Account export pages `UserMeter.exportCounters` through the `user_meter`
+manifest section / `accountExportSection` (daily counters plus authoritative
+`storageBytesState`, sanitized `deletionState`, and `inboundConnectionLastUsed`
+on the first page only when present).
 
 ## Durable Objects (`Mailbox`)
 

@@ -1154,8 +1154,7 @@ function instrumentWriteLeaseRpcs(namespace: DurableObjectNamespace) {
 			get(id: DurableObjectId) {
 				const target = namespace.get(id)
 				return new Proxy(target, {
-					get(target, prop, receiver) {
-						const value = Reflect.get(target, prop, receiver)
+					get(_target, prop) {
 						if (
 							prop === 'acquireWriteLease' ||
 							prop === 'assertWriteLeaseHeld' ||
@@ -1171,9 +1170,19 @@ function instrumentWriteLeaseRpcs(namespace: DurableObjectNamespace) {
 								)[String(prop)](args)
 							}
 						}
-						return typeof value === 'function'
-							? (value as (...args: Array<unknown>) => unknown).bind(target)
-							: value
+						const value = (target as unknown as Record<PropertyKey, unknown>)[
+							prop
+						]
+						if (typeof value === 'function') {
+							return (...args: Array<unknown>) =>
+								(
+									target as unknown as Record<
+										PropertyKey,
+										(...args: Array<unknown>) => unknown
+									>
+								)[prop](...args)
+						}
+						return value
 					},
 				})
 			},
@@ -1376,3 +1385,67 @@ test('mcp write lease is scoped to mutating tools/call and still rejects deletin
 	expect(instrumented.calls).toEqual([])
 	expect(fetchMcpCalls).toBe(3)
 })
+
+test('successful mcp bearer validation records inbound connection last-used', async () => {
+	const userId = `last-used-${crypto.randomUUID()}`
+	const clientId = `https://cursor.com/oauth/${crypto.randomUUID()}/client.json`
+	const email = `${userId}@example.com`
+	const validToken: TokenSummary = {
+		id: 'token',
+		grantId: 'grant',
+		userId,
+		createdAt: 0,
+		expiresAt: 999999,
+		audience: `https://example.com${mcpResourcePath}`,
+		grant: {
+			clientId,
+			scope: oauthScopes,
+			props: { userId, email },
+		},
+	}
+	const testEnv = createEnv(
+		createHelpers({
+			unwrapToken: async () => validToken,
+		}),
+		{},
+		{
+			emailVerifiedAt: new Date(0).toISOString(),
+			expectedEmail: email,
+			expectedStableUserId: userId,
+		},
+	)
+	const response = await handleMcpRequestAndDrain({
+		request: new Request(`https://example.com${mcpResourcePath}`, {
+			headers: { Authorization: 'Bearer token' },
+		}),
+		env: testEnv,
+		ctx: createContext(),
+		fetchMcp: () => new Response('ok'),
+	})
+	expect(response.status).toBe(200)
+	const rows = await userMeterRpc({
+		env: testEnv,
+		userId,
+	}).listInboundConnectionLastUsed()
+	expect(rows).toHaveLength(1)
+	expect(rows[0]?.clientId).toBe(clientId)
+	const usedAt = Date.parse(rows[0]?.lastUsedAt ?? '')
+	expect(Number.isFinite(usedAt)).toBe(true)
+	expect(Math.abs(Date.now() - usedAt)).toBeLessThan(15_000)
+
+	const second = await handleMcpRequestAndDrain({
+		request: new Request(`https://example.com${mcpResourcePath}`, {
+			headers: { Authorization: 'Bearer token' },
+		}),
+		env: testEnv,
+		ctx: createContext(),
+		fetchMcp: () => new Response('ok'),
+	})
+	expect(second.status).toBe(200)
+	expect(
+		await userMeterRpc({
+			env: testEnv,
+			userId,
+		}).listInboundConnectionLastUsed(),
+	).toEqual(rows)
+}, 30_000)

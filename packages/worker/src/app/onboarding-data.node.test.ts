@@ -174,6 +174,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 				label: 'client-a',
 				kind: null,
 				connectedAt: null,
+				lastUsedAt: null,
 			},
 		],
 		emailVerified: true,

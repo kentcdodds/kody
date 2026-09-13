@@ -30,6 +30,7 @@ export function createInMemoryUserMeterEnv() {
 	const storageByUser = new Map<string, StorageRow>()
 	const deletionByUser = new Map<string, DeletionState>()
 	const dynamicWorkerDaysByUser = new Map<string, Set<string>>()
+	const lastUsedByUser = new Map<string, Map<string, string>>()
 	function counterKey(resource: string, day: string) {
 		return `${resource}\0${day}`
 	}
@@ -56,6 +57,9 @@ export function createInMemoryUserMeterEnv() {
 		if (!existingDynamicWorkerDays) {
 			dynamicWorkerDaysByUser.set(userId, dynamicWorkerDays)
 		}
+		const existingLastUsed = lastUsedByUser.get(userId)
+		const lastUsed = existingLastUsed ?? new Map<string, string>()
+		if (!existingLastUsed) lastUsedByUser.set(userId, lastUsed)
 
 		function readRow(resource: string, day: string) {
 			return rows.get(counterKey(resource, day)) ?? null
@@ -471,12 +475,40 @@ export function createInMemoryUserMeterEnv() {
 			async countActiveWriteLeases() {
 				return { count: deletion.leases.size }
 			},
+			async touchInboundConnectionLastUsed(input: {
+				clientId: string
+				lastUsedAt: string
+			}) {
+				const previous = lastUsed.get(input.clientId) ?? null
+				const cutoff = new Date(
+					Date.parse(input.lastUsedAt) - 5 * 60 * 1000,
+				).toISOString()
+				if (previous != null && previous >= cutoff) {
+					return { updated: false }
+				}
+				lastUsed.set(input.clientId, input.lastUsedAt)
+				return { updated: true }
+			},
+			async listInboundConnectionLastUsed() {
+				return [...lastUsed.entries()]
+					.map(([clientId, lastUsedAt]) => ({ clientId, lastUsedAt }))
+					.sort((left, right) => {
+						const byTime = right.lastUsedAt.localeCompare(left.lastUsedAt)
+						if (byTime !== 0) return byTime
+						return left.clientId.localeCompare(right.clientId)
+					})
+			},
+			async forgetInboundConnectionLastUsed(input: { clientId: string }) {
+				lastUsed.delete(input.clientId)
+				return { ok: true as const }
+			},
 			async purge() {
 				const deletingAt = deletion.deletingAt
 				rows.clear()
 				storageByUser.delete(userId)
 				deletion.leases.clear()
 				deletion.deletingAt = deletingAt
+				lastUsed.clear()
 				return { ok: true as const }
 			},
 			async exportCounters(
@@ -512,10 +544,17 @@ export function createInMemoryUserMeterEnv() {
 				const deletionState = includeFirstPageState
 					? readDeletionStateExport()
 					: null
+				const inboundConnectionLastUsed = includeFirstPageState
+					? [...lastUsed.entries()].map(([clientId, lastUsedAt]) => ({
+							clientId,
+							lastUsedAt,
+						}))
+					: null
 				return {
 					counters,
 					storageBytesState,
 					deletionState,
+					inboundConnectionLastUsed,
 					nextStartAfter: null,
 					truncated: false,
 				}

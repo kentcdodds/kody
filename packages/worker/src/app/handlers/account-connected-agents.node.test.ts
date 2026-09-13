@@ -5,8 +5,13 @@ import {
 	type AuthSession,
 } from '#app/auth-session.ts'
 import { createAccountConnectedAgentsApiHandler } from '#app/handlers/account-connected-agents.ts'
+import {
+	listInboundMcpConnectionLastUsed,
+	recordInboundMcpConnectionLastUsed,
+} from '#worker/inbound-mcp-connection-last-used.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -25,16 +30,20 @@ vi.mock('#app/authenticated-user.ts', () => ({
 		mockModule.readAuthenticatedAppUser(...args),
 }))
 
-function createAppEnv(helpers?: {
-	listUserGrants: ReturnType<typeof vi.fn>
-	revokeGrant: ReturnType<typeof vi.fn>
-	lookupClient?: ReturnType<typeof vi.fn>
-}) {
+function createAppEnv(
+	helpers?: {
+		listUserGrants: ReturnType<typeof vi.fn>
+		revokeGrant: ReturnType<typeof vi.fn>
+		lookupClient?: ReturnType<typeof vi.fn>
+	},
+	meter = createInMemoryUserMeterEnv(),
+) {
 	return {
 		APP_DB: {} as D1Database,
 		COOKIE_SECRET: testCookieSecret,
 		SENTRY_ENVIRONMENT: 'test',
 		OAUTH_PROVIDER: helpers,
+		...meter.env,
 	} as unknown as Env
 }
 
@@ -94,7 +103,10 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 		mcpUser: { userId: userOneSession.stableUserId },
 	})
 	const cookie = await createAuthCookie(userOneSession, false)
-	const handler = createAccountConnectedAgentsApiHandler(createAppEnv(helpers))
+	const meter = createInMemoryUserMeterEnv()
+	const handler = createAccountConnectedAgentsApiHandler(
+		createAppEnv(helpers, meter),
+	)
 
 	const listed = await runHandler(
 		handler,
@@ -105,7 +117,12 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 	expect(listed.status).toBe(200)
 	const listBody = (await listed.json()) as {
 		ok: true
-		agents: Array<{ clientId: string; label: string; kind: string | null }>
+		agents: Array<{
+			clientId: string
+			label: string
+			kind: string | null
+			lastUsedAt: string | null
+		}>
 		mcpServerUrl: string
 	}
 	expect(listBody.ok).toBe(true)
@@ -113,6 +130,7 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 		'ChatGPT.com',
 		'Cursor',
 	])
+	expect(listBody.agents.map((agent) => agent.lastUsedAt)).toEqual([null, null])
 	// The Connections page pastes this into a new host; it comes from the
 	// request origin so preview and local deployments show their own URL.
 	expect(listBody.mcpServerUrl).toBe('https://example.com/mcp')
@@ -140,6 +158,52 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 		mcpUser: { userId: userOneSession.stableUserId },
 	})
 
+	await recordInboundMcpConnectionLastUsed({
+		env: meter.env,
+		userId: userOneSession.stableUserId,
+		clientId: 'client-a',
+		lastUsedAt: '2026-03-20T12:00:00.000Z',
+		nowMs: Date.parse('2026-03-20T12:00:00.000Z'),
+	})
+	await recordInboundMcpConnectionLastUsed({
+		env: meter.env,
+		userId: userOneSession.stableUserId,
+		clientId: 'https://chatgpt.com/oauth/vG3/client.json',
+		lastUsedAt: '2026-03-10T12:00:00.000Z',
+		nowMs: Date.parse('2026-03-10T12:00:00.000Z'),
+	})
+	const listedWithLastUsed = await runHandler(
+		handler,
+		new Request('https://example.com/account/connected-agents.json', {
+			headers: { Cookie: cookie, Accept: 'application/json' },
+		}),
+	)
+	expect(listedWithLastUsed.status).toBe(200)
+	expect(
+		(
+			(await listedWithLastUsed.json()) as {
+				agents: Array<{ clientId: string; lastUsedAt: string | null }>
+			}
+		).agents,
+	).toEqual([
+		{
+			clientId: 'client-a',
+			grantIds: ['grant-1', 'grant-2'],
+			label: 'Cursor',
+			kind: 'cursor',
+			connectedAt: '2023-11-14T22:13:20.000Z',
+			lastUsedAt: '2026-03-20T12:00:00.000Z',
+		},
+		{
+			clientId: 'https://chatgpt.com/oauth/vG3/client.json',
+			grantIds: ['grant-3'],
+			label: 'ChatGPT.com',
+			kind: 'chatgpt',
+			connectedAt: '2023-11-14T22:16:40.000Z',
+			lastUsedAt: '2026-03-10T12:00:00.000Z',
+		},
+	])
+
 	const revoked = await runHandler(
 		handler,
 		new Request('https://example.com/account/connected-agents.json', {
@@ -161,6 +225,16 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 	expect(revokeBody.agents.map((agent) => agent.clientId)).toEqual([
 		'https://chatgpt.com/oauth/vG3/client.json',
 	])
+	expect(
+		await listInboundMcpConnectionLastUsed({
+			env: meter.env,
+			userId: userOneSession.stableUserId,
+		}),
+	).toEqual(
+		new Map([
+			['https://chatgpt.com/oauth/vG3/client.json', '2026-03-10T12:00:00.000Z'],
+		]),
+	)
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'oauth',

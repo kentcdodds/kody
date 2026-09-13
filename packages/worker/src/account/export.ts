@@ -220,7 +220,8 @@ function countUserMeterExportEntries(result: UserMeterExportResult): number {
 	return (
 		result.counters.length +
 		(result.storageBytesState == null ? 0 : 1) +
-		deletionStateCount
+		deletionStateCount +
+		(result.inboundConnectionLastUsed?.length ?? 0)
 	)
 }
 
@@ -303,6 +304,11 @@ export type AccountExportSectionResult = {
 	 * absent); later pages set it to `null`.
 	 */
 	deletionState?: UserMeterExportResult['deletionState']
+	/**
+	 * Inbound MCP OAuth last-used stamps. Present only on the first
+	 * `user_meter` page (`startAfter` absent); later pages set it to `null`.
+	 */
+	inboundConnectionLastUsed?: UserMeterExportResult['inboundConnectionLastUsed']
 }
 
 function normalizePageSize(pageSize: number | undefined) {
@@ -1872,6 +1878,7 @@ export async function readAccountExportSection(input: {
 			items: page.counters,
 			storageBytesState: page.storageBytesState,
 			deletionState: page.deletionState,
+			inboundConnectionLastUsed: page.inboundConnectionLastUsed,
 			truncated: page.truncated,
 			nextStartAfter: page.nextStartAfter,
 			pageSize,

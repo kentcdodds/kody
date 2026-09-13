@@ -56,8 +56,8 @@ function accountWriteLeaseColumnNames(state: DurableObjectState) {
 		.map((row) => String(row.name))
 }
 
-test('fresh UserMeter schema v11 creates write-lease and unique worker-day tables', async () => {
-	const user = await seedFreeUser('meter-schema-v11-fresh')
+test('fresh UserMeter schema v12 creates write-lease, unique worker-day, and inbound last-used tables', async () => {
+	const user = await seedFreeUser('meter-schema-v12-fresh')
 	const stub = env.USER_METER.get(
 		env.USER_METER.idFromName(userMeterDurableObjectName(user.userId)),
 	)
@@ -69,7 +69,7 @@ test('fresh UserMeter schema v11 creates write-lease and unique worker-day table
 				WHERE key = 'schema_version' LIMIT 1`,
 			)
 			.toArray()[0]
-		expect(Number(version?.value)).toBe(11)
+		expect(Number(version?.value)).toBe(12)
 		expect(accountWriteLeaseColumnNames(state)).toEqual([
 			'token',
 			'holder',
@@ -84,10 +84,18 @@ test('fresh UserMeter schema v11 creates write-lease and unique worker-day table
 				)
 				.toArray(),
 		).toEqual([{ name: 'dynamic_worker_days' }])
+		expect(
+			state.storage.sql
+				.exec<{ name: string }>(
+					`SELECT name FROM sqlite_master
+					WHERE type = 'table' AND name = 'inbound_mcp_connection_last_used'`,
+				)
+				.toArray(),
+		).toEqual([{ name: 'inbound_mcp_connection_last_used' }])
 	})
 }, 30_000)
 
-test('warm UserMeter schema v7 upgrades to v11 and preserves leases', async () => {
+test('warm UserMeter schema v7 upgrades to v12 and preserves leases', async () => {
 	const user = await seedFreeUser('meter-schema-v7-upgrade')
 	const stub = env.USER_METER.get(
 		env.USER_METER.idFromName(userMeterDurableObjectName(user.userId)),
@@ -138,13 +146,21 @@ test('warm UserMeter schema v7 upgrades to v11 and preserves leases', async () =
 				WHERE key = 'schema_version' LIMIT 1`,
 			)
 			.toArray()[0]
-		expect(Number(version?.value)).toBe(11)
+		expect(Number(version?.value)).toBe(12)
 		expect(accountWriteLeaseColumnNames(state)).toEqual([
 			'token',
 			'holder',
 			'acquired_at',
 			'pending_repair_id',
 		])
+		expect(
+			state.storage.sql
+				.exec<{ name: string }>(
+					`SELECT name FROM sqlite_master
+					WHERE type = 'table' AND name = 'inbound_mcp_connection_last_used'`,
+				)
+				.toArray(),
+		).toEqual([{ name: 'inbound_mcp_connection_last_used' }])
 		expect(
 			state.storage.sql
 				.exec<{
@@ -638,6 +654,7 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 			activeWriteLeaseCount: 0,
 			writeLeases: [],
 		},
+		inboundConnectionLastUsed: [],
 		nextStartAfter: null,
 		truncated: false,
 	})
@@ -744,6 +761,7 @@ test('UserMeter purge blocks concurrent RPCs across deleteAll and schema restore
 			activeWriteLeaseCount: 0,
 			writeLeases: [],
 		},
+		inboundConnectionLastUsed: [],
 		nextStartAfter: null,
 		truncated: false,
 	})
@@ -910,6 +928,7 @@ test('UserMeter storage RPCs, authoritative export state, and purge work additiv
 		activeWriteLeaseCount: 0,
 		writeLeases: [],
 	})
+	expect(firstPage.inboundConnectionLastUsed).toEqual([])
 
 	const secondPage = await meter.exportCounters({
 		pageSize: 2,
@@ -920,6 +939,7 @@ test('UserMeter storage RPCs, authoritative export state, and purge work additiv
 	expect(secondPage.nextStartAfter).toEqual(expect.any(String))
 	expect(secondPage.storageBytesState).toBeNull()
 	expect(secondPage.deletionState).toBeNull()
+	expect(secondPage.inboundConnectionLastUsed).toBeNull()
 
 	const thirdPage = await meter.exportCounters({
 		pageSize: 2,
@@ -941,6 +961,7 @@ test('UserMeter storage RPCs, authoritative export state, and purge work additiv
 			activeWriteLeaseCount: 0,
 			writeLeases: [],
 		},
+		inboundConnectionLastUsed: [],
 		nextStartAfter: null,
 		truncated: false,
 	})
@@ -1140,11 +1161,13 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 		activeWriteLeaseCount: 0,
 		writeLeases: [],
 	})
+	expect(firstPage.inboundConnectionLastUsed).toEqual([])
 	const secondPage = await meterA.exportCounters({
 		pageSize: 1,
 		startAfter: firstPage.nextStartAfter,
 	})
 	expect(secondPage.deletionState).toBeNull()
+	expect(secondPage.inboundConnectionLastUsed).toBeNull()
 
 	// Purge resets counters but preserves the deletion tombstone.
 	await expect(meterA.purge()).resolves.toEqual({ ok: true })
@@ -1163,6 +1186,7 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 			activeWriteLeaseCount: 0,
 			writeLeases: [],
 		},
+		inboundConnectionLastUsed: [],
 		nextStartAfter: null,
 		truncated: false,
 	})
@@ -1187,4 +1211,104 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 		leaseCount: 0,
 	})
 	expect(await meterB.countActiveWriteLeases()).toEqual({ count: 0 })
+}, 30_000)
+
+test('UserMeter inbound MCP last-used touches debounce, list, forget, export, and purge', async () => {
+	const user = await seedFreeUser('meter-inbound-last-used')
+	const other = await seedFreeUser('meter-inbound-last-used-other')
+	const meter = userMeterRpc({ env, userId: user.userId })
+	const otherMeter = userMeterRpc({ env, userId: other.userId })
+	const clientId = 'https://cursor.com/oauth/vG4-last-used/client.json'
+	const firstUsedAt = '2026-03-20T12:00:00.000Z'
+	const withinWindow = '2026-03-20T12:04:59.000Z'
+	const afterWindow = '2026-03-20T12:05:01.000Z'
+
+	await expect(
+		meter.touchInboundConnectionLastUsed({
+			clientId,
+			lastUsedAt: firstUsedAt,
+		}),
+	).resolves.toEqual({ updated: true })
+	await expect(
+		meter.touchInboundConnectionLastUsed({
+			clientId,
+			lastUsedAt: withinWindow,
+		}),
+	).resolves.toEqual({ updated: false })
+	expect(await meter.listInboundConnectionLastUsed()).toEqual([
+		{ clientId, lastUsedAt: firstUsedAt },
+	])
+	await expect(
+		meter.touchInboundConnectionLastUsed({
+			clientId,
+			lastUsedAt: afterWindow,
+		}),
+	).resolves.toEqual({ updated: true })
+	expect(await meter.listInboundConnectionLastUsed()).toEqual([
+		{ clientId, lastUsedAt: afterWindow },
+	])
+	await expect(
+		otherMeter.touchInboundConnectionLastUsed({
+			clientId: 'other-client',
+			lastUsedAt: afterWindow,
+		}),
+	).resolves.toEqual({ updated: true })
+	expect(await otherMeter.listInboundConnectionLastUsed()).toEqual([
+		{ clientId: 'other-client', lastUsedAt: afterWindow },
+	])
+
+	const day = utcDayKey()
+	for (const resource of [
+		'email_sends_per_day',
+		'email_receives_per_day',
+	] as const) {
+		await meter.initialize({
+			resource,
+			day,
+			count: 1,
+			updatedAt: afterWindow,
+		})
+	}
+	const firstPage = await meter.exportCounters({ pageSize: 1 })
+	expect(firstPage.truncated).toBe(true)
+	expect(firstPage.inboundConnectionLastUsed).toEqual([
+		{ clientId, lastUsedAt: afterWindow },
+	])
+	const secondPage = await meter.exportCounters({
+		pageSize: 1,
+		startAfter: firstPage.nextStartAfter,
+	})
+	expect(secondPage.inboundConnectionLastUsed).toBeNull()
+
+	await expect(
+		meter.forgetInboundConnectionLastUsed({ clientId }),
+	).resolves.toEqual({ ok: true })
+	expect(await meter.listInboundConnectionLastUsed()).toEqual([])
+	expect(await otherMeter.listInboundConnectionLastUsed()).toEqual([
+		{ clientId: 'other-client', lastUsedAt: afterWindow },
+	])
+
+	await expect(
+		meter.touchInboundConnectionLastUsed({
+			clientId,
+			lastUsedAt: afterWindow,
+		}),
+	).resolves.toEqual({ updated: true })
+	await expect(meter.purge()).resolves.toEqual({ ok: true })
+	expect(await meter.listInboundConnectionLastUsed()).toEqual([])
+	expect(await meter.exportCounters({})).toEqual({
+		counters: [],
+		storageBytesState: null,
+		deletionState: {
+			deletingAt: null,
+			activeWriteLeaseCount: 0,
+			writeLeases: [],
+		},
+		inboundConnectionLastUsed: [],
+		nextStartAfter: null,
+		truncated: false,
+	})
+	expect(await otherMeter.listInboundConnectionLastUsed()).toEqual([
+		{ clientId: 'other-client', lastUsedAt: afterWindow },
+	])
 }, 30_000)

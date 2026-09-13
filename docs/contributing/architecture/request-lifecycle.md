@@ -152,12 +152,13 @@ All server-side Kody runtime contexts expose `workflows` from `kody:runtime`.
 The helper routes every call to the shared `DynamicCallableWorkflow` binding;
 there is no separate context-specific Workflow class.
 
-- `workflows.create({ code, runAt, idempotencyKey, params })` queues an inline
-  ESM module and later executes it through the same module loader used by
-  `execute`.
-- `workflows.create({ exportName, packageId?, runAt, idempotencyKey, params })`
+- `workflows.create({ code, workflowName?, runAt, idempotencyKey, params })`
+  queues an inline ESM module and later executes it through the same module
+  loader used by `execute`. Omitted `workflowName` falls back to `inline-code`.
+- `workflows.create({ exportName, packageId?, workflowName?, runAt, idempotencyKey, params })`
   queues a saved-package export invocation. Package runtime contexts resolve
   `packageId` from `packageContext`; ad hoc contexts must pass it explicitly.
+  Omitted `workflowName` falls back to the export path.
 - The hub verifies saved-package ownership before queuing export-backed
   workflows and records recent workflow rows for `workflowRunList`.
 

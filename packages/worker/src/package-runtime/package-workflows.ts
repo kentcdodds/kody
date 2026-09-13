@@ -51,6 +51,7 @@ import {
 } from '#worker/run-records/workflow-projection.ts'
 import { isTransientDurableObjectResetError } from '#worker/durable-object-reset-retry.ts'
 import { UserCodeError } from '#worker/user-code-error.ts'
+import { inlineWorkflowNameFallback } from '#universal/workflow-display.ts'
 import {
 	activeWorkflowStatusValues,
 	terminalWorkflowStatusValues,
@@ -398,7 +399,7 @@ function createInlineWorkflowPayload(input: {
 		packageContext: input.packageContext ?? null,
 		workflowName: normalizeOptionalWorkflowName(
 			input.workflowName,
-			'inline-code',
+			inlineWorkflowNameFallback,
 		),
 		code: normalizeNonEmptyString(input.code, 'code'),
 		idempotencyKey,

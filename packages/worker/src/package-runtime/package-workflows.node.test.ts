@@ -548,6 +548,7 @@ test('DynamicCallableWorkflowBase marks package export error responses as workfl
 			params: { key: 'west-sensitive-reopen' },
 		},
 	})
+	expect(created.workflow_name).toBe('./workflow-run-event')
 	const queued = binding.instances.get(created.id)
 	if (!queued?.params) throw new Error('Expected queued workflow payload.')
 	invocationMocks.invokePackageExport.mockReset()

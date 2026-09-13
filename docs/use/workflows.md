@@ -50,6 +50,10 @@ export default async function main() {
 
 Both shapes accept:
 
+- `workflowName`: optional display name. When omitted, inline workflows fall
+  back to `inline-code` and package workflows fall back to the export path. On
+  `/account/workflows` and Activity, a displayed `inline-code` name shows the
+  idempotency key as a subtitle so those runs stay distinguishable.
 - `runAt`: optional ISO date-time string or `Date`; defaults to now
 - `idempotencyKey`: optional caller-chosen dedupe key; omitted keys create a
   fresh run

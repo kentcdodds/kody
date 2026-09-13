@@ -58,6 +58,7 @@ export type AccountActivityRunListItem = {
 	packageId: string | null
 	jobId: string | null
 	logCount: number
+	idempotencyKey: string | null
 }
 
 export type AccountActivityRunLog = {
@@ -75,7 +76,6 @@ export type AccountActivityRunDetail = AccountActivityRunListItem & {
 	workflowId: string | null
 	invocationId: string | null
 	sessionId: string | null
-	idempotencyKey: string | null
 	parentRunId: string | null
 	triageNote: string | null
 	triagedAt: string | null
@@ -148,6 +148,7 @@ function toListItem(run: RunRecord): AccountActivityRunListItem {
 		packageId: run.packageId,
 		jobId: run.jobId,
 		logCount: run.logCount,
+		idempotencyKey: run.idempotencyKey,
 	}
 }
 
@@ -166,7 +167,6 @@ async function toDetail(
 		workflowId: run.workflowId,
 		invocationId: run.invocationId,
 		sessionId: run.sessionId,
-		idempotencyKey: run.idempotencyKey,
 		parentRunId: run.parentRunId,
 		triageNote: run.triageNote,
 		triagedAt: run.triagedAt,

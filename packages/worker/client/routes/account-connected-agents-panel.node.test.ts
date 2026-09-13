@@ -17,6 +17,7 @@ test('connected agents panel groups same-name hosts, shows logos, and keeps revo
 				label: 'Cursor',
 				kind: 'cursor',
 				connectedAt: '2024-01-01T00:00:00.000Z',
+				lastUsedAt: '2024-08-01T00:00:00.000Z',
 			},
 			{
 				clientId: 'cursor-new',
@@ -24,6 +25,7 @@ test('connected agents panel groups same-name hosts, shows logos, and keeps revo
 				label: 'Cursor',
 				kind: 'cursor',
 				connectedAt: '2024-06-01T00:00:00.000Z',
+				lastUsedAt: '2024-05-01T00:00:00.000Z',
 			},
 			{
 				clientId: 'https://chatgpt.com/oauth/vG3/client.json',
@@ -31,6 +33,7 @@ test('connected agents panel groups same-name hosts, shows logos, and keeps revo
 				label: 'ChatGPT.com',
 				kind: 'chatgpt',
 				connectedAt: '2024-03-01T00:00:00.000Z',
+				lastUsedAt: null,
 			},
 			{
 				clientId: 'https://chatgpt.com/oauth/vG4/client.json',
@@ -38,6 +41,7 @@ test('connected agents panel groups same-name hosts, shows logos, and keeps revo
 				label: 'ChatGPT.com',
 				kind: 'chatgpt',
 				connectedAt: '2024-04-01T00:00:00.000Z',
+				lastUsedAt: null,
 			},
 			{
 				clientId: 'opaque-client-id-abcdefghijklmnopqrstuvwxyz',
@@ -45,6 +49,7 @@ test('connected agents panel groups same-name hosts, shows logos, and keeps revo
 				label: 'Acme Agent',
 				kind: null,
 				connectedAt: '2024-05-01T00:00:00.000Z',
+				lastUsedAt: null,
 			},
 		],
 	})
@@ -67,9 +72,11 @@ test('connected agents panel groups same-name hosts, shows logos, and keeps revo
 	)
 	expect(cursorBlock).toContain('<details')
 	expect(cursorBlock).toContain('<summary')
-	expect(cursorBlock.indexOf('cursor-new')).toBeLessThan(
-		cursorBlock.indexOf('cursor-old'),
+	expect(cursorBlock.indexOf('cursor-old')).toBeLessThan(
+		cursorBlock.indexOf('cursor-new'),
 	)
+	expect(cursorBlock).toContain('Last used')
+	expect(html).toMatch(/Last used <span[^>]*>never<\/span>/)
 	expect(cursorBlock).toContain('aria-label="Revoke Cursor (cursor-n…)"')
 	expect(cursorBlock).toContain('aria-label="Revoke Cursor (cursor-o…)"')
 	const chatgptBlock = html.slice(

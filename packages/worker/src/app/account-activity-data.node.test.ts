@@ -126,7 +126,7 @@ test('activity helpers parse filters and prefer path selected run ids', () => {
 })
 
 test('loadAccountActivityData maps filters, summary, pagination, detail, and cursors', async () => {
-	const run = makeRun()
+	const run = makeRun({ idempotencyKey: 'sync-account-123' })
 	mockModule.summarizeRunRecords.mockResolvedValue({
 		since: '2026-07-19T12:00:00.000Z',
 		total: 4,
@@ -214,6 +214,7 @@ test('loadAccountActivityData maps filters, summary, pagination, detail, and cur
 				surface: 'job',
 				status: 'error',
 				errorMessage: 'boom',
+				idempotencyKey: 'sync-account-123',
 			}),
 		],
 		selectedRun: expect.objectContaining({

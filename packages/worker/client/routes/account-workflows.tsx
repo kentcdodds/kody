@@ -33,9 +33,12 @@ import {
 	RecordTableSearch,
 	RecordTableSelect,
 	recordBodyCss,
-	recordCellClamp,
 	recordStampCss,
 } from '#client/routes/record-table.tsx'
+import {
+	renderInlineWorkflowNameSubtitle,
+	renderWorkflowNameCell,
+} from '#client/routes/workflow-name-display.tsx'
 import {
 	type AccountWorkflowDetail,
 	type AccountWorkflowListItem,
@@ -51,8 +54,6 @@ import {
 	getGhostButtonCss,
 	primaryLinkCss,
 } from '#universal/styles/style-primitives.ts'
-
-const clampedCellCss = css(recordCellClamp(28))
 
 type MessageTone = 'info' | 'error'
 
@@ -476,7 +477,10 @@ export function AccountWorkflowsRoute(handle: Handle) {
 								? undefined
 								: workflowsRoute.buildDetailHref(item.id, getCurrentSearch()),
 							cells: {
-								name: <span mix={clampedCellCss}>{item.workflowName}</span>,
+								name: renderWorkflowNameCell({
+									name: item.workflowName,
+									idempotencyKey: item.idempotencyKey,
+								}),
 								source: sourceLabel(item),
 								status: (
 									<span mix={css({ color: statusColor(item.status) })}>
@@ -500,6 +504,10 @@ export function AccountWorkflowsRoute(handle: Handle) {
 								<section mix={css(recordBodyCss)}>
 									<div mix={css({ display: 'grid', gap: spacing.xs })}>
 										<h2 mix={css(cardTitleCss)}>{detail.workflowName}</h2>
+										{renderInlineWorkflowNameSubtitle({
+											displayedName: detail.workflowName,
+											idempotencyKey: detail.idempotencyKey,
+										})}
 										<p mix={css(descriptionCss)}>
 											{detail.sourceType === 'package'
 												? 'Package workflow run. Cancel stops the underlying Cloudflare Workflow instance when it has not finished yet.'
@@ -660,6 +668,12 @@ export function AccountWorkflowsRoute(handle: Handle) {
 									>
 										{listMatch?.workflowName ?? 'Loading workflow'}
 									</h2>
+									{listMatch
+										? renderInlineWorkflowNameSubtitle({
+												displayedName: listMatch.workflowName,
+												idempotencyKey: listMatch.idempotencyKey,
+											})
+										: null}
 									<p mix={css({ margin: 0, color: colors.textMuted })}>
 										Loading workflow details…
 									</p>
