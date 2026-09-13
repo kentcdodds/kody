@@ -3,6 +3,11 @@ import {
 	labelInboundMcpClient,
 	oauthGrantCreatedAtIso,
 } from '#universal/connected-mcp-agents.ts'
+import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
+import {
+	forgetInboundMcpConnectionLastUsed,
+	listInboundMcpConnectionLastUsed,
+} from '#worker/inbound-mcp-connection-last-used.ts'
 import {
 	listUserOAuthGrants,
 	listUserOAuthGrantsForClient,
@@ -26,13 +31,22 @@ export type InboundMcpConnectionState = {
 export async function loadInboundMcpConnectionState(
 	helpers: OAuthGrantListHelpers | undefined,
 	userId: string,
+	options?: { env?: UserMeterEnv },
 ): Promise<InboundMcpConnectionState> {
 	if (!helpers) {
 		return { uniqueClientCount: 0, agents: [] }
 	}
 	try {
-		const grants = await listUserOAuthGrants(helpers, userId)
-		return await labelInboundMcpGrants(helpers, grants)
+		const [grants, lastUsedByClientId] = await Promise.all([
+			listUserOAuthGrants(helpers, userId),
+			options?.env
+				? listInboundMcpConnectionLastUsed({
+						env: options.env,
+						userId,
+					}).catch(() => new Map<string, string>())
+				: Promise.resolve(new Map<string, string>()),
+		])
+		return await labelInboundMcpGrants(helpers, grants, lastUsedByClientId)
 	} catch {
 		return { uniqueClientCount: 0, agents: [], listingFailed: true }
 	}
@@ -42,6 +56,7 @@ export async function revokeConnectedMcpAgent(input: {
 	helpers: OAuthGrantHelpers
 	userId: string
 	clientId: string
+	env?: UserMeterEnv
 }): Promise<{ revoked: number } | { error: 'not_found' }> {
 	const grants = await listUserOAuthGrantsForClient(
 		input.helpers,
@@ -52,12 +67,20 @@ export async function revokeConnectedMcpAgent(input: {
 	for (const grant of grants) {
 		await revokeOAuthGrant(input.helpers, grant.id, input.userId)
 	}
+	if (input.env) {
+		await forgetInboundMcpConnectionLastUsed({
+			env: input.env,
+			userId: input.userId,
+			clientId: input.clientId,
+		}).catch(() => undefined)
+	}
 	return { revoked: grants.length }
 }
 
 async function labelInboundMcpGrants(
 	helpers: OAuthGrantListHelpers,
 	grants: Array<OAuthGrantListItem>,
+	lastUsedByClientId: ReadonlyMap<string, string>,
 ): Promise<InboundMcpConnectionState> {
 	const byClient = new Map<string, Array<OAuthGrantListItem>>()
 	for (const grant of grants) {
@@ -84,6 +107,7 @@ async function labelInboundMcpGrants(
 			label: labeled.label,
 			kind: labeled.kind,
 			connectedAt: earliestGrantCreatedAt(clientGrants),
+			lastUsedAt: lastUsedByClientId.get(clientId) ?? null,
 		})
 	}
 
@@ -136,6 +160,9 @@ function compareConnectedAgents(
 	left: ConnectedMcpAgentListItem,
 	right: ConnectedMcpAgentListItem,
 ) {
+	const leftUsed = left.lastUsedAt ?? ''
+	const rightUsed = right.lastUsedAt ?? ''
+	if (leftUsed !== rightUsed) return rightUsed.localeCompare(leftUsed)
 	const leftAt = left.connectedAt ?? ''
 	const rightAt = right.connectedAt ?? ''
 	if (leftAt !== rightAt) return rightAt.localeCompare(leftAt)

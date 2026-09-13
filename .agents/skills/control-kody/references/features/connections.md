@@ -37,8 +37,10 @@ node tools/control-kody.ts request GET /account/connections/new/cursor
 
 - Seed users start with no connected agents; connect one from Add connection or
   an MCP host to see the list. Revoke is a double-check button.
-- Hosts are grouped by display name (logos for known kinds, newest-first,
-  best-effort labels). That list is not `users.mcp_client_name` and not minted
+- Hosts are grouped by display name (logos for known kinds, last-used then
+  connected newest-first, best-effort labels). Last used is the revoke signal
+  (successful `/mcp` bearer validation; unknown renders as "never"). Connected
+  is grant `createdAt`. That list is not `users.mcp_client_name` and not minted
   MCP OAuth clients (`/account/mcp-oauth-clients`).
 - The grid reuses onboarding's `AgentPickerGrid` with `viewport: 'both'` on
   every entry, so the phone/desktop split and greyed same-ecosystem cards that

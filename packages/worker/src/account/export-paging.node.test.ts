@@ -670,6 +670,7 @@ test('account export includes user_meter counters, pages them, and warns on trun
 				counters: page,
 				storageBytesState: isFirstPage ? storageBytesState : null,
 				deletionState: isFirstPage ? deletionState : null,
+				inboundConnectionLastUsed: isFirstPage ? [] : null,
 				nextStartAfter: truncated
 					? `${page.at(-1)!.day}:${page.at(-1)!.resource}`
 					: null,
@@ -698,6 +699,7 @@ test('account export includes user_meter counters, pages them, and warns on trun
 		counters,
 		storageBytesState,
 		deletionState,
+		inboundConnectionLastUsed: [],
 		nextStartAfter: null,
 		truncated: false,
 	})
@@ -717,6 +719,7 @@ test('account export includes user_meter counters, pages them, and warns on trun
 	expect(first.items).toEqual(counters.slice(0, 2))
 	expect(first.storageBytesState).toEqual(storageBytesState)
 	expect(first.deletionState).toEqual(deletionState)
+	expect(first.inboundConnectionLastUsed).toEqual([])
 	expect(first.truncated).toBe(true)
 	expect(first.nextStartAfter).toBe('2026-07-30:execute_calls_per_day')
 
@@ -731,6 +734,7 @@ test('account export includes user_meter counters, pages them, and warns on trun
 	expect(second.items).toEqual(counters.slice(2))
 	expect(second.storageBytesState).toBeNull()
 	expect(second.deletionState).toBeNull()
+	expect(second.inboundConnectionLastUsed).toBeNull()
 	expect(second.truncated).toBe(false)
 	expect(second.nextStartAfter).toBeNull()
 	expect(exportCounters).toHaveBeenCalledWith(
@@ -744,6 +748,7 @@ test('account export includes user_meter counters, pages them, and warns on trun
 		counters: [counters[0]!],
 		storageBytesState: null,
 		deletionState: null,
+		inboundConnectionLastUsed: null,
 		nextStartAfter: 'cursor-more',
 		truncated: true,
 	}))

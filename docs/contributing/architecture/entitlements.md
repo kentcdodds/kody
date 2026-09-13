@@ -240,11 +240,12 @@ binding). Code lives in `packages/worker/src/entitlements/user-meter-do.ts` and
 `user-meter-client.ts`; storage layout and naming are documented in
 [Data storage](./data-storage.md). UserMeter also stores first-seen Dynamic
 Worker ids per UTC day so usage metering can record `dynamic_worker_day` without
-double-counting. `PlanLimits.maxUniqueWorkerDaysPerMonth` is the public included
-allotment (Free 50, Standard 350, Pro 2,000) shown on `/pricing`.
-`PlanLimits.maxDurableObjectRowsReadPerMonth` is the public included Durable
-Object rows-read allotment (Free 0.5B, Standard 5B, Pro 20B). Those two fields
-are the only customer-facing monthly overage meters. They are not in
+double-counting, and inbound MCP OAuth last-used stamps so Account → Connections
+can show which host is safe to revoke. `PlanLimits.maxUniqueWorkerDaysPerMonth`
+is the public included allotment (Free 50, Standard 350, Pro 2,000) shown on
+`/pricing`. `PlanLimits.maxDurableObjectRowsReadPerMonth` is the public included
+Durable Object rows-read allotment (Free 0.5B, Standard 5B, Pro 20B). Those two
+fields are the only customer-facing monthly overage meters. They are not in
 `entitlementResources`, so `assertWithinEntitlement` does not hard-cut them.
 Hourly user warning emails cover approaching (80%) and reached (100%) includes
 for both public and legacy accounts. User-facing overage list prices live on
@@ -413,15 +414,16 @@ callers must use `readCurrentEntitlementResourceUsage` or
 reads UserMeter via `readStorageBytesFromUserMeter`.
 
 **Account export and purge:** `UserMeter.exportCounters` returns authoritative
-`storageBytesState` and sanitized `deletionState` on the first page only
-(`startAfter` absent). Subsequent pages return `null` for each so paged
-consumers never double-count them. `UserMeter.purge()` clears counters, inbound
-delivery claims, storage state, and write leases via `deleteAll`, then restores
-an existing deletion tombstone so in-flight cleanup stays fenced. After the D1
-`users` row is deleted, origin calls `clearUserMeterDeletionTombstone` so the
-next signup with the same email (same SHA-256 `stable_user_id`) can acquire
-write leases. A live D1 row that collides with a leftover DO tombstone also
-clears that tombstone on the next `withAccountWriteLease` acquire.
+`storageBytesState`, sanitized `deletionState`, and `inboundConnectionLastUsed`
+on the first page only (`startAfter` absent). Subsequent pages return `null` for
+each so paged consumers never double-count them. `UserMeter.purge()` clears
+counters, inbound delivery claims, storage state, write leases, and inbound MCP
+last-used rows via `deleteAll`, then restores an existing deletion tombstone so
+in-flight cleanup stays fenced. After the D1 `users` row is deleted, origin
+calls `clearUserMeterDeletionTombstone` so the next signup with the same email
+(same SHA-256 `stable_user_id`) can acquire write leases. A live D1 row that
+collides with a leftover DO tombstone also clears that tombstone on the next
+`withAccountWriteLease` acquire.
 
 ### Account-deletion write fencing
 

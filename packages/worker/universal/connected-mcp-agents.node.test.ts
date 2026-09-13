@@ -184,30 +184,35 @@ test('connected agents group by display name and sort newest-first at group and 
 		label: 'Cursor',
 		kind: 'cursor',
 		connectedAt: '2024-01-01T00:00:00.000Z',
+		lastUsedAt: null,
 	}
 	const newerCursor: ConnectedMcpAgent = {
 		clientId: 'cursor-new',
 		label: 'Cursor',
 		kind: 'cursor',
 		connectedAt: '2024-06-01T00:00:00.000Z',
+		lastUsedAt: null,
 	}
 	const chatgpt: ConnectedMcpAgent = {
 		clientId: 'https://chatgpt.com/oauth/client.json',
 		label: 'ChatGPT.com',
 		kind: 'chatgpt',
 		connectedAt: '2024-03-01T00:00:00.000Z',
+		lastUsedAt: null,
 	}
 	const unknown: ConnectedMcpAgent = {
 		clientId: 'opaque-client-id-abcdefghijklmnopqrstuvwxyz',
 		label: 'Acme Agent',
 		kind: null,
 		connectedAt: '2024-05-01T00:00:00.000Z',
+		lastUsedAt: null,
 	}
 	const undated: ConnectedMcpAgent = {
 		clientId: 'undated',
 		label: 'Acme Agent',
 		kind: null,
 		connectedAt: null,
+		lastUsedAt: null,
 	}
 
 	const groups = groupConnectedAgents([
@@ -226,18 +231,58 @@ test('connected agents group by display name and sort newest-first at group and 
 		kind: 'cursor',
 		icon: 'cursor',
 		connectedAt: '2024-06-01T00:00:00.000Z',
+		lastUsedAt: null,
 		members: [newerCursor, olderCursor],
 	})
 	expect(groups[1]).toMatchObject({
 		kind: null,
 		icon: null,
 		connectedAt: '2024-05-01T00:00:00.000Z',
+		lastUsedAt: null,
 		members: [unknown, undated],
 	})
 	expect(groups[2]).toMatchObject({
 		kind: 'chatgpt',
 		icon: 'chatgpt',
 		connectedAt: '2024-03-01T00:00:00.000Z',
+		lastUsedAt: null,
 		members: [chatgpt],
 	})
+})
+
+test('connected agents sort last-used first so stale hosts drop below the active one', () => {
+	const staleCursor: ConnectedMcpAgent = {
+		clientId: 'cursor-stale',
+		label: 'Cursor',
+		kind: 'cursor',
+		connectedAt: '2024-06-01T00:00:00.000Z',
+		lastUsedAt: '2024-06-02T00:00:00.000Z',
+	}
+	const activeCursor: ConnectedMcpAgent = {
+		clientId: 'cursor-active',
+		label: 'Cursor',
+		kind: 'cursor',
+		connectedAt: '2024-01-01T00:00:00.000Z',
+		lastUsedAt: '2024-08-01T00:00:00.000Z',
+	}
+	const unusedChatgpt: ConnectedMcpAgent = {
+		clientId: 'chatgpt-idle',
+		label: 'ChatGPT.com',
+		kind: 'chatgpt',
+		connectedAt: '2024-07-01T00:00:00.000Z',
+		lastUsedAt: null,
+	}
+
+	const groups = groupConnectedAgents([
+		unusedChatgpt,
+		staleCursor,
+		activeCursor,
+	])
+	expect(groups.map((group) => group.label)).toEqual(['Cursor', 'ChatGPT.com'])
+	expect(groups[0]?.lastUsedAt).toBe('2024-08-01T00:00:00.000Z')
+	expect(groups[0]?.members.map((member) => member.clientId)).toEqual([
+		'cursor-active',
+		'cursor-stale',
+	])
+	expect(groups[1]?.lastUsedAt).toBeNull()
 })

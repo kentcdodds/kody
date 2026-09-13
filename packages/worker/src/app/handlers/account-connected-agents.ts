@@ -37,7 +37,9 @@ export async function loadAccountConnectedAgentsData(input: {
 }): Promise<AccountConnectedAgentsLoaderData> {
 	const stableUserId = input.user.mcpUser.userId
 	const helpers = await resolveOAuthHelpers<OAuthGrantListHelpers>(input.env)
-	const state = await loadInboundMcpConnectionState(helpers, stableUserId)
+	const state = await loadInboundMcpConnectionState(helpers, stableUserId, {
+		env: input.env,
+	})
 	if (
 		!state.listingFailed &&
 		hasSecondConnectedMcpClient(state.uniqueClientCount)
@@ -146,6 +148,7 @@ export function createAccountConnectedAgentsApiHandler(env: Env) {
 				helpers,
 				userId: user.mcpUser.userId,
 				clientId: parsed.value.clientId.trim(),
+				env,
 			})
 			if ('error' in revoked) {
 				return jsonResponse(

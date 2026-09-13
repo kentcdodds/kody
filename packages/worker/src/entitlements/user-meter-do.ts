@@ -36,7 +36,7 @@ export const userMeterDailyCounterRetentionDays = 7
 
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema DDL changes; warm objects skip DDL. */
-const userMeterSchemaVersion = 11
+const userMeterSchemaVersion = 12
 /** Singleton row id for authoritative storage-byte state (schema v4). */
 const storageBytesStateRowId = 1
 /** Singleton row id for deletion fence / write leases (schema v6+). */
@@ -45,6 +45,9 @@ const defaultExportPageSize = 100
 const maxExportPageSize = 500
 const maxInboundDeliveryIdLength = 256
 const maxDynamicWorkerIdLength = 128
+const maxInboundMcpClientIdLength = 1024
+/** Keep in sync with inbound-mcp-connection-last-used.ts. */
+const inboundMcpConnectionLastUsedMinIntervalMs = 5 * 60 * 1000
 const maxWriteLeaseTokenLength = 64
 const maxWriteLeaseHolderLength = 256
 const maxWriteLeaseRepairIdLength = 64
@@ -204,6 +207,11 @@ export type UserMeterWriteLeaseCountResult = {
 	count: number
 }
 
+export type UserMeterInboundConnectionLastUsedRow = {
+	clientId: string
+	lastUsedAt: string
+}
+
 export type UserMeterExportResult = {
 	counters: Array<UserMeterCounterRow>
 	/**
@@ -219,6 +227,11 @@ export type UserMeterExportResult = {
 	 * holder (see {@link UserMeterDeletionStateExport}).
 	 */
 	deletionState: UserMeterDeletionStateExport | null
+	/**
+	 * Inbound MCP OAuth `clientId` last-heard times. Emitted only on the first
+	 * export page (`startAfter` absent); subsequent pages return `null`.
+	 */
+	inboundConnectionLastUsed: Array<UserMeterInboundConnectionLastUsedRow> | null
 	nextStartAfter: string | null
 	truncated: boolean
 }
@@ -308,6 +321,33 @@ function assertDynamicWorkerId(workerId: string): string {
 		)
 	}
 	return workerId
+}
+
+function assertInboundMcpClientId(clientId: string): string {
+	if (
+		typeof clientId !== 'string' ||
+		clientId.length === 0 ||
+		clientId.length > maxInboundMcpClientIdLength
+	) {
+		throw new Error(
+			`UserMeter inbound MCP client id must be a non-empty string up to ${maxInboundMcpClientIdLength} characters.`,
+		)
+	}
+	return clientId
+}
+
+function assertInboundMcpLastUsedAt(lastUsedAt: string): string {
+	if (
+		typeof lastUsedAt !== 'string' ||
+		lastUsedAt.length === 0 ||
+		lastUsedAt.length > maxDeletionTimestampLength ||
+		!Number.isFinite(Date.parse(lastUsedAt))
+	) {
+		throw new Error(
+			`UserMeter inbound MCP last-used timestamp must be an ISO datetime; got ${JSON.stringify(lastUsedAt)}.`,
+		)
+	}
+	return lastUsedAt
 }
 
 function assertDeletionTimestamp(label: string, value: string): string {
@@ -591,6 +631,14 @@ class UserMeterBase extends DurableObject<Env> {
 				day TEXT NOT NULL,
 				created_at TEXT NOT NULL,
 				PRIMARY KEY (day, worker_id)
+			)
+		`)
+		// Last successful MCP bearer validation per inbound OAuth clientId
+		// (schema v12). Account → Connections reads this as last-used.
+		this.ctx.storage.sql.exec(`
+			CREATE TABLE IF NOT EXISTS inbound_mcp_connection_last_used (
+				client_id TEXT PRIMARY KEY NOT NULL,
+				last_used_at TEXT NOT NULL
 			)
 		`)
 		this.ctx.storage.sql.exec(
@@ -1559,6 +1607,62 @@ class UserMeterBase extends DurableObject<Env> {
 		return { count: this.countWriteLeases() }
 	}
 
+	async touchInboundConnectionLastUsed(input: {
+		clientId: string
+		lastUsedAt: string
+	}): Promise<{ updated: boolean }> {
+		const clientId = assertInboundMcpClientId(input.clientId)
+		const lastUsedAt = assertInboundMcpLastUsedAt(input.lastUsedAt)
+		const debounceCutoffIso = new Date(
+			Date.parse(lastUsedAt) - inboundMcpConnectionLastUsedMinIntervalMs,
+		).toISOString()
+		this.ctx.storage.sql.exec(
+			`INSERT INTO inbound_mcp_connection_last_used (client_id, last_used_at)
+			VALUES (?, ?)
+			ON CONFLICT(client_id) DO UPDATE SET last_used_at = excluded.last_used_at
+			WHERE inbound_mcp_connection_last_used.last_used_at < ?`,
+			clientId,
+			lastUsedAt,
+			debounceCutoffIso,
+		)
+		const row = this.ctx.storage.sql
+			.exec<{ last_used_at: string }>(
+				`SELECT last_used_at
+				FROM inbound_mcp_connection_last_used
+				WHERE client_id = ?`,
+				clientId,
+			)
+			.toArray()[0]
+		return { updated: row?.last_used_at === lastUsedAt }
+	}
+
+	async listInboundConnectionLastUsed(): Promise<
+		Array<UserMeterInboundConnectionLastUsedRow>
+	> {
+		return this.ctx.storage.sql
+			.exec<{ client_id: string; last_used_at: string }>(
+				`SELECT client_id, last_used_at
+				FROM inbound_mcp_connection_last_used
+				ORDER BY last_used_at DESC, client_id ASC`,
+			)
+			.toArray()
+			.map((row) => ({
+				clientId: String(row.client_id),
+				lastUsedAt: String(row.last_used_at),
+			}))
+	}
+
+	async forgetInboundConnectionLastUsed(input: {
+		clientId: string
+	}): Promise<{ ok: true }> {
+		const clientId = assertInboundMcpClientId(input.clientId)
+		this.ctx.storage.sql.exec(
+			`DELETE FROM inbound_mcp_connection_last_used WHERE client_id = ?`,
+			clientId,
+		)
+		return { ok: true }
+	}
+
 	async purge(): Promise<{ ok: true }> {
 		await this.ctx.blockConcurrencyWhile(async () => {
 			const deletingAt = this.readDeletingAt()
@@ -1646,6 +1750,9 @@ class UserMeterBase extends DurableObject<Env> {
 		const deletionState = includeFirstPageState
 			? this.readDeletionStateExport()
 			: null
+		const inboundConnectionLastUsed = includeFirstPageState
+			? await this.listInboundConnectionLastUsed()
+			: null
 		const last = pageRows[pageRows.length - 1]
 		return {
 			counters,
@@ -1658,6 +1765,7 @@ class UserMeterBase extends DurableObject<Env> {
 					}
 				: null,
 			deletionState,
+			inboundConnectionLastUsed,
 			nextStartAfter:
 				truncated && last
 					? encodeExportCursor({
@@ -1789,6 +1897,16 @@ export type UserMeterRpc = DurableObjectPitrRpc & {
 	}) => Promise<UserMeterWriteLeaseListResult>
 	/** Active lease count (pending repair still counts). */
 	countActiveWriteLeases: () => Promise<UserMeterWriteLeaseCountResult>
+	touchInboundConnectionLastUsed: (input: {
+		clientId: string
+		lastUsedAt: string
+	}) => Promise<{ updated: boolean }>
+	listInboundConnectionLastUsed: () => Promise<
+		Array<UserMeterInboundConnectionLastUsedRow>
+	>
+	forgetInboundConnectionLastUsed: (input: {
+		clientId: string
+	}) => Promise<{ ok: true }>
 	purge: () => Promise<{ ok: true }>
 	exportCounters: (input: {
 		pageSize?: number

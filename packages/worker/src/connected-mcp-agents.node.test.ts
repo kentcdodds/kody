@@ -3,7 +3,12 @@ import {
 	loadInboundMcpConnectionState,
 	revokeConnectedMcpAgent,
 } from '#worker/connected-mcp-agents.ts'
+import {
+	listInboundMcpConnectionLastUsed,
+	recordInboundMcpConnectionLastUsed,
+} from '#worker/inbound-mcp-connection-last-used.ts'
 import { type OAuthGrantHelpers } from '#worker/oauth-grants.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
 function createHelpers(input: {
 	grants: Array<{
@@ -69,6 +74,7 @@ test('inbound connection state pages grants and counts unique clientIds', async 
 			label: 'Cursor',
 			kind: 'cursor',
 			connectedAt: '2023-11-14T22:13:20.000Z',
+			lastUsedAt: null,
 		},
 	])
 
@@ -196,4 +202,93 @@ test('revokeConnectedMcpAgent revokes every grant for that clientId', async () =
 			clientId: 'missing',
 		}),
 	).resolves.toEqual({ error: 'not_found' })
+})
+
+test('inbound connection state joins last-used and revoke forgets that stamp', async () => {
+	const meter = createInMemoryUserMeterEnv()
+	const userId = `user-${crypto.randomUUID()}`
+	const helpers = createHelpers({
+		grants: [
+			{
+				id: 'grant-stale',
+				clientId: 'client-stale',
+				createdAt: 1_710_000_000,
+			},
+			{
+				id: 'grant-active',
+				clientId: 'client-active',
+				createdAt: 1_700_000_000,
+			},
+			{
+				id: 'grant-unused',
+				clientId: 'client-unused',
+				createdAt: 1_720_000_000,
+			},
+		],
+		clients: {
+			'client-stale': { clientName: 'Cursor' },
+			'client-active': { clientName: 'Cursor' },
+			'client-unused': { clientName: 'ChatGPT' },
+		},
+	})
+	await recordInboundMcpConnectionLastUsed({
+		env: meter.env,
+		userId,
+		clientId: 'client-stale',
+		lastUsedAt: '2026-03-10T00:00:00.000Z',
+		nowMs: Date.parse('2026-03-10T00:00:00.000Z'),
+	})
+	await recordInboundMcpConnectionLastUsed({
+		env: meter.env,
+		userId,
+		clientId: 'client-active',
+		lastUsedAt: '2026-03-20T00:00:00.000Z',
+		nowMs: Date.parse('2026-03-20T00:00:00.000Z'),
+	})
+
+	const withoutMeter = await loadInboundMcpConnectionState(helpers, userId)
+	expect(withoutMeter.agents.map((agent) => agent.clientId)).toEqual([
+		'client-unused',
+		'client-stale',
+		'client-active',
+	])
+	expect(withoutMeter.agents.every((agent) => agent.lastUsedAt === null)).toBe(
+		true,
+	)
+
+	const withMeter = await loadInboundMcpConnectionState(helpers, userId, {
+		env: meter.env,
+	})
+	expect(withMeter.agents.map((agent) => agent.clientId)).toEqual([
+		'client-active',
+		'client-stale',
+		'client-unused',
+	])
+	expect(withMeter.agents[0]).toMatchObject({
+		clientId: 'client-active',
+		lastUsedAt: '2026-03-20T00:00:00.000Z',
+	})
+	expect(withMeter.agents[1]).toMatchObject({
+		clientId: 'client-stale',
+		lastUsedAt: '2026-03-10T00:00:00.000Z',
+	})
+	expect(withMeter.agents[2]).toMatchObject({
+		clientId: 'client-unused',
+		lastUsedAt: null,
+	})
+
+	await expect(
+		revokeConnectedMcpAgent({
+			helpers,
+			userId,
+			clientId: 'client-active',
+			env: meter.env,
+		}),
+	).resolves.toEqual({ revoked: 1 })
+	expect(
+		await listInboundMcpConnectionLastUsed({
+			env: meter.env,
+			userId,
+		}),
+	).toEqual(new Map([['client-stale', '2026-03-10T00:00:00.000Z']]))
 })

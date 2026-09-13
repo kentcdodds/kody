@@ -24,6 +24,7 @@ import {
 } from './mcp/protocol-metrics.ts'
 import { oauthScopes } from './oauth-handlers.ts'
 import { stampFirstMcpConnected } from '#worker/identity/activation-stamps.ts'
+import { recordInboundMcpConnectionLastUsed } from '#worker/inbound-mcp-connection-last-used.ts'
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { isCredentialInvalidatedByStoredPasswordChange } from '#worker/password-change-lockout.ts'
 
@@ -406,6 +407,18 @@ export async function handleMcpRequest({
 			console.warn('mcp-first-connected-kit-sync-failed', error)
 		}),
 	)
+	const inboundClientId = tokenSummary.grant.clientId?.trim()
+	if (inboundClientId) {
+		ctx.waitUntil(
+			recordInboundMcpConnectionLastUsed({
+				env,
+				userId: mcpUser.userId,
+				clientId: inboundClientId,
+			}).catch((error) => {
+				console.warn('mcp-inbound-connection-last-used-failed', error)
+			}),
+		)
+	}
 
 	try {
 		const serveMcp = async () =>

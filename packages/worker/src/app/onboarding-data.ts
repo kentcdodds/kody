@@ -252,5 +252,6 @@ function toOnboardingConnectedAgents(
 		label: agent.label,
 		kind: agent.kind,
 		connectedAt: agent.connectedAt,
+		lastUsedAt: agent.lastUsedAt ?? null,
 	}))
 }
