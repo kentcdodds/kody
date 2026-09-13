@@ -43,6 +43,7 @@ import {
 	recordCellClamp,
 	recordStampCss,
 } from '#client/routes/record-table.tsx'
+import { renderWorkflowNameCell } from '#client/routes/workflow-name-display.tsx'
 import {
 	defaultAccountActivityStatusFilter,
 	defaultAccountActivityTriageFilter,
@@ -470,9 +471,10 @@ export function AccountActivityRoute(handle: Handle) {
 								id: item.id,
 								href: activityRoute.buildDetailHref(item.id, filterSearch),
 								cells: {
-									name: (
-										<span mix={clampedCellCss}>{runDisplayName(item)}</span>
-									),
+									name: renderWorkflowNameCell({
+										name: runDisplayName(item),
+										idempotencyKey: item.idempotencyKey,
+									}),
 									surface: surfaceLabel(item.surface),
 									status: (
 										<span mix={css({ color: statusColor(item.status) })}>

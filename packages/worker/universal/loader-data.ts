@@ -1833,6 +1833,7 @@ export type AccountActivityRunListItem = {
 	packageId: string | null
 	jobId: string | null
 	logCount: number
+	idempotencyKey: string | null
 }
 
 type AccountActivityRunLog = {
@@ -1850,7 +1851,6 @@ export type AccountActivityRunDetail = AccountActivityRunListItem & {
 	workflowId: string | null
 	invocationId: string | null
 	sessionId: string | null
-	idempotencyKey: string | null
 	parentRunId: string | null
 	triageNote: string | null
 	triagedAt: string | null

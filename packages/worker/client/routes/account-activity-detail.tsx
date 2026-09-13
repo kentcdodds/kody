@@ -8,6 +8,7 @@ import {
 	surfaceLabel,
 	triageLabel,
 } from '#client/routes/account-activity-shared.ts'
+import { renderInlineWorkflowNameSubtitle } from '#client/routes/workflow-name-display.tsx'
 import {
 	accountManagementNarrowMq,
 	AccountManagementMessage,
@@ -43,6 +44,10 @@ export function renderActivityRunDetail(detail: AccountActivityRunDetail) {
 		>
 			<div mix={css({ display: 'grid', gap: spacing.xs })}>
 				<h2 mix={css(cardTitleCss)}>{runDisplayName(detail)}</h2>
+				{renderInlineWorkflowNameSubtitle({
+					displayedName: runDisplayName(detail),
+					idempotencyKey: detail.idempotencyKey,
+				})}
 				<p mix={css(descriptionCss)}>
 					{surfaceLabel(detail.surface)} run with{' '}
 					{detail.logCount === 1
