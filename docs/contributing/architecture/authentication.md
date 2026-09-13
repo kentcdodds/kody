@@ -608,7 +608,7 @@ OAuth endpoints are implemented in `packages/worker/src/oauth-handlers.ts` and
 routed from `packages/worker/src/index.ts`.
 
 - Authorization endpoint: `/oauth/authorize`
-- Token endpoint: `/oauth/token` (via provider)
+- Token endpoint: `/oauth/token` (via provider; also RFC 7009 revocation)
 - Client registration: `/oauth/register` (via provider), plus Client ID Metadata
   Documents (`clientIdMetadataDocumentEnabled` in
   `packages/worker/src/origin-handler.ts`): a client may present an HTTPS URL as
@@ -669,7 +669,16 @@ routed from `packages/worker/src/index.ts`.
   `OIDC_SIGNING_KEY_ID`). Discovery: `/.well-known/openid-configuration`; JWKS:
   `/.well-known/jwks.json`; UserInfo: `/oauth/userinfo` (Bearer access token;
   fail-closed when email is unverified). RP-Initiated Logout: `/oauth/logout`.
-  Token responses from `/oauth/token` gain an `id_token` when the granted scope
+  RFC 7009 revocation is the token endpoint (`/oauth/token`); both
+  `/.well-known/openid-configuration` and
+  `/.well-known/oauth-authorization-server` advertise that URL as
+  `revocation_endpoint`. OpenID Connect discovery also lists
+  `revocation_endpoint_auth_methods_supported` matching
+  `token_endpoint_auth_methods_supported` (`none`, `client_secret_basic`,
+  `client_secret_post`) so public clients are not left with RFC 8414's omitted
+  default of `client_secret_basic` only. Authorization-server metadata from
+  `@cloudflare/workers-oauth-provider` omits that auth-methods array. Token
+  responses from `/oauth/token` gain an `id_token` when the granted scope
   includes `openid` (authorization_code and refresh_token grants; refresh omits
   `nonce`). The provider handles the token path internally and does not inject
   `env.OAUTH_PROVIDER` there (or on UserInfo/logout, which run before

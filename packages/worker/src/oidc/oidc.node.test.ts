@@ -31,6 +31,7 @@ test('openid-configuration advertises authorization code OIDC only', () => {
 		'https://heykody.dev/oauth/authorize',
 	)
 	expect(document.token_endpoint).toBe('https://heykody.dev/oauth/token')
+	expect(document.revocation_endpoint).toBe(document.token_endpoint)
 	expect(document.userinfo_endpoint).toBe('https://heykody.dev/oauth/userinfo')
 	expect(document.jwks_uri).toBe('https://heykody.dev/.well-known/jwks.json')
 	expect(document.end_session_endpoint).toBe('https://heykody.dev/oauth/logout')
@@ -45,6 +46,9 @@ test('openid-configuration advertises authorization code OIDC only', () => {
 		'client_secret_basic',
 		'client_secret_post',
 	])
+	expect(document.revocation_endpoint_auth_methods_supported).toEqual(
+		document.token_endpoint_auth_methods_supported,
+	)
 	expect(document.grant_types_supported).toEqual([
 		'authorization_code',
 		'refresh_token',

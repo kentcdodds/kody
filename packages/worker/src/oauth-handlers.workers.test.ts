@@ -992,12 +992,16 @@ test('worker entrypoint advertises MCP resource metadata on both RFC 9728 paths'
 	expect(discovery.status).toBe(200)
 	const metadata = (await discovery.json()) as {
 		issuer?: string
+		token_endpoint?: string
+		revocation_endpoint?: string
 		authorization_response_iss_parameter_supported?: boolean
 		client_id_metadata_document_supported?: boolean
 		code_challenge_methods_supported?: Array<string>
 		token_endpoint_auth_methods_supported?: Array<string>
 	}
 	expect(metadata.issuer).toBe('https://heykody.dev')
+	expect(metadata.token_endpoint).toBe('https://heykody.dev/oauth/token')
+	expect(metadata.revocation_endpoint).toBe(metadata.token_endpoint)
 	expect(metadata.authorization_response_iss_parameter_supported).toBe(true)
 	expect(metadata.client_id_metadata_document_supported).toBe(true)
 	expect(metadata.code_challenge_methods_supported).toEqual(['S256'])
@@ -1574,12 +1578,31 @@ test('worker entrypoint serves openid-configuration and jwks', async () => {
 	expect(discovery.status).toBe(200)
 	const metadata = (await discovery.json()) as {
 		issuer: string
+		token_endpoint: string
+		revocation_endpoint: string
+		revocation_endpoint_auth_methods_supported: Array<string>
+		token_endpoint_auth_methods_supported: Array<string>
 		response_types_supported: Array<string>
 		scopes_supported: Array<string>
 	}
 	expect(metadata.issuer).toBe('https://heykody.dev')
 	expect(metadata.response_types_supported).toEqual(['code'])
 	expect(metadata.scopes_supported).toContain('openid')
+	expect(metadata.revocation_endpoint).toBe(metadata.token_endpoint)
+	expect(metadata.revocation_endpoint_auth_methods_supported).toEqual(
+		metadata.token_endpoint_auth_methods_supported,
+	)
+
+	const authorizationServer = await workerFetch(
+		new Request('https://heykody.dev/.well-known/oauth-authorization-server'),
+	)
+	expect(authorizationServer.status).toBe(200)
+	const asMetadata = (await authorizationServer.json()) as {
+		revocation_endpoint?: string
+		token_endpoint?: string
+	}
+	expect(asMetadata.revocation_endpoint).toBe(metadata.revocation_endpoint)
+	expect(asMetadata.token_endpoint).toBe(metadata.token_endpoint)
 
 	const jwks = await workerFetch(
 		new Request('https://heykody.dev/.well-known/jwks.json'),

@@ -10,10 +10,21 @@ export function buildOpenIdConfiguration(input: {
 		env: input.env,
 		requestUrl: input.request.url,
 	})
+	const tokenEndpoint = `${issuer}${oauthPaths.token}`
+	// Same methods as `/oauth/token`. RFC 7009 revocation is that endpoint
+	// (`@cloudflare/workers-oauth-provider`); RFC 8414 defaults omitted
+	// revocation auth to `client_secret_basic`, which would hide public
+	// clients (`none`).
+	const tokenEndpointAuthMethodsSupported = [
+		'none',
+		'client_secret_basic',
+		'client_secret_post',
+	]
 	return {
 		issuer,
 		authorization_endpoint: `${issuer}${oauthPaths.authorize}`,
-		token_endpoint: `${issuer}${oauthPaths.token}`,
+		token_endpoint: tokenEndpoint,
+		revocation_endpoint: tokenEndpoint,
 		userinfo_endpoint: `${issuer}${oauthPaths.userinfo}`,
 		jwks_uri: `${issuer}${oauthPaths.jwks}`,
 		end_session_endpoint: `${issuer}${oauthPaths.logout}`,
@@ -35,11 +46,9 @@ export function buildOpenIdConfiguration(input: {
 			'preferred_username',
 		],
 		grant_types_supported: ['authorization_code', 'refresh_token'],
-		token_endpoint_auth_methods_supported: [
-			'none',
-			'client_secret_basic',
-			'client_secret_post',
-		],
+		token_endpoint_auth_methods_supported: tokenEndpointAuthMethodsSupported,
+		revocation_endpoint_auth_methods_supported:
+			tokenEndpointAuthMethodsSupported,
 		code_challenge_methods_supported: ['S256'],
 	}
 }
