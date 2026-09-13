@@ -173,7 +173,9 @@ TypeScript source instead of checked-in `.js`.
 
 ### Minimal recipe
 
-Three files plus an optional directory. Copy, rename, publish.
+Three files plus an optional directory. This is the layout `create-package-app`
+(package-app-kit) scaffolds, so keep it: Worker code under `src/`, browser code
+under `src/client/`, static files under `public/`.
 
 `package.json`:
 
@@ -186,44 +188,77 @@ Three files plus an optional directory. Copy, rename, publish.
 		"description": "Counter with a platform-built browser client",
 		"app": {
 			"entry": "./src/app.ts",
-			"client": "./src/client.ts",
+			"client": "./src/client/index.ts",
 			"assets": "./public"
 		}
 	}
 }
 ```
 
-`src/app.ts` (Worker fetch handler; renders the page):
+`src/app.ts` (Worker fetch handler; renders the page). Runtime config rides on
+`<html>` data attributes rendered from `packageContext`: `data-app-base` (the
+mount), `data-client-module` (the fingerprinted module URL), and
+`data-pak-config` (any JSON your client needs):
 
 ```ts
 import { packageContext } from 'kody:runtime'
 
 export default {
 	async fetch() {
-		const { assetBasePath, clientModuleUrl } = packageContext ?? {}
+		const { appBasePath, assetBasePath, clientModuleUrl } = packageContext ?? {}
+		const pakConfig = JSON.stringify({ theme: 'dark' })
 		return new Response(
 			`<!doctype html>
-<link rel="stylesheet" href="${assetBasePath}/styles.css" />
-<button id="inc" type="button">Clicked 0 times</button>
-<script type="module" src="${clientModuleUrl}"></script>`,
+<html lang="en"
+	data-app-base="${appBasePath}"
+	data-client-module="${clientModuleUrl}"
+	data-pak-config='${pakConfig}'>
+<head>
+	<meta charset="utf-8" />
+	<link rel="stylesheet" href="${assetBasePath}/styles.css" />
+</head>
+<body>
+	<button id="inc" type="button">Clicked 0 times</button>
+	<script type="module" src="${clientModuleUrl}"></script>
+</body>
+</html>`,
 			{ headers: { 'content-type': 'text/html; charset=utf-8' } },
 		)
 	},
 }
 ```
 
-`src/client.ts` (browser; TypeScript is fine, relative imports are inlined):
+`src/client/index.ts` (browser; TypeScript is fine, relative imports are
+inlined):
 
 ```ts
+const config = JSON.parse(document.documentElement.dataset.pakConfig ?? '{}')
 let count = 0
 const button = document.querySelector<HTMLButtonElement>('#inc')!
 button.addEventListener('click', () => {
 	count += 1
 	button.textContent = `Clicked ${count} time${count === 1 ? '' : 's'}`
 })
+console.log('theme', config.theme)
 ```
 
 `public/styles.css` (optional `assets` directory, served as-is).
+
+### Two graphs, not one
+
+`kody.app.entry` and `kody.app.client` are **separate module graphs**. The
+Worker bundle rewrites `kody:` imports into runtime proxies and runs in an
+isolate; the client bundle targets the browser. Publish fails when the Worker
+graph imports the client entry (directly or through a helper), or when both
+fields point at the same file. Shared helpers imported from both sides are fine
+— keep them free of `kody:` and DOM APIs. The Worker renders the
+`<script type="module">` tag; the two sides talk over fetch or the realtime
+facet.
+
+Browser-only packages (`@remix-run/ui`, a component library, a DOM polyfill)
+therefore never reach the Worker bundle as long as the Worker graph does not
+import them. To keep them out of the client bundle too, declare them as
+[externals](#import-maps-and-externals) and resolve them with an import map.
 
 ### What each field does
 
@@ -235,13 +270,14 @@ button.addEventListener('click', () => {
   `Cache-Control: private, max-age=31536000, immutable` (browser-cached for a
   year; `private` because the owner's session gates every package-app response);
   the hash changes with the content, so never hardcode the file name. Use the
-  object form `{ "entry": "./src/client.ts", "externals": [...] }` when the page
-  supplies an [import map](#import-maps-and-externals).
+  object form `{ "entry": "./src/client/index.ts", "externals": [...] }` when
+  the page supplies an [import map](#import-maps-and-externals).
 - `assets` — a subdirectory of static files served as-is at
   `<appBasePath>/_assets/<path inside the directory>` with a content type
   inferred from the extension (`.css`, `.png`, `.wasm`, `.woff2`, …), a
   commit-scoped `ETag`, and `Cache-Control: private, max-age=300`. No TypeScript
-  compile, no bundling.
+  compile, no bundling. `__version.json` is reserved at the root of `/_assets/`
+  (see [Service worker precache](#service-worker-precache)).
 
 ### Stable `packageContext` fields
 
@@ -251,7 +287,7 @@ scaffolders can depend on them.
 - `packageContext.clientModuleUrl` — absolute URL of the current fingerprinted
   client module (`<hostedUrl>/_assets/client.<hash>.js`), or `null` when the
   manifest declares no `client`. Drop it straight into
-  `<script type="module" src="…">`.
+  `<script type="module" src="…">` and `data-client-module`.
 - `packageContext.assetBasePath` — origin-relative `<appBasePath>/_assets`,
   mount-aware like `appBasePath`. Join `assets` files onto it
   (`${assetBasePath}/styles.css`).
@@ -283,7 +319,7 @@ bundle, or a file in `assets`), declare it under `client.externals`:
 		"app": {
 			"entry": "./src/app.ts",
 			"client": {
-				"entry": "./src/client.ts",
+				"entry": "./src/client/index.ts",
 				"externals": ["@remix-run/ui", "preact"]
 			},
 			"assets": "./public"
@@ -314,31 +350,54 @@ names the specifier and points here.
 ### Service worker precache
 
 `clientModuleUrl` is content-addressed and immutable, so a service worker can
-precache it on install and serve it from cache forever. Ship the worker script
-from the `assets` directory and register it with the app mount as its scope —
-JavaScript served from `/_assets/` carries
-`Service-Worker-Allowed: <appBasePath>/` so that broader scope is permitted:
+precache it on install and serve it from cache forever. **Never hardcode the
+hash in the worker's source** — it changes on every publish. Discover the URL at
+runtime instead; the platform gives you two ways:
+
+- `<html data-client-module="…">`, rendered by your fetch handler from
+  `packageContext.clientModuleUrl` (the page reads it and posts it to the
+  worker, as in the recipe above).
+- `GET <assetBasePath>/__version.json` — served by the platform, never cached
+  (`Cache-Control: private, no-cache`), always the current publish:
+
+```json
+{
+	"clientModuleUrl": "https://you.kody.run/packages/counter/_assets/client.83T6UIqNQEvueSq_.js",
+	"assetBasePath": "/packages/counter/_assets",
+	"publishedCommit": "0f3c…"
+}
+```
+
+Ship the worker script from the `assets` directory and register it with the app
+mount as its scope — JavaScript served from `/_assets/` carries
+`Service-Worker-Allowed: <appBasePath>` so that broader scope is permitted (no
+trailing slash, so the app root itself is controlled too):
 
 ```ts
-// in the page
-navigator.serviceWorker.register(`${assetBasePath}/sw.js`, {
-	scope: `${appBasePath}/`,
-})
+// in the page (src/client/index.ts)
+const { appBase } = document.documentElement.dataset
+navigator.serviceWorker.register(`${appBase}/_assets/sw.js`, { scope: appBase })
 ```
 
 ```js
-// public/sw.js — precache list injected by the page, or read from a manifest
-// your fetch handler renders; the URL below is the fingerprinted module.
+// public/sw.js — no hash anywhere: read the current module URL on install.
 self.addEventListener('install', (event) => {
 	event.waitUntil(
-		caches.open('app-v1').then((cache) => cache.addAll(self.__precache ?? [])),
+		(async () => {
+			const scope = new URL(self.registration.scope)
+			const version = await (
+				await fetch(new URL(`${scope.pathname}/_assets/__version.json`, scope))
+			).json()
+			const cache = await caches.open(`app-${version.publishedCommit}`)
+			if (version.clientModuleUrl) await cache.add(version.clientModuleUrl)
+		})(),
 	)
 })
 ```
 
 Static `assets` paths are not fingerprinted (they carry a commit-scoped `ETag`
-and a five-minute max-age), so precache them only with a version key you rotate
-on publish.
+and a five-minute max-age), so precache them keyed by `publishedCommit` and drop
+old caches on activate.
 
 Checked-in browser-ready `.js` served from the fetch handler with an explicit
 `Content-Type` still works; `client` is the pit-of-success path for source you

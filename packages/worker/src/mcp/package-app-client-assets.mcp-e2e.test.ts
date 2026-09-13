@@ -79,8 +79,9 @@ export default {
 		const importMap = JSON.stringify({
 			imports: { '@remix-run/ui': \`\${context.assetBasePath}/vendor/ui.js\` },
 		})
+		const pakConfig = JSON.stringify({ theme: 'dark' })
 		return new Response(
-			\`<!doctype html><html lang="en"><head><meta charset="utf-8" /><title>Client smoke</title>
+			\`<!doctype html><html lang="en" data-app-base="\${context.appBasePath}" data-client-module="\${context.clientModuleUrl}" data-pak-config='\${pakConfig}'><head><meta charset="utf-8" /><title>Client smoke</title>
 <link rel="stylesheet" href="\${context.assetBasePath}/styles.css" />
 <script type="importmap">\${importMap}</script></head>
 <body><h1 id="title">Client smoke</h1><button id="inc" type="button">Clicked 0 times</button>
@@ -209,6 +210,21 @@ export default async function main(input) {
 			`<script type="module" src="${clientModuleUrl}">`,
 		)
 		expect(pageHtml).toContain(`href="${appBasePath}/_assets/styles.css"`)
+		// Kit conventions: runtime config and the module URL ride on <html>
+		// data attributes rendered from packageContext.
+		expect(pageHtml).toContain(`data-app-base="${appBasePath}"`)
+		expect(pageHtml).toContain(`data-client-module="${clientModuleUrl}"`)
+		expect(pageHtml).toContain(`data-pak-config='{"theme":"dark"}'`)
+
+		// Platform-served version JSON: how a service worker discovers the
+		// fingerprinted URL without a hash in its source.
+		const version = await authedFetch(`${appOrigin}/_assets/__version.json`)
+		expect(version.status).toBe(200)
+		expect(version.headers.get('cache-control')).toBe('private, no-cache')
+		expect(await version.json()).toMatchObject({
+			clientModuleUrl,
+			assetBasePath: `${appBasePath}/_assets`,
+		})
 
 		const clientModule = await authedFetch(clientModuleUrl)
 		const clientSource = await clientModule.text()

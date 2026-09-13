@@ -29,6 +29,7 @@ import {
 	buildKodyModuleBundle,
 } from '#worker/package-runtime/module-graph.ts'
 import { validatePackageAppAssetsDirectory } from '#worker/package-runtime/package-app-assets-directory.ts'
+import { validatePackageAppGraphSeparation } from '#worker/package-runtime/package-app-client-graph.ts'
 import {
 	collectPublishedPackageArtifactTargets,
 	type PublishedPackageArtifactBuildTarget,
@@ -1248,15 +1249,23 @@ export async function runRepoChecks(input: {
 		})
 	}
 	const sourceFiles = sourceWalk.collected
-	const assetsDirectoryCheck = validatePackageAppAssetsDirectory({
-		assetsDirectory: getPackageAppAssetsDirectory(manifest),
-		sourceFiles,
-	})
-	if (!assetsDirectoryCheck.ok) {
+	// Cheap static gates for the package-app browser surface run before the
+	// heavy phases so a misconfigured manifest fails fast with one message.
+	const packageAppSurfaceChecks = [
+		validatePackageAppAssetsDirectory({
+			assetsDirectory: getPackageAppAssetsDirectory(manifest),
+			sourceFiles,
+		}),
+		validatePackageAppGraphSeparation({ manifest, sourceFiles }),
+	]
+	const failedPackageAppSurfaceCheck = packageAppSurfaceChecks.find(
+		(check) => !check.ok,
+	)
+	if (failedPackageAppSurfaceCheck) {
 		results.push({
 			kind: 'bundle',
 			ok: false,
-			message: assetsDirectoryCheck.message,
+			message: failedPackageAppSurfaceCheck.message,
 		})
 		return toRepoCheckRunResult({
 			results,

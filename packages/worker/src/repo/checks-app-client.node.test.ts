@@ -258,6 +258,105 @@ test('runRepoChecks rejects a kody.app.assets directory with no files or an unsa
 	)
 })
 
+test('runRepoChecks keeps the Worker and client graphs separate', async () => {
+	const importsClient = await runChecks(
+		new Map([
+			[
+				'package.json',
+				createAppManifest({ entry: './src/app.ts', client: './src/client.ts' }),
+			],
+			...baseFiles,
+			[
+				'src/app.ts',
+				[
+					"import './client.ts'",
+					'export default { async fetch() { return new Response("ok") } }',
+				].join('\n'),
+			],
+		]),
+	)
+	expect(importsClient.ok).toBe(false)
+	expect(importsClient.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'bundle',
+				ok: false,
+				message: expect.stringContaining(
+					'imports the browser client entry "src/client.ts"',
+				),
+			}),
+		]),
+	)
+	expect(mockModule.buildKodyAppBundle).not.toHaveBeenCalled()
+
+	const viaHelper = await runChecks(
+		new Map([
+			[
+				'package.json',
+				createAppManifest({ entry: './src/app.ts', client: './src/client.ts' }),
+			],
+			...baseFiles,
+			[
+				'src/app.ts',
+				[
+					"import { render } from './render.ts'",
+					'export default { async fetch() { return new Response(render()) } }',
+				].join('\n'),
+			],
+			[
+				'src/render.ts',
+				"import './client.ts'\nexport const render = () => 'x'\n",
+			],
+		]),
+	)
+	expect(viaHelper.ok).toBe(false)
+
+	const sameEntry = await runChecks(
+		new Map([
+			[
+				'package.json',
+				createAppManifest({ entry: './src/app.ts', client: './src/app.ts' }),
+			],
+			...baseFiles,
+		]),
+	)
+	expect(sameEntry.ok).toBe(false)
+	expect(sameEntry.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'bundle',
+				ok: false,
+				message: expect.stringContaining('both point at "src/app.ts"'),
+			}),
+		]),
+	)
+
+	// Shared helpers imported from both sides are fine; only the client entry
+	// itself is off limits to the Worker graph.
+	const sharedHelper = await runChecks(
+		new Map([
+			[
+				'package.json',
+				createAppManifest({ entry: './src/app.ts', client: './src/client.ts' }),
+			],
+			...baseFiles,
+			[
+				'src/app.ts',
+				[
+					"import { formatCount } from './format.ts'",
+					'export default { async fetch() { return new Response(formatCount(1)) } }',
+				].join('\n'),
+			],
+			[
+				'src/client.ts',
+				"import { formatCount } from './format.ts'\ndocument.body.textContent = formatCount(2)\n",
+			],
+			['src/format.ts', 'export const formatCount = (n: number) => `${n}`\n'],
+		]),
+	)
+	expect(sharedHelper.ok).toBe(true)
+})
+
 test('runRepoChecks leaves apps without kody.app.client on the Worker-only path', async () => {
 	const result = await runChecks(
 		new Map([

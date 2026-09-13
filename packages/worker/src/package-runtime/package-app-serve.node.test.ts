@@ -330,6 +330,42 @@ test('/_assets/ serves the fingerprinted client module with immutable caching an
 	expect(css.headers.get('Service-Worker-Allowed')).toBeNull()
 })
 
+test('/_assets/__version.json exposes the current client module URL for service workers without caching', async () => {
+	const fixture = seedClientAndAssets()
+	mockModule.buildPackageAppWorker.mockClear()
+
+	const version = await serveHelloWorld({
+		kodyId: clientAppKodyId,
+		restPath: '/_assets/__version.json',
+	})
+	expect(version.status).toBe(200)
+	expect(version.headers.get('Content-Type')).toBe(
+		'application/json; charset=utf-8',
+	)
+	expect(version.headers.get('Cache-Control')).toBe('private, no-cache')
+	expect(version.headers.get('ETag')).toBe(
+		`"${fixture.source.published_commit}:${clientModuleName}"`,
+	)
+	expect(await version.json()).toEqual({
+		clientModuleUrl: `https://example.com/@kentcdodds/packages/${clientAppKodyId}/_assets/${clientModuleName}`,
+		assetBasePath: `/@kentcdodds/packages/${clientAppKodyId}/_assets`,
+		publishedCommit: fixture.source.published_commit,
+	})
+	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
+
+	// Worker-only apps still answer, with a null module URL, so kit code can
+	// probe one path regardless of manifest shape.
+	seedFixture()
+	const workerOnly = await serveHelloWorld({
+		restPath: '/_assets/__version.json',
+	})
+	expect(workerOnly.status).toBe(200)
+	expect(await workerOnly.json()).toMatchObject({
+		clientModuleUrl: null,
+		assetBasePath: '/@kentcdodds/packages/perf-app/_assets',
+	})
+})
+
 test('/_assets/ serves files from the declared assets directory with inferred content types', async () => {
 	const fixture = seedClientAndAssets()
 	mockModule.buildPackageAppWorker.mockClear()

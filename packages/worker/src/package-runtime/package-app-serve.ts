@@ -434,6 +434,15 @@ export async function servePackageAppRequest(input: {
 		forwardedPackageRestPath,
 	)
 	if (assetRelativePath !== null) {
+		// Same mount rule as buildPackageAppPublicContext: the username lives in
+		// the hostname on a per-user subdomain and in the path when inline.
+		const appBasePath =
+			packagePath.mount === 'user-subdomain'
+				? buildPackageAppSubdomainPath({ kodyId: savedPackage.kodyId })
+				: buildPackageAppPath({
+						username: packagePath.username,
+						kodyId: savedPackage.kodyId,
+					})
 		try {
 			const packageManifest = await loadInvokeManifestBySourceId({
 				env,
@@ -455,13 +464,8 @@ export async function servePackageAppRequest(input: {
 				},
 				loadSourceFiles,
 				relativePath: assetRelativePath,
-				appBasePath:
-					packagePath.mount === 'user-subdomain'
-						? buildPackageAppSubdomainPath({ kodyId: savedPackage.kodyId })
-						: buildPackageAppPath({
-								username: packagePath.username,
-								kodyId: savedPackage.kodyId,
-							}),
+				appBasePath,
+				hostedUrl: `${requestUrl.origin}${appBasePath}`,
 			})
 		} catch (error) {
 			console.error('Package app asset handler failed:', error)

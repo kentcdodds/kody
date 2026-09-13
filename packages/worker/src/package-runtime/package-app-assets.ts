@@ -34,6 +34,9 @@ import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './publishe
  * - `client.<hash>.js` — the browser ESM built from `kody.app.client`,
  *   served with immutable caching because the hash is in the URL. Only the
  *   current artifact's exact name matches; anything else falls through.
+ * - `__version.json` — the current `clientModuleUrl`, `assetBasePath`, and
+ *   published commit, never cached, so a service worker or page script can
+ *   discover the fingerprinted URL instead of hardcoding a hash.
  * - any other path — a file from the `kody.app.assets` directory, read from
  *   the published source snapshot and served as-is.
  */
@@ -45,6 +48,12 @@ const packageAppAssetsPathPrefix = `/${packageAppAssetsPathSegment}/`
 // cache them, and the content hash keeps the client module immutable.
 const clientModuleCacheControl = 'private, max-age=31536000, immutable'
 const staticAssetCacheControl = 'private, max-age=300'
+/**
+ * Reserved file name under `/_assets/`. Answered by the platform before the
+ * assets directory, so a static file with this name is never served.
+ */
+export const packageAppVersionAssetName = '__version.json'
+const versionAssetCacheControl = 'private, no-cache'
 
 export type PackageAppClientArtifact = {
 	mainModule: string
@@ -319,9 +328,34 @@ export async function servePackageAppAssetRequest(input: {
 	 * are controllable.
 	 */
 	appBasePath: string
+	/** Public mount URL (`<origin><appBasePath>`), for absolute URLs in JSON. */
+	hostedUrl: string
 }) {
 	if (input.request.method !== 'GET' && input.request.method !== 'HEAD') {
 		return methodNotAllowed()
+	}
+	if (input.relativePath === packageAppVersionAssetName) {
+		const artifact = await resolvePackageAppClientArtifact(input)
+		const clientModuleUrl = artifact
+			? buildPackageAppClientModuleUrl({
+					hostedUrl: input.hostedUrl,
+					mainModule: artifact.mainModule,
+				})
+			: null
+		const publishedCommit = input.savedPackage.publishedCommit
+		return createAssetResponse({
+			request: input.request,
+			body: JSON.stringify({
+				clientModuleUrl,
+				assetBasePath: buildPackageAppAssetBasePath(input.appBasePath),
+				publishedCommit,
+			}),
+			contentType: 'application/json; charset=utf-8',
+			cacheControl: versionAssetCacheControl,
+			etag: publishedCommit
+				? `"${publishedCommit}:${artifact?.mainModule ?? 'no-client'}"`
+				: null,
+		})
 	}
 	if (
 		getPackageAppClientEntryPath(input.manifest) &&
