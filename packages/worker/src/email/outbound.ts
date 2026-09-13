@@ -6,7 +6,6 @@ import {
 } from '#app/account-suspension.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
-import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -19,6 +18,7 @@ import {
 } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { normalizeEmailAddress } from './address.ts'
+import { resolveAcceptableNotificationEmails } from './destinations.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
 import { mailboxRpc, type MailboxEnv } from './mailbox-client.ts'
 import { mailboxMessageToEmailMessageRecord } from './mailbox-record-mappers.ts'
@@ -105,11 +105,13 @@ export type EmailSendInput = {
 } & (
 	| {
 			/**
-			 * Notify-self policy (emailSend): only the acting user's own
-			 * account email may be addressed — never an outreach channel.
+			 * Notify-self policy (emailSend): only the acting user's
+			 * verified notification destinations may be addressed — never
+			 * an outreach channel. Identity email always counts once the
+			 * account email is verified.
 			 */
 			recipientPolicy: 'self'
-			/** Defaults to the acting user's account email. */
+			/** Defaults to the configured default destination. */
 			to?: string | Array<string> | null
 	  }
 	| {
@@ -151,13 +153,23 @@ export class OutboundEmailPersistenceError extends Error {
 	}
 }
 
-function resolveSelfRecipients(input: {
+async function resolveSelfRecipients(input: {
+	db: D1Database
+	stableUserId: string
 	to: string | Array<string> | null | undefined
 	accountEmail: string
 }) {
-	const accountEmail = normalizeEmail(input.accountEmail)
+	const { acceptable, defaultEmail } =
+		await resolveAcceptableNotificationEmails({
+			db: input.db,
+			stableUserId: input.stableUserId,
+			accountEmail: input.accountEmail,
+		})
 	const values =
 		input.to == null ? [] : Array.isArray(input.to) ? input.to : [input.to]
+	if (values.length === 0) {
+		return [defaultEmail]
+	}
 	const normalized = values.map((value) => {
 		const address = normalizeEmailAddress(value)
 		if (!address) {
@@ -166,16 +178,21 @@ function resolveSelfRecipients(input: {
 		}
 		return address
 	})
-	const disallowed = normalized.filter((value) => value !== accountEmail)
+	const unique: Array<string> = []
+	for (const address of normalized) {
+		if (!unique.includes(address)) unique.push(address)
+	}
+	const disallowed = unique.filter((value) => !acceptable.has(value))
 	if (disallowed.length > 0) {
 		// emailSend is notify-self only; agents often pass a third-party
 		// address by mistake. That is a routine caller correction (use
-		// emailReply), not a platform defect — keep it off Sentry.
+		// emailReply or add a verified destination), not a platform defect
+		// — keep it off Sentry.
 		throw new McpCallerError(
-			`emailSend only delivers to your own account email (${accountEmail}). Use emailReply to answer stored inbound messages.`,
+			`emailSend only delivers to your verified notification destinations. Not on the list: ${disallowed.join(', ')}. Add and verify addresses in Account settings, or use emailReply to answer stored inbound messages.`,
 		)
 	}
-	return [accountEmail]
+	return unique
 }
 
 function deriveReplyRecipient(original: EmailMessageRecord) {
@@ -599,7 +616,9 @@ export async function sendOutboundEmail(
 					)
 				}
 			}
-			to = resolveSelfRecipients({
+			to = await resolveSelfRecipients({
+				db: input.env.APP_DB,
+				stableUserId: input.userId,
 				to: input.to,
 				accountEmail: sender.accountEmail,
 			})

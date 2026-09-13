@@ -25,7 +25,7 @@ export const emailSendCapability = defineDomainCapability(
 	{
 		name: 'emailSend',
 		description:
-			'Send a notification email to your own account email address. The from address is your platform-assigned {username}@<platform domain>; any other recipient is rejected (use emailReply to answer stored inbound mail).',
+			'Send a notification email to your verified notification destinations. Omit `to` to use the default destination. Every explicit address must be the verified identity email or a verified extra destination; if any `to` is missing or unverified the whole send fails. The from address is your platform-assigned {username}@<platform domain>. Use emailReply to answer stored inbound mail.',
 		keywords: ['email', 'send', 'mail', 'outbound', 'notify'],
 		readOnly: false,
 		idempotent: false,

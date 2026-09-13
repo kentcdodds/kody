@@ -56,6 +56,30 @@ export function buildEmailChangeEmail(input: {
 	})
 }
 
+export function buildEmailDestinationVerificationEmail(input: {
+	appBaseUrl: string
+	destinationEmail: string
+	verificationUrl: string
+}) {
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: 'Verify this Kody notification address',
+		preheader: `Confirm ${input.destinationEmail} so Kody can send notifications there.`,
+		heading: 'Confirm this notification address',
+		body: [
+			`We received a request to let Kody send notification email to ${input.destinationEmail}.`,
+			'Verify the address to add it as a destination. Kody will still send from your platform inbox address, not from this one.',
+		],
+		action: {
+			label: 'Verify notification address',
+			url: input.verificationUrl,
+		},
+		afterAction: ['This link expires in 24 hours.'],
+		footnote:
+			'If you did not ask to add this address, you can safely ignore this email.',
+	})
+}
+
 export function buildEmailClaimReleaseEmail(input: {
 	appBaseUrl: string
 	email: string

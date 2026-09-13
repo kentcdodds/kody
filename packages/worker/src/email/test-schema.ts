@@ -5,6 +5,8 @@ export async function ensureEmailTestSchema(db: D1Database) {
 	// exercising email sends needs the entitlement tables too.
 	await ensureEntitlementTestSchema(db)
 	const statements = [
+		`DROP TABLE IF EXISTS pending_email_destination_verifications;`,
+		`DROP TABLE IF EXISTS email_notification_destinations;`,
 		`DROP TABLE IF EXISTS transactional_email_delivery_index;`,
 		`DROP TABLE IF EXISTS email_delivery_alert_events;`,
 		`DROP TABLE IF EXISTS email_outbound_provider_index_repair_owners;`,
@@ -214,6 +216,27 @@ WHERE direction = 'outbound' AND provider_message_id IS NOT NULL;`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_system_email_delivery_events_provider_event_id
 ON system_email_delivery_events(provider_event_id)
 WHERE provider_event_id IS NOT NULL;`,
+		`CREATE TABLE IF NOT EXISTS email_notification_destinations (
+	id TEXT PRIMARY KEY NOT NULL,
+	user_id INTEGER NOT NULL,
+	email TEXT NOT NULL,
+	verified_at TEXT,
+	is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_notification_destinations_user_email
+ON email_notification_destinations(user_id, email);`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_notification_destinations_user_default
+ON email_notification_destinations(user_id)
+WHERE is_default = 1;`,
+		`CREATE TABLE IF NOT EXISTS pending_email_destination_verifications (
+	id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+	user_id INTEGER NOT NULL,
+	destination_id TEXT NOT NULL,
+	token_hash TEXT NOT NULL UNIQUE,
+	expires_at INTEGER NOT NULL,
+	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);`,
 		`CREATE TABLE IF NOT EXISTS transactional_email_delivery_index (
 	provider_message_id TEXT PRIMARY KEY NOT NULL,
 	user_id INTEGER NOT NULL,

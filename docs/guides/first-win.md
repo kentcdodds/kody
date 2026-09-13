@@ -66,8 +66,9 @@ it.
 
 ## Step 1 — Send the welcome email
 
-Call `emailSend` on your own account address with a subject the person can find
-by searching their inbox:
+Call `emailSend` without a `to` (it uses the default notification destination,
+which starts as the account email) with a subject the person can find by
+searching their inbox:
 
 ```text
 Welcome to Kody — reply to introduce yourself
@@ -77,8 +78,8 @@ Keep the body short and personal, and ask three questions in it: their name,
 what they do for work, and what they do for fun. Close by inviting a reply to
 that same message.
 
-`emailSend` only ever mails the account's own address, and the from address is
-the account's platform inbox (`{username}@<platform domain>`). Note both the
+`emailSend` only mails verified notification destinations, and the from address
+is the account's platform inbox (`{username}@<platform domain>`). Note both the
 subject you used and the from address the response reports — the next step needs
 them.
 
