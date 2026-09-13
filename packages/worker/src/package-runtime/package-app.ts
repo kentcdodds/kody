@@ -90,7 +90,6 @@ import {
 	buildPackageAppClientModuleUrl,
 	resolvePackageAppClientArtifact,
 } from './package-app-assets.ts'
-import { packageAppRuntimeMarkerExportName } from './runtime-source-modules.ts'
 import { recordUniqueDynamicWorkerDay } from '#worker/usage/dynamic-worker-day.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
@@ -705,25 +704,6 @@ function isSyntheticPackageAppRequest(request) {
 	return request.headers.get(${JSON.stringify(packageAppSyntheticHeaderName)}) === ${JSON.stringify(packageAppSyntheticHeaderValue)};
 }
 
-// The host strips the app mount before forwarding, so a fetch handler sees
-// "/notes" for "/packages/<id>/notes". New bootstraps remount router-shaped
-// apps themselves. Persisted artifacts published before that still export
-// __kodyPackageAppRuntime === 'remix' and forward the stripped path; remount
-// those here so prefixed Remix routes keep matching.
-function createMountedPackageAppRequest(request, packageContext) {
-	const appBasePath = String(packageContext?.appBasePath ?? '').replace(/\\/+$/, '');
-	if (!appBasePath) return request;
-	const url = new URL(request.url);
-	url.pathname = url.pathname === '/' ? appBasePath : appBasePath + url.pathname;
-	return new Request(url, request);
-}
-
-function resolvePackageAppRuntimeKind(userModule) {
-	return userModule[${JSON.stringify(packageAppRuntimeMarkerExportName)}] === 'remix'
-		? 'remix'
-		: 'fetch';
-}
-
 async function startRuntimeRun(runtimeBridge, input) {
 	try {
 		return await runtimeBridge.packageRuntimeRunStart(input);
@@ -813,11 +793,7 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 				if (!fetchHandler) {
 					throw new Error('Package apps must default export a fetch handler or an object with fetch().');
 				}
-				const dispatchedRequest =
-					resolvePackageAppRuntimeKind(userModule) === 'remix'
-						? createMountedPackageAppRequest(request, this.env.__kodyPackageContext)
-						: request;
-				return await fetchHandler(dispatchedRequest, runtimeEnv, this.ctx);
+				return await fetchHandler(request, runtimeEnv, this.ctx);
 			});
 			finishRuntimeRun(runtimeBridge, this.ctx, {
 				run: runtimeRun,

@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises'
 import { RequestContext } from 'remix/router'
 import { expect, test } from 'vitest'
 import {
@@ -16,7 +15,6 @@ import {
 	createAppEntrypointSource,
 	createPackageRuntimeModuleSource,
 	createRuntimeModuleSource,
-	packageAppRuntimeMarkerExportName,
 } from './runtime-source-modules.ts'
 
 const remixUiEntryGraph = {
@@ -167,9 +165,6 @@ test('the app bootstrap remounts a router-shaped export and leaves a fetch handl
 		// Only the request reaches router.fetch: the Worker env would be read
 		// as RequestInit.
 		expect(routerBootstrap.calls_).toEqual([1])
-		expect(routerBootstrap).not.toHaveProperty(
-			packageAppRuntimeMarkerExportName,
-		)
 
 		const fetchBootstrap = (await moduleGraph.importModule(
 			'fetch-bootstrap.js',
@@ -196,175 +191,6 @@ test('the app bootstrap remounts a router-shaped export and leaves a fetch handl
 		await expect(
 			moduleGraph.importModule('broken-bootstrap.js'),
 		).rejects.toThrow(/default export a Remix router .* or a fetch handler/)
-		expect(fetchBootstrap).not.toHaveProperty(packageAppRuntimeMarkerExportName)
-	} finally {
-		await moduleGraph.cleanup()
-	}
-})
-
-/**
- * Historical bootstrap persisted before remount moved into the bootstrap:
- * forwarded the stripped path and exported the runtime marker so the wrapper
- * would remount Remix routers.
- */
-function createLegacyRuntimeMarkerBootstrapSource(modulePath: string) {
-	return `
-import * as userModule from ${JSON.stringify(modulePath)};
-export * from ${JSON.stringify(modulePath)};
-
-function isRemixRouter(candidate) {
-	return (
-		candidate != null &&
-		typeof candidate === 'object' &&
-		typeof candidate.fetch === 'function' &&
-		typeof candidate.map === 'function' &&
-		typeof candidate.mount === 'function'
-	);
-}
-
-function resolvePackageAppHandler() {
-	const candidate = userModule.default ?? userModule;
-	if (typeof candidate === 'function') return candidate;
-	if (isRemixRouter(candidate)) return (request) => candidate.fetch(request);
-	if (candidate && typeof candidate.fetch === 'function') {
-		return candidate.fetch.bind(candidate);
-	}
-	throw new Error('missing handler');
-}
-
-const handler = resolvePackageAppHandler();
-export const ${packageAppRuntimeMarkerExportName} = isRemixRouter(
-	userModule.default ?? userModule,
-)
-	? 'remix'
-	: 'fetch';
-
-export default {
-	async fetch(request, env, ctx) {
-		return await handler(request, env, ctx);
-	},
-};
-`.trim()
-}
-
-async function createPackageAppDispatchHelpersForTest() {
-	const sourceText = await readFile(
-		new URL('./package-app.ts', import.meta.url),
-		'utf8',
-	)
-	const start = sourceText.indexOf(
-		'function createMountedPackageAppRequest(request, packageContext) {',
-	)
-	const end = sourceText.indexOf('\nasync function startRuntimeRun', start)
-	if (start < 0 || end < 0) {
-		throw new Error('package-app dispatch helpers were not found.')
-	}
-	const functionSource = sourceText
-		.slice(start, end)
-		.replaceAll('\\\\', '\\')
-		.replaceAll('\\`', '`')
-		.replaceAll('\\${', '${')
-		.replaceAll(
-			'${JSON.stringify(packageAppRuntimeMarkerExportName)}',
-			JSON.stringify(packageAppRuntimeMarkerExportName),
-		)
-	return new Function(
-		`${functionSource}; return { createMountedPackageAppRequest, resolvePackageAppRuntimeKind };`,
-	)() as {
-		createMountedPackageAppRequest: (
-			request: Request,
-			packageContext: { appBasePath?: string } | null,
-		) => Request
-		resolvePackageAppRuntimeKind: (userModule: object) => 'remix' | 'fetch'
-	}
-}
-
-test('the wrapper remounts persisted remix artifacts that still export the runtime marker', async () => {
-	const { createMountedPackageAppRequest, resolvePackageAppRuntimeKind } =
-		await createPackageAppDispatchHelpersForTest()
-	const packageContext = { appBasePath: '/packages/app' }
-	const moduleGraph = await createTemporaryModuleGraph({
-		'router-app.js': [
-			'export default {',
-			'\tmap() {},',
-			'\tmount() {},',
-			'\tasync fetch(request) {',
-			'\t\treturn new Response("router:" + new URL(request.url).pathname)',
-			'\t},',
-			'}',
-		].join('\n'),
-		'legacy-router-bootstrap.js':
-			createLegacyRuntimeMarkerBootstrapSource('./router-app.js'),
-		'current-router-bootstrap.js': createAppEntrypointSource({
-			modulePath: './router-app.js',
-		}),
-		'fetch-app.js': [
-			'export default {',
-			'\tasync fetch(request) {',
-			'\t\treturn new Response("fetch:" + new URL(request.url).pathname)',
-			'\t},',
-			'}',
-		].join('\n'),
-		'legacy-fetch-bootstrap.js':
-			createLegacyRuntimeMarkerBootstrapSource('./fetch-app.js'),
-		'current-fetch-bootstrap.js': createAppEntrypointSource({
-			modulePath: './fetch-app.js',
-		}),
-	})
-	try {
-		type Bootstrap = {
-			default: {
-				fetch(request: Request, env: unknown, ctx: unknown): Promise<Response>
-			}
-		}
-		const wrap = async (userModule: Bootstrap, request: Request) => {
-			const dispatchedRequest =
-				resolvePackageAppRuntimeKind(userModule) === 'remix'
-					? createMountedPackageAppRequest(request, packageContext)
-					: request
-			return await userModule.default.fetch(
-				dispatchedRequest,
-				{ __kodyPackageContext: packageContext },
-				{},
-			)
-		}
-		const stripped = new Request('https://kent.kody.run/notes')
-
-		const legacyRouter = (await moduleGraph.importModule(
-			'legacy-router-bootstrap.js',
-		)) as Bootstrap
-		expect(legacyRouter).toMatchObject({
-			[packageAppRuntimeMarkerExportName]: 'remix',
-		})
-		expect(await (await wrap(legacyRouter, stripped)).text()).toBe(
-			'router:/packages/app/notes',
-		)
-
-		const currentRouter = (await moduleGraph.importModule(
-			'current-router-bootstrap.js',
-		)) as Bootstrap
-		expect(currentRouter).not.toHaveProperty(packageAppRuntimeMarkerExportName)
-		expect(await (await wrap(currentRouter, stripped)).text()).toBe(
-			'router:/packages/app/notes',
-		)
-
-		const legacyFetch = (await moduleGraph.importModule(
-			'legacy-fetch-bootstrap.js',
-		)) as Bootstrap
-		expect(legacyFetch).toMatchObject({
-			[packageAppRuntimeMarkerExportName]: 'fetch',
-		})
-		expect(await (await wrap(legacyFetch, stripped)).text()).toBe(
-			'fetch:/notes',
-		)
-
-		const currentFetch = (await moduleGraph.importModule(
-			'current-fetch-bootstrap.js',
-		)) as Bootstrap
-		expect(currentFetch).not.toHaveProperty(packageAppRuntimeMarkerExportName)
-		expect(await (await wrap(currentFetch, stripped)).text()).toBe(
-			'fetch:/notes',
-		)
 	} finally {
 		await moduleGraph.cleanup()
 	}
