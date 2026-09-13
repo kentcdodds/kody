@@ -2,6 +2,7 @@ import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { hashVerificationToken } from '#worker/identity/email-verification-tokens.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -106,6 +107,7 @@ test('destination verification tokens mark one extra address verified and reject
 })
 
 test('createEmailDestinationVerification rate-limits add and resend for UI and MCP', async () => {
+	consoleWarn.mockImplementation(() => {})
 	const { sqlite, db } = createMigratedDb()
 	await seedUser(sqlite)
 	const env = {
@@ -138,4 +140,5 @@ test('createEmailDestinationVerification rate-limits add and resend for UI and M
 	).rejects.toMatchObject({
 		code: 'rate_limited',
 	} satisfies Partial<EmailDestinationError>)
+	expect(consoleWarn).toHaveBeenCalled()
 })
