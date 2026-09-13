@@ -371,3 +371,65 @@ test('each row revokes on its own: another in-flight request does not lock remai
 		globalThis.fetch = originalFetch
 	}
 })
+
+test('a later success with a stale agent list does not restore a sibling that already committed', async () => {
+	toast.dismiss()
+	const { handle } = createStubHandle()
+	const panel = createAccountConnectedAgents(handle)
+	panel.applyPayload(listedAgents)
+
+	const resolveByClientId = new Map<string, (response: Response) => void>()
+	globalThis.fetch = vi.fn((_input, init) => {
+		const body = JSON.parse(String(init?.body)) as { clientId: string }
+		return new Promise<Response>((resolve) => {
+			resolveByClientId.set(body.clientId, resolve)
+		})
+	}) as typeof fetch
+
+	try {
+		const acmePromise = panel.revokeAgent(acme.clientId)
+		const cursorPromise = panel.revokeAgent(cursorOld.clientId)
+
+		resolveByClientId.get(acme.clientId)!(
+			jsonResponse(
+				{
+					ok: true,
+					mcpServerUrl: listedAgents.mcpServerUrl,
+					agents: [cursorOld, cursorNew, chatgptOld, chatgptNew],
+				},
+				200,
+			),
+		)
+		await acmePromise
+
+		resolveByClientId.get(cursorOld.clientId)!(
+			jsonResponse(
+				{
+					ok: true,
+					mcpServerUrl: listedAgents.mcpServerUrl,
+					agents: [acme, cursorNew, chatgptOld, chatgptNew],
+				},
+				200,
+			),
+		)
+		await cursorPromise
+
+		const html = await renderToString(panel.render())
+		expect(html).not.toContain(`data-client-id="${acme.clientId}"`)
+		expect(html).not.toContain(`data-client-id="${cursorOld.clientId}"`)
+		expectRevokeEnabled(html, cursorNew.clientId)
+		expect(listToasts()).toEqual([
+			expect.objectContaining({
+				message: 'Agent disconnected.',
+				tone: 'success',
+			}),
+			expect.objectContaining({
+				message: 'Agent disconnected.',
+				tone: 'success',
+			}),
+		])
+	} finally {
+		toast.dismiss()
+		globalThis.fetch = originalFetch
+	}
+})

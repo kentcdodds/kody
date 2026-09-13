@@ -82,9 +82,8 @@ export function createAccountConnectedAgents(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to revoke this agent.')
 			}
 			pendingRevokes.delete(clientId)
-			agents = visibleAgents(
-				payload.agents.filter((agent) => agent.clientId !== clientId),
-			)
+			// Keep the optimistic list. Replacing from this response can put
+			// back a sibling that already committed if that POST listed earlier.
 			toast.success('Agent disconnected.')
 		} catch (error) {
 			pendingRevokes.delete(clientId)
