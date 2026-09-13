@@ -32,12 +32,12 @@ Typical items:
   integration grant, first user-scope secret, and official Kody Discord
   membership (Connect Discord on `/discord`)
 
-The `/onboarding` wizard stays Steps 1–3 plus the derived checklist
+The `/onboarding` wizard is Steps 1–3 plus the derived checklist
 (`verify-email`, `connect-agent`, `give-access`, `connect-second-agent`,
-`install-starter`). Waiting does **not** add Discord or the broken-out first-use
-list as wizard steps. Coarse checklist cards for `give-access` and
-`install-starter` do not appear here — they would duplicate first search /
-memory / execute / package.
+`install-starter`). Discord membership and the first-use items above are Waiting
+cards, not wizard steps. Coarse checklist cards for `give-access` and
+`install-starter` do not appear here — they overlap first search / memory /
+execute / package.
 
 First-use cards are independent of checklist dismiss. A probe that errors is
 treated as unknown: Waiting neither invents that card nor claims the gate

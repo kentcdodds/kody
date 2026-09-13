@@ -222,9 +222,6 @@ serialization of `params`; **0** when `params` is omitted, `null`, a non-object,
 an array, or empty `{}` — not 2 from stringifying `{}`). Payloads never include
 source, param keys or values, package names, or worker ids.
 
-APP_LOADER package-app isolates record `dynamic_worker_day` only; they do not
-emit `dynamic_worker_invoke`.
-
 D1 `usage_rollups` for `dynamic_worker_invoke` is the monthly invoke count (and
 summed duration). Hit rate and average `paramsChars` are Analytics Engine
 queries. Use `buildDynamicWorkerInvokeReuseQuery` and
@@ -255,9 +252,10 @@ volume). Same-user same-graph executes that vary only `params` reuse one worker
 id; execute-surface hit rate and unique-day yield are the fleet readouts for
 that reuse.
 
-APP_LOADER package-app isolates record UWD when the worker id is stable
-(`app_fetch` / `app_realtime`). One-off `APP_LOADER.load()` without a hashed id
-has no worker id to claim and does not emit `dynamic_worker_day`.
+APP_LOADER package-app isolates record UWD (`dynamic_worker_day`) when the
+worker id is stable (`app_fetch` / `app_realtime`). They do not emit
+`dynamic_worker_invoke`. One-off `APP_LOADER.load()` without a hashed id has no
+worker id to claim and does not emit `dynamic_worker_day`.
 
 ### LOADER worker identity
 

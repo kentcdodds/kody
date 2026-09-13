@@ -1,7 +1,8 @@
 # Waiting inbox
 
-Things waiting on the signed-in human (approvals, reconnects, expired secrets,
-publish locks). Fold connection-health here — do not invent another inbox.
+Things waiting on the signed-in human (first-use setup, approvals, reconnects,
+expired secrets, publish locks). Fold connection-health here — do not invent
+another inbox.
 
 ## How to get there
 
