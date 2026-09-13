@@ -7,6 +7,7 @@ import {
 	TimestampValue,
 	accountActionsCss,
 } from '#client/routes/account-management-components.tsx'
+import { toast } from '#client/toast.ts'
 import {
 	connectedAgentConnectionLabel,
 	groupConnectedAgents,
@@ -25,12 +26,13 @@ import {
 import {
 	getDangerPillCss,
 	getLogoWellCss,
+	getSwapLabelCss,
+	mergeCss,
 } from '#universal/styles/style-primitives.ts'
 
 export function createAccountConnectedAgents(handle: Handle) {
 	let agents: Array<AccountConnectedAgentListItem> = []
 	let busy = false
-	let message: { text: string; tone: 'error' | 'info' } | null = null
 	const revokeChecks = new Map<string, ReturnType<typeof createDoubleCheck>>()
 
 	function getRevokeCheck(clientId: string) {
@@ -46,8 +48,14 @@ export function createAccountConnectedAgents(handle: Handle) {
 	}
 
 	async function revokeAgent(clientId: string) {
+		const previous = agents
+		const remaining = agents.filter((agent) => agent.clientId !== clientId)
+		if (remaining.length === agents.length) return
+
+		agents = remaining
+		revokeChecks.get(clientId)?.reset()
+		revokeChecks.delete(clientId)
 		busy = true
-		message = null
 		handle.update()
 		try {
 			const response = await fetch(connectedAgentsApiPath, {
@@ -70,16 +78,12 @@ export function createAccountConnectedAgents(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to revoke this agent.')
 			}
 			agents = payload.agents
-			revokeChecks.get(clientId)?.reset()
-			message = { text: 'Agent disconnected.', tone: 'info' }
+			toast.success('Agent disconnected.')
 		} catch (error) {
-			message = {
-				text:
-					error instanceof Error
-						? error.message
-						: 'Unable to revoke this agent.',
-				tone: 'error',
-			}
+			agents = previous
+			toast.error(
+				error instanceof Error ? error.message : 'Unable to revoke this agent.',
+			)
 		} finally {
 			busy = false
 			handle.update()
@@ -88,6 +92,7 @@ export function createAccountConnectedAgents(handle: Handle) {
 
 	return {
 		applyPayload,
+		revokeAgent,
 		/** `actions` renders under the list (the Connections page puts Add connection there). */
 		render(options?: { actions?: RemixNode }) {
 			const groups = groupConnectedAgents(agents)
@@ -97,17 +102,6 @@ export function createAccountConnectedAgents(handle: Handle) {
 					description="AI hosts that have authorized against this Kody account. Same-named hosts are grouped. Labels are best-effort from the host name or redirect."
 					ariaLabel="Connected agents"
 				>
-					{message ? (
-						<p
-							role="status"
-							mix={css({
-								color: message.tone === 'error' ? colors.error : colors.text,
-								margin: 0,
-							})}
-						>
-							{message.text}
-						</p>
-					) : null}
 					{groups.length > 0 ? (
 						<ul
 							aria-busy={busy ? 'true' : undefined}
@@ -161,7 +155,7 @@ export function createAccountConnectedAgents(handle: Handle) {
 												Last used{' '}
 												<TimestampValue
 													value={group.lastUsedAt}
-													fallback="never"
+													fallback="unknown"
 												/>
 												{' · '}
 												Connected{' '}
@@ -194,14 +188,7 @@ export function createAccountConnectedAgents(handle: Handle) {
 														key={agent.clientId}
 														data-testid="connected-agent-connection"
 														data-client-id={agent.clientId}
-														mix={css({
-															display: 'flex',
-															justifyContent: 'space-between',
-															alignItems: 'center',
-															gap: spacing.md,
-															flexWrap: 'wrap',
-															paddingInlineStart: spacing.lg,
-														})}
+														mix={css(connectionRowCss)}
 													>
 														<span
 															mix={css({ display: 'grid', gap: spacing.xs })}
@@ -225,7 +212,7 @@ export function createAccountConnectedAgents(handle: Handle) {
 																Last used{' '}
 																<TimestampValue
 																	value={agent.lastUsedAt}
-																	fallback="never"
+																	fallback="unknown"
 																/>
 															</span>
 															<span
@@ -260,9 +247,28 @@ export function createAccountConnectedAgents(handle: Handle) {
 																}),
 															]}
 														>
-															{revokeCheck.doubleCheck
-																? 'Confirm revoke'
-																: 'Revoke'}
+															<span
+																data-swap-label
+																data-active={
+																	revokeCheck.doubleCheck ? undefined : true
+																}
+																aria-hidden={
+																	revokeCheck.doubleCheck ? 'true' : undefined
+																}
+															>
+																Revoke
+															</span>
+															<span
+																data-swap-label
+																data-active={
+																	revokeCheck.doubleCheck ? true : undefined
+																}
+																aria-hidden={
+																	revokeCheck.doubleCheck ? undefined : 'true'
+																}
+															>
+																Confirm revoke
+															</span>
 														</button>
 													</li>
 												)
@@ -341,4 +347,15 @@ const groupSummaryCss = {
 	flexWrap: 'wrap' as const,
 }
 
-const dangerButtonCss = getDangerPillCss({ size: 'sm' })
+const connectionRowCss = {
+	display: 'grid',
+	gridTemplateColumns: 'minmax(0, 1fr) auto',
+	alignItems: 'start',
+	gap: spacing.md,
+	paddingInlineStart: spacing.lg,
+}
+
+const dangerButtonCss = mergeCss(
+	getDangerPillCss({ size: 'sm' }),
+	getSwapLabelCss(),
+)

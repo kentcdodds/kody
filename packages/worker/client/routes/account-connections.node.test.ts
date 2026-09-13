@@ -72,7 +72,7 @@ test('connections page renders the connected list with Add connection, the MCP U
 	expect(html).toContain('aria-label="Connected agents"')
 	expect(html).toContain('data-agent-label="Cursor"')
 	expect(html).toContain('aria-label="Revoke Cursor"')
-	expect(html).toMatch(/Last used <span[^>]*>never<\/span>/)
+	expect(html).toMatch(/Last used <span[^>]*>unknown<\/span>/)
 	expect(html).toMatch(
 		/data-testid="account-connections-add"[^>]*>Add connection</,
 	)
