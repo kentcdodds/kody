@@ -248,20 +248,19 @@ generic UI runtime and hosted under the package app route.
 A package app is a hosted Remix mini-app running in the package-app isolate:
 
 - package app code belongs to the package repo
-- package app entry is declared by `kody.app.entry`. Under the `remix` runtime
-  it default-exports a Remix router; the bootstrap (`createAppEntrypointSource`)
-  duck-types the router, calls `router.fetch(request)` with only the request,
-  and exports `__kodyPackageAppRuntime` so the wrapper
-  (`createPackageAppWorkerSource`) dispatches the full mounted URL
-  (`createMountedPackageAppRequest`) instead of the mount-stripped path a
-  `fetch` handler receives
-- `kody.app.runtime` (`remix` | `fetch`, optional) is resolved by
-  `resolvePackageAppRuntime` (`package-app-runtime.ts`): declared value, else
-  `remix` when the entry graph imports `remix/<subpath>`, else `fetch`. The
-  `remix` runtime adds `jsx: automatic` / `jsxImportSource: remix/ui`, a
-  `define` that pins `import.meta.url` to `kody:app` (workerd leaves it empty
-  and `clientEntry()` needs a non-empty id), and esbuild `keepNames` so
-  `component.name` survives bundling and matches the browser registry
+- package app entry is declared by `kody.app.entry`. The bootstrap
+  (`createAppEntrypointSource`) duck-types the default export: a router-shaped
+  object (`fetch`, `map`, `mount`) is called as `router.fetch(request)` with
+  only the request and is dispatched the full hosted URL; a function or
+  `{ fetch }` handler receives the mount-stripped path. Manifest parsing rejects
+  `kody.app.runtime`
+- Remix UI bundler defaults (`jsx: automatic` / `jsxImportSource: remix/ui`, a
+  `define` that pins `import.meta.url` to `kody:app` because workerd leaves it
+  empty and `clientEntry()` needs a non-empty id, and esbuild `keepNames` so
+  `component.name` survives bundling) apply only when the graph imports
+  `remix/ui` or a `remix/ui/…` subpath (`entryGraphNeedsRemixUiBundleOptions` in
+  `package-app-runtime.ts`). A handler that borrows `remix/headers` or
+  `remix/html-template` stays on esbuild's defaults
 - Remix itself is platform-supplied: `tools/build-worker-bundler-modules.ts`
   pre-bundles the Workers-safe `remix/<subpath>` set (`packageAppRemixSubpaths`)
   with code splitting into the deferred module `package-app-remix.mjs`, and

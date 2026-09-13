@@ -302,8 +302,8 @@ primitives:
     name: Package apps
     summary:
       Optional package-declared hosted Remix mini-apps (routes, actions,
-      middleware, SSR) with Kody in the request context; raw fetch handlers
-      remain the fetch runtime.
+      middleware, SSR) with Kody in the request context; dispatch follows the
+      default-export shape (router vs fetch handler).
     code:
       - packages/worker/src/package-runtime/package-app.ts
       - packages/worker/src/package-runtime/package-app-assets.ts

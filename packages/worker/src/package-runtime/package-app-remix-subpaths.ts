@@ -115,13 +115,12 @@ export type PackageAppRemixSubpath = (typeof packageAppRemixSubpaths)[number]
 export const remixPackageName = 'remix'
 
 /**
- * Whether a bare specifier names Remix (`remix` or `remix/<subpath>`). Used
- * to decide the package-app runtime when `kody.app.runtime` is not declared
- * and to keep `@remix-run/*` out of `package.json#dependencies`.
+ * Whether a bare specifier is Remix UI (`remix/ui` or `remix/ui/…`). That
+ * graph needs Remix UI bundler defaults; other `remix/…` helpers do not.
  */
-export function isRemixSpecifier(specifier: string) {
+export function isRemixUiSpecifier(specifier: string) {
 	return (
-		specifier === remixPackageName ||
-		specifier.startsWith(`${remixPackageName}/`)
+		specifier === `${remixPackageName}/ui` ||
+		specifier.startsWith(`${remixPackageName}/ui/`)
 	)
 }

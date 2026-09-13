@@ -6,7 +6,6 @@ import {
 	authoredPackageJsonSchema,
 	webhookDefaultRateLimitPerMinute,
 	type AuthoredPackageJson,
-	type PackageAppRuntime,
 	type PackageExportTarget,
 	type PackageRetrieverScope,
 } from './types.ts'
@@ -155,6 +154,9 @@ const retiredKodyFieldMessages = {
 		'kody.services is not a supported field; long-running daemons run on an external process. Use jobs or workflows for exclusive or cancellable background work.',
 } as const
 
+const retiredPackageAppRuntimeMessage =
+	'kody.app.runtime was removed; request dispatch is by export shape (a router gets the mounted URL, a fetch handler gets the stripped path), not a configured mode.'
+
 function assertNoRetiredKodyFields(input: {
 	parsed: unknown
 	manifestPath: string
@@ -175,6 +177,17 @@ function assertNoRetiredKodyFields(input: {
 		if (field in record) {
 			throw new Error(`Invalid ${input.manifestPath}:\n${message}`)
 		}
+	}
+	const app = record.app
+	if (
+		app &&
+		typeof app === 'object' &&
+		!Array.isArray(app) &&
+		'runtime' in app
+	) {
+		throw new Error(
+			`Invalid ${input.manifestPath}:\n${retiredPackageAppRuntimeMessage}`,
+		)
 	}
 }
 
@@ -250,17 +263,6 @@ export function getPackageAppEntryPath(manifest: AuthoredPackageJson) {
 	const appEntry = manifest.kody.app?.entry?.trim()
 	if (!appEntry) return null
 	return normalizePackageWorkspacePath(appEntry)
-}
-
-/**
- * The runtime `kody.app.runtime` declares, or `null` when the manifest leaves
- * it to be inferred from the entry graph (see `resolvePackageAppRuntime` in
- * `#worker/package-runtime/package-app-runtime.ts`).
- */
-export function getDeclaredPackageAppRuntime(
-	manifest: AuthoredPackageJson,
-): PackageAppRuntime | null {
-	return manifest.kody.app?.runtime ?? null
 }
 
 export function getPackageAppClientEntryPath(manifest: AuthoredPackageJson) {

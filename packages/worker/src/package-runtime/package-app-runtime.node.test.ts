@@ -1,6 +1,5 @@
 import { RequestContext } from 'remix/router'
 import { expect, test } from 'vitest'
-import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import {
 	createTemporaryModuleGraph,
 	type RuntimeModule,
@@ -9,36 +8,23 @@ import {
 	createKeepNamesPlugin,
 	createPackageAppRemixClientBundleOptions,
 	createPackageAppRemixServerBundleOptions,
-	entryGraphImportsRemix,
+	entryGraphNeedsRemixUiBundleOptions,
 	packageAppServerModuleUrl,
-	resolvePackageAppRuntime,
 } from './package-app-runtime.ts'
 import {
 	createAppEntrypointSource,
 	createPackageRuntimeModuleSource,
 	createRuntimeModuleSource,
-	packageAppRuntimeMarkerExportName,
 } from './runtime-source-modules.ts'
 
-function createManifest(app: Record<string, unknown>) {
-	return parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/runtime-app',
-			exports: { '.': './src/index.ts' },
-			kody: { id: 'runtime-app', description: 'runtime app', app },
-		}),
-		manifestPath: 'package.json',
-	})
-}
-
-const remixEntryGraph = {
+const remixUiEntryGraph = {
 	'app/router.ts': [
 		"import { createRouter } from 'remix/router'",
-		"import { routes } from './routes.ts'",
+		"import { render } from './render.tsx'",
 		'export default createRouter()',
 	].join('\n'),
-	'app/routes.ts':
-		"import { route } from 'remix/routes'\nexport const routes = route({ home: '/' })",
+	'app/render.tsx':
+		"import { renderToString } from 'remix/ui/server'\nexport const render = renderToString",
 }
 
 const fetchEntryGraph = {
@@ -50,26 +36,22 @@ const fetchEntryGraph = {
 	// Reachable only through a type import target, never in the graph.
 	'src/types.d.ts': "import type { Router } from 'remix/router'",
 	// Not reachable from the entry at all.
-	'src/unused.ts': "import { html } from 'remix/html-template'",
+	'src/unused.ts': "import { html } from 'remix/ui/server'",
 }
 
-test('resolvePackageAppRuntime prefers the declared runtime and otherwise infers it from remix imports reachable from the entry', () => {
+test('entryGraphNeedsRemixUiBundleOptions is true only when remix/ui is reachable from the entry', () => {
 	expect(
-		resolvePackageAppRuntime({
-			manifest: createManifest({ entry: './app/router.ts' }),
-			sourceFiles: remixEntryGraph,
+		entryGraphNeedsRemixUiBundleOptions({
+			sourceFiles: remixUiEntryGraph,
 			entryPoint: 'app/router.ts',
 		}),
-	).toBe('remix')
+	).toBe(true)
 	expect(
-		resolvePackageAppRuntime({
-			manifest: createManifest({ entry: './src/app.ts' }),
+		entryGraphNeedsRemixUiBundleOptions({
 			sourceFiles: fetchEntryGraph,
 			entryPoint: 'src/app.ts',
 		}),
-	).toBe('fetch')
-	// A fetch app that only borrows html-template is still a Remix-runtime
-	// bundle by inference; the declaration is the escape hatch.
+	).toBe(false)
 	const borrowsHtmlTemplate = {
 		'src/app.ts': [
 			"import { html } from 'remix/html-template'",
@@ -77,36 +59,32 @@ test('resolvePackageAppRuntime prefers the declared runtime and otherwise infers
 		].join('\n'),
 	}
 	expect(
-		resolvePackageAppRuntime({
-			manifest: createManifest({ entry: './src/app.ts' }),
+		entryGraphNeedsRemixUiBundleOptions({
 			sourceFiles: borrowsHtmlTemplate,
 			entryPoint: 'src/app.ts',
 		}),
-	).toBe('remix')
+	).toBe(false)
+	const routerOnly = {
+		'app/router.ts': [
+			"import { createRouter } from 'remix/router'",
+			'export default createRouter()',
+		].join('\n'),
+	}
 	expect(
-		resolvePackageAppRuntime({
-			manifest: createManifest({ runtime: 'fetch', entry: './src/app.ts' }),
-			sourceFiles: borrowsHtmlTemplate,
-			entryPoint: 'src/app.ts',
-		}),
-	).toBe('fetch')
-	expect(
-		resolvePackageAppRuntime({
-			manifest: createManifest({ runtime: 'remix', entry: './src/app.ts' }),
-			sourceFiles: fetchEntryGraph,
-			entryPoint: 'src/app.ts',
-		}),
-	).toBe('remix')
-	expect(
-		resolvePackageAppRuntime({
-			manifest: null,
-			sourceFiles: remixEntryGraph,
+		entryGraphNeedsRemixUiBundleOptions({
+			sourceFiles: routerOnly,
 			entryPoint: 'app/router.ts',
 		}),
-	).toBe('remix')
+	).toBe(false)
+	const borrowsHeaders = {
+		'src/app.ts': [
+			"import { CacheControl } from 'remix/headers'",
+			'export default { fetch: () => new Response("ok") }',
+		].join('\n'),
+	}
 	expect(
-		entryGraphImportsRemix({
-			sourceFiles: fetchEntryGraph,
+		entryGraphNeedsRemixUiBundleOptions({
+			sourceFiles: borrowsHeaders,
 			entryPoint: 'src/app.ts',
 		}),
 	).toBe(false)
@@ -129,7 +107,7 @@ test('Remix bundle options compile JSX against remix/ui, pin import.meta.url on 
 	expect(client).toEqual({ jsx: 'automatic', jsxImportSource: 'remix/ui' })
 })
 
-test('the app bootstrap dispatches a Remix router with the request alone and marks the runtime kind', async () => {
+test('the app bootstrap remounts a router-shaped export and leaves a fetch handler on the stripped path', async () => {
 	const moduleGraph = await createTemporaryModuleGraph({
 		'router-app.js': [
 			'const calls = []',
@@ -170,16 +148,17 @@ test('the app bootstrap dispatches a Remix router with the request alone and mar
 			default: {
 				fetch(request: Request, env: unknown, ctx: unknown): Promise<Response>
 			}
-			__kodyPackageAppRuntime: string
 			calls_?: Array<number>
 		}
 		const routerBootstrap = (await moduleGraph.importModule(
 			'router-bootstrap.js',
 		)) as Bootstrap
-		expect(routerBootstrap[packageAppRuntimeMarkerExportName]).toBe('remix')
 		const routerResponse = await routerBootstrap.default.fetch(
-			new Request('https://kent.kody.run/packages/app/notes'),
-			{ marker: 'env' },
+			new Request('https://kent.kody.run/notes'),
+			{
+				marker: 'env',
+				__kodyPackageContext: { appBasePath: '/packages/app' },
+			},
 			{},
 		)
 		expect(await routerResponse.text()).toBe('router:/packages/app/notes')
@@ -190,7 +169,6 @@ test('the app bootstrap dispatches a Remix router with the request alone and mar
 		const fetchBootstrap = (await moduleGraph.importModule(
 			'fetch-bootstrap.js',
 		)) as Bootstrap
-		expect(fetchBootstrap[packageAppRuntimeMarkerExportName]).toBe('fetch')
 		const fetchResponse = await fetchBootstrap.default.fetch(
 			new Request('https://kent.kody.run/notes'),
 			{ marker: 'env' },
@@ -201,7 +179,14 @@ test('the app bootstrap dispatches a Remix router with the request alone and mar
 		const functionBootstrap = (await moduleGraph.importModule(
 			'function-bootstrap.js',
 		)) as Bootstrap
-		expect(functionBootstrap[packageAppRuntimeMarkerExportName]).toBe('fetch')
+		const functionResponse = await functionBootstrap.default.fetch(
+			new Request('https://kent.kody.run/notes'),
+			{
+				__kodyPackageContext: { appBasePath: '/packages/app' },
+			},
+			{},
+		)
+		expect(await functionResponse.text()).toBe('fn')
 
 		await expect(
 			moduleGraph.importModule('broken-bootstrap.js'),

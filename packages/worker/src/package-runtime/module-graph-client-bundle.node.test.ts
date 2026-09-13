@@ -95,6 +95,42 @@ test('buildKodyAppClientBundle bundles only the browser graph and names the outp
 	expect(changed.mainModule).not.toBe(bundle.mainModule)
 })
 
+test('buildKodyAppClientBundle applies Remix UI JSX defaults only when the client graph imports remix/ui', async () => {
+	mockBundledOutput('export const Counter = () => null;\n')
+	await buildKodyAppClientBundle({
+		sourceFiles: {
+			'package.json': packageJson,
+			'src/client.ts':
+				"import { run } from 'remix/ui'\nrun({ loadModule: async () => ({}) })",
+		},
+		entryPoint: 'src/client.ts',
+	})
+	const uiCall = mockModule.createWorker.mock.calls[0]?.[0] as {
+		jsx?: string
+		jsxImportSource?: string
+	}
+	expect(uiCall).toMatchObject({
+		jsx: 'automatic',
+		jsxImportSource: 'remix/ui',
+	})
+
+	mockBundledOutput('export {}\n')
+	await buildKodyAppClientBundle({
+		sourceFiles: {
+			'package.json': packageJson,
+			'src/client.ts':
+				"import { CacheControl } from 'remix/headers'\nconsole.log(CacheControl)",
+		},
+		entryPoint: 'src/client.ts',
+	})
+	const headersCall = mockModule.createWorker.mock.calls[0]?.[0] as Record<
+		string,
+		unknown
+	>
+	expect(headersCall).not.toHaveProperty('jsx')
+	expect(headersCall).not.toHaveProperty('jsxImportSource')
+})
+
 test('buildKodyAppClientBundle rejects kody:, cloudflare:, and node: imports before bundling', async () => {
 	mockBundledOutput('')
 	await expect(
