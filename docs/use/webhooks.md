@@ -335,9 +335,9 @@ ingress (unknown name → 404). Disable with `webhookDisable` without deleting t
 mint; re-enable with `webhookEnable`. Rotate the URL secret with
 `webhookUrlRotate` when a credential may have leaked, then call
 `webhookUrlApply` again with the same handle so providers get the new URL. The
-previous URL stays active for 24 hours, or until the first accepted delivery
-arrives on the new URL. The same disable, enable, and rotate actions are in the
-package's settings Webhooks section.
+[settings card](#manage-webhook-urls-in-package-settings) describes the 24-hour
+/ first-accepted-delivery overlap. The same disable, enable, and rotate actions
+are in that Webhooks section.
 
 ## Related
 

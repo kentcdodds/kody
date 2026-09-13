@@ -90,8 +90,9 @@ export default async function main() {
 
 `workflows.create` takes either `code` (a complete module string) or
 `exportName` (a saved-package export). Inspect runs with `workflowRunList`,
-cancel with `workflowRunCancel`; they appear on `/account/workflows`. Recurring
-work is a job, not a workflow that reschedules itself.
+cancel with `workflowRunCancel`; they appear on `/account/workflows`. Unnamed
+inline runs display as `inline-code` with the idempotency key as a subtitle.
+Recurring work is a job, not a workflow that reschedules itself.
 
 ## Inbound webhooks — the external HTTP knock
 

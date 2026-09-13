@@ -41,4 +41,6 @@ node tools/control-kody.ts preview -- \
   count. Account → Connected agents is the grouped inbound list (logos for known
   kinds, newest-first). That first cross also records the one-time 14-day
   Standard gift (`secondAgentStandardGift` on `/onboarding.json`).
-- The Discord invite sits below the step wizard.
+- The Discord invite sits below the step wizard. First-use setup (search,
+  memory, execute, package, job, integration, secret, Discord membership) is on
+  Waiting.

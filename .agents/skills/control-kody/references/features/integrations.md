@@ -26,3 +26,6 @@ node tools/control-kody.ts request GET /account/integrations.json
 - `/docs/connect` is the public how-to, not the account page.
 - OAuth access/refresh tokens and app client secrets live as AES-GCM ciphertext
   on `user_integrations` / `user_oauth_apps`, not as user secret-store rows.
+- After a successful `/connect/oauth`, the success page shows a **What's next?**
+  prompt the user can copy into chat. Agents `communitySearch` (prefer
+  `trusted`) or create a helpers package.

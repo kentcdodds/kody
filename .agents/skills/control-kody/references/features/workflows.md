@@ -19,3 +19,5 @@ node tools/control-kody.ts request GET /account/workflows.json
 ## Gotchas
 
 - Recurring work belongs on `kody.jobs`, not workflows.
+- A displayed `inline-code` name on `/account/workflows` and Activity shows the
+  idempotency key as a subtitle.
