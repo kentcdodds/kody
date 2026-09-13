@@ -59,6 +59,7 @@ const {
 	parsePackageRuntimeModulePathPackageId,
 	refreshKodyRuntimeModules,
 } = await import('./module-graph.ts')
+const { packageAppServerModuleUrl } = await import('./package-app-runtime.ts')
 
 test('hydrateKodyRuntimeModules resolves duplicate dynamic specifiers once per pass', async () => {
 	const createDynamicPlaceholder = (specifier: string) =>
@@ -313,6 +314,62 @@ test('kody:runtime exports resolve against the current run when the module insta
 	} finally {
 		await moduleGraph.cleanup()
 	}
+})
+
+test('buildKodyAppBundle hands Remix apps the platform remix files and Remix bundler options, and leaves fetch apps on esbuild defaults', async () => {
+	mockModule.createWorker.mockReset()
+	mockModule.createWorker.mockResolvedValue(createBundleResult('remix'))
+	const remixInput = createBundleInput({ entryPoint: 'app/router.ts' })
+	remixInput.sourceFiles['app/router.ts'] = [
+		"import { createRouter } from 'remix/router'",
+		'export default createRouter()',
+	].join('\n')
+	await buildKodyAppBundle(remixInput)
+	const remixCall = mockModule.createWorker.mock.calls[0]?.[0] as {
+		files: Record<string, string>
+		jsx?: string
+		jsxImportSource?: string
+		define?: Record<string, string>
+		__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired?: Array<{
+			name: string
+		}>
+	}
+	expect(remixCall.files['node_modules/remix/package.json']).toContain(
+		'"./router": "./dist/router.js"',
+	)
+	expect(remixCall.files['node_modules/remix/dist/ui/server.js']).toBeTypeOf(
+		'string',
+	)
+	expect(remixCall).toMatchObject({
+		jsx: 'automatic',
+		jsxImportSource: 'remix/ui',
+		define: { 'import.meta.url': JSON.stringify(packageAppServerModuleUrl) },
+	})
+	expect(
+		remixCall.__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired?.map(
+			(plugin) => plugin.name,
+		),
+	).toEqual(['kody-package-app-keep-names'])
+
+	mockModule.createWorker.mockReset()
+	mockModule.createWorker.mockResolvedValue(createBundleResult('fetch'))
+	await buildKodyAppBundle(createBundleInput())
+	const fetchCall = mockModule.createWorker.mock.calls[0]?.[0] as Record<
+		string,
+		unknown
+	>
+	// The vendored remix is present for any bundle that wants
+	// remix/html-template, but a fetch app gets no Remix JSX or define.
+	expect(
+		(fetchCall.files as Record<string, string>)[
+			'node_modules/remix/package.json'
+		],
+	).toBeTypeOf('string')
+	expect(fetchCall).not.toHaveProperty('jsx')
+	expect(fetchCall).not.toHaveProperty('define')
+	expect(fetchCall).not.toHaveProperty(
+		'__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired',
+	)
 })
 
 test('buildKodyAppBundle cache lifecycle reuses hits, shares in-flight builds, evicts failures, and keys by entrypoint', async () => {

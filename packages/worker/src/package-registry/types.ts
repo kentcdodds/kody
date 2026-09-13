@@ -30,9 +30,73 @@ export const packageJobDefinitionSchema = z.object({
 
 export type PackageJobDefinition = z.infer<typeof packageJobDefinitionSchema>
 
+/**
+ * A bare package specifier the browser bundle leaves as an `import` for the
+ * page's import map to resolve (for example `@remix-run/ui`). Relative
+ * paths, URLs, and Worker-only schemes are not externals: the first two need
+ * no declaration and the last never belong in a browser graph.
+ */
+export const packageAppClientExternalSchema = z
+	.string()
+	.trim()
+	.min(1)
+	.refine(
+		(specifier) =>
+			!specifier.startsWith('.') &&
+			!specifier.startsWith('/') &&
+			!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(specifier),
+		{
+			message:
+				'kody.app.client.externals entries must be bare package specifiers such as "@remix-run/ui" or "preact/hooks" (no relative paths, URLs, or kody:/cloudflare:/node: schemes).',
+		},
+	)
+
+export const packageAppClientDefinitionSchema = z.object({
+	/** Browser entry (`.ts`/`.tsx`/`.js`/`.jsx`). */
+	entry: z.string().trim().min(1),
+	/**
+	 * Bare specifiers kept as external `import`s in the bundled module so an
+	 * import map on the page resolves them. Matches the specifier and its
+	 * subpaths (`preact` also covers `preact/hooks`).
+	 */
+	externals: z.array(packageAppClientExternalSchema).optional(),
+})
+
+export type PackageAppClientDefinition = z.infer<
+	typeof packageAppClientDefinitionSchema
+>
+
+export const packageAppRuntimeValues = ['remix', 'fetch'] as const
+export type PackageAppRuntime = (typeof packageAppRuntimeValues)[number]
+
 export const packageAppDefinitionSchema = z.object({
-	entry: z.string().min(1),
-	assets: z.string().min(1).optional(),
+	/**
+	 * How the platform runs `entry`. `remix`: the module default-exports a
+	 * Remix router (`createRouter` from `remix/router`) and the bundle gets
+	 * Remix defaults (JSX from `remix/ui`, `clientEntry(import.meta.url, …)`
+	 * hydration ids). `fetch`: a raw Worker-style `fetch` handler. When
+	 * omitted, `remix` applies as soon as the entry graph imports
+	 * `remix/<subpath>`; otherwise `fetch`.
+	 */
+	runtime: z.enum(packageAppRuntimeValues).optional(),
+	/**
+	 * Server entry bundled for the package-app isolate: the Remix router
+	 * module or the Worker fetch handler, depending on `runtime`.
+	 */
+	entry: z.string().trim().min(1),
+	/**
+	 * Browser entry the platform bundles to a fingerprinted ESM module served
+	 * under `<appBasePath>/_assets/`. A path string, or an object when the
+	 * client needs `externals` for an import map.
+	 */
+	client: z
+		.union([z.string().trim().min(1), packageAppClientDefinitionSchema])
+		.optional(),
+	/**
+	 * Directory of static files served as-is under `<appBasePath>/_assets/`
+	 * (no bundling; content types inferred from the extension).
+	 */
+	assets: z.string().trim().min(1).optional(),
 })
 
 export type PackageAppDefinition = z.infer<typeof packageAppDefinitionSchema>

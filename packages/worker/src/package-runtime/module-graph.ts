@@ -13,6 +13,7 @@ export {
 	buildKodyModuleBundle,
 	createPublishedPackageAppBundleCacheKey,
 } from './module-graph-bundle-builders.ts'
+export { buildKodyAppClientBundle } from './module-graph-client-bundle.ts'
 export {
 	hydrateKodyRuntimeModules,
 	type HydratedKodyRuntimeModules,

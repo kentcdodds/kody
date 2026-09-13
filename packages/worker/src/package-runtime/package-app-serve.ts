@@ -1,7 +1,11 @@
 import * as Sentry from '@sentry/cloudflare'
 import { html } from 'remix/html-template'
 import { createHtmlResponse } from 'remix/response/html'
-import { type PackageAppMount } from '@kody-internal/shared/public-urls.ts'
+import {
+	buildPackageAppPath,
+	buildPackageAppSubdomainPath,
+	type PackageAppMount,
+} from '@kody-internal/shared/public-urls.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import {
@@ -13,6 +17,10 @@ import {
 	buildPackageAppWorker,
 	createPackageAppCallerContext,
 } from '#worker/package-runtime/package-app.ts'
+import {
+	parsePackageAppAssetRequestPath,
+	servePackageAppAssetRequest,
+} from '#worker/package-runtime/package-app-assets.ts'
 import {
 	buildPackageAppNotFoundMessage,
 	isPackageAppSyntheticRequest,
@@ -410,6 +418,77 @@ export async function servePackageAppRequest(input: {
 		}
 	}
 
+	const loadSourceFiles = async () => {
+		const packageSource = await loadPackageSourceBySourceId({
+			env,
+			baseUrl,
+			userId: owner.userId,
+			sourceId: savedPackage.sourceId,
+		})
+		return packageSource.files
+	}
+
+	// Platform-served static surface (`/_assets/*`): the fingerprinted client
+	// module and the declared assets directory never reach author code.
+	const assetRelativePath = parsePackageAppAssetRequestPath(
+		forwardedPackageRestPath,
+	)
+	if (assetRelativePath !== null) {
+		// Same mount rule as buildPackageAppPublicContext: the username lives in
+		// the hostname on a per-user subdomain and in the path when inline.
+		const appBasePath =
+			packagePath.mount === 'user-subdomain'
+				? buildPackageAppSubdomainPath({ kodyId: savedPackage.kodyId })
+				: buildPackageAppPath({
+						username: packagePath.username,
+						kodyId: savedPackage.kodyId,
+					})
+		try {
+			const packageManifest = await loadInvokeManifestBySourceId({
+				env,
+				userId: owner.userId,
+				sourceId: savedPackage.sourceId,
+			})
+			return await servePackageAppAssetRequest({
+				request,
+				env,
+				userId: owner.userId,
+				manifest: packageManifest.manifest,
+				savedPackage: {
+					id: savedPackage.id,
+					kodyId: savedPackage.kodyId,
+					sourceId: savedPackage.sourceId,
+					publishedCommit: packageManifest.source.published_commit,
+					manifestPath: packageManifest.source.manifest_path,
+					sourceRoot: packageManifest.source.source_root,
+				},
+				loadSourceFiles,
+				relativePath: assetRelativePath,
+				appBasePath,
+				hostedUrl: `${requestUrl.origin}${appBasePath}`,
+			})
+		} catch (error) {
+			console.error('Package app asset handler failed:', error)
+			reportPackageAppFailure({
+				error,
+				phase: 'host-setup',
+				requestUrl,
+				kodyId: savedPackage.kodyId,
+				packageId: savedPackage.id,
+				packageName: savedPackage.name,
+				sourceId: savedPackage.sourceId,
+				forwardedPath: forwardedPackageRestPath,
+				realtimePath: packageRealtimeRestPath,
+			})
+			return createPackageAppErrorResponse({
+				request,
+				kind: 'host-setup',
+				kodyId: savedPackage.kodyId,
+				packageName: savedPackage.name,
+			})
+		}
+	}
+
 	let forwardedRequest: Request
 	let entrypoint: { fetch(request: Request): Promise<Response> }
 	try {
@@ -446,15 +525,7 @@ export async function servePackageAppRequest(input: {
 			},
 			source: packageManifest.source,
 			manifest: packageManifest.manifest,
-			loadSourceFiles: async () => {
-				const packageSource = await loadPackageSourceBySourceId({
-					env,
-					baseUrl,
-					userId: owner.userId,
-					sourceId: savedPackage.sourceId,
-				})
-				return packageSource.files
-			},
+			loadSourceFiles,
 			runtime: {
 				callerContext,
 				servingUsername: packagePath.username,

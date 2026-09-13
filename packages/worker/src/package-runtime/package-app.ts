@@ -27,6 +27,7 @@ import {
 	createPublishedPackageAppBundleCacheKey,
 	hydrateKodyRuntimeModules,
 } from './module-graph.ts'
+import { packageAppRuntimeMarkerExportName } from './runtime-source-modules.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './published-source-dependencies.ts'
 import {
 	loadPublishedBundleArtifactByIdentity,
@@ -85,6 +86,11 @@ import {
 	packageAppSyntheticHeaderName,
 	packageAppSyntheticHeaderValue,
 } from './package-app-synthetic.ts'
+import {
+	buildPackageAppAssetBasePath,
+	buildPackageAppClientModuleUrl,
+	resolvePackageAppClientArtifact,
+} from './package-app-assets.ts'
 import { recordUniqueDynamicWorkerDay } from '#worker/usage/dynamic-worker-day.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
@@ -699,6 +705,25 @@ function isSyntheticPackageAppRequest(request) {
 	return request.headers.get(${JSON.stringify(packageAppSyntheticHeaderName)}) === ${JSON.stringify(packageAppSyntheticHeaderValue)};
 }
 
+// The host strips the app mount before forwarding, so a fetch handler sees
+// "/notes" for "/packages/<id>/notes". A Remix router matches the address
+// bar instead: its route contract carries packageContext.appBasePath as a
+// prefix so href(), redirects, and form actions stay inside the mount, and
+// context.url is the URL the browser actually requested.
+function createMountedPackageAppRequest(request, packageContext) {
+	const appBasePath = String(packageContext?.appBasePath ?? '').replace(/\\/+$/, '');
+	if (!appBasePath) return request;
+	const url = new URL(request.url);
+	url.pathname = url.pathname === '/' ? appBasePath : appBasePath + url.pathname;
+	return new Request(url, request);
+}
+
+function resolvePackageAppRuntimeKind(userModule) {
+	return userModule[${JSON.stringify(packageAppRuntimeMarkerExportName)}] === 'remix'
+		? 'remix'
+		: 'fetch';
+}
+
 async function startRuntimeRun(runtimeBridge, input) {
 	try {
 		return await runtimeBridge.packageRuntimeRunStart(input);
@@ -788,7 +813,11 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 				if (!fetchHandler) {
 					throw new Error('Package apps must default export a fetch handler or an object with fetch().');
 				}
-				return await fetchHandler(request, runtimeEnv, this.ctx);
+				const dispatchedRequest =
+					resolvePackageAppRuntimeKind(userModule) === 'remix'
+						? createMountedPackageAppRequest(request, this.env.__kodyPackageContext)
+						: request;
+				return await fetchHandler(dispatchedRequest, runtimeEnv, this.ctx);
 			});
 			finishRuntimeRun(runtimeBridge, this.ctx, {
 				run: runtimeRun,
@@ -1845,16 +1874,38 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 		sourceFiles: input.sourceFiles,
 		savedPackage: input.savedPackage,
 	})
-	const bundled = await resolvePackageAppBundledArtifact({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.userId,
-		source: input.source,
-		manifest,
-		savedPackage: input.savedPackage,
-		loadSourceFiles: input.loadSourceFiles,
-		sourceFiles: input.sourceFiles,
-	})
+	const [bundled, clientArtifact] = await Promise.all([
+		resolvePackageAppBundledArtifact({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			source: input.source,
+			manifest,
+			savedPackage: input.savedPackage,
+			loadSourceFiles: input.loadSourceFiles,
+			sourceFiles: input.sourceFiles,
+		}),
+		resolvePackageAppClientArtifact({
+			env: input.env,
+			userId: input.userId,
+			manifest,
+			savedPackage: input.savedPackage,
+			loadSourceFiles: input.loadSourceFiles,
+			sourceFiles: input.sourceFiles,
+		}),
+	])
+	// Platform-served static surface. The client module URL carries the
+	// content hash, so pages read it from packageContext instead of
+	// hardcoding a file name that changes on every publish.
+	const assetContext = {
+		assetBasePath: buildPackageAppAssetBasePath(publicContext.appBasePath),
+		clientModuleUrl: clientArtifact
+			? buildPackageAppClientModuleUrl({
+					hostedUrl: publicContext.hostedUrl,
+					mainModule: clientArtifact.mainModule,
+				})
+			: null,
+	}
 	await assertPersonOwnedPackageMayNotRunPlatformDependencies({
 		db: input.env.APP_DB,
 		userId: input.userId,
@@ -1912,6 +1963,7 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 				sourceId: input.savedPackage.sourceId,
 				publishedCommit: input.savedPackage.publishedCommit,
 				...publicContext,
+				...assetContext,
 			},
 		},
 		globalOutbound: workerExports?.KodyFetchGateway

@@ -6,6 +6,7 @@ import {
 	authoredPackageJsonSchema,
 	webhookDefaultRateLimitPerMinute,
 	type AuthoredPackageJson,
+	type PackageAppRuntime,
 	type PackageExportTarget,
 	type PackageRetrieverScope,
 } from './types.ts'
@@ -249,6 +250,58 @@ export function getPackageAppEntryPath(manifest: AuthoredPackageJson) {
 	const appEntry = manifest.kody.app?.entry?.trim()
 	if (!appEntry) return null
 	return normalizePackageWorkspacePath(appEntry)
+}
+
+/**
+ * The runtime `kody.app.runtime` declares, or `null` when the manifest leaves
+ * it to be inferred from the entry graph (see `resolvePackageAppRuntime` in
+ * `#worker/package-runtime/package-app-runtime.ts`).
+ */
+export function getDeclaredPackageAppRuntime(
+	manifest: AuthoredPackageJson,
+): PackageAppRuntime | null {
+	return manifest.kody.app?.runtime ?? null
+}
+
+export function getPackageAppClientEntryPath(manifest: AuthoredPackageJson) {
+	const client = manifest.kody.app?.client
+	const clientEntry = (
+		typeof client === 'string' ? client : client?.entry
+	)?.trim()
+	if (!clientEntry) return null
+	return normalizePackageWorkspacePath(clientEntry)
+}
+
+/**
+ * Bare specifiers the browser bundle must leave as external `import`s for
+ * the page's import map. Sorted and de-duplicated; empty for the string form
+ * of `kody.app.client` or when no client is declared.
+ */
+export function getPackageAppClientExternals(manifest: AuthoredPackageJson) {
+	const client = manifest.kody.app?.client
+	if (!client || typeof client === 'string') return []
+	return [
+		...new Set(
+			(client.externals ?? [])
+				.map((specifier) => specifier.trim())
+				.filter((specifier) => specifier.length > 0),
+		),
+	].sort((left, right) => left.localeCompare(right))
+}
+
+/**
+ * Workspace-relative static asset directory declared by `kody.app.assets`,
+ * without leading `./` or trailing slashes. `null` when the app declares no
+ * assets directory.
+ */
+export function getPackageAppAssetsDirectory(manifest: AuthoredPackageJson) {
+	const assetsDirectory = manifest.kody.app?.assets?.trim()
+	if (!assetsDirectory) return null
+	const normalized = normalizePackageWorkspacePath(assetsDirectory).replace(
+		/\/+$/,
+		'',
+	)
+	return normalized.length > 0 ? normalized : null
 }
 
 export function listPackageSubscriptions(manifest: AuthoredPackageJson) {

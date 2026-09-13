@@ -81,6 +81,18 @@ const oauthProviderGeneratedModuleRelativePath = path.join(
 )
 const oauthProviderPackageSourcePath =
 	'/node_modules/@cloudflare/workers-oauth-provider/'
+/**
+ * The pre-bundled `remix` file set package bundles receive as
+ * `node_modules/remix/*` (~0.5 MB of string constants). Only the runtime
+ * bundler path loads it, so it must stay a separate additional module.
+ */
+const packageAppRemixGeneratedModuleSourcePath =
+	'/packages/worker/.generated/package-app-remix.mjs'
+const packageAppRemixGeneratedModuleRelativePath = path.join(
+	'node_modules',
+	'.kody-generated',
+	'package-app-remix.mjs',
+)
 const workerBundlerWasmRelativePath = path.join(
 	'node_modules',
 	'.kody-generated',
@@ -109,7 +121,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// waitingSummary runs in the MCP Durable Object. UserMeter schema
 		// v12 inbound MCP last-used RPCs add a few KB (CI dry-run
 		// 4_992_191). Keep last-used on this class; do not add a second DO.
-		maxEntryBytes: 5_000_000,
+		// Package-app `kody.app.client` browser bundling and `/_assets/*`
+		// serving (publish rebuild and packageAppFetch both run here) add
+		// ~12 KB on top: local dry-run 5_004_707 bytes.
+		maxEntryBytes: 5_020_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
@@ -126,8 +141,14 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// and add a few KB. Share-grant import/storage routing added more.
 		// secretJwtSign JWA families (HMAC/PSS/ES plus extra RSA hashes)
 		// add ~0.5KB. Split listing out of service.ts or the share-grant
-		// runtime path if this budget is raised again.
-		maxEntryBytes: 3_700_000,
+		// runtime path if this budget is raised again. Package-app
+		// `/_assets/*` serving (fingerprinted client module, static assets
+		// directory) runs here: local dry-run 3_701_307 bytes. The Remix
+		// package-app runtime (mounted-URL dispatch in the wrapper source,
+		// runtime resolution, and the deferred-module loader for the vendored
+		// remix file set — the ~0.5 MB file set itself stays in
+		// `package-app-remix.mjs`) adds ~11 KB: local dry-run 3_712_214 bytes.
+		maxEntryBytes: 3_720_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',
@@ -190,6 +211,15 @@ function assertDeferredSourcesStayOutOfMain(
 			`${definition.name} startup bundle inlines the generated OAuth provider (${oauthProviderGeneratedModuleSourcePath}) into its main module instead of loading it as a separate additional module.`,
 		)
 	}
+	if (
+		sources.some((source) =>
+			source.includes(packageAppRemixGeneratedModuleSourcePath),
+		)
+	) {
+		throw new Error(
+			`${definition.name} startup bundle inlines the generated package-app Remix file set (${packageAppRemixGeneratedModuleSourcePath}) into its main module instead of loading it as a separate additional module.`,
+		)
+	}
 }
 
 async function assertWranglerAdditionalModules(
@@ -218,6 +248,13 @@ async function assertWranglerAdditionalModules(
 			`${name} startup bundle did not emit ${oauthProviderGeneratedModuleRelativePath} as a separate additional module (find_additional_modules regression?).`,
 		)
 	}
+	try {
+		await stat(path.join(outputDir, packageAppRemixGeneratedModuleRelativePath))
+	} catch {
+		throw new Error(
+			`${name} startup bundle did not emit ${packageAppRemixGeneratedModuleRelativePath} as a separate additional module (find_additional_modules regression?).`,
+		)
+	}
 }
 
 function assertOriginViteDeferredChunks(
@@ -238,6 +275,11 @@ function assertOriginViteDeferredChunks(
 	if (assets.workerBundler.length === 0) {
 		throw new Error(
 			`${name} Vite startup bundle did not emit a separate worker-bundler chunk (dynamic import() regression?).`,
+		)
+	}
+	if (assets.packageAppRemix.length === 0) {
+		throw new Error(
+			`${name} Vite startup bundle did not emit a separate package-app-remix chunk (dynamic import() regression?).`,
 		)
 	}
 	if (assets.esbuildWasm.length === 0) {

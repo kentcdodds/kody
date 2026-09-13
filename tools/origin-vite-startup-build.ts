@@ -20,6 +20,7 @@ export const originViteDeferredAssetPatterns = {
 	guideCatalog: /^guide-catalog-[^/]+\.js$/,
 	workerBundler: /^worker-bundler-[^/]+\.js$/,
 	oauthProvider: /^oauth-provider-[^/]+\.js$/,
+	packageAppRemix: /^package-app-remix-[^/]+\.js$/,
 	esbuildWasm: /^esbuild-[^/]+\.wasm$/,
 } as const
 
@@ -27,6 +28,7 @@ export type OriginViteDeferredAssets = {
 	guideCatalog: Array<string>
 	workerBundler: Array<string>
 	oauthProvider: Array<string>
+	packageAppRemix: Array<string>
 	esbuildWasm: Array<string>
 }
 
@@ -42,6 +44,9 @@ export function findOriginViteDeferredAssets(
 		),
 		oauthProvider: assetNames.filter((name) =>
 			originViteDeferredAssetPatterns.oauthProvider.test(name),
+		),
+		packageAppRemix: assetNames.filter((name) =>
+			originViteDeferredAssetPatterns.packageAppRemix.test(name),
 		),
 		esbuildWasm: assetNames.filter((name) =>
 			originViteDeferredAssetPatterns.esbuildWasm.test(name),

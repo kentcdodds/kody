@@ -7,9 +7,11 @@ import {
 } from '#mcp/run-kody-registry.ts'
 import { createExecutePackageInvokeTools } from '#worker/package-invocations/service.ts'
 import {
+	buildKodyAppClientBundle,
 	buildKodyImportableModuleBundle,
 	buildKodyModuleBundle,
 } from './module-graph.ts'
+import { packageAppClientModuleNamePattern } from './package-app-client-module-name.ts'
 import { persistPublishedSourceSnapshot } from './published-runtime-artifacts.ts'
 import { persistPublishedBundleArtifact } from './published-bundle-artifacts.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
@@ -524,5 +526,159 @@ test(
 		// budget; the production lean-path latency claim is validated by live
 		// probes, not this test.
 		expect(payload.firstDurationMs).toBeLessThan(20_000)
+	},
+)
+
+test(
+	'kody.app.client bundles TypeScript for the browser into one fingerprinted ESM module',
+	{ timeout: 20_000 },
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		const packageJson = JSON.stringify({
+			name: '@kentcdodds/browser-client',
+			exports: {
+				'.': './src/index.ts',
+			},
+			kody: {
+				id: 'browser-client',
+				description: 'Exercises the browser client bundle',
+				app: {
+					entry: './src/app.ts',
+					client: './src/client.ts',
+				},
+			},
+		})
+		const sourceFiles = {
+			'package.json': packageJson,
+			'src/index.ts': 'export default async () => ({ ok: true })',
+			'src/app.ts': [
+				"import { packageContext } from 'kody:runtime'",
+				'export default {',
+				'\tasync fetch() {',
+				'\t\treturn new Response(packageContext?.clientModuleUrl ?? "")',
+				'\t},',
+				'}',
+			].join('\n'),
+			'src/client.ts': [
+				"import { render } from './render.ts'",
+				'',
+				'type Greeting = { name: string }',
+				'const greeting: Greeting = { name: "browser" }',
+				'export const mounted = render(greeting.name)',
+			].join('\n'),
+			'src/render.ts': [
+				'export function render(name: string) {',
+				'\treturn `hello ${name}`',
+				'}',
+			].join('\n'),
+		}
+
+		const bundle = await buildKodyAppClientBundle({
+			sourceFiles,
+			entryPoint: 'src/client.ts',
+		})
+
+		expect(bundle.mainModule).toMatch(packageAppClientModuleNamePattern)
+		expect(Object.keys(bundle.modules)).toEqual([bundle.mainModule])
+		const source = bundle.modules[bundle.mainModule]
+		expect(typeof source).toBe('string')
+		const code = source as string
+		// Browser ESM: TypeScript stripped, relative graph inlined, no imports
+		// left for the browser to resolve, and the export surface preserved.
+		expect(code).not.toContain('type Greeting')
+		expect(code).not.toMatch(/\bimport\b/)
+		expect(code).toContain('hello ${name}')
+		expect(code).toMatch(/export\s*\{/)
+
+		const rebuilt = await buildKodyAppClientBundle({
+			sourceFiles,
+			entryPoint: 'src/client.ts',
+		})
+		expect(rebuilt.mainModule).toBe(bundle.mainModule)
+
+		await expect(
+			buildKodyAppClientBundle({
+				sourceFiles: {
+					...sourceFiles,
+					'src/client.ts': [
+						"import { packageContext } from 'kody:runtime'",
+						'console.log(packageContext)',
+					].join('\n'),
+				},
+				entryPoint: 'src/client.ts',
+			}),
+		).rejects.toThrow(/server-only modules that cannot run in the browser/)
+
+		// Declared externals survive esbuild as bare imports for the page's
+		// import map; the relative graph is still inlined around them.
+		const importMapPackageJson = JSON.stringify({
+			...JSON.parse(packageJson),
+			kody: {
+				...JSON.parse(packageJson).kody,
+				app: {
+					entry: './src/app.ts',
+					client: { entry: './src/client.ts', externals: ['@remix-run/ui'] },
+				},
+			},
+		})
+		const withExternals = await buildKodyAppClientBundle({
+			sourceFiles: {
+				...sourceFiles,
+				'package.json': importMapPackageJson,
+				'src/client.ts': [
+					"import { Button } from '@remix-run/ui'",
+					"import { render } from './render.ts'",
+					'export const mounted = render(String(Button))',
+				].join('\n'),
+			},
+			entryPoint: 'src/client.ts',
+		})
+		const externalCode = withExternals.modules[withExternals.mainModule]
+		expect(externalCode).toMatch(/from\s+"@remix-run\/ui"/)
+		expect(externalCode).toContain('hello ${name}')
+		expect(externalCode).not.toMatch(/from\s+["']\.\/render/)
+
+		// Subpaths of a declared external stay external too, but a package that
+		// merely shares the prefix is not silently externalized: it is an
+		// unresolved bare import and fails publish with the externals hint.
+		const subpathPackageJson = JSON.stringify({
+			...JSON.parse(packageJson),
+			kody: {
+				...JSON.parse(packageJson).kody,
+				app: {
+					entry: './src/app.ts',
+					client: { entry: './src/client.ts', externals: ['preact'] },
+				},
+			},
+		})
+		const subpath = await buildKodyAppClientBundle({
+			sourceFiles: {
+				...sourceFiles,
+				'package.json': subpathPackageJson,
+				'src/client.ts': [
+					"import { useState } from 'preact/hooks'",
+					'export const state = useState',
+				].join('\n'),
+			},
+			entryPoint: 'src/client.ts',
+		})
+		expect(subpath.modules[subpath.mainModule]).toMatch(
+			/from\s+"preact\/hooks"/,
+		)
+		await expect(
+			buildKodyAppClientBundle({
+				sourceFiles: {
+					...sourceFiles,
+					'package.json': subpathPackageJson,
+					'src/client.ts': [
+						"import render from 'preact-render-to-string'",
+						'export const html = render',
+					].join('\n'),
+				},
+				entryPoint: 'src/client.ts',
+			}),
+		).rejects.toThrow(
+			/unresolved bare package imports after bundling \("preact-render-to-string"\)/,
+		)
 	},
 )

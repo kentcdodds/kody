@@ -9,7 +9,17 @@ const sourceSnapshotPrefix = 'source-snapshot'
 const sourceManifestSnapshotPrefix = 'source-manifest-snapshot'
 const bundleArtifactPrefix = 'bundle-artifact'
 
-export type BundleArtifactKind = 'app' | 'importable-module' | 'job' | 'module'
+/**
+ * `app` is the Worker fetch bundle loaded into the package-app isolate;
+ * `app-client` is the browser ESM built from `kody.app.client` and served
+ * as a fingerprinted static module (never loaded into an isolate).
+ */
+export type BundleArtifactKind =
+	| 'app'
+	| 'app-client'
+	| 'importable-module'
+	| 'job'
+	| 'module'
 
 export type BundleArtifactDependency = {
 	sourceId: string

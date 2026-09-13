@@ -324,18 +324,20 @@ signed-in user.
 
 Package app URLs follow the mount contract: on a subdomain the public path is
 `/packages/<package-name>/<path>` (the username lives in the hostname; the
-segment is the package name leaf). Kody strips that mount before forwarding, so
-root-relative links such as `/audio/123` escape the app. Build in-app links,
-redirects, shared links, email links, and OAuth callbacks against
-`packageContext.hostedUrl` and `packageContext.appBasePath` (derived from the
-serving username and package name leaf — `/packages/<package-name>` on a
-subdomain, `/@username/packages/<package-name>` when served inline in
-non-production). See
+segment is the package name leaf). A Remix router receives the full hosted URL
+and prefixes its route contract with `packageContext.appBasePath`, so `href()`,
+redirects, and form actions stay inside the mount. For a fetch handler Kody
+strips that mount before forwarding, so root-relative links such as `/audio/123`
+escape the app; build in-app links, redirects, shared links, email links, and
+OAuth callbacks against `packageContext.hostedUrl` and
+`packageContext.appBasePath` (derived from the serving username and package name
+leaf — `/packages/<package-name>` on a subdomain,
+`/@username/packages/<package-name>` when served inline in non-production). See
 [Package app routing](../guides/package-authoring.md#package-app-routing) for
 the authoring example, and [Package apps](../guides/package-apps.md)
-(`package_apps:guide`) for session handoff, `packageAppFetch`, asset URLs, and
-lean forks. Other saved-package runtime surfaces may omit these app-specific
-fields.
+(`package_apps:guide`) for the Remix recipe, session handoff, `packageAppFetch`,
+asset URLs, and lean forks. Other saved-package runtime surfaces may omit these
+app-specific fields.
 
 Use the package app model when the package needs:
 
@@ -350,10 +352,27 @@ secret reference, open `search({ entity: "integration_bootstrap:guide" })`, and
 complete a minimal authenticated `execute` smoke test before treating the app as
 ready.
 
-Treat package apps like Worker-style modules:
+A package app is a hosted Remix mini-app:
 
 - app code lives in the package repo
-- the entry module is declared by `kody.app.entry`
+- the entry module is declared by `kody.app.entry` and default-exports a Remix
+  router (`createRouter` from `remix/router`) — routes, controllers, actions,
+  middleware, and SSR through `remix/ui/server`; Kody supplies `remix` at the
+  platform version, so it is imported as `remix/<subpath>` and never installed
+  from npm. A raw `fetch` handler is the `fetch` runtime; `kody.app.runtime`
+  (`"remix"` or `"fetch"`) pins the choice and is inferred from the entry graph
+  when omitted
+- Kody's runtime is in every Remix request context as `get(KodyRuntime)` (from
+  `kody:runtime`): `packageStorage()`, `packageSecrets`, `kody`,
+  `createAuthenticatedFetch`, `workflows`, and `packageContext`
+- an optional browser entry is declared by `kody.app.client` (a path, or
+  `{ entry, externals }` for import-map packages); Kody bundles it for the
+  browser on publish and serves it as a fingerprinted, immutable module under
+  `<appBasePath>/_assets/`, with the URL on `packageContext.clientModuleUrl`;
+  for a Remix app this is the `run()` entry that hydrates `clientEntry` islands
+- an optional static directory is declared by `kody.app.assets` and served as-is
+  under `packageContext.assetBasePath` (see
+  [Browser client and static assets](../guides/package-apps.md#browser-client-and-static-assets))
 - durable package data uses `packageStorage()` — the same shared package bucket
   as exports and jobs
 - internal Durable Objects or facets are app-only realtime/coordination details

@@ -1,9 +1,11 @@
 # Package app fetch
 
-`packageAppFetch` invokes a published package app's fetch handler over MCP. It
-is a **platform-marked real-surface** `app_fetch` run: same package runtime,
-`packageStorage()`, and secret mounts as production traffic. **Side effects are
-real.**
+`packageAppFetch` invokes a published package app over MCP — the Remix router or
+the fetch handler, whichever `kody.app.entry` exports. It is a **platform-marked
+real-surface** `app_fetch` run: same package runtime, `packageStorage()`, and
+secret mounts as production traffic. **Side effects are real.** `path` is
+mount-relative (`/notes`); a Remix router sees it as the full hosted URL,
+exactly like a browser request.
 
 Use it to verify `kody.app` wiring and JSON/API responses immediately after
 publish — without opening the hosted URL in a browser or performing session
@@ -93,6 +95,16 @@ marker the handler saw.
 - Populates `packageContext` (`hostedUrl`, `appBasePath`) from the serving
   username and package name leaf.
 - Does **not** count toward package activation milestones.
+
+## Platform assets under `/_assets/`
+
+`packageAppFetch` goes through the same serve path as the browser, so on a host
+that serves platform client assets, `path: "/_assets/__version.json"` returns
+the current `clientModuleUrl` and `path: "/_assets/<file>"` returns files from
+`kody.app.assets` — the fetch handler is never invoked for those paths. A 404 on
+`/_assets/__version.json` means the host does not serve client assets yet, not
+that the handler is broken; see
+[Troubleshooting](../guides/package-apps.md#troubleshooting).
 
 ## Related
 

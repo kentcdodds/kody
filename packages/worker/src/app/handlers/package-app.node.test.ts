@@ -61,6 +61,10 @@ vi.mock('@sentry/cloudflare', () => ({
 		callback(mockModule.sentryScope),
 	captureException: (...args: Array<unknown>) =>
 		mockModule.captureException(...args),
+	instrumentDurableObjectWithSentry: (
+		_getOptions: unknown,
+		durableObjectClass: unknown,
+	) => durableObjectClass,
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({

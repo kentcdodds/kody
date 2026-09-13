@@ -2539,6 +2539,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 		const {
 			buildKodyAppBundle,
+			buildKodyAppClientBundle,
 			buildKodyModuleBundle,
 			buildKodyImportableModuleBundle,
 		} = await import('#worker/package-runtime/module-graph.ts')
@@ -2557,6 +2558,11 @@ class RepoSessionBase extends DurableObject<Env> {
 					entryPoint,
 					rootPackageId: input.savedPackage.id,
 					cacheKey: null,
+				}),
+			buildAppClientBundle: async ({ entryPoint }) =>
+				await buildKodyAppClientBundle({
+					sourceFiles: input.sourceFiles,
+					entryPoint,
 				}),
 			buildModuleBundle: async ({ entryPoint }) =>
 				await buildKodyModuleBundle({

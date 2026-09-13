@@ -1,6 +1,11 @@
 import { expect, test } from 'vitest'
 import {
 	buildPackageSearchProjection,
+	getDeclaredPackageAppRuntime,
+	getPackageAppAssetsDirectory,
+	getPackageAppClientEntryPath,
+	getPackageAppClientExternals,
+	getPackageAppEntryPath,
 	listPackageEmittedEvents,
 	parseAuthoredPackageJson,
 } from './manifest.ts'
@@ -8,6 +13,155 @@ import {
 	assertKodyDescriptionLength,
 	KODY_DESCRIPTION_MAX_LENGTH,
 } from './types.ts'
+
+test('parseAuthoredPackageJson accepts kody.app.client and kody.app.assets next to the Worker entry', () => {
+	const manifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/browser-app',
+			exports: { '.': './src/index.ts' },
+			kody: {
+				id: 'browser-app',
+				description: 'App with a platform-built browser client',
+				app: {
+					entry: './src/app.ts',
+					client: './src/client.tsx',
+					assets: './public/',
+				},
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+	expect(manifest.kody.app).toEqual({
+		entry: './src/app.ts',
+		client: './src/client.tsx',
+		assets: './public/',
+	})
+	expect(getPackageAppEntryPath(manifest)).toBe('src/app.ts')
+	expect(getPackageAppClientEntryPath(manifest)).toBe('src/client.tsx')
+	expect(getPackageAppAssetsDirectory(manifest)).toBe('public')
+
+	const workerOnly = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/worker-app',
+			exports: { '.': './src/index.ts' },
+			kody: {
+				id: 'worker-app',
+				description: 'Worker-only app',
+				app: { entry: './src/app.ts' },
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+	expect(getPackageAppClientEntryPath(workerOnly)).toBeNull()
+	expect(getPackageAppAssetsDirectory(workerOnly)).toBeNull()
+	expect(getPackageAppClientExternals(manifest)).toEqual([])
+
+	const withExternals = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/import-map-app',
+			exports: { '.': './src/index.ts' },
+			kody: {
+				id: 'import-map-app',
+				description: 'Client with import-map externals',
+				app: {
+					entry: './src/app.ts',
+					client: {
+						entry: './src/client.tsx',
+						externals: ['preact', ' @remix-run/ui ', 'preact'],
+					},
+				},
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+	expect(getPackageAppClientEntryPath(withExternals)).toBe('src/client.tsx')
+	expect(getPackageAppClientExternals(withExternals)).toEqual([
+		'@remix-run/ui',
+		'preact',
+	])
+
+	for (const external of [
+		'./local.ts',
+		'/abs.js',
+		'kody:runtime',
+		'https://esm.sh/preact',
+	]) {
+		expect(() =>
+			parseAuthoredPackageJson({
+				content: JSON.stringify({
+					name: '@kentcdodds/bad-externals',
+					exports: {},
+					kody: {
+						id: 'bad-externals',
+						description: 'Externals must be bare specifiers',
+						app: {
+							entry: './src/app.ts',
+							client: { entry: './src/client.ts', externals: [external] },
+						},
+					},
+				}),
+				manifestPath: 'package.json',
+			}),
+		).toThrow(/bare package specifiers/)
+	}
+
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/bad-app',
+				exports: {},
+				kody: {
+					id: 'bad-app',
+					description: 'Client without a Worker entry',
+					app: { client: './src/client.ts' },
+				},
+			}),
+			manifestPath: 'package.json',
+		}),
+	).toThrow(/entry/)
+})
+
+test('parseAuthoredPackageJson accepts kody.app.runtime as remix or fetch and leaves it undeclared otherwise', () => {
+	const parse = (app: Record<string, unknown>) =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/runtime-app',
+				exports: { '.': './src/index.ts' },
+				kody: {
+					id: 'runtime-app',
+					description: 'App runtime declaration',
+					app,
+				},
+			}),
+			manifestPath: 'package.json',
+		})
+	expect(
+		getDeclaredPackageAppRuntime(
+			parse({ runtime: 'remix', entry: './app/router.ts' }),
+		),
+	).toBe('remix')
+	expect(
+		getDeclaredPackageAppRuntime(
+			parse({ runtime: 'fetch', entry: './src/app.ts' }),
+		),
+	).toBe('fetch')
+	expect(getDeclaredPackageAppRuntime(parse({ entry: './src/app.ts' }))).toBe(
+		null,
+	)
+	expect(() => parse({ runtime: 'vite', entry: './src/app.ts' })).toThrow(
+		/runtime/,
+	)
+	// Whitespace-only paths are rejected up front instead of trimming to an
+	// empty entry that publish would then silently skip.
+	for (const app of [
+		{ entry: '  ' },
+		{ entry: './src/app.ts', client: ' ' },
+		{ entry: './src/app.ts', client: { entry: '\t' } },
+		{ entry: './src/app.ts', assets: '  ' },
+	]) {
+		expect(() => parse(app)).toThrow()
+	}
+})
 
 test('parseAuthoredPackageJson validates scoped package names against kody.id', () => {
 	const manifest = parseAuthoredPackageJson({

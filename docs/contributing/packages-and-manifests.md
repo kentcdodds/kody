@@ -245,10 +245,50 @@ A package app is optional.
 When `package.json#kody.app` is present, the package may be opened through the
 generic UI runtime and hosted under the package app route.
 
-Treat package apps like Worker-style modules:
+A package app is a hosted Remix mini-app running in the package-app isolate:
 
 - package app code belongs to the package repo
-- package app entry is declared by `kody.app.entry`
+- package app entry is declared by `kody.app.entry`. Under the `remix` runtime
+  it default-exports a Remix router; the bootstrap (`createAppEntrypointSource`)
+  duck-types the router, calls `router.fetch(request)` with only the request,
+  and exports `__kodyPackageAppRuntime` so the wrapper
+  (`createPackageAppWorkerSource`) dispatches the full mounted URL
+  (`createMountedPackageAppRequest`) instead of the mount-stripped path a
+  `fetch` handler receives
+- `kody.app.runtime` (`remix` | `fetch`, optional) is resolved by
+  `resolvePackageAppRuntime` (`package-app-runtime.ts`): declared value, else
+  `remix` when the entry graph imports `remix/<subpath>`, else `fetch`. The
+  `remix` runtime adds `jsx: automatic` / `jsxImportSource: remix/ui`, a
+  `define` that pins `import.meta.url` to `kody:app` (workerd leaves it empty
+  and `clientEntry()` needs a non-empty id), and esbuild `keepNames` so
+  `component.name` survives bundling and matches the browser registry
+- Remix itself is platform-supplied: `tools/build-worker-bundler-modules.ts`
+  pre-bundles the Workers-safe `remix/<subpath>` set (`packageAppRemixSubpaths`)
+  with code splitting into the deferred module `package-app-remix.mjs`, and
+  `withPlatformRemixFiles` (`package-app-remix.ts`) mounts it at
+  `node_modules/remix/` in the bundler file system for every package bundle
+  (app, app-client, callable, importable, ad hoc execute). The bundler skips the
+  npm install for a package whose `node_modules/<name>/package.json` exists, so
+  a `remix` dependency is inert; publish checks reject `@remix-run/*`
+  dependencies outright
+- `kody:runtime` exports `KodyRuntime`, a frozen `{ defaultValue }` object that
+  Remix's `RequestContext.get()` returns when nothing called `set()`; the value
+  is the module's default export (late-bound to the current run), and the
+  per-package stamped runtime module exports its own key bound to that package
+- `kody.app.client` (optional) is a browser entry; publish builds it with
+  `buildKodyAppClientBundle` into the `app-client` artifact kind (esbuild
+  browser platform, `kody:` / `cloudflare:` / `node:` imports rejected) and
+  `package-app-assets.ts` serves it under
+  `<appBasePath>/_assets/client.<hash>.js` with immutable caching before author
+  code runs
+- `kody.app.assets` (optional) is a static directory served as-is from the
+  published source snapshot under `<appBasePath>/_assets/`; publish checks
+  require it to be a populated subdirectory. JavaScript assets carry
+  `Service-Worker-Allowed: <appBasePath>/` so a service worker shipped there can
+  claim the slash-terminated app mount but never a sibling mount that shares the
+  prefix
+- `packageContext.assetBasePath` and `packageContext.clientModuleUrl` expose
+  those URLs to the fetch handler
 - durable package data uses `packageStorage()` (same
   `buildPackageStorageId(packageId)` bucket as other package surfaces)
 - Durable Objects / facets are app-only realtime/coordination buckets under the
