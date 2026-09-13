@@ -32,6 +32,20 @@ Package-app hosts (`kody.run`) and the invocation API live on `kody-runtime`.
 Platform Durable Objects and scheduled jobs live on `kody-platform` and
 `kody-jobs`. See [architecture](architecture/index.md#production-worker-fleet).
 
+Package apps are Remix mini-apps too, but they run inside a dynamic Worker
+Loader isolate on `kody-runtime`, not on the origin: the package's
+`app/router.ts` default-exports a router, the platform supplies `remix` at the
+same version as this repo (pre-bundled by
+`tools/build-worker-bundler-modules.ts`, mounted at `node_modules/remix/` in the
+runtime bundler), and `kody:runtime` exposes Kody as the `KodyRuntime` request
+context key. Authoring conventions for that surface live in
+[`docs/guides/package-apps.md`](../guides/package-apps.md); the platform side is
+in [packages and manifests](./packages-and-manifests.md#package-apps). The skill
+below applies to both, with two package-app differences: no Vite (esbuild via
+the runtime bundler, no HMR) and no `remix/assets` (the browser entry is one
+platform-built module under `/_assets`, hydrated through a `loadModule`
+registry).
+
 Keep these Worker-specific differences when comparing Kody with the default
 template:
 

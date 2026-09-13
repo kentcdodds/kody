@@ -197,13 +197,26 @@ Production-hosted package apps live at
 `https://{username}.kody.run/packages/<package-name>/<path>` (the username is in
 the hostname; the path mount is `/packages/<package-name>`). Confirmed
 non-production runtimes may serve inline on the app origin at
-`/@username/packages/<package-name>/<path>` instead. The app receives only
-`/<path>` in its fetch request in both cases. Root-relative links such as
-`/audio/123` therefore escape the mount and are not routed back to the package
-app.
+`/@username/packages/<package-name>/<path>` instead.
 
-Import `packageContext` from `kody:runtime` and build every in-app link,
-redirect, share/email URL, and OAuth callback against its public base:
+A **Remix router** (`kody.app.entry` default-exporting `createRouter()`)
+receives the full hosted URL and prefixes its route contract with the mount, so
+`href()`, redirects, and form actions stay inside it:
+
+```ts
+import { packageContext } from 'kody:runtime'
+import { form, route } from 'remix/routes'
+
+export const routes = route(packageContext?.appBasePath ?? '', {
+	home: '/',
+	notes: form('notes'),
+})
+```
+
+A **fetch handler** receives only `/<path>` in both mounts. Root-relative links
+such as `/audio/123` therefore escape the mount and are not routed back to the
+package app. Import `packageContext` from `kody:runtime` and build every in-app
+link, redirect, share/email URL, and OAuth callback against its public base:
 
 ```ts
 import { packageContext } from 'kody:runtime'

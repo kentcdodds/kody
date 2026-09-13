@@ -223,7 +223,7 @@ test(
 		})
 		const bundle = await buildKodyAppClientBundle({
 			sourceFiles,
-			entryPoint: 'app/entry.client.ts',
+			entryPoint: 'app/assets/entry.ts',
 		})
 		expect(bundle.mainModule).toMatch(packageAppClientModuleNamePattern)
 		const code = bundle.modules[bundle.mainModule] as string

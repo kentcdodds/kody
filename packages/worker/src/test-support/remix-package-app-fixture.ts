@@ -23,7 +23,7 @@ export function createRemixPackageAppFiles(input: {
 			app: {
 				...(input.declareRuntime === false ? {} : { runtime: 'remix' }),
 				entry: './app/router.ts',
-				client: './app/entry.client.ts',
+				client: './app/assets/entry.ts',
 				assets: './public',
 			},
 		},
@@ -100,7 +100,7 @@ export async function addNote(context: RequestContext, text: string) {
 import { KodyRuntime } from 'kody:runtime'
 import { listNotes } from '../data/notes.ts'
 import { RequestId } from '../middleware/request-id.ts'
-import { render } from '../render.tsx'
+import { render } from '../ui/render.tsx'
 import { routes } from '../routes.ts'
 import { Counter } from '../ui/counter.tsx'
 
@@ -126,7 +126,7 @@ import * as s from 'remix/data-schema'
 import * as f from 'remix/data-schema/form-data'
 import { redirect } from 'remix/response/redirect'
 import { addNote, listNotes } from '../data/notes.ts'
-import { render } from '../render.tsx'
+import { render } from '../ui/render.tsx'
 import { routes } from '../routes.ts'
 
 const noteSchema = f.object({
@@ -171,12 +171,12 @@ export default {
 	},
 } satisfies Controller<typeof routes.notes>
 `,
-		'app/render.tsx': `import type { RequestContext } from 'remix/router'
+		'app/ui/render.tsx': `import type { RequestContext } from 'remix/router'
 import { KodyRuntime } from 'kody:runtime'
 import type { RemixNode } from 'remix/ui'
 import { renderToStream } from 'remix/ui/server'
 import { createHtmlResponse } from 'remix/response/html'
-import { Document } from './ui/document.tsx'
+import { Document } from './document.tsx'
 
 export function render(
 	context: RequestContext,
@@ -254,8 +254,8 @@ export const Counter = clientEntry(
 	},
 )
 `,
-		'app/entry.client.ts': `import { run } from 'remix/ui'
-import { Counter } from './ui/counter.tsx'
+		'app/assets/entry.ts': `import { run } from 'remix/ui'
+import { Counter } from '../ui/counter.tsx'
 
 // One browser module, so hydration resolves exports here instead of by URL.
 const clientEntries: Record<string, unknown> = { Counter }
