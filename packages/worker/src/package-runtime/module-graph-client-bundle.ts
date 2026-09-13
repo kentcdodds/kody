@@ -1,7 +1,6 @@
 import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
 import {
 	getPackageAppClientExternals,
-	getPackageAppEntryPath,
 	normalizePackageWorkspacePath,
 } from '#worker/package-registry/manifest.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
@@ -27,8 +26,7 @@ import {
 import { withPlatformRemixFiles } from './package-app-remix.ts'
 import {
 	createPackageAppRemixClientBundleOptions,
-	entryGraphImportsRemix,
-	resolvePackageAppRuntime,
+	entryGraphNeedsRemixUiBundleOptions,
 } from './package-app-runtime.ts'
 import { type RuntimeBundle } from './runtime-bundle-types.ts'
 import { iterateModuleSourceTexts } from './runtime-source-modules.ts'
@@ -287,23 +285,13 @@ export async function buildKodyAppClientBundle(input: {
 	const externals = rootPackage
 		? getPackageAppClientExternals(rootPackage.manifest)
 		: []
-	// JSX compiles against `remix/ui` whenever the app is a Remix app or the
-	// browser graph itself reaches for Remix; a fetch app with a plain DOM
-	// client keeps esbuild's defaults.
-	const appEntry = rootPackage
-		? getPackageAppEntryPath(rootPackage.manifest)
-		: null
-	const usesRemix =
-		(appEntry !== null &&
-			resolvePackageAppRuntime({
-				manifest: rootPackage?.manifest ?? null,
-				sourceFiles: input.sourceFiles,
-				entryPoint: appEntry,
-			}) === 'remix') ||
-		entryGraphImportsRemix({
-			sourceFiles: input.sourceFiles,
-			entryPoint,
-		})
+	// JSX compiles against `remix/ui` only when this browser graph imports
+	// `remix/ui`. A DOM client, or one that only borrows remix/headers, keeps
+	// esbuild's defaults.
+	const usesRemixUi = entryGraphNeedsRemixUiBundleOptions({
+		sourceFiles: input.sourceFiles,
+		entryPoint,
+	})
 	// Keep the experimental bundler out of the Worker's top-level deploy graph.
 	const { createWorker } = await importWorkerBundler()
 	const bundle = await createWorker({
@@ -311,7 +299,7 @@ export async function buildKodyAppClientBundle(input: {
 		entryPoint,
 		bundle: true,
 		target: 'es2022',
-		...(usesRemix ? createPackageAppRemixClientBundleOptions() : {}),
+		...(usesRemixUi ? createPackageAppRemixClientBundleOptions() : {}),
 		...(externals.length > 0
 			? {
 					__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired: [

@@ -1,9 +1,7 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
-	getDeclaredPackageAppRuntime,
 	getPackageAppAssetsDirectory,
 	getPackageAppClientEntryPath,
-	getPackageAppEntryPath,
 	listPackageRetrievers,
 	listPackageSubscriptions,
 	normalizePackageWorkspacePath,
@@ -34,7 +32,6 @@ import {
 import { validatePackageAppAssetsDirectory } from '#worker/package-runtime/package-app-assets-directory.ts'
 import { validatePackageAppGraphSeparation } from '#worker/package-runtime/package-app-client-graph.ts'
 import { remixPackageName } from '#worker/package-runtime/package-app-remix-subpaths.ts'
-import { resolvePackageAppRuntime } from '#worker/package-runtime/package-app-runtime.ts'
 import {
 	collectPublishedPackageArtifactTargets,
 	type PublishedPackageArtifactBuildTarget,
@@ -740,28 +737,6 @@ export async function validatePackageBundles(input: {
 				? `Bundled ${input.entryPoints.length} package target(s) successfully.`
 				: failures.join('\n'),
 	}
-}
-
-/**
- * Appends which runtime `kody.app.entry` resolved to (declared or inferred
- * from the entry graph) so the publish log shows whether the app runs as a
- * Remix router or a raw fetch handler.
- */
-function describePackageAppRuntime(input: {
-	manifest: AuthoredPackageJson
-	sourceFiles: Record<string, string>
-}) {
-	const appEntry = getPackageAppEntryPath(input.manifest)
-	if (!appEntry) return null
-	const runtime = resolvePackageAppRuntime({
-		manifest: input.manifest,
-		sourceFiles: input.sourceFiles,
-		entryPoint: appEntry,
-	})
-	const declared = getDeclaredPackageAppRuntime(input.manifest)
-	return `kody.app.entry "${appEntry}" uses the ${runtime} runtime${
-		declared ? '' : ' (inferred; set kody.app.runtime to pin it)'
-	}.`
 }
 
 function getPackageTypecheckDiagnostics(input: {
@@ -1668,15 +1643,10 @@ export async function runRepoChecks(input: {
 			await isolatedRunner.discard(stagingKey)
 		}
 	}
-	const appRuntimeNote = bundleCheckResult.ok
-		? describePackageAppRuntime({ manifest, sourceFiles })
-		: null
 	results.push({
 		kind: 'bundle',
 		ok: bundleCheckResult.ok,
-		message: appRuntimeNote
-			? `${bundleCheckResult.message} ${appRuntimeNote}`
-			: bundleCheckResult.message,
+		message: bundleCheckResult.message,
 	})
 	results.push(typecheckResult)
 	results.push({

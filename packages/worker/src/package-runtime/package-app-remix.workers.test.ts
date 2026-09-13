@@ -6,7 +6,6 @@ import { createRemixPackageAppFiles } from '#worker/test-support/remix-package-a
 import { buildKodyAppBundle, buildKodyAppClientBundle } from './module-graph.ts'
 import { packageAppClientModuleNamePattern } from './package-app-client-module-name.ts'
 import { packageAppServerModuleUrl } from './package-app-runtime.ts'
-import { packageAppRuntimeMarkerExportName } from './runtime-source-modules.ts'
 
 const appBasePath = '/packages/remix-notes'
 const hostedOrigin = 'https://kent.kody.run'
@@ -15,8 +14,8 @@ const clientModuleUrl = `${hostedOrigin}${appBasePath}/_assets/client.0123456789
 /**
  * Stands in for the package-app wrapper: runs the bundled app inside the
  * same AsyncLocalStorage store `kody:runtime` reads, with an in-memory
- * `packageStorage()` and the `packageContext` fields a hosted request gets,
- * and dispatches the mounted URL to a Remix router the way the wrapper does.
+ * `packageStorage()` and the `packageContext` fields a hosted request gets.
+ * The bootstrap duck-types the live export and remounts router-shaped apps.
  */
 function createTestWrapperSource(mainModule: string) {
 	return `
@@ -51,16 +50,13 @@ export default {
 		return await als.run(runtime, async () => {
 			// Like the real wrapper: the app module is first evaluated inside the
 			// request store, so module-scope reads of packageContext (the route
-			// prefix) see the mount.
+			// prefix) see the mount. The bootstrap remounts when the export is
+			// router-shaped.
 			const app = await import(${JSON.stringify(`./${mainModule}`)});
-			const kind = app[${JSON.stringify(packageAppRuntimeMarkerExportName)}];
-			const url = new URL(request.url);
-			if (kind === 'remix') {
-				url.pathname = url.pathname === '/' ? packageContext.appBasePath : packageContext.appBasePath + url.pathname;
-			}
-			const response = await app.default.fetch(new Request(url, request), env, ctx);
-			response.headers.set('x-test-runtime-kind', String(kind));
-			return response;
+			const envWithContext = Object.assign(Object.create(env ?? {}), {
+				__kodyPackageContext: packageContext,
+			});
+			return await app.default.fetch(request, envWithContext, ctx);
 		});
 	},
 };
@@ -114,7 +110,6 @@ test(
 		const homeHtml = await home.text()
 		expect({ status: home.status, homeHtml }).toMatchObject({ status: 200 })
 		expect(home.headers.get('content-type')).toMatch(/^text\/html/)
-		expect(home.headers.get('x-test-runtime-kind')).toBe('remix')
 		expect(home.headers.get('x-request-id')).toMatch(/^[0-9a-f-]{36}$/)
 		expect(homeHtml).toContain('<!DOCTYPE html>')
 		expect(homeHtml).toContain(
@@ -292,7 +287,7 @@ test(
 )
 
 test(
-	'a fetch package app that imports remix/html-template keeps the fetch runtime and the stripped path',
+	'a fetch handler that imports remix/html-template keeps the stripped path',
 	{ timeout: 60_000 },
 	async () => {
 		silenceIncidentalRuntimeWarnings()
@@ -307,7 +302,7 @@ test(
 					kody: {
 						id: 'fetch-with-remix',
 						description: 'fetch app that borrows html-template',
-						app: { runtime: 'fetch', entry: './src/app.ts' },
+						app: { entry: './src/app.ts' },
 					},
 				}),
 				'src/index.ts': 'export default async () => ({ ok: true })',
@@ -324,6 +319,11 @@ test(
 			},
 			entryPoint: 'src/app.ts',
 		})
+		const mainSource = bundle.modules[bundle.mainModule]
+		expect(typeof mainSource).toBe('string')
+		expect(mainSource as string).not.toContain(
+			JSON.stringify(packageAppServerModuleUrl),
+		)
 		const wrapperModule = 'test-entry.js'
 		const worker = env.APP_LOADER.load({
 			...createDynamicWorkerCompatibilityOptions(),
@@ -339,7 +339,6 @@ test(
 				redirect: 'manual',
 			}),
 		)
-		expect(response.headers.get('x-test-runtime-kind')).toBe('fetch')
 		expect(await response.text()).toContain('<h1>/hello</h1>')
 	},
 )

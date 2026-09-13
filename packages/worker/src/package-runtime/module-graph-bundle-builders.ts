@@ -22,14 +22,11 @@ import {
 	collectDynamicPackageImportProxyModules,
 	prepareKodyGraphFiles,
 } from './module-graph-import-rewriting.ts'
-import {
-	readRootPackage,
-	resolveDirectKodyDependenciesForEntryPoint,
-} from './module-graph-workspace.ts'
+import { resolveDirectKodyDependenciesForEntryPoint } from './module-graph-workspace.ts'
 import { withPlatformRemixFiles } from './package-app-remix.ts'
 import {
 	createPackageAppRemixServerBundleOptions,
-	resolvePackageAppRuntime,
+	entryGraphNeedsRemixUiBundleOptions,
 	type PackageAppRemixBundleOptions,
 } from './package-app-runtime.ts'
 import {
@@ -292,18 +289,15 @@ export async function buildKodyAppBundle(input: {
 				normalizedEntrypoint,
 			),
 		})
-		const appRuntime = resolvePackageAppRuntime({
-			manifest: readRootPackage(input.sourceFiles)?.manifest ?? null,
-			sourceFiles: input.sourceFiles,
-			entryPoint,
-		})
 		const bundle = await createWorkerBundle({
 			files,
 			entryPoint: bootstrapPath,
-			remixOptions:
-				appRuntime === 'remix'
-					? createPackageAppRemixServerBundleOptions()
-					: null,
+			remixOptions: entryGraphNeedsRemixUiBundleOptions({
+				sourceFiles: input.sourceFiles,
+				entryPoint,
+			})
+				? createPackageAppRemixServerBundleOptions()
+				: null,
 		})
 		const modules = {
 			...stripKodyRuntimeModules(bundle.modules as WorkerLoaderModules),

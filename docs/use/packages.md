@@ -359,9 +359,10 @@ A package app is a hosted Remix mini-app:
   router (`createRouter` from `remix/router`) — routes, controllers, actions,
   middleware, and SSR through `remix/ui/server`; Kody supplies `remix` at the
   platform version, so it is imported as `remix/<subpath>` and never installed
-  from npm. A raw `fetch` handler is the `fetch` runtime; `kody.app.runtime`
-  (`"remix"` or `"fetch"`) pins the choice and is inferred from the entry graph
-  when omitted
+  from npm. A raw `fetch` handler is also valid: a router-shaped default export
+  receives the full hosted URL, and a function or `{ fetch }` receives the
+  mount-stripped path. There is no runtime field; publish rejects
+  `kody.app.runtime`
 - Kody's runtime is in every Remix request context as `get(KodyRuntime)` (from
   `kody:runtime`): `packageStorage()`, `packageSecrets`, `kody`,
   `createAuthenticatedFetch`, `workflows`, and `packageContext`

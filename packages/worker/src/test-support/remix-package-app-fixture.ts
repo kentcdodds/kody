@@ -10,8 +10,6 @@
 export function createRemixPackageAppFiles(input: {
 	username: string
 	kodyId: string
-	/** Declares `kody.app.runtime` (default `true`); pass `false` to exercise inference. */
-	declareRuntime?: boolean
 }): Record<string, string> {
 	const packageJson = {
 		name: `@${input.username}/${input.kodyId}`,
@@ -24,7 +22,6 @@ export function createRemixPackageAppFiles(input: {
 			id: input.kodyId,
 			description: 'Remix mini-app fixture: routes, action, middleware, SSR',
 			app: {
-				...(input.declareRuntime === false ? {} : { runtime: 'remix' }),
 				entry: './app/router.ts',
 				client: './app/assets/entry.ts',
 				assets: './public',
@@ -38,7 +35,7 @@ export function createRemixPackageAppFiles(input: {
 		'AGENTS.md': [
 			'# Agents',
 			'',
-			'Remix mini-app on the Kody package-app runtime (`kody.app.runtime: "remix"`).',
+			'Remix mini-app. Default-export a router; dispatch is by export shape.',
 			'',
 			'- Import Remix as `remix/<subpath>`; the platform supplies it. Never add',
 			'  `@remix-run/*` or `remix` to `dependencies` (publish rejects `@remix-run/*`).',

@@ -953,14 +953,6 @@ export default async function __kodyExecuteEntrypoint(input) {
 `.trim()
 }
 
-/**
- * Named export the app bootstrap adds so the wrapper can tell a Remix router
- * (full mounted URL) from a fetch handler (mount-stripped path) without
- * re-running the duck typing. Artifacts published before the export existed
- * are fetch apps.
- */
-export const packageAppRuntimeMarkerExportName = '__kodyPackageAppRuntime'
-
 export function createAppEntrypointSource(input: { modulePath: string }) {
 	return `
 import * as userModule from ${JSON.stringify(input.modulePath)};
@@ -979,8 +971,9 @@ function isRemixRouter(candidate) {
   );
 }
 
+const candidate = userModule.default ?? userModule;
+
 function resolvePackageAppHandler() {
-  const candidate = userModule.default ?? userModule;
   if (typeof candidate === 'function') {
     return candidate;
   }
@@ -1006,18 +999,24 @@ function resolvePackageAppHandler() {
 
 const handler = resolvePackageAppHandler();
 
-// Read by the package-app wrapper: a Remix router receives the full hosted
-// URL (mount included) so prefixed route contracts match and href() agrees
-// with the address bar; a fetch handler keeps the mount-stripped path.
-export const ${packageAppRuntimeMarkerExportName} = isRemixRouter(
-  userModule.default ?? userModule,
-)
-  ? 'remix'
-  : 'fetch';
+// The host strips the app mount before forwarding, so a fetch handler sees
+// "/notes" for "/packages/<id>/notes". A router matches the address bar
+// instead: its route contract carries packageContext.appBasePath as a
+// prefix so href(), redirects, and form actions stay inside the mount.
+function createMountedPackageAppRequest(request, packageContext) {
+  const appBasePath = String(packageContext?.appBasePath ?? '').replace(/\\/+$/, '');
+  if (!appBasePath) return request;
+  const url = new URL(request.url);
+  url.pathname = url.pathname === '/' ? appBasePath : appBasePath + url.pathname;
+  return new Request(url, request);
+}
 
 export default {
   async fetch(request, env, ctx) {
-    return await handler(request, env, ctx);
+    const dispatchedRequest = isRemixRouter(candidate)
+      ? createMountedPackageAppRequest(request, env?.__kodyPackageContext)
+      : request;
+    return await handler(dispatchedRequest, env, ctx);
   },
 };
 `.trim()

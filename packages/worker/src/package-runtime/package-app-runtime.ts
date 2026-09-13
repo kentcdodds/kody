@@ -1,14 +1,9 @@
-import { getDeclaredPackageAppRuntime } from '#worker/package-registry/manifest.ts'
-import {
-	type AuthoredPackageJson,
-	type PackageAppRuntime,
-} from '#worker/package-registry/types.ts'
 import { collectLiteralImportNodes } from './import-specifiers.ts'
 import {
 	collectReachableSourceFilePaths,
 	readRootPackage,
 } from './module-graph-workspace.ts'
-import { isRemixSpecifier } from './package-app-remix-subpaths.ts'
+import { isRemixUiSpecifier } from './package-app-remix-subpaths.ts'
 import { isTypeDeclarationFilePath } from './static-kody-imports.ts'
 
 /**
@@ -24,14 +19,17 @@ import { isTypeDeclarationFilePath } from './static-kody-imports.ts'
  */
 export const packageAppServerModuleUrl = 'kody:app'
 
-/** JSX import source every Remix package app compiles against. */
+/** JSX import source every Remix UI graph compiles against. */
 export const packageAppRemixJsxImportSource = 'remix/ui'
 
 /**
- * Whether any module reachable from the entry statically imports
- * `remix/<subpath>`; the inference rule for an undeclared `kody.app.runtime`.
+ * Whether any module reachable from the entry statically imports `remix/ui`
+ * or a `remix/ui/…` subpath. That is the signal the graph needs Remix UI
+ * bundler defaults (JSX from `remix/ui`, pinned `import.meta.url`,
+ * `keepNames` for `clientEntry` names). A handler that only borrows
+ * `remix/headers` or `remix/html-template` stays on esbuild's defaults.
  */
-export function entryGraphImportsRemix(input: {
+export function entryGraphNeedsRemixUiBundleOptions(input: {
 	sourceFiles: Record<string, string>
 	entryPoint: string
 }) {
@@ -45,29 +43,10 @@ export function entryGraphImportsRemix(input: {
 		const source = input.sourceFiles[modulePath]
 		if (source == null) continue
 		for (const node of collectLiteralImportNodes(source)) {
-			if (isRemixSpecifier(node.specifier)) return true
+			if (isRemixUiSpecifier(node.specifier)) return true
 		}
 	}
 	return false
-}
-
-/**
- * The runtime a package app's `entry` runs under: the declared
- * `kody.app.runtime`, else `remix` when the entry graph imports Remix, else
- * `fetch`. Publish checks, the bundle builders, and the docs all use this
- * one rule so a manifest that omits the field behaves the same everywhere.
- */
-export function resolvePackageAppRuntime(input: {
-	/** `null` when the snapshot has no parseable `package.json`. */
-	manifest: AuthoredPackageJson | null
-	sourceFiles: Record<string, string>
-	entryPoint: string
-}): PackageAppRuntime {
-	const declared = input.manifest
-		? getDeclaredPackageAppRuntime(input.manifest)
-		: null
-	if (declared) return declared
-	return entryGraphImportsRemix(input) ? 'remix' : 'fetch'
 }
 
 type EsbuildInitialOptionsBuild = {
@@ -102,7 +81,7 @@ export type PackageAppRemixBundleOptions = {
 }
 
 /**
- * Bundler options for a Remix package app's server graph: JSX compiles
+ * Bundler options for a server graph that uses Remix UI: JSX compiles
  * against `remix/ui` without a per-file pragma, `import.meta.url` is pinned
  * so `clientEntry(import.meta.url, …)` yields a usable hydration id, and
  * component names survive bundling so that id resolves to the right browser
@@ -121,9 +100,9 @@ export function createPackageAppRemixServerBundleOptions(): PackageAppRemixBundl
 }
 
 /**
- * Bundler options for the browser graph of a Remix package app. The browser
- * has a real `import.meta.url` (the fingerprinted module URL), so only the
- * JSX default applies.
+ * Bundler options for a browser graph that uses Remix UI. The browser has a
+ * real `import.meta.url` (the fingerprinted module URL), so only the JSX
+ * default applies.
  */
 export function createPackageAppRemixClientBundleOptions(): PackageAppRemixBundleOptions {
 	return {

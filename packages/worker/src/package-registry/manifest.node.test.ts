@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest'
 import {
 	buildPackageSearchProjection,
-	getDeclaredPackageAppRuntime,
 	getPackageAppAssetsDirectory,
 	getPackageAppClientEntryPath,
 	getPackageAppClientExternals,
@@ -121,7 +120,7 @@ test('parseAuthoredPackageJson accepts kody.app.client and kody.app.assets next 
 	).toThrow(/entry/)
 })
 
-test('parseAuthoredPackageJson accepts kody.app.runtime as remix or fetch and leaves it undeclared otherwise', () => {
+test('parseAuthoredPackageJson rejects kody.app.runtime and whitespace-only app paths', () => {
 	const parse = (app: Record<string, unknown>) =>
 		parseAuthoredPackageJson({
 			content: JSON.stringify({
@@ -135,21 +134,17 @@ test('parseAuthoredPackageJson accepts kody.app.runtime as remix or fetch and le
 			}),
 			manifestPath: 'package.json',
 		})
-	expect(
-		getDeclaredPackageAppRuntime(
-			parse({ runtime: 'remix', entry: './app/router.ts' }),
-		),
-	).toBe('remix')
-	expect(
-		getDeclaredPackageAppRuntime(
-			parse({ runtime: 'fetch', entry: './src/app.ts' }),
-		),
-	).toBe('fetch')
-	expect(getDeclaredPackageAppRuntime(parse({ entry: './src/app.ts' }))).toBe(
-		null,
+	expect(parse({ entry: './src/app.ts' }).kody.app).toEqual({
+		entry: './src/app.ts',
+	})
+	expect(() => parse({ runtime: 'remix', entry: './app/router.ts' })).toThrow(
+		/kody\.app\.runtime was removed/,
+	)
+	expect(() => parse({ runtime: 'fetch', entry: './src/app.ts' })).toThrow(
+		/kody\.app\.runtime was removed/,
 	)
 	expect(() => parse({ runtime: 'vite', entry: './src/app.ts' })).toThrow(
-		/runtime/,
+		/kody\.app\.runtime was removed/,
 	)
 	// Whitespace-only paths are rejected up front instead of trimming to an
 	// empty entry that publish would then silently skip.

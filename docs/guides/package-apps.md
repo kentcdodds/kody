@@ -2,13 +2,13 @@
 id: package_apps
 title: Package apps
 summary:
-  Give a package a hosted Remix mini-app on `*.kody.run`. Covers the Remix
-  runtime (routes, controllers, actions, middleware, SSR, hydration with
-  `KodyRuntime` in the request context), the app shape after an integration
-  smoke test, session handoff, smoke tests with packageAppFetch, mount-aware
-  URLs, the platform-built browser client (`kody.app.client`) and static assets
-  directory (`kody.app.assets`), the raw fetch runtime, the same-origin proxy,
-  lean forks, compiled clients, and listing verification.
+  Give a package a hosted Remix mini-app on `*.kody.run`. Covers Remix routes,
+  controllers, actions, middleware, SSR, hydration with `KodyRuntime` in the
+  request context, the app shape after an integration smoke test, session
+  handoff, smoke tests with packageAppFetch, mount-aware URLs, the
+  platform-built browser client (`kody.app.client`) and static assets directory
+  (`kody.app.assets`), plain fetch handlers, the same-origin proxy, lean forks,
+  compiled clients, and listing verification.
 category: platform
 ---
 
@@ -24,9 +24,9 @@ export JSDoc stay in [Package authoring](./package-authoring.md)
 A package app is a hosted **Remix mini-app** with Kody in the request context:
 `kody.app.entry` default-exports a Remix router, Kody renders it on
 `*.kody.run`, and the browser hydrates from the platform-built module under
-`/_assets`. A raw Worker-style `fetch` handler keeps working as the
-[fetch runtime](#fetch-runtime). Start at [Remix mini-apps](#remix-mini-apps)
-for the recipe.
+`/_assets`. A raw Worker-style `fetch` handler also works: the default export is
+the app, and dispatch follows its shape. Start at
+[Remix mini-apps](#remix-mini-apps) for the recipe.
 
 Open a heading with `search({ entity: "package_apps:guide#remix-mini-apps" })`
 (or another slug below) when you need one recipe.
@@ -80,8 +80,8 @@ For non-trivial or integration-backed apps, prefer this split:
 - **internal backend modules / Durable Objects / facets** — app-internal
   realtime and coordination details (integration lookups, provider calls,
   validation, mutations), not the persistence mechanism
-- **inline HTML from a fetch handler** — fine for a quick prototype (the
-  [fetch runtime](#fetch-runtime)), not the default pattern
+- **inline HTML from a fetch handler** — fine for a quick prototype (see
+  [Fetch handlers](#fetch-handlers)), not the default pattern
 
 ## Session handoff
 
@@ -167,7 +167,7 @@ a `remix` entry there is ignored. No `esm.sh`, no vendored browser build in
 into the browser module from the platform copy. Put `remix` in `devDependencies`
 only, for editor types. A kit or recipe that installs `@remix-run/ui` from npm
 or maps it through an import map is describing the
-[fetch runtime's island pattern](#migrating-an-island-app); see
+[island pattern](#migrating-an-island-app); see
 [What the platform supplies](#what-the-platform-supplies) for the surface and
 version rules.
 
@@ -178,12 +178,10 @@ folders, the browser entry under `app/assets/`, static files in `public/`. The
 
 ### Recipe
 
-`package.json` — `runtime: "remix"` pins the runtime (it is inferred from a
-`remix/…` import in the entry graph when omitted; see
-[Runtime selection](#runtime-selection)). `remix` goes in `devDependencies` for
-local types only: publish installs `package.json#dependencies` and nothing else,
-so a types-only `remix` dev dependency is inert and the runtime uses the
-platform copy.
+`package.json` — `remix` goes in `devDependencies` for local types only: publish
+installs `package.json#dependencies` and nothing else, so a types-only `remix`
+dev dependency is inert and the bundle uses the platform copy. There is no
+runtime field: the default export is the app.
 
 ```json
 {
@@ -194,7 +192,6 @@ platform copy.
 		"id": "notes",
 		"description": "Notes with a hosted Remix app",
 		"app": {
-			"runtime": "remix",
 			"entry": "./app/router.ts",
 			"client": "./app/assets/entry.ts",
 			"assets": "./public"
@@ -535,19 +532,18 @@ that:
 - `<Frame>` and `handle.frame.reload()` work with Remix's default frame
   resolver; frame sources are mount-prefixed hrefs like every other URL.
 
-### Runtime selection
+### Default export
 
-`kody.app.runtime` is `"remix"` or `"fetch"`. When omitted, the runtime is
-`remix` as soon as a module reachable from `kody.app.entry` imports
-`remix/<subpath>`, otherwise `fetch`; the publish `bundle` check reports which
-one applied
-(`uses the remix runtime (inferred; set kody.app.runtime to pin it)`). The field
-drives the build — JSX against `remix/ui`, the pinned `import.meta.url`,
-preserved component names — while request dispatch follows the export: a
-default-exported router gets the full hosted URL, a `fetch` handler gets the
-mount-stripped path. Declare `"runtime": "fetch"` for a fetch handler that
-borrows `remix/html-template` or `remix/headers` and wants esbuild's default
-JSX.
+`kody.app.entry` default-exports the app. A router-shaped object (`fetch`,
+`map`, and `mount` — `createRouter()` from `remix/router`) receives the full
+hosted URL so a mount-prefixed route contract matches. A function or `{ fetch }`
+handler receives the mount-stripped path (`/` at the app root). Publish rejects
+`kody.app.runtime`: dispatch is by export shape, not a configured mode.
+
+JSX compiles against `remix/ui` (and `import.meta.url` pins to `kody:app`,
+component names survive bundling) only when the graph imports `remix/ui` or a
+`remix/ui/…` subpath. A handler that only borrows `remix/headers` or
+`remix/html-template` keeps esbuild's JSX defaults.
 
 ### What the platform supplies
 
@@ -623,9 +619,10 @@ declaration (`KodyRuntime`, `packageContext`, `packageStorage`, …).
   name drifted from the registry key; keep islands named functions or put
   `#Counter` in the entry id, and register that exact name.
 - **`clientEntry() requires either an export name in the entry ID …`** — the
-  island is an anonymous function, or the app resolved to the `fetch` runtime so
-  `import.meta.url` stayed empty instead of `kody:app`. Name the island and set
-  `"runtime": "remix"`.
+  island is an anonymous function, or the server graph does not import
+  `remix/ui` so `import.meta.url` stayed empty instead of `kody:app`. Name the
+  island and import `remix/ui` or `remix/ui/server` from a module the entry
+  reaches.
 - **Island renders on the server but never hydrates, no console error** — the
   document does not render `<script type="module" src={clientModuleUrl}>`, or
   `kody.app.client` is missing so `clientModuleUrl` is `null`. Check the
@@ -650,23 +647,25 @@ declaration (`KodyRuntime`, `packageContext`, `packageStorage`, …).
   bundle left it external because `client.externals` lists `remix/ui` or
   `@remix-run/ui`. Remove the external and the import-map entry; the platform
   inlines it.
-- **JSX compiled to `React.createElement`** — the app resolved to the `fetch`
-  runtime (no `remix/…` import reachable from `kody.app.entry`). Set
-  `"runtime": "remix"`.
+- **JSX compiled to `React.createElement`** — the graph does not import
+  `remix/ui`, so JSX used esbuild's default. Import `remix/ui` or
+  `remix/ui/server` from a reachable module, or add a
+  `@jsxImportSource remix/ui` pragma.
 
 ## Migrating an island app
 
-An app built on the fetch runtime's island pattern — `src/app.ts` rendering an
-HTML string, `kody.app.client` with `externals: ["@remix-run/ui"]`, an import
-map pointing at `esm.sh` or a vendored build in `public/`, and a hand-written
-Navigation API router in the client — moves to the Remix runtime in one publish:
+An app built on the island pattern — `src/app.ts` rendering an HTML string,
+`kody.app.client` with `externals: ["@remix-run/ui"]`, an import map pointing at
+`esm.sh` or a vendored build in `public/`, and a hand-written Navigation API
+router in the client — moves to a Remix router in one publish:
 
 1. **Dependencies.** Delete `@remix-run/*` from `dependencies` (publish rejects
    them), drop the `client.externals` entry and the `<script type="importmap">`
    for Remix, and remove the vendored `public/vendor/remix-ui.js` (or the
    `esm.sh` URL). Add `"remix": "3.0.0-rc.2"` to `devDependencies` for types.
-2. **Manifest.** Set `"runtime": "remix"`, point `entry` at `./app/router.ts`,
-   and `client` at `./app/assets/entry.ts`. `assets` stays `./public`.
+2. **Manifest.** Point `entry` at `./app/router.ts` and `client` at
+   `./app/assets/entry.ts`. `assets` stays `./public`. Do not set
+   `kody.app.runtime`.
 3. **Server.** Replace the fetch handler with a router: the HTML-string response
    becomes a `Document` component rendered through `renderToStream`
    (`app/ui/render.tsx`), each path the handler matched becomes a route in
@@ -682,8 +681,9 @@ Navigation API router in the client — moves to the Remix runtime in one publis
 5. **Service worker and `__version.json`.** Unchanged — see
    [Service worker and PWA files](#service-worker-and-pwa-files).
 
-Both runtimes serve `/_assets/*` the same way, so `assetBasePath`,
-`clientModuleUrl`, and `__version.json` keep their meaning across the move.
+Router apps and fetch handlers serve `/_assets/*` the same way, so
+`assetBasePath`, `clientModuleUrl`, and `__version.json` keep their meaning
+across the move.
 
 ## Service worker and PWA files
 
@@ -706,8 +706,8 @@ if (appBase && 'serviceWorker' in navigator) {
 `public/sw.js` discovers the current fingerprinted module through
 `<assetBasePath>/__version.json` exactly as in
 [Service worker precache](#service-worker-precache) — the document's
-`data-app-base` attribute and the version endpoint are the same on both
-runtimes, so a worker written for the fetch runtime keeps working.
+`data-app-base` attribute and the version endpoint are the same for router apps
+and fetch handlers, so a worker written for a fetch handler keeps working.
 
 ## Scaffolder contract
 
@@ -715,7 +715,7 @@ runtimes, so a worker written for the fetch runtime keeps working.
 Remix layout for a new app, not `src/app.ts`:
 
 ```text
-package.json            runtime: "remix", entry ./app/router.ts, client ./app/assets/entry.ts, assets ./public
+package.json            entry ./app/router.ts, client ./app/assets/entry.ts, assets ./public
 app/routes.ts           route(packageContext?.appBasePath ?? '', …)
 app/router.ts           createRouter + router.map, default export
 app/controllers/        one file or folder per route area
@@ -728,10 +728,9 @@ public/                 styles, sw.js, manifest, icons
 src/index.ts            package export (unchanged)
 ```
 
-- The **starter** a kit scaffolds is `runtime: "remix"`. A kit **demo** may stay
-  on the fetch runtime for a script-only page, but then it declares
-  `"runtime": "fetch"` explicitly so a `remix/…` helper import does not flip its
-  build defaults, and it does not install `@remix-run/*`.
+- The **starter** a kit scaffolds is the Remix layout above. A kit **demo** may
+  emit a fetch handler for a script-only page; it does not set a runtime field,
+  and it does not install `@remix-run/*`.
 - Kits must not add `@remix-run/*` to `dependencies`, `remix/ui` or
   `@remix-run/ui` to `client.externals`, or an import map for Remix; the
   `client.externals` + import map pair stays available for other browser
@@ -752,15 +751,13 @@ src/index.ts            package export (unchanged)
   route is needed); shared **nav/layout** components import `routes` and stay
   server-only.
 
-## Fetch runtime
+## Fetch handlers
 
 A raw Worker-style handler is still a valid app: `kody.app.entry` default
 exports a function or an object with `fetch(request, env, ctx)`, receives the
 **mount-stripped** path (`/` for the app root), and builds URLs itself (see
 [Asset URLs](#asset-urls)). Everything below about `packageContext`, `client`,
-`assets`, and `/_assets` applies to both runtimes. Published fetch apps keep
-working unchanged; declare `"runtime": "fetch"` when such a handler imports a
-`remix/…` helper.
+`assets`, and `/_assets` applies to fetch handlers and router apps alike.
 
 ## Asset URLs
 
@@ -805,9 +802,9 @@ next section.
 ## Browser client and static assets
 
 Declare a browser entry and Kody compiles it on publish, so the repo holds
-TypeScript source instead of checked-in `.js`. Both runtimes share this surface:
-a Remix app's `client` is its `run()` entry
-([Remix mini-apps](#remix-mini-apps)); the recipe below is the fetch-runtime
+TypeScript source instead of checked-in `.js`. Router apps and fetch handlers
+share this surface: a Remix app's `client` is its `run()` entry
+([Remix mini-apps](#remix-mini-apps)); the recipe below is the fetch-handler
 counterpart for a page that only needs a script.
 
 ### Minimal fetch recipe
@@ -906,8 +903,9 @@ keep them out of the client bundle too, declare them as
 
 ### What each field does
 
-- `entry` — the server entry: the Remix router or the Worker fetch handler (see
-  [Runtime selection](#runtime-selection)).
+- `entry` — the server entry: the Remix router or the Worker fetch handler.
+  Routers get the hosted URL; fetch handlers get the stripped path (see
+  [Default export](#default-export)).
 - `client` — one `.ts`, `.tsx`, `.js`, or `.jsx` file bundled for the
   **browser** (ESM, `es2022`, relative imports and `package.json` npm
   dependencies inlined). The output is served at

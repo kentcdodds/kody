@@ -316,12 +316,13 @@ test('kody:runtime exports resolve against the current run when the module insta
 	}
 })
 
-test('buildKodyAppBundle hands Remix apps the platform remix files and Remix bundler options, and leaves fetch apps on esbuild defaults', async () => {
+test('buildKodyAppBundle applies Remix UI bundler options only when the graph imports remix/ui', async () => {
 	mockModule.createWorker.mockReset()
 	mockModule.createWorker.mockResolvedValue(createBundleResult('remix'))
 	const remixInput = createBundleInput({ entryPoint: 'app/router.ts' })
 	remixInput.sourceFiles['app/router.ts'] = [
 		"import { createRouter } from 'remix/router'",
+		"import { renderToString } from 'remix/ui/server'",
 		'export default createRouter()',
 	].join('\n')
 	await buildKodyAppBundle(remixInput)
@@ -352,6 +353,29 @@ test('buildKodyAppBundle hands Remix apps the platform remix files and Remix bun
 	).toEqual(['kody-package-app-keep-names'])
 
 	mockModule.createWorker.mockReset()
+	mockModule.createWorker.mockResolvedValue(createBundleResult('headers'))
+	const headersInput = createBundleInput({ entryPoint: 'src/app.ts' })
+	headersInput.sourceFiles['src/app.ts'] = [
+		"import { CacheControl } from 'remix/headers'",
+		'export default { fetch: () => new Response("ok") }',
+	].join('\n')
+	await buildKodyAppBundle(headersInput)
+	const headersCall = mockModule.createWorker.mock.calls[0]?.[0] as Record<
+		string,
+		unknown
+	>
+	expect(
+		(headersCall.files as Record<string, string>)[
+			'node_modules/remix/package.json'
+		],
+	).toBeTypeOf('string')
+	expect(headersCall).not.toHaveProperty('jsx')
+	expect(headersCall).not.toHaveProperty('define')
+	expect(headersCall).not.toHaveProperty(
+		'__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired',
+	)
+
+	mockModule.createWorker.mockReset()
 	mockModule.createWorker.mockResolvedValue(createBundleResult('fetch'))
 	await buildKodyAppBundle(createBundleInput())
 	const fetchCall = mockModule.createWorker.mock.calls[0]?.[0] as Record<
@@ -359,7 +383,7 @@ test('buildKodyAppBundle hands Remix apps the platform remix files and Remix bun
 		unknown
 	>
 	// The vendored remix is present for any bundle that wants
-	// remix/html-template, but a fetch app gets no Remix JSX or define.
+	// remix/html-template, but a fetch handler gets no Remix JSX or define.
 	expect(
 		(fetchCall.files as Record<string, string>)[
 			'node_modules/remix/package.json'

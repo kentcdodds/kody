@@ -115,7 +115,7 @@ const remixAppFiles: Array<[string, string]> = [
 	],
 ]
 
-test('runRepoChecks reports the declared Remix runtime for kody.app.entry', async () => {
+test('runRepoChecks rejects kody.app.runtime as a removed option', async () => {
 	const result = await runChecks(
 		new Map([
 			[
@@ -127,29 +127,28 @@ test('runRepoChecks reports the declared Remix runtime for kody.app.entry', asyn
 			...remixAppFiles,
 		]),
 	)
-	expect(result.ok).toBe(true)
-	const bundle = result.results.find((entry) => entry.kind === 'bundle')
-	expect(bundle?.message).toBe(
-		'Bundled 3 package target(s) successfully. kody.app.entry "app/router.ts" uses the remix runtime.',
-	)
+	expect(result.ok).toBe(false)
+	const manifest = result.results.find((entry) => entry.kind === 'manifest')
+	expect(manifest?.ok).toBe(false)
+	expect(manifest?.message).toMatch(/kody\.app\.runtime was removed/)
+	expect(result.results.some((entry) => entry.kind === 'bundle')).toBe(false)
+	expect(mockModule.buildKodyAppBundle).not.toHaveBeenCalled()
 })
 
-test('runRepoChecks infers the Remix runtime from remix imports and says how to pin it', async () => {
-	const result = await runChecks(
+test('runRepoChecks bundles a router app and a fetch handler without a runtime field', async () => {
+	const remixResult = await runChecks(
 		new Map([
 			['package.json', createManifest({ app: { entry: './app/router.ts' } })],
 			...remixAppFiles,
 		]),
 	)
-	expect(result.ok).toBe(true)
-	const bundle = result.results.find((entry) => entry.kind === 'bundle')
-	expect(bundle?.message).toContain(
-		'kody.app.entry "app/router.ts" uses the remix runtime (inferred; set kody.app.runtime to pin it).',
+	expect(remixResult.ok).toBe(true)
+	const remixBundle = remixResult.results.find(
+		(entry) => entry.kind === 'bundle',
 	)
-})
+	expect(remixBundle?.message).toBe('Bundled 3 package target(s) successfully.')
 
-test('runRepoChecks keeps a plain fetch handler on the fetch runtime', async () => {
-	const result = await runChecks(
+	const fetchResult = await runChecks(
 		new Map([
 			['package.json', createManifest({ app: { entry: './src/app.ts' } })],
 			['src/index.ts', 'export default async () => ({ ready: true })\n'],
@@ -159,11 +158,11 @@ test('runRepoChecks keeps a plain fetch handler on the fetch runtime', async () 
 			],
 		]),
 	)
-	expect(result.ok).toBe(true)
-	const bundle = result.results.find((entry) => entry.kind === 'bundle')
-	expect(bundle?.message).toContain(
-		'kody.app.entry "src/app.ts" uses the fetch runtime',
+	expect(fetchResult.ok).toBe(true)
+	const fetchBundle = fetchResult.results.find(
+		(entry) => entry.kind === 'bundle',
 	)
+	expect(fetchBundle?.message).toBe('Bundled 3 package target(s) successfully.')
 })
 
 test('runRepoChecks rejects @remix-run/* npm dependencies and points at remix/<subpath>', async () => {
@@ -172,7 +171,7 @@ test('runRepoChecks rejects @remix-run/* npm dependencies and points at remix/<s
 			[
 				'package.json',
 				createManifest({
-					app: { runtime: 'remix', entry: './app/router.ts' },
+					app: { entry: './app/router.ts' },
 					dependencies: {
 						'@remix-run/fetch-router': '^0.22.0',
 						zod: '^4.0.0',
@@ -200,7 +199,7 @@ test('runRepoChecks treats a types-only remix devDependency as no npm dependency
 			[
 				'package.json',
 				createManifest({
-					app: { runtime: 'remix', entry: './app/router.ts' },
+					app: { entry: './app/router.ts' },
 					devDependencies: { remix: '3.0.0-rc.2', typescript: '^6.0.0' },
 				}),
 			],
@@ -228,7 +227,7 @@ test('runRepoChecks notes that a declared remix dependency is not installed', as
 			[
 				'package.json',
 				createManifest({
-					app: { runtime: 'remix', entry: './app/router.ts' },
+					app: { entry: './app/router.ts' },
 					dependencies: { remix: '3.0.0-rc.2' },
 				}),
 			],
