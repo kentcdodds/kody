@@ -36,7 +36,10 @@ node tools/control-kody.ts request GET /account/connections/new/cursor
 ## Gotchas
 
 - Seed users start with no connected agents; connect one from Add connection or
-  an MCP host to see the list. Revoke is a double-check button.
+  an MCP host to see the list. Revoke is a double-check button per connection:
+  confirm and the in-flight POST stay on that row, so other Revoke controls stay
+  clickable. Confirm removes the row immediately; a failed request restores that
+  row only.
 - Hosts are grouped by display name (logos for known kinds, last-used then
   connected newest-first, best-effort labels). Last used is the revoke signal
   (successful `/mcp` bearer validation). A missing stamp renders as "unknown"
