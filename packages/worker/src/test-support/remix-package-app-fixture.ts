@@ -32,8 +32,20 @@ export function createRemixPackageAppFiles(input: {
 		'package.json': `${JSON.stringify(packageJson, null, '\t')}\n`,
 		'README.md':
 			'# Remix notes\n\n## Intent\n\nProve a package app can be a hosted Remix mini-app with Kody in the request context.\n',
-		'AGENTS.md':
-			'# Agents\n\nRoutes live in app/routes.ts; controllers in app/controllers/.\n',
+		'AGENTS.md': [
+			'# Agents',
+			'',
+			'Remix mini-app on the Kody package-app runtime (`kody.app.runtime: "remix"`).',
+			'',
+			'- Import Remix as `remix/<subpath>`; the platform supplies it. Never add',
+			'  `@remix-run/*` or `remix` to `dependencies` (publish rejects `@remix-run/*`).',
+			'- Routes live in `app/routes.ts`, prefixed with `packageContext.appBasePath`;',
+			'  build every URL with `routes.x.href()`, never a root-relative literal.',
+			'- Controllers in `app/controllers/` read Kody through `get(KodyRuntime)`.',
+			'- Islands in `app/ui/` are named `clientEntry` functions registered in',
+			'  `app/assets/entry.ts`; static files and `sw.js` live in `public/`.',
+			'',
+		].join('\n'),
 		'src/index.ts':
 			'export default async function main() {\n\treturn { ok: true }\n}\n',
 		'app/routes.ts': `import { packageContext } from 'kody:runtime'

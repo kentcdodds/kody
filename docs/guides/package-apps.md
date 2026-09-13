@@ -159,9 +159,22 @@ as the `KodyRuntime` key, so controllers read `packageStorage()`,
 `packageContext` (`appBasePath`, `hostedUrl`, `assetBasePath`,
 `clientModuleUrl`) without wiring a middleware.
 
+**Do not depend on `@remix-run/*` or npm `remix`.** The platform supplies every
+`remix/<subpath>` import at the version Kody's origin ships (`3.0.0-rc.2`);
+publish **rejects** any `@remix-run/*` entry in `package.json#dependencies`, and
+a `remix` entry there is ignored. No `esm.sh`, no vendored browser build in
+`public/`, no `client.externals` / import map for Remix: `remix/ui` is inlined
+into the browser module from the platform copy. Put `remix` in `devDependencies`
+only, for editor types. A kit or recipe that installs `@remix-run/ui` from npm
+or maps it through an import map is describing the
+[fetch runtime's island pattern](#migrating-an-island-app); see
+[What the platform supplies](#what-the-platform-supplies) for the surface and
+version rules.
+
 The layout below is what `create-package-app` scaffolds. Keep it: routes and
 router at the root of `app/`, controllers, middleware, data, and UI in their own
-folders, the browser entry under `app/assets/`, static files in `public/`.
+folders, the browser entry under `app/assets/`, static files in `public/`. The
+[scaffolder contract](#scaffolder-contract) spells out what a kit emits.
 
 ### Recipe
 
@@ -543,30 +556,163 @@ rejects them, because a second copy from npm would not share the platform copy's
 component runtime. A `remix` entry there is inert; put it in `devDependencies`
 for editor types.
 
+**Version pin.** There is exactly one Remix version per platform deploy: the
+origin's `remix@3.0.0-rc.2`. A package never selects it. When the platform
+upgrades Remix, a **republish** picks the new version up for both the server
+bundle and the browser module; artifacts already published keep the Remix they
+were built with until then (they are sticky, not rebuilt behind your back). A
+`devDependencies` pin is for editor types only; keep it on the platform version
+so the types match what publish compiles. Older kit pins such as
+`@remix-run/ui@0.9.0` are obsolete — `remix/ui` comes from the platform.
+
 Local development: `npm i -D remix@3.0.0-rc.2` and a `tsconfig.json` with
 `"jsx": "react-jsx"`, `"jsxImportSource": "remix/ui"`, and
 `"allowImportingTsExtensions": true` gives editors the same types the bundle
 compiles against. `kody:runtime` types come from the repo's generated
 declaration (`KodyRuntime`, `packageContext`, `packageStorage`, …).
 
+### Conventions that keep agents out of trouble
+
+- **Read Kody through `get(KodyRuntime)` in controllers, actions, and
+  middleware.** Direct `import { packageStorage } from 'kody:runtime'` still
+  works, but mixing the two in one app hides which requests touch Kody; the
+  context key is the Remix-shaped door. The one module-scope read the recipe
+  keeps is `packageContext.appBasePath` in `app/routes.ts`.
+- **Every URL comes from the mount-prefixed contract.** Build
+  `route(packageContext?.appBasePath ?? '', …)` once and use `routes.x.href()`
+  for links, `redirect()`, `<form action>`, `<Frame src>`, and fetch targets. A
+  root-relative literal such as `/about` or `/api/notes` leaves the mount and
+  404s on the host.
+- **TSX compiles against the platform's `remix/ui`.** No `@jsxImportSource`
+  pragma, no React, no `jsx-runtime` dependency; a pragma still wins per file.
+- **Islands are named functions listed in the browser registry.** The server id
+  is `import.meta.url` (pinned to `kody:app`), names survive bundling
+  (`keepNames`), and `run({ loadModule })` resolves by export name. If hydration
+  misses, one of those three drifted — see the troubleshooting entries for
+  `Unknown client entry` and `clientEntry() requires …`.
+
 ### Remix troubleshooting
 
 - **Every hosted path returns `Not Found: /packages/<name>/…`** — the route
   contract has no mount prefix. Build it with
   `route(packageContext?.appBasePath ?? '', …)`.
+- **A link or redirect lands on the host root (`/about` → 404)** — a
+  root-relative literal bypassed the contract. Add the route and use
+  `routes.about.href()`.
 - **Browser console `Unknown client entry "Counter2"`** — the island's export
   name drifted from the registry key; keep islands named functions or put
   `#Counter` in the entry id, and register that exact name.
 - **`clientEntry() requires either an export name in the entry ID …`** — the
-  island is an anonymous function. Name it.
+  island is an anonymous function, or the app resolved to the `fetch` runtime so
+  `import.meta.url` stayed empty instead of `kody:app`. Name the island and set
+  `"runtime": "remix"`.
+- **Island renders on the server but never hydrates, no console error** — the
+  document does not render `<script type="module" src={clientModuleUrl}>`, or
+  `kody.app.client` is missing so `clientModuleUrl` is `null`. Check the
+  `#rmx-data` script in the page for `"moduleUrl":"kody:app"`.
 - **Publish fails with `unresolved bare package imports … "remix/assets"`** — a
   Node-only subpath. Serve files from `kody.app.assets` instead.
 - **Publish fails with
   `package.json#dependencies must not list "@remix-run/…"`** — import
-  `remix/<subpath>` and delete the entry.
+  `remix/<subpath>` and delete the entry (and any import map that pointed at
+  it).
+- **Browser console `Failed to resolve module specifier "remix/ui"`** — the
+  bundle left it external because `client.externals` lists `remix/ui` or
+  `@remix-run/ui`. Remove the external and the import-map entry; the platform
+  inlines it.
 - **JSX compiled to `React.createElement`** — the app resolved to the `fetch`
   runtime (no `remix/…` import reachable from `kody.app.entry`). Set
   `"runtime": "remix"`.
+
+## Migrating an island app
+
+An app built on the fetch runtime's island pattern — `src/app.ts` rendering an
+HTML string, `kody.app.client` with `externals: ["@remix-run/ui"]`, an import
+map pointing at `esm.sh` or a vendored build in `public/`, and a hand-written
+Navigation API router in the client — moves to the Remix runtime in one publish:
+
+1. **Dependencies.** Delete `@remix-run/*` from `dependencies` (publish rejects
+   them), drop the `client.externals` entry and the `<script type="importmap">`
+   for Remix, and remove the vendored `public/vendor/remix-ui.js` (or the
+   `esm.sh` URL). Add `"remix": "3.0.0-rc.2"` to `devDependencies` for types.
+2. **Manifest.** Set `"runtime": "remix"`, point `entry` at `./app/router.ts`,
+   and `client` at `./app/assets/entry.ts`. `assets` stays `./public`.
+3. **Server.** Replace the fetch handler with a router: the HTML-string response
+   becomes a `Document` component rendered through `renderToStream`
+   (`app/ui/render.tsx`), each path the handler matched becomes a route in
+   `app/routes.ts` (prefixed with `packageContext.appBasePath`) with a
+   controller in `app/controllers/`, and `appUrl()` / manual URL joins become
+   `routes.x.href()`. Reads of `packageContext`, `packageStorage()`, and secrets
+   move to `get(KodyRuntime)`.
+4. **Client.** The custom SPA router goes away: `run({ loadModule })` in
+   `app/assets/entry.ts` hydrates `clientEntry` islands, real anchors and forms
+   navigate, and `<Frame>` covers partial reloads. Interactive pieces become
+   named `clientEntry` components registered in the entry; page-level state that
+   lived in the SPA router becomes server-rendered props.
+5. **Service worker and `__version.json`.** Unchanged — see
+   [Service worker and PWA files](#service-worker-and-pwa-files).
+
+Both runtimes serve `/_assets/*` the same way, so `assetBasePath`,
+`clientModuleUrl`, and `__version.json` keep their meaning across the move.
+
+## Service worker and PWA files
+
+The Remix layout does not change where PWA files live: `public/sw.js`,
+`public/manifest.webmanifest`, and icons are static files in the
+`kody.app.assets` directory, served under `<assetBasePath>/…` with
+`Service-Worker-Allowed: <appBasePath>/` on JavaScript. Registration belongs in
+the browser entry next to `run()`:
+
+```ts
+// app/assets/entry.ts, after run()
+const { appBase } = document.documentElement.dataset
+if (appBase && 'serviceWorker' in navigator) {
+	void navigator.serviceWorker.register(`${appBase}/_assets/sw.js`, {
+		scope: `${appBase}/`,
+	})
+}
+```
+
+`public/sw.js` discovers the current fingerprinted module through
+`<assetBasePath>/__version.json` exactly as in
+[Service worker precache](#service-worker-precache) — the document's
+`data-app-base` attribute and the version endpoint are the same on both
+runtimes, so a worker written for the fetch runtime keeps working.
+
+## Scaffolder contract
+
+`create-package-app` (the `@kentcdodds/package-app-kit` scaffolder) emits the
+Remix layout for a new app, not `src/app.ts`:
+
+```
+package.json            runtime: "remix", entry ./app/router.ts, client ./app/assets/entry.ts, assets ./public
+app/routes.ts           route(packageContext?.appBasePath ?? '', …)
+app/router.ts           createRouter + router.map, default export
+app/controllers/        one file or folder per route area
+app/middleware/         request-lifecycle context keys
+app/data/               packageStorage() access through get(KodyRuntime)
+app/ui/render.tsx       Document + renderToStream
+app/ui/*.tsx            islands (clientEntry, named functions)
+app/assets/entry.ts     run({ loadModule }) + service-worker registration
+public/                 styles, sw.js, manifest, icons
+src/index.ts            package export (unchanged)
+```
+
+- The **starter** a kit scaffolds is `runtime: "remix"`. A kit **demo** may stay
+  on the fetch runtime for a script-only page, but then it declares
+  `"runtime": "fetch"` explicitly so a `remix/…` helper import does not flip its
+  build defaults, and it does not install `@remix-run/*`.
+- Kits must not add `@remix-run/*` to `dependencies`, `remix/ui` or
+  `@remix-run/ui` to `client.externals`, or an import map for Remix; the
+  `client.externals` + import map pair stays available for other browser
+  packages.
+- `data-app-base` on `<html>` and `__version.json` remain the two runtime
+  discovery points kits may rely on; `data-client-module` is optional now that
+  the document renders `clientModuleUrl` itself.
+- `kody:runtime` types (`KodyRuntime`, `packageContext`) come from the
+  platform's generated declaration, so a kit ships only `remix` in
+  `devDependencies` and the `tsconfig.json` from
+  [What the platform supplies](#what-the-platform-supplies).
 
 ## Fetch runtime
 
