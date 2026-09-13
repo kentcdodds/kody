@@ -181,7 +181,9 @@ folders, the browser entry under `app/assets/`, static files in `public/`. The
 `package.json` — `runtime: "remix"` pins the runtime (it is inferred from a
 `remix/…` import in the entry graph when omitted; see
 [Runtime selection](#runtime-selection)). `remix` goes in `devDependencies` for
-local types only; the platform ignores it at publish.
+local types only: publish installs `package.json#dependencies` and nothing else,
+so a types-only `remix` dev dependency is inert and the runtime uses the
+platform copy.
 
 ```json
 {
@@ -281,7 +283,12 @@ export async function addNote(context: RequestContext, text: string) {
 
 `app/controllers/notes.tsx` — a `form()` route: GET renders, POST validates with
 `remix/data-schema`, persists, and redirects inside the mount. JSX needs no
-pragma: the bundle compiles against `remix/ui`.
+pragma: the bundle compiles against `remix/ui`. `context.get(FormData)` uses the
+**global `FormData` constructor** as the context key — that is the key the
+`formData()` middleware stores the parsed body under.
+`remix/middleware/form-data` exports only `formData` and `FormDataParseError`;
+an `import { FormData } from 'remix/middleware/form-data'` has no matching
+export and fails publish.
 
 ```tsx
 import type { Controller } from 'remix/router'
@@ -515,6 +522,16 @@ that:
   (`routes.api.href()`) as a prop rather than importing `app/routes.ts` into the
   browser graph; that module imports `kody:runtime`, which the browser bundle
   rejects at publish.
+- **Server-only modules stay out of the island graph.** `app/routes.ts` reads
+  `kody:runtime`, so anything that imports it — a layout or nav component that
+  renders `routes.x.href()`, `app/ui/render.tsx`, controllers, `app/data/*` — is
+  server-only. That is fine for SSR: a layout may import `routes` freely. It
+  must not be reachable from `app/assets/entry.ts` or any `clientEntry` island
+  it registers. Publish enforces the boundary: the browser bundle fails with
+  `imports server-only modules that cannot run in the browser (<file>: "kody:runtime")`
+  naming the offending module, and the message points at the fix (pass hrefs as
+  props). Keep islands in their own files under `app/ui/` that import only
+  `remix/ui` and other islands.
 - `<Frame>` and `handle.frame.reload()` work with Remix's default frame
   resolver; frame sources are mount-prefixed hrefs like every other URL.
 
@@ -554,7 +571,10 @@ isolate.
 `package.json#dependencies` must not list `@remix-run/*` packages — publish
 rejects them, because a second copy from npm would not share the platform copy's
 component runtime. A `remix` entry there is inert; put it in `devDependencies`
-for editor types.
+for editor types. Publish reads `dependencies` only (the runtime bundler
+installs with `dev: false`, and the repo dependency check lists `dependencies`
+only), so a types-only `remix` dev dependency never reaches the bundle and the
+runtime always uses the platform copy.
 
 **Version pin.** There is exactly one Remix version per platform deploy: the
 origin's `remix@3.0.0-rc.2`. A package never selects it. When the platform
@@ -591,7 +611,7 @@ declaration (`KodyRuntime`, `packageContext`, `packageStorage`, …).
   misses, one of those three drifted — see the troubleshooting entries for
   `Unknown client entry` and `clientEntry() requires …`.
 
-### Remix troubleshooting
+## Remix troubleshooting
 
 - **Every hosted path returns `Not Found: /packages/<name>/…`** — the route
   contract has no mount prefix. Build it with
@@ -610,6 +630,15 @@ declaration (`KodyRuntime`, `packageContext`, `packageStorage`, …).
   document does not render `<script type="module" src={clientModuleUrl}>`, or
   `kody.app.client` is missing so `clientModuleUrl` is `null`. Check the
   `#rmx-data` script in the page for `"moduleUrl":"kody:app"`.
+- **Publish fails with
+  `No matching export in "…/middleware/form-data.js" for import "FormData"`** —
+  `FormData` is not a Remix export. Drop the import and use the global:
+  `context.get(FormData)`.
+- **Publish fails with
+  `imports server-only modules that cannot run in the browser (app/ui/layout.tsx: "kody:runtime")`**
+  (or `app/routes.ts`) — an island or the browser entry imports a layout/nav
+  module that imports `routes`. Keep that module server-side and pass the hrefs
+  it needs to the island as props.
 - **Publish fails with `unresolved bare package imports … "remix/assets"`** — a
   Node-only subpath. Serve files from `kody.app.assets` instead.
 - **Publish fails with
@@ -713,6 +742,14 @@ src/index.ts            package export (unchanged)
   platform's generated declaration, so a kit ships only `remix` in
   `devDependencies` and the `tsconfig.json` from
   [What the platform supplies](#what-the-platform-supplies).
+- Common kit pieces map onto the layout without platform help: a **toast** or
+  **double-check confirm** is a named `clientEntry` island fed by props; an
+  **update check** is an island (or the service worker) that polls
+  `<assetBasePath>/__version.json` and compares `publishedCommit`; **icons**
+  live in `public/icons/` and are linked from the document via
+  `${assetBasePath}/icons/…` (one path — no fetch-runtime `/icons/` handler
+  route is needed); shared **nav/layout** components import `routes` and stay
+  server-only.
 
 ## Fetch runtime
 

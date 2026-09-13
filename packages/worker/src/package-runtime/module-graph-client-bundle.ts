@@ -130,7 +130,8 @@ function assertClientGraphIsBrowserSafe(input: {
 			`${input.bundleLabel} imports server-only modules that cannot run in the browser (${formatProblems(
 				serverOnly,
 			)}). ` +
-				'Keep kody:runtime, kody:@ package imports, cloudflare:*, and node:* in the Worker entry (kody.app.entry) and expose what the page needs over fetch or the realtime facet.',
+				'Keep kody:runtime, kody:@ package imports, cloudflare:*, and node:* in the Worker entry (kody.app.entry) and expose what the page needs over fetch or the realtime facet. ' +
+				'In a Remix app, islands and the browser entry must not import app/routes.ts or a layout that imports it (both read kody:runtime); pass hrefs from routes.x.href() to islands as props.',
 		)
 	}
 	if (stylesheets.length > 0) {

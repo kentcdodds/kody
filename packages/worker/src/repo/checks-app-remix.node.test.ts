@@ -37,11 +37,15 @@ import { withRequiredPackageDocs } from './checks-test-docs.ts'
 function createManifest(input: {
 	app: Record<string, string>
 	dependencies?: Record<string, string>
+	devDependencies?: Record<string, string>
 }) {
 	return JSON.stringify({
 		name: '@kody/remix-app',
 		exports: { '.': './src/index.ts' },
 		...(input.dependencies ? { dependencies: input.dependencies } : {}),
+		...(input.devDependencies
+			? { devDependencies: input.devDependencies }
+			: {}),
 		kody: {
 			id: 'remix-app',
 			description: 'Remix mini-app',
@@ -188,6 +192,34 @@ test('runRepoChecks rejects @remix-run/* npm dependencies and points at remix/<s
 	)
 	expect(result.results.some((entry) => entry.kind === 'bundle')).toBe(false)
 	expect(mockModule.buildKodyAppBundle).not.toHaveBeenCalled()
+})
+
+test('runRepoChecks treats a types-only remix devDependency as no npm dependency at all', async () => {
+	const result = await runChecks(
+		new Map([
+			[
+				'package.json',
+				createManifest({
+					app: { runtime: 'remix', entry: './app/router.ts' },
+					devDependencies: { remix: '3.0.0-rc.2', typescript: '^6.0.0' },
+				}),
+			],
+			...remixAppFiles,
+		]),
+	)
+	expect(result.ok).toBe(true)
+	const dependencies = result.results.find(
+		(entry) => entry.kind === 'dependencies',
+	)
+	expect(dependencies?.ok).toBe(true)
+	expect(dependencies?.message).toContain(
+		'package.json declares no npm dependencies.',
+	)
+	// The bundle path receives the manifest untouched; publish never installs
+	// devDependencies, so the platform copy of remix is the only one.
+	expect(mockModule.buildKodyAppBundle).toHaveBeenCalledWith(
+		expect.objectContaining({ entryPoint: 'app/router.ts' }),
+	)
 })
 
 test('runRepoChecks notes that a declared remix dependency is not installed', async () => {

@@ -123,8 +123,12 @@ test(
 		expect(homeHtml).toContain('<h1 id="title">Remix notes</h1>')
 		expect(homeHtml).toContain(`<p id="mount">Mounted at ${appBasePath}</p>`)
 		expect(homeHtml).toContain(`href="${appBasePath}/_assets/styles.css"`)
-		// Prefixed route contract: links stay inside the mount.
+		// Prefixed route contract: links stay inside the mount, including the
+		// server-only layout that imports routes (and so kody:runtime).
 		expect(homeHtml).toContain(`<a href="${appBasePath}/notes">Add a note</a>`)
+		expect(homeHtml).toContain(
+			`<nav id="nav"><a href="${appBasePath}">Home</a><a href="${appBasePath}/notes">Notes</a></nav>`,
+		)
 		// SSR of the clientEntry island plus its hydration record pointing at
 		// the platform-served browser module rendered by the document.
 		expect(homeHtml).toContain('<!-- rmx:h:')
@@ -213,6 +217,31 @@ test(
 )
 
 test(
+	'the formData middleware key is the global FormData; importing FormData from remix/middleware/form-data fails publish',
+	{ timeout: 60_000 },
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		const sourceFiles = createRemixPackageAppFiles({
+			username: 'kent',
+			kodyId: 'remix-notes',
+		})
+		const notesController = sourceFiles['app/controllers/notes.tsx'] as string
+		await expect(
+			buildKodyAppBundle({
+				env,
+				baseUrl: 'https://kody.dev',
+				userId: 'user-remix-workers-test',
+				sourceFiles: {
+					...sourceFiles,
+					'app/controllers/notes.tsx': `import { FormData } from 'remix/middleware/form-data'\n${notesController}`,
+				},
+				entryPoint: 'app/router.ts',
+			}),
+		).rejects.toThrow(/No matching export[\s\S]*"FormData"/)
+	},
+)
+
+test(
 	'a Remix package app browser entry bundles run() and the island into one fingerprinted module',
 	{ timeout: 60_000 },
 	async () => {
@@ -238,6 +267,27 @@ test(
 		expect(code).toContain('id: "counter"')
 		expect(code).not.toContain('React.createElement')
 		expect(code).toContain('data-rmx-')
+
+		// The server-only boundary is enforced at publish: an island that pulls
+		// the layout (which imports routes, which imports kody:runtime) into the
+		// browser graph fails with the offending module named and the fix.
+		await expect(
+			buildKodyAppClientBundle({
+				sourceFiles: {
+					...sourceFiles,
+					'app/ui/counter.tsx': [
+						"import { clientEntry, type Handle } from 'remix/ui'",
+						"import { Layout } from './layout.tsx'",
+						'export const Counter = clientEntry(import.meta.url, function Counter(handle: Handle<{ label: string }>) {',
+						'\treturn () => <Layout>{handle.props.label}</Layout>',
+						'})',
+					].join('\n'),
+				},
+				entryPoint: 'app/assets/entry.ts',
+			}),
+		).rejects.toThrow(
+			/imports server-only modules that cannot run in the browser \(app\/routes\.ts: "kody:runtime"\)[\s\S]*islands and the browser entry must not import app\/routes\.ts or a layout that imports it/,
+		)
 	},
 )
 
