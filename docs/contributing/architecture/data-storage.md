@@ -792,7 +792,7 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   entitlement counter and not included in `exportCounters`.
 - `inbound_mcp_connection_last_used` — last successful MCP bearer validation per
   inbound OAuth `clientId` (`client_id` PK, `last_used_at`). Account →
-  Connections joins this as last-used next to Revoke. Isolate memory and
+  Connections joins this as last-used next to Revoke.
   `ON CONFLICT … WHERE last_used_at < cutoff` debounce writes to five minutes.
   Not time-pruned; revoke and `purge()` remove the row. Account export emits
   `inboundConnectionLastUsed` on the first `exportCounters` page only.

@@ -7,13 +7,11 @@ import {
 /**
  * Best-effort last-heard time for an inbound MCP OAuth `clientId`. Written
  * from successful bearer validation onto the per-user UserMeter (0002:
- * high-write, userId-addressed). Isolate + DO debounce keep this off the
- * awaited MCP hot path.
+ * high-write, userId-addressed). `waitUntil` keeps the RPC off the awaited
+ * MCP path. Durable debounce lives on the DO so a failed stamp or a revoke
+ * on another isolate cannot skip the next write.
  */
 const inboundMcpConnectionLastUsedMinIntervalMs = 5 * 60 * 1000
-
-const lastTouchByKey = new Map<string, number>()
-const debounceMapPruneLimit = 512
 
 function inboundMcpConnectionLastUsedDebounceCutoffIso(
 	lastUsedAt: string,
@@ -43,37 +41,6 @@ export function shouldSkipInboundMcpConnectionLastUsedTouch(input: {
 	)
 }
 
-function debounceKey(userId: string, clientId: string) {
-	return `${userId}\0${clientId}`
-}
-
-function pruneDebounceMap(nowMs: number) {
-	if (lastTouchByKey.size < debounceMapPruneLimit) return
-	for (const [key, touchedAt] of lastTouchByKey) {
-		if (nowMs - touchedAt >= inboundMcpConnectionLastUsedMinIntervalMs) {
-			lastTouchByKey.delete(key)
-		}
-	}
-}
-
-function shouldSkipIsolateDebounce(
-	userId: string,
-	clientId: string,
-	nowMs: number,
-) {
-	pruneDebounceMap(nowMs)
-	const key = debounceKey(userId, clientId)
-	const previous = lastTouchByKey.get(key)
-	if (
-		previous != null &&
-		nowMs - previous < inboundMcpConnectionLastUsedMinIntervalMs
-	) {
-		return true
-	}
-	lastTouchByKey.set(key, nowMs)
-	return false
-}
-
 export async function recordInboundMcpConnectionLastUsed(input: {
 	env: UserMeterEnv
 	userId: string
@@ -84,7 +51,6 @@ export async function recordInboundMcpConnectionLastUsed(input: {
 	const clientId = input.clientId.trim()
 	if (!clientId || !userMeterNamespace(input.env)) return
 	const nowMs = input.nowMs ?? Date.now()
-	if (shouldSkipIsolateDebounce(input.userId, clientId, nowMs)) return
 	const lastUsedAt = input.lastUsedAt ?? new Date(nowMs).toISOString()
 	await userMeterRpc({
 		env: input.env,
@@ -118,7 +84,6 @@ export async function forgetInboundMcpConnectionLastUsed(input: {
 }): Promise<void> {
 	const clientId = input.clientId.trim()
 	if (!clientId || !userMeterNamespace(input.env)) return
-	lastTouchByKey.delete(debounceKey(input.userId, clientId))
 	await userMeterRpc({
 		env: input.env,
 		userId: input.userId,

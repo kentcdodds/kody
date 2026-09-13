@@ -5,6 +5,7 @@ import {
 	recordInboundMcpConnectionLastUsed,
 	shouldSkipInboundMcpConnectionLastUsedTouch,
 } from '#worker/inbound-mcp-connection-last-used.ts'
+import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
 test('inbound MCP last-used debounce, record, list, and forget stay per user and no-op without USER_METER', async () => {
@@ -121,4 +122,81 @@ test('inbound MCP last-used debounce, record, list, and forget stay per user and
 			userId: otherUserId,
 		}),
 	).toEqual(new Map([[clientId, firstUsedAt]]))
+
+	const reusedAt = '2026-03-20T12:02:00.000Z'
+	await recordInboundMcpConnectionLastUsed({
+		env: meter.env,
+		userId,
+		clientId,
+		lastUsedAt: reusedAt,
+		nowMs: Date.parse(reusedAt),
+	})
+	expect(
+		await listInboundMcpConnectionLastUsed({
+			env: meter.env,
+			userId,
+		}),
+	).toEqual(new Map([[clientId, reusedAt]]))
+})
+
+test('inbound MCP last-used records again after a failed UserMeter touch', async () => {
+	const meter = createInMemoryUserMeterEnv()
+	const namespace = meter.env.USER_METER
+	if (!namespace) throw new Error('expected in-memory USER_METER')
+	const userId = `user-${crypto.randomUUID()}`
+	const clientId = `https://cursor.com/oauth/${crypto.randomUUID()}/client.json`
+	const usedAt = '2026-03-20T12:00:00.000Z'
+	let failNextTouch = true
+	const failingEnv: UserMeterEnv = {
+		USER_METER: {
+			idFromName: (name: string) => namespace.idFromName(name),
+			get(id: DurableObjectId) {
+				const stub = namespace.get(id) as {
+					touchInboundConnectionLastUsed: (input: {
+						clientId: string
+						lastUsedAt: string
+					}) => Promise<{ updated: boolean }>
+					listInboundConnectionLastUsed: () => Promise<
+						Array<{ clientId: string; lastUsedAt: string }>
+					>
+				}
+				return {
+					...stub,
+					async touchInboundConnectionLastUsed(input: {
+						clientId: string
+						lastUsedAt: string
+					}) {
+						if (failNextTouch) {
+							failNextTouch = false
+							throw new Error('meter down')
+						}
+						return stub.touchInboundConnectionLastUsed(input)
+					},
+				}
+			},
+		} as DurableObjectNamespace,
+	}
+
+	await expect(
+		recordInboundMcpConnectionLastUsed({
+			env: failingEnv,
+			userId,
+			clientId,
+			lastUsedAt: usedAt,
+			nowMs: Date.parse(usedAt),
+		}),
+	).rejects.toThrow(/meter down/)
+	await recordInboundMcpConnectionLastUsed({
+		env: failingEnv,
+		userId,
+		clientId,
+		lastUsedAt: usedAt,
+		nowMs: Date.parse(usedAt),
+	})
+	expect(
+		await listInboundMcpConnectionLastUsed({
+			env: meter.env,
+			userId,
+		}),
+	).toEqual(new Map([[clientId, usedAt]]))
 })
