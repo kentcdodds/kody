@@ -1,6 +1,7 @@
 import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
 import {
 	getPackageAppClientExternals,
+	getPackageAppEntryPath,
 	normalizePackageWorkspacePath,
 } from '#worker/package-registry/manifest.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
@@ -23,6 +24,12 @@ import {
 	buildPackageAppClientModuleName,
 	clientModuleHashLength,
 } from './package-app-client-module-name.ts'
+import { withPlatformRemixFiles } from './package-app-remix.ts'
+import {
+	createPackageAppRemixClientBundleOptions,
+	entryGraphImportsRemix,
+	resolvePackageAppRuntime,
+} from './package-app-runtime.ts'
 import { type RuntimeBundle } from './runtime-bundle-types.ts'
 import { iterateModuleSourceTexts } from './runtime-source-modules.ts'
 import { isTypeDeclarationFilePath } from './static-kody-imports.ts'
@@ -265,15 +272,37 @@ export async function buildKodyAppClientBundle(input: {
 		reachable,
 		bundleLabel,
 	})
-	const files = collectBrowserBundleFiles({
-		sourceFiles: input.sourceFiles,
-		reachable,
-	})
+	// The platform's vendored `remix` joins the browser graph too, so `run()`
+	// and hydrated components come from the same Remix build the server
+	// rendered with.
+	const files = await withPlatformRemixFiles(
+		collectBrowserBundleFiles({
+			sourceFiles: input.sourceFiles,
+			reachable,
+		}),
+	)
 	// Externals come from the manifest in the files being built (not a cached
 	// manifest) so a republish that changes them rebuilds against itself.
 	const externals = rootPackage
 		? getPackageAppClientExternals(rootPackage.manifest)
 		: []
+	// JSX compiles against `remix/ui` whenever the app is a Remix app or the
+	// browser graph itself reaches for Remix; a fetch app with a plain DOM
+	// client keeps esbuild's defaults.
+	const appEntry = rootPackage
+		? getPackageAppEntryPath(rootPackage.manifest)
+		: null
+	const usesRemix =
+		(appEntry !== null &&
+			resolvePackageAppRuntime({
+				manifest: rootPackage?.manifest ?? null,
+				sourceFiles: input.sourceFiles,
+				entryPoint: appEntry,
+			}) === 'remix') ||
+		entryGraphImportsRemix({
+			sourceFiles: input.sourceFiles,
+			entryPoint,
+		})
 	// Keep the experimental bundler out of the Worker's top-level deploy graph.
 	const { createWorker } = await importWorkerBundler()
 	const bundle = await createWorker({
@@ -281,6 +310,7 @@ export async function buildKodyAppClientBundle(input: {
 		entryPoint,
 		bundle: true,
 		target: 'es2022',
+		...(usesRemix ? createPackageAppRemixClientBundleOptions() : {}),
 		...(externals.length > 0
 			? {
 					__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired: [

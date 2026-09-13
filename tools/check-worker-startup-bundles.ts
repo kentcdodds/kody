@@ -81,6 +81,18 @@ const oauthProviderGeneratedModuleRelativePath = path.join(
 )
 const oauthProviderPackageSourcePath =
 	'/node_modules/@cloudflare/workers-oauth-provider/'
+/**
+ * The pre-bundled `remix` file set package bundles receive as
+ * `node_modules/remix/*` (~0.5 MB of string constants). Only the runtime
+ * bundler path loads it, so it must stay a separate additional module.
+ */
+const packageAppRemixGeneratedModuleSourcePath =
+	'/packages/worker/.generated/package-app-remix.mjs'
+const packageAppRemixGeneratedModuleRelativePath = path.join(
+	'node_modules',
+	'.kody-generated',
+	'package-app-remix.mjs',
+)
 const workerBundlerWasmRelativePath = path.join(
 	'node_modules',
 	'.kody-generated',
@@ -195,6 +207,15 @@ function assertDeferredSourcesStayOutOfMain(
 			`${definition.name} startup bundle inlines the generated OAuth provider (${oauthProviderGeneratedModuleSourcePath}) into its main module instead of loading it as a separate additional module.`,
 		)
 	}
+	if (
+		sources.some((source) =>
+			source.includes(packageAppRemixGeneratedModuleSourcePath),
+		)
+	) {
+		throw new Error(
+			`${definition.name} startup bundle inlines the generated package-app Remix file set (${packageAppRemixGeneratedModuleSourcePath}) into its main module instead of loading it as a separate additional module.`,
+		)
+	}
 }
 
 async function assertWranglerAdditionalModules(
@@ -223,6 +244,13 @@ async function assertWranglerAdditionalModules(
 			`${name} startup bundle did not emit ${oauthProviderGeneratedModuleRelativePath} as a separate additional module (find_additional_modules regression?).`,
 		)
 	}
+	try {
+		await stat(path.join(outputDir, packageAppRemixGeneratedModuleRelativePath))
+	} catch {
+		throw new Error(
+			`${name} startup bundle did not emit ${packageAppRemixGeneratedModuleRelativePath} as a separate additional module (find_additional_modules regression?).`,
+		)
+	}
 }
 
 function assertOriginViteDeferredChunks(
@@ -243,6 +271,11 @@ function assertOriginViteDeferredChunks(
 	if (assets.workerBundler.length === 0) {
 		throw new Error(
 			`${name} Vite startup bundle did not emit a separate worker-bundler chunk (dynamic import() regression?).`,
+		)
+	}
+	if (assets.packageAppRemix.length === 0) {
+		throw new Error(
+			`${name} Vite startup bundle did not emit a separate package-app-remix chunk (dynamic import() regression?).`,
 		)
 	}
 	if (assets.esbuildWasm.length === 0) {

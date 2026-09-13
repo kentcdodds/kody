@@ -22,7 +22,16 @@ import {
 	collectDynamicPackageImportProxyModules,
 	prepareKodyGraphFiles,
 } from './module-graph-import-rewriting.ts'
-import { resolveDirectKodyDependenciesForEntryPoint } from './module-graph-workspace.ts'
+import {
+	readRootPackage,
+	resolveDirectKodyDependenciesForEntryPoint,
+} from './module-graph-workspace.ts'
+import { withPlatformRemixFiles } from './package-app-remix.ts'
+import {
+	createPackageAppRemixServerBundleOptions,
+	resolvePackageAppRuntime,
+	type PackageAppRemixBundleOptions,
+} from './package-app-runtime.ts'
 import {
 	createAppEntrypointSource,
 	createExecuteEntrypointSource,
@@ -37,10 +46,18 @@ const moduleBundleCache = createPublishedPackagePromiseCache<RuntimeBundle>()
 async function createWorkerBundle(input: {
 	files: Record<string, string>
 	entryPoint: string
+	remixOptions?: PackageAppRemixBundleOptions | null
 }) {
 	// Keep the experimental bundler out of the Worker's top-level deploy graph.
 	const { createWorker } = await importWorkerBundler()
-	return await createWorker(input)
+	// Every package bundle can import `remix/<subpath>` from the platform's
+	// vendored copy, whether or not the entry is a Remix app.
+	const files = await withPlatformRemixFiles(input.files)
+	return await createWorker({
+		files,
+		entryPoint: input.entryPoint,
+		...input.remixOptions,
+	})
 }
 
 function serializePreparedFilesRecord(files: Record<string, string>) {
@@ -275,9 +292,18 @@ export async function buildKodyAppBundle(input: {
 				normalizedEntrypoint,
 			),
 		})
+		const appRuntime = resolvePackageAppRuntime({
+			manifest: readRootPackage(input.sourceFiles)?.manifest ?? null,
+			sourceFiles: input.sourceFiles,
+			entryPoint,
+		})
 		const bundle = await createWorkerBundle({
 			files,
 			entryPoint: bootstrapPath,
+			remixOptions:
+				appRuntime === 'remix'
+					? createPackageAppRemixServerBundleOptions()
+					: null,
 		})
 		const modules = {
 			...stripKodyRuntimeModules(bundle.modules as WorkerLoaderModules),

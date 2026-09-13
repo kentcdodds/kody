@@ -168,7 +168,9 @@ test('runRepoChecks defers full esbuild when rebuild will validate the same targ
 			expect.objectContaining({
 				kind: 'bundle',
 				ok: true,
-				message: 'Bundle validation deferred to published artifact rebuild.',
+				message: expect.stringContaining(
+					'Bundle validation deferred to published artifact rebuild.',
+				),
 			}),
 			expect.objectContaining({ kind: 'typecheck', ok: true }),
 		]),
@@ -323,7 +325,9 @@ test('deferred bundle check still typechecks in an isolate and does not start bu
 			expect.objectContaining({
 				kind: 'bundle',
 				ok: true,
-				message: 'Bundle validation deferred to published artifact rebuild.',
+				message: expect.stringContaining(
+					'Bundle validation deferred to published artifact rebuild.',
+				),
 			}),
 			expect.objectContaining({
 				kind: 'typecheck',

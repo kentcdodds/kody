@@ -12,11 +12,13 @@ import {
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build, type Plugin } from 'esbuild'
+import { packageAppRemixSubpaths } from '#worker/package-runtime/package-app-remix-subpaths.ts'
 import { isExecutedDirectly } from './node-runtime.ts'
 
 /**
- * Pre-bundles `@cloudflare/worker-bundler` (and its `/typescript` entry) and
- * `@cloudflare/workers-oauth-provider` into standalone ES modules under
+ * Pre-bundles `@cloudflare/worker-bundler` (and its `/typescript` entry),
+ * `@cloudflare/workers-oauth-provider`, and the platform-supplied `remix`
+ * package for package apps into standalone ES modules under
  * `packages/worker/.generated/`.
  *
  * Why: wrangler inlines every dynamic `import()` into the single main worker
@@ -39,6 +41,18 @@ import { isExecutedDirectly } from './node-runtime.ts'
  * clears that collector's esbuild `watchFiles` / `watchDirs`. workerd still
  * requires CompiledWasm for `esbuild.wasm` (`WebAssembly.compile` is
  * disallowed).
+ *
+ * `package-app-remix.mjs` is different in kind: it is not code the Worker
+ * runs but a file set the Worker hands to the runtime bundler. Package apps
+ * import `remix/<subpath>` and the platform, not npm, supplies Remix — the
+ * same `remix` version the origin UI ships, so Kody's Remix conventions
+ * carry over to hosted mini-apps without a 48-package npm install per
+ * publish. Every Workers-safe subpath is bundled once with esbuild code
+ * splitting so `remix/ui` and `remix/ui/server` share a single component
+ * runtime instance, and the result is serialized as
+ * `{ "package.json": …, "dist/router.js": …, "dist/chunks/…": … }` that
+ * `#worker/package-runtime/package-app-remix.ts` mounts at
+ * `node_modules/remix/` in the bundler's virtual file system.
  *
  * The output is deterministic for a given installed package version, so a
  * stamp file makes re-runs a no-op (important: this runs in front of every
@@ -65,10 +79,12 @@ export const leftoverSrcGeneratedBundlerNames = [
 	'esbuild-wasm.mjs',
 	'worker-bundler.stamp.json',
 ] as const
+export const packageAppRemixModuleName = 'package-app-remix.mjs'
 const generatedArtifactNames = [
 	'worker-bundler.mjs',
 	'worker-bundler-typescript.mjs',
 	'oauth-provider.mjs',
+	packageAppRemixModuleName,
 	'esbuild.wasm',
 ] as const
 const leftoverWranglerVisibleNames = [
@@ -82,6 +98,7 @@ const stampPath = path.join(
 
 const nodeBuiltins = new Set([
 	'assert',
+	'async_hooks',
 	'buffer',
 	'child_process',
 	'crypto',
@@ -156,9 +173,14 @@ function resolveOAuthProviderPackageDir() {
 	)
 }
 
+function resolveRemixPackageDir() {
+	return path.join(repoRoot, 'node_modules', 'remix')
+}
+
 async function buildStampContent(
 	bundlerPackageDir: string,
 	oauthProviderPackageDir: string,
+	remixPackageDir: string,
 ) {
 	const bundlerPackageJson = await readFile(
 		path.join(bundlerPackageDir, 'package.json'),
@@ -166,6 +188,17 @@ async function buildStampContent(
 	)
 	const oauthProviderPackageJson = await readFile(
 		path.join(oauthProviderPackageDir, 'package.json'),
+		'utf8',
+	)
+	// The `remix` meta-package pins its `@remix-run/*` dependencies by range,
+	// so the installed lockfile decides which bytes land in the vendored set;
+	// stamp the lockfile too so a `npm update` of those packages regenerates.
+	const remixPackageJson = await readFile(
+		path.join(remixPackageDir, 'package.json'),
+		'utf8',
+	)
+	const lockfile = await readFile(
+		path.join(repoRoot, 'package-lock.json'),
 		'utf8',
 	)
 	const generatorSource = await readFile(fileURLToPath(import.meta.url), 'utf8')
@@ -180,10 +213,97 @@ async function buildStampContent(
 	const hash = createHash('sha256')
 		.update(bundlerPackageJson)
 		.update(oauthProviderPackageJson)
+		.update(remixPackageJson)
+		.update(packageAppRemixSubpaths.join('\n'))
+		.update(lockfile)
 		.update(esbuildVersion)
 		.update(generatorSource)
 		.digest('hex')
 	return JSON.stringify({ hash }, null, '\t')
+}
+
+type RemixExportTarget = string | { default?: string; types?: string }
+
+/**
+ * Bundles the Workers-safe `remix/<subpath>` entries into one code-split ESM
+ * file set and serializes it as the module `package-app-remix.mjs` exports:
+ * `remixVersion` plus `files`, keyed relative to `node_modules/remix/`.
+ */
+async function buildPackageAppRemixModule(remixPackageDir: string) {
+	const remixPackage = JSON.parse(
+		await readFile(path.join(remixPackageDir, 'package.json'), 'utf8'),
+	) as { version: string; exports: Record<string, RemixExportTarget> }
+	const entryPoints: Record<string, string> = {}
+	const vendoredExports: Record<string, string> = {
+		'./package.json': './package.json',
+	}
+	for (const subpath of packageAppRemixSubpaths) {
+		const target = remixPackage.exports[`./${subpath}`]
+		const targetFile =
+			typeof target === 'string' ? target : (target?.default ?? null)
+		if (!targetFile) {
+			throw new Error(
+				`remix@${remixPackage.version} does not export "./${subpath}"; update packageAppRemixSubpaths.`,
+			)
+		}
+		entryPoints[subpath] = path.join(remixPackageDir, targetFile)
+		vendoredExports[`./${subpath}`] = `./dist/${subpath}.js`
+	}
+	// `platform: 'neutral'` keeps esbuild from injecting Node or browser
+	// shims; the same output feeds the Worker bundle and the browser bundle.
+	// Node builtins stay external in `node:` form: the package-app isolate
+	// runs with `nodejs_compat`, and the browser bundle check rejects any
+	// subpath that still needs one (`middleware/async-context`).
+	const distOutdir = path.join(remixPackageDir, 'dist')
+	const result = await build({
+		entryPoints,
+		bundle: true,
+		splitting: true,
+		format: 'esm',
+		platform: 'neutral',
+		mainFields: ['module', 'main'],
+		conditions: ['workerd', 'worker', 'browser', 'import', 'default'],
+		target: 'es2022',
+		minify: true,
+		write: false,
+		outdir: distOutdir,
+		chunkNames: 'chunks/[name]-[hash]',
+		plugins: [externalsPlugin],
+		logLevel: 'silent',
+	})
+	const files: Record<string, string> = {
+		'package.json': JSON.stringify(
+			{
+				name: 'remix',
+				version: remixPackage.version,
+				type: 'module',
+				exports: vendoredExports,
+			},
+			null,
+			'\t',
+		),
+	}
+	for (const output of result.outputFiles) {
+		const relative = path
+			.relative(distOutdir, output.path)
+			.replaceAll(path.sep, '/')
+		if (relative.startsWith('..')) {
+			throw new Error(
+				`remix prebuild emitted "${output.path}" outside the dist directory.`,
+			)
+		}
+		files[`dist/${relative}`] = output.text
+	}
+	const serialized = [
+		'// Generated by tools/build-worker-bundler-modules.ts; do not edit.',
+		`export const remixVersion = ${JSON.stringify(remixPackage.version)};`,
+		`export const files = ${JSON.stringify(files)};`,
+		'',
+	].join('\n')
+	await writeFile(
+		path.join(workerBundlerGeneratedDir, packageAppRemixModuleName),
+		serialized,
+	)
 }
 
 async function pathExists(filePath: string) {
@@ -234,9 +354,11 @@ async function materializeWranglerVisibleModules() {
 export async function ensureWorkerBundlerModules() {
 	const bundlerPackageDir = resolveWorkerBundlerDistDir()
 	const oauthProviderPackageDir = resolveOAuthProviderPackageDir()
+	const remixPackageDir = resolveRemixPackageDir()
 	const stampContent = await buildStampContent(
 		bundlerPackageDir,
 		oauthProviderPackageDir,
+		remixPackageDir,
 	)
 	await removeLeftoverSrcGeneratedBundlerArtifacts()
 	await rm(path.join(workerBundlerGeneratedDir, 'esbuild-wasm.mjs'), {
@@ -276,6 +398,7 @@ export async function ensureWorkerBundlerModules() {
 		path.join(bundlerPackageDir, 'dist/esbuild.wasm'),
 		path.join(workerBundlerGeneratedDir, 'esbuild.wasm'),
 	)
+	await buildPackageAppRemixModule(remixPackageDir)
 	await writeFile(stampPath, stampContent)
 	await rm(path.join(workerBundlerGeneratedDir, 'esbuild-wasm.mjs'), {
 		force: true,

@@ -1,7 +1,9 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
+	getDeclaredPackageAppRuntime,
 	getPackageAppAssetsDirectory,
 	getPackageAppClientEntryPath,
+	getPackageAppEntryPath,
 	listPackageRetrievers,
 	listPackageSubscriptions,
 	normalizePackageWorkspacePath,
@@ -31,6 +33,8 @@ import {
 } from '#worker/package-runtime/module-graph.ts'
 import { validatePackageAppAssetsDirectory } from '#worker/package-runtime/package-app-assets-directory.ts'
 import { validatePackageAppGraphSeparation } from '#worker/package-runtime/package-app-client-graph.ts'
+import { remixPackageName } from '#worker/package-runtime/package-app-remix-subpaths.ts'
+import { resolvePackageAppRuntime } from '#worker/package-runtime/package-app-runtime.ts'
 import {
 	collectPublishedPackageArtifactTargets,
 	type PublishedPackageArtifactBuildTarget,
@@ -442,6 +446,26 @@ declare module "kody:runtime" {
         has(alias: string): Promise<boolean>;
       }
     | null;
+  /**
+   * Remix request-context key for package apps. \`context.get(KodyRuntime)\`
+   * (or \`get(KodyRuntime)\` in a controller) returns this module's exports
+   * for the current request; no middleware is needed to install it.
+   */
+  export const KodyRuntime: {
+    readonly defaultValue: {
+      kody: typeof kody;
+      createAuthenticatedFetch: typeof createAuthenticatedFetch;
+      secretHeaders: typeof secretHeaders;
+      oauthClientCredentials: typeof oauthClientCredentials;
+      packageContext: typeof packageContext;
+      packages: typeof packages;
+      packageStorage: typeof packageStorage;
+      email: typeof email;
+      workflows: typeof workflows;
+      events: typeof events;
+      packageSecrets: typeof packageSecrets;
+    };
+  };
 }
 `.trim()
 }
@@ -577,11 +601,34 @@ function formatNpmDependencyCheckMessage(input: {
 	if (input.dependencies.length === 0) {
 		return 'package.json declares no npm dependencies.'
 	}
-	return `package.json declares ${input.dependencies.length} npm ${pluralize(
+	const declared = `package.json declares ${input.dependencies.length} npm ${pluralize(
 		input.dependencies.length,
 		'dependency',
 		'dependencies',
 	)}: ${formatQuotedList(input.dependencies)}.`
+	return input.dependencies.includes(remixPackageName)
+		? `${declared} Kody supplies "${remixPackageName}" to every package bundle at the platform version, so the declared range is not installed.`
+		: declared
+}
+
+const remixInternalPackageScope = '@remix-run/'
+
+/**
+ * `@remix-run/*` are the packages behind the `remix` meta-package. Installing
+ * one from npm next to the platform's vendored `remix` yields two copies of
+ * the same runtime (two component registries, two context-key modules), so
+ * publish names the fix instead.
+ */
+function findRemixInternalNpmDependencies(dependencies: Array<string>) {
+	return dependencies.filter((dependency) =>
+		dependency.startsWith(remixInternalPackageScope),
+	)
+}
+
+function formatRemixInternalNpmDependencyMessage(dependencies: Array<string>) {
+	return `package.json#dependencies must not list ${formatQuotedList(
+		dependencies,
+	)}: import Remix as "${remixPackageName}/<subpath>" (for example "${remixPackageName}/router", "${remixPackageName}/ui"); Kody supplies that package to every bundle, and a second copy from npm would not share its component runtime.`
 }
 
 function getDeclaredStaticKodyPackageDependencies(
@@ -693,6 +740,28 @@ export async function validatePackageBundles(input: {
 				? `Bundled ${input.entryPoints.length} package target(s) successfully.`
 				: failures.join('\n'),
 	}
+}
+
+/**
+ * Appends which runtime `kody.app.entry` resolved to (declared or inferred
+ * from the entry graph) so the publish log shows whether the app runs as a
+ * Remix router or a raw fetch handler.
+ */
+function describePackageAppRuntime(input: {
+	manifest: AuthoredPackageJson
+	sourceFiles: Record<string, string>
+}) {
+	const appEntry = getPackageAppEntryPath(input.manifest)
+	if (!appEntry) return null
+	const runtime = resolvePackageAppRuntime({
+		manifest: input.manifest,
+		sourceFiles: input.sourceFiles,
+		entryPoint: appEntry,
+	})
+	const declared = getDeclaredPackageAppRuntime(input.manifest)
+	return `kody.app.entry "${appEntry}" uses the ${runtime} runtime${
+		declared ? '' : ' (inferred; set kody.app.runtime to pin it)'
+	}.`
 }
 
 function getPackageTypecheckDiagnostics(input: {
@@ -1328,6 +1397,23 @@ export async function runRepoChecks(input: {
 			}
 		}
 	}
+	const remixInternalDependencies = findRemixInternalNpmDependencies(
+		declaredNpmDependencies,
+	)
+	if (remixInternalDependencies.length > 0) {
+		results.push({
+			kind: 'dependencies',
+			ok: false,
+			message: formatRemixInternalNpmDependencyMessage(
+				remixInternalDependencies,
+			),
+		})
+		return toRepoCheckRunResult({
+			results,
+			manifest,
+			sourceFiles,
+		})
+	}
 	const staticKodyDependencyCheck =
 		validateStaticKodyPackageDependencyDeclarations({
 			manifest,
@@ -1582,10 +1668,15 @@ export async function runRepoChecks(input: {
 			await isolatedRunner.discard(stagingKey)
 		}
 	}
+	const appRuntimeNote = bundleCheckResult.ok
+		? describePackageAppRuntime({ manifest, sourceFiles })
+		: null
 	results.push({
 		kind: 'bundle',
 		ok: bundleCheckResult.ok,
-		message: bundleCheckResult.message,
+		message: appRuntimeNote
+			? `${bundleCheckResult.message} ${appRuntimeNote}`
+			: bundleCheckResult.message,
 	})
 	results.push(typecheckResult)
 	results.push({

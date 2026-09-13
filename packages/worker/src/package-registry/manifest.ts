@@ -6,6 +6,7 @@ import {
 	authoredPackageJsonSchema,
 	webhookDefaultRateLimitPerMinute,
 	type AuthoredPackageJson,
+	type PackageAppRuntime,
 	type PackageExportTarget,
 	type PackageRetrieverScope,
 } from './types.ts'
@@ -249,6 +250,17 @@ export function getPackageAppEntryPath(manifest: AuthoredPackageJson) {
 	const appEntry = manifest.kody.app?.entry?.trim()
 	if (!appEntry) return null
 	return normalizePackageWorkspacePath(appEntry)
+}
+
+/**
+ * The runtime `kody.app.runtime` declares, or `null` when the manifest leaves
+ * it to be inferred from the entry graph (see `resolvePackageAppRuntime` in
+ * `#worker/package-runtime/package-app-runtime.ts`).
+ */
+export function getDeclaredPackageAppRuntime(
+	manifest: AuthoredPackageJson,
+): PackageAppRuntime | null {
+	return manifest.kody.app?.runtime ?? null
 }
 
 export function getPackageAppClientEntryPath(manifest: AuthoredPackageJson) {

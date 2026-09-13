@@ -676,7 +676,7 @@ const __kodyRuntimeNamedExports = {
 // The default export mirrors the named exports and forwards any extra
 // wrapper-specific helpers (for example package-app \`realtime\`) to the
 // current run's store instead of freezing the first run's object.
-export default new Proxy(__kodyRuntimeNamedExports, {
+const __kodyRuntimeDefault = new Proxy(__kodyRuntimeNamedExports, {
 	get(target, property) {
 		if (Reflect.has(target, property)) return Reflect.get(target, property);
 		const currentRuntime = __kodyRuntimeStorage.getStore();
@@ -705,6 +705,15 @@ export default new Proxy(__kodyRuntimeNamedExports, {
 		return { ...descriptor, configurable: true };
 	},
 });
+export default __kodyRuntimeDefault;
+
+// Remix request-context key for package apps: \`context.get(KodyRuntime)\`
+// in any controller, action, or middleware yields this module's default
+// export. A Remix context key is a plain object read by identity, and
+// \`get()\` falls back to its own \`defaultValue\` when nothing called
+// \`set()\`, so the runtime is present in every request context without a
+// middleware to install it, and it stays late-bound like every other export.
+export const KodyRuntime = Object.freeze({ defaultValue: __kodyRuntimeDefault });
 `.trim()
 	cachedRuntimeModuleSource = source
 	return source
@@ -789,7 +798,7 @@ export const packageSecrets = __kodyCreatePackageBoundSecrets(${JSON.stringify(
 	)});
 // The default export mirrors the shared runtime default but resolves
 // packageStorage / packageSecrets to this package's bound variants.
-export default new Proxy(__kodyBaseRuntimeDefault, {
+const __kodyPackageRuntimeDefault = new Proxy(__kodyBaseRuntimeDefault, {
 	get(target, property, receiver) {
 		if (property === 'packageStorage') return packageStorage;
 		if (property === 'packageSecrets') return packageSecrets;
@@ -803,6 +812,11 @@ export default new Proxy(__kodyBaseRuntimeDefault, {
 		);
 	},
 });
+export default __kodyPackageRuntimeDefault;
+// Remix request-context key bound to this package: \`context.get(KodyRuntime)\`
+// resolves packageStorage / packageSecrets to the declaring package, matching
+// the named exports above.
+export const KodyRuntime = Object.freeze({ defaultValue: __kodyPackageRuntimeDefault });
 `.trim()
 }
 
@@ -939,15 +953,41 @@ export default async function __kodyExecuteEntrypoint(input) {
 `.trim()
 }
 
+/**
+ * Named export the app bootstrap adds so the wrapper can tell a Remix router
+ * (full mounted URL) from a fetch handler (mount-stripped path) without
+ * re-running the duck typing. Artifacts published before the export existed
+ * are fetch apps.
+ */
+export const packageAppRuntimeMarkerExportName = '__kodyPackageAppRuntime'
+
 export function createAppEntrypointSource(input: { modulePath: string }) {
 	return `
 import * as userModule from ${JSON.stringify(input.modulePath)};
 export * from ${JSON.stringify(input.modulePath)};
 
+// A Remix router (createRouter from remix/router) is an object whose fetch
+// takes (input, init?: RequestInit). Duck-type it by the methods only a
+// router has so a plain { fetch } handler object keeps the Worker signature.
+function isRemixRouter(candidate) {
+  return (
+    candidate != null &&
+    typeof candidate === 'object' &&
+    typeof candidate.fetch === 'function' &&
+    typeof candidate.map === 'function' &&
+    typeof candidate.mount === 'function'
+  );
+}
+
 function resolvePackageAppHandler() {
   const candidate = userModule.default ?? userModule;
   if (typeof candidate === 'function') {
     return candidate;
+  }
+  if (isRemixRouter(candidate)) {
+    // Never forward the Worker env as the router's RequestInit: it would be
+    // read as request options and rebuild the Request from them.
+    return (request) => candidate.fetch(request);
   }
   if (candidate && typeof candidate.fetch === 'function') {
     return candidate.fetch.bind(candidate);
@@ -960,11 +1000,20 @@ function resolvePackageAppHandler() {
     return moduleFetch;
   }
   throw new Error(
-    'Kody package apps must export a fetch handler via default export or named fetch.',
+    'Kody package apps must default export a Remix router (createRouter from remix/router) or a fetch handler (a function, an object with fetch(), or a named fetch export).',
   );
 }
 
 const handler = resolvePackageAppHandler();
+
+// Read by the package-app wrapper: a Remix router receives the full hosted
+// URL (mount included) so prefixed route contracts match and href() agrees
+// with the address bar; a fetch handler keeps the mount-stripped path.
+export const ${packageAppRuntimeMarkerExportName} = isRemixRouter(
+  userModule.default ?? userModule,
+)
+  ? 'remix'
+  : 'fetch';
 
 export default {
   async fetch(request, env, ctx) {

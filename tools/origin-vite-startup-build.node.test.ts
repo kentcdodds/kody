@@ -14,6 +14,7 @@ test('classifies hashed Vite origin deferred assets', () => {
 			'worker-bundler-DkncWciV.js',
 			'worker-bundler-typescript-CF82MPh-.js',
 			'oauth-provider-DuOVB_DS.js',
+			'package-app-remix-Cq1x9Zr2.js',
 			'esbuild-eina1h7z.wasm',
 			'index.js',
 			'account-area-Bk2HBZxv.js',
@@ -25,6 +26,7 @@ test('classifies hashed Vite origin deferred assets', () => {
 			'worker-bundler-typescript-CF82MPh-.js',
 		],
 		oauthProvider: ['oauth-provider-DuOVB_DS.js'],
+		packageAppRemix: ['package-app-remix-Cq1x9Zr2.js'],
 		esbuildWasm: ['esbuild-eina1h7z.wasm'],
 	})
 })

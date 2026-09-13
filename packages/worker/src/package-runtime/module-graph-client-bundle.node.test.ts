@@ -11,6 +11,7 @@ vi.mock('#worker/worker-bundler-modules.ts', () => ({
 }))
 
 import { packageAppClientModuleNamePattern } from './package-app-client-module-name.ts'
+import { isVendoredRemixPath } from './package-app-remix.ts'
 
 const { buildKodyAppClientBundle, isDeclaredClientExternal } =
 	await import('./module-graph-client-bundle.ts')
@@ -65,13 +66,20 @@ test('buildKodyAppClientBundle bundles only the browser graph and names the outp
 	}
 	expect(call.entryPoint).toBe('src/client.ts')
 	expect(call.bundle).toBe(true)
-	expect(Object.keys(call.files).sort()).toEqual([
+	const fileKeys = Object.keys(call.files).sort()
+	expect(fileKeys.filter((key) => !isVendoredRemixPath(key))).toEqual([
 		'node_modules/left-pad/index.js',
 		'node_modules/left-pad/package.json',
 		'package.json',
 		'src/client.ts',
 		'src/greet.ts',
 	])
+	// The platform's vendored Remix rides along so `remix/ui` resolves in
+	// the browser graph without an npm install.
+	expect(fileKeys).toContain('node_modules/remix/package.json')
+	expect(fileKeys).toContain('node_modules/remix/dist/ui.js')
+	// A plain DOM client keeps esbuild's JSX defaults.
+	expect(call).not.toHaveProperty('jsxImportSource')
 
 	const same = await buildKodyAppClientBundle({
 		sourceFiles,

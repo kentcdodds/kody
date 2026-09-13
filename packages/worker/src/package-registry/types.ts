@@ -66,8 +66,23 @@ export type PackageAppClientDefinition = z.infer<
 	typeof packageAppClientDefinitionSchema
 >
 
+export const packageAppRuntimeValues = ['remix', 'fetch'] as const
+export type PackageAppRuntime = (typeof packageAppRuntimeValues)[number]
+
 export const packageAppDefinitionSchema = z.object({
-	/** Worker fetch entry bundled for the package-app isolate. */
+	/**
+	 * How the platform runs `entry`. `remix`: the module default-exports a
+	 * Remix router (`createRouter` from `remix/router`) and the bundle gets
+	 * Remix defaults (JSX from `remix/ui`, `clientEntry(import.meta.url, …)`
+	 * hydration ids). `fetch`: a raw Worker-style `fetch` handler. When
+	 * omitted, `remix` applies as soon as the entry graph imports
+	 * `remix/<subpath>`; otherwise `fetch`.
+	 */
+	runtime: z.enum(packageAppRuntimeValues).optional(),
+	/**
+	 * Server entry bundled for the package-app isolate: the Remix router
+	 * module or the Worker fetch handler, depending on `runtime`.
+	 */
 	entry: z.string().min(1),
 	/**
 	 * Browser entry the platform bundles to a fingerprinted ESM module served
