@@ -8,12 +8,10 @@ export const identityEmailDestinationId = 'identity'
 /** Extra addresses besides the account identity email. */
 export const maxAdditionalEmailNotificationDestinations = 5
 
-export type EmailNotificationDestinationKind = 'identity' | 'additional'
-
 export type EmailNotificationDestination = {
 	id: string
 	email: string
-	kind: EmailNotificationDestinationKind
+	kind: 'identity' | 'additional'
 	verified: boolean
 	isDefault: boolean
 	canRemove: boolean
