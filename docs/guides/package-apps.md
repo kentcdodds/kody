@@ -244,6 +244,12 @@ console.log('theme', config.theme)
 
 `public/styles.css` (optional `assets` directory, served as-is).
 
+Using a browser package such as `@remix-run/ui` from the client? Switch `client`
+to the object form and pair it with an import map — see
+[Import maps and externals](#import-maps-and-externals) for the copy-paste pair.
+The string form is only right when everything the client imports is relative or
+inlined from `package.json#dependencies`.
+
 ### Two graphs, not one
 
 `kody.app.entry` and `kody.app.client` are **separate module graphs**. The
@@ -297,6 +303,30 @@ and the handler never sees those paths. A client hash from an older publish
 returns 404 rather than a stale module, so always render the URL from
 `packageContext`.
 
+None of `appBasePath`, `assetBasePath`, `hostedUrl`, or `clientModuleUrl` ends
+with a slash, so `${assetBasePath}/styles.css` is always a single-slash join.
+When you resolve relative to a URL that does end with a slash (a service worker
+scope, `new URL('x', base)`), pass the relative path without a leading slash.
+
+#### Detecting support
+
+Kits that must run on hosts with and without this feature probe the platform
+version endpoint — it answers on every host that serves client assets, whether
+or not the manifest declares `client`:
+
+```ts
+const version = await fetch(`${assetBasePath}/__version.json`)
+// 200  → the host serves /_assets (clientModuleUrl may still be null when the
+//        manifest has no `client`)
+// 404  → the host does not serve client assets yet; fall back
+```
+
+In the fetch handler the same distinction is `packageContext.clientModuleUrl`:
+`null` means the host supports client assets but this manifest declares no
+`client`; `undefined` (field absent) means the host predates the feature. A host
+that returns 200 from `__version.json` also builds the declared client at
+publish, so a declared `client` with a `null` URL does not happen there.
+
 ### Browser-safe graph
 
 The client graph must be browser-safe. Publish fails, naming the file, when the
@@ -310,8 +340,16 @@ and load in the browser as written.
 
 By default every bare import is inlined from `package.json#dependencies`, and a
 bare import the bundler cannot resolve fails publish. To let the **page** decide
-where a package comes from (an import map pointing at a CDN, a shared kit
-bundle, or a file in `assets`), declare it under `client.externals`:
+where a package comes from, declare it under `client.externals` **and** map it
+in the page's import map. The two lists must match: an external with no import
+map entry is a bare-specifier error in the browser; an import map entry with no
+external is simply unused (the bundler inlines or fails on the specifier).
+
+Recommended vendor story: ship the browser build of the package in the `assets`
+directory and map to it. It is same-origin, versioned with your publish, and
+needs no third-party CDN. One copy-paste pair:
+
+`package.json`:
 
 ```json
 {
@@ -320,7 +358,7 @@ bundle, or a file in `assets`), declare it under `client.externals`:
 			"entry": "./src/app.ts",
 			"client": {
 				"entry": "./src/client/index.ts",
-				"externals": ["@remix-run/ui", "preact"]
+				"externals": ["@remix-run/ui"]
 			},
 			"assets": "./public"
 		}
@@ -328,24 +366,34 @@ bundle, or a file in `assets`), declare it under `client.externals`:
 }
 ```
 
-Externals are bare specifiers only (no relative paths, URLs, or `kody:` /
-`cloudflare:` / `node:` schemes); each covers its subpaths (`preact` also covers
-`preact/hooks`). The bundled module keeps them as
-`import … from "@remix-run/ui"` and the page maps them:
+`src/app.ts` (the import map goes in `<head>`, before the module script; keys
+are exactly the `externals` entries):
 
 ```ts
 const importMap = JSON.stringify({
 	imports: {
-		'@remix-run/ui': `${assetBasePath}/vendor/ui.js`,
-		preact: 'https://esm.sh/preact@10',
+		'@remix-run/ui': `${assetBasePath}/vendor/remix-ui.js`,
 	},
 })
-// in the HTML head, before the module script
-`<script type="importmap">${importMap}</script>`
+// <script type="importmap">${importMap}</script>
+// <script type="module" src="${clientModuleUrl}"></script>
 ```
 
-Undeclared bare imports that survive bundling still fail publish; the error
-names the specifier and points here.
+`public/vendor/remix-ui.js` — the package's browser ESM build, copied into the
+assets directory.
+
+Externals are bare specifiers only (no relative paths, URLs, or `kody:` /
+`cloudflare:` / `node:` schemes); each covers its subpaths (`preact` also covers
+`preact/hooks`; map subpaths with a trailing-slash prefix entry such as
+`"preact/": "${assetBasePath}/vendor/preact/"` next to the bare `"preact"`
+entry). The bundled module keeps them as `import … from "@remix-run/ui"`. A CDN
+URL (`https://esm.sh/preact@10`) works as the map target too when you accept the
+third-party dependency.
+
+Undeclared bare imports that survive bundling fail publish; the error names the
+specifier and offers the fix: add it to `package.json#dependencies` to inline
+it, or to `kody.app.client.externals` and the import map to load it from the
+page.
 
 ### Service worker precache
 
@@ -369,11 +417,17 @@ runtime instead; the platform gives you two ways:
 ```
 
 Ship the worker script from the `assets` directory and register it with the
-slash-terminated app mount as its scope. JavaScript served from `/_assets/`
-carries `Service-Worker-Allowed: <appBasePath>/`, which permits that broader
-scope. The trailing slash matters: scope matching is a string-prefix check, so a
-scope of `/packages/app` would also claim the sibling mount
-`/packages/app-secret`; `/packages/app/` cannot.
+slash-terminated app mount as its scope. The canonical pair is:
+
+- scope: `` `${appBasePath}/` `` (always with the trailing slash)
+- header the platform sends on JavaScript under `/_assets/`:
+  `Service-Worker-Allowed: <appBasePath>/` (the same value)
+
+A scope that does not start with that header value is rejected by the browser
+with a `SecurityError`, so register exactly `${appBase}/`. The trailing slash
+matters: scope matching is a string-prefix check, so a scope of `/packages/app`
+would also claim the sibling mount `/packages/app-secret`; `/packages/app/`
+cannot.
 
 ```ts
 // in the page (src/client/index.ts)
@@ -409,6 +463,29 @@ its immutable cache header.
 Static `assets` paths are not fingerprinted (they carry a commit-scoped `ETag`
 and a five-minute max-age), so precache them keyed by `publishedCommit` and drop
 old caches on activate.
+
+### Troubleshooting
+
+- **404 on `<assetBasePath>/__version.json`** — the host does not serve client
+  assets yet. This is the support probe, not a broken fetch handler; nothing
+  under `/_assets/` will answer on that host, and
+  `packageContext.clientModuleUrl` is `undefined` there.
+- **`clientModuleUrl` is `null` on a host where `__version.json` returns 200** —
+  the published manifest declares no `client`. Check the manifest that actually
+  published (the `client` key, path or object form).
+- **404 on `<assetBasePath>/client.<hash>.js`** — the hash is from an older
+  publish. Re-read the URL from `packageContext`, `data-client-module`, or
+  `__version.json`; never store it in code.
+- **Publish fails with "unresolved bare package imports"** — the client imports
+  a package that is neither installable from `package.json#dependencies` nor
+  listed in `kody.app.client.externals`. Pick one and, for an external, add the
+  matching import map entry.
+- **Browser console: "Failed to resolve module specifier"** — the module kept an
+  external import that the page's import map does not cover. Add the entry (keys
+  must match the `externals` strings exactly).
+- **Publish fails with "imports the browser client entry"** — the Worker graph
+  reaches `kody.app.client`. Move the shared code into a helper both sides
+  import and keep the client entry out of `src/app.ts`.
 
 Checked-in browser-ready `.js` served from the fetch handler with an explicit
 `Content-Type` still works; `client` is the pit-of-success path for source you
