@@ -252,9 +252,29 @@ export function getPackageAppEntryPath(manifest: AuthoredPackageJson) {
 }
 
 export function getPackageAppClientEntryPath(manifest: AuthoredPackageJson) {
-	const clientEntry = manifest.kody.app?.client?.trim()
+	const client = manifest.kody.app?.client
+	const clientEntry = (
+		typeof client === 'string' ? client : client?.entry
+	)?.trim()
 	if (!clientEntry) return null
 	return normalizePackageWorkspacePath(clientEntry)
+}
+
+/**
+ * Bare specifiers the browser bundle must leave as external `import`s for
+ * the page's import map. Sorted and de-duplicated; empty for the string form
+ * of `kody.app.client` or when no client is declared.
+ */
+export function getPackageAppClientExternals(manifest: AuthoredPackageJson) {
+	const client = manifest.kody.app?.client
+	if (!client || typeof client === 'string') return []
+	return [
+		...new Set(
+			(client.externals ?? [])
+				.map((specifier) => specifier.trim())
+				.filter((specifier) => specifier.length > 0),
+		),
+	].sort((left, right) => left.localeCompare(right))
 }
 
 /**

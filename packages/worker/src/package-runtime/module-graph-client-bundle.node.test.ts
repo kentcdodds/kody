@@ -10,8 +10,11 @@ vi.mock('#worker/worker-bundler-modules.ts', () => ({
 	}),
 }))
 
-const { buildKodyAppClientBundle, packageAppClientModuleNamePattern } =
-	await import('./module-graph-client-bundle.ts')
+const {
+	buildKodyAppClientBundle,
+	isDeclaredClientExternal,
+	packageAppClientModuleNamePattern,
+} = await import('./module-graph-client-bundle.ts')
 
 const packageJson = JSON.stringify({
 	name: '@kentcdodds/client-app',
@@ -155,6 +158,67 @@ test('buildKodyAppClientBundle fails when the bundled output still imports unres
 		entryPoint: 'src/client.ts',
 	})
 	expect(urlImports.mainModule).toMatch(packageAppClientModuleNamePattern)
+})
+
+test('buildKodyAppClientBundle keeps declared externals as bare imports for an import map and passes them to the bundler', async () => {
+	const packageJsonWithExternals = JSON.stringify({
+		name: '@kentcdodds/client-app',
+		exports: { '.': './src/index.ts' },
+		kody: {
+			id: 'client-app',
+			description: 'Client app',
+			app: {
+				entry: './src/app.ts',
+				client: {
+					entry: './src/client.ts',
+					externals: ['@remix-run/ui', 'preact'],
+				},
+			},
+		},
+	})
+	const sourceFiles = {
+		'package.json': packageJsonWithExternals,
+		'src/client.ts': [
+			"import { Button } from '@remix-run/ui'",
+			"import { render } from 'preact'",
+			"import { useState } from 'preact/hooks'",
+			'render(Button, useState)',
+		].join('\n'),
+	}
+	mockBundledOutput(
+		[
+			'import { Button } from "@remix-run/ui";',
+			'import { render } from "preact";',
+			'import { useState } from "preact/hooks";',
+			'render(Button, useState);',
+			'',
+		].join('\n'),
+	)
+
+	const bundle = await buildKodyAppClientBundle({
+		sourceFiles,
+		entryPoint: 'src/client.ts',
+	})
+	expect(bundle.mainModule).toMatch(packageAppClientModuleNamePattern)
+	expect(bundle.modules[bundle.mainModule]).toContain('from "@remix-run/ui"')
+	const call = mockModule.createWorker.mock.calls[0]?.[0] as {
+		externals?: Array<string>
+	}
+	expect(call.externals).toEqual(['@remix-run/ui', 'preact'])
+
+	expect(isDeclaredClientExternal('preact/hooks', ['preact'])).toBe(true)
+	expect(isDeclaredClientExternal('preact-render-to-string', ['preact'])).toBe(
+		false,
+	)
+
+	// An undeclared bare import is still a publish error, with the externals
+	// path named as one of the fixes.
+	mockBundledOutput('import { signal } from "@preact/signals";\nsignal();\n')
+	await expect(
+		buildKodyAppClientBundle({ sourceFiles, entryPoint: 'src/client.ts' }),
+	).rejects.toThrow(
+		/unresolved bare package imports after bundling \("@preact\/signals"\)[\s\S]*kody\.app\.client\.externals/,
+	)
 })
 
 test('buildKodyAppClientBundle names a missing client entry', async () => {

@@ -264,11 +264,13 @@ function createAssetResponse(input: {
 	contentType: string
 	cacheControl: string
 	etag: string | null
+	extraHeaders?: Record<string, string>
 }) {
 	const headers = new Headers({
 		'Cache-Control': input.cacheControl,
 		'Content-Type': input.contentType,
 		'X-Content-Type-Options': 'nosniff',
+		...input.extraHeaders,
 	})
 	if (input.etag) {
 		headers.set('ETag', input.etag)
@@ -310,6 +312,13 @@ export async function servePackageAppAssetRequest(input: {
 	savedPackage: PackageAppAssetSavedPackage
 	loadSourceFiles: () => Promise<Record<string, string>>
 	relativePath: string
+	/**
+	 * Origin-relative app mount (`/packages/<kodyId>` on a subdomain). A
+	 * service worker script served from the assets directory may claim this
+	 * scope, so the app root and pages under the mount (not just `/_assets/`)
+	 * are controllable.
+	 */
+	appBasePath: string
 }) {
 	if (input.request.method !== 'GET' && input.request.method !== 'HEAD') {
 		return methodNotAllowed()
@@ -350,10 +359,18 @@ export async function servePackageAppAssetRequest(input: {
 	const content = sourceFiles[sourcePath]
 	if (content == null) return assetNotFound()
 	const publishedCommit = input.savedPackage.publishedCommit
+	const contentType = inferPackageAppAssetContentType(sourcePath)
 	return createAssetResponse({
 		request: input.request,
 		body: snapshotStringToBytes(content, sourcePath),
-		contentType: inferPackageAppAssetContentType(sourcePath),
+		contentType,
+		extraHeaders: contentType.startsWith('text/javascript')
+			? {
+					// No trailing slash: the app root itself (`/packages/<kodyId>`) is
+					// served without one, and a scope must be within this prefix.
+					'Service-Worker-Allowed': input.appBasePath.replace(/\/+$/, ''),
+				}
+			: undefined,
 		// The published snapshot is immutable per commit, so the commit plus
 		// path is a strong validator without hashing the bytes per request.
 		cacheControl: publishedCommit ? staticAssetCacheControl : 'no-store',

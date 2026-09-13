@@ -257,7 +257,9 @@ Treat package apps like Worker-style modules:
   code runs
 - `kody.app.assets` (optional) is a static directory served as-is from the
   published source snapshot under `<appBasePath>/_assets/`; publish checks
-  require it to be a populated subdirectory
+  require it to be a populated subdirectory. JavaScript assets carry
+  `Service-Worker-Allowed: <appBasePath>` so a service worker shipped there can
+  claim the app mount
 - `packageContext.assetBasePath` and `packageContext.clientModuleUrl` expose
   those URLs to the fetch handler
 - durable package data uses `packageStorage()` (same

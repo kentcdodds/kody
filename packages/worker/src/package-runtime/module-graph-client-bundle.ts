@@ -1,5 +1,8 @@
 import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
-import { normalizePackageWorkspacePath } from '#worker/package-registry/manifest.ts'
+import {
+	getPackageAppClientExternals,
+	normalizePackageWorkspacePath,
+} from '#worker/package-registry/manifest.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import { importWorkerBundler } from '#worker/worker-bundler-modules.ts'
 import {
@@ -166,9 +169,24 @@ function collectBrowserBundleFiles(input: {
 	return files
 }
 
+/**
+ * Whether a bare specifier is covered by a declared external: the external
+ * itself or one of its subpaths (`preact` covers `preact/hooks`).
+ */
+export function isDeclaredClientExternal(
+	specifier: string,
+	externals: ReadonlyArray<string>,
+) {
+	return externals.some(
+		(external) =>
+			specifier === external || specifier.startsWith(`${external}/`),
+	)
+}
+
 function assertBrowserBundleHasNoUnresolvedImports(input: {
 	modules: WorkerLoaderModules
 	bundleLabel: string
+	externals: ReadonlyArray<string>
 }) {
 	const serverOnly = new Set<string>()
 	const unresolved = new Set<string>()
@@ -176,7 +194,10 @@ function assertBrowserBundleHasNoUnresolvedImports(input: {
 		for (const node of collectLiteralImportNodes(source)) {
 			if (isServerOnlySpecifier(node.specifier)) {
 				serverOnly.add(node.specifier)
-			} else if (isBarePackageImportSpecifier(node.specifier)) {
+			} else if (
+				isBarePackageImportSpecifier(node.specifier) &&
+				!isDeclaredClientExternal(node.specifier, input.externals)
+			) {
 				unresolved.add(node.specifier)
 			}
 		}
@@ -192,7 +213,7 @@ function assertBrowserBundleHasNoUnresolvedImports(input: {
 		throw new Error(
 			`${input.bundleLabel} still contains unresolved bare package imports after bundling (${formatSpecifierList(
 				unresolved,
-			)}). Declare the dependency in package.json so publish can install it, or import it from a full https:// URL the browser can load.`,
+			)}). Declare the dependency in package.json so publish can install and inline it, list it under kody.app.client.externals and resolve it with an import map on the page, or import it from a full https:// URL the browser can load.`,
 		)
 	}
 }
@@ -213,10 +234,11 @@ export async function buildKodyAppClientBundle(input: {
 			`${bundleLabel} entry was not found in the package source. Point package.json#kody.app.client at a .ts, .tsx, .js, or .jsx file in the repo.`,
 		)
 	}
+	const rootPackage = readRootPackage(input.sourceFiles)
 	const reachable = collectReachableSourceFilePaths({
 		files: input.sourceFiles,
 		entryPoint,
-		rootPackage: readRootPackage(input.sourceFiles),
+		rootPackage,
 	})
 	assertClientGraphIsBrowserSafe({
 		files: input.sourceFiles,
@@ -227,6 +249,11 @@ export async function buildKodyAppClientBundle(input: {
 		sourceFiles: input.sourceFiles,
 		reachable,
 	})
+	// Externals come from the manifest in the files being built (not a cached
+	// manifest) so a republish that changes them rebuilds against itself.
+	const externals = rootPackage
+		? getPackageAppClientExternals(rootPackage.manifest)
+		: []
 	// Keep the experimental bundler out of the Worker's top-level deploy graph.
 	const { createWorker } = await importWorkerBundler()
 	const bundle = await createWorker({
@@ -234,6 +261,7 @@ export async function buildKodyAppClientBundle(input: {
 		entryPoint,
 		bundle: true,
 		target: 'es2022',
+		...(externals.length > 0 ? { externals } : {}),
 	})
 	const bundledModule = bundle.modules[bundle.mainModule]
 	const source =
@@ -248,7 +276,7 @@ export async function buildKodyAppClientBundle(input: {
 		)
 	}
 	const modules: WorkerLoaderModules = { [bundle.mainModule]: source }
-	assertBrowserBundleHasNoUnresolvedImports({ modules, bundleLabel })
+	assertBrowserBundleHasNoUnresolvedImports({ modules, bundleLabel, externals })
 	const hash = (await sha256Base64Url(source)).slice(0, clientModuleHashLength)
 	const mainModule = buildPackageAppClientModuleName(hash)
 	return {

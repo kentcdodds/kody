@@ -1,7 +1,11 @@
 import * as Sentry from '@sentry/cloudflare'
 import { html } from 'remix/html-template'
 import { createHtmlResponse } from 'remix/response/html'
-import { type PackageAppMount } from '@kody-internal/shared/public-urls.ts'
+import {
+	buildPackageAppPath,
+	buildPackageAppSubdomainPath,
+	type PackageAppMount,
+} from '@kody-internal/shared/public-urls.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import {
@@ -451,6 +455,13 @@ export async function servePackageAppRequest(input: {
 				},
 				loadSourceFiles,
 				relativePath: assetRelativePath,
+				appBasePath:
+					packagePath.mount === 'user-subdomain'
+						? buildPackageAppSubdomainPath({ kodyId: savedPackage.kodyId })
+						: buildPackageAppPath({
+								username: packagePath.username,
+								kodyId: savedPackage.kodyId,
+							}),
 			})
 		} catch (error) {
 			console.error('Package app asset handler failed:', error)

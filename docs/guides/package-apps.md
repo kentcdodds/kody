@@ -169,35 +169,31 @@ next section.
 ## Browser client and static assets
 
 Declare a browser entry and Kody compiles it on publish, so the repo holds
-TypeScript source instead of checked-in `.js`:
+TypeScript source instead of checked-in `.js`.
+
+### Minimal recipe
+
+Three files plus an optional directory. Copy, rename, publish.
+
+`package.json`:
 
 ```json
 {
+	"name": "@you/counter",
+	"exports": { ".": "./src/index.ts" },
 	"kody": {
+		"id": "counter",
+		"description": "Counter with a platform-built browser client",
 		"app": {
-			"entry": "./app.ts",
-			"client": "./client.ts",
+			"entry": "./src/app.ts",
+			"client": "./src/client.ts",
 			"assets": "./public"
 		}
 	}
 }
 ```
 
-- `entry` — the Worker fetch handler (unchanged).
-- `client` — one `.ts`, `.tsx`, `.js`, or `.jsx` file bundled for the
-  **browser** (ESM, `es2022`, relative imports and `package.json` npm
-  dependencies inlined). The output is served at
-  `<appBasePath>/_assets/client.<hash>.js` with
-  `Cache-Control: private, max-age=31536000, immutable` (browser-cached for a
-  year; `private` because the owner's session gates every package-app response);
-  the hash changes with the content, so never hardcode the file name.
-- `assets` — a subdirectory of static files served as-is at
-  `<appBasePath>/_assets/<path inside the directory>` with a content type
-  inferred from the extension (`.css`, `.png`, `.wasm`, `.woff2`, …), a
-  commit-scoped `ETag`, and `Cache-Control: private, max-age=300`. No TypeScript
-  compile, no bundling.
-
-Read the URLs from `packageContext` in the fetch handler:
+`src/app.ts` (Worker fetch handler; renders the page):
 
 ```ts
 import { packageContext } from 'kody:runtime'
@@ -208,7 +204,7 @@ export default {
 		return new Response(
 			`<!doctype html>
 <link rel="stylesheet" href="${assetBasePath}/styles.css" />
-<div id="app"></div>
+<button id="inc" type="button">Clicked 0 times</button>
 <script type="module" src="${clientModuleUrl}"></script>`,
 			{ headers: { 'content-type': 'text/html; charset=utf-8' } },
 		)
@@ -216,15 +212,56 @@ export default {
 }
 ```
 
-- `packageContext.assetBasePath` — origin-relative `<appBasePath>/_assets`,
-  mount-aware like `appBasePath`.
+`src/client.ts` (browser; TypeScript is fine, relative imports are inlined):
+
+```ts
+let count = 0
+const button = document.querySelector<HTMLButtonElement>('#inc')!
+button.addEventListener('click', () => {
+	count += 1
+	button.textContent = `Clicked ${count} time${count === 1 ? '' : 's'}`
+})
+```
+
+`public/styles.css` (optional `assets` directory, served as-is).
+
+### What each field does
+
+- `entry` — the Worker fetch handler (unchanged).
+- `client` — one `.ts`, `.tsx`, `.js`, or `.jsx` file bundled for the
+  **browser** (ESM, `es2022`, relative imports and `package.json` npm
+  dependencies inlined). The output is served at
+  `<appBasePath>/_assets/client.<hash>.js` with
+  `Cache-Control: private, max-age=31536000, immutable` (browser-cached for a
+  year; `private` because the owner's session gates every package-app response);
+  the hash changes with the content, so never hardcode the file name. Use the
+  object form `{ "entry": "./src/client.ts", "externals": [...] }` when the page
+  supplies an [import map](#import-maps-and-externals).
+- `assets` — a subdirectory of static files served as-is at
+  `<appBasePath>/_assets/<path inside the directory>` with a content type
+  inferred from the extension (`.css`, `.png`, `.wasm`, `.woff2`, …), a
+  commit-scoped `ETag`, and `Cache-Control: private, max-age=300`. No TypeScript
+  compile, no bundling.
+
+### Stable `packageContext` fields
+
+These names are part of the package-app contract and stay stable; kits and
+scaffolders can depend on them.
+
 - `packageContext.clientModuleUrl` — absolute URL of the current fingerprinted
-  client module, or `null` when the manifest declares no `client`.
+  client module (`<hostedUrl>/_assets/client.<hash>.js`), or `null` when the
+  manifest declares no `client`. Drop it straight into
+  `<script type="module" src="…">`.
+- `packageContext.assetBasePath` — origin-relative `<appBasePath>/_assets`,
+  mount-aware like `appBasePath`. Join `assets` files onto it
+  (`${assetBasePath}/styles.css`).
 
 `/_assets/*` is reserved: the platform answers it before the fetch handler runs,
 and the handler never sees those paths. A client hash from an older publish
 returns 404 rather than a stale module, so always render the URL from
 `packageContext`.
+
+### Browser-safe graph
 
 The client graph must be browser-safe. Publish fails, naming the file, when the
 client (or anything it imports) pulls in `kody:runtime`, a `kody:@…` package
@@ -232,6 +269,76 @@ import, `cloudflare:*`, or `node:*`; keep those in `entry` and expose data over
 fetch or the realtime facet. `import './styles.css'` is rejected too — put CSS
 in the assets directory and link it. Full `https://` URL imports stay external
 and load in the browser as written.
+
+### Import maps and externals
+
+By default every bare import is inlined from `package.json#dependencies`, and a
+bare import the bundler cannot resolve fails publish. To let the **page** decide
+where a package comes from (an import map pointing at a CDN, a shared kit
+bundle, or a file in `assets`), declare it under `client.externals`:
+
+```json
+{
+	"kody": {
+		"app": {
+			"entry": "./src/app.ts",
+			"client": {
+				"entry": "./src/client.ts",
+				"externals": ["@remix-run/ui", "preact"]
+			},
+			"assets": "./public"
+		}
+	}
+}
+```
+
+Externals are bare specifiers only (no relative paths, URLs, or `kody:` /
+`cloudflare:` / `node:` schemes); each covers its subpaths (`preact` also covers
+`preact/hooks`). The bundled module keeps them as
+`import … from "@remix-run/ui"` and the page maps them:
+
+```ts
+const importMap = JSON.stringify({
+	imports: {
+		'@remix-run/ui': `${assetBasePath}/vendor/ui.js`,
+		preact: 'https://esm.sh/preact@10',
+	},
+})
+// in the HTML head, before the module script
+`<script type="importmap">${importMap}</script>`
+```
+
+Undeclared bare imports that survive bundling still fail publish; the error
+names the specifier and points here.
+
+### Service worker precache
+
+`clientModuleUrl` is content-addressed and immutable, so a service worker can
+precache it on install and serve it from cache forever. Ship the worker script
+from the `assets` directory and register it with the app mount as its scope —
+JavaScript served from `/_assets/` carries
+`Service-Worker-Allowed: <appBasePath>/` so that broader scope is permitted:
+
+```ts
+// in the page
+navigator.serviceWorker.register(`${assetBasePath}/sw.js`, {
+	scope: `${appBasePath}/`,
+})
+```
+
+```js
+// public/sw.js — precache list injected by the page, or read from a manifest
+// your fetch handler renders; the URL below is the fingerprinted module.
+self.addEventListener('install', (event) => {
+	event.waitUntil(
+		caches.open('app-v1').then((cache) => cache.addAll(self.__precache ?? [])),
+	)
+})
+```
+
+Static `assets` paths are not fingerprinted (they carry a commit-scoped `ETag`
+and a five-minute max-age), so precache them only with a version key you rotate
+on publish.
 
 Checked-in browser-ready `.js` served from the fetch handler with an explicit
 `Content-Type` still works; `client` is the pit-of-success path for source you

@@ -3,6 +3,7 @@ import {
 	buildPackageSearchProjection,
 	getPackageAppAssetsDirectory,
 	getPackageAppClientEntryPath,
+	getPackageAppClientExternals,
 	getPackageAppEntryPath,
 	listPackageEmittedEvents,
 	parseAuthoredPackageJson,
@@ -52,6 +53,56 @@ test('parseAuthoredPackageJson accepts kody.app.client and kody.app.assets next 
 	})
 	expect(getPackageAppClientEntryPath(workerOnly)).toBeNull()
 	expect(getPackageAppAssetsDirectory(workerOnly)).toBeNull()
+	expect(getPackageAppClientExternals(manifest)).toEqual([])
+
+	const withExternals = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/import-map-app',
+			exports: { '.': './src/index.ts' },
+			kody: {
+				id: 'import-map-app',
+				description: 'Client with import-map externals',
+				app: {
+					entry: './src/app.ts',
+					client: {
+						entry: './src/client.tsx',
+						externals: ['preact', '@remix-run/ui', 'preact'],
+					},
+				},
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+	expect(getPackageAppClientEntryPath(withExternals)).toBe('src/client.tsx')
+	expect(getPackageAppClientExternals(withExternals)).toEqual([
+		'@remix-run/ui',
+		'preact',
+	])
+
+	for (const external of [
+		'./local.ts',
+		'/abs.js',
+		'kody:runtime',
+		'https://esm.sh/preact',
+	]) {
+		expect(() =>
+			parseAuthoredPackageJson({
+				content: JSON.stringify({
+					name: '@kentcdodds/bad-externals',
+					exports: {},
+					kody: {
+						id: 'bad-externals',
+						description: 'Externals must be bare specifiers',
+						app: {
+							entry: './src/app.ts',
+							client: { entry: './src/client.ts', externals: [external] },
+						},
+					},
+				}),
+				manifestPath: 'package.json',
+			}),
+		).toThrow(/bare package specifiers/)
+	}
 
 	expect(() =>
 		parseAuthoredPackageJson({
@@ -66,7 +117,7 @@ test('parseAuthoredPackageJson accepts kody.app.client and kody.app.assets next 
 			}),
 			manifestPath: 'package.json',
 		}),
-	).toThrow()
+	).toThrow(/entry/)
 })
 
 test('parseAuthoredPackageJson validates scoped package names against kody.id', () => {

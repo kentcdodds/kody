@@ -317,6 +317,17 @@ test('/_assets/ serves the fingerprinted client module with immutable caching an
 	)
 	expect(lookalike.headers.get('Cache-Control')).toBe('private, max-age=300')
 	expect(await lookalike.text()).toBe('console.log("static, not the bundle")')
+	// A service worker script in the assets directory may claim the whole app
+	// mount as its scope; non-script assets do not carry the header.
+	expect(lookalike.headers.get('Service-Worker-Allowed')).toBe(
+		'/@kentcdodds/packages/client-app',
+	)
+	expect(response.headers.get('Service-Worker-Allowed')).toBeNull()
+	const css = await serveHelloWorld({
+		kodyId: clientAppKodyId,
+		restPath: '/_assets/styles.css',
+	})
+	expect(css.headers.get('Service-Worker-Allowed')).toBeNull()
 })
 
 test('/_assets/ serves files from the declared assets directory with inferred content types', async () => {

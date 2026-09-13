@@ -40,7 +40,7 @@ function buildPackageFiles(input: { username: string; clientSource: string }) {
 				'MCP e2e smoke package for kody.app.client and kody.app.assets',
 			app: {
 				entry: './src/app.ts',
-				client: './src/client.ts',
+				client: { entry: './src/client.ts', externals: ['@remix-run/ui'] },
 				assets: './public',
 			},
 		},
@@ -76,9 +76,13 @@ export default {
 			return Response.json({ packageContext, seenPath: url.pathname })
 		}
 		const context = packageContext ?? {}
+		const importMap = JSON.stringify({
+			imports: { '@remix-run/ui': \`\${context.assetBasePath}/vendor/ui.js\` },
+		})
 		return new Response(
 			\`<!doctype html><html lang="en"><head><meta charset="utf-8" /><title>Client smoke</title>
-<link rel="stylesheet" href="\${context.assetBasePath}/styles.css" /></head>
+<link rel="stylesheet" href="\${context.assetBasePath}/styles.css" />
+<script type="importmap">\${importMap}</script></head>
 <body><h1 id="title">Client smoke</h1><button id="inc" type="button">Clicked 0 times</button>
 <script type="module" src="\${context.clientModuleUrl}"></script></body></html>\`,
 			{ headers: { 'content-type': 'text/html; charset=utf-8' } },
@@ -101,10 +105,20 @@ export default {
 			path: 'public/client.production.js',
 			content: 'console.log("static lookalike, not the bundle")\n',
 		},
+		{
+			path: 'public/vendor/ui.js',
+			content:
+				'export function Button(label) {\n\treturn `<button>${label}</button>`\n}\n',
+		},
+		{
+			path: 'public/sw.js',
+			content: "self.addEventListener('install', () => self.skipWaiting())\n",
+		},
 	]
 }
 
-const browserClientSource = `import { formatCount } from './format.ts'
+const browserClientSource = `import { Button } from '@remix-run/ui'
+import { formatCount } from './format.ts'
 
 type State = { count: number }
 const state: State = { count: 0 }
@@ -114,7 +128,7 @@ button.addEventListener('click', () => {
 	button.textContent = formatCount(state.count)
 })
 document.querySelector<HTMLHeadingElement>('#title')!.dataset.hydrated = 'true'
-export const ready = true
+export const ready = Button('ready')
 `
 
 test('kody.app.client and kody.app.assets publish and serve end-to-end on a real local worker', async () => {
@@ -214,8 +228,27 @@ export default async function main(input) {
 		// nothing left for the browser to resolve, exports preserved.
 		expect(clientSource).toContain('Clicked ${count} time')
 		expect(clientSource).not.toContain('type State')
-		expect(clientSource).not.toMatch(/\bimport\b/)
+		// The declared external stays a bare import for the page's import map;
+		// the relative graph is inlined so nothing else is left to resolve.
+		expect(clientSource).toMatch(/from\s+"@remix-run\/ui"/)
+		expect(clientSource).not.toMatch(/from\s+["']\.\//)
 		expect(clientSource).toMatch(/export\s*\{/)
+		expect(pageHtml).toContain(
+			`<script type="importmap">{"imports":{"@remix-run/ui":"${appBasePath}/_assets/vendor/ui.js"}}</script>`,
+		)
+		const vendorModule = await authedFetch(`${appOrigin}/_assets/vendor/ui.js`)
+		expect(vendorModule.status).toBe(200)
+		expect(vendorModule.headers.get('content-type')).toBe(
+			'text/javascript; charset=utf-8',
+		)
+
+		// A service worker script from the assets directory may claim the
+		// app mount as its scope, so it can precache clientModuleUrl.
+		const serviceWorker = await authedFetch(`${appOrigin}/_assets/sw.js`)
+		expect(serviceWorker.status).toBe(200)
+		expect(serviceWorker.headers.get('service-worker-allowed')).toBe(
+			appBasePath,
+		)
 
 		const revalidated = await authedFetch(clientModuleUrl, {
 			headers: { 'If-None-Match': etag ?? '' },

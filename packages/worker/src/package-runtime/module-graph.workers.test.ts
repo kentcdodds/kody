@@ -608,5 +608,34 @@ test(
 				entryPoint: 'src/client.ts',
 			}),
 		).rejects.toThrow(/server-only modules that cannot run in the browser/)
+
+		// Declared externals survive esbuild as bare imports for the page's
+		// import map; the relative graph is still inlined around them.
+		const importMapPackageJson = JSON.stringify({
+			...JSON.parse(packageJson),
+			kody: {
+				...JSON.parse(packageJson).kody,
+				app: {
+					entry: './src/app.ts',
+					client: { entry: './src/client.ts', externals: ['@remix-run/ui'] },
+				},
+			},
+		})
+		const withExternals = await buildKodyAppClientBundle({
+			sourceFiles: {
+				...sourceFiles,
+				'package.json': importMapPackageJson,
+				'src/client.ts': [
+					"import { Button } from '@remix-run/ui'",
+					"import { render } from './render.ts'",
+					'export const mounted = render(String(Button))',
+				].join('\n'),
+			},
+			entryPoint: 'src/client.ts',
+		})
+		const externalCode = withExternals.modules[withExternals.mainModule]
+		expect(externalCode).toMatch(/from\s+"@remix-run\/ui"/)
+		expect(externalCode).toContain('hello ${name}')
+		expect(externalCode).not.toMatch(/from\s+["']\.\/render/)
 	},
 )

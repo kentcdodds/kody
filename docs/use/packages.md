@@ -354,8 +354,9 @@ Treat package apps like Worker-style modules:
 
 - app code lives in the package repo
 - the entry module is declared by `kody.app.entry`
-- an optional browser entry is declared by `kody.app.client`; Kody bundles it
-  for the browser on publish and serves it as a fingerprinted module under
+- an optional browser entry is declared by `kody.app.client` (a path, or
+  `{ entry, externals }` for import-map packages); Kody bundles it for the
+  browser on publish and serves it as a fingerprinted, immutable module under
   `<appBasePath>/_assets/`, with the URL on `packageContext.clientModuleUrl`
 - an optional static directory is declared by `kody.app.assets` and served as-is
   under `packageContext.assetBasePath` (see
