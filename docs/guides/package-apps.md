@@ -684,7 +684,7 @@ runtimes, so a worker written for the fetch runtime keeps working.
 `create-package-app` (the `@kentcdodds/package-app-kit` scaffolder) emits the
 Remix layout for a new app, not `src/app.ts`:
 
-```
+```text
 package.json            runtime: "remix", entry ./app/router.ts, client ./app/assets/entry.ts, assets ./public
 app/routes.ts           route(packageContext?.appBasePath ?? '', …)
 app/router.ts           createRouter + router.map, default export
