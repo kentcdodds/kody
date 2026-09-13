@@ -131,7 +131,7 @@ const playBadgeCss = {
 	height: '4.5rem',
 	borderRadius: radius.full,
 	backgroundColor: 'rgba(0, 0, 0, 0.72)',
-	color: colors.onPrimary,
+	color: colors.onScrim,
 	display: 'grid',
 	placeItems: 'center',
 	fontSize: '1.5rem',

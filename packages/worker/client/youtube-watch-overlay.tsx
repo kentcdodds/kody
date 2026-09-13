@@ -130,7 +130,7 @@ const closeCss = {
 	border: 'none',
 	borderRadius: radius.full,
 	backgroundColor: 'rgba(0, 0, 0, 0.72)',
-	color: colors.onPrimary,
+	color: colors.onScrim,
 	fontSize: '1.5rem',
 	lineHeight: 1,
 	cursor: 'pointer',

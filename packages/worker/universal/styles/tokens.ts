@@ -30,6 +30,12 @@ export const colors = {
 	logoWell: '#ffffff',
 	/** Ink for `currentColor` marks sitting on {@link colors.logoWell}. */
 	logoWellInk: '#111111',
+	/**
+	 * Ink on a fixed dark scrim (YouTube play badge, watch overlay close).
+	 * Theme `onPrimary` is near-black in dark mode and would vanish on
+	 * `rgba(0, 0, 0, 0.72)`. Same white as light-mode `--color-on-primary`.
+	 */
+	onScrim: 'oklch(1 0 0)',
 } as const
 
 // Typography tokens
