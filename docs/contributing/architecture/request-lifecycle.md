@@ -67,6 +67,11 @@ Requests are handled in this order:
    - In confirmed local, preview, and test runtimes, an unset package-app origin
      is a no-op and package apps are served inline at step 10 below.
 2. Public OAuth metadata (before `OAuthProvider`):
+   - OpenID Connect discovery: `/.well-known/openid-configuration` (`GET` /
+     `HEAD` / `OPTIONS`) — includes `revocation_endpoint` at `/oauth/token`
+     (same URL RFC 8414 authorization-server metadata advertises) plus matching
+     `revocation_endpoint_auth_methods_supported`.
+   - JWKS: `/.well-known/jwks.json` (`GET` / `HEAD` / `OPTIONS`)
    - Protected resource metadata (base path only):
      `/.well-known/oauth-protected-resource` (`GET` / `HEAD` / `OPTIONS`)
    - Client ID Metadata Document: `/oauth/client-metadata.json` (`GET` / `HEAD`
