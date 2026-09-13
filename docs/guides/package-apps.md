@@ -368,15 +368,19 @@ runtime instead; the platform gives you two ways:
 }
 ```
 
-Ship the worker script from the `assets` directory and register it with the app
-mount as its scope — JavaScript served from `/_assets/` carries
-`Service-Worker-Allowed: <appBasePath>` so that broader scope is permitted (no
-trailing slash, so the app root itself is controlled too):
+Ship the worker script from the `assets` directory and register it with the
+slash-terminated app mount as its scope. JavaScript served from `/_assets/`
+carries `Service-Worker-Allowed: <appBasePath>/`, which permits that broader
+scope. The trailing slash matters: scope matching is a string-prefix check, so a
+scope of `/packages/app` would also claim the sibling mount
+`/packages/app-secret`; `/packages/app/` cannot.
 
 ```ts
 // in the page (src/client/index.ts)
 const { appBase } = document.documentElement.dataset
-navigator.serviceWorker.register(`${appBase}/_assets/sw.js`, { scope: appBase })
+navigator.serviceWorker.register(`${appBase}/_assets/sw.js`, {
+	scope: `${appBase}/`,
+})
 ```
 
 ```js
@@ -384,9 +388,8 @@ navigator.serviceWorker.register(`${appBase}/_assets/sw.js`, { scope: appBase })
 self.addEventListener('install', (event) => {
 	event.waitUntil(
 		(async () => {
-			const scope = new URL(self.registration.scope)
 			const version = await (
-				await fetch(new URL(`${scope.pathname}/_assets/__version.json`, scope))
+				await fetch(new URL('_assets/__version.json', self.registration.scope))
 			).json()
 			const cache = await caches.open(`app-${version.publishedCommit}`)
 			if (version.clientModuleUrl) await cache.add(version.clientModuleUrl)
@@ -394,6 +397,14 @@ self.addEventListener('install', (event) => {
 	)
 })
 ```
+
+Scope boundary: the bare mount URL (`hostedUrl`, `/packages/app` with no
+trailing slash — where the handoff lands) sits outside a `/packages/app/` scope,
+so the worker controls every page under the mount but not a document loaded at
+that exact URL. Link and redirect to slash-terminated paths inside the app
+(`${appBase}/`, `${appBase}/settings`) so the pages people spend time on are
+controlled; the root visit still gets the module straight from the platform with
+its immutable cache header.
 
 Static `assets` paths are not fingerprinted (they carry a commit-scoped `ETag`
 and a five-minute max-age), so precache them keyed by `publishedCommit` and drop

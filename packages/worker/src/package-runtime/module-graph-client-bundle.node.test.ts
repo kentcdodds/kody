@@ -201,10 +201,46 @@ test('buildKodyAppClientBundle keeps declared externals as bare imports for an i
 	})
 	expect(bundle.mainModule).toMatch(packageAppClientModuleNamePattern)
 	expect(bundle.modules[bundle.mainModule]).toContain('from "@remix-run/ui"')
+	// Externals reach esbuild through a plugin with exact-or-subpath matching
+	// (the bundler's own `externals` option is a raw prefix match).
 	const call = mockModule.createWorker.mock.calls[0]?.[0] as {
 		externals?: Array<string>
+		__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired?: Array<{
+			name: string
+			setup(build: {
+				onResolve(
+					options: { filter: RegExp },
+					callback: (args: { path: string }) => unknown,
+				): void
+			}): void
+		}>
 	}
-	expect(call.externals).toEqual(['@remix-run/ui', 'preact'])
+	expect(call.externals).toBeUndefined()
+	const [plugin] =
+		call.__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired ?? []
+	expect(plugin?.name).toBe('kody-package-app-client-externals')
+	let resolve: ((args: { path: string }) => unknown) | null = null
+	let filter: RegExp | null = null
+	plugin?.setup({
+		onResolve(options, callback) {
+			filter = options.filter
+			resolve = callback
+		},
+	})
+	expect(filter?.test('preact')).toBe(true)
+	expect(filter?.test('@remix-run/ui')).toBe(true)
+	expect(filter?.test('./local.ts')).toBe(false)
+	expect(filter?.test('/abs.js')).toBe(false)
+	expect(resolve?.({ path: '@remix-run/ui' })).toEqual({
+		path: '@remix-run/ui',
+		external: true,
+	})
+	expect(resolve?.({ path: 'preact/hooks' })).toEqual({
+		path: 'preact/hooks',
+		external: true,
+	})
+	expect(resolve?.({ path: 'preact-render-to-string' })).toBeUndefined()
+	expect(resolve?.({ path: '@remix-run/ui-extra' })).toBeUndefined()
 
 	expect(isDeclaredClientExternal('preact/hooks', ['preact'])).toBe(true)
 	expect(isDeclaredClientExternal('preact-render-to-string', ['preact'])).toBe(

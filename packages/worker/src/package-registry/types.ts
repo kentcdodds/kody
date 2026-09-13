@@ -38,6 +38,7 @@ export type PackageJobDefinition = z.infer<typeof packageJobDefinitionSchema>
  */
 export const packageAppClientExternalSchema = z
 	.string()
+	.trim()
 	.min(1)
 	.refine(
 		(specifier) =>

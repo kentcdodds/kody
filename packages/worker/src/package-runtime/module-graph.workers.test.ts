@@ -637,5 +637,48 @@ test(
 		expect(externalCode).toMatch(/from\s+"@remix-run\/ui"/)
 		expect(externalCode).toContain('hello ${name}')
 		expect(externalCode).not.toMatch(/from\s+["']\.\/render/)
+
+		// Subpaths of a declared external stay external too, but a package that
+		// merely shares the prefix is not silently externalized: it is an
+		// unresolved bare import and fails publish with the externals hint.
+		const subpathPackageJson = JSON.stringify({
+			...JSON.parse(packageJson),
+			kody: {
+				...JSON.parse(packageJson).kody,
+				app: {
+					entry: './src/app.ts',
+					client: { entry: './src/client.ts', externals: ['preact'] },
+				},
+			},
+		})
+		const subpath = await buildKodyAppClientBundle({
+			sourceFiles: {
+				...sourceFiles,
+				'package.json': subpathPackageJson,
+				'src/client.ts': [
+					"import { useState } from 'preact/hooks'",
+					'export const state = useState',
+				].join('\n'),
+			},
+			entryPoint: 'src/client.ts',
+		})
+		expect(subpath.modules[subpath.mainModule]).toMatch(
+			/from\s+"preact\/hooks"/,
+		)
+		await expect(
+			buildKodyAppClientBundle({
+				sourceFiles: {
+					...sourceFiles,
+					'package.json': subpathPackageJson,
+					'src/client.ts': [
+						"import render from 'preact-render-to-string'",
+						'export const html = render',
+					].join('\n'),
+				},
+				entryPoint: 'src/client.ts',
+			}),
+		).rejects.toThrow(
+			/unresolved bare package imports after bundling \("preact-render-to-string"\)/,
+		)
 	},
 )

@@ -183,6 +183,38 @@ export function isDeclaredClientExternal(
 	)
 }
 
+type EsbuildResolveArgs = { path: string }
+type EsbuildPluginBuild = {
+	onResolve(
+		options: { filter: RegExp },
+		callback: (
+			args: EsbuildResolveArgs,
+		) => { path: string; external: true } | undefined,
+	): void
+}
+
+/**
+ * Marks declared externals (exact specifier or a subpath of it) as external
+ * for esbuild. The bundler's own `externals` option matches by raw string
+ * prefix, so `preact` would also externalize `preact-render-to-string`,
+ * which then fails the post-bundle check even though the author meant to
+ * inline it. This plugin applies the same rule as `isDeclaredClientExternal`,
+ * so what stays external is exactly what the import map is expected to map.
+ */
+export function createClientExternalsPlugin(externals: ReadonlyArray<string>) {
+	return {
+		name: 'kody-package-app-client-externals',
+		setup(build: EsbuildPluginBuild) {
+			// Bare specifiers only: relative and absolute paths never match.
+			build.onResolve({ filter: /^[^./]/ }, (args) =>
+				isDeclaredClientExternal(args.path, externals)
+					? { path: args.path, external: true }
+					: undefined,
+			)
+		},
+	}
+}
+
 function assertBrowserBundleHasNoUnresolvedImports(input: {
 	modules: WorkerLoaderModules
 	bundleLabel: string
@@ -261,7 +293,13 @@ export async function buildKodyAppClientBundle(input: {
 		entryPoint,
 		bundle: true,
 		target: 'es2022',
-		...(externals.length > 0 ? { externals } : {}),
+		...(externals.length > 0
+			? {
+					__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired: [
+						createClientExternalsPlugin(externals),
+					],
+				}
+			: {}),
 	})
 	const bundledModule = bundle.modules[bundle.mainModule]
 	const source =

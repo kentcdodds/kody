@@ -323,9 +323,9 @@ export async function servePackageAppAssetRequest(input: {
 	relativePath: string
 	/**
 	 * Origin-relative app mount (`/packages/<kodyId>` on a subdomain). A
-	 * service worker script served from the assets directory may claim this
-	 * scope, so the app root and pages under the mount (not just `/_assets/`)
-	 * are controllable.
+	 * service worker script served from the assets directory may claim
+	 * `<appBasePath>/` as its scope, so pages under the mount (not just
+	 * `/_assets/`) are controllable.
 	 */
 	appBasePath: string
 	/** Public mount URL (`<origin><appBasePath>`), for absolute URLs in JSON. */
@@ -400,9 +400,10 @@ export async function servePackageAppAssetRequest(input: {
 		contentType,
 		extraHeaders: contentType.startsWith('text/javascript')
 			? {
-					// No trailing slash: the app root itself (`/packages/<kodyId>`) is
-					// served without one, and a scope must be within this prefix.
-					'Service-Worker-Allowed': input.appBasePath.replace(/\/+$/, ''),
+					// Slash-terminated: scope matching is a string-prefix check, so a
+					// bare `/packages/app` would also let this worker claim the
+					// sibling mount `/packages/app-secret` on the same origin.
+					'Service-Worker-Allowed': `${input.appBasePath.replace(/\/+$/, '')}/`,
 				}
 			: undefined,
 		// The published snapshot is immutable per commit, so the commit plus

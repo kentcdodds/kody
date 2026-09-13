@@ -66,7 +66,7 @@ test('parseAuthoredPackageJson accepts kody.app.client and kody.app.assets next 
 					entry: './src/app.ts',
 					client: {
 						entry: './src/client.tsx',
-						externals: ['preact', '@remix-run/ui', 'preact'],
+						externals: ['preact', ' @remix-run/ui ', 'preact'],
 					},
 				},
 			},

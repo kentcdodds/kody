@@ -263,7 +263,7 @@ export default async function main(input) {
 		const serviceWorker = await authedFetch(`${appOrigin}/_assets/sw.js`)
 		expect(serviceWorker.status).toBe(200)
 		expect(serviceWorker.headers.get('service-worker-allowed')).toBe(
-			appBasePath,
+			`${appBasePath}/`,
 		)
 
 		const revalidated = await authedFetch(clientModuleUrl, {

@@ -320,7 +320,7 @@ test('/_assets/ serves the fingerprinted client module with immutable caching an
 	// A service worker script in the assets directory may claim the whole app
 	// mount as its scope; non-script assets do not carry the header.
 	expect(lookalike.headers.get('Service-Worker-Allowed')).toBe(
-		'/@kentcdodds/packages/client-app',
+		'/@kentcdodds/packages/client-app/',
 	)
 	expect(response.headers.get('Service-Worker-Allowed')).toBeNull()
 	const css = await serveHelloWorld({
