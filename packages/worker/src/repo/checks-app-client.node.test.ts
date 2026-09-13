@@ -357,6 +357,34 @@ test('runRepoChecks keeps the Worker and client graphs separate', async () => {
 	expect(sharedHelper.ok).toBe(true)
 })
 
+test('runRepoChecks rejects assets that would be shadowed by platform-served names', async () => {
+	const shadowed = await runChecks(
+		new Map([
+			[
+				'package.json',
+				createAppManifest({
+					entry: './src/app.ts',
+					client: './src/client.ts',
+					assets: './public',
+				}),
+			],
+			...baseFiles,
+			['public/__version.json', '{"stale": true}'],
+		]),
+	)
+	expect(shadowed.ok).toBe(false)
+	expect(shadowed.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'bundle',
+				ok: false,
+				message: expect.stringContaining('"public/__version.json"'),
+			}),
+		]),
+	)
+	expect(mockModule.buildKodyAppClientBundle).not.toHaveBeenCalled()
+})
+
 test('runRepoChecks leaves apps without kody.app.client on the Worker-only path', async () => {
 	const result = await runChecks(
 		new Map([

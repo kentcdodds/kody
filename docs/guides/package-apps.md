@@ -282,8 +282,12 @@ import them. To keep them out of the client bundle too, declare them as
   `<appBasePath>/_assets/<path inside the directory>` with a content type
   inferred from the extension (`.css`, `.png`, `.wasm`, `.woff2`, …), a
   commit-scoped `ETag`, and `Cache-Control: private, max-age=300`. No TypeScript
-  compile, no bundling. `__version.json` is reserved at the root of `/_assets/`
-  (see [Service worker precache](#service-worker-precache)).
+  compile, no bundling. Two root names are reserved because the platform answers
+  them first: `__version.json` (see
+  [Service worker precache](#service-worker-precache)) and, when `client` is
+  declared, anything shaped like the compiled module
+  (`client.<16-char-hash>.js`). Publish rejects a root asset with either name;
+  nest it or rename it.
 
 ### Stable `packageContext` fields
 

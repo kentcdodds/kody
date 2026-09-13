@@ -1,4 +1,8 @@
 import { normalizePackageWorkspacePath } from '#worker/package-registry/manifest.ts'
+import {
+	packageAppClientModuleNamePattern,
+	packageAppVersionAssetName,
+} from './package-app-client-module-name.ts'
 
 /**
  * Pure helpers for `package.json#kody.app.assets`: the static directory the
@@ -14,9 +18,33 @@ function hasTraversalSegment(path: string) {
 	return path.split('/').some((segment) => segment === '..' || segment === '.')
 }
 
+/**
+ * Root-level asset names the platform answers before the directory, so a
+ * file with one of these names could never be served: the version JSON, and
+ * (when the app declares a client) anything shaped like the fingerprinted
+ * module.
+ */
+function findReservedRootAssetNames(input: {
+	assetsDirectory: string
+	assetFiles: ReadonlyArray<string>
+	clientDeclared: boolean
+}) {
+	const prefix = `${input.assetsDirectory}/`
+	return input.assetFiles
+		.map((path) => path.slice(prefix.length))
+		.filter((relativePath) => !relativePath.includes('/'))
+		.filter(
+			(name) =>
+				name === packageAppVersionAssetName ||
+				(input.clientDeclared && packageAppClientModuleNamePattern.test(name)),
+		)
+}
+
 export function validatePackageAppAssetsDirectory(input: {
 	assetsDirectory: string | null
 	sourceFiles: Record<string, string>
+	/** Whether the manifest declares `kody.app.client`. */
+	clientDeclared?: boolean
 }): { ok: true; message: string } | { ok: false; message: string } {
 	const { assetsDirectory } = input
 	if (assetsDirectory == null) {
@@ -37,6 +65,21 @@ export function validatePackageAppAssetsDirectory(input: {
 		return {
 			ok: false,
 			message: `package.json#kody.app.assets points at "${assetsDirectory}", but no files exist under that directory. Add the static files or remove the field.`,
+		}
+	}
+	const reserved = findReservedRootAssetNames({
+		assetsDirectory,
+		assetFiles,
+		clientDeclared: input.clientDeclared === true,
+	})
+	if (reserved.length > 0) {
+		return {
+			ok: false,
+			message: `package.json#kody.app.assets contains root file(s) the platform answers itself under /_assets/ and would never serve: ${reserved
+				.map((name) => `"${assetsDirectory}/${name}"`)
+				.join(
+					', ',
+				)}. "${packageAppVersionAssetName}" is the platform version JSON and "client.<16-char-hash>.js" is the compiled kody.app.client module; rename the file or move it into a subdirectory.`,
 		}
 	}
 	return {

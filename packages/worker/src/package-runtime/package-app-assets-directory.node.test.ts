@@ -75,6 +75,47 @@ test('validatePackageAppAssetsDirectory accepts populated subdirectories and rej
 	expect(missing.message).toContain('no files exist under that directory')
 })
 
+test('validatePackageAppAssetsDirectory rejects root files the platform answers itself', () => {
+	const withReserved = {
+		...sourceFiles,
+		'public/__version.json': '{}',
+		'public/client.0123456789abcdef.js': 'x',
+		'public/client.production.js': 'fine',
+		'public/nested/client.0123456789abcdef.js': 'fine too',
+	}
+	const withClient = validatePackageAppAssetsDirectory({
+		assetsDirectory: 'public',
+		sourceFiles: withReserved,
+		clientDeclared: true,
+	})
+	expect(withClient.ok).toBe(false)
+	expect(withClient.message).toContain('"public/__version.json"')
+	expect(withClient.message).toContain('"public/client.0123456789abcdef.js"')
+	expect(withClient.message).not.toContain('client.production.js')
+	expect(withClient.message).not.toContain('nested/')
+
+	// Without a declared client the module namespace is not reserved, but
+	// the version JSON always is.
+	const withoutClient = validatePackageAppAssetsDirectory({
+		assetsDirectory: 'public',
+		sourceFiles: withReserved,
+	})
+	expect(withoutClient.ok).toBe(false)
+	expect(withoutClient.message).toContain('"public/__version.json"')
+	expect(withoutClient.message).not.toContain('client.0123456789abcdef.js')
+
+	const clean = validatePackageAppAssetsDirectory({
+		assetsDirectory: 'public',
+		sourceFiles: {
+			...sourceFiles,
+			'public/client.production.js': 'fine',
+			'public/nested/__version.json': 'fine too',
+		},
+		clientDeclared: true,
+	})
+	expect(clean.ok).toBe(true)
+})
+
 test('listPackageAppAssetFiles only returns files inside the directory', () => {
 	expect(
 		listPackageAppAssetFiles({ assetsDirectory: 'public', sourceFiles }),

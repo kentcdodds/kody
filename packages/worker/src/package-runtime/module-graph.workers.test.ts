@@ -11,7 +11,7 @@ import {
 	buildKodyImportableModuleBundle,
 	buildKodyModuleBundle,
 } from './module-graph.ts'
-import { packageAppClientModuleNamePattern } from './module-graph-client-bundle.ts'
+import { packageAppClientModuleNamePattern } from './package-app-client-module-name.ts'
 import { persistPublishedSourceSnapshot } from './published-runtime-artifacts.ts'
 import { persistPublishedBundleArtifact } from './published-bundle-artifacts.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'

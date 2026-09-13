@@ -19,6 +19,10 @@ import {
 	isBundlerRootDependencyPath,
 	readRootPackage,
 } from './module-graph-workspace.ts'
+import {
+	buildPackageAppClientModuleName,
+	clientModuleHashLength,
+} from './package-app-client-module-name.ts'
 import { type RuntimeBundle } from './runtime-bundle-types.ts'
 import { iterateModuleSourceTexts } from './runtime-source-modules.ts'
 import { isTypeDeclarationFilePath } from './static-kody-imports.ts'
@@ -35,8 +39,6 @@ import { isTypeDeclarationFilePath } from './static-kody-imports.ts'
  * cache headers and authors read the URL from `packageContext.clientModuleUrl`
  * instead of hardcoding it.
  */
-
-const clientModuleHashLength = 16
 
 /**
  * Specifier schemes that only resolve inside the Worker runtime. `kody:` is
@@ -60,20 +62,6 @@ function formatSpecifierList(specifiers: Iterable<string>) {
 		.map((specifier) => `"${specifier}"`)
 		.join(', ')
 }
-
-function buildPackageAppClientModuleName(hash: string) {
-	return `client.${hash}.js`
-}
-
-/**
- * Exactly the shape `buildPackageAppClientModuleName` produces (base64url
- * SHA-256 prefix of fixed length), so the serve path can recognise a client
- * module request without shadowing static assets such as
- * `client.production.js`.
- */
-export const packageAppClientModuleNamePattern = new RegExp(
-	`^client\\.[A-Za-z0-9_-]{${clientModuleHashLength}}\\.js$`,
-)
 
 type ClientGraphProblem = {
 	modulePath: string

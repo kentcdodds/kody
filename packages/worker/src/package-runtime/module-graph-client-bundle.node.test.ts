@@ -10,11 +10,10 @@ vi.mock('#worker/worker-bundler-modules.ts', () => ({
 	}),
 }))
 
-const {
-	buildKodyAppClientBundle,
-	isDeclaredClientExternal,
-	packageAppClientModuleNamePattern,
-} = await import('./module-graph-client-bundle.ts')
+import { packageAppClientModuleNamePattern } from './package-app-client-module-name.ts'
+
+const { buildKodyAppClientBundle, isDeclaredClientExternal } =
+	await import('./module-graph-client-bundle.ts')
 
 const packageJson = JSON.stringify({
 	name: '@kentcdodds/client-app',

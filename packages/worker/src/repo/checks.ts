@@ -1,6 +1,7 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	getPackageAppAssetsDirectory,
+	getPackageAppClientEntryPath,
 	listPackageRetrievers,
 	listPackageSubscriptions,
 	normalizePackageWorkspacePath,
@@ -1255,6 +1256,7 @@ export async function runRepoChecks(input: {
 		validatePackageAppAssetsDirectory({
 			assetsDirectory: getPackageAppAssetsDirectory(manifest),
 			sourceFiles,
+			clientDeclared: getPackageAppClientEntryPath(manifest) !== null,
 		}),
 		validatePackageAppGraphSeparation({ manifest, sourceFiles }),
 	]

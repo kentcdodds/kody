@@ -11,10 +11,11 @@ import {
 import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
+import { buildKodyAppClientBundle } from './module-graph-client-bundle.ts'
 import {
-	buildKodyAppClientBundle,
 	packageAppClientModuleNamePattern,
-} from './module-graph-client-bundle.ts'
+	packageAppVersionAssetName,
+} from './package-app-client-module-name.ts'
 import {
 	inferPackageAppAssetContentType,
 	resolvePackageAppAssetSourcePath,
@@ -48,11 +49,6 @@ const packageAppAssetsPathPrefix = `/${packageAppAssetsPathSegment}/`
 // cache them, and the content hash keeps the client module immutable.
 const clientModuleCacheControl = 'private, max-age=31536000, immutable'
 const staticAssetCacheControl = 'private, max-age=300'
-/**
- * Reserved file name under `/_assets/`. Answered by the platform before the
- * assets directory, so a static file with this name is never served.
- */
-export const packageAppVersionAssetName = '__version.json'
 const versionAssetCacheControl = 'private, no-cache'
 
 export type PackageAppClientArtifact = {
