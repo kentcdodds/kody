@@ -196,6 +196,61 @@ test('additional destinations cap at five extras and identity email cannot be ad
 	expect(listed).toHaveLength(1 + maxAdditionalEmailNotificationDestinations)
 })
 
+test('display-name and odd email forms store the bare address and become sendable', async () => {
+	const { sqlite, db } = createMigratedDb()
+	const userStableId = await seedUser(sqlite, {
+		id: 1,
+		email: 'owner@example.com',
+		username: 'owner',
+	})
+
+	await expect(
+		addEmailNotificationDestination({
+			db,
+			dbUserId: 1,
+			email: 'Owner <owner@example.com>',
+		}),
+	).rejects.toMatchObject({ code: 'identity_email' })
+
+	const added = await addEmailNotificationDestination({
+		db,
+		dbUserId: 1,
+		email: 'Phone <Phone@Example.com>',
+	})
+	expect(added.created).toBe(true)
+	expect(added.destination.email).toBe('phone@example.com')
+	expect(
+		sqlite
+			.prepare(`SELECT email FROM email_notification_destinations WHERE id = ?`)
+			.get(added.destination.id) as { email: string },
+	).toEqual({ email: 'phone@example.com' })
+
+	await markEmailNotificationDestinationVerified({
+		db,
+		destinationId: added.destination.id,
+		userId: 1,
+	})
+	sqlite.exec(`
+		INSERT INTO email_notification_destinations (
+			id, user_id, email, verified_at, is_default
+		) VALUES (
+			'legacy-mixed-case',
+			1,
+			'Pager@Example.com',
+			CURRENT_TIMESTAMP,
+			0
+		);
+	`)
+	const resolved = await resolveAcceptableNotificationEmails({
+		db,
+		stableUserId: userStableId,
+		accountEmail: 'owner@example.com',
+	})
+	expect(resolved.acceptable).toEqual(
+		new Set(['owner@example.com', 'phone@example.com', 'pager@example.com']),
+	)
+})
+
 test('changing identity email to an extra destination drops that extra row', async () => {
 	const { sqlite, db } = createMigratedDb()
 	await seedUser(sqlite, {

@@ -17,8 +17,8 @@ export const emailDestinationListCapability = defineDomainCapability(
 	{
 		name: 'emailDestinationList',
 		description:
-			'List notification email destinations for the signed-in user. The account identity email is always included. Additional addresses must be verified before emailSend can use them.',
-		keywords: ['email', 'destination', 'notify', 'default', 'address'],
+			'List email destinations emailSend may use. Mail still comes from your platform address. The account identity email is always included. Extra addresses must be verified before emailSend can use them.',
+		keywords: ['email', 'destination', 'send', 'default', 'address'],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,

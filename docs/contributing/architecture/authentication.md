@@ -145,16 +145,17 @@ exist without a way to verify it. The only exception is non-production runtimes
 email sender configured; there the send is skipped and accounts are verified
 through seeded tokens instead.
 
-Additional notification destinations (addresses `emailSend` may use besides
+Additional email destinations (addresses `emailSend` may use besides
 `users.email`) reuse the same 24-hour hashed-token link pattern:
 `email_notification_destinations` plus
 `pending_email_destination_verifications`, sent from `kody@<apex>`, confirmed at
 `GET /verify-email-destination?token=...`. Identity email change and release
 stay on their existing flows; destinations do not own `users.email`. Add,
-resend, set-default, and remove live at `/account` and
-`/account/email-destinations.json` (3 requests per 15 minutes for add/resend).
-The cap is 5 extras besides the identity email. Unverified extras never receive
-mail.
+resend, set-default, and remove live at `/account`,
+`/account/email-destinations.json`, and the `emailDestination*` capabilities (3
+requests per 15 minutes for add/resend). The cap is 5 extras besides the
+identity email. Unverified extras never receive mail. Destinations expand the
+verified `to` set only; mail still comes from `{username}@{platform}`.
 
 Signed-in users with an unverified email can request a fresh link with
 `POST /account/resend-verification.json`
@@ -809,7 +810,7 @@ intercepts `POST /oauth/token` refresh grants:
 - `packages/worker/src/email/destinations.ts`,
   `packages/worker/src/email/destination-verification.ts`, and
   `packages/worker/src/app/handlers/account-email-destinations.ts` for extra
-  notification destinations
+  email destinations
 - `packages/worker/src/app/handlers/account-secrets.ts` for owner-scoped secret
   reveal
 - `packages/worker/src/app/deployment-env.ts` for non-production runtime

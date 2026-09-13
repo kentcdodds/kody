@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	EmailDestinationError,
 	type EmailNotificationDestination,
@@ -26,7 +27,7 @@ export function toEmailDestination(destination: EmailNotificationDestination) {
 
 export function mapEmailDestinationError(error: unknown): never {
 	if (error instanceof EmailDestinationError) {
-		throw new Error(error.message)
+		throw new McpCallerError(error.message)
 	}
 	throw error
 }

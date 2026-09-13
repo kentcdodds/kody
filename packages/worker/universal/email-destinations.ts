@@ -1,7 +1,8 @@
 /**
- * Shared notify-self destination contract for account settings, MCP
+ * Shared email send-destination contract for account settings, MCP
  * capabilities, and emailSend. Identity email is always listable and is never
- * stored as an additional destination row.
+ * stored as an additional destination row. Mail still comes from the
+ * platform-assigned sender.
  */
 export const identityEmailDestinationId = 'identity'
 

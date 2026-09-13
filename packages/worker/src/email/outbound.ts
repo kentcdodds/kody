@@ -106,7 +106,7 @@ export type EmailSendInput = {
 	| {
 			/**
 			 * Notify-self policy (emailSend): only the acting user's
-			 * verified notification destinations may be addressed — never
+			 * verified email destinations may be addressed — never
 			 * an outreach channel. Identity email always counts once the
 			 * account email is verified.
 			 */
@@ -189,7 +189,7 @@ async function resolveSelfRecipients(input: {
 		// emailReply or add a verified destination), not a platform defect
 		// — keep it off Sentry.
 		throw new McpCallerError(
-			`emailSend only delivers to your verified notification destinations. Not on the list: ${disallowed.join(', ')}. Add and verify addresses in Account settings, or use emailReply to answer stored inbound messages.`,
+			`emailSend only delivers to your verified email destinations. Not on the list: ${disallowed.join(', ')}. Add and verify addresses in Account settings, or use emailReply to answer stored inbound messages.`,
 		)
 	}
 	return unique

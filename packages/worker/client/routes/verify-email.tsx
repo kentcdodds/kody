@@ -31,7 +31,7 @@ export function VerifyEmailRoute(handle: Handle) {
 				: isEmailClaimRelease
 					? 'Email released'
 					: isEmailDestination
-						? 'Notification address verified'
+						? 'Email destination verified'
 						: 'Email verified'
 			: 'Email verification'
 		const returnsToAccount =
@@ -60,7 +60,7 @@ export function VerifyEmailRoute(handle: Handle) {
 								: isEmailClaimRelease
 									? 'That former address can now be used to create a new Kody account.'
 									: isEmailDestination
-										? 'Kody can send notification email to this address.'
+										? 'emailSend can use this address. Mail still comes from your Kody platform inbox.'
 										: 'Your Kody account can use MCP and send outbound email.'
 							: 'We could not verify your email address.'}
 					</p>

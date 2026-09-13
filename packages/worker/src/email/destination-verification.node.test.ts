@@ -5,8 +5,15 @@ import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { hashVerificationToken } from '#worker/identity/email-verification-tokens.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
-import { addEmailNotificationDestination } from './destinations.ts'
-import { verifyEmailDestinationToken } from './destination-verification.ts'
+import {
+	addEmailNotificationDestination,
+	type EmailDestinationError,
+} from './destinations.ts'
+import {
+	createEmailDestinationVerification,
+	emailDestinationRateLimitConfig,
+	verifyEmailDestinationToken,
+} from './destination-verification.ts'
 
 function createMigratedDb() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -96,4 +103,39 @@ test('destination verification tokens mark one extra address verified and reject
 			)
 			.get() as { count: number },
 	).toEqual({ count: 0 })
+})
+
+test('createEmailDestinationVerification rate-limits add and resend for UI and MCP', async () => {
+	const { sqlite, db } = createMigratedDb()
+	await seedUser(sqlite)
+	const env = {
+		APP_DB: db,
+		APP_BASE_URL: 'http://example.com',
+		SENTRY_ENVIRONMENT: 'test',
+	} as Env
+
+	for (
+		let index = 0;
+		index < emailDestinationRateLimitConfig.maxRequests;
+		index++
+	) {
+		const added = await createEmailDestinationVerification({
+			env,
+			userId: 1,
+			email: `extra-${index}@example.com`,
+			requestUrl: 'http://example.com',
+		})
+		expect(added.created).toBe(true)
+	}
+
+	await expect(
+		createEmailDestinationVerification({
+			env,
+			userId: 1,
+			email: 'one-more@example.com',
+			requestUrl: 'http://example.com',
+		}),
+	).rejects.toMatchObject({
+		code: 'rate_limited',
+	} satisfies Partial<EmailDestinationError>)
 })

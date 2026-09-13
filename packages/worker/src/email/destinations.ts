@@ -21,6 +21,7 @@ export type EmailDestinationErrorCode =
 	| 'not_verified'
 	| 'at_cap'
 	| 'cannot_remove_identity'
+	| 'rate_limited'
 
 export class EmailDestinationError extends Error {
 	readonly code: EmailDestinationErrorCode
@@ -47,12 +48,24 @@ type DestinationRow = {
 }
 
 export function getEmailDestinationValidationError(email: string) {
-	if (!email) return 'Email is required.'
+	if (!email.trim()) return 'Email is required.'
 	if (email.length > 254) return 'Email is too long.'
 	if (!normalizeEmailAddress(email)) {
 		return 'Enter a valid email address.'
 	}
 	return null
+}
+
+function requireCanonicalDestinationEmail(email: string) {
+	const validationError = getEmailDestinationValidationError(email)
+	if (validationError) {
+		throw new EmailDestinationError('invalid_email', validationError)
+	}
+	return normalizeEmailAddress(email) as string
+}
+
+function canonicalizeStoredEmail(email: string) {
+	return normalizeEmailAddress(email) ?? normalizeEmail(email)
 }
 
 export async function loadEmailDestinationAccount(input: {
@@ -143,7 +156,7 @@ export async function listEmailNotificationDestinations(input: {
 	accountEmailVerified?: boolean
 }): Promise<Array<EmailNotificationDestination>> {
 	const account = await loadEmailDestinationAccount(input)
-	const identityEmail = normalizeEmail(
+	const identityEmail = canonicalizeStoredEmail(
 		input.accountEmail ?? account?.email ?? '',
 	)
 	const identityVerified =
@@ -165,28 +178,13 @@ export async function listEmailNotificationDestinations(input: {
 		},
 		...extras.map((row) => ({
 			id: row.id,
-			email: row.email,
+			email: canonicalizeStoredEmail(row.email),
 			kind: 'additional' as const,
 			verified: row.verified_at != null,
 			isDefault: row.is_default === 1,
 			canRemove: true,
 		})),
 	]
-}
-
-export async function countAdditionalEmailDestinations(
-	db: D1Database,
-	userId: number,
-) {
-	const row = await db
-		.prepare(
-			`SELECT COUNT(*) AS count
-			 FROM email_notification_destinations
-			 WHERE user_id = ?`,
-		)
-		.bind(userId)
-		.first<{ count: number }>()
-	return row?.count ?? 0
 }
 
 export async function addEmailNotificationDestination(input: {
@@ -202,12 +200,8 @@ export async function addEmailNotificationDestination(input: {
 		db: input.db,
 		dbUserId: input.dbUserId,
 	})
-	const email = normalizeEmail(input.email)
-	const validationError = getEmailDestinationValidationError(email)
-	if (validationError) {
-		throw new EmailDestinationError('invalid_email', validationError)
-	}
-	if (email === normalizeEmail(account.email)) {
+	const email = requireCanonicalDestinationEmail(input.email)
+	if (email === canonicalizeStoredEmail(account.email)) {
 		throw new EmailDestinationError(
 			'identity_email',
 			'That address is already your account email.',
@@ -226,7 +220,7 @@ export async function addEmailNotificationDestination(input: {
 		if (existing.verified_at) {
 			throw new EmailDestinationError(
 				'already_added',
-				'That address is already a notification destination.',
+				'That address is already an email destination.',
 			)
 		}
 		return {
@@ -242,29 +236,33 @@ export async function addEmailNotificationDestination(input: {
 		}
 	}
 
-	const extraCount = await countAdditionalEmailDestinations(
-		input.db,
-		account.id,
-	)
-	if (extraCount >= maxAdditionalEmailNotificationDestinations) {
-		throw new EmailDestinationError(
-			'at_cap',
-			`You can add up to ${maxAdditionalEmailNotificationDestinations} extra notification addresses.`,
-		)
-	}
-
 	const id = crypto.randomUUID()
 	const inserted = await input.db
 		.prepare(
 			`INSERT INTO email_notification_destinations (id, user_id, email, verified_at, is_default)
 			 SELECT ?, id, ?, NULL, 0
 			 FROM users
-			 WHERE id = ? AND deleting_at IS NULL`,
+			 WHERE id = ? AND deleting_at IS NULL
+			   AND (
+				 SELECT COUNT(*)
+				 FROM email_notification_destinations
+				 WHERE user_id = users.id
+			   ) < ?`,
 		)
-		.bind(id, email, account.id)
+		.bind(id, email, account.id, maxAdditionalEmailNotificationDestinations)
 		.run()
 	if ((inserted.meta.changes ?? 0) !== 1) {
-		throw new AccountDeletionInProgressError()
+		const stillPresent = await loadEmailDestinationAccount({
+			db: input.db,
+			dbUserId: account.id,
+		})
+		if (!stillPresent) {
+			throw new AccountDeletionInProgressError()
+		}
+		throw new EmailDestinationError(
+			'at_cap',
+			`You can add up to ${maxAdditionalEmailNotificationDestinations} extra email destinations.`,
+		)
 	}
 
 	return {
@@ -362,7 +360,7 @@ export async function setDefaultEmailNotificationDestination(input: {
 	if (!row) {
 		throw new EmailDestinationError(
 			'not_found',
-			'Notification destination was not found.',
+			'Email destination was not found.',
 		)
 	}
 	if (!row.verified_at) {
@@ -372,22 +370,22 @@ export async function setDefaultEmailNotificationDestination(input: {
 		)
 	}
 
-	await input.db
-		.prepare(
-			`UPDATE email_notification_destinations
-			 SET is_default = 0
-			 WHERE user_id = ? AND is_default = 1`,
-		)
-		.bind(account.id)
-		.run()
-	await input.db
-		.prepare(
-			`UPDATE email_notification_destinations
-			 SET is_default = 1
-			 WHERE id = ? AND user_id = ?`,
-		)
-		.bind(row.id, account.id)
-		.run()
+	await input.db.batch([
+		input.db
+			.prepare(
+				`UPDATE email_notification_destinations
+				 SET is_default = 0
+				 WHERE user_id = ? AND is_default = 1`,
+			)
+			.bind(account.id),
+		input.db
+			.prepare(
+				`UPDATE email_notification_destinations
+				 SET is_default = 1
+				 WHERE id = ? AND user_id = ?`,
+			)
+			.bind(row.id, account.id),
+	])
 
 	return listEmailNotificationDestinations({
 		db: input.db,
@@ -423,7 +421,7 @@ export async function removeEmailNotificationDestination(input: {
 	if ((deleted.meta.changes ?? 0) !== 1) {
 		throw new EmailDestinationError(
 			'not_found',
-			'Notification destination was not found.',
+			'Email destination was not found.',
 		)
 	}
 
@@ -458,7 +456,7 @@ export async function reconcileDestinationsAfterIdentityEmailChange(input: {
 	userId: number
 	newEmail: string
 }) {
-	const email = normalizeEmail(input.newEmail)
+	const email = canonicalizeStoredEmail(input.newEmail)
 	await input.db
 		.prepare(
 			`DELETE FROM email_notification_destinations
@@ -474,12 +472,14 @@ export function collectAcceptableNotificationEmails(input: {
 	extras: Array<Pick<DestinationRow, 'email' | 'verified_at'>>
 }) {
 	const acceptable = new Set<string>()
-	const identity = normalizeEmail(input.accountEmail)
+	const identity = canonicalizeStoredEmail(input.accountEmail)
 	if (input.accountEmailVerified && identity) {
 		acceptable.add(identity)
 	}
 	for (const extra of input.extras) {
-		if (extra.verified_at) acceptable.add(extra.email)
+		if (!extra.verified_at) continue
+		const email = canonicalizeStoredEmail(extra.email)
+		if (email) acceptable.add(email)
 	}
 	return acceptable
 }
@@ -489,7 +489,7 @@ export async function resolveDefaultNotificationEmail(input: {
 	stableUserId: string
 	accountEmail: string
 }): Promise<string> {
-	const identity = normalizeEmail(input.accountEmail)
+	const identity = canonicalizeStoredEmail(input.accountEmail)
 	const account = await loadEmailDestinationAccount({
 		db: input.db,
 		stableUserId: input.stableUserId,
@@ -503,7 +503,7 @@ export async function resolveDefaultNotificationEmail(input: {
 		)
 		.bind(account.id)
 		.first<{ email: string }>()
-	return defaultExtra?.email ?? identity
+	return defaultExtra ? canonicalizeStoredEmail(defaultExtra.email) : identity
 }
 
 export async function resolveAcceptableNotificationEmails(input: {
@@ -514,7 +514,7 @@ export async function resolveAcceptableNotificationEmails(input: {
 	acceptable: Set<string>
 	defaultEmail: string
 }> {
-	const identity = normalizeEmail(input.accountEmail)
+	const identity = canonicalizeStoredEmail(input.accountEmail)
 	const account = await loadEmailDestinationAccount({
 		db: input.db,
 		stableUserId: input.stableUserId,
@@ -532,6 +532,8 @@ export async function resolveAcceptableNotificationEmails(input: {
 	)
 	return {
 		acceptable,
-		defaultEmail: defaultExtra?.email ?? identity,
+		defaultEmail: defaultExtra
+			? canonicalizeStoredEmail(defaultExtra.email)
+			: identity,
 	}
 }

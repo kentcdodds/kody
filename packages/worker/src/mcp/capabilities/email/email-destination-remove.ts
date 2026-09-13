@@ -17,7 +17,7 @@ export const emailDestinationRemoveCapability = defineDomainCapability(
 	{
 		name: 'emailDestinationRemove',
 		description:
-			'Remove an additional notification destination. The account identity email cannot be removed. If the removed address was the default, emailSend without `to` falls back to the identity email.',
+			'Remove an additional email destination. The account identity email cannot be removed. If the removed address was the default, emailSend without `to` falls back to the identity email.',
 		keywords: ['email', 'destination', 'remove', 'delete'],
 		readOnly: false,
 		idempotent: false,

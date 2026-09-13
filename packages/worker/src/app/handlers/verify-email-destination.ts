@@ -15,9 +15,9 @@ function getVerifyEmailDestinationError(
 		case 'missing_token':
 			return 'Verification token is required.'
 		case 'invalid_token':
-			return 'Notification destination link is invalid.'
+			return 'Email destination link is invalid.'
 		case 'expired_token':
-			return 'Notification destination link has expired.'
+			return 'Email destination link has expired.'
 		default: {
 			const unreachable: never = reason
 			return unreachable
@@ -48,7 +48,7 @@ export function createVerifyEmailDestinationHandler(env: Env) {
 				return renderAppPage({
 					request,
 					env,
-					title: 'Verify notification address',
+					title: 'Verify email destination',
 					status: 400,
 					loaderData: {
 						emailVerification: {
@@ -71,13 +71,13 @@ export function createVerifyEmailDestinationHandler(env: Env) {
 			return renderAppPage({
 				request,
 				env,
-				title: 'Notification address verified',
+				title: 'Email destination verified',
 				loaderData: {
 					emailVerification: {
 						ok: true,
 						kind: 'email_destination',
 						message:
-							'This address can now receive Kody notification email. Set it as the default from Account settings if you want emailSend without a `to` to use it.',
+							'emailSend can now use this address. Mail still comes from your platform inbox. Set it as the default from Account settings if you want omitted `to` to use it.',
 						ctaHref: '/account',
 						ctaLabel: 'Go to account',
 					},

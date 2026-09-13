@@ -444,7 +444,7 @@ test('sendOutboundEmail rejects non-self recipients under the self policy', asyn
 	expect(nonSelfError).toBeInstanceOf(McpCallerError)
 	expect(nonSelfError).toMatchObject({
 		message: expect.stringContaining(
-			'emailSend only delivers to your verified notification destinations',
+			'emailSend only delivers to your verified email destinations',
 		),
 	})
 	// Malformed explicit recipients are rejected instead of silently dropped

@@ -53,18 +53,20 @@ Use the MCP `email` domain:
 
 - `emailInboxList` lists inboxes and automatic platform addresses for the
   signed-in user.
-- `emailDestinationList` lists notification destinations. The account identity
-  email is always included. Extra addresses must be verified before `emailSend`
-  can use them. Cap is 5 extras besides the account email.
+- `emailDestinationList` lists email destinations `emailSend` may use. The
+  account identity email is always included. Extra addresses must be verified
+  before `emailSend` can use them. Cap is 5 extras besides the account email.
+  Mail still comes from `{username}@<platform domain>`.
 - `emailDestinationAdd` starts verification for an extra address (or resends the
   link if that address is already pending).
 - `emailDestinationSetDefault` picks the destination used when `emailSend` omits
   `to`.
 - `emailDestinationRemove` removes an extra destination. The identity email
   stays on the list.
-- `emailSend` sends a notification email to your verified notification
-  destinations. Omit `to` to use the default destination (the account email
-  until you pick another). Every explicit address must already be on that
+- `emailSend` sends from your platform address to your verified email
+  destinations. This expands the allowed `to` set; it is not a separate
+  notify-only channel. Omit `to` to use the default destination (the account
+  email until you pick another). Every explicit address must already be on that
   verified set; if any `to` is missing or unverified the whole send fails.
   Manage destinations from `/account` as well. Unverified extras never receive
   mail.
@@ -157,14 +159,14 @@ Inbound storage is quota-gated per user:
   authentication headers separately.
 - Outbound sending requires a verified account email, sends only from the
   platform-assigned address, and `emailSend` only delivers to the signed-in
-  user's verified notification destinations (the account identity email plus
-  extra addresses they added and verified). This is still notify-self: Kody is
-  not an open relay. `emailReply` is the only way for a user account to address
-  external recipients, and only recipients taken from stored inbound mail.
-  Admins have a separate operator channel (`adminSystemEmailSend`) that speaks
-  for the platform rather than for any user account: it sends from a reserved
-  system sender, uses no user mailbox or plan entitlement, is audit-logged, and
-  is capped per sender per UTC day.
+  user's verified email destinations (the account identity email plus extra
+  addresses they added and verified). Kody is not an open relay: destinations
+  only expand the allowed `to` set. `emailReply` is the only way for a user
+  account to address external recipients, and only recipients taken from stored
+  inbound mail. Admins have a separate operator channel (`adminSystemEmailSend`)
+  that speaks for the platform rather than for any user account: it sends from a
+  reserved system sender, uses no user mailbox or plan entitlement, is
+  audit-logged, and is capped per sender per UTC day.
 - Outbound sends consume a per-day entitlement. The `max` plan allows 10,000
   send attempts per UTC day.
 - A successful send request has `processing_status: "sent"`. Cloudflare delivery

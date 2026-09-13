@@ -47,7 +47,8 @@ node tools/control-kody.ts request GET /account/connections.json
 - Former-address release is `POST /account/email-claim-release.json`, then
   confirm at `/verify-email-claim-release`. It drops the claim without reminting
   `users.stable_user_id`.
-- Notification destinations are `GET|POST /account/email-destinations.json`
-  (`add` / `resend` / `setDefault` / `remove`), then confirm extras at
-  `/verify-email-destination`. The account email is always listable; extras must
-  verify before `emailSend` can use them. Cap is 5 extras.
+- Email destinations are `GET|POST /account/email-destinations.json` (`add` /
+  `resend` / `setDefault` / `remove`), then confirm extras at
+  `/verify-email-destination`. The account email is always listable and cannot
+  be removed here; extras must verify before `emailSend` can use them. Cap is 5
+  extras. Mail still comes from `{username}@platform`.

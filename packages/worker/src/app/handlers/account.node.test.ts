@@ -353,7 +353,7 @@ test('authenticated account SSR batches user/role and flag reads into two round 
 		'package-share-grants': false,
 	})
 	// Session batches: users+roles, flags+overrides (two 2-statement batches).
-	// Account SSR also prepares the notification-destinations list query.
+	// Account SSR also prepares the email-destinations list query.
 	expect(counts.batchSizes).toEqual([2, 2])
 	expect(counts.prepare).toBe(5)
 	expect(counts.batch).toBe(2)

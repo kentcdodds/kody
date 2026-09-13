@@ -75,7 +75,7 @@ export async function fetchAccountPagePayloads(
 		throw new Error('Unable to load connected accounts.')
 	}
 	if (!destinationsResponse.ok || !destinationsPayload?.ok) {
-		throw new Error('Unable to load notification destinations.')
+		throw new Error('Unable to load email destinations.')
 	}
 	return {
 		kind: 'ok',

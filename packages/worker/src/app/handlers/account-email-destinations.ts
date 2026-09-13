@@ -9,6 +9,7 @@ import {
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	createEmailDestinationVerification,
+	emailDestinationRateLimitConfig,
 	resendEmailDestinationVerification,
 } from '#worker/email/destination-verification.ts'
 import {
@@ -18,13 +19,9 @@ import {
 	removeEmailNotificationDestination,
 	setDefaultEmailNotificationDestination,
 } from '#worker/email/destinations.ts'
-import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
 import { type routes } from '#universal/routes.ts'
 
-export const emailDestinationRateLimitConfig = {
-	maxRequests: 3,
-	windowSeconds: 15 * 60,
-}
+export { emailDestinationRateLimitConfig }
 
 const destinationMutationSchema = object({
 	action: enum_(['add', 'resend', 'setDefault', 'remove'] as const),
@@ -110,73 +107,11 @@ export function createAccountEmailDestinationsHandler(env: Env) {
 
 			try {
 				if (action === 'add' || action === 'resend') {
-					const rateLimitKey = `email-destination:user:${user.userId}`
-					const rateLimit = await checkRateLimit(
-						env.APP_DB,
-						rateLimitKey,
-						emailDestinationRateLimitConfig,
-					)
-					if (!rateLimit.allowed) {
-						void logAuditEvent({
-							db: auditDatabaseFromEnv(env),
-							category: 'account',
-							action: 'email_destination',
-							result: 'rate_limited',
-							email: user.email,
-							ip: requestIp,
-							path: url.pathname,
-							reason: action,
-						})
-						return jsonResponse(
-							{
-								ok: false,
-								error:
-									'Too many destination verification requests. Please try again later.',
-							},
-							{
-								status: 429,
-								headers: {
-									'Retry-After': String(rateLimit.retryAfterSeconds ?? 60),
-								},
-							},
-						)
-					}
-
-					try {
-						if (action === 'add') {
-							const result = await createEmailDestinationVerification({
-								env,
-								userId: user.userId,
-								email,
-								requestUrl: url,
-							})
-							const destinations = await listEmailNotificationDestinations({
-								db: env.APP_DB,
-								dbUserId: user.userId,
-								accountEmail: user.email,
-								accountEmailVerified: user.emailVerified,
-							})
-							void logAuditEvent({
-								db: auditDatabaseFromEnv(env),
-								category: 'account',
-								action: 'email_destination',
-								result: 'success',
-								email: user.email,
-								ip: requestIp,
-								path: url.pathname,
-								reason: `add=${result.destination.email}`,
-							})
-							return jsonResponse({
-								...destinationListPayload(destinations),
-								message:
-									'Verification email sent. Open the link to start using this address.',
-							})
-						}
-
-						const destination = await resendEmailDestinationVerification({
+					if (action === 'add') {
+						const result = await createEmailDestinationVerification({
 							env,
 							userId: user.userId,
-							destinationId,
+							email,
 							requestUrl: url,
 						})
 						const destinations = await listEmailNotificationDestinations({
@@ -193,18 +128,41 @@ export function createAccountEmailDestinationsHandler(env: Env) {
 							email: user.email,
 							ip: requestIp,
 							path: url.pathname,
-							reason: `resend=${destination.email}`,
+							reason: `add=${result.destination.email}`,
 						})
 						return jsonResponse({
 							...destinationListPayload(destinations),
-							message: 'Verification email sent again.',
+							message:
+								'Verification email sent. Open the link to start using this address.',
 						})
-					} catch (error) {
-						await releaseRateLimit(env.APP_DB, rateLimitKey).catch(
-							() => undefined,
-						)
-						throw error
 					}
+
+					const destination = await resendEmailDestinationVerification({
+						env,
+						userId: user.userId,
+						destinationId,
+						requestUrl: url,
+					})
+					const destinations = await listEmailNotificationDestinations({
+						db: env.APP_DB,
+						dbUserId: user.userId,
+						accountEmail: user.email,
+						accountEmailVerified: user.emailVerified,
+					})
+					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
+						category: 'account',
+						action: 'email_destination',
+						result: 'success',
+						email: user.email,
+						ip: requestIp,
+						path: url.pathname,
+						reason: `resend=${destination.email}`,
+					})
+					return jsonResponse({
+						...destinationListPayload(destinations),
+						message: 'Verification email sent again.',
+					})
 				}
 
 				if (action === 'setDefault') {
@@ -225,7 +183,7 @@ export function createAccountEmailDestinationsHandler(env: Env) {
 					})
 					return jsonResponse({
 						...destinationListPayload(destinations),
-						message: 'Default notification address updated.',
+						message: 'Default email destination updated.',
 					})
 				}
 
@@ -246,10 +204,33 @@ export function createAccountEmailDestinationsHandler(env: Env) {
 				})
 				return jsonResponse({
 					...destinationListPayload(destinations),
-					message: 'Notification address removed.',
+					message: 'Email destination removed.',
 				})
 			} catch (error) {
 				if (error instanceof EmailDestinationError) {
+					if (error.code === 'rate_limited') {
+						void logAuditEvent({
+							db: auditDatabaseFromEnv(env),
+							category: 'account',
+							action: 'email_destination',
+							result: 'rate_limited',
+							email: user.email,
+							ip: requestIp,
+							path: url.pathname,
+							reason: action,
+						})
+						return jsonResponse(
+							{ ok: false, error: error.message },
+							{
+								status: 429,
+								headers: {
+									'Retry-After': String(
+										emailDestinationRateLimitConfig.windowSeconds,
+									),
+								},
+							},
+						)
+					}
 					const status =
 						error.code === 'not_found'
 							? 404
@@ -260,7 +241,7 @@ export function createAccountEmailDestinationsHandler(env: Env) {
 				}
 				if (
 					error instanceof Error &&
-					(error.message === 'Notification destination was not found.' ||
+					(error.message === 'Email destination was not found.' ||
 						error.message === 'That address is already verified.')
 				) {
 					return jsonResponse({ ok: false, error: error.message }, 400)
@@ -280,7 +261,7 @@ export function createAccountEmailDestinationsHandler(env: Env) {
 					{
 						ok: false,
 						error:
-							'Unable to update notification destinations. Please try again later.',
+							'Unable to update email destinations. Please try again later.',
 					},
 					502,
 				)

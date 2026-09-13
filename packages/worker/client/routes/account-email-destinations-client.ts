@@ -46,17 +46,16 @@ export function createAccountEmailDestinations(handle: Handle) {
 				AccountEmailDestinationsLoaderData & { error?: string }
 			>(response)
 			if (!response.ok || !payload?.ok) {
-				message =
-					payload?.error ?? 'Unable to update notification destinations.'
+				message = payload?.error ?? 'Unable to update email destinations.'
 				tone = 'error'
 				return
 			}
 			applyPayload(payload)
 			if (body.action === 'add') draftEmail = ''
-			message = payload.message ?? 'Notification destinations updated.'
+			message = payload.message ?? 'Email destinations updated.'
 			tone = 'info'
 		} catch {
-			message = 'Unable to update notification destinations.'
+			message = 'Unable to update email destinations.'
 			tone = 'error'
 		} finally {
 			status = 'idle'

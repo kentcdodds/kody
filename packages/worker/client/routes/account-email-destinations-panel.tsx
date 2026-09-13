@@ -55,8 +55,8 @@ export function renderAccountEmailDestinationsPanel(
 
 	return (
 		<AccountManagementPanel
-			title="Notification destinations"
-			description="Addresses Kody may email from your platform inbox. The account email is always available. Extra addresses need a verification link before emailSend can use them."
+			title="Email destinations"
+			description="Addresses emailSend may use. Mail still comes from your Kody platform address. The account email is always available. Extra addresses need a verification link first."
 		>
 			<ul
 				mix={css({
@@ -177,7 +177,7 @@ export function renderAccountEmailDestinationsPanel(
 						/>
 						<span mix={css(accountFieldNoteCss)}>
 							Up to {additionalLimit} extras besides your account email. We send
-							a verification link before Kody can notify this address.
+							a verification link before emailSend can use this address.
 						</span>
 					</label>
 					<button

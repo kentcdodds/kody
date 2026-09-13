@@ -21,7 +21,7 @@ import { emailSenderRuleSetCapability } from './email-sender-rule-set.ts'
 export const emailDomain = defineDomain({
 	name: capabilityDomainNames.email,
 	description:
-		'Per-user inbox primitives for store, notify-self destinations, reply, and delete.',
+		'Per-user inbox primitives for store, verified send destinations, reply, and delete.',
 	keywords: ['email', 'mail', 'inbox', 'routing', 'destination', 'notify'],
 	capabilities: [
 		emailInboxListCapability,

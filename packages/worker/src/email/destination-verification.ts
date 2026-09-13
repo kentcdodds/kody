@@ -2,9 +2,11 @@ import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { buildEmailDestinationVerificationEmail } from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
+import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
 import {
 	addEmailNotificationDestination,
 	deleteEmailNotificationDestinationRow,
+	EmailDestinationError,
 	markEmailNotificationDestinationVerified,
 	type EmailNotificationDestination,
 } from './destinations.ts'
@@ -13,6 +15,41 @@ import {
 	hashVerificationToken,
 	verificationTokenExpiryMs,
 } from '#worker/identity/email-verification-tokens.ts'
+
+export const emailDestinationRateLimitConfig = {
+	maxRequests: 3,
+	windowSeconds: 15 * 60,
+}
+
+function destinationVerificationRateLimitKey(userId: number) {
+	return `email-destination:user:${userId}`
+}
+
+async function consumeDestinationVerificationRateLimit(
+	db: D1Database,
+	userId: number,
+) {
+	const rateLimit = await checkRateLimit(
+		db,
+		destinationVerificationRateLimitKey(userId),
+		emailDestinationRateLimitConfig,
+	)
+	if (!rateLimit.allowed) {
+		throw new EmailDestinationError(
+			'rate_limited',
+			'Too many destination verification requests. Please try again later.',
+		)
+	}
+}
+
+async function refundDestinationVerificationRateLimit(
+	db: D1Database,
+	userId: number,
+) {
+	await releaseRateLimit(db, destinationVerificationRateLimitKey(userId)).catch(
+		() => undefined,
+	)
+}
 
 export type VerifyEmailDestinationResult =
 	| {
@@ -142,9 +179,14 @@ async function sendDestinationVerificationEmail(input: {
 
 	await input.env.APP_DB.prepare(
 		`DELETE FROM pending_email_destination_verifications
-		 WHERE destination_id = ? AND token_hash != ?`,
+		 WHERE destination_id = ?
+		   AND token_hash != ?
+		   AND id < (
+			 SELECT id FROM pending_email_destination_verifications
+			 WHERE token_hash = ?
+		   )`,
 	)
-		.bind(input.destinationId, input.tokenHash)
+		.bind(input.destinationId, input.tokenHash, input.tokenHash)
 		.run()
 		.catch((error) => {
 			console.warn('email-destination-token-cleanup-failed', error)
@@ -157,40 +199,61 @@ export async function createEmailDestinationVerification(input: {
 	email: string
 	requestUrl: string | URL
 }): Promise<{ destination: EmailNotificationDestination; created: boolean }> {
-	const added = await addEmailNotificationDestination({
-		db: input.env.APP_DB,
-		dbUserId: input.userId,
-		email: input.email,
-	})
+	await consumeDestinationVerificationRateLimit(input.env.APP_DB, input.userId)
+	let added: {
+		destination: EmailNotificationDestination
+		created: boolean
+	}
+	try {
+		added = await addEmailNotificationDestination({
+			db: input.env.APP_DB,
+			dbUserId: input.userId,
+			email: input.email,
+		})
+	} catch (error) {
+		await refundDestinationVerificationRateLimit(input.env.APP_DB, input.userId)
+		throw error
+	}
 
-	const minted = await insertDestinationVerificationToken({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		destinationId: added.destination.id,
-	})
+	let minted: { token: string; tokenHash: string }
+	try {
+		minted = await insertDestinationVerificationToken({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			destinationId: added.destination.id,
+		})
+	} catch (error) {
+		await refundDestinationVerificationRateLimit(input.env.APP_DB, input.userId)
+		throw error
+	}
 
-	await sendDestinationVerificationEmail({
-		env: input.env,
-		userId: input.userId,
-		destinationId: added.destination.id,
-		destinationEmail: added.destination.email,
-		requestUrl: input.requestUrl,
-		token: minted.token,
-		tokenHash: minted.tokenHash,
-		onSendFailure: async () => {
-			await discardDestinationVerificationToken(
-				input.env.APP_DB,
-				minted.tokenHash,
-			)
-			if (added.created) {
-				await deleteEmailNotificationDestinationRow({
-					db: input.env.APP_DB,
-					destinationId: added.destination.id,
-					userId: input.userId,
-				})
-			}
-		},
-	})
+	try {
+		await sendDestinationVerificationEmail({
+			env: input.env,
+			userId: input.userId,
+			destinationId: added.destination.id,
+			destinationEmail: added.destination.email,
+			requestUrl: input.requestUrl,
+			token: minted.token,
+			tokenHash: minted.tokenHash,
+			onSendFailure: async () => {
+				await discardDestinationVerificationToken(
+					input.env.APP_DB,
+					minted.tokenHash,
+				)
+				if (added.created) {
+					await deleteEmailNotificationDestinationRow({
+						db: input.env.APP_DB,
+						destinationId: added.destination.id,
+						userId: input.userId,
+					})
+				}
+			},
+		})
+	} catch (error) {
+		await refundDestinationVerificationRateLimit(input.env.APP_DB, input.userId)
+		throw error
+	}
 
 	return added
 }
@@ -201,6 +264,7 @@ export async function resendEmailDestinationVerification(input: {
 	destinationId: string
 	requestUrl: string | URL
 }): Promise<EmailNotificationDestination> {
+	await consumeDestinationVerificationRateLimit(input.env.APP_DB, input.userId)
 	const row = await input.env.APP_DB.prepare(
 		`SELECT id, email, verified_at, is_default
 		 FROM email_notification_destinations
@@ -214,33 +278,40 @@ export async function resendEmailDestinationVerification(input: {
 			is_default: number
 		}>()
 	if (!row) {
-		throw new Error('Notification destination was not found.')
+		await refundDestinationVerificationRateLimit(input.env.APP_DB, input.userId)
+		throw new Error('Email destination was not found.')
 	}
 	if (row.verified_at) {
+		await refundDestinationVerificationRateLimit(input.env.APP_DB, input.userId)
 		throw new Error('That address is already verified.')
 	}
 
-	const minted = await insertDestinationVerificationToken({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		destinationId: row.id,
-	})
+	try {
+		const minted = await insertDestinationVerificationToken({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			destinationId: row.id,
+		})
 
-	await sendDestinationVerificationEmail({
-		env: input.env,
-		userId: input.userId,
-		destinationId: row.id,
-		destinationEmail: row.email,
-		requestUrl: input.requestUrl,
-		token: minted.token,
-		tokenHash: minted.tokenHash,
-		onSendFailure: async () => {
-			await discardDestinationVerificationToken(
-				input.env.APP_DB,
-				minted.tokenHash,
-			)
-		},
-	})
+		await sendDestinationVerificationEmail({
+			env: input.env,
+			userId: input.userId,
+			destinationId: row.id,
+			destinationEmail: row.email,
+			requestUrl: input.requestUrl,
+			token: minted.token,
+			tokenHash: minted.tokenHash,
+			onSendFailure: async () => {
+				await discardDestinationVerificationToken(
+					input.env.APP_DB,
+					minted.tokenHash,
+				)
+			},
+		})
+	} catch (error) {
+		await refundDestinationVerificationRateLimit(input.env.APP_DB, input.userId)
+		throw error
+	}
 
 	return {
 		id: row.id,

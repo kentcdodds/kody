@@ -435,8 +435,8 @@ const routeDocumentHeads = {
 		const verification = loaderData?.emailVerification
 		return titleOnly(
 			verification?.ok
-				? 'Notification email verified'
-				: 'Verify notification email',
+				? 'Email destination verified'
+				: 'Verify email destination',
 		)
 	},
 	[routePattern(routes.unsubscribeTips)]: ({ loaderData }) => {
