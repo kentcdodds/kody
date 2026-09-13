@@ -107,8 +107,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Waiting first-use probes (search, memory, execute, package, job,
 		// integration, secret, Discord membership) ship on platform because
 		// waitingSummary runs in the MCP Durable Object. Local dry-run after
-		// that change is 4_983_088 bytes.
-		maxEntryBytes: 4_990_000,
+		// that change is 4_983_088 bytes. Package-app `kody.app.client`
+		// browser bundling and `/_assets/*` serving (publish rebuild and
+		// packageAppFetch both run here) add ~19 KB: 5_001_786 bytes.
+		maxEntryBytes: 5_010_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
