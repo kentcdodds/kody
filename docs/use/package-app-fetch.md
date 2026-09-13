@@ -1,9 +1,11 @@
 # Package app fetch
 
-`packageAppFetch` invokes a published package app's fetch handler over MCP. It
-is a **platform-marked real-surface** `app_fetch` run: same package runtime,
-`packageStorage()`, and secret mounts as production traffic. **Side effects are
-real.**
+`packageAppFetch` invokes a published package app over MCP — the Remix router or
+the fetch handler, whichever `kody.app.entry` exports. It is a **platform-marked
+real-surface** `app_fetch` run: same package runtime, `packageStorage()`, and
+secret mounts as production traffic. **Side effects are real.** `path` is
+mount-relative (`/notes`); a Remix router sees it as the full hosted URL,
+exactly like a browser request.
 
 Use it to verify `kody.app` wiring and JSON/API responses immediately after
 publish — without opening the hosted URL in a browser or performing session
