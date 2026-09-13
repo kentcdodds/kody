@@ -76,7 +76,7 @@ test('connected agents panel groups same-name hosts, shows logos, and keeps revo
 		cursorBlock.indexOf('cursor-new'),
 	)
 	expect(cursorBlock).toContain('Last used')
-	expect(html).toContain('Last used never')
+	expect(html).toMatch(/Last used <span[^>]*>never<\/span>/)
 	expect(cursorBlock).toContain('aria-label="Revoke Cursor (cursor-n…)"')
 	expect(cursorBlock).toContain('aria-label="Revoke Cursor (cursor-o…)"')
 	const chatgptBlock = html.slice(

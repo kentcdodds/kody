@@ -1154,8 +1154,7 @@ function instrumentWriteLeaseRpcs(namespace: DurableObjectNamespace) {
 			get(id: DurableObjectId) {
 				const target = namespace.get(id)
 				return new Proxy(target, {
-					get(target, prop, receiver) {
-						const value = Reflect.get(target, prop, receiver)
+					get(_target, prop) {
 						if (
 							prop === 'acquireWriteLease' ||
 							prop === 'assertWriteLeaseHeld' ||
@@ -1171,9 +1170,19 @@ function instrumentWriteLeaseRpcs(namespace: DurableObjectNamespace) {
 								)[String(prop)](args)
 							}
 						}
-						return typeof value === 'function'
-							? (value as (...args: Array<unknown>) => unknown).bind(target)
-							: value
+						const value = (target as unknown as Record<PropertyKey, unknown>)[
+							prop
+						]
+						if (typeof value === 'function') {
+							return (...args: Array<unknown>) =>
+								(
+									target as unknown as Record<
+										PropertyKey,
+										(...args: Array<unknown>) => unknown
+									>
+								)[prop](...args)
+						}
+						return value
 					},
 				})
 			},
