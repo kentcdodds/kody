@@ -106,9 +106,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		bundler: 'wrangler',
 		// Waiting first-use probes (search, memory, execute, package, job,
 		// integration, secret, Discord membership) ship on platform because
-		// waitingSummary runs in the MCP Durable Object. Local dry-run after
-		// that change is 4_983_088 bytes.
-		maxEntryBytes: 4_990_000,
+		// waitingSummary runs in the MCP Durable Object. UserMeter schema
+		// v12 inbound MCP last-used RPCs add a few KB (CI dry-run
+		// 4_992_191). Keep last-used on this class; do not add a second DO.
+		maxEntryBytes: 5_000_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
