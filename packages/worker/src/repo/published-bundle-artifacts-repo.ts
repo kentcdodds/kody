@@ -1,3 +1,5 @@
+import { errorCauseChainIncludes } from '@kody-internal/shared/error-message.ts'
+
 export type PublishedBundleArtifactRecord = {
 	id: string
 	userId: string
@@ -305,6 +307,15 @@ export async function listPublishedBundleArtifactsBySourceId(
 	return (result.results ?? []).map(mapRow)
 }
 
+export function isPublishedBundleArtifactIdentityConflict(error: unknown) {
+	return errorCauseChainIncludes(
+		error,
+		(message) =>
+			/idx_published_bundle_artifacts_(source_)?identity/i.test(message) ||
+			/unique constraint failed:.*published_bundle_artifacts/i.test(message),
+	)
+}
+
 export async function insertPublishedBundleArtifactRow(
 	db: D1Database,
 	input: PublishedBundleArtifactUpsertInput,
@@ -333,6 +344,52 @@ export async function insertPublishedBundleArtifactRow(
 		)
 		.run()
 	return id
+}
+
+/**
+ * Write one identity row. Isolated rebuilds, overlapping publishes, and
+ * hydration can race the same (kind, name, entry) after a source publish
+ * already succeeded; a UNIQUE on that index updates the winner instead of
+ * aborting later importable-module targets.
+ */
+export async function upsertPublishedBundleArtifactRow(
+	db: D1Database,
+	input: PublishedBundleArtifactUpsertInput,
+) {
+	const identity = {
+		userId: input.userId,
+		sourceId: input.sourceId,
+		artifactKind: input.artifactKind,
+		artifactName: input.artifactName,
+		entryPoint: input.entryPoint,
+	}
+	const existing = await getPublishedBundleArtifactByIdentity(db, identity)
+	try {
+		if (existing) {
+			await updatePublishedBundleArtifactRow(db, {
+				id: existing.id,
+				...input,
+			})
+			return existing.id
+		}
+		return await insertPublishedBundleArtifactRow(db, input)
+	} catch (error) {
+		if (!isPublishedBundleArtifactIdentityConflict(error)) {
+			throw error
+		}
+		const raced = await getPublishedBundleArtifactByIdentity(db, identity)
+		if (!raced) {
+			throw error
+		}
+		const updated = await updatePublishedBundleArtifactRow(db, {
+			id: raced.id,
+			...input,
+		})
+		if (!updated) {
+			throw error
+		}
+		return raced.id
+	}
 }
 
 export async function updatePublishedBundleArtifactRow(
