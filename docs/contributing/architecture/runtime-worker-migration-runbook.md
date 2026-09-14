@@ -74,14 +74,6 @@ When runtime sources change on a steady-state script, the workflow deploys
 binding and healthcheck hygiene. It does not re-apply the `v1` transfer and it
 does not republish package-app zone routes as a first-time attach.
 
-Wrangler 4.131+ builds its local sqlite-class map during a real `deploy` and
-still ignores `transferred_classes`. The committed `v1` transfer then `v2`
-`PackageServiceInstance` delete is valid on Cloudflare (tag `v2` already
-applied) but fails that local check. `wrangler-env.ts` annotates the generated
-deploy config so the local map can see the later-deleted transfer without
-dropping `v2`. Do not localize a real deploy: dropping `v2` would make wrangler
-treat production's current tag as missing and replay the chain.
-
 Remix/blog/UI-only uploads skip runtime. Official guide markdown still skips
 runtime.
 
@@ -104,4 +96,10 @@ together so they elide.
 
 `PackageServiceInstance` is gone from production `kody-runtime` (tag `v2`; no
 stub export). Preview applies `v1` `new_sqlite_classes` then `v2`
-`deleted_classes` on first deploy so create and delete elide.
+`deleted_classes` on first deploy so create and delete elide. Wrangler 4.131+
+walks the local sqlite-class map on real `wrangler deploy` as well as
+`--dry-run`, and that map ignores `transferred_classes`. `wrangler-env.ts`
+rewrites the generated runtime deploy config with `elideDeletedMigrationClasses`
+so the already-applied create-then-delete pair is omitted and tag `v2` stays for
+last-applied matching. Do not convert production transfers to
+`new_sqlite_classes` on a real deploy.

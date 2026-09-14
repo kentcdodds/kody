@@ -21,8 +21,8 @@ import {
 } from './tools/wrangler-env-config.ts'
 import {
 	writeLocalRuntimeDevConfig,
-	writeRuntimeDeployConfig,
 	writeRuntimeDryRunConfig,
+	writeRuntimeRemoteDeployConfig,
 } from './tools/local-runtime-dev-config.ts'
 import { writeLocalPlatformDevConfig } from './tools/local-platform-dev-config.ts'
 import { runWranglerDeployWithRetry } from './tools/wrangler-deploy-retry.ts'
@@ -279,7 +279,7 @@ if (args[0] === 'deploy' && isRuntimeWorkerConfig && configArgValue) {
 				runtimeConfigPath,
 				envName,
 			})
-		: await writeRuntimeDeployConfig({
+		: await writeRuntimeRemoteDeployConfig({
 				runtimeConfigPath,
 				envName,
 			})

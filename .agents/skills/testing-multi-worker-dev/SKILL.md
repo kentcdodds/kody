@@ -68,13 +68,14 @@ inspect those generated files first.
 If `npm run dev` or `npm run runtime:build` / startup-bundle dry-run fails with
 `Cannot apply deleted_classes migration to non-existent class PackageServiceInstance`,
 the config still has the production transfer+delete chain. Wrangler 4.131+
-applies that local sqlite-class map on `deploy --dry-run` as well as `dev`.
-`wrangler-env.ts` and `tools/check-worker-startup-bundles.ts` write
-`wrangler-dry-run.generated.json` with `localizeMigrations` for those bundle
+applies that local sqlite-class map on `deploy`, `deploy --dry-run`, and `dev`.
+`wrangler-env.ts` writes `wrangler-remote-deploy.generated.json` with
+`elideDeletedMigrationClasses` for real runtime deploys (keeps transfer tags)
+and `wrangler-dry-run.generated.json` with `localizeMigrations` for bundle
 checks. `wrangler check startup` ignores `--config` and loads cwd
 `wrangler.jsonc`, so `check-worker-startup-time.ts` snapshots a localized config
-into a temp directory. Confirm `localizeMigrations` ran and that the generated
-file's **top-level** `migrations` (not only `env.production.migrations`) has no
+into a temp directory. Confirm the rewrite ran and that the generated file's
+**top-level** `migrations` (not only `env.production.migrations`) has no
 `PackageServiceInstance` delete. For `npm run dev`, confirm
 `wrangler-local-dev.generated.json` instead.
 
