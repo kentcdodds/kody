@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 	})),
 	getArtifactsNamespace: vi.fn(() => 'production'),
 	applyArtifactSourcePushToHeadCache: vi.fn(async () => {}),
+	refreshIdentityIconForSource: vi.fn(async () => {}),
 }))
 
 vi.mock('#worker/package-invocations/service.ts', () => ({
@@ -47,6 +48,10 @@ vi.mock('./artifacts.ts', () => ({
 
 vi.mock('./artifact-head-cache.ts', () => ({
 	applyArtifactSourcePushToHeadCache: mocks.applyArtifactSourcePushToHeadCache,
+}))
+
+vi.mock('./identity-icon.ts', () => ({
+	refreshIdentityIconForSource: mocks.refreshIdentityIconForSource,
 }))
 
 const { dispatchRepoSubscriptionEvents, processCloudflareArtifactsRepoEvent } =
@@ -257,5 +262,12 @@ test('processCloudflareArtifactsRepoEvent ignores, unmatched, and dispatches by 
 	expect(mocks.getEntitySourceByRepoId).toHaveBeenCalledWith(
 		env.APP_DB,
 		'repo-user-repo-1',
+	)
+	expect(mocks.refreshIdentityIconForSource).toHaveBeenCalledWith(
+		expect.objectContaining({
+			source,
+			iconCommit: 'def789ghi012def789ghi012def789ghi012def7',
+			indexLiveHead: true,
+		}),
 	)
 })

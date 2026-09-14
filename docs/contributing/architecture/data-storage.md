@@ -624,6 +624,12 @@ fallback.
   its pinned snapshot commit. Derived bytes are a 256-pixel WebP from the
   Cloudflare Images ingest fit. Account deletion also prefix-deletes leftover
   `community-icon:v1/` and `community-icon:v2/` objects.
+- Repo- and package-scoped list marks use
+  `identity-icon:v1/{repoId}/{commit}/asset` on the same bucket. The taught
+  source is `.kody/icon.png` (aliases: `.kody/icon.{svg,webp,jpg,jpeg}`, root
+  `icon.*`, root `community-icon.*`, then `icons/icon-192.png` for package
+  apps). Package publish and default-branch push prune superseded commits.
+  Account deletion prefix-deletes every `entity_sources.repo_id`.
 - Descriptor keys include the same listing id and commit, so package publish and
   listing re-publish cannot serve an older icon.
 - Unpublish, admin hard delete, and re-publish prune all descriptor and object
@@ -1509,6 +1515,9 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
   listing icon cache; registered as a user-owned KV surface and deleted for a
   user's listings during account deletion (including leftover
   `community-icon:v1` and `community-icon:v2` prefixes).
+- `derived-cache:v1:identity-icon:v1:{repoId}:...` — derived repo/package list
+  mark cache; registered as a user-owned KV surface and deleted for every
+  `entity_sources.repo_id` during account deletion.
 - `derived-cache:v1:artifact-head:v1:{namespace}:{repoId}` — default-branch HEAD
   (`{ branch, commit }`) of an Artifacts repo, read by package home, tree, and
   file pages instead of a live binding + REST + git `info/refs` chain
@@ -1549,6 +1558,10 @@ App-owned R2 keys are:
   is the public ownership boundary. Account deletion paginates and strictly
   deletes every key under each D1-owned listing prefix, including historical
   `community-icon:v1/` and `community-icon:v2/` revisions.
+- `identity-icon:v1/{repoId}/{commit}/asset` — processed list/identity mark
+  bytes (256px WebP) for a package or plain repo at its published or indexed
+  commit. The Artifacts `repo_id` is the ownership boundary. Account deletion
+  paginates and strictly deletes every key under each D1-owned repo prefix.
 
 - `user-avatars/{stableUserId}/{contentHash}.{extension}` — profile avatars.
   Account deletion paginates and strictly deletes the complete stable-user

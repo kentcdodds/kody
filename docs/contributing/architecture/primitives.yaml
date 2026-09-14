@@ -678,6 +678,11 @@ primitives:
     code:
       - packages/worker/src/community/community-icon.ts
       - packages/worker/src/app/handlers/community-icon.ts
+      - packages/worker/src/repo/identity-icon.ts
+      - packages/worker/src/repo/identity-icon-paths.ts
+      - packages/worker/src/app/handlers/identity-icon-response.ts
+      - packages/worker/src/app/handlers/community-package-icon.ts
+      - packages/worker/src/app/handlers/account-repo-icon.ts
     docs:
       - docs/contributing/community-packages.md
       - docs/contributing/architecture/data-storage.md

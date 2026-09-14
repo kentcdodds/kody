@@ -1,6 +1,11 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { buildCommunityIconR2Key } from '#worker/community/community-icon.ts'
 import {
+	buildIdentityIconR2Key,
+	identityIconCommitForKind,
+} from '#worker/repo/identity-icon.ts'
+import { type EntityKind } from '#worker/repo/types.ts'
+import {
 	type AccountMailboxEmailObjectSource,
 	countMailboxEmailObjectRefs,
 	listMailboxEmailObjectRefPage,
@@ -20,6 +25,7 @@ const accountR2ChunkBytes = 256 * 1024
 type R2ScanState =
 	| { stage: 'avatar' }
 	| { stage: 'community_icon'; afterRowid: number }
+	| { stage: 'identity_icon'; afterRowid: number }
 	| { stage: 'mailbox_email_blob'; startAfter: string | null }
 	| { stage: 'done' }
 
@@ -30,6 +36,11 @@ type R2ObjectSource =
 			rowid: number
 			listingId: string
 			commitSlot: 'pinned' | 'icon'
+	  }
+	| {
+			kind: 'identity_icon'
+			rowid: number
+			repoId: string
 	  }
 	| AccountMailboxEmailObjectSource
 
@@ -103,7 +114,7 @@ function isScanState(value: unknown): value is R2ScanState {
 		)
 	}
 	return (
-		stage === 'community_icon' &&
+		(stage === 'community_icon' || stage === 'identity_icon') &&
 		'afterRowid' in value &&
 		Number.isSafeInteger((value as { afterRowid: unknown }).afterRowid) &&
 		(value as { afterRowid: number }).afterRowid >= 0
@@ -216,7 +227,7 @@ async function findNextRef(input: {
 				if (!row) {
 					cursor = {
 						v: accountR2CursorVersion,
-						state: { stage: 'mailbox_email_blob', startAfter: null },
+						state: { stage: 'identity_icon', afterRowid: 0 },
 					}
 					break
 				}
@@ -248,6 +259,68 @@ async function findNextRef(input: {
 					},
 					current: { ref: refs[0]!, offset: 0 },
 					...(refs[1] ? { pending: refs[1] } : {}),
+				}
+				break
+			}
+			case 'identity_icon': {
+				const row = await input.env.APP_DB.prepare(
+					`SELECT entity_sources.rowid AS source_rowid,
+						entity_sources.repo_id,
+						entity_sources.entity_kind,
+						entity_sources.published_commit,
+						entity_sources.indexed_commit
+					FROM entity_sources
+					WHERE entity_sources.user_id = ?
+						AND entity_sources.rowid > ?
+					ORDER BY entity_sources.rowid
+					LIMIT 1`,
+				)
+					.bind(input.userId, cursor.state.afterRowid)
+					.first<{
+						source_rowid: number
+						repo_id: string
+						entity_kind: EntityKind
+						published_commit: string | null
+						indexed_commit: string | null
+					}>()
+				if (!row) {
+					cursor = {
+						v: accountR2CursorVersion,
+						state: { stage: 'mailbox_email_blob', startAfter: null },
+					}
+					break
+				}
+				const iconCommit = identityIconCommitForKind({
+					entityKind: row.entity_kind,
+					publishedCommit: row.published_commit,
+					indexedCommit: row.indexed_commit,
+				})
+				cursor = {
+					v: accountR2CursorVersion,
+					state: {
+						stage: 'identity_icon',
+						afterRowid: row.source_rowid,
+					},
+					...(iconCommit
+						? {
+								current: {
+									ref: {
+										surfaceId: 'identity_icon' as const,
+										binding: 'COMMUNITY_ASSETS' as const,
+										key: buildIdentityIconR2Key({
+											repoId: row.repo_id,
+											commit: iconCommit,
+										}),
+										source: {
+											kind: 'identity_icon' as const,
+											rowid: row.source_rowid,
+											repoId: row.repo_id,
+										},
+									},
+									offset: 0,
+								},
+							}
+						: {}),
 				}
 				break
 			}
@@ -350,6 +423,38 @@ async function resolveCurrentRef(input: {
 				listingId: input.ref.source.listingId,
 				commit,
 			}) === input.ref.key
+				? input.ref
+				: null
+		}
+		case 'identity_icon': {
+			const row = await input.env.APP_DB.prepare(
+				`SELECT entity_sources.repo_id,
+					entity_sources.entity_kind,
+					entity_sources.published_commit,
+					entity_sources.indexed_commit
+				FROM entity_sources
+				WHERE entity_sources.user_id = ?
+					AND entity_sources.rowid = ?
+					AND entity_sources.repo_id = ?`,
+			)
+				.bind(input.userId, input.ref.source.rowid, input.ref.source.repoId)
+				.first<{
+					repo_id: string
+					entity_kind: EntityKind
+					published_commit: string | null
+					indexed_commit: string | null
+				}>()
+			if (!row) return null
+			const iconCommit = identityIconCommitForKind({
+				entityKind: row.entity_kind,
+				publishedCommit: row.published_commit,
+				indexedCommit: row.indexed_commit,
+			})
+			return iconCommit &&
+				buildIdentityIconR2Key({
+					repoId: row.repo_id,
+					commit: iconCommit,
+				}) === input.ref.key
 				? input.ref
 				: null
 		}
@@ -537,7 +642,7 @@ export async function countAccountR2ObjectRefs(input: {
 	userId: string
 	dbUserId: number
 }) {
-	const [emailBlobs, icons, avatar] = await Promise.all([
+	const [emailBlobs, icons, identityIcons, avatar] = await Promise.all([
 		countMailboxEmailObjectRefs({
 			env: input.env,
 			ownerId: input.userId,
@@ -561,6 +666,22 @@ export async function countAccountR2ObjectRefs(input: {
 			.bind(input.userId)
 			.first<{ count: number }>(),
 		input.env.APP_DB.prepare(
+			`SELECT COUNT(*) AS count
+			FROM entity_sources
+			WHERE entity_sources.user_id = ?
+				AND (
+					(entity_sources.entity_kind = 'package'
+						AND entity_sources.published_commit IS NOT NULL)
+					OR (entity_sources.entity_kind <> 'package'
+						AND COALESCE(
+							entity_sources.indexed_commit,
+							entity_sources.published_commit
+						) IS NOT NULL)
+				)`,
+		)
+			.bind(input.userId)
+			.first<{ count: number }>(),
+		input.env.APP_DB.prepare(
 			`SELECT CASE WHEN avatar_key IS NULL OR TRIM(avatar_key) = ''
 				THEN 0 ELSE 1 END AS count
 			FROM users WHERE id = ?`,
@@ -568,5 +689,10 @@ export async function countAccountR2ObjectRefs(input: {
 			.bind(input.dbUserId)
 			.first<{ count: number }>(),
 	])
-	return emailBlobs + Number(icons?.count ?? 0) + Number(avatar?.count ?? 0)
+	return (
+		emailBlobs +
+		Number(icons?.count ?? 0) +
+		Number(identityIcons?.count ?? 0) +
+		Number(avatar?.count ?? 0)
+	)
 }

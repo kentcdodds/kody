@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { buildRepoIdentityIconUrl } from '#universal/identity-icon-urls.ts'
 import { listUserRepos } from '#worker/repo/user-repos.ts'
 
 export const repoListCapability = defineDomainCapability(
@@ -9,7 +10,7 @@ export const repoListCapability = defineDomainCapability(
 	{
 		name: 'repoList',
 		description:
-			'List plain repos owned by the signed-in user from D1 discovery metadata (no live Artifacts reads).',
+			'List plain repos owned by the signed-in user from D1 discovery metadata (no live Artifacts reads). Each repo includes icon_url when an indexed or published commit is available.',
 		keywords: ['repo', 'list', 'plain', 'discovery'],
 		readOnly: true,
 		idempotent: true,
@@ -22,6 +23,12 @@ export const repoListCapability = defineDomainCapability(
 					name: z.string(),
 					description: z.string().nullable(),
 					visibility: z.enum(['public', 'private']),
+					icon_url: z
+						.string()
+						.nullable()
+						.describe(
+							'Owner-only identity mark URL for the indexed (or published) commit, or null when the repo has no indexed commit yet.',
+						),
 					created_at: z.string(),
 					updated_at: z.string(),
 				}),
@@ -38,6 +45,12 @@ export const repoListCapability = defineDomainCapability(
 					visibility: repo.isPrivate
 						? ('private' as const)
 						: ('public' as const),
+					icon_url: repo.iconCommit
+						? buildRepoIdentityIconUrl({
+								repoId: repo.id,
+								iconCommit: repo.iconCommit,
+							})
+						: null,
 					created_at: repo.createdAt,
 					updated_at: repo.updatedAt,
 				})),

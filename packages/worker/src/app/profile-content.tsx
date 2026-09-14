@@ -8,6 +8,7 @@ import {
 } from '#universal/community-activity-display.ts'
 import { formatCommunityPublishedDate } from '#universal/community-display.ts'
 import { renderCommunityListingName } from '#universal/community-listing-name.tsx'
+import { IdentityIconMark } from '#universal/identity-icon-mark.tsx'
 import {
 	type ProfilePackageFilters,
 	type ProfilePackageHiddenFilter,
@@ -259,6 +260,12 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 								return (
 									<li key={pkg.kodyId} mix={css(cardCss)}>
 										<div mix={css(packageHeadingCss)}>
+											<IdentityIconMark
+												name={pkg.name}
+												iconUrl={pkg.iconUrl}
+												size="card"
+												testId="profile-package-icon"
+											/>
 											<div mix={css(packageTitleGroupCss)}>
 												{listingHref ? (
 													<a

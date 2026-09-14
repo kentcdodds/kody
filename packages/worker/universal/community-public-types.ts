@@ -109,6 +109,8 @@ export type PublicProfilePackageItem = {
 	 * Owners use this for the "Needs republish" filter and date reminder.
 	 */
 	needsRepublish: boolean
+	/** List/identity mark URL, or null when no published or listing commit exists. */
+	iconUrl: string | null
 	/** Present on the owner's own profile list; omitted for other viewers. */
 	isPrivate?: boolean
 	/** Present on the owner's own profile list; omitted for other viewers. */

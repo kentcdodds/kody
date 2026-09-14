@@ -301,8 +301,18 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			{ id: 'aja-1', user_id: userAaa, storage_id: 'job:archived-1' },
 		],
 		entity_sources: [
-			{ id: 'src-1', user_id: userAaa, published_commit: 'abc123' },
-			{ id: 'src-2', user_id: userBbb, published_commit: 'def456' },
+			{
+				id: 'src-1',
+				user_id: userAaa,
+				repo_id: 'repo-src-1',
+				published_commit: 'abc123',
+			},
+			{
+				id: 'src-2',
+				user_id: userBbb,
+				repo_id: 'repo-src-2',
+				published_commit: 'def456',
+			},
 		],
 		password_resets: [
 			{ id: 1, user_id: 1 },
@@ -493,6 +503,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'derived-cache:v1:community-icon:v2:listing-1:abc123',
 		'derived-cache:v1:community-icon:v3:listing-1:commit-1',
 		'derived-cache:v1:community-icon:v3:listing-1:abc123',
+		'derived-cache:v1:identity-icon:v1:repo-src-1:abc123',
+		'derived-cache:v1:identity-icon:v1:repo-src-1:old',
 		'source-snapshot:v1:src-2:def456',
 		`package-codemod-revert:${userAaa}:item-1`,
 		`package-codemod-revert:${userAaa}:item-2`,
@@ -575,6 +587,9 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'community-icon:v2/listing-1/abc123/asset',
 		'community-icon:v2/listing-1/commit-1/asset',
 		'community-icon:v1/listing-2/other/asset',
+		'identity-icon:v1/repo-src-1/abc123/asset',
+		'identity-icon:v1/repo-src-1/old/asset',
+		'identity-icon:v1/repo-src-2/def456/asset',
 	])
 	const communityAssets = {
 		async list(options?: { prefix?: string; cursor?: string }) {
@@ -913,6 +928,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'derived-cache:v1:community-icon:v2:listing-1:commit-1',
 		'derived-cache:v1:community-icon:v3:listing-1:abc123',
 		'derived-cache:v1:community-icon:v3:listing-1:commit-1',
+		'derived-cache:v1:identity-icon:v1:repo-src-1:abc123',
+		'derived-cache:v1:identity-icon:v1:repo-src-1:old',
 		`package-codemod-revert:${userAaa}:item-1`,
 		`package-codemod-revert:${userAaa}:item-2`,
 		'package-retriever-index-entry:v1:user-aaa:context:pkg-1:notes',
@@ -947,8 +964,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.updatedRowCounts.community_bans).toBe(1)
 	expect(result.deletedRowCounts.platform_feedback).toBe(1)
 	expect(result.updatedRowCounts.platform_feedback).toBe(1)
-	expect(result.deletedKvKeys).toBe(18)
-	expect(result.deletedCommunityAssets).toBe(7)
+	expect(result.deletedKvKeys).toBe(20)
+	expect(result.deletedCommunityAssets).toBe(9)
 	expect(result.deletedEmailBlobs).toBe(2)
 	// Prefix sweeps remove current and historical assets without crossing users.
 	expect(deletedCommunityAssetKeys.sort()).toEqual([
@@ -957,12 +974,15 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'community-icon:v1/listing-1/historical/asset',
 		'community-icon:v2/listing-1/abc123/asset',
 		'community-icon:v2/listing-1/commit-1/asset',
+		'identity-icon:v1/repo-src-1/abc123/asset',
+		'identity-icon:v1/repo-src-1/old/asset',
 		'user-avatars/user-aaa/abc123.png',
 		'user-avatars/user-aaa/old.png',
 	])
 	expect(communityAssetKeys).toEqual(
 		new Set([
 			'community-icon:v1/listing-2/other/asset',
+			'identity-icon:v1/repo-src-2/def456/asset',
 			'user-avatars/user-bbb/other.png',
 		]),
 	)

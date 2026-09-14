@@ -122,20 +122,38 @@ export async function getUserRepoByName(
 	return row ? mapUserRepoRow(row) : null
 }
 
+export type UserRepoListRecord = UserRepoRecord & {
+	iconCommit: string | null
+}
+
 export async function listUserRepos(
 	db: D1Database,
 	userId: string,
-): Promise<Array<UserRepoRecord>> {
+): Promise<Array<UserRepoListRecord>> {
 	const result = await db
 		.prepare(
-			`SELECT ${userRepoSelectColumns}
+			`SELECT ${userRepoSelectColumns},
+				entity_sources.indexed_commit AS indexed_commit,
+				entity_sources.published_commit AS published_commit
 			FROM user_repos
-			WHERE user_id = ?
-			ORDER BY name ASC`,
+			LEFT JOIN entity_sources
+				ON entity_sources.user_id = user_repos.user_id
+				AND entity_sources.entity_kind = 'repo'
+				AND entity_sources.entity_id = user_repos.id
+			WHERE user_repos.user_id = ?
+			ORDER BY user_repos.name ASC`,
 		)
 		.bind(userId)
 		.all<Record<string, unknown>>()
-	return (result.results ?? []).map(mapUserRepoRow)
+	return (result.results ?? []).map((row) => ({
+		...mapUserRepoRow(row),
+		iconCommit:
+			row['indexed_commit'] == null
+				? row['published_commit'] == null
+					? null
+					: String(row['published_commit'])
+				: String(row['indexed_commit']),
+	}))
 }
 
 export async function updateUserRepo(

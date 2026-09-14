@@ -258,6 +258,14 @@ test('community raster icon formats are validated then fitted to WebP', async ()
 			'community-icon.svg': '',
 		}),
 	).toBe('community-icon.svg')
+	expect(
+		findCommunityIconPath({
+			'.kody/icon.png': '',
+			'icon.svg': '',
+			'community-icon.svg': '',
+			'icons/icon-192.png': '',
+		}),
+	).toBe('.kody/icon.png')
 	expect(findCommunityIconPath({ 'package.json': '{}' })).toBeNull()
 })
 

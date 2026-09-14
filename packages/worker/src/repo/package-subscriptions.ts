@@ -10,6 +10,7 @@ import {
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { applyArtifactSourcePushToHeadCache } from './artifact-head-cache.ts'
+import { refreshIdentityIconForSource } from './identity-icon.ts'
 import { getArtifactsNamespace } from './artifacts.ts'
 import {
 	type CloudflareArtifactsRepoEvent,
@@ -428,6 +429,22 @@ export async function processCloudflareArtifactsRepoEvent(input: {
 	)
 	if (!source) {
 		return { outcome: 'unmatched', providerEvent }
+	}
+
+	if (
+		providerEvent.type === 'cf.artifacts.repo.pushed' &&
+		source.entity_kind === 'repo'
+	) {
+		try {
+			await refreshIdentityIconForSource({
+				env: input.env,
+				source,
+				iconCommit: providerEvent.payload.after,
+				indexLiveHead: true,
+			})
+		} catch (error) {
+			console.error('identity-icon-push-refresh-failed', source.repo_id, error)
+		}
 	}
 
 	await dispatchRepoSubscriptionEvents({

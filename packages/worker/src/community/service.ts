@@ -649,7 +649,7 @@ export async function publishCommunityListing(input: {
 	const communityIconPath = findCommunityIconPath(loadedSource.files)
 	const snapshotFiles = { ...loadedSource.files }
 	for (const iconPath of communityIconPaths) {
-		if (iconPath === 'community-icon.svg') continue
+		if (iconPath.endsWith('.svg')) continue
 		// Package source snapshots are text-backed. Keep the selected binary
 		// icon's path as metadata for public artifact reads, but do not put any
 		// corrupted UTF-8 raster bytes into community forks.

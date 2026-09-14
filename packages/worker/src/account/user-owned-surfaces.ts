@@ -44,6 +44,7 @@ export type UserOwnedKvKeyScheme = {
 		| 'source_manifest_snapshot'
 		| 'community_snapshot'
 		| 'community_icon_derived_cache'
+		| 'identity_icon_derived_cache'
 		| 'usage_rollup_derived_cache'
 		| 'artifact_head_derived_cache'
 		| 'package_retriever_manifest'
@@ -63,6 +64,7 @@ export type UserOwnedR2Surface = {
 		| 'email_raw_mime'
 		| 'email_attachment_storage_key'
 		| 'community_icon'
+		| 'identity_icon'
 		| 'user_avatar'
 	binding: 'EMAIL_BLOBS' | 'COMMUNITY_ASSETS'
 	sourceTable: string
@@ -220,6 +222,13 @@ export const accountUserOwnedKvKeySchemes: ReadonlyArray<UserOwnedKvKeyScheme> =
 				'Derived cache key from derivedCacheKeyPrefix + buildCommunityIconCacheKey. Account deletion also prefixes historical community-icon:v1 and community-icon:v2 keys.',
 		},
 		{
+			id: 'identity_icon_derived_cache',
+			binding: 'BUNDLE_ARTIFACTS_KV',
+			prefixTemplate: 'derived-cache:v1:identity-icon:v1:{repoId}:',
+			notes:
+				'Derived cache key from derivedCacheKeyPrefix + buildIdentityIconCacheKey. Account deletion prefixes every entity_sources.repo_id.',
+		},
+		{
 			id: 'usage_rollup_derived_cache',
 			binding: 'BUNDLE_ARTIFACTS_KV',
 			prefixTemplate: 'derived-cache:v1:usage-rollups:user:{userId}:',
@@ -290,6 +299,16 @@ export const accountUserOwnedR2Surfaces: ReadonlyArray<UserOwnedR2Surface> = [
 		export: 'chunked_bytes',
 		notes:
 			'Current fitted WebP derivative. Account deletion also removes historical community-icon:v1 and community-icon:v2 prefixes.',
+	},
+	{
+		id: 'identity_icon',
+		binding: 'COMMUNITY_ASSETS',
+		sourceTable: 'entity_sources',
+		sourceColumn: 'repo_id',
+		keyTemplate: 'identity-icon:v1/{repoId}/{commit}/asset',
+		export: 'chunked_bytes',
+		notes:
+			'Fitted WebP/PNG/JPEG derivative of .kody/icon (and aliases). Account deletion prefix-deletes every entity_sources.repo_id.',
 	},
 	{
 		id: 'user_avatar',

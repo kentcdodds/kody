@@ -26,6 +26,7 @@ const listedPackage = {
 	communityListingKodyId: 'fathom-analytics',
 	communityPublishedAt: '2026-07-28T00:00:00.000Z',
 	needsRepublish: true,
+	iconUrl: '/community/listing-1/icon/abc123',
 } satisfies PublicProfilePackageItem
 
 const unpublishedPackage = {
@@ -38,6 +39,7 @@ const unpublishedPackage = {
 	communityListingKodyId: null,
 	communityPublishedAt: null,
 	needsRepublish: false,
+	iconUrl: '/@kody/notes/icon/pub-1',
 } satisfies PublicProfilePackageItem
 
 test('profile packages link listings, prefer listing kody ids, and separate published dates from local edits', async () => {

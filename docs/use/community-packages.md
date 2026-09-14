@@ -55,10 +55,11 @@ on that review.
 
 ### Icon
 
-Prefer a root `icon.svg`, `icon.png`, `icon.webp`, `icon.jpg`, or `icon.jpeg`.
-`community-icon.*` is also accepted. The first existing file in that combined
-order wins. Packages without an icon get a generated swirl based on the package
-name.
+Put the list/identity mark at `.kody/icon.png` (also `.svg`, `.webp`, `.jpg`,
+`.jpeg`). Root `icon.*` and `community-icon.*` remain permanent aliases. The
+first existing file in that combined order wins. Package apps without those
+files can fall back to `icons/icon-192.png`. Packages without a file get a
+generated swirl based on the package name.
 
 ## Browsing listings
 

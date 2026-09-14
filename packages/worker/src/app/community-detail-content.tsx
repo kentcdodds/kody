@@ -12,8 +12,8 @@ import {
 	formatCommunityStars,
 	shortCommunityCommit,
 } from '#universal/community-display.ts'
-import { CommunityListingIcon } from '#universal/community-listing-icon.tsx'
 import { renderIcon } from '#universal/icon.tsx'
+import { IdentityIconMark } from '#universal/identity-icon-mark.tsx'
 import {
 	communityTagListCss,
 	communityTagPillCss,
@@ -50,6 +50,7 @@ export type CommunityDetailContentProps = {
 	publishCompareHref?: string | null
 	shareGrant?: PackageShareGrantLoaderView | null
 	hasApp?: boolean
+	iconUrl?: string | null
 }
 
 export function CommunityDetailContent(
@@ -69,6 +70,7 @@ export function CommunityDetailContent(
 		publishCompareHref,
 		shareGrant,
 		hasApp,
+		iconUrl,
 	} = handle.props
 	const packageAppHref = resolvePackageAppHref({
 		hasApp: hasApp === true,
@@ -77,6 +79,7 @@ export function CommunityDetailContent(
 		viewerIsOwner,
 		shareGrant,
 	})
+	const markUrl = listing?.iconUrl ?? iconUrl ?? null
 
 	const filesHref = getPackageTreeHref({
 		username,
@@ -126,9 +129,25 @@ export function CommunityDetailContent(
 				</section>
 			) : null}
 
+			{!listing ? (
+				<header data-rise style={{ '--rise': '2' }} mix={css(listingHeadCss)}>
+					<IdentityIconMark
+						name={kodyId}
+						iconUrl={markUrl}
+						size="detail"
+						testId="package-identity-icon-detail"
+					/>
+				</header>
+			) : null}
+
 			{listing ? (
 				<header data-rise style={{ '--rise': '2' }} mix={css(listingHeadCss)}>
-					<CommunityListingIcon listing={listing} size="detail" />
+					<IdentityIconMark
+						name={listing.name}
+						iconUrl={markUrl}
+						size="detail"
+						testId="community-listing-icon-detail"
+					/>
 					<div mix={css(listingBadgeGroupCss)}>
 						{listing.sourceAhead ? (
 							publishCompareHref ? (

@@ -1,4 +1,5 @@
 import { communityIconR2ListingPrefixes } from '#worker/community/community-icon.ts'
+import { identityIconR2RepoPrefixes } from '#worker/repo/identity-icon.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 
 function userAvatarPrefix(stableUserId: string) {
@@ -47,6 +48,7 @@ export async function deleteAccountCommunityAssetPrefixes(input: {
 	bucket: Pick<R2Bucket, 'list' | 'delete'>
 	stableUserId: string
 	listingIds: ReadonlyArray<string>
+	repoIds?: ReadonlyArray<string>
 }) {
 	let deleted = await deletePrefixStrict({
 		bucket: input.bucket,
@@ -59,6 +61,15 @@ export async function deleteAccountCommunityAssetPrefixes(input: {
 				bucket: input.bucket,
 				prefix,
 				label: 'Community icon',
+			})
+		}
+	}
+	for (const repoId of new Set(input.repoIds ?? [])) {
+		for (const prefix of identityIconR2RepoPrefixes(repoId)) {
+			deleted += await deletePrefixStrict({
+				bucket: input.bucket,
+				prefix,
+				label: 'Identity icon',
 			})
 		}
 	}

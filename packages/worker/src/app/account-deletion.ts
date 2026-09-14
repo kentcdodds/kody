@@ -87,6 +87,7 @@ import {
 	communityIconKvListingPrefixes,
 	buildCommunityIconCacheKey,
 } from '#worker/community/community-icon.ts'
+import { identityIconKvRepoPrefixes } from '#worker/repo/identity-icon.ts'
 import { derivedCacheKeyPrefix } from '#worker/kv-cachified.ts'
 import {
 	maybeRemoveDiscordGuildRoles,
@@ -138,6 +139,7 @@ export function getAccountDeletionD1UserColumnCoverage() {
 type UserSourceSnapshot = {
 	sourceId: string
 	publishedCommit: string | null
+	repoId: string
 }
 
 type UserSavedPackageSnapshot = {
@@ -320,15 +322,16 @@ async function listUserStorageIds(env: Env, userId: string) {
 
 async function listUserSourceSnapshots(env: Env, userId: string) {
 	const sourceRows = await env.APP_DB.prepare(
-		`SELECT id, published_commit
+		`SELECT id, published_commit, repo_id
 		FROM entity_sources
 		WHERE user_id = ?`,
 	)
 		.bind(userId)
-		.all<{ id: string; published_commit: string | null }>()
+		.all<{ id: string; published_commit: string | null; repo_id: string }>()
 	return (sourceRows.results ?? []).map((row) => ({
 		sourceId: row.id,
 		publishedCommit: row.published_commit,
+		repoId: row.repo_id,
 	}))
 }
 
@@ -1612,6 +1615,9 @@ export async function deleteUserAccount(input: {
 				...inventory.communityListings.flatMap((listing) =>
 					communityIconKvListingPrefixes(listing.id),
 				),
+				...inventory.sourceSnapshots.flatMap((source) =>
+					identityIconKvRepoPrefixes(source.repoId),
+				),
 				// Package-codemod apply snapshots are user-namespaced in KV
 				// (`package-codemod-revert:{userId}:{itemId}`). D1 run items are
 				// deleted separately; purge the orphaned revert trees here rather
@@ -1647,6 +1653,7 @@ export async function deleteUserAccount(input: {
 			bucket: input.env.COMMUNITY_ASSETS,
 			stableUserId: input.mcpUserId,
 			listingIds: inventory.communityListings.map((listing) => listing.id),
+			repoIds: inventory.sourceSnapshots.map((source) => source.repoId),
 		})
 	} catch (error) {
 		warnings.push(getErrorMessage(error))

@@ -85,6 +85,8 @@ const packageFixture = [
 		needsRepublish: false,
 		isPrivate: false,
 		hidden: false,
+		publishedCommit: 'abc1234567890',
+		listingIconCommit: 'abc1234567890',
 	},
 ]
 
@@ -128,6 +130,9 @@ test('profile API and page respect visibility and expose packages/activity', asy
 	expect(publicBody.ok).toBe(true)
 	expect(publicBody.profile.displayName).toBe('Alice')
 	expect(publicBody.packages).toHaveLength(1)
+	expect(publicBody.packages[0].iconUrl).toBe(
+		'/community/listing-1/icon/abc1234567890',
+	)
 	expect(publicBody.activity).toHaveLength(1)
 	expect(publicBody.isSelf).toBe(false)
 	expect(publicBody.loggedIn).toBe(false)

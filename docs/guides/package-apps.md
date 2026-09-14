@@ -728,8 +728,10 @@ across the move.
 The Remix recipe does not change where PWA files live: `public/sw.js`,
 `public/manifest.webmanifest`, and icons are static files in the
 `kody.app.assets` directory, served under `<assetBasePath>/…` with
-`Service-Worker-Allowed: <appBasePath>/` on JavaScript. Registration belongs in
-the browser entry next to `run()`:
+`Service-Worker-Allowed: <appBasePath>/` on JavaScript. Those product assets
+stay in the app tree. The catalog / list mark is `.kody/icon.png` — see
+[Package icon](./package-authoring.md#package-icon). Registration belongs in the
+browser entry next to `run()`:
 
 ```ts
 // app/assets/entry.ts, after run()
