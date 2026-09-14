@@ -44,6 +44,15 @@ const privateNoApp = {
 	hidden: true,
 } satisfies PublicProfilePackageItem
 
+const privateListed = {
+	...listedApp,
+	name: '@kody/secret-app',
+	kodyId: 'secret-app',
+	isPrivate: true,
+	hidden: false,
+	needsRepublish: false,
+} satisfies PublicProfilePackageItem
+
 const defaultFilters = {
 	query: '',
 	visibility: 'all',
@@ -264,6 +273,19 @@ test('profile package chips filter the already-loaded list', () => {
 			listing: 'unpublished',
 		}).map((pkg) => pkg.kodyId),
 	).toEqual(['secret'])
+	const inventory = [listedApp, privateNoApp, privateListed]
+	expect(
+		filterProfilePackages(inventory, {
+			...defaultFilters,
+			listing: 'unpublished',
+		}).map((pkg) => pkg.kodyId),
+	).toEqual(['secret'])
+	expect(
+		filterProfilePackages(inventory, {
+			...defaultFilters,
+			listing: 'published',
+		}).map((pkg) => pkg.kodyId),
+	).toEqual(['notes-app', 'secret-app'])
 })
 
 test('profile package sort reorders the already-loaded list without changing default order', () => {

@@ -156,6 +156,27 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 	expect(ownInventoryHtml).not.toContain('title="No community listing"')
 	expect(ownInventoryHtml).not.toContain('title="Not published"')
 
+	// A private repository that already has a community listing is published;
+	// the lock is the privacy signal. Do not also mark it unpublished.
+	const publishedPrivateHtml = await renderProfileContentHtml({
+		profile,
+		packages: [
+			{
+				...listedPackage,
+				isPrivate: true,
+			},
+		],
+		activity: [],
+		query: null,
+		isSelf: true,
+	})
+	expect(publishedPrivateHtml).toContain('title="Private"')
+	expect(publishedPrivateHtml).toContain('data-icon="lock"')
+	expect(publishedPrivateHtml).toContain('title="Published to community"')
+	expect(publishedPrivateHtml).toContain('data-icon="share"')
+	expect(publishedPrivateHtml).not.toContain('title="No community listing"')
+	expect(publishedPrivateHtml).not.toContain('title="Not published"')
+
 	const ownEmptyHtml = await renderProfileContentHtml({
 		profile,
 		packages: [],
