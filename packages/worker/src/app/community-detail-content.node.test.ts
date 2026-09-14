@@ -350,6 +350,9 @@ test('open package app link shows for owner and accepted share, and hides withou
 		shareGrant: shareGrantFixture('pending'),
 	})
 	expect(pendingHtml).not.toContain('data-testid="open-package-app"')
+	expect(pendingHtml).toContain('data-signifier="private"')
+	expect(pendingHtml).toContain('data-icon="lock"')
+	expect(pendingHtml).not.toContain('data-signifier="unpublished"')
 	expect(pendingHtml).toContain(
 		'data-testid="package-share-accept-frame-banner"',
 	)

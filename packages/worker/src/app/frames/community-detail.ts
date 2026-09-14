@@ -5,7 +5,7 @@ import {
 } from '#app/community-detail-content.tsx'
 import { resolveCommunityListingRoute } from '#app/community-package-route.ts'
 import { registerFrame } from '#app/frame-registry.ts'
-import { loadPackagePage } from '#app/package-page.ts'
+import { loadPackagePage, packagePageIsPrivate } from '#app/package-page.ts'
 import { type PublicCommunityListing } from '#app/community-public.ts'
 import { COMMUNITY_DETAIL_TARGET } from '#universal/community-frame-constants.ts'
 import { routes } from '#universal/routes.ts'
@@ -44,7 +44,7 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 				kodyId: page.kodyId,
 				description:
 					listing?.description ?? page.ownerPackage?.description ?? '',
-				isPrivate: page.ownerPackage?.isPrivate ?? false,
+				isPrivate: packagePageIsPrivate(page),
 				ownerProfilePublic: page.listing?.ownerProfilePublic ?? true,
 				loggedIn: page.loggedIn,
 				viewerIsOwner: page.viewerIsOwner,
