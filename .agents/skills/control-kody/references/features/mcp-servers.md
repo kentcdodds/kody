@@ -26,4 +26,8 @@ node tools/control-kody.ts request GET /account/mcp-oauth-clients.json
   by design.
 - After IdP success, Status on `/account/mcp-servers/:serverId` shows a
   sanitized last settle error when tool discovery does not finish (including
-  after a 2025 handshake retry). Reconnect from that page.
+  after a 2025 handshake retry). When a ready connection parks on
+  `authenticating`, Status and `mcpServerList.error` include the sanitized
+  token-refresh reason. `mcpServerList` also reports `hasRefreshToken`.
+  Reconnect tries the stored tokens first, then mints a new authorization link.
+  Reconnect from that page.

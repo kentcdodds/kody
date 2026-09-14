@@ -538,9 +538,8 @@ that:
 `map`, and `mount` — `createRouter()` from `remix/router`) receives the full
 hosted URL so a mount-prefixed route contract matches. A function or `{ fetch }`
 handler receives the mount-stripped path (`/` at the app root). Publish rejects
-`kody.app.runtime`: dispatch is by export shape, not a configured mode. An
-already-published snapshot that still carries the field loads; the field is
-inert.
+`kody.app.runtime`: dispatch is by export shape, not a configured mode. A
+leftover field on a published snapshot is ignored.
 
 JSX compiles against `remix/ui` (and `import.meta.url` pins to `kody:app`,
 component names survive bundling) only when the graph imports `remix/ui` or a
@@ -737,9 +736,9 @@ src/index.ts            package export (unchanged)
   `@remix-run/ui` to `client.externals`, or an import map for Remix; the
   `client.externals` + import map pair stays available for other browser
   packages.
-- `data-app-base` on `<html>` and `__version.json` remain the two runtime
-  discovery points kits may rely on; `data-client-module` is optional now that
-  the document renders `clientModuleUrl` itself.
+- `data-app-base` on `<html>` and `__version.json` are the two runtime discovery
+  points kits may rely on; `data-client-module` is optional because the document
+  already renders `clientModuleUrl`.
 - `kody:runtime` types (`KodyRuntime`, `packageContext`) come from the
   platform's generated declaration, so a kit ships only `remix` in
   `devDependencies` and the `tsconfig.json` from
@@ -1132,8 +1131,8 @@ old caches on activate.
 - **`packageAppFetch` returns HTTP 500 `"Package app could not be prepared"`** —
   host-setup failed before package code ran (manifest load, worker build, or
   asset prep). The JSON body includes `cause` on synthetic fetches. Publish
-  still rejects `kody.app.runtime`; a leftover field on an already-published
-  snapshot does not brick serve.
+  rejects `kody.app.runtime`; a leftover field on a published snapshot does not
+  brick serve.
 
 Checked-in browser-ready `.js` served from the fetch handler with an explicit
 `Content-Type` still works; `client` is the pit-of-success path for source you

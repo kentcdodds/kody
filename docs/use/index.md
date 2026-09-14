@@ -73,8 +73,8 @@ MCP-level reference detail those docs link into.
 - [Repo-backed editing sessions](./repo-sessions.md)
 - [Raw MCP content blocks](./raw-content-blocks.md)
 - [Secrets and host approval](./secrets-and-values.md)
-- [Email primitives](./email-primitives.md) — the per-user inbox, notify-self
-  sends, and replies
+- [Email primitives](./email-primitives.md) — the per-user inbox, verified
+  destinations, notify-self sends, and replies
 - [Inbound webhooks](./webhooks.md) — user-owned HTTPS endpoints that dispatch
   provider POSTs to a saved-package export
 - [Package apps](../guides/package-apps.md) — session handoff, `packageAppFetch`

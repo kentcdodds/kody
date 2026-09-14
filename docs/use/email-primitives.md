@@ -64,17 +64,17 @@ Use the MCP `email` domain:
 - `emailDestinationRemove` removes an extra destination. The identity email
   stays on the list.
 - `emailSend` sends from your platform address to your verified email
-  destinations. This expands the allowed `to` set; it is not a separate
-  notify-only channel. Omit `to` to use the default destination (the account
-  email until you pick another). Every explicit address must already be on that
-  verified set; if any `to` is missing or unverified the whole send fails.
-  Optional `attachments` (up to 10 of
-  `{ filename, content_type, content_base64 }`) are sent with the message and
-  stored as `external` attachments readable later via `emailAttachmentGet`. The
-  same attachments go to every allowed `to` on one MIME message. With
-  attachments, the whole message (bodies plus decoded attachment bytes) must fit
-  the plan's `email_message_bytes` per-message cap. Manage destinations from
-  `/account/email` as well. Unverified extras never receive mail.
+  destinations. Destinations expand the allowed `to` set; Kody is not an open
+  relay. Omit `to` to use the default destination (the account email until you
+  pick another). Every explicit address must already be on that verified set; if
+  any `to` is missing or unverified the whole send fails. Optional `attachments`
+  (up to 10 of `{ filename, content_type, content_base64 }`) are sent with the
+  message and stored as `external` attachments readable later via
+  `emailAttachmentGet`. The same attachments go to every allowed `to` on one
+  MIME message. With attachments, the whole message (bodies plus decoded
+  attachment bytes) must fit the plan's `email_message_bytes` per-message cap.
+  Manage destinations from `/account/email` as well. Unverified extras never
+  receive mail.
 - `emailReply` replies to a stored inbound message. The recipient always comes
   from the stored message. Optional `attachments` (up to 10 of
   `{ filename, content_type, content_base64 }`) are sent with the reply and

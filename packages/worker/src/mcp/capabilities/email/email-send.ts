@@ -31,7 +31,7 @@ export const emailSendCapability = defineDomainCapability(
 	{
 		name: 'emailSend',
 		description:
-			'Send email from your platform-assigned {username}@<platform domain> to your verified email destinations, optionally attaching files (base64 content). This expands the allowed to set; it is not a separate notify-only channel. Omit `to` to use the default destination. Every explicit address must be the verified identity email or a verified extra destination; if any `to` is missing or unverified the whole send fails. With attachments, the whole message must fit the plan email_message_bytes cap. Use emailReply to answer stored inbound mail.',
+			'Send email from your platform-assigned {username}@<platform domain> to your verified email destinations, optionally attaching files (base64 content). Destinations expand the allowed to set; Kody is not an open relay. Omit `to` to use the default destination. Every explicit address must be the verified identity email or a verified extra destination; if any `to` is missing or unverified the whole send fails. With attachments, the whole message must fit the plan email_message_bytes cap. Use emailReply to answer stored inbound mail.',
 		keywords: ['email', 'send', 'mail', 'outbound', 'notify', 'attachment'],
 		readOnly: false,
 		idempotent: false,

@@ -42,10 +42,9 @@ node tools/control-kody.ts request GET /account/connections/new/cursor
   row only.
 - Hosts are grouped by display name (logos for known kinds, last-used then
   connected newest-first, best-effort labels). Last used is the revoke signal
-  (successful `/mcp` bearer validation). A missing stamp renders as "unknown"
-  because tracking may not have recorded earlier use. Connected is grant
-  `createdAt`. That list is not `users.mcp_client_name` and not minted MCP OAuth
-  clients (`/account/mcp-oauth-clients`).
+  (successful `/mcp` bearer validation). A missing stamp renders as "unknown".
+  Connected is grant `createdAt`. That list is not `users.mcp_client_name` and
+  not minted MCP OAuth clients (`/account/mcp-oauth-clients`).
 - The grid reuses onboarding's `AgentPickerGrid` with `viewport: 'both'` on
   every entry, so the phone/desktop split and greyed same-ecosystem cards that
   onboarding applies do not appear here.
