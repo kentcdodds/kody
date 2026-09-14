@@ -16,8 +16,10 @@ the package name leaf; README), `/@username/:kodyId/tree/:ref` (files),
 pinned commit), `/@username/:kodyId/settings` (lock, visibility, share,
 webhooks, delete), `/@username/:kodyId/approve-publish` (published-vs-HEAD
 review), and `/@username/:kodyId/approve-changes` (guest pin-ahead published
-diff). Opening an allowlisted image or video in the tree renders a preview; the
-bytes come from `/@username/:kodyId/raw/:ref/…` (same authz as the tree). Legacy
+diff). List marks come from `/@username/:kodyId/icon/:iconCommit` (packages) and
+`/account/repos/:repoId/icon/:iconCommit` (owner-only plain repos). Opening an
+allowlisted image or video in the tree renders a preview; the bytes come from
+`/@username/:kodyId/raw/:ref/…` (same authz as the tree). Legacy
 `/account/packages` HTML URLs only redirect to these canonical pages.
 
 ## Drive it
@@ -54,6 +56,8 @@ empty state.
   action)
 - `GET /profiles/:username/packages/:kodyId.json`
 - `GET /profiles/:username/packages/:kodyId/files.json`
+- `GET /@:username/:kodyId/icon/:iconCommit` (package list mark)
+- `GET /account/repos/:repoId/icon/:iconCommit` (owner-only repo list mark)
 - `GET /@:username/:kodyId/raw/:ref(/*relativePath)` (allowlisted media bytes)
 - `GET /profiles/:username/packages/:kodyId/approve-publish.json`
 - `GET|POST /profiles/:username/packages/:kodyId/share.json`

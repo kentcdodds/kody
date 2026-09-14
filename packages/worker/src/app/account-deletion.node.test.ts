@@ -787,7 +787,12 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(rows.value_entries).toEqual([])
 	expect(rows.archived_job_artifacts).toEqual([])
 	expect(rows.entity_sources).toEqual([
-		{ id: 'src-2', user_id: userBbb, published_commit: 'def456' },
+		{
+			id: 'src-2',
+			user_id: userBbb,
+			repo_id: 'repo-src-2',
+			published_commit: 'def456',
+		},
 	])
 	await expect(listRepoSessionsByUser(env, userAaa)).resolves.toEqual([])
 	expect(deletedEmailBlobKeys.sort()).toEqual([

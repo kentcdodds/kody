@@ -159,6 +159,12 @@ export async function deleteIdentityIconAssets(input: {
 	repoId: string
 	keepCommits?: ReadonlyArray<string>
 }) {
+	if (
+		!input.env.BUNDLE_ARTIFACTS_KV?.list ||
+		!input.env.COMMUNITY_ASSETS?.list
+	) {
+		return
+	}
 	const keptKvKeys = new Set(
 		(input.keepCommits ?? []).map(
 			(commit) =>
