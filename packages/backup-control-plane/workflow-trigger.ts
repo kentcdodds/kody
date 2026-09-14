@@ -10,6 +10,7 @@ export type WorkflowInstanceStatus =
 	| 'complete'
 	| 'waiting'
 	| 'waitingForPause'
+	| 'rollingBack'
 	| 'unknown'
 
 export type EnqueueResult = 'created' | 'duplicate' | 'restarted'
@@ -74,6 +75,7 @@ export async function enqueueBackup(
 			case 'complete':
 			case 'waiting':
 			case 'waitingForPause':
+			case 'rollingBack':
 				return 'duplicate'
 			case 'errored':
 			case 'terminated':
