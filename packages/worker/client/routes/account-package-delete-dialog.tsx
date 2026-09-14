@@ -1,6 +1,8 @@
 import { css, ref, type Handle } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { navigate } from '#client/client-router.tsx'
+import { copyPromptTooltipCss } from '#universal/fork-outdated-copy-button.tsx'
+import { renderIcon } from '#universal/icon.tsx'
 import { routes } from '#universal/routes.ts'
 import {
 	colors,
@@ -13,6 +15,8 @@ import {
 	getAccentCalloutCss,
 	getDangerPillCss,
 	getGhostButtonCss,
+	hoverMq,
+	mergeCss,
 } from '#universal/styles/style-primitives.ts'
 import {
 	accountActionsCss,
@@ -24,6 +28,9 @@ import {
 import { type AccountPackageDetail } from '#universal/loader-data.ts'
 
 type DeleteStatus = 'idle' | 'deleting'
+
+const packageDeleteCopyTooltip = 'Copy'
+const packageDeleteCopyTooltipId = 'package-delete-copy-name-tooltip'
 
 export function AccountPackageDeleteDialog(
 	handle: Handle<{
@@ -162,7 +169,28 @@ export function AccountPackageDeleteDialog(
 						mix={[css(deleteDialogFormCss), on('submit', handleDeleteSubmit)]}
 					>
 						<h3 id="delete-package-title" mix={css(deleteDialogTitleCss)}>
-							Delete {packageName}?
+							Delete {packageName}
+							<button
+								type="button"
+								// Delegated copy+tooltip swap: `[data-copy-prompt]` on `<main>`.
+								data-testid="package-delete-copy-name"
+								data-copy-prompt=""
+								data-copy-text={packageName}
+								data-copy-tooltip={packageDeleteCopyTooltip}
+								aria-label="Copy package name"
+								aria-describedby={packageDeleteCopyTooltipId}
+								mix={css(packageDeleteCopyButtonCss)}
+							>
+								{renderIcon('copy', { size: '0.85em' })}
+								<span
+									id={packageDeleteCopyTooltipId}
+									role="tooltip"
+									aria-hidden="true"
+								>
+									{packageDeleteCopyTooltip}
+								</span>
+							</button>
+							?
 						</h3>
 						<div
 							mix={css(
@@ -236,6 +264,7 @@ const deleteDialogCss = {
 	width: 'min(32rem, calc(100vw - 2rem))',
 	maxWidth: '32rem',
 	padding: 0,
+	overflow: 'visible',
 	border: `1px solid ${colors.border}`,
 	borderRadius: radius.lg,
 	boxShadow: shadows.md,
@@ -259,3 +288,31 @@ const deleteDialogTitleCss = {
 	letterSpacing: '-0.014em',
 	lineHeight: 1.2,
 }
+
+const packageDeleteCopyButtonCss = mergeCss(copyPromptTooltipCss, {
+	position: 'relative' as const,
+	display: 'inline-flex',
+	alignItems: 'center',
+	justifyContent: 'center',
+	verticalAlign: '-0.2em',
+	width: '1.15rem',
+	height: '1.15rem',
+	marginInlineStart: '0.35rem',
+	padding: 0,
+	appearance: 'none' as const,
+	flex: 'none',
+	border: 'none',
+	borderRadius: radius.sm,
+	backgroundColor: 'transparent',
+	color: colors.textMuted,
+	cursor: 'pointer',
+	[hoverMq]: {
+		'&:hover': {
+			color: colors.text,
+		},
+	},
+	'&:focus-visible': {
+		outline: `2px solid ${colors.primary}`,
+		outlineOffset: '2px',
+	},
+})
