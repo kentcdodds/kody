@@ -3,7 +3,12 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
 import { sendOutboundEmail } from '#worker/email/outbound.ts'
-import { emailMessageSummarySchema, toMessageSummary } from './shared.ts'
+import {
+	emailMessageSummarySchema,
+	emailOutboundAttachmentsInputSchema,
+	toMessageSummary,
+	toOutboundEmailAttachments,
+} from './shared.ts'
 
 const emailSendInputSchema = z
 	.object({
@@ -14,6 +19,7 @@ const emailSendInputSchema = z
 		text: z.string().min(1).optional(),
 		html: z.string().min(1).optional(),
 		reply_to: z.string().min(1).optional(),
+		attachments: emailOutboundAttachmentsInputSchema,
 	})
 	.refine((value) => value.text || value.html, {
 		message: 'Email text or HTML body is required.',
@@ -25,8 +31,8 @@ export const emailSendCapability = defineDomainCapability(
 	{
 		name: 'emailSend',
 		description:
-			'Send email from your platform-assigned {username}@<platform domain> to your verified email destinations. This expands the allowed to set; it is not a separate notify-only channel. Omit `to` to use the default destination. Every explicit address must be the verified identity email or a verified extra destination; if any `to` is missing or unverified the whole send fails. Use emailReply to answer stored inbound mail.',
-		keywords: ['email', 'send', 'mail', 'outbound', 'notify'],
+			'Send email from your platform-assigned {username}@<platform domain> to your verified email destinations, optionally attaching files (base64 content). This expands the allowed to set; it is not a separate notify-only channel. Omit `to` to use the default destination. Every explicit address must be the verified identity email or a verified extra destination; if any `to` is missing or unverified the whole send fails. With attachments, the whole message must fit the plan email_message_bytes cap. Use emailReply to answer stored inbound mail.',
+		keywords: ['email', 'send', 'mail', 'outbound', 'notify', 'attachment'],
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
@@ -49,6 +55,7 @@ export const emailSendCapability = defineDomainCapability(
 				text: args.text ?? null,
 				html: args.html ?? null,
 				replyTo: args.reply_to ?? null,
+				attachments: toOutboundEmailAttachments(args.attachments),
 			})
 			return {
 				message: toMessageSummary(result.message),

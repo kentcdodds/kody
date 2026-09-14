@@ -235,6 +235,16 @@ function buildProviderHeaders(headers: Record<string, string>) {
 	)
 }
 
+function isUnsafeOutboundAttachmentFilename(filename: string) {
+	return (
+		filename === '.' ||
+		filename === '..' ||
+		filename.includes('/') ||
+		filename.includes('\\') ||
+		filename.includes('\0')
+	)
+}
+
 type PreparedOutboundAttachment = {
 	filename: string
 	contentType: string
@@ -266,6 +276,9 @@ function prepareOutboundAttachments(
 	return attachments.map((attachment) => {
 		const filename = attachment.filename.trim()
 		if (!filename) throw new Error('Attachment filename is required.')
+		if (isUnsafeOutboundAttachmentFilename(filename)) {
+			throw new Error(`Attachment filename is not allowed: ${filename}`)
+		}
 		const contentType = attachment.contentType.trim()
 		if (!contentType) {
 			throw new Error(`Attachment content type is required: ${filename}`)

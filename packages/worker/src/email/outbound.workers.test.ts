@@ -1047,6 +1047,72 @@ test('sendOutboundEmail passes base64 attachments to the REST fallback', async (
 	])
 })
 
+test('sendOutboundEmail sends one attached MIME message to every allowed to', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const accountEmail = `account-${crypto.randomUUID()}@example.com`
+	const extraEmail = `phone-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	await seedVerifiedAccount({ email: accountEmail })
+	const user = await env.APP_DB.prepare(
+		`SELECT id FROM users WHERE stable_user_id = ?`,
+	)
+		.bind(userId)
+		.first<{ id: number }>()
+	if (!user) throw new Error('expected seeded user')
+	await env.APP_DB.prepare(
+		`INSERT INTO email_notification_destinations (id, user_id, email, verified_at, is_default)
+		 VALUES (?, ?, ?, ?, 0)`,
+	)
+		.bind(crypto.randomUUID(), user.id, extraEmail, new Date().toISOString())
+		.run()
+
+	const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31])
+	const sent: Array<Record<string, unknown>> = []
+	const sendEnv = {
+		...env,
+		APP_BASE_URL: platformBaseUrl,
+		EMAIL: {
+			async send(message: Record<string, unknown>) {
+				sent.push(message)
+				return { messageId: 'provider-multi-attach-1' }
+			},
+		} as unknown as SendEmail,
+	}
+
+	const result = await sendOutboundEmail({
+		env: sendEnv,
+		userId,
+		accountEmail,
+		recipientPolicy: 'self',
+		to: [accountEmail, extraEmail],
+		subject: 'Shared file',
+		text: 'Same attachment for both.',
+		attachments: [
+			{
+				filename: 'invoice.pdf',
+				contentType: 'application/pdf',
+				contentBase64: bytesToBase64(pdfBytes),
+			},
+		],
+	})
+
+	expect(result.status).toBe('sent')
+	expect(result.message.toAddresses).toEqual([accountEmail, extraEmail])
+	expect(sent).toHaveLength(1)
+	expect(sent[0]?.to).toEqual([accountEmail, extraEmail])
+	const sentAttachments = sent[0]?.attachments as Array<Record<string, unknown>>
+	expect(sentAttachments).toHaveLength(1)
+	expect(sentAttachments[0]).toMatchObject({
+		disposition: 'attachment',
+		filename: 'invoice.pdf',
+		type: 'application/pdf',
+	})
+	expect(new Uint8Array(sentAttachments[0]?.content as Uint8Array)).toEqual(
+		pdfBytes,
+	)
+	expect(await readDailyEmailSendCounter(userId)).toBe(1)
+})
+
 test('sendOutboundEmail rejects invalid and oversized attachments', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const accountEmail = `account-${crypto.randomUUID()}@example.com`
@@ -1070,6 +1136,24 @@ test('sendOutboundEmail rejects invalid and oversized attachments', async () => 
 			],
 		}),
 	).rejects.toThrow('Attachment content must be valid base64: broken.bin')
+
+	await expect(
+		sendOutboundEmail({
+			env: createBindingSendEnv(),
+			userId,
+			accountEmail,
+			recipientPolicy: 'self',
+			subject: 'Traversal',
+			text: 'Body',
+			attachments: [
+				{
+					filename: '../secret.txt',
+					contentType: 'text/plain',
+					contentBase64: bytesToBase64(new TextEncoder().encode('nope')),
+				},
+			],
+		}),
+	).rejects.toThrow('Attachment filename is not allowed: ../secret.txt')
 
 	// Attachments put the message under the per-message email_message_bytes
 	// cap that body-only sends are not subject to.
