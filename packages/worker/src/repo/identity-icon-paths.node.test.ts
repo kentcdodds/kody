@@ -6,6 +6,7 @@ import {
 	identityIconSourcePaths,
 	isIdentityIconSourcePath,
 	isSnapshotRetainedIdentityIconPath,
+	shouldStripIdentityIconFromCommunitySnapshot,
 	kodyIdentityIconPaths,
 	legacyCommunityIconPaths,
 	legacyRootIconPaths,
@@ -57,6 +58,13 @@ test('snapshot retention keeps SVG identity marks and drops rasters', () => {
 	expect(isSnapshotRetainedIdentityIconPath('icons/icon-192.png')).toBe(false)
 	expect(isIdentityIconSourcePath('.kody/icon.webp')).toBe(true)
 	expect(isIdentityIconSourcePath('public/icon.png')).toBe(false)
+	expect(shouldStripIdentityIconFromCommunitySnapshot('.kody/icon.png')).toBe(
+		true,
+	)
+	expect(shouldStripIdentityIconFromCommunitySnapshot('icon.svg')).toBe(false)
+	expect(
+		shouldStripIdentityIconFromCommunitySnapshot(packageAppIdentityIconPath),
+	).toBe(false)
 })
 
 test('leaf name and monogram letter come from the package/repo leaf', () => {

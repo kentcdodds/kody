@@ -831,6 +831,7 @@ test('publishCommunityListing stores long README content and drops binary icon b
 			'.kody/icon.png': 'binary bytes decoded as text',
 			'community-icon.png': 'binary bytes decoded as text',
 			'community-icon.jpg': 'extra binary bytes decoded as text',
+			'icons/icon-192.png': 'package-app pwa icon bytes',
 		},
 	})
 	mockModule.insertCommunityListing.mockResolvedValue(undefined)
@@ -859,6 +860,7 @@ test('publishCommunityListing stores long README content and drops binary icon b
 			files: expect.objectContaining({
 				'.kody/icon.svg':
 					'<svg xmlns="http://www.w3.org/2000/svg"><circle /></svg>',
+				'icons/icon-192.png': 'package-app pwa icon bytes',
 			}),
 		}),
 	)

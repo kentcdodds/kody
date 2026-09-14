@@ -2,6 +2,7 @@ import { type Action } from 'remix/router'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	identityIconNotFound,
+	ownerIdentityIconCacheControl,
 	serveIdentityIcon,
 } from './identity-icon-response.ts'
 import { resolvePackagePageUrl } from '#worker/community/package-url.ts'
@@ -88,6 +89,7 @@ export function createCommunityPackageIconHandler(env: Env) {
 				ownerUserId: target.userId,
 				leafName: target.savedPackage.kodyId,
 				includePackageAppIcon: true,
+				cacheControl: guestVisible ? undefined : ownerIdentityIconCacheControl,
 				isServableCommit: async () => {
 					const current = await getEntitySourceById(env.APP_DB, source.id)
 					if (

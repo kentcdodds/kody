@@ -269,6 +269,48 @@ test('community raster icon formats are validated then fitted to WebP', async ()
 	expect(findCommunityIconPath({ 'package.json': '{}' })).toBeNull()
 })
 
+test('pinned root SVG icons missing from older snapshots load from Artifacts', async () => {
+	const svg = new TextEncoder().encode(
+		'<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><circle cx="32" cy="32" r="30" fill="#2563eb"/></svg>',
+	)
+	const { kv } = createFakeKv()
+	const { bucket } = createFakeR2()
+	const env = {
+		APP_DB: {} as D1Database,
+		BUNDLE_ARTIFACTS_KV: kv,
+		COMMUNITY_ASSETS: bucket,
+		IMAGES: createFakeImagesBinding(),
+	} as Env
+	mocks.readCommunitySnapshot.mockResolvedValue({
+		version: 1,
+		listingId: listing.id,
+		pinnedCommit: listing.pinnedCommit,
+		files: {},
+		communityIconPath: 'icon.svg',
+		createdAt: '2026-07-10T00:00:00.000Z',
+	})
+	mocks.getEntitySourceById.mockResolvedValue(entitySourceRow)
+	mocks.getCommunityListingById.mockResolvedValue(listing)
+	mocks.readFirstArtifactFileAtCommit.mockResolvedValue({
+		path: 'icon.svg',
+		bytes: svg,
+	})
+
+	const result = await getCommunityIconObject({
+		env,
+		listing,
+		iconCommit: listing.pinnedCommit,
+	})
+
+	expect(result.descriptor.sourcePath).toBe('icon.svg')
+	expect(mocks.readFirstArtifactFileAtCommit).toHaveBeenCalledWith(
+		expect.objectContaining({
+			commit: listing.pinnedCommit,
+			filePaths: ['icon.svg'],
+		}),
+	)
+})
+
 test('community SVG icons load directly from the retained listing snapshot', async () => {
 	const { kv } = createFakeKv()
 	const { bucket } = createFakeR2()

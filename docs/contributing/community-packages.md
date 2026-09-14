@@ -127,8 +127,10 @@ Pinned file trees live in `BUNDLE_ARTIFACTS_KV` under:
 `packages/worker/src/community/snapshot.ts` reads and writes `CommunitySnapshot`
 (`version`, `listingId`, `pinnedCommit`, `files`, optional `communityIconPath`,
 `createdAt`). Publish and re-publish overwrite the snapshot; unpublish and hard
-delete remove it. Binary icon bytes are omitted from the text-backed `files`
-map; the path metadata lets the icon route retrieve bytes from Artifacts. The
+delete remove it. Raster list-mark bytes (`.kody/icon.*`, root `icon.*`, and
+`community-icon.*`) are omitted from the text-backed `files` map; the path
+metadata lets the icon route retrieve bytes from Artifacts. Package-app
+`icons/icon-192.png` stays in the snapshot so forks keep their PWA icon. The
 public `/@owner/kody-id/tree/:ref` explorer reads this snapshot (not a live git
 checkout). Leftover `/files` URLs 301 to `/tree/{defaultBranch}`.
 

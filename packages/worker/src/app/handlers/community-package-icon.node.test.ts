@@ -37,6 +37,7 @@ vi.mock('#worker/package-registry/share-grants.ts', () => ({
 
 vi.mock('./identity-icon-response.ts', () => ({
 	identityIconNotFound: () => new Response('Not found', { status: 404 }),
+	ownerIdentityIconCacheControl: 'private, max-age=31536000, immutable',
 	serveIdentityIcon: (...args: Array<unknown>) =>
 		mocks.serveIdentityIcon(...args),
 }))
@@ -91,6 +92,51 @@ test('package identity icon serves the published commit for guest-visible packag
 			iconCommit: 'pub-1',
 			includePackageAppIcon: true,
 			leafName: 'notes',
+			cacheControl: undefined,
+		}),
+	)
+})
+
+test('private package identity icons use a private cache for owner and sharees', async () => {
+	const privatePackage = {
+		...publicPackage,
+		hidden: false,
+		isPrivate: true,
+	}
+	mocks.resolvePackagePageUrl.mockResolvedValue({
+		kind: 'package',
+		username: 'kent',
+		kodyId: 'notes',
+		userId: 'owner-1',
+		savedPackage: privatePackage,
+		listingId: null,
+	})
+	mocks.readAuthenticatedAppUser.mockResolvedValue({
+		mcpUser: { userId: 'owner-1' },
+	})
+	mocks.getEntitySourceById.mockResolvedValue(source)
+	mocks.serveIdentityIcon.mockResolvedValue(
+		new Response('icon', { status: 200 }),
+	)
+
+	expect((await callHandler()).status).toBe(200)
+	expect(mocks.serveIdentityIcon).toHaveBeenCalledWith(
+		expect.objectContaining({
+			cacheControl: 'private, max-age=31536000, immutable',
+		}),
+	)
+
+	mocks.serveIdentityIcon.mockClear()
+	mocks.readAuthenticatedAppUser.mockResolvedValue({
+		mcpUser: { userId: 'sharee-1' },
+		email: 'sharee@example.com',
+		emailVerified: true,
+	})
+	mocks.loadViewerPackageShare.mockResolvedValue({ status: 'accepted' })
+	expect((await callHandler()).status).toBe(200)
+	expect(mocks.serveIdentityIcon).toHaveBeenCalledWith(
+		expect.objectContaining({
+			cacheControl: 'private, max-age=31536000, immutable',
 		}),
 	)
 })

@@ -275,15 +275,15 @@ async function loadCommunityIconSource(input: {
 		if (!sourcePath) return null
 		if (isSnapshotRetainedIdentityIconPath(sourcePath)) {
 			const source = snapshot.files[sourcePath]
-			if (source == null) {
-				throw new Error(
-					`Community icon "${sourcePath}" was not retained in the listing snapshot.`,
-				)
+			if (source != null) {
+				return {
+					path: sourcePath,
+					bytes: new TextEncoder().encode(source),
+				}
 			}
-			return {
-				path: sourcePath,
-				bytes: new TextEncoder().encode(source),
-			}
+			// Pre-identity-icon listings stored `icon.svg` (and later
+			// `.kody/icon.svg`) in `communityIconPath` but stripped those
+			// files from the text snapshot. Fall through to Artifacts.
 		}
 		const source = await getValidatedListingPackageSource(input)
 		const found = await readFirstArtifactFileAtCommit({
