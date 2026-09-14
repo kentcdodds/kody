@@ -332,11 +332,11 @@ every entry sees `/<path>` and root-relative links such as `/audio/123` escape
 the app; build in-app links, redirects, shared links, email links, and OAuth
 callbacks against `packageContext.hostedUrl` and `packageContext.appBasePath`
 (derived from the serving username and package name leaf —
-`/packages/<package-name>` on a subdomain,
-`/@username/packages/<package-name>` when served inline in non-production). A
-Remix recipe that prefixes its route contract remounts the Request in the
-entry. See [Package app routing](../guides/package-authoring.md#package-app-routing)
-for the authoring example, and [Package apps](../guides/package-apps.md)
+`/packages/<package-name>` on a subdomain, `/@username/packages/<package-name>`
+when served inline in non-production). A Remix recipe that prefixes its route
+contract remounts the Request in the entry. See
+[Package app routing](../guides/package-authoring.md#package-app-routing) for
+the authoring example, and [Package apps](../guides/package-apps.md)
 (`package_apps:guide`) for the fetch contract, Remix recipe, session handoff,
 `packageAppFetch`, asset URLs, and lean forks. Other saved-package runtime
 surfaces may omit these app-specific fields.
@@ -360,8 +360,8 @@ A package app is a hosted Worker entry:
 - the entry module is declared by `kody.app.entry` and default-exports a fetch
   handler (a function, `{ fetch }`, or a named `fetch` export). The host strips
   the app mount before forwarding. There is no runtime field; publish rejects
-  `kody.app.runtime`. A leftover field on a published snapshot is ignored.
-  Remix is a recipe (`package_apps:guide#remix-recipe`): the platform supplies
+  `kody.app.runtime`. A leftover field on a published snapshot is ignored. Remix
+  is a recipe (`package_apps:guide#remix-recipe`): the platform supplies
   `remix/<subpath>` at the origin version as an optional convenience
 - Kody's runtime is available from `kody:runtime` (`packageStorage()`,
   `packageSecrets`, `kody`, `createAuthenticatedFetch`, `workflows`, and

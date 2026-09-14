@@ -35,11 +35,11 @@ Platform Durable Objects and scheduled jobs live on `kody-platform` and
 Package apps are framework-agnostic Worker entries on `kody-runtime` (dynamic
 Worker Loader isolate), not on the origin. Remix is a recipe: the package's
 `app/router.ts` default-exports a fetch handler that remounts into
-`createRouter()`, the platform supplies `remix` at the same version as this
-repo (pre-bundled by `tools/build-worker-bundler-modules.ts`, mounted at
-`node_modules/remix/` in the runtime bundler), and `kody:runtime` exposes
-Kody as named exports plus the optional `KodyRuntime` request-context key.
-Authoring conventions for that surface live in
+`createRouter()`, the platform supplies `remix` at the same version as this repo
+(pre-bundled by `tools/build-worker-bundler-modules.ts`, mounted at
+`node_modules/remix/` in the runtime bundler), and `kody:runtime` exposes Kody
+as named exports plus the optional `KodyRuntime` request-context key. Authoring
+conventions for that surface live in
 [`docs/guides/package-apps.md`](../guides/package-apps.md); the platform side is
 in [packages and manifests](./packages-and-manifests.md#package-apps). The skill
 below applies to origin UI and to the Remix package-app recipe, with two

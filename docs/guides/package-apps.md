@@ -6,8 +6,8 @@ summary:
   contract, mount-stripped URLs, `packageContext` / `kody:runtime`, the
   platform-built browser client (`kody.app.client`) and static assets directory
   (`kody.app.assets`), session handoff, smoke tests with packageAppFetch, a
-  Remix recipe (Example A), the same-origin proxy, lean forks, compiled
-  clients, and listing verification.
+  Remix recipe (Example A), the same-origin proxy, lean forks, compiled clients,
+  and listing verification.
 category: platform
 ---
 
@@ -22,16 +22,15 @@ export JSDoc stay in [Package authoring](./package-authoring.md)
 
 A package app is a hosted **Worker entry**. `kody.app.entry` default-exports a
 fetch handler (a function, `{ fetch }`, or a named `fetch` export). Anything
-esbuild can bundle that answers `fetch` is a valid app. The host strips the
-app mount before forwarding, so every entry sees `/notes` for
+esbuild can bundle that answers `fetch` is a valid app. The host strips the app
+mount before forwarding, so every entry sees `/notes` for
 `/packages/<id>/notes`. Optional `kody.app.client` and `kody.app.assets` add a
 browser module and static files under `/_assets`. `kody:runtime` exposes
 `packageContext`, `packageStorage()`, and the rest of the run. Remix is
-[Example A](#remix-recipe) — a recipe with its own boilerplate, not a host
-mode.
+[Example A](#remix-recipe) — a recipe with its own boilerplate, not a host mode.
 
-Open a heading with `search({ entity: "package_apps:guide#remix-recipe" })`
-(or another slug below) when you need one recipe.
+Open a heading with `search({ entity: "package_apps:guide#remix-recipe" })` (or
+another slug below) when you need one recipe.
 
 ## After an integration smoke test
 
@@ -76,8 +75,8 @@ The host contract is the same for every app:
   validation, mutations), not the persistence mechanism
 
 A one-file fetch handler is a complete app (see
-[Fetch handlers](#fetch-handlers)). Framework folder layouts belong in a
-recipe; [Remix](#remix-recipe) is Example A.
+[Fetch handlers](#fetch-handlers)). Framework folder layouts belong in a recipe;
+[Remix](#remix-recipe) is Example A.
 
 ## Session handoff
 
@@ -143,12 +142,12 @@ full stream.
 
 ## Remix recipe
 
-**Example A.** Remix is a worked example, not a host mode. The platform
-supplies `remix/<subpath>` at the version Kody's own UI ships (no npm install,
-no version to pick) as an optional convenience. The host treats the entry
-as a fetch handler: esbuild defaults, mount-stripped URLs. The recipe below
-adds the boilerplate Remix needs under that contract — `tsconfig` JSX,
-per-file `@jsxImportSource`, a remount wrapper, named islands with an explicit
+**Example A.** Remix is a worked example, not a host mode. The platform supplies
+`remix/<subpath>` at the version Kody's own UI ships (no npm install, no version
+to pick) as an optional convenience. The host treats the entry as a fetch
+handler: esbuild defaults, mount-stripped URLs. The recipe below adds the
+boilerplate Remix needs under that contract — `tsconfig` JSX, per-file
+`@jsxImportSource`, a remount wrapper, named islands with an explicit
 `kody:app#Name` id, and a browser registry.
 
 Kody's runtime is available as named exports from `kody:runtime`, and as the
@@ -216,9 +215,8 @@ export const routes = route(packageContext?.appBasePath ?? '', {
 })
 ```
 
-`tsconfig.json` — the host maps root `compilerOptions.jsx` /
-`jsxImportSource` onto the esbuild bundle (no graph sniff). The editor
-reads the same file.
+`tsconfig.json` — the host maps root `compilerOptions.jsx` / `jsxImportSource`
+onto the esbuild bundle (no graph sniff). The editor reads the same file.
 
 ```json
 {
@@ -529,8 +527,8 @@ The host strips the mount before the entry runs. This recipe remounts in
 produces mount-prefixed paths when the contract is built with
 `route(packageContext.appBasePath, …)`. A contract without the prefix 404s on
 every hosted path; a missing remount does the same. `hostedUrl`, `appBasePath`,
-and `assetBasePath` never end with a slash, and the mount root is served with
-or without a trailing slash.
+and `assetBasePath` never end with a slash, and the mount root is served with or
+without a trailing slash.
 
 The route contract reads `packageContext.appBasePath` at module scope. That is
 safe: the app module is first evaluated inside the request that loads it, and
@@ -542,9 +540,9 @@ the worker.
 `clientEntry('kody:app#Name', function Name…)` is the recipe's island id.
 workerd leaves `import.meta.url` empty, and the host does not define it or set
 `keepNames`. The explicit `#Name` fragment is the export the browser registry
-must list. Remix then emits `{ moduleUrl: "kody:app", exportName: "Name" }`
-and `run({ loadModule })` looks `Name` up in that registry. Rules that follow
-from that:
+must list. Remix then emits `{ moduleUrl: "kody:app", exportName: "Name" }` and
+`run({ loadModule })` looks `Name` up in that registry. Rules that follow from
+that:
 
 - Islands are **named functions** (`function Counter(handle) {}`); an arrow
   function has no name and fails at render with Remix's own error. Put the
@@ -580,9 +578,9 @@ mode. A leftover field on a published snapshot is ignored.
 
 The host uses esbuild's JSX defaults unless the root `tsconfig.json` sets
 `compilerOptions.jsx` / `jsxImportSource`. A Remix recipe sets
-`"jsx": "react-jsx"` and `"jsxImportSource": "remix/ui"` there (and can
-repeat a `@jsxImportSource remix/ui` pragma per file). A handler that only
-borrows `remix/headers` or `remix/html-template` needs neither.
+`"jsx": "react-jsx"` and `"jsxImportSource": "remix/ui"` there (and can repeat a
+`@jsxImportSource remix/ui` pragma per file). A handler that only borrows
+`remix/headers` or `remix/html-template` needs neither.
 
 ### What the platform supplies
 
@@ -642,19 +640,18 @@ declaration (`KodyRuntime`, `packageContext`, `packageStorage`, …).
   `"jsxImportSource": "remix/ui"` in `tsconfig.json` and a
   `@jsxImportSource remix/ui` pragma on each TSX file. No React, no
   `jsx-runtime` dependency.
-- **Islands are named functions listed in the browser registry.** The server
-  id is the explicit `kody:app#Name` string, and `run({ loadModule })` resolves
-  by export name. If hydration misses, the id, the function name, or the
-  registry key drifted — see the troubleshooting entries for
-  `Unknown client entry` and `clientEntry() requires …`.
+- **Islands are named functions listed in the browser registry.** The server id
+  is the explicit `kody:app#Name` string, and `run({ loadModule })` resolves by
+  export name. If hydration misses, the id, the function name, or the registry
+  key drifted — see the troubleshooting entries for `Unknown client entry` and
+  `clientEntry() requires …`.
 
 ## Remix troubleshooting
 
 - **Every hosted path returns `Not Found: /packages/<name>/…`** — the route
-  contract has no mount prefix, or `app/router.ts` does not remount the
-  Request. Build the contract with
-  `route(packageContext?.appBasePath ?? '', …)` and remount before
-  `router.fetch`.
+  contract has no mount prefix, or `app/router.ts` does not remount the Request.
+  Build the contract with `route(packageContext?.appBasePath ?? '', …)` and
+  remount before `router.fetch`.
 - **A link or redirect lands on the host root (`/about` → 404)** — a
   root-relative literal bypassed the contract. Add the route and use
   `routes.about.href()`.
@@ -754,8 +751,8 @@ and fetch handlers, so a worker written for a fetch handler keeps working.
 
 `create-package-app` (the `@kentcdodds/package-app-kit` scaffolder) emits the
 Remix recipe layout for a new app, not `src/app.ts`. The host contract is a
-fetch handler; this recipe is the source of truth for remount, JSX, and
-island ids.
+fetch handler; this recipe is the source of truth for remount, JSX, and island
+ids.
 
 ```text
 package.json            entry ./app/router.ts, client ./app/assets/entry.ts, assets ./public
@@ -945,8 +942,8 @@ keep them out of the client bundle too, declare them as
 
 ### What each field does
 
-- `entry` — the server fetch handler. Every entry gets the mount-stripped
-  path (see [Default export](#default-export)).
+- `entry` — the server fetch handler. Every entry gets the mount-stripped path
+  (see [Default export](#default-export)).
 - `client` — one `.ts`, `.tsx`, `.js`, or `.jsx` file bundled for the
   **browser** (ESM, `es2022`, relative imports and `package.json` npm
   dependencies inlined). The output is served at

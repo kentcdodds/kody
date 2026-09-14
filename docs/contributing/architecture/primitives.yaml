@@ -302,8 +302,8 @@ primitives:
     name: Package apps
     summary:
       Optional package-declared hosted Worker apps (fetch handler, optional
-      client bundle, optional assets) with kody:runtime and packageContext;
-      the host strips the app mount before every entry.
+      client bundle, optional assets) with kody:runtime and packageContext; the
+      host strips the app mount before every entry.
     code:
       - packages/worker/src/package-runtime/package-app.ts
       - packages/worker/src/package-runtime/package-app-assets.ts

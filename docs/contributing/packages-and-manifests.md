@@ -250,25 +250,24 @@ A package app is a hosted Worker entry running in the package-app isolate:
 - package app code belongs to the package repo
 - package app entry is declared by `kody.app.entry`. The bootstrap
   (`createAppEntrypointSource`) resolves a fetch handler (a function,
-  `{ fetch }`, or a named `fetch` export) and forwards the mount-stripped
-  path. Authoring and publish reject `kody.app.runtime`. A leftover field on a
+  `{ fetch }`, or a named `fetch` export) and forwards the mount-stripped path.
+  Authoring and publish reject `kody.app.runtime`. A leftover field on a
   published snapshot is ignored
-- The host uses esbuild defaults unless the package's root `tsconfig.json`
-  sets `compilerOptions.jsx` / `jsxImportSource` (mapped onto the bundle
-  for any import source). Remix recipes set those to `react-jsx` /
-  `remix/ui`, remount the Request when the route contract includes
-  `appBasePath`, and pass explicit `clientEntry` ids (`kody:app#Name`). A
-  handler that borrows `remix/headers` or `remix/html-template` needs none
-  of that
-- Remix itself is an optional convenience: `tools/build-worker-bundler-modules.ts`
-  pre-bundles the Workers-safe `remix/<subpath>` set (`packageAppRemixSubpaths`)
-  with code splitting into the deferred module `package-app-remix.mjs`, and
-  `withPlatformRemixFiles` (`package-app-remix.ts`) mounts it at
-  `node_modules/remix/` in the bundler file system for every package bundle
-  (app, app-client, callable, importable, ad hoc execute). The bundler skips the
-  npm install for a package whose `node_modules/<name>/package.json` exists, so
-  a `remix` dependency is inert; publish checks reject `@remix-run/*`
-  dependencies outright
+- The host uses esbuild defaults unless the package's root `tsconfig.json` sets
+  `compilerOptions.jsx` / `jsxImportSource` (mapped onto the bundle for any
+  import source). Remix recipes set those to `react-jsx` / `remix/ui`, remount
+  the Request when the route contract includes `appBasePath`, and pass explicit
+  `clientEntry` ids (`kody:app#Name`). A handler that borrows `remix/headers` or
+  `remix/html-template` needs none of that
+- Remix itself is an optional convenience:
+  `tools/build-worker-bundler-modules.ts` pre-bundles the Workers-safe
+  `remix/<subpath>` set (`packageAppRemixSubpaths`) with code splitting into the
+  deferred module `package-app-remix.mjs`, and `withPlatformRemixFiles`
+  (`package-app-remix.ts`) mounts it at `node_modules/remix/` in the bundler
+  file system for every package bundle (app, app-client, callable, importable,
+  ad hoc execute). The bundler skips the npm install for a package whose
+  `node_modules/<name>/package.json` exists, so a `remix` dependency is inert;
+  publish checks reject `@remix-run/*` dependencies outright
 - `kody:runtime` exports `KodyRuntime`, a frozen `{ defaultValue }` object that
   Remix's `RequestContext.get()` returns when nothing called `set()`; the value
   is the module's default export (late-bound to the current run), and the

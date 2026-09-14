@@ -2,12 +2,19 @@ const packageTsconfigPath = 'tsconfig.json'
 
 type EsbuildJsx = 'automatic' | 'transform' | 'preserve'
 
-const tsconfigJsxToEsbuild = {
-	'react-jsx': 'automatic',
-	'react-jsxdev': 'automatic',
-	react: 'transform',
-	preserve: 'preserve',
-} as const satisfies Record<string, EsbuildJsx>
+function mapTsconfigJsx(jsx: string): EsbuildJsx | undefined {
+	switch (jsx) {
+		case 'react-jsx':
+		case 'react-jsxdev':
+			return 'automatic'
+		case 'react':
+			return 'transform'
+		case 'preserve':
+			return 'preserve'
+		default:
+			return undefined
+	}
+}
 
 export type PackageAppJsxBundleOptions = {
 	jsx?: EsbuildJsx
@@ -28,7 +35,7 @@ export function createPackageAppJsxBundleOptions(
 	const options: PackageAppJsxBundleOptions = {}
 	const jsx = compilerOptions.jsx
 	if (typeof jsx === 'string') {
-		const mapped = tsconfigJsxToEsbuild[jsx]
+		const mapped = mapTsconfigJsx(jsx)
 		if (mapped != null) options.jsx = mapped
 	}
 	const jsxImportSource = compilerOptions.jsxImportSource
@@ -45,11 +52,7 @@ function readRootTsconfigCompilerOptions(
 	if (raw == null) return null
 	try {
 		const parsed: unknown = JSON.parse(raw)
-		if (
-			parsed == null ||
-			typeof parsed !== 'object' ||
-			Array.isArray(parsed)
-		) {
+		if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) {
 			return null
 		}
 		const compilerOptions = (parsed as { compilerOptions?: unknown })
