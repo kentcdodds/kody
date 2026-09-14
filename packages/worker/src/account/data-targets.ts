@@ -265,7 +265,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'secret_buckets' },
 	// Connections reference OAuth apps with ON DELETE RESTRICT, so delete
 	// user_integrations before user_oauth_apps. Ciphertext columns are redacted
-	// on export; secret-name placeholders stay for soak compatibility.
+	// on export.
 	{ kind: 'user_id', table: 'user_integrations' },
 	{ kind: 'user_id', table: 'user_oauth_apps' },
 	{ kind: 'user_id', table: 'mcp_server_settings' },
