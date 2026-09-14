@@ -77,6 +77,8 @@ budget; oversized guides return a table of contents.
 
 **execute** runs one ephemeral ESM module inside Kody's runtime. The module uses
 ordinary imports and exports and **default exports** the function Kody invokes.
+That module can read or write the signed-in user's Kody data and connected
+services.
 
 ### What execute enables
 

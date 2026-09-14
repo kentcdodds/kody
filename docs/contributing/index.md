@@ -75,6 +75,8 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Search entity plugins](./search-entity-plugins.md) (plugin module + registry,
   result/detail unions, list markdown, detail routing, public type lists)
 - [MCP server patterns](./mcp-server-patterns.md) (reference for server design)
+- [Claude Connectors Directory](./claude-connectors-directory.md) (listing
+  checklist and portal copy; Kent submits)
 - [AI chat package guide](./ai-chat-package-guide.md)
 - Execute patterns:
   [Cloudflare API v4](./execute-patterns/cloudflare-api-v4.md),

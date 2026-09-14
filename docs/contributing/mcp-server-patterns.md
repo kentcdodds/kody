@@ -167,7 +167,10 @@ annotations: {
 | `openWorldHint`   | Accesses external APIs/resources        |
 
 **Example in this repo:** All tools provide annotations via the
-`server.registerTool()` config.
+`server.registerTool()` config. Claude's Connectors Directory requires a `title`
+plus `readOnlyHint` or `destructiveHint` on every advertised tool;
+`mcp-tool-descriptions.node.test.ts` enforces that. See
+[Claude Connectors Directory](./claude-connectors-directory.md).
 
 ---
 

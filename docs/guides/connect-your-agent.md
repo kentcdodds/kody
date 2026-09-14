@@ -47,7 +47,8 @@ agents panel on `/account` when you stop using it.
 
 Some hosts bind MCP tools when a conversation starts. If Kody's tools do not
 appear right after authorizing (Claude Desktop is the usual case), start a new
-chat before the first task.
+chat before the first task. On claude.ai, add the MCP URL under Customize →
+Connectors as a custom connector.
 
 Agents discovering a Kody deployment on their own can read `/auth.md` for the
 OAuth registration block and MCP URL, and `/.well-known/mcp/server-card.json`

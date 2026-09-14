@@ -44,11 +44,12 @@ you only have the MCP URL.
 - **Cursor** — Install the official
   [Kody plugin](https://cursor.com/marketplace/kody), or in Cursor chat run
   `/add-plugin kody`. After install, Authenticate in the Cursor MCP list.
-- **Claude Desktop** — Copy the MCP URL into Settings → Connectors (custom
-  connector). Remote servers are not configured through
-  `claude_desktop_config.json`. After connecting, start a new chat and ask
-  Claude to list Kody tools before the first task — Claude Desktop often does
-  not bind MCP tools until that next turn.
+- **Claude Desktop / Claude.ai** — Copy the MCP URL into Settings → Connectors
+  (custom connector). The same path works on claude.ai (Customize → Connectors).
+  Remote servers are not configured through `claude_desktop_config.json`. After
+  connecting, start a new chat and ask Claude to list Kody tools before the
+  first task — Claude Desktop often does not bind MCP tools until that next
+  turn.
 - **Grok.com** — On [grok.com/connectors](https://grok.com/connectors), click
   **New Connector**, select **Custom**, and paste the MCP URL. Complete OAuth
   when prompted. For Grok Business and Enterprise, a team admin must first add

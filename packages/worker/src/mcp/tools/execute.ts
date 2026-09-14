@@ -1,11 +1,8 @@
 import * as Sentry from '@sentry/cloudflare'
-import {
-	type ContentBlock,
-	type ToolAnnotations,
-} from '@modelcontextprotocol/sdk/types.js'
+import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { z } from 'zod'
-import { executeToolDescription } from '#mcp/instructions/execute-tool-description.ts'
+import { executeTool } from './execute-tool-definition.ts'
 import {
 	defaultExecutionResponseLimitBytes,
 	formatLimitedExecutionOutput,
@@ -65,19 +62,7 @@ import {
 } from '#worker/run-records/types.ts'
 import { scheduleFleetExecuteLastSuccess } from '#worker/execute-health-heartbeat.ts'
 
-export const executeTool = {
-	name: 'execute',
-	title: 'Execute Capabilities',
-	description: executeToolDescription,
-	annotations: {
-		readOnlyHint: false,
-		// Execute can delete, overwrite, send, revoke, or otherwise make
-		// irreversible changes depending on the module and capabilities called.
-		destructiveHint: true,
-		idempotentHint: false,
-		openWorldHint: true,
-	} satisfies ToolAnnotations,
-} as const
+export { executeTool }
 
 /**
  * Advertised MCP output schema for the execute tool's `structuredContent`

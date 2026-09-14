@@ -810,6 +810,7 @@ test('mcp requests route by protocol era and record lane metrics', async () => {
 			resultType?: string
 			tools: Array<{
 				name: string
+				title?: string
 				outputSchema?: Record<string, unknown>
 				icons?: Array<{ src: string }>
 				annotations?: {
@@ -830,6 +831,10 @@ test('mcp requests route by protocol era and record lane metrics', async () => {
 	const executeListed = modernBody.result.tools.find(
 		(tool) => tool.name === 'execute',
 	)
+	expect(searchListed?.title).toBe(
+		'Search Capabilities, Guides, Packages, Integrations, and Secrets',
+	)
+	expect(executeListed?.title).toBe('Run a Sandboxed Module')
 	expect(searchListed?.annotations).toEqual({
 		readOnlyHint: true,
 		destructiveHint: false,
@@ -843,6 +848,8 @@ test('mcp requests route by protocol era and record lane metrics', async () => {
 		openWorldHint: true,
 	})
 	for (const tool of modernBody.result.tools) {
+		expect(tool.name.length).toBeLessThanOrEqual(64)
+		expect(tool.title).toBeTruthy()
 		expect(tool.outputSchema).toMatchObject({ type: 'object' })
 		expect(tool.icons?.[0]?.src).toBe(`${origin}/android-chrome-192x192.png`)
 	}
