@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { ensureGuideCatalogModules } from './build-guide-catalog-modules.ts'
 import { ensureWorkerBundlerModules } from './build-worker-bundler-modules.ts'
 import { isExecutedDirectly, resolveLocalBinary } from './node-runtime.ts'
+import { writeRuntimeDryRunConfig } from './local-runtime-dev-config.ts'
 import {
 	buildOriginProductionViteBundle,
 	findOriginViteDeferredAssets,
@@ -29,6 +30,12 @@ type StartupBundleDefinition = {
 	 * at it — so the Vite path writes a temporary config with that `main`.
 	 */
 	bundler: 'vite' | 'wrangler'
+	/**
+	 * Wrangler 4.131+ applies the local sqlite-class map on `deploy --dry-run`.
+	 * Runtime's committed production chain transfers then deletes
+	 * `PackageServiceInstance`; localize that chain for this check only.
+	 */
+	localizeMigrationsForDryRun?: boolean
 	/**
 	 * Positional entry-point override passed to `wrangler deploy`, relative
 	 * to `packageDir`. Platform and runtime already commit their own
@@ -140,6 +147,7 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		packageDir: 'packages/runtime-worker',
 		entryFile: 'runtime-worker.js',
 		bundler: 'wrangler',
+		localizeMigrationsForDryRun: true,
 		// Listing-only helpers live in the shared secrets service module
 		// (resolveSecretListScopeOrder / listSecretBucketsByScope). Runtime
 		// does not call them, but they sit in the same module as resolve
@@ -330,6 +338,15 @@ async function inspectWranglerStartupBundle(
 ) {
 	const outputDir = path.join(outputRoot, definition.name)
 	const cwd = path.join(repoRoot, definition.packageDir)
+	const wranglerConfig = definition.localizeMigrationsForDryRun
+		? path.relative(
+				cwd,
+				await writeRuntimeDryRunConfig({
+					runtimeConfigPath: path.join(cwd, 'wrangler.jsonc'),
+					envName: 'production',
+				}),
+			)
+		: 'wrangler.jsonc'
 	await execFileAsync(
 		wranglerBinary,
 		[
@@ -339,7 +356,7 @@ async function inspectWranglerStartupBundle(
 			'--outdir',
 			outputDir,
 			'--config',
-			'wrangler.jsonc',
+			wranglerConfig,
 			'--env',
 			'production',
 		],
