@@ -80,6 +80,13 @@
 					"to": "PackageServiceInstance",
 				},
 			],
+			// Wrangler 4.131+ builds getDurableObjectClassNameToUseSQLiteMap on
+			// real `wrangler deploy` (container prep) and ignores
+			// transferred_classes. v2 deletes PackageServiceInstance; without a
+			// local-map create, deploy fails even when tag v2 is already
+			// applied remotely. Cloudflare will not re-run v1 (remote tag is
+			// already v2).
+			"new_sqlite_classes": ["PackageServiceInstance"],
 		},
 		{
 			"tag": "v2",

@@ -130,11 +130,13 @@ function localizeRuntimeConfigMigrations(config: JsonRecord, envName: string) {
 }
 
 /**
- * Wrangler 4.131+ applies the local sqlite-class map during `deploy --dry-run`.
- * The committed runtime production chain transfers `PackageServiceInstance`
- * then deletes it; wrangler ignores `transferred_classes` locally, so the
- * later delete fails. Localize migrations for bundle checks only — never for
- * a real deploy. Production history stays in the committed wrangler.jsonc.
+ * Wrangler 4.131+ applies the local sqlite-class map during `deploy --dry-run`
+ * and on real deploy (container prep). The committed runtime production chain
+ * transfers `PackageServiceInstance` then deletes it; wrangler ignores
+ * `transferred_classes` in that map. Production `wrangler.jsonc` annotates v1
+ * with `new_sqlite_classes: ["PackageServiceInstance"]` so live deploy passes.
+ * These helpers still localize the full transfer chain for local sqlite
+ * (dry-run / check startup). Do not use them as a production deploy config.
  */
 export async function writeRuntimeDryRunConfig({
 	runtimeConfigPath,

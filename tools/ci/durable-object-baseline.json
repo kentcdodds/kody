@@ -411,6 +411,10 @@
 			"protected_migrations": [
 				{
 					"tag": "v1",
+					"new_sqlite_classes": ["PackageServiceInstance"]
+				},
+				{
+					"tag": "v1",
 					"location": "env.preview.migrations",
 					"new_sqlite_classes": [
 						"StorageRunner",
