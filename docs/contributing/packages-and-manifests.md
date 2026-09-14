@@ -252,8 +252,9 @@ A package app is a hosted Remix mini-app running in the package-app isolate:
   (`createAppEntrypointSource`) duck-types the default export: a router-shaped
   object (`fetch`, `map`, `mount`) is called as `router.fetch(request)` with
   only the request and is dispatched the full hosted URL; a function or
-  `{ fetch }` handler receives the mount-stripped path. Manifest parsing rejects
-  `kody.app.runtime`
+  `{ fetch }` handler receives the mount-stripped path. Authoring and publish
+  reject `kody.app.runtime`. Loading an already-published snapshot ignores a
+  leftover field; dispatch still follows the live export
 - Remix UI bundler defaults (`jsx: automatic` / `jsxImportSource: remix/ui`, a
   `define` that pins `import.meta.url` to `kody:app` because workerd leaves it
   empty and `clientEntry()` needs a non-empty id, and esbuild `keepNames` so

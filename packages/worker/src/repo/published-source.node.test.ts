@@ -109,6 +109,54 @@ test('loadPublishedEntityManifest reads only manifest content from stored snapsh
 	})
 })
 
+test('loadPublishedEntityManifest ignores leftover kody.app.runtime on published snapshots', async () => {
+	mockModule.getEntitySourceById.mockReset()
+	mockModule.readArtifactSourceSnapshot.mockReset()
+	mockModule.loadPublishedSourceManifestSnapshot.mockReset()
+	mockModule.persistPublishedSourceManifestSnapshot.mockReset()
+	mockModule.loadPublishedSourceSnapshot.mockReset()
+	mockModule.persistPublishedSourceSnapshot.mockReset()
+
+	mockModule.getEntitySourceById.mockResolvedValue(createSourceRow())
+	mockModule.loadPublishedSourceManifestSnapshot.mockResolvedValue({
+		version: 1,
+		sourceId: 'source-1',
+		repoId: 'repo-1',
+		entityKind: 'package',
+		entityId: 'package-1',
+		publishedCommit: 'commit-1',
+		manifestPath: 'package.json',
+		manifestContent: JSON.stringify({
+			name: '@kentcdodds/example-package',
+			exports: {
+				'.': './index.js',
+			},
+			kody: {
+				id: 'example-package',
+				description: 'Example package',
+				app: {
+					runtime: 'remix',
+					entry: './app/router.ts',
+				},
+			},
+		}),
+		createdAt: '2026-04-20T00:00:00.000Z',
+	})
+
+	const manifest = await loadPublishedEntityManifest({
+		env: {
+			APP_DB: {},
+			BUNDLE_ARTIFACTS_KV: {},
+		} as Env,
+		userId: 'user-1',
+		sourceId: 'source-1',
+	})
+
+	expect(manifest.manifest.kody.app).toEqual({
+		entry: './app/router.ts',
+	})
+})
+
 test('loadPublishedEntitySource persists fetched snapshots for later reuse', async () => {
 	mockModule.getEntitySourceById.mockReset()
 	mockModule.readArtifactSourceSnapshot.mockReset()

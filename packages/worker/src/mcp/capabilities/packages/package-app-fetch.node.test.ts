@@ -157,6 +157,22 @@ test('packageAppFetch dispatches synthetic in-process app requests against hoste
 	expect(request.headers.get('X-Forwarded-For')).toBeNull()
 	expect(request.headers.get('Origin')).toBe('https://caller.example.com')
 	expect(request.headers.get('X-Test')).toBe('kept')
+	expect(request.headers.get('Accept')).toBe('application/json')
+
+	mockModule.servePackageAppRequest.mockClear()
+	mockModule.servePackageAppRequest.mockResolvedValue(
+		new Response('ok', { status: 200 }),
+	)
+	await packageAppFetchCapability.handler(
+		{
+			kody_id: 'demo-app',
+			headers: { Accept: 'text/html' },
+		},
+		createContext(),
+	)
+	const htmlRequest =
+		mockModule.servePackageAppRequest.mock.calls[0]?.[0]?.request
+	expect(htmlRequest.headers.get('Accept')).toBe('text/html')
 })
 
 test('packageAppFetch resolves owned packages by package_id', async () => {

@@ -58,6 +58,7 @@ function parsePublishedManifest(input: {
 	return parseAuthoredPackageJson({
 		content: input.content,
 		manifestPath: input.source.manifest_path,
+		mode: 'published',
 	})
 }
 

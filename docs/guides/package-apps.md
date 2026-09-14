@@ -538,7 +538,9 @@ that:
 `map`, and `mount` — `createRouter()` from `remix/router`) receives the full
 hosted URL so a mount-prefixed route contract matches. A function or `{ fetch }`
 handler receives the mount-stripped path (`/` at the app root). Publish rejects
-`kody.app.runtime`: dispatch is by export shape, not a configured mode.
+`kody.app.runtime`: dispatch is by export shape, not a configured mode. An
+already-published snapshot that still carries the field loads; the field is
+inert.
 
 JSX compiles against `remix/ui` (and `import.meta.url` pins to `kody:app`,
 component names survive bundling) only when the graph imports `remix/ui` or a
@@ -1127,6 +1129,11 @@ old caches on activate.
 - **Publish fails with "imports the browser client entry"** — the Worker graph
   reaches `kody.app.client`. Move the shared code into a helper both sides
   import and keep the client entry out of `src/app.ts`.
+- **`packageAppFetch` returns HTTP 500 `"Package app could not be prepared"`** —
+  host-setup failed before package code ran (manifest load, worker build, or
+  asset prep). The JSON body includes `cause` on synthetic fetches. Publish
+  still rejects `kody.app.runtime`; a leftover field on an already-published
+  snapshot does not brick serve.
 
 Checked-in browser-ready `.js` served from the fetch handler with an explicit
 `Content-Type` still works; `client` is the pit-of-success path for source you

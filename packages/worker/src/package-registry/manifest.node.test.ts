@@ -146,6 +146,20 @@ test('parseAuthoredPackageJson rejects kody.app.runtime and whitespace-only app 
 	expect(() => parse({ runtime: 'vite', entry: './src/app.ts' })).toThrow(
 		/kody\.app\.runtime was removed/,
 	)
+	const published = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/runtime-app',
+			exports: { '.': './src/index.ts' },
+			kody: {
+				id: 'runtime-app',
+				description: 'App runtime declaration',
+				app: { runtime: 'remix', entry: './app/router.ts' },
+			},
+		}),
+		manifestPath: 'package.json',
+		mode: 'published',
+	})
+	expect(published.kody.app).toEqual({ entry: './app/router.ts' })
 	// Whitespace-only paths are rejected up front instead of trimming to an
 	// empty entry that publish would then silently skip.
 	for (const app of [
