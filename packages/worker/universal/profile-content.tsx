@@ -12,6 +12,7 @@ import {
 	type ProfilePackageFilters,
 	type ProfilePackageHiddenFilter,
 	type ProfilePackageListingFilter,
+	type ProfilePackageSort,
 	type ProfilePackageVisibilityFilter,
 	type PublicCommunityActivityItem,
 	type PublicCommunityProfile,
@@ -23,6 +24,7 @@ import {
 	buildProfileHref,
 	filterProfilePackages,
 	profilePackageFiltersAreActive,
+	profilePackageSortIsActive,
 } from '#universal/profile-search.ts'
 import { routes } from '#universal/routes.ts'
 import { UserAvatar } from '#universal/user-avatar.tsx'
@@ -49,6 +51,7 @@ export type ProfileContentProps = {
 	listing?: ProfilePackageListingFilter
 	hidden?: ProfilePackageHiddenFilter
 	app?: ProfilePackageAppFilter
+	sort?: ProfilePackageSort
 	isSelf: boolean
 }
 
@@ -221,6 +224,17 @@ function renderProfilePackageFilters(input: {
 					],
 					hrefFor: (app) => buildProfileHref({ username, ...filters, app }),
 				})}
+				{renderProfileFilterNav<ProfilePackageSort>({
+					label: 'Sort',
+					ariaLabel: 'Sort repositories',
+					testId: 'profile-package-sort',
+					selected: filters.sort,
+					choices: [
+						{ value: 'updated', label: 'Updated' },
+						{ value: 'name', label: 'Name' },
+					],
+					hrefFor: (sort) => buildProfileHref({ username, ...filters, sort }),
+				})}
 			</div>
 		</details>
 	)
@@ -231,8 +245,29 @@ function countNoun(count: number, singular: string, plural: string) {
 }
 
 function renderProfilePackageSignifiers(pkg: PublicProfilePackageItem) {
+	const hasCommunityListing = pkg.communityListingId != null
 	const signifiers: Array<{ name: IconName; title: string; show: boolean }> = [
 		{ name: 'box', title: 'Package', show: true },
+		{
+			name: 'lock',
+			title: 'Private',
+			show: pkg.isPrivate === true,
+		},
+		{
+			name: 'eye',
+			title: 'Hidden',
+			show: pkg.hidden === true,
+		},
+		{
+			name: 'share',
+			title: 'Published to community',
+			show: hasCommunityListing,
+		},
+		{
+			name: 'inbox',
+			title: 'No community listing',
+			show: !hasCommunityListing && pkg.isPrivate !== true,
+		},
 		{
 			name: 'cloud',
 			title: countNoun(pkg.webhookCount, 'webhook', 'webhooks'),
@@ -294,11 +329,14 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 			listing: handle.props.listing ?? 'all',
 			hidden: handle.props.hidden ?? 'all',
 			app: handle.props.app ?? 'all',
+			sort: handle.props.sort ?? 'updated',
 		}
 		const filtersActive = profilePackageFiltersAreActive(filters)
+		const toolbarActive =
+			filtersActive || profilePackageSortIsActive(filters.sort)
 		const visiblePackages = filterProfilePackages(packages, filters)
 		const showFilters =
-			isSelf || packages.length > 0 || Boolean(query) || filtersActive
+			isSelf || packages.length > 0 || Boolean(query) || toolbarActive
 
 		return (
 			<div data-testid="profile-frame">
@@ -308,7 +346,7 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 								username: profile.username,
 								filters,
 								isSelf,
-								filtersActive,
+								filtersActive: toolbarActive,
 							})
 						: null}
 					{visiblePackages.length === 0 ? (
@@ -355,19 +393,6 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 												</h3>
 												{renderProfilePackageSignifiers(pkg)}
 											</div>
-											{pkg.hidden ? (
-												<span mix={css(unpublishedBadgeCss)}>Hidden</span>
-											) : null}
-											{pkg.isPrivate ? (
-												<span mix={css(unpublishedBadgeCss)}>Private</span>
-											) : null}
-											{pkg.communityListingId ? (
-												<span mix={css(communityBadgeCss)}>Community</span>
-											) : (
-												<span mix={css(unpublishedBadgeCss)}>
-													Not published
-												</span>
-											)}
 										</div>
 										{pkg.description ? (
 											<p mix={css(descriptionCss)}>{pkg.description}</p>
@@ -618,25 +643,6 @@ const forkButtonCss = {
 			backgroundColor: colors.primarySoftest,
 		},
 	},
-}
-
-const communityBadgeCss = {
-	padding: `${spacing.xs} ${spacing.sm}`,
-	borderRadius: radius.full,
-	backgroundColor: colors.primarySoft,
-	color: colors.primaryText,
-	fontSize: typography.fontSize.xs,
-	fontWeight: typography.fontWeight.semibold,
-}
-
-const unpublishedBadgeCss = {
-	padding: `${spacing.xs} ${spacing.sm}`,
-	borderRadius: radius.full,
-	backgroundColor: colors.surface,
-	border: `1px solid ${colors.border}`,
-	color: colors.textMuted,
-	fontSize: typography.fontSize.xs,
-	fontWeight: typography.fontWeight.medium,
 }
 
 const tagListCss = {

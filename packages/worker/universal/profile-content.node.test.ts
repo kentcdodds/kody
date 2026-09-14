@@ -149,9 +149,12 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 		isSelf: true,
 	})
 	expect(ownInventoryHtml).toContain('href="/@kody/notes"')
-	expect(ownInventoryHtml).toContain('Hidden')
-	expect(ownInventoryHtml).toContain('Private')
-	expect(ownInventoryHtml).toContain('Not published')
+	expect(ownInventoryHtml).toContain('title="Hidden"')
+	expect(ownInventoryHtml).toContain('title="Private"')
+	expect(ownInventoryHtml).toContain('data-icon="lock"')
+	expect(ownInventoryHtml).toContain('data-icon="eye"')
+	expect(ownInventoryHtml).not.toContain('title="No community listing"')
+	expect(ownInventoryHtml).not.toContain('title="Not published"')
 
 	const ownEmptyHtml = await renderProfileContentHtml({
 		profile,
@@ -185,6 +188,7 @@ test('profile package filters render owner-only pills, keep other filters in eac
 	expect(ownHtml).toContain('data-testid="profile-package-filter-listing"')
 	expect(ownHtml).toContain('data-testid="profile-package-filter-hidden"')
 	expect(ownHtml).toContain('data-testid="profile-package-filter-app"')
+	expect(ownHtml).toContain('data-testid="profile-package-sort"')
 	expect(ownHtml).toContain('data-prevent-scroll-reset')
 	// The selected pill is marked; sibling pills in the same group are not.
 	expect(ownHtml).toContain(
@@ -203,6 +207,9 @@ test('profile package filters render owner-only pills, keep other filters in eac
 	)
 	expect(ownHtml).toContain(
 		'href="/@kody?q=fathom&amp;visibility=private&amp;app=yes"',
+	)
+	expect(ownHtml).toContain(
+		'href="/@kody?q=fathom&amp;visibility=private&amp;sort=name"',
 	)
 	// The visibility "All" pill drops only its own param and is not current.
 	expect(ownHtml).toMatch(/<a href="\/@kody\?q=fathom"[^>]*class=/)
@@ -284,6 +291,11 @@ test('profile repository rows show package, webhook, job, and app signifiers wit
 	expect(html).toContain('data-icon="briefcase"')
 	expect(html).toContain('title="Has an app"')
 	expect(html).toContain('data-icon="globe"')
+	expect(html).toContain('title="Published to community"')
+	expect(html).toContain('data-icon="share"')
+	expect(html).toContain('title="No community listing"')
+	expect(html).toContain('data-icon="inbox"')
 	expect(html).not.toContain('title="0 webhooks"')
 	expect(html).not.toContain('title="0 jobs"')
+	expect(html).not.toContain('title="Not published"')
 })

@@ -3,6 +3,7 @@ import {
 	type ProfilePackageAppFilter,
 	type ProfilePackageHiddenFilter,
 	type ProfilePackageListingFilter,
+	type ProfilePackageSort,
 	type ProfilePackageVisibilityFilter,
 	type ProfileVisibility,
 	type PublicCommunityActivityItem,
@@ -253,6 +254,7 @@ export type ProfileLoaderData = {
 	listing: ProfilePackageListingFilter
 	hidden: ProfilePackageHiddenFilter
 	app: ProfilePackageAppFilter
+	sort: ProfilePackageSort
 	isSelf: boolean
 	loggedIn: boolean
 }

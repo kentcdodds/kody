@@ -130,6 +130,8 @@ export type ProfilePackageListingFilter =
 	| 'ahead'
 export type ProfilePackageHiddenFilter = 'all' | 'yes' | 'no'
 export type ProfilePackageAppFilter = 'all' | 'yes' | 'no'
+/** Client-side list order. Default `updated` matches `ORDER BY updated_at DESC`. */
+export type ProfilePackageSort = 'updated' | 'name'
 
 export type ProfilePackageFilters = {
 	query: string
@@ -137,6 +139,7 @@ export type ProfilePackageFilters = {
 	listing: ProfilePackageListingFilter
 	hidden: ProfilePackageHiddenFilter
 	app: ProfilePackageAppFilter
+	sort: ProfilePackageSort
 }
 
 export type CommunityActivityEventType =

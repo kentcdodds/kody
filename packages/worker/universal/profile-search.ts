@@ -4,6 +4,7 @@ import {
 	type ProfilePackageFilters,
 	type ProfilePackageHiddenFilter,
 	type ProfilePackageListingFilter,
+	type ProfilePackageSort,
 	type ProfilePackageVisibilityFilter,
 	type PublicProfilePackageItem,
 } from '#universal/community-public-types.ts'
@@ -15,6 +16,7 @@ const defaultProfilePackageFilters = {
 	listing: 'all',
 	hidden: 'all',
 	app: 'all',
+	sort: 'updated',
 } as const satisfies ProfilePackageFilters
 
 const profilePackageChipParams = [
@@ -22,6 +24,7 @@ const profilePackageChipParams = [
 	'listing',
 	'hidden',
 	'app',
+	'sort',
 ] as const
 
 function parseVisibility(
@@ -48,6 +51,10 @@ function parseApp(raw: string | null | undefined): ProfilePackageAppFilter {
 	return raw === 'yes' || raw === 'no' ? raw : 'all'
 }
 
+function parseSort(raw: string | null | undefined): ProfilePackageSort {
+	return raw === 'name' ? 'name' : defaultProfilePackageFilters.sort
+}
+
 export function readProfilePackageFiltersFromUrl(
 	url: URL,
 	options?: { allowOwnerFilters?: boolean },
@@ -67,6 +74,7 @@ export function readProfilePackageFiltersFromUrl(
 			? parseHidden(url.searchParams.get('hidden'))
 			: 'all',
 		app: parseApp(url.searchParams.get('app')),
+		sort: parseSort(url.searchParams.get('sort')),
 	}
 }
 
@@ -93,6 +101,10 @@ export function profilePackageFiltersAreActive(filters: ProfilePackageFilters) {
 	)
 }
 
+export function profilePackageSortIsActive(sort: ProfilePackageSort) {
+	return sort !== defaultProfilePackageFilters.sort
+}
+
 export function buildProfileHref(input: {
 	username: string
 	query?: string | null
@@ -100,6 +112,7 @@ export function buildProfileHref(input: {
 	listing?: ProfilePackageListingFilter
 	hidden?: ProfilePackageHiddenFilter
 	app?: ProfilePackageAppFilter
+	sort?: ProfilePackageSort
 }) {
 	const searchParams = new URLSearchParams()
 	const query = input.query?.trim() ?? ''
@@ -120,6 +133,9 @@ export function buildProfileHref(input: {
 	if (input.app === 'yes' || input.app === 'no') {
 		searchParams.set('app', input.app)
 	}
+	if (input.sort === 'name') {
+		searchParams.set('sort', input.sort)
+	}
 	return routes.profile.href(
 		{ username: input.username },
 		searchParams.size > 0 ? { searchParams } : undefined,
@@ -137,9 +153,9 @@ function hrefWithoutChipParams(href: string) {
 
 /**
  * True when both URLs are the same `/@username` page and only chip filters
- * (`visibility`, `listing`, `hidden`, `app`) differ. Search (`q`) and every
- * other query param stay the same, so the already-loaded package list can
- * be re-filtered without a loader or frame fetch.
+ * (`visibility`, `listing`, `hidden`, `app`, `sort`) differ. Search (`q`) and
+ * every other query param stay the same, so the already-loaded package list
+ * can be re-filtered without a loader or frame fetch.
  */
 export function isProfilePackageFilterOnlyHrefChange(from: string, to: string) {
 	const fromUrl = new URL(from, 'http://localhost')
@@ -236,10 +252,33 @@ export function profilePackageMatchesFilters(
 	)
 }
 
+export function sortProfilePackages(
+	packages: ReadonlyArray<PublicProfilePackageItem>,
+	sort: ProfilePackageSort,
+) {
+	switch (sort) {
+		case 'updated':
+			// Server list is already `updated_at DESC`. Keep that order so the
+			// default matches what `/@username` rendered before sort chips.
+			return [...packages]
+		case 'name':
+			return [...packages].sort((left, right) => {
+				const byName = left.name.localeCompare(right.name)
+				return byName !== 0 ? byName : left.kodyId.localeCompare(right.kodyId)
+			})
+		default: {
+			const exhaustive: never = sort
+			throw new Error(`Unhandled profile package sort: ${exhaustive}`)
+		}
+	}
+}
+
 export function filterProfilePackages(
 	packages: ReadonlyArray<PublicProfilePackageItem>,
 	filters: ProfilePackageFilters,
 ) {
-	if (!profilePackageFiltersAreActive(filters)) return [...packages]
-	return packages.filter((pkg) => profilePackageMatchesFilters(pkg, filters))
+	const visible = profilePackageFiltersAreActive(filters)
+		? packages.filter((pkg) => profilePackageMatchesFilters(pkg, filters))
+		: packages
+	return sortProfilePackages(visible, filters.sort)
 }

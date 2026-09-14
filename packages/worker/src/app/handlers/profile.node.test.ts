@@ -134,6 +134,7 @@ test('profile API and page respect visibility and expose packages/activity', asy
 	expect(publicBody.listing).toBe('all')
 	expect(publicBody.hidden).toBe('all')
 	expect(publicBody.app).toBe('all')
+	expect(publicBody.sort).toBe('updated')
 	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
 		expect.objectContaining({
 			ownerStableUserId: 'stable-alice',
@@ -156,6 +157,7 @@ test('profile API and page respect visibility and expose packages/activity', asy
 	expect(guestFilterResponse.status).toBe(200)
 	expect(guestFilterBody.listing).toBe('published')
 	expect(guestFilterBody.app).toBe('all')
+	expect(guestFilterBody.sort).toBe('updated')
 	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
 		expect.objectContaining({
 			includePrivate: false,
@@ -214,6 +216,7 @@ test('profile API and page respect visibility and expose packages/activity', asy
 	expect(ownBody.listing).toBe('ahead')
 	expect(ownBody.hidden).toBe('yes')
 	expect(ownBody.app).toBe('all')
+	expect(ownBody.sort).toBe('updated')
 	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
 		expect.objectContaining({
 			ownerStableUserId: 'stable-alice',

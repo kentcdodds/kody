@@ -107,6 +107,7 @@ async function loadProfileDataUncached(
 		listing: filters.listing,
 		hidden: filters.hidden,
 		app: filters.app,
+		sort: filters.sort,
 		isSelf,
 		loggedIn: Boolean(user),
 	}

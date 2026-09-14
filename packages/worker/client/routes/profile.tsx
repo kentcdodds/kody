@@ -260,6 +260,9 @@ export function ProfileRoute(handle: Handle) {
 							{filters.app !== 'all' ? (
 								<input type="hidden" name="app" value={filters.app} />
 							) : null}
+							{filters.sort !== 'updated' ? (
+								<input type="hidden" name="sort" value={filters.sort} />
+							) : null}
 							<label mix={css(searchFieldCss)}>
 								<span mix={css(fieldLabelCss)}>Search repositories</span>
 								<input
@@ -289,6 +292,7 @@ export function ProfileRoute(handle: Handle) {
 								listing={filters.listing}
 								hidden={filters.hidden}
 								app={filters.app}
+								sort={filters.sort}
 								isSelf={readyShell?.isSelf === true}
 							/>
 						) : null}
