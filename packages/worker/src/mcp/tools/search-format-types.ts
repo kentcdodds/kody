@@ -342,6 +342,7 @@ export type SearchEntityDetailStructured =
 			maintain: {
 				gitLane: string
 				publish: string
+				sourceSession: string
 			}
 			exports: Array<{
 				subpath: string

@@ -69,7 +69,15 @@ export function buildPackageMaintainSnippets(packageId: string) {
 	return {
 		gitLane: `packageGetGitRemote({ package_id: ${JSON.stringify(packageId)} })`,
 		publish: `packagePublishExternalPush({ package_id: ${JSON.stringify(packageId)} })`,
+		sourceSession: `repoOpenSession({ target: { kind: "package", package_id: ${JSON.stringify(packageId)} } })`,
 	}
+}
+
+export function buildPackageSourceFollowUp(packageId: string) {
+	const packageGetCall = `packageGet({ package_id: ${JSON.stringify(packageId)} })`
+	const sessionCall = `repoOpenSession({ target: { kind: "package", package_id: ${JSON.stringify(packageId)} } })`
+	const gitLaneCall = `packageGetGitRemote({ package_id: ${JSON.stringify(packageId)} })`
+	return `If you plan to invoke an export, call ${packageGetCall} first for the exact call shape, types, and package-scoped secret metadata. That call does not return files. For the full README.md, AGENTS.md, and source, open a repo session with ${sessionCall} then repoReadFile({ session_id, path: "README.md" }) and repoReadFile({ session_id, path: "AGENTS.md" }) (browse other files with repoTree). Discard the session with repoDiscardSession when finished. If you have a local git client, call ${gitLaneCall} instead and clone. search({ entity: "package_authoring:guide" }) covers inbound webhooks and maintenance workflows.`
 }
 
 export function buildCapabilityExecuteExample(spec: CapabilitySpec) {

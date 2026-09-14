@@ -658,3 +658,12 @@ export default function calendar() {
 		}),
 	])
 })
+
+test('packageGet description says it does not return package files', () => {
+	expect(getPackageCapability.description).toContain(
+		'Does not return README, AGENTS.md, or source files',
+	)
+	expect(getPackageCapability.description).toContain(
+		'repoOpenSession + repoReadFile',
+	)
+})

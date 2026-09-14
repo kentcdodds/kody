@@ -197,7 +197,10 @@ exhaustive.
   export at a `types` file and put the JSDoc there. Package search detail and
   `packageGet` surface package descriptions, export descriptions, function
   signatures, JSDoc, type definitions, and FYI metadata for associated
-  package-scoped secrets (names and `package_id`, never values).
+  package-scoped secrets (names and `package_id`, never values). `packageGet`
+  does not return `README.md`, `AGENTS.md`, or source files. For those, open a
+  repo session (`repoOpenSession` + `repoReadFile`) or clone with
+  `packageGetGitRemote`.
 
 ### Package reuse
 
@@ -541,15 +544,19 @@ Use:
   use the scoped name, or `package_id` when the name is not known.
 - `packageSave` to create or replace a saved package from a complete UTF-8 text
   file set when no local git client is available
-- `packageGet` and `packageList` to inspect saved packages
+- `packageGet` and `packageList` to inspect saved package metadata (exports,
+  types, secret FYI). They do not return files. For `README.md`, `AGENTS.md`,
+  and source, open a repo session (`repoOpenSession` + `repoReadFile`) or clone
+  with `packageGetGitRemote`
 - `packageDelete` to permanently remove a saved package the owner typed the name
   of (`confirm_name` must match the package name)
 - `packageUpdate` to change mutable package settings such as hidden search
   discovery state or to lock publishes (`changes.locked: true`). Unlocking is
   website-only.
-- `repoEditFiles`, `repoApplyPatch`, `repoCommit`, `repoRunChecks`, and
-  `repoPublishSession` to edit, validate, and publish repo-backed package source
-  through the file-level session API
+- `repoOpenSession`, `repoReadFile`, `repoEditFiles`, `repoApplyPatch`,
+  `repoCommit`, `repoRunChecks`, and `repoPublishSession` to inspect, edit,
+  validate, and publish repo-backed package source through the file-level
+  session API
 
 ### Platform maintenance migrations (codemods)
 
