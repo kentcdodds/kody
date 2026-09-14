@@ -74,6 +74,14 @@ When runtime sources change on a steady-state script, the workflow deploys
 binding and healthcheck hygiene. It does not re-apply the `v1` transfer and it
 does not republish package-app zone routes as a first-time attach.
 
+Wrangler 4.131+ builds its local sqlite-class map during a real `deploy` and
+still ignores `transferred_classes`. The committed `v1` transfer then `v2`
+`PackageServiceInstance` delete is valid on Cloudflare (tag `v2` already
+applied) but fails that local check. `wrangler-env.ts` annotates the generated
+deploy config so the local map can see the later-deleted transfer without
+dropping `v2`. Do not localize a real deploy: dropping `v2` would make wrangler
+treat production's current tag as missing and replay the chain.
+
 Remix/blog/UI-only uploads skip runtime. Official guide markdown still skips
 runtime.
 

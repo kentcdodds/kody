@@ -3,9 +3,13 @@ import os from 'node:os'
 import path from 'node:path'
 import { expect, test } from 'vitest'
 import { parseJsonc } from './ci/resource-utils.ts'
-import { localizeMigrations } from './local-dev-migrations.ts'
+import {
+	annotateTransfersForLocalSqliteMap,
+	localizeMigrations,
+} from './local-dev-migrations.ts'
 import {
 	writeLocalRuntimeDevConfig,
+	writeRuntimeDeployConfig,
 	writeRuntimeDryRunConfig,
 	writeRuntimeStartupCheckConfig,
 } from './local-runtime-dev-config.ts'
@@ -51,6 +55,99 @@ test('the committed runtime production chain fails wrangler’s local sqlite map
 	)
 	expect(sqliteMapAccepts(source.migrations)).toBe(false)
 	expect(sqliteMapAccepts(localizeMigrations(source.migrations))).toBe(true)
+})
+
+test('annotateTransfersForLocalSqliteMap keeps transfer-then-delete tags wrangler can upload', () => {
+	const annotated = annotateTransfersForLocalSqliteMap([
+		{
+			tag: 'v1',
+			transferred_classes: [
+				{
+					from: 'StorageRunner',
+					from_script: 'kody',
+					to: 'StorageRunner',
+				},
+				{
+					from: 'PackageServiceInstance',
+					from_script: 'kody',
+					to: 'PackageServiceInstance',
+				},
+			],
+		},
+		{
+			tag: 'v2',
+			deleted_classes: ['PackageServiceInstance'],
+		},
+	])
+
+	expect(annotated).toEqual([
+		{
+			tag: 'v1',
+			transferred_classes: [
+				{
+					from: 'StorageRunner',
+					from_script: 'kody',
+					to: 'StorageRunner',
+				},
+				{
+					from: 'PackageServiceInstance',
+					from_script: 'kody',
+					to: 'PackageServiceInstance',
+				},
+			],
+			new_sqlite_classes: ['PackageServiceInstance'],
+		},
+		{
+			tag: 'v2',
+			deleted_classes: ['PackageServiceInstance'],
+		},
+	])
+	expect(
+		sqliteMapAccepts(annotated),
+		'annotated chain must pass wrangler’s local deleted_classes check',
+	).toBe(true)
+	expect(
+		sqliteMapAccepts(localizeMigrations(annotated)),
+		'localizing the annotated chain must still elide the delete',
+	).toBe(true)
+})
+
+test('writeRuntimeDeployConfig keeps applied tags and satisfies the local sqlite map', async () => {
+	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-runtime-deploy-'))
+	const sourcePath = path.join(tempDir, 'wrangler.jsonc')
+	try {
+		await writeFile(
+			sourcePath,
+			await readFile('packages/runtime-worker/wrangler.jsonc', 'utf8'),
+		)
+		const outputPath = await writeRuntimeDeployConfig({
+			runtimeConfigPath: sourcePath,
+			envName: 'production',
+		})
+		const generated = parseJsonc<{
+			migrations?: unknown
+			env?: {
+				production?: { migrations?: unknown; vars?: Record<string, unknown> }
+				preview?: { migrations?: unknown }
+			}
+		}>(await readFile(outputPath, 'utf8'))
+		expect(path.basename(outputPath)).toBe('wrangler-deploy.generated.json')
+		expect(sqliteMapAccepts(generated.migrations)).toBe(true)
+		expect(generated.migrations).toEqual(generated.env?.production?.migrations)
+		expect(JSON.stringify(generated.migrations)).toContain(
+			'PackageServiceInstance',
+		)
+		expect(JSON.stringify(generated.migrations)).toContain(
+			'transferred_classes',
+		)
+		expect(JSON.stringify(generated.migrations)).toContain('deleted_classes')
+		expect(generated.env?.production?.vars?.WRANGLER_IS_LOCAL_DEV).toBe(
+			undefined,
+		)
+		expect(sqliteMapAccepts(generated.env?.preview?.migrations)).toBe(true)
+	} finally {
+		await rm(tempDir, { recursive: true, force: true })
+	}
 })
 
 test('writeRuntimeDryRunConfig localizes migrations without local-dev vars', async () => {

@@ -1,7 +1,10 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { parseJsonc } from './ci/resource-utils.ts'
-import { localizeMigrations } from './local-dev-migrations.ts'
+import {
+	annotateTransfersForLocalSqliteMap,
+	localizeMigrations,
+} from './local-dev-migrations.ts'
 
 type JsonRecord = Record<string, unknown>
 
@@ -114,27 +117,36 @@ function requireRuntimeEnv(
 	return envs as JsonRecord
 }
 
-function localizeRuntimeConfigMigrations(config: JsonRecord, envName: string) {
+function rewriteRuntimeConfigMigrations(
+	config: JsonRecord,
+	envName: string,
+	rewrite: (migrations: unknown) => unknown,
+) {
 	const envs = config.env as JsonRecord
-	const localizedTop = localizeMigrations(config.migrations)
-	config.migrations = localizedTop
+	const rewrittenTop = rewrite(config.migrations)
+	config.migrations = rewrittenTop
 	for (const [name, runtimeEnv] of Object.entries(envs)) {
 		if (!runtimeEnv || typeof runtimeEnv !== 'object') continue
 		const envRecord = runtimeEnv as JsonRecord
-		const localized = localizeMigrations(envRecord.migrations ?? localizedTop)
-		envRecord.migrations = localized
+		const rewritten = rewrite(envRecord.migrations ?? rewrittenTop)
+		envRecord.migrations = rewritten
 		if (name === envName) {
-			config.migrations = localized
+			config.migrations = rewritten
 		}
 	}
+}
+
+function localizeRuntimeConfigMigrations(config: JsonRecord, envName: string) {
+	rewriteRuntimeConfigMigrations(config, envName, localizeMigrations)
 }
 
 /**
  * Wrangler 4.131+ applies the local sqlite-class map during `deploy --dry-run`.
  * The committed runtime production chain transfers `PackageServiceInstance`
  * then deletes it; wrangler ignores `transferred_classes` locally, so the
- * later delete fails. Localize migrations for bundle checks only — never for
- * a real deploy. Production history stays in the committed wrangler.jsonc.
+ * later delete fails. Localize migrations for bundle checks only. Real
+ * deploys use `writeRuntimeDeployConfig` so Cloudflare still sees the
+ * applied tags. Production history stays in the committed wrangler.jsonc.
  */
 export async function writeRuntimeDryRunConfig({
 	runtimeConfigPath,
@@ -151,6 +163,35 @@ export async function writeRuntimeDryRunConfig({
 	const outputPath = path.join(
 		path.dirname(runtimeConfigPath),
 		'wrangler-dry-run.generated.json',
+	)
+	await writeFile(outputPath, `${JSON.stringify(config, null, '\t')}\n`)
+	return outputPath
+}
+
+/**
+ * Real runtime deploys must keep the committed transfer-then-delete tags so
+ * wrangler can match production's current migration tag. Annotate later-
+ * deleted transfers for the local sqlite-class map without dropping `v2`.
+ */
+export async function writeRuntimeDeployConfig({
+	runtimeConfigPath,
+	envName,
+}: {
+	runtimeConfigPath: string
+	envName: string
+}) {
+	const sourceText = await readFile(runtimeConfigPath, 'utf8')
+	const config = parseJsonc<JsonRecord>(sourceText)
+	requireRuntimeEnv(config, runtimeConfigPath, envName)
+	rewriteRuntimeConfigMigrations(
+		config,
+		envName,
+		annotateTransfersForLocalSqliteMap,
+	)
+
+	const outputPath = path.join(
+		path.dirname(runtimeConfigPath),
+		'wrangler-deploy.generated.json',
 	)
 	await writeFile(outputPath, `${JSON.stringify(config, null, '\t')}\n`)
 	return outputPath
