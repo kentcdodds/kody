@@ -240,7 +240,7 @@ function matchesApp(
 	}
 }
 
-export function profilePackageMatchesFilters(
+function profilePackageMatchesFilters(
 	pkg: PublicProfilePackageItem,
 	filters: ProfilePackageFilters,
 ) {
@@ -252,7 +252,7 @@ export function profilePackageMatchesFilters(
 	)
 }
 
-export function sortProfilePackages(
+function sortProfilePackages(
 	packages: ReadonlyArray<PublicProfilePackageItem>,
 	sort: ProfilePackageSort,
 ) {
