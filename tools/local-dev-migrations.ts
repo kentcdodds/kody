@@ -1,6 +1,33 @@
 type JsonRecord = Record<string, unknown>
 
 /**
+ * Strip classes that the same chain later deletes, without converting
+ * transfers or dropping tags.
+ *
+ * Wrangler 4.131+ walks the local sqlite-class map on real `wrangler deploy`,
+ * not only `--dry-run`. That map ignores `transferred_classes`, so a
+ * transfer-then-delete of `PackageServiceInstance` throws before upload.
+ * Production `kody-runtime` is already at tag `v2`; Cloudflare only applies
+ * steps after the last published tag. Keep every tag (including an empty
+ * `v2`) so last-tag matching still works, and drop the deleted class from
+ * both the transfer and the delete so the local map can run.
+ */
+export function elideDeletedMigrationClasses(migrations: unknown): unknown {
+	if (!Array.isArray(migrations)) return migrations
+
+	const deleted = collectDeletedClassNames(migrations)
+	return migrations.map((migration) => {
+		if (!migration || typeof migration !== 'object') return migration
+		const record = { ...(migration as JsonRecord) }
+		stripTransferredClasses(record, deleted)
+		stripDeletedClasses(record, 'new_sqlite_classes', deleted)
+		stripDeletedClasses(record, 'new_classes', deleted)
+		stripDeletedClasses(record, 'deleted_classes', deleted)
+		return record
+	})
+}
+
+/**
  * Rewrite a worker's Durable Object migrations for single-process local dev.
  *
  * Wrangler's local sqlite-class map (`getDurableObjectClassNameToUseSQLiteMap`)
@@ -10,7 +37,8 @@ type JsonRecord = Record<string, unknown>
  * new, so transfers become `new_sqlite_classes` (mirroring the committed
  * `preview` env chains). Classes that the same chain later deletes are
  * elided: creating them only to delete them trips the same check when the
- * script no longer exports the class.
+ * script no longer exports the class. Empty tags are dropped; use
+ * `elideDeletedMigrationClasses` when a remote last-applied tag must stay.
  */
 export function localizeMigrations(migrations: unknown): unknown {
 	if (!Array.isArray(migrations)) return migrations
@@ -35,15 +63,7 @@ export function localizeMigrations(migrations: unknown): unknown {
 		return record
 	})
 
-	const deleted = new Set<string>()
-	for (const migration of converted) {
-		if (!migration || typeof migration !== 'object') continue
-		const classes = (migration as JsonRecord).deleted_classes
-		if (!Array.isArray(classes)) continue
-		for (const name of classes) {
-			if (typeof name === 'string') deleted.add(name)
-		}
-	}
+	const deleted = collectDeletedClassNames(converted)
 
 	const localized: Array<unknown> = []
 	for (const migration of converted) {
@@ -60,9 +80,37 @@ export function localizeMigrations(migrations: unknown): unknown {
 	return localized
 }
 
+function collectDeletedClassNames(migrations: ReadonlyArray<unknown>) {
+	const deleted = new Set<string>()
+	for (const migration of migrations) {
+		if (!migration || typeof migration !== 'object') continue
+		const classes = (migration as JsonRecord).deleted_classes
+		if (!Array.isArray(classes)) continue
+		for (const name of classes) {
+			if (typeof name === 'string') deleted.add(name)
+		}
+	}
+	return deleted
+}
+
+function stripTransferredClasses(
+	record: JsonRecord,
+	deleted: ReadonlySet<string>,
+) {
+	const transferred = record.transferred_classes
+	if (!Array.isArray(transferred)) return
+	const kept = transferred.filter((entry) => {
+		if (!entry || typeof entry !== 'object') return true
+		const to = (entry as JsonRecord).to
+		return typeof to !== 'string' || !deleted.has(to)
+	})
+	if (kept.length === 0) delete record.transferred_classes
+	else record.transferred_classes = kept
+}
+
 function stripDeletedClasses(
 	record: JsonRecord,
-	key: 'new_sqlite_classes' | 'deleted_classes',
+	key: 'new_sqlite_classes' | 'new_classes' | 'deleted_classes',
 	deleted: ReadonlySet<string>,
 ) {
 	const classes = record[key]

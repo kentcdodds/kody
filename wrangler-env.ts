@@ -22,6 +22,7 @@ import {
 import {
 	writeLocalRuntimeDevConfig,
 	writeRuntimeDryRunConfig,
+	writeRuntimeRemoteDeployConfig,
 } from './tools/local-runtime-dev-config.ts'
 import { writeLocalPlatformDevConfig } from './tools/local-platform-dev-config.ts'
 import { runWranglerDeployWithRetry } from './tools/wrangler-deploy-retry.ts'
@@ -268,17 +269,21 @@ const wranglerCommand =
 	(existsSync(localWranglerPath) && localWranglerPath) ||
 	resolveLocalBinary('wrangler')
 
-if (
-	args[0] === 'deploy' &&
-	args.includes('--dry-run') &&
-	isRuntimeWorkerConfig &&
-	configArgValue
-) {
-	const dryRunConfigPath = await writeRuntimeDryRunConfig({
-		runtimeConfigPath: resolveWranglerConfigPath(configArgValue, process.cwd()),
-		envName,
-	})
-	replaceConfigArg(commandArgs, dryRunConfigPath)
+if (args[0] === 'deploy' && isRuntimeWorkerConfig && configArgValue) {
+	const runtimeConfigPath = resolveWranglerConfigPath(
+		configArgValue,
+		process.cwd(),
+	)
+	const rewrittenConfigPath = args.includes('--dry-run')
+		? await writeRuntimeDryRunConfig({
+				runtimeConfigPath,
+				envName,
+			})
+		: await writeRuntimeRemoteDeployConfig({
+				runtimeConfigPath,
+				envName,
+			})
+	replaceConfigArg(commandArgs, rewrittenConfigPath)
 }
 
 if (args[0] === 'deploy') {

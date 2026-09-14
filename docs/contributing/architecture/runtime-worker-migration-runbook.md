@@ -96,4 +96,10 @@ together so they elide.
 
 `PackageServiceInstance` is gone from production `kody-runtime` (tag `v2`; no
 stub export). Preview applies `v1` `new_sqlite_classes` then `v2`
-`deleted_classes` on first deploy so create and delete elide.
+`deleted_classes` on first deploy so create and delete elide. Wrangler 4.131+
+walks the local sqlite-class map on real `wrangler deploy` as well as
+`--dry-run`, and that map ignores `transferred_classes`. `wrangler-env.ts`
+rewrites the generated runtime deploy config with `elideDeletedMigrationClasses`
+so the already-applied create-then-delete pair is omitted and tag `v2` stays for
+last-applied matching. Do not convert production transfers to
+`new_sqlite_classes` on a real deploy.

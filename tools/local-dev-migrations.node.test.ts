@@ -3,10 +3,14 @@ import os from 'node:os'
 import path from 'node:path'
 import { expect, test } from 'vitest'
 import { parseJsonc } from './ci/resource-utils.ts'
-import { localizeMigrations } from './local-dev-migrations.ts'
+import {
+	elideDeletedMigrationClasses,
+	localizeMigrations,
+} from './local-dev-migrations.ts'
 import {
 	writeLocalRuntimeDevConfig,
 	writeRuntimeDryRunConfig,
+	writeRuntimeRemoteDeployConfig,
 	writeRuntimeStartupCheckConfig,
 } from './local-runtime-dev-config.ts'
 
@@ -51,6 +55,57 @@ test('the committed runtime production chain fails wrangler’s local sqlite map
 	)
 	expect(sqliteMapAccepts(source.migrations)).toBe(false)
 	expect(sqliteMapAccepts(localizeMigrations(source.migrations))).toBe(true)
+	expect(
+		sqliteMapAccepts(elideDeletedMigrationClasses(source.migrations)),
+	).toBe(true)
+})
+
+test('elideDeletedMigrationClasses keeps transfer history and empty last-applied tags', () => {
+	const rewritten = elideDeletedMigrationClasses([
+		{
+			tag: 'v1',
+			transferred_classes: [
+				{
+					from: 'StorageRunner',
+					from_script: 'kody',
+					to: 'StorageRunner',
+				},
+				{
+					from: 'PackageServiceInstance',
+					from_script: 'kody',
+					to: 'PackageServiceInstance',
+				},
+			],
+		},
+		{
+			tag: 'v2',
+			deleted_classes: ['PackageServiceInstance'],
+		},
+	])
+
+	expect(rewritten).toEqual([
+		{
+			tag: 'v1',
+			transferred_classes: [
+				{
+					from: 'StorageRunner',
+					from_script: 'kody',
+					to: 'StorageRunner',
+				},
+			],
+		},
+		{
+			tag: 'v2',
+		},
+	])
+	expect(
+		sqliteMapAccepts(rewritten),
+		'elided chain must pass wrangler’s local deleted_classes check',
+	).toBe(true)
+	expect(
+		lastAppliedTag(rewritten),
+		'Cloudflare last-tag matching still finds v2',
+	).toBe('v2')
 })
 
 test('writeRuntimeDryRunConfig localizes migrations without local-dev vars', async () => {
@@ -146,6 +201,47 @@ test('writeLocalRuntimeDevConfig writes a top-level chain wrangler can apply', a
 	}
 })
 
+test('writeRuntimeRemoteDeployConfig keeps live transfers and the v2 tag', async () => {
+	const tempDir = await mkdtemp(
+		path.join(os.tmpdir(), 'kody-runtime-remote-deploy-'),
+	)
+	const sourcePath = path.join(tempDir, 'wrangler.jsonc')
+	try {
+		await writeFile(
+			sourcePath,
+			await readFile('packages/runtime-worker/wrangler.jsonc', 'utf8'),
+		)
+		const outputPath = await writeRuntimeRemoteDeployConfig({
+			runtimeConfigPath: sourcePath,
+			envName: 'production',
+		})
+		expect(path.basename(outputPath)).toBe(
+			'wrangler-remote-deploy.generated.json',
+		)
+		const generated = parseJsonc<{
+			migrations?: unknown
+			env?: {
+				production?: { migrations?: unknown; vars?: Record<string, unknown> }
+			}
+		}>(await readFile(outputPath, 'utf8'))
+		expect(sqliteMapAccepts(generated.migrations)).toBe(true)
+		expect(generated.migrations).toEqual(generated.env?.production?.migrations)
+		expect(lastAppliedTag(generated.migrations)).toBe('v2')
+		expect(JSON.stringify(generated.migrations)).toContain(
+			'transferred_classes',
+		)
+		expect(JSON.stringify(generated.migrations)).toContain('StorageRunner')
+		expect(JSON.stringify(generated.migrations)).not.toContain(
+			'PackageServiceInstance',
+		)
+		expect(generated.env?.production?.vars?.WRANGLER_IS_LOCAL_DEV).toBe(
+			undefined,
+		)
+	} finally {
+		await rm(tempDir, { recursive: true, force: true })
+	}
+})
+
 /**
  * Same order and rules as wrangler’s
  * `getDurableObjectClassNameToUseSQLiteMap` for deleted_classes /
@@ -170,4 +266,12 @@ function sqliteMapAccepts(migrations: unknown) {
 		}
 	}
 	return true
+}
+
+function lastAppliedTag(migrations: unknown) {
+	if (!Array.isArray(migrations)) return undefined
+	const last = migrations.at(-1)
+	if (!last || typeof last !== 'object') return undefined
+	const tag = (last as Record<string, unknown>).tag
+	return typeof tag === 'string' ? tag : undefined
 }
