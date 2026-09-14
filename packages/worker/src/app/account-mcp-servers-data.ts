@@ -12,6 +12,7 @@ import { backfillMissingMcpServerFavicons } from '#worker/mcp-client/mcp-server-
 import { buildMcpServerAutoLogoPath } from '#worker/mcp-client/mcp-server-logo.ts'
 import {
 	listMcpServerSettings,
+	persistMcpServerLastErrorIfChanged,
 	resolveMcpServerOAuthClientUrls,
 } from '#worker/mcp-client/settings-service.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
@@ -47,6 +48,22 @@ export async function loadAccountMcpServersData(input: {
 		settings.length > 0
 			? await loadMcpClientHubSnapshotOrNull({ env: input.env, userId })
 			: null
+	if (snapshot) {
+		await Promise.all(
+			settings.map((setting) => {
+				const server = snapshot.servers.find(
+					(entry) => entry.serverId === setting.id,
+				)
+				return persistMcpServerLastErrorIfChanged({
+					env: input.env,
+					userId,
+					id: setting.id,
+					state: server?.state ?? 'disconnected',
+					lastError: server?.lastError ?? null,
+				})
+			}),
+		)
+	}
 	return {
 		ok: true,
 		email: input.user.email,

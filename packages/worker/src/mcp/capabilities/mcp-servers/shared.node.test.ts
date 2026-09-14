@@ -115,6 +115,7 @@ test('buildMcpServerStatusView surfaces durable lastError when live connection e
 	})
 	expect(hung.connected).toBe(false)
 	expect(hung.error).toBe(lastError)
+	expect(hung.hasRefreshToken).toBe(false)
 
 	const ready = buildMcpServerStatusView({
 		setting: setting({ lastError }),

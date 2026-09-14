@@ -419,7 +419,9 @@ function buildMcpServerWaitingItem(
 			id: `mcp-server:${server.id}`,
 			kind: 'mcp-server',
 			title: `${server.name} needs authorization`,
-			why: 'This MCP server is waiting for you to finish OAuth. Until you do, its tools stay off.',
+			why:
+				server.error?.trim() ||
+				'This MCP server is waiting for you to finish OAuth. Until you do, its tools stay off.',
 			who: 'you',
 			doLabel: 'Complete authorization',
 			href,

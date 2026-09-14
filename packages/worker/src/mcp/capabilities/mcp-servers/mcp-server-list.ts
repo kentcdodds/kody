@@ -8,6 +8,7 @@ import {
 } from '#mcp/capabilities/types.ts'
 import {
 	listMcpServerSettings,
+	persistMcpServerLastErrorIfChanged,
 	resolveMcpServerOAuthClientUrls,
 } from '#worker/mcp-client/settings-service.ts'
 import {
@@ -28,7 +29,7 @@ export const mcpServerListCapability = defineDomainCapability(
 	{
 		name: 'mcpServerList',
 		description:
-			"List the signed-in user's saved MCP servers with live connection status, pending OAuth authUrls, discovered tool names, durable lastError when post-IdP settle did not reach ready, and package usage (any context vs locked to listed packages).",
+			"List the signed-in user's saved MCP servers with live connection status, pending OAuth authUrls, whether stored tokens include a refresh token, discovered tool names, durable lastError when post-IdP settle or token refresh did not reach ready, and package usage (any context vs locked to listed packages).",
 		keywords: [
 			'mcp',
 			'server',
@@ -60,6 +61,21 @@ export const mcpServerListCapability = defineDomainCapability(
 					waitUntil: ctx.waitUntil,
 				}),
 			])
+			await Promise.all(
+				settings.map((setting) => {
+					const snapshot =
+						hubSnapshot?.servers.find(
+							(server) => server.serverId === setting.id,
+						) ?? null
+					return persistMcpServerLastErrorIfChanged({
+						env: ctx.env,
+						userId: user.userId,
+						id: setting.id,
+						state: snapshot?.state ?? 'disconnected',
+						lastError: snapshot?.lastError ?? null,
+					})
+				}),
+			)
 			return {
 				oauthClientOrigin: oauth.clientOrigin,
 				oauthCallbackUrl: oauth.callbackUrl,

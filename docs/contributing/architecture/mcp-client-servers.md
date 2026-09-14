@@ -116,9 +116,16 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
    transport is `connected`, but it does not report `auth=success` or clear
    `last_error` until the connection is `ready`. Origin and redirect-URI
    rejection messages are enriched with Kody's `oauthClientOrigin` and
-   `oauthCallbackUrl`. Reconnect uses the same recovery path (invalidate
-   unusable tokens and request a fresh authorization URL). The account page
-   offers Reconnect when automatic recovery cannot finish.
+   `oauthCallbackUrl`. When a previously ready connection parks on
+   `authenticating`, the hub inspects stored tokens, stamps a durable
+   `last_error` (phase `token exchange`) instead of leaving Status silent, and
+   `mcpServerList` exposes `hasRefreshToken` without returning token values.
+   Reconnect tries `connectToServer` with the stored tokens first so the MCP SDK
+   can refresh; it only wipes client storage when that cannot restore `ready`
+   and no authorization URL is available, or when the callback URL changed.
+   Authorization-server reuse of a rotating refresh token still requires a human
+   re-auth. The account page offers Reconnect when automatic recovery cannot
+   finish.
 6. The route redirects to `/account/mcp-servers/:serverId?auth=success|error`
    when the callback resolves to a server (including failures), or
    `/account/mcp-servers?auth=error` when it does not, for user feedback. Tokens

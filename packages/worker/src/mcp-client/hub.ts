@@ -23,10 +23,20 @@ import {
 	buildIncompleteDiscoverLastError,
 	isFormattedMcpOAuthSettleMessage,
 	isIncompleteDiscoverState,
+	parseStoredMcpServerLastError,
 	readAttemptIdFromSettleMessage,
 	readOAuthDiscoveryUrls,
 	sanitizePublicUrl,
 } from './oauth-settle-error.ts'
+import {
+	buildMcpOAuthTokenRecoveryLastError,
+	isMcpOAuthTokenRecoveryLastError,
+	mcpOAuthTokenRecoveryStorageKey,
+	mcpOAuthTokenRecoveryStoragePrefix,
+	readMcpOAuthTokenPresence,
+	shouldAttemptMcpOAuthRefresh,
+	type McpOAuthTokenPresence,
+} from './oauth-token-recovery.ts'
 import {
 	outboundMcpClientOptions,
 	reconnectMcpServerOptions,
@@ -92,6 +102,8 @@ class McpClientHubBase extends DurableObject<Env> {
 	private readonly lifecycle: Lifecycle<Env>
 	private restored: Promise<void> | null = null
 	private readonly lastDiscoverErrors = new Map<string, McpServerLastError>()
+	private readonly tokenPresence = new Map<string, McpOAuthTokenPresence>()
+	private readonly connectLocks = new Map<string, Promise<void>>()
 
 	constructor(state: DurableObjectState, env: Env) {
 		super(state, env)
@@ -134,6 +146,7 @@ class McpClientHubBase extends DurableObject<Env> {
 			keepLegacyHandshakeIds: await this.readLegacyHandshakeServerIds(),
 		})
 		await this.lifecycle.start()
+		await this.hydrateTokenRecoveryErrors()
 	}
 
 	private async readLegacyHandshakeServerIds() {
@@ -207,13 +220,17 @@ class McpClientHubBase extends DurableObject<Env> {
 						...(tool.annotations ? { annotations: tool.annotations } : {}),
 					}))
 				: []
+		const lastError = this.lastDiscoverErrors.get(row.id) ?? null
+		const error = connection?.connectionError ?? lastError?.message ?? null
 		return {
 			serverId: row.id,
 			name: row.name,
 			url: row.server_url,
 			state,
 			authUrl: row.auth_url,
-			error: connection?.connectionError ?? null,
+			error,
+			lastError,
+			hasRefreshToken: this.tokenPresence.get(row.id)?.hasRefreshToken ?? false,
 			instructions: connection?.instructions ?? null,
 			tools,
 		}
@@ -229,6 +246,9 @@ class McpClientHubBase extends DurableObject<Env> {
 					state: this.connectionStateFor(serverId),
 					authUrl: null,
 					error: null,
+					lastError: this.lastDiscoverErrors.get(serverId) ?? null,
+					hasRefreshToken:
+						this.tokenPresence.get(serverId)?.hasRefreshToken ?? false,
 					tools: [],
 				}
 		return {
@@ -237,6 +257,8 @@ class McpClientHubBase extends DurableObject<Env> {
 			authUrl: snapshot.authUrl,
 			error: snapshot.error,
 			toolCount: snapshot.tools.length,
+			lastError: snapshot.lastError ?? null,
+			hasRefreshToken: snapshot.hasRefreshToken ?? false,
 		}
 	}
 
@@ -260,6 +282,8 @@ class McpClientHubBase extends DurableObject<Env> {
 		await this.ensureRestored()
 		await this.forgetLegacyHandshakeFallback(input.serverId)
 		this.clearIncompleteDiscoverStamp(input.serverId)
+		this.tokenPresence.delete(input.serverId)
+		await this.persistTokenRecoveryLastError(input.serverId, null)
 		const existing = this.manager.mcpConnections[input.serverId]
 		if (existing) {
 			await this.manager.removeServer(input.serverId)
@@ -286,7 +310,7 @@ class McpClientHubBase extends DurableObject<Env> {
 			}),
 		})
 		this.clearSessionBeforeConnect(input.serverId)
-		const connected = await this.manager.connectToServer(input.serverId)
+		const connected = await this.connectToServerSerialized(input.serverId)
 		if (connected.state === 'connected') {
 			await this.runDiscoverIfConnected(input.serverId)
 		}
@@ -314,7 +338,6 @@ class McpClientHubBase extends DurableObject<Env> {
 			timeout: connectionSettleTimeoutMs,
 		})
 		await this.forgetLegacyHandshakeFallback(input.serverId)
-		this.clearIncompleteDiscoverStamp(input.serverId)
 		await this.restartServerAuthorization(input)
 		const row = this.manager
 			.listServers()
@@ -336,6 +359,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		await this.manager.waitForConnections({
 			timeout: connectionSettleTimeoutMs,
 		})
+		const before = await this.readTokenPresence(input.serverId)
 		await this.runDiscoverIfConnected(input.serverId)
 		const row = this.manager
 			.listServers()
@@ -346,15 +370,18 @@ class McpClientHubBase extends DurableObject<Env> {
 				serverName: row.name,
 			})
 		}
-		return this.finalizeConnectResult(input.serverId)
+		return await this.finishConnectResult(input.serverId, before)
 	}
 
 	async removeServer(input: { serverId: string }): Promise<void> {
 		await this.ensureRestored()
 		await this.manager.removeServer(input.serverId)
+		this.lastDiscoverErrors.delete(input.serverId)
+		this.tokenPresence.delete(input.serverId)
 		await this.ctx.storage.delete([
 			mcpConnectionEpisodeStorageKey(input.serverId),
 			mcpLegacyHandshakeStorageKey(input.serverId),
+			mcpOAuthTokenRecoveryStorageKey(input.serverId),
 		])
 	}
 
@@ -542,6 +569,20 @@ class McpClientHubBase extends DurableObject<Env> {
 			throw new Error(`MCP server "${input.serverId}" is not registered.`)
 		}
 
+		const storedTokens = await this.readTokenPresence(input.serverId)
+		if (
+			row.callback_url === input.callbackUrl &&
+			shouldAttemptMcpOAuthRefresh(storedTokens)
+		) {
+			const refreshed = await this.connectUsingStoredOAuthTokens(input.serverId)
+			if (refreshed.state === 'ready') {
+				return refreshed
+			}
+			if (refreshed.state === 'authenticating' && refreshed.authUrl) {
+				return refreshed
+			}
+		}
+
 		const existingConnection = this.manager.mcpConnections[input.serverId]
 		const existingOptions = existingConnection?.options
 		const callbackChanged = row.callback_url !== input.callbackUrl
@@ -611,11 +652,11 @@ class McpClientHubBase extends DurableObject<Env> {
 			throw error
 		}
 		this.clearSessionBeforeConnect(input.serverId)
-		const result = await this.manager.connectToServer(input.serverId)
+		const result = await this.connectToServerSerialized(input.serverId)
 		if (result.state === 'connected') {
 			return (await this.runDiscoverIfConnected(input.serverId)).result
 		}
-		return this.buildConnectResult(input.serverId)
+		return await this.finishConnectResult(input.serverId, storedTokens)
 	}
 
 	private async clearOAuthAuthorizationStorage(input: {
@@ -638,7 +679,17 @@ class McpClientHubBase extends DurableObject<Env> {
 	 * auth URL. Needed when SQL `auth_url` was cleared on callback success but
 	 * the live connection never reached `ready`.
 	 */
-	private clearIncompleteDiscoverStamp(serverId: string) {
+	private clearIncompleteDiscoverStamp(
+		serverId: string,
+		options?: { preserveTokenRecovery?: boolean },
+	) {
+		const existing = this.lastDiscoverErrors.get(serverId) ?? null
+		if (
+			options?.preserveTokenRecovery &&
+			isMcpOAuthTokenRecoveryLastError(existing)
+		) {
+			return
+		}
 		const connection = this.manager.mcpConnections[serverId]
 		if (connection) connection.connectionError = null
 		this.lastDiscoverErrors.delete(serverId)
@@ -651,7 +702,9 @@ class McpClientHubBase extends DurableObject<Env> {
 		result: McpServerConnectResult
 		lastError: McpServerLastError | null
 	}> {
-		this.clearIncompleteDiscoverStamp(serverId)
+		this.clearIncompleteDiscoverStamp(serverId, {
+			preserveTokenRecovery: true,
+		})
 		let discoverError: string | null = null
 		try {
 			await this.manager.discoverIfConnected(serverId, {
@@ -668,16 +721,18 @@ class McpClientHubBase extends DurableObject<Env> {
 				attemptId: options?.attemptId,
 			},
 		)
-		if (
+		const outcome =
 			options?.allowLegacyFallback === false ||
 			!shouldRetryLegacyHandshake({
 				state: afterAuto.result.state,
 				client: this.manager.mcpConnections[serverId]?.options.client,
 			})
-		) {
-			return afterAuto
+				? afterAuto
+				: await this.retryDiscoverWithLegacyHandshake(serverId, afterAuto)
+		if (outcome.result.state === 'ready') {
+			await this.persistTokenRecoveryLastError(serverId, null)
 		}
-		return this.retryDiscoverWithLegacyHandshake(serverId, afterAuto)
+		return outcome
 	}
 
 	private async retryDiscoverWithLegacyHandshake(
@@ -758,12 +813,12 @@ class McpClientHubBase extends DurableObject<Env> {
 		}
 
 		this.clearSessionBeforeConnect(serverId)
-		const connected = await this.manager.connectToServer(serverId)
+		const connected = await this.connectToServerSerialized(serverId)
 		if (connected.state !== 'connected') {
-			const result = this.buildConnectResult(serverId)
+			const result = await this.finishConnectResult(serverId)
 			if (result.state === 'authenticating' && result.authUrl) {
 				await this.rememberLegacyHandshakeIfActive(serverId)
-				return { result, lastError: null }
+				return { result, lastError: result.lastError ?? null }
 			}
 			return this.keepCatalogLastError(serverId, autoFailure, result.error)
 		}
@@ -834,8 +889,33 @@ class McpClientHubBase extends DurableObject<Env> {
 					lastError: null,
 				}
 			}
-			const existing = this.lastDiscoverErrors.get(serverId)
-			if (existing && result.state !== 'authenticating') {
+			const existing = this.lastDiscoverErrors.get(serverId) ?? null
+			const existingIsTokenRecovery =
+				existing !== null && isMcpOAuthTokenRecoveryLastError(existing)
+			if (existing && existingIsTokenRecovery) {
+				if (connection) connection.connectionError = existing.message
+				return {
+					result: {
+						...this.buildConnectResult(serverId),
+						error: existing.message,
+						lastError: existing,
+					},
+					lastError: existing,
+				}
+			}
+			if (result.state === 'authenticating') {
+				this.lastDiscoverErrors.delete(serverId)
+				if (connection) connection.connectionError = null
+				return {
+					result: {
+						...result,
+						error: null,
+						lastError: null,
+					},
+					lastError: null,
+				}
+			}
+			if (existing) {
 				if (connection) connection.connectionError = existing.message
 				return {
 					result: {
@@ -1045,11 +1125,11 @@ class McpClientHubBase extends DurableObject<Env> {
 			}
 		}
 		this.clearSessionBeforeConnect(serverId)
-		const result = await this.manager.connectToServer(serverId)
+		const result = await this.connectToServerSerialized(serverId)
 		if (result.state === 'connected') {
 			return (await this.runDiscoverIfConnected(serverId)).result
 		}
-		return this.buildConnectResult(serverId)
+		return await this.finishConnectResult(serverId)
 	}
 
 	private async restoreAndWaitForServers() {
@@ -1072,6 +1152,7 @@ class McpClientHubBase extends DurableObject<Env> {
 				serverId: row.id,
 				serverName: row.name,
 			})
+			await this.finishConnectResult(row.id)
 		}
 		return this.listServerCards()
 	}
@@ -1090,6 +1171,9 @@ class McpClientHubBase extends DurableObject<Env> {
 	 */
 	async peekServers(): Promise<Pick<McpClientHubSnapshot, 'servers'>> {
 		await this.restoreAndWaitForServers()
+		for (const row of this.manager.listServers()) {
+			await this.finishConnectResult(row.id)
+		}
 		return {
 			servers: this.listServerCards(),
 		}
@@ -1166,14 +1250,15 @@ class McpClientHubBase extends DurableObject<Env> {
 	}
 
 	private async lightweightReconnectServer(serverId: string) {
+		const before = await this.readTokenPresence(serverId)
 		this.clearSessionBeforeConnect(serverId)
-		const connected = await this.manager.connectToServer(serverId)
+		const connected = await this.connectToServerSerialized(serverId)
 		if (connected.state === 'connected') {
 			await this.manager.discoverIfConnected(serverId, {
 				timeoutMs: mcpLightweightReconnectDiscoverTimeoutMs,
 			})
 		}
-		return this.buildConnectResult(serverId)
+		return await this.finishConnectResult(serverId, before)
 	}
 
 	private async recoverUnavailableServer(serverId: string) {
@@ -1234,6 +1319,141 @@ class McpClientHubBase extends DurableObject<Env> {
 					}
 				: undefined,
 		)
+	}
+
+	private async connectToServerSerialized(serverId: string) {
+		const previous = this.connectLocks.get(serverId) ?? Promise.resolve()
+		let release = () => {}
+		const current = new Promise<void>((resolve) => {
+			release = resolve
+		})
+		this.connectLocks.set(serverId, current)
+		await previous.catch(() => {})
+		try {
+			return await this.manager.connectToServer(serverId)
+		} finally {
+			release()
+			if (this.connectLocks.get(serverId) === current) {
+				this.connectLocks.delete(serverId)
+			}
+		}
+	}
+
+	private async connectUsingStoredOAuthTokens(serverId: string) {
+		const before = await this.readTokenPresence(serverId)
+		this.clearSessionBeforeConnect(serverId)
+		const connected = await this.connectToServerSerialized(serverId)
+		if (connected.state === 'connected') {
+			return (await this.runDiscoverIfConnected(serverId)).result
+		}
+		return await this.finishConnectResult(serverId, before)
+	}
+
+	private async finishConnectResult(
+		serverId: string,
+		beforeTokens?: McpOAuthTokenPresence,
+	) {
+		await this.stampTokenRecoveryIfAuthenticating(serverId, beforeTokens)
+		return this.finalizeConnectResult(serverId)
+	}
+
+	private async readTokenPresence(
+		serverId: string,
+	): Promise<McpOAuthTokenPresence> {
+		const authProvider =
+			this.manager.mcpConnections[serverId]?.options.transport.authProvider
+		const tokensFn = (
+			authProvider as { tokens?: () => Promise<unknown> } | undefined
+		)?.tokens
+		let presence: McpOAuthTokenPresence = {
+			hasAccessToken: false,
+			hasRefreshToken: false,
+		}
+		if (typeof tokensFn === 'function') {
+			try {
+				presence = readMcpOAuthTokenPresence(await tokensFn.call(authProvider))
+			} catch {
+				presence = { hasAccessToken: false, hasRefreshToken: false }
+			}
+		}
+		this.tokenPresence.set(serverId, presence)
+		return presence
+	}
+
+	private async hydrateTokenRecoveryErrors() {
+		const entries = await this.ctx.storage.list({
+			prefix: mcpOAuthTokenRecoveryStoragePrefix,
+		})
+		for (const [key, value] of entries) {
+			const serverId = key.slice(mcpOAuthTokenRecoveryStoragePrefix.length)
+			const lastError =
+				typeof value === 'string'
+					? parseStoredMcpServerLastError(value)
+					: parseStoredMcpServerLastError(JSON.stringify(value))
+			if (!serverId || !lastError) continue
+			this.lastDiscoverErrors.set(serverId, lastError)
+			const connection = this.manager.mcpConnections[serverId]
+			if (connection && !connection.connectionError) {
+				connection.connectionError = lastError.message
+			}
+		}
+	}
+
+	private async persistTokenRecoveryLastError(
+		serverId: string,
+		lastError: McpServerLastError | null,
+	) {
+		const key = mcpOAuthTokenRecoveryStorageKey(serverId)
+		if (!lastError) {
+			await this.ctx.storage.delete(key)
+			return
+		}
+		await this.ctx.storage.put(key, lastError)
+	}
+
+	private async stampTokenRecoveryIfAuthenticating(
+		serverId: string,
+		beforeTokens?: McpOAuthTokenPresence,
+	) {
+		const result = this.buildConnectResult(serverId)
+		if (result.state !== 'authenticating') {
+			if (result.state === 'ready') {
+				await this.persistTokenRecoveryLastError(serverId, null)
+			}
+			await this.readTokenPresence(serverId)
+			return
+		}
+		const after = await this.readTokenPresence(serverId)
+		const before = beforeTokens ?? after
+		const episode = await this.readEpisode(serverId)
+		const existing = this.lastDiscoverErrors.get(serverId) ?? null
+		if (existing && isMcpOAuthTokenRecoveryLastError(existing)) {
+			const connection = this.manager.mcpConnections[serverId]
+			if (connection) connection.connectionError = existing.message
+			return
+		}
+		const shouldStamp = episode.wasReady || shouldAttemptMcpOAuthRefresh(before)
+		if (!shouldStamp) return
+		const row = this.manager
+			.listServers()
+			.find((server) => server.id === serverId)
+		const lastError = buildMcpOAuthTokenRecoveryLastError({
+			authUrl: result.authUrl,
+			mcpEndpoint: row?.server_url ?? null,
+			hadRefreshToken: before.hasRefreshToken,
+			stillHasRefreshToken: after.hasRefreshToken,
+		})
+		const connection = this.manager.mcpConnections[serverId]
+		if (connection) connection.connectionError = lastError.message
+		this.lastDiscoverErrors.set(serverId, lastError)
+		await this.persistTokenRecoveryLastError(serverId, lastError)
+		console.warn('mcp oauth token recovery parked authenticating', {
+			attemptId: lastError.attemptId,
+			serverId,
+			hadRefreshToken: before.hasRefreshToken,
+			stillHasRefreshToken: after.hasRefreshToken,
+			mcpEndpoint: lastError.mcpEndpoint,
+		})
 	}
 
 	/** Close all connections and wipe stored servers, tokens, and OAuth state. */

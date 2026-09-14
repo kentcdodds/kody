@@ -367,12 +367,24 @@ function parseStoredPhase(value: unknown): McpOAuthSettlePhase | null {
 	return null
 }
 
+function isStoredTokenRecoveryLead(error: string) {
+	const lower = error.toLowerCase()
+	return (
+		lower.includes('could not be refreshed') ||
+		lower.includes('could not keep this mcp server ready') ||
+		lower.includes('has no refresh token to renew')
+	)
+}
+
 function describeIncompleteMcpOAuthLead(input: {
 	state: McpServerConnectionState
 	authUrl: string | null
 	error: string | null
 	phase: McpOAuthSettlePhase | null
 }): string {
+	if (input.error && isStoredTokenRecoveryLead(input.error)) {
+		return input.error
+	}
 	if (input.error) {
 		return `Authorization completed at the identity provider, but ${decapitalizeLead(input.error)}`
 	}

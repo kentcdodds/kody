@@ -29,6 +29,11 @@ type FakeConnection = {
 				clientId?: string
 				authUrl?: string
 				redirectUrl: string
+				storedTokens?: {
+					access_token?: string
+					refresh_token?: string
+				} | null
+				tokens?: () => Promise<unknown>
 			}
 		}
 	}
@@ -212,6 +217,7 @@ vi.mock('agents/mcp/client', () => ({
 				connection.connectionError = 'upstream closed'
 				return { state: 'disconnected' }
 			}
+			if (provider.storedTokens) provider.storedTokens = null
 			provider.clientId ??= `client-${this.connectCount}`
 			provider.authUrl = `https://auth.example/authorize?state=fresh-${this.connectCount}.${serverId}&redirect_uri=${encodeURIComponent(provider.redirectUrl)}`
 			connection.connectionState = 'authenticating'
@@ -307,6 +313,13 @@ function seedServer(input: {
 		clientId: input.clientId,
 		authUrl: input.authUrl,
 		redirectUrl: input.callbackUrl,
+		storedTokens: null as {
+			access_token?: string
+			refresh_token?: string
+		} | null,
+		async tokens() {
+			return this.storedTokens ?? undefined
+		},
 	}
 	input.manager.rows = [
 		{
@@ -643,16 +656,177 @@ test('snapshot retries a previously ready server before emitting disconnect', as
 	}
 })
 
-test('refreshServer returns the recovered ready connection after a lightweight retry', async () => {
+test('reconnect tries stored refresh before wiping tokens and stamps lastError when that parks authenticating', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { state, values } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	const { callbackUrl, connection } = await seedReadyHomeServer({
+		hub,
+		manager,
+	})
+	connection.options.transport.authProvider.storedTokens = {
+		access_token: 'expired-at',
+		refresh_token: 'rotating-rt',
+	}
+	const tokenKey = '/Kody/server-1/client-1/token'
+	values.set(tokenKey, {
+		access_token: 'expired-at',
+		refresh_token: 'rotating-rt',
+	})
+	manager.connectBehavior = 'ready'
+	const refreshed = await hub.reconnectServer({
+		serverId: 'server-1',
+		callbackUrl,
+	})
+	expect(refreshed.state).toBe('ready')
+	expect(refreshed.lastError ?? null).toBeNull()
+	expect(refreshed.hasRefreshToken).toBe(true)
+	expect(values.get(tokenKey)).toEqual({
+		access_token: 'expired-at',
+		refresh_token: 'rotating-rt',
+	})
+	expect(manager.registerCount).toBe(0)
+
+	manager.connectBehavior = 'oauth'
+	connection.options.transport.authProvider.storedTokens = {
+		refresh_token: 'rotating-rt',
+	}
+	const parked = await hub.reconnectServer({
+		serverId: 'server-1',
+		callbackUrl,
+	})
+	expect(parked.state).toBe('authenticating')
+	expect(parked.authUrl).toBeTruthy()
+	expect(parked.error).toContain('could not be refreshed')
+	expect(parked.lastError?.phase).toBe('token exchange')
+	expect(parked.lastError?.message).not.toContain('Authorization completed')
+	expect(parked.hasRefreshToken).toBe(false)
+	expect(values.get(tokenKey)).toEqual({
+		access_token: 'expired-at',
+		refresh_token: 'rotating-rt',
+	})
+	expect(values.get('mcp-oauth-token-recovery/server-1')).toMatchObject({
+		phase: 'token exchange',
+	})
+	expect(manager.registerCount).toBe(0)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'mcp oauth token recovery parked authenticating',
+		expect.objectContaining({
+			serverId: 'server-1',
+			hadRefreshToken: true,
+			stillHasRefreshToken: false,
+		}),
+	)
+})
+
+test('snapshot after a prior ready connection parks authenticating with a durable token-recovery lastError', async () => {
+	consoleWarn.mockImplementation(() => {})
 	const { state } = createDurableObjectState()
 	const hub = new McpClientHub(state, {} as Env)
 	const manager = mockModule.manager
 	if (!manager) throw new Error('Fake manager was not constructed.')
 	const { connection } = await seedReadyHomeServer({ hub, manager })
+	connection.connectionState = 'authenticating'
+	connection.connectionError = null
+	connection.options.transport.authProvider.storedTokens = {
+		access_token: 'stale-at',
+	}
+	manager.rows[0]!.auth_url =
+		'https://auth.example/authorize?state=fresh.server-1'
+	const snapshot = await hub.getSnapshot()
+	const card = snapshot.servers[0]
+	expect(card?.state).toBe('authenticating')
+	expect(card?.error).toContain('has no refresh token to renew')
+	expect(card?.lastError?.phase).toBe('token exchange')
+	expect(card?.hasRefreshToken).toBe(false)
+	expect(card?.error).not.toContain('Authorization completed')
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'mcp oauth token recovery parked authenticating',
+		expect.objectContaining({
+			serverId: 'server-1',
+			hadRefreshToken: false,
+		}),
+	)
+})
+
+test('authenticating park drops a leftover incomplete-discover lastError', async () => {
+	const { state } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	const callbackUrl = 'https://kody.codes/account/mcp-servers/oauth/callback'
+	seedServer({
+		manager,
+		callbackUrl,
+		clientId: 'client-1',
+		authUrl: 'https://auth.example/authorize?state=ok.server-1',
+	})
+	const connection = manager.mcpConnections['server-1']
+	if (!connection) throw new Error('Fake connection was not seeded.')
+	connection.connectionState = 'discovering'
+	connection.connectionError = "tool discovery didn't finish"
+	const hung = await hub.getSnapshot()
+	expect(hung.servers[0]?.lastError?.phase).toBe('tools/list')
+	expect(hung.servers[0]?.error).toContain("tool discovery didn't finish")
+
+	connection.connectionState = 'authenticating'
+	const parked = await hub.getSnapshot()
+	expect(parked.servers[0]?.state).toBe('authenticating')
+	expect(parked.servers[0]?.lastError ?? null).toBeNull()
+	expect(parked.servers[0]?.error ?? null).toBeNull()
+	expect(connection.connectionError).toBeNull()
+	expect(parked.servers[0]?.error ?? '').not.toContain(
+		'Authorization completed',
+	)
+})
+
+test('refreshServer keeps a token-recovery lastError when the server stays authenticating', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { state } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	const { callbackUrl, connection } = await seedReadyHomeServer({
+		hub,
+		manager,
+	})
+	connection.options.transport.authProvider.storedTokens = {
+		refresh_token: 'rotating-rt',
+	}
+	manager.connectBehavior = 'oauth'
+	const parked = await hub.reconnectServer({
+		serverId: 'server-1',
+		callbackUrl,
+	})
+	expect(parked.lastError?.phase).toBe('token exchange')
+
+	const refreshed = await hub.refreshServer({ serverId: 'server-1' })
+	expect(refreshed.state).toBe('authenticating')
+	expect(refreshed.lastError?.phase).toBe('token exchange')
+	expect(refreshed.error).toContain('could not be refreshed')
+	expect(refreshed.error).not.toContain('Authorization completed')
+})
+
+test('refreshServer returns the recovered ready connection after a lightweight retry', async () => {
+	const { state, values } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	const { connection } = await seedReadyHomeServer({ hub, manager })
+	values.set('mcp-oauth-token-recovery/server-1', {
+		message: 'Stored OAuth tokens could not be refreshed',
+		phase: 'token exchange',
+		attemptId: 'stale-rt',
+		at: '2026-09-14T00:00:00.000Z',
+	})
 	connection.connectionState = 'disconnected'
 	manager.connectBehavior = 'ready'
 	const result = await hub.refreshServer({ serverId: 'server-1' })
 	expect(result.state).toBe('ready')
+	expect(result.lastError ?? null).toBeNull()
+	expect(values.has('mcp-oauth-token-recovery/server-1')).toBe(false)
 })
 
 test('reconnectServer returns the recovered ready connection after a lightweight retry', async () => {
@@ -1082,6 +1256,7 @@ test('replacing a server forgets the catalog-timeout legacy mark and probes auto
 		callbackUrl: 'https://kody.codes/account/mcp-servers/oauth/callback',
 	})
 	expect(replaced.state).toBe('ready')
+	expect(replaced.hasRefreshToken).toBe(false)
 	expect(manager.registerCount).toBe(1)
 	expect(manager.discoverCount).toBe(1)
 	expect(manager.mcpConnections['server-1']?.options.client).toEqual({

@@ -148,4 +148,22 @@ test('settle error helpers sanitize secrets and keep observable phases', () => {
 	expect(wrapped.match(/\bphase\s/g)?.length).toBe(1)
 	expect(wrapped.match(/\bid\s/g)?.length).toBe(1)
 	expect(wrapped).toContain('id 11111111-1111-4111-8111-111111111111')
+	expect(
+		formatMcpOAuthSettleErrorMessage({
+			state: 'authenticating',
+			authUrl: 'https://auth.example/authorize',
+			error: 'Stored OAuth tokens could not be refreshed',
+			phase: 'token exchange',
+			attemptId: '33333333-3333-4333-8333-333333333333',
+		}),
+	).toContain('Stored OAuth tokens could not be refreshed')
+	expect(
+		formatMcpOAuthSettleErrorMessage({
+			state: 'authenticating',
+			authUrl: 'https://auth.example/authorize',
+			error: 'Stored OAuth tokens could not be refreshed',
+			phase: 'token exchange',
+			attemptId: '33333333-3333-4333-8333-333333333333',
+		}),
+	).not.toContain('Authorization completed')
 })

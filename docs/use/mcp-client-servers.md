@@ -36,7 +36,12 @@ This is the inverse of [connecting your agent to Kody](./connect-your-agent.md)
 
 If a server is authenticating, failed, or disconnected, [Waiting](./waiting.md)
 lists it and links to `/account/mcp-servers/:id`. `waitingSummary` returns the
-same items.
+same items. When a server that was already connected later asks for
+authorization again, Status and `mcpServerList.error` include the sanitized
+token-refresh reason (for example a rejected or already-used refresh token).
+`mcpServerList` also reports `hasRefreshToken` so agents can tell whether Kody
+still has a refresh token without reading the secret. `mcpServerReconnect` tries
+that refresh before minting a new authorization link.
 
 ## Lock a server to a package
 

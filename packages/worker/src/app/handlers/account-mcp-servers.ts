@@ -195,7 +195,7 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 					id: serverId,
 					lastError: null,
 				}).catch(() => {})
-			} else if (serverId && lastError && !authorizationNeeded) {
+			} else if (serverId && lastError) {
 				await setMcpServerLastError({
 					env,
 					userId: user.mcpUser.userId,

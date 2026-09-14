@@ -5,7 +5,10 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { createMcpClientHubClient } from '#worker/mcp-client/hub-client.ts'
 import { enrichMcpOAuthProviderError } from '#worker/mcp-client/oauth-provider-error.ts'
-import { resolveMcpServerOAuthClientUrls } from '#worker/mcp-client/settings-service.ts'
+import {
+	persistMcpServerLastErrorIfChanged,
+	resolveMcpServerOAuthClientUrls,
+} from '#worker/mcp-client/settings-service.ts'
 import { resolveMcpServerSetting } from './shared.ts'
 
 const outputSchema = z.object({
@@ -25,7 +28,7 @@ export const mcpServerReconnectCapability = defineDomainCapability(
 	{
 		name: 'mcpServerReconnect',
 		description:
-			'Retry connecting to a saved MCP server that is failed or disconnected. Returns the resulting connection state; an authUrl means the user must re-authorize via OAuth.',
+			'Retry connecting to a saved MCP server that is failed or disconnected. Tries stored OAuth refresh first; an authUrl means the user must re-authorize. Surfaces a durable lastError when refresh failed.',
 		keywords: ['mcp', 'server', 'reconnect', 'retry', 'connection', 'client'],
 		readOnly: false,
 		idempotent: true,
@@ -53,6 +56,13 @@ export const mcpServerReconnectCapability = defineDomainCapability(
 			const result = await hub.reconnectServer({
 				serverId: setting.id,
 				callbackUrl: oauth.callbackUrl,
+			})
+			await persistMcpServerLastErrorIfChanged({
+				env: ctx.env,
+				userId: user.userId,
+				id: setting.id,
+				state: result.state,
+				lastError: result.lastError ?? null,
 			})
 			return {
 				id: setting.id,

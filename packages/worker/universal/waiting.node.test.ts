@@ -57,7 +57,8 @@ test('waiting items are a current-state you-queue and skip noise', () => {
 				id: 'srv-auth',
 				name: 'Notion',
 				state: 'authenticating',
-				error: null,
+				error:
+					'Stored OAuth tokens could not be refreshed. Re-authorize from /account/mcp-servers.',
 			},
 			{
 				id: 'srv-down',
@@ -110,6 +111,7 @@ test('waiting items are a current-state you-queue and skip noise', () => {
 	const notion = items.find((item) => item.id === 'mcp-server:srv-auth')
 	expect(notion).toMatchObject({
 		title: 'Notion needs authorization',
+		why: 'Stored OAuth tokens could not be refreshed. Re-authorize from /account/mcp-servers.',
 		doLabel: 'Complete authorization',
 		href: '/account/mcp-servers/srv-auth',
 		severity: 'block',
