@@ -100,6 +100,6 @@ stub export). Preview applies `v1` `new_sqlite_classes` then `v2`
 walks the local sqlite-class map on real `wrangler deploy` as well as
 `--dry-run`, and that map ignores `transferred_classes`. `wrangler-env.ts`
 rewrites the generated runtime deploy config with `elideDeletedMigrationClasses`
-so the already-applied create-then-delete pair is omitted and tag `v2` stays for
-last-applied matching. Do not convert production transfers to
-`new_sqlite_classes` on a real deploy.
+for that already-applied class only so tag `v2` stays for last-applied matching.
+Do not convert production transfers to `new_sqlite_classes` on a real deploy,
+and do not strip a later live-class `deleted_classes` tag.

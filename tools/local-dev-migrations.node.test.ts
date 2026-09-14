@@ -108,6 +108,55 @@ test('elideDeletedMigrationClasses keeps transfer history and empty last-applied
 	).toBe('v2')
 })
 
+test('elideDeletedMigrationClasses keeps a later live-class delete', () => {
+	const rewritten = elideDeletedMigrationClasses([
+		{
+			tag: 'v1',
+			transferred_classes: [
+				{
+					from: 'StorageRunner',
+					from_script: 'kody',
+					to: 'StorageRunner',
+				},
+				{
+					from: 'PackageServiceInstance',
+					from_script: 'kody',
+					to: 'PackageServiceInstance',
+				},
+			],
+		},
+		{
+			tag: 'v2',
+			deleted_classes: ['PackageServiceInstance'],
+		},
+		{
+			tag: 'v3',
+			deleted_classes: ['StorageRunner'],
+		},
+	])
+
+	expect(rewritten).toEqual([
+		{
+			tag: 'v1',
+			transferred_classes: [
+				{
+					from: 'StorageRunner',
+					from_script: 'kody',
+					to: 'StorageRunner',
+				},
+			],
+		},
+		{
+			tag: 'v2',
+		},
+		{
+			tag: 'v3',
+			deleted_classes: ['StorageRunner'],
+		},
+	])
+	expect(lastAppliedTag(rewritten)).toBe('v3')
+})
+
 test('writeRuntimeDryRunConfig localizes migrations without local-dev vars', async () => {
 	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-runtime-dry-run-'))
 	const sourcePath = path.join(tempDir, 'wrangler.jsonc')

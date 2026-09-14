@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { parseJsonc } from './ci/resource-utils.ts'
 import {
+	alreadyAppliedRuntimeDeletedClasses,
 	elideDeletedMigrationClasses,
 	localizeMigrations,
 } from './local-dev-migrations.ts'
@@ -195,11 +196,11 @@ export async function writeRuntimeStartupCheckConfig({
 
 /**
  * Wrangler 4.131+ also walks the local sqlite-class map on a real
- * `wrangler deploy`, not only `--dry-run`. Elide the already-applied
- * `PackageServiceInstance` transfer-then-delete pair so that check can run,
- * but keep every migration tag (including empty `v2`) and leave remaining
- * `transferred_classes` intact so Cloudflare last-tag matching still works
- * and a fresh runtime worker would still transfer live classes.
+ * `wrangler deploy`, not only `--dry-run`. Elide only the already-applied
+ * `PackageServiceInstance` transfer-then-delete pair so that check can run.
+ * Keep every migration tag (including empty `v2`) and leave remaining
+ * `transferred_classes` and any later live-class deletes intact so Cloudflare
+ * still applies pending `deleted_classes` tags.
  */
 export async function writeRuntimeRemoteDeployConfig({
 	runtimeConfigPath,
@@ -211,7 +212,12 @@ export async function writeRuntimeRemoteDeployConfig({
 	const sourceText = await readFile(runtimeConfigPath, 'utf8')
 	const config = parseJsonc<JsonRecord>(sourceText)
 	requireRuntimeEnv(config, runtimeConfigPath, envName)
-	rewriteRuntimeConfigMigrations(config, envName, elideDeletedMigrationClasses)
+	rewriteRuntimeConfigMigrations(config, envName, (migrations) =>
+		elideDeletedMigrationClasses(
+			migrations,
+			alreadyAppliedRuntimeDeletedClasses,
+		),
+	)
 
 	const outputPath = path.join(
 		path.dirname(runtimeConfigPath),

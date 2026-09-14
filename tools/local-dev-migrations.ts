@@ -1,21 +1,35 @@
 type JsonRecord = Record<string, unknown>
 
 /**
- * Strip classes that the same chain later deletes, without converting
+ * Already-applied `kody-runtime` deletes. Production is at tag `v2`; only
+ * these names may be stripped from a real-deploy rewrite. A later live-class
+ * `deleted_classes` tag must stay so Cloudflare still applies it.
+ */
+export const alreadyAppliedRuntimeDeletedClasses = [
+	'PackageServiceInstance',
+] as const
+
+/**
+ * Strip an allowlisted set of already-applied deletes, without converting
  * transfers or dropping tags.
  *
  * Wrangler 4.131+ walks the local sqlite-class map on real `wrangler deploy`,
  * not only `--dry-run`. That map ignores `transferred_classes`, so a
  * transfer-then-delete of `PackageServiceInstance` throws before upload.
- * Production `kody-runtime` is already at tag `v2`; Cloudflare only applies
- * steps after the last published tag. Keep every tag (including an empty
- * `v2`) so last-tag matching still works, and drop the deleted class from
- * both the transfer and the delete so the local map can run.
+ * Keep every tag (including an empty `v2`) so last-tag matching still works.
+ * Pass only classes whose delete has already landed; stripping a pending
+ * delete would advance the last-applied tag and leave the class in place.
  */
-export function elideDeletedMigrationClasses(migrations: unknown): unknown {
+export function elideDeletedMigrationClasses(
+	migrations: unknown,
+	classes: ReadonlyArray<string> = alreadyAppliedRuntimeDeletedClasses,
+): unknown {
 	if (!Array.isArray(migrations)) return migrations
 
-	const deleted = collectDeletedClassNames(migrations)
+	const allow = new Set(classes)
+	const deleted = new Set(
+		[...collectDeletedClassNames(migrations)].filter((name) => allow.has(name)),
+	)
 	return migrations.map((migration) => {
 		if (!migration || typeof migration !== 'object') return migration
 		const record = { ...(migration as JsonRecord) }
