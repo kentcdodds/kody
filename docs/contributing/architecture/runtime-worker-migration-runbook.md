@@ -97,3 +97,10 @@ together so they elide.
 `PackageServiceInstance` is gone from production `kody-runtime` (tag `v2`; no
 stub export). Preview applies `v1` `new_sqlite_classes` then `v2`
 `deleted_classes` on first deploy so create and delete elide.
+
+Wrangler 4.131+ runs `getDurableObjectClassNameToUseSQLiteMap` on real
+`wrangler deploy`, not only dry-run, and that map ignores `transferred_classes`.
+The production `v1` tag therefore also lists
+`new_sqlite_classes: ["PackageServiceInstance"]` so the local map can apply
+`v2`. Do not treat that annotation as a new create: remote `kody-runtime` is
+already at tag `v2`, so wrangler does not re-upload `v1`.

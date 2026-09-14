@@ -45,11 +45,11 @@ test('localizeMigrations turns transfers into sqlite creates and elides a later 
 	).toBe(true)
 })
 
-test('the committed runtime production chain fails wrangler’s local sqlite map', async () => {
+test('the committed runtime production chain passes wrangler’s local sqlite map', async () => {
 	const source = parseJsonc<{ migrations?: unknown }>(
 		await readFile('packages/runtime-worker/wrangler.jsonc', 'utf8'),
 	)
-	expect(sqliteMapAccepts(source.migrations)).toBe(false)
+	expect(sqliteMapAccepts(source.migrations)).toBe(true)
 	expect(sqliteMapAccepts(localizeMigrations(source.migrations))).toBe(true)
 })
 
