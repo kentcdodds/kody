@@ -54,6 +54,7 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 					listing,
 				}),
 				shareGrant: page.shareGrant,
+				hasApp: page.ownerPackage?.hasApp === true,
 			})
 		}
 
@@ -81,6 +82,7 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 				viewerIsOwner: detail.viewerIsOwner,
 				listing: detail.listing,
 			}),
+			hasApp: detail.ownerPackage?.hasApp === true,
 		})
 	},
 })

@@ -4,6 +4,7 @@ import {
 	renderCommunityDetailContentHtml,
 } from '#app/community-detail-content.tsx'
 import { type PublicCommunityListing } from '#universal/community-public-types.ts'
+import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
 
 const sampleListing = {
 	id: 'listing-1',
@@ -260,6 +261,65 @@ test('package chrome is shared for public listings and private owner packages', 
 	expect(privateHtml).toContain('Local notes.')
 })
 
+test('open package app link shows for owner and accepted share, and hides without an app or access', async () => {
+	const ownerHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
+		listing: null,
+		isPrivate: true,
+		viewerIsOwner: true,
+		loggedIn: true,
+		hasApp: true,
+	})
+	expect(ownerHtml).toContain('data-testid="open-package-app"')
+	expect(ownerHtml).toContain('href="/@kentcdodds/packages/github-triage"')
+	expect(ownerHtml).toContain('data-rmx-document')
+	expect(ownerHtml).toContain('data-icon="share"')
+	expect(ownerHtml).toContain('Open Package App')
+
+	const sharedHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
+		listing: null,
+		isPrivate: true,
+		viewerIsOwner: false,
+		loggedIn: true,
+		hasApp: true,
+		shareGrant: shareGrantFixture('accepted'),
+	})
+	expect(sharedHtml).toContain('data-testid="open-package-app"')
+	expect(sharedHtml).toContain('href="/@kentcdodds/packages/github-triage"')
+
+	const noAppHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
+		listing: null,
+		isPrivate: true,
+		viewerIsOwner: true,
+		loggedIn: true,
+		hasApp: false,
+	})
+	expect(noAppHtml).not.toContain('data-testid="open-package-app"')
+	expect(noAppHtml).toContain('data-testid="community-browse-files"')
+
+	const noAccessHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
+		loggedIn: true,
+		hasApp: true,
+	})
+	expect(noAccessHtml).not.toContain('data-testid="open-package-app"')
+
+	const pendingHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
+		listing: null,
+		isPrivate: true,
+		loggedIn: true,
+		hasApp: true,
+		shareGrant: shareGrantFixture('pending'),
+	})
+	expect(pendingHtml).not.toContain('data-testid="open-package-app"')
+	expect(pendingHtml).toContain(
+		'data-testid="package-share-accept-frame-banner"',
+	)
+})
+
 test('buildSourceAheadPublishHref names the HEAD commit when present', () => {
 	expect(
 		buildSourceAheadPublishHref({
@@ -278,3 +338,26 @@ test('buildSourceAheadPublishHref names the HEAD commit when present', () => {
 		}),
 	).toBe('/@kentcdodds/github-triage/approve-publish')
 })
+
+function shareGrantFixture(
+	status: 'pending' | 'accepted',
+): PackageShareGrantLoaderView {
+	return {
+		id: 'grant-1',
+		packageId: 'pkg-1',
+		status,
+		role: 'use',
+		trustLevel: 'pin',
+		pinAhead: false,
+		approveChangesPath: null,
+		packagePath: '/@kentcdodds/github-triage',
+		packageName: '@kentcdodds/github-triage',
+		packageKodyId: 'github-triage',
+		ownerUsername: 'kentcdodds',
+		inviteeEmail: 'jane@example.com',
+		inviteeUsername: 'jane',
+		granteeUsername: 'jane',
+		acceptedPublishedCommit: null,
+		publishedCommit: null,
+	}
+}
