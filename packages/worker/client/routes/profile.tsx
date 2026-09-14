@@ -25,6 +25,7 @@ import { on } from '#client/event-mixin.ts'
 import { readProfilePackageFiltersFromHref } from '#universal/profile-search.ts'
 import { ProfileContent } from '#universal/profile-content.tsx'
 import { renderProfileIdentity } from '#client/routes/profile-identity.tsx'
+import { profileListForUsername } from './profile-list-for-username.ts'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	fieldCss,
@@ -80,6 +81,7 @@ export function ProfileRoute(handle: Handle) {
 	let list: ProfileListLoaderData | null = null
 	let shellStatus: 'loading' | 'ready' | 'error' = 'loading'
 	let shellLoadedForUsername: string | null = null
+	let listLoadedForUsername: string | null = null
 	let shellRequestedForUsername: string | null = null
 	let shellLoadRequestId = 0
 
@@ -90,6 +92,8 @@ export function ProfileRoute(handle: Handle) {
 		const requestId = ++shellLoadRequestId
 		if (shellLoadedForUsername !== username) {
 			shellStatus = 'loading'
+			list = null
+			listLoadedForUsername = null
 			handle.update()
 		}
 
@@ -108,6 +112,7 @@ export function ProfileRoute(handle: Handle) {
 				shell = { ok: false, unavailable: true }
 				list = null
 				shellLoadedForUsername = username
+				listLoadedForUsername = null
 				shellStatus = 'ready'
 				handle.update()
 				return
@@ -119,6 +124,7 @@ export function ProfileRoute(handle: Handle) {
 			shell = toProfileShellLoaderData(payload)
 			list = toProfileListLoaderData(payload)
 			shellLoadedForUsername = username
+			listLoadedForUsername = username
 			shellStatus = 'ready'
 			handle.update()
 		} catch {
@@ -161,6 +167,7 @@ export function ProfileRoute(handle: Handle) {
 				shellLoadedForUsername = username
 				shellStatus = 'ready'
 				list = null
+				listLoadedForUsername = null
 			}
 		}
 		const routeList = tryConsumeRouteLoaderData(
@@ -170,6 +177,7 @@ export function ProfileRoute(handle: Handle) {
 		)
 		if (routeList) {
 			list = routeList
+			listLoadedForUsername = username
 		}
 
 		const needsStaleRefresh =
@@ -201,6 +209,11 @@ export function ProfileRoute(handle: Handle) {
 			allowOwnerFilters: readyShell?.isSelf === true,
 		})
 		const searchQuery = filters.query
+		const visibleList = profileListForUsername(
+			list,
+			listLoadedForUsername,
+			username,
+		)
 
 		if (showUnavailable) {
 			return (
@@ -282,11 +295,11 @@ export function ProfileRoute(handle: Handle) {
 							</button>
 						</form>
 
-						{list ? (
+						{visibleList ? (
 							<ProfileContent
-								profile={list.profile}
-								packages={list.packages}
-								activity={list.activity}
+								profile={visibleList.profile}
+								packages={visibleList.packages}
+								activity={visibleList.activity}
 								query={searchQuery || null}
 								visibility={filters.visibility}
 								listing={filters.listing}

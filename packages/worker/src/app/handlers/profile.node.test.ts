@@ -130,11 +130,17 @@ test('profile API and page respect visibility and expose packages/activity', asy
 	expect(publicBody.activity).toHaveLength(1)
 	expect(publicBody.isSelf).toBe(false)
 	expect(publicBody.loggedIn).toBe(false)
-	expect(publicBody.visibility).toBe('all')
-	expect(publicBody.listing).toBe('all')
-	expect(publicBody.hidden).toBe('all')
-	expect(publicBody.app).toBe('all')
-	expect(publicBody.sort).toBe('updated')
+	expect(Object.keys(publicBody).sort()).toEqual(
+		[
+			'activity',
+			'isSelf',
+			'loggedIn',
+			'ok',
+			'packages',
+			'profile',
+			'query',
+		].sort(),
+	)
 	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
 		expect.objectContaining({
 			ownerStableUserId: 'stable-alice',
@@ -155,9 +161,17 @@ test('profile API and page respect visibility and expose packages/activity', asy
 	} as never)
 	const guestFilterBody = await guestFilterResponse.json()
 	expect(guestFilterResponse.status).toBe(200)
-	expect(guestFilterBody.listing).toBe('published')
-	expect(guestFilterBody.app).toBe('all')
-	expect(guestFilterBody.sort).toBe('updated')
+	expect(Object.keys(guestFilterBody).sort()).toEqual(
+		[
+			'activity',
+			'isSelf',
+			'loggedIn',
+			'ok',
+			'packages',
+			'profile',
+			'query',
+		].sort(),
+	)
 	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
 		expect.objectContaining({
 			includePrivate: false,
@@ -212,11 +226,17 @@ test('profile API and page respect visibility and expose packages/activity', asy
 	expect(ownBody.ok).toBe(true)
 	expect(ownBody.isSelf).toBe(true)
 	expect(ownBody.profile.visibility).toBe('private')
-	expect(ownBody.visibility).toBe('private')
-	expect(ownBody.listing).toBe('ahead')
-	expect(ownBody.hidden).toBe('yes')
-	expect(ownBody.app).toBe('all')
-	expect(ownBody.sort).toBe('updated')
+	expect(Object.keys(ownBody).sort()).toEqual(
+		[
+			'activity',
+			'isSelf',
+			'loggedIn',
+			'ok',
+			'packages',
+			'profile',
+			'query',
+		].sort(),
+	)
 	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
 		expect.objectContaining({
 			ownerStableUserId: 'stable-alice',
