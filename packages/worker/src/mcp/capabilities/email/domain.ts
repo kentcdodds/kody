@@ -9,6 +9,10 @@ import { emailMessageGetCapability } from './email-message-get.ts'
 import { emailMessageListCapability } from './email-message-list.ts'
 import { emailMessageSearchCapability } from './email-message-search.ts'
 import { emailReplyCapability } from './email-reply.ts'
+import { emailDestinationAddCapability } from './email-destination-add.ts'
+import { emailDestinationListCapability } from './email-destination-list.ts'
+import { emailDestinationRemoveCapability } from './email-destination-remove.ts'
+import { emailDestinationSetDefaultCapability } from './email-destination-set-default.ts'
 import { emailSendCapability } from './email-send.ts'
 import { emailSenderRuleDeleteCapability } from './email-sender-rule-delete.ts'
 import { emailSenderRuleListCapability } from './email-sender-rule-list.ts'
@@ -17,8 +21,8 @@ import { emailSenderRuleSetCapability } from './email-sender-rule-set.ts'
 export const emailDomain = defineDomain({
 	name: capabilityDomainNames.email,
 	description:
-		'Per-user inbox primitives for store, notify-self, reply, and delete.',
-	keywords: ['email', 'mail', 'inbox', 'routing'],
+		'Per-user inbox primitives for store, verified send destinations, reply, and delete.',
+	keywords: ['email', 'mail', 'inbox', 'routing', 'destination', 'notify'],
 	capabilities: [
 		emailInboxListCapability,
 		emailAttachmentGetCapability,
@@ -31,6 +35,10 @@ export const emailDomain = defineDomain({
 		emailSenderRuleListCapability,
 		emailSenderRuleSetCapability,
 		emailSenderRuleDeleteCapability,
+		emailDestinationListCapability,
+		emailDestinationAddCapability,
+		emailDestinationSetDefaultCapability,
+		emailDestinationRemoveCapability,
 		emailSendCapability,
 		emailReplyCapability,
 	],

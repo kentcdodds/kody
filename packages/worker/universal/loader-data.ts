@@ -30,6 +30,7 @@ import { type ConnectedMcpAgent } from '#universal/connected-mcp-agents.ts'
 import { type ReferralProgramSummary } from '#universal/referral-program.ts'
 import { type SecondAgentStandardGiftState } from '#universal/second-agent-standard-gift.ts'
 import { type OnboardingAgentChooserPick } from '#universal/onboarding-mcp-clients.ts'
+import { type EmailNotificationDestination } from '#universal/email-destinations.ts'
 import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { type IntegrationAuthFailureView } from '#universal/connection-trouble.ts'
 import { type WaitingItem } from '#universal/waiting.ts'
@@ -1029,6 +1030,14 @@ export type AdminPlatformFeedbackLoaderData = {
 	categoryFilter: AdminPlatformFeedbackListItem['category'] | null
 }
 
+export type AccountEmailDestinationsLoaderData = {
+	ok: true
+	destinations: Array<EmailNotificationDestination>
+	additionalLimit: number
+	additionalRemaining: number
+	message?: string
+}
+
 export type AccountFormerEmail = {
 	email: string
 	claimedAt: string
@@ -1267,7 +1276,11 @@ export type PendingVerificationLoaderData = {
 export type EmailVerificationLoaderData =
 	| {
 			ok: true
-			kind: 'email_verify' | 'email_change' | 'email_claim_release'
+			kind:
+				| 'email_verify'
+				| 'email_change'
+				| 'email_claim_release'
+				| 'email_destination'
 			message: string
 			ctaHref?: string
 			ctaLabel?: string
@@ -2085,6 +2098,7 @@ export type AppLoaderData = {
 	adminSystemEmail?: AdminSystemEmailLoaderData
 	accountProfile?: AccountProfileLoaderData
 	accountConnections?: AccountConnectionsLoaderData
+	accountEmailDestinations?: AccountEmailDestinationsLoaderData
 	accountConnectedAgents?: AccountConnectedAgentsLoaderData
 	accountWebhooks?: AccountWebhooksLoaderData
 	onboarding?: OnboardingLoaderData

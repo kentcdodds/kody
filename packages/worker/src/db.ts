@@ -105,6 +105,32 @@ export const userEmailClaimsTable = table({
 	primaryKey: 'id',
 })
 
+export const emailNotificationDestinationsTable = table({
+	name: 'email_notification_destinations',
+	columns: {
+		id: c.text(),
+		user_id: c.integer(),
+		email: c.text(),
+		verified_at: c.text(),
+		is_default: c.integer(),
+		created_at: c.text(),
+	},
+	primaryKey: 'id',
+})
+
+export const pendingEmailDestinationVerificationsTable = table({
+	name: 'pending_email_destination_verifications',
+	columns: {
+		id: c.integer(),
+		user_id: c.integer(),
+		destination_id: c.text(),
+		token_hash: c.text(),
+		expires_at: c.integer(),
+		created_at: c.text(),
+	},
+	primaryKey: 'id',
+})
+
 export const pendingEmailClaimReleasesTable = table({
 	name: 'pending_email_claim_releases',
 	columns: {

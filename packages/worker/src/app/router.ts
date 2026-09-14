@@ -281,8 +281,10 @@ import {
 	createVerifyHandler,
 } from '#app/handlers/verify.ts'
 import { createUnsubscribeTipsHandler } from '#app/handlers/unsubscribe-tips.ts'
+import { createAccountEmailDestinationsHandler } from '#app/handlers/account-email-destinations.ts'
 import { createVerifyEmailChangeHandler } from '#app/handlers/verify-email-change.ts'
 import { createVerifyEmailClaimReleaseHandler } from '#app/handlers/verify-email-claim-release.ts'
+import { createVerifyEmailDestinationHandler } from '#app/handlers/verify-email-destination.ts'
 import { createVerifyEmailHandler } from '#app/handlers/verify-email.ts'
 import {
 	createWebauthnAuthenticationHandler,
@@ -375,6 +377,7 @@ export function createAppRouter(env: Env) {
 			verifyEmail: createVerifyEmailHandler(env),
 			verifyEmailChange: createVerifyEmailChangeHandler(env),
 			verifyEmailClaimRelease: createVerifyEmailClaimReleaseHandler(env),
+			verifyEmailDestination: createVerifyEmailDestinationHandler(env),
 			unsubscribeTips: createUnsubscribeTipsHandler(env),
 			pendingVerification: createPendingVerificationHandler(env),
 			signup: createSignupHandler(env),
@@ -457,6 +460,9 @@ export function createAppRouter(env: Env) {
 			accountSharedApi: createAccountSharedApiHandler(env),
 			accountSharedApiPost: createAccountSharedApiHandler(env),
 			accountEmailChange: createAccountEmailChangeHandler(env),
+			accountEmailDestinationsApi: createAccountEmailDestinationsHandler(env),
+			accountEmailDestinationsApiPost:
+				createAccountEmailDestinationsHandler(env),
 			accountEmailClaimRelease: createAccountEmailClaimReleaseHandler(env),
 			accountPassword: createAccountPasswordHandler(env),
 			accountResendVerification: createAccountResendVerificationHandler(env),

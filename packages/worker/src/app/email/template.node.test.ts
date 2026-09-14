@@ -10,6 +10,7 @@ import {
 	buildUserEntitlementWarningEmail,
 	buildUserErrorRateEmail,
 	buildVerificationEmail,
+	buildEmailDestinationVerificationEmail,
 } from './messages.ts'
 import { renderTransactionalEmail } from './template.ts'
 
@@ -54,6 +55,17 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	})
 	expect(verification.html).toContain(verificationUrl)
 	expect(verification.text).toContain(verificationUrl)
+
+	const destinationUrl =
+		'https://kody.codes/verify-email-destination?token=abc123'
+	const destination = buildEmailDestinationVerificationEmail({
+		appBaseUrl: 'https://kody.codes',
+		destinationEmail: 'phone@example.com',
+		verificationUrl: destinationUrl,
+	})
+	expect(destination.html).toContain(destinationUrl)
+	expect(destination.text).toContain(destinationUrl)
+	expect(destination.html).toContain('phone@example.com')
 
 	const warning = buildUserEntitlementWarningEmail({
 		appBaseUrl: 'https://kody.codes',

@@ -444,7 +444,7 @@ test('sendOutboundEmail rejects non-self recipients under the self policy', asyn
 	expect(nonSelfError).toBeInstanceOf(McpCallerError)
 	expect(nonSelfError).toMatchObject({
 		message: expect.stringContaining(
-			`emailSend only delivers to your own account email (${accountEmail})`,
+			'emailSend only delivers to your verified email destinations',
 		),
 	})
 	// Malformed explicit recipients are rejected instead of silently dropped
@@ -474,6 +474,85 @@ test('sendOutboundEmail rejects non-self recipients under the self policy', asyn
 	})
 	expect(allowed.status).toBe('sent')
 	expect(allowed.message.toAddresses).toEqual([accountEmail])
+})
+
+test('sendOutboundEmail accepts any verified destinations together and rejects unverified or unknown `to` without sending', async () => {
+	silenceIncidentalRuntimeWarnings()
+	await ensureEmailTestSchema(env.APP_DB)
+	const accountEmail = `account-${crypto.randomUUID()}@example.com`
+	const extraEmail = `phone-${crypto.randomUUID()}@example.com`
+	const pendingEmail = `pending-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	await seedVerifiedAccount({ email: accountEmail })
+	const user = await env.APP_DB.prepare(
+		`SELECT id FROM users WHERE stable_user_id = ?`,
+	)
+		.bind(userId)
+		.first<{ id: number }>()
+	if (!user) throw new Error('expected seeded user')
+	await env.APP_DB.prepare(
+		`INSERT INTO email_notification_destinations (id, user_id, email, verified_at, is_default)
+		 VALUES (?, ?, ?, ?, 1), (?, ?, ?, NULL, 0)`,
+	)
+		.bind(
+			crypto.randomUUID(),
+			user.id,
+			extraEmail,
+			new Date().toISOString(),
+			crypto.randomUUID(),
+			user.id,
+			pendingEmail,
+		)
+		.run()
+
+	let providerSend = 0
+	const sendEnv = {
+		...createBindingSendEnv(),
+		EMAIL: {
+			async send() {
+				providerSend += 1
+				return { messageId: `provider-destinations-${providerSend}` }
+			},
+		},
+	}
+
+	const omitted = await sendOutboundEmail({
+		env: sendEnv,
+		userId,
+		accountEmail,
+		recipientPolicy: 'self',
+		subject: 'Default extra',
+		text: 'Body',
+	})
+	expect(omitted.status).toBe('sent')
+	expect(omitted.message.toAddresses).toEqual([extraEmail])
+
+	const both = await sendOutboundEmail({
+		env: sendEnv,
+		userId,
+		accountEmail,
+		recipientPolicy: 'self',
+		to: [accountEmail, extraEmail],
+		subject: 'Both',
+		text: 'Body',
+	})
+	expect(both.status).toBe('sent')
+	expect(both.message.toAddresses).toEqual([accountEmail, extraEmail])
+
+	const unverifiedError = await sendOutboundEmail({
+		env: sendEnv,
+		userId,
+		accountEmail,
+		recipientPolicy: 'self',
+		to: [accountEmail, pendingEmail],
+		subject: 'Blocked',
+		text: 'Body',
+	}).catch((caught: unknown) => caught)
+	expect(unverifiedError).toBeInstanceOf(McpCallerError)
+	expect(unverifiedError).toMatchObject({
+		message: expect.stringContaining(pendingEmail),
+	})
+	expect(providerSend).toBe(2)
 })
 
 test('sendOutboundEmail blocks permanently reserved usernames, sends from an unreserved built-in, and rejects unconfigured platform domains', async () => {

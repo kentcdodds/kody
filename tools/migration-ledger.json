@@ -251,6 +251,10 @@
 		{
 			"filename": "0062-webhook-url-rotation-grace.sql",
 			"sha256": "7b399500a63898a5af7985b1131e6a8e760af77d5f7abdc709ded16402bacbf0"
+		},
+		{
+			"filename": "0063-email-notification-destinations.sql",
+			"sha256": "7f70bb1ff274e15c778da111a026c404291bc93845cb3e4b120a4b5067b02be2"
 		}
 	]
 }

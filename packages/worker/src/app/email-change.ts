@@ -12,6 +12,7 @@ import {
 } from '#worker/identity/email-claims.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import { attachPendingPackageShareInvitesSafely } from '#worker/package-registry/share-grants.ts'
+import { reconcileDestinationsAfterIdentityEmailChange } from '#worker/email/destinations.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 
 const emailChangeTokenBytes = 32
@@ -239,6 +240,11 @@ export async function verifyEmailChangeToken(input: {
 		db: input.db,
 		userId: stableUserId,
 		email: newEmail,
+	})
+	await reconcileDestinationsAfterIdentityEmailChange({
+		db: input.db,
+		userId: record.user_id,
+		newEmail,
 	})
 
 	return {

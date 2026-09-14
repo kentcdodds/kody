@@ -352,9 +352,9 @@ test('authenticated account SSR batches user/role and flag reads into two round 
 		'compute-overage-charging': true,
 		'package-share-grants': false,
 	})
-	// Before: 4 sequential prepares (users, roles, flags, overrides).
-	// After: those same 4 prepares run as two 2-statement batches.
+	// Session batches: users+roles, flags+overrides (two 2-statement batches).
+	// Account SSR also prepares the email-destinations list query.
 	expect(counts.batchSizes).toEqual([2, 2])
-	expect(counts.prepare).toBe(4)
+	expect(counts.prepare).toBe(5)
 	expect(counts.batch).toBe(2)
 })

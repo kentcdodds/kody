@@ -124,7 +124,9 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Package-app `kody.app.client` browser bundling and `/_assets/*`
 		// serving (publish rebuild and packageAppFetch both run here) add
 		// ~12 KB on top: local dry-run 5_004_707 bytes.
-		maxEntryBytes: 5_020_000,
+		// emailDestination list/add/set-default/remove plus emailSend
+		// destination resolution add ~23 KB: local dry-run 5_028_263 bytes.
+		maxEntryBytes: 5_035_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
@@ -148,7 +150,9 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// runtime resolution, and the deferred-module loader for the vendored
 		// remix file set — the ~0.5 MB file set itself stays in
 		// `package-app-remix.mjs`) adds ~11 KB: local dry-run 3_712_214 bytes.
-		maxEntryBytes: 3_720_000,
+		// emailSend destination resolution (verified extras plus default) lives
+		// on the shared outbound send path: local dry-run 3_725_245 bytes.
+		maxEntryBytes: 3_730_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',

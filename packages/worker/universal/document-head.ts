@@ -431,6 +431,14 @@ const routeDocumentHeads = {
 		const verification = loaderData?.emailVerification
 		return titleOnly(verification?.ok ? 'Email released' : 'Release email')
 	},
+	[routePattern(routes.verifyEmailDestination)]: ({ loaderData }) => {
+		const verification = loaderData?.emailVerification
+		return titleOnly(
+			verification?.ok
+				? 'Email destination verified'
+				: 'Verify email destination',
+		)
+	},
 	[routePattern(routes.unsubscribeTips)]: ({ loaderData }) => {
 		const unsubscribe = loaderData?.tipsUnsubscribe
 		return titleOnly(

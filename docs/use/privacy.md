@@ -18,18 +18,19 @@ consent to that transfer.
 ## What Kody stores per account
 
 Each signed-in user gets a fully isolated assistant. Kody stores account profile
-information (email, username, optional display name and bio, and profile
-visibility), first-touch marketing attribution captured on public-site visits
-when UTM or landing context is present and associated with the account at signup
-(`utm_source` / `utm_medium` / `utm_campaign` / `utm_content` / `utm_term`,
-landing path, and referrer), referral attribution when a signup used a
-`kody_ref` cookie from `?ref=<username>` (the referred and referring stable user
-ids, reward status, and the Stripe invoice id after a paid reward), first-seen
-activation timestamps (email verified, first MCP connection, first execute,
-first saved package), MCP client name when known, last-active day stamps used
-for return metrics, secrets, memories, packages and their source, jobs, email
-inboxes and messages, durable storage, MCP server configuration, OAuth grants,
-package invocation tokens, short-lived execution history (see
+information (email, username, optional display name and bio, profile visibility,
+and extra email destinations, including pending unverified extras until you
+confirm or remove them), first-touch marketing attribution captured on
+public-site visits when UTM or landing context is present and associated with
+the account at signup (`utm_source` / `utm_medium` / `utm_campaign` /
+`utm_content` / `utm_term`, landing path, and referrer), referral attribution
+when a signup used a `kody_ref` cookie from `?ref=<username>` (the referred and
+referring stable user ids, reward status, and the Stripe invoice id after a paid
+reward), first-seen activation timestamps (email verified, first MCP connection,
+first execute, first saved package), MCP client name when known, last-active day
+stamps used for return metrics, secrets, memories, packages and their source,
+jobs, email inboxes and messages, durable storage, MCP server configuration,
+OAuth grants, package invocation tokens, short-lived execution history (see
 [Activity](./activity.md)), stored community activity events, and any platform
 feedback you approve for submission. All of this remains scoped to your account
 except for content you deliberately make public (community listings and a public
