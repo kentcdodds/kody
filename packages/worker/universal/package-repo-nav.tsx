@@ -2,27 +2,11 @@
 /** @jsxRuntime automatic */
 import { css } from 'remix/ui'
 import { getPackageSettingsHref } from '#universal/package-files.ts'
+import { renderPackageStatusSignifiers } from '#universal/package-status-signifiers.tsx'
 import { routes } from '#universal/routes.ts'
-import {
-	colors,
-	radius,
-	spacing,
-	typography,
-} from '#universal/styles/tokens.ts'
+import { colors, spacing } from '#universal/styles/tokens.ts'
 
 export type PackageRepoNavActive = 'code' | 'settings'
-
-function renderPackageVisibilityBadge(isPrivate: boolean) {
-	return (
-		<span
-			data-testid="package-visibility-badge"
-			data-visibility={isPrivate ? 'private' : 'public'}
-			mix={css(isPrivate ? privateBadgeCss : publicBadgeCss)}
-		>
-			{isPrivate ? 'Private' : 'Public'}
-		</span>
-	)
-}
 
 function renderPackageRepoNav(input: {
 	username: string
@@ -66,6 +50,7 @@ export function renderPackageRepoChrome(input: {
 	username: string
 	kodyId: string
 	isPrivate: boolean
+	isListed?: boolean
 	viewerIsOwner: boolean
 	active: PackageRepoNavActive
 	description?: string
@@ -113,7 +98,10 @@ export function renderPackageRepoChrome(input: {
 					)}
 					<span mix={css(slashCss)}>/</span>
 					<span>{input.kodyId}</span>
-					{renderPackageVisibilityBadge(input.isPrivate)}
+					{renderPackageStatusSignifiers({
+						isPrivate: input.isPrivate,
+						isListed: input.isListed === true,
+					})}
 				</h1>
 			</header>
 			{input.description ? (
@@ -182,31 +170,6 @@ const descriptionCss = {
 	color: colors.textMuted,
 	fontSize: '1.05rem',
 	maxWidth: '58ch',
-}
-
-const badgeCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	padding: `${spacing.xs} ${spacing.sm}`,
-	borderRadius: radius.full,
-	fontSize: typography.fontSize.xs,
-	fontWeight: typography.fontWeight.medium,
-	lineHeight: 1.2,
-}
-
-const privateBadgeCss = {
-	...badgeCss,
-	backgroundColor: colors.surface,
-	border: `1px solid ${colors.border}`,
-	color: colors.textMuted,
-}
-
-const publicBadgeCss = {
-	...badgeCss,
-	backgroundColor: colors.primarySoft,
-	border: 'none',
-	color: colors.primaryText,
-	fontWeight: typography.fontWeight.semibold,
 }
 
 const navCss = {

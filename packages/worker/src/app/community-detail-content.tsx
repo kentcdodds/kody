@@ -91,6 +91,7 @@ export function CommunityDetailContent(
 				username,
 				kodyId,
 				isPrivate,
+				isListed: listing != null,
 				viewerIsOwner,
 				active: 'code',
 				description,

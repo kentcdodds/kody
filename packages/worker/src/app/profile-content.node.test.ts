@@ -138,8 +138,9 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 	})
 	expect(ownInventoryHtml).toContain('href="/@kody/notes"')
 	expect(ownInventoryHtml).toContain('Hidden')
-	expect(ownInventoryHtml).toContain('Private')
-	expect(ownInventoryHtml).toContain('Not published')
+	expect(ownInventoryHtml).toContain('data-signifier="private"')
+	expect(ownInventoryHtml).toContain('title="Private"')
+	expect(ownInventoryHtml).not.toContain('data-signifier="unpublished"')
 
 	const ownEmptyHtml = await renderProfileContentHtml({
 		profile,
