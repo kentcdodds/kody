@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { maxOutboundEmailAttachments } from '#worker/email/outbound.ts'
 import {
 	emailClassificationValues,
 	emailDeliveryStatusValues,
@@ -75,6 +76,28 @@ export const emailAttachmentSchema = z.object({
 	storage_key: z.string().nullable(),
 	created_at: z.string(),
 })
+
+export const emailOutboundAttachmentsInputSchema = z
+	.array(
+		z.object({
+			filename: z.string().min(1).max(255),
+			content_type: z.string().min(1).max(255),
+			content_base64: z.string().min(1),
+		}),
+	)
+	.min(1)
+	.max(maxOutboundEmailAttachments)
+	.optional()
+
+export function toOutboundEmailAttachments(
+	attachments: z.infer<typeof emailOutboundAttachmentsInputSchema>,
+) {
+	return attachments?.map((attachment) => ({
+		filename: attachment.filename,
+		contentType: attachment.content_type,
+		contentBase64: attachment.content_base64,
+	}))
+}
 
 export const emailMessageDetailSchema = emailMessageSummarySchema.extend({
 	cc_addresses: z.array(z.string()),

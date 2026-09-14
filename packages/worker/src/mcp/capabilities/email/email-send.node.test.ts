@@ -1,0 +1,196 @@
+import { expect, test, vi } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
+import { createMcpCallerContext } from '#mcp/context.ts'
+
+const mocks = vi.hoisted(() => ({
+	sendOutboundEmail: vi.fn(),
+}))
+
+vi.mock('#worker/email/outbound.ts', () => ({
+	maxOutboundEmailAttachments: 10,
+	sendOutboundEmail: mocks.sendOutboundEmail,
+}))
+
+const { emailSendCapability } = await import('./email-send.ts')
+
+function createUsersDb(emailVerifiedAt: string | null) {
+	return {
+		prepare: () => ({
+			bind: () => ({
+				first: async () => ({ email_verified_at: emailVerifiedAt }),
+			}),
+		}),
+	} as unknown as D1Database
+}
+
+function createContext(options: { emailVerifiedAt?: string | null } = {}) {
+	return {
+		env: {
+			APP_DB: createUsersDb(
+				options.emailVerifiedAt === undefined
+					? '2026-01-01T00:00:00.000Z'
+					: options.emailVerifiedAt,
+			),
+		} as Env,
+		callerContext: createMcpCallerContext({
+			baseUrl: 'https://example.com',
+			user: {
+				userId: 'user-1',
+				email: 'user@example.com',
+				displayName: 'User Example',
+			},
+		}),
+	}
+}
+
+function sentMessage(id = 'outbound-1') {
+	return {
+		id,
+		direction: 'outbound',
+		inboxId: 'inbox-1',
+		threadId: 'thread-1',
+		fromAddress: 'user@heykody.dev',
+		envelopeFrom: 'user@heykody.dev',
+		toAddresses: ['user@example.com'],
+		subject: 'Hello',
+		messageIdHeader: '<outbound@heykody.dev>',
+		processingStatus: 'sent',
+		classification: 'accepted',
+		classificationReason: null,
+		providerMessageId: 'provider-1',
+		deliveryStatus: null,
+		deliveryStatusAt: null,
+		error: null,
+		receivedAt: null,
+		sentAt: '2026-05-13T07:30:16.000Z',
+		createdAt: '2026-05-13T07:30:16.000Z',
+		updatedAt: '2026-05-13T07:30:16.000Z',
+	}
+}
+
+test('emailSend forwards optional attachments and rejects invalid attachment shapes', async () => {
+	mocks.sendOutboundEmail.mockResolvedValue({
+		status: 'sent',
+		error: null,
+		providerMessageId: 'provider-1',
+		message: sentMessage(),
+	})
+
+	const withoutAttachments = await emailSendCapability.handler(
+		{
+			subject: 'Hello',
+			text: 'Body',
+		},
+		createContext(),
+	)
+	expect(withoutAttachments).toMatchObject({
+		provider_message_id: 'provider-1',
+		status: 'sent',
+		error: null,
+		message: { id: 'outbound-1', subject: 'Hello' },
+	})
+	expect(mocks.sendOutboundEmail).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'user-1',
+			accountEmail: 'user@example.com',
+			recipientPolicy: 'self',
+			to: null,
+			subject: 'Hello',
+			text: 'Body',
+			html: null,
+			replyTo: null,
+			attachments: undefined,
+		}),
+	)
+
+	await emailSendCapability.handler(
+		{
+			to: ['user@example.com', 'phone@example.com'],
+			subject: 'Report',
+			text: 'Report attached.',
+			attachments: [
+				{
+					filename: 'report.csv',
+					content_type: 'text/csv',
+					content_base64: 'bmFtZSx0b3RhbA==',
+				},
+			],
+		},
+		createContext(),
+	)
+	expect(mocks.sendOutboundEmail).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			recipientPolicy: 'self',
+			to: ['user@example.com', 'phone@example.com'],
+			attachments: [
+				{
+					filename: 'report.csv',
+					contentType: 'text/csv',
+					contentBase64: 'bmFtZSx0b3RhbA==',
+				},
+			],
+		}),
+	)
+
+	const missingFilename = await emailSendCapability
+		.handler(
+			{
+				subject: 'Hello',
+				text: 'Body',
+				attachments: [
+					{
+						content_type: 'text/plain',
+						content_base64: 'aGVsbG8=',
+					},
+				],
+			},
+			createContext(),
+		)
+		.catch((error: unknown) => error)
+	expect(missingFilename).toBeInstanceOf(McpCallerError)
+	expect(missingFilename).toMatchObject({
+		message: expect.stringContaining(
+			'Invalid input for capability "emailSend"',
+		),
+	})
+
+	const emptyList = await emailSendCapability
+		.handler(
+			{
+				subject: 'Hello',
+				text: 'Body',
+				attachments: [],
+			},
+			createContext(),
+		)
+		.catch((error: unknown) => error)
+	expect(emptyList).toBeInstanceOf(McpCallerError)
+	expect(emptyList).toMatchObject({
+		message: expect.stringContaining(
+			'Invalid input for capability "emailSend"',
+		),
+	})
+
+	const tooMany = await emailSendCapability
+		.handler(
+			{
+				subject: 'Hello',
+				text: 'Body',
+				attachments: Array.from({ length: 11 }, (_, index) => ({
+					filename: `file-${index}.txt`,
+					content_type: 'text/plain',
+					content_base64: 'aGVsbG8=',
+				})),
+			},
+			createContext(),
+		)
+		.catch((error: unknown) => error)
+	expect(tooMany).toBeInstanceOf(McpCallerError)
+	expect(tooMany).toMatchObject({
+		message: expect.stringContaining(
+			'Invalid input for capability "emailSend"',
+		),
+	})
+
+	expect(mocks.sendOutboundEmail).toHaveBeenCalledTimes(2)
+})

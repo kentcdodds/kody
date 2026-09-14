@@ -68,8 +68,13 @@ Use the MCP `email` domain:
   notify-only channel. Omit `to` to use the default destination (the account
   email until you pick another). Every explicit address must already be on that
   verified set; if any `to` is missing or unverified the whole send fails.
-  Manage destinations from `/account/email` as well. Unverified extras never
-  receive mail.
+  Optional `attachments` (up to 10 of
+  `{ filename, content_type, content_base64 }`) are sent with the message and
+  stored as `external` attachments readable later via `emailAttachmentGet`. The
+  same attachments go to every allowed `to` on one MIME message. With
+  attachments, the whole message (bodies plus decoded attachment bytes) must fit
+  the plan's `email_message_bytes` per-message cap. Manage destinations from
+  `/account/email` as well. Unverified extras never receive mail.
 - `emailReply` replies to a stored inbound message. The recipient always comes
   from the stored message. Optional `attachments` (up to 10 of
   `{ filename, content_type, content_base64 }`) are sent with the reply and
