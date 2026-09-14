@@ -24,6 +24,7 @@ import {
 } from './module-graph-import-rewriting.ts'
 import { resolveDirectKodyDependenciesForEntryPoint } from './module-graph-workspace.ts'
 import { withPlatformRemixFiles } from './package-app-remix.ts'
+import { createPackageAppJsxBundleOptions } from './package-app-tsconfig.ts'
 import {
 	createAppEntrypointSource,
 	createExecuteEntrypointSource,
@@ -38,15 +39,18 @@ const moduleBundleCache = createPublishedPackagePromiseCache<RuntimeBundle>()
 async function createWorkerBundle(input: {
 	files: Record<string, string>
 	entryPoint: string
+	sourceFiles?: Record<string, string>
 }) {
 	// Keep the experimental bundler out of the Worker's top-level deploy graph.
 	const { createWorker } = await importWorkerBundler()
 	// Optional convenience: every package bundle can import `remix/<subpath>`
-	// from the platform's vendored copy. Host options stay on esbuild defaults.
+	// from the platform's vendored copy. JSX comes from the package
+	// tsconfig when present; otherwise esbuild defaults.
 	const files = await withPlatformRemixFiles(input.files)
 	return await createWorker({
 		files,
 		entryPoint: input.entryPoint,
+		...createPackageAppJsxBundleOptions(input.sourceFiles ?? input.files),
 	})
 }
 
@@ -138,6 +142,7 @@ export async function buildKodyModuleBundle(input: {
 		const bundle = await createWorkerBundle({
 			files,
 			entryPoint: bootstrapPath,
+			sourceFiles: input.sourceFiles,
 		})
 		const modules = {
 			...stripKodyRuntimeModules(bundle.modules as WorkerLoaderModules),
@@ -223,6 +228,7 @@ export async function buildKodyImportableModuleBundle(input: {
 	const bundle = await createWorkerBundle({
 		files,
 		entryPoint: bootstrapPath,
+		sourceFiles: input.sourceFiles,
 	})
 	const modules = {
 		...stripKodyRuntimeModules(bundle.modules as WorkerLoaderModules),
@@ -285,6 +291,7 @@ export async function buildKodyAppBundle(input: {
 		const bundle = await createWorkerBundle({
 			files,
 			entryPoint: bootstrapPath,
+			sourceFiles: input.sourceFiles,
 		})
 		const modules = {
 			...stripKodyRuntimeModules(bundle.modules as WorkerLoaderModules),

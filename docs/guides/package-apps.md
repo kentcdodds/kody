@@ -216,8 +216,9 @@ export const routes = route(packageContext?.appBasePath ?? '', {
 })
 ```
 
-`tsconfig.json` — esbuild and the editor read JSX settings from here. The host
-does not sniff `remix/ui` to set them.
+`tsconfig.json` — the host maps root `compilerOptions.jsx` /
+`jsxImportSource` onto the esbuild bundle (no graph sniff). The editor
+reads the same file.
 
 ```json
 {
@@ -577,10 +578,11 @@ named `fetch` export). Every entry receives the mount-stripped path (`/` at the
 app root). Publish rejects `kody.app.runtime`: there is no configured runtime
 mode. A leftover field on a published snapshot is ignored.
 
-The host uses esbuild's JSX defaults. A Remix graph sets
-`"jsxImportSource": "remix/ui"` in `tsconfig.json` and/or a per-file
-`@jsxImportSource remix/ui` pragma. A handler that only borrows
-`remix/headers` or `remix/html-template` needs neither.
+The host uses esbuild's JSX defaults unless the root `tsconfig.json` sets
+`compilerOptions.jsx` / `jsxImportSource`. A Remix recipe sets
+`"jsx": "react-jsx"` and `"jsxImportSource": "remix/ui"` there (and can
+repeat a `@jsxImportSource remix/ui` pragma per file). A handler that only
+borrows `remix/headers` or `remix/html-template` needs neither.
 
 ### What the platform supplies
 

@@ -253,11 +253,13 @@ A package app is a hosted Worker entry running in the package-app isolate:
   `{ fetch }`, or a named `fetch` export) and forwards the mount-stripped
   path. Authoring and publish reject `kody.app.runtime`. A leftover field on a
   published snapshot is ignored
-- The host uses esbuild defaults. Remix recipes set `jsxImportSource` in
-  `tsconfig.json` and/or a per-file pragma, remount the Request when the
-  route contract includes `appBasePath`, and pass explicit `clientEntry` ids
-  (`kody:app#Name`). A handler that borrows `remix/headers` or
-  `remix/html-template` needs none of that
+- The host uses esbuild defaults unless the package's root `tsconfig.json`
+  sets `compilerOptions.jsx` / `jsxImportSource` (mapped onto the bundle
+  for any import source). Remix recipes set those to `react-jsx` /
+  `remix/ui`, remount the Request when the route contract includes
+  `appBasePath`, and pass explicit `clientEntry` ids (`kody:app#Name`). A
+  handler that borrows `remix/headers` or `remix/html-template` needs none
+  of that
 - Remix itself is an optional convenience: `tools/build-worker-bundler-modules.ts`
   pre-bundles the Workers-safe `remix/<subpath>` set (`packageAppRemixSubpaths`)
   with code splitting into the deferred module `package-app-remix.mjs`, and

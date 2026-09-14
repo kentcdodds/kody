@@ -112,6 +112,30 @@ test('buildKodyAppClientBundle keeps esbuild JSX defaults even when the client g
 	expect(uiCall).not.toHaveProperty('jsx')
 	expect(uiCall).not.toHaveProperty('jsxImportSource')
 
+	mockBundledOutput('export const Counter = () => null;\n')
+	await buildKodyAppClientBundle({
+		sourceFiles: {
+			'package.json': packageJson,
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					jsx: 'react-jsx',
+					jsxImportSource: 'remix/ui',
+				},
+			}),
+			'src/client.ts':
+				"import { run } from 'remix/ui'\nrun({ loadModule: async () => ({}) })",
+		},
+		entryPoint: 'src/client.ts',
+	})
+	const tsconfigCall = mockModule.createWorker.mock.calls[0]?.[0] as {
+		jsx?: string
+		jsxImportSource?: string
+	}
+	expect(tsconfigCall).toMatchObject({
+		jsx: 'automatic',
+		jsxImportSource: 'remix/ui',
+	})
+
 	mockBundledOutput('export {}\n')
 	await buildKodyAppClientBundle({
 		sourceFiles: {

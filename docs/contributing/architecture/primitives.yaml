@@ -309,6 +309,7 @@ primitives:
       - packages/worker/src/package-runtime/package-app-assets.ts
       - packages/worker/src/package-runtime/package-app-remix.ts
       - packages/worker/src/package-runtime/package-app-remix-subpaths.ts
+      - packages/worker/src/package-runtime/package-app-tsconfig.ts
       - packages/worker/src/package-runtime/module-graph-client-bundle.ts
     docs:
       - docs/use/packages.md

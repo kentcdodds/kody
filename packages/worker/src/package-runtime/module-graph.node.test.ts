@@ -341,13 +341,37 @@ test('buildKodyAppBundle keeps esbuild defaults even when the graph imports remi
 		'string',
 	)
 	// Vendored remix is a convenience; the host does not sniff the graph for
-	// JSX, import.meta.url, or keepNames.
+	// JSX, import.meta.url, or keepNames. Without a tsconfig, esbuild defaults.
 	expect(remixCall).not.toHaveProperty('jsx')
 	expect(remixCall).not.toHaveProperty('jsxImportSource')
 	expect(remixCall).not.toHaveProperty('define')
 	expect(remixCall).not.toHaveProperty(
 		'__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired',
 	)
+
+	mockModule.createWorker.mockReset()
+	mockModule.createWorker.mockResolvedValue(createBundleResult('tsconfig'))
+	const tsconfigInput = createBundleInput({ entryPoint: 'app/router.ts' })
+	tsconfigInput.sourceFiles['app/router.ts'] = [
+		"import { createRouter } from 'remix/router'",
+		"import { renderToString } from 'remix/ui/server'",
+		'export default createRouter()',
+	].join('\n')
+	tsconfigInput.sourceFiles['tsconfig.json'] = JSON.stringify({
+		compilerOptions: {
+			jsx: 'react-jsx',
+			jsxImportSource: 'remix/ui',
+		},
+	})
+	await buildKodyAppBundle(tsconfigInput)
+	const tsconfigCall = mockModule.createWorker.mock.calls[0]?.[0] as {
+		jsx?: string
+		jsxImportSource?: string
+	}
+	expect(tsconfigCall).toMatchObject({
+		jsx: 'automatic',
+		jsxImportSource: 'remix/ui',
+	})
 
 	mockModule.createWorker.mockReset()
 	mockModule.createWorker.mockResolvedValue(createBundleResult('headers'))

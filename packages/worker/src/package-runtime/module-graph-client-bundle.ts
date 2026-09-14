@@ -24,6 +24,7 @@ import {
 	clientModuleHashLength,
 } from './package-app-client-module-name.ts'
 import { withPlatformRemixFiles } from './package-app-remix.ts'
+import { createPackageAppJsxBundleOptions } from './package-app-tsconfig.ts'
 import { type RuntimeBundle } from './runtime-bundle-types.ts'
 import { iterateModuleSourceTexts } from './runtime-source-modules.ts'
 import { isTypeDeclarationFilePath } from './static-kody-imports.ts'
@@ -288,6 +289,7 @@ export async function buildKodyAppClientBundle(input: {
 		entryPoint,
 		bundle: true,
 		target: 'es2022',
+		...createPackageAppJsxBundleOptions(input.sourceFiles),
 		...(externals.length > 0
 			? {
 					__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired: [

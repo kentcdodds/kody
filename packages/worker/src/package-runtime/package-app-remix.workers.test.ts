@@ -85,7 +85,7 @@ test(
 		expect(code).not.toMatch(/from\s+["']remix\//)
 		expect(code).toContain('kody:app#Counter')
 		expect(code).not.toContain('import.meta.url')
-		// JSX compiled against remix/ui from the per-file pragma / tsconfig.
+		// JSX compiled against remix/ui from the recipe's tsconfig.
 		expect(code).not.toContain('React.createElement')
 
 		const wrapperModule = 'test-entry.js'
@@ -251,8 +251,8 @@ test(
 		expect(code).not.toMatch(/from\s+["']remix\//)
 		expect(code).not.toMatch(/from\s+["']node:/)
 		expect(code).not.toContain('kody:runtime')
-		// The island and the boot are both present; JSX compiled without a
-		// pragma because the app is a Remix app.
+		// The island and the boot are both present; JSX compiled against
+		// remix/ui from the recipe's tsconfig.
 		expect(code).toContain('Unknown client entry')
 		expect(code).toContain('id: "counter"')
 		expect(code).not.toContain('React.createElement')
