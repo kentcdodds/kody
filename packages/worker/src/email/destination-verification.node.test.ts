@@ -83,6 +83,27 @@ test('destination verification tokens mark one extra address verified and reject
 		)
 		.run(added.destination.id, liveHash, Date.now() + 60_000)
 
+	expect(
+		await verifyEmailDestinationToken({
+			db,
+			token: liveToken,
+			consume: false,
+		}),
+	).toEqual({
+		ok: true,
+		userId: 1,
+		email: 'phone@example.com',
+	})
+	expect(
+		sqlite
+			.prepare(
+				`SELECT verified_at IS NOT NULL AS verified
+				 FROM email_notification_destinations
+				 WHERE id = ?`,
+			)
+			.get(added.destination.id) as { verified: number },
+	).toEqual({ verified: 0 })
+
 	expect(await verifyEmailDestinationToken({ db, token: liveToken })).toEqual({
 		ok: true,
 		userId: 1,
@@ -97,13 +118,18 @@ test('destination verification tokens mark one extra address verified and reject
 			)
 			.get(added.destination.id) as { verified: number },
 	).toEqual({ verified: 1 })
+	expect(await verifyEmailDestinationToken({ db, token: liveToken })).toEqual({
+		ok: true,
+		userId: 1,
+		email: 'phone@example.com',
+	})
 	expect(
 		sqlite
 			.prepare(
 				`SELECT COUNT(*) AS count FROM pending_email_destination_verifications`,
 			)
 			.get() as { count: number },
-	).toEqual({ count: 0 })
+	).toEqual({ count: 1 })
 })
 
 test('createEmailDestinationVerification rate-limits add and resend for UI and MCP', async () => {
@@ -141,4 +167,52 @@ test('createEmailDestinationVerification rate-limits add and resend for UI and M
 		code: 'rate_limited',
 	} satisfies Partial<EmailDestinationError>)
 	expect(consoleWarn).toHaveBeenCalled()
+})
+
+test('createEmailDestinationVerification resends for a pending address and leaves unused links valid', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { sqlite, db } = createMigratedDb()
+	await seedUser(sqlite)
+	const env = {
+		APP_DB: db,
+		APP_BASE_URL: 'http://example.com',
+		SENTRY_ENVIRONMENT: 'test',
+	} as Env
+
+	const first = await createEmailDestinationVerification({
+		env,
+		userId: 1,
+		email: 'pager@example.com',
+		requestUrl: 'http://example.com',
+	})
+	expect(first.created).toBe(true)
+	const firstToken = sqlite
+		.prepare(
+			`SELECT token_hash AS tokenHash
+			 FROM pending_email_destination_verifications
+			 WHERE destination_id = ?`,
+		)
+		.get(first.destination.id) as { tokenHash: string }
+
+	const second = await createEmailDestinationVerification({
+		env,
+		userId: 1,
+		email: 'Pager@Example.com',
+		requestUrl: 'http://example.com',
+	})
+	expect(second).toMatchObject({
+		created: false,
+		destination: { id: first.destination.id, email: 'pager@example.com' },
+	})
+	const pending = sqlite
+		.prepare(
+			`SELECT token_hash AS tokenHash
+			 FROM pending_email_destination_verifications
+			 WHERE destination_id = ?
+			 ORDER BY id ASC`,
+		)
+		.all(first.destination.id) as Array<{ tokenHash: string }>
+	expect(pending).toHaveLength(2)
+	expect(pending[0]?.tokenHash).toBe(firstToken.tokenHash)
+	expect(pending[1]?.tokenHash).not.toBe(firstToken.tokenHash)
 })

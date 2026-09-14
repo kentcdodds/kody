@@ -1288,6 +1288,14 @@ export type EmailVerificationLoaderData =
 	| {
 			ok: false
 			error: string
+			kind?:
+				| 'email_verify'
+				| 'email_change'
+				| 'email_claim_release'
+				| 'email_destination'
+			reason?: 'missing_token' | 'invalid_token' | 'expired_token'
+			ctaHref?: string
+			ctaLabel?: string
 	  }
 
 export type TipsUnsubscribeLoaderData =

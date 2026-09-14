@@ -117,8 +117,9 @@ export function createAccountEmailDestinationsHandler(env: Env) {
 						})
 						return jsonResponse({
 							...destinationListPayload(destinations),
-							message:
-								'Verification email sent. Open the link to start using this address.',
+							message: result.created
+								? 'Verification email sent. Open the link to start using this address.'
+								: 'Verification email sent again. Open the latest link to start using this address.',
 						})
 					}
 

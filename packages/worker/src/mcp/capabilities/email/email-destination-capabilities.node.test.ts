@@ -130,6 +130,17 @@ test('email destination capabilities list, add, set default, and remove through 
 		requestUrl: 'https://example.com',
 	})
 
+	mocks.createEmailDestinationVerification.mockResolvedValueOnce({
+		destination: { ...extra, verified: false },
+		created: false,
+	})
+	const resent = await emailDestinationAddCapability.handler(
+		{ email: 'phone@example.com' },
+		{ env, callerContext: createUserContext() },
+	)
+	expect(resent.created).toBe(false)
+	expect(resent.destination.verified).toBe(false)
+
 	const defaulted = await emailDestinationSetDefaultCapability.handler(
 		{ id: 'dest-1' },
 		{ env, callerContext: createUserContext() },

@@ -149,13 +149,18 @@ Additional email destinations (addresses `emailSend` may use besides
 `users.email`) reuse the same 24-hour hashed-token link pattern:
 `email_notification_destinations` plus
 `pending_email_destination_verifications`, sent from `kody@<apex>`, confirmed at
-`GET /verify-email-destination?token=...`. Identity email change and release
-stay on their existing flows; destinations do not own `users.email`. Add,
-resend, set-default, and remove live at `/account/email`,
-`/account/email-destinations.json`, and the `emailDestination*` capabilities (3)
-requests per 15 minutes for add/resend). The cap is 5 extras besides the
-identity email. Unverified extras never receive mail. Destinations expand the
-verified `to` set only; mail still comes from `{username}@{platform}`.
+`GET /verify-email-destination?token=...`. `HEAD` probes inspect the token
+without consuming it, so link scanners do not burn an unused link. A successful
+`GET` keeps that token until it expires so a repeat click is idempotent; unused
+links from earlier resends stay valid until expiry or the address verifies.
+Identity email change and release stay on their existing flows; destinations do
+not own `users.email`. Add, resend, set-default, and remove live at
+`/account/email`, `/account/email-destinations.json`, and the
+`emailDestination*` capabilities (3 requests per 15 minutes for add/resend).
+Re-adding a pending unverified address resends a verification email. The cap is
+5 extras besides the identity email. Unverified extras never receive mail.
+Destinations expand the verified `to` set only; mail still comes from
+`{username}@{platform}`.
 
 Signed-in users with an unverified email can request a fresh link with
 `POST /account/resend-verification.json`

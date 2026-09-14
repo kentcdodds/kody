@@ -47,8 +47,9 @@ export const emailDestinationAddCapability = defineDomainCapability(
 				return {
 					destination: toEmailDestination(result.destination),
 					created: result.created,
-					message:
-						'Verification email sent. The address cannot receive emailSend mail until it is verified.',
+					message: result.created
+						? 'Verification email sent. The address cannot receive emailSend mail until it is verified.'
+						: 'Verification email resent. The address cannot receive emailSend mail until it is verified.',
 				}
 			} catch (error) {
 				mapEmailDestinationError(error)
