@@ -71,8 +71,10 @@ the config still has the production transfer+delete chain. Wrangler 4.131+
 applies that local sqlite-class map on `deploy --dry-run` as well as `dev`.
 `wrangler-env.ts` and `tools/check-worker-startup-bundles.ts` write
 `wrangler-dry-run.generated.json` with `localizeMigrations` for those bundle
-checks. Confirm `localizeMigrations` ran and that the generated file's
-**top-level** `migrations` (not only `env.production.migrations`) has no
+checks. `wrangler check startup` ignores `--config` and loads cwd
+`wrangler.jsonc`, so `check-worker-startup-time.ts` snapshots a localized config
+into a temp directory. Confirm `localizeMigrations` ran and that the generated
+file's **top-level** `migrations` (not only `env.production.migrations`) has no
 `PackageServiceInstance` delete. For `npm run dev`, confirm
 `wrangler-local-dev.generated.json` instead.
 

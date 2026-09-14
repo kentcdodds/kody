@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { expect, test } from 'vitest'
@@ -7,6 +7,7 @@ import { localizeMigrations } from './local-dev-migrations.ts'
 import {
 	writeLocalRuntimeDevConfig,
 	writeRuntimeDryRunConfig,
+	writeRuntimeStartupCheckConfig,
 } from './local-runtime-dev-config.ts'
 
 test('localizeMigrations turns transfers into sqlite creates and elides a later delete', () => {
@@ -68,15 +69,45 @@ test('writeRuntimeDryRunConfig localizes migrations without local-dev vars', asy
 			migrations?: unknown
 			env?: {
 				production?: { migrations?: unknown; vars?: Record<string, unknown> }
+				preview?: { migrations?: unknown }
 			}
 		}>(await readFile(outputPath, 'utf8'))
 		expect(sqliteMapAccepts(generated.migrations)).toBe(true)
 		expect(generated.migrations).toEqual(generated.env?.production?.migrations)
-		expect(JSON.stringify(generated.migrations)).not.toContain(
-			'PackageServiceInstance',
-		)
+		expect(sqliteMapAccepts(generated.env?.preview?.migrations)).toBe(true)
+		expect(JSON.stringify(generated)).not.toContain('PackageServiceInstance')
 		expect(generated.env?.production?.vars?.WRANGLER_IS_LOCAL_DEV).toBe(
 			undefined,
+		)
+	} finally {
+		await rm(tempDir, { recursive: true, force: true })
+	}
+})
+
+test('writeRuntimeStartupCheckConfig writes wrangler.jsonc with an absolute main', async () => {
+	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-runtime-startup-'))
+	const sourcePath = path.join(tempDir, 'wrangler.jsonc')
+	const snapshotDir = path.join(tempDir, 'snapshot')
+	try {
+		await writeFile(
+			sourcePath,
+			await readFile('packages/runtime-worker/wrangler.jsonc', 'utf8'),
+		)
+		await mkdir(snapshotDir, { recursive: true })
+		const outputPath = await writeRuntimeStartupCheckConfig({
+			runtimeConfigPath: sourcePath,
+			envName: 'production',
+			outputDir: snapshotDir,
+		})
+		expect(path.basename(outputPath)).toBe('wrangler.jsonc')
+		const generated = parseJsonc<{
+			main?: string
+			migrations?: unknown
+		}>(await readFile(outputPath, 'utf8'))
+		expect(path.isAbsolute(generated.main ?? '')).toBe(true)
+		expect(sqliteMapAccepts(generated.migrations)).toBe(true)
+		expect(JSON.stringify(generated.migrations)).not.toContain(
+			'PackageServiceInstance',
 		)
 	} finally {
 		await rm(tempDir, { recursive: true, force: true })
