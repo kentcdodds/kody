@@ -45,6 +45,23 @@ test('createPackageAppJsxBundleOptions maps tsconfig jsx settings for any import
 	).toEqual({ jsx: 'transform' })
 })
 
+test('createPackageAppJsxBundleOptions reads JSONC tsconfig comments and trailing commas', () => {
+	expect(
+		createPackageAppJsxBundleOptions({
+			'tsconfig.json': `{
+  // Remix recipe
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "remix/ui", /* trailing comma next */
+  },
+}`,
+		}),
+	).toEqual({
+		jsx: 'automatic',
+		jsxImportSource: 'remix/ui',
+	})
+})
+
 test('createPackageAppJsxBundleOptions ignores invalid tsconfig JSON', () => {
 	expect(
 		createPackageAppJsxBundleOptions({
