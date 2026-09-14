@@ -1,9 +1,11 @@
+import { jsx } from 'remix/ui/jsx-runtime'
+import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
-import { renderProfileContentHtml } from '#app/profile-content.tsx'
+import { ProfileContent, type ProfileContentProps } from './profile-content.tsx'
 import {
 	type PublicCommunityProfile,
 	type PublicProfilePackageItem,
-} from '#universal/community-public-types.ts'
+} from './community-public-types.ts'
 
 const profile = {
 	username: 'kody',
@@ -26,6 +28,9 @@ const listedPackage = {
 	communityListingKodyId: 'fathom-analytics',
 	communityPublishedAt: '2026-07-28T00:00:00.000Z',
 	needsRepublish: true,
+	hasApp: true,
+	webhookCount: 2,
+	jobCount: 1,
 	iconUrl: '/community/listing-1/icon/abc123',
 } satisfies PublicProfilePackageItem
 
@@ -39,8 +44,15 @@ const unpublishedPackage = {
 	communityListingKodyId: null,
 	communityPublishedAt: null,
 	needsRepublish: false,
+	hasApp: false,
+	webhookCount: 0,
+	jobCount: 0,
 	iconUrl: '/@kody/notes/icon/pub-1',
 } satisfies PublicProfilePackageItem
+
+async function renderProfileContentHtml(props: ProfileContentProps) {
+	return renderToString(jsx(ProfileContent, props))
+}
 
 test('profile packages link listings, prefer listing kody ids, and separate published dates from local edits', async () => {
 	const guestHtml = await renderProfileContentHtml({
@@ -56,6 +68,8 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 	expect(guestHtml.match(/aria-label="fork"/g)).toHaveLength(1)
 	expect(guestHtml).toContain('notes')
 	expect(guestHtml).toContain('href="/@kody/notes"')
+	expect(guestHtml).toContain('data-testid="profile-package-icon"')
+	expect(guestHtml).toContain('/community/listing-1/icon/abc123')
 
 	// Listed packages report the listing's published date, not the owner's
 	// unpublished local edit, which is what made the activity feed look stale.
@@ -89,7 +103,7 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 		query: null,
 		isSelf: false,
 	})
-	expect(guestEmptyHtml).toContain('No public packages to take yet.')
+	expect(guestEmptyHtml).toContain('No public repositories to take yet.')
 	expect(guestEmptyHtml).toContain('data-testid="profile-packages-empty"')
 	expect(guestEmptyHtml).not.toContain('data-testid="profile-username"')
 	expect(guestEmptyHtml).not.toContain('data-testid="profile-display-name"')
@@ -139,10 +153,33 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 		isSelf: true,
 	})
 	expect(ownInventoryHtml).toContain('href="/@kody/notes"')
-	expect(ownInventoryHtml).toContain('Hidden')
-	expect(ownInventoryHtml).toContain('data-signifier="private"')
+	expect(ownInventoryHtml).toContain('title="Hidden"')
 	expect(ownInventoryHtml).toContain('title="Private"')
-	expect(ownInventoryHtml).not.toContain('data-signifier="unpublished"')
+	expect(ownInventoryHtml).toContain('data-icon="lock"')
+	expect(ownInventoryHtml).toContain('data-icon="eye"')
+	expect(ownInventoryHtml).not.toContain('title="No community listing"')
+	expect(ownInventoryHtml).not.toContain('title="Not published"')
+
+	// A private repository that already has a community listing is published;
+	// the lock is the privacy signal. Do not also mark it unpublished.
+	const publishedPrivateHtml = await renderProfileContentHtml({
+		profile,
+		packages: [
+			{
+				...listedPackage,
+				isPrivate: true,
+			},
+		],
+		activity: [],
+		query: null,
+		isSelf: true,
+	})
+	expect(publishedPrivateHtml).toContain('title="Private"')
+	expect(publishedPrivateHtml).toContain('data-icon="lock"')
+	expect(publishedPrivateHtml).toContain('title="Published to community"')
+	expect(publishedPrivateHtml).toContain('data-icon="share"')
+	expect(publishedPrivateHtml).not.toContain('title="No community listing"')
+	expect(publishedPrivateHtml).not.toContain('title="Not published"')
 
 	const ownEmptyHtml = await renderProfileContentHtml({
 		profile,
@@ -151,8 +188,8 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 		query: null,
 		isSelf: true,
 	})
-	expect(ownEmptyHtml).toContain('You have no packages yet.')
-	expect(ownEmptyHtml).not.toContain('No public packages to take yet.')
+	expect(ownEmptyHtml).toContain('You have no repositories yet.')
+	expect(ownEmptyHtml).not.toContain('No public repositories to take yet.')
 })
 
 test('profile package filters render owner-only pills, keep other filters in each href, and explain an empty filtered list', async () => {
@@ -168,10 +205,16 @@ test('profile package filters render owner-only pills, keep other filters in eac
 	})
 
 	expect(ownHtml).toContain('data-testid="profile-package-filters"')
-	expect(ownHtml).toContain('min-height: 44px')
+	expect(ownHtml).toContain('<details')
+	expect(ownHtml).toContain('<summary')
+	expect(ownHtml).toContain('Filters')
+	expect(ownHtml).toContain('min-height: 1.75rem')
 	expect(ownHtml).toContain('data-testid="profile-package-filter-visibility"')
 	expect(ownHtml).toContain('data-testid="profile-package-filter-listing"')
 	expect(ownHtml).toContain('data-testid="profile-package-filter-hidden"')
+	expect(ownHtml).toContain('data-testid="profile-package-filter-app"')
+	expect(ownHtml).toContain('data-testid="profile-package-sort"')
+	expect(ownHtml).toContain('data-prevent-scroll-reset')
 	// The selected pill is marked; sibling pills in the same group are not.
 	expect(ownHtml).toContain(
 		'href="/@kody?q=fathom&amp;visibility=private" aria-current="page"',
@@ -187,11 +230,21 @@ test('profile package filters render owner-only pills, keep other filters in eac
 	expect(ownHtml).toContain(
 		'href="/@kody?q=fathom&amp;visibility=private&amp;hidden=yes"',
 	)
+	expect(ownHtml).toContain(
+		'href="/@kody?q=fathom&amp;visibility=private&amp;app=yes"',
+	)
+	expect(ownHtml).toContain(
+		'href="/@kody?q=fathom&amp;visibility=private&amp;sort=name"',
+	)
 	// The visibility "All" pill drops only its own param and is not current.
-	expect(ownHtml).toMatch(/<a href="\/@kody\?q=fathom" class=/)
+	expect(ownHtml).toMatch(/<a href="\/@kody\?q=fathom"[^>]*class=/)
 	expect(ownHtml).toContain('Needs republish')
+	expect(ownHtml).toContain('Has app')
+	// Already-loaded packages are narrowed in render, not by a second fetch.
+	expect(ownHtml).toContain('No repositories matched these filters.')
+	expect(ownHtml).not.toContain('href="/@kody/fathom-analytics"')
 
-	// Guests see the same packages with only the listing axis.
+	// Guests see listing and app; visibility and hidden stay owner-only.
 	const guestHtml = await renderProfileContentHtml({
 		profile,
 		packages: [listedPackage, unpublishedPackage],
@@ -202,10 +255,13 @@ test('profile package filters render owner-only pills, keep other filters in eac
 	})
 	expect(guestHtml).toContain('data-testid="profile-package-filters"')
 	expect(guestHtml).toContain('data-testid="profile-package-filter-listing"')
+	expect(guestHtml).toContain('data-testid="profile-package-filter-app"')
 	expect(guestHtml).toContain(
 		'href="/@kody?listing=published" aria-current="page"',
 	)
 	expect(guestHtml).toContain('href="/@kody?listing=unpublished"')
+	expect(guestHtml).toContain('href="/@kody/fathom-analytics"')
+	expect(guestHtml).not.toContain('href="/@kody/notes"')
 	expect(guestHtml).not.toContain(
 		'data-testid="profile-package-filter-visibility"',
 	)
@@ -235,7 +291,36 @@ test('profile package filters render owner-only pills, keep other filters in eac
 	expect(ownFilteredEmptyHtml).toContain(
 		'data-testid="profile-package-filters"',
 	)
-	expect(ownFilteredEmptyHtml).toContain('No packages matched these filters.')
+	expect(ownFilteredEmptyHtml).toContain(
+		'No repositories matched these filters.',
+	)
 	expect(ownFilteredEmptyHtml).toContain('href="/@kody"')
-	expect(ownFilteredEmptyHtml).not.toContain('You have no packages yet.')
+	expect(ownFilteredEmptyHtml).not.toContain('You have no repositories yet.')
+})
+
+test('profile repository rows show package, webhook, job, and app signifiers with count tooltips', async () => {
+	const html = await renderProfileContentHtml({
+		profile,
+		packages: [listedPackage, unpublishedPackage],
+		activity: [],
+		query: null,
+		isSelf: true,
+	})
+
+	expect(html).toContain('data-testid="profile-package-signifiers"')
+	expect(html).toContain('title="Package"')
+	expect(html).toContain('data-icon="box"')
+	expect(html).toContain('title="2 webhooks"')
+	expect(html).toContain('data-icon="cloud"')
+	expect(html).toContain('title="1 job"')
+	expect(html).toContain('data-icon="briefcase"')
+	expect(html).toContain('title="Has an app"')
+	expect(html).toContain('data-icon="globe"')
+	expect(html).toContain('title="Published to community"')
+	expect(html).toContain('data-icon="share"')
+	expect(html).toContain('title="No community listing"')
+	expect(html).toContain('data-icon="inbox"')
+	expect(html).not.toContain('title="0 webhooks"')
+	expect(html).not.toContain('title="0 jobs"')
+	expect(html).not.toContain('title="Not published"')
 })

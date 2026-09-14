@@ -1,7 +1,6 @@
 /** @jsxImportSource remix/ui */
 /** @jsxRuntime automatic */
 import { type Handle, css } from 'remix/ui'
-import { renderToString } from 'remix/ui/server'
 import {
 	communityActivityVerb,
 	formatCommunityActivityDate,
@@ -10,19 +9,23 @@ import { formatCommunityPublishedDate } from '#universal/community-display.ts'
 import { renderCommunityListingName } from '#universal/community-listing-name.tsx'
 import { IdentityIconMark } from '#universal/identity-icon-mark.tsx'
 import {
+	type ProfilePackageAppFilter,
 	type ProfilePackageFilters,
 	type ProfilePackageHiddenFilter,
 	type ProfilePackageListingFilter,
+	type ProfilePackageSort,
 	type ProfilePackageVisibilityFilter,
 	type PublicCommunityActivityItem,
 	type PublicCommunityProfile,
 	type PublicProfilePackageItem,
 } from '#universal/community-public-types.ts'
 import { getCommunityListingHref } from '#universal/community-links.ts'
-import { renderPackageStatusSignifiers } from '#universal/package-status-signifiers.tsx'
+import { renderIcon, type IconName } from '#universal/icon.tsx'
 import {
 	buildProfileHref,
+	filterProfilePackages,
 	profilePackageFiltersAreActive,
+	profilePackageSortIsActive,
 } from '#universal/profile-search.ts'
 import { routes } from '#universal/routes.ts'
 import { UserAvatar } from '#universal/user-avatar.tsx'
@@ -48,6 +51,8 @@ export type ProfileContentProps = {
 	visibility?: ProfilePackageVisibilityFilter
 	listing?: ProfilePackageListingFilter
 	hidden?: ProfilePackageHiddenFilter
+	app?: ProfilePackageAppFilter
+	sort?: ProfilePackageSort
 	isSelf: boolean
 }
 
@@ -122,6 +127,7 @@ function renderProfileFilterNav<Filter extends string>(input: {
 					href={input.hrefFor(choice.value)}
 					aria-current={input.selected === choice.value ? 'page' : undefined}
 					title={choice.title}
+					data-prevent-scroll-reset
 					mix={css(filterLinkCss)}
 				>
 					{choice.label}
@@ -135,13 +141,14 @@ function renderProfileFilterNav<Filter extends string>(input: {
  * GET filter pills above the package list, in the same grammar as the
  * community category chips. Every link carries the other active filters and
  * the search query so narrowing one axis never resets another. Guests only
- * get the listing axis; visibility, hidden, and "needs republish" describe
- * owner-only inventory the server ignores for them anyway.
+ * get listing and app; visibility, hidden, and "needs republish" describe
+ * owner-only inventory the client ignores for them anyway.
  */
 function renderProfilePackageFilters(input: {
 	username: string
 	filters: ProfilePackageFilters
 	isSelf: boolean
+	filtersActive: boolean
 }) {
 	const { username, filters, isSelf } = input
 	const listingChoices: Array<
@@ -160,60 +167,158 @@ function renderProfilePackageFilters(input: {
 		})
 	}
 	return (
-		<div data-testid="profile-package-filters" mix={css(filterToolbarCss)}>
-			{isSelf
-				? renderProfileFilterNav<ProfilePackageVisibilityFilter>({
-						label: 'Visibility',
-						ariaLabel: 'Filter packages by visibility',
-						testId: 'profile-package-filter-visibility',
-						selected: filters.visibility,
-						choices: [
-							{ value: 'all', label: 'All' },
-							{ value: 'public', label: 'Public' },
-							{ value: 'private', label: 'Private' },
-						],
-						hrefFor: (visibility) =>
-							buildProfileHref({ username, ...filters, visibility }),
-					})
-				: null}
-			{renderProfileFilterNav<ProfilePackageListingFilter>({
-				label: 'Listing',
-				ariaLabel: 'Filter packages by community listing',
-				testId: 'profile-package-filter-listing',
-				selected: filters.listing,
-				choices: listingChoices,
-				hrefFor: (listing) =>
-					buildProfileHref({ username, ...filters, listing }),
-			})}
-			{isSelf
-				? renderProfileFilterNav<ProfilePackageHiddenFilter>({
-						label: 'Hidden',
-						ariaLabel: 'Filter packages by hidden state',
-						testId: 'profile-package-filter-hidden',
-						selected: filters.hidden,
-						choices: [
-							{ value: 'all', label: 'All' },
-							{ value: 'yes', label: 'Hidden' },
-							{ value: 'no', label: 'Visible' },
-						],
-						hrefFor: (hidden) =>
-							buildProfileHref({ username, ...filters, hidden }),
-					})
-				: null}
-		</div>
+		<details
+			data-testid="profile-package-filters"
+			open={input.filtersActive ? true : undefined}
+			mix={css(filterDetailsCss)}
+		>
+			<summary mix={css(filterSummaryCss)}>Filters</summary>
+			<div mix={css(filterToolbarCss)}>
+				{isSelf
+					? renderProfileFilterNav<ProfilePackageVisibilityFilter>({
+							label: 'Visibility',
+							ariaLabel: 'Filter repositories by visibility',
+							testId: 'profile-package-filter-visibility',
+							selected: filters.visibility,
+							choices: [
+								{ value: 'all', label: 'All' },
+								{ value: 'public', label: 'Public' },
+								{ value: 'private', label: 'Private' },
+							],
+							hrefFor: (visibility) =>
+								buildProfileHref({ username, ...filters, visibility }),
+						})
+					: null}
+				{renderProfileFilterNav<ProfilePackageListingFilter>({
+					label: 'Listing',
+					ariaLabel: 'Filter repositories by community listing',
+					testId: 'profile-package-filter-listing',
+					selected: filters.listing,
+					choices: listingChoices,
+					hrefFor: (listing) =>
+						buildProfileHref({ username, ...filters, listing }),
+				})}
+				{isSelf
+					? renderProfileFilterNav<ProfilePackageHiddenFilter>({
+							label: 'Hidden',
+							ariaLabel: 'Filter repositories by hidden state',
+							testId: 'profile-package-filter-hidden',
+							selected: filters.hidden,
+							choices: [
+								{ value: 'all', label: 'All' },
+								{ value: 'yes', label: 'Hidden' },
+								{ value: 'no', label: 'Visible' },
+							],
+							hrefFor: (hidden) =>
+								buildProfileHref({ username, ...filters, hidden }),
+						})
+					: null}
+				{renderProfileFilterNav<ProfilePackageAppFilter>({
+					label: 'App',
+					ariaLabel: 'Filter repositories by whether they have an app',
+					testId: 'profile-package-filter-app',
+					selected: filters.app,
+					choices: [
+						{ value: 'all', label: 'All' },
+						{ value: 'yes', label: 'Has app' },
+						{ value: 'no', label: 'No app' },
+					],
+					hrefFor: (app) => buildProfileHref({ username, ...filters, app }),
+				})}
+				{renderProfileFilterNav<ProfilePackageSort>({
+					label: 'Sort',
+					ariaLabel: 'Sort repositories',
+					testId: 'profile-package-sort',
+					selected: filters.sort,
+					choices: [
+						{ value: 'updated', label: 'Updated' },
+						{ value: 'name', label: 'Name' },
+					],
+					hrefFor: (sort) => buildProfileHref({ username, ...filters, sort }),
+				})}
+			</div>
+		</details>
+	)
+}
+
+function countNoun(count: number, singular: string, plural: string) {
+	return count === 1 ? `1 ${singular}` : `${count} ${plural}`
+}
+
+function renderProfilePackageSignifiers(pkg: PublicProfilePackageItem) {
+	const hasCommunityListing = pkg.communityListingId != null
+	const signifiers: Array<{ name: IconName; title: string; show: boolean }> = [
+		{ name: 'box', title: 'Package', show: true },
+		{
+			name: 'lock',
+			title: 'Private',
+			show: pkg.isPrivate === true,
+		},
+		{
+			name: 'eye',
+			title: 'Hidden',
+			show: pkg.hidden === true,
+		},
+		{
+			name: 'share',
+			title: 'Published to community',
+			show: hasCommunityListing,
+		},
+		{
+			name: 'inbox',
+			title: 'No community listing',
+			show: !hasCommunityListing && pkg.isPrivate !== true,
+		},
+		{
+			name: 'cloud',
+			title: countNoun(pkg.webhookCount, 'webhook', 'webhooks'),
+			show: pkg.webhookCount > 0,
+		},
+		{
+			name: 'briefcase',
+			title: countNoun(pkg.jobCount, 'job', 'jobs'),
+			show: pkg.jobCount > 0,
+		},
+		{ name: 'globe', title: 'Has an app', show: pkg.hasApp },
+	]
+	return (
+		<span
+			data-testid="profile-package-signifiers"
+			mix={css(packageSignifiersCss)}
+		>
+			{signifiers
+				.filter((signifier) => signifier.show)
+				.map((signifier) => (
+					<span
+						key={signifier.name}
+						title={signifier.title}
+						data-signifier={signifier.name}
+						mix={css(packageSignifierCss)}
+					>
+						{renderIcon(signifier.name, {
+							size: '0.95em',
+							title: signifier.title,
+						})}
+					</span>
+				))}
+		</span>
 	)
 }
 
 function renderProfilePackagesEmptyCopy(input: {
 	query: string | null
 	filtersActive: boolean
+	hasLoadedPackages: boolean
 	isSelf: boolean
 }) {
-	if (input.query) return 'No packages matched your search.'
-	if (input.filtersActive) return 'No packages matched these filters.'
+	if (input.filtersActive && input.hasLoadedPackages) {
+		return 'No repositories matched these filters.'
+	}
+	if (input.query) return 'No repositories matched your search.'
+	if (input.filtersActive) return 'No repositories matched these filters.'
 	return input.isSelf
-		? 'You have no packages yet.'
-		: 'No public packages to take yet.'
+		? 'You have no repositories yet.'
+		: 'No public repositories to take yet.'
 }
 
 export function ProfileContent(handle: Handle<ProfileContentProps>) {
@@ -224,10 +329,15 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 			visibility: handle.props.visibility ?? 'all',
 			listing: handle.props.listing ?? 'all',
 			hidden: handle.props.hidden ?? 'all',
+			app: handle.props.app ?? 'all',
+			sort: handle.props.sort ?? 'updated',
 		}
 		const filtersActive = profilePackageFiltersAreActive(filters)
+		const toolbarActive =
+			filtersActive || profilePackageSortIsActive(filters.sort)
+		const visiblePackages = filterProfilePackages(packages, filters)
 		const showFilters =
-			isSelf || packages.length > 0 || Boolean(query) || filtersActive
+			isSelf || packages.length > 0 || Boolean(query) || toolbarActive
 
 		return (
 			<div data-testid="profile-frame">
@@ -237,15 +347,21 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 								username: profile.username,
 								filters,
 								isSelf,
+								filtersActive: toolbarActive,
 							})
 						: null}
-					{packages.length === 0 ? (
+					{visiblePackages.length === 0 ? (
 						<p mix={css(emptyCss)} data-testid="profile-packages-empty">
-							{renderProfilePackagesEmptyCopy({ query, filtersActive, isSelf })}
+							{renderProfilePackagesEmptyCopy({
+								query,
+								filtersActive,
+								hasLoadedPackages: packages.length > 0,
+								isSelf,
+							})}
 						</p>
 					) : (
 						<ul mix={css(packageListCss)}>
-							{packages.map((pkg) => {
+							{visiblePackages.map((pkg) => {
 								const packageHref = routes.communityPackage.href({
 									username: profile.username,
 									kodyId: pkg.communityListingKodyId ?? pkg.kodyId,
@@ -282,17 +398,8 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 														{renderCommunityListingName(pkg.name)}
 													</a>
 												</h3>
+												{renderProfilePackageSignifiers(pkg)}
 											</div>
-											{pkg.hidden ? (
-												<span mix={css(unpublishedBadgeCss)}>Hidden</span>
-											) : null}
-											{renderPackageStatusSignifiers({
-												isPrivate: pkg.isPrivate === true,
-												isListed: pkg.communityListingId != null,
-											})}
-											{pkg.communityListingId ? (
-												<span mix={css(communityBadgeCss)}>Community</span>
-											) : null}
 										</div>
 										{pkg.description ? (
 											<p mix={css(descriptionCss)}>{pkg.description}</p>
@@ -319,7 +426,7 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 				<section mix={css(activitySectionCss)} data-testid="profile-activity">
 					<h2 mix={css(sectionTitleCss)}>Recent activity</h2>
 					<p mix={css(mutedCss)} data-testid="profile-activity-hint">
-						Community publishes and forks. Editing a package without
+						Community publishes and forks. Editing a repository without
 						republishing it does not appear here.
 					</p>
 					{activity.length === 0 ? (
@@ -368,10 +475,6 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 	}
 }
 
-export async function renderProfileContentHtml(props: ProfileContentProps) {
-	return renderToString(<ProfileContent {...props} />)
-}
-
 const activityActorCss = {
 	display: 'inline-flex',
 	alignItems: 'center',
@@ -383,50 +486,67 @@ const sectionCss = {
 	gap: spacing.md,
 }
 
-const filterToolbarCss = {
-	display: 'grid',
-	gap: spacing.sm,
+const filterDetailsCss = {
+	margin: 0,
 }
 
-/* Same bordered-pill grammar as the community category chips. */
-const filterNavCss = {
-	display: 'flex',
-	flexWrap: 'wrap' as const,
-	alignItems: 'center',
-	gap: '0.4rem',
-	'& a': {
-		display: 'inline-flex',
-		alignItems: 'center',
-		minHeight: '44px',
-		backgroundColor: colors.surface,
-		border: `1.5px solid ${colors.border}`,
-		borderRadius: '999px',
-		padding: '0.35rem 0.85rem',
-	},
-}
-
-const filterNavLabelCss = {
+const filterSummaryCss = {
+	cursor: 'pointer',
 	color: colors.textMuted,
 	fontSize: '0.8rem',
 	fontWeight: 600,
 	textTransform: 'uppercase' as const,
 	letterSpacing: '0.04em',
-	minWidth: '5.5rem',
+	width: 'fit-content',
+	minHeight: '1.75rem',
+	display: 'flex',
+	alignItems: 'center',
+}
+
+const filterToolbarCss = {
+	display: 'grid',
+	gap: spacing.sm,
+	marginTop: spacing.sm,
+}
+
+/* Same bordered-pill grammar as the community category chips, sized down. */
+const filterNavCss = {
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	alignItems: 'center',
+	gap: '0.3rem',
+	'& a': {
+		display: 'inline-flex',
+		alignItems: 'center',
+		minHeight: '1.75rem',
+		backgroundColor: colors.surface,
+		border: `1px solid ${colors.border}`,
+		borderRadius: '999px',
+		padding: '0.1rem 0.5rem',
+	},
+}
+
+const filterNavLabelCss = {
+	color: colors.textMuted,
+	fontSize: '0.7rem',
+	fontWeight: 600,
+	textTransform: 'uppercase' as const,
+	letterSpacing: '0.04em',
+	minWidth: '4.5rem',
 }
 
 const filterLinkCss = {
 	display: 'inline-flex',
 	alignItems: 'center',
 	justifyContent: 'center',
-	minHeight: '44px',
-	padding: '0.3rem 0.95rem',
+	minHeight: '1.75rem',
+	padding: '0.1rem 0.55rem',
 	borderRadius: '999px',
 	color: colors.textMuted,
-	fontSize: '0.88rem',
+	fontSize: '0.75rem',
 	fontWeight: 650,
 	lineHeight: 1.2,
 	textDecoration: 'none',
-	transition: `background-color 140ms ${transitions.easeOut}, color 140ms ${transitions.easeOut}, border-color 140ms ${transitions.easeOut}`,
 	'&:hover': {
 		color: colors.text,
 	},
@@ -479,6 +599,20 @@ const packageTitleGroupCss = {
 	flex: '1 1 auto',
 }
 
+const packageSignifiersCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	gap: '0.3rem',
+	flex: 'none',
+	color: colors.textMuted,
+}
+
+const packageSignifierCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	lineHeight: 0,
+}
+
 const packageNameCss = {
 	margin: 0,
 	fontSize: typography.fontSize.base,
@@ -516,25 +650,6 @@ const forkButtonCss = {
 			backgroundColor: colors.primarySoftest,
 		},
 	},
-}
-
-const communityBadgeCss = {
-	padding: `${spacing.xs} ${spacing.sm}`,
-	borderRadius: radius.full,
-	backgroundColor: colors.primarySoft,
-	color: colors.primaryText,
-	fontSize: typography.fontSize.xs,
-	fontWeight: typography.fontWeight.semibold,
-}
-
-const unpublishedBadgeCss = {
-	padding: `${spacing.xs} ${spacing.sm}`,
-	borderRadius: radius.full,
-	backgroundColor: colors.surface,
-	border: `1px solid ${colors.border}`,
-	color: colors.textMuted,
-	fontSize: typography.fontSize.xs,
-	fontWeight: typography.fontWeight.medium,
 }
 
 const tagListCss = {

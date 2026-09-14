@@ -5,7 +5,6 @@ import {
 	COMMUNITY_DETAIL_TARGET,
 	COMMUNITY_LISTINGS_TARGET,
 } from '#universal/community-frame-constants.ts'
-import { PROFILE_TARGET } from '#universal/profile-frame-constants.ts'
 
 /**
  * `registerFrame` replaces on a repeated name so Vite HMR can re-run a frame
@@ -15,6 +14,6 @@ import { PROFILE_TARGET } from '#universal/profile-frame-constants.ts'
  */
 test('each frame module registers a distinct frame name', () => {
 	expect(listRegisteredFrameNames().sort()).toEqual(
-		[COMMUNITY_LISTINGS_TARGET, COMMUNITY_DETAIL_TARGET, PROFILE_TARGET].sort(),
+		[COMMUNITY_LISTINGS_TARGET, COMMUNITY_DETAIL_TARGET].sort(),
 	)
 })

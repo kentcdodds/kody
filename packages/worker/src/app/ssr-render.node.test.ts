@@ -429,13 +429,13 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(accountHtml).toContain('data-testid="account-connections-link"')
 	expect(accountHtml).toContain('href="/account/connections"')
 	expect(accountHtml).not.toContain('aria-label="Connected agents"')
-	// The rail carries Connections and Packages (the profile is the canonical
-	// package list, so the nav links there rather than the `/account/packages`
+	// The rail carries Connections and Repositories (the profile is the canonical
+	// repository list, so the nav links there rather than the `/account/packages`
 	// redirect).
 	expect(accountHtml).toContain('>Connections</a>')
 	expect(accountHtml).toContain('data-icon="link"')
 	expect(accountHtml).toMatch(
-		/href="\/@account-user"[^>]*>[\s\S]*?Packages<\/a>/,
+		/href="\/@account-user"[^>]*>[\s\S]*?Repositories<\/a>/,
 	)
 	expect(accountHtml).toContain('data-icon="box"')
 	expect(accountProps.loaderData?.onboarding).toEqual({

@@ -56,6 +56,7 @@ const storeMethodNames = [
 	'listArchivedJobArtifactsDueBefore',
 	'deleteArchivedJobArtifact',
 	'countJobsForUser',
+	'countJobsBySourceId',
 	'sumJobsStorageBytesForUser',
 	'listJobStorageIdsForUser',
 	'listArchivedJobArtifactsForUser',

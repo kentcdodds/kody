@@ -732,6 +732,31 @@ export async function countJobRowsForUser(
 	return Number(row?.count ?? 0)
 }
 
+export type JobCountBySourceId = {
+	sourceId: string
+	count: number
+}
+
+/** Per-`source_id` job counts for one user. Does not load job rows. */
+export async function countJobRowsBySourceId(
+	db: D1Database,
+	userId: string,
+): Promise<Array<JobCountBySourceId>> {
+	const { results } = await db
+		.prepare(
+			`SELECT source_id, COUNT(*) AS job_count
+			FROM jobs
+			WHERE user_id = ?
+			GROUP BY source_id`,
+		)
+		.bind(userId)
+		.all<{ source_id: string; job_count: number }>()
+	return (results ?? []).map((row) => ({
+		sourceId: String(row.source_id),
+		count: Number(row.job_count ?? 0),
+	}))
+}
+
 /**
  * Physical text-byte estimate of a user's job rows, mirroring the main
  * worker's `calculateUserD1StorageBytes` per-table formula so jobs data in the

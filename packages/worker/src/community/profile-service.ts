@@ -1,9 +1,11 @@
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
+import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { CommunityActionError } from './errors.ts'
 import {
 	countActiveListingsForOwner,
 	countPublicSavedPackagesForUser,
+	countWebhooksByPackageId,
 	getUserSocialRowByStableId,
 	getUserSocialRowByUsername,
 	listCommunityActivityForActors,
@@ -17,6 +19,7 @@ import {
 	type CommunityProfileRecord,
 	type ProfileVisibility,
 	type PublicProfilePackage,
+	type PublicProfilePackageListRow,
 } from './types.ts'
 
 const maxDisplayNameLength = 50
@@ -175,10 +178,40 @@ export async function listPublicProfilePackages(input: {
 	limit: number
 	includePrivate?: boolean
 }): Promise<Array<PublicProfilePackage>> {
-	return await listPublicProfilePackagesFromDb(input.env.APP_DB, {
+	const packages = await listPublicProfilePackagesFromDb(input.env.APP_DB, {
 		ownerStableUserId: input.ownerStableUserId,
 		query: input.query,
 		limit: input.limit,
 		includePrivate: input.includePrivate,
 	})
+	return await attachProfilePackageSignifierCounts({
+		env: input.env,
+		ownerStableUserId: input.ownerStableUserId,
+		packages,
+	})
+}
+
+async function attachProfilePackageSignifierCounts(input: {
+	env: Env
+	ownerStableUserId: string
+	packages: Array<PublicProfilePackageListRow>
+}): Promise<Array<PublicProfilePackage>> {
+	if (input.packages.length === 0) return []
+	const [webhookCounts, jobCountRows] = await Promise.all([
+		countWebhooksByPackageId(input.env.APP_DB, {
+			ownerStableUserId: input.ownerStableUserId,
+			packageIds: input.packages.map((pkg) => pkg.packageId),
+		}).catch(() => new Map<string, number>()),
+		jobsData(input.env)
+			.countJobsBySourceId({ userId: input.ownerStableUserId })
+			.catch(() => []),
+	])
+	const jobCounts = new Map(
+		jobCountRows.map((row) => [row.sourceId, row.count] as const),
+	)
+	return input.packages.map(({ sourceId, ...pkg }) => ({
+		...pkg,
+		webhookCount: webhookCounts.get(pkg.packageId) ?? 0,
+		jobCount: jobCounts.get(sourceId) ?? 0,
+	}))
 }

@@ -73,6 +73,9 @@ export function toPublicProfilePackageItem(
 		communityListingKodyId: pkg.communityListingKodyId,
 		communityPublishedAt: pkg.communityPublishedAt,
 		needsRepublish: pkg.needsRepublish,
+		hasApp: pkg.hasApp,
+		webhookCount: pkg.webhookCount,
+		jobCount: pkg.jobCount,
 		iconUrl: options?.username
 			? resolvePackageListIconUrl({
 					username: options.username,

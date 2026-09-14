@@ -81,12 +81,12 @@ test('account section switches keep the current page on screen (no loading flash
 		'Jobs',
 	)
 
-	// Packages sits in the rail at the same level as the other sections and
-	// points at the profile, which is the canonical package list.
+	// Repositories sits in the rail at the same level as the other sections and
+	// points at the profile, which is the canonical repository list.
 	await expect(
 		page
 			.getByRole('navigation', { name: 'Account sections' })
-			.getByRole('link', { name: 'Packages', exact: true }),
+			.getByRole('link', { name: 'Repositories', exact: true }),
 	).toHaveAttribute('href', `/@${user.username}`)
 })
 

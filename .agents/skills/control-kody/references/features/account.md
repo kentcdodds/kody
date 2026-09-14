@@ -6,8 +6,8 @@ site header. Desktop puts an Account link in the header to the left of the
 avatar; narrower viewports keep Account in the menu panel. The header avatar
 goes to the public profile (`/@username`).
 
-The account rail ("Account sections") lists every account page plus Packages
-(`/@username`, the canonical package list) and Connections
+The account rail ("Account sections") lists every account page plus Repositories
+(`/@username`, the canonical repository list) and Connections
 (`/account/connections`, connected agents). The rail is rendered by
 `AccountPageHeader` in
 `packages/worker/client/routes/account-management-components.tsx`.

@@ -4,21 +4,31 @@ Repo-backed saved packages: list, detail, files, share, approve-publish.
 
 ## How to get there
 
-`/@username` lists your packages, including private and unpublished packages
-when you view your own profile. Own-profile GET filters:
+`/@username` lists your repositories (saved packages), including private and
+unpublished ones when you view your own profile. The page heading and account
+rail label are **Repositories**; routes stay `/@username` and
+`/account/packages`. Chip filters (`visibility`, `listing`, `hidden`, `app`) and
+sort (`sort=name`; default is updated, matching `updated_at DESC`) run
+client-side from the already-loaded list (behind a `<details>` Filters
+disclosure; no loader, no view transition). Own-profile GET params:
 `visibility=public|private`, `listing=published|unpublished|ahead` (ahead =
 **Needs republish**: the listing pin is behind `published_commit`, not
-HEAD-ahead-of-published), and `hidden=yes|no`. Guests can use
-`listing=published|unpublished` only; owner-only params are ignored for them.
-Search stays `q=`. Each package lives at `/@username/:kodyId` (the URL slug is
-the package name leaf; README), `/@username/:kodyId/tree/:ref` (files),
-`/@username/:kodyId/assets/…` (README-relative images from the published or
-pinned commit), `/@username/:kodyId/settings` (lock, visibility, share,
-webhooks, delete), `/@username/:kodyId/approve-publish` (published-vs-HEAD
-review), and `/@username/:kodyId/approve-changes` (guest pin-ahead published
-diff). List marks come from `/@username/:kodyId/icon/:iconCommit` (packages) and
-`/account/repos/:repoId/icon/:iconCommit` (owner-only plain repos). Opening an
-allowlisted image or video in the tree renders a preview; the bytes come from
+HEAD-ahead-of-published), `hidden=yes|no`, `app=yes|no`, and `sort=name`. Guests
+can use `listing=published|unpublished`, `app=yes|no`, and `sort`. Owner-only
+params are ignored for them. Search stays `q=` and still hits the server. Each
+row shows Iconic signifiers (native tooltip only) for package, private, hidden,
+published-to-community or no community listing, webhook count, job count, and
+whether it has an app. Private repositories do not also get a “no community
+listing” signifier — the private icon is enough. List marks come from
+`/@username/:kodyId/icon/:iconCommit` (packages) and
+`/account/repos/:repoId/icon/:iconCommit` (owner-only plain repos). Each package
+lives at `/@username/:kodyId` (the URL slug is the package name leaf; README),
+`/@username/:kodyId/tree/:ref` (files), `/@username/:kodyId/assets/…`
+(README-relative images from the published or pinned commit),
+`/@username/:kodyId/settings` (lock, visibility, share, webhooks, delete),
+`/@username/:kodyId/approve-publish` (published-vs-HEAD review), and
+`/@username/:kodyId/approve-changes` (guest pin-ahead published diff). Opening
+an allowlisted image or video in the tree renders a preview; the bytes come from
 `/@username/:kodyId/raw/:ref/…` (same authz as the tree). Legacy
 `/account/packages` HTML URLs only redirect to these canonical pages.
 

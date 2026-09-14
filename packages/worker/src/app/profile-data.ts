@@ -11,10 +11,10 @@ import {
 import { type ProfileLoaderData } from '#universal/loader-data.ts'
 import { readProfilePackageFiltersFromUrl } from '#universal/profile-search.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
-import { listPublicProfilePackages } from '#worker/community/profile-package-list.ts'
 import {
 	getCommunityProfileByUsername,
 	getProfileActivity,
+	listPublicProfilePackages,
 } from '#worker/community/profile-service.ts'
 
 const defaultProfilePackageLimit = 50
@@ -86,7 +86,6 @@ async function loadProfileDataUncached(
 			query: filters.query || undefined,
 			limit: packageLimit,
 			includePrivate: isSelf,
-			filters,
 		}),
 		getProfileActivity({
 			env,
@@ -107,9 +106,6 @@ async function loadProfileDataUncached(
 		),
 		activity: activity.map(toPublicCommunityActivityItem),
 		query: filters.query || null,
-		visibility: filters.visibility,
-		listing: filters.listing,
-		hidden: filters.hidden,
 		isSelf,
 		loggedIn: Boolean(user),
 	}

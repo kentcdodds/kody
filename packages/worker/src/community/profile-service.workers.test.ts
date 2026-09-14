@@ -5,12 +5,14 @@ import {
 	resetDataCacheForTests,
 } from '#app/data-cache.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { jobsData } from '#worker/jobs/jobs-data.ts'
+import { createJobStorageId } from '@kody-internal/shared/jobs/storage-id.ts'
 import { ensureCommunityFlowSchema } from './community-flow-test-schema.ts'
-import { listPublicProfilePackages } from './profile-package-list.ts'
 import { insertCommunityActivityEvent } from './profile-repo.ts'
 import {
 	getCommunityProfileByUsername,
 	getProfileActivity,
+	listPublicProfilePackages,
 	updateCommunityProfile,
 } from './profile-service.ts'
 
@@ -121,13 +123,14 @@ async function insertSavedPackage(input: {
 	searchText?: string
 	isPrivate: boolean
 	hidden?: boolean
+	hasApp?: boolean
 	updatedAt?: string
 }) {
 	await runSql(
 		`INSERT INTO saved_packages (
 			id, user_id, name, kody_id, description, tags_json, search_text,
 			source_id, has_app, hidden, is_private, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		input.id,
 		input.userId,
 		input.name,
@@ -136,11 +139,47 @@ async function insertSavedPackage(input: {
 		JSON.stringify(input.tags ?? ['catalog']),
 		input.searchText ?? `${input.kodyId} search`,
 		`source-${input.id}`,
+		input.hasApp ? 1 : 0,
 		input.hidden ? 1 : 0,
 		input.isPrivate ? 1 : 0,
 		input.updatedAt ?? '2026-07-01T00:00:00.000Z',
 		input.updatedAt ?? '2026-07-01T00:00:00.000Z',
 	)
+}
+
+async function insertTestJob(input: {
+	id: string
+	userId: string
+	sourceId: string
+	name: string
+	now?: string
+}) {
+	const now = input.now ?? '2026-07-01T00:00:00.000Z'
+	await jobsData(env).insertJob({
+		userId: input.userId,
+		callerContextJson: '{}',
+		job: {
+			version: 1,
+			id: input.id,
+			userId: input.userId,
+			name: input.name,
+			sourceId: input.sourceId,
+			publishedCommit: null,
+			storageId: createJobStorageId(input.id),
+			schedule: { type: 'once', runAt: now },
+			timezone: 'UTC',
+			enabled: true,
+			killSwitchEnabled: false,
+			preserved: false,
+			expiresAt: null,
+			createdAt: now,
+			updatedAt: now,
+			nextRunAt: now,
+			runCount: 0,
+			successCount: 0,
+			errorCount: 0,
+		},
+	})
 }
 
 test('profile get hides private profiles unless includePrivate', async () => {
@@ -359,80 +398,18 @@ test('listPublicProfilePackages filters private/hidden packages and supports que
 		publishedCommit: 'commit-ahead',
 	})
 
-	const published = await listPublicProfilePackages({
+	const listed = await listPublicProfilePackages({
 		env,
 		ownerStableUserId: owner.userId,
 		limit: 10,
 		includePrivate: true,
-		filters: {
-			query: '',
-			visibility: 'all',
-			listing: 'published',
-			hidden: 'all',
-		},
 	})
-	expect(published.map((pkg) => pkg.kodyId)).toEqual(['public-notes'])
-
-	const unpublished = await listPublicProfilePackages({
-		env,
-		ownerStableUserId: owner.userId,
-		limit: 10,
-		includePrivate: true,
-		filters: {
-			query: '',
-			visibility: 'all',
-			listing: 'unpublished',
-			hidden: 'all',
-		},
-	})
-	expect(unpublished.map((pkg) => pkg.kodyId).sort()).toEqual([
-		'calendar',
-		'hidden-notes',
-		'secret-notes',
-	])
-
-	const privateOnly = await listPublicProfilePackages({
-		env,
-		ownerStableUserId: owner.userId,
-		limit: 10,
-		includePrivate: true,
-		filters: {
-			query: '',
-			visibility: 'private',
-			listing: 'all',
-			hidden: 'all',
-		},
-	})
-	expect(privateOnly.map((pkg) => pkg.kodyId)).toEqual(['secret-notes'])
-
-	const hiddenOnly = await listPublicProfilePackages({
-		env,
-		ownerStableUserId: owner.userId,
-		limit: 10,
-		includePrivate: true,
-		filters: {
-			query: '',
-			visibility: 'all',
-			listing: 'all',
-			hidden: 'yes',
-		},
-	})
-	expect(hiddenOnly.map((pkg) => pkg.kodyId)).toEqual(['hidden-notes'])
-
-	const ahead = await listPublicProfilePackages({
-		env,
-		ownerStableUserId: owner.userId,
-		limit: 10,
-		includePrivate: true,
-		filters: {
-			query: '',
-			visibility: 'all',
-			listing: 'ahead',
-			hidden: 'all',
-		},
-	})
-	expect(ahead.map((pkg) => pkg.kodyId)).toEqual(['public-notes'])
-	expect(ahead[0]?.needsRepublish).toBe(true)
+	expect(
+		listed.find((pkg) => pkg.kodyId === 'public-notes')?.needsRepublish,
+	).toBe(true)
+	expect(listed.find((pkg) => pkg.kodyId === 'calendar')?.needsRepublish).toBe(
+		false,
+	)
 })
 
 test('listPublicProfilePackages ahead filter ignores post-publish updated_at skew when the pin matches published_commit', async () => {
@@ -501,21 +478,100 @@ test('listPublicProfilePackages ahead filter ignores post-publish updated_at ske
 	expect(listed.find((pkg) => pkg.kodyId === 'skills')?.needsRepublish).toBe(
 		true,
 	)
+})
 
-	const ahead = await listPublicProfilePackages({
+test('listPublicProfilePackages attaches webhook, job, and app signifier counts', async () => {
+	const owner = await insertUser({
+		email: `sign-${crypto.randomUUID()}@example.com`,
+		username: `sign${crypto.randomUUID().slice(0, 8)}`,
+	})
+	const appId = `app-${crypto.randomUUID()}`
+	const plainId = `plain-${crypto.randomUUID()}`
+	await insertSavedPackage({
+		id: appId,
+		userId: owner.userId,
+		name: `@${owner.username}/notes-app`,
+		kodyId: 'notes-app',
+		isPrivate: false,
+		hasApp: true,
+	})
+	await insertSavedPackage({
+		id: plainId,
+		userId: owner.userId,
+		name: `@${owner.username}/notes`,
+		kodyId: 'notes',
+		isPrivate: false,
+	})
+	const now = '2026-07-01T00:00:00.000Z'
+	await runSql(
+		`INSERT INTO webhook_endpoints (
+			id, user_id, package_id, webhook_name, url_secret_hash, created_at, rotated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?)`,
+		`hook-1-${appId}`,
+		owner.userId,
+		appId,
+		'inbound',
+		'hash-1',
+		now,
+		now,
+		`hook-2-${appId}`,
+		owner.userId,
+		appId,
+		'alerts',
+		'hash-2',
+		now,
+		now,
+	)
+	await insertTestJob({
+		id: `job-${appId}`,
+		userId: owner.userId,
+		sourceId: `source-${appId}`,
+		name: 'daily notes',
+		now,
+	})
+	await insertTestJob({
+		id: `job-2-${appId}`,
+		userId: owner.userId,
+		sourceId: `source-${appId}`,
+		name: 'weekly notes',
+		now,
+	})
+	await insertTestJob({
+		id: `job-${plainId}`,
+		userId: owner.userId,
+		sourceId: `source-${plainId}`,
+		name: 'plain notes',
+		now,
+	})
+	const otherOwner = await insertUser({
+		email: `sign-other-${crypto.randomUUID()}@example.com`,
+		username: `signo${crypto.randomUUID().slice(0, 8)}`,
+	})
+	await insertTestJob({
+		id: `job-other-${appId}`,
+		userId: otherOwner.userId,
+		sourceId: `source-${appId}`,
+		name: 'other user notes',
+		now,
+	})
+
+	const listed = await listPublicProfilePackages({
 		env,
 		ownerStableUserId: owner.userId,
 		limit: 10,
-		includePrivate: true,
-		filters: {
-			query: '',
-			visibility: 'all',
-			listing: 'ahead',
-			hidden: 'all',
-		},
 	})
-	expect(ahead.map((pkg) => pkg.kodyId)).toEqual(['skills'])
-	expect(ahead[0]?.needsRepublish).toBe(true)
+	const appPkg = listed.find((pkg) => pkg.kodyId === 'notes-app')
+	const plainPkg = listed.find((pkg) => pkg.kodyId === 'notes')
+	expect(appPkg).toMatchObject({
+		hasApp: true,
+		webhookCount: 2,
+		jobCount: 2,
+	})
+	expect(plainPkg).toMatchObject({
+		hasApp: false,
+		webhookCount: 0,
+		jobCount: 1,
+	})
 })
 
 test('profile activity includes own private publishes and hides them from public reads', async () => {

@@ -1,8 +1,9 @@
-import { Frame, type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/ui'
 import { routes } from '#universal/routes.ts'
-import { PROFILE_TARGET } from '#universal/profile-frame-constants.ts'
 import {
+	toProfileListLoaderData,
 	toProfileShellLoaderData,
+	type ProfileListLoaderData,
 	type ProfileLoaderData,
 	type ProfileShellLoaderData,
 	type ProfileUnavailableLoaderData,
@@ -15,7 +16,6 @@ import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
-import { prefetchFrame } from '#client/frame-prefetch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
@@ -23,7 +23,9 @@ import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { on } from '#client/event-mixin.ts'
 import { readProfilePackageFiltersFromHref } from '#universal/profile-search.ts'
+import { ProfileContent } from '#universal/profile-content.tsx'
 import { renderProfileIdentity } from '#client/routes/profile-identity.tsx'
+import { profileListForUsername } from './profile-list-for-username.ts'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	fieldCss,
@@ -39,11 +41,6 @@ function getCurrentUsername(handle: Handle) {
 	return getProfileUsernameFromPathname(readRouterPathname(handle))
 }
 
-function buildProfileFrameSrc(href: string) {
-	const url = new URL(href, 'http://localhost')
-	return `${url.pathname}${url.search}`
-}
-
 export async function profileRouteLoader(
 	url: URL,
 	signal: AbortSignal,
@@ -55,8 +52,7 @@ export async function profileRouteLoader(
 		}
 	}
 
-	const frameSrc = buildProfileFrameSrc(`${url.pathname}${url.search}`)
-	const shellPromise = fetch(
+	const response = await fetch(
 		routes.profileApi.href({ username }, { searchParams: url.searchParams }),
 		{
 			headers: { Accept: 'application/json' },
@@ -64,11 +60,7 @@ export async function profileRouteLoader(
 			signal,
 		},
 	)
-	const framePrefetchPromise = prefetchFrame(frameSrc, PROFILE_TARGET, signal)
-
-	const response = await shellPromise
 	if (response.status === 404) {
-		await framePrefetchPromise.catch(() => {})
 		return {
 			profileShell: { ok: false, unavailable: true },
 		}
@@ -78,17 +70,18 @@ export async function profileRouteLoader(
 		throw new Error('Unable to load profile.')
 	}
 
-	await framePrefetchPromise
-
 	return {
 		profileShell: toProfileShellLoaderData(payload),
+		profileList: toProfileListLoaderData(payload),
 	}
 }
 
 export function ProfileRoute(handle: Handle) {
 	let shell: ProfileShellLoaderData | ProfileUnavailableLoaderData | null = null
+	let list: ProfileListLoaderData | null = null
 	let shellStatus: 'loading' | 'ready' | 'error' = 'loading'
 	let shellLoadedForUsername: string | null = null
+	let listLoadedForUsername: string | null = null
 	let shellRequestedForUsername: string | null = null
 	let shellLoadRequestId = 0
 
@@ -99,6 +92,8 @@ export function ProfileRoute(handle: Handle) {
 		const requestId = ++shellLoadRequestId
 		if (shellLoadedForUsername !== username) {
 			shellStatus = 'loading'
+			list = null
+			listLoadedForUsername = null
 			handle.update()
 		}
 
@@ -115,7 +110,9 @@ export function ProfileRoute(handle: Handle) {
 			if (requestId !== shellLoadRequestId) return
 			if (response.status === 404) {
 				shell = { ok: false, unavailable: true }
+				list = null
 				shellLoadedForUsername = username
+				listLoadedForUsername = null
 				shellStatus = 'ready'
 				handle.update()
 				return
@@ -125,7 +122,9 @@ export function ProfileRoute(handle: Handle) {
 				throw new Error('Unable to load profile.')
 			}
 			shell = toProfileShellLoaderData(payload)
+			list = toProfileListLoaderData(payload)
 			shellLoadedForUsername = username
+			listLoadedForUsername = username
 			shellStatus = 'ready'
 			handle.update()
 		} catch {
@@ -139,17 +138,7 @@ export function ProfileRoute(handle: Handle) {
 	listenToRouterNavigation(handle, () => {
 		const href = readCurrentRouterHref(handle)
 		if (!isProfilePathname(new URL(href, 'http://localhost').pathname)) return
-
 		handle.update()
-
-		const frame = handle.frames.get(PROFILE_TARGET)
-		if (!frame) return
-
-		const nextSrc = buildProfileFrameSrc(href)
-		if (frame.src !== nextSrc) {
-			frame.src = nextSrc
-		}
-		void frame.reload()
 	})
 
 	return () => {
@@ -164,15 +153,31 @@ export function ProfileRoute(handle: Handle) {
 			)
 		}
 
-		const routeData = tryConsumeRouteLoaderData(
+		const routeShell = tryConsumeRouteLoaderData(
 			handle,
 			'profileShell',
 			currentHref,
 		)
-		if (routeData && shellLoadedForUsername !== username) {
-			shell = routeData
-			shellLoadedForUsername = username
-			shellStatus = 'ready'
+		if (routeShell) {
+			shell = routeShell
+			if (routeShell.ok) {
+				shellLoadedForUsername = username
+				shellStatus = 'ready'
+			} else {
+				shellLoadedForUsername = username
+				shellStatus = 'ready'
+				list = null
+				listLoadedForUsername = null
+			}
+		}
+		const routeList = tryConsumeRouteLoaderData(
+			handle,
+			'profileList',
+			currentHref,
+		)
+		if (routeList) {
+			list = routeList
+			listLoadedForUsername = username
 		}
 
 		const needsStaleRefresh =
@@ -191,7 +196,6 @@ export function ProfileRoute(handle: Handle) {
 			handle.queueTask(loadShell)
 		}
 
-		const frameSrc = buildProfileFrameSrc(currentHref)
 		const showUnavailable =
 			shellStatus === 'ready' &&
 			shell != null &&
@@ -201,12 +205,15 @@ export function ProfileRoute(handle: Handle) {
 			shell != null && shell.ok && shellLoadedForUsername === username
 				? shell
 				: null
-		// The frame decides which filters the viewer may use; the shell only
-		// carries owner-only params forward when this is the signed-in owner.
 		const filters = readProfilePackageFiltersFromHref(currentHref, {
 			allowOwnerFilters: readyShell?.isSelf === true,
 		})
 		const searchQuery = filters.query
+		const visibleList = profileListForUsername(
+			list,
+			listLoadedForUsername,
+			username,
+		)
 
 		if (showUnavailable) {
 			return (
@@ -243,13 +250,11 @@ export function ProfileRoute(handle: Handle) {
 					{readyShell ? renderProfileIdentity(readyShell) : null}
 
 					<div mix={css(mainCss)}>
-						<h2 mix={css(packagesHeadingCss)}>Packages</h2>
+						<h2 mix={css(packagesHeadingCss)}>Repositories</h2>
 						<form
 							method="get"
 							action={routes.profile.href({ username })}
 							role="search"
-							data-rmx-target={PROFILE_TARGET}
-							data-rmx-history="push"
 							mix={css(searchFormCss)}
 						>
 							{filters.visibility !== 'all' ? (
@@ -265,10 +270,16 @@ export function ProfileRoute(handle: Handle) {
 							{filters.hidden !== 'all' ? (
 								<input type="hidden" name="hidden" value={filters.hidden} />
 							) : null}
+							{filters.app !== 'all' ? (
+								<input type="hidden" name="app" value={filters.app} />
+							) : null}
+							{filters.sort !== 'updated' ? (
+								<input type="hidden" name="sort" value={filters.sort} />
+							) : null}
 							<label mix={css(searchFieldCss)}>
-								<span mix={css(fieldLabelCss)}>Search packages</span>
+								<span mix={css(fieldLabelCss)}>Search repositories</span>
 								<input
-									key={`${searchQuery}:${filters.visibility}:${filters.listing}:${filters.hidden}`}
+									key={searchQuery}
 									type="search"
 									name="q"
 									defaultValue={searchQuery}
@@ -284,7 +295,20 @@ export function ProfileRoute(handle: Handle) {
 							</button>
 						</form>
 
-						<Frame name={PROFILE_TARGET} src={frameSrc} />
+						{visibleList ? (
+							<ProfileContent
+								profile={visibleList.profile}
+								packages={visibleList.packages}
+								activity={visibleList.activity}
+								query={searchQuery || null}
+								visibility={filters.visibility}
+								listing={filters.listing}
+								hidden={filters.hidden}
+								app={filters.app}
+								sort={filters.sort}
+								isSelf={readyShell?.isSelf === true}
+							/>
+						) : null}
 					</div>
 				</div>
 			</section>
