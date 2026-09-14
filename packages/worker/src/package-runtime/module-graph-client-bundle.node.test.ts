@@ -95,7 +95,7 @@ test('buildKodyAppClientBundle bundles only the browser graph and names the outp
 	expect(changed.mainModule).not.toBe(bundle.mainModule)
 })
 
-test('buildKodyAppClientBundle applies Remix UI JSX defaults only when the client graph imports remix/ui', async () => {
+test('buildKodyAppClientBundle keeps esbuild JSX defaults even when the client graph imports remix/ui', async () => {
 	mockBundledOutput('export const Counter = () => null;\n')
 	await buildKodyAppClientBundle({
 		sourceFiles: {
@@ -105,14 +105,12 @@ test('buildKodyAppClientBundle applies Remix UI JSX defaults only when the clien
 		},
 		entryPoint: 'src/client.ts',
 	})
-	const uiCall = mockModule.createWorker.mock.calls[0]?.[0] as {
-		jsx?: string
-		jsxImportSource?: string
-	}
-	expect(uiCall).toMatchObject({
-		jsx: 'automatic',
-		jsxImportSource: 'remix/ui',
-	})
+	const uiCall = mockModule.createWorker.mock.calls[0]?.[0] as Record<
+		string,
+		unknown
+	>
+	expect(uiCall).not.toHaveProperty('jsx')
+	expect(uiCall).not.toHaveProperty('jsxImportSource')
 
 	mockBundledOutput('export {}\n')
 	await buildKodyAppClientBundle({

@@ -76,7 +76,7 @@ export default async function main(input) {
 				redirect: 'manual',
 			})
 
-		// GET / — the Remix router renders the home controller: Kody from the
+		// GET / — the Remix recipe renders the home controller: Kody from the
 		// request context, the custom middleware's header, and the hydrated
 		// island's serialized entry pointing at the platform-built module.
 		const home = await authedFetch(appOrigin)

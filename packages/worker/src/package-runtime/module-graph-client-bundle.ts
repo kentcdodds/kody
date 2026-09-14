@@ -24,10 +24,6 @@ import {
 	clientModuleHashLength,
 } from './package-app-client-module-name.ts'
 import { withPlatformRemixFiles } from './package-app-remix.ts'
-import {
-	createPackageAppRemixClientBundleOptions,
-	entryGraphNeedsRemixUiBundleOptions,
-} from './package-app-runtime.ts'
 import { type RuntimeBundle } from './runtime-bundle-types.ts'
 import { iterateModuleSourceTexts } from './runtime-source-modules.ts'
 import { isTypeDeclarationFilePath } from './static-kody-imports.ts'
@@ -129,7 +125,7 @@ function assertClientGraphIsBrowserSafe(input: {
 				serverOnly,
 			)}). ` +
 				'Keep kody:runtime, kody:@ package imports, cloudflare:*, and node:* in the Worker entry (kody.app.entry) and expose what the page needs over fetch or the realtime facet. ' +
-				'In a Remix app, islands and the browser entry must not import app/routes.ts or a layout that imports it (both read kody:runtime); pass hrefs from routes.x.href() to islands as props.',
+				'If a client module needs a URL from a server-only route contract, pass that href as a prop instead of importing the server module.',
 		)
 	}
 	if (stylesheets.length > 0) {
@@ -271,9 +267,9 @@ export async function buildKodyAppClientBundle(input: {
 		reachable,
 		bundleLabel,
 	})
-	// The platform's vendored `remix` joins the browser graph too, so `run()`
-	// and hydrated components come from the same Remix build the server
-	// rendered with.
+	// Optional convenience: the platform's vendored `remix` joins the browser
+	// graph too, so a recipe that imports `remix/ui` resolves the same copy
+	// the server bundle used. Bundler options stay on esbuild defaults.
 	const files = await withPlatformRemixFiles(
 		collectBrowserBundleFiles({
 			sourceFiles: input.sourceFiles,
@@ -285,13 +281,6 @@ export async function buildKodyAppClientBundle(input: {
 	const externals = rootPackage
 		? getPackageAppClientExternals(rootPackage.manifest)
 		: []
-	// JSX compiles against `remix/ui` only when this browser graph imports
-	// `remix/ui`. A DOM client, or one that only borrows remix/headers, keeps
-	// esbuild's defaults.
-	const usesRemixUi = entryGraphNeedsRemixUiBundleOptions({
-		sourceFiles: input.sourceFiles,
-		entryPoint,
-	})
 	// Keep the experimental bundler out of the Worker's top-level deploy graph.
 	const { createWorker } = await importWorkerBundler()
 	const bundle = await createWorker({
@@ -299,7 +288,6 @@ export async function buildKodyAppClientBundle(input: {
 		entryPoint,
 		bundle: true,
 		target: 'es2022',
-		...(usesRemixUi ? createPackageAppRemixClientBundleOptions() : {}),
 		...(externals.length > 0
 			? {
 					__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired: [

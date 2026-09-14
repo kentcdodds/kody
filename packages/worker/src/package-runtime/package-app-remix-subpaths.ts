@@ -113,14 +113,3 @@ export type PackageAppRemixSubpath = (typeof packageAppRemixSubpaths)[number]
 
 /** The bare package name package code imports Remix from (`remix/<subpath>`). */
 export const remixPackageName = 'remix'
-
-/**
- * Whether a bare specifier is Remix UI (`remix/ui` or `remix/ui/…`). That
- * graph needs Remix UI bundler defaults; other `remix/…` helpers do not.
- */
-export function isRemixUiSpecifier(specifier: string) {
-	return (
-		specifier === `${remixPackageName}/ui` ||
-		specifier.startsWith(`${remixPackageName}/ui/`)
-	)
-}

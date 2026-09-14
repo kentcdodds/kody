@@ -25,11 +25,6 @@ import {
 import { resolveDirectKodyDependenciesForEntryPoint } from './module-graph-workspace.ts'
 import { withPlatformRemixFiles } from './package-app-remix.ts'
 import {
-	createPackageAppRemixServerBundleOptions,
-	entryGraphNeedsRemixUiBundleOptions,
-	type PackageAppRemixBundleOptions,
-} from './package-app-runtime.ts'
-import {
 	createAppEntrypointSource,
 	createExecuteEntrypointSource,
 	createImportableEntrypointSource,
@@ -43,17 +38,15 @@ const moduleBundleCache = createPublishedPackagePromiseCache<RuntimeBundle>()
 async function createWorkerBundle(input: {
 	files: Record<string, string>
 	entryPoint: string
-	remixOptions?: PackageAppRemixBundleOptions | null
 }) {
 	// Keep the experimental bundler out of the Worker's top-level deploy graph.
 	const { createWorker } = await importWorkerBundler()
-	// Every package bundle can import `remix/<subpath>` from the platform's
-	// vendored copy, whether or not the entry is a Remix app.
+	// Optional convenience: every package bundle can import `remix/<subpath>`
+	// from the platform's vendored copy. Host options stay on esbuild defaults.
 	const files = await withPlatformRemixFiles(input.files)
 	return await createWorker({
 		files,
 		entryPoint: input.entryPoint,
-		...input.remixOptions,
 	})
 }
 
@@ -292,12 +285,6 @@ export async function buildKodyAppBundle(input: {
 		const bundle = await createWorkerBundle({
 			files,
 			entryPoint: bootstrapPath,
-			remixOptions: entryGraphNeedsRemixUiBundleOptions({
-				sourceFiles: input.sourceFiles,
-				entryPoint,
-			})
-				? createPackageAppRemixServerBundleOptions()
-				: null,
 		})
 		const modules = {
 			...stripKodyRuntimeModules(bundle.modules as WorkerLoaderModules),

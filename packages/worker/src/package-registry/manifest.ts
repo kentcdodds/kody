@@ -96,7 +96,7 @@ export function parseAuthoredPackageJson(input: {
 	/**
 	 * `authoring` (default) is write/publish: leftover `kody.app.runtime` is
 	 * rejected so kits cannot hide a removed mode. `published` is snapshot
-	 * load: the field is inert (dispatch is by export shape) and must not
+	 * load: the field is inert (every entry is a fetch handler) and must not
 	 * brick host-setup / packageAppFetch.
 	 */
 	mode?: PackageManifestParseMode
@@ -165,7 +165,7 @@ const retiredKodyFieldMessages = {
 } as const
 
 const retiredPackageAppRuntimeMessage =
-	'kody.app.runtime was removed; request dispatch is by export shape (a router gets the mounted URL, a fetch handler gets the stripped path), not a configured mode.'
+	'kody.app.runtime was removed; every package app is a fetch handler and receives the mount-stripped path. There is no configured runtime mode.'
 
 function assertNoRetiredKodyFields(input: {
 	parsed: unknown

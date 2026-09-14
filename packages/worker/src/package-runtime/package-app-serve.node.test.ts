@@ -588,7 +588,7 @@ test('synthetic host-setup failures return JSON with the underlying cause', asyn
 	seedFixture({ kodyId: 'prep-fail-app' })
 	mockModule.buildPackageAppWorker.mockRejectedValueOnce(
 		new Error(
-			'kody.app.runtime was removed; request dispatch is by export shape',
+			'kody.app.runtime was removed; every package app is a fetch handler',
 		),
 	)
 
@@ -609,6 +609,6 @@ test('synthetic host-setup failures return JSON with the underlying cause', asyn
 			kody_id: 'prep-fail-app',
 		},
 		request_path: '/@kentcdodds/packages/prep-fail-app',
-		cause: 'kody.app.runtime was removed; request dispatch is by export shape',
+		cause: 'kody.app.runtime was removed; every package app is a fetch handler',
 	})
 })
