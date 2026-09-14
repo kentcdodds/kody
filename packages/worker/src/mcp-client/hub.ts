@@ -358,6 +358,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		await this.manager.waitForConnections({
 			timeout: connectionSettleTimeoutMs,
 		})
+		const before = await this.readTokenPresence(input.serverId)
 		await this.runDiscoverIfConnected(input.serverId)
 		const row = this.manager
 			.listServers()
@@ -368,7 +369,7 @@ class McpClientHubBase extends DurableObject<Env> {
 				serverName: row.name,
 			})
 		}
-		return this.finalizeConnectResult(input.serverId)
+		return await this.finishConnectResult(input.serverId, before)
 	}
 
 	async removeServer(input: { serverId: string }): Promise<void> {
@@ -677,7 +678,17 @@ class McpClientHubBase extends DurableObject<Env> {
 	 * auth URL. Needed when SQL `auth_url` was cleared on callback success but
 	 * the live connection never reached `ready`.
 	 */
-	private clearIncompleteDiscoverStamp(serverId: string) {
+	private clearIncompleteDiscoverStamp(
+		serverId: string,
+		options?: { preserveTokenRecovery?: boolean },
+	) {
+		const existing = this.lastDiscoverErrors.get(serverId) ?? null
+		if (
+			options?.preserveTokenRecovery &&
+			isMcpOAuthTokenRecoveryLastError(existing)
+		) {
+			return
+		}
 		const connection = this.manager.mcpConnections[serverId]
 		if (connection) connection.connectionError = null
 		this.lastDiscoverErrors.delete(serverId)
@@ -690,7 +701,9 @@ class McpClientHubBase extends DurableObject<Env> {
 		result: McpServerConnectResult
 		lastError: McpServerLastError | null
 	}> {
-		this.clearIncompleteDiscoverStamp(serverId)
+		this.clearIncompleteDiscoverStamp(serverId, {
+			preserveTokenRecovery: true,
+		})
 		let discoverError: string | null = null
 		try {
 			await this.manager.discoverIfConnected(serverId, {
@@ -873,12 +886,10 @@ class McpClientHubBase extends DurableObject<Env> {
 					lastError: null,
 				}
 			}
-			const existing = this.lastDiscoverErrors.get(serverId)
-			if (
-				existing &&
-				(result.state !== 'authenticating' ||
-					isMcpOAuthTokenRecoveryLastError(existing))
-			) {
+			const existing = this.lastDiscoverErrors.get(serverId) ?? null
+			const existingIsTokenRecovery =
+				existing !== null && isMcpOAuthTokenRecoveryLastError(existing)
+			if (existing && existingIsTokenRecovery) {
 				if (connection) connection.connectionError = existing.message
 				return {
 					result: {
@@ -889,9 +900,29 @@ class McpClientHubBase extends DurableObject<Env> {
 					lastError: existing,
 				}
 			}
-			if (result.state !== 'authenticating') {
+			if (result.state === 'authenticating') {
 				this.lastDiscoverErrors.delete(serverId)
+				return {
+					result: {
+						...result,
+						error: result.error ?? discoverError,
+						lastError: null,
+					},
+					lastError: null,
+				}
 			}
+			if (existing) {
+				if (connection) connection.connectionError = existing.message
+				return {
+					result: {
+						...this.buildConnectResult(serverId),
+						error: existing.message,
+						lastError: existing,
+					},
+					lastError: existing,
+				}
+			}
+			this.lastDiscoverErrors.delete(serverId)
 			return {
 				result: {
 					...result,
@@ -1392,7 +1423,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		const before = beforeTokens ?? after
 		const episode = await this.readEpisode(serverId)
 		const existing = this.lastDiscoverErrors.get(serverId) ?? null
-		if (isMcpOAuthTokenRecoveryLastError(existing)) {
+		if (existing && isMcpOAuthTokenRecoveryLastError(existing)) {
 			const connection = this.manager.mcpConnections[serverId]
 			if (connection) connection.connectionError = existing.message
 			return

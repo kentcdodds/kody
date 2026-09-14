@@ -751,6 +751,64 @@ test('snapshot after a prior ready connection parks authenticating with a durabl
 	)
 })
 
+test('authenticating park drops a leftover incomplete-discover lastError', async () => {
+	const { state } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	const callbackUrl = 'https://kody.codes/account/mcp-servers/oauth/callback'
+	seedServer({
+		manager,
+		callbackUrl,
+		clientId: 'client-1',
+		authUrl: 'https://auth.example/authorize?state=ok.server-1',
+	})
+	const connection = manager.mcpConnections['server-1']
+	if (!connection) throw new Error('Fake connection was not seeded.')
+	connection.connectionState = 'discovering'
+	connection.connectionError = "tool discovery didn't finish"
+	const hung = await hub.getSnapshot()
+	expect(hung.servers[0]?.lastError?.phase).toBe('tools/list')
+	expect(hung.servers[0]?.error).toContain("tool discovery didn't finish")
+
+	connection.connectionState = 'authenticating'
+	connection.connectionError = null
+	const parked = await hub.getSnapshot()
+	expect(parked.servers[0]?.state).toBe('authenticating')
+	expect(parked.servers[0]?.lastError ?? null).toBeNull()
+	expect(parked.servers[0]?.error ?? null).toBeNull()
+	expect(parked.servers[0]?.error ?? '').not.toContain(
+		'Authorization completed',
+	)
+})
+
+test('refreshServer keeps a token-recovery lastError when the server stays authenticating', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { state } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	const { callbackUrl, connection } = await seedReadyHomeServer({
+		hub,
+		manager,
+	})
+	connection.options.transport.authProvider.storedTokens = {
+		refresh_token: 'rotating-rt',
+	}
+	manager.connectBehavior = 'oauth'
+	const parked = await hub.reconnectServer({
+		serverId: 'server-1',
+		callbackUrl,
+	})
+	expect(parked.lastError?.phase).toBe('token exchange')
+
+	const refreshed = await hub.refreshServer({ serverId: 'server-1' })
+	expect(refreshed.state).toBe('authenticating')
+	expect(refreshed.lastError?.phase).toBe('token exchange')
+	expect(refreshed.error).toContain('could not be refreshed')
+	expect(refreshed.error).not.toContain('Authorization completed')
+})
+
 test('refreshServer returns the recovered ready connection after a lightweight retry', async () => {
 	const { state } = createDurableObjectState()
 	const hub = new McpClientHub(state, {} as Env)

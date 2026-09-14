@@ -51,7 +51,7 @@ export function describeMcpOAuthTokenRecovery(input: {
 
 export function isMcpOAuthTokenRecoveryLastError(
 	lastError: McpServerLastError | null,
-): lastError is McpServerLastError {
+): boolean {
 	if (!lastError || lastError.phase !== 'token exchange') return false
 	const message = lastError.message.toLowerCase()
 	return (

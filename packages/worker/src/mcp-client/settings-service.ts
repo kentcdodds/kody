@@ -484,29 +484,33 @@ export async function persistMcpServerLastErrorIfChanged(input: {
 	state: string
 	lastError: McpServerLastError | null
 }): Promise<void> {
-	const existing = await getMcpServerSettingById({
-		env: input.env,
-		userId: input.userId,
-		id: input.id,
-	})
-	if (!existing) return
-	if (input.state === 'ready') {
-		if (existing.lastError) {
-			await setMcpServerLastError({
-				env: input.env,
-				userId: input.userId,
-				id: input.id,
-				lastError: null,
-			})
+	try {
+		const existing = await getMcpServerSettingById({
+			env: input.env,
+			userId: input.userId,
+			id: input.id,
+		})
+		if (!existing) return
+		if (input.state === 'ready') {
+			if (existing.lastError) {
+				await setMcpServerLastError({
+					env: input.env,
+					userId: input.userId,
+					id: input.id,
+					lastError: null,
+				})
+			}
+			return
 		}
-		return
+		if (!input.lastError) return
+		if (existing.lastError === input.lastError.message) return
+		await setMcpServerLastError({
+			env: input.env,
+			userId: input.userId,
+			id: input.id,
+			lastError: input.lastError,
+		})
+	} catch {
+		// Status reads and reconnect results stay valid if D1 persist fails.
 	}
-	if (!input.lastError) return
-	if (existing.lastError === input.lastError.message) return
-	await setMcpServerLastError({
-		env: input.env,
-		userId: input.userId,
-		id: input.id,
-		lastError: input.lastError,
-	})
 }

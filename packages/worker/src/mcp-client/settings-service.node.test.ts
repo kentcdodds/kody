@@ -321,6 +321,29 @@ test('persistMcpServerLastErrorIfChanged writes token-recovery errors and skips 
 	)
 })
 
+test('persistMcpServerLastErrorIfChanged swallows D1 failures', async () => {
+	mockModule.getMcpServerSettingRowById.mockRejectedValue(new Error('D1 down'))
+	await expect(
+		persistMcpServerLastErrorIfChanged({
+			env: { APP_DB: {} } as Env,
+			userId: 'user-1',
+			id: 'server-1',
+			state: 'authenticating',
+			lastError: {
+				message: 'Stored OAuth tokens could not be refreshed',
+				phase: 'token exchange',
+				httpStatus: null,
+				httpBodySnippet: null,
+				mcpEndpoint: null,
+				resource: null,
+				authServer: null,
+				attemptId: 'attempt-rt',
+				at: '2026-09-14T00:00:00.000Z',
+			},
+		}),
+	).resolves.toBeUndefined()
+})
+
 test('MCP server usage lock hides the server from execute and grants a package', async () => {
 	clearEnabledMcpServerRefsCacheForTests()
 	const env = { APP_DB: {} } as Env
