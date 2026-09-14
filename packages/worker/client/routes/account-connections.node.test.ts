@@ -86,9 +86,9 @@ test('connections page renders the connected list with Add connection, the MCP U
 	expect(html).toContain(`href="${routes.accountMcpOauthClients.href()}"`)
 	// No cold-path loading copy when the SSR payload is present.
 	expect(html).not.toContain('Loading connections')
-	// The rail marks this page current and links Packages to the profile.
+	// The rail marks this page current and links Repositories to the profile.
 	expect(html).toMatch(/href="\/account\/connections"[^>]*aria-current="page"/)
-	expect(html).toMatch(/href="\/@jane"[^>]*>[\s\S]*?Packages<\/a>/)
+	expect(html).toMatch(/href="\/@jane"[^>]*>[\s\S]*?Repositories<\/a>/)
 	expect(html).toContain('data-icon="box"')
 })
 
@@ -211,7 +211,7 @@ test('connections page swaps the copy card for a verify note while the email is 
 	expect(html).toContain('No agents have authorized yet.')
 })
 
-test('account rail lists Connections and Packages at the same level as the other sections', () => {
+test('account rail lists Connections and Repositories at the same level as the other sections', () => {
 	const items = accountNavItemsFor({
 		username: 'jane',
 		showShared: true,
@@ -220,8 +220,10 @@ test('account rail lists Connections and Packages at the same level as the other
 	expect(items.find((item) => item.label === 'Connections')?.href).toBe(
 		'/account/connections',
 	)
-	// Packages is the profile page — the canonical package list — not the
+	// Repositories is the profile page — the canonical repo list — not the
 	// `/account/packages` redirect, unless the session has no username yet.
-	expect(items.find((item) => item.label === 'Packages')?.href).toBe('/@jane')
+	expect(items.find((item) => item.label === 'Repositories')?.href).toBe(
+		'/@jane',
+	)
 	expect(accountPackagesNavHref(null)).toBe('/account/packages')
 })

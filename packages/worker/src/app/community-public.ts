@@ -70,6 +70,9 @@ export function toPublicProfilePackageItem(
 		communityListingKodyId: pkg.communityListingKodyId,
 		communityPublishedAt: pkg.communityPublishedAt,
 		needsRepublish: pkg.needsRepublish,
+		hasApp: pkg.hasApp,
+		webhookCount: pkg.webhookCount,
+		jobCount: pkg.jobCount,
 		...(options?.includeOwnerVisibility
 			? { isPrivate: pkg.isPrivate, hidden: pkg.hidden }
 			: {}),

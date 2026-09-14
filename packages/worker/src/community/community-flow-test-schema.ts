@@ -208,6 +208,16 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			last_run_status TEXT,
 			next_run_at TEXT NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS webhook_endpoints (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			package_id TEXT NOT NULL,
+			webhook_name TEXT NOT NULL,
+			url_secret_hash TEXT NOT NULL DEFAULT '',
+			enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+			created_at TEXT NOT NULL,
+			rotated_at TEXT NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS published_bundle_artifacts (
 			id TEXT PRIMARY KEY,
 			user_id TEXT NOT NULL,

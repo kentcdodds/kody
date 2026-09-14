@@ -403,7 +403,7 @@ export function accountNavItemsFor(input: {
 		},
 		{
 			href: accountPackagesNavHref(input.username),
-			label: 'Packages',
+			label: 'Repositories',
 			icon: 'box',
 		},
 		...(input.showShared

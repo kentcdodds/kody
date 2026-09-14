@@ -1,5 +1,6 @@
 import {
 	type OnboardingFeaturedListing,
+	type ProfilePackageAppFilter,
 	type ProfilePackageHiddenFilter,
 	type ProfilePackageListingFilter,
 	type ProfilePackageVisibilityFilter,
@@ -251,8 +252,16 @@ export type ProfileLoaderData = {
 	visibility: ProfilePackageVisibilityFilter
 	listing: ProfilePackageListingFilter
 	hidden: ProfilePackageHiddenFilter
+	app: ProfilePackageAppFilter
 	isSelf: boolean
 	loggedIn: boolean
+}
+
+/** Package list + activity for `/@username`. Filter chips apply client-side. */
+export type ProfileListLoaderData = {
+	profile: PublicCommunityProfile
+	packages: Array<PublicProfilePackageItem>
+	activity: Array<PublicCommunityActivityItem>
 }
 
 /** SSR-embedded shell data for the identity header on the profile page. */
@@ -281,6 +290,16 @@ export function toProfileShellLoaderData(
 		isSelf: data.isSelf,
 		loggedIn: data.loggedIn,
 		visibility: data.profile.visibility,
+	}
+}
+
+export function toProfileListLoaderData(
+	data: ProfileLoaderData,
+): ProfileListLoaderData {
+	return {
+		profile: data.profile,
+		packages: data.packages,
+		activity: data.activity,
 	}
 }
 
@@ -2090,6 +2109,7 @@ export type AppLoaderData = {
 		| CommunityPackageNotFoundLoaderData
 	packageFiles?: PackageFilesLoaderData
 	profileShell?: ProfileShellLoaderData | ProfileUnavailableLoaderData
+	profileList?: ProfileListLoaderData
 	adminUsers?: AdminUsersLoaderData
 	adminRoles?: AdminRolesLoaderData
 	adminCommunityReports?: AdminCommunityReportsLoaderData

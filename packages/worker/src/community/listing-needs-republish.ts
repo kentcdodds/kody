@@ -17,22 +17,3 @@ export function listingNeedsRepublish(input: {
 	if (!pin || !published) return false
 	return pin !== published
 }
-
-/**
- * Profile `listing=ahead` filter. Same commit comparison as
- * `listingNeedsRepublish`, joined through the owner's package source so a
- * foreign `entity_sources` row cannot leak a commit into another user's list.
- */
-export const listingNeedsRepublishSql = `EXISTS (
-	SELECT 1 FROM community_listings AS cl
-	JOIN entity_sources AS es
-		ON es.id = saved_packages.source_id
-		AND es.user_id = saved_packages.user_id
-		AND es.entity_kind = 'package'
-		AND es.entity_id = saved_packages.id
-	WHERE cl.owner_user_id = saved_packages.user_id
-		AND cl.status = 'active'
-		AND cl.package_id = saved_packages.id
-		AND es.published_commit IS NOT NULL
-		AND cl.pinned_commit != es.published_commit
-)`

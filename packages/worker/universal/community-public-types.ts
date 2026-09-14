@@ -109,6 +109,12 @@ export type PublicProfilePackageItem = {
 	 * Owners use this for the "Needs republish" filter and date reminder.
 	 */
 	needsRepublish: boolean
+	/** True when the saved package declares a package app. */
+	hasApp: boolean
+	/** Inbound webhook endpoints declared on this saved package. */
+	webhookCount: number
+	/** Package-owned jobs whose `source_id` matches this saved package. */
+	jobCount: number
 	/** Present on the owner's own profile list; omitted for other viewers. */
 	isPrivate?: boolean
 	/** Present on the owner's own profile list; omitted for other viewers. */
@@ -123,12 +129,14 @@ export type ProfilePackageListingFilter =
 	| 'unpublished'
 	| 'ahead'
 export type ProfilePackageHiddenFilter = 'all' | 'yes' | 'no'
+export type ProfilePackageAppFilter = 'all' | 'yes' | 'no'
 
 export type ProfilePackageFilters = {
 	query: string
 	visibility: ProfilePackageVisibilityFilter
 	listing: ProfilePackageListingFilter
 	hidden: ProfilePackageHiddenFilter
+	app: ProfilePackageAppFilter
 }
 
 export type CommunityActivityEventType =

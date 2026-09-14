@@ -139,10 +139,21 @@ export type PublicProfilePackage = {
 	 * from `updated_at` vs `published_at`.
 	 */
 	needsRepublish: boolean
+	/** True when the saved package declares a package app. */
+	hasApp: boolean
+	/** Inbound webhook endpoints declared on this saved package. */
+	webhookCount: number
+	/** Package-owned jobs whose `source_id` matches this saved package. */
+	jobCount: number
 	/** Owner-only: repo visibility. Always false on public profile lists. */
 	isPrivate: boolean
 	/** Owner-only: hidden from ranked search. Always false on public profile lists. */
 	hidden: boolean
+}
+
+/** Internal list row: `sourceId` is used to attach job counts, then stripped. */
+export type PublicProfilePackageListRow = PublicProfilePackage & {
+	sourceId: string
 }
 
 export type CommunityListingWithAggregates = CommunityListingRecord &

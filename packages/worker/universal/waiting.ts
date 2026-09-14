@@ -381,7 +381,7 @@ const waitingFirstUseCopy: Record<
 	package: {
 		title: 'Persist your first package',
 		why: 'A saved package is reusable code your agents can keep and share.',
-		doLabel: 'Open Packages',
+		doLabel: 'Open Repositories',
 		href: routes.accountPackages.href(),
 	},
 	job: {

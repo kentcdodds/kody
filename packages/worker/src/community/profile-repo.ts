@@ -9,7 +9,7 @@ import {
 	type CommunityActivityEventType,
 	type CommunityActivityItem,
 	type ProfileVisibility,
-	type PublicProfilePackage,
+	type PublicProfilePackageListRow,
 } from './types.ts'
 
 // D1 caps bound parameters per statement; 90 leaves headroom for fixed binds.
@@ -331,16 +331,11 @@ export async function listPublicProfilePackages(
 		limit: number
 		/** When true, include private and hidden packages (own-profile inventory). */
 		includePrivate?: boolean
-		/** Extra AND clauses. Origin profile filters pass these; MCP does not. */
-		additionalWhereSql?: Array<string>
 	},
-): Promise<Array<PublicProfilePackage>> {
+): Promise<Array<PublicProfilePackageListRow>> {
 	const conditions = input.includePrivate
 		? ['user_id = ?']
 		: ['user_id = ?', 'is_private = 0', 'hidden = 0']
-	if (input.additionalWhereSql && input.additionalWhereSql.length > 0) {
-		conditions.push(...input.additionalWhereSql)
-	}
 	const bindings: Array<unknown> = [input.ownerStableUserId]
 	const tokens = extractCommunityListingLikeTokens(input.query ?? '')
 	if (tokens.length > 0) {
@@ -358,7 +353,7 @@ export async function listPublicProfilePackages(
 	const rows = await db
 		.prepare(
 			`SELECT id, name, kody_id, description, tags_json, updated_at,
-				is_private, hidden
+				source_id, is_private, hidden, has_app
 			FROM saved_packages
 			WHERE ${conditions.join(' AND ')}
 			ORDER BY updated_at DESC
@@ -374,10 +369,14 @@ export async function listPublicProfilePackages(
 		description: String(row['description']),
 		tags: parseTagsJson(row['tags_json']),
 		updatedAt: String(row['updated_at']),
+		sourceId: String(row['source_id']),
 		communityListingId: null as string | null,
 		communityListingKodyId: null as string | null,
 		communityPublishedAt: null as string | null,
 		needsRepublish: false,
+		hasApp: Number(row['has_app']) === 1,
+		webhookCount: 0,
+		jobCount: 0,
 		isPrivate: Number(row['is_private']) === 1,
 		hidden: Number(row['hidden']) === 1,
 	}))
@@ -452,4 +451,31 @@ export async function listPublicProfilePackages(
 			}),
 		}
 	})
+}
+
+export async function countWebhooksByPackageId(
+	db: D1Database,
+	input: {
+		ownerStableUserId: string
+		packageIds: Array<string>
+	},
+): Promise<Map<string, number>> {
+	const counts = new Map<string, number>()
+	if (input.packageIds.length === 0) return counts
+	for (const idChunk of chunkArray(input.packageIds, maxSqlBindingsPerChunk)) {
+		const placeholders = idChunk.map(() => '?').join(', ')
+		const rows = await db
+			.prepare(
+				`SELECT package_id, COUNT(*) AS count
+				FROM webhook_endpoints
+				WHERE user_id = ? AND package_id IN (${placeholders})
+				GROUP BY package_id`,
+			)
+			.bind(input.ownerStableUserId, ...idChunk)
+			.all<{ package_id: string; count: number }>()
+		for (const row of rows.results ?? []) {
+			counts.set(String(row.package_id), Number(row.count ?? 0))
+		}
+	}
+	return counts
 }

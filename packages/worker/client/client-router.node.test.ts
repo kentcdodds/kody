@@ -243,6 +243,15 @@ test('view transitions skip shell tab switches, including when from-path was nev
 	expect(animate({ from: '/pricing', to: '/onboarding/step-1' })).toBe(true)
 	expect(animate({ from: '/onboarding/step-1', to: '/pricing' })).toBe(true)
 
+	// Chip filters and search on `/@username` stay on the same page.
+	expect(animate({ from: '/@jane', to: '/@jane?app=yes' })).toBe(false)
+	expect(
+		animate({ from: '/@jane?visibility=private', to: '/@jane?app=no' }),
+	).toBe(false)
+	expect(animate({ from: '/@jane', to: '/@jane?q=notes' })).toBe(false)
+	expect(animate({ from: '/@jane', to: '/@other' })).toBe(true)
+	expect(animate({ from: '/pricing', to: '/@jane' })).toBe(true)
+
 	const withRail = {
 		querySelector: (selector: string) =>
 			selector === persistentShellNavSelector ? ({} as Element) : null,

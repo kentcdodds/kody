@@ -2,6 +2,8 @@ import { type Handle } from 'remix/ui'
 import { createMultiMatcher } from 'remix/route-pattern/match'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 import { isOnboardingPagePath } from '#universal/onboarding-process.ts'
+import { isProfilePathname } from '#universal/profile-path.ts'
+import { isProfilePackageFilterOnlyHrefChange } from '#universal/profile-search.ts'
 import { clearOnboardingPayloadCache } from '#client/routes/onboarding-payload.ts'
 import { applyDocumentHead } from './document-head.ts'
 import { installFileDropNavigationGuard } from './file-drop-navigation.ts'
@@ -148,6 +150,12 @@ function isSameOnboardingNavigation(from: string | null, to: string) {
 	)
 }
 
+function isSameProfilePathnameNavigation(from: string | null, to: string) {
+	if (from == null) return false
+	const fromPathname = pathnameOf(from)
+	return fromPathname === pathnameOf(to) && isProfilePathname(fromPathname)
+}
+
 export function documentHasPersistentShell(
 	root: {
 		querySelector: (selector: string) => Element | null
@@ -174,6 +182,7 @@ export function shouldUseViewTransition(input: {
 	if (input.from === input.to) return false
 	if (isSameShellAreaNavigation(input.from, input.to)) return false
 	if (isSameOnboardingNavigation(input.from, input.to)) return false
+	if (isSameProfilePathnameNavigation(input.from, input.to)) return false
 	// Full document load never recorded `from`. If the rail is already on
 	// screen and the destination is still a shell page, this is a tab click.
 	if (
@@ -449,6 +458,14 @@ function runIntentPrefetch(destination: URL) {
 	// focusin lands after the navigation consumed the prefetch slot).
 	if (destinationPath === getCurrentPathWithSearchAndHash()) return
 	if (destinationPath === activeNavigationPath) return
+	if (
+		isProfilePackageFilterOnlyHrefChange(
+			getCurrentPathWithSearchAndHash(),
+			destinationPath,
+		)
+	) {
+		return
+	}
 	// Warm the destination's lazy code chunk too — loaders in lazy areas pull
 	// their own chunk, but loaderless lazy routes (e.g. /connect/oauth) would
 	// otherwise wait for the chunk at navigation time.
@@ -493,6 +510,9 @@ export function prefetchRouteHrefs(
 		seen.add(destinationPath)
 		if (destinationPath === currentPath) continue
 		if (destinationPath === activeNavigationPath) continue
+		if (isProfilePackageFilterOnlyHrefChange(currentPath, destinationPath)) {
+			continue
+		}
 		void preloadClientRouteModules(
 			`${destination.pathname}${destination.search}`,
 		).catch(() => {
@@ -1023,6 +1043,26 @@ function handlePopState() {
 		)
 		return
 	}
+	if (
+		lastNotifiedDocumentPath &&
+		isProfilePackageFilterOnlyHrefChange(
+			lastNotifiedDocumentPath,
+			getCurrentDocumentPath(),
+		)
+	) {
+		cancelHoverIntent()
+		navigationAbortController?.abort()
+		navigationAbortController = null
+		dispatchNavigationStart({ historyAction: 'pop' })
+		notify()
+		dispatchNavigationEnd(
+			createNavigationEventDetail(getCurrentPathWithSearchAndHash(), {
+				historyAction: 'pop',
+				preventScrollReset: true,
+			}),
+		)
+		return
+	}
 	void runNavigationWithLoader(new URL(window.location.href), {
 		historyAction: 'pop',
 		skipPushState: true,
@@ -1138,6 +1178,14 @@ async function navigateInternal(to: string, options?: NavigationRunOptions) {
 		`${current.pathname}${current.search}`
 	if (sameDocumentLocation && destination.hash !== current.hash) {
 		commitImmediateNavigation(nextPath, options)
+		return
+	}
+
+	if (isProfilePackageFilterOnlyHrefChange(currentPath, nextPath)) {
+		commitImmediateNavigation(nextPath, {
+			...options,
+			preventScrollReset: options?.preventScrollReset ?? true,
+		})
 		return
 	}
 

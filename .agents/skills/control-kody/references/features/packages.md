@@ -4,12 +4,18 @@ Repo-backed saved packages: list, detail, files, share, approve-publish.
 
 ## How to get there
 
-`/@username` lists your packages, including private and unpublished packages
-when you view your own profile. Own-profile GET filters:
+`/@username` lists your repositories (saved packages), including private and
+unpublished ones when you view your own profile. The page heading and account
+rail label are **Repositories**; routes stay `/@username` and
+`/account/packages`. Chip filters (`visibility`, `listing`, `hidden`, `app`) run
+client-side from the already-loaded list (behind a `<details>` Filters
+disclosure; no loader, no view transition). Own-profile GET params:
 `visibility=public|private`, `listing=published|unpublished|ahead` (ahead =
 **Needs republish**: the listing pin is behind `published_commit`, not
-HEAD-ahead-of-published), and `hidden=yes|no`. Guests can use
-`listing=published|unpublished` only; owner-only params are ignored for them.
+HEAD-ahead-of-published), `hidden=yes|no`, and `app=yes|no`. Guests can use
+`listing=published|unpublished` and `app=yes|no`; owner-only params are ignored
+for them. Search stays `q=` and still hits the server. Each row shows Iconic
+signifiers for package, webhook count, job count, and whether it has an app.
 Search stays `q=`. Each package lives at `/@username/:kodyId` (the URL slug is
 the package name leaf; README), `/@username/:kodyId/tree/:ref` (files),
 `/@username/:kodyId/assets/…` (README-relative images from the published or

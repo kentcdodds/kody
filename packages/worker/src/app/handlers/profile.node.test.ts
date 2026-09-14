@@ -20,9 +20,6 @@ vi.mock('#worker/community/profile-service.ts', () => ({
 		mockModule.getCommunityProfileByUsername(...args),
 	getProfileActivity: (...args: Array<unknown>) =>
 		mockModule.getProfileActivity(...args),
-}))
-
-vi.mock('#worker/community/profile-package-list.ts', () => ({
 	listPublicProfilePackages: (...args: Array<unknown>) =>
 		mockModule.listPublicProfilePackages(...args),
 }))
@@ -39,7 +36,6 @@ vi.mock('#app/ssr-render.tsx', () => ({
 
 vi.mock('#app/frames/community-listings.ts', () => ({}))
 vi.mock('#app/frames/community-detail.ts', () => ({}))
-vi.mock('#app/frames/profile.ts', () => ({}))
 vi.mock('#app/frame-registrations.ts', () => ({}))
 
 vi.mock('#app/frame-registry.ts', async (importOriginal) => {
@@ -83,6 +79,9 @@ const packageFixture = [
 		communityListingKodyId: 'helper',
 		communityPublishedAt: '2026-07-01T00:00:00.000Z',
 		needsRepublish: false,
+		hasApp: false,
+		webhookCount: 0,
+		jobCount: 0,
 		isPrivate: false,
 		hidden: false,
 	},
@@ -134,16 +133,12 @@ test('profile API and page respect visibility and expose packages/activity', asy
 	expect(publicBody.visibility).toBe('all')
 	expect(publicBody.listing).toBe('all')
 	expect(publicBody.hidden).toBe('all')
+	expect(publicBody.app).toBe('all')
 	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
 		expect.objectContaining({
 			ownerStableUserId: 'stable-alice',
 			includePrivate: false,
-			filters: {
-				query: '',
-				visibility: 'all',
-				listing: 'all',
-				hidden: 'all',
-			},
+			query: undefined,
 		}),
 	)
 
@@ -157,17 +152,14 @@ test('profile API and page respect visibility and expose packages/activity', asy
 			'https://example.com/profiles/alice.json?visibility=private&listing=published&hidden=yes',
 		),
 	} as never)
+	const guestFilterBody = await guestFilterResponse.json()
 	expect(guestFilterResponse.status).toBe(200)
-	expect((await guestFilterResponse.json()).listing).toBe('published')
+	expect(guestFilterBody.listing).toBe('published')
+	expect(guestFilterBody.app).toBe('all')
 	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
 		expect.objectContaining({
 			includePrivate: false,
-			filters: {
-				query: '',
-				visibility: 'all',
-				listing: 'published',
-				hidden: 'all',
-			},
+			query: undefined,
 		}),
 	)
 
@@ -221,20 +213,16 @@ test('profile API and page respect visibility and expose packages/activity', asy
 	expect(ownBody.visibility).toBe('private')
 	expect(ownBody.listing).toBe('ahead')
 	expect(ownBody.hidden).toBe('yes')
+	expect(ownBody.app).toBe('all')
 	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
 		expect.objectContaining({
 			ownerStableUserId: 'stable-alice',
 			includePrivate: true,
-			filters: {
-				query: '',
-				visibility: 'private',
-				listing: 'ahead',
-				hidden: 'yes',
-			},
+			query: undefined,
 		}),
 	)
 
-	// Page shell embeds the person so first paint does not wait on the frame.
+	// Page shell embeds the person and the unfiltered package list.
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	setupPublicProfileMocks()
 	const publicPageResponse = await pageHandler.handler({
@@ -255,6 +243,46 @@ test('profile API and page respect visibility and expose packages/activity', asy
 		loggedIn: false,
 		visibility: 'public',
 	})
+	expect(publicPageBody.loaderData.profileList).toEqual({
+		profile: {
+			username: 'alice',
+			displayName: 'Alice',
+			bio: 'Hello',
+			avatarUrl: null,
+			visibility: 'public',
+			joinedAt: '2026-01-01T00:00:00.000Z',
+			publicPackageCount: 1,
+			listingCount: 1,
+		},
+		packages: [
+			{
+				name: '@alice/helper',
+				kodyId: 'helper',
+				description: 'Helpful package',
+				tags: ['tools'],
+				updatedAt: '2026-07-01T00:00:00.000Z',
+				communityListingId: 'listing-1',
+				communityListingKodyId: 'helper',
+				communityPublishedAt: '2026-07-01T00:00:00.000Z',
+				needsRepublish: false,
+				hasApp: false,
+				webhookCount: 0,
+				jobCount: 0,
+			},
+		],
+		activity: [
+			{
+				type: 'listing_published',
+				actorUsername: 'alice',
+				actorDisplayName: 'Alice',
+				actorAvatarUrl: null,
+				listingId: 'listing-1',
+				listingName: '@alice/helper',
+				listingKodyId: 'helper',
+				createdAt: '2026-07-01T00:00:00.000Z',
+			},
+		],
+	})
 
 	// Page shell 404 for unavailable profiles.
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
@@ -270,20 +298,4 @@ test('profile API and page respect visibility and expose packages/activity', asy
 		ok: false,
 		unavailable: true,
 	})
-
-	// Bare profile frame HTML for target header.
-	setupPublicProfileMocks()
-	const frameResponse = await pageHandler.handler({
-		request: new Request('https://example.com/@alice', {
-			headers: { 'x-remix-target': 'profile' },
-		}),
-		params: { username: 'alice' },
-		url: new URL('https://example.com/@alice'),
-	} as never)
-	const html = await frameResponse.text()
-	expect(frameResponse.status).toBe(200)
-	expect(frameResponse.headers.get('Cache-Control')).toBe('no-store')
-	expect(html).toContain('data-testid="profile-frame"')
-	expect(html).toContain('data-testid="profile-packages-empty"')
-	expect(html).not.toContain('<html')
 })
