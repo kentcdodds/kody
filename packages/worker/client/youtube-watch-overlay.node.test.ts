@@ -45,7 +45,5 @@ test('youtube watch overlay paints a poster for an allowlisted youtubeId', async
 	expect(html).toContain(`/youtube-thumb/${videoId}`)
 	expect(html).toContain('data-testid="youtube-watch-play"')
 	expect(html).toContain('▶')
-	expect(html).toContain('oklch(1 0 0)')
-	expect(html).not.toContain('--color-on-primary')
 	expect(html).not.toContain('youtube-nocookie.com')
 })

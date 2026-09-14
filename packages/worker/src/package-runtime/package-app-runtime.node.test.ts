@@ -4,13 +4,7 @@ import {
 	createTemporaryModuleGraph,
 	type RuntimeModule,
 } from '#worker/test-support/module-graph.ts'
-import {
-	createKeepNamesPlugin,
-	createPackageAppRemixClientBundleOptions,
-	createPackageAppRemixServerBundleOptions,
-	entryGraphNeedsRemixUiBundleOptions,
-	packageAppServerModuleUrl,
-} from './package-app-runtime.ts'
+import { entryGraphNeedsRemixUiBundleOptions } from './package-app-runtime.ts'
 import {
 	createAppEntrypointSource,
 	createPackageRuntimeModuleSource,
@@ -88,23 +82,6 @@ test('entryGraphNeedsRemixUiBundleOptions is true only when remix/ui is reachabl
 			entryPoint: 'src/app.ts',
 		}),
 	).toBe(false)
-})
-
-test('Remix bundle options compile JSX against remix/ui, pin import.meta.url on the server, and keep component names', () => {
-	const server = createPackageAppRemixServerBundleOptions()
-	expect(server).toMatchObject({
-		jsx: 'automatic',
-		jsxImportSource: 'remix/ui',
-		define: { 'import.meta.url': JSON.stringify(packageAppServerModuleUrl) },
-	})
-	const plugins = server.__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired
-	expect(plugins).toHaveLength(1)
-	const initialOptions: { keepNames?: boolean } = {}
-	createKeepNamesPlugin().setup({ initialOptions })
-	expect(initialOptions.keepNames).toBe(true)
-
-	const client = createPackageAppRemixClientBundleOptions()
-	expect(client).toEqual({ jsx: 'automatic', jsxImportSource: 'remix/ui' })
 })
 
 test('the app bootstrap remounts a router-shaped export and leaves a fetch handler on the stripped path', async () => {

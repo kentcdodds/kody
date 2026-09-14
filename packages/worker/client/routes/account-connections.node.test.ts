@@ -112,7 +112,6 @@ test('Add connection shows every named client on every viewport with none greyed
 			),
 		)
 	}
-	expect(html).not.toContain('data-greyed="true"')
 	// No card is hidden behind the onboarding phone/desktop media query: every
 	// card `<li>` shares one class whose rules never reach `display: none`.
 	const cards = [

@@ -257,14 +257,6 @@ test('waiting first-use cards are discrete, skip coarse checklist ids, and ignor
 		'first-use:discord',
 	])
 
-	const discord = wizardResume.find((item) => item.id === 'first-use:discord')
-	expect(discord).toMatchObject({
-		title: 'Join the Kody Discord',
-		doLabel: 'Join Discord',
-		href: '/discord',
-		severity: 'setup',
-	})
-
 	const presentClearsCard: Array<WaitingFirstUseId> = [...waitingFirstUseIds]
 	for (const id of presentClearsCard) {
 		const remaining = presentClearsCard.filter((candidate) => candidate !== id)

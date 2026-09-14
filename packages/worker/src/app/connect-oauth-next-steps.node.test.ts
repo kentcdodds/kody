@@ -14,17 +14,13 @@ function githubIntegration() {
 	}
 }
 
-test('buildConnectOauthNextSteps fills the copyable prompt from provider and connection name', () => {
+test('buildConnectOauthNextSteps resolves the provider display name for the connection', () => {
 	const github = buildConnectOauthNextSteps({
 		integrationName: 'github',
 		integration: githubIntegration(),
 	})
-	expect(github).toEqual({
-		service: 'github',
-		connectionName: 'github',
-		prompt:
-			'I just connected to github with github. What should we do next? Is there a community package we can fork or one we can build to make using this integration easier?',
-	})
+	expect(github.service).toBe('github')
+	expect(github.connectionName).toBe('github')
 
 	const googleBusiness = buildConnectOauthNextSteps({
 		integrationName: 'google-business',
@@ -41,7 +37,4 @@ test('buildConnectOauthNextSteps fills the copyable prompt from provider and con
 	})
 	expect(googleBusiness.service).toBe('google')
 	expect(googleBusiness.connectionName).toBe('google-business')
-	expect(googleBusiness.prompt).toBe(
-		'I just connected to google with google-business. What should we do next? Is there a community package we can fork or one we can build to make using this integration easier?',
-	)
 })

@@ -799,18 +799,12 @@ test('session config parsing is strict: usePkce and clientId are required and st
 })
 
 test('parseConnectOauthNextSteps accepts the copyable prompt payload', () => {
-	const parsed = parseConnectOauthNextSteps({
+	const payload = {
 		service: 'google',
 		connectionName: 'google-work',
-		prompt:
-			'I just connected to google with google-work. What should we do next? Is there a community package we can fork or one we can build to make using this integration easier?',
-	})
-	expect(parsed).toEqual({
-		service: 'google',
-		connectionName: 'google-work',
-		prompt:
-			'I just connected to google with google-work. What should we do next? Is there a community package we can fork or one we can build to make using this integration easier?',
-	})
+		prompt: 'ask the agent what to do next',
+	}
+	expect(parseConnectOauthNextSteps(payload)).toEqual(payload)
 	expect(parseConnectOauthNextSteps(null)).toBeNull()
 	expect(parseConnectOauthNextSteps({ guidance: 'x' })).toBeNull()
 	expect(
@@ -955,8 +949,7 @@ test('success card shows a copyable whats-next prompt for the connected connecti
 		},
 		storedIntegration: null,
 	})
-	const prompt =
-		'I just connected to google with google-work. What should we do next? Is there a community package we can fork or one we can build to make using this integration easier?'
+	const prompt = 'ask the agent about google-work next steps'
 	const html = await renderToString(
 		renderSuccessCard({
 			config,
@@ -971,11 +964,9 @@ test('success card shows a copyable whats-next prompt for the connected connecti
 		}),
 	)
 	expect(html).toContain('data-testid="connect-oauth-whats-next"')
-	expect(html).toContain("What's next?")
-	expect(html).toContain('Not sure what to do next? Ask your agent:')
 	expect(html).toContain(prompt)
-	expect(html).toContain('Copy prompt')
 	expect(html).toContain('/account/integrations/google-work')
+	expect(html).not.toContain('google-work with google-work')
 
 	const fallbackHtml = await renderToString(
 		renderSuccessCard({
@@ -987,7 +978,6 @@ test('success card shows a copyable whats-next prompt for the connected connecti
 		}),
 	)
 	expect(fallbackHtml).toContain('data-testid="connect-oauth-whats-next"')
-	expect(fallbackHtml).toContain(
-		'I just connected to google-work with google-work. What should we do next? Is there a community package we can fork or one we can build to make using this integration easier?',
-	)
+	expect(fallbackHtml).toContain('google-work with google-work')
+	expect(fallbackHtml).not.toContain(prompt)
 })

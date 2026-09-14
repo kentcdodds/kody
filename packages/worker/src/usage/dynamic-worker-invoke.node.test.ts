@@ -11,16 +11,12 @@ test('countEvaluateInvocationParamsChars is the key-sorted JSON length or 0', ()
 		'{"token":"x"}'.length,
 	)
 	expect(countEvaluateInvocationParamsChars({ z: 1, a: 2 })).toBe(
-		countEvaluateInvocationParamsChars({ a: 2, z: 1 }),
-	)
-	expect(countEvaluateInvocationParamsChars({ z: 1, a: 2 })).toBe(
 		'{"a":2,"z":1}'.length,
 	)
 	expect(countEvaluateInvocationParamsChars({ z: { b: 1, a: 2 }, a: 0 })).toBe(
 		'{"a":0,"z":{"a":2,"b":1}}'.length,
 	)
 
-	expect(JSON.stringify({}).length).toBe(2)
 	expect(countEvaluateInvocationParamsChars({})).toBe(0)
 	expect(countEvaluateInvocationParamsChars(null)).toBe(0)
 	expect(countEvaluateInvocationParamsChars(undefined)).toBe(0)

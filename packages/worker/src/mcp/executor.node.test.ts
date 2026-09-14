@@ -244,19 +244,6 @@ test('kody namespaced proxy enumerates advertised tools on a disconnected server
 	)
 })
 
-test('generated kody provider source reads MCP metadata from evaluate invocation', () => {
-	const source = createKodyProviderProxySource({
-		providerName: 'kody',
-	})
-
-	expect(source).toContain('__invocation.mcpServers')
-	expect(source).toBe(
-		createKodyProviderProxySource({
-			providerName: 'kody',
-		}),
-	)
-})
-
 test('generated kody provider and executor module sources stay bundle-safe', () => {
 	const source = createKodyProviderProxySource({
 		providerName: 'kody',

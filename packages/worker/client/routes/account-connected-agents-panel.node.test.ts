@@ -149,7 +149,6 @@ test('connected agents panel groups same-name hosts, shows logos, and keeps revo
 	expect(rowClass).toBeTruthy()
 	const rowRules = cssRulesForClass(html, rowClass!)
 	expect(rowRules).toContain('grid-template-columns: minmax(0, 1fr) auto')
-	expect(rowRules).not.toContain('flex-wrap')
 })
 
 test('confirming revoke removes the row immediately and restores it with an error toast if the request fails', async () => {

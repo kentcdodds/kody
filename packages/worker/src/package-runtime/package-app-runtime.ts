@@ -64,7 +64,7 @@ type EsbuildInitialOptionsBuild = {
  * initial options during setup — the documented way for an esbuild plugin
  * to adjust options.
  */
-export function createKeepNamesPlugin() {
+function createKeepNamesPlugin() {
 	return {
 		name: 'kody-package-app-keep-names',
 		setup(build: EsbuildInitialOptionsBuild) {

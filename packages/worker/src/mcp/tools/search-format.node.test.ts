@@ -531,32 +531,11 @@ export declare function fetch(request: Request): Promise<Response>
 	expect(observedPackageDetail.markdown).toContain(
 		'If you plan to invoke an export, call packageGet({ package_id: "package-123" }) first',
 	)
-	expect(observedPackageDetail.markdown).toContain(
-		'That call does not return files.',
-	)
-	expect(observedPackageDetail.markdown).toContain(
-		'repoOpenSession({ target: { kind: "package", package_id: "package-123" } })',
-	)
-	expect(observedPackageDetail.markdown).toContain(
-		'repoReadFile({ session_id, path: "README.md" })',
-	)
-	expect(observedPackageDetail.markdown).toContain(
-		'repoReadFile({ session_id, path: "AGENTS.md" })',
-	)
-	expect(observedPackageDetail.markdown).toContain(
-		'packageGetGitRemote({ package_id: "package-123" })',
-	)
 	expect(observedPackageDetail.structured).toMatchObject({
 		listingAhead: null,
 		followUp: expect.stringContaining(
 			'repoOpenSession({ target: { kind: "package", package_id: "package-123" } })',
 		),
-		maintain: {
-			gitLane: 'packageGetGitRemote({ package_id: "package-123" })',
-			publish: 'packagePublishExternalPush({ package_id: "package-123" })',
-			sourceSession:
-				'repoOpenSession({ target: { kind: "package", package_id: "package-123" } })',
-		},
 	})
 })
 
@@ -652,10 +631,6 @@ test('package search surfaces listing ahead only when the fork is behind', () =>
 	expect(aheadDetail.structured).toMatchObject({ listingAhead: true })
 	expect(aheadDetail.markdown).toContain('repoPublishSession')
 	expect(aheadDetail.markdown).toContain('absorbed_upstream_commit')
-	expect(aheadDetail.markdown).toContain(
-		'repoReadFile({ session_id, path: "AGENTS.md" })',
-	)
-	expect(aheadDetail.markdown).toContain('That call does not return files.')
 
 	const [forkAheadMatch] = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',

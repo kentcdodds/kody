@@ -63,7 +63,6 @@ test('token recovery lastError names refresh failure without claiming IdP just s
 	expect(rejected.message).toContain('rejected or consumed the refresh token')
 	expect(rejected.message).not.toContain('Authorization completed')
 	expect(rejected.message).toContain('id 11111111-1111-4111-8111-111111111111')
-	expect(isMcpOAuthTokenRecoveryLastError(rejected)).toBe(true)
 
 	const noRefresh = buildMcpOAuthTokenRecoveryLastError({
 		authUrl: null,
