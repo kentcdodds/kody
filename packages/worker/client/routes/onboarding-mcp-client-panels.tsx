@@ -20,6 +20,7 @@ import {
 	claudeDesktopToolHint,
 	grokBotInstallUrl,
 	grokConnectorsUrl,
+	isDefaultKodyMcpUrl,
 	kodyAppIconFilename,
 	kodyChatGptPluginUrl,
 	kodyCursorAddPluginCommand,
@@ -69,21 +70,27 @@ export function renderPanelContent(
 			)
 		case 'chatgpt': {
 			const appIconUrl = buildKodyAppIconUrl(mcpServerUrl)
+			const developerApp = (
+				<>
+					<CopyCard
+						highlights={highlights}
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+					/>
+					<AppIconCard src={appIconUrl} downloadName={kodyAppIconFilename} />
+					<ChatGptDeveloperModeWarning
+						href={chatGptDeveloperModeGuideUrl}
+						linkLabel="developer mode help"
+					/>
+				</>
+			)
+			if (!isDefaultKodyMcpUrl(mcpServerUrl)) return developerApp
 			return (
 				<>
 					<ChatGptPluginAction />
 					<OnboardingManualDetails summaryLead="Or create a developer-mode app">
-						<CopyCard
-							highlights={highlights}
-							label="MCP URL"
-							value={mcpServerUrl}
-							copyLabel="Copy MCP URL"
-						/>
-						<AppIconCard src={appIconUrl} downloadName={kodyAppIconFilename} />
-						<ChatGptDeveloperModeWarning
-							href={chatGptDeveloperModeGuideUrl}
-							linkLabel="developer mode help"
-						/>
+						{developerApp}
 					</OnboardingManualDetails>
 				</>
 			)
@@ -94,44 +101,53 @@ export function renderPanelContent(
 			const codexCommand = buildCodexMcpAddCommand(mcpServerUrl)
 			const codexToml = buildCodexMcpToml(mcpServerUrl)
 			if (surface === 'mobile') {
+				const mobileMcp = (
+					<>
+						<CopyCard
+							highlights={highlights}
+							label="MCP URL"
+							value={mcpServerUrl}
+							copyLabel="Copy MCP URL"
+						/>
+						<AppIconCard src={appIconUrl} downloadName={kodyAppIconFilename} />
+					</>
+				)
+				if (!isDefaultKodyMcpUrl(mcpServerUrl)) return mobileMcp
 				return (
 					<>
 						<ChatGptPluginAction />
 						<OnboardingManualDetails summaryLead="Or paste the MCP URL in the ChatGPT app">
-							<CopyCard
-								highlights={highlights}
-								label="MCP URL"
-								value={mcpServerUrl}
-								copyLabel="Copy MCP URL"
-							/>
-							<AppIconCard
-								src={appIconUrl}
-								downloadName={kodyAppIconFilename}
-							/>
+							{mobileMcp}
 						</OnboardingManualDetails>
 					</>
 				)
 			}
+			const desktopMcp = (
+				<>
+					<PrimaryActionLink href={codexDeepLink} label="Open Codex" />
+					<CopyCard
+						highlights={highlights}
+						label="codex CLI"
+						value={codexCommand}
+						copyLabel="Copy command"
+						variant="pill"
+						lang="sh"
+					/>
+					<CopyCard
+						highlights={highlights}
+						label="~/.codex/config.toml"
+						value={codexToml}
+						copyLabel="Copy TOML"
+						lang="toml"
+					/>
+				</>
+			)
+			if (!isDefaultKodyMcpUrl(mcpServerUrl)) return desktopMcp
 			return (
 				<>
 					<ChatGptPluginAction />
 					<OnboardingManualDetails summaryLead="Or add Kody as a Codex MCP server">
-						<PrimaryActionLink href={codexDeepLink} label="Open Codex" />
-						<CopyCard
-							highlights={highlights}
-							label="codex CLI"
-							value={codexCommand}
-							copyLabel="Copy command"
-							variant="pill"
-							lang="sh"
-						/>
-						<CopyCard
-							highlights={highlights}
-							label="~/.codex/config.toml"
-							value={codexToml}
-							copyLabel="Copy TOML"
-							lang="toml"
-						/>
+						{desktopMcp}
 					</OnboardingManualDetails>
 				</>
 			)

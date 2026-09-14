@@ -68,10 +68,13 @@ you only have the MCP URL.
   Authenticate. Manual includes
   `claude mcp add --transport http -s user kody <url>`, or a `.mcp.json` entry
   with `"type": "http"`.
-- **ChatGPT.com** — This is the web app. Add the
+- **ChatGPT.com** — This is the web app. On [kody.codes](https://kody.codes),
+  add the
   [Kody ChatGPT plugin](https://chatgpt.com/plugins/plugin_asdk_app_6a95fefc5c1081919756fdd35dd918ee)
   from the ChatGPT plugin directory, then complete OAuth when ChatGPT prompts
-  you. You need an
+  you. That listing talks to production. Preview and local Get started keep the
+  developer-mode app as the primary step so OAuth hits this deployment. You need
+  an
   [eligible paid plan (Plus, Pro, Business, Enterprise, or Education)](https://developers.openai.com/api/docs/guides/developer-mode).
   In a managed workspace, ask an admin to enable plugins if the directory is
   missing. ChatGPT desktop is Codex — use that entry instead.
@@ -88,9 +91,11 @@ you only have the MCP URL.
 
   </details>
 
-- **Codex** — ChatGPT desktop is Codex. Add the same
+- **Codex** — ChatGPT desktop is Codex. On [kody.codes](https://kody.codes), add
+  the same
   [Kody ChatGPT plugin](https://chatgpt.com/plugins/plugin_asdk_app_6a95fefc5c1081919756fdd35dd918ee),
-  then complete OAuth when ChatGPT prompts you.
+  then complete OAuth when ChatGPT prompts you. Preview and local Get started
+  keep **Open Codex** / the CLI with this deployment's MCP URL.
 
   <details>
   <summary>Or add Kody as a Codex MCP server</summary>

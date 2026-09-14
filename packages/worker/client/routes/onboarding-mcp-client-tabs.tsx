@@ -7,6 +7,7 @@ import {
 	type OnboardingAgentViewport,
 	canonicalOnboardingAgentChooser,
 	codexMcpLoginCommand,
+	isDefaultKodyMcpUrl,
 	onboardingAgentHelp,
 	onboardingAgentIconName,
 	onboardingAgentLabel,
@@ -164,7 +165,11 @@ function AgentHelpLink(handle: Handle<{ agent: McpClientKind }>) {
 }
 
 function AgentAuthCallout(
-	handle: Handle<{ agent: McpClientKind; surface: OnboardingAgentSurface }>,
+	handle: Handle<{
+		agent: McpClientKind
+		surface: OnboardingAgentSurface
+		mcpServerUrl: string
+	}>,
 ) {
 	return () => (
 		<div
@@ -174,7 +179,11 @@ function AgentAuthCallout(
 		>
 			<strong>Authenticate Kody before you continue</strong>
 			<span>
-				{renderAgentAuthHint(handle.props.agent, handle.props.surface)}
+				{renderAgentAuthHint(
+					handle.props.agent,
+					handle.props.surface,
+					handle.props.mcpServerUrl,
+				)}
 			</span>
 			<span>
 				Approve the <strong>kody.codes</strong> OAuth window. This is the step
@@ -187,7 +196,9 @@ function AgentAuthCallout(
 function renderAgentAuthHint(
 	kind: McpClientKind,
 	surface: OnboardingAgentSurface,
+	mcpServerUrl: string,
 ) {
+	const productionPlugin = isDefaultKodyMcpUrl(mcpServerUrl)
 	switch (kind) {
 		case 'cursor':
 			return surface === 'mobile' ? (
@@ -211,20 +222,32 @@ function renderAgentAuthHint(
 				</>
 			)
 		case 'chatgpt':
-			return (
+			return productionPlugin ? (
 				<>Complete OAuth when ChatGPT prompts you after adding the plugin.</>
+			) : (
+				<>Complete OAuth when ChatGPT prompts you after creating the app.</>
 			)
 		case 'codex':
-			return surface === 'mobile' ? (
-				<>
-					Complete OAuth when the ChatGPT app prompts you after adding the
-					plugin.
-				</>
-			) : (
+			if (surface === 'mobile') {
+				return productionPlugin ? (
+					<>
+						Complete OAuth when the ChatGPT app prompts you after adding the
+						plugin.
+					</>
+				) : (
+					<>Complete OAuth when the ChatGPT app prompts you.</>
+				)
+			}
+			return productionPlugin ? (
 				<>
 					After adding the plugin, complete OAuth when ChatGPT prompts you. If
 					you used the Codex CLI instead, run{' '}
 					<code>{codexMcpLoginCommand}</code>.
+				</>
+			) : (
+				<>
+					Run <code>{codexMcpLoginCommand}</code> if OAuth does not start
+					automatically.
 				</>
 			)
 		case 'claude-desktop':
@@ -435,7 +458,11 @@ export function AgentSurfaceInstructions(
 					<AgentHelpLink agent={handle.props.agent} />
 					{renderPanelWarning(handle.props.agent, 'desktop')}
 				</div>
-				<AgentAuthCallout agent={handle.props.agent} surface="desktop" />
+				<AgentAuthCallout
+					agent={handle.props.agent}
+					surface="desktop"
+					mcpServerUrl={handle.props.mcpServerUrl}
+				/>
 			</div>
 			<div
 				data-surface="mobile"
@@ -451,7 +478,11 @@ export function AgentSurfaceInstructions(
 					<AgentHelpLink agent={handle.props.agent} />
 					{renderPanelWarning(handle.props.agent, 'mobile')}
 				</div>
-				<AgentAuthCallout agent={handle.props.agent} surface="mobile" />
+				<AgentAuthCallout
+					agent={handle.props.agent}
+					surface="mobile"
+					mcpServerUrl={handle.props.mcpServerUrl}
+				/>
 			</div>
 		</>
 	)
