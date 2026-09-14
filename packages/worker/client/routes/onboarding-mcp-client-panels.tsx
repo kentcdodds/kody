@@ -1,3 +1,4 @@
+import { type Handle } from 'remix/ui'
 import {
 	buildClaudeCodeAddCommand,
 	buildClaudeCodeMcpJson,
@@ -15,10 +16,13 @@ import {
 	buildOpenCodeMcpJson,
 	buildVsCodeInstallUrl,
 	buildVsCodeMcpJson,
+	chatGptDeveloperModeGuideUrl,
 	claudeDesktopToolHint,
 	grokBotInstallUrl,
 	grokConnectorsUrl,
+	isDefaultKodyMcpUrl,
 	kodyAppIconFilename,
+	kodyChatGptPluginUrl,
 	kodyCursorAddPluginCommand,
 	kodyCursorMarketplaceUrl,
 	type McpClientKind,
@@ -28,13 +32,25 @@ import {
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import {
 	AppIconCard,
+	ChatGptDeveloperModeWarning,
 	ClientWarning,
 	CopyCard,
 	CopyCardDetails,
 	InstallDeepLink,
+	OnboardingManualDetails,
 	PluginPrimaryInstall,
 	PrimaryActionLink,
 } from './onboarding-mcp-client-cards.tsx'
+
+function ChatGptPluginAction(_handle: Handle<object>) {
+	return () => (
+		<PrimaryActionLink
+			href={kodyChatGptPluginUrl}
+			label="Add ChatGPT plugin"
+			external
+		/>
+	)
+}
 
 export function renderPanelContent(
 	kind: McpClientKind,
@@ -54,7 +70,7 @@ export function renderPanelContent(
 			)
 		case 'chatgpt': {
 			const appIconUrl = buildKodyAppIconUrl(mcpServerUrl)
-			return (
+			const developerApp = (
 				<>
 					<CopyCard
 						highlights={highlights}
@@ -63,6 +79,19 @@ export function renderPanelContent(
 						copyLabel="Copy MCP URL"
 					/>
 					<AppIconCard src={appIconUrl} downloadName={kodyAppIconFilename} />
+					<ChatGptDeveloperModeWarning
+						href={chatGptDeveloperModeGuideUrl}
+						linkLabel="developer mode help"
+					/>
+				</>
+			)
+			if (!isDefaultKodyMcpUrl(mcpServerUrl)) return developerApp
+			return (
+				<>
+					<ChatGptPluginAction />
+					<OnboardingManualDetails summaryLead="Or create a developer-mode app">
+						{developerApp}
+					</OnboardingManualDetails>
 				</>
 			)
 		}
@@ -72,7 +101,7 @@ export function renderPanelContent(
 			const codexCommand = buildCodexMcpAddCommand(mcpServerUrl)
 			const codexToml = buildCodexMcpToml(mcpServerUrl)
 			if (surface === 'mobile') {
-				return (
+				const mobileMcp = (
 					<>
 						<CopyCard
 							highlights={highlights}
@@ -83,8 +112,17 @@ export function renderPanelContent(
 						<AppIconCard src={appIconUrl} downloadName={kodyAppIconFilename} />
 					</>
 				)
+				if (!isDefaultKodyMcpUrl(mcpServerUrl)) return mobileMcp
+				return (
+					<>
+						<ChatGptPluginAction />
+						<OnboardingManualDetails summaryLead="Or paste the MCP URL in the ChatGPT app">
+							{mobileMcp}
+						</OnboardingManualDetails>
+					</>
+				)
 			}
-			return (
+			const desktopMcp = (
 				<>
 					<PrimaryActionLink href={codexDeepLink} label="Open Codex" />
 					<CopyCard
@@ -95,15 +133,22 @@ export function renderPanelContent(
 						variant="pill"
 						lang="sh"
 					/>
-					<CopyCardDetails
+					<CopyCard
 						highlights={highlights}
-						summaryLead="Or merge this into"
-						summaryCode="~/.codex/config.toml"
-						label="config.toml"
+						label="~/.codex/config.toml"
 						value={codexToml}
 						copyLabel="Copy TOML"
 						lang="toml"
 					/>
+				</>
+			)
+			if (!isDefaultKodyMcpUrl(mcpServerUrl)) return desktopMcp
+			return (
+				<>
+					<ChatGptPluginAction />
+					<OnboardingManualDetails summaryLead="Or add Kody as a Codex MCP server">
+						{desktopMcp}
+					</OnboardingManualDetails>
 				</>
 			)
 		}

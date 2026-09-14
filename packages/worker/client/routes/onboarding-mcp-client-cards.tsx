@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, type RemixNode, css } from 'remix/ui'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { colors, radius, typography } from '#universal/styles/tokens.ts'
 import {
@@ -61,11 +61,19 @@ type CopyCardDetailsProps = CopyCardProps & {
 	summaryCode?: string
 }
 
+type OnboardingManualDetailsProps = {
+	summaryLead: string
+	summaryCode?: string
+	children: RemixNode
+}
+
 /**
- * Collapsed manual snippet: the lead sentence is the summary, the copy
- * well sits inside. Closed unless the caller sets `open` on `<details>`.
+ * Collapsed alternative install path. Closed unless the caller sets `open`
+ * on `<details>`.
  */
-export function CopyCardDetails(handle: Handle<CopyCardDetailsProps>) {
+export function OnboardingManualDetails(
+	handle: Handle<OnboardingManualDetailsProps>,
+) {
 	return () => (
 		<details
 			data-testid="onboarding-mcp-manual-json"
@@ -81,17 +89,30 @@ export function CopyCardDetails(handle: Handle<CopyCardDetailsProps>) {
 				) : null}
 				:
 			</summary>
-			<div>
-				<CopyCard
-					highlights={handle.props.highlights}
-					label={handle.props.label}
-					value={handle.props.value}
-					copyLabel={handle.props.copyLabel}
-					lang={handle.props.lang}
-					variant={handle.props.variant}
-				/>
-			</div>
+			<div>{handle.props.children}</div>
 		</details>
+	)
+}
+
+/**
+ * Collapsed manual snippet: the lead sentence is the summary, the copy
+ * well sits inside.
+ */
+export function CopyCardDetails(handle: Handle<CopyCardDetailsProps>) {
+	return () => (
+		<OnboardingManualDetails
+			summaryLead={handle.props.summaryLead}
+			summaryCode={handle.props.summaryCode}
+		>
+			<CopyCard
+				highlights={handle.props.highlights}
+				label={handle.props.label}
+				value={handle.props.value}
+				copyLabel={handle.props.copyLabel}
+				lang={handle.props.lang}
+				variant={handle.props.variant}
+			/>
+		</OnboardingManualDetails>
 	)
 }
 
@@ -154,7 +175,7 @@ type ChatGptDeveloperModeWarningProps = {
 }
 
 /**
- * Amber caution for ChatGPT: developer mode is required. Same quiet
+ * Amber caution for ChatGPT's developer-mode alternative. Same quiet
  * callout language as {@link ClientWarning}, warning tone instead of danger.
  */
 export function ChatGptDeveloperModeWarning(
@@ -163,12 +184,7 @@ export function ChatGptDeveloperModeWarning(
 	return () => (
 		<p mix={css(clientCautionCss)} role="note">
 			ChatGPT developer mode is required. See{' '}
-			<a
-				href={handle.props.href}
-				target="_blank"
-				rel="noreferrer noopener"
-				data-testid="onboarding-agent-help"
-			>
+			<a href={handle.props.href} target="_blank" rel="noreferrer noopener">
 				{handle.props.linkLabel}
 			</a>
 			.

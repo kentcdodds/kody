@@ -7,6 +7,7 @@ import {
 	type OnboardingAgentViewport,
 	canonicalOnboardingAgentChooser,
 	codexMcpLoginCommand,
+	isDefaultKodyMcpUrl,
 	onboardingAgentHelp,
 	onboardingAgentIconName,
 	onboardingAgentLabel,
@@ -34,7 +35,6 @@ import {
 	hoverMq,
 } from '#universal/styles/style-primitives.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
-import { ChatGptDeveloperModeWarning } from './onboarding-mcp-client-cards.tsx'
 import {
 	renderPanelContent,
 	renderPanelWarning,
@@ -149,11 +149,6 @@ function AgentSurfaceLabel(handle: Handle<{ agent: McpClientKind }>) {
 function AgentHelpLink(handle: Handle<{ agent: McpClientKind }>) {
 	return () => {
 		const help = onboardingAgentHelp(handle.props.agent)
-		if (handle.props.agent === 'chatgpt') {
-			return (
-				<ChatGptDeveloperModeWarning href={help.href} linkLabel={help.label} />
-			)
-		}
 		return (
 			<p mix={css(agentHelpCss)}>
 				<a
@@ -170,7 +165,11 @@ function AgentHelpLink(handle: Handle<{ agent: McpClientKind }>) {
 }
 
 function AgentAuthCallout(
-	handle: Handle<{ agent: McpClientKind; surface: OnboardingAgentSurface }>,
+	handle: Handle<{
+		agent: McpClientKind
+		surface: OnboardingAgentSurface
+		mcpServerUrl: string
+	}>,
 ) {
 	return () => (
 		<div
@@ -180,11 +179,15 @@ function AgentAuthCallout(
 		>
 			<strong>Authenticate Kody before you continue</strong>
 			<span>
-				{renderAgentAuthHint(handle.props.agent, handle.props.surface)}
+				{renderAgentAuthHint(
+					handle.props.agent,
+					handle.props.surface,
+					handle.props.mcpServerUrl,
+				)}
 			</span>
 			<span>
-				Approve the <strong>kody.codes</strong> OAuth window. This is the step
-				that connects your agent to your factory.
+				Approve the <strong>{new URL(handle.props.mcpServerUrl).host}</strong>{' '}
+				OAuth window. This is the step that connects your agent to your factory.
 			</span>
 		</div>
 	)
@@ -193,7 +196,9 @@ function AgentAuthCallout(
 function renderAgentAuthHint(
 	kind: McpClientKind,
 	surface: OnboardingAgentSurface,
+	mcpServerUrl: string,
 ) {
+	const productionPlugin = isDefaultKodyMcpUrl(mcpServerUrl)
 	switch (kind) {
 		case 'cursor':
 			return surface === 'mobile' ? (
@@ -217,12 +222,28 @@ function renderAgentAuthHint(
 				</>
 			)
 		case 'chatgpt':
-			return (
+			return productionPlugin ? (
+				<>Complete OAuth when ChatGPT prompts you after adding the plugin.</>
+			) : (
 				<>Complete OAuth when ChatGPT prompts you after creating the app.</>
 			)
 		case 'codex':
-			return surface === 'mobile' ? (
-				<>Complete OAuth when the ChatGPT app prompts you.</>
+			if (surface === 'mobile') {
+				return productionPlugin ? (
+					<>
+						Complete OAuth when the ChatGPT app prompts you after adding the
+						plugin.
+					</>
+				) : (
+					<>Complete OAuth when the ChatGPT app prompts you.</>
+				)
+			}
+			return productionPlugin ? (
+				<>
+					After adding the plugin, complete OAuth when ChatGPT prompts you. If
+					you used the Codex CLI instead, run{' '}
+					<code>{codexMcpLoginCommand}</code>.
+				</>
 			) : (
 				<>
 					Run <code>{codexMcpLoginCommand}</code> if OAuth does not start
@@ -437,7 +458,11 @@ export function AgentSurfaceInstructions(
 					<AgentHelpLink agent={handle.props.agent} />
 					{renderPanelWarning(handle.props.agent, 'desktop')}
 				</div>
-				<AgentAuthCallout agent={handle.props.agent} surface="desktop" />
+				<AgentAuthCallout
+					agent={handle.props.agent}
+					surface="desktop"
+					mcpServerUrl={handle.props.mcpServerUrl}
+				/>
 			</div>
 			<div
 				data-surface="mobile"
@@ -453,7 +478,11 @@ export function AgentSurfaceInstructions(
 					<AgentHelpLink agent={handle.props.agent} />
 					{renderPanelWarning(handle.props.agent, 'mobile')}
 				</div>
-				<AgentAuthCallout agent={handle.props.agent} surface="mobile" />
+				<AgentAuthCallout
+					agent={handle.props.agent}
+					surface="mobile"
+					mcpServerUrl={handle.props.mcpServerUrl}
+				/>
 			</div>
 		</>
 	)

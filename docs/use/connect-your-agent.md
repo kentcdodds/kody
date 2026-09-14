@@ -69,23 +69,48 @@ you only have the MCP URL.
   Authenticate. Manual includes
   `claude mcp add --transport http -s user kody <url>`, or a `.mcp.json` entry
   with `"type": "http"`.
-- **ChatGPT.com** — This is the web app. On an
-  [eligible paid plan (Plus, Pro, Business, Enterprise, or Education)](https://developers.openai.com/api/docs/guides/developer-mode),
-  turn on Developer mode (Settings → Security and login), then create an app
-  under Settings → Plugins → Browse plugins → Create app with the MCP URL. In a
-  managed workspace, ask an admin to enable access if the setting or Plugins UI
-  is missing. Use the connector icon (`/images/kody-app-icon.png`, 256×256 and
-  under ChatGPT's 10 KB limit) — right-click Save as on the connect page, then
-  upload it. The owner can edit a developer-mode app's name and logo later from
-  Manage in Apps settings. ChatGPT desktop is Codex — use that entry instead.
-- **Codex** — ChatGPT desktop is Codex. Get started offers **Open Codex**
-  (`codex://mcp/add?name=kody&url=<url>`) so the desktop app launches when that
-  protocol is registered. After the CLI writes the shared config, run
-  `codex mcp login kody` if OAuth does not start. Manual includes
-  `codex mcp add kody --url <url>` and the shared `~/.codex/config.toml`
-  `[mcp_servers.kody]` `url` entry. If Codex asks you to log in again after
-  about an hour, see
+- **ChatGPT.com** — This is the web app. On [kody.codes](https://kody.codes),
+  add the
+  [Kody ChatGPT plugin](https://chatgpt.com/plugins/plugin_asdk_app_6a95fefc5c1081919756fdd35dd918ee)
+  from the ChatGPT plugin directory, then complete OAuth when ChatGPT prompts
+  you. That listing talks to production. Preview and local Get started keep the
+  developer-mode app as the primary step so OAuth hits this deployment. You need
+  an
+  [eligible paid plan (Plus, Pro, Business, Enterprise, or Education)](https://developers.openai.com/api/docs/guides/developer-mode).
+  In a managed workspace, ask an admin to enable plugins if the directory is
+  missing. ChatGPT desktop is Codex — use that entry instead.
+
+  <details>
+  <summary>Or create a developer-mode app</summary>
+
+  Turn on Developer mode (Settings → Security and login), then create an app
+  under Settings → Plugins → Browse plugins → Create app with the MCP URL. Use
+  the connector icon (`/images/kody-app-icon.png`, 256×256 and under ChatGPT's
+  10 KB limit) — right-click Save as on the connect page, then upload it. The
+  owner can edit a developer-mode app's name and logo later from Manage in Apps
+  settings.
+
+  </details>
+
+- **Codex** — ChatGPT desktop is Codex. On [kody.codes](https://kody.codes), add
+  the same
+  [Kody ChatGPT plugin](https://chatgpt.com/plugins/plugin_asdk_app_6a95fefc5c1081919756fdd35dd918ee),
+  then complete OAuth when ChatGPT prompts you. Preview and local Get started
+  keep **Open Codex** / the CLI with this deployment's MCP URL.
+
+  <details>
+  <summary>Or add Kody as a Codex MCP server</summary>
+
+  Get started offers **Open Codex** (`codex://mcp/add?name=kody&url=<url>`) so
+  the desktop app launches when that protocol is registered. After the CLI
+  writes the shared config, run `codex mcp login kody` if OAuth does not start.
+  Manual includes `codex mcp add kody --url <url>` and the shared
+  `~/.codex/config.toml` `[mcp_servers.kody]` `url` entry. If Codex asks you to
+  log in again after about an hour, see
   [Codex keeps asking for `codex mcp login kody`](./troubleshooting.md#codex-keeps-asking-for-codex-mcp-login-kody).
+
+  </details>
+
 - **OpenCode** — After the CLI writes the remote entry, run
   `opencode mcp auth kody` if prompted. Manual includes
   `opencode mcp add kody --url <url>` and a `mcp.kody` remote entry in
