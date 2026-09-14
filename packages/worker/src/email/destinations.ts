@@ -187,6 +187,23 @@ export async function listEmailNotificationDestinations(input: {
 	]
 }
 
+export function buildEmailDestinationsLoaderData(
+	destinations: Array<EmailNotificationDestination>,
+) {
+	const additionalCount = destinations.filter(
+		(destination) => destination.kind === 'additional',
+	).length
+	return {
+		ok: true as const,
+		destinations,
+		additionalLimit: maxAdditionalEmailNotificationDestinations,
+		additionalRemaining: Math.max(
+			0,
+			maxAdditionalEmailNotificationDestinations - additionalCount,
+		),
+	}
+}
+
 export async function addEmailNotificationDestination(input: {
 	db: D1Database
 	dbUserId: number

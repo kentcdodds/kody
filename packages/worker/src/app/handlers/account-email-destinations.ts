@@ -14,8 +14,8 @@ import {
 } from '#worker/email/destination-verification.ts'
 import {
 	EmailDestinationError,
+	buildEmailDestinationsLoaderData,
 	listEmailNotificationDestinations,
-	maxAdditionalEmailNotificationDestinations,
 	removeEmailNotificationDestination,
 	setDefaultEmailNotificationDestination,
 } from '#worker/email/destinations.ts'
@@ -29,22 +29,7 @@ const destinationMutationSchema = object({
 	id: optional(string()),
 })
 
-function destinationListPayload(
-	destinations: Awaited<ReturnType<typeof listEmailNotificationDestinations>>,
-) {
-	const additionalCount = destinations.filter(
-		(destination) => destination.kind === 'additional',
-	).length
-	return {
-		ok: true as const,
-		destinations,
-		additionalLimit: maxAdditionalEmailNotificationDestinations,
-		additionalRemaining: Math.max(
-			0,
-			maxAdditionalEmailNotificationDestinations - additionalCount,
-		),
-	}
-}
+const destinationListPayload = buildEmailDestinationsLoaderData
 
 export function createAccountEmailDestinationsHandler(env: Env) {
 	return {

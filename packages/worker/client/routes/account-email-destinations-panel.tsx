@@ -55,6 +55,7 @@ export function renderAccountEmailDestinationsPanel(
 
 	return (
 		<AccountManagementPanel
+			id="email-destinations"
 			title="Email destinations"
 			description="Addresses emailSend may use. Mail still comes from your Kody platform address. The account email is always available. Extra addresses need a verification link first."
 		>

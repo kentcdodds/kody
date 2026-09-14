@@ -544,6 +544,7 @@ export function AccountManagementMessage(
 }
 
 type AccountManagementPanelProps = {
+	id?: string
 	title?: string
 	description?: string
 	children?: AccountManagementSlot
@@ -574,6 +575,7 @@ export function AccountManagementPanel(
 	return () =>
 		handle.props.asForm ? (
 			<form
+				id={handle.props.id}
 				method="post"
 				noValidate
 				mix={[
@@ -586,7 +588,11 @@ export function AccountManagementPanel(
 				{content()}
 			</form>
 		) : (
-			<section aria-label={handle.props.ariaLabel} mix={css(accountSectionCss)}>
+			<section
+				id={handle.props.id}
+				aria-label={handle.props.ariaLabel}
+				mix={css(accountSectionCss)}
+			>
 				{content()}
 			</section>
 		)

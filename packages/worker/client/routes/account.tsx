@@ -47,8 +47,6 @@ import {
 	accountActionsCss,
 } from '#client/routes/account-management-components.tsx'
 import { createAccountEmailClaims } from '#client/routes/account-email-claims-client.ts'
-import { createAccountEmailDestinations } from '#client/routes/account-email-destinations-client.ts'
-import { renderAccountEmailDestinationsPanel } from '#client/routes/account-email-destinations-panel.tsx'
 import { renderAccountFormerEmailsPanel } from '#client/routes/account-former-emails-panel.tsx'
 import { renderAccountProfilePanel } from '#client/routes/account-profile-panel.tsx'
 import { AccountPasswordPanel } from '#client/routes/account-password-panel.tsx'
@@ -99,7 +97,6 @@ export function AccountRoute(handle: Handle) {
 	let usernameSaveError: string | null = null
 	const accountConnections = createAccountConnections(handle)
 	const accountEmailClaims = createAccountEmailClaims(handle)
-	const accountEmailDestinations = createAccountEmailDestinations(handle)
 	let consumedCallbackMessage = false
 	let needsOnboarding = false
 	let onboardingChecklist: OnboardingChecklistLoaderData | null = null
@@ -121,17 +118,10 @@ export function AccountRoute(handle: Handle) {
 				href,
 			)
 			if (!accountConnections) return null
-			const accountEmailDestinations = tryConsumeRouteLoaderData(
-				handle,
-				'accountEmailDestinations',
-				href,
-			)
-			if (!accountEmailDestinations) return null
 			const onboarding = tryConsumeRouteLoaderData(handle, 'onboarding', href)
 			return {
 				accountProfile,
 				accountConnections,
-				accountEmailDestinations,
 				onboarding: onboarding ?? null,
 			}
 		},
@@ -152,12 +142,10 @@ export function AccountRoute(handle: Handle) {
 		const {
 			accountProfile: payload,
 			accountConnections: connectionsPayload,
-			accountEmailDestinations: destinationsPayload,
 			onboarding,
 		} = payloads
 		applyOnboardingPayload(onboarding)
 		accountConnections.applyPayload(connectionsPayload)
-		accountEmailDestinations.applyPayload(destinationsPayload)
 		email = payload.email
 		emailVerified = payload.emailVerified
 		emailVerificationDelivery = payload.emailVerificationDelivery ?? null
@@ -613,32 +601,6 @@ export function AccountRoute(handle: Handle) {
 							onEmailChangePasswordInput:
 								accountEmailClaims.updateEmailChangePassword,
 						})}
-						{emailVerified
-							? renderAccountEmailDestinationsPanel({
-									destinations: accountEmailDestinations.destinations,
-									additionalRemaining:
-										accountEmailDestinations.additionalRemaining,
-									additionalLimit: accountEmailDestinations.additionalLimit,
-									draftEmail: accountEmailDestinations.draftEmail,
-									status: accountEmailDestinations.status,
-									message: accountEmailDestinations.message,
-									tone: accountEmailDestinations.tone,
-									pendingId: accountEmailDestinations.pendingId,
-									onDraftEmailInput: accountEmailDestinations.updateDraftEmail,
-									onAddSubmit: (event) => {
-										void accountEmailDestinations.handleAddSubmit(event)
-									},
-									onResend: (id) => {
-										void accountEmailDestinations.resend(id)
-									},
-									onSetDefault: (id) => {
-										void accountEmailDestinations.setDefault(id)
-									},
-									onRemove: (id) => {
-										void accountEmailDestinations.remove(id)
-									},
-								})
-							: null}
 						{emailVerified
 							? renderAccountFormerEmailsPanel({
 									formerEmails: emailClaims.formerEmails,

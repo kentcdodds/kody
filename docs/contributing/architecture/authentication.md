@@ -151,8 +151,8 @@ Additional email destinations (addresses `emailSend` may use besides
 `pending_email_destination_verifications`, sent from `kody@<apex>`, confirmed at
 `GET /verify-email-destination?token=...`. Identity email change and release
 stay on their existing flows; destinations do not own `users.email`. Add,
-resend, set-default, and remove live at `/account`,
-`/account/email-destinations.json`, and the `emailDestination*` capabilities (3
+resend, set-default, and remove live at `/account/email`,
+`/account/email-destinations.json`, and the `emailDestination*` capabilities (3)
 requests per 15 minutes for add/resend). The cap is 5 extras besides the
 identity email. Unverified extras never receive mail. Destinations expand the
 verified `to` set only; mail still comes from `{username}@{platform}`.

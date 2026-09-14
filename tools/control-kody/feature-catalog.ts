@@ -97,7 +97,6 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 			'/account/profile.json',
 			'/account/profile/avatar.json',
 			'/account/email-change.json',
-			'/account/email-destinations.json',
 			'/account/email-claim-release.json',
 			'/account/export.json',
 			'/account/delete',
@@ -218,7 +217,7 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		title: 'Email inbox',
 		file: 'email.md',
 		paths: ['/account/email'],
-		apis: ['/account/email.json'],
+		apis: ['/account/email.json', '/account/email-destinations.json'],
 	},
 	{
 		id: 'values',

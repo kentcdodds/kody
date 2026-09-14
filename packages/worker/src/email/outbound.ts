@@ -189,7 +189,7 @@ async function resolveSelfRecipients(input: {
 		// emailReply or add a verified destination), not a platform defect
 		// — keep it off Sentry.
 		throw new McpCallerError(
-			`emailSend only delivers to your verified email destinations. Not on the list: ${disallowed.join(', ')}. Add and verify addresses in Account settings, or use emailReply to answer stored inbound messages.`,
+			`emailSend only delivers to your verified email destinations. Not on the list: ${disallowed.join(', ')}. Add and verify addresses on the email inbox page, or use emailReply to answer stored inbound messages.`,
 		)
 	}
 	return unique
