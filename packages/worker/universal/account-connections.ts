@@ -1,7 +1,9 @@
 /**
  * `/account/connections` views. The page is one payload
- * (`/account/connected-agents.json`) rendered three ways: the connected
- * list, the full client grid (Add connection), and one host's install steps.
+ * (`/account/connected-agents.json`) rendered three exclusive ways: the
+ * connected list, the full client grid on `/new` (Add connection), and one
+ * host's install steps on `/new/:agent`. The add views are their own pages,
+ * not nested chrome on the list.
  */
 
 import {

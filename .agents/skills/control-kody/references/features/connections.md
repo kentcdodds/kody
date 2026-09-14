@@ -1,15 +1,17 @@
 # Connections
 
 Inbound MCP hosts (connected agents). The connected list is a grouped panel with
-per-`clientId` revoke. **Add connection** opens the full client wall from
-onboarding Step 1 — every named agent, on every device, none folded under Not
-listed — then one host's install steps. The MCP URL card covers any other host
-that speaks MCP. Also links the Advanced MCP OAuth clients page.
+per-`clientId` revoke. **Add connection** is its own page: the full client wall
+from onboarding Step 1 — every named agent, on every device, none folded under
+Not listed — then one host's install steps. The MCP URL card covers any other
+host that speaks MCP. Also links the Advanced MCP OAuth clients page.
 
 ## How to get there
 
-- `/account/connections` — connected list, Add connection button, MCP URL.
-- `/account/connections/new` — the agent grid.
+- `/account/connections` — connected list, Add connection button, MCP URL. Does
+  not nest the add grid.
+- `/account/connections/new` — the agent grid, with a “← back to connections”
+  link. Does not wrap the connected list.
 - `/account/connections/new/:agent` — install steps for one `McpClientKind`
   (`cursor`, `claude-code`, `chatgpt`, …; `other` is not a page here). Unknown
   agents 404.

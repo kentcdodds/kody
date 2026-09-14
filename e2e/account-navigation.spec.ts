@@ -90,7 +90,7 @@ test('account section switches keep the current page on screen (no loading flash
 	).toHaveAttribute('href', `/@${user.username}`)
 })
 
-test('Add connection opens the full client wall and a host step in place (no loading flash, no double fetch)', async ({
+test('Add connection opens its own page with the client wall, then a host step (no loading flash, no double fetch)', async ({
 	page,
 	seedE2eUser,
 	login,
@@ -108,6 +108,13 @@ test('Add connection opens the full client wall and a host step in place (no loa
 	await expect(
 		page.getByRole('heading', { level: 1, name: 'Connections' }),
 	).toBeVisible()
+	await expect(
+		page.getByRole('region', { name: 'Connected agents' }),
+	).toBeVisible()
+	await expect(page.getByTestId('account-connections-agent-grid')).toHaveCount(
+		0,
+	)
+	await expect(page.getByTestId('account-connections-back')).toHaveCount(0)
 
 	const requests = collectJsonRequests(page)
 	await observeMainTransitions(page)
@@ -115,7 +122,12 @@ test('Add connection opens the full client wall and a host step in place (no loa
 	await expect(page).toHaveURL(/\/account\/connections\/new$/)
 	const grid = page.getByTestId('account-connections-agent-grid')
 	await expect(grid).toBeVisible()
-	// The heading never leaves the screen: the grid is a view of the same page.
+	await expect(page.getByTestId('account-connections-back')).toBeVisible()
+	await expect(
+		page.getByRole('region', { name: 'Connected agents' }),
+	).toHaveCount(0)
+	// The heading never leaves the screen: list and add share the account
+	// shell while the body swaps in one commit.
 	await page.waitForTimeout(250)
 	expectSingleCommitTransition(await readMainTransitions(page), {
 		fromHeading: 'Connections',
@@ -140,7 +152,10 @@ test('Add connection opens the full client wall and a host step in place (no loa
 	await expect(
 		page.getByTestId('account-connections-agent-instructions'),
 	).toBeVisible()
-	// Connections stays current in the rail on the nested views.
+	await expect(
+		page.getByRole('region', { name: 'Connected agents' }),
+	).toHaveCount(0)
+	// Connections stays current in the rail on the add views.
 	await expect(
 		page
 			.getByRole('navigation', { name: 'Account sections' })
@@ -152,6 +167,18 @@ test('Add connection opens the full client wall and a host step in place (no loa
 
 	await page.getByTestId('account-connections-change-agent').click()
 	await expect(grid).toBeVisible()
+	expect(requests.duplicates(), requests.paths.join(', ')).toEqual([])
+	requests.reset()
+
+	await page.getByTestId('account-connections-back').click()
+	await expect(page).toHaveURL(/\/account\/connections$/)
+	await expect(page.getByTestId('account-connections-add')).toBeVisible()
+	await expect(
+		page.getByRole('region', { name: 'Connected agents' }),
+	).toBeVisible()
+	await expect(page.getByTestId('account-connections-agent-grid')).toHaveCount(
+		0,
+	)
 	expect(requests.duplicates(), requests.paths.join(', ')).toEqual([])
 })
 

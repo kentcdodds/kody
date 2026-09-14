@@ -570,8 +570,19 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	})
 	expect(connectionsHtml).toContain('data-testid="account-connections-add"')
 
-	// Add connection and the per-agent step share the handler and payload;
-	// an unknown agent segment is a 404 page, not an empty grid.
+	// `/new` is its own page; the per-agent step shares the handler; unknown
+	// agent segments 404 instead of rendering an empty grid.
+	const addGridHtml = await readResponseText(
+		await runHtmlHandler(
+			createAccountConnectionsHandler(env),
+			new Request('https://example.com/account/connections/new', {
+				headers: { Cookie: accountCookie },
+			}),
+		),
+	)
+	expect(addGridHtml).toContain('← back to connections')
+	expect(addGridHtml).not.toContain('aria-label="Connected agents"')
+
 	const addConnectionResponse = await runHtmlHandler(
 		createAccountConnectionsHandler(env),
 		new Request('https://example.com/account/connections/new/cursor', {
