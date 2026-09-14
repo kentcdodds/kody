@@ -60,9 +60,9 @@ caches come in two tiers with different correctness arguments (see
   `published_commit` taken from the freshness tier. A commit's artifacts are
   immutable, so these entries are never a staleness source; their TTL only
   bounds isolate memory.
-- **Registry source lists** — enabled MCP-server refs and OpenAPI bindings,
-  per-user TTL **30 s** with eager invalidation on mutation, matching the
-  existing MCP hub snapshot bounds.
+- **Registry source lists** — enabled MCP-server refs, per-user TTL **30 s**
+  with eager invalidation on mutation, matching the existing MCP hub snapshot
+  bounds.
 
 Rules for touching these paths: publish and rebuild flows must keep using the
 uncached row/manifest loaders (`loadPackageManifestBySourceId`,
