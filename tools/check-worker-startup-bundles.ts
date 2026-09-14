@@ -126,7 +126,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// ~12 KB on top: local dry-run 5_004_707 bytes.
 		// emailDestination list/add/set-default/remove plus emailSend
 		// destination resolution add ~23 KB: local dry-run 5_028_263 bytes.
-		maxEntryBytes: 5_035_000,
+		// MCP OAuth token-recovery persist/stamp on McpClientHub (refresh
+		// before wipe, durable last_error when a previously-ready server
+		// parks authenticating) adds ~2 KB: CI dry-run 5_036_978 bytes.
+		maxEntryBytes: 5_040_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
