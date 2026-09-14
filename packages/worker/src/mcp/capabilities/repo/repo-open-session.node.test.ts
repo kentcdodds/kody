@@ -181,6 +181,7 @@ test('repoOpenSession maps published HEAD mismatch to McpCallerError', async () 
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId,
+				username: 'kody',
 				email,
 				displayName: 'Head Mismatch User',
 			},
@@ -242,6 +243,7 @@ test('repoOpenSession enforces the repo sessions entitlement for plan users open
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId,
+				username: 'kody',
 				email,
 				displayName: 'Planned User',
 			},
@@ -303,6 +305,7 @@ test('repoOpenSession resumes an existing active session without enforcing the r
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId,
+				username: 'kody',
 				email,
 				displayName: 'Planned User',
 			},
@@ -356,6 +359,7 @@ test('repoOpenSession mints a new session when conversation_id is omitted', asyn
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId,
+				username: 'kody',
 				email,
 				displayName: 'Mint New',
 			},
@@ -394,6 +398,78 @@ test('repoOpenSession mints a new session when conversation_id is omitted', asyn
 	expect(mockModule.countActiveRepoSessions).toHaveBeenCalled()
 })
 
+test('repoOpenSession opens a package by scoped @owner/leaf the same as the name leaf', async () => {
+	resetMocks()
+	const email = 'scoped-name@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const env = {
+		APP_DB: createEntitlementsDatabase({
+			users: [{ email, plan: 'pro', stable_user_id: userId }],
+		}),
+	} as Env
+	const ctx = {
+		env,
+		callerContext: createMcpCallerContext({
+			baseUrl: 'https://heykody.dev',
+			user: {
+				userId,
+				username: 'kody',
+				email,
+				displayName: 'Scoped Name',
+			},
+		}),
+	}
+	mockModule.getSavedPackageByKodyId.mockResolvedValue(
+		createSavedPackageRow(userId),
+	)
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue(
+		createPackageSourceRow(userId),
+	)
+	const openRpc = createRepoRpc()
+	openRpc.openSession
+		.mockResolvedValueOnce({
+			...createOpenSessionResult(),
+			id: 'session-scoped',
+		})
+		.mockResolvedValueOnce({
+			...createOpenSessionResult(),
+			id: 'session-leaf',
+		})
+	mockModule.repoSessionRpc.mockReturnValue(openRpc)
+
+	const scoped = await repoOpenSessionCapability.handler(
+		{
+			target: { kind: 'package', kody_id: '@kody/triage-github-pr' },
+		},
+		ctx,
+	)
+	const leaf = await repoOpenSessionCapability.handler(
+		{
+			target: { kind: 'package', kody_id: 'triage-github-pr' },
+		},
+		ctx,
+	)
+
+	expect(scoped.resolved_target).toEqual({
+		kind: 'package',
+		source_id: 'source-package-1',
+		package_id: 'package-1',
+		kody_id: 'triage-github-pr',
+		name: '@kody/triage-github-pr',
+	})
+	expect(leaf.resolved_target).toEqual(scoped.resolved_target)
+	expect(mockModule.getSavedPackageByKodyId).toHaveBeenNthCalledWith(
+		1,
+		expect.anything(),
+		{ userId, kodyId: 'triage-github-pr' },
+	)
+	expect(mockModule.getSavedPackageByKodyId).toHaveBeenNthCalledWith(
+		2,
+		expect.anything(),
+		{ userId, kodyId: 'triage-github-pr' },
+	)
+})
+
 test('repoOpenSession allows below-max usage and denies at the max plan ceiling', async () => {
 	resetMocks()
 	const email = 'max@example.com'
@@ -410,6 +486,7 @@ test('repoOpenSession allows below-max usage and denies at the max plan ceiling'
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId,
+				username: 'kody',
 				email,
 				displayName: 'Max User',
 			},
@@ -448,6 +525,7 @@ test('repoOpenSession allows below-max usage and denies at the max plan ceiling'
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId,
+				username: 'kody',
 				email,
 				displayName: 'Max User',
 			},
@@ -506,6 +584,7 @@ test('repoOpenSession retries opaque Cloudflare internal errors then rethrows wh
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId,
+				username: 'kody',
 				email,
 				displayName: 'Opaque Internal User',
 			},
@@ -563,6 +642,7 @@ test('repoOpenSession retries opaque Cloudflare internal errors then rethrows wh
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId: exhaustedUserId,
+				username: 'kody',
 				email: exhaustedEmail,
 				displayName: 'Opaque Exhausted User',
 			},
