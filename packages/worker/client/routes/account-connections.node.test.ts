@@ -82,6 +82,7 @@ test('connections page renders the connected list with Add connection, the MCP U
 	expect(html).toContain('Copy MCP URL')
 	expect(html).not.toContain('data-testid="account-connections-verify-note"')
 	expect(html).not.toContain('data-testid="account-connections-agent-grid"')
+	expect(html).not.toContain('data-testid="account-connections-back"')
 	expect(html).toContain('href="/docs/connect-your-agent"')
 	expect(html).toContain(`href="${routes.accountMcpOauthClients.href()}"`)
 	// No cold-path loading copy when the SSR payload is present.
@@ -100,8 +101,12 @@ test('Add connection shows every named client on every viewport with none greyed
 
 	expect(html).toContain('data-testid="account-connections-agent-grid"')
 	expect(html).toContain('aria-label="Add connection"')
-	// The list stays on screen above the grid; its Add button steps aside.
-	expect(html).toContain('aria-label="Connected agents"')
+	expect(html).toMatch(
+		/data-testid="account-connections-back"[^>]*>← back to connections</,
+	)
+	expect(html).toContain(`href="${routes.accountConnections.href()}"`)
+	// The list is its own page; it does not wrap the grid.
+	expect(html).not.toContain('aria-label="Connected agents"')
 	expect(html).not.toContain('data-testid="account-connections-add"')
 	// Every named client is a card, in catalog order; `other` is not a card
 	// because the generic MCP URL path sits under the grid instead.
@@ -154,7 +159,11 @@ test('picking a client shows that host’s install steps with a way back to the 
 		),
 	)
 	expect(html).not.toContain('data-testid="account-connections-agent-grid"')
-	// Connections stays the current rail item on the nested view.
+	expect(html).toMatch(
+		/data-testid="account-connections-back"[^>]*>← back to connections</,
+	)
+	expect(html).not.toContain('aria-label="Connected agents"')
+	// Connections stays the current rail item on the add views.
 	expect(html).toMatch(/href="\/account\/connections"[^>]*aria-current="page"/)
 })
 
@@ -164,6 +173,8 @@ test('an unknown agent segment renders the fallback instead of instructions', as
 		'/account/connections/new/not-a-client',
 	)
 	expect(html).toContain('>Unknown agent</h2>')
+	expect(html).toContain('data-testid="account-connections-back"')
+	expect(html).not.toContain('aria-label="Connected agents"')
 	expect(html).not.toContain(
 		'data-testid="account-connections-agent-instructions"',
 	)

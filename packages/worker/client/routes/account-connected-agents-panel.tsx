@@ -102,7 +102,7 @@ export function createAccountConnectedAgents(handle: Handle) {
 	return {
 		applyPayload,
 		revokeAgent,
-		/** `actions` renders under the list (the Connections page puts Add connection there). */
+		/** `actions` renders under the list (the Connections list page puts Add connection there). */
 		render(options?: { actions?: RemixNode }) {
 			const groups = groupConnectedAgents(agents)
 			return (

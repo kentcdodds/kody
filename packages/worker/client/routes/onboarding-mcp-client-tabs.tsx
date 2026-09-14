@@ -412,7 +412,7 @@ export function OnboardingMcpClientTabs(
  * One host's install path: desktop and phone surfaces both render and CSS
  * shows the one that matches the viewport, followed by the help link, any
  * host caveat, and the authenticate callout. Shared with Add connection on
- * `/account/connections`.
+ * `/account/connections/new`.
  */
 export function AgentSurfaceInstructions(
 	handle: Handle<{
@@ -463,7 +463,7 @@ export function AgentSurfaceInstructions(
  * The client wall. Entries given as bare ids follow the onboarding
  * viewport split (desktop-only hosts hide on a phone); pass
  * `{ id, viewport: 'both' }` entries to show every card everywhere, which
- * is what Add connection on `/account/connections` does.
+ * is what Add connection on `/account/connections/new` does.
  */
 export function AgentPickerGrid(
 	handle: Handle<{

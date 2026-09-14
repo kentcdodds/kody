@@ -40,7 +40,7 @@ import {
 	getGhostButtonCss,
 	getPillButtonCss,
 } from '#universal/styles/style-primitives.ts'
-import { colors, spacing } from '#universal/styles/tokens.ts'
+import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 
 const connectYourAgentDocHref = docHref('connect-your-agent')
 
@@ -83,10 +83,11 @@ function readView(href: string): AccountConnectionsView | null {
 /**
  * `/account/connections` — the durable home for inbound MCP hosts. The
  * connected list is the same panel Overview used to host. Add connection
- * (`/new`) opens the full client wall from onboarding Step 1 with no
- * phone/desktop split and nothing folded under Not listed, and `/new/:agent`
- * shows that host's install steps. Sign-in providers stay on Overview;
- * outbound MCP servers stay on MCP servers.
+ * is its own page (`/new`): the full client wall from onboarding Step 1
+ * with no phone/desktop split and nothing folded under Not listed, not a
+ * nested child of the list. `/new/:agent` shows that host's install
+ * steps. Sign-in providers stay on Overview; outbound MCP servers stay on
+ * MCP servers.
  */
 export function AccountConnectionsRoute(handle: Handle) {
 	const connectedAgents = createAccountConnectedAgents(handle)
@@ -130,8 +131,6 @@ export function AccountConnectionsRoute(handle: Handle) {
 				: pending && appliedPayload === null
 					? 'loading'
 					: 'ready'
-		const adding = view?.kind === 'new'
-		const selectedAgent = view?.kind === 'new' ? view.agent : null
 
 		return (
 			<AccountManagementShell busy={pending && appliedPayload !== null}>
@@ -152,45 +151,97 @@ export function AccountConnectionsRoute(handle: Handle) {
 					</AccountManagementMessage>
 				) : null}
 
-				{status === 'ready' ? (
-					<>
-						{connectedAgents.render({
-							actions: adding ? null : (
-								<a
-									href={accountConnectionsNewHref(null)}
-									data-testid="account-connections-add"
-									mix={css(primaryButtonCss)}
-								>
-									Add connection
-								</a>
-							),
-						})}
-						{view === null ? renderUnknownAgent() : null}
-						{adding && selectedAgent === null
-							? renderAgentGrid({ mcpServerUrl })
-							: null}
-						{selectedAgent
-							? renderAgentInstructions({ agent: selectedAgent, mcpServerUrl })
-							: null}
-						{!adding ? renderMcpUrlPanel({ mcpServerUrl }) : null}
-						<AccountManagementPanel
-							title="Advanced"
-							description="Optional tools for hosts that cannot finish dynamic OAuth on their own. This is not the list of agents already connected to your account."
-						>
-							<div mix={css(accountActionsCss)}>
-								<a
-									href={routes.accountMcpOauthClients.href()}
-									mix={css(compactGhostButtonCss)}
-								>
-									MCP OAuth clients
-								</a>
-							</div>
-						</AccountManagementPanel>
-					</>
-				) : null}
+				{status === 'ready'
+					? renderReadyView({
+							view,
+							connectedAgents,
+							mcpServerUrl,
+						})
+					: null}
 			</AccountManagementShell>
 		)
 	}
+}
+
+function renderBackToConnections() {
+	return (
+		<a
+			href={routes.accountConnections.href()}
+			data-testid="account-connections-back"
+			mix={css(backLinkCss)}
+		>
+			← back to connections
+		</a>
+	)
+}
+
+function renderReadyView(input: {
+	view: AccountConnectionsView | null
+	connectedAgents: ReturnType<typeof createAccountConnectedAgents>
+	mcpServerUrl: string
+}) {
+	if (input.view === null) {
+		return (
+			<>
+				{renderBackToConnections()}
+				{renderUnknownAgent()}
+			</>
+		)
+	}
+	switch (input.view.kind) {
+		case 'list':
+			return (
+				<>
+					{input.connectedAgents.render({
+						actions: (
+							<a
+								href={accountConnectionsNewHref(null)}
+								data-testid="account-connections-add"
+								mix={css(primaryButtonCss)}
+							>
+								Add connection
+							</a>
+						),
+					})}
+					{renderMcpUrlPanel({ mcpServerUrl: input.mcpServerUrl })}
+					{renderAdvancedPanel()}
+				</>
+			)
+		case 'new':
+			return (
+				<>
+					{renderBackToConnections()}
+					{input.view.agent === null
+						? renderAgentGrid({ mcpServerUrl: input.mcpServerUrl })
+						: renderAgentInstructions({
+								agent: input.view.agent,
+								mcpServerUrl: input.mcpServerUrl,
+							})}
+				</>
+			)
+		default: {
+			const _exhaustive: never = input.view
+			return _exhaustive
+		}
+	}
+}
+
+function renderAdvancedPanel() {
+	return (
+		<AccountManagementPanel
+			title="Advanced"
+			description="Optional tools for hosts that cannot finish dynamic OAuth on their own. This is not the list of agents already connected to your account."
+		>
+			<div mix={css(accountActionsCss)}>
+				<a
+					href={routes.accountMcpOauthClients.href()}
+					mix={css(compactGhostButtonCss)}
+				>
+					MCP OAuth clients
+				</a>
+			</div>
+		</AccountManagementPanel>
+	)
 }
 
 function renderVerifyNote() {
@@ -282,7 +333,7 @@ function renderAgentInstructions(input: {
 	return (
 		<AccountManagementPanel
 			title={`Connect ${label}`}
-			description="Follow the steps for this host, then approve the Kody OAuth window when it opens. The new connection appears in the list above once the host authorizes."
+			description="Follow the steps for this host, then approve the Kody OAuth window when it opens. The new connection appears on the connections list once the host authorizes."
 			ariaLabel={`Connect ${label}`}
 		>
 			<div mix={css(accountActionsCss)}>
@@ -336,4 +387,18 @@ const primaryButtonCss = {
 	...getPillButtonCss({ size: 'sm' }),
 	textDecoration: 'none',
 	width: 'fit-content',
+}
+
+const backLinkCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	gap: spacing.xs,
+	width: 'fit-content',
+	fontSize: typography.fontSize.sm,
+	fontWeight: typography.fontWeight.medium,
+	color: colors.primaryText,
+	textDecoration: 'none',
+	'&:hover': {
+		color: colors.text,
+	},
 }

@@ -25,8 +25,9 @@ block and MCP URL, and `/.well-known/mcp/server-card.json` for the server card.
 
 Once signed in, Account → Connections (`/account/connections`) is the durable
 home for this: it lists every agent that has authorized (with revoke), shows the
-MCP URL with a copy button, and **Add connection** opens the same per-host steps
-as Get started for every agent Kody knows how to connect.
+MCP URL with a copy button, and **Add connection** opens
+`/account/connections/new` with the same per-host steps as Get started for every
+agent Kody knows how to connect.
 
 Your account email must be verified before authorize can finish or MCP can run.
 If authorize asks you to verify, keep that tab open, finish verification (from

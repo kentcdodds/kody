@@ -569,9 +569,30 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		mcpServerUrl: '',
 	})
 	expect(connectionsHtml).toContain('data-testid="account-connections-add"')
+	expect(connectionsHtml).not.toContain(
+		'data-testid="account-connections-agent-grid"',
+	)
+	expect(connectionsHtml).not.toContain(
+		'data-testid="account-connections-back"',
+	)
 
-	// Add connection and the per-agent step share the handler and payload;
-	// an unknown agent segment is a 404 page, not an empty grid.
+	// Add connection is its own page (no connected list around the grid);
+	// the per-agent step shares the handler and payload; an unknown agent
+	// segment is a 404 page, not an empty grid.
+	const addGridResponse = await runHtmlHandler(
+		createAccountConnectionsHandler(env),
+		new Request('https://example.com/account/connections/new', {
+			headers: { Cookie: accountCookie },
+		}),
+	)
+	expect(addGridResponse.status).toBe(200)
+	const addGridHtml = await readResponseText(addGridResponse)
+	expect(addGridHtml).toContain('data-testid="account-connections-back"')
+	expect(addGridHtml).toContain('← back to connections')
+	expect(addGridHtml).toContain('aria-label="Add connection"')
+	expect(addGridHtml).not.toContain('aria-label="Connected agents"')
+	expect(addGridHtml).toContain('<title>Add connection')
+
 	const addConnectionResponse = await runHtmlHandler(
 		createAccountConnectionsHandler(env),
 		new Request('https://example.com/account/connections/new/cursor', {
@@ -582,6 +603,8 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	const addConnectionHtml = await readResponseText(addConnectionResponse)
 	expect(addConnectionHtml).toContain('<title>Connect Cursor')
 	expect(addConnectionHtml).toContain('aria-label="Connect Cursor"')
+	expect(addConnectionHtml).toContain('data-testid="account-connections-back"')
+	expect(addConnectionHtml).not.toContain('aria-label="Connected agents"')
 	expect(addConnectionHtml).toMatch(
 		/href="\/account\/connections"[^>]*aria-current="page"/,
 	)
