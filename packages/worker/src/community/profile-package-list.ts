@@ -18,10 +18,10 @@ function profilePackageFilterWhereSql(
 		case 'all':
 			break
 		case 'public':
-			conditions.push('is_private = 0')
+			conditions.push('saved_packages.is_private = 0')
 			break
 		case 'private':
-			conditions.push('is_private = 1')
+			conditions.push('saved_packages.is_private = 1')
 			break
 		default: {
 			const exhaustive: never = filters.visibility
@@ -32,10 +32,10 @@ function profilePackageFilterWhereSql(
 		case 'all':
 			break
 		case 'yes':
-			conditions.push('hidden = 1')
+			conditions.push('saved_packages.hidden = 1')
 			break
 		case 'no':
-			conditions.push('hidden = 0')
+			conditions.push('saved_packages.hidden = 0')
 			break
 		default: {
 			const exhaustive: never = filters.hidden

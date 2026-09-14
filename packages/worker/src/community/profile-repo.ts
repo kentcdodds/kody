@@ -336,8 +336,12 @@ export async function listPublicProfilePackages(
 	},
 ): Promise<Array<PublicProfilePackage>> {
 	const conditions = input.includePrivate
-		? ['user_id = ?']
-		: ['user_id = ?', 'is_private = 0', 'hidden = 0']
+		? ['saved_packages.user_id = ?']
+		: [
+				'saved_packages.user_id = ?',
+				'saved_packages.is_private = 0',
+				'saved_packages.hidden = 0',
+			]
 	if (input.additionalWhereSql && input.additionalWhereSql.length > 0) {
 		conditions.push(...input.additionalWhereSql)
 	}
@@ -348,7 +352,7 @@ export async function listPublicProfilePackages(
 			const pattern = d1ContainsLikePattern(token, { escape: false })
 			const columnClauses = publicPackageSearchColumns.map((column) => {
 				bindings.push(pattern)
-				return `${column} LIKE ?`
+				return `saved_packages.${column} LIKE ?`
 			})
 			return `(${columnClauses.join(' OR ')})`
 		})
