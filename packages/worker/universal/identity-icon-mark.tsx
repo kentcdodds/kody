@@ -5,7 +5,7 @@ import { identityIconMonogramLetter } from '#universal/identity-icon-leaf.ts'
 import { getLogoWellCss } from '#universal/styles/style-primitives.ts'
 import { colors } from '#universal/styles/tokens.ts'
 
-export type IdentityIconMarkSize = 'card' | 'starter' | 'detail'
+type IdentityIconMarkSize = 'card' | 'starter' | 'detail'
 
 type IdentityIconMarkProps = {
 	name: string
