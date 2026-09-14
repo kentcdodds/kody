@@ -157,6 +157,14 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	})
 	expect(advocate.subject).toBe('Share Kody (and a free month)')
 	expect(advocate.html).toContain('https://kody.codes/signup?ref=kentcdodds')
+	expect(advocate.html).toContain(
+		'reply to this email and tell Kent what you think about Kody',
+	)
+	expect(advocate.html).toContain('– Kent')
+	expect(advocate.text).toContain(
+		"If you have thirty seconds, reply to this email and tell Kent what you think about Kody and how you're using it.",
+	)
+	expect(advocate.text).toContain('– Kent')
 	expect(advocate.text).toContain(
 		'Email a short testimonial: mailto:me@kentcdodds.com?subject=Kody%20testimonial',
 	)

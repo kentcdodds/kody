@@ -38,6 +38,20 @@ export type PackagePageAccess =
 			ownerUserId: string
 	  }
 
+export type PackagePagePrivacySource = {
+	ownerPackage: { isPrivate: boolean } | null
+	shareGrant: PackageShareGrantLoaderView | null
+}
+
+/**
+ * Pending share guests do not load `ownerPackage` (no source read until
+ * accept). Treat a share grant as private so the details frame does not
+ * fall through to the unlisted-public "Not published" mark.
+ */
+export function packagePageIsPrivate(page: PackagePagePrivacySource): boolean {
+	return page.ownerPackage?.isPrivate ?? page.shareGrant != null
+}
+
 function isPublicSavedPackage(pkg: { hidden: boolean; isPrivate: boolean }) {
 	return !pkg.hidden && !pkg.isPrivate
 }

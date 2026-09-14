@@ -135,6 +135,7 @@ export function PackageFilesExplorer(
 						username: data.username,
 						kodyId: data.kodyId,
 						isPrivate: data.isPrivate ?? false,
+						isListed: data.isListed === true,
 						viewerIsOwner: data.viewerIsOwner ?? false,
 						active: 'code',
 					})

@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { type Action } from 'remix/router'
 import { toPublicCommunityListing } from '#app/community-public.ts'
 import { loadCommunityDetailData } from '#app/community-data.ts'
-import { loadPackagePage } from '#app/package-page.ts'
+import { loadPackagePage, packagePageIsPrivate } from '#app/package-page.ts'
 import {
 	loadOwnerPackageReadme,
 	loadPackagePageHasAgentsDocs,
@@ -346,8 +346,7 @@ export function createCommunityPackageHandler(env: Env) {
 							username: page.username,
 							kodyId: page.kodyId,
 							viewerIsOwner: page.viewerIsOwner,
-							isPrivate:
-								page.ownerPackage?.isPrivate ?? page.shareGrant != null,
+							isPrivate: packagePageIsPrivate(page),
 							invocationUrlOrigin: page.invocationUrlOrigin,
 							shareGrant: page.shareGrant,
 						},
@@ -425,7 +424,7 @@ export function createCommunityPackageHandler(env: Env) {
 						username: page.username,
 						kodyId: page.kodyId,
 						viewerIsOwner: page.viewerIsOwner,
-						isPrivate: page.ownerPackage?.isPrivate ?? true,
+						isPrivate: packagePageIsPrivate(page),
 						invocationUrlOrigin: page.invocationUrlOrigin,
 						shareGrant: page.shareGrant,
 					},
@@ -581,7 +580,7 @@ export function createCommunityPackageApiHandler(env: Env) {
 					ownerPackage: page.ownerPackage,
 					username: page.username,
 					kodyId: page.kodyId,
-					isPrivate: page.ownerPackage?.isPrivate ?? page.shareGrant != null,
+					isPrivate: packagePageIsPrivate(page),
 					invocationUrlOrigin: page.invocationUrlOrigin,
 					shareGrant: page.shareGrant,
 				},

@@ -318,6 +318,7 @@ export function PackageSettingsRoute(handle: Handle) {
 							username: chromeUsername,
 							kodyId: chromeKodyId,
 							isPrivate,
+							isListed: ownerPackage?.hasCommunityListing === true,
 							viewerIsOwner: true,
 							active: 'settings',
 							description: ownerPackage?.description ?? '',

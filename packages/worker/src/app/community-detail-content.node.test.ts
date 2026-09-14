@@ -4,6 +4,7 @@ import {
 	renderCommunityDetailContentHtml,
 } from '#app/community-detail-content.tsx'
 import { type PublicCommunityListing } from '#universal/community-public-types.ts'
+import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
 
 const sampleListing = {
 	id: 'listing-1',
@@ -219,7 +220,9 @@ test('package chrome is shared for public listings and private owner packages', 
 	expect(publicHtml).toContain('data-testid="package-repo-chrome"')
 	expect(publicHtml).toContain('data-testid="package-repo-nav-code"')
 	expect(publicHtml).not.toContain('data-testid="package-repo-nav-settings"')
-	expect(publicHtml).toContain('data-visibility="public"')
+	expect(publicHtml).not.toContain('data-testid="package-visibility-badge"')
+	expect(publicHtml).not.toContain('data-signifier="unpublished"')
+	expect(publicHtml).not.toContain('>Public<')
 	expect(publicHtml).toContain('data-testid="community-browse-files"')
 	expect(publicHtml).toContain('href="/@kentcdodds/github-triage/tree/main"')
 	expect(publicHtml).toContain('data-testid="community-detail-forks"')
@@ -253,11 +256,106 @@ test('package chrome is shared for public listings and private owner packages', 
 	})
 	expect(privateHtml).toContain('data-testid="package-repo-chrome"')
 	expect(privateHtml).toContain('data-visibility="private"')
+	expect(privateHtml).toContain('data-signifier="private"')
+	expect(privateHtml).toContain('data-icon="lock"')
+	expect(privateHtml).toContain('title="Private"')
+	expect(privateHtml).not.toContain('data-signifier="unpublished"')
+	expect(privateHtml).not.toMatch(/>Private</)
+	expect(privateHtml).not.toMatch(/>Not published</)
 	expect(privateHtml).toContain('data-testid="package-repo-nav-settings"')
 	expect(privateHtml).toContain('href="/@kentcdodds/github-triage/tree/main"')
 	expect(privateHtml).not.toContain('data-testid="community-detail-forks"')
 	expect(privateHtml).not.toContain('data-testid="community-listing-category"')
 	expect(privateHtml).toContain('Local notes.')
+})
+
+test('package chrome uses lock and unpublished icon tooltips instead of text pills', async () => {
+	const privateListedHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
+		isPrivate: true,
+		viewerIsOwner: true,
+		loggedIn: true,
+	})
+	expect(privateListedHtml).toContain('data-signifier="private"')
+	expect(privateListedHtml).toContain('data-icon="lock"')
+	expect(privateListedHtml).not.toContain('data-signifier="unpublished"')
+	expect(privateListedHtml).not.toMatch(/>Not published</)
+
+	const publicUnpublishedHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
+		listing: null,
+		isPrivate: false,
+		viewerIsOwner: true,
+		loggedIn: true,
+		description: 'Public but unlisted.',
+	})
+	expect(publicUnpublishedHtml).toContain('data-signifier="unpublished"')
+	expect(publicUnpublishedHtml).toContain('data-icon="file"')
+	expect(publicUnpublishedHtml).toContain('title="Not published"')
+	expect(publicUnpublishedHtml).not.toContain('data-signifier="private"')
+	expect(publicUnpublishedHtml).not.toMatch(/>Not published</)
+})
+
+test('open package app link shows for owner and accepted share, and hides without an app or access', async () => {
+	const ownerHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
+		listing: null,
+		isPrivate: true,
+		viewerIsOwner: true,
+		loggedIn: true,
+		hasApp: true,
+	})
+	expect(ownerHtml).toContain('data-testid="open-package-app"')
+	expect(ownerHtml).toContain('href="/@kentcdodds/packages/github-triage"')
+	expect(ownerHtml).toContain('data-rmx-document')
+	expect(ownerHtml).toContain('data-icon="share"')
+	expect(ownerHtml).toContain('Open Package App')
+
+	const sharedHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
+		listing: null,
+		isPrivate: true,
+		viewerIsOwner: false,
+		loggedIn: true,
+		hasApp: true,
+		shareGrant: shareGrantFixture('accepted'),
+	})
+	expect(sharedHtml).toContain('data-testid="open-package-app"')
+	expect(sharedHtml).toContain('href="/@kentcdodds/packages/github-triage"')
+
+	const noAppHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
+		listing: null,
+		isPrivate: true,
+		viewerIsOwner: true,
+		loggedIn: true,
+		hasApp: false,
+	})
+	expect(noAppHtml).not.toContain('data-testid="open-package-app"')
+	expect(noAppHtml).toContain('data-testid="community-browse-files"')
+
+	const noAccessHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
+		loggedIn: true,
+		hasApp: true,
+	})
+	expect(noAccessHtml).not.toContain('data-testid="open-package-app"')
+
+	const pendingHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
+		listing: null,
+		isPrivate: true,
+		loggedIn: true,
+		hasApp: true,
+		shareGrant: shareGrantFixture('pending'),
+	})
+	expect(pendingHtml).not.toContain('data-testid="open-package-app"')
+	expect(pendingHtml).toContain('data-signifier="private"')
+	expect(pendingHtml).toContain('data-icon="lock"')
+	expect(pendingHtml).not.toContain('data-signifier="unpublished"')
+	expect(pendingHtml).toContain(
+		'data-testid="package-share-accept-frame-banner"',
+	)
 })
 
 test('buildSourceAheadPublishHref names the HEAD commit when present', () => {
@@ -278,3 +376,26 @@ test('buildSourceAheadPublishHref names the HEAD commit when present', () => {
 		}),
 	).toBe('/@kentcdodds/github-triage/approve-publish')
 })
+
+function shareGrantFixture(
+	status: 'pending' | 'accepted',
+): PackageShareGrantLoaderView {
+	return {
+		id: 'grant-1',
+		packageId: 'pkg-1',
+		status,
+		role: 'use',
+		trustLevel: 'pin',
+		pinAhead: false,
+		approveChangesPath: null,
+		packagePath: '/@kentcdodds/github-triage',
+		packageName: '@kentcdodds/github-triage',
+		packageKodyId: 'github-triage',
+		ownerUsername: 'kentcdodds',
+		inviteeEmail: 'jane@example.com',
+		inviteeUsername: 'jane',
+		granteeUsername: 'jane',
+		acceptedPublishedCommit: null,
+		publishedCommit: null,
+	}
+}

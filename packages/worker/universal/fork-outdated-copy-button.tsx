@@ -128,7 +128,7 @@ export function renderForkAheadPill(input: { href: string; testId: string }) {
 	)
 }
 
-const copyPromptTooltipCss = {
+export const copyPromptTooltipCss = {
 	'& [role="tooltip"]': {
 		position: 'absolute' as const,
 		left: '50%',

@@ -201,6 +201,7 @@ export type PackageFilesLoaderData = {
 	kodyId?: string
 	viewerIsOwner?: boolean
 	isPrivate?: boolean
+	isListed?: boolean
 	imageBaseHref?: string | null
 }
 

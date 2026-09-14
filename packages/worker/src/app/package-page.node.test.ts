@@ -41,7 +41,8 @@ vi.mock('#worker/package-registry/share-grants.ts', () => ({
 	toPackageShareGrantLoaderView: (view: unknown) => view,
 }))
 
-const { loadPackagePage } = await import('./package-page.ts')
+const { loadPackagePage, packagePageIsPrivate } =
+	await import('./package-page.ts')
 
 const request = new Request('https://example.com/@owner/notes')
 const env = {} as Env
@@ -321,6 +322,7 @@ test('loadPackagePage lets pending and accepted share guests see a private packa
 		canReadOwnerSource: false,
 		shareGrant: { id: 'grant-1', status: 'pending' },
 	})
+	expect(pending.kind === 'page' && packagePageIsPrivate(pending)).toBe(true)
 
 	mockModule.loadViewerPackageShare.mockResolvedValue({
 		id: 'grant-1',
