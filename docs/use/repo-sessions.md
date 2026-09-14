@@ -73,7 +73,14 @@ of requiring the internal `source_id`. Prefer the scoped `@owner/leaf` name (or
 the name leaf). Use `package_id` only when the name is not known, or for a
 stable ref.
 
-Example (fallback when the scoped name is not known):
+Example:
+
+```json
+{ "target": { "kind": "package", "kody_id": "@owner/leaf" } }
+```
+
+`kody_id` also accepts the name leaf (`"leaf"`). Use `package_id` only when the
+name is not known, or for a stable ref:
 
 ```json
 { "target": { "kind": "package", "package_id": "…" } }
@@ -151,7 +158,7 @@ It only mutates the live session overlay. Pair it with `repoCommit`,
 
 ```ts
 const session = await kody.repoOpenSession({
-	target: { kind: 'package', package_id: '…' },
+	target: { kind: 'package', kody_id: '@owner/leaf' },
 })
 
 await kody.repoEditFiles({
