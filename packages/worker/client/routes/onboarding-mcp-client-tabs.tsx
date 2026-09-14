@@ -186,8 +186,8 @@ function AgentAuthCallout(
 				)}
 			</span>
 			<span>
-				Approve the <strong>kody.codes</strong> OAuth window. This is the step
-				that connects your agent to your factory.
+				Approve the <strong>{new URL(handle.props.mcpServerUrl).host}</strong>{' '}
+				OAuth window. This is the step that connects your agent to your factory.
 			</span>
 		</div>
 	)
