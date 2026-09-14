@@ -476,3 +476,37 @@ export async function setMcpServerLastError(input: {
 		lastError: stringifyMcpServerLastError(input.lastError),
 	})
 }
+
+export async function persistMcpServerLastErrorIfChanged(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	id: string
+	state: string
+	lastError: McpServerLastError | null
+}): Promise<void> {
+	const existing = await getMcpServerSettingById({
+		env: input.env,
+		userId: input.userId,
+		id: input.id,
+	})
+	if (!existing) return
+	if (input.state === 'ready') {
+		if (existing.lastError) {
+			await setMcpServerLastError({
+				env: input.env,
+				userId: input.userId,
+				id: input.id,
+				lastError: null,
+			})
+		}
+		return
+	}
+	if (!input.lastError) return
+	if (existing.lastError === input.lastError.message) return
+	await setMcpServerLastError({
+		env: input.env,
+		userId: input.userId,
+		id: input.id,
+		lastError: input.lastError,
+	})
+}

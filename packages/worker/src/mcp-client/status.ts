@@ -84,7 +84,9 @@ function buildStatusMessage(input: {
 				? `The ${input.label} is connected and exposing ${input.toolCount} tool${input.toolCount === 1 ? '' : 's'}.`
 				: `The ${input.label} is connected, but it has not exposed any tools.`
 		case 'authenticating':
-			return `The ${input.label} is waiting for OAuth authorization. Complete the authorization from /account/mcp-servers.`
+			return input.error
+				? `The ${input.label} is waiting for OAuth authorization: ${input.error}`
+				: `The ${input.label} is waiting for OAuth authorization. Complete the authorization from /account/mcp-servers.`
 		case 'connecting':
 		case 'connected':
 		case 'discovering':

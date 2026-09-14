@@ -55,6 +55,7 @@ const {
 	resolveMcpServerOAuthClientUrls,
 	listVisibleEnabledMcpServerRefsCached,
 	lockMcpServerToPackage,
+	persistMcpServerLastErrorIfChanged,
 	setMcpServerEnabled,
 	setMcpServerUsage,
 } = await import('./settings-service.ts')
@@ -254,6 +255,68 @@ test('addMcpServer persists lastError when discover times out still connected', 
 		expect.objectContaining({
 			userId: 'user-1',
 			lastError: expect.stringContaining('"phase":"server/discover"'),
+		}),
+	)
+})
+
+test('persistMcpServerLastErrorIfChanged writes token-recovery errors and skips unchanged rows', async () => {
+	mockModule.getMcpServerSettingRowById.mockResolvedValue(
+		createSettingRow({ id: 'server-1' }),
+	)
+	mockModule.updateMcpServerSettingLastErrorRow.mockResolvedValue(true)
+	const lastError = {
+		message:
+			'Stored OAuth tokens could not be refreshed (phase token exchange, id attempt-rt).',
+		phase: 'token exchange' as const,
+		httpStatus: null,
+		httpBodySnippet: null,
+		mcpEndpoint: 'https://mediarss.example/mcp',
+		resource: null,
+		authServer: null,
+		attemptId: 'attempt-rt',
+		at: '2026-09-14T00:00:00.000Z',
+	}
+
+	await persistMcpServerLastErrorIfChanged({
+		env: { APP_DB: {} } as Env,
+		userId: 'user-1',
+		id: 'server-1',
+		state: 'authenticating',
+		lastError,
+	})
+	expect(mockModule.updateMcpServerSettingLastErrorRow).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'user-1',
+			id: 'server-1',
+			lastError: expect.stringContaining('"phase":"token exchange"'),
+		}),
+	)
+
+	mockModule.getMcpServerSettingRowById.mockResolvedValue({
+		...createSettingRow({ id: 'server-1' }),
+		last_error: JSON.stringify(lastError),
+	})
+	mockModule.updateMcpServerSettingLastErrorRow.mockClear()
+	await persistMcpServerLastErrorIfChanged({
+		env: { APP_DB: {} } as Env,
+		userId: 'user-1',
+		id: 'server-1',
+		state: 'authenticating',
+		lastError,
+	})
+	expect(mockModule.updateMcpServerSettingLastErrorRow).not.toHaveBeenCalled()
+
+	await persistMcpServerLastErrorIfChanged({
+		env: { APP_DB: {} } as Env,
+		userId: 'user-1',
+		id: 'server-1',
+		state: 'ready',
+		lastError: null,
+	})
+	expect(mockModule.updateMcpServerSettingLastErrorRow).toHaveBeenCalledWith(
+		expect.objectContaining({
+			id: 'server-1',
+			lastError: null,
 		}),
 	)
 })

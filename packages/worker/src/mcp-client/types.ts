@@ -58,6 +58,8 @@ export type McpServerSnapshot = {
 	state: McpServerConnectionState
 	authUrl: string | null
 	error: string | null
+	lastError?: McpServerLastError | null
+	hasRefreshToken?: boolean
 	instructions: string | null
 	tools: Array<McpServerToolDescriptor>
 }
@@ -74,6 +76,7 @@ export type McpServerConnectResult = {
 	error: string | null
 	toolCount: number
 	lastError?: McpServerLastError | null
+	hasRefreshToken?: boolean
 }
 
 export type McpServerOAuthCallbackOutcome = {

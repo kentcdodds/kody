@@ -84,6 +84,7 @@ const mockModule = vi.hoisted(() => ({
 	})),
 	deleteMcpServer: vi.fn(async () => true),
 	setMcpServerLastError: vi.fn(async () => true),
+	persistMcpServerLastErrorIfChanged: vi.fn(async () => undefined),
 	getCachedMcpClientHubSnapshot: vi.fn(async () => ({
 		servers: [
 			{
@@ -159,6 +160,8 @@ vi.mock('#worker/mcp-client/settings-service.ts', () => ({
 		mockModule.deleteMcpServer(...args),
 	setMcpServerLastError: (...args: Array<unknown>) =>
 		mockModule.setMcpServerLastError(...args),
+	persistMcpServerLastErrorIfChanged: (...args: Array<unknown>) =>
+		mockModule.persistMcpServerLastErrorIfChanged(...args),
 	resolveMcpServerOAuthClientUrls: (input: {
 		env: { APP_BASE_URL?: string | null }
 		requestUrl?: string | URL | null
@@ -251,6 +254,7 @@ test('MCP servers API lists, adds, reconnects, disables, and deletes with user s
 				toolCount: 2,
 				authUrl: null,
 				error: null,
+				hasRefreshToken: false,
 				tools: ['create_issue', 'list_issues'],
 				createdAt: new Date(0).toISOString(),
 				updatedAt: new Date(0).toISOString(),

@@ -634,9 +634,10 @@ same `server.episode_id`.
 Never-ready servers (still `authenticating` after add), disabled servers, and
 in-flight `connecting` / `connected` / `discovering` states do not emit. Token
 loss that parks in `authenticating` after a prior `ready` emits disconnected
-without the lightweight retry — the user must reopen `/account/mcp-servers`.
-`mcpServerReconnect` remains the explicit OAuth restart; listener packages
-should not call it on every event.
+without the lightweight retry — the hub stamps a durable token-refresh
+`last_error` and the user must reopen `/account/mcp-servers`.
+`mcpServerReconnect` tries stored refresh first, then mints a new authorization
+URL; listener packages should not call it on every event.
 
 Delivery is best-effort after the hub observes the transition — there is no
 Queue / DLQ for these topics. Failures during subscriber discovery or

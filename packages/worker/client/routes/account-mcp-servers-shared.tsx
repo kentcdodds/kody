@@ -53,6 +53,7 @@ export type McpServerListItem = {
 	toolCount: number
 	authUrl: string | null
 	error: string | null
+	hasRefreshToken: boolean
 	tools: Array<string>
 	createdAt: string
 	updatedAt: string
