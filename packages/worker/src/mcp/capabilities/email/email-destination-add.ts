@@ -15,7 +15,7 @@ export const emailDestinationAddCapability = defineDomainCapability(
 	{
 		name: 'emailDestinationAdd',
 		description:
-			'Start verification for an additional email destination. emailSend still sends from your platform address; this only expands the allowed to set. The address cannot receive mail until the owner opens the verification link. Re-adding an unverified address resends the link. Cap is 5 extras besides the account email.',
+			'Start verification for an additional email destination. Mail comes from your platform address; destinations expand the allowed to set. The address cannot receive mail until the owner opens the verification link. Re-adding an unverified address resends the link. Cap is 5 extras besides the account email.',
 		keywords: ['email', 'destination', 'add', 'verify', 'send'],
 		readOnly: false,
 		idempotent: false,
