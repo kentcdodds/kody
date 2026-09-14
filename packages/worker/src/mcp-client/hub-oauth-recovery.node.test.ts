@@ -772,11 +772,11 @@ test('authenticating park drops a leftover incomplete-discover lastError', async
 	expect(hung.servers[0]?.error).toContain("tool discovery didn't finish")
 
 	connection.connectionState = 'authenticating'
-	connection.connectionError = null
 	const parked = await hub.getSnapshot()
 	expect(parked.servers[0]?.state).toBe('authenticating')
 	expect(parked.servers[0]?.lastError ?? null).toBeNull()
 	expect(parked.servers[0]?.error ?? null).toBeNull()
+	expect(connection.connectionError).toBeNull()
 	expect(parked.servers[0]?.error ?? '').not.toContain(
 		'Authorization completed',
 	)

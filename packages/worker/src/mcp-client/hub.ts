@@ -902,10 +902,11 @@ class McpClientHubBase extends DurableObject<Env> {
 			}
 			if (result.state === 'authenticating') {
 				this.lastDiscoverErrors.delete(serverId)
+				if (connection) connection.connectionError = null
 				return {
 					result: {
 						...result,
-						error: result.error ?? discoverError,
+						error: null,
 						lastError: null,
 					},
 					lastError: null,

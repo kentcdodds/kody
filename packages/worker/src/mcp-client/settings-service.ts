@@ -491,7 +491,10 @@ export async function persistMcpServerLastErrorIfChanged(input: {
 			id: input.id,
 		})
 		if (!existing) return
-		if (input.state === 'ready') {
+		if (
+			input.state === 'ready' ||
+			(input.state === 'authenticating' && !input.lastError)
+		) {
 			if (existing.lastError) {
 				await setMcpServerLastError({
 					env: input.env,

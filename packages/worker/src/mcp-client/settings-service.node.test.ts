@@ -319,6 +319,21 @@ test('persistMcpServerLastErrorIfChanged writes token-recovery errors and skips 
 			lastError: null,
 		}),
 	)
+
+	mockModule.updateMcpServerSettingLastErrorRow.mockClear()
+	await persistMcpServerLastErrorIfChanged({
+		env: { APP_DB: {} } as Env,
+		userId: 'user-1',
+		id: 'server-1',
+		state: 'authenticating',
+		lastError: null,
+	})
+	expect(mockModule.updateMcpServerSettingLastErrorRow).toHaveBeenCalledWith(
+		expect.objectContaining({
+			id: 'server-1',
+			lastError: null,
+		}),
+	)
 })
 
 test('persistMcpServerLastErrorIfChanged swallows D1 failures', async () => {
