@@ -59,7 +59,6 @@ const {
 	parsePackageRuntimeModulePathPackageId,
 	refreshKodyRuntimeModules,
 } = await import('./module-graph.ts')
-const { packageAppServerModuleUrl } = await import('./package-app-runtime.ts')
 
 test('hydrateKodyRuntimeModules resolves duplicate dynamic specifiers once per pass', async () => {
 	const createDynamicPlaceholder = (specifier: string) =>
@@ -316,7 +315,7 @@ test('kody:runtime exports resolve against the current run when the module insta
 	}
 })
 
-test('buildKodyAppBundle applies Remix UI bundler options only when the graph imports remix/ui', async () => {
+test('buildKodyAppBundle keeps esbuild defaults even when the graph imports remix/ui', async () => {
 	mockModule.createWorker.mockReset()
 	mockModule.createWorker.mockResolvedValue(createBundleResult('remix'))
 	const remixInput = createBundleInput({ entryPoint: 'app/router.ts' })
@@ -341,16 +340,38 @@ test('buildKodyAppBundle applies Remix UI bundler options only when the graph im
 	expect(remixCall.files['node_modules/remix/dist/ui/server.js']).toBeTypeOf(
 		'string',
 	)
-	expect(remixCall).toMatchObject({
+	// Vendored remix is a convenience; the host does not sniff the graph for
+	// JSX, import.meta.url, or keepNames. Without a tsconfig, esbuild defaults.
+	expect(remixCall).not.toHaveProperty('jsx')
+	expect(remixCall).not.toHaveProperty('jsxImportSource')
+	expect(remixCall).not.toHaveProperty('define')
+	expect(remixCall).not.toHaveProperty(
+		'__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired',
+	)
+
+	mockModule.createWorker.mockReset()
+	mockModule.createWorker.mockResolvedValue(createBundleResult('tsconfig'))
+	const tsconfigInput = createBundleInput({ entryPoint: 'app/router.ts' })
+	tsconfigInput.sourceFiles['app/router.ts'] = [
+		"import { createRouter } from 'remix/router'",
+		"import { renderToString } from 'remix/ui/server'",
+		'export default createRouter()',
+	].join('\n')
+	tsconfigInput.sourceFiles['tsconfig.json'] = JSON.stringify({
+		compilerOptions: {
+			jsx: 'react-jsx',
+			jsxImportSource: 'remix/ui',
+		},
+	})
+	await buildKodyAppBundle(tsconfigInput)
+	const tsconfigCall = mockModule.createWorker.mock.calls[0]?.[0] as {
+		jsx?: string
+		jsxImportSource?: string
+	}
+	expect(tsconfigCall).toMatchObject({
 		jsx: 'automatic',
 		jsxImportSource: 'remix/ui',
-		define: { 'import.meta.url': JSON.stringify(packageAppServerModuleUrl) },
 	})
-	expect(
-		remixCall.__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired?.map(
-			(plugin) => plugin.name,
-		),
-	).toEqual(['kody-package-app-keep-names'])
 
 	mockModule.createWorker.mockReset()
 	mockModule.createWorker.mockResolvedValue(createBundleResult('headers'))
@@ -382,8 +403,6 @@ test('buildKodyAppBundle applies Remix UI bundler options only when the graph im
 		string,
 		unknown
 	>
-	// The vendored remix is present for any bundle that wants
-	// remix/html-template, but a fetch handler gets no Remix JSX or define.
 	expect(
 		(fetchCall.files as Record<string, string>)[
 			'node_modules/remix/package.json'

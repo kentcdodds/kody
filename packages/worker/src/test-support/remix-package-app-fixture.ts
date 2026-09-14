@@ -1,11 +1,9 @@
 /**
  * A mid-complexity Remix package app used by the workers bundling test and
- * the MCP end-to-end test: a typed route contract, a controller with a GET
- * page and a POST action that validates form data and persists through
- * `packageStorage()`, a custom middleware that sets a context key, an SSR
- * document, and one hydrated `clientEntry` island booted by the browser
- * entry. It is the shape `docs/guides/package-apps.md` documents, so the
- * tests prove the recipe as written.
+ * the MCP end-to-end test. It is the shape
+ * `docs/guides/package-apps.md` documents as Example A (Remix recipe), so
+ * the tests prove the recipe as written — including the boilerplate the
+ * host does not apply (JSX import source, remount, explicit island ids).
  */
 export function createRemixPackageAppFiles(input: {
 	username: string
@@ -20,7 +18,8 @@ export function createRemixPackageAppFiles(input: {
 		devDependencies: { remix: '3.0.0-rc.2' },
 		kody: {
 			id: input.kodyId,
-			description: 'Remix mini-app fixture: routes, action, middleware, SSR',
+			description:
+				'Remix recipe fixture: routes, action, middleware, SSR, remount',
 			app: {
 				entry: './app/router.ts',
 				client: './app/assets/entry.ts',
@@ -30,20 +29,40 @@ export function createRemixPackageAppFiles(input: {
 	}
 	return {
 		'package.json': `${JSON.stringify(packageJson, null, '\t')}\n`,
+		'tsconfig.json': `${JSON.stringify(
+			{
+				compilerOptions: {
+					jsx: 'react-jsx',
+					jsxImportSource: 'remix/ui',
+					allowImportingTsExtensions: true,
+					strict: true,
+					noEmit: true,
+					module: 'esnext',
+					moduleResolution: 'bundler',
+					target: 'es2022',
+				},
+			},
+			null,
+			'\t',
+		)}\n`,
 		'README.md':
-			'# Remix notes\n\n## Intent\n\nProve a package app can be a hosted Remix mini-app with Kody in the request context.\n',
+			'# Remix notes\n\n## Intent\n\nProve a package app can use Remix as a recipe: Worker fetch entry, remount, and Kody via `KodyRuntime`.\n',
 		'AGENTS.md': [
 			'# Agents',
 			'',
-			'Remix mini-app. Default-export a router; dispatch is by export shape.',
+			'Remix recipe. Default-export a fetch handler. The host strips the',
+			'app mount; remount the Request if the route contract is prefixed.',
 			'',
 			'- Import Remix as `remix/<subpath>`; the platform supplies it. Never add',
 			'  `@remix-run/*` or `remix` to `dependencies` (publish rejects `@remix-run/*`).',
+			'- Set `"jsxImportSource": "remix/ui"` in tsconfig and/or a per-file pragma.',
 			'- Routes live in `app/routes.ts`, prefixed with `packageContext.appBasePath`;',
-			'  build every URL with `routes.x.href()`, never a root-relative literal.',
+			'  remount in `app/router.ts` so those prefixes match. Build every URL with',
+			'  `routes.x.href()`, never a root-relative literal.',
 			'- Controllers in `app/controllers/` read Kody through `get(KodyRuntime)`.',
-			'- Islands in `app/ui/` are named `clientEntry` functions registered in',
-			'  `app/assets/entry.ts`; static files and `sw.js` live in `public/`.',
+			'- Islands in `app/ui/` are named `clientEntry` functions with an explicit',
+			'  id (`kody:app#Name`) registered in `app/assets/entry.ts`; static files',
+			'  and `sw.js` live in `public/`.',
 			'',
 		].join('\n'),
 		'src/index.ts':
@@ -59,7 +78,8 @@ export const routes = route(packageContext?.appBasePath ?? '', {
 	health: '/healthz',
 })
 `,
-		'app/router.ts': `import { createRouter } from 'remix/router'
+		'app/router.ts': `import { packageContext } from 'kody:runtime'
+import { createRouter } from 'remix/router'
 import { formData } from 'remix/middleware/form-data'
 import { requestId } from './middleware/request-id.ts'
 import { routes } from './routes.ts'
@@ -72,7 +92,24 @@ router.map(routes.home, home)
 router.map(routes.notes, notes)
 router.get(routes.health, () => Response.json({ ok: true }))
 
-export default router
+// The host strips the mount before forwarding. Remix route contracts that
+// include appBasePath need the hosted pathname, so remount here.
+function remountRequest(request: Request) {
+	const appBasePath = String(packageContext?.appBasePath ?? '').replace(
+		/\\/+$/,
+		'',
+	)
+	if (!appBasePath) return request
+	const url = new URL(request.url)
+	url.pathname = url.pathname === '/' ? appBasePath : appBasePath + url.pathname
+	return new Request(url, request)
+}
+
+export default {
+	fetch(request: Request) {
+		return router.fetch(remountRequest(request))
+	},
+}
 `,
 		'app/middleware/request-id.ts': `import { createContextKey, type Middleware } from 'remix/router'
 
@@ -108,7 +145,8 @@ export async function addNote(context: RequestContext, text: string) {
 	return note
 }
 `,
-		'app/controllers/home.tsx': `import type { BuildAction } from 'remix/router'
+		'app/controllers/home.tsx': `/** @jsxImportSource remix/ui */
+import type { BuildAction } from 'remix/router'
 import { KodyRuntime } from 'kody:runtime'
 import { listNotes } from '../data/notes.ts'
 import { RequestId } from '../middleware/request-id.ts'
@@ -133,7 +171,8 @@ export default {
 	},
 } satisfies BuildAction<'ANY', typeof routes.home>
 `,
-		'app/controllers/notes.tsx': `import type { Controller } from 'remix/router'
+		'app/controllers/notes.tsx': `/** @jsxImportSource remix/ui */
+import type { Controller } from 'remix/router'
 import * as s from 'remix/data-schema'
 import * as f from 'remix/data-schema/form-data'
 import { redirect } from 'remix/response/redirect'
@@ -183,7 +222,8 @@ export default {
 	},
 } satisfies Controller<typeof routes.notes>
 `,
-		'app/ui/render.tsx': `import type { RequestContext } from 'remix/router'
+		'app/ui/render.tsx': `/** @jsxImportSource remix/ui */
+import type { RequestContext } from 'remix/router'
 import { KodyRuntime } from 'kody:runtime'
 import type { RemixNode } from 'remix/ui'
 import { renderToStream } from 'remix/ui/server'
@@ -214,7 +254,8 @@ export function render(
 	return createHtmlResponse(stream, init)
 }
 `,
-		'app/ui/layout.tsx': `import type { Handle, RemixNode } from 'remix/ui'
+		'app/ui/layout.tsx': `/** @jsxImportSource remix/ui */
+import type { Handle, RemixNode } from 'remix/ui'
 import { routes } from '../routes.ts'
 
 // Server-only: imports the route contract (and so kody:runtime). Islands must
@@ -231,7 +272,8 @@ export function Layout(handle: Handle<{ children?: RemixNode }>) {
 	)
 }
 `,
-		'app/ui/document.tsx': `import type { Handle, RemixNode } from 'remix/ui'
+		'app/ui/document.tsx': `/** @jsxImportSource remix/ui */
+import type { Handle, RemixNode } from 'remix/ui'
 import { Layout } from './layout.tsx'
 
 export function Document(
@@ -263,10 +305,11 @@ export function Document(
 	)
 }
 `,
-		'app/ui/counter.tsx': `import { clientEntry, on, type Handle } from 'remix/ui'
+		'app/ui/counter.tsx': `/** @jsxImportSource remix/ui */
+import { clientEntry, on, type Handle } from 'remix/ui'
 
 export const Counter = clientEntry(
-	import.meta.url,
+	'kody:app#Counter',
 	function Counter(handle: Handle<{ initialCount: number; label: string }>) {
 		let count = handle.props.initialCount
 		return () => (

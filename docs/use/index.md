@@ -77,8 +77,8 @@ MCP-level reference detail those docs link into.
   destinations, notify-self sends, and replies
 - [Inbound webhooks](./webhooks.md) — user-owned HTTPS endpoints that dispatch
   provider POSTs to a saved-package export
-- [Package apps](../guides/package-apps.md) — session handoff, `packageAppFetch`
-  smoke, absolute asset URLs, lean forks
+- [Package apps](../guides/package-apps.md) — Worker fetch contract, session
+  handoff, `packageAppFetch` smoke, Remix recipe, lean forks
 - [Package app fetch](./package-app-fetch.md) — platform-marked real-surface
   `app_fetch` smoke tests after publish
 - [Synthetic event dispatch](./synthetic-event-dispatch.md) — interactive MCP

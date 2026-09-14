@@ -24,11 +24,7 @@ import {
 } from './module-graph-import-rewriting.ts'
 import { resolveDirectKodyDependenciesForEntryPoint } from './module-graph-workspace.ts'
 import { withPlatformRemixFiles } from './package-app-remix.ts'
-import {
-	createPackageAppRemixServerBundleOptions,
-	entryGraphNeedsRemixUiBundleOptions,
-	type PackageAppRemixBundleOptions,
-} from './package-app-runtime.ts'
+import { createPackageAppJsxBundleOptions } from './package-app-tsconfig.ts'
 import {
 	createAppEntrypointSource,
 	createExecuteEntrypointSource,
@@ -43,17 +39,18 @@ const moduleBundleCache = createPublishedPackagePromiseCache<RuntimeBundle>()
 async function createWorkerBundle(input: {
 	files: Record<string, string>
 	entryPoint: string
-	remixOptions?: PackageAppRemixBundleOptions | null
+	sourceFiles?: Record<string, string>
 }) {
 	// Keep the experimental bundler out of the Worker's top-level deploy graph.
 	const { createWorker } = await importWorkerBundler()
-	// Every package bundle can import `remix/<subpath>` from the platform's
-	// vendored copy, whether or not the entry is a Remix app.
+	// Optional convenience: every package bundle can import `remix/<subpath>`
+	// from the platform's vendored copy. JSX comes from the package
+	// tsconfig when present; otherwise esbuild defaults.
 	const files = await withPlatformRemixFiles(input.files)
 	return await createWorker({
 		files,
 		entryPoint: input.entryPoint,
-		...input.remixOptions,
+		...createPackageAppJsxBundleOptions(input.sourceFiles ?? input.files),
 	})
 }
 
@@ -145,6 +142,7 @@ export async function buildKodyModuleBundle(input: {
 		const bundle = await createWorkerBundle({
 			files,
 			entryPoint: bootstrapPath,
+			sourceFiles: input.sourceFiles,
 		})
 		const modules = {
 			...stripKodyRuntimeModules(bundle.modules as WorkerLoaderModules),
@@ -230,6 +228,7 @@ export async function buildKodyImportableModuleBundle(input: {
 	const bundle = await createWorkerBundle({
 		files,
 		entryPoint: bootstrapPath,
+		sourceFiles: input.sourceFiles,
 	})
 	const modules = {
 		...stripKodyRuntimeModules(bundle.modules as WorkerLoaderModules),
@@ -292,12 +291,7 @@ export async function buildKodyAppBundle(input: {
 		const bundle = await createWorkerBundle({
 			files,
 			entryPoint: bootstrapPath,
-			remixOptions: entryGraphNeedsRemixUiBundleOptions({
-				sourceFiles: input.sourceFiles,
-				entryPoint,
-			})
-				? createPackageAppRemixServerBundleOptions()
-				: null,
+			sourceFiles: input.sourceFiles,
 		})
 		const modules = {
 			...stripKodyRuntimeModules(bundle.modules as WorkerLoaderModules),

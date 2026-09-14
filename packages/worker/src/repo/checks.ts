@@ -444,9 +444,10 @@ declare module "kody:runtime" {
       }
     | null;
   /**
-   * Remix request-context key for package apps. \`context.get(KodyRuntime)\`
-   * (or \`get(KodyRuntime)\` in a controller) returns this module's exports
-   * for the current request; no middleware is needed to install it.
+   * Optional request-context key. \`context.get(KodyRuntime)\` (Remix) or
+   * any library that reads \`defaultValue\` the same way returns this
+   * module's exports for the current request; no middleware is needed to
+   * install it. Other entries import named exports from this module.
    */
   export const KodyRuntime: {
     readonly defaultValue: {

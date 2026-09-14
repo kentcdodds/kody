@@ -2,13 +2,12 @@
 id: package_apps
 title: Package apps
 summary:
-  Give a package a hosted Remix mini-app on `*.kody.run`. Covers Remix routes,
-  controllers, actions, middleware, SSR, hydration with `KodyRuntime` in the
-  request context, the app shape after an integration smoke test, session
-  handoff, smoke tests with packageAppFetch, mount-aware URLs, the
+  Give a package a hosted Worker app on `*.kody.run`. Covers the fetch-handler
+  contract, mount-stripped URLs, `packageContext` / `kody:runtime`, the
   platform-built browser client (`kody.app.client`) and static assets directory
-  (`kody.app.assets`), plain fetch handlers, the same-origin proxy, lean forks,
-  compiled clients, and listing verification.
+  (`kody.app.assets`), session handoff, smoke tests with packageAppFetch, a
+  Remix recipe (Example A), the same-origin proxy, lean forks, compiled clients,
+  and listing verification.
 category: platform
 ---
 
@@ -21,15 +20,17 @@ export JSDoc stay in [Package authoring](./package-authoring.md)
 [Integration bootstrap](./integration-bootstrap.md)
 (`integration_bootstrap:guide`).
 
-A package app is a hosted **Remix mini-app** with Kody in the request context:
-`kody.app.entry` default-exports a Remix router, Kody renders it on
-`*.kody.run`, and the browser hydrates from the platform-built module under
-`/_assets`. A raw Worker-style `fetch` handler also works: the default export is
-the app, and dispatch follows its shape. Start at
-[Remix mini-apps](#remix-mini-apps) for the recipe.
+A package app is a hosted **Worker entry**. `kody.app.entry` default-exports a
+fetch handler (a function, `{ fetch }`, or a named `fetch` export). Anything
+esbuild can bundle that answers `fetch` is a valid app. The host strips the app
+mount before forwarding, so every entry sees `/notes` for
+`/packages/<id>/notes`. Optional `kody.app.client` and `kody.app.assets` add a
+browser module and static files under `/_assets`. `kody:runtime` exposes
+`packageContext`, `packageStorage()`, and the rest of the run. Remix is
+[Example A](#remix-recipe) — a recipe with its own boilerplate, not a host mode.
 
-Open a heading with `search({ entity: "package_apps:guide#remix-mini-apps" })`
-(or another slug below) when you need one recipe.
+Open a heading with `search({ entity: "package_apps:guide#remix-recipe" })` (or
+another slug below) when you need one recipe.
 
 ## After an integration smoke test
 
@@ -47,7 +48,8 @@ conventions, shared helpers, or an existing package to extend.
 3. Run one cheap authenticated smoke test in `execute` — a small read-only
    request such as `GET /me`, `GET /viewer`, or `GET /v1/me`.
 4. If it passes, build the app as a saved package with `package.json#kody.app`
-   (the [Remix mini-app recipe](#remix-mini-apps)). Keep human `README.md`
+   (start from a [fetch handler](#fetch-handlers); use the
+   [Remix recipe](#remix-recipe) when you want Remix). Keep human `README.md`
    (including `## Intent`) and agent `AGENTS.md` aligned with the person's goal.
    Keep provider API calls and durable coordination in package-owned backend
    modules.
@@ -57,31 +59,24 @@ conventions, shared helpers, or an existing package to extend.
 
 ### Default app shape
 
-For non-trivial or integration-backed apps, prefer this split:
+The host contract is the same for every app:
 
-- **router** — `app/router.ts`, declared by `package.json#kody.app.entry`,
-  default-exports the Remix router; `app/routes.ts` is the typed URL contract
-- **controllers and actions** — `app/controllers/`, one per route area; GET
-  handlers render pages, POST actions validate `FormData` and redirect
-- **middleware** — `app/middleware/`, request lifecycle concerns that set typed
-  context keys
-- **UI** — `app/ui/`, the document, shared components, and `clientEntry`
-  islands; SSR through `remix/ui/server`
-- **browser entry** — `app/assets/entry.ts`, declared by
-  `package.json#kody.app.client`; calls `run()` and is bundled for the browser
-  on publish (see
+- **entry** — `kody.app.entry`, a Worker fetch handler. The host strips the
+  mount (`/packages/<package-name>/notes` → `/notes`)
+- **browser entry** — optional `kody.app.client`; the platform bundles it for
+  the browser on publish (see
   [Browser client and static assets](#browser-client-and-static-assets))
-- **static assets** — an optional `public/` directory declared by
-  `package.json#kody.app.assets`, served as-is
+- **static assets** — optional `kody.app.assets` directory, served as-is
 - **exports** — reusable modules and callable default exports declared in
   `package.json#exports`
-- **durable data** — `packageStorage()` for the shared package bucket, reached
-  from controllers through `get(KodyRuntime)`
+- **durable data** — `packageStorage()` for the shared package bucket
 - **internal backend modules / Durable Objects / facets** — app-internal
   realtime and coordination details (integration lookups, provider calls,
   validation, mutations), not the persistence mechanism
-- **inline HTML from a fetch handler** — fine for a quick prototype (see
-  [Fetch handlers](#fetch-handlers)), not the default pattern
+
+A one-file fetch handler is a complete app (see
+[Fetch handlers](#fetch-handlers)). Framework folder layouts belong in a recipe;
+[Remix](#remix-recipe) is Example A.
 
 ## Session handoff
 
@@ -145,18 +140,20 @@ opens in the client.
 Treat `truncated: true` as “the handler answered,” then finish the proof on the
 full stream.
 
-## Remix mini-apps
+## Remix recipe
 
-A package app runs real Remix — the same `remix` version Kody's own UI ships,
-imported as `remix/<subpath>` — inside the package-app isolate. The platform
-supplies the package on publish (no npm install, no version to pick), compiles
-JSX against `remix/ui`, bundles the router graph for the Worker and the browser
-entry for the browser with esbuild, serves the server-rendered HTML on
-`*.kody.run`, and hydrates from the fingerprinted module under
-`<appBasePath>/_assets/`. Kody's runtime is available in every request context
-as the `KodyRuntime` key, so controllers read `packageStorage()`,
-`packageSecrets`, `kody`, `createAuthenticatedFetch`, `workflows`, and
-`packageContext` (`appBasePath`, `hostedUrl`, `assetBasePath`,
+**Example A.** Remix is a worked example, not a host mode. The platform supplies
+`remix/<subpath>` at the version Kody's own UI ships (no npm install, no version
+to pick) as an optional convenience. The host treats the entry as a fetch
+handler: esbuild defaults, mount-stripped URLs. The recipe below adds the
+boilerplate Remix needs under that contract — `tsconfig` JSX, per-file
+`@jsxImportSource`, a remount wrapper, named islands with an explicit
+`kody:app#Name` id, and a browser registry.
+
+Kody's runtime is available as named exports from `kody:runtime`, and as the
+`KodyRuntime` request-context key so controllers can `context.get(KodyRuntime)`
+for `packageStorage()`, `packageSecrets`, `kody`, `createAuthenticatedFetch`,
+`workflows`, and `packageContext` (`appBasePath`, `hostedUrl`, `assetBasePath`,
 `clientModuleUrl`) without wiring a middleware.
 
 **Do not depend on `@remix-run/*` or npm `remix`.** The platform supplies every
@@ -218,10 +215,32 @@ export const routes = route(packageContext?.appBasePath ?? '', {
 })
 ```
 
-`app/router.ts` — `kody.app.entry`. Default-exports the router; Kody calls
-`router.fetch(request)` with the full hosted URL.
+`tsconfig.json` — the host maps root `compilerOptions.jsx` / `jsxImportSource`
+onto the esbuild bundle (no graph sniff). The editor reads the same file.
+
+```json
+{
+	"compilerOptions": {
+		"jsx": "react-jsx",
+		"jsxImportSource": "remix/ui",
+		"allowImportingTsExtensions": true,
+		"module": "esnext",
+		"moduleResolution": "bundler",
+		"target": "es2022",
+		"strict": true,
+		"noEmit": true
+	}
+}
+```
+
+`app/router.ts` — `kody.app.entry`. Default-export a fetch handler. The host
+strips the mount, so remount the Request before `router.fetch` when the route
+contract includes `appBasePath`. Do not default-export the router object:
+`router.fetch` takes `(input, init?)`, and the Worker `env` is not
+`RequestInit`.
 
 ```ts
+import { packageContext } from 'kody:runtime'
 import { createRouter } from 'remix/router'
 import { formData } from 'remix/middleware/form-data'
 import { requestId } from './middleware/request-id.ts'
@@ -235,7 +254,22 @@ router.map(routes.home, home)
 router.map(routes.notes, notes)
 router.get(routes.health, () => Response.json({ ok: true }))
 
-export default router
+function remountRequest(request: Request) {
+	const appBasePath = String(packageContext?.appBasePath ?? '').replace(
+		/\/+$/,
+		'',
+	)
+	if (!appBasePath) return request
+	const url = new URL(request.url)
+	url.pathname = url.pathname === '/' ? appBasePath : appBasePath + url.pathname
+	return new Request(url, request)
+}
+
+export default {
+	fetch(request: Request) {
+		return router.fetch(remountRequest(request))
+	},
+}
 ```
 
 `app/middleware/request-id.ts` — middleware sets typed context the usual Remix
@@ -288,6 +322,7 @@ an `import { FormData } from 'remix/middleware/form-data'` has no matching
 export and fails publish.
 
 ```tsx
+/** @jsxImportSource remix/ui */
 import type { Controller } from 'remix/router'
 import * as s from 'remix/data-schema'
 import * as f from 'remix/data-schema/form-data'
@@ -333,6 +368,7 @@ export default {
 comes from the same key.
 
 ```tsx
+/** @jsxImportSource remix/ui */
 import type { BuildAction } from 'remix/router'
 import { KodyRuntime } from 'kody:runtime'
 import { listNotes } from '../data/notes.ts'
@@ -361,6 +397,7 @@ platform module URL from `packageContext.clientModuleUrl`; no
 `resolveClientEntry` is needed (see [Hydration](#hydration)).
 
 ```tsx
+/** @jsxImportSource remix/ui */
 import type { RequestContext } from 'remix/router'
 import { KodyRuntime } from 'kody:runtime'
 import type { Handle, RemixNode } from 'remix/ui'
@@ -415,14 +452,16 @@ export function render(
 ```
 
 `app/ui/counter.tsx` — a `clientEntry` island, shared by the server render and
-the browser bundle. Use a **named** function: its name is the export the browser
-loads.
+the browser bundle. Use a **named** function and an explicit id
+(`kody:app#Counter`): workerd leaves `import.meta.url` empty, and the host does
+not pin it or keep export names.
 
 ```tsx
+/** @jsxImportSource remix/ui */
 import { clientEntry, on, type Handle } from 'remix/ui'
 
 export const Counter = clientEntry(
-	import.meta.url,
+	'kody:app#Counter',
 	function Counter(handle: Handle<{ initialCount: number; label: string }>) {
 		let count = handle.props.initialCount
 		return () => (
@@ -471,25 +510,25 @@ counter increments after hydration (`<html data-hydrated="true">`).
 
 ### Kody in the request context
 
-`KodyRuntime` (from `kody:runtime`) is a Remix context key whose default value
-is the `kody:runtime` module for the current request: `get(KodyRuntime)` in any
-controller, action, or middleware returns
+`KodyRuntime` (from `kody:runtime`) is a frozen `{ defaultValue }` object.
+Remix's `context.get(KodyRuntime)` returns the `kody:runtime` module for the
+current request when nothing called `set()`:
 `{ kody, packageStorage, packageSecrets, packageContext, createAuthenticatedFetch, workflows, events, packages, email }`
 plus package-app extras such as `realtime`. It is the same object as
-`import runtime from 'kody:runtime'`; the key exists so Remix code reads it the
-way it reads `Database` or `Session`. Modules that come from another saved
-package (static `kody:@scope/package` imports) get their own stamped key, so
-their `packageStorage()` still resolves to the declaring package.
+`import runtime from 'kody:runtime'`. Other entries import named exports
+directly. Modules that come from another saved package (static
+`kody:@scope/package` imports) get their own stamped key, so their
+`packageStorage()` still resolves to the declaring package.
 
 ### Mount and URLs
 
-The router receives the URL the browser requested — origin, mount, and path — so
-`context.url` matches the address bar and `routes.x.href()` produces
-mount-prefixed paths when the contract is built with
+The host strips the mount before the entry runs. This recipe remounts in
+`app/router.ts` so `context.url` matches the address bar and `routes.x.href()`
+produces mount-prefixed paths when the contract is built with
 `route(packageContext.appBasePath, …)`. A contract without the prefix 404s on
-every hosted path; that is the first thing to check when a fresh app returns
-`Not Found`. `hostedUrl`, `appBasePath`, and `assetBasePath` never end with a
-slash, and the mount root is served with or without a trailing slash.
+every hosted path; a missing remount does the same. `hostedUrl`, `appBasePath`,
+and `assetBasePath` never end with a slash, and the mount root is served with or
+without a trailing slash.
 
 The route contract reads `packageContext.appBasePath` at module scope. That is
 safe: the app module is first evaluated inside the request that loads it, and
@@ -498,18 +537,16 @@ the worker.
 
 ### Hydration
 
-`clientEntry(import.meta.url, function Name…)` is the Remix idiom and works as
-written. The server bundle is one module and the browser bundle is one module,
-so Kody pins the server's `import.meta.url` to the stable id `kody:app` and
-keeps component names through bundling; Remix's default resolution then emits
-`{ moduleUrl: "kody:app", exportName: "Name" }` and the browser's
-`run({ loadModule })` looks `Name` up in its registry. Rules that follow from
+`clientEntry('kody:app#Name', function Name…)` is the recipe's island id.
+workerd leaves `import.meta.url` empty, and the host does not define it or set
+`keepNames`. The explicit `#Name` fragment is the export the browser registry
+must list. Remix then emits `{ moduleUrl: "kody:app", exportName: "Name" }` and
+`run({ loadModule })` looks `Name` up in that registry. Rules that follow from
 that:
 
 - Islands are **named functions** (`function Counter(handle) {}`); an arrow
-  function has no name and fails at render with Remix's own error. To decouple
-  the export name from the function name, put it in the id:
-  `clientEntry(`${import.meta.url}#Counter`, …)`.
+  function has no name and fails at render with Remix's own error. Put the
+  export name in the id: `clientEntry('kody:app#Counter', …)`.
 - Every island is listed in the browser entry's registry and shared with the
   server through a module that imports neither `kody:runtime` nor DOM-only
   packages at module scope.
@@ -534,17 +571,16 @@ that:
 
 ### Default export
 
-`kody.app.entry` default-exports the app. A router-shaped object (`fetch`,
-`map`, and `mount` — `createRouter()` from `remix/router`) receives the full
-hosted URL so a mount-prefixed route contract matches. A function or `{ fetch }`
-handler receives the mount-stripped path (`/` at the app root). Publish rejects
-`kody.app.runtime`: dispatch is by export shape, not a configured mode. A
-leftover field on a published snapshot is ignored.
+`kody.app.entry` default-exports a fetch handler (a function, `{ fetch }`, or a
+named `fetch` export). Every entry receives the mount-stripped path (`/` at the
+app root). Publish rejects `kody.app.runtime`: there is no configured runtime
+mode. A leftover field on a published snapshot is ignored.
 
-JSX compiles against `remix/ui` (and `import.meta.url` pins to `kody:app`,
-component names survive bundling) only when the graph imports `remix/ui` or a
-`remix/ui/…` subpath. A handler that only borrows `remix/headers` or
-`remix/html-template` keeps esbuild's JSX defaults.
+The host uses esbuild's JSX defaults unless the root `tsconfig.json` sets
+`compilerOptions.jsx` / `jsxImportSource`. A Remix recipe sets
+`"jsx": "react-jsx"` and `"jsxImportSource": "remix/ui"` there (and can repeat a
+`@jsxImportSource remix/ui` pragma per file). A handler that only borrows
+`remix/headers` or `remix/html-template` needs neither.
 
 ### What the platform supplies
 
@@ -600,19 +636,22 @@ declaration (`KodyRuntime`, `packageContext`, `packageStorage`, …).
   for links, `redirect()`, `<form action>`, `<Frame src>`, and fetch targets. A
   root-relative literal such as `/about` or `/api/notes` leaves the mount and
   404s on the host.
-- **TSX compiles against the platform's `remix/ui`.** No `@jsxImportSource`
-  pragma, no React, no `jsx-runtime` dependency; a pragma still wins per file.
+- **TSX compiles against `remix/ui` only when you set it.** Put
+  `"jsxImportSource": "remix/ui"` in `tsconfig.json` and a
+  `@jsxImportSource remix/ui` pragma on each TSX file. No React, no
+  `jsx-runtime` dependency.
 - **Islands are named functions listed in the browser registry.** The server id
-  is `import.meta.url` (pinned to `kody:app`), names survive bundling
-  (`keepNames`), and `run({ loadModule })` resolves by export name. If hydration
-  misses, one of those three drifted — see the troubleshooting entries for
-  `Unknown client entry` and `clientEntry() requires …`.
+  is the explicit `kody:app#Name` string, and `run({ loadModule })` resolves by
+  export name. If hydration misses, the id, the function name, or the registry
+  key drifted — see the troubleshooting entries for `Unknown client entry` and
+  `clientEntry() requires …`.
 
 ## Remix troubleshooting
 
 - **Every hosted path returns `Not Found: /packages/<name>/…`** — the route
-  contract has no mount prefix. Build it with
-  `route(packageContext?.appBasePath ?? '', …)`.
+  contract has no mount prefix, or `app/router.ts` does not remount the Request.
+  Build the contract with `route(packageContext?.appBasePath ?? '', …)` and
+  remount before `router.fetch`.
 - **A link or redirect lands on the host root (`/about` → 404)** — a
   root-relative literal bypassed the contract. Add the route and use
   `routes.about.href()`.
@@ -620,10 +659,9 @@ declaration (`KodyRuntime`, `packageContext`, `packageStorage`, …).
   name drifted from the registry key; keep islands named functions or put
   `#Counter` in the entry id, and register that exact name.
 - **`clientEntry() requires either an export name in the entry ID …`** — the
-  island is an anonymous function, or the server graph does not import
-  `remix/ui` so `import.meta.url` stayed empty instead of `kody:app`. Name the
-  island and import `remix/ui` or `remix/ui/server` from a module the entry
-  reaches.
+  island is an anonymous function, or the id is `import.meta.url` (empty in
+  workerd). Name the island and pass an explicit id:
+  `clientEntry('kody:app#Counter', function Counter…)`.
 - **Island renders on the server but never hydrates, no console error** — the
   document does not render `<script type="module" src={clientModuleUrl}>`, or
   `kody.app.client` is missing so `clientModuleUrl` is `null`. Check the
@@ -648,10 +686,9 @@ declaration (`KodyRuntime`, `packageContext`, `packageStorage`, …).
   bundle left it external because `client.externals` lists `remix/ui` or
   `@remix-run/ui`. Remove the external and the import-map entry; the platform
   inlines it.
-- **JSX compiled to `React.createElement`** — the graph does not import
-  `remix/ui`, so JSX used esbuild's default. Import `remix/ui` or
-  `remix/ui/server` from a reachable module, or add a
-  `@jsxImportSource remix/ui` pragma.
+- **JSX compiled to `React.createElement`** — missing
+  `"jsxImportSource": "remix/ui"` in `tsconfig.json` and no
+  `@jsxImportSource remix/ui` pragma. The host does not sniff the graph.
 
 ## Migrating an island app
 
@@ -667,11 +704,11 @@ router in the client — moves to a Remix router in one publish:
 2. **Manifest.** Point `entry` at `./app/router.ts` and `client` at
    `./app/assets/entry.ts`. `assets` stays `./public`. Do not set
    `kody.app.runtime`.
-3. **Server.** Replace the fetch handler with a router: the HTML-string response
-   becomes a `Document` component rendered through `renderToStream`
-   (`app/ui/render.tsx`), each path the handler matched becomes a route in
-   `app/routes.ts` (prefixed with `packageContext.appBasePath`) with a
-   controller in `app/controllers/`, and `appUrl()` / manual URL joins become
+3. **Server.** Replace the fetch handler with the Remix recipe: remount in
+   `app/router.ts`, render a `Document` through `renderToStream`
+   (`app/ui/render.tsx`), turn each path into a route in `app/routes.ts`
+   (prefixed with `packageContext.appBasePath`) with a controller in
+   `app/controllers/`, and replace `appUrl()` / manual URL joins with
    `routes.x.href()`. Reads of `packageContext`, `packageStorage()`, and secrets
    move to `get(KodyRuntime)`.
 4. **Client.** The custom SPA router goes away: `run({ loadModule })` in
@@ -688,7 +725,7 @@ across the move.
 
 ## Service worker and PWA files
 
-The Remix layout does not change where PWA files live: `public/sw.js`,
+The Remix recipe does not change where PWA files live: `public/sw.js`,
 `public/manifest.webmanifest`, and icons are static files in the
 `kody.app.assets` directory, served under `<assetBasePath>/…` with
 `Service-Worker-Allowed: <appBasePath>/` on JavaScript. Registration belongs in
@@ -713,12 +750,15 @@ and fetch handlers, so a worker written for a fetch handler keeps working.
 ## Scaffolder contract
 
 `create-package-app` (the `@kentcdodds/package-app-kit` scaffolder) emits the
-Remix layout for a new app, not `src/app.ts`:
+Remix recipe layout for a new app, not `src/app.ts`. The host contract is a
+fetch handler; this recipe is the source of truth for remount, JSX, and island
+ids.
 
 ```text
 package.json            entry ./app/router.ts, client ./app/assets/entry.ts, assets ./public
+tsconfig.json           jsx react-jsx, jsxImportSource remix/ui
 app/routes.ts           route(packageContext?.appBasePath ?? '', …)
-app/router.ts           createRouter + router.map, default export
+app/router.ts           createRouter + remount wrapper, default export { fetch }
 app/controllers/        one file or folder per route area
 app/middleware/         request-lifecycle context keys
 app/data/               packageStorage() access through get(KodyRuntime)
@@ -729,7 +769,7 @@ public/                 styles, sw.js, manifest, icons
 src/index.ts            package export (unchanged)
 ```
 
-- The **starter** a kit scaffolds is the Remix layout above. A kit **demo** may
+- The **starter** a kit scaffolds is the Remix recipe above. A kit **demo** may
   emit a fetch handler for a script-only page; it does not set a runtime field,
   and it does not install `@remix-run/*`.
 - Kits must not add `@remix-run/*` to `dependencies`, `remix/ui` or
@@ -754,23 +794,22 @@ src/index.ts            package export (unchanged)
 
 ## Fetch handlers
 
-A raw Worker-style handler is still a valid app: `kody.app.entry` default
-exports a function or an object with `fetch(request, env, ctx)`, receives the
-**mount-stripped** path (`/` for the app root), and builds URLs itself (see
-[Asset URLs](#asset-urls)). Everything below about `packageContext`, `client`,
-`assets`, and `/_assets` applies to fetch handlers and router apps alike.
+`kody.app.entry` default-exports a function or an object with
+`fetch(request, env, ctx)`, receives the **mount-stripped** path (`/` for the
+app root), and builds URLs itself (see [Asset URLs](#asset-urls)). Everything
+below about `packageContext`, `client`, `assets`, and `/_assets` applies to
+every package app.
 
 ## Asset URLs
 
 Build every in-app asset URL, link, redirect, share/email URL, and OAuth
 callback from `packageContext.appBasePath` plus `hostedUrl` (or
-`new URL(path, origin)` with a trailing-slash-safe origin). For a **fetch
-handler**, Kody strips the mount before the handler runs, so the fetch sees
-`/<path>` only. Absolute `/audio/123` links leave the mount; mount-prefixed URLs
-stay under `/packages/<package-name>/…` (or
-`/@username/packages/<package-name>/…` when served inline). A **Remix router**
-receives the full hosted URL and gets the prefix through its route contract (see
-[Mount and URLs](#mount-and-urls)).
+`new URL(path, origin)` with a trailing-slash-safe origin). Kody strips the
+mount before the handler runs, so every entry sees `/<path>` only. Absolute
+`/audio/123` links leave the mount; mount-prefixed URLs stay under
+`/packages/<package-name>/…` (or `/@username/packages/<package-name>/…` when
+served inline). A Remix recipe that prefixes its route contract remounts the
+Request in the entry (see [Mount and URLs](#mount-and-urls)).
 
 ```ts
 import { packageContext } from 'kody:runtime'
@@ -803,10 +842,9 @@ next section.
 ## Browser client and static assets
 
 Declare a browser entry and Kody compiles it on publish, so the repo holds
-TypeScript source instead of checked-in `.js`. Router apps and fetch handlers
-share this surface: a Remix app's `client` is its `run()` entry
-([Remix mini-apps](#remix-mini-apps)); the recipe below is the fetch-handler
-counterpart for a page that only needs a script.
+TypeScript source instead of checked-in `.js`. Every app shares this surface: a
+Remix recipe's `client` is its `run()` entry ([Remix recipe](#remix-recipe));
+the example below is a page that only needs a script.
 
 ### Minimal fetch recipe
 
@@ -904,9 +942,8 @@ keep them out of the client bundle too, declare them as
 
 ### What each field does
 
-- `entry` — the server entry: the Remix router or the Worker fetch handler.
-  Routers get the hosted URL; fetch handlers get the stripped path (see
-  [Default export](#default-export)).
+- `entry` — the server fetch handler. Every entry gets the mount-stripped path
+  (see [Default export](#default-export)).
 - `client` — one `.ts`, `.tsx`, `.js`, or `.jsx` file bundled for the
   **browser** (ESM, `es2022`, relative imports and `package.json` npm
   dependencies inlined). The output is served at

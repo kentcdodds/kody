@@ -5,7 +5,6 @@ import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidenta
 import { createRemixPackageAppFiles } from '#worker/test-support/remix-package-app-fixture.ts'
 import { buildKodyAppBundle, buildKodyAppClientBundle } from './module-graph.ts'
 import { packageAppClientModuleNamePattern } from './package-app-client-module-name.ts'
-import { packageAppServerModuleUrl } from './package-app-runtime.ts'
 
 const appBasePath = '/packages/remix-notes'
 const hostedOrigin = 'https://kent.kody.run'
@@ -15,7 +14,7 @@ const clientModuleUrl = `${hostedOrigin}${appBasePath}/_assets/client.0123456789
  * Stands in for the package-app wrapper: runs the bundled app inside the
  * same AsyncLocalStorage store `kody:runtime` reads, with an in-memory
  * `packageStorage()` and the `packageContext` fields a hosted request gets.
- * The bootstrap duck-types the live export and remounts router-shaped apps.
+ * The host forwards the mount-stripped path; Remix recipes remount themselves.
  */
 function createTestWrapperSource(mainModule: string) {
 	return `
@@ -50,8 +49,7 @@ export default {
 		return await als.run(runtime, async () => {
 			// Like the real wrapper: the app module is first evaluated inside the
 			// request store, so module-scope reads of packageContext (the route
-			// prefix) see the mount. The bootstrap remounts when the export is
-			// router-shaped.
+			// prefix) see the mount. The host forwards the stripped path.
 			const app = await import(${JSON.stringify(`./${mainModule}`)});
 			const envWithContext = Object.assign(Object.create(env ?? {}), {
 				__kodyPackageContext: packageContext,
@@ -83,12 +81,11 @@ test(
 		expect(typeof mainSource).toBe('string')
 		const code = mainSource as string
 		// The platform's vendored Remix is inlined: nothing bare is left for
-		// the isolate to resolve, and `import.meta.url` became the stable id
-		// `clientEntry()` needs.
+		// the isolate to resolve. The recipe writes an explicit island id.
 		expect(code).not.toMatch(/from\s+["']remix\//)
-		expect(code).toContain(JSON.stringify(packageAppServerModuleUrl))
+		expect(code).toContain('kody:app#Counter')
 		expect(code).not.toContain('import.meta.url')
-		// JSX compiled against remix/ui without a per-file pragma.
+		// JSX compiled against remix/ui from the recipe's tsconfig.
 		expect(code).not.toContain('React.createElement')
 
 		const wrapperModule = 'test-entry.js'
@@ -133,9 +130,7 @@ test(
 			`<script type="module" src="${clientModuleUrl}">`,
 		)
 		expect(homeHtml).toMatch(/<script type="application\/json" id="rmx-data">/)
-		expect(homeHtml).toContain(
-			`"moduleUrl":${JSON.stringify(packageAppServerModuleUrl)}`,
-		)
+		expect(homeHtml).toContain('"moduleUrl":"kody:app"')
 		expect(homeHtml).toContain('"exportName":"Counter"')
 
 		// POST action: form data parsed by the formData middleware, validated
@@ -256,8 +251,8 @@ test(
 		expect(code).not.toMatch(/from\s+["']remix\//)
 		expect(code).not.toMatch(/from\s+["']node:/)
 		expect(code).not.toContain('kody:runtime')
-		// The island and the boot are both present; JSX compiled without a
-		// pragma because the app is a Remix app.
+		// The island and the boot are both present; JSX compiled against
+		// remix/ui from the recipe's tsconfig.
 		expect(code).toContain('Unknown client entry')
 		expect(code).toContain('id: "counter"')
 		expect(code).not.toContain('React.createElement')
@@ -281,7 +276,7 @@ test(
 				entryPoint: 'app/assets/entry.ts',
 			}),
 		).rejects.toThrow(
-			/imports server-only modules that cannot run in the browser \(app\/routes\.ts: "kody:runtime"\)[\s\S]*islands and the browser entry must not import app\/routes\.ts or a layout that imports it/,
+			/imports server-only modules that cannot run in the browser \(app\/routes\.ts: "kody:runtime"\)[\s\S]*pass that href as a prop/,
 		)
 	},
 )
@@ -321,9 +316,7 @@ test(
 		})
 		const mainSource = bundle.modules[bundle.mainModule]
 		expect(typeof mainSource).toBe('string')
-		expect(mainSource as string).not.toContain(
-			JSON.stringify(packageAppServerModuleUrl),
-		)
+		expect(mainSource as string).not.toContain('kody:app')
 		const wrapperModule = 'test-entry.js'
 		const worker = env.APP_LOADER.load({
 			...createDynamicWorkerCompatibilityOptions(),

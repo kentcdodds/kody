@@ -4,87 +4,13 @@ import {
 	createTemporaryModuleGraph,
 	type RuntimeModule,
 } from '#worker/test-support/module-graph.ts'
-import { entryGraphNeedsRemixUiBundleOptions } from './package-app-runtime.ts'
 import {
 	createAppEntrypointSource,
 	createPackageRuntimeModuleSource,
 	createRuntimeModuleSource,
 } from './runtime-source-modules.ts'
 
-const remixUiEntryGraph = {
-	'app/router.ts': [
-		"import { createRouter } from 'remix/router'",
-		"import { render } from './render.tsx'",
-		'export default createRouter()',
-	].join('\n'),
-	'app/render.tsx':
-		"import { renderToString } from 'remix/ui/server'\nexport const render = renderToString",
-}
-
-const fetchEntryGraph = {
-	'src/app.ts': [
-		"import { helper } from './helper.ts'",
-		'export default { fetch: () => new Response(helper()) }',
-	].join('\n'),
-	'src/helper.ts': "export const helper = () => 'ok'",
-	// Reachable only through a type import target, never in the graph.
-	'src/types.d.ts': "import type { Router } from 'remix/router'",
-	// Not reachable from the entry at all.
-	'src/unused.ts': "import { html } from 'remix/ui/server'",
-}
-
-test('entryGraphNeedsRemixUiBundleOptions is true only when remix/ui is reachable from the entry', () => {
-	expect(
-		entryGraphNeedsRemixUiBundleOptions({
-			sourceFiles: remixUiEntryGraph,
-			entryPoint: 'app/router.ts',
-		}),
-	).toBe(true)
-	expect(
-		entryGraphNeedsRemixUiBundleOptions({
-			sourceFiles: fetchEntryGraph,
-			entryPoint: 'src/app.ts',
-		}),
-	).toBe(false)
-	const borrowsHtmlTemplate = {
-		'src/app.ts': [
-			"import { html } from 'remix/html-template'",
-			'export default { fetch: () => new Response(String(html`<p>hi</p>`)) }',
-		].join('\n'),
-	}
-	expect(
-		entryGraphNeedsRemixUiBundleOptions({
-			sourceFiles: borrowsHtmlTemplate,
-			entryPoint: 'src/app.ts',
-		}),
-	).toBe(false)
-	const routerOnly = {
-		'app/router.ts': [
-			"import { createRouter } from 'remix/router'",
-			'export default createRouter()',
-		].join('\n'),
-	}
-	expect(
-		entryGraphNeedsRemixUiBundleOptions({
-			sourceFiles: routerOnly,
-			entryPoint: 'app/router.ts',
-		}),
-	).toBe(false)
-	const borrowsHeaders = {
-		'src/app.ts': [
-			"import { CacheControl } from 'remix/headers'",
-			'export default { fetch: () => new Response("ok") }',
-		].join('\n'),
-	}
-	expect(
-		entryGraphNeedsRemixUiBundleOptions({
-			sourceFiles: borrowsHeaders,
-			entryPoint: 'src/app.ts',
-		}),
-	).toBe(false)
-})
-
-test('the app bootstrap remounts a router-shaped export and leaves a fetch handler on the stripped path', async () => {
+test('the app bootstrap dispatches every export shape on the mount-stripped path', async () => {
 	const moduleGraph = await createTemporaryModuleGraph({
 		'router-app.js': [
 			'const calls = []',
@@ -138,10 +64,10 @@ test('the app bootstrap remounts a router-shaped export and leaves a fetch handl
 			},
 			{},
 		)
-		expect(await routerResponse.text()).toBe('router:/packages/app/notes')
-		// Only the request reaches router.fetch: the Worker env would be read
-		// as RequestInit.
-		expect(routerBootstrap.calls_).toEqual([1])
+		// Router-shaped objects are not special: they see the same stripped
+		// path as every other fetch handler. A Remix recipe remounts itself.
+		expect(await routerResponse.text()).toBe('router:/notes')
+		expect(routerBootstrap.calls_).toEqual([3])
 
 		const fetchBootstrap = (await moduleGraph.importModule(
 			'fetch-bootstrap.js',
@@ -167,13 +93,13 @@ test('the app bootstrap remounts a router-shaped export and leaves a fetch handl
 
 		await expect(
 			moduleGraph.importModule('broken-bootstrap.js'),
-		).rejects.toThrow(/default export a Remix router .* or a fetch handler/)
+		).rejects.toThrow(/default export a fetch handler/)
 	} finally {
 		await moduleGraph.cleanup()
 	}
 })
 
-test('KodyRuntime is a Remix context key whose default value is the current run runtime, stamped per package', async () => {
+test('KodyRuntime is a request-context key whose default value is the current run runtime, stamped per package', async () => {
 	const moduleGraph = await createTemporaryModuleGraph({
 		'.__kody_virtual__/runtime.js': createRuntimeModuleSource(),
 		'.__kody_virtual__/package-runtime/stamped.js':
@@ -213,8 +139,8 @@ test('KodyRuntime is a Remix context key whose default value is the current run 
 			realtime: { broadcast: async () => ({ delivered: 1 }) },
 		}
 		const result = await runtimeModule.__kodyRunInRuntime(runtime, async () => {
-			// A real Remix request context: nothing calls set(), so get() falls
-			// back to the key's defaultValue.
+			// Remix RequestContext: nothing calls set(), so get() falls back
+			// to the key's defaultValue. Other libraries can ignore this key.
 			const context = new RequestContext(
 				new Request('https://kent.kody.run/packages/app/notes'),
 			)

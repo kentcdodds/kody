@@ -68,10 +68,10 @@ export type PackageAppClientDefinition = z.infer<
 
 export const packageAppDefinitionSchema = z.object({
 	/**
-	 * Server entry bundled for the package-app isolate. Dispatch follows the
-	 * default export: a router-shaped object (`fetch`, `map`, `mount`) gets
-	 * the full hosted URL; a function or `{ fetch }` gets the mount-stripped
-	 * path.
+	 * Server entry bundled for the package-app isolate. The default export
+	 * is a fetch handler (a function, `{ fetch }`, or a named `fetch`
+	 * export). The host strips the app mount before forwarding, so every
+	 * entry sees `/notes` for `/packages/<id>/notes`.
 	 */
 	entry: z.string().trim().min(1),
 	/**

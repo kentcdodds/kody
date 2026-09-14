@@ -707,12 +707,11 @@ const __kodyRuntimeDefault = new Proxy(__kodyRuntimeNamedExports, {
 });
 export default __kodyRuntimeDefault;
 
-// Remix request-context key for package apps: \`context.get(KodyRuntime)\`
-// in any controller, action, or middleware yields this module's default
-// export. A Remix context key is a plain object read by identity, and
-// \`get()\` falls back to its own \`defaultValue\` when nothing called
-// \`set()\`, so the runtime is present in every request context without a
-// middleware to install it, and it stays late-bound like every other export.
+// Optional request-context key: a frozen \`{ defaultValue }\` object so a
+// Remix \`context.get(KodyRuntime)\` (or any library that treats
+// \`defaultValue\` the same way) yields this module's default export without
+// a middleware to install it. The value stays late-bound like every other
+// export. Other entries import named exports from this module directly.
 export const KodyRuntime = Object.freeze({ defaultValue: __kodyRuntimeDefault });
 `.trim()
 	cachedRuntimeModuleSource = source
@@ -813,9 +812,9 @@ const __kodyPackageRuntimeDefault = new Proxy(__kodyBaseRuntimeDefault, {
 	},
 });
 export default __kodyPackageRuntimeDefault;
-// Remix request-context key bound to this package: \`context.get(KodyRuntime)\`
-// resolves packageStorage / packageSecrets to the declaring package, matching
-// the named exports above.
+// Per-package request-context key: \`context.get(KodyRuntime)\` resolves
+// packageStorage / packageSecrets to the declaring package, matching the
+// named exports above.
 export const KodyRuntime = Object.freeze({ defaultValue: __kodyPackageRuntimeDefault });
 `.trim()
 }
@@ -958,29 +957,11 @@ export function createAppEntrypointSource(input: { modulePath: string }) {
 import * as userModule from ${JSON.stringify(input.modulePath)};
 export * from ${JSON.stringify(input.modulePath)};
 
-// A Remix router (createRouter from remix/router) is an object whose fetch
-// takes (input, init?: RequestInit). Duck-type it by the methods only a
-// router has so a plain { fetch } handler object keeps the Worker signature.
-function isRemixRouter(candidate) {
-  return (
-    candidate != null &&
-    typeof candidate === 'object' &&
-    typeof candidate.fetch === 'function' &&
-    typeof candidate.map === 'function' &&
-    typeof candidate.mount === 'function'
-  );
-}
-
 const candidate = userModule.default ?? userModule;
 
 function resolvePackageAppHandler() {
   if (typeof candidate === 'function') {
     return candidate;
-  }
-  if (isRemixRouter(candidate)) {
-    // Never forward the Worker env as the router's RequestInit: it would be
-    // read as request options and rebuild the Request from them.
-    return (request) => candidate.fetch(request);
   }
   if (candidate && typeof candidate.fetch === 'function') {
     return candidate.fetch.bind(candidate);
@@ -993,30 +974,15 @@ function resolvePackageAppHandler() {
     return moduleFetch;
   }
   throw new Error(
-    'Kody package apps must default export a Remix router (createRouter from remix/router) or a fetch handler (a function, an object with fetch(), or a named fetch export).',
+    'Kody package apps must default export a fetch handler (a function, an object with fetch(), or a named fetch export).',
   );
 }
 
 const handler = resolvePackageAppHandler();
 
-// The host strips the app mount before forwarding, so a fetch handler sees
-// "/notes" for "/packages/<id>/notes". A router matches the address bar
-// instead: its route contract carries packageContext.appBasePath as a
-// prefix so href(), redirects, and form actions stay inside the mount.
-function createMountedPackageAppRequest(request, packageContext) {
-  const appBasePath = String(packageContext?.appBasePath ?? '').replace(/\\/+$/, '');
-  if (!appBasePath) return request;
-  const url = new URL(request.url);
-  url.pathname = url.pathname === '/' ? appBasePath : appBasePath + url.pathname;
-  return new Request(url, request);
-}
-
 export default {
   async fetch(request, env, ctx) {
-    const dispatchedRequest = isRemixRouter(candidate)
-      ? createMountedPackageAppRequest(request, env?.__kodyPackageContext)
-      : request;
-    return await handler(dispatchedRequest, env, ctx);
+    return await handler(request, env, ctx);
   },
 };
 `.trim()

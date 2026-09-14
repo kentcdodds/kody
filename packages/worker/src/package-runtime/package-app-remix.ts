@@ -4,10 +4,10 @@ import { remixPackageName } from './package-app-remix-subpaths.ts'
 /**
  * Platform-supplied Remix for package code.
  *
- * Package apps are hosted Remix mini-apps: they import `remix/<subpath>`
- * like the origin UI does, and the platform — not an npm install at publish
- * time — supplies those modules at the version the rest of Kody ships. The
- * file set is pre-bundled by `tools/build-worker-bundler-modules.ts`
+ * Optional convenience: package apps may import `remix/<subpath>` like the
+ * origin UI does, and the platform — not an npm install at publish time —
+ * supplies those modules at the version the rest of Kody ships. The file
+ * set is pre-bundled by `tools/build-worker-bundler-modules.ts`
  * (`package-app-remix.mjs`, loaded lazily from
  * `./node_modules/.kody-generated/` like the runtime bundler itself) and
  * mounted at `node_modules/remix/` in the bundler's virtual file system, so
@@ -15,7 +15,8 @@ import { remixPackageName } from './package-app-remix-subpaths.ts'
  * exports exactly as it would a real install. The bundler skips the npm
  * install for any package whose `node_modules/<name>/package.json` is
  * already present, so a `remix` entry in `package.json#dependencies` is
- * inert and the platform version always wins.
+ * inert and the platform version always wins. Host dispatch and bundler
+ * options do not depend on Remix.
  */
 
 const vendoredRemixPathPrefix = `node_modules/${remixPackageName}/`
