@@ -91,7 +91,7 @@ function exampleImportHint(scopedName: string, kodyId: string): string {
 		case 'personal-capture':
 			return `${searchHint} Example: import capture from "${specifier}/capture" then await capture({ text: "Onboarding first build" }), then import listCaptures from "${specifier}/listCaptures" then await listCaptures({ limit: 5 }).`
 		default:
-			return `${searchHint} Call packageGet for that installed package, read its README exports, then statically import one export from its scoped kody: module specifier.`
+			return `${searchHint} Call packageGet for export call shapes and secret metadata (it does not return files). Open a repo session and repoReadFile README.md and AGENTS.md, then statically import one export from its scoped kody: module specifier.`
 	}
 }
 

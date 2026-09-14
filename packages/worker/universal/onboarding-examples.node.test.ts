@@ -128,4 +128,11 @@ test('example prompt searches the user-owned scoped package and statically impor
 	expect(buildOnboardingPackageAuthoringPrompt('hn-pulse')).toContain(
 		'packageGetGitRemote({ create: true, kody_id: "hn-pulse" })',
 	)
+	const unknownExample = buildOnboardingExamplePrompt({
+		listingName: '@kody/unknown-kit',
+		kodyId: 'unknown-kit',
+		username: 'u-b',
+	})
+	expect(unknownExample).toContain('does not return files')
+	expect(unknownExample).toContain('repoReadFile README.md and AGENTS.md')
 })

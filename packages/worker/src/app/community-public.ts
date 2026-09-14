@@ -157,7 +157,7 @@ export function buildForkPrompt(input: { name: string; listingId: string }) {
 }
 
 export function buildInstallSuccessPrompt(input: { targetName: string }) {
-	return `I just one-click installed the public package "${input.targetName}" into my Kody account. Call packageGet for it and read its README, then walk me through any remaining setup: create required secrets or OAuth connections, approve package secret access if prompted, and run a quick test to confirm it works.`
+	return `I just one-click installed the public package "${input.targetName}" into my Kody account. Call packageGet for export and secret metadata (it does not return files). Then open a repo session with repoOpenSession({ target: { kind: "package", kody_id: ${JSON.stringify(input.targetName)} } }) and repoReadFile README.md and AGENTS.md. Walk me through any remaining setup: create required secrets or OAuth connections, approve package secret access if prompted, and run a quick test to confirm it works.`
 }
 
 export function buildInstallAdaptPrompt(input: {
@@ -168,7 +168,7 @@ export function buildInstallAdaptPrompt(input: {
 }
 
 export function buildExistingInstallPrompt(input: { targetName: string }) {
-	return `I have the public package "${input.targetName}" installed in my Kody account. Call packageGet for it and read its README, then adapt it to my needs: update the README Intent section, change behavior if needed, and publish the result.`
+	return `I have the public package "${input.targetName}" installed in my Kody account. Call packageGet for export and secret metadata (it does not return files). Then open a repo session with repoOpenSession({ target: { kind: "package", kody_id: ${JSON.stringify(input.targetName)} } }), repoReadFile README.md and AGENTS.md, and adapt it to my needs: update the README Intent section, change behavior if needed, and publish the result.`
 }
 
 export function buildExistingAdaptPrompt(input: {

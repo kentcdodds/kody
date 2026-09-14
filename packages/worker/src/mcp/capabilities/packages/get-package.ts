@@ -29,7 +29,7 @@ export const getPackageCapability = defineDomainCapability(
 	{
 		name: 'packageGet',
 		description:
-			'Load one saved package metadata record for the signed-in user, including community-fork source listing provenance, ready-to-import export specifiers, callable export contracts, and FYI metadata for associated package-scoped secrets (names and package_id, never values).',
+			'Load one saved package metadata record for the signed-in user, including community-fork source listing provenance, ready-to-import export specifiers, callable export contracts, and FYI metadata for associated package-scoped secrets (names and package_id, never values). Does not return README, AGENTS.md, or source files; use repoOpenSession + repoReadFile (or packageGetGitRemote) for those.',
 		keywords: ['package', 'get', 'read', 'metadata', 'exports', 'imports'],
 		readOnly: true,
 		idempotent: true,

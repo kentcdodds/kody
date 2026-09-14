@@ -178,8 +178,12 @@ community fork is outdated (the listing pin is not an ancestor of the fork tip),
 detail includes `listingAhead: true` and a one-line absorb next step
 (`communityGet`, then `repoPublishSession` with `absorbed_upstream_commit`).
 Ranked package hits include that same notice only when the fork is outdated.
-Follow the returned `packageGet` / `package_authoring` pointer when you need
-types, external token URLs, the full README, source, or maintenance steps.
+Follow the returned `packageGet` pointer for export call shapes, types, and
+package-scoped secret metadata. `packageGet` does not return files. For the full
+README, `AGENTS.md`, and source, open a repo session (`repoOpenSession` +
+`repoReadFile`) or clone with `packageGetGitRemote`. See
+[Repo sessions](./repo-sessions.md). Search `package_authoring:guide` for
+inbound webhooks and maintenance workflows.
 
 Capability detail shows the exact runtime pattern for **execute**:
 

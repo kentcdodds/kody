@@ -35,6 +35,7 @@ import {
 	buildPackageHostedUrl,
 	buildPackageMaintainSnippets,
 	buildPackageRootImportUsage,
+	buildPackageSourceFollowUp,
 	getPrimaryPackageActionFunction,
 } from '../search-format-helpers.ts'
 import { type SearchMatch } from '../search-format-types.ts'
@@ -536,9 +537,10 @@ export const packageSearchEntityPlugin = {
 		const maintain = buildPackageMaintainSnippets(detail.record.id)
 		const rootImportUsage = buildPackageRootImportUsage(detail.record.name)
 		const listingAhead = detail.listingAhead === true
+		const sourceFollowUp = buildPackageSourceFollowUp(detail.record.id)
 		const followUp = listingAhead
-			? `${listingAheadSearchNotice} If you plan to invoke an export, call packageGet({ package_id: ${JSON.stringify(detail.record.id)} }) first for the exact call shape. Use that same call for the full README, AGENTS.md, and source, or search({ entity: "package_authoring:guide" }) for types, inbound webhooks, and maintenance workflows.`
-			: `If you plan to invoke an export, call packageGet({ package_id: ${JSON.stringify(detail.record.id)} }) first for the exact call shape. Use that same call for the full README, AGENTS.md, and source, or search({ entity: "package_authoring:guide" }) for types, inbound webhooks, and maintenance workflows.`
+			? `${listingAheadSearchNotice} ${sourceFollowUp}`
+			: sourceFollowUp
 		const lines = [
 			`# Package — \`${detail.record.kodyId}\``,
 			'',

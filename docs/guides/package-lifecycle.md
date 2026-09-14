@@ -156,10 +156,11 @@ git review.
 
 Without local filesystem or git access:
 
-1. Create the complete UTF-8 text package with `packageSave`, or inspect an
-   existing package with `packageGet`.
-2. Use `repoOpenSession`, `repoEditFiles`, `repoCommit`, and `repoRunChecks` for
-   repo-backed edits and validation.
+1. Create the complete UTF-8 text package with `packageSave`, or inspect
+   existing package metadata with `packageGet`. For `README.md`, `AGENTS.md`,
+   and source, open a repo session (`repoOpenSession` + `repoReadFile`).
+2. Use `repoEditFiles`, `repoCommit`, and `repoRunChecks` for repo-backed edits
+   and validation.
 3. Publish with `repoPublishSession`.
 
 If the work needs binary assets, broad refactors, or a substantial local
