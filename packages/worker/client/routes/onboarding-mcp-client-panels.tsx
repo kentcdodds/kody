@@ -1,3 +1,4 @@
+import { type Handle } from 'remix/ui'
 import {
 	buildClaudeCodeAddCommand,
 	buildClaudeCodeMcpJson,
@@ -15,10 +16,12 @@ import {
 	buildOpenCodeMcpJson,
 	buildVsCodeInstallUrl,
 	buildVsCodeMcpJson,
+	chatGptDeveloperModeGuideUrl,
 	claudeDesktopToolHint,
 	grokBotInstallUrl,
 	grokConnectorsUrl,
 	kodyAppIconFilename,
+	kodyChatGptPluginUrl,
 	kodyCursorAddPluginCommand,
 	kodyCursorMarketplaceUrl,
 	type McpClientKind,
@@ -28,13 +31,25 @@ import {
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import {
 	AppIconCard,
+	ChatGptDeveloperModeWarning,
 	ClientWarning,
 	CopyCard,
 	CopyCardDetails,
 	InstallDeepLink,
+	OnboardingManualDetails,
 	PluginPrimaryInstall,
 	PrimaryActionLink,
 } from './onboarding-mcp-client-cards.tsx'
+
+function ChatGptPluginAction(_handle: Handle<object>) {
+	return () => (
+		<PrimaryActionLink
+			href={kodyChatGptPluginUrl}
+			label="Add ChatGPT plugin"
+			external
+		/>
+	)
+}
 
 export function renderPanelContent(
 	kind: McpClientKind,
@@ -56,13 +71,20 @@ export function renderPanelContent(
 			const appIconUrl = buildKodyAppIconUrl(mcpServerUrl)
 			return (
 				<>
-					<CopyCard
-						highlights={highlights}
-						label="MCP URL"
-						value={mcpServerUrl}
-						copyLabel="Copy MCP URL"
-					/>
-					<AppIconCard src={appIconUrl} downloadName={kodyAppIconFilename} />
+					<ChatGptPluginAction />
+					<OnboardingManualDetails summaryLead="Or create a developer-mode app">
+						<CopyCard
+							highlights={highlights}
+							label="MCP URL"
+							value={mcpServerUrl}
+							copyLabel="Copy MCP URL"
+						/>
+						<AppIconCard src={appIconUrl} downloadName={kodyAppIconFilename} />
+						<ChatGptDeveloperModeWarning
+							href={chatGptDeveloperModeGuideUrl}
+							linkLabel="developer mode help"
+						/>
+					</OnboardingManualDetails>
 				</>
 			)
 		}
@@ -74,36 +96,43 @@ export function renderPanelContent(
 			if (surface === 'mobile') {
 				return (
 					<>
-						<CopyCard
-							highlights={highlights}
-							label="MCP URL"
-							value={mcpServerUrl}
-							copyLabel="Copy MCP URL"
-						/>
-						<AppIconCard src={appIconUrl} downloadName={kodyAppIconFilename} />
+						<ChatGptPluginAction />
+						<OnboardingManualDetails summaryLead="Or paste the MCP URL in the ChatGPT app">
+							<CopyCard
+								highlights={highlights}
+								label="MCP URL"
+								value={mcpServerUrl}
+								copyLabel="Copy MCP URL"
+							/>
+							<AppIconCard
+								src={appIconUrl}
+								downloadName={kodyAppIconFilename}
+							/>
+						</OnboardingManualDetails>
 					</>
 				)
 			}
 			return (
 				<>
-					<PrimaryActionLink href={codexDeepLink} label="Open Codex" />
-					<CopyCard
-						highlights={highlights}
-						label="codex CLI"
-						value={codexCommand}
-						copyLabel="Copy command"
-						variant="pill"
-						lang="sh"
-					/>
-					<CopyCardDetails
-						highlights={highlights}
-						summaryLead="Or merge this into"
-						summaryCode="~/.codex/config.toml"
-						label="config.toml"
-						value={codexToml}
-						copyLabel="Copy TOML"
-						lang="toml"
-					/>
+					<ChatGptPluginAction />
+					<OnboardingManualDetails summaryLead="Or add Kody as a Codex MCP server">
+						<PrimaryActionLink href={codexDeepLink} label="Open Codex" />
+						<CopyCard
+							highlights={highlights}
+							label="codex CLI"
+							value={codexCommand}
+							copyLabel="Copy command"
+							variant="pill"
+							lang="sh"
+						/>
+						<CopyCard
+							highlights={highlights}
+							label="~/.codex/config.toml"
+							value={codexToml}
+							copyLabel="Copy TOML"
+							lang="toml"
+						/>
+					</OnboardingManualDetails>
 				</>
 			)
 		}

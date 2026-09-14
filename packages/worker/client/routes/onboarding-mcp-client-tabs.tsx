@@ -34,7 +34,6 @@ import {
 	hoverMq,
 } from '#universal/styles/style-primitives.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
-import { ChatGptDeveloperModeWarning } from './onboarding-mcp-client-cards.tsx'
 import {
 	renderPanelContent,
 	renderPanelWarning,
@@ -149,11 +148,6 @@ function AgentSurfaceLabel(handle: Handle<{ agent: McpClientKind }>) {
 function AgentHelpLink(handle: Handle<{ agent: McpClientKind }>) {
 	return () => {
 		const help = onboardingAgentHelp(handle.props.agent)
-		if (handle.props.agent === 'chatgpt') {
-			return (
-				<ChatGptDeveloperModeWarning href={help.href} linkLabel={help.label} />
-			)
-		}
 		return (
 			<p mix={css(agentHelpCss)}>
 				<a
@@ -218,15 +212,19 @@ function renderAgentAuthHint(
 			)
 		case 'chatgpt':
 			return (
-				<>Complete OAuth when ChatGPT prompts you after creating the app.</>
+				<>Complete OAuth when ChatGPT prompts you after adding the plugin.</>
 			)
 		case 'codex':
 			return surface === 'mobile' ? (
-				<>Complete OAuth when the ChatGPT app prompts you.</>
+				<>
+					Complete OAuth when the ChatGPT app prompts you after adding the
+					plugin.
+				</>
 			) : (
 				<>
-					Run <code>{codexMcpLoginCommand}</code> if OAuth does not start
-					automatically.
+					After adding the plugin, complete OAuth when ChatGPT prompts you. If
+					you used the Codex CLI instead, run{' '}
+					<code>{codexMcpLoginCommand}</code>.
 				</>
 			)
 		case 'claude-desktop':

@@ -8,6 +8,7 @@ import {
 	defaultKodyMcpUrl,
 	grokBotConnectPluginsUrl,
 	grokBotInstallUrl,
+	kodyChatGptPluginUrl,
 	kodyCursorAddPluginCommand,
 	kodyCursorMarketplaceUrl,
 } from './onboarding-mcp-clients.ts'
@@ -106,6 +107,11 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 			selectedAgent: 'codex',
 		}),
 	)
+	expect(codexPreview).toContain(kodyChatGptPluginUrl)
+	expect(codexPreview).toContain('Add ChatGPT plugin')
+	expect(codexPreview.indexOf(kodyChatGptPluginUrl)).toBeLessThan(
+		codexPreview.indexOf('onboarding-mcp-manual-json'),
+	)
 	expect(codexPreview).toContain(`codex mcp add kody --url ${previewUrl}`)
 	expect(codexPreview).toContain(
 		`href="codex://mcp/add?name=kody&amp;url=${encodeURIComponent(previewUrl)}"`,
@@ -148,6 +154,11 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 			selectedAgent: 'chatgpt',
 		}),
 	)
+	expect(chatgpt).toContain(kodyChatGptPluginUrl)
+	expect(chatgpt).toContain('Add ChatGPT plugin')
+	expect(chatgpt.indexOf(kodyChatGptPluginUrl)).toBeLessThan(
+		chatgpt.indexOf('onboarding-mcp-manual-json'),
+	)
 	expect(chatgpt).toContain('data-testid="onboarding-mcp-app-icon"')
 	expect(chatgpt).toContain('src="https://kody.codes/images/kody-app-icon.png"')
 	expect(chatgpt).toContain('alt="Kody app icon"')
@@ -181,6 +192,7 @@ function countClosedManualDetails(html: string) {
 test('onboarding alternative config wells collapse behind closed details', async () => {
 	const url = defaultKodyMcpUrl
 	const agentsWithClosedWells = [
+		'chatgpt',
 		'codex',
 		'grok-cli',
 		'claude-code',

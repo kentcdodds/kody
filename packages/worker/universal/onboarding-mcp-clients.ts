@@ -384,6 +384,10 @@ const openClawMcpGuideUrl = 'https://docs.openclaw.ai/tools/mcp'
 /** Cursor Marketplace listing for the official Kody plugin (production). */
 export const kodyCursorMarketplaceUrl = 'https://cursor.com/marketplace/kody'
 
+/** ChatGPT plugin directory listing for Kody (production MCP). */
+export const kodyChatGptPluginUrl =
+	'https://chatgpt.com/plugins/plugin_asdk_app_6a95fefc5c1081919756fdd35dd918ee'
+
 /** Cursor chat command shown on the marketplace listing. */
 export const kodyCursorAddPluginCommand = '/add-plugin kody'
 
@@ -407,11 +411,14 @@ export function onboardingAgentHelp(id: McpClientKind): {
 			return { href: cursorMcpGuideUrl, label: 'Cursor MCP help' }
 		case 'chatgpt':
 			return {
-				href: chatGptDeveloperModeGuideUrl,
-				label: 'developer mode help',
+				href: kodyConnectYourAgentUrl,
+				label: 'Connect your agent help',
 			}
 		case 'codex':
-			return { href: kodyConnectYourAgentUrl, label: 'Connect your agent help' }
+			return {
+				href: kodyConnectYourAgentUrl,
+				label: 'Connect your agent help',
+			}
 		case 'claude-desktop':
 			return {
 				href: claudeCustomConnectorsGuideUrl,
@@ -424,21 +431,36 @@ export function onboardingAgentHelp(id: McpClientKind): {
 		case 'grok-bot':
 			return { href: grokBotConnectPluginsUrl, label: 'Grok Bot plugin help' }
 		case 'claude-code':
-			return { href: kodyConnectYourAgentUrl, label: 'Connect your agent help' }
+			return {
+				href: kodyConnectYourAgentUrl,
+				label: 'Connect your agent help',
+			}
 		case 'opencode':
-			return { href: kodyConnectYourAgentUrl, label: 'Connect your agent help' }
+			return {
+				href: kodyConnectYourAgentUrl,
+				label: 'Connect your agent help',
+			}
 		case 'copilot':
 			return { href: copilotCliMcpGuideUrl, label: 'Copilot CLI MCP help' }
 		case 'copilot-app':
 			return { href: copilotAppCustomizeGuideUrl, label: 'Copilot app help' }
 		case 'devin':
-			return { href: kodyConnectYourAgentUrl, label: 'Connect your agent help' }
+			return {
+				href: kodyConnectYourAgentUrl,
+				label: 'Connect your agent help',
+			}
 		case 'gemini':
-			return { href: kodyConnectYourAgentUrl, label: 'Connect your agent help' }
+			return {
+				href: kodyConnectYourAgentUrl,
+				label: 'Connect your agent help',
+			}
 		case 'openclaw':
 			return { href: openClawMcpGuideUrl, label: 'OpenClaw MCP help' }
 		case 'other':
-			return { href: kodyConnectYourAgentUrl, label: 'Connect your agent help' }
+			return {
+				href: kodyConnectYourAgentUrl,
+				label: 'Connect your agent help',
+			}
 		default: {
 			const exhaustive: never = id
 			return exhaustive
