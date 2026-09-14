@@ -321,7 +321,8 @@ export function buildAdvocateReferralEmail(input: {
 		heading: 'Share Kody — and keep a month',
 		body: [
 			"You've been using Kody long enough to know if it stuck. Send someone you trust your invite. When they pay their first invoice, you both get a Standard month.",
-			'If you have thirty seconds, tell Kent what made Kody worth keeping. He reads those.',
+			"If you have thirty seconds, reply to this email and tell Kent what you think about Kody and how you're using it.",
+			'– Kent',
 		],
 		action: { label: 'Open your invite link', url: input.shareUrl },
 		secondaryAction: {
