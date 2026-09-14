@@ -12,10 +12,12 @@ import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
 	applyArtifactSourcePushToHeadCache,
 	isDeletedArtifactRefCommit,
-	resolveCachedArtifactSourceHead,
 } from './artifact-head-cache.ts'
 import { refreshIdentityIconForSource } from './identity-icon.ts'
-import { getArtifactsNamespace } from './artifacts.ts'
+import {
+	getArtifactsNamespace,
+	resolveArtifactSourceHead,
+} from './artifacts.ts'
 import {
 	type CloudflareArtifactsRepoEvent,
 	type RepoSubscriptionTopic,
@@ -439,30 +441,25 @@ export async function processCloudflareArtifactsRepoEvent(input: {
 		providerEvent.type === 'cf.artifacts.repo.pushed' &&
 		source.entity_kind === 'repo'
 	) {
-		const head = await resolveCachedArtifactSourceHead(
-			input.env,
-			source.repo_id,
-		)
-		const defaultBranchRef = `refs/heads/${head.branch}`
-		if (
-			providerEvent.payload.ref === defaultBranchRef &&
-			!isDeletedArtifactRefCommit(providerEvent.payload.after) &&
-			(head.commit == null || head.commit === providerEvent.payload.after)
-		) {
-			try {
+		try {
+			// Live HEAD, not the KV cache: applyArtifactSourcePushToHeadCache
+			// already wrote payload.after into that entry for viewed repos.
+			const head = await resolveArtifactSourceHead(input.env, source.repo_id)
+			const defaultBranchRef = `refs/heads/${head.branch}`
+			if (
+				providerEvent.payload.ref === defaultBranchRef &&
+				!isDeletedArtifactRefCommit(providerEvent.payload.after) &&
+				(head.commit == null || head.commit === providerEvent.payload.after)
+			) {
 				await refreshIdentityIconForSource({
 					env: input.env,
 					source,
 					iconCommit: providerEvent.payload.after,
 					indexLiveHead: true,
 				})
-			} catch (error) {
-				console.error(
-					'identity-icon-push-refresh-failed',
-					source.repo_id,
-					error,
-				)
 			}
+		} catch (error) {
+			console.error('identity-icon-push-refresh-failed', source.repo_id, error)
 		}
 	}
 

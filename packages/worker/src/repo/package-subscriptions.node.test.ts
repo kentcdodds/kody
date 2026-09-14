@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 
 const mocks = vi.hoisted(() => ({
 	invokePackageSubscription: vi.fn(async () => ({ status: 200, body: {} })),
@@ -12,11 +13,11 @@ const mocks = vi.hoisted(() => ({
 		skipped: false,
 	})),
 	getArtifactsNamespace: vi.fn(() => 'production'),
-	applyArtifactSourcePushToHeadCache: vi.fn(async () => {}),
-	resolveCachedArtifactSourceHead: vi.fn(async () => ({
+	resolveArtifactSourceHead: vi.fn(async () => ({
 		branch: 'main',
 		commit: 'def789ghi012def789ghi012def789ghi012def7',
 	})),
+	applyArtifactSourcePushToHeadCache: vi.fn(async () => {}),
 	isDeletedArtifactRefCommit: (commit: string) => /^0+$/.test(commit),
 	refreshIdentityIconForSource: vi.fn(async () => {}),
 }))
@@ -49,11 +50,11 @@ vi.mock('./artifacts-push-subscriptions.ts', () => ({
 
 vi.mock('./artifacts.ts', () => ({
 	getArtifactsNamespace: mocks.getArtifactsNamespace,
+	resolveArtifactSourceHead: mocks.resolveArtifactSourceHead,
 }))
 
 vi.mock('./artifact-head-cache.ts', () => ({
 	applyArtifactSourcePushToHeadCache: mocks.applyArtifactSourcePushToHeadCache,
-	resolveCachedArtifactSourceHead: mocks.resolveCachedArtifactSourceHead,
 	isDeletedArtifactRefCommit: mocks.isDeletedArtifactRefCommit,
 }))
 
@@ -297,7 +298,7 @@ test('repo.pushed refreshes identity icons only for the current default-branch H
 		head: { branch: string; commit: string | null }
 	}) {
 		mocks.refreshIdentityIconForSource.mockClear()
-		mocks.resolveCachedArtifactSourceHead.mockResolvedValueOnce(input.head)
+		mocks.resolveArtifactSourceHead.mockResolvedValueOnce(input.head)
 		mocks.getEntitySourceByRepoId.mockResolvedValueOnce(source)
 		mocks.listSavedPackagesByUserId.mockResolvedValueOnce([])
 		mocks.getUserRepoById.mockResolvedValueOnce({
@@ -372,4 +373,36 @@ test('repo.pushed refreshes identity icons only for the current default-branch H
 		head: { branch: 'main', commit: after },
 	})
 	expect(stale).not.toHaveBeenCalled()
+
+	mocks.refreshIdentityIconForSource.mockClear()
+	consoleError.mockImplementation(() => {})
+	mocks.resolveArtifactSourceHead.mockRejectedValueOnce(
+		new Error(
+			'Artifacts repo "repo-user-repo-1" is importing. Retry after 5s.',
+		),
+	)
+	mocks.getEntitySourceByRepoId.mockResolvedValueOnce(source)
+	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([])
+	mocks.getUserRepoById.mockResolvedValueOnce({
+		id: 'user-repo-1',
+		userId: 'user-1',
+		name: 'skills',
+		description: null,
+		createdAt: '2026-05-18T00:00:00.000Z',
+		updatedAt: '2026-05-18T00:00:00.000Z',
+	})
+	const lookupFailed = await processCloudflareArtifactsRepoEvent({
+		env,
+		body: pushedEvent,
+	})
+	expect(lookupFailed.outcome).toBe('dispatched')
+	expect(mocks.refreshIdentityIconForSource).not.toHaveBeenCalled()
+	expect(consoleError).toHaveBeenCalledWith(
+		'identity-icon-push-refresh-failed',
+		'repo-user-repo-1',
+		expect.objectContaining({
+			message:
+				'Artifacts repo "repo-user-repo-1" is importing. Retry after 5s.',
+		}),
+	)
 })
