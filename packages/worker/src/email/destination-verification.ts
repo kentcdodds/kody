@@ -51,6 +51,11 @@ async function refundDestinationVerificationRateLimit(
 	)
 }
 
+export type VerifyEmailDestinationReason =
+	| 'missing_token'
+	| 'invalid_token'
+	| 'expired_token'
+
 export type VerifyEmailDestinationResult =
 	| {
 			ok: true
@@ -59,8 +64,13 @@ export type VerifyEmailDestinationResult =
 	  }
 	| {
 			ok: false
-			reason: 'missing_token' | 'invalid_token' | 'expired_token'
+			reason: VerifyEmailDestinationReason
 	  }
+
+function readDestinationVerificationToken(token: unknown) {
+	if (typeof token !== 'string') return ''
+	return token.trim().toLowerCase()
+}
 
 function getDestinationEmailConfig(input: {
 	env: Pick<Env, 'APP_BASE_URL' | 'SYSTEM_EMAIL_DOMAIN'> & {
@@ -176,21 +186,6 @@ async function sendDestinationVerificationEmail(input: {
 		}
 		console.warn('email-destination-verify-send-skipped', input.userId)
 	}
-
-	await input.env.APP_DB.prepare(
-		`DELETE FROM pending_email_destination_verifications
-		 WHERE destination_id = ?
-		   AND token_hash != ?
-		   AND id < (
-			 SELECT id FROM pending_email_destination_verifications
-			 WHERE token_hash = ?
-		   )`,
-	)
-		.bind(input.destinationId, input.tokenHash, input.tokenHash)
-		.run()
-		.catch((error) => {
-			console.warn('email-destination-token-cleanup-failed', error)
-		})
 }
 
 export async function createEmailDestinationVerification(input: {
@@ -323,20 +318,40 @@ export async function resendEmailDestinationVerification(input: {
 	}
 }
 
+async function retireSiblingDestinationVerificationTokens(
+	db: D1Database,
+	destinationId: string,
+	tokenHash: string,
+) {
+	await db
+		.prepare(
+			`DELETE FROM pending_email_destination_verifications
+			 WHERE destination_id = ? AND token_hash != ?`,
+		)
+		.bind(destinationId, tokenHash)
+		.run()
+		.catch((error) => {
+			console.warn('email-destination-token-cleanup-failed', error)
+		})
+}
+
 export async function verifyEmailDestinationToken(input: {
 	db: D1Database
 	token: unknown
 	now?: Date
+	/** When false, a valid unused token is not consumed. HEAD probes use this. */
+	consume?: boolean
 }): Promise<VerifyEmailDestinationResult> {
-	const token = typeof input.token === 'string' ? input.token.trim() : ''
+	const token = readDestinationVerificationToken(input.token)
 	if (!token) return { ok: false, reason: 'missing_token' }
 
 	const tokenHash = await hashVerificationToken(token)
 	const record = await input.db
 		.prepare(
-			`SELECT id, user_id, destination_id, expires_at
-			 FROM pending_email_destination_verifications
-			 WHERE token_hash = ?`,
+			`SELECT p.id, p.user_id, p.destination_id, p.expires_at, d.email
+			 FROM pending_email_destination_verifications p
+			 LEFT JOIN email_notification_destinations d ON d.id = p.destination_id
+			 WHERE p.token_hash = ?`,
 		)
 		.bind(tokenHash)
 		.first<{
@@ -344,6 +359,7 @@ export async function verifyEmailDestinationToken(input: {
 			user_id: number
 			destination_id: string
 			expires_at: number
+			email: string | null
 		}>()
 	const now = input.now ?? new Date()
 
@@ -357,6 +373,23 @@ export async function verifyEmailDestinationToken(input: {
 			.run()
 		return { ok: false, reason: 'expired_token' }
 	}
+	if (!record.email) {
+		await input.db
+			.prepare(
+				`DELETE FROM pending_email_destination_verifications WHERE id = ?`,
+			)
+			.bind(record.id)
+			.run()
+		return { ok: false, reason: 'invalid_token' }
+	}
+
+	if (input.consume === false) {
+		return {
+			ok: true,
+			userId: record.user_id,
+			email: record.email,
+		}
+	}
 
 	const destination = await markEmailNotificationDestinationVerified({
 		db: input.db,
@@ -365,6 +398,12 @@ export async function verifyEmailDestinationToken(input: {
 		now,
 	})
 	if (!destination) return { ok: false, reason: 'invalid_token' }
+
+	await retireSiblingDestinationVerificationTokens(
+		input.db,
+		record.destination_id,
+		tokenHash,
+	)
 
 	return {
 		ok: true,

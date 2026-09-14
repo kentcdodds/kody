@@ -4,20 +4,23 @@ import {
 	getRequestIp,
 	logAuditEvent,
 } from '#worker/audit-log.ts'
-import { verifyEmailDestinationToken } from '#worker/email/destination-verification.ts'
+import {
+	verifyEmailDestinationToken,
+	type VerifyEmailDestinationReason,
+} from '#worker/email/destination-verification.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#universal/routes.ts'
 
-function getVerifyEmailDestinationError(
-	reason: 'missing_token' | 'invalid_token' | 'expired_token',
-) {
+const emailDestinationsHref = '/account/email#email-destinations'
+
+function getVerifyEmailDestinationError(reason: VerifyEmailDestinationReason) {
 	switch (reason) {
 		case 'missing_token':
-			return 'Verification token is required.'
+			return 'Verification token is required. Open the link from the latest verification email, or resend it from your email inbox.'
 		case 'invalid_token':
-			return 'Email destination link is invalid.'
+			return 'This email destination link is invalid or is no longer active. Open the latest verification email, or resend the link from your email inbox.'
 		case 'expired_token':
-			return 'Email destination link has expired.'
+			return 'This email destination link has expired. Resend a new link from your email inbox.'
 		default: {
 			const unreachable: never = reason
 			return unreachable
@@ -29,10 +32,17 @@ export function createVerifyEmailDestinationHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request, url }) {
+			const consume = request.method !== 'HEAD'
 			const result = await verifyEmailDestinationToken({
 				db: env.APP_DB,
 				token: url.searchParams.get('token'),
+				consume,
 			})
+
+			if (request.method === 'HEAD') {
+				return new Response(null, { status: result.ok ? 200 : 400 })
+			}
+
 			const requestIp = getRequestIp(request) ?? undefined
 
 			if (!result.ok) {
@@ -53,7 +63,11 @@ export function createVerifyEmailDestinationHandler(env: Env) {
 					loaderData: {
 						emailVerification: {
 							ok: false,
+							kind: 'email_destination',
+							reason: result.reason,
 							error: getVerifyEmailDestinationError(result.reason),
+							ctaHref: emailDestinationsHref,
+							ctaLabel: 'Resend from email inbox',
 						},
 					},
 				})
@@ -78,7 +92,7 @@ export function createVerifyEmailDestinationHandler(env: Env) {
 						kind: 'email_destination',
 						message:
 							'emailSend can now use this address. Mail still comes from your platform inbox. Set it as the default from the email inbox if you want omitted `to` to use it.',
-						ctaHref: '/account/email#email-destinations',
+						ctaHref: emailDestinationsHref,
 						ctaLabel: 'Go to email inbox',
 					},
 				},

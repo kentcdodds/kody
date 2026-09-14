@@ -302,31 +302,14 @@ export async function markEmailNotificationDestinationVerified(input: {
 	now?: Date
 }): Promise<EmailNotificationDestination | null> {
 	const verifiedAt = (input.now ?? new Date()).toISOString()
-	const updated = await input.db
+	const row = await input.db
 		.prepare(
 			`UPDATE email_notification_destinations
 			 SET verified_at = COALESCE(verified_at, ?)
-			 WHERE id = ? AND user_id = ?`,
+			 WHERE id = ? AND user_id = ?
+			 RETURNING id, email, verified_at, is_default`,
 		)
 		.bind(verifiedAt, input.destinationId, input.userId)
-		.run()
-	if ((updated.meta.changes ?? 0) !== 1) return null
-
-	await input.db
-		.prepare(
-			`DELETE FROM pending_email_destination_verifications
-			 WHERE destination_id = ?`,
-		)
-		.bind(input.destinationId)
-		.run()
-
-	const row = await input.db
-		.prepare(
-			`SELECT id, email, verified_at, is_default
-			 FROM email_notification_destinations
-			 WHERE id = ?`,
-		)
-		.bind(input.destinationId)
 		.first<DestinationRow>()
 	if (!row) return null
 	return {

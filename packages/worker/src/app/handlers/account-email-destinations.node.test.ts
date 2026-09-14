@@ -144,6 +144,24 @@ test('account destination API lists identity, adds a pending extra, and blocks u
 			.get() as { count: number },
 	).toEqual({ count: 1 })
 
+	const resent = await runHandler(
+		handler,
+		await createRequest({
+			session,
+			body: { action: 'add', email: 'phone@example.com' },
+		}),
+	)
+	expect(resent.status).toBe(200)
+	const resentBody = (await resent.json()) as { message: string }
+	expect(resentBody.message).toContain('sent again')
+	expect(
+		sqlite
+			.prepare(
+				`SELECT COUNT(*) AS count FROM pending_email_destination_verifications`,
+			)
+			.get() as { count: number },
+	).toEqual({ count: 2 })
+
 	const { sqlite: unverifiedSqlite, db: unverifiedDb } = createMigratedDb()
 	await seedUser(unverifiedSqlite, { verified: false })
 	const unverifiedHandler = createAccountEmailDestinationsHandler(

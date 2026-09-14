@@ -81,6 +81,15 @@ test('identity is always listed, extras verify before they are sendable, and def
 		isDefault: false,
 		canRemove: true,
 	})
+	const readded = await addEmailNotificationDestination({
+		db: appDb,
+		dbUserId: 1,
+		email: 'phone@example.com',
+	})
+	expect(readded).toEqual({
+		created: false,
+		destination: added.destination,
+	})
 
 	const beforeVerify = await resolveAcceptableNotificationEmails({
 		db: appDb,
@@ -106,6 +115,15 @@ test('identity is always listed, extras verify before they are sendable, and def
 		userId: 1,
 	})
 	expect(verified?.verified).toBe(true)
+	await expect(
+		addEmailNotificationDestination({
+			db: appDb,
+			dbUserId: 1,
+			email: 'phone@example.com',
+		}),
+	).rejects.toMatchObject({
+		code: 'already_added',
+	} satisfies Partial<EmailDestinationError>)
 
 	const afterDefault = await setDefaultEmailNotificationDestination({
 		db: appDb,

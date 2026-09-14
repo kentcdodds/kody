@@ -24,7 +24,7 @@ export function VerifyEmailRoute(handle: Handle) {
 			} satisfies EmailVerificationLoaderData)
 		const isEmailChange = data.ok && data.kind === 'email_change'
 		const isEmailClaimRelease = data.ok && data.kind === 'email_claim_release'
-		const isEmailDestination = data.ok && data.kind === 'email_destination'
+		const isEmailDestination = data.kind === 'email_destination'
 		const title = data.ok
 			? isEmailChange
 				? 'Email changed'
@@ -33,21 +33,29 @@ export function VerifyEmailRoute(handle: Handle) {
 					: isEmailDestination
 						? 'Email destination verified'
 						: 'Email verified'
-			: 'Email verification'
+			: isEmailDestination
+				? 'Verify email destination'
+				: 'Email verification'
 		const returnsToAccount =
 			isEmailChange || isEmailClaimRelease || isEmailDestination
-		const ctaHref =
-			data.ok && data.ctaHref
-				? data.ctaHref
-				: returnsToAccount
+		const ctaHref = data.ctaHref
+			? data.ctaHref
+			: data.ok
+				? returnsToAccount
 					? '/account'
 					: '/onboarding'
-		const ctaLabel =
-			data.ok && data.ctaLabel
-				? data.ctaLabel
-				: returnsToAccount
+				: isEmailDestination
+					? '/account/email#email-destinations'
+					: '/account'
+		const ctaLabel = data.ctaLabel
+			? data.ctaLabel
+			: data.ok
+				? returnsToAccount
 					? 'Go to account'
 					: 'Continue to onboarding'
+				: isEmailDestination
+					? 'Resend from email inbox'
+					: 'Go to account'
 
 		return (
 			<section mix={css(pageCss)}>
@@ -62,7 +70,9 @@ export function VerifyEmailRoute(handle: Handle) {
 									: isEmailDestination
 										? 'emailSend can use this address. Mail still comes from your Kody platform inbox.'
 										: 'Your Kody account can use MCP and send outbound email.'
-							: 'We could not verify your email address.'}
+							: isEmailDestination
+								? 'We could not verify this email destination.'
+								: 'We could not verify your email address.'}
 					</p>
 				</header>
 				<div mix={css(cardCss)}>
@@ -76,29 +86,28 @@ export function VerifyEmailRoute(handle: Handle) {
 					>
 						{data.ok ? data.message : data.error}
 					</p>
-					{data.ok ? (
-						<div
-							mix={css({
-								display: 'flex',
-								alignItems: 'center',
-								gap: spacing.md,
-								flexWrap: 'wrap',
-							})}
-						>
-							<a href={ctaHref} mix={css(ctaButtonCss)}>
-								{ctaLabel}
-							</a>
-							{ctaHref === '/account' ? null : (
-								<a href="/account" mix={css(mutedLinkCss)}>
-									Account
-								</a>
+					<div
+						mix={css({
+							display: 'flex',
+							alignItems: 'center',
+							gap: spacing.md,
+							flexWrap: 'wrap',
+						})}
+					>
+						<a
+							href={ctaHref}
+							mix={css(
+								data.ok || isEmailDestination ? ctaButtonCss : mutedLinkCss,
 							)}
-						</div>
-					) : (
-						<a href="/account" mix={css(mutedLinkCss)}>
-							Go to account
+						>
+							{ctaLabel}
 						</a>
-					)}
+						{ctaHref === '/account' ? null : (
+							<a href="/account" mix={css(mutedLinkCss)}>
+								Account
+							</a>
+						)}
+					</div>
 				</div>
 			</section>
 		)
