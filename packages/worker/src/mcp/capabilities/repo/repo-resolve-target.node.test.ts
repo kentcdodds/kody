@@ -66,3 +66,46 @@ test('resolveRepoSourceReference throws McpCallerError for missing source and pa
 		'Repo source identity is required.',
 	)
 })
+
+test('resolveRepoSourceReference looks up scoped package names by leaf', async () => {
+	mockModule.getEntitySourceByIdForUser.mockReset()
+	mockModule.getSavedPackageById.mockReset()
+	mockModule.getSavedPackageByKodyId.mockReset()
+
+	const savedPackage = {
+		id: 'pkg-1',
+		kodyId: 'package-app-kit',
+		name: '@me/package-app-kit',
+		sourceId: 'source-1',
+	}
+	const source = {
+		id: 'source-1',
+		entity_kind: 'package',
+		entity_id: 'pkg-1',
+	}
+	mockModule.getSavedPackageByKodyId.mockResolvedValue(savedPackage)
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue(source)
+
+	const resolved = await resolveRepoSourceReference({
+		db: {} as D1Database,
+		userId: 'user-1',
+		args: {
+			target: { kind: 'package', kody_id: '@me/package-app-kit' },
+		},
+	})
+
+	expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledWith(
+		expect.anything(),
+		{ userId: 'user-1', kodyId: 'package-app-kit' },
+	)
+	expect(resolved).toEqual({
+		source,
+		resolvedTarget: {
+			kind: 'package',
+			source_id: 'source-1',
+			package_id: 'pkg-1',
+			kody_id: 'package-app-kit',
+			name: '@me/package-app-kit',
+		},
+	})
+})

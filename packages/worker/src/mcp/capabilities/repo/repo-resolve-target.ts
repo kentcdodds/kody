@@ -1,5 +1,6 @@
 import { type z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { getPackageNameLeaf } from '#worker/package-registry/package-name.ts'
 import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
@@ -57,7 +58,7 @@ async function requirePackageTarget(input: {
 				})
 			: await getSavedPackageByKodyId(input.db, {
 					userId: input.userId,
-					kodyId: input.target.kody_id,
+					kodyId: getPackageNameLeaf(input.target.kody_id),
 				})
 	if (!savedPackage) {
 		const missingId =
