@@ -810,15 +810,23 @@ test('refreshServer keeps a token-recovery lastError when the server stays authe
 })
 
 test('refreshServer returns the recovered ready connection after a lightweight retry', async () => {
-	const { state } = createDurableObjectState()
+	const { state, values } = createDurableObjectState()
 	const hub = new McpClientHub(state, {} as Env)
 	const manager = mockModule.manager
 	if (!manager) throw new Error('Fake manager was not constructed.')
 	const { connection } = await seedReadyHomeServer({ hub, manager })
+	values.set('mcp-oauth-token-recovery/server-1', {
+		message: 'Stored OAuth tokens could not be refreshed',
+		phase: 'token exchange',
+		attemptId: 'stale-rt',
+		at: '2026-09-14T00:00:00.000Z',
+	})
 	connection.connectionState = 'disconnected'
 	manager.connectBehavior = 'ready'
 	const result = await hub.refreshServer({ serverId: 'server-1' })
 	expect(result.state).toBe('ready')
+	expect(result.lastError ?? null).toBeNull()
+	expect(values.has('mcp-oauth-token-recovery/server-1')).toBe(false)
 })
 
 test('reconnectServer returns the recovered ready connection after a lightweight retry', async () => {
@@ -1248,6 +1256,7 @@ test('replacing a server forgets the catalog-timeout legacy mark and probes auto
 		callbackUrl: 'https://kody.codes/account/mcp-servers/oauth/callback',
 	})
 	expect(replaced.state).toBe('ready')
+	expect(replaced.hasRefreshToken).toBe(false)
 	expect(manager.registerCount).toBe(1)
 	expect(manager.discoverCount).toBe(1)
 	expect(manager.mcpConnections['server-1']?.options.client).toEqual({

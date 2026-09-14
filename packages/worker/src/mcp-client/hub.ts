@@ -282,6 +282,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		await this.ensureRestored()
 		await this.forgetLegacyHandshakeFallback(input.serverId)
 		this.clearIncompleteDiscoverStamp(input.serverId)
+		this.tokenPresence.delete(input.serverId)
 		await this.persistTokenRecoveryLastError(input.serverId, null)
 		const existing = this.manager.mcpConnections[input.serverId]
 		if (existing) {
@@ -720,16 +721,18 @@ class McpClientHubBase extends DurableObject<Env> {
 				attemptId: options?.attemptId,
 			},
 		)
-		if (
+		const outcome =
 			options?.allowLegacyFallback === false ||
 			!shouldRetryLegacyHandshake({
 				state: afterAuto.result.state,
 				client: this.manager.mcpConnections[serverId]?.options.client,
 			})
-		) {
-			return afterAuto
+				? afterAuto
+				: await this.retryDiscoverWithLegacyHandshake(serverId, afterAuto)
+		if (outcome.result.state === 'ready') {
+			await this.persistTokenRecoveryLastError(serverId, null)
 		}
-		return this.retryDiscoverWithLegacyHandshake(serverId, afterAuto)
+		return outcome
 	}
 
 	private async retryDiscoverWithLegacyHandshake(
