@@ -23,6 +23,7 @@ const listedApp = {
 	hasApp: true,
 	webhookCount: 0,
 	jobCount: 0,
+	iconUrl: null,
 	isPrivate: false,
 	hidden: false,
 } satisfies PublicProfilePackageItem
@@ -40,6 +41,7 @@ const privateNoApp = {
 	hasApp: false,
 	webhookCount: 0,
 	jobCount: 0,
+	iconUrl: null,
 	isPrivate: true,
 	hidden: true,
 } satisfies PublicProfilePackageItem

@@ -32,6 +32,10 @@ const headStaleWhileRevalidateMs = 60 * 60_000
 const missingHeadTtlMs = 60_000
 const deletedRefCommit = /^0+$/
 
+export function isDeletedArtifactRefCommit(commit: string) {
+	return deletedRefCommit.test(commit)
+}
+
 export function isArtifactSourceHead(
 	value: unknown,
 ): value is ArtifactSourceHead {
@@ -130,7 +134,7 @@ export async function applyArtifactSourcePushToHeadCache(input: {
 	if (
 		branchRef &&
 		isArtifactSourceHead(entry.value) &&
-		!deletedRefCommit.test(input.after)
+		!isDeletedArtifactRefCommit(input.after)
 	) {
 		await cache.set(
 			key,

@@ -132,13 +132,14 @@ export function createTestDb(
 							}
 							if (
 								lower ===
-								'select id, published_commit from entity_sources where user_id = ?'
+								'select id, published_commit, repo_id from entity_sources where user_id = ?'
 							) {
 								results = (rows.entity_sources ?? [])
 									.filter((row) => row['user_id'] === userId)
 									.map((row) => ({
 										id: row['id'],
 										published_commit: row['published_commit'] ?? null,
+										repo_id: row['repo_id'] ?? row['id'],
 									}))
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
@@ -205,6 +206,21 @@ export function createTestDb(
 												source?.['published_commit'] ?? null,
 										}
 									})
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
+							if (
+								lower.includes('from entity_sources') &&
+								lower.includes('entity_sources.indexed_commit')
+							) {
+								results = (rows.entity_sources ?? [])
+									.filter((row) => row['user_id'] === userId)
+									.map((row, index) => ({
+										account_r2_rowid: index + 1,
+										repo_id: row['repo_id'] ?? row['id'],
+										entity_kind: row['entity_kind'] ?? 'package',
+										published_commit: row['published_commit'] ?? null,
+										indexed_commit: row['indexed_commit'] ?? null,
+									}))
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							const m = lower.match(/^select id from (\w+) where user_id = \?/)

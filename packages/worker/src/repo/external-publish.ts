@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/cloudflare'
 import { refreshCommunityIconForPackagePublish } from '#worker/community/community-icon.ts'
+import { refreshIdentityIconForSource } from '#worker/repo/identity-icon.ts'
 import {
 	createPackagePublishLockedError,
 	loadLockedSavedPackage,
@@ -99,6 +100,23 @@ export async function finalizePublishedEntitySource(
 			}
 			throw snapshotError
 		}
+	}
+	try {
+		await refreshIdentityIconForSource({
+			env: input.env,
+			source: {
+				...input.source,
+				published_commit: input.publishedCommit,
+			},
+			iconCommit: input.publishedCommit,
+			indexLiveHead: input.source.entity_kind === 'repo',
+		})
+	} catch (error) {
+		console.error(
+			'identity-icon-publish-refresh-failed',
+			input.source.entity_id,
+			error,
+		)
 	}
 	if (input.source.entity_kind !== 'package') return
 	try {

@@ -334,8 +334,12 @@ export async function listPublicProfilePackages(
 	},
 ): Promise<Array<PublicProfilePackageListRow>> {
 	const conditions = input.includePrivate
-		? ['user_id = ?']
-		: ['user_id = ?', 'is_private = 0', 'hidden = 0']
+		? ['saved_packages.user_id = ?']
+		: [
+				'saved_packages.user_id = ?',
+				'saved_packages.is_private = 0',
+				'saved_packages.hidden = 0',
+			]
 	const bindings: Array<unknown> = [input.ownerStableUserId]
 	const tokens = extractCommunityListingLikeTokens(input.query ?? '')
 	if (tokens.length > 0) {
@@ -343,7 +347,7 @@ export async function listPublicProfilePackages(
 			const pattern = d1ContainsLikePattern(token, { escape: false })
 			const columnClauses = publicPackageSearchColumns.map((column) => {
 				bindings.push(pattern)
-				return `${column} LIKE ?`
+				return `saved_packages.${column} LIKE ?`
 			})
 			return `(${columnClauses.join(' OR ')})`
 		})
@@ -352,11 +356,19 @@ export async function listPublicProfilePackages(
 
 	const rows = await db
 		.prepare(
-			`SELECT id, name, kody_id, description, tags_json, updated_at,
-				source_id, is_private, hidden, has_app
+			`SELECT saved_packages.id, saved_packages.name, saved_packages.kody_id,
+				saved_packages.description, saved_packages.tags_json,
+				saved_packages.updated_at, saved_packages.source_id,
+				saved_packages.is_private, saved_packages.hidden, saved_packages.has_app,
+				es.published_commit
 			FROM saved_packages
+			LEFT JOIN entity_sources AS es
+				ON es.id = saved_packages.source_id
+				AND es.user_id = saved_packages.user_id
+				AND es.entity_kind = 'package'
+				AND es.entity_id = saved_packages.id
 			WHERE ${conditions.join(' AND ')}
-			ORDER BY updated_at DESC
+			ORDER BY saved_packages.updated_at DESC
 			LIMIT ?`,
 		)
 		.bind(...bindings, input.limit)
@@ -379,6 +391,9 @@ export async function listPublicProfilePackages(
 		jobCount: 0,
 		isPrivate: Number(row['is_private']) === 1,
 		hidden: Number(row['hidden']) === 1,
+		publishedCommit:
+			row['published_commit'] == null ? null : String(row['published_commit']),
+		listingIconCommit: null as string | null,
 	}))
 
 	if (packages.length === 0) return packages
@@ -449,6 +464,8 @@ export async function listPublicProfilePackages(
 				listingPinnedCommit: listing?.pinnedCommit,
 				sourcePublishedCommit: listing?.sourcePublishedCommit,
 			}),
+			listingIconCommit:
+				listing?.sourcePublishedCommit ?? listing?.pinnedCommit ?? null,
 		}
 	})
 }

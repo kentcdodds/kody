@@ -19,8 +19,10 @@ params are ignored for them. Search stays `q=` and still hits the server. Each
 row shows Iconic signifiers (native tooltip only) for package, private, hidden,
 published-to-community or no community listing, webhook count, job count, and
 whether it has an app. Private repositories do not also get a “no community
-listing” signifier — the private icon is enough. Each package lives at
-`/@username/:kodyId` (the URL slug is the package name leaf; README),
+listing” signifier — the private icon is enough. List marks come from
+`/@username/:kodyId/icon/:iconCommit` (packages) and
+`/account/repos/:repoId/icon/:iconCommit` (owner-only plain repos). Each package
+lives at `/@username/:kodyId` (the URL slug is the package name leaf; README),
 `/@username/:kodyId/tree/:ref` (files), `/@username/:kodyId/assets/…`
 (README-relative images from the published or pinned commit),
 `/@username/:kodyId/settings` (lock, visibility, share, webhooks, delete),
@@ -64,6 +66,8 @@ empty state.
   action)
 - `GET /profiles/:username/packages/:kodyId.json`
 - `GET /profiles/:username/packages/:kodyId/files.json`
+- `GET /@:username/:kodyId/icon/:iconCommit` (package list mark)
+- `GET /account/repos/:repoId/icon/:iconCommit` (owner-only repo list mark)
 - `GET /@:username/:kodyId/raw/:ref(/*relativePath)` (allowlisted media bytes)
 - `GET /profiles/:username/packages/:kodyId/approve-publish.json`
 - `GET|POST /profiles/:username/packages/:kodyId/share.json`

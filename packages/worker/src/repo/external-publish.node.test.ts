@@ -9,6 +9,7 @@ const mockModule = vi.hoisted(() => ({
 	loadPublishedSourceSnapshot: vi.fn(),
 	refreshSavedPackageProjection: vi.fn(),
 	refreshCommunityIconForPackagePublish: vi.fn(async () => undefined),
+	refreshIdentityIconForSource: vi.fn(async () => undefined),
 	hasPublishedRuntimeArtifacts: vi.fn(() => false),
 	loadLockedSavedPackage: vi.fn(async () => null),
 }))
@@ -43,6 +44,11 @@ vi.mock('#worker/package-registry/service.ts', () => ({
 vi.mock('#worker/community/community-icon.ts', () => ({
 	refreshCommunityIconForPackagePublish: (...args: Array<unknown>) =>
 		mockModule.refreshCommunityIconForPackagePublish(...args),
+}))
+
+vi.mock('#worker/repo/identity-icon.ts', () => ({
+	refreshIdentityIconForSource: (...args: Array<unknown>) =>
+		mockModule.refreshIdentityIconForSource(...args),
 }))
 
 vi.mock(
@@ -150,6 +156,12 @@ test('publishes an external fast-forward ref after checks pass', async () => {
 			userId: 'user-1',
 			packageId: 'package-1',
 			publishedCommit: 'commit-new',
+		}),
+	)
+	expect(mockModule.refreshIdentityIconForSource).toHaveBeenCalledWith(
+		expect.objectContaining({
+			iconCommit: 'commit-new',
+			indexLiveHead: false,
 		}),
 	)
 

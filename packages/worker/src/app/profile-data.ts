@@ -99,7 +99,10 @@ async function loadProfileDataUncached(
 		ok: true,
 		profile: toPublicCommunityProfile(profile),
 		packages: packages.map((pkg) =>
-			toPublicProfilePackageItem(pkg, { includeOwnerVisibility: isSelf }),
+			toPublicProfilePackageItem(pkg, {
+				includeOwnerVisibility: isSelf,
+				username: profile.username,
+			}),
 		),
 		activity: activity.map(toPublicCommunityActivityItem),
 		query: filters.query || null,

@@ -149,6 +149,10 @@ export type PublicProfilePackage = {
 	isPrivate: boolean
 	/** Owner-only: hidden from ranked search. Always false on public profile lists. */
 	hidden: boolean
+	/** Package published commit used to build a list identity-icon URL. */
+	publishedCommit: string | null
+	/** Listing icon commit when an active community listing exists. */
+	listingIconCommit: string | null
 }
 
 /** Internal list row: `sourceId` is used to attach job counts, then stripped. */

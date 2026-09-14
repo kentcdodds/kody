@@ -31,6 +31,7 @@ const listedPackage = {
 	hasApp: true,
 	webhookCount: 2,
 	jobCount: 1,
+	iconUrl: '/community/listing-1/icon/abc123',
 } satisfies PublicProfilePackageItem
 
 const unpublishedPackage = {
@@ -46,6 +47,7 @@ const unpublishedPackage = {
 	hasApp: false,
 	webhookCount: 0,
 	jobCount: 0,
+	iconUrl: '/@kody/notes/icon/pub-1',
 } satisfies PublicProfilePackageItem
 
 async function renderProfileContentHtml(props: ProfileContentProps) {
@@ -66,6 +68,8 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 	expect(guestHtml.match(/aria-label="fork"/g)).toHaveLength(1)
 	expect(guestHtml).toContain('notes')
 	expect(guestHtml).toContain('href="/@kody/notes"')
+	expect(guestHtml).toContain('data-testid="profile-package-icon"')
+	expect(guestHtml).toContain('/community/listing-1/icon/abc123')
 
 	// Listed packages report the listing's published date, not the owner's
 	// unpublished local edit, which is what made the activity feed look stale.

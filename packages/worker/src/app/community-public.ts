@@ -10,7 +10,10 @@ import {
 	type PublicProfilePackageItem,
 	type ViewerListingInstall,
 } from '#universal/community-public-types.ts'
-import { routes } from '#universal/routes.ts'
+import {
+	buildCommunityIconUrl,
+	resolvePackageListIconUrl,
+} from '#universal/identity-icon-urls.ts'
 import {
 	buildUserAvatarUrl,
 	getOwnerUsernameFromListingName,
@@ -58,7 +61,7 @@ export function toPublicCommunityProfile(
 
 export function toPublicProfilePackageItem(
 	pkg: PublicProfilePackage,
-	options?: { includeOwnerVisibility?: boolean },
+	options?: { includeOwnerVisibility?: boolean; username?: string },
 ): PublicProfilePackageItem {
 	return {
 		name: pkg.name,
@@ -73,6 +76,15 @@ export function toPublicProfilePackageItem(
 		hasApp: pkg.hasApp,
 		webhookCount: pkg.webhookCount,
 		jobCount: pkg.jobCount,
+		iconUrl: options?.username
+			? resolvePackageListIconUrl({
+					username: options.username,
+					kodyId: pkg.kodyId,
+					listingId: pkg.communityListingId,
+					listingIconCommit: pkg.listingIconCommit,
+					publishedCommit: pkg.publishedCommit,
+				})
+			: null,
 		...(options?.includeOwnerVisibility
 			? { isPrivate: pkg.isPrivate, hidden: pkg.hidden }
 			: {}),
@@ -103,12 +115,7 @@ export function truncateCommunityText(text: string, maxLength: number) {
 	return `${trimmed.slice(0, maxLength - 1)}…`
 }
 
-export function buildCommunityIconUrl(input: {
-	listingId: string
-	iconCommit: string
-}) {
-	return routes.communityDetailIcon.href(input)
-}
+export { buildCommunityIconUrl } from '#universal/identity-icon-urls.ts'
 
 export function toPublicCommunityListing(
 	listing: CommunityListingWithAggregates,

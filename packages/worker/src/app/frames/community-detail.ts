@@ -7,6 +7,7 @@ import { resolveCommunityListingRoute } from '#app/community-package-route.ts'
 import { registerFrame } from '#app/frame-registry.ts'
 import { loadPackagePage, packagePageIsPrivate } from '#app/package-page.ts'
 import { type PublicCommunityListing } from '#app/community-public.ts'
+import { resolvePackageListIconUrl } from '#universal/identity-icon-urls.ts'
 import { COMMUNITY_DETAIL_TARGET } from '#universal/community-frame-constants.ts'
 import { routes } from '#universal/routes.ts'
 import { createMatcher } from 'remix/route-pattern/match'
@@ -55,6 +56,15 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 				}),
 				shareGrant: page.shareGrant,
 				hasApp: page.ownerPackage?.hasApp === true,
+				iconUrl:
+					listing?.iconUrl ??
+					resolvePackageListIconUrl({
+						username: page.username,
+						kodyId: page.kodyId,
+						listingId: null,
+						listingIconCommit: null,
+						publishedCommit: page.ownerPackage?.publishedCommit ?? null,
+					}),
 			})
 		}
 

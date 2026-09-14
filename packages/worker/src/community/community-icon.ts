@@ -18,6 +18,13 @@ import {
 	iconFitMaxDimension,
 	publicFittedIconCacheControl,
 } from './icon-fit.ts'
+import {
+	findIdentityIconPath,
+	identityIconSourcePaths,
+	isIdentityIconSourcePath,
+	isSnapshotRetainedIdentityIconPath,
+	type IdentityIconSourcePath,
+} from '#worker/repo/identity-icon-paths.ts'
 import { buildCommunityIconFallbackSvg } from './community-icon-fallback.ts'
 import {
 	getCommunityListingById,
@@ -37,18 +44,7 @@ const maxCommunityIconRenderedBytes = 2 * 1024 * 1024
 const communityIconDescriptorTtlMs = 30 * 24 * 60 * 60 * 1000
 export const communityIconCacheControl = publicFittedIconCacheControl
 
-export const communityIconPaths = [
-	'icon.svg',
-	'icon.png',
-	'icon.webp',
-	'icon.jpg',
-	'icon.jpeg',
-	'community-icon.svg',
-	'community-icon.png',
-	'community-icon.webp',
-	'community-icon.jpg',
-	'community-icon.jpeg',
-] as const
+export const communityIconPaths = identityIconSourcePaths
 
 type CommunityIconContentType = 'image/png' | 'image/webp' | 'image/jpeg'
 
@@ -58,7 +54,7 @@ type CommunityIconDescriptor = {
 	iconCommit: string
 	r2Key: string
 	contentType: CommunityIconContentType
-	sourcePath: (typeof communityIconPaths)[number] | null
+	sourcePath: IdentityIconSourcePath | null
 	byteLength: number
 }
 
@@ -96,8 +92,8 @@ export function communityIconR2ListingPrefixes(listingId: string) {
 
 export function findCommunityIconPath(
 	files: Readonly<Record<string, string>>,
-): (typeof communityIconPaths)[number] | null {
-	return communityIconPaths.find((path) => path in files) ?? null
+): IdentityIconSourcePath | null {
+	return findIdentityIconPath(files, { includePackageAppIcon: true })
 }
 
 export async function getCommunityIconObject(input: {
@@ -258,7 +254,7 @@ async function loadCommunityIconSource(input: {
 	listing: CommunityListingRecord
 	iconCommit: string
 }): Promise<{
-	path: (typeof communityIconPaths)[number]
+	path: IdentityIconSourcePath
 	bytes: Uint8Array
 } | null> {
 	if (input.iconCommit === input.listing.pinnedCommit) {
@@ -272,20 +268,22 @@ async function loadCommunityIconSource(input: {
 			)
 		}
 		const sourcePath =
-			communityIconPaths.find((path) => path === snapshot.communityIconPath) ??
-			findCommunityIconPath(snapshot.files)
+			(snapshot.communityIconPath &&
+			isIdentityIconSourcePath(snapshot.communityIconPath)
+				? snapshot.communityIconPath
+				: null) ?? findCommunityIconPath(snapshot.files)
 		if (!sourcePath) return null
-		if (sourcePath === 'community-icon.svg') {
+		if (isSnapshotRetainedIdentityIconPath(sourcePath)) {
 			const source = snapshot.files[sourcePath]
-			if (source == null) {
-				throw new Error(
-					`Community icon "${sourcePath}" was not retained in the listing snapshot.`,
-				)
+			if (source != null) {
+				return {
+					path: sourcePath,
+					bytes: new TextEncoder().encode(source),
+				}
 			}
-			return {
-				path: sourcePath,
-				bytes: new TextEncoder().encode(source),
-			}
+			// Pre-identity-icon listings stored `icon.svg` (and later
+			// `.kody/icon.svg`) in `communityIconPath` but stripped those
+			// files from the text snapshot. Fall through to Artifacts.
 		}
 		const source = await getValidatedListingPackageSource(input)
 		const found = await readFirstArtifactFileAtCommit({
@@ -312,9 +310,8 @@ async function loadCommunityIconSource(input: {
 		filePaths: communityIconPaths,
 	})
 	if (!found) return null
-	const path = communityIconPaths.find((candidate) => candidate === found.path)
-	if (!path) return null
-	return { path, bytes: found.bytes }
+	if (!isIdentityIconSourcePath(found.path)) return null
+	return { path: found.path, bytes: found.bytes }
 }
 
 async function getValidatedListingPackageSource(input: {
@@ -432,7 +429,7 @@ async function isServableIconCommit(input: {
 }
 
 export async function processCommunityIcon(input: {
-	path: (typeof communityIconPaths)[number]
+	path: IdentityIconSourcePath
 	sourceBytes: Uint8Array
 	images: ImagesBinding
 }): Promise<ProcessedCommunityIcon> {
@@ -519,10 +516,7 @@ async function renderCommunitySvgIcon(source: string) {
 	}
 }
 
-function readRasterDimensions(
-	path: (typeof communityIconPaths)[number],
-	bytes: Uint8Array,
-) {
+function readRasterDimensions(path: IdentityIconSourcePath, bytes: Uint8Array) {
 	if (path.endsWith('.png')) return readPngDimensions(bytes)
 	if (path.endsWith('.webp')) return readWebpDimensions(bytes)
 	return readJpegDimensions(bytes)
@@ -680,7 +674,7 @@ function isCommunityIconDescriptor(
 			descriptor.contentType ?? '',
 		) &&
 		(descriptor.sourcePath === null ||
-			communityIconPaths.some((path) => path === descriptor.sourcePath)) &&
+			isIdentityIconSourcePath(descriptor.sourcePath ?? '')) &&
 		typeof descriptor.byteLength === 'number'
 	)
 }

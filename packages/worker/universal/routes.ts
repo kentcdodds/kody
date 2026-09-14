@@ -40,6 +40,7 @@ export const routes = route({
 	accountMcpServersApiPost: post('/account/mcp-servers.json'),
 	// Legacy HTML package routes only redirect to their canonical `/@…` pages.
 	// The JSON endpoints remain account-scoped mutation/read APIs.
+	accountRepoIcon: '/account/repos/:repoId/icon/:iconCommit',
 	accountPackages: '/account/packages',
 	accountPackageDetail: '/account/packages/:packageId',
 	accountPackageApprovePublish: '/account/packages/:packageId/approve-publish',
@@ -229,6 +230,9 @@ export const routes = route({
 	// First-party bytes for README-relative images. Third-segment noun so
 	// `/@:username/packages/…` stays the hosted package-app mount.
 	communityPackageAsset: '/@:username/:kodyId/assets(/*relativePath)',
+	// Repo/list identity mark for a saved package (public when the package is
+	// public). Third-segment noun so it cannot collide with a kodyId.
+	communityPackageIcon: '/@:username/:kodyId/icon/:iconCommit',
 	communityPackageSettings: '/@:username/:kodyId/settings',
 	communityPackageApprovePublish: '/@:username/:kodyId/approve-publish',
 	communityPackageApproveChanges: '/@:username/:kodyId/approve-changes',

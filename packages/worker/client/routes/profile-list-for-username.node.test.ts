@@ -27,6 +27,7 @@ const janeList = {
 			hasApp: false,
 			webhookCount: 0,
 			jobCount: 0,
+			iconUrl: null,
 			isPrivate: true,
 			hidden: false,
 		},

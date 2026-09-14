@@ -115,6 +115,8 @@ export type PublicProfilePackageItem = {
 	webhookCount: number
 	/** Package-owned jobs whose `source_id` matches this saved package. */
 	jobCount: number
+	/** List/identity mark URL, or null when no published or listing commit exists. */
+	iconUrl: string | null
 	/** Present on the owner's own profile list; omitted for other viewers. */
 	isPrivate?: boolean
 	/** Present on the owner's own profile list; omitted for other viewers. */
