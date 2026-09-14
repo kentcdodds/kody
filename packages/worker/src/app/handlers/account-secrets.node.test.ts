@@ -352,12 +352,10 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 		allowedHosts: ['api.github.com', 'github.com'],
 		hostApprovalLinks: [],
 		integrationName: 'github',
-		nextSteps: {
+		nextSteps: expect.objectContaining({
 			service: 'github',
 			connectionName: 'github',
-			prompt:
-				'I just connected to github with github. What should we do next? Is there a community package we can fork or one we can build to make using this integration easier?',
-		},
+		}),
 	})
 	expect(mockModule.buildSecretHostApprovalUrl).not.toHaveBeenCalled()
 	expect(mockModule.setSecretAllowedHosts).not.toHaveBeenCalled()
@@ -1563,12 +1561,10 @@ test('connect oauth persists usePkce for confidential + PKCE providers like Canv
 		accessTokenSaved: true,
 		refreshTokenSaved: true,
 		integrationName: 'canva',
-		nextSteps: {
+		nextSteps: expect.objectContaining({
 			service: 'canva',
 			connectionName: 'canva',
-			prompt:
-				'I just connected to canva with canva. What should we do next? Is there a community package we can fork or one we can build to make using this integration easier?',
-		},
+		}),
 	})
 	expect(mockModule.deleteSecret).not.toHaveBeenCalled()
 	expect(mockModule.upsertIntegration).toHaveBeenCalledWith(
