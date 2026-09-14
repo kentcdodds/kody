@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import type * as PackageSourceModule from '#worker/package-registry/source.ts'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 import { servePackageAppRequest } from './package-app-serve.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -176,6 +177,7 @@ async function serveHelloWorld(input?: {
 	kodyId?: string
 	restPath?: string
 	init?: RequestInit
+	dispatch?: { synthetic: true }
 }) {
 	const kodyId = input?.kodyId ?? 'perf-app'
 	const restPath = input?.restPath ?? '/'
@@ -200,6 +202,7 @@ async function serveHelloWorld(input?: {
 			restPath,
 			mount: 'username-path',
 		},
+		dispatch: input?.dispatch,
 	})
 }
 
@@ -566,4 +569,46 @@ test('/_assets/ is a 404 for apps without client or assets and author fetch stil
 	expect(page.status).toBe(200)
 	expect(await page.text()).toBe('ok')
 	expect(mockModule.buildPackageAppWorker).toHaveBeenCalledTimes(1)
+})
+
+test('published leftover kody.app.runtime does not brick host-setup', async () => {
+	seedFixture({
+		kodyId: 'legacy-runtime-app',
+		app: { entry: './src/app.ts', runtime: 'remix' },
+	})
+
+	const response = await serveHelloWorld({ kodyId: 'legacy-runtime-app' })
+	expect(response.status).toBe(200)
+	expect(await response.text()).toBe('ok')
+	expect(mockModule.buildPackageAppWorker).toHaveBeenCalled()
+})
+
+test('synthetic host-setup failures return JSON with the underlying cause', async () => {
+	consoleError.mockImplementation(() => {})
+	seedFixture({ kodyId: 'prep-fail-app' })
+	mockModule.buildPackageAppWorker.mockRejectedValueOnce(
+		new Error(
+			'kody.app.runtime was removed; request dispatch is by export shape',
+		),
+	)
+
+	const response = await serveHelloWorld({
+		kodyId: 'prep-fail-app',
+		dispatch: { synthetic: true },
+	})
+	expect(response.status).toBe(500)
+	expect(response.headers.get('content-type')).toContain('application/json')
+	await expect(response.json()).resolves.toEqual({
+		error: 'Package app could not be prepared',
+		message:
+			'Kody could not load or prepare this package app runtime before your request reached the package code.',
+		next_step:
+			'This has been reported to Kody. Try again shortly, or ask the package owner to republish the package if it keeps happening.',
+		package: {
+			name: '@kentcdodds/prep-fail-app',
+			kody_id: 'prep-fail-app',
+		},
+		request_path: '/@kentcdodds/packages/prep-fail-app',
+		cause: 'kody.app.runtime was removed; request dispatch is by export shape',
+	})
 })

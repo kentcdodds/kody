@@ -87,10 +87,19 @@ export function assertAuthoredPackageJsonNameScope(input: {
 	}
 }
 
+export type PackageManifestParseMode = 'authoring' | 'published'
+
 export function parseAuthoredPackageJson(input: {
 	content: string
 	manifestPath?: string
 	expectedPackageScope?: string
+	/**
+	 * `authoring` (default) is write/publish: leftover `kody.app.runtime` is
+	 * rejected so kits cannot hide a removed mode. `published` is snapshot
+	 * load: the field is inert (dispatch is by export shape) and must not
+	 * brick host-setup / packageAppFetch.
+	 */
+	mode?: PackageManifestParseMode
 }): AuthoredPackageJson {
 	let parsed: unknown
 	try {
@@ -105,6 +114,7 @@ export function parseAuthoredPackageJson(input: {
 	assertNoRetiredKodyFields({
 		parsed,
 		manifestPath: input.manifestPath ?? packageManifestPath,
+		mode: input.mode ?? 'authoring',
 	})
 	const result = authoredPackageJsonSchema.safeParse(parsed)
 	if (!result.success) {
@@ -160,6 +170,7 @@ const retiredPackageAppRuntimeMessage =
 function assertNoRetiredKodyFields(input: {
 	parsed: unknown
 	manifestPath: string
+	mode: PackageManifestParseMode
 }) {
 	if (
 		!input.parsed ||
@@ -185,6 +196,9 @@ function assertNoRetiredKodyFields(input: {
 		!Array.isArray(app) &&
 		'runtime' in app
 	) {
+		if (input.mode === 'published') {
+			return
+		}
 		throw new Error(
 			`Invalid ${input.manifestPath}:\n${retiredPackageAppRuntimeMessage}`,
 		)

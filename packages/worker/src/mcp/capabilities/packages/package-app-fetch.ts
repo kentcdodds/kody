@@ -454,6 +454,9 @@ export const packageAppFetchCapability = defineDomainCapability(
 			}
 
 			const requestHeaders = collectSafeRequestHeaders(args.headers)
+			if (!requestHeaders.has('accept')) {
+				requestHeaders.set('Accept', 'application/json')
+			}
 			const requestInit: RequestInit = {
 				method,
 				headers: requestHeaders,

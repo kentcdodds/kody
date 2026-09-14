@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/cloudflare'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { html } from 'remix/html-template'
 import { createHtmlResponse } from 'remix/response/html'
 import {
@@ -225,6 +226,8 @@ function createPackageAppErrorResponse(input: {
 	kind: PackageAppFailureKind
 	kodyId: string
 	packageName: string
+	synthetic?: boolean
+	cause?: string
 }) {
 	const messages = {
 		'host-setup': {
@@ -263,8 +266,9 @@ function createPackageAppErrorResponse(input: {
 			kody_id: input.kodyId,
 		},
 		request_path: requestPath,
+		...(input.synthetic === true && input.cause ? { cause: input.cause } : {}),
 	}
-	if (wantsJson(input.request)) {
+	if (input.synthetic === true || wantsJson(input.request)) {
 		return Response.json(body, { status: 500 })
 	}
 	return createHtmlResponse(
@@ -414,6 +418,8 @@ export async function servePackageAppRequest(input: {
 				kind: 'realtime-connect',
 				kodyId: savedPackage.kodyId,
 				packageName: savedPackage.name,
+				synthetic: dispatch?.synthetic === true,
+				cause: getErrorMessage(error),
 			})
 		}
 	}
@@ -485,6 +491,8 @@ export async function servePackageAppRequest(input: {
 				kind: 'host-setup',
 				kodyId: savedPackage.kodyId,
 				packageName: savedPackage.name,
+				synthetic: dispatch?.synthetic === true,
+				cause: getErrorMessage(error),
 			})
 		}
 	}
@@ -558,6 +566,8 @@ export async function servePackageAppRequest(input: {
 			kind: 'host-setup',
 			kodyId: savedPackage.kodyId,
 			packageName: savedPackage.name,
+			synthetic: dispatch?.synthetic === true,
+			cause: getErrorMessage(error),
 		})
 	}
 

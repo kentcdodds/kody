@@ -83,9 +83,13 @@ The capability returns exactly:
 | `truncated` | `true` when the body was truncated to fit the MCP response size budget |
 
 Failures surface as structured MCP errors with the handler's thrown message or
-non-2xx body when applicable. Check [Activity](./activity.md) (`app_fetch`
-surface) for run records; the run record carries the same `Kody-Synthetic`
-marker the handler saw.
+non-2xx body when applicable. A host-setup 500
+(`Package app could not be prepared`) includes `cause` with the platform error
+so the failure is not an opaque smoke-test dead end. Check
+[Activity](./activity.md) (`app_fetch` surface) for run records; the run record
+carries the same `Kody-Synthetic` marker the handler saw. Host-setup failures
+happen before the isolate starts, so they do not appear as `app_fetch` run
+errors.
 
 ## Semantics
 
