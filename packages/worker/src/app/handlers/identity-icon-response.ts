@@ -8,6 +8,9 @@ import {
 } from '#worker/repo/identity-icon.ts'
 import { identityIconLeafName } from '#universal/identity-icon-leaf.ts'
 
+export const ownerIdentityIconCacheControl =
+	'private, max-age=31536000, immutable'
+
 export async function serveIdentityIcon(input: {
 	env: Env
 	repoId: string
@@ -15,6 +18,7 @@ export async function serveIdentityIcon(input: {
 	ownerUserId: string
 	leafName: string
 	includePackageAppIcon?: boolean
+	cacheControl?: string
 	isServableCommit: () => Promise<boolean>
 	logLabel: string
 }) {
@@ -30,7 +34,7 @@ export async function serveIdentityIcon(input: {
 		})
 		return new Response(object.body, {
 			headers: {
-				'Cache-Control': identityIconCacheControl,
+				'Cache-Control': input.cacheControl ?? identityIconCacheControl,
 				'Content-Length': String(descriptor.byteLength),
 				'Content-Type': descriptor.contentType,
 				ETag: object.httpEtag,

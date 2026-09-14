@@ -22,11 +22,16 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 		mocks.getEntitySourceByEntity(...args),
 }))
 
-vi.mock('./identity-icon-response.ts', () => ({
-	identityIconNotFound: () => new Response('Not found', { status: 404 }),
-	serveIdentityIcon: (...args: Array<unknown>) =>
-		mocks.serveIdentityIcon(...args),
-}))
+vi.mock('./identity-icon-response.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('./identity-icon-response.ts')>()
+	return {
+		...actual,
+		identityIconNotFound: () => new Response('Not found', { status: 404 }),
+		serveIdentityIcon: (...args: Array<unknown>) =>
+			mocks.serveIdentityIcon(...args),
+	}
+})
 
 const source = {
 	id: 'source-1',
@@ -71,6 +76,7 @@ test('repo identity icon serves the indexed commit for the owner', async () => {
 			iconCommit: 'idx-1',
 			includePackageAppIcon: false,
 			leafName: 'notes',
+			cacheControl: 'private, max-age=31536000, immutable',
 		}),
 	)
 })

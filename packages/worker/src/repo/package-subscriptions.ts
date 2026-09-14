@@ -9,7 +9,11 @@ import {
 } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
-import { applyArtifactSourcePushToHeadCache } from './artifact-head-cache.ts'
+import {
+	applyArtifactSourcePushToHeadCache,
+	isDeletedArtifactRefCommit,
+	resolveCachedArtifactSourceHead,
+} from './artifact-head-cache.ts'
 import { refreshIdentityIconForSource } from './identity-icon.ts'
 import { getArtifactsNamespace } from './artifacts.ts'
 import {
@@ -435,15 +439,30 @@ export async function processCloudflareArtifactsRepoEvent(input: {
 		providerEvent.type === 'cf.artifacts.repo.pushed' &&
 		source.entity_kind === 'repo'
 	) {
-		try {
-			await refreshIdentityIconForSource({
-				env: input.env,
-				source,
-				iconCommit: providerEvent.payload.after,
-				indexLiveHead: true,
-			})
-		} catch (error) {
-			console.error('identity-icon-push-refresh-failed', source.repo_id, error)
+		const head = await resolveCachedArtifactSourceHead(
+			input.env,
+			source.repo_id,
+		)
+		const defaultBranchRef = `refs/heads/${head.branch}`
+		if (
+			providerEvent.payload.ref === defaultBranchRef &&
+			!isDeletedArtifactRefCommit(providerEvent.payload.after) &&
+			(head.commit == null || head.commit === providerEvent.payload.after)
+		) {
+			try {
+				await refreshIdentityIconForSource({
+					env: input.env,
+					source,
+					iconCommit: providerEvent.payload.after,
+					indexLiveHead: true,
+				})
+			} catch (error) {
+				console.error(
+					'identity-icon-push-refresh-failed',
+					source.repo_id,
+					error,
+				)
+			}
 		}
 	}
 

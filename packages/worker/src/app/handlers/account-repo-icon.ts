@@ -2,6 +2,7 @@ import { type Action } from 'remix/router'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	identityIconNotFound,
+	ownerIdentityIconCacheControl,
 	serveIdentityIcon,
 } from './identity-icon-response.ts'
 import { getEntitySourceByEntity } from '#worker/repo/entity-sources.ts'
@@ -41,6 +42,7 @@ export function createAccountRepoIconHandler(env: Env) {
 				ownerUserId: repo.userId,
 				leafName: repo.name,
 				includePackageAppIcon: false,
+				cacheControl: ownerIdentityIconCacheControl,
 				isServableCommit: async () => {
 					const current = await getEntitySourceByEntity(env.APP_DB, {
 						userId: repo.userId,

@@ -27,7 +27,7 @@ export const repoListCapability = defineDomainCapability(
 						.string()
 						.nullable()
 						.describe(
-							'Owner-only identity mark URL for the indexed (or published) commit, or null when the repo has no indexed commit yet.',
+							'Owner-only identity mark URL for the indexed or published commit, or null when neither commit exists.',
 						),
 					created_at: z.string(),
 					updated_at: z.string(),

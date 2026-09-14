@@ -26,7 +26,9 @@ export const plainRepoPromotionNotice =
 export const plainRepoPackageShapedNotice =
 	'Root package.json detected at HEAD. Promote with repoPromoteToPackage to activate package runtime surfaces.'
 
-const userRepoSelectColumns = `id, user_id, name, description, is_private, created_at, updated_at`
+const userRepoSelectColumns = `user_repos.id, user_repos.user_id, user_repos.name,
+	user_repos.description, user_repos.is_private, user_repos.created_at,
+	user_repos.updated_at`
 
 function mapUserRepoRow(row: Record<string, unknown>): UserRepoRecord {
 	return {

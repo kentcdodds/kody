@@ -13,6 +13,11 @@ const mocks = vi.hoisted(() => ({
 	})),
 	getArtifactsNamespace: vi.fn(() => 'production'),
 	applyArtifactSourcePushToHeadCache: vi.fn(async () => {}),
+	resolveCachedArtifactSourceHead: vi.fn(async () => ({
+		branch: 'main',
+		commit: 'def789ghi012def789ghi012def789ghi012def7',
+	})),
+	isDeletedArtifactRefCommit: (commit: string) => /^0+$/.test(commit),
 	refreshIdentityIconForSource: vi.fn(async () => {}),
 }))
 
@@ -48,6 +53,8 @@ vi.mock('./artifacts.ts', () => ({
 
 vi.mock('./artifact-head-cache.ts', () => ({
 	applyArtifactSourcePushToHeadCache: mocks.applyArtifactSourcePushToHeadCache,
+	resolveCachedArtifactSourceHead: mocks.resolveCachedArtifactSourceHead,
+	isDeletedArtifactRefCommit: mocks.isDeletedArtifactRefCommit,
 }))
 
 vi.mock('./identity-icon.ts', () => ({
@@ -270,4 +277,99 @@ test('processCloudflareArtifactsRepoEvent ignores, unmatched, and dispatches by 
 			indexLiveHead: true,
 		}),
 	)
+})
+
+test('repo.pushed refreshes identity icons only for the current default-branch HEAD', async () => {
+	mocks.getArtifactsNamespace.mockReturnValue('production')
+	const env = {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {},
+		APP_BASE_URL: 'https://example.com',
+		ARTIFACTS_NAMESPACE: 'production',
+	} as Env
+	const after = pushedEvent.payload.after
+	const featureAfter = 'aaa111bbb222aaa111bbb222aaa111bbb222aaa1'
+	const deletedAfter = '0000000000000000000000000000000000000000'
+
+	async function processPush(input: {
+		ref?: string
+		after?: string
+		head: { branch: string; commit: string | null }
+	}) {
+		mocks.refreshIdentityIconForSource.mockClear()
+		mocks.resolveCachedArtifactSourceHead.mockResolvedValueOnce(input.head)
+		mocks.getEntitySourceByRepoId.mockResolvedValueOnce(source)
+		mocks.listSavedPackagesByUserId.mockResolvedValueOnce([])
+		mocks.getUserRepoById.mockResolvedValueOnce({
+			id: 'user-repo-1',
+			userId: 'user-1',
+			name: 'skills',
+			description: null,
+			createdAt: '2026-05-18T00:00:00.000Z',
+			updatedAt: '2026-05-18T00:00:00.000Z',
+		})
+		const result = await processCloudflareArtifactsRepoEvent({
+			env,
+			body: {
+				...pushedEvent,
+				payload: {
+					...pushedEvent.payload,
+					ref: input.ref ?? pushedEvent.payload.ref,
+					after: input.after ?? after,
+				},
+			},
+		})
+		expect(result.outcome).toBe('dispatched')
+		return mocks.refreshIdentityIconForSource
+	}
+
+	const matching = await processPush({
+		head: { branch: 'main', commit: after },
+	})
+	expect(matching).toHaveBeenCalledWith(
+		expect.objectContaining({
+			source,
+			iconCommit: after,
+			indexLiveHead: true,
+		}),
+	)
+
+	const defaultNamedDevelop = await processPush({
+		ref: 'refs/heads/develop',
+		after: featureAfter,
+		head: { branch: 'develop', commit: featureAfter },
+	})
+	expect(defaultNamedDevelop).toHaveBeenCalledWith(
+		expect.objectContaining({
+			iconCommit: featureAfter,
+		}),
+	)
+
+	const uncachedHead = await processPush({
+		head: { branch: 'main', commit: null },
+	})
+	expect(uncachedHead).toHaveBeenCalledWith(
+		expect.objectContaining({
+			iconCommit: after,
+		}),
+	)
+
+	const feature = await processPush({
+		ref: 'refs/heads/feature',
+		after: featureAfter,
+		head: { branch: 'main', commit: after },
+	})
+	expect(feature).not.toHaveBeenCalled()
+
+	const deleted = await processPush({
+		after: deletedAfter,
+		head: { branch: 'main', commit: after },
+	})
+	expect(deleted).not.toHaveBeenCalled()
+
+	const stale = await processPush({
+		after: featureAfter,
+		head: { branch: 'main', commit: after },
+	})
+	expect(stale).not.toHaveBeenCalled()
 })

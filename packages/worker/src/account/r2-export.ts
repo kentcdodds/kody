@@ -19,7 +19,7 @@ import {
 // v1 traversed D1 email rows, so its continuation cannot be translated to the
 // Mailbox keyset without risking duplicate bytes. Signed v1 cursors fail with
 // an explicit restart instruction instead.
-const accountR2CursorVersion = 2
+const accountR2CursorVersion = 3
 const accountR2ChunkBytes = 256 * 1024
 
 type R2ScanState =
