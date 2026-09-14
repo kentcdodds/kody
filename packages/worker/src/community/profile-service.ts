@@ -197,33 +197,21 @@ async function attachProfilePackageSignifierCounts(input: {
 	packages: Array<PublicProfilePackageListRow>
 }): Promise<Array<PublicProfilePackage>> {
 	if (input.packages.length === 0) return []
-	const [webhookCounts, jobCounts] = await Promise.all([
+	const [webhookCounts, jobCountRows] = await Promise.all([
 		countWebhooksByPackageId(input.env.APP_DB, {
 			ownerStableUserId: input.ownerStableUserId,
 			packageIds: input.packages.map((pkg) => pkg.packageId),
 		}).catch(() => new Map<string, number>()),
-		countJobsBySourceId(input.env, input.ownerStableUserId).catch(
-			() => new Map<string, number>(),
-		),
+		jobsData(input.env)
+			.countJobsBySourceId({ userId: input.ownerStableUserId })
+			.catch(() => []),
 	])
+	const jobCounts = new Map(
+		jobCountRows.map((row) => [row.sourceId, row.count] as const),
+	)
 	return input.packages.map(({ sourceId, ...pkg }) => ({
 		...pkg,
 		webhookCount: webhookCounts.get(pkg.packageId) ?? 0,
 		jobCount: jobCounts.get(sourceId) ?? 0,
 	}))
-}
-
-async function countJobsBySourceId(
-	env: Env,
-	ownerStableUserId: string,
-): Promise<Map<string, number>> {
-	const counts = new Map<string, number>()
-	const jobs = await jobsData(env).listJobsForUser({
-		userId: ownerStableUserId,
-	})
-	for (const job of jobs) {
-		const sourceId = job.source_id
-		counts.set(sourceId, (counts.get(sourceId) ?? 0) + 1)
-	}
-	return counts
 }

@@ -5,7 +5,10 @@ import {
 	type JobsHostContract,
 } from '@kody-internal/shared/jobs/rpc.ts'
 import { type ArchivedJobArtifactRecord } from '@kody-internal/shared/jobs/archived-artifacts-repo.ts'
-import { type JobRow } from '@kody-internal/shared/jobs/repo.ts'
+import {
+	type JobCountBySourceId,
+	type JobRow,
+} from '@kody-internal/shared/jobs/repo.ts'
 import {
 	type JobRecord,
 	type JobRepoCheckPolicy,
@@ -155,6 +158,12 @@ export class JobsService
 
 	async countJobsForUser(input: { userId: string }): Promise<number> {
 		return jobsStore(this.env).countJobsForUser(input)
+	}
+
+	async countJobsBySourceId(input: {
+		userId: string
+	}): Promise<Array<JobCountBySourceId>> {
+		return jobsStore(this.env).countJobsBySourceId(input)
 	}
 
 	async sumJobsStorageBytesForUser(input: { userId: string }): Promise<number> {

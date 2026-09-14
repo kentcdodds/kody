@@ -8,6 +8,7 @@ import {
 } from './archived-artifacts-repo.ts'
 import {
 	claimJobRow,
+	countJobRowsBySourceId,
 	countJobRowsForUser,
 	deleteJobRow,
 	disableExpiredJobRowsForUser,
@@ -27,6 +28,7 @@ import {
 	retryClaimedJobRow,
 	sumJobRowsStorageBytesForUser,
 	updateJobRow,
+	type JobCountBySourceId,
 	type JobRow,
 } from './repo.ts'
 import { type JobRecord } from './types.ts'
@@ -116,6 +118,13 @@ export type JobsStore = {
 	deleteArchivedJobArtifact(input: { id: string }): Promise<void>
 	countJobsForUser(input: { userId: string }): Promise<number>
 	/**
+	 * Per-`source_id` job counts for one user. Used by profile signifiers
+	 * so listing a profile does not load every job row.
+	 */
+	countJobsBySourceId(input: {
+		userId: string
+	}): Promise<Array<JobCountBySourceId>>
+	/**
 	 * Text-byte estimate of the user's job rows for the D1 storage quota
 	 * (mirrors the main worker's per-table storage byte formula).
 	 */
@@ -185,6 +194,7 @@ export function createD1JobsStore(db: D1Database): JobsStore {
 			await deleteArchivedJobArtifact(db, input.id)
 		},
 		countJobsForUser: (input) => countJobRowsForUser(db, input.userId),
+		countJobsBySourceId: (input) => countJobRowsBySourceId(db, input.userId),
 		sumJobsStorageBytesForUser: (input) =>
 			sumJobRowsStorageBytesForUser(db, input.userId),
 		listJobIdsForUser: async (input) => {

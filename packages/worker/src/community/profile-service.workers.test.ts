@@ -147,6 +147,41 @@ async function insertSavedPackage(input: {
 	)
 }
 
+async function insertTestJob(input: {
+	id: string
+	userId: string
+	sourceId: string
+	name: string
+	now?: string
+}) {
+	const now = input.now ?? '2026-07-01T00:00:00.000Z'
+	await jobsData(env).insertJob({
+		userId: input.userId,
+		callerContextJson: '{}',
+		job: {
+			version: 1,
+			id: input.id,
+			userId: input.userId,
+			name: input.name,
+			sourceId: input.sourceId,
+			publishedCommit: null,
+			storageId: createJobStorageId(input.id),
+			schedule: { type: 'once', runAt: now },
+			timezone: 'UTC',
+			enabled: true,
+			killSwitchEnabled: false,
+			preserved: false,
+			expiresAt: null,
+			createdAt: now,
+			updatedAt: now,
+			nextRunAt: now,
+			runCount: 0,
+			successCount: 0,
+			errorCount: 0,
+		},
+	})
+}
+
 test('profile get hides private profiles unless includePrivate', async () => {
 	const user = await insertUser({
 		email: `profile-${crypto.randomUUID()}@example.com`,
@@ -487,31 +522,37 @@ test('listPublicProfilePackages attaches webhook, job, and app signifier counts'
 		now,
 		now,
 	)
-	const jobId = `job-${appId}`
-	await jobsData(env).insertJob({
+	await insertTestJob({
+		id: `job-${appId}`,
 		userId: owner.userId,
-		callerContextJson: '{}',
-		job: {
-			version: 1,
-			id: jobId,
-			userId: owner.userId,
-			name: 'daily notes',
-			sourceId: `source-${appId}`,
-			publishedCommit: null,
-			storageId: createJobStorageId(jobId),
-			schedule: { type: 'once', runAt: now },
-			timezone: 'UTC',
-			enabled: true,
-			killSwitchEnabled: false,
-			preserved: false,
-			expiresAt: null,
-			createdAt: now,
-			updatedAt: now,
-			nextRunAt: now,
-			runCount: 0,
-			successCount: 0,
-			errorCount: 0,
-		},
+		sourceId: `source-${appId}`,
+		name: 'daily notes',
+		now,
+	})
+	await insertTestJob({
+		id: `job-2-${appId}`,
+		userId: owner.userId,
+		sourceId: `source-${appId}`,
+		name: 'weekly notes',
+		now,
+	})
+	await insertTestJob({
+		id: `job-${plainId}`,
+		userId: owner.userId,
+		sourceId: `source-${plainId}`,
+		name: 'plain notes',
+		now,
+	})
+	const otherOwner = await insertUser({
+		email: `sign-other-${crypto.randomUUID()}@example.com`,
+		username: `signo${crypto.randomUUID().slice(0, 8)}`,
+	})
+	await insertTestJob({
+		id: `job-other-${appId}`,
+		userId: otherOwner.userId,
+		sourceId: `source-${appId}`,
+		name: 'other user notes',
+		now,
 	})
 
 	const listed = await listPublicProfilePackages({
@@ -524,12 +565,12 @@ test('listPublicProfilePackages attaches webhook, job, and app signifier counts'
 	expect(appPkg).toMatchObject({
 		hasApp: true,
 		webhookCount: 2,
-		jobCount: 1,
+		jobCount: 2,
 	})
 	expect(plainPkg).toMatchObject({
 		hasApp: false,
 		webhookCount: 0,
-		jobCount: 0,
+		jobCount: 1,
 	})
 })
 
