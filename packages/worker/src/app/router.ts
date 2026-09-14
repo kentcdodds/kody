@@ -192,7 +192,9 @@ import {
 	createCommunityReportApiPostHandler,
 } from '#app/handlers/community-detail.tsx'
 import { createCommunityFeatureApiPostHandler } from '#app/handlers/community-feature.ts'
+import { createAccountRepoIconHandler } from '#app/handlers/account-repo-icon.ts'
 import { createCommunityIconHandler } from '#app/handlers/community-icon.ts'
+import { createCommunityPackageIconHandler } from '#app/handlers/community-package-icon.ts'
 import {
 	createCommunityDetailAssetHandler,
 	createCommunityPackageAssetHandler,
@@ -559,6 +561,8 @@ export function createAppRouter(env: Env) {
 			communityPackageAsset: createCommunityPackageAssetHandler(env),
 			communityDetailAsset: createCommunityDetailAssetHandler(env),
 			communityDetailIcon: createCommunityIconHandler(env),
+			communityPackageIcon: createCommunityPackageIconHandler(env),
+			accountRepoIcon: createAccountRepoIconHandler(env),
 			integrationLogo: createIntegrationLogoHandler(env),
 			providerMarkLogo: createProviderMarkLogoHandler(env),
 			communityDetailOgImage: createCommunityDetailOgImageHandler(env),

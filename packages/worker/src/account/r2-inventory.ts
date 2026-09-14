@@ -1,5 +1,10 @@
 import { accountUserOwnedR2Surfaces } from '#worker/account/user-owned-surfaces.ts'
 import { buildCommunityIconR2Key } from '#worker/community/community-icon.ts'
+import {
+	buildIdentityIconR2Key,
+	identityIconCommitForKind,
+} from '#worker/repo/identity-icon.ts'
+import { type EntityKind } from '#worker/repo/types.ts'
 import { listAllMailboxEmailObjectRefs } from './mailbox-r2-references.ts'
 
 export type AccountR2Binding = 'EMAIL_BLOBS' | 'COMMUNITY_ASSETS'
@@ -13,6 +18,11 @@ export type AccountR2ObjectRef = {
 export type AccountCommunityListingSnapshot = {
 	id: string
 	pinnedCommit: string
+	iconCommit: string
+}
+
+export type AccountIdentityIconSnapshot = {
+	repoId: string
 	iconCommit: string
 }
 
@@ -82,6 +92,49 @@ async function listUserCommunityListings(env: Env, userId: string) {
 	}
 }
 
+async function listUserIdentityIcons(env: Env, userId: string) {
+	const icons: Array<AccountIdentityIconSnapshot> = []
+	let afterRowid = 0
+	const pageSize = 500
+	while (true) {
+		const rows = await env.APP_DB.prepare(
+			`SELECT entity_sources.rowid AS account_r2_rowid,
+				entity_sources.repo_id,
+				entity_sources.entity_kind,
+				entity_sources.published_commit,
+				entity_sources.indexed_commit
+			FROM entity_sources
+			WHERE entity_sources.user_id = ?
+				AND entity_sources.rowid > ?
+			ORDER BY entity_sources.rowid
+			LIMIT ?`,
+		)
+			.bind(userId, afterRowid, pageSize + 1)
+			.all<{
+				account_r2_rowid: number
+				repo_id: string
+				entity_kind: EntityKind
+				published_commit: string | null
+				indexed_commit: string | null
+			}>()
+		const page = rows.results ?? []
+		const truncated = page.length > pageSize
+		const included = truncated ? page.slice(0, pageSize) : page
+		for (const row of included) {
+			const iconCommit = identityIconCommitForKind({
+				entityKind: row.entity_kind,
+				publishedCommit: row.published_commit,
+				indexedCommit: row.indexed_commit,
+			})
+			if (iconCommit) {
+				icons.push({ repoId: row.repo_id, iconCommit })
+			}
+		}
+		if (!truncated) return icons
+		afterRowid = included.at(-1)?.account_r2_rowid ?? afterRowid
+	}
+}
+
 export async function collectAccountR2Inventory(input: {
 	env: Env
 	userId: string
@@ -90,18 +143,18 @@ export async function collectAccountR2Inventory(input: {
 	objects: Array<AccountR2ObjectRef>
 	communityListings: Array<AccountCommunityListingSnapshot>
 }> {
-	const [emailBlobReferences, communityListings, avatarRow] = await Promise.all(
-		[
+	const [emailBlobReferences, communityListings, identityIcons, avatarRow] =
+		await Promise.all([
 			listAllMailboxEmailObjectRefs({
 				env: input.env,
 				ownerId: input.userId,
 			}),
 			listUserCommunityListings(input.env, input.userId),
+			listUserIdentityIcons(input.env, input.userId),
 			input.env.APP_DB.prepare(`SELECT avatar_key FROM users WHERE id = ?`)
 				.bind(input.dbUserId)
 				.first<{ avatar_key: string | null }>(),
-		],
-	)
+		])
 
 	const objects: Array<AccountR2ObjectRef> = [
 		...emailBlobReferences,
@@ -115,6 +168,14 @@ export async function collectAccountR2Inventory(input: {
 				}),
 			})),
 		),
+		...identityIcons.map((icon) => ({
+			surfaceId: 'identity_icon' as const,
+			binding: bindingFor('identity_icon'),
+			key: buildIdentityIconR2Key({
+				repoId: icon.repoId,
+				commit: icon.iconCommit,
+			}),
+		})),
 		...(avatarRow?.avatar_key
 			? [
 					{

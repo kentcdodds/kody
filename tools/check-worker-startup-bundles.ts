@@ -136,7 +136,9 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// MCP OAuth token-recovery persist/stamp on McpClientHub (refresh
 		// before wipe, durable last_error when a previously-ready server
 		// parks authenticating) adds ~2 KB: CI dry-run 5_036_978 bytes.
-		maxEntryBytes: 5_040_000,
+		// Package publish stamps identity-icon derivatives from
+		// finalizePublishedEntitySource: local dry-run 5_046_681 bytes.
+		maxEntryBytes: 5_050_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
@@ -163,7 +165,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// `package-app-remix.mjs`) adds ~11 KB: local dry-run 3_712_214 bytes.
 		// emailSend destination resolution (verified extras plus default) lives
 		// on the shared outbound send path: local dry-run 3_725_245 bytes.
-		maxEntryBytes: 3_730_000,
+		// Repo/package list marks (`refreshIdentityIconForSource` on
+		// `repo.pushed`) add identity-icon keying and the existing community
+		// icon ingest path: local dry-run 3_736_186 bytes.
+		maxEntryBytes: 3_740_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',

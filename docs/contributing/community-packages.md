@@ -127,8 +127,10 @@ Pinned file trees live in `BUNDLE_ARTIFACTS_KV` under:
 `packages/worker/src/community/snapshot.ts` reads and writes `CommunitySnapshot`
 (`version`, `listingId`, `pinnedCommit`, `files`, optional `communityIconPath`,
 `createdAt`). Publish and re-publish overwrite the snapshot; unpublish and hard
-delete remove it. Binary icon bytes are omitted from the text-backed `files`
-map; the path metadata lets the icon route retrieve bytes from Artifacts. The
+delete remove it. Raster list-mark bytes (`.kody/icon.*`, root `icon.*`, and
+`community-icon.*`) are omitted from the text-backed `files` map; the path
+metadata lets the icon route retrieve bytes from Artifacts. Package-app
+`icons/icon-192.png` stays in the snapshot so forks keep their PWA icon. The
 public `/@owner/kody-id/tree/:ref` explorer reads this snapshot (not a live git
 checkout). Leftover `/files` URLs 301 to `/tree/{defaultBranch}`.
 
@@ -144,24 +146,39 @@ stores a small descriptor in `BUNDLE_ARTIFACTS_KV` under
 live in the private `COMMUNITY_ASSETS` R2 bucket under
 `community-icon:v3/{listingId}/{commit}/asset`.
 
-On a descriptor cache miss, the icon service resolves the standardized root
-`community-icon.*` path (from the pinned snapshot when serving the pinned
-commit, otherwise by probing the Artifacts git repo at the icon commit), reads
-the bytes, validates them, and writes the derived asset to R2 before returning
-the descriptor. A dangling descriptor is deleted and regenerated once. Packages
-without an icon receive a generated fallback: a deterministic swirl from the
-package name (`packages/worker/src/community/community-icon-fallback.ts`). Every
-accepted source (SVG rasterized first, then PNG, WebP, and JPEG) is fitted
-through the Cloudflare Images binding to a 256-pixel WebP (`fit: scale-down`,
-quality 90). Publish and account-deletion cleanup also remove leftover
-`community-icon:v1` and `community-icon:v2` keys.
+On a descriptor cache miss, the icon service resolves the identity-mark path
+(from the pinned snapshot when serving the pinned commit, otherwise by probing
+the Artifacts git repo at the icon commit), reads the bytes, validates them, and
+writes the derived asset to R2 before returning the descriptor. The taught file
+is `.kody/icon.png` (also `.svg`, `.webp`, `.jpg`, `.jpeg`). Root `icon.*` and
+`community-icon.*` are permanent aliases; package apps can also use
+`icons/icon-192.png`. A dangling descriptor is deleted and regenerated once.
+Packages without an icon receive a generated fallback: a deterministic swirl
+from the package name
+(`packages/worker/src/community/community-icon-fallback.ts`). Every accepted
+source (SVG rasterized first, then PNG, WebP, and JPEG) is fitted through the
+Cloudflare Images binding to a 256-pixel WebP (`fit: scale-down`, quality 90).
+Publish and account-deletion cleanup also remove leftover `community-icon:v1`
+and `community-icon:v2` keys.
+
+Repo- and package-scoped list marks (including unpublished packages and plain
+repos) use the same path contract and ingest fit, stored under
+`identity-icon:v1/{repoId}/{commit}/asset` and
+`derived-cache:v1:identity-icon:v1:{repoId}:{commit}`. Package URLs are
+`/@:username/:kodyId/icon/:iconCommit`. Owner-only repo URLs are
+`/account/repos/:repoId/icon/:iconCommit`. Publish and default-branch push prune
+superseded identity-icon revisions. List UIs (`/@username`, `/community`,
+community detail) render `IdentityIconMark`; `repoList` returns `icon_url`.
 
 The icon route serves only the current icon commit and the pinned commit; stale
 commit URLs 404. Package publish (`finalizePublishedEntitySource`) calls
-`refreshCommunityIconForPackagePublish`, which prunes superseded KV/R2 icon
-entries by listing prefix and invalidates the public listing data cache.
-Community republish, unpublish, admin hard delete, and account deletion remove
-icon entries for the listing.
+`refreshIdentityIconForSource` (repo-keyed list mark) and
+`refreshCommunityIconForPackagePublish` (listing-scoped catalog mark). The
+community hook prunes superseded KV/R2 icon entries by listing prefix and
+invalidates the public listing data cache. Community republish, unpublish, admin
+hard delete, and account deletion remove icon entries for the listing. Account
+deletion also prefix-deletes `identity-icon:v1/{repoId}/` for every owned
+source.
 
 ## Service layer
 

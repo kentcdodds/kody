@@ -826,8 +826,12 @@ test('publishCommunityListing stores long README content and drops binary icon b
 		files: {
 			...validPublishSource().files,
 			'README.md': `${padding}\n\n## Intent\n\nBridge Discord events.`,
+			'.kody/icon.svg':
+				'<svg xmlns="http://www.w3.org/2000/svg"><circle /></svg>',
+			'.kody/icon.png': 'binary bytes decoded as text',
 			'community-icon.png': 'binary bytes decoded as text',
 			'community-icon.jpg': 'extra binary bytes decoded as text',
+			'icons/icon-192.png': 'package-app pwa icon bytes',
 		},
 	})
 	mockModule.insertCommunityListing.mockResolvedValue(undefined)
@@ -852,8 +856,19 @@ test('publishCommunityListing stores long README content and drops binary icon b
 	expect(mockModule.writeCommunitySnapshot).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
-			communityIconPath: 'community-icon.png',
+			communityIconPath: '.kody/icon.svg',
+			files: expect.objectContaining({
+				'.kody/icon.svg':
+					'<svg xmlns="http://www.w3.org/2000/svg"><circle /></svg>',
+				'icons/icon-192.png': 'package-app pwa icon bytes',
+			}),
+		}),
+	)
+	expect(mockModule.writeCommunitySnapshot).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
 			files: expect.not.objectContaining({
+				'.kody/icon.png': expect.anything(),
 				'community-icon.png': expect.anything(),
 				'community-icon.jpg': expect.anything(),
 			}),

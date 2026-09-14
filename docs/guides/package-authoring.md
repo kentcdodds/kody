@@ -379,14 +379,21 @@ ready to run.
 
 ## Package icon
 
-Public packages should include one root `icon.svg`, `icon.png`, `icon.webp`,
-`icon.jpg`, or `icon.jpeg`. `community-icon.*` is also accepted. Prefer a square
-visual with a simple silhouette that remains legible at 56 pixels. Keep it under
-2 MiB and 16 megapixels. Kody stores a 256-pixel WebP derivative of that source
+Put the list/identity mark at `.kody/icon.png` (or `.kody/icon.svg`,
+`.kody/icon.webp`, `.kody/icon.jpg`, `.kody/icon.jpeg`). Prefer a square visual
+with a simple silhouette that remains legible at 56 pixels. Keep it under 2 MiB
+and 16 megapixels. For a package that represents a product or service, use that
+product's official logo. Kody stores a 256-pixel WebP derivative of that source
 (or a generated package-name swirl when the repository has no icon).
 
-Publishing the package refreshes the catalog listing icon automatically. The
-candidate paths win in the order `icon.*` then `community-icon.*` (svg, png,
-webp, jpg, jpeg in each group), so when replacing an icon with a different
+`.kody/` is platform metadata, like `.github/`. Keep app PWA icons
+(`icons/icon-192.png`, `public/`) in the product tree — they are not the list
+mark.
+
+Publishing or pushing the package indexes the mark from the published commit.
+The first existing file wins in this order: `.kody/icon.*`, root `icon.*`, root
+`community-icon.*` (svg, png, webp, jpg, jpeg in each group), then
+`icons/icon-192.png` for package apps. When replacing an icon with a different
 format (for example svg → png), delete the superseded file in the same commit or
-the earlier path in that list keeps winning.
+the earlier path in that list keeps winning. `packageSave` is text-only; binary
+icons arrive through the Artifacts git / publish path.

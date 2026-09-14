@@ -14,6 +14,9 @@ test('community asset prefix cleanup paginates and preserves other users', async
 		'community-icon:v2/listing-a/current/asset',
 		'community-icon:v2/listing-a/historical/asset',
 		'community-icon:v1/listing-b/other/asset',
+		'identity-icon:v1/repo-a/current/asset',
+		'identity-icon:v1/repo-a/historical/asset',
+		'identity-icon:v1/repo-b/other/asset',
 	])
 	const list = vi.fn(async (options?: { prefix?: string; cursor?: string }) => {
 		const matches = [...keys]
@@ -45,20 +48,24 @@ test('community asset prefix cleanup paginates and preserves other users', async
 		},
 		stableUserId: 'user-aaa',
 		listingIds: ['listing-a'],
+		repoIds: ['repo-a'],
 	})
-	expect(count).toBe(6)
-	expect(list).toHaveBeenCalledTimes(7)
+	expect(count).toBe(8)
+	expect(list).toHaveBeenCalledTimes(9)
 	expect(deleted.sort()).toEqual([
 		'community-icon:v1/listing-a/current/asset',
 		'community-icon:v1/listing-a/historical/asset',
 		'community-icon:v2/listing-a/current/asset',
 		'community-icon:v2/listing-a/historical/asset',
+		'identity-icon:v1/repo-a/current/asset',
+		'identity-icon:v1/repo-a/historical/asset',
 		'user-avatars/user-aaa/current.png',
 		'user-avatars/user-aaa/historical.png',
 	])
 	expect(keys).toEqual(
 		new Set([
 			'community-icon:v1/listing-b/other/asset',
+			'identity-icon:v1/repo-b/other/asset',
 			'user-avatars/user-bbb/other.png',
 		]),
 	)
