@@ -301,13 +301,12 @@ primitives:
     group: assistant
     name: Package apps
     summary:
-      Optional package-declared hosted Remix mini-apps (routes, actions,
-      middleware, SSR) with Kody in the request context; dispatch follows the
-      default-export shape (router vs fetch handler).
+      Optional package-declared hosted Worker apps (fetch handler, optional
+      client bundle, optional assets) with kody:runtime and packageContext;
+      the host strips the app mount before every entry.
     code:
       - packages/worker/src/package-runtime/package-app.ts
       - packages/worker/src/package-runtime/package-app-assets.ts
-      - packages/worker/src/package-runtime/package-app-runtime.ts
       - packages/worker/src/package-runtime/package-app-remix.ts
       - packages/worker/src/package-runtime/package-app-remix-subpaths.ts
       - packages/worker/src/package-runtime/module-graph-client-bundle.ts

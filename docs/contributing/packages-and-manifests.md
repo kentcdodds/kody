@@ -245,24 +245,20 @@ A package app is optional.
 When `package.json#kody.app` is present, the package may be opened through the
 generic UI runtime and hosted under the package app route.
 
-A package app is a hosted Remix mini-app running in the package-app isolate:
+A package app is a hosted Worker entry running in the package-app isolate:
 
 - package app code belongs to the package repo
 - package app entry is declared by `kody.app.entry`. The bootstrap
-  (`createAppEntrypointSource`) duck-types the default export: a router-shaped
-  object (`fetch`, `map`, `mount`) is called as `router.fetch(request)` with
-  only the request and is dispatched the full hosted URL; a function or
-  `{ fetch }` handler receives the mount-stripped path. Authoring and publish
-  reject `kody.app.runtime`. A leftover field on a published snapshot is
-  ignored; dispatch follows the live export
-- Remix UI bundler defaults (`jsx: automatic` / `jsxImportSource: remix/ui`, a
-  `define` that pins `import.meta.url` to `kody:app` because workerd leaves it
-  empty and `clientEntry()` needs a non-empty id, and esbuild `keepNames` so
-  `component.name` survives bundling) apply only when the graph imports
-  `remix/ui` or a `remix/ui/…` subpath (`entryGraphNeedsRemixUiBundleOptions` in
-  `package-app-runtime.ts`). A handler that borrows `remix/headers` or
-  `remix/html-template` stays on esbuild's defaults
-- Remix itself is platform-supplied: `tools/build-worker-bundler-modules.ts`
+  (`createAppEntrypointSource`) resolves a fetch handler (a function,
+  `{ fetch }`, or a named `fetch` export) and forwards the mount-stripped
+  path. Authoring and publish reject `kody.app.runtime`. A leftover field on a
+  published snapshot is ignored
+- The host uses esbuild defaults. Remix recipes set `jsxImportSource` in
+  `tsconfig.json` and/or a per-file pragma, remount the Request when the
+  route contract includes `appBasePath`, and pass explicit `clientEntry` ids
+  (`kody:app#Name`). A handler that borrows `remix/headers` or
+  `remix/html-template` needs none of that
+- Remix itself is an optional convenience: `tools/build-worker-bundler-modules.ts`
   pre-bundles the Workers-safe `remix/<subpath>` set (`packageAppRemixSubpaths`)
   with code splitting into the deferred module `package-app-remix.mjs`, and
   `withPlatformRemixFiles` (`package-app-remix.ts`) mounts it at
