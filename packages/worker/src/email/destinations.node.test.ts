@@ -6,6 +6,7 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	addEmailNotificationDestination,
+	buildEmailDestinationsLoaderData,
 	type EmailDestinationError,
 	identityEmailDestinationId,
 	listEmailNotificationDestinations,
@@ -296,4 +297,29 @@ test('changing identity email to an extra destination drops that extra row', asy
 			canRemove: false,
 		},
 	])
+})
+
+test('destinations loader data counts remaining extras against the cap', () => {
+	const identity = {
+		id: identityEmailDestinationId,
+		email: 'owner@example.com',
+		kind: 'identity' as const,
+		verified: true,
+		isDefault: true,
+		canRemove: false,
+	}
+	const extra = {
+		id: 'dest-1',
+		email: 'pager@example.com',
+		kind: 'additional' as const,
+		verified: false,
+		isDefault: false,
+		canRemove: true,
+	}
+	expect(buildEmailDestinationsLoaderData([identity, extra])).toEqual({
+		ok: true,
+		destinations: [identity, extra],
+		additionalLimit: maxAdditionalEmailNotificationDestinations,
+		additionalRemaining: maxAdditionalEmailNotificationDestinations - 1,
+	})
 })

@@ -12,6 +12,7 @@ import {
 	typography,
 } from '#universal/styles/tokens.ts'
 import {
+	type AccountEmailDestinationsLoaderData,
 	type AccountEmailLoaderData,
 	type AccountEmailMessageListItem,
 } from '#universal/loader-data.ts'
@@ -22,7 +23,9 @@ export type DeleteState = 'idle' | 'deleting'
 export type ClassificationFilter = 'all' | 'quarantined'
 
 const accountEmailApiPath = '/account/email.json'
+const destinationsApiPath = '/account/email-destinations.json'
 export const emailRoute = createListDetailRoute('/account/email')
+export const accountEmailDestinationsLocationKey = 'account-email-destinations'
 
 export const quarantinedBadgeCss = {
 	display: 'inline-flex',
@@ -108,6 +111,25 @@ export function buildEmailApiRequestUrl(href: string) {
 	return `${requestUrl.pathname}${requestUrl.search}`
 }
 
+export async function fetchAccountEmailDestinations(
+	signal: AbortSignal,
+): Promise<
+	| { kind: 'unauthorized' }
+	| { kind: 'ok'; payload: AccountEmailDestinationsLoaderData }
+> {
+	const response = await fetch(destinationsApiPath, {
+		headers: { Accept: 'application/json' },
+		credentials: 'include',
+		signal,
+	})
+	if (response.status === 401) return { kind: 'unauthorized' }
+	const payload = await readJson<AccountEmailDestinationsLoaderData>(response)
+	if (!response.ok || !payload?.ok) {
+		throw new Error('Unable to load email destinations.')
+	}
+	return { kind: 'ok', payload }
+}
+
 export async function accountEmailRouteLoader(
 	url: URL,
 	signal: AbortSignal,
@@ -125,7 +147,17 @@ export async function accountEmailRouteLoader(
 	if (!response.ok || !payload?.ok) {
 		throw new Error('Unable to load your email inbox.')
 	}
-	return { accountEmail: payload }
+	if (url.pathname !== '/account/email') {
+		return { accountEmail: payload }
+	}
+	const destinations = await fetchAccountEmailDestinations(signal)
+	if (destinations.kind === 'unauthorized') {
+		return routeLoaderRedirect('/login')
+	}
+	return {
+		accountEmail: payload,
+		accountEmailDestinations: destinations.payload,
+	}
 }
 
 export function messageDate(message: AccountEmailMessageListItem) {

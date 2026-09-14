@@ -342,6 +342,7 @@ test('authenticated account SSR batches user/role and flag reads into two round 
 			permissions: Array<string>
 			featureFlags: Record<string, boolean>
 		}
+		loaderData: Record<string, unknown>
 	}
 	expect(body.session.username).toBe('account-user')
 	expect(body.session.roles).toEqual(['user'])
@@ -352,9 +353,13 @@ test('authenticated account SSR batches user/role and flag reads into two round 
 		'compute-overage-charging': true,
 		'package-share-grants': false,
 	})
+	expect(Object.keys(body.loaderData).sort()).toEqual([
+		'accountConnections',
+		'accountProfile',
+		'onboarding',
+	])
 	// Session batches: users+roles, flags+overrides (two 2-statement batches).
-	// Account SSR also prepares the email-destinations list query.
 	expect(counts.batchSizes).toEqual([2, 2])
-	expect(counts.prepare).toBe(5)
+	expect(counts.prepare).toBe(4)
 	expect(counts.batch).toBe(2)
 })

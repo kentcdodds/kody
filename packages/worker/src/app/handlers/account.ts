@@ -1,10 +1,6 @@
 import { type Action } from 'remix/router'
 import { loadAccountConnectionsData } from '#app/account-connections-data.ts'
 import { loadAccountProfileData } from '#app/account-profile-data.ts'
-import {
-	listEmailNotificationDestinations,
-	maxAdditionalEmailNotificationDestinations,
-} from '#worker/email/destinations.ts'
 import { loadChecklist } from '#app/handlers/onboarding.ts'
 import { loadOnboardingData } from '#app/onboarding-data.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
@@ -20,16 +16,10 @@ export function createAccountHandler(env: Env) {
 				return user
 			}
 
-			const [accountProfile, accountConnections, destinations, onboarding] =
+			const [accountProfile, accountConnections, onboarding] =
 				await Promise.all([
 					loadAccountProfileData(user, env),
 					loadAccountConnectionsData({ env, userId: user.userId }),
-					listEmailNotificationDestinations({
-						db: env.APP_DB,
-						dbUserId: user.userId,
-						accountEmail: user.email,
-						accountEmailVerified: user.emailVerified,
-					}),
 					loadOnboardingData({
 						env,
 						requestUrl: request.url,
@@ -38,18 +28,6 @@ export function createAccountHandler(env: Env) {
 						emailVerified: user.emailVerified,
 					}),
 				])
-			const additionalCount = destinations.filter(
-				(destination) => destination.kind === 'additional',
-			).length
-			const accountEmailDestinations = {
-				ok: true as const,
-				destinations,
-				additionalLimit: maxAdditionalEmailNotificationDestinations,
-				additionalRemaining: Math.max(
-					0,
-					maxAdditionalEmailNotificationDestinations - additionalCount,
-				),
-			}
 			// The banner shows checklist progress, so the SSR payload needs the
 			// checklist too — hydration keeps SSR data and does not refetch.
 			if (user.emailVerified) {
@@ -70,7 +48,6 @@ export function createAccountHandler(env: Env) {
 				loaderData: {
 					accountProfile,
 					accountConnections,
-					accountEmailDestinations,
 					onboarding,
 				},
 			})

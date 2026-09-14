@@ -8,6 +8,10 @@ import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
 import { type routes } from '#universal/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import {
+	buildEmailDestinationsLoaderData,
+	listEmailNotificationDestinations,
+} from '#worker/email/destinations.ts'
+import {
 	deleteEmailMessage,
 	setEmailMessageClassification,
 } from '#worker/email/service.ts'
@@ -43,18 +47,28 @@ export function createAccountEmailHandler(env: Env) {
 				return user
 			}
 
-			const accountEmail = await loadAccountEmailData({
-				env,
-				request,
-				user,
-				pathMessageId: readPathMessageId(params),
-			})
+			const [accountEmail, destinations] = await Promise.all([
+				loadAccountEmailData({
+					env,
+					request,
+					user,
+					pathMessageId: readPathMessageId(params),
+				}),
+				listEmailNotificationDestinations({
+					db: env.APP_DB,
+					dbUserId: user.userId,
+					accountEmail: user.email,
+					accountEmailVerified: user.emailVerified,
+				}),
+			])
 			return renderAppPage({
 				request,
 				env,
 				title: 'Email inbox',
 				loaderData: {
 					accountEmail: accountEmail as AccountEmailLoaderData,
+					accountEmailDestinations:
+						buildEmailDestinationsLoaderData(destinations),
 				},
 			})
 		},

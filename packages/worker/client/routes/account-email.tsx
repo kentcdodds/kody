@@ -8,6 +8,8 @@ import { createDoubleCheck } from '#client/double-check.ts'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { acceptedEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
+import { createAccountEmailDestinations } from '#client/routes/account-email-destinations-client.ts'
+import { renderAccountEmailDestinationsPanel } from '#client/routes/account-email-destinations-panel.tsx'
 import {
 	AccountManagementMessage,
 	AccountManagementShell,
@@ -26,6 +28,7 @@ import {
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 import {
+	type AccountEmailDestinationsLoaderData,
 	type AccountEmailLoaderData,
 	type AccountEmailMessageDetail,
 } from '#universal/loader-data.ts'
@@ -35,8 +38,10 @@ import {
 	type ClassifyState,
 	type DeleteState,
 	type PageStatus,
+	accountEmailDestinationsLocationKey,
 	accountEmailRouteLoader,
 	buildEmailApiRequestUrl,
+	fetchAccountEmailDestinations,
 	clampedCellCss,
 	directionLabel,
 	emailRoute,
@@ -66,7 +71,9 @@ export function AccountEmailRoute(handle: Handle) {
 	let resendAccepted = false
 	/** Payload last applied from the route data snapshot (mutations update `data` directly). */
 	let appliedPayload: AccountEmailLoaderData | null = null
+	let appliedDestinations: AccountEmailDestinationsLoaderData | null = null
 	let appliedError: Error | null = null
+	const accountEmailDestinations = createAccountEmailDestinations(handle)
 	const emailData = createRouteData({
 		key: 'accountEmail',
 		locationKey: getDataKey,
@@ -82,6 +89,15 @@ export function AccountEmailRoute(handle: Handle) {
 				throw new Error('Unable to load your email inbox.')
 			}
 			return payload
+		},
+	})
+	const destinationsData = createRouteData({
+		key: 'accountEmailDestinations',
+		locationKey: () => accountEmailDestinationsLocationKey,
+		async load(_href, signal) {
+			const result = await fetchAccountEmailDestinations(signal)
+			if (result.kind === 'unauthorized') return routeDataRedirect('/login')
+			return result.payload
 		},
 	})
 
@@ -263,13 +279,28 @@ export function AccountEmailRoute(handle: Handle) {
 	return () => {
 		const currentHref = getCurrentHref()
 		const snapshot = emailData.read(handle, currentHref)
+		const destinationsSnapshot = destinationsData.read(handle, currentHref)
 		if (snapshot.data && snapshot.data !== appliedPayload) {
 			appliedPayload = snapshot.data
 			applyPayload(snapshot.data, currentHref)
 		}
+		if (
+			destinationsSnapshot.data &&
+			destinationsSnapshot.data !== appliedDestinations
+		) {
+			appliedDestinations = destinationsSnapshot.data
+			accountEmailDestinations.applyPayload(destinationsSnapshot.data)
+		}
 		if (snapshot.error && snapshot.error !== appliedError) {
 			appliedError = snapshot.error
 			message = snapshot.error.message
+			messageTone = 'error'
+		} else if (
+			destinationsSnapshot.error &&
+			destinationsSnapshot.error !== appliedError
+		) {
+			appliedError = destinationsSnapshot.error
+			message = destinationsSnapshot.error.message
 			messageTone = 'error'
 		}
 		const pending = snapshot.kind === 'pending'
@@ -301,7 +332,7 @@ export function AccountEmailRoute(handle: Handle) {
 			>
 				<AccountPageHeader
 					title="Email inbox"
-					description="Browse inbound and outbound messages for your platform email address. Compose and reply through Kody agents."
+					description="Browse inbound and outbound messages for your platform email address. Compose and reply through Kody agents. Manage the addresses emailSend may use here."
 					currentHref={currentHref}
 				/>
 				{status === 'loading' ? (
@@ -354,6 +385,32 @@ export function AccountEmailRoute(handle: Handle) {
 								) : null}
 							</div>
 						) : null}
+						{appliedDestinations
+							? renderAccountEmailDestinationsPanel({
+									destinations: accountEmailDestinations.destinations,
+									additionalRemaining:
+										accountEmailDestinations.additionalRemaining,
+									additionalLimit: accountEmailDestinations.additionalLimit,
+									draftEmail: accountEmailDestinations.draftEmail,
+									status: accountEmailDestinations.status,
+									message: accountEmailDestinations.message,
+									tone: accountEmailDestinations.tone,
+									pendingId: accountEmailDestinations.pendingId,
+									onDraftEmailInput: accountEmailDestinations.updateDraftEmail,
+									onAddSubmit: (event) => {
+										void accountEmailDestinations.handleAddSubmit(event)
+									},
+									onResend: (id) => {
+										void accountEmailDestinations.resend(id)
+									},
+									onSetDefault: (id) => {
+										void accountEmailDestinations.setDefault(id)
+									},
+									onRemove: (id) => {
+										void accountEmailDestinations.remove(id)
+									},
+								})
+							: null}
 						<RecordTable
 							mode="expand"
 							busy={pending}
