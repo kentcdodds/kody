@@ -1,10 +1,7 @@
 import { type z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
-import { getPackageNameLeaf } from '#worker/package-registry/package-name.ts'
-import {
-	getSavedPackageById,
-	getSavedPackageByKodyId,
-} from '#worker/package-registry/repo.ts'
+import { resolveOwnedPackageSource } from '#mcp/capabilities/packages/resolve-package-source.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	getEntitySourceByEntity,
 	getEntitySourceByIdForUser,
@@ -48,38 +45,26 @@ function toResolvedSourceTarget(source: EntitySourceRow): RepoResolvedTarget {
 async function requirePackageTarget(input: {
 	db: D1Database
 	userId: string
+	ownerScope?: string
 	target: Extract<RepoTarget, { kind: 'package' }>
 }): Promise<{ source: EntitySourceRow; resolvedTarget: RepoResolvedTarget }> {
-	const savedPackage =
-		'package_id' in input.target
-			? await getSavedPackageById(input.db, {
-					userId: input.userId,
-					packageId: input.target.package_id,
-				})
-			: await getSavedPackageByKodyId(input.db, {
-					userId: input.userId,
-					kodyId: getPackageNameLeaf(input.target.kody_id),
-				})
-	if (!savedPackage) {
-		const missingId =
-			'package_id' in input.target
-				? input.target.package_id
-				: input.target.kody_id
-		throw new McpCallerError(`Saved package "${missingId}" was not found.`)
-	}
-	const source = await requireOwnedEntitySource({
+	const resolved = await resolveOwnedPackageSource({
 		db: input.db,
 		userId: input.userId,
-		sourceId: savedPackage.sourceId,
+		ownerScope: input.ownerScope,
+		args:
+			'package_id' in input.target
+				? { package_id: input.target.package_id }
+				: { kody_id: input.target.kody_id },
 	})
 	return {
-		source,
+		source: resolved.source,
 		resolvedTarget: {
 			kind: 'package',
-			source_id: source.id,
-			package_id: savedPackage.id,
-			kody_id: savedPackage.kodyId,
-			name: savedPackage.name,
+			source_id: resolved.source.id,
+			package_id: resolved.packageId,
+			kody_id: resolved.kodyId,
+			name: resolved.name,
 		},
 	}
 }
@@ -126,6 +111,7 @@ async function requirePlainRepoTarget(input: {
 export async function resolveRepoSourceReference(input: {
 	db: D1Database
 	userId: string
+	ownerScope?: string
 	args: Pick<RepoOpenSessionInput, 'source_id' | 'target'>
 }): Promise<{ source: EntitySourceRow; resolvedTarget: RepoResolvedTarget }> {
 	if (input.args.source_id) {
@@ -151,6 +137,7 @@ export async function resolveRepoSourceReference(input: {
 			return requirePackageTarget({
 				db: input.db,
 				userId: input.userId,
+				ownerScope: input.ownerScope,
 				target: input.args.target,
 			})
 		case 'repo':

@@ -4,6 +4,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
+import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import {
 	countActiveRepoSessions,
@@ -75,6 +76,10 @@ export const repoOpenSessionCapability = defineDomainCapability(
 			const requested = await resolveRepoSourceReference({
 				db: ctx.env.APP_DB,
 				userId: user.userId,
+				ownerScope:
+					args.target?.kind === 'package' && 'kody_id' in args.target
+						? await getMcpUserPackageScope(ctx.env.APP_DB, user)
+						: undefined,
 				args,
 			})
 			const existingSession =
