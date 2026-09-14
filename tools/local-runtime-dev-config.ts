@@ -97,3 +97,42 @@ export async function writeLocalRuntimeDevConfig({
 	await writeFile(outputPath, `${JSON.stringify(config, null, '\t')}\n`)
 	return outputPath
 }
+
+/**
+ * Wrangler 4.131+ applies the local sqlite-class map during `deploy --dry-run`.
+ * The committed runtime production chain transfers `PackageServiceInstance`
+ * then deletes it; wrangler ignores `transferred_classes` locally, so the
+ * later delete fails. Localize migrations for bundle checks only — never for
+ * a real deploy. Production history stays in the committed wrangler.jsonc.
+ */
+export async function writeRuntimeDryRunConfig({
+	runtimeConfigPath,
+	envName,
+}: {
+	runtimeConfigPath: string
+	envName: string
+}) {
+	const sourceText = await readFile(runtimeConfigPath, 'utf8')
+	const config = parseJsonc<JsonRecord>(sourceText)
+	const envs = config.env
+	if (!envs || typeof envs !== 'object') {
+		throw new Error(`${runtimeConfigPath} is missing "env".`)
+	}
+	const runtimeEnv = (envs as JsonRecord)[envName]
+	if (!runtimeEnv || typeof runtimeEnv !== 'object') {
+		throw new Error(`${runtimeConfigPath} is missing "env.${envName}".`)
+	}
+	const envRecord = runtimeEnv as JsonRecord
+	const localized = localizeMigrations(
+		envRecord.migrations ?? config.migrations,
+	)
+	config.migrations = localized
+	envRecord.migrations = localized
+
+	const outputPath = path.join(
+		path.dirname(runtimeConfigPath),
+		'wrangler-dry-run.generated.json',
+	)
+	await writeFile(outputPath, `${JSON.stringify(config, null, '\t')}\n`)
+	return outputPath
+}

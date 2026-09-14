@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { ensureGuideCatalogModules } from './build-guide-catalog-modules.ts'
 import { ensureWorkerBundlerModules } from './build-worker-bundler-modules.ts'
 import { isExecutedDirectly, resolveLocalBinary } from './node-runtime.ts'
+import { writeRuntimeDryRunConfig } from './local-runtime-dev-config.ts'
 import { buildOriginProductionViteBundle } from './origin-vite-startup-build.ts'
 
 const execFileAsync = promisify(execFile)
@@ -67,6 +68,19 @@ export function resolveStartupTimeCwd(packageDir: string) {
 	return path.isAbsolute(packageDir)
 		? packageDir
 		: path.join(repoRoot, packageDir)
+}
+
+async function resolveRuntimeDryRunTarget(target: StartupTimeTarget) {
+	if (target.name !== 'runtime') return target
+	const cwd = resolveStartupTimeCwd(target.packageDir)
+	const dryRunConfigPath = await writeRuntimeDryRunConfig({
+		runtimeConfigPath: path.join(cwd, 'wrangler.jsonc'),
+		envName: 'production',
+	})
+	return {
+		...target,
+		args: ['--config', path.relative(cwd, dryRunConfigPath)],
+	}
 }
 
 export type StartupBudget = {
@@ -187,9 +201,8 @@ export async function checkWorkerStartupTime() {
 		// Sequential on purpose: concurrent workerd instances would contend for
 		// CPU and inflate each other's samples.
 		for (const target of startupTimeTargets) {
-			const resolvedTarget = resolveStartupTimeTarget(
-				target,
-				originBuild.wranglerConfigPath,
+			const resolvedTarget = await resolveRuntimeDryRunTarget(
+				resolveStartupTimeTarget(target, originBuild.wranglerConfigPath),
 			)
 			const samples: Array<StartupProfileSummary> = []
 			for (let run = 0; run < budget.runs; run++) {

@@ -19,7 +19,10 @@ import {
 	jobsWorkerWranglerConfigPath,
 	resolveWranglerConfigPath,
 } from './tools/wrangler-env-config.ts'
-import { writeLocalRuntimeDevConfig } from './tools/local-runtime-dev-config.ts'
+import {
+	writeLocalRuntimeDevConfig,
+	writeRuntimeDryRunConfig,
+} from './tools/local-runtime-dev-config.ts'
 import { writeLocalPlatformDevConfig } from './tools/local-platform-dev-config.ts'
 import { runWranglerDeployWithRetry } from './tools/wrangler-deploy-retry.ts'
 
@@ -265,6 +268,19 @@ const wranglerCommand =
 	(existsSync(localWranglerPath) && localWranglerPath) ||
 	resolveLocalBinary('wrangler')
 
+if (
+	args[0] === 'deploy' &&
+	args.includes('--dry-run') &&
+	isRuntimeWorkerConfig &&
+	configArgValue
+) {
+	const dryRunConfigPath = await writeRuntimeDryRunConfig({
+		runtimeConfigPath: resolveWranglerConfigPath(configArgValue, process.cwd()),
+		envName,
+	})
+	replaceConfigArg(commandArgs, dryRunConfigPath)
+}
+
 if (args[0] === 'deploy') {
 	const deployResult = await runWranglerDeployWithRetry({
 		command: wranglerCommand,
@@ -338,6 +354,22 @@ function createExitPromise(proc: ChildProcess) {
 
 function getPortArg(argumentList: ReadonlyArray<string>) {
 	return getArgValue(argumentList, '--port')
+}
+
+function replaceConfigArg(argumentList: Array<string>, nextPath: string) {
+	const inlineIndex = argumentList.findIndex((arg) =>
+		arg.startsWith('--config='),
+	)
+	if (inlineIndex >= 0) {
+		argumentList[inlineIndex] = `--config=${nextPath}`
+		return
+	}
+	const flagIndex = argumentList.findIndex((arg) => arg === '--config')
+	if (flagIndex >= 0 && argumentList[flagIndex + 1]) {
+		argumentList[flagIndex + 1] = nextPath
+		return
+	}
+	argumentList.push('--config', nextPath)
 }
 
 function getArgValue(argumentList: ReadonlyArray<string>, flagName: string) {

@@ -4,7 +4,10 @@ import path from 'node:path'
 import { expect, test } from 'vitest'
 import { parseJsonc } from './ci/resource-utils.ts'
 import { localizeMigrations } from './local-dev-migrations.ts'
-import { writeLocalRuntimeDevConfig } from './local-runtime-dev-config.ts'
+import {
+	writeLocalRuntimeDevConfig,
+	writeRuntimeDryRunConfig,
+} from './local-runtime-dev-config.ts'
 
 test('localizeMigrations turns transfers into sqlite creates and elides a later delete', () => {
 	const localized = localizeMigrations([
@@ -47,6 +50,37 @@ test('the committed runtime production chain fails wrangler’s local sqlite map
 	)
 	expect(sqliteMapAccepts(source.migrations)).toBe(false)
 	expect(sqliteMapAccepts(localizeMigrations(source.migrations))).toBe(true)
+})
+
+test('writeRuntimeDryRunConfig localizes migrations without local-dev vars', async () => {
+	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-runtime-dry-run-'))
+	const sourcePath = path.join(tempDir, 'wrangler.jsonc')
+	try {
+		await writeFile(
+			sourcePath,
+			await readFile('packages/runtime-worker/wrangler.jsonc', 'utf8'),
+		)
+		const outputPath = await writeRuntimeDryRunConfig({
+			runtimeConfigPath: sourcePath,
+			envName: 'production',
+		})
+		const generated = parseJsonc<{
+			migrations?: unknown
+			env?: {
+				production?: { migrations?: unknown; vars?: Record<string, unknown> }
+			}
+		}>(await readFile(outputPath, 'utf8'))
+		expect(sqliteMapAccepts(generated.migrations)).toBe(true)
+		expect(generated.migrations).toEqual(generated.env?.production?.migrations)
+		expect(JSON.stringify(generated.migrations)).not.toContain(
+			'PackageServiceInstance',
+		)
+		expect(generated.env?.production?.vars?.WRANGLER_IS_LOCAL_DEV).toBe(
+			undefined,
+		)
+	} finally {
+		await rm(tempDir, { recursive: true, force: true })
+	}
 })
 
 test('writeLocalRuntimeDevConfig writes a top-level chain wrangler can apply', async () => {
