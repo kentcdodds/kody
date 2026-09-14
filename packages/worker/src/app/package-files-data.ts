@@ -63,6 +63,7 @@ async function toLoaderData(input: {
 	kodyId?: string
 	viewerIsOwner?: boolean
 	isPrivate?: boolean
+	isListed?: boolean
 	listingId?: string | null
 	viewedCommit?: string | null
 	assetCommit?: string | null
@@ -114,6 +115,7 @@ async function toLoaderData(input: {
 		kodyId: input.kodyId,
 		viewerIsOwner: input.viewerIsOwner,
 		isPrivate: input.isPrivate,
+		isListed: input.isListed ?? Boolean(input.listingId),
 		imageBaseHref: getCommunityPackageAssetBaseHrefForViewedCommit({
 			listingId: input.listingId,
 			ownerUsername: input.username,
@@ -398,6 +400,7 @@ export async function loadAccountPackageFilesData(input: {
 	selectedPath: string
 	ref?: string
 	serverTiming?: Array<ServerTimingEntry>
+	isListed?: boolean
 }): Promise<PackageFilesLoaderData | null> {
 	const record = await getSavedPackageById(input.env.APP_DB, {
 		userId: input.userId,
@@ -469,6 +472,7 @@ export async function loadAccountPackageFilesData(input: {
 		kodyId: record.kodyId,
 		viewerIsOwner: true,
 		isPrivate: record.isPrivate,
+		isListed: input.isListed === true,
 		viewedCommit: resolved.commit,
 		assetCommit: source?.published_commit ?? '',
 		mediaHref: view.contentPath
@@ -531,6 +535,7 @@ export async function loadAccessiblePackageFilesData(input: {
 		selectedPath: input.selectedPath,
 		ref: input.ref,
 		serverTiming: input.serverTiming,
+		isListed: page.ownerPackage.hasCommunityListing,
 	})
 }
 

@@ -18,6 +18,7 @@ import {
 	type PublicProfilePackageItem,
 } from '#universal/community-public-types.ts'
 import { getCommunityListingHref } from '#universal/community-links.ts'
+import { renderPackageStatusSignifiers } from '#universal/package-status-signifiers.tsx'
 import {
 	buildProfileHref,
 	profilePackageFiltersAreActive,
@@ -278,16 +279,13 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 											{pkg.hidden ? (
 												<span mix={css(unpublishedBadgeCss)}>Hidden</span>
 											) : null}
-											{pkg.isPrivate ? (
-												<span mix={css(unpublishedBadgeCss)}>Private</span>
-											) : null}
+											{renderPackageStatusSignifiers({
+												isPrivate: pkg.isPrivate === true,
+												isListed: pkg.communityListingId != null,
+											})}
 											{pkg.communityListingId ? (
 												<span mix={css(communityBadgeCss)}>Community</span>
-											) : (
-												<span mix={css(unpublishedBadgeCss)}>
-													Not published
-												</span>
-											)}
+											) : null}
 										</div>
 										{pkg.description ? (
 											<p mix={css(descriptionCss)}>{pkg.description}</p>

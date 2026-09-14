@@ -2,6 +2,7 @@
 /** @jsxRuntime automatic */
 import { type Handle, css } from 'remix/ui'
 import { renderToString } from 'remix/ui/server'
+import { buildPackageAppPath } from '@kody-internal/shared/public-urls.ts'
 import { type PublicCommunityListing } from '#app/community-public.ts'
 import { communityPackageCategoryCopy } from '#universal/community-categories.ts'
 import { buildCommunityIndexHref } from '#universal/community-search.ts'
@@ -12,6 +13,7 @@ import {
 	shortCommunityCommit,
 } from '#universal/community-display.ts'
 import { CommunityListingIcon } from '#universal/community-listing-icon.tsx'
+import { renderIcon } from '#universal/icon.tsx'
 import {
 	communityTagListCss,
 	communityTagPillCss,
@@ -47,6 +49,7 @@ export type CommunityDetailContentProps = {
 	treeRef?: string
 	publishCompareHref?: string | null
 	shareGrant?: PackageShareGrantLoaderView | null
+	hasApp?: boolean
 }
 
 export function CommunityDetailContent(
@@ -65,7 +68,15 @@ export function CommunityDetailContent(
 		treeRef,
 		publishCompareHref,
 		shareGrant,
+		hasApp,
 	} = handle.props
+	const packageAppHref = resolvePackageAppHref({
+		hasApp: hasApp === true,
+		username,
+		kodyId,
+		viewerIsOwner,
+		shareGrant,
+	})
 
 	const filesHref = getPackageTreeHref({
 		username,
@@ -80,6 +91,7 @@ export function CommunityDetailContent(
 				username,
 				kodyId,
 				isPrivate,
+				isListed: listing != null,
 				viewerIsOwner,
 				active: 'code',
 				description,
@@ -158,7 +170,18 @@ export function CommunityDetailContent(
 				</header>
 			) : null}
 
-			<p data-rise style={{ '--rise': '3' }} mix={css(filesLinkRowCss)}>
+			<div data-rise style={{ '--rise': '3' }} mix={css(filesLinkRowCss)}>
+				{packageAppHref ? (
+					<a
+						href={packageAppHref}
+						data-testid="open-package-app"
+						data-rmx-document
+						mix={css(filesLinkCss)}
+					>
+						{renderIcon('share', { size: '1em' })}
+						Open Package App
+					</a>
+				) : null}
 				<a
 					href={filesHref}
 					data-testid="community-browse-files"
@@ -166,7 +189,7 @@ export function CommunityDetailContent(
 				>
 					Browse files
 				</a>
-			</p>
+			</div>
 
 			{listing ? (
 				<>
@@ -298,6 +321,21 @@ const badgeLinkCss = {
 	},
 }
 
+function resolvePackageAppHref(input: {
+	hasApp: boolean
+	username: string
+	kodyId: string
+	viewerIsOwner: boolean
+	shareGrant?: PackageShareGrantLoaderView | null
+}) {
+	const canOpen = input.viewerIsOwner || input.shareGrant?.status === 'accepted'
+	if (!input.hasApp || !canOpen) return null
+	return buildPackageAppPath({
+		username: input.username,
+		kodyId: input.kodyId,
+	})
+}
+
 export function buildSourceAheadPublishHref(input: {
 	username: string
 	kodyId: string
@@ -317,10 +355,17 @@ export function buildSourceAheadPublishHref(input: {
 }
 
 const filesLinkRowCss = {
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	alignItems: 'center',
+	gap: '0.65rem 1.15rem',
 	margin: '0.9rem 0 0',
 }
 
 const filesLinkCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	gap: '0.35rem',
 	color: colors.primaryText,
 	fontWeight: 550,
 	textDecoration: 'none',
