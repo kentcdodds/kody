@@ -73,13 +73,12 @@ and wrangler-env clears that collector's additional-module watches and disables
 esbuild's source-graph watcher in `CLOUDFLARE_ENV=test`
 (`WRANGLER_DISABLE_BUNDLE_WATCH`) so `wrangler dev` does not loop on overlay
 create events. Run `npm run test:e2e:run` or `npm run validate` for the
-Playwright gate locally. `wrangler-env.ts` applies
-`tools/patch-wrangler-proxy-worker-errors.ts` before `wrangler dev` so a
-request-scoped ProxyWorker failure does not exit the Playwright webServer. It
-also defaults `X_LOCAL_EXPLORER=false` on `dev` because wrangler 4.127+ local
-explorer writes under `.wrangler/tmp` on these VMs, retriggers esbuild, and
-leaves ProxyWorker in a pause/reload loop after Ready. Opt in with
-`X_LOCAL_EXPLORER=true`.
+Playwright gate locally. `wrangler-env.ts` defaults `X_LOCAL_EXPLORER=false` on
+`dev` because wrangler 4.127+ local explorer writes under `.wrangler/tmp` on
+these VMs, retriggers esbuild, and leaves ProxyWorker in a pause/reload loop
+after Ready. Opt in with `X_LOCAL_EXPLORER=true`. Wrangler 4.131+ keeps
+`Error inside ProxyWorker` request-scoped (workers-sdk#15252), so a transient
+ProxyWorker failure no longer exits the Playwright webServer.
 
 Cloud Agent environment `start` should run `npm run hooks:ensure` so a snapshot
 boot that skips `npm ci` still composes hooks after Cursor installs the

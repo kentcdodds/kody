@@ -44,9 +44,8 @@ export default defineConfig({
 			// Keep wrangler's default incoming-body drain. Setting
 			// WRANGLER_DISABLE_REQUEST_BODY_DRAINING=true recreates the
 			// workers-sdk#5106 ProxyWorker "Network connection lost" race on
-			// POST /auth and other JSON posts. wrangler-env.ts also rewrites
-			// handleErrorEvent so that race cannot exit wrangler 4.114+
-			// (workers-sdk#14926; pending #15207 / #15252).
+			// POST /auth and other JSON posts. Wrangler 4.131+ keeps
+			// `Error inside ProxyWorker` request-scoped (workers-sdk#15252).
 			// Wrangler 4.118+ enables local observability capture by default in
 			// `wrangler dev`. The extra collector/tail services have crashed the
 			// Playwright webServer mid-suite here; opt out for e2e stability.
