@@ -449,7 +449,7 @@ export async function processCloudflareArtifactsRepoEvent(input: {
 			if (
 				providerEvent.payload.ref === defaultBranchRef &&
 				!isDeletedArtifactRefCommit(providerEvent.payload.after) &&
-				(head.commit == null || head.commit === providerEvent.payload.after)
+				head.commit === providerEvent.payload.after
 			) {
 				await refreshIdentityIconForSource({
 					env: input.env,

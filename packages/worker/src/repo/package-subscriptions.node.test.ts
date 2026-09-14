@@ -346,14 +346,10 @@ test('repo.pushed refreshes identity icons only for the current default-branch H
 		}),
 	)
 
-	const uncachedHead = await processPush({
+	const unresolvedHead = await processPush({
 		head: { branch: 'main', commit: null },
 	})
-	expect(uncachedHead).toHaveBeenCalledWith(
-		expect.objectContaining({
-			iconCommit: after,
-		}),
-	)
+	expect(unresolvedHead).not.toHaveBeenCalled()
 
 	const feature = await processPush({
 		ref: 'refs/heads/feature',
