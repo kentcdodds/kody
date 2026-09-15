@@ -719,13 +719,31 @@ test('token-recovery park with no refresh token still emits disconnected when wa
 		disconnectedEmitted: true,
 		lastObservedState: 'authenticating',
 	})
-	expect(await hub.peekConnectionEvents()).toEqual([
+	const downEvents = await hub.peekConnectionEvents()
+	expect(downEvents).toEqual([
 		expect.objectContaining({
 			topic: 'mcp.server.disconnected',
 			serverId: 'server-1',
 			serverName: 'mediarss',
 			state: 'authenticating',
 			previousState: 'ready',
+		}),
+	])
+	const episodeId = downEvents[0]?.episodeId
+	expect(episodeId).toBeTruthy()
+	await hub.takeConnectionEvents()
+
+	connection.connectionState = 'ready'
+	connection.connectionError = null
+	manager.connectBehavior = 'ready'
+	const recovered = await hub.getSnapshot()
+	expect(recovered.servers[0]?.state).toBe('ready')
+	expect(recovered.connectionEvents).toEqual([
+		expect.objectContaining({
+			topic: 'mcp.server.reconnected',
+			serverId: 'server-1',
+			episodeId,
+			state: 'ready',
 		}),
 	])
 })
@@ -913,6 +931,15 @@ test('snapshot after a prior ready connection parks authenticating with a durabl
 	expect(card?.lastError?.phase).toBe('token exchange')
 	expect(card?.hasRefreshToken).toBe(false)
 	expect(card?.error).not.toContain('Authorization completed')
+	expect(snapshot.connectionEvents).toEqual([
+		expect.objectContaining({
+			topic: 'mcp.server.disconnected',
+			serverId: 'server-1',
+			serverName: 'home',
+			state: 'authenticating',
+			previousState: 'ready',
+		}),
+	])
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'mcp oauth token recovery parked authenticating',
 		expect.objectContaining({

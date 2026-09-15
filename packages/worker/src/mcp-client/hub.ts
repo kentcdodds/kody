@@ -1336,9 +1336,23 @@ class McpClientHubBase extends DurableObject<Env> {
 
 	private async observeServer(input: { serverId: string; serverName: string }) {
 		const previous = await this.readEpisode(input.serverId)
+		const currentState = this.connectionStateFor(input.serverId)
+		const presence =
+			this.tokenPresence.get(input.serverId) ??
+			(await this.readTokenPresence(input.serverId))
+		const lastError = this.lastDiscoverErrors.get(input.serverId) ?? null
+		const inferPreviouslyReady =
+			currentState === 'authenticating' &&
+			shouldQueueMcpTokenRecoveryDisconnected({
+				wasReady: previous.wasReady,
+				presence,
+				hasTokenRecoveryLastError: isMcpOAuthTokenRecoveryLastError(lastError),
+			})
 		const first = observeMcpConnectionState({
-			previous,
-			currentState: this.connectionStateFor(input.serverId),
+			previous: inferPreviouslyReady
+				? episodeAsPreviouslyReady(previous)
+				: previous,
+			currentState,
 			retryCompleted: false,
 			createEpisodeId: () => crypto.randomUUID(),
 		})
