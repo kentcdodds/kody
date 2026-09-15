@@ -19,6 +19,7 @@ import {
 	getJobRunObservability,
 	getJobRunObservabilityBatch,
 	getSqlBillingStats,
+	inspectRunLogSqlBilling,
 	getWorkflowProjection,
 	listActivationMilestones,
 	listPackageRunSuccesses,
@@ -1736,4 +1737,57 @@ test('getSqlBillingStats tracks listRuns rowsRead after denormalized log_count r
 	expect(stats.ops.some((op) => op.op === 'finishRun' && op.calls >= 1)).toBe(
 		true,
 	)
+})
+
+test('inspectRunLogSqlBilling returns counts, run_logs schema, and query plans', async () => {
+	const userId = uniqueUserId('sql-inspect')
+	const pending: Array<Promise<unknown>> = []
+	const secretLog = 'secret-log-line-must-not-appear'
+	const handle = beginRunRecord({
+		env,
+		userId,
+		context: {
+			surface: 'job',
+			name: 'inspect-job',
+			jobId: 'job-inspect',
+		},
+		waitUntil: (promise) => {
+			pending.push(promise)
+		},
+	})
+	expect(handle).not.toBeNull()
+	await Promise.all(pending)
+	await finishRunRecord({
+		env,
+		handle,
+		status: 'success',
+		logs: [secretLog, 'second-line'],
+	})
+	await listRunRecords({ env, userId })
+
+	const inspection = await inspectRunLogSqlBilling({ env, userId })
+	expect(inspection.schemaVersion).toBe(11)
+	expect(inspection.tableCounts.runs).toBeGreaterThanOrEqual(1)
+	expect(inspection.tableCounts.runLogs).toBeGreaterThanOrEqual(1)
+	expect(inspection.runCount.actual).toBe(inspection.tableCounts.runs)
+	expect(inspection.runCount.matches).toBe(true)
+	expect(
+		inspection.runLogsColumns.some(
+			(column) => column.name === 'run_id' && column.pk >= 1,
+		),
+	).toBe(true)
+	expect(inspection.runLogsIndexes.length).toBeGreaterThan(0)
+	expect(
+		inspection.explainRunLogsSelectByRunId.some((step) =>
+			step.detail.toLowerCase().includes('run_logs'),
+		),
+	).toBe(true)
+	expect(
+		inspection.explainRunLogsDeleteByRunId.some((step) =>
+			step.detail.toLowerCase().includes('run_logs'),
+		),
+	).toBe(true)
+	const serialized = JSON.stringify(inspection)
+	expect(serialized).not.toContain(secretLog)
+	expect(serialized).not.toContain('inspect-job')
 })

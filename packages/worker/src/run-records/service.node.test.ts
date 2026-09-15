@@ -19,6 +19,26 @@ const mocks = vi.hoisted(() => ({
 		rowsWrittenTotal: 0,
 		ops: [],
 	})),
+	inspectSqlBilling: vi.fn(async () => ({
+		schemaVersion: 11,
+		billing: {
+			databaseSize: 0,
+			rowsReadTotal: 0,
+			rowsWrittenTotal: 0,
+			ops: [],
+		},
+		runLogsIndexes: [],
+		runLogsColumns: [],
+		tableCounts: {
+			runs: 0,
+			runLogs: 0,
+			packageInvocationLedger: 0,
+			workflowProjections: 0,
+		},
+		runCount: { meta: 0, actual: 0, matches: true },
+		explainRunLogsDeleteByRunId: [],
+		explainRunLogsSelectByRunId: [],
+	})),
 }))
 
 vi.mock('./package-subscriptions.ts', () => ({
@@ -30,6 +50,7 @@ const {
 	finishRunRecord,
 	getAdminInsightsSnapshot,
 	getSqlBillingStats,
+	inspectRunLogSqlBilling,
 	listActivationMilestones,
 	listPackageRunSuccesses,
 	recordRunRecord,
@@ -46,6 +67,7 @@ function createEnv(overrides: Partial<Env> = {}) {
 				listActivationMilestones: mocks.listActivationMilestones,
 				getAdminInsightsSnapshot: mocks.getAdminInsightsSnapshot,
 				getSqlBillingStats: mocks.getSqlBillingStats,
+				inspectSqlBilling: mocks.inspectSqlBilling,
 			}),
 		},
 		APP_DB: {},
@@ -323,4 +345,59 @@ test('getSqlBillingStats requires RUN_LOG and forwards the RPC', async () => {
 		rowsWrittenTotal: 3,
 		ops: [{ op: 'listRuns', rowsRead: 12, rowsWritten: 0, calls: 1 }],
 	})
+})
+
+test('inspectRunLogSqlBilling requires RUN_LOG and forwards the RPC', async () => {
+	await expect(
+		inspectRunLogSqlBilling({ env: {} as Env, userId: 'user-1' }),
+	).rejects.toThrow('RUN_LOG Durable Object binding is not configured.')
+
+	const inspection = {
+		schemaVersion: 11,
+		billing: {
+			databaseSize: 4096,
+			rowsReadTotal: 12,
+			rowsWrittenTotal: 3,
+			ops: [
+				{ op: 'listRuns' as const, rowsRead: 12, rowsWritten: 0, calls: 1 },
+			],
+		},
+		runLogsIndexes: [
+			{
+				seq: 0,
+				name: 'sqlite_autoindex_run_logs_1',
+				unique: true,
+				origin: 'pk',
+				partial: false,
+			},
+		],
+		runLogsColumns: [
+			{
+				cid: 0,
+				name: 'run_id',
+				type: 'TEXT',
+				notnull: true,
+				dfltValue: null,
+				pk: 1,
+			},
+		],
+		tableCounts: {
+			runs: 2,
+			runLogs: 4,
+			packageInvocationLedger: 0,
+			workflowProjections: 0,
+		},
+		runCount: { meta: 2, actual: 2, matches: true },
+		explainRunLogsDeleteByRunId: [
+			{ id: 2, parent: 0, detail: 'SEARCH run_logs USING INTEGER PRIMARY KEY' },
+		],
+		explainRunLogsSelectByRunId: [
+			{ id: 3, parent: 0, detail: 'SEARCH run_logs USING INTEGER PRIMARY KEY' },
+		],
+	}
+	mocks.inspectSqlBilling.mockResolvedValueOnce(inspection)
+	const env = createEnv()
+	await expect(
+		inspectRunLogSqlBilling({ env, userId: 'user-1' }),
+	).resolves.toEqual(inspection)
 })

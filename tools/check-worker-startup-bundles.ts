@@ -170,7 +170,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Repo/package list marks (`refreshIdentityIconForSource` on
 		// `repo.pushed`) add identity-icon keying and the existing community
 		// icon ingest path: local dry-run 3_736_186 bytes.
-		maxEntryBytes: 3_740_000,
+		// RunLog `inspectSqlBilling` (content-free admin SQL snapshot) adds
+		// PRAGMA/COUNT/EXPLAIN helpers on the DO class: CI measured
+		// 3_741_747 bytes against the previous 3_740_000 budget.
+		maxEntryBytes: 3_745_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',

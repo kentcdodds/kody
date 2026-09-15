@@ -90,7 +90,7 @@ type RunLogSqlBillingOp =
 	| 'healStaleRunning'
 	| 'updateRunErrorTriage'
 
-const runLogSqlBillingOps = [
+export const runLogSqlBillingOps = [
 	'listRuns',
 	'getRun',
 	'summarize',
@@ -123,6 +123,61 @@ export type RunLogSqlBillingStats = {
 	rowsWrittenTotal: number
 	ops: Array<RunLogSqlBillingOpStats>
 }
+
+type RunLogSqlIndexInfo = {
+	seq: number
+	name: string
+	unique: boolean
+	origin: string
+	partial: boolean
+}
+
+type RunLogSqlColumnInfo = {
+	cid: number
+	name: string
+	type: string
+	notnull: boolean
+	dfltValue: string | null
+	pk: number
+}
+
+type RunLogSqlExplainStep = {
+	id: number
+	parent: number
+	detail: string
+}
+
+type RunLogSqlTableCounts = {
+	runs: number
+	runLogs: number
+	packageInvocationLedger: number
+	workflowProjections: number
+}
+
+export type RunLogSqlBillingInspection = {
+	schemaVersion: number | null
+	billing: RunLogSqlBillingStats
+	runLogsIndexes: Array<RunLogSqlIndexInfo>
+	runLogsColumns: Array<RunLogSqlColumnInfo>
+	tableCounts: RunLogSqlTableCounts
+	runCount: {
+		meta: number | null
+		actual: number
+		matches: boolean
+	}
+	explainRunLogsDeleteByRunId: Array<RunLogSqlExplainStep>
+	explainRunLogsSelectByRunId: Array<RunLogSqlExplainStep>
+}
+
+/** Placeholder bind for EXPLAIN QUERY PLAN — not a real run id. */
+const sqlBillingExplainProbeRunId = '__admin_sql_probe__'
+
+const sqlBillingCountableTables = {
+	runs: 'runs',
+	run_logs: 'run_logs',
+	package_invocation_ledger: 'package_invocation_ledger',
+	workflow_projections: 'workflow_projections',
+} as const
 
 /**
  * Cursor namespaces for `exportRuns` phases after the raw run-id phase.
@@ -402,6 +457,61 @@ function normalizePageSize(pageSize: number | undefined, fallback: number) {
 			? Math.trunc(pageSize)
 			: fallback
 	return Math.min(Math.max(requested, 1), runRecordMaxPageSize)
+}
+
+function sqlNumber(value: SqlStorageValue | undefined): number {
+	if (typeof value === 'number' && Number.isFinite(value)) return value
+	if (typeof value === 'bigint') return Number(value)
+	if (typeof value === 'string' && value.trim() !== '') {
+		const parsed = Number(value)
+		return Number.isFinite(parsed) ? parsed : 0
+	}
+	return 0
+}
+
+function sqlString(value: SqlStorageValue | undefined): string {
+	if (value == null) return ''
+	return String(value)
+}
+
+function sqlFlag(value: SqlStorageValue | undefined): boolean {
+	return sqlNumber(value) !== 0
+}
+
+function mapSqlIndexInfo(
+	row: Record<string, SqlStorageValue>,
+): RunLogSqlIndexInfo {
+	return {
+		seq: sqlNumber(row['seq']),
+		name: sqlString(row['name']),
+		unique: sqlFlag(row['unique']),
+		origin: sqlString(row['origin']),
+		partial: sqlFlag(row['partial']),
+	}
+}
+
+function mapSqlColumnInfo(
+	row: Record<string, SqlStorageValue>,
+): RunLogSqlColumnInfo {
+	return {
+		cid: sqlNumber(row['cid']),
+		name: sqlString(row['name']),
+		type: sqlString(row['type']),
+		notnull: sqlFlag(row['notnull']),
+		dfltValue: row['dflt_value'] == null ? null : sqlString(row['dflt_value']),
+		pk: sqlNumber(row['pk']),
+	}
+}
+
+function mapSqlExplainStep(
+	row: Record<string, SqlStorageValue>,
+): RunLogSqlExplainStep {
+	return {
+		// EXPLAIN QUERY PLAN columns are selectid/from/detail; bytecode EXPLAIN uses id/parent.
+		id: sqlNumber(row['selectid'] ?? row['id']),
+		parent: sqlNumber(row['from'] ?? row['parent']),
+		detail: sqlString(row['detail']),
+	}
 }
 
 function isRunErrorTriage(value: string): value is RunErrorTriage {
@@ -2725,6 +2835,76 @@ class RunLogBase extends DurableObject<Env> {
 		}
 	}
 
+	/**
+	 * Content-free schema + SQL-plan snapshot for cost diagnosis. Counts and
+	 * planner text only — never run rows, logs, or other user-authored values.
+	 * Uses raw `sql.exec` so these one-off scans do not increment billing ops.
+	 * First RPC on a never-used account initializes the same empty schema as
+	 * any other RunLog read.
+	 */
+	async inspectSqlBilling(): Promise<RunLogSqlBillingInspection> {
+		const billing = await this.getSqlBillingStats()
+		const runLogsIndexes = this.ctx.storage.sql
+			.exec<Record<string, SqlStorageValue>>(`PRAGMA index_list('run_logs')`)
+			.toArray()
+			.map(mapSqlIndexInfo)
+		const runLogsColumns = this.ctx.storage.sql
+			.exec<Record<string, SqlStorageValue>>(`PRAGMA table_info('run_logs')`)
+			.toArray()
+			.map(mapSqlColumnInfo)
+		const tableCounts = {
+			runs: this.countTableRows('runs'),
+			runLogs: this.countTableRows('run_logs'),
+			packageInvocationLedger: this.countTableRows('package_invocation_ledger'),
+			workflowProjections: this.countTableRows('workflow_projections'),
+		}
+		const runCountMeta = this.getMeta(metaRunCountKey)
+		const runCountActual = tableCounts.runs
+		return {
+			schemaVersion: this.getMeta(metaSchemaVersionKey),
+			billing,
+			runLogsIndexes,
+			runLogsColumns,
+			tableCounts,
+			runCount: {
+				meta: runCountMeta,
+				actual: runCountActual,
+				matches: runCountMeta != null && runCountMeta === runCountActual,
+			},
+			explainRunLogsDeleteByRunId: this.explainQueryPlan(
+				`DELETE FROM run_logs WHERE run_id = ?`,
+				sqlBillingExplainProbeRunId,
+			),
+			explainRunLogsSelectByRunId: this.explainQueryPlan(
+				`SELECT * FROM run_logs WHERE run_id = ? ORDER BY sequence ASC`,
+				sqlBillingExplainProbeRunId,
+			),
+		}
+	}
+
+	private countTableRows(
+		table: keyof typeof sqlBillingCountableTables,
+	): number {
+		const name = sqlBillingCountableTables[table]
+		const row = this.ctx.storage.sql
+			.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM ${name}`)
+			.one()
+		return Number(row.n ?? 0) || 0
+	}
+
+	private explainQueryPlan(
+		query: string,
+		...bindings: Array<SqlStorageValue>
+	): Array<RunLogSqlExplainStep> {
+		return this.ctx.storage.sql
+			.exec<Record<string, SqlStorageValue>>(
+				`EXPLAIN QUERY PLAN ${query}`,
+				...bindings,
+			)
+			.toArray()
+			.map(mapSqlExplainStep)
+	}
+
 	private getJobRunObservabilitySync(
 		jobId: string,
 	): JobRunObservabilityRecord | null {
@@ -3729,6 +3909,7 @@ export type RunLogRpc = DurableObjectPitrRpc & {
 	}) => Promise<Array<JobRunObservabilityRecord>>
 	getAdminInsightsSnapshot: () => Promise<RunLogAdminInsightsSnapshot>
 	getSqlBillingStats: () => Promise<RunLogSqlBillingStats>
+	inspectSqlBilling: () => Promise<RunLogSqlBillingInspection>
 	listPackageRunSuccesses: () => Promise<Array<PackageRunSuccessRecord>>
 	listActivationMilestones: () => Promise<Array<ActivationMilestoneRecord>>
 	summarize: (input: { since: string }) => Promise<RunRecordSummary>
