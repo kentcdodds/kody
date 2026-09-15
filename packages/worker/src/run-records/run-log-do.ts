@@ -1172,6 +1172,20 @@ class RunLogBase extends DurableObject<Env> {
 		return `since:${String(Math.floor(sinceMs / 60_000))}`
 	}
 
+	private runMatchesListFilters(
+		run: RunRecord,
+		input: Pick<ListRunsInput, 'status' | 'errorTriage'>,
+	): boolean {
+		if (input.status && run.status !== input.status) return false
+		const errorTriage = input.errorTriage ?? null
+		if (errorTriage === 'open') return run.errorTriage == null
+		if (errorTriage === 'ignored') return run.errorTriage === 'ignored'
+		if (errorTriage === 'resolved') return run.errorTriage === 'resolved'
+		if (errorTriage === 'all' || errorTriage == null) return true
+		const exhaustive: never = errorTriage
+		throw new Error(`Unhandled error triage filter: ${String(exhaustive)}`)
+	}
+
 	private hasCapEvictableRun(): boolean {
 		return (
 			this.ctx.storage.sql
@@ -2470,6 +2484,10 @@ class RunLogBase extends DurableObject<Env> {
 		// A terminal ledger row creates future age-prune work even when no run
 		// row was written, so a stale idle conclusion must be cleared.
 		this.retentionIdleConfirmed = false
+		if (input.run) {
+			this.invalidateReadMemos()
+			this.resetRetentionEmptyBackoff()
+		}
 		this.maybeEnforceRetention()
 		await this.ensureRetentionAlarm()
 		if (ledgerUpdated) {
@@ -3093,11 +3111,13 @@ class RunLogBase extends DurableObject<Env> {
 		).toArray()
 		const hasMore = rows.length > limit
 		const pageRows = hasMore ? rows.slice(0, limit) : rows
-		const runs = pageRows.map((row) =>
-			this.healStaleRunningRecord(
-				mapRunRow(row, Number(row['log_count'] ?? 0) || 0),
-			),
-		)
+		const runs = pageRows
+			.map((row) =>
+				this.healStaleRunningRecord(
+					mapRunRow(row, Number(row['log_count'] ?? 0) || 0),
+				),
+			)
+			.filter((run) => this.runMatchesListFilters(run, input))
 		const last = pageRows[pageRows.length - 1]
 		const nextCursor =
 			hasMore && last

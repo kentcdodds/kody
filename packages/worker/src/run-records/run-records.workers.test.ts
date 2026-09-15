@@ -11,9 +11,11 @@ import { seedRunLogMeta } from './run-log-meta-test-seed.ts'
 import {
 	abandonRunRecord,
 	beginRunRecord,
+	claimPackageInvocationRecord,
 	bulkUpdateRunErrorTriage,
 	claimRunRecord,
 	clearRunRecords,
+	finishPackageInvocationRecord,
 	finishRunRecord,
 	getRunRecord,
 	getRunRecordByIdempotencyKey,
@@ -1489,6 +1491,12 @@ test('empty over-cap retention backs off; summarize memos; list does not reconci
 				surface: 'execute',
 			})
 		})
+		const runningPage = await listRunRecords({
+			env,
+			userId,
+			filter: { status: 'running' },
+		})
+		expect(runningPage.runs).toHaveLength(0)
 		const page = await listRunRecords({ env, userId })
 		expect(page.runs).toHaveLength(1)
 		expect(page.runs[0]).toMatchObject({
@@ -1503,6 +1511,53 @@ test('empty over-cap retention backs off; summarize memos; list does not reconci
 		expect(
 			stats.ops.some((op) => op.op === 'healStaleRunning' && op.calls >= 1),
 		).toBe(true)
+	}
+
+	{
+		const userId = uniqueUserId('package-finish-memo')
+		const claimed = await claimPackageInvocationRecord({
+			env,
+			userId,
+			context: {
+				surface: 'export',
+				packageId: 'pkg-memo',
+				name: 'handler',
+				idempotencyKey: 'evt-memo',
+			},
+			invocation: {
+				id: crypto.randomUUID(),
+				tokenId: 'token-memo',
+				packageId: 'pkg-memo',
+				packageKodyId: 'kody-memo',
+				exportName: 'handler',
+				idempotencyKey: 'evt-memo',
+				requestHash: 'hash-memo',
+				source: null,
+				topic: null,
+			},
+			staleBefore: new Date(0).toISOString(),
+		})
+		expect(claimed.outcome).toBe('claimed')
+		if (claimed.outcome !== 'claimed') throw new Error('expected claim')
+		const since = new Date(0).toISOString()
+		const whileRunning = await summarizeRunRecords({ env, userId, since })
+		expect(whileRunning.running).toBe(1)
+		const finished = await finishPackageInvocationRecord({
+			env,
+			userId,
+			handle: claimed.handle,
+			invocationId: claimed.invocationId,
+			claimUpdatedAt: claimed.claimUpdatedAt,
+			ledgerStatus: 'completed',
+			responseJson: JSON.stringify({ ok: true }),
+			status: 'success',
+		})
+		expect(finished.ledgerUpdated).toBe(true)
+		const afterFinish = await summarizeRunRecords({ env, userId, since })
+		expect(afterFinish).toMatchObject({
+			total: 1,
+			running: 0,
+		})
 	}
 })
 
