@@ -82,10 +82,10 @@ A one-file fetch handler is a complete app (see
 
 Production-hosted apps live at
 `https://{username}.kody.run/packages/<package-name>/…`. Opening the app from
-the signed-in kody.codes origin (**Open app**, the publish `hosted_app_url`, or
-the equivalent package page control) attaches a short-lived session, then the
-subdomain loads. Plan QA around that path: signed-in origin first, then confirm
-the app on `*.kody.run/packages/…`.
+the signed-in kody.codes origin (**Open Package App**, the publish
+`hosted_app_url`, or the equivalent package page control) attaches a short-lived
+session, then the subdomain loads. Plan QA around that path: signed-in origin
+first, then confirm the app on `*.kody.run/packages/…`.
 
 `packageAppFetch` exercises the fetch handler without that browser session. Use
 it for handler smoke tests. Use the handed-off URL for cookies, layout, OAuth
@@ -518,7 +518,7 @@ plus package-app extras such as `realtime`. It is the same object as
 `import runtime from 'kody:runtime'`. Other entries import named exports
 directly. Modules that come from another saved package (static
 `kody:@scope/package` imports) get their own stamped key, so their
-`packageStorage()` still resolves to the declaring package.
+`packageStorage()` resolves to the declaring package.
 
 ### Mount and URLs
 
@@ -776,8 +776,7 @@ src/index.ts            package export (unchanged)
   and it does not install `@remix-run/*`.
 - Kits must not add `@remix-run/*` to `dependencies`, `remix/ui` or
   `@remix-run/ui` to `client.externals`, or an import map for Remix; the
-  `client.externals` + import map pair stays available for other browser
-  packages.
+  `client.externals` + import map pair is valid for other browser packages.
 - `data-app-base` on `<html>` and `__version.json` are the two runtime discovery
   points kits may rely on; `data-client-module` is optional because the document
   already renders `clientModuleUrl`.
@@ -1174,8 +1173,8 @@ old caches on activate.
   brick serve.
 
 Checked-in browser-ready `.js` served from the fetch handler with an explicit
-`Content-Type` still works; `client` is the pit-of-success path for source you
-want compiled.
+`Content-Type` is valid; `client` is the pit-of-success path for source you want
+compiled.
 
 ## Same-origin proxy
 

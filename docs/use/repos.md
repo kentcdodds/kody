@@ -26,10 +26,11 @@ you want runtime surfaces (exports, apps, jobs, webhooks).
 
 `repoList` includes `icon_url` when the repo has an indexed (or published)
 commit. Put the list mark at `.kody/icon.png` (also `.svg`, `.webp`, `.jpg`,
-`.jpeg`). Root `icon.*` and `community-icon.*` remain permanent aliases. A
-default-branch push indexes the mark from the new HEAD. The owner-only image
-route is `/account/repos/:repoId/icon/:iconCommit`. Repos without a file show a
-monogram from the repo leaf name.
+`.jpeg`). Root `icon.*` and `community-icon.*` are aliases. See
+[Package icon](../guides/package-authoring.md#package-icon) for the resolution
+order. A default-branch push indexes the mark from the new HEAD. The owner-only
+image route is `/account/repos/:repoId/icon/:iconCommit`. Repos without a file
+show a monogram from the repo leaf name.
 
 Plain repos do not have Vectorize/search integration—use `repoList` for
 discovery.

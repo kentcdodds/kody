@@ -33,8 +33,8 @@ action.
 There are **no** MIT, logo, README Intent, or `package.json#private`
 **platform** gates to flip visibility. Tags, description, category, and an icon
 are optional (ranking can prefer filled-in cards). Publishing a version requires
-non-empty root `README.md` and `AGENTS.md`. Agents still review the package for
-overly personal content before flipping public — see
+non-empty root `README.md` and `AGENTS.md`. Agents review the package for overly
+personal content before flipping public — see
 [Personal-details hygiene](../guides/package-authoring.md#personal-details-hygiene-before-going-public)
 in the package authoring guide. If anything looks personal or
 household-specific, the agent stops, tells you what it found, suggests how to
@@ -56,10 +56,10 @@ on that review.
 ### Icon
 
 Put the list/identity mark at `.kody/icon.png` (also `.svg`, `.webp`, `.jpg`,
-`.jpeg`). Root `icon.*` and `community-icon.*` remain permanent aliases. The
-first existing file in that combined order wins. Package apps without those
-files can fall back to `icons/icon-192.png`. Packages without a file get a
-generated swirl based on the package name.
+`.jpeg`). Root `icon.*` and `community-icon.*` are aliases. See
+[Package icon](../guides/package-authoring.md#package-icon) for the full
+resolution order. Packages without a file get a generated swirl based on the
+package name.
 
 ## Browsing listings
 

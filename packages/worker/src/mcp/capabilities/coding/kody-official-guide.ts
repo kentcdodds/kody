@@ -32,7 +32,7 @@ function buildCapabilityDescription(): string {
 	return [
 		'Load an official Kody guide from execute-module code (markdown, bundled from the kody repository).',
 		'Prefer `search({ entity: "{id}:guide" })` to read a guide — do not execute this capability just to load documentation. Oversized guides return a table of contents; pass `section` or use `{id}:guide#{slug}` on search.',
-		'This capability stays available for execute-module code that needs the markdown body programmatically.',
+		'Use this from execute-module code when you need the markdown body programmatically.',
 		'The `guide` input lists each available id. Discover guides with `search({ query: "… guide" })`.',
 	].join('\n')
 }

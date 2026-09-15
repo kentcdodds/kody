@@ -273,9 +273,9 @@ New packages are always **private**. Visibility is a repo setting
 - Private is owner-only. Going private 404s public URLs; existing forks keep
   their copies. Type the package slug to confirm (`confirm_name` for agents).
 - There are no MIT, logo, or README Intent **platform** gates to become public.
-  Agents still run a personal-details hygiene pass before flipping public
-  (below). The Worker does not scan or block on that review. Publishing a
-  version requires non-empty root `README.md` and `AGENTS.md` (see
+  Agents run a personal-details hygiene pass before flipping public (below). The
+  Worker does not scan or block on that review. Publishing a version requires
+  non-empty root `README.md` and `AGENTS.md` (see
   [Package docs](#package-docs-readmemd--agentsmd)).
 
 ### Personal-details hygiene before going public

@@ -28,11 +28,11 @@ Think in terms of:
 Packages are the saved-entity unit across search, execute, repo editing, and UI
 hosting. The package page tabs are **Repo**, **Files**
 (`/@username/:name/tree/:ref` — the same URL whether the package is public or
-private), and **Settings**. Visibility, not a separate account files path, is
-what keeps private source off the public web. Owner controls (lock, visibility,
-share, webhooks, delete) live at `/@username/:name/settings`. Inbound HTTP uses
-[webhooks](./webhooks.md). To let another paid account use a package without
-getting a copy, [share it](../guides/package-sharing.md).
+private), and **Settings**. Visibility keeps private source off the public web.
+Owner controls (lock, visibility, share, webhooks, delete) live at
+`/@username/:name/settings`. Inbound HTTP uses [webhooks](./webhooks.md). To let
+another paid account use a package without getting a copy,
+[share it](../guides/package-sharing.md).
 
 ## Package state model
 

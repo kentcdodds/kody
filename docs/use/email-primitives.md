@@ -56,7 +56,7 @@ Use the MCP `email` domain:
 - `emailDestinationList` lists email destinations `emailSend` may use. The
   account identity email is always included. Extra addresses must be verified
   before `emailSend` can use them. Cap is 5 extras besides the account email.
-  Mail still comes from `{username}@<platform domain>`.
+  Mail comes from `{username}@<platform domain>`.
 - `emailDestinationAdd` starts verification for an extra address, or resends the
   verification email if that address is already pending. Unused links from
   earlier sends stay valid until they expire or the address is verified.
