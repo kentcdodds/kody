@@ -35,8 +35,26 @@ function createPublishedBundleArtifactsDb() {
 			COALESCE(artifact_name, ''),
 			entry_point
 		);
+		CREATE TABLE entity_sources (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			published_commit TEXT
+		);
 	`)
 	return createD1FromSqlite(sqlite)
+}
+
+async function setLivePublishedCommit(
+	db: D1Database,
+	input: { userId: string; sourceId: string; publishedCommit: string },
+) {
+	await db
+		.prepare(
+			`INSERT OR REPLACE INTO entity_sources (id, user_id, published_commit)
+			VALUES (?, ?, ?)`,
+		)
+		.bind(input.sourceId, input.userId, input.publishedCommit)
+		.run()
 }
 
 function createStaticDependentsDb(input: {
@@ -193,9 +211,7 @@ test('upsertPublishedBundleArtifactRow keeps module and importable-module distin
 	} catch (error) {
 		racedInsertError = error
 	}
-	expect(isPublishedBundleArtifactIdentityConflict(racedInsertError)).toBe(
-		true,
-	)
+	expect(isPublishedBundleArtifactIdentityConflict(racedInsertError)).toBe(true)
 
 	const recoveredId = await upsertPublishedBundleArtifactRow(db, {
 		...identity,
@@ -254,6 +270,9 @@ test('upsertPublishedBundleArtifactRow recovers when lookup misses and insert hi
 				bind(...values: Array<unknown>) {
 					return {
 						async first() {
+							if (query.includes('FROM entity_sources')) {
+								return { published_commit: 'commit-2' }
+							}
 							lookups += 1
 							return lookups === 1 ? null : existingRow
 						},
@@ -304,4 +323,47 @@ test('upsertPublishedBundleArtifactRow recovers when lookup misses and insert hi
 		kvKey: 'kv:importable:commit-2',
 		dependenciesJson: '[{"sourceId":"dep-1"}]',
 	})
+})
+
+test('upsertPublishedBundleArtifactRow leaves a newer live identity alone when a stale persist recovers', async () => {
+	const db = createPublishedBundleArtifactsDb()
+	const identity = {
+		userId: 'user-1',
+		sourceId: 'source-1',
+		artifactName: './record-version',
+		entryPoint: 'src/record-version.ts',
+	}
+	await setLivePublishedCommit(db, {
+		userId: 'user-1',
+		sourceId: 'source-1',
+		publishedCommit: 'commit-2',
+	})
+	const liveId = await upsertPublishedBundleArtifactRow(db, {
+		...identity,
+		publishedCommit: 'commit-2',
+		artifactKind: 'importable-module',
+		kvKey: 'kv:importable:commit-2',
+		dependenciesJson: '[]',
+	})
+	const staleId = await upsertPublishedBundleArtifactRow(db, {
+		...identity,
+		publishedCommit: 'commit-1',
+		artifactKind: 'importable-module',
+		kvKey: 'kv:importable:commit-1',
+		dependenciesJson: '[]',
+	})
+
+	expect(staleId).toBe(liveId)
+	expect(
+		await getPublishedBundleArtifactByIdentity(db, {
+			...identity,
+			artifactKind: 'importable-module',
+		}),
+	).toEqual(
+		expect.objectContaining({
+			id: liveId,
+			publishedCommit: 'commit-2',
+			kvKey: 'kv:importable:commit-2',
+		}),
+	)
 })

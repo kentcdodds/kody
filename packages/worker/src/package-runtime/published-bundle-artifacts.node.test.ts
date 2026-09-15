@@ -18,8 +18,10 @@ const mockModule = vi.hoisted(() => ({
 	updatePublishedBundleArtifactRow: vi.fn(),
 	upsertPublishedBundleArtifactRow: vi.fn(
 		async (db: unknown, input: { userId: string; sourceId: string }) => {
-			const existing =
-				await mockModule.getPublishedBundleArtifactByIdentity(db, input)
+			const existing = await mockModule.getPublishedBundleArtifactByIdentity(
+				db,
+				input,
+			)
 			if (existing) {
 				await mockModule.updatePublishedBundleArtifactRow(db, {
 					id: existing.id,
