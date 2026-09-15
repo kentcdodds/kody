@@ -37,7 +37,6 @@ import {
 	defaultDumpFile,
 	formatContainsFailure,
 	missingContainsNeedles,
-	rawRequestBody,
 } from './control-kody/request-proof.ts'
 import {
 	cookieHeaderFromSetCookie,
@@ -587,6 +586,7 @@ export type RequestResult = {
 	status: number
 	path: string
 	body: unknown
+	rawBody: string
 	detail: string
 }
 
@@ -608,12 +608,12 @@ export async function requestAsSession(input: {
 		body:
 			input.spec.body === null ? undefined : JSON.stringify(input.spec.body),
 	})
-	const text = await response.text()
-	let body: unknown = text
+	const rawBody = await response.text()
+	let body: unknown = rawBody
 	try {
-		body = JSON.parse(text) as unknown
+		body = JSON.parse(rawBody) as unknown
 	} catch {
-		body = text
+		body = rawBody
 	}
 	const expected = input.spec.expectedStatus
 	const ok = expected === null ? response.ok : response.status === expected
@@ -622,6 +622,7 @@ export async function requestAsSession(input: {
 		status: response.status,
 		path: input.spec.path,
 		body,
+		rawBody,
 		detail: ok
 			? `HTTP ${response.status}`
 			: `expected ${expected ?? '2xx'}, got HTTP ${response.status}`,
@@ -707,6 +708,30 @@ export async function writeCookieFile(
 async function writeDumpFile(dumpFile: string, rawBody: string) {
 	await mkdir(path.dirname(dumpFile), { recursive: true })
 	await writeFile(dumpFile, rawBody, { mode: 0o600 })
+}
+
+async function loginAndStoreCookie(
+	origin: string,
+	options: ControlKodyOptions,
+): Promise<{ ok: true; cookieHeader: string } | { ok: false }> {
+	const defaults = credentialsForOrigin(origin)
+	const session = await loginToOrigin({
+		origin,
+		email: options.email ?? defaults.email,
+		password: options.password ?? defaults.password,
+	})
+	if (!session.ok || !session.cookieHeader) {
+		const detail = withLocalAppDbRemediation(
+			origin,
+			session,
+			localAppDbSeedEmails(),
+		)
+		if (options.json) printJson({ ...session, detail })
+		else console.error(detail)
+		return { ok: false }
+	}
+	await writeCookieFile(options.cookieFile, session.cookieHeader)
+	return { ok: true, cookieHeader: session.cookieHeader }
 }
 
 export function formatFeatureMap(features: ReadonlyArray<Feature>) {
@@ -841,31 +866,26 @@ async function runCommand(options: ControlKodyOptions) {
 			const origin = await resolveOrigin(options)
 			let cookieHeader = readCookieFile(options.cookieFile)
 			if (!options.skipLogin && !cookieHeader) {
-				const defaults = credentialsForOrigin(origin)
-				const session = await loginToOrigin({
-					origin,
-					email: options.email ?? defaults.email,
-					password: options.password ?? defaults.password,
-				})
-				if (!session.ok || !session.cookieHeader) {
-					const detail = withLocalAppDbRemediation(
-						origin,
-						session,
-						localAppDbSeedEmails(),
-					)
-					if (options.json) printJson({ ...session, detail })
-					else console.error(detail)
-					return 1
-				}
-				cookieHeader = session.cookieHeader
-				await writeCookieFile(options.cookieFile, cookieHeader)
+				const loggedIn = await loginAndStoreCookie(origin, options)
+				if (!loggedIn.ok) return 1
+				cookieHeader = loggedIn.cookieHeader
 			}
-			const result = await requestAsSession({
+			let result = await requestAsSession({
 				origin,
 				spec: options.request,
 				cookieHeader,
 			})
-			const rawBody = rawRequestBody(result.body)
+			if (!options.skipLogin && result.status === 401) {
+				const loggedIn = await loginAndStoreCookie(origin, options)
+				if (!loggedIn.ok) return 1
+				cookieHeader = loggedIn.cookieHeader
+				result = await requestAsSession({
+					origin,
+					spec: options.request,
+					cookieHeader,
+				})
+			}
+			const rawBody = result.rawBody
 			const missing = missingContainsNeedles(rawBody, options.contains)
 			let dumpFile: string | null = null
 			if (options.dump) {

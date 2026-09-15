@@ -459,6 +459,105 @@ test('control-kody request --dump writes the body and --contains asserts HTML', 
 	}
 })
 
+test('control-kody request --dump and --contains use the raw JSON text', async () => {
+	const dir = await mkdtemp(path.join(tmpdir(), 'control-kody-raw-json-'))
+	try {
+		const dumpFile = path.join(dir, 'control-kody-body')
+		const spaced = '{\n  "ok": true\n}'
+		await withAuthServer(
+			(request, response) => {
+				const url = request.url ?? '/'
+				if (request.method === 'POST' && url === '/auth') {
+					response.setHeader('Set-Cookie', 'kody_session=abc; Path=/')
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ ok: true }))
+					return
+				}
+				if (url === '/account/waiting.json') {
+					response.setHeader('Content-Type', 'application/json')
+					response.end(spaced)
+					return
+				}
+				response.statusCode = 404
+				response.end('missing')
+			},
+			async (origin) => {
+				const code = await runCommand({
+					...parseControlArgs([
+						'request',
+						'GET',
+						'/account/waiting.json',
+						'--origin',
+						origin,
+						'--cookie-file',
+						path.join(dir, 'cookie'),
+						'--dump',
+						'--contains',
+						'"ok": true',
+						'--json',
+					]),
+					dumpFile,
+				})
+				expect(code).toBe(0)
+				expect(readFileSync(dumpFile, 'utf8')).toBe(spaced)
+			},
+		)
+	} finally {
+		await rm(dir, { recursive: true, force: true })
+	}
+})
+
+test('control-kody request re-logs in when a stored cookie is rejected', async () => {
+	const dir = await mkdtemp(path.join(tmpdir(), 'control-kody-stale-cookie-'))
+	try {
+		const cookieFile = path.join(dir, 'cookie')
+		await writeFile(cookieFile, 'kody_session=stale\n')
+		await withAuthServer(
+			(request, response) => {
+				const url = request.url ?? '/'
+				if (request.method === 'POST' && url === '/auth') {
+					response.setHeader('Set-Cookie', 'kody_session=fresh; Path=/')
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ ok: true }))
+					return
+				}
+				if (url === '/account/waiting.json') {
+					if (request.headers.cookie !== 'kody_session=fresh') {
+						response.statusCode = 401
+						response.end('{"ok":false}')
+						return
+					}
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ items: [] }))
+					return
+				}
+				response.statusCode = 404
+				response.end('missing')
+			},
+			async (origin) => {
+				const code = await runCommand(
+					parseControlArgs([
+						'request',
+						'GET',
+						'/account/waiting.json',
+						'--origin',
+						origin,
+						'--cookie-file',
+						cookieFile,
+						'--json',
+					]),
+				)
+				expect(code).toBe(0)
+				expect(readFileSync(cookieFile, 'utf8').trim()).toBe(
+					'kody_session=fresh',
+				)
+			},
+		)
+	} finally {
+		await rm(dir, { recursive: true, force: true })
+	}
+})
+
 test('control-kody login prints migrate+seed when local APP_DB is unready', async () => {
 	await withAuthServer(
 		(_request, response) => {
