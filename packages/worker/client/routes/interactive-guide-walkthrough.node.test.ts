@@ -29,6 +29,7 @@ test('google oauth connect bubbles wrap the prefilled url instead of overflowing
 	const guide = await renderToString(renderGoogleOauthWalkthrough())
 	expect(guide).toContain('/connect/oauth?provider=google')
 	expect(guide).toContain('Connect and verify')
+	expect(guide).not.toContain('notranslate')
 })
 
 test('walkthrough acts stay in the article column instead of breaking out', () => {

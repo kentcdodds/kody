@@ -20,6 +20,8 @@ test('host intro and walkthrough bind picked agents; picker variant drops the st
 	expect(intro).toContain(`>${hosts.coding.label}</span>`)
 	expect(intro).toContain(`/images/icons/${hosts.coding.icon}.svg`)
 	expect(intro).toContain('aria-label="Regular coding agent"')
+	expect(intro).toContain('translate="no"')
+	expect(intro).toContain('notranslate')
 	expect(intro).toContain("Let's say you use")
 
 	const picker = await renderToString(
@@ -31,12 +33,16 @@ test('host intro and walkthrough bind picked agents; picker variant drops the st
 	)
 	expect(picker).toContain(`value="${hosts.coding.id}"`)
 	expect(picker).toContain('aria-label="Regular coding agent"')
+	expect(picker).toContain('translate="no"')
+	expect(picker).toContain('notranslate')
 	expect(picker).not.toContain("Let's say you use")
 
 	const walkthrough = await renderToString(
 		jsx(HowKodyWorksWalkthrough, { hosts }),
 	)
 	expect(walkthrough).toContain("Let's say you use")
+	expect(walkthrough).toContain('translate="no"')
+	expect(walkthrough).toContain('notranslate')
 	expect(walkthrough).toContain(`>${hosts.coding.label}</figcaption>`)
 	expect(walkthrough).toContain(`/images/icons/${hosts.coding.icon}.svg`)
 	expect(walkthrough).toContain(`/images/icons/${hosts.invoke.icon}.svg`)

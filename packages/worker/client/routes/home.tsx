@@ -315,7 +315,8 @@ export function HomeRoute(handle: Handle) {
 					</p>
 					<section
 						aria-labelledby="walkthrough-title"
-						class="landing-walkthrough-story"
+						class="landing-walkthrough-story notranslate"
+						translate="no"
 					>
 						<h2
 							id="walkthrough-title"

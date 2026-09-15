@@ -6,6 +6,7 @@ import {
 	isMetaMaskWalletNoAccountError,
 	isLocalViteDevError,
 	isResolveFrameFetchNetworkError,
+	isRemixReconcileInsertBeforeNotFoundError,
 	isSyntaxHighlightCoreDynamicImportFailureError,
 } from '#client/sentry-browser-filters.ts'
 import {
@@ -59,7 +60,8 @@ function shouldIgnoreBufferedError(error: unknown) {
 		isSyntaxHighlightCoreDynamicImportFailureError(error) ||
 		isResolveFrameFetchNetworkError(error) ||
 		isLocalViteDevError(error) ||
-		isCloudflareTurnstileClientError(error)
+		isCloudflareTurnstileClientError(error) ||
+		isRemixReconcileInsertBeforeNotFoundError(error)
 	)
 }
 

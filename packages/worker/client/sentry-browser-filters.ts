@@ -1256,6 +1256,99 @@ function filterCloudflareTurnstileClientSentryEvent<
 	return event
 }
 
+/**
+ * Chrome Translate (and similar) rewrites Remix-owned DOM, then reconcile's
+ * `moveDomRange` calls `insertBefore` with a stale sibling. Signature from
+ * production issue 7732198685 / KODY-7N on `/docs/how-kody-works` (Polish
+ * Chrome Translate, click on a translated host select).
+ *
+ * Match is intentionally narrow: `NotFoundError` plus this exact
+ * insertBefore wording AND a stack frame attributable to `@remix-run/ui`
+ * reconcile (`moveDomRange` / `reconcile`). Never blanket-drop
+ * insertBefore NotFoundErrors from app code — KODY-5E was a different
+ * HierarchyRequestError on RSS SPA nav.
+ */
+const remixReconcileInsertBeforeNotFoundMessage =
+	/^(?:NotFoundError:\s*)?Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node\.?$/
+
+function isRemixReconcileInsertBeforeNotFoundMessage(message: string) {
+	return remixReconcileInsertBeforeNotFoundMessage.test(message.trim())
+}
+
+function isRemixUiReconcileStackUrl(url: string) {
+	const normalized = url.replace(/\\/g, '/')
+	return (
+		normalized.includes('@remix-run/ui') ||
+		normalized.includes('/remix/ui') ||
+		normalized.includes('remix_ui')
+	)
+}
+
+function stackTextLooksLikeRemixUiReconcile(text: string) {
+	const normalized = text.replace(/\\/g, '/')
+	if (!isRemixUiReconcileStackUrl(normalized)) return false
+	return normalized.includes('reconcile') || normalized.includes('moveDomRange')
+}
+
+function isRemixUiReconcileStack(event: SentryErrorEventLike) {
+	if (
+		sentryEventStackFrameFunctions(event).some((name) =>
+			name.includes('moveDomRange'),
+		)
+	) {
+		return true
+	}
+	return sentryEventStackFrameUrls(event).some(
+		stackTextLooksLikeRemixUiReconcile,
+	)
+}
+
+function isNotFoundErrorName(name: string | undefined) {
+	return name === 'NotFoundError'
+}
+
+export function isRemixReconcileInsertBeforeNotFoundError(error: unknown) {
+	if (typeof error !== 'object' || error === null) return false
+	const name =
+		'name' in error && typeof error.name === 'string' ? error.name : ''
+	if (!isNotFoundErrorName(name)) return false
+	const message =
+		'message' in error && typeof error.message === 'string' ? error.message : ''
+	if (!isRemixReconcileInsertBeforeNotFoundMessage(message)) return false
+	const stack =
+		'stack' in error && typeof error.stack === 'string' ? error.stack : ''
+	return stackTextLooksLikeRemixUiReconcile(stack)
+}
+
+function isRemixReconcileInsertBeforeNotFoundSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	if (isRemixReconcileInsertBeforeNotFoundError(originalException)) return true
+	const hasNotFoundType =
+		event.exception?.values?.some((value) => isNotFoundErrorName(value.type)) ??
+		false
+	if (!hasNotFoundType) return false
+	const hasInsertBeforeMessage = sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' &&
+			isRemixReconcileInsertBeforeNotFoundMessage(message),
+	)
+	if (!hasInsertBeforeMessage) return false
+	return isRemixUiReconcileStack(event)
+}
+
+function filterRemixReconcileInsertBeforeNotFoundSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (
+		isRemixReconcileInsertBeforeNotFoundSentryEvent(event, originalException)
+	) {
+		return null
+	}
+	return event
+}
+
 /** Combined browser beforeSend / capture gate used by the client SDK. */
 export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	event: T,
@@ -1380,6 +1473,14 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	if (
 		filterCloudflareTurnstileClientSentryEvent(event, originalException) ===
 		null
+	) {
+		return null
+	}
+	if (
+		filterRemixReconcileInsertBeforeNotFoundSentryEvent(
+			event,
+			originalException,
+		) === null
 	) {
 		return null
 	}

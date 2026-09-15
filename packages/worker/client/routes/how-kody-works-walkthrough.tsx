@@ -31,7 +31,9 @@ import { WalkthroughHostIntro } from './walkthrough-host-intro.tsx'
  * Interactive factory-loop transcript for /docs/how-kody-works.
  * Shared line/tool rendering lives in interactive-guide-walkthrough.tsx.
  * Host selects live in the lead so changing an agent updates the
- * conversation marks and the package-title marks together.
+ * conversation marks and the package-title marks together. The
+ * interactive guide opts out of page translation so Chrome Translate
+ * cannot rewrite those remounted nodes (KODY-7N).
  */
 export function HowKodyWorksWalkthrough(
 	handle: Handle<{
@@ -44,6 +46,7 @@ export function HowKodyWorksWalkthrough(
 	return () => {
 		if (!hosts && handle.props.hosts) hosts = handle.props.hosts
 		return renderInteractiveGuideWalkthrough({
+			lockTranslation: true,
 			lead: hosts ? (
 				<WalkthroughHostIntro
 					hosts={hosts}
