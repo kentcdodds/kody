@@ -218,12 +218,16 @@ test('package chrome is shared for public listings and private owner packages', 
 		loggedIn: false,
 	})
 	expect(publicHtml).toContain('data-testid="package-repo-chrome"')
-	expect(publicHtml).toContain('data-testid="package-repo-nav-code"')
+	expect(publicHtml).toContain('data-testid="community-listing-icon-detail"')
+	expect(
+		publicHtml.indexOf('data-testid="community-listing-icon-detail"'),
+	).toBeLessThan(publicHtml.indexOf('<h1'))
+	expect(publicHtml).toContain('data-testid="package-repo-nav-repo"')
+	expect(publicHtml).toContain('data-testid="package-repo-nav-files"')
 	expect(publicHtml).not.toContain('data-testid="package-repo-nav-settings"')
 	expect(publicHtml).not.toContain('data-testid="package-visibility-badge"')
 	expect(publicHtml).not.toContain('data-signifier="unpublished"')
 	expect(publicHtml).not.toContain('>Public<')
-	expect(publicHtml).toContain('data-testid="community-browse-files"')
 	expect(publicHtml).toContain('href="/@kentcdodds/github-triage/tree/main"')
 	expect(publicHtml).toContain('data-testid="community-detail-forks"')
 	expect(publicHtml).toContain('data-testid="community-detail-version"')
@@ -242,6 +246,8 @@ test('package chrome is shared for public listings and private owner packages', 
 		loggedIn: true,
 	})
 	expect(ownerHtml).toContain('data-testid="package-repo-nav-settings"')
+	expect(ownerHtml).toContain('data-testid="package-repo-nav-repo"')
+	expect(ownerHtml).toContain('data-testid="package-repo-nav-files"')
 	expect(ownerHtml).toContain('href="/@kentcdodds/github-triage/settings"')
 	expect(ownerHtml).toContain('href="/@kentcdodds"')
 	expect(ownerHtml).toContain('← @kentcdodds')
@@ -332,7 +338,7 @@ test('open package app link shows for owner and accepted share, and hides withou
 		hasApp: false,
 	})
 	expect(noAppHtml).not.toContain('data-testid="open-package-app"')
-	expect(noAppHtml).toContain('data-testid="community-browse-files"')
+	expect(noAppHtml).toContain('data-testid="package-repo-nav-files"')
 
 	const noAccessHtml = await renderCommunityDetailContentHtml({
 		...detailBase,

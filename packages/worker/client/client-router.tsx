@@ -2,6 +2,7 @@ import { type Handle } from 'remix/ui'
 import { createMultiMatcher } from 'remix/route-pattern/match'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 import { isOnboardingPagePath } from '#universal/onboarding-process.ts'
+import { isSamePackageRepoChromeHref } from '#universal/package-files.ts'
 import { isProfilePathname } from '#universal/profile-path.ts'
 import { isProfilePackageFilterOnlyHrefChange } from '#universal/profile-search.ts'
 import { clearOnboardingPayloadCache } from '#client/routes/onboarding-payload.ts'
@@ -183,6 +184,9 @@ export function shouldUseViewTransition(input: {
 	if (isSameShellAreaNavigation(input.from, input.to)) return false
 	if (isSameOnboardingNavigation(input.from, input.to)) return false
 	if (isSameProfilePathnameNavigation(input.from, input.to)) return false
+	if (input.from != null && isSamePackageRepoChromeHref(input.from, input.to)) {
+		return false
+	}
 	// Full document load never recorded `from`. If the rail is already on
 	// screen and the destination is still a shell page, this is a tab click.
 	if (

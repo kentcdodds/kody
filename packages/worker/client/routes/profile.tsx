@@ -22,7 +22,10 @@ import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { on } from '#client/event-mixin.ts'
-import { readProfilePackageFiltersFromHref } from '#universal/profile-search.ts'
+import {
+	defaultProfilePackageSortDirection,
+	readProfilePackageFiltersFromHref,
+} from '#universal/profile-search.ts'
 import { ProfileContent } from '#universal/profile-content.tsx'
 import { renderProfileIdentity } from '#client/routes/profile-identity.tsx'
 import { profileListForUsername } from './profile-list-for-username.ts'
@@ -273,8 +276,15 @@ export function ProfileRoute(handle: Handle) {
 							{filters.app !== 'all' ? (
 								<input type="hidden" name="app" value={filters.app} />
 							) : null}
+							{filters.package !== 'all' ? (
+								<input type="hidden" name="package" value={filters.package} />
+							) : null}
 							{filters.sort !== 'updated' ? (
 								<input type="hidden" name="sort" value={filters.sort} />
+							) : null}
+							{filters.dir !==
+							defaultProfilePackageSortDirection(filters.sort) ? (
+								<input type="hidden" name="dir" value={filters.dir} />
 							) : null}
 							<label mix={css(searchFieldCss)}>
 								<span mix={css(fieldLabelCss)}>Search repositories</span>
@@ -305,7 +315,9 @@ export function ProfileRoute(handle: Handle) {
 								listing={filters.listing}
 								hidden={filters.hidden}
 								app={filters.app}
+								package={filters.package}
 								sort={filters.sort}
+								dir={filters.dir}
 								isSelf={readyShell?.isSelf === true}
 							/>
 						) : null}

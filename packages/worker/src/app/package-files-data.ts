@@ -7,6 +7,10 @@ import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { readPublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { getCommunityListingHref } from '#universal/community-links.ts'
 import {
+	buildCommunityIconUrl,
+	resolvePackageListIconUrl,
+} from '#universal/identity-icon-urls.ts'
+import {
 	isPackageFilesMediaKind,
 	maxPackageFilePreviewBytes,
 	safeContentDispositionFilename,
@@ -65,6 +69,7 @@ async function toLoaderData(input: {
 	isPrivate?: boolean
 	isListed?: boolean
 	listingId?: string | null
+	iconUrl?: string | null
 	viewedCommit?: string | null
 	assetCommit?: string | null
 	mediaHref?: string | null
@@ -116,6 +121,7 @@ async function toLoaderData(input: {
 		viewerIsOwner: input.viewerIsOwner,
 		isPrivate: input.isPrivate,
 		isListed: input.isListed ?? Boolean(input.listingId),
+		iconUrl: input.iconUrl ?? null,
 		imageBaseHref: getCommunityPackageAssetBaseHrefForViewedCommit({
 			listingId: input.listingId,
 			ownerUsername: input.username,
@@ -187,7 +193,7 @@ export async function loadCommunityPackageFilesData(input: {
 			ownerUsername,
 			kodyId: listing.kodyId,
 		}),
-		backLabel: 'Code',
+		backLabel: 'Repo',
 		filesBasePath,
 		view,
 		serverTiming: input.serverTiming,
@@ -196,6 +202,10 @@ export async function loadCommunityPackageFilesData(input: {
 		viewerIsOwner: viewerUserId === listing.ownerUserId,
 		isPrivate: false,
 		listingId: listing.id,
+		iconUrl: buildCommunityIconUrl({
+			listingId: listing.id,
+			iconCommit: listing.iconCommit,
+		}),
 		viewedCommit: resolved.commit,
 		assetCommit: listing.pinnedCommit,
 		mediaHref: view.contentPath
@@ -460,7 +470,7 @@ export async function loadAccountPackageFilesData(input: {
 			username: input.username,
 			kodyId: record.kodyId,
 		}),
-		backLabel: 'Code',
+		backLabel: 'Repo',
 		filesBasePath: getPackageTreeHref({
 			username: input.username,
 			kodyId: record.kodyId,
@@ -473,6 +483,13 @@ export async function loadAccountPackageFilesData(input: {
 		viewerIsOwner: true,
 		isPrivate: record.isPrivate,
 		isListed: input.isListed === true,
+		iconUrl: resolvePackageListIconUrl({
+			username: input.username,
+			kodyId: record.kodyId,
+			listingId: null,
+			listingIconCommit: null,
+			publishedCommit: source?.published_commit ?? null,
+		}),
 		viewedCommit: resolved.commit,
 		assetCommit: source?.published_commit ?? '',
 		mediaHref: view.contentPath

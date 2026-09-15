@@ -7,29 +7,34 @@ Repo-backed saved packages: list, detail, files, share, approve-publish.
 `/@username` lists your repositories (saved packages), including private and
 unpublished ones when you view your own profile. The page heading and account
 rail label are **Repositories**; routes stay `/@username` and
-`/account/packages`. Chip filters (`visibility`, `listing`, `hidden`, `app`) and
-sort (`sort=name`; default is updated, matching `updated_at DESC`) run
-client-side from the already-loaded list (behind a `<details>` Filters
-disclosure; no loader, no view transition). Own-profile GET params:
-`visibility=public|private`, `listing=published|unpublished|ahead` (ahead =
-**Needs republish**: the listing pin is behind `published_commit`, not
-HEAD-ahead-of-published), `hidden=yes|no`, `app=yes|no`, and `sort=name`. Guests
-can use `listing=published|unpublished`, `app=yes|no`, and `sort`. Owner-only
-params are ignored for them. Search stays `q=` and still hits the server. Each
-row shows Iconic signifiers (native tooltip only) for package, private, hidden,
-published-to-community or no community listing, webhook count, job count, and
-whether it has an app. Private repositories do not also get a “no community
-listing” signifier — the private icon is enough. List marks come from
+`/account/packages`. Chip filters (`visibility`, `listing`, `hidden`, `package`,
+`app`) and sort (`sort=updated|created|name`, `dir=asc|desc`) run client-side
+from the already-loaded list (behind a `<details>` Filters disclosure; no
+loader, no view transition). Default sort is updated descending
+(`updated_at DESC`); name defaults to ascending. `package=yes|no` is whether the
+row has the saved-package extension — distinct from `app=yes|no` (Has app / No
+app). Own-profile GET params: `visibility=public|private`,
+`listing=published|unpublished|ahead` (ahead = **Needs republish**: the listing
+pin is behind `published_commit`, not HEAD-ahead-of-published), `hidden=yes|no`,
+`package=yes|no`, `app=yes|no`, `sort=created|name`, and `dir=asc|desc` (omit
+`dir` when it matches the sort field's default). Guests can use
+`listing=published|unpublished`, `package=yes|no`, `app=yes|no`, `sort`, and
+`dir`. Owner-only params are ignored for them. Search stays `q=` and still hits
+the server. Each row shows Iconic signifiers (native tooltip only) for package,
+private, hidden, published-to-community or no community listing, webhook count,
+job count, and whether it has an app. Private repositories do not also get a “no
+community listing” signifier — the private icon is enough. List marks come from
 `/@username/:kodyId/icon/:iconCommit` (packages) and
 `/account/repos/:repoId/icon/:iconCommit` (owner-only plain repos). Each package
-lives at `/@username/:kodyId` (the URL slug is the package name leaf; README),
-`/@username/:kodyId/tree/:ref` (files), `/@username/:kodyId/assets/…`
+lives at `/@username/:kodyId` (the URL slug is the package name leaf; **Repo**
+tab: description, tags, license, badges — no Browse files link),
+`/@username/:kodyId/tree/:ref` (**Files** tab), `/@username/:kodyId/assets/…`
 (README-relative images from the published or pinned commit),
-`/@username/:kodyId/settings` (lock, visibility, share, webhooks, delete),
-`/@username/:kodyId/approve-publish` (published-vs-HEAD review), and
-`/@username/:kodyId/approve-changes` (guest pin-ahead published diff). Opening
-an allowlisted image or video in the tree renders a preview; the bytes come from
-`/@username/:kodyId/raw/:ref/…` (same authz as the tree). Legacy
+`/@username/:kodyId/settings` (**Settings** tab: lock, visibility, share,
+webhooks, delete), `/@username/:kodyId/approve-publish` (published-vs-HEAD
+review), and `/@username/:kodyId/approve-changes` (guest pin-ahead published
+diff). Opening an allowlisted image or video in the tree renders a preview; the
+bytes come from `/@username/:kodyId/raw/:ref/…` (same authz as the tree). Legacy
 `/account/packages` HTML URLs only redirect to these canonical pages.
 
 ## Drive it
@@ -52,7 +57,7 @@ node tools/control-kody.ts preview -- \
   --check /@user-me
 ```
 
-`--head-ahead` pushes one unpublished commit so the Code tab can show **HEAD
+`--head-ahead` pushes one unpublished commit so the Repo tab can show **HEAD
 ahead of published**. That flag needs a minted Artifacts write remote. If
 `packageGetGitRemote` fails with source-safety `account not found`, the stub
 package still exists (check `/@username/:kodyId`) but HEAD-ahead cannot be
@@ -87,7 +92,7 @@ empty state.
   private.
 - Invocation-token JSON actions on `POST /account/packages.json` are an
   unadvertised operator drain. Settings does not show token forms.
-- When default-branch HEAD is newer than the last publish, the Code tab shows
+- When default-branch HEAD is newer than the last publish, the Repo tab shows
   **HEAD ahead of published**. Owners click that badge to review the diff and
   publish HEAD on `/@username/:kodyId/approve-publish`. Publish checks require
   non-empty root `README.md` and `AGENTS.md`.

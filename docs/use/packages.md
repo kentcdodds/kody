@@ -26,8 +26,9 @@ Think in terms of:
 - package-owned webhooks
 
 Packages are the saved-entity unit across search, execute, repo editing, and UI
-hosting. Browse files at `/@username/:name/tree/:ref` — the same URL whether the
-package is public or private. Visibility, not a separate account files path, is
+hosting. The package page tabs are **Repo**, **Files**
+(`/@username/:name/tree/:ref` — the same URL whether the package is public or
+private), and **Settings**. Visibility, not a separate account files path, is
 what keeps private source off the public web. Owner controls (lock, visibility,
 share, webhooks, delete) live at `/@username/:name/settings`. Inbound HTTP uses
 [webhooks](./webhooks.md). To let another paid account use a package without
@@ -633,7 +634,7 @@ artifacts, projections) for that SHA. Promoting one commit does not unlock the
 package.
 
 Unlocked packages use the same review page. When default-branch HEAD is newer
-than the last publish, the package Code tab shows a **HEAD ahead of published**
+than the last publish, the package Repo tab shows a **HEAD ahead of published**
 badge. Owners click it to open
 `/@{username}/{package-name}/approve-publish?commit=<sha>`, where `<sha>` is the
 resolved default-branch HEAD, and publish that SHA with **Publish HEAD**.

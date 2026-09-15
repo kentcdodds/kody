@@ -4,7 +4,9 @@ import {
 	type ProfilePackageFilters,
 	type ProfilePackageHiddenFilter,
 	type ProfilePackageListingFilter,
+	type ProfilePackagePresenceFilter,
 	type ProfilePackageSort,
+	type ProfilePackageSortDirection,
 	type ProfilePackageVisibilityFilter,
 	type PublicProfilePackageItem,
 } from '#universal/community-public-types.ts'
@@ -16,7 +18,9 @@ const defaultProfilePackageFilters = {
 	listing: 'all',
 	hidden: 'all',
 	app: 'all',
+	package: 'all',
 	sort: 'updated',
+	dir: 'desc',
 } as const satisfies ProfilePackageFilters
 
 const profilePackageChipParams = [
@@ -24,7 +28,9 @@ const profilePackageChipParams = [
 	'listing',
 	'hidden',
 	'app',
+	'package',
 	'sort',
+	'dir',
 ] as const
 
 function parseVisibility(
@@ -51,8 +57,38 @@ function parseApp(raw: string | null | undefined): ProfilePackageAppFilter {
 	return raw === 'yes' || raw === 'no' ? raw : 'all'
 }
 
+function parsePackagePresence(
+	raw: string | null | undefined,
+): ProfilePackagePresenceFilter {
+	return raw === 'yes' || raw === 'no' ? raw : 'all'
+}
+
 function parseSort(raw: string | null | undefined): ProfilePackageSort {
-	return raw === 'name' ? 'name' : defaultProfilePackageFilters.sort
+	return raw === 'name' || raw === 'created'
+		? raw
+		: defaultProfilePackageFilters.sort
+}
+
+function parseDir(
+	raw: string | null | undefined,
+): ProfilePackageSortDirection | null {
+	return raw === 'asc' || raw === 'desc' ? raw : null
+}
+
+export function defaultProfilePackageSortDirection(
+	sort: ProfilePackageSort,
+): ProfilePackageSortDirection {
+	switch (sort) {
+		case 'name':
+			return 'asc'
+		case 'updated':
+		case 'created':
+			return 'desc'
+		default: {
+			const exhaustive: never = sort
+			throw new Error(`Unhandled profile package sort: ${exhaustive}`)
+		}
+	}
 }
 
 export function readProfilePackageFiltersFromUrl(
@@ -61,6 +97,7 @@ export function readProfilePackageFiltersFromUrl(
 ): ProfilePackageFilters {
 	const allowOwnerFilters = options?.allowOwnerFilters === true
 	const listing = parseListing(url.searchParams.get('listing'))
+	const sort = parseSort(url.searchParams.get('sort'))
 	return {
 		query: url.searchParams.get('q')?.trim() ?? '',
 		visibility: allowOwnerFilters
@@ -74,7 +111,11 @@ export function readProfilePackageFiltersFromUrl(
 			? parseHidden(url.searchParams.get('hidden'))
 			: 'all',
 		app: parseApp(url.searchParams.get('app')),
-		sort: parseSort(url.searchParams.get('sort')),
+		package: parsePackagePresence(url.searchParams.get('package')),
+		sort,
+		dir:
+			parseDir(url.searchParams.get('dir')) ??
+			defaultProfilePackageSortDirection(sort),
 	}
 }
 
@@ -97,12 +138,19 @@ export function profilePackageFiltersAreActive(filters: ProfilePackageFilters) {
 		filters.visibility !== 'all' ||
 		filters.listing !== 'all' ||
 		filters.hidden !== 'all' ||
-		filters.app !== 'all'
+		filters.app !== 'all' ||
+		filters.package !== 'all'
 	)
 }
 
-export function profilePackageSortIsActive(sort: ProfilePackageSort) {
-	return sort !== defaultProfilePackageFilters.sort
+export function profilePackageSortIsActive(filters: {
+	sort: ProfilePackageSort
+	dir: ProfilePackageSortDirection
+}) {
+	return (
+		filters.sort !== defaultProfilePackageFilters.sort ||
+		filters.dir !== defaultProfilePackageSortDirection(filters.sort)
+	)
 }
 
 export function buildProfileHref(input: {
@@ -112,7 +160,9 @@ export function buildProfileHref(input: {
 	listing?: ProfilePackageListingFilter
 	hidden?: ProfilePackageHiddenFilter
 	app?: ProfilePackageAppFilter
+	package?: ProfilePackagePresenceFilter
 	sort?: ProfilePackageSort
+	dir?: ProfilePackageSortDirection
 }) {
 	const searchParams = new URLSearchParams()
 	const query = input.query?.trim() ?? ''
@@ -133,8 +183,16 @@ export function buildProfileHref(input: {
 	if (input.app === 'yes' || input.app === 'no') {
 		searchParams.set('app', input.app)
 	}
-	if (input.sort === 'name') {
-		searchParams.set('sort', input.sort)
+	if (input.package === 'yes' || input.package === 'no') {
+		searchParams.set('package', input.package)
+	}
+	const sort = input.sort ?? defaultProfilePackageFilters.sort
+	if (sort !== defaultProfilePackageFilters.sort) {
+		searchParams.set('sort', sort)
+	}
+	const dir = input.dir ?? defaultProfilePackageSortDirection(sort)
+	if (dir !== defaultProfilePackageSortDirection(sort)) {
+		searchParams.set('dir', dir)
 	}
 	return routes.profile.href(
 		{ username: input.username },
@@ -153,9 +211,9 @@ function hrefWithoutChipParams(href: string) {
 
 /**
  * True when both URLs are the same `/@username` page and only chip filters
- * (`visibility`, `listing`, `hidden`, `app`, `sort`) differ. Search (`q`) and
- * every other query param stay the same, so the already-loaded package list
- * can be re-filtered without a loader or frame fetch.
+ * (`visibility`, `listing`, `hidden`, `app`, `package`, `sort`, `dir`) differ.
+ * Search (`q`) and every other query param stay the same, so the already-loaded
+ * package list can be re-filtered without a loader or frame fetch.
  */
 export function isProfilePackageFilterOnlyHrefChange(from: string, to: string) {
 	const fromUrl = new URL(from, 'http://localhost')
@@ -240,6 +298,24 @@ function matchesApp(
 	}
 }
 
+function matchesPackagePresence(
+	pkg: PublicProfilePackageItem,
+	filter: ProfilePackagePresenceFilter,
+) {
+	switch (filter) {
+		case 'all':
+			return true
+		case 'yes':
+			return pkg.hasPackage
+		case 'no':
+			return !pkg.hasPackage
+		default: {
+			const exhaustive: never = filter
+			throw new Error(`Unhandled profile package filter: ${exhaustive}`)
+		}
+	}
+}
+
 function profilePackageMatchesFilters(
 	pkg: PublicProfilePackageItem,
 	filters: ProfilePackageFilters,
@@ -248,29 +324,41 @@ function profilePackageMatchesFilters(
 		matchesVisibility(pkg, filters.visibility) &&
 		matchesHidden(pkg, filters.hidden) &&
 		matchesListing(pkg, filters.listing) &&
-		matchesApp(pkg, filters.app)
+		matchesApp(pkg, filters.app) &&
+		matchesPackagePresence(pkg, filters.package)
 	)
 }
 
-function sortProfilePackages(
-	packages: ReadonlyArray<PublicProfilePackageItem>,
+function compareProfilePackages(
+	left: PublicProfilePackageItem,
+	right: PublicProfilePackageItem,
 	sort: ProfilePackageSort,
 ) {
 	switch (sort) {
-		case 'updated':
-			// Server list is already `updated_at DESC`. Keep that order so the
-			// default matches what `/@username` rendered before sort chips.
-			return [...packages]
 		case 'name':
-			return [...packages].sort((left, right) => {
-				const byName = left.name.localeCompare(right.name)
-				return byName !== 0 ? byName : left.kodyId.localeCompare(right.kodyId)
-			})
+			return left.name.localeCompare(right.name)
+		case 'updated':
+			return left.updatedAt.localeCompare(right.updatedAt)
+		case 'created':
+			return left.createdAt.localeCompare(right.createdAt)
 		default: {
 			const exhaustive: never = sort
 			throw new Error(`Unhandled profile package sort: ${exhaustive}`)
 		}
 	}
+}
+
+function sortProfilePackages(
+	packages: ReadonlyArray<PublicProfilePackageItem>,
+	sort: ProfilePackageSort,
+	dir: ProfilePackageSortDirection,
+) {
+	const direction = dir === 'desc' ? -1 : 1
+	return [...packages].sort((left, right) => {
+		const byField = compareProfilePackages(left, right, sort)
+		if (byField !== 0) return byField * direction
+		return left.kodyId.localeCompare(right.kodyId)
+	})
 }
 
 export function filterProfilePackages(
@@ -280,5 +368,5 @@ export function filterProfilePackages(
 	const visible = profilePackageFiltersAreActive(filters)
 		? packages.filter((pkg) => profilePackageMatchesFilters(pkg, filters))
 		: packages
-	return sortProfilePackages(visible, filters.sort)
+	return sortProfilePackages(visible, filters.sort, filters.dir)
 }

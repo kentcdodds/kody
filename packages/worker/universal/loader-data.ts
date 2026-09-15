@@ -202,6 +202,7 @@ export type PackageFilesLoaderData = {
 	viewerIsOwner?: boolean
 	isPrivate?: boolean
 	isListed?: boolean
+	iconUrl?: string | null
 	imageBaseHref?: string | null
 }
 

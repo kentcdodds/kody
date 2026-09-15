@@ -1,20 +1,22 @@
 /** @jsxImportSource remix/ui */
 /** @jsxRuntime automatic */
 import { css } from 'remix/ui'
+import { IdentityIconMark } from '#universal/identity-icon-mark.tsx'
 import { getPackageSettingsHref } from '#universal/package-files.ts'
 import { renderPackageStatusSignifiers } from '#universal/package-status-signifiers.tsx'
 import { routes } from '#universal/routes.ts'
 import { colors, spacing } from '#universal/styles/tokens.ts'
 
-export type PackageRepoNavActive = 'code' | 'settings'
+export type PackageRepoNavActive = 'repo' | 'files' | 'settings'
 
 function renderPackageRepoNav(input: {
 	username: string
 	kodyId: string
+	filesHref: string
 	viewerIsOwner: boolean
 	active: PackageRepoNavActive
 }) {
-	const codeHref = routes.communityPackage.href({
+	const repoHref = routes.communityPackage.href({
 		username: input.username,
 		kodyId: input.kodyId,
 	})
@@ -23,14 +25,26 @@ function renderPackageRepoNav(input: {
 		kodyId: input.kodyId,
 	})
 	return (
-		<nav aria-label="Package" data-testid="package-repo-nav" mix={css(navCss)}>
+		<nav
+			aria-label="Repository"
+			data-testid="package-repo-nav"
+			mix={css(navCss)}
+		>
 			<a
-				href={codeHref}
-				aria-current={input.active === 'code' ? 'page' : undefined}
-				data-testid="package-repo-nav-code"
+				href={repoHref}
+				aria-current={input.active === 'repo' ? 'page' : undefined}
+				data-testid="package-repo-nav-repo"
 				mix={css(tabCss)}
 			>
-				Code
+				Repo
+			</a>
+			<a
+				href={input.filesHref}
+				aria-current={input.active === 'files' ? 'page' : undefined}
+				data-testid="package-repo-nav-files"
+				mix={css(tabCss)}
+			>
+				Files
 			</a>
 			{input.viewerIsOwner ? (
 				<a
@@ -53,8 +67,12 @@ export function renderPackageRepoChrome(input: {
 	isListed?: boolean
 	viewerIsOwner: boolean
 	active: PackageRepoNavActive
+	filesHref: string
 	description?: string
 	ownerProfilePublic?: boolean
+	iconUrl?: string | null
+	iconName?: string
+	iconTestId?: string
 	animate?: boolean
 }) {
 	const backHref = input.viewerIsOwner
@@ -74,6 +92,7 @@ export function renderPackageRepoChrome(input: {
 					style: { '--rise': step },
 				} as const)
 			: {}
+	const isListed = input.isListed === true
 
 	return (
 		<div data-testid="package-repo-chrome">
@@ -86,6 +105,17 @@ export function renderPackageRepoChrome(input: {
 				← {backLabel}
 			</a>
 			<header {...rise('1')} mix={css(headCss)}>
+				<IdentityIconMark
+					name={input.iconName ?? input.kodyId}
+					iconUrl={input.iconUrl ?? null}
+					size="detail"
+					testId={
+						input.iconTestId ??
+						(isListed
+							? 'community-listing-icon-detail'
+							: 'package-identity-icon-detail')
+					}
+				/>
 				<h1 mix={css(titleCss)}>
 					{profileHref ? (
 						<a href={profileHref} mix={css(ownerLinkCss)}>
@@ -100,7 +130,7 @@ export function renderPackageRepoChrome(input: {
 					<span>{input.kodyId}</span>
 					{renderPackageStatusSignifiers({
 						isPrivate: input.isPrivate,
-						isListed: input.isListed === true,
+						isListed,
 					})}
 				</h1>
 			</header>
@@ -113,6 +143,7 @@ export function renderPackageRepoChrome(input: {
 				{renderPackageRepoNav({
 					username: input.username,
 					kodyId: input.kodyId,
+					filesHref: input.filesHref,
 					viewerIsOwner: input.viewerIsOwner,
 					active: input.active,
 				})}
@@ -136,6 +167,10 @@ const backLinkCss = {
 
 const headCss = {
 	marginTop: '1.8rem',
+	display: 'flex',
+	alignItems: 'center',
+	gap: '0.85rem',
+	minWidth: 0,
 }
 
 const titleCss = {
@@ -149,6 +184,7 @@ const titleCss = {
 	letterSpacing: '-0.024em',
 	lineHeight: 1.15,
 	overflowWrap: 'anywhere' as const,
+	minWidth: 0,
 }
 
 const slashCss = {

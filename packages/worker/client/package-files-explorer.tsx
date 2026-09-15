@@ -137,7 +137,10 @@ export function PackageFilesExplorer(
 						isPrivate: data.isPrivate ?? false,
 						isListed: data.isListed === true,
 						viewerIsOwner: data.viewerIsOwner ?? false,
-						active: 'code',
+						active: 'files',
+						filesHref: data.filesBasePath,
+						iconUrl: data.iconUrl ?? null,
+						iconName: data.kodyId,
 					})
 				) : (
 					<>

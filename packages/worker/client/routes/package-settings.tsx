@@ -13,7 +13,12 @@ import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { NotFoundPage } from '#client/not-found-page.tsx'
 import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
+import { resolvePackageListIconUrl } from '#universal/identity-icon-urls.ts'
 import { type AccountPackageDetail } from '#universal/loader-data.ts'
+import {
+	fallbackDefaultBranchName,
+	getPackageTreeHref,
+} from '#universal/package-files.ts'
 import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
 import { renderPackageRepoChrome } from '#universal/package-repo-nav.tsx'
 import { routes } from '#universal/routes.ts'
@@ -321,8 +326,21 @@ export function PackageSettingsRoute(handle: Handle) {
 							isListed: ownerPackage?.hasCommunityListing === true,
 							viewerIsOwner: true,
 							active: 'settings',
+							filesHref: getPackageTreeHref({
+								username: chromeUsername,
+								kodyId: chromeKodyId,
+								ref: fallbackDefaultBranchName,
+							}),
 							description: ownerPackage?.description ?? '',
 							ownerProfilePublic,
+							iconUrl: resolvePackageListIconUrl({
+								username: chromeUsername,
+								kodyId: chromeKodyId,
+								listingId: null,
+								listingIconCommit: null,
+								publishedCommit: ownerPackage?.publishedCommit ?? null,
+							}),
+							iconName: ownerPackage?.kodyId ?? chromeKodyId,
 						})
 					: null}
 				{renderShellStatus(statusMessage)}
