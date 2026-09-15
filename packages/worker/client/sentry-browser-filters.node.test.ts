@@ -1167,3 +1167,88 @@ test('browser Sentry filters drop local Vite HMR and loopback frame-resolve 500s
 		}),
 	).not.toBeNull()
 })
+
+test('browser Sentry filters drop Remix reconcile insertBefore NotFoundError (KODY-7N)', () => {
+	const insertBeforeMessage =
+		"Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node."
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'NotFoundError',
+						value: insertBeforeMessage,
+						stacktrace: {
+							frames: [
+								{
+									function: 'moveDomRange',
+									filename: '@remix-run/ui/dist/runtime/reconcile',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent(
+			{
+				exception: {
+					values: [
+						{
+							type: 'NotFoundError',
+							value: `NotFoundError: ${insertBeforeMessage}`,
+						},
+					],
+				},
+			},
+			Object.assign(new DOMException(insertBeforeMessage, 'NotFoundError'), {
+				stack:
+					"NotFoundError: Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.\n    at ka (@remix-run/ui/dist/runtime/reconcile:1:1)",
+			}),
+		),
+	).toBeNull()
+	// Same insertBefore NotFoundError without Remix reconcile frames stays visible.
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'NotFoundError',
+						value: insertBeforeMessage,
+						stacktrace: {
+							frames: [
+								{
+									function: 'boot',
+									filename: '../client/entry.tsx',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+	// KODY-5E-style HierarchyRequestError must stay visible.
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'HierarchyRequestError',
+						value: insertBeforeMessage,
+						stacktrace: {
+							frames: [
+								{
+									function: 'moveDomRange',
+									filename: '@remix-run/ui/dist/runtime/reconcile',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+})

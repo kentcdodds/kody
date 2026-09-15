@@ -17,6 +17,11 @@ import { colors, radius } from '#universal/styles/tokens.ts'
  * Changing a select updates conversation marks through `onHostsChange`.
  * Customizable select is a progressive enhancement; other browsers keep
  * a native select styled as the same inline chip.
+ *
+ * `translate="no"` + `notranslate` keep Chrome Translate (and similar)
+ * from rewriting Remix-owned select/label DOM. A host change calls
+ * `handle.update()`; reconcile then throws NotFoundError if a translator
+ * has replaced nodes Remix still holds as anchors (KODY-7N).
  */
 export function WalkthroughHostIntro(
 	handle: Handle<{
@@ -35,7 +40,7 @@ export function WalkthroughHostIntro(
 		const hosts = handle.props.hosts
 		if (handle.props.variant === 'picker') {
 			return (
-				<div mix={css(pickerCss)}>
+				<div translate="no" class="notranslate" mix={css(pickerCss)}>
 					<p mix={css(pickerLeadCss)}>Choose three agents you use:</p>
 					<p mix={css(pickerSentenceCss)}>
 						I use {renderHostSelect(hosts, 'coding', changeSlot)} for daily
@@ -47,14 +52,14 @@ export function WalkthroughHostIntro(
 			)
 		}
 		return (
-			<>
+			<span translate="no" class="notranslate">
 				Let&apos;s say you use {renderHostSelect(hosts, 'coding', changeSlot)}{' '}
 				as your regular coding agent,{' '}
 				{renderHostSelect(hosts, 'invoke', changeSlot)} as your chat agent on
 				your phone, and {renderHostSelect(hosts, 'notify', changeSlot)} as
 				another agent you sometimes use. Here&apos;s an example of conversations
 				you might have with them when they&apos;re connected to Kody.
-			</>
+			</span>
 		)
 	}
 }
@@ -71,6 +76,8 @@ function renderHostSelect(
 		<select
 			aria-label={label}
 			value={selected.id}
+			translate="no"
+			class="notranslate"
 			mix={[
 				css(selectCss),
 				on('change', (event) => {

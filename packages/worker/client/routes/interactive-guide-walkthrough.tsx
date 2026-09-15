@@ -40,9 +40,15 @@ export function renderInteractiveGuideWalkthrough(input: {
 	afterActs?: RemixNode
 	highlights?: Record<string, HighlightedCode>
 	hosts?: WalkthroughHostPick
+	/** Keep Remix-owned transcript DOM out of Chrome Translate (KODY-7N). */
+	lockTranslation?: boolean
 }) {
 	return (
-		<div mix={css(walkthroughCss)}>
+		<div
+			translate={input.lockTranslation ? 'no' : undefined}
+			class={input.lockTranslation ? 'notranslate' : undefined}
+			mix={css(walkthroughCss)}
+		>
 			<p mix={css(leadCss)}>{input.lead}</p>
 
 			{input.acts.map((act) => (
