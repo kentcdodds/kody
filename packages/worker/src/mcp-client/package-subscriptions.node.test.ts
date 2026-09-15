@@ -93,7 +93,8 @@ test('mcp.server.disconnected fans out a lean same-user payload', async () => {
 		event,
 	})
 
-	expect(results).toHaveLength(1)
+	expect(results.complete).toBe(true)
+	expect(results.results).toHaveLength(1)
 	expect(mocks.invokePackageSubscription).toHaveBeenCalledWith(
 		expect.objectContaining({
 			savedPackage,
@@ -153,7 +154,7 @@ test('mcp.server connection events skip disabled servers and never throw', async
 			userId: 'user-1',
 			events: [event],
 		}),
-	).resolves.toBeUndefined()
+	).resolves.toBe(false)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'mcp.server connection package subscription discovery incomplete',
 		expect.objectContaining({
@@ -193,6 +194,58 @@ test('mcp.server connection events skip disabled servers and never throw', async
 	expect(mocks.invokePackageSubscription).toHaveBeenCalledWith(
 		expect.objectContaining({
 			topic: mcpServerReconnectedTopic,
+		}),
+	)
+
+	mocks.listEnabledMcpServerSettingRows.mockRejectedValueOnce(
+		new Error('D1 unavailable'),
+	)
+	await expect(
+		emitMcpServerConnectionEventsIfNeeded({
+			env,
+			userId: 'user-1',
+			events: [event],
+		}),
+	).resolves.toBe(false)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'mcp.server connection event enabled-server lookup failed',
+		expect.objectContaining({
+			error: expect.any(Error),
+		}),
+	)
+
+	mocks.listEnabledMcpServerSettingRows.mockResolvedValueOnce([
+		{ id: 'server-home' },
+	])
+	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([
+		{
+			id: 'package-1',
+			userId: 'user-1',
+			sourceId: 'source-1',
+			kodyId: 'home-watch',
+			name: '@user/home-watch',
+		},
+	])
+	mocks.loadPackageManifestBySourceId.mockResolvedValueOnce(
+		subscribedManifest({ topic: mcpServerDisconnectedTopic }),
+	)
+	mocks.invokePackageSubscription.mockResolvedValueOnce({
+		status: 503,
+		body: { error: { code: 'idempotency_lookup_failed' } },
+	})
+	await expect(
+		emitMcpServerConnectionEventsIfNeeded({
+			env,
+			userId: 'user-1',
+			events: [event],
+		}),
+	).resolves.toBe(false)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'mcp.server connection package subscription invoke failed',
+		expect.objectContaining({
+			eventId: 'event-1',
+			topic: mcpServerDisconnectedTopic,
+			serverName: 'home',
 		}),
 	)
 })

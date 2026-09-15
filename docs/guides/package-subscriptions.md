@@ -495,13 +495,20 @@ packages saved by that same user that declare the topic. When that down episode
 later observes `ready` again, Kody dispatches `mcp.server.reconnected` with the
 same `server.episode_id`.
 
-Never-ready servers (still `authenticating` after add), disabled servers, and
-in-flight `connecting` / `connected` / `discovering` states do not emit. Token
-loss that parks in `authenticating` after a prior `ready` emits disconnected
-without the lightweight retry — the hub stamps a durable token-refresh
-`last_error` and the user must reopen `/account/mcp-servers`.
-`mcpServerReconnect` tries stored refresh first, then mints a new authorization
-URL; listener packages should not call it on every event.
+Never-ready servers (still `authenticating` after add, with no stored tokens and
+no token-recovery `last_error`), disabled servers, and in-flight `connecting` /
+`connected` / `discovering` states do not emit. A durable token-recovery park
+(`authenticating` plus “no refresh token” / phase token exchange) is a working →
+failed flip: the hub infers previously-ready when the episode bit is missing,
+stamps `last_error`, and queues `mcp.server.disconnected` without the
+lightweight retry. Waiting and search peeks, account-page snapshots, and hub
+mutations dispatch that pending event to same-user packages that declare the
+topic (for example a Discord notifier). Those requests pass `waitUntil` so the
+package invoke can finish after the response; the hub acks only the dispatched
+event ids after fan-out returns complete. Incomplete discovery, retryable invoke
+failures, and a failed enabled-server lookup leave the event pending instead of
+acking it. `mcpServerReconnect` tries stored refresh first, then mints a new
+authorization URL; listener packages should not call it on every event.
 
 Delivery is best-effort after the hub observes the transition — there is no
 Queue / DLQ for these topics. Failures during subscriber discovery or

@@ -4,8 +4,10 @@ import {
 	describeMcpOAuthTokenRecovery,
 	isMcpOAuthTokenRecoveryLastError,
 	mcpOAuthTokenRecoveryStorageKey,
+	mergeMcpOAuthTokens,
 	readMcpOAuthTokenPresence,
 	shouldAttemptMcpOAuthRefresh,
+	shouldQueueMcpTokenRecoveryDisconnected,
 } from './oauth-token-recovery.ts'
 
 test('token recovery inspects stored OAuth blobs without treating empty strings as tokens', () => {
@@ -43,6 +45,34 @@ test('token recovery inspects stored OAuth blobs without treating empty strings 
 			hasRefreshToken: false,
 		}),
 	).toBe(false)
+	expect(
+		shouldQueueMcpTokenRecoveryDisconnected({
+			wasReady: false,
+			presence: { hasAccessToken: true, hasRefreshToken: false },
+			hasTokenRecoveryLastError: false,
+		}),
+	).toBe(true)
+	expect(
+		shouldQueueMcpTokenRecoveryDisconnected({
+			wasReady: false,
+			presence: { hasAccessToken: true, hasRefreshToken: true },
+			hasTokenRecoveryLastError: false,
+		}),
+	).toBe(false)
+	expect(
+		shouldQueueMcpTokenRecoveryDisconnected({
+			wasReady: false,
+			presence: { hasAccessToken: false, hasRefreshToken: false },
+			hasTokenRecoveryLastError: true,
+		}),
+	).toBe(true)
+	expect(
+		shouldQueueMcpTokenRecoveryDisconnected({
+			wasReady: false,
+			presence: { hasAccessToken: false, hasRefreshToken: false },
+			hasTokenRecoveryLastError: false,
+		}),
+	).toBe(false)
 	expect(mcpOAuthTokenRecoveryStorageKey('server-1')).toBe(
 		'mcp-oauth-token-recovery/server-1',
 	)
@@ -77,6 +107,24 @@ test('token recovery lastError names refresh failure without claiming IdP just s
 			stillHasRefreshToken: true,
 		}),
 	).toContain('Refresh did not restore the connection')
+	expect(
+		mergeMcpOAuthTokens({
+			incoming: { access_token: 'new-at' },
+			existing: { access_token: 'old-at', refresh_token: 'keep-rt' },
+		}),
+	).toEqual({ access_token: 'new-at', refresh_token: 'keep-rt' })
+	expect(
+		mergeMcpOAuthTokens({
+			incoming: { access_token: 'new-at', refresh_token: 'rotated-rt' },
+			existing: { refresh_token: 'old-rt' },
+		}),
+	).toEqual({ access_token: 'new-at', refresh_token: 'rotated-rt' })
+	expect(
+		mergeMcpOAuthTokens({
+			incoming: { access_token: 'new-at' },
+			existing: { access_token: 'old-at' },
+		}),
+	).toEqual({ access_token: 'new-at' })
 	expect(
 		isMcpOAuthTokenRecoveryLastError({
 			message: 'Authorization completed at the identity provider, but hung',

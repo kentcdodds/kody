@@ -138,7 +138,9 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// parks authenticating) adds ~2 KB: CI dry-run 5_036_978 bytes.
 		// Package publish stamps identity-icon derivatives from
 		// finalizePublishedEntitySource: local dry-run 5_046_681 bytes.
-		maxEntryBytes: 5_050_000,
+		// MCP connection-event ack-by-id plus last_error keep-until-ready
+		// on McpClientHub: CI dry-run 5_050_804 bytes.
+		maxEntryBytes: 5_060_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,

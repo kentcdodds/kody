@@ -149,6 +149,10 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
+			if (request.method === 'HEAD') {
+				return new Response(null, { status: 200 })
+			}
+
 			const user = await requireAuthenticatedPageUser(request, env)
 			if (user instanceof Response) {
 				return user
@@ -157,6 +161,7 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 			const hub = createMcpClientHubClient({
 				env,
 				userId: user.mcpUser.userId,
+				waitUntil,
 			})
 			let authSuccess = false
 			let authError: string | null = null
@@ -282,6 +287,7 @@ async function handleConnectionAction(input: {
 	const hub = createMcpClientHubClient({
 		env: input.env,
 		userId: input.user.mcpUser.userId,
+		waitUntil,
 	})
 	const result =
 		input.kind === 'reconnect'

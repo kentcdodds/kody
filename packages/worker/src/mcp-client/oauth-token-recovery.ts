@@ -32,8 +32,56 @@ export function readMcpOAuthTokenPresence(
 	}
 }
 
+/**
+ * Authorization servers often omit `refresh_token` on refresh (and
+ * sometimes on a second authorization-code grant). RFC 6749 says the
+ * client must keep the existing refresh token in that case. The Agents
+ * SDK `saveTokens` replaces the whole blob, so a merge has to happen
+ * before the write.
+ */
+export function mergeMcpOAuthTokens(input: {
+	incoming: unknown
+	existing: unknown
+}): unknown {
+	if (!input.incoming || typeof input.incoming !== 'object') {
+		return input.incoming
+	}
+	const incomingPresence = readMcpOAuthTokenPresence(input.incoming)
+	if (incomingPresence.hasRefreshToken) return input.incoming
+	const existingPresence = readMcpOAuthTokenPresence(input.existing)
+	if (!existingPresence.hasRefreshToken) return input.incoming
+	if (!input.existing || typeof input.existing !== 'object') {
+		return input.incoming
+	}
+	return {
+		...(input.incoming as Record<string, unknown>),
+		refresh_token: (input.existing as Record<string, unknown>)['refresh_token'],
+	}
+}
+
 export function shouldAttemptMcpOAuthRefresh(presence: McpOAuthTokenPresence) {
 	return presence.hasAccessToken || presence.hasRefreshToken
+}
+
+/**
+ * Queue `mcp.server.disconnected` for a durable token-recovery park.
+ * A stale access token with no refresh token is the "Authorization
+ * required / no refresh token / phase token exchange" card — still a
+ * working → failed flip even when episode `wasReady` was never written.
+ * A first Authorize that just saved tokens (typically including a
+ * refresh token) is not a park: do not infer previously-ready from
+ * refresh-token presence alone.
+ */
+export function shouldQueueMcpTokenRecoveryDisconnected(input: {
+	wasReady: boolean
+	presence: McpOAuthTokenPresence
+	hasTokenRecoveryLastError: boolean
+}) {
+	return (
+		input.wasReady ||
+		input.hasTokenRecoveryLastError ||
+		(input.presence.hasAccessToken && !input.presence.hasRefreshToken)
+	)
 }
 
 export function describeMcpOAuthTokenRecovery(input: {

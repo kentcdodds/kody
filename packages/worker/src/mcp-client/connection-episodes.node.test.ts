@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	createInitialMcpConnectionEpisode,
+	episodeAsPreviouslyReady,
 	mcpServerDisconnectedTopic,
 	mcpServerReconnectedTopic,
 	observeMcpConnectionState,
@@ -100,4 +101,18 @@ test('MCP connection episodes retry then emit once per down period', () => {
 	})
 	expect(reconnected.next.episodeId).toBeNull()
 	expect(reconnected.next.disconnectedEmitted).toBe(false)
+
+	const inferredReady = observe({
+		previous: episodeAsPreviouslyReady(createInitialMcpConnectionEpisode()),
+		currentState: 'authenticating',
+		retryCompleted: true,
+		episodeId: 'episode-token-recovery',
+	})
+	expect(inferredReady.event).toEqual({
+		topic: mcpServerDisconnectedTopic,
+		episodeId: 'episode-token-recovery',
+		previousState: 'ready',
+	})
+	expect(inferredReady.next.wasReady).toBe(true)
+	expect(inferredReady.next.disconnectedEmitted).toBe(true)
 })

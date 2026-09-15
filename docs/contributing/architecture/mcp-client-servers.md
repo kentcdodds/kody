@@ -110,22 +110,30 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
    `last_error` (`tools/list` after a catalog attempt, otherwise
    `server/discover`, plus attempt id and MCP URL) so Status cannot stay silent.
    Used or missing OAuth `state` on the callback recover without surfacing an
-   internal state error: the hub restarts authorization when needed. A
-   Back/replay while the connection is still `connected`, `discovering`, or
-   `connecting` keeps the existing tokens and retries discovery when the
-   transport is `connected`, but it does not report `auth=success` or clear
-   `last_error` until the connection is `ready`. Origin and redirect-URI
-   rejection messages are enriched with Kody's `oauthClientOrigin` and
-   `oauthCallbackUrl`. When a previously ready connection parks on
+   internal state error. When stored access or refresh tokens are present
+   (typical after a prefetch or Back/replay of a callback that already exchanged
+   the code), the hub settles with those tokens and does not remint or wipe the
+   grant. HEAD probes on the callback path return 200 and do not consume
+   `state`. A Back/replay while the connection is still `connected`,
+   `discovering`, or `connecting` keeps the existing tokens and retries
+   discovery when the transport is `connected`, but it does not report
+   `auth=success` or clear `last_error` until the connection is `ready`. A
+   successful code exchange clears a stale token-recovery `last_error` so Status
+   cannot keep showing "no refresh token" after Authorize. Origin and
+   redirect-URI rejection messages are enriched with Kody's `oauthClientOrigin`
+   and `oauthCallbackUrl`. When a previously ready connection parks on
    `authenticating`, the hub inspects stored tokens, stamps a durable
    `last_error` (phase `token exchange`) instead of leaving Status silent, and
    `mcpServerList` exposes `hasRefreshToken` without returning token values.
-   Reconnect tries `connectToServer` with the stored tokens first so the MCP SDK
-   can refresh; it only wipes client storage when that cannot restore `ready`
-   and no authorization URL is available, or when the callback URL changed.
-   Authorization-server reuse of a rotating refresh token still requires a human
-   re-auth. The account page offers Reconnect when automatic recovery cannot
-   finish.
+   `saveTokens` keeps an existing refresh token when the authorization server
+   omits one (RFC 6749) and keeps OAuth discovery so the next authorize URL can
+   still list scopes. Reconnect tries `connectToServer` with the stored tokens
+   first so the MCP SDK can refresh; it only remints authorization state when
+   that cannot restore `ready` and no authorization URL is available, or when
+   the callback URL changed. Token blobs stay in place unless the callback URL
+   changed. Authorization-server reuse of a rotating refresh token still
+   requires a human re-auth. The account page offers Reconnect when automatic
+   recovery cannot finish.
 6. The route redirects to `/account/mcp-servers/:serverId?auth=success|error`
    when the callback resolves to a server (including failures), or
    `/account/mcp-servers?auth=error` when it does not, for user feedback. Tokens
@@ -190,6 +198,14 @@ fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
   After a server has been `ready`, a later `disconnected` / `failed` state gets
   two lightweight reconnects (`connectToServer` + discover, no OAuth restart)
   before `mcp.server.disconnected` fans out to the owning user's packages.
+  Token-recovery parks that stamp `last_error` (including access-token-only “no
+  refresh token” parks that never wrote `wasReady`) also queue that disconnected
+  episode as working → failed. The hub client peeks pending events after
+  snapshots, waiting/search peeks, and hub mutations, dispatches them to
+  same-user subscriber packages (using `waitUntil` on account, waiting, and
+  callback requests), then acks only the dispatched event ids so a later-queued
+  episode stays pending. Incomplete discovery, retryable invoke failures, and a
+  failed enabled-server lookup leave the notice pending instead of acking.
   Recovery emits `mcp.server.reconnected`. `mcpServerReconnect` remains the
   explicit authorization restart. See
   [Package subscriptions](../../guides/package-subscriptions.md).

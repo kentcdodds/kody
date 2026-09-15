@@ -140,7 +140,9 @@ async function loadMatchingMcpServerSubscriptions(input: {
  * Fan an MCP server connection episode out to the owning user's packages that
  * declare the topic. Best-effort: discovery and invocation infrastructure
  * failures are logged, never thrown. Sibling handler terminal failures are
- * isolated via `Promise.allSettled`.
+ * isolated via `Promise.allSettled`. `complete` is false when discovery is
+ * incomplete or a retryable invoke failed, so the hub can leave the event
+ * pending.
  *
  * One emit per topic per episode. Packages decide how to notify.
  */
@@ -191,8 +193,10 @@ export async function dispatchMcpServerConnectionSubscriptionEvents(input: {
 				}),
 			),
 	)
+	let invokeFailed = false
 	for (const result of settled) {
 		if (result.status === 'rejected') {
+			invokeFailed = true
 			console.warn('mcp.server connection package subscription invoke failed', {
 				eventId: input.event.eventId,
 				topic: input.event.topic,
@@ -213,9 +217,12 @@ export async function dispatchMcpServerConnectionSubscriptionEvents(input: {
 			},
 		)
 	}
-	return settled.map((result) =>
-		result.status === 'fulfilled' ? result.value : null,
-	)
+	return {
+		results: settled.map((result) =>
+			result.status === 'fulfilled' ? result.value : null,
+		),
+		complete: discoveryErrors.length === 0 && !invokeFailed,
+	}
 }
 
 export async function emitMcpServerConnectionEventsIfNeeded(input: {
@@ -223,8 +230,8 @@ export async function emitMcpServerConnectionEventsIfNeeded(input: {
 	userId: string
 	events: Array<McpServerConnectionEvent>
 	waitUntil?: (promise: Promise<unknown>) => void
-}) {
-	if (input.events.length === 0) return
+}): Promise<boolean> {
+	if (input.events.length === 0) return true
 	let enabledIds: Set<string>
 	try {
 		const rows = await listEnabledMcpServerSettingRows({
@@ -236,7 +243,7 @@ export async function emitMcpServerConnectionEventsIfNeeded(input: {
 		console.warn('mcp.server connection event enabled-server lookup failed', {
 			error,
 		})
-		return
+		return false
 	}
 	const pending = input.events
 		.filter((event) => enabledIds.has(event.serverId))
@@ -248,11 +255,7 @@ export async function emitMcpServerConnectionEventsIfNeeded(input: {
 				waitUntil: input.waitUntil,
 			}),
 		)
-	if (pending.length === 0) return
-	const all = Promise.all(pending).then(() => undefined)
-	if (input.waitUntil) {
-		input.waitUntil(all)
-		return
-	}
-	await all
+	if (pending.length === 0) return true
+	const outcomes = await Promise.all(pending)
+	return outcomes.every((outcome) => outcome.complete)
 }

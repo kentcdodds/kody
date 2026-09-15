@@ -35,6 +35,7 @@ import {
 	mcpOAuthTokenRecoveryStoragePrefix,
 	readMcpOAuthTokenPresence,
 	shouldAttemptMcpOAuthRefresh,
+	shouldQueueMcpTokenRecoveryDisconnected,
 	type McpOAuthTokenPresence,
 } from './oauth-token-recovery.ts'
 import {
@@ -46,6 +47,7 @@ import { withStaticTransportHeaders } from './transport-headers.ts'
 import { clearLiveMcpTransportSession } from './transport-session.ts'
 import {
 	createInitialMcpConnectionEpisode,
+	episodeAsPreviouslyReady,
 	mcpConnectionEpisodeStorageKey,
 	mcpConnectionEventsPendingStorageKey,
 	mcpLightweightReconnectAttempts,
@@ -449,23 +451,7 @@ class McpClientHubBase extends DurableObject<Env> {
 			})
 		}
 		if (result.authSuccess && serverId) {
-			this.clearSessionBeforeConnect(serverId)
-			await this.manager.establishConnection(serverId)
-			await this.manager.waitForConnections({
-				timeout: connectionSettleTimeoutMs,
-			})
-			let connection = this.buildConnectResult(serverId)
-			let settleError: string | null = null
-			let settleLastError: McpServerLastError | null = null
-			if (isStuckMcpAuthenticatingWithoutAuthUrl(connection)) {
-				connection = await this.recoverStuckAuthenticating(serverId)
-				settleError = connection.error
-				settleLastError = connection.lastError ?? null
-			} else if (connection.state === 'connected') {
-				connection = await this.discoverAfterOAuthEstablish(serverId)
-				settleError = connection.error
-				settleLastError = connection.lastError ?? null
-			}
+			const settled = await this.settleAfterOAuthGrant(serverId)
 			if (serverName) {
 				await this.observeServer({
 					serverId,
@@ -477,8 +463,8 @@ class McpClientHubBase extends DurableObject<Env> {
 				sdkAuthError: result.authError ?? null,
 				serverId,
 				serverName,
-				settleError,
-				settleLastError,
+				settleError: settled.error,
+				settleLastError: settled.lastError ?? null,
 			})
 		}
 		return await this.resolveOAuthCallbackOutcome({
@@ -533,6 +519,35 @@ class McpClientHubBase extends DurableObject<Env> {
 				settleLastError,
 			})
 		}
+		const storedTokens = await this.readTokenPresence(input.serverId)
+		if (shouldAttemptMcpOAuthRefresh(storedTokens)) {
+			// A replay/prefetch often arrives after the first GET already
+			// exchanged the code. Settle with those tokens instead of
+			// reminting — remint used to wipe the new grant and force a
+			// second Authorize click.
+			const settled = await this.settleAfterOAuthGrant(input.serverId)
+			if (serverName) {
+				await this.observeServer({
+					serverId: input.serverId,
+					serverName,
+				})
+			}
+			if (
+				settled.state === 'ready' ||
+				shouldAttemptMcpOAuthRefresh(
+					await this.readTokenPresence(input.serverId),
+				)
+			) {
+				return await this.resolveOAuthCallbackOutcome({
+					sdkAuthSuccess: true,
+					sdkAuthError: null,
+					serverId: input.serverId,
+					serverName,
+					settleError: settled.error,
+					settleLastError: settled.lastError ?? null,
+				})
+			}
+		}
 		try {
 			const connection = await this.restartServerAuthorization(input)
 			if (connection.state === 'ready') {
@@ -556,6 +571,25 @@ class McpClientHubBase extends DurableObject<Env> {
 			authorizationNeeded: true,
 			lastError: null,
 		}
+	}
+
+	private async settleAfterOAuthGrant(
+		serverId: string,
+	): Promise<McpServerConnectResult> {
+		await this.clearTokenRecoveryLastError(serverId)
+		this.clearSessionBeforeConnect(serverId)
+		await this.manager.establishConnection(serverId)
+		await this.manager.waitForConnections({
+			timeout: connectionSettleTimeoutMs,
+		})
+		const connection = this.buildConnectResult(serverId)
+		if (isStuckMcpAuthenticatingWithoutAuthUrl(connection)) {
+			return await this.recoverStuckAuthenticating(serverId)
+		}
+		if (connection.state === 'connected') {
+			return await this.discoverAfterOAuthEstablish(serverId)
+		}
+		return connection
 	}
 
 	private async restartServerAuthorization(input: {
@@ -667,6 +701,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		const entries = await this.ctx.storage.list({ prefix })
 		const keys = [...entries.keys()].filter((key) => {
 			if (input.clearClientRegistration) return true
+			if (key.endsWith('/token')) return false
 			return !key.endsWith('/client_info/') && !key.endsWith('/oauth_discovery')
 		})
 		if (keys.length > 0) {
@@ -1112,6 +1147,13 @@ class McpClientHubBase extends DurableObject<Env> {
 	private async recoverStuckAuthenticating(
 		serverId: string,
 	): Promise<McpServerConnectResult> {
+		const storedTokens = await this.readTokenPresence(serverId)
+		if (shouldAttemptMcpOAuthRefresh(storedTokens)) {
+			const refreshed = await this.connectUsingStoredOAuthTokens(serverId)
+			if (refreshed.state === 'ready' || refreshed.authUrl) {
+				return refreshed
+			}
+		}
 		const connection = this.manager.mcpConnections[serverId]
 		const authProvider = connection?.options.transport.authProvider
 		if (
@@ -1129,7 +1171,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		if (result.state === 'connected') {
 			return (await this.runDiscoverIfConnected(serverId)).result
 		}
-		return await this.finishConnectResult(serverId)
+		return await this.finishConnectResult(serverId, storedTokens)
 	}
 
 	private async restoreAndWaitForServers() {
@@ -1148,11 +1190,12 @@ class McpClientHubBase extends DurableObject<Env> {
 	private async collectServerSnapshots(): Promise<Array<McpServerSnapshot>> {
 		await this.restoreAndWaitForServers()
 		for (const row of this.manager.listServers()) {
+			const beforeTokens = await this.readTokenPresence(row.id)
 			await this.observeServer({
 				serverId: row.id,
 				serverName: row.name,
 			})
-			await this.finishConnectResult(row.id)
+			await this.finishConnectResult(row.id, beforeTokens)
 		}
 		return this.listServerCards()
 	}
@@ -1160,19 +1203,21 @@ class McpClientHubBase extends DurableObject<Env> {
 	async getSnapshot(): Promise<McpClientHubSnapshot> {
 		return {
 			servers: await this.collectServerSnapshots(),
-			connectionEvents: await this.takeConnectionEvents(),
+			connectionEvents: await this.peekConnectionEvents(),
 		}
 	}
 
 	/**
-	 * Current server cards without observing, reconnecting, or draining
-	 * pending connection events. Search waiting uses this so a cache miss
-	 * cannot write episode state or later dispatch package subscriptions.
+	 * Current server cards without reconnecting. Search waiting uses this
+	 * so a cache miss cannot run lightweight reconnect. A token-recovery
+	 * park may queue a pending disconnected episode; the hub client
+	 * dispatches it after this peek.
 	 */
 	async peekServers(): Promise<Pick<McpClientHubSnapshot, 'servers'>> {
 		await this.restoreAndWaitForServers()
 		for (const row of this.manager.listServers()) {
-			await this.finishConnectResult(row.id)
+			const beforeTokens = await this.readTokenPresence(row.id)
+			await this.finishConnectResult(row.id, beforeTokens)
 		}
 		return {
 			servers: this.listServerCards(),
@@ -1210,15 +1255,38 @@ class McpClientHubBase extends DurableObject<Env> {
 		})) as CallToolResult
 	}
 
-	async takeConnectionEvents(): Promise<Array<McpServerConnectionEvent>> {
-		const events =
+	async peekConnectionEvents(): Promise<Array<McpServerConnectionEvent>> {
+		return (
 			(await this.ctx.storage.get<Array<McpServerConnectionEvent>>(
 				mcpConnectionEventsPendingStorageKey,
 			)) ?? []
+		)
+	}
+
+	async takeConnectionEvents(): Promise<Array<McpServerConnectionEvent>> {
+		const events = await this.peekConnectionEvents()
 		if (events.length > 0) {
 			await this.ctx.storage.delete(mcpConnectionEventsPendingStorageKey)
 		}
 		return events
+	}
+
+	/**
+	 * Remove only the supplied event ids. Events appended while dispatch
+	 * was in flight stay pending.
+	 */
+	async ackConnectionEvents(eventIds: Array<string>): Promise<void> {
+		if (eventIds.length === 0) return
+		const pending = await this.peekConnectionEvents()
+		if (pending.length === 0) return
+		const acked = new Set(eventIds)
+		const remaining = pending.filter((event) => !acked.has(event.eventId))
+		if (remaining.length === pending.length) return
+		if (remaining.length === 0) {
+			await this.ctx.storage.delete(mcpConnectionEventsPendingStorageKey)
+			return
+		}
+		await this.ctx.storage.put(mcpConnectionEventsPendingStorageKey, remaining)
 	}
 
 	private async readEpisode(
@@ -1286,9 +1354,27 @@ class McpClientHubBase extends DurableObject<Env> {
 
 	private async observeServer(input: { serverId: string; serverName: string }) {
 		const previous = await this.readEpisode(input.serverId)
+		const currentState = this.connectionStateFor(input.serverId)
+		const presence =
+			this.tokenPresence.get(input.serverId) ??
+			(await this.readTokenPresence(input.serverId))
+		const lastError = this.lastDiscoverErrors.get(input.serverId) ?? null
+		// After a successful grant, settle clears last_error and saves
+		// tokens while the connection may still be authenticating.
+		// Inferring from refresh-token presence would emit a false
+		// disconnect for first-add / still-settling Authorize.
+		const inferPreviouslyReady =
+			currentState === 'authenticating' &&
+			shouldQueueMcpTokenRecoveryDisconnected({
+				wasReady: previous.wasReady,
+				presence,
+				hasTokenRecoveryLastError: isMcpOAuthTokenRecoveryLastError(lastError),
+			})
 		const first = observeMcpConnectionState({
-			previous,
-			currentState: this.connectionStateFor(input.serverId),
+			previous: inferPreviouslyReady
+				? episodeAsPreviouslyReady(previous)
+				: previous,
+			currentState,
 			retryCompleted: false,
 			createEpisodeId: () => crypto.randomUUID(),
 		})
@@ -1411,6 +1497,66 @@ class McpClientHubBase extends DurableObject<Env> {
 		await this.ctx.storage.put(key, lastError)
 	}
 
+	private async clearTokenRecoveryLastError(serverId: string) {
+		const existing = this.lastDiscoverErrors.get(serverId) ?? null
+		const connection = this.manager.mcpConnections[serverId]
+		const liveMessage = connection?.connectionError ?? null
+		const liveLooksLikeRecovery =
+			liveMessage != null &&
+			isMcpOAuthTokenRecoveryLastError({
+				message: liveMessage,
+				phase: 'token exchange',
+				httpStatus: null,
+				httpBodySnippet: null,
+				mcpEndpoint: null,
+				resource: null,
+				authServer: null,
+				attemptId: 'unknown',
+				at: new Date().toISOString(),
+			})
+		if (
+			connection &&
+			(liveLooksLikeRecovery ||
+				(existing &&
+					isMcpOAuthTokenRecoveryLastError(existing) &&
+					liveMessage === existing.message))
+		) {
+			connection.connectionError = null
+		}
+		this.lastDiscoverErrors.delete(serverId)
+		await this.persistTokenRecoveryLastError(serverId, null)
+	}
+
+	private async ensureTokenRecoveryDisconnectedEpisode(serverId: string) {
+		const row = this.manager
+			.listServers()
+			.find((server) => server.id === serverId)
+		if (!row) return
+		const previous = await this.readEpisode(serverId)
+		const decision = observeMcpConnectionState({
+			previous: episodeAsPreviouslyReady(previous),
+			currentState: this.connectionStateFor(serverId),
+			retryCompleted: true,
+			createEpisodeId: () => crypto.randomUUID(),
+		})
+		await this.writeEpisode(
+			serverId,
+			decision.next,
+			decision.event
+				? {
+						topic: decision.event.topic,
+						eventId: crypto.randomUUID(),
+						episodeId: decision.event.episodeId,
+						serverId,
+						serverName: row.name,
+						state: this.connectionStateFor(serverId),
+						previousState: decision.event.previousState,
+						observedAt: new Date().toISOString(),
+					}
+				: undefined,
+		)
+	}
+
 	private async stampTokenRecoveryIfAuthenticating(
 		serverId: string,
 		beforeTokens?: McpOAuthTokenPresence,
@@ -1418,7 +1564,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		const result = this.buildConnectResult(serverId)
 		if (result.state !== 'authenticating') {
 			if (result.state === 'ready') {
-				await this.persistTokenRecoveryLastError(serverId, null)
+				await this.clearTokenRecoveryLastError(serverId)
 			}
 			await this.readTokenPresence(serverId)
 			return
@@ -1428,11 +1574,28 @@ class McpClientHubBase extends DurableObject<Env> {
 		const episode = await this.readEpisode(serverId)
 		const existing = this.lastDiscoverErrors.get(serverId) ?? null
 		if (existing && isMcpOAuthTokenRecoveryLastError(existing)) {
+			// Keep last_error while still authenticating, even if a refresh
+			// token remains after saveTokens merge. Clear only on ready.
 			const connection = this.manager.mcpConnections[serverId]
 			if (connection) connection.connectionError = existing.message
+			if (
+				shouldQueueMcpTokenRecoveryDisconnected({
+					wasReady: episode.wasReady,
+					presence: before,
+					hasTokenRecoveryLastError: true,
+				})
+			) {
+				await this.ensureTokenRecoveryDisconnectedEpisode(serverId)
+			}
 			return
 		}
-		const shouldStamp = episode.wasReady || shouldAttemptMcpOAuthRefresh(before)
+		const shouldStamp =
+			episode.wasReady ||
+			shouldQueueMcpTokenRecoveryDisconnected({
+				wasReady: false,
+				presence: before,
+				hasTokenRecoveryLastError: false,
+			})
 		if (!shouldStamp) return
 		const row = this.manager
 			.listServers()
@@ -1447,6 +1610,15 @@ class McpClientHubBase extends DurableObject<Env> {
 		if (connection) connection.connectionError = lastError.message
 		this.lastDiscoverErrors.set(serverId, lastError)
 		await this.persistTokenRecoveryLastError(serverId, lastError)
+		if (
+			shouldQueueMcpTokenRecoveryDisconnected({
+				wasReady: episode.wasReady,
+				presence: before,
+				hasTokenRecoveryLastError: true,
+			})
+		) {
+			await this.ensureTokenRecoveryDisconnectedEpisode(serverId)
+		}
 		console.warn('mcp oauth token recovery parked authenticating', {
 			attemptId: lastError.attemptId,
 			serverId,
