@@ -18,11 +18,11 @@ import {
 import {
 	deletePublishedBundleArtifactRowsBySourceId,
 	getPublishedBundleArtifactByIdentity,
-	insertPublishedBundleArtifactRow,
 	listPublishedBundleArtifactsBySourceId,
 	type PublishedBundleArtifactRecord,
 	type PublishedBundleArtifactUpsertInput,
 	updatePublishedBundleArtifactRow,
+	upsertPublishedBundleArtifactRow,
 } from '#worker/repo/published-bundle-artifacts-repo.ts'
 import {
 	getEntitySourceById,
@@ -168,16 +168,6 @@ export async function persistPublishedBundleArtifact(
 		packageContext: input.packageContext ?? null,
 		createdAt: new Date().toISOString(),
 	}
-	const existing = await getPublishedBundleArtifactByIdentity(
-		input.env.APP_DB,
-		{
-			userId: input.userId,
-			sourceId: input.source.id,
-			artifactKind: input.kind,
-			artifactName,
-			entryPoint,
-		},
-	)
 	const rowInput = toDbRowInput({
 		userId: input.userId,
 		sourceId: input.source.id,
@@ -194,14 +184,7 @@ export async function persistPublishedBundleArtifact(
 			artifact,
 			kvKey,
 		})
-		if (existing) {
-			await updatePublishedBundleArtifactRow(input.env.APP_DB, {
-				id: existing.id,
-				...rowInput,
-			})
-		} else {
-			await insertPublishedBundleArtifactRow(input.env.APP_DB, rowInput)
-		}
+		await upsertPublishedBundleArtifactRow(input.env.APP_DB, rowInput)
 	} catch (error) {
 		await deletePublishedBundleArtifact({
 			env: input.env,

@@ -16,6 +16,22 @@ const mockModule = vi.hoisted(() => ({
 	readPublishedBundleArtifact: vi.fn(),
 	readPublishedSourceSnapshot: vi.fn(),
 	updatePublishedBundleArtifactRow: vi.fn(),
+	upsertPublishedBundleArtifactRow: vi.fn(
+		async (db: unknown, input: { userId: string; sourceId: string }) => {
+			const existing = await mockModule.getPublishedBundleArtifactByIdentity(
+				db,
+				input,
+			)
+			if (existing) {
+				await mockModule.updatePublishedBundleArtifactRow(db, {
+					id: existing.id,
+					...input,
+				})
+				return existing.id
+			}
+			return await mockModule.insertPublishedBundleArtifactRow(db, input)
+		},
+	),
 	writePublishedBundleArtifact: vi.fn(),
 }))
 
@@ -38,6 +54,8 @@ vi.mock('#worker/repo/published-bundle-artifacts-repo.ts', async () => {
 			mockModule.insertPublishedBundleArtifactRow(...args),
 		updatePublishedBundleArtifactRow: (...args: Array<unknown>) =>
 			mockModule.updatePublishedBundleArtifactRow(...args),
+		upsertPublishedBundleArtifactRow: (...args: Array<unknown>) =>
+			mockModule.upsertPublishedBundleArtifactRow(...args),
 	}
 })
 

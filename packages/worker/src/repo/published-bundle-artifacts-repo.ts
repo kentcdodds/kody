@@ -1,3 +1,5 @@
+import { errorCauseChainIncludes } from '@kody-internal/shared/error-message.ts'
+
 export type PublishedBundleArtifactRecord = {
 	id: string
 	userId: string
@@ -305,6 +307,15 @@ export async function listPublishedBundleArtifactsBySourceId(
 	return (result.results ?? []).map(mapRow)
 }
 
+export function isPublishedBundleArtifactIdentityConflict(error: unknown) {
+	return errorCauseChainIncludes(
+		error,
+		(message) =>
+			/idx_published_bundle_artifacts_(source_)?identity/i.test(message) ||
+			/unique constraint failed:.*published_bundle_artifacts/i.test(message),
+	)
+}
+
 export async function insertPublishedBundleArtifactRow(
 	db: D1Database,
 	input: PublishedBundleArtifactUpsertInput,
@@ -333,6 +344,88 @@ export async function insertPublishedBundleArtifactRow(
 		)
 		.run()
 	return id
+}
+
+async function getLivePublishedCommit(
+	db: D1Database,
+	input: { userId: string; sourceId: string },
+) {
+	try {
+		const row = await db
+			.prepare(
+				`SELECT published_commit FROM entity_sources
+				WHERE id = ? AND user_id = ?
+				LIMIT 1`,
+			)
+			.bind(input.sourceId, input.userId)
+			.first<Record<string, unknown>>()
+		const commit = row?.['published_commit']
+		return typeof commit === 'string' && commit.length > 0 ? commit : null
+	} catch {
+		// Tests and callers without entity_sources keep last-write-wins.
+		return null
+	}
+}
+
+async function isStalePublishedBundleArtifactWrite(
+	db: D1Database,
+	input: PublishedBundleArtifactUpsertInput,
+) {
+	const liveCommit = await getLivePublishedCommit(db, input)
+	return liveCommit != null && liveCommit !== input.publishedCommit
+}
+
+/**
+ * Write one identity row. Isolated rebuilds, overlapping publishes, and
+ * hydration can race the same (kind, name, entry) after a source publish
+ * already succeeded; a UNIQUE on that index updates the winner instead of
+ * aborting later importable-module targets. A persist whose commit is no
+ * longer `entity_sources.published_commit` leaves the live identity alone.
+ */
+export async function upsertPublishedBundleArtifactRow(
+	db: D1Database,
+	input: PublishedBundleArtifactUpsertInput,
+) {
+	const identity = {
+		userId: input.userId,
+		sourceId: input.sourceId,
+		artifactKind: input.artifactKind,
+		artifactName: input.artifactName,
+		entryPoint: input.entryPoint,
+	}
+	const existing = await getPublishedBundleArtifactByIdentity(db, identity)
+	if (await isStalePublishedBundleArtifactWrite(db, input)) {
+		return existing?.id ?? null
+	}
+	try {
+		if (existing) {
+			await updatePublishedBundleArtifactRow(db, {
+				id: existing.id,
+				...input,
+			})
+			return existing.id
+		}
+		return await insertPublishedBundleArtifactRow(db, input)
+	} catch (error) {
+		if (!isPublishedBundleArtifactIdentityConflict(error)) {
+			throw error
+		}
+		const raced = await getPublishedBundleArtifactByIdentity(db, identity)
+		if (!raced) {
+			throw error
+		}
+		if (await isStalePublishedBundleArtifactWrite(db, input)) {
+			return raced.id
+		}
+		const updated = await updatePublishedBundleArtifactRow(db, {
+			id: raced.id,
+			...input,
+		})
+		if (!updated) {
+			throw error
+		}
+		return raced.id
+	}
 }
 
 export async function updatePublishedBundleArtifactRow(
