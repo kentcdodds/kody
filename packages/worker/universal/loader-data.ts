@@ -258,7 +258,7 @@ export type ProfileLoaderData = {
 	loggedIn: boolean
 }
 
-/** Package list + activity for `/@username`. Filter chips apply client-side. */
+/** Package list + activity for `/@username`. Chips and search (`q`) apply client-side. */
 export type ProfileListLoaderData = {
 	profile: PublicCommunityProfile
 	packages: Array<PublicProfilePackageItem>

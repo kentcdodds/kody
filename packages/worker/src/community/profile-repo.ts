@@ -328,7 +328,7 @@ export async function listPublicProfilePackages(
 	input: {
 		ownerStableUserId: string
 		query?: string
-		limit: number
+		limit?: number
 		/** When true, include private and hidden packages (own-profile inventory). */
 		includePrivate?: boolean
 	},
@@ -351,12 +351,12 @@ export async function listPublicProfilePackages(
 			})
 			return `(${columnClauses.join(' OR ')})`
 		})
-		conditions.push(`(${tokenClauses.join(' OR ')})`)
+		conditions.push(`(${tokenClauses.join(' AND ')})`)
 	}
 
-	const rows = await db
-		.prepare(
-			`SELECT saved_packages.id, saved_packages.name, saved_packages.kody_id,
+	const limitClause = input.limit == null ? '' : '\n\t\t\tLIMIT ?'
+	const statement = db.prepare(
+		`SELECT saved_packages.id, saved_packages.name, saved_packages.kody_id,
 				saved_packages.description, saved_packages.tags_json,
 				saved_packages.created_at, saved_packages.updated_at,
 				saved_packages.source_id, saved_packages.is_private,
@@ -369,11 +369,13 @@ export async function listPublicProfilePackages(
 				AND es.entity_kind = 'package'
 				AND es.entity_id = saved_packages.id
 			WHERE ${conditions.join(' AND ')}
-			ORDER BY saved_packages.updated_at DESC
-			LIMIT ?`,
-		)
-		.bind(...bindings, input.limit)
-		.all<Record<string, unknown>>()
+			ORDER BY saved_packages.updated_at DESC${limitClause}`,
+	)
+	const bound =
+		input.limit == null
+			? statement.bind(...bindings)
+			: statement.bind(...bindings, input.limit)
+	const rows = await bound.all<Record<string, unknown>>()
 
 	const packages = (rows.results ?? []).map((row) => ({
 		packageId: String(row['id']),

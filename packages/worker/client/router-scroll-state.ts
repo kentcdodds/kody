@@ -8,6 +8,8 @@ export type ScrollHistoryAction = RouterHistoryAction | 'load'
 
 export type RouterNavigateOptions = {
 	preventScrollReset?: boolean
+	/** Replace the current history entry instead of pushing a new one. */
+	replace?: boolean
 }
 
 export type RouterNavigationEventDetail = {

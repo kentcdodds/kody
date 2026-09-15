@@ -28,13 +28,13 @@ import {
 } from '#universal/profile-search.ts'
 import { ProfileContent } from '#universal/profile-content.tsx'
 import { renderProfileIdentity } from '#client/routes/profile-identity.tsx'
+import { ProfileRepositorySearchInput } from './profile-search-field.tsx'
 import { profileListForUsername } from './profile-list-for-username.ts'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	fieldCss,
 	fieldLabelCss,
 	getPrimaryButtonCss,
-	inputCss,
 	layoutMaxWidths,
 	pageDescriptionCss,
 	pageGutter,
@@ -212,6 +212,10 @@ export function ProfileRoute(handle: Handle) {
 			allowOwnerFilters: readyShell?.isSelf === true,
 		})
 		const searchQuery = filters.query
+		const queryAppliedByLoader = new URL(
+			currentHref,
+			'http://localhost',
+		).searchParams.has('limit')
 		const visibleList = profileListForUsername(
 			list,
 			listLoadedForUsername,
@@ -288,13 +292,9 @@ export function ProfileRoute(handle: Handle) {
 							) : null}
 							<label mix={css(searchFieldCss)}>
 								<span mix={css(fieldLabelCss)}>Search repositories</span>
-								<input
-									key={searchQuery}
-									type="search"
-									name="q"
-									defaultValue={searchQuery}
-									placeholder="Search by name, description, or tags"
-									mix={css(inputCss)}
+								<ProfileRepositorySearchInput
+									username={username}
+									filters={filters}
 								/>
 							</label>
 							<button
@@ -319,6 +319,7 @@ export function ProfileRoute(handle: Handle) {
 								sort={filters.sort}
 								dir={filters.dir}
 								isSelf={readyShell?.isSelf === true}
+								queryAppliedByLoader={queryAppliedByLoader}
 							/>
 						) : null}
 					</div>

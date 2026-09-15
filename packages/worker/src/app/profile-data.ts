@@ -1,4 +1,3 @@
-import { readPositiveInt } from '#worker/query-params.ts'
 import {
 	readAuthenticatedAppUser,
 	type ReadAuthenticatedAppUserOptions,
@@ -17,8 +16,15 @@ import {
 	listPublicProfilePackages,
 } from '#worker/community/profile-service.ts'
 
-const defaultProfilePackageLimit = 50
 const defaultProfileActivityLimit = 20
+const maxProfilePackageLimit = 100
+
+function readOptionalProfilePackageLimit(raw: string | null) {
+	if (raw == null || raw === '') return undefined
+	const parsed = Number.parseInt(raw, 10)
+	if (!Number.isFinite(parsed) || parsed < 1) return undefined
+	return Math.min(parsed, maxProfilePackageLimit)
+}
 
 const requestProfileDataStore = new WeakMap<
 	Request,
@@ -73,18 +79,18 @@ async function loadProfileDataUncached(
 	const filters = readProfilePackageFiltersFromUrl(url, {
 		allowOwnerFilters: isSelf,
 	})
-	const packageLimit = readPositiveInt(
+	const packageLimit = readOptionalProfilePackageLimit(
 		url.searchParams.get('limit'),
-		defaultProfilePackageLimit,
-		100,
 	)
+	const serverQuery =
+		packageLimit == null ? undefined : filters.query || undefined
 
 	const [packages, activity] = await Promise.all([
 		listPublicProfilePackages({
 			env,
 			ownerStableUserId: profile.userId,
-			query: filters.query || undefined,
-			limit: packageLimit,
+			...(serverQuery ? { query: serverQuery } : {}),
+			...(packageLimit == null ? {} : { limit: packageLimit }),
 			includePrivate: isSelf,
 		}),
 		getProfileActivity({
