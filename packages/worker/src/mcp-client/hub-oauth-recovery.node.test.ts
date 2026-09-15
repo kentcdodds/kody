@@ -837,6 +837,8 @@ test('token-recovery park with no refresh token still emits disconnected when wa
 	manager.connectBehavior = 'ready'
 	const recovered = await hub.getSnapshot()
 	expect(recovered.servers[0]?.state).toBe('ready')
+	expect(recovered.servers[0]?.lastError ?? null).toBeNull()
+	expect(recovered.servers[0]?.error ?? null).toBeNull()
 	expect(recovered.connectionEvents).toEqual([
 		expect.objectContaining({
 			topic: 'mcp.server.reconnected',

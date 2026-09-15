@@ -1564,7 +1564,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		const result = this.buildConnectResult(serverId)
 		if (result.state !== 'authenticating') {
 			if (result.state === 'ready') {
-				await this.persistTokenRecoveryLastError(serverId, null)
+				await this.clearTokenRecoveryLastError(serverId)
 			}
 			await this.readTokenPresence(serverId)
 			return
