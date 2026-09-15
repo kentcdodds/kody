@@ -249,8 +249,37 @@ test('view transitions skip shell tab switches, including when from-path was nev
 		animate({ from: '/@jane?visibility=private', to: '/@jane?app=no' }),
 	).toBe(false)
 	expect(animate({ from: '/@jane', to: '/@jane?q=notes' })).toBe(false)
+	expect(animate({ from: '/@jane', to: '/@jane?package=no' })).toBe(false)
+	expect(animate({ from: '/@jane', to: '/@jane?sort=created' })).toBe(false)
+	expect(animate({ from: '/@jane', to: '/@jane?dir=asc' })).toBe(false)
 	expect(animate({ from: '/@jane', to: '/@other' })).toBe(true)
 	expect(animate({ from: '/pricing', to: '/@jane' })).toBe(true)
+
+	// Repo / Files / Settings share chrome; crossing packages still animates.
+	expect(
+		animate({
+			from: '/@kentcdodds/grok-bot',
+			to: '/@kentcdodds/grok-bot/tree/main',
+		}),
+	).toBe(false)
+	expect(
+		animate({
+			from: '/@kentcdodds/grok-bot/tree/main',
+			to: '/@kentcdodds/grok-bot/settings',
+		}),
+	).toBe(false)
+	expect(
+		animate({
+			from: '/@kentcdodds/grok-bot/settings',
+			to: '/@kentcdodds/grok-bot',
+		}),
+	).toBe(false)
+	expect(
+		animate({
+			from: '/@kentcdodds/grok-bot',
+			to: '/@kentcdodds/other-bot',
+		}),
+	).toBe(true)
 
 	const withRail = {
 		querySelector: (selector: string) =>

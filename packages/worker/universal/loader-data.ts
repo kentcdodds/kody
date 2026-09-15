@@ -202,15 +202,23 @@ export type PackageFilesLoaderData = {
 	viewerIsOwner?: boolean
 	isPrivate?: boolean
 	isListed?: boolean
+	iconUrl?: string | null
 	imageBaseHref?: string | null
+	description?: string
+	/** True when `/@owner` is publicly reachable. Omit to keep the owner link. */
+	ownerProfilePublic?: boolean
 }
 
 /** SSR-embedded shell data for client-only regions on the detail page. */
 type CommunityDetailShellLoaderData = {
 	ok: true
 	listingId: string | null
+	/** Git default-branch name for Files-tab `/tree/:ref` URLs. */
+	defaultBranch?: string | null
 	name: string
 	description: string
+	/** True when `/@owner` is publicly reachable. Omit to keep the owner link. */
+	ownerProfilePublic?: boolean
 	forkPrompt: string
 	loggedIn: boolean
 	viewerIsAdmin: boolean

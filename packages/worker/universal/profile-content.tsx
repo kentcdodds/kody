@@ -13,7 +13,9 @@ import {
 	type ProfilePackageFilters,
 	type ProfilePackageHiddenFilter,
 	type ProfilePackageListingFilter,
+	type ProfilePackagePresenceFilter,
 	type ProfilePackageSort,
+	type ProfilePackageSortDirection,
 	type ProfilePackageVisibilityFilter,
 	type PublicCommunityActivityItem,
 	type PublicCommunityProfile,
@@ -23,6 +25,7 @@ import { getCommunityListingHref } from '#universal/community-links.ts'
 import { renderIcon, type IconName } from '#universal/icon.tsx'
 import {
 	buildProfileHref,
+	defaultProfilePackageSortDirection,
 	filterProfilePackages,
 	profilePackageFiltersAreActive,
 	profilePackageSortIsActive,
@@ -52,7 +55,9 @@ export type ProfileContentProps = {
 	listing?: ProfilePackageListingFilter
 	hidden?: ProfilePackageHiddenFilter
 	app?: ProfilePackageAppFilter
+	package?: ProfilePackagePresenceFilter
 	sort?: ProfilePackageSort
+	dir?: ProfilePackageSortDirection
 	isSelf: boolean
 }
 
@@ -141,8 +146,8 @@ function renderProfileFilterNav<Filter extends string>(input: {
  * GET filter pills above the package list, in the same grammar as the
  * community category chips. Every link carries the other active filters and
  * the search query so narrowing one axis never resets another. Guests only
- * get listing and app; visibility, hidden, and "needs republish" describe
- * owner-only inventory the client ignores for them anyway.
+ * get listing, package, app, and sort; visibility, hidden, and "needs
+ * republish" describe owner-only inventory the client ignores for them anyway.
  */
 function renderProfilePackageFilters(input: {
 	username: string
@@ -213,6 +218,23 @@ function renderProfilePackageFilters(input: {
 								buildProfileHref({ username, ...filters, hidden }),
 						})
 					: null}
+				{renderProfileFilterNav<ProfilePackagePresenceFilter>({
+					label: 'Package',
+					ariaLabel: 'Filter repositories by whether they have a package',
+					testId: 'profile-package-filter-package',
+					selected: filters.package,
+					choices: [
+						{ value: 'all', label: 'All' },
+						{ value: 'yes', label: 'Has package' },
+						{ value: 'no', label: 'No package' },
+					],
+					hrefFor: (packagePresence) =>
+						buildProfileHref({
+							username,
+							...filters,
+							package: packagePresence,
+						}),
+				})}
 				{renderProfileFilterNav<ProfilePackageAppFilter>({
 					label: 'App',
 					ariaLabel: 'Filter repositories by whether they have an app',
@@ -232,9 +254,27 @@ function renderProfilePackageFilters(input: {
 					selected: filters.sort,
 					choices: [
 						{ value: 'updated', label: 'Updated' },
+						{ value: 'created', label: 'Created' },
 						{ value: 'name', label: 'Name' },
 					],
-					hrefFor: (sort) => buildProfileHref({ username, ...filters, sort }),
+					hrefFor: (sort) =>
+						buildProfileHref({
+							username,
+							...filters,
+							sort,
+							dir: defaultProfilePackageSortDirection(sort),
+						}),
+				})}
+				{renderProfileFilterNav<ProfilePackageSortDirection>({
+					label: 'Order',
+					ariaLabel: 'Sort direction',
+					testId: 'profile-package-sort-dir',
+					selected: filters.dir,
+					choices: [
+						{ value: 'asc', label: 'Ascending' },
+						{ value: 'desc', label: 'Descending' },
+					],
+					hrefFor: (dir) => buildProfileHref({ username, ...filters, dir }),
 				})}
 			</div>
 		</details>
@@ -248,7 +288,7 @@ function countNoun(count: number, singular: string, plural: string) {
 function renderProfilePackageSignifiers(pkg: PublicProfilePackageItem) {
 	const hasCommunityListing = pkg.communityListingId != null
 	const signifiers: Array<{ name: IconName; title: string; show: boolean }> = [
-		{ name: 'box', title: 'Package', show: true },
+		{ name: 'box', title: 'Package', show: pkg.hasPackage },
 		{
 			name: 'lock',
 			title: 'Private',
@@ -330,11 +370,12 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 			listing: handle.props.listing ?? 'all',
 			hidden: handle.props.hidden ?? 'all',
 			app: handle.props.app ?? 'all',
+			package: handle.props.package ?? 'all',
 			sort: handle.props.sort ?? 'updated',
+			dir: handle.props.dir ?? 'desc',
 		}
 		const filtersActive = profilePackageFiltersAreActive(filters)
-		const toolbarActive =
-			filtersActive || profilePackageSortIsActive(filters.sort)
+		const toolbarActive = filtersActive || profilePackageSortIsActive(filters)
 		const visiblePackages = filterProfilePackages(packages, filters)
 		const showFilters =
 			isSelf || packages.length > 0 || Boolean(query) || toolbarActive

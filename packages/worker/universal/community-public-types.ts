@@ -100,6 +100,7 @@ export type PublicProfilePackageItem = {
 	description: string
 	tags: Array<string>
 	updatedAt: string
+	createdAt: string
 	communityListingId: string | null
 	/** The listing's package name leaf, which can lag the package's until republish. */
 	communityListingKodyId: string | null
@@ -109,6 +110,11 @@ export type PublicProfilePackageItem = {
 	 * Owners use this for the "Needs republish" filter and date reminder.
 	 */
 	needsRepublish: boolean
+	/**
+	 * True when this repository has the saved-package extension. Distinct
+	 * from `hasApp` (a package that also declares a package app).
+	 */
+	hasPackage: boolean
 	/** True when the saved package declares a package app. */
 	hasApp: boolean
 	/** Inbound webhook endpoints declared on this saved package. */
@@ -132,8 +138,14 @@ export type ProfilePackageListingFilter =
 	| 'ahead'
 export type ProfilePackageHiddenFilter = 'all' | 'yes' | 'no'
 export type ProfilePackageAppFilter = 'all' | 'yes' | 'no'
-/** Client-side list order. Default `updated` matches `ORDER BY updated_at DESC`. */
-export type ProfilePackageSort = 'updated' | 'name'
+/** Whether the repository has the saved-package extension. URL `package=`. */
+export type ProfilePackagePresenceFilter = 'all' | 'yes' | 'no'
+/**
+ * Client-side list order. Default `updated` matches `ORDER BY updated_at DESC`.
+ * `dir` defaults to `desc` for updated/created and `asc` for name.
+ */
+export type ProfilePackageSort = 'updated' | 'created' | 'name'
+export type ProfilePackageSortDirection = 'asc' | 'desc'
 
 export type ProfilePackageFilters = {
 	query: string
@@ -141,7 +153,9 @@ export type ProfilePackageFilters = {
 	listing: ProfilePackageListingFilter
 	hidden: ProfilePackageHiddenFilter
 	app: ProfilePackageAppFilter
+	package: ProfilePackagePresenceFilter
 	sort: ProfilePackageSort
+	dir: ProfilePackageSortDirection
 }
 
 export type CommunityActivityEventType =

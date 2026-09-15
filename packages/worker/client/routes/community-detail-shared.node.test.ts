@@ -52,7 +52,7 @@ test('settings loader follows a rename to settings, not the README', async () =>
 test('settings loader 404s for listed packages the viewer does not own', async () => {
 	const listedPublic = {
 		ok: true,
-		listing: { id: 'listing-1', kodyId: 'demo' },
+		listing: { id: 'listing-1', kodyId: 'demo', defaultBranch: 'develop' },
 		viewerIsOwner: false,
 		ownerPackage: null,
 		username: 'owner',
@@ -89,6 +89,8 @@ test('settings loader 404s for listed packages the viewer does not own', async (
 			viewerIsOwner: false,
 			kodyId: 'demo',
 			hasAgentsDocs: true,
+			listingId: 'listing-1',
+			defaultBranch: 'develop',
 		},
 	})
 	vi.unstubAllGlobals()

@@ -125,6 +125,7 @@ export type PublicProfilePackage = {
 	description: string
 	tags: Array<string>
 	updatedAt: string
+	createdAt: string
 	communityListingId: string | null
 	/**
 	 * The listing's own `kody_id`, which only moves on republish and so can lag
@@ -139,6 +140,11 @@ export type PublicProfilePackage = {
 	 * from `updated_at` vs `published_at`.
 	 */
 	needsRepublish: boolean
+	/**
+	 * True when this row is a saved package. Profile lists currently only
+	 * include saved packages, so this is always true there.
+	 */
+	hasPackage: boolean
 	/** True when the saved package declares a package app. */
 	hasApp: boolean
 	/** Inbound webhook endpoints declared on this saved package. */

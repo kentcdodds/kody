@@ -342,7 +342,7 @@ function loadCommunityDetailPublicData(
  *
  * Compare HEAD to the package runtime pin, not `listing.pinnedCommit`. The
  * catalog snapshot only moves on community republish; `published_commit`
- * moves on every package publish. Mixing those made the Code tab claim
+ * moves on every package publish. Mixing those made the Repo tab claim
  * HEAD was unpublished after Publish HEAD already showed no changes.
  */
 async function withSourceHead(

@@ -1,11 +1,16 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { getOwnerUsernameFromListingName } from '#worker/community/public-urls.ts'
 import { getCommunityListingById } from '#worker/community/repo.ts'
+import { getUserSocialRowByUsername } from '#worker/community/profile-repo.ts'
 import { readCommunitySnapshot } from '#worker/community/snapshot.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { readPublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { getCommunityListingHref } from '#universal/community-links.ts'
+import {
+	buildCommunityIconUrl,
+	resolvePackageListIconUrl,
+} from '#universal/identity-icon-urls.ts'
 import {
 	isPackageFilesMediaKind,
 	maxPackageFilePreviewBytes,
@@ -65,9 +70,12 @@ async function toLoaderData(input: {
 	isPrivate?: boolean
 	isListed?: boolean
 	listingId?: string | null
+	iconUrl?: string | null
 	viewedCommit?: string | null
 	assetCommit?: string | null
 	mediaHref?: string | null
+	description?: string
+	ownerProfilePublic?: boolean
 }): Promise<PackageFilesLoaderData> {
 	const contentKind = input.view.contentKind
 	const omitText =
@@ -116,6 +124,7 @@ async function toLoaderData(input: {
 		viewerIsOwner: input.viewerIsOwner,
 		isPrivate: input.isPrivate,
 		isListed: input.isListed ?? Boolean(input.listingId),
+		iconUrl: input.iconUrl ?? null,
 		imageBaseHref: getCommunityPackageAssetBaseHrefForViewedCommit({
 			listingId: input.listingId,
 			ownerUsername: input.username,
@@ -123,6 +132,8 @@ async function toLoaderData(input: {
 			viewedCommit: input.viewedCommit,
 			assetCommit: input.assetCommit,
 		}),
+		description: input.description,
+		ownerProfilePublic: input.ownerProfilePublic,
 	}
 }
 
@@ -155,7 +166,7 @@ export async function loadCommunityPackageFilesData(input: {
 
 	const ownerUsername = getOwnerUsernameFromListingName(listing.name)
 	const treeRef = input.ref?.trim() ?? ''
-	const [tree, viewerUserId] = await Promise.all([
+	const [tree, viewerUserId, ownerRow] = await Promise.all([
 		loadCommunityListingPublicTree({
 			env: input.env,
 			request: input.request,
@@ -163,6 +174,9 @@ export async function loadCommunityPackageFilesData(input: {
 			treeRef,
 		}),
 		readOptionalViewerUserId({ env: input.env, request: input.request }),
+		ownerUsername
+			? getUserSocialRowByUsername(input.env.APP_DB, ownerUsername)
+			: Promise.resolve(null),
 	])
 	if (!tree) return null
 	const { loaded, urlRef, resolved } = tree
@@ -187,7 +201,7 @@ export async function loadCommunityPackageFilesData(input: {
 			ownerUsername,
 			kodyId: listing.kodyId,
 		}),
-		backLabel: 'Code',
+		backLabel: 'Repo',
 		filesBasePath,
 		view,
 		serverTiming: input.serverTiming,
@@ -196,6 +210,10 @@ export async function loadCommunityPackageFilesData(input: {
 		viewerIsOwner: viewerUserId === listing.ownerUserId,
 		isPrivate: false,
 		listingId: listing.id,
+		iconUrl: buildCommunityIconUrl({
+			listingId: listing.id,
+			iconCommit: listing.iconCommit,
+		}),
 		viewedCommit: resolved.commit,
 		assetCommit: listing.pinnedCommit,
 		mediaHref: view.contentPath
@@ -207,6 +225,8 @@ export async function loadCommunityPackageFilesData(input: {
 					relativePath: view.contentPath,
 				})
 			: null,
+		description: listing.description,
+		ownerProfilePublic: ownerRow?.profile_visibility === 'public',
 	})
 }
 
@@ -408,7 +428,10 @@ export async function loadAccountPackageFilesData(input: {
 	})
 	if (!record) return null
 
-	const source = await getEntitySourceById(input.env.APP_DB, record.sourceId)
+	const [source, ownerRow] = await Promise.all([
+		getEntitySourceById(input.env.APP_DB, record.sourceId),
+		getUserSocialRowByUsername(input.env.APP_DB, input.username),
+	])
 	const treeRef = input.ref?.trim() ?? ''
 	const resolved = await resolvePublicTreeCommit({
 		env: input.env,
@@ -460,7 +483,7 @@ export async function loadAccountPackageFilesData(input: {
 			username: input.username,
 			kodyId: record.kodyId,
 		}),
-		backLabel: 'Code',
+		backLabel: 'Repo',
 		filesBasePath: getPackageTreeHref({
 			username: input.username,
 			kodyId: record.kodyId,
@@ -473,6 +496,13 @@ export async function loadAccountPackageFilesData(input: {
 		viewerIsOwner: true,
 		isPrivate: record.isPrivate,
 		isListed: input.isListed === true,
+		iconUrl: resolvePackageListIconUrl({
+			username: input.username,
+			kodyId: record.kodyId,
+			listingId: null,
+			listingIconCommit: null,
+			publishedCommit: source?.published_commit ?? null,
+		}),
 		viewedCommit: resolved.commit,
 		assetCommit: source?.published_commit ?? '',
 		mediaHref: view.contentPath
@@ -483,6 +513,8 @@ export async function loadAccountPackageFilesData(input: {
 					relativePath: view.contentPath,
 				})
 			: null,
+		description: record.description,
+		ownerProfilePublic: ownerRow?.profile_visibility === 'public',
 	})
 }
 
@@ -519,6 +551,8 @@ export async function loadAccessiblePackageFilesData(input: {
 			isPrivate: page.ownerPackage?.isPrivate ?? false,
 			username: page.username,
 			kodyId: page.kodyId,
+			description: page.listing.listing.description,
+			ownerProfilePublic: page.ownerProfilePublic,
 		}
 	}
 
@@ -526,7 +560,7 @@ export async function loadAccessiblePackageFilesData(input: {
 	if (!page.canReadOwnerSource) return null
 	const user = await readAuthenticatedAppUser(input.request, input.env)
 	if (!user) return null
-	return loadAccountPackageFilesData({
+	const data = await loadAccountPackageFilesData({
 		env: input.env,
 		request: input.request,
 		userId: page.ownerUserId,
@@ -537,6 +571,12 @@ export async function loadAccessiblePackageFilesData(input: {
 		serverTiming: input.serverTiming,
 		isListed: page.ownerPackage.hasCommunityListing,
 	})
+	if (!data) return null
+	return {
+		...data,
+		description: page.ownerPackage.description,
+		ownerProfilePublic: page.ownerProfilePublic,
+	}
 }
 
 export async function loadPackagePageHasAgentsDocs(input: {

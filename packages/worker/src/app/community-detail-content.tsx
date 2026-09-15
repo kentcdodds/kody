@@ -13,7 +13,6 @@ import {
 	shortCommunityCommit,
 } from '#universal/community-display.ts'
 import { renderIcon } from '#universal/icon.tsx'
-import { IdentityIconMark } from '#universal/identity-icon-mark.tsx'
 import {
 	communityTagListCss,
 	communityTagPillCss,
@@ -32,8 +31,8 @@ import { buildPackagePublishApprovalPath } from '#worker/package-registry/packag
 
 /**
  * Server-rendered package head (the `community-detail` frame): GitHub-style
- * `@owner / name` + visibility + Code/Settings tabs, then the public catalog
- * extras (icon, install badges, tags, facts) when a listing exists.
+ * icon + `@owner / name` + visibility + Repo/Files/Settings tabs, then the
+ * public catalog extras (install badges, tags, facts) when a listing exists.
  */
 
 export type CommunityDetailContentProps = {
@@ -96,9 +95,12 @@ export function CommunityDetailContent(
 				isPrivate,
 				isListed: listing != null,
 				viewerIsOwner,
-				active: 'code',
+				active: 'repo',
+				filesHref,
 				description,
 				ownerProfilePublic,
+				iconUrl: markUrl,
+				iconName: listing?.name ?? kodyId,
 				animate: true,
 			})}
 
@@ -129,25 +131,8 @@ export function CommunityDetailContent(
 				</section>
 			) : null}
 
-			{!listing ? (
-				<header data-rise style={{ '--rise': '2' }} mix={css(listingHeadCss)}>
-					<IdentityIconMark
-						name={kodyId}
-						iconUrl={markUrl}
-						size="detail"
-						testId="package-identity-icon-detail"
-					/>
-				</header>
-			) : null}
-
 			{listing ? (
 				<header data-rise style={{ '--rise': '2' }} mix={css(listingHeadCss)}>
-					<IdentityIconMark
-						name={listing.name}
-						iconUrl={markUrl}
-						size="detail"
-						testId="community-listing-icon-detail"
-					/>
 					<div mix={css(listingBadgeGroupCss)}>
 						{listing.sourceAhead ? (
 							publishCompareHref ? (
@@ -189,26 +174,23 @@ export function CommunityDetailContent(
 				</header>
 			) : null}
 
-			<div data-rise style={{ '--rise': '3' }} mix={css(filesLinkRowCss)}>
-				{packageAppHref ? (
+			{packageAppHref ? (
+				<div
+					data-rise
+					style={{ '--rise': '3' }}
+					mix={css(packageAppLinkRowCss)}
+				>
 					<a
 						href={packageAppHref}
 						data-testid="open-package-app"
 						data-rmx-document
-						mix={css(filesLinkCss)}
+						mix={css(packageAppLinkCss)}
 					>
 						{renderIcon('share', { size: '1em' })}
 						Open Package App
 					</a>
-				) : null}
-				<a
-					href={filesHref}
-					data-testid="community-browse-files"
-					mix={css(filesLinkCss)}
-				>
-					Browse files
-				</a>
-			</div>
+				</div>
+			) : null}
 
 			{listing ? (
 				<>
@@ -316,7 +298,6 @@ const listingBadgeGroupCss = {
 	alignItems: 'center',
 	flexWrap: 'wrap' as const,
 	gap: '0.35rem',
-	paddingTop: '0.35rem',
 }
 
 const badgeCss = {
@@ -373,7 +354,7 @@ export function buildSourceAheadPublishHref(input: {
 	})
 }
 
-const filesLinkRowCss = {
+const packageAppLinkRowCss = {
 	display: 'flex',
 	flexWrap: 'wrap' as const,
 	alignItems: 'center',
@@ -381,7 +362,7 @@ const filesLinkRowCss = {
 	margin: '0.9rem 0 0',
 }
 
-const filesLinkCss = {
+const packageAppLinkCss = {
 	display: 'inline-flex',
 	alignItems: 'center',
 	gap: '0.35rem',

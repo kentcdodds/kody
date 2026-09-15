@@ -1,4 +1,4 @@
-import { createMultiMatcher } from 'remix/route-pattern/match'
+import { createMatcher, createMultiMatcher } from 'remix/route-pattern/match'
 import {
 	classifyPackageFileMedia,
 	type PackageFilesContentKind,
@@ -147,6 +147,39 @@ export function isPackageFilesPathname(pathname: string) {
 	return (
 		packageFilesPathMatcher.match(new URL(pathname, 'http://localhost')) != null
 	)
+}
+
+const packageRepoChromeMatchers = [
+	createMatcher(routes.communityPackage.pattern),
+	createMatcher(routes.communityPackageSettings.pattern),
+	createMatcher(routes.communityPackageTree.pattern),
+	createMatcher(routes.communityPackageFiles.pattern),
+] as const
+
+/**
+ * Same `@owner/name` Repo / Files / Settings chrome. Tab clicks should not
+ * run a page view-transition — the previous tab stays until the next
+ * loader commits.
+ */
+export function getPackageRepoChromeKey(pathname: string) {
+	const url = new URL(pathname, 'http://localhost')
+	for (const matcher of packageRepoChromeMatchers) {
+		const match = matcher.match(url)
+		if (match) {
+			return `${match.params.username.toLowerCase()}/${match.params.kodyId.toLowerCase()}`
+		}
+	}
+	return null
+}
+
+export function isSamePackageRepoChromeHref(from: string, to: string) {
+	const fromKey = getPackageRepoChromeKey(
+		new URL(from, 'http://localhost').pathname,
+	)
+	const toKey = getPackageRepoChromeKey(
+		new URL(to, 'http://localhost').pathname,
+	)
+	return fromKey != null && fromKey === toKey
 }
 
 export function isReservedPackageFilesKodyId(kodyId: string) {

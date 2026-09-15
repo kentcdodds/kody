@@ -65,13 +65,14 @@ generated swirl based on the package name.
 
 Anyone can browse `/community`, a public catalog at `/@username`, and a package
 at `/@username/:name` — for example `/@kentcdodds/devin`.
-`/community/:listingId` redirects to that canonical URL. Browse files at
+`/community/:listingId` redirects to that canonical URL. The package page tabs
+are **Repo** (details), **Files**, and **Settings** (owner). Files live at
 `/@username/:name/tree/:ref/...` where `:ref` is the repo's **default branch
 name** (usually `main`, whatever git reports — not hardcoded `master`), a SHA,
 or another branch. `HEAD` and leftover `/files` URLs 301 to
 `/tree/{defaultBranch}` (`main` when lookup misses). Private packages use the
 same tree URL; unauthenticated visitors get 404. Owner settings are
-`/@username/:name/settings`. The package home renders the README.
+`/@username/:name/settings`. The package home (Repo tab) renders the README.
 
 The catalog defaults to **Best**. **Newest** orders by last community publish.
 **Featured** is editorial placement only — not a safety badge. There is no

@@ -47,8 +47,8 @@ import { postPackageShareAction } from './package-share-client.ts'
 /**
  * Community detail, ported from the redesign prototype
  * (`landing/community-detail.html`). A 46rem article mirroring the blog
- * post: the listing head (back link, `@owner / name`, visibility, Code /
- * Settings tabs, tags, quiet meta row) stays server-rendered in the
+ * post: the listing head (back link, `@owner / name`, visibility, Repo /
+ * Files / Settings tabs, tags, quiet meta row) stays server-rendered in the
  * `community-detail` frame — see `src/app/community-detail-content.tsx` —
  * while this shell renders the README as `.prose`, admin tools, and the
  * report disclosure. Install / Installed / Fork outdated live in the frame

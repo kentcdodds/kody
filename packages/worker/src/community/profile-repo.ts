@@ -358,8 +358,9 @@ export async function listPublicProfilePackages(
 		.prepare(
 			`SELECT saved_packages.id, saved_packages.name, saved_packages.kody_id,
 				saved_packages.description, saved_packages.tags_json,
-				saved_packages.updated_at, saved_packages.source_id,
-				saved_packages.is_private, saved_packages.hidden, saved_packages.has_app,
+				saved_packages.created_at, saved_packages.updated_at,
+				saved_packages.source_id, saved_packages.is_private,
+				saved_packages.hidden, saved_packages.has_app,
 				es.published_commit
 			FROM saved_packages
 			LEFT JOIN entity_sources AS es
@@ -381,11 +382,13 @@ export async function listPublicProfilePackages(
 		description: String(row['description']),
 		tags: parseTagsJson(row['tags_json']),
 		updatedAt: String(row['updated_at']),
+		createdAt: String(row['created_at']),
 		sourceId: String(row['source_id']),
 		communityListingId: null as string | null,
 		communityListingKodyId: null as string | null,
 		communityPublishedAt: null as string | null,
 		needsRepublish: false,
+		hasPackage: true,
 		hasApp: Number(row['has_app']) === 1,
 		webhookCount: 0,
 		jobCount: 0,

@@ -81,7 +81,7 @@ const filesPayload = {
 	ok: true,
 	title: '@owner/demo',
 	backHref: '/@owner/demo',
-	backLabel: 'Code',
+	backLabel: 'Repo',
 	filesBasePath: '/@owner/demo/tree/main',
 	selectedPath: 'src/index.ts',
 	kind: 'file',

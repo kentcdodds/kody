@@ -2,6 +2,7 @@ import { loadAccountPackageDetail } from '#app/account-packages-data.ts'
 import { loadCommunityDetailData } from '#app/community-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { getUserSocialRowByUsername } from '#worker/community/profile-repo.ts'
 import {
 	memoizePerRequest,
 	recordServerTiming,
@@ -36,6 +37,8 @@ export type PackagePageAccess =
 			shareGrant: PackageShareGrantLoaderView | null
 			canReadOwnerSource: boolean
 			ownerUserId: string
+			/** True when `/@owner` is publicly reachable. */
+			ownerProfilePublic: boolean
 	  }
 
 export type PackagePagePrivacySource = {
@@ -54,6 +57,18 @@ export function packagePageIsPrivate(page: PackagePagePrivacySource): boolean {
 
 function isPublicSavedPackage(pkg: { hidden: boolean; isPrivate: boolean }) {
 	return !pkg.hidden && !pkg.isPrivate
+}
+
+async function resolvePackagePageOwnerProfilePublic(input: {
+	env: Env
+	username: string
+	listing: CommunityDetailLoaderData | null
+}) {
+	if (typeof input.listing?.ownerProfilePublic === 'boolean') {
+		return input.listing.ownerProfilePublic
+	}
+	const row = await getUserSocialRowByUsername(input.env.APP_DB, input.username)
+	return row?.profile_visibility === 'public'
 }
 
 function sameKodyId(left: string, right: string) {
@@ -199,6 +214,11 @@ async function loadPackagePageUncached(input: {
 				packageId: target.savedPackage.id,
 			}),
 		])
+		const ownerProfilePublic = await resolvePackagePageOwnerProfilePublic({
+			env: input.env,
+			username: target.username,
+			listing,
+		})
 		return {
 			kind: 'page',
 			username: target.username,
@@ -211,6 +231,7 @@ async function loadPackagePageUncached(input: {
 			shareGrant: null,
 			canReadOwnerSource: true,
 			ownerUserId: target.userId,
+			ownerProfilePublic,
 		}
 	}
 
@@ -232,6 +253,11 @@ async function loadPackagePageUncached(input: {
 					})
 				: Promise.resolve(null),
 		])
+		const ownerProfilePublic = await resolvePackagePageOwnerProfilePublic({
+			env: input.env,
+			username: target.username,
+			listing,
+		})
 		return {
 			kind: 'page',
 			username: target.username,
@@ -244,6 +270,7 @@ async function loadPackagePageUncached(input: {
 			shareGrant,
 			canReadOwnerSource: shareCanReadSource,
 			ownerUserId: target.userId,
+			ownerProfilePublic,
 		}
 	}
 
@@ -266,6 +293,7 @@ async function loadPackagePageUncached(input: {
 			shareGrant,
 			canReadOwnerSource: false,
 			ownerUserId: target.userId,
+			ownerProfilePublic: listing.ownerProfilePublic,
 		}
 	}
 

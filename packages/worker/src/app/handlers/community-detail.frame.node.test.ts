@@ -141,7 +141,7 @@ test('community detail handler returns bare detail frame HTML for target header'
 		'data-testid="community-detail-owner-private"',
 	)
 	expect(publicHtml).toContain('data-testid="community-detail-forks"')
-	expect(publicHtml).toContain('data-testid="community-browse-files"')
+	expect(publicHtml).toContain('data-testid="package-repo-nav-files"')
 	expect(publicHtml).toContain('href="/@kentcdodds/github-triage/tree/main"')
 	expect(publicHtml).not.toContain('<html')
 
@@ -196,7 +196,7 @@ test('community detail handler returns bare detail frame HTML for target header'
 	).toBeGreaterThan(signedInHtml.indexOf('data-testid="package-repo-nav"'))
 })
 
-test('community detail browse-files uses the looked-up default branch', async () => {
+test('community detail Files tab uses the looked-up default branch', async () => {
 	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
 	mockModule.getCommunityListingById.mockResolvedValue(sampleListing)
 	mockModule.getEntitySourceById.mockResolvedValue({ repo_id: 'repo-1' })

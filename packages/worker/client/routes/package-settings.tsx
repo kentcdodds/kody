@@ -13,7 +13,12 @@ import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { NotFoundPage } from '#client/not-found-page.tsx'
 import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
+import { resolvePackageListIconUrl } from '#universal/identity-icon-urls.ts'
 import { type AccountPackageDetail } from '#universal/loader-data.ts'
+import {
+	fallbackDefaultBranchName,
+	getPackageTreeHref,
+} from '#universal/package-files.ts'
 import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
 import { renderPackageRepoChrome } from '#universal/package-repo-nav.tsx'
 import { routes } from '#universal/routes.ts'
@@ -47,6 +52,8 @@ export function PackageSettingsRoute(handle: Handle) {
 	let username = ''
 	let kodyId = ''
 	let isPrivate = false
+	let listingId: string | null = null
+	let defaultBranch: string | null = null
 	let ownerProfilePublic = true
 	let ownerDetailsMessage: string | null = null
 	/** Payload last applied to the closure state above. */
@@ -103,6 +110,8 @@ export function PackageSettingsRoute(handle: Handle) {
 				username: payload.username,
 				kodyId: payload.kodyId || payload.ownerPackage.kodyId,
 				isPrivate: payload.isPrivate ?? payload.ownerPackage.isPrivate,
+				listingId: payload.listing?.id ?? null,
+				defaultBranch: payload.listing?.defaultBranch ?? null,
 				ownerProfilePublic: payload.ownerProfilePublic,
 			}
 		},
@@ -245,6 +254,8 @@ export function PackageSettingsRoute(handle: Handle) {
 					username = snapshot.data.username
 					kodyId = snapshot.data.kodyId
 					isPrivate = snapshot.data.isPrivate
+					listingId = snapshot.data.listingId
+					defaultBranch = snapshot.data.defaultBranch
 					if (snapshot.data.ownerProfilePublic !== undefined) {
 						ownerProfilePublic = snapshot.data.ownerProfilePublic
 					}
@@ -321,8 +332,22 @@ export function PackageSettingsRoute(handle: Handle) {
 							isListed: ownerPackage?.hasCommunityListing === true,
 							viewerIsOwner: true,
 							active: 'settings',
+							filesHref: getPackageTreeHref({
+								username: chromeUsername,
+								kodyId: chromeKodyId,
+								listingId,
+								ref: defaultBranch || fallbackDefaultBranchName,
+							}),
 							description: ownerPackage?.description ?? '',
 							ownerProfilePublic,
+							iconUrl: resolvePackageListIconUrl({
+								username: chromeUsername,
+								kodyId: chromeKodyId,
+								listingId,
+								listingIconCommit: null,
+								publishedCommit: ownerPackage?.publishedCommit ?? null,
+							}),
+							iconName: ownerPackage?.kodyId ?? chromeKodyId,
 						})
 					: null}
 				{renderShellStatus(statusMessage)}

@@ -24,10 +24,12 @@ const listedPackage = {
 	description: 'Read Fathom Analytics site stats.',
 	tags: ['fathom', 'analytics'],
 	updatedAt: '2026-08-07T00:00:00.000Z',
+	createdAt: '2026-06-01T00:00:00.000Z',
 	communityListingId: 'listing-1',
 	communityListingKodyId: 'fathom-analytics',
 	communityPublishedAt: '2026-07-28T00:00:00.000Z',
 	needsRepublish: true,
+	hasPackage: true,
 	hasApp: true,
 	webhookCount: 2,
 	jobCount: 1,
@@ -40,10 +42,12 @@ const unpublishedPackage = {
 	description: 'Private notes helper.',
 	tags: [],
 	updatedAt: '2026-07-01T00:00:00.000Z',
+	createdAt: '2026-05-01T00:00:00.000Z',
 	communityListingId: null,
 	communityListingKodyId: null,
 	communityPublishedAt: null,
 	needsRepublish: false,
+	hasPackage: true,
 	hasApp: false,
 	webhookCount: 0,
 	jobCount: 0,
@@ -213,7 +217,9 @@ test('profile package filters render owner-only pills, keep other filters in eac
 	expect(ownHtml).toContain('data-testid="profile-package-filter-listing"')
 	expect(ownHtml).toContain('data-testid="profile-package-filter-hidden"')
 	expect(ownHtml).toContain('data-testid="profile-package-filter-app"')
+	expect(ownHtml).toContain('data-testid="profile-package-filter-package"')
 	expect(ownHtml).toContain('data-testid="profile-package-sort"')
+	expect(ownHtml).toContain('data-testid="profile-package-sort-dir"')
 	expect(ownHtml).toContain('data-prevent-scroll-reset')
 	// The selected pill is marked; sibling pills in the same group are not.
 	expect(ownHtml).toContain(
@@ -234,17 +240,31 @@ test('profile package filters render owner-only pills, keep other filters in eac
 		'href="/@kody?q=fathom&amp;visibility=private&amp;app=yes"',
 	)
 	expect(ownHtml).toContain(
+		'href="/@kody?q=fathom&amp;visibility=private&amp;package=yes"',
+	)
+	expect(ownHtml).toContain(
 		'href="/@kody?q=fathom&amp;visibility=private&amp;sort=name"',
+	)
+	expect(ownHtml).toContain(
+		'href="/@kody?q=fathom&amp;visibility=private&amp;sort=created"',
+	)
+	expect(ownHtml).toContain(
+		'href="/@kody?q=fathom&amp;visibility=private&amp;dir=asc"',
 	)
 	// The visibility "All" pill drops only its own param and is not current.
 	expect(ownHtml).toMatch(/<a href="\/@kody\?q=fathom"[^>]*class=/)
 	expect(ownHtml).toContain('Needs republish')
 	expect(ownHtml).toContain('Has app')
+	expect(ownHtml).toContain('Has package')
+	expect(ownHtml).toContain('No package')
+	expect(ownHtml).toContain('Created')
+	expect(ownHtml).toContain('Ascending')
+	expect(ownHtml).toContain('Descending')
 	// Already-loaded packages are narrowed in render, not by a second fetch.
 	expect(ownHtml).toContain('No repositories matched these filters.')
 	expect(ownHtml).not.toContain('href="/@kody/fathom-analytics"')
 
-	// Guests see listing and app; visibility and hidden stay owner-only.
+	// Guests see listing, package, app, and sort; visibility and hidden stay owner-only.
 	const guestHtml = await renderProfileContentHtml({
 		profile,
 		packages: [listedPackage, unpublishedPackage],
@@ -255,7 +275,10 @@ test('profile package filters render owner-only pills, keep other filters in eac
 	})
 	expect(guestHtml).toContain('data-testid="profile-package-filters"')
 	expect(guestHtml).toContain('data-testid="profile-package-filter-listing"')
+	expect(guestHtml).toContain('data-testid="profile-package-filter-package"')
 	expect(guestHtml).toContain('data-testid="profile-package-filter-app"')
+	expect(guestHtml).toContain('data-testid="profile-package-sort"')
+	expect(guestHtml).toContain('data-testid="profile-package-sort-dir"')
 	expect(guestHtml).toContain(
 		'href="/@kody?listing=published" aria-current="page"',
 	)

@@ -45,6 +45,7 @@ test('enqueueBackup status matrix: leave active alone, restart failed, fail clos
 		'complete',
 		'waiting',
 		'waitingForPause',
+		'rollingBack',
 	] as const) {
 		let restarts = 0
 		assert.equal(
