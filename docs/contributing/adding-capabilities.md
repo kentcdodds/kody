@@ -236,6 +236,7 @@ rule.
 - `adminPackageScopeGrantList`
 - `adminAuditLogQuery`
 - `adminUserUsage`
+- `adminRunLogSqlBilling`
 - `adminFeatureFlagList`
 - `adminFeatureFlagSet`
 - `adminFeatureFlagOverride`

@@ -18,7 +18,9 @@ import {
 	type RunLogEntryInput,
 	type RunLogRowInput,
 	type RunLogRpc,
+	type RunLogSqlBillingInspection,
 	type RunLogSqlBillingStats,
+	runLogSqlBillingOps,
 } from './run-log-do.ts'
 import {
 	type WorkflowProjectionRecord,
@@ -47,6 +49,9 @@ import {
 	runRecordMaxResultSnapshotBytes,
 	runRecordMaxTextBytes,
 } from './types.ts'
+
+export { runLogSqlBillingOps }
+export type { RunLogSqlBillingInspection, RunLogSqlBillingStats }
 
 const textEncoder = new TextEncoder()
 
@@ -1126,6 +1131,23 @@ export async function getSqlBillingStats(input: {
 		env: input.env,
 		userId: input.userId,
 	}).getSqlBillingStats()
+}
+
+/**
+ * Content-free RunLog schema + SQL-plan snapshot for cost diagnosis.
+ * Propagates binding/RPC errors. Never returns user content.
+ */
+export async function inspectRunLogSqlBilling(input: {
+	env: Env
+	userId: string
+}): Promise<RunLogSqlBillingInspection> {
+	if (!runLogBinding(input.env)) {
+		throw new Error('RUN_LOG Durable Object binding is not configured.')
+	}
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).inspectSqlBilling()
 }
 
 export async function getJobRunObservabilityBatch(input: {
