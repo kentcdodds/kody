@@ -55,6 +55,13 @@ test('token recovery inspects stored OAuth blobs without treating empty strings 
 	expect(
 		shouldQueueMcpTokenRecoveryDisconnected({
 			wasReady: false,
+			presence: { hasAccessToken: true, hasRefreshToken: true },
+			hasTokenRecoveryLastError: false,
+		}),
+	).toBe(false)
+	expect(
+		shouldQueueMcpTokenRecoveryDisconnected({
+			wasReady: false,
 			presence: { hasAccessToken: false, hasRefreshToken: false },
 			hasTokenRecoveryLastError: true,
 		}),

@@ -1366,6 +1366,10 @@ class McpClientHubBase extends DurableObject<Env> {
 				presence,
 				hasTokenRecoveryLastError: isMcpOAuthTokenRecoveryLastError(lastError),
 			})
+		// After a successful grant, settle clears last_error and saves
+		// tokens while the connection may still be authenticating.
+		// Inferring from refresh-token presence would emit a false
+		// disconnect for first-add / still-settling Authorize.
 		const first = observeMcpConnectionState({
 			previous: inferPreviouslyReady
 				? episodeAsPreviouslyReady(previous)
@@ -1585,7 +1589,13 @@ class McpClientHubBase extends DurableObject<Env> {
 			}
 			return
 		}
-		const shouldStamp = episode.wasReady || shouldAttemptMcpOAuthRefresh(before)
+		const shouldStamp =
+			episode.wasReady ||
+			shouldQueueMcpTokenRecoveryDisconnected({
+				wasReady: false,
+				presence: before,
+				hasTokenRecoveryLastError: false,
+			})
 		if (!shouldStamp) return
 		const row = this.manager
 			.listServers()

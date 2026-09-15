@@ -68,6 +68,9 @@ export function shouldAttemptMcpOAuthRefresh(presence: McpOAuthTokenPresence) {
  * A stale access token with no refresh token is the "Authorization
  * required / no refresh token / phase token exchange" card — still a
  * working → failed flip even when episode `wasReady` was never written.
+ * A first Authorize that just saved tokens (typically including a
+ * refresh token) is not a park: do not infer previously-ready from
+ * refresh-token presence alone.
  */
 export function shouldQueueMcpTokenRecoveryDisconnected(input: {
 	wasReady: boolean
@@ -76,8 +79,8 @@ export function shouldQueueMcpTokenRecoveryDisconnected(input: {
 }) {
 	return (
 		input.wasReady ||
-		shouldAttemptMcpOAuthRefresh(input.presence) ||
-		input.hasTokenRecoveryLastError
+		input.hasTokenRecoveryLastError ||
+		(input.presence.hasAccessToken && !input.presence.hasRefreshToken)
 	)
 }
 
