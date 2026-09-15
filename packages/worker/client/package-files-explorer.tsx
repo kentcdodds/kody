@@ -139,6 +139,8 @@ export function PackageFilesExplorer(
 						viewerIsOwner: data.viewerIsOwner ?? false,
 						active: 'files',
 						filesHref: data.filesBasePath,
+						description: data.description,
+						ownerProfilePublic: data.ownerProfilePublic,
 						iconUrl: data.iconUrl ?? null,
 						iconName: data.kodyId,
 					})

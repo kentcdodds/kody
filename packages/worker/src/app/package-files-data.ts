@@ -1,6 +1,7 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { getOwnerUsernameFromListingName } from '#worker/community/public-urls.ts'
 import { getCommunityListingById } from '#worker/community/repo.ts'
+import { getUserSocialRowByUsername } from '#worker/community/profile-repo.ts'
 import { readCommunitySnapshot } from '#worker/community/snapshot.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
@@ -73,6 +74,8 @@ async function toLoaderData(input: {
 	viewedCommit?: string | null
 	assetCommit?: string | null
 	mediaHref?: string | null
+	description?: string
+	ownerProfilePublic?: boolean
 }): Promise<PackageFilesLoaderData> {
 	const contentKind = input.view.contentKind
 	const omitText =
@@ -129,6 +132,8 @@ async function toLoaderData(input: {
 			viewedCommit: input.viewedCommit,
 			assetCommit: input.assetCommit,
 		}),
+		description: input.description,
+		ownerProfilePublic: input.ownerProfilePublic,
 	}
 }
 
@@ -161,7 +166,7 @@ export async function loadCommunityPackageFilesData(input: {
 
 	const ownerUsername = getOwnerUsernameFromListingName(listing.name)
 	const treeRef = input.ref?.trim() ?? ''
-	const [tree, viewerUserId] = await Promise.all([
+	const [tree, viewerUserId, ownerRow] = await Promise.all([
 		loadCommunityListingPublicTree({
 			env: input.env,
 			request: input.request,
@@ -169,6 +174,9 @@ export async function loadCommunityPackageFilesData(input: {
 			treeRef,
 		}),
 		readOptionalViewerUserId({ env: input.env, request: input.request }),
+		ownerUsername
+			? getUserSocialRowByUsername(input.env.APP_DB, ownerUsername)
+			: Promise.resolve(null),
 	])
 	if (!tree) return null
 	const { loaded, urlRef, resolved } = tree
@@ -217,6 +225,8 @@ export async function loadCommunityPackageFilesData(input: {
 					relativePath: view.contentPath,
 				})
 			: null,
+		description: listing.description,
+		ownerProfilePublic: ownerRow?.profile_visibility === 'public',
 	})
 }
 
@@ -418,7 +428,10 @@ export async function loadAccountPackageFilesData(input: {
 	})
 	if (!record) return null
 
-	const source = await getEntitySourceById(input.env.APP_DB, record.sourceId)
+	const [source, ownerRow] = await Promise.all([
+		getEntitySourceById(input.env.APP_DB, record.sourceId),
+		getUserSocialRowByUsername(input.env.APP_DB, input.username),
+	])
 	const treeRef = input.ref?.trim() ?? ''
 	const resolved = await resolvePublicTreeCommit({
 		env: input.env,
@@ -500,6 +513,8 @@ export async function loadAccountPackageFilesData(input: {
 					relativePath: view.contentPath,
 				})
 			: null,
+		description: record.description,
+		ownerProfilePublic: ownerRow?.profile_visibility === 'public',
 	})
 }
 
@@ -536,6 +551,8 @@ export async function loadAccessiblePackageFilesData(input: {
 			isPrivate: page.ownerPackage?.isPrivate ?? false,
 			username: page.username,
 			kodyId: page.kodyId,
+			description: page.listing.listing.description,
+			ownerProfilePublic: page.listing.ownerProfilePublic,
 		}
 	}
 

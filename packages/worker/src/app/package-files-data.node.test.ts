@@ -10,11 +10,17 @@ const mockModule = vi.hoisted(() => ({
 	highlightMarkdownFences: vi.fn(async () => []),
 	highlightSnippets: vi.fn(async () => []),
 	readArtifactFileAtCommit: vi.fn<() => Promise<unknown>>(),
+	getUserSocialRowByUsername: vi.fn<() => Promise<unknown>>(),
 }))
 
 vi.mock('#worker/community/repo.ts', () => ({
 	getCommunityListingById: (...args: Array<unknown>) =>
 		mockModule.getCommunityListingById(...args),
+}))
+
+vi.mock('#worker/community/profile-repo.ts', () => ({
+	getUserSocialRowByUsername: (...args: Array<unknown>) =>
+		mockModule.getUserSocialRowByUsername(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -72,12 +78,16 @@ const listing = {
 	sourceId: 'src-1',
 	kodyId: 'sentry',
 	name: '@kentcdodds/sentry',
+	description: 'Sentry package',
 	pinnedCommit: 'abc123',
 	iconCommit: 'abc123',
 }
 
 test('listed package tree marks the owner so Settings stays on the chrome', async () => {
 	mockModule.getCommunityListingById.mockResolvedValue(listing)
+	mockModule.getUserSocialRowByUsername.mockResolvedValue({
+		profile_visibility: 'public',
+	})
 	mockModule.getEntitySourceById.mockResolvedValue({
 		repo_id: 'repo-1',
 		published_commit: 'abc123',
@@ -113,6 +123,8 @@ test('listed package tree marks the owner so Settings stays on the chrome', asyn
 		filesBasePath: '/@kentcdodds/sentry/tree/main',
 		imageBaseHref: '/@kentcdodds/sentry/assets',
 		iconUrl: '/community/listing-1/icon/abc123',
+		description: 'Sentry package',
+		ownerProfilePublic: true,
 	})
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
@@ -127,6 +139,38 @@ test('listed package tree marks the owner so Settings stays on the chrome', asyn
 		viewerIsOwner: false,
 		username: 'kentcdodds',
 		kodyId: 'sentry',
+	})
+})
+
+test('listed package tree keeps a private owner username unlinked', async () => {
+	mockModule.getCommunityListingById.mockResolvedValue(listing)
+	mockModule.getUserSocialRowByUsername.mockResolvedValue({
+		profile_visibility: 'private',
+	})
+	mockModule.getEntitySourceById.mockResolvedValue({
+		repo_id: 'repo-1',
+		published_commit: 'abc123',
+	})
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'abc123',
+	})
+	mockModule.readPublishedSourceSnapshot.mockResolvedValue({
+		files: { 'README.md': '# Sentry\n' },
+	})
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+
+	const data = await loadCommunityPackageFilesData({
+		env,
+		request: new Request('https://example.com/@kentcdodds/sentry/tree/main'),
+		listingId: 'listing-1',
+		selectedPath: '',
+		ref: 'main',
+	})
+	expect(data).toMatchObject({
+		ok: true,
+		description: 'Sentry package',
+		ownerProfilePublic: false,
 	})
 })
 

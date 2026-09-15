@@ -275,6 +275,16 @@ test('package chrome is shared for public listings and private owner packages', 
 	expect(privateHtml).toContain('Local notes.')
 })
 
+test('package Files tab uses the listing default branch instead of main', async () => {
+	const html = await renderCommunityDetailContentHtml({
+		...detailBase,
+		listing: { ...sampleListing, defaultBranch: 'develop' },
+		loggedIn: false,
+	})
+	expect(html).toContain('href="/@kentcdodds/github-triage/tree/develop"')
+	expect(html).not.toContain('href="/@kentcdodds/github-triage/tree/main"')
+})
+
 test('package chrome uses lock and unpublished icon tooltips instead of text pills', async () => {
 	const privateListedHtml = await renderCommunityDetailContentHtml({
 		...detailBase,

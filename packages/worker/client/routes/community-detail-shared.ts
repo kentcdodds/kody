@@ -197,7 +197,10 @@ export type PackageSettingsShell =
 			username: string
 			kodyId: string
 			isPrivate: boolean
-			/** Only the detail API reports this; SSR shell data leaves it as is. */
+			listingId: string | null
+			/** Git default-branch name for the Files tab. Null falls back to `main`. */
+			defaultBranch: string | null
+			/** True when `/@owner` is publicly reachable. Omit to keep the owner link. */
 			ownerProfilePublic?: boolean
 	  }
 
@@ -217,6 +220,9 @@ export function toPackageSettingsShell(
 		username: routeData.username,
 		kodyId: routeData.kodyId || routeData.ownerPackage.kodyId,
 		isPrivate: routeData.isPrivate,
+		listingId: routeData.listingId,
+		defaultBranch: routeData.defaultBranch ?? null,
+		ownerProfilePublic: routeData.ownerProfilePublic,
 	}
 }
 
@@ -313,9 +319,11 @@ export async function communityDetailRouteLoader(
 		communityDetailShell: {
 			ok: true,
 			listingId,
+			defaultBranch: payload.listing?.defaultBranch ?? null,
 			name: payload.listing?.name ?? payload.ownerPackage?.name ?? '',
 			description:
 				payload.listing?.description ?? payload.ownerPackage?.description ?? '',
+			ownerProfilePublic: payload.ownerProfilePublic,
 			forkPrompt: payload.forkPrompt,
 			loggedIn: payload.loggedIn,
 			viewerIsAdmin: payload.viewerIsAdmin,

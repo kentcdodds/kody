@@ -85,6 +85,53 @@ test('package settings 404 unless the viewer owns the package', async () => {
 					kodyId: 'friction-log',
 					viewerIsOwner: true,
 					isPrivate: true,
+					listingId: null,
+					defaultBranch: null,
+				}),
+			}),
+		}),
+	)
+})
+
+test('package settings Files tab uses the listing default branch and id', async () => {
+	const handler = createCommunityPackageSettingsHandler({} as Env)
+	mockModule.loadPackagePage.mockResolvedValue({
+		kind: 'page',
+		username: 'kentcdodds',
+		kodyId: 'packages',
+		listing: {
+			listing: {
+				id: 'listing-1',
+				kodyId: 'packages',
+				defaultBranch: 'develop',
+			},
+			ownerProfilePublic: false,
+		},
+		ownerPackage: {
+			id: 'pkg-1',
+			name: 'packages',
+			description: 'Reserved kody id',
+			isPrivate: true,
+			kodyId: 'packages',
+		},
+		viewerIsOwner: true,
+		loggedIn: true,
+		invocationUrlOrigin: 'https://example.com',
+	})
+	const owner = await handler.handler({
+		request: new Request('https://example.com/@kentcdodds/packages/settings'),
+		params: { username: 'kentcdodds', kodyId: 'packages' },
+		url: new URL('https://example.com/@kentcdodds/packages/settings'),
+	} as never)
+	expect(owner.status).toBe(200)
+	expect(mockModule.renderAppPage).toHaveBeenCalledWith(
+		expect.objectContaining({
+			loaderData: expect.objectContaining({
+				communityDetailShell: expect.objectContaining({
+					kodyId: 'packages',
+					listingId: 'listing-1',
+					defaultBranch: 'develop',
+					ownerProfilePublic: false,
 				}),
 			}),
 		}),

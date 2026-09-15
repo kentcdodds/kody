@@ -129,8 +129,10 @@ async function renderCommunityListingPage(input: {
 			communityDetailShell: {
 				ok: true,
 				listingId: input.listingId,
+				defaultBranch: detail.listing.defaultBranch ?? null,
 				name: detail.listing.name,
 				description: detail.listing.description,
+				ownerProfilePublic: detail.ownerProfilePublic,
 				forkPrompt: detail.forkPrompt,
 				loggedIn: detail.loggedIn,
 				viewerIsAdmin: detail.viewerIsAdmin,
@@ -330,8 +332,10 @@ export function createCommunityPackageHandler(env: Env) {
 						communityDetailShell: {
 							ok: true,
 							listingId: page.listing.listing.id,
+							defaultBranch: page.listing.listing.defaultBranch ?? null,
 							name: page.listing.listing.name,
 							description: page.listing.listing.description,
+							ownerProfilePublic: page.listing.ownerProfilePublic,
 							forkPrompt: page.listing.forkPrompt,
 							loggedIn: page.listing.loggedIn,
 							viewerIsAdmin: page.listing.viewerIsAdmin,
@@ -405,6 +409,7 @@ export function createCommunityPackageHandler(env: Env) {
 					communityDetailShell: {
 						ok: true,
 						listingId: null,
+						defaultBranch: null,
 						name:
 							page.ownerPackage?.name ??
 							page.shareGrant?.packageName ??
@@ -631,8 +636,10 @@ export function createCommunityPackageSettingsHandler(env: Env) {
 					communityDetailShell: {
 						ok: true,
 						listingId: page.listing?.listing?.id ?? null,
+						defaultBranch: page.listing?.listing?.defaultBranch ?? null,
 						name: page.ownerPackage.name,
 						description: page.ownerPackage.description,
+						ownerProfilePublic: page.listing?.ownerProfilePublic,
 						forkPrompt: '',
 						loggedIn: page.loggedIn,
 						viewerIsAdmin: false,

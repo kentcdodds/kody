@@ -183,6 +183,22 @@ test('files hrefs use the default-branch fallback and avoid reserved kody ids', 
 		}),
 	).toBe('/@kentcdodds/friction-log/tree/main')
 	expect(
+		getPackageTreeHref({
+			username: 'kentcdodds',
+			kodyId: 'grok-bot',
+			listingId: 'listing-1',
+			ref: 'develop',
+		}),
+	).toBe('/@kentcdodds/grok-bot/tree/develop')
+	expect(
+		getPackageTreeHref({
+			username: 'kentcdodds',
+			kodyId: 'packages',
+			listingId: 'listing-1',
+			ref: 'develop',
+		}),
+	).toBe('/community/listing-1/files')
+	expect(
 		getPackageSettingsHref({
 			username: 'kentcdodds',
 			kodyId: 'friction-log',

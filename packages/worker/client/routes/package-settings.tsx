@@ -52,6 +52,8 @@ export function PackageSettingsRoute(handle: Handle) {
 	let username = ''
 	let kodyId = ''
 	let isPrivate = false
+	let listingId: string | null = null
+	let defaultBranch: string | null = null
 	let ownerProfilePublic = true
 	let ownerDetailsMessage: string | null = null
 	/** Payload last applied to the closure state above. */
@@ -108,6 +110,8 @@ export function PackageSettingsRoute(handle: Handle) {
 				username: payload.username,
 				kodyId: payload.kodyId || payload.ownerPackage.kodyId,
 				isPrivate: payload.isPrivate ?? payload.ownerPackage.isPrivate,
+				listingId: payload.listing?.id ?? null,
+				defaultBranch: payload.listing?.defaultBranch ?? null,
 				ownerProfilePublic: payload.ownerProfilePublic,
 			}
 		},
@@ -250,6 +254,8 @@ export function PackageSettingsRoute(handle: Handle) {
 					username = snapshot.data.username
 					kodyId = snapshot.data.kodyId
 					isPrivate = snapshot.data.isPrivate
+					listingId = snapshot.data.listingId
+					defaultBranch = snapshot.data.defaultBranch
 					if (snapshot.data.ownerProfilePublic !== undefined) {
 						ownerProfilePublic = snapshot.data.ownerProfilePublic
 					}
@@ -329,14 +335,15 @@ export function PackageSettingsRoute(handle: Handle) {
 							filesHref: getPackageTreeHref({
 								username: chromeUsername,
 								kodyId: chromeKodyId,
-								ref: fallbackDefaultBranchName,
+								listingId,
+								ref: defaultBranch || fallbackDefaultBranchName,
 							}),
 							description: ownerPackage?.description ?? '',
 							ownerProfilePublic,
 							iconUrl: resolvePackageListIconUrl({
 								username: chromeUsername,
 								kodyId: chromeKodyId,
-								listingId: null,
+								listingId,
 								listingIconCommit: null,
 								publishedCommit: ownerPackage?.publishedCommit ?? null,
 							}),
