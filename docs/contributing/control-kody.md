@@ -9,7 +9,9 @@ npm run control-kody -- doctor
 npm run control-kody -- dev
 npm run control-kody -- login
 npm run control-kody -- request GET /account/waiting.json
+npm run control-kody -- request GET /account/waiting --dump --contains 'Waiting'
 npm run control-kody -- map waiting
+npm run control-kody -- map --check
 npm run control-kody -- health --sha <commit>
 npm run control-kody -- preview -- --pr 42 --check /account/waiting
 npm run control-kody -- package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]
@@ -33,7 +35,21 @@ against
 
 When you add, remove, or rename a user-facing HTML route under `/account`,
 `/admin`, `/login`, `/onboarding`, `/community`, or `/@`, update the catalog and
-the matching feature file in the same change.
+the matching feature file in the same change. Run `map --check` before opening a
+Feature Map PR.
+
+After `login`, keep using `request` for HTML and JSON assertions. Do not `cat`
+the session cookie into `curl` or Python. `request --dump` writes the raw body
+to `.tmp/control-kody-body`. `request --contains <text>` fails unless that
+substring is in the body.
+
+`doctor` checks local APP_DB readiness. A failed local `login` (unmigrated or
+unseeded D1) prints:
+
+```bash
+npm run migrate:local
+node tools/seed-test-data.ts --local
+```
 
 ## Seed login
 
@@ -43,7 +59,8 @@ the matching feature file in the same change.
 - anything else (PR preview, production) → `me@kentcdodds.com` / `ilikecode`
 
 Override with `--email` / `--password`. `--cookie-file` defaults to
-`.tmp/control-kody-cookie`. `preview` uses
+`.tmp/control-kody-cookie` and stores the origin that created the session, so a
+leftover local cookie is not sent to a preview. `preview` uses
 [`preview-manual-test`](./preview-manual-testing.md) and its own seed.
 
 `package-create` registers a stub saved package on a PR preview (or local

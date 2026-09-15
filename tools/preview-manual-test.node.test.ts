@@ -238,6 +238,7 @@ test('preview manual test smokes a local preview: health, login page, auth, sess
 			'GET /admin 403',
 			'--check',
 			'/account/secrets',
+			'--json',
 		],
 		createSilentDeps({ logs, files }),
 	)
@@ -248,6 +249,8 @@ test('preview manual test smokes a local preview: health, login page, auth, sess
 	expect(result?.smoke?.sessionEmail).toBe(previewSeedEmail)
 	expect(result?.session.cookieHeader).toBe('kody_session=test-cookie')
 	expect(files.get('.tmp/preview-cookie')).toBe('kody_session=test-cookie\n')
+	expect(logs.join('\n')).not.toContain('kody_session=test-cookie')
+	expect(logs.join('\n')).toContain('"cookieHeader": "present"')
 	expect(result?.smoke?.checks.map((check) => check.name)).toEqual([
 		'GET /health',
 		'GET /login',

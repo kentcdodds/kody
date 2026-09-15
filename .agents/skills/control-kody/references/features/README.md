@@ -15,7 +15,8 @@ node tools/control-kody.ts map waiting
 node tools/control-kody.ts map --check
 ```
 
-Then drive the surface with `login`, `request`, `preview`, and `health`. See the
+Then drive the surface with `login`, `request`, `preview`, and `health`. Run
+`map --check` before opening a Feature Map PR. See the
 [control-kody skill](../../SKILL.md).
 
 ## Surfaces
