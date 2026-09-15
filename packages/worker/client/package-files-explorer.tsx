@@ -892,6 +892,8 @@ const markdownCss = {
 
 // Line numbers ride Shiki's own `.line` spans as a CSS counter, so the
 // highlighter keeps emitting one flat token tree.
+const packageFileLineNumberWidth = '2.5rem'
+
 const codeCss = {
 	'& pre': {
 		margin: 0,
@@ -917,6 +919,13 @@ const codeCss = {
 	},
 	'& .line': {
 		display: 'block',
+		position: 'relative' as const,
+		// Tab stops start at the content edge. An in-flow number + gap ate
+		// into the first tab stop, so a leading tab was shorter than later
+		// tabs on the same line. Keep the gutter as padding and paint the
+		// number on top so every tab is a full `tab-size`.
+		paddingInlineStart: `calc(${packageFileLineNumberWidth} + ${spacing.md})`,
+		minHeight: '1.55em',
 		counterIncrement: 'package-file-line',
 	},
 	'& .line:hover': {
@@ -924,9 +933,9 @@ const codeCss = {
 	},
 	'& .line::before': {
 		content: 'counter(package-file-line)',
-		display: 'inline-block',
-		width: '2.5rem',
-		marginRight: spacing.md,
+		position: 'absolute' as const,
+		insetInlineStart: 0,
+		width: packageFileLineNumberWidth,
 		textAlign: 'right' as const,
 		color: colors.textMuted,
 		opacity: 0.65,
