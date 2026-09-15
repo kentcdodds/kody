@@ -1,5 +1,6 @@
 import { resolveHostedPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { callerHasRole } from '#mcp/capabilities/access-control.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import { importGuideCatalog } from '#worker/guide-catalog-modules.ts'
@@ -97,6 +98,9 @@ export async function resolveEntityDetail(input: {
 		const section = ref.section ?? alias?.section
 		const guide = guides.find((candidate) => candidate.id === guideId) ?? null
 		if (!guide) {
+			throw new McpCallerError('Guide not found.')
+		}
+		if (guide.adminOnly && !callerHasRole(input.callerContext, 'admin')) {
 			throw new McpCallerError('Guide not found.')
 		}
 		return {

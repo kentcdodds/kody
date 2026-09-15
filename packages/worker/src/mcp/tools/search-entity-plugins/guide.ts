@@ -22,9 +22,16 @@ import {
 	normalizeSearchText,
 } from '../understand-search-query.ts'
 
-const advertisedGuides = guideMetadataList.filter(
-	(guide) => !guide.unadvertised,
+const advertisedPublicGuides = guideMetadataList.filter(
+	(guide) => !guide.unadvertised && !guide.adminOnly,
 )
+
+function searchableGuides(includeAdmin: boolean) {
+	if (includeAdmin) {
+		return guideMetadataList.filter((guide) => !guide.unadvertised)
+	}
+	return advertisedPublicGuides
+}
 
 function guideBelongsInDomain(domain: string | undefined) {
 	return domain == null || domain === capabilityDomainNames.coding
@@ -92,7 +99,7 @@ export const guideSearchEntityPlugin = {
 	type: 'guide',
 	buildDescriptors(input) {
 		if (!guideBelongsInDomain(input.domain)) return []
-		return advertisedGuides.map((guide) => ({
+		return searchableGuides(input.includeAdminGuides === true).map((guide) => ({
 			type: 'guide' as const,
 			id: guide.id,
 			title: guide.title,
@@ -106,7 +113,7 @@ export const guideSearchEntityPlugin = {
 	},
 	buildCandidates(input) {
 		if (!guideBelongsInDomain(input.domain)) return []
-		return advertisedGuides
+		return searchableGuides(input.includeAdminGuides === true)
 			.filter((guide) => guideHasStrongQueryMatch(input.query, guide))
 			.map((guide) => {
 				const lexical = lexicalScore(input.query, guideSearchText(guide))

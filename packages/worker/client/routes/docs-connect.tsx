@@ -1,7 +1,9 @@
 import { type Handle, css } from 'remix/ui'
+import { readAppSession } from '#client/app-session-context.tsx'
 import { type DocsConnectLoaderData } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
 import { docHref } from '#universal/docs-nav.ts'
+import { userHasRole } from '#universal/permissions.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import {
 	createRouteData,
@@ -76,9 +78,12 @@ export function DocsConnectRoute(handle: Handle) {
 		const snapshot = guidesData.read(handle, currentHref)
 		const guides = snapshot.data?.guides ?? null
 		const pending = snapshot.kind === 'pending'
+		const session = readAppSession(handle)?.session
+		const isAdmin = Boolean(session && userHasRole(session, 'admin'))
 
 		return renderDocsShell({
 			current: 'connect',
+			isAdmin,
 			children: (
 				<section
 					mix={css(connectPageCss)}

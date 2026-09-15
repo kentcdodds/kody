@@ -4,10 +4,10 @@ import { type DocSummaryLoaderData } from '#universal/loader-data.ts'
 import {
 	docHref,
 	docsCurrentPageLabel,
-	docsNav,
 	findDocsNavNeighbors,
 	listDocsPrefetchHrefs,
 	resolveDocsNavSection,
+	visibleDocsNav,
 	type DocsNavSection,
 } from '#universal/docs-nav.ts'
 import { renderIcon } from '#universal/icon.tsx'
@@ -33,15 +33,17 @@ import {
 export function renderDocsShell(input: {
 	current: string
 	children: RemixNode
+	isAdmin?: boolean
 }) {
 	const { current, children } = input
+	const isAdmin = input.isAdmin === true
 	const currentSection = resolveDocsNavSection(current)
 	return (
 		<div data-docs-shell mix={css(docsLayoutCss)}>
-			<DocsNavPrefetch />
+			<DocsNavPrefetch isAdmin={isAdmin} />
 			<aside data-docs-nav mix={css(docsSidebarCss)}>
 				<nav aria-label="Docs" mix={css(docsSidebarNavCss)}>
-					{renderDocsNavSections(current, currentSection)}
+					{renderDocsNavSections(current, currentSection, isAdmin)}
 				</nav>
 			</aside>
 			<details
@@ -64,7 +66,7 @@ export function renderDocsShell(input: {
 					</span>
 				</summary>
 				<nav aria-label="Docs" mix={css(docsSidebarNavCss)}>
-					{renderDocsNavSections(current, currentSection)}
+					{renderDocsNavSections(current, currentSection, isAdmin)}
 				</nav>
 			</details>
 			<div mix={css(docsMainCss)}>{children}</div>
@@ -77,11 +79,13 @@ export function renderDocsShell(input: {
  * href (`prefetch="intent"`). Docs slugs share a matcher, not a payload, so
  * each request stays independent.
  */
-function DocsNavPrefetch(handle: Handle) {
+function DocsNavPrefetch(handle: Handle<{ isAdmin?: boolean }>) {
 	let warmedKey = ''
 	return () => {
 		handle.queueTask(() => {
-			const hrefs = listDocsPrefetchHrefs()
+			const hrefs = listDocsPrefetchHrefs({
+				includeAdmin: handle.props.isAdmin === true,
+			})
 			const key = hrefs.join('\0')
 			if (key === warmedKey) return
 			warmedKey = key
@@ -94,9 +98,14 @@ function DocsNavPrefetch(handle: Handle) {
 function renderDocsNavSections(
 	current: string,
 	currentSection: DocsNavSection | null,
+	isAdmin: boolean,
 ) {
-	return docsNav.map((section) => (
-		<section key={section.id} mix={css(docsNavSectionCss)}>
+	return visibleDocsNav(isAdmin).map((section) => (
+		<section
+			key={section.id}
+			mix={css(docsNavSectionCss)}
+			data-docs-admin-nav={section.adminOnly ? 'true' : undefined}
+		>
 			<h2>
 				{section.id === 'providers' ? (
 					<a
@@ -129,8 +138,8 @@ function renderDocsNavSections(
 }
 
 /** Previous / next links in reading order for the foot of an article. */
-export function renderDocsPager(slug: string) {
-	const { prev, next } = findDocsNavNeighbors(slug)
+export function renderDocsPager(slug: string, isAdmin = false) {
+	const { prev, next } = findDocsNavNeighbors(slug, { includeAdmin: isAdmin })
 	if (!prev && !next) return null
 	return (
 		<nav aria-label="Docs order" mix={css(docsPagerCss)}>

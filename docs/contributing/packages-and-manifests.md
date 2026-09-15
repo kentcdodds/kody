@@ -449,7 +449,7 @@ The first community listing publish similarly enqueues
 `community.listing.published` for admin-only package-subscription delivery.
 Republishes write `listing_updated` for the timeline but do not enqueue this
 topic. Payload shape, admin gating, and delivery semantics match
-[the subscription guide](../guides/package-subscriptions.md#communitylistingpublished-admins);
+[the admin events guide](../guides/admin-events.md#communitylistingpublished-admins);
 enqueue failures are logged and never fail `communityPublish`.
 
 Status-page incident open/resolve is a separate admin-only, best-effort path.
@@ -471,7 +471,7 @@ and rates, `status_url`, and `insights_url`. When one account or a few accounts
 own the recent-window errors, it also names those usernames and package kody
 ids. It omits user ids, package UUIDs, emails, error strings, and all other user
 content. There is no Queue for this topic. See
-[Package subscriptions](../guides/package-subscriptions.md#fleetpackageerrorrateelevated-admins).
+[Admin events](../guides/admin-events.md#fleetpackageerrorrateelevated-admins).
 
 Fleet entitlement crossings are a separate admin-only, best-effort path. The
 hourly `usage_entitlement_alert` lane fans `fleet.entitlement.crossed` only to
@@ -481,7 +481,7 @@ Worker cost month, or three-of-seven execute-cap train). The payload is stable
 user id, username, resource counts, runtime duration, unique-worker days, or
 days at the execute cap, and admin URLs. It omits emails, plans, secrets, and
 package source. There is no Queue for this topic. See
-[Package subscriptions](../guides/package-subscriptions.md#fleetentitlementcrossed-admins).
+[Admin events](../guides/admin-events.md#fleetentitlementcrossed-admins).
 
 Verification-mail terminal failures are a separate admin-only, best-effort path.
 The first bounce, failure, rejection, or complaint on a signup/verify send fans
@@ -491,7 +491,7 @@ status (`bounced` / `failed` / `rejected` / `complained`), `class`
 (`sender_block` / `other` / `null`), an admin user URL, and `occurred_at`. It
 omits SMTP transcripts, tokens, and unrelated account content. There is no Queue
 for this topic. See
-[Package subscriptions](../guides/package-subscriptions.md#useremailverificationfailed-admins).
+[Admin events](../guides/admin-events.md#useremailverificationfailed-admins).
 
 Stalled verification sends are a separate admin-only, best-effort path. The
 hourly `email_verification_stall_alert` lane fans
@@ -501,7 +501,7 @@ after 60 minutes with no Cloudflare lifecycle event. The payload is stable user
 id, username, email, `accepted_at`, stall threshold, an admin user URL, and
 `occurred_at`. It omits SMTP transcripts, tokens, and unrelated account content.
 There is no Queue for this topic. See
-[Package subscriptions](../guides/package-subscriptions.md#useremailverificationstalled-admins).
+[Admin events](../guides/admin-events.md#useremailverificationstalled-admins).
 
 Outbound-mail abuse pauses are a separate admin-only, best-effort path. After
 the pause write commits, Kody fans `user.email_outbound.paused` only to packages
@@ -509,7 +509,7 @@ whose owners hold the admin role at dispatch time. The payload is stable user
 id, username, email, reason (`complained` / `bounced`), bounce threshold when
 the reason is `bounced`, an admin user URL, and `occurred_at`. There is no Queue
 for this topic. See
-[Package subscriptions](../guides/package-subscriptions.md#useremailoutboundpaused-admins).
+[Admin events](../guides/admin-events.md#useremailoutboundpaused-admins).
 
 Hourly MCP auth-denial and shared-domain email-delivery bursts are separate
 admin-only, best-effort paths. The `auth_denial_alert` and
@@ -518,9 +518,8 @@ only to packages whose owners hold the admin role at dispatch time. Payloads are
 count, threshold, window minutes, insights URL, and `observed_at`. They omit
 user identities, tokens, recipients, and message content. There is no Queue for
 these topics. See
-[Package subscriptions](../guides/package-subscriptions.md#authdenialburst-admins)
-and
-[Package subscriptions](../guides/package-subscriptions.md#emaildeliveryburst-admins).
+[Admin events](../guides/admin-events.md#authdenialburst-admins) and
+[Admin events](../guides/admin-events.md#emaildeliveryburst-admins).
 
 ## Package-owned workflows
 

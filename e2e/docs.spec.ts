@@ -131,4 +131,21 @@ test('docs site: header says Docs, /docs opens the introduction with a sidebar, 
 	const llms = await request.get('/llms.txt')
 	expect(llms.status()).toBe(200)
 	expect(await llms.text()).toContain('/docs/secrets.md')
+	expect(await llms.text()).not.toContain('/docs/admin-events.md')
+
+	await expect(
+		sidebar.getByRole('link', { name: 'Admin events', exact: true }),
+	).toHaveCount(0)
+	await expect(sidebar.getByRole('heading', { name: 'Admin' })).toHaveCount(0)
+
+	const adminDoc = await request.get('/docs/admin-events')
+	expect(adminDoc.status()).toBe(404)
+	expect(await adminDoc.text()).not.toContain('fleet.entitlement.crossed')
+	const adminMarkdown = await request.get('/docs/admin-events.md')
+	expect(adminMarkdown.status()).toBe(404)
+	expect(await adminMarkdown.text()).toBe('# Doc not found\n')
+	const subscriptions = await request.get('/docs/package-subscriptions.md')
+	expect(subscriptions.status()).toBe(200)
+	expect(await subscriptions.text()).not.toContain('fleet.entitlement.crossed')
+	expect(await subscriptions.text()).not.toContain('(admins)')
 })

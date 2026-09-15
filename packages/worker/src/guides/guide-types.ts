@@ -36,6 +36,12 @@ export type GuideFrontmatter = {
 	 * web/agent listings and `{id}:guide` search advertisements.
 	 */
 	unadvertised: boolean
+	/**
+	 * When true, the guide is omitted from public nav, indexes, sitemap, and
+	 * search. Logged-in admins see it in the Admin docs section and in search;
+	 * everyone else gets the same not-found response as a missing slug.
+	 */
+	adminOnly: boolean
 	audience: GuideAudience
 }
 

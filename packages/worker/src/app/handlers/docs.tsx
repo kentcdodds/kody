@@ -20,7 +20,11 @@ import {
 	docsIntroSlug,
 	resolveLegacyDocSlug,
 } from '#universal/docs-nav.ts'
-import { publicSharedJsonCacheHeaders } from '#app/anonymous-html-cache.ts'
+import {
+	anonymousPersonalizedJsonCacheHeaders,
+	publicSharedJsonCacheHeaders,
+} from '#app/anonymous-html-cache.ts'
+import { requestIsDocsAdmin, viewerCanAccessGuide } from '#app/docs-access.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { jsonResponse } from '#worker/json-response.ts'
 import { parseOgTheme } from '#worker/og/palette.ts'
@@ -251,6 +255,55 @@ async function renderDocPage(
 	)
 }
 
+async function renderMissingDocPage(
+	env: Env,
+	request: Request,
+): Promise<Response> {
+	return withVaryAccept(
+		await renderAppPage({
+			request,
+			env,
+			title: 'Doc not found',
+			notFound: true,
+			status: 404,
+		}),
+	)
+}
+
+async function missingDocResponse(
+	env: Env,
+	request: Request,
+	kind: 'html' | 'markdown' | 'json',
+): Promise<Response> {
+	if (kind === 'markdown') {
+		return markdownResponse('# Doc not found\n', 404)
+	}
+	if (kind === 'json') {
+		return jsonResponse({ ok: false, error: 'Doc not found.' }, 404)
+	}
+	return renderMissingDocPage(env, request)
+}
+
+async function resolveAccessibleGuide(
+	request: Request,
+	env: Env,
+	slug: string,
+): Promise<Guide | null> {
+	const guide = getGuideBySlug(slug)
+	if (!guide) return null
+	if (!guide.adminOnly) return guide
+	const isAdmin = await requestIsDocsAdmin(request, env)
+	return viewerCanAccessGuide(guide, isAdmin) ? guide : null
+}
+
+function guideMarkdownResponse(guide: Guide): Response {
+	const response = markdownResponse(guide.body)
+	if (guide.adminOnly) {
+		response.headers.set('Cache-Control', 'no-store')
+	}
+	return response
+}
+
 export function createDocsHandler(env: Env) {
 	return {
 		middleware: [],
@@ -264,21 +317,32 @@ export function createDocsHandler(env: Env) {
 	} satisfies Action<typeof routes.docs>
 }
 
-export function createDocsApiHandler(_env: Env) {
+export function createDocsApiHandler(env: Env) {
 	return {
 		middleware: [],
-		async handler() {
-			return jsonResponse({
-				ok: true,
-				intro: docsIntroSlug,
-				sections: listGuidesBySection().map(({ section, guides }) => ({
-					id: section.id,
-					label: section.label,
-					description: section.description,
-					slugs: guides.map((guide) => guide.slug),
-				})),
-				guides: listGuides().map(toGuideSummary),
-			})
+		async handler({ request }) {
+			const includeAdmin = await requestIsDocsAdmin(request, env)
+			return jsonResponse(
+				{
+					ok: true,
+					intro: docsIntroSlug,
+					sections: listGuidesBySection({ includeAdmin }).map(
+						({ section, guides }) => ({
+							id: section.id,
+							label: section.label,
+							description: section.description,
+							slugs: guides.map((guide) => guide.slug),
+						}),
+					),
+					guides: listGuides({ includeAdmin }).map(toGuideSummary),
+				},
+				{
+					headers: anonymousPersonalizedJsonCacheHeaders({
+						personalized: includeAdmin,
+						request,
+					}),
+				},
+			)
 		},
 	} satisfies Action<typeof routes.docsApi>
 }
@@ -380,23 +444,12 @@ export function createDocDetailHandler(env: Env) {
 				markdown ? '.md' : '',
 			)
 			if (redirect) return redirect
-			const guide = getGuideBySlug(params.slug)
+			const guide = await resolveAccessibleGuide(request, env, params.slug)
 			if (!guide) {
-				if (markdown) {
-					return markdownResponse('# Doc not found\n', 404)
-				}
-				return withVaryAccept(
-					await renderAppPage({
-						request,
-						env,
-						title: 'Doc not found',
-						notFound: true,
-						status: 404,
-					}),
-				)
+				return missingDocResponse(env, request, markdown ? 'markdown' : 'html')
 			}
 			if (markdown) {
-				return markdownResponse(guide.body)
+				return guideMarkdownResponse(guide)
 			}
 			return renderDocPage(env, request, guide)
 		},
@@ -409,30 +462,32 @@ export function createDocDetailApiHandler(env: Env) {
 		async handler({ request, params }) {
 			const redirect = docDetailRedirect(params.slug, request, '.json')
 			if (redirect) return redirect
-			const guide = getGuideBySlug(params.slug)
+			const guide = await resolveAccessibleGuide(request, env, params.slug)
 			if (!guide) {
-				return jsonResponse({ ok: false, error: 'Doc not found.' }, 404)
+				return missingDocResponse(env, request, 'json')
 			}
 			const serverTiming: Array<ServerTimingEntry> = []
 			return jsonResponse(await toDocDetail(env, guide, serverTiming), {
 				serverTiming,
-				headers: publicSharedJsonCacheHeaders(),
+				headers: guide.adminOnly
+					? { 'Cache-Control': 'no-store' }
+					: publicSharedJsonCacheHeaders(),
 			})
 		},
 	} satisfies Action<typeof routes.docDetailApi>
 }
 
-export function createDocDetailMarkdownHandler(_env: Env) {
+export function createDocDetailMarkdownHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request, params }) {
 			const redirect = docDetailRedirect(params.slug, request, '.md')
 			if (redirect) return redirect
-			const guide = getGuideBySlug(params.slug)
+			const guide = await resolveAccessibleGuide(request, env, params.slug)
 			if (!guide) {
-				return markdownResponse('# Doc not found\n', 404)
+				return missingDocResponse(env, request, 'markdown')
 			}
-			return markdownResponse(guide.body)
+			return guideMarkdownResponse(guide)
 		},
 	} satisfies Action<typeof routes.docDetailMarkdown>
 }
@@ -443,7 +498,7 @@ export function createDocDetailOgImageHandler(env: Env) {
 		async handler({ request, params }) {
 			const redirect = docDetailRedirect(params.slug, request, '/og.png')
 			if (redirect) return redirect
-			const guide = getGuideBySlug(params.slug)
+			const guide = await resolveAccessibleGuide(request, env, params.slug)
 			const ogImage = guide?.ogImage ?? guide?.image
 			if (!guide || !ogImage) {
 				return new Response('Not found', { status: 404 })
@@ -476,7 +531,9 @@ export function createDocDetailOgImageHandler(env: Env) {
 			return new Response(png, {
 				status: 200,
 				headers: {
-					'Cache-Control': 'public, max-age=3600',
+					'Cache-Control': guide.adminOnly
+						? 'no-store'
+						: 'public, max-age=3600',
 					'Content-Type': 'image/png',
 				},
 			})

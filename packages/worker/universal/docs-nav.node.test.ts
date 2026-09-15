@@ -33,13 +33,24 @@ test('docsCurrentPageLabel uses the connect branch and falls back for unknown sl
 	expect(docsCurrentPageLabel('missing-doc')).toBe('Docs')
 })
 
-test('listDocsPrefetchHrefs covers the intro, every advertised slug, and connect', () => {
+test('listDocsPrefetchHrefs covers public advertised slugs and connect', () => {
 	const hrefs = listDocsPrefetchHrefs()
 	expect(hrefs).toContain('/docs')
 	expect(hrefs).toContain('/docs/how-kody-works')
 	expect(hrefs).toContain('/docs/oauth')
 	expect(hrefs).toContain('/docs/connect')
 	expect(hrefs).not.toContain('/docs/what-is-kody')
-	expect(hrefs).toEqual([...listDocsNavSlugs().map(docHref), '/docs/connect'])
+	expect(hrefs).not.toContain('/docs/admin-events')
+	expect(hrefs).toEqual([
+		...listDocsNavSlugs({ includeAdmin: false }).map(docHref),
+		'/docs/connect',
+	])
 	expect(new Set(hrefs).size).toBe(hrefs.length)
+	expect(listDocsPrefetchHrefs({ includeAdmin: true })).toContain(
+		'/docs/admin-events',
+	)
+	expect(listDocsNavSlugs()).toContain('admin-events')
+	expect(listDocsNavSlugs({ includeAdmin: false })).not.toContain(
+		'admin-events',
+	)
 })

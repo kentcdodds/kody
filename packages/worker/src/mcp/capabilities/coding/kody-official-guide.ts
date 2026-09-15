@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
+import { callerHasRole } from '#mcp/capabilities/access-control.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { maxChars } from '#mcp/tools/search-constants.ts'
@@ -24,9 +25,8 @@ import {
  */
 
 const advertisedGuides = guideMetadataList.filter(
-	(guide) => !guide.unadvertised,
+	(guide) => !guide.unadvertised && !guide.adminOnly,
 )
-const knownGuideIds = new Set(guideMetadataList.map((guide) => guide.id))
 
 function buildCapabilityDescription(): string {
 	return [
@@ -37,11 +37,11 @@ function buildCapabilityDescription(): string {
 	].join('\n')
 }
 
+const unknownGuideError = 'Unknown Kody guide.'
+
 const guideFieldSchema = z
 	.string()
-	.refine((id) => knownGuideIds.has(id), {
-		message: 'Unknown Kody guide.',
-	})
+	.min(1)
 	.describe(
 		[
 			'Which guide to load.',
@@ -109,11 +109,14 @@ export const kodyOfficialGuideCapability = defineDomainCapability(
 		destructive: false,
 		inputSchema,
 		outputSchema,
-		async handler(args, _ctx: CapabilityContext) {
+		async handler(args, ctx: CapabilityContext) {
 			const { guides } = await importGuideCatalog()
 			const guide = guides.find((candidate) => candidate.id === args.guide)
-			if (!guide) {
-				throw new Error(`Unknown Kody guide "${args.guide}".`)
+			if (
+				!guide ||
+				(guide.adminOnly && !callerHasRole(ctx.callerContext, 'admin'))
+			) {
+				throw new Error(unknownGuideError)
 			}
 			const resolved = resolveMarkdownDocument({
 				markdown: guide.body,

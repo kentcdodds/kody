@@ -8,10 +8,12 @@ import {
 	docsIntroSlug,
 	docsNav,
 	isReservedDocsIndexSlug,
+	visibleDocsNav,
 	type DocsNavSection,
 } from '#universal/docs-nav.ts'
 import accountPackageInvocationTokenSetup from '../../../../docs/guides/account-package-invocation-token-setup.md'
 import accountSecretSetup from '../../../../docs/guides/account-secret-setup.md'
+import adminEvents from '../../../../docs/guides/admin-events.md'
 import connectYourAgent from '../../../../docs/guides/connect-your-agent.md'
 import firstWin from '../../../../docs/guides/first-win.md'
 import howKodyWorks from '../../../../docs/guides/how-kody-works.md'
@@ -102,6 +104,7 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'slack', raw: providerSlack },
 	{ slug: 'spotify', raw: providerSpotify },
 	{ slug: 'platform-friction', raw: platformFriction },
+	{ slug: 'admin-events', raw: adminEvents },
 	{ slug: 'values', raw: values },
 	{
 		slug: 'account-package-invocation-token-setup',
@@ -169,10 +172,25 @@ export function getIntroGuide(): Guide {
 	return intro
 }
 
+type ListGuidesOptions = {
+	/** When true, include admin-only docs. Default is public docs only. */
+	includeAdmin?: boolean
+}
+
+function guideIsAdvertised(guide: Guide, includeAdmin: boolean): boolean {
+	if (guide.unadvertised) return false
+	if (guide.adminOnly && !includeAdmin) return false
+	return true
+}
+
 /** Advertised platform docs in reading order. */
-export function listPlatformGuides(): ReadonlyArray<Guide> {
+export function listPlatformGuides(
+	options?: ListGuidesOptions,
+): ReadonlyArray<Guide> {
+	const includeAdmin = options?.includeAdmin === true
 	return guides.filter(
-		(guide) => !guide.unadvertised && guide.category === 'platform',
+		(guide) =>
+			guideIsAdvertised(guide, includeAdmin) && guide.category === 'platform',
 	)
 }
 
@@ -189,10 +207,11 @@ export function listProviderGuides(): ReadonlyArray<Guide> {
 /**
  * Every advertised doc in reading order (sidebar order: platform sections,
  * then providers, then help). Used by sitemap, `llms.txt`, and surfaces that
- * need every advertised doc.
+ * need every advertised doc. Admin-only docs stay out unless `includeAdmin`.
  */
-export function listGuides(): ReadonlyArray<Guide> {
-	return guides.filter((guide) => !guide.unadvertised)
+export function listGuides(options?: ListGuidesOptions): ReadonlyArray<Guide> {
+	const includeAdmin = options?.includeAdmin === true
+	return guides.filter((guide) => guideIsAdvertised(guide, includeAdmin))
 }
 
 export type GuidesBySection = {
@@ -201,12 +220,17 @@ export type GuidesBySection = {
 }
 
 /** Advertised docs grouped by docs-nav section, in reading order. */
-export function listGuidesBySection(): ReadonlyArray<GuidesBySection> {
-	return docsNav.map((section) => ({
+export function listGuidesBySection(
+	options?: ListGuidesOptions,
+): ReadonlyArray<GuidesBySection> {
+	const includeAdmin = options?.includeAdmin === true
+	return visibleDocsNav(includeAdmin).map((section) => ({
 		section,
 		guides: section.items
 			.map((item) => guidesBySlug.get(item.slug))
-			.filter((guide): guide is Guide => Boolean(guide && !guide.unadvertised)),
+			.filter((guide): guide is Guide =>
+				Boolean(guide && guideIsAdvertised(guide, includeAdmin)),
+			),
 	}))
 }
 

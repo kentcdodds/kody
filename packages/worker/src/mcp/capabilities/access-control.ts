@@ -40,6 +40,13 @@ function hasRequiredRole(user: McpUserAccessContext, role: RoleName) {
 	return userHasRole({ roles: (user?.roles ?? []) as Array<RoleName> }, role)
 }
 
+export function callerHasRole(
+	callerContext: McpCallerContext,
+	role: RoleName,
+): boolean {
+	return hasRequiredRole(getUserAccessContext(callerContext), role)
+}
+
 function hasRequiredPermission(
 	user: McpUserAccessContext,
 	permission: PermissionString,

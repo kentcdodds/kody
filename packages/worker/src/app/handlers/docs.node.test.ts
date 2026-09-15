@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { highlightSnippetKey } from '#universal/highlighted-code.ts'
 import { howKodyWorksPackageFiles } from '#universal/how-kody-works-transcript.ts'
 import {
@@ -6,9 +6,11 @@ import {
 	type WalkthroughHostPick,
 } from '#universal/walkthrough-hosts.ts'
 import { getGuideBySlug, listProviderGuides } from '#worker/guides/catalog.ts'
-import { docsNav, listDocsNavSlugs } from '#universal/docs-nav.ts'
+import { listDocsNavSlugs, visibleDocsNav } from '#universal/docs-nav.ts'
+import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	createDocDetailApiHandler,
+	createDocDetailHandler,
 	createDocDetailMarkdownHandler,
 	createDocsApiHandler,
 	createDocsConnectApiHandler,
@@ -17,6 +19,10 @@ import {
 	createLlmsTxtHandler,
 } from './docs.tsx'
 import { resolveLegacyGuidesLocation } from './legacy-guides-redirect.ts'
+
+vi.mock('#app/authenticated-user.ts', () => ({
+	readAuthenticatedAppUser: vi.fn(async () => null),
+}))
 
 const env = { APP_BASE_URL: 'https://kody.example' } as Env
 
@@ -35,6 +41,10 @@ test('docs API lists every advertised doc by section and the markdown root is in
 		params: { slug: '' },
 	})
 	expect(apiResponse.status).toBe(200)
+	expect(apiResponse.headers.get('Cache-Control')).toBe(
+		'public, max-age=60, stale-while-revalidate=300',
+	)
+	expect(apiResponse.headers.get('Vary')).toBe('Cookie')
 	const payload = (await apiResponse.json()) as {
 		ok: boolean
 		intro: string
@@ -50,7 +60,9 @@ test('docs API lists every advertised doc by section and the markdown root is in
 	}
 	expect(payload.ok).toBe(true)
 	expect(payload.intro).toBe('what-is-kody')
-	expect(payload.guides.map((guide) => guide.slug)).toEqual(listDocsNavSlugs())
+	expect(payload.guides.map((guide) => guide.slug)).toEqual(
+		listDocsNavSlugs({ includeAdmin: false }),
+	)
 	expect(payload.guides.some((guide) => guide.id === 'values')).toBe(false)
 	expect(
 		payload.guides.some(
@@ -59,7 +71,10 @@ test('docs API lists every advertised doc by section and the markdown root is in
 	).toBe(false)
 	expect(payload.guides.every((guide) => guide.section !== null)).toBe(true)
 	expect(payload.sections.map((section) => section.id)).toEqual(
-		docsNav.map((section) => section.id),
+		visibleDocsNav(false).map((section) => section.id),
+	)
+	expect(payload.guides.some((guide) => guide.slug === 'admin-events')).toBe(
+		false,
 	)
 	expect(payload.guides[0]?.slug).toBe('what-is-kody')
 	expect(
@@ -94,6 +109,8 @@ test('docs API lists every advertised doc by section and the markdown root is in
 		indexBody.indexOf('## Connect a provider'),
 	)
 	expect(indexBody).not.toContain('https://kody.example/docs/values.md')
+	expect(indexBody).not.toContain('/docs/admin-events.md')
+	expect(indexBody).not.toContain('## Admin')
 
 	const llms = await callHandler(createLlmsTxtHandler(env) as never, {
 		request: new Request('https://kody.example/llms.txt'),
@@ -104,6 +121,7 @@ test('docs API lists every advertised doc by section and the markdown root is in
 	const llmsBody = await llms.text()
 	expect(llmsBody.startsWith('# Kody\n')).toBe(true)
 	expect(llmsBody).not.toContain('/docs/values.md')
+	expect(llmsBody).not.toContain('/docs/admin-events.md')
 	expect(llmsBody).toContain('/docs/search-and-execute.md')
 	expect(llmsBody.indexOf('/docs/what-is-kody.md')).toBeLessThan(
 		llmsBody.indexOf('/docs/search-and-execute.md'),
@@ -426,4 +444,120 @@ test('interactive doc JSON includes walkthrough highlight tokens', async () => {
 		walkthroughHighlights?: Record<string, unknown>
 	}
 	expect(oauthPayload.walkthroughHighlights).toBeUndefined()
+})
+
+test('admin-only docs 404 for anonymous viewers and stay out of public subscriptions', async () => {
+	const json = await callHandler(createDocDetailApiHandler(env) as never, {
+		request: new Request('https://kody.example/docs/admin-events.json'),
+		params: { slug: 'admin-events' },
+	})
+	expect(json.status).toBe(404)
+	const jsonBody = (await json.json()) as { ok: boolean; error?: string }
+	expect(jsonBody).toEqual({ ok: false, error: 'Doc not found.' })
+	expect(JSON.stringify(jsonBody)).not.toContain('fleet.entitlement.crossed')
+
+	const markdown = await callHandler(
+		createDocDetailMarkdownHandler(env) as never,
+		{
+			request: new Request('https://kody.example/docs/admin-events.md'),
+			params: { slug: 'admin-events' },
+		},
+	)
+	expect(markdown.status).toBe(404)
+	expect(await markdown.text()).toBe('# Doc not found\n')
+
+	const publicSubscriptions = await callHandler(
+		createDocDetailMarkdownHandler(env) as never,
+		{
+			request: new Request(
+				'https://kody.example/docs/package-subscriptions.md',
+			),
+			params: { slug: 'package-subscriptions' },
+		},
+	)
+	expect(publicSubscriptions.status).toBe(200)
+	const publicBody = await publicSubscriptions.text()
+	expect(publicBody).not.toContain('fleet.entitlement.crossed')
+	expect(publicBody).not.toContain('(admins)')
+	expect(publicBody).toContain('run.error.recorded')
+
+	vi.mocked(readAuthenticatedAppUser).mockResolvedValueOnce({
+		roles: ['admin', 'user'],
+	} as never)
+	const adminJson = await callHandler(createDocDetailApiHandler(env) as never, {
+		request: new Request('https://kody.example/docs/admin-events.json', {
+			headers: { Cookie: 'kody_session=test' },
+		}),
+		params: { slug: 'admin-events' },
+	})
+	expect(adminJson.status).toBe(200)
+	const adminPayload = (await adminJson.json()) as {
+		ok: boolean
+		slug: string
+		body: string
+	}
+	expect(adminPayload.ok).toBe(true)
+	expect(adminPayload.slug).toBe('admin-events')
+	expect(adminPayload.body).toContain('fleet.entitlement.crossed')
+	expect(adminJson.headers.get('Cache-Control')).toBe('no-store')
+
+	vi.mocked(readAuthenticatedAppUser).mockResolvedValueOnce({
+		roles: ['admin', 'user'],
+	} as never)
+	const adminMarkdown = await callHandler(
+		createDocDetailMarkdownHandler(env) as never,
+		{
+			request: new Request('https://kody.example/docs/admin-events.md', {
+				headers: { Cookie: 'kody_session=test' },
+			}),
+			params: { slug: 'admin-events' },
+		},
+	)
+	expect(adminMarkdown.status).toBe(200)
+	expect(await adminMarkdown.text()).toContain('fleet.entitlement.crossed')
+	expect(adminMarkdown.headers.get('Cache-Control')).toBe('no-store')
+
+	vi.mocked(readAuthenticatedAppUser).mockResolvedValueOnce({
+		roles: ['admin', 'user'],
+	} as never)
+	const adminNegotiatedMarkdown = await callHandler(
+		createDocDetailHandler(env) as never,
+		{
+			request: new Request('https://kody.example/docs/admin-events', {
+				headers: {
+					Accept: 'text/markdown',
+					Cookie: 'kody_session=test',
+				},
+			}),
+			params: { slug: 'admin-events' },
+		},
+	)
+	expect(adminNegotiatedMarkdown.status).toBe(200)
+	expect(await adminNegotiatedMarkdown.text()).toContain(
+		'fleet.entitlement.crossed',
+	)
+	expect(adminNegotiatedMarkdown.headers.get('Cache-Control')).toBe('no-store')
+	expect(adminNegotiatedMarkdown.headers.get('Vary')).toBe('Accept')
+
+	vi.mocked(readAuthenticatedAppUser).mockResolvedValueOnce({
+		roles: ['admin', 'user'],
+	} as never)
+	const adminIndex = await callHandler(createDocsApiHandler(env) as never, {
+		request: new Request('https://kody.example/docs.json', {
+			headers: { Cookie: 'kody_session=test' },
+		}),
+		params: { slug: '' },
+	})
+	expect(adminIndex.status).toBe(200)
+	expect(adminIndex.headers.get('Cache-Control')).toBe('no-store')
+	const adminIndexPayload = (await adminIndex.json()) as {
+		guides: Array<{ slug: string }>
+		sections: Array<{ id: string }>
+	}
+	expect(
+		adminIndexPayload.guides.some((guide) => guide.slug === 'admin-events'),
+	).toBe(true)
+	expect(
+		adminIndexPayload.sections.some((section) => section.id === 'admin'),
+	).toBe(true)
 })
