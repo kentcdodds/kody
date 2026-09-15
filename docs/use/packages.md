@@ -470,10 +470,12 @@ pings. See the
 [package subscriptions guide](../guides/package-subscriptions.md).
 
 When a saved MCP server leaves the ready state and stays down after a
-lightweight hub retry, Kody dispatches `mcp.server.disconnected`. Recovery to
-ready dispatches `mcp.server.reconnected` with the same episode id. The payload
-is metadata-first (server id/name/state, `account_url`). See the
-[package subscriptions guide](../guides/package-subscriptions.md).
+lightweight hub retry — or parks in `authenticating` after a prior ready because
+token refresh failed — Kody dispatches `mcp.server.disconnected`. Waiting and
+search peeks dispatch that pending event; they do not wait for an account-page
+snapshot. Recovery to ready dispatches `mcp.server.reconnected` with the same
+episode id. The payload is metadata-first (server id/name/state, `account_url`).
+See the [package subscriptions guide](../guides/package-subscriptions.md).
 
 Artifacts-backed plain repos, packages, and job sources also emit `repo.pushed`,
 `repo.created`, and `repo.deleted` when Cloudflare Artifacts reports those

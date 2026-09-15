@@ -1,3 +1,4 @@
+import { waitUntil } from 'cloudflare:workers'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { loadAccountWaitingData } from '#app/account-waiting-data.ts'
@@ -15,7 +16,11 @@ export function createAccountWaitingHandler(env: Env) {
 				return user
 			}
 
-			const accountWaiting = await loadAccountWaitingData({ env, user })
+			const accountWaiting = await loadAccountWaitingData({
+				env,
+				user,
+				waitUntil,
+			})
 			return renderAppPage({
 				request,
 				env,
@@ -39,7 +44,11 @@ export function createAccountWaitingApiHandler(env: Env) {
 				return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
 			}
 
-			const accountWaiting = await loadAccountWaitingData({ env, user })
+			const accountWaiting = await loadAccountWaitingData({
+				env,
+				user,
+				waitUntil,
+			})
 			return jsonResponse(accountWaiting)
 		},
 	} satisfies Action<typeof routes.accountWaitingApi>

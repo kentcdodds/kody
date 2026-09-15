@@ -46,8 +46,9 @@ Authorize + callback is enough: a replay of the callback URL settles with the
 tokens from the first exchange instead of asking you to approve again.
 `mcpServerReconnect` tries that refresh before minting a new authorization link.
 Packages that subscribe to `mcp.server.disconnected` (for example a Discord
-notifier) receive the event when a previously connected server parks needing
-re-auth.
+notifier on `package.json#kody.subscriptions`) receive the event when a
+previously connected server parks needing re-auth, including when waiting or
+search first notices the park.
 
 ## Lock a server to a package
 

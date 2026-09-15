@@ -1206,10 +1206,10 @@ class McpClientHubBase extends DurableObject<Env> {
 	}
 
 	/**
-	 * Current server cards without reconnecting or dispatching connection
-	 * events. Search waiting uses this so a cache miss cannot fan out
-	 * package subscriptions. A token-recovery park may queue a pending
-	 * disconnected episode for the next snapshot or mutation to emit.
+	 * Current server cards without reconnecting. Search waiting uses this
+	 * so a cache miss cannot run lightweight reconnect. A token-recovery
+	 * park may queue a pending disconnected episode; the hub client
+	 * dispatches it after this peek.
 	 */
 	async peekServers(): Promise<Pick<McpClientHubSnapshot, 'servers'>> {
 		await this.restoreAndWaitForServers()

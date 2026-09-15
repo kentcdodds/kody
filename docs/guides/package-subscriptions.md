@@ -635,10 +635,12 @@ Never-ready servers (still `authenticating` after add), disabled servers, and
 in-flight `connecting` / `connected` / `discovering` states do not emit. Token
 loss that parks in `authenticating` after a prior `ready` (or when a refresh
 token is still stored) emits disconnected without the lightweight retry — the
-hub stamps a durable token-refresh `last_error` and queues the episode for the
-next snapshot or mutation to dispatch. Account-page loads and the OAuth callback
-pass `waitUntil` so the Discord/package notice can finish after the response. A
-failed enabled-server lookup leaves the event pending instead of acking it.
+hub stamps a durable token-refresh `last_error` and queues the episode. Waiting
+and search peeks, account-page snapshots, and hub mutations dispatch that
+pending event to same-user packages that declare the topic (for example a
+Discord notifier). Those requests pass `waitUntil` so the package invoke can
+finish after the response; the hub acks only after fan-out returns. A failed
+enabled-server lookup leaves the event pending instead of acking it.
 `mcpServerReconnect` tries stored refresh first, then mints a new authorization
 URL; listener packages should not call it on every event.
 

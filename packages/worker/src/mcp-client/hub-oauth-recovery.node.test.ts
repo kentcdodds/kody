@@ -649,7 +649,7 @@ test('peekServers returns cards without observing or reconnecting', async () => 
 	expect(await hub.takeConnectionEvents()).toEqual([])
 })
 
-test('peekServers queues a disconnected episode when a ready server parks on token recovery', async () => {
+test('peekServers queues a disconnected episode when a ready server parks on token recovery so the hub client can dispatch it', async () => {
 	consoleWarn.mockImplementation(() => {})
 	const { state, values } = createDurableObjectState()
 	const hub = new McpClientHub(state, {} as Env)

@@ -10,6 +10,7 @@ export async function loadAccountWaitingData(input: {
 	env: Env
 	user: AuthenticatedUser
 	now?: Date
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<AccountWaitingLoaderData> {
 	const items = await deriveWaitingItems({
 		env: input.env,
@@ -21,6 +22,7 @@ export async function loadAccountWaitingData(input: {
 			emailVerified: input.user.emailVerified,
 		},
 		now: input.now,
+		waitUntil: input.waitUntil,
 	})
 	return {
 		ok: true,

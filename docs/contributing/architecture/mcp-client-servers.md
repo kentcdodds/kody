@@ -199,9 +199,10 @@ fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
   two lightweight reconnects (`connectToServer` + discover, no OAuth restart)
   before `mcp.server.disconnected` fans out to the owning user's packages.
   Token-recovery parks that stamp `last_error` also queue that disconnected
-  episode. The hub client peeks pending events, dispatches (using `waitUntil` on
-  account and callback requests), then acks them so a failed enabled-server
-  lookup does not drop the Discord/package notice. Recovery emits
+  episode. The hub client peeks pending events after snapshots, waiting/search
+  peeks, and hub mutations, dispatches them to same-user subscriber packages
+  (using `waitUntil` on account, waiting, and callback requests), then acks them
+  so a failed enabled-server lookup does not drop the notice. Recovery emits
   `mcp.server.reconnected`. `mcpServerReconnect` remains the explicit
   authorization restart. See
   [Package subscriptions](../../guides/package-subscriptions.md).

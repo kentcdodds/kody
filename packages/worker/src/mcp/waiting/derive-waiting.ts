@@ -53,6 +53,7 @@ export async function deriveWaitingItems(input: {
 	user: DeriveWaitingUser
 	now?: Date
 	fetchImpl?: typeof fetch
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<Array<WaitingItem>> {
 	const signals = await collectWaitingSignals(input)
 	return buildWaitingItems(signals)
@@ -67,6 +68,7 @@ export async function deriveWaitingItemsForStableUser(input: {
 	stableUserId: string
 	email: string
 	now?: Date
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<Array<WaitingItem>> {
 	try {
 		const userRow = await input.env.APP_DB.prepare(
@@ -89,6 +91,7 @@ export async function deriveWaitingItemsForStableUser(input: {
 				emailVerified: Boolean(userRow.email_verified_at),
 			},
 			now: input.now,
+			waitUntil: input.waitUntil,
 		})
 	} catch {
 		return []
@@ -100,6 +103,7 @@ export async function collectWaitingSignals(input: {
 	user: DeriveWaitingUser
 	now?: Date
 	fetchImpl?: typeof fetch
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<WaitingSignals> {
 	const now = input.now ?? new Date()
 	const { env, user } = input
@@ -126,7 +130,7 @@ export async function collectWaitingSignals(input: {
 			userId: user.stableUserId,
 		}).catch(() => true),
 		userHasMcpOAuthGrants(env, user.stableUserId),
-		collectMcpServerSignals(env, user.stableUserId),
+		collectMcpServerSignals(env, user.stableUserId, input.waitUntil),
 		probe(() => listJoinedIntegrations({ env, userId: user.stableUserId })),
 		probe(() =>
 			listSecrets({
@@ -249,6 +253,7 @@ async function userHasMcpOAuthGrants(env: WaitingEnv, stableUserId: string) {
 async function collectMcpServerSignals(
 	env: Env,
 	userId: string,
+	waitUntil?: (promise: Promise<unknown>) => void,
 ): Promise<Array<WaitingMcpServerSignal>> {
 	const settings = await listMcpServerSettings({ env, userId }).catch(
 		() => [] as Awaited<ReturnType<typeof listMcpServerSettings>>,
@@ -261,6 +266,7 @@ async function collectMcpServerSignals(
 		snapshot = await getCachedMcpClientHubServers({
 			env,
 			userId,
+			waitUntil,
 		})
 	} catch {
 		// A hub blip must not invent reconnect cards for every enabled server.

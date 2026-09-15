@@ -56,6 +56,7 @@ export const waitingSummaryCapability = defineDomainCapability(
 				env: ctx.env,
 				stableUserId: user.userId,
 				email: user.email,
+				waitUntil: ctx.waitUntil,
 			})
 			return {
 				count: items.length,
