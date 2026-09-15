@@ -23,7 +23,8 @@ const defaultProfilePackageFilters = {
 	dir: 'desc',
 } as const satisfies ProfilePackageFilters
 
-const profilePackageChipParams = [
+const profilePackageClientFilterParams = [
+	'q',
 	'visibility',
 	'listing',
 	'hidden',
@@ -200,9 +201,9 @@ export function buildProfileHref(input: {
 	)
 }
 
-function hrefWithoutChipParams(href: string) {
+function hrefWithoutClientFilterParams(href: string) {
 	const url = new URL(href, 'http://localhost')
-	for (const param of profilePackageChipParams) {
+	for (const param of profilePackageClientFilterParams) {
 		url.searchParams.delete(param)
 	}
 	url.searchParams.sort()
@@ -210,10 +211,10 @@ function hrefWithoutChipParams(href: string) {
 }
 
 /**
- * True when both URLs are the same `/@username` page and only chip filters
- * (`visibility`, `listing`, `hidden`, `app`, `package`, `sort`, `dir`) differ.
- * Search (`q`) and every other query param stay the same, so the already-loaded
- * package list can be re-filtered without a loader or frame fetch.
+ * True when both URLs are the same `/@username` page and only client-side
+ * inventory filters differ: search (`q`) plus chips (`visibility`, `listing`,
+ * `hidden`, `app`, `package`, `sort`, `dir`). The already-loaded package list
+ * can be re-filtered without a loader or frame fetch.
  */
 export function isProfilePackageFilterOnlyHrefChange(from: string, to: string) {
 	const fromUrl = new URL(from, 'http://localhost')
@@ -221,7 +222,9 @@ export function isProfilePackageFilterOnlyHrefChange(from: string, to: string) {
 	if (fromUrl.pathname !== toUrl.pathname) return false
 	if (!isProfilePathname(fromUrl.pathname)) return false
 	if (fromUrl.search === toUrl.search) return false
-	return hrefWithoutChipParams(from) === hrefWithoutChipParams(to)
+	return (
+		hrefWithoutClientFilterParams(from) === hrefWithoutClientFilterParams(to)
+	)
 }
 
 function matchesVisibility(
@@ -329,6 +332,18 @@ function profilePackageMatchesFilters(
 	)
 }
 
+function matchesProfilePackageQuery(
+	pkg: PublicProfilePackageItem,
+	query: string,
+) {
+	const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+	if (tokens.length === 0) return true
+	const haystack = [pkg.name, pkg.kodyId, pkg.description, ...pkg.tags]
+		.join(' ')
+		.toLowerCase()
+	return tokens.every((token) => haystack.includes(token))
+}
+
 function compareProfilePackages(
 	left: PublicProfilePackageItem,
 	right: PublicProfilePackageItem,
@@ -365,8 +380,11 @@ export function filterProfilePackages(
 	packages: ReadonlyArray<PublicProfilePackageItem>,
 	filters: ProfilePackageFilters,
 ) {
-	const visible = profilePackageFiltersAreActive(filters)
-		? packages.filter((pkg) => profilePackageMatchesFilters(pkg, filters))
-		: packages
+	const visible = packages.filter(
+		(pkg) =>
+			(!profilePackageFiltersAreActive(filters) ||
+				profilePackageMatchesFilters(pkg, filters)) &&
+			matchesProfilePackageQuery(pkg, filters.query),
+	)
 	return sortProfilePackages(visible, filters.sort, filters.dir)
 }

@@ -43,7 +43,7 @@ sequenceDiagram
 
 Persistent shells (`/account`, `/admin`, `/docs`) additionally skip the page
 view transition so their rail does not re-animate. Same-package Repo / Files /
-Settings hops and `/@username` chip-filter query changes skip it too —
+Settings hops and `/@username` chip and search (`q`) query changes skip it too —
 `shouldUseViewTransition` in `client-router.tsx` owns those lists, and
 `prefers-reduced-motion` disables transitions everywhere.
 

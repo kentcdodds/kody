@@ -152,7 +152,6 @@ test('profile API and page respect visibility and expose packages/activity', asy
 		expect.objectContaining({
 			ownerStableUserId: 'stable-alice',
 			includePrivate: false,
-			query: undefined,
 		}),
 	)
 
@@ -182,9 +181,27 @@ test('profile API and page respect visibility and expose packages/activity', asy
 	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
 		expect.objectContaining({
 			includePrivate: false,
-			query: undefined,
 		}),
 	)
+
+	mockModule.listPublicProfilePackages.mockClear()
+	const searchResponse = await apiHandler.handler({
+		request: new Request('https://example.com/profiles/alice.json?q=helper'),
+		params: { username: 'alice' },
+		url: new URL('https://example.com/profiles/alice.json?q=helper'),
+	} as never)
+	const searchBody = await searchResponse.json()
+	expect(searchResponse.status).toBe(200)
+	expect(searchBody.query).toBe('helper')
+	expect(searchBody.packages).toHaveLength(1)
+	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
+		expect.objectContaining({
+			includePrivate: false,
+		}),
+	)
+	expect(
+		mockModule.listPublicProfilePackages.mock.calls.at(-1)?.[0],
+	).not.toHaveProperty('query')
 
 	// Private profile hidden from others.
 	mockModule.getCommunityProfileByUsername.mockResolvedValue({
@@ -248,7 +265,6 @@ test('profile API and page respect visibility and expose packages/activity', asy
 		expect.objectContaining({
 			ownerStableUserId: 'stable-alice',
 			includePrivate: true,
-			query: undefined,
 		}),
 	)
 

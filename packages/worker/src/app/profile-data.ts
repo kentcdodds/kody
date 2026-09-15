@@ -83,7 +83,6 @@ async function loadProfileDataUncached(
 		listPublicProfilePackages({
 			env,
 			ownerStableUserId: profile.userId,
-			query: filters.query || undefined,
 			limit: packageLimit,
 			includePrivate: isSelf,
 		}),
