@@ -160,6 +160,11 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	expect(advocate.text).toContain(
 		'Email a short testimonial: mailto:me@kentcdodds.com?subject=Kody%20testimonial',
 	)
+	expect(advocate.text).toContain(
+		"If you have thirty seconds, reply to this email and tell me what you think about Kody and how you're using it.",
+	)
+	expect(advocate.text).not.toContain('tell Kent')
+	expect(advocate.html).not.toContain('tell Kent')
 
 	const billing = buildBillingSuccessEmail({
 		appBaseUrl: 'https://kody.codes',
