@@ -154,6 +154,9 @@ test('profile API and page respect visibility and expose packages/activity', asy
 			includePrivate: false,
 		}),
 	)
+	expect(
+		mockModule.listPublicProfilePackages.mock.calls.at(-1)?.[0],
+	).not.toHaveProperty('limit')
 
 	mockModule.listPublicProfilePackages.mockClear()
 	const guestFilterResponse = await apiHandler.handler({
@@ -202,6 +205,23 @@ test('profile API and page respect visibility and expose packages/activity', asy
 	expect(
 		mockModule.listPublicProfilePackages.mock.calls.at(-1)?.[0],
 	).not.toHaveProperty('query')
+
+	mockModule.listPublicProfilePackages.mockClear()
+	const cappedSearchResponse = await apiHandler.handler({
+		request: new Request(
+			'https://example.com/profiles/alice.json?q=helper&limit=10',
+		),
+		params: { username: 'alice' },
+		url: new URL('https://example.com/profiles/alice.json?q=helper&limit=10'),
+	} as never)
+	expect(cappedSearchResponse.status).toBe(200)
+	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
+		expect.objectContaining({
+			includePrivate: false,
+			query: 'helper',
+			limit: 10,
+		}),
+	)
 
 	// Private profile hidden from others.
 	mockModule.getCommunityProfileByUsername.mockResolvedValue({

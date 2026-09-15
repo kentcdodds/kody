@@ -175,7 +175,7 @@ export async function listPublicProfilePackages(input: {
 	env: Env
 	ownerStableUserId: string
 	query?: string
-	limit: number
+	limit?: number
 	includePrivate?: boolean
 }): Promise<Array<PublicProfilePackage>> {
 	const packages = await listPublicProfilePackagesFromDb(input.env.APP_DB, {

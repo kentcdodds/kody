@@ -164,6 +164,7 @@ export function buildProfileHref(input: {
 	package?: ProfilePackagePresenceFilter
 	sort?: ProfilePackageSort
 	dir?: ProfilePackageSortDirection
+	extraSearchParams?: URLSearchParams
 }) {
 	const searchParams = new URLSearchParams()
 	const query = input.query?.trim() ?? ''
@@ -195,6 +196,18 @@ export function buildProfileHref(input: {
 	if (dir !== defaultProfilePackageSortDirection(sort)) {
 		searchParams.set('dir', dir)
 	}
+	if (input.extraSearchParams) {
+		for (const [key, value] of input.extraSearchParams) {
+			if (
+				(profilePackageClientFilterParams as ReadonlyArray<string>).includes(
+					key,
+				)
+			) {
+				continue
+			}
+			if (!searchParams.has(key)) searchParams.set(key, value)
+		}
+	}
 	return routes.profile.href(
 		{ username: input.username },
 		searchParams.size > 0 ? { searchParams } : undefined,
@@ -203,7 +216,9 @@ export function buildProfileHref(input: {
 
 function hrefWithoutClientFilterParams(href: string) {
 	const url = new URL(href, 'http://localhost')
+	const inventoryIsCapped = url.searchParams.has('limit')
 	for (const param of profilePackageClientFilterParams) {
+		if (param === 'q' && inventoryIsCapped) continue
 		url.searchParams.delete(param)
 	}
 	url.searchParams.sort()
@@ -215,6 +230,10 @@ function hrefWithoutClientFilterParams(href: string) {
  * inventory filters differ: search (`q`) plus chips (`visibility`, `listing`,
  * `hidden`, `app`, `package`, `sort`, `dir`). The already-loaded package list
  * can be re-filtered without a loader or frame fetch.
+ *
+ * `q` is not client-only when `limit` is present: that inventory is a capped
+ * page, so search must reload (server-side `q`) instead of pretending the
+ * first page is the full corpus.
  */
 export function isProfilePackageFilterOnlyHrefChange(from: string, to: string) {
 	const fromUrl = new URL(from, 'http://localhost')

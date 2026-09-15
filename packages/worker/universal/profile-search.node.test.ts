@@ -106,6 +106,13 @@ test('profile package filter hrefs omit defaults and ignore owner-only params fo
 			listing: 'ahead',
 		}),
 	).toBe('/@kody?listing=ahead')
+	expect(
+		buildProfileHref({
+			username: 'kody',
+			query: 'notes',
+			extraSearchParams: new URLSearchParams('limit=10&q=old'),
+		}),
+	).toBe('/@kody?q=notes&limit=10')
 
 	expect(
 		readProfilePackageFiltersFromHref(
@@ -285,6 +292,12 @@ test('chip and search profile href changes skip the loader', () => {
 	expect(
 		isProfilePackageFilterOnlyHrefChange(
 			'/@kody?q=notes',
+			'/@kody?q=notes&limit=10',
+		),
+	).toBe(false)
+	expect(
+		isProfilePackageFilterOnlyHrefChange(
+			'/@kody?limit=10',
 			'/@kody?q=notes&limit=10',
 		),
 	).toBe(false)

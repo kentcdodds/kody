@@ -78,6 +78,7 @@ export function ProfileRepositorySearchInput(
 								username: handle.props.username,
 								...handle.props.filters,
 								query: value,
+								extraSearchParams: new URL(window.location.href).searchParams,
 							}),
 						)
 					}),
