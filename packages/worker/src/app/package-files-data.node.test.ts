@@ -73,6 +73,7 @@ const listing = {
 	kodyId: 'sentry',
 	name: '@kentcdodds/sentry',
 	pinnedCommit: 'abc123',
+	iconCommit: 'abc123',
 }
 
 test('listed package tree marks the owner so Settings stays on the chrome', async () => {
@@ -111,6 +112,7 @@ test('listed package tree marks the owner so Settings stays on the chrome', asyn
 		backHref: '/@kentcdodds/sentry',
 		filesBasePath: '/@kentcdodds/sentry/tree/main',
 		imageBaseHref: '/@kentcdodds/sentry/assets',
+		iconUrl: '/community/listing-1/icon/abc123',
 	})
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
