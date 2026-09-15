@@ -154,6 +154,8 @@ test('step 2 shows one prompt and a search waiting spinner', async () => {
 	expect(waiting).toContain('data-testid="onboarding-step-2-prompt"')
 	expect(waiting).toContain('data-testid="onboarding-search-status"')
 	expect(waiting).toContain('data-testid="onboarding-guide-pointer"')
+	expect(waiting).toContain('first wins')
+	expect(waiting).toContain('first-win choices')
 	expect(waiting).toContain('data-testid="onboarding-wizard-next"')
 	expect(waiting).not.toContain('data-connected="true"')
 	expect(waiting).toContain('data-testid="onboarding-connected-agents"')

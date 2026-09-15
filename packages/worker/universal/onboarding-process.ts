@@ -105,17 +105,17 @@ export const portabilityGuideEntity = 'portability:guide'
 export const portabilityGuideHref = '/docs/portability'
 
 export const onboardingAccessLede =
-	'Kody is the home your agents share — memory, secrets, packages, jobs, workflows, and apps. Paste this prompt so your agent looks up the onboarding guide and helps you make something useful. It is not a service gateway.'
+	'Kody is the home your agents share — memory, secrets, packages, jobs, workflows, and apps. Paste this prompt so your agent looks up the onboarding guide, offers a few concrete first wins, and helps you make one of them. It is not a service gateway.'
 
 export function onboardingAccessSelectedLede(agentLabel: string | null) {
 	const name = agentLabel?.trim() ? agentLabel.trim() : 'your agent'
-	return `Copy this prompt into ${name}. It will look up the onboarding guide, ask 1–2 questions to find your use, and help you make something useful in Kody.`
+	return `Copy this prompt into ${name}. It will look up the onboarding guide, offer a few concrete first wins, and help you make one of them in Kody.`
 }
 
 export const onboardingStep2Prompt = [
 	"I'm on Kody onboarding Step 2.",
 	`Look up the onboarding guide with search({ entity: "${onboardingGuideEntity}" }) and help me make something useful in my account.`,
-	'Follow the guide.',
+	'Follow the guide: offer the first-win choices, wait for my pick, then do one small win.',
 ].join(' ')
 
 export const onboardingCopyStep2PromptLabel = 'Copy Step 2 prompt'

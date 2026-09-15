@@ -3,9 +3,8 @@ id: onboarding
 title: First run: the onboarding briefing
 summary:
   First-run guide for a connected agent. Teach lightly what Kody is and is not,
-  ask 1–2 questions to find the person's use, help them take advantage of the
-  right features, and set up integrations with clear difficulty. One small win,
-  then Step 3.
+  offer six concrete first-win choices, help them take one small win from their
+  pick, and set up integrations with clear difficulty. Then Step 3.
 category: platform
 audience: agents
 ---
@@ -17,9 +16,10 @@ Agent notes — for AI agents driving first-run from a copied onboarding prompt:
 
 - The person pasted a short prompt from /onboarding/step-2. Follow that prompt.
   This guide is depth, not a script to dump.
-- Interview conversationally. Ask at most two short questions, then wait.
+- First message: one short line on what Kody is (home for agents, not a
+  gateway), then present the six first-win choices. Wait for their pick.
   Keep each message under roughly 120 words.
-- Do one small concrete win in their Kody account from their answer. Do not
+- After they pick, do one small concrete win from that playbook. Do not
   tour every surface.
 - Kody is the home where their agents share memory, secrets, packages, jobs,
   workflows, and apps. They keep or switch agents without rebuilding that
@@ -62,13 +62,76 @@ are available when a job needs them. They are supporting cast.
 
 If the person leaves thinking "I signed up to wire APIs," this briefing failed.
 
-## Start with their use
+## Start with a first win
 
-Ask 1–2 short questions. Wait. Examples: what should follow them into another
-agent? What do they want done when they are not in chat? What tool do they
-already live in?
+Ask: **Which of these would help you this week?** Wait for their pick before
+doing anything else.
 
-Then pick the smallest Kody surface that fits that answer. Do not tour the rest.
+1. **Check if a PR is ready to ship** — a GitHub readiness checklist they can
+   invoke from any agent.
+2. **Ping me when something needs me** — CI failed, review requested, and/or a
+   new Sentry issue, as a subscription that runs when they are not in chat.
+3. **Turn a skill or repeated prompt into deterministic package code** — take
+   _their_ skill.md, INTENT, or repeated agent prompt and save it as owned
+   package code. This is not installing `@kentcdodds/skills`.
+4. **Wake my agent from email** — forward something and the agent handles it.
+   Only pursue this when the connected host can be woken asynchronously (cloud
+   agent with an API, webhook, or wake URL).
+5. **Trigger Kody from Slack or Raycast** — a webhook that runs outside chat.
+6. **Something else** — they name it; you do one small win from that answer.
+
+Then follow the matching playbook. One small win, then send them to
+`/onboarding/step-3`.
+
+### Check if a PR is ready to ship
+
+Same spirit as the homepage demo: one useful check becomes a durable package
+they can run from any agent. Open `search({ entity: "provider_github:guide" })`
+if they need a token, then `search({ entity: "package_lifecycle:guide" })` and
+`search({ entity: "package_authoring:guide" })`. Persist a small checklist
+export (reviews, CI, mergeable). Smoke-test from execute, then save the package
+they own.
+
+### Ping me when something needs me
+
+Prefer a subscription or inbound webhook that runs when they are not in chat.
+Ask which event they care about first (CI failed, review requested, new Sentry
+issue). Open `search({ entity: "triggers:guide" })` and
+`search({ entity: "package_subscriptions:guide" })`. GitHub events:
+`provider_github:guide` then a webhook or subscription. Sentry: inbound webhook
+from `triggers:guide`. Name the event, persist a quiet handler, smoke-test once.
+
+### Turn a skill or repeated prompt into owned package code
+
+They already have a skill.md, INTENT, or a prompt they paste every week. Turn
+_that_ into deterministic code they own — not a fork of `@kentcdodds/skills`.
+Open `search({ entity: "how_kody_works:guide" })` for the factory-loop shape,
+then `package_authoring:guide` and `package_lifecycle:guide`. One export that
+does the repeated job without a model in the loop.
+
+### Wake my agent from email
+
+Forwarding mail into Kody is easy (`email.message.received` on
+`triggers:guide`). Waking _the agent_ only works when this host has an async
+wake path (cloud agent API, webhook, or wake URL). If the host is local-only
+with no wake API, say so in one sentence and help them pick another option — or
+build the email→event half now and defer the wake. Do not pretend a laptop agent
+will answer mail while it is closed.
+
+### Trigger Kody from Slack or Raycast
+
+A POST from Slack or Raycast should run a package they own, without opening this
+chat. Open `search({ entity: "triggers:guide" })` for inbound webhooks. Raycast
+(or any CLI/shortcut) POSTs JSON to a minted webhook. Slack as a knock is the
+same webhook path; talking _to_ Slack later is `provider_slack:guide` and is a
+different job. Persist one webhook handler, mint the URL from package settings,
+and send one test POST.
+
+### Something else
+
+Ask what they want in one short sentence. Then do the smallest Kody surface that
+fits: a memory, one execute, or a package they own. Use the sections below. One
+win, then Step 3.
 
 ## Memory
 
