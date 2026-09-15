@@ -1,4 +1,5 @@
 import { DurableObjectOAuthClientProvider } from 'agents/mcp/do-oauth-client-provider'
+import { mergeMcpOAuthTokens } from './oauth-token-recovery.ts'
 
 export const mcpClientIdMetadataPath = '/oauth/client-metadata.json'
 export const mcpServerOAuthCallbackPath = '/account/mcp-servers/oauth/callback'
@@ -61,10 +62,16 @@ export function handleMcpClientIdMetadataRequest(request: Request) {
 	return new Response(body, { headers })
 }
 
+type McpClientOAuthProvider = DurableObjectOAuthClientProvider & {
+	clientMetadataUrl?: string
+}
+
 /**
  * Agents SDK storage/PKCE provider plus the MCP SDK `clientMetadataUrl`
  * hook. HTTPS callbacks present CIMD; http (local dev) omits it so auth
- * falls back to DCR.
+ * falls back to DCR. `saveTokens` keeps an existing refresh token when
+ * the authorization server omits one, and keeps OAuth discovery so the
+ * next authorize URL can still advertise scopes.
  */
 export function createMcpClientOAuthProvider(
 	storage: DurableObjectStorage,
@@ -74,10 +81,44 @@ export function createMcpClientOAuthProvider(
 		storage,
 		mcpClientName,
 		callbackUrl,
-	) as DurableObjectOAuthClientProvider & { clientMetadataUrl?: string }
+	) as McpClientOAuthProvider
+	installMcpOAuthTokenPreservation(provider)
 	const clientMetadataUrl = resolveMcpClientMetadataUrl(callbackUrl)
 	if (clientMetadataUrl) {
 		provider.clientMetadataUrl = clientMetadataUrl
 	}
 	return provider
+}
+
+function installMcpOAuthTokenPreservation(
+	provider: DurableObjectOAuthClientProvider,
+) {
+	if (
+		typeof provider.saveTokens !== 'function' ||
+		typeof provider.tokens !== 'function' ||
+		typeof provider.discoveryState !== 'function' ||
+		typeof provider.saveDiscoveryState !== 'function'
+	) {
+		return
+	}
+	const saveTokens = provider.saveTokens.bind(provider)
+	const readTokens = provider.tokens.bind(provider)
+	const readDiscovery = provider.discoveryState.bind(provider)
+	const writeDiscovery = provider.saveDiscoveryState.bind(provider)
+	provider.saveTokens = async (incoming, context) => {
+		const [existing, discovery] = await Promise.all([
+			readTokens(context),
+			readDiscovery(),
+		])
+		const merged = mergeMcpOAuthTokens({ incoming, existing })
+		await saveTokens(
+			merged && typeof merged === 'object'
+				? (merged as typeof incoming)
+				: incoming,
+			context,
+		)
+		if (discovery !== undefined) {
+			await writeDiscovery(discovery)
+		}
+	}
 }

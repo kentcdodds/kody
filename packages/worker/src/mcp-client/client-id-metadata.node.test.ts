@@ -78,3 +78,51 @@ test('CIMD resolves only for HTTPS, serves the origin-bound document, and wires 
 	)
 	expect(httpProvider.clientMetadataUrl).toBeUndefined()
 })
+
+test('OAuth provider saveTokens keeps a refresh token and discovery when the AS omits them', async () => {
+	const values = new Map<string, unknown>()
+	const storage = {
+		put: async (key: string, value: unknown) => {
+			values.set(key, value)
+		},
+		get: async (key: string) => values.get(key),
+		delete: async (key: string | Array<string>) => {
+			for (const item of Array.isArray(key) ? key : [key]) {
+				values.delete(item)
+			}
+		},
+		list: async () => new Map(),
+	} as unknown as DurableObjectStorage
+	const provider = createMcpClientOAuthProvider(
+		storage,
+		'https://kody.codes/account/mcp-servers/oauth/callback',
+	)
+	provider.serverId = 'server-home'
+	provider.clientId = 'client-1'
+	await provider.saveDiscoveryState({
+		authorization_servers: ['https://auth.example'],
+	} as never)
+	await provider.saveTokens({
+		access_token: 'first-at',
+		refresh_token: 'keep-rt',
+		token_type: 'Bearer',
+	})
+	expect(values.get('/Kody/server-home/client-1/token')).toEqual({
+		access_token: 'first-at',
+		refresh_token: 'keep-rt',
+		token_type: 'Bearer',
+	})
+
+	await provider.saveTokens({
+		access_token: 'refreshed-at',
+		token_type: 'Bearer',
+	})
+	expect(values.get('/Kody/server-home/client-1/token')).toEqual({
+		access_token: 'refreshed-at',
+		refresh_token: 'keep-rt',
+		token_type: 'Bearer',
+	})
+	expect(values.get('/Kody/server-home/oauth_discovery')).toEqual({
+		authorization_servers: ['https://auth.example'],
+	})
+})

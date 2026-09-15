@@ -153,7 +153,7 @@ test('mcp.server connection events skip disabled servers and never throw', async
 			userId: 'user-1',
 			events: [event],
 		}),
-	).resolves.toBeUndefined()
+	).resolves.toBe(true)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'mcp.server connection package subscription discovery incomplete',
 		expect.objectContaining({
@@ -193,6 +193,23 @@ test('mcp.server connection events skip disabled servers and never throw', async
 	expect(mocks.invokePackageSubscription).toHaveBeenCalledWith(
 		expect.objectContaining({
 			topic: mcpServerReconnectedTopic,
+		}),
+	)
+
+	mocks.listEnabledMcpServerSettingRows.mockRejectedValueOnce(
+		new Error('D1 unavailable'),
+	)
+	await expect(
+		emitMcpServerConnectionEventsIfNeeded({
+			env,
+			userId: 'user-1',
+			events: [event],
+		}),
+	).resolves.toBe(false)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'mcp.server connection event enabled-server lookup failed',
+		expect.objectContaining({
+			error: expect.any(Error),
 		}),
 	)
 })

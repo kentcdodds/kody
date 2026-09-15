@@ -223,8 +223,8 @@ export async function emitMcpServerConnectionEventsIfNeeded(input: {
 	userId: string
 	events: Array<McpServerConnectionEvent>
 	waitUntil?: (promise: Promise<unknown>) => void
-}) {
-	if (input.events.length === 0) return
+}): Promise<boolean> {
+	if (input.events.length === 0) return true
 	let enabledIds: Set<string>
 	try {
 		const rows = await listEnabledMcpServerSettingRows({
@@ -236,7 +236,7 @@ export async function emitMcpServerConnectionEventsIfNeeded(input: {
 		console.warn('mcp.server connection event enabled-server lookup failed', {
 			error,
 		})
-		return
+		return false
 	}
 	const pending = input.events
 		.filter((event) => enabledIds.has(event.serverId))
@@ -248,11 +248,12 @@ export async function emitMcpServerConnectionEventsIfNeeded(input: {
 				waitUntil: input.waitUntil,
 			}),
 		)
-	if (pending.length === 0) return
+	if (pending.length === 0) return true
 	const all = Promise.all(pending).then(() => undefined)
 	if (input.waitUntil) {
 		input.waitUntil(all)
-		return
+		return true
 	}
 	await all
+	return true
 }

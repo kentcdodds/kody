@@ -415,6 +415,20 @@ test('MCP servers API lists, adds, reconnects, disables, and deletes with user s
 	)
 })
 
+test('MCP servers OAuth callback HEAD does not exchange the authorization code', async () => {
+	mockModule.handleOAuthCallback.mockClear()
+	const handler = createAccountMcpServersOauthCallbackHandler(createEnv())
+	const headResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/account/mcp-servers/oauth/callback?code=abc&state=xyz',
+			{ method: 'HEAD' },
+		),
+		params: {},
+	} as never)
+	expect(headResponse.status).toBe(200)
+	expect(mockModule.handleOAuthCallback).not.toHaveBeenCalled()
+})
+
 test('MCP servers OAuth callback redirects with the auth outcome', async () => {
 	const handler = createAccountMcpServersOauthCallbackHandler(createEnv())
 

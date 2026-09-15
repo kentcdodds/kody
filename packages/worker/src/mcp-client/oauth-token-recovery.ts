@@ -32,6 +32,33 @@ export function readMcpOAuthTokenPresence(
 	}
 }
 
+/**
+ * Authorization servers often omit `refresh_token` on refresh (and
+ * sometimes on a second authorization-code grant). RFC 6749 says the
+ * client must keep the existing refresh token in that case. The Agents
+ * SDK `saveTokens` replaces the whole blob, so a merge has to happen
+ * before the write.
+ */
+export function mergeMcpOAuthTokens(input: {
+	incoming: unknown
+	existing: unknown
+}): unknown {
+	if (!input.incoming || typeof input.incoming !== 'object') {
+		return input.incoming
+	}
+	const incomingPresence = readMcpOAuthTokenPresence(input.incoming)
+	if (incomingPresence.hasRefreshToken) return input.incoming
+	const existingPresence = readMcpOAuthTokenPresence(input.existing)
+	if (!existingPresence.hasRefreshToken) return input.incoming
+	if (!input.existing || typeof input.existing !== 'object') {
+		return input.incoming
+	}
+	return {
+		...(input.incoming as Record<string, unknown>),
+		refresh_token: (input.existing as Record<string, unknown>)['refresh_token'],
+	}
+}
+
 export function shouldAttemptMcpOAuthRefresh(presence: McpOAuthTokenPresence) {
 	return presence.hasAccessToken || presence.hasRefreshToken
 }

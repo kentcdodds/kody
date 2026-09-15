@@ -4,6 +4,7 @@ import {
 	describeMcpOAuthTokenRecovery,
 	isMcpOAuthTokenRecoveryLastError,
 	mcpOAuthTokenRecoveryStorageKey,
+	mergeMcpOAuthTokens,
 	readMcpOAuthTokenPresence,
 	shouldAttemptMcpOAuthRefresh,
 } from './oauth-token-recovery.ts'
@@ -77,6 +78,24 @@ test('token recovery lastError names refresh failure without claiming IdP just s
 			stillHasRefreshToken: true,
 		}),
 	).toContain('Refresh did not restore the connection')
+	expect(
+		mergeMcpOAuthTokens({
+			incoming: { access_token: 'new-at' },
+			existing: { access_token: 'old-at', refresh_token: 'keep-rt' },
+		}),
+	).toEqual({ access_token: 'new-at', refresh_token: 'keep-rt' })
+	expect(
+		mergeMcpOAuthTokens({
+			incoming: { access_token: 'new-at', refresh_token: 'rotated-rt' },
+			existing: { refresh_token: 'old-rt' },
+		}),
+	).toEqual({ access_token: 'new-at', refresh_token: 'rotated-rt' })
+	expect(
+		mergeMcpOAuthTokens({
+			incoming: { access_token: 'new-at' },
+			existing: { access_token: 'old-at' },
+		}),
+	).toEqual({ access_token: 'new-at' })
 	expect(
 		isMcpOAuthTokenRecoveryLastError({
 			message: 'Authorization completed at the identity provider, but hung',

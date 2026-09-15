@@ -31,12 +31,11 @@ async function emitMcpServerConnectionEvents(input: {
 	env: Env
 	userId: string
 	events: Array<McpServerConnectionEvent>
-	waitUntil?: (promise: Promise<unknown>) => void
-}) {
-	if (input.events.length === 0) return
+}): Promise<boolean> {
+	if (input.events.length === 0) return true
 	const { emitMcpServerConnectionEventsIfNeeded } =
 		await import('./package-subscriptions.ts')
-	await emitMcpServerConnectionEventsIfNeeded(input)
+	return await emitMcpServerConnectionEventsIfNeeded(input)
 }
 
 export type McpClientHubClient = {
@@ -73,19 +72,19 @@ export function createMcpClientHubClient(
 		async addServer(addInput) {
 			invalidateMcpClientHubSnapshotCache(input)
 			const result = await stub.addServer(addInput)
-			await emitTakenConnectionEvents(input, stub)
+			await emitPendingConnectionEvents(input, stub)
 			return result
 		},
 		async reconnectServer(reconnectInput) {
 			invalidateMcpClientHubSnapshotCache(input)
 			const result = await stub.reconnectServer(reconnectInput)
-			await emitTakenConnectionEvents(input, stub)
+			await emitPendingConnectionEvents(input, stub)
 			return result
 		},
 		async refreshServer(refreshInput) {
 			invalidateMcpClientHubSnapshotCache(input)
 			const result = await stub.refreshServer(refreshInput)
-			await emitTakenConnectionEvents(input, stub)
+			await emitPendingConnectionEvents(input, stub)
 			return result
 		},
 		async removeServer(removeInput) {
@@ -95,7 +94,7 @@ export function createMcpClientHubClient(
 		async handleOAuthCallback(callbackInput) {
 			invalidateMcpClientHubSnapshotCache(input)
 			const result = await stub.handleOAuthCallback(callbackInput)
-			await emitTakenConnectionEvents(input, stub)
+			await emitPendingConnectionEvents(input, stub)
 			return result
 		},
 		async getSnapshot() {
@@ -104,29 +103,39 @@ export function createMcpClientHubClient(
 		async callTool(callInput) {
 			try {
 				const result = (await stub.callTool(callInput)) as CallToolResult
-				await emitTakenConnectionEvents(input, stub)
+				await emitPendingConnectionEvents(input, stub)
 				return result
 			} catch (error) {
 				invalidateMcpClientHubSnapshotCache(input)
-				await emitTakenConnectionEvents(input, stub)
+				await emitPendingConnectionEvents(input, stub)
 				throw error
 			}
 		},
 	}
 }
 
-async function emitTakenConnectionEvents(
+async function emitPendingConnectionEvents(
 	input: McpClientHubClientInput,
 	stub: ReturnType<typeof getMcpClientHubStub>,
+	events?: Array<McpServerConnectionEvent>,
 ) {
-	const events =
-		(await stub.takeConnectionEvents()) as Array<McpServerConnectionEvent>
-	await emitMcpServerConnectionEvents({
-		env: input.env,
-		userId: input.userId,
-		events,
-		waitUntil: input.waitUntil,
-	})
+	const pending =
+		events ??
+		((await stub.peekConnectionEvents()) as Array<McpServerConnectionEvent>)
+	if (pending.length === 0) return
+	const work = (async () => {
+		const emitted = await emitMcpServerConnectionEvents({
+			env: input.env,
+			userId: input.userId,
+			events: pending,
+		})
+		if (emitted) await stub.takeConnectionEvents()
+	})()
+	if (input.waitUntil) {
+		input.waitUntil(work)
+		return
+	}
+	await work
 }
 
 function createMcpClientHubSnapshotCache() {
@@ -147,12 +156,11 @@ export function getCachedMcpClientHubSnapshot(
 		create: async () => {
 			const stub = getMcpClientHubStub(input)
 			const snapshot = await stub.getSnapshot()
-			await emitMcpServerConnectionEvents({
-				env: input.env,
-				userId: input.userId,
-				events: snapshot.connectionEvents ?? [],
-				waitUntil: input.waitUntil,
-			})
+			await emitPendingConnectionEvents(
+				input,
+				stub,
+				snapshot.connectionEvents ?? [],
+			)
 			return { servers: snapshot.servers }
 		},
 	})

@@ -46,7 +46,11 @@ export async function loadAccountMcpServersData(input: {
 	})
 	const snapshot =
 		settings.length > 0
-			? await loadMcpClientHubSnapshotOrNull({ env: input.env, userId })
+			? await loadMcpClientHubSnapshotOrNull({
+					env: input.env,
+					userId,
+					waitUntil: input.waitUntil,
+				})
 			: null
 	if (snapshot) {
 		await Promise.all(

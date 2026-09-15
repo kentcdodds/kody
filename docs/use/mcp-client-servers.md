@@ -40,8 +40,14 @@ same items. When a server that was already connected later asks for
 authorization again, Status and `mcpServerList.error` include the sanitized
 token-refresh reason (for example a rejected or already-used refresh token).
 `mcpServerList` also reports `hasRefreshToken` so agents can tell whether Kody
-still has a refresh token without reading the secret. `mcpServerReconnect` tries
-that refresh before minting a new authorization link.
+still has a refresh token without reading the secret. Kody keeps a stored
+refresh token when the server's token response omits a new one. One successful
+Authorize + callback is enough: a replay of the callback URL settles with the
+tokens from the first exchange instead of asking you to approve again.
+`mcpServerReconnect` tries that refresh before minting a new authorization link.
+Packages that subscribe to `mcp.server.disconnected` (for example a Discord
+notifier) receive the event when a previously connected server parks needing
+re-auth.
 
 ## Lock a server to a package
 
