@@ -1868,8 +1868,12 @@ class RunLogBase extends DurableObject<Env> {
 		this.retentionIdleConfirmed = false
 		const alarmAt = Math.max(next, Date.now() + 1_000)
 		const existing = await this.ctx.storage.getAlarm()
+		// Keep a soon-enough existing wake only when it is not later than the
+		// new due-time. A leftover empty-pass backoff (15s–15min) must not
+		// delay over-cap eviction after a finish creates an evictable row.
 		if (
 			existing != null &&
+			existing <= alarmAt + 1_000 &&
 			Math.abs(existing - alarmAt) < runRecordRetentionAlarmMs
 		) {
 			this.retentionAlarmArmed = true

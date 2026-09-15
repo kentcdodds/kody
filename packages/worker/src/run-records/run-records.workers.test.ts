@@ -1409,6 +1409,23 @@ test('empty over-cap retention backs off; summarize memos; list does not reconci
 				beforeSecond + runRecordRetentionEmptyBackoffMinMs * 2 - 100,
 			)
 		})
+		await finishRunRecord({
+			env,
+			handle: {
+				id: 'now-evictable',
+				userId,
+				startedAt: new Date().toISOString(),
+				persistence: 'eager',
+				context: baseContext({ surface: 'job', name: 'now-evictable' }),
+			},
+			status: 'success',
+		})
+		const pulledIn = await runInDurableObject(
+			stub,
+			async (_instance: RunLog, state) => state.storage.getAlarm(),
+		)
+		expect(pulledIn).toBeTypeOf('number')
+		expect(pulledIn).toBeLessThan(Date.now() + 5_000)
 	}
 
 	// Same-since summarize reuses the isolate memo; list heals page rows only.
