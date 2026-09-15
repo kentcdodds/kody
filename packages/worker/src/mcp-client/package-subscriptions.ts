@@ -140,7 +140,9 @@ async function loadMatchingMcpServerSubscriptions(input: {
  * Fan an MCP server connection episode out to the owning user's packages that
  * declare the topic. Best-effort: discovery and invocation infrastructure
  * failures are logged, never thrown. Sibling handler terminal failures are
- * isolated via `Promise.allSettled`.
+ * isolated via `Promise.allSettled`. `complete` is false when discovery is
+ * incomplete or a retryable invoke failed, so the hub can leave the event
+ * pending.
  *
  * One emit per topic per episode. Packages decide how to notify.
  */
@@ -191,8 +193,10 @@ export async function dispatchMcpServerConnectionSubscriptionEvents(input: {
 				}),
 			),
 	)
+	let invokeFailed = false
 	for (const result of settled) {
 		if (result.status === 'rejected') {
+			invokeFailed = true
 			console.warn('mcp.server connection package subscription invoke failed', {
 				eventId: input.event.eventId,
 				topic: input.event.topic,
@@ -213,9 +217,12 @@ export async function dispatchMcpServerConnectionSubscriptionEvents(input: {
 			},
 		)
 	}
-	return settled.map((result) =>
-		result.status === 'fulfilled' ? result.value : null,
-	)
+	return {
+		results: settled.map((result) =>
+			result.status === 'fulfilled' ? result.value : null,
+		),
+		complete: discoveryErrors.length === 0 && !invokeFailed,
+	}
 }
 
 export async function emitMcpServerConnectionEventsIfNeeded(input: {
@@ -249,11 +256,6 @@ export async function emitMcpServerConnectionEventsIfNeeded(input: {
 			}),
 		)
 	if (pending.length === 0) return true
-	const all = Promise.all(pending).then(() => undefined)
-	if (input.waitUntil) {
-		input.waitUntil(all)
-		return true
-	}
-	await all
-	return true
+	const outcomes = await Promise.all(pending)
+	return outcomes.every((outcome) => outcome.complete)
 }

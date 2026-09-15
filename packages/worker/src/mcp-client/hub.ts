@@ -1271,6 +1271,24 @@ class McpClientHubBase extends DurableObject<Env> {
 		return events
 	}
 
+	/**
+	 * Remove only the supplied event ids. Events appended while dispatch
+	 * was in flight stay pending.
+	 */
+	async ackConnectionEvents(eventIds: Array<string>): Promise<void> {
+		if (eventIds.length === 0) return
+		const pending = await this.peekConnectionEvents()
+		if (pending.length === 0) return
+		const acked = new Set(eventIds)
+		const remaining = pending.filter((event) => !acked.has(event.eventId))
+		if (remaining.length === pending.length) return
+		if (remaining.length === 0) {
+			await this.ctx.storage.delete(mcpConnectionEventsPendingStorageKey)
+			return
+		}
+		await this.ctx.storage.put(mcpConnectionEventsPendingStorageKey, remaining)
+	}
+
 	private async readEpisode(
 		serverId: string,
 	): Promise<McpConnectionEpisodeRecord> {
@@ -1552,10 +1570,8 @@ class McpClientHubBase extends DurableObject<Env> {
 		const episode = await this.readEpisode(serverId)
 		const existing = this.lastDiscoverErrors.get(serverId) ?? null
 		if (existing && isMcpOAuthTokenRecoveryLastError(existing)) {
-			if (after.hasRefreshToken) {
-				await this.clearTokenRecoveryLastError(serverId)
-				return
-			}
+			// Keep last_error while still authenticating, even if a refresh
+			// token remains after saveTokens merge. Clear only on ready.
 			const connection = this.manager.mcpConnections[serverId]
 			if (connection) connection.connectionError = existing.message
 			if (

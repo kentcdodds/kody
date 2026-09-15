@@ -681,6 +681,66 @@ test('peekServers queues a disconnected episode when a ready server parks on tok
 	expect(await hub.takeConnectionEvents()).toHaveLength(1)
 })
 
+test('ackConnectionEvents removes only the dispatched ids', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { state, values } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	const { connection } = await seedReadyHomeServer({ hub, manager })
+	connection.connectionState = 'authenticating'
+	connection.connectionError = null
+	connection.options.transport.authProvider.storedTokens = {
+		access_token: 'stale-at',
+		refresh_token: 'still-rt',
+	}
+	manager.rows[0]!.auth_url =
+		'https://auth.example/authorize?state=fresh.server-1'
+	await hub.peekServers()
+	const queued = await hub.peekConnectionEvents()
+	expect(queued).toHaveLength(1)
+	const firstId = queued[0]?.eventId
+	expect(firstId).toBeTruthy()
+	const laterEvent = {
+		...queued[0]!,
+		eventId: 'later-event',
+		topic: 'mcp.server.reconnected' as const,
+		state: 'ready' as const,
+	}
+	values.set('mcp-connection-events-pending', [...queued, laterEvent])
+	await hub.ackConnectionEvents([firstId!])
+	expect(await hub.peekConnectionEvents()).toEqual([laterEvent])
+})
+
+test('token-recovery park keeps lastError on a later peek while a refresh token is still stored', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { state, values } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	const { connection } = await seedReadyHomeServer({ hub, manager })
+	connection.connectionState = 'authenticating'
+	connection.connectionError = null
+	connection.options.transport.authProvider.storedTokens = {
+		access_token: 'stale-at',
+		refresh_token: 'still-rt',
+	}
+	manager.rows[0]!.auth_url =
+		'https://auth.example/authorize?state=fresh.server-1'
+	const first = await hub.peekServers()
+	expect(first.servers[0]?.lastError?.phase).toBe('token exchange')
+	expect(values.get('mcp-oauth-token-recovery/server-1')).toMatchObject({
+		phase: 'token exchange',
+	})
+	const second = await hub.peekServers()
+	expect(second.servers[0]?.state).toBe('authenticating')
+	expect(second.servers[0]?.lastError?.phase).toBe('token exchange')
+	expect(second.servers[0]?.hasRefreshToken).toBe(true)
+	expect(values.get('mcp-oauth-token-recovery/server-1')).toMatchObject({
+		phase: 'token exchange',
+	})
+})
+
 test('token-recovery park with no refresh token still emits disconnected when wasReady was never stored', async () => {
 	consoleWarn.mockImplementation(() => {})
 	const { state, values } = createDurableObjectState()

@@ -136,7 +136,9 @@ async function emitPendingConnectionEvents(
 			userId: input.userId,
 			events: pending,
 		})
-		if (emitted) await stub.takeConnectionEvents()
+		if (emitted) {
+			await stub.ackConnectionEvents(pending.map((event) => event.eventId))
+		}
 	})()
 	if (input.waitUntil) {
 		input.waitUntil(work)
