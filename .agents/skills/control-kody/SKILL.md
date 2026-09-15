@@ -30,7 +30,9 @@ node tools/control-kody.ts package-create --origin <preview> --package-name <lea
 After `login`, keep using `request` for HTML and JSON assertions. Do **not**
 `cat` the session cookie into `curl` or Python. `--dump` writes the raw body to
 `.tmp/control-kody-body`. `--contains <text>` fails unless that substring is in
-the body.
+the body. Cookie files are bound to the origin that created them; `request`
+re-logs in if a leftover cookie is rejected (HTTP 401 or a login-page HTML
+body).
 
 `doctor` (and a failed local `login`) print `npm run migrate:local` plus
 `node tools/seed-test-data.ts --local` when local APP_DB was never migrated or

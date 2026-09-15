@@ -39,6 +39,11 @@ import {
 	missingContainsNeedles,
 } from './control-kody/request-proof.ts'
 import {
+	cookieHeaderForOrigin,
+	formatCookieFile,
+	shouldRefreshSession,
+} from './control-kody/session-cookie.ts'
+import {
 	cookieHeaderFromSetCookie,
 	evaluateAppHealth,
 	parseSessionRequest,
@@ -690,18 +695,20 @@ export async function readHealth(input: {
 	}
 }
 
-export function readCookieFile(cookieFile: string) {
+export function readCookieFile(cookieFile: string, origin: string) {
 	if (!existsSync(cookieFile)) return null
-	const value = readFileSync(cookieFile, 'utf8').trim()
-	return value.length > 0 ? value : null
+	return cookieHeaderForOrigin(readFileSync(cookieFile, 'utf8'), origin)
 }
 
 export async function writeCookieFile(
 	cookieFile: string,
 	cookieHeader: string,
+	origin: string,
 ) {
 	await mkdir(path.dirname(cookieFile), { recursive: true })
-	await writeFile(cookieFile, `${cookieHeader}\n`, { mode: 0o600 })
+	await writeFile(cookieFile, formatCookieFile(origin, cookieHeader), {
+		mode: 0o600,
+	})
 	await chmod(cookieFile, 0o600)
 }
 
@@ -730,7 +737,7 @@ async function loginAndStoreCookie(
 		else console.error(detail)
 		return { ok: false }
 	}
-	await writeCookieFile(options.cookieFile, session.cookieHeader)
+	await writeCookieFile(options.cookieFile, session.cookieHeader, origin)
 	return { ok: true, cookieHeader: session.cookieHeader }
 }
 
@@ -847,7 +854,7 @@ async function runCommand(options: ControlKodyOptions) {
 				? session.detail
 				: withLocalAppDbRemediation(origin, session, localAppDbSeedEmails())
 			if (session.cookieHeader) {
-				await writeCookieFile(options.cookieFile, session.cookieHeader)
+				await writeCookieFile(options.cookieFile, session.cookieHeader, origin)
 			}
 			if (options.json) {
 				printJson({ ...session, detail, cookieFile: options.cookieFile })
@@ -864,7 +871,7 @@ async function runCommand(options: ControlKodyOptions) {
 				)
 			}
 			const origin = await resolveOrigin(options)
-			let cookieHeader = readCookieFile(options.cookieFile)
+			let cookieHeader = readCookieFile(options.cookieFile, origin)
 			if (!options.skipLogin && !cookieHeader) {
 				const loggedIn = await loginAndStoreCookie(origin, options)
 				if (!loggedIn.ok) return 1
@@ -875,7 +882,14 @@ async function runCommand(options: ControlKodyOptions) {
 				spec: options.request,
 				cookieHeader,
 			})
-			if (!options.skipLogin && result.status === 401) {
+			if (
+				shouldRefreshSession({
+					skipLogin: options.skipLogin,
+					status: result.status,
+					path: options.request.path,
+					rawBody: result.rawBody,
+				})
+			) {
 				const loggedIn = await loginAndStoreCookie(origin, options)
 				if (!loggedIn.ok) return 1
 				cookieHeader = loggedIn.cookieHeader
@@ -961,7 +975,7 @@ async function runCommand(options: ControlKodyOptions) {
 				headAhead: options.headAhead,
 			})
 			if (report.cookieHeader) {
-				await writeCookieFile(options.cookieFile, report.cookieHeader)
+				await writeCookieFile(options.cookieFile, report.cookieHeader, origin)
 			}
 			if (options.json) {
 				const { cookieHeader: _cookieHeader, ...publicReport } = report

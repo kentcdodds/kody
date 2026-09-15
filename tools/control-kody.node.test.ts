@@ -28,6 +28,7 @@ import {
 } from './control-kody.ts'
 import { previewSeedEmail } from './preview-manual-test.ts'
 import { featureCatalog } from './control-kody/feature-catalog.ts'
+import { formatCookieFile } from './control-kody/session-cookie.ts'
 
 async function withAuthServer(
 	handler: (request: IncomingMessage, response: ServerResponse) => void,
@@ -511,7 +512,6 @@ test('control-kody request re-logs in when a stored cookie is rejected', async (
 	const dir = await mkdtemp(path.join(tmpdir(), 'control-kody-stale-cookie-'))
 	try {
 		const cookieFile = path.join(dir, 'cookie')
-		await writeFile(cookieFile, 'kody_session=stale\n')
 		await withAuthServer(
 			(request, response) => {
 				const url = request.url ?? '/'
@@ -535,6 +535,10 @@ test('control-kody request re-logs in when a stored cookie is rejected', async (
 				response.end('missing')
 			},
 			async (origin) => {
+				await writeFile(
+					cookieFile,
+					formatCookieFile(origin, 'kody_session=stale'),
+				)
 				const code = await runCommand(
 					parseControlArgs([
 						'request',
@@ -548,9 +552,64 @@ test('control-kody request re-logs in when a stored cookie is rejected', async (
 					]),
 				)
 				expect(code).toBe(0)
-				expect(readFileSync(cookieFile, 'utf8').trim()).toBe(
-					'kody_session=fresh',
+				expect(readFileSync(cookieFile, 'utf8')).toBe(
+					formatCookieFile(origin, 'kody_session=fresh'),
 				)
+			},
+		)
+	} finally {
+		await rm(dir, { recursive: true, force: true })
+	}
+})
+
+test('control-kody request re-logs in when HTML redirects to login', async () => {
+	const dir = await mkdtemp(path.join(tmpdir(), 'control-kody-login-html-'))
+	try {
+		const cookieFile = path.join(dir, 'cookie')
+		const loginHtml =
+			'<link rel="canonical" href="http://127.0.0.1/login" data-kody-head="canonical" />'
+		await withAuthServer(
+			(request, response) => {
+				const url = request.url ?? '/'
+				if (request.method === 'POST' && url === '/auth') {
+					response.setHeader('Set-Cookie', 'kody_session=fresh; Path=/')
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ ok: true }))
+					return
+				}
+				if (url === '/account/waiting') {
+					if (request.headers.cookie !== 'kody_session=fresh') {
+						response.setHeader('Content-Type', 'text/html')
+						response.end(loginHtml)
+						return
+					}
+					response.setHeader('Content-Type', 'text/html')
+					response.end('<h1>Waiting inbox</h1>')
+					return
+				}
+				response.statusCode = 404
+				response.end('missing')
+			},
+			async (origin) => {
+				await writeFile(
+					cookieFile,
+					formatCookieFile(origin, 'kody_session=stale'),
+				)
+				const code = await runCommand(
+					parseControlArgs([
+						'request',
+						'GET',
+						'/account/waiting',
+						'--origin',
+						origin,
+						'--cookie-file',
+						cookieFile,
+						'--contains',
+						'Waiting inbox',
+						'--json',
+					]),
+				)
+				expect(code).toBe(0)
 			},
 		)
 	} finally {
