@@ -10,9 +10,11 @@ const ctx = {
 	},
 }
 
-test('codingGuideGet serves every bundled guide without frontmatter', async () => {
+test('codingGuideGet serves public bundled guides and hides admin-only docs from anonymous callers', async () => {
 	expect(guides.length).toBeGreaterThan(0)
-	for (const guide of guides) {
+	const publicGuides = guides.filter((guide) => !guide.adminOnly)
+	expect(publicGuides.length).toBeLessThan(guides.length)
+	for (const guide of publicGuides) {
 		const result = await kodyOfficialGuideCapability.handler(
 			{ guide: guide.id },
 			ctx,
@@ -41,4 +43,26 @@ test('codingGuideGet serves every bundled guide without frontmatter', async () =
 	expect(section.section?.slug).toBe('repo.pushed')
 	expect(section.body).toContain('type RepoPushedEvent')
 	expect(section.body).not.toContain('type FleetEntitlementCrossedEvent')
+
+	await expect(
+		kodyOfficialGuideCapability.handler({ guide: 'admin_events' }, ctx),
+	).rejects.toThrow('Unknown Kody guide "admin_events".')
+
+	const adminResult = await kodyOfficialGuideCapability.handler(
+		{ guide: 'admin_events' },
+		{
+			env: {} as Env,
+			callerContext: {
+				baseUrl: 'https://kody.example',
+				user: {
+					userId: 'admin-1',
+					email: 'admin@example.com',
+					displayName: 'Admin',
+					roles: ['admin'],
+				},
+			},
+		},
+	)
+	expect(adminResult.title).toBe('Admin events')
+	expect(adminResult.body).toContain('fleet.entitlement.crossed')
 })

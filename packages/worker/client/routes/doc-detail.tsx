@@ -1,5 +1,6 @@
 import { type Handle, type RemixNode, css } from 'remix/ui'
 import { NotFoundPage } from '#client/not-found-page.tsx'
+import { readAppSession } from '#client/app-session-context.tsx'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { type DocDetailLoaderData } from '#universal/loader-data.ts'
 import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'
@@ -31,6 +32,7 @@ import {
 import { HowKodyWorksWalkthrough } from '#client/routes/how-kody-works-walkthrough.tsx'
 import { renderGoogleOauthWalkthrough } from '#client/routes/google-oauth-walkthrough.tsx'
 import { colors, radius } from '#universal/styles/tokens.ts'
+import { userHasRole } from '#universal/permissions.ts'
 import {
 	articleMeasure,
 	pageHeadCss,
@@ -215,6 +217,8 @@ export function DocDetailRoute(handle: Handle) {
 		}
 
 		const snapshot = docData.read(handle, currentHref)
+		const session = readAppSession(handle)?.session
+		const isAdmin = Boolean(session && userHasRole(session, 'admin'))
 
 		if (snapshot.kind === 'not-found') {
 			return <NotFoundPage />
@@ -223,6 +227,7 @@ export function DocDetailRoute(handle: Handle) {
 		if (snapshot.kind === 'error') {
 			return renderDocsShell({
 				current: slug,
+				isAdmin,
 				children: (
 					<article mix={css(docPageCss)}>
 						<p mix={css(docStatusCss)} role="status">
@@ -240,6 +245,7 @@ export function DocDetailRoute(handle: Handle) {
 		if (doc === null) {
 			return renderDocsShell({
 				current: slug,
+				isAdmin,
 				children: (
 					<article mix={css(docPageCss)} aria-busy="true">
 						<p mix={css(docStatusCss)} role="status">
@@ -257,6 +263,7 @@ export function DocDetailRoute(handle: Handle) {
 		// the pager/eyebrow follow the doc actually shown.
 		return renderDocsShell({
 			current: slug,
+			isAdmin,
 			children: (
 				<article mix={css(docPageCss)} aria-busy={pending ? 'true' : undefined}>
 					{pending ? renderRoutePendingStatus() : null}
@@ -300,7 +307,7 @@ export function DocDetailRoute(handle: Handle) {
 						doc.walkthroughHosts,
 					) ?? <div mix={css(docProseCss)}>{renderDocBody(doc)}</div>}
 
-					{renderDocsPager(doc.slug)}
+					{renderDocsPager(doc.slug, isAdmin)}
 
 					<footer mix={css(docFootCss)}>
 						<p>

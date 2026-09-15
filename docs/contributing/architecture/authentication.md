@@ -193,9 +193,9 @@ known `sender_block`. The first terminal failure fans
 `email_verification_stall_alert` lane fans `user.email_verification.stalled`.
 `/admin/users` and `adminUserList` accept `verification=stalled` for the same
 derived set. See
-[the subscription guide](../../guides/package-subscriptions.md#useremailverificationfailed-admins)
+[the admin events guide](../../guides/admin-events.md#useremailverificationfailed-admins)
 and
-[stalled verification](../../guides/package-subscriptions.md#useremailverificationstalled-admins).
+[stalled verification](../../guides/admin-events.md#useremailverificationstalled-admins).
 
 Operators can unblock a stranded signup without a raw D1 write:
 
@@ -338,7 +338,7 @@ Both are opt-in and adapted from the Epic Stack.
 - Successful deletion best-effort fans `user.deleted` to admin-owned packages.
   Successful password signup, social-login signup, and admin person account
   creation fan `user.created`. See
-  [the subscription guide](../../guides/package-subscriptions.md#user-created-and-deleted-admins).
+  [the admin events guide](../../guides/admin-events.md#user-created-and-deleted-admins).
 - On success, runs a full per-user cascade across:
   - all `user_id`-scoped D1 tables (children before parents),
   - the shared Vectorize capability index, removing memory, job and

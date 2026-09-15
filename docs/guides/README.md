@@ -4,11 +4,11 @@ The markdown in this directory is the user-facing documentation served at
 [kody.codes/docs](https://kody.codes/docs) and read by connected agents over
 MCP. The directory keeps its historical `guides` name; the MCP entity type is
 still `{id}:guide`. Each file carries YAML frontmatter (`id`, `title`,
-`summary`, `category`, optional `audience`, `unadvertised`, `image` / `imageAlt`
-/ `ogImage`, and for provider docs `provider` and `lastVerified`). Sources are
-bundled into origin and `kody-platform` at build time so the web pages and
-`search({ entity: "{id}:guide" })` serve the same deployed content. Doc-only
-deploys upload those two scripts and skip runtime and jobs.
+`summary`, `category`, optional `audience`, `unadvertised`, `adminOnly`, `image`
+/ `imageAlt` / `ogImage`, and for provider docs `provider` and `lastVerified`).
+Sources are bundled into origin and `kody-platform` at build time so the web
+pages and `search({ entity: "{id}:guide" })` serve the same deployed content.
+Doc-only deploys upload those two scripts and skip runtime and jobs.
 
 Surfaces:
 
@@ -39,7 +39,10 @@ and `search({ entity })` calls keep resolving.
 
 Frontmatter `audience: agents` marks a playbook the connected agent follows step
 by step (the page shows an "Agent playbook" label); omit it for ordinary
-documentation.
+documentation. Frontmatter `adminOnly: true` plus a `docsNav` section with
+`adminOnly: true` hides the page from the public website, sitemap, `llms.txt`,
+and `{id}:guide` search; signed-in admins see the Admin sidebar and can search
+those pages. Non-admins get the same not-found response as a missing slug.
 
 | Section            | Files                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -50,6 +53,7 @@ documentation.
 | Integrations       | [integration-bootstrap.md](./integration-bootstrap.md), [oauth.md](./oauth.md), [google-oauth.md](./google-oauth.md), [secret-backed-integration.md](./secret-backed-integration.md), [account-secret-setup.md](./account-secret-setup.md), [openapi-integrations.md](./openapi-integrations.md), [local-mcp-tunnels.md](./local-mcp-tunnels.md), [locked-mcp-server.md](./locked-mcp-server.md), [locked-gmail-drafts.md](./locked-gmail-drafts.md) |
 | Connect a provider | [providers/](./providers/) — one file per provider (`category: provider`, alphabetical in the nav)                                                                                                                                                                                                                                                                                                                                                   |
 | Help               | [platform-friction.md](./platform-friction.md)                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Admin              | [admin-events.md](./admin-events.md) — website, sitemap, and search only for signed-in admins                                                                                                                                                                                                                                                                                                                                                        |
 | Unadvertised       | [values.md](./values.md), [account-package-invocation-token-setup.md](./account-package-invocation-token-setup.md) — reachable by exact slug / id only                                                                                                                                                                                                                                                                                               |
 
 Wizard/checklist alignment for the Get started playbooks lives in

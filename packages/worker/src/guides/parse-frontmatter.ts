@@ -29,6 +29,7 @@ const GUIDE_IMAGE_PATTERN =
  * lastVerified: YYYY-MM (required when category is provider)
  * audience: everyone | agents (optional; agents = playbook the agent follows)
  * unadvertised: true | false (optional)
+ * adminOnly: true | false (optional; website + search only for signed-in admins)
  * ---
  * <markdown body>
  * ```
@@ -108,6 +109,21 @@ export function parseGuideMarkdown(slug: string, raw: string): Guide {
 		}
 		unadvertised = unadvertisedField === 'true'
 	}
+	const adminOnlyField = fields.get('adminOnly') ?? null
+	let adminOnly = false
+	if (adminOnlyField !== null) {
+		if (adminOnlyField !== 'true' && adminOnlyField !== 'false') {
+			throw new Error(
+				`Guide "${slug}" has invalid frontmatter "adminOnly" (expected true or false).`,
+			)
+		}
+		adminOnly = adminOnlyField === 'true'
+	}
+	if (unadvertised && adminOnly) {
+		throw new Error(
+			`Guide "${slug}" cannot set both frontmatter "unadvertised" and "adminOnly".`,
+		)
+	}
 	const audienceField = fields.get('audience') ?? 'everyone'
 	if (audienceField !== 'everyone' && audienceField !== 'agents') {
 		throw new Error(
@@ -183,6 +199,7 @@ export function parseGuideMarkdown(slug: string, raw: string): Guide {
 		provider,
 		lastVerified,
 		unadvertised,
+		adminOnly,
 		audience,
 		body,
 	}

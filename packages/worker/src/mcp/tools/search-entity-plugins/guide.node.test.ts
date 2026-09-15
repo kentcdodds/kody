@@ -29,6 +29,16 @@ test('guide search entities rank advertised docs and open full markdown on entit
 			(descriptor) => descriptor.id === 'package_invocation_token_setup',
 		),
 	).toBe(false)
+	expect(
+		descriptors.some((descriptor) => descriptor.id === 'admin_events'),
+	).toBe(false)
+	expect(
+		guideSearchEntityPlugin.buildDescriptors!({
+			registry: { capabilitySpecs: {} } as never,
+			optionalRows: emptyOptionalRows,
+			includeAdminGuides: true,
+		}).some((descriptor) => descriptor.id === 'admin_events'),
+	).toBe(true)
 
 	const authoringCandidates = await guideSearchEntityPlugin.buildCandidates!({
 		env: {} as Env,
@@ -323,6 +333,33 @@ test('guide search entities rank advertised docs and open full markdown on entit
 	expect(
 		stopwordInId.matches.every(
 			(match) => match.type !== 'guide' || match.id !== 'first_win',
+		),
+	).toBe(true)
+
+	const publicAdminSearch = await searchUnified({
+		env: {} as Env,
+		query: 'admin events',
+		limit: 10,
+		registry: { capabilitySpecs: {} } as never,
+		optionalRows: emptyOptionalRows,
+	})
+	expect(
+		publicAdminSearch.matches.some(
+			(match) => match.type === 'guide' && match.id === 'admin_events',
+		),
+	).toBe(false)
+
+	const adminSearch = await searchUnified({
+		env: {} as Env,
+		query: 'admin events',
+		limit: 10,
+		registry: { capabilitySpecs: {} } as never,
+		optionalRows: emptyOptionalRows,
+		includeAdminGuides: true,
+	})
+	expect(
+		adminSearch.matches.some(
+			(match) => match.type === 'guide' && match.id === 'admin_events',
 		),
 	).toBe(true)
 })

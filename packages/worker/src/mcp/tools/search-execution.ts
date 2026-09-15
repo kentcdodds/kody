@@ -1,4 +1,5 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { callerHasRole } from '#mcp/capabilities/access-control.ts'
 import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
 import { buildMemoryRetrievalQuery } from '#mcp/tools/memory-tool-context.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
@@ -225,6 +226,9 @@ async function executeSearchListWithinBudget(
 		retrieverResults: retrieverRun.results,
 		embedText: embeddingCache.embedText,
 		...(domainFilter ? { domain: domainFilter } : {}),
+		...(callerHasRole(input.callerContext, 'admin')
+			? { includeAdminGuides: true }
+			: {}),
 	})
 	phaseTimings.searchUnifiedMs = elapsedMs(searchUnifiedStart)
 	capabilityGuidance = result.guidance

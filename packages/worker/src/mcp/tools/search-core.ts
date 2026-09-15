@@ -174,6 +174,8 @@ export async function searchUnified(input: {
 	/** Optional capability domain id; scopes ranked results to that domain's capabilities. */
 	domain?: string
 	embedText?: EmbedTextFn
+	/** Include admin-only official guides in ranking. */
+	includeAdminGuides?: boolean
 }): Promise<SearchUnifiedResult> {
 	const offline = isCapabilitySearchOffline(input.env)
 	const query = input.query.trim()
@@ -244,6 +246,7 @@ export async function searchUnified(input: {
 		registry,
 		optionalRows,
 		...(domainFilter ? { domain: domainFilter } : {}),
+		...(input.includeAdminGuides ? { includeAdminGuides: true } : {}),
 	})
 	const queryUnderstandingStart = performance.now()
 	const intent = understandSearchQuery({
@@ -312,6 +315,7 @@ export async function searchUnified(input: {
 							queryEmbedding,
 							sharedQueryVector,
 							...(domainFilter ? { domain: domainFilter } : {}),
+							...(input.includeAdminGuides ? { includeAdminGuides: true } : {}),
 						})
 					: []
 			return {

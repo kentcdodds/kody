@@ -98,6 +98,7 @@ export function buildSearchableEntityDescriptors(input: {
 		'packageRows' | 'userSecretRows' | 'userValueRows' | 'userIntegrationRows'
 	>
 	domain?: string
+	includeAdminGuides?: boolean
 }): Array<SearchableEntityDescriptor> {
 	const descriptors: Array<SearchableEntityDescriptor> = []
 	for (const plugin of searchEntityPlugins) {

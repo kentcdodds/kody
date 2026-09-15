@@ -374,7 +374,7 @@ the dedicated DLQ.
 The first community listing publish enqueues an opaque listing id for durable
 `community.listing.published` package-subscription delivery. Republishes do not
 enqueue this topic. Fan-out, payload redaction, and retry semantics match
-[the subscription guide](../../guides/package-subscriptions.md#communitylistingpublished-admins):
+[the admin events guide](../../guides/admin-events.md#communitylistingpublished-admins):
 admin owners only, metadata-only listing fields (including canonical
 `public_url`), permanent cancellation for missing or inactive listings, and
 enqueue failures that never fail `communityPublish`.

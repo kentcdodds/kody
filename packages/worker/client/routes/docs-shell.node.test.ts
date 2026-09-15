@@ -22,6 +22,8 @@ test('docs shell marks the sidebar and highlights the open page', async () => {
 	expect(html).toContain('data-section-current="true"')
 	expect(html).toContain('href="/docs"')
 	expect(html).toContain('href="/docs/search-and-execute"')
+	expect(html).not.toContain('href="/docs/admin-events"')
+	expect(html).not.toContain('data-docs-admin-nav')
 	expect(html.indexOf('href="/docs"')).toBeLessThan(
 		html.indexOf('href="/docs/search-and-execute"'),
 	)
@@ -60,6 +62,19 @@ test('docs shell treats /docs/connect as the providers section', async () => {
 	expect(html).toContain('data-section-current="true"')
 })
 
+test('docs shell shows the admin section only when isAdmin is set', async () => {
+	const html = await renderToString(
+		renderDocsShell({
+			current: 'admin-events',
+			isAdmin: true,
+			children: jsx('p', { children: 'Admin article' }),
+		}),
+	)
+	expect(html).toContain('href="/docs/admin-events"')
+	expect(html).toContain('data-docs-admin-nav="true"')
+	expect(html).toContain('>Admin events</')
+})
+
 test('docs pager omits empty placeholders and links neighbors', async () => {
 	const first = await renderToString(renderDocsPager(docsIntroSlug))
 	expect(first).toContain('href="/docs/search-and-execute"')
@@ -69,4 +84,10 @@ test('docs pager omits empty placeholders and links neighbors', async () => {
 	const last = await renderToString(renderDocsPager('platform-friction'))
 	expect(last).toContain('Previous')
 	expect(last).not.toContain('Next')
+
+	const adminLast = await renderToString(
+		renderDocsPager('platform-friction', true),
+	)
+	expect(adminLast).toContain('href="/docs/admin-events"')
+	expect(adminLast).toContain('Next')
 })

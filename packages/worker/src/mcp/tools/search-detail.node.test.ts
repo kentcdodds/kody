@@ -304,6 +304,44 @@ test('resolveEntityDetail loads official guides without a signed-in user', async
 			searchRows: emptySearchRows() as never,
 		}),
 	).rejects.toThrow('Guide not found.')
+
+	await expect(
+		resolveEntityDetail({
+			agent,
+			callerContext: agent.getCallerContext(),
+			userId: null,
+			username: null,
+			entity: 'admin_events:guide',
+			searchRows: emptySearchRows() as never,
+		}),
+	).rejects.toThrow('Guide not found.')
+
+	const adminCaller = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+		user: {
+			userId: 'admin-1',
+			email: 'admin@example.com',
+			displayName: 'admin',
+			roles: ['admin'],
+		},
+	})
+	const adminAgent = {
+		getEnv: () => ({ APP_DB: {} }) as Env,
+		getCallerContext: () => adminCaller,
+	} as unknown as McpRegistrationAgent
+	const adminGuide = await resolveEntityDetail({
+		agent: adminAgent,
+		callerContext: adminCaller,
+		userId: 'admin-1',
+		username: 'admin',
+		entity: 'admin_events:guide',
+		searchRows: emptySearchRows() as never,
+	})
+	expect(adminGuide).toMatchObject({
+		type: 'guide',
+		id: 'admin_events',
+		slug: 'admin-events',
+	})
 })
 
 test('resolveEntityDetail loads {name}:integration via getJoinedIntegration', async () => {

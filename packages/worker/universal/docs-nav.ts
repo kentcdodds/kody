@@ -25,6 +25,11 @@ export type DocsNavSection = {
 	/** One line under the section heading in markdown / llms indexes. */
 	description: string
 	items: ReadonlyArray<DocsNavItem>
+	/**
+	 * When true, the section is omitted from public nav, indexes, sitemap, and
+	 * search. Logged-in admins see it; everyone else does not.
+	 */
+	adminOnly?: boolean
 }
 
 /**
@@ -141,6 +146,14 @@ export const docsNav: ReadonlyArray<DocsNavSection> = [
 		description: 'When Kody gets in the way.',
 		items: [{ slug: 'platform-friction', label: 'Report friction' }],
 	},
+	{
+		id: 'admin',
+		label: 'Admin',
+		description:
+			'Operator topics visible only when you are signed in with the admin role.',
+		adminOnly: true,
+		items: [{ slug: 'admin-events', label: 'Admin events' }],
+	},
 ]
 
 /**
@@ -211,17 +224,40 @@ export function docsCurrentPageLabel(current: string): string {
 	return item?.label ?? section?.label ?? 'Docs'
 }
 
+function isAdminOnlyDocsSection(section: DocsNavSection): boolean {
+	return section.adminOnly === true
+}
+
+/** Sidebar / index sections the viewer is allowed to see. */
+export function visibleDocsNav(
+	includeAdmin = false,
+): ReadonlyArray<DocsNavSection> {
+	if (includeAdmin) return docsNav
+	return docsNav.filter((section) => !isAdminOnlyDocsSection(section))
+}
+
 /** Every advertised slug in reading order (sidebar order). */
-export function listDocsNavSlugs(): ReadonlyArray<string> {
-	return docsNav.flatMap((section) => section.items.map((item) => item.slug))
+export function listDocsNavSlugs(options?: {
+	includeAdmin?: boolean
+}): ReadonlyArray<string> {
+	return visibleDocsNav(options?.includeAdmin !== false).flatMap((section) =>
+		section.items.map((item) => item.slug),
+	)
 }
 
 /**
  * Same-origin hrefs the docs sidebar can navigate to. Used to render-prefetch
  * every guide (and `/docs/connect`) so a click does not wait on a cold loader.
  */
-export function listDocsPrefetchHrefs(): ReadonlyArray<string> {
-	return [...listDocsNavSlugs().map(docHref), '/docs/connect']
+export function listDocsPrefetchHrefs(options?: {
+	includeAdmin?: boolean
+}): ReadonlyArray<string> {
+	return [
+		...listDocsNavSlugs({ includeAdmin: options?.includeAdmin === true }).map(
+			docHref,
+		),
+		'/docs/connect',
+	]
 }
 
 export function findDocsNavSection(slug: string): DocsNavSection | null {
@@ -233,11 +269,16 @@ export function findDocsNavSection(slug: string): DocsNavSection | null {
 }
 
 /** Previous and next docs in reading order; null at either end. */
-export function findDocsNavNeighbors(slug: string): {
+export function findDocsNavNeighbors(
+	slug: string,
+	options?: { includeAdmin?: boolean },
+): {
 	prev: DocsNavItem | null
 	next: DocsNavItem | null
 } {
-	const items = docsNav.flatMap((section) => section.items)
+	const items = visibleDocsNav(options?.includeAdmin === true).flatMap(
+		(section) => section.items,
+	)
 	const index = items.findIndex((item) => item.slug === slug)
 	if (index === -1) return { prev: null, next: null }
 	return {

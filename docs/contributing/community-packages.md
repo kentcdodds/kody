@@ -368,7 +368,7 @@ durable `community.listing.published` delivery (same admin fan-out as activity
 events). Republishes write `listing_updated` for profile activity but do not
 enqueue this topic. Enqueue failures are logged and never fail
 `communityPublish`. See
-[the subscription guide](../guides/package-subscriptions.md#communitylistingpublished-admins)
+[the admin events guide](../guides/admin-events.md#communitylistingpublished-admins)
 for the handler payload.
 
 ## Inert fork mechanism

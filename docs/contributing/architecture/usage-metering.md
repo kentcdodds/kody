@@ -632,7 +632,7 @@ WHERE timestamp > NOW() - INTERVAL '1' HOUR
   keys so a later drop below 100% the same day does not erase the count. Admin
   links in the payload are built with `joinAppUrl` so a trailing slash on
   `APP_BASE_URL` cannot produce `https://host//admin/…`. See
-  [Package subscriptions](../../guides/package-subscriptions.md#fleetentitlementcrossed-admins).
+  [Admin events](../../guides/admin-events.md#fleetentitlementcrossed-admins).
 - **Fleet package error rate** (same `usage_aggregation` hour): a second
   Analytics Engine SQL, not grouped by user, totals `package_export`,
   `package_static_call`, `job_run`, and `workflow_run` for the last completed
@@ -649,7 +649,7 @@ WHERE timestamp > NOW() - INTERVAL '1' HOUR
   cooldown key `ops-alert:fleet-package-error-rate:v1` suppresses repeat pages
   for six hours. The payload has no user ids, package UUIDs, emails, or error
   strings. See
-  [Package subscriptions](../../guides/package-subscriptions.md#fleetpackageerrorrateelevated-admins).
+  [Admin events](../../guides/admin-events.md#fleetpackageerrorrateelevated-admins).
 
 ## Usage campaign
 

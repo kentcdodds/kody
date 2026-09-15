@@ -30,6 +30,8 @@ export type SearchEntityCandidateInput = {
 	sharedQueryVector?: ReadonlyArray<number>
 	/** Capability domain id when ranked search is scoped to one domain. */
 	domain?: string
+	/** Include admin-only official guides in ranking. */
+	includeAdminGuides?: boolean
 }
 
 export type SearchEntityDescriptorInput = {
@@ -40,6 +42,8 @@ export type SearchEntityDescriptorInput = {
 	>
 	/** Capability domain id when ranked search is scoped to one domain. */
 	domain?: string
+	/** Include admin-only official guides in ranking. */
+	includeAdminGuides?: boolean
 }
 
 export type SearchEntitySlimFormatInput<

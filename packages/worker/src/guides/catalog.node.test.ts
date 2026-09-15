@@ -72,6 +72,13 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 	expect(
 		listGuides().some((guide) => guide.id === 'package_invocation_token_setup'),
 	).toBe(false)
+	expect(getGuideById('admin_events')?.adminOnly).toBe(true)
+	expect(listGuides().some((guide) => guide.id === 'admin_events')).toBe(false)
+	expect(
+		listGuides({ includeAdmin: true }).some(
+			(guide) => guide.id === 'admin_events',
+		),
+	).toBe(true)
 	expect(getGuideBySlug('connect')).toBeNull()
 
 	// Web ordering follows the docs nav: provider docs sit together in one
@@ -110,8 +117,13 @@ test('docs nav covers every advertised doc exactly once and nothing else', () =>
 		'kody-factory',
 	])
 
-	const advertised = listGuides().map((guide) => guide.slug)
+	const advertised = listGuides({ includeAdmin: true }).map(
+		(guide) => guide.slug,
+	)
 	expect([...navSlugs].toSorted()).toEqual([...advertised].toSorted())
+	expect(listGuides().map((guide) => guide.slug)).toEqual(
+		listDocsNavSlugs({ includeAdmin: false }),
+	)
 	for (const slug of unadvertisedDocSlugs) {
 		expect(getGuideBySlug(slug)?.unadvertised).toBe(true)
 	}
@@ -121,6 +133,9 @@ test('docs nav covers every advertised doc exactly once and nothing else', () =>
 		for (const item of section.items) {
 			expect(item.label.length).toBeGreaterThan(0)
 			expect(getGuideBySlug(item.slug)).not.toBeNull()
+			expect(Boolean(getGuideBySlug(item.slug)?.adminOnly)).toBe(
+				section.adminOnly === true,
+			)
 		}
 	}
 	const providerSection = docsNav.find((section) => section.id === 'providers')
@@ -136,11 +151,20 @@ test('docs nav covers every advertised doc exactly once and nothing else', () =>
 
 	const grouped = listGuidesBySection()
 	expect(grouped.map(({ section }) => section.id)).toEqual(
-		docsNav.map((section) => section.id),
+		docsNav
+			.filter((section) => section.adminOnly !== true)
+			.map((section) => section.id),
 	)
 	expect(grouped.flatMap(({ guides }) => guides.map((g) => g.slug))).toEqual(
-		navSlugs,
+		listDocsNavSlugs({ includeAdmin: false }),
 	)
+	const groupedWithAdmin = listGuidesBySection({ includeAdmin: true })
+	expect(groupedWithAdmin.map(({ section }) => section.id)).toEqual(
+		docsNav.map((section) => section.id),
+	)
+	expect(
+		groupedWithAdmin.flatMap(({ guides }) => guides.map((g) => g.slug)),
+	).toEqual(navSlugs)
 	for (const guide of listGuides()) {
 		expect(toGuideSummary(guide).section).not.toBeNull()
 	}
