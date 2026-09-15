@@ -29,11 +29,10 @@ export function looksLikeUnreadyLocalAppDb(input: {
 	if (!isLocalAppOrigin(input.origin)) return false
 	const detail = input.detail.toLowerCase()
 	if (detail.includes('no such table')) return true
-	if (input.status === 500) return true
+	if (detail.includes('app_db') || /\bd1\b/.test(detail)) return true
 	const usedLocalSeed =
 		!input.email || input.localSeedEmails.includes(input.email)
 	if (input.status === 401 && usedLocalSeed) return true
-	if (detail.includes('app_db') || /\bd1\b/.test(detail)) return true
 	return false
 }
 

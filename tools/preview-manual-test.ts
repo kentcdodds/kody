@@ -752,7 +752,7 @@ export async function runPreviewManualTest(
 				: await runSmokeChecks(snapshot, options, deps)
 		const result = buildResult(options, snapshot, smoke)
 		if (options.json) {
-			deps.print(JSON.stringify(result, null, 2))
+			deps.print(JSON.stringify(publicPreviewResult(result), null, 2))
 		} else {
 			deps.print(result.briefing)
 		}
@@ -1514,6 +1514,22 @@ function buildResult(
 	}
 	result.briefing = formatBriefing(result)
 	return result
+}
+
+export function publicPreviewResult(result: PreviewManualTestResult) {
+	return {
+		...result,
+		smoke: result.smoke
+			? {
+					...result.smoke,
+					cookieHeader: result.smoke.cookieHeader ? 'present' : null,
+				}
+			: null,
+		session: {
+			...result.session,
+			cookieHeader: result.session.cookieHeader ? 'present' : null,
+		},
+	}
 }
 
 function notReadyMessage(snapshot: PreviewSnapshot) {

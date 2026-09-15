@@ -715,6 +715,7 @@ export async function writeCookieFile(
 async function writeDumpFile(dumpFile: string, rawBody: string) {
 	await mkdir(path.dirname(dumpFile), { recursive: true })
 	await writeFile(dumpFile, rawBody, { mode: 0o600 })
+	await chmod(dumpFile, 0o600)
 }
 
 async function loginAndStoreCookie(

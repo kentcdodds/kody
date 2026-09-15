@@ -19,6 +19,15 @@ test('local APP_DB readiness matches localhost login failures and names migrate+
 			email: 'jane@example.com',
 			localSeedEmails: localSeeds,
 		}),
+	).toBe(false)
+	expect(
+		looksLikeUnreadyLocalAppDb({
+			origin: 'http://localhost:3742',
+			status: 500,
+			detail: 'HTTP 500 no such table: users',
+			email: 'jane@example.com',
+			localSeedEmails: localSeeds,
+		}),
 	).toBe(true)
 	expect(
 		looksLikeUnreadyLocalAppDb({

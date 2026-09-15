@@ -3,11 +3,11 @@ import {
 	type IncomingMessage,
 	type ServerResponse,
 } from 'node:http'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { expect, test } from 'vitest'
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
 import {
 	credentialsForOrigin,
 	defaultFeaturesDir,
@@ -400,6 +400,8 @@ test('control-kody request --dump writes the body and --contains asserts HTML', 
 	const dir = await mkdtemp(path.join(tmpdir(), 'control-kody-dump-'))
 	try {
 		const dumpFile = path.join(dir, 'control-kody-body')
+		await writeFile(dumpFile, 'stale', { mode: 0o644 })
+		await chmod(dumpFile, 0o644)
 		await withAuthServer(
 			(request, response) => {
 				const url = request.url ?? '/'
@@ -437,6 +439,7 @@ test('control-kody request --dump writes the body and --contains asserts HTML', 
 				})
 				expect(hit).toBe(0)
 				expect(readFileSync(dumpFile, 'utf8')).toBe('<h1>Waiting inbox</h1>')
+				expect(statSync(dumpFile).mode & 0o777).toBe(0o600)
 
 				const missed = await runCommand({
 					...parseControlArgs([
