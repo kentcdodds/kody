@@ -20,7 +20,10 @@ import {
 	docsIntroSlug,
 	resolveLegacyDocSlug,
 } from '#universal/docs-nav.ts'
-import { publicSharedJsonCacheHeaders } from '#app/anonymous-html-cache.ts'
+import {
+	anonymousPersonalizedJsonCacheHeaders,
+	publicSharedJsonCacheHeaders,
+} from '#app/anonymous-html-cache.ts'
 import { requestIsDocsAdmin, viewerCanAccessGuide } from '#app/docs-access.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { jsonResponse } from '#worker/json-response.ts'
@@ -293,6 +296,14 @@ async function resolveAccessibleGuide(
 	return viewerCanAccessGuide(guide, isAdmin) ? guide : null
 }
 
+function guideMarkdownResponse(guide: Guide): Response {
+	const response = markdownResponse(guide.body)
+	if (guide.adminOnly) {
+		response.headers.set('Cache-Control', 'no-store')
+	}
+	return response
+}
+
 export function createDocsHandler(env: Env) {
 	return {
 		middleware: [],
@@ -326,9 +337,10 @@ export function createDocsApiHandler(env: Env) {
 					guides: listGuides({ includeAdmin }).map(toGuideSummary),
 				},
 				{
-					headers: includeAdmin
-						? { 'Cache-Control': 'no-store' }
-						: publicSharedJsonCacheHeaders(),
+					headers: anonymousPersonalizedJsonCacheHeaders({
+						personalized: includeAdmin,
+						request,
+					}),
 				},
 			)
 		},
@@ -437,7 +449,7 @@ export function createDocDetailHandler(env: Env) {
 				return missingDocResponse(env, request, markdown ? 'markdown' : 'html')
 			}
 			if (markdown) {
-				return markdownResponse(guide.body)
+				return guideMarkdownResponse(guide)
 			}
 			return renderDocPage(env, request, guide)
 		},
@@ -475,11 +487,7 @@ export function createDocDetailMarkdownHandler(env: Env) {
 			if (!guide) {
 				return missingDocResponse(env, request, 'markdown')
 			}
-			const response = markdownResponse(guide.body)
-			if (guide.adminOnly) {
-				response.headers.set('Cache-Control', 'no-store')
-			}
-			return response
+			return guideMarkdownResponse(guide)
 		},
 	} satisfies Action<typeof routes.docDetailMarkdown>
 }

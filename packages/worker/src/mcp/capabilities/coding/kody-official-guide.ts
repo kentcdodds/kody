@@ -27,7 +27,6 @@ import {
 const advertisedGuides = guideMetadataList.filter(
 	(guide) => !guide.unadvertised && !guide.adminOnly,
 )
-const knownGuideIds = new Set(guideMetadataList.map((guide) => guide.id))
 
 function buildCapabilityDescription(): string {
 	return [
@@ -38,11 +37,11 @@ function buildCapabilityDescription(): string {
 	].join('\n')
 }
 
+const unknownGuideError = 'Unknown Kody guide.'
+
 const guideFieldSchema = z
 	.string()
-	.refine((id) => knownGuideIds.has(id), {
-		message: 'Unknown Kody guide.',
-	})
+	.min(1)
 	.describe(
 		[
 			'Which guide to load.',
@@ -117,7 +116,7 @@ export const kodyOfficialGuideCapability = defineDomainCapability(
 				!guide ||
 				(guide.adminOnly && !callerHasRole(ctx.callerContext, 'admin'))
 			) {
-				throw new Error(`Unknown Kody guide "${args.guide}".`)
+				throw new Error(unknownGuideError)
 			}
 			const resolved = resolveMarkdownDocument({
 				markdown: guide.body,

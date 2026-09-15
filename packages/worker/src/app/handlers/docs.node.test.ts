@@ -10,6 +10,7 @@ import { listDocsNavSlugs, visibleDocsNav } from '#universal/docs-nav.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	createDocDetailApiHandler,
+	createDocDetailHandler,
 	createDocDetailMarkdownHandler,
 	createDocsApiHandler,
 	createDocsConnectApiHandler,
@@ -40,6 +41,10 @@ test('docs API lists every advertised doc by section and the markdown root is in
 		params: { slug: '' },
 	})
 	expect(apiResponse.status).toBe(200)
+	expect(apiResponse.headers.get('Cache-Control')).toBe(
+		'public, max-age=60, stale-while-revalidate=300',
+	)
+	expect(apiResponse.headers.get('Vary')).toBe('Cookie')
 	const payload = (await apiResponse.json()) as {
 		ok: boolean
 		intro: string
@@ -511,6 +516,28 @@ test('admin-only docs 404 for anonymous viewers and stay out of public subscript
 	expect(adminMarkdown.status).toBe(200)
 	expect(await adminMarkdown.text()).toContain('fleet.entitlement.crossed')
 	expect(adminMarkdown.headers.get('Cache-Control')).toBe('no-store')
+
+	vi.mocked(readAuthenticatedAppUser).mockResolvedValueOnce({
+		roles: ['admin', 'user'],
+	} as never)
+	const adminNegotiatedMarkdown = await callHandler(
+		createDocDetailHandler(env) as never,
+		{
+			request: new Request('https://kody.example/docs/admin-events', {
+				headers: {
+					Accept: 'text/markdown',
+					Cookie: 'kody_session=test',
+				},
+			}),
+			params: { slug: 'admin-events' },
+		},
+	)
+	expect(adminNegotiatedMarkdown.status).toBe(200)
+	expect(await adminNegotiatedMarkdown.text()).toContain(
+		'fleet.entitlement.crossed',
+	)
+	expect(adminNegotiatedMarkdown.headers.get('Cache-Control')).toBe('no-store')
+	expect(adminNegotiatedMarkdown.headers.get('Vary')).toBe('Accept')
 
 	vi.mocked(readAuthenticatedAppUser).mockResolvedValueOnce({
 		roles: ['admin', 'user'],

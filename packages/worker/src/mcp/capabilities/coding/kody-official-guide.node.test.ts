@@ -44,9 +44,31 @@ test('codingGuideGet serves public bundled guides and hides admin-only docs from
 	expect(section.body).toContain('type RepoPushedEvent')
 	expect(section.body).not.toContain('type FleetEntitlementCrossedEvent')
 
-	await expect(
-		kodyOfficialGuideCapability.handler({ guide: 'admin_events' }, ctx),
-	).rejects.toThrow('Unknown Kody guide "admin_events".')
+	const missingError = await kodyOfficialGuideCapability
+		.handler({ guide: 'definitely_not_a_guide' }, ctx)
+		.then(
+			() => {
+				throw new Error('expected missing guide to reject')
+			},
+			(error: unknown) => error,
+		)
+	const hiddenAdminError = await kodyOfficialGuideCapability
+		.handler({ guide: 'admin_events' }, ctx)
+		.then(
+			() => {
+				throw new Error('expected admin guide to reject for anonymous callers')
+			},
+			(error: unknown) => error,
+		)
+	expect(missingError).toBeInstanceOf(Error)
+	expect(hiddenAdminError).toBeInstanceOf(Error)
+	expect((missingError as Error).message).toBe('Unknown Kody guide.')
+	expect((hiddenAdminError as Error).message).toBe(
+		(missingError as Error).message,
+	)
+	expect(JSON.stringify(kodyOfficialGuideCapability.inputSchema)).not.toContain(
+		'admin_events',
+	)
 
 	const adminResult = await kodyOfficialGuideCapability.handler(
 		{ guide: 'admin_events' },
