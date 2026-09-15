@@ -63,12 +63,12 @@ easily. Either kind can be first; the home is the same.
 
 ## Step 2 — Make something useful
 
-Once the connection works, Step 2 is one short prompt you paste into the agent
-you just connected. The agent loads the first-run briefing
-(`search({ entity: "onboarding:guide" })`), asks one or two questions about what
-you want done when you are not in chat, and helps you make one small useful
-thing in your Kody account: a memory it will want tomorrow, a package you own,
-or an ad hoc run worth keeping.
+Once the connection works, Step 2 (`/onboarding/step-2`) is one short prompt you
+paste into the agent you just connected. The agent loads the first-run briefing
+(`search({ entity: "onboarding:guide" })`), asks which of a few concrete first
+wins would help this week, and helps you make that one small useful thing in
+your Kody account: a package you can invoke from any agent, a subscription that
+runs when you are not in chat, or another small win from the list.
 
 This is the moment Kody stops being a login and becomes yours. The agent should
 not tour every surface or wire up integrations you did not ask for. If it starts

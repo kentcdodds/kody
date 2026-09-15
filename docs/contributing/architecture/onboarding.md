@@ -5,19 +5,22 @@ optional first-win email guide share one contract:
 
 [`packages/worker/universal/onboarding-process.ts`](../../../packages/worker/universal/onboarding-process.ts)
 
-| Surface                                  | Role                                                                      |
-| ---------------------------------------- | ------------------------------------------------------------------------- |
-| Wizard index `/onboarding`               | Redirects to the first unfinished step (Step 3 once Step 2 is done)       |
-| Wizard Step 1 `/onboarding/step-1`       | Connect an MCP host                                                       |
-| Wizard Step 2 `/onboarding/step-2`       | Make something useful (one prompt + first `search` + `onboarding:guide`)  |
-| Wizard Step 3 `/onboarding/step-3`       | Connect a second agent (same-ecosystem hosts greyed; `portability:guide`) |
-| Checklist                                | Verify email, complete the three wizard steps, then persist a package     |
-| [`first-win`](../../guides/first-win.md) | Optional email → reply → memories loop after a host is connected          |
+| Surface                                  | Role                                                                                      |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Wizard index `/onboarding`               | Redirects to the first unfinished step (Step 3 once Step 2 is done)                       |
+| Wizard Step 1 `/onboarding/step-1`       | Connect an MCP host                                                                       |
+| Wizard Step 2 `/onboarding/step-2`       | Make something useful (one prompt + first `search` + `onboarding:guide` first-win picker) |
+| Wizard Step 3 `/onboarding/step-3`       | Connect a second agent (same-ecosystem hosts greyed; `portability:guide`)                 |
+| Checklist                                | Verify email, complete the three wizard steps, then persist a package                     |
+| [`first-win`](../../guides/first-win.md) | Optional email → reply → memories loop after a host is connected                          |
 
 Step 2 is one copy-paste prompt that tells the connected agent to retrieve
 [`onboarding`](../../guides/onboarding.md)
-(`search({ entity: "onboarding:guide" })`). The page shows a spinner until Kody
-observes that first successful `search` (or an existing access win: memory,
+(`search({ entity: "onboarding:guide" })`). The guide presents six concrete
+first-win choices (PR readiness, an always-on ping, skill→owned package, email
+wake when the host can be woken, Slack/Raycast webhook, or something else) and
+the agent does one small win from their pick. The page shows a spinner until
+Kody observes that first successful `search` (or an existing access win: memory,
 execute, or saved package). Leftover `/onboarding/step-2/:service` URLs redirect
 to Step 2. Hosted / platform OAuth is not the onboarding path; new connects are
 bring-your-own.
@@ -58,7 +61,7 @@ queue. Wizard-resume and first-use cards live there. See
 `npm run test:node` / `npm run validate`) requires `docs/guides/first-win.md` to
 name each current wizard step (label or path). `docs/guides/quick-example.md`
 names Step 2's label and the Step 1 path. The first-run briefing is
-`docs/guides/onboarding.md`.
+`docs/guides/onboarding.md` and must name the six first-win choices.
 
 Change the wizard in `onboarding-process.ts` first, then update those two guides
 until the test passes. The same check requires `docs/guides/portability.md` to

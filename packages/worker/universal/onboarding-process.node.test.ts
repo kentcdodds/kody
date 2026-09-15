@@ -141,9 +141,11 @@ test('step 2 is one short prompt that retrieves the onboarding guide', () => {
 	expect(onboardingAccessSelectedLede(null)).toContain('your agent')
 	expect(onboardingAccessSelectedLede('Cursor')).toContain('Cursor')
 	expect(onboardingAccessSelectedLede('Cursor')).toContain('onboarding guide')
+	expect(onboardingAccessSelectedLede('Cursor')).toContain('first wins')
 	expect(onboardingStep2Prompt).toContain(
 		'search({ entity: "onboarding:guide" })',
 	)
+	expect(onboardingStep2Prompt).toContain('first-win choices')
 	expect(onboardingPortabilityProofPrompt).toContain(
 		'search({ entity: "portability:guide" })',
 	)
@@ -285,6 +287,11 @@ test('first-win and quick-example name the current wizard steps', () => {
 	const firstWin = readFileSync(join(guidesDir, 'first-win.md'), 'utf8')
 	const quickExample = readFileSync(join(guidesDir, 'quick-example.md'), 'utf8')
 	const portability = readFileSync(join(guidesDir, 'portability.md'), 'utf8')
+	const onboarding = readFileSync(join(guidesDir, 'onboarding.md'), 'utf8')
+	const connectYourAgent = readFileSync(
+		join(guidesDir, 'connect-your-agent.md'),
+		'utf8',
+	)
 	for (const step of onboardingWizardSteps) {
 		expect(firstWin.includes(step.label) || firstWin.includes(step.path)).toBe(
 			true,
@@ -298,7 +305,23 @@ test('first-win and quick-example name the current wizard steps', () => {
 	}
 	expect(quickExample).toContain(giveAccess.label)
 	expect(quickExample).toContain(connectAgent.path)
+	expect(quickExample).toContain('first-win')
 	expect(portability).toContain(`id: ${portabilityGuideSlug}`)
 	expect(portability).toContain(portabilityGuideEntity)
 	expect(portability).toContain(secondAgent.path)
+	expect(onboarding).toContain('Which of these would help you this week?')
+	expect(onboarding).toContain('Check if a PR is ready to ship')
+	expect(onboarding).toContain('Ping me when something needs me')
+	expect(onboarding).toContain('GitHub CI and review knocks are inbound')
+	expect(onboarding).toContain('then mint a webhook')
+	expect(onboarding).toContain(
+		'Turn a skill or repeated prompt into deterministic package code',
+	)
+	expect(onboarding).toContain('not installing `@kentcdodds/skills`')
+	expect(onboarding).toContain('Wake my agent from email')
+	expect(onboarding).toContain('woken asynchronously')
+	expect(onboarding).toContain('Trigger Kody from Slack or Raycast')
+	expect(onboarding).toContain('Something else')
+	expect(connectYourAgent).toContain('concrete first')
+	expect(connectYourAgent).toContain(giveAccess.path)
 })

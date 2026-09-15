@@ -1,10 +1,11 @@
 # Onboarding
 
 Three-step wizard after signup: connect an agent, make something useful (one
-prompt plus first search), then connect a second agent from a different
-ecosystem. Step 3 advertises Standard free for 2 weeks on that second unique
-inbound client, pastes a portability-guide prompt, and, when the payload has a
-known memory subject or package name, shows a short "You made …" chip.
+prompt plus first search; the onboarding guide offers six first-win choices),
+then connect a second agent from a different ecosystem. Step 3 advertises
+Standard free for 2 weeks on that second unique inbound client, pastes a
+portability-guide prompt, and, when the payload has a known memory subject or
+package name, shows a short "You made …" chip.
 
 ## How to get there
 

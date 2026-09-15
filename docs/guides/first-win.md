@@ -20,7 +20,8 @@ Agent notes — for AI agents driving the optional email loop from this page:
 
 - Onboarding Step 1 is Connect your agent (`/onboarding/step-1`). Step 2 is Make
   something useful (`/onboarding/step-2`): one prompt that retrieves
-  `search({ entity: "onboarding:guide" })`. Step 3 is Connect a second agent
+  `search({ entity: "onboarding:guide" })` and offers six first-win choices.
+  Step 3 is Connect a second agent
   (`/onboarding/step-3`) and reuses what Step 2 made via
   `search({ entity: "portability:guide" })`. Hosted OAuth is not the
   onboarding path. The optional climax after that is /docs/quick-example
