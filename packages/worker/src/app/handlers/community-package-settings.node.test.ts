@@ -117,6 +117,7 @@ test('package settings Files tab uses the listing default branch and id', async 
 		viewerIsOwner: true,
 		loggedIn: true,
 		invocationUrlOrigin: 'https://example.com',
+		ownerProfilePublic: false,
 	})
 	const owner = await handler.handler({
 		request: new Request('https://example.com/@kentcdodds/packages/settings'),

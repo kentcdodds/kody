@@ -6,7 +6,7 @@ const mockModule = vi.hoisted(() => ({
 	loadCommunityDetailData: vi.fn(),
 	loadAccountPackageDetail: vi.fn(),
 	loadViewerPackageShare: vi.fn(),
-	getAppBaseUrl: () => 'https://example.com',
+	getUserSocialRowByUsername: vi.fn(),
 }))
 
 vi.mock('#worker/community/package-url.ts', () => ({
@@ -31,8 +31,9 @@ vi.mock('#app/account-packages-data.ts', () => ({
 		mockModule.loadAccountPackageDetail(...args),
 }))
 
-vi.mock('#worker/app-base-url.ts', () => ({
-	getAppBaseUrl: () => mockModule.getAppBaseUrl(),
+vi.mock('#worker/community/profile-repo.ts', () => ({
+	getUserSocialRowByUsername: (...args: Array<unknown>) =>
+		mockModule.getUserSocialRowByUsername(...args),
 }))
 
 vi.mock('#worker/package-registry/share-grants.ts', () => ({
@@ -73,6 +74,9 @@ function listingDetail() {
 }
 
 test('loadPackagePage applies the owner / community / public visibility matrix', async () => {
+	mockModule.getUserSocialRowByUsername.mockResolvedValue({
+		profile_visibility: 'public',
+	})
 	mockModule.loadViewerPackageShare.mockResolvedValue(null)
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	mockModule.resolvePackagePageUrl.mockResolvedValue(null)
@@ -163,6 +167,7 @@ test('loadPackagePage applies the owner / community / public visibility matrix',
 		viewerIsOwner: true,
 		ownerPackage: { id: 'pkg-1' },
 		listing: null,
+		ownerProfilePublic: true,
 	})
 
 	mockModule.resolvePackagePageUrl.mockResolvedValue({
@@ -284,6 +289,9 @@ test('loadPackagePage does not send anonymous visitors to an unpublished listing
 })
 
 test('loadPackagePage lets pending and accepted share guests see a private package', async () => {
+	mockModule.getUserSocialRowByUsername.mockResolvedValue({
+		profile_visibility: 'private',
+	})
 	mockModule.loadCommunityDetailData.mockResolvedValue(null)
 	mockModule.loadAccountPackageDetail.mockResolvedValue({
 		id: 'pkg-1',
@@ -321,6 +329,7 @@ test('loadPackagePage lets pending and accepted share guests see a private packa
 		ownerPackage: null,
 		canReadOwnerSource: false,
 		shareGrant: { id: 'grant-1', status: 'pending' },
+		ownerProfilePublic: false,
 	})
 	expect(pending.kind === 'page' && packagePageIsPrivate(pending)).toBe(true)
 
@@ -341,5 +350,6 @@ test('loadPackagePage lets pending and accepted share guests see a private packa
 		ownerPackage: { id: 'pkg-1' },
 		canReadOwnerSource: true,
 		shareGrant: { id: 'grant-1', status: 'accepted' },
+		ownerProfilePublic: false,
 	})
 })

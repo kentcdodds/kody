@@ -552,7 +552,7 @@ export async function loadAccessiblePackageFilesData(input: {
 			username: page.username,
 			kodyId: page.kodyId,
 			description: page.listing.listing.description,
-			ownerProfilePublic: page.listing.ownerProfilePublic,
+			ownerProfilePublic: page.ownerProfilePublic,
 		}
 	}
 
@@ -560,7 +560,7 @@ export async function loadAccessiblePackageFilesData(input: {
 	if (!page.canReadOwnerSource) return null
 	const user = await readAuthenticatedAppUser(input.request, input.env)
 	if (!user) return null
-	return loadAccountPackageFilesData({
+	const data = await loadAccountPackageFilesData({
 		env: input.env,
 		request: input.request,
 		userId: page.ownerUserId,
@@ -571,6 +571,12 @@ export async function loadAccessiblePackageFilesData(input: {
 		serverTiming: input.serverTiming,
 		isListed: page.ownerPackage.hasCommunityListing,
 	})
+	if (!data) return null
+	return {
+		...data,
+		description: page.ownerPackage.description,
+		ownerProfilePublic: page.ownerProfilePublic,
+	}
 }
 
 export async function loadPackagePageHasAgentsDocs(input: {

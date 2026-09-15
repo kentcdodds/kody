@@ -46,7 +46,7 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 				description:
 					listing?.description ?? page.ownerPackage?.description ?? '',
 				isPrivate: packagePageIsPrivate(page),
-				ownerProfilePublic: page.listing?.ownerProfilePublic ?? true,
+				ownerProfilePublic: page.ownerProfilePublic,
 				loggedIn: page.loggedIn,
 				viewerIsOwner: page.viewerIsOwner,
 				returnTo: url.pathname,
