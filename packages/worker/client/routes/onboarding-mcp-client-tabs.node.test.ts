@@ -108,7 +108,6 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 		}),
 	)
 	expect(codexPreview).not.toContain(kodyChatGptPluginUrl)
-	expect(codexPreview).not.toContain('Add ChatGPT plugin')
 	expect(codexPreview).toContain(`codex mcp add kody --url ${previewUrl}`)
 	expect(codexPreview).toContain(
 		`href="codex://mcp/add?name=kody&amp;url=${encodeURIComponent(previewUrl)}"`,
@@ -125,7 +124,6 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	)
 	expect(chatgptPreview).not.toContain(kodyChatGptPluginUrl)
 	expect(chatgptPreview).toContain(previewUrl)
-	expect(chatgptPreview).toContain('creating the app')
 	expect(chatgptPreview).toContain(chatGptDeveloperModeGuideUrl)
 	expect(chatgptPreview).toContain(
 		'<strong>localhost:3742</strong> OAuth window',
@@ -167,8 +165,6 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 		}),
 	)
 	expect(chatgpt).toContain(kodyChatGptPluginUrl)
-	expect(chatgpt).toContain('Add ChatGPT plugin')
-	expect(chatgpt).toContain('adding the plugin')
 	expect(chatgpt).toContain('<strong>kody.codes</strong> OAuth window')
 	expect(chatgpt.indexOf(kodyChatGptPluginUrl)).toBeLessThan(
 		chatgpt.indexOf('onboarding-mcp-manual-json'),

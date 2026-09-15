@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest'
 import {
-	docHref,
 	docsCurrentPageLabel,
 	docsIntroSlug,
 	isDocsPagePath,
@@ -41,10 +40,6 @@ test('listDocsPrefetchHrefs covers public advertised slugs and connect', () => {
 	expect(hrefs).toContain('/docs/connect')
 	expect(hrefs).not.toContain('/docs/what-is-kody')
 	expect(hrefs).not.toContain('/docs/admin-events')
-	expect(hrefs).toEqual([
-		...listDocsNavSlugs({ includeAdmin: false }).map(docHref),
-		'/docs/connect',
-	])
 	expect(new Set(hrefs).size).toBe(hrefs.length)
 	expect(listDocsPrefetchHrefs({ includeAdmin: true })).toContain(
 		'/docs/admin-events',

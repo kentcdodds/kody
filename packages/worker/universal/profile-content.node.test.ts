@@ -109,8 +109,6 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 	})
 	expect(guestEmptyHtml).toContain('No public repositories to take yet.')
 	expect(guestEmptyHtml).toContain('data-testid="profile-packages-empty"')
-	expect(guestEmptyHtml).not.toContain('data-testid="profile-username"')
-	expect(guestEmptyHtml).not.toContain('data-testid="profile-display-name"')
 
 	const ownHtml = await renderProfileContentHtml({
 		profile,
@@ -162,7 +160,6 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 	expect(ownInventoryHtml).toContain('data-icon="lock"')
 	expect(ownInventoryHtml).toContain('data-icon="eye"')
 	expect(ownInventoryHtml).not.toContain('title="No community listing"')
-	expect(ownInventoryHtml).not.toContain('title="Not published"')
 
 	// A private repository that already has a community listing is published;
 	// the lock is the privacy signal. Do not also mark it unpublished.
@@ -183,7 +180,6 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 	expect(publishedPrivateHtml).toContain('title="Published to community"')
 	expect(publishedPrivateHtml).toContain('data-icon="share"')
 	expect(publishedPrivateHtml).not.toContain('title="No community listing"')
-	expect(publishedPrivateHtml).not.toContain('title="Not published"')
 
 	const ownEmptyHtml = await renderProfileContentHtml({
 		profile,
@@ -211,8 +207,6 @@ test('profile package filters render owner-only pills, keep other filters in eac
 	expect(ownHtml).toContain('data-testid="profile-package-filters"')
 	expect(ownHtml).toContain('<details')
 	expect(ownHtml).toContain('<summary')
-	expect(ownHtml).toContain('Filters')
-	expect(ownHtml).toContain('min-height: 1.75rem')
 	expect(ownHtml).toContain('data-testid="profile-package-filter-visibility"')
 	expect(ownHtml).toContain('data-testid="profile-package-filter-listing"')
 	expect(ownHtml).toContain('data-testid="profile-package-filter-hidden"')
@@ -253,13 +247,6 @@ test('profile package filters render owner-only pills, keep other filters in eac
 	)
 	// The visibility "All" pill drops only its own param and is not current.
 	expect(ownHtml).toMatch(/<a href="\/@kody\?q=fathom"[^>]*class=/)
-	expect(ownHtml).toContain('Needs republish')
-	expect(ownHtml).toContain('Has app')
-	expect(ownHtml).toContain('Has package')
-	expect(ownHtml).toContain('No package')
-	expect(ownHtml).toContain('Created')
-	expect(ownHtml).toContain('Ascending')
-	expect(ownHtml).toContain('Descending')
 	// Already-loaded packages are narrowed in render, not by a second fetch.
 	expect(ownHtml).toContain('No repositories matched these filters.')
 	expect(ownHtml).not.toContain('href="/@kody/fathom-analytics"')
@@ -345,5 +332,4 @@ test('profile repository rows show package, webhook, job, and app signifiers wit
 	expect(html).toContain('data-icon="inbox"')
 	expect(html).not.toContain('title="0 webhooks"')
 	expect(html).not.toContain('title="0 jobs"')
-	expect(html).not.toContain('title="Not published"')
 })

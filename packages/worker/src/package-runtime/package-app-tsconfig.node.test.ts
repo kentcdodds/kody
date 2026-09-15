@@ -1,15 +1,17 @@
 import { expect, test } from 'vitest'
 import { createPackageAppJsxBundleOptions } from './package-app-tsconfig.ts'
 
-test('createPackageAppJsxBundleOptions is empty without a root tsconfig', () => {
+test('createPackageAppJsxBundleOptions maps tsconfig jsx and ignores missing or invalid files', () => {
 	expect(
 		createPackageAppJsxBundleOptions({
 			'src/app.ts': 'export default { fetch() { return new Response("ok") } }',
 		}),
 	).toEqual({})
-})
-
-test('createPackageAppJsxBundleOptions maps tsconfig jsx settings for any import source', () => {
+	expect(
+		createPackageAppJsxBundleOptions({
+			'tsconfig.json': '{',
+		}),
+	).toEqual({})
 	expect(
 		createPackageAppJsxBundleOptions({
 			'tsconfig.json': JSON.stringify({
@@ -43,9 +45,6 @@ test('createPackageAppJsxBundleOptions maps tsconfig jsx settings for any import
 			}),
 		}),
 	).toEqual({ jsx: 'transform' })
-})
-
-test('createPackageAppJsxBundleOptions reads JSONC tsconfig comments and trailing commas', () => {
 	expect(
 		createPackageAppJsxBundleOptions({
 			'tsconfig.json': `{
@@ -60,12 +59,4 @@ test('createPackageAppJsxBundleOptions reads JSONC tsconfig comments and trailin
 		jsx: 'automatic',
 		jsxImportSource: 'remix/ui',
 	})
-})
-
-test('createPackageAppJsxBundleOptions ignores invalid tsconfig JSON', () => {
-	expect(
-		createPackageAppJsxBundleOptions({
-			'tsconfig.json': '{',
-		}),
-	).toEqual({})
 })

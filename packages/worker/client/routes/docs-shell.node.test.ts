@@ -30,6 +30,17 @@ test('docs shell marks the sidebar and highlights the open page', async () => {
 	expect(html.indexOf('href="/docs/search-and-execute"')).toBeLessThan(
 		html.indexOf('href="/docs/how-kody-works"'),
 	)
+
+	const adminHtml = await renderToString(
+		renderDocsShell({
+			current: 'admin-events',
+			isAdmin: true,
+			children: jsx('p', { children: 'Admin article' }),
+		}),
+	)
+	expect(adminHtml).toContain('href="/docs/admin-events"')
+	expect(adminHtml).toContain('data-docs-admin-nav="true"')
+	expect(adminHtml).toContain('>Admin events</')
 })
 
 test('docs sidebar and mobile menu leave room for hanging nav-link focus rings', async () => {
@@ -60,19 +71,6 @@ test('docs shell treats /docs/connect as the providers section', async () => {
 	expect(html).toContain('href="/docs/connect"')
 	expect(html).toMatch(/<a[^>]*href="\/docs\/connect"[^>]*aria-current="page"/)
 	expect(html).toContain('data-section-current="true"')
-})
-
-test('docs shell shows the admin section only when isAdmin is set', async () => {
-	const html = await renderToString(
-		renderDocsShell({
-			current: 'admin-events',
-			isAdmin: true,
-			children: jsx('p', { children: 'Admin article' }),
-		}),
-	)
-	expect(html).toContain('href="/docs/admin-events"')
-	expect(html).toContain('data-docs-admin-nav="true"')
-	expect(html).toContain('>Admin events</')
 })
 
 test('docs pager omits empty placeholders and links neighbors', async () => {

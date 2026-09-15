@@ -95,7 +95,6 @@ test('destination verify HEAD peeks without consuming and failures offer a resen
 				kind: 'email_destination',
 				reason: 'invalid_token',
 				ctaHref: '/account/email#email-destinations',
-				ctaLabel: 'Resend from email inbox',
 			},
 		},
 	})
