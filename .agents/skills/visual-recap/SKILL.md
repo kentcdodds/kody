@@ -247,8 +247,8 @@ Format rules:
 When the recap is **medium** (`extends`) or **high** (`adds`), also load
 [`.agents/skills/preview-manual-test/SKILL.md`](../preview-manual-test/SKILL.md)
 and exercise the PR preview **as the seeded logged-in user with data for this
-change** (`--request` / `--cookie-file`, then a UI pass). A health/login smoke
-alone is not enough.
+change** (`control-kody request` / `--request`, then a UI pass). A health/login
+smoke alone is not enough. Do not cat the session cookie into curl or Python.
 
 ### Plan mode
 

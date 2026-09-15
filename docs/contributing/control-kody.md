@@ -9,7 +9,9 @@ npm run control-kody -- doctor
 npm run control-kody -- dev
 npm run control-kody -- login
 npm run control-kody -- request GET /account/waiting.json
+npm run control-kody -- request GET /account/waiting --dump --contains 'Waiting'
 npm run control-kody -- map waiting
+npm run control-kody -- map --check
 npm run control-kody -- health --sha <commit>
 npm run control-kody -- preview -- --pr 42 --check /account/waiting
 npm run control-kody -- package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]
@@ -33,7 +35,21 @@ against
 
 When you add, remove, or rename a user-facing HTML route under `/account`,
 `/admin`, `/login`, `/onboarding`, `/community`, or `/@`, update the catalog and
-the matching feature file in the same change.
+the matching feature file in the same change. Run `map --check` before opening a
+Feature Map PR.
+
+After `login`, keep using `request` for HTML and JSON assertions. Do not `cat`
+the session cookie into `curl` or Python. `request --dump` writes the raw body
+to `.tmp/control-kody-body`. `request --contains <text>` fails unless that
+substring is in the body.
+
+`doctor` checks local APP_DB readiness. A failed local `login` (unmigrated or
+unseeded D1) prints:
+
+```bash
+npm run migrate:local
+node tools/seed-test-data.ts --local
+```
 
 ## Seed login
 

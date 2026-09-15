@@ -85,6 +85,27 @@ test('control-kody parses commands, maps every required route, and drives a seed
 		expectedStatus: 403,
 		body: null,
 	})
+	expect(
+		parseControlArgs([
+			'request',
+			'GET',
+			'/account/waiting',
+			'--dump',
+			'--contains',
+			'Waiting inbox',
+			'--contains',
+			'<h1>',
+		]),
+	).toEqual(
+		expect.objectContaining({
+			command: 'request',
+			dump: true,
+			dumpFile: '.tmp/control-kody-body',
+			contains: ['Waiting inbox', '<h1>'],
+		}),
+	)
+	expect(usageLines.join('\n')).toMatch(/--dump/)
+	expect(usageLines.join('\n')).toMatch(/--contains/)
 	expect(parseControlArgs(['preview', '--', '--pr', '42']).previewArgv).toEqual(
 		['--pr', '42'],
 	)
@@ -186,6 +207,13 @@ test('control-kody parses commands, maps every required route, and drives a seed
 		probeHealth: async () => true,
 		ports: [3742],
 		origin: 'http://localhost:3742',
+		persistRoot: tmpdir(),
+		probeLocalLogin: async () => ({
+			ok: true,
+			status: 200,
+			detail: 'signed in as jane@example.com',
+			email: 'jane@example.com',
+		}),
 	})
 	expect(doctor.ok).toBe(true)
 	expect(doctor.checks.map((check) => check.name)).toEqual([
@@ -193,6 +221,7 @@ test('control-kody parses commands, maps every required route, and drives a seed
 		'playwright',
 		'hooks',
 		'health',
+		'local-d1',
 	])
 
 	const oldNode = await runDoctor({
@@ -203,6 +232,7 @@ test('control-kody parses commands, maps every required route, and drives a seed
 		probeHealth: async () => false,
 		ports: [3742],
 		origin: null,
+		persistRoot: path.join(tmpdir(), 'missing-wrangler-state'),
 	})
 	expect(oldNode.ok).toBe(false)
 	expect(oldNode.checks.find((check) => check.name === 'node')?.detail).toMatch(
@@ -337,6 +367,228 @@ test('readHealth accepts a unique short SHA and a descendant live SHA', async ()
 			execFile: () => Buffer.from(''),
 		}),
 	).toBe(true)
+})
+
+test('doctor local-d1 prints migrate+seed when local seed login fails', async () => {
+	const doctor = await runDoctor({
+		nodeVersion: 'v26.1.2',
+		homeDir: tmpdir(),
+		hooksPath: '.husky',
+		playwrightMarkerExists: () => true,
+		probeHealth: async () => true,
+		ports: [3742],
+		origin: 'http://localhost:3742',
+		persistRoot: path.join(tmpdir(), 'missing-wrangler-state'),
+		probeLocalLogin: async () => ({
+			ok: false,
+			status: 500,
+			detail: 'HTTP 500 no such table: users',
+			email: 'jane@example.com',
+		}),
+	})
+	expect(doctor.ok).toBe(false)
+	expect(
+		doctor.checks.find((check) => check.name === 'local-d1')?.detail,
+	).toMatch(/npm run migrate:local/)
+	expect(
+		doctor.checks.find((check) => check.name === 'local-d1')?.detail,
+	).toMatch(/node tools\/seed-test-data\.ts --local/)
+})
+
+test('control-kody request --dump writes the body and --contains asserts HTML', async () => {
+	const dir = await mkdtemp(path.join(tmpdir(), 'control-kody-dump-'))
+	try {
+		const dumpFile = path.join(dir, 'control-kody-body')
+		await withAuthServer(
+			(request, response) => {
+				const url = request.url ?? '/'
+				if (request.method === 'POST' && url === '/auth') {
+					response.setHeader('Set-Cookie', 'kody_session=abc; Path=/')
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ ok: true }))
+					return
+				}
+				if (url === '/account/waiting') {
+					response.setHeader('Content-Type', 'text/html')
+					response.end('<h1>Waiting inbox</h1>')
+					return
+				}
+				response.statusCode = 404
+				response.end('missing')
+			},
+			async (origin) => {
+				const cookieFile = path.join(dir, 'cookie')
+				const hit = await runCommand({
+					...parseControlArgs([
+						'request',
+						'GET',
+						'/account/waiting',
+						'--origin',
+						origin,
+						'--cookie-file',
+						cookieFile,
+						'--dump',
+						'--contains',
+						'Waiting inbox',
+						'--json',
+					]),
+					dumpFile,
+				})
+				expect(hit).toBe(0)
+				expect(readFileSync(dumpFile, 'utf8')).toBe('<h1>Waiting inbox</h1>')
+
+				const missed = await runCommand({
+					...parseControlArgs([
+						'request',
+						'GET',
+						'/account/waiting',
+						'--origin',
+						origin,
+						'--cookie-file',
+						cookieFile,
+						'--contains',
+						'No such heading',
+						'--json',
+					]),
+				})
+				expect(missed).toBe(1)
+			},
+		)
+	} finally {
+		await rm(dir, { recursive: true, force: true })
+	}
+})
+
+test('control-kody request --dump and --contains use the raw JSON text', async () => {
+	const dir = await mkdtemp(path.join(tmpdir(), 'control-kody-raw-json-'))
+	try {
+		const dumpFile = path.join(dir, 'control-kody-body')
+		const spaced = '{\n  "ok": true\n}'
+		await withAuthServer(
+			(request, response) => {
+				const url = request.url ?? '/'
+				if (request.method === 'POST' && url === '/auth') {
+					response.setHeader('Set-Cookie', 'kody_session=abc; Path=/')
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ ok: true }))
+					return
+				}
+				if (url === '/account/waiting.json') {
+					response.setHeader('Content-Type', 'application/json')
+					response.end(spaced)
+					return
+				}
+				response.statusCode = 404
+				response.end('missing')
+			},
+			async (origin) => {
+				const code = await runCommand({
+					...parseControlArgs([
+						'request',
+						'GET',
+						'/account/waiting.json',
+						'--origin',
+						origin,
+						'--cookie-file',
+						path.join(dir, 'cookie'),
+						'--dump',
+						'--contains',
+						'"ok": true',
+						'--json',
+					]),
+					dumpFile,
+				})
+				expect(code).toBe(0)
+				expect(readFileSync(dumpFile, 'utf8')).toBe(spaced)
+			},
+		)
+	} finally {
+		await rm(dir, { recursive: true, force: true })
+	}
+})
+
+test('control-kody request re-logs in when a stored cookie is rejected', async () => {
+	const dir = await mkdtemp(path.join(tmpdir(), 'control-kody-stale-cookie-'))
+	try {
+		const cookieFile = path.join(dir, 'cookie')
+		await writeFile(cookieFile, 'kody_session=stale\n')
+		await withAuthServer(
+			(request, response) => {
+				const url = request.url ?? '/'
+				if (request.method === 'POST' && url === '/auth') {
+					response.setHeader('Set-Cookie', 'kody_session=fresh; Path=/')
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ ok: true }))
+					return
+				}
+				if (url === '/account/waiting.json') {
+					if (request.headers.cookie !== 'kody_session=fresh') {
+						response.statusCode = 401
+						response.end('{"ok":false}')
+						return
+					}
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ items: [] }))
+					return
+				}
+				response.statusCode = 404
+				response.end('missing')
+			},
+			async (origin) => {
+				const code = await runCommand(
+					parseControlArgs([
+						'request',
+						'GET',
+						'/account/waiting.json',
+						'--origin',
+						origin,
+						'--cookie-file',
+						cookieFile,
+						'--json',
+					]),
+				)
+				expect(code).toBe(0)
+				expect(readFileSync(cookieFile, 'utf8').trim()).toBe(
+					'kody_session=fresh',
+				)
+			},
+		)
+	} finally {
+		await rm(dir, { recursive: true, force: true })
+	}
+})
+
+test('control-kody login prints migrate+seed when local APP_DB is unready', async () => {
+	await withAuthServer(
+		(_request, response) => {
+			response.statusCode = 500
+			response.setHeader('Content-Type', 'application/json')
+			response.end(JSON.stringify({ error: 'no such table: users' }))
+		},
+		async (origin) => {
+			const logs: Array<string> = []
+			const originalLog = console.log
+			console.log = (message?: unknown) => {
+				logs.push(String(message))
+			}
+			try {
+				const code = await runCommand(
+					parseControlArgs([
+						'login',
+						'--origin',
+						origin,
+						'--cookie-file',
+						path.join(tmpdir(), 'control-kody-login-unready'),
+					]),
+				)
+				expect(code).toBe(1)
+			} finally {
+				console.log = originalLog
+			}
+			expect(logs.join('\n')).toMatch(/npm run migrate:local/)
+			expect(logs.join('\n')).toMatch(/node tools\/seed-test-data\.ts --local/)
+		},
+	)
 })
 
 test('control-kody request stops when auto-login fails', async () => {

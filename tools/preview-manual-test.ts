@@ -39,8 +39,7 @@ const usageLines = [
 	'                      POST /account/values.json {"action":"save",...}',
 	'  --check <path>      Extra authenticated GET after login (repeatable)',
 	'  --cookie-file <p>   Write the session Cookie header value to a file',
-	'  --json              Machine-readable output on stdout (includes',
-	'                      session.cookieHeader for follow-up curl)',
+	'  --json              Machine-readable output on stdout',
 	'  --help              Print this help',
 	'',
 	'Docs: docs/contributing/preview-manual-testing.md',
@@ -684,8 +683,8 @@ export function formatBriefing(result: PreviewManualTestResult): string {
 		`Login (preview seed, non-admin): ${result.login.email} / ${result.login.password}`,
 		`Username: ${result.login.username}`,
 		'`/admin` is expected to 403 — preview does not seed an admin account.',
-		result.session.cookieHeader
-			? 'Session cookie: `--json` field `session.cookieHeader`, or `--cookie-file`.'
+		result.session.origin
+			? `Follow-up HTTP: npm run control-kody -- request GET /account/values.json --origin ${result.session.origin}`
 			: null,
 	].filter((line): line is string => line !== null)
 
@@ -709,8 +708,8 @@ export function formatBriefing(result: PreviewManualTestResult): string {
 		'The seed account starts empty except the user row. Create the data this',
 		'PR needs through the same JSON APIs the UI uses, then assert them:',
 		'  npm run preview:manual-test -- --request \'POST /account/values.json {"action":"save","name":"preview-locale","value":"en-US"}\' --request \'GET /account/values.json\'',
-		'Follow-up curl with the session cookie:',
-		`  curl -sS -H "Cookie: $COOKIE" -H 'Accept: application/json' ${result.session.origin ?? '<preview-url>'}/account/values.json`,
+		'Follow-up HTML/JSON assertions use control-kody request, not cookie+curl:',
+		`  npm run control-kody -- request GET /account/values.json --origin ${result.session.origin ?? '<preview-url>'}`,
 		'Stay on the preview origin. `/mcp` is 401 without OAuth by design.',
 		'',
 		'UI pass after data exists: open the preview URL (computerUse on Cloud',

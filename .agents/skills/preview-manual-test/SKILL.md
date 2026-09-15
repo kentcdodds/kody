@@ -40,8 +40,9 @@ npm run preview:manual-test -- \
 
 `--request` spec: `METHOD /path [status] [json-body]` (default success: 2xx).
 Use the JSON APIs the UI uses (`/account/*.json` in
-`packages/worker/universal/routes.ts`). `--json` includes
-`session.cookieHeader`; `--cookie-file` writes it for follow-up `curl`.
+`packages/worker/universal/routes.ts`). For more authenticated HTTP after login,
+use `control-kody request` (`--dump` / `--contains` for HTML). Do not cat the
+session cookie into `curl` or Python.
 
 `--pr`, `--url`, `--no-wait`, `--skip-login`, `--help` as documented.
 
