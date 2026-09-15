@@ -50,3 +50,29 @@ test('login HTML on an account path refreshes the session', () => {
 		}),
 	).toBe(true)
 })
+
+test('a login nav link on a real account page does not refresh the session', () => {
+	const waitingHtml = [
+		'<link rel="canonical" href="https://kody-pr-2338.example/account/waiting" data-kody-head="canonical" />',
+		'<a href="https://kody-pr-2338.example/login">Sign in</a>',
+	].join('')
+	expect(looksLikeLoginHtml(waitingHtml)).toBe(false)
+	expect(
+		shouldRefreshSession({
+			skipLogin: false,
+			status: 200,
+			path: '/account/waiting',
+			rawBody: waitingHtml,
+			method: 'GET',
+		}),
+	).toBe(false)
+	expect(
+		shouldRefreshSession({
+			skipLogin: false,
+			status: 200,
+			path: '/account/values.json',
+			rawBody: loginHtml,
+			method: 'POST',
+		}),
+	).toBe(false)
+})

@@ -22,10 +22,19 @@ export function cookieHeaderForOrigin(fileText: string, origin: string) {
 }
 
 export function looksLikeLoginHtml(rawBody: string) {
-	return (
-		rawBody.includes('data-kody-head="canonical"') &&
-		/href="[^"]+\/login"/.test(rawBody)
-	)
+	for (const match of rawBody.matchAll(/<link\b[^>]*>/gi)) {
+		const tag = match[0]
+		if (!/\brel="canonical"/i.test(tag)) continue
+		if (!/\bdata-kody-head="canonical"/i.test(tag)) continue
+		const href = tag.match(/\bhref="([^"]+)"/i)?.[1]
+		if (!href) continue
+		try {
+			return new URL(href, 'https://control-kody.invalid').pathname === '/login'
+		} catch {
+			return false
+		}
+	}
+	return false
 }
 
 export function shouldRefreshSession(input: {
@@ -33,9 +42,12 @@ export function shouldRefreshSession(input: {
 	status: number
 	path: string
 	rawBody: string
+	method?: string
 }) {
 	if (input.skipLogin) return false
 	if (input.status === 401) return true
 	if (input.path === '/login') return false
+	const method = (input.method ?? 'GET').toUpperCase()
+	if (method !== 'GET' && method !== 'HEAD') return false
 	return looksLikeLoginHtml(input.rawBody)
 }

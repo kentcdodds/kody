@@ -889,6 +889,7 @@ async function runCommand(options: ControlKodyOptions) {
 					status: result.status,
 					path: options.request.path,
 					rawBody: result.rawBody,
+					method: options.request.method,
 				})
 			) {
 				const loggedIn = await loginAndStoreCookie(origin, options)
