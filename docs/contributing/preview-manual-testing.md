@@ -42,21 +42,16 @@ npm run preview:manual-test -- \
 `METHOD /path [expected-status] [json-body]`. Default success is any 2xx.
 Example negative check: `--request 'GET /admin 403'`.
 
-`--json` prints `session.cookieHeader` so follow-up `curl` can reuse the
-session. `--cookie-file .tmp/preview-cookie` writes that header value:
-
-```bash
-COOKIE=$(cat .tmp/preview-cookie)
-curl -sS -H "Cookie: $COOKIE" -H 'Accept: application/json' \
-  "$PREVIEW_URL/onboarding.json"
-```
+`--json` includes session metadata for the scripted run. For more authenticated
+HTTP, use `control-kody request` with the same `--origin` (and `--dump` /
+`--contains` for HTML). Do not `cat` the session cookie into `curl` or Python.
 
 `--no-wait` fails immediately if the preview is not up. `--url` skips GitHub
 discovery. `--help` lists the rest.
 
 On medium or high risk, running only the default smoke (health + empty login) is
-not enough. Add `--request` / `--check` for the flows this PR changes, or reuse
-the session cookie and drive those APIs yourself. Then do a UI pass.
+not enough. Add `--request` / `--check` for the flows this PR changes, or run
+`control-kody request` against the same origin. Then do a UI pass.
 
 ## When a preview exists
 
@@ -104,8 +99,9 @@ CLI does it for them.
 ## Logged-in data and UI pass
 
 1. Run the script with `--request` (and `--check` for HTML) covering the change.
-2. If you need a longer session, take `session.cookieHeader` from `--json` or
-   `--cookie-file` and `curl` more endpoints.
+2. If you need a longer session, keep using `control-kody request` (or more
+   `--request` flags) against the same origin. Do not `cat` the cookie into
+   `curl` or Python.
 3. Open the preview URL (computerUse on Cloud Agents), sign in with the seed
    credentials, and confirm the same data in the UI. Stay on the preview origin
    (do not follow package-app handoff into production).

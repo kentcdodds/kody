@@ -29,6 +29,17 @@ import {
 	isProductionKodyOrigin,
 } from './control-kody/package-create.ts'
 import {
+	formatLocalAppDbRemediation,
+	isLocalAppOrigin,
+	withLocalAppDbRemediation,
+} from './control-kody/local-app-db.ts'
+import {
+	defaultDumpFile,
+	formatContainsFailure,
+	missingContainsNeedles,
+	rawRequestBody,
+} from './control-kody/request-proof.ts'
+import {
 	cookieHeaderFromSetCookie,
 	evaluateAppHealth,
 	parseSessionRequest,
@@ -48,7 +59,7 @@ const usageLines = [
 	'Drive and verify the Kody app without throwaway scripts.',
 	'',
 	'Commands:',
-	'  doctor          Check Node, Playwright browsers, hooks, and /health',
+	'  doctor          Check Node, Playwright, hooks, /health, and local APP_DB',
 	'  dev             Start or reuse the local origin (npm run dev:ensure)',
 	'  login           POST /auth and write a session cookie',
 	'  request         Authenticated HTTP as the current session',
@@ -61,6 +72,8 @@ const usageLines = [
 	'  --origin <url>       App origin (default: healthy local 3742-3751)',
 	'  --json               Machine-readable stdout',
 	'  --cookie-file <p>    Session Cookie header file',
+	'  --dump               Write the raw response body to .tmp/control-kody-body',
+	'  --contains <text>    Fail unless the response body includes this text',
 	'  --package-name <s>   Required for package-create (leaf or @scope/leaf)',
 	'  --kody-id <slug>     Alias for --package-name',
 	'  --description <t>    Optional package-create stub description',
@@ -95,6 +108,9 @@ export type ControlKodyOptions = {
 	check: boolean
 	request: SessionRequestSpec | null
 	body: string | null
+	dump: boolean
+	dumpFile: string
+	contains: Array<string>
 	previewArgv: Array<string>
 	kodyId: string | null
 	description: string | null
@@ -147,6 +163,9 @@ export function parseControlArgs(argv: Array<string>): ControlKodyOptions {
 		check: false,
 		request: null,
 		body: null,
+		dump: false,
+		dumpFile: defaultDumpFile(),
+		contains: [],
 		previewArgv: [],
 		kodyId: null,
 		description: null,
@@ -247,6 +266,15 @@ function parseSharedFlags(
 				options.skipLogin = true
 				break
 			}
+			case '--dump': {
+				options.dump = true
+				break
+			}
+			case '--contains': {
+				options.contains.push(requireValue(argv[index + 1], '--contains'))
+				index += 1
+				break
+			}
 			case '--origin': {
 				options.origin = requireValue(argv[index + 1], '--origin')
 				index += 1
@@ -324,6 +352,13 @@ export type DoctorReport = {
 	checks: Array<DoctorCheck>
 }
 
+export type LocalLoginProbe = {
+	ok: boolean
+	status: number | null
+	detail: string
+	email?: string
+}
+
 export type DoctorDeps = {
 	nodeVersion: string
 	homeDir: string
@@ -332,6 +367,8 @@ export type DoctorDeps = {
 	probeHealth: (origin: string) => Promise<boolean>
 	ports: ReadonlyArray<number>
 	origin: string | null
+	persistRoot: string
+	probeLocalLogin?: (origin: string) => Promise<LocalLoginProbe>
 }
 
 export function playwrightBrowsersInstalled(homeDir: string) {
@@ -410,7 +447,74 @@ export async function runDoctor(deps: DoctorDeps): Promise<DoctorReport> {
 		})
 	}
 
+	checks.push(await runLocalAppDbCheck(deps, origin))
+
 	return { ok: checks.every((check) => check.ok), checks }
+}
+
+async function runLocalAppDbCheck(
+	deps: DoctorDeps,
+	origin: string | null,
+): Promise<DoctorCheck> {
+	if (origin && !isLocalAppOrigin(origin)) {
+		return {
+			name: 'local-d1',
+			ok: true,
+			detail: 'skipped (non-local origin)',
+		}
+	}
+
+	if (origin && deps.probeLocalLogin) {
+		try {
+			const probe = await deps.probeLocalLogin(origin)
+			if (probe.ok) {
+				return {
+					name: 'local-d1',
+					ok: true,
+					detail: `local seed login ok (${probe.email ?? localSeedEmail})`,
+				}
+			}
+			return {
+				name: 'local-d1',
+				ok: false,
+				detail: withLocalAppDbRemediation(
+					origin,
+					probe,
+					localAppDbSeedEmails(),
+				),
+			}
+		} catch (error) {
+			const detail = error instanceof Error ? error.message : String(error)
+			return {
+				name: 'local-d1',
+				ok: false,
+				detail: withLocalAppDbRemediation(
+					origin,
+					{ status: null, detail, email: localSeedEmail },
+					localAppDbSeedEmails(),
+				),
+			}
+		}
+	}
+
+	const persistOk = existsSync(deps.persistRoot)
+	if (persistOk) {
+		return {
+			name: 'local-d1',
+			ok: true,
+			detail:
+				'local persist present; if login fails, run npm run migrate:local && node tools/seed-test-data.ts --local',
+		}
+	}
+	return {
+		name: 'local-d1',
+		ok: false,
+		detail: `no local Wrangler persist at ${deps.persistRoot}\n${formatLocalAppDbRemediation()}`,
+	}
+}
+
+function localAppDbSeedEmails() {
+	return [localSeedEmail, localAdminEmail]
 }
 
 export async function resolveOrigin(options: {
@@ -600,6 +704,11 @@ export async function writeCookieFile(
 	await chmod(cookieFile, 0o600)
 }
 
+async function writeDumpFile(dumpFile: string, rawBody: string) {
+	await mkdir(path.dirname(dumpFile), { recursive: true })
+	await writeFile(dumpFile, rawBody, { mode: 0o600 })
+}
+
 export function formatFeatureMap(features: ReadonlyArray<Feature>) {
 	return features
 		.map(
@@ -642,6 +751,20 @@ export function defaultDoctorDeps(origin: string | null = null): DoctorDeps {
 		probeHealth: (value) => isWorkerHealthOk(value),
 		ports: workerPortRange(),
 		origin,
+		persistRoot: path.join(process.cwd(), '.wrangler', 'state'),
+		probeLocalLogin: async (value) => {
+			const session = await loginToOrigin({
+				origin: value,
+				email: localSeedEmail,
+				password: localSeedPassword,
+			})
+			return {
+				ok: session.ok,
+				status: session.status,
+				detail: session.detail,
+				email: session.email,
+			}
+		},
 	}
 }
 
@@ -695,13 +818,16 @@ async function runCommand(options: ControlKodyOptions) {
 				email: options.email ?? defaults.email,
 				password: options.password ?? defaults.password,
 			})
+			const detail = session.ok
+				? session.detail
+				: withLocalAppDbRemediation(origin, session, localAppDbSeedEmails())
 			if (session.cookieHeader) {
 				await writeCookieFile(options.cookieFile, session.cookieHeader)
 			}
 			if (options.json) {
-				printJson({ ...session, cookieFile: options.cookieFile })
+				printJson({ ...session, detail, cookieFile: options.cookieFile })
 			} else {
-				console.log(session.detail)
+				console.log(detail)
 				if (session.ok) console.log(`cookie-file ${options.cookieFile}`)
 			}
 			return session.ok ? 0 : 1
@@ -722,8 +848,13 @@ async function runCommand(options: ControlKodyOptions) {
 					password: options.password ?? defaults.password,
 				})
 				if (!session.ok || !session.cookieHeader) {
-					if (options.json) printJson(session)
-					else console.error(session.detail)
+					const detail = withLocalAppDbRemediation(
+						origin,
+						session,
+						localAppDbSeedEmails(),
+					)
+					if (options.json) printJson({ ...session, detail })
+					else console.error(detail)
 					return 1
 				}
 				cookieHeader = session.cookieHeader
@@ -734,13 +865,39 @@ async function runCommand(options: ControlKodyOptions) {
 				spec: options.request,
 				cookieHeader,
 			})
-			if (options.json) printJson(result)
-			else {
-				console.log(`${result.detail} ${result.path}`)
-				if (typeof result.body === 'string') console.log(result.body)
-				else console.log(JSON.stringify(result.body, null, 2))
+			const rawBody = rawRequestBody(result.body)
+			const missing = missingContainsNeedles(rawBody, options.contains)
+			let dumpFile: string | null = null
+			if (options.dump) {
+				await writeDumpFile(options.dumpFile, rawBody)
+				dumpFile = options.dumpFile
 			}
-			return result.ok ? 0 : 1
+			const ok = result.ok && missing.length === 0
+			const detail = [
+				result.detail,
+				dumpFile ? `dumped ${dumpFile}` : null,
+				missing.length > 0 ? formatContainsFailure(missing) : null,
+			]
+				.filter((part): part is string => Boolean(part))
+				.join('\n')
+			const output = {
+				...result,
+				ok,
+				detail,
+				dumpFile,
+				contains: options.contains.map((needle) => ({
+					needle,
+					ok: !missing.includes(needle),
+				})),
+			}
+			if (options.json) printJson(output)
+			else {
+				console.log(`${output.detail} ${output.path}`)
+				if (options.dump || typeof result.body === 'string') {
+					console.log(rawBody)
+				} else console.log(JSON.stringify(result.body, null, 2))
+			}
+			return output.ok ? 0 : 1
 		}
 		case 'preview': {
 			const result = await runPreviewManualTest(options.previewArgv)

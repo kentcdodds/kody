@@ -49,8 +49,8 @@ CodeRabbit when the change is **high** risk (or the user explicitly asks).
    above for CodeRabbit) and address valid feedback. Rebase only when actually
    unmergeable. For **medium+**, also run `npm run control-kody -- preview` (or
    `npm run preview:manual-test`) as the seeded user **with data for this
-   change** (`--request` / session cookie; see
-   [control-kody](../control-kody/SKILL.md) and
+   change** (`control-kody request` / `--request`; do not cat the cookie into
+   curl or Python — see [control-kody](../control-kody/SKILL.md) and
    [preview-manual-test](../preview-manual-test/SKILL.md)). After merge,
    `npm run control-kody -- health --origin https://kody.codes --sha <merge>`.
 4. Green + (medium+: valid feedback cleared) → break.
