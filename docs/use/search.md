@@ -48,7 +48,7 @@ them. Individual tools (`mcp:home:set_pin`) do not fill unscoped results.
 Inspect the server with `search({ entity: "home:mcp-server" })` (or
 `search({ domain: "mcp:home" })`) to list tools, then call
 `kody.mcp["home"].tool_name(args)`. Known tool entity refs such as
-`mcp:home:set_pin:capability` still resolve.
+`mcp:home:set_pin:capability` resolve.
 
 When a saved package's id, name, tags, or README matches a connected MCP server,
 the package ranks with that server so a wrapper workflow stays visible.

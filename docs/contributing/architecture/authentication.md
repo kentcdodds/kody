@@ -159,7 +159,7 @@ not own `users.email`. Add, resend, set-default, and remove live at
 `emailDestination*` capabilities (3 requests per 15 minutes for add/resend).
 Re-adding a pending unverified address resends a verification email. The cap is
 5 extras besides the identity email. Unverified extras never receive mail.
-Destinations expand the verified `to` set only; mail still comes from
+Destinations expand the verified `to` set only; mail comes from
 `{username}@{platform}`.
 
 Signed-in users with an unverified email can request a fresh link with

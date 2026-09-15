@@ -19,23 +19,23 @@ pin is behind `published_commit`, not HEAD-ahead-of-published), `hidden=yes|no`,
 `package=yes|no`, `app=yes|no`, `sort=created|name`, and `dir=asc|desc` (omit
 `dir` when it matches the sort field's default). Guests can use
 `listing=published|unpublished`, `package=yes|no`, `app=yes|no`, `sort`, and
-`dir`. Owner-only params are ignored for them. Search stays `q=` and still hits
-the server. Each row shows Iconic signifiers (native tooltip only) for package,
+`dir`. Owner-only params are ignored for them. Search is `q=` and hits the
+server. Each row shows Iconic signifiers (native tooltip only) for package,
 private, hidden, published-to-community or no community listing, webhook count,
 job count, and whether it has an app. Private repositories do not also get a “no
 community listing” signifier — the private icon is enough. List marks come from
 `/@username/:kodyId/icon/:iconCommit` (packages) and
 `/account/repos/:repoId/icon/:iconCommit` (owner-only plain repos). Each package
 lives at `/@username/:kodyId` (the URL slug is the package name leaf; **Repo**
-tab: description, tags, license, badges — no Browse files link),
-`/@username/:kodyId/tree/:ref` (**Files** tab), `/@username/:kodyId/assets/…`
-(README-relative images from the published or pinned commit),
-`/@username/:kodyId/settings` (**Settings** tab: lock, visibility, share,
-webhooks, delete), `/@username/:kodyId/approve-publish` (published-vs-HEAD
-review), and `/@username/:kodyId/approve-changes` (guest pin-ahead published
-diff). Opening an allowlisted image or video in the tree renders a preview; the
-bytes come from `/@username/:kodyId/raw/:ref/…` (same authz as the tree). Legacy
-`/account/packages` HTML URLs only redirect to these canonical pages.
+tab: description, tags, license, badges), `/@username/:kodyId/tree/:ref`
+(**Files** tab), `/@username/:kodyId/assets/…` (README-relative images from the
+published or pinned commit), `/@username/:kodyId/settings` (**Settings** tab:
+lock, visibility, share, webhooks, delete), `/@username/:kodyId/approve-publish`
+(published-vs-HEAD review), and `/@username/:kodyId/approve-changes` (guest
+pin-ahead published diff). Opening an allowlisted image or video in the tree
+renders a preview; the bytes come from `/@username/:kodyId/raw/:ref/…` (same
+authz as the tree). Legacy `/account/packages` HTML URLs only redirect to these
+canonical pages.
 
 ## Drive it
 
@@ -96,6 +96,8 @@ empty state.
   **HEAD ahead of published**. Owners click that badge to review the diff and
   publish HEAD on `/@username/:kodyId/approve-publish`. Publish checks require
   non-empty root `README.md` and `AGENTS.md`.
+- Owners and accepted shares see **Open Package App** on the package page when
+  the package declares an app. Guests do not.
 - Own-profile **Needs republish** (`listing=ahead`) is listing pin behind
   `published_commit`. It is not HEAD-ahead-of-published and not `updated_at`
   after `published_at` (community publish bumps that timestamp even when the pin

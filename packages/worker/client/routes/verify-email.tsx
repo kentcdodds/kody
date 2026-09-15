@@ -68,7 +68,7 @@ export function VerifyEmailRoute(handle: Handle) {
 								: isEmailClaimRelease
 									? 'That former address can now be used to create a new Kody account.'
 									: isEmailDestination
-										? 'emailSend can use this address. Mail still comes from your Kody platform inbox.'
+										? 'emailSend can use this address. Mail comes from your Kody platform inbox.'
 										: 'Your Kody account can use MCP and send outbound email.'
 							: isEmailDestination
 								? 'We could not verify this email destination.'

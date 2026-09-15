@@ -44,8 +44,8 @@ blocks from the downstream tool — including `image`, `audio`, `resource`, and
 `resource_link` — and passes them through to the upstream MCP client.
 
 If the downstream tool returns both `structuredContent` and non-text `content`,
-structured data stays available for code (and in execute’s
-`structuredContent.result`) while the content blocks still pass through.
+structured data is available for code (and in execute’s
+`structuredContent.result`) while the content blocks pass through.
 
 Image and audio blocks must already be protocol-valid
 `{ type: 'image' | 'audio', data, mimeType }` with base64 `data`. Kody does not

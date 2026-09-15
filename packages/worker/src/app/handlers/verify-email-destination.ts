@@ -91,7 +91,7 @@ export function createVerifyEmailDestinationHandler(env: Env) {
 						ok: true,
 						kind: 'email_destination',
 						message:
-							'emailSend can now use this address. Mail still comes from your platform inbox. Set it as the default from the email inbox if you want omitted `to` to use it.',
+							'emailSend can now use this address. Mail comes from your platform inbox. Set it as the default from the email inbox if you want omitted `to` to use it.',
 						ctaHref: emailDestinationsHref,
 						ctaLabel: 'Go to email inbox',
 					},

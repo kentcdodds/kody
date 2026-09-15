@@ -32,5 +32,5 @@ updated `usage.stored_messages` count.
 - Preview seed starts empty. Inbound mail is not something a Cloud Agent can
   mint without the email store APIs.
 - The account email is always listable and cannot be removed here; extras must
-  verify before `emailSend` can use them. Cap is 5 extras. Mail still comes from
+  verify before `emailSend` can use them. Cap is 5 extras. Mail comes from
   `{username}@platform`.
