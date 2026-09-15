@@ -70,7 +70,7 @@ doing anything else.
 1. **Check if a PR is ready to ship** — a GitHub readiness checklist they can
    invoke from any agent.
 2. **Ping me when something needs me** — CI failed, review requested, and/or a
-   new Sentry issue, as a subscription that runs when they are not in chat.
+   new Sentry issue, as an event that runs when they are not in chat.
 3. **Turn a skill or repeated prompt into deterministic package code** — take
    _their_ skill.md, INTENT, or repeated agent prompt and save it as owned
    package code. This is not installing `@kentcdodds/skills`.
@@ -94,12 +94,13 @@ they own.
 
 ### Ping me when something needs me
 
-Prefer a subscription or inbound webhook that runs when they are not in chat.
-Ask which event they care about first (CI failed, review requested, new Sentry
-issue). Open `search({ entity: "triggers:guide" })` and
-`search({ entity: "package_subscriptions:guide" })`. GitHub events:
-`provider_github:guide` then a webhook or subscription. Sentry: inbound webhook
-from `triggers:guide`. Name the event, persist a quiet handler, smoke-test once.
+Prefer an event that runs when they are not in chat. Ask which they care about
+first (CI failed, review requested, new Sentry issue). Open
+`search({ entity: "triggers:guide" })`. GitHub CI and review knocks are inbound
+webhooks (`provider_github:guide`, then mint a webhook). Sentry is the same
+inbound-webhook path. Use `package_subscriptions:guide` only for events Kody
+already emits (inbox, a run error). Name the event, persist a quiet handler,
+smoke-test once.
 
 ### Turn a skill or repeated prompt into owned package code
 

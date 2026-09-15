@@ -312,6 +312,8 @@ test('first-win and quick-example name the current wizard steps', () => {
 	expect(onboarding).toContain('Which of these would help you this week?')
 	expect(onboarding).toContain('Check if a PR is ready to ship')
 	expect(onboarding).toContain('Ping me when something needs me')
+	expect(onboarding).toContain('GitHub CI and review knocks are inbound')
+	expect(onboarding).toContain('then mint a webhook')
 	expect(onboarding).toContain(
 		'Turn a skill or repeated prompt into deterministic package code',
 	)
