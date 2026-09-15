@@ -198,9 +198,11 @@ fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
   After a server has been `ready`, a later `disconnected` / `failed` state gets
   two lightweight reconnects (`connectToServer` + discover, no OAuth restart)
   before `mcp.server.disconnected` fans out to the owning user's packages.
-  Token-recovery parks that stamp `last_error` also queue that disconnected
-  episode. The hub client peeks pending events after snapshots, waiting/search
-  peeks, and hub mutations, dispatches them to same-user subscriber packages
+  Token-recovery parks that stamp `last_error` (including access-token-only
+  “no refresh token” parks that never wrote `wasReady`) also queue that
+  disconnected episode as working → failed. The hub client peeks pending events
+  after snapshots, waiting/search peeks, and hub mutations, dispatches them to
+  same-user subscriber packages
   (using `waitUntil` on account, waiting, and callback requests), then acks them
   so a failed enabled-server lookup does not drop the notice. Recovery emits
   `mcp.server.reconnected`. `mcpServerReconnect` remains the explicit

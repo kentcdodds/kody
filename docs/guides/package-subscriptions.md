@@ -631,11 +631,13 @@ packages saved by that same user that declare the topic. When that down episode
 later observes `ready` again, Kody dispatches `mcp.server.reconnected` with the
 same `server.episode_id`.
 
-Never-ready servers (still `authenticating` after add), disabled servers, and
-in-flight `connecting` / `connected` / `discovering` states do not emit. Token
-loss that parks in `authenticating` after a prior `ready` (or when a refresh
-token is still stored) emits disconnected without the lightweight retry — the
-hub stamps a durable token-refresh `last_error` and queues the episode. Waiting
+Never-ready servers (still `authenticating` after add, with no stored tokens
+and no token-recovery `last_error`), disabled servers, and in-flight
+`connecting` / `connected` / `discovering` states do not emit. A durable
+token-recovery park (`authenticating` plus “no refresh token” / phase token
+exchange) is a working → failed flip: the hub infers previously-ready when the
+episode bit is missing, stamps `last_error`, and queues `mcp.server.disconnected`
+without the lightweight retry. Waiting
 and search peeks, account-page snapshots, and hub mutations dispatch that
 pending event to same-user packages that declare the topic (for example a
 Discord notifier). Those requests pass `waitUntil` so the package invoke can

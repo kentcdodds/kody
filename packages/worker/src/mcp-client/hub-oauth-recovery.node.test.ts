@@ -681,6 +681,55 @@ test('peekServers queues a disconnected episode when a ready server parks on tok
 	expect(await hub.takeConnectionEvents()).toHaveLength(1)
 })
 
+test('token-recovery park with no refresh token still emits disconnected when wasReady was never stored', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { state, values } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	seedServer({
+		manager,
+		callbackUrl: 'https://kody.codes/account/mcp-servers/oauth/callback',
+		clientId: 'client-1',
+		authUrl: 'https://auth.example/authorize?state=fresh.server-1',
+	})
+	const connection = manager.mcpConnections['server-1']
+	if (!connection) throw new Error('Fake connection was not seeded.')
+	connection.connectionState = 'authenticating'
+	connection.options.transport.authProvider.storedTokens = null
+	expect(values.has('mcp-connection-episode/server-1')).toBe(false)
+
+	const firstAdd = await hub.peekServers()
+	expect(firstAdd.servers[0]?.state).toBe('authenticating')
+	expect(firstAdd.servers[0]?.lastError).toBeNull()
+	expect(values.has('mcp-connection-events-pending')).toBe(false)
+
+	connection.options.transport.authProvider.storedTokens = {
+		access_token: 'stale-at',
+	}
+
+	const peeked = await hub.peekServers()
+	expect(peeked.servers[0]?.state).toBe('authenticating')
+	expect(peeked.servers[0]?.lastError?.phase).toBe('token exchange')
+	expect(peeked.servers[0]?.lastError?.message).toContain(
+		'has no refresh token to renew',
+	)
+	expect(values.get('mcp-connection-episode/server-1')).toMatchObject({
+		wasReady: true,
+		disconnectedEmitted: true,
+		lastObservedState: 'authenticating',
+	})
+	expect(await hub.peekConnectionEvents()).toEqual([
+		expect.objectContaining({
+			topic: 'mcp.server.disconnected',
+			serverId: 'server-1',
+			serverName: 'mediarss',
+			state: 'authenticating',
+			previousState: 'ready',
+		}),
+	])
+})
+
 test('snapshot retries a previously ready server before emitting disconnect', async () => {
 	const { state, values } = createDurableObjectState()
 	const hub = new McpClientHub(state, {} as Env)

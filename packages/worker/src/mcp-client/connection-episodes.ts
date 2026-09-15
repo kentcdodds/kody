@@ -56,6 +56,25 @@ export function createInitialMcpConnectionEpisode(): McpConnectionEpisodeRecord 
 	}
 }
 
+/**
+ * Token-recovery parks can lose the in-storage `wasReady` bit (new hub
+ * incarnation, peek-only last_error stamp). Treat the server as previously
+ * ready so `authenticating` classifies as working → failed, not first-add.
+ */
+export function episodeAsPreviouslyReady(
+	previous: McpConnectionEpisodeRecord,
+): McpConnectionEpisodeRecord {
+	if (previous.wasReady) return previous
+	return {
+		...previous,
+		wasReady: true,
+		lastObservedState:
+			previous.lastObservedState === 'unknown'
+				? 'ready'
+				: previous.lastObservedState,
+	}
+}
+
 export function isMcpServerUnavailableState(
 	state: McpServerConnectionState,
 ): boolean {

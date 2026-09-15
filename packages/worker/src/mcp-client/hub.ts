@@ -35,6 +35,7 @@ import {
 	mcpOAuthTokenRecoveryStoragePrefix,
 	readMcpOAuthTokenPresence,
 	shouldAttemptMcpOAuthRefresh,
+	shouldQueueMcpTokenRecoveryDisconnected,
 	type McpOAuthTokenPresence,
 } from './oauth-token-recovery.ts'
 import {
@@ -46,6 +47,7 @@ import { withStaticTransportHeaders } from './transport-headers.ts'
 import { clearLiveMcpTransportSession } from './transport-session.ts'
 import {
 	createInitialMcpConnectionEpisode,
+	episodeAsPreviouslyReady,
 	mcpConnectionEpisodeStorageKey,
 	mcpConnectionEventsPendingStorageKey,
 	mcpLightweightReconnectAttempts,
@@ -1496,7 +1498,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		if (!row) return
 		const previous = await this.readEpisode(serverId)
 		const decision = observeMcpConnectionState({
-			previous: previous.wasReady ? previous : { ...previous, wasReady: true },
+			previous: episodeAsPreviouslyReady(previous),
 			currentState: this.connectionStateFor(serverId),
 			retryCompleted: true,
 			createEpisodeId: () => crypto.randomUUID(),
@@ -1542,7 +1544,13 @@ class McpClientHubBase extends DurableObject<Env> {
 			}
 			const connection = this.manager.mcpConnections[serverId]
 			if (connection) connection.connectionError = existing.message
-			if (episode.wasReady || before.hasRefreshToken) {
+			if (
+				shouldQueueMcpTokenRecoveryDisconnected({
+					wasReady: episode.wasReady,
+					presence: before,
+					hasTokenRecoveryLastError: true,
+				})
+			) {
 				await this.ensureTokenRecoveryDisconnectedEpisode(serverId)
 			}
 			return
@@ -1562,7 +1570,13 @@ class McpClientHubBase extends DurableObject<Env> {
 		if (connection) connection.connectionError = lastError.message
 		this.lastDiscoverErrors.set(serverId, lastError)
 		await this.persistTokenRecoveryLastError(serverId, lastError)
-		if (episode.wasReady || before.hasRefreshToken) {
+		if (
+			shouldQueueMcpTokenRecoveryDisconnected({
+				wasReady: episode.wasReady,
+				presence: before,
+				hasTokenRecoveryLastError: true,
+			})
+		) {
 			await this.ensureTokenRecoveryDisconnectedEpisode(serverId)
 		}
 		console.warn('mcp oauth token recovery parked authenticating', {

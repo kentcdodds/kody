@@ -7,6 +7,7 @@ import {
 	mergeMcpOAuthTokens,
 	readMcpOAuthTokenPresence,
 	shouldAttemptMcpOAuthRefresh,
+	shouldQueueMcpTokenRecoveryDisconnected,
 } from './oauth-token-recovery.ts'
 
 test('token recovery inspects stored OAuth blobs without treating empty strings as tokens', () => {
@@ -42,6 +43,27 @@ test('token recovery inspects stored OAuth blobs without treating empty strings 
 		shouldAttemptMcpOAuthRefresh({
 			hasAccessToken: false,
 			hasRefreshToken: false,
+		}),
+	).toBe(false)
+	expect(
+		shouldQueueMcpTokenRecoveryDisconnected({
+			wasReady: false,
+			presence: { hasAccessToken: true, hasRefreshToken: false },
+			hasTokenRecoveryLastError: false,
+		}),
+	).toBe(true)
+	expect(
+		shouldQueueMcpTokenRecoveryDisconnected({
+			wasReady: false,
+			presence: { hasAccessToken: false, hasRefreshToken: false },
+			hasTokenRecoveryLastError: true,
+		}),
+	).toBe(true)
+	expect(
+		shouldQueueMcpTokenRecoveryDisconnected({
+			wasReady: false,
+			presence: { hasAccessToken: false, hasRefreshToken: false },
+			hasTokenRecoveryLastError: false,
 		}),
 	).toBe(false)
 	expect(mcpOAuthTokenRecoveryStorageKey('server-1')).toBe(
