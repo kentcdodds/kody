@@ -373,6 +373,15 @@ export function runRecordStaleRunningTtlMsForSurface(
 export const runRecordRetentionAlarmMs = 60 * 60 * 1000
 
 /**
+ * First empty retention pass (over-cap with nothing evictable, or a due-now
+ * pass that deleted no run rows) waits this long instead of 1s.
+ */
+export const runRecordRetentionEmptyBackoffMinMs = 15_000
+
+/** Cap for empty-pass alarm backoff. Doubles from the min on each empty pass. */
+export const runRecordRetentionEmptyBackoffMaxMs = 15 * 60 * 1000
+
+/**
  * Keyed package-invocation idempotency ledger rows live in the same per-user
  * `RunLog` Durable Object as run records (they moved off the shared D1 writer;
  * see `docs/contributing/architecture/run-records.md`). Terminal rows keep

@@ -58,6 +58,8 @@ import {
 	runRecordPlatformInterruptedErrorName,
 	runRecordRetentionAlarmMs,
 	runRecordRetentionDays,
+	runRecordRetentionEmptyBackoffMaxMs,
+	runRecordRetentionEmptyBackoffMinMs,
 	runRecordRetentionEveryNFinishes,
 	runRecordStaleRunningTtlMsForSurface,
 	runSurfaceValues,
@@ -74,6 +76,7 @@ const maxStaleCreatingDeletesPerPass = 100
 
 const metaRunCountKey = 'run_count'
 const metaFinishesSinceRetentionKey = 'finishes_since_retention'
+const metaRetentionEmptyBackoffKey = 'retention_empty_backoff_ms'
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema's DDL set changes; warm objects skip DDL. */
 const runLogSchemaVersion = 11
@@ -707,6 +710,11 @@ class RunLogBase extends DurableObject<Env> {
 		RunLogSqlBillingOp,
 		{ rowsRead: number; rowsWritten: number; calls: number }
 	>()
+	/** Same-isolate summarize reuse; cleared on any run-row mutation. */
+	private summarizeMemo: {
+		cacheKey: string
+		summary: RunRecordSummary
+	} | null = null
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env)
@@ -725,6 +733,7 @@ class RunLogBase extends DurableObject<Env> {
 		// rewrite storage under us; drop counter memos so the next read reloads.
 		this.runCountCache = null
 		this.finishesSinceRetentionCache = null
+		this.summarizeMemo = null
 		this.ctx.storage.sql.exec(`
 			CREATE TABLE IF NOT EXISTS run_log_meta (
 				key TEXT PRIMARY KEY NOT NULL,
@@ -1139,6 +1148,54 @@ class RunLogBase extends DurableObject<Env> {
 		this.setMeta(metaFinishesSinceRetentionKey, value)
 	}
 
+	private invalidateReadMemos() {
+		this.summarizeMemo = null
+	}
+
+	private resetRetentionEmptyBackoff() {
+		this.setMeta(metaRetentionEmptyBackoffKey, 0)
+	}
+
+	private nextRetentionEmptyBackoffMs(): number {
+		const previous = this.getMeta(metaRetentionEmptyBackoffKey) ?? 0
+		const next =
+			previous <= 0
+				? runRecordRetentionEmptyBackoffMinMs
+				: Math.min(previous * 2, runRecordRetentionEmptyBackoffMaxMs)
+		this.setMeta(metaRetentionEmptyBackoffKey, next)
+		return next
+	}
+
+	private summarizeCacheKey(since: string): string {
+		const sinceMs = Date.parse(since)
+		if (!Number.isFinite(sinceMs) || sinceMs <= 0) return 'all'
+		return `since:${String(Math.floor(sinceMs / 60_000))}`
+	}
+
+	private runMatchesListFilters(
+		run: RunRecord,
+		input: Pick<ListRunsInput, 'status' | 'errorTriage'>,
+	): boolean {
+		if (input.status && run.status !== input.status) return false
+		const errorTriage = input.errorTriage ?? null
+		if (errorTriage === 'open') return run.errorTriage == null
+		if (errorTriage === 'ignored') return run.errorTriage === 'ignored'
+		if (errorTriage === 'resolved') return run.errorTriage === 'resolved'
+		if (errorTriage === 'all' || errorTriage == null) return true
+		const exhaustive: never = errorTriage
+		throw new Error(`Unhandled error triage filter: ${String(exhaustive)}`)
+	}
+
+	private hasCapEvictableRun(): boolean {
+		return (
+			this.ctx.storage.sql
+				.exec<{ ok: number }>(
+					`SELECT 1 AS ok FROM runs WHERE status != 'running' LIMIT 1`,
+				)
+				.toArray()[0] != null
+		)
+	}
+
 	private runExists(runId: string) {
 		const row = this.ctx.storage.sql
 			.exec<{ ok: number }>(
@@ -1187,6 +1244,8 @@ class RunLogBase extends DurableObject<Env> {
 				// Clear armed too: a new `running` row may need an earlier wake.
 				this.retentionIdleConfirmed = false
 				this.retentionAlarmArmed = false
+				this.invalidateReadMemos()
+				this.resetRetentionEmptyBackoff()
 			}
 		}
 	}
@@ -1345,6 +1404,7 @@ class RunLogBase extends DurableObject<Env> {
 			this.ctx.storage.sql.exec(`DELETE FROM runs WHERE id = ?`, id)
 		}
 		this.adjustRunCount(-ids.length)
+		if (ids.length > 0) this.invalidateReadMemos()
 	}
 
 	private isStaleRunning(input: {
@@ -1404,6 +1464,7 @@ class RunLogBase extends DurableObject<Env> {
 		// Row became terminal: age-prune now applies, so any prior idle
 		// conclusion is stale (covers reconcile + heal-on-read callers).
 		this.retentionIdleConfirmed = false
+		this.invalidateReadMemos()
 	}
 
 	/**
@@ -1537,8 +1598,9 @@ class RunLogBase extends DurableObject<Env> {
 	 * Arming rule (keep this comment accurate — reviewers rely on it):
 	 *
 	 * - Schedule at most one alarm for the soonest retention due-time:
-	 *   over-cap → now; oldest finished → started_at + retention; oldest
-	 *   running → started_at + stale TTL. Empty DOs stay disarmed.
+	 *   over-cap with evictable terminal rows → now; over-cap with only
+	 *   in-flight rows → oldest running + stale TTL; oldest finished →
+	 *   started_at + retention. Empty DOs stay disarmed.
 	 * - `retentionAlarmArmed` skips getAlarm/setAlarm on hot finishes once
 	 *   scheduled (over-cap still forces a near-term resync).
 	 * - `retentionIdleConfirmed` skips re-evaluation only while no new row
@@ -1546,11 +1608,16 @@ class RunLogBase extends DurableObject<Env> {
 	 *   next ensure re-arms for that row's future due-time.
 	 * - alarm() self-terminates only when nothing remains to ever prune;
 	 *   otherwise it reschedules for the next due-time (not hourly forever).
+	 * - An empty pass that is still over-cap or due immediately backs off
+	 *   from 15s (doubling to 15 minutes) instead of waking every 1s.
 	 * - An unvisited DO never runs (platform constraint). Cold start observes
 	 *   any existing alarm; the first write re-converges via ensure.
 	 */
 	private nextRetentionDueAtMs(): number | null {
-		if (this.getRunCount() > runRecordMaxRunsPerUser) {
+		if (
+			this.getRunCount() > runRecordMaxRunsPerUser &&
+			this.hasCapEvictableRun()
+		) {
 			return Date.now()
 		}
 
@@ -1643,7 +1710,7 @@ class RunLogBase extends DurableObject<Env> {
 		return next
 	}
 
-	private enforceRetention() {
+	private enforceRetention(): { runDeletes: number } {
 		// Reconcile first so stranded `running` rows become terminal `error`
 		// before the count cap runs — that is how a cap full of in-flight rows
 		// still converges once they pass the stale TTL.
@@ -1665,6 +1732,7 @@ class RunLogBase extends DurableObject<Env> {
 
 		const total = this.getRunCount()
 		const excess = total - runRecordMaxRunsPerUser
+		let excessIds: Array<string> = []
 		if (excess > 0) {
 			const deleteCount = Math.min(excess, maxExcessDeletesPerFinish)
 			// In-flight rows are never cap-evicted (same as age prune). Handled
@@ -1675,32 +1743,34 @@ class RunLogBase extends DurableObject<Env> {
 			// Genuinely in-flight rows can therefore push the stored count
 			// briefly above runRecordMaxRunsPerUser until they finish or go
 			// stale — that is intentional, not a broken cap.
-			const ids: Array<string> = []
-			ids.push(...this.deleteOldestMatching('error', 'triaged', deleteCount))
-			if (ids.length < deleteCount) {
-				ids.push(
+			excessIds.push(
+				...this.deleteOldestMatching('error', 'triaged', deleteCount),
+			)
+			if (excessIds.length < deleteCount) {
+				excessIds.push(
 					...this.deleteOldestMatching(
 						'success',
 						null,
-						deleteCount - ids.length,
+						deleteCount - excessIds.length,
 					),
 				)
 			}
-			if (ids.length < deleteCount) {
-				ids.push(
+			if (excessIds.length < deleteCount) {
+				excessIds.push(
 					...this.deleteOldestMatching(
 						'error',
 						'open',
-						deleteCount - ids.length,
+						deleteCount - excessIds.length,
 					),
 				)
 			}
-			this.deleteRunsByIds(ids)
+			this.deleteRunsByIds(excessIds)
 		}
 
 		this.pruneInvocationLedgerForRetention()
 		this.pruneWorkflowProjectionsForRetention()
 		this.setFinishesSinceRetention(0)
+		return { runDeletes: expired.length + excessIds.length }
 	}
 
 	/**
@@ -1798,8 +1868,12 @@ class RunLogBase extends DurableObject<Env> {
 		this.retentionIdleConfirmed = false
 		const alarmAt = Math.max(next, Date.now() + 1_000)
 		const existing = await this.ctx.storage.getAlarm()
+		// Keep a soon-enough existing wake only when it is not later than the
+		// new due-time. A leftover empty-pass backoff (15s–15min) must not
+		// delay over-cap eviction after a finish creates an evictable row.
 		if (
 			existing != null &&
+			existing <= alarmAt + 1_000 &&
 			Math.abs(existing - alarmAt) < runRecordRetentionAlarmMs
 		) {
 			this.retentionAlarmArmed = true
@@ -1810,13 +1884,24 @@ class RunLogBase extends DurableObject<Env> {
 	}
 
 	async alarm(): Promise<void> {
-		this.enforceRetention()
+		const { runDeletes } = this.enforceRetention()
+		const overCap = this.getRunCount() > runRecordMaxRunsPerUser
 		const next = this.nextRetentionDueAtMs()
 		if (next == null) {
 			this.retentionAlarmArmed = false
 			this.retentionIdleConfirmed = true
+			this.resetRetentionEmptyBackoff()
 			return
 		}
+		const dueImmediately = next <= Date.now() + 1_000
+		if (runDeletes === 0 && (overCap || dueImmediately)) {
+			const backoffMs = this.nextRetentionEmptyBackoffMs()
+			await this.ctx.storage.setAlarm(Date.now() + backoffMs)
+			this.retentionAlarmArmed = true
+			this.retentionIdleConfirmed = false
+			return
+		}
+		this.resetRetentionEmptyBackoff()
 		await this.ctx.storage.setAlarm(Math.max(next, Date.now() + 1_000))
 		this.retentionAlarmArmed = true
 		this.retentionIdleConfirmed = false
@@ -2220,6 +2305,8 @@ class RunLogBase extends DurableObject<Env> {
 		// finishes inside an already-scheduled window stay off alarm storage;
 		// terminal rows only push age deadlines later.
 		this.retentionIdleConfirmed = false
+		this.invalidateReadMemos()
+		this.resetRetentionEmptyBackoff()
 		this.maybeEnforceRetention()
 		await this.ensureRetentionAlarm()
 		return { ok: true }
@@ -2401,6 +2488,10 @@ class RunLogBase extends DurableObject<Env> {
 		// A terminal ledger row creates future age-prune work even when no run
 		// row was written, so a stale idle conclusion must be cleared.
 		this.retentionIdleConfirmed = false
+		if (input.run) {
+			this.invalidateReadMemos()
+			this.resetRetentionEmptyBackoff()
+		}
 		this.maybeEnforceRetention()
 		await this.ensureRetentionAlarm()
 		if (ledgerUpdated) {
@@ -2963,9 +3054,6 @@ class RunLogBase extends DurableObject<Env> {
 	}
 
 	async listRuns(input: ListRunsInput): Promise<RunRecordPage> {
-		// Heal before listing so `status=running` filters and Activity views
-		// do not keep advertising stranded rows past their surface TTL.
-		this.reconcileStaleRunning()
 		const limit = normalizePageSize(input.limit, runRecordDefaultPageSize)
 		const clauses: Array<string> = ['1 = 1']
 		const params: Array<SqlStorageValue> = []
@@ -3027,9 +3115,13 @@ class RunLogBase extends DurableObject<Env> {
 		).toArray()
 		const hasMore = rows.length > limit
 		const pageRows = hasMore ? rows.slice(0, limit) : rows
-		const runs = pageRows.map((row) =>
-			mapRunRow(row, Number(row['log_count'] ?? 0) || 0),
-		)
+		const runs = pageRows
+			.map((row) =>
+				this.healStaleRunningRecord(
+					mapRunRow(row, Number(row['log_count'] ?? 0) || 0),
+				),
+			)
+			.filter((run) => this.runMatchesListFilters(run, input))
 		const last = pageRows[pageRows.length - 1]
 		const nextCursor =
 			hasMore && last
@@ -3070,9 +3162,13 @@ class RunLogBase extends DurableObject<Env> {
 	}
 
 	async summarize(input: { since: string }): Promise<RunRecordSummary> {
-		this.reconcileStaleRunning()
 		const since = input.since
-		const totals = this.execSqlTracked<{
+		const cacheKey = this.summarizeCacheKey(since)
+		if (this.summarizeMemo?.cacheKey === cacheKey) {
+			return { ...this.summarizeMemo.summary, since }
+		}
+		const bySurfaceRows = this.execSqlTracked<{
+			surface: string
 			total: number
 			errors: number
 			ignored: number
@@ -3081,6 +3177,7 @@ class RunLogBase extends DurableObject<Env> {
 		}>(
 			'summarize',
 			`SELECT
+				surface,
 				COUNT(*) AS total,
 				SUM(CASE
 					WHEN status = 'error' AND error_triage IS NULL THEN 1
@@ -3090,43 +3187,43 @@ class RunLogBase extends DurableObject<Env> {
 				SUM(CASE WHEN error_triage = 'resolved' THEN 1 ELSE 0 END) AS resolved,
 				SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running
 			FROM runs
-			WHERE started_at >= ?`,
-			since,
-		).one()
-		const bySurfaceRows = this.execSqlTracked<{
-			surface: string
-			total: number
-			errors: number
-		}>(
-			'summarize',
-			`SELECT
-				surface,
-				COUNT(*) AS total,
-				SUM(CASE
-					WHEN status = 'error' AND error_triage IS NULL THEN 1
-					ELSE 0
-				END) AS errors
-			FROM runs
 			WHERE started_at >= ?
 			GROUP BY surface
 			ORDER BY surface ASC`,
 			since,
 		).toArray()
-		return {
-			since,
-			total: Number(totals.total ?? 0) || 0,
-			errors: Number(totals.errors ?? 0) || 0,
-			ignored: Number(totals.ignored ?? 0) || 0,
-			resolved: Number(totals.resolved ?? 0) || 0,
-			running: Number(totals.running ?? 0) || 0,
-			bySurface: bySurfaceRows.map((row) => ({
+		let total = 0
+		let errors = 0
+		let ignored = 0
+		let resolved = 0
+		let running = 0
+		const bySurface = bySurfaceRows.map((row) => {
+			const surfaceTotal = Number(row.total ?? 0) || 0
+			const surfaceErrors = Number(row.errors ?? 0) || 0
+			total += surfaceTotal
+			errors += surfaceErrors
+			ignored += Number(row.ignored ?? 0) || 0
+			resolved += Number(row.resolved ?? 0) || 0
+			running += Number(row.running ?? 0) || 0
+			return {
 				surface: (isRunSurface(row.surface)
 					? row.surface
 					: 'execute') as RunSurface,
-				total: Number(row.total ?? 0) || 0,
-				errors: Number(row.errors ?? 0) || 0,
-			})),
+				total: surfaceTotal,
+				errors: surfaceErrors,
+			}
+		})
+		const summary: RunRecordSummary = {
+			since,
+			total,
+			errors,
+			ignored,
+			resolved,
+			running,
+			bySurface,
 		}
+		this.summarizeMemo = { cacheKey, summary }
+		return summary
 	}
 
 	/**
@@ -3199,6 +3296,7 @@ class RunLogBase extends DurableObject<Env> {
 			now,
 			input.runId,
 		)
+		this.invalidateReadMemos()
 
 		const updated = this.execSqlTracked<Record<string, SqlStorageValue>>(
 			'updateRunErrorTriage',
@@ -3351,6 +3449,7 @@ class RunLogBase extends DurableObject<Env> {
 				}
 			}
 		})
+		this.invalidateReadMemos()
 		return {
 			matchedRunIds,
 			updatedCount: matchedRunIds.length,
@@ -3806,6 +3905,7 @@ class RunLogBase extends DurableObject<Env> {
 		this.retentionIdleConfirmed = true
 		this.runCountCache = null
 		this.finishesSinceRetentionCache = null
+		this.summarizeMemo = null
 		this.sqlBillingByOp.clear()
 		this.initializeSchema()
 		this.setMeta(metaRunCountKey, 0)

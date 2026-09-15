@@ -11,12 +11,15 @@ import { seedRunLogMeta } from './run-log-meta-test-seed.ts'
 import {
 	abandonRunRecord,
 	beginRunRecord,
+	claimPackageInvocationRecord,
 	bulkUpdateRunErrorTriage,
 	claimRunRecord,
 	clearRunRecords,
+	finishPackageInvocationRecord,
 	finishRunRecord,
 	getRunRecord,
 	getRunRecordByIdempotencyKey,
+	getSqlBillingStats,
 	listRunRecords,
 	recordRunRecord,
 	runLogRpc,
@@ -30,6 +33,7 @@ import {
 	runRecordMaxRunsPerUser,
 	runRecordPlatformInterruptedErrorName,
 	runRecordRetentionDays,
+	runRecordRetentionEmptyBackoffMinMs,
 	runRecordRetentionEveryNFinishes,
 	runRecordStaleRunningTtlMsJob,
 	runRecordStaleRunningTtlMsShortLived,
@@ -1016,20 +1020,10 @@ test('cap and stale retention journey', async () => {
 			})
 		})
 
-		const summary = await summarizeRunRecords({
-			env,
-			userId,
-			since: new Date(0).toISOString(),
-		})
-		expect(summary).toMatchObject({
-			errors: 0,
-			ignored: 3,
-			running: 0,
-		})
 		const page = await listRunRecords({
 			env,
 			userId,
-			filter: { errorTriage: 'ignored' },
+			filter: { errorTriage: 'all' },
 		})
 		expect(page.runs).toHaveLength(3)
 		for (const run of page.runs) {
@@ -1040,6 +1034,22 @@ test('cap and stale retention journey', async () => {
 				triagedBy: 'system:platform-interrupt',
 			})
 		}
+		const summary = await summarizeRunRecords({
+			env,
+			userId,
+			since: new Date(0).toISOString(),
+		})
+		expect(summary).toMatchObject({
+			errors: 0,
+			ignored: 3,
+			running: 0,
+		})
+		const ignoredPage = await listRunRecords({
+			env,
+			userId,
+			filter: { errorTriage: 'ignored' },
+		})
+		expect(ignoredPage.runs).toHaveLength(3)
 
 		await finishRunRecord({
 			env,
@@ -1355,6 +1365,217 @@ test('alarm lifecycle: fresh arm, self-termination when idle, re-arm after idle,
 			state.storage.getAlarm(),
 		),
 	).toBeNull()
+})
+
+test('empty over-cap retention backs off; summarize memos; list does not reconcile', async () => {
+	// Over-cap with only in-flight rows: an empty pass must not re-arm at 1s.
+	{
+		const userId = uniqueUserId('over-cap-backoff')
+		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+		const startedAt = new Date().toISOString()
+		await runInDurableObject(stub, async (instance: RunLog, state) => {
+			expect(instance).toBeInstanceOf(RunLog)
+			insertRunRow(state, {
+				id: 'only-running',
+				status: 'running',
+				startedAt,
+				finishedAt: null,
+				surface: 'job',
+			})
+			seedRunLogMeta(instance, {
+				runCount: runRecordMaxRunsPerUser + 1,
+				finishesSinceRetention: 0,
+			})
+			const beforeFirst = Date.now()
+			await instance.alarm()
+			const firstAlarm = await state.storage.getAlarm()
+			expect(firstAlarm).toBeTypeOf('number')
+			expect(firstAlarm).toBeGreaterThanOrEqual(
+				beforeFirst + runRecordRetentionEmptyBackoffMinMs - 100,
+			)
+			expect(firstAlarm).toBeLessThan(
+				beforeFirst + runRecordRetentionEmptyBackoffMinMs + 2_000,
+			)
+			expect(
+				state.storage.sql
+					.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM runs`)
+					.one().n,
+			).toBe(1)
+
+			const beforeSecond = Date.now()
+			await instance.alarm()
+			const secondAlarm = await state.storage.getAlarm()
+			expect(secondAlarm).toBeGreaterThanOrEqual(
+				beforeSecond + runRecordRetentionEmptyBackoffMinMs * 2 - 100,
+			)
+		})
+		await finishRunRecord({
+			env,
+			handle: {
+				id: 'now-evictable',
+				userId,
+				startedAt: new Date().toISOString(),
+				persistence: 'eager',
+				context: baseContext({ surface: 'job', name: 'now-evictable' }),
+			},
+			status: 'success',
+		})
+		const pulledIn = await runInDurableObject(
+			stub,
+			async (_instance: RunLog, state) => state.storage.getAlarm(),
+		)
+		expect(pulledIn).toBeTypeOf('number')
+		expect(pulledIn).toBeLessThan(Date.now() + 5_000)
+	}
+
+	// Same-since summarize reuses the isolate memo; list heals page rows only.
+	{
+		const userId = uniqueUserId('hot-path-reads')
+		const startedAtBase = Date.now() - 60_000
+		for (const index of [0, 1, 2]) {
+			await finishRunRecord({
+				env,
+				handle: {
+					id: `hot-${String(index)}`,
+					userId,
+					startedAt: new Date(startedAtBase + index * 1000).toISOString(),
+					persistence: 'eager',
+					context: baseContext({
+						surface: 'job',
+						name: `hot-${String(index)}`,
+					}),
+				},
+				status: 'success',
+			})
+		}
+		const since = new Date(startedAtBase - 1_000).toISOString()
+		const first = await summarizeRunRecords({ env, userId, since })
+		expect(first.total).toBe(3)
+		const afterFirst = await getSqlBillingStats({ env, userId })
+		const summarizeAfterFirst = afterFirst.ops.find(
+			(op) => op.op === 'summarize',
+		)
+		expect(summarizeAfterFirst?.calls).toBe(1)
+		for (let index = 0; index < 4; index += 1) {
+			const again = await summarizeRunRecords({ env, userId, since })
+			expect(again.total).toBe(3)
+		}
+		const afterMemo = await getSqlBillingStats({ env, userId })
+		const summarizeAfterMemo = afterMemo.ops.find((op) => op.op === 'summarize')
+		expect(summarizeAfterMemo?.calls).toBe(1)
+		expect(summarizeAfterMemo?.rowsRead).toBe(summarizeAfterFirst?.rowsRead)
+
+		for (let index = 0; index < 5; index += 1) {
+			await listRunRecords({ env, userId })
+		}
+		const afterLists = await getSqlBillingStats({ env, userId })
+		expect(afterLists.ops.some((op) => op.op === 'reconcileStaleRunning')).toBe(
+			false,
+		)
+
+		await finishRunRecord({
+			env,
+			handle: {
+				id: 'hot-3',
+				userId,
+				startedAt: new Date(startedAtBase + 3_000).toISOString(),
+				persistence: 'eager',
+				context: baseContext({ surface: 'job', name: 'hot-3' }),
+			},
+			status: 'success',
+		})
+		const afterWrite = await summarizeRunRecords({ env, userId, since })
+		expect(afterWrite.total).toBe(4)
+		const afterInvalidate = await getSqlBillingStats({ env, userId })
+		expect(afterInvalidate.ops.find((op) => op.op === 'summarize')?.calls).toBe(
+			2,
+		)
+	}
+
+	{
+		const userId = uniqueUserId('list-page-heal')
+		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+		const staleStartedAt = new Date(
+			Date.now() - runRecordStaleRunningTtlMsShortLived - 1_000,
+		).toISOString()
+		await runInDurableObject(stub, async (instance: RunLog, state) => {
+			expect(instance).toBeInstanceOf(RunLog)
+			insertRunRow(state, {
+				id: 'stale-on-page',
+				status: 'running',
+				startedAt: staleStartedAt,
+				finishedAt: null,
+				surface: 'execute',
+			})
+		})
+		const runningPage = await listRunRecords({
+			env,
+			userId,
+			filter: { status: 'running' },
+		})
+		expect(runningPage.runs).toHaveLength(0)
+		const page = await listRunRecords({ env, userId })
+		expect(page.runs).toHaveLength(1)
+		expect(page.runs[0]).toMatchObject({
+			id: 'stale-on-page',
+			status: 'error',
+			errorName: runRecordPlatformInterruptedErrorName,
+		})
+		const stats = await getSqlBillingStats({ env, userId })
+		expect(stats.ops.some((op) => op.op === 'reconcileStaleRunning')).toBe(
+			false,
+		)
+		expect(
+			stats.ops.some((op) => op.op === 'healStaleRunning' && op.calls >= 1),
+		).toBe(true)
+	}
+
+	{
+		const userId = uniqueUserId('package-finish-memo')
+		const claimed = await claimPackageInvocationRecord({
+			env,
+			userId,
+			context: {
+				surface: 'export',
+				packageId: 'pkg-memo',
+				name: 'handler',
+				idempotencyKey: 'evt-memo',
+			},
+			invocation: {
+				id: crypto.randomUUID(),
+				tokenId: 'token-memo',
+				packageId: 'pkg-memo',
+				packageKodyId: 'kody-memo',
+				exportName: 'handler',
+				idempotencyKey: 'evt-memo',
+				requestHash: 'hash-memo',
+				source: null,
+				topic: null,
+			},
+			staleBefore: new Date(0).toISOString(),
+		})
+		expect(claimed.outcome).toBe('claimed')
+		if (claimed.outcome !== 'claimed') throw new Error('expected claim')
+		const since = new Date(0).toISOString()
+		const whileRunning = await summarizeRunRecords({ env, userId, since })
+		expect(whileRunning.running).toBe(1)
+		const finished = await finishPackageInvocationRecord({
+			env,
+			userId,
+			handle: claimed.handle,
+			invocationId: claimed.invocationId,
+			claimUpdatedAt: claimed.claimUpdatedAt,
+			ledgerStatus: 'completed',
+			responseJson: JSON.stringify({ ok: true }),
+			status: 'success',
+		})
+		expect(finished.ledgerUpdated).toBe(true)
+		const afterFinish = await summarizeRunRecords({ env, userId, since })
+		expect(afterFinish).toMatchObject({
+			total: 1,
+			running: 0,
+		})
+	}
 })
 
 test('run recording degrades to a warning instead of failing the observed run', async () => {

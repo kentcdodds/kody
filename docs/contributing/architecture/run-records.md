@@ -202,14 +202,23 @@ success history and keeping active failures strongest. Orphan log lines are
 cleaned in the same pass. Caps are applied in small batches per finish so a
 single RPC stays bounded.
 
+The retention alarm is one-shot at the next due-time (oldest finished + age,
+oldest in-flight + surface stale TTL, or now when over-cap **and** a terminal
+row is evictable). Over-cap with only `running` rows is not treated as due now.
+An empty pass (deleted no run rows) that would otherwise wake immediately backs
+off from 15s, doubling to a 15-minute cap, instead of rescheduling every 1s. A
+later start or finish resets that backoff.
+
 Stranded `running` rows (isolate reset, lost `waitUntil` finish, hung Worker
 Loader `evaluate`) are reconciled to `status=error` with the stable
 `errorName=platform_interrupted`. This name means platform weather ended the
 host execution and its outcome is unknown; Activity, `runList`, and triage
 automation must not classify it as a user-authored package failure.
-Reconciliation uses the surface-aware TTLs above and runs on the DO alarm, on
-retention passes, and **on read** (`getRun`, keyed lookup, `listRuns`,
-`summarize`) so Activity and keyed-execute recovery do not wait for an alarm.
+Reconciliation uses the surface-aware TTLs above and runs on the DO alarm and on
+retention passes. Readers heal only the row they already loaded (`getRun`, keyed
+lookup, and each `listRuns` page row) so Activity and keyed-execute recovery do
+not wait for an alarm. `summarize` does not reconcile — it counts current rows
+and reuses a same-isolate memo for the same `since` minute.
 
 Interrupted scheduled-job occurrences (`idempotency_key` beginning
 `scheduled-job:`), keyed subscription deliveries, and keyed package-export
