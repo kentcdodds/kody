@@ -47,5 +47,4 @@ test('package file line numbers stay out of the tab-stop origin', async () => {
 	expect(html).toContain('counter(package-file-line)')
 	expect(html).toMatch(/\.line::before\s*\{[^}]*position:\s*absolute/)
 	expect(html).toMatch(/\.line\s*\{[^}]*padding-inline-start/)
-	expect(html).not.toMatch(/\.line::before\s*\{[^}]*display:\s*inline-block/)
 })

@@ -7,15 +7,8 @@ import {
 	identityIconCommitForKind,
 	refreshIdentityIconForSource,
 } from './identity-icon.ts'
-import {
-	identityIconAliasPaths,
-	identityIconSourcePaths,
-} from './identity-icon-paths.ts'
 import { type EntitySourceRow } from './types.ts'
-import {
-	createFakeImagesBinding,
-	tinyWebpBytes,
-} from '#worker/test-support/images-binding.ts'
+import { createFakeImagesBinding } from '#worker/test-support/images-binding.ts'
 
 const mocks = vi.hoisted(() => ({
 	readFirstArtifactFileAtCommit: vi.fn(),
@@ -169,14 +162,10 @@ test('getIdentityIconObject prefers .kody/icon and skips package-app icons unles
 
 	expect(result.descriptor.sourcePath).toBe('.kody/icon.png')
 	expect(result.descriptor.contentType).toBe('image/webp')
-	expect(result.descriptor.r2Key).toBe(
-		buildIdentityIconR2Key({ repoId: 'repo-1', commit: 'commit-1' }),
-	)
-	expect(mocks.readFirstArtifactFileAtCommit).toHaveBeenCalledWith(
-		expect.objectContaining({
-			filePaths: [...identityIconSourcePaths],
-		}),
-	)
+	const withPackageApp = mocks.readFirstArtifactFileAtCommit.mock
+		.calls[0]?.[0] as { filePaths?: Array<string> }
+	expect(withPackageApp.filePaths).toContain('.kody/icon.png')
+	expect(withPackageApp.filePaths).toContain('icons/icon-192.png')
 
 	mocks.readFirstArtifactFileAtCommit.mockClear()
 	mocks.readFirstArtifactFileAtCommit.mockResolvedValue(null)
@@ -189,12 +178,10 @@ test('getIdentityIconObject prefers .kody/icon and skips package-app icons unles
 		includePackageAppIcon: false,
 		isServableCommit: async () => true,
 	})
-	expect(mocks.readFirstArtifactFileAtCommit).toHaveBeenCalledWith(
-		expect.objectContaining({
-			filePaths: [...identityIconAliasPaths],
-		}),
-	)
-	expect(tinyWebpBytes.byteLength).toBeGreaterThan(0)
+	const withoutPackageApp = mocks.readFirstArtifactFileAtCommit.mock
+		.calls[0]?.[0] as { filePaths?: Array<string> }
+	expect(withoutPackageApp.filePaths).toContain('.kody/icon.png')
+	expect(withoutPackageApp.filePaths).not.toContain('icons/icon-192.png')
 })
 
 test('deleteIdentityIconAssets keeps the current commit and refresh stamps live repo heads', async () => {

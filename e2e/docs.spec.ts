@@ -146,6 +146,5 @@ test('docs site: header says Docs, /docs opens the introduction with a sidebar, 
 	expect(await adminMarkdown.text()).toBe('# Doc not found\n')
 	const subscriptions = await request.get('/docs/package-subscriptions.md')
 	expect(subscriptions.status()).toBe(200)
-	expect(await subscriptions.text()).not.toContain('fleet.entitlement.crossed')
-	expect(await subscriptions.text()).not.toContain('(admins)')
+	expect(await subscriptions.text()).toContain('run.error.recorded')
 })

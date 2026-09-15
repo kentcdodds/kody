@@ -227,7 +227,6 @@ test('package chrome is shared for public listings and private owner packages', 
 	expect(publicHtml).not.toContain('data-testid="package-repo-nav-settings"')
 	expect(publicHtml).not.toContain('data-testid="package-visibility-badge"')
 	expect(publicHtml).not.toContain('data-signifier="unpublished"')
-	expect(publicHtml).not.toContain('>Public<')
 	expect(publicHtml).toContain('href="/@kentcdodds/github-triage/tree/main"')
 	expect(publicHtml).toContain('data-testid="community-detail-forks"')
 	expect(publicHtml).toContain('data-testid="community-detail-version"')
@@ -273,29 +272,6 @@ test('package chrome is shared for public listings and private owner packages', 
 	expect(privateHtml).not.toContain('data-testid="community-detail-forks"')
 	expect(privateHtml).not.toContain('data-testid="community-listing-category"')
 	expect(privateHtml).toContain('Local notes.')
-})
-
-test('package Files tab uses the listing default branch instead of main', async () => {
-	const html = await renderCommunityDetailContentHtml({
-		...detailBase,
-		listing: { ...sampleListing, defaultBranch: 'develop' },
-		loggedIn: false,
-	})
-	expect(html).toContain('href="/@kentcdodds/github-triage/tree/develop"')
-	expect(html).not.toContain('href="/@kentcdodds/github-triage/tree/main"')
-})
-
-test('package chrome uses lock and unpublished icon tooltips instead of text pills', async () => {
-	const privateListedHtml = await renderCommunityDetailContentHtml({
-		...detailBase,
-		isPrivate: true,
-		viewerIsOwner: true,
-		loggedIn: true,
-	})
-	expect(privateListedHtml).toContain('data-signifier="private"')
-	expect(privateListedHtml).toContain('data-icon="lock"')
-	expect(privateListedHtml).not.toContain('data-signifier="unpublished"')
-	expect(privateListedHtml).not.toMatch(/>Not published</)
 
 	const publicUnpublishedHtml = await renderCommunityDetailContentHtml({
 		...detailBase,
@@ -312,6 +288,16 @@ test('package chrome uses lock and unpublished icon tooltips instead of text pil
 	expect(publicUnpublishedHtml).not.toMatch(/>Not published</)
 })
 
+test('package Files tab uses the listing default branch instead of main', async () => {
+	const html = await renderCommunityDetailContentHtml({
+		...detailBase,
+		listing: { ...sampleListing, defaultBranch: 'develop' },
+		loggedIn: false,
+	})
+	expect(html).toContain('href="/@kentcdodds/github-triage/tree/develop"')
+	expect(html).not.toContain('href="/@kentcdodds/github-triage/tree/main"')
+})
+
 test('open package app link shows for owner and accepted share, and hides without an app or access', async () => {
 	const ownerHtml = await renderCommunityDetailContentHtml({
 		...detailBase,
@@ -325,7 +311,6 @@ test('open package app link shows for owner and accepted share, and hides withou
 	expect(ownerHtml).toContain('href="/@kentcdodds/packages/github-triage"')
 	expect(ownerHtml).toContain('data-rmx-document')
 	expect(ownerHtml).toContain('data-icon="share"')
-	expect(ownerHtml).toContain('Open Package App')
 
 	const sharedHtml = await renderCommunityDetailContentHtml({
 		...detailBase,

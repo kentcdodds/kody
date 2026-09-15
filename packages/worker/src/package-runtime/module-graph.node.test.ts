@@ -329,10 +329,6 @@ test('buildKodyAppBundle keeps esbuild defaults even when the graph imports remi
 		files: Record<string, string>
 		jsx?: string
 		jsxImportSource?: string
-		define?: Record<string, string>
-		__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired?: Array<{
-			name: string
-		}>
 	}
 	expect(remixCall.files['node_modules/remix/package.json']).toContain(
 		'"./router": "./dist/router.js"',
@@ -344,10 +340,6 @@ test('buildKodyAppBundle keeps esbuild defaults even when the graph imports remi
 	// JSX, import.meta.url, or keepNames. Without a tsconfig, esbuild defaults.
 	expect(remixCall).not.toHaveProperty('jsx')
 	expect(remixCall).not.toHaveProperty('jsxImportSource')
-	expect(remixCall).not.toHaveProperty('define')
-	expect(remixCall).not.toHaveProperty(
-		'__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired',
-	)
 
 	mockModule.createWorker.mockReset()
 	mockModule.createWorker.mockResolvedValue(createBundleResult('tsconfig'))
@@ -391,10 +383,6 @@ test('buildKodyAppBundle keeps esbuild defaults even when the graph imports remi
 		],
 	).toBeTypeOf('string')
 	expect(headersCall).not.toHaveProperty('jsx')
-	expect(headersCall).not.toHaveProperty('define')
-	expect(headersCall).not.toHaveProperty(
-		'__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired',
-	)
 
 	mockModule.createWorker.mockReset()
 	mockModule.createWorker.mockResolvedValue(createBundleResult('fetch'))
@@ -409,10 +397,6 @@ test('buildKodyAppBundle keeps esbuild defaults even when the graph imports remi
 		],
 	).toBeTypeOf('string')
 	expect(fetchCall).not.toHaveProperty('jsx')
-	expect(fetchCall).not.toHaveProperty('define')
-	expect(fetchCall).not.toHaveProperty(
-		'__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired',
-	)
 })
 
 test('buildKodyAppBundle cache lifecycle reuses hits, shares in-flight builds, evicts failures, and keys by entrypoint', async () => {

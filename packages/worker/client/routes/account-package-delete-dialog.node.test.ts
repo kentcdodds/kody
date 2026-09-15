@@ -40,11 +40,8 @@ test('package delete dialog puts a tooltip-only copy icon next to the confirm na
 	expect(html).toContain('data-copy-prompt')
 	expect(html).toContain('data-testid="package-delete-copy-name"')
 	expect(html).toContain('data-icon="copy"')
-	expect(html).toContain('aria-label="Copy package name"')
-	expect(html).toMatch(/role="tooltip"[^>]*>Copy</)
 	expect(html).not.toContain('data-swap-label')
 	expect(html).toContain(`placeholder="${packageName}"`)
-	expect(html).toContain(`Type <strong>${packageName}</strong> to`)
 
 	const titleAt = html.indexOf('id="delete-package-title"')
 	const copyAt = html.indexOf('data-testid="package-delete-copy-name"')

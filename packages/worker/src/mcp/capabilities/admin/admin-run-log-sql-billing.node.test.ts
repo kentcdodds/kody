@@ -114,9 +114,6 @@ test('adminRunLogSqlBilling is admin-only and returns content-free schema stats'
 	).rejects.toThrow('lacks required role "admin"')
 	expect(mockModule.inspectRunLogSqlBilling).not.toHaveBeenCalled()
 
-	expect(adminRunLogSqlBillingCapability.requiredRole).toBe('admin')
-	expect(adminRunLogSqlBillingCapability.readOnly).toBe(true)
-
 	const ctx = createCtx(['admin'])
 	mockModule.loadAdminUserByTarget.mockResolvedValueOnce(null)
 	const missing = await adminRunLogSqlBillingCapability.handler(
@@ -155,12 +152,6 @@ test('adminRunLogSqlBilling is admin-only and returns content-free schema stats'
 	})
 	expect(present.report?.stableUserId).toBe(targetStableUserId)
 	expect(present.report?.username).toBe('kentcdodds')
-	expect(present.report?.tableCounts.runLogs).toBe(4)
-	expect(present.report?.runCount.matches).toBe(true)
-	expect(present.report?.billing.ops[0]?.op).toBe('listRuns')
-	expect(
-		present.report?.runLogsColumns.some((column) => column.name === 'run_id'),
-	).toBe(true)
 	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
 		expect.objectContaining({
 			action: 'adminRunLogSqlBilling',

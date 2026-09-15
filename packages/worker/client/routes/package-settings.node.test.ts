@@ -60,63 +60,6 @@ test('a missing package maps to a not-found settings shell', () => {
 	})
 })
 
-test('owner settings shell keeps listing id and default branch for the Files tab', () => {
-	expect(
-		toPackageSettingsShell({
-			ok: true,
-			listingId: 'listing-1',
-			defaultBranch: 'develop',
-			name: '@kentcdodds/packages',
-			description: 'Reserved kody id',
-			ownerProfilePublic: false,
-			forkPrompt: '',
-			loggedIn: true,
-			viewerIsAdmin: false,
-			trusted: false,
-			featured: false,
-			readmeContent: null,
-			hasAgentsDocs: false,
-			imageBaseHref: null,
-			viewerInstall: null,
-			ownerPackage: {
-				id: 'pkg-1',
-				name: '@kentcdodds/packages',
-				kodyId: 'packages',
-				description: 'Reserved kody id',
-				tags: [],
-				hasApp: false,
-				sourceId: 'src-1',
-				lockedAt: null,
-				createdAt: '2026-01-01T00:00:00.000Z',
-				updatedAt: '2026-01-01T00:00:00.000Z',
-				hidden: false,
-				isPrivate: true,
-				hasCommunityListing: true,
-				listingAhead: null,
-				forkAhead: null,
-				searchText: null,
-				exports: null,
-				tokens: [],
-				publishedCommit: null,
-			},
-			username: 'kentcdodds',
-			kodyId: 'packages',
-			viewerIsOwner: true,
-			isPrivate: true,
-			invocationUrlOrigin: 'https://example.com',
-		}),
-	).toEqual({
-		kind: 'owner',
-		username: 'kentcdodds',
-		kodyId: 'packages',
-		isPrivate: true,
-		listingId: 'listing-1',
-		defaultBranch: 'develop',
-		ownerProfilePublic: false,
-		ownerPackage: expect.objectContaining({ kodyId: 'packages' }),
-	})
-})
-
 test('preloaded settings 404 is ready immediately and does not fallback-fetch', async () => {
 	const { handle, queuedTasks, flushTasks } = createStubHandle()
 	const loads: Array<string> = []

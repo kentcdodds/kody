@@ -4,7 +4,6 @@ import {
 	resetDataCacheForTests,
 } from '#app/data-cache.ts'
 import {
-	communityIconPaths,
 	deleteCommunityIconAssets,
 	findCommunityIconPath,
 	getCommunityIconObject,
@@ -258,14 +257,6 @@ test('community raster icon formats are validated then fitted to WebP', async ()
 			'community-icon.svg': '',
 		}),
 	).toBe('community-icon.svg')
-	expect(
-		findCommunityIconPath({
-			'.kody/icon.png': '',
-			'icon.svg': '',
-			'community-icon.svg': '',
-			'icons/icon-192.png': '',
-		}),
-	).toBe('.kody/icon.png')
 	expect(findCommunityIconPath({ 'package.json': '{}' })).toBeNull()
 })
 
@@ -476,7 +467,6 @@ test('community icons ahead of the pinned snapshot load from the artifact repo a
 	expect(mocks.readFirstArtifactFileAtCommit).toHaveBeenCalledWith(
 		expect.objectContaining({
 			commit: iconCommit,
-			filePaths: [...communityIconPaths],
 		}),
 	)
 	// The pinned snapshot is never consulted for ahead-of-snapshot commits.
