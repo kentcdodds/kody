@@ -272,6 +272,19 @@ test('profile package filters render owner-only pills, keep other filters in eac
 	expect(searchEmptyHtml).toContain('data-testid="profile-packages-empty"')
 	expect(searchEmptyHtml).not.toContain('href="/@kody/fathom-analytics"')
 
+	const loaderAppliedHtml = await renderProfileContentHtml({
+		profile,
+		packages: [unpublishedPackage],
+		activity: [],
+		query: 'fathom',
+		queryAppliedByLoader: true,
+		isSelf: false,
+	})
+	expect(loaderAppliedHtml).toContain('href="/@kody/notes"')
+	expect(loaderAppliedHtml).not.toContain(
+		'data-testid="profile-packages-empty"',
+	)
+
 	// Guests see listing, package, app, and sort; visibility and hidden stay owner-only.
 	const guestHtml = await renderProfileContentHtml({
 		profile,

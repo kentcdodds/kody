@@ -351,6 +351,22 @@ test('listPublicProfilePackages filters private/hidden packages and supports que
 	})
 	expect(queried.map((pkg) => pkg.kodyId)).toEqual(['public-notes'])
 
+	const everyToken = await listPublicProfilePackages({
+		env,
+		ownerStableUserId: owner.userId,
+		query: 'public diary',
+		limit: 10,
+	})
+	expect(everyToken.map((pkg) => pkg.kodyId)).toEqual(['public-notes'])
+
+	const mixedTokens = await listPublicProfilePackages({
+		env,
+		ownerStableUserId: owner.userId,
+		query: 'notes calendar',
+		limit: 10,
+	})
+	expect(mixedTokens).toEqual([])
+
 	// search_text is not publicly searchable (substring-probing oracle).
 	const searchTextOnly = await listPublicProfilePackages({
 		env,

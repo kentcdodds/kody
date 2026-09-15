@@ -267,7 +267,8 @@ function createNavigationEventDetail(
 	return {
 		location,
 		historyAction:
-			options?.historyAction ?? (options?.skipPushState ? 'replace' : 'push'),
+			options?.historyAction ??
+			(options?.replace || options?.skipPushState ? 'replace' : 'push'),
 		preventScrollReset: options?.preventScrollReset ?? false,
 	}
 }
@@ -718,6 +719,10 @@ function getCurrentPathWithSearchAndHash() {
 	return `${window.location.pathname}${window.location.search}${window.location.hash}`
 }
 
+function shouldReplaceHistory(options?: NavigationRunOptions) {
+	return options?.replace === true || options?.historyAction === 'replace'
+}
+
 function commitNavigation(nextPath: string, onSwapped?: () => void) {
 	window.history.pushState(
 		createScrollRestorationHistoryState(window.history.state),
@@ -725,6 +730,31 @@ function commitNavigation(nextPath: string, onSwapped?: () => void) {
 		nextPath,
 	)
 	notify(onSwapped)
+}
+
+function commitReplaceNavigation(nextPath: string, onSwapped?: () => void) {
+	window.history.replaceState(
+		createScrollRestorationHistoryState(window.history.state),
+		'',
+		nextPath,
+	)
+	notify(onSwapped)
+}
+
+function commitHistory(
+	nextPath: string,
+	options?: NavigationRunOptions,
+	onSwapped?: () => void,
+) {
+	if (options?.skipPushState) {
+		notify(onSwapped)
+		return
+	}
+	if (shouldReplaceHistory(options)) {
+		commitReplaceNavigation(nextPath, onSwapped)
+		return
+	}
+	commitNavigation(nextPath, onSwapped)
 }
 
 function commitImmediateNavigation(
@@ -853,11 +883,7 @@ async function runNavigationWithLoader(
 		applyDocumentHead(destination.pathname, loadedData)
 
 		const finish = () => dispatchNavigationEnd(navigationEndDetail)
-		if (options?.skipPushState) {
-			notify(finish)
-		} else {
-			commitNavigation(nextPath, finish)
-		}
+		commitHistory(nextPath, options, finish)
 	} catch {
 		// Promise.all rejects as soon as the loader fails, even if the lazy chunk
 		// retry is still pending. Do not commit under the destination URL until
@@ -883,11 +909,7 @@ async function runNavigationWithLoader(
 		markNavigationDataStale(nextPath)
 		applyDocumentHead(destination.pathname)
 		const finish = () => dispatchNavigationEnd(navigationEndDetail)
-		if (options?.skipPushState) {
-			notify(finish)
-		} else {
-			commitNavigation(nextPath, finish)
-		}
+		commitHistory(nextPath, options, finish)
 	} finally {
 		globalThis.clearTimeout(timeoutId)
 		// A superseding navigation owns the marker now; only clear our own.

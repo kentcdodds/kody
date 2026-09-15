@@ -212,6 +212,10 @@ export function ProfileRoute(handle: Handle) {
 			allowOwnerFilters: readyShell?.isSelf === true,
 		})
 		const searchQuery = filters.query
+		const queryAppliedByLoader = new URL(
+			currentHref,
+			'http://localhost',
+		).searchParams.has('limit')
 		const visibleList = profileListForUsername(
 			list,
 			listLoadedForUsername,
@@ -315,6 +319,7 @@ export function ProfileRoute(handle: Handle) {
 								sort={filters.sort}
 								dir={filters.dir}
 								isSelf={readyShell?.isSelf === true}
+								queryAppliedByLoader={queryAppliedByLoader}
 							/>
 						) : null}
 					</div>

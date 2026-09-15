@@ -438,6 +438,12 @@ test('profile search filters the already-loaded list by name, description, tags,
 	expect(
 		filterProfilePackages(packages, {
 			...defaultFilters,
+			query: 'notes helper',
+		}),
+	).toEqual([])
+	expect(
+		filterProfilePackages(packages, {
+			...defaultFilters,
 			query: '   ',
 		}).map((pkg) => pkg.kodyId),
 	).toEqual(['notes-app', 'secret'])

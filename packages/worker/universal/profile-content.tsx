@@ -59,6 +59,8 @@ export type ProfileContentProps = {
 	sort?: ProfilePackageSort
 	dir?: ProfilePackageSortDirection
 	isSelf: boolean
+	/** Server already applied `q` (capped inventory). Do not AND-filter again. */
+	queryAppliedByLoader?: boolean
 }
 
 function renderForkIcon() {
@@ -376,7 +378,10 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 		}
 		const filtersActive = profilePackageFiltersAreActive(filters)
 		const toolbarActive = filtersActive || profilePackageSortIsActive(filters)
-		const visiblePackages = filterProfilePackages(packages, filters)
+		const visiblePackages = filterProfilePackages(packages, {
+			...filters,
+			query: handle.props.queryAppliedByLoader ? '' : filters.query,
+		})
 		const showFilters =
 			isSelf || packages.length > 0 || Boolean(query) || toolbarActive
 

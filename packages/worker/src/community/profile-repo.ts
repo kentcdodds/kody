@@ -351,7 +351,7 @@ export async function listPublicProfilePackages(
 			})
 			return `(${columnClauses.join(' OR ')})`
 		})
-		conditions.push(`(${tokenClauses.join(' OR ')})`)
+		conditions.push(`(${tokenClauses.join(' AND ')})`)
 	}
 
 	const limitClause = input.limit == null ? '' : '\n\t\t\tLIMIT ?'

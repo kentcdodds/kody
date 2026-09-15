@@ -1,8 +1,12 @@
 import { css, ref, type Handle } from 'remix/ui'
+import { navigate } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
 import { replaceLocation } from '#client/replace-location.ts'
 import { type ProfilePackageFilters } from '#universal/community-public-types.ts'
-import { buildProfileHref } from '#universal/profile-search.ts'
+import {
+	buildProfileHref,
+	isProfilePackageFilterOnlyHrefChange,
+} from '#universal/profile-search.ts'
 import { inputCss } from '#universal/styles/style-primitives.ts'
 import {
 	acknowledgeRecordTableSearchInput,
@@ -12,10 +16,12 @@ import {
 } from './record-table-search-sync.ts'
 
 /**
- * Live profile inventory search. The list is already loaded, so each
- * keystroke rewrites `q` with replaceState and re-filters in render. The
- * field stays uncontrolled: a Remix-controlled value (or `type="search"`)
- * restores the previous query on the first character and drops focus.
+ * Live profile inventory search. The uncapped list is already loaded, so each
+ * keystroke rewrites `q` with replaceState and re-filters in render. When
+ * `limit` caps the inventory, `q` is loader-affecting: navigate (replace)
+ * so search hits the full corpus instead of the newest-N page. The field
+ * stays uncontrolled: a Remix-controlled value (or `type="search"`) restores
+ * the previous query on the first character and drops focus.
  */
 export function ProfileRepositorySearchInput(
 	handle: Handle<{
@@ -73,14 +79,21 @@ export function ProfileRepositorySearchInput(
 					on('input', (event) => {
 						const value = (event.currentTarget as HTMLInputElement).value
 						sync = acknowledgeRecordTableSearchInput(value)
-						replaceLocation(
-							buildProfileHref({
-								username: handle.props.username,
-								...handle.props.filters,
-								query: value,
-								extraSearchParams: new URL(window.location.href).searchParams,
-							}),
-						)
+						const href = buildProfileHref({
+							username: handle.props.username,
+							...handle.props.filters,
+							query: value,
+							extraSearchParams: new URL(window.location.href).searchParams,
+						})
+						const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`
+						if (isProfilePackageFilterOnlyHrefChange(currentPath, href)) {
+							replaceLocation(href)
+							return
+						}
+						navigate(href, {
+							replace: true,
+							preventScrollReset: true,
+						})
 					}),
 					on('blur', () => {
 						focused = false
