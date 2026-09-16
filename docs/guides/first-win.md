@@ -151,10 +151,10 @@ The email loop is done. Offer one concrete next step and let them choose:
   `execute`, a community fork, and a new package.
 - **Bring their own OAuth app** to connect a service — open
   `search({ entity: "guide:oauth" })`, or a resolved
-  `search({ entity: "provider_<slug>:guide" })`.
+  `search({ entity: "guide:provider_<slug>" })`.
 - **Bring their own API key or PAT** to connect a service — open
   `search({ entity: "guide:connect_secret" })`, or a resolved
-  `search({ entity: "provider_<slug>:guide" })`.
+  `search({ entity: "guide:provider_<slug>" })`.
 
 ## Troubleshooting
 

@@ -185,11 +185,11 @@ Only set up a connection when their use needs one. Say the difficulty first.
 - **PAT / API key (harder, more powerful).** Store a token they already have as
   a secret. Packages can use it; you never read the value. Open
   `search({ entity: "guide:connect_secret" })` or a resolved
-  `search({ entity: "provider_<slug>:guide" })`.
+  `search({ entity: "guide:provider_<slug>" })`.
 - **OAuth (hardest, most powerful).** They register their own provider app and
   complete `/connect/oauth`. Use this when a key is not enough. Open
   `search({ entity: "guide:oauth" })` or a resolved
-  `search({ entity: "provider_<slug>:guide" })`.
+  `search({ entity: "guide:provider_<slug>" })`.
 
 Hosted / platform OAuth is not the onboarding path. New connects are
 bring-your-own.

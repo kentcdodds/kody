@@ -260,4 +260,4 @@ with `search({ entity: "guide:integration_bootstrap" })`. Inspect the relevant
 `integration` or `secret` entity, run one cheap authenticated **execute** smoke
 test, then build the downstream artifact. If setup is missing, open the official
 OAuth or secret-backed setup guide that matches the auth path (`guide:oauth`,
-`guide:connect_secret`, or a resolved `provider_<slug>:guide`).
+`guide:connect_secret`, or a resolved `guide:provider_<slug>`).

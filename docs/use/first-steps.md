@@ -44,7 +44,7 @@ guides load with `search({ entity: "guide:{id}" })` — not execute.
 - **Credentials use connect flows.** Use saved secrets, `/connect/oauth`,
   `/account/secrets/new`, or the flows described in
   [Secrets and host approval](./secrets-and-values.md). Per-provider connect
-  guides are available: `search({ entity: "provider_<name>:guide" })` (for
+  guides are available: `search({ entity: "guide:provider_<name>" })` (for
   example `provider_github`) or browse
   [https://kody.codes/docs/connect](https://kody.codes/docs/connect) (each page
   also serves raw markdown at `/docs/<slug>.md`).
