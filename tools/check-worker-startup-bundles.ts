@@ -143,7 +143,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// MCP OAuth sidecar refresh-token preserve (merge omitted RT,
 		// restore when client_id missing, remint/invalidate delete sidecar,
 		// nested discovery refresh advertising): CI dry-run 5_063_749 bytes.
-		maxEntryBytes: 5_075_000,
+		// Provider-secret placeholders on the shared fetch-gateway path
+		// (bindings, grants, sealed resolve) plus the MCP OAuth sidecar
+		// preserve: local dry-run 5_088_887 bytes.
+		maxEntryBytes: 5_095_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
