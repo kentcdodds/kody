@@ -25,7 +25,9 @@ permissions:
 # to write. Literal secret refs only — do not index `secrets[...]`
 # (overprovisions the whole secrets context). Nx treats an
 # unreachable self-hosted cache as a fatal error, so setup-validate
-# probes before setting the server URL.
+# probes before setting the server URL. Cached npm scripts then run
+# through tools/run-nx.ts so a mid-run /v1/cache transport flake
+# cannot fail the job after tasks already succeeded.
 env:
   CI: '1'
   NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN:

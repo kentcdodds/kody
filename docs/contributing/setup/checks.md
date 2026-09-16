@@ -54,7 +54,9 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   [decision 0019](../decisions/0019-self-hosted-nx-remote-cache.md),
   [decision 0038](../decisions/0038-no-nx-cloud-read-write-cache-tokens.md),
   [decision 0040](../decisions/0040-same-repo-writers-may-put-nx-cache.md), and
-  [`packages/nx-cache/readme.md`](../../../packages/nx-cache/readme.md)).
+  [`packages/nx-cache/readme.md`](../../../packages/nx-cache/readme.md)). Those
+  cached scripts run through `tools/run-nx.ts` so a mid-run remote-cache
+  transport flake cannot fail validate after the tasks already succeeded.
 - `npm run deploy-guardrails:check` protects reviewed Durable Object migration
   history and bindings in both Wrangler configs, requires exact allowlisting for
   class deletion, and rejects destructive Cloudflare CLI operations in
