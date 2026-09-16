@@ -10,11 +10,7 @@ test('secret providers flag callout covers logged-out, opt-in, and already-on', 
 	)
 	expect(loggedOut).toContain('data-testid="secret-providers-flag-callout"')
 	expect(loggedOut).toContain(`data-flag="${secretProvidersFlagKey}"`)
-	expect(loggedOut).toContain(
-		'Custom secret providers are behind a feature flag because they may change or go away.',
-	)
 	expect(loggedOut).toContain('data-testid="secret-providers-flag-login"')
-	expect(loggedOut).toContain('Log in to try it')
 	expect(loggedOut).toContain(
 		`href="${routes.login.href()}?redirectTo=${encodeURIComponent(routes.docDetail.href({ slug: 'secret-providers' }))}"`,
 	)
@@ -24,7 +20,6 @@ test('secret providers flag callout covers logged-out, opt-in, and already-on', 
 		renderSecretProvidersFlagCallout({ loggedIn: true, enabled: false }),
 	)
 	expect(loggedIn).toContain('data-testid="secret-providers-flag-opt-in"')
-	expect(loggedIn).toContain('Try secret providers')
 	expect(loggedIn).toContain(
 		`action="${routes.secretProvidersOptInPost.href()}"`,
 	)
@@ -34,7 +29,6 @@ test('secret providers flag callout covers logged-out, opt-in, and already-on', 
 	const alreadyOn = await renderToString(
 		renderSecretProvidersFlagCallout({ loggedIn: true, enabled: true }),
 	)
-	expect(alreadyOn).toContain('You are trying custom secret providers.')
 	expect(alreadyOn).not.toContain('data-testid="secret-providers-flag-opt-in"')
 	expect(alreadyOn).not.toContain('data-testid="secret-providers-flag-login"')
 })

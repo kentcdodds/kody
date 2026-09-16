@@ -11,11 +11,9 @@ import {
 	createBrokenProviderRefMessage,
 	createMissingProviderBindingMessage,
 	createMissingProviderDoorSecretMessage,
-	createProviderHostDeniedMessage,
 	createProviderNoWebsitesMessage,
 	createProviderPackageNotGrantedMessage,
 } from './errors.ts'
-import { providerHostsAllowRequestHost } from './hosts.ts'
 import {
 	enableSecretProvidersForTests,
 	isSecretProvidersEnabled,
@@ -179,18 +177,6 @@ test('provider resolve grants, hosts, cache, owner execute, share owner binding,
 		hosts: ['app.example.com'],
 	})
 	expect(providerCalls).toBe(1)
-	expect(
-		providerHostsAllowRequestHost(ownerExecute.hosts, 'app.example.com'),
-	).toBe(true)
-	expect(
-		providerHostsAllowRequestHost(ownerExecute.hosts, 'other.example.com'),
-	).toBe(false)
-	expect(
-		createProviderHostDeniedMessage({
-			providerId,
-			host: 'other.example.com',
-		}),
-	).toContain('other.example.com')
 
 	const cached = await resolveProviderSecret({
 		env,

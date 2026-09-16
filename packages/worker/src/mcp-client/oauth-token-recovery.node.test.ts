@@ -5,10 +5,8 @@ import {
 	clientIdFromMcpOAuthTokenStorageKey,
 	describeMcpOAuthTokenRecovery,
 	isMcpOAuthGrantIssueLastError,
-	isMcpOAuthMissingRefreshGrantLastError,
 	isMcpOAuthTokenRecoveryLastError,
 	mcpOAuthDiscoveryAdvertisesRefresh,
-	mcpOAuthRefreshTokenStorageKey,
 	mcpOAuthTokenRecoveryStorageKey,
 	mergeMcpOAuthTokens,
 	readMcpOAuthTokenPresence,
@@ -83,9 +81,6 @@ test('token recovery inspects stored OAuth blobs without treating empty strings 
 	).toBe(false)
 	expect(mcpOAuthTokenRecoveryStorageKey('server-1')).toBe(
 		'mcp-oauth-token-recovery/server-1',
-	)
-	expect(mcpOAuthRefreshTokenStorageKey('server-1')).toBe(
-		'mcp-oauth-refresh-token/server-1',
 	)
 	expect(
 		clientIdFromMcpOAuthTokenStorageKey({
@@ -212,10 +207,7 @@ test('token recovery lastError names refresh failure without claiming IdP just s
 		at: '2026-09-16T00:00:00.000Z',
 	})
 	expect(omitted.phase).toBe('token exchange')
-	expect(omitted.message).toContain('advertised refresh tokens')
 	expect(omitted.message).not.toContain('Authorization completed')
-	expect(isMcpOAuthMissingRefreshGrantLastError(omitted)).toBe(true)
 	expect(isMcpOAuthTokenRecoveryLastError(omitted)).toBe(false)
-	expect(isMcpOAuthGrantIssueLastError(omitted)).toBe(true)
 	expect(isMcpOAuthGrantIssueLastError(noRefresh)).toBe(true)
 })

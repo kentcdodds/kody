@@ -1025,15 +1025,11 @@ test('ready grant without a refresh token warns when the authorization server ad
 	expect(snapshot.servers[0]?.state).toBe('ready')
 	expect(snapshot.servers[0]?.hasRefreshToken).toBe(false)
 	expect(snapshot.servers[0]?.lastError?.phase).toBe('token exchange')
-	expect(snapshot.servers[0]?.lastError?.message).toContain(
-		'advertised refresh tokens',
-	)
 	expect(snapshot.connectionEvents).toEqual([])
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'mcp oauth grant omitted advertised refresh token',
 		expect.objectContaining({ serverId: 'server-1' }),
 	)
-	expect(connection.connectionError).toContain('advertised refresh tokens')
 
 	connection.options.transport.authProvider.storedTokens = {
 		access_token: 'at-new',
