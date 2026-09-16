@@ -13,7 +13,7 @@ import {
 /**
  * Guide markdown is bundled from `docs/guides/` at build time (see
  * `#worker/guides/catalog.ts` for the web-facing catalog), so this
- * capability, search `{id}:guide` entities, the `/docs` web pages, and
+ * capability, search `guide:{id}` entities, the `/docs` web pages, and
  * the raw `text/markdown` responses always serve the same deployed content
  * with no request-time GitHub dependency.
  *
@@ -31,7 +31,7 @@ const advertisedGuides = guideMetadataList.filter(
 function buildCapabilityDescription(): string {
 	return [
 		'Load an official Kody guide from execute-module code (markdown, bundled from the kody repository).',
-		'Prefer `search({ entity: "{id}:guide" })` to read a guide — do not execute this capability just to load documentation. Oversized guides return a table of contents; pass `section` or use `{id}:guide#{slug}` on search.',
+		'Prefer `search({ entity: "guide:{id}" })` to read a guide — do not execute this capability just to load documentation. Oversized guides return a table of contents; pass `section` or use `guide:{id}#{slug}` on search.',
 		'Use this from execute-module code when you need the markdown body programmatically.',
 		'The `guide` input lists each available id. Discover guides with `search({ query: "… guide" })`.',
 	].join('\n')
@@ -88,7 +88,7 @@ const outputSchema = z.object({
 			}),
 		)
 		.describe(
-			'Headings that can be requested with section or {id}:guide#{slug}.',
+			'Headings that can be requested with section or guide:{id}#{slug}.',
 		),
 })
 
@@ -121,7 +121,7 @@ export const kodyOfficialGuideCapability = defineDomainCapability(
 			const resolved = resolveMarkdownDocument({
 				markdown: guide.body,
 				maxChars,
-				entityRef: `${guide.id}:guide`,
+				entityRef: `guide:${guide.id}`,
 				...(args.section ? { section: args.section } : {}),
 			})
 			return {

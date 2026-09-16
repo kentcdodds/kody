@@ -223,11 +223,11 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 	expect(naturalLanguage.matches).toEqual([
 		expect.objectContaining({
 			type: 'capability',
-			entityRef: 'search_docs:capability',
+			entityRef: 'capability:search_docs',
 		}),
 		expect.objectContaining({
 			type: 'guide',
-			entityRef: 'search_and_execute:guide',
+			entityRef: 'guide:search_and_execute',
 		}),
 	])
 
@@ -271,7 +271,7 @@ test('meta search supports domain browsing and empty discovery', async () => {
 	expect(browse.matches).toEqual([
 		expect.objectContaining({
 			type: 'capability',
-			entityRef: 'search_docs:capability',
+			entityRef: 'capability:search_docs',
 			domain: 'meta',
 		}),
 	])

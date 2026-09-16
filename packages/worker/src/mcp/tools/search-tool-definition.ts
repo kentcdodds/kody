@@ -15,14 +15,14 @@ Find built-in capabilities, official guides, saved packages, integrations, conne
 
 **query** — compact ranked markdown + structured matches. Empty or broad queries return a domain index; search again with a more specific query. Domain ids appear on capability hits. Connected MCP servers appear as server hits (name, instructions); do not expect every remote tool in unscoped results.
 
-**entity: "{id}:{type}"** — detail for one hit (\`capability\` | \`guide\` | \`integration\` | \`mcp-server\` | \`package\` | \`secret\`), or 1–10 refs. Guide detail is the full markdown when it fits the response budget; oversized guides return a table of contents. Open a heading with \`{id}:guide#{slug}\` (for example \`package_subscriptions:guide#repo.pushed\`). Open one package export contract with \`{id}:package#{subpath}\` (for example \`home-controls:package#bond-area-shades\`). Capability detail includes an execute snippet. MCP server detail lists discovered tools; after that, call \`kody.mcp["name"].tool_name(args)\`.
+**entity: "{type}:{id}"** — detail for one hit (\`capability\` | \`guide\` | \`integration\` | \`mcp-server\` | \`package\` | \`secret\`), or 1–10 refs. The first \`:\` is the type; ids may contain colons (\`capability:mcp:home:set_pin\`). The previous \`{id}:{type}\` form is rejected. Guide detail is the full markdown when it fits the response budget; oversized guides return a table of contents. Open a heading with \`guide:{id}#{slug}\` (for example \`guide:package_subscriptions#repo.pushed\`). Open one package export contract with \`package:{id}#{subpath}\` (for example \`package:home-controls#bond-area-shades\`). Capability detail includes an execute snippet. MCP server detail lists discovered tools; after that, call \`kody.mcp["name"].tool_name(args)\`.
 
 Example arguments:
 - \`{ "query": "send a message" }\`
 - \`{}\`
 - \`{ "query": "send a message", "domain": "email" }\`
 - \`{ "domain": "jobs" }\`
-- \`{ "entity": "package_authoring:guide" }\`
+- \`{ "entity": "guide:package_authoring" }\`
 
 https://github.com/kentcdodds/kody/blob/main/docs/use/search.md
 	`.trim(),
@@ -49,7 +49,7 @@ export const searchToolInputSchema = {
 		])
 		.optional()
 		.describe(
-			'Optional exact entity reference "{id}:{type}" (capability, guide, integration, mcp-server, package, or secret), or an array of 1–10 refs to batch related detail lookups. Guide refs accept "#{heading}" to open one section. Package refs accept "#{subpath}" to open one export contract (leading "./" is optional). Use "{name}:mcp-server" to list tools on a connected MCP server.',
+			'Optional exact entity reference "{type}:{id}" (capability, guide, integration, mcp-server, package, or secret), or an array of 1–10 refs to batch related detail lookups. Guide refs accept "#{heading}" to open one section. Package refs accept "#{subpath}" to open one export contract (leading "./" is optional). Use "mcp-server:{name}" to list tools on a connected MCP server.',
 		),
 	domain: z
 		.string()

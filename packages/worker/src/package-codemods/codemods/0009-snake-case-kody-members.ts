@@ -19,7 +19,7 @@ const scannableModuleFilePattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
 const markdownFilePattern = /\.mdx?$/
 const snakeCaseIdentifierPattern = /^[A-Za-z][A-Za-z0-9]*(_[A-Za-z0-9]+)+$/
 const entityRefPattern =
-	/\b([A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+):capability\b/g
+	/\bcapability:([A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+)\b/g
 const markdownMemberPattern =
 	/\bkody\.([A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+)\b/g
 const markdownComputedPattern =
@@ -186,7 +186,7 @@ function collectModuleRewriteSites(
 				const recased = value.replace(
 					entityRefPattern,
 					(_match, name: string) =>
-						`${snakeToCamelIdentifier(name)}:capability`,
+						`capability:${snakeToCamelIdentifier(name)}`,
 				)
 				if (recased !== value) {
 					sites.push({
@@ -267,7 +267,7 @@ function rewriteMarkdown(source: string) {
 		)
 		.replace(
 			entityRefPattern,
-			(_match, name: string) => `${snakeToCamelIdentifier(name)}:capability`,
+			(_match, name: string) => `capability:${snakeToCamelIdentifier(name)}`,
 		)
 }
 
@@ -372,7 +372,7 @@ function transformSnakeCaseKodyMembers(
 export const snakeCaseKodyMembersCodemod: PackageCodemod = {
 	id: snakeCaseKodyMembersCodemodId,
 	description:
-		'Rewrite snake_case `kody.foo_bar` / `kody["foo_bar"]` calls and `foo_bar:capability` entity refs to camelCase. Leaves MCP tools on `kody.mcp` unchanged.',
+		'Rewrite snake_case `kody.foo_bar` / `kody["foo_bar"]` calls and `capability:foo_bar` entity refs to camelCase. Leaves MCP tools on `kody.mcp` unchanged.',
 	detect: detectSnakeCaseKodyMembers,
 	transform: transformSnakeCaseKodyMembers,
 }

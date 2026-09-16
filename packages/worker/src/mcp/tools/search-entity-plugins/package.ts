@@ -459,10 +459,10 @@ export const packageSearchEntityPlugin = {
 			match.listingAhead === true ? ` ${listingAheadSearchNotice}` : ''
 		const nextStep =
 			primaryAction && primaryActionFunction
-				? `Use ${primaryActionFunction.usage}; inspect search({ entity: "${match.kodyId}:package" }) only if you need more exports.${platformSuffix}${listingAheadSuffix}`
+				? `Use ${primaryActionFunction.usage}; inspect search({ entity: "package:${match.kodyId}" }) only if you need more exports.${platformSuffix}${listingAheadSuffix}`
 				: match.hasApp
-					? `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, jobs, and the hosted app URL.${platformSuffix}${listingAheadSuffix}`
-					: `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.name, '.')}".${platformSuffix}${listingAheadSuffix}`
+					? `Inspect package detail with search({ entity: "package:${match.kodyId}" }) to review exports, jobs, and the hosted app URL.${platformSuffix}${listingAheadSuffix}`
+					: `Inspect package detail with search({ entity: "package:${match.kodyId}" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.name, '.')}".${platformSuffix}${listingAheadSuffix}`
 		return {
 			type: 'package',
 			id: match.kodyId,

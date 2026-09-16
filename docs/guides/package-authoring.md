@@ -25,7 +25,7 @@ publish requires both files.
 
 Unique Dynamic Worker days and how the acting user plus a stable module graph
 reuse one isolate per UTC day are documented once in
-[Platform efficiency](./platform-efficiency.md) (`platform_efficiency:guide`).
+[Platform efficiency](./platform-efficiency.md) (`guide:platform_efficiency`).
 Package README and AGENTS.md files do not repeat that cost model.
 
 ## Choose an authoring lane
@@ -190,7 +190,7 @@ same as a missing README `## Intent` section.
 ## Package app routing
 
 Hosted-app session handoff, `packageAppFetch` smoke tests, asset URLs, and lean
-forks are the [Package apps](./package-apps.md) playbook (`package_apps:guide`).
+forks are the [Package apps](./package-apps.md) playbook (`guide:package_apps`).
 This section is the mount-prefix recipe those pages share.
 
 Production-hosted package apps live at
@@ -309,7 +309,7 @@ works in ad hoc `execute`.
 
 Do not vendor the library, switch to a dynamic import, or skip checks. Keep the
 Kody package as a thin orchestrator and run the heavy work in a process the
-owner operates. Open `search({ entity: "heavy_work_offload:guide" })`.
+owner operates. Open `search({ entity: "guide:heavy_work_offload" })`.
 
 ## Secret-using packages
 
@@ -320,8 +320,8 @@ from user-secret grants.
 When a package will use user-scoped secrets (`{{secret:name}}` placeholders or
 `kody.secretMounts`):
 
-1. Ensure each secret exists (open `search({ entity: "connect_secret:guide" })`
-   / `search({ entity: "secret_backed_integration:guide" })`).
+1. Ensure each secret exists (open `search({ entity: "guide:connect_secret" })`
+   / `search({ entity: "guide:secret_backed_integration" })`).
 2. Self-authored packages and community forks adopted with `communityForkAdopt`
    after a real source review get automatic read/use access to user secrets
    (host approval still applies; `secretSet` / `secretDelete` still need an
@@ -365,7 +365,7 @@ irreversible-side-effect guard when a smoke test should stay safe.
    needs. Confirm `{ status, headers, body, truncated }` and any
    `packageStorage()` side effects. See
    [Package app fetch](../use/package-app-fetch.md) and the
-   [Package apps](./package-apps.md) playbook (`package_apps:guide`).
+   [Package apps](./package-apps.md) playbook (`guide:package_apps`).
 4. **Subscriptions** — from interactive MCP, `packageSubscriptionDispatch` with
    the scoped name (or `package_id` when the name is not known), `topic`, and
    exactly one of `params` (fixture) or `email_message_id` (stored-mail replay)

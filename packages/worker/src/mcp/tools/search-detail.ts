@@ -40,7 +40,7 @@ export async function resolveEntityDetail(input: {
 	const ref = parseEntityRef(input.entity)
 	if (ref.section && ref.type !== 'guide' && ref.type !== 'package') {
 		throw new McpCallerError(
-			'Section fragments are only supported on guide and package entities. Use "{id}:guide#{heading}" or "{id}:package#{subpath}".',
+			'Section fragments are only supported on guide and package entities. Use "guide:{id}#{heading}" or "package:{id}#{subpath}".',
 		)
 	}
 	if (ref.type === 'mcp-server') {

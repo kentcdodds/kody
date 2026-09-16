@@ -3,7 +3,7 @@
 Kody exposes **search** and **execute** as the main tools. The agent should
 **search first** to find the right capability, official guide, package,
 integration, or secret reference, then run work through **execute**. Official
-guides load with `search({ entity: "{id}:guide" })` — not execute.
+guides load with `search({ entity: "guide:{id}" })` — not execute.
 
 ## Habits that help
 
@@ -35,7 +35,7 @@ guides load with `search({ entity: "{id}:guide" })` — not execute.
   exists. See [Public packages](./community-packages.md).
 - **Bootstrap integration-backed work before building.** When a package, package
   app, or workflow depends on OAuth, a saved secret, or a third-party API, use
-  `search({ entity: "integration_bootstrap:guide" })` first. Confirm the
+  `search({ entity: "guide:integration_bootstrap" })` first. Confirm the
   integration or secret exists, run a cheap authenticated smoke test in
   `execute`, then prefer a community fork before building the downstream
   artifact.

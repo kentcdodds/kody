@@ -26,12 +26,12 @@ test('0009 recases snake_case kody members, brackets, and entity refs, and leave
 			'\tawait kody.email_send({ subject: "hi" })',
 			'\tawait kody["package_get"]({ package_id: "demo" })',
 			'\tawait kody.mcp["home"].set_pin({ pin: "1" })',
-			'\treturn "email_send:capability"',
+			'\treturn "capability:email_send"',
 			'}',
 			'',
 		].join('\n'),
 		'README.md':
-			'Call `kody.secret_list({})` or search `secret_list:capability`.\n',
+			'Call `kody.secret_list({})` or search `capability:secret_list`.\n',
 	}
 
 	expect(snakeCaseKodyMembersCodemod.detect(files)).toEqual(
@@ -54,11 +54,11 @@ test('0009 recases snake_case kody members, brackets, and entity refs, and leave
 	expect(result.files['index.ts']).toContain(
 		'kody.mcp["home"].set_pin({ pin: "1" })',
 	)
-	expect(result.files['index.ts']).toContain('"emailSend:capability"')
+	expect(result.files['index.ts']).toContain('"capability:emailSend"')
 	expect(result.files['index.ts']).not.toContain('kody.email_send')
 	expect(result.files['index.ts']).not.toContain('kody["package_get"]')
 	expect(result.files['README.md']).toContain('kody.secretList({})')
-	expect(result.files['README.md']).toContain('secretList:capability')
+	expect(result.files['README.md']).toContain('capability:secretList')
 
 	const again = snakeCaseKodyMembersCodemod.transform(result.files)
 	expect(again.changed).toBe(false)
@@ -91,10 +91,10 @@ test('0009 recases leftover ambient kody.foo_bar without a kody:runtime import',
 test('0009 detect does not skip a later file after a global entity-ref match', () => {
 	const files = {
 		'package.json': manifest(),
-		'broken.ts': 'export default function broken( {\nemail_send:capability\n',
+		'broken.ts': 'export default function broken( {\ncapability:email_send\n',
 		'refs.ts': [
 			'export default function note() {',
-			'\treturn "package_get:capability"',
+			'\treturn "capability:package_get"',
 			'}',
 			'',
 		].join('\n'),
@@ -110,7 +110,7 @@ test('0009 detect does not skip a later file after a global entity-ref match', (
 		]),
 	)
 	const result = snakeCaseKodyMembersCodemod.transform(files)
-	expect(result.files['refs.ts']).toContain('"packageGet:capability"')
+	expect(result.files['refs.ts']).toContain('"capability:packageGet"')
 	expect(result.needsManual).toEqual([
 		{
 			path: 'broken.ts',

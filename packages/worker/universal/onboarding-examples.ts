@@ -91,7 +91,7 @@ function exampleImportHint(scopedName: string, kodyId: string): string {
 		case 'personal-capture':
 			return `${searchHint} Example: import capture from "${specifier}/capture" then await capture({ text: "Onboarding first build" }), then import listCaptures from "${specifier}/listCaptures" then await listCaptures({ limit: 5 }).`
 		default:
-			return `${searchHint} Open search({ entity: "${kodyId}:package#<subpath>" }) for one export contract, or packageGet for the full export array and secret metadata (it does not return files). Open a repo session and repoReadFile README.md and AGENTS.md, then statically import one export from its scoped kody: module specifier.`
+			return `${searchHint} Open search({ entity: "$package:{kodyId}#<subpath>" }) for one export contract, or packageGet for the full export array and secret metadata (it does not return files). Open a repo session and repoReadFile README.md and AGENTS.md, then statically import one export from its scoped kody: module specifier.`
 	}
 }
 
@@ -120,7 +120,7 @@ export function buildOnboardingExamplePrompt(input: {
 export function buildOnboardingPackageAuthoringPrompt(kodyId: string): string {
 	return [
 		`Help me change my Kody package "${kodyId}" or create a new package.`,
-		'First open search({ entity: ["package_authoring:guide", "package_lifecycle:guide"] }).',
+		'First open search({ entity: ["guide:package_authoring", "guide:package_lifecycle"] }).',
 		`Then call packageGetGitRemote({ create: true, kody_id: ${JSON.stringify(kodyId)} }) or pass the matching @owner/leaf in leftover kody_id so we can work in the package repository.`,
 		'Ask what I want the package to do, then follow the guides.',
 	].join(' ')

@@ -25,7 +25,7 @@ To add a search entity:
    - Always required for any list/result type (including result-only types such
      as `retriever_result` and `domain`): `SearchMatchType`, `SearchMatch`, and
      `SlimSearchMatch`.
-   - Entity-backed only (types accepted by `{id}:{type}` / entity detail):
+   - Entity-backed only (types accepted by `{type}:{id}` / entity detail):
      `SearchEntityType`, `SearchEntityDetail`, and related
      `SearchEntityDetailStructured` variants as needed.
 6. Update Markdown list formatting in `search-format-list.ts`
@@ -34,16 +34,18 @@ To add a search entity:
 7. Teach `resolveEntityDetail` in `search-detail.ts` how to load that entity
    when `search({ entity })` should support it (skip for result-only types such
    as `retriever_result`).
-8. Update `parseEntityRef` in `search-format-helpers.ts` so `{id}:{type}`
-   parsing accepts the new entity-backed type. Guide and package entity refs
-   also accept a hash fragment (`{id}:guide#{slug}`, `{id}:package#{subpath}`);
-   other types reject fragments in `resolveEntityDetail`.
+8. Update `parseEntityRef` in `search-format-helpers.ts` so `{type}:{id}`
+   parsing accepts the new entity-backed type (first `:` is the type; the id may
+   contain colons). Reject leftover `{id}:{type}` refs with an error that shows
+   the new shape. Guide and package entity refs also accept a hash fragment
+   (`guide:{id}#{slug}`, `package:{id}#{subpath}`); other types reject fragments
+   in `resolveEntityDetail`.
 9. For entity-backed types, update the public allowed-type lists so agents and
    docs stay in sync:
    - `search-tool-definition.ts` (tool description and `entity` input schema
-     copy that enumerates `capability` | `guide` | `integration` | `package` |
-     `secret`)
-   - `docs/use/search.md` (user-facing `{id}:{type}` type list)
+     copy that enumerates `capability` | `guide` | `integration` | `mcp-server`
+     | `package` | `secret`)
+   - `docs/use/search.md` (user-facing `{type}:{id}` type list)
 10. Add or update `search-entity-registry.node.test.ts` to prove the registry
     order and whether the type is entity-backed.
 

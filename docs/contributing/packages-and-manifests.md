@@ -78,7 +78,7 @@ Important behavior:
   publish that will only fail later at runtime.
 - An isolate memory or CPU reset during bundle validation is the same class of
   failure: the npm graph does not fit a Worker isolate. The check message points
-  at `search({ entity: "heavy_work_offload:guide" })`.
+  at `search({ entity: "guide:heavy_work_offload" })`.
 - Runtime execution does not invent a new dependency policy or ask callers to
   choose one. Dependency handling is part of the saved-package pipeline itself.
 
@@ -705,9 +705,9 @@ Search returns packages as the saved-entity unit.
 
 Package detail should expose nested exports, nested jobs, tags, and app
 presence. Search should not frame exports or jobs as separate top-level saved
-entities. The slim `{id}:package` index stays an index; one export contract
+entities. The slim `package:{id}` index stays an index; one export contract
 opens with the same package entity plus a subpath fragment
-(`{id}:package#{subpath}`).
+(`package:{id}#{subpath}`).
 
 Saved packages carry a user-scoped **`hidden`** flag in `saved_packages` (set
 via **`packageUpdate`** with `changes.hidden`). Ranked search excludes hidden

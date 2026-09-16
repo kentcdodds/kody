@@ -509,7 +509,7 @@ export type SearchEntityDetail =
 			/** Platform (built-in) scope username when owned by a platform account. */
 			platformScope?: string | null
 			listingAhead: boolean | null
-			/** Export subpath when opening `{id}:package#{subpath}`. */
+			/** Export subpath when opening `package:{id}#{subpath}`. */
 			section?: string
 	  }
 	| {

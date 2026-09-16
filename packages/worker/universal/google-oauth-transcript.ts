@@ -67,11 +67,11 @@ const connectOauthUrl =
 
 const codingGuideSearchMarkdown = `# Search results
 
-For full detail on entity-backed hits, call \`search\` with \`entity: "{id}:{type}"\`.
+For full detail on entity-backed hits, call \`search\` with \`entity: "{type}:{id}"\`.
 
-1. **guide** Connect Google (Gmail, Calendar, Drive) — Bring-your-own OAuth client, Google Auth Platform console steps, and the Testing-status refresh-token trap. Entity: \`provider_google:guide\`
-2. **guide** OAuth guide (standard path) — Hosted \`/connect/oauth\`, redirect URI, PKCE vs confidential. Entity: \`oauth:guide\`
-3. **guide** Integration bootstrap guide — Inspect integration/secret state, then run an authenticated smoke test. Entity: \`integration_bootstrap:guide\``
+1. **guide** Connect Google (Gmail, Calendar, Drive) — Bring-your-own OAuth client, Google Auth Platform console steps, and the Testing-status refresh-token trap. Entity: \`guide:provider_google\`
+2. **guide** OAuth guide (standard path) — Hosted \`/connect/oauth\`, redirect URI, PKCE vs confidential. Entity: \`guide:oauth\`
+3. **guide** Integration bootstrap guide — Inspect integration/secret state, then run an authenticated smoke test. Entity: \`guide:integration_bootstrap\``
 
 const googleOauthGuideMarkdown = `# Guide — \`provider_google\`
 
@@ -79,7 +79,7 @@ Verified walkthrough for connecting Google to Kody.
 
 ## Summary
 
-- Entity: \`provider_google:guide\`
+- Entity: \`guide:provider_google\`
 - Category: \`provider\`
 - Web: \`/docs/google\`
 
@@ -97,7 +97,7 @@ START HERE for third-party OAuth: hosted \`/connect/oauth\`.
 
 ## Summary
 
-- Entity: \`oauth:guide\`
+- Entity: \`guide:oauth\`
 - Category: \`platform\`
 - Web: \`/docs/oauth\`
 
@@ -117,7 +117,7 @@ START HERE when a third-party integration must work before saving a dependent pa
 
 ## Summary
 
-- Entity: \`integration_bootstrap:guide\`
+- Entity: \`guide:integration_bootstrap\`
 - Category: \`platform\`
 - Web: \`/docs/integration-bootstrap\`
 
@@ -152,7 +152,7 @@ export const googleOauthTranscriptActs: Array<TranscriptAct> = [
 					{
 						name: 'search',
 						summary: 'Find official guides for Google Gmail OAuth',
-						note: 'Search ranks the Google, OAuth, and bootstrap guides as `{id}:guide` entities. No matching memory is required for this story. The `conversationId` is minted here so later calls in this chat stay cheap.',
+						note: 'Search ranks the Google, OAuth, and bootstrap guides as `guide:{id}` entities. No matching memory is required for this story. The `conversationId` is minted here so later calls in this chat stay cheap.',
 						inputs: [
 							{
 								name: 'query',
@@ -178,9 +178,9 @@ export const googleOauthTranscriptActs: Array<TranscriptAct> = [
 								kind: 'query',
 								lang: 'json',
 								value: jsonInput([
-									'provider_google:guide',
-									'oauth:guide',
-									'integration_bootstrap:guide',
+									'guide:provider_google',
+									'guide:oauth',
+									'guide:integration_bootstrap',
 								]),
 							},
 							conversationIdInput(conversationId),

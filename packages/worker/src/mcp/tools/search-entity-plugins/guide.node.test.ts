@@ -116,15 +116,15 @@ test('guide search entities rank advertised docs and open full markdown on entit
 		expect.objectContaining({
 			type: 'guide',
 			id: 'package_authoring',
-			entityRef: 'package_authoring:guide',
-			usage: 'search({ entity: "package_authoring:guide" })',
+			entityRef: 'guide:package_authoring',
+			usage: 'search({ entity: "guide:package_authoring" })',
 		}),
 	])
 
 	const markdown = formatSearchMarkdown({
 		matches: [authoringMatch!.match],
 	})
-	expect(markdown).toContain('package_authoring:guide')
+	expect(markdown).toContain('guide:package_authoring')
 
 	const { guides } = await importGuideCatalog()
 	const loaded =
@@ -145,7 +145,7 @@ test('guide search entities rank advertised docs and open full markdown on entit
 	expect(detail.structured).toMatchObject({
 		kind: 'entity',
 		type: 'guide',
-		entityRef: 'package_authoring:guide',
+		entityRef: 'guide:package_authoring',
 		body: loaded!.body,
 		bodyMode: 'full',
 		section: null,
@@ -172,7 +172,7 @@ test('guide search entities rank advertised docs and open full markdown on entit
 	})
 	expect(subscriptionsDetail.markdown).toContain('## Contents')
 	expect(subscriptionsDetail.markdown).toContain(
-		'package_subscriptions:guide#repo.pushed',
+		'guide:package_subscriptions#repo.pushed',
 	)
 	expect(subscriptionsDetail.markdown).not.toContain('type RepoPushedEvent')
 
@@ -191,7 +191,7 @@ test('guide search entities rank advertised docs and open full markdown on entit
 	expect(repoSection.structured).toMatchObject({
 		type: 'guide',
 		bodyMode: 'section',
-		entityRef: 'package_subscriptions:guide#repo.pushed',
+		entityRef: 'guide:package_subscriptions#repo.pushed',
 		section: { slug: 'repo.pushed' },
 	})
 	expect(repoSection.markdown).toContain('type RepoPushedEvent')
@@ -317,7 +317,7 @@ test('guide search entities rank advertised docs and open full markdown on entit
 	expect(assetUrls.structured).toMatchObject({
 		type: 'guide',
 		bodyMode: 'section',
-		entityRef: 'package_apps:guide#asset-urls',
+		entityRef: 'guide:package_apps#asset-urls',
 		section: { slug: 'asset-urls' },
 	})
 	expect(assetUrls.markdown).toContain('packageContext.appBasePath')

@@ -12,7 +12,7 @@ return or rank package-scoped secret references; call **`secretList`** or
 
 **Hidden saved packages** are excluded from ranked **query** results by default.
 Pass **`includeHiddenPackages: true`** to include them. Hiding is not deletion:
-known-id **`entity`** lookups (for example `my-package:package`),
+known-id **`entity`** lookups (for example `package:my-package`),
 **`packageList`**, and **`packageGet`** return hidden packages. Use
 **`packageUpdate`** with **`changes: { hidden: true }`** to hide a package (or
 `false` to unhide it). See [Packages](./packages.md#hidden-packages).
@@ -45,10 +45,10 @@ Task-specific queries ("send an email to Kent") keep returning ranked results.
 Connected MCP servers appear in ranked `search({ query })` as **mcp-server**
 hits: name, description, and server instructions when the remote server sent
 them. Individual tools (`mcp:home:set_pin`) do not fill unscoped results.
-Inspect the server with `search({ entity: "home:mcp-server" })` (or
+Inspect the server with `search({ entity: "mcp-server:home" })` (or
 `search({ domain: "mcp:home" })`) to list tools, then call
 `kody.mcp["home"].tool_name(args)`. Known tool entity refs such as
-`mcp:home:set_pin:capability` resolve.
+`capability:mcp:home:set_pin` resolve.
 
 When a saved package's id, name, tags, or README matches a connected MCP server,
 the package ranks with that server so a wrapper workflow stays visible.
@@ -115,17 +115,20 @@ a tight size budget does not drop them.
 ## Entity indexes and detail
 
 To inspect one hit, call **search** again with **`entity`** set to
-`"{id}:{type}"` where **`type`** is `capability`, `guide`, `integration`,
-`mcp-server`, `package`, or `secret`. Guide entities return the official
-markdown (the same bundled body as the web `/docs` pages) when it fits the
-search response budget. Oversized guides return a table of contents instead of
-truncating mid-document. Open one heading with `"{id}:guide#{slug}"` (for
-example `package_subscriptions:guide#repo.pushed`). Official guide headings
-themselves must fit the remaining budget after the search entity header
-(`kody-custom/no-oversized-guide-section`). Package entities use the same hash
-form for one export: `"{id}:package#{subpath}"` (for example
-`home-controls:package#bond-area-shades` or
-`home-controls:package#./bond-area-shades`). That heading returns the import
+`"{type}:{id}"` where **`type`** is `capability`, `guide`, `integration`,
+`mcp-server`, `package`, or `secret`. The first `:` is the type; the id may
+itself contain colons (`capability:mcp:home:set_pin`). The previous
+`{id}:{type}` form fails closed with an error that shows the new shape (for
+example use `package:home-controls`, not `home-controls:package`). Guide
+entities return the official markdown (the same bundled body as the web `/docs`
+pages) when it fits the search response budget. Oversized guides return a table
+of contents instead of truncating mid-document. Open one heading with
+`"guide:{id}#{slug}"` (for example `guide:package_subscriptions#repo.pushed`).
+Official guide headings themselves must fit the remaining budget after the
+search entity header (`kody-custom/no-oversized-guide-section`). Package
+entities use the same hash form for one export: `"package:{id}#{subpath}"` (for
+example `package:home-controls#bond-area-shades` or
+`package:home-controls#./bond-area-shades`). That heading returns the import
 specifier, JSDoc purpose, a ready-to-run **execute** snippet, `typeDefinition`,
 `functions` when the module is multi-callable, `referencedTypes`, and a JSDoc
 `@example` when present. Capability entities additionally include a ready-to-run
@@ -138,23 +141,23 @@ every ref fails, the tool returns an error result.
 
 Examples:
 
-- `package_authoring:guide`
-- `package_apps:guide#asset-urls`
-- `package_subscriptions:guide#repo.pushed`
-- `["package_authoring:guide", "package_lifecycle:guide"]`
-- `codingGuideGet:capability`
-- `["mcp:linear:create_issue:capability", "mcp:linear:get_issue:capability"]`
-- `github:integration`
-- `home:mcp-server`
-- `mcp:home:mcp-server`
-- `my-package:package`
-- `home-controls:package#bond-area-shades`
-- `550e8400-e29b-41d4-a716-446655440000:package`
-- `spotify:integration`
-- `githubPat:secret`
+- `guide:package_authoring`
+- `guide:package_apps#asset-urls`
+- `guide:package_subscriptions#repo.pushed`
+- `["guide:package_authoring", "guide:package_lifecycle"]`
+- `capability:codingGuideGet`
+- `["capability:mcp:linear:create_issue", "capability:mcp:linear:get_issue"]`
+- `integration:github`
+- `mcp-server:home`
+- `mcp-server:mcp:home`
+- `package:my-package`
+- `package:home-controls#bond-area-shades`
+- `package:550e8400-e29b-41d4-a716-446655440000`
+- `integration:spotify`
+- `secret:githubPat`
 
-Official guides are first-class entities. Ranked search can return `{id}:guide`
-hits; `search({ entity: "package_authoring:guide" })` returns the bundled
+Official guides are first-class entities. Ranked search can return `guide:{id}`
+hits; `search({ entity: "guide:package_authoring" })` returns the bundled
 markdown, or a contents index when that file exceeds the response budget. Prefer
 that over executing `codingGuideGet` just to read a guide. `codingGuideGet` is
 for execute-module code that needs the body programmatically and accepts the
@@ -164,11 +167,11 @@ There is **no separate `detail` flag** on search. Deeper inspection uses
 **`entity`**, not a different mode of the same ranked query.
 
 Top-level ranked result cards include an explicit entity ref for each hit when
-applicable, using that same `"{id}:{type}"` format, so you can immediately copy
+applicable, using that same `"{type}:{id}"` format, so you can immediately copy
 the ref into a follow-up `entity` lookup when needed.
 
 For synthesized MCP server tools, capability detail reports the **related
-operation count**. Use `search({ entity: "<name>:mcp-server" })` or
+operation count**. Use `search({ entity: "mcp-server:<name>" })` or
 `search({ domain })` to list siblings.
 
 Integration entity detail may include a small set of **related package
@@ -177,10 +180,10 @@ community listings whose name, package name leaf, or tags mention that provider,
 capped). Ranked query results stay lean and do not run community lookup or
 expand those suggestions.
 
-Package entity detail (`{id}:package`) is a slim index: summary, export subpaths
+Package entity detail (`package:{id}`) is a slim index: summary, export subpaths
 with one-line purposes, job and retriever names, and the README `Intent`
 section. Structured content mirrors that index and does not contain a full
-export tree. Open one export with `{id}:package#{subpath}` for that export's
+export tree. Open one export with `package:{id}#{subpath}` for that export's
 import specifier, types, and execute snippet. `packageGet` remains the bulk
 metadata API: full export array, provenance, and package-scoped secret FYI. When
 a community fork is outdated (the listing pin is not an ancestor of the fork
@@ -190,7 +193,7 @@ Ranked package hits include that same notice only when the fork is outdated.
 `packageGet` does not return files. For the full README, `AGENTS.md`, and
 source, open a repo session (`repoOpenSession` + `repoReadFile`) or clone with
 `packageGetGitRemote`. See [Repo sessions](./repo-sessions.md). Search
-`package_authoring:guide` for inbound webhooks and maintenance workflows.
+`guide:package_authoring` for inbound webhooks and maintenance workflows.
 
 Capability detail shows the exact runtime pattern for **execute**:
 
@@ -222,10 +225,10 @@ Saved **packages** require a signed-in MCP user. Capabilities and built-in
 behavior work without user-scoped data.
 
 Package and integration query hits stay summary-only. Exact package detail
-(`entity: "my-package:package"`) returns the package index described above.
-Exact package export detail (`entity: "my-package:package#export-name"`) returns
+(`entity: "package:my-package"`) returns the package index described above.
+Exact package export detail (`entity: "package:my-package#export-name"`) returns
 that one export contract. Exact integration detail
-(`entity: "github:integration"`) includes operational details such as token URL,
+(`entity: "integration:github"`) includes operational details such as token URL,
 API base URL, client id, and required hosts. Access and refresh tokens live on
 the connection — call **`createAuthenticatedFetch(name)`**. They do not appear
 as secret names.
@@ -247,14 +250,14 @@ OAuth apps, and `integrationTokenRefresh` for host-side metadata-only refresh).
 For a new provider, load `integration_bootstrap` and prefer `communitySearch`
 for a close helpers package before writing fetch code. For integrations.sh
 registry lookup, `communityFork` `@kody/integrations-sh`. See
-`search({ entity: "openapi_integrations:guide" })` (also at
+`search({ entity: "guide:openapi_integrations" })` (also at
 `/docs/openapi-integrations`) when the API publishes a spec. For a named
 bind-and-call surface, `communityFork` `@kody/openapi` into the user's account —
 person accounts cannot import `@kody/*` live.
 
 For integration-backed packages, package apps, or workflows, pair that discovery
-with `search({ entity: "integration_bootstrap:guide" })`. Inspect the relevant
+with `search({ entity: "guide:integration_bootstrap" })`. Inspect the relevant
 `integration` or `secret` entity, run one cheap authenticated **execute** smoke
 test, then build the downstream artifact. If setup is missing, open the official
-OAuth or secret-backed setup guide that matches the auth path (`oauth:guide`,
-`connect_secret:guide`, or a resolved `provider_<slug>:guide`).
+OAuth or secret-backed setup guide that matches the auth path (`guide:oauth`,
+`guide:connect_secret`, or a resolved `provider_<slug>:guide`).

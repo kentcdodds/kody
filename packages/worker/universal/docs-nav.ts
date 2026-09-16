@@ -3,7 +3,7 @@
  * JSON / `llms.txt` indexes, sitemap, and prev/next links).
  *
  * The docs are bundled from `docs/guides/**\/*.md` (see
- * `#worker/guides/catalog.ts`); MCP still addresses them as `{id}:guide`
+ * `#worker/guides/catalog.ts`); MCP still addresses them as `guide:{id}`
  * entities. This module owns only the reading order and grouping. Adding a
  * doc means adding its slug here (or to `unadvertisedDocSlugs`); the catalog
  * throws at module scope when a bundled guide is missing from both lists or

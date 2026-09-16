@@ -146,7 +146,7 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Provider-secret placeholders on the shared fetch-gateway path
 		// (bindings, grants, sealed resolve) plus the MCP OAuth sidecar
 		// preserve: local dry-run 5_088_887 bytes.
-		// Search package export headings (`{id}:package#{subpath}`) add a
+		// Search package export headings (`package:{id}#{subpath}`) add a
 		// few hundred bytes: local dry-run 5_095_156 bytes.
 		maxEntryBytes: 5_096_000,
 		forbiddenSources: [

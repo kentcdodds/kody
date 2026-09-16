@@ -42,7 +42,7 @@ Agent notes — for AI agents driving first-run from a copied onboarding prompt:
 
 This page is the first-run briefing for an agent already connected to a Kody
 account. People paste one short prompt on `/onboarding/step-2`. Agents retrieve
-this guide with `search({ entity: "onboarding:guide" })`.
+this guide with `search({ entity: "guide:onboarding" })`.
 
 ## What Kody is
 
@@ -86,9 +86,9 @@ Then follow the matching playbook. One small win, then send them to
 ### Check if a PR is ready to ship
 
 Same spirit as the homepage demo: one useful check becomes a durable package
-they can run from any agent. Open `search({ entity: "provider_github:guide" })`
-if they need a token, then `search({ entity: "package_lifecycle:guide" })` and
-`search({ entity: "package_authoring:guide" })`. Persist a small checklist
+they can run from any agent. Open `search({ entity: "guide:provider_github" })`
+if they need a token, then `search({ entity: "guide:package_lifecycle" })` and
+`search({ entity: "guide:package_authoring" })`. Persist a small checklist
 export (reviews, CI, mergeable). Smoke-test from execute, then save the package
 they own.
 
@@ -96,9 +96,9 @@ they own.
 
 Prefer an event that runs when they are not in chat. Ask which they care about
 first (CI failed, review requested, new Sentry issue). Open
-`search({ entity: "triggers:guide" })`. GitHub CI and review knocks are inbound
-webhooks (`provider_github:guide`, then mint a webhook). Sentry is the same
-inbound-webhook path. Use `package_subscriptions:guide` only for events Kody
+`search({ entity: "guide:triggers" })`. GitHub CI and review knocks are inbound
+webhooks (`guide:provider_github`, then mint a webhook). Sentry is the same
+inbound-webhook path. Use `guide:package_subscriptions` only for events Kody
 already emits (inbox, a run error). Name the event, persist a quiet handler,
 smoke-test once.
 
@@ -106,14 +106,14 @@ smoke-test once.
 
 They already have a skill.md, INTENT, or a prompt they paste every week. Turn
 _that_ into deterministic code they own — not a fork of `@kentcdodds/skills`.
-Open `search({ entity: "how_kody_works:guide" })` for the factory-loop shape,
-then `package_authoring:guide` and `package_lifecycle:guide`. One export that
+Open `search({ entity: "guide:how_kody_works" })` for the factory-loop shape,
+then `guide:package_authoring` and `guide:package_lifecycle`. One export that
 does the repeated job without a model in the loop.
 
 ### Wake my agent from email
 
 Forwarding mail into Kody is easy (`email.message.received` on
-`triggers:guide`). Waking _the agent_ only works when this host has an async
+`guide:triggers`). Waking _the agent_ only works when this host has an async
 wake path (cloud agent API, webhook, or wake URL). If the host is local-only
 with no wake API, say so in one sentence and help them pick another option — or
 build the email→event half now and defer the wake. Do not pretend a laptop agent
@@ -122,9 +122,9 @@ will answer mail while it is closed.
 ### Trigger Kody from Slack or Raycast
 
 A POST from Slack or Raycast should run a package they own, without opening this
-chat. Open `search({ entity: "triggers:guide" })` for inbound webhooks. Raycast
+chat. Open `search({ entity: "guide:triggers" })` for inbound webhooks. Raycast
 (or any CLI/shortcut) POSTs JSON to a minted webhook. Slack as a knock is the
-same webhook path; talking _to_ Slack later is `provider_slack:guide` and is a
+same webhook path; talking _to_ Slack later is `guide:provider_slack` and is a
 different job. Persist one webhook handler, mint the URL from package settings,
 and send one test POST.
 
@@ -184,11 +184,11 @@ Only set up a connection when their use needs one. Say the difficulty first.
   authorize quickly. Start here when a server exists.
 - **PAT / API key (harder, more powerful).** Store a token they already have as
   a secret. Packages can use it; you never read the value. Open
-  `search({ entity: "connect_secret:guide" })` or a resolved
+  `search({ entity: "guide:connect_secret" })` or a resolved
   `search({ entity: "provider_<slug>:guide" })`.
 - **OAuth (hardest, most powerful).** They register their own provider app and
   complete `/connect/oauth`. Use this when a key is not enough. Open
-  `search({ entity: "oauth:guide" })` or a resolved
+  `search({ entity: "guide:oauth" })` or a resolved
   `search({ entity: "provider_<slug>:guide" })`.
 
 Hosted / platform OAuth is not the onboarding path. New connects are
@@ -208,5 +208,5 @@ if they have none.
 The last onboarding beat is portability. Send them to `/onboarding/step-3` to
 connect a second agent from a different ecosystem. Connecting that second agent
 unlocks Standard free for 2 weeks (once per account). That new agent looks up
-`search({ entity: "portability:guide" })` and reuses the memory, package, or ask
+`search({ entity: "guide:portability" })` and reuses the memory, package, or ask
 you just made — one short proof. Do not restart setup.

@@ -139,7 +139,7 @@ test('package heading detail returns one export contract without packageGet', ()
 		kind: 'entity',
 		type: 'package',
 		detailMode: 'export',
-		entityRef: 'home-controls:package#bond-area-shades',
+		entityRef: 'package:home-controls#bond-area-shades',
 		packageId: 'package-home',
 		kodyId: 'home-controls',
 		name: '@user/home-controls',
@@ -286,15 +286,15 @@ test('unknown package export heading is a clear per-entity caller error', () => 
 	expect(() =>
 		formatEntityDetailMarkdown(createHomeControlsDetail('missing-export')),
 	).toThrow(
-		'Unknown export "missing-export" for home-controls:package. Available: ., ./bond-area-shades.',
+		'Unknown export "missing-export" for package:home-controls. Available: ., ./bond-area-shades.',
 	)
 	expect(
 		formatUnknownPackageExportError({
-			entityRef: 'home-controls:package',
+			entityRef: 'package:home-controls',
 			section: './ghost',
 			exports: [],
 		}),
-	).toBe('Unknown export "./ghost" for home-controls:package. Available: none.')
+	).toBe('Unknown export "./ghost" for package:home-controls. Available: none.')
 })
 
 test('oversized referenced types keep the signature and type names', () => {

@@ -9,14 +9,14 @@ optional first-win email guide share one contract:
 | ---------------------------------------- | ----------------------------------------------------------------------------------------- |
 | Wizard index `/onboarding`               | Redirects to the first unfinished step (Step 3 once Step 2 is done)                       |
 | Wizard Step 1 `/onboarding/step-1`       | Connect an MCP host                                                                       |
-| Wizard Step 2 `/onboarding/step-2`       | Make something useful (one prompt + first `search` + `onboarding:guide` first-win picker) |
-| Wizard Step 3 `/onboarding/step-3`       | Connect a second agent (same-ecosystem hosts greyed; `portability:guide`)                 |
+| Wizard Step 2 `/onboarding/step-2`       | Make something useful (one prompt + first `search` + `guide:onboarding` first-win picker) |
+| Wizard Step 3 `/onboarding/step-3`       | Connect a second agent (same-ecosystem hosts greyed; `guide:portability`)                 |
 | Checklist                                | Verify email, complete the three wizard steps, then persist a package                     |
 | [`first-win`](../../guides/first-win.md) | Optional email → reply → memories loop after a host is connected                          |
 
 Step 2 is one copy-paste prompt that tells the connected agent to retrieve
 [`onboarding`](../../guides/onboarding.md)
-(`search({ entity: "onboarding:guide" })`). The guide presents six concrete
+(`search({ entity: "guide:onboarding" })`). The guide presents six concrete
 first-win choices (PR readiness, an always-on ping, skill→owned package, email
 wake when the host can be woken, Slack/Raycast webhook, or something else) and
 the agent does one small win from their pick. The page shows a spinner until
@@ -29,7 +29,7 @@ Step 3 reuses the Step 1 agent picker. Hosts in the same vendor family as the
 first agent are greyed so the second connect is a different ecosystem. After the
 person picks a host, a short portability-proof prompt is folded into the same
 step so the new agent looks up [`portability`](../../guides/portability.md)
-(`search({ entity: "portability:guide" })`) and reuses what Step 2 made. When
+(`search({ entity: "guide:portability" })`) and reuses what Step 2 made. When
 the onboarding payload has a known memory subject or saved-package name, Step 3
 shows a short "You made …" chip (truncated subject and `@scope/kody-id`, or
 hidden if nothing sensible). `hasSecondMcpClient` is unique inbound OAuth
@@ -48,7 +48,7 @@ sort, best-effort labels, and per-`clientId` revoke. That list is not
 
 `first-win` is not a wizard step and is not a checklist item. Signed-in
 `/onboarding` does not probe Mailbox for that loop. MCP registers
-`onboarding_first_win` and `search({ entity: "first_win:guide" })` serves the
+`onboarding_first_win` and `search({ entity: "guide:first_win" })` serves the
 guide.
 
 Waiting (`/account/waiting` and `waitingSummary`) is a separate current-state

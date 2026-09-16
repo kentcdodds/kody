@@ -484,7 +484,7 @@ This boundary is enforced structurally:
 
 1. **The permission vocabulary cannot express general user content access.**
    `permissionEntities` contains only `user` and `role`, so a guard like
-   `requireUserWithPermission(..., 'read:secret:any')` is a compile error.
+   `requireUserWithPermission(..., 'secret:read:any')` is a compile error.
 2. **Admin account queries touch identity tables only.** `/admin/users*.json`
    and role handlers select explicit column lists from `users`, `user_roles`,
    and `roles`. They never join user content tables. `/admin/system-email*.json`

@@ -177,7 +177,7 @@ fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
   (`mcp:<server-name>:<tool>`), marked `source: 'mcp-server'`. Unscoped
   `search({ query })` ranks the **server** (name, description, and remote
   instructions) as an `mcp-server` entity, not every tool. List tools with
-  `search({ entity: "<name>:mcp-server" })` or
+  `search({ entity: "mcp-server:<name>" })` or
   `search({ domain: "mcp:<name>" })`.
 - Execute: the `kody.mcp` proxy exposes tools as
   `kody.mcp["<server-name>"].<tool>(input)` and never as flat `kody.*`

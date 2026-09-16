@@ -3,7 +3,7 @@ id: portability
 title: Second agent: reuse what already exists
 summary:
   Second-agent proof after a first win. Find what the account already has, reuse
-  it once, and stop. Retrieved as portability:guide from Step 3.
+  it once, and stop. Retrieved as guide:portability from Step 3.
 category: platform
 audience: agents
 ---
@@ -12,7 +12,7 @@ audience: agents
 
 This page is the second-agent briefing. People paste one short prompt on
 `/onboarding/step-3`. Agents retrieve this guide with
-`search({ entity: "portability:guide" })`.
+`search({ entity: "guide:portability" })`.
 
 ## Job
 
@@ -29,7 +29,7 @@ citation is the proof that Kody traveled with the person.
 ## When reuse finds nothing
 
 If search finds no memory and no package to reuse, open
-`search({ entity: "onboarding:guide" })` and help them make one small useful
+`search({ entity: "guide:onboarding" })` and help them make one small useful
 thing. Then reuse that here.
 
 ## What a proof looks like

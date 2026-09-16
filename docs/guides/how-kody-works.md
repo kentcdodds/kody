@@ -26,9 +26,9 @@ Agent notes — for AI agents explaining or recreating this loop:
   kody-bot as the favorite bot) as a compact subject and summary
   one-liner. Later retrievals can repeat that one-liner.
 - Before creating the package, search `{ query: "package authoring lifecycle",
-  domain: "coding" }` to find `package_authoring:guide` and
-  `package_lifecycle:guide`, then `search` with
-  `entity: ["package_authoring:guide", "package_lifecycle:guide"]`. Coding agents
+  domain: "coding" }` to find `guide:package_authoring` and
+  `guide:package_lifecycle`, then `search` with
+  `entity: ["guide:package_authoring", "guide:package_lifecycle"]`. Coding agents
   then use the git lane:
   `packageGetGitRemote({ create: true, kody_id: '@owner/leaf', description })`
   (or the name leaf in leftover `kody_id`), clone via `setup_commands`, write
@@ -69,7 +69,7 @@ This page is the playbook. The same story is an interactive transcript at
    releases and new public repositories.
 2. **Save the answer shape.** Offer to make it a package. After they say yes,
    search the `coding` domain for official guides, open
-   `package_authoring:guide` and `package_lifecycle:guide`, then create a
+   `guide:package_authoring` and `guide:package_lifecycle`, then create a
    package with a callable export via the git lane (coding agents) or
    `packageSave` (tool-only). The export returns the list (or "nothing new") and
    records the newest event id in `packageStorage()`.

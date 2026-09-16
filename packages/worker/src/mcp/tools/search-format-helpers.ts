@@ -26,8 +26,20 @@ export function buildEntityRef(
 	type: SearchEntityType,
 	section?: string,
 ) {
-	const ref = `${id}:${type}`
+	const ref = `${type}:${id}`
 	return section ? `${ref}#${section}` : ref
+}
+
+export function formatLegacySearchEntityRefError(input: {
+	id: string
+	type: SearchEntityType
+	section?: string
+}) {
+	const next = buildEntityRef(input.id, input.type, input.section)
+	const previous = input.section
+		? `${input.id}:${input.type}#${input.section}`
+		: `${input.id}:${input.type}`
+	return `Entity refs are "{type}:{id}". Use ${JSON.stringify(next)}, not ${JSON.stringify(previous)}.`
 }
 
 export function buildCapabilityUsage(spec: {
@@ -81,11 +93,11 @@ export function buildPackageSourceFollowUp(input: {
 	packageId: string
 	kodyId: string
 }) {
-	const headingCall = `search({ entity: ${JSON.stringify(`${input.kodyId}:package#<subpath>`)} })`
+	const headingCall = `search({ entity: ${JSON.stringify(`package:${input.kodyId}#<subpath>`)} })`
 	const packageGetCall = `packageGet({ package_id: ${JSON.stringify(input.packageId)} })`
 	const sessionCall = `repoOpenSession({ target: { kind: "package", package_id: ${JSON.stringify(input.packageId)} } })`
 	const gitLaneCall = `packageGetGitRemote({ package_id: ${JSON.stringify(input.packageId)} })`
-	return `Open one export with ${headingCall} for its import specifier, types, and execute snippet. ${packageGetCall} returns the full export array plus package-scoped secret metadata. That call does not return files. For the full README.md, AGENTS.md, and source, open a repo session with ${sessionCall} then repoReadFile({ session_id, path: "README.md" }) and repoReadFile({ session_id, path: "AGENTS.md" }) (browse other files with repoTree). Discard the session with repoDiscardSession when finished. If you have a local git client, call ${gitLaneCall} instead and clone. search({ entity: "package_authoring:guide" }) covers inbound webhooks and maintenance workflows.`
+	return `Open one export with ${headingCall} for its import specifier, types, and execute snippet. ${packageGetCall} returns the full export array plus package-scoped secret metadata. That call does not return files. For the full README.md, AGENTS.md, and source, open a repo session with ${sessionCall} then repoReadFile({ session_id, path: "README.md" }) and repoReadFile({ session_id, path: "AGENTS.md" }) (browse other files with repoTree). Discard the session with repoDiscardSession when finished. If you have a local git client, call ${gitLaneCall} instead and clone. search({ entity: "guide:package_authoring" }) covers inbound webhooks and maintenance workflows.`
 }
 
 export function buildCapabilityExecuteExample(spec: CapabilitySpec) {
@@ -194,35 +206,48 @@ export function parseEntityRef(entity: string): {
 	section?: string
 } {
 	const trimmed = entity.trim()
-	const hash = trimmed.lastIndexOf('#')
-	const colon = trimmed.lastIndexOf(':')
-	const hasSectionFragment = hash > colon && colon > 0
+	const hash = trimmed.indexOf('#')
+	const hasSectionFragment = hash >= 0
 	const section = hasSectionFragment
 		? decodeEntitySection(trimmed.slice(hash + 1))
 		: undefined
 	const withoutSection = hasSectionFragment ? trimmed.slice(0, hash) : trimmed
-	const separator = withoutSection.lastIndexOf(':')
-	if (separator <= 0 || separator === withoutSection.length - 1) {
+	const firstColon = withoutSection.indexOf(':')
+	if (firstColon <= 0 || firstColon === withoutSection.length - 1) {
 		throw new McpCallerError(
-			`Entity must use the format "{id}:{type}" where type is ${formatSearchEntityRefTypeList()}.`,
+			`Entity must use the format "{type}:{id}" where type is ${formatSearchEntityRefTypeList()}.`,
 		)
 	}
-	const id = withoutSection.slice(0, separator).trim()
-	const type = withoutSection.slice(separator + 1).trim()
-	if (!isSearchEntityRefType(type)) {
+	const firstSegment = withoutSection.slice(0, firstColon).trim()
+	const rest = withoutSection.slice(firstColon + 1).trim()
+	if (isSearchEntityRefType(firstSegment)) {
+		if (!rest) {
+			throw new McpCallerError('Entity id must not be empty.')
+		}
+		if (hasSectionFragment && !section) {
+			throw new McpCallerError(
+				'Section fragment after "{type}:{id}#" must not be empty.',
+			)
+		}
+		return section
+			? { id: rest, type: firstSegment, section }
+			: { id: rest, type: firstSegment }
+	}
+	const lastColon = withoutSection.lastIndexOf(':')
+	const lastSegment = withoutSection.slice(lastColon + 1).trim()
+	const legacyId = withoutSection.slice(0, lastColon).trim()
+	if (isSearchEntityRefType(lastSegment) && legacyId) {
 		throw new McpCallerError(
-			`Entity type must be one of: ${formatSearchEntityRefTypeList()}.`,
+			formatLegacySearchEntityRefError({
+				id: legacyId,
+				type: lastSegment,
+				...(section ? { section } : {}),
+			}),
 		)
 	}
-	if (!id) {
-		throw new McpCallerError('Entity id must not be empty.')
-	}
-	if (hasSectionFragment && !section) {
-		throw new McpCallerError(
-			'Section fragment after "{id}:{type}#" must not be empty.',
-		)
-	}
-	return section ? { id, type, section } : { id, type }
+	throw new McpCallerError(
+		`Entity type must be one of: ${formatSearchEntityRefTypeList()}.`,
+	)
 }
 
 export function formatList(items: Array<string>) {

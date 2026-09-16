@@ -64,11 +64,11 @@ function createHomeRegistry() {
 }
 
 test('MCP server entities resolve by name or domain and list tools with instructions', () => {
-	expect(parseEntityRef('home:mcp-server')).toEqual({
+	expect(parseEntityRef('mcp-server:home')).toEqual({
 		id: 'home',
 		type: 'mcp-server',
 	})
-	expect(parseEntityRef('mcp:home:mcp-server')).toEqual({
+	expect(parseEntityRef('mcp-server:mcp:home')).toEqual({
 		id: 'mcp:home',
 		type: 'mcp-server',
 	})
@@ -128,12 +128,12 @@ test('MCP server entities resolve by name or domain and list tools with instruct
 	expect(detail.markdown).toContain(
 		'Use set_pin after unlocking the island router.',
 	)
-	expect(detail.markdown).toContain('home:mcp-server')
-	expect(detail.markdown).toContain('mcp:home:set_pin:capability')
+	expect(detail.markdown).toContain('mcp-server:home')
+	expect(detail.markdown).toContain('capability:mcp:home:set_pin')
 	expect(detail.markdown).toContain('kody.mcp["home"].set_pin(args)')
 	expect(detail.structured).toMatchObject({
 		type: 'mcp-server',
-		entityRef: 'home:mcp-server',
+		entityRef: 'mcp-server:home',
 		capabilityCount: 2,
 		instructions: 'Use set_pin after unlocking the island router.',
 	})
@@ -216,7 +216,7 @@ test('unscoped search ranks the MCP server instead of dumping every remote tool'
 				'Control lights, locks, and the island router PIN on the home LAN.',
 		}),
 	])
-	expect(unscopedHome.guidance).toContain('home:mcp-server')
+	expect(unscopedHome.guidance).toContain('mcp-server:home')
 
 	const unscopedPin = await searchUnified({
 		env: {} as Env,

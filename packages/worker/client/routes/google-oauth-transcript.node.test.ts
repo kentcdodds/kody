@@ -65,9 +65,9 @@ test('google oauth transcript covers discover, console, and connect', () => {
 				tool.inputs.some(
 					(input) =>
 						input.name === 'entity' &&
-						input.value.includes('provider_google:guide') &&
-						input.value.includes('oauth:guide') &&
-						input.value.includes('integration_bootstrap:guide'),
+						input.value.includes('guide:provider_google') &&
+						input.value.includes('guide:oauth') &&
+						input.value.includes('guide:integration_bootstrap'),
 				),
 		),
 	).toBe(true)

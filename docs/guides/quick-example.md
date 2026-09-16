@@ -17,7 +17,7 @@ Agent notes — for AI agents driving the first build from this page:
 
 - The person already connected a host on /onboarding/step-1 and may have
   pasted the Step 2 prompt (Make something useful). They run an owned copy, not
-  kody:@kody/*. Prefer `search({ entity: "onboarding:guide" })` if they are
+  kody:@kody/*. Prefer `search({ entity: "guide:onboarding" })` if they are
   still in first-run.
 - Your job is one useful execute call, a short result, then persist that
   working code as a package they own. That owned package is the point of Kody.

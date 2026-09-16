@@ -18,7 +18,7 @@ To add a new **search entity type** (not a capability), follow
 module under `packages/worker/src/mcp/tools/search-entity-plugins/`, one
 registration in `search-entity-registry.ts`, closed unions in
 `search-format-types.ts` (result unions for every list type; entity-backed
-detail unions only when `{id}:{type}` applies), Markdown list formatting in
+detail unions only when `{type}:{id}` applies), Markdown list formatting in
 `search-format-list.ts`, detail routing in `search-detail.ts`, and for
 entity-backed types the public allowed-type lists in `search-tool-definition.ts`
 and `docs/use/search.md` (plus `parseEntityRef`). Plugin `formatSlimMatch`
@@ -486,7 +486,7 @@ alias/deprecation machinery for a cleanup pass.
   the handler must validate the args explicitly before reading them.
 - MCP server capability entity ids use `mcp:<name>:<tool>` (for example
   `mcp:home:set_pin`). The connected server itself is
-  `search({ entity: "<name>:mcp-server" })` (for example `home:mcp-server`).
+  `search({ entity: "mcp-server:<name>" })` (for example `mcp-server:home`).
   Unscoped search ranks that server, not every discovered tool. In
   execute/runtime code, MCP tools are not flat functions. Use
   `kody.mcp["<name>"].<tool>(input)`, for example

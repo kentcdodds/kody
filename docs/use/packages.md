@@ -202,7 +202,7 @@ exhaustive.
   `packageGet` surface package descriptions, export descriptions, function
   signatures, JSDoc, type definitions, and FYI metadata for associated
   package-scoped secrets (names and `package_id`, never values). Search
-  `{id}:package#{subpath}` is the agent-facing door for one export contract.
+  `package:{id}#{subpath}` is the agent-facing door for one export contract.
   `packageGet` returns the full export array and secret FYI. `packageGet` does
   not return `README.md`, `AGENTS.md`, or source files. For those, open a repo
   session (`repoOpenSession` + `repoReadFile`) or clone with
@@ -343,7 +343,7 @@ when served inline in non-production). A Remix recipe that prefixes its route
 contract remounts the Request in the entry. See
 [Package app routing](../guides/package-authoring.md#package-app-routing) for
 the authoring example, and [Package apps](../guides/package-apps.md)
-(`package_apps:guide`) for the fetch contract, Remix recipe, session handoff,
+(`guide:package_apps`) for the fetch contract, Remix recipe, session handoff,
 `packageAppFetch`, asset URLs, and lean forks. Other saved-package runtime
 surfaces may omit these app-specific fields.
 
@@ -356,7 +356,7 @@ Use the package app model when the package needs:
 
 When a package app depends on OAuth, saved secrets, or a third-party API, run
 the integration bootstrap first: use `search` for the saved integration or
-secret reference, open `search({ entity: "integration_bootstrap:guide" })`, and
+secret reference, open `search({ entity: "guide:integration_bootstrap" })`, and
 complete a minimal authenticated `execute` smoke test before treating the app as
 ready.
 
@@ -367,7 +367,7 @@ A package app is a hosted Worker entry:
   handler (a function, `{ fetch }`, or a named `fetch` export). The host strips
   the app mount before forwarding. There is no runtime field; publish rejects
   `kody.app.runtime`. A leftover field on a published snapshot is ignored. Remix
-  is a recipe (`package_apps:guide#remix-recipe`): the platform supplies
+  is a recipe (`guide:package_apps#remix-recipe`): the platform supplies
   `remix/<subpath>` at the origin version as an optional convenience
 - Kody's runtime is available from `kody:runtime` (`packageStorage()`,
   `packageSecrets`, `kody`, `createAuthenticatedFetch`, `workflows`, and
@@ -547,7 +547,7 @@ Use:
   use the scoped name, or `package_id` when the name is not known.
 - `packageSave` to create or replace a saved package from a complete UTF-8 text
   file set when no local git client is available
-- `search({ entity: "{id}:package#{subpath}" })` for one export's import
+- `search({ entity: "package:{id}#{subpath}" })` for one export's import
   specifier, types, and execute snippet; `packageGet` and `packageList` for
   saved package metadata (full export array, secret FYI). They do not return
   files. For `README.md`, `AGENTS.md`, and source, open a repo session
@@ -670,7 +670,7 @@ package summary (`source_listing_id`, `listing_current`, `listing_name`,
 `listing_ahead`). Those fields are `null` for self-authored packages.
 `listing_ahead` is true only when the listing pin is not an ancestor of the fork
 tip. When `listing_ahead` is true, the owner profile, the listing page, package
-search, and `{package-name}:package` entity detail surface a **Fork outdated** /
+search, and `package:{package-name}` entity detail surface a **Fork outdated** /
 absorb next step. Full workflow:
 [Public packages → Forking a listing](./community-packages.md#forking-a-listing).
 

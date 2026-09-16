@@ -177,8 +177,8 @@ Omit the key for ordinary short calls; key-less execute stays on-failure-only so
 Activity is not flooded with successful one-offs.
 
 To read field shapes while coding, use **search** with
-**`entity: "{name}:capability"`** for builtin capability type definitions, or
-inspect the relevant saved package with **`entity: "{package-name}:package"`**.
+**`entity: "capability:{name}"`** for builtin capability type definitions, or
+inspect the relevant saved package with **`entity: "package:{package-name}"`**.
 Capability detail includes a complete **execute** module snippet; the runtime
 call itself is always through the imported `kody` object.
 

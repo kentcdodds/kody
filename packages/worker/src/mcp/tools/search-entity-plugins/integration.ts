@@ -140,7 +140,7 @@ export const integrationSearchEntityPlugin = {
 			authorization: match.authorization ?? null,
 			nextStep: match.lastAuthFailure?.reconnectable
 				? `${match.lastAuthFailure.why} ${match.lastAuthFailure.doLabel} at ${match.lastAuthFailure.reconnectHref}.`
-				: `Inspect integration detail with search({ entity: "${match.integrationName}:integration" }), then smoke-test with createAuthenticatedFetch('${match.integrationName}'). Do not persist tokens with secretSet or secretSetMany.`,
+				: `Inspect integration detail with search({ entity: "integration:${match.integrationName}" }), then smoke-test with createAuthenticatedFetch('${match.integrationName}'). Do not persist tokens with secretSet or secretSetMany.`,
 		}
 	},
 	formatEntityDetail(detail) {

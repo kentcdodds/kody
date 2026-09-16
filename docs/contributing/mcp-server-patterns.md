@@ -69,7 +69,7 @@ call returns belongs in the tool response (see
 
 **Retiring a primitive:** add one line to `retiringPrimitiveNotices` in
 `packages/worker/src/mcp/instructions/retiring-primitives.ts` and put the
-destination map in a `{id}:guide` search entity. Do not paste the migration
+destination map in a `guide:{id}` search entity. Do not paste the migration
 table into always-on instructions. Assembly includes a notice only for users who
 still have rows of that primitive (`loadActiveRetiringNoticeIds`). An empty
 active set omits the section.

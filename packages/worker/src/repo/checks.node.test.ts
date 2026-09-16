@@ -1940,6 +1940,6 @@ test('an isolate reset during a check phase becomes a failed check, not a crash'
 		"exceeded the isolated check runner's",
 	)
 	expect(bundleResult?.message).toContain(
-		'search({ entity: "heavy_work_offload:guide" })',
+		'search({ entity: "guide:heavy_work_offload" })',
 	)
 })

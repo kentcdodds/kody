@@ -92,7 +92,7 @@ Open these before proposing a new primitive, surface, or storage home.
   — do not re-attach `heykody.app`, `heykody.dev`, or `kodyapps.dev` as app,
   package-app, status, or email hosts
 - [0045 — Official guides load through search, not execute](./0045-guides-load-through-search.md)
-  — `{id}:guide` entity detail is the read path; do not execute `codingGuideGet`
+  — `guide:{id}` entity detail is the read path; do not execute `codingGuideGet`
   just to load a guide
 - [0046 — Community is the catalog; public is the visibility word](./0046-community-is-the-catalog.md)
   — no “community package” kind-name; do not rename `/community` or the MCP

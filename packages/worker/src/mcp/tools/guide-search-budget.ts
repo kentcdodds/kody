@@ -1,7 +1,7 @@
 import { docHref } from '#universal/docs-nav.ts'
 
 export const guideContentsModeLine =
-	'- Contents: oversized guide; open a heading with `{id}:guide#{slug}`'
+	'- Contents: oversized guide; open a heading with `guide:{id}#{slug}`'
 
 export function guideSectionModeLine(slug: string) {
 	return `- Section: \`${slug}\``
@@ -22,7 +22,7 @@ export function buildGuideDetailHeaderLines(input: {
 		'',
 		'## Summary',
 		'',
-		`- Entity: \`${input.id}:guide\``,
+		`- Entity: \`guide:${input.id}\``,
 		`- Category: \`${input.category}\``,
 		`- Web: \`${docHref(input.slug)}\``,
 		...(input.provider ? [`- Provider: ${input.provider}`] : []),
