@@ -167,3 +167,93 @@ test('OAuth provider saveTokens keeps a refresh token and discovery when the AS 
 	).toBeUndefined()
 	expect(await restored.tokens()).toBeUndefined()
 })
+
+test('OAuth invalidate infers a missing client id, drops leftover token blobs, and keeps a newer rotated grant', async () => {
+	const { storage, values } = createMemoryStorage()
+	const provider = createMcpClientOAuthProvider(
+		storage,
+		'https://kody.codes/account/mcp-servers/oauth/callback',
+	)
+	provider.serverId = 'server-home'
+	provider.clientId = 'client-1'
+	await provider.saveTokens({
+		access_token: 'old-at',
+		refresh_token: 'old-rt',
+		token_type: 'Bearer',
+	})
+	values.set('/Kody/server-home/client-stale/token', {
+		access_token: 'stale-at',
+		refresh_token: 'stale-rt',
+		token_type: 'Bearer',
+	})
+
+	const restored = createMcpClientOAuthProvider(
+		storage,
+		'https://kody.codes/account/mcp-servers/oauth/callback',
+	)
+	restored.serverId = 'server-home'
+	await restored.invalidateCredentials('tokens')
+	expect(values.get('/Kody/server-home/client-1/token')).toBeUndefined()
+	expect(values.get('/Kody/server-home/client-stale/token')).toBeUndefined()
+	expect(
+		values.get(mcpOAuthRefreshTokenStorageKey('server-home')),
+	).toBeUndefined()
+	expect(await restored.tokens()).toBeUndefined()
+
+	const rotating = createMcpClientOAuthProvider(
+		storage,
+		'https://kody.codes/account/mcp-servers/oauth/callback',
+	)
+	rotating.serverId = 'server-home'
+	rotating.clientId = 'client-1'
+	await rotating.saveTokens({
+		access_token: 'live-at',
+		refresh_token: 'live-rt',
+		token_type: 'Bearer',
+	})
+
+	let releaseSave: () => void = () => {}
+	let markSaveStarted: () => void = () => {}
+	const blockSave = new Promise<void>((resolve) => {
+		releaseSave = resolve
+	})
+	const saveStarted = new Promise<void>((resolve) => {
+		markSaveStarted = resolve
+	})
+	const originalPut = storage.put.bind(storage)
+	storage.put = async (key, value) => {
+		if (
+			typeof key === 'string' &&
+			key.endsWith('/token') &&
+			value &&
+			typeof value === 'object' &&
+			'refresh_token' in value &&
+			value.refresh_token === 'rotated-rt'
+		) {
+			markSaveStarted()
+			await blockSave
+		}
+		return originalPut(key, value)
+	}
+
+	const saveRotated = rotating.saveTokens({
+		access_token: 'rotated-at',
+		refresh_token: 'rotated-rt',
+		token_type: 'Bearer',
+	})
+	await saveStarted
+	const staleInvalidate = rotating.invalidateCredentials('tokens')
+	releaseSave()
+	await Promise.all([saveRotated, staleInvalidate])
+
+	expect(values.get('/Kody/server-home/client-1/token')).toMatchObject({
+		access_token: 'rotated-at',
+		refresh_token: 'rotated-rt',
+	})
+	expect(values.get(mcpOAuthRefreshTokenStorageKey('server-home'))).toEqual({
+		refresh_token: 'rotated-rt',
+	})
+	expect(await rotating.tokens()).toMatchObject({
+		refresh_token: 'rotated-rt',
+	})
+})

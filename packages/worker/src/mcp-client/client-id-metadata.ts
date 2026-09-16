@@ -90,8 +90,10 @@ type McpOAuthSaveTokens = Parameters<
  * the authorization server omits one, writes a server-scoped sidecar so
  * restore can find it when SQL `client_id` is missing, and keeps OAuth
  * discovery so the next authorize URL can still advertise scopes.
- * `invalidateCredentials` for `tokens`, `client`, or `all` deletes that
- * sidecar so a rejected grant cannot be replayed.
+ * `invalidateCredentials` for `tokens`, `client`, or `all` infers
+ * `clientId` when it is missing, deletes leftover `/token` keys and the
+ * sidecar so a rejected grant cannot be replayed, and skips a `tokens`
+ * wipe when a newer rotated refresh token already landed.
  */
 export function createMcpClientOAuthProvider(
 	storage: DurableObjectStorage,
@@ -161,14 +163,31 @@ function installMcpOAuthTokenPreservation(
 	}
 	if (invalidateCredentials) {
 		provider.invalidateCredentials = async (scope) => {
+			const rejectedRefreshToken =
+				scope === 'tokens'
+					? refreshTokenFromSources(
+							(await collectStoredMcpOAuthTokenSources(provider)).sources,
+						)
+					: null
 			const run = saveQueue.then(async () => {
-				const serverId = readProviderString(provider, 'serverId')
+				const stored = await collectStoredMcpOAuthTokenSources(provider)
+				if (
+					scope === 'tokens' &&
+					rejectedRefreshToken &&
+					refreshTokenFromSources(stored.sources) !== rejectedRefreshToken
+				) {
+					return
+				}
+				if (!readProviderString(provider, 'clientId') && stored.clientId) {
+					provider.clientId = stored.clientId
+				}
 				await invalidateCredentials(scope)
 				if (scope !== 'all' && scope !== 'client' && scope !== 'tokens') {
 					return
 				}
+				const serverId = readProviderString(provider, 'serverId')
 				if (!serverId) return
-				await provider.storage.delete(mcpOAuthRefreshTokenStorageKey(serverId))
+				await deleteStoredMcpOAuthTokenBlobs(provider, serverId)
 			})
 			saveQueue = run.then(
 				() => {},
@@ -251,6 +270,38 @@ async function collectStoredMcpOAuthTokenSources(
 		),
 		clientId: inferredClientId,
 	}
+}
+
+function refreshTokenFromSources(sources: ReadonlyArray<unknown>) {
+	for (const source of sources) {
+		const refreshToken = parseStoredMcpOAuthRefreshToken(source)
+		if (refreshToken) return refreshToken
+	}
+	return null
+}
+
+async function deleteStoredMcpOAuthTokenBlobs(
+	provider: DurableObjectOAuthClientProvider,
+	serverId: string,
+) {
+	const keys = [mcpOAuthRefreshTokenStorageKey(serverId)]
+	const prefix = mcpOAuthServerStoragePrefix({
+		clientName: mcpClientName,
+		serverId,
+	})
+	const entries = await provider.storage.list({ prefix })
+	for (const key of entries.keys()) {
+		if (
+			clientIdFromMcpOAuthTokenStorageKey({
+				clientName: mcpClientName,
+				serverId,
+				key,
+			})
+		) {
+			keys.push(key)
+		}
+	}
+	await provider.storage.delete(keys)
 }
 
 function readProviderString(
