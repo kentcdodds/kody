@@ -74,7 +74,7 @@ export const featureFlagDefinitions = [
 		key: 'package-share-grants',
 		defaultEnabled: false,
 		description:
-			'Person-to-person package share grants: invite, accept, UI, MCP, and runtime use of a shared package. Off by default so invite email cannot go live until an operator enables it. No success metric: this is a rollout kill switch, not an experiment.',
+			'Person-to-person package share grants: invite, accept, UI, MCP, and runtime use of a shared package. Off by default. Signed-in users can turn it on from /docs/package-sharing. No success metric: this is a rollout kill switch, not an experiment.',
 	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
