@@ -103,6 +103,16 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 		type: 'package',
 		section: './bond-area-shades',
 	})
+	expect(parseEntityRef('package:cpp-tools#./c++')).toEqual({
+		id: 'cpp-tools',
+		type: 'package',
+		section: './c++',
+	})
+	expect(parseEntityRef('guide:topic#hello%20world')).toEqual({
+		id: 'topic',
+		type: 'guide',
+		section: 'hello world',
+	})
 	expect(() => parseEntityRef('guide:package_subscriptions#')).toThrow(
 		/Section fragment/,
 	)

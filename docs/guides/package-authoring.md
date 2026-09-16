@@ -132,7 +132,7 @@ Call the root export from `execute` after publish.
 
 ## Export JSDoc
 
-Search detail (`entity: "…:package"`) shows an Exports table whose **Purpose**
+Search detail (`entity: "package:…"`) shows an Exports table whose **Purpose**
 column comes from each export's JSDoc. When JSDoc is missing, Purpose falls back
 to the generic string `Package export.` Agents skim that column first when
 choosing among sibling exports.

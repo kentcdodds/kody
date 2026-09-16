@@ -169,7 +169,7 @@ function decodeEntitySection(raw: string) {
 	const trimmed = raw.trim()
 	if (!trimmed) return undefined
 	try {
-		return decodeURIComponent(trimmed.replace(/\+/g, ' ')).trim() || undefined
+		return decodeURIComponent(trimmed).trim() || undefined
 	} catch {
 		return trimmed
 	}

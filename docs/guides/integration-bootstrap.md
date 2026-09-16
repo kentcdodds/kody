@@ -67,8 +67,8 @@ If those conditions are not met, stop and fix the integration first.
    - Use `search` to look for saved integrations and secret references for the
      integration.
    - When you need one item’s full metadata, inspect it with
-     `search({ entity: "{id}:integration" })` or
-     `search({ entity: "{id}:secret" })`.
+     `search({ entity: "integration:{id}" })` or
+     `search({ entity: "secret:{id}" })`.
 3. If the required integration or secret is missing, **stop**.
    - Surface the exact `/connect/oauth` or `/account/secrets/new` URL in chat.
      OAuth connections use a provider app the user registers (client ID, and
@@ -104,7 +104,7 @@ If those conditions are not met, stop and fix the integration first.
      `communitySearch` for a close helpers package (listing name, package name
      leaf, or tags must mention the connected provider) and a create-helpers
      path when none fits.
-   - `search({ entity: "<provider>:integration" })` may already surface a small
+   - `search({ entity: "integration:<provider>" })` may already surface a small
      same-provider package suggestion set (user packages first, else community
      listings). Use those when present.
    - Otherwise search the user's account for an existing package that wraps the
