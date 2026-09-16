@@ -13,12 +13,16 @@ import {
 import { AppRoot } from './app-root.tsx'
 import { ensureConstructableStylesheets } from './ensure-constructable-stylesheets.ts'
 import { ensureCryptoRandomUUID } from './ensure-crypto-random-uuid.ts'
+import { ensurePromiseWithResolvers } from './ensure-promise-with-resolvers.ts'
 
 // Remix frame ids call crypto.randomUUID(); some in-app browsers omit it.
 ensureCryptoRandomUUID()
 // Remix StyleManager uses `new CSSStyleSheet()` + adoptedStyleSheets; Safari
 // / iOS before 16.4 throw TypeError: Illegal constructor (KODY-CLOUDFLARE-63).
 ensureConstructableStylesheets()
+// Remix reconcile runtime calls Promise.withResolvers(); absent in Safari < 17
+// (e.g. iOS 11) — aborts client hydration (KODY-7P).
+ensurePromiseWithResolvers()
 initSentryClient(document)
 
 const clientRegistry: Record<string, typeof AppRoot> = {
