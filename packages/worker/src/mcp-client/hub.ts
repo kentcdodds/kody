@@ -31,6 +31,7 @@ import {
 import {
 	buildMcpOAuthMissingRefreshGrantLastError,
 	buildMcpOAuthTokenRecoveryLastError,
+	isMcpOAuthGrantIssueLastError,
 	isMcpOAuthMissingRefreshGrantLastError,
 	isMcpOAuthTokenRecoveryLastError,
 	mcpOAuthDiscoveryAdvertisesRefresh,
@@ -630,6 +631,11 @@ class McpClientHubBase extends DurableObject<Env> {
 		const oauthStorageSnapshot = await this.ctx.storage.list({
 			prefix: oauthStoragePrefix,
 		})
+		const sidecarKey = mcpOAuthRefreshTokenStorageKey(input.serverId)
+		const sidecarValue = await this.ctx.storage.get(sidecarKey)
+		if (sidecarValue !== undefined) {
+			oauthStorageSnapshot.set(sidecarKey, sidecarValue)
+		}
 
 		try {
 			await this.manager.removeServer(input.serverId)
@@ -709,6 +715,9 @@ class McpClientHubBase extends DurableObject<Env> {
 			if (key.endsWith('/token')) return false
 			return !key.endsWith('/client_info/') && !key.endsWith('/oauth_discovery')
 		})
+		if (input.clearClientRegistration) {
+			keys.push(mcpOAuthRefreshTokenStorageKey(input.serverId))
+		}
 		if (keys.length > 0) {
 			await this.ctx.storage.delete(keys)
 		}
@@ -726,8 +735,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		const existing = this.lastDiscoverErrors.get(serverId) ?? null
 		if (
 			options?.preserveTokenRecovery &&
-			(isMcpOAuthTokenRecoveryLastError(existing) ||
-				isMcpOAuthMissingRefreshGrantLastError(existing))
+			isMcpOAuthGrantIssueLastError(existing)
 		) {
 			return
 		}
@@ -1525,9 +1533,9 @@ class McpClientHubBase extends DurableObject<Env> {
 		const existing = this.lastDiscoverErrors.get(serverId) ?? null
 		const connection = this.manager.mcpConnections[serverId]
 		const liveMessage = connection?.connectionError ?? null
-		const liveLooksLikeRecovery =
+		const liveLooksLikeGrantIssue =
 			liveMessage != null &&
-			isMcpOAuthTokenRecoveryLastError({
+			isMcpOAuthGrantIssueLastError({
 				message: liveMessage,
 				phase: 'token exchange',
 				httpStatus: null,
@@ -1540,9 +1548,9 @@ class McpClientHubBase extends DurableObject<Env> {
 			})
 		if (
 			connection &&
-			(liveLooksLikeRecovery ||
+			(liveLooksLikeGrantIssue ||
 				(existing &&
-					isMcpOAuthTokenRecoveryLastError(existing) &&
+					isMcpOAuthGrantIssueLastError(existing) &&
 					liveMessage === existing.message))
 		) {
 			connection.connectionError = null
@@ -1671,6 +1679,8 @@ class McpClientHubBase extends DurableObject<Env> {
 			authUrl: row?.auth_url ?? null,
 			mcpEndpoint: row?.server_url ?? null,
 		})
+		const connection = this.manager.mcpConnections[serverId]
+		if (connection) connection.connectionError = lastError.message
 		this.lastDiscoverErrors.set(serverId, lastError)
 		await this.persistTokenRecoveryLastError(serverId, lastError)
 		console.warn('mcp oauth grant omitted advertised refresh token', {

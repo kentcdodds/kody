@@ -4,6 +4,7 @@ import {
 	buildMcpOAuthTokenRecoveryLastError,
 	clientIdFromMcpOAuthTokenStorageKey,
 	describeMcpOAuthTokenRecovery,
+	isMcpOAuthGrantIssueLastError,
 	isMcpOAuthMissingRefreshGrantLastError,
 	isMcpOAuthTokenRecoveryLastError,
 	mcpOAuthDiscoveryAdvertisesRefresh,
@@ -199,4 +200,6 @@ test('token recovery lastError names refresh failure without claiming IdP just s
 	expect(omitted.message).not.toContain('Authorization completed')
 	expect(isMcpOAuthMissingRefreshGrantLastError(omitted)).toBe(true)
 	expect(isMcpOAuthTokenRecoveryLastError(omitted)).toBe(false)
+	expect(isMcpOAuthGrantIssueLastError(omitted)).toBe(true)
+	expect(isMcpOAuthGrantIssueLastError(noRefresh)).toBe(true)
 })

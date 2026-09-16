@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import type * as CloudflareWorkers from 'cloudflare:workers'
+import { mcpOAuthRefreshTokenStorageKey } from './oauth-token-recovery.ts'
 
 type FakeServerRow = {
 	id: string
@@ -396,6 +397,9 @@ test('reconnect repairs stale callbacks and always replaces pending OAuth state'
 		client_id: 'stale-client',
 	})
 	values.set('/Kody/server-1/state/stale', { serverId: 'server-1' })
+	values.set(mcpOAuthRefreshTokenStorageKey('server-1'), {
+		refresh_token: 'old-rt',
+	})
 
 	const repaired = await hub.reconnectServer({
 		serverId: 'server-1',
@@ -423,6 +427,7 @@ test('reconnect repairs stale callbacks and always replaces pending OAuth state'
 	expect([...values.keys()].filter((key) => key.startsWith('/Kody/'))).toEqual(
 		[],
 	)
+	expect(values.has(mcpOAuthRefreshTokenStorageKey('server-1'))).toBe(false)
 
 	values.set('/Kody/server-1/client-1/client_info/', {
 		client_id: 'client-1',
@@ -460,6 +465,8 @@ test('failed replacement registration restores the saved server and OAuth state'
 	const stateKey = '/Kody/server-1/state/stale'
 	values.set(clientInfoKey, { client_id: 'stale-client' })
 	values.set(stateKey, { serverId: 'server-1' })
+	const sidecarKey = mcpOAuthRefreshTokenStorageKey('server-1')
+	values.set(sidecarKey, { refresh_token: 'old-rt' })
 	manager.registerFailuresRemaining = 1
 
 	await expect(
@@ -482,6 +489,7 @@ test('failed replacement registration restores the saved server and OAuth state'
 	)
 	expect(values.get(clientInfoKey)).toEqual({ client_id: 'stale-client' })
 	expect(values.get(stateKey)).toEqual({ serverId: 'server-1' })
+	expect(values.get(sidecarKey)).toEqual({ refresh_token: 'old-rt' })
 })
 
 test('replayed unusable callbacks leave past-OAuth server credentials intact', async () => {
@@ -1025,6 +1033,17 @@ test('ready grant without a refresh token warns when the authorization server ad
 		'mcp oauth grant omitted advertised refresh token',
 		expect.objectContaining({ serverId: 'server-1' }),
 	)
+	expect(connection.connectionError).toContain('advertised refresh tokens')
+
+	connection.options.transport.authProvider.storedTokens = {
+		access_token: 'at-new',
+		refresh_token: 'rt-new',
+	}
+	const afterRefresh = await hub.getSnapshot()
+	expect(afterRefresh.servers[0]?.hasRefreshToken).toBe(true)
+	expect(afterRefresh.servers[0]?.lastError).toBeNull()
+	expect(afterRefresh.servers[0]?.error).toBeNull()
+	expect(connection.connectionError).toBeNull()
 })
 
 test('snapshot after a prior ready connection parks authenticating with a durable token-recovery lastError', async () => {

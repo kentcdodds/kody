@@ -228,6 +228,15 @@ export function isMcpOAuthMissingRefreshGrantLastError(
 	return lastError.message.toLowerCase().includes('advertised refresh tokens')
 }
 
+export function isMcpOAuthGrantIssueLastError(
+	lastError: McpServerLastError | null,
+): boolean {
+	return (
+		isMcpOAuthTokenRecoveryLastError(lastError) ||
+		isMcpOAuthMissingRefreshGrantLastError(lastError)
+	)
+}
+
 export function buildMcpOAuthTokenRecoveryLastError(input: {
 	authUrl: string | null
 	mcpEndpoint?: string | null
