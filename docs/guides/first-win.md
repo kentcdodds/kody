@@ -20,10 +20,10 @@ Agent notes — for AI agents driving the optional email loop from this page:
 
 - Onboarding Step 1 is Connect your agent (`/onboarding/step-1`). Step 2 is Make
   something useful (`/onboarding/step-2`): one prompt that retrieves
-  `search({ entity: "onboarding:guide" })` and offers six first-win choices.
+  `search({ entity: "guide:onboarding" })` and offers six first-win choices.
   Step 3 is Connect a second agent
   (`/onboarding/step-3`) and reuses what Step 2 made via
-  `search({ entity: "portability:guide" })`. Hosted OAuth is not the
+  `search({ entity: "guide:portability" })`. Hosted OAuth is not the
   onboarding path. The optional climax after that is /docs/quick-example
   (ad hoc execute → persist → own). Use this guide only when the person wants
   the email-and-memories loop.
@@ -141,20 +141,20 @@ The email loop is done. Offer one concrete next step and let them choose:
 
 - **Make something useful.** If they have not finished onboarding Step 2, send
   them to `/onboarding/step-2` on the same origin this guide came from, or open
-  `search({ entity: "onboarding:guide" })`. After a first win, Step 3 is
+  `search({ entity: "guide:onboarding" })`. After a first win, Step 3 is
   `/onboarding/step-3` so a second agent can reuse that same thing
-  (`search({ entity: "portability:guide" })`), or
-  `search({ entity: "quick_example:guide" })` for one ad hoc execute then
+  (`search({ entity: "guide:portability" })`), or
+  `search({ entity: "guide:quick_example" })` for one ad hoc execute then
   persist.
 - **Ask what they want automated** and open
-  `search({ entity: "package_lifecycle:guide" })` to pick between a one-off
+  `search({ entity: "guide:package_lifecycle" })` to pick between a one-off
   `execute`, a community fork, and a new package.
 - **Bring their own OAuth app** to connect a service — open
-  `search({ entity: "oauth:guide" })`, or a resolved
-  `search({ entity: "provider_<slug>:guide" })`.
+  `search({ entity: "guide:oauth" })`, or a resolved
+  `search({ entity: "guide:provider_<slug>" })`.
 - **Bring their own API key or PAT** to connect a service — open
-  `search({ entity: "connect_secret:guide" })`, or a resolved
-  `search({ entity: "provider_<slug>:guide" })`.
+  `search({ entity: "guide:connect_secret" })`, or a resolved
+  `search({ entity: "guide:provider_<slug>" })`.
 
 ## Troubleshooting
 

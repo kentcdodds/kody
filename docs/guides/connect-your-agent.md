@@ -65,7 +65,7 @@ easily. Either kind can be first; the home is the same.
 
 Once the connection works, Step 2 (`/onboarding/step-2`) is one short prompt you
 paste into the agent you just connected. The agent loads the first-run briefing
-(`search({ entity: "onboarding:guide" })`), asks which of a few concrete first
+(`search({ entity: "guide:onboarding" })`), asks which of a few concrete first
 wins would help this week, and helps you make that one small useful thing in
 your Kody account: a package you can invoke from any agent, a subscription that
 runs when you are not in chat, or another small win from the list.
@@ -85,7 +85,7 @@ about you.
 Step 3 is where Kody earns the name. Pick an agent from a different ecosystem
 than the first (same-vendor hosts stay unavailable for this step), connect it
 the same way, then paste the portability prompt. The new agent loads
-`search({ entity: "portability:guide" })`, searches your account, and reuses the
+`search({ entity: "guide:portability" })`, searches your account, and reuses the
 memory or package you just made — in a different product, with no setup
 repeated.
 

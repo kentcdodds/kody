@@ -321,7 +321,7 @@ camelCase JavaScript identifiers:
 - Rewrites `kody.package_get(...)` and `kody["package_get"](...)` to
   `kody.packageGet(...)` in JavaScript and TypeScript modules, including
   leftover ambient `kody` calls that never imported `kody:runtime`.
-- Rewrites `package_get:capability` entity refs in those modules and in Markdown
+- Rewrites `capability:package_get` entity refs in those modules and in Markdown
   / MDX.
 - Leaves `kody.mcp["server"].tool_name(...)` unchanged. MCP-synthesized tools
   keep their upstream names.

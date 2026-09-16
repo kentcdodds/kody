@@ -48,10 +48,10 @@ If those conditions are not met, stop and fix the integration first.
 ## Bootstrap sequence
 
 1. Decide which auth path the integration needs.
-   - Standard OAuth: open `search({ entity: "oauth:guide" })`.
-   - API key or PAT: open `search({ entity: "connect_secret:guide" })`.
+   - Standard OAuth: open `search({ entity: "guide:oauth" })`.
+   - API key or PAT: open `search({ entity: "guide:connect_secret" })`.
    - Non-OAuth secret-backed API: after `connect_secret`, open
-     `search({ entity: "secret_backed_integration:guide" })` for the default
+     `search({ entity: "guide:secret_backed_integration" })` for the default
      "research auth, collect secret, smoke-test, then build" recipe.
    - When the provider's auth contract is unknown (authorize/token URLs, API
      base, credential type), research before building `/connect/oauth` URLs or
@@ -67,8 +67,8 @@ If those conditions are not met, stop and fix the integration first.
    - Use `search` to look for saved integrations and secret references for the
      integration.
    - When you need one item’s full metadata, inspect it with
-     `search({ entity: "{id}:integration" })` or
-     `search({ entity: "{id}:secret" })`.
+     `search({ entity: "integration:{id}" })` or
+     `search({ entity: "secret:{id}" })`.
 3. If the required integration or secret is missing, **stop**.
    - Surface the exact `/connect/oauth` or `/account/secrets/new` URL in chat.
      OAuth connections use a provider app the user registers (client ID, and
@@ -104,7 +104,7 @@ If those conditions are not met, stop and fix the integration first.
      `communitySearch` for a close helpers package (listing name, package name
      leaf, or tags must mention the connected provider) and a create-helpers
      path when none fits.
-   - `search({ entity: "<provider>:integration" })` may already surface a small
+   - `search({ entity: "integration:<provider>" })` may already surface a small
      same-provider package suggestion set (user packages first, else community
      listings). Use those when present.
    - Otherwise search the user's account for an existing package that wraps the
@@ -119,7 +119,7 @@ If those conditions are not met, stop and fix the integration first.
      state, secret names, allowed hosts, and provider contract are already clear
      enough.
    - For the default package-app structure after bootstrap, open
-     `search({ entity: "package_apps:guide#after-an-integration-smoke-test" })`.
+     `search({ entity: "guide:package_apps#after-an-integration-smoke-test" })`.
 6. If the smoke test fails, keep working on integration setup. Do not treat the
    downstream artifact as ready.
 

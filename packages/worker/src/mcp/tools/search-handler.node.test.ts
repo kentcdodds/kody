@@ -332,11 +332,11 @@ test('search tool returns compact query markdown while preserving structured aux
 	expect(result.matches).toEqual([
 		expect.objectContaining({
 			type: 'capability',
-			entityRef: 'search_docs:capability',
+			entityRef: 'capability:search_docs',
 		}),
 		expect.objectContaining({
 			type: 'guide',
-			entityRef: 'search_and_execute:guide',
+			entityRef: 'guide:search_and_execute',
 		}),
 	])
 	expect(result.memories?.surfaced).toEqual([
@@ -588,7 +588,7 @@ test('search tool treats exact package identity as authoritative and still resol
 
 	mockPerformanceNow.mockReturnValueOnce(300).mockReturnValueOnce(310)
 	const entityResponse = await handler({
-		entity: `${exactPackageId}:package`,
+		entity: `package:${exactPackageId}`,
 		conversationId: 'conv-uuid-entity',
 	})
 	expect(entityResponse.isError).toBeUndefined()
@@ -687,7 +687,7 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 
 	mockPerformanceNow.mockReturnValueOnce(100).mockReturnValueOnce(110)
 	const singleResponse = await handler({
-		entity: 'search_docs:capability',
+		entity: 'capability:search_docs',
 		conversationId: 'conv-single-entity',
 	})
 	expect(singleResponse.isError).toBeUndefined()
@@ -695,7 +695,7 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 		kind: 'entity',
 		type: 'capability',
 		id: 'search_docs',
-		entityRef: 'search_docs:capability',
+		entityRef: 'capability:search_docs',
 	})
 	expect(singleResponse.structuredContent.result).not.toHaveProperty(
 		'relatedOperations',
@@ -705,8 +705,8 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 	mockPerformanceNow.mockReturnValueOnce(200).mockReturnValueOnce(210)
 	const batchSuccess = await handler({
 		entity: [
-			'mcp:widgets:createwidget:capability',
-			'mcp:widgets:getwidget:capability',
+			'capability:mcp:widgets:createwidget',
+			'capability:mcp:widgets:getwidget',
 		],
 		conversationId: 'conv-batch-success',
 	})
@@ -727,7 +727,7 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 	])
 	mockPerformanceNow.mockReturnValueOnce(300).mockReturnValueOnce(310)
 	const partialFailure = await handler({
-		entity: ['mcp:widgets:createwidget:capability', 'missing_thing:capability'],
+		entity: ['capability:mcp:widgets:createwidget', 'capability:missing_thing'],
 		conversationId: 'conv-batch-partial',
 	})
 	expect(partialFailure.isError).toBeUndefined()
@@ -738,7 +738,7 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 			id: 'mcp:widgets:createwidget',
 		}),
 		expect.objectContaining({
-			entityRef: 'missing_thing:capability',
+			entityRef: 'capability:missing_thing',
 			error: expect.stringMatching(/not found/i),
 		}),
 	])
@@ -748,7 +748,7 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 	const logMcpEventSpy = vi.spyOn(observability, 'logMcpEvent')
 	try {
 		const allFailed = await handler({
-			entity: ['missing_a:capability', 'missing_b:capability'],
+			entity: ['capability:missing_a', 'capability:missing_b'],
 			conversationId: 'conv-batch-all-failed',
 		})
 		expect(allFailed.isError).toBe(true)
@@ -757,11 +757,11 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 		)
 		expect(allFailed.structuredContent.result).toEqual([
 			expect.objectContaining({
-				entityRef: 'missing_a:capability',
+				entityRef: 'capability:missing_a',
 				error: expect.any(String),
 			}),
 			expect.objectContaining({
-				entityRef: 'missing_b:capability',
+				entityRef: 'capability:missing_b',
 				error: expect.any(String),
 			}),
 		])
@@ -831,7 +831,7 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 		})
 		mockPerformanceNow.mockReturnValueOnce(500).mockReturnValueOnce(510)
 		const platformFail = await authenticatedHandler({
-			entity: ['pkg-a:package', 'pkg-b:package'],
+			entity: ['package:pkg-a', 'package:pkg-b'],
 			conversationId: 'conv-batch-platform-fail',
 		})
 		expect(platformFail.isError).toBe(true)
@@ -995,12 +995,12 @@ test('integration entity detail enriches related packages without bloating ranke
 	)
 	expect(rankedIntegration).toMatchObject({
 		type: 'integration',
-		entityRef: 'github:integration',
+		entityRef: 'integration:github',
 	})
 	expect(rankedIntegration).not.toHaveProperty('relatedPackageSuggestions')
 
 	const detail = await handler({
-		entity: 'github:integration',
+		entity: 'integration:github',
 		conversationId: 'conv-integration-detail',
 	})
 	expect(detail.isError).toBeUndefined()
@@ -1088,7 +1088,7 @@ test('integration entity detail enriches related packages without bloating ranke
 		user,
 	})
 	const userPackageDetail = await userPackageHandler({
-		entity: 'github:integration',
+		entity: 'integration:github',
 		conversationId: 'conv-integration-user-pkg',
 	})
 	expect(mockModule.searchCommunityListings).not.toHaveBeenCalled()
@@ -1098,7 +1098,7 @@ test('integration entity detail enriches related packages without bloating ranke
 			expect.objectContaining({
 				source: 'user',
 				kodyId: 'github',
-				entityRef: 'github:package',
+				entityRef: 'package:github',
 			}),
 		],
 	})
@@ -1569,7 +1569,7 @@ test('provider-name search ranks a wrapping package and MCP server without an op
 		result.matches.find((match) => match.type === 'mcp-server'),
 	).toMatchObject({
 		type: 'mcp-server',
-		entityRef: 'github:mcp-server',
+		entityRef: 'mcp-server:github',
 		wrappingPackage: { kodyId: 'github' },
 	})
 	expect(
@@ -1577,7 +1577,7 @@ test('provider-name search ranks a wrapping package and MCP server without an op
 	).toHaveLength(0)
 
 	const entityResponse = await handler({
-		entity: 'github:mcp-server',
+		entity: 'mcp-server:github',
 		conversationId: 'conv-provider-entity',
 	})
 	expect(entityResponse.isError).toBeUndefined()
@@ -1585,7 +1585,7 @@ test('provider-name search ranks a wrapping package and MCP server without an op
 		kind: 'entity',
 		type: 'mcp-server',
 		id: 'github',
-		entityRef: 'github:mcp-server',
+		entityRef: 'mcp-server:github',
 		capabilityCount: 2,
 		tools: [
 			expect.objectContaining({ name: 'mcp:github:listrepositories' }),

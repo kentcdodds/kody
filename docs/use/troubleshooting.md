@@ -82,7 +82,7 @@ Cloudflare Tunnel and Access, also see
   hints (for example “GitHub”, “Cloudflare”, “meta capabilities”).
 - Try **`metaListCapabilities`** for the full live registry, including dynamic
   entries from MCP servers.
-- **`entity: "id:capability"`** looks up a **known** id. It does **not** turn an
+- **`entity: "capability:id"`** looks up a **known** id. It does **not** turn an
   empty ranked **`query`** into better matches — rephrase or list capabilities
   instead.
 

@@ -436,16 +436,16 @@ function repoSessionPublishReturn(publishedCommit: string) {
 
 const githubSearchMarkdown = `# Search results
 
-For full detail on entity-backed hits, call \`search\` with \`entity: "{id}:{type}"\`.
+For full detail on entity-backed hits, call \`search\` with \`entity: "{type}:{id}"\`.
 
-1. **secret** \`githubAccessToken\` — github OAuth access token. Entity: \`githubAccessToken:secret\``
+1. **secret** \`githubAccessToken\` — github OAuth access token. Entity: \`secret:githubAccessToken\``
 
 const codingGuideSearchMarkdown = `# Search results
 
-For full detail on entity-backed hits, call \`search\` with \`entity: "{id}:{type}"\`.
+For full detail on entity-backed hits, call \`search\` with \`entity: "{type}:{id}"\`.
 
-1. **guide** Package authoring guide — START HERE when creating or materially changing a Kody package. Entity: \`package_authoring:guide\`
-2. **guide** Durable package lifecycle guide — Choose reuse vs temporary execute vs a new durable package. Entity: \`package_lifecycle:guide\``
+1. **guide** Package authoring guide — START HERE when creating or materially changing a Kody package. Entity: \`guide:package_authoring\`
+2. **guide** Durable package lifecycle guide — Choose reuse vs temporary execute vs a new durable package. Entity: \`guide:package_lifecycle\``
 
 const packageAuthoringGuideMarkdown = `# Guide — \`package_authoring\`
 
@@ -453,7 +453,7 @@ START HERE when creating or materially changing a Kody package.
 
 ## Summary
 
-- Entity: \`package_authoring:guide\`
+- Entity: \`guide:package_authoring\`
 - Category: \`platform\`
 - Web: \`/docs/package-authoring\`
 
@@ -471,7 +471,7 @@ Choose between invoking existing behavior, temporary execute exploration, and cr
 
 ## Summary
 
-- Entity: \`package_lifecycle:guide\`
+- Entity: \`guide:package_lifecycle\`
 - Category: \`platform\`
 - Web: \`/docs/package-lifecycle\`
 
@@ -485,17 +485,17 @@ Use this guide to decide whether to reuse existing behavior, explore with \`exec
 
 const packageSearchMarkdown = `# Search results
 
-For full detail on entity-backed hits, call \`search\` with \`entity: "{id}:{type}"\`.
+For full detail on entity-backed hits, call \`search\` with \`entity: "{type}:{id}"\`.
 
-1. **package** @you/kody-bot-shipped (\`kody-bot-shipped\`) — What kody-bot shipped since you last asked. Entity: \`kody-bot-shipped:package\``
+1. **package** @you/kody-bot-shipped (\`kody-bot-shipped\`) — What kody-bot shipped since you last asked. Entity: \`package:kody-bot-shipped\``
 
 const notifySearchMarkdown = `# Search results
 
-For full detail on entity-backed hits, call \`search\` with \`entity: "{id}:{type}"\`.
+For full detail on entity-backed hits, call \`search\` with \`entity: "{type}:{id}"\`.
 
-1. **guide** Durable package lifecycle guide — Choose reuse vs temporary execute vs a new durable package. Entity: \`package_lifecycle:guide\`
-2. **capability** \`webhookUrlMint\` (\`webhooks\`) — Mint an inbound webhook URL handle for a package-declared webhook. Entity: \`webhookUrlMint:capability\`
-3. **capability** \`jobList\` (\`jobs\`) — List scheduled jobs for the signed-in user. Entity: \`jobList:capability\``
+1. **guide** Durable package lifecycle guide — Choose reuse vs temporary execute vs a new durable package. Entity: \`guide:package_lifecycle\`
+2. **capability** \`webhookUrlMint\` (\`webhooks\`) — Mint an inbound webhook URL handle for a package-declared webhook. Entity: \`capability:webhookUrlMint\`
+3. **capability** \`jobList\` (\`jobs\`) — List scheduled jobs for the signed-in user. Entity: \`capability:jobList\``
 
 export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 	{
@@ -599,7 +599,7 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 					{
 						name: 'search',
 						summary: 'Find the official package authoring guides',
-						note: '`domain: "coding"` ranks official guides as `{id}:guide` entities. That is how the agent finds `package_authoring` and `package_lifecycle` instead of inventing a package shape.',
+						note: '`domain: "coding"` ranks official guides as `guide:{id}` entities. That is how the agent finds `package_authoring` and `package_lifecycle` instead of inventing a package shape.',
 						inputs: [
 							{
 								name: 'query',
@@ -631,8 +631,8 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 								kind: 'query',
 								lang: 'json',
 								value: jsonInput([
-									'package_authoring:guide',
-									'package_lifecycle:guide',
+									'guide:package_authoring',
+									'guide:package_lifecycle',
 								]),
 							},
 							conversationIdInput(askConversationId),
@@ -846,13 +846,13 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 					{
 						name: 'search',
 						summary: 'Open the package lifecycle guide',
-						note: 'The real `package_lifecycle:guide` return is the full guide. This walkthrough shows the opening only. It is how the agent learns to add a package-owned job, test the wrapper, then enable it.',
+						note: 'The real `guide:package_lifecycle` return is the full guide. This walkthrough shows the opening only. It is how the agent learns to add a package-owned job, test the wrapper, then enable it.',
 						inputs: [
 							{
 								name: 'entity',
 								kind: 'query',
 								lang: 'json',
-								value: jsonInput('package_lifecycle:guide'),
+								value: jsonInput('guide:package_lifecycle'),
 							},
 							conversationIdInput(notifyConversationId),
 						],

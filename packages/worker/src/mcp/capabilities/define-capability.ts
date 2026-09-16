@@ -216,7 +216,7 @@ function createCapabilityValidationError(
 			[
 				`Invalid input for capability "${capabilityName}".`,
 				z.prettifyError(error),
-				`Repair: Call search({ entity: "${capabilityName}:capability" }) for the exact input shape.`,
+				`Repair: Call search({ entity: "capability:${capabilityName}" }) for the exact input shape.`,
 			].join('\n'),
 			{ cause: error },
 		)

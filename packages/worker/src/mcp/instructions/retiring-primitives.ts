@@ -2,7 +2,7 @@
  * Per-affected-user MCP notices for primitives in active retirement.
  *
  * Keep each notice one line. Put the destination map and migration steps in
- * a `{id}:guide` search entity — server instructions stay compact
+ * a `guide:{id}` search entity — server instructions stay compact
  * (`docs/contributing/documentation.md`). Assembly includes a notice only when
  * that user still has rows of the retiring primitive. When the last notice is
  * removed, `formatRetiringPrimitivesInstructions` returns empty and the
@@ -40,7 +40,7 @@ export function formatRetiringPrimitivesInstructions(
 	if (notices.length === 0) return ''
 	const bullets = notices.map(
 		(notice) =>
-			`- ${notice.label}: ${notice.summary} Load \`search({ entity: "${notice.guide}:guide" })\` to migrate.`,
+			`- ${notice.label}: ${notice.summary} Load \`search({ entity: "guide:${notice.guide}" })\` to migrate.`,
 	)
 	return `Retiring primitives
 ${bullets.join('\n')}`

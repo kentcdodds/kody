@@ -38,9 +38,9 @@ export async function resolveEntityDetail(input: {
 	searchRows: SearchRowsAndRegistry
 }) {
 	const ref = parseEntityRef(input.entity)
-	if (ref.section && ref.type !== 'guide') {
+	if (ref.section && ref.type !== 'guide' && ref.type !== 'package') {
 		throw new McpCallerError(
-			'Section fragments are only supported on guide entities. Use "{id}:guide#{heading}".',
+			'Section fragments are only supported on guide and package entities. Use "guide:{id}#{heading}" or "package:{id}#{subpath}".',
 		)
 	}
 	if (ref.type === 'mcp-server') {
@@ -179,6 +179,7 @@ export async function resolveEntityDetail(input: {
 							kodyId: record.kodyId,
 						})
 					: null,
+			...(ref.section ? { section: ref.section } : {}),
 		}
 	}
 

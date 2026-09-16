@@ -62,7 +62,7 @@ test('document sections parse headings, skip fences, and resolve by slug or titl
 	const full = resolveMarkdownDocument({
 		markdown: sample,
 		maxChars: 10_000,
-		entityRef: 'demo:guide',
+		entityRef: 'guide:demo',
 	})
 	expect(full.mode).toBe('full')
 	expect(full.markdown).toBe(sample)
@@ -70,18 +70,18 @@ test('document sections parse headings, skip fences, and resolve by slug or titl
 	const toc = resolveMarkdownDocument({
 		markdown: sample,
 		maxChars: 80,
-		entityRef: 'demo:guide',
+		entityRef: 'guide:demo',
 	})
 	expect(toc.mode).toBe('toc')
 	expect(toc.markdown).toContain('## Contents')
-	expect(toc.markdown).toContain('demo:guide#repo.pushed')
+	expect(toc.markdown).toContain('guide:demo#repo.pushed')
 	expect(toc.markdown).not.toContain('Repo payload.')
 	expect(toc.markdown).not.toContain('Fake heading in a fence')
 
 	const section = resolveMarkdownDocument({
 		markdown: sample,
 		maxChars: 80,
-		entityRef: 'demo:guide',
+		entityRef: 'guide:demo',
 		section: 'repo.pushed',
 	})
 	expect(section.mode).toBe('section')
@@ -94,24 +94,24 @@ test('document sections parse headings, skip fences, and resolve by slug or titl
 		resolveMarkdownDocument({
 			markdown: sample,
 			maxChars: 80,
-			entityRef: 'demo:guide',
+			entityRef: 'guide:demo',
 			section: 'not-a-heading',
 		}),
-	).toThrow(/Unknown section "not-a-heading" for demo:guide/)
+	).toThrow(/Unknown section "not-a-heading" for guide:demo/)
 
 	const contents = formatDocumentContents({
 		headings,
-		entityRef: 'demo:guide',
+		entityRef: 'guide:demo',
 	})
 	expect(contents).toContain(
-		'  - `Handler guidance` — `demo:guide#handler-guidance`',
+		'  - `Handler guidance` — `guide:demo#handler-guidance`',
 	)
 
 	const oversizedSection = `${'#'.repeat(2)} Only heading\n\n${'x'.repeat(400)}`
 	const truncated = resolveMarkdownDocument({
 		markdown: oversizedSection,
 		maxChars: 160,
-		entityRef: 'demo:guide',
+		entityRef: 'guide:demo',
 		section: 'only-heading',
 	})
 	expect(truncated.mode).toBe('section')

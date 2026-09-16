@@ -50,7 +50,7 @@ export function buildRecommendedNextStep(
 			false)
 
 	if (integrationMatchesPackage && input.intent.task.name === 'operate') {
-		return `Found saved package \`${topPackage.kodyId}\` and integration \`${topIntegration.integrationName}\`. Inspect the package with \`search({ entity: "${topPackage.kodyId}:package" })\`, then use the integration detail or an authenticated \`execute\` smoke test to confirm the integration path before running API-backed actions.`
+		return `Found saved package \`${topPackage.kodyId}\` and integration \`${topIntegration.integrationName}\`. Inspect the package with \`search({ entity: "package:${topPackage.kodyId}" })\`, then use the integration detail or an authenticated \`execute\` smoke test to confirm the integration path before running API-backed actions.`
 	}
 	if (topMatch?.type === 'package') {
 		const [actionMatch] = topMatch.actionMatches ?? []
@@ -63,20 +63,20 @@ export function buildRecommendedNextStep(
 				subpath: actionMatch.subpath,
 				functionName: actionFunction.name,
 			})
-			return `Use \`${importStatement}\` for the matched package action. Inspect \`search({ entity: "${topMatch.kodyId}:package" })\` only if you need more exports or full package detail.`
+			return `Use \`${importStatement}\` for the matched package action. Inspect \`search({ entity: "package:${topMatch.kodyId}" })\` only if you need more exports or full package detail.`
 		}
 		return topMatch.hasApp
-			? `Inspect package detail with \`search({ entity: "${topMatch.kodyId}:package" })\` to review exports, jobs, and the hosted app URL.`
-			: `Inspect package detail with \`search({ entity: "${topMatch.kodyId}:package" })\` to review exports, then import the right entry from \`${buildPackageImportSpecifier(topMatch.name, '.')}\` or a subpath export.`
+			? `Inspect package detail with \`search({ entity: "package:${topMatch.kodyId}" })\` to review exports, jobs, and the hosted app URL.`
+			: `Inspect package detail with \`search({ entity: "package:${topMatch.kodyId}" })\` to review exports, then import the right entry from \`${buildPackageImportSpecifier(topMatch.name, '.')}\` or a subpath export.`
 	}
 	if (topMatch?.type === 'mcp-server') {
-		return `Inspect the connected MCP server with \`search({ entity: "${topMatch.kodyName}:mcp-server" })\` to list its tools, then call \`kody.mcp[${JSON.stringify(topMatch.kodyName)}].tool_name(args)\`.`
+		return `Inspect the connected MCP server with \`search({ entity: "mcp-server:${topMatch.kodyName}" })\` to list its tools, then call \`kody.mcp[${JSON.stringify(topMatch.kodyName)}].tool_name(args)\`.`
 	}
 	if (topMatch?.type === 'integration') {
-		return `Inspect integration detail with \`search({ entity: "${topMatch.integrationName}:integration" })\` and then run a minimal authenticated \`execute\` smoke test before building or calling integration-backed code.`
+		return `Inspect integration detail with \`search({ entity: "integration:${topMatch.integrationName}" })\` and then run a minimal authenticated \`execute\` smoke test before building or calling integration-backed code.`
 	}
 	if (topMatch?.type === 'guide') {
-		return `Open the official guide with \`search({ entity: "${topMatch.id}:guide" })\`. Oversized guides return a table of contents; open a heading with \`{id}:guide#{slug}\`.`
+		return `Open the official guide with \`search({ entity: "guide:${topMatch.id}" })\`. Oversized guides return a table of contents; open a heading with \`guide:{id}#{slug}\`.`
 	}
 	if (topMatch?.type === 'capability') {
 		const accessor = buildKodyCapabilityAccessor(topMatch)
@@ -84,9 +84,9 @@ export function buildRecommendedNextStep(
 			topMatch.inputTypeDefinition &&
 			!topMatch.inputTypeDefinitionTruncated
 		) {
-			return `Call \`${accessor}(args)\` from \`execute\` using the inlined call shape above. Use \`search({ entity: "${topMatch.name}:capability" })\` only if you need the full type definitions.`
+			return `Call \`${accessor}(args)\` from \`execute\` using the inlined call shape above. Use \`search({ entity: "capability:${topMatch.name}" })\` only if you need the full type definitions.`
 		}
-		return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`${accessor}(args)\`.`
+		return `Inspect capability detail with \`search({ entity: "capability:${topMatch.name}" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`${accessor}(args)\`.`
 	}
 	return undefined
 }

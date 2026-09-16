@@ -152,20 +152,28 @@ test('resolveEntityDetail reports unresolvable entity refs as caller errors', as
 		})
 
 	const expected = [
-		['nope:capability', 'Capability not found.'],
+		['capability:nope', 'Capability not found.'],
 		[
 			'user:missing-value:value',
 			'Entity type must be one of: capability, guide, integration, mcp-server, package, or secret.',
 		],
-		['notion:integration', 'Saved integration not found for this user.'],
-		['API_KEY:secret', 'Secret not found for this user.'],
+		['integration:notion', 'Saved integration not found for this user.'],
+		['secret:API_KEY', 'Secret not found for this user.'],
 		[
 			'not-a-ref',
-			'Entity must use the format "{id}:{type}" where type is capability, guide, integration, mcp-server, package, or secret.',
+			'Entity must use the format "{type}:{id}" where type is capability, guide, integration, mcp-server, package, or secret.',
 		],
 		[
 			'thing:widget',
 			'Entity type must be one of: capability, guide, integration, mcp-server, package, or secret.',
+		],
+		[
+			'home-controls:package',
+			'Entity refs are "{type}:{id}". Use "package:home-controls", not "home-controls:package".',
+		],
+		[
+			'emailSend:capability',
+			'Entity refs are "{type}:{id}". Use "capability:emailSend", not "emailSend:capability".',
 		],
 	] as const
 
@@ -183,7 +191,7 @@ test('resolveEntityDetail lists MCP server tools from the synthesized registry',
 		callerContext: agent.getCallerContext(),
 		userId: 'user-1',
 		username: 'user',
-		entity: 'home:mcp-server',
+		entity: 'mcp-server:home',
 		searchRows: {
 			...emptySearchRows(),
 			registry: {
@@ -228,7 +236,7 @@ test('resolveEntityDetail lists MCP server tools from the synthesized registry',
 		tools: [
 			expect.objectContaining({
 				name: 'mcp:home:set_pin',
-				entityRef: 'mcp:home:set_pin:capability',
+				entityRef: 'capability:mcp:home:set_pin',
 				toolName: 'set_pin',
 			}),
 		],
@@ -240,7 +248,7 @@ test('resolveEntityDetail lists MCP server tools from the synthesized registry',
 			callerContext: agent.getCallerContext(),
 			userId: 'user-1',
 			username: 'user',
-			entity: 'missing:mcp-server',
+			entity: 'mcp-server:missing',
 			searchRows: emptySearchRows() as never,
 		}),
 	).rejects.toThrow('MCP server not found.')
@@ -253,7 +261,7 @@ test('resolveEntityDetail loads official guides without a signed-in user', async
 		callerContext: agent.getCallerContext(),
 		userId: null,
 		username: null,
-		entity: 'package_authoring:guide',
+		entity: 'guide:package_authoring',
 		searchRows: emptySearchRows() as never,
 	})
 
@@ -274,7 +282,7 @@ test('resolveEntityDetail loads official guides without a signed-in user', async
 		callerContext: agent.getCallerContext(),
 		userId: null,
 		username: null,
-		entity: 'package_subscriptions:guide#repo.pushed',
+		entity: 'guide:package_subscriptions#repo.pushed',
 		searchRows: emptySearchRows() as never,
 	})
 	expect(sectionDetail).toMatchObject({
@@ -289,10 +297,12 @@ test('resolveEntityDetail loads official guides without a signed-in user', async
 			callerContext: agent.getCallerContext(),
 			userId: null,
 			username: null,
-			entity: 'search_docs:capability#repo.pushed',
+			entity: 'capability:search_docs#repo.pushed',
 			searchRows: emptySearchRows() as never,
 		}),
-	).rejects.toThrow(/Section fragments are only supported on guide entities/)
+	).rejects.toThrow(
+		/Section fragments are only supported on guide and package entities/,
+	)
 
 	await expect(
 		resolveEntityDetail({
@@ -300,7 +310,7 @@ test('resolveEntityDetail loads official guides without a signed-in user', async
 			callerContext: agent.getCallerContext(),
 			userId: null,
 			username: null,
-			entity: 'not_a_real_guide:guide',
+			entity: 'guide:not_a_real_guide',
 			searchRows: emptySearchRows() as never,
 		}),
 	).rejects.toThrow('Guide not found.')
@@ -311,7 +321,7 @@ test('resolveEntityDetail loads official guides without a signed-in user', async
 			callerContext: agent.getCallerContext(),
 			userId: null,
 			username: null,
-			entity: 'admin_events:guide',
+			entity: 'guide:admin_events',
 			searchRows: emptySearchRows() as never,
 		}),
 	).rejects.toThrow('Guide not found.')
@@ -334,7 +344,7 @@ test('resolveEntityDetail loads official guides without a signed-in user', async
 		callerContext: adminCaller,
 		userId: 'admin-1',
 		username: 'admin',
-		entity: 'admin_events:guide',
+		entity: 'guide:admin_events',
 		searchRows: emptySearchRows() as never,
 	})
 	expect(adminGuide).toMatchObject({
@@ -357,7 +367,7 @@ test('resolveEntityDetail loads {name}:integration via getJoinedIntegration', as
 		callerContext: agent.getCallerContext(),
 		userId: 'user-1',
 		username: 'user',
-		entity: 'github:integration',
+		entity: 'integration:github',
 		searchRows: emptySearchRows() as never,
 	})
 
@@ -397,7 +407,7 @@ test('resolveEntityDetail keeps integrations isolated by userId', async () => {
 			callerContext: agent.getCallerContext(),
 			userId: 'user-2',
 			username: 'other',
-			entity: 'github:integration',
+			entity: 'integration:github',
 			searchRows: emptySearchRows() as never,
 		}),
 	).rejects.toThrow('Saved integration not found for this user.')
@@ -448,7 +458,7 @@ test('resolveEntityDetail hostedUrl uses PACKAGE_APP_BASE_URL when configured', 
 		callerContext,
 		userId: 'user-1',
 		username: 'kentcdodds',
-		entity: 'demo:package',
+		entity: 'package:demo',
 		searchRows: emptySearchRows() as never,
 	})
 
@@ -457,5 +467,68 @@ test('resolveEntityDetail hostedUrl uses PACKAGE_APP_BASE_URL when configured', 
 		hostedUrl: 'https://kentcdodds.kody.run/packages/demo',
 		baseUrl: 'https://heykody.dev',
 		listingAhead: null,
+	})
+})
+
+test('resolveEntityDetail passes package export fragments and hidden known-id packages', async () => {
+	const hiddenRecord = {
+		id: 'pkg-hidden',
+		packageId: 'pkg-hidden',
+		kodyId: 'home-controls',
+		name: '@user/home-controls',
+		description: 'Hidden home controls',
+		hasApp: false,
+		hidden: true,
+		sourceId: 'source-hidden',
+		userId: 'user-1',
+		tags: [],
+		searchText: null,
+		isPrivate: false,
+		createdAt: '2026-03-20T00:00:00.000Z',
+		updatedAt: '2026-03-20T00:00:00.000Z',
+	}
+	mockModule.getSavedPackageByKodyId.mockReset()
+	mockModule.getSavedPackageByKodyId.mockResolvedValue(hiddenRecord)
+	mockModule.getSavedPackageById.mockResolvedValue(null)
+	mockModule.loadPackageSourceBySourceId.mockReset()
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		manifest: {
+			name: '@user/home-controls',
+			exports: { './bond-area-shades': './src/bond-area-shades.ts' },
+			kody: { id: 'home-controls', description: 'Hidden home controls' },
+		},
+		files: {
+			'src/bond-area-shades.ts':
+				'/** Lower shades. */\nexport default async function bondAreaShades() { return true }',
+		},
+	})
+
+	const agent = createAgent()
+	const hashed = await resolveEntityDetail({
+		agent,
+		callerContext: agent.getCallerContext(),
+		userId: 'user-1',
+		username: 'user',
+		entity: 'package:home-controls#bond-area-shades',
+		searchRows: emptySearchRows() as never,
+	})
+	expect(hashed).toMatchObject({
+		type: 'package',
+		id: 'home-controls',
+		section: 'bond-area-shades',
+		record: expect.objectContaining({ hidden: true }),
+	})
+
+	const dotted = await resolveEntityDetail({
+		agent,
+		callerContext: agent.getCallerContext(),
+		userId: 'user-1',
+		username: 'user',
+		entity: 'package:home-controls#./bond-area-shades',
+		searchRows: emptySearchRows() as never,
+	})
+	expect(dotted).toMatchObject({
+		type: 'package',
+		section: './bond-area-shades',
 	})
 })

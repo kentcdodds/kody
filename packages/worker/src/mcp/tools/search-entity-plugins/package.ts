@@ -1,3 +1,4 @@
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { listingAheadSearchNotice } from '#universal/community-listing-ahead.ts'
 import {
 	deterministicEmbedding,
@@ -23,6 +24,11 @@ import { buildPackageAgentsDocs } from '#worker/repo/required-package-docs.ts'
 import { savedPackageVectorId } from '#worker/package-registry/repo.ts'
 import { webhookDefaultRateLimitPerMinute } from '#worker/package-registry/types.ts'
 
+import {
+	findPackageExportByFragment,
+	formatPackageExportEntityDetail,
+	formatUnknownPackageExportError,
+} from '../package-export-search-detail.ts'
 import { maxFusedPackageCandidates } from '../search-constants.ts'
 import { type SearchEntityPlugin } from '../search-entity-plugin.ts'
 import {
@@ -36,6 +42,7 @@ import {
 	buildPackageMaintainSnippets,
 	buildPackageRootImportUsage,
 	buildPackageSourceFollowUp,
+	buildPlatformPackageForkNotice,
 	getPrimaryPackageActionFunction,
 } from '../search-format-helpers.ts'
 import { type SearchMatch } from '../search-format-types.ts'
@@ -446,16 +453,16 @@ export const packageSearchEntityPlugin = {
 			? getPrimaryPackageActionFunction(primaryAction)
 			: null
 		const platformSuffix = match.platformScope
-			? ` This is a platform (built-in) package from @${match.platformScope}. communityFork it into your scope before importing it.`
+			? ` ${buildPlatformPackageForkNotice(match.platformScope)}`
 			: ''
 		const listingAheadSuffix =
 			match.listingAhead === true ? ` ${listingAheadSearchNotice}` : ''
 		const nextStep =
 			primaryAction && primaryActionFunction
-				? `Use ${primaryActionFunction.usage}; inspect search({ entity: "${match.kodyId}:package" }) only if you need more exports.${platformSuffix}${listingAheadSuffix}`
+				? `Use ${primaryActionFunction.usage}; inspect search({ entity: "package:${match.kodyId}" }) only if you need more exports.${platformSuffix}${listingAheadSuffix}`
 				: match.hasApp
-					? `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, jobs, and the hosted app URL.${platformSuffix}${listingAheadSuffix}`
-					: `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.name, '.')}".${platformSuffix}${listingAheadSuffix}`
+					? `Inspect package detail with search({ entity: "package:${match.kodyId}" }) to review exports, jobs, and the hosted app URL.${platformSuffix}${listingAheadSuffix}`
+					: `Inspect package detail with search({ entity: "package:${match.kodyId}" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.name, '.')}".${platformSuffix}${listingAheadSuffix}`
 		return {
 			type: 'package',
 			id: match.kodyId,
@@ -501,6 +508,26 @@ export const packageSearchEntityPlugin = {
 			detail.manifest,
 			detail.files,
 		)
+		if (detail.section) {
+			const exportDetail = findPackageExportByFragment(
+				exportProjection.exports,
+				detail.section,
+			)
+			if (!exportDetail) {
+				throw new McpCallerError(
+					formatUnknownPackageExportError({
+						entityRef: buildEntityRef(detail.record.kodyId, 'package'),
+						section: detail.section,
+						exports: exportProjection.exports,
+					}),
+				)
+			}
+			return formatPackageExportEntityDetail({
+				detail,
+				exportDetail,
+				includeBoilerplate: options?.includeBoilerplate ?? true,
+			})
+		}
 		const exportDetails = exportProjection.exports.map((exportDetail) => ({
 			subpath: exportDetail.subpath,
 			description:
@@ -537,7 +564,10 @@ export const packageSearchEntityPlugin = {
 		const maintain = buildPackageMaintainSnippets(detail.record.id)
 		const rootImportUsage = buildPackageRootImportUsage(detail.record.name)
 		const listingAhead = detail.listingAhead === true
-		const sourceFollowUp = buildPackageSourceFollowUp(detail.record.id)
+		const sourceFollowUp = buildPackageSourceFollowUp({
+			packageId: detail.record.id,
+			kodyId: detail.record.kodyId,
+		})
 		const followUp = listingAhead
 			? `${listingAheadSearchNotice} ${sourceFollowUp}`
 			: sourceFollowUp
@@ -643,6 +673,7 @@ export const packageSearchEntityPlugin = {
 			structured: {
 				kind: 'entity',
 				type: 'package',
+				detailMode: 'index',
 				id: detail.record.kodyId,
 				entityRef: buildEntityRef(detail.record.kodyId, 'package'),
 				title: detail.title,

@@ -343,7 +343,7 @@ export function DocDetailRoute(handle: Handle) {
 								/docs/{doc.slug}.md
 							</a>
 							, or load it over MCP with{' '}
-							<code>{`search({ entity: '${doc.id}:guide' })`}</code>.
+							<code>{`search({ entity: 'guide:${doc.id}' })`}</code>.
 						</p>
 					</footer>
 				</article>

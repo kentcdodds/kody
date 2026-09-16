@@ -208,7 +208,7 @@ community package or build a helpers package. The same prompt is in the
 
 Do not treat connect success as “the Google/GitHub/etc. package is ready.” Next
 step is smoke-test auth, then `communitySearch` (preferring `trusted`) or create
-a thin helpers package. `search({ entity: "<provider>:integration" })` may
+a thin helpers package. `search({ entity: "integration:<provider>" })` may
 already surface same-provider package suggestions.
 
 ## Agent checklist

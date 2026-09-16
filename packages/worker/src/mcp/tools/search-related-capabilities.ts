@@ -68,7 +68,7 @@ export function collectRelatedCapabilityOperations(input: {
 		.slice(0, maxRelatedCapabilityOperations)
 		.map((other) => ({
 			name: other.name,
-			entityRef: `${other.name}:capability`,
+			entityRef: `capability:${other.name}`,
 			description: other.description,
 		}))
 }

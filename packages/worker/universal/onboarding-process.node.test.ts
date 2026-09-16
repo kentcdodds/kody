@@ -142,10 +142,10 @@ test('step 2 is one short prompt that retrieves the onboarding guide', () => {
 	expect(onboardingAccessSelectedLede('Cursor')).toContain('Cursor')
 	expect(onboardingAccessSelectedLede('Cursor')).toContain('onboarding guide')
 	expect(onboardingStep2Prompt).toContain(
-		'search({ entity: "onboarding:guide" })',
+		'search({ entity: "guide:onboarding" })',
 	)
 	expect(onboardingPortabilityProofPrompt).toContain(
-		'search({ entity: "portability:guide" })',
+		'search({ entity: "guide:portability" })',
 	)
 	expect(onboardingAccessWinMadeLine({})).toBeNull()
 	expect(onboardingAccessWinMadeLine({ packageName: 'grok-bot' })).toBeNull()

@@ -324,6 +324,7 @@ export type SearchEntityDetailStructured =
 	| {
 			kind: 'entity'
 			type: 'package'
+			detailMode: 'index'
 			id: string
 			entityRef: string
 			title: string
@@ -385,6 +386,37 @@ export type SearchEntityDetailStructured =
 			} | null
 			followUp: string
 			listingAhead: boolean | null
+	  }
+	| {
+			kind: 'entity'
+			type: 'package'
+			detailMode: 'export'
+			id: string
+			entityRef: string
+			title: string
+			description: string
+			usage: string
+			packageId: string
+			kodyId: string
+			name: string
+			importSpecifier: string
+			executeExample: string
+			typeDefinition: string | null
+			functions: Array<{
+				name: string
+				description: string | null
+				typeDefinition: string | null
+			}>
+			referencedTypes: Array<{
+				name: string
+				kind: 'type' | 'interface' | 'enum'
+				definition: string | null
+			}>
+			example: string | null
+			followUp: string
+			hidden: boolean
+			platformScope?: string | null
+			referencedTypesTruncated?: true
 	  }
 	| {
 			kind: 'entity'
@@ -477,6 +509,8 @@ export type SearchEntityDetail =
 			/** Platform (built-in) scope username when owned by a platform account. */
 			platformScope?: string | null
 			listingAhead: boolean | null
+			/** Export subpath when opening `package:{id}#{subpath}`. */
+			section?: string
 	  }
 	| {
 			type: 'secret'

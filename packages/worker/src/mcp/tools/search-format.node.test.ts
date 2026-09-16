@@ -77,25 +77,67 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 	expect(() => parseEntityRef('user:preferred_repo:value')).toThrow(
 		/Entity type must be one of/,
 	)
-	expect(parseEntityRef('github:integration')).toEqual({
+	expect(parseEntityRef('integration:github')).toEqual({
 		id: 'github',
 		type: 'integration',
 	})
-	expect(parseEntityRef('home:mcp-server')).toEqual({
+	expect(parseEntityRef('mcp-server:home')).toEqual({
 		id: 'home',
 		type: 'mcp-server',
 	})
-	expect(parseEntityRef('package_authoring:guide')).toEqual({
+	expect(parseEntityRef('guide:package_authoring')).toEqual({
 		id: 'package_authoring',
 		type: 'guide',
 	})
-	expect(parseEntityRef('package_subscriptions:guide#repo.pushed')).toEqual({
+	expect(parseEntityRef('guide:package_subscriptions#repo.pushed')).toEqual({
 		id: 'package_subscriptions',
 		type: 'guide',
 		section: 'repo.pushed',
 	})
-	expect(() => parseEntityRef('package_subscriptions:guide#')).toThrow(
+	expect(parseEntityRef('package:home-controls#bond-area-shades')).toEqual({
+		id: 'home-controls',
+		type: 'package',
+		section: 'bond-area-shades',
+	})
+	expect(parseEntityRef('package:home-controls#./bond-area-shades')).toEqual({
+		id: 'home-controls',
+		type: 'package',
+		section: './bond-area-shades',
+	})
+	expect(parseEntityRef('package:cpp-tools#./c++')).toEqual({
+		id: 'cpp-tools',
+		type: 'package',
+		section: './c++',
+	})
+	expect(parseEntityRef('guide:topic#hello%20world')).toEqual({
+		id: 'topic',
+		type: 'guide',
+		section: 'hello world',
+	})
+	expect(() => parseEntityRef('guide:package_subscriptions#')).toThrow(
 		/Section fragment/,
+	)
+	expect(parseEntityRef('capability:mcp:home:set_pin')).toEqual({
+		id: 'mcp:home:set_pin',
+		type: 'capability',
+	})
+	expect(parseEntityRef('mcp-server:mcp:home')).toEqual({
+		id: 'mcp:home',
+		type: 'mcp-server',
+	})
+	expect(() => parseEntityRef('home-controls:package')).toThrow(
+		'Entity refs are "{type}:{id}". Use "package:home-controls", not "home-controls:package".',
+	)
+	expect(() =>
+		parseEntityRef('home-controls:package#bond-area-shades'),
+	).toThrow(
+		'Entity refs are "{type}:{id}". Use "package:home-controls#bond-area-shades", not "home-controls:package#bond-area-shades".',
+	)
+	expect(() => parseEntityRef('mcp:home:set_pin:capability')).toThrow(
+		'Entity refs are "{type}:{id}". Use "capability:mcp:home:set_pin", not "mcp:home:set_pin:capability".',
+	)
+	expect(() => parseEntityRef('home:mcp-server')).toThrow(
+		'Entity refs are "{type}:{id}". Use "mcp-server:home", not "home:mcp-server".',
 	)
 
 	const structuredMatches = toSlimStructuredMatches({
@@ -140,7 +182,7 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 
 	expect(structuredMatches[0]).toMatchObject({
 		type: 'integration',
-		entityRef: 'github:integration',
+		entityRef: 'integration:github',
 		flow: 'confidential',
 		tokenUrl: 'https://github.com/login/oauth/access_token',
 		requiredHosts: ['api.github.com'],
@@ -163,7 +205,7 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 	expect(structuredMatches[2]).toMatchObject({
 		type: 'secret',
 		id: 'secret "name"',
-		entityRef: 'secret "name":secret',
+		entityRef: 'secret:secret "name"',
 	})
 	expect(structuredMatches[2]?.usage).not.toContain('{{secret:')
 
@@ -187,7 +229,7 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 				kodyId: 'github',
 				name: '@user/github',
 				description: 'User GitHub package.',
-				entityRef: 'github:package',
+				entityRef: 'package:github',
 			},
 			{
 				source: 'community',
@@ -202,12 +244,12 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 	})
 	expect(integrationDetail.structured).toMatchObject({
 		type: 'integration',
-		entityRef: 'github:integration',
+		entityRef: 'integration:github',
 		clientId: 'github_client_id',
 		relatedPackageSuggestions: [
 			expect.objectContaining({
 				source: 'user',
-				entityRef: 'github:package',
+				entityRef: 'package:github',
 			}),
 			expect.objectContaining({
 				source: 'community',
@@ -216,7 +258,7 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 			}),
 		],
 	})
-	expect(integrationDetail.markdown).toContain('github:package')
+	expect(integrationDetail.markdown).toContain('package:github')
 	expect(integrationDetail.markdown).toContain('listing-1')
 	expect(integrationDetail.markdown).toContain('Client ID: `github_client_id`')
 	// Structured contract omits soak token secret names (input still carries them).
@@ -245,7 +287,7 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 	expect(leanIntegrationDetail.structured).not.toHaveProperty(
 		'relatedPackageSuggestions',
 	)
-	expect(leanIntegrationDetail.markdown).not.toContain('github:package')
+	expect(leanIntegrationDetail.markdown).not.toContain('package:github')
 	expect(leanIntegrationDetail.markdown).not.toContain('listing-1')
 })
 
@@ -304,7 +346,7 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 	})
 	expect(identifierDetail.structured).toMatchObject({
 		type: 'capability',
-		entityRef: 'github_create_issue:capability',
+		entityRef: 'capability:github_create_issue',
 		requiredInputFields: ['owner', 'repo', 'title'],
 		readOnly: false,
 		idempotent: false,
@@ -337,7 +379,7 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 	})
 	expect(bracketMatch).toMatchObject({
 		type: 'capability',
-		entityRef: 'foo-bar:capability',
+		entityRef: 'capability:foo-bar',
 	})
 
 	const bracketDetail = formatEntityDetailMarkdown({
@@ -363,7 +405,7 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 	})
 	expect(bracketDetail.structured).toMatchObject({
 		type: 'capability',
-		entityRef: 'foo-bar:capability',
+		entityRef: 'capability:foo-bar',
 		readOnly: true,
 		idempotent: true,
 	})
@@ -506,7 +548,7 @@ export declare function fetch(request: Request): Promise<Response>
 	})
 	expect(observedPackageDetail.structured).toMatchObject({
 		type: 'package',
-		entityRef: 'observed-package:package',
+		entityRef: 'package:observed-package',
 		hasApp: true,
 		hidden: false,
 		hostedUrl: 'http://localhost/@test-user/packages/observed-package',
@@ -530,8 +572,13 @@ export declare function fetch(request: Request): Promise<Response>
 	})
 	expect(observedPackageDetail.markdown).toContain('## Follow up')
 	expect(observedPackageDetail.markdown).toContain(
-		'If you plan to invoke an export, call packageGet({ package_id: "package-123" }) first',
+		'Open one export with search({ entity: "package:observed-package#<subpath>" })',
 	)
+	expect(observedPackageDetail.structured).toMatchObject({
+		detailMode: 'index',
+	})
+	expect(observedPackageDetail.structured).not.toHaveProperty('typeDefinition')
+	expect(observedPackageDetail.structured).not.toHaveProperty('referencedTypes')
 	expect(observedPackageDetail.structured).toMatchObject({
 		listingAhead: null,
 		followUp: expect.stringContaining(
@@ -732,7 +779,7 @@ test('package search formatting keeps runnable actions and hosted URLs in struct
 	expect(hostedPackageMatch).toMatchObject({
 		type: 'package',
 		id: 'spotify-playback',
-		entityRef: 'spotify-playback:package',
+		entityRef: 'package:spotify-playback',
 		hasApp: true,
 		hidden: false,
 		hostedUrl: 'http://localhost/@test-user/packages/spotify-playback',
@@ -985,7 +1032,7 @@ test('search markdown summarizes broad results safely and only suggests entity d
 	})
 	expect(entityStructured[0]).toMatchObject({
 		type: 'capability',
-		entityRef: 'search_docs:capability',
+		entityRef: 'capability:search_docs',
 	})
 	expect(retrieverStructured[0]).toMatchObject({
 		type: 'retriever_result',
@@ -1078,7 +1125,7 @@ test('capability list items include the domain id for follow-up scoping', () => 
 		includePreamble: false,
 	})
 	expect(markdown).toContain(
-		'1. **capability** `emailSend` (`email`) — Send a message\\. Entity: `emailSend:capability`',
+		'1. **capability** `emailSend` (`email`) — Send a message\\. Entity: `capability:emailSend`',
 	)
 
 	const [slim] = toSlimStructuredMatches({
@@ -1147,9 +1194,9 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 		includePreamble: false,
 	})
 	expect(mcpServerListMarkdown).toContain('**mcp-server** home')
-	expect(mcpServerListMarkdown).toContain('home:mcp-server')
+	expect(mcpServerListMarkdown).toContain('mcp-server:home')
 	expect(mcpServerListMarkdown).toContain('168 tools')
-	expect(mcpServerListMarkdown).not.toContain('mcp:home:set_pin:capability')
+	expect(mcpServerListMarkdown).not.toContain('capability:mcp:home:set_pin')
 
 	const [slimMcpServer] = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
@@ -1176,7 +1223,7 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 	})
 	expect(slimMcpServer).toMatchObject({
 		type: 'mcp-server',
-		entityRef: 'home:mcp-server',
+		entityRef: 'mcp-server:home',
 		capabilityCount: 168,
 		instructions:
 			'Control lights, locks, and the island router PIN on the home LAN.',
@@ -1321,8 +1368,8 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 	expect(mcpDetail.markdown).toContain(
 		'Related operations from this MCP server: 2',
 	)
-	expect(mcpDetail.markdown).toContain('widgets:mcp-server')
-	expect(mcpDetail.markdown).not.toContain('mcp:widgets:listwidgets:capability')
+	expect(mcpDetail.markdown).toContain('mcp-server:widgets')
+	expect(mcpDetail.markdown).not.toContain('capability:mcp:widgets:listwidgets')
 	expect(mcpDetail.structured).toMatchObject({
 		type: 'capability',
 		relatedOperationCount: 2,

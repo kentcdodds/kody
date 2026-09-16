@@ -17,6 +17,6 @@ test('retiring-primitives formatter omits the section when empty and names guide
 	])
 	expect(formatted.startsWith('Retiring primitives')).toBe(true)
 	expect(formatted).toContain('Example:')
-	expect(formatted).toContain('example:guide')
-	expect(formatted).toContain('"example:guide"')
+	expect(formatted).toContain('guide:example')
+	expect(formatted).toContain('"guide:example"')
 })

@@ -16,9 +16,9 @@ category: platform
 Use this doc when authoring or debugging a package **app**, a community fork of
 an app, or a hosted-app load. Package shape, README / AGENTS.md, Intent, and
 export JSDoc stay in [Package authoring](./package-authoring.md)
-(`package_authoring:guide`). Proving the integration first stays in
+(`guide:package_authoring`). Proving the integration first stays in
 [Integration bootstrap](./integration-bootstrap.md)
-(`integration_bootstrap:guide`).
+(`guide:integration_bootstrap`).
 
 A package app is a hosted **Worker entry**. `kody.app.entry` default-exports a
 fetch handler (a function, `{ fetch }`, or a named `fetch` export). Anything
@@ -29,7 +29,7 @@ browser module and static files under `/_assets`. `kody:runtime` exposes
 `packageContext`, `packageStorage()`, and the rest of the run. Remix is
 [Example A](#remix-recipe) — a recipe with its own boilerplate, not a host mode.
 
-Open a heading with `search({ entity: "package_apps:guide#remix-recipe" })` (or
+Open a heading with `search({ entity: "guide:package_apps#remix-recipe" })` (or
 another slug below) when you need one recipe.
 
 ## After an integration smoke test

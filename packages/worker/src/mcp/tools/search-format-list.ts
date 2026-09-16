@@ -30,7 +30,7 @@ export function formatSearchMarkdown(input: {
 	}
 	if ((input.includePreamble ?? true) && hasEntityBackedMatch) {
 		lines.push(
-			'For full detail on entity-backed hits, call `search` with `entity: "{id}:{type}"`.',
+			'For full detail on entity-backed hits, call `search` with `entity: "{type}:{id}"`.',
 			'',
 		)
 	}

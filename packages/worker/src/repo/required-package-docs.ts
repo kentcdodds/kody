@@ -44,7 +44,7 @@ export function formatRequiredPackageDocsFailure(
 	missing: Array<RequiredPackageDocName>,
 ) {
 	const missingList = missing.join(' and ')
-	return `Missing required package docs: ${missingList} ${missing.length === 1 ? 'is' : 'are'} missing or empty. Publish requires non-empty root README.md (human-focused: what it does, prerequisites, setup, done-when) and AGENTS.md (agent-focused: imports, smoke tests, edge cases). Existing published packages keep running; add both files before publishing a new version. See search({ entity: "package_authoring:guide" }).`
+	return `Missing required package docs: ${missingList} ${missing.length === 1 ? 'is' : 'are'} missing or empty. Publish requires non-empty root README.md (human-focused: what it does, prerequisites, setup, done-when) and AGENTS.md (agent-focused: imports, smoke tests, edge cases). Existing published packages keep running; add both files before publishing a new version. See search({ entity: "guide:package_authoring" }).`
 }
 
 export function validateRequiredPackageDocs(

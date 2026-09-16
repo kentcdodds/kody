@@ -5,10 +5,10 @@ exists, that repo-backed source is the source of truth for later edits and
 publishes.
 
 Use the repo capabilities when you want to inspect or modify package source
-directly. `packageGet` returns metadata only (exports, types, secret FYI). To
-read `README.md`, `AGENTS.md`, or other package files, open a session with
-`repoOpenSession` and call `repoReadFile`. One-shot reads should
-`repoDiscardSession` when finished.
+directly. Search `package:{id}#{subpath}` returns one export contract;
+`packageGet` returns the full export array plus secret FYI. To read `README.md`,
+`AGENTS.md`, or other package files, open a session with `repoOpenSession` and
+call `repoReadFile`. One-shot reads should `repoDiscardSession` when finished.
 
 ## When to use repo sessions vs. a local git remote
 

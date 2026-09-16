@@ -26,7 +26,7 @@ This is the inverse of [connecting your agent to Kody](./connect-your-agent.md)
    in at the provider, and approve access.
 4. Confirm with `mcpServerList` (or refresh the account page). The connected
    server shows up in `search` as an **mcp-server** hit (name and server
-   instructions). List its tools with `search({ entity: "<name>:mcp-server" })`
+   instructions). List its tools with `search({ entity: "mcp-server:<name>" })`
    or `search({ domain: "mcp:<name>" })`. If the identity provider approved
    access but tools never appear, Status on `/account/mcp-servers/:serverId`
    shows the last sanitized settle error (phase, HTTP status, URLs, and an

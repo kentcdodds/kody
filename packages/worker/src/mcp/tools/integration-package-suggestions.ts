@@ -119,7 +119,7 @@ function toUserSuggestion(
 		kodyId: row.record.kodyId,
 		name: row.record.name,
 		description: row.record.description,
-		entityRef: `${row.record.kodyId}:package`,
+		entityRef: `package:${row.record.kodyId}`,
 	}
 }
 

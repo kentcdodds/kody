@@ -3,11 +3,11 @@
 The markdown in this directory is the user-facing documentation served at
 [kody.codes/docs](https://kody.codes/docs) and read by connected agents over
 MCP. The directory keeps its historical `guides` name; the MCP entity type is
-still `{id}:guide`. Each file carries YAML frontmatter (`id`, `title`,
+still `guide:{id}`. Each file carries YAML frontmatter (`id`, `title`,
 `summary`, `category`, optional `audience`, `unadvertised`, `adminOnly`, `image`
 / `imageAlt` / `ogImage`, and for provider docs `provider` and `lastVerified`).
 Sources are bundled into origin and `kody-platform` at build time so the web
-pages and `search({ entity: "{id}:guide" })` serve the same deployed content.
+pages and `search({ entity: "guide:{id}" })` serve the same deployed content.
 Doc-only deploys upload those two scripts and skip runtime and jobs.
 
 Surfaces:
@@ -17,9 +17,9 @@ Surfaces:
 - **Raw markdown** — `/docs/<slug>.md`, or `Accept: text/markdown` on the HTML
   URL. `/docs.md` is the introduction plus a sectioned index; `/llms.txt` (also
   `/docs/llms.txt`) is the compact index.
-- **`search({ entity: "{id}:guide" })`** over MCP — pass the stable frontmatter
-  `id` (for example `package_authoring:guide`). Oversized docs return a table of
-  contents; open a heading with `{id}:guide#{slug}`.
+- **`search({ entity: "guide:{id}" })`** over MCP — pass the stable frontmatter
+  `id` (for example `guide:package_authoring`). Oversized docs return a table of
+  contents; open a heading with `guide:{id}#{slug}`.
 - **Legacy `/guides*`** — every old URL 308s to its `/docs*` twin
   (`packages/worker/src/app/handlers/legacy-guides-redirect.ts`).
 
@@ -41,7 +41,7 @@ Frontmatter `audience: agents` marks a playbook the connected agent follows step
 by step (the page shows an "Agent playbook" label); omit it for ordinary
 documentation. Frontmatter `adminOnly: true` plus a `docsNav` section with
 `adminOnly: true` hides the page from the public website, sitemap, `llms.txt`,
-and `{id}:guide` search; signed-in admins see the Admin sidebar and can search
+and `guide:{id}` search; signed-in admins see the Admin sidebar and can search
 those pages. Non-admins get the same not-found response as a missing slug.
 
 | Section            | Files                                                                                                                                                                                                                                                                                                                                                                                                                                                |

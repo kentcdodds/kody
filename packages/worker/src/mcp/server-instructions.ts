@@ -60,7 +60,7 @@ function formatDomainInstructions(
 		.join('\n')
 	const connectedBindingsInstruction =
 		connectedBindingCount > 0
-			? `${connectedBindingCount} connected MCP ${connectedBindingCount === 1 ? 'binding' : 'bindings'}; search finds the server, then \`search({ entity: "<name>:mcp-server" })\` lists tools.`
+			? `${connectedBindingCount} connected MCP ${connectedBindingCount === 1 ? 'binding' : 'bindings'}; search finds the server, then \`search({ entity: "mcp-server:<name>" })\` lists tools.`
 			: ''
 	return [builtinInstructions, connectedBindingsInstruction]
 		.filter(Boolean)

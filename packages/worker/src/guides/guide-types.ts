@@ -33,7 +33,7 @@ export type GuideFrontmatter = {
 	lastVerified: string | null
 	/**
 	 * When true, the guide stays callable by exact id but is omitted from
-	 * web/agent listings and `{id}:guide` search advertisements.
+	 * web/agent listings and `guide:{id}` search advertisements.
 	 */
 	unadvertised: boolean
 	/**

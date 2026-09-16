@@ -6,7 +6,7 @@ Executable plan for retiring the values primitive (ADR
 ## Status
 
 Writes are gone. `value_set` is not a capability. `POST /account/values.json`
-save is gone. Search, domain listing, MCP instructions, and `values:guide`
+save is gone. Search, domain listing, MCP instructions, and `guide:values`
 advertisements do not mention values. The unadvertised `values` guide stays
 callable by exact entity id. `primitives.yaml` has no `id: values` entry.
 

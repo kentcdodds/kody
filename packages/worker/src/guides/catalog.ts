@@ -57,7 +57,7 @@ import portability from '../../../../docs/guides/portability.md'
 
 /**
  * Static doc sources. The canonical markdown lives in `docs/guides/` (also
- * readable on GitHub); this catalog bundles it so the MCP `{id}:guide`
+ * readable on GitHub); this catalog bundles it so the MCP `guide:{id}`
  * search entity, the `/docs` web pages, and the raw `text/markdown`
  * responses all serve exactly the same deployed content. When adding a doc,
  * drop a `.md` file with the frontmatter contract (see

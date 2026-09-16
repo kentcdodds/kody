@@ -8,7 +8,7 @@ import { cwd as processCwd } from 'node:process'
  */
 export const maxGuideSectionChars = 6_000 * 4
 export const guideContentsModeLine =
-	'- Contents: oversized guide; open a heading with `{id}:guide#{slug}`'
+	'- Contents: oversized guide; open a heading with `guide:{id}#{slug}`'
 
 const headingLinePattern = /^(#{1,6})\s+(.+?)\s*$/
 const fencedBlockPattern = /^(`{3,}|~{3,})/
@@ -43,7 +43,7 @@ export function buildGuideDetailHeaderLines(input) {
 		'',
 		'## Summary',
 		'',
-		`- Entity: \`${input.id}:guide\``,
+		`- Entity: \`guide:${input.id}\``,
 		`- Category: \`${input.category}\``,
 		`- Web: \`${input.slug === 'what-is-kody' ? '/docs' : `/docs/${input.slug}`}\``,
 		...(input.provider ? [`- Provider: ${input.provider}`] : []),

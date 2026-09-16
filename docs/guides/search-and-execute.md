@@ -17,7 +17,7 @@ Agent notes — for AI agents explaining or using these two tools:
 - This page is the playbook for the public MCP surface. Load it when someone
   asks what search and execute are, how to call them, or why Kody is not a
   long tool list.
-- Official guides load with search({ entity: "{id}:guide" }). Capability
+- Official guides load with search({ entity: "guide:{id}" }). Capability
   detail includes a ready-to-run execute snippet; adapt that snippet, then
   execute.
 - Search returns markdown (`# Search results`), not a matches JSON object.
@@ -62,9 +62,9 @@ Three useful shapes:
   builtins (`email`, `jobs`, `packages`) and connected MCP servers
   (`mcp:linear`, `mcp:home`). Ranked search surfaces those servers as
   **mcp-server** hits (name and instructions), not every remote tool. Open
-  `{ "entity": "home:mcp-server" }` to list tools, then call
+  `{ "entity": "mcp-server:home" }` to list tools, then call
   `kody.mcp["home"].tool_name(args)`.
-- **Entity lookup** — `{ "entity": "{id}:{type}" }` opens one hit. `type` is
+- **Entity lookup** — `{ "entity": "{type}:{id}" }` opens one hit. `type` is
   `capability`, `guide`, `integration`, `mcp-server`, `package`, or `secret`.
   Pass an array of 1–10 refs to load related details in one call. Guide refs
   accept `#{heading}` to open one section.
@@ -120,7 +120,7 @@ helpers, workflows, and timeouts.
 5. **Save** the working module as a package when the behavior should live past
    this chat — [Package lifecycle](./package-lifecycle.md).
 
-Official guides load with `search({ entity: "{id}:guide" })`. Prefer that over
+Official guides load with `search({ entity: "guide:{id}" })`. Prefer that over
 executing `codingGuideGet` just to read a guide.
 
 ## Example agent inputs
@@ -156,45 +156,45 @@ List one domain in registry order:
 Open one official guide:
 
 ```json
-{ "entity": "package_authoring:guide" }
+{ "entity": "guide:package_authoring" }
 ```
 
 Open several related guides:
 
 ```json
 {
-	"entity": ["package_authoring:guide", "package_lifecycle:guide"]
+	"entity": ["guide:package_authoring", "guide:package_lifecycle"]
 }
 ```
 
 Open a capability (returns the execute snippet):
 
 ```json
-{ "entity": "emailSend:capability" }
+{ "entity": "capability:emailSend" }
 ```
 
 Open a connected MCP server, saved integration, package, or secret reference:
 
 ```json
-{ "entity": "home:mcp-server" }
+{ "entity": "mcp-server:home" }
 ```
 
 ```json
-{ "entity": "github:integration" }
+{ "entity": "integration:github" }
 ```
 
 ```json
-{ "entity": "my-package:package" }
+{ "entity": "package:my-package" }
 ```
 
 ```json
-{ "entity": "githubPat:secret" }
+{ "entity": "secret:githubPat" }
 ```
 
 Open one guide heading:
 
 ```json
-{ "entity": "package_subscriptions:guide#repo.pushed" }
+{ "entity": "guide:package_subscriptions#repo.pushed" }
 ```
 
 Optional `memoryContext` (task plus a couple of entities) can travel with a

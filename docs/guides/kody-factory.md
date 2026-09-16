@@ -94,7 +94,7 @@ resource and expose that server through a protected public HTTPS route. The
 Access pattern and points at
 [home-mcp-starter](https://github.com/kody-bot/home-mcp-starter). Then connect
 its URL as a [remote MCP server](../use/mcp-client-servers.md). Search ranks the
-server; `search({ entity: "<name>:mcp-server" })` lists its tools.
+server; `search({ entity: "mcp-server:<name>" })` lists its tools.
 
 Work that does not fit a Worker isolate — a large npm graph, native code, or
 multi-minute CPU — follows the same split: the saved package orchestrates, and

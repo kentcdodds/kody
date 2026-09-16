@@ -114,7 +114,7 @@ export const mcpServerSearchEntityPlugin = {
 			'',
 			'## Tools',
 			'',
-			'Inspect a tool with `search({ entity: "<id>:capability" })`, then call it from `execute`.',
+			'Inspect a tool with `search({ entity: "capability:<id>" })`, then call it from `execute`.',
 			'',
 		)
 		if (detail.tools.length === 0) {

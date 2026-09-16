@@ -7,7 +7,7 @@ import { type Guide, type GuideMetadata } from './guides/guide-types.ts'
  *
  * `guideMetadataList` is small (frontmatter only, no bodies) and safe to
  * statically import: it costs no per-guide parsing at runtime and adds
- * negligible size to whichever Worker ranks `{id}:guide` search entities
+ * negligible size to whichever Worker ranks `guide:{id}` search entities
  * or registers `codingGuideGet`.
  *
  * `importGuideCatalog()` returns the full parsed catalog (bodies included).
@@ -20,7 +20,7 @@ import { type Guide, type GuideMetadata } from './guides/guide-types.ts'
  * origin emits it as a hashed SSR chunk and Wrangler sibling workers still
  * match the `generated/*.mjs` `find_additional_modules` rule. Either way it
  * is excluded from the main script and only fetched, parsed, and evaluated
- * when a request actually opens a `{id}:guide` entity or calls the
+ * when a request actually opens a `guide:{id}` entity or calls the
  * `codingGuideGet` handler.
  * Merely ranking guide metadata does not add catalog parse/link cost to
  * the main module's cold start.
