@@ -145,8 +145,13 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		id: 'secrets',
 		title: 'Secrets',
 		file: 'secrets.md',
-		paths: ['/account/secrets', '/connect/secrets'],
-		apis: ['/account/secrets.json'],
+		paths: [
+			'/account/secrets',
+			'/connect/secrets',
+			'/account/secret-providers',
+			'/account/secret-providers/approve',
+		],
+		apis: ['/account/secrets.json', '/account/secret-providers.json'],
 	},
 	{
 		id: 'integrations',

@@ -8,7 +8,10 @@ import {
 	type RunRecordContext,
 	type RunSurface,
 } from '#worker/run-records/types.ts'
-import { packageWorkflowInvocationSource } from '#worker/package-runtime/package-invocation-sources.ts'
+import {
+	packageWorkflowInvocationSource,
+	sealedSecretProviderInvocationSource,
+} from '#worker/package-runtime/package-invocation-sources.ts'
 import { type listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { buildPackageStorageId } from '#worker/storage-ids.ts'
@@ -174,7 +177,12 @@ export function resolveInvocationRuntimeSurface(input: {
 	selector: PackageModuleSelector
 	source: string | null
 }): RunSurface | null {
-	if (input.source === packageWorkflowInvocationSource) return null
+	if (
+		input.source === packageWorkflowInvocationSource ||
+		input.source === sealedSecretProviderInvocationSource
+	) {
+		return null
+	}
 	switch (input.selector.kind) {
 		case 'export':
 			return 'export'
@@ -200,7 +208,11 @@ export function resolveInvocationMeteringSurface(input: {
 }): RunSurface | null {
 	return (
 		resolveInvocationRuntimeSurface(input) ??
-		(input.source === packageWorkflowInvocationSource ? 'workflow' : null)
+		(input.source === packageWorkflowInvocationSource
+			? 'workflow'
+			: input.source === sealedSecretProviderInvocationSource
+				? 'export'
+				: null)
 	)
 }
 

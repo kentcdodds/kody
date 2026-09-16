@@ -3,6 +3,7 @@ import { expect, test, vi } from 'vitest'
 import {
 	executeGatewayFetch,
 	expandSecretPlaceholders,
+	providerSecretsRequireHttpsMessage,
 	secretResolutionHeaderName,
 } from '#mcp/fetch-gateway.ts'
 import {
@@ -17,6 +18,7 @@ import * as packageRepo from '#worker/package-registry/repo.ts'
 import * as integrationCredentials from '#worker/integrations/credentials.ts'
 import * as integrationPackageAccess from '#worker/integrations/package-access.ts'
 import * as integrationService from '#worker/integrations/service.ts'
+import * as providerResolve from '#mcp/secrets/secret-providers/resolve.ts'
 
 const userMeter = createInMemoryUserMeterEnv()
 const env = {
@@ -1496,6 +1498,107 @@ test('fetch gateway aborts hung outbound fetches via timeoutMs or outboundFetchT
 	).rejects.toSatisfy(isAbortOrTimeout)
 	expect(propsTimeout).toHaveBeenCalledTimes(1)
 	expect(propsTimeout.mock.calls[0]?.[0]?.signal.aborted).toBe(true)
+})
+
+test('fetch gateway expands provider placeholders and denies the wrong host without calling user secrets', async () => {
+	const createRequest = (host: string) =>
+		new Request(`https://${host}/login`, {
+			headers: {
+				Authorization:
+					'Bearer {{secret/1password:i/cccccccc-cccc-4ccc-8ccc-cccccccccccc/password}}',
+			},
+		})
+	const resolveSpy = vi
+		.spyOn(providerResolve, 'resolveProviderSecretForFetch')
+		.mockResolvedValue({
+			provider: '1password',
+			ref: 'i/cccccccc-cccc-4ccc-8ccc-cccccccccccc/password',
+			canonicalRef: 'i/cccccccc-cccc-4ccc-8ccc-cccccccccccc/password',
+			value: 'vault-password',
+			hosts: ['app.example.com'],
+		})
+	const userSecretSpy = vi.spyOn(secretService, 'resolveSecret')
+	try {
+		const allowed = await expandSecretPlaceholders({
+			request: createRequest('app.example.com'),
+			props,
+			env,
+		})
+		expect(allowed.headers.get('Authorization')).toBe('Bearer vault-password')
+		expect(resolveSpy).toHaveBeenCalledTimes(1)
+
+		await expect(
+			expandSecretPlaceholders({
+				request: createRequest('evil.example.com'),
+				props,
+				env,
+			}),
+		).rejects.toThrow('not allowed for host "evil.example.com"')
+		expect(userSecretSpy).not.toHaveBeenCalled()
+	} finally {
+		resolveSpy.mockRestore()
+		userSecretSpy.mockRestore()
+	}
+})
+
+test('fetch gateway replaces the original mixed-case provider placeholder after normalize', async () => {
+	const original =
+		'{{secret/1Password: i/cccccccc-cccc-4ccc-8ccc-cccccccccccc/password }}'
+	const resolveSpy = vi
+		.spyOn(providerResolve, 'resolveProviderSecretForFetch')
+		.mockResolvedValue({
+			provider: '1password',
+			ref: 'i/cccccccc-cccc-4ccc-8ccc-cccccccccccc/password',
+			canonicalRef: 'i/cccccccc-cccc-4ccc-8ccc-cccccccccccc/password',
+			value: 'vault-password',
+			hosts: ['app.example.com'],
+		})
+	try {
+		const allowed = await expandSecretPlaceholders({
+			request: new Request('https://app.example.com/login', {
+				headers: { Authorization: `Bearer ${original}` },
+			}),
+			props,
+			env,
+		})
+		expect(allowed.headers.get('Authorization')).toBe('Bearer vault-password')
+		expect(resolveSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				provider: '1Password',
+				ref: 'i/cccccccc-cccc-4ccc-8ccc-cccccccccccc/password',
+			}),
+		)
+	} finally {
+		resolveSpy.mockRestore()
+	}
+})
+
+test('fetch gateway rejects provider secrets on a non-HTTPS request URL', async () => {
+	const resolveSpy = vi
+		.spyOn(providerResolve, 'resolveProviderSecretForFetch')
+		.mockResolvedValue({
+			provider: '1password',
+			ref: 'i/cccccccc-cccc-4ccc-8ccc-cccccccccccc/password',
+			canonicalRef: 'i/cccccccc-cccc-4ccc-8ccc-cccccccccccc/password',
+			value: 'vault-password',
+			hosts: ['app.example.com'],
+		})
+	try {
+		await expect(
+			expandSecretPlaceholders({
+				request: new Request('http://app.example.com/login', {
+					headers: {
+						Authorization:
+							'Bearer {{secret/1password:i/cccccccc-cccc-4ccc-8ccc-cccccccccccc/password}}',
+					},
+				}),
+				props,
+				env,
+			}),
+		).rejects.toThrow(providerSecretsRequireHttpsMessage)
+	} finally {
+		resolveSpy.mockRestore()
+	}
 })
 
 test('executeGatewayFetch rejects when allowOutboundFetch is false', async () => {

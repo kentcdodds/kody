@@ -18,6 +18,7 @@ const signedInSession: session.SessionInfo = {
 		'compact-mcp-server-instructions': false,
 		'compute-overage-charging': true,
 		'package-share-grants': false,
+		'secret-providers': false,
 	},
 }
 

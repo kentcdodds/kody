@@ -58,6 +58,7 @@ test('email verification redirect helpers preserve safe targets and reject open 
 			'compact-mcp-server-instructions': false,
 			'compute-overage-charging': true,
 			'package-share-grants': false,
+			'secret-providers': false,
 		},
 	}
 	const verifiedUser: SessionInfo = {

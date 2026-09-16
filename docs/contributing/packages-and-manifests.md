@@ -31,6 +31,9 @@ Use `package.json` as the canonical source of truth for saved package metadata.
   Arrays are rejected. Repo checks reject cycles in this graph at publish time,
   and fail closed if a reachable saved package manifest cannot be loaded.
 - `kody.secretMounts` — optional package-scoped secret mount declarations
+- `kody.secretProvider` — optional `{ id }` declaring this package can serve
+  that external secret provider. Metadata alone does not bind the provider; see
+  [secret providers](./secret-providers.md)
 - `kody.app` — optional hosted package app config
 - `kody.subscriptions` — optional package-owned event subscriptions
 - `kody.emits` — optional package-emitted event topic declarations

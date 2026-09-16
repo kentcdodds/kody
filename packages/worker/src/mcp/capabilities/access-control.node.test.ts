@@ -15,6 +15,7 @@ function createFlagMap(enabled: boolean): CallerFeatureFlags {
 		'compact-mcp-server-instructions': false,
 		'compute-overage-charging': true,
 		'package-share-grants': false,
+		'secret-providers': false,
 	}
 }
 

@@ -64,6 +64,10 @@ export {
 	accountSecretsRouteLoader,
 } from './account-secrets.tsx'
 export {
+	AccountSecretProvidersRoute,
+	accountSecretProvidersRouteLoader,
+} from './account-secret-providers.tsx'
+export {
 	AccountTwoFactorRoute,
 	accountTwoFactorRouteLoader,
 } from './account-two-factor.tsx'

@@ -1664,6 +1664,46 @@ export type AccountSecretDetail = AccountSecretListItem & {
 	value: string
 }
 
+type AccountSecretProviderBindingItem = {
+	provider: string
+	packageId: string
+	kodyId: string
+	doorSecretName: string
+	config: Record<string, string>
+	updatedAt: string
+}
+
+type AccountSecretProviderApproval = {
+	provider: string
+	canonicalRef: string
+	packageId: string
+	kodyId: string
+	alreadyGranted: boolean
+	error?: string
+}
+
+type AccountSecretProviderGrantItem = {
+	provider: string
+	canonicalRef: string
+	packageId: string
+	kodyId: string
+	createdAt: string
+}
+
+export type AccountSecretProvidersLoaderData = {
+	ok: true
+	email: string
+	bindings: Array<AccountSecretProviderBindingItem>
+	grants: Array<AccountSecretProviderGrantItem>
+	packages: Array<{
+		id: string
+		kodyId: string
+		name: string
+	}>
+	doorSecrets: Array<string>
+	approval: AccountSecretProviderApproval | null
+}
+
 export type AccountSecretsLoaderData = {
 	ok: true
 	email: string
@@ -2142,6 +2182,7 @@ export type AppLoaderData = {
 	accountPackages?: AccountPackagesLoaderData
 	accountPackageApprovePublish?: AccountPackageApprovePublishLoaderData
 	accountSecrets?: AccountSecretsLoaderData
+	accountSecretProviders?: AccountSecretProvidersLoaderData
 	accountValues?: AccountValuesLoaderData
 	accountJobs?: AccountJobsLoaderData
 	accountWorkflows?: AccountWorkflowsLoaderData

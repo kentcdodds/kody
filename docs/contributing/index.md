@@ -83,6 +83,7 @@ style, tests, MCP capabilities, and runtime architecture.
 ## Security and operations
 
 - [Security](./security.md), [secret host approval](./secret-host-approval.md),
+  [secret providers](./secret-providers.md),
   [secret rotation](./secret-rotation.md), [social login](./social-login.md)
 - [Operator accounts](./operator-accounts.md) (third-party services, secret
   names, recovery)

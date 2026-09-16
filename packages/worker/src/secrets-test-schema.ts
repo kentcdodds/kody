@@ -34,4 +34,30 @@ export async function ensureSecretBucketsTestSchema(db: D1Database) {
 			)`,
 		)
 		.run()
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS secret_provider_bindings (
+				user_id TEXT NOT NULL,
+				provider_id TEXT NOT NULL,
+				package_id TEXT NOT NULL,
+				door_secret_name TEXT NOT NULL,
+				config_json TEXT NOT NULL DEFAULT '{}',
+				created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+				updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+				PRIMARY KEY (user_id, provider_id)
+			)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS secret_provider_grants (
+				user_id TEXT NOT NULL,
+				provider_id TEXT NOT NULL,
+				canonical_ref TEXT NOT NULL,
+				package_id TEXT NOT NULL,
+				created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+				PRIMARY KEY (user_id, provider_id, canonical_ref, package_id)
+			)`,
+		)
+		.run()
 }

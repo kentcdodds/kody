@@ -17,6 +17,10 @@ import { runSavedPackageModuleEphemeral } from './module-execution.ts'
 import { type PackageInvokeCheckPreloads } from './invoke-check.ts'
 import { resolveSavedPackage } from './module-artifacts.ts'
 import { buildJsonErrorResponse } from './responses.ts'
+import {
+	isSealedSecretProviderExport,
+	sealedSecretProviderExportDeniedResponse,
+} from '#mcp/secrets/secret-providers/sealed-export.ts'
 
 function tokenAllowsPackage(input: {
 	token: PackageInvocationTokenScope
@@ -61,6 +65,9 @@ export async function invokePackageExportForExecuteRuntime(input: {
 		})
 	}
 	const exportName = normalizeExportName(input.request.exportName)
+	if (isSealedSecretProviderExport(exportName)) {
+		return buildJsonErrorResponse(sealedSecretProviderExportDeniedResponse())
+	}
 	const idempotencyKey = normalizeNullableString(input.request.idempotencyKey)
 	const savedPackage =
 		input.preloads?.savedPackage ??
@@ -143,6 +150,9 @@ export async function invokePackageExportForPackageRuntime(input: {
 		})
 	}
 	const exportName = normalizeExportName(input.request.exportName)
+	if (isSealedSecretProviderExport(exportName)) {
+		return buildJsonErrorResponse(sealedSecretProviderExportDeniedResponse())
+	}
 	const idempotencyKey = normalizeNullableString(input.request.idempotencyKey)
 	const savedPackage =
 		input.preloads?.savedPackage ??
@@ -217,6 +227,9 @@ export async function invokePackageExportWithToolFactories(input: {
 		})
 	}
 	const exportName = normalizeExportName(input.request.exportName)
+	if (isSealedSecretProviderExport(exportName)) {
+		return buildJsonErrorResponse(sealedSecretProviderExportDeniedResponse())
+	}
 	// External HTTP token invocations stay keyed-only: providers retry
 	// deliveries, so exactly-once is the point of this surface. Workflow
 	// step retries pass ephemeral: true and run key-less instead.

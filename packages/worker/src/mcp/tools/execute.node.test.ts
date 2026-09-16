@@ -29,6 +29,8 @@ vi.mock('#worker/execute-health-heartbeat.ts', () => heartbeatMock)
 const mockModule = vi.hoisted(() => ({
 	runModuleWithRegistry: vi.fn(),
 	createExecutePackageInvokeTools: vi.fn(),
+	createPackageRuntimeInvokeTools: vi.fn(),
+	createPackageEventTools: vi.fn(),
 	getCapabilityRegistryForContext: vi.fn(async () => ({
 		capabilityHandlers: {
 			codingGuideGet: true,
@@ -52,6 +54,10 @@ vi.mock('#mcp/capabilities/registry.ts', () => ({
 vi.mock('#worker/package-invocations/service.ts', () => ({
 	createExecutePackageInvokeTools: (...args: Array<unknown>) =>
 		mockModule.createExecutePackageInvokeTools(...args),
+	createPackageRuntimeInvokeTools: (...args: Array<unknown>) =>
+		mockModule.createPackageRuntimeInvokeTools(...args),
+	createPackageEventTools: (...args: Array<unknown>) =>
+		mockModule.createPackageEventTools(...args),
 }))
 
 vi.mock('#worker/run-records/service.ts', async () => {

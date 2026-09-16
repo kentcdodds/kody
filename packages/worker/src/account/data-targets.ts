@@ -263,6 +263,8 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		parentTable: 'secret_buckets',
 	},
 	{ kind: 'user_id', table: 'secret_buckets' },
+	{ kind: 'user_id', table: 'secret_provider_grants' },
+	{ kind: 'user_id', table: 'secret_provider_bindings' },
 	// Connections reference OAuth apps with ON DELETE RESTRICT, so delete
 	// user_integrations before user_oauth_apps. Ciphertext columns are redacted
 	// on export.
