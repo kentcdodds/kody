@@ -162,6 +162,9 @@ export function outboundFetchTimeoutMsForExecutor(executorTimeoutMs: number) {
 export const retrieverOutboundFetchDeniedMessage =
 	'Outbound fetch is not available in retriever runs.'
 
+export const providerSecretsRequireHttpsMessage =
+	'Provider secrets require an HTTPS request URL.'
+
 export class KodyFetchGateway extends WorkerEntrypoint<Env, FetchGatewayProps> {
 	async fetch(request: Request) {
 		return executeGatewayFetch({
@@ -563,6 +566,11 @@ export async function expandSecretPlaceholders(input: {
 			throw new Error(
 				'Unable to resolve the request host after secret expansion.',
 			)
+		}
+		if (resolvedProviderSecrets.length > 0) {
+			if (new URL(nextUrl).protocol !== 'https:') {
+				throw new Error(providerSecretsRequireHttpsMessage)
+			}
 		}
 		const normalizedHost = normalizeHost(requestedHost)
 		const missingApprovals = await collectHostApprovalEntries({

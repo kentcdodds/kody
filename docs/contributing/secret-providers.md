@@ -8,8 +8,9 @@ provider-agnostic.
 ## Feature flag
 
 The whole surface is behind the `secret-providers` admin flag (registry default
-**off**). Enable it for one account or globally at `/admin/feature-flags`. When
-the flag is off:
+**off**). Enable it for one account or globally at `/admin/feature-flags`.
+Evaluation is fail-closed: unresolved accounts and evaluation errors stay off,
+even when the global flag is on. When the flag is off:
 
 - `{{secret/<provider>:<ref>}}` is unsupported (clear error, no provider call)
 - binding, grants, approval UX, and the account nav item are hidden
@@ -70,8 +71,9 @@ or import result.
 
 Timeout budget: **8s** for resolve, **5s** for canonicalize. Empty `hosts`
 denies every use. Host match normalizes to hostname, so
-`https://app.example.com/login` allows `app.example.com` only. Items with no
-usable websites fail closed.
+`https://app.example.com/login` allows `app.example.com` only. A request that
+carries a provider secret must use an `https:` URL. Items with no usable
+websites fail closed.
 
 ## Grants
 
@@ -79,7 +81,8 @@ usable websites fail closed.
   spirit as unlocked user secrets).
 - Saved packages need an explicit `(provider, canonicalRef) → package` grant.
   `secretProviderLock` returns the approval URL; only the owner can grant or
-  revoke on `/account/secret-providers`. Unbind does not drop grants.
+  revoke on `/account/secret-providers`. Unbind, and rebind to a different
+  provider package, drop every grant for that provider.
 - Share-granted packages use the **package owner's** binding and grants, not the
   guest's.
 
@@ -88,10 +91,11 @@ Ungranted package use fails **before** the value-returning provider call.
 ## Cache and failures
 
 Resolved values cache for **30 seconds**, keyed by
-`(account, provider, canonicalRef)`. Deduplicate refs in one request. Fail
-closed on a missing door-key secret, provider error, missing field, empty hosts,
-host mismatch, broken ref, or missing grant. Errors name the next action and
-never include values.
+`(account, provider, canonicalRef)`. Bind, unbind, and rebind invalidate that
+account+provider slice. Deduplicate refs in one request. Fail closed on a
+missing door-key secret, provider error, missing field, empty hosts, host
+mismatch, non-HTTPS request URL, broken ref, or missing grant. Errors name the
+next action and never include values.
 
 Ordinary `search` does not call the provider or crawl a vault.
 

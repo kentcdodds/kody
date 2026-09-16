@@ -23,7 +23,10 @@ CREATE TABLE secret_provider_grants (
 	package_id TEXT NOT NULL,
 	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 	PRIMARY KEY (user_id, provider_id, canonical_ref, package_id),
-	FOREIGN KEY (package_id) REFERENCES saved_packages(id) ON DELETE CASCADE
+	FOREIGN KEY (package_id) REFERENCES saved_packages(id) ON DELETE CASCADE,
+	FOREIGN KEY (user_id, provider_id)
+		REFERENCES secret_provider_bindings(user_id, provider_id)
+		ON DELETE CASCADE
 );
 
 CREATE INDEX idx_secret_provider_grants_user_package

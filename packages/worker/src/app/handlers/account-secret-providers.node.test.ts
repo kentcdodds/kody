@@ -106,6 +106,18 @@ test('secret providers API lists grants and revokes them on the website', async 
 		userId: ownerStableId,
 		kodyId: 'deploy',
 	})
+	sqlite
+		.prepare(
+			`INSERT INTO secret_provider_bindings (
+				user_id, provider_id, package_id, door_secret_name, config_json
+			) VALUES (?, ?, ?, ?, '{}')`,
+		)
+		.run(
+			ownerStableId,
+			'1password',
+			'pkg-provider',
+			'onePasswordServiceAccountToken',
+		)
 	await enableSecretProvidersForTests(db)
 	await grantSecretProviderToPackage({
 		env,

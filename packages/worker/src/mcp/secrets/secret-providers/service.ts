@@ -22,7 +22,11 @@ import {
 } from './errors.ts'
 import { assertSecretProvidersEnabled } from './flag.ts'
 import { normalizeProviderHosts } from './hosts.ts'
-import { readProviderSecretCache, writeProviderSecretCache } from './cache.ts'
+import {
+	clearProviderSecretCacheForBinding,
+	readProviderSecretCache,
+	writeProviderSecretCache,
+} from './cache.ts'
 import {
 	deleteSecretProviderBinding,
 	deleteSecretProviderGrant,
@@ -176,6 +180,10 @@ export async function bindSecretProvider(input: {
 		doorSecretName,
 		configJson: JSON.stringify(config),
 	})
+	clearProviderSecretCacheForBinding({
+		userId: input.userId,
+		providerId,
+	})
 	return {
 		providerId,
 		packageId: savedPackage.id,
@@ -196,6 +204,10 @@ export async function unbindSecretProvider(input: {
 	})
 	const providerId = normalizeProviderId(input.providerId)
 	await deleteSecretProviderBinding(input.env.APP_DB, {
+		userId: input.userId,
+		providerId,
+	})
+	clearProviderSecretCacheForBinding({
 		userId: input.userId,
 		providerId,
 	})

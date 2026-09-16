@@ -12,7 +12,7 @@ export const secretProviderUnbindCapability = defineDomainCapability(
 		name: 'secretProviderUnbind',
 		featureFlag: secretProvidersFlagKey,
 		description:
-			'Remove the account binding for an external secret provider id. Existing package grants stay until revoked on the website. Does not return secret values.',
+			'Remove the account binding for an external secret provider id. Unbind and rebind to a different package drop every grant for that provider. Does not return secret values.',
 		keywords: ['secret', 'provider', 'unbind', 'disconnect'],
 		readOnly: false,
 		idempotent: true,

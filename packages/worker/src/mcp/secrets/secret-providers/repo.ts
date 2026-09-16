@@ -62,6 +62,19 @@ function toGrantRecord(row: GrantRow): SecretProviderGrantRecord {
 	}
 }
 
+async function deleteSecretProviderGrantsForBinding(
+	db: D1Database,
+	input: { userId: string; providerId: string },
+) {
+	await db
+		.prepare(
+			`DELETE FROM secret_provider_grants
+			WHERE user_id = ? AND provider_id = ?`,
+		)
+		.bind(input.userId, input.providerId)
+		.run()
+}
+
 export async function upsertSecretProviderBinding(
 	db: D1Database,
 	input: {
@@ -72,6 +85,16 @@ export async function upsertSecretProviderBinding(
 		configJson: string
 	},
 ) {
+	const existing = await getSecretProviderBinding(db, {
+		userId: input.userId,
+		providerId: input.providerId,
+	})
+	if (existing && existing.packageId !== input.packageId) {
+		await deleteSecretProviderGrantsForBinding(db, {
+			userId: input.userId,
+			providerId: input.providerId,
+		})
+	}
 	await db
 		.prepare(
 			`INSERT INTO secret_provider_bindings (
@@ -98,6 +121,7 @@ export async function deleteSecretProviderBinding(
 	db: D1Database,
 	input: { userId: string; providerId: string },
 ) {
+	await deleteSecretProviderGrantsForBinding(db, input)
 	await db
 		.prepare(
 			`DELETE FROM secret_provider_bindings

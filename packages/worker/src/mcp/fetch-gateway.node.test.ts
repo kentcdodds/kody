@@ -3,6 +3,7 @@ import { expect, test, vi } from 'vitest'
 import {
 	executeGatewayFetch,
 	expandSecretPlaceholders,
+	providerSecretsRequireHttpsMessage,
 	secretResolutionHeaderName,
 } from '#mcp/fetch-gateway.ts'
 import {
@@ -1567,6 +1568,34 @@ test('fetch gateway replaces the original mixed-case provider placeholder after 
 				ref: 'i/cccccccc-cccc-4ccc-8ccc-cccccccccccc/password',
 			}),
 		)
+	} finally {
+		resolveSpy.mockRestore()
+	}
+})
+
+test('fetch gateway rejects provider secrets on a non-HTTPS request URL', async () => {
+	const resolveSpy = vi
+		.spyOn(providerResolve, 'resolveProviderSecretForFetch')
+		.mockResolvedValue({
+			provider: '1password',
+			ref: 'i/cccccccc-cccc-4ccc-8ccc-cccccccccccc/password',
+			canonicalRef: 'i/cccccccc-cccc-4ccc-8ccc-cccccccccccc/password',
+			value: 'vault-password',
+			hosts: ['app.example.com'],
+		})
+	try {
+		await expect(
+			expandSecretPlaceholders({
+				request: new Request('http://app.example.com/login', {
+					headers: {
+						Authorization:
+							'Bearer {{secret/1password:i/cccccccc-cccc-4ccc-8ccc-cccccccccccc/password}}',
+					},
+				}),
+				props,
+				env,
+			}),
+		).rejects.toThrow(providerSecretsRequireHttpsMessage)
 	} finally {
 		resolveSpy.mockRestore()
 	}

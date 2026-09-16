@@ -51,6 +51,16 @@ export function writeProviderSecretCache(input: {
 	})
 }
 
+export function clearProviderSecretCacheForBinding(input: {
+	userId: string
+	providerId: string
+}) {
+	const prefix = `${input.userId}\u0000${input.providerId}\u0000`
+	for (const key of cache.keys()) {
+		if (key.startsWith(prefix)) cache.delete(key)
+	}
+}
+
 export function clearProviderSecretCacheForTests() {
 	cache.clear()
 }

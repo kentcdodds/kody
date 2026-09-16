@@ -28,6 +28,9 @@ export async function isSecretProvidersEnabled(input: {
 				.first<{ id: number }>()
 			userId = row?.id ?? null
 		}
+		// isFeatureEnabled(db, key, null) treats a globally-on flag with no
+		// rollout percent as enabled. Unresolved accounts must stay off.
+		if (userId == null) return false
 		return await isFeatureEnabled(input.db, secretProvidersFlagKey, userId)
 	} catch {
 		return false
