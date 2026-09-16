@@ -29,8 +29,14 @@ test('provider placeholders split on the first colon after secret/ and leave use
 		{
 			provider: '1password',
 			ref: 'i/11111111-1111-4111-8111-111111111111/password',
+			placeholder:
+				'{{secret/1password:i/11111111-1111-4111-8111-111111111111/password}}',
 		},
-		{ provider: '1password', ref: 'op://Vault/Item/password' },
+		{
+			provider: '1password',
+			ref: 'op://Vault/Item/password',
+			placeholder: '{{secret/1password:op://Vault/Item/password}}',
+		},
 	])
 	expect(
 		buildProviderSecretPlaceholder({
@@ -44,6 +50,25 @@ test('provider placeholders split on the first colon after secret/ and leave use
 		containsSecretPlaceholder('{{secret-basic:username=a,password=b}}'),
 	).toBe(true)
 	expect(containsSecretPlaceholder('plain text')).toBe(false)
+})
+
+test('provider placeholder parse keeps the original mixed-case and spaced token', () => {
+	const token =
+		'{{secret/1Password: i/11111111-1111-4111-8111-111111111111/password }}'
+	expect(parseProviderSecretPlaceholders(token)).toEqual([
+		{
+			provider: '1Password',
+			ref: 'i/11111111-1111-4111-8111-111111111111/password',
+			placeholder: token,
+		},
+	])
+	expect(
+		buildProviderSecretPlaceholder({
+			provider: '1Password',
+			ref: 'i/11111111-1111-4111-8111-111111111111/password',
+			placeholder: token,
+		}),
+	).toBe(token)
 })
 
 test('canonicalize maps op:// UUID synonyms to i/<uuid>/<field> and leaves name-based refs for the provider', () => {

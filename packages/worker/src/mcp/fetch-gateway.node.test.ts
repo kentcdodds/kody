@@ -1540,6 +1540,38 @@ test('fetch gateway expands provider placeholders and denies the wrong host with
 	}
 })
 
+test('fetch gateway replaces the original mixed-case provider placeholder after normalize', async () => {
+	const original =
+		'{{secret/1Password: i/cccccccc-cccc-4ccc-8ccc-cccccccccccc/password }}'
+	const resolveSpy = vi
+		.spyOn(providerResolve, 'resolveProviderSecretForFetch')
+		.mockResolvedValue({
+			provider: '1password',
+			ref: 'i/cccccccc-cccc-4ccc-8ccc-cccccccccccc/password',
+			canonicalRef: 'i/cccccccc-cccc-4ccc-8ccc-cccccccccccc/password',
+			value: 'vault-password',
+			hosts: ['app.example.com'],
+		})
+	try {
+		const allowed = await expandSecretPlaceholders({
+			request: new Request('https://app.example.com/login', {
+				headers: { Authorization: `Bearer ${original}` },
+			}),
+			props,
+			env,
+		})
+		expect(allowed.headers.get('Authorization')).toBe('Bearer vault-password')
+		expect(resolveSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				provider: '1Password',
+				ref: 'i/cccccccc-cccc-4ccc-8ccc-cccccccccccc/password',
+			}),
+		)
+	} finally {
+		resolveSpy.mockRestore()
+	}
+})
+
 test('executeGatewayFetch rejects when allowOutboundFetch is false', async () => {
 	const usageModule = await import('#worker/usage/record-usage.ts')
 	const recordUsageSpy = vi

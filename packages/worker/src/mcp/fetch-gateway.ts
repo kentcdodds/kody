@@ -501,7 +501,7 @@ export async function expandSecretPlaceholders(input: {
 			if (!userId) {
 				throw new Error(fetchSecretAuthRequiredMessage)
 			}
-			return await resolveProviderSecretForFetch({
+			const resolved = await resolveProviderSecretForFetch({
 				env: input.env as Env,
 				baseUrl: input.props.baseUrl,
 				userId,
@@ -510,6 +510,7 @@ export async function expandSecretPlaceholders(input: {
 				storageContext,
 				authorityPackageId,
 			})
+			return { referenced, resolved }
 		}),
 	)
 	for (const { referenced, resolved, value } of resolvedSecretResults) {
@@ -528,11 +529,8 @@ export async function expandSecretPlaceholders(input: {
 			replacements.set(placeholder, value)
 		}
 	}
-	for (const resolved of resolvedProviderSecrets) {
-		const placeholder = buildProviderSecretPlaceholder({
-			provider: resolved.provider,
-			ref: resolved.ref,
-		})
+	for (const { referenced, resolved } of resolvedProviderSecrets) {
+		const placeholder = buildProviderSecretPlaceholder(referenced)
 		if (!replacements.has(placeholder)) {
 			replacements.set(placeholder, resolved.value)
 		}
@@ -596,7 +594,9 @@ export async function expandSecretPlaceholders(input: {
 			)
 		}
 		assertProviderSecretHostsAllowed({
-			resolvedProviderSecrets,
+			resolvedProviderSecrets: resolvedProviderSecrets.map(
+				(entry) => entry.resolved,
+			),
 			normalizedHost,
 		})
 		if (userId && referencedIntegrationTokens.length > 0) {

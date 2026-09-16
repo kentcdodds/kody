@@ -23,6 +23,8 @@ export type ReferencedBasicAuthSecretPlaceholder = {
 export type ReferencedProviderSecret = {
 	provider: string
 	ref: string
+	/** Exact `{{secret/...}}` token from the request, if parsed from text. */
+	placeholder?: string
 }
 
 /**
@@ -102,7 +104,7 @@ export function parseProviderSecretPlaceholders(value: string) {
 		const provider = match[1]?.trim()
 		const ref = match[2]?.trim()
 		if (!provider || !ref) continue
-		secrets.push({ provider, ref })
+		secrets.push({ provider, ref, placeholder: match[0] })
 	}
 	return secrets
 }
@@ -121,7 +123,7 @@ export function parseProviderSecretPlaceholdersFromFormUrlEncoded(
 export function buildProviderSecretPlaceholder(
 	secret: ReferencedProviderSecret,
 ) {
-	return `{{secret/${secret.provider}:${secret.ref}}}`
+	return secret.placeholder ?? `{{secret/${secret.provider}:${secret.ref}}}`
 }
 
 export function parseIntegrationTokenPlaceholders(value: string) {
