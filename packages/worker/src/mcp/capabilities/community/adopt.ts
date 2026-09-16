@@ -10,7 +10,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 
 export const communityForkAdoptPackageRuntimeErrorMessage =
-	'communityForkAdopt is unavailable from package runtime contexts. Review the forked package source from an interactive MCP agent, then call this capability there. Adoption grants user-secret read/use and is not something package code can grant itself.'
+	'communityForkAdopt is unavailable from package runtime contexts. Call it from an interactive MCP agent after reviewing the fork source.'
 
 function assertDirectMcpCaller(callerContext: {
 	executionOrigin?: string
@@ -37,7 +37,7 @@ export const communityForkAdoptCapability = defineDomainCapability(
 	{
 		name: 'communityForkAdopt',
 		description:
-			'Mark a community-forked package as reviewed and trusted by you. Adoption keeps fork provenance but grants self-authored-like read/use access to your user secrets (mutations still need an allowed_packages grant). Call this only from an interactive MCP agent after actually reviewing the package source (repo session or fork files). Include what was reviewed in `review_summary`, and tell the user the fork was adopted. Package apps, jobs, webhooks, and other package runtimes cannot adopt.',
+			'Mark a community-forked package as reviewed and trusted by you. Adoption keeps fork provenance but grants self-authored-like read/use access to your user secrets (mutations still need an allowed_packages grant). Call only from an interactive MCP agent after reviewing the package source. Include what was reviewed in `review_summary`. Package runtimes cannot adopt.',
 		keywords: [
 			'community',
 			'fork',
