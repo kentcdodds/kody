@@ -70,6 +70,5 @@ open capability detail for the exact call shape.
 
 ## Where to go next
 
-- [Secrets](./secrets.md) — the no-`secret_get` rule and Kody-stored secrets
-- [Secrets and host approval](../use/secrets-and-values.md) — placeholder and
-  approval semantics
+- [Secrets](./secrets.md) — the no-`secret_get` rule, placeholders, and host
+  approval
