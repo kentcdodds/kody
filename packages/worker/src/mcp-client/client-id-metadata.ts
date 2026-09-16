@@ -93,7 +93,7 @@ type McpOAuthSaveTokens = Parameters<
  * `invalidateCredentials` for `tokens`, `client`, or `all` infers
  * `clientId` when it is missing, deletes leftover `/token` keys and the
  * sidecar so a rejected grant cannot be replayed, and skips a `tokens`
- * wipe when a newer rotated refresh token already landed.
+ * wipe when a save completed after the invalidate was requested.
  */
 export function createMcpClientOAuthProvider(
 	storage: DurableObjectStorage,
@@ -132,6 +132,7 @@ function installMcpOAuthTokenPreservation(
 			? provider.invalidateCredentials.bind(provider)
 			: null
 	let saveQueue = Promise.resolve()
+	let tokenWriteGeneration = 0
 	provider.tokens = async (context) => {
 		const stored = await collectStoredMcpOAuthTokenSources(provider)
 		if (!readProviderString(provider, 'clientId') && stored.clientId) {
@@ -144,8 +145,8 @@ function installMcpOAuthTokenPreservation(
 		}) as McpOAuthStoredTokens
 	}
 	provider.saveTokens = async (incoming, context) => {
-		const run = saveQueue.then(() =>
-			savePreservedMcpOAuthTokens({
+		const run = saveQueue.then(async () => {
+			const result = await savePreservedMcpOAuthTokens({
 				provider,
 				incoming,
 				context,
@@ -153,8 +154,10 @@ function installMcpOAuthTokenPreservation(
 				readTokens,
 				readDiscovery,
 				writeDiscovery,
-			}),
-		)
+			})
+			tokenWriteGeneration += 1
+			return result
+		})
 		saveQueue = run.then(
 			() => {},
 			() => {},
@@ -163,21 +166,15 @@ function installMcpOAuthTokenPreservation(
 	}
 	if (invalidateCredentials) {
 		provider.invalidateCredentials = async (scope) => {
-			const rejectedRefreshToken =
-				scope === 'tokens'
-					? refreshTokenFromSources(
-							(await collectStoredMcpOAuthTokenSources(provider)).sources,
-						)
-					: null
+			const generationAtRequest = tokenWriteGeneration
 			const run = saveQueue.then(async () => {
-				const stored = await collectStoredMcpOAuthTokenSources(provider)
 				if (
 					scope === 'tokens' &&
-					rejectedRefreshToken &&
-					refreshTokenFromSources(stored.sources) !== rejectedRefreshToken
+					tokenWriteGeneration !== generationAtRequest
 				) {
 					return
 				}
+				const stored = await collectStoredMcpOAuthTokenSources(provider)
 				if (!readProviderString(provider, 'clientId') && stored.clientId) {
 					provider.clientId = stored.clientId
 				}
@@ -270,14 +267,6 @@ async function collectStoredMcpOAuthTokenSources(
 		),
 		clientId: inferredClientId,
 	}
-}
-
-function refreshTokenFromSources(sources: ReadonlyArray<unknown>) {
-	for (const source of sources) {
-		const refreshToken = parseStoredMcpOAuthRefreshToken(source)
-		if (refreshToken) return refreshToken
-	}
-	return null
 }
 
 async function deleteStoredMcpOAuthTokenBlobs(

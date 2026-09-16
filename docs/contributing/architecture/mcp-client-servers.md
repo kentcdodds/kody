@@ -134,8 +134,8 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
    provider has no client id. `invalidateCredentials('tokens'|'client'|'all')`
    infers `clientId` when restore left it unset, deletes leftover `/token` keys
    and the sidecar so a rejected refresh grant cannot be replayed, and skips a
-   `tokens` wipe when a newer rotated refresh token already landed; user remove
-   and callback-URL remint also delete the sidecar. Discovery refresh
+   `tokens` wipe when a save completed after the invalidate was requested; user
+   remove and callback-URL remint also delete the sidecar. Discovery refresh
    advertising is read from top-level metadata and from nested
    `authorizationServerMetadata` / `resourceMetadata`. A later grant that
    includes a refresh token clears the ready missing-grant warning from Status.

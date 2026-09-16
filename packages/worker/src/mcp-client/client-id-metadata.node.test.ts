@@ -222,9 +222,10 @@ test('OAuth invalidate infers a missing client id, drops leftover token blobs, a
 	})
 	const originalPut = storage.put.bind(storage)
 	storage.put = async (key, value) => {
+		const written = await originalPut(key, value)
 		if (
 			typeof key === 'string' &&
-			key.endsWith('/token') &&
+			key === mcpOAuthRefreshTokenStorageKey('server-home') &&
 			value &&
 			typeof value === 'object' &&
 			'refresh_token' in value &&
@@ -233,7 +234,7 @@ test('OAuth invalidate infers a missing client id, drops leftover token blobs, a
 			markSaveStarted()
 			await blockSave
 		}
-		return originalPut(key, value)
+		return written
 	}
 
 	const saveRotated = rotating.saveTokens({
