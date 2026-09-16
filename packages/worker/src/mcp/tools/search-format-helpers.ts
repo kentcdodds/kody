@@ -101,7 +101,7 @@ export function buildPackageActionImportUsage(input: {
 		input.packageName,
 		input.subpath,
 	)
-	if (input.functionName === 'home') {
+	if (input.functionName === 'home' || input.functionName === 'default') {
 		return `import action from ${JSON.stringify(importSpecifier)}`
 	}
 	return `import { ${input.functionName} } from ${JSON.stringify(importSpecifier)}`
