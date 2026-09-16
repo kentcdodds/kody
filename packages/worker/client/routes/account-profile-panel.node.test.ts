@@ -36,6 +36,7 @@ function panelProps(
 		onDraftBioChange: () => undefined,
 		onDraftProfileVisibilityChange: () => undefined,
 		onDraftEmailInput: () => undefined,
+		onEmailChangeToggle: () => undefined,
 		onEmailChangePasswordInput: () => undefined,
 		...overrides,
 	}
@@ -56,4 +57,37 @@ test('profile panel keeps the typed username and shows a save error without succ
 	expect(html).toContain('data-testid="account-username-error"')
 	expect(html).toContain('`jklotz` is taken.')
 	expect(html).not.toContain('Profile saved.')
+})
+
+test('change-email disclosure stays open after a new-email keystroke remounts the panel', async () => {
+	const closedHtml = await renderToString(
+		jsx('div', {
+			children: renderAccountProfilePanel(panelProps()),
+		}),
+	)
+	const openHtml = await renderToString(
+		jsx('div', {
+			children: renderAccountProfilePanel(
+				panelProps({
+					emailChangeOpen: true,
+					draftEmail: 'n',
+					normalizedDraftEmail: 'n',
+				}),
+			),
+		}),
+	)
+
+	expect(closedHtml).toContain('data-testid="account-change-email"')
+	expect(closedHtml).not.toMatch(
+		/<details[^>]*open[^>]*data-testid="account-change-email"/,
+	)
+	expect(openHtml).toMatch(
+		/<details[^>]*open[^>]*data-testid="account-change-email"/,
+	)
+	expect(openHtml).toContain('id="account-new-email"')
+	expect(openHtml).toContain('data-testid="account-new-email"')
+	expect(openHtml).toContain('value="n"')
+	expect(openHtml).toMatch(
+		/<input[^>]*id="account-new-email"[^>]*autocomplete="off"/,
+	)
 })

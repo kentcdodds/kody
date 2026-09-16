@@ -54,6 +54,7 @@ export type AccountProfilePanelProps = {
 	onDraftBioChange: (value: string) => void
 	onDraftProfileVisibilityChange: (value: ProfileVisibility) => void
 	onDraftEmailInput: (event: InputEvent) => void
+	onEmailChangeToggle: (event: Event) => void
 	onEmailChangePasswordInput: (event: InputEvent) => void
 }
 
@@ -88,6 +89,7 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 		onDraftBioChange,
 		onDraftProfileVisibilityChange,
 		onDraftEmailInput,
+		onEmailChangeToggle,
 		onEmailChangePasswordInput,
 	} = props
 	return (
@@ -301,12 +303,20 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 				</div>
 			</form>
 			{emailVerified ? (
+				/* Remix drops `open` when the prop is undefined. A natively
+				 * opened disclosure must latch into emailChangeOpen on toggle,
+				 * or the first New email keystroke closes it and focus lands
+				 * on Former email. */
 				<details
 					open={emailChangeOpen ? true : undefined}
-					mix={css({
-						...accountDisclosureCss,
-						marginTop: '0.6rem',
-					})}
+					data-testid="account-change-email"
+					mix={[
+						css({
+							...accountDisclosureCss,
+							marginTop: '0.6rem',
+						}),
+						on('toggle', onEmailChangeToggle),
+					]}
 				>
 					<summary>Change email</summary>
 					<form
@@ -334,9 +344,11 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 							<input
 								type="email"
 								name="email"
+								id="account-new-email"
+								data-testid="account-new-email"
 								data-field-ring
 								required
-								autoComplete="email"
+								autoComplete="off"
 								value={draftEmail}
 								mix={[css(accountInputCss), on('input', onDraftEmailInput)]}
 							/>

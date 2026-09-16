@@ -33,6 +33,13 @@ export function createAccountEmailClaims(handle: Handle) {
 		handle.update()
 	}
 
+	function handleEmailChangeToggle(event: Event) {
+		if (!(event.currentTarget instanceof HTMLDetailsElement)) return
+		if (emailChangeOpen === event.currentTarget.open) return
+		emailChangeOpen = event.currentTarget.open
+		handle.update()
+	}
+
 	function updateEmailChangePassword(event: InputEvent) {
 		if (!(event.currentTarget instanceof HTMLInputElement)) return
 		emailChangePassword = event.currentTarget.value
@@ -216,6 +223,7 @@ export function createAccountEmailClaims(handle: Handle) {
 		applyFormerEmails,
 		applyCurrentEmail,
 		updateDraftEmail,
+		handleEmailChangeToggle,
 		updateEmailChangePassword,
 		updateReleaseEmail,
 		updateReleasePassword,

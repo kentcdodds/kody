@@ -135,6 +135,8 @@ export function renderAccountFormerEmailsPanel(
 					<input
 						type="email"
 						name="former_email"
+						id="account-former-email"
+						data-testid="account-former-email"
 						data-field-ring
 						required
 						autoComplete="off"
