@@ -162,8 +162,8 @@ test('OAuth provider saveTokens keeps a refresh token and discovery when the AS 
 
 	await restored.invalidateCredentials('tokens')
 	expect(values.get('/Kody/server-home/client-1/token')).toBeUndefined()
-	expect(values.get(mcpOAuthRefreshTokenStorageKey('server-home'))).toEqual({
-		refresh_token: 'keep-rt',
-	})
-	expect(await restored.tokens()).toEqual({ refresh_token: 'keep-rt' })
+	expect(
+		values.get(mcpOAuthRefreshTokenStorageKey('server-home')),
+	).toBeUndefined()
+	expect(await restored.tokens()).toBeUndefined()
 })

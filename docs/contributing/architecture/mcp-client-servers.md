@@ -131,22 +131,23 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
    keyed by client id), serializes overlapping saves, and keeps OAuth discovery
    so the next authorize URL can still list scopes. `tokens()` rebuilds the blob
    from the sidecar and any `/token` keys under that server when the live
-   provider has no client id. `invalidateCredentials('tokens')` clears the SDK
-   blob and does not delete the sidecar; user remove, callback-URL remint
-   (`clearClientRegistration`), and `invalidateCredentials('all'|'client')` do.
-   A later grant that includes a refresh token clears the ready missing-grant
-   warning from Status. Phase `token exchange` on token-recovery `last_error`
-   covers both authorization-code exchange and refresh-token grant failure. A
-   grant that becomes `ready` without a refresh token, after the authorization
-   server advertised `refresh_token` or `offline_access`, keeps a durable Status
-   warning instead of looking healthy until the access token expires. Reconnect
-   tries `connectToServer` with the stored tokens first so the MCP SDK can
-   refresh; it only remints authorization state when that cannot restore `ready`
-   and no authorization URL is available, or when the callback URL changed.
-   Token blobs stay in place unless the callback URL changed.
-   Authorization-server reuse of a rotating refresh token still requires a human
-   re-auth. The account page offers Reconnect when automatic recovery cannot
-   finish.
+   provider has no client id. `invalidateCredentials('tokens'|'client'|'all')`
+   deletes the sidecar so a rejected refresh grant cannot be replayed; user
+   remove and callback-URL remint do the same. Discovery refresh advertising is
+   read from top-level metadata and from nested `authorizationServerMetadata` /
+   `resourceMetadata`. A later grant that includes a refresh token clears the
+   ready missing-grant warning from Status. Phase `token exchange` on
+   token-recovery `last_error` covers both authorization-code exchange and
+   refresh-token grant failure. A grant that becomes `ready` without a refresh
+   token, after the authorization server advertised `refresh_token` or
+   `offline_access`, keeps a durable Status warning instead of looking healthy
+   until the access token expires. Reconnect tries `connectToServer` with the
+   stored tokens first so the MCP SDK can refresh; it only remints authorization
+   state when that cannot restore `ready` and no authorization URL is available,
+   or when the callback URL changed. Token blobs stay in place unless the
+   callback URL changed. Authorization-server reuse of a rotating refresh token
+   still requires a human re-auth. The account page offers Reconnect when
+   automatic recovery cannot finish.
 6. The route redirects to `/account/mcp-servers/:serverId?auth=success|error`
    when the callback resolves to a server (including failures), or
    `/account/mcp-servers?auth=error` when it does not, for user feedback. Tokens

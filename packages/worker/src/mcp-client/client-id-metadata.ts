@@ -90,6 +90,8 @@ type McpOAuthSaveTokens = Parameters<
  * the authorization server omits one, writes a server-scoped sidecar so
  * restore can find it when SQL `client_id` is missing, and keeps OAuth
  * discovery so the next authorize URL can still advertise scopes.
+ * `invalidateCredentials` for `tokens`, `client`, or `all` deletes that
+ * sidecar so a rejected grant cannot be replayed.
  */
 export function createMcpClientOAuthProvider(
 	storage: DurableObjectStorage,
@@ -159,11 +161,20 @@ function installMcpOAuthTokenPreservation(
 	}
 	if (invalidateCredentials) {
 		provider.invalidateCredentials = async (scope) => {
-			await invalidateCredentials(scope)
-			if (scope !== 'all' && scope !== 'client') return
-			const serverId = readProviderString(provider, 'serverId')
-			if (!serverId) return
-			await provider.storage.delete(mcpOAuthRefreshTokenStorageKey(serverId))
+			const run = saveQueue.then(async () => {
+				const serverId = readProviderString(provider, 'serverId')
+				await invalidateCredentials(scope)
+				if (scope !== 'all' && scope !== 'client' && scope !== 'tokens') {
+					return
+				}
+				if (!serverId) return
+				await provider.storage.delete(mcpOAuthRefreshTokenStorageKey(serverId))
+			})
+			saveQueue = run.then(
+				() => {},
+				() => {},
+			)
+			return run
 		}
 	}
 }

@@ -73,10 +73,19 @@ export function readMcpOAuthTokenPresence(
 export function mcpOAuthDiscoveryAdvertisesRefresh(discovery: unknown) {
 	if (!discovery || typeof discovery !== 'object') return false
 	const record = discovery as Record<string, unknown>
-	const grantTypes = readStringList(record['grant_types_supported'])
-	if (grantTypes.includes('refresh_token')) return true
-	const scopes = readStringList(record['scopes_supported'])
-	return scopes.includes('offline_access') || scopes.includes('refresh_token')
+	const candidates = [
+		record,
+		record['authorizationServerMetadata'],
+		record['resourceMetadata'],
+	]
+	return candidates.some((candidate) => {
+		if (!candidate || typeof candidate !== 'object') return false
+		const nested = candidate as Record<string, unknown>
+		const grantTypes = readStringList(nested['grant_types_supported'])
+		if (grantTypes.includes('refresh_token')) return true
+		const scopes = readStringList(nested['scopes_supported'])
+		return scopes.includes('offline_access') || scopes.includes('refresh_token')
+	})
 }
 
 function readStringList(value: unknown) {

@@ -112,6 +112,22 @@ test('token recovery inspects stored OAuth blobs without treating empty strings 
 		}),
 	).toBe(false)
 	expect(
+		mcpOAuthDiscoveryAdvertisesRefresh({
+			authorizationServerUrl: 'https://auth.example',
+			authorizationServerMetadata: {
+				grant_types_supported: ['authorization_code', 'refresh_token'],
+			},
+		}),
+	).toBe(true)
+	expect(
+		mcpOAuthDiscoveryAdvertisesRefresh({
+			authorizationServerUrl: 'https://auth.example',
+			resourceMetadata: {
+				scopes_supported: ['offline_access'],
+			},
+		}),
+	).toBe(true)
+	expect(
 		withPreservedMcpOAuthRefreshToken({
 			incoming: { access_token: 'new-at' },
 			sources: [{ refresh_token: 'sidecar-rt' }],
