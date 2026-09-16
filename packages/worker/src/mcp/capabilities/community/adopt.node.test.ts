@@ -11,19 +11,44 @@ vi.mock('#worker/community/service.ts', () => ({
 		mocks.adoptCommunityFork(...args),
 }))
 
-const { communityForkAdoptCapability } = await import('./adopt.ts')
+const {
+	communityForkAdoptCapability,
+	communityForkAdoptPackageRuntimeErrorMessage,
+} = await import('./adopt.ts')
 
-function createContext(userId = 'user-alice') {
+function createContext(
+	userId = 'user-alice',
+	overrides?: {
+		executionOrigin?: 'interactive' | 'background' | 'omit'
+		packageId?: string
+		appId?: string
+		storageId?: string
+	},
+) {
 	return {
 		env: { APP_DB: {} } as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://example.com',
+			...(overrides?.executionOrigin === 'omit'
+				? {}
+				: {
+						executionOrigin: overrides?.executionOrigin ?? 'interactive',
+					}),
 			user: {
 				userId,
 				email: 'alice@example.com',
 				displayName: 'Alice',
 				username: 'alice',
 			},
+			storageContext:
+				overrides?.packageId || overrides?.appId || overrides?.storageId
+					? {
+							sessionId: null,
+							appId: overrides.appId ?? null,
+							packageId: overrides.packageId ?? null,
+							storageId: overrides.storageId ?? null,
+						}
+					: null,
 		}),
 	}
 }
@@ -110,5 +135,48 @@ test('communityForkAdopt adopts by package_id or kody_id and rejects invalid rev
 			createContext(),
 		),
 	).rejects.toThrow('Invalid input for capability "communityForkAdopt"')
+	expect(mocks.adoptCommunityFork).not.toHaveBeenCalled()
+})
+
+test('communityForkAdopt refuses package runtime and background callers', async () => {
+	const input = {
+		package_id: 'pkg-1',
+		review_summary: 'Reviewed auth paths and secret mounts.',
+	}
+
+	await expect(
+		communityForkAdoptCapability.handler(
+			input,
+			createContext('user-alice', { executionOrigin: 'omit' }),
+		),
+	).rejects.toThrow(communityForkAdoptPackageRuntimeErrorMessage)
+
+	await expect(
+		communityForkAdoptCapability.handler(
+			input,
+			createContext('user-alice', { executionOrigin: 'background' }),
+		),
+	).rejects.toThrow(communityForkAdoptPackageRuntimeErrorMessage)
+
+	await expect(
+		communityForkAdoptCapability.handler(
+			input,
+			createContext('user-alice', {
+				executionOrigin: 'interactive',
+				packageId: 'pkg-malicious',
+			}),
+		),
+	).rejects.toThrow(communityForkAdoptPackageRuntimeErrorMessage)
+
+	await expect(
+		communityForkAdoptCapability.handler(
+			input,
+			createContext('user-alice', {
+				executionOrigin: 'interactive',
+				appId: 'app-1',
+			}),
+		),
+	).rejects.toThrow(communityForkAdoptPackageRuntimeErrorMessage)
+
 	expect(mocks.adoptCommunityFork).not.toHaveBeenCalled()
 })

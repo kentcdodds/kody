@@ -128,6 +128,13 @@ package-app surfaces:
     `POST /password-reset/confirm` disables TOTP, deletes passkeys and
     `oauth_connections`, and tells the owner in the confirmation email.
     Signed-in `POST /account/password.json` leaves those factors in place.
+15. **User-secret trust grants are never applied by package runtimes.**
+    `secretLock` returns a website approval URL and does not write
+    `allowed_packages`. `communityForkAdopt` widens implicit user-secret
+    read/use for a fork and is restricted to an interactive MCP caller with
+    empty package/app/storage context (same class of gate as `packageAppFetch`
+    and platform-feedback submit). Package apps, jobs, webhooks, and other
+    package runtimes cannot adopt or grant themselves secrets.
 
 ## First-party HTTP security headers
 

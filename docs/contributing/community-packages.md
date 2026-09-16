@@ -274,7 +274,7 @@ Capabilities:
 - `communitySearch`
 - `communityGet`
 - `communityFork`
-- `communityForkAdopt`
+- `communityForkAdopt` (interactive MCP only; package runtimes cannot adopt)
 - `communityRate`
 - `communityProfileGet` / `communityProfileUpdate`
 - `communityReport`
