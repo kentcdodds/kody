@@ -122,9 +122,14 @@ search response budget. Oversized guides return a table of contents instead of
 truncating mid-document. Open one heading with `"{id}:guide#{slug}"` (for
 example `package_subscriptions:guide#repo.pushed`). Official guide headings
 themselves must fit the remaining budget after the search entity header
-(`kody-custom/no-oversized-guide-section`). Capability entities additionally
-include a ready-to-run **execute** snippet plus `inputTypeDefinition` /
-`outputTypeDefinition`.
+(`kody-custom/no-oversized-guide-section`). Package entities use the same hash
+form for one export: `"{id}:package#{subpath}"` (for example
+`home-controls:package#bond-area-shades` or
+`home-controls:package#./bond-area-shades`). That heading returns the import
+specifier, JSDoc purpose, a ready-to-run **execute** snippet, `typeDefinition`,
+`functions` when the module is multi-callable, `referencedTypes`, and a JSDoc
+`@example` when present. Capability entities additionally include a ready-to-run
+**execute** snippet plus `inputTypeDefinition` / `outputTypeDefinition`.
 
 Pass an **array of 1–10 entity refs** when you need several related details at
 once (for example a create/poll MCP pair). Each ref resolves independently:
@@ -143,6 +148,7 @@ Examples:
 - `home:mcp-server`
 - `mcp:home:mcp-server`
 - `my-package:package`
+- `home-controls:package#bond-area-shades`
 - `550e8400-e29b-41d4-a716-446655440000:package`
 - `spotify:integration`
 - `githubPat:secret`
@@ -171,19 +177,20 @@ community listings whose name, package name leaf, or tags mention that provider,
 capped). Ranked query results stay lean and do not run community lookup or
 expand those suggestions.
 
-Package entity detail is a slim index: summary, export subpaths with one-line
-purposes, job and retriever names, and the README `Intent` section. Structured
-content mirrors that index and does not contain a full export tree. When a
-community fork is outdated (the listing pin is not an ancestor of the fork tip),
-detail includes `listingAhead: true` and a one-line absorb next step
+Package entity detail (`{id}:package`) is a slim index: summary, export subpaths
+with one-line purposes, job and retriever names, and the README `Intent`
+section. Structured content mirrors that index and does not contain a full
+export tree. Open one export with `{id}:package#{subpath}` for that export's
+import specifier, types, and execute snippet. `packageGet` remains the bulk
+metadata API: full export array, provenance, and package-scoped secret FYI. When
+a community fork is outdated (the listing pin is not an ancestor of the fork
+tip), detail includes `listingAhead: true` and a one-line absorb next step
 (`communityGet`, then `repoPublishSession` with `absorbed_upstream_commit`).
 Ranked package hits include that same notice only when the fork is outdated.
-Follow the returned `packageGet` pointer for export call shapes, types, and
-package-scoped secret metadata. `packageGet` does not return files. For the full
-README, `AGENTS.md`, and source, open a repo session (`repoOpenSession` +
-`repoReadFile`) or clone with `packageGetGitRemote`. See
-[Repo sessions](./repo-sessions.md). Search `package_authoring:guide` for
-inbound webhooks and maintenance workflows.
+`packageGet` does not return files. For the full README, `AGENTS.md`, and
+source, open a repo session (`repoOpenSession` + `repoReadFile`) or clone with
+`packageGetGitRemote`. See [Repo sessions](./repo-sessions.md). Search
+`package_authoring:guide` for inbound webhooks and maintenance workflows.
 
 Capability detail shows the exact runtime pattern for **execute**:
 
@@ -216,10 +223,12 @@ behavior work without user-scoped data.
 
 Package and integration query hits stay summary-only. Exact package detail
 (`entity: "my-package:package"`) returns the package index described above.
-Exact integration detail (`entity: "github:integration"`) includes operational
-details such as token URL, API base URL, client id, and required hosts. Access
-and refresh tokens live on the connection — call
-**`createAuthenticatedFetch(name)`**. They do not appear as secret names.
+Exact package export detail (`entity: "my-package:package#export-name"`) returns
+that one export contract. Exact integration detail
+(`entity: "github:integration"`) includes operational details such as token URL,
+API base URL, client id, and required hosts. Access and refresh tokens live on
+the connection — call **`createAuthenticatedFetch(name)`**. They do not appear
+as secret names.
 
 Long-term memory retrieval also requires a signed-in MCP user.
 

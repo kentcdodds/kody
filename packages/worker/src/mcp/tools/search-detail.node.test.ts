@@ -292,7 +292,9 @@ test('resolveEntityDetail loads official guides without a signed-in user', async
 			entity: 'search_docs:capability#repo.pushed',
 			searchRows: emptySearchRows() as never,
 		}),
-	).rejects.toThrow(/Section fragments are only supported on guide entities/)
+	).rejects.toThrow(
+		/Section fragments are only supported on guide and package entities/,
+	)
 
 	await expect(
 		resolveEntityDetail({
@@ -457,5 +459,68 @@ test('resolveEntityDetail hostedUrl uses PACKAGE_APP_BASE_URL when configured', 
 		hostedUrl: 'https://kentcdodds.kody.run/packages/demo',
 		baseUrl: 'https://heykody.dev',
 		listingAhead: null,
+	})
+})
+
+test('resolveEntityDetail passes package export fragments and hidden known-id packages', async () => {
+	const hiddenRecord = {
+		id: 'pkg-hidden',
+		packageId: 'pkg-hidden',
+		kodyId: 'home-controls',
+		name: '@user/home-controls',
+		description: 'Hidden home controls',
+		hasApp: false,
+		hidden: true,
+		sourceId: 'source-hidden',
+		userId: 'user-1',
+		tags: [],
+		searchText: null,
+		isPrivate: false,
+		createdAt: '2026-03-20T00:00:00.000Z',
+		updatedAt: '2026-03-20T00:00:00.000Z',
+	}
+	mockModule.getSavedPackageByKodyId.mockReset()
+	mockModule.getSavedPackageByKodyId.mockResolvedValue(hiddenRecord)
+	mockModule.getSavedPackageById.mockResolvedValue(null)
+	mockModule.loadPackageSourceBySourceId.mockReset()
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		manifest: {
+			name: '@user/home-controls',
+			exports: { './bond-area-shades': './src/bond-area-shades.ts' },
+			kody: { id: 'home-controls', description: 'Hidden home controls' },
+		},
+		files: {
+			'src/bond-area-shades.ts':
+				'/** Lower shades. */\nexport default async function bondAreaShades() { return true }',
+		},
+	})
+
+	const agent = createAgent()
+	const hashed = await resolveEntityDetail({
+		agent,
+		callerContext: agent.getCallerContext(),
+		userId: 'user-1',
+		username: 'user',
+		entity: 'home-controls:package#bond-area-shades',
+		searchRows: emptySearchRows() as never,
+	})
+	expect(hashed).toMatchObject({
+		type: 'package',
+		id: 'home-controls',
+		section: 'bond-area-shades',
+		record: expect.objectContaining({ hidden: true }),
+	})
+
+	const dotted = await resolveEntityDetail({
+		agent,
+		callerContext: agent.getCallerContext(),
+		userId: 'user-1',
+		username: 'user',
+		entity: 'home-controls:package#./bond-area-shades',
+		searchRows: emptySearchRows() as never,
+	})
+	expect(dotted).toMatchObject({
+		type: 'package',
+		section: './bond-area-shades',
 	})
 })

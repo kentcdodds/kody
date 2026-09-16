@@ -1,3 +1,4 @@
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { listingAheadSearchNotice } from '#universal/community-listing-ahead.ts'
 import {
 	deterministicEmbedding,
@@ -23,6 +24,11 @@ import { buildPackageAgentsDocs } from '#worker/repo/required-package-docs.ts'
 import { savedPackageVectorId } from '#worker/package-registry/repo.ts'
 import { webhookDefaultRateLimitPerMinute } from '#worker/package-registry/types.ts'
 
+import {
+	findPackageExportByFragment,
+	formatPackageExportEntityDetail,
+	formatUnknownPackageExportError,
+} from '../package-export-search-detail.ts'
 import { maxFusedPackageCandidates } from '../search-constants.ts'
 import { type SearchEntityPlugin } from '../search-entity-plugin.ts'
 import {
@@ -501,6 +507,26 @@ export const packageSearchEntityPlugin = {
 			detail.manifest,
 			detail.files,
 		)
+		if (detail.section) {
+			const exportDetail = findPackageExportByFragment(
+				exportProjection.exports,
+				detail.section,
+			)
+			if (!exportDetail) {
+				throw new McpCallerError(
+					formatUnknownPackageExportError({
+						entityRef: buildEntityRef(detail.record.kodyId, 'package'),
+						section: detail.section,
+						exports: exportProjection.exports,
+					}),
+				)
+			}
+			return formatPackageExportEntityDetail({
+				detail,
+				exportDetail,
+				includeBoilerplate: options?.includeBoilerplate ?? true,
+			})
+		}
 		const exportDetails = exportProjection.exports.map((exportDetail) => ({
 			subpath: exportDetail.subpath,
 			description:
@@ -537,7 +563,10 @@ export const packageSearchEntityPlugin = {
 		const maintain = buildPackageMaintainSnippets(detail.record.id)
 		const rootImportUsage = buildPackageRootImportUsage(detail.record.name)
 		const listingAhead = detail.listingAhead === true
-		const sourceFollowUp = buildPackageSourceFollowUp(detail.record.id)
+		const sourceFollowUp = buildPackageSourceFollowUp({
+			packageId: detail.record.id,
+			kodyId: detail.record.kodyId,
+		})
 		const followUp = listingAhead
 			? `${listingAheadSearchNotice} ${sourceFollowUp}`
 			: sourceFollowUp
@@ -643,6 +672,7 @@ export const packageSearchEntityPlugin = {
 			structured: {
 				kind: 'entity',
 				type: 'package',
+				detailMode: 'index',
 				id: detail.record.kodyId,
 				entityRef: buildEntityRef(detail.record.kodyId, 'package'),
 				title: detail.title,

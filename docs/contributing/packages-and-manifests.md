@@ -705,7 +705,9 @@ Search returns packages as the saved-entity unit.
 
 Package detail should expose nested exports, nested jobs, tags, and app
 presence. Search should not frame exports or jobs as separate top-level saved
-entities.
+entities. The slim `{id}:package` index stays an index; one export contract
+opens with the same package entity plus a subpath fragment
+(`{id}:package#{subpath}`).
 
 Saved packages carry a user-scoped **`hidden`** flag in `saved_packages` (set
 via **`packageUpdate`** with `changes.hidden`). Ranked search excludes hidden

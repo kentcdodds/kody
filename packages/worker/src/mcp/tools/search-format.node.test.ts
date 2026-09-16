@@ -93,6 +93,16 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 		type: 'guide',
 		section: 'repo.pushed',
 	})
+	expect(parseEntityRef('home-controls:package#bond-area-shades')).toEqual({
+		id: 'home-controls',
+		type: 'package',
+		section: 'bond-area-shades',
+	})
+	expect(parseEntityRef('home-controls:package#./bond-area-shades')).toEqual({
+		id: 'home-controls',
+		type: 'package',
+		section: './bond-area-shades',
+	})
 	expect(() => parseEntityRef('package_subscriptions:guide#')).toThrow(
 		/Section fragment/,
 	)
@@ -529,8 +539,13 @@ export declare function fetch(request: Request): Promise<Response>
 	})
 	expect(observedPackageDetail.markdown).toContain('## Follow up')
 	expect(observedPackageDetail.markdown).toContain(
-		'If you plan to invoke an export, call packageGet({ package_id: "package-123" }) first',
+		'Open one export with search({ entity: "observed-package:package#<subpath>" })',
 	)
+	expect(observedPackageDetail.structured).toMatchObject({
+		detailMode: 'index',
+	})
+	expect(observedPackageDetail.structured).not.toHaveProperty('typeDefinition')
+	expect(observedPackageDetail.structured).not.toHaveProperty('referencedTypes')
 	expect(observedPackageDetail.structured).toMatchObject({
 		listingAhead: null,
 		followUp: expect.stringContaining(

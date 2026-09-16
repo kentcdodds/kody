@@ -73,11 +73,15 @@ export function buildPackageMaintainSnippets(packageId: string) {
 	}
 }
 
-export function buildPackageSourceFollowUp(packageId: string) {
-	const packageGetCall = `packageGet({ package_id: ${JSON.stringify(packageId)} })`
-	const sessionCall = `repoOpenSession({ target: { kind: "package", package_id: ${JSON.stringify(packageId)} } })`
-	const gitLaneCall = `packageGetGitRemote({ package_id: ${JSON.stringify(packageId)} })`
-	return `If you plan to invoke an export, call ${packageGetCall} first for the exact call shape, types, and package-scoped secret metadata. That call does not return files. For the full README.md, AGENTS.md, and source, open a repo session with ${sessionCall} then repoReadFile({ session_id, path: "README.md" }) and repoReadFile({ session_id, path: "AGENTS.md" }) (browse other files with repoTree). Discard the session with repoDiscardSession when finished. If you have a local git client, call ${gitLaneCall} instead and clone. search({ entity: "package_authoring:guide" }) covers inbound webhooks and maintenance workflows.`
+export function buildPackageSourceFollowUp(input: {
+	packageId: string
+	kodyId: string
+}) {
+	const headingCall = `search({ entity: ${JSON.stringify(`${input.kodyId}:package#<subpath>`)} })`
+	const packageGetCall = `packageGet({ package_id: ${JSON.stringify(input.packageId)} })`
+	const sessionCall = `repoOpenSession({ target: { kind: "package", package_id: ${JSON.stringify(input.packageId)} } })`
+	const gitLaneCall = `packageGetGitRemote({ package_id: ${JSON.stringify(input.packageId)} })`
+	return `Open one export with ${headingCall} for its import specifier, types, and execute snippet. ${packageGetCall} returns the full export array plus package-scoped secret metadata. That call does not return files. For the full README.md, AGENTS.md, and source, open a repo session with ${sessionCall} then repoReadFile({ session_id, path: "README.md" }) and repoReadFile({ session_id, path: "AGENTS.md" }) (browse other files with repoTree). Discard the session with repoDiscardSession when finished. If you have a local git client, call ${gitLaneCall} instead and clone. search({ entity: "package_authoring:guide" }) covers inbound webhooks and maintenance workflows.`
 }
 
 export function buildCapabilityExecuteExample(spec: CapabilitySpec) {
@@ -101,7 +105,7 @@ export function buildPackageActionImportUsage(input: {
 		input.packageName,
 		input.subpath,
 	)
-	if (input.functionName === 'home') {
+	if (input.functionName === 'home' || input.functionName === 'default') {
 		return `import action from ${JSON.stringify(importSpecifier)}`
 	}
 	return `import { ${input.functionName} } from ${JSON.stringify(importSpecifier)}`
@@ -109,9 +113,11 @@ export function buildPackageActionImportUsage(input: {
 
 export function getPrimaryPackageActionFunction<
 	FunctionShape extends { name: string },
->(actionMatch: { functions: Array<FunctionShape> }) {
+>(actionMatch: { functions: ReadonlyArray<FunctionShape> }) {
 	return (
-		actionMatch.functions.find((fn) => fn.name !== 'home') ??
+		actionMatch.functions.find(
+			(fn) => fn.name !== 'home' && fn.name !== 'default',
+		) ??
 		actionMatch.functions[0] ??
 		null
 	)

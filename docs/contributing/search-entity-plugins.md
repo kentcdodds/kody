@@ -35,7 +35,9 @@ To add a search entity:
    when `search({ entity })` should support it (skip for result-only types such
    as `retriever_result`).
 8. Update `parseEntityRef` in `search-format-helpers.ts` so `{id}:{type}`
-   parsing accepts the new entity-backed type.
+   parsing accepts the new entity-backed type. Guide and package entity refs
+   also accept a hash fragment (`{id}:guide#{slug}`, `{id}:package#{subpath}`);
+   other types reject fragments in `resolveEntityDetail`.
 9. For entity-backed types, update the public allowed-type lists so agents and
    docs stay in sync:
    - `search-tool-definition.ts` (tool description and `entity` input schema

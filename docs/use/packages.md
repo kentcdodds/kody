@@ -201,9 +201,11 @@ exhaustive.
   export at a `types` file and put the JSDoc there. Package search detail and
   `packageGet` surface package descriptions, export descriptions, function
   signatures, JSDoc, type definitions, and FYI metadata for associated
-  package-scoped secrets (names and `package_id`, never values). `packageGet`
-  does not return `README.md`, `AGENTS.md`, or source files. For those, open a
-  repo session (`repoOpenSession` + `repoReadFile`) or clone with
+  package-scoped secrets (names and `package_id`, never values). Search
+  `{id}:package#{subpath}` is the agent-facing door for one export contract.
+  `packageGet` returns the full export array and secret FYI. `packageGet` does
+  not return `README.md`, `AGENTS.md`, or source files. For those, open a repo
+  session (`repoOpenSession` + `repoReadFile`) or clone with
   `packageGetGitRemote`.
 
 ### Package reuse
@@ -545,10 +547,11 @@ Use:
   use the scoped name, or `package_id` when the name is not known.
 - `packageSave` to create or replace a saved package from a complete UTF-8 text
   file set when no local git client is available
-- `packageGet` and `packageList` to inspect saved package metadata (exports,
-  types, secret FYI). They do not return files. For `README.md`, `AGENTS.md`,
-  and source, open a repo session (`repoOpenSession` + `repoReadFile`) or clone
-  with `packageGetGitRemote`
+- `search({ entity: "{id}:package#{subpath}" })` for one export's import
+  specifier, types, and execute snippet; `packageGet` and `packageList` for
+  saved package metadata (full export array, secret FYI). They do not return
+  files. For `README.md`, `AGENTS.md`, and source, open a repo session
+  (`repoOpenSession` + `repoReadFile`) or clone with `packageGetGitRemote`
 - `packageDelete` to permanently remove a saved package the owner typed the name
   of (`confirm_name` must match the package name)
 - `packageUpdate` to change mutable package settings such as hidden search
