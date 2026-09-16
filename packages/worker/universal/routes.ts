@@ -201,6 +201,8 @@ export const routes = route({
 	docDetailApi: '/docs/:slug.json',
 	docDetailMarkdown: '/docs/:slug.md',
 	docDetailOgImage: '/docs/:slug/og.png',
+	// Signed-in opt-in for the package-share-grants flag from the sharing docs.
+	packageSharingOptInPost: post('/docs/package-sharing/opt-in'),
 	llmsTxt: '/llms.txt',
 	// The docs used to live under `/guides`. Everything there 308s to `/docs`
 	// (see `#app/handlers/legacy-guides-redirect.ts`).

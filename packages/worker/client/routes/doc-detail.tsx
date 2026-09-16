@@ -31,6 +31,9 @@ import {
 } from '#client/routes/docs-shell.tsx'
 import { HowKodyWorksWalkthrough } from '#client/routes/how-kody-works-walkthrough.tsx'
 import { renderGoogleOauthWalkthrough } from '#client/routes/google-oauth-walkthrough.tsx'
+import { renderPackageSharingFlagCallout } from '#client/routes/package-sharing-flag-callout.tsx'
+import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
+import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
 import { colors, radius } from '#universal/styles/tokens.ts'
 import { userHasRole } from '#universal/permissions.ts'
 import {
@@ -287,6 +290,16 @@ export function DocDetailRoute(handle: Handle) {
 							{describeDoc(doc)}
 						</p>
 					</header>
+
+					{doc.slug === 'package-sharing'
+						? renderPackageSharingFlagCallout({
+								loggedIn: Boolean(session),
+								enabled: isFeatureFlagEnabled(
+									session,
+									packageShareGrantsFlagKey,
+								),
+							})
+						: null}
 
 					{doc.image && doc.imageAlt ? (
 						<img

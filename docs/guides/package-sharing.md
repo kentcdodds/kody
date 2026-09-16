@@ -34,9 +34,10 @@ Both people need a paid plan to share. Forking a public listing does not.
 </details>
 
 Use this guide when one person should **use** another person's package without
-sharing a login. Sharing is behind the `package-share-grants` feature flag (off
-by default). Search `packageShareInvite` / `packageShareAccept` first; open
-capability detail for the exact call shape.
+sharing a login. Sharing is behind the `package-share-grants` feature flag
+because it may change or go away. Signed-in users can turn it on from this page.
+Search `packageShareInvite` / `packageShareAccept` first; open capability detail
+for the exact call shape.
 
 ## What sharing is
 
