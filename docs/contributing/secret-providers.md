@@ -9,7 +9,7 @@ provider-agnostic.
 
 The whole surface is behind the `secret-providers` admin flag (registry default
 **off**). Signed-in users can turn it on from
-[Custom secret providers](../guides/secret-providers.md). Operators can still
+[Custom secret providers](../guides/secret-providers.md). Operators can also
 enable it globally at `/admin/feature-flags`. Evaluation is fail-closed:
 unresolved accounts and evaluation errors stay off, even when the global flag is
 on. When the flag is off:
@@ -18,7 +18,7 @@ on. When the flag is off:
 - binding, grants, approval UX, and the account nav item are hidden
 - MCP `secretProvider*` capabilities are hidden and denied
 
-Existing `{{secret:name}}` placeholders are unchanged.
+User-secret `{{secret:name}}` placeholders do not use this flag.
 
 ## Grammar
 
@@ -27,8 +27,7 @@ Existing `{{secret:name}}` placeholders are unchanged.
 
 - `{{secret/1password:i/<item-uuid>/password}}` — canonical form
 - `{{secret/1password:op://Vault/Item/password}}` — writable synonym only
-
-Existing `{{secret:name}}` user-secret placeholders are unchanged.
+- `{{secret:name}}` — user-secret placeholders (separate grammar)
 
 ## Canonicalization
 

@@ -223,8 +223,8 @@ fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
   callback requests), then acks only the dispatched event ids so a later-queued
   episode stays pending. Incomplete discovery, retryable invoke failures, and a
   failed enabled-server lookup leave the notice pending instead of acking.
-  Recovery emits `mcp.server.reconnected`. `mcpServerReconnect` remains the
-  explicit authorization restart. See
+  Recovery emits `mcp.server.reconnected`. `mcpServerReconnect` is the explicit
+  authorization restart. See
   [Package subscriptions](../../guides/package-subscriptions.md).
 
 ## Related docs
