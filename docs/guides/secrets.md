@@ -20,17 +20,15 @@ that uses a secret. It can never read one.
 ## The rule: there is no `secret_get`
 
 The secrets capabilities are `secretList`, `secretSet`, `secretSetMany`,
-`secretLock`, `secretProviderList`, `secretProviderBind`,
-`secretProviderUnbind`, `secretProviderLock` (the `secretProvider*` capabilities
-and `{{secret/<provider>:<ref>}}` placeholders are behind the `secret-providers`
-flag, off by default), `secretDelete`, and `secretJwtSign`. No capability
-returns a secret value. `secretList` returns metadata only: names, descriptions,
-approved hosts, expiry, remaining time to live, and `package_id` for
-package-scoped secrets. Explicit listing includes caller-owned package-scoped
-metadata even from execute; using a package secret still requires package
-context. Search does not return or rank those rows. `secretLock` returns
-grant-status metadata and an `approval_url` for the owner to click; it does not
-apply the grant.
+`secretLock`, `secretDelete`, and `secretJwtSign`. No capability returns a
+secret value. `secretList` returns metadata only: names, descriptions, approved
+hosts, expiry, remaining time to live, and `package_id` for package-scoped
+secrets. Explicit listing includes caller-owned package-scoped metadata even
+from execute; using a package secret still requires package context. Search does
+not return or rank those rows. `secretLock` returns grant-status metadata and an
+`approval_url` for the owner to click; it does not apply the grant. External
+vaults use [custom secret providers](./secret-providers.md) (`secretProvider*`
+capabilities and `{{secret/<provider>:<ref>}}` placeholders).
 
 This is why you can hand an agent a job that needs your GitHub token without the
 token ever entering the prompt, the transcript, or the model provider's logs.
@@ -44,9 +42,9 @@ boundary, on the final serialized request, and only for hosts you approved.
 
 - **Placeholders in `fetch`** — `{{secret:githubAccessToken}}` in a URL, header,
   or body of an outbound `fetch` resolves when the request leaves Kody. External
-  providers use `{{secret/1password:i/<item-uuid>/password}}` the same way; the
-  item's websites are the host gate. This is not general string interpolation;
-  it works only in secret-aware `fetch`.
+  providers use the same boundary; see
+  [Custom secret providers](./secret-providers.md). This is not general string
+  interpolation; it works only in secret-aware `fetch`.
 - **Derived headers** — when an API wants Basic Auth built from two secrets,
   `secretHeaders.basic({ usernameSecret, passwordSecret })` from `kody:runtime`
   produces the header without exposing either half.
@@ -127,6 +125,8 @@ on connected tool servers.
   parameters: [Secret setup URL reference](./account-secret-setup.md).
 - Building an integration around one or more secrets:
   [Secret-backed integrations](./secret-backed-integration.md).
+- Using a password-manager item without pasting it into Kody:
+  [Custom secret providers](./secret-providers.md).
 - A token that already exists inside trusted code (a key the package just
   minted): `secretSet` persists it without returning it.
 
@@ -134,5 +134,7 @@ on connected tool servers.
 
 - [Secrets and host approval](../use/secrets-and-values.md) — the MCP-level
   reference with the exact placeholder, header, and approval semantics.
+- [Custom secret providers](./secret-providers.md) — vault placeholders, account
+  binding, and package grants.
 - [Integration bootstrap](./integration-bootstrap.md) — the sequence before a
   secret-backed package is saved.

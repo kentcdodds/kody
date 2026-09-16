@@ -30,7 +30,8 @@ MCP-level reference detail those docs link into.
   find the right thing, then run it
 - [Connect your agent](../guides/connect-your-agent.md) — the three-step Get
   started flow for people
-- [Shared memory](../guides/memory.md), [Secrets](../guides/secrets.md), and
+- [Shared memory](../guides/memory.md), [Secrets](../guides/secrets.md),
+  [Custom secret providers](../guides/secret-providers.md), and
   [Jobs, workflows, and webhooks](../guides/triggers.md) — concept docs for the
   primitives every connected agent shares
 - [Connect a provider](https://kody.codes/docs/connect) — verified walkthroughs
@@ -73,7 +74,8 @@ MCP-level reference detail those docs link into.
 - [Repo-backed editing sessions](./repo-sessions.md)
 - [Raw MCP content blocks](./raw-content-blocks.md)
 - [Secrets and host approval](./secrets-and-values.md) — includes external
-  provider placeholders (`{{secret/<provider>:<ref>}}`)
+  provider placeholders (`{{secret/<provider>:<ref>}}`); usage:
+  [Custom secret providers](../guides/secret-providers.md)
 - [Email primitives](./email-primitives.md) — the per-user inbox, verified
   destinations, notify-self sends, and replies
 - [Inbound webhooks](./webhooks.md) — user-owned HTTPS endpoints that dispatch

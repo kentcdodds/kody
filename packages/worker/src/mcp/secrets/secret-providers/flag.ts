@@ -6,7 +6,7 @@ import { SecretProviderError } from './errors.ts'
 export { secretProvidersFlagKey }
 
 export const secretProvidersDisabledMessage =
-	'External secret providers are not enabled for this account. An admin can enable the secret-providers flag for this account on /admin/feature-flags.'
+	'External secret providers are not enabled for this account. Signed-in users can turn them on from /docs/secret-providers.'
 
 /**
  * Fail-closed gate for pluggable secret providers. Evaluation failures and
