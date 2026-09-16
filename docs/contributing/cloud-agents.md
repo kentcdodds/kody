@@ -53,7 +53,9 @@ export NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN="$NX_CACHE_WRITE_TOKEN"
 ```
 
 Use `CI=1` on cached test commands (the repo scripts already do). Leave the
-variables unset to run without remote cache. See
+variables unset to run without remote cache. Those scripts run through
+`tools/run-nx.ts` so a mid-run `/v1/cache` transport flake cannot fail
+`test:push` or validate after the tasks already succeeded. See
 [`packages/nx-cache/readme.md`](../packages/nx-cache/readme.md).
 
 ## Git hooks
