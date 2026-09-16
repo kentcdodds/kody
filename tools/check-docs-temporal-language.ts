@@ -24,6 +24,7 @@ export const exemptRelativePaths = new Set([
 /** Directories whose pages are intentionally point-in-time records. */
 export const exemptRelativePrefixes: ReadonlyArray<string> = [
 	'docs/contributing/decisions/',
+	'docs/audits/',
 ]
 
 /**
