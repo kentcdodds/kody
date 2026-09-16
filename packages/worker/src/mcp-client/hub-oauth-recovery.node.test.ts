@@ -33,7 +33,9 @@ type FakeConnection = {
 					access_token?: string
 					refresh_token?: string
 				} | null
+				storedDiscovery?: unknown
 				tokens?: () => Promise<unknown>
+				discoveryState?: () => Promise<unknown>
 			}
 		}
 	}
@@ -317,8 +319,12 @@ function seedServer(input: {
 			access_token?: string
 			refresh_token?: string
 		} | null,
+		storedDiscovery: undefined as unknown,
 		async tokens() {
 			return this.storedTokens ?? undefined
+		},
+		async discoveryState() {
+			return this.storedDiscovery
 		},
 	}
 	input.manager.rows = [
@@ -986,6 +992,38 @@ test('reconnect tries stored refresh before wiping tokens and stamps lastError w
 			hadRefreshToken: true,
 			stillHasRefreshToken: false,
 		}),
+	)
+})
+
+test('ready grant without a refresh token warns when the authorization server advertised refresh', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { state, values } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	const { connection } = await seedReadyHomeServer({ hub, manager })
+	connection.options.transport.authProvider.storedTokens = {
+		access_token: 'at-only',
+	}
+	connection.options.transport.authProvider.storedDiscovery = {
+		grant_types_supported: ['authorization_code', 'refresh_token'],
+		scopes_supported: ['mcp'],
+	}
+	values.set('/Kody/server-1/oauth_discovery', {
+		grant_types_supported: ['authorization_code', 'refresh_token'],
+		scopes_supported: ['mcp'],
+	})
+	const snapshot = await hub.getSnapshot()
+	expect(snapshot.servers[0]?.state).toBe('ready')
+	expect(snapshot.servers[0]?.hasRefreshToken).toBe(false)
+	expect(snapshot.servers[0]?.lastError?.phase).toBe('token exchange')
+	expect(snapshot.servers[0]?.lastError?.message).toContain(
+		'advertised refresh tokens',
+	)
+	expect(snapshot.connectionEvents).toEqual([])
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'mcp oauth grant omitted advertised refresh token',
+		expect.objectContaining({ serverId: 'server-1' }),
 	)
 })
 

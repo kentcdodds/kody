@@ -132,4 +132,35 @@ test('buildMcpServerStatusView surfaces durable lastError when live connection e
 	})
 	expect(ready.connected).toBe(true)
 	expect(ready.error).toBeNull()
+
+	const omittedRefresh =
+		"This MCP server's authorization server advertised refresh tokens, but the token response did not include a refresh token. The access token will expire and Kody cannot renew it (phase token exchange, id attempt-omit)."
+	const warned = buildMcpServerStatusView({
+		setting: setting(),
+		snapshot: {
+			serverId: 'server-1',
+			name: 'ha',
+			url: 'https://example.com/mcp',
+			state: 'ready',
+			authUrl: null,
+			error: null,
+			lastError: {
+				message: omittedRefresh,
+				phase: 'token exchange',
+				httpStatus: null,
+				httpBodySnippet: null,
+				mcpEndpoint: 'https://example.com/mcp',
+				resource: null,
+				authServer: null,
+				attemptId: 'attempt-omit',
+				at: '2026-09-16T00:00:00.000Z',
+			},
+			hasRefreshToken: false,
+			instructions: null,
+			tools: [{ name: 'ping', inputSchema: { type: 'object' } }],
+		},
+	})
+	expect(warned.connected).toBe(true)
+	expect(warned.error).toBe(omittedRefresh)
+	expect(warned.hasRefreshToken).toBe(false)
 })

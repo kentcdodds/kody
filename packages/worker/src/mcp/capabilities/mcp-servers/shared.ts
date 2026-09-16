@@ -8,6 +8,7 @@ import {
 	listMcpServerSettings,
 } from '#worker/mcp-client/settings-service.ts'
 import { type McpServerSettingMetadata } from '#worker/mcp-client/settings-types.ts'
+import { isMcpOAuthMissingRefreshGrantLastError } from '#worker/mcp-client/oauth-token-recovery.ts'
 import { type McpServerSnapshot } from '#worker/mcp-client/types.ts'
 
 export const mcpServerStatusSchema = z.object({
@@ -39,8 +40,13 @@ export function buildMcpServerStatusView(input: {
 }): McpServerStatusView {
 	const { setting, snapshot } = input
 	const connected = snapshot?.state === 'ready'
+	const readyWarning = isMcpOAuthMissingRefreshGrantLastError(
+		snapshot?.lastError ?? null,
+	)
+		? snapshot?.lastError?.message
+		: null
 	const rawError = connected
-		? null
+		? (readyWarning ?? null)
 		: (snapshot?.error ?? setting.lastError ?? null)
 	const error =
 		rawError && input.oauthCallbackUrl && input.oauthClientOrigin

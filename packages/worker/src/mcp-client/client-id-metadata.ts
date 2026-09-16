@@ -1,5 +1,12 @@
 import { DurableObjectOAuthClientProvider } from 'agents/mcp/do-oauth-client-provider'
-import { mergeMcpOAuthTokens } from './oauth-token-recovery.ts'
+import {
+	clientIdFromMcpOAuthTokenStorageKey,
+	mcpOAuthRefreshTokenStorageKey,
+	mcpOAuthServerStoragePrefix,
+	parseStoredMcpOAuthRefreshToken,
+	restoreReadableMcpOAuthTokens,
+	withPreservedMcpOAuthRefreshToken,
+} from './oauth-token-recovery.ts'
 
 export const mcpClientIdMetadataPath = '/oauth/client-metadata.json'
 export const mcpServerOAuthCallbackPath = '/account/mcp-servers/oauth/callback'
@@ -66,12 +73,23 @@ type McpClientOAuthProvider = DurableObjectOAuthClientProvider & {
 	clientMetadataUrl?: string
 }
 
+type McpOAuthTokenContext = Parameters<
+	DurableObjectOAuthClientProvider['tokens']
+>[0]
+type McpOAuthStoredTokens = Awaited<
+	ReturnType<DurableObjectOAuthClientProvider['tokens']>
+>
+type McpOAuthSaveTokens = Parameters<
+	DurableObjectOAuthClientProvider['saveTokens']
+>[0]
+
 /**
  * Agents SDK storage/PKCE provider plus the MCP SDK `clientMetadataUrl`
  * hook. HTTPS callbacks present CIMD; http (local dev) omits it so auth
  * falls back to DCR. `saveTokens` keeps an existing refresh token when
- * the authorization server omits one, and keeps OAuth discovery so the
- * next authorize URL can still advertise scopes.
+ * the authorization server omits one, writes a server-scoped sidecar so
+ * restore can find it when SQL `client_id` is missing, and keeps OAuth
+ * discovery so the next authorize URL can still advertise scopes.
  */
 export function createMcpClientOAuthProvider(
 	storage: DurableObjectStorage,
@@ -105,20 +123,133 @@ function installMcpOAuthTokenPreservation(
 	const readTokens = provider.tokens.bind(provider)
 	const readDiscovery = provider.discoveryState.bind(provider)
 	const writeDiscovery = provider.saveDiscoveryState.bind(provider)
-	provider.saveTokens = async (incoming, context) => {
-		const [existing, discovery] = await Promise.all([
-			readTokens(context),
-			readDiscovery(),
-		])
-		const merged = mergeMcpOAuthTokens({ incoming, existing })
-		await saveTokens(
-			merged && typeof merged === 'object'
-				? (merged as typeof incoming)
-				: incoming,
-			context,
-		)
-		if (discovery !== undefined) {
-			await writeDiscovery(discovery)
+	const invalidateCredentials =
+		typeof provider.invalidateCredentials === 'function'
+			? provider.invalidateCredentials.bind(provider)
+			: null
+	let saveQueue = Promise.resolve()
+	provider.tokens = async (context) => {
+		const stored = await collectStoredMcpOAuthTokenSources(provider)
+		if (!readProviderString(provider, 'clientId') && stored.clientId) {
+			provider.clientId = stored.clientId
 		}
+		const blob = await readTokens(context).catch(() => undefined)
+		return restoreReadableMcpOAuthTokens({
+			blob,
+			sources: stored.sources,
+		}) as McpOAuthStoredTokens
+	}
+	provider.saveTokens = async (incoming, context) => {
+		const run = saveQueue.then(() =>
+			savePreservedMcpOAuthTokens({
+				provider,
+				incoming,
+				context,
+				saveTokens,
+				readTokens,
+				readDiscovery,
+				writeDiscovery,
+			}),
+		)
+		saveQueue = run.then(
+			() => {},
+			() => {},
+		)
+		return run
+	}
+	if (invalidateCredentials) {
+		provider.invalidateCredentials = async (scope) => {
+			await invalidateCredentials(scope)
+			if (scope !== 'all' && scope !== 'client') return
+			const serverId = readProviderString(provider, 'serverId')
+			if (!serverId) return
+			await provider.storage.delete(mcpOAuthRefreshTokenStorageKey(serverId))
+		}
+	}
+}
+
+async function savePreservedMcpOAuthTokens(input: {
+	provider: DurableObjectOAuthClientProvider
+	incoming: McpOAuthSaveTokens
+	context: McpOAuthTokenContext
+	saveTokens: DurableObjectOAuthClientProvider['saveTokens']
+	readTokens: DurableObjectOAuthClientProvider['tokens']
+	readDiscovery: DurableObjectOAuthClientProvider['discoveryState']
+	writeDiscovery: DurableObjectOAuthClientProvider['saveDiscoveryState']
+}) {
+	const stored = await collectStoredMcpOAuthTokenSources(input.provider)
+	if (!readProviderString(input.provider, 'clientId') && stored.clientId) {
+		input.provider.clientId = stored.clientId
+	}
+	const [existing, discovery] = await Promise.all([
+		input.readTokens(input.context).catch(() => undefined),
+		input.readDiscovery(),
+	])
+	const merged = withPreservedMcpOAuthRefreshToken({
+		incoming: input.incoming,
+		sources: [existing, ...stored.sources],
+	})
+	await input.saveTokens(
+		merged && typeof merged === 'object'
+			? (merged as McpOAuthSaveTokens)
+			: input.incoming,
+		input.context,
+	)
+	const serverId = readProviderString(input.provider, 'serverId')
+	const refreshToken = parseStoredMcpOAuthRefreshToken(merged)
+	if (serverId && refreshToken) {
+		await input.provider.storage.put(mcpOAuthRefreshTokenStorageKey(serverId), {
+			refresh_token: refreshToken,
+		})
+	}
+	if (discovery !== undefined) {
+		await input.writeDiscovery(discovery)
+	}
+}
+
+async function collectStoredMcpOAuthTokenSources(
+	provider: DurableObjectOAuthClientProvider,
+) {
+	const serverId = readProviderString(provider, 'serverId')
+	if (!serverId) {
+		return { sources: [] as Array<unknown>, clientId: null as string | null }
+	}
+	const sidecar = parseStoredMcpOAuthRefreshToken(
+		await provider.storage.get(mcpOAuthRefreshTokenStorageKey(serverId)),
+	)
+	const prefix = mcpOAuthServerStoragePrefix({
+		clientName: mcpClientName,
+		serverId,
+	})
+	const entries = await provider.storage.list({ prefix })
+	const siblings: Array<unknown> = []
+	let inferredClientId: string | null = null
+	for (const [key, value] of entries) {
+		const clientId = clientIdFromMcpOAuthTokenStorageKey({
+			clientName: mcpClientName,
+			serverId,
+			key,
+		})
+		if (!clientId) continue
+		siblings.push(value)
+		inferredClientId ??= clientId
+	}
+	return {
+		sources: [sidecar ? { refresh_token: sidecar } : null, ...siblings].filter(
+			(source) => source != null,
+		),
+		clientId: inferredClientId,
+	}
+}
+
+function readProviderString(
+	provider: DurableObjectOAuthClientProvider,
+	key: 'serverId' | 'clientId',
+) {
+	try {
+		const value = provider[key]
+		return typeof value === 'string' && value.trim().length > 0 ? value : null
+	} catch {
+		return null
 	}
 }

@@ -7,6 +7,7 @@ import {
 	mcpClientName,
 	resolveMcpClientMetadataUrl,
 } from './client-id-metadata.ts'
+import { mcpOAuthRefreshTokenStorageKey } from './oauth-token-recovery.ts'
 
 test('CIMD resolves only for HTTPS, serves the origin-bound document, and wires the OAuth provider', async () => {
 	const origin = 'https://kody.codes'
@@ -79,7 +80,7 @@ test('CIMD resolves only for HTTPS, serves the origin-bound document, and wires 
 	expect(httpProvider.clientMetadataUrl).toBeUndefined()
 })
 
-test('OAuth provider saveTokens keeps a refresh token and discovery when the AS omits them', async () => {
+function createMemoryStorage() {
 	const values = new Map<string, unknown>()
 	const storage = {
 		put: async (key: string, value: unknown) => {
@@ -91,8 +92,19 @@ test('OAuth provider saveTokens keeps a refresh token and discovery when the AS 
 				values.delete(item)
 			}
 		},
-		list: async () => new Map(),
+		list: async ({ prefix }: { prefix?: string } = {}) => {
+			return new Map(
+				[...values.entries()].filter(([key]) =>
+					prefix ? key.startsWith(prefix) : true,
+				),
+			)
+		},
 	} as unknown as DurableObjectStorage
+	return { storage, values }
+}
+
+test('OAuth provider saveTokens keeps a refresh token and discovery when the AS omits them', async () => {
+	const { storage, values } = createMemoryStorage()
 	const provider = createMcpClientOAuthProvider(
 		storage,
 		'https://kody.codes/account/mcp-servers/oauth/callback',
@@ -112,6 +124,9 @@ test('OAuth provider saveTokens keeps a refresh token and discovery when the AS 
 		refresh_token: 'keep-rt',
 		token_type: 'Bearer',
 	})
+	expect(values.get(mcpOAuthRefreshTokenStorageKey('server-home'))).toEqual({
+		refresh_token: 'keep-rt',
+	})
 
 	await provider.saveTokens({
 		access_token: 'refreshed-at',
@@ -125,4 +140,30 @@ test('OAuth provider saveTokens keeps a refresh token and discovery when the AS 
 	expect(values.get('/Kody/server-home/oauth_discovery')).toEqual({
 		authorization_servers: ['https://auth.example'],
 	})
+
+	await Promise.all([
+		provider.saveTokens({ access_token: 'race-a', token_type: 'Bearer' }),
+		provider.saveTokens({ access_token: 'race-b', token_type: 'Bearer' }),
+	])
+	const raced = values.get('/Kody/server-home/client-1/token') as {
+		refresh_token?: string
+	}
+	expect(raced.refresh_token).toBe('keep-rt')
+
+	const restored = createMcpClientOAuthProvider(
+		storage,
+		'https://kody.codes/account/mcp-servers/oauth/callback',
+	)
+	restored.serverId = 'server-home'
+	expect(await restored.tokens()).toMatchObject({
+		refresh_token: 'keep-rt',
+	})
+	expect(restored.clientId).toBe('client-1')
+
+	await restored.invalidateCredentials('tokens')
+	expect(values.get('/Kody/server-home/client-1/token')).toBeUndefined()
+	expect(values.get(mcpOAuthRefreshTokenStorageKey('server-home'))).toEqual({
+		refresh_token: 'keep-rt',
+	})
+	expect(await restored.tokens()).toEqual({ refresh_token: 'keep-rt' })
 })

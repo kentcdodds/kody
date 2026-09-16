@@ -372,7 +372,8 @@ function isStoredTokenRecoveryLead(error: string) {
 	return (
 		lower.includes('could not be refreshed') ||
 		lower.includes('could not keep this mcp server ready') ||
-		lower.includes('has no refresh token to renew')
+		lower.includes('has no refresh token to renew') ||
+		lower.includes('advertised refresh tokens')
 	)
 }
 

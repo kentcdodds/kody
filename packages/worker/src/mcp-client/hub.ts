@@ -29,8 +29,12 @@ import {
 	sanitizePublicUrl,
 } from './oauth-settle-error.ts'
 import {
+	buildMcpOAuthMissingRefreshGrantLastError,
 	buildMcpOAuthTokenRecoveryLastError,
+	isMcpOAuthMissingRefreshGrantLastError,
 	isMcpOAuthTokenRecoveryLastError,
+	mcpOAuthDiscoveryAdvertisesRefresh,
+	mcpOAuthRefreshTokenStorageKey,
 	mcpOAuthTokenRecoveryStorageKey,
 	mcpOAuthTokenRecoveryStoragePrefix,
 	readMcpOAuthTokenPresence,
@@ -384,6 +388,7 @@ class McpClientHubBase extends DurableObject<Env> {
 			mcpConnectionEpisodeStorageKey(input.serverId),
 			mcpLegacyHandshakeStorageKey(input.serverId),
 			mcpOAuthTokenRecoveryStorageKey(input.serverId),
+			mcpOAuthRefreshTokenStorageKey(input.serverId),
 		])
 	}
 
@@ -721,8 +726,12 @@ class McpClientHubBase extends DurableObject<Env> {
 		const existing = this.lastDiscoverErrors.get(serverId) ?? null
 		if (
 			options?.preserveTokenRecovery &&
-			isMcpOAuthTokenRecoveryLastError(existing)
+			(isMcpOAuthTokenRecoveryLastError(existing) ||
+				isMcpOAuthMissingRefreshGrantLastError(existing))
 		) {
+			return
+		}
+		if (isMcpOAuthMissingRefreshGrantLastError(existing)) {
 			return
 		}
 		const connection = this.manager.mcpConnections[serverId]
@@ -765,7 +774,7 @@ class McpClientHubBase extends DurableObject<Env> {
 				? afterAuto
 				: await this.retryDiscoverWithLegacyHandshake(serverId, afterAuto)
 		if (outcome.result.state === 'ready') {
-			await this.persistTokenRecoveryLastError(serverId, null)
+			await this.stampMissingRefreshGrantIfReady(serverId)
 		}
 		return outcome
 	}
@@ -918,6 +927,16 @@ class McpClientHubBase extends DurableObject<Env> {
 		const connection = this.manager.mcpConnections[serverId]
 		if (!isIncompleteDiscoverState(result.state)) {
 			if (result.state === 'ready') {
+				const existing = this.lastDiscoverErrors.get(serverId) ?? null
+				if (isMcpOAuthMissingRefreshGrantLastError(existing)) {
+					return {
+						result: {
+							...this.buildConnectResult(serverId),
+							lastError: existing,
+						},
+						lastError: existing,
+					}
+				}
 				this.clearIncompleteDiscoverStamp(serverId)
 				return {
 					result: { ...result, error: null, lastError: null },
@@ -1057,6 +1076,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		const result = (await this.runDiscoverIfConnected(serverId)).result
 		if (result.state === 'ready') {
 			await this.rememberLegacyHandshakeIfActive(serverId)
+			await this.stampMissingRefreshGrantIfReady(serverId)
 		}
 		return result
 	}
@@ -1156,7 +1176,11 @@ class McpClientHubBase extends DurableObject<Env> {
 		}
 		const connection = this.manager.mcpConnections[serverId]
 		const authProvider = connection?.options.transport.authProvider
+		const latestTokens = storedTokens.hasRefreshToken
+			? storedTokens
+			: await this.readTokenPresence(serverId)
 		if (
+			!latestTokens.hasRefreshToken &&
 			authProvider &&
 			typeof authProvider.invalidateCredentials === 'function'
 		) {
@@ -1564,7 +1588,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		const result = this.buildConnectResult(serverId)
 		if (result.state !== 'authenticating') {
 			if (result.state === 'ready') {
-				await this.clearTokenRecoveryLastError(serverId)
+				await this.stampMissingRefreshGrantIfReady(serverId)
 			}
 			await this.readTokenPresence(serverId)
 			return
@@ -1626,6 +1650,61 @@ class McpClientHubBase extends DurableObject<Env> {
 			stillHasRefreshToken: after.hasRefreshToken,
 			mcpEndpoint: lastError.mcpEndpoint,
 		})
+	}
+
+	private async stampMissingRefreshGrantIfReady(serverId: string) {
+		const presence = await this.readTokenPresence(serverId)
+		if (presence.hasRefreshToken) {
+			await this.clearTokenRecoveryLastError(serverId)
+			return
+		}
+		if (!(await this.discoveryAdvertisesRefresh(serverId))) {
+			await this.clearTokenRecoveryLastError(serverId)
+			return
+		}
+		const existing = this.lastDiscoverErrors.get(serverId) ?? null
+		if (isMcpOAuthMissingRefreshGrantLastError(existing)) return
+		const row = this.manager
+			.listServers()
+			.find((server) => server.id === serverId)
+		const lastError = buildMcpOAuthMissingRefreshGrantLastError({
+			authUrl: row?.auth_url ?? null,
+			mcpEndpoint: row?.server_url ?? null,
+		})
+		this.lastDiscoverErrors.set(serverId, lastError)
+		await this.persistTokenRecoveryLastError(serverId, lastError)
+		console.warn('mcp oauth grant omitted advertised refresh token', {
+			attemptId: lastError.attemptId,
+			serverId,
+			mcpEndpoint: lastError.mcpEndpoint,
+		})
+	}
+
+	private async discoveryAdvertisesRefresh(serverId: string) {
+		const authProvider =
+			this.manager.mcpConnections[serverId]?.options.transport.authProvider
+		const discoveryFn = (
+			authProvider as { discoveryState?: () => Promise<unknown> } | undefined
+		)?.discoveryState
+		if (typeof discoveryFn === 'function') {
+			try {
+				if (
+					mcpOAuthDiscoveryAdvertisesRefresh(
+						await discoveryFn.call(authProvider),
+					)
+				) {
+					return true
+				}
+			} catch {
+				// Fall through to stored discovery blobs.
+			}
+		}
+		const prefix = `/${mcpClientName}/${serverId}/`
+		const entries = await this.ctx.storage.list({ prefix })
+		for (const value of entries.values()) {
+			if (mcpOAuthDiscoveryAdvertisesRefresh(value)) return true
+		}
+		return false
 	}
 
 	/** Close all connections and wipe stored servers, tokens, and OAuth state. */

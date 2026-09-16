@@ -41,7 +41,11 @@ authorization again, Status and `mcpServerList.error` include the sanitized
 token-refresh reason (for example a rejected or already-used refresh token).
 `mcpServerList` also reports `hasRefreshToken` so agents can tell whether Kody
 still has a refresh token without reading the secret. Kody keeps a stored
-refresh token when the server's token response omits a new one. One successful
+refresh token when the server's token response omits a new one, including across
+Durable Object restore when the OAuth client id is not in SQL yet. If the
+authorization server advertised refresh support but the token response had no
+refresh token, Status and `mcpServerList.error` stay visible while the server is
+still Connected so the access-token expiry is not a surprise. One successful
 Authorize + callback is enough: a replay of the callback URL settles with the
 tokens from the first exchange instead of asking you to approve again.
 `mcpServerReconnect` tries that refresh before minting a new authorization link.
