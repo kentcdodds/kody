@@ -15,11 +15,11 @@ they may change or go away. Signed-in users can turn them on from this page.
 
 A custom secret provider lets your agent use a password-manager item the same
 way it uses a Kody secret: a placeholder in `fetch`, resolved at the network
-boundary. The model never sees the value. Existing `{{secret:name}}`
-placeholders are unchanged.
+boundary. The model never sees the value. User secrets use `{{secret:name}}`;
+providers use `{{secret/<provider>:<ref>}}`.
 
-The first provider id is `1password`. Provider logic lives in a saved package
-you bind; Kody core does not talk to the vault itself.
+Provider packages declare an id such as `1password`. Provider logic lives in a
+saved package you bind; Kody core does not talk to the vault itself.
 
 ## Turn it on
 

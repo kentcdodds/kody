@@ -313,6 +313,10 @@ owner operates. Open `search({ entity: "heavy_work_offload:guide" })`.
 
 ## Secret-using packages
 
+Password-manager items use [custom secret providers](./secret-providers.md)
+(`{{secret/<provider>:<ref>}}` and `kody.secretProvider`); that path is separate
+from user-secret grants.
+
 When a package will use user-scoped secrets (`{{secret:name}}` placeholders or
 `kody.secretMounts`):
 

@@ -92,6 +92,9 @@ Important fields:
 - `kody.dependencies` — map of direct saved package names imported through
   static `kody:@...` imports (`{ "@scope/package": "*" }`)
 - `kody.secretMounts` — optional package-scoped secret mount declarations
+- `kody.secretProvider` — optional `{ id }` declaring this package can serve
+  that external secret provider. Metadata alone does not bind the provider; see
+  [Custom secret providers](../guides/secret-providers.md)
 - `kody.app` — optional hosted package app config
 - `kody.subscriptions` — optional event-topic subscriptions with package-local
   handlers
