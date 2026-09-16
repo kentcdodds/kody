@@ -2,6 +2,7 @@ import { Script, createContext } from 'node:vm'
 import { expect, test } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
+	buildPackageActionImportUsage,
 	compactCapabilityInputTypeDefinition,
 	formatEntityDetailMarkdown,
 	formatSearchMarkdown,
@@ -1434,4 +1435,31 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 			truncated: false,
 		},
 	})
+})
+
+test('package action import usage uses a default import for default and home exports', () => {
+	const defaultUsage = buildPackageActionImportUsage({
+		packageName: '@kentcdodds/shade-automation',
+		subpath: './control',
+		functionName: 'default',
+	})
+	expect(defaultUsage).toBe(
+		'import action from "kody:@kentcdodds/shade-automation/control"',
+	)
+	expect(
+		buildPackageActionImportUsage({
+			packageName: '@kentcdodds/home-controls',
+			subpath: './bond-area-shades',
+			functionName: 'home',
+		}),
+	).toBe('import action from "kody:@kentcdodds/home-controls/bond-area-shades"')
+	expect(
+		buildPackageActionImportUsage({
+			packageName: '@kentcdodds/google-products',
+			subpath: './calendar',
+			functionName: 'createEvent',
+		}),
+	).toBe(
+		'import { createEvent } from "kody:@kentcdodds/google-products/calendar"',
+	)
 })
