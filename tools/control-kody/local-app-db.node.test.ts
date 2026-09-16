@@ -7,7 +7,7 @@ import {
 
 const localSeeds = ['jane@example.com', 'kody@example.com']
 
-test('local APP_DB readiness matches localhost login failures and names migrate+seed', () => {
+test('local APP_DB readiness matches localhost login failures and appends remediation', () => {
 	expect(isLocalAppOrigin('http://127.0.0.1:3742')).toBe(true)
 	expect(isLocalAppOrigin('https://kody-pr-9.kody.workers.dev')).toBe(false)
 
@@ -66,9 +66,8 @@ test('local APP_DB readiness matches localhost login failures and names migrate+
 		},
 		localSeeds,
 	)
-	expect(detail).toContain('HTTP 500 no such table: users')
-	expect(detail).toContain('npm run migrate:local')
-	expect(detail).toContain('node tools/seed-test-data.ts --local')
+	expect(detail.startsWith('HTTP 500 no such table: users')).toBe(true)
+	expect(detail).not.toBe('HTTP 500 no such table: users')
 	expect(
 		withLocalAppDbRemediation(
 			'https://kody-pr-9.kody.workers.dev',

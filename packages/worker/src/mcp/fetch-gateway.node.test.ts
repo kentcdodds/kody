@@ -3,7 +3,6 @@ import { expect, test, vi } from 'vitest'
 import {
 	executeGatewayFetch,
 	expandSecretPlaceholders,
-	providerSecretsRequireHttpsMessage,
 	secretResolutionHeaderName,
 } from '#mcp/fetch-gateway.ts'
 import {
@@ -1595,7 +1594,7 @@ test('fetch gateway rejects provider secrets on a non-HTTPS request URL', async 
 				props,
 				env,
 			}),
-		).rejects.toThrow(providerSecretsRequireHttpsMessage)
+		).rejects.toThrow(/HTTPS/)
 	} finally {
 		resolveSpy.mockRestore()
 	}

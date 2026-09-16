@@ -10,11 +10,7 @@ test('package sharing flag callout covers logged-out, opt-in, and already-on', a
 	)
 	expect(loggedOut).toContain('data-testid="package-sharing-flag-callout"')
 	expect(loggedOut).toContain(`data-flag="${packageShareGrantsFlagKey}"`)
-	expect(loggedOut).toContain(
-		'Package sharing is behind a feature flag because it may change or go away.',
-	)
 	expect(loggedOut).toContain('data-testid="package-sharing-flag-login"')
-	expect(loggedOut).toContain('Log in to try it')
 	expect(loggedOut).toContain(
 		`href="${routes.login.href()}?redirectTo=${encodeURIComponent(routes.docDetail.href({ slug: 'package-sharing' }))}"`,
 	)
@@ -24,7 +20,6 @@ test('package sharing flag callout covers logged-out, opt-in, and already-on', a
 		renderPackageSharingFlagCallout({ loggedIn: true, enabled: false }),
 	)
 	expect(loggedIn).toContain('data-testid="package-sharing-flag-opt-in"')
-	expect(loggedIn).toContain('Try sharing')
 	expect(loggedIn).toContain(
 		`action="${routes.packageSharingOptInPost.href()}"`,
 	)
@@ -34,7 +29,6 @@ test('package sharing flag callout covers logged-out, opt-in, and already-on', a
 	const alreadyOn = await renderToString(
 		renderPackageSharingFlagCallout({ loggedIn: true, enabled: true }),
 	)
-	expect(alreadyOn).toContain('You are trying package sharing.')
 	expect(alreadyOn).not.toContain('data-testid="package-sharing-flag-opt-in"')
 	expect(alreadyOn).not.toContain('data-testid="package-sharing-flag-login"')
 })

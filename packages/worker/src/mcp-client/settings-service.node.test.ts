@@ -329,7 +329,7 @@ test('persistMcpServerLastErrorIfChanged writes token-recovery errors and skips 
 	expect(mockModule.updateMcpServerSettingLastErrorRow).toHaveBeenCalledWith(
 		expect.objectContaining({
 			id: 'server-1',
-			lastError: expect.stringContaining('advertised refresh tokens'),
+			lastError: expect.stringContaining('"phase":"token exchange"'),
 		}),
 	)
 

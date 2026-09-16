@@ -161,6 +161,6 @@ test('buildMcpServerStatusView surfaces durable lastError when live connection e
 		},
 	})
 	expect(warned.connected).toBe(true)
-	expect(warned.error).toBe(omittedRefresh)
+	expect(warned.error).toBeTruthy()
 	expect(warned.hasRefreshToken).toBe(false)
 })

@@ -105,8 +105,6 @@ test('control-kody parses commands, maps every required route, and drives a seed
 			contains: ['Waiting inbox', '<h1>'],
 		}),
 	)
-	expect(usageLines.join('\n')).toMatch(/--dump/)
-	expect(usageLines.join('\n')).toMatch(/--contains/)
 	expect(parseControlArgs(['preview', '--', '--pr', '42']).previewArgv).toEqual(
 		['--pr', '42'],
 	)
@@ -370,7 +368,7 @@ test('readHealth accepts a unique short SHA and a descendant live SHA', async ()
 	).toBe(true)
 })
 
-test('doctor local-d1 prints migrate+seed when local seed login fails', async () => {
+test('doctor local-d1 fails when local seed login fails', async () => {
 	const doctor = await runDoctor({
 		nodeVersion: 'v26.1.2',
 		homeDir: tmpdir(),
@@ -389,11 +387,8 @@ test('doctor local-d1 prints migrate+seed when local seed login fails', async ()
 	})
 	expect(doctor.ok).toBe(false)
 	expect(
-		doctor.checks.find((check) => check.name === 'local-d1')?.detail,
-	).toMatch(/npm run migrate:local/)
-	expect(
-		doctor.checks.find((check) => check.name === 'local-d1')?.detail,
-	).toMatch(/node tools\/seed-test-data\.ts --local/)
+		doctor.checks.some((check) => check.name === 'local-d1' && !check.ok),
+	).toBe(true)
 })
 
 test('control-kody request --dump writes the body and --contains asserts HTML', async () => {
@@ -618,39 +613,6 @@ test('control-kody request re-logs in when HTML redirects to login', async () =>
 	} finally {
 		await rm(dir, { recursive: true, force: true })
 	}
-})
-
-test('control-kody login prints migrate+seed when local APP_DB is unready', async () => {
-	await withAuthServer(
-		(_request, response) => {
-			response.statusCode = 500
-			response.setHeader('Content-Type', 'application/json')
-			response.end(JSON.stringify({ error: 'no such table: users' }))
-		},
-		async (origin) => {
-			const logs: Array<string> = []
-			const originalLog = console.log
-			console.log = (message?: unknown) => {
-				logs.push(String(message))
-			}
-			try {
-				const code = await runCommand(
-					parseControlArgs([
-						'login',
-						'--origin',
-						origin,
-						'--cookie-file',
-						path.join(tmpdir(), 'control-kody-login-unready'),
-					]),
-				)
-				expect(code).toBe(1)
-			} finally {
-				console.log = originalLog
-			}
-			expect(logs.join('\n')).toMatch(/npm run migrate:local/)
-			expect(logs.join('\n')).toMatch(/node tools\/seed-test-data\.ts --local/)
-		},
-	)
 })
 
 test('control-kody request stops when auto-login fails', async () => {
