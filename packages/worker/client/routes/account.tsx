@@ -598,6 +598,7 @@ export function AccountRoute(handle: Handle) {
 								handle.update()
 							},
 							onDraftEmailInput: accountEmailClaims.updateDraftEmail,
+							onEmailChangeToggle: accountEmailClaims.handleEmailChangeToggle,
 							onEmailChangePasswordInput:
 								accountEmailClaims.updateEmailChangePassword,
 						})}
