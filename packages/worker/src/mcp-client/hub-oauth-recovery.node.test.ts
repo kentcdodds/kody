@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import type * as CloudflareWorkers from 'cloudflare:workers'
+import { mcpOAuthRefreshTokenStorageKey } from './oauth-token-recovery.ts'
 
 type FakeServerRow = {
 	id: string
@@ -33,7 +34,9 @@ type FakeConnection = {
 					access_token?: string
 					refresh_token?: string
 				} | null
+				storedDiscovery?: unknown
 				tokens?: () => Promise<unknown>
+				discoveryState?: () => Promise<unknown>
 			}
 		}
 	}
@@ -317,8 +320,12 @@ function seedServer(input: {
 			access_token?: string
 			refresh_token?: string
 		} | null,
+		storedDiscovery: undefined as unknown,
 		async tokens() {
 			return this.storedTokens ?? undefined
+		},
+		async discoveryState() {
+			return this.storedDiscovery
 		},
 	}
 	input.manager.rows = [
@@ -390,6 +397,9 @@ test('reconnect repairs stale callbacks and always replaces pending OAuth state'
 		client_id: 'stale-client',
 	})
 	values.set('/Kody/server-1/state/stale', { serverId: 'server-1' })
+	values.set(mcpOAuthRefreshTokenStorageKey('server-1'), {
+		refresh_token: 'old-rt',
+	})
 
 	const repaired = await hub.reconnectServer({
 		serverId: 'server-1',
@@ -417,6 +427,7 @@ test('reconnect repairs stale callbacks and always replaces pending OAuth state'
 	expect([...values.keys()].filter((key) => key.startsWith('/Kody/'))).toEqual(
 		[],
 	)
+	expect(values.has(mcpOAuthRefreshTokenStorageKey('server-1'))).toBe(false)
 
 	values.set('/Kody/server-1/client-1/client_info/', {
 		client_id: 'client-1',
@@ -454,6 +465,8 @@ test('failed replacement registration restores the saved server and OAuth state'
 	const stateKey = '/Kody/server-1/state/stale'
 	values.set(clientInfoKey, { client_id: 'stale-client' })
 	values.set(stateKey, { serverId: 'server-1' })
+	const sidecarKey = mcpOAuthRefreshTokenStorageKey('server-1')
+	values.set(sidecarKey, { refresh_token: 'old-rt' })
 	manager.registerFailuresRemaining = 1
 
 	await expect(
@@ -476,6 +489,7 @@ test('failed replacement registration restores the saved server and OAuth state'
 	)
 	expect(values.get(clientInfoKey)).toEqual({ client_id: 'stale-client' })
 	expect(values.get(stateKey)).toEqual({ serverId: 'server-1' })
+	expect(values.get(sidecarKey)).toEqual({ refresh_token: 'old-rt' })
 })
 
 test('replayed unusable callbacks leave past-OAuth server credentials intact', async () => {
@@ -987,6 +1001,49 @@ test('reconnect tries stored refresh before wiping tokens and stamps lastError w
 			stillHasRefreshToken: false,
 		}),
 	)
+})
+
+test('ready grant without a refresh token warns when the authorization server advertised refresh', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { state, values } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	const { connection } = await seedReadyHomeServer({ hub, manager })
+	connection.options.transport.authProvider.storedTokens = {
+		access_token: 'at-only',
+	}
+	connection.options.transport.authProvider.storedDiscovery = {
+		grant_types_supported: ['authorization_code', 'refresh_token'],
+		scopes_supported: ['mcp'],
+	}
+	values.set('/Kody/server-1/oauth_discovery', {
+		grant_types_supported: ['authorization_code', 'refresh_token'],
+		scopes_supported: ['mcp'],
+	})
+	const snapshot = await hub.getSnapshot()
+	expect(snapshot.servers[0]?.state).toBe('ready')
+	expect(snapshot.servers[0]?.hasRefreshToken).toBe(false)
+	expect(snapshot.servers[0]?.lastError?.phase).toBe('token exchange')
+	expect(snapshot.servers[0]?.lastError?.message).toContain(
+		'advertised refresh tokens',
+	)
+	expect(snapshot.connectionEvents).toEqual([])
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'mcp oauth grant omitted advertised refresh token',
+		expect.objectContaining({ serverId: 'server-1' }),
+	)
+	expect(connection.connectionError).toContain('advertised refresh tokens')
+
+	connection.options.transport.authProvider.storedTokens = {
+		access_token: 'at-new',
+		refresh_token: 'rt-new',
+	}
+	const afterRefresh = await hub.getSnapshot()
+	expect(afterRefresh.servers[0]?.hasRefreshToken).toBe(true)
+	expect(afterRefresh.servers[0]?.lastError).toBeNull()
+	expect(afterRefresh.servers[0]?.error).toBeNull()
+	expect(connection.connectionError).toBeNull()
 })
 
 test('snapshot after a prior ready connection parks authenticating with a durable token-recovery lastError', async () => {

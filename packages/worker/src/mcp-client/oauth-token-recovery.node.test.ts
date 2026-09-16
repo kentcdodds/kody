@@ -1,13 +1,21 @@
 import { expect, test } from 'vitest'
 import {
+	buildMcpOAuthMissingRefreshGrantLastError,
 	buildMcpOAuthTokenRecoveryLastError,
+	clientIdFromMcpOAuthTokenStorageKey,
 	describeMcpOAuthTokenRecovery,
+	isMcpOAuthGrantIssueLastError,
+	isMcpOAuthMissingRefreshGrantLastError,
 	isMcpOAuthTokenRecoveryLastError,
+	mcpOAuthDiscoveryAdvertisesRefresh,
+	mcpOAuthRefreshTokenStorageKey,
 	mcpOAuthTokenRecoveryStorageKey,
 	mergeMcpOAuthTokens,
 	readMcpOAuthTokenPresence,
+	restoreReadableMcpOAuthTokens,
 	shouldAttemptMcpOAuthRefresh,
 	shouldQueueMcpTokenRecoveryDisconnected,
+	withPreservedMcpOAuthRefreshToken,
 } from './oauth-token-recovery.ts'
 
 test('token recovery inspects stored OAuth blobs without treating empty strings as tokens', () => {
@@ -76,6 +84,64 @@ test('token recovery inspects stored OAuth blobs without treating empty strings 
 	expect(mcpOAuthTokenRecoveryStorageKey('server-1')).toBe(
 		'mcp-oauth-token-recovery/server-1',
 	)
+	expect(mcpOAuthRefreshTokenStorageKey('server-1')).toBe(
+		'mcp-oauth-refresh-token/server-1',
+	)
+	expect(
+		clientIdFromMcpOAuthTokenStorageKey({
+			clientName: 'Kody',
+			serverId: 'home',
+			key: '/Kody/home/https://kody.codes/oauth/client-metadata.json/token',
+		}),
+	).toBe('https://kody.codes/oauth/client-metadata.json')
+	expect(
+		mcpOAuthDiscoveryAdvertisesRefresh({
+			grant_types_supported: ['authorization_code', 'refresh_token'],
+			scopes_supported: ['mcp'],
+		}),
+	).toBe(true)
+	expect(
+		mcpOAuthDiscoveryAdvertisesRefresh({
+			scopes_supported: ['offline_access'],
+		}),
+	).toBe(true)
+	expect(
+		mcpOAuthDiscoveryAdvertisesRefresh({
+			grant_types_supported: ['authorization_code'],
+			scopes_supported: ['mcp'],
+		}),
+	).toBe(false)
+	expect(
+		mcpOAuthDiscoveryAdvertisesRefresh({
+			authorizationServerUrl: 'https://auth.example',
+			authorizationServerMetadata: {
+				grant_types_supported: ['authorization_code', 'refresh_token'],
+			},
+		}),
+	).toBe(true)
+	expect(
+		mcpOAuthDiscoveryAdvertisesRefresh({
+			authorizationServerUrl: 'https://auth.example',
+			resourceMetadata: {
+				scopes_supported: ['offline_access'],
+			},
+		}),
+	).toBe(true)
+	expect(
+		withPreservedMcpOAuthRefreshToken({
+			incoming: { access_token: 'new-at' },
+			sources: [{ refresh_token: 'sidecar-rt' }],
+		}),
+	).toEqual({ access_token: 'new-at', refresh_token: 'sidecar-rt' })
+	expect(
+		restoreReadableMcpOAuthTokens({
+			blob: undefined,
+			sources: [
+				{ refresh_token: 'sidecar-rt' },
+				{ access_token: 'sibling-at' },
+			],
+		}),
+	).toEqual({ access_token: 'sibling-at', refresh_token: 'sidecar-rt' })
 })
 
 test('token recovery lastError names refresh failure without claiming IdP just succeeded', () => {
@@ -138,4 +204,18 @@ test('token recovery lastError names refresh failure without claiming IdP just s
 			at: '2026-01-01T00:00:00.000Z',
 		}),
 	).toBe(false)
+
+	const omitted = buildMcpOAuthMissingRefreshGrantLastError({
+		authUrl: null,
+		mcpEndpoint: 'https://kody-home.doddsfamily.us/mcp',
+		attemptId: '33333333-3333-4333-8333-333333333333',
+		at: '2026-09-16T00:00:00.000Z',
+	})
+	expect(omitted.phase).toBe('token exchange')
+	expect(omitted.message).toContain('advertised refresh tokens')
+	expect(omitted.message).not.toContain('Authorization completed')
+	expect(isMcpOAuthMissingRefreshGrantLastError(omitted)).toBe(true)
+	expect(isMcpOAuthTokenRecoveryLastError(omitted)).toBe(false)
+	expect(isMcpOAuthGrantIssueLastError(omitted)).toBe(true)
+	expect(isMcpOAuthGrantIssueLastError(noRefresh)).toBe(true)
 })

@@ -306,6 +306,33 @@ test('persistMcpServerLastErrorIfChanged writes token-recovery errors and skips 
 	})
 	expect(mockModule.updateMcpServerSettingLastErrorRow).not.toHaveBeenCalled()
 
+	const omittedRefresh = {
+		message:
+			"This MCP server's authorization server advertised refresh tokens, but the token response did not include a refresh token. The access token will expire and Kody cannot renew it (phase token exchange, id attempt-omit).",
+		phase: 'token exchange' as const,
+		httpStatus: null,
+		httpBodySnippet: null,
+		mcpEndpoint: 'https://kody-home.doddsfamily.us/mcp',
+		resource: null,
+		authServer: null,
+		attemptId: 'attempt-omit',
+		at: '2026-09-16T00:00:00.000Z',
+	}
+	mockModule.updateMcpServerSettingLastErrorRow.mockClear()
+	await persistMcpServerLastErrorIfChanged({
+		env: { APP_DB: {} } as Env,
+		userId: 'user-1',
+		id: 'server-1',
+		state: 'ready',
+		lastError: omittedRefresh,
+	})
+	expect(mockModule.updateMcpServerSettingLastErrorRow).toHaveBeenCalledWith(
+		expect.objectContaining({
+			id: 'server-1',
+			lastError: expect.stringContaining('advertised refresh tokens'),
+		}),
+	)
+
 	await persistMcpServerLastErrorIfChanged({
 		env: { APP_DB: {} } as Env,
 		userId: 'user-1',

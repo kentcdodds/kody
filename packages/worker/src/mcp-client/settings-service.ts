@@ -23,6 +23,7 @@ import {
 	parseStoredMcpServerLastError,
 	stringifyMcpServerLastError,
 } from './oauth-settle-error.ts'
+import { isMcpOAuthMissingRefreshGrantLastError } from './oauth-token-recovery.ts'
 import {
 	filterEnabledMcpServerRefsForCaller,
 	type EnabledMcpServerRef,
@@ -491,6 +492,21 @@ export async function persistMcpServerLastErrorIfChanged(input: {
 			id: input.id,
 		})
 		if (!existing) return
+		const lastError = input.lastError
+		if (
+			lastError &&
+			input.state === 'ready' &&
+			isMcpOAuthMissingRefreshGrantLastError(lastError)
+		) {
+			if (existing.lastError === lastError.message) return
+			await setMcpServerLastError({
+				env: input.env,
+				userId: input.userId,
+				id: input.id,
+				lastError,
+			})
+			return
+		}
 		if (
 			input.state === 'ready' ||
 			(input.state === 'authenticating' && !input.lastError)

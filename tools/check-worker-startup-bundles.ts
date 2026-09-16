@@ -140,7 +140,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// finalizePublishedEntitySource: local dry-run 5_046_681 bytes.
 		// MCP connection-event ack-by-id plus last_error keep-until-ready
 		// on McpClientHub: CI dry-run 5_050_804 bytes.
-		maxEntryBytes: 5_060_000,
+		// MCP OAuth sidecar refresh-token preserve (merge omitted RT,
+		// restore when client_id missing, remint/invalidate delete sidecar,
+		// nested discovery refresh advertising): CI dry-run 5_063_749 bytes.
+		maxEntryBytes: 5_075_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
