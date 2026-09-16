@@ -5,6 +5,7 @@ import {
 	listBoundSecretProviders,
 } from '#mcp/secrets/secret-providers/service.ts'
 import { tryCanonicalizeProviderRef } from '#mcp/secrets/secret-providers/canonicalize.ts'
+import { SecretProviderError } from '#mcp/secrets/secret-providers/errors.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { type AccountSecretProvidersLoaderData } from '#universal/loader-data.ts'
 
@@ -91,14 +92,17 @@ async function loadApprovalCard(input: {
 			kodyId: state.savedPackage.kodyId,
 			alreadyGranted: state.alreadyGranted,
 		}
-	} catch {
+	} catch (error) {
 		return {
 			provider,
 			canonicalRef,
 			packageId,
 			kodyId: input.searchParams.get('package')?.trim() || packageId,
 			alreadyGranted: false,
-			error: 'Unable to load this provider grant.',
+			error:
+				error instanceof SecretProviderError
+					? error.message
+					: 'Unable to load this provider grant.',
 		}
 	}
 }

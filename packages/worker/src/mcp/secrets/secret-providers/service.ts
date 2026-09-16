@@ -120,6 +120,23 @@ async function requireOwnedPackage(input: {
 	return savedPackage
 }
 
+async function requireBoundProvider(input: {
+	db: D1Database
+	userId: string
+	providerId: string
+}) {
+	const binding = await getSecretProviderBinding(input.db, {
+		userId: input.userId,
+		providerId: input.providerId,
+	})
+	if (!binding) {
+		throw new SecretProviderError(
+			createMissingProviderBindingMessage(input.providerId),
+		)
+	}
+	return binding
+}
+
 export async function bindSecretProvider(input: {
 	env: Env
 	baseUrl: string
@@ -240,6 +257,11 @@ export async function grantSecretProviderToPackage(input: {
 	})
 	const providerId = normalizeProviderId(input.providerId)
 	const canonicalRef = requireLocalCanonicalRef(providerId, input.ref)
+	await requireBoundProvider({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		providerId,
+	})
 	const savedPackage = await requireOwnedPackage({
 		db: input.env.APP_DB,
 		userId: input.userId,
@@ -298,6 +320,11 @@ export async function inspectSecretProviderPackageGrant(input: {
 	})
 	const providerId = normalizeProviderId(input.providerId)
 	const canonicalRef = requireLocalCanonicalRef(providerId, input.ref)
+	await requireBoundProvider({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		providerId,
+	})
 	const savedPackage = await requireOwnedPackage({
 		db: input.env.APP_DB,
 		userId: input.userId,

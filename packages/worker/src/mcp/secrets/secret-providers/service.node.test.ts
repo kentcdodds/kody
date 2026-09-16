@@ -565,17 +565,15 @@ test('unbind drops grants and refuses the next resolve', async () => {
 		userId: ownerId,
 		providerId,
 	})
-	expect(
-		(
-			await inspectSecretProviderPackageGrant({
-				env,
-				userId: ownerId,
-				providerId,
-				ref: canonicalRef,
-				packageId: 'pkg-consumer',
-			})
-		).alreadyGranted,
-	).toBe(false)
+	await expect(
+		inspectSecretProviderPackageGrant({
+			env,
+			userId: ownerId,
+			providerId,
+			ref: canonicalRef,
+			packageId: 'pkg-consumer',
+		}),
+	).rejects.toThrow(createMissingProviderBindingMessage(providerId))
 	let providerCalls = 0
 	await expect(
 		resolveProviderSecret({
@@ -591,4 +589,28 @@ test('unbind drops grants and refuses the next resolve', async () => {
 		}),
 	).rejects.toThrow(createMissingProviderBindingMessage(providerId))
 	expect(providerCalls).toBe(0)
+})
+
+test('grant and inspect require a binding before offering Allow', async () => {
+	const { sqlite, env } = await createHarness()
+	const ownerId = 'user-owner'
+	seedPackage(sqlite, { id: 'pkg-consumer', userId: ownerId, kodyId: 'deploy' })
+	await expect(
+		grantSecretProviderToPackage({
+			env,
+			userId: ownerId,
+			providerId,
+			ref: canonicalRef,
+			packageId: 'pkg-consumer',
+		}),
+	).rejects.toThrow(createMissingProviderBindingMessage(providerId))
+	await expect(
+		inspectSecretProviderPackageGrant({
+			env,
+			userId: ownerId,
+			providerId,
+			ref: canonicalRef,
+			packageId: 'pkg-consumer',
+		}),
+	).rejects.toThrow(createMissingProviderBindingMessage(providerId))
 })
