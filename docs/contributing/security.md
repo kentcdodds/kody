@@ -3,7 +3,9 @@
 Security-relevant patterns in the Worker, and the reasoning behind them. This
 doc is the authoritative record of what is protected, what is intentionally out
 of scope, and the invariants future changes must not regress. See the 2026-05-01
-and 2026-07-01 internal security audits for the underlying findings.
+and 2026-07-01 internal security audits for the underlying findings, and
+[the 2026-09-16 codebase audit](../audits/2026-09-16-codebase-audit.md) for a
+later cross-cutting review.
 
 Kody is a multi-worker Cloudflare app: a Remix 3 browser UI and OAuth-protected
 MCP HTTP on origin, platform Durable Objects on `kody-platform`, package apps on
@@ -128,6 +130,13 @@ package-app surfaces:
     `POST /password-reset/confirm` disables TOTP, deletes passkeys and
     `oauth_connections`, and tells the owner in the confirmation email.
     Signed-in `POST /account/password.json` leaves those factors in place.
+15. **User-secret trust grants are never applied by package runtimes.**
+    `secretLock` returns a website approval URL and does not write
+    `allowed_packages`. `communityForkAdopt` widens implicit user-secret
+    read/use for a fork and is restricted to an interactive MCP caller with
+    empty package/app/storage context (same class of gate as `packageAppFetch`
+    and platform-feedback submit). Package apps, jobs, webhooks, and other
+    package runtimes cannot adopt or grant themselves secrets.
 
 ## First-party HTTP security headers
 

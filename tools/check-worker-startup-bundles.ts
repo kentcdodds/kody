@@ -148,7 +148,9 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// preserve: local dry-run 5_088_887 bytes.
 		// Search package export headings (`package:{id}#{subpath}`) add a
 		// few hundred bytes: local dry-run 5_095_156 bytes.
-		maxEntryBytes: 5_096_000,
+		// communityForkAdopt interactive-MCP gate (refuse package-runtime
+		// self-adopt of user-secret read): local dry-run 5_096_278 bytes.
+		maxEntryBytes: 5_097_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,

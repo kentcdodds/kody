@@ -122,10 +122,11 @@ Your agent should:
 5. Rewrite the README **`## Intent`** section for your goals.
 6. Publish via `repoPublishSession`. Repo checks fail if cross-scope imports
    remain.
-7. Optionally call `communityForkAdopt` (with a short `review_summary`) after a
-   real source review, so the fork gets the same automatic secret read/use
-   access as self-authored packages (see
-   [Secrets and host approval](./secrets-and-values.md)).
+7. Optionally call `communityForkAdopt` from an interactive MCP agent (with a
+   short `review_summary`) after a real source review, so the fork gets the same
+   automatic secret read/use access as self-authored packages (see
+   [Secrets and host approval](./secrets-and-values.md)). Package apps, jobs,
+   webhooks, and other package runtimes cannot adopt.
 
 Only after publish does the package become a live saved package in your account.
 

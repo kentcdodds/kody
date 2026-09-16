@@ -163,12 +163,13 @@ fetch even when package read/use is automatic.
 User-scoped secrets are available automatically for **reading and using**
 (mounts, fetch placeholders, named capability lookups including `secretList`) to
 packages the user authored themselves and adopted community forks
-(`communityForkAdopt` after a real source review). Unadopted community-forked
-packages need explicit **package** approval (`allowed_packages`) before those
-read/use paths. Approval is checked against the **stamped** package — the module
-that originated the call — not the importing run. Dependents statically import
-the owning export; they do not need their own grant for secrets locked to that
-owner. Updating or deleting a user secret from package code (`secretSet`,
+(`communityForkAdopt` from an interactive MCP agent after a real source review;
+package runtimes cannot adopt). Unadopted community-forked packages need
+explicit **package** approval (`allowed_packages`) before those read/use paths.
+Approval is checked against the **stamped** package — the module that originated
+the call — not the importing run. Dependents statically import the owning
+export; they do not need their own grant for secrets locked to that owner.
+Updating or deleting a user secret from package code (`secretSet`,
 `secretDelete`) always needs the grant on the stamp package, including for
 self-authored and adopted packages. Only the account owner can add a package to
 that grant on `/account/secrets/user/:name` or `/account/secrets/approve`.
@@ -190,7 +191,8 @@ approval URL shaped like
 `/account/secrets/approve?package_id=...&names=secretA,secretB`. That page lists
 every pending secret and approves them in one click. A single-secret link grants
 one package on one secret. For community forks, reviewing the source and calling
-`communityForkAdopt` is an alternative to sending those approval links.
+`communityForkAdopt` from an interactive MCP agent is an alternative to sending
+those approval links. Package runtimes cannot adopt.
 
 ## Package config vs package storage
 
