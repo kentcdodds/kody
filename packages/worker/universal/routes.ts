@@ -203,6 +203,8 @@ export const routes = route({
 	docDetailOgImage: '/docs/:slug/og.png',
 	// Signed-in opt-in for the package-share-grants flag from the sharing docs.
 	packageSharingOptInPost: post('/docs/package-sharing/opt-in'),
+	// Signed-in opt-in for the secret-providers flag from the usage docs.
+	secretProvidersOptInPost: post('/docs/secret-providers/opt-in'),
 	llmsTxt: '/llms.txt',
 	// The docs used to live under `/guides`. Everything there 308s to `/docs`
 	// (see `#app/handlers/legacy-guides-redirect.ts`).

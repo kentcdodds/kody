@@ -80,7 +80,7 @@ export const featureFlagDefinitions = [
 		key: 'secret-providers',
 		defaultEnabled: false,
 		description:
-			'Pluggable external secret providers (1Password-shaped placeholders, account bindings, sealed resolve, and package grants). Off by default so Kent can enable per account or globally before this is generally available. No success metric: this is a rollout kill switch, not an experiment.',
+			'Pluggable external secret providers (1Password-shaped placeholders, account bindings, sealed resolve, and package grants). Off by default. Signed-in users can turn it on from /docs/secret-providers. No success metric: this is a rollout kill switch, not an experiment.',
 	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 

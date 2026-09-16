@@ -8,9 +8,11 @@ provider-agnostic.
 ## Feature flag
 
 The whole surface is behind the `secret-providers` admin flag (registry default
-**off**). Enable it for one account or globally at `/admin/feature-flags`.
-Evaluation is fail-closed: unresolved accounts and evaluation errors stay off,
-even when the global flag is on. When the flag is off:
+**off**). Signed-in users can turn it on from
+[Custom secret providers](../guides/secret-providers.md). Operators can still
+enable it globally at `/admin/feature-flags`. Evaluation is fail-closed:
+unresolved accounts and evaluation errors stay off, even when the global flag is
+on. When the flag is off:
 
 - `{{secret/<provider>:<ref>}}` is unsupported (clear error, no provider call)
 - binding, grants, approval UX, and the account nav item are hidden
@@ -112,5 +114,6 @@ Ordinary `search` does not call the provider or crawl a vault.
 Adding another vendor is a new package plus an account binding, not a Kody core
 fork.
 
-See [Secrets](../guides/secrets.md) and
+See [Secrets](../guides/secrets.md),
+[Custom secret providers](../guides/secret-providers.md), and
 [Secrets and host approval](../use/secrets-and-values.md).

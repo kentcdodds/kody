@@ -79,6 +79,7 @@ export const docsNav: ReadonlyArray<DocsNavSection> = [
 		items: [
 			{ slug: 'memory', label: 'Shared memory' },
 			{ slug: 'secrets', label: 'Secrets' },
+			{ slug: 'secret-providers', label: 'Custom secret providers' },
 			{
 				slug: 'packages-integrations-mcp',
 				label: 'Packages vs integrations vs MCP',

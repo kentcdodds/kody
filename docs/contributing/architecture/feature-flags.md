@@ -96,11 +96,12 @@ availability.
 
 `secret-providers` is a rollout kill switch for pluggable external secret
 providers (placeholders, account bindings, sealed resolve, package grants, and
-the `/account/secret-providers` UI). Registry default is **off** so Kent can
-enable a single account (or globally) before this is generally available.
-Evaluation failures fail closed. No `successMetric`: this is not an experiment.
-See [secret providers](../secret-providers.md). Remove the flag and every gate
-site after general availability.
+the `/account/secret-providers` UI). Registry default is **off**. Signed-in
+users can opt themselves in from `/docs/secret-providers` (a per-user on
+override). Operators can still enable it globally at `/admin/feature-flags` (or
+`adminFeatureFlagSet`). Evaluation failures fail closed. No `successMetric`:
+this is not an experiment. See [secret providers](../secret-providers.md).
+Remove the flag and every gate site after general availability.
 
 ## Success metrics
 
