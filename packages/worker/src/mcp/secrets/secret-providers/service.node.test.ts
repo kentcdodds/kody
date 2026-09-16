@@ -23,6 +23,7 @@ import {
 	grantSecretProviderToPackage,
 	inspectSecretProviderPackageGrant,
 	resolveProviderSecret,
+	revokeSecretProviderGrant,
 	type SecretProviderInvoker,
 } from './service.ts'
 
@@ -272,6 +273,62 @@ test('provider resolve grants, hosts, cache, owner execute, share owner binding,
 			doorSecretName: 'onePasswordServiceAccountToken',
 		}),
 	)
+})
+
+test('revoke drops a package grant before the next resolve', async () => {
+	const { sqlite, env } = await createHarness()
+	const ownerId = 'user-owner'
+	seedPackage(sqlite, { id: 'pkg-provider', userId: ownerId, kodyId: 'op' })
+	seedPackage(sqlite, { id: 'pkg-consumer', userId: ownerId, kodyId: 'deploy' })
+	await seedDoorSecret(env, ownerId)
+	await seedBinding(env, { userId: ownerId, packageId: 'pkg-provider' })
+	vi.mocked(readDeclaredSecretProviderId).mockResolvedValue(providerId)
+	await grantSecretProviderToPackage({
+		env,
+		userId: ownerId,
+		providerId,
+		ref: canonicalRef,
+		packageId: 'pkg-consumer',
+	})
+	await revokeSecretProviderGrant({
+		env,
+		userId: ownerId,
+		providerId,
+		ref: canonicalRef,
+		packageId: 'pkg-consumer',
+	})
+	const granted = await inspectSecretProviderPackageGrant({
+		env,
+		userId: ownerId,
+		providerId,
+		ref: canonicalRef,
+		packageId: 'pkg-consumer',
+	})
+	expect(granted.alreadyGranted).toBe(false)
+	let providerCalls = 0
+	await expect(
+		resolveProviderSecret({
+			env,
+			baseUrl: 'https://kody.example',
+			userId: ownerId,
+			provider: providerId,
+			ref: canonicalRef,
+			authorityPackageId: 'pkg-consumer',
+			invokeProvider: async () => {
+				providerCalls += 1
+				return { value: 'should-not-resolve', hosts: ['app.example.com'] }
+			},
+		}),
+	).rejects.toThrow(
+		createProviderPackageNotGrantedMessage({
+			providerId,
+			canonicalRef,
+			packageName: 'deploy',
+			approvalUrl:
+				'https://kody.example/account/secret-providers/approve?provider=1password&ref=i%2Fbbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb%2Fpassword&package_id=pkg-consumer&package=deploy',
+		}),
+	)
+	expect(providerCalls).toBe(0)
 })
 
 test('flag off treats provider placeholders as unsupported and never calls the provider', async () => {

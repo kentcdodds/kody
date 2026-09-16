@@ -176,7 +176,11 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// RunLog `inspectSqlBilling` (content-free admin SQL snapshot) adds
 		// PRAGMA/COUNT/EXPLAIN helpers on the DO class: CI measured
 		// 3_741_747 bytes against the previous 3_740_000 budget.
-		maxEntryBytes: 3_745_000,
+		// Provider-secret placeholders on the shared fetch-gateway path
+		// (`{{secret/<provider>:<ref>}}`, sealed resolve, grants) pull
+		// secret-providers/service.ts into runtime: CI dry-run 3_768_307
+		// bytes against the previous 3_745_000 budget.
+		maxEntryBytes: 3_780_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',

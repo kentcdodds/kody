@@ -78,8 +78,8 @@ usable websites fail closed.
 - Ad hoc execute may use provider placeholders without a package grant (same
   spirit as unlocked user secrets).
 - Saved packages need an explicit `(provider, canonicalRef) → package` grant.
-  `secretProviderLock` returns the approval URL; only the owner can grant on
-  `/account/secret-providers/approve`.
+  `secretProviderLock` returns the approval URL; only the owner can grant or
+  revoke on `/account/secret-providers`. Unbind does not drop grants.
 - Share-granted packages use the **package owner's** binding and grants, not the
   guest's.
 

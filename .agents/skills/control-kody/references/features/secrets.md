@@ -35,4 +35,6 @@ https://kody.codes/account/secrets” note with no body is not proof.
   target, and they must not land in `allowedHosts`.
 - Package grants on user secrets are website-only (`/account/secrets/approve` or
   the secret editor). `secretLock` returns an approval URL; it does not add
-  `allowed_packages`.
+  `allowed_packages`. Provider grants are website-only on
+  `/account/secret-providers`; `secretProviderLock` also returns an approval
+  URL.

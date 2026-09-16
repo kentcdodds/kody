@@ -213,3 +213,19 @@ export async function listSecretProviderGrantsForPackage(
 		.all<GrantRow>()
 	return (result.results ?? []).map(toGrantRecord)
 }
+
+export async function listSecretProviderGrantsForUser(
+	db: D1Database,
+	input: { userId: string },
+): Promise<Array<SecretProviderGrantRecord>> {
+	const result = await db
+		.prepare(
+			`SELECT user_id, provider_id, canonical_ref, package_id, created_at
+			FROM secret_provider_grants
+			WHERE user_id = ?
+			ORDER BY provider_id ASC, canonical_ref ASC, package_id ASC`,
+		)
+		.bind(input.userId)
+		.all<GrantRow>()
+	return (result.results ?? []).map(toGrantRecord)
+}

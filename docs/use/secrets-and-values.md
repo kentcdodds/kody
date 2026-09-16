@@ -60,10 +60,10 @@ External providers use **`{{secret/<provider>:<ref>}}`** (first `:` after
 synonym that must canonicalize to the same grant/cache key. The item's websites
 are the host allowlist; empty websites refuse the fetch. Ad hoc execute does not
 need a package grant; saved packages do (`secretProviderLock` returns the Allow
-URL). Shared packages use the owner's provider binding. Search does not crawl
-vaults. Bind providers on `/account/secret-providers`. The whole provider
-surface is behind the `secret-providers` flag (off by default; enable on
-`/admin/feature-flags`).
+URL). Revoke a grant on `/account/secret-providers`. Shared packages use the
+owner's provider binding. Search does not crawl vaults. Bind providers on
+`/account/secret-providers`. The whole provider surface is behind the
+`secret-providers` flag (off by default; enable on `/admin/feature-flags`).
 
 When an API requires Basic Auth derived from two saved secrets, import
 **`secretHeaders`** from **`kody:runtime`** and put the opaque helper result in

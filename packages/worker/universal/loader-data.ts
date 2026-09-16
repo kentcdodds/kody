@@ -1664,7 +1664,7 @@ export type AccountSecretDetail = AccountSecretListItem & {
 	value: string
 }
 
-export type AccountSecretProviderBindingItem = {
+type AccountSecretProviderBindingItem = {
 	provider: string
 	packageId: string
 	kodyId: string
@@ -1673,7 +1673,7 @@ export type AccountSecretProviderBindingItem = {
 	updatedAt: string
 }
 
-export type AccountSecretProviderApproval = {
+type AccountSecretProviderApproval = {
 	provider: string
 	canonicalRef: string
 	packageId: string
@@ -1682,10 +1682,19 @@ export type AccountSecretProviderApproval = {
 	error?: string
 }
 
+type AccountSecretProviderGrantItem = {
+	provider: string
+	canonicalRef: string
+	packageId: string
+	kodyId: string
+	createdAt: string
+}
+
 export type AccountSecretProvidersLoaderData = {
 	ok: true
 	email: string
 	bindings: Array<AccountSecretProviderBindingItem>
+	grants: Array<AccountSecretProviderGrantItem>
 	packages: Array<{
 		id: string
 		kodyId: string

@@ -1,6 +1,7 @@
 import { listSecrets } from '#mcp/secrets/service.ts'
 import {
 	inspectSecretProviderPackageGrant,
+	listAccountSecretProviderGrants,
 	listBoundSecretProviders,
 } from '#mcp/secrets/secret-providers/service.ts'
 import { tryCanonicalizeProviderRef } from '#mcp/secrets/secret-providers/canonicalize.ts'
@@ -14,8 +15,12 @@ export async function loadAccountSecretProvidersData(input: {
 	url: string
 }): Promise<AccountSecretProvidersLoaderData> {
 	const requestUrl = new URL(input.url)
-	const [bindings, packages, secrets] = await Promise.all([
+	const [bindings, grants, packages, secrets] = await Promise.all([
 		listBoundSecretProviders({
+			env: input.env,
+			userId: input.userId,
+		}),
+		listAccountSecretProviderGrants({
 			env: input.env,
 			userId: input.userId,
 		}),
@@ -43,6 +48,13 @@ export async function loadAccountSecretProvidersData(input: {
 			doorSecretName: binding.doorSecretName,
 			config: binding.config,
 			updatedAt: binding.updatedAt,
+		})),
+		grants: grants.map((grant) => ({
+			provider: grant.providerId,
+			canonicalRef: grant.canonicalRef,
+			packageId: grant.packageId,
+			kodyId: packagesById.get(grant.packageId)?.kodyId ?? grant.packageId,
+			createdAt: grant.createdAt,
 		})),
 		packages: packages.map((row) => ({
 			id: row.id,

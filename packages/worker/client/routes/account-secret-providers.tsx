@@ -1,6 +1,7 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { createDoubleCheck } from '#client/double-check.ts'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
@@ -21,6 +22,7 @@ import {
 	fieldCss,
 	fieldLabelCss,
 	getAccentCalloutCss,
+	getDangerPillCss,
 	getPrimaryButtonCss,
 	getSecondaryButtonCss,
 	pageDescriptionCss,
@@ -101,6 +103,24 @@ export function AccountSecretProvidersRoute(handle: Handle) {
 	let bindPackageId = ''
 	let bindDoorSecret = ''
 	let bindConfig = ''
+	const revokeChecks = new Map<string, ReturnType<typeof createDoubleCheck>>()
+	const dangerButtonCss = getDangerPillCss({ size: 'sm' })
+
+	function grantKey(grant: {
+		provider: string
+		canonicalRef: string
+		packageId: string
+	}) {
+		return `${grant.provider}:${grant.canonicalRef}:${grant.packageId}`
+	}
+
+	function getRevokeCheck(id: string) {
+		const existing = revokeChecks.get(id)
+		if (existing) return existing
+		const created = createDoubleCheck(handle)
+		revokeChecks.set(id, created)
+		return created
+	}
 
 	const submit = async (body: Record<string, unknown>, successHref: string) => {
 		status = 'saving'
@@ -191,7 +211,34 @@ export function AccountSecretProvidersRoute(handle: Handle) {
 								{approval.error}
 							</p>
 						) : null}
-						{approval.alreadyGranted || approval.error ? null : (
+						{approval.error ? null : approval.alreadyGranted ? (
+							<button
+								type="button"
+								disabled={disabled}
+								mix={[
+									css(dangerButtonCss),
+									...getRevokeCheck(grantKey(approval)).getButtonMix({
+										on: {
+											click: () => {
+												void submit(
+													{
+														action: 'revoke',
+														provider: approval.provider,
+														ref: approval.canonicalRef,
+														packageId: approval.packageId,
+													},
+													routes.accountSecretProviders.href(),
+												)
+											},
+										},
+									}),
+								]}
+							>
+								{getRevokeCheck(grantKey(approval)).doubleCheck
+									? 'Revoke now'
+									: 'Revoke'}
+							</button>
+						) : (
 							<button
 								type="button"
 								disabled={disabled}
@@ -259,6 +306,66 @@ export function AccountSecretProvidersRoute(handle: Handle) {
 										]}
 									>
 										Unbind
+									</button>
+								</li>
+							))}
+						</ul>
+					)}
+				</AccountManagementPanel>
+				<AccountManagementPanel title="Package grants">
+					{payload.grants.length === 0 ? (
+						<p mix={css(pageDescriptionCss)}>
+							No package grants yet. Allow a package from an approval link.
+						</p>
+					) : (
+						<ul
+							mix={css({
+								listStyle: 'none',
+								margin: 0,
+								padding: 0,
+								display: 'grid',
+								gap: spacing.md,
+							})}
+						>
+							{payload.grants.map((grant) => (
+								<li
+									key={grantKey(grant)}
+									mix={css({
+										display: 'grid',
+										gap: spacing.xs,
+									})}
+								>
+									<strong mix={css({ color: colors.text })}>
+										{grant.provider}
+									</strong>
+									<p mix={css(pageDescriptionCss)}>
+										<code>{grant.canonicalRef}</code> · package {grant.kodyId}
+									</p>
+									<button
+										type="button"
+										disabled={disabled}
+										mix={[
+											css(dangerButtonCss),
+											...getRevokeCheck(grantKey(grant)).getButtonMix({
+												on: {
+													click: () => {
+														void submit(
+															{
+																action: 'revoke',
+																provider: grant.provider,
+																ref: grant.canonicalRef,
+																packageId: grant.packageId,
+															},
+															routes.accountSecretProviders.href(),
+														)
+													},
+												},
+											}),
+										]}
+									>
+										{getRevokeCheck(grantKey(grant)).doubleCheck
+											? 'Revoke now'
+											: 'Revoke'}
 									</button>
 								</li>
 							))}

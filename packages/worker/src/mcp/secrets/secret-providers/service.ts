@@ -31,6 +31,7 @@ import {
 	insertSecretProviderGrant,
 	listSecretProviderBindings,
 	listSecretProviderGrantsForPackage,
+	listSecretProviderGrantsForUser,
 	upsertSecretProviderBinding,
 } from './repo.ts'
 import {
@@ -259,11 +260,16 @@ export async function revokeSecretProviderGrant(input: {
 	})
 	const providerId = normalizeProviderId(input.providerId)
 	const canonicalRef = requireLocalCanonicalRef(providerId, input.ref)
+	const savedPackage = await requireOwnedPackage({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		packageId: input.packageId,
+	})
 	await deleteSecretProviderGrant(input.env.APP_DB, {
 		userId: input.userId,
 		providerId,
 		canonicalRef,
-		packageId: input.packageId,
+		packageId: savedPackage.id,
 	})
 }
 
@@ -312,6 +318,19 @@ export async function listSecretProviderGrants(input: {
 		stableUserId: input.userId,
 	})
 	return await listSecretProviderGrantsForPackage(input.env.APP_DB, input)
+}
+
+export async function listAccountSecretProviderGrants(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+}) {
+	await assertSecretProvidersEnabled({
+		db: input.env.APP_DB,
+		stableUserId: input.userId,
+	})
+	return await listSecretProviderGrantsForUser(input.env.APP_DB, {
+		userId: input.userId,
+	})
 }
 
 function requireLocalCanonicalRef(providerId: string, ref: string) {

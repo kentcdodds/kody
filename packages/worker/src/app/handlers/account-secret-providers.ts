@@ -10,6 +10,7 @@ import { isSecretProvidersEnabled } from '#mcp/secrets/secret-providers/flag.ts'
 import {
 	bindSecretProvider,
 	grantSecretProviderToPackage,
+	revokeSecretProviderGrant,
 	unbindSecretProvider,
 } from '#mcp/secrets/secret-providers/service.ts'
 
@@ -93,6 +94,9 @@ export function createAccountSecretProvidersApiHandler(env: Env) {
 				if (action === 'grant') {
 					return await handleGrant({ env, user, body })
 				}
+				if (action === 'revoke') {
+					return await handleRevoke({ env, user, body })
+				}
 			} catch (error) {
 				return jsonResponse(
 					{
@@ -157,6 +161,21 @@ async function handleGrant(input: {
 		packageId: readTrimmedStringOrEmpty(input.body, 'packageId'),
 	})
 	return jsonResponse({ ok: true, granted })
+}
+
+async function handleRevoke(input: {
+	env: Env
+	user: AuthenticatedUser
+	body: object
+}) {
+	await revokeSecretProviderGrant({
+		env: input.env,
+		userId: input.user.mcpUser.userId,
+		providerId: readTrimmedStringOrEmpty(input.body, 'provider'),
+		ref: readTrimmedStringOrEmpty(input.body, 'ref'),
+		packageId: readTrimmedStringOrEmpty(input.body, 'packageId'),
+	})
+	return jsonResponse({ ok: true })
 }
 
 function readConfig(body: object) {
