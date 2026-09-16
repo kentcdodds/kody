@@ -73,6 +73,10 @@ export function buildPackageMaintainSnippets(packageId: string) {
 	}
 }
 
+export function buildPlatformPackageForkNotice(platformScope: string) {
+	return `This is a platform (built-in) package from @${platformScope}. communityFork it into your scope before importing it.`
+}
+
 export function buildPackageSourceFollowUp(input: {
 	packageId: string
 	kodyId: string
@@ -115,9 +119,7 @@ export function getPrimaryPackageActionFunction<
 	FunctionShape extends { name: string },
 >(actionMatch: { functions: ReadonlyArray<FunctionShape> }) {
 	return (
-		actionMatch.functions.find(
-			(fn) => fn.name !== 'home' && fn.name !== 'default',
-		) ??
+		actionMatch.functions.find((fn) => fn.name !== 'home') ??
 		actionMatch.functions[0] ??
 		null
 	)

@@ -7,6 +7,7 @@ import { formatMarkdownInlineCode } from './markdown-safety.ts'
 import { type SearchEntityDetailFormatResult } from './search-entity-plugin.ts'
 import {
 	buildEntityRef,
+	buildPlatformPackageForkNotice,
 	getPrimaryPackageActionFunction,
 } from './search-format-helpers.ts'
 import { type SearchEntityDetail } from './search-format-types.ts'
@@ -15,7 +16,9 @@ export const packageExportReferencedTypesOmittedLine =
 	'Referenced type definitions omitted (exceeds search response budget). `packageGet` returns the full export array.'
 
 export function normalizePackageExportFragment(section: string) {
-	return section.trim().replace(/^\.\//, '')
+	const trimmed = section.trim()
+	if (trimmed === '.' || trimmed === './') return '.'
+	return trimmed.replace(/^\.\//, '')
 }
 
 export function findPackageExportByFragment<
@@ -108,9 +111,13 @@ export default async function main(params) {
 }`
 }
 
-function buildPackageExportFollowUp(packageId: string) {
-	const packageGetCall = `packageGet({ package_id: ${JSON.stringify(packageId)} })`
-	return `${packageGetCall} returns the full export array plus package-scoped secret metadata. That call does not return files.`
+function buildPackageExportFollowUp(input: {
+	packageId: string
+	platformNotice: string | null
+}) {
+	const packageGetCall = `packageGet({ package_id: ${JSON.stringify(input.packageId)} })`
+	const base = `${packageGetCall} returns the full export array plus package-scoped secret metadata. That call does not return files.`
+	return input.platformNotice ? `${input.platformNotice} ${base}` : base
 }
 
 function isDefaultExportName(name: string) {
@@ -227,9 +234,15 @@ export function formatPackageExportEntityDetail(input: {
 		subpath: input.exportDetail.subpath,
 		functions: input.exportDetail.functions,
 	})
+	const platformNotice = input.detail.platformScope
+		? buildPlatformPackageForkNotice(input.detail.platformScope)
+		: null
 	const includeBoilerplate = input.includeBoilerplate ?? true
 	const followUp = includeBoilerplate
-		? buildPackageExportFollowUp(input.detail.record.id)
+		? buildPackageExportFollowUp({
+				packageId: input.detail.record.id,
+				platformNotice,
+			})
 		: ''
 	const functions = input.exportDetail.functions.map((fn) => ({
 		name: fn.name,
@@ -251,6 +264,7 @@ export function formatPackageExportEntityDetail(input: {
 		'',
 		'## Execute from `execute`',
 		'',
+		...(platformNotice ? [platformNotice, ''] : []),
 		'```ts',
 		executeExample,
 		'```',
@@ -309,10 +323,11 @@ export function formatPackageExportEntityDetail(input: {
 	const primary = getPrimaryPackageActionFunction({
 		functions: input.exportDetail.functions,
 	})
-	const usage =
-		primary && !isDefaultExportName(primary.name)
-			? `import { ${primary.name} } from ${JSON.stringify(importSpecifier)}`
-			: `import action from ${JSON.stringify(importSpecifier)}`
+	const usage = !primary
+		? `import * as exported from ${JSON.stringify(importSpecifier)}`
+		: isDefaultExportName(primary.name)
+			? `import action from ${JSON.stringify(importSpecifier)}`
+			: `import { ${primary.name} } from ${JSON.stringify(importSpecifier)}`
 	return {
 		markdown,
 		structured: {

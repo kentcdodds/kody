@@ -42,6 +42,7 @@ import {
 	buildPackageMaintainSnippets,
 	buildPackageRootImportUsage,
 	buildPackageSourceFollowUp,
+	buildPlatformPackageForkNotice,
 	getPrimaryPackageActionFunction,
 } from '../search-format-helpers.ts'
 import { type SearchMatch } from '../search-format-types.ts'
@@ -452,7 +453,7 @@ export const packageSearchEntityPlugin = {
 			? getPrimaryPackageActionFunction(primaryAction)
 			: null
 		const platformSuffix = match.platformScope
-			? ` This is a platform (built-in) package from @${match.platformScope}. communityFork it into your scope before importing it.`
+			? ` ${buildPlatformPackageForkNotice(match.platformScope)}`
 			: ''
 		const listingAheadSuffix =
 			match.listingAhead === true ? ` ${listingAheadSearchNotice}` : ''
