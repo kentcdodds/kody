@@ -21,6 +21,7 @@ import {
 import { loadPublishedBundleArtifactByIdentity } from './published-bundle-artifacts.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './published-source-dependencies.ts'
 import { isTypeDeclarationFilePath } from './static-kody-imports.ts'
+import { assertNotSealedSecretProviderExport } from '#mcp/secrets/secret-providers/sealed-export.ts'
 import {
 	collectDynamicImportExpressionNodes,
 	collectLiteralImportNodes,
@@ -121,6 +122,7 @@ async function maybeEnsurePublishedArtifactTarget(input: {
 		return null
 	}
 	const parsed = parseKodyPackageSpecifier(input.specifier)
+	assertNotSealedSecretProviderExport(parsed.exportName)
 	const exportName = normalizePackageExportKey(parsed.exportName)
 	const entryPoint = resolvePackageExportPath({
 		manifest: input.loaded.manifest,
@@ -268,6 +270,7 @@ async function ensurePackageProxy(
 	const existing = state.proxies.get(specifier)
 	if (existing) return existing
 	const parsed = parseKodyPackageSpecifier(specifier)
+	assertNotSealedSecretProviderExport(parsed.exportName)
 	// Callee saved-package UUID stamped into the metered proxy below. Root
 	// self-imports resolve back into the bundle's own source and are not
 	// stamped: the surrounding run already meters that package via

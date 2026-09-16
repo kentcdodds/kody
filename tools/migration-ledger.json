@@ -255,6 +255,10 @@
 		{
 			"filename": "0063-email-notification-destinations.sql",
 			"sha256": "7f70bb1ff274e15c778da111a026c404291bc93845cb3e4b120a4b5067b02be2"
+		},
+		{
+			"filename": "0064-secret-provider-bindings.sql",
+			"sha256": "50ca7868b24b382d58d4ee5143687a1942826f706b0e17f217c56781a95dfa0d"
 		}
 	]
 }

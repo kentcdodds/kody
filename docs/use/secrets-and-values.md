@@ -54,6 +54,17 @@ Outbound **`fetch`** can include placeholders such as **`{{secret:tokenName}}`**
 or **`{{secret:tokenName|scope=user}}`** in the URL, headers, or body. The host
 resolves them for **approved** destinations.
 
+External providers use **`{{secret/<provider>:<ref>}}`** (first `:` after
+`secret/`). Canonical 1Password form is
+**`{{secret/1password:i/<item-uuid>/password}}`**. `op://…` is a writable
+synonym that must canonicalize to the same grant/cache key. The item's websites
+are the host allowlist; empty websites refuse the fetch. Ad hoc execute does not
+need a package grant; saved packages do (`secretProviderLock` returns the Allow
+URL). Shared packages use the owner's provider binding. Search does not crawl
+vaults. Bind providers on `/account/secret-providers`. The whole provider
+surface is behind the `secret-providers` flag (off by default; enable on
+`/admin/feature-flags`).
+
 When an API requires Basic Auth derived from two saved secrets, import
 **`secretHeaders`** from **`kody:runtime`** and put the opaque helper result in
 the outbound fetch header. This example uses a placeholder API host and generic

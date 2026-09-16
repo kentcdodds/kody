@@ -6,7 +6,9 @@ User, session, and package secret rows. Host approval and package grants.
 
 `/account/secrets` → new `/account/secrets/new` → detail under
 `/account/secrets/{user|session|package}/…`. Package grant lane:
-`/account/secrets/approve`. Host approval: `/connect/secrets`.
+`/account/secrets/approve`. Host approval: `/connect/secrets`. External
+providers: `/account/secret-providers` and `/account/secret-providers/approve`
+(hidden unless the `secret-providers` flag is on for the seeded user).
 
 ## Drive it
 
@@ -22,6 +24,7 @@ https://kody.codes/account/secrets” note with no body is not proof.
 ## APIs
 
 - `GET|POST /account/secrets.json`
+- `GET|POST /account/secret-providers.json`
 
 ## Gotchas
 

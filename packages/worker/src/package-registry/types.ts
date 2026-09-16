@@ -96,6 +96,12 @@ export const packageSecretMountDefinitionSchema = z.object({
 	scope: z.enum(['user', 'package', 'session']).optional(),
 })
 
+export const packageSecretProviderIdPattern = /^[a-z0-9][a-z0-9._-]{0,63}$/
+
+export const packageSecretProviderSchema = z.object({
+	id: z.string().regex(packageSecretProviderIdPattern),
+})
+
 export type PackageSecretMountDefinition = z.infer<
 	typeof packageSecretMountDefinitionSchema
 >
@@ -394,6 +400,7 @@ export const authoredPackageKodySchema = z.object({
 	secretMounts: z
 		.record(z.string().min(1), packageSecretMountDefinitionSchema)
 		.optional(),
+	secretProvider: packageSecretProviderSchema.optional(),
 	subscriptions: z
 		.record(z.string().min(1), packageSubscriptionDefinitionSchema)
 		.optional(),

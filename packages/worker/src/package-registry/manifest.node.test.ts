@@ -294,6 +294,9 @@ test('parseAuthoredPackageJson accepts subscriptions, emits, retrievers, and sec
 						scope: 'user',
 					},
 				},
+				secretProvider: {
+					id: '1password',
+				},
 				subscriptions: {
 					'discord.message.created': {
 						handler: './src/handle-discord-message-created.ts',
@@ -329,6 +332,7 @@ test('parseAuthoredPackageJson accepts subscriptions, emits, retrievers, and sec
 			scope: 'user',
 		},
 	})
+	expect(manifest.kody.secretProvider).toEqual({ id: '1password' })
 	expect(manifest.kody.subscriptions).toEqual({
 		'discord.message.created': {
 			handler: './src/handle-discord-message-created.ts',

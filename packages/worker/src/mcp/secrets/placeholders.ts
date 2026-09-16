@@ -2,6 +2,8 @@ import { type SecretScope } from '#mcp/secrets/types.ts'
 
 const secretPlaceholderRegex =
 	/\{\{secret:([a-zA-Z0-9._-]+)(?:\|scope=(session|package|user))?\}\}/g
+const providerSecretPlaceholderRegex =
+	/\{\{secret\/([a-zA-Z0-9._-]+):([^}]+)\}\}/g
 const basicAuthSecretPlaceholderRegex =
 	/\{\{secret-basic:username=([a-zA-Z0-9._-]+),password=([a-zA-Z0-9._-]+)(?:\|scope=(session|package|user))?\}\}/g
 const integrationTokenPlaceholderRegex =
@@ -16,6 +18,11 @@ export type ReferencedBasicAuthSecretPlaceholder = {
 	username: ReferencedSecret
 	password: ReferencedSecret
 	scope: SecretScope | null
+}
+
+export type ReferencedProviderSecret = {
+	provider: string
+	ref: string
 }
 
 /**
@@ -87,6 +94,34 @@ export function parseBasicAuthSecretPlaceholdersFromFormUrlEncoded(
 		placeholders.push(...parseBasicAuthSecretPlaceholders(entryValue))
 	}
 	return placeholders
+}
+
+export function parseProviderSecretPlaceholders(value: string) {
+	const secrets: Array<ReferencedProviderSecret> = []
+	for (const match of value.matchAll(providerSecretPlaceholderRegex)) {
+		const provider = match[1]?.trim()
+		const ref = match[2]?.trim()
+		if (!provider || !ref) continue
+		secrets.push({ provider, ref })
+	}
+	return secrets
+}
+
+export function parseProviderSecretPlaceholdersFromFormUrlEncoded(
+	value: string,
+) {
+	const secrets: Array<ReferencedProviderSecret> = []
+	for (const [key, entryValue] of new URLSearchParams(value)) {
+		secrets.push(...parseProviderSecretPlaceholders(key))
+		secrets.push(...parseProviderSecretPlaceholders(entryValue))
+	}
+	return secrets
+}
+
+export function buildProviderSecretPlaceholder(
+	secret: ReferencedProviderSecret,
+) {
+	return `{{secret/${secret.provider}:${secret.ref}}}`
 }
 
 export function parseIntegrationTokenPlaceholders(value: string) {
@@ -165,7 +200,7 @@ export function replaceSecretPlaceholdersInFormUrlEncoded(
 }
 
 export function containsSecretPlaceholder(value: string) {
-	return /\{\{(?:secret(?::|-basic:)|integration-token:)/.test(value)
+	return /\{\{(?:secret(?:\/|:|-basic:)|integration-token:)/.test(value)
 }
 
 function parseSecretScope(scope: string | undefined) {

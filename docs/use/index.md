@@ -72,7 +72,8 @@ MCP-level reference detail those docs link into.
   packages on the same deployment; public catalogs live at `/@username`
 - [Repo-backed editing sessions](./repo-sessions.md)
 - [Raw MCP content blocks](./raw-content-blocks.md)
-- [Secrets and host approval](./secrets-and-values.md)
+- [Secrets and host approval](./secrets-and-values.md) — includes external
+  provider placeholders (`{{secret/<provider>:<ref>}}`)
 - [Email primitives](./email-primitives.md) — the per-user inbox, verified
   destinations, notify-self sends, and replies
 - [Inbound webhooks](./webhooks.md) — user-owned HTTPS endpoints that dispatch

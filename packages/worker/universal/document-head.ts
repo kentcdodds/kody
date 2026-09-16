@@ -214,6 +214,9 @@ const routeDocumentHeads = {
 	[routePattern(routes.accountSecrets)]: titleOnly('Secrets'),
 	[routePattern(routes.accountSecretNew)]: titleOnly('Secrets'),
 	[routePattern(routes.accountSecretsApprove)]: titleOnly('Secrets'),
+	[routePattern(routes.accountSecretProviders)]: titleOnly('Secret providers'),
+	[routePattern(routes.accountSecretProvidersApprove)]:
+		titleOnly('Secret providers'),
 	[routePattern(routes.accountSecretUserDetail)]: titleOnly('Secrets'),
 	[routePattern(routes.accountSecretPackageDetail)]: titleOnly('Secrets'),
 	[routePattern(routes.accountSecretSessionDetail)]: titleOnly('Secrets'),

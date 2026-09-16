@@ -277,6 +277,8 @@ registerPreloadPatterns(
 		routePattern(routes.accountSecrets),
 		routePattern(routes.accountSecretNew),
 		routePattern(routes.accountSecretsApprove),
+		routePattern(routes.accountSecretProviders),
+		routePattern(routes.accountSecretProvidersApprove),
 		routePattern(routes.accountSecretUserDetail),
 		routePattern(routes.accountSecretPackageDetail),
 		routePattern(routes.accountSecretSessionDetail),

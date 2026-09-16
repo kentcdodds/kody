@@ -7,17 +7,21 @@ import {
 import {
 	buildBasicAuthSecretPlaceholderFromReference,
 	buildIntegrationTokenPlaceholder,
+	buildProviderSecretPlaceholder,
 	buildSecretPlaceholder,
 	decodeSecretPlaceholderDelimiters,
 	parseBasicAuthSecretPlaceholders,
 	parseBasicAuthSecretPlaceholdersFromFormUrlEncoded,
 	parseIntegrationTokenPlaceholders,
 	parseIntegrationTokenPlaceholdersFromFormUrlEncoded,
+	parseProviderSecretPlaceholders,
+	parseProviderSecretPlaceholdersFromFormUrlEncoded,
 	parseSecretPlaceholders,
 	parseSecretPlaceholdersFromFormUrlEncoded,
 	replaceSecretPlaceholders,
 	replaceSecretPlaceholdersInFormUrlEncoded,
 	type ReferencedBasicAuthSecretPlaceholder,
+	type ReferencedProviderSecret,
 	type ReferencedSecret,
 } from '#mcp/secrets/placeholders.ts'
 import {
@@ -30,6 +34,13 @@ import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { resolveSecret, type ResolvedSecret } from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
+import {
+	createProviderHostDeniedMessage,
+	createProviderNoWebsitesMessage,
+} from '#mcp/secrets/secret-providers/errors.ts'
+import { providerHostsAllowRequestHost } from '#mcp/secrets/secret-providers/hosts.ts'
+import { resolveProviderSecretForFetch } from '#mcp/secrets/secret-providers/resolve.ts'
+import { type ResolvedProviderSecret } from '#mcp/secrets/secret-providers/types.ts'
 import {
 	grantedSecretAuthorityPackageIdSet,
 	readSecretAuthorityHeader,
@@ -294,6 +305,9 @@ function readMeteredRequestHostname(
 	if (originalHostname) return originalHostname
 	const urlForPlaceholderScan = decodeSecretPlaceholderDelimiters(originalUrl)
 	if (parseSecretPlaceholders(urlForPlaceholderScan).length > 0) return ''
+	if (parseProviderSecretPlaceholders(urlForPlaceholderScan).length > 0) {
+		return ''
+	}
 	if (parseIntegrationTokenPlaceholders(urlForPlaceholderScan).length > 0) {
 		return ''
 	}
@@ -409,8 +423,17 @@ export async function expandSecretPlaceholders(input: {
 		]),
 		...collectReferencedIntegrationTokensFromRequestBody(headers, requestBody),
 	])
+	const referencedProviderSecrets = dedupeReferencedProviderSecrets([
+		...collectReferencedProviderSecrets([
+			requestUrl,
+			...Array.from(headers.values()),
+		]),
+		...collectReferencedProviderSecretsFromRequestBody(headers, requestBody),
+	])
 	const hasReferencedSecrets =
-		referencedSecrets.length > 0 || referencedIntegrationTokens.length > 0
+		referencedSecrets.length > 0 ||
+		referencedIntegrationTokens.length > 0 ||
+		referencedProviderSecrets.length > 0
 	const userId = hasReferencedSecrets
 		? requireFetchUserId(input.props)
 		: input.props.userId
@@ -473,6 +496,22 @@ export async function expandSecretPlaceholders(input: {
 			return { name, value }
 		}),
 	)
+	const resolvedProviderSecrets = await Promise.all(
+		referencedProviderSecrets.map(async (referenced) => {
+			if (!userId) {
+				throw new Error(fetchSecretAuthRequiredMessage)
+			}
+			return await resolveProviderSecretForFetch({
+				env: input.env as Env,
+				baseUrl: input.props.baseUrl,
+				userId,
+				provider: referenced.provider,
+				ref: referenced.ref,
+				storageContext,
+				authorityPackageId,
+			})
+		}),
+	)
 	for (const { referenced, resolved, value } of resolvedSecretResults) {
 		const placeholder = buildSecretPlaceholder(referenced)
 		if (!replacements.has(placeholder)) {
@@ -487,6 +526,15 @@ export async function expandSecretPlaceholders(input: {
 		const placeholder = buildIntegrationTokenPlaceholder(name)
 		if (!replacements.has(placeholder)) {
 			replacements.set(placeholder, value)
+		}
+	}
+	for (const resolved of resolvedProviderSecrets) {
+		const placeholder = buildProviderSecretPlaceholder({
+			provider: resolved.provider,
+			ref: resolved.ref,
+		})
+		if (!replacements.has(placeholder)) {
+			replacements.set(placeholder, resolved.value)
 		}
 	}
 	for (const placeholder of basicAuthPlaceholders) {
@@ -547,6 +595,10 @@ export async function expandSecretPlaceholders(input: {
 				}),
 			)
 		}
+		assertProviderSecretHostsAllowed({
+			resolvedProviderSecrets,
+			normalizedHost,
+		})
 		if (userId && referencedIntegrationTokens.length > 0) {
 			for (const name of referencedIntegrationTokens) {
 				const joined = await getJoinedIntegration({
@@ -717,6 +769,53 @@ function readSecretResolutionMode(headers: Headers): 'on' | 'off' {
 	throw new Error(
 		`Invalid ${secretResolutionHeaderName} header value "${raw}". Use "off" to send secret placeholders literally without resolution, or omit the header for normal resolution.`,
 	)
+}
+
+function assertProviderSecretHostsAllowed(input: {
+	resolvedProviderSecrets: Array<ResolvedProviderSecret>
+	normalizedHost: string
+}) {
+	for (const resolved of input.resolvedProviderSecrets) {
+		if (resolved.hosts.length === 0) {
+			throw new Error(createProviderNoWebsitesMessage(resolved.provider))
+		}
+		if (!providerHostsAllowRequestHost(resolved.hosts, input.normalizedHost)) {
+			throw new Error(
+				createProviderHostDeniedMessage({
+					providerId: resolved.provider,
+					host: input.normalizedHost,
+				}),
+			)
+		}
+	}
+}
+
+function collectReferencedProviderSecrets(
+	values: Array<string | null | undefined>,
+) {
+	return values.flatMap((value) =>
+		value ? parseProviderSecretPlaceholders(value) : [],
+	)
+}
+
+function collectReferencedProviderSecretsFromRequestBody(
+	headers: Headers,
+	requestBody: GatewayRequestBody | null,
+) {
+	if (requestBody?.kind !== 'text' || !requestBody.text) return []
+	return isFormUrlEncodedRequest(headers)
+		? parseProviderSecretPlaceholdersFromFormUrlEncoded(requestBody.text)
+		: parseProviderSecretPlaceholders(requestBody.text)
+}
+
+function dedupeReferencedProviderSecrets(
+	referenced: Array<ReferencedProviderSecret>,
+) {
+	const deduped = new Map<string, ReferencedProviderSecret>()
+	for (const entry of referenced) {
+		deduped.set(buildProviderSecretPlaceholder(entry), entry)
+	}
+	return Array.from(deduped.values())
 }
 
 function collectReferencedSecrets(values: Array<string | null | undefined>) {

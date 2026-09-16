@@ -352,6 +352,7 @@ test('authenticated account SSR batches user/role and flag reads into two round 
 		'compact-mcp-server-instructions': true,
 		'compute-overage-charging': true,
 		'package-share-grants': false,
+		'secret-providers': false,
 	})
 	expect(Object.keys(body.loaderData).sort()).toEqual([
 		'accountConnections',

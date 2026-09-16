@@ -125,6 +125,14 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(m) => m.accountSecretsRouteLoader,
 	),
+	[routePattern(routes.accountSecretProviders)]: lazyRouteLoader(
+		accountArea,
+		(m) => m.accountSecretProvidersRouteLoader,
+	),
+	[routePattern(routes.accountSecretProvidersApprove)]: lazyRouteLoader(
+		accountArea,
+		(m) => m.accountSecretProvidersRouteLoader,
+	),
 	[routePattern(routes.accountSecretUserDetail)]: lazyRouteLoader(
 		accountArea,
 		(m) => m.accountSecretsRouteLoader,
@@ -451,6 +459,12 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.accountSecretsApprove)]: (
 		<LazyAccountRoute render={(m) => <m.AccountSecretsRoute />} />
+	),
+	[routePattern(routes.accountSecretProviders)]: (
+		<LazyAccountRoute render={(m) => <m.AccountSecretProvidersRoute />} />
+	),
+	[routePattern(routes.accountSecretProvidersApprove)]: (
+		<LazyAccountRoute render={(m) => <m.AccountSecretProvidersRoute />} />
 	),
 	[routePattern(routes.accountSecretUserDetail)]: (
 		<LazyAccountRoute render={(m) => <m.AccountSecretsRoute />} />

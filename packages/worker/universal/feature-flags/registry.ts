@@ -76,12 +76,21 @@ export const featureFlagDefinitions = [
 		description:
 			'Person-to-person package share grants: invite, accept, UI, MCP, and runtime use of a shared package. Off by default so invite email cannot go live until an operator enables it. No success metric: this is a rollout kill switch, not an experiment.',
 	},
+	{
+		key: 'secret-providers',
+		defaultEnabled: false,
+		description:
+			'Pluggable external secret providers (1Password-shaped placeholders, account bindings, sealed resolve, and package grants). Off by default so Kent can enable per account or globally before this is generally available. No success metric: this is a rollout kill switch, not an experiment.',
+	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
 export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']
 
 export const packageShareGrantsFlagKey =
 	'package-share-grants' satisfies FeatureFlagKey
+
+export const secretProvidersFlagKey =
+	'secret-providers' satisfies FeatureFlagKey
 
 export const featureFlagKeys: ReadonlyArray<FeatureFlagKey> =
 	featureFlagDefinitions.map((definition) => definition.key)

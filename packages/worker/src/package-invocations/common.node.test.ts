@@ -1,5 +1,8 @@
 import { expect, test } from 'vitest'
-import { packageWorkflowInvocationSource } from '#worker/package-runtime/package-invocation-sources.ts'
+import {
+	packageWorkflowInvocationSource,
+	sealedSecretProviderInvocationSource,
+} from '#worker/package-runtime/package-invocation-sources.ts'
 import {
 	resolveInvocationMeteringSurface,
 	resolveInvocationRuntimeName,
@@ -35,6 +38,18 @@ test('invocation runtime surface and name map selectors without double-counting 
 		resolveInvocationMeteringSurface({
 			selector: { kind: 'export', exportName: './run' },
 			source: 'discord-gateway',
+		}),
+	).toBe('export')
+	expect(
+		resolveInvocationRuntimeSurface({
+			selector: { kind: 'export', exportName: './secretProvider' },
+			source: sealedSecretProviderInvocationSource,
+		}),
+	).toBeNull()
+	expect(
+		resolveInvocationMeteringSurface({
+			selector: { kind: 'export', exportName: './secretProvider' },
+			source: sealedSecretProviderInvocationSource,
 		}),
 	).toBe('export')
 

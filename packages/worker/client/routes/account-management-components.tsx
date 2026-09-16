@@ -19,7 +19,10 @@ import {
 import { readAppSession } from '#client/app-session-context.tsx'
 import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
 import { renderRoutePendingStatus } from '#client/route-data.tsx'
-import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
+import {
+	packageShareGrantsFlagKey,
+	secretProvidersFlagKey,
+} from '#universal/feature-flags/registry.ts'
 import { type IconName } from '#universal/icon.tsx'
 import { EntityExplainer, resolveEntityExplainer } from './entity-explainer.tsx'
 import {
@@ -392,6 +395,7 @@ type AccountNavItem = { href: string; label: string; icon: IconName }
 export function accountNavItemsFor(input: {
 	username: string | null | undefined
 	showShared: boolean
+	showSecretProviders: boolean
 }): Array<AccountNavItem> {
 	return [
 		{ href: '/account', label: 'Overview', icon: 'home' },
@@ -422,6 +426,15 @@ export function accountNavItemsFor(input: {
 		{ href: '/account/workflows', label: 'Workflows', icon: 'refresh' },
 		{ href: routes.accountWebhooks.href(), label: 'Webhooks', icon: 'cloud' },
 		{ href: '/account/secrets', label: 'Secrets', icon: 'key' },
+		...(input.showSecretProviders
+			? [
+					{
+						href: '/account/secret-providers',
+						label: 'Secret providers',
+						icon: 'key' as const,
+					},
+				]
+			: []),
 		{ href: '/account/integrations', label: 'Integrations', icon: 'plug' },
 		{ href: '/account/mcp-servers', label: 'MCP servers', icon: 'server' },
 		{ href: '/account/memories', label: 'Memories', icon: 'book' },
@@ -452,6 +465,10 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 			.pathname
 		const session = readAppSession(handle)?.session ?? null
 		const showShared = isFeatureFlagEnabled(session, packageShareGrantsFlagKey)
+		const showSecretProviders = isFeatureFlagEnabled(
+			session,
+			secretProvidersFlagKey,
+		)
 		const explainer =
 			!showShared && currentPath === routes.accountShared.href()
 				? null
@@ -459,6 +476,7 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 		const navItems = accountNavItemsFor({
 			username: session?.username,
 			showShared,
+			showSecretProviders,
 		})
 
 		return (

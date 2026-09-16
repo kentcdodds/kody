@@ -167,6 +167,10 @@ import {
 	createAccountSecretsHandler,
 } from '#app/handlers/account-secrets.ts'
 import {
+	createAccountSecretProvidersApiHandler,
+	createAccountSecretProvidersHandler,
+} from '#app/handlers/account-secret-providers.ts'
+import {
 	createAccountValuesApiHandler,
 	createAccountValuesHandler,
 } from '#app/handlers/account-values.ts'
@@ -476,6 +480,11 @@ export function createAppRouter(env: Env) {
 			accountSecretPackageDetail: createAccountSecretsHandler(env),
 			accountSecretsApi: createAccountSecretsApiHandler(env),
 			accountSecretsApiPost: createAccountSecretsApiHandler(env),
+			accountSecretProviders: createAccountSecretProvidersHandler(env),
+			accountSecretProvidersApprove: createAccountSecretProvidersHandler(env),
+			accountSecretProvidersApi: createAccountSecretProvidersApiHandler(env),
+			accountSecretProvidersApiPost:
+				createAccountSecretProvidersApiHandler(env),
 			accountValues: createAccountValuesHandler(env),
 			accountValueNew: createAccountValuesHandler(env),
 			accountValueDetail: createAccountValuesHandler(env),
