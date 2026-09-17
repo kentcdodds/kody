@@ -2,10 +2,10 @@
 
 The markdown in this directory is the user-facing documentation served at
 [kody.codes/docs](https://kody.codes/docs) and read by connected agents over
-MCP. The directory keeps its historical `guides` name; the MCP entity type is
-still `guide:{id}`. Each file carries YAML frontmatter (`id`, `title`,
-`summary`, `category`, optional `audience`, `unadvertised`, `adminOnly`, `image`
-/ `imageAlt` / `ogImage`, and for provider docs `provider` and `lastVerified`).
+MCP. Sources live in this `docs/guides/` directory. The MCP entity type is
+`guide:{id}`. Each file carries YAML frontmatter (`id`, `title`, `summary`,
+`category`, optional `audience`, `unadvertised`, `adminOnly`, `image` /
+`imageAlt` / `ogImage`, and for provider docs `provider` and `lastVerified`).
 Sources are bundled into origin and `kody-platform` at build time so the web
 pages and `search({ entity: "guide:{id}" })` serve the same deployed content.
 Doc-only deploys upload those two scripts and skip runtime and jobs.

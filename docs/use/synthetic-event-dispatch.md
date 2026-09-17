@@ -54,7 +54,7 @@ Fields:
 
 | Field              | Required | Meaning                                                                 |
 | ------------------ | -------- | ----------------------------------------------------------------------- |
-| scoped name        | one of   | `@owner/leaf` (or the name leaf) in leftover `kody_id`                  |
+| scoped name        | one of   | `@owner/leaf` (or the name leaf) as `kody_id`                           |
 | `package_id`       | one of   | Saved-package UUID when the scoped name is not known                    |
 | `package_scope`    | no       | Owner scope for delegated packages; preserve it from publish test hints |
 | `topic`            | yes      | Exact topic key from `kody.subscriptions`                               |

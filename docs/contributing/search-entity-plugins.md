@@ -36,8 +36,8 @@ To add a search entity:
    as `retriever_result`).
 8. Update `parseEntityRef` in `search-format-helpers.ts` so `{type}:{id}`
    parsing accepts the new entity-backed type (first `:` is the type; the id may
-   contain colons). Reject leftover `{id}:{type}` refs with an error that shows
-   the new shape. Guide and package entity refs also accept a hash fragment
+   contain colons). Reject `{id}:{type}` refs with an error that shows
+   `{type}:{id}`. Guide and package entity refs also accept a hash fragment
    (`guide:{id}#{slug}`, `package:{id}#{subpath}`); other types reject fragments
    in `resolveEntityDetail`.
 9. For entity-backed types, update the public allowed-type lists so agents and

@@ -79,7 +79,7 @@ publish to verify handler wiring without waiting for production fan-out.
 Package reuse is a static `import … from 'kody:@scope/pkg/export'` (declare
 `kody.dependencies`). See [Package reuse](../use/packages.md#package-reuse).
 
-Reuse the scoped `name` from `packageSubscriptionsList` as leftover `kody_id`.
+Reuse the scoped `name` from `packageSubscriptionsList` as `kody_id`.
 
 ```json
 {
