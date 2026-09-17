@@ -56,12 +56,13 @@ resolves them for **approved** destinations.
 
 External providers use **`{{secret/<provider>:<ref>}}`** (first `:` after
 `secret/`). Canonical 1Password form is
-**`{{secret/1password:i/<item-uuid>/password}}`**. `op://…` is a writable
-synonym that must canonicalize to the same grant/cache key. The item's websites
-are the host allowlist; empty websites refuse the fetch. Ad hoc execute does not
-need a package grant; saved packages do (`secretProviderLock` returns the Allow
-URL). Revoke a grant on `/account/secret-providers`. Shared packages use the
-owner's provider binding. Search does not crawl vaults. Bind providers on
+**`{{secret/1password:i/<item-id>/password}}`** where `<item-id>` is a UUID or a
+1Password Connect 26-char id. `op://…` is a writable synonym that must
+canonicalize to the same grant/cache key. The item's websites are the host
+allowlist; empty websites refuse the fetch. Ad hoc execute does not need a
+package grant; saved packages do (`secretProviderLock` returns the Allow URL).
+Revoke a grant on `/account/secret-providers`. Shared packages use the owner's
+provider binding. Search does not crawl vaults. Bind providers on
 `/account/secret-providers`. The whole provider surface is behind the
 `secret-providers` flag (off by default; signed-in users can turn it on from
 [Custom secret providers](../guides/secret-providers.md)).

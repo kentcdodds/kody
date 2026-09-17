@@ -30,7 +30,7 @@ export function createProviderPackageMismatchMessage(input: {
 }
 
 export function createBrokenProviderRefMessage(providerId: string) {
-	return `Secret provider "${providerId}" received a broken ref. Use {{secret/${providerId}:i/<item-uuid>/<field>}} or ask the provider package to canonicalize the synonym.`
+	return `Secret provider "${providerId}" received a broken ref. Use {{secret/${providerId}:i/<item-id>/<field>}} (UUID or 1Password Connect 26-char id) or ask the provider package to canonicalize the synonym.`
 }
 
 export function createProviderNoWebsitesMessage(providerId: string) {

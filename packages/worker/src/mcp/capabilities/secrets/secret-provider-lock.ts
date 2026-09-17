@@ -31,7 +31,7 @@ export const secretProviderLockCapability = defineDomainCapability(
 		name: 'secretProviderLock',
 		featureFlag: secretProvidersFlagKey,
 		description:
-			'Return a website approval URL so the account owner can grant a saved package use of one external secret-provider ref (canonical i/<item-uuid>/<field>). This capability does not change grants. Send the approval_url to the user and wait. Ad hoc execute does not need this grant; saved packages do.',
+			'Return a website approval URL so the account owner can grant a saved package use of one external secret-provider ref (canonical i/<item-id>/<field>: UUID or 1Password Connect 26-char id). This capability does not change grants. Send the approval_url to the user and wait. Ad hoc execute does not need this grant; saved packages do.',
 		keywords: [
 			'secret',
 			'provider',
@@ -53,7 +53,7 @@ export const secretProviderLockCapability = defineDomainCapability(
 				.string()
 				.min(1)
 				.describe(
-					'Canonical i/<item-uuid>/<field> ref, or an op:// synonym that already contains the item UUID.',
+					'Canonical i/<item-id>/<field> ref (UUID or 1Password Connect 26-char id), or an op:// synonym that already contains that item id.',
 				),
 			package_id: z
 				.string()
