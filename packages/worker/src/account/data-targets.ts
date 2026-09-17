@@ -339,7 +339,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		includeInExport: false,
 		surface: 'transactional_email_delivery_index',
 		reason:
-			'Operational Cloudflare message-id → user reverse lookup for signup/verify delivery webhooks omitted from portable export; account deletion removes the owner rows.',
+			'Operational Cloudflare message-id → user reverse lookup for signup/verify and additional-destination verification delivery webhooks omitted from portable export; account deletion removes the owner rows.',
 	},
 	{ kind: 'user_id', table: 'email_inbox_addresses' },
 	{ kind: 'user_id', table: 'email_inboxes' },

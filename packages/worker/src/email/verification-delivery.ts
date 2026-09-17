@@ -9,6 +9,8 @@ import {
 import { type EmailDeliveryStatus } from './types.ts'
 
 export const transactionalEmailVerificationKind = 'email_verification'
+export const transactionalEmailDestinationVerificationKind =
+	'email_destination_verification'
 
 const deliveryDetailMaxLength = 500
 
@@ -75,12 +77,15 @@ export async function registerTransactionalEmailDelivery(input: {
 		)
 		.bind(input.providerMessageId, input.userId, kind, input.recipient)
 		.run()
+	// Latest send wins for this user + kind + recipient. Extra destination
+	// addresses share a kind, so recipient keeps sibling pending sends.
 	await input.db
 		.prepare(
 			`DELETE FROM transactional_email_delivery_index
-			 WHERE user_id = ? AND kind = ? AND provider_message_id != ?`,
+			 WHERE user_id = ? AND kind = ? AND recipient = ?
+			   AND provider_message_id != ?`,
 		)
-		.bind(input.userId, kind, input.providerMessageId)
+		.bind(input.userId, kind, input.recipient, input.providerMessageId)
 		.run()
 }
 
@@ -220,10 +225,35 @@ export async function recordTransactionalEmailDeliveryEvent(input: {
 		db: input.db,
 		providerMessageId: input.providerMessageId,
 	})
-	if (!index || index.kind !== transactionalEmailVerificationKind) {
+	if (!index) {
 		return { outcome: 'unmatched' }
 	}
 	if (!isEmailVerificationDeliveryStatus(input.deliveryStatus)) {
+		return { outcome: 'unmatched' }
+	}
+
+	if (index.kind === transactionalEmailDestinationVerificationKind) {
+		// Index-only: extra-address verify must not write
+		// users.email_verification_delivery_*. Those columns are signup
+		// identity verification. Matching here still acks the queue and
+		// keeps the provider id attributable for ops queries.
+		return {
+			outcome: 'recorded',
+			event: {
+				userId: index.user_id,
+				kind: index.kind,
+				recipient: index.recipient,
+				status: input.deliveryStatus,
+				class: classifyVerificationDeliveryFailure({
+					status: input.deliveryStatus,
+					smtpResponse: input.smtpResponse,
+					smtpEnhancedStatusCode: input.smtpEnhancedStatusCode,
+				}),
+				alreadyTerminal: false,
+			},
+		}
+	}
+	if (index.kind !== transactionalEmailVerificationKind) {
 		return { outcome: 'unmatched' }
 	}
 

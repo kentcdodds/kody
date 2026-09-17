@@ -3,6 +3,7 @@ import { applyOutboundEmailAbusePause } from './outbound-abuse.ts'
 import { dispatchEmailDeliverySubscriptionEvents } from './package-subscriptions.ts'
 import { type EmailReportingEnv } from './reporting-events.ts'
 import { notifyAdminsOfVerificationDeliveryFailure } from './verification-delivery-notify.ts'
+import { transactionalEmailVerificationKind } from './verification-delivery.ts'
 
 const unmatchedRetryDelaySeconds = 30
 export const emailDeliveryQueueName = 'kody-email-delivery'
@@ -26,22 +27,30 @@ export async function handleEmailDeliveryQueue(
 					break
 				case 'recorded_transactional': {
 					const status = result.event.status
-					if (
+					const isTerminalFailure =
 						!result.event.alreadyTerminal &&
 						(status === 'bounced' ||
 							status === 'failed' ||
 							status === 'rejected' ||
 							status === 'complained')
-					) {
-						console.warn('email-verification-delivery-failed', {
-							status,
-							class: result.event.class,
-						})
-						await notifyAdminsOfVerificationDeliveryFailure({
-							env,
-							event: result.event,
-							waitUntil,
-						})
+					if (isTerminalFailure) {
+						if (result.event.kind === transactionalEmailVerificationKind) {
+							console.warn('email-verification-delivery-failed', {
+								status,
+								class: result.event.class,
+							})
+							await notifyAdminsOfVerificationDeliveryFailure({
+								env,
+								event: result.event,
+								waitUntil,
+							})
+						} else {
+							console.warn('email-destination-verification-delivery', {
+								status,
+								class: result.event.class,
+								kind: result.event.kind,
+							})
+						}
 					}
 					queueMessage.ack()
 					break

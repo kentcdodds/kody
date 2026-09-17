@@ -160,7 +160,14 @@ not own `users.email`. Add, resend, set-default, and remove live at
 Re-adding a pending unverified address resends a verification email. The cap is
 5 extras besides the identity email. Unverified extras never receive mail.
 Destinations expand the verified `to` set only; mail comes from
-`{username}@{platform}`.
+`{username}@{platform}`. A successful Cloudflare send stores that
+`provider_message_id` in `transactional_email_delivery_index` with kind
+`email_destination_verification` so later Cloudflare lifecycle events can
+attribute bounce, deferred, or delivered to the extra-address message. A newer
+send retires only the previous index row for that same recipient, so other
+pending extras stay attributable. Those events stay on the index (and the
+delivery-alert bounce/complaint table); they do not write
+`users.email_verification_delivery_*`.
 
 Signed-in users with an unverified email can request a fresh link with
 `POST /account/resend-verification.json`
@@ -180,7 +187,7 @@ Verification mail is sent from `kody@<SYSTEM_EMAIL_DOMAIN>` through Cloudflare
 Email Sending and sets `Reply-To: support@<same domain>` so human replies land
 on support rather than the transactional sender. Provider accept is not
 delivery: the send stores `provider_message_id` in
-`transactional_email_delivery_index` and sets
+`transactional_email_delivery_index` with kind `email_verification` and sets
 `users.email_verification_delivery_status` to `accepted`. Later Cloudflare
 lifecycle events (`delivered`, `bounced`, `failed`, `rejected`, `complained`)
 update that status. A Fastmail-style sender-domain/IP block (`RLR613`, `RLR813`,
