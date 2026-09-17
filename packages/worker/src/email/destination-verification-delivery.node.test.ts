@@ -71,6 +71,10 @@ test('destination verify send indexes a distinct kind and leaves signup verifica
 		})
 		.mockResolvedValueOnce({
 			ok: true,
+			messageId: 'cf-destination-alerts',
+		})
+		.mockResolvedValueOnce({
+			ok: true,
 			messageId: 'cf-signup-1',
 		})
 
@@ -114,6 +118,32 @@ test('destination verify send indexes a distinct kind and leaves signup verifica
 		recipient: 'pager@example.com',
 	})
 
+	const alerts = await createEmailDestinationVerification({
+		env,
+		userId: 1,
+		email: 'alerts@example.com',
+		requestUrl: 'http://example.com',
+	})
+	expect(alerts.created).toBe(true)
+	expect(
+		await lookupTransactionalEmailDelivery({
+			db,
+			providerMessageId: 'cf-destination-2',
+		}),
+	).toMatchObject({
+		kind: transactionalEmailDestinationVerificationKind,
+		recipient: 'pager@example.com',
+	})
+	expect(
+		await lookupTransactionalEmailDelivery({
+			db,
+			providerMessageId: 'cf-destination-alerts',
+		}),
+	).toMatchObject({
+		kind: transactionalEmailDestinationVerificationKind,
+		recipient: 'alerts@example.com',
+	})
+
 	await createEmailVerification({
 		env,
 		userId: 1,
@@ -141,12 +171,22 @@ test('destination verify send indexes a distinct kind and leaves signup verifica
 	expect(
 		sqlite
 			.prepare(
-				`SELECT kind FROM transactional_email_delivery_index
-				 ORDER BY kind ASC`,
+				`SELECT kind, recipient FROM transactional_email_delivery_index
+				 ORDER BY kind ASC, recipient ASC`,
 			)
-			.all() as Array<{ kind: string }>,
+			.all() as Array<{ kind: string; recipient: string }>,
 	).toEqual([
-		{ kind: transactionalEmailDestinationVerificationKind },
-		{ kind: transactionalEmailVerificationKind },
+		{
+			kind: transactionalEmailDestinationVerificationKind,
+			recipient: 'alerts@example.com',
+		},
+		{
+			kind: transactionalEmailDestinationVerificationKind,
+			recipient: 'pager@example.com',
+		},
+		{
+			kind: transactionalEmailVerificationKind,
+			recipient: 'owner@example.com',
+		},
 	])
 })

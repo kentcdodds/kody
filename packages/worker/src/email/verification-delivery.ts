@@ -77,12 +77,15 @@ export async function registerTransactionalEmailDelivery(input: {
 		)
 		.bind(input.providerMessageId, input.userId, kind, input.recipient)
 		.run()
+	// Latest send wins for this user + kind + recipient. Extra destination
+	// addresses share a kind, so recipient keeps sibling pending sends.
 	await input.db
 		.prepare(
 			`DELETE FROM transactional_email_delivery_index
-			 WHERE user_id = ? AND kind = ? AND provider_message_id != ?`,
+			 WHERE user_id = ? AND kind = ? AND recipient = ?
+			   AND provider_message_id != ?`,
 		)
-		.bind(input.userId, kind, input.providerMessageId)
+		.bind(input.userId, kind, input.recipient, input.providerMessageId)
 		.run()
 }
 

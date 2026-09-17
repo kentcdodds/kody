@@ -163,9 +163,11 @@ Destinations expand the verified `to` set only; mail comes from
 `{username}@{platform}`. A successful Cloudflare send stores that
 `provider_message_id` in `transactional_email_delivery_index` with kind
 `email_destination_verification` so later Cloudflare lifecycle events can
-attribute bounce, deferred, or delivered to the extra-address message. Those
-events stay on the index (and the delivery-alert bounce/complaint table); they
-do not write `users.email_verification_delivery_*`.
+attribute bounce, deferred, or delivered to the extra-address message. A newer
+send retires only the previous index row for that same recipient, so other
+pending extras stay attributable. Those events stay on the index (and the
+delivery-alert bounce/complaint table); they do not write
+`users.email_verification_delivery_*`.
 
 Signed-in users with an unverified email can request a fresh link with
 `POST /account/resend-verification.json`
