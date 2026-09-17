@@ -99,6 +99,12 @@ Scopes requested: `read:user user:email` (the primary verified email comes from
 Scopes requested: `openid email profile` (profile read via the OIDC userinfo
 endpoint; `email_verified` gates account matching).
 
+Production `kody.codes` uses the Web client named
+`kody.codes production — Sign in with Google (DO NOT DELETE)` in project
+`kody-507217`. Inventory (owning account, client id, redirect URI, secret names,
+recovery) lives in [operator accounts](./operator-accounts.md#google). Deleting
+that client breaks Continue with Google on the live site.
+
 ### X
 
 1. In the [X Developer Portal](https://developer.x.com/en/portal/dashboard),

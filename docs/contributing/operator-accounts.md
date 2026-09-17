@@ -450,21 +450,43 @@ shipped-PR posts skip.
 
 ## Google
 
-Social-login OAuth client (`openid email profile`). Worker secrets
-`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` from Actions `OAUTH_GOOGLE_*`.
-Callback `https://kody.codes/auth/google/callback`.
+Social-login OAuth client (`openid email profile`) for **Continue with Google**
+on `kody.codes`. Worker secrets `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` come
+from Actions `OAUTH_GOOGLE_*` and sync on deploy.
+
+Production lives in Google Cloud project `kody-507217` (number `656338894779`),
+owned by `kodykoalacodes@gmail.com` (Kody Codes / Koala). Do not use Kent's
+personal Google account or a `gen-lang-client-*` project for production social
+login.
+
+| Field                     | Production value                                                           |
+| ------------------------- | -------------------------------------------------------------------------- |
+| Owning Google account     | `kodykoalacodes@gmail.com` (Kody Codes / Koala)                            |
+| GCP project id            | `kody-507217`                                                              |
+| GCP project number        | `656338894779`                                                             |
+| OAuth client display name | `kody.codes production — Sign in with Google (DO NOT DELETE)`              |
+| OAuth Web client id       | `656338894779-lbjqipo1rojni2kpfeknb95ilplgoktj.apps.googleusercontent.com` |
+| Authorized redirect URI   | `https://kody.codes/auth/google/callback`                                  |
+| Actions secrets           | `OAUTH_GOOGLE_CLIENT_ID` / `OAUTH_GOOGLE_CLIENT_SECRET`                    |
+| Worker secrets            | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (synced on deploy)             |
+
+Deleting this Web client breaks Continue with Google on `kody.codes`. Recreate
+it only under `kodykoalacodes@gmail.com` / `kody-507217`, restore the display
+name and redirect URI above, update `OAUTH_GOOGLE_CLIENT_ID` /
+`OAUTH_GOOGLE_CLIENT_SECRET`, then deploy so Worker secrets sync.
 
 Dashboard: [Google Cloud Console](https://console.cloud.google.com/) → **APIs &
 Services → Credentials** (Web application client) and **OAuth consent screen**.
 Setup: [social-login.md](./social-login.md).
 
-Rotation: create a new client secret, update `OAUTH_GOOGLE_CLIENT_SECRET`,
-deploy.
+Rotation: create a new client secret on this client, update
+`OAUTH_GOOGLE_CLIENT_SECRET`, deploy. Do not mint a replacement client unless
+this one is gone.
 
-Recovery: Google account that owns the Cloud project. GitHub login succeeds when
-Google is unset.
+Recovery: Google account `kodykoalacodes@gmail.com` owns the Cloud project.
+GitHub login succeeds when Google is unset.
 
-`Password manager: Google Cloud project name / OAuth client name.`
+`Password manager: Google Cloud project kody-507217; OAuth client display name kody.codes production — Sign in with Google (DO NOT DELETE).`
 
 ## X
 
@@ -549,7 +571,7 @@ values in this repo.
 5. `Password manager: Fathom account login item name.`
 6. `Password manager: Kit account login item name.`
 7. `Password manager: Discord application name(s) for social login vs shipped-PR bot; guild name.`
-8. `Password manager: Google Cloud project / OAuth client name.`
+8. `Password manager: Google Cloud project kody-507217; OAuth client display name kody.codes production — Sign in with Google (DO NOT DELETE).`
 9. `Password manager: X project / app name.`
 10. `Password manager: GitHub OAuth App display name; PREVIEW_ENVIRONMENT_ADMIN_TOKEN item name; kody-bot GitHub user login item name.`
 11. `Password manager: Cursor API key / cursorApiKey item name.`
