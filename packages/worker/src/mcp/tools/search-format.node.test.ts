@@ -2,7 +2,6 @@ import { Script, createContext } from 'node:vm'
 import { expect, test } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
-	buildPackageActionImportUsage,
 	compactCapabilityInputTypeDefinition,
 	formatEntityDetailMarkdown,
 	formatSearchMarkdown,
@@ -809,40 +808,39 @@ test('package search formatting keeps runnable actions and hosted URLs in struct
 		hostedUrl: null,
 	})
 
-	const [actionPackageMatch] = toSlimStructuredMatches({
-		baseUrl: 'http://localhost',
-		username: 'test-user',
-		matches: [
+	const namedActionPackage = {
+		type: 'package' as const,
+		packageId: 'package-123',
+		kodyId: 'google-products',
+		name: '@kentcdodds/google-products',
+		title: '@kentcdodds/google-products',
+		description: 'Google product helpers.',
+		tags: ['google', 'calendar'],
+		hasApp: true,
+		hidden: false,
+		actionMatches: [
 			{
-				type: 'package',
-				packageId: 'package-123',
-				kodyId: 'google-products',
-				name: '@kentcdodds/google-products',
-				title: '@kentcdodds/google-products',
-				description: 'Google product helpers.',
-				tags: ['google', 'calendar'],
-				hasApp: true,
-				hidden: false,
-				actionMatches: [
+				subpath: './calendar',
+				description: 'Create a calendar event.',
+				typeDefinition:
+					'export declare function createEvent(params: CalendarEventMutationParams): Promise<JsonObject>',
+				functions: [
 					{
-						subpath: './calendar',
+						name: 'createEvent',
 						description: 'Create a calendar event.',
 						typeDefinition:
 							'export declare function createEvent(params: CalendarEventMutationParams): Promise<JsonObject>',
-						functions: [
-							{
-								name: 'createEvent',
-								description: 'Create a calendar event.',
-								typeDefinition:
-									'export declare function createEvent(params: CalendarEventMutationParams): Promise<JsonObject>',
-							},
-						],
-						score: 0.92,
-						matchedTerms: ['calendar', 'create', 'event'],
 					},
 				],
+				score: 0.92,
+				matchedTerms: ['calendar', 'create', 'event'],
 			},
 		],
+	}
+	const [actionPackageMatch] = toSlimStructuredMatches({
+		baseUrl: 'http://localhost',
+		username: 'test-user',
+		matches: [namedActionPackage],
 	})
 	expect(actionPackageMatch).toMatchObject({
 		type: 'package',
@@ -858,6 +856,80 @@ test('package search formatting keeps runnable actions and hosted URLs in struct
 			}),
 		],
 	})
+	expect(
+		formatSearchMarkdown({
+			matches: [namedActionPackage],
+			includePreamble: false,
+		}),
+	).toContain(
+		'import { createEvent } from "kody:@kentcdodds/google-products/calendar"',
+	)
+
+	const defaultActionMarkdown = formatSearchMarkdown({
+		matches: [
+			{
+				type: 'package',
+				packageId: 'package-shade',
+				kodyId: 'shade-automation',
+				name: '@kentcdodds/shade-automation',
+				title: '@kentcdodds/shade-automation',
+				description: 'Shade controls.',
+				tags: ['home'],
+				hasApp: false,
+				hidden: false,
+				actionMatches: [
+					{
+						subpath: './control',
+						description: 'Move one shade.',
+						typeDefinition: null,
+						functions: [
+							{
+								name: 'default',
+								description: 'Move one shade.',
+								typeDefinition: null,
+							},
+						],
+						score: 0.9,
+						matchedTerms: ['shade'],
+					},
+				],
+			},
+			{
+				type: 'package',
+				packageId: 'package-home',
+				kodyId: 'home-controls',
+				name: '@kentcdodds/home-controls',
+				title: '@kentcdodds/home-controls',
+				description: 'Home control helpers.',
+				tags: ['home'],
+				hasApp: false,
+				hidden: false,
+				actionMatches: [
+					{
+						subpath: './bond-area-shades',
+						description: 'Lower or raise Bond-controlled shades.',
+						typeDefinition: null,
+						functions: [
+							{
+								name: 'home',
+								description: 'Lower or raise Bond-controlled shades.',
+								typeDefinition: null,
+							},
+						],
+						score: 0.88,
+						matchedTerms: ['shade'],
+					},
+				],
+			},
+		],
+		includePreamble: false,
+	})
+	expect(defaultActionMarkdown).toContain(
+		'import action from "kody:@kentcdodds/shade-automation/control"',
+	)
+	expect(defaultActionMarkdown).toContain(
+		'import action from "kody:@kentcdodds/home-controls/bond-area-shades"',
+	)
 })
 
 test('integration search hits surface reconnect nextStep when last auth failure is yours', () => {
@@ -1482,31 +1554,4 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 			truncated: false,
 		},
 	})
-})
-
-test('package action import usage uses a default import for default and home exports', () => {
-	const defaultUsage = buildPackageActionImportUsage({
-		packageName: '@kentcdodds/shade-automation',
-		subpath: './control',
-		functionName: 'default',
-	})
-	expect(defaultUsage).toBe(
-		'import action from "kody:@kentcdodds/shade-automation/control"',
-	)
-	expect(
-		buildPackageActionImportUsage({
-			packageName: '@kentcdodds/home-controls',
-			subpath: './bond-area-shades',
-			functionName: 'home',
-		}),
-	).toBe('import action from "kody:@kentcdodds/home-controls/bond-area-shades"')
-	expect(
-		buildPackageActionImportUsage({
-			packageName: '@kentcdodds/google-products',
-			subpath: './calendar',
-			functionName: 'createEvent',
-		}),
-	).toBe(
-		'import { createEvent } from "kody:@kentcdodds/google-products/calendar"',
-	)
 })

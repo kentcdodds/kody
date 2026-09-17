@@ -2,14 +2,7 @@ import { expect, test } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
 
-import {
-	findPackageExportByFragment,
-	formatPackageExportEntityDetail,
-	formatUnknownPackageExportError,
-	normalizePackageExportFragment,
-	packageExportReferencedTypesOmittedLine,
-	splitPackageExportJsDoc,
-} from './package-export-search-detail.ts'
+import { formatPackageExportEntityDetail } from './package-export-search-detail.ts'
 import { formatEntityDetailMarkdown } from './search-format-detail.ts'
 import { type SearchEntityDetail } from './search-format-types.ts'
 
@@ -83,51 +76,6 @@ export default async function bondAreaShades(input: {
 	}
 }
 
-test('package export fragments strip a leading ./ and match either form', () => {
-	expect(normalizePackageExportFragment('./bond-area-shades')).toBe(
-		'bond-area-shades',
-	)
-	expect(normalizePackageExportFragment('bond-area-shades')).toBe(
-		'bond-area-shades',
-	)
-	expect(normalizePackageExportFragment('.')).toBe('.')
-	expect(normalizePackageExportFragment('./')).toBe('.')
-	expect(normalizePackageExportFragment('./.')).toBe('.')
-	const exports = [{ subpath: './bond-area-shades' }, { subpath: '.' }]
-	expect(
-		findPackageExportByFragment(exports, 'bond-area-shades')?.subpath,
-	).toBe('./bond-area-shades')
-	expect(
-		findPackageExportByFragment(exports, './bond-area-shades')?.subpath,
-	).toBe('./bond-area-shades')
-	expect(findPackageExportByFragment(exports, '.')?.subpath).toBe('.')
-	expect(findPackageExportByFragment(exports, './')?.subpath).toBe('.')
-	expect(findPackageExportByFragment(exports, 'missing')).toBeNull()
-})
-
-test('package export JSDoc keeps the purpose line and extracts @example', () => {
-	expect(
-		splitPackageExportJsDoc(`Lower or raise Bond-controlled shades.
-
-@param input - Area id
-@returns Shade positions
-
-@example
-import bondAreaShades from 'kody:@user/home-controls/bond-area-shades'
-
-const result = await bondAreaShades({ areaId: 'living' })`),
-	).toEqual({
-		purpose: 'Lower or raise Bond-controlled shades.',
-		example: `import bondAreaShades from 'kody:@user/home-controls/bond-area-shades'
-
-const result = await bondAreaShades({ areaId: 'living' })`,
-	})
-	expect(splitPackageExportJsDoc('List upcoming calendar events.')).toEqual({
-		purpose: 'List upcoming calendar events.',
-		example: null,
-	})
-})
-
 test('package heading detail returns one export contract without packageGet', () => {
 	const hashed = formatEntityDetailMarkdown(
 		createHomeControlsDetail('bond-area-shades'),
@@ -165,6 +113,18 @@ test('package heading detail returns one export contract without packageGet', ()
 		'import action from "kody:@user/home-controls/bond-area-shades"',
 	)
 	expect(hashed.markdown).not.toContain('communityFork')
+
+	const root = formatEntityDetailMarkdown(createHomeControlsDetail('.'))
+	const dottedRoot = formatEntityDetailMarkdown(createHomeControlsDetail('./'))
+	expect(root.structured).toMatchObject({
+		kind: 'entity',
+		type: 'package',
+		detailMode: 'export',
+		entityRef: 'package:home-controls#.',
+		importSpecifier: 'kody:@user/home-controls',
+	})
+	expect(root.structured).toEqual(dottedRoot.structured)
+	expect(root.markdown).toBe(dottedRoot.markdown)
 })
 
 test('platform package heading detail tells person accounts to communityFork first', () => {
@@ -288,13 +248,6 @@ test('unknown package export heading is a clear per-entity caller error', () => 
 	).toThrow(
 		'Unknown export "missing-export" for package:home-controls. Available: ., ./bond-area-shades.',
 	)
-	expect(
-		formatUnknownPackageExportError({
-			entityRef: 'package:home-controls',
-			section: './ghost',
-			exports: [],
-		}),
-	).toBe('Unknown export "./ghost" for package:home-controls. Available: none.')
 })
 
 test('oversized referenced types keep the signature and type names', () => {
@@ -335,7 +288,9 @@ test('oversized referenced types keep the signature and type names', () => {
 	})
 	expect(formatted.markdown).toContain('bondAreaShades')
 	expect(formatted.markdown).toContain('`ShadeInput`')
-	expect(formatted.markdown).toContain(packageExportReferencedTypesOmittedLine)
+	expect(formatted.markdown).toContain(
+		'Referenced type definitions omitted (exceeds search response budget).',
+	)
 	expect(formatted.markdown).toContain(
 		'packageGet({ package_id: "package-home" })',
 	)

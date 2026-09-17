@@ -12,10 +12,10 @@ import {
 } from './search-format-helpers.ts'
 import { type SearchEntityDetail } from './search-format-types.ts'
 
-export const packageExportReferencedTypesOmittedLine =
+const packageExportReferencedTypesOmittedLine =
 	'Referenced type definitions omitted (exceeds search response budget). `packageGet` returns the full export array.'
 
-export function normalizePackageExportFragment(section: string) {
+function normalizePackageExportFragment(section: string) {
 	const trimmed = section.trim()
 	if (trimmed === '.' || trimmed === './') return '.'
 	return trimmed.replace(/^\.\//, '')
@@ -45,7 +45,7 @@ export function formatUnknownPackageExportError(input: {
 	return `Unknown export ${JSON.stringify(input.section)} for ${input.entityRef}. Available: ${available || 'none'}.`
 }
 
-export function splitPackageExportJsDoc(jsDoc: string | null | undefined): {
+function splitPackageExportJsDoc(jsDoc: string | null | undefined): {
 	purpose: string | null
 	example: string | null
 } {

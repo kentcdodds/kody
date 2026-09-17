@@ -9,7 +9,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 
-export const communityForkAdoptPackageRuntimeErrorMessage =
+const communityForkAdoptPackageRuntimeErrorMessage =
 	'communityForkAdopt is unavailable from package runtime contexts. Call it from an interactive MCP agent after reviewing the fork source.'
 
 function assertDirectMcpCaller(callerContext: {

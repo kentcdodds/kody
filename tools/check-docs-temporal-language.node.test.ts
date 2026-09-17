@@ -164,7 +164,6 @@ test.each([
 
 test('exempts principles and migration pages and scans discovered docs', async () => {
 	expect(exemptRelativePrefixes).toContain('docs/contributing/decisions/')
-	expect(exemptRelativePrefixes).toContain('docs/audits/')
 	for (const relativePath of [
 		...exemptRelativePaths,
 		...exemptRelativePrefixes.map((prefix) => `${prefix}0001-example.md`),

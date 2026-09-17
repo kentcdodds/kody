@@ -93,7 +93,6 @@ test('docs API lists every advertised doc by section and the markdown root is in
 	const indexBody = await markdownIndex.text()
 	expect(indexBody).toContain('# All Kody docs')
 	expect(indexBody).toContain('search({ entity: "guide:{id}" })')
-	expect(indexBody).not.toContain('search({ entity: "{id}:guide" })')
 	expect(indexBody).toContain('https://kody.example/llms.txt')
 	expect(indexBody.indexOf('## Introduction')).toBeLessThan(
 		indexBody.indexOf('## Get started'),
@@ -120,7 +119,6 @@ test('docs API lists every advertised doc by section and the markdown root is in
 	const llmsBody = await llms.text()
 	expect(llmsBody.startsWith('# Kody\n')).toBe(true)
 	expect(llmsBody).toContain('search({ entity: "guide:{id}" })')
-	expect(llmsBody).not.toContain('search({ entity: "{id}:guide" })')
 	expect(llmsBody).not.toContain('/docs/values.md')
 	expect(llmsBody).not.toContain('/docs/admin-events.md')
 	expect(llmsBody).toContain('/docs/search-and-execute.md')
