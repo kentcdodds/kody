@@ -45,12 +45,13 @@ that provider.
 In secret-aware `fetch`:
 
 ```
-{{secret/1password:i/<item-uuid>/password}}
+{{secret/1password:i/<item-id>/password}}
 ```
 
-`op://Vault/<item-uuid>/password` is a writable synonym that canonicalizes to
-the same grant key when the item segment is a UUID. Name-based vault paths are
-not interpreted in Kody core.
+`<item-id>` is a UUID (Service Account / web) or a 1Password Connect item id
+(`^[a-z0-9]{26}$`). `op://Vault/<item-id>/password` is a writable synonym that
+canonicalizes to the same grant key when the item segment is one of those ids.
+Name-based vault paths are not interpreted in Kody core.
 
 The item's websites are the host allowlist. Empty websites refuse the fetch. The
 request URL must be `https:`.

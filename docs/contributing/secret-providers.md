@@ -25,19 +25,20 @@ User-secret `{{secret:name}}` placeholders do not use this flag.
 `{{secret/<provider>:<ref>}}` splits on the **first** `:` after `secret/`. The
 `ref` is opaque to core.
 
-- `{{secret/1password:i/<item-uuid>/password}}` — canonical form
+- `{{secret/1password:i/<item-id>/password}}` — canonical form (`<item-id>` is a
+  UUID or a 1Password Connect 26-char id `^[a-z0-9]{26}$`)
 - `{{secret/1password:op://Vault/Item/password}}` — writable synonym only
 - `{{secret:name}}` — user-secret placeholders (separate grammar)
 
 ## Canonicalization
 
-Grants and the short TTL cache key on the canonical ref `i/<item-uuid>/<field>`.
+Grants and the short TTL cache key on the canonical ref `i/<item-id>/<field>`.
 
-Core has a small helper that maps `op://<vault>/<item-uuid>/<field>` when the
-item segment is already a UUID. Name-based `op://Vault/Item/password` is not
-interpreted in core. The bound provider package's sealed `./secretProvider`
-export can canonicalize that synonym (`action: "canonicalize"`) and return
-`{ canonicalRef }` without a secret value.
+Core has a small helper that maps `op://<vault>/<item-id>/<field>` when the item
+segment is already a UUID or Connect item id. Name-based
+`op://Vault/Item/password` is not interpreted in core. The bound provider
+package's sealed `./secretProvider` export can canonicalize that synonym
+(`action: "canonicalize"`) and return `{ canonicalRef }` without a secret value.
 
 Grant approval (`secretProviderLock`) requires a locally canonicalizable ref so
 lock/search never call the vault.

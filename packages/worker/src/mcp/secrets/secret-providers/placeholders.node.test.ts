@@ -7,7 +7,9 @@ import {
 } from '#mcp/secrets/placeholders.ts'
 import {
 	canonicalizeOpSecretReference,
+	isCanonicalItemId,
 	isCanonicalProviderRef,
+	isConnectItemId,
 	tryCanonicalizeProviderRef,
 } from './canonicalize.ts'
 import { providerHostsAllowRequestHost } from './hosts.ts'
@@ -85,6 +87,33 @@ test('canonicalize maps op:// UUID synonyms to i/<uuid>/<field> and leaves name-
 	expect(tryCanonicalizeProviderRef('op://Vault/Item/password')).toBeNull()
 	expect(isCanonicalProviderRef('op://Vault/Item/password')).toBe(false)
 	expect(isCanonicalProviderRef(`i/${itemId}/password`)).toBe(true)
+})
+
+test('canonicalize accepts 1Password Connect 26-char item ids and rejects invalid ids', () => {
+	const connectId = 'tz23g2vsmvctvfdujkxu4ezgie'
+	expect(isConnectItemId(connectId)).toBe(true)
+	expect(isCanonicalItemId(connectId)).toBe(true)
+	expect(isCanonicalProviderRef(`i/${connectId}/password`)).toBe(true)
+	expect(tryCanonicalizeProviderRef(`i/${connectId}/password`)).toBe(
+		`i/${connectId}/password`,
+	)
+	expect(
+		tryCanonicalizeProviderRef(`op://Personal/${connectId}/password`),
+	).toBe(`i/${connectId}/password`)
+	expect(
+		canonicalizeOpSecretReference(`op://Work/${connectId}/section/field`),
+	).toBe(`i/${connectId}/section/field`)
+
+	expect(isConnectItemId('TZ23G2VSMVCTVFDUJKXU4EZGIE')).toBe(false)
+	expect(isCanonicalProviderRef('i/not-a-valid-id/password')).toBe(false)
+	expect(isCanonicalProviderRef('i/tz23g2vsmvctvfdujkxu4ezgi/password')).toBe(
+		false,
+	)
+	expect(isCanonicalProviderRef('i/tz23g2vsmvctvfdujkxu4ezgiex/password')).toBe(
+		false,
+	)
+	expect(tryCanonicalizeProviderRef('i/Item Name/password')).toBeNull()
+	expect(tryCanonicalizeProviderRef('op://Vault/Item Name/password')).toBeNull()
 })
 
 test('provider host match uses hostname only and empty hosts deny every use', () => {
