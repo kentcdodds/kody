@@ -28,15 +28,15 @@ export type CanonicalItemRef = {
 	field: string
 }
 
-export function isUuid(value: string) {
+function isUuid(value: string) {
 	return uuidPattern.test(value.trim())
 }
 
-export function isConnectItemId(value: string) {
+function isConnectItemId(value: string) {
 	return connectItemIdPattern.test(value.trim())
 }
 
-export function isCanonicalItemId(value: string) {
+function isCanonicalItemId(value: string) {
 	const trimmed = value.trim()
 	return isUuid(trimmed) || isConnectItemId(trimmed)
 }

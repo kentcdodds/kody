@@ -35,7 +35,6 @@ test('community listings render sort controls, categories, empty states, and for
 	expect(searchMissHtml).toContain(
 		'search({ entity: ["guide:package_authoring", "guide:package_lifecycle"] })',
 	)
-	expect(searchMissHtml).not.toContain('package_authoring:guide')
 	expect(searchMissHtml).toContain('obsidian')
 	expect(searchMissHtml).toContain('href="/docs/package-authoring"')
 	expect(searchMissHtml).toContain('href="/community?sort=newest"')

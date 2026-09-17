@@ -7,9 +7,7 @@ import {
 } from '#mcp/secrets/placeholders.ts'
 import {
 	canonicalizeOpSecretReference,
-	isCanonicalItemId,
 	isCanonicalProviderRef,
-	isConnectItemId,
 	tryCanonicalizeProviderRef,
 } from './canonicalize.ts'
 import { providerHostsAllowRequestHost } from './hosts.ts'
@@ -91,8 +89,6 @@ test('canonicalize maps op:// UUID synonyms to i/<uuid>/<field> and leaves name-
 
 test('canonicalize accepts 1Password Connect 26-char item ids and rejects invalid ids', () => {
 	const connectId = 'tz23g2vsmvctvfdujkxu4ezgie'
-	expect(isConnectItemId(connectId)).toBe(true)
-	expect(isCanonicalItemId(connectId)).toBe(true)
 	expect(isCanonicalProviderRef(`i/${connectId}/password`)).toBe(true)
 	expect(tryCanonicalizeProviderRef(`i/${connectId}/password`)).toBe(
 		`i/${connectId}/password`,
@@ -104,7 +100,9 @@ test('canonicalize accepts 1Password Connect 26-char item ids and rejects invali
 		canonicalizeOpSecretReference(`op://Work/${connectId}/section/field`),
 	).toBe(`i/${connectId}/section/field`)
 
-	expect(isConnectItemId('TZ23G2VSMVCTVFDUJKXU4EZGIE')).toBe(false)
+	expect(isCanonicalProviderRef('i/TZ23G2VSMVCTVFDUJKXU4EZGIE/password')).toBe(
+		false,
+	)
 	expect(isCanonicalProviderRef('i/not-a-valid-id/password')).toBe(false)
 	expect(isCanonicalProviderRef('i/tz23g2vsmvctvfdujkxu4ezgi/password')).toBe(
 		false,

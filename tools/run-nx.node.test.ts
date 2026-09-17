@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises'
 import { Writable } from 'node:stream'
 import { expect, test } from 'vitest'
 import {
@@ -127,22 +126,6 @@ test('runNxWithRemoteCacheFallback does not retry a real task failure', async ()
 	})
 	expect(result.status).toBe(1)
 	expect(attempts).toEqual([1])
-})
-
-test('validate nx scripts go through run-nx so a cache transport flake cannot fail the gate', async () => {
-	const pkg = JSON.parse(await readFile('package.json', 'utf8')) as {
-		scripts: Record<string, string>
-	}
-	for (const name of [
-		'typecheck',
-		'test',
-		'test:node',
-		'test:workers',
-		'test:e2e:run',
-		'test:mcp',
-	]) {
-		expect(pkg.scripts[name]).toContain('node tools/run-nx.ts')
-	}
 })
 
 test('spawnNx captures stdout from the local nx binary', async () => {

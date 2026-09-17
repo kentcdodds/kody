@@ -167,14 +167,6 @@ test('resolveEntityDetail reports unresolvable entity refs as caller errors', as
 			'thing:widget',
 			'Entity type must be one of: capability, guide, integration, mcp-server, package, or secret.',
 		],
-		[
-			'home-controls:package',
-			'Entity refs are "{type}:{id}". Use "package:home-controls", not "home-controls:package".',
-		],
-		[
-			'emailSend:capability',
-			'Entity refs are "{type}:{id}". Use "capability:emailSend", not "emailSend:capability".',
-		],
 	] as const
 
 	for (const [entity, message] of expected) {

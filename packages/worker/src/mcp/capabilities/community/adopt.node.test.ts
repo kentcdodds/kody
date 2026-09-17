@@ -11,10 +11,7 @@ vi.mock('#worker/community/service.ts', () => ({
 		mocks.adoptCommunityFork(...args),
 }))
 
-const {
-	communityForkAdoptCapability,
-	communityForkAdoptPackageRuntimeErrorMessage,
-} = await import('./adopt.ts')
+const { communityForkAdoptCapability } = await import('./adopt.ts')
 
 function createContext(
 	userId = 'user-alice',
@@ -149,14 +146,18 @@ test('communityForkAdopt refuses package runtime and background callers', async 
 			input,
 			createContext('user-alice', { executionOrigin: 'omit' }),
 		),
-	).rejects.toThrow(communityForkAdoptPackageRuntimeErrorMessage)
+	).rejects.toThrow(
+		'communityForkAdopt is unavailable from package runtime contexts',
+	)
 
 	await expect(
 		communityForkAdoptCapability.handler(
 			input,
 			createContext('user-alice', { executionOrigin: 'background' }),
 		),
-	).rejects.toThrow(communityForkAdoptPackageRuntimeErrorMessage)
+	).rejects.toThrow(
+		'communityForkAdopt is unavailable from package runtime contexts',
+	)
 
 	await expect(
 		communityForkAdoptCapability.handler(
@@ -166,7 +167,9 @@ test('communityForkAdopt refuses package runtime and background callers', async 
 				packageId: 'pkg-malicious',
 			}),
 		),
-	).rejects.toThrow(communityForkAdoptPackageRuntimeErrorMessage)
+	).rejects.toThrow(
+		'communityForkAdopt is unavailable from package runtime contexts',
+	)
 
 	await expect(
 		communityForkAdoptCapability.handler(
@@ -176,7 +179,9 @@ test('communityForkAdopt refuses package runtime and background callers', async 
 				appId: 'app-1',
 			}),
 		),
-	).rejects.toThrow(communityForkAdoptPackageRuntimeErrorMessage)
+	).rejects.toThrow(
+		'communityForkAdopt is unavailable from package runtime contexts',
+	)
 
 	expect(mocks.adoptCommunityFork).not.toHaveBeenCalled()
 })

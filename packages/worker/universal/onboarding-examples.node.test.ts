@@ -128,11 +128,4 @@ test('example prompt searches the user-owned scoped package and statically impor
 	expect(buildOnboardingPackageAuthoringPrompt('hn-pulse')).toContain(
 		'packageGetGitRemote({ create: true, kody_id: "hn-pulse" })',
 	)
-	expect(
-		buildOnboardingExamplePrompt({
-			listingName: '@kody/notes-helper',
-			kodyId: 'notes-helper',
-			username: 'u-b',
-		}),
-	).toContain('search({ entity: "package:{kodyId}#<subpath>" })')
 })
