@@ -117,17 +117,17 @@ a tight size budget does not drop them.
 To inspect one hit, call **search** again with **`entity`** set to
 `"{type}:{id}"` where **`type`** is `capability`, `guide`, `integration`,
 `mcp-server`, `package`, or `secret`. The first `:` is the type; the id may
-itself contain colons (`capability:mcp:home:set_pin`). The previous
-`{id}:{type}` form fails closed with an error that shows the new shape (for
-example use `package:home-controls`, not `home-controls:package`). Guide
-entities return the official markdown (the same bundled body as the web `/docs`
-pages) when it fits the search response budget. Oversized guides return a table
-of contents instead of truncating mid-document. Open one heading with
-`"guide:{id}#{slug}"` (for example `guide:package_subscriptions#repo.pushed`).
-Official guide headings themselves must fit the remaining budget after the
-search entity header (`kody-custom/no-oversized-guide-section`). Package
-entities use the same hash form for one export: `"package:{id}#{subpath}"` (for
-example `package:home-controls#bond-area-shades` or
+itself contain colons (`capability:mcp:home:set_pin`). Refs that put the type
+last (`home-controls:package`) fail with an error that shows the required
+`{type}:{id}` shape. Guide entities return the official markdown (the same
+bundled body as the web `/docs` pages) when it fits the search response budget.
+Oversized guides return a table of contents instead of truncating mid-document.
+Open one heading with `"guide:{id}#{slug}"` (for example
+`guide:package_subscriptions#repo.pushed`). Official guide headings themselves
+must fit the remaining budget after the search entity header
+(`kody-custom/no-oversized-guide-section`). Package entities use the same hash
+form for one export: `"package:{id}#{subpath}"` (for example
+`package:home-controls#bond-area-shades` or
 `package:home-controls#./bond-area-shades`). That heading returns the import
 specifier, JSDoc purpose, a ready-to-run **execute** snippet, `typeDefinition`,
 `functions` when the module is multi-callable, `referencedTypes`, and a JSDoc
@@ -184,10 +184,10 @@ Package entity detail (`package:{id}`) is a slim index: summary, export subpaths
 with one-line purposes, job and retriever names, and the README `Intent`
 section. Structured content mirrors that index and does not contain a full
 export tree. Open one export with `package:{id}#{subpath}` for that export's
-import specifier, types, and execute snippet. `packageGet` remains the bulk
-metadata API: full export array, provenance, and package-scoped secret FYI. When
-a community fork is outdated (the listing pin is not an ancestor of the fork
-tip), detail includes `listingAhead: true` and a one-line absorb next step
+import specifier, types, and execute snippet. `packageGet` is the bulk metadata
+API: full export array, provenance, and package-scoped secret FYI. When a
+community fork is outdated (the listing pin is not an ancestor of the fork tip),
+detail includes `listingAhead: true` and a one-line absorb next step
 (`communityGet`, then `repoPublishSession` with `absorbed_upstream_commit`).
 Ranked package hits include that same notice only when the fork is outdated.
 `packageGet` does not return files. For the full README, `AGENTS.md`, and

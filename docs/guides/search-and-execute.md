@@ -67,7 +67,8 @@ Three useful shapes:
 - **Entity lookup** — `{ "entity": "{type}:{id}" }` opens one hit. `type` is
   `capability`, `guide`, `integration`, `mcp-server`, `package`, or `secret`.
   Pass an array of 1–10 refs to load related details in one call. Guide refs
-  accept `#{heading}` to open one section.
+  accept `#{heading}` to open one section. Package refs accept `#{subpath}` to
+  open one export contract.
 
 Capability detail includes a ready-to-run **execute** snippet plus input and
 output types. Guide detail is the official markdown when it fits the response
