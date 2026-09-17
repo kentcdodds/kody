@@ -54,6 +54,12 @@ test('delivery queue handles terminal outcomes without a D1-to-Mailbox graph mir
 	const transactional = createQueueMessage('queue-transactional', {
 		kind: 'recorded_transactional',
 	})
+	const destinationTransactional = createQueueMessage(
+		'queue-destination-transactional',
+		{
+			kind: 'recorded_transactional_destination',
+		},
+	)
 	const dispatchFailure = createQueueMessage('queue-dispatch-failure', {
 		kind: 'dispatch-failure',
 	})
@@ -105,6 +111,19 @@ test('delivery queue handles terminal outcomes without a D1-to-Mailbox graph mir
 			message: null,
 		})
 		.mockResolvedValueOnce({
+			outcome: 'recorded_transactional',
+			providerEvent,
+			event: {
+				userId: 9,
+				kind: 'email_destination_verification',
+				recipient: 'pager@example.com',
+				status: 'bounced',
+				class: 'other',
+				alreadyTerminal: false,
+			},
+			message: null,
+		})
+		.mockResolvedValueOnce({
 			outcome: 'recorded',
 			providerEvent,
 			message: storedMessage,
@@ -133,6 +152,7 @@ test('delivery queue handles terminal outcomes without a D1-to-Mailbox graph mir
 				stale,
 				unmatched,
 				transactional,
+				destinationTransactional,
 				dispatchFailure,
 			],
 			ackAll() {},
@@ -148,14 +168,25 @@ test('delivery queue handles terminal outcomes without a D1-to-Mailbox graph mir
 	expect(stale.ack).toHaveBeenCalledOnce()
 	expect(unmatched.retry).toHaveBeenCalledWith({ delaySeconds: 30 })
 	expect(transactional.ack).toHaveBeenCalledOnce()
+	expect(destinationTransactional.ack).toHaveBeenCalledOnce()
+	expect(mocks.notifyAdminsOfVerificationDeliveryFailure).toHaveBeenCalledOnce()
 	expect(mocks.notifyAdminsOfVerificationDeliveryFailure).toHaveBeenCalledWith({
 		env: expect.anything(),
 		event: expect.objectContaining({
 			status: 'bounced',
 			class: 'sender_block',
+			kind: 'email_verification',
 		}),
 		waitUntil: expect.any(Function),
 	})
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'email-destination-verification-delivery',
+		{
+			status: 'bounced',
+			class: 'other',
+			kind: 'email_destination_verification',
+		},
+	)
 	expect(dispatchFailure.retry).toHaveBeenCalledWith({ delaySeconds: 30 })
 	expect(mocks.dispatchEmailDeliverySubscriptionEvents).toHaveBeenCalledTimes(3)
 	expect(waitUntilPromises).toHaveLength(0)

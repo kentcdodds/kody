@@ -8,6 +8,8 @@ import {
 	recordTransactionalEmailDeliveryEvent,
 	registerTransactionalEmailDelivery,
 	setUserEmailVerificationDelivery,
+	transactionalEmailDestinationVerificationKind,
+	transactionalEmailVerificationKind,
 } from './verification-delivery.ts'
 
 async function createDeliveryTestDb() {
@@ -280,4 +282,104 @@ test('an immediate bounce still wins over a later worker-clock accepted stamp', 
 		email_verification_delivery_status: 'bounced',
 		email_verification_delivery_class: 'sender_block',
 	})
+})
+
+test('destination verification lifecycle matches the index without clobbering signup delivery columns', async () => {
+	const db = await createDeliveryTestDb()
+	await registerTransactionalEmailDelivery({
+		db,
+		providerMessageId: 'cf-signup',
+		userId: 1,
+		recipient: 'blocked@example.com',
+		kind: transactionalEmailVerificationKind,
+	})
+	await setUserEmailVerificationDelivery({
+		db,
+		userId: 1,
+		status: 'accepted',
+		class: null,
+		at: '2026-09-17T02:00:00.000Z',
+	})
+	await registerTransactionalEmailDelivery({
+		db,
+		providerMessageId: 'cf-destination',
+		userId: 1,
+		recipient: 'pager@example.com',
+		kind: transactionalEmailDestinationVerificationKind,
+	})
+
+	expect(
+		await lookupTransactionalEmailDelivery({
+			db,
+			providerMessageId: 'cf-signup',
+		}),
+	).toMatchObject({
+		kind: transactionalEmailVerificationKind,
+		recipient: 'blocked@example.com',
+	})
+	expect(
+		await lookupTransactionalEmailDelivery({
+			db,
+			providerMessageId: 'cf-destination',
+		}),
+	).toMatchObject({
+		kind: transactionalEmailDestinationVerificationKind,
+		recipient: 'pager@example.com',
+	})
+
+	const destinationBounce = await recordTransactionalEmailDeliveryEvent({
+		db,
+		providerMessageId: 'cf-destination',
+		deliveryStatus: 'bounced',
+		eventTimestamp: '2026-09-17T02:05:00.000Z',
+		smtpResponse:
+			'451 4.7.1 Data command rejected: kody.codes is blacklisted - RLR613',
+	})
+	expect(destinationBounce).toEqual({
+		outcome: 'recorded',
+		event: {
+			userId: 1,
+			kind: transactionalEmailDestinationVerificationKind,
+			recipient: 'pager@example.com',
+			status: 'bounced',
+			class: 'sender_block',
+			alreadyTerminal: false,
+		},
+	})
+	expect(
+		await db
+			.prepare(
+				`SELECT email_verification_delivery_status, email_verification_delivery_class
+				 FROM users WHERE id = 1`,
+			)
+			.first<{
+				email_verification_delivery_status: string
+				email_verification_delivery_class: string | null
+			}>(),
+	).toEqual({
+		email_verification_delivery_status: 'accepted',
+		email_verification_delivery_class: null,
+	})
+
+	const signupDelivered = await recordTransactionalEmailDeliveryEvent({
+		db,
+		providerMessageId: 'cf-signup',
+		deliveryStatus: 'delivered',
+		eventTimestamp: '2026-09-17T02:06:00.000Z',
+	})
+	expect(signupDelivered).toMatchObject({
+		outcome: 'recorded',
+		event: {
+			kind: transactionalEmailVerificationKind,
+			status: 'delivered',
+			alreadyTerminal: false,
+		},
+	})
+	expect(
+		await db
+			.prepare(
+				`SELECT email_verification_delivery_status FROM users WHERE id = 1`,
+			)
+			.first<{ email_verification_delivery_status: string }>(),
+	).toEqual({ email_verification_delivery_status: 'delivered' })
 })

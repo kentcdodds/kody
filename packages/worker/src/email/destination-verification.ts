@@ -4,6 +4,11 @@ import { buildEmailDestinationVerificationEmail } from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
 import {
+	generateVerificationToken,
+	hashVerificationToken,
+	verificationTokenExpiryMs,
+} from '#worker/identity/email-verification-tokens.ts'
+import {
 	addEmailNotificationDestination,
 	deleteEmailNotificationDestinationRow,
 	EmailDestinationError,
@@ -11,10 +16,9 @@ import {
 	type EmailNotificationDestination,
 } from './destinations.ts'
 import {
-	generateVerificationToken,
-	hashVerificationToken,
-	verificationTokenExpiryMs,
-} from '#worker/identity/email-verification-tokens.ts'
+	registerTransactionalEmailDelivery,
+	transactionalEmailDestinationVerificationKind,
+} from './verification-delivery.ts'
 
 export const emailDestinationRateLimitConfig = {
 	maxRequests: 3,
@@ -185,6 +189,20 @@ async function sendDestinationVerificationEmail(input: {
 			)
 		}
 		console.warn('email-destination-verify-send-skipped', input.userId)
+	}
+	if (sendResult.ok && sendResult.messageId) {
+		await registerTransactionalEmailDelivery({
+			db: input.env.APP_DB,
+			providerMessageId: sendResult.messageId,
+			userId: input.userId,
+			recipient: input.destinationEmail,
+			kind: transactionalEmailDestinationVerificationKind,
+		}).catch((error) => {
+			console.warn(
+				'email-destination-verification-delivery-index-failed',
+				error,
+			)
+		})
 	}
 }
 
