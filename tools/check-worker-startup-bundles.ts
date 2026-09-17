@@ -150,7 +150,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// few hundred bytes: local dry-run 5_095_156 bytes.
 		// communityForkAdopt interactive-MCP gate (refuse package-runtime
 		// self-adopt of user-secret read): local dry-run 5_096_278 bytes.
-		maxEntryBytes: 5_097_000,
+		// Destination-verify Cloudflare delivery index
+		// (email_destination_verification) on the shared add/resend path:
+		// local dry-run 5_097_119 bytes.
+		maxEntryBytes: 5_098_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
