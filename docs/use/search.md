@@ -90,6 +90,15 @@ and `search({ domain })` do not attach memories. **execute** retrieves memories
 only when its caller opts in with **`memoryContext`**. Archived or very weak
 memory matches are not surfaced automatically.
 
+Those same ranked list-mode responses include **`telemetry.jevRerank`** when the
+ranker computed the Jev Score stage — including skipped and fallback outcomes
+such as `skipped-flag-off`, `skipped-offline`, `fallback-error`, and `applied` —
+plus **`phaseTimings.jevRerankMs`** for that stage. Entity lookups, domain
+listings, empty/broad discovery, `search({ domain })`, and exact package
+identity omit the field because Jev does not run. The `search` meta capability
+(usable inside **execute**) returns the same `telemetry.jevRerank` object on
+ranked `query` results.
+
 Those same ranked `search({ query })` calls may also prepend a **`## Waiting`**
 block when something the signed-in human must clear is `block` or `degraded`
 (reconnectable OAuth, expired secrets, MCP reconnects). Setup/onboarding cards
