@@ -367,8 +367,11 @@ Worker secrets:
 
 - **`AI_GATEWAY_ID`** — Cloudflare AI Gateway id. When set, embedding and Jev
   Score calls use the Workers AI binding `gateway` option so production and
-  preview inference is logged/routed through AI Gateway. When unset, the Worker
-  calls Workers AI directly.
+  preview inference is logged/routed through AI Gateway. When unset, embeddings
+  call Workers AI directly; `typesafe/jev` does not (that third-party model
+  requires AI Gateway plus Unified Billing or BYOK). The configured gateway must
+  have authentication enabled and a non-zero Unified Billing balance, or a BYOK
+  key; authentication off yields HTTP 403, zero credits yields HTTP 402.
 - **`CAPABILITY_REINDEX_SECRET`** — strongly recommended for production (CI
   skips the post-deploy capability reindex and origin-only execute smoke check
   when it is unset); bearer token for

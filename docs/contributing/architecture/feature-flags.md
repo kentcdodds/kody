@@ -76,10 +76,13 @@ the same way: delete the definition and every gate site.
 
 `jev-search-rerank` is an experiment (default **off**) that widens ranked MCP
 `search({ query })` hybrid recall and runs a Workers AI `typesafe/jev` Score
-rerank/filter behind AI Gateway when configured. Offline/deterministic search
-skips Jev and uses hybrid order. Ranked list-mode structured content reports the
-stage on `telemetry.jevRerank` and `phaseTimings.jevRerankMs`; see
-[Search](../../use/search.md). Enable for dogfood with
+rerank/filter through AI Gateway. That model requires Gateway authentication and
+Unified Billing credits (or BYOK); missing Gateway or a Gateway 403/402 records
+`telemetry.jevRerank.outcome` `fallback-error` with `errorReason`.
+Offline/deterministic search skips Jev and uses hybrid order. Ranked list-mode
+structured content reports the stage on `telemetry.jevRerank` and
+`phaseTimings.jevRerankMs`; see [Search](../../use/search.md). Enable for
+dogfood with
 `adminFeatureFlagOverride({ key: "jev-search-rerank", username: "kentcdodds", enabled: true })`.
 Remove the flag and gate sites when the experiment ends.
 

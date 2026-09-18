@@ -98,7 +98,10 @@ Production names from committed Wrangler / ensure scripts
 - **Images** — binding `IMAGES` on origin and platform (no extra resource to
   create).
 - **Workers AI** — binding `AI`. Optional AI Gateway id (`AI_GATEWAY_ID` /
-  `AI_GATEWAY_ID_PREVIEW`).
+  `AI_GATEWAY_ID_PREVIEW`). Ranked-search Jev Score (`typesafe/jev`) requires
+  that gateway: authentication enabled and Unified Billing credits (or BYOK).
+  Auth off is HTTP 403; zero credits is HTTP 402. Embeddings (`@cf/baai/…`)
+  still succeed without Gateway.
 - **OTLP traces** — account destination `sentry-otlp-traces` → Sentry project
   `kody-cloudflare`. Dashboard: **Workers Observability → Destinations**.
 
@@ -154,7 +157,8 @@ value.
 | Control-plane `CLOUDFLARE_API_TOKEN` | DR Worker secret                                              | Production-account D1 Edit (export + import). Separate from the Actions deploy token |
 
 `AI_GATEWAY_ID` / `AI_GATEWAY_ID_PREVIEW` are optional Worker secrets (Gateway
-id, not a Cloudflare API token).
+id, not a Cloudflare API token). For `typesafe/jev`, the configured gateway must
+have authentication enabled and Unified Billing credits (or BYOK).
 
 ### Other Cloudflare-owned Worker / Actions names
 
