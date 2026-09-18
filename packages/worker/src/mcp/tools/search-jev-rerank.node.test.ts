@@ -5,6 +5,7 @@ import {
 	jevSearchMinKeepScore,
 	jevSearchModel,
 	jevSearchScoreQuestionBatchSize,
+	normalizeJevRunResponse,
 	rerankSearchCandidatesWithJev,
 	resolveJevSearchRecallLimit,
 } from './search-jev-rerank.ts'
@@ -375,7 +376,7 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 	})
 	expect(incompleteAnswers.outcome).toBe('fallback-error')
 	expect(incompleteAnswers.errorReason).toBe(
-		'incomplete-score-answers expected=2 received=0',
+		'incomplete-score-answers expected=2 received=0 keys=answers result.answers=missing answerKeys=c0',
 	)
 	expect(incompleteRun).toHaveBeenCalledOnce()
 
@@ -469,7 +470,7 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 	expect(partialBatch.model).toBe(jevSearchModel)
 	expect(partialBatch.aiCallCount).toBe(2)
 	expect(partialBatch.errorReason).toBe(
-		`incomplete-score-answers expected=${String(widePool.length)} received=${String(jevSearchScoreQuestionBatchSize)}`,
+		`incomplete-score-answers expected=${String(widePool.length)} received=${String(jevSearchScoreQuestionBatchSize)} keys=answers result.answers=missing answerKeys=${Array.from({ length: jevSearchScoreQuestionBatchSize }, (_, index) => `c${String(index)}`).join(',')}`,
 	)
 	expect(partialBatch.candidates.map((candidate) => candidate.id)).toEqual([
 		widePool[0]!.id,
@@ -481,5 +482,142 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 	})
 	expect(partialBatchRun.mock.calls[1]?.[2]).toEqual({
 		gateway: { id: 'kody' },
+	})
+})
+
+test('normalizeJevRunResponse unwraps gateway envelopes and docs Score payloads', () => {
+	const docsScoreAnswer = {
+		type: 'score' as const,
+		score: 1.04,
+		confidence: 0.94,
+		legend: {
+			'0': 'Calm',
+			'1': 'Frustrated',
+			'2': 'Very angry',
+		},
+		probabilities: {
+			'0': 0,
+			'1': 0.96,
+			'2': 0.04,
+		},
+	}
+	const docsUsage = { input_tokens: 426, output_tokens: 73 }
+	const unwrapped = normalizeJevRunResponse({
+		model: 'jev-1.13.0',
+		answers: { frustration: docsScoreAnswer },
+		usage: docsUsage,
+	})
+	expect(unwrapped.rawTopLevelKeys).toEqual(['model', 'answers', 'usage'])
+	expect(unwrapped.resultAnswers).toBe('missing')
+	expect(unwrapped.payload.answers).toEqual({ frustration: docsScoreAnswer })
+	expect(unwrapped.payload.usage).toEqual(docsUsage)
+
+	const wrapped = normalizeJevRunResponse({
+		success: true,
+		errors: [],
+		messages: [],
+		result: {
+			model: 'jev-1.13.0',
+			answers: { frustration: docsScoreAnswer },
+			usage: docsUsage,
+		},
+	})
+	expect(wrapped.rawTopLevelKeys).toEqual([
+		'success',
+		'errors',
+		'messages',
+		'result',
+	])
+	expect(wrapped.resultAnswers).toBe('object')
+	expect(wrapped.payload.answers).toEqual({ frustration: docsScoreAnswer })
+	expect(wrapped.payload.usage).toEqual(docsUsage)
+})
+
+test('rerankSearchCandidatesWithJev applies wrapped gateway Score answers and samples missing-answer keys', async () => {
+	const pair = [
+		makeCandidate({ id: 'a', title: 'A' }),
+		makeCandidate({ id: 'b', title: 'B' }),
+	]
+	const intent = makeIntent('send email', 0.9)
+
+	const wrappedRun = vi.fn(async () => ({
+		success: true,
+		errors: [],
+		messages: [],
+		result: {
+			model: 'jev-1.13.0',
+			answers: {
+				c0: { type: 'score', score: 0.2, confidence: 0.9 },
+				c1: { type: 'score', score: 2.7, confidence: 0.95 },
+			},
+			usage: { input_tokens: 426, output_tokens: 73 },
+		},
+	}))
+	const wrapped = await rerankSearchCandidatesWithJev({
+		env: {
+			AI: { run: wrappedRun },
+			AI_GATEWAY_ID: 'kody',
+		} as unknown as Env,
+		query: 'send email',
+		intent,
+		candidates: pair,
+		limit: 2,
+		offline: false,
+		enabled: true,
+	})
+	expect(wrapped.outcome).toBe('applied')
+	expect(wrapped.errorReason).toBeUndefined()
+	expect(wrapped.candidates.map((candidate) => candidate.id)).toEqual(['b'])
+	expect(wrapped.usage).toEqual({ inputTokens: 426, outputTokens: 73 })
+	expect(wrappedRun).toHaveBeenCalledOnce()
+
+	const unwrappedRun = vi.fn(async () => ({
+		model: 'jev-1.13.0',
+		answers: {
+			c0: { type: 'score', score: 2.8, confidence: 0.91 },
+			c1: { type: 'score', score: 0.4, confidence: 0.88 },
+		},
+		usage: { input_tokens: 190, output_tokens: 0 },
+	}))
+	const unwrapped = await rerankSearchCandidatesWithJev({
+		env: {
+			AI: { run: unwrappedRun },
+			AI_GATEWAY_ID: 'kody',
+		} as unknown as Env,
+		query: 'send email',
+		intent,
+		candidates: pair,
+		limit: 2,
+		offline: false,
+		enabled: true,
+	})
+	expect(unwrapped.outcome).toBe('applied')
+	expect(unwrapped.candidates.map((candidate) => candidate.id)).toEqual(['a'])
+	expect(unwrapped.usage).toEqual({ inputTokens: 190, outputTokens: 0 })
+
+	const envelopeWithoutAnswers = vi.fn(async () => ({
+		success: true,
+		errors: [],
+		result: { model: 'jev-1.13.0' },
+	}))
+	const missingAnswers = await rerankSearchCandidatesWithJev({
+		env: {
+			AI: { run: envelopeWithoutAnswers },
+			AI_GATEWAY_ID: 'kody',
+		} as unknown as Env,
+		query: 'send email',
+		intent,
+		candidates: pair,
+		limit: 2,
+		offline: false,
+		enabled: true,
+	})
+	expect(missingAnswers.outcome).toBe('fallback-error')
+	expect(missingAnswers.errorReason).toBe(
+		'incomplete-score-answers expected=2 received=0 keys=success,errors,result result.answers=missing answerKeys=none',
+	)
+	expect(missingAnswers.usage).toEqual({
+		inputTokens: null,
+		outputTokens: null,
 	})
 })
