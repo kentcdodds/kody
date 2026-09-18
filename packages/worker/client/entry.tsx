@@ -13,12 +13,16 @@ import {
 import { AppRoot } from './app-root.tsx'
 import { ensureConstructableStylesheets } from './ensure-constructable-stylesheets.ts'
 import { ensureCryptoRandomUUID } from './ensure-crypto-random-uuid.ts'
+import { ensureObjectHasOwn } from './ensure-object-has-own.ts'
 
 // Remix frame ids call crypto.randomUUID(); some in-app browsers omit it.
 ensureCryptoRandomUUID()
 // Remix StyleManager uses `new CSSStyleSheet()` + adoptedStyleSheets; Safari
 // / iOS before 16.4 throw TypeError: Illegal constructor (KODY-CLOUDFLARE-63).
 ensureConstructableStylesheets()
+// Remix frame runtime calls Object.hasOwn(); Whale 4.34.340 and other older
+// Chromium-based browsers do not implement this ES2022 method (KODY-7R).
+ensureObjectHasOwn()
 initSentryClient(document)
 
 const clientRegistry: Record<string, typeof AppRoot> = {
