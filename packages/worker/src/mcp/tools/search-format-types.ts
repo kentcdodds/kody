@@ -84,6 +84,8 @@ export type SearchResultStructuredContent = {
 			droppedCount: number
 			meanConfidence: number | null
 			top1Type: SearchMatchType | null
+			/** Present only when `outcome` is `fallback-error`. */
+			errorReason?: string
 		}
 	}
 	waiting?: {

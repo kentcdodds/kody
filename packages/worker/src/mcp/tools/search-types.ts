@@ -105,6 +105,8 @@ export type SearchTelemetry = {
 		droppedCount: number
 		meanConfidence: number | null
 		top1Type: SearchMatch['type'] | null
+		/** Present only when `outcome` is `fallback-error`. */
+		errorReason?: string
 	}
 }
 

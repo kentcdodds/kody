@@ -118,7 +118,10 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 		},
 	}))
 	const applied = await rerankSearchCandidatesWithJev({
-		env: { AI: { run: applyRun } } as unknown as Env,
+		env: {
+			AI: { run: applyRun },
+			AI_GATEWAY_ID: 'kody',
+		} as unknown as Env,
 		query: 'send email',
 		intent,
 		candidates: ranked,
@@ -127,11 +130,13 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 		enabled: true,
 	})
 	expect(applied.outcome).toBe('applied')
+	expect(applied.errorReason).toBeUndefined()
 	expect(applied.candidates.map((candidate) => candidate.id)).toEqual(['email'])
 	expect(applied.droppedCount).toBe(2)
 	expect(applied.top1Type).toBe('capability')
 	expect(applyRun).toHaveBeenCalledOnce()
 	expect(applyRun.mock.calls[0]?.[0]).toBe('typesafe/jev')
+	expect(applyRun.mock.calls[0]?.[2]).toEqual({ gateway: { id: 'kody' } })
 	expect(applyRun.mock.calls[0]?.[1]).toEqual(
 		expect.objectContaining({
 			state: expect.objectContaining({
@@ -181,7 +186,10 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 		},
 	}))
 	const emptyAfterDrop = await rerankSearchCandidatesWithJev({
-		env: { AI: { run: emptyAfterDropRun } } as unknown as Env,
+		env: {
+			AI: { run: emptyAfterDropRun },
+			AI_GATEWAY_ID: 'kody',
+		} as unknown as Env,
 		query: 'send email',
 		intent,
 		candidates: pair,
@@ -195,12 +203,54 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 		'b',
 	])
 
-	const failingRun = vi.fn(async () => {
-		throw new Error('gateway down')
-	})
 	consoleWarn.mockImplementation(() => {})
+	const missingGatewayRun = vi.fn()
+	const missingGateway = await rerankSearchCandidatesWithJev({
+		env: { AI: { run: missingGatewayRun } } as unknown as Env,
+		query: 'packages',
+		intent: makeIntent('packages', 0.7),
+		candidates: pair,
+		limit: 2,
+		offline: false,
+		enabled: true,
+	})
+	expect(missingGateway.outcome).toBe('fallback-error')
+	expect(missingGateway.errorReason).toBe(
+		'ai-gateway-required-for-typesafe-jev',
+	)
+	expect(missingGateway.candidates.map((candidate) => candidate.id)).toEqual([
+		'a',
+		'b',
+	])
+	expect(missingGatewayRun).not.toHaveBeenCalled()
+
+	const blankGatewayRun = vi.fn()
+	const blankGateway = await rerankSearchCandidatesWithJev({
+		env: {
+			AI: { run: blankGatewayRun },
+			AI_GATEWAY_ID: '   ',
+		} as unknown as Env,
+		query: 'packages',
+		intent: makeIntent('packages', 0.7),
+		candidates: pair,
+		limit: 2,
+		offline: false,
+		enabled: true,
+	})
+	expect(blankGateway.outcome).toBe('fallback-error')
+	expect(blankGateway.errorReason).toBe('ai-gateway-required-for-typesafe-jev')
+	expect(blankGatewayRun).not.toHaveBeenCalled()
+
+	const failingRun = vi.fn(async () => {
+		throw new Error(
+			'Insufficient balance; add money to your gateway or use BYOK',
+		)
+	})
 	const fallbackError = await rerankSearchCandidatesWithJev({
-		env: { AI: { run: failingRun } } as unknown as Env,
+		env: {
+			AI: { run: failingRun },
+			AI_GATEWAY_ID: 'kody',
+		} as unknown as Env,
 		query: 'packages',
 		intent: makeIntent('packages', 0.7),
 		candidates: pair,
@@ -209,9 +259,76 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 		enabled: true,
 	})
 	expect(fallbackError.outcome).toBe('fallback-error')
+	expect(fallbackError.errorReason).toBe(
+		'Insufficient balance; add money to your gateway or use BYOK',
+	)
 	expect(fallbackError.candidates.map((candidate) => candidate.id)).toEqual([
 		'a',
 		'b',
 	])
+	expect(failingRun).toHaveBeenCalledOnce()
+	expect(failingRun.mock.calls[0]?.[2]).toEqual({ gateway: { id: 'kody' } })
 	expect(consoleWarn).toHaveBeenCalled()
+
+	const longMessage = `Gateway authentication is required to use unified billing. ${'x'.repeat(300)}`
+	const longErrorRun = vi.fn(async () => {
+		throw new Error(longMessage)
+	})
+	const longError = await rerankSearchCandidatesWithJev({
+		env: {
+			AI: { run: longErrorRun },
+			AI_GATEWAY_ID: 'kody',
+		} as unknown as Env,
+		query: 'packages',
+		intent: makeIntent('packages', 0.7),
+		candidates: pair,
+		limit: 2,
+		offline: false,
+		enabled: true,
+	})
+	expect(longError.outcome).toBe('fallback-error')
+	expect(longError.errorReason).toBeDefined()
+	expect(longError.errorReason?.length).toBeLessThanOrEqual(240)
+	expect(longError.errorReason?.endsWith('...')).toBe(true)
+	expect(longErrorRun).toHaveBeenCalledOnce()
+
+	const blankMessageRun = vi.fn(async () => {
+		throw new Error('   ')
+	})
+	const blankMessage = await rerankSearchCandidatesWithJev({
+		env: {
+			AI: { run: blankMessageRun },
+			AI_GATEWAY_ID: 'kody',
+		} as unknown as Env,
+		query: 'packages',
+		intent: makeIntent('packages', 0.7),
+		candidates: pair,
+		limit: 2,
+		offline: false,
+		enabled: true,
+	})
+	expect(blankMessage.outcome).toBe('fallback-error')
+	expect(blankMessage.errorReason).toBe('unknown-jev-error')
+	expect(blankMessageRun).toHaveBeenCalledOnce()
+
+	const incompleteRun = vi.fn(async () => ({
+		answers: {
+			c0: { type: 'score', score: 2.4 },
+		},
+	}))
+	const incompleteAnswers = await rerankSearchCandidatesWithJev({
+		env: {
+			AI: { run: incompleteRun },
+			AI_GATEWAY_ID: 'kody',
+		} as unknown as Env,
+		query: 'packages',
+		intent: makeIntent('packages', 0.7),
+		candidates: pair,
+		limit: 2,
+		offline: false,
+		enabled: true,
+	})
+	expect(incompleteAnswers.outcome).toBe('fallback-error')
+	expect(incompleteAnswers.errorReason).toBe('incomplete-score-answers')
+	expect(incompleteRun).toHaveBeenCalledOnce()
 })

@@ -410,6 +410,9 @@ export async function searchUnified(input: {
 				droppedCount: jevRerank.droppedCount,
 				meanConfidence: jevRerank.meanConfidence,
 				top1Type: jevRerank.top1Type,
+				...(jevRerank.errorReason
+					? { errorReason: jevRerank.errorReason }
+					: {}),
 			},
 		},
 		phaseTimings: {

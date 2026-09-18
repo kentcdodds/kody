@@ -3,8 +3,10 @@
  *
  * Hybrid lexical+vector recall stays the retriever. When the
  * `jev-search-rerank` flag is on, a wider candidate pool is scored by
- * Workers AI `typesafe/jev` (via AI Gateway when configured). Failures and
- * low confidence fall back to the pre-Jev hybrid order for the same pool.
+ * Workers AI `typesafe/jev` through AI Gateway. That third-party model
+ * requires Gateway authentication and Unified Billing (or BYOK); the
+ * Worker does not fall back to direct Workers AI. Failures and low
+ * confidence fall back to the pre-Jev hybrid order for the same pool.
  *
  * Offline / deterministic embedding paths never call Jev.
  */
@@ -41,6 +43,13 @@ export const jevSearchMinKeepScore = 1.5
 
 export const jevSearchModel = 'typesafe/jev'
 
+/** Safe length for `errorReason` on fallback-error telemetry. */
+const jevSearchErrorReasonMaxChars = 240
+
+const jevSearchGatewayRequiredReason = 'ai-gateway-required-for-typesafe-jev'
+
+const jevSearchIncompleteScoreAnswersReason = 'incomplete-score-answers'
+
 export type JevSearchSkinnyCard = {
 	index: number
 	type: SearchCandidate['type']
@@ -59,6 +68,8 @@ export type JevSearchRerankResult = {
 	droppedCount: number
 	meanConfidence: number | null
 	top1Type: SearchCandidate['type'] | null
+	/** Present only when `outcome` is `fallback-error`. */
+	errorReason?: string
 }
 
 type JevScoreAnswer = {
@@ -161,7 +172,14 @@ async function runJevScoreRequest(
 	)) as JevRunResponse
 }
 
-async function runJevWithGatewayFallback(
+function toJevErrorReason(error: unknown): string {
+	return (
+		oneLine(getErrorMessage(error), jevSearchErrorReasonMaxChars) ||
+		'unknown-jev-error'
+	)
+}
+
+async function runJevViaGateway(
 	runtime: JevRuntimeEnv & { AI: Ai },
 	body: {
 		state: Record<string, unknown>
@@ -169,30 +187,23 @@ async function runJevWithGatewayFallback(
 	},
 ): Promise<JevRunResponse> {
 	const gatewayId = runtime.AI_GATEWAY_ID?.trim()
-	if (gatewayId) {
-		try {
-			return await runJevScoreRequest(runtime, body, {
-				gateway: { id: gatewayId },
-			})
-		} catch (error) {
-			console.warn(
-				JSON.stringify({
-					message:
-						'Workers AI Gateway Jev request failed; retrying direct Workers AI',
-					gatewayId,
-					error: getErrorMessage(error),
-				}),
-			)
-			try {
-				return await runJevScoreRequest(runtime, body)
-			} catch (directError) {
-				throw new Error(
-					`Workers AI Jev request failed after AI Gateway fallback. Gateway error: ${getErrorMessage(error)}. Direct error: ${getErrorMessage(directError)}`,
-				)
-			}
-		}
+	if (!gatewayId) {
+		throw new Error(jevSearchGatewayRequiredReason)
 	}
-	return await runJevScoreRequest(runtime, body)
+	try {
+		return await runJevScoreRequest(runtime, body, {
+			gateway: { id: gatewayId },
+		})
+	} catch (error) {
+		console.warn(
+			JSON.stringify({
+				message: 'Workers AI Gateway Jev request failed',
+				gatewayId,
+				error: getErrorMessage(error),
+			}),
+		)
+		throw error
+	}
 }
 
 function parseScoreAnswers(
@@ -249,7 +260,10 @@ export async function rerankSearchCandidatesWithJev(input: {
 
 	const emptyResult = (
 		outcome: JevSearchRerankOutcome,
-		meanConfidence: number | null = null,
+		extras?: {
+			meanConfidence?: number | null
+			errorReason?: string
+		},
 	): JevSearchRerankResult => ({
 		candidates: hybridCandidates.slice(0, Math.max(1, input.limit)),
 		outcome,
@@ -257,8 +271,9 @@ export async function rerankSearchCandidatesWithJev(input: {
 		candidatesBefore,
 		candidatesAfter: Math.min(candidatesBefore, Math.max(0, input.limit)),
 		droppedCount: 0,
-		meanConfidence,
+		meanConfidence: extras?.meanConfidence ?? null,
 		top1Type: hybridCandidates[0]?.type ?? null,
+		...(extras?.errorReason ? { errorReason: extras.errorReason } : {}),
 	})
 
 	if (!input.enabled) return emptyResult('skipped-flag-off')
@@ -274,7 +289,7 @@ export async function rerankSearchCandidatesWithJev(input: {
 	)
 
 	try {
-		const response = await runJevWithGatewayFallback(
+		const response = await runJevViaGateway(
 			runtime as JevRuntimeEnv & { AI: Ai },
 			{
 				state: {
@@ -291,11 +306,13 @@ export async function rerankSearchCandidatesWithJev(input: {
 		)
 		const parsed = parseScoreAnswers(response, cards.length)
 		if (!parsed) {
-			return emptyResult('fallback-error')
+			return emptyResult('fallback-error', {
+				errorReason: jevSearchIncompleteScoreAnswersReason,
+			})
 		}
 		const meanConfidence = mean(parsed.confidences)
 		if (meanConfidence < jevSearchMinMeanConfidence) {
-			return emptyResult('fallback-low-confidence', meanConfidence)
+			return emptyResult('fallback-low-confidence', { meanConfidence })
 		}
 
 		const ranked = pool
@@ -314,7 +331,7 @@ export async function rerankSearchCandidatesWithJev(input: {
 		if (kept.length === 0) {
 			// Every score missed the keep threshold — preserve pre-Jev hybrid
 			// order rather than returning the rejected Jev sort.
-			return emptyResult('fallback-empty-after-drop', meanConfidence)
+			return emptyResult('fallback-empty-after-drop', { meanConfidence })
 		}
 		const candidates = kept
 			.slice(0, Math.max(1, input.limit))
@@ -336,6 +353,8 @@ export async function rerankSearchCandidatesWithJev(input: {
 				error: getErrorMessage(error),
 			}),
 		)
-		return emptyResult('fallback-error')
+		return emptyResult('fallback-error', {
+			errorReason: toJevErrorReason(error),
+		})
 	}
 }

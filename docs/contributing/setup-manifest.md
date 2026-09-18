@@ -129,7 +129,9 @@ This project uses the following resources:
   - `binding`: `AI`
   - Production and preview route embedding and Jev Score (`typesafe/jev`) calls
     through this binding. When `AI_GATEWAY_ID` is configured, calls are sent
-    through AI Gateway via the Workers AI binding options.
+    through AI Gateway via the Workers AI binding options. `typesafe/jev`
+    requires that gateway (authentication plus Unified Billing credits or BYOK);
+    embeddings can still call Workers AI directly when the id is unset.
 - Second registrable domain for hosted package apps
   - Production: `kody.run` (zone in the same Cloudflare account, on Cloudflare
     nameservers), served by the runtime Worker via **zone routes** plus proxied
@@ -469,7 +471,10 @@ automatically:
   Wrangler environment in `packages/worker/wrangler.jsonc` — e.g. `production`
   and `preview` — so Artifacts repos are partitioned by deploy environment.)
 - `AI_GATEWAY_ID` (optional Worker secret; routes Workers AI embedding and Jev
-  Score calls through the configured Cloudflare AI Gateway when set)
+  Score calls through the configured Cloudflare AI Gateway when set. For
+  `typesafe/jev`, that gateway must have authentication enabled and Unified
+  Billing credits, or BYOK; authentication off yields HTTP 403, zero credits
+  yields HTTP 402. Embeddings still work without Gateway; Jev does not.)
 - `CAPABILITY_REINDEX_SECRET` (strongly recommended for production — CI skips
   the post-deploy reindex and origin-only execute smoke check when unset;
   optional locally and for previews; bearer auth for
@@ -557,9 +562,11 @@ Configure these GitHub Actions secrets and variables for workflows:
   generated Worker `vars` config before deploy. Request-scoped MCP/app URLs use
   the inbound request origin.)
 - `AI_GATEWAY_ID` (optional for production deploys; enables AI Gateway routing
-  for Workers AI embeddings and Jev Score)
+  for Workers AI embeddings and Jev Score. `typesafe/jev` requires this gateway
+  to have authentication enabled and Unified Billing credits or BYOK)
 - `AI_GATEWAY_ID_PREVIEW` (optional for preview deploys; enables AI Gateway
-  routing for Workers AI embeddings and Jev Score)
+  routing for Workers AI embeddings and Jev Score; same auth/credits requirement
+  for `typesafe/jev`)
 - `SENTRY_DSN` (optional; create a JavaScript/Cloudflare project in Sentry and
   paste the DSN; syncs to the Worker as a secret when set in GitHub Actions)
 - `YOUTUBE_DATA_API_KEY` (optional origin-only; YouTube Data API key for the
@@ -705,7 +712,11 @@ How to get/set each value:
 - `AI_GATEWAY_ID`
   - Create a Cloudflare AI Gateway in the dashboard and copy its production
     gateway ID. The Worker uses this for Workers AI embedding and Jev Score
-    calls when set; leave unset only if direct Workers AI calls are preferred.
+    calls when set. Embeddings can still call Workers AI directly when unset;
+    `typesafe/jev` cannot — ranked-search Jev Score requires this gateway.
+    Enable authentication on the gateway and keep Unified Billing credits (or
+    provide BYOK). Authentication off yields HTTP 403; zero credits yields
+    HTTP 402.
   - Store that value as the production GitHub Actions secret.
 - `AI_GATEWAY_ID_PREVIEW`
   - Create a separate Cloudflare AI Gateway for previews and copy its gateway
