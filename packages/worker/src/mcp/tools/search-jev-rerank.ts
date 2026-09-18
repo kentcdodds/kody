@@ -173,7 +173,10 @@ async function runJevScoreRequest(
 }
 
 function toJevErrorReason(error: unknown): string {
-	return oneLine(getErrorMessage(error), jevSearchErrorReasonMaxChars)
+	return (
+		oneLine(getErrorMessage(error), jevSearchErrorReasonMaxChars) ||
+		'unknown-jev-error'
+	)
 }
 
 async function runJevViaGateway(

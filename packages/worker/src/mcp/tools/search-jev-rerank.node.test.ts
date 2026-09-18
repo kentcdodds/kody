@@ -292,6 +292,25 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 	expect(longError.errorReason?.endsWith('...')).toBe(true)
 	expect(longErrorRun).toHaveBeenCalledOnce()
 
+	const blankMessageRun = vi.fn(async () => {
+		throw new Error('   ')
+	})
+	const blankMessage = await rerankSearchCandidatesWithJev({
+		env: {
+			AI: { run: blankMessageRun },
+			AI_GATEWAY_ID: 'kody',
+		} as unknown as Env,
+		query: 'packages',
+		intent: makeIntent('packages', 0.7),
+		candidates: pair,
+		limit: 2,
+		offline: false,
+		enabled: true,
+	})
+	expect(blankMessage.outcome).toBe('fallback-error')
+	expect(blankMessage.errorReason).toBe('unknown-jev-error')
+	expect(blankMessageRun).toHaveBeenCalledOnce()
+
 	const incompleteRun = vi.fn(async () => ({
 		answers: {
 			c0: { type: 'score', score: 2.4 },
