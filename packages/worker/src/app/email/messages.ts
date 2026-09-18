@@ -316,9 +316,9 @@ export function buildAdvocateReferralEmail(input: {
 }) {
 	return renderTransactionalEmail({
 		appBaseUrl: input.appBaseUrl,
-		subject: 'Share Kody (and a free month)',
+		subject: 'Share Kody (and get a month free)',
 		preheader: 'Invite a friend. Tell us what stuck.',
-		heading: 'Share Kody — and keep a month',
+		heading: 'Share Kody and get a month free',
 		body: [
 			"You've been using Kody long enough to know if it stuck. Send someone you trust your invite. When they pay their first invoice, you both get a Standard month.",
 			"If you have thirty seconds, reply to this email and tell me what you think about Kody and how you're using it.",

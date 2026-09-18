@@ -634,7 +634,8 @@ test('advocate one-shot uses the live referral share URL and never repeats', asy
 		text: string
 	}
 	expect(payload.to).toBe('advocate@example.com')
-	expect(payload.subject).toBe('Share Kody (and a free month)')
+	expect(payload.subject).toBe('Share Kody (and get a month free)')
+	expect(payload.html).toContain('Share Kody and get a month free')
 	expect(payload.html).toContain('https://kody.codes/signup?ref=kentcdodds')
 	expect(payload.text).toContain(
 		'mailto:me@kentcdodds.com?subject=Kody%20testimonial',
