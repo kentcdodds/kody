@@ -21,4 +21,7 @@ export type {
 	SearchResultStructuredContent,
 	SlimSearchMatch,
 } from './search-format-types.ts'
-export { searchEntityRefTypes } from './search-format-types.ts'
+export {
+	jevSearchRerankOutcomes,
+	searchEntityRefTypes,
+} from './search-format-types.ts'

@@ -319,9 +319,16 @@ test('search tool returns compact query markdown while preserving structured aux
 		warnings: Array<string>
 		guidance?: string
 		memories?: { surfaced: Array<{ id: string }> }
+		telemetry?: {
+			jevRerank?: {
+				enabled: boolean
+				outcome: string
+			}
+		}
 		phaseTimings?: {
 			memoryEnrichmentMs?: number
 			memoryEnrichmentTimedOut?: boolean
+			jevRerankMs?: number
 		}
 		matches: Array<{ type: string; entityRef?: string }>
 	}
@@ -342,6 +349,12 @@ test('search tool returns compact query markdown while preserving structured aux
 	expect(result.memories?.surfaced).toEqual([
 		expect.objectContaining({ id: 'memory-1' }),
 	])
+	expect(result.telemetry?.jevRerank).toEqual(
+		expect.objectContaining({
+			enabled: false,
+			outcome: 'skipped-flag-off',
+		}),
+	)
 	expect(result.phaseTimings).toEqual(
 		expect.objectContaining({
 			memoryEnrichmentTimedOut: false,
@@ -352,6 +365,7 @@ test('search tool returns compact query markdown while preserving structured aux
 			waitingItemsMs: expect.any(Number),
 			exclusiveMs: expect.any(Number),
 			unaccountedMs: expect.any(Number),
+			jevRerankMs: expect.any(Number),
 		}),
 	)
 	expect(result.phaseTimings?.exclusiveMs).toBeLessThanOrEqual(

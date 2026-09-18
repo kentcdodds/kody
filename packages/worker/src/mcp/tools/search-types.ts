@@ -8,8 +8,13 @@ import { type PackageSearchProjection } from '#worker/package-registry/manifest.
 import { type PackageReadmeSnippet } from '#worker/package-registry/package-readme.ts'
 import { type listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 
-import { type SearchMatch } from './search-format-types.ts'
+import {
+	type JevSearchRerankOutcome,
+	type SearchMatch,
+} from './search-format-types.ts'
 import { type SearchIntent } from './understand-search-query.ts'
+
+export type { JevSearchRerankOutcome }
 
 export type PackageSearchRow = {
 	record: Awaited<ReturnType<typeof listSavedPackagesByUserId>>[number]
@@ -74,16 +79,6 @@ export type SearchCandidate = {
 	synthesizedProviderKey?: string
 	scoreComponents: SearchScoreComponents
 }
-
-export type JevSearchRerankOutcome =
-	| 'applied'
-	| 'fallback-error'
-	| 'fallback-low-confidence'
-	| 'fallback-empty-after-drop'
-	| 'skipped-offline'
-	| 'skipped-no-ai'
-	| 'skipped-flag-off'
-	| 'skipped-empty'
 
 export type SearchTelemetry = {
 	intent: {

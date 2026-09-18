@@ -3,6 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import {
+	jevSearchRerankOutcomes,
 	toSlimStructuredMatches,
 	type SlimSearchMatch,
 } from '#mcp/tools/search-format.ts'
@@ -26,6 +27,20 @@ const memoryResultSchema = z.object({
 	retrieverWarnings: z.array(z.string()).optional(),
 })
 
+const jevRerankTelemetrySchema = z
+	.object({
+		enabled: z.boolean(),
+		outcome: z.enum(jevSearchRerankOutcomes),
+		candidatesBefore: z.number().int().nonnegative(),
+		candidatesAfter: z.number().int().nonnegative(),
+		droppedCount: z.number().int().nonnegative(),
+		meanConfidence: z.number().nullable(),
+		top1Type: z.string().nullable(),
+	})
+	.describe(
+		'Jev Score rerank stage for list-mode ranked search. Present when the ranked path ran or skipped the stage. Omitted for domain overview, domain browse, empty discovery, and exact-package identity.',
+	)
+
 const searchOutputSchema = z.object({
 	conversationId: z.string(),
 	matches: z.array(z.unknown()),
@@ -33,6 +48,22 @@ const searchOutputSchema = z.object({
 	warnings: z.array(z.string()),
 	guidance: z.string().optional(),
 	memories: memoryResultSchema.optional(),
+	telemetry: z
+		.object({
+			jevRerank: jevRerankTelemetrySchema,
+		})
+		.optional()
+		.describe(
+			'List-mode ranked search telemetry. Omitted when Jev never ran (entity-style short circuits, domain overview, domain browse, exact package identity).',
+		),
+	phaseTimings: z
+		.object({
+			jevRerankMs: z.number().nonnegative().optional(),
+		})
+		.optional()
+		.describe(
+			'Exclusive Jev rerank wall time in milliseconds when the ranked path computed the stage.',
+		),
 })
 
 function normalizeLimit(
@@ -127,6 +158,8 @@ export const searchCapability = defineDomainCapability(
 				memoryContext: args.memoryContext,
 				...(domainFilter ? { domain: domainFilter } : {}),
 			})
+			const jevRerank = execution.result.telemetry.jevRerank
+			const jevRerankMs = execution.result.phaseTimings.jevRerankMs
 			return {
 				conversationId,
 				matches: toSlimStructuredMatches({
@@ -142,6 +175,16 @@ export const searchCapability = defineDomainCapability(
 				...(execution.memorySettlement.memories
 					? {
 							memories: execution.memorySettlement.memories,
+						}
+					: {}),
+				...(jevRerank
+					? {
+							telemetry: { jevRerank },
+						}
+					: {}),
+				...(jevRerankMs != null
+					? {
+							phaseTimings: { jevRerankMs },
 						}
 					: {}),
 			}

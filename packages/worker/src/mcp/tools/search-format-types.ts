@@ -16,6 +16,19 @@ export const searchEntityRefTypes = [
 	'secret',
 ] as const
 
+export const jevSearchRerankOutcomes = [
+	'applied',
+	'fallback-error',
+	'fallback-low-confidence',
+	'fallback-empty-after-drop',
+	'skipped-offline',
+	'skipped-no-ai',
+	'skipped-flag-off',
+	'skipped-empty',
+] as const
+
+export type JevSearchRerankOutcome = (typeof jevSearchRerankOutcomes)[number]
+
 export type SearchEntityType = (typeof searchEntityRefTypes)[number]
 
 type SearchMatchType =
@@ -63,6 +76,15 @@ export type SearchResultStructuredContent = {
 		topResultTypes: Array<SearchMatchType>
 		trimmedMatchCount?: number
 		responseTrimmed?: boolean
+		jevRerank?: {
+			enabled: boolean
+			outcome: JevSearchRerankOutcome
+			candidatesBefore: number
+			candidatesAfter: number
+			droppedCount: number
+			meanConfidence: number | null
+			top1Type: SearchMatchType | null
+		}
 	}
 	waiting?: {
 		count: number
@@ -80,6 +102,7 @@ export type SearchResultStructuredContent = {
 		queryUnderstandingMs: number
 		candidateGenerationMs: number
 		rerankingMs: number
+		jevRerankMs?: number
 		formattingMs?: number
 		rowAndRegistryLoadMs?: number
 		retrieversMs?: number

@@ -200,6 +200,8 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 		context,
 	)
 	expect(hidden.matches).toEqual([])
+	expect(hidden.telemetry?.jevRerank).toBeUndefined()
+	expect(hidden.phaseTimings?.jevRerankMs).toBeUndefined()
 	const included = await searchCapability.handler(
 		{
 			query: packageId,
@@ -230,6 +232,16 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 			entityRef: 'guide:search_and_execute',
 		}),
 	])
+	expect(naturalLanguage.telemetry?.jevRerank).toEqual({
+		enabled: false,
+		outcome: 'skipped-flag-off',
+		candidatesBefore: expect.any(Number),
+		candidatesAfter: expect.any(Number),
+		droppedCount: 0,
+		meanConfidence: null,
+		top1Type: 'capability',
+	})
+	expect(naturalLanguage.phaseTimings?.jevRerankMs).toEqual(expect.any(Number))
 
 	const unauthenticated = await searchCapability.handler(
 		{ query: packageId, conversationId: 'meta-unauthenticated' },
@@ -275,6 +287,8 @@ test('meta search supports domain browsing and empty discovery', async () => {
 			domain: 'meta',
 		}),
 	])
+	expect(browse.telemetry?.jevRerank).toBeUndefined()
+	expect(browse.phaseTimings?.jevRerankMs).toBeUndefined()
 
 	const memoryCallsBeforeEmpty =
 		mockModule.loadRelevantMemoriesForTool.mock.calls.length
@@ -289,6 +303,8 @@ test('meta search supports domain browsing and empty discovery', async () => {
 			capabilityCount: 1,
 		}),
 	])
+	expect(empty.telemetry?.jevRerank).toBeUndefined()
+	expect(empty.phaseTimings?.jevRerankMs).toBeUndefined()
 	expect(mockModule.loadRelevantMemoriesForTool).toHaveBeenCalledTimes(
 		memoryCallsBeforeEmpty,
 	)
