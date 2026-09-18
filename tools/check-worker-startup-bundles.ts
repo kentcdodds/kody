@@ -157,7 +157,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// entry plus shared search list wiring) spilled ~5 KB into the
 		// platform entry: CI measured 5_102_980 bytes against the previous
 		// 5_098_000 budget.
-		maxEntryBytes: 5_105_000,
+		// List-mode search `serverTiming` (execute-shaped `{ name,
+		// durationMs }` including `jevRerank`) adds a few hundred bytes:
+		// CI dry-run 5_105_268 against the previous 5_105_000 budget.
+		maxEntryBytes: 5_107_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
