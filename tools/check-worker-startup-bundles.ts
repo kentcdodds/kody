@@ -160,7 +160,9 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// List-mode search `serverTiming` (execute-shaped `{ name,
 		// durationMs }` including `jevRerank`) adds a few hundred bytes:
 		// CI dry-run 5_105_268 against the previous 5_105_000 budget.
-		maxEntryBytes: 5_107_000,
+		// Jev Score question batching (merge/parse plus expected/received
+		// errorReason) adds a few hundred bytes on top of that wiring.
+		maxEntryBytes: 5_110_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
