@@ -162,6 +162,54 @@ test('rerankSearchCandidatesWithJev applies Score order and drops low scores', a
 	expect(run.mock.calls[0]?.[0]).toBe('typesafe/jev')
 })
 
+test('rerankSearchCandidatesWithJev falls back to hybrid order when every score is dropped', async () => {
+	const candidates = [
+		makeCandidate({ id: 'first', title: 'First' }),
+		makeCandidate({ id: 'second', title: 'Second' }),
+	]
+	const intent = {
+		normalizedQuery: 'send email',
+		tokens: ['send', 'email'],
+		meaningfulTokens: ['send', 'email'],
+		phrases: ['send email'],
+		task: { name: 'inspect' as const, confidence: 0.9 },
+		actions: [],
+		entities: [],
+		constraints: [],
+		confidence: 0.9,
+	}
+	const run = vi.fn(async () => ({
+		answers: {
+			c0: {
+				type: 'score',
+				score: jevSearchMinKeepScore - 1,
+				confidence: 0.9,
+			},
+			c1: {
+				type: 'score',
+				score: jevSearchMinKeepScore - 0.1,
+				confidence: 0.95,
+			},
+		},
+	}))
+
+	const result = await rerankSearchCandidatesWithJev({
+		env: { AI: { run } } as unknown as Env,
+		query: 'send email',
+		intent,
+		candidates,
+		limit: 2,
+		offline: false,
+		enabled: true,
+	})
+
+	expect(result.outcome).toBe('fallback-empty-after-drop')
+	expect(result.candidates.map((candidate) => candidate.id)).toEqual([
+		'first',
+		'second',
+	])
+})
+
 test('rerankSearchCandidatesWithJev falls back on AI errors and never returns blank', async () => {
 	const candidates = [
 		makeCandidate({ id: 'a', title: 'A' }),

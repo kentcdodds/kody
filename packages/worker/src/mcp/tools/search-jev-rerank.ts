@@ -311,16 +311,17 @@ export async function rerankSearchCandidatesWithJev(input: {
 			})
 
 		const kept = ranked.filter((entry) => entry.score >= jevSearchMinKeepScore)
-		const selected = (kept.length > 0 ? kept : ranked).slice(
-			0,
-			Math.max(1, input.limit),
-		)
-		const outcome: JevSearchRerankOutcome =
-			kept.length > 0 ? 'applied' : 'fallback-empty-after-drop'
-		const candidates = selected.map((entry) => entry.candidate)
+		if (kept.length === 0) {
+			// Every score missed the keep threshold — preserve pre-Jev hybrid
+			// order rather than returning the rejected Jev sort.
+			return emptyResult('fallback-empty-after-drop', meanConfidence)
+		}
+		const candidates = kept
+			.slice(0, Math.max(1, input.limit))
+			.map((entry) => entry.candidate)
 		return {
 			candidates,
-			outcome,
+			outcome: 'applied',
 			durationMs: performance.now() - startedAt,
 			candidatesBefore,
 			candidatesAfter: candidates.length,

@@ -672,9 +672,9 @@ export async function runSearchTool(input: {
 			jevDroppedCount: jevTelemetry?.droppedCount,
 			jevMeanConfidence: jevTelemetry?.meanConfidence ?? undefined,
 			jevDurationMs: execution.result.phaseTimings.jevRerankMs,
-			top1TypeCode: encodeSearchTop1Type(
-				jevTelemetry?.top1Type ?? result.matches[0]?.type,
-			),
+			// Prefer the match actually returned (after provider collapse),
+			// not the pre-collapse Jev top-1 type.
+			top1TypeCode: encodeSearchTop1Type(result.matches[0]?.type),
 		})
 		return {
 			content: prependToolMetadataContent(conversationId, [
