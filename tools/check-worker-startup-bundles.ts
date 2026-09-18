@@ -153,7 +153,11 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Destination-verify Cloudflare delivery index
 		// (email_destination_verification) on the shared add/resend path:
 		// local dry-run 5_097_119 bytes.
-		maxEntryBytes: 5_098_000,
+		// Flag-gated Jev search experiment (`jev-search-rerank` registry
+		// entry plus shared search list wiring) spilled ~5 KB into the
+		// platform entry: CI measured 5_102_980 bytes against the previous
+		// 5_098_000 budget.
+		maxEntryBytes: 5_105_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
