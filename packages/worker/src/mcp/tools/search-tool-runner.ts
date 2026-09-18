@@ -40,7 +40,10 @@ import {
 	applyMaxResponseSize,
 	truncateSearchText,
 } from './search-response-size.ts'
-import { recordSearchObservabilityEvent } from './search-observability.ts'
+import {
+	encodeSearchTop1Type,
+	recordSearchObservabilityEvent,
+} from './search-observability.ts'
 import { elapsedMs, reconcileSearchPhaseTimings } from './search-timing.ts'
 import { type SearchPhaseTimings } from './search-types.ts'
 import { type SearchToolArgs } from './search-tool-definition.ts'
@@ -650,6 +653,7 @@ export async function runSearchTool(input: {
 				phaseTimings,
 			},
 		})
+		const jevTelemetry = execution.result.telemetry.jevRerank
 		recordSearchObservabilityEvent(agent.getEnv(), {
 			outcome: 'success',
 			mode: 'list',
@@ -660,6 +664,17 @@ export async function runSearchTool(input: {
 			responseTrimmed: result.telemetry?.responseTrimmed ?? false,
 			trimmedMatchCount,
 			offline: execution.result.offline,
+			jevFlagCohort:
+				jevTelemetry == null ? 'n/a' : jevTelemetry.enabled ? 'on' : 'off',
+			jevOutcome: jevTelemetry?.outcome ?? '',
+			candidatesBeforeJev: jevTelemetry?.candidatesBefore,
+			candidatesAfterJev: jevTelemetry?.candidatesAfter,
+			jevDroppedCount: jevTelemetry?.droppedCount,
+			jevMeanConfidence: jevTelemetry?.meanConfidence ?? undefined,
+			jevDurationMs: execution.result.phaseTimings.jevRerankMs,
+			top1TypeCode: encodeSearchTop1Type(
+				jevTelemetry?.top1Type ?? result.matches[0]?.type,
+			),
 		})
 		return {
 			content: prependToolMetadataContent(conversationId, [

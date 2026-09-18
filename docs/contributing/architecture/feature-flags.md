@@ -74,6 +74,13 @@ end-to-end (`e2e/admin-feature-flags.spec.ts`). Experiment flags such as
 `compact-mcp-server-instructions` live in the same registry and are removed in
 the same way: delete the definition and every gate site.
 
+`jev-search-rerank` is an experiment (default **off**) that widens ranked MCP
+`search({ query })` hybrid recall and runs a Workers AI `typesafe/jev` Score
+rerank/filter behind AI Gateway when configured. Offline/deterministic search
+skips Jev and keeps hybrid order. Enable for dogfood with
+`adminFeatureFlagOverride({ key: "jev-search-rerank", username: "kentcdodds", enabled: true })`.
+Remove the flag and gate sites when the experiment ends.
+
 `compute-overage-charging` is a billing gate, not an experiment (no
 `successMetric`). Registry default is **on**. When on, the
 `compute_overage_billing` lane creates standalone Stripe invoices for

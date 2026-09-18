@@ -42,6 +42,34 @@ export type SearchObservabilityPoint = {
 	responseTrimmed?: boolean
 	trimmedMatchCount?: number
 	offline?: boolean
+	/** Flag cohort for the Jev search experiment (`on` / `off` / `n/a`). */
+	jevFlagCohort?: 'on' | 'off' | 'n/a'
+	/** Stage-2 Jev outcome; empty when not a ranked list search. */
+	jevOutcome?: string
+	candidatesBeforeJev?: number
+	candidatesAfterJev?: number
+	jevDroppedCount?: number
+	jevMeanConfidence?: number
+	jevDurationMs?: number
+	/** Encoded top-1 match type for cohort mix charts; -1 when unknown. */
+	top1TypeCode?: number
+}
+
+const searchTop1TypeCodes = {
+	capability: 1,
+	guide: 2,
+	package: 3,
+	'mcp-server': 4,
+	integration: 5,
+	secret: 6,
+	domain: 7,
+	retriever_result: 8,
+} as const
+
+/** Stable numeric code for top-1 match type mix charts; -1 when unknown. */
+export function encodeSearchTop1Type(type: string | null | undefined): number {
+	if (!type) return -1
+	return searchTop1TypeCodes[type as keyof typeof searchTop1TypeCodes] ?? -1
 }
 
 function numericPhase(
@@ -69,6 +97,8 @@ export function recordSearchObservabilityEvent(
 				input.task ?? '',
 				input.responseTrimmed ? 'trimmed' : 'intact',
 				input.offline ? 'offline' : 'online',
+				input.jevFlagCohort ?? 'n/a',
+				input.jevOutcome ?? '',
 			],
 			doubles: [
 				input.durationMs,
@@ -82,6 +112,14 @@ export function recordSearchObservabilityEvent(
 					? input.intentConfidence
 					: -1,
 				input.trimmedMatchCount ?? 0,
+				input.candidatesBeforeJev ?? -1,
+				input.candidatesAfterJev ?? -1,
+				input.jevDroppedCount ?? -1,
+				typeof input.jevMeanConfidence === 'number'
+					? input.jevMeanConfidence
+					: -1,
+				input.jevDurationMs ?? -1,
+				input.top1TypeCode ?? -1,
 			],
 		})
 	} catch (error) {

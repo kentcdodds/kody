@@ -182,6 +182,7 @@ test('authenticated home SSR prefetches flags while loading page data', async ()
 		'compute-overage-charging': true,
 		'package-share-grants': false,
 		'secret-providers': false,
+		'jev-search-rerank': false,
 	})
 	expect(counts.batchSizes).toEqual([2, 2])
 	expect(loadOnboardingData).not.toHaveBeenCalled()

@@ -1,5 +1,8 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { callerHasRole } from '#mcp/capabilities/access-control.ts'
+import {
+	callerHasRole,
+	resolveCallerFeatureFlags,
+} from '#mcp/capabilities/access-control.ts'
 import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
 import { buildMemoryRetrievalQuery } from '#mcp/tools/memory-tool-context.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
@@ -12,6 +15,7 @@ import {
 
 import { resolvePackageIdentitySearch } from './package-search-identity.ts'
 import { buildExactPackageSearchResult, searchUnified } from './search-core.ts'
+import { jevSearchRerankFlagKey } from './search-jev-rerank.ts'
 import { searchQueryUsesRankingEmbedding } from './search-domain-overview.ts'
 import { loadSearchRowsAndRegistry } from './search-loaders.ts'
 import {
@@ -215,6 +219,11 @@ async function executeSearchListWithinBudget(
 	warnings = searchRows.warnings
 	const retrieverRun = await retrieverRunPromise
 	warnings.push(...retrieverRun.warnings)
+	const featureFlags = await resolveCallerFeatureFlags(
+		input.env,
+		input.callerContext,
+	)
+	const jevRerankEnabled = featureFlags[jevSearchRerankFlagKey] === true
 	const searchUnifiedStart = performance.now()
 	result = await searchUnified({
 		env: input.env,
@@ -229,6 +238,7 @@ async function executeSearchListWithinBudget(
 		...(callerHasRole(input.callerContext, 'admin')
 			? { includeAdminGuides: true }
 			: {}),
+		...(jevRerankEnabled ? { jevRerankEnabled: true } : {}),
 	})
 	phaseTimings.searchUnifiedMs = elapsedMs(searchUnifiedStart)
 	capabilityGuidance = result.guidance

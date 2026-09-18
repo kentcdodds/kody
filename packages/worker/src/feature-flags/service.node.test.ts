@@ -287,6 +287,7 @@ test('isFeatureEnabled falls back to registry default when no DB state exists', 
 		'compute-overage-charging': true,
 		'package-share-grants': false,
 		'secret-providers': false,
+		'jev-search-rerank': false,
 	})
 })
 
@@ -463,6 +464,7 @@ test('user override wins over global off and global on; clear restores evaluatio
 		'compute-overage-charging': true,
 		'package-share-grants': false,
 		'secret-providers': false,
+		'jev-search-rerank': false,
 	})
 
 	await setFeatureFlagGlobalState(db, {
@@ -498,6 +500,7 @@ test('getFeatureFlagEvaluationsForUser reports assignment sources', async () => 
 		'compute-overage-charging': { enabled: true, source: 'default' },
 		'package-share-grants': { enabled: false, source: 'default' },
 		'secret-providers': { enabled: false, source: 'default' },
+		'jev-search-rerank': { enabled: false, source: 'default' },
 	})
 
 	await setFeatureFlagGlobalState(db, {
