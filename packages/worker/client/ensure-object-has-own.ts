@@ -7,10 +7,12 @@
 export function ensureObjectHasOwn(): void {
 	if (typeof Object.hasOwn === 'function') return
 
-	Object.hasOwn = function hasOwn(
-		obj: object,
-		prop: PropertyKey,
-	): boolean {
-		return Object.prototype.hasOwnProperty.call(obj, prop)
-	}
+	Object.defineProperty(Object, 'hasOwn', {
+		configurable: true,
+		enumerable: false,
+		writable: true,
+		value: function hasOwn(obj: object, prop: PropertyKey): boolean {
+			return Object.prototype.hasOwnProperty.call(obj, prop)
+		},
+	})
 }
