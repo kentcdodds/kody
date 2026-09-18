@@ -202,7 +202,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Flag-gated Jev Score search rerank (`search-jev-rerank.ts` plus
 		// list-mode wiring) added ~2.4 KB: CI measured 3_782_433 bytes
 		// against the previous 3_780_000 budget.
-		maxEntryBytes: 3_785_000,
+		// Jev Score question batching (merge/parse plus expected/received
+		// errorReason) adds ~2 KB: local dry-run 3_784_520 bytes against
+		// the previous 3_785_000 budget.
+		maxEntryBytes: 3_788_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',
