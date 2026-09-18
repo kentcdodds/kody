@@ -35,6 +35,10 @@ import {
 	type SearchPhaseTimings,
 	type SearchUnifiedResult,
 } from './search-types.ts'
+import {
+	rerankSearchCandidatesWithJev,
+	resolveJevSearchRecallLimit,
+} from './search-jev-rerank.ts'
 import { understandSearchQuery } from './understand-search-query.ts'
 
 export function buildExactPackageSearchResult(input: {
@@ -176,6 +180,8 @@ export async function searchUnified(input: {
 	embedText?: EmbedTextFn
 	/** Include admin-only official guides in ranking. */
 	includeAdminGuides?: boolean
+	/** Widen hybrid recall and run stage-2 Jev Score rerank/filter. */
+	jevRerankEnabled?: boolean
 }): Promise<SearchUnifiedResult> {
 	const offline = isCapabilitySearchOffline(input.env)
 	const query = input.query.trim()
@@ -242,6 +248,11 @@ export async function searchUnified(input: {
 	}
 
 	const limit = Math.max(1, input.limit)
+	const jevRerankEnabled = input.jevRerankEnabled === true
+	const recallLimit = resolveJevSearchRecallLimit({
+		limit,
+		widerRecall: jevRerankEnabled,
+	})
 	const entityDescriptors = buildSearchableEntityDescriptors({
 		registry,
 		optionalRows,
@@ -306,7 +317,7 @@ export async function searchUnified(input: {
 					? await plugin.buildCandidates({
 							env: input.env,
 							query: intent.normalizedQuery,
-							limit,
+							limit: recallLimit,
 							offline,
 							...(input.userId ? { userId: input.userId } : {}),
 							registry,
@@ -348,11 +359,21 @@ export async function searchUnified(input: {
 	}
 	const candidateGenerationMs = elapsedMs(candidateGenerationStart)
 	const rerankingStart = performance.now()
-	const reranked = rerankCandidates({
+	const hybridReranked = rerankCandidates({
 		candidates,
 		intent,
-		limit,
+		limit: recallLimit,
 	})
+	const jevRerank = await rerankSearchCandidatesWithJev({
+		env: input.env,
+		query: intent.normalizedQuery,
+		intent,
+		candidates: hybridReranked,
+		limit,
+		offline,
+		enabled: jevRerankEnabled,
+	})
+	const reranked = jevRerank.candidates
 	const matches = domainFilter
 		? reranked.map((candidate) => candidate.match)
 		: collapseSynthesizedProviderMatches({
@@ -375,16 +396,28 @@ export async function searchUnified(input: {
 		matches,
 		offline,
 		intent,
-		telemetry: buildCandidateTelemetry({
-			intent,
-			candidates,
-			matches,
-		}),
+		telemetry: {
+			...buildCandidateTelemetry({
+				intent,
+				candidates,
+				matches,
+			}),
+			jevRerank: {
+				enabled: jevRerankEnabled,
+				outcome: jevRerank.outcome,
+				candidatesBefore: jevRerank.candidatesBefore,
+				candidatesAfter: jevRerank.candidatesAfter,
+				droppedCount: jevRerank.droppedCount,
+				meanConfidence: jevRerank.meanConfidence,
+				top1Type: jevRerank.top1Type,
+			},
+		},
 		phaseTimings: {
 			queryUnderstandingMs,
 			candidateGenerationMs,
 			rerankingMs,
 			queryEmbeddingMs,
+			jevRerankMs: jevRerank.durationMs,
 			...candidateTimings,
 		},
 		guidance: buildRecommendedNextStep({

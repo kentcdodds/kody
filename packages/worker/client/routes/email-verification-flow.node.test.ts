@@ -59,6 +59,7 @@ test('email verification redirect helpers preserve safe targets and reject open 
 			'compute-overage-charging': true,
 			'package-share-grants': false,
 			'secret-providers': false,
+			'jev-search-rerank': false,
 		},
 	}
 	const verifiedUser: SessionInfo = {

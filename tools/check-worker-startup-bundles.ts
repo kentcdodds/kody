@@ -153,7 +153,11 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Destination-verify Cloudflare delivery index
 		// (email_destination_verification) on the shared add/resend path:
 		// local dry-run 5_097_119 bytes.
-		maxEntryBytes: 5_098_000,
+		// Flag-gated Jev search experiment (`jev-search-rerank` registry
+		// entry plus shared search list wiring) spilled ~5 KB into the
+		// platform entry: CI measured 5_102_980 bytes against the previous
+		// 5_098_000 budget.
+		maxEntryBytes: 5_105_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
@@ -190,7 +194,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// (`{{secret/<provider>:<ref>}}`, sealed resolve, grants) pull
 		// secret-providers/service.ts into runtime: CI dry-run 3_768_307
 		// bytes against the previous 3_745_000 budget.
-		maxEntryBytes: 3_780_000,
+		// Flag-gated Jev Score search rerank (`search-jev-rerank.ts` plus
+		// list-mode wiring) added ~2.4 KB: CI measured 3_782_433 bytes
+		// against the previous 3_780_000 budget.
+		maxEntryBytes: 3_785_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',

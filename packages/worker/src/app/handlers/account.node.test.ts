@@ -353,6 +353,7 @@ test('authenticated account SSR batches user/role and flag reads into two round 
 		'compute-overage-charging': true,
 		'package-share-grants': false,
 		'secret-providers': false,
+		'jev-search-rerank': false,
 	})
 	expect(Object.keys(body.loaderData).sort()).toEqual([
 		'accountConnections',

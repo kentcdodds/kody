@@ -82,6 +82,19 @@ export const featureFlagDefinitions = [
 		description:
 			'Pluggable external secret providers (1Password-shaped placeholders, account bindings, sealed resolve, and package grants). Off by default. Signed-in users can turn it on from /docs/secret-providers. No success metric: this is a rollout kill switch, not an experiment.',
 	},
+	{
+		key: 'jev-search-rerank',
+		defaultEnabled: false,
+		description:
+			'Experiment: widen hybrid search recall, then rerank/drop candidates with Workers AI typesafe/jev Score (AI Gateway when configured). List-mode ranked search only. Offline/deterministic paths skip Jev and keep hybrid order. Delete the flag and gate sites when the experiment ends.',
+		successMetric: {
+			eventType: 'execute',
+			measure: 'event_count',
+			goal: 'increase',
+			hypothesis:
+				'Wider recall plus Jev Score filtering surfaces better next hops, so agents follow ranked search with execute more often in the same conversation.',
+		},
+	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
 export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']
@@ -91,6 +104,9 @@ export const packageShareGrantsFlagKey =
 
 export const secretProvidersFlagKey =
 	'secret-providers' satisfies FeatureFlagKey
+
+export const jevSearchRerankFlagKey =
+	'jev-search-rerank' satisfies FeatureFlagKey
 
 export const featureFlagKeys: ReadonlyArray<FeatureFlagKey> =
 	featureFlagDefinitions.map((definition) => definition.key)

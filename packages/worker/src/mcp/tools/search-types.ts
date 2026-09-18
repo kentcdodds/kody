@@ -75,6 +75,16 @@ export type SearchCandidate = {
 	scoreComponents: SearchScoreComponents
 }
 
+export type JevSearchRerankOutcome =
+	| 'applied'
+	| 'fallback-error'
+	| 'fallback-low-confidence'
+	| 'fallback-empty-after-drop'
+	| 'skipped-offline'
+	| 'skipped-no-ai'
+	| 'skipped-flag-off'
+	| 'skipped-empty'
+
 export type SearchTelemetry = {
 	intent: {
 		task: SearchIntent['task']['name']
@@ -92,12 +102,22 @@ export type SearchTelemetry = {
 	topResultTypes: Array<SearchMatch['type']>
 	trimmedMatchCount?: number
 	responseTrimmed?: boolean
+	jevRerank?: {
+		enabled: boolean
+		outcome: JevSearchRerankOutcome
+		candidatesBefore: number
+		candidatesAfter: number
+		droppedCount: number
+		meanConfidence: number | null
+		top1Type: SearchMatch['type'] | null
+	}
 }
 
 export type SearchPhaseTimings = {
 	queryUnderstandingMs: number
 	candidateGenerationMs: number
 	rerankingMs: number
+	jevRerankMs?: number
 	formattingMs?: number
 	rowAndRegistryLoadMs?: number
 	retrieversMs?: number

@@ -16,6 +16,7 @@ function createFlagMap(enabled: boolean): CallerFeatureFlags {
 		'compute-overage-charging': true,
 		'package-share-grants': false,
 		'secret-providers': false,
+		'jev-search-rerank': false,
 	}
 }
 
