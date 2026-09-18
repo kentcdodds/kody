@@ -586,7 +586,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 	})
 
 	const listed = await listFeatureFlagsForAdmin(db)
-	expect(listed).toHaveLength(7)
+	expect(listed).toHaveLength(8)
 
 	const charging = listed.find(
 		(flag) => flag.key === 'compute-overage-charging',
@@ -612,6 +612,18 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 		stale: false,
 		defaultEnabled: false,
 		successMetric: null,
+	})
+
+	const jevSearch = listed.find((flag) => flag.key === 'jev-search-rerank')
+	expect(jevSearch).toMatchObject({
+		key: 'jev-search-rerank',
+		stale: false,
+		defaultEnabled: false,
+		successMetric: {
+			eventType: 'execute',
+			measure: 'event_count',
+			goal: 'increase',
+		},
 	})
 
 	const compact = listed.find(
