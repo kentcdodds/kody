@@ -3,6 +3,7 @@ import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 import {
 	jevSearchMinKeepScore,
+	jevSearchScoreQuestionBatchSize,
 	rerankSearchCandidatesWithJev,
 	resolveJevSearchRecallLimit,
 } from './search-jev-rerank.ts'
@@ -43,6 +44,34 @@ function makeCandidate(
 			final: 1,
 		},
 		...overrides,
+	}
+}
+
+function makeCandidates(count: number): Array<SearchCandidate> {
+	return Array.from({ length: count }, (_, index) =>
+		makeCandidate({
+			id: `card-${String(index)}`,
+			title: `Card ${String(index)}`,
+		}),
+	)
+}
+
+function scoreAnswersForQuestions(
+	questions: Record<string, unknown>,
+	scoreForKey: (key: string) => { score: number; confidence: number },
+): Record<string, { type: 'score'; score: number; confidence: number }> {
+	return Object.fromEntries(
+		Object.keys(questions).map((key) => [
+			key,
+			{ type: 'score', ...scoreForKey(key) },
+		]),
+	)
+}
+
+function jevRunBody(run: ReturnType<typeof vi.fn>, callIndex: number) {
+	return run.mock.calls[callIndex]?.[1] as {
+		questions: Record<string, unknown>
+		state: { candidates: Array<unknown> }
 	}
 }
 
@@ -329,6 +358,101 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 		enabled: true,
 	})
 	expect(incompleteAnswers.outcome).toBe('fallback-error')
-	expect(incompleteAnswers.errorReason).toBe('incomplete-score-answers')
+	expect(incompleteAnswers.errorReason).toBe(
+		'incomplete-score-answers expected=2 received=0',
+	)
 	expect(incompleteRun).toHaveBeenCalledOnce()
+
+	const widePool = makeCandidates(jevSearchScoreQuestionBatchSize + 4)
+	const bestWideId = widePool[widePool.length - 1]!.id
+	const multiBatchRun = vi.fn(
+		async (_model: string, body: { questions: Record<string, unknown> }) => ({
+			answers: scoreAnswersForQuestions(body.questions, (key) => {
+				if (key === `c${String(widePool.length - 1)}`) {
+					return { score: 2.8, confidence: 0.96 }
+				}
+				return { score: 0.3, confidence: 0.9 }
+			}),
+		}),
+	)
+	const multiBatch = await rerankSearchCandidatesWithJev({
+		env: {
+			AI: { run: multiBatchRun },
+			AI_GATEWAY_ID: 'kody',
+		} as unknown as Env,
+		query: 'send email',
+		intent,
+		candidates: widePool,
+		limit: 2,
+		offline: false,
+		enabled: true,
+	})
+	expect(multiBatch.outcome).toBe('applied')
+	expect(multiBatch.errorReason).toBeUndefined()
+	expect(multiBatch.candidates.map((candidate) => candidate.id)).toEqual([
+		bestWideId,
+	])
+	expect(multiBatchRun).toHaveBeenCalledTimes(2)
+	expect(multiBatchRun.mock.calls[0]?.[2]).toEqual({ gateway: { id: 'kody' } })
+	expect(multiBatchRun.mock.calls[1]?.[2]).toEqual({ gateway: { id: 'kody' } })
+	expect(Object.keys(jevRunBody(multiBatchRun, 0).questions)).toEqual(
+		Array.from(
+			{ length: jevSearchScoreQuestionBatchSize },
+			(_, index) => `c${String(index)}`,
+		),
+	)
+	expect(Object.keys(jevRunBody(multiBatchRun, 1).questions)).toEqual(
+		Array.from(
+			{ length: 4 },
+			(_, index) => `c${String(jevSearchScoreQuestionBatchSize + index)}`,
+		),
+	)
+	expect(jevRunBody(multiBatchRun, 0).state.candidates).toHaveLength(
+		widePool.length,
+	)
+	expect(jevRunBody(multiBatchRun, 1).state.candidates).toHaveLength(
+		widePool.length,
+	)
+
+	const partialBatchRun = vi.fn(
+		async (_model: string, body: { questions: Record<string, unknown> }) => {
+			const keys = Object.keys(body.questions)
+			if (!keys.includes('c0')) {
+				return { answers: {} }
+			}
+			return {
+				answers: scoreAnswersForQuestions(body.questions, () => ({
+					score: 2.1,
+					confidence: 0.9,
+				})),
+			}
+		},
+	)
+	const partialBatch = await rerankSearchCandidatesWithJev({
+		env: {
+			AI: { run: partialBatchRun },
+			AI_GATEWAY_ID: 'kody',
+		} as unknown as Env,
+		query: 'send email',
+		intent,
+		candidates: widePool,
+		limit: 2,
+		offline: false,
+		enabled: true,
+	})
+	expect(partialBatch.outcome).toBe('fallback-error')
+	expect(partialBatch.errorReason).toBe(
+		`incomplete-score-answers expected=${String(widePool.length)} received=${String(jevSearchScoreQuestionBatchSize)}`,
+	)
+	expect(partialBatch.candidates.map((candidate) => candidate.id)).toEqual([
+		widePool[0]!.id,
+		widePool[1]!.id,
+	])
+	expect(partialBatchRun).toHaveBeenCalledTimes(2)
+	expect(partialBatchRun.mock.calls[0]?.[2]).toEqual({
+		gateway: { id: 'kody' },
+	})
+	expect(partialBatchRun.mock.calls[1]?.[2]).toEqual({
+		gateway: { id: 'kody' },
+	})
 })

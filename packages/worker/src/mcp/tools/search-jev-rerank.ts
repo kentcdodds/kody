@@ -3,10 +3,12 @@
  *
  * Hybrid lexical+vector recall stays the retriever. When the
  * `jev-search-rerank` flag is on, a wider candidate pool is scored by
- * Workers AI `typesafe/jev` through AI Gateway. That third-party model
- * requires Gateway authentication and Unified Billing (or BYOK); the
- * Worker does not fall back to direct Workers AI. Failures and low
- * confidence fall back to the pre-Jev hybrid order for the same pool.
+ * Workers AI `typesafe/jev` through AI Gateway. Score questions are sent
+ * in small batches that share the same skinny-card state; answers are
+ * merged before parse. That third-party model requires Gateway
+ * authentication and Unified Billing (or BYOK); the Worker does not fall
+ * back to direct Workers AI. Failures and low confidence fall back to
+ * the pre-Jev hybrid order for the same pool.
  *
  * Offline / deterministic embedding paths never call Jev.
  */
@@ -42,6 +44,12 @@ export const jevSearchMinMeanConfidence = 0.45
 export const jevSearchMinKeepScore = 1.5
 
 export const jevSearchModel = 'typesafe/jev'
+
+/**
+ * Max Score questions per `AI.run`. `typesafe/jev` can omit answers when
+ * one call asks for the full candidate cap at once.
+ */
+export const jevSearchScoreQuestionBatchSize = 8
 
 /** Safe length for `errorReason` on fallback-error telemetry. */
 const jevSearchErrorReasonMaxChars = 240
@@ -132,7 +140,23 @@ function questionKey(index: number): string {
 	return `c${String(index)}`
 }
 
-function buildJevQuestions(cardCount: number) {
+function buildQuestionBatches(
+	cardCount: number,
+	batchSize: number,
+): Array<Array<number>> {
+	const batches: Array<Array<number>> = []
+	for (let start = 0; start < cardCount; start += batchSize) {
+		const batch: Array<number> = []
+		const end = Math.min(cardCount, start + batchSize)
+		for (let index = start; index < end; index += 1) {
+			batch.push(index)
+		}
+		batches.push(batch)
+	}
+	return batches
+}
+
+function buildJevQuestions(indexes: ReadonlyArray<number>) {
 	const questions: Record<
 		string,
 		{
@@ -141,7 +165,7 @@ function buildJevQuestions(cardCount: number) {
 			criteria: Array<string>
 		}
 	> = {}
-	for (let index = 0; index < cardCount; index += 1) {
+	for (const index of indexes) {
 		questions[questionKey(index)] = {
 			type: 'score',
 			instructions: `How relevant is state.candidates[${String(index)}] to state.query for the agent's next hop (open detail or execute)? Use state.intent only as context.`,
@@ -206,32 +230,69 @@ async function runJevViaGateway(
 	}
 }
 
+function isCompleteScoreAnswer(
+	answer: JevScoreAnswer | undefined,
+): answer is JevScoreAnswer & { score: number; confidence: number } {
+	return (
+		answer != null &&
+		typeof answer.score === 'number' &&
+		Number.isFinite(answer.score) &&
+		typeof answer.confidence === 'number' &&
+		Number.isFinite(answer.confidence)
+	)
+}
+
+function mergeScoreAnswers(
+	responses: ReadonlyArray<JevRunResponse>,
+): Record<string, JevScoreAnswer> {
+	const answers: Record<string, JevScoreAnswer> = {}
+	for (const response of responses) {
+		if (!response.answers || typeof response.answers !== 'object') continue
+		for (const [key, value] of Object.entries(response.answers)) {
+			if (value) answers[key] = value
+		}
+	}
+	return answers
+}
+
 function parseScoreAnswers(
-	response: JevRunResponse,
+	answers: Record<string, JevScoreAnswer>,
 	cardCount: number,
-): {
-	scores: Array<number>
-	confidences: Array<number>
-} | null {
-	const answers = response.answers
-	if (!answers || typeof answers !== 'object') return null
+):
+	| {
+			ok: true
+			scores: Array<number>
+			confidences: Array<number>
+	  }
+	| {
+			ok: false
+			expected: number
+			received: number
+	  } {
 	const scores: Array<number> = []
 	const confidences: Array<number> = []
+	let received = 0
 	for (let index = 0; index < cardCount; index += 1) {
 		const answer = answers[questionKey(index)]
-		if (
-			!answer ||
-			typeof answer.score !== 'number' ||
-			!Number.isFinite(answer.score) ||
-			typeof answer.confidence !== 'number' ||
-			!Number.isFinite(answer.confidence)
-		) {
-			return null
-		}
+		if (!isCompleteScoreAnswer(answer)) continue
+		received += 1
 		scores.push(answer.score)
 		confidences.push(answer.confidence)
 	}
-	return { scores, confidences }
+	if (received !== cardCount) {
+		return { ok: false, expected: cardCount, received }
+	}
+	return { ok: true, scores, confidences }
+}
+
+function incompleteScoreAnswersReason(input: {
+	expected: number
+	received: number
+}): string {
+	return oneLine(
+		`${jevSearchIncompleteScoreAnswersReason} expected=${String(input.expected)} received=${String(input.received)}`,
+		jevSearchErrorReasonMaxChars,
+	)
 }
 
 function mean(values: ReadonlyArray<number>): number {
@@ -289,25 +350,31 @@ export async function rerankSearchCandidatesWithJev(input: {
 	)
 
 	try {
-		const response = await runJevViaGateway(
-			runtime as JevRuntimeEnv & { AI: Ai },
-			{
-				state: {
-					query: input.query,
-					intent: {
-						task: input.intent.task.name,
-						confidence: input.intent.confidence,
-						normalizedQuery: input.intent.normalizedQuery,
-					},
-					candidates: cards,
-				},
-				questions: buildJevQuestions(cards.length),
+		const state = {
+			query: input.query,
+			intent: {
+				task: input.intent.task.name,
+				confidence: input.intent.confidence,
+				normalizedQuery: input.intent.normalizedQuery,
 			},
+			candidates: cards,
+		}
+		const batches = buildQuestionBatches(
+			cards.length,
+			jevSearchScoreQuestionBatchSize,
 		)
-		const parsed = parseScoreAnswers(response, cards.length)
-		if (!parsed) {
+		const responses = await Promise.all(
+			batches.map((indexes) =>
+				runJevViaGateway(runtime as JevRuntimeEnv & { AI: Ai }, {
+					state,
+					questions: buildJevQuestions(indexes),
+				}),
+			),
+		)
+		const parsed = parseScoreAnswers(mergeScoreAnswers(responses), cards.length)
+		if (!parsed.ok) {
 			return emptyResult('fallback-error', {
-				errorReason: jevSearchIncompleteScoreAnswersReason,
+				errorReason: incompleteScoreAnswersReason(parsed),
 			})
 		}
 		const meanConfidence = mean(parsed.confidences)
