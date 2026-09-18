@@ -413,6 +413,16 @@ export async function searchUnified(input: {
 				...(jevRerank.errorReason
 					? { errorReason: jevRerank.errorReason }
 					: {}),
+				...(jevRerank.model
+					? {
+							model: jevRerank.model,
+							aiCallCount: jevRerank.aiCallCount ?? 0,
+							usage: jevRerank.usage ?? {
+								inputTokens: null,
+								outputTokens: null,
+							},
+						}
+					: {}),
 			},
 		},
 		phaseTimings: {

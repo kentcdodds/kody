@@ -3,10 +3,12 @@
  *
  * Hybrid lexical+vector recall stays the retriever. When the
  * `jev-search-rerank` flag is on, a wider candidate pool is scored by
- * Workers AI `typesafe/jev` through AI Gateway. That third-party model
- * requires Gateway authentication and Unified Billing (or BYOK); the
- * Worker does not fall back to direct Workers AI. Failures and low
- * confidence fall back to the pre-Jev hybrid order for the same pool.
+ * Workers AI `typesafe/jev` through AI Gateway. Score questions are sent
+ * in small batches that share the same skinny-card state; answers are
+ * merged before parse. That third-party model requires Gateway
+ * authentication and Unified Billing (or BYOK); the Worker does not fall
+ * back to direct Workers AI. Failures and low confidence fall back to
+ * the pre-Jev hybrid order for the same pool.
  *
  * Offline / deterministic embedding paths never call Jev.
  */
@@ -43,6 +45,12 @@ export const jevSearchMinKeepScore = 1.5
 
 export const jevSearchModel = 'typesafe/jev'
 
+/**
+ * Max Score questions per `AI.run`. `typesafe/jev` can omit answers when
+ * one call asks for the full candidate cap at once.
+ */
+export const jevSearchScoreQuestionBatchSize = 8
+
 /** Safe length for `errorReason` on fallback-error telemetry. */
 const jevSearchErrorReasonMaxChars = 240
 
@@ -59,6 +67,11 @@ export type JevSearchSkinnyCard = {
 	domain?: string
 }
 
+export type JevSearchTokenUsage = {
+	inputTokens: number | null
+	outputTokens: number | null
+}
+
 export type JevSearchRerankResult = {
 	candidates: Array<SearchCandidate>
 	outcome: JevSearchRerankOutcome
@@ -70,6 +83,12 @@ export type JevSearchRerankResult = {
 	top1Type: SearchCandidate['type'] | null
 	/** Present only when `outcome` is `fallback-error`. */
 	errorReason?: string
+	/** Present when the Jev stage ran or attempted. */
+	model?: typeof jevSearchModel
+	/** Score `AI.run` count (one per question batch). */
+	aiCallCount?: number
+	/** Summed Workers AI / Gateway usage across batches. */
+	usage?: JevSearchTokenUsage
 }
 
 type JevScoreAnswer = {
@@ -80,6 +99,14 @@ type JevScoreAnswer = {
 
 type JevRunResponse = {
 	answers?: Record<string, JevScoreAnswer>
+	usage?: {
+		input_tokens?: number
+		output_tokens?: number
+		prompt_tokens?: number
+		completion_tokens?: number
+		inputTokens?: number
+		outputTokens?: number
+	}
 }
 
 type JevRuntimeEnv = {
@@ -132,7 +159,23 @@ function questionKey(index: number): string {
 	return `c${String(index)}`
 }
 
-function buildJevQuestions(cardCount: number) {
+function buildQuestionBatches(
+	cardCount: number,
+	batchSize: number,
+): Array<Array<number>> {
+	const batches: Array<Array<number>> = []
+	for (let start = 0; start < cardCount; start += batchSize) {
+		const batch: Array<number> = []
+		const end = Math.min(cardCount, start + batchSize)
+		for (let index = start; index < end; index += 1) {
+			batch.push(index)
+		}
+		batches.push(batch)
+	}
+	return batches
+}
+
+function buildJevQuestions(indexes: ReadonlyArray<number>) {
 	const questions: Record<
 		string,
 		{
@@ -141,7 +184,7 @@ function buildJevQuestions(cardCount: number) {
 			criteria: Array<string>
 		}
 	> = {}
-	for (let index = 0; index < cardCount; index += 1) {
+	for (const index of indexes) {
 		questions[questionKey(index)] = {
 			type: 'score',
 			instructions: `How relevant is state.candidates[${String(index)}] to state.query for the agent's next hop (open detail or execute)? Use state.intent only as context.`,
@@ -163,7 +206,9 @@ async function runJevScoreRequest(
 		questions: ReturnType<typeof buildJevQuestions>
 	},
 	options?: { gateway: { id: string } },
+	tally?: { aiCallCount: number },
 ): Promise<JevRunResponse> {
+	if (tally) tally.aiCallCount += 1
 	// Model is not yet in the generated AiModels map; cast at the boundary.
 	return (await runtime.AI.run(
 		jevSearchModel as Parameters<Ai['run']>[0],
@@ -185,15 +230,21 @@ async function runJevViaGateway(
 		state: Record<string, unknown>
 		questions: ReturnType<typeof buildJevQuestions>
 	},
+	tally?: { aiCallCount: number },
 ): Promise<JevRunResponse> {
 	const gatewayId = runtime.AI_GATEWAY_ID?.trim()
 	if (!gatewayId) {
 		throw new Error(jevSearchGatewayRequiredReason)
 	}
 	try {
-		return await runJevScoreRequest(runtime, body, {
-			gateway: { id: gatewayId },
-		})
+		return await runJevScoreRequest(
+			runtime,
+			body,
+			{
+				gateway: { id: gatewayId },
+			},
+			tally,
+		)
 	} catch (error) {
 		console.warn(
 			JSON.stringify({
@@ -206,32 +257,108 @@ async function runJevViaGateway(
 	}
 }
 
+function isCompleteScoreAnswer(
+	answer: JevScoreAnswer | undefined,
+): answer is JevScoreAnswer & { score: number; confidence: number } {
+	return (
+		answer != null &&
+		typeof answer.score === 'number' &&
+		Number.isFinite(answer.score) &&
+		typeof answer.confidence === 'number' &&
+		Number.isFinite(answer.confidence)
+	)
+}
+
+function mergeScoreAnswers(
+	responses: ReadonlyArray<JevRunResponse>,
+): Record<string, JevScoreAnswer> {
+	const answers: Record<string, JevScoreAnswer> = {}
+	for (const response of responses) {
+		if (!response.answers || typeof response.answers !== 'object') continue
+		for (const [key, value] of Object.entries(response.answers)) {
+			if (value) answers[key] = value
+		}
+	}
+	return answers
+}
+
 function parseScoreAnswers(
-	response: JevRunResponse,
+	answers: Record<string, JevScoreAnswer>,
 	cardCount: number,
-): {
-	scores: Array<number>
-	confidences: Array<number>
-} | null {
-	const answers = response.answers
-	if (!answers || typeof answers !== 'object') return null
+):
+	| {
+			ok: true
+			scores: Array<number>
+			confidences: Array<number>
+	  }
+	| {
+			ok: false
+			expected: number
+			received: number
+	  } {
 	const scores: Array<number> = []
 	const confidences: Array<number> = []
+	let received = 0
 	for (let index = 0; index < cardCount; index += 1) {
 		const answer = answers[questionKey(index)]
-		if (
-			!answer ||
-			typeof answer.score !== 'number' ||
-			!Number.isFinite(answer.score) ||
-			typeof answer.confidence !== 'number' ||
-			!Number.isFinite(answer.confidence)
-		) {
-			return null
-		}
+		if (!isCompleteScoreAnswer(answer)) continue
+		received += 1
 		scores.push(answer.score)
 		confidences.push(answer.confidence)
 	}
-	return { scores, confidences }
+	if (received !== cardCount) {
+		return { ok: false, expected: cardCount, received }
+	}
+	return { ok: true, scores, confidences }
+}
+
+function incompleteScoreAnswersReason(input: {
+	expected: number
+	received: number
+}): string {
+	return oneLine(
+		`${jevSearchIncompleteScoreAnswersReason} expected=${String(input.expected)} received=${String(input.received)}`,
+		jevSearchErrorReasonMaxChars,
+	)
+}
+
+function readFiniteTokenCount(value: unknown): number | null {
+	return typeof value === 'number' && Number.isFinite(value) && value >= 0
+		? value
+		: null
+}
+
+function readResponseUsage(response: JevRunResponse): JevSearchTokenUsage {
+	const usage = response.usage
+	if (!usage || typeof usage !== 'object') {
+		return { inputTokens: null, outputTokens: null }
+	}
+	return {
+		inputTokens:
+			readFiniteTokenCount(usage.input_tokens) ??
+			readFiniteTokenCount(usage.prompt_tokens) ??
+			readFiniteTokenCount(usage.inputTokens),
+		outputTokens:
+			readFiniteTokenCount(usage.output_tokens) ??
+			readFiniteTokenCount(usage.completion_tokens) ??
+			readFiniteTokenCount(usage.outputTokens),
+	}
+}
+
+function sumTokenUsage(
+	usages: ReadonlyArray<JevSearchTokenUsage>,
+): JevSearchTokenUsage {
+	let inputTokens: number | null = null
+	let outputTokens: number | null = null
+	for (const usage of usages) {
+		if (usage.inputTokens != null) {
+			inputTokens = (inputTokens ?? 0) + usage.inputTokens
+		}
+		if (usage.outputTokens != null) {
+			outputTokens = (outputTokens ?? 0) + usage.outputTokens
+		}
+	}
+	return { inputTokens, outputTokens }
 }
 
 function mean(values: ReadonlyArray<number>): number {
@@ -263,6 +390,9 @@ export async function rerankSearchCandidatesWithJev(input: {
 		extras?: {
 			meanConfidence?: number | null
 			errorReason?: string
+			model?: typeof jevSearchModel
+			aiCallCount?: number
+			usage?: JevSearchTokenUsage
 		},
 	): JevSearchRerankResult => ({
 		candidates: hybridCandidates.slice(0, Math.max(1, input.limit)),
@@ -274,45 +404,80 @@ export async function rerankSearchCandidatesWithJev(input: {
 		meanConfidence: extras?.meanConfidence ?? null,
 		top1Type: hybridCandidates[0]?.type ?? null,
 		...(extras?.errorReason ? { errorReason: extras.errorReason } : {}),
+		...(extras?.model
+			? {
+					model: extras.model,
+					aiCallCount: extras.aiCallCount ?? 0,
+					usage: extras.usage ?? {
+						inputTokens: null,
+						outputTokens: null,
+					},
+				}
+			: {}),
 	})
 
 	if (!input.enabled) return emptyResult('skipped-flag-off')
-	if (candidatesBefore === 0) return emptyResult('skipped-empty')
-	if (input.offline) return emptyResult('skipped-offline')
+	const attempted = {
+		model: jevSearchModel,
+		aiCallCount: 0,
+		usage: { inputTokens: null, outputTokens: null },
+	} as const
+	if (candidatesBefore === 0) return emptyResult('skipped-empty', attempted)
+	if (input.offline) return emptyResult('skipped-offline', attempted)
 
 	const runtime = input.env as unknown as JevRuntimeEnv
-	if (!runtime.AI) return emptyResult('skipped-no-ai')
+	if (!runtime.AI) return emptyResult('skipped-no-ai', attempted)
 
 	const pool = hybridCandidates.slice(0, jevSearchCandidateCap)
 	const cards = pool.map((candidate, index) =>
 		buildJevSearchSkinnyCard(candidate, index),
 	)
 
+	const tally = { aiCallCount: 0 }
 	try {
-		const response = await runJevViaGateway(
-			runtime as JevRuntimeEnv & { AI: Ai },
-			{
-				state: {
-					query: input.query,
-					intent: {
-						task: input.intent.task.name,
-						confidence: input.intent.confidence,
-						normalizedQuery: input.intent.normalizedQuery,
-					},
-					candidates: cards,
-				},
-				questions: buildJevQuestions(cards.length),
+		const state = {
+			query: input.query,
+			intent: {
+				task: input.intent.task.name,
+				confidence: input.intent.confidence,
+				normalizedQuery: input.intent.normalizedQuery,
 			},
+			candidates: cards,
+		}
+		const batches = buildQuestionBatches(
+			cards.length,
+			jevSearchScoreQuestionBatchSize,
 		)
-		const parsed = parseScoreAnswers(response, cards.length)
-		if (!parsed) {
+		const responses = await Promise.all(
+			batches.map((indexes) =>
+				runJevViaGateway(
+					runtime as JevRuntimeEnv & { AI: Ai },
+					{
+						state,
+						questions: buildJevQuestions(indexes),
+					},
+					tally,
+				),
+			),
+		)
+		const usage = sumTokenUsage(responses.map(readResponseUsage))
+		const parsed = parseScoreAnswers(mergeScoreAnswers(responses), cards.length)
+		if (!parsed.ok) {
 			return emptyResult('fallback-error', {
-				errorReason: jevSearchIncompleteScoreAnswersReason,
+				errorReason: incompleteScoreAnswersReason(parsed),
+				model: jevSearchModel,
+				aiCallCount: tally.aiCallCount,
+				usage,
 			})
 		}
 		const meanConfidence = mean(parsed.confidences)
 		if (meanConfidence < jevSearchMinMeanConfidence) {
-			return emptyResult('fallback-low-confidence', { meanConfidence })
+			return emptyResult('fallback-low-confidence', {
+				meanConfidence,
+				model: jevSearchModel,
+				aiCallCount: tally.aiCallCount,
+				usage,
+			})
 		}
 
 		const ranked = pool
@@ -331,7 +496,12 @@ export async function rerankSearchCandidatesWithJev(input: {
 		if (kept.length === 0) {
 			// Every score missed the keep threshold — preserve pre-Jev hybrid
 			// order rather than returning the rejected Jev sort.
-			return emptyResult('fallback-empty-after-drop', { meanConfidence })
+			return emptyResult('fallback-empty-after-drop', {
+				meanConfidence,
+				model: jevSearchModel,
+				aiCallCount: tally.aiCallCount,
+				usage,
+			})
 		}
 		const candidates = kept
 			.slice(0, Math.max(1, input.limit))
@@ -345,6 +515,9 @@ export async function rerankSearchCandidatesWithJev(input: {
 			droppedCount: Math.max(0, pool.length - kept.length),
 			meanConfidence,
 			top1Type: candidates[0]?.type ?? null,
+			model: jevSearchModel,
+			aiCallCount: tally.aiCallCount,
+			usage,
 		}
 	} catch (error) {
 		console.warn(
@@ -355,6 +528,9 @@ export async function rerankSearchCandidatesWithJev(input: {
 		)
 		return emptyResult('fallback-error', {
 			errorReason: toJevErrorReason(error),
+			model: jevSearchModel,
+			aiCallCount: tally.aiCallCount,
+			usage: { inputTokens: null, outputTokens: null },
 		})
 	}
 }

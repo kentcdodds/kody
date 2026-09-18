@@ -3,6 +3,8 @@ import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 import {
 	jevSearchMinKeepScore,
+	jevSearchModel,
+	jevSearchScoreQuestionBatchSize,
 	rerankSearchCandidatesWithJev,
 	resolveJevSearchRecallLimit,
 } from './search-jev-rerank.ts'
@@ -43,6 +45,34 @@ function makeCandidate(
 			final: 1,
 		},
 		...overrides,
+	}
+}
+
+function makeCandidates(count: number): Array<SearchCandidate> {
+	return Array.from({ length: count }, (_, index) =>
+		makeCandidate({
+			id: `card-${String(index)}`,
+			title: `Card ${String(index)}`,
+		}),
+	)
+}
+
+function scoreAnswersForQuestions(
+	questions: Record<string, unknown>,
+	scoreForKey: (key: string) => { score: number; confidence: number },
+): Record<string, { type: 'score'; score: number; confidence: number }> {
+	return Object.fromEntries(
+		Object.keys(questions).map((key) => [
+			key,
+			{ type: 'score', ...scoreForKey(key) },
+		]),
+	)
+}
+
+function jevRunBody(run: ReturnType<typeof vi.fn>, callIndex: number) {
+	return run.mock.calls[callIndex]?.[1] as {
+		questions: Record<string, unknown>
+		state: { candidates: Array<unknown> }
 	}
 }
 
@@ -91,6 +121,9 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 	})
 	expect(offline.outcome).toBe('skipped-offline')
 	expect(offline.candidates).toEqual([pair[0]])
+	expect(offline.model).toBe(jevSearchModel)
+	expect(offline.aiCallCount).toBe(0)
+	expect(offline.usage).toEqual({ inputTokens: null, outputTokens: null })
 
 	const unusedRun = vi.fn()
 	const flagOff = await rerankSearchCandidatesWithJev({
@@ -104,6 +137,9 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 	})
 	expect(flagOff.outcome).toBe('skipped-flag-off')
 	expect(flagOff.candidates).toEqual([pair[0]])
+	expect(flagOff.model).toBeUndefined()
+	expect(flagOff.aiCallCount).toBeUndefined()
+	expect(flagOff.usage).toBeUndefined()
 	expect(unusedRun).not.toHaveBeenCalled()
 
 	const applyRun = vi.fn(async () => ({
@@ -131,6 +167,9 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 	})
 	expect(applied.outcome).toBe('applied')
 	expect(applied.errorReason).toBeUndefined()
+	expect(applied.model).toBe(jevSearchModel)
+	expect(applied.aiCallCount).toBe(1)
+	expect(applied.usage).toEqual({ inputTokens: null, outputTokens: null })
 	expect(applied.candidates.map((candidate) => candidate.id)).toEqual(['email'])
 	expect(applied.droppedCount).toBe(2)
 	expect(applied.top1Type).toBe('capability')
@@ -218,6 +257,12 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 	expect(missingGateway.errorReason).toBe(
 		'ai-gateway-required-for-typesafe-jev',
 	)
+	expect(missingGateway.model).toBe(jevSearchModel)
+	expect(missingGateway.aiCallCount).toBe(0)
+	expect(missingGateway.usage).toEqual({
+		inputTokens: null,
+		outputTokens: null,
+	})
 	expect(missingGateway.candidates.map((candidate) => candidate.id)).toEqual([
 		'a',
 		'b',
@@ -329,6 +374,112 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 		enabled: true,
 	})
 	expect(incompleteAnswers.outcome).toBe('fallback-error')
-	expect(incompleteAnswers.errorReason).toBe('incomplete-score-answers')
+	expect(incompleteAnswers.errorReason).toBe(
+		'incomplete-score-answers expected=2 received=0',
+	)
 	expect(incompleteRun).toHaveBeenCalledOnce()
+
+	const widePool = makeCandidates(jevSearchScoreQuestionBatchSize + 4)
+	const bestWideId = widePool[widePool.length - 1]!.id
+	const multiBatchRun = vi.fn(
+		async (_model: string, body: { questions: Record<string, unknown> }) => {
+			const keys = Object.keys(body.questions)
+			return {
+				answers: scoreAnswersForQuestions(body.questions, (key) => {
+					if (key === `c${String(widePool.length - 1)}`) {
+						return { score: 2.8, confidence: 0.96 }
+					}
+					return { score: 0.3, confidence: 0.9 }
+				}),
+				usage: keys.includes('c0')
+					? { prompt_tokens: 40, completion_tokens: 12 }
+					: { input_tokens: 18, output_tokens: 7 },
+			}
+		},
+	)
+	const multiBatch = await rerankSearchCandidatesWithJev({
+		env: {
+			AI: { run: multiBatchRun },
+			AI_GATEWAY_ID: 'kody',
+		} as unknown as Env,
+		query: 'send email',
+		intent,
+		candidates: widePool,
+		limit: 2,
+		offline: false,
+		enabled: true,
+	})
+	expect(multiBatch.outcome).toBe('applied')
+	expect(multiBatch.errorReason).toBeUndefined()
+	expect(multiBatch.model).toBe(jevSearchModel)
+	expect(multiBatch.aiCallCount).toBe(2)
+	expect(multiBatch.usage).toEqual({ inputTokens: 58, outputTokens: 19 })
+	expect(multiBatch.candidates.map((candidate) => candidate.id)).toEqual([
+		bestWideId,
+	])
+	expect(multiBatchRun).toHaveBeenCalledTimes(2)
+	expect(multiBatchRun.mock.calls[0]?.[2]).toEqual({ gateway: { id: 'kody' } })
+	expect(multiBatchRun.mock.calls[1]?.[2]).toEqual({ gateway: { id: 'kody' } })
+	expect(Object.keys(jevRunBody(multiBatchRun, 0).questions)).toEqual(
+		Array.from(
+			{ length: jevSearchScoreQuestionBatchSize },
+			(_, index) => `c${String(index)}`,
+		),
+	)
+	expect(Object.keys(jevRunBody(multiBatchRun, 1).questions)).toEqual(
+		Array.from(
+			{ length: 4 },
+			(_, index) => `c${String(jevSearchScoreQuestionBatchSize + index)}`,
+		),
+	)
+	expect(jevRunBody(multiBatchRun, 0).state.candidates).toHaveLength(
+		widePool.length,
+	)
+	expect(jevRunBody(multiBatchRun, 1).state.candidates).toHaveLength(
+		widePool.length,
+	)
+
+	const partialBatchRun = vi.fn(
+		async (_model: string, body: { questions: Record<string, unknown> }) => {
+			const keys = Object.keys(body.questions)
+			if (!keys.includes('c0')) {
+				return { answers: {} }
+			}
+			return {
+				answers: scoreAnswersForQuestions(body.questions, () => ({
+					score: 2.1,
+					confidence: 0.9,
+				})),
+			}
+		},
+	)
+	const partialBatch = await rerankSearchCandidatesWithJev({
+		env: {
+			AI: { run: partialBatchRun },
+			AI_GATEWAY_ID: 'kody',
+		} as unknown as Env,
+		query: 'send email',
+		intent,
+		candidates: widePool,
+		limit: 2,
+		offline: false,
+		enabled: true,
+	})
+	expect(partialBatch.outcome).toBe('fallback-error')
+	expect(partialBatch.model).toBe(jevSearchModel)
+	expect(partialBatch.aiCallCount).toBe(2)
+	expect(partialBatch.errorReason).toBe(
+		`incomplete-score-answers expected=${String(widePool.length)} received=${String(jevSearchScoreQuestionBatchSize)}`,
+	)
+	expect(partialBatch.candidates.map((candidate) => candidate.id)).toEqual([
+		widePool[0]!.id,
+		widePool[1]!.id,
+	])
+	expect(partialBatchRun).toHaveBeenCalledTimes(2)
+	expect(partialBatchRun.mock.calls[0]?.[2]).toEqual({
+		gateway: { id: 'kody' },
+	})
+	expect(partialBatchRun.mock.calls[1]?.[2]).toEqual({
+		gateway: { id: 'kody' },
+	})
 })

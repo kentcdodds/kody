@@ -688,6 +688,9 @@ export async function runSearchTool(input: {
 			// Prefer the match actually returned (after provider collapse),
 			// not the pre-collapse Jev top-1 type.
 			top1TypeCode: encodeSearchTop1Type(result.matches[0]?.type),
+			jevAiCallCount: jevTelemetry?.aiCallCount,
+			jevInputTokens: jevTelemetry?.usage?.inputTokens ?? undefined,
+			jevOutputTokens: jevTelemetry?.usage?.outputTokens ?? undefined,
 		})
 		return {
 			content: prependToolMetadataContent(conversationId, [
