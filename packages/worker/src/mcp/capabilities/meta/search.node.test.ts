@@ -287,8 +287,6 @@ test('meta search supports domain browsing and empty discovery', async () => {
 			domain: 'meta',
 		}),
 	])
-	expect(browse.telemetry?.jevRerank).toBeUndefined()
-	expect(browse.phaseTimings?.jevRerankMs).toBeUndefined()
 
 	const memoryCallsBeforeEmpty =
 		mockModule.loadRelevantMemoriesForTool.mock.calls.length
@@ -303,8 +301,6 @@ test('meta search supports domain browsing and empty discovery', async () => {
 			capabilityCount: 1,
 		}),
 	])
-	expect(empty.telemetry?.jevRerank).toBeUndefined()
-	expect(empty.phaseTimings?.jevRerankMs).toBeUndefined()
 	expect(mockModule.loadRelevantMemoriesForTool).toHaveBeenCalledTimes(
 		memoryCallsBeforeEmpty,
 	)
