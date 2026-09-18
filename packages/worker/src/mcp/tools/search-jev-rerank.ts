@@ -5,7 +5,8 @@
  * `jev-search-rerank` flag is on, a wider candidate pool is scored by
  * Workers AI `typesafe/jev` through AI Gateway. Score questions are sent
  * in small batches that share the same skinny-card state; answers are
- * merged before parse. That third-party model requires Gateway
+ * unwrapped from known Gateway envelopes, then merged before parse.
+ * That third-party model requires Gateway
  * authentication and Unified Billing (or BYOK); the Worker does not fall
  * back to direct Workers AI. Failures and low confidence fall back to
  * the pre-Jev hybrid order for the same pool.
@@ -97,16 +98,31 @@ type JevScoreAnswer = {
 	confidence?: number
 }
 
+type JevRunUsage = {
+	input_tokens?: number
+	output_tokens?: number
+	prompt_tokens?: number
+	completion_tokens?: number
+	inputTokens?: number
+	outputTokens?: number
+	promptTokens?: number
+	completionTokens?: number
+	tokens_in?: number
+	tokens_out?: number
+}
+
 type JevRunResponse = {
 	answers?: Record<string, JevScoreAnswer>
-	usage?: {
-		input_tokens?: number
-		output_tokens?: number
-		prompt_tokens?: number
-		completion_tokens?: number
-		inputTokens?: number
-		outputTokens?: number
-	}
+	usage?: JevRunUsage
+}
+
+export type JevResultAnswersPresence = 'object' | 'missing' | 'other'
+
+/** Binding/Gateway payload after known-envelope unwrap. */
+export type JevNormalizedRunResponse = {
+	payload: JevRunResponse
+	rawTopLevelKeys: Array<string>
+	resultAnswers: JevResultAnswersPresence
 }
 
 type JevRuntimeEnv = {
@@ -159,6 +175,96 @@ function questionKey(index: number): string {
 	return `c${String(index)}`
 }
 
+function asPlainRecord(value: unknown): Record<string, unknown> | null {
+	if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+		return null
+	}
+	return value as Record<string, unknown>
+}
+
+function parseJsonRecord(value: string): Record<string, unknown> | null {
+	try {
+		return asPlainRecord(JSON.parse(value) as unknown)
+	} catch {
+		return null
+	}
+}
+
+function recordHasAnswers(value: Record<string, unknown>): boolean {
+	return asPlainRecord(value.answers) != null
+}
+
+function nestedRecord(value: unknown): Record<string, unknown> | null {
+	if (typeof value === 'string') return parseJsonRecord(value)
+	return asPlainRecord(value)
+}
+
+function describeResultAnswers(
+	raw: Record<string, unknown> | null,
+): JevResultAnswersPresence {
+	if (!raw || !('result' in raw)) return 'missing'
+	const result = nestedRecord(raw.result)
+	if (raw.result == null) return 'missing'
+	if (!result) return 'other'
+	if (!('answers' in result)) return 'missing'
+	return asPlainRecord(result.answers) != null ? 'object' : 'other'
+}
+
+/**
+ * `typesafe/jev` is not in the generated AiModels map. Direct docs show
+ * `{ answers, usage }`, but the Workers AI binding through
+ * `{ gateway: { id } }` can return the Cloudflare v4 / `/ai/run` envelope
+ * (`{ success, result: { answers, usage } }`) or a `{ response }` wrap.
+ * Unwrap those so merge and usage read the Score payload.
+ */
+function unwrapJevPayload(
+	raw: Record<string, unknown>,
+): Record<string, unknown> {
+	if (recordHasAnswers(raw)) return raw
+
+	const result = nestedRecord(raw.result)
+	if (result) {
+		if (recordHasAnswers(result)) return result
+		const resultResponse = nestedRecord(result.response)
+		if (resultResponse && recordHasAnswers(resultResponse)) {
+			return resultResponse
+		}
+	}
+
+	const response = nestedRecord(raw.response)
+	if (response && recordHasAnswers(response)) return response
+
+	return raw
+}
+
+export function normalizeJevRunResponse(
+	raw: unknown,
+): JevNormalizedRunResponse {
+	const parsedRaw =
+		typeof raw === 'string' ? parseJsonRecord(raw) : asPlainRecord(raw)
+	const rawTopLevelKeys = parsedRaw ? Object.keys(parsedRaw) : []
+	const resultAnswers = describeResultAnswers(parsedRaw)
+	if (!parsedRaw) {
+		return { payload: {}, rawTopLevelKeys, resultAnswers }
+	}
+	const unwrapped = unwrapJevPayload(parsedRaw)
+	const answers = asPlainRecord(unwrapped.answers)
+	const usage =
+		asPlainRecord(unwrapped.usage) ??
+		asPlainRecord(nestedRecord(parsedRaw.result)?.usage) ??
+		asPlainRecord(parsedRaw.usage)
+	return {
+		payload: {
+			...(answers
+				? { answers: answers as Record<string, JevScoreAnswer> }
+				: {}),
+			...(usage ? { usage: usage as JevRunUsage } : {}),
+		},
+		rawTopLevelKeys,
+		resultAnswers,
+	}
+}
+
 function buildQuestionBatches(
 	cardCount: number,
 	batchSize: number,
@@ -207,14 +313,15 @@ async function runJevScoreRequest(
 	},
 	options?: { gateway: { id: string } },
 	tally?: { aiCallCount: number },
-): Promise<JevRunResponse> {
+): Promise<JevNormalizedRunResponse> {
 	if (tally) tally.aiCallCount += 1
 	// Model is not yet in the generated AiModels map; cast at the boundary.
-	return (await runtime.AI.run(
+	const raw: unknown = await runtime.AI.run(
 		jevSearchModel as Parameters<Ai['run']>[0],
 		body,
 		options,
-	)) as JevRunResponse
+	)
+	return normalizeJevRunResponse(raw)
 }
 
 function toJevErrorReason(error: unknown): string {
@@ -231,7 +338,7 @@ async function runJevViaGateway(
 		questions: ReturnType<typeof buildJevQuestions>
 	},
 	tally?: { aiCallCount: number },
-): Promise<JevRunResponse> {
+): Promise<JevNormalizedRunResponse> {
 	const gatewayId = runtime.AI_GATEWAY_ID?.trim()
 	if (!gatewayId) {
 		throw new Error(jevSearchGatewayRequiredReason)
@@ -312,12 +419,29 @@ function parseScoreAnswers(
 	return { ok: true, scores, confidences }
 }
 
+function formatSampledKeys(keys: ReadonlyArray<string>): string {
+	if (keys.length === 0) return 'none'
+	const shown = keys.slice(0, 8)
+	if (shown.length === keys.length) return shown.join(',')
+	return `${shown.join(',')}+${String(keys.length - shown.length)}`
+}
+
 function incompleteScoreAnswersReason(input: {
 	expected: number
 	received: number
+	rawTopLevelKeys: ReadonlyArray<string>
+	resultAnswers: JevResultAnswersPresence
+	answerKeys: ReadonlyArray<string>
 }): string {
 	return oneLine(
-		`${jevSearchIncompleteScoreAnswersReason} expected=${String(input.expected)} received=${String(input.received)}`,
+		[
+			jevSearchIncompleteScoreAnswersReason,
+			`expected=${String(input.expected)}`,
+			`received=${String(input.received)}`,
+			`keys=${formatSampledKeys(input.rawTopLevelKeys)}`,
+			`result.answers=${input.resultAnswers}`,
+			`answerKeys=${formatSampledKeys(input.answerKeys)}`,
+		].join(' '),
 		jevSearchErrorReasonMaxChars,
 	)
 }
@@ -337,11 +461,15 @@ function readResponseUsage(response: JevRunResponse): JevSearchTokenUsage {
 		inputTokens:
 			readFiniteTokenCount(usage.input_tokens) ??
 			readFiniteTokenCount(usage.prompt_tokens) ??
-			readFiniteTokenCount(usage.inputTokens),
+			readFiniteTokenCount(usage.inputTokens) ??
+			readFiniteTokenCount(usage.promptTokens) ??
+			readFiniteTokenCount(usage.tokens_in),
 		outputTokens:
 			readFiniteTokenCount(usage.output_tokens) ??
 			readFiniteTokenCount(usage.completion_tokens) ??
-			readFiniteTokenCount(usage.outputTokens),
+			readFiniteTokenCount(usage.outputTokens) ??
+			readFiniteTokenCount(usage.completionTokens) ??
+			readFiniteTokenCount(usage.tokens_out),
 	}
 }
 
@@ -460,11 +588,26 @@ export async function rerankSearchCandidatesWithJev(input: {
 				),
 			),
 		)
-		const usage = sumTokenUsage(responses.map(readResponseUsage))
-		const parsed = parseScoreAnswers(mergeScoreAnswers(responses), cards.length)
+		const usage = sumTokenUsage(
+			responses.map((response) => readResponseUsage(response.payload)),
+		)
+		const mergedAnswers = mergeScoreAnswers(
+			responses.map((response) => response.payload),
+		)
+		const parsed = parseScoreAnswers(mergedAnswers, cards.length)
 		if (!parsed.ok) {
+			const sample =
+				responses.find((response) => {
+					const answers = asPlainRecord(response.payload.answers)
+					return answers == null || Object.keys(answers).length === 0
+				}) ?? responses[0]
 			return emptyResult('fallback-error', {
-				errorReason: incompleteScoreAnswersReason(parsed),
+				errorReason: incompleteScoreAnswersReason({
+					...parsed,
+					rawTopLevelKeys: sample?.rawTopLevelKeys ?? [],
+					resultAnswers: sample?.resultAnswers ?? 'missing',
+					answerKeys: Object.keys(mergedAnswers),
+				}),
 				model: jevSearchModel,
 				aiCallCount: tally.aiCallCount,
 				usage,
