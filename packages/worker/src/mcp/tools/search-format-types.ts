@@ -63,6 +63,16 @@ export type SearchResultStructuredContent = {
 		topResultTypes: Array<SearchMatchType>
 		trimmedMatchCount?: number
 		responseTrimmed?: boolean
+		/** Admin or `jev-search-rerank` cohort only. */
+		jevRerank?: {
+			enabled: boolean
+			outcome: string
+			candidatesBefore: number
+			candidatesAfter: number
+			droppedCount: number
+			meanConfidence: number | null
+			top1Type: string | null
+		}
 	}
 	waiting?: {
 		count: number
@@ -80,6 +90,7 @@ export type SearchResultStructuredContent = {
 		queryUnderstandingMs: number
 		candidateGenerationMs: number
 		rerankingMs: number
+		jevRerankMs?: number
 		formattingMs?: number
 		rowAndRegistryLoadMs?: number
 		retrieversMs?: number

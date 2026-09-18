@@ -58,6 +58,24 @@ const mockModule = vi.hoisted(() => {
 		searchUnified: vi.fn(async () => createEmptySearchUnifiedResult()),
 		loadRelevantMemoriesForTool: vi.fn(),
 		runPackageRetrievers: vi.fn(),
+		resolveCallerFeatureFlags: vi.fn(async () => ({
+			'demo-indicator': false,
+			'compact-mcp-server-instructions': false,
+			'compute-overage-charging': true,
+			'package-share-grants': false,
+			'secret-providers': false,
+			'jev-search-rerank': false,
+		})),
+	}
+})
+
+vi.mock('#mcp/capabilities/access-control.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#mcp/capabilities/access-control.ts')>()
+	return {
+		...actual,
+		resolveCallerFeatureFlags: (...args: Array<unknown>) =>
+			mockModule.resolveCallerFeatureFlags(...args),
 	}
 })
 
@@ -523,4 +541,94 @@ test('executeSearchList does not prefetch an embedding for domain-overview or in
 		includeHiddenPackages: false,
 	})
 	expect(aiRunCount).toBe(0)
+})
+
+test('executeSearchList enables wider recall + Jev when caller flag override is on', async () => {
+	mockModule.resolveCallerFeatureFlags.mockResolvedValueOnce({
+		'demo-indicator': false,
+		'compact-mcp-server-instructions': false,
+		'compute-overage-charging': true,
+		'package-share-grants': false,
+		'secret-providers': false,
+		'jev-search-rerank': true,
+	})
+	mockModule.loadRelevantMemoriesForTool.mockResolvedValue({
+		memories: [],
+		retrieverResults: [],
+		retrieverWarnings: [],
+		suppressedCount: 0,
+		retrievalQuery: 'email',
+	})
+	mockModule.runPackageRetrievers.mockResolvedValue({
+		results: [],
+		warnings: [],
+	})
+	mockModule.searchUnified.mockImplementation(async () =>
+		mockModule.createEmptySearchUnifiedResult(),
+	)
+
+	await executeSearchList({
+		env: {
+			APP_DB: {},
+			WRANGLER_IS_LOCAL_DEV: 'true',
+		} as unknown as Env,
+		callerContext: signedInSearchCaller(),
+		conversationId: 'conv-jev-flag-on',
+		query: 'email',
+		limit: 15,
+		userId: 'user-1',
+		includeHiddenPackages: false,
+	})
+
+	expect(mockModule.resolveCallerFeatureFlags).toHaveBeenCalled()
+	expect(mockModule.searchUnified).toHaveBeenCalledWith(
+		expect.objectContaining({
+			jevRerankEnabled: true,
+			limit: 15,
+		}),
+	)
+})
+
+test('executeSearchList keeps Jev off when caller flag override is cleared', async () => {
+	mockModule.resolveCallerFeatureFlags.mockResolvedValueOnce({
+		'demo-indicator': false,
+		'compact-mcp-server-instructions': false,
+		'compute-overage-charging': true,
+		'package-share-grants': false,
+		'secret-providers': false,
+		'jev-search-rerank': false,
+	})
+	mockModule.loadRelevantMemoriesForTool.mockResolvedValue({
+		memories: [],
+		retrieverResults: [],
+		retrieverWarnings: [],
+		suppressedCount: 0,
+		retrievalQuery: 'email',
+	})
+	mockModule.runPackageRetrievers.mockResolvedValue({
+		results: [],
+		warnings: [],
+	})
+	mockModule.searchUnified.mockImplementation(async () =>
+		mockModule.createEmptySearchUnifiedResult(),
+	)
+
+	await executeSearchList({
+		env: {
+			APP_DB: {},
+			WRANGLER_IS_LOCAL_DEV: 'true',
+		} as unknown as Env,
+		callerContext: signedInSearchCaller(),
+		conversationId: 'conv-jev-flag-off',
+		query: 'email',
+		limit: 15,
+		userId: 'user-1',
+		includeHiddenPackages: false,
+	})
+
+	expect(mockModule.searchUnified).toHaveBeenCalledWith(
+		expect.not.objectContaining({
+			jevRerankEnabled: true,
+		}),
+	)
 })

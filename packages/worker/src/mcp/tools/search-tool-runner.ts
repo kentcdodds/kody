@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/cloudflare'
+import { callerHasRole } from '#mcp/capabilities/access-control.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import { stampFirstSearch } from '#worker/identity/activation-stamps.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
@@ -44,6 +45,10 @@ import {
 	encodeSearchTop1Type,
 	recordSearchObservabilityEvent,
 } from './search-observability.ts'
+import {
+	pickJevSearchEvalTelemetry,
+	shouldExposeJevSearchEvalTelemetry,
+} from './search-jev-eval-telemetry.ts'
 import { elapsedMs, reconcileSearchPhaseTimings } from './search-timing.ts'
 import { type SearchPhaseTimings } from './search-types.ts'
 import { type SearchToolArgs } from './search-tool-definition.ts'
@@ -601,6 +606,21 @@ export async function runSearchTool(input: {
 			durationMs: timing.durationMs,
 			phaseTimings: mergedPhaseTimings,
 		})
+		const jevTelemetry = execution.result.telemetry.jevRerank
+		const exposeJevEval = shouldExposeJevSearchEvalTelemetry({
+			isAdmin: callerHasRole(callerContext, 'admin'),
+			jevRerankEnabled: jevTelemetry?.enabled === true,
+		})
+		const jevEval = exposeJevEval
+			? pickJevSearchEvalTelemetry({
+					...(jevTelemetry ? { jevRerank: jevTelemetry } : {}),
+					jevRerankMs: execution.result.phaseTimings.jevRerankMs,
+				})
+			: null
+		const { jevRerank: _omitJevRerank, ...baseTelemetry } =
+			execution.result.telemetry
+		const { jevRerankMs: _omitJevRerankMs, ...phaseTimingsWithoutJev } =
+			phaseTimings
 		const result: SearchResultStructuredContent = {
 			offline: trimmedPayload.offline,
 			warnings: structuredWarnings,
@@ -610,14 +630,32 @@ export async function runSearchTool(input: {
 					}
 				: {}),
 			telemetry: {
-				...execution.result.telemetry,
+				...baseTelemetry,
+				...(jevEval
+					? {
+							jevRerank: {
+								enabled: jevEval.enabled,
+								outcome: jevEval.outcome,
+								candidatesBefore: jevEval.candidatesBefore,
+								candidatesAfter: jevEval.candidatesAfter,
+								droppedCount: jevEval.droppedCount,
+								meanConfidence: jevEval.meanConfidence,
+								top1Type: jevEval.top1Type,
+							},
+						}
+					: {}),
 				topResultTypes: trimmedPayload.matches
 					.slice(0, 5)
 					.map((match) => match.type),
 				trimmedMatchCount,
 				responseTrimmed: trimmedMatchCount > 0,
 			},
-			phaseTimings,
+			phaseTimings: {
+				...phaseTimingsWithoutJev,
+				...(jevEval && typeof jevEval.jevRerankMs === 'number'
+					? { jevRerankMs: jevEval.jevRerankMs }
+					: {}),
+			},
 			...(searchMemories
 				? {
 						memories: searchMemories,
@@ -653,7 +691,6 @@ export async function runSearchTool(input: {
 				phaseTimings,
 			},
 		})
-		const jevTelemetry = execution.result.telemetry.jevRerank
 		recordSearchObservabilityEvent(agent.getEnv(), {
 			outcome: 'success',
 			mode: 'list',

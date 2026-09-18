@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { callerHasRole } from '#mcp/capabilities/access-control.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
@@ -6,6 +7,10 @@ import {
 	toSlimStructuredMatches,
 	type SlimSearchMatch,
 } from '#mcp/tools/search-format.ts'
+import {
+	pickJevSearchEvalTelemetry,
+	shouldExposeJevSearchEvalTelemetry,
+} from '#mcp/tools/search-jev-eval-telemetry.ts'
 import {
 	conversationIdInputField,
 	memoryContextInputField,
@@ -26,6 +31,17 @@ const memoryResultSchema = z.object({
 	retrieverWarnings: z.array(z.string()).optional(),
 })
 
+const jevSearchEvalTelemetrySchema = z.object({
+	enabled: z.boolean(),
+	outcome: z.string(),
+	candidatesBefore: z.number(),
+	candidatesAfter: z.number(),
+	droppedCount: z.number(),
+	meanConfidence: z.number().nullable(),
+	top1Type: z.string().nullable(),
+	jevRerankMs: z.number().optional(),
+})
+
 const searchOutputSchema = z.object({
 	conversationId: z.string(),
 	matches: z.array(z.unknown()),
@@ -33,6 +49,12 @@ const searchOutputSchema = z.object({
 	warnings: z.array(z.string()),
 	guidance: z.string().optional(),
 	memories: memoryResultSchema.optional(),
+	/** Admin or `jev-search-rerank` cohort only — prove stage-2 ran. */
+	telemetry: z
+		.object({
+			jevRerank: jevSearchEvalTelemetrySchema,
+		})
+		.optional(),
 })
 
 function normalizeLimit(
@@ -127,6 +149,17 @@ export const searchCapability = defineDomainCapability(
 				memoryContext: args.memoryContext,
 				...(domainFilter ? { domain: domainFilter } : {}),
 			})
+			const jevRerank = execution.result.telemetry.jevRerank
+			const exposeJevEval = shouldExposeJevSearchEvalTelemetry({
+				isAdmin: callerHasRole(ctx.callerContext, 'admin'),
+				jevRerankEnabled: jevRerank?.enabled === true,
+			})
+			const jevEval = exposeJevEval
+				? pickJevSearchEvalTelemetry({
+						...(jevRerank ? { jevRerank } : {}),
+						jevRerankMs: execution.result.phaseTimings.jevRerankMs,
+					})
+				: null
 			return {
 				conversationId,
 				matches: toSlimStructuredMatches({
@@ -142,6 +175,13 @@ export const searchCapability = defineDomainCapability(
 				...(execution.memorySettlement.memories
 					? {
 							memories: execution.memorySettlement.memories,
+						}
+					: {}),
+				...(jevEval
+					? {
+							telemetry: {
+								jevRerank: jevEval,
+							},
 						}
 					: {}),
 			}

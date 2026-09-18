@@ -79,6 +79,21 @@ the same way: delete the definition and every gate site.
 rerank/filter behind AI Gateway when configured. Offline/deterministic search
 skips Jev and keeps hybrid order. Enable for dogfood with
 `adminFeatureFlagOverride({ key: "jev-search-rerank", username: "kentcdodds", enabled: true })`.
+
+**Verify the stage-2 path actually ran** (top-5 identity alone is not enough —
+wider recall with a skipped or no-op Jev pass can match flag-off hybrid order):
+
+- Prefer MCP host `search({ query })` and inspect
+  `structuredContent.result.telemetry.jevRerank` (and
+  `phaseTimings.jevRerankMs`), or `kody.search({ query })` and inspect
+  `telemetry.jevRerank`.
+- Those fields are included when the caller is an **admin** or has the flag
+  **on**. Read `enabled`, `outcome` (`applied` / `skipped-offline` /
+  `skipped-flag-off` / `fallback-*`), and `candidatesBefore` (≈50 when wider
+  recall is active).
+- Flag resolution uses the signed-in MCP user's overrides for both the MCP
+  `search` tool and execute-sandbox `kody.search` (same `callerContext`).
+
 Remove the flag and gate sites when the experiment ends.
 
 `compute-overage-charging` is a billing gate, not an experiment (no
