@@ -24,7 +24,9 @@ test('recordSearchObservabilityEvent writes duration and exclusive tiles, no-ops
 			trimmedMatchCount: 13,
 			offline: false,
 			jevFlagCohort: 'on',
-			jevOutcome: 'applied',
+			jevOutcome: 'fallback-error',
+			jevErrorReason:
+				'Insufficient balance; add money to your gateway or use BYOK',
 			candidatesBeforeJev: 40,
 			candidatesAfterJev: 12,
 			jevDroppedCount: 28,
@@ -43,7 +45,16 @@ test('recordSearchObservabilityEvent writes duration and exclusive tiles, no-ops
 	)
 	expect(writeDataPoint).toHaveBeenCalledExactlyOnceWith({
 		indexes: [searchObservabilityTelemetryIndex],
-		blobs: ['success', 'list', 'inspect', 'trimmed', 'online', 'on', 'applied'],
+		blobs: [
+			'success',
+			'list',
+			'inspect',
+			'trimmed',
+			'online',
+			'on',
+			'fallback-error',
+			'Insufficient balance; add money to your gateway or use BYOK',
+		],
 		doubles: [
 			12389, 7436, 2114, 4000, 2114, 1967, 725, 0.18, 13, 40, 12, 28, 0.82, 310,
 			1,
@@ -65,7 +76,7 @@ test('recordSearchObservabilityEvent writes duration and exclusive tiles, no-ops
 	)
 	expect(writeDataPoint).toHaveBeenLastCalledWith({
 		indexes: [searchObservabilityTelemetryIndex],
-		blobs: ['success', 'list', '', 'intact', 'online', 'n/a', ''],
+		blobs: ['success', 'list', '', 'intact', 'online', 'n/a', '', ''],
 		doubles: [10, 0, 0, 0, 0, 0, 0, -1, 0, -1, -1, -1, -1, -1, -1],
 	})
 

@@ -36,6 +36,13 @@ const jevRerankTelemetrySchema = z
 		droppedCount: z.number().int().nonnegative(),
 		meanConfidence: z.number().nullable(),
 		top1Type: z.string().nullable(),
+		errorReason: z
+			.string()
+			.max(240)
+			.optional()
+			.describe(
+				'Short reason when outcome is fallback-error (gateway auth/credits, incomplete Score answers). Omitted otherwise.',
+			),
 	})
 	.describe(
 		'Jev Score rerank stage for list-mode ranked search. Present when the ranked path ran or skipped the stage. Omitted for domain overview, domain browse, empty discovery, and exact-package identity.',

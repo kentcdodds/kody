@@ -46,6 +46,8 @@ export type SearchObservabilityPoint = {
 	jevFlagCohort?: 'on' | 'off' | 'n/a'
 	/** Stage-2 Jev outcome; empty when not a ranked list search. */
 	jevOutcome?: string
+	/** Short fallback-error reason; empty when not a Jev fallback-error. */
+	jevErrorReason?: string
 	candidatesBeforeJev?: number
 	candidatesAfterJev?: number
 	jevDroppedCount?: number
@@ -99,6 +101,7 @@ export function recordSearchObservabilityEvent(
 				input.offline ? 'offline' : 'online',
 				input.jevFlagCohort ?? 'n/a',
 				input.jevOutcome ?? '',
+				input.jevErrorReason ?? '',
 			],
 			doubles: [
 				input.durationMs,
