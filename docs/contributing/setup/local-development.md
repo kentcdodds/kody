@@ -66,11 +66,13 @@ Prerequisites, install, and `npm run dev` notes. See the
   streams origin logs live; the background mock buffers logs and only prints
   them if that child process exits with an error.
 - MCP **`search`** uses a deterministic offline ranker in tests and when
-  `WRANGLER_IS_LOCAL_DEV` is set (no Vectorize / Workers AI embedding calls
+  `WRANGLER_IS_LOCAL_DEV` is set (no Vectorize, embedding, or Jev Score calls
   required for `npm run test` or unauthenticated local runs). Production uses
   Vectorize plus the Workers AI `@cf/baai/bge-small-en-v1.5` embedding model
-  through the `AI` binding, optionally routed through AI Gateway; see
-  [`environment-variables.md`](../environment-variables.md).
+  through the `AI` binding, optionally routed through AI Gateway. Ranked search
+  can also call `typesafe/jev` when `jev-search-rerank` is on; see
+  [`environment-variables.md`](../environment-variables.md) and
+  [feature flags](../architecture/feature-flags.md).
 - Add new mock API servers by following
   [`mock-api-servers.md`](../mock-api-servers.md).
 - `npm run dev:client`, `npm run dev:vite`, and `npm run dev:worker` all start

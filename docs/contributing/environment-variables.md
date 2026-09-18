@@ -357,16 +357,18 @@ Worker bindings (see `packages/worker/wrangler.jsonc`):
   environment omits this binding so `npm run test` and e2e use the deterministic
   offline fusion path (`offline: true` in search results).
 - **`AI`** — Workers AI binding used by production and preview capability,
-  memory, job, and saved-package embedding calls. Local dev and tests do not
-  require it because `WRANGLER_IS_LOCAL_DEV`, `SENTRY_ENVIRONMENT=test`, or a
-  missing non-production binding keeps search on the deterministic offline path.
+  memory, job, and saved-package embedding calls, and by ranked MCP search Jev
+  Score (`typesafe/jev`) when `jev-search-rerank` is on. Local dev and tests do
+  not require it because `WRANGLER_IS_LOCAL_DEV`, `SENTRY_ENVIRONMENT=test`, or
+  a missing non-production binding keeps search on the deterministic offline
+  path.
 
 Worker secrets:
 
-- **`AI_GATEWAY_ID`** — Cloudflare AI Gateway id. When set, embedding calls use
-  the Workers AI binding `gateway` option so production and preview inference is
-  logged/routed through AI Gateway. When unset, the Worker calls Workers AI
-  directly.
+- **`AI_GATEWAY_ID`** — Cloudflare AI Gateway id. When set, embedding and Jev
+  Score calls use the Workers AI binding `gateway` option so production and
+  preview inference is logged/routed through AI Gateway. When unset, the Worker
+  calls Workers AI directly.
 - **`CAPABILITY_REINDEX_SECRET`** — strongly recommended for production (CI
   skips the post-deploy capability reindex and origin-only execute smoke check
   when it is unset); bearer token for
