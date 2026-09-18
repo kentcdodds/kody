@@ -531,6 +531,22 @@ test('normalizeJevRunResponse unwraps gateway envelopes and docs Score payloads'
 	expect(wrapped.resultAnswers).toBe('object')
 	expect(wrapped.payload.answers).toEqual({ frustration: docsScoreAnswer })
 	expect(wrapped.payload.usage).toEqual(docsUsage)
+
+	const nestedResponseUsage = { input_tokens: 40, output_tokens: 8 }
+	const nestedResponse = normalizeJevRunResponse({
+		success: true,
+		result: {
+			response: JSON.stringify({
+				answers: { frustration: docsScoreAnswer },
+			}),
+			usage: nestedResponseUsage,
+		},
+	})
+	expect(nestedResponse.resultAnswers).toBe('missing')
+	expect(nestedResponse.payload.answers).toEqual({
+		frustration: docsScoreAnswer,
+	})
+	expect(nestedResponse.payload.usage).toEqual(nestedResponseUsage)
 })
 
 test('rerankSearchCandidatesWithJev applies wrapped gateway Score answers and samples missing-answer keys', async () => {

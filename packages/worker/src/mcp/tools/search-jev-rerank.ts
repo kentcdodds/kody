@@ -249,7 +249,10 @@ export function normalizeJevRunResponse(
 	}
 	const unwrapped = unwrapJevPayload(parsedRaw)
 	const answers = asPlainRecord(unwrapped.answers)
-	const usage = asPlainRecord(unwrapped.usage) ?? asPlainRecord(parsedRaw.usage)
+	const usage =
+		asPlainRecord(unwrapped.usage) ??
+		asPlainRecord(nestedRecord(parsedRaw.result)?.usage) ??
+		asPlainRecord(parsedRaw.usage)
 	return {
 		payload: {
 			...(answers

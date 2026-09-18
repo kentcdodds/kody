@@ -205,7 +205,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Jev Score question batching (merge/parse plus expected/received
 		// errorReason) adds ~2 KB: local dry-run 3_784_520 bytes against
 		// the previous 3_785_000 budget.
-		maxEntryBytes: 3_788_000,
+		// Gateway envelope unwrap plus incomplete-answer key sampling adds
+		// a few KB: CI dry-run 3_788_951 bytes against the previous
+		// 3_788_000 budget.
+		maxEntryBytes: 3_792_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',
