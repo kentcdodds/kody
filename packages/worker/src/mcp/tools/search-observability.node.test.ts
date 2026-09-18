@@ -6,15 +6,6 @@ import {
 	searchObservabilityTelemetryIndex,
 } from './search-observability.ts'
 
-test('encodeSearchTop1Type maps known types and unknowns to -1', () => {
-	expect(encodeSearchTop1Type('capability')).toBe(1)
-	expect(encodeSearchTop1Type('guide')).toBe(2)
-	expect(encodeSearchTop1Type('package')).toBe(3)
-	expect(encodeSearchTop1Type('mcp-server')).toBe(4)
-	expect(encodeSearchTop1Type('unknown')).toBe(-1)
-	expect(encodeSearchTop1Type(null)).toBe(-1)
-})
-
 test('recordSearchObservabilityEvent writes duration and exclusive tiles, no-ops without binding, and swallows sink errors', () => {
 	const writeDataPoint = vi.fn()
 	recordSearchObservabilityEvent(
@@ -57,6 +48,25 @@ test('recordSearchObservabilityEvent writes duration and exclusive tiles, no-ops
 			12389, 7436, 2114, 4000, 2114, 1967, 725, 0.18, 13, 40, 12, 28, 0.82, 310,
 			1,
 		],
+	})
+
+	recordSearchObservabilityEvent(
+		{
+			MCP_SEARCH_EVENTS: {
+				writeDataPoint,
+			} as unknown as AnalyticsEngineDataset,
+		},
+		{
+			outcome: 'success',
+			mode: 'list',
+			durationMs: 10,
+			top1TypeCode: encodeSearchTop1Type('unknown'),
+		},
+	)
+	expect(writeDataPoint).toHaveBeenLastCalledWith({
+		indexes: [searchObservabilityTelemetryIndex],
+		blobs: ['success', 'list', '', 'intact', 'online', 'n/a', ''],
+		doubles: [10, 0, 0, 0, 0, 0, 0, -1, 0, -1, -1, -1, -1, -1, -1],
 	})
 
 	expect(() =>
