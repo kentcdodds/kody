@@ -1,5 +1,8 @@
 import { expect, test } from 'vitest'
-import { reconcileSearchPhaseTimings } from './search-timing.ts'
+import {
+	reconcileSearchPhaseTimings,
+	toSearchServerTiming,
+} from './search-timing.ts'
 
 test('reconcileSearchPhaseTimings sums exclusive tiles and leaves overlapping detail out of exclusiveMs', () => {
 	const reconciled = reconcileSearchPhaseTimings({
@@ -56,4 +59,70 @@ test('reconcileSearchPhaseTimings counts rowAndRegistryLoadMs only when loadAndR
 	})
 	expect(entityMode.exclusiveMs).toBe(625)
 	expect(entityMode.unaccountedMs).toBe(175)
+})
+
+test('toSearchServerTiming maps list phases and emits jevRerank only on the flag path', () => {
+	const phaseTimings = {
+		queryUnderstandingMs: 4,
+		candidateGenerationMs: 20,
+		rerankingMs: 12,
+		jevRerankMs: 1280,
+		formattingMs: 3,
+		memoryEnrichmentTimedOut: false,
+	}
+	const flagOff = toSearchServerTiming({
+		phaseTimings,
+		jevRerank: {
+			enabled: false,
+			outcome: 'skipped-flag-off',
+			candidatesBefore: 8,
+			candidatesAfter: 8,
+			droppedCount: 0,
+			meanConfidence: null,
+			top1Type: 'capability',
+		},
+	})
+	expect(flagOff).toEqual([
+		{ name: 'queryUnderstanding', durationMs: 4 },
+		{ name: 'candidateGeneration', durationMs: 20 },
+		{ name: 'reranking', durationMs: 12 },
+		{ name: 'formatting', durationMs: 3 },
+	])
+
+	const applied = toSearchServerTiming({
+		phaseTimings,
+		jevRerank: {
+			enabled: true,
+			outcome: 'applied',
+			candidatesBefore: 50,
+			candidatesAfter: 8,
+			droppedCount: 12,
+			meanConfidence: 0.8,
+			top1Type: 'capability',
+		},
+	})
+	expect(applied).toEqual([
+		{ name: 'queryUnderstanding', durationMs: 4 },
+		{ name: 'candidateGeneration', durationMs: 20 },
+		{ name: 'reranking', durationMs: 12 },
+		{ name: 'jevRerank', durationMs: 1280 },
+		{ name: 'formatting', durationMs: 3 },
+	])
+
+	const fallback = toSearchServerTiming({
+		phaseTimings,
+		jevRerank: {
+			enabled: true,
+			outcome: 'fallback-error',
+			candidatesBefore: 50,
+			candidatesAfter: 8,
+			droppedCount: 0,
+			meanConfidence: null,
+			top1Type: 'capability',
+		},
+	})
+	expect(fallback.find((entry) => entry.name === 'jevRerank')).toEqual({
+		name: 'jevRerank',
+		durationMs: 1280,
+	})
 })

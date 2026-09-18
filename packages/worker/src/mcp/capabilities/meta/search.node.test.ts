@@ -1,4 +1,8 @@
 import { expect, test, vi } from 'vitest'
+import {
+	featureFlagKeys,
+	jevSearchRerankFlagKey,
+} from '#universal/feature-flags/registry.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getCapabilityRegistryForContext: vi.fn(async () => ({
@@ -113,6 +117,24 @@ vi.mock('#worker/package-retrievers/service.ts', () => ({
 	runPackageRetrievers: (...args: Array<unknown>) =>
 		mockModule.runPackageRetrievers(...args),
 }))
+
+const mockFeatureFlags = vi.hoisted(() => ({
+	override: null as Record<string, boolean> | null,
+}))
+
+vi.mock('#mcp/capabilities/access-control.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#mcp/capabilities/access-control.ts')>()
+	return {
+		...actual,
+		resolveCallerFeatureFlags: async (
+			...args: Parameters<typeof actual.resolveCallerFeatureFlags>
+		) => {
+			if (mockFeatureFlags.override) return mockFeatureFlags.override
+			return actual.resolveCallerFeatureFlags(...args)
+		},
+	}
+})
 
 const { searchCapability } = await import('./search.ts')
 
@@ -271,6 +293,27 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 			query: 'search docs',
 		}),
 	)
+
+	mockFeatureFlags.override = Object.fromEntries(
+		featureFlagKeys.map((key) => [key, key === jevSearchRerankFlagKey]),
+	)
+	try {
+		const jevEnabled = await searchCapability.handler(
+			{ query: 'search docs', conversationId: 'meta-jev-timing' },
+			context,
+		)
+		const jevEntry = jevEnabled.serverTiming?.find(
+			(entry) => entry.name === 'jevRerank',
+		)
+		expect(jevEntry).toEqual({
+			name: 'jevRerank',
+			durationMs: expect.any(Number),
+		})
+		expect(jevEnabled.telemetry?.jevRerank?.enabled).toBe(true)
+		expect(jevEntry?.durationMs).toBe(jevEnabled.phaseTimings?.jevRerankMs)
+	} finally {
+		mockFeatureFlags.override = null
+	}
 })
 
 test('meta search supports domain browsing and empty discovery', async () => {

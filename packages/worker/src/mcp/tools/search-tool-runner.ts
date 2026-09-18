@@ -44,7 +44,11 @@ import {
 	encodeSearchTop1Type,
 	recordSearchObservabilityEvent,
 } from './search-observability.ts'
-import { elapsedMs, reconcileSearchPhaseTimings } from './search-timing.ts'
+import {
+	elapsedMs,
+	reconcileSearchPhaseTimings,
+	toSearchServerTiming,
+} from './search-timing.ts'
 import { type SearchPhaseTimings } from './search-types.ts'
 import { type SearchToolArgs } from './search-tool-definition.ts'
 import { buildOnboardingSearchNotice } from './search-onboarding-notice.ts'
@@ -592,15 +596,24 @@ export async function runSearchTool(input: {
 		})
 		const formattingMs = elapsedMs(formattingStartMs)
 		endToEndPhaseTimings.formattingMs = formattingMs
-		const timing = finishToolTiming(timingStart)
+		const timingBase = finishToolTiming(timingStart)
 		const mergedPhaseTimings: SearchPhaseTimings = {
 			...execution.result.phaseTimings,
 			...endToEndPhaseTimings,
 		}
 		const phaseTimings = reconcileSearchPhaseTimings({
-			durationMs: timing.durationMs,
+			durationMs: timingBase.durationMs,
 			phaseTimings: mergedPhaseTimings,
 		})
+		const jevTelemetry = execution.result.telemetry.jevRerank
+		const serverTiming = toSearchServerTiming({
+			phaseTimings,
+			jevRerank: jevTelemetry,
+		})
+		const timing = {
+			...timingBase,
+			...(serverTiming.length > 0 ? { serverTiming } : {}),
+		}
 		const result: SearchResultStructuredContent = {
 			offline: trimmedPayload.offline,
 			warnings: structuredWarnings,
@@ -653,7 +666,6 @@ export async function runSearchTool(input: {
 				phaseTimings,
 			},
 		})
-		const jevTelemetry = execution.result.telemetry.jevRerank
 		recordSearchObservabilityEvent(agent.getEnv(), {
 			outcome: 'success',
 			mode: 'list',

@@ -1,7 +1,54 @@
-import { type SearchPhaseTimings } from './search-types.ts'
+import { type ServerTimingEntry } from '#worker/server-timing.ts'
+
+import {
+	type SearchPhaseTimings,
+	type SearchTelemetry,
+} from './search-types.ts'
 
 export function elapsedMs(startedAt: number): number {
 	return Math.max(0, Math.round(performance.now() - startedAt))
+}
+
+/**
+ * Request-scoped Server-Timing phases for list-mode ranked search. Same
+ * `{ name, durationMs }` shape as execute. `jevRerank` is included when the
+ * flag path ran (applied, fallback-*, or a flag-on skip). Other
+ * already-collected millisecond tiles map when present.
+ */
+const searchServerTimingPhases = [
+	['queryUnderstanding', 'queryUnderstandingMs'],
+	['candidateGeneration', 'candidateGenerationMs'],
+	['queryEmbedding', 'queryEmbeddingMs'],
+	['loadAndRank', 'loadAndRankMs'],
+	['reranking', 'rerankingMs'],
+	['retrievers', 'retrieversMs'],
+	['memoryEnrichment', 'memoryEnrichmentMs'],
+	['formatting', 'formattingMs'],
+	['waitingItems', 'waitingItemsMs'],
+] as const satisfies ReadonlyArray<readonly [string, keyof SearchPhaseTimings]>
+
+export function toSearchServerTiming(input: {
+	phaseTimings: Partial<SearchPhaseTimings>
+	jevRerank?: SearchTelemetry['jevRerank'] | null
+}): Array<ServerTimingEntry> {
+	const entries: Array<ServerTimingEntry> = []
+	for (const [name, key] of searchServerTimingPhases) {
+		const durationMs = input.phaseTimings[key]
+		if (typeof durationMs === 'number' && Number.isFinite(durationMs)) {
+			entries.push({ name, durationMs })
+		}
+		if (name === 'reranking') {
+			const jevDurationMs = input.phaseTimings.jevRerankMs
+			if (
+				input.jevRerank?.enabled === true &&
+				typeof jevDurationMs === 'number' &&
+				Number.isFinite(jevDurationMs)
+			) {
+				entries.push({ name: 'jevRerank', durationMs: jevDurationMs })
+			}
+		}
+	}
+	return entries
 }
 
 /**

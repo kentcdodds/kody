@@ -93,10 +93,13 @@ memory matches are not surfaced automatically.
 Ranked list-mode structured content includes **`telemetry.jevRerank`**
 (`applied`, `skipped-*`, or `fallback-*`) and **`phaseTimings.jevRerankMs`**. A
 `fallback-error` outcome includes a short **`errorReason`** (missing AI Gateway,
-Gateway 403/402, or incomplete Score answers). Entity lookups, domain listings,
-empty/broad discovery, `search({ domain })`, and exact package identity omit
-those fields. The `search` meta capability (usable inside **execute**) returns
-the same object on ranked `query` results.
+Gateway 403/402, or incomplete Score answers). Public `search` also returns
+request-scoped **`timing.serverTiming`** phases (`{ name, durationMs }`, same
+shape as execute, not stored), including **`jevRerank`** when that stage ran.
+The `search` meta capability (usable inside **execute**) returns the same
+`telemetry`, `phaseTimings`, and top-level `serverTiming` on ranked `query`
+results. Entity lookups, domain listings, empty/broad discovery,
+`search({ domain })`, and exact package identity omit those Jev fields.
 
 Ranked `search({ query })` may also prepend a **`## Waiting`** block when
 something the signed-in human must clear is `block` or `degraded` (reconnectable

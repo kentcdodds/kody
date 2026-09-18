@@ -7,6 +7,7 @@ import {
 	toSlimStructuredMatches,
 	type SlimSearchMatch,
 } from '#mcp/tools/search-format.ts'
+import { toSearchServerTiming } from '#mcp/tools/search-timing.ts'
 import {
 	conversationIdInputField,
 	memoryContextInputField,
@@ -70,6 +71,17 @@ const searchOutputSchema = z.object({
 		.optional()
 		.describe(
 			'Exclusive Jev rerank wall time in milliseconds when the ranked path computed the stage.',
+		),
+	serverTiming: z
+		.array(
+			z.object({
+				name: z.string(),
+				durationMs: z.number().nonnegative(),
+			}),
+		)
+		.optional()
+		.describe(
+			'Request-scoped phase timings. Same shape as execute serverTiming. Not stored. Includes jevRerank when the Jev stage ran on the ranked path.',
 		),
 })
 
@@ -167,6 +179,10 @@ export const searchCapability = defineDomainCapability(
 			})
 			const jevRerank = execution.result.telemetry.jevRerank
 			const jevRerankMs = execution.result.phaseTimings.jevRerankMs
+			const serverTiming = toSearchServerTiming({
+				phaseTimings: execution.result.phaseTimings,
+				jevRerank,
+			})
 			return {
 				conversationId,
 				matches: toSlimStructuredMatches({
@@ -194,6 +210,7 @@ export const searchCapability = defineDomainCapability(
 							phaseTimings: { jevRerankMs },
 						}
 					: {}),
+				...(serverTiming.length > 0 ? { serverTiming } : {}),
 			}
 		},
 	},
