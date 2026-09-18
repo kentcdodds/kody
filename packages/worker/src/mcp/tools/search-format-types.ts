@@ -86,6 +86,14 @@ export type SearchResultStructuredContent = {
 			top1Type: SearchMatchType | null
 			/** Present only when `outcome` is `fallback-error`. */
 			errorReason?: string
+			/** Present when the Jev stage ran or attempted. */
+			model?: 'typesafe/jev'
+			/** Score `AI.run` count (one per question batch). */
+			aiCallCount?: number
+			usage?: {
+				inputTokens: number | null
+				outputTokens: number | null
+			}
 		}
 	}
 	waiting?: {

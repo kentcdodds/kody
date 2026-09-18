@@ -55,6 +55,12 @@ export type SearchObservabilityPoint = {
 	jevDurationMs?: number
 	/** Encoded top-1 match type for cohort mix charts; -1 when unknown. */
 	top1TypeCode?: number
+	/** Score `AI.run` count; -1 when the Jev stage did not attempt. */
+	jevAiCallCount?: number
+	/** Summed prompt/input tokens; -1 when unused or omitted. */
+	jevInputTokens?: number
+	/** Summed completion/output tokens; -1 when unused or omitted. */
+	jevOutputTokens?: number
 }
 
 const searchTop1TypeCodes = {
@@ -123,6 +129,9 @@ export function recordSearchObservabilityEvent(
 					: -1,
 				input.jevDurationMs ?? -1,
 				input.top1TypeCode ?? -1,
+				input.jevAiCallCount ?? -1,
+				input.jevInputTokens ?? -1,
+				input.jevOutputTokens ?? -1,
 			],
 		})
 	} catch (error) {

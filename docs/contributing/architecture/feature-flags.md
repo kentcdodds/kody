@@ -83,8 +83,10 @@ credits (or BYOK); missing Gateway, a Gateway 403/402, or incomplete Score
 answers records `telemetry.jevRerank.outcome` `fallback-error` with
 `errorReason`. Offline/deterministic search skips Jev and uses hybrid order.
 Ranked list-mode structured content reports the stage on `telemetry.jevRerank`
-and `phaseTimings.jevRerankMs`; see [Search](../../use/search.md). Enable for
-dogfood with
+(including `model`, `aiCallCount`, and token `usage` when the stage ran or
+attempted) and `phaseTimings.jevRerankMs`; experiment eval gates are ranking
+quality and latency/usage. See [Search](../../use/search.md). Enable for dogfood
+with
 `adminFeatureFlagOverride({ key: "jev-search-rerank", username: "kentcdodds", enabled: true })`.
 Remove the flag and gate sites when the experiment ends.
 

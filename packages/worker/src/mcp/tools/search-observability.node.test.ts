@@ -33,6 +33,9 @@ test('recordSearchObservabilityEvent writes duration and exclusive tiles, no-ops
 			jevMeanConfidence: 0.82,
 			jevDurationMs: 310,
 			top1TypeCode: encodeSearchTop1Type('capability'),
+			jevAiCallCount: 5,
+			jevInputTokens: 1200,
+			jevOutputTokens: 80,
 			phaseTimings: {
 				unaccountedMs: 7436,
 				loadAndRankMs: 2114,
@@ -57,7 +60,7 @@ test('recordSearchObservabilityEvent writes duration and exclusive tiles, no-ops
 		],
 		doubles: [
 			12389, 7436, 2114, 4000, 2114, 1967, 725, 0.18, 13, 40, 12, 28, 0.82, 310,
-			1,
+			1, 5, 1200, 80,
 		],
 	})
 
@@ -77,7 +80,7 @@ test('recordSearchObservabilityEvent writes duration and exclusive tiles, no-ops
 	expect(writeDataPoint).toHaveBeenLastCalledWith({
 		indexes: [searchObservabilityTelemetryIndex],
 		blobs: ['success', 'list', '', 'intact', 'online', 'n/a', '', ''],
-		doubles: [10, 0, 0, 0, 0, 0, 0, -1, 0, -1, -1, -1, -1, -1, -1],
+		doubles: [10, 0, 0, 0, 0, 0, 0, -1, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1],
 	})
 
 	expect(() =>

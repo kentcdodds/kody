@@ -455,10 +455,26 @@ test('list search with Jev enabled includes serverTiming jevRerank', async () =>
 		})
 		expect(jevEntry?.durationMs).toBeGreaterThanOrEqual(0)
 		const result = response.structuredContent.result as {
-			telemetry?: { jevRerank?: { enabled: boolean } }
+			telemetry?: {
+				jevRerank?: {
+					enabled: boolean
+					model?: string
+					aiCallCount?: number
+					usage?: {
+						inputTokens: number | null
+						outputTokens: number | null
+					}
+				}
+			}
 			phaseTimings?: { jevRerankMs?: number }
 		}
 		expect(result.telemetry?.jevRerank?.enabled).toBe(true)
+		expect(result.telemetry?.jevRerank?.model).toBe('typesafe/jev')
+		expect(result.telemetry?.jevRerank?.aiCallCount).toEqual(expect.any(Number))
+		expect(result.telemetry?.jevRerank?.usage).toEqual({
+			inputTokens: null,
+			outputTokens: null,
+		})
 		expect(jevEntry?.durationMs).toBe(result.phaseTimings?.jevRerankMs)
 	} finally {
 		mockFeatureFlags.override = null

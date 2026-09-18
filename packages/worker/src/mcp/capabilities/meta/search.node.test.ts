@@ -310,6 +310,14 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 			durationMs: expect.any(Number),
 		})
 		expect(jevEnabled.telemetry?.jevRerank?.enabled).toBe(true)
+		expect(jevEnabled.telemetry?.jevRerank?.model).toBe('typesafe/jev')
+		expect(jevEnabled.telemetry?.jevRerank?.aiCallCount).toEqual(
+			expect.any(Number),
+		)
+		expect(jevEnabled.telemetry?.jevRerank?.usage).toEqual({
+			inputTokens: null,
+			outputTokens: null,
+		})
 		expect(jevEntry?.durationMs).toBe(jevEnabled.phaseTimings?.jevRerankMs)
 	} finally {
 		mockFeatureFlags.override = null

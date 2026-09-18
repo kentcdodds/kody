@@ -44,6 +44,29 @@ const jevRerankTelemetrySchema = z
 			.describe(
 				'Short reason when outcome is fallback-error (gateway auth/credits, incomplete Score answers). Omitted otherwise.',
 			),
+		model: z
+			.literal('typesafe/jev')
+			.optional()
+			.describe(
+				'Workers AI model when the Jev stage ran or attempted. Omitted when the flag is off.',
+			),
+		aiCallCount: z
+			.number()
+			.int()
+			.nonnegative()
+			.optional()
+			.describe(
+				'Number of Score AI.run calls (one per question batch). Present with model.',
+			),
+		usage: z
+			.object({
+				inputTokens: z.number().nonnegative().nullable(),
+				outputTokens: z.number().nonnegative().nullable(),
+			})
+			.optional()
+			.describe(
+				'Summed Workers AI / Gateway token usage across Score batches. Nulls when the binding omitted usage.',
+			),
 	})
 	.describe(
 		'Jev Score rerank stage for list-mode ranked search. Present when the ranked path ran or skipped the stage. Omitted for domain overview, domain browse, empty discovery, and exact-package identity.',
