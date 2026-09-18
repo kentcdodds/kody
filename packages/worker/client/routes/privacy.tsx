@@ -98,25 +98,27 @@ export function PrivacyRoute(_handle: Handle) {
 					isolation rules. Kody does not sell that data, use it for advertising,
 					share it with other Kody users, or use it to train a Kody model. Kody
 					does not run its own chat-model agent loop and does not bill for chat
-					tokens. Search and indexing do call Cloudflare Workers AI for
-					embeddings: the search query, plus indexed text for builtin
-					capabilities, saved packages (manifest search fields, not full
-					source), memories (subject, summary, details, and tags), jobs (name,
-					description, and schedule), and public community listings (name,
-					description, tags, and a short readme snippet). Secret values and
-					OAuth tokens are never sent to that model. Connected-account provider
-					content is embedded only if it was first saved as one of those indexed
-					records.
+					tokens. Search and indexing call Cloudflare Workers AI for embeddings:
+					the search query, plus indexed text for builtin capabilities, saved
+					packages (manifest search fields, not full source), memories (subject,
+					summary, details, and tags), jobs (name, description, and schedule),
+					and public community listings (name, description, tags, and a short
+					readme snippet). Ranked search can send that query plus candidate
+					cards (type, id, title, and summary) to Workers AI for scoring. Secret
+					values and OAuth tokens are never sent to those models.
+					Connected-account provider content is embedded or scored only if it
+					was first saved as one of those indexed records or appears on a search
+					candidate card.
 				</p>
 				<p mix={css(descriptionCss)}>
 					<strong>Share, transfer, and disclose.</strong> Provider data leaves
 					your isolated account only to Cloudflare, which hosts the application,
-					database, object storage, network, and Workers AI embeddings; the MCP
-					host you connected (for example ChatGPT, Claude, or Cursor), when that
-					host asks Kody to act and receives the result; the provider itself,
-					when Kody calls its API with your token; and disclosure required by
-					law. Kody does not hand connected-account data to other customers or
-					advertisers.
+					database, object storage, network, and Workers AI embeddings and
+					ranked-search scoring; the MCP host you connected (for example
+					ChatGPT, Claude, or Cursor), when that host asks Kody to act and
+					receives the result; the provider itself, when Kody calls its API with
+					your token; and disclosure required by law. Kody does not hand
+					connected-account data to other customers or advertisers.
 				</p>
 				<p mix={css(descriptionCss)}>
 					<strong>Protection.</strong> Tokens and OAuth grants are encrypted at
@@ -133,10 +135,11 @@ export function PrivacyRoute(_handle: Handle) {
 					fulfill your request or saved job. Kody stores Google OAuth tokens
 					encrypted on that Google connection and does not use Google user data
 					for advertising. Kody shares, transfers, or discloses Google user data
-					only with Cloudflare (hosting, including Workers AI embeddings for
-					content first saved as an indexed record), the MCP host you connected
-					when it asks Kody to act, Google when Kody calls Google APIs on your
-					behalf, and when required by law.
+					only with Cloudflare (hosting, including Workers AI embeddings and
+					ranked-search scoring for content first saved as an indexed record or
+					shown on a search candidate card), the MCP host you connected when it
+					asks Kody to act, Google when Kody calls Google APIs on your behalf,
+					and when required by law.
 				</p>
 			</section>
 
@@ -372,7 +375,7 @@ export function PrivacyRoute(_handle: Handle) {
 					<li>
 						Cloudflare — application hosting, database, object storage, email
 						delivery, security, network infrastructure, and Workers AI
-						embeddings for search
+						embeddings and ranked-search scoring
 					</li>
 					<li>Stripe — paid subscriptions, billing, and payment records</li>
 					<li>

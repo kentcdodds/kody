@@ -125,11 +125,11 @@ This project uses the following resources:
     Derived community icons and OAuth / MCP logos are fitted to 256px WebP at
     ingest. No extra Cloudflare resource to create; local wrangler uses the
     offline simulator.
-- Workers AI binding for semantic search embeddings
+- Workers AI binding for semantic search embeddings and ranked-search scoring
   - `binding`: `AI`
-  - Production and preview route embedding calls through this binding. When
-    `AI_GATEWAY_ID` is configured, calls are sent through AI Gateway via the
-    Workers AI binding options.
+  - Production and preview route embedding and Jev Score (`typesafe/jev`) calls
+    through this binding. When `AI_GATEWAY_ID` is configured, calls are sent
+    through AI Gateway via the Workers AI binding options.
 - Second registrable domain for hosted package apps
   - Production: `kody.run` (zone in the same Cloudflare account, on Cloudflare
     nameservers), served by the runtime Worker via **zone routes** plus proxied
@@ -468,8 +468,8 @@ automatically:
 - `ARTIFACTS_NAMESPACE` (optional Worker var; defaults to `default`. Set per
   Wrangler environment in `packages/worker/wrangler.jsonc` — e.g. `production`
   and `preview` — so Artifacts repos are partitioned by deploy environment.)
-- `AI_GATEWAY_ID` (optional Worker secret; routes Workers AI embedding calls
-  through the configured Cloudflare AI Gateway when set)
+- `AI_GATEWAY_ID` (optional Worker secret; routes Workers AI embedding and Jev
+  Score calls through the configured Cloudflare AI Gateway when set)
 - `CAPABILITY_REINDEX_SECRET` (strongly recommended for production — CI skips
   the post-deploy reindex and origin-only execute smoke check when unset;
   optional locally and for previews; bearer auth for
@@ -557,9 +557,9 @@ Configure these GitHub Actions secrets and variables for workflows:
   generated Worker `vars` config before deploy. Request-scoped MCP/app URLs use
   the inbound request origin.)
 - `AI_GATEWAY_ID` (optional for production deploys; enables AI Gateway routing
-  for Workers AI embeddings)
+  for Workers AI embeddings and Jev Score)
 - `AI_GATEWAY_ID_PREVIEW` (optional for preview deploys; enables AI Gateway
-  routing for Workers AI embeddings)
+  routing for Workers AI embeddings and Jev Score)
 - `SENTRY_DSN` (optional; create a JavaScript/Cloudflare project in Sentry and
   paste the DSN; syncs to the Worker as a secret when set in GitHub Actions)
 - `YOUTUBE_DATA_API_KEY` (optional origin-only; YouTube Data API key for the
@@ -704,8 +704,8 @@ How to get/set each value:
   Production leaves both unset.
 - `AI_GATEWAY_ID`
   - Create a Cloudflare AI Gateway in the dashboard and copy its production
-    gateway ID. The Worker uses this for Workers AI embedding calls when set;
-    leave unset only if direct Workers AI calls are preferred.
+    gateway ID. The Worker uses this for Workers AI embedding and Jev Score
+    calls when set; leave unset only if direct Workers AI calls are preferred.
   - Store that value as the production GitHub Actions secret.
 - `AI_GATEWAY_ID_PREVIEW`
   - Create a separate Cloudflare AI Gateway for previews and copy its gateway

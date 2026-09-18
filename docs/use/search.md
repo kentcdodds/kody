@@ -90,22 +90,19 @@ and `search({ domain })` do not attach memories. **execute** retrieves memories
 only when its caller opts in with **`memoryContext`**. Archived or very weak
 memory matches are not surfaced automatically.
 
-Those same ranked list-mode responses include **`telemetry.jevRerank`** when the
-ranker computed the Jev Score stage — including skipped and fallback outcomes
-such as `skipped-flag-off`, `skipped-offline`, `fallback-error`, and `applied` —
-plus **`phaseTimings.jevRerankMs`** for that stage. Entity lookups, domain
-listings, empty/broad discovery, `search({ domain })`, and exact package
-identity omit the field because Jev does not run. The `search` meta capability
-(usable inside **execute**) returns the same `telemetry.jevRerank` object on
-ranked `query` results.
+Ranked list-mode structured content includes **`telemetry.jevRerank`**
+(`applied`, `skipped-*`, or `fallback-*`) and **`phaseTimings.jevRerankMs`**.
+Entity lookups, domain listings, empty/broad discovery, `search({ domain })`,
+and exact package identity omit those fields. The `search` meta capability
+(usable inside **execute**) returns the same object on ranked `query` results.
 
-Those same ranked `search({ query })` calls may also prepend a **`## Waiting`**
-block when something the signed-in human must clear is `block` or `degraded`
-(reconnectable OAuth, expired secrets, MCP reconnects). Setup/onboarding cards
-stay off this block. At most three items, then “N more” pointing at
-`waitingSummary` and `/account/waiting`. Entity lookups, `search({ domain })`,
-and empty/broad discovery do not inject it. Matching integration hits also carry
-the reconnect `nextStep` when the last refresh was reconnectable.
+Ranked `search({ query })` may also prepend a **`## Waiting`** block when
+something the signed-in human must clear is `block` or `degraded` (reconnectable
+OAuth, expired secrets, MCP reconnects). Setup/onboarding cards stay off this
+block. At most three items, then “N more” pointing at `waitingSummary` and
+`/account/waiting`. Entity lookups, `search({ domain })`, and empty/broad
+discovery do not inject it. Matching integration hits also carry the reconnect
+`nextStep` when the last refresh was reconnectable.
 
 Plan-limit or quota denials keep the existing error text and `isError` flag and
 add a focused `entitlement` object on structured content. Ordinary successful
