@@ -6,6 +6,24 @@ export const defaultSearchLimit = 15
 export const domainBrowseDefaultLimit = 100
 export const defaultMaxResponseSize = 4_000
 export const topCapabilityInlineCallShapeCount = 3
+/**
+ * Max length for an inlined package-export type definition on a high-
+ * confidence ranked hit (same budget family as capability call shapes).
+ */
+export const inlineExportCallContractTypeMaxLength = 500
+/**
+ * Hybrid `scoreComponents.final` gap (top1 − top2) at or above which a
+ * top package-export hit may receive an inlined call contract. Below
+ * this (or missing top2 treated as clear) still requires a score floor.
+ */
+export const exportCallContractMinScoreGap = 0.15
+/** Minimum top-1 hybrid final score to inline an export call contract. */
+export const exportCallContractMinTopScore = 0.45
+/**
+ * When Jev applied, meanConfidence at or above this may inline the top
+ * export call contract (also requires the top hit to be an export).
+ */
+export const exportCallContractMinJevMeanConfidence = 0.7
 export const maxRelatedCapabilityOperations = 20
 export const maxBatchEntityRefs = 10
 export const maxFusedPackageCandidates = 100

@@ -91,4 +91,7 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 	expect(html).toContain('50,000')
 	expect(html).toContain('120,000')
 	expect(html).toMatch(/<a[^>]*href="\/docs\/kody-factory"[^>]*>factory<\/a>/)
+	// Improved-search marketing copy is gated by jev-search-rerank; anonymous
+	// sessions evaluate flags off, so the claim must not appear here.
+	expect(html).not.toContain('Improved search')
 })

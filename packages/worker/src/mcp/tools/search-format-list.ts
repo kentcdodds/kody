@@ -118,7 +118,18 @@ function formatMatchListItem(match: SearchMatch, index: number) {
 			match.listingAhead === true
 				? ' Listing ahead — origin has new commits; communityGet then repoPublishSession with absorbed_upstream_commit.'
 				: ''
-		return `${String(index + 1)}. **package** ${escapeMarkdownText(match.title)} (${formatMarkdownInlineCode(match.kodyId)}${exportLabel}) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}${actionSummary}${listingAheadNote}`
+		const mainLine = `${String(index + 1)}. **package** ${escapeMarkdownText(match.title)} (${formatMarkdownInlineCode(match.kodyId)}${exportLabel}) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}${actionSummary}${listingAheadNote}`
+		if (!match.exportCallContract) {
+			return mainLine
+		}
+		const contract = match.exportCallContract
+		const truncatedNote = contract.typeDefinitionTruncated
+			? '; use entity detail for the full definition'
+			: ''
+		const typePart = contract.typeDefinition
+			? ` — ${formatMarkdownInlineCode(contract.typeDefinition)}${truncatedNote}`
+			: ''
+		return `${mainLine}\n   ${formatMarkdownInlineCode(contract.usage)}${typePart}`
 	}
 	if (match.type === 'integration') {
 		const entityRef = buildEntityRef(match.integrationName, 'integration')

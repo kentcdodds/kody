@@ -20,6 +20,7 @@ import { searchEntityPlugins } from './search-entity-registry.ts'
 import { toCapabilitySearchMatch } from './search-entity-plugins/capability.ts'
 import { hydrateTopPackageMatches } from './search-entity-plugins/package.ts'
 import { type SearchMatch } from './search-format.ts'
+import { attachHighConfidenceExportCallContract } from './search-export-call-contract.ts'
 import { attachTopCapabilityCallShapes } from './search-related-capabilities.ts'
 import {
 	buildCandidateBaseScore,
@@ -180,8 +181,13 @@ export async function searchUnified(input: {
 	embedText?: EmbedTextFn
 	/** Include admin-only official guides in ranking. */
 	includeAdminGuides?: boolean
-	/** Widen hybrid recall and run stage-2 Jev Score rerank/filter. */
+	/** Widen hybrid recall and run stage-2 Jev when plan + necessity allow. */
 	jevRerankEnabled?: boolean
+	/**
+	 * Paid plan for Jev product gate. Ignored when `jevRerankEnabled` is
+	 * false. Free / anonymous must pass false.
+	 */
+	jevRerankPlanEligible?: boolean
 }): Promise<SearchUnifiedResult> {
 	const offline = isCapabilitySearchOffline(input.env)
 	const query = input.query.trim()
@@ -249,9 +255,10 @@ export async function searchUnified(input: {
 
 	const limit = Math.max(1, input.limit)
 	const jevRerankEnabled = input.jevRerankEnabled === true
+	const jevRerankPlanEligible = input.jevRerankPlanEligible === true
 	const recallLimit = resolveJevSearchRecallLimit({
 		limit,
-		widerRecall: jevRerankEnabled,
+		widerRecall: jevRerankEnabled && jevRerankPlanEligible,
 	})
 	const entityDescriptors = buildSearchableEntityDescriptors({
 		registry,
@@ -372,6 +379,7 @@ export async function searchUnified(input: {
 		limit,
 		offline,
 		enabled: jevRerankEnabled,
+		planEligible: jevRerankPlanEligible,
 	})
 	const reranked = jevRerank.candidates
 	const matches = domainFilter
@@ -389,6 +397,12 @@ export async function searchUnified(input: {
 		query: intent.normalizedQuery,
 		matches,
 		rows: optionalRows.packageRows,
+	})
+	attachHighConfidenceExportCallContract({
+		matches,
+		rankedCandidates: reranked,
+		jevOutcome: jevRerank.outcome,
+		jevMeanConfidence: jevRerank.meanConfidence,
 	})
 	const rerankingMs = elapsedMs(rerankingStart)
 

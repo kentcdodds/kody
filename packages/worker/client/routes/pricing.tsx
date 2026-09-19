@@ -1,7 +1,9 @@
 import { type Handle, css } from 'remix/ui'
 import { readAppSession } from '#client/app-session-context.tsx'
+import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
 import { reveal } from '#client/reveal.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
+import { jevSearchRerankFlagKey } from '#universal/feature-flags/registry.ts'
 import {
 	computeOverageRatesUsd,
 	formatDurableObjectRowsRead,
@@ -122,8 +124,16 @@ export async function pricingRouteLoader(): Promise<RouteLoaderResult> {
 
 export function PricingRoute(handle: Handle) {
 	return () => {
-		const isSignedIn = readAppSession(handle).session !== null
+		const session = readAppSession(handle).session
+		const isSignedIn = session !== null
+		const showImprovedSearch = isFeatureFlagEnabled(
+			session,
+			jevSearchRerankFlagKey,
+		)
 		const signedOutCta = publicSignupPrimaryCta()
+		const improvedSearchNote = showImprovedSearch
+			? ' Improved search when the candidate pool is ambiguous.'
+			: ''
 		return (
 			<section mix={css(pricingCss)}>
 				<header mix={css(pageHeadCss)}>
@@ -182,7 +192,7 @@ export function PricingRoute(handle: Handle) {
 						<p mix={css(planPriceNoteCss)}>$10/mo billed annually</p>
 						<p mix={css(planCopyCss)}>
 							Same {factoryGuideLink()}. More room for jobs, workflows, and
-							daily volume.
+							daily volume.{improvedSearchNote}
 						</p>
 						{renderPaidPlanCta(isSignedIn, signedOutCta)}
 					</section>
@@ -200,7 +210,7 @@ export function PricingRoute(handle: Handle) {
 						<p mix={css(planPriceNoteCss)}>$40/mo billed annually</p>
 						<p mix={css(planCopyCss)}>
 							Same {factoryGuideLink()}. More room for storage, jobs, workflows,
-							and daily volume.
+							and daily volume.{improvedSearchNote}
 						</p>
 						{renderPaidPlanCta(isSignedIn, signedOutCta)}
 					</section>

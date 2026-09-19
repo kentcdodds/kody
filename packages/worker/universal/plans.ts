@@ -68,6 +68,16 @@ export function resolvePlanWrite(plan: PlanName | null | undefined): PlanName {
 }
 
 /**
+ * Paid product SKUs (Standard, Pro, Max). Free never qualifies.
+ * Use for feature gates that are not usage entitlements (for example
+ * improved search / Jev). Do not put those features in the entitlement
+ * catalog.
+ */
+export function isPaidPlan(plan: PlanName): boolean {
+	return plan !== 'free'
+}
+
+/**
  * Rank order for comparing manual grants vs Stripe subscription plans.
  * Higher rank wins. free(0) < standard(1) < pro(2) < max(3).
  */

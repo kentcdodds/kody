@@ -1,15 +1,22 @@
 /**
  * Stage-2 Jev Score rerank/filter for ranked MCP `search({ query })`.
  *
- * Hybrid lexical+vector recall stays the retriever. When the
- * `jev-search-rerank` flag is on, a wider candidate pool is scored by
- * Workers AI `typesafe/jev` through AI Gateway. Score questions are sent
- * in small batches that share the same skinny-card state; answers are
- * unwrapped from known Gateway envelopes, then merged before parse.
- * That third-party model requires Gateway
- * authentication and Unified Billing (or BYOK); the Worker does not fall
- * back to direct Workers AI. Failures and low confidence fall back to
- * the pre-Jev hybrid order for the same pool.
+ * Hybrid lexical+vector recall stays the retriever. Product gate (when the
+ * `jev-search-rerank` flag is on): **paid plans only** (standard / pro /
+ * max) and only when the post-hybrid pool looks ambiguous
+ * ({@link evaluateJevSearchNecessity}). Free and anonymous never call Jev
+ * (`skipped-plan`). The flag remains the rollout / kill switch
+ * (`skipped-flag-off` when off); plan + necessity are the real product
+ * gates so pricing "improved search" (also flag-gated in the UI) stays
+ * truthful when the flag is on.
+ *
+ * Eligible paid searches widen hybrid recall, then score with Workers AI
+ * `typesafe/jev` through AI Gateway when necessity says so. Score questions
+ * are sent in small batches that share the same skinny-card state; answers
+ * are unwrapped from known Gateway envelopes, then merged before parse.
+ * That third-party model requires Gateway authentication and Unified
+ * Billing (or BYOK); the Worker does not fall back to direct Workers AI.
+ * Failures and low confidence fall back to the pre-Jev hybrid order.
  *
  * Offline / deterministic embedding paths never call Jev.
  */
@@ -30,10 +37,32 @@ export { jevSearchRerankFlagKey }
 export const jevSearchCandidateCap = 40
 
 /**
- * When the flag is on, plugins fetch at least this many hybrid candidates
- * (still Vectorize-capped at 100) before heuristic rerank + Jev.
+ * When flag + paid plan are eligible, plugins fetch at least this many
+ * hybrid candidates (still Vectorize-capped at 100) before heuristic
+ * rerank + optional Jev.
  */
 export const jevSearchWideRecallLimit = 50
+
+/**
+ * Necessity: pools this size or smaller skip Jev (`skipped-small-pool`).
+ * Hybrid `scoreComponents.final` is already decisive enough.
+ */
+export const jevSearchNecessitySmallPoolMax = 8
+
+/**
+ * Necessity: pools from smallMax+1 through this size run Jev only when
+ * top scores are tight or the top slice mixes entity kinds / parent
+ * package + export clash; otherwise `skipped-clear-winner`. Larger pools
+ * always run.
+ */
+export const jevSearchNecessityMediumPoolMax = 20
+
+/**
+ * Necessity (medium pools): run Jev when `top1.final - top2.final` is
+ * strictly below this gap on hybrid scores. Tuned for blended
+ * lexical/vector finals that often sit in ~0–2 with intent boosts.
+ */
+export const jevSearchNecessityTightScoreGap = 0.12
 
 /** Mean Jev confidence below this falls back to hybrid order. */
 export const jevSearchMinMeanConfidence = 0.45
@@ -181,6 +210,97 @@ export function resolveJevSearchRecallLimit(input: {
 }): number {
 	if (!input.widerRecall) return Math.max(1, input.limit)
 	return Math.max(input.limit, jevSearchWideRecallLimit)
+}
+
+function packageKodyId(candidate: SearchCandidate): string | null {
+	if (candidate.match.type !== 'package') return null
+	return candidate.match.kodyId
+}
+
+function isPackageExportHit(candidate: SearchCandidate): boolean {
+	return (
+		candidate.match.type === 'package' &&
+		typeof candidate.match.exportSubpath === 'string' &&
+		candidate.match.exportSubpath.length > 0
+	)
+}
+
+/**
+ * True when the top slice mixes a package index hit with an export hit for
+ * the same package — hybrid order alone may pick the wrong surface.
+ */
+export function hasParentPackageExportClash(
+	candidates: ReadonlyArray<SearchCandidate>,
+	topN = 5,
+): boolean {
+	const packageIndexes = new Set<string>()
+	const packageExports = new Set<string>()
+	for (const candidate of candidates.slice(0, topN)) {
+		const kodyId = packageKodyId(candidate)
+		if (!kodyId) continue
+		if (isPackageExportHit(candidate)) packageExports.add(kodyId)
+		else packageIndexes.add(kodyId)
+	}
+	for (const kodyId of packageExports) {
+		if (packageIndexes.has(kodyId)) return true
+	}
+	return false
+}
+
+/**
+ * True when the top slice spans more than one search match type.
+ */
+export function hasMixedEntityKinds(
+	candidates: ReadonlyArray<SearchCandidate>,
+	topN = 5,
+): boolean {
+	const kinds = new Set(
+		candidates.slice(0, topN).map((candidate) => candidate.type),
+	)
+	return kinds.size > 1
+}
+
+export type JevSearchNecessityDecision =
+	| { run: true }
+	| {
+			run: false
+			outcome: 'skipped-small-pool' | 'skipped-clear-winner'
+	  }
+
+/**
+ * Decide whether the post-hybrid pool needs Jev. Pure; no AI.
+ *
+ * - `≤ {@link jevSearchNecessitySmallPoolMax}` → skip (`skipped-small-pool`)
+ * - `smallMax+1 … {@link jevSearchNecessityMediumPoolMax}` → run only when
+ *   top scores are tight, entity kinds mix, or parent package + export
+ *   clash; else `skipped-clear-winner`
+ * - `> mediumMax` → run
+ */
+export function evaluateJevSearchNecessity(
+	candidates: ReadonlyArray<SearchCandidate>,
+): JevSearchNecessityDecision {
+	const count = candidates.length
+	if (count <= jevSearchNecessitySmallPoolMax) {
+		return { run: false, outcome: 'skipped-small-pool' }
+	}
+	if (count > jevSearchNecessityMediumPoolMax) {
+		return { run: true }
+	}
+	const top1 = candidates[0]
+	const top2 = candidates[1]
+	const scoreGap =
+		top1 && top2
+			? top1.scoreComponents.final - top2.scoreComponents.final
+			: Number.POSITIVE_INFINITY
+	const tightScores = scoreGap < jevSearchNecessityTightScoreGap
+	if (
+		tightScores ||
+		hasMixedEntityKinds(candidates) ||
+		hasParentPackageExportClash(candidates)
+	) {
+		return { run: true }
+	}
+	return { run: false, outcome: 'skipped-clear-winner' }
 }
 
 function questionKey(index: number): string {
@@ -511,6 +631,8 @@ function mean(values: ReadonlyArray<number>): number {
 /**
  * Reorder and drop hybrid candidates with Jev Score. Never returns an empty
  * list when `candidates` was non-empty — falls back to hybrid order instead.
+ *
+ * Gate order: flag → paid plan → empty/offline/AI → necessity → Score.
  */
 export async function rerankSearchCandidatesWithJev(input: {
 	env: Env
@@ -519,7 +641,13 @@ export async function rerankSearchCandidatesWithJev(input: {
 	candidates: Array<SearchCandidate>
 	limit: number
 	offline: boolean
+	/** `jev-search-rerank` feature flag (rollout / kill switch). */
 	enabled: boolean
+	/**
+	 * Paid plan (standard/pro/max). Free and anonymous pass false and
+	 * record `skipped-plan` when the flag is on.
+	 */
+	planEligible: boolean
 }): Promise<JevSearchRerankResult> {
 	const startedAt = performance.now()
 	const hybridCandidates = input.candidates
@@ -557,6 +685,7 @@ export async function rerankSearchCandidatesWithJev(input: {
 	})
 
 	if (!input.enabled) return emptyResult('skipped-flag-off')
+	if (!input.planEligible) return emptyResult('skipped-plan')
 	const attempted = {
 		model: jevSearchModel,
 		aiCallCount: 0,
@@ -564,6 +693,9 @@ export async function rerankSearchCandidatesWithJev(input: {
 	} as const
 	if (candidatesBefore === 0) return emptyResult('skipped-empty', attempted)
 	if (input.offline) return emptyResult('skipped-offline', attempted)
+
+	const necessity = evaluateJevSearchNecessity(hybridCandidates)
+	if (!necessity.run) return emptyResult(necessity.outcome)
 
 	const runtime = input.env as unknown as JevRuntimeEnv
 	if (!runtime.AI) return emptyResult('skipped-no-ai', attempted)
