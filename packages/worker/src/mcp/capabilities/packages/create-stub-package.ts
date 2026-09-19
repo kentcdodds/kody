@@ -1,3 +1,5 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { buildSavedPackageEmbedText } from '#worker/package-registry/embed.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
@@ -89,7 +91,13 @@ export async function createStubSavedPackage(input: {
 	})
 	const name = `@${input.owner.ownerScope}/${kodyId}`
 	const description = input.description?.trim() || defaultStubPackageDescription
-	assertKodyDescriptionLength(description)
+	try {
+		assertKodyDescriptionLength(description)
+	} catch (error) {
+		// Oversized taglines are caller-fixable. Wrap so handler failures stay
+		// off Sentry even if the packageGetGitRemote schema max is bypassed.
+		throw new McpCallerError(getErrorMessage(error), { cause: error })
+	}
 	const files = buildStubPackageFiles({ name, kodyId, description })
 	const packageJsonContent = files['package.json']
 	if (!packageJsonContent) {

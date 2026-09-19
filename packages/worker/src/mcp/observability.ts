@@ -9,6 +9,7 @@ import {
 } from '#worker/entitlements/errors.ts'
 import { isSearchRateLimitError } from '#worker/search-rate-limit-error.ts'
 import { PackageScopeAccessError } from '#worker/package-registry/package-owner.ts'
+import { isKodyDescriptionLengthMessage } from '#worker/package-registry/types.ts'
 import { isRepoLargeFileMessage } from '#worker/repo/large-file-policy.ts'
 import {
 	isGitPushNotFastForwardMessage,
@@ -195,6 +196,19 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 				entry instanceof Error &&
 				(isDestructiveOverwriteConfirmationMessage(entry.message) ||
 					isPrivateVisibilityChangeConfirmationMessage(entry.message)),
+		)
+	) {
+		return true
+	}
+	// Oversized kody.description taglines (KODY-7S). Write/publish asserts
+	// throw a plain Error from package-registry. packageGetGitRemote rejects
+	// them at parse_input and stub create wraps as McpCallerError. This
+	// phrase match keeps a remaining handler throw (packageSave, promote, or
+	// checks rethrowing the assert) off Sentry.
+	if (
+		getErrorCauseChain(cause).some(
+			(entry) =>
+				entry instanceof Error && isKodyDescriptionLengthMessage(entry.message),
 		)
 	) {
 		return true

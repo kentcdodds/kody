@@ -1,5 +1,7 @@
 import { expect, test, vi } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { type PackageOwnerContext } from '#worker/package-registry/package-owner.ts'
+import { KODY_DESCRIPTION_MAX_LENGTH } from '#worker/package-registry/types.ts'
 
 const mockModule = vi.hoisted(() => ({
 	assertWithinEntitlement: vi.fn(),
@@ -77,6 +79,22 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for ow
 	).rejects.toThrow(/lower-kebab-case/)
 	expect(mockModule.assertWithinEntitlement).not.toHaveBeenCalled()
 	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
+
+	resetMocks()
+	const tooLongDescription = 'a'.repeat(KODY_DESCRIPTION_MAX_LENGTH + 1)
+	const oversizeError = await createStubSavedPackage({
+		env: { APP_DB: {} } as Env,
+		baseUrl: 'https://heykody.dev',
+		owner,
+		kodyId: 'my-package',
+		description: tooLongDescription,
+	}).catch((error: unknown) => error)
+	expect(oversizeError).toBeInstanceOf(McpCallerError)
+	expect((oversizeError as Error).message).toBe(
+		`kody.description must be at most ${KODY_DESCRIPTION_MAX_LENGTH} characters (short public tagline).`,
+	)
+	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
+	expect(mockModule.insertSavedPackage).not.toHaveBeenCalled()
 
 	resetMocks()
 	await expect(
