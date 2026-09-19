@@ -29,33 +29,35 @@ documented exceptions. The product is in better shape than the size of the tree
 suggests: isolation, OAuth token persistence, entitlement consume on the billed
 paths, and the Jev gates are careful. The velocity of the last 48 hours is
 search ranking (#2359–#2381). That surface is default-off and paid-only. The
-risks that should not wait on a product meeting are three contained engineering
-fixes. The product meeting that unblocks a cluster is "which capabilities may a
-running package exercise as the owner, and which invocations count as an
-execute?"
+risks that should not wait on a product meeting are the secret-authority runner
+and the storage SQL cap. The product meeting that unblocks a cluster is "which
+capabilities may a running package exercise as the owner, including admin tools
+and connected accounts, and which invocations count as an execute?"
 
 ## Executive summary
 
 Ranked by severity times leverage. P0 is remote cross-user takeover or a
 credential leak to another account. None of those showed up.
 
-| Rank | ID  | Sev | Needs Kent | One line                                                                                                                                                                                                |
-| ---- | --- | --- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | F2  | P1  | No         | Sandbox secret-authority runner is still stealable via well-known symbols. Same-user, not cross-user.                                                                                                   |
-| 2    | F1  | P1  | Yes        | `storage.sql` materializes the full cursor, and a read skips the storage-byte check. One query can reset that user's runner and burn Durable Object rows before any monthly cut.                        |
-| 3    | F3  | P1  | No         | Account deletion reports success if the UserMeter tombstone clear fails. The same email's next signup can be write-fenced, including `/mcp`.                                                            |
-| 4    | F4  | P2  | Yes        | Package runtimes still inherit almost the full capability map. Publish, delete, share, webhook rotate, and `secretProviderBind` are not interactive-only. Adopt is gated except on interactive execute. |
-| 5    | F5  | P2  | Yes        | Jev Score is correctly off and paid-only. Before any wide flip: no timeout, error paths drop token usage, in-execute search is invisible to Analytics Engine, and pools of 8 or fewer skip the clash.   |
-| 6    | F6  | P2  | No         | Scheduled jobs retry transient failures forever. A non-transient throw aborts the rest of that alarm.                                                                                                   |
-| 7    | F7  | P2  | Yes        | Dead-letter queues are declared and not consumed. Ack webhooks already returned 202.                                                                                                                    |
-| 8    | F8  | P2  | Yes        | Inbound webhooks and other package exports are not under the execute daily cap. HTTP rate limit is 60/min, author-raisable to 600.                                                                      |
-| 9    | F9  | P2  | No         | A green status page does not prove queues, jobs, or MCP execute. KV 5xx/429 no longer pages Sentry. There is no one-page incident card.                                                                 |
-| 10   | F10 | P2  | No         | Hottest entitlement path still runs three retention `DELETE`s on every consume. Mailbox list still selects bodies. `RepoSession` still statically imports `isomorphic-git`.                             |
+| Rank | ID  | Sev | Needs Kent | One line                                                                                                                                                                                              |
+| ---- | --- | --- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | F2  | P1  | No         | Sandbox secret-authority runner is still stealable via well-known symbols. Same-user, not cross-user.                                                                                                 |
+| 2    | F1  | P1  | Yes        | `storage.sql` materializes the full cursor, and a read skips the storage-byte check. One query can reset that user's runner and burn Durable Object rows before any monthly cut.                      |
+| 3    | F16 | P1  | Yes        | Jobs, workflows, retrievers, and `packages.invoke` load admin roles. Hosted package apps do not. An admin-owned package can call admin MCP.                                                           |
+| 4    | F4  | P2  | Yes        | Package runtimes still inherit almost the full capability map, and new OAuth / remote MCP connections default to `usage_mode = any`. Adopt is gated except on interactive execute.                    |
+| 5    | F5  | P2  | Yes        | Jev Score is correctly off and paid-only. Before any wide flip: no timeout, error paths drop token usage, in-execute search is invisible to Analytics Engine, and pools of 8 or fewer skip the clash. |
+| 6    | F6  | P2  | No         | Scheduled jobs retry transient failures forever. A non-transient throw aborts the rest of that alarm.                                                                                                 |
+| 7    | F7  | P2  | Yes        | Dead-letter queues are declared and not consumed. Ack webhooks already returned 202.                                                                                                                  |
+| 8    | F8  | P2  | Yes        | Inbound webhooks and other package exports are not under the execute daily cap. HTTP rate limit is 60/min, author-raisable to 600.                                                                    |
+| 9    | F9  | P2  | No         | Jobs `/health` is probed. A green page still misses queue consumers, JobManager alarms, and Vectorize/AI. The execute card is a one-hour timestamp. Bare KV 5xx/429 no longer pages Sentry.           |
+| 10   | F10 | P2  | No         | Hottest entitlement path still runs three retention `DELETE`s on every consume. Mailbox list still selects bodies. `RepoSession` still statically imports `isomorphic-git`.                           |
 
-Do the first three before a planning meeting. Hold a single product call for F4
-and F8 (and the rollout criteria inside F5). Do not schedule a Durable Object
-rewrite: [code health receipts](../contributing/code-health-receipts.md) already
-froze that and it is the right call.
+Do F2 and F1 before a planning meeting. F3 is not a lockout: the next signup
+heals a leftover tombstone on the first write lease. Hold a single product call
+for F16, F4, and F8 (and the rollout criteria inside F5). Do not schedule a
+Durable Object rewrite:
+[code health receipts](../contributing/code-health-receipts.md) already froze
+that and it is the right call.
 
 The only doc edit in this change besides the report is F12: the entitlements
 enforcement table said Max concurrent workflows is 5,000. Code says 200.
@@ -132,27 +134,36 @@ peel the behavior you are already touching. Do not open a split program.
 
 ## Reliability and correctness
 
-### F3 — Deletion success can leave a write fence on the next signup
+### F3 — A failed tombstone clear is logged and healed, not a lockout
 
-- **Severity:** P1
+- **Severity:** P3. Earlier draft of this report scored this P1. That overstated
+  the next signup.
 - **Product call:** No
-- **Next step:** Fix
+- **Next step:** Leave. Optional: send the existing console error to Sentry.
 - **Evidence:** After the user row is deleted, `deleteUserAccount` calls
-  `clearUserMeterDeletionTombstone` and swallows the error
+  `clearUserMeterDeletionTombstone` and swallows a throw
   (`packages/worker/src/app/account-deletion.ts`, the block whose comment starts
-  "The D1 user row is gone"). The comment in that block is accurate: a leftover
-  tombstone fences every write, including `/mcp`, for that stable id. New
-  accounts take `SHA-256(lowercase email)` as `stable_user_id`
-  (`packages/worker/src/user-id.ts`). The Durable Object is the same object.
-- **Blast radius:** One email, only when the clear RPC fails after D1 deletion
-  already committed. Not the happy path. When it happens, that person cannot use
-  the new account until an operator clears the tombstone.
-- **Recommendation:** Do not return success until the tombstone is gone, or
-  retry the clear and surface
-  `account_deletion_user_meter_tombstone_clear_failed` as a failed deletion
-  (Sentry already has a pattern for purge failures). The ordering before that
-  point is sound: inventory and Stripe cancel fail closed, warnings abort before
-  the user row is deleted, Mailbox waits on R2, jobs purge is idempotent.
+  "The D1 user row is gone"). The comment describes the fence the clear exists
+  to remove. It is not what the next signup hits. `withAccountWriteLease` treats
+  a live D1 row plus a meter tombstone as a leftover fence, clears it, re-checks
+  D1, and acquires again (`packages/worker/src/account/deletion-state.ts`, the
+  block that starts "Live D1 + meter tombstone"). Covered by
+  `withAccountWriteLease drops a leftover UserMeter tombstone when D1 is live`
+  in `packages/worker/src/account/deletion-state.node.test.ts`. New accounts
+  reuse `SHA-256(lowercase email)` as `stable_user_id`
+  (`packages/worker/src/user-id.ts`), so the object is the same. `/mcp` `search`
+  does not take the lease (`jsonRpcMessageNeedsAccountWriteLease` returns false
+  for `search` in `packages/worker/src/mcp-auth.ts`) and only checks D1. `/mcp`
+  `execute` takes the lease, so the first execute heals.
+- **Blast radius:** One extra UserMeter RPC on the first write lease after a
+  failed clear. `console.error` is
+  `account_deletion_user_meter_tombstone_clear_failed`. An operator is not
+  required.
+- **Recommendation:** Keep the clear. Do not fail the deletion response after
+  the user row is gone: that response cannot retry the D1 delete, and the lease
+  path is the backstop. The ordering before the clear is sound: inventory and
+  Stripe cancel fail closed, warnings abort before the user row is deleted,
+  Mailbox waits on R2, jobs purge is idempotent.
 
 ### F6 — Jobs have no poison ceiling
 
@@ -172,6 +183,22 @@ peel the behavior you are already touching. Do not open a split program.
   the other 24 due jobs until the alarm retries.
 - **Recommendation:** After a fixed retry count, finalize the occurrence as
   failed and continue the batch. Keep the claim fence.
+
+### F18 — Job delete removes the row before the vector
+
+- **Severity:** P2
+- **Product call:** No
+- **Next step:** Fix
+- **Evidence:** `deleteJob` awaits `jobsData().deleteJob`, then
+  `deleteJobVector` (`packages/worker/src/jobs/service.ts`). The package-job
+  sync loop does the same. Account deletion rebuilds vector ids from rows that
+  still exist (`listJobIdsForUser`). A vector left behind is invisible to that
+  purge. A retry of the failed delete hits "not found" and does not clean the
+  index.
+- **Blast radius:** That user's search can still return a deleted job. Same
+  user. Not a cross-user leak.
+- **Recommendation:** Delete the vector, or write a cleanup debt row, before the
+  job row is removed.
 
 ### F7 — Dead-letter queues are sinks
 
@@ -294,6 +321,36 @@ left is interactive `execute`.
   not put it on any user-reachable object. Add the steal test the 2026-09-16
   audit already specified.
 
+### F16 — Background package callers load admin roles
+
+- **Severity:** P1
+- **Product call:** Yes. The load is commented as intentional so an admin
+  owner's packages can see `admin_*` tools. Hosted package apps do the opposite.
+- **Next step:** Spike only the policy. The code change is small once Kent picks
+  it.
+- **Evidence:** `loadBackgroundMcpUser` loads roles and permissions. The comment
+  says omitting roles hides `admin_*` tools even for admin owners
+  (`packages/worker/src/identity/background-mcp-user.ts`). Callers include
+  `packages/worker/src/jobs/service.ts`,
+  `packages/worker/src/package-runtime/package-workflows.ts`,
+  `packages/worker/src/package-runtime/realtime-session.ts`, and
+  `packages/worker/src/package-retrievers/service.ts`.
+  `callerCanAccessCapability` checks role, permission, and feature flag. It does
+  not check `executionOrigin`
+  (`packages/worker/src/mcp/capabilities/access-control.ts`).
+  `adminCapabilityAccess` is `requiredRole: 'admin'` only
+  (`packages/worker/src/mcp/capabilities/admin/admin-shared.ts`).
+  `PackageAppRuntimeBridge.createCallerContext` sets id, email, and display name
+  and leaves `roles` unset
+  (`packages/worker/src/package-runtime/package-app.ts`), so hosted package apps
+  do not see admin tools.
+- **Blast radius:** A job, webhook, workflow, retriever, or `packages.invoke` on
+  an admin-owned package, including a community fork that admin installed. Not
+  other users. Not the hosted package-app HTTP bridge.
+- **Recommendation:** Do not copy admin roles onto background package callers
+  unless the package is an explicit operator tool. Owning the package is not
+  that tool.
+
 ### F4 — Packages still act as the user for consent-sensitive capabilities
 
 - **Severity:** P2
@@ -331,8 +388,22 @@ left is interactive `execute`.
   The flag is off by default and user-toggleable from the docs page. Non-secret
   `fetch` can then carry the key out (accepted SSRF residual).
 
-- **Blast radius:** One owner's account surface, and, if secret providers are
-  on, that owner's door key. Not cross-user.
+  **Connected accounts default to every package.** `usage_mode` is
+  `NOT NULL DEFAULT 'any'` on `user_integrations`
+  (`packages/worker/migrations/0026-integration-owned-credentials.sql`) and
+  `mcp_server_settings`
+  (`packages/worker/migrations/0031-mcp-server-package-usage.sql`).
+  `assertCanUseIntegration` returns immediately when the mode is `any`
+  (`packages/worker/src/integrations/package-access.ts`). New MCP server rows
+  are inserted as `any` (`packages/worker/src/mcp-client/settings-service.ts`).
+  An unadopted fork can be denied user secrets and still call
+  `createAuthenticatedFetch` or `kody.mcp[...]`. This is not an accepted
+  residual in `security.md`. It is the same product sentence, applied to
+  third-party accounts.
+
+- **Blast radius:** One owner's packages, and, when `usage_mode` is `any`, that
+  owner's connected accounts and remote MCP servers. If secret providers are on,
+  the door key too. Not cross-user.
 - **Recommendation:** One shared interactive-only check, applied to the consent
   list Kent names. Minimum if he does not want a meeting: omit
   `communityForkAdopt` from sandbox `kody.*`, and gate `secretProviderBind` /
@@ -678,6 +749,20 @@ is join-on-login. A second-agent Standard gift does not paint the Standard role.
 - **Next step:** Leave unless Kent wants the guild to match the effective plan.
   The code is explicit. This is not a bug against the file's own contract.
 
+### F19 — Community bans have no reachable unban
+
+- **Severity:** P2
+- **Product call:** Yes, on whether unban is a product action.
+- **Next step:** Fix, or document the SQL and delete the dead function.
+- **Evidence:** `/admin/community-reports` calls `banCommunityUser`
+  (`packages/worker/src/app/handlers/admin-community-reports.ts`).
+  `unbanCommunityUser` in `packages/worker/src/community/service.ts` has no
+  other callers. Neither path calls `logAuditEvent`. The report row and
+  `banned_by_user_id` are the trail.
+- **Blast radius:** A banned account stays banned until someone writes D1.
+- **Recommendation:** An audited unban on that page, or a one-line SQL procedure
+  in the operator runbook. Do not leave a function that nothing calls.
+
 ### Onboarding and waiting
 
 One contract in `packages/worker/universal/onboarding-process.ts`: connect a
@@ -813,6 +898,8 @@ Do not re-open these without new evidence.
   documented and true.
 - `secretLock` and `secretProviderLock` do not write grants.
 - Background package apps, jobs, and webhooks cannot `communityForkAdopt`.
+  Hosted package apps also omit admin roles. Jobs, workflows, retrievers, and
+  `packages.invoke` do not. That split is F16, not a non-finding.
 - Webhook rotation, HMAC-if-declared, and previous-URL retirement match
   `docs/contributing/architecture/webhooks.md`.
 - Refresh tokens are preserved when a token response omits them.
@@ -863,20 +950,26 @@ Not a commitment. Order is "what unblocks the next thing."
 1. Hide `runWithSecretAuthority` in a closure. Add the workers steal test (F2).
 2. Cap `sqlQuery` rows so the query fails instead of the isolate (F1,
    engineering half).
-3. Fail account deletion, or retry, when the UserMeter tombstone clear throws
-   (F3).
+3. Delete the job vector, or record cleanup debt, before the job row (F18).
 4. Cap scheduled-job retries and continue the batch on a hard throw (F6).
 5. Back off RepoSessionIndex when cleanup returns errors (F14).
+6. Leave F3. The write-lease heal is the backstop. Do not fail a deletion
+   response after the user row is gone.
 
 ### Second slice (one product call, then code)
 
-Hold the call on two questions:
+Hold the call on three questions:
 
-- Which capabilities are interactive-only? Recommended starter set:
+- Do background package callers keep admin roles? Recommended: no, unless the
+  package is an explicit operator tool. Hosted package apps already omit roles
+  (F16).
+- Which capabilities are interactive-only, and do new OAuth and remote MCP
+  connections stay `usage_mode = any`? Recommended starter set:
   `communityForkAdopt` (remove from sandbox `kody.*`), `secretProviderBind`,
   `secretProviderUnbind`, `communityPublish`, `packageDelete`,
   `packageShareInvite`, `webhookUrlRotate`. Leave email, storage, and fetch
-  callable (F4).
+  callable. Default new connections to `packages`, and leave existing `any` rows
+  until the owner locks them (F4).
 - Do webhooks, subscriptions, and package exports share `execute_calls_per_day`,
   or is 60–600/min plus monthly worker-day overage the bill (F8)?
 
@@ -903,6 +996,8 @@ Also in this slice, no meeting required: move UserMeter retention off `consume`
   Confirm with a captured header before changing accept/reject.
 - Discord roles versus effective plan, only if Kent wants the guild to match
   gifts.
+- Audited community unban, or a documented SQL procedure and deletion of
+  `unbanCommunityUser` (F19).
 - Attach `experiments_opt_in` to `jev-search-rerank` only after the F5
   measurement gaps are closed. Otherwise leave the experiments page as an unused
   audience bit.
