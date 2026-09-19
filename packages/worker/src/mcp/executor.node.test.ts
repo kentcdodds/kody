@@ -7,6 +7,10 @@ import {
 	createSecretScopeUnavailableMessage,
 } from '#mcp/secrets/errors.ts'
 import { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
+import {
+	kodyCallDispatcherName,
+	kodyProviderEvaluateBindingName,
+} from '#worker/kody-evaluate-bindings.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import {
 	ComputeOverageLimitError,
@@ -272,6 +276,11 @@ test('generated kody provider and executor module sources stay bundle-safe', () 
 	)
 	expect(moduleSource).toContain(')(__invocation)')
 	expect(moduleSource).toContain('__invocation.mcpServers')
+	expect(moduleSource).toContain(
+		`const ${kodyProviderEvaluateBindingName} = new Proxy`,
+	)
+	expect(moduleSource).toContain(`const ${kodyCallDispatcherName} = async`)
+	expect(moduleSource).not.toMatch(/\b(?:const|let|var) kody\b/)
 })
 
 test('closed-world executor module rejects fetch in the sandbox before outbound RPC', () => {
@@ -312,7 +321,7 @@ test('generated kody provider source wires mcp proxy dispatch', async () => {
 	const kody = new Function(
 		'__dispatchers',
 		'__invocation',
-		`${source}; return kody;`,
+		`${source}; return ${kodyProviderEvaluateBindingName};`,
 	)(
 		{
 			kody: {

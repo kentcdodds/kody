@@ -19,6 +19,7 @@ import {
 } from '#worker/usage/package-static-call-usage.ts'
 import { staticCallMeterRuntimeBridgeProviderName } from '#mcp/evaluation-side-effects.ts'
 import { takeSecretAuthorityFromCapabilityArgs } from '#mcp/secrets/secret-authority.ts'
+import { kodyCallDispatcherName } from '#worker/kody-evaluate-bindings.ts'
 
 export type AdditionalKodyTools = Record<
 	string,
@@ -191,7 +192,7 @@ const __kodyPackageSecrets = (packageId) => ({
     if (!normalizedAlias) {
       throw new Error('packageSecrets.get requires a non-empty alias.')
     }
-    const result = await kody.packageSecretGet({
+    const result = await ${kodyCallDispatcherName}('packageSecretGet', {
       alias: normalizedAlias,
     });
     return typeof result?.value === 'string' ? result.value : '';
@@ -201,7 +202,7 @@ const __kodyPackageSecrets = (packageId) => ({
     if (!normalizedAlias) {
       throw new Error('packageSecrets.has requires a non-empty alias.')
     }
-    const result = await kody.packageSecretHas({
+    const result = await ${kodyCallDispatcherName}('packageSecretHas', {
       alias: normalizedAlias,
     });
     return result?.has === true;
@@ -227,7 +228,7 @@ const email = {
     if (!normalizedMessageId) {
       throw new Error('email.getMessage requires a non-empty message id.')
     }
-    return await kody.emailMessageGet({ message_id: normalizedMessageId });
+    return await ${kodyCallDispatcherName}('emailMessageGet', { message_id: normalizedMessageId });
   },
   getAttachment: async (attachmentId) => {
     const normalizedAttachmentId =
@@ -235,7 +236,7 @@ const email = {
     if (!normalizedAttachmentId) {
       throw new Error('email.getAttachment requires a non-empty attachment id.')
     }
-    const result = await kody.emailAttachmentGet({
+    const result = await ${kodyCallDispatcherName}('emailAttachmentGet', {
       attachment_id: normalizedAttachmentId,
     });
     if (!result || typeof result !== 'object') {
@@ -250,7 +251,7 @@ const email = {
         typeof result.data_base64 === 'string' ? result.data_base64 : null,
     };
   },
-  reply: async (input) => await kody.emailReply(input ?? {}),
+  reply: async (input) => await ${kodyCallDispatcherName}('emailReply', input ?? {}),
 };
 	`.trim()
 }
@@ -258,7 +259,7 @@ const email = {
 function createWorkflowsHelperPrelude() {
 	return `
 const workflows = {
-  create: async (input) => await kody.packageWorkflowCreate(input ?? {}),
+  create: async (input) => await ${kodyCallDispatcherName}('packageWorkflowCreate', input ?? {}),
 };
 	`.trim()
 }

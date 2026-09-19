@@ -251,11 +251,22 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 test('createExecuteHelperPrelude exposes sandbox oauth and secret helper bindings', async () => {
 	const prelude = createExecuteHelperPrelude()
 	const createSandboxHelpers = new Function(
-		'kody',
+		'__kodyCallDispatcher',
 		`${prelude}; return { createAuthenticatedFetch, secretHeaders, oauthClientCredentials };`,
-	) as (kodyNamespace: KodyNamespace) => SandboxHelpers
+	) as (
+		dispatch: (name: string, args: CapabilityArgs) => Promise<unknown>,
+	) => SandboxHelpers
+	const dispatchFor = (kody: KodyNamespace) => {
+		return async (name: string, args: CapabilityArgs) => {
+			const tool = kody[name]
+			if (typeof tool !== 'function') {
+				throw new Error(`${name} is not available in this sandbox.`)
+			}
+			return await tool(args)
+		}
+	}
 
-	const helpers = createSandboxHelpers(createKody().kody)
+	const helpers = createSandboxHelpers(dispatchFor(createKody().kody))
 	expect(
 		helpers.secretHeaders.basic({
 			usernameSecret: 'paypalClientId',
@@ -266,8 +277,15 @@ test('createExecuteHelperPrelude exposes sandbox oauth and secret helper binding
 		'{{secret-basic:username=paypalClientId,password=paypalClientSecret|scope=user}}',
 	)
 
-	const platformHelpers = createSandboxHelpers(createPlatformKody().kody)
+	const platform = createPlatformKody()
+	const platformCalls: Array<string> = []
+	const platformHelpers = createSandboxHelpers(async (name, args) => {
+		platformCalls.push(name)
+		return await dispatchFor(platform.kody)(name, args)
+	})
 	expect(typeof platformHelpers.createAuthenticatedFetch).toBe('function')
+	await platformHelpers.createAuthenticatedFetch('github')
+	expect(platformCalls).toEqual(['integrationGet'])
 
 	const clientCredentialsCalls: Array<Request> = []
 	{
