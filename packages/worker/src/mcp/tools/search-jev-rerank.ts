@@ -7,7 +7,8 @@
  * ({@link evaluateJevSearchNecessity}). Free and anonymous never call Jev
  * (`skipped-plan`). The flag remains the rollout / kill switch
  * (`skipped-flag-off` when off); plan + necessity are the real product
- * gates so pricing "improved search" stays truthful when the flag is on.
+ * gates so pricing "improved search" (also flag-gated in the UI) stays
+ * truthful when the flag is on.
  *
  * Eligible paid searches widen hybrid recall, then score with Workers AI
  * `typesafe/jev` through AI Gateway when necessity says so. Score questions

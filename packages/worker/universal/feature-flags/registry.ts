@@ -86,7 +86,7 @@ export const featureFlagDefinitions = [
 		key: 'jev-search-rerank',
 		defaultEnabled: false,
 		description:
-			'Rollout / kill switch for improved ranked search: when on, paid plans (standard/pro/max) widen hybrid recall and may run Workers AI typesafe/jev Score (AI Gateway) only when the post-hybrid pool looks ambiguous. Free and anonymous never get Jev (skipped-plan). Necessity skips: skipped-small-pool (≤8), skipped-clear-winner (9–20 with a decisive top hit). List-mode ranked search only. Offline/deterministic paths skip Jev and keep hybrid order. Plan gate is a feature gate, not an entitlement. Delete the flag and gate sites when the experiment ends.',
+			'Rollout / kill switch for improved ranked search: when on, paid plans (standard/pro/max) widen hybrid recall and may run Workers AI typesafe/jev Score (AI Gateway) only when the post-hybrid pool looks ambiguous. Free and anonymous never get Jev (skipped-plan). Necessity skips: skipped-small-pool (≤8), skipped-clear-winner (9–20 with a decisive top hit). Pricing-page improved-search copy is gated by this same flag. List-mode ranked search only. Offline/deterministic paths skip Jev and keep hybrid order. Plan gate is a feature gate, not an entitlement. Delete the flag and gate sites when the experiment ends.',
 		successMetric: {
 			eventType: 'execute',
 			measure: 'event_count',

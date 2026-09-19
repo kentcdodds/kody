@@ -81,13 +81,15 @@ through AI Gateway — but only when the post-hybrid pool looks ambiguous (`≤8
 `skipped-small-pool`; `9–20` clear winner → `skipped-clear-winner`; larger or
 tight/mixed pools run). Free and anonymous always record `skipped-plan` and
 never call Jev. The plan gate is a **feature gate**, not an entitlement / usage
-counter. Score questions are sent in batches of at most eight per `AI.run` that
-share the same skinny-card state; answers are merged before parse. Gateway /
-Cloudflare v4 envelopes (`result.answers`) are unwrapped before merge and token
-usage. That model requires Gateway authentication and Unified Billing credits
-(or BYOK); missing Gateway, a Gateway 403/402, or incomplete Score answers
-records `telemetry.jevRerank.outcome` `fallback-error` with `errorReason`
-(including sampled response keys when answers are missing).
+counter. Pricing-page “improved search” copy is gated by the same flag
+(`isFeatureFlagEnabled` on the session) so the claim is not visible while the
+experiment is off. Score questions are sent in batches of at most eight per
+`AI.run` that share the same skinny-card state; answers are merged before parse.
+Gateway / Cloudflare v4 envelopes (`result.answers`) are unwrapped before merge
+and token usage. That model requires Gateway authentication and Unified Billing
+credits (or BYOK); missing Gateway, a Gateway 403/402, or incomplete Score
+answers records `telemetry.jevRerank.outcome` `fallback-error` with
+`errorReason` (including sampled response keys when answers are missing).
 Offline/deterministic search skips Jev and uses hybrid order. Ranked list-mode
 structured content reports the stage on `telemetry.jevRerank` (including
 `model`, `aiCallCount`, and token `usage` when the stage ran or attempted) and
