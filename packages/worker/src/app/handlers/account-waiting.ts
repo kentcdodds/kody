@@ -6,6 +6,7 @@ import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#universal/routes.ts'
+import { recordFunnelEvent } from '#worker/funnel/record-funnel-event.ts'
 
 export function createAccountWaitingHandler(env: Env) {
 	return {
@@ -52,4 +53,29 @@ export function createAccountWaitingApiHandler(env: Env) {
 			return jsonResponse(accountWaiting)
 		},
 	} satisfies Action<typeof routes.accountWaitingApi>
+}
+
+export function createAccountWaitingClickHandler(env: Env) {
+	return {
+		middleware: [],
+		async handler({ request }) {
+			const user = await readAuthenticatedAppUser(request, env)
+			if (!user) {
+				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
+			}
+			if (request.method !== 'POST') {
+				return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
+			}
+			const body = (await request.json().catch(() => null)) as {
+				cardId?: unknown
+			} | null
+			const cardId = typeof body?.cardId === 'string' ? body.cardId : ''
+			void recordFunnelEvent(env, {
+				event: 'waiting_card_clicked',
+				stableUserId: user.mcpUser.userId,
+				cardId,
+			})
+			return jsonResponse({ ok: true })
+		},
+	} satisfies Action<typeof routes.accountWaitingClickPost>
 }

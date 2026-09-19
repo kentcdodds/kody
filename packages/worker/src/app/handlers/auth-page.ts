@@ -6,6 +6,7 @@ import {
 import { loadSessionInfo } from '#app/session-info.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { getTurnstileSiteKey } from '#app/public-form-protection.ts'
+import { recordFunnelEvent } from '#worker/funnel/record-funnel-event.ts'
 
 export function createAuthPageHandler(
 	env: Env,
@@ -37,6 +38,9 @@ export function createAuthPageHandler(
 				return Response.redirect(redirectUrl, 302)
 			}
 
+			if (_pageId === 'signup') {
+				void recordFunnelEvent(env, { event: 'signup_started' })
+			}
 			// Server-render the social login buttons with the rest of the
 			// page: the enabled-provider list is deployment configuration,
 			// not per-user data, so there is nothing to lazily load.

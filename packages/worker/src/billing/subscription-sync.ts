@@ -7,6 +7,7 @@ import {
 } from '#app/user-account-emails.ts'
 import { maybeSyncDiscordGuildRolesForUser } from '#worker/discord/guild-role.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
+import { recordFunnelEvent } from '#worker/funnel/record-funnel-event.ts'
 import {
 	parseEntitlementLadder,
 	parseStoredPlanName,
@@ -396,12 +397,18 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 		now,
 	})
 	try {
-		return await refreshStripePlanForUser({
+		const refreshed = await refreshStripePlanForUser({
 			env: input.env,
 			userId: input.user.id,
 			customerId,
 			now,
 		})
+		void recordFunnelEvent(input.env, {
+			event: 'checkout_completed',
+			stableUserId: input.user.stableUserId,
+			plan: refreshed.stripePlan,
+		})
+		return refreshed
 	} catch (error) {
 		if (
 			error instanceof StripeApiError ||

@@ -1,4 +1,5 @@
 import { jsonResponse } from '#worker/json-response.ts'
+import { recordFunnelEvent } from '#worker/funnel/record-funnel-event.ts'
 import { type Action } from 'remix/router'
 import { loadAccountBillingData } from '#app/account-billing-data.ts'
 import {
@@ -229,6 +230,11 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 					email: user.email,
 					ip: requestIp,
 					path: requestPath,
+				})
+				void recordFunnelEvent(env, {
+					event: 'checkout_started',
+					stableUserId: user.mcpUser.userId,
+					plan,
 				})
 				return jsonResponse({ ok: true, url: session.url, mode: 'checkout' })
 			} catch (error) {

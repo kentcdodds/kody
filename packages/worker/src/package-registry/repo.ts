@@ -5,6 +5,10 @@ import { classifyForkListingRelation } from '#universal/community-listing-ahead.
 import { buildLengthSafeVectorId } from '#worker/vectorize/vector-ids.ts'
 import { stampFirstSavedPackage } from '#worker/identity/activation-stamps.ts'
 import {
+	recordFunnelEvent,
+	type FunnelEventEnv,
+} from '#worker/funnel/record-funnel-event.ts'
+import {
 	type SavedPackageCommunityProvenance,
 	type SavedPackageRecord,
 	type SavedPackageRow,
@@ -132,6 +136,7 @@ export async function insertSavedPackage(
 		created_at?: string
 		updated_at?: string
 	},
+	env?: FunnelEventEnv,
 ) {
 	const now = new Date().toISOString()
 	await db
@@ -157,6 +162,18 @@ export async function insertSavedPackage(
 			row.updated_at ?? now,
 		)
 		.run()
+	await recordFunnelEvent(
+		{
+			APP_DB: db,
+			FUNNEL_EVENTS: env?.FUNNEL_EVENTS,
+			WRANGLER_IS_LOCAL_DEV: env?.WRANGLER_IS_LOCAL_DEV,
+		},
+		{
+			event: 'first_package',
+			stableUserId: row.user_id,
+			timestamp: row.created_at ?? now,
+		},
+	)
 	await stampFirstSavedPackage(db, {
 		stableUserId: row.user_id,
 		at: row.created_at ?? now,

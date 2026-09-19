@@ -3,11 +3,12 @@
 Point-in-time answer to: how much of the **entire** onboarding funnel can Kody
 reasonably track so weekly product decisions are evidence-backed?
 
-This is a snapshot of the tree on this date. It does not add events. It does not
-propose PostHog, a new analytics product, or a new primitive. The existing
-pattern — write-once stamps on `users`, a COUNT query on `/admin/insights`, and
-Fathom for anonymous page traffic — already covers the decisions that matter. A
-few missing stamps are the gap, not a new pipeline.
+This is a snapshot of the tree on this date. The funnel MVP that followed this
+audit writes `FUNNEL_EVENTS` (`kody_funnel_events`) and a 7/28-day table on
+`/admin/insights`. See
+[Usage metering — Onboarding funnel](../contributing/architecture/usage-metering.md#onboarding-funnel).
+It does not add PostHog, and it does not replace Fathom or the existing `users`
+activation stamps.
 
 **Short answer.** Signed-in activation from signup through first package and
 paid plan is already tracked well enough for a weekly review. Anonymous visit

@@ -202,6 +202,22 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		columns: ['referrer_stable_user_id', 'referee_stable_user_id'],
 	},
 	{ kind: 'user_id', table: 'feature_flag_exposure_rollups' },
+	{
+		kind: 'user_id',
+		table: 'funnel_events',
+		includeInExport: false,
+		surface: 'funnel_events',
+		reason:
+			'Onboarding funnel rows are operational counts keyed by stable user id. Account deletion removes them; account export does not include them.',
+	},
+	{
+		kind: 'user_id',
+		table: 'funnel_first_claims',
+		includeInExport: false,
+		surface: 'funnel_first_claims',
+		reason:
+			'First-event claims are idempotency keys for funnel analytics. Account deletion removes them; account export does not include them.',
+	},
 	{ kind: 'user_id', table: 'agent_package_conversation_uses' },
 	// Per-package codemod outcomes belong to the package owner. Delete before
 	// anonymizing run attribution so orphaned items do not outlive the user.

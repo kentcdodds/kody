@@ -5,6 +5,7 @@ import {
 	secretTtlMs,
 } from '@kody-internal/shared/secret-expires-at.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { recordFunnelEvent } from '#worker/funnel/record-funnel-event.ts'
 import {
 	normalizeAllowedPackages,
 	parseAllowedPackages,
@@ -55,7 +56,11 @@ type SecretOwnerContext = {
 	storageContext?: StorageContext | null
 }
 
-type SecretWriteEnv = Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'> & UserMeterEnv
+type SecretWriteEnv = Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'> &
+	UserMeterEnv & {
+		FUNNEL_EVENTS?: AnalyticsEngineDataset
+		WRANGLER_IS_LOCAL_DEV?: string
+	}
 
 type SaveSecretInput = SecretOwnerContext & {
 	env: SecretWriteEnv
@@ -189,6 +194,12 @@ export async function saveSecret(
 			updated_at: now,
 		},
 	})
+	if (existingEntry == null && input.scope === 'user') {
+		void recordFunnelEvent(input.env, {
+			event: 'first_secret',
+			stableUserId: input.userId,
+		})
+	}
 	return toSecretMetadata({
 		name,
 		scope: input.scope,

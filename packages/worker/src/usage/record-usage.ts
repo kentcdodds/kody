@@ -37,6 +37,7 @@ import {
 	type UsageEventType,
 } from '#universal/usage-event-types.ts'
 import { stampFirstExecute } from '#worker/identity/activation-stamps.ts'
+import { recordFunnelEvent } from '#worker/funnel/record-funnel-event.ts'
 import { type DynamicWorkerDaySurface } from './dynamic-worker-day-surface.ts'
 import { type ExecuteThinGlueClass } from './execute-thin-glue.ts'
 
@@ -210,10 +211,17 @@ export async function recordUsage(
 			event.outcome === 'success' &&
 			env.APP_DB
 		) {
-			const stamp = stampFirstExecute(env.APP_DB, {
-				stableUserId: event.userId,
-				at: timestamp,
-			}).catch((error: unknown) => {
+			const stamp = Promise.all([
+				recordFunnelEvent(env, {
+					event: 'first_execute',
+					stableUserId: event.userId,
+					timestamp,
+				}),
+				stampFirstExecute(env.APP_DB, {
+					stableUserId: event.userId,
+					at: timestamp,
+				}),
+			]).catch((error: unknown) => {
 				console.warn('activation-stamp-execute-failed', error)
 			})
 			if (options?.waitUntil) {

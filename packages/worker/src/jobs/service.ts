@@ -18,6 +18,7 @@ import { applyExecutionOutcome, processDueJobs } from './process-due-jobs.ts'
 import { syncJobManagerAlarm } from './manager-client.ts'
 import { type JobRow } from '@kody-internal/shared/jobs/repo.ts'
 import { jobsData } from './jobs-data.ts'
+import { recordFunnelEvent } from '#worker/funnel/record-funnel-event.ts'
 import {
 	buildScheduledJobIdempotencyKey,
 	computeJobRetryAt,
@@ -855,6 +856,10 @@ export async function syncPackageJobsForPackage(input: {
 					userId: input.userId,
 					job: created,
 					callerContextJson,
+				})
+				void recordFunnelEvent(input.env, {
+					event: 'first_job',
+					stableUserId: input.userId,
 				})
 				schedulerStateChanged = true
 			}

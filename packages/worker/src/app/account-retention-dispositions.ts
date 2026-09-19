@@ -13,6 +13,7 @@ export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposi
 		{ table: 'published_bundle_artifacts', kind: 'scheduled_policy' },
 		{ table: 'usage_rollups', kind: 'scheduled_policy' },
 		{ table: 'feature_flag_exposure_rollups', kind: 'scheduled_policy' },
+		{ table: 'funnel_events', kind: 'scheduled_policy' },
 		{ table: 'stripe_webhook_events', kind: 'scheduled_policy' },
 		{
 			table: 'agent_package_conversation_uses',

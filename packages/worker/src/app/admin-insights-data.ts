@@ -7,6 +7,7 @@ import {
 import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { loadAdminLaunchSignals } from '#worker/admin/launch-signals.ts'
+import { loadAdminFunnelSummary } from '#worker/funnel/admin-funnel.ts'
 import {
 	readAdminInsightsRunLogSnapshot,
 	type AggregatedRunLogInsights,
@@ -86,7 +87,7 @@ export async function loadAdminInsightsData(
 		: null
 	if (!cache) return await queryAdminInsights(env, now)
 	return await cachified({
-		key: 'admin-insights:v11',
+		key: 'admin-insights:v12',
 		cache,
 		ttl: insightsCacheTtlMs,
 		getFreshValue: () => queryAdminInsights(env, now),
@@ -199,9 +200,10 @@ async function queryAdminInsights(
 		readAdminInsightsRunLogSnapshot(env.BUNDLE_ARTIFACTS_KV),
 	])
 
-	const [fleetUsage, packageErrorRateSnapshot] = await Promise.all([
+	const [fleetUsage, packageErrorRateSnapshot, funnel] = await Promise.all([
 		loadFleetUsageInsights({ db, env, now }),
 		loadFleetPackageErrorRateSnapshot(env),
+		loadAdminFunnelSummary({ env, now }),
 	])
 
 	const jobHealth: AdminInsightsJobHealth = {
@@ -273,6 +275,7 @@ async function queryAdminInsights(
 		entitlementPressure: fleetUsage.entitlementPressure,
 		dynamicWorkerCost: fleetUsage.dynamicWorkerCost,
 		packageErrorRate: toInsightsPackageErrorRate(packageErrorRateSnapshot),
+		funnel,
 	}
 }
 

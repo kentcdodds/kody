@@ -11,6 +11,8 @@ import {
 	getRequestIp,
 	logAuditEvent,
 } from '#worker/audit-log.ts'
+import { recordFunnelEvent } from '#worker/funnel/record-funnel-event.ts'
+import { sanitizeClientFamily } from '#universal/funnel-events.ts'
 import {
 	createAuthCookie,
 	isSecureRequest,
@@ -485,6 +487,7 @@ async function handleResetClientRequest(
 		(clientId !== null && verifiedClientReset?.clientId === clientId)
 	if (!canResetStoredClient) {
 		return respondAuthorizeError(
+			env,
 			request,
 			'Stored client cleanup is only available for stale or mismatched client registrations.',
 			400,
@@ -495,6 +498,7 @@ async function handleResetClientRequest(
 
 	if (!clientId) {
 		return respondAuthorizeError(
+			env,
 			request,
 			'Missing client ID for stored client cleanup.',
 			400,
@@ -518,6 +522,7 @@ async function handleResetClientRequest(
 			reason: 'missing_session',
 		})
 		return respondAuthorizeError(
+			env,
 			request,
 			'Sign in before resetting this connection.',
 			401,
@@ -543,6 +548,7 @@ async function handleResetClientRequest(
 				reason: 'user_not_found',
 			})
 			return respondAuthorizeError(
+				env,
 				request,
 				'Signed-in user not found.',
 				401,
@@ -604,6 +610,7 @@ async function handleResetClientRequest(
 			reason: error instanceof Error ? error.message : 'unknown_error',
 		})
 		return respondAuthorizeError(
+			env,
 			request,
 			'Unable to reset this connection right now.',
 			500,
@@ -672,13 +679,32 @@ function createAuthorizeErrorRedirect(
 	})
 }
 
+function authorizeClientHint(request: Request) {
+	try {
+		return new URL(request.url).searchParams.get('client_id')
+	} catch {
+		return null
+	}
+}
+
 function respondAuthorizeError(
+	env: Env,
 	request: Request,
 	message: string,
 	status = 400,
 	errorCode = 'invalid_request',
 	headers?: HeadersInit,
 ) {
+	void resolveAuthorizeSession(request, env)
+		.then((session) =>
+			recordFunnelEvent(env, {
+				event: 'mcp_connect_failed',
+				stableUserId: session.stableUserId,
+				errorClass: errorCode,
+				clientFamily: sanitizeClientFamily(authorizeClientHint(request)),
+			}),
+		)
+		.catch(() => undefined)
 	if (wantsJson(request)) {
 		return jsonResponse(
 			{ ok: false, error: message, code: errorCode },
@@ -973,6 +999,7 @@ async function tryHandleSilentOidcAuthorize(
 			if (redirectTo) return Response.redirect(redirectTo, 302)
 		}
 		return respondAuthorizeError(
+			env,
 			request,
 			oidcParamsOrError.error,
 			400,
@@ -985,6 +1012,7 @@ async function tryHandleSilentOidcAuthorize(
 	const resolution = await resolveAuthRequest(helpers, request, env)
 	if ('error' in resolution) {
 		return respondAuthorizeError(
+			env,
 			request,
 			resolution.error ?? 'Unable to process OAuth request.',
 		)
@@ -1010,6 +1038,7 @@ async function tryHandleSilentOidcAuthorize(
 		)
 		if (redirectTo) return Response.redirect(redirectTo, 302)
 		return respondAuthorizeError(
+			env,
 			request,
 			oidcGate.error,
 			oidcGate.status ?? 400,
@@ -1029,7 +1058,7 @@ async function tryHandleSilentOidcAuthorize(
 			pkceError,
 		)
 		if (redirectTo) return Response.redirect(redirectTo, 302)
-		return respondAuthorizeError(request, pkceError)
+		return respondAuthorizeError(env, request, pkceError)
 	}
 
 	if (!authorizeSession.email || !authorizeSession.stableUserId) {
@@ -1040,6 +1069,7 @@ async function tryHandleSilentOidcAuthorize(
 		)
 		if (redirectTo) return Response.redirect(redirectTo, 302)
 		return respondAuthorizeError(
+			env,
 			request,
 			'Login required.',
 			401,
@@ -1058,7 +1088,7 @@ async function tryHandleSilentOidcAuthorize(
 			'Signed-in user not found.',
 		)
 		if (redirectTo) return Response.redirect(redirectTo, 302)
-		return respondAuthorizeError(request, 'Signed-in user not found.', 401)
+		return respondAuthorizeError(env, request, 'Signed-in user not found.', 401)
 	}
 	const username = getValidOAuthUsername(userRecord.username)
 	if (!username) {
@@ -1068,7 +1098,7 @@ async function tryHandleSilentOidcAuthorize(
 			'Username is required.',
 		)
 		if (redirectTo) return Response.redirect(redirectTo, 302)
-		return respondAuthorizeError(request, 'Username is required.', 401)
+		return respondAuthorizeError(env, request, 'Username is required.', 401)
 	}
 
 	const approvedEmail = userRecord.email.trim().toLowerCase()
@@ -1086,6 +1116,7 @@ async function tryHandleSilentOidcAuthorize(
 		)
 		if (redirectTo) return Response.redirect(redirectTo, 302)
 		return respondAuthorizeError(
+			env,
 			request,
 			oauthEmailVerificationRequiredMessage,
 			403,
@@ -1101,7 +1132,7 @@ async function tryHandleSilentOidcAuthorize(
 			resolvedScopes.error,
 		)
 		if (redirectTo) return Response.redirect(redirectTo, 302)
-		return respondAuthorizeError(request, resolvedScopes.error)
+		return respondAuthorizeError(env, request, resolvedScopes.error)
 	}
 
 	const existingGrants = await listUserOAuthGrantsForClient(
@@ -1120,6 +1151,7 @@ async function tryHandleSilentOidcAuthorize(
 		)
 		if (redirectTo) return Response.redirect(redirectTo, 302)
 		return respondAuthorizeError(
+			env,
 			request,
 			'Consent is required for this client.',
 			401,
@@ -1162,6 +1194,11 @@ async function tryHandleSilentOidcAuthorize(
 		ip: getRequestIp(request) ?? undefined,
 		clientId: authRequest.clientId,
 	})
+	void recordFunnelEvent(env, {
+		event: 'mcp_connect_succeeded',
+		stableUserId: approvedUserId,
+		clientFamily: sanitizeClientFamily(authorizeClientHint(request)),
+	})
 	await evaluateSecondAgentGiftAfterAuthorize(env, approvedUserId)
 	return Response.redirect(redirectTo, 302)
 }
@@ -1171,6 +1208,12 @@ export async function handleAuthorizeRequest(
 	env: Env,
 ): Promise<Response> {
 	if (request.method === 'GET') {
+		const authorizeSession = await resolveAuthorizeSession(request, env)
+		void recordFunnelEvent(env, {
+			event: 'mcp_connect_started',
+			stableUserId: authorizeSession.stableUserId,
+			clientFamily: sanitizeClientFamily(authorizeClientHint(request)),
+		})
 		const silentOrError = await tryHandleSilentOidcAuthorize(request, env)
 		if (silentOrError) return silentOrError
 		const { data, setCookie } = await loadOAuthAuthorizeData(request, env)
@@ -1189,6 +1232,7 @@ export async function handleAuthorizeRequest(
 	const oidcParamsOrError = parseOidcAuthorizeParams(request)
 	if (isOidcAuthorizeParamsParseError(oidcParamsOrError)) {
 		return respondAuthorizeError(
+			env,
 			request,
 			oidcParamsOrError.error,
 			400,
@@ -1208,6 +1252,7 @@ export async function handleAuthorizeRequest(
 	})
 	if (!oidcGate.ok) {
 		return respondAuthorizeError(
+			env,
 			request,
 			oidcGate.error,
 			oidcGate.status ?? 400,
@@ -1217,7 +1262,7 @@ export async function handleAuthorizeRequest(
 
 	const formData = await request.formData().catch(() => null)
 	if (!formData) {
-		return respondAuthorizeError(request, 'Invalid form data')
+		return respondAuthorizeError(env, request, 'Invalid form data')
 	}
 	if (
 		isOAuthAuthorizeClobberedResubmit({
@@ -1226,6 +1271,7 @@ export async function handleAuthorizeRequest(
 		})
 	) {
 		return respondAuthorizeError(
+			env,
 			request,
 			oauthAuthorizeClobberedResubmitMessage,
 		)
@@ -1238,6 +1284,7 @@ export async function handleAuthorizeRequest(
 	const resolution = await resolveAuthRequest(helpers, request, env)
 	if ('error' in resolution) {
 		return respondAuthorizeError(
+			env,
 			request,
 			resolution.error ?? 'Unable to process OAuth request.',
 		)
@@ -1260,13 +1307,14 @@ export async function handleAuthorizeRequest(
 			clientId: authRequest.clientId,
 			reason: 'invalid_pkce_method',
 		})
-		return respondAuthorizeError(request, pkceError)
+		return respondAuthorizeError(env, request, pkceError)
 	}
 
 	if (decision === 'deny') {
 		const redirectTo = createAccessDeniedRedirectUrl(authRequest, request, env)
 		if (!redirectTo) {
 			return respondAuthorizeError(
+				env,
 				request,
 				'Missing redirect URI for access denial.',
 			)
@@ -1288,6 +1336,7 @@ export async function handleAuthorizeRequest(
 
 	if (oidcGate.forbidInlineLogin && hasFormCredentials) {
 		return respondAuthorizeError(
+			env,
 			request,
 			'Interactive login is not allowed for this authorization request.',
 			400,
@@ -1306,7 +1355,11 @@ export async function handleAuthorizeRequest(
 			clientId: authRequest.clientId,
 			reason: 'missing_credentials',
 		})
-		return respondAuthorizeError(request, 'Email and password are required.')
+		return respondAuthorizeError(
+			env,
+			request,
+			'Email and password are required.',
+		)
 	}
 
 	let approvedEmail = ''
@@ -1335,7 +1388,7 @@ export async function handleAuthorizeRequest(
 				clientId: authRequest.clientId,
 				reason: 'invalid_credentials',
 			})
-			return respondAuthorizeError(request, 'Invalid email or password.')
+			return respondAuthorizeError(env, request, 'Invalid email or password.')
 		}
 		try {
 			await upgradePasswordHashIfNeeded(
@@ -1359,7 +1412,7 @@ export async function handleAuthorizeRequest(
 				clientId: authRequest.clientId,
 				reason: 'username_missing',
 			})
-			return respondAuthorizeError(request, 'Username is required.', 401)
+			return respondAuthorizeError(env, request, 'Username is required.', 401)
 		}
 		// The inline OAuth password form has no TOTP step, so 2FA accounts must
 		// establish a browser session (which enforces the second factor) first.
@@ -1375,6 +1428,7 @@ export async function handleAuthorizeRequest(
 				reason: 'two_factor_required',
 			})
 			return respondAuthorizeError(
+				env,
 				request,
 				'Two-factor authentication is enabled for this account. Log in on this device first, then retry connecting.',
 				401,
@@ -1401,7 +1455,12 @@ export async function handleAuthorizeRequest(
 				clientId: authRequest.clientId,
 				reason: 'session_user_not_found',
 			})
-			return respondAuthorizeError(request, 'Signed-in user not found.', 401)
+			return respondAuthorizeError(
+				env,
+				request,
+				'Signed-in user not found.',
+				401,
+			)
 		}
 		const username = getValidOAuthUsername(userRecord.username)
 		if (!username) {
@@ -1415,7 +1474,7 @@ export async function handleAuthorizeRequest(
 				clientId: authRequest.clientId,
 				reason: 'username_missing',
 			})
-			return respondAuthorizeError(request, 'Username is required.', 401)
+			return respondAuthorizeError(env, request, 'Username is required.', 401)
 		}
 		approvedEmail = userRecord.email.trim().toLowerCase()
 		approvedUsername = username
@@ -1449,6 +1508,7 @@ export async function handleAuthorizeRequest(
 			reason: 'email_verification_required',
 		})
 		return respondAuthorizeError(
+			env,
 			request,
 			oauthEmailVerificationRequiredMessage,
 			403,
@@ -1498,6 +1558,11 @@ export async function handleAuthorizeRequest(
 			ip: requestIp,
 			clientId: authRequest.clientId,
 		})
+		void recordFunnelEvent(env, {
+			event: 'mcp_connect_succeeded',
+			stableUserId: userId,
+			clientFamily: sanitizeClientFamily(authorizeClientHint(request)),
+		})
 		await evaluateSecondAgentGiftAfterAuthorize(env, userId)
 		if (wantsJson(request)) {
 			return jsonResponse(
@@ -1521,7 +1586,7 @@ export async function handleAuthorizeRequest(
 		return Response.redirect(redirectTo, 302)
 	}
 
-	return respondAuthorizeError(request, resolvedScopes.error)
+	return respondAuthorizeError(env, request, resolvedScopes.error)
 }
 
 export function handleOAuthCallback(

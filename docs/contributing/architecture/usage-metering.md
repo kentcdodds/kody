@@ -567,6 +567,46 @@ FROM kody_mcp_search_events
 WHERE timestamp > NOW() - INTERVAL '1' HOUR
 ```
 
+## Onboarding funnel
+
+Measurement dataset for the signed-in onboarding funnel. This is **not** a
+`recordUsage()` event and does not enter `usage_rollups`. The write path is
+`packages/worker/src/funnel/record-funnel-event.ts`. `first_*` events claim
+`funnel_first_claims` once per user. Existing activation columns
+(`first_search_at`, `first_execute_at`, `first_saved_package_at`) stay the
+source of "already happened before this dataset existed".
+
+Production dataset `kody_funnel_events` (preview: `kody_funnel_events_preview`).
+Binding `FUNNEL_EVENTS` on origin, platform, and runtime. The same row is
+mirrored into D1 `funnel_events` (90-day retention) so `/admin/insights` can
+count unique accounts when the Analytics Engine SQL API is unavailable. Local
+Wrangler skips the Analytics Engine write.
+
+| Field     | Value                                                                                                                                                                                                                                                                                                          |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `index1`  | event name (one sampling population per stage)                                                                                                                                                                                                                                                                 |
+| `blob1`   | event name: `signup_started`, `signup_completed`, `email_verified`, `mcp_connect_started`, `mcp_connect_succeeded`, `mcp_connect_failed`, `first_search`, `first_execute`, `first_package`, `first_secret`, `first_integration`, `first_job`, `waiting_card_clicked`, `checkout_started`, `checkout_completed` |
+| `blob2`   | stable user id, or empty for pre-auth `signup_started`                                                                                                                                                                                                                                                         |
+| `blob3`   | MCP client family (`cursor`, `claude-desktop`, …) or `unknown`. Raw OAuth client ids are not stored.                                                                                                                                                                                                           |
+| `blob4`   | error class token, or `other` when the text is not a token                                                                                                                                                                                                                                                     |
+| `blob5`   | `standard`, `pro`, or `unknown`                                                                                                                                                                                                                                                                                |
+| `blob6`   | waiting card id from the closed set, or `other`                                                                                                                                                                                                                                                                |
+| `double1` | `1`                                                                                                                                                                                                                                                                                                            |
+
+No email, prompt, search query, secret value, or package source. Recording never
+throws. `/admin/insights` shows unique accounts for the last 7 and 28 days.
+`signup_started` is a page-load count because there is no account yet.
+
+```sql
+SELECT
+  blob1 AS event,
+  count(DISTINCT blob2) AS users,
+  sum(_sample_interval) AS events
+FROM kody_funnel_events
+WHERE timestamp > NOW() - INTERVAL '7' DAY
+GROUP BY event
+```
+
 ## Reading the data
 
 - Analytics Engine: query the `kody_usage_events` dataset (SQL API) filtered by

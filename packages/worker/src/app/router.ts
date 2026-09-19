@@ -148,6 +148,7 @@ import {
 } from '#app/handlers/account-usage.ts'
 import {
 	createAccountWaitingApiHandler,
+	createAccountWaitingClickHandler,
 	createAccountWaitingHandler,
 } from '#app/handlers/account-waiting.ts'
 import {
@@ -470,6 +471,7 @@ export function createAppRouter(env: Env) {
 			accountUsageApi: createAccountUsageApiHandler(env),
 			accountWaiting: createAccountWaitingHandler(env),
 			accountWaitingApi: createAccountWaitingApiHandler(env),
+			accountWaitingClickPost: createAccountWaitingClickHandler(env),
 			accountExperiments: createAccountExperimentsHandler(env),
 			accountExperimentsApi: createAccountExperimentsApiHandler(env),
 			accountExperimentsApiPost: createAccountExperimentsApiHandler(env),

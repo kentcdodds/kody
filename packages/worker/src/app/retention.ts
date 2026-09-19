@@ -45,6 +45,7 @@ export const platformFeedbackRetentionDays = 365
 export const publishedBundleArtifactRetentionDays = 30
 export const usageRollupRetentionMonths = 24
 export const featureFlagExposureRetentionDays = 90
+export const funnelEventRetentionDays = 90
 export const auditEventRetentionDays = 180
 export const stripeWebhookEventRetentionDays = 30
 export const agentPackageConversationUseRetentionDays =
@@ -93,6 +94,14 @@ export const retentionPolicies: ReadonlyArray<RetentionPolicy> = [
 		batchSize: retentionDefaultBatchSize,
 		description:
 			'Per user/metric/month usage rollups keep 24 months; Analytics Engine retains the raw event stream separately.',
+	},
+	{
+		table: 'funnel_events',
+		scope: 'per-user',
+		retentionDays: funnelEventRetentionDays,
+		batchSize: retentionDefaultBatchSize,
+		description:
+			"Onboarding funnel mirror rows keep 90 days by occurred_at. Analytics Engine keeps the production stream; account deletion still removes a user's rows immediately.",
 	},
 	{
 		table: 'feature_flag_exposure_rollups',
@@ -148,6 +157,7 @@ export type RetentionPruneResult = {
 	}
 	usageRollups: number
 	featureFlagExposureRollups: number
+	funnelEvents: number
 	auditEvents: number
 	stripeWebhookEvents: number
 	agentPackageConversationUses: number
@@ -495,6 +505,25 @@ export async function pruneFeatureFlagExposuresForRetention(input: {
 	})
 }
 
+export async function pruneFunnelEventsForRetention(input: {
+	db: D1Database
+	now?: Date
+	batchSize?: number
+}) {
+	const cutoff = cutoffIso(input.now ?? new Date(), funnelEventRetentionDays)
+	return selectAndDeleteByIds({
+		db: input.db,
+		bindings: [cutoff, input.batchSize ?? retentionDefaultBatchSize],
+		sql: `SELECT id
+			FROM funnel_events
+			WHERE occurred_at < ?
+			ORDER BY occurred_at ASC, id ASC
+			LIMIT ?`,
+		table: 'funnel_events',
+		idColumn: 'id',
+	})
+}
+
 export async function pruneAuditEventsForRetention(input: {
 	db: D1Database
 	now?: Date
@@ -581,6 +610,7 @@ export async function pruneRetention(input: {
 		},
 		usageRollups: 0,
 		featureFlagExposureRollups: 0,
+		funnelEvents: 0,
 		auditEvents: 0,
 		stripeWebhookEvents: 0,
 		agentPackageConversationUses: 0,
@@ -649,6 +679,13 @@ export async function pruneRetention(input: {
 			() => pruneFeatureFlagExposuresForRetention({ db, now }),
 			(count) => {
 				result.featureFlagExposureRollups += count
+			},
+		),
+		countTask(
+			'funnel_events',
+			() => pruneFunnelEventsForRetention({ db, now }),
+			(count) => {
+				result.funnelEvents += count
 			},
 		),
 		countTask(

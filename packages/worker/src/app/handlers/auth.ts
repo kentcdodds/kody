@@ -45,6 +45,7 @@ import {
 } from '@kody-internal/shared/password-hash.ts'
 import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts'
 import { maybeTagKitSubscriberOnSignup } from '#app/kit-signup.ts'
+import { recordFunnelEvent } from '#worker/funnel/record-funnel-event.ts'
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 import {
@@ -527,6 +528,10 @@ export function createAuthHandler(env: Env) {
 				scheduleKitSubscriberSync({
 					env,
 					email: normalizedEmail,
+					stableUserId: record.stableUserId,
+				})
+				void recordFunnelEvent(env, {
+					event: 'signup_completed',
 					stableUserId: record.stableUserId,
 				})
 				scheduleUserCreatedEvent({
