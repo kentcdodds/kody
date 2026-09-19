@@ -7,6 +7,10 @@ import {
 	buildKodyFlatCapabilityUnavailableMessage,
 	kodyCapabilityNamespaceConfigs,
 } from '#mcp/kody-capability-accessors.ts'
+import {
+	kodyCallDispatcherName,
+	kodyProviderEvaluateBindingName,
+} from '#worker/kody-evaluate-bindings.ts'
 
 export type KodyRemoteProxyEvaluateMetadata = {
 	name: string
@@ -61,7 +65,7 @@ export function createKodyProviderProxySource(input: { providerName: string }) {
 	})
 	const mcpFlatNamePrefix = kodyCapabilityNamespaceConfigs.mcp.flatNamePrefix
 	const source = `    const __kodyCreateRemoteProxy = ${kodyRemoteProxyFactorySource};
-    const __kodyCallDispatcher = async (dispatchName, args) => {
+    const ${kodyCallDispatcherName} = async (dispatchName, args) => {
       const __kodyGetSecretAuthority = globalThis[Symbol.for('kody.getSecretAuthority')];
       const __kodySecretAuthority =
         typeof __kodyGetSecretAuthority === 'function'
@@ -88,9 +92,9 @@ export function createKodyProviderProxySource(input: { providerName: string }) {
       entityLabel: "MCP server",
       shortEntityLabel: "MCP server",
       capabilityLabel: "MCP tool",
-      callTool: __kodyCallDispatcher,
+      callTool: ${kodyCallDispatcherName},
     });
-    const ${input.providerName} = new Proxy({}, {
+    const ${kodyProviderEvaluateBindingName} = new Proxy({}, {
       get: (_, toolName) => {
         if (typeof toolName === 'symbol' || toolName === 'then') return undefined;
         if (toolName === 'mcp') return __kodyMcp;
@@ -98,7 +102,7 @@ export function createKodyProviderProxySource(input: { providerName: string }) {
         if (normalizedToolName.startsWith('${mcpFlatNamePrefix}')) {
           throw new Error(\`${mcpFlatNameMessage}\`);
         }
-        return async (args) => await __kodyCallDispatcher(normalizedToolName, args);
+        return async (args) => await ${kodyCallDispatcherName}(normalizedToolName, args);
       },
       has: (_, toolName) => toolName === 'mcp',
       ownKeys: () => ['mcp'],

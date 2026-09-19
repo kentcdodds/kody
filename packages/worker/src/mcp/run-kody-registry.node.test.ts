@@ -344,7 +344,11 @@ export default async function main() {
 			status: 'queued',
 		})
 		expect(wrappedSource).toContain('const workflows = {')
-		expect(wrappedSource).toContain('kody.packageWorkflowCreate')
+		expect(wrappedSource).toContain(
+			"__kodyCallDispatcher('packageWorkflowCreate'",
+		)
+		expect(wrappedSource).toContain('kody: __kodyProvider')
+		expect(wrappedSource).not.toMatch(/\b(?:const|let|var) kody\b/)
 		expect(created).toHaveLength(1)
 		expect(created[0]?.params).toEqual(
 			expect.objectContaining({

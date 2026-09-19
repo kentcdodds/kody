@@ -86,6 +86,10 @@ import {
 	isExecutorSandboxTimeoutMessage,
 } from '#worker/sentry-options.ts'
 import { parseStorageEstimateReadErrorMessage } from '#worker/storage-estimate-error.ts'
+import {
+	kodyCallDispatcherName,
+	kodyProviderEvaluateBindingName,
+} from '#worker/kody-evaluate-bindings.ts'
 import { isTransientDurableObjectResetError } from '#worker/durable-object-reset-retry.ts'
 import { createStableDynamicWorkerId } from '#mcp/dynamic-worker-id.ts'
 import {
@@ -914,9 +918,22 @@ function createExecutorModule(input: {
 				'    });',
 			]
 		: []
+	// Empty module graphs inline the snippet into evaluate(). Shadow the
+	// capability dispatcher (and the RPC bag it closes over) so that snippet
+	// cannot call tools. Do not shadow `kody`: a bare reference must stay a
+	// ReferenceError so the import hint still fires. Bundled executes skip
+	// this wrapper; their host prelude calls the dispatcher from the outer
+	// scope.
+	const oneFileHiddenBindings = [
+		kodyCallDispatcherName,
+		kodyProviderEvaluateBindingName,
+		'__kodyMcp',
+		'__kodyCreateRemoteProxy',
+		'__dispatchers',
+	]
 	const userCodeInvocation = input.shadowGlobalThis
 		? [
-				'        (async (globalThis, self, global) => (',
+				`        (async (globalThis, self, global, ${oneFileHiddenBindings.join(', ')}) => (`,
 				normalized,
 				')(__invocation))(__kodySandboxGlobal, __kodySandboxGlobal, __kodySandboxGlobal),',
 			]

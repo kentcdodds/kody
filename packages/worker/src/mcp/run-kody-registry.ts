@@ -64,6 +64,7 @@ import {
 	buildKodyModuleBundle,
 	hydrateKodyRuntimeModules,
 } from '#worker/package-runtime/module-graph.ts'
+import { kodyProviderEvaluateBindingName } from '#worker/kody-evaluate-bindings.ts'
 import {
 	collectLiteralImportSpecifiers,
 	getBarePackageNameFromSpecifier,
@@ -1056,7 +1057,8 @@ ${runtimeHelperPreludeSource}
     __kodyGlobal[__kodyRuntimeStorageSymbol] ??
     (__kodyGlobal[__kodyRuntimeStorageSymbol] = new __KodyAsyncLocalStorage());
   const __kodyRuntime = {
-    kody,
+    // Internal proxy. User modules reach it only via import { kody } from 'kody:runtime'.
+    kody: ${kodyProviderEvaluateBindingName},
 ${runtimeHelperRuntimePropertySource}
     packageContext: __kodyTrustedPackageContext,
   };

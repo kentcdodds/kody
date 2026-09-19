@@ -23,6 +23,7 @@ import { storageRunnerDurableObjectName } from '#worker/user-scoped-durable-obje
 import { recordDurableObjectRowsRead } from '#worker/usage/durable-object-rows.ts'
 import { createMeteredDurableObjectStub } from '#worker/usage/durable-object-usage.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
+import { kodyCallDispatcherName } from '#worker/kody-evaluate-bindings.ts'
 
 const defaultStorageExportPageSize = 250
 const maxStorageExportPageSize = 1_000
@@ -1379,18 +1380,18 @@ export function createPackageStorageHelperPrelude(input?: {
 	return `
 const __kodyPackageStorage = (packageId) => ({
   id: 'package:' + encodeURIComponent(packageId),
-  get: async (key) => (await kody.packageStorageGet({ packageId, key })).value,
-  list: async (options = {}) => await kody.packageStorageList({ ...options, packageId }),
+  get: async (key) => (await ${kodyCallDispatcherName}('packageStorageGet', { packageId, key })).value,
+  list: async (options = {}) => await ${kodyCallDispatcherName}('packageStorageList', { ...options, packageId }),
   sql: async (query, params = []) =>
-    await kody.packageStorageSql({
+    await ${kodyCallDispatcherName}('packageStorageSql', {
       packageId,
       query,
       params,
       writable: ${writable ? 'true' : 'false'},
     }),
-  set: async (key, value) => await kody.packageStorageSet({ packageId, key, value }),
-  delete: async (key) => await kody.packageStorageDelete({ packageId, key }),
-  clear: async () => await kody.packageStorageClear({ packageId }),
+  set: async (key, value) => await ${kodyCallDispatcherName}('packageStorageSet', { packageId, key, value }),
+  delete: async (key) => await ${kodyCallDispatcherName}('packageStorageDelete', { packageId, key }),
+  clear: async () => await ${kodyCallDispatcherName}('packageStorageClear', { packageId }),
 });
 	`.trim()
 }

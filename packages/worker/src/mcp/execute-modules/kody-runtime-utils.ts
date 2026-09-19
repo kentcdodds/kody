@@ -1,3 +1,4 @@
+import { kodyCallDispatcherName } from '#worker/kody-evaluate-bindings.ts'
 import {
 	assertIntegrationHostAllowed,
 	IntegrationHostNotAllowedError,
@@ -431,11 +432,7 @@ const secretHeaders = {
   },
 };
 const __kodyReadIntegrationConfig = async (providerName) => {
-  const integrationGet = kody.integrationGet;
-  if (typeof integrationGet !== 'function') {
-    throw new Error('kody.integrationGet is not available in this sandbox.');
-  }
-  const result = await integrationGet({ name: providerName });
+  const result = await ${kodyCallDispatcherName}('integrationGet', { name: providerName });
   const integration = result?.integration ?? null;
   if (!integration) {
     throw new Error(\`Integration "\${providerName}" was not found.\`);
@@ -488,13 +485,7 @@ const __kodyResolveRequestUrl = (input, integration) => {
   return input;
 };
 const __kodyRefreshIntegrationTokensHostSide = async (providerName) => {
-  const tokenRefresh = kody.integrationTokenRefresh;
-  if (typeof tokenRefresh !== 'function') {
-    throw new Error(
-      'kody.integrationTokenRefresh is not available in this sandbox.',
-    );
-  }
-  const result = await tokenRefresh({ name: providerName });
+  const result = await ${kodyCallDispatcherName}('integrationTokenRefresh', { name: providerName });
   if (result?.ok !== true) {
     throw new Error(
       \`Host-side token refresh for integration "\${providerName}" did not succeed.\`,
