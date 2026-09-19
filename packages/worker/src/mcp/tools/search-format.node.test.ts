@@ -1073,10 +1073,11 @@ test('search markdown summarizes broad results safely and only suggests entity d
 	})
 
 	expect(markdown).toMatch(/^# Search results/m)
+	expect(markdown).toContain('## Notices')
+	expect(markdown).toContain('Saved package metadata warning with long details')
+	expect(markdown).toContain('Package retriever warning with long details')
 	for (const sensitiveValue of [
 		truncatedReadmeSnippet,
-		sensitiveWarning,
-		retrieverWarning,
 		'https://github.com/login/oauth/access_token',
 		'github-access-token',
 		'github-refresh-token',
@@ -1298,6 +1299,10 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 	expect(mcpServerListMarkdown).toContain('**mcp-server** home')
 	expect(mcpServerListMarkdown).toContain('mcp-server:home')
 	expect(mcpServerListMarkdown).toContain('168 tools')
+	expect(mcpServerListMarkdown).toContain('Instructions:')
+	expect(mcpServerListMarkdown).toContain(
+		'Control lights, locks, and the island router PIN on the home LAN',
+	)
 	expect(mcpServerListMarkdown).not.toContain('capability:mcp:home:set_pin')
 
 	const [slimMcpServer] = toSlimStructuredMatches({
@@ -1584,4 +1589,145 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 			truncated: false,
 		},
 	})
+})
+
+test('list markdown and slim structured stay semantically equivalent for inlined export contracts', () => {
+	const exportHit = {
+		type: 'package' as const,
+		packageId: 'package-shade',
+		kodyId: 'home-controls',
+		name: '@kentcdodds/home-controls',
+		title: '@kentcdodds/home-controls setBondAreaShades',
+		description: 'Lower or raise Bond-controlled shades.',
+		tags: ['home', 'shades'],
+		hasApp: false,
+		hidden: false,
+		exportSubpath: './bond-area-shades',
+		actionMatches: [
+			{
+				subpath: './bond-area-shades',
+				description: 'Lower or raise Bond-controlled shades.',
+				typeDefinition:
+					'export declare function setBondAreaShades(params: BondAreaShadeParams): Promise<JsonObject>',
+				functions: [
+					{
+						name: 'setBondAreaShades',
+						description: 'Lower or raise Bond-controlled shades.',
+						typeDefinition:
+							'export declare function setBondAreaShades(params: BondAreaShadeParams): Promise<JsonObject>',
+					},
+					{
+						name: 'listBondAreas',
+						description: 'List Bond areas with shades.',
+						typeDefinition: null,
+					},
+				],
+				score: 0.94,
+				matchedTerms: ['shade', 'bond', 'lower'],
+			},
+		],
+		exportCallContract: {
+			importSpecifier: 'kody:@kentcdodds/home-controls/bond-area-shades',
+			usage:
+				'import { setBondAreaShades } from "kody:@kentcdodds/home-controls/bond-area-shades"',
+			executeExample: `import { setBondAreaShades } from "kody:@kentcdodds/home-controls/bond-area-shades"
+
+export default async function main(params) {
+	return await setBondAreaShades(params)
+}`,
+			typeDefinition:
+				'export declare function setBondAreaShades(params: BondAreaShadeParams): Promise<JsonObject>',
+			functions: [
+				{
+					name: 'setBondAreaShades',
+					description: 'Lower or raise Bond-controlled shades.',
+					typeDefinition:
+						'export declare function setBondAreaShades(params: BondAreaShadeParams): Promise<JsonObject>',
+				},
+				{
+					name: 'listBondAreas',
+					description: 'List Bond areas with shades.',
+					typeDefinition: null,
+				},
+			],
+		},
+	}
+	const guidance =
+		'Use the inlined export call contract above from `execute` (`import { setBondAreaShades } from "kody:@kentcdodds/home-controls/bond-area-shades"`). Inspect `search({ entity: "package:home-controls#./bond-area-shades" })` only if you need referenced types or more exports.'
+	const warning =
+		'Shade package retriever timed out once; results may be partial.'
+
+	const markdown = formatSearchMarkdown({
+		matches: [exportHit],
+		warnings: [warning],
+		guidance,
+		includePreamble: false,
+	})
+	const [slim] = toSlimStructuredMatches({
+		baseUrl: 'http://localhost',
+		username: 'test-user',
+		matches: [exportHit],
+	})
+
+	expect(slim).toMatchObject({
+		type: 'package',
+		entityRef: 'package:home-controls#./bond-area-shades',
+		exportSubpath: './bond-area-shades',
+		exportCallContract: {
+			importSpecifier: 'kody:@kentcdodds/home-controls/bond-area-shades',
+			usage: exportHit.exportCallContract.usage,
+			executeExample: exportHit.exportCallContract.executeExample,
+			typeDefinition: exportHit.exportCallContract.typeDefinition,
+			functions: [
+				expect.objectContaining({ name: 'setBondAreaShades' }),
+				expect.objectContaining({ name: 'listBondAreas' }),
+			],
+		},
+		actionMatches: [
+			expect.objectContaining({
+				matchedTerms: ['shade', 'bond', 'lower'],
+				score: 0.94,
+			}),
+		],
+		nextStep: expect.stringContaining('inlined export call contract'),
+	})
+
+	expect(markdown).toContain(
+		'Entity: `package:home-controls#./bond-area-shades`',
+	)
+	expect(markdown).toContain('Matched: `shade`, `bond`, `lower`')
+	expect(markdown).toContain(
+		'Import: `kody:@kentcdodds/home-controls/bond-area-shades`',
+	)
+	expect(markdown).toContain(exportHit.exportCallContract.usage)
+	expect(markdown).toContain(exportHit.exportCallContract.typeDefinition)
+	expect(markdown).toContain('```ts')
+	for (const exampleLine of exportHit.exportCallContract.executeExample.split(
+		'\n',
+	)) {
+		expect(markdown).toContain(exampleLine)
+	}
+	expect(markdown).toContain('`setBondAreaShades`')
+	expect(markdown).toContain('`listBondAreas`')
+	expect(markdown).toContain('Next: Use the inlined export call contract above')
+	expect(markdown).toContain('## Notices')
+	expect(markdown).toContain(
+		'Shade package retriever timed out once; results may be partial',
+	)
+	expect(markdown).toContain('## Recommended next step')
+	expect(markdown).toContain(guidance)
+	expect(markdown).not.toMatch(/structured result/i)
+
+	const slimContract =
+		slim && 'exportCallContract' in slim ? slim.exportCallContract : null
+	expect(slimContract).toBeDefined()
+	expect(markdown).toContain(slimContract!.importSpecifier)
+	expect(markdown).toContain(slimContract!.usage)
+	for (const exampleLine of slimContract!.executeExample.split('\n')) {
+		expect(markdown).toContain(exampleLine)
+	}
+	expect(markdown).toContain(slim!.entityRef)
+	expect(markdown).toContain(
+		(slim && 'nextStep' in slim ? slim.nextStep : '') ?? '',
+	)
 })

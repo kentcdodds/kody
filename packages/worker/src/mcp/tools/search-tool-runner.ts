@@ -571,7 +571,8 @@ export async function runSearchTool(input: {
 			(value) =>
 				formatSearchMarkdown({
 					matches: value.matches,
-					warningCount: structuredWarnings.length,
+					warnings: structuredWarnings,
+					guidance: execution.result.guidance,
 					includePreamble,
 				}),
 			(value, count) => ({

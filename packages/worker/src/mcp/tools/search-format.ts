@@ -1,6 +1,7 @@
 export {
 	buildKodyCapabilityAccessor,
 	buildPackageActionImportUsage,
+	buildPackageListNextStep,
 	buildPackageMaintainSnippets,
 	compactCapabilityInputTypeDefinition,
 	getPrimaryPackageActionFunction,

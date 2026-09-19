@@ -1,6 +1,7 @@
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { buildKodyCapabilityAccessor } from '#mcp/kody-capability-accessors.ts'
+import { listingAheadSearchNotice } from '#universal/community-listing-ahead.ts'
 import { buildPackageImportSpecifier } from '#worker/package-registry/package-import-specifier.ts'
 import { type PackageJobSchedule } from '#worker/package-registry/types.ts'
 import { resolveHostedPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
@@ -8,6 +9,7 @@ import { resolveHostedPackageAppUrl } from '@kody-internal/shared/public-urls.ts
 import {
 	searchEntityRefTypes,
 	type SearchEntityType,
+	type SearchMatch,
 } from './search-format-types.ts'
 
 export { buildKodyCapabilityAccessor } from '#mcp/kody-capability-accessors.ts'
@@ -135,6 +137,51 @@ export function getPrimaryPackageActionFunction<
 		actionMatch.functions[0] ??
 		null
 	)
+}
+
+/**
+ * Shared next-step copy for package list hits. Used by slim structured
+ * matches and list markdown so content-preferring and structured-preferring
+ * MCP hosts see the same guidance.
+ */
+export function buildPackageListNextStep(
+	match: Extract<SearchMatch, { type: 'package' }>,
+): string {
+	const exportSubpath = match.exportSubpath
+	const [actionMatch] = match.actionMatches ?? []
+	const actionFunction = actionMatch
+		? getPrimaryPackageActionFunction(actionMatch)
+		: null
+	const primaryUsage =
+		actionMatch && actionFunction
+			? buildPackageActionImportUsage({
+					packageName: match.name,
+					subpath: actionMatch.subpath,
+					functionName: actionFunction.name,
+				})
+			: null
+	const platformSuffix = match.platformScope
+		? ` ${buildPlatformPackageForkNotice(match.platformScope)}`
+		: ''
+	const listingAheadSuffix =
+		match.listingAhead === true ? ` ${listingAheadSearchNotice}` : ''
+	const entityRef = buildEntityRef(match.kodyId, 'package', exportSubpath)
+	if (exportSubpath) {
+		if (match.exportCallContract) {
+			return `Use the inlined export call contract above from \`execute\`. Inspect search({ entity: ${JSON.stringify(entityRef)} }) only if you need referenced types or the full package.${platformSuffix}${listingAheadSuffix}`
+		}
+		if (primaryUsage) {
+			return `Use ${primaryUsage}; inspect search({ entity: ${JSON.stringify(entityRef)} }) only if you need the full export contract.${platformSuffix}${listingAheadSuffix}`
+		}
+		return `Inspect the export contract with search({ entity: ${JSON.stringify(entityRef)} }).${platformSuffix}${listingAheadSuffix}`
+	}
+	if (primaryUsage) {
+		return `Use ${primaryUsage}; inspect search({ entity: "package:${match.kodyId}" }) only if you need more exports.${platformSuffix}${listingAheadSuffix}`
+	}
+	if (match.hasApp) {
+		return `Inspect package detail with search({ entity: "package:${match.kodyId}" }) to review exports, jobs, and the hosted app URL.${platformSuffix}${listingAheadSuffix}`
+	}
+	return `Inspect package detail with search({ entity: "package:${match.kodyId}" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.name, '.')}".${platformSuffix}${listingAheadSuffix}`
 }
 
 export function formatInlineTypeDefinition(typeDefinition: string) {

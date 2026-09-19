@@ -48,7 +48,8 @@ type, title, one-line summary, and an entity ref — instead of loading hundreds
 of tools. Capability hits include a domain id and, for the top few, a compact
 call shape so the next step is often a single **execute**. Prefer a matching
 package export hit (`package:{id}#{subpath}`) over only the parent package;
-high-confidence export hits may include an inlined call contract.
+high-confidence export hits may include an inlined call contract (import, types,
+and execute example) on both markdown and structured channels.
 
 ### How an agent calls it
 
