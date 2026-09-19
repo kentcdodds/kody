@@ -5,6 +5,7 @@ import { searchUnified, type PackageSearchRow } from './search.ts'
 import { packageExportCandidateMinScore } from './search-constants.ts'
 import {
 	buildPackageActionMatches,
+	hydrateTopPackageMatches,
 	shouldPromotePackageExportCandidate,
 } from './search-entity-plugins/package.ts'
 
@@ -330,4 +331,123 @@ test('searchUnified hydrates lean package rows before promoting export candidate
 				match.exportSubpath === './bond-area-shades',
 		),
 	).toBe(true)
+})
+
+test('hydrateTopPackageMatches keeps export hits aligned with exportSubpath', async () => {
+	const hydrate = vi.fn(async () => ({
+		projection: {
+			name: '@kody/home-controls',
+			kodyId: 'home-controls',
+			description: 'Home controls package.',
+			tags: ['home'],
+			searchText: null,
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			appEntry: null,
+			exports: [
+				createPackageExportProjection('./bond-area-shades', {
+					description: 'Dim bond area shades.',
+					functionName: 'setBondAreaShades',
+					functionDescription: 'Dim bond area shades.',
+				}),
+				createPackageExportProjection('./other-export', {
+					description: 'Unrelated other export helpers.',
+					functionName: 'otherHelper',
+					functionDescription: 'Unrelated other export helpers.',
+				}),
+			],
+			jobs: [],
+			subscriptions: [],
+			retrievers: [],
+			webhooks: [],
+		},
+		readmeSnippet: {
+			path: 'README.md',
+			snippet: 'Home controls intent.',
+			truncated: false,
+		},
+	}))
+	const match = {
+		type: 'package' as const,
+		packageId: 'home-controls-pkg',
+		kodyId: 'home-controls',
+		name: '@kody/home-controls',
+		title: '@kody/home-controls setBondAreaShades',
+		description: 'Dim bond area shades.',
+		tags: ['home'],
+		hasApp: false,
+		hidden: false,
+		exportSubpath: './bond-area-shades',
+		actionMatches: [
+			{
+				subpath: './bond-area-shades',
+				description: 'Dim bond area shades.',
+				typeDefinition: null,
+				functions: [
+					{
+						name: 'setBondAreaShades',
+						description: 'Dim bond area shades.',
+						typeDefinition: null,
+					},
+				],
+				score: 0.9,
+				matchedTerms: ['bond', 'area', 'shades'],
+			},
+		],
+	}
+	await hydrateTopPackageMatches({
+		query: 'bond area shades set',
+		matches: [match],
+		rows: [
+			{
+				record: {
+					id: 'home-controls-pkg',
+					userId: 'user-1',
+					name: '@kody/home-controls',
+					kodyId: 'home-controls',
+					description: 'Home controls package.',
+					tags: ['home'],
+					searchText: null,
+					sourceId: 'source-home',
+					hasApp: false,
+					hidden: false,
+					isPrivate: false,
+					createdAt: '2026-04-20T00:00:00.000Z',
+					updatedAt: '2026-04-20T00:00:00.000Z',
+				},
+				listingAhead: null,
+				projection: {
+					name: '@kody/home-controls',
+					kodyId: 'home-controls',
+					description: 'Home controls package.',
+					tags: ['home'],
+					searchText: null,
+					hasApp: false,
+					hidden: false,
+					isPrivate: false,
+					appEntry: null,
+					exports: [],
+					jobs: [],
+					subscriptions: [],
+					retrievers: [],
+					webhooks: [],
+				},
+				readmeSnippet: null,
+				hydrate,
+			},
+		],
+	})
+	expect(hydrate).toHaveBeenCalled()
+	expect(match.actionMatches).toEqual([
+		expect.objectContaining({
+			subpath: './bond-area-shades',
+			functions: [expect.objectContaining({ name: 'setBondAreaShades' })],
+		}),
+	])
+	expect(match.actionMatches).toHaveLength(1)
+	expect(match.readmeSnippet).toMatchObject({
+		path: 'README.md',
+		snippet: 'Home controls intent.',
+	})
 })

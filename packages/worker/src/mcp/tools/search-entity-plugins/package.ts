@@ -896,11 +896,30 @@ export async function hydrateTopPackageMatches(input: {
 			try {
 				const hydrated = await row.hydrate()
 				match.readmeSnippet = hydrated.readmeSnippet
-				match.actionMatches = buildPackageActionMatches({
+				const actionMatches = buildPackageActionMatches({
 					query: input.query,
 					meaningfulTokens,
 					exports: hydrated.projection.exports,
 				})
+				// Export-focused ranked hits must keep actionMatches aligned with
+				// exportSubpath. Replacing with the full nested-display list would
+				// let list/slim formatting pair the wrong usage with the entity ref.
+				if (match.exportSubpath) {
+					const focused =
+						findPackageExportByFragment(actionMatches, match.exportSubpath) ??
+						null
+					match.actionMatches = focused
+						? [focused]
+						: (match.actionMatches ?? []).filter(
+								(actionMatch) =>
+									findPackageExportByFragment(
+										[actionMatch],
+										match.exportSubpath!,
+									) != null,
+							)
+					return
+				}
+				match.actionMatches = actionMatches
 			} catch (error) {
 				console.warn(
 					JSON.stringify({
