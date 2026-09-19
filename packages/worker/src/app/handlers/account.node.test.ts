@@ -360,8 +360,8 @@ test('authenticated account SSR batches user/role and flag reads into two round 
 		'accountProfile',
 		'onboarding',
 	])
-	// Session batches: users+roles, flags+overrides (two 2-statement batches).
-	expect(counts.batchSizes).toEqual([2, 2])
-	expect(counts.prepare).toBe(4)
+	// Session batches: users+roles, then flags+overrides+experiments_opt_in.
+	expect(counts.batchSizes).toEqual([2, 3])
+	expect(counts.prepare).toBe(5)
 	expect(counts.batch).toBe(2)
 })
