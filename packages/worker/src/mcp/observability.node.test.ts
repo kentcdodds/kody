@@ -33,6 +33,8 @@ vi.mock('@sentry/cloudflare', () => ({
 }))
 
 const { logMcpEvent } = await import('./observability.ts')
+const { assertKodyDescriptionLength, KODY_DESCRIPTION_MAX_LENGTH } =
+	await import('#worker/package-registry/types.ts')
 const { McpCallerError } = await import('./caller-error.ts')
 const { PackageSecretAccessDeniedError } =
 	await import('./secrets/package-access.ts')
@@ -453,4 +455,44 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 		}),
 	)
 	expect(sentryMock.captureMessage).not.toHaveBeenCalled()
+})
+
+test('oversized kody.description handler errors stay off Sentry', () => {
+	let thrown: unknown
+	try {
+		assertKodyDescriptionLength('a'.repeat(KODY_DESCRIPTION_MAX_LENGTH + 1))
+	} catch (error) {
+		thrown = error
+	}
+	expect(thrown).toBeInstanceOf(Error)
+	expect((thrown as Error).message).toBe(
+		'kody.description must be at most 200 characters (short public tagline).',
+	)
+
+	captureMcpEvents(() => {
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'packageGetGitRemote',
+			domain: 'packages',
+			capabilitySource: 'builtin',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage: (thrown as Error).message,
+			cause: thrown,
+		})
+	})
+	expect(sentryMock.captureException).not.toHaveBeenCalled()
+	expect(sentryMock.captureMessage).not.toHaveBeenCalled()
+
+	captureMcpEvents(() => {
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'packageGetGitRemote',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage: 'kody.description is missing',
+			cause: new Error('kody.description is missing'),
+		})
+	})
+	expect(sentryMock.captureException).toHaveBeenCalledTimes(1)
 })

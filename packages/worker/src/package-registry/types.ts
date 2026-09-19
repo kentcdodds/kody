@@ -379,11 +379,24 @@ const kodyPackageDependenciesSchema = z
 /** Soft cap for new/updated `kody.description` taglines on write/publish only. */
 export const KODY_DESCRIPTION_MAX_LENGTH = 200
 
+/**
+ * Stable phrase used to recognize oversized taglines after the Error leaves
+ * `package-registry` (no MCP types here). `isKodyDescriptionLengthMessage`
+ * and MCP observability depend on it. KODY-7S.
+ */
+const kodyDescriptionTooLongPhrase = `must be at most ${KODY_DESCRIPTION_MAX_LENGTH} characters (short public tagline)`
+
+export function kodyDescriptionTooLongMessage() {
+	return `kody.description ${kodyDescriptionTooLongPhrase}.`
+}
+
+export function isKodyDescriptionLengthMessage(message: string) {
+	return message.includes(kodyDescriptionTooLongPhrase)
+}
+
 export function assertKodyDescriptionLength(description: string) {
 	if (description.length > KODY_DESCRIPTION_MAX_LENGTH) {
-		throw new Error(
-			'kody.description must be at most 200 characters (short public tagline).',
-		)
+		throw new Error(kodyDescriptionTooLongMessage())
 	}
 }
 

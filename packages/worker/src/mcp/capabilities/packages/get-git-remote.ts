@@ -19,6 +19,10 @@ import {
 } from '#worker/package-registry/package-owner.ts'
 import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import {
+	KODY_DESCRIPTION_MAX_LENGTH,
+	kodyDescriptionTooLongMessage,
+} from '#worker/package-registry/types.ts'
+import {
 	buildAuthenticatedArtifactsRemote,
 	parseArtifactTokenSecret,
 } from '#worker/repo/artifacts.ts'
@@ -48,9 +52,10 @@ const getGitRemoteInputSchema = z.object({
 	description: z
 		.string()
 		.min(1)
+		.max(KODY_DESCRIPTION_MAX_LENGTH, kodyDescriptionTooLongMessage())
 		.optional()
 		.describe(
-			'Package description used when `create: true` registers a new stub package. Ignored for existing packages.',
+			`Package description used when \`create: true\` registers a new stub package. At most ${KODY_DESCRIPTION_MAX_LENGTH} characters (short public tagline). Ignored for existing packages.`,
 		),
 	scope: z.enum(['read', 'write']).default('write'),
 	ttl_seconds: z.number().int().min(60).max(86_400).default(14_400),

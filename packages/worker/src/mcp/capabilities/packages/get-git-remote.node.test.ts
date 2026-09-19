@@ -1,4 +1,6 @@
 import { expect, test, vi } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
+import { KODY_DESCRIPTION_MAX_LENGTH } from '#worker/package-registry/types.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -269,6 +271,37 @@ test('get_git_remote returns scoped artifact remotes and rejects invalid input',
 	expect(
 		mockModule.markEntitySourcePendingExternalReconcile,
 	).not.toHaveBeenCalled()
+
+	resetMocks()
+	const tooLongDescription = 'a'.repeat(KODY_DESCRIPTION_MAX_LENGTH + 1)
+	const descriptionSchema = getGitRemoteCapability.inputSchema.properties?.[
+		'description'
+	] as { maxLength?: number; description?: string } | undefined
+	expect(descriptionSchema?.maxLength).toBe(KODY_DESCRIPTION_MAX_LENGTH)
+	expect(descriptionSchema?.description).toContain(
+		`${KODY_DESCRIPTION_MAX_LENGTH} characters (short public tagline)`,
+	)
+	const oversizeError = await getGitRemoteCapability
+		.handler(
+			{
+				create: true,
+				kody_id: 'new-package',
+				description: tooLongDescription,
+			},
+			createContext(),
+		)
+		.catch((error: unknown) => error)
+	expect(oversizeError).toBeInstanceOf(McpCallerError)
+	expect(oversizeError).toMatchObject({
+		message: expect.stringContaining(
+			'Invalid input for capability "packageGetGitRemote"',
+		),
+	})
+	expect((oversizeError as Error).message).toContain(
+		`at most ${KODY_DESCRIPTION_MAX_LENGTH} characters (short public tagline)`,
+	)
+	expect(mockModule.createStubSavedPackage).not.toHaveBeenCalled()
+	expect(mockModule.resolvePackageOwnerContext).not.toHaveBeenCalled()
 
 	resetMocks()
 	mockPackageSource()

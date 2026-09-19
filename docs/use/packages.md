@@ -715,7 +715,7 @@ publish checks run.
 
    To start a **new** package in this lane, pass `create: true` with leftover
    `kody_id` set to the new `@owner/leaf` name (or the name leaf) and an
-   optional `description`:
+   optional `description` (at most 200 characters; a short public tagline):
 
    ```json
    {
