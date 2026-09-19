@@ -29,7 +29,11 @@ import {
 	formatPackageExportEntityDetail,
 	formatUnknownPackageExportError,
 } from '../package-export-search-detail.ts'
-import { maxFusedPackageCandidates } from '../search-constants.ts'
+import {
+	maxFusedPackageCandidates,
+	maxPackageExportCandidatesPerPackage,
+	packageExportCandidateMinScore,
+} from '../search-constants.ts'
 import { type SearchEntityPlugin } from '../search-entity-plugin.ts'
 import {
 	escapeMarkdownText,
@@ -45,12 +49,15 @@ import {
 	buildPlatformPackageForkNotice,
 	getPrimaryPackageActionFunction,
 } from '../search-format-helpers.ts'
-import { type SearchMatch } from '../search-format-types.ts'
+import {
+	type PackageActionMatch,
+	type SearchMatch,
+} from '../search-format-types.ts'
 import {
 	buildCandidateBaseScore,
 	scoreMatchedTerms,
 } from '../search-scoring.ts'
-import { type PackageSearchRow } from '../search-types.ts'
+import { type PackageSearchRow, type SearchCandidate } from '../search-types.ts'
 import { extractMeaningfulSearchTokens } from '../understand-search-query.ts'
 
 export function flattenReferencedTypeFields(
@@ -83,11 +90,11 @@ function buildPackageExportSearchFields(
 	]
 }
 
-function buildPackageActionMatches(input: {
+export function buildPackageActionMatches(input: {
 	query: string
 	meaningfulTokens: ReadonlyArray<string>
 	exports: ReadonlyArray<PackageSearchProjection['exports'][number]>
-}) {
+}): Array<PackageActionMatch> {
 	if (input.meaningfulTokens.length === 0) return []
 	return input.exports
 		.map((exportDetail) => {
@@ -123,6 +130,118 @@ function buildPackageActionMatches(input: {
 			return left.subpath.localeCompare(right.subpath)
 		})
 		.slice(0, 3)
+}
+
+/**
+ * Stricter than nested actionMatches: exports enter the first-pass pool only
+ * when the query clearly targets the export (multi-term hit or strong score).
+ */
+export function shouldPromotePackageExportCandidate(
+	actionMatch: PackageActionMatch,
+): boolean {
+	return (
+		actionMatch.matchedTerms.length >= 2 ||
+		actionMatch.score >= packageExportCandidateMinScore
+	)
+}
+
+function buildPackageExportCandidate(input: {
+	entry: PackageSearchRow
+	actionMatch: PackageActionMatch
+	exportDetail: PackageSearchProjection['exports'][number]
+	readmeSnippet: string
+}): SearchCandidate {
+	const { entry, actionMatch, exportDetail, readmeSnippet } = input
+	const primaryFunction = getPrimaryPackageActionFunction(actionMatch)
+	const title = primaryFunction
+		? `${entry.record.name} ${primaryFunction.name}`
+		: `${entry.record.name} ${actionMatch.subpath}`
+	const description =
+		actionMatch.description ??
+		primaryFunction?.description ??
+		entry.record.description
+	return {
+		match: {
+			type: 'package' as const,
+			packageId: entry.record.id,
+			kodyId: entry.record.kodyId,
+			name: entry.record.name,
+			title,
+			description,
+			tags: entry.record.tags,
+			hasApp: entry.record.hasApp,
+			hidden: entry.record.hidden,
+			platformScope: entry.platformScope ?? null,
+			ownerUsername: entry.shareGranted
+				? (entry.record.name.replace(/^@/, '').split('/')[0] ?? null)
+				: null,
+			readmeSnippet: entry.readmeSnippet ?? null,
+			exportSubpath: actionMatch.subpath,
+			actionMatches: [actionMatch],
+			...(entry.listingAhead === true ? { listingAhead: true as const } : {}),
+		},
+		type: 'package' as const,
+		id: `${entry.record.kodyId}#${actionMatch.subpath}`,
+		title,
+		packageIdentityFields: [
+			entry.record.kodyId,
+			entry.record.name,
+			...entry.record.tags,
+			readmeSnippet,
+		],
+		searchFields: [
+			entry.record.kodyId,
+			entry.record.name,
+			...buildPackageExportSearchFields(exportDetail),
+		],
+		scoreComponents: buildCandidateBaseScore({
+			lexical: actionMatch.score,
+		}),
+	}
+}
+
+function collectPackageExportCandidates(input: {
+	packageCandidates: ReadonlyArray<SearchCandidate>
+	rowsByRecordId: ReadonlyMap<string, PackageSearchRow>
+	query: string
+	meaningfulTokens: ReadonlyArray<string>
+}): Array<SearchCandidate> {
+	const exportCandidates: Array<SearchCandidate> = []
+	for (const candidate of input.packageCandidates) {
+		if (candidate.match.type !== 'package') continue
+		if (candidate.match.exportSubpath) continue
+		const row = input.rowsByRecordId.get(candidate.match.packageId)
+		if (!row) continue
+		const exports = Array.isArray(row.projection.exports)
+			? row.projection.exports
+			: []
+		const actionMatches =
+			candidate.match.actionMatches && candidate.match.actionMatches.length > 0
+				? candidate.match.actionMatches
+				: buildPackageActionMatches({
+						query: input.query,
+						meaningfulTokens: input.meaningfulTokens,
+						exports,
+					})
+		const promoted = actionMatches
+			.filter(shouldPromotePackageExportCandidate)
+			.slice(0, maxPackageExportCandidatesPerPackage)
+		for (const actionMatch of promoted) {
+			const exportDetail = exports.find(
+				(item) => item.subpath === actionMatch.subpath,
+			)
+			if (!exportDetail) continue
+			exportCandidates.push(
+				buildPackageExportCandidate({
+					entry: row,
+					actionMatch,
+					exportDetail,
+					readmeSnippet: row.readmeSnippet?.snippet ?? '',
+				}),
+			)
+		}
+	}
+	return exportCandidates
 }
 
 /**
@@ -378,49 +497,98 @@ export const packageSearchEntityPlugin = {
 				}
 			})
 			.filter((candidate) => candidate.scoreComponents.base > 0)
-		if (!vectorScoresByRecordId) {
-			return candidates
-		}
-		// Fuse lexical and vector rankings to bound the online candidate set.
-		const candidateIds = candidates.map(
-			(candidate) => candidate.match.packageId,
+		const rowsByRecordId = new Map(
+			rows.map((row) => [row.record.id, row] as const),
 		)
-		const lexicalById = new Map(
-			candidates.map(
-				(candidate) =>
-					[
-						candidate.match.packageId,
-						candidate.scoreComponents.lexical,
-					] as const,
-			),
-		)
-		const lexicalOrder = sortIdsByScore(
-			candidateIds,
-			(id) => lexicalById.get(id) ?? 0,
-		)
-		const vectorHitIds = candidateIds.filter((id) =>
-			vectorScoresByRecordId.has(id),
-		)
-		const vectorOrder = sortIdsByScore(
-			vectorHitIds,
-			(id) => vectorScoresByRecordId.get(id) ?? 0,
-		)
-		const fused = reciprocalRankFusion(
-			[lexicalOrder, vectorOrder],
-			CAPABILITY_SEARCH_RRF_K,
-		)
-		const keptIds = new Set(
-			sortIdsByScore(candidateIds, (id) => fused.get(id) ?? 0).slice(
-				0,
-				Math.min(
-					maxFusedPackageCandidates,
-					Math.max(input.limit * 5, input.limit),
+		let packageCandidates = candidates
+		if (vectorScoresByRecordId) {
+			// Fuse lexical and vector rankings to bound the online candidate set.
+			const candidateIds = packageCandidates.map(
+				(candidate) => candidate.match.packageId,
+			)
+			const lexicalById = new Map(
+				packageCandidates.map(
+					(candidate) =>
+						[
+							candidate.match.packageId,
+							candidate.scoreComponents.lexical,
+						] as const,
 				),
-			),
+			)
+			const lexicalOrder = sortIdsByScore(
+				candidateIds,
+				(id) => lexicalById.get(id) ?? 0,
+			)
+			const vectorHitIds = candidateIds.filter((id) =>
+				vectorScoresByRecordId.has(id),
+			)
+			const vectorOrder = sortIdsByScore(
+				vectorHitIds,
+				(id) => vectorScoresByRecordId.get(id) ?? 0,
+			)
+			const fused = reciprocalRankFusion(
+				[lexicalOrder, vectorOrder],
+				CAPABILITY_SEARCH_RRF_K,
+			)
+			const keptIds = new Set(
+				sortIdsByScore(candidateIds, (id) => fused.get(id) ?? 0).slice(
+					0,
+					Math.min(
+						maxFusedPackageCandidates,
+						Math.max(input.limit * 5, input.limit),
+					),
+				),
+			)
+			packageCandidates = packageCandidates.filter((candidate) =>
+				keptIds.has(candidate.match.packageId),
+			)
+		}
+
+		// Lean search rows omit exports until hydrate. Bound hydrate to the
+		// recall window so strong exports can enter the first-pass pool without
+		// loading every package source.
+		const hydrateBudget = Math.min(packageCandidates.length, input.limit)
+		const hydrateTargets = [...packageCandidates]
+			.sort(
+				(left, right) => right.scoreComponents.base - left.scoreComponents.base,
+			)
+			.slice(0, hydrateBudget)
+		await Promise.all(
+			hydrateTargets.map(async (candidate) => {
+				if (candidate.match.type !== 'package') return
+				if ((candidate.match.actionMatches?.length ?? 0) > 0) return
+				const row = rowsByRecordId.get(candidate.match.packageId)
+				if (!row?.hydrate) return
+				try {
+					const hydrated = await row.hydrate()
+					row.projection = hydrated.projection
+					row.readmeSnippet = hydrated.readmeSnippet
+					candidate.match.readmeSnippet = hydrated.readmeSnippet
+					candidate.match.actionMatches = buildPackageActionMatches({
+						query: input.query,
+						meaningfulTokens,
+						exports: hydrated.projection.exports,
+					})
+				} catch (error) {
+					console.warn(
+						JSON.stringify({
+							message:
+								'package export candidate hydrate failed; skipping export promotion',
+							packageId: candidate.match.packageId,
+							error: error instanceof Error ? error.message : String(error),
+						}),
+					)
+				}
+			}),
 		)
-		return candidates.filter((candidate) =>
-			keptIds.has(candidate.match.packageId),
-		)
+
+		const exportCandidates = collectPackageExportCandidates({
+			packageCandidates,
+			rowsByRecordId,
+			query: input.query,
+			meaningfulTokens,
+		})
+		return [...packageCandidates, ...exportCandidates]
 	},
 	formatSlimMatch({ match, baseUrl, packageAppBaseUrl, username }) {
 		const rootImportUsage = buildPackageRootImportUsage(match.name)
@@ -448,6 +616,7 @@ export const packageSearchEntityPlugin = {
 				matchedTerms: actionMatch.matchedTerms,
 			}
 		})
+		const exportSubpath = match.exportSubpath
 		const [primaryAction] = actionMatches
 		const primaryActionFunction = primaryAction
 			? getPrimaryPackageActionFunction(primaryAction)
@@ -457,16 +626,20 @@ export const packageSearchEntityPlugin = {
 			: ''
 		const listingAheadSuffix =
 			match.listingAhead === true ? ` ${listingAheadSearchNotice}` : ''
-		const nextStep =
-			primaryAction && primaryActionFunction
+		const entityRef = buildEntityRef(match.kodyId, 'package', exportSubpath)
+		const nextStep = exportSubpath
+			? primaryAction && primaryActionFunction
+				? `Use ${primaryActionFunction.usage}; inspect search({ entity: ${JSON.stringify(entityRef)} }) only if you need the full export contract.${platformSuffix}${listingAheadSuffix}`
+				: `Inspect the export contract with search({ entity: ${JSON.stringify(entityRef)} }).${platformSuffix}${listingAheadSuffix}`
+			: primaryAction && primaryActionFunction
 				? `Use ${primaryActionFunction.usage}; inspect search({ entity: "package:${match.kodyId}" }) only if you need more exports.${platformSuffix}${listingAheadSuffix}`
 				: match.hasApp
 					? `Inspect package detail with search({ entity: "package:${match.kodyId}" }) to review exports, jobs, and the hosted app URL.${platformSuffix}${listingAheadSuffix}`
 					: `Inspect package detail with search({ entity: "package:${match.kodyId}" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.name, '.')}".${platformSuffix}${listingAheadSuffix}`
 		return {
 			type: 'package',
-			id: match.kodyId,
-			entityRef: buildEntityRef(match.kodyId, 'package'),
+			id: exportSubpath ? `${match.kodyId}#${exportSubpath}` : match.kodyId,
+			entityRef,
 			packageId: match.packageId,
 			kodyId: match.kodyId,
 			title: match.title,
@@ -477,6 +650,7 @@ export const packageSearchEntityPlugin = {
 			hasApp: match.hasApp,
 			hidden: match.hidden,
 			platformScope: match.platformScope ?? null,
+			...(exportSubpath ? { exportSubpath } : {}),
 			...(match.listingAhead === true ? { listingAhead: true as const } : {}),
 			// Platform package apps are hosted under the platform account's
 			// username, not the caller's.
@@ -722,11 +896,30 @@ export async function hydrateTopPackageMatches(input: {
 			try {
 				const hydrated = await row.hydrate()
 				match.readmeSnippet = hydrated.readmeSnippet
-				match.actionMatches = buildPackageActionMatches({
+				const actionMatches = buildPackageActionMatches({
 					query: input.query,
 					meaningfulTokens,
 					exports: hydrated.projection.exports,
 				})
+				// Export-focused ranked hits must keep actionMatches aligned with
+				// exportSubpath. Replacing with the full nested-display list would
+				// let list/slim formatting pair the wrong usage with the entity ref.
+				if (match.exportSubpath) {
+					const focused =
+						findPackageExportByFragment(actionMatches, match.exportSubpath) ??
+						null
+					match.actionMatches = focused
+						? [focused]
+						: (match.actionMatches ?? []).filter(
+								(actionMatch) =>
+									findPackageExportByFragment(
+										[actionMatch],
+										match.exportSubpath!,
+									) != null,
+							)
+					return
+				}
+				match.actionMatches = actionMatches
 			} catch (error) {
 				console.warn(
 					JSON.stringify({

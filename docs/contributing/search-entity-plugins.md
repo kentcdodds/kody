@@ -58,6 +58,11 @@ Current candidate flatten order is:
 5. `secret`
 6. `retriever_result`
 
+The **package** plugin may emit additional first-class candidates for strong
+export contracts (`id` / entity ref `package:{kodyId}#{subpath}`) alongside the
+package index candidate. Promotion is capped and score-gated so broad queries
+are not flooded; see `docs/use/search.md` (Package exports in ranked results).
+
 `domain` is registered last as a result-only plugin (slim formatting only): its
 rows come from the broad-query domain overview in `searchUnified`, not from the
 candidate pipeline.

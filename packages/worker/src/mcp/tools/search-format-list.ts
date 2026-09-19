@@ -96,20 +96,29 @@ function formatMatchListItem(match: SearchMatch, index: number) {
 		return `${String(index + 1)}. **guide** ${escapeMarkdownText(match.title)} — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}`
 	}
 	if (match.type === 'package') {
-		const entityRef = buildEntityRef(match.kodyId, 'package')
+		const entityRef = buildEntityRef(
+			match.kodyId,
+			'package',
+			match.exportSubpath,
+		)
 		const [actionMatch] = match.actionMatches ?? []
 		const actionFunction = actionMatch
 			? getPrimaryPackageActionFunction(actionMatch)
 			: null
+		const exportLabel = match.exportSubpath
+			? ` export ${formatMarkdownInlineCode(match.exportSubpath)}`
+			: ''
 		const actionSummary =
 			actionMatch && actionFunction
-				? ` Best action: ${formatMarkdownInlineCode(actionFunction.name)} via ${formatMarkdownInlineCode(buildPackageActionImportUsage({ packageName: match.name, subpath: actionMatch.subpath, functionName: actionFunction.name }))}${actionFunction.description ? ` — ${escapeMarkdownText(formatOneLineSentence(actionFunction.description))}` : ''}`
+				? match.exportSubpath
+					? ` Use ${formatMarkdownInlineCode(buildPackageActionImportUsage({ packageName: match.name, subpath: actionMatch.subpath, functionName: actionFunction.name }))}${actionFunction.description ? ` — ${escapeMarkdownText(formatOneLineSentence(actionFunction.description))}` : ''}`
+					: ` Best action: ${formatMarkdownInlineCode(actionFunction.name)} via ${formatMarkdownInlineCode(buildPackageActionImportUsage({ packageName: match.name, subpath: actionMatch.subpath, functionName: actionFunction.name }))}${actionFunction.description ? ` — ${escapeMarkdownText(formatOneLineSentence(actionFunction.description))}` : ''}`
 				: ''
 		const listingAheadNote =
 			match.listingAhead === true
 				? ' Listing ahead — origin has new commits; communityGet then repoPublishSession with absorbed_upstream_commit.'
 				: ''
-		return `${String(index + 1)}. **package** ${escapeMarkdownText(match.title)} (${formatMarkdownInlineCode(match.kodyId)}) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}${actionSummary}${listingAheadNote}`
+		return `${String(index + 1)}. **package** ${escapeMarkdownText(match.title)} (${formatMarkdownInlineCode(match.kodyId)}${exportLabel}) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}${actionSummary}${listingAheadNote}`
 	}
 	if (match.type === 'integration') {
 		const entityRef = buildEntityRef(match.integrationName, 'integration')

@@ -252,6 +252,11 @@ export type SlimSearchMatch =
 				snippet: string
 				truncated: boolean
 			} | null
+			/**
+			 * Present when this ranked hit is a package export contract
+			 * (`package:{id}#{subpath}`), not the package index.
+			 */
+			exportSubpath?: string
 			actionMatches: Array<{
 				subpath: string
 				importSpecifier: string
@@ -653,6 +658,11 @@ export type SearchMatch =
 				snippet: string
 				truncated: boolean
 			} | null
+			/**
+			 * Present when this ranked hit targets one export contract rather than
+			 * the package index. Entity refs use `package:{kodyId}#{exportSubpath}`.
+			 */
+			exportSubpath?: string
 			actionMatches?: Array<PackageActionMatch>
 			/** Present only when the source community listing pin moved past this fork. */
 			listingAhead?: true

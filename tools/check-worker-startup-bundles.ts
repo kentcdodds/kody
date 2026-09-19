@@ -166,7 +166,11 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// checkRateLimit before embeddings/Jev, not an entitlement) add
 		// ~2 KB: local dry-run 5_112_004 against the previous 5_110_000
 		// budget.
-		maxEntryBytes: 5_115_000,
+		// First-pass package export candidates (`package:{id}#{subpath}`
+		// promotion + bounded hydrate) add a few KB on top of that wiring:
+		// prior CI dry-run 5_112_939 against 5_110_000 before the rate-limit
+		// bump; keep headroom for both.
+		maxEntryBytes: 5_118_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
@@ -212,7 +216,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Gateway envelope unwrap plus incomplete-answer key sampling adds
 		// a few KB: CI dry-run 3_788_951 bytes against the previous
 		// 3_788_000 budget.
-		maxEntryBytes: 3_792_000,
+		// First-pass package export candidates spill shared search package
+		// plugin code into runtime: CI dry-run 3_793_904 against the
+		// previous 3_792_000 budget.
+		maxEntryBytes: 3_795_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',
