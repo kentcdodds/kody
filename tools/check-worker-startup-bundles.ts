@@ -216,7 +216,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Gateway envelope unwrap plus incomplete-answer key sampling adds
 		// a few KB: CI dry-run 3_788_951 bytes against the previous
 		// 3_788_000 budget.
-		maxEntryBytes: 3_792_000,
+		// First-pass package export candidates spill shared search package
+		// plugin code into runtime: CI dry-run 3_793_904 against the
+		// previous 3_792_000 budget.
+		maxEntryBytes: 3_795_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',
