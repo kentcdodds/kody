@@ -310,7 +310,7 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 				<div mix={css({ display: 'grid', gap: spacing.lg })}>
 					{registryFlags.map((flag) => (
 						<section
-							key={`${flag.key}:${flag.global?.updatedAt ?? 'none'}:${flag.overrides.length}`}
+							key={`${flag.key}:${flag.global?.updatedAt ?? 'none'}:${flag.global?.audience ?? 'everyone'}:${flag.overrides.length}`}
 							mix={css(cardCss)}
 						>
 							<div
@@ -514,12 +514,25 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 										<span mix={css(fieldLabelCss)}>Audience</span>
 										<select
 											name="audience"
-											defaultValue={flag.global?.audience ?? 'everyone'}
 											disabled={isMutating}
 											mix={css(selectCss)}
 										>
-											<option value="everyone">Everyone</option>
-											<option value="experiments_opt_in">
+											{/* Explicit per-option selection: this renderer applies
+											    defaultValue as an attribute, which selects ignore. */}
+											<option
+												value="everyone"
+												selected={
+													(flag.global?.audience ?? 'everyone') === 'everyone'
+												}
+											>
+												Everyone
+											</option>
+											<option
+												value="experiments_opt_in"
+												selected={
+													flag.global?.audience === 'experiments_opt_in'
+												}
+											>
 												Experiments opt-in
 											</option>
 										</select>

@@ -414,6 +414,7 @@ test('admin feature flags HTTP lifecycle: auth, list, set_global, and validation
 				global: expect.objectContaining({
 					enabled: true,
 					rolloutPercent: 25,
+					audience: 'everyone',
 					note: 'canary',
 					updatedByStableUserId: null,
 				}),
@@ -427,6 +428,66 @@ test('admin feature flags HTTP lifecycle: auth, list, set_global, and validation
 			result: 'success',
 			reason: 'key=demo-indicator;enabled=true;rollout_percent=25',
 		}),
+	)
+
+	logAuditEventSpy.mockClear()
+	const setAudienceResponse = await handler.handler(
+		createHandlerRequest({
+			method: 'POST',
+			body: {
+				action: 'set_global',
+				key: 'demo-indicator',
+				enabled: false,
+				rolloutPercent: null,
+				audience: 'experiments_opt_in',
+				note: 'opt-in canary',
+			},
+		}),
+	)
+	expect(setAudienceResponse.status).toBe(200)
+	const setAudienceBody = (await setAudienceResponse.json()) as {
+		ok: boolean
+		featureFlags: Array<{ key: string }>
+	}
+	expect(setAudienceBody).toMatchObject({ ok: true })
+	expect(setAudienceBody.featureFlags).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				key: 'demo-indicator',
+				global: expect.objectContaining({
+					enabled: false,
+					rolloutPercent: null,
+					audience: 'experiments_opt_in',
+					note: 'opt-in canary',
+				}),
+			}),
+		]),
+	)
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'admin',
+			action: 'feature_flag_set_global',
+			result: 'success',
+			reason:
+				'key=demo-indicator;enabled=false;rollout_percent=null;audience=experiments_opt_in',
+		}),
+	)
+
+	const listAfterAudience = await handler.handler(createHandlerRequest())
+	expect(listAfterAudience.status).toBe(200)
+	const listAfterAudienceBody = (await listAfterAudience.json()) as {
+		ok: boolean
+		featureFlags: Array<{ key: string }>
+	}
+	expect(listAfterAudienceBody.featureFlags).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				key: 'demo-indicator',
+				global: expect.objectContaining({
+					audience: 'experiments_opt_in',
+				}),
+			}),
+		]),
 	)
 
 	const unknownKeyResponse = await handler.handler(
