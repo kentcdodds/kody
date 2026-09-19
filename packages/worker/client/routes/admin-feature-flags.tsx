@@ -25,6 +25,7 @@ import {
 	TimestampValue,
 	accountInputCss,
 } from './account-management-components.tsx'
+import { renderAdminFeatureFlagAudienceField } from '#client/admin-feature-flag-audience-field.tsx'
 import {
 	type AdminFeatureFlag,
 	type AdminFeatureFlagsLoaderData,
@@ -310,7 +311,7 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 				<div mix={css({ display: 'grid', gap: spacing.lg })}>
 					{registryFlags.map((flag) => (
 						<section
-							key={`${flag.key}:${flag.global?.updatedAt ?? 'none'}:${flag.overrides.length}`}
+							key={`${flag.key}:${flag.global?.updatedAt ?? 'none'}:${flag.global?.audience ?? 'everyone'}:${flag.overrides.length}`}
 							mix={css(cardCss)}
 						>
 							<div
@@ -510,20 +511,10 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 											mix={css(accountInputCss)}
 										/>
 									</label>
-									<label mix={css(fieldCss)}>
-										<span mix={css(fieldLabelCss)}>Audience</span>
-										<select
-											name="audience"
-											defaultValue={flag.global?.audience ?? 'everyone'}
-											disabled={isMutating}
-											mix={css(selectCss)}
-										>
-											<option value="everyone">Everyone</option>
-											<option value="experiments_opt_in">
-												Experiments opt-in
-											</option>
-										</select>
-									</label>
+									{renderAdminFeatureFlagAudienceField({
+										audience: flag.global?.audience,
+										disabled: isMutating,
+									})}
 									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>Note</span>
 										<input

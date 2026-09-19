@@ -38,6 +38,7 @@ test('admin feature flags: global toggle and per-user override visibility', asyn
 		.locator('xpath=ancestor::section[1]')
 
 	const enabledCheckbox = demoFlagSection.getByLabel('Enabled')
+	const audienceSelect = demoFlagSection.getByLabel('Audience')
 	if (await enabledCheckbox.isChecked()) {
 		await enabledCheckbox.uncheck()
 		await demoFlagSection
@@ -47,6 +48,23 @@ test('admin feature flags: global toggle and per-user override visibility', asyn
 		await expect(page.getByTestId('demo-indicator')).toHaveCount(0)
 	}
 
+	// Audience must hydrate from list data after save/reload. Remix applies
+	// defaultValue as an attribute (ignored by <select>); options need selected.
+	await audienceSelect.selectOption('experiments_opt_in')
+	await demoFlagSection.getByLabel('Note').fill(`e2e-audience-${runId}`)
+	await demoFlagSection
+		.getByRole('button', { name: 'Save', exact: true })
+		.click()
+	await expect(page.getByText(/Saved global state/)).toBeVisible()
+	await page.reload()
+	await expect(audienceSelect).toHaveValue('experiments_opt_in')
+	await expect(
+		demoFlagSection.getByText(/experiments opt-in only/),
+	).toBeVisible()
+
+	// Restore everyone before enabling: seeded users are not experiments-opted-in,
+	// so experiments_opt_in audience would hide demo-indicator for the admin.
+	await audienceSelect.selectOption('everyone')
 	await enabledCheckbox.check()
 	await demoFlagSection.getByLabel('Note').fill(`e2e-global-${runId}`)
 	await demoFlagSection
@@ -54,6 +72,7 @@ test('admin feature flags: global toggle and per-user override visibility', asyn
 		.click()
 	await page.reload()
 	await expect(page.getByTestId('demo-indicator')).toBeVisible()
+	await expect(audienceSelect).toHaveValue('everyone')
 
 	await enabledCheckbox.uncheck()
 	await demoFlagSection
