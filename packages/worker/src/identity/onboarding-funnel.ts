@@ -32,7 +32,6 @@ import {
 	type OnboardingFunnelStage,
 } from '#universal/onboarding-funnel.ts'
 import { isStableUserId } from '#worker/user-id.ts'
-import { queryAnalyticsEngineSql } from '#worker/usage/aggregate-rollups.ts'
 import {
 	type AdminInsightsOnboardingFunnel,
 	type AdminInsightsOnboardingFunnelWindow,
@@ -235,50 +234,5 @@ export function foldOnboardingFunnelRows(
 			stage,
 			users: counts.get(stage) ?? 0,
 		})),
-	}
-}
-
-export async function loadOnboardingFunnelSummary(
-	env: OnboardingFunnelEnv,
-): Promise<AdminInsightsOnboardingFunnel> {
-	if (env.WRANGLER_IS_LOCAL_DEV === 'true' || !env.ONBOARDING_FUNNEL_EVENTS) {
-		return emptyOnboardingFunnel()
-	}
-	const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim()
-	const apiToken = env.CLOUDFLARE_API_TOKEN?.trim()
-	if (!accountId || !apiToken) {
-		console.warn('admin-insights-onboarding-funnel-unavailable', {
-			reason: 'missing-analytics-engine-credentials',
-		})
-		return emptyOnboardingFunnel()
-	}
-	const dataset = resolveOnboardingFunnelDataset(env)
-	const baseUrl =
-		env.CLOUDFLARE_API_BASE_URL?.trim() || 'https://api.cloudflare.com'
-	try {
-		const [days7Rows, days28Rows] = await Promise.all([
-			queryAnalyticsEngineSql<FunnelCountRow>({
-				accountId,
-				apiToken,
-				baseUrl,
-				query: onboardingFunnelCountQuery({ dataset, days: 7 }),
-			}),
-			queryAnalyticsEngineSql<FunnelCountRow>({
-				accountId,
-				apiToken,
-				baseUrl,
-				query: onboardingFunnelCountQuery({ dataset, days: 28 }),
-			}),
-		])
-		return {
-			available: true,
-			windows: {
-				days7: foldOnboardingFunnelRows(7, days7Rows),
-				days28: foldOnboardingFunnelRows(28, days28Rows),
-			},
-		}
-	} catch (error) {
-		console.warn('admin-insights-onboarding-funnel-unavailable', { error })
-		return emptyOnboardingFunnel()
 	}
 }

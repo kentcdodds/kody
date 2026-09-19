@@ -14,7 +14,7 @@ import {
 import { adminUsageMetrics } from '#worker/admin/user-usage-data.ts'
 import { loadFleetUsageInsights } from '#worker/admin/fleet-usage-insights.ts'
 import { queryAnalyticsEngineSql } from '#worker/usage/aggregate-rollups.ts'
-import { loadOnboardingFunnelSummary } from '#worker/identity/onboarding-funnel.ts'
+import { loadOnboardingFunnelSummary } from '#worker/identity/onboarding-funnel-summary.ts'
 import { loadFleetPackageErrorRateSnapshot } from '#worker/usage/fleet-package-error-rate.ts'
 import {
 	type AdminInsightsActivation,
