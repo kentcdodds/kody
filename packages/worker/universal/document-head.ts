@@ -181,6 +181,7 @@ const routeDocumentHeads = {
 	[routePattern(routes.accountBillingSuccess)]: titleOnly("You're in"),
 	[routePattern(routes.accountUsage)]: titleOnly('Usage'),
 	[routePattern(routes.accountWaiting)]: titleOnly('Waiting'),
+	[routePattern(routes.accountExperiments)]: titleOnly('Experiments'),
 	[routePattern(routes.accountConnections)]: titleOnly('Connections'),
 	[routePattern(routes.accountConnectionNew)]: titleOnly('Add connection'),
 	[routePattern(routes.accountConnectionNewAgent)]: ({ params }) => {

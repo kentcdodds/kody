@@ -1,5 +1,10 @@
 import { fnv1a32 } from '@kody-internal/shared/fnv1a.ts'
 import {
+	defaultFeatureFlagAudience,
+	isFeatureFlagAudience,
+	type FeatureFlagAudience,
+} from '#universal/feature-flags/audiences.ts'
+import {
 	featureFlagDefinitions,
 	featureFlagKeys,
 	getFeatureFlagDefinition,
@@ -9,6 +14,7 @@ import {
 import { type AdminFeatureFlag } from '#universal/feature-flags/types.ts'
 
 export type { AdminFeatureFlag } from '#universal/feature-flags/types.ts'
+export type { FeatureFlagAudience } from '#universal/feature-flags/audiences.ts'
 
 const maxFeatureFlagNoteLength = 500
 
@@ -16,6 +22,7 @@ type GlobalFlagRow = {
 	key: string
 	enabled: number
 	rollout_percent: number | null
+	audience: string
 	note: string
 	updated_by_stable_user_id: string | null
 	updated_at: string
@@ -59,30 +66,96 @@ export type FeatureFlagEvaluation = {
 	source: FeatureFlagAssignmentSource
 }
 
+function normalizeAudience(
+	value: string | null | undefined,
+): FeatureFlagAudience {
+	if (isFeatureFlagAudience(value)) return value
+	return defaultFeatureFlagAudience
+}
+
+/**
+ * After override / global / rollout / default, optionally require the account
+ * Experiments opt-in. Overrides skip this gate so operators can still dogfood
+ * a specific account without that user visiting `/account/experiments`.
+ */
+function applyAudienceGate(input: {
+	evaluation: FeatureFlagEvaluation
+	audience: FeatureFlagAudience
+	experimentsOptIn: boolean
+}): FeatureFlagEvaluation {
+	if (input.evaluation.source === 'override') return input.evaluation
+	if (!input.evaluation.enabled) return input.evaluation
+	switch (input.audience) {
+		case 'everyone':
+			return input.evaluation
+		case 'experiments_opt_in':
+			if (input.experimentsOptIn) return input.evaluation
+			return { enabled: false, source: input.evaluation.source }
+		default: {
+			const exhaustive: never = input.audience
+			return exhaustive
+		}
+	}
+}
+
 function evaluateFlagState(input: {
 	key: string
 	userId: number | null
 	overrideEnabled: boolean | null
-	global: { enabled: boolean; rolloutPercent: number | null } | null
+	global: {
+		enabled: boolean
+		rolloutPercent: number | null
+		audience: FeatureFlagAudience
+	} | null
 	defaultEnabled: boolean
+	experimentsOptIn: boolean
 }): FeatureFlagEvaluation {
+	const audience = input.global?.audience ?? defaultFeatureFlagAudience
 	if (input.overrideEnabled !== null) {
-		return { enabled: input.overrideEnabled, source: 'override' }
+		return applyAudienceGate({
+			evaluation: { enabled: input.overrideEnabled, source: 'override' },
+			audience,
+			experimentsOptIn: input.experimentsOptIn,
+		})
 	}
 	if (input.global) {
-		if (!input.global.enabled) return { enabled: false, source: 'global' }
+		if (!input.global.enabled) {
+			return applyAudienceGate({
+				evaluation: { enabled: false, source: 'global' },
+				audience,
+				experimentsOptIn: input.experimentsOptIn,
+			})
+		}
 		if (input.global.rolloutPercent === null) {
-			return { enabled: true, source: 'global' }
+			return applyAudienceGate({
+				evaluation: { enabled: true, source: 'global' },
+				audience,
+				experimentsOptIn: input.experimentsOptIn,
+			})
 		}
-		if (input.userId === null) return { enabled: false, source: 'rollout' }
-		return {
-			enabled:
-				computeRolloutBucket(input.key, input.userId) <
-				input.global.rolloutPercent,
-			source: 'rollout',
+		if (input.userId === null) {
+			return applyAudienceGate({
+				evaluation: { enabled: false, source: 'rollout' },
+				audience,
+				experimentsOptIn: input.experimentsOptIn,
+			})
 		}
+		return applyAudienceGate({
+			evaluation: {
+				enabled:
+					computeRolloutBucket(input.key, input.userId) <
+					input.global.rolloutPercent,
+				source: 'rollout',
+			},
+			audience,
+			experimentsOptIn: input.experimentsOptIn,
+		})
 	}
-	return { enabled: input.defaultEnabled, source: 'default' }
+	return applyAudienceGate({
+		evaluation: { enabled: input.defaultEnabled, source: 'default' },
+		audience,
+		experimentsOptIn: input.experimentsOptIn,
+	})
 }
 
 function assertValidRolloutPercent(rolloutPercent: number | null) {
@@ -112,11 +185,40 @@ function normalizeFeatureFlagNote(note: unknown): string | null {
 	return trimmed
 }
 
+/**
+ * null = leave unchanged on update (default `everyone` on first insert).
+ */
+function normalizeFeatureFlagAudience(
+	audience: unknown,
+): FeatureFlagAudience | null {
+	if (audience === undefined) {
+		return null
+	}
+	if (!isFeatureFlagAudience(audience)) {
+		throw new Error('audience must be one of: everyone, experiments_opt_in.')
+	}
+	return audience
+}
+
+async function readExperimentsOptInForUser(
+	db: D1Database,
+	userId: number | null,
+): Promise<boolean> {
+	if (userId === null) return false
+	const row = await db
+		.prepare(`SELECT experiments_opt_in FROM users WHERE id = ?`)
+		.bind(userId)
+		.first<{ experiments_opt_in: number }>()
+	return row?.experiments_opt_in === 1
+}
+
 export async function evaluateFeatureFlag(
 	db: D1Database,
 	key: FeatureFlagKey,
 	userId: number | null,
 ): Promise<FeatureFlagEvaluation> {
+	const experimentsOptIn = await readExperimentsOptInForUser(db, userId)
+
 	if (userId !== null) {
 		const override = await db
 			.prepare(
@@ -127,21 +229,30 @@ export async function evaluateFeatureFlag(
 			.bind(key, userId)
 			.first<{ enabled: number }>()
 		if (override) {
-			return {
-				enabled: override.enabled === 1,
-				source: 'override',
-			}
+			return applyAudienceGate({
+				evaluation: {
+					enabled: override.enabled === 1,
+					source: 'override',
+				},
+				// Overrides skip the audience gate; audience value is unused.
+				audience: defaultFeatureFlagAudience,
+				experimentsOptIn,
+			})
 		}
 	}
 
 	const global = await db
 		.prepare(
-			`SELECT enabled, rollout_percent
+			`SELECT enabled, rollout_percent, audience
 			 FROM feature_flags
 			 WHERE key = ?`,
 		)
 		.bind(key)
-		.first<{ enabled: number; rollout_percent: number | null }>()
+		.first<{
+			enabled: number
+			rollout_percent: number | null
+			audience: string | null
+		}>()
 
 	return evaluateFlagState({
 		key,
@@ -151,9 +262,11 @@ export async function evaluateFeatureFlag(
 			? {
 					enabled: global.enabled === 1,
 					rolloutPercent: global.rollout_percent,
+					audience: normalizeAudience(global.audience),
 				}
 			: null,
 		defaultEnabled: getFeatureFlagDefinition(key).defaultEnabled,
+		experimentsOptIn,
 	})
 }
 
@@ -189,6 +302,7 @@ type GlobalEvaluationRow = {
 	key: string
 	enabled: number
 	rollout_percent: number | null
+	audience: string | null
 }
 
 function d1ResultRows<T>(result: D1Result<T> | undefined): Array<T> {
@@ -200,16 +314,17 @@ export async function getFeatureFlagEvaluationsForUser(
 	userId: number | null,
 ): Promise<Record<FeatureFlagKey, FeatureFlagEvaluation>> {
 	const globalStatement = db.prepare(
-		`SELECT key, enabled, rollout_percent
+		`SELECT key, enabled, rollout_percent, audience
 			 FROM feature_flags`,
 	)
 	let globalRows: Array<GlobalEvaluationRow>
 	let overrideRows: Array<OverrideEnabledRow> = []
+	let experimentsOptIn = false
 	if (userId === null) {
 		const globalResult = await globalStatement.all<GlobalEvaluationRow>()
 		globalRows = globalResult.results ?? []
 	} else {
-		const [globalResult, overrideResult] = await db.batch([
+		const [globalResult, overrideResult, optInResult] = await db.batch([
 			globalStatement,
 			db
 				.prepare(
@@ -218,6 +333,9 @@ export async function getFeatureFlagEvaluationsForUser(
 				 WHERE user_id = ?`,
 				)
 				.bind(userId),
+			db
+				.prepare(`SELECT experiments_opt_in FROM users WHERE id = ?`)
+				.bind(userId),
 		])
 		globalRows = d1ResultRows<GlobalEvaluationRow>(
 			globalResult as D1Result<GlobalEvaluationRow>,
@@ -225,6 +343,10 @@ export async function getFeatureFlagEvaluationsForUser(
 		overrideRows = d1ResultRows<OverrideEnabledRow>(
 			overrideResult as D1Result<OverrideEnabledRow>,
 		)
+		const optInRows = d1ResultRows<{ experiments_opt_in: number }>(
+			optInResult as D1Result<{ experiments_opt_in: number }>,
+		)
+		experimentsOptIn = optInRows[0]?.experiments_opt_in === 1
 	}
 	const globalByKey = new Map(globalRows.map((row) => [row.key, row]))
 
@@ -247,9 +369,11 @@ export async function getFeatureFlagEvaluationsForUser(
 				? {
 						enabled: global.enabled === 1,
 						rolloutPercent: global.rollout_percent,
+						audience: normalizeAudience(global.audience),
 					}
 				: null,
 			defaultEnabled: getFeatureFlagDefinition(key).defaultEnabled,
+			experimentsOptIn,
 		})
 	}
 	return evaluations
@@ -273,22 +397,25 @@ export async function setFeatureFlagGlobalState(
 		key: FeatureFlagKey
 		enabled: boolean
 		rolloutPercent: number | null
+		audience?: unknown
 		note?: unknown
 		updatedBy: number
 	},
 ): Promise<void> {
 	assertValidRolloutPercent(input.rolloutPercent)
-	// null note = "leave unchanged" on update ('' on first insert); callers
-	// omit the field to preserve an existing operator note.
+	// null note/audience = "leave unchanged" on update (defaults on first insert);
+	// callers omit the field to preserve an existing operator value.
 	const note = normalizeFeatureFlagNote(input.note)
+	const audience = normalizeFeatureFlagAudience(input.audience)
 	await db
 		.prepare(
-			`INSERT INTO feature_flags (key, enabled, rollout_percent, note, updated_by, updated_at)
-			 VALUES (?, ?, ?, COALESCE(?, ''), ?, CURRENT_TIMESTAMP)
+			`INSERT INTO feature_flags (key, enabled, rollout_percent, note, audience, updated_by, updated_at)
+			 VALUES (?, ?, ?, COALESCE(?, ''), COALESCE(?, 'everyone'), ?, CURRENT_TIMESTAMP)
 			 ON CONFLICT(key) DO UPDATE SET
 				enabled = excluded.enabled,
 				rollout_percent = excluded.rollout_percent,
 				note = COALESCE(?, feature_flags.note),
+				audience = COALESCE(?, feature_flags.audience),
 				updated_by = excluded.updated_by,
 				updated_at = CURRENT_TIMESTAMP`,
 		)
@@ -297,8 +424,10 @@ export async function setFeatureFlagGlobalState(
 			input.enabled ? 1 : 0,
 			input.rolloutPercent,
 			note,
+			audience,
 			input.updatedBy,
 			note,
+			audience,
 		)
 		.run()
 }
@@ -344,7 +473,7 @@ export async function listFeatureFlagsForAdmin(
 ): Promise<Array<AdminFeatureFlag>> {
 	const globalResult = await db
 		.prepare(
-			`SELECT f.key, f.enabled, f.rollout_percent, f.note,
+			`SELECT f.key, f.enabled, f.rollout_percent, f.audience, f.note,
 				u.stable_user_id AS updated_by_stable_user_id, f.updated_at
 			 FROM feature_flags f
 			 LEFT JOIN users u ON u.id = f.updated_by`,
@@ -395,6 +524,7 @@ export async function listFeatureFlagsForAdmin(
 				? {
 						enabled: global.enabled === 1,
 						rolloutPercent: global.rollout_percent,
+						audience: normalizeAudience(global.audience),
 						note: global.note,
 						updatedByStableUserId: global.updated_by_stable_user_id,
 						updatedAt: global.updated_at,
@@ -424,6 +554,7 @@ export async function listFeatureFlagsForAdmin(
 				? {
 						enabled: global.enabled === 1,
 						rolloutPercent: global.rollout_percent,
+						audience: normalizeAudience(global.audience),
 						note: global.note,
 						updatedByStableUserId: global.updated_by_stable_user_id,
 						updatedAt: global.updated_at,

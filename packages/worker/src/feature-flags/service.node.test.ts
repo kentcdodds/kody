@@ -16,6 +16,7 @@ type GlobalRow = {
 	key: string
 	enabled: number
 	rollout_percent: number | null
+	audience: string
 	note: string
 	updated_by: number | null
 	updated_at: string
@@ -33,6 +34,7 @@ type UserRow = {
 	id: number
 	username: string
 	stable_user_id?: string
+	experiments_opt_in?: number
 }
 
 function createFeatureFlagsTestDb(
@@ -54,7 +56,11 @@ function createFeatureFlagsTestDb(
 	const users = new Map(
 		(input.users ?? []).map((row) => [
 			row.id,
-			{ ...row, stable_user_id: row.stable_user_id ?? `stable-${row.id}` },
+			{
+				...row,
+				stable_user_id: row.stable_user_id ?? `stable-${row.id}`,
+				experiments_opt_in: row.experiments_opt_in ?? 0,
+			},
 		]),
 	)
 	let clock = 0
@@ -93,8 +99,19 @@ function createFeatureFlagsTestDb(
 							? {
 									enabled: row.enabled,
 									rollout_percent: row.rollout_percent,
+									audience: row.audience,
 								}
 							: null
+					) as T | null
+				}
+				if (
+					normalized.includes('from users') &&
+					normalized.includes('experiments_opt_in') &&
+					normalized.includes('where id = ?')
+				) {
+					const row = users.get(Number(params[0]))
+					return (
+						row ? { experiments_opt_in: row.experiments_opt_in } : null
 					) as T | null
 				}
 				throw new Error(`Unsupported first query: ${query}`)
@@ -125,6 +142,19 @@ function createFeatureFlagsTestDb(
 								flag_key: row.flag_key,
 								enabled: row.enabled,
 							})),
+						meta: { changes: 0 },
+					} as { results: Array<T>; meta: { changes: number } }
+				}
+				if (
+					normalized.includes('from users') &&
+					normalized.includes('experiments_opt_in') &&
+					normalized.includes('where id = ?')
+				) {
+					const row = users.get(Number(params[0]))
+					return {
+						results: row
+							? [{ experiments_opt_in: row.experiments_opt_in }]
+							: [],
 						meta: { changes: 0 },
 					} as { results: Array<T>; meta: { changes: number } }
 				}
@@ -175,12 +205,19 @@ function createFeatureFlagsTestDb(
 							? null
 							: String(params[3])
 					const note = noteParam ?? globals.get(key)?.note ?? ''
-					const updatedBy = Number(params[4])
+					const audienceParam =
+						params[4] === null || params[4] === undefined
+							? null
+							: String(params[4])
+					const audience =
+						audienceParam ?? globals.get(key)?.audience ?? 'everyone'
+					const updatedBy = Number(params[5])
 					const updatedAt = nextTimestamp()
 					globals.set(key, {
 						key,
 						enabled,
 						rollout_percent: rolloutPercent,
+						audience,
 						note,
 						updated_by: updatedBy,
 						updated_at: updatedAt,
@@ -267,9 +304,19 @@ function createFeatureFlagsTestDb(
 		},
 		globals,
 		overrides,
+		users,
 	} as unknown as D1Database & {
 		globals: Map<string, GlobalRow>
 		overrides: Map<string, OverrideRow>
+		users: Map<
+			number,
+			{
+				id: number
+				username: string
+				stable_user_id: string
+				experiments_opt_in: number
+			}
+		>
 	}
 
 	return db
@@ -554,6 +601,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 				key: 'demo-indicator',
 				enabled: 1,
 				rollout_percent: 25,
+				audience: 'everyone',
 				note: 'rolling out',
 				updated_by: 1,
 				updated_at: '2026-07-01T00:00:00.000Z',
@@ -562,6 +610,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 				key: 'retired-flag',
 				enabled: 0,
 				rollout_percent: null,
+				audience: 'everyone',
 				note: 'leftover',
 				updated_by: null,
 				updated_at: '2026-06-01T00:00:00.000Z',
@@ -648,6 +697,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 		global: {
 			enabled: true,
 			rolloutPercent: 25,
+			audience: 'everyone',
 			note: 'rolling out',
 			updatedByStableUserId: null,
 		},
@@ -669,6 +719,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 		global: {
 			enabled: false,
 			rolloutPercent: null,
+			audience: 'everyone',
 			note: 'leftover',
 			updatedByStableUserId: null,
 			updatedAt: '2026-06-01T00:00:00.000Z',
@@ -703,6 +754,7 @@ test('deleteStaleFeatureFlag refuses registry keys and removes stale rows', asyn
 				key: 'demo-indicator',
 				enabled: 1,
 				rollout_percent: null,
+				audience: 'everyone',
 				note: '',
 				updated_by: 1,
 				updated_at: '2026-07-01T00:00:00.000Z',
@@ -711,6 +763,7 @@ test('deleteStaleFeatureFlag refuses registry keys and removes stale rows', asyn
 				key: 'retired-flag',
 				enabled: 1,
 				rollout_percent: null,
+				audience: 'everyone',
 				note: '',
 				updated_by: 1,
 				updated_at: '2026-07-01T00:00:00.000Z',
@@ -736,4 +789,63 @@ test('deleteStaleFeatureFlag refuses registry keys and removes stale rows', asyn
 	expect(db.globals.has('retired-flag')).toBe(false)
 	expect(db.overrides.size).toBe(0)
 	await expect(deleteStaleFeatureFlag(db, 'retired-flag')).resolves.toBe(false)
+})
+
+test('experiments_opt_in audience requires users.experiments_opt_in; overrides still win', async () => {
+	const db = createFeatureFlagsTestDb({
+		users: [
+			{ id: 7, username: 'opted', experiments_opt_in: 1 },
+			{ id: 8, username: 'plain', experiments_opt_in: 0 },
+		],
+	})
+
+	await setFeatureFlagGlobalState(db, {
+		key: 'demo-indicator',
+		enabled: true,
+		rolloutPercent: null,
+		audience: 'experiments_opt_in',
+		updatedBy: 1,
+	})
+	expect(db.globals.get('demo-indicator')?.audience).toBe('experiments_opt_in')
+
+	await expect(isFeatureEnabled(db, 'demo-indicator', 7)).resolves.toBe(true)
+	await expect(isFeatureEnabled(db, 'demo-indicator', 8)).resolves.toBe(false)
+	await expect(isFeatureEnabled(db, 'demo-indicator', null)).resolves.toBe(
+		false,
+	)
+
+	await setFeatureFlagUserOverride(db, {
+		key: 'demo-indicator',
+		userId: 8,
+		enabled: true,
+		updatedBy: 1,
+	})
+	await expect(isFeatureEnabled(db, 'demo-indicator', 8)).resolves.toBe(true)
+
+	await setFeatureFlagGlobalState(db, {
+		key: 'demo-indicator',
+		enabled: true,
+		rolloutPercent: null,
+		updatedBy: 1,
+	})
+	expect(db.globals.get('demo-indicator')?.audience).toBe('experiments_opt_in')
+
+	await setFeatureFlagGlobalState(db, {
+		key: 'demo-indicator',
+		enabled: true,
+		rolloutPercent: null,
+		audience: 'everyone',
+		updatedBy: 1,
+	})
+	await expect(isFeatureEnabled(db, 'demo-indicator', 8)).resolves.toBe(true)
+
+	await expect(
+		setFeatureFlagGlobalState(db, {
+			key: 'demo-indicator',
+			enabled: true,
+			rolloutPercent: null,
+			audience: 'not-a-real-audience',
+			updatedBy: 1,
+		}),
+	).rejects.toThrow(/audience must be one of/)
 })

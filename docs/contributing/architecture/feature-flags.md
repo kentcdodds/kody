@@ -26,14 +26,18 @@ mutations).
 ## The registry-owns-existence invariant
 
 The database stores **state**, never **existence**. The squashed baseline
-(`packages/worker/migrations/0001-squashed-init.sql`) defines two tables:
+(`packages/worker/migrations/0001-squashed-init.sql`) defines two tables, later
+extended by `0065-experiments-opt-in.sql`:
 
 - `feature_flags` — at most one global row per key: `enabled`, `rollout_percent`
-  (nullable), `note`, `updated_by`, `updated_at`. No row means "use the registry
-  default".
+  (nullable), `audience` (`everyone` | `experiments_opt_in`, default
+  `everyone`), `note`, `updated_by`, `updated_at`. No row means "use the
+  registry default" with audience `everyone`.
 - `feature_flag_user_overrides` — per-user forced on/off, keyed by
   `(flag_key, user_id)`, cascade-deleted with the user and covered by account
   export/deletion targets.
+- `users.experiments_opt_in` — account preference (0/1) for the
+  `experiments_opt_in` flag audience, edited at `/account/experiments`.
 
 Removing a flag from the registry breaks the build at every remaining gate site;
 leftover DB rows for removed keys surface as **stale** in the admin UI
@@ -41,14 +45,33 @@ leftover DB rows for removed keys surface as **stale** in the admin UI
 
 ## Evaluation precedence
 
-1. Per-user override row (wins over everything).
+1. Per-user override row (wins over everything, including audience).
 2. Global row: off → off; on with `rollout_percent` set → deterministic FNV-1a
    bucket of `key:userId` compared to the percentage (anonymous users are
    excluded from percentage rollouts); on without a percentage → on.
 3. Registry `defaultEnabled`.
+4. **Audience gate** (when the global row's `audience` is not `everyone`): if
+   the evaluation would be on and the audience is `experiments_opt_in`, the user
+   must have `users.experiments_opt_in = 1` (set from `/account/experiments`).
+   Otherwise the flag stays off and keeps the same assignment source. No global
+   row means audience `everyone`.
 
 Evaluation failures for authenticated users **fail closed** (all flags off) so a
 default-on flag can never bypass an operator kill switch when D1 is unavailable.
+
+### Experiments audience
+
+Signed-in users opt in or out at `/account/experiments`
+(`GET|POST /account/experiments.json` with `{ "experimentsOptIn": boolean }`).
+That writes `users.experiments_opt_in`. Operators then target that audience on a
+flag:
+
+- **Admin UI**: `/admin/feature-flags` → Audience → “Experiments opt-in”.
+- **MCP**:
+  `adminFeatureFlagSet({ key, enabled: true, audience: "experiments_opt_in" })`.
+
+Audience values: `everyone` (default) | `experiments_opt_in`. Distinct from
+site-banner audiences.
 
 ## Surfaces
 

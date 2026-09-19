@@ -60,6 +60,7 @@ export const adminFeatureFlagSchema = z.object({
 		.object({
 			enabled: z.boolean(),
 			rolloutPercent: z.number().int().min(0).max(100).nullable(),
+			audience: z.enum(['everyone', 'experiments_opt_in']),
 			note: z.string(),
 			updatedByStableUserId: stableUserIdSchema.nullable(),
 			updatedAt: z.string(),

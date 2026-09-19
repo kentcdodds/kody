@@ -2197,6 +2197,7 @@ export type AppLoaderData = {
 	accountBillingSuccess?: AccountBillingSuccessLoaderData
 	accountUsage?: AccountUsageLoaderData
 	accountWaiting?: AccountWaitingLoaderData
+	accountExperiments?: AccountExperimentsLoaderData
 	accountShared?: AccountSharedLoaderData
 	packageShareApproveChanges?: PackageShareApproveChangesLoaderData
 	discord?: DiscordPageLoaderData
@@ -2289,6 +2290,11 @@ export type AccountUsageLoaderData = {
 export type AccountWaitingLoaderData = {
 	ok: true
 	items: Array<WaitingItem>
+}
+
+export type AccountExperimentsLoaderData = {
+	ok: true
+	experimentsOptIn: boolean
 }
 
 export type AccountSharedLoaderData = {

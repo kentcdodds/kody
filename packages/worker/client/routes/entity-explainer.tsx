@@ -189,6 +189,15 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		],
 	},
 	{
+		id: 'experiments',
+		question: 'What are experiments?',
+		match: accountSection(routes.accountExperiments.href()),
+		paragraphs: [
+			'Experiments is an opt-in for early, unfinished work. Turning it on puts your account in the experiments audience so feature flags that target that audience can include you.',
+			'Opting in does not enable every experiment by itself — each flag still needs to be on for you. You can opt out anytime on this page.',
+		],
+	},
+	{
 		id: 'activity',
 		question: 'What is activity?',
 		match: accountSection(routes.accountActivity.href()),

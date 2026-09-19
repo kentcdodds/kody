@@ -229,6 +229,10 @@ test('account rail lists Connections and Repositories at the same level as the o
 		showSecretProviders: false,
 	})
 	expect(items.map((item) => item.label)).toContain('Shared')
+	expect(items.map((item) => item.label)).toContain('Experiments')
+	expect(items.find((item) => item.label === 'Experiments')?.href).toBe(
+		'/account/experiments',
+	)
 	expect(items.find((item) => item.label === 'Connections')?.href).toBe(
 		'/account/connections',
 	)

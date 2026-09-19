@@ -97,16 +97,22 @@ function summarizeEffectiveSource(flag: AdminFeatureFlag): string {
 	if (flag.stale) {
 		return 'stale (absent from the code registry)'
 	}
+	const audienceSuffix =
+		flag.global?.audience === 'experiments_opt_in'
+			? ' · experiments opt-in only'
+			: ''
 	if (!flag.global) {
-		return flag.defaultEnabled ? 'default (on)' : 'default (off)'
+		return flag.defaultEnabled
+			? `default (on)${audienceSuffix}`
+			: `default (off)${audienceSuffix}`
 	}
 	if (!flag.global.enabled) {
-		return 'globally off'
+		return `globally off${audienceSuffix}`
 	}
 	if (flag.global.rolloutPercent === null) {
-		return 'globally on'
+		return `globally on${audienceSuffix}`
 	}
-	return `on for ${flag.global.rolloutPercent}% of users`
+	return `on for ${flag.global.rolloutPercent}% of users${audienceSuffix}`
 }
 
 export async function adminFeatureFlagsRouteLoader(
@@ -220,6 +226,7 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 		const formData = new FormData(event.currentTarget)
 		const enabled = formData.get('enabled') === 'on'
 		const rolloutRaw = String(formData.get('rolloutPercent') ?? '').trim()
+		const audience = String(formData.get('audience') ?? 'everyone').trim()
 		const note = String(formData.get('note') ?? '')
 		void submitAdminAction(
 			{
@@ -227,6 +234,7 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 				key,
 				enabled,
 				rolloutPercent: rolloutRaw === '' ? null : Number(rolloutRaw),
+				audience,
 				note,
 			},
 			'saving-global',
@@ -452,7 +460,7 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 									mix={css({
 										display: 'grid',
 										gridTemplateColumns:
-											'auto minmax(0, 8rem) minmax(0, 1fr) auto',
+											'auto minmax(0, 8rem) minmax(0, 12rem) minmax(0, 1fr) auto',
 										gap: spacing.md,
 										alignItems: 'end',
 										[mq.tablet]: {
@@ -503,6 +511,20 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 										/>
 									</label>
 									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Audience</span>
+										<select
+											name="audience"
+											defaultValue={flag.global?.audience ?? 'everyone'}
+											disabled={isMutating}
+											mix={css(selectCss)}
+										>
+											<option value="everyone">Everyone</option>
+											<option value="experiments_opt_in">
+												Experiments opt-in
+											</option>
+										</select>
+									</label>
+									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>Note</span>
 										<input
 											data-field-ring
@@ -547,6 +569,13 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 													),
 											},
 											{
+												label: 'Audience',
+												value:
+													flag.global.audience === 'experiments_opt_in'
+														? 'Experiments opt-in'
+														: 'Everyone',
+											},
+											{
 												label: 'Note',
 												value: flag.global.note || 'None',
 											},
@@ -555,7 +584,9 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 								) : (
 									<p mix={css({ margin: 0, color: colors.textMuted })}>
 										No global row yet — saving creates one. Empty rollout means
-										all users when enabled.
+										all users when enabled. Audience defaults to everyone;
+										choose Experiments opt-in to limit the flag to
+										`/account/experiments` members.
 									</p>
 								)}
 							</form>

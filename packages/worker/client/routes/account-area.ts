@@ -18,6 +18,10 @@ export {
 	accountWaitingRouteLoader,
 } from './account-waiting.tsx'
 export {
+	AccountExperimentsRoute,
+	accountExperimentsRouteLoader,
+} from './account-experiments.tsx'
+export {
 	AccountSharedRoute,
 	accountSharedRouteLoader,
 } from './account-shared.tsx'

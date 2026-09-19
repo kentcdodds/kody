@@ -133,7 +133,7 @@ test('authenticated home SSR prefetches flags while loading page data', async ()
 	})
 	vi.mocked(loadOnboardingData).mockImplementation(async () => {
 		expect(hasResolvedRequestFeatureFlags(request)).toBe(true)
-		expect(counts.batchSizes).toEqual([2, 2])
+		expect(counts.batchSizes).toEqual([2, 3])
 		return {
 			ok: true,
 			loggedIn: true,
@@ -184,7 +184,7 @@ test('authenticated home SSR prefetches flags while loading page data', async ()
 		'secret-providers': false,
 		'jev-search-rerank': false,
 	})
-	expect(counts.batchSizes).toEqual([2, 2])
+	expect(counts.batchSizes).toEqual([2, 3])
 	expect(loadOnboardingData).not.toHaveBeenCalled()
 	const homeInput = vi.mocked(renderAppPage).mock.calls.at(-1)?.[0]
 	expect(homeInput?.listedBanners).toEqual(expect.any(Promise))

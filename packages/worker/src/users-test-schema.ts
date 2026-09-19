@@ -25,6 +25,7 @@ export type UsersTestSchemaColumn =
 	| 'avatar_key'
 	| 'profile_visibility'
 	| 'onboarding_checklist_dismissed_at'
+	| 'experiments_opt_in'
 
 type UsersColumnDefinition = {
 	/** Definition used by the fresh `CREATE TABLE users`. */
@@ -125,6 +126,10 @@ const optionalColumns: Record<UsersTestSchemaColumn, UsersColumnDefinition> = {
 		alter: `TEXT NOT NULL DEFAULT 'public'`,
 	},
 	onboarding_checklist_dismissed_at: { create: 'TEXT' },
+	experiments_opt_in: {
+		create: `INTEGER NOT NULL DEFAULT 0 CHECK (experiments_opt_in IN (0, 1))`,
+		alter: `INTEGER NOT NULL DEFAULT 0`,
+	},
 }
 
 export async function ensureUsersTestSchema(input: {
