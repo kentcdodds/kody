@@ -2,6 +2,7 @@ import { type CloudflareOptions } from '@sentry/cloudflare'
 import { type ErrorEvent, type EventHint } from '@sentry/core'
 import { getErrorCauseChain } from '@kody-internal/shared/error-message.ts'
 import { isRetryableD1LockSentryEvent } from './d1-retry.ts'
+import { isCloudflareKvTransientHttpErrorMessage } from './cloudflare-kv-platform-error.ts'
 import { isCimdUnknownClientSentryMessage } from './oauth-cimd-error.ts'
 import {
 	isComputeOverageLimitError,
@@ -511,6 +512,38 @@ export function filterCimdUnknownClientSentryEvent(event: ErrorEvent) {
 	return null
 }
 
+/**
+ * Bare Workers KV binding HTTP 5xx / 429 (KODY-7W). Observed on
+ * `POST /oauth/token` refresh when `@cloudflare/workers-oauth-provider`
+ * persists the rotated grant or access token to `OAUTH_KV`
+ * (`saveGrantWithTTL` / token `put` inside `handleRefreshTokenGrant`). The
+ * provider remaps only 429 to `temporarily_unavailable`; 5xx rethrow and
+ * `origin-handler` captures them. Best-effort refresh-family snapshots in
+ * `BUNDLE_ARTIFACTS_KV` can throw the same binding string. Retrying the
+ * provider grant from our wrapper is not safe (grant `put` then token `put`;
+ * a 500 after the grant write would rotate again). Match only the bare
+ * binding sentence so wrapped recovery stays visible.
+ */
+export function isCloudflareKvTransientHttpErrorSentryEvent(event: ErrorEvent) {
+	const messages = sentryEventMessages(event).filter(
+		(message): message is string =>
+			typeof message === 'string' && message.trim().length > 0,
+	)
+	return (
+		messages.length > 0 &&
+		messages.every((message) =>
+			isCloudflareKvTransientHttpErrorMessage(message),
+		)
+	)
+}
+
+export function filterCloudflareKvTransientHttpErrorSentryEvent(
+	event: ErrorEvent,
+) {
+	if (!isCloudflareKvTransientHttpErrorSentryEvent(event)) return event
+	return null
+}
+
 export function filterSentryEvent(event: ErrorEvent, hint?: EventHint) {
 	// Marker first: primary mechanism for user-authored failures.
 	if (filterUserCodeErrorSentryEvent(event, hint) === null) return null
@@ -530,6 +563,8 @@ export function filterSentryEvent(event: ErrorEvent, hint?: EventHint) {
 	if (filterMcpAgentSessionDestroyedAbortSentryEvent(event) === null)
 		return null
 	if (filterCimdUnknownClientSentryEvent(event) === null) return null
+	if (filterCloudflareKvTransientHttpErrorSentryEvent(event) === null)
+		return null
 	return event
 }
 
@@ -591,7 +626,9 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// filterMcpAgentSessionDestroyedAbortSentryEvent. Expected CIMD
 		// unknown-client outcomes (missing document, HTTP 404, metadata fetch
 		// timeout) are dropped the same way — see
-		// filterCimdUnknownClientSentryEvent.
+		// filterCimdUnknownClientSentryEvent. Bare Workers KV binding HTTP
+		// 5xx / 429 (`KV PUT|GET|DELETE|LIST failed: …`) are dropped the same
+		// way — see filterCloudflareKvTransientHttpErrorSentryEvent.
 		beforeSend: filterSentryEvent,
 	}
 }

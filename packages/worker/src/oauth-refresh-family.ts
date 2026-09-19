@@ -1,8 +1,10 @@
 import * as Sentry from '@sentry/cloudflare'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	decryptSecretValue,
 	encryptSecretValue,
 } from '#worker/mcp/secrets/crypto.ts'
+import { isCloudflareKvTransientHttpErrorMessage } from './cloudflare-kv-platform-error.ts'
 
 /**
  * MCP hosts on one machine often share a stored OAuth client but keep their
@@ -412,8 +414,12 @@ async function persistRefreshFamilyBestEffort(input: {
 		await persistRefreshFamilyFromTokenResponse(input)
 	} catch (error) {
 		// Snapshot writes are best-effort. The provider already minted tokens;
-		// a KV or encrypt failure must not hide that response.
-		Sentry.captureException(error)
+		// a KV or encrypt failure must not hide that response. Bare Workers KV
+		// 5xx / 429 binding strings are platform blips (KODY-7W); skip Sentry
+		// for those and keep reporting encrypt / unexpected persist failures.
+		if (!isCloudflareKvTransientHttpErrorMessage(getErrorMessage(error))) {
+			Sentry.captureException(error)
+		}
 	}
 }
 

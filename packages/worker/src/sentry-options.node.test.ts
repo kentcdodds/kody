@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { isCloudflareKvTransientHttpErrorMessage } from './cloudflare-kv-platform-error.ts'
 import {
 	ComputeOverageLimitError,
 	EntitlementLimitError,
@@ -706,4 +707,75 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		},
 	}
 	expect(filterSentryEvent(recoveryWithCimdCause)).toBe(recoveryWithCimdCause)
+
+	// Bare Workers KV binding HTTP 5xx / 429 (KODY-7W). Optional Error:
+	// prefix drops; other 4xx, wrapped recovery, and bare "Internal Server
+	// Error" stay visible.
+	expect(
+		isCloudflareKvTransientHttpErrorMessage(
+			'Error: KV PUT failed: 500 Internal Server Error',
+		),
+	).toBe(true)
+	expect(
+		isCloudflareKvTransientHttpErrorMessage(
+			'KV GET failed: 429 Too Many Requests',
+		),
+	).toBe(true)
+	expect(
+		isCloudflareKvTransientHttpErrorMessage('KV PUT failed: 400 Bad Request'),
+	).toBe(false)
+	expect(
+		isCloudflareKvTransientHttpErrorMessage(
+			'refresh family persist failed: KV PUT failed: 500 Internal Server Error',
+		),
+	).toBe(false)
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [{ value: 'KV PUT failed: 500 Internal Server Error' }],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [{ value: 'Error: KV LIST failed: 503 Service Unavailable' }],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			message: 'KV DELETE failed: 502 Bad Gateway',
+		}),
+	).toBeNull()
+	const kvClientError = {
+		exception: { values: [{ value: 'KV PUT failed: 400 Bad Request' }] },
+	}
+	expect(filterSentryEvent(kvClientError)).toBe(kvClientError)
+	const wrappedKvFailure = {
+		exception: {
+			values: [
+				{
+					value:
+						'refresh family persist failed: KV PUT failed: 500 Internal Server Error',
+				},
+			],
+		},
+	}
+	expect(filterSentryEvent(wrappedKvFailure)).toBe(wrappedKvFailure)
+	const recoveryWithKvCause = {
+		exception: {
+			values: [
+				{ value: 'completeMcpOAuthTokenRequest could not persist tokens.' },
+				{ value: 'KV PUT failed: 500 Internal Server Error' },
+			],
+		},
+	}
+	expect(filterSentryEvent(recoveryWithKvCause)).toBe(recoveryWithKvCause)
+	const bareInternalServerError = {
+		exception: { values: [{ value: 'Internal Server Error' }] },
+	}
+	expect(filterSentryEvent(bareInternalServerError)).toBe(
+		bareInternalServerError,
+	)
 })
