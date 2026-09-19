@@ -88,7 +88,7 @@ const jevSearchGatewayRequiredReason = 'ai-gateway-required-for-typesafe-jev'
 
 const jevSearchIncompleteScoreAnswersReason = 'incomplete-score-answers'
 
-export type JevSearchSkinnyCard = {
+type JevSearchSkinnyCard = {
 	index: number
 	type: SearchCandidate['type']
 	id: string
@@ -167,7 +167,7 @@ function oneLine(text: string, maxChars: number): string {
 	return `${collapsed.slice(0, Math.max(0, maxChars - 3)).trimEnd()}...`
 }
 
-export function buildJevSearchSkinnyCard(
+function buildJevSearchSkinnyCard(
 	candidate: SearchCandidate,
 	index: number,
 ): JevSearchSkinnyCard {

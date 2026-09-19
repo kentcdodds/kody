@@ -796,6 +796,7 @@ test('experiments_opt_in audience requires users.experiments_opt_in; overrides s
 		users: [
 			{ id: 7, username: 'opted', experiments_opt_in: 1 },
 			{ id: 8, username: 'plain', experiments_opt_in: 0 },
+			{ id: 9, username: 'plain-two', experiments_opt_in: 0 },
 		],
 	})
 
@@ -806,10 +807,10 @@ test('experiments_opt_in audience requires users.experiments_opt_in; overrides s
 		audience: 'experiments_opt_in',
 		updatedBy: 1,
 	})
-	expect(db.globals.get('demo-indicator')?.audience).toBe('experiments_opt_in')
 
 	await expect(isFeatureEnabled(db, 'demo-indicator', 7)).resolves.toBe(true)
 	await expect(isFeatureEnabled(db, 'demo-indicator', 8)).resolves.toBe(false)
+	await expect(isFeatureEnabled(db, 'demo-indicator', 9)).resolves.toBe(false)
 	await expect(isFeatureEnabled(db, 'demo-indicator', null)).resolves.toBe(
 		false,
 	)
@@ -828,7 +829,7 @@ test('experiments_opt_in audience requires users.experiments_opt_in; overrides s
 		rolloutPercent: null,
 		updatedBy: 1,
 	})
-	expect(db.globals.get('demo-indicator')?.audience).toBe('experiments_opt_in')
+	await expect(isFeatureEnabled(db, 'demo-indicator', 9)).resolves.toBe(false)
 
 	await setFeatureFlagGlobalState(db, {
 		key: 'demo-indicator',
@@ -838,6 +839,7 @@ test('experiments_opt_in audience requires users.experiments_opt_in; overrides s
 		updatedBy: 1,
 	})
 	await expect(isFeatureEnabled(db, 'demo-indicator', 8)).resolves.toBe(true)
+	await expect(isFeatureEnabled(db, 'demo-indicator', 9)).resolves.toBe(true)
 
 	await expect(
 		setFeatureFlagGlobalState(db, {

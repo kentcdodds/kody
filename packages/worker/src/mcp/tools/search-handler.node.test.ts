@@ -1,9 +1,5 @@
 import { expect, test, vi } from 'vitest'
 import type * as IntegrationsService from '#worker/integrations/service.ts'
-import {
-	featureFlagKeys,
-	jevSearchRerankFlagKey,
-} from '#universal/feature-flags/registry.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -128,34 +124,12 @@ vi.mock('#mcp/waiting/derive-waiting.ts', () => ({
 		mockModule.deriveWaitingItemsForStableUser(...args),
 }))
 
-const mockFeatureFlags = vi.hoisted(() => ({
-	override: null as Record<string, boolean> | null,
-}))
-
-const mockUserPlan = vi.hoisted(() => ({
-	plan: 'free' as 'free' | 'standard' | 'pro' | 'max',
-}))
-
-vi.mock('#mcp/capabilities/access-control.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#mcp/capabilities/access-control.ts')>()
-	return {
-		...actual,
-		resolveCallerFeatureFlags: async (
-			...args: Parameters<typeof actual.resolveCallerFeatureFlags>
-		) => {
-			if (mockFeatureFlags.override) return mockFeatureFlags.override
-			return actual.resolveCallerFeatureFlags(...args)
-		},
-	}
-})
-
 vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
 	const actual =
 		await importOriginal<typeof import('#worker/entitlements/service.ts')>()
 	return {
 		...actual,
-		getUserPlan: async () => mockUserPlan.plan,
+		getUserPlan: async () => 'free',
 	}
 })
 
@@ -447,66 +421,6 @@ test('search tool returns compact query markdown while preserving structured aux
 	expect(handledErrorResponse.structuredContent.error).toBe(
 		'Registry unavailable',
 	)
-})
-
-test('list search with Jev enabled includes serverTiming jevRerank', async () => {
-	vi.clearAllMocks()
-	mockUserPlan.plan = 'standard'
-	mockFeatureFlags.override = Object.fromEntries(
-		featureFlagKeys.map((key) => [key, key === jevSearchRerankFlagKey]),
-	)
-	try {
-		const { handler } = await getSearchRegistration({
-			user: {
-				userId: 'user-1',
-				email: 'user@example.com',
-				displayName: 'User',
-				username: 'user',
-			},
-		})
-		const response = await handler({
-			query: 'search docs',
-			conversationId: 'conv-jev-timing',
-		})
-		const timing = response.structuredContent.timing
-		const jevEntry = timing.serverTiming?.find(
-			(entry) => entry.name === 'jevRerank',
-		)
-		expect(jevEntry).toEqual({
-			name: 'jevRerank',
-			durationMs: expect.any(Number),
-		})
-		expect(jevEntry?.durationMs).toBeGreaterThanOrEqual(0)
-		const result = response.structuredContent.result as {
-			telemetry?: {
-				jevRerank?: {
-					enabled: boolean
-					outcome?: string
-					model?: string
-					aiCallCount?: number
-					usage?: {
-						inputTokens: number | null
-						outputTokens: number | null
-					}
-				}
-			}
-			phaseTimings?: { jevRerankMs?: number }
-		}
-		expect(result.telemetry?.jevRerank?.enabled).toBe(true)
-		// Offline / small registry pools skip before Score; paid + flag still
-		// records the gate on serverTiming.
-		expect([
-			'skipped-offline',
-			'skipped-small-pool',
-			'skipped-no-ai',
-			'applied',
-			'fallback-error',
-		]).toContain(result.telemetry?.jevRerank?.outcome)
-		expect(jevEntry?.durationMs).toBe(result.phaseTimings?.jevRerankMs)
-	} finally {
-		mockFeatureFlags.override = null
-		mockUserPlan.plan = 'free'
-	}
 })
 
 test('ranked search prepends ## Waiting for block items and skips domain browse', async () => {

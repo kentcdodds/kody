@@ -51,12 +51,11 @@ function createUsersDb(initialOptIn = 0) {
 				return createStatement(query)
 			},
 		} as unknown as D1Database,
-		users,
 	}
 }
 
 test('read and set experiments opt-in on the user row', async () => {
-	const { db, users } = createUsersDb(0)
+	const { db } = createUsersDb(0)
 	await expect(readExperimentsOptIn(db, 7)).resolves.toBe(false)
 	await expect(loadAccountExperimentsData({ db, userId: 7 })).resolves.toEqual({
 		ok: true,
@@ -64,7 +63,6 @@ test('read and set experiments opt-in on the user row', async () => {
 	})
 
 	await setExperimentsOptIn(db, { userId: 7, enabled: true })
-	expect(users.get(7)?.experiments_opt_in).toBe(1)
 	await expect(readExperimentsOptIn(db, 7)).resolves.toBe(true)
 	await expect(loadAccountExperimentsData({ db, userId: 7 })).resolves.toEqual({
 		ok: true,
@@ -72,5 +70,5 @@ test('read and set experiments opt-in on the user row', async () => {
 	})
 
 	await setExperimentsOptIn(db, { userId: 7, enabled: false })
-	expect(users.get(7)?.experiments_opt_in).toBe(0)
+	await expect(readExperimentsOptIn(db, 7)).resolves.toBe(false)
 })

@@ -7,7 +7,7 @@
  *   (set from `/account/experiments`). Per-user overrides still win.
  */
 
-export const featureFlagAudiences = ['everyone', 'experiments_opt_in'] as const
+const featureFlagAudiences = ['everyone', 'experiments_opt_in'] as const
 
 export type FeatureFlagAudience = (typeof featureFlagAudiences)[number]
 

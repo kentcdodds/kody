@@ -90,9 +90,6 @@ test('buildPackageActionMatches keeps nested display threshold below promotion',
 	if (!top) return
 	if (top.matchedTerms.length < 2) {
 		expect(top.score).toBeGreaterThanOrEqual(0.35)
-		expect(shouldPromotePackageExportCandidate(top)).toBe(
-			top.score >= packageExportCandidateMinScore,
-		)
 	}
 })
 

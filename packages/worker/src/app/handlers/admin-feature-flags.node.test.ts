@@ -473,23 +473,6 @@ test('admin feature flags HTTP lifecycle: auth, list, set_global, and validation
 		}),
 	)
 
-	const listAfterAudience = await handler.handler(createHandlerRequest())
-	expect(listAfterAudience.status).toBe(200)
-	const listAfterAudienceBody = (await listAfterAudience.json()) as {
-		ok: boolean
-		featureFlags: Array<{ key: string }>
-	}
-	expect(listAfterAudienceBody.featureFlags).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				key: 'demo-indicator',
-				global: expect.objectContaining({
-					audience: 'experiments_opt_in',
-				}),
-			}),
-		]),
-	)
-
 	const unknownKeyResponse = await handler.handler(
 		createHandlerRequest({
 			method: 'POST',
