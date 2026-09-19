@@ -7,6 +7,7 @@ import {
 	toSlimStructuredMatches,
 	type SlimSearchMatch,
 } from '#mcp/tools/search-format.ts'
+import { jevSearchKeepPaths } from '#mcp/tools/search-jev-rerank.ts'
 import { toSearchServerTiming } from '#mcp/tools/search-timing.ts'
 import {
 	conversationIdInputField,
@@ -37,6 +38,12 @@ const jevRerankTelemetrySchema = z
 		droppedCount: z.number().int().nonnegative(),
 		meanConfidence: z.number().nullable(),
 		top1Type: z.string().nullable(),
+		keepPath: z
+			.enum(jevSearchKeepPaths)
+			.optional()
+			.describe(
+				'Adaptive keep path after Jev Score (`kept-high` | `kept-lowered` | `empty`). Present when Score ran and mean confidence cleared the floor.',
+			),
 		errorReason: z
 			.string()
 			.max(240)

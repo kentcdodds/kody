@@ -55,6 +55,13 @@ export type PackageActionMatch = {
 	}>
 	score: number
 	matchedTerms: Array<string>
+	/**
+	 * Tokens matched against export-local fields only (excludes parent package
+	 * identity). Nested display and first-pass promotion require at least one
+	 * so package aliases boost siblings without promoting identity-only hits.
+	 * When omitted (older fixtures), treat all `matchedTerms` as export-local.
+	 */
+	exportLocalMatchedTermCount?: number
 }
 
 export type SearchResultStructuredContent = {
@@ -87,6 +94,11 @@ export type SearchResultStructuredContent = {
 			droppedCount: number
 			meanConfidence: number | null
 			top1Type: SearchMatchType | null
+			/**
+			 * Adaptive keep path after Jev Score (`kept-high` |
+			 * `kept-lowered` | `empty`). Present when Score ran successfully.
+			 */
+			keepPath?: 'kept-high' | 'kept-lowered' | 'empty'
 			/** Present only when `outcome` is `fallback-error`. */
 			errorReason?: string
 			/** Present when the Jev stage ran or attempted. */

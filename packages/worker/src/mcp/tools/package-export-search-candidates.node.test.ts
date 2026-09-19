@@ -2,12 +2,18 @@ import { expect, test, vi } from 'vitest'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
 
 import { searchUnified, type PackageSearchRow } from './search.ts'
-import { packageExportCandidateMinScore } from './search-constants.ts'
+import {
+	packageExportCandidateMinScore,
+	packageExportCloseScoreGap,
+} from './search-constants.ts'
 import {
 	buildPackageActionMatches,
+	buildPackageExportParentIdentityFields,
 	hydrateTopPackageMatches,
+	selectPromotedPackageExportCandidates,
 	shouldPromotePackageExportCandidate,
 } from './search-entity-plugins/package.ts'
+import { type PackageActionMatch } from './search-format-types.ts'
 
 function createPackageExportProjection(
 	subpath: string,
@@ -37,6 +43,92 @@ function createPackageExportProjection(
 		referencedTypes: [],
 	}
 }
+
+function createActionMatch(
+	subpath: string,
+	score: number,
+	matchedTerms: ReadonlyArray<string>,
+	exportLocalMatchedTermCount = matchedTerms.length,
+): PackageActionMatch {
+	return {
+		subpath,
+		description: subpath,
+		typeDefinition: null,
+		functions: [
+			{
+				name: subpath.replace(/^\.\//, ''),
+				description: null,
+				typeDefinition: null,
+			},
+		],
+		score,
+		matchedTerms: [...matchedTerms],
+		exportLocalMatchedTermCount,
+	}
+}
+
+test('buildPackageExportParentIdentityFields includes kodyId, name, name leaf, and tags', () => {
+	expect(
+		buildPackageExportParentIdentityFields({
+			kodyId: 'social-post',
+			name: '@kody/social-post',
+			tags: ['twitter', 'microblog'],
+		}),
+	).toEqual([
+		'social-post',
+		'@kody/social-post',
+		'social-post',
+		'twitter',
+		'microblog',
+	])
+})
+
+test('buildPackageActionMatches folds parent tags into export matched terms', () => {
+	const matches = buildPackageActionMatches({
+		query: 'twitter create status',
+		meaningfulTokens: ['twitter', 'create', 'status'],
+		parentIdentityFields: buildPackageExportParentIdentityFields({
+			kodyId: 'social-post',
+			name: '@kody/social-post',
+			tags: ['twitter', 'microblog'],
+		}),
+		exports: [
+			createPackageExportProjection('./create-status', {
+				description: 'Create a new status update.',
+				functionName: 'createStatus',
+				functionDescription: 'Create a new status update.',
+			}),
+			createPackageExportProjection('./like-status', {
+				description: 'Like an existing status.',
+				functionName: 'likeStatus',
+				functionDescription: 'Like an existing status.',
+			}),
+		],
+	})
+	expect(matches.length).toBeGreaterThan(0)
+	for (const match of matches) {
+		expect(match.matchedTerms).toContain('twitter')
+	}
+	expect(matches.some((match) => match.subpath === './create-status')).toBe(
+		true,
+	)
+})
+
+test('shouldPromotePackageExportCandidate rejects parent-identity-only matches', () => {
+	expect(
+		shouldPromotePackageExportCandidate({
+			subpath: './identity-only',
+			description: 'identity only',
+			typeDefinition: null,
+			functions: [
+				{ name: 'identityOnly', description: null, typeDefinition: null },
+			],
+			score: 0.8,
+			matchedTerms: ['twitter', 'alpha'],
+			exportLocalMatchedTermCount: 0,
+		}),
+	).toBe(false)
+})
 
 test('shouldPromotePackageExportCandidate requires multi-term or strong score', () => {
 	expect(
@@ -71,10 +163,75 @@ test('shouldPromotePackageExportCandidate requires multi-term or strong score', 
 	).toBe(true)
 })
 
+test('selectPromotedPackageExportCandidates promotes close runners-up', () => {
+	const top = createActionMatch('./create-status', 0.82, [
+		'twitter',
+		'create',
+		'status',
+	])
+	const closeSecond = createActionMatch('./send-status', 0.78, [
+		'twitter',
+		'send',
+		'status',
+	])
+	const closeThird = createActionMatch('./like-status', 0.74, [
+		'twitter',
+		'like',
+		'status',
+	])
+	expect(top.score - closeSecond.score).toBeLessThanOrEqual(
+		packageExportCloseScoreGap,
+	)
+	expect(top.score - closeThird.score).toBeLessThanOrEqual(
+		packageExportCloseScoreGap,
+	)
+	expect(
+		selectPromotedPackageExportCandidates([top, closeSecond, closeThird]).map(
+			(match) => match.subpath,
+		),
+	).toEqual(['./create-status', './send-status', './like-status'])
+})
+
+test('selectPromotedPackageExportCandidates keeps a single winner on a clear gap', () => {
+	const top = createActionMatch('./bond-area-shades', 0.9, [
+		'bond',
+		'area',
+		'shades',
+	])
+	const distant = createActionMatch('./other-export', 0.55, ['bond', 'other'])
+	expect(top.score - distant.score).toBeGreaterThan(packageExportCloseScoreGap)
+	expect(
+		selectPromotedPackageExportCandidates([top, distant]).map(
+			(match) => match.subpath,
+		),
+	).toEqual(['./bond-area-shades'])
+})
+
+test('selectPromotedPackageExportCandidates can promote beyond nested display top-3', () => {
+	const weakDisplay = [
+		createActionMatch('./weak-a', 0.4, ['alpha'], 1),
+		createActionMatch('./weak-b', 0.39, ['alpha'], 1),
+		createActionMatch('./weak-c', 0.38, ['alpha'], 1),
+	]
+	const strongFourth = createActionMatch(
+		'./create-status',
+		0.5,
+		['twitter', 'create', 'status'],
+		2,
+	)
+	// Nested display would only keep the three weaks; promotion must still
+	// see the stronger multi-term export when the full list is uncapped.
+	expect(
+		selectPromotedPackageExportCandidates([...weakDisplay, strongFourth]).map(
+			(match) => match.subpath,
+		),
+	).toEqual(['./create-status'])
+})
+
 test('buildPackageActionMatches keeps nested display threshold below promotion', () => {
 	const matches = buildPackageActionMatches({
 		query: 'module-a',
-		meaningfulTokens: ['module-a'],
+		meaningfulTokens: ['module'],
 		exports: [
 			createPackageExportProjection('./module-a', {
 				description: 'Run module-a task with distinctive wording.',
@@ -88,6 +245,7 @@ test('buildPackageActionMatches keeps nested display threshold below promotion',
 	const [top] = matches
 	expect(top).toBeDefined()
 	if (!top) return
+	expect(top.exportLocalMatchedTermCount).toBeGreaterThan(0)
 	if (top.matchedTerms.length < 2) {
 		expect(top.score).toBeGreaterThanOrEqual(0.35)
 	}
@@ -241,6 +399,161 @@ test('searchUnified promotes strong package exports into first-pass ranked hits'
 		kodyId: 'pkg-alpha',
 		actionMatches: [],
 	})
+})
+
+test('searchUnified promotes close sibling exports when package alias terms match', async () => {
+	const registry = buildCapabilityRegistry([])
+	const packageRow = {
+		record: {
+			id: 'pkg-social',
+			userId: 'user-1',
+			name: '@kody/social-post',
+			kodyId: 'social-post',
+			description: 'Social status helpers.',
+			tags: ['twitter', 'microblog'],
+			searchText: 'status create like send',
+			sourceId: 'source-social',
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			createdAt: '2026-04-20T00:00:00.000Z',
+			updatedAt: '2026-04-20T00:00:00.000Z',
+		},
+		listingAhead: null,
+		projection: {
+			name: '@kody/social-post',
+			kodyId: 'social-post',
+			description: 'Social status helpers.',
+			tags: ['twitter', 'microblog'],
+			searchText: 'status create like send',
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			appEntry: null,
+			exports: [
+				createPackageExportProjection('./create-status', {
+					description: 'Create a new status update on the timeline.',
+					functionName: 'createStatus',
+					functionDescription: 'Create a new status update on the timeline.',
+				}),
+				createPackageExportProjection('./like-status', {
+					description: 'Like an existing status on the timeline.',
+					functionName: 'likeStatus',
+					functionDescription: 'Like an existing status on the timeline.',
+				}),
+				createPackageExportProjection('./send-direct', {
+					description: 'Send a direct message to a recipient.',
+					functionName: 'sendDirect',
+					functionDescription: 'Send a direct message to a recipient.',
+				}),
+			],
+			jobs: [],
+			subscriptions: [],
+			retrievers: [],
+			webhooks: [],
+		},
+	}
+	// Alias + shared export terms (no operate verb) so create/like stay near-tied.
+	const result = await searchUnified({
+		env: {} as Env,
+		query: 'twitter status',
+		userId: 'user-1',
+		limit: 8,
+		registry,
+		optionalRows: {
+			packageRows: [packageRow],
+			userSecretRows: [],
+			userValueRows: [],
+			userIntegrationRows: [],
+		},
+	})
+	const exportSubpaths = result.matches
+		.filter(
+			(match) =>
+				match.type === 'package' &&
+				match.kodyId === 'social-post' &&
+				match.exportSubpath != null,
+		)
+		.map((match) => (match.type === 'package' ? match.exportSubpath : null))
+	expect(exportSubpaths).toContain('./create-status')
+	expect(exportSubpaths).toContain('./like-status')
+	expect(exportSubpaths.length).toBeGreaterThanOrEqual(2)
+})
+
+test('searchUnified surfaces operate export when package alias is only on parent tags', async () => {
+	const registry = buildCapabilityRegistry([])
+	const packageRow = {
+		record: {
+			id: 'pkg-social',
+			userId: 'user-1',
+			name: '@kody/social-post',
+			kodyId: 'social-post',
+			description: 'Social status helpers.',
+			tags: ['twitter', 'microblog'],
+			searchText: 'status create like send',
+			sourceId: 'source-social',
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			createdAt: '2026-04-20T00:00:00.000Z',
+			updatedAt: '2026-04-20T00:00:00.000Z',
+		},
+		listingAhead: null,
+		projection: {
+			name: '@kody/social-post',
+			kodyId: 'social-post',
+			description: 'Social status helpers.',
+			tags: ['twitter', 'microblog'],
+			searchText: 'status create like send',
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			appEntry: null,
+			exports: [
+				createPackageExportProjection('./create-status', {
+					description: 'Create a new status update on the timeline.',
+					functionName: 'createStatus',
+					functionDescription: 'Create a new status update on the timeline.',
+				}),
+				createPackageExportProjection('./like-status', {
+					description: 'Like an existing status on the timeline.',
+					functionName: 'likeStatus',
+					functionDescription: 'Like an existing status on the timeline.',
+				}),
+				createPackageExportProjection('./send-direct', {
+					description: 'Send a direct message to a recipient.',
+					functionName: 'sendDirect',
+					functionDescription: 'Send a direct message to a recipient.',
+				}),
+			],
+			jobs: [],
+			subscriptions: [],
+			retrievers: [],
+			webhooks: [],
+		},
+	}
+	const result = await searchUnified({
+		env: {} as Env,
+		query: 'twitter create status',
+		userId: 'user-1',
+		limit: 8,
+		registry,
+		optionalRows: {
+			packageRows: [packageRow],
+			userSecretRows: [],
+			userValueRows: [],
+			userIntegrationRows: [],
+		},
+	})
+	const exportSubpaths = result.matches
+		.filter(
+			(match) =>
+				match.type === 'package' &&
+				match.kodyId === 'social-post' &&
+				match.exportSubpath != null,
+		)
+		.map((match) => (match.type === 'package' ? match.exportSubpath : null))
+	expect(exportSubpaths).toContain('./create-status')
 })
 
 test('searchUnified hydrates lean package rows before promoting export candidates', async () => {

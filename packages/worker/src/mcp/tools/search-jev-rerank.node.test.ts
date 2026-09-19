@@ -3,15 +3,18 @@ import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 import {
 	evaluateJevSearchNecessity,
+	jevSearchLoweredKeepClusterGap,
 	jevSearchMinKeepScore,
 	jevSearchModel,
 	jevSearchNecessityMediumPoolMax,
 	jevSearchNecessitySmallPoolMax,
 	jevSearchNecessityTightScoreGap,
 	jevSearchScoreQuestionBatchSize,
+	jevSearchSecondaryKeepScore,
 	normalizeJevRunResponse,
 	rerankSearchCandidatesWithJev,
 	resolveJevSearchRecallLimit,
+	selectJevKeptCandidates,
 } from './search-jev-rerank.ts'
 import { type SearchCandidate } from './search-types.ts'
 import { type SearchIntent } from './understand-search-query.ts'
@@ -118,6 +121,61 @@ test('resolveJevSearchRecallLimit widens only when requested', () => {
 	expect(resolveJevSearchRecallLimit({ limit: 80, widerRecall: true })).toBe(80)
 })
 
+test('selectJevKeptCandidates uses high bar, secondary floor with cluster, or empty', () => {
+	const stub = (id: string, score: number) => ({
+		candidate: makeCandidate({ id, title: id }),
+		score,
+		confidence: 0.9,
+	})
+
+	expect(
+		selectJevKeptCandidates([
+			stub('strong', jevSearchMinKeepScore),
+			stub('also-high', jevSearchMinKeepScore + 0.2),
+			stub('weak', 0.5),
+		]).keepPath,
+	).toBe('kept-high')
+	expect(
+		selectJevKeptCandidates([
+			stub('strong', jevSearchMinKeepScore),
+			stub('also-high', jevSearchMinKeepScore + 0.2),
+			stub('weak', 0.5),
+		]).kept.map((entry) => entry.candidate.id),
+	).toEqual(['strong', 'also-high'])
+
+	const mid = selectJevKeptCandidates([
+		stub('mid-top', 1.2),
+		stub('mid-near', 1.0),
+		stub('mid-tail', jevSearchSecondaryKeepScore),
+		stub('noise', 0.2),
+	])
+	expect(mid.keepPath).toBe('kept-lowered')
+	expect(mid.kept.map((entry) => entry.candidate.id)).toEqual([
+		'mid-top',
+		'mid-near',
+		'mid-tail',
+	])
+	expect(mid.kept.some((entry) => entry.candidate.id === 'noise')).toBe(false)
+
+	expect(
+		selectJevKeptCandidates([
+			stub('weak', jevSearchSecondaryKeepScore - 0.1),
+			stub('weaker', 0.1),
+		]),
+	).toEqual({ kept: [], keepPath: 'empty' })
+
+	const clustered = selectJevKeptCandidates([
+		stub('mid-top', 1.4),
+		stub('near', 1.4 - jevSearchLoweredKeepClusterGap + 0.01),
+		stub('outside-cluster', 1.4 - jevSearchLoweredKeepClusterGap - 0.05),
+	])
+	expect(clustered.keepPath).toBe('kept-lowered')
+	expect(clustered.kept.map((entry) => entry.candidate.id)).toEqual([
+		'mid-top',
+		'near',
+	])
+})
+
 test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back', async () => {
 	const pair = [
 		makeCandidate({ id: 'a', title: 'A' }),
@@ -206,6 +264,7 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 		planEligible: true,
 	})
 	expect(applied.outcome).toBe('applied')
+	expect(applied.keepPath).toBe('kept-high')
 	expect(applied.errorReason).toBeUndefined()
 	expect(applied.model).toBe(jevSearchModel)
 	expect(applied.aiCallCount).toBe(
@@ -282,10 +341,45 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 		planEligible: true,
 	})
 	expect(emptyAfterDrop.outcome).toBe('fallback-empty-after-drop')
-	expect(emptyAfterDrop.candidates.map((candidate) => candidate.id)).toEqual([
+	expect(emptyAfterDrop.keepPath).toBe('empty')
+	expect(emptyAfterDrop.candidates).toEqual([])
+	expect(emptyAfterDrop.candidatesAfter).toBe(0)
+	expect(emptyAfterDrop.droppedCount).toBe(emptyAfterDrop.candidatesBefore)
+
+	const midTierRun = vi.fn(
+		async (_model: string, body: { questions: Record<string, unknown> }) => ({
+			answers: scoreAnswersForQuestions(body.questions, (key) => {
+				if (key === 'c0') return { score: 1.2, confidence: 0.9 }
+				if (key === 'c1') return { score: 1.05, confidence: 0.85 }
+				return { score: 0.2, confidence: 0.8 }
+			}),
+		}),
+	)
+	const midTierPool = makeNecessityRunPool(pair)
+	const midTier = await rerankSearchCandidatesWithJev({
+		env: {
+			AI: { run: midTierRun },
+			AI_GATEWAY_ID: 'kody',
+		} as unknown as Env,
+		query: 'send email',
+		intent,
+		candidates: midTierPool,
+		limit: 5,
+		offline: false,
+		enabled: true,
+		planEligible: true,
+	})
+	expect(midTier.outcome).toBe('applied')
+	expect(midTier.keepPath).toBe('kept-lowered')
+	expect(midTier.candidates.map((candidate) => candidate.id)).toEqual([
 		'a',
 		'b',
 	])
+	expect(
+		midTier.candidates.every(
+			(candidate) => candidate.id === 'a' || candidate.id === 'b',
+		),
+	).toBe(true)
 
 	consoleWarn.mockImplementation(() => {})
 	const missingGatewayRun = vi.fn()
