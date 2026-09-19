@@ -177,7 +177,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// actionable export-contract / next-step / notices substance as
 		// structured): CI dry-run 5_124_196 against the previous 5_124_000
 		// budget.
-		maxEntryBytes: 5_126_000,
+		// Export parent-identity fold, close top-K promotion, and adaptive
+		// Jev keep spill into platform: local dry-run 5_126_440 against the
+		// previous 5_126_000 budget.
+		maxEntryBytes: 5_128_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
