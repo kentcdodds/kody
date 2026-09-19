@@ -60,6 +60,10 @@ froze that and it is the right call.
 The only doc edit in this change besides the report is F12: the entitlements
 enforcement table said Max concurrent workflows is 5,000. Code says 200.
 
+Signup-to-paid instrumentation is not a top-10 risk. What exists, and what is
+missing for a conversion decision, is the section "Onboarding and growth funnel
+observability" below.
+
 ## How to read a finding
 
 - **Severity.** P0 remote cross-user or credential leak. P1 same-user
@@ -680,7 +684,8 @@ One contract in `packages/worker/universal/onboarding-process.ts`: connect a
 host, first search via `guide:onboarding`, second agent (same vendor family
 greyed, 14-day Standard gift). Waiting is a separate queue (email verify, OAuth
 reconnect, secret expiry, plan cap). First-win email is not a wizard step. Docs
-match that split. Leave it.
+match that split. Leave the wizard. The measurement gap is the funnel appendix
+below, not a missing step in the wizard.
 
 ### Accessibility (carried, not re-walked)
 
@@ -902,6 +907,133 @@ Also in this slice, no meeting required: move UserMeter retention off `consume`
   measurement gaps are closed. Otherwise leave the experiments page as an unused
   audience bit.
 - Do not start a Durable Object split program.
+- Do not add PostHog. If a growth readout is wanted, add `first_paid_at` and a
+  UTM count to the launch page that already exists (funnel appendix).
+
+## Onboarding and growth funnel observability
+
+Current versus recommended.
+
+**ID:** F15. **Severity:** P2 as a decision gap, not an incident. **Product
+call:** yes, on which definition of "activated" is canonical. **Next step:**
+leave the vendors alone. Spike one paid stamp and one acquisition chart on the
+page that already exists.
+
+No production counts were queried. This is the code that would produce them.
+
+### What already exists
+
+Acquisition and activation are mostly write-once columns on `users`, not a
+third-party product-analytics pipeline.
+
+| Stage                    | Where it is recorded                                                                                                                                                                                                                                                                                           | Where an operator can see it                                                                                                   |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Homepage → signup intent | Fathom `signup_started` from the login/signup client (`packages/worker/universal/fathom-events.ts`, `packages/worker/client/routes/login.tsx`)                                                                                                                                                                 | Fathom, not `/admin/insights`                                                                                                  |
+| Account created          | Fathom `account_created` (query `accountCreated=1` after OAuth). D1 `users` row. Kit tag `signed_up::kody` (`packages/worker/src/app/kit-signup.ts`). Package topic `user.created` with attribution, source `signup` / `oauth` / `admin` (`packages/worker/src/identity/user-lifecycle-subscription-event.ts`) | Fathom for the browser event. Per-user row on `/admin/users`. `user.created` is an admin package subscription, not a warehouse |
+| First touch              | Write-once `utm_*`, `first_touch_landing_path`, `first_touch_referrer` (`packages/worker/migrations/0029-users-attribution-activation.sql`, `packages/worker/universal/first-touch-attribution.ts`). Homepage CTA injects `utm_source=kody.codes` so organic is not blank                                      | Admin user detail only (`packages/worker/client/routes/admin-users-detail.tsx`). No cohort chart                               |
+| Email verified           | `users.email_verified_at`                                                                                                                                                                                                                                                                                      | Both admin funnels below                                                                                                       |
+| Connected an agent       | `first_mcp_connected_at` plus first `mcp_client_name` (`stampFirstMcpConnected` in `packages/worker/src/identity/activation-stamps.ts`, called from `packages/worker/src/mcp-auth.ts`)                                                                                                                         | Launch funnel                                                                                                                  |
+| First search             | `first_search_at` (`packages/worker/migrations/0042-users-first-search-at.sql`). Stamped only from the public search tool (`packages/worker/src/mcp/tools/search-tool-runner.ts`)                                                                                                                              | Launch funnel and admin user detail                                                                                            |
+| First execute            | `first_execute_at`, stamped from `recordUsage` on execute (`packages/worker/src/usage/record-usage.ts`)                                                                                                                                                                                                        | Launch funnel and admin user detail                                                                                            |
+| First saved package      | `first_saved_package_at`, stamped on package insert (`packages/worker/src/package-registry/repo.ts`)                                                                                                                                                                                                           | Launch funnel and admin user detail                                                                                            |
+| Return                   | `last_active_at`, UTC day, not a per-event clock (`launch-signals.ts` comments this)                                                                                                                                                                                                                           | Launch cards: 24h / 48h / 7d                                                                                                   |
+| Paid                     | Snapshot of `users.stripe_plan` + `stripe_price_id`. MRR from the price catalog. Gift and referral Standard are a separate `overlayStandard` count, excluded from paid subscribers                                                                                                                             | Launch page plan slices, not a funnel step                                                                                     |
+| Wizard                   | Derived checklist in `packages/worker/universal/onboarding-process.ts`. Dismiss time is `onboarding_checklist_dismissed_at`. No step-view event                                                                                                                                                                | The wizard itself, not insights                                                                                                |
+
+`/admin/insights` is a real dashboard
+(`packages/worker/client/routes/admin-insights.tsx`, launch section in
+`admin-insights-launch.tsx`). It is two funnels, not one.
+
+**Launch funnel** (`packages/worker/src/admin/launch-signals.ts`). One `COUNT`
+over live users (`deleting_at IS NULL`): signed up, email verified, first MCP,
+first search, first execute, first saved package. "Since open" restricts
+`created_at` to `platformPublicOpenedDay` and is the closer thing to a cohort.
+The bars divide each step by signup count. The steps are not nested: a user can
+have `first_execute_at` with `first_search_at` still null, so a later bar can be
+taller than an earlier one. That chart is a stock, not a conversion rate.
+
+**Classic activation funnel** (`queryActivationBase` in
+`packages/worker/src/app/admin-insights-data.ts`). Signup and verified are user
+counts. "Agent connected" is `COUNT(DISTINCT user_id) FROM mcp_agent_sessions`,
+not `first_mcp_connected_at`. "Package forked" is `community_forks`. "Package
+run succeeded" and "package activated" come from the hourly RunLog snapshot
+(`packages/worker/src/run-records/package-activation-state.ts`). The type
+comment says counts are monotonically non-increasing. The queries do not enforce
+that. This funnel can disagree with the launch funnel on the same day.
+
+Also on that page, and not a signup funnel: signups by week
+(`buildSignupWeeks`), `usage_rollups` by month, auth audit charts from
+`audit_events` (denials and categories, not conversion), job health, entitlement
+pressure, Dynamic Worker cost.
+
+Analytics Engine datasets in `packages/worker/wrangler.jsonc` are product
+telemetry: `kody_usage_events`, `kody_flag_exposures`, `kody_email_events`,
+`kody_mcp_protocol_events`, `kody_package_invoke_specifier_events`,
+`kody_execute_interpretable_events`, `kody_mcp_search_events`. Usage rollups are
+the hourly aggregate (`packages/worker/src/usage/aggregate-rollups.ts`). Search
+points omit user id (F5). None of these datasets is a signup or checkout stream.
+
+Sentry is an error pipeline. Production pins the Sentry trace sample to 0. There
+are no growth breadcrumbs. `recordUsage` emits `kody.usage.*` spans when Workers
+tracing is on. That is cost tracing, not a funnel chart.
+
+PostHog is not installed. The only PostHog string in the client is the example
+MCP URL `https://mcp.posthog.com/mcp`. Do not treat a user's own PostHog
+connection as Kody's analytics.
+
+### Gaps that block a data-driven signup → paid decision
+
+1. **No paid step in either funnel.** There is no `first_paid_at`.
+   `stripe_plan_refreshed_at` is overwritten on every refresh
+   (`packages/worker/src/billing/subscription-sync.ts`). You can count who is
+   paid now. You cannot see conversion time, or checkout started versus checkout
+   finished. `POST /account/billing/checkout.json` has no Fathom event and no
+   audit stamp.
+2. **Two activation definitions.** Launch stamps (search, execute, saved
+   package) versus RunLog `package_activated` / fork. Pick one before arguing
+   about a percentage.
+3. **UTM is stored and not aggregated.** Per-user fields exist. Insights does
+   not group by `utm_source`. Channel decisions still require a SQL query or
+   clicking through users.
+4. **`first_search_at` misses in-execute search.** Only `search-tool-runner.ts`
+   stamps it. The meta `search` capability does not. Agents that search inside
+   `execute` never move that column.
+5. **Fathom stops at account created.** No verify, connect, search, execute,
+   pricing view, or checkout event. Fine as a marketing pixel. Not a product
+   funnel.
+6. **`last_active_at` is a day stamp.** D1/D7 "return" is calendar-day activity,
+   not session retention. The launch comment already says so. Do not read 24h
+   active as a rolling 24-hour window.
+7. **`docs/use/privacy.md` lists activation stamps and omits
+   `first_search_at`.** The column exists. The privacy sentence is short one
+   stamp.
+
+### Recommended, in order
+
+Do not add PostHog, Mixpanel, or a new Analytics Engine dataset for this. The
+user row is the right grain for a few hundred to a few thousand accounts, and
+the launch page already loads it with one query.
+
+1. Kent names the activation step that matters (recommended: `first_execute_at`,
+   because execute is the billed action; saved-package and RunLog
+   `package_activated` answer a different question). Hide or label the other
+   funnel so the two charts stop being quoted against each other.
+2. Write `first_paid_at` once, in the same subscription sync that sets
+   `stripe_plan` from free to standard/pro. Add it as the last launch bar,
+   since-open only. That is the signup → paid number.
+3. On the same page, `GROUP BY utm_source` (and maybe `utm_campaign`) for
+   since-open signups and since-open paid. The columns are already write-once.
+4. Stamp `first_search_at` from the meta search path, or say in the launch
+   caption that only the public `search` tool counts.
+5. Optional, and only if (2) shows a drop before Stripe: one Fathom event or one
+   D1 stamp when checkout is created. Not before you know the drop is there.
+6. Median hours from `email_verified_at` to `first_execute_at` and from
+   `first_execute_at` to `first_paid_at`, same shape as
+   `medianHoursToActivation` on the classic funnel. The timestamps are already
+   on the row.
+
+Skip Sentry for this. Skip a browser "viewed /pricing" event until the paid
+stamp says you cannot tell where people stop.
 
 ## Appendix: 2026-09-16 status
 
