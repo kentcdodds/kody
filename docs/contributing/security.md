@@ -3,9 +3,11 @@
 Security-relevant patterns in the Worker, and the reasoning behind them. This
 doc is the authoritative record of what is protected, what is intentionally out
 of scope, and the invariants future changes must not regress. See the 2026-05-01
-and 2026-07-01 internal security audits for the underlying findings, and
+and 2026-07-01 internal security audits for the underlying findings,
 [the 2026-09-16 codebase audit](../audits/2026-09-16-codebase-audit.md) for a
-later cross-cutting review.
+security, accessibility, and performance review, and
+[the 2026-09-19 full platform audit](../audits/2026-09-19-full-platform-audit.md)
+for a later pass across reliability, cost, product, and operations as well.
 
 Kody is a multi-worker Cloudflare app: a Remix 3 browser UI and OAuth-protected
 MCP HTTP on origin, platform Durable Objects on `kody-platform`, package apps on

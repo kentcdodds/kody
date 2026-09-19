@@ -84,6 +84,7 @@ style, tests, MCP capabilities, and runtime architecture.
 
 - [Security](./security.md),
   [2026-09-16 codebase audit](../audits/2026-09-16-codebase-audit.md),
+  [2026-09-19 full platform audit](../audits/2026-09-19-full-platform-audit.md),
   [secret host approval](./secret-host-approval.md),
   [secret providers](./secret-providers.md),
   [secret rotation](./secret-rotation.md), [social login](./social-login.md)
