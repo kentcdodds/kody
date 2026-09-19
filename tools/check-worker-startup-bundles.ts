@@ -170,7 +170,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// promotion + bounded hydrate) add a few KB on top of that wiring:
 		// prior CI dry-run 5_112_939 against 5_110_000 before the rate-limit
 		// bump; keep headroom for both.
-		maxEntryBytes: 5_118_000,
+		// Paid Jev necessity + high-confidence export call-contract attach
+		// spill into platform: CI/local dry-run 5_120_066 against the
+		// previous 5_118_000 budget.
+		maxEntryBytes: 5_124_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
