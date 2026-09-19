@@ -15,6 +15,9 @@ test('waiting card ids drop secret names and unknown ids', () => {
 	expect(sanitizeWaitingCardId('secret-expired:OPENAI_KEY')).toBe(
 		'secret-expired',
 	)
+	expect(sanitizeWaitingCardId('secret-expired-more')).toBe(
+		'secret-expired-more',
+	)
 	expect(sanitizeWaitingCardId('mcp-server:server-1')).toBe('mcp-server')
 	expect(sanitizeWaitingCardId('integration-auth:github')).toBe(
 		'integration-auth:github',

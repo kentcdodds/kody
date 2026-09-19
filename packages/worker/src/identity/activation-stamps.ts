@@ -5,11 +5,8 @@
  */
 
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
-import {
-	recordOnboardingFunnelEvent,
-	type OnboardingFunnelEnv,
-} from './onboarding-funnel.ts'
-import { type OnboardingFunnelStage } from '#universal/onboarding-funnel.ts'
+import { type OnboardingFunnelStage } from '#universal/onboarding-funnel-point.ts'
+import { type OnboardingFunnelEnv } from './onboarding-funnel-event.ts'
 
 function nowIso(at?: string) {
 	return at ?? new Date().toISOString()
@@ -132,78 +129,56 @@ const activationClaimStage: Record<
 	first_job_at: 'first_job',
 }
 
-function activationClaimSql(column: ActivationClaimColumn) {
+function activationColumnLiteral(column: ActivationClaimColumn) {
 	switch (column) {
 		case 'first_execute_at':
-			return `UPDATE users
-				SET first_execute_at = ?1,
-					last_active_at = CASE
-						WHEN last_active_at IS NULL THEN ?1
-						WHEN date(last_active_at) < date(?1) THEN ?1
-						ELSE last_active_at
-					END,
-					updated_at = ?2
-				WHERE stable_user_id = ?3
-					AND first_execute_at IS NULL`
+			return 'first_execute_at'
 		case 'first_search_at':
-			return `UPDATE users
-				SET first_search_at = ?1,
-					last_active_at = CASE
-						WHEN last_active_at IS NULL THEN ?1
-						WHEN date(last_active_at) < date(?1) THEN ?1
-						ELSE last_active_at
-					END,
-					updated_at = ?2
-				WHERE stable_user_id = ?3
-					AND first_search_at IS NULL`
+			return 'first_search_at'
 		case 'first_saved_package_at':
-			return `UPDATE users
-				SET first_saved_package_at = ?1,
-					last_active_at = CASE
-						WHEN last_active_at IS NULL THEN ?1
-						WHEN date(last_active_at) < date(?1) THEN ?1
-						ELSE last_active_at
-					END,
-					updated_at = ?2
-				WHERE stable_user_id = ?3
-					AND first_saved_package_at IS NULL`
+			return 'first_saved_package_at'
 		case 'first_secret_at':
-			return `UPDATE users
-				SET first_secret_at = ?1,
-					last_active_at = CASE
-						WHEN last_active_at IS NULL THEN ?1
-						WHEN date(last_active_at) < date(?1) THEN ?1
-						ELSE last_active_at
-					END,
-					updated_at = ?2
-				WHERE stable_user_id = ?3
-					AND first_secret_at IS NULL`
+			return 'first_secret_at'
 		case 'first_integration_at':
-			return `UPDATE users
-				SET first_integration_at = ?1,
-					last_active_at = CASE
-						WHEN last_active_at IS NULL THEN ?1
-						WHEN date(last_active_at) < date(?1) THEN ?1
-						ELSE last_active_at
-					END,
-					updated_at = ?2
-				WHERE stable_user_id = ?3
-					AND first_integration_at IS NULL`
+			return 'first_integration_at'
 		case 'first_job_at':
-			return `UPDATE users
-				SET first_job_at = ?1,
-					last_active_at = CASE
-						WHEN last_active_at IS NULL THEN ?1
-						WHEN date(last_active_at) < date(?1) THEN ?1
-						ELSE last_active_at
-					END,
-					updated_at = ?2
-				WHERE stable_user_id = ?3
-					AND first_job_at IS NULL`
+			return 'first_job_at'
 		default: {
 			const exhaustive: never = column
 			throw new Error(`Unknown activation stamp: ${String(exhaustive)}`)
 		}
+	}
+}
+
+function activationClaimSql(column: ActivationClaimColumn) {
+	const name = activationColumnLiteral(column)
+	return `UPDATE users
+		SET ${name} = ?1,
+			last_active_at = CASE
+				WHEN last_active_at IS NULL THEN ?1
+				WHEN date(last_active_at) < date(?1) THEN ?1
+				ELSE last_active_at
+			END,
+			updated_at = ?2
+		WHERE stable_user_id = ?3
+			AND ${name} IS NULL`
+}
+
+function recordClaimedFunnelStage(
+	env: OnboardingFunnelEnv | null | undefined,
+	stage: OnboardingFunnelStage,
+	userId: string,
+) {
+	try {
+		if (!env?.ONBOARDING_FUNNEL_EVENTS) return
+		if (!/^[a-f0-9]{64}$/.test(userId)) return
+		env.ONBOARDING_FUNNEL_EVENTS.writeDataPoint({
+			indexes: [userId],
+			blobs: [stage, '', '', ''],
+			doubles: [1],
+		})
+	} catch (error) {
+		console.warn('onboarding-funnel-event-failed', error)
 	}
 }
 
@@ -235,12 +210,11 @@ async function claimActivationStamp(
 			})
 			return false
 		}
-		if (input.telemetry) {
-			recordOnboardingFunnelEvent(input.telemetry, {
-				stage: activationClaimStage[input.column],
-				userId: input.stableUserId,
-			})
-		}
+		recordClaimedFunnelStage(
+			input.telemetry,
+			activationClaimStage[input.column],
+			input.stableUserId,
+		)
 		return true
 	} catch (error) {
 		console.debug(input.debugLabel, error)

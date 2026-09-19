@@ -76,10 +76,12 @@ export function createVerifyEmailHandler(env: Env) {
 				ip: requestIp,
 				path: url.pathname,
 			})
-			recordOnboardingFunnelEvent(env, {
-				stage: 'email_verified',
-				userId: result.stableUserId,
-			})
+			if (result.newlyVerified) {
+				recordOnboardingFunnelEvent(env, {
+					stage: 'email_verified',
+					userId: result.stableUserId,
+				})
+			}
 			await attachPendingPackageShareInvitesSafely({
 				db: env.APP_DB,
 				userId: result.stableUserId,

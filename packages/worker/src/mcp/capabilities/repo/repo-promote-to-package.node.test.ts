@@ -259,7 +259,8 @@ test('repoPromoteToPackage seeds published_commit from the opened session base s
 			is_private: 0,
 			kody_id: 'brave-search',
 		}),
-		expect.anything(),
+		null,
+		{ stamp: false },
 	)
 	expect(rpc.runChecks).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -327,7 +328,8 @@ test('repoPromoteToPackage inherits repo visibility, not package.json private', 
 		expect.objectContaining({
 			is_private: 1,
 		}),
-		expect.anything(),
+		null,
+		{ stamp: false },
 	)
 	expect(mockModule.publishCommunityListing).not.toHaveBeenCalled()
 })

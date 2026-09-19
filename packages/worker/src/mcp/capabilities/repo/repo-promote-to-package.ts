@@ -7,6 +7,7 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { buildSavedPackageEmbedText } from '#worker/package-registry/embed.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
+import { stampFirstSavedPackage } from '#worker/identity/activation-stamps.ts'
 import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
@@ -169,7 +170,8 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 					created_at: now,
 					updated_at: now,
 				},
-				ctx.env,
+				null,
+				{ stamp: false },
 			)
 			// Seed published_commit from the opened session base, not the
 			// earlier HEAD snapshot. A git-lane push between those two reads
@@ -214,6 +216,11 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 					publishResult.message || 'Failed to publish promoted package source.',
 				)
 			}
+			await stampFirstSavedPackage(
+				ctx.env.APP_DB,
+				{ stableUserId: user.userId, at: now },
+				ctx.env,
+			)
 			// Best-effort projections after the publish committed: a vector or
 			// search-projection failure must not strand a half-promoted repo.
 			// Reindex lanes converge both later.

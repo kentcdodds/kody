@@ -180,7 +180,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Export parent-identity fold, close top-K promotion, and adaptive
 		// Jev keep spill into platform: local dry-run 5_126_440 against the
 		// previous 5_126_000 budget.
-		maxEntryBytes: 5_128_000,
+		// First-seen search funnel claim sits on the shared activation stamp
+		// that platform search already calls: local dry-run 5_128_692 against
+		// the previous 5_128_000 budget.
+		maxEntryBytes: 5_130_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
@@ -238,7 +241,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Export parent-identity fold, close top-K promotion, and adaptive
 		// Jev keep (`selectJevKeptCandidates`) add ~1.3 KB: local dry-run
 		// 3_803_286 against the previous 3_802_000 budget.
-		maxEntryBytes: 3_805_000,
+		// First-seen execute/search/secret/job funnel claim lives on the
+		// shared activation-stamp module that runtime execute already calls:
+		// local dry-run 3_806_157 against the previous 3_805_000 budget.
+		maxEntryBytes: 3_808_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',

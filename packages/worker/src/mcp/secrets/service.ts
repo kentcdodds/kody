@@ -578,6 +578,13 @@ async function saveSecretsAtomically(input: {
 			updated_at: now,
 		})),
 	})
+	if (input.scope === 'user' && newSecretCount > 0) {
+		await stampFirstSecret(
+			input.env.APP_DB,
+			{ stableUserId: input.userId, at: now },
+			input.env,
+		)
+	}
 
 	return prepared.map((entry) =>
 		toSecretMetadata({

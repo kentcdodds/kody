@@ -31,7 +31,7 @@ import { type EmailNotificationDestination } from '#universal/email-destinations
 import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { type IntegrationAuthFailureView } from '#universal/connection-trouble.ts'
 import { type WaitingItem } from '#universal/waiting.ts'
-import { type OnboardingFunnelStage } from '#universal/onboarding-funnel.ts'
+import { type OnboardingFunnelStage } from '#universal/onboarding-funnel-point.ts'
 import { type EntitlementLadder } from '#universal/plans.ts'
 import {
 	type ComputeOverageDisposition,
@@ -825,14 +825,9 @@ export type AdminInsightsActivation = {
 	medianHoursToActivation: number | null
 }
 
-export type AdminInsightsOnboardingFunnelStep = {
-	stage: OnboardingFunnelStage
-	users: number
-}
-
 export type AdminInsightsOnboardingFunnelWindow = {
 	days: 7 | 28
-	steps: Array<AdminInsightsOnboardingFunnelStep>
+	steps: Array<{ stage: OnboardingFunnelStage; users: number }>
 }
 
 /**
