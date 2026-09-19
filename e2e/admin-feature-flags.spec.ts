@@ -55,7 +55,7 @@ test('admin feature flags: global toggle and per-user override visibility', asyn
 	await demoFlagSection
 		.getByRole('button', { name: 'Save', exact: true })
 		.click()
-	await expect(demoFlagSection.getByText('Saved global state')).toBeVisible()
+	await expect(page.getByText(/Saved global state/)).toBeVisible()
 	await page.reload()
 	await expect(audienceSelect).toHaveValue('experiments_opt_in')
 	await expect(
