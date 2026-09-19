@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 import {
+	buildJevSearchSkinnyCard,
 	jevSearchMinKeepScore,
 	jevSearchModel,
 	jevSearchScoreQuestionBatchSize,
@@ -97,6 +98,38 @@ test('resolveJevSearchRecallLimit widens only when requested', () => {
 	)
 	expect(resolveJevSearchRecallLimit({ limit: 15, widerRecall: true })).toBe(50)
 	expect(resolveJevSearchRecallLimit({ limit: 80, widerRecall: true })).toBe(80)
+})
+
+test('buildJevSearchSkinnyCard includes package export identity', () => {
+	const card = buildJevSearchSkinnyCard(
+		makeCandidate({
+			id: 'home-controls#./bond-area-shades',
+			title: '@kody/home-controls setBondAreaShades',
+			type: 'package',
+			match: {
+				type: 'package',
+				packageId: 'pkg-1',
+				kodyId: 'home-controls',
+				name: '@kody/home-controls',
+				title: '@kody/home-controls setBondAreaShades',
+				description: 'Dim bond area shades for evening.',
+				tags: ['home'],
+				hasApp: false,
+				hidden: false,
+				exportSubpath: './bond-area-shades',
+				actionMatches: [],
+			},
+		}),
+		0,
+	)
+	expect(card).toMatchObject({
+		index: 0,
+		type: 'package',
+		id: 'home-controls#./bond-area-shades',
+		exportSubpath: './bond-area-shades',
+		summary: expect.stringContaining('./bond-area-shades'),
+	})
+	expect(card.summary).toContain('Dim bond area shades')
 })
 
 test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back', async () => {

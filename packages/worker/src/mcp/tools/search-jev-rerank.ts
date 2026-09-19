@@ -66,6 +66,8 @@ export type JevSearchSkinnyCard = {
 	title: string
 	summary: string
 	domain?: string
+	/** Package export subpath when the candidate is an export contract hit. */
+	exportSubpath?: string
 }
 
 export type JevSearchTokenUsage = {
@@ -153,13 +155,23 @@ export function buildJevSearchSkinnyCard(
 		'domain' in match && typeof match.domain === 'string'
 			? match.domain
 			: undefined
+	const exportSubpath =
+		candidate.match.type === 'package' &&
+		typeof candidate.match.exportSubpath === 'string'
+			? candidate.match.exportSubpath
+			: undefined
+	const summaryWithExport =
+		exportSubpath && summary
+			? `${exportSubpath}: ${summary}`
+			: (exportSubpath ?? summary)
 	return {
 		index,
 		type: candidate.type,
 		id: candidate.id,
 		title: oneLine(candidate.title, 80),
-		summary: oneLine(summary, 160),
+		summary: oneLine(summaryWithExport, 160),
 		...(domain ? { domain: oneLine(domain, 64) } : {}),
+		...(exportSubpath ? { exportSubpath: oneLine(exportSubpath, 64) } : {}),
 	}
 }
 

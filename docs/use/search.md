@@ -53,6 +53,18 @@ Inspect the server with `search({ entity: "mcp-server:home" })` (or
 When a saved package's id, name, tags, or README matches a connected MCP server,
 the package ranks with that server so a wrapper workflow stays visible.
 
+### Package exports in ranked results
+
+Saved packages still appear as **package** index hits (`package:{id}`). When a
+query strongly matches one export contract (subpath, JSDoc purpose, or callable
+name), ranked `search({ query })` may also return that export as its own hit
+with entity ref `package:{id}#{subpath}` — the same shape as
+`search({ entity: "package:…#…" })`. Weak or package-overview queries do not
+flood results with every export; nested “best action” hints on package index
+hits remain for medium-confidence matches. Optional stage-2 Jev Score rerank
+(when enabled) sees export identity on skinny cards and can narrow a wider
+recall pool; the global `jev-search-rerank` flag stays off by default.
+
 ### Domain scoping
 
 Pass optional **`domain`** with a capability domain id:

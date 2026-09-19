@@ -21,6 +21,11 @@ import {
 	type OptionalSearchRowsResult,
 	type PackageSearchRow,
 } from './search.ts'
+import {
+	buildPackageActionMatches,
+	shouldPromotePackageExportCandidate,
+} from './search-entity-plugins/package.ts'
+import { packageExportCandidateMinScore } from './search-constants.ts'
 
 function createJoinedIntegration(input: {
 	userId?: string
@@ -786,7 +791,65 @@ test('optional search rows load packages and values without partial fallbacks', 
 	})
 })
 
-test('searchUnified annotates high-confidence package action matches', async () => {
+test('shouldPromotePackageExportCandidate requires multi-term or strong score', () => {
+	expect(
+		shouldPromotePackageExportCandidate({
+			subpath: './weak',
+			description: 'weak',
+			typeDefinition: null,
+			functions: [{ name: 'weak', description: null, typeDefinition: null }],
+			score: 0.2,
+			matchedTerms: ['weak'],
+		}),
+	).toBe(false)
+	expect(
+		shouldPromotePackageExportCandidate({
+			subpath: './multi',
+			description: 'multi',
+			typeDefinition: null,
+			functions: [{ name: 'multi', description: null, typeDefinition: null }],
+			score: 0.2,
+			matchedTerms: ['bond', 'shades'],
+		}),
+	).toBe(true)
+	expect(
+		shouldPromotePackageExportCandidate({
+			subpath: './strong',
+			description: 'strong',
+			typeDefinition: null,
+			functions: [{ name: 'strong', description: null, typeDefinition: null }],
+			score: packageExportCandidateMinScore,
+			matchedTerms: ['strong'],
+		}),
+	).toBe(true)
+})
+
+test('buildPackageActionMatches keeps nested display threshold below promotion', () => {
+	const matches = buildPackageActionMatches({
+		query: 'module-a',
+		meaningfulTokens: ['module-a'],
+		exports: [
+			createPackageExportProjection('./module-a', {
+				description: 'Run module-a task with distinctive wording.',
+				functionName: 'runTask',
+				functionDescription: 'Run module-a task with distinctive wording.',
+				typeDefinition: 'export declare function runTask(): Promise<void>',
+			}),
+		],
+	})
+	expect(matches.length).toBeGreaterThan(0)
+	const [top] = matches
+	expect(top).toBeDefined()
+	if (!top) return
+	if (top.matchedTerms.length < 2) {
+		expect(top.score).toBeGreaterThanOrEqual(0.35)
+		expect(shouldPromotePackageExportCandidate(top)).toBe(
+			top.score >= packageExportCandidateMinScore,
+		)
+	}
+})
+
+test('searchUnified promotes strong package exports into first-pass ranked hits', async () => {
 	const registry = buildCapabilityRegistry([])
 	const packageRow = {
 		record: {
@@ -849,12 +912,35 @@ test('searchUnified annotates high-confidence package action matches', async () 
 		},
 	})
 
-	const packageMatch = result.matches.find((match) => match.type === 'package')
-	expect(packageMatch).toMatchObject({
+	const exportMatch = result.matches.find(
+		(match) => match.type === 'package' && match.exportSubpath === './module-a',
+	)
+	expect(exportMatch).toMatchObject({
+		type: 'package',
+		kodyId: 'pkg-alpha',
+		exportSubpath: './module-a',
+		actionMatches: [
+			expect.objectContaining({
+				subpath: './module-a',
+				functions: [
+					expect.objectContaining({
+						name: 'runTask',
+					}),
+				],
+			}),
+		],
+	})
+	const packageIndexMatch = result.matches.find(
+		(match) =>
+			match.type === 'package' &&
+			match.kodyId === 'pkg-alpha' &&
+			match.exportSubpath == null,
+	)
+	expect(packageIndexMatch).toMatchObject({
 		type: 'package',
 		kodyId: 'pkg-alpha',
 	})
-	expect(packageMatch?.actionMatches).toEqual(
+	expect(packageIndexMatch?.actionMatches).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
 				subpath: './module-a',
@@ -883,6 +969,11 @@ test('searchUnified annotates high-confidence package action matches', async () 
 								description: 'Run module-a task.',
 								functionName: 'runTask',
 							}),
+							createPackageExportProjection('./unrelated-widget', {
+								description: 'Spin the unrelated widget thrice.',
+								functionName: 'spinWidget',
+								functionDescription: 'Spin the unrelated widget thrice.',
+							}),
 						],
 					},
 				},
@@ -892,14 +983,107 @@ test('searchUnified annotates high-confidence package action matches', async () 
 			userIntegrationRows: [],
 		},
 	})
-	const broadPackageMatch = broadQuery.matches.find(
+	const broadPackageMatches = broadQuery.matches.filter(
 		(match) => match.type === 'package',
+	)
+	expect(
+		broadPackageMatches.every((match) => match.exportSubpath == null),
+	).toBe(true)
+	const broadPackageMatch = broadPackageMatches.find(
+		(match) => match.kodyId === 'pkg-alpha',
 	)
 	expect(broadPackageMatch).toMatchObject({
 		type: 'package',
 		kodyId: 'pkg-alpha',
 		actionMatches: [],
 	})
+})
+
+test('searchUnified hydrates lean package rows before promoting export candidates', async () => {
+	const registry = buildCapabilityRegistry([])
+	const exportDescription = 'Dim bond area shades for evening.'
+	const hydrate = vi.fn(async () => ({
+		projection: {
+			name: '@kody/home-controls',
+			kodyId: 'home-controls',
+			description: 'Home controls package.',
+			tags: ['home', 'shades'],
+			searchText: null,
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			appEntry: null,
+			exports: [
+				createPackageExportProjection('./bond-area-shades', {
+					description: exportDescription,
+					functionName: 'setBondAreaShades',
+					functionDescription: exportDescription,
+				}),
+			],
+			jobs: [],
+			subscriptions: [],
+			retrievers: [],
+			webhooks: [],
+		},
+		readmeSnippet: null,
+	}))
+	const leanRow: PackageSearchRow = {
+		record: {
+			id: 'home-controls-pkg',
+			userId: 'user-1',
+			name: '@kody/home-controls',
+			kodyId: 'home-controls',
+			description: 'Home controls package.',
+			tags: ['home', 'shades', 'bond-area-shades'],
+			searchText: 'bond area shades',
+			sourceId: 'source-home-controls',
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			createdAt: '2026-04-20T00:00:00.000Z',
+			updatedAt: '2026-04-20T00:00:00.000Z',
+		},
+		listingAhead: null,
+		projection: {
+			name: '@kody/home-controls',
+			kodyId: 'home-controls',
+			description: 'Home controls package.',
+			tags: ['home', 'shades', 'bond-area-shades'],
+			searchText: 'bond area shades',
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			appEntry: null,
+			exports: [],
+			jobs: [],
+			subscriptions: [],
+			retrievers: [],
+			webhooks: [],
+		},
+		readmeSnippet: null,
+		hydrate,
+	}
+	const result = await searchUnified({
+		env: {} as Env,
+		query: 'bond area shades set',
+		userId: 'user-1',
+		limit: 5,
+		registry,
+		optionalRows: {
+			packageRows: [leanRow],
+			userSecretRows: [],
+			userValueRows: [],
+			userIntegrationRows: [],
+		},
+	})
+	expect(hydrate).toHaveBeenCalled()
+	expect(
+		result.matches.some(
+			(match) =>
+				match.type === 'package' &&
+				match.exportSubpath === './bond-area-shades',
+		),
+	).toBe(true)
 })
 
 test('buildSavedPackageSearchRows defers source loading and hydrates only top matches', async () => {

@@ -865,6 +865,36 @@ test('package search formatting keeps runnable actions and hosted URLs in struct
 		'import { createEvent } from "kody:@kentcdodds/google-products/calendar"',
 	)
 
+	const exportHitPackage = {
+		...namedActionPackage,
+		title: '@kentcdodds/google-products createEvent',
+		description: 'Create a calendar event.',
+		exportSubpath: './calendar',
+	}
+	const [exportSlim] = toSlimStructuredMatches({
+		baseUrl: 'http://localhost',
+		username: 'test-user',
+		matches: [exportHitPackage],
+	})
+	expect(exportSlim).toMatchObject({
+		type: 'package',
+		id: 'google-products#./calendar',
+		entityRef: 'package:google-products#./calendar',
+		exportSubpath: './calendar',
+	})
+	expect(
+		formatSearchMarkdown({
+			matches: [exportHitPackage],
+			includePreamble: false,
+		}),
+	).toContain('Entity: `package:google-products#./calendar`')
+	expect(
+		formatSearchMarkdown({
+			matches: [exportHitPackage],
+			includePreamble: false,
+		}),
+	).toContain('export `./calendar`')
+
 	const defaultActionMarkdown = formatSearchMarkdown({
 		matches: [
 			{
