@@ -13,6 +13,8 @@ import {
 	isCapabilitySearchOffline,
 } from '#worker/vectorize/embedding.ts'
 
+import { consumeSearchRateLimit } from '#worker/search-rate-limit.ts'
+
 import { resolvePackageIdentitySearch } from './package-search-identity.ts'
 import { buildExactPackageSearchResult, searchUnified } from './search-core.ts'
 import { jevSearchRerankFlagKey } from './search-jev-rerank.ts'
@@ -71,6 +73,12 @@ export async function executeSearchList(
 async function executeSearchListWithinBudget(
 	input: ExecuteSearchListInput,
 ): Promise<SearchListExecutionResult> {
+	// Abuse ceiling only (not an entitlement): reject before embeddings / Jev.
+	await consumeSearchRateLimit({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		email: input.callerContext.user?.email ?? null,
+	})
 	const domainFilter = input.domain?.trim() || undefined
 	const phaseTimings: Partial<SearchPhaseTimings> = {}
 	const usernameStart = performance.now()

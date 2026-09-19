@@ -146,6 +146,15 @@ vi.mock('#mcp/capabilities/access-control.ts', async (importOriginal) => {
 	}
 })
 
+vi.mock('#worker/search-rate-limit.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/search-rate-limit.ts')>()
+	return {
+		...actual,
+		consumeSearchRateLimit: vi.fn(async () => undefined),
+	}
+})
+
 const {
 	registerSearchTool,
 	SEARCH_MEMORY_ENRICHMENT_BUDGET_MS,

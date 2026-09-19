@@ -162,7 +162,11 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// CI dry-run 5_105_268 against the previous 5_105_000 budget.
 		// Jev Score question batching (merge/parse plus expected/received
 		// errorReason) adds a few hundred bytes on top of that wiring.
-		maxEntryBytes: 5_110_000,
+		// Per-user MCP/meta search abuse rate limits (burst + daily D1
+		// checkRateLimit before embeddings/Jev, not an entitlement) add
+		// ~2 KB: local dry-run 5_112_004 against the previous 5_110_000
+		// budget.
+		maxEntryBytes: 5_115_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,

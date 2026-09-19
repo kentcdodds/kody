@@ -116,8 +116,11 @@ discovery do not inject it. Matching integration hits also carry the reconnect
 
 Plan-limit or quota denials keep the existing error text and `isError` flag and
 add a focused `entitlement` object on structured content. Ordinary successful
-search results omit `entitlement`. Search itself has no daily quota; the field
-is for the shared MCP error envelope.
+search results omit `entitlement`. Search is not a plan entitlement and has no
+usage-catalog quota; a separate high-ceiling per-user abuse rate limit (burst +
+daily) still applies before embeddings / Jev. When that trips, structured
+content includes a `rateLimit` object (`code: "rate_limited"`) so agents can
+back off — not an `entitlement` upgrade hint.
 
 Search responses also return top-level **`timing`** metadata with
 **`startedAt`**, **`endedAt`**, and **`durationMs`** so hosts can reason about

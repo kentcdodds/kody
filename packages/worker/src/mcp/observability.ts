@@ -7,6 +7,7 @@ import {
 	isEntitlementLimitError,
 	isJobIntervalFloorError,
 } from '#worker/entitlements/errors.ts'
+import { isSearchRateLimitError } from '#worker/search-rate-limit-error.ts'
 import { PackageScopeAccessError } from '#worker/package-registry/package-owner.ts'
 import { isRepoLargeFileMessage } from '#worker/repo/large-file-policy.ts'
 import {
@@ -111,6 +112,7 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 	if (payload.callerError) return true
 	if (isUserCodeError(cause)) return true
 	if (getErrorCauseChain(cause).some(isEntitlementLimitError)) return true
+	if (getErrorCauseChain(cause).some(isSearchRateLimitError)) return true
 	if (getErrorCauseChain(cause).some(isComputeOverageLimitError)) return true
 	if (getErrorCauseChain(cause).some(isJobIntervalFloorError)) return true
 	// Community preconditions (rate before fork, self-rate, banned, …) are
