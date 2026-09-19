@@ -136,6 +136,15 @@ vi.mock('#mcp/capabilities/access-control.ts', async (importOriginal) => {
 	}
 })
 
+vi.mock('#worker/search-rate-limit.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/search-rate-limit.ts')>()
+	return {
+		...actual,
+		consumeSearchRateLimit: vi.fn(async () => undefined),
+	}
+})
+
 const { searchCapability } = await import('./search.ts')
 
 const packageId = '550e8400-e29b-41d4-a716-446655440000'
