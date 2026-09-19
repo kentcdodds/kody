@@ -67,8 +67,15 @@ export function AccountExperimentsRoute(handle: Handle) {
 
 	async function saveOptIn(enabled: boolean) {
 		if (saving) return
+		const previous = payload
 		saving = true
 		message = null
+		// Optimistic: keep the controlled checkbox on the clicked value while
+		// the POST is in flight (otherwise handle.update() re-renders the old
+		// experimentsOptIn and the checkbox snaps back until the response).
+		if (payload?.ok) {
+			payload = { ...payload, experimentsOptIn: enabled }
+		}
 		handle.update()
 		try {
 			const response = await fetch(routes.accountExperimentsApiPost.href(), {
@@ -101,6 +108,7 @@ export function AccountExperimentsRoute(handle: Handle) {
 				: 'You are opted out of experiments.'
 			messageTone = 'info'
 		} catch (error) {
+			payload = previous
 			message =
 				error instanceof Error
 					? error.message
