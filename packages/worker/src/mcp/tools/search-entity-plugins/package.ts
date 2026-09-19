@@ -114,10 +114,15 @@ export function buildPackageActionMatches(input: {
 	meaningfulTokens: ReadonlyArray<string>
 	exports: ReadonlyArray<PackageSearchProjection['exports'][number]>
 	parentIdentityFields?: ReadonlyArray<string>
+	/**
+	 * Cap for nested package-index display. Omit (or leave unset) when
+	 * scoring the full export surface for first-pass promotion.
+	 */
+	limit?: number
 }): Array<PackageActionMatch> {
 	if (input.meaningfulTokens.length === 0) return []
 	const parentIdentityFields = input.parentIdentityFields ?? []
-	return input.exports
+	const matches = input.exports
 		.map((exportDetail) => {
 			const exportSearchFields = buildPackageExportSearchFields(exportDetail)
 			const searchFields = [...parentIdentityFields, ...exportSearchFields]
@@ -156,7 +161,7 @@ export function buildPackageActionMatches(input: {
 			if (right.score !== left.score) return right.score - left.score
 			return left.subpath.localeCompare(right.subpath)
 		})
-		.slice(0, 3)
+	return input.limit == null ? matches : matches.slice(0, input.limit)
 }
 
 /**
@@ -271,15 +276,14 @@ function collectPackageExportCandidates(input: {
 			name: row.record.name,
 			tags: row.record.tags,
 		})
-		const actionMatches =
-			candidate.match.actionMatches && candidate.match.actionMatches.length > 0
-				? candidate.match.actionMatches
-				: buildPackageActionMatches({
-						query: input.query,
-						meaningfulTokens: input.meaningfulTokens,
-						exports,
-						parentIdentityFields,
-					})
+		// Rebuild uncapped so promotion sees every eligible export; nested
+		// package-index display stays capped separately (limit: 3).
+		const actionMatches = buildPackageActionMatches({
+			query: input.query,
+			meaningfulTokens: input.meaningfulTokens,
+			exports,
+			parentIdentityFields,
+		})
 		const promoted = selectPromotedPackageExportCandidates(actionMatches)
 		for (const actionMatch of promoted) {
 			const exportDetail = exports.find(
@@ -468,6 +472,7 @@ export const packageSearchEntityPlugin = {
 						name: entry.record.name,
 						tags: entry.record.tags,
 					}),
+					limit: 3,
 				})
 				const document = [
 					buildPackageSearchDocument(entry.projection),
@@ -633,6 +638,7 @@ export const packageSearchEntityPlugin = {
 							name: row.record.name,
 							tags: row.record.tags,
 						}),
+						limit: 3,
 					})
 				} catch (error) {
 					console.warn(
@@ -960,6 +966,7 @@ export async function hydrateTopPackageMatches(input: {
 						name: row.record.name,
 						tags: row.record.tags,
 					}),
+					limit: match.exportSubpath ? undefined : 3,
 				})
 				// Export-focused ranked hits must keep actionMatches aligned with
 				// exportSubpath. Replacing with the full nested-display list would

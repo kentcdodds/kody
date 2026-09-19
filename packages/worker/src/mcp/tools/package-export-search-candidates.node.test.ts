@@ -207,6 +207,27 @@ test('selectPromotedPackageExportCandidates keeps a single winner on a clear gap
 	).toEqual(['./bond-area-shades'])
 })
 
+test('selectPromotedPackageExportCandidates can promote beyond nested display top-3', () => {
+	const weakDisplay = [
+		createActionMatch('./weak-a', 0.4, ['alpha'], 1),
+		createActionMatch('./weak-b', 0.39, ['alpha'], 1),
+		createActionMatch('./weak-c', 0.38, ['alpha'], 1),
+	]
+	const strongFourth = createActionMatch(
+		'./create-status',
+		0.5,
+		['twitter', 'create', 'status'],
+		2,
+	)
+	// Nested display would only keep the three weaks; promotion must still
+	// see the stronger multi-term export when the full list is uncapped.
+	expect(
+		selectPromotedPackageExportCandidates([...weakDisplay, strongFourth]).map(
+			(match) => match.subpath,
+		),
+	).toEqual(['./create-status'])
+})
+
 test('buildPackageActionMatches keeps nested display threshold below promotion', () => {
 	const matches = buildPackageActionMatches({
 		query: 'module-a',
