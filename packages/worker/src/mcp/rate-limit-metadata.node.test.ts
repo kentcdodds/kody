@@ -12,14 +12,14 @@ test('rate limit metadata is only for search abuse denials', () => {
 	const denial = new SearchRateLimitError({
 		window: 'burst',
 		retryAfterSeconds: 60,
-		limit: 40,
+		limit: 80,
 		plan: 'free',
 	})
 	expect(toMcpRateLimitMetadata(denial)).toEqual({
 		code: searchRateLimitErrorCode,
 		window: 'burst',
 		retryAfterSeconds: 60,
-		limit: 40,
+		limit: 80,
 		plan: 'free',
 	})
 	expect(rateLimitStructuredContent(denial)).toEqual({
@@ -27,7 +27,7 @@ test('rate limit metadata is only for search abuse denials', () => {
 			code: searchRateLimitErrorCode,
 			window: 'burst',
 			retryAfterSeconds: 60,
-			limit: 40,
+			limit: 80,
 			plan: 'free',
 		},
 	})

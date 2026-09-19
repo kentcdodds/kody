@@ -17,24 +17,25 @@ export {
  *
  * Tuned against sibling daily ladders (`maxExecuteCallsPerDay` 150 → 25_000,
  * `maxOutboundFetchesPerDay` 1_000 → 80_000): search is cheaper than execute
- * but still pays Workers AI (~$0.001/search with Jev). Burst is high enough
- * for tight agent search loops; daily is a soft DOW backstop.
+ * but still pays Workers AI (~$0.0009/search with Jev → ~$22.50/day at the
+ * max daily ceiling). Burst is doubled relative to the initial ship so agent
+ * loops have headroom when Jev is on; daily stays the DOW/cost backstop.
  */
 export const searchRateLimitByPlan = {
 	free: {
-		burst: { maxRequests: 40, windowSeconds: 60 },
+		burst: { maxRequests: 80, windowSeconds: 60 },
 		daily: { maxRequests: 1_000, windowSeconds: 60 * 60 * 24 },
 	},
 	standard: {
-		burst: { maxRequests: 80, windowSeconds: 60 },
+		burst: { maxRequests: 160, windowSeconds: 60 },
 		daily: { maxRequests: 5_000, windowSeconds: 60 * 60 * 24 },
 	},
 	pro: {
-		burst: { maxRequests: 100, windowSeconds: 60 },
+		burst: { maxRequests: 200, windowSeconds: 60 },
 		daily: { maxRequests: 10_000, windowSeconds: 60 * 60 * 24 },
 	},
 	max: {
-		burst: { maxRequests: 120, windowSeconds: 60 },
+		burst: { maxRequests: 240, windowSeconds: 60 },
 		daily: { maxRequests: 25_000, windowSeconds: 60 * 60 * 24 },
 	},
 } as const satisfies Record<
