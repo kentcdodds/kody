@@ -74,6 +74,34 @@ test(
 			nextStep: expect.stringContaining("import { kody } from 'kody:runtime'"),
 		})
 
+		const bypass = await oneFile.execute(
+			`async () => {
+				const attempts = []
+				const tryCall = async (label, call) => {
+					try {
+						await call()
+						attempts.push(label + ':called')
+					} catch (error) {
+						const name = error instanceof Error ? error.name : 'Error'
+						attempts.push(label + ':' + name)
+					}
+				}
+				await tryCall('dispatcher', () => __kodyCallDispatcher('ping', {}))
+				await tryCall('provider', () => __kodyProvider.ping({}))
+				await tryCall('bag', () => __dispatchers.kody.call('ping', '{}'))
+				return {
+					attempts,
+					dispatcherType: typeof __kodyCallDispatcher,
+				}
+			}`,
+			providers,
+		)
+		expect(bypass.error).toBeUndefined()
+		expect(bypass.result).toEqual({
+			attempts: ['dispatcher:TypeError', 'provider:TypeError', 'bag:TypeError'],
+			dispatcherType: 'undefined',
+		})
+
 		const symbols = await oneFile.execute(
 			`async () => ({
 				globalKody: typeof globalThis.kody,
