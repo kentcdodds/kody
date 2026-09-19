@@ -62,14 +62,29 @@ export default async function main(params) {
 }
 
 /**
+ * Score for a post-collapse match from the ranked candidate list that
+ * produced it. Collapse can drop/replace leading synthesized MCP tools, so
+ * index 0 of the candidate list is not always `matches[0]`.
+ */
+function finalScoreForMatch(
+	rankedCandidates: ReadonlyArray<SearchCandidate>,
+	match: SearchMatch | undefined,
+): number | null {
+	if (!match) return null
+	const candidate = rankedCandidates.find((entry) => entry.match === match)
+	return candidate?.scoreComponents.final ?? null
+}
+
+/**
  * Whether the top ranked hit should carry an inlined export call contract.
  *
- * Uses post-Jev meanConfidence when Jev applied; otherwise hybrid score gap
- * and top-1 floor. Ambiguous top-2 (gap below threshold) never inlines.
+ * Uses post-Jev meanConfidence when Jev applied; otherwise score gap and
+ * top-1 floor from the candidates that correspond to the post-collapse
+ * matches (not pre-collapse index 0/1). Ambiguous top-2 never inlines.
  */
 export function shouldInlineExportCallContract(input: {
 	matches: ReadonlyArray<SearchMatch>
-	hybridCandidates: ReadonlyArray<SearchCandidate>
+	rankedCandidates: ReadonlyArray<SearchCandidate>
 	jevOutcome: JevSearchRerankOutcome
 	jevMeanConfidence: number | null
 }): boolean {
@@ -94,14 +109,13 @@ export function shouldInlineExportCallContract(input: {
 		return true
 	}
 
-	const topCandidate = input.hybridCandidates[0]
-	const secondCandidate = input.hybridCandidates[1]
-	if (!topCandidate) return false
-	const topScore = topCandidate.scoreComponents.final
-	if (topScore < exportCallContractMinTopScore) return false
-	if (!secondCandidate) return true
-	const gap = topScore - secondCandidate.scoreComponents.final
-	return gap >= exportCallContractMinScoreGap
+	const topScore = finalScoreForMatch(input.rankedCandidates, topMatch)
+	if (topScore == null || topScore < exportCallContractMinTopScore) {
+		return false
+	}
+	const secondScore = finalScoreForMatch(input.rankedCandidates, secondMatch)
+	if (secondScore == null) return true
+	return topScore - secondScore >= exportCallContractMinScoreGap
 }
 
 /**
@@ -110,7 +124,7 @@ export function shouldInlineExportCallContract(input: {
  */
 export function attachHighConfidenceExportCallContract(input: {
 	matches: Array<SearchMatch>
-	hybridCandidates: ReadonlyArray<SearchCandidate>
+	rankedCandidates: ReadonlyArray<SearchCandidate>
 	jevOutcome: JevSearchRerankOutcome
 	jevMeanConfidence: number | null
 }): void {

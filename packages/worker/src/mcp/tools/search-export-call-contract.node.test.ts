@@ -90,27 +90,27 @@ test('shouldInlineExportCallContract requires high confidence', () => {
 			},
 		],
 	})
-	const hybridClear = [
+	const rankedClear = [
 		makeCandidateFromMatch(top, 1.2),
 		makeCandidateFromMatch(weakSecond, 0.3),
 	]
 	expect(
 		shouldInlineExportCallContract({
 			matches: [top, weakSecond],
-			hybridCandidates: hybridClear,
+			rankedCandidates: rankedClear,
 			jevOutcome: 'skipped-clear-winner',
 			jevMeanConfidence: null,
 		}),
 	).toBe(true)
 
-	const hybridTight = [
+	const rankedTight = [
 		makeCandidateFromMatch(top, 1.0),
 		makeCandidateFromMatch(weakSecond, 0.95),
 	]
 	expect(
 		shouldInlineExportCallContract({
 			matches: [top, weakSecond],
-			hybridCandidates: hybridTight,
+			rankedCandidates: rankedTight,
 			jevOutcome: 'skipped-flag-off',
 			jevMeanConfidence: null,
 		}),
@@ -119,7 +119,7 @@ test('shouldInlineExportCallContract requires high confidence', () => {
 	expect(
 		shouldInlineExportCallContract({
 			matches: [top],
-			hybridCandidates: hybridClear,
+			rankedCandidates: rankedClear,
 			jevOutcome: 'applied',
 			jevMeanConfidence: 0.5,
 		}),
@@ -128,7 +128,7 @@ test('shouldInlineExportCallContract requires high confidence', () => {
 	expect(
 		shouldInlineExportCallContract({
 			matches: [top],
-			hybridCandidates: hybridClear,
+			rankedCandidates: rankedClear,
 			jevOutcome: 'applied',
 			jevMeanConfidence: 0.85,
 		}),
@@ -152,9 +152,52 @@ test('shouldInlineExportCallContract requires high confidence', () => {
 	expect(
 		shouldInlineExportCallContract({
 			matches: [top, rivalExport],
-			hybridCandidates: hybridClear,
+			rankedCandidates: rankedClear,
 			jevOutcome: 'applied',
 			jevMeanConfidence: 0.9,
+		}),
+	).toBe(false)
+})
+
+test('shouldInlineExportCallContract scores post-collapse matches, not pre-collapse index 0', () => {
+	// Collapse dropped a leading synthesized MCP tool; matches[0] is a weak
+	// export that must not inherit the dropped hit's score/gap.
+	const droppedCapabilityMatch = {
+		type: 'capability',
+		id: 'cap-dropped',
+		title: 'Dropped tool',
+		description: null,
+		domain: 'integrations',
+		tags: [],
+		score: 2.0,
+		matchedTerms: ['tool'],
+	} as SearchMatch
+	const weakExport = makeExportMatch()
+	const rival = makeExportMatch({
+		kodyId: 'other-pkg',
+		exportSubpath: './other',
+		actionMatches: [
+			{
+				subpath: './other',
+				description: null,
+				typeDefinition: null,
+				functions: [{ name: 'other', description: null, typeDefinition: null }],
+				score: 0.2,
+				matchedTerms: ['other'],
+			},
+		],
+	})
+	const rankedPreCollapse = [
+		makeCandidateFromMatch(droppedCapabilityMatch, 2.0),
+		makeCandidateFromMatch(weakExport, 0.5),
+		makeCandidateFromMatch(rival, 0.45),
+	]
+	expect(
+		shouldInlineExportCallContract({
+			matches: [weakExport, rival],
+			rankedCandidates: rankedPreCollapse,
+			jevOutcome: 'skipped-clear-winner',
+			jevMeanConfidence: null,
 		}),
 	).toBe(false)
 })
@@ -162,10 +205,10 @@ test('shouldInlineExportCallContract requires high confidence', () => {
 test('attachHighConfidenceExportCallContract inlines import and types', () => {
 	const top = makeExportMatch()
 	const matches: Array<SearchMatch> = [top]
-	const hybrid = [makeCandidateFromMatch(top, 1.5)]
+	const ranked = [makeCandidateFromMatch(top, 1.5)]
 	attachHighConfidenceExportCallContract({
 		matches,
-		hybridCandidates: hybrid,
+		rankedCandidates: ranked,
 		jevOutcome: 'skipped-small-pool',
 		jevMeanConfidence: null,
 	})
@@ -180,7 +223,7 @@ test('attachHighConfidenceExportCallContract inlines import and types', () => {
 	const weak: Array<SearchMatch> = [makeExportMatch()]
 	attachHighConfidenceExportCallContract({
 		matches: weak,
-		hybridCandidates: [
+		rankedCandidates: [
 			makeCandidateFromMatch(weak[0]!, 0.2),
 			makeCandidateFromMatch(makeExportMatch({ kodyId: 'other' }), 0.19),
 		],

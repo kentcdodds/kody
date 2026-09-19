@@ -400,7 +400,7 @@ export async function searchUnified(input: {
 	})
 	attachHighConfidenceExportCallContract({
 		matches,
-		hybridCandidates: hybridReranked,
+		rankedCandidates: reranked,
 		jevOutcome: jevRerank.outcome,
 		jevMeanConfidence: jevRerank.meanConfidence,
 	})

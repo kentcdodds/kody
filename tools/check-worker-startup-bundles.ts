@@ -219,7 +219,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// First-pass package export candidates spill shared search package
 		// plugin code into runtime: CI dry-run 3_793_904 against the
 		// previous 3_792_000 budget.
-		maxEntryBytes: 3_795_000,
+		// Paid Jev necessity + high-confidence export call-contract attach
+		// adds a few KB: CI dry-run 3_798_379 against the previous
+		// 3_795_000 budget.
+		maxEntryBytes: 3_802_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',
