@@ -24,6 +24,7 @@ import {
 	maxChars,
 } from './search-constants.ts'
 import { resolveEntityDetail } from './search-detail.ts'
+import { buildRecommendedNextStep } from './search-descriptors.ts'
 import {
 	executeSearchList,
 	type SearchListExecutionResult,
@@ -565,27 +566,42 @@ export async function runSearchTool(input: {
 		}, 0)
 		const reservedWaitingChars = waitingMarkdown?.length ?? 0
 		const formattingStartMs = performance.now()
-		const { payload: trimmedPayload, serialized } = applyMaxResponseSize(
-			payload,
-			maxResponseSize,
-			(value) =>
-				formatSearchMarkdown({
-					matches: value.matches,
-					warnings: structuredWarnings,
-					guidance: execution.result.guidance,
-					includePreamble,
+		const { payload: trimmedPayload, serialized: trimmedSerialized } =
+			applyMaxResponseSize(
+				payload,
+				maxResponseSize,
+				(value) =>
+					formatSearchMarkdown({
+						matches: value.matches,
+						warnings: structuredWarnings,
+						includePreamble,
+					}),
+				(value, count) => ({
+					...value,
+					matches: value.matches.slice(0, count),
 				}),
-			(value, count) => ({
-				...value,
-				matches: value.matches.slice(0, count),
-			}),
-			(value) => value.matches.length,
-			{
-				reservedChars:
-					(reservedMemoryChars > 0 ? reservedMemoryChars + 1 : 0) +
-					(reservedWaitingChars > 0 ? reservedWaitingChars + 1 : 0),
-			},
-		)
+				(value) => value.matches.length,
+				{
+					reservedChars:
+						(reservedMemoryChars > 0 ? reservedMemoryChars + 1 : 0) +
+						(reservedWaitingChars > 0 ? reservedWaitingChars + 1 : 0),
+				},
+			)
+		// Recompute after trim so guidance never points at a match that was
+		// dropped for size (same value on markdown and structured).
+		const listGuidance = buildRecommendedNextStep({
+			query: trimmedQuery,
+			intent: execution.result.intent,
+			matches: trimmedPayload.matches,
+		})
+		const serialized = listGuidance
+			? formatSearchMarkdown({
+					matches: trimmedPayload.matches,
+					warnings: structuredWarnings,
+					guidance: listGuidance,
+					includePreamble,
+				})
+			: trimmedSerialized
 		const trimmedMatchCount = Math.max(
 			0,
 			execution.result.matches.length - trimmedPayload.matches.length,
@@ -619,9 +635,9 @@ export async function runSearchTool(input: {
 		const result: SearchResultStructuredContent = {
 			offline: trimmedPayload.offline,
 			warnings: structuredWarnings,
-			...(execution.result.guidance
+			...(listGuidance
 				? {
-						guidance: execution.result.guidance,
+						guidance: listGuidance,
 					}
 				: {}),
 			telemetry: {

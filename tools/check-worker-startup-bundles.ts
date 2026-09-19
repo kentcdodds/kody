@@ -173,7 +173,11 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Paid Jev necessity + high-confidence export call-contract attach
 		// spill into platform: CI/local dry-run 5_120_066 against the
 		// previous 5_118_000 budget.
-		maxEntryBytes: 5_124_000,
+		// Search list dual-channel parity (markdown carries the same
+		// actionable export-contract / next-step / notices substance as
+		// structured): CI dry-run 5_124_196 against the previous 5_124_000
+		// budget.
+		maxEntryBytes: 5_126_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
