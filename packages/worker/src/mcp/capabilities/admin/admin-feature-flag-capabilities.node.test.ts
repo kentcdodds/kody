@@ -18,6 +18,7 @@ type GlobalRow = {
 	key: string
 	enabled: number
 	rollout_percent: number | null
+	audience: string
 	note: string
 	updated_by: number | null
 	updated_at: string
@@ -212,13 +213,24 @@ function createFeatureFlagCapabilityTestDb(input: {
 						params[2] === null || params[2] === undefined
 							? null
 							: Number(params[2])
-					const note = String(params[3] ?? '')
-					const updatedBy = Number(params[4])
+					const noteParam =
+						params[3] === null || params[3] === undefined
+							? null
+							: String(params[3])
+					const note = noteParam ?? globals.get(key)?.note ?? ''
+					const audienceParam =
+						params[4] === null || params[4] === undefined
+							? null
+							: String(params[4])
+					const audience =
+						audienceParam ?? globals.get(key)?.audience ?? 'everyone'
+					const updatedBy = Number(params[5])
 					const updatedAt = nextTimestamp()
 					globals.set(key, {
 						key,
 						enabled,
 						rollout_percent: rolloutPercent,
+						audience,
 						note,
 						updated_by: updatedBy,
 						updated_at: updatedAt,
@@ -346,6 +358,7 @@ test('admin feature flag MCP capabilities: list, set, override, and audit wiring
 		global: {
 			enabled: true,
 			rolloutPercent: 25,
+			audience: 'everyone',
 			note: 'gradual rollout',
 			updatedByStableUserId: testStableUserIdFromEmail('admin@example.com'),
 		},
@@ -353,6 +366,7 @@ test('admin feature flag MCP capabilities: list, set, override, and audit wiring
 	expect(globals.get('demo-indicator')).toMatchObject({
 		enabled: 1,
 		rollout_percent: 25,
+		audience: 'everyone',
 		updated_by: 1,
 	})
 

@@ -206,6 +206,13 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		apis: ['/account/waiting.json'],
 	},
 	{
+		id: 'experiments',
+		title: 'Experiments',
+		file: 'experiments.md',
+		paths: ['/account/experiments'],
+		apis: ['/account/experiments.json'],
+	},
+	{
 		id: 'shared',
 		title: 'Shared packages',
 		file: 'shared.md',

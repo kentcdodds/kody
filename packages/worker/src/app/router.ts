@@ -151,6 +151,10 @@ import {
 	createAccountWaitingHandler,
 } from '#app/handlers/account-waiting.ts'
 import {
+	createAccountExperimentsApiHandler,
+	createAccountExperimentsHandler,
+} from '#app/handlers/account-experiments.ts'
+import {
 	createAccountSharedApiHandler,
 	createAccountSharedHandler,
 } from '#app/handlers/account-shared.ts'
@@ -466,6 +470,9 @@ export function createAppRouter(env: Env) {
 			accountUsageApi: createAccountUsageApiHandler(env),
 			accountWaiting: createAccountWaitingHandler(env),
 			accountWaitingApi: createAccountWaitingApiHandler(env),
+			accountExperiments: createAccountExperimentsHandler(env),
+			accountExperimentsApi: createAccountExperimentsApiHandler(env),
+			accountExperimentsApiPost: createAccountExperimentsApiHandler(env),
 			accountShared: createAccountSharedHandler(env),
 			accountSharedApi: createAccountSharedApiHandler(env),
 			accountSharedApiPost: createAccountSharedApiHandler(env),

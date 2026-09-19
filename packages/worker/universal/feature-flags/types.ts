@@ -5,6 +5,7 @@
  */
 
 import { type FeatureFlagSuccessMetric } from './registry.ts'
+import { type FeatureFlagAudience } from './audiences.ts'
 
 /**
  * One exposure cohort's aggregates over the flag's declared usage metric.
@@ -47,6 +48,7 @@ export type AdminFeatureFlag = {
 	global: {
 		enabled: boolean
 		rolloutPercent: number | null
+		audience: FeatureFlagAudience
 		note: string
 		updatedByStableUserId: string | null
 		updatedAt: string

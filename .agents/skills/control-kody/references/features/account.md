@@ -8,8 +8,8 @@ goes to the public profile (`/@username`).
 
 The account rail ("Account sections") lists every account page plus Repositories
 (`/@username`, the canonical repository list) and Connections
-(`/account/connections`, connected agents). The rail is rendered by
-`AccountPageHeader` in
+(`/account/connections`, connected agents). Experiments opt-in lives at
+`/account/experiments`. The rail is rendered by `AccountPageHeader` in
 `packages/worker/client/routes/account-management-components.tsx`.
 
 ## How to get there

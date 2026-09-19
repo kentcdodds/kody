@@ -139,6 +139,9 @@ async function handleSetGlobalAction(input: {
 			enabled,
 			rolloutPercent,
 			...(Object.hasOwn(bodyRecord, 'note') ? { note: bodyRecord.note } : {}),
+			...(Object.hasOwn(bodyRecord, 'audience')
+				? { audience: bodyRecord.audience }
+				: {}),
 			updatedBy: input.actor.userId,
 		})
 	} catch (error) {
@@ -167,7 +170,12 @@ async function handleSetGlobalAction(input: {
 			`key=${key}`,
 			`enabled=${enabled}`,
 			`rollout_percent=${rolloutPercent === null ? 'null' : String(rolloutPercent)}`,
-		].join(';'),
+			Object.hasOwn(bodyRecord, 'audience')
+				? `audience=${String(bodyRecord.audience)}`
+				: null,
+		]
+			.filter((part) => part !== null)
+			.join(';'),
 	})
 
 	return jsonResponse(await loadAdminFeatureFlagsData(input.env))

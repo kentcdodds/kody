@@ -400,6 +400,7 @@ export function accountNavItemsFor(input: {
 	return [
 		{ href: '/account', label: 'Overview', icon: 'home' },
 		{ href: '/account/waiting', label: 'Waiting', icon: 'clock' },
+		{ href: '/account/experiments', label: 'Experiments', icon: 'star' },
 		{
 			href: routes.accountConnections.href(),
 			label: 'Connections',

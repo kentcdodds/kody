@@ -40,6 +40,7 @@ Then drive the surface with `login`, `request`, `preview`, and `health`. Run
   `/account/webhooks`)
 - [activity](./activity.md) — `/account/activity`
 - [waiting](./waiting.md) — `/account/waiting`
+- [experiments](./experiments.md) — `/account/experiments`
 - [memories](./memories.md) — `/account/memories`
 - [email](./email.md) — `/account/email`
 - [values](./values.md) — `/account/values`

@@ -29,6 +29,12 @@ const inputSchema = z.object({
 		.describe(
 			'Optional 0–100 percentage rollout when enabled. Null or omitted means 100% of users once enabled.',
 		),
+	audience: z
+		.enum(['everyone', 'experiments_opt_in'])
+		.optional()
+		.describe(
+			'Who the flag may turn on for after global/rollout evaluation. `everyone` (default) is unrestricted. `experiments_opt_in` limits to users who opted in at /account/experiments. Per-user overrides still win. Omit to leave the stored audience unchanged.',
+		),
 	note: z
 		.string()
 		.optional()
@@ -69,6 +75,7 @@ export const adminFeatureFlagSetCapability = defineDomainCapability(
 						enabled: args.enabled,
 						rolloutPercent:
 							args.rolloutPercent === undefined ? null : args.rolloutPercent,
+						...(args.audience === undefined ? {} : { audience: args.audience }),
 						note: args.note,
 						updatedBy,
 					})
@@ -81,7 +88,7 @@ export const adminFeatureFlagSetCapability = defineDomainCapability(
 				},
 				{
 					successReason: ({ flag }) =>
-						`key=${flag.key};enabled=${flag.global?.enabled ?? false};rollout=${flag.global?.rolloutPercent ?? 'null'}`,
+						`key=${flag.key};enabled=${flag.global?.enabled ?? false};rollout=${flag.global?.rolloutPercent ?? 'null'};audience=${flag.global?.audience ?? 'everyone'}`,
 				},
 			)
 		},
