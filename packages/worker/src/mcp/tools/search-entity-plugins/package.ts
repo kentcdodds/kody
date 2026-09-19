@@ -43,10 +43,10 @@ import {
 	buildEntityRef,
 	buildPackageActionImportUsage,
 	buildPackageHostedUrl,
+	buildPackageListNextStep,
 	buildPackageMaintainSnippets,
 	buildPackageRootImportUsage,
 	buildPackageSourceFollowUp,
-	buildPlatformPackageForkNotice,
 	getPrimaryPackageActionFunction,
 } from '../search-format-helpers.ts'
 import {
@@ -621,23 +621,8 @@ export const packageSearchEntityPlugin = {
 		const primaryActionFunction = primaryAction
 			? getPrimaryPackageActionFunction(primaryAction)
 			: null
-		const platformSuffix = match.platformScope
-			? ` ${buildPlatformPackageForkNotice(match.platformScope)}`
-			: ''
-		const listingAheadSuffix =
-			match.listingAhead === true ? ` ${listingAheadSearchNotice}` : ''
 		const entityRef = buildEntityRef(match.kodyId, 'package', exportSubpath)
-		const nextStep = exportSubpath
-			? match.exportCallContract
-				? `Use the inlined export call contract above from \`execute\`. Inspect search({ entity: ${JSON.stringify(entityRef)} }) only if you need referenced types or the full package.${platformSuffix}${listingAheadSuffix}`
-				: primaryAction && primaryActionFunction
-					? `Use ${primaryActionFunction.usage}; inspect search({ entity: ${JSON.stringify(entityRef)} }) only if you need the full export contract.${platformSuffix}${listingAheadSuffix}`
-					: `Inspect the export contract with search({ entity: ${JSON.stringify(entityRef)} }).${platformSuffix}${listingAheadSuffix}`
-			: primaryAction && primaryActionFunction
-				? `Use ${primaryActionFunction.usage}; inspect search({ entity: "package:${match.kodyId}" }) only if you need more exports.${platformSuffix}${listingAheadSuffix}`
-				: match.hasApp
-					? `Inspect package detail with search({ entity: "package:${match.kodyId}" }) to review exports, jobs, and the hosted app URL.${platformSuffix}${listingAheadSuffix}`
-					: `Inspect package detail with search({ entity: "package:${match.kodyId}" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.name, '.')}".${platformSuffix}${listingAheadSuffix}`
+		const nextStep = buildPackageListNextStep(match)
 		return {
 			type: 'package',
 			id: exportSubpath ? `${match.kodyId}#${exportSubpath}` : match.kodyId,

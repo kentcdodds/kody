@@ -14,9 +14,11 @@ To add a search entity:
 3. Implement the applicable hooks:
    - `buildDescriptors` for `understandSearchQuery` entity hints.
    - `buildCandidates` for list-search candidates.
-   - `formatSlimMatch` for structured list results only
-     (`toSlimStructuredMatches` / `SlimSearchMatch`). It does **not** cover
-     Markdown list output.
+   - `formatSlimMatch` for structured list results (`toSlimStructuredMatches` /
+     `SlimSearchMatch`). It does **not** cover Markdown list output — keep
+     actionable list fields in parity with `formatMatchListItem` in
+     `search-format-list.ts` (entity refs, why-matched, inlined call contracts /
+     shapes, next-step guidance).
    - `formatEntityDetail` only when `search({ entity })` supports that type.
 4. Register the plugin once in `search-entity-registry.ts`, in the intended
    flatten order.

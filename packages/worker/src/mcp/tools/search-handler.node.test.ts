@@ -1322,6 +1322,7 @@ test('search reserves maxResponseSize for memories and still enriches from memor
 	expect(tightMemoryBlock?.text).toContain(longSummary)
 	const tightResult = tightResponse.structuredContent.result as {
 		matches: Array<{ type: string }>
+		guidance?: string
 		memories?: { surfaced: Array<{ id: string; summary: string }> }
 		telemetry?: { responseTrimmed?: boolean; trimmedMatchCount?: number }
 	}
@@ -1334,6 +1335,10 @@ test('search reserves maxResponseSize for memories and still enriches from memor
 	expect(tightResult.telemetry?.responseTrimmed).toBe(true)
 	expect(tightResult.telemetry?.trimmedMatchCount).toBeGreaterThan(0)
 	expect(tightResult.matches).toEqual([])
+	expect(tightResult.guidance).toBeUndefined()
+	const tightText = tightResponse.content.map((item) => item.text).join('\n')
+	expect(tightText).not.toContain('## Recommended next step')
+	expect(tightText).not.toMatch(/inlined export call contract/i)
 
 	vi.clearAllMocks()
 	mockModule.getCapabilityRegistryForContext.mockResolvedValueOnce({

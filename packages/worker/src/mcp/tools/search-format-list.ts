@@ -6,6 +6,7 @@ import {
 	buildEntityRef,
 	buildKodyCapabilityAccessor,
 	buildPackageActionImportUsage,
+	buildPackageListNextStep,
 	formatOneLineSentence,
 	getPrimaryPackageActionFunction,
 } from './search-format-helpers.ts'
@@ -15,6 +16,7 @@ export function formatSearchMarkdown(input: {
 	matches: Array<SearchMatch>
 	warnings?: Array<string>
 	warningCount?: number
+	guidance?: string
 	includePreamble?: boolean
 }) {
 	const lines: Array<string> = ['# Search results', '']
@@ -45,12 +47,23 @@ export function formatSearchMarkdown(input: {
 		})
 	}
 
-	const warningCount = input.warningCount ?? input.warnings?.length ?? 0
-	if (warningCount > 0) {
-		lines.push(
-			'',
-			`> ${String(warningCount)} search notice(s) available in the structured result.`,
-		)
+	const warnings = input.warnings ?? []
+	if (warnings.length > 0) {
+		lines.push('', '## Notices', '')
+		for (const warning of warnings) {
+			// Keep full notice text (URLs / onboarding links); structured carries
+			// the same strings without truncation.
+			lines.push(`- ${escapeMarkdownText(warning.replace(/\s+/g, ' ').trim())}`)
+		}
+	} else {
+		const warningCount = input.warningCount ?? 0
+		if (warningCount > 0) {
+			lines.push('', `> ${String(warningCount)} search notice(s).`)
+		}
+	}
+
+	if (input.guidance) {
+		lines.push('', '## Recommended next step', '', input.guidance)
 	}
 
 	return lines.join('\n').trim()
@@ -61,6 +74,49 @@ export function formatSearchMarkdown(input: {
  * map fits inside the default `maxResponseSize` without trimming.
  */
 const domainOverviewDescriptionMaxLength = 110
+
+function formatMatchedTermsNote(
+	matchedTerms: ReadonlyArray<string> | undefined,
+) {
+	if (!matchedTerms || matchedTerms.length === 0) return ''
+	return ` Matched: ${matchedTerms
+		.map((term) => formatMarkdownInlineCode(term))
+		.join(', ')}.`
+}
+
+function formatExportCallContractMarkdown(
+	contract: NonNullable<
+		Extract<SearchMatch, { type: 'package' }>['exportCallContract']
+	>,
+) {
+	const lines: Array<string> = [
+		`   Import: ${formatMarkdownInlineCode(contract.importSpecifier)}`,
+	]
+	const truncatedNote = contract.typeDefinitionTruncated
+		? '; use entity detail for the full definition'
+		: ''
+	const typePart = contract.typeDefinition
+		? ` — ${formatMarkdownInlineCode(contract.typeDefinition)}${truncatedNote}`
+		: ''
+	lines.push(`   ${formatMarkdownInlineCode(contract.usage)}${typePart}`)
+	lines.push('   ```ts')
+	for (const exampleLine of contract.executeExample.split('\n')) {
+		lines.push(`   ${exampleLine}`)
+	}
+	lines.push('   ```')
+	if (contract.functions.length > 1) {
+		const functionSummary = contract.functions
+			.map((fn) => {
+				const description = fn.description
+					? ` — ${escapeMarkdownText(formatOneLineSentence(fn.description))}`
+					: ''
+				return `${formatMarkdownInlineCode(fn.name)}${description}`
+			})
+			.join('; ')
+		lines.push(`   Functions: ${functionSummary}`)
+	}
+	return lines.join('\n')
+}
 
 function formatMatchListItem(match: SearchMatch, index: number) {
 	if (match.type === 'domain') {
@@ -77,7 +133,10 @@ function formatMatchListItem(match: SearchMatch, index: number) {
 		const packageSuffix = match.wrappingPackage
 			? ` Wrapping package: ${formatMarkdownInlineCode(match.wrappingPackage.name)} (Entity: ${formatMarkdownInlineCode(match.wrappingPackage.entityRef)}).`
 			: ''
-		return `${String(index + 1)}. **mcp-server** ${escapeMarkdownText(match.title)} (${formatMarkdownInlineCode(match.domain)}, ${String(match.capabilityCount)} tools) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}. List tools with \`search({ entity: ${JSON.stringify(entityRef)} })\`. Call via ${formatMarkdownInlineCode(match.usage)}.${packageSuffix}`
+		const instructionsNote = match.instructions
+			? ` Instructions: ${escapeMarkdownText(formatOneLineSentence(match.instructions, 200))}`
+			: ''
+		return `${String(index + 1)}. **mcp-server** ${escapeMarkdownText(match.title)} (${formatMarkdownInlineCode(match.domain)}, ${String(match.capabilityCount)} tools) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}.${instructionsNote} List tools with \`search({ entity: ${JSON.stringify(entityRef)} })\`. Call via ${formatMarkdownInlineCode(match.usage)}.${packageSuffix}`
 	}
 	if (match.type === 'capability') {
 		const entityRef = buildEntityRef(match.name, 'capability')
@@ -108,28 +167,23 @@ function formatMatchListItem(match: SearchMatch, index: number) {
 		const exportLabel = match.exportSubpath
 			? ` export ${formatMarkdownInlineCode(match.exportSubpath)}`
 			: ''
+		const matchedNote = formatMatchedTermsNote(actionMatch?.matchedTerms)
 		const actionSummary =
 			actionMatch && actionFunction
 				? match.exportSubpath
-					? ` Use ${formatMarkdownInlineCode(buildPackageActionImportUsage({ packageName: match.name, subpath: actionMatch.subpath, functionName: actionFunction.name }))}${actionFunction.description ? ` — ${escapeMarkdownText(formatOneLineSentence(actionFunction.description))}` : ''}`
-					: ` Best action: ${formatMarkdownInlineCode(actionFunction.name)} via ${formatMarkdownInlineCode(buildPackageActionImportUsage({ packageName: match.name, subpath: actionMatch.subpath, functionName: actionFunction.name }))}${actionFunction.description ? ` — ${escapeMarkdownText(formatOneLineSentence(actionFunction.description))}` : ''}`
-				: ''
+					? ` Use ${formatMarkdownInlineCode(buildPackageActionImportUsage({ packageName: match.name, subpath: actionMatch.subpath, functionName: actionFunction.name }))}${actionFunction.description ? ` — ${escapeMarkdownText(formatOneLineSentence(actionFunction.description))}` : ''}${matchedNote}`
+					: ` Best action: ${formatMarkdownInlineCode(actionFunction.name)} via ${formatMarkdownInlineCode(buildPackageActionImportUsage({ packageName: match.name, subpath: actionMatch.subpath, functionName: actionFunction.name }))}${actionFunction.description ? ` — ${escapeMarkdownText(formatOneLineSentence(actionFunction.description))}` : ''}${matchedNote}`
+				: matchedNote
 		const listingAheadNote =
 			match.listingAhead === true
 				? ' Listing ahead — origin has new commits; communityGet then repoPublishSession with absorbed_upstream_commit.'
 				: ''
 		const mainLine = `${String(index + 1)}. **package** ${escapeMarkdownText(match.title)} (${formatMarkdownInlineCode(match.kodyId)}${exportLabel}) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}${actionSummary}${listingAheadNote}`
+		const nextStepLine = `   Next: ${buildPackageListNextStep(match)}`
 		if (!match.exportCallContract) {
-			return mainLine
+			return `${mainLine}\n${nextStepLine}`
 		}
-		const contract = match.exportCallContract
-		const truncatedNote = contract.typeDefinitionTruncated
-			? '; use entity detail for the full definition'
-			: ''
-		const typePart = contract.typeDefinition
-			? ` — ${formatMarkdownInlineCode(contract.typeDefinition)}${truncatedNote}`
-			: ''
-		return `${mainLine}\n   ${formatMarkdownInlineCode(contract.usage)}${typePart}`
+		return `${mainLine}\n${formatExportCallContractMarkdown(match.exportCallContract)}\n${nextStepLine}`
 	}
 	if (match.type === 'integration') {
 		const entityRef = buildEntityRef(match.integrationName, 'integration')

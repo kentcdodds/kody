@@ -30,9 +30,17 @@ whitespace-collapsed input type, truncated when long) so you can often call from
 **execute** without an immediate entity round trip. Prefer short task phrases
 over keyword lists. Prefer a matching **package export** hit over only the
 parent package when it fits. High-confidence top export hits may also inline the
-call contract (import specifier plus signature/types — the same substance as
-`entity: package:{id}#{subpath}`); use it when present, otherwise open `entity`
-for the full contract.
+call contract (import specifier, usage, execute example, and signature/types —
+the same substance as `entity: package:{id}#{subpath}`); use it when present,
+otherwise open `entity` for the full contract.
+
+Major MCP clients typically load **either** the markdown `content` **or**
+`structuredContent` into the model (not both). List-mode search therefore keeps
+those channels **semantically equivalent** for actionable fields (entity refs,
+why-matched terms, inlined call contracts, notices, and recommended next step)
+so content-preferring and structured-preferring hosts both get a one-shot
+execute path. Presentation differs; substance does not. Markdown never defers to
+structured for call details.
 
 ### Broad queries return domain overviews
 
