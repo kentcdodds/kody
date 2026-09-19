@@ -19,6 +19,7 @@ import {
 	type PackageSearchProjection,
 } from '#worker/package-registry/manifest.ts'
 import { buildPackageImportSpecifier } from '#worker/package-registry/package-import-specifier.ts'
+import { getPackageNameLeaf } from '#worker/package-registry/package-name.ts'
 import { buildPackageReadmeIntent } from '#worker/package-registry/package-readme.ts'
 import { buildPackageAgentsDocs } from '#worker/repo/required-package-docs.ts'
 import { savedPackageVectorId } from '#worker/package-registry/repo.ts'
@@ -33,6 +34,7 @@ import {
 	maxFusedPackageCandidates,
 	maxPackageExportCandidatesPerPackage,
 	packageExportCandidateMinScore,
+	packageExportCloseScoreGap,
 } from '../search-constants.ts'
 import { type SearchEntityPlugin } from '../search-entity-plugin.ts'
 import {
@@ -90,18 +92,41 @@ function buildPackageExportSearchFields(
 	]
 }
 
+/**
+ * Parent package identity folded into export candidates so aliases (tags),
+ * `kodyId`, scoped name, and name leaf help pick among that package's exports.
+ */
+export function buildPackageExportParentIdentityFields(input: {
+	kodyId: string
+	name: string
+	tags: ReadonlyArray<string>
+}): Array<string> {
+	return [
+		input.kodyId,
+		input.name,
+		getPackageNameLeaf(input.name),
+		...input.tags,
+	]
+}
+
 export function buildPackageActionMatches(input: {
 	query: string
 	meaningfulTokens: ReadonlyArray<string>
 	exports: ReadonlyArray<PackageSearchProjection['exports'][number]>
+	parentIdentityFields?: ReadonlyArray<string>
 }): Array<PackageActionMatch> {
 	if (input.meaningfulTokens.length === 0) return []
+	const parentIdentityFields = input.parentIdentityFields ?? []
 	return input.exports
 		.map((exportDetail) => {
-			const searchFields = buildPackageExportSearchFields(exportDetail)
+			const exportSearchFields = buildPackageExportSearchFields(exportDetail)
+			const searchFields = [...parentIdentityFields, ...exportSearchFields]
 			const matchedTerms = input.meaningfulTokens.filter((token) =>
 				scoreMatchedTerms(searchFields, [token]),
 			)
+			const exportLocalMatchedTermCount = input.meaningfulTokens.filter(
+				(token) => scoreMatchedTerms(exportSearchFields, [token]),
+			).length
 			const termCoverage =
 				matchedTerms.length / Math.max(1, input.meaningfulTokens.length)
 			const score =
@@ -118,11 +143,13 @@ export function buildPackageActionMatches(input: {
 				})),
 				score,
 				matchedTerms,
+				exportLocalMatchedTermCount,
 			}
 		})
 		.filter(
 			(match) =>
 				match.functions.length > 0 &&
+				(match.exportLocalMatchedTermCount ?? match.matchedTerms.length) > 0 &&
 				(match.matchedTerms.length >= 2 || match.score >= 0.35),
 		)
 		.sort((left, right) => {
@@ -134,15 +161,40 @@ export function buildPackageActionMatches(input: {
 
 /**
  * Stricter than nested actionMatches: exports enter the first-pass pool only
- * when the query clearly targets the export (multi-term hit or strong score).
+ * when the query clearly targets the export (multi-term hit or strong score)
+ * and at least one term hits export-local fields (not parent identity alone).
  */
 export function shouldPromotePackageExportCandidate(
 	actionMatch: PackageActionMatch,
 ): boolean {
+	const exportLocalMatchedTermCount =
+		actionMatch.exportLocalMatchedTermCount ?? actionMatch.matchedTerms.length
+	if (exportLocalMatchedTermCount < 1) return false
 	return (
 		actionMatch.matchedTerms.length >= 2 ||
 		actionMatch.score >= packageExportCandidateMinScore
 	)
+}
+
+/**
+ * Promote the top eligible export and close runners-up (score within
+ * `packageExportCloseScoreGap` of the leader), up to
+ * `maxPackageExportCandidatesPerPackage`. Clear score gaps stay single-winner.
+ */
+export function selectPromotedPackageExportCandidates(
+	actionMatches: ReadonlyArray<PackageActionMatch>,
+): Array<PackageActionMatch> {
+	const eligible = actionMatches.filter(shouldPromotePackageExportCandidate)
+	if (eligible.length === 0) return []
+	const [top, ...rest] = eligible
+	if (!top) return []
+	const promoted: Array<PackageActionMatch> = [top]
+	for (const candidate of rest) {
+		if (promoted.length >= maxPackageExportCandidatesPerPackage) break
+		if (top.score - candidate.score > packageExportCloseScoreGap) break
+		promoted.push(candidate)
+	}
+	return promoted
 }
 
 function buildPackageExportCandidate(input: {
@@ -160,6 +212,11 @@ function buildPackageExportCandidate(input: {
 		actionMatch.description ??
 		primaryFunction?.description ??
 		entry.record.description
+	const parentIdentityFields = buildPackageExportParentIdentityFields({
+		kodyId: entry.record.kodyId,
+		name: entry.record.name,
+		tags: entry.record.tags,
+	})
 	return {
 		match: {
 			type: 'package' as const,
@@ -183,15 +240,9 @@ function buildPackageExportCandidate(input: {
 		type: 'package' as const,
 		id: `${entry.record.kodyId}#${actionMatch.subpath}`,
 		title,
-		packageIdentityFields: [
-			entry.record.kodyId,
-			entry.record.name,
-			...entry.record.tags,
-			readmeSnippet,
-		],
+		packageIdentityFields: [...parentIdentityFields, readmeSnippet],
 		searchFields: [
-			entry.record.kodyId,
-			entry.record.name,
+			...parentIdentityFields,
 			...buildPackageExportSearchFields(exportDetail),
 		],
 		scoreComponents: buildCandidateBaseScore({
@@ -215,6 +266,11 @@ function collectPackageExportCandidates(input: {
 		const exports = Array.isArray(row.projection.exports)
 			? row.projection.exports
 			: []
+		const parentIdentityFields = buildPackageExportParentIdentityFields({
+			kodyId: row.record.kodyId,
+			name: row.record.name,
+			tags: row.record.tags,
+		})
 		const actionMatches =
 			candidate.match.actionMatches && candidate.match.actionMatches.length > 0
 				? candidate.match.actionMatches
@@ -222,10 +278,9 @@ function collectPackageExportCandidates(input: {
 						query: input.query,
 						meaningfulTokens: input.meaningfulTokens,
 						exports,
+						parentIdentityFields,
 					})
-		const promoted = actionMatches
-			.filter(shouldPromotePackageExportCandidate)
-			.slice(0, maxPackageExportCandidatesPerPackage)
+		const promoted = selectPromotedPackageExportCandidates(actionMatches)
 		for (const actionMatch of promoted) {
 			const exportDetail = exports.find(
 				(item) => item.subpath === actionMatch.subpath,
@@ -408,6 +463,11 @@ export const packageSearchEntityPlugin = {
 					query: input.query,
 					meaningfulTokens,
 					exports,
+					parentIdentityFields: buildPackageExportParentIdentityFields({
+						kodyId: entry.record.kodyId,
+						name: entry.record.name,
+						tags: entry.record.tags,
+					}),
 				})
 				const document = [
 					buildPackageSearchDocument(entry.projection),
@@ -568,6 +628,11 @@ export const packageSearchEntityPlugin = {
 						query: input.query,
 						meaningfulTokens,
 						exports: hydrated.projection.exports,
+						parentIdentityFields: buildPackageExportParentIdentityFields({
+							kodyId: row.record.kodyId,
+							name: row.record.name,
+							tags: row.record.tags,
+						}),
 					})
 				} catch (error) {
 					console.warn(
@@ -890,6 +955,11 @@ export async function hydrateTopPackageMatches(input: {
 					query: input.query,
 					meaningfulTokens,
 					exports: hydrated.projection.exports,
+					parentIdentityFields: buildPackageExportParentIdentityFields({
+						kodyId: row.record.kodyId,
+						name: row.record.name,
+						tags: row.record.tags,
+					}),
 				})
 				// Export-focused ranked hits must keep actionMatches aligned with
 				// exportSubpath. Replacing with the full nested-display list would

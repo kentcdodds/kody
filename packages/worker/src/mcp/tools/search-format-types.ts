@@ -55,6 +55,13 @@ export type PackageActionMatch = {
 	}>
 	score: number
 	matchedTerms: Array<string>
+	/**
+	 * Tokens matched against export-local fields only (excludes parent package
+	 * identity). Nested display and first-pass promotion require at least one
+	 * so package aliases boost siblings without promoting identity-only hits.
+	 * When omitted (older fixtures), treat all `matchedTerms` as export-local.
+	 */
+	exportLocalMatchedTermCount?: number
 }
 
 export type SearchResultStructuredContent = {

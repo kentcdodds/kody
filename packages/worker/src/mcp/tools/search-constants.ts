@@ -30,9 +30,17 @@ export const maxFusedPackageCandidates = 100
 /**
  * Max first-class package-export candidates promoted per package into the
  * ranked pool (widen-then-narrow). Nested `actionMatches` on package index
- * hits stay capped separately.
+ * hits stay capped separately. Close runners-up within
+ * `packageExportCloseScoreGap` of the top eligible export may also promote
+ * (up to this cap) so Jev can choose among near-tied siblings.
  */
-export const maxPackageExportCandidatesPerPackage = 1
+export const maxPackageExportCandidatesPerPackage = 3
+/**
+ * Promote additional export siblings when their action-match score is within
+ * this gap of the top eligible export for the same package. Wider gaps keep a
+ * single winner so clear export-first queries stay narrow.
+ */
+export const packageExportCloseScoreGap = 0.15
 /**
  * Lexical action-match score at or above which a package export may enter the
  * first-pass candidate pool even with a single matched term. Nested
