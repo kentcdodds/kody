@@ -131,16 +131,6 @@ function createRetentionDb() {
 			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 			PRIMARY KEY (user_id, metric, month)
 		);
-		CREATE TABLE funnel_events (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			event TEXT NOT NULL,
-			user_id TEXT NOT NULL DEFAULT '',
-			occurred_at TEXT NOT NULL,
-			client_family TEXT NOT NULL DEFAULT '',
-			error_class TEXT NOT NULL DEFAULT '',
-			plan TEXT NOT NULL DEFAULT '',
-			card_id TEXT NOT NULL DEFAULT ''
-		);
 		CREATE TABLE feature_flag_exposure_rollups (
 			flag_key TEXT NOT NULL,
 			user_id TEXT NOT NULL,

@@ -42,7 +42,6 @@ import {
 	setUserOauthAppLogo,
 } from './user-oauth-app-logo.ts'
 import { scheduleUserOauthAppFaviconFill } from './user-oauth-app-favicon.ts'
-import { recordFunnelEvent } from '#worker/funnel/record-funnel-event.ts'
 import {
 	type JoinedIntegration,
 	type UserIntegrationConnection,
@@ -53,16 +52,7 @@ import {
 export type { IntegrationConfig, PlatformOauthApp }
 
 type IntegrationWriteEnv = Pick<Env, 'APP_DB'> &
-	Partial<
-		Pick<
-			Env,
-			| 'COMMUNITY_ASSETS'
-			| 'IMAGES'
-			| 'SECRET_STORE_KEY'
-			| 'FUNNEL_EVENTS'
-			| 'WRANGLER_IS_LOCAL_DEV'
-		>
-	>
+	Partial<Pick<Env, 'COMMUNITY_ASSETS' | 'IMAGES' | 'SECRET_STORE_KEY'>>
 
 type LogoWriteInput = {
 	logoBase64?: string | null
@@ -336,12 +326,6 @@ export async function upsertIntegration(
 			updated_at: now,
 		},
 	})
-	if (!existing) {
-		void recordFunnelEvent(input.env, {
-			event: 'first_integration',
-			stableUserId: input.userId,
-		})
-	}
 
 	if (existing && existing.lane === 'user' && existing.app.slug !== appSlug) {
 		await deleteOauthAppIfNoConnections({
@@ -506,12 +490,6 @@ export async function upsertPlatformIntegration(input: {
 			updated_at: now,
 		},
 	})
-	if (!existing) {
-		void recordFunnelEvent(input.env, {
-			event: 'first_integration',
-			stableUserId: input.userId,
-		})
-	}
 
 	// Converting an existing user-lane connection to the platform lane leaves
 	// its old app row behind when it was the sole connection; clean it up the

@@ -1,5 +1,4 @@
 import { type Handle, css } from 'remix/ui'
-import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
@@ -153,22 +152,11 @@ function renderWaitingBody(items: Array<WaitingItem>) {
 					</p>
 					<a
 						href={item.href}
-						mix={[
-							css({
-								...getPillButtonCss({ size: 'sm' }),
-								width: 'fit-content',
-								textDecoration: 'none',
-							}),
-							on('click', () => {
-								void fetch(routes.accountWaitingClickPost.href(), {
-									method: 'POST',
-									credentials: 'include',
-									keepalive: true,
-									headers: { 'Content-Type': 'application/json' },
-									body: JSON.stringify({ cardId: item.id }),
-								}).catch(() => undefined)
-							}),
-						]}
+						mix={css({
+							...getPillButtonCss({ size: 'sm' }),
+							width: 'fit-content',
+							textDecoration: 'none',
+						})}
 					>
 						{item.doLabel}
 					</a>

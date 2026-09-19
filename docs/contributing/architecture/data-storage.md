@@ -1750,12 +1750,6 @@ Current retention policies:
   (`invoice`, `soft_block`, `dry_run`, `skip_legacy`, and the other skips) or
   `failed`. Stripe invoice ids stay null on non-invoice rows. Durable forever
   until account deletion/export; `user_id` is the stable user id.
-- `funnel_events`: onboarding funnel mirror rows keep 90 days by `occurred_at`.
-  Analytics Engine `kody_funnel_events` is the production stream. `user_id` is
-  the stable user id (empty for pre-auth signup starts). Account deletion
-  removes the user's rows; export omits them.
-- `funnel_first_claims`: one idempotency row per user per `first_*` event.
-  Deleted with the account. Not time-pruned.
 - `feature_flag_exposure_rollups`: local-dev/test flag exposure rollups keep 90
   days by `day` key, matching Analytics Engine retention for the production
   `FLAG_EXPOSURES` exposure stream; the admin metric readout window is the

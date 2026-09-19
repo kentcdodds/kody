@@ -27,7 +27,6 @@ import {
 } from './admin-insights-shared.ts'
 import { renderCostVsPay } from './admin-insights-cost.tsx'
 import { renderLaunchSignals } from './admin-insights-launch.tsx'
-import { renderAdminFunnel } from './admin-insights-funnel.tsx'
 import {
 	ChartCard,
 	ChartGrid,
@@ -72,7 +71,6 @@ export function renderDashboard(data: AdminInsightsLoaderData) {
 				</AccountManagementMessage>
 			) : null}
 			{renderLaunchSignals(data.launchSignals)}
-			{renderAdminFunnel(data.funnel)}
 			<ChartGrid>{renderCostVsPay(data.dynamicWorkerCost)}</ChartGrid>
 			<StatGrid>
 				<StatCard

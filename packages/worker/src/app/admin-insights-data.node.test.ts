@@ -396,9 +396,6 @@ function createInsightsTestDb() {
 							results: [{ day: '2026-07-08', hour: '09', n: 4 }] as Array<T>,
 						}
 					}
-					if (normalizedQuery.includes('from funnel_events')) {
-						return { results: [] as Array<T> }
-					}
 					throw new Error(`Unsupported all query: ${query}`)
 				},
 				async run() {

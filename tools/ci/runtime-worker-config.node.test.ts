@@ -154,10 +154,6 @@ function buildMainGeneratedConfig(envName: string) {
 				binding: 'PACKAGE_INVOKE_SPECIFIER_EVENTS',
 				dataset: 'kody_package_invoke_specifier_events_pr',
 			},
-			{
-				binding: 'FUNNEL_EVENTS',
-				dataset: 'kody_funnel_events_pr',
-			},
 		],
 		vars: {
 			APP_BASE_URL: 'https://kody-pr-7.example.workers.dev',
@@ -232,14 +228,6 @@ test('generate rewrites worker names, copies resource ids, and patches the main 
 		).toEqual({
 			binding: 'PACKAGE_INVOKE_SPECIFIER_EVENTS',
 			dataset: 'kody_package_invoke_specifier_events_pr',
-		})
-		expect(
-			previewEnv?.analytics_engine_datasets?.find(
-				(entry) => entry.binding === 'FUNNEL_EVENTS',
-			),
-		).toEqual({
-			binding: 'FUNNEL_EVENTS',
-			dataset: 'kody_funnel_events_pr',
 		})
 		expect(previewEnv?.queues?.producers?.[0]).toMatchObject({
 			binding: 'WEBHOOK_DISPATCH_QUEUE',

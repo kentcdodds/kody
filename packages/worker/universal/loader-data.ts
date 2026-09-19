@@ -9,7 +9,6 @@ import {
 } from '#universal/community-public-types.ts'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { type AdminFeatureFlag } from '#universal/feature-flags/types.ts'
-import { type AdminFunnelSummary } from '#universal/funnel-events.ts'
 import { type OnboardingChecklistItemId } from '#universal/onboarding-checklist-types.ts'
 import {
 	type OnboardingCustomMcpServer,
@@ -960,7 +959,6 @@ export type AdminInsightsLoaderData = {
 	entitlementPressure: Array<AdminInsightsEntitlementPressureUser>
 	dynamicWorkerCost: AdminInsightsDynamicWorkerCost
 	packageErrorRate: AdminInsightsPackageErrorRate
-	funnel: AdminFunnelSummary
 }
 
 type AdminSystemEmailListItem = {

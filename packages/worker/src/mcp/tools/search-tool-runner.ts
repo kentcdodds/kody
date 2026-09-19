@@ -1,7 +1,6 @@
 import * as Sentry from '@sentry/cloudflare'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import { stampFirstSearch } from '#worker/identity/activation-stamps.ts'
-import { recordFunnelEvent } from '#worker/funnel/record-funnel-event.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import { isMcpCallerError } from '#mcp/caller-error.ts'
 import { entitlementStructuredContent } from '#mcp/entitlement-metadata.ts'
@@ -112,10 +111,6 @@ async function stampFirstSearchIfAuthenticated(
 	// the same request, and waitUntil would leave first_search_at unset so
 	// the notice still says Step 2 is left after this search completed it.
 	try {
-		await recordFunnelEvent(agent.getEnv(), {
-			event: 'first_search',
-			stableUserId: userId,
-		})
 		await stampFirstSearch(db, { stableUserId: userId })
 	} catch (error: unknown) {
 		console.warn('activation-stamp-search-failed', error)

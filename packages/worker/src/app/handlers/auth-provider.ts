@@ -14,7 +14,6 @@ import {
 } from '#app/auth-session.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { maybeTagKitSubscriberOnSignup } from '#app/kit-signup.ts'
-import { recordFunnelEvent } from '#worker/funnel/record-funnel-event.ts'
 import { attachPendingPackageShareInvitesSafely } from '#worker/package-registry/share-grants.ts'
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { getAvailableUsernameFromBase } from '#worker/identity/generated-username.ts'
@@ -679,12 +678,6 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					)
 						.bind(new Date().toISOString(), existingUser.id)
 						.run()
-					if ((stamped.meta.changes ?? 0) === 1) {
-						void recordFunnelEvent(env, {
-							event: 'email_verified',
-							stableUserId: resolveUserStableId(existingUser),
-						})
-					}
 					if ((stamped.meta.changes ?? 0) !== 1) {
 						await env.APP_DB.prepare(
 							`DELETE FROM oauth_connections
@@ -841,14 +834,6 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			scheduleKitSubscriberSync({
 				env,
 				email,
-				stableUserId,
-			})
-			void recordFunnelEvent(env, {
-				event: 'signup_completed',
-				stableUserId,
-			})
-			void recordFunnelEvent(env, {
-				event: 'email_verified',
 				stableUserId,
 			})
 			scheduleUserCreatedEvent({

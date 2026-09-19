@@ -152,25 +152,21 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 			}
 			const packageId = crypto.randomUUID()
 			const now = new Date().toISOString()
-			await insertSavedPackage(
-				ctx.env.APP_DB,
-				{
-					id: packageId,
-					user_id: user.userId,
-					name: manifest.name,
-					kody_id: manifest.kody.id,
-					description: manifest.kody.description,
-					tags_json: JSON.stringify(manifest.kody.tags ?? []),
-					search_text: manifest.kody.searchText ?? null,
-					source_id: source.id,
-					has_app: manifest.kody.app !== undefined ? 1 : 0,
-					hidden: 0,
-					is_private: userRepo.isPrivate ? 1 : 0,
-					created_at: now,
-					updated_at: now,
-				},
-				ctx.env,
-			)
+			await insertSavedPackage(ctx.env.APP_DB, {
+				id: packageId,
+				user_id: user.userId,
+				name: manifest.name,
+				kody_id: manifest.kody.id,
+				description: manifest.kody.description,
+				tags_json: JSON.stringify(manifest.kody.tags ?? []),
+				search_text: manifest.kody.searchText ?? null,
+				source_id: source.id,
+				has_app: manifest.kody.app !== undefined ? 1 : 0,
+				hidden: 0,
+				is_private: userRepo.isPrivate ? 1 : 0,
+				created_at: now,
+				updated_at: now,
+			})
 			// Seed published_commit from the opened session base, not the
 			// earlier HEAD snapshot. A git-lane push between those two reads
 			// would otherwise seed the old commit and fail publish as

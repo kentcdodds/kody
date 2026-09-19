@@ -262,10 +262,6 @@
 					"binding": "PACKAGE_INVOKE_SPECIFIER_EVENTS",
 					"dataset": "kody_package_invoke_specifier_events",
 				},
-				{
-					"binding": "FUNNEL_EVENTS",
-					"dataset": "kody_funnel_events",
-				},
 			],
 			"ai": {
 				"binding": "AI",
@@ -429,10 +425,6 @@
 				{
 					"binding": "PACKAGE_INVOKE_SPECIFIER_EVENTS",
 					"dataset": "kody_package_invoke_specifier_events_preview",
-				},
-				{
-					"binding": "FUNNEL_EVENTS",
-					"dataset": "kody_funnel_events_preview",
 				},
 			],
 			"ai": {
