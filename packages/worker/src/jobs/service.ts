@@ -47,6 +47,7 @@ import {
 	type PersistedJobCallerContext,
 } from './types.ts'
 import { createJobStorageId, storageRunnerRpc } from '#worker/storage-runner.ts'
+import { stampFirstJob } from '#worker/identity/activation-stamps.ts'
 import {
 	isComputeOverageLimitError,
 	isEntitlementLimitError,
@@ -856,6 +857,11 @@ export async function syncPackageJobsForPackage(input: {
 					job: created,
 					callerContextJson,
 				})
+				await stampFirstJob(
+					input.env.APP_DB,
+					{ stableUserId: input.userId, at: now },
+					input.env,
+				)
 				schedulerStateChanged = true
 			}
 

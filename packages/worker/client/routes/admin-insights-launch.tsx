@@ -10,7 +10,9 @@ import {
 import {
 	type AdminInsightsLaunchFunnelStep,
 	type AdminInsightsLaunchSignals,
+	type AdminInsightsOnboardingFunnel,
 } from '#universal/loader-data.ts'
+import { onboardingFunnelStageLabels } from '#universal/onboarding-funnel.ts'
 import { formatPlanLabel, formatUsdFromCents } from './admin-insights-shared.ts'
 import {
 	ChartCard,
@@ -409,5 +411,100 @@ export function renderLaunchSignals(signals: AdminInsightsLaunchSignals) {
 				</ChartCard>
 			</ChartGrid>
 		</>
+	)
+}
+
+export function renderOnboardingFunnelSummary(
+	funnel: AdminInsightsOnboardingFunnel,
+) {
+	const days7 = new Map(
+		funnel.windows.days7.steps.map((step) => [step.stage, step.users]),
+	)
+	const days28 = new Map(
+		funnel.windows.days28.steps.map((step) => [step.stage, step.users]),
+	)
+	return (
+		<section
+			aria-label="Onboarding funnel"
+			mix={css({ display: 'grid', gap: spacing.sm })}
+		>
+			<div mix={css({ display: 'grid', gap: spacing.xs })}>
+				<h2
+					mix={css({
+						margin: 0,
+						fontSize: typography.fontSize.lg,
+						fontWeight: 700,
+					})}
+				>
+					Onboarding funnel
+				</h2>
+				<p
+					mix={css({
+						margin: 0,
+						color: colors.textMuted,
+						fontSize: typography.fontSize.sm,
+					})}
+				>
+					{funnel.available
+						? 'Unique users per stage from Analytics Engine. Sampled, so treat the count as a floor.'
+						: 'Analytics Engine funnel is unavailable here (local dev or missing credentials). Stages stay at zero.'}
+				</p>
+			</div>
+			<TableScroller>
+				<table
+					aria-label="Unique users by onboarding stage"
+					mix={css({
+						width: '100%',
+						borderCollapse: 'collapse',
+						fontSize: typography.fontSize.sm,
+					})}
+				>
+					<thead>
+						<tr>
+							<th
+								scope="col"
+								mix={css({ ...tableHeadCellCss, textAlign: 'left' })}
+							>
+								Stage
+							</th>
+							<th
+								scope="col"
+								mix={css({ ...tableHeadCellCss, textAlign: 'right' })}
+							>
+								7 days
+							</th>
+							<th
+								scope="col"
+								mix={css({ ...tableHeadCellCss, textAlign: 'right' })}
+							>
+								28 days
+							</th>
+						</tr>
+					</thead>
+					<tbody>
+						{funnel.windows.days28.steps.map((step) => (
+							<tr key={step.stage}>
+								<th
+									scope="row"
+									mix={css({
+										...tableStickyColumnCss,
+										textAlign: 'left',
+										fontWeight: 600,
+									})}
+								>
+									{onboardingFunnelStageLabels[step.stage]}
+								</th>
+								<td mix={css({ ...tableNumericCellCss })}>
+									{formatIntegerNumber(days7.get(step.stage) ?? 0)}
+								</td>
+								<td mix={css({ ...tableNumericCellCss })}>
+									{formatIntegerNumber(days28.get(step.stage) ?? 0)}
+								</td>
+							</tr>
+						))}
+					</tbody>
+				</table>
+			</TableScroller>
+		</section>
 	)
 }

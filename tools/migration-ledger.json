@@ -263,6 +263,10 @@
 		{
 			"filename": "0065-experiments-opt-in.sql",
 			"sha256": "61ea4cca61e7ccca4be89e74f53cdab4dfd21800cff2da9af7082014c9a3d44d"
+		},
+		{
+			"filename": "0066-users-first-activation-stamps.sql",
+			"sha256": "21d202ce5e1bd4f2db70f9e148710df1dd7d5ad5eedf2b427948e5bc6fe552d5"
 		}
 	]
 }

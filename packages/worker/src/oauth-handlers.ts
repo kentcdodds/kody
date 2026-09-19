@@ -23,6 +23,7 @@ import { getEnv } from '#app/env.ts'
 import { type OAuthAuthorizeLoaderData } from '#universal/loader-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { resolveUserStableId } from '#worker/user-id.ts'
+import { recordMcpConnectFunnelEvent } from '#worker/identity/onboarding-funnel.ts'
 import { createDb, usersTable } from './db.ts'
 import { upgradePasswordHashIfNeeded } from './password-upgrade.ts'
 import { wantsJson } from './utils.ts'
@@ -859,6 +860,14 @@ export async function loadOAuthAuthorizeData(
 			stableUserId: authorizeSession.stableUserId ?? undefined,
 		})
 	}
+	if (!requireCredentials && authorizeSession.stableUserId) {
+		recordMcpConnectFunnelEvent(env, {
+			stage: 'mcp_connect_started',
+			userId: authorizeSession.stableUserId,
+			clientId: client.clientId,
+			clientName: client.clientName,
+		})
+	}
 
 	return {
 		data: {
@@ -1073,12 +1082,23 @@ async function tryHandleSilentOidcAuthorize(
 
 	const approvedEmail = userRecord.email.trim().toLowerCase()
 	const approvedUserId = resolveUserStableId(userRecord)
+	recordMcpConnectFunnelEvent(env, {
+		stage: 'mcp_connect_started',
+		userId: approvedUserId,
+		clientId: authRequest.clientId,
+	})
 	const emailVerified = await isAccountEmailVerified({
 		db: env.APP_DB,
 		email: approvedEmail,
 		stableUserId: approvedUserId,
 	})
 	if (!emailVerified) {
+		recordMcpConnectFunnelEvent(env, {
+			stage: 'mcp_connect_failed',
+			userId: approvedUserId,
+			clientId: authRequest.clientId,
+			errorClass: 'email_verification_required',
+		})
 		const redirectTo = oidcClientErrorRedirect(
 			authRequest,
 			'interaction_required',
@@ -1160,6 +1180,11 @@ async function tryHandleSilentOidcAuthorize(
 		result: 'success',
 		email: approvedEmail,
 		ip: getRequestIp(request) ?? undefined,
+		clientId: authRequest.clientId,
+	})
+	recordMcpConnectFunnelEvent(env, {
+		stage: 'mcp_connect_succeeded',
+		userId: approvedUserId,
 		clientId: authRequest.clientId,
 	})
 	await evaluateSecondAgentGiftAfterAuthorize(env, approvedUserId)
@@ -1335,6 +1360,19 @@ export async function handleAuthorizeRequest(
 				clientId: authRequest.clientId,
 				reason: 'invalid_credentials',
 			})
+			if (userRecord) {
+				recordMcpConnectFunnelEvent(env, {
+					stage: 'mcp_connect_started',
+					userId: resolveUserStableId(userRecord),
+					clientId: authRequest.clientId,
+				})
+				recordMcpConnectFunnelEvent(env, {
+					stage: 'mcp_connect_failed',
+					userId: resolveUserStableId(userRecord),
+					clientId: authRequest.clientId,
+					errorClass: 'invalid_credentials',
+				})
+			}
 			return respondAuthorizeError(request, 'Invalid email or password.')
 		}
 		try {
@@ -1373,6 +1411,17 @@ export async function handleAuthorizeRequest(
 				ip: requestIp,
 				clientId: authRequest.clientId,
 				reason: 'two_factor_required',
+			})
+			recordMcpConnectFunnelEvent(env, {
+				stage: 'mcp_connect_started',
+				userId: resolveUserStableId(userRecord),
+				clientId: authRequest.clientId,
+			})
+			recordMcpConnectFunnelEvent(env, {
+				stage: 'mcp_connect_failed',
+				userId: resolveUserStableId(userRecord),
+				clientId: authRequest.clientId,
+				errorClass: 'two_factor_required',
 			})
 			return respondAuthorizeError(
 				request,
@@ -1437,7 +1486,18 @@ export async function handleAuthorizeRequest(
 		email: approvedEmail,
 		stableUserId: approvedUserId,
 	})
+	recordMcpConnectFunnelEvent(env, {
+		stage: 'mcp_connect_started',
+		userId: approvedUserId,
+		clientId: authRequest.clientId,
+	})
 	if (!emailVerified) {
+		recordMcpConnectFunnelEvent(env, {
+			stage: 'mcp_connect_failed',
+			userId: approvedUserId,
+			clientId: authRequest.clientId,
+			errorClass: 'email_verification_required',
+		})
 		void logAuditEvent({
 			db: auditDatabaseFromEnv(env),
 			category: 'oauth',
@@ -1496,6 +1556,11 @@ export async function handleAuthorizeRequest(
 			result: 'success',
 			email: approvedEmail,
 			ip: requestIp,
+			clientId: authRequest.clientId,
+		})
+		recordMcpConnectFunnelEvent(env, {
+			stage: 'mcp_connect_succeeded',
+			userId,
 			clientId: authRequest.clientId,
 		})
 		await evaluateSecondAgentGiftAfterAuthorize(env, userId)

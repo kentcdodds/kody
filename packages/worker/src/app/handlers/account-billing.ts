@@ -34,6 +34,7 @@ import {
 import { enqueuePlatformFeedbackDispatch } from '#worker/platform-feedback/dispatch-queue-producer.ts'
 import { isPlatformFeedbackDomainError } from '#worker/platform-feedback/errors.ts'
 import { submitPlatformFeedback } from '#worker/platform-feedback/service.ts'
+import { recordCheckoutFunnelEvent } from '#worker/identity/onboarding-funnel.ts'
 
 function billingErrorRedirect(request: Request, errorCode: string) {
 	const url = new URL('/account/billing', request.url)
@@ -219,7 +220,15 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 					...(customerId ? { customerId } : { customerEmail: user.email }),
 					// Lets the Stripe webhook resolve the user without reversing
 					// the HMAC client_reference_id (still verified on link).
-					metadata: { kody_stable_user_id: user.mcpUser.userId },
+					metadata: {
+						kody_stable_user_id: user.mcpUser.userId,
+						kody_plan: plan,
+					},
+				})
+				recordCheckoutFunnelEvent(env, {
+					stage: 'checkout_started',
+					userId: user.mcpUser.userId,
+					plan,
 				})
 				void logAuditEvent({
 					db: auditDatabaseFromEnv(env),

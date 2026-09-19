@@ -7,6 +7,7 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { buildSavedPackageEmbedText } from '#worker/package-registry/embed.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
+import { stampFirstSavedPackage } from '#worker/identity/activation-stamps.ts'
 import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
@@ -152,21 +153,26 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 			}
 			const packageId = crypto.randomUUID()
 			const now = new Date().toISOString()
-			await insertSavedPackage(ctx.env.APP_DB, {
-				id: packageId,
-				user_id: user.userId,
-				name: manifest.name,
-				kody_id: manifest.kody.id,
-				description: manifest.kody.description,
-				tags_json: JSON.stringify(manifest.kody.tags ?? []),
-				search_text: manifest.kody.searchText ?? null,
-				source_id: source.id,
-				has_app: manifest.kody.app !== undefined ? 1 : 0,
-				hidden: 0,
-				is_private: userRepo.isPrivate ? 1 : 0,
-				created_at: now,
-				updated_at: now,
-			})
+			await insertSavedPackage(
+				ctx.env.APP_DB,
+				{
+					id: packageId,
+					user_id: user.userId,
+					name: manifest.name,
+					kody_id: manifest.kody.id,
+					description: manifest.kody.description,
+					tags_json: JSON.stringify(manifest.kody.tags ?? []),
+					search_text: manifest.kody.searchText ?? null,
+					source_id: source.id,
+					has_app: manifest.kody.app !== undefined ? 1 : 0,
+					hidden: 0,
+					is_private: userRepo.isPrivate ? 1 : 0,
+					created_at: now,
+					updated_at: now,
+				},
+				null,
+				{ stamp: false },
+			)
 			// Seed published_commit from the opened session base, not the
 			// earlier HEAD snapshot. A git-lane push between those two reads
 			// would otherwise seed the old commit and fail publish as
@@ -210,6 +216,11 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 					publishResult.message || 'Failed to publish promoted package source.',
 				)
 			}
+			await stampFirstSavedPackage(
+				ctx.env.APP_DB,
+				{ stableUserId: user.userId, at: now },
+				ctx.env,
+			)
 			// Best-effort projections after the publish committed: a vector or
 			// search-projection failure must not strand a half-promoted repo.
 			// Reindex lanes converge both later.

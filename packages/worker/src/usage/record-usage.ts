@@ -210,10 +210,14 @@ export async function recordUsage(
 			event.outcome === 'success' &&
 			env.APP_DB
 		) {
-			const stamp = stampFirstExecute(env.APP_DB, {
-				stableUserId: event.userId,
-				at: timestamp,
-			}).catch((error: unknown) => {
+			const stamp = stampFirstExecute(
+				env.APP_DB,
+				{
+					stableUserId: event.userId,
+					at: timestamp,
+				},
+				env,
+			).catch((error: unknown) => {
 				console.warn('activation-stamp-execute-failed', error)
 			})
 			if (options?.waitUntil) {

@@ -128,21 +128,25 @@ export async function createStubSavedPackage(input: {
 		files,
 	})
 	const now = new Date().toISOString()
-	await insertSavedPackage(input.env.APP_DB, {
-		id: packageId,
-		user_id: input.owner.ownerUserId,
-		name: manifest.name,
-		kody_id: manifest.kody.id,
-		description: manifest.kody.description,
-		tags_json: JSON.stringify(manifest.kody.tags ?? []),
-		search_text: manifest.kody.searchText ?? null,
-		source_id: ensuredSource.id,
-		has_app: 0,
-		hidden: 0,
-		is_private: 1,
-		created_at: now,
-		updated_at: now,
-	})
+	await insertSavedPackage(
+		input.env.APP_DB,
+		{
+			id: packageId,
+			user_id: input.owner.ownerUserId,
+			name: manifest.name,
+			kody_id: manifest.kody.id,
+			description: manifest.kody.description,
+			tags_json: JSON.stringify(manifest.kody.tags ?? []),
+			search_text: manifest.kody.searchText ?? null,
+			source_id: ensuredSource.id,
+			has_app: 0,
+			hidden: 0,
+			is_private: 1,
+			created_at: now,
+			updated_at: now,
+		},
+		input.env,
+	)
 	await upsertSavedPackageVector(input.env, {
 		packageId,
 		userId: input.owner.ownerUserId,
