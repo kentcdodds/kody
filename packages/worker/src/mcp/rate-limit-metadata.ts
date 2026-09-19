@@ -1,7 +1,7 @@
 import {
 	isSearchRateLimitError,
 	searchRateLimitErrorCode,
-} from '#worker/search-rate-limit.ts'
+} from '#worker/search-rate-limit-error.ts'
 
 /**
  * Machine-readable abuse rate-limit fields for MCP tool structured content.

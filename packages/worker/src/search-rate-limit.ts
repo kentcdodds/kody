@@ -1,6 +1,14 @@
 import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
 import { type PlanName } from '#universal/plans.ts'
 import { getUserPlan } from '#worker/entitlements/service.ts'
+import { SearchRateLimitError } from '#worker/search-rate-limit-error.ts'
+
+export {
+	SearchRateLimitError,
+	isSearchRateLimitError,
+	searchRateLimitErrorCode,
+	type SearchRateLimitWindow,
+} from '#worker/search-rate-limit-error.ts'
 
 /**
  * Abuse-protection ceilings for MCP/meta search — not plan entitlements.
@@ -36,41 +44,6 @@ export const searchRateLimitByPlan = {
 		daily: { maxRequests: number; windowSeconds: number }
 	}
 >
-
-export type SearchRateLimitWindow = 'burst' | 'day'
-
-export const searchRateLimitErrorCode = 'rate_limited' as const
-
-export class SearchRateLimitError extends Error {
-	readonly code = searchRateLimitErrorCode
-	readonly window: SearchRateLimitWindow
-	readonly retryAfterSeconds: number
-	readonly limit: number
-	readonly plan: PlanName
-
-	constructor(input: {
-		window: SearchRateLimitWindow
-		retryAfterSeconds: number
-		limit: number
-		plan: PlanName
-	}) {
-		const windowLabel = input.window === 'burst' ? 'per-minute' : 'per-day'
-		super(
-			`Search rate limit exceeded (${windowLabel}; plan "${input.plan}" allows ${input.limit} searches ${windowLabel === 'per-minute' ? 'per minute' : 'per day'}). Retry after ${input.retryAfterSeconds} seconds. This is abuse protection, not a plan quota.`,
-		)
-		this.name = 'SearchRateLimitError'
-		this.window = input.window
-		this.retryAfterSeconds = input.retryAfterSeconds
-		this.limit = input.limit
-		this.plan = input.plan
-	}
-}
-
-export function isSearchRateLimitError(
-	error: unknown,
-): error is SearchRateLimitError {
-	return error instanceof SearchRateLimitError
-}
 
 export function searchBurstRateLimitKey(userId: string) {
 	return `mcp-search-burst:user:${userId}`

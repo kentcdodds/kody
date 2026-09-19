@@ -7,7 +7,7 @@ import {
 	isEntitlementLimitError,
 	isJobIntervalFloorError,
 } from '#worker/entitlements/errors.ts'
-import { isSearchRateLimitError } from '#worker/search-rate-limit.ts'
+import { isSearchRateLimitError } from '#worker/search-rate-limit-error.ts'
 import { PackageScopeAccessError } from '#worker/package-registry/package-owner.ts'
 import { isRepoLargeFileMessage } from '#worker/repo/large-file-policy.ts'
 import {
