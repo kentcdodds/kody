@@ -36,3 +36,9 @@ previews the next claim page; results carry stable user ids).
 ## APIs
 
 JSON siblings under `/admin/*.json`. Same 403 for the preview seed.
+
+## Gotchas
+
+- `/admin/feature-flags` Audience is `everyone` or `experiments_opt_in`. That
+  audience only includes users who opted in at `/account/experiments`. Per-user
+  overrides win over the audience gate.

@@ -46,7 +46,9 @@ never secret values). Public community listings live in the `community` domain
 An agent can describe a goal in natural language and get a ranked shortlist —
 type, title, one-line summary, and an entity ref — instead of loading hundreds
 of tools. Capability hits include a domain id and, for the top few, a compact
-call shape so the next step is often a single **execute**.
+call shape so the next step is often a single **execute**. Prefer a matching
+package export hit (`package:{id}#{subpath}`) over only the parent package;
+high-confidence export hits may include an inlined call contract.
 
 ### How an agent calls it
 

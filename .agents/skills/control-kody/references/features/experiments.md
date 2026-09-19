@@ -26,7 +26,7 @@ node tools/control-kody.ts request POST /account/experiments.json \
 - Opt-in only membership. Operators still enable each flag globally (and may set
   Audience to “Experiments opt-in” at `/admin/feature-flags` or via
   `adminFeatureFlagSet({ audience: "experiments_opt_in" })`).
-- Per-user flag overrides still win over the audience gate (operator dogfood
-  without the account page).
+- Per-user flag overrides win over the audience gate (operator dogfood without
+  the account page).
 - This page is unrelated to Jev search enablement; do not assume
   `jev-search-rerank` is on after opt-in.

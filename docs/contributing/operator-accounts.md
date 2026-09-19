@@ -101,7 +101,7 @@ Production names from committed Wrangler / ensure scripts
   `AI_GATEWAY_ID_PREVIEW`). Ranked-search Jev Score (`typesafe/jev`) requires
   that gateway: authentication enabled and Unified Billing credits (or BYOK).
   Auth off is HTTP 403; zero credits is HTTP 402. Embeddings (`@cf/baai/…`)
-  still succeed without Gateway.
+  succeed without Gateway.
 - **OTLP traces** — account destination `sentry-otlp-traces` → Sentry project
   `kody-cloudflare`. Dashboard: **Workers Observability → Destinations**.
 

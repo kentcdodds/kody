@@ -55,7 +55,8 @@ export function PrivacyRoute(_handle: Handle) {
 				<p mix={css(descriptionCss)}>
 					Each signed-in user gets a fully isolated assistant. Kody stores
 					account profile information (email, username, optional display name
-					and bio, and profile visibility), first-touch marketing attribution
+					and bio, profile visibility, and the experiments opt-in preference at{' '}
+					<code>/account/experiments</code>), first-touch marketing attribution
 					captured on public-site visits when UTM or landing context is present
 					and associated with the account at signup, first-seen activation
 					timestamps (email verified, first MCP connection, first execute, first
