@@ -24,6 +24,9 @@ export const jevSearchRerankOutcomes = [
 	'skipped-offline',
 	'skipped-no-ai',
 	'skipped-flag-off',
+	'skipped-plan',
+	'skipped-small-pool',
+	'skipped-clear-winner',
 	'skipped-empty',
 ] as const
 
@@ -271,6 +274,22 @@ export type SlimSearchMatch =
 				score: number
 				matchedTerms: Array<string>
 			}>
+			/**
+			 * Present on high-confidence top export hits: import path +
+			 * signature/types (same substance as entity export detail).
+			 */
+			exportCallContract?: {
+				importSpecifier: string
+				usage: string
+				executeExample: string
+				typeDefinition: string | null
+				typeDefinitionTruncated?: boolean
+				functions: Array<{
+					name: string
+					description: string | null
+					typeDefinition: string | null
+				}>
+			}
 			nextStep?: string
 			listingAhead?: true
 	  }
@@ -664,6 +683,24 @@ export type SearchMatch =
 			 */
 			exportSubpath?: string
 			actionMatches?: Array<PackageActionMatch>
+			/**
+			 * High-confidence top export hits may inline the call contract
+			 * (import + signature/types) so agents can execute without an
+			 * entity round-trip. Omitted when top-2 is ambiguous or scores
+			 * are weak.
+			 */
+			exportCallContract?: {
+				importSpecifier: string
+				usage: string
+				executeExample: string
+				typeDefinition: string | null
+				typeDefinitionTruncated?: boolean
+				functions: Array<{
+					name: string
+					description: string | null
+					typeDefinition: string | null
+				}>
+			}
 			/** Present only when the source community listing pin moved past this fork. */
 			listingAhead?: true
 	  }

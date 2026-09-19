@@ -628,9 +628,11 @@ export const packageSearchEntityPlugin = {
 			match.listingAhead === true ? ` ${listingAheadSearchNotice}` : ''
 		const entityRef = buildEntityRef(match.kodyId, 'package', exportSubpath)
 		const nextStep = exportSubpath
-			? primaryAction && primaryActionFunction
-				? `Use ${primaryActionFunction.usage}; inspect search({ entity: ${JSON.stringify(entityRef)} }) only if you need the full export contract.${platformSuffix}${listingAheadSuffix}`
-				: `Inspect the export contract with search({ entity: ${JSON.stringify(entityRef)} }).${platformSuffix}${listingAheadSuffix}`
+			? match.exportCallContract
+				? `Use the inlined export call contract above from \`execute\`. Inspect search({ entity: ${JSON.stringify(entityRef)} }) only if you need referenced types or the full package.${platformSuffix}${listingAheadSuffix}`
+				: primaryAction && primaryActionFunction
+					? `Use ${primaryActionFunction.usage}; inspect search({ entity: ${JSON.stringify(entityRef)} }) only if you need the full export contract.${platformSuffix}${listingAheadSuffix}`
+					: `Inspect the export contract with search({ entity: ${JSON.stringify(entityRef)} }).${platformSuffix}${listingAheadSuffix}`
 			: primaryAction && primaryActionFunction
 				? `Use ${primaryActionFunction.usage}; inspect search({ entity: "package:${match.kodyId}" }) only if you need more exports.${platformSuffix}${listingAheadSuffix}`
 				: match.hasApp
@@ -652,6 +654,9 @@ export const packageSearchEntityPlugin = {
 			platformScope: match.platformScope ?? null,
 			...(exportSubpath ? { exportSubpath } : {}),
 			...(match.listingAhead === true ? { listingAhead: true as const } : {}),
+			...(match.exportCallContract
+				? { exportCallContract: match.exportCallContract }
+				: {}),
 			// Platform package apps are hosted under the platform account's
 			// username, not the caller's.
 			hostedUrl: (() => {

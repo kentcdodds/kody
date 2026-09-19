@@ -9,7 +9,7 @@ import {
 	type PublicUserIdentity,
 } from '#worker/identity/user-lookup.ts'
 import { normalizeUsername } from '#worker/identity/username.ts'
-import { type PlanName } from '#universal/plans.ts'
+import { isPaidPlan, type PlanName } from '#universal/plans.ts'
 import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
 import { getCommunityPackageHref } from '#worker/community/package-url.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
@@ -196,7 +196,7 @@ const grantSelectColumns = `id, package_id, owner_user_id, invitee_email, invite
 	created_at, updated_at`
 
 export function isPaidPlanForPackageShare(plan: PlanName) {
-	return plan !== 'free'
+	return isPaidPlan(plan)
 }
 
 export async function assertPaidPlanForPackageShare(

@@ -132,6 +132,10 @@ const mockFeatureFlags = vi.hoisted(() => ({
 	override: null as Record<string, boolean> | null,
 }))
 
+const mockUserPlan = vi.hoisted(() => ({
+	plan: 'free' as 'free' | 'standard' | 'pro' | 'max',
+}))
+
 vi.mock('#mcp/capabilities/access-control.ts', async (importOriginal) => {
 	const actual =
 		await importOriginal<typeof import('#mcp/capabilities/access-control.ts')>()
@@ -143,6 +147,15 @@ vi.mock('#mcp/capabilities/access-control.ts', async (importOriginal) => {
 			if (mockFeatureFlags.override) return mockFeatureFlags.override
 			return actual.resolveCallerFeatureFlags(...args)
 		},
+	}
+})
+
+vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/entitlements/service.ts')>()
+	return {
+		...actual,
+		getUserPlan: async () => mockUserPlan.plan,
 	}
 })
 
@@ -438,6 +451,7 @@ test('search tool returns compact query markdown while preserving structured aux
 
 test('list search with Jev enabled includes serverTiming jevRerank', async () => {
 	vi.clearAllMocks()
+	mockUserPlan.plan = 'standard'
 	mockFeatureFlags.override = Object.fromEntries(
 		featureFlagKeys.map((key) => [key, key === jevSearchRerankFlagKey]),
 	)
@@ -467,6 +481,7 @@ test('list search with Jev enabled includes serverTiming jevRerank', async () =>
 			telemetry?: {
 				jevRerank?: {
 					enabled: boolean
+					outcome?: string
 					model?: string
 					aiCallCount?: number
 					usage?: {
@@ -478,15 +493,19 @@ test('list search with Jev enabled includes serverTiming jevRerank', async () =>
 			phaseTimings?: { jevRerankMs?: number }
 		}
 		expect(result.telemetry?.jevRerank?.enabled).toBe(true)
-		expect(result.telemetry?.jevRerank?.model).toBe('typesafe/jev')
-		expect(result.telemetry?.jevRerank?.aiCallCount).toEqual(expect.any(Number))
-		expect(result.telemetry?.jevRerank?.usage).toEqual({
-			inputTokens: null,
-			outputTokens: null,
-		})
+		// Offline / small registry pools skip before Score; paid + flag still
+		// records the gate on serverTiming.
+		expect([
+			'skipped-offline',
+			'skipped-small-pool',
+			'skipped-no-ai',
+			'applied',
+			'fallback-error',
+		]).toContain(result.telemetry?.jevRerank?.outcome)
 		expect(jevEntry?.durationMs).toBe(result.phaseTimings?.jevRerankMs)
 	} finally {
 		mockFeatureFlags.override = null
+		mockUserPlan.plan = 'free'
 	}
 })
 

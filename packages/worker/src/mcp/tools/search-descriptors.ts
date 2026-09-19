@@ -57,6 +57,9 @@ export function buildRecommendedNextStep(
 		const actionFunction = actionMatch
 			? getPrimaryPackageActionFunction(actionMatch)
 			: null
+		if (topMatch.exportCallContract) {
+			return `Use the inlined export call contract above from \`execute\` (\`${topMatch.exportCallContract.usage}\`). Inspect \`search({ entity: "package:${topMatch.kodyId}${topMatch.exportSubpath ? `#${topMatch.exportSubpath}` : ''}" })\` only if you need referenced types or more exports.`
+		}
 		if (actionMatch && actionFunction) {
 			const importStatement = buildPackageActionImportUsage({
 				packageName: topMatch.name,

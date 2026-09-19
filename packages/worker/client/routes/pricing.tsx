@@ -182,7 +182,8 @@ export function PricingRoute(handle: Handle) {
 						<p mix={css(planPriceNoteCss)}>$10/mo billed annually</p>
 						<p mix={css(planCopyCss)}>
 							Same {factoryGuideLink()}. More room for jobs, workflows, and
-							daily volume.
+							daily volume. Improved search when the candidate pool is
+							ambiguous.
 						</p>
 						{renderPaidPlanCta(isSignedIn, signedOutCta)}
 					</section>
@@ -200,7 +201,8 @@ export function PricingRoute(handle: Handle) {
 						<p mix={css(planPriceNoteCss)}>$40/mo billed annually</p>
 						<p mix={css(planCopyCss)}>
 							Same {factoryGuideLink()}. More room for storage, jobs, workflows,
-							and daily volume.
+							and daily volume. Improved search when the candidate pool is
+							ambiguous.
 						</p>
 						{renderPaidPlanCta(isSignedIn, signedOutCta)}
 					</section>

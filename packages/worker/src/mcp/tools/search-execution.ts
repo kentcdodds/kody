@@ -14,6 +14,8 @@ import {
 } from '#worker/vectorize/embedding.ts'
 
 import { consumeSearchRateLimit } from '#worker/search-rate-limit.ts'
+import { getUserPlan } from '#worker/entitlements/service.ts'
+import { isPaidPlan } from '#universal/plans.ts'
 
 import { resolvePackageIdentitySearch } from './package-search-identity.ts'
 import { buildExactPackageSearchResult, searchUnified } from './search-core.ts'
@@ -232,6 +234,14 @@ async function executeSearchListWithinBudget(
 		input.callerContext,
 	)
 	const jevRerankEnabled = featureFlags[jevSearchRerankFlagKey] === true
+	const plan =
+		input.userId && input.env.APP_DB
+			? await getUserPlan(input.env.APP_DB, {
+					userId: input.userId,
+					email: input.callerContext.user?.email ?? null,
+				})
+			: 'free'
+	const jevRerankPlanEligible = isPaidPlan(plan)
 	const searchUnifiedStart = performance.now()
 	result = await searchUnified({
 		env: input.env,
@@ -247,6 +257,7 @@ async function executeSearchListWithinBudget(
 			? { includeAdminGuides: true }
 			: {}),
 		...(jevRerankEnabled ? { jevRerankEnabled: true } : {}),
+		...(jevRerankPlanEligible ? { jevRerankPlanEligible: true } : {}),
 	})
 	phaseTimings.searchUnifiedMs = elapsedMs(searchUnifiedStart)
 	capabilityGuidance = result.guidance

@@ -11,9 +11,9 @@ export const searchTool = {
 	name: 'search',
 	title: 'Search Capabilities, Guides, Packages, Integrations, and Secrets',
 	description: `
-Find built-in capabilities, official guides, saved packages, integrations, connected MCP servers, and secret references (metadata only) before \`execute\`.
+Find built-in capabilities, official guides, saved packages, integrations, connected MCP servers, and secret references (metadata only) before \`execute\`. Prefer short task phrases over keyword lists.
 
-**query** — compact ranked markdown + structured matches. Empty or broad queries return a domain index; search again with a more specific query. Domain ids appear on capability hits. Connected MCP servers appear as server hits (name, instructions); do not expect every remote tool in unscoped results.
+**query** — compact ranked markdown + structured matches. Empty or broad queries return a domain index; search again with a more specific query. Domain ids appear on capability hits. Connected MCP servers appear as server hits (name, instructions); do not expect every remote tool in unscoped results. Prefer a matching package export hit over only the parent package when it fits the task. High-confidence export hits may include an inlined call contract (import + types) — use it; otherwise open \`entity\` for the full contract.
 
 **entity: "{type}:{id}"** — detail for one hit (\`capability\` | \`guide\` | \`integration\` | \`mcp-server\` | \`package\` | \`secret\`), or 1–10 refs. The first \`:\` is the type; ids may contain colons (\`capability:mcp:home:set_pin\`). Guide detail is the full markdown when it fits the response budget; oversized guides return a table of contents. Open a heading with \`guide:{id}#{slug}\` (for example \`guide:package_subscriptions#repo.pushed\`). Open one package export contract with \`package:{id}#{subpath}\` (for example \`package:home-controls#bond-area-shades\`). Capability detail includes an execute snippet. MCP server detail lists discovered tools; after that, call \`kody.mcp["name"].tool_name(args)\`.
 

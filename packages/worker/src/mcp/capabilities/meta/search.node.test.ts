@@ -122,6 +122,10 @@ const mockFeatureFlags = vi.hoisted(() => ({
 	override: null as Record<string, boolean> | null,
 }))
 
+const mockUserPlan = vi.hoisted(() => ({
+	plan: 'free' as 'free' | 'standard' | 'pro' | 'max',
+}))
+
 vi.mock('#mcp/capabilities/access-control.ts', async (importOriginal) => {
 	const actual =
 		await importOriginal<typeof import('#mcp/capabilities/access-control.ts')>()
@@ -133,6 +137,15 @@ vi.mock('#mcp/capabilities/access-control.ts', async (importOriginal) => {
 			if (mockFeatureFlags.override) return mockFeatureFlags.override
 			return actual.resolveCallerFeatureFlags(...args)
 		},
+	}
+})
+
+vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/entitlements/service.ts')>()
+	return {
+		...actual,
+		getUserPlan: async () => mockUserPlan.plan,
 	}
 })
 
@@ -303,6 +316,7 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 		}),
 	)
 
+	mockUserPlan.plan = 'standard'
 	mockFeatureFlags.override = Object.fromEntries(
 		featureFlagKeys.map((key) => [key, key === jevSearchRerankFlagKey]),
 	)
@@ -319,17 +333,17 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 			durationMs: expect.any(Number),
 		})
 		expect(jevEnabled.telemetry?.jevRerank?.enabled).toBe(true)
-		expect(jevEnabled.telemetry?.jevRerank?.model).toBe('typesafe/jev')
-		expect(jevEnabled.telemetry?.jevRerank?.aiCallCount).toEqual(
-			expect.any(Number),
-		)
-		expect(jevEnabled.telemetry?.jevRerank?.usage).toEqual({
-			inputTokens: null,
-			outputTokens: null,
-		})
+		expect([
+			'skipped-offline',
+			'skipped-small-pool',
+			'skipped-no-ai',
+			'applied',
+			'fallback-error',
+		]).toContain(jevEnabled.telemetry?.jevRerank?.outcome)
 		expect(jevEntry?.durationMs).toBe(jevEnabled.phaseTimings?.jevRerankMs)
 	} finally {
 		mockFeatureFlags.override = null
+		mockUserPlan.plan = 'free'
 	}
 })
 

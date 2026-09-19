@@ -27,7 +27,12 @@ include their **domain id** (for example `email`, `jobs`, `mcp:linear`) so a
 follow-up search can scope to that domain. The top few capability hits also
 include a compact inlined call shape (runtime accessor plus a
 whitespace-collapsed input type, truncated when long) so you can often call from
-**execute** without an immediate entity round trip.
+**execute** without an immediate entity round trip. Prefer short task phrases
+over keyword lists. Prefer a matching **package export** hit over only the
+parent package when it fits. High-confidence top export hits may also inline the
+call contract (import specifier plus signature/types — the same substance as
+`entity: package:{id}#{subpath}`); use it when present, otherwise open `entity`
+for the full contract.
 
 ### Broad queries return domain overviews
 
@@ -62,8 +67,10 @@ with entity ref `package:{id}#{subpath}` — the same shape as
 `search({ entity: "package:…#…" })`. Weak or package-overview queries do not
 flood results with every export; nested “best action” hints on package index
 hits remain for medium-confidence matches. Optional stage-2 Jev Score rerank
-(when enabled) sees export identity on skinny cards and can narrow a wider
-recall pool; the global `jev-search-rerank` flag stays off by default.
+runs only for **paid** plans (Standard / Pro / Max) when the `jev-search-rerank`
+flag is on **and** the post-hybrid candidate pool looks ambiguous (small clear
+pools skip). Free and anonymous never get Jev. The flag is the rollout / kill
+switch; plan + necessity are the product gates.
 
 ### Domain scoping
 
@@ -103,20 +110,22 @@ only when its caller opts in with **`memoryContext`**. Archived or very weak
 memory matches are not surfaced automatically.
 
 Ranked list-mode structured content includes **`telemetry.jevRerank`**
-(`applied`, `skipped-*`, or `fallback-*`) and **`phaseTimings.jevRerankMs`**. A
-`fallback-error` outcome includes a short **`errorReason`** (missing AI Gateway,
-Gateway 403/402, or incomplete Score answers, including sampled top-level
-response keys when answers are missing). When the Jev stage runs or attempts,
-that object also carries **`model`**, **`aiCallCount`** (Score `AI.run`
-batches), and **`usage`** (`inputTokens` / `outputTokens`, or nulls when the
-binding omits them) so eval can weigh ranking quality against latency and token
-use. Public `search` also returns request-scoped **`timing.serverTiming`**
-phases (`{ name, durationMs }`, same shape as execute, not stored), including
-**`jevRerank`** when that stage ran. The `search` meta capability (usable inside
-**execute**) returns the same `telemetry`, `phaseTimings`, and top-level
-`serverTiming` on ranked `query` results. Entity lookups, domain listings,
-empty/broad discovery, `search({ domain })`, and exact package identity omit
-those Jev fields.
+(`applied`, `skipped-*`, or `fallback-*`) and **`phaseTimings.jevRerankMs`**.
+Skip reasons include `skipped-flag-off`, `skipped-plan` (Free / anonymous),
+`skipped-small-pool` (≤8 hybrid candidates), and `skipped-clear-winner` (9–20
+with a decisive top hit). A `fallback-error` outcome includes a short
+**`errorReason`** (missing AI Gateway, Gateway 403/402, or incomplete Score
+answers, including sampled top-level response keys when answers are missing).
+When the Jev stage runs or attempts, that object also carries **`model`**,
+**`aiCallCount`** (Score `AI.run` batches), and **`usage`** (`inputTokens` /
+`outputTokens`, or nulls when the binding omits them) so eval can weigh ranking
+quality against latency and token use. Public `search` also returns
+request-scoped **`timing.serverTiming`** phases (`{ name, durationMs }`, same
+shape as execute, not stored), including **`jevRerank`** when that stage ran.
+The `search` meta capability (usable inside **execute**) returns the same
+`telemetry`, `phaseTimings`, and top-level `serverTiming` on ranked `query`
+results. Entity lookups, domain listings, empty/broad discovery,
+`search({ domain })`, and exact package identity omit those Jev fields.
 
 Ranked `search({ query })` may also prepend a **`## Waiting`** block when
 something the signed-in human must clear is `block` or `degraded` (reconnectable
