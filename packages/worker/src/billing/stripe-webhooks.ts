@@ -21,6 +21,7 @@ import {
 	isBillingConfigured,
 	selectPlanRetainingSubscriptions,
 } from './billing-config.ts'
+import { recordCheckoutFunnelEvent } from '#worker/identity/onboarding-funnel.ts'
 import {
 	BillingLinkError,
 	linkStripeCustomerFromCheckoutSessionAttribution,
@@ -146,6 +147,11 @@ async function handleCheckoutSessionCompleted(input: {
 			customerId: session.customer,
 			customerEmail,
 			now: input.now,
+		})
+		recordCheckoutFunnelEvent(input.env, {
+			stage: 'checkout_completed',
+			userId: stableUserIdHint,
+			plan: session.metadata?.kody_plan,
 		})
 	} catch (error) {
 		if (error instanceof BillingLinkError) {

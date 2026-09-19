@@ -85,6 +85,7 @@ export const routes = route({
 	accountActivityApi: '/account/activity.json',
 	accountWaiting: '/account/waiting',
 	accountWaitingApi: '/account/waiting.json',
+	accountWaitingClickPost: post('/account/waiting/click.json'),
 	accountExperiments: '/account/experiments',
 	accountExperimentsApi: '/account/experiments.json',
 	accountExperimentsApiPost: post('/account/experiments.json'),

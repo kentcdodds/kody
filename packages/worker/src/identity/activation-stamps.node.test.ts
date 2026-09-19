@@ -21,43 +21,62 @@ function createUsersDb() {
 								first_execute_at: null,
 								first_search_at: null,
 								first_saved_package_at: null,
+								first_secret_at: null,
+								first_integration_at: null,
+								first_job_at: null,
 								mcp_client_name: null,
 								last_active_at: null,
+							}
+							let changes = 0
+							const touchLastActive = (at: unknown) => {
+								const next = String(at)
+								if (
+									row.last_active_at == null ||
+									String(row.last_active_at) < next
+								) {
+									row.last_active_at = at
+								}
 							}
 							if (sql.includes('first_mcp_connected_at')) {
 								const at = values[0]
 								const clientName = values[1]
 								if (row.first_mcp_connected_at == null) {
 									row.first_mcp_connected_at = at
+									changes = 1
 								}
 								if (row.mcp_client_name == null && clientName != null) {
 									row.mcp_client_name = clientName
+									changes = 1
 								}
-								row.last_active_at = at
+								touchLastActive(at)
 							}
-							if (sql.includes('first_execute_at')) {
+							const claimColumns = [
+								'first_execute_at',
+								'first_search_at',
+								'first_saved_package_at',
+								'first_secret_at',
+								'first_integration_at',
+								'first_job_at',
+							] as const
+							for (const column of claimColumns) {
+								if (!sql.includes(`SET ${column} =`)) continue
 								const at = values[0]
-								if (row.first_execute_at == null) {
-									row.first_execute_at = at
+								if (row[column] == null) {
+									row[column] = at
+									touchLastActive(at)
+									changes = 1
 								}
-								row.last_active_at = at
 							}
-							if (sql.includes('first_search_at')) {
-								const at = values[0]
-								if (row.first_search_at == null) {
-									row.first_search_at = at
-								}
-								row.last_active_at = at
-							}
-							if (sql.includes('first_saved_package_at')) {
-								const at = values[0]
-								if (row.first_saved_package_at == null) {
-									row.first_saved_package_at = at
-								}
-								row.last_active_at = at
+							if (
+								changes === 0 &&
+								sql.includes('SET last_active_at =') &&
+								!claimColumns.some((column) => sql.includes(`SET ${column} =`))
+							) {
+								touchLastActive(values[0])
+								changes = 1
 							}
 							columns.set(stableUserId, row)
-							return { success: true, meta: { changes: 1 } }
+							return { success: true, meta: { changes } }
 						},
 					}
 				},
@@ -118,6 +137,9 @@ test('activation stamps are write-once and keep the first client name', async ()
 		first_execute_at: '2026-08-27T11:00:00.000Z',
 		first_search_at: '2026-08-27T11:30:00.000Z',
 		first_saved_package_at: '2026-08-27T12:00:00.000Z',
+		first_secret_at: null,
+		first_integration_at: null,
+		first_job_at: null,
 		last_active_at: '2026-08-28T12:00:00.000Z',
 	})
 })

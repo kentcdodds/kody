@@ -26,7 +26,10 @@ import {
 	workflowStatusColors,
 } from './admin-insights-shared.ts'
 import { renderCostVsPay } from './admin-insights-cost.tsx'
-import { renderLaunchSignals } from './admin-insights-launch.tsx'
+import {
+	renderLaunchSignals,
+	renderOnboardingFunnelSummary,
+} from './admin-insights-launch.tsx'
 import {
 	ChartCard,
 	ChartGrid,
@@ -71,6 +74,7 @@ export function renderDashboard(data: AdminInsightsLoaderData) {
 				</AccountManagementMessage>
 			) : null}
 			{renderLaunchSignals(data.launchSignals)}
+			{renderOnboardingFunnelSummary(data.onboardingFunnel)}
 			<ChartGrid>{renderCostVsPay(data.dynamicWorkerCost)}</ChartGrid>
 			<StatGrid>
 				<StatCard

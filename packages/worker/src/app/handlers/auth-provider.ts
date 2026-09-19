@@ -56,6 +56,7 @@ import {
 	claimAccountEmail,
 } from '#worker/identity/email-claims.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
+import { recordOnboardingFunnelEvent } from '#worker/identity/onboarding-funnel.ts'
 import {
 	getTurnstileSiteKey,
 	verifyPublicFormProtection,
@@ -678,6 +679,12 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					)
 						.bind(new Date().toISOString(), existingUser.id)
 						.run()
+					if ((stamped.meta.changes ?? 0) === 1) {
+						recordOnboardingFunnelEvent(env, {
+							stage: 'email_verified',
+							userId: resolveUserStableId(existingUser),
+						})
+					}
 					if ((stamped.meta.changes ?? 0) !== 1) {
 						await env.APP_DB.prepare(
 							`DELETE FROM oauth_connections
@@ -721,6 +728,10 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					return fail('account-error', 'user_create_conflict')
 				}
 				stableUserId = allocated.stableUserId
+				recordOnboardingFunnelEvent(env, {
+					stage: 'signup_started',
+					userId: stableUserId,
+				})
 				const createdAt = new Date().toISOString()
 				const signupAttribution = loginState.attribution
 				const createdUser = await db.create(
@@ -869,6 +880,14 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				ip: requestIp,
 				path: url.pathname,
 				reason: `provider=${provider}`,
+			})
+			recordOnboardingFunnelEvent(env, {
+				stage: 'signup_completed',
+				userId: stableUserId,
+			})
+			recordOnboardingFunnelEvent(env, {
+				stage: 'email_verified',
+				userId: stableUserId,
 			})
 			return issueLogin(newUser, defaultPostVerificationRedirect, {
 				destination: withAccountCreatedQuery(

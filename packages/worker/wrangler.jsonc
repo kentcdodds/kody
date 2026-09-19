@@ -524,6 +524,10 @@
 					"binding": "MCP_SEARCH_EVENTS",
 					"dataset": "kody_mcp_search_events",
 				},
+				{
+					"binding": "ONBOARDING_FUNNEL_EVENTS",
+					"dataset": "kody_onboarding_funnel_events",
+				},
 			],
 			"ai": {
 				"binding": "AI",
@@ -944,6 +948,10 @@
 				{
 					"binding": "MCP_SEARCH_EVENTS",
 					"dataset": "kody_mcp_search_events_preview",
+				},
+				{
+					"binding": "ONBOARDING_FUNNEL_EVENTS",
+					"dataset": "kody_onboarding_funnel_events_preview",
 				},
 			],
 			"ai": {

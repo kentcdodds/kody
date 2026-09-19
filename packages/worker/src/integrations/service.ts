@@ -11,6 +11,7 @@ import {
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 import { normalizeAllowedPackages } from '#mcp/secrets/allowed-packages.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { stampFirstIntegration } from '#worker/identity/activation-stamps.ts'
 import {
 	getPlatformOauthAppBySlug,
 	listPlatformOauthApps,
@@ -326,6 +327,13 @@ export async function upsertIntegration(
 			updated_at: now,
 		},
 	})
+	if (!existing) {
+		await stampFirstIntegration(
+			input.env.APP_DB,
+			{ stableUserId: input.userId, at: now },
+			input.env,
+		)
+	}
 
 	if (existing && existing.lane === 'user' && existing.app.slug !== appSlug) {
 		await deleteOauthAppIfNoConnections({
@@ -490,6 +498,13 @@ export async function upsertPlatformIntegration(input: {
 			updated_at: now,
 		},
 	})
+	if (!existing) {
+		await stampFirstIntegration(
+			input.env.APP_DB,
+			{ stableUserId: input.userId, at: now },
+			input.env,
+		)
+	}
 
 	// Converting an existing user-lane connection to the platform lane leaves
 	// its old app row behind when it was the sole connection; clean it up the

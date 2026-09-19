@@ -348,13 +348,14 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   marketing columns (`utm_*`, `first_touch_landing_path`,
   `first_touch_referrer`) store signup attribution when present. Activation and
   return columns (`first_mcp_connected_at`, `first_execute_at`,
-  `first_search_at`, `first_saved_package_at`, `mcp_client_name`,
-  `last_active_at`) support product metrics; email verification delivery columns
-  track the latest transactional verify-mail outcome.
-  `second_agent_standard_gift_granted_at` is the write-once ledger for the
-  14-day Standard overlay granted when unique inbound MCP OAuth `clientId`s
-  first reach 2; `second_agent_standard_gift_expires_at` is set only when that
-  overlay actually raises a free account (NULL means already paid / no-op). See
+  `first_search_at`, `first_saved_package_at`, `first_secret_at`,
+  `first_integration_at`, `first_job_at`, `mcp_client_name`, `last_active_at`)
+  support product metrics; email verification delivery columns track the latest
+  transactional verify-mail outcome. `second_agent_standard_gift_granted_at` is
+  the write-once ledger for the 14-day Standard overlay granted when unique
+  inbound MCP OAuth `clientId`s first reach 2;
+  `second_agent_standard_gift_expires_at` is set only when that overlay actually
+  raises a free account (NULL means already paid / no-op). See
   [Entitlements](./entitlements.md#second-agent-standard-gift).
   `user_tips_email_opt_outs` is the durable Kody tips opt-out (usage-state
   campaign mail only). `referral_standard_credit_expires_at` is the stackable
@@ -1190,6 +1191,10 @@ script owns no Durable Object classes.
   point per MCP `search` call with wall clock, exclusive-tile remainder, and
   intent/trim signals; see
   [Usage metering](./usage-metering.md#mcp-search-duration))
+- `ONBOARDING_FUNNEL_EVENTS` (Analytics Engine dataset, production/preview only;
+  one best-effort point per onboarding stage, indexed by stable user id, no
+  prompts or secrets; admin insights reads unique users for 7 and 28 days. See
+  [Usage metering](./usage-metering.md#onboarding-funnel))
 
 `packages/worker/wrangler.jsonc` also configures the `EMAIL` send binding,
 dispatch queues, worker loaders (`LOADER` / `APP_LOADER`), the `AI` binding, and

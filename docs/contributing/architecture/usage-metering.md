@@ -567,6 +567,40 @@ FROM kody_mcp_search_events
 WHERE timestamp > NOW() - INTERVAL '1' HOUR
 ```
 
+## Onboarding funnel
+
+Best-effort Analytics Engine points for the signup-to-checkout funnel. Not a
+`recordUsage()` event and not a UWD surface. First-seen stages also write the
+matching `users.first_*_at` column so a repeat does not emit again. Recording
+never throws and is a no-op without the binding.
+
+Production dataset `kody_onboarding_funnel_events` (preview:
+`kody_onboarding_funnel_events_preview`). Binding `ONBOARDING_FUNNEL_EVENTS` on
+origin, platform, and runtime. Schema:
+
+| Field     | Value                                                             |
+| --------- | ----------------------------------------------------------------- |
+| `index1`  | stable user id                                                    |
+| `blob1`   | stage (`signup_started`, `first_search`, `checkout_completed`, …) |
+| `blob2`   | MCP client family, sanitized waiting card id, or plan             |
+| `blob3`   | `mcp_connect_failed` error class, otherwise empty                 |
+| `blob4`   | sanitized OAuth client id (hostname when the id is a URL)         |
+| `double1` | `1`                                                               |
+
+No email, prompt, secret, or free-text error. `/admin/insights` reads unique
+users per stage for 7 and 28 days with `count(DISTINCT index1)`. Those counts
+are sampled, so they are a floor. Local dev and missing credentials render the
+table empty.
+
+```sql
+SELECT
+  blob1 AS stage,
+  count(DISTINCT index1) AS users
+FROM kody_onboarding_funnel_events
+WHERE timestamp > NOW() - INTERVAL '7' DAY
+GROUP BY stage
+```
+
 ## Reading the data
 
 - Analytics Engine: query the `kody_usage_events` dataset (SQL API) filtered by

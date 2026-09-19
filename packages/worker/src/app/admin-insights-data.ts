@@ -14,6 +14,7 @@ import {
 import { adminUsageMetrics } from '#worker/admin/user-usage-data.ts'
 import { loadFleetUsageInsights } from '#worker/admin/fleet-usage-insights.ts'
 import { queryAnalyticsEngineSql } from '#worker/usage/aggregate-rollups.ts'
+import { loadOnboardingFunnelSummary } from '#worker/identity/onboarding-funnel.ts'
 import { loadFleetPackageErrorRateSnapshot } from '#worker/usage/fleet-package-error-rate.ts'
 import {
 	type AdminInsightsActivation,
@@ -86,7 +87,7 @@ export async function loadAdminInsightsData(
 		: null
 	if (!cache) return await queryAdminInsights(env, now)
 	return await cachified({
-		key: 'admin-insights:v11',
+		key: 'admin-insights:v12',
 		cache,
 		ttl: insightsCacheTtlMs,
 		getFreshValue: () => queryAdminInsights(env, now),
@@ -129,6 +130,7 @@ async function queryAdminInsights(
 		activationBase,
 		launchSignals,
 		runLogInsights,
+		onboardingFunnel,
 	] = await Promise.all([
 		queryTotals(db),
 		jobsData(env).getJobInsights(),
@@ -197,6 +199,7 @@ async function queryAdminInsights(
 		queryActivationBase(db),
 		loadAdminLaunchSignals({ db, env, now }),
 		readAdminInsightsRunLogSnapshot(env.BUNDLE_ARTIFACTS_KV),
+		loadOnboardingFunnelSummary(env),
 	])
 
 	const [fleetUsage, packageErrorRateSnapshot] = await Promise.all([
@@ -260,6 +263,7 @@ async function queryAdminInsights(
 		workflowStatuses: runLogInsights.workflowStatuses,
 		jobHealth,
 		activation: mergeActivation(activationBase, runLogInsights),
+		onboardingFunnel,
 		launchSignals,
 		runLogCompleteness: {
 			usersAttempted: runLogInsights.usersAttempted,

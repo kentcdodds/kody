@@ -14,6 +14,7 @@ import { waitUntil } from 'cloudflare:workers'
 import { maybeRewardHeldReferralAfterEmailVerified } from '#worker/entitlements/referral-program.ts'
 import { latestReferrerPaidPeriodEnd } from '#worker/billing/stripe-webhooks.ts'
 import { attachPendingPackageShareInvitesSafely } from '#worker/package-registry/share-grants.ts'
+import { recordOnboardingFunnelEvent } from '#worker/identity/onboarding-funnel.ts'
 
 function getVerifyEmailError(
 	reason: 'missing_token' | 'invalid_token' | 'expired_token',
@@ -74,6 +75,10 @@ export function createVerifyEmailHandler(env: Env) {
 				email: result.email,
 				ip: requestIp,
 				path: url.pathname,
+			})
+			recordOnboardingFunnelEvent(env, {
+				stage: 'email_verified',
+				userId: result.stableUserId,
 			})
 			await attachPendingPackageShareInvitesSafely({
 				db: env.APP_DB,

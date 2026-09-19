@@ -440,7 +440,10 @@ privacy-safe point to `MCP_SEARCH_EVENTS` (see
 [Usage metering — MCP search duration](./usage-metering.md#mcp-search-duration)).
 Operators asking "is search slow this hour?" query that dataset; UWD `retriever`
 surface attribution is unchanged and does not measure search latency.
-`/admin/insights` has no search-latency chart.
+`/admin/insights` has no search-latency chart. The same page does show the
+onboarding funnel (`ONBOARDING_FUNNEL_EVENTS`): unique users per stage for the
+last 7 and 28 days. See
+[Usage metering — Onboarding funnel](./usage-metering.md#onboarding-funnel).
 
 Authentication and authorization denials are deliberately **not**
 `McpCallerError`. `/mcp` rejects anonymous callers at the transport before any

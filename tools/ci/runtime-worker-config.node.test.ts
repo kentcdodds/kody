@@ -154,6 +154,10 @@ function buildMainGeneratedConfig(envName: string) {
 				binding: 'PACKAGE_INVOKE_SPECIFIER_EVENTS',
 				dataset: 'kody_package_invoke_specifier_events_pr',
 			},
+			{
+				binding: 'ONBOARDING_FUNNEL_EVENTS',
+				dataset: 'kody_onboarding_funnel_events_pr',
+			},
 		],
 		vars: {
 			APP_BASE_URL: 'https://kody-pr-7.example.workers.dev',

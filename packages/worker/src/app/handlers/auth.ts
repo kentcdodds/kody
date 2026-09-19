@@ -39,6 +39,7 @@ import {
 	claimAccountEmail,
 } from '#worker/identity/email-claims.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
+import { recordOnboardingFunnelEvent } from '#worker/identity/onboarding-funnel.ts'
 import {
 	createPasswordHash,
 	verifyPassword,
@@ -278,6 +279,12 @@ export function createAuthHandler(env: Env) {
 					env.APP_DB,
 					normalizedEmail,
 				)
+				if (allocated.ok) {
+					recordOnboardingFunnelEvent(env, {
+						stage: 'signup_started',
+						userId: allocated.stableUserId,
+					})
+				}
 				if (!allocated.ok) {
 					if (allocated.reason === 'current_email') {
 						void logAuditEvent({
@@ -571,6 +578,10 @@ export function createAuthHandler(env: Env) {
 					email: normalizedEmail,
 					ip: requestIp,
 					path: url.pathname,
+				})
+				recordOnboardingFunnelEvent(env, {
+					stage: 'signup_completed',
+					userId: record.stableUserId,
 				})
 				const headers = new Headers()
 				headers.append('Set-Cookie', cookie)

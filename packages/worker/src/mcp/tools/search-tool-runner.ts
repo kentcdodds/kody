@@ -111,7 +111,7 @@ async function stampFirstSearchIfAuthenticated(
 	// the same request, and waitUntil would leave first_search_at unset so
 	// the notice still says Step 2 is left after this search completed it.
 	try {
-		await stampFirstSearch(db, { stableUserId: userId })
+		await stampFirstSearch(db, { stableUserId: userId }, agent.getEnv())
 	} catch (error: unknown) {
 		console.warn('activation-stamp-search-failed', error)
 	}

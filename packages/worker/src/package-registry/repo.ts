@@ -4,6 +4,7 @@ import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import { classifyForkListingRelation } from '#universal/community-listing-ahead.ts'
 import { buildLengthSafeVectorId } from '#worker/vectorize/vector-ids.ts'
 import { stampFirstSavedPackage } from '#worker/identity/activation-stamps.ts'
+import { type OnboardingFunnelEnv } from '#worker/identity/onboarding-funnel.ts'
 import {
 	type SavedPackageCommunityProvenance,
 	type SavedPackageRecord,
@@ -132,6 +133,7 @@ export async function insertSavedPackage(
 		created_at?: string
 		updated_at?: string
 	},
+	telemetry?: OnboardingFunnelEnv | null,
 ) {
 	const now = new Date().toISOString()
 	await db
@@ -157,10 +159,14 @@ export async function insertSavedPackage(
 			row.updated_at ?? now,
 		)
 		.run()
-	await stampFirstSavedPackage(db, {
-		stableUserId: row.user_id,
-		at: row.created_at ?? now,
-	})
+	await stampFirstSavedPackage(
+		db,
+		{
+			stableUserId: row.user_id,
+			at: row.created_at ?? now,
+		},
+		telemetry,
+	)
 }
 
 export async function updateSavedPackage(

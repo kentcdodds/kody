@@ -5,6 +5,11 @@
  */
 
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
+import {
+	recordOnboardingFunnelEvent,
+	type OnboardingFunnelEnv,
+} from './onboarding-funnel.ts'
+import { type OnboardingFunnelStage } from '#universal/onboarding-funnel.ts'
 
 function nowIso(at?: string) {
 	return at ?? new Date().toISOString()
@@ -104,112 +109,227 @@ export async function userHasFirstSearch(
 	}
 }
 
-export async function stampFirstExecute(
-	db: D1Database,
-	input: { stableUserId: string; at?: string },
-): Promise<void> {
-	try {
-		const at = nowIso(input.at)
-		await db
-			.prepare(
-				`UPDATE users
-				SET first_execute_at = COALESCE(first_execute_at, ?1),
+const activationClaimColumns = [
+	'first_execute_at',
+	'first_search_at',
+	'first_saved_package_at',
+	'first_secret_at',
+	'first_integration_at',
+	'first_job_at',
+] as const
+
+type ActivationClaimColumn = (typeof activationClaimColumns)[number]
+
+const activationClaimStage: Record<
+	ActivationClaimColumn,
+	OnboardingFunnelStage
+> = {
+	first_execute_at: 'first_execute',
+	first_search_at: 'first_search',
+	first_saved_package_at: 'first_package',
+	first_secret_at: 'first_secret',
+	first_integration_at: 'first_integration',
+	first_job_at: 'first_job',
+}
+
+function activationClaimSql(column: ActivationClaimColumn) {
+	switch (column) {
+		case 'first_execute_at':
+			return `UPDATE users
+				SET first_execute_at = ?1,
 					last_active_at = CASE
 						WHEN last_active_at IS NULL THEN ?1
 						WHEN date(last_active_at) < date(?1) THEN ?1
 						ELSE last_active_at
 					END,
-					updated_at = CASE
-						WHEN first_execute_at IS NULL
-							OR last_active_at IS NULL
-							OR date(last_active_at) < date(?1)
-						THEN ?2
-						ELSE updated_at
-					END
+					updated_at = ?2
 				WHERE stable_user_id = ?3
-					AND (
-						first_execute_at IS NULL
-						OR last_active_at IS NULL
-						OR date(last_active_at) < date(?1)
-					)`,
-			)
+					AND first_execute_at IS NULL`
+		case 'first_search_at':
+			return `UPDATE users
+				SET first_search_at = ?1,
+					last_active_at = CASE
+						WHEN last_active_at IS NULL THEN ?1
+						WHEN date(last_active_at) < date(?1) THEN ?1
+						ELSE last_active_at
+					END,
+					updated_at = ?2
+				WHERE stable_user_id = ?3
+					AND first_search_at IS NULL`
+		case 'first_saved_package_at':
+			return `UPDATE users
+				SET first_saved_package_at = ?1,
+					last_active_at = CASE
+						WHEN last_active_at IS NULL THEN ?1
+						WHEN date(last_active_at) < date(?1) THEN ?1
+						ELSE last_active_at
+					END,
+					updated_at = ?2
+				WHERE stable_user_id = ?3
+					AND first_saved_package_at IS NULL`
+		case 'first_secret_at':
+			return `UPDATE users
+				SET first_secret_at = ?1,
+					last_active_at = CASE
+						WHEN last_active_at IS NULL THEN ?1
+						WHEN date(last_active_at) < date(?1) THEN ?1
+						ELSE last_active_at
+					END,
+					updated_at = ?2
+				WHERE stable_user_id = ?3
+					AND first_secret_at IS NULL`
+		case 'first_integration_at':
+			return `UPDATE users
+				SET first_integration_at = ?1,
+					last_active_at = CASE
+						WHEN last_active_at IS NULL THEN ?1
+						WHEN date(last_active_at) < date(?1) THEN ?1
+						ELSE last_active_at
+					END,
+					updated_at = ?2
+				WHERE stable_user_id = ?3
+					AND first_integration_at IS NULL`
+		case 'first_job_at':
+			return `UPDATE users
+				SET first_job_at = ?1,
+					last_active_at = CASE
+						WHEN last_active_at IS NULL THEN ?1
+						WHEN date(last_active_at) < date(?1) THEN ?1
+						ELSE last_active_at
+					END,
+					updated_at = ?2
+				WHERE stable_user_id = ?3
+					AND first_job_at IS NULL`
+		default: {
+			const exhaustive: never = column
+			throw new Error(`Unknown activation stamp: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/**
+ * Write-once claim. Returns true only when this call stored the timestamp.
+ * Subsequent calls still refresh last_active_at. Never throws.
+ */
+async function claimActivationStamp(
+	db: D1Database,
+	input: {
+		column: ActivationClaimColumn
+		stableUserId: string
+		at?: string
+		debugLabel: string
+		telemetry?: OnboardingFunnelEnv | null
+	},
+): Promise<boolean> {
+	try {
+		const at = nowIso(input.at)
+		const result = await db
+			.prepare(activationClaimSql(input.column))
 			.bind(at, utcSqliteTimestamp(), input.stableUserId)
 			.run()
+		const first = (result.meta?.changes ?? 0) > 0
+		if (!first) {
+			await touchLastActiveAt(db, {
+				stableUserId: input.stableUserId,
+				at,
+			})
+			return false
+		}
+		if (input.telemetry) {
+			recordOnboardingFunnelEvent(input.telemetry, {
+				stage: activationClaimStage[input.column],
+				userId: input.stableUserId,
+			})
+		}
+		return true
 	} catch (error) {
-		console.debug('activation-stamp-execute-failed', error)
+		console.debug(input.debugLabel, error)
+		return false
 	}
+}
+
+export async function stampFirstExecute(
+	db: D1Database,
+	input: { stableUserId: string; at?: string },
+	telemetry?: OnboardingFunnelEnv | null,
+): Promise<boolean> {
+	return claimActivationStamp(db, {
+		column: 'first_execute_at',
+		stableUserId: input.stableUserId,
+		at: input.at,
+		debugLabel: 'activation-stamp-execute-failed',
+		telemetry,
+	})
 }
 
 export async function stampFirstSearch(
 	db: D1Database,
 	input: { stableUserId: string; at?: string },
-): Promise<void> {
-	try {
-		const at = nowIso(input.at)
-		await db
-			.prepare(
-				`UPDATE users
-				SET first_search_at = COALESCE(first_search_at, ?1),
-					last_active_at = CASE
-						WHEN last_active_at IS NULL THEN ?1
-						WHEN date(last_active_at) < date(?1) THEN ?1
-						ELSE last_active_at
-					END,
-					updated_at = CASE
-						WHEN first_search_at IS NULL
-							OR last_active_at IS NULL
-							OR date(last_active_at) < date(?1)
-						THEN ?2
-						ELSE updated_at
-					END
-				WHERE stable_user_id = ?3
-					AND (
-						first_search_at IS NULL
-						OR last_active_at IS NULL
-						OR date(last_active_at) < date(?1)
-					)`,
-			)
-			.bind(at, utcSqliteTimestamp(), input.stableUserId)
-			.run()
-	} catch (error) {
-		console.debug('activation-stamp-search-failed', error)
-	}
+	telemetry?: OnboardingFunnelEnv | null,
+): Promise<boolean> {
+	return claimActivationStamp(db, {
+		column: 'first_search_at',
+		stableUserId: input.stableUserId,
+		at: input.at,
+		debugLabel: 'activation-stamp-search-failed',
+		telemetry,
+	})
 }
 
 export async function stampFirstSavedPackage(
 	db: D1Database,
 	input: { stableUserId: string; at?: string },
-): Promise<void> {
-	try {
-		const at = nowIso(input.at)
-		await db
-			.prepare(
-				`UPDATE users
-				SET first_saved_package_at = COALESCE(first_saved_package_at, ?1),
-					last_active_at = CASE
-						WHEN last_active_at IS NULL THEN ?1
-						WHEN date(last_active_at) < date(?1) THEN ?1
-						ELSE last_active_at
-					END,
-					updated_at = CASE
-						WHEN first_saved_package_at IS NULL
-							OR last_active_at IS NULL
-							OR date(last_active_at) < date(?1)
-						THEN ?2
-						ELSE updated_at
-					END
-				WHERE stable_user_id = ?3
-					AND (
-						first_saved_package_at IS NULL
-						OR last_active_at IS NULL
-						OR date(last_active_at) < date(?1)
-					)`,
-			)
-			.bind(at, utcSqliteTimestamp(), input.stableUserId)
-			.run()
-	} catch (error) {
-		console.debug('activation-stamp-saved-package-failed', error)
-	}
+	telemetry?: OnboardingFunnelEnv | null,
+): Promise<boolean> {
+	return claimActivationStamp(db, {
+		column: 'first_saved_package_at',
+		stableUserId: input.stableUserId,
+		at: input.at,
+		debugLabel: 'activation-stamp-saved-package-failed',
+		telemetry,
+	})
+}
+
+export async function stampFirstSecret(
+	db: D1Database,
+	input: { stableUserId: string; at?: string },
+	telemetry?: OnboardingFunnelEnv | null,
+): Promise<boolean> {
+	return claimActivationStamp(db, {
+		column: 'first_secret_at',
+		stableUserId: input.stableUserId,
+		at: input.at,
+		debugLabel: 'activation-stamp-secret-failed',
+		telemetry,
+	})
+}
+
+export async function stampFirstIntegration(
+	db: D1Database,
+	input: { stableUserId: string; at?: string },
+	telemetry?: OnboardingFunnelEnv | null,
+): Promise<boolean> {
+	return claimActivationStamp(db, {
+		column: 'first_integration_at',
+		stableUserId: input.stableUserId,
+		at: input.at,
+		debugLabel: 'activation-stamp-integration-failed',
+		telemetry,
+	})
+}
+
+export async function stampFirstJob(
+	db: D1Database,
+	input: { stableUserId: string; at?: string },
+	telemetry?: OnboardingFunnelEnv | null,
+): Promise<boolean> {
+	return claimActivationStamp(db, {
+		column: 'first_job_at',
+		stableUserId: input.stableUserId,
+		at: input.at,
+		debugLabel: 'activation-stamp-job-failed',
+		telemetry,
+	})
 }
 
 /** Refresh last_active_at on login (and similar return signals). */

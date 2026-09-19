@@ -322,7 +322,7 @@ export async function refreshSavedPackageProjection(input: {
 					console.warn('kit-first-package-pre-read-failed', error)
 					isFirstSavedPackage = true
 				}
-				await insertSavedPackage(input.env.APP_DB, row)
+				await insertSavedPackage(input.env.APP_DB, row, input.env)
 				if (isFirstSavedPackage) {
 					scheduleKitSubscriberSync({
 						env: input.env,

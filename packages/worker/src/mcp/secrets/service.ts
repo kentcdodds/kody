@@ -49,6 +49,7 @@ import {
 import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 import { type SecretMetadata, type SecretScope } from './types.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { stampFirstSecret } from '#worker/identity/activation-stamps.ts'
 
 type SecretOwnerContext = {
 	userId: string
@@ -189,6 +190,13 @@ export async function saveSecret(
 			updated_at: now,
 		},
 	})
+	if (existingEntry == null && input.scope === 'user') {
+		await stampFirstSecret(
+			input.env.APP_DB,
+			{ stableUserId: input.userId, at: now },
+			input.env,
+		)
+	}
 	return toSecretMetadata({
 		name,
 		scope: input.scope,

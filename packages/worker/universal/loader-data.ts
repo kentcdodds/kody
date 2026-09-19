@@ -31,6 +31,7 @@ import { type EmailNotificationDestination } from '#universal/email-destinations
 import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { type IntegrationAuthFailureView } from '#universal/connection-trouble.ts'
 import { type WaitingItem } from '#universal/waiting.ts'
+import { type OnboardingFunnelStage } from '#universal/onboarding-funnel.ts'
 import { type EntitlementLadder } from '#universal/plans.ts'
 import {
 	type ComputeOverageDisposition,
@@ -824,6 +825,29 @@ export type AdminInsightsActivation = {
 	medianHoursToActivation: number | null
 }
 
+export type AdminInsightsOnboardingFunnelStep = {
+	stage: OnboardingFunnelStage
+	users: number
+}
+
+export type AdminInsightsOnboardingFunnelWindow = {
+	days: 7 | 28
+	steps: Array<AdminInsightsOnboardingFunnelStep>
+}
+
+/**
+ * Unique stable user ids per funnel stage from Analytics Engine. `available`
+ * is false when the SQL API cannot be queried (local dev, missing credentials).
+ * Counts are sampled, so they are a floor, not a ledger.
+ */
+export type AdminInsightsOnboardingFunnel = {
+	available: boolean
+	windows: {
+		days7: AdminInsightsOnboardingFunnelWindow
+		days28: AdminInsightsOnboardingFunnelWindow
+	}
+}
+
 /** Content-free status for the hourly RunLog snapshot that insights reads. */
 export type AdminInsightsRunLogCompleteness = {
 	usersAttempted: number
@@ -951,6 +975,7 @@ export type AdminInsightsLoaderData = {
 	workflowStatuses: Array<AdminInsightsWorkflowStatus>
 	jobHealth: AdminInsightsJobHealth
 	activation: AdminInsightsActivation
+	onboardingFunnel: AdminInsightsOnboardingFunnel
 	launchSignals: AdminInsightsLaunchSignals
 	runLogCompleteness: AdminInsightsRunLogCompleteness
 	topRuntimeDurationConsumers: Array<AdminInsightsDurationConsumer>
