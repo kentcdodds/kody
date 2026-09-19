@@ -131,7 +131,7 @@ This project uses the following resources:
     through this binding. When `AI_GATEWAY_ID` is configured, calls are sent
     through AI Gateway via the Workers AI binding options. `typesafe/jev`
     requires that gateway (authentication plus Unified Billing credits or BYOK);
-    embeddings can still call Workers AI directly when the id is unset.
+    embeddings call Workers AI directly when the id is unset.
 - Second registrable domain for hosted package apps
   - Production: `kody.run` (zone in the same Cloudflare account, on Cloudflare
     nameservers), served by the runtime Worker via **zone routes** plus proxied
@@ -474,7 +474,7 @@ automatically:
   Score calls through the configured Cloudflare AI Gateway when set. For
   `typesafe/jev`, that gateway must have authentication enabled and Unified
   Billing credits, or BYOK; authentication off yields HTTP 403, zero credits
-  yields HTTP 402. Embeddings still work without Gateway; Jev does not.)
+  yields HTTP 402. Embeddings work without Gateway; Jev does not.)
 - `CAPABILITY_REINDEX_SECRET` (strongly recommended for production — CI skips
   the post-deploy reindex and origin-only execute smoke check when unset;
   optional locally and for previews; bearer auth for
@@ -712,7 +712,7 @@ How to get/set each value:
 - `AI_GATEWAY_ID`
   - Create a Cloudflare AI Gateway in the dashboard and copy its production
     gateway ID. The Worker uses this for Workers AI embedding and Jev Score
-    calls when set. Embeddings can still call Workers AI directly when unset;
+    calls when set. Embeddings call Workers AI directly when unset;
     `typesafe/jev` cannot — ranked-search Jev Score requires this gateway.
     Enable authentication on the gateway and keep Unified Billing credits (or
     provide BYOK). Authentication off yields HTTP 403; zero credits yields

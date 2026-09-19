@@ -60,17 +60,13 @@ the package ranks with that server so a wrapper workflow stays visible.
 
 ### Package exports in ranked results
 
-Saved packages still appear as **package** index hits (`package:{id}`). When a
-query strongly matches one export contract (subpath, JSDoc purpose, or callable
-name), ranked `search({ query })` may also return that export as its own hit
-with entity ref `package:{id}#{subpath}` — the same shape as
+Saved packages appear as **package** index hits (`package:{id}`). When a query
+strongly matches one export contract (subpath, JSDoc purpose, or callable name),
+ranked `search({ query })` may also return that export as its own hit with
+entity ref `package:{id}#{subpath}` — the same shape as
 `search({ entity: "package:…#…" })`. Weak or package-overview queries do not
-flood results with every export; nested “best action” hints on package index
-hits remain for medium-confidence matches. Optional stage-2 Jev Score rerank
-runs only for **paid** plans (Standard / Pro / Max) when the `jev-search-rerank`
-flag is on **and** the post-hybrid candidate pool looks ambiguous (small clear
-pools skip). Free and anonymous never get Jev. The flag is the rollout / kill
-switch; plan + necessity are the product gates.
+flood results with every export; package index hits include nested “best action”
+hints for medium-confidence matches.
 
 ### Domain scoping
 
@@ -109,6 +105,13 @@ and `search({ domain })` do not attach memories. **execute** retrieves memories
 only when its caller opts in with **`memoryContext`**. Archived or very weak
 memory matches are not surfaced automatically.
 
+### Ranked search scoring
+
+Optional stage-2 Jev Score rerank runs only for **paid** plans (Standard / Pro /
+Max) when the `jev-search-rerank` flag is on **and** the post-hybrid candidate
+pool looks ambiguous (small clear pools skip). Free and anonymous never get Jev.
+The flag is a kill switch; plan + necessity are the product gates.
+
 Ranked list-mode structured content includes **`telemetry.jevRerank`**
 (`applied`, `skipped-*`, or `fallback-*`) and **`phaseTimings.jevRerankMs`**.
 Skip reasons include `skipped-flag-off`, `skipped-plan` (Free / anonymous),
@@ -138,12 +141,11 @@ discovery do not inject it. Matching integration hits also carry the reconnect
 Plan-limit or quota denials keep the existing error text and `isError` flag and
 add a focused `entitlement` object on structured content. Ordinary successful
 search results omit `entitlement`. Search is not a plan entitlement and has no
-usage-catalog quota; a separate high-ceiling per-user abuse rate limit (burst +
-daily) still applies before embeddings / Jev. Burst ceilings are free 80/min,
-standard 160/min, pro 200/min, max 240/min; daily ceilings stay 1_000 / 5_000 /
-10_000 / 25_000. When that trips, structured content includes a `rateLimit`
-object (`code: "rate_limited"`) so agents can back off — not an `entitlement`
-upgrade hint.
+usage-catalog quota. A high-ceiling per-user abuse rate limit (burst + daily)
+applies before embeddings / Jev: free 80/min and 1_000/day, standard 160/min and
+5_000/day, pro 200/min and 10_000/day, max 240/min and 25_000/day. When that
+trips, structured content includes a `rateLimit` object (`code: "rate_limited"`)
+so agents can back off — not an `entitlement` upgrade hint.
 
 Search responses also return top-level **`timing`** metadata with
 **`startedAt`**, **`endedAt`**, and **`durationMs`** so hosts can reason about

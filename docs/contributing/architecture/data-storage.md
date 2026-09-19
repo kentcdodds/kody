@@ -340,9 +340,11 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   with `adminUserStableIdConflict` (returns stable user id, username,
   `created_at`, and email-verified state — never content). Optional community
   profile fields are `display_name`, `bio`, and `profile_visibility` (default
-  `public`). `account_type` (`'person'` default or `'platform'`) distinguishes
-  normal signups from operator-provisioned platform accounts that own official
-  package scopes (see [Platform accounts](./platform-accounts.md)). First-touch
+  `public`). `experiments_opt_in` is the account preference for the feature-flag
+  `experiments_opt_in` audience, edited at `/account/experiments`.
+  `account_type` (`'person'` default or `'platform'`) distinguishes normal
+  signups from operator-provisioned platform accounts that own official package
+  scopes (see [Platform accounts](./platform-accounts.md)). First-touch
   marketing columns (`utm_*`, `first_touch_landing_path`,
   `first_touch_referrer`) store signup attribution when present. Activation and
   return columns (`first_mcp_connected_at`, `first_execute_at`,
