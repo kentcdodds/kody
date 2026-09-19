@@ -62,6 +62,9 @@ test('admin feature flags: global toggle and per-user override visibility', asyn
 		demoFlagSection.getByText(/experiments opt-in only/),
 	).toBeVisible()
 
+	// Restore everyone before enabling: seeded users are not experiments-opted-in,
+	// so experiments_opt_in audience would hide demo-indicator for the admin.
+	await audienceSelect.selectOption('everyone')
 	await enabledCheckbox.check()
 	await demoFlagSection.getByLabel('Note').fill(`e2e-global-${runId}`)
 	await demoFlagSection
@@ -69,7 +72,7 @@ test('admin feature flags: global toggle and per-user override visibility', asyn
 		.click()
 	await page.reload()
 	await expect(page.getByTestId('demo-indicator')).toBeVisible()
-	await expect(audienceSelect).toHaveValue('experiments_opt_in')
+	await expect(audienceSelect).toHaveValue('everyone')
 
 	await enabledCheckbox.uncheck()
 	await demoFlagSection
