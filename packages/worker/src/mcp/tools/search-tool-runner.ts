@@ -4,6 +4,7 @@ import { stampFirstSearch } from '#worker/identity/activation-stamps.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import { isMcpCallerError } from '#mcp/caller-error.ts'
 import { entitlementStructuredContent } from '#mcp/entitlement-metadata.ts'
+import { rateLimitStructuredContent } from '#mcp/rate-limit-metadata.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {
 	callerContextFields,
@@ -754,6 +755,7 @@ export async function runSearchTool(input: {
 				timing,
 				error: error.message,
 				...entitlementStructuredContent(error),
+				...rateLimitStructuredContent(error),
 			},
 			isError: true,
 		}

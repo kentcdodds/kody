@@ -58,6 +58,7 @@ const mockModule = vi.hoisted(() => {
 		searchUnified: vi.fn(async () => createEmptySearchUnifiedResult()),
 		loadRelevantMemoriesForTool: vi.fn(),
 		runPackageRetrievers: vi.fn(),
+		consumeSearchRateLimit: vi.fn(async () => undefined),
 	}
 })
 
@@ -94,6 +95,16 @@ vi.mock('#worker/package-retrievers/service.ts', () => ({
 	runPackageRetrievers: (...args: Array<unknown>) =>
 		mockModule.runPackageRetrievers(...args),
 }))
+
+vi.mock('#worker/search-rate-limit.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/search-rate-limit.ts')>()
+	return {
+		...actual,
+		consumeSearchRateLimit: (...args: Array<unknown>) =>
+			mockModule.consumeSearchRateLimit(...args),
+	}
+})
 
 const { executeSearchList } = await import('./search-execution.ts')
 
@@ -523,4 +534,59 @@ test('executeSearchList does not prefetch an embedding for domain-overview or in
 		includeHiddenPackages: false,
 	})
 	expect(aiRunCount).toBe(0)
+})
+
+test('executeSearchList fails closed before ranking when the abuse rate limit rejects', async () => {
+	const { SearchRateLimitError } = await import('#worker/search-rate-limit.ts')
+	mockModule.consumeSearchRateLimit.mockReset()
+	mockModule.consumeSearchRateLimit.mockRejectedValueOnce(
+		new SearchRateLimitError({
+			window: 'burst',
+			retryAfterSeconds: 60,
+			limit: 40,
+			plan: 'free',
+		}),
+	)
+	mockModule.searchUnified.mockClear()
+
+	const env = {
+		AI: {
+			async run() {
+				return {
+					data: [deterministicEmbedding('should-not-embed')],
+					shape: [1, CAPABILITY_EMBEDDING_DIMENSIONS],
+				}
+			},
+		},
+		CAPABILITY_VECTOR_INDEX: {
+			async query() {
+				return { matches: [] }
+			},
+		},
+		APP_DB: {},
+	} as unknown as Env
+
+	await expect(
+		executeSearchList({
+			env,
+			callerContext: {
+				baseUrl: 'https://example.com',
+				user: {
+					userId: 'user-1',
+					email: 'user@example.com',
+					displayName: 'User',
+					username: 'user',
+				},
+			} as never,
+			conversationId: 'conv-search-rate-limit',
+			query: 'skills',
+			limit: 15,
+			userId: 'user-1',
+			includeHiddenPackages: false,
+		}),
+	).rejects.toMatchObject({
+		code: 'rate_limited',
+		window: 'burst',
+	})
+	expect(mockModule.searchUnified).not.toHaveBeenCalled()
 })
