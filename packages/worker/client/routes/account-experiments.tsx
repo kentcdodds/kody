@@ -80,6 +80,10 @@ export function AccountExperimentsRoute(handle: Handle) {
 				credentials: 'include',
 				body: JSON.stringify({ experimentsOptIn: enabled }),
 			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
 			const next = await readJson<AccountExperimentsLoaderData>(response)
 			if (!response.ok || !next?.ok) {
 				throw new Error(
@@ -88,8 +92,10 @@ export function AccountExperimentsRoute(handle: Handle) {
 						: null) ?? 'Unable to update experiments preference.',
 				)
 			}
+			// Keep `appliedSnapshot` on the route-data cache object so the next
+			// render does not treat that still-cached value as a newer snapshot
+			// and overwrite the POST result (same pattern as account-shared).
 			payload = next
-			appliedSnapshot = next
 			message = enabled
 				? 'You are opted into experiments. You can turn this off anytime.'
 				: 'You are opted out of experiments.'
