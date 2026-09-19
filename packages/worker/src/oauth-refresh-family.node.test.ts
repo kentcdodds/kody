@@ -1,4 +1,5 @@
-import { expect, test } from 'vitest'
+import * as Sentry from '@sentry/cloudflare'
+import { expect, test, vi } from 'vitest'
 import {
 	decideRefreshFamilyAction,
 	forgetRefreshFamilyGrant,
@@ -162,46 +163,67 @@ function missingKvEnv() {
 }
 
 test('refresh family persist failures still return provider-minted tokens', async () => {
-	const minted = {
-		access_token: 'user-1:grant-1:at2',
-		refresh_token: 'user-1:grant-1:rt2',
-		token_type: 'bearer',
-		expires_in: 3600,
-		scope: 'profile email',
+	const captureException = vi.spyOn(Sentry, 'captureException')
+	const transientKvError = new Error('KV PUT failed: 500 Internal Server Error')
+	const unexpectedPersistError = new Error('kv unavailable')
+	const transientMinted = mintedTokens(
+		'user-persist:grant-kv:rt2',
+		'user-persist:grant-kv:at2',
+	)
+	const unexpectedMinted = mintedTokens(
+		'user-persist:grant-other:rt2',
+		'user-persist:grant-other:at2',
+	)
+
+	async function persistWithPutError(
+		refreshToken: string,
+		minted: ReturnType<typeof mintedTokens>,
+		putError: Error,
+	) {
+		return handleMcpOAuthTokenRequest({
+			request: refreshTokenRequest(refreshToken),
+			env: {
+				SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+				BUNDLE_ARTIFACTS_KV: {
+					async get() {
+						return null
+					},
+					async put() {
+						throw putError
+					},
+				},
+				OAUTH_KV: {
+					async get() {
+						return null
+					},
+				},
+			} as unknown as Env,
+			fetchProvider: async () =>
+				new Response(JSON.stringify(minted), {
+					status: 200,
+					headers: { 'Content-Type': 'application/json' },
+				}),
+		})
 	}
-	const { response } = await handleMcpOAuthTokenRequest({
-		request: new Request('https://heykody.dev/oauth/token', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-			body: new URLSearchParams({
-				grant_type: 'refresh_token',
-				refresh_token: 'user-1:grant-1:rt1',
-			}),
-		}),
-		env: {
-			SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-			BUNDLE_ARTIFACTS_KV: {
-				async get() {
-					return null
-				},
-				async put() {
-					throw new Error('kv unavailable')
-				},
-			},
-			OAUTH_KV: {
-				async get() {
-					return null
-				},
-			},
-		} as unknown as Env,
-		fetchProvider: async () =>
-			new Response(JSON.stringify(minted), {
-				status: 200,
-				headers: { 'Content-Type': 'application/json' },
-			}),
-	})
-	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toEqual(minted)
+
+	const transient = await persistWithPutError(
+		'user-persist:grant-kv:rt1',
+		transientMinted,
+		transientKvError,
+	)
+	expect(transient.response.status).toBe(200)
+	await expect(transient.response.json()).resolves.toEqual(transientMinted)
+	expect(captureException).not.toHaveBeenCalled()
+
+	const unexpected = await persistWithPutError(
+		'user-persist:grant-other:rt1',
+		unexpectedMinted,
+		unexpectedPersistError,
+	)
+	expect(unexpected.response.status).toBe(200)
+	await expect(unexpected.response.json()).resolves.toEqual(unexpectedMinted)
+	expect(captureException).toHaveBeenCalledWith(unexpectedPersistError)
+	captureException.mockRestore()
 })
 
 test('refresh family reuses isolate memory when KV still misses after the first rotation', async () => {
