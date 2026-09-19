@@ -16,7 +16,10 @@
  * are unwrapped from known Gateway envelopes, then merged before parse.
  * That third-party model requires Gateway authentication and Unified
  * Billing (or BYOK); the Worker does not fall back to direct Workers AI.
- * Failures and low confidence fall back to the pre-Jev hybrid order.
+ * Failures and low mean confidence fall back to the pre-Jev hybrid order.
+ * After Score, keep uses an adaptive cutoff: high bar first, one secondary
+ * floor if that keep-set is empty, then a true empty ranked list (never
+ * restore hybrid noise when every Jev score is weak).
  *
  * Offline / deterministic embedding paths never call Jev.
  */
@@ -69,9 +72,31 @@ export const jevSearchMinMeanConfidence = 0.45
 
 /**
  * Score rubric: 0 unrelated … 3 best primary match. Drop below "clearly
- * relevant" (2) unless that would empty the result set.
+ * relevant" (2) unless that would empty the result set — then try the
+ * secondary floor once ({@link jevSearchSecondaryKeepScore}).
  */
 export const jevSearchMinKeepScore = 1.5
+
+/**
+ * Secondary keep floor when nothing clears {@link jevSearchMinKeepScore}.
+ * Mid-tier Jev scores stay in Jev order; weaker still yields a true empty
+ * list (no hybrid fallback).
+ */
+export const jevSearchSecondaryKeepScore = 0.75
+
+/**
+ * When using the secondary floor, also require scores within this gap of
+ * the top Jev score so one mediocre hit does not drag a long weak tail.
+ */
+export const jevSearchLoweredKeepClusterGap = 0.5
+
+export const jevSearchKeepPaths = [
+	'kept-high',
+	'kept-lowered',
+	'empty',
+] as const
+
+export type JevSearchKeepPath = (typeof jevSearchKeepPaths)[number]
 
 export const jevSearchModel = 'typesafe/jev'
 
@@ -113,6 +138,12 @@ export type JevSearchRerankResult = {
 	droppedCount: number
 	meanConfidence: number | null
 	top1Type: SearchCandidate['type'] | null
+	/**
+	 * Adaptive keep path after Jev Score sort. Present when Score ran and
+	 * mean confidence cleared the floor (`applied` or
+	 * `fallback-empty-after-drop`).
+	 */
+	keepPath?: JevSearchKeepPath
 	/** Present only when `outcome` is `fallback-error`. */
 	errorReason?: string
 	/** Present when the Jev stage ran or attempted. */
@@ -121,6 +152,41 @@ export type JevSearchRerankResult = {
 	aiCallCount?: number
 	/** Summed Workers AI / Gateway usage across batches. */
 	usage?: JevSearchTokenUsage
+}
+
+export type JevScoredCandidate = {
+	candidate: SearchCandidate
+	score: number
+	confidence: number
+}
+
+/**
+ * Adaptive keep after Jev Score sort: high bar, then one secondary floor
+ * (with a relative cluster near the top score), else true empty.
+ */
+export function selectJevKeptCandidates(
+	ranked: ReadonlyArray<JevScoredCandidate>,
+): {
+	kept: Array<JevScoredCandidate>
+	keepPath: JevSearchKeepPath
+} {
+	const high = ranked.filter((entry) => entry.score >= jevSearchMinKeepScore)
+	if (high.length > 0) {
+		return { kept: high, keepPath: 'kept-high' }
+	}
+
+	const top = ranked[0]
+	if (!top || top.score < jevSearchSecondaryKeepScore) {
+		return { kept: [], keepPath: 'empty' }
+	}
+
+	const clusterFloor = top.score - jevSearchLoweredKeepClusterGap
+	const floor = Math.max(jevSearchSecondaryKeepScore, clusterFloor)
+	const lowered = ranked.filter((entry) => entry.score >= floor)
+	if (lowered.length === 0) {
+		return { kept: [], keepPath: 'empty' }
+	}
+	return { kept: lowered, keepPath: 'kept-lowered' }
 }
 
 type JevScoreAnswer = {
@@ -629,8 +695,9 @@ function mean(values: ReadonlyArray<number>): number {
 }
 
 /**
- * Reorder and drop hybrid candidates with Jev Score. Never returns an empty
- * list when `candidates` was non-empty — falls back to hybrid order instead.
+ * Reorder and drop hybrid candidates with Jev Score. When every score misses
+ * the adaptive keep floors, returns a true empty ranked list (not hybrid
+ * order). Failures and low mean confidence still fall back to hybrid.
  *
  * Gate order: flag → paid plan → empty/offline/AI → necessity → Score.
  */
@@ -779,16 +846,22 @@ export async function rerankSearchCandidatesWithJev(input: {
 				return right.confidence - left.confidence
 			})
 
-		const kept = ranked.filter((entry) => entry.score >= jevSearchMinKeepScore)
+		const { kept, keepPath } = selectJevKeptCandidates(ranked)
 		if (kept.length === 0) {
-			// Every score missed the keep threshold — preserve pre-Jev hybrid
-			// order rather than returning the rejected Jev sort.
-			return emptyResult('fallback-empty-after-drop', {
+			return {
+				candidates: [],
+				outcome: 'fallback-empty-after-drop',
+				durationMs: performance.now() - startedAt,
+				candidatesBefore,
+				candidatesAfter: 0,
+				droppedCount: pool.length,
 				meanConfidence,
+				top1Type: null,
+				keepPath,
 				model: jevSearchModel,
 				aiCallCount: tally.aiCallCount,
 				usage,
-			})
+			}
 		}
 		const candidates = kept
 			.slice(0, Math.max(1, input.limit))
@@ -802,6 +875,7 @@ export async function rerankSearchCandidatesWithJev(input: {
 			droppedCount: Math.max(0, pool.length - kept.length),
 			meanConfidence,
 			top1Type: candidates[0]?.type ?? null,
+			keepPath,
 			model: jevSearchModel,
 			aiCallCount: tally.aiCallCount,
 			usage,

@@ -94,6 +94,11 @@ export type SearchResultStructuredContent = {
 			droppedCount: number
 			meanConfidence: number | null
 			top1Type: SearchMatchType | null
+			/**
+			 * Adaptive keep path after Jev Score (`kept-high` |
+			 * `kept-lowered` | `empty`). Present when Score ran successfully.
+			 */
+			keepPath?: 'kept-high' | 'kept-lowered' | 'empty'
 			/** Present only when `outcome` is `fallback-error`. */
 			errorReason?: string
 			/** Present when the Jev stage ran or attempted. */
