@@ -1082,6 +1082,11 @@ async function tryHandleSilentOidcAuthorize(
 
 	const approvedEmail = userRecord.email.trim().toLowerCase()
 	const approvedUserId = resolveUserStableId(userRecord)
+	recordMcpConnectFunnelEvent(env, {
+		stage: 'mcp_connect_started',
+		userId: approvedUserId,
+		clientId: authRequest.clientId,
+	})
 	const emailVerified = await isAccountEmailVerified({
 		db: env.APP_DB,
 		email: approvedEmail,
@@ -1357,6 +1362,11 @@ export async function handleAuthorizeRequest(
 			})
 			if (userRecord) {
 				recordMcpConnectFunnelEvent(env, {
+					stage: 'mcp_connect_started',
+					userId: resolveUserStableId(userRecord),
+					clientId: authRequest.clientId,
+				})
+				recordMcpConnectFunnelEvent(env, {
 					stage: 'mcp_connect_failed',
 					userId: resolveUserStableId(userRecord),
 					clientId: authRequest.clientId,
@@ -1401,6 +1411,11 @@ export async function handleAuthorizeRequest(
 				ip: requestIp,
 				clientId: authRequest.clientId,
 				reason: 'two_factor_required',
+			})
+			recordMcpConnectFunnelEvent(env, {
+				stage: 'mcp_connect_started',
+				userId: resolveUserStableId(userRecord),
+				clientId: authRequest.clientId,
 			})
 			recordMcpConnectFunnelEvent(env, {
 				stage: 'mcp_connect_failed',
