@@ -225,8 +225,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Paid Jev necessity + high-confidence export call-contract attach
 		// adds a few KB: CI dry-run 3_798_379 against the previous
 		// 3_795_000 budget.
-		maxEntryBytes: 3_802_000,
-		forbiddenSources: [
+		// Feature-flag `experiments_opt_in` audience (users.experiments_opt_in
+		// batch read + gate) measured ~1.3 KB on the prior base (CI dry-run
+		// 3_796_324); fits within this headroom after the paid-Jev bump.
+		maxEntryBytes: 3_802_000,		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',
 			oauthProviderPackageSourcePath,
