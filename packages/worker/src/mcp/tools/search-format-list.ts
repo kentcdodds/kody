@@ -51,7 +51,9 @@ export function formatSearchMarkdown(input: {
 	if (warnings.length > 0) {
 		lines.push('', '## Notices', '')
 		for (const warning of warnings) {
-			lines.push(`- ${escapeMarkdownText(formatOneLineSentence(warning, 240))}`)
+			// Keep full notice text (URLs / onboarding links); structured carries
+			// the same strings without truncation.
+			lines.push(`- ${escapeMarkdownText(warning.replace(/\s+/g, ' ').trim())}`)
 		}
 	} else {
 		const warningCount = input.warningCount ?? 0

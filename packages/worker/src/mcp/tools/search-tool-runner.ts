@@ -52,14 +52,10 @@ import {
 	toSearchServerTiming,
 } from './search-timing.ts'
 import { type SearchPhaseTimings } from './search-types.ts'
+import { type SearchIntent } from './understand-search-query.ts'
 import { type SearchToolArgs } from './search-tool-definition.ts'
 import { buildOnboardingSearchNotice } from './search-onboarding-notice.ts'
 import { resolveConversationId } from './tool-call-context.ts'
-
-/** Bound on remembered notice conversations; oldest entries fall off. */
-const maxOnboardingNoticeConversationIds = 256
-/** Sessions without conversation ids see the notice at most this often. */
-const onboardingNoticeCooldownMs = 6 * 60 * 60 * 1000
 import { prependToolMetadataContent } from './tool-response-content.ts'
 import { finishToolTiming, startToolTiming } from './tool-timing.ts'
 import { deriveWaitingItemsForStableUser } from '#mcp/waiting/derive-waiting.ts'
@@ -67,6 +63,42 @@ import {
 	formatSearchWaitingMarkdown,
 	toSearchWaitingStructured,
 } from './search-waiting.ts'
+
+/** Bound on remembered notice conversations; oldest entries fall off. */
+const maxOnboardingNoticeConversationIds = 256
+/** Sessions without conversation ids see the notice at most this often. */
+const onboardingNoticeCooldownMs = 6 * 60 * 60 * 1000
+
+/**
+ * List-mode guidance after size trim. Recomputes from retained matches so
+ * call-contract tips never point at a dropped hit, but preserves domain-browse
+ * truncation notices that encode the full-domain count.
+ */
+function resolveListGuidance(input: {
+	trimmedMatches: ReadonlyArray<SearchMatch>
+	query: string
+	intent: SearchIntent
+	preTrimGuidance: string | undefined
+}): string | undefined {
+	const preTrim = input.preTrimGuidance
+	if (
+		preTrim?.startsWith('Domain listing truncated:') &&
+		input.trimmedMatches.length > 0 &&
+		input.trimmedMatches.every((match) => match.type === 'capability')
+	) {
+		const totalMatch = /of (\d+) capabilities/.exec(preTrim)
+		const domainMatch = /in ("(?:\\.|[^"\\])*")/.exec(preTrim)
+		if (totalMatch && domainMatch) {
+			return `Domain listing truncated: showing the first ${String(input.trimmedMatches.length)} of ${totalMatch[1]} capabilities in ${domainMatch[1]}. Raise "limit" or call metaListCapabilities({ domain: ${domainMatch[1]} }) from execute for the complete list.`
+		}
+		return preTrim
+	}
+	return buildRecommendedNextStep({
+		query: input.query,
+		intent: input.intent,
+		matches: [...input.trimmedMatches],
+	})
+}
 
 async function stampFirstSearchIfAuthenticated(
 	agent: McpRegistrationAgent,
@@ -566,42 +598,40 @@ export async function runSearchTool(input: {
 		}, 0)
 		const reservedWaitingChars = waitingMarkdown?.length ?? 0
 		const formattingStartMs = performance.now()
-		const { payload: trimmedPayload, serialized: trimmedSerialized } =
-			applyMaxResponseSize(
-				payload,
-				maxResponseSize,
-				(value) =>
-					formatSearchMarkdown({
-						matches: value.matches,
-						warnings: structuredWarnings,
-						includePreamble,
-					}),
-				(value, count) => ({
-					...value,
-					matches: value.matches.slice(0, count),
-				}),
-				(value) => value.matches.length,
-				{
-					reservedChars:
-						(reservedMemoryChars > 0 ? reservedMemoryChars + 1 : 0) +
-						(reservedWaitingChars > 0 ? reservedWaitingChars + 1 : 0),
-				},
-			)
-		// Recompute after trim so guidance never points at a match that was
-		// dropped for size (same value on markdown and structured).
-		const listGuidance = buildRecommendedNextStep({
-			query: trimmedQuery,
-			intent: execution.result.intent,
-			matches: trimmedPayload.matches,
-		})
-		const serialized = listGuidance
-			? formatSearchMarkdown({
-					matches: trimmedPayload.matches,
+		const { payload: trimmedPayload, serialized } = applyMaxResponseSize(
+			payload,
+			maxResponseSize,
+			(value) => {
+				const guidanceForSize = resolveListGuidance({
+					trimmedMatches: value.matches,
+					query: trimmedQuery,
+					intent: execution.result.intent,
+					preTrimGuidance: execution.result.guidance,
+				})
+				return formatSearchMarkdown({
+					matches: value.matches,
 					warnings: structuredWarnings,
-					guidance: listGuidance,
+					guidance: guidanceForSize,
 					includePreamble,
 				})
-			: trimmedSerialized
+			},
+			(value, count) => ({
+				...value,
+				matches: value.matches.slice(0, count),
+			}),
+			(value) => value.matches.length,
+			{
+				reservedChars:
+					(reservedMemoryChars > 0 ? reservedMemoryChars + 1 : 0) +
+					(reservedWaitingChars > 0 ? reservedWaitingChars + 1 : 0),
+			},
+		)
+		const listGuidance = resolveListGuidance({
+			trimmedMatches: trimmedPayload.matches,
+			query: trimmedQuery,
+			intent: execution.result.intent,
+			preTrimGuidance: execution.result.guidance,
+		})
 		const trimmedMatchCount = Math.max(
 			0,
 			execution.result.matches.length - trimmedPayload.matches.length,
