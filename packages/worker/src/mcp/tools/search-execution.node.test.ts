@@ -543,7 +543,7 @@ test('executeSearchList fails closed before ranking when the abuse rate limit re
 		new SearchRateLimitError({
 			window: 'burst',
 			retryAfterSeconds: 60,
-			limit: 40,
+			limit: 80,
 			plan: 'free',
 		}),
 	)

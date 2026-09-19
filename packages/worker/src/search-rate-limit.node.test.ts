@@ -20,6 +20,27 @@ function createDb() {
 	return { sqlite, db }
 }
 
+test('searchRateLimitByPlan doubles burst while keeping daily DOW ceilings', () => {
+	expect(searchRateLimitByPlan).toEqual({
+		free: {
+			burst: { maxRequests: 80, windowSeconds: 60 },
+			daily: { maxRequests: 1_000, windowSeconds: 60 * 60 * 24 },
+		},
+		standard: {
+			burst: { maxRequests: 160, windowSeconds: 60 },
+			daily: { maxRequests: 5_000, windowSeconds: 60 * 60 * 24 },
+		},
+		pro: {
+			burst: { maxRequests: 200, windowSeconds: 60 },
+			daily: { maxRequests: 10_000, windowSeconds: 60 * 60 * 24 },
+		},
+		max: {
+			burst: { maxRequests: 240, windowSeconds: 60 },
+			daily: { maxRequests: 25_000, windowSeconds: 60 * 60 * 24 },
+		},
+	})
+})
+
 test('consumeSearchRateLimit no-ops without a userId', async () => {
 	const { sqlite, db } = createDb()
 	await consumeSearchRateLimit({
