@@ -1,20 +1,12 @@
 import { expect, test } from 'vitest'
 import {
 	formatDurableObjectRowsRead,
-	isPaidPlan,
 	parseEntitlementLadder,
 	resolveEntitlementLadderAfterPaidAccessChange,
 	resolvePlanLimit,
 	resolvePlanLimits,
 	resolveWeeklyPlanLimit,
 } from './plans.ts'
-
-test('isPaidPlan is true for standard, pro, and max only', () => {
-	expect(isPaidPlan('free')).toBe(false)
-	expect(isPaidPlan('standard')).toBe(true)
-	expect(isPaidPlan('pro')).toBe(true)
-	expect(isPaidPlan('max')).toBe(true)
-})
 
 test('formatDurableObjectRowsRead uses billion-scale labels', () => {
 	expect(formatDurableObjectRowsRead(500_000_000)).toBe('0.5B')

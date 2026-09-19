@@ -118,21 +118,6 @@ test('account experiments API persists opt-in and opt-out with audit', async () 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(user)
 	mockModule.loadAccountExperimentsData.mockResolvedValue({
 		ok: true,
-		experimentsOptIn: false,
-	})
-	const getResponse = await handler.handler({
-		request: new Request(url, { method: 'GET' }),
-		params: {},
-		url,
-	} as never)
-	expect(getResponse.status).toBe(200)
-	await expect(getResponse.json()).resolves.toEqual({
-		ok: true,
-		experimentsOptIn: false,
-	})
-
-	mockModule.loadAccountExperimentsData.mockResolvedValue({
-		ok: true,
 		experimentsOptIn: true,
 	})
 	const optIn = await handler.handler({

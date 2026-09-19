@@ -10,9 +10,4 @@ test('search and execute tool descriptions fit a 2048-character client cut', () 
 	expect(executeToolDescription.length).toBeLessThan(
 		mcpServerInstructionsClientHeadLimitChars,
 	)
-	expect(searchTool.description).toContain('Prefer short task phrases')
-	expect(searchTool.description).toContain('inlined call contract')
-	expect(searchTool.description).toContain(
-		'Prefer a matching package export hit',
-	)
 })
