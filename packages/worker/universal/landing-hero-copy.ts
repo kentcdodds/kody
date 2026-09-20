@@ -6,31 +6,18 @@ export type LandingHeroVideo = {
 	title: string
 }
 
-/**
- * Public thumbs that still paint the retired switching-agents hero
- * ("Stop Sweating Agent Switching" / "Switch Agents"). Keep them off the
- * homepage strip until that artwork changes. HTML titles are not enough:
- * the YouTube poster is the visible text.
- */
-export const landingHeroCarouselOmittedVideoIds = [
-	'iGMkgjXc8Ho',
-	'QA0xYMAMjEg',
-] as const
-
 const retiredHeroTitlePattern = /stop sweating/i
 
 /**
- * Homepage-only presentation: drop clips whose thumb still uses the
- * retired hero, and retitle any leftover "Stop Sweating" strings to the
- * locked continuity H1.
+ * Homepage-only presentation: keep playlist order, drop invalid clips,
+ * and retitle leftover "Stop Sweating" strings to the locked continuity H1.
  */
 export function presentLandingHeroVideos(
 	videos: ReadonlyArray<LandingHeroVideo>,
 ): Array<LandingHeroVideo> {
-	const omitted = new Set<string>(landingHeroCarouselOmittedVideoIds)
 	const result: Array<LandingHeroVideo> = []
 	for (const video of videos) {
-		if (!isLandingHeroVideo(video) || omitted.has(video.videoId)) continue
+		if (!isLandingHeroVideo(video)) continue
 		result.push({
 			videoId: video.videoId,
 			title: retiredHeroTitlePattern.test(video.title)

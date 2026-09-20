@@ -41,9 +41,10 @@ function shouldFetchYoutubePlaylist(fetchImpl?: YoutubeFetch) {
 
 /**
  * Source playlist videos in playlist order. KV-backed SWR so `/` stays
- * fast when YouTube is slow. Homepage presentation (omit retired thumbs)
- * happens at the page boundary via `presentLandingHeroVideos`; this loader
- * stays unfiltered so the youtube-watch allowlist can reuse the cache.
+ * fast when YouTube is slow. Homepage presentation (playlist order,
+ * leftover title cleanup) happens at the page boundary via
+ * `presentLandingHeroVideos`; this loader stays unfiltered so the
+ * youtube-watch allowlist can reuse the cache.
  * Unit tests stay offline unless a fetch impl is passed. Missing key /
  * failed YouTube fail open to `[]`.
  */
