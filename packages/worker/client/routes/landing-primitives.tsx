@@ -12,7 +12,10 @@ import {
 /**
  * Homepage primitives sentence. Each named primitive is a disclosure button:
  * hover, focus, or click opens one popover; Escape, blur, and leaving the
- * word close it. No-JS keeps the definitions in the document for read-out.
+ * word close it. Escape does not move focus, so a hovered word stays
+ * dismissed instead of reopening on focusin. Opening another word dismisses
+ * the previous one so :hover and :focus-within cannot stack two panels.
+ * No-JS keeps the definitions in the document for read-out.
  */
 
 export const landingPrimitivesSectionId = 'primitives'
@@ -31,8 +34,11 @@ export function LandingPrimitives(handle: Handle) {
 
 	function setOpen(id: string | null) {
 		if (openId === id) return
+		if (id) {
+			if (openId && openId !== id) dismissedId = openId
+			if (dismissedId === id) dismissedId = null
+		}
 		openId = id
-		if (id) dismissedId = null
 		handle.update()
 	}
 
@@ -135,8 +141,6 @@ function LandingPrimitiveWord(
 							}
 							event.preventDefault()
 							handle.props.onDismiss()
-							const trigger = node.querySelector('button')
-							if (trigger instanceof HTMLElement) trigger.focus()
 						}
 						document.addEventListener('keydown', onKeydown, { signal })
 					}),

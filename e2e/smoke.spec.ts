@@ -1,3 +1,4 @@
+import { landingHeroHeadline } from '../packages/worker/universal/landing-home-copy.ts'
 import { expect, test } from './playwright-utils.ts'
 import { ensurePrimaryUserExists, primaryTestUser } from './auth-test-user.ts'
 import { clearAuthRateLimitsInE2eDatabase } from './d1-utils.ts'
@@ -18,7 +19,8 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	).toBeVisible()
 	await expect(
 		page.getByRole('heading', {
-			name: /start over in every agent/i,
+			name: landingHeroHeadline,
+			exact: true,
 		}),
 	).toBeVisible()
 
