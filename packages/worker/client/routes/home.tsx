@@ -20,6 +20,7 @@ import { routes } from '#universal/routes.ts'
 import {
 	isLandingHeroVideo,
 	landingHeroChooserLabel,
+	presentLandingHeroVideos,
 	type LandingHeroVideo as LandingHeroVideoItem,
 } from '#universal/landing-hero-copy.ts'
 import {
@@ -133,7 +134,7 @@ async function fetchLandingHeroVideos(signal: AbortSignal) {
 		if (!response.ok || !payload?.ok || !Array.isArray(payload.videos)) {
 			return []
 		}
-		return payload.videos.filter(isLandingHeroVideo)
+		return presentLandingHeroVideos(payload.videos.filter(isLandingHeroVideo))
 	} catch (error) {
 		if (signal.aborted) throw error
 		return []
@@ -184,12 +185,14 @@ export function HomeRoute(handle: Handle) {
 			// Optional keys stand on their own; apply them even when the
 			// required onboarding key is missing and the fallback fetch runs.
 			if (hosts) walkthroughHosts = hosts
-			if (videos) landingHeroVideos = videos
+			if (videos) landingHeroVideos = presentLandingHeroVideos(videos)
 			if (!onboarding) return null
 			return {
 				onboarding,
 				walkthroughHosts: hosts,
-				landingHeroVideos: videos ?? landingHeroVideos,
+				landingHeroVideos: videos
+					? presentLandingHeroVideos(videos)
+					: landingHeroVideos,
 			}
 		},
 		async load(_href, signal) {
@@ -211,7 +214,7 @@ export function HomeRoute(handle: Handle) {
 
 	function applyHomePayload(payload: HomePagePayloads) {
 		if (payload.walkthroughHosts) walkthroughHosts = payload.walkthroughHosts
-		landingHeroVideos = payload.landingHeroVideos
+		landingHeroVideos = presentLandingHeroVideos(payload.landingHeroVideos)
 		applyOnboardingPayload(payload.onboarding)
 	}
 

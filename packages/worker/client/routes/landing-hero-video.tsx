@@ -4,6 +4,7 @@ import { YouTubeLightPlayer } from '#client/youtube-light-player.tsx'
 import {
 	landingHeroChooserLabel,
 	landingHeroDemoPlaylistId,
+	presentLandingHeroVideos,
 	type LandingHeroVideo,
 } from '#universal/landing-hero-copy.ts'
 import { youtubeThumbPath } from '#universal/youtube-watch.ts'
@@ -146,7 +147,7 @@ export function LandingHeroVideo(
 	}
 
 	return () => {
-		const videos = handle.props.videos
+		const videos = presentLandingHeroVideos(handle.props.videos)
 		if (selectedIndex >= videos.length) selectedIndex = 0
 		if (activeIndex >= videos.length) activeIndex = 0
 		const selected = videos[selectedIndex]

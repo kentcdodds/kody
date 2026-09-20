@@ -1,8 +1,39 @@
+import { landingHeroHeadline } from '#universal/landing-home-copy.ts'
 import { isYoutubeVideoId } from '#universal/youtube-watch.ts'
 
 export type LandingHeroVideo = {
 	videoId: string
 	title: string
+}
+
+/**
+ * Public thumb for this clip still paints the retired "Stop Sweating"
+ * hero. Keep it off the homepage strip until that artwork changes.
+ */
+export const landingHeroCarouselOmittedVideoIds = ['iGMkgjXc8Ho'] as const
+
+const retiredHeroTitlePattern = /stop sweating/i
+
+/**
+ * Homepage-only presentation: drop clips whose thumb still uses the
+ * retired hero, and retitle any leftover "Stop Sweating" strings to the
+ * locked continuity H1.
+ */
+export function presentLandingHeroVideos(
+	videos: ReadonlyArray<LandingHeroVideo>,
+): Array<LandingHeroVideo> {
+	const omitted = new Set<string>(landingHeroCarouselOmittedVideoIds)
+	const result: Array<LandingHeroVideo> = []
+	for (const video of videos) {
+		if (!isLandingHeroVideo(video) || omitted.has(video.videoId)) continue
+		result.push({
+			videoId: video.videoId,
+			title: retiredHeroTitlePattern.test(video.title)
+				? landingHeroHeadline
+				: video.title.trim(),
+		})
+	}
+	return result
 }
 
 /**

@@ -55,7 +55,9 @@ test('hero video renders playlist order in the player and listbox', async () => 
 	const html = await renderToString(
 		jsx(LandingHeroVideo, { videos: fixtureVideos }),
 	)
-	const [first, ...rest] = fixtureVideos
+	const omitted = fixtureVideos[0]
+	const presented = fixtureVideos.slice(1)
+	const [first, ...rest] = presented
 
 	// Poster, not an embed, until the visitor clicks.
 	expect(html).not.toContain('youtube-nocookie.com')
@@ -63,8 +65,9 @@ test('hero video renders playlist order in the player and listbox', async () => 
 
 	expect(html).toContain('role="listbox"')
 	expect(html).toContain('tabindex="0"')
-	expect(html.match(/role="option"/g)).toHaveLength(fixtureVideos.length)
+	expect(html.match(/role="option"/g)).toHaveLength(presented.length)
 	expect(html.match(/aria-selected="true"/g)).toHaveLength(1)
+	expect(html).not.toContain(`/youtube-thumb/${omitted.videoId}`)
 	expect(html).toContain(`/youtube-thumb/${first.videoId}`)
 	for (const video of rest) {
 		expect(html).toContain(`/youtube-thumb/${video.videoId}`)
@@ -75,9 +78,9 @@ test('hero video renders playlist order in the player and listbox', async () => 
 			/role="option"[\s\S]*?\/youtube-thumb\/([A-Za-z0-9_-]{11})/g,
 		),
 	].map((match) => match[1])
-	expect(optionThumbs).toEqual(fixtureVideos.map((video) => video.videoId))
+	expect(optionThumbs).toEqual(presented.map((video) => video.videoId))
 	expect(html).toContain(first.title)
-	expect(html).toContain(rest[1]?.title)
+	expect(html).toContain(rest[0]?.title)
 	expect(html).toContain(`data-embed-playlist="${landingHeroDemoPlaylistId}"`)
 })
 

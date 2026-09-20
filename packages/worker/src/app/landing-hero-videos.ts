@@ -4,6 +4,7 @@ import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import {
 	isLandingHeroVideoList,
 	landingHeroSourcePlaylistId,
+	presentLandingHeroVideos,
 	type LandingHeroVideo,
 } from '#universal/landing-hero-copy.ts'
 import {
@@ -20,12 +21,18 @@ import {
 const heroVideosTtlMs = 5 * 60 * 1000
 const heroVideosStaleWhileRevalidateMs = 60 * 60 * 1000
 const youtubeFetchTimeoutMs = 2_500
-export const landingHeroVideosCacheKeyPrefix = 'landing-hero-videos:v3:'
+export const landingHeroVideosCacheKeyPrefix = 'landing-hero-videos:v4:'
 
 type YoutubeFetch = (input: string, init?: RequestInit) => Promise<Response>
 
 export function buildLandingHeroVideosCacheKey(playlistId: string) {
 	return `${landingHeroVideosCacheKeyPrefix}${playlistId}`
+}
+
+function presentUniqueLandingHeroVideos(
+	videos: ReadonlyArray<LandingHeroVideo>,
+) {
+	return presentLandingHeroVideos(uniqueLandingHeroVideos(videos))
 }
 
 function isVitestRuntime() {
@@ -125,15 +132,15 @@ async function fetchPlaylistItemsApi(input: {
 					signal: AbortSignal.timeout(youtubeFetchTimeoutMs),
 				},
 			)
-			if (!response.ok) return uniqueLandingHeroVideos(videos)
+			if (!response.ok) return presentUniqueLandingHeroVideos(videos)
 			const parsed = parseYoutubePlaylistItemsApi(await response.json())
 			videos.push(...parsed.videos)
 			if (!parsed.nextPageToken) break
 			pageToken = parsed.nextPageToken
 		}
-		return uniqueLandingHeroVideos(videos)
+		return presentUniqueLandingHeroVideos(videos)
 	} catch {
-		return uniqueLandingHeroVideos(videos)
+		return presentUniqueLandingHeroVideos(videos)
 	}
 }
 
@@ -160,7 +167,7 @@ async function fetchPlaylistBrowse(input: {
 				signal: AbortSignal.timeout(youtubeFetchTimeoutMs),
 			})
 			if (!response.ok) {
-				if (videos.length > 0) return uniqueLandingHeroVideos(videos)
+				if (videos.length > 0) return presentUniqueLandingHeroVideos(videos)
 				throw new Error(`youtube browse ${String(response.status)}`)
 			}
 			const parsed = parseYoutubePlaylistBrowseJson(await response.json())
@@ -175,9 +182,9 @@ async function fetchPlaylistBrowse(input: {
 			}
 			continuation = parsed.continuation
 		}
-		return uniqueLandingHeroVideos(videos)
+		return presentUniqueLandingHeroVideos(videos)
 	} catch (error) {
-		if (videos.length > 0) return uniqueLandingHeroVideos(videos)
+		if (videos.length > 0) return presentUniqueLandingHeroVideos(videos)
 		throw error
 	}
 }
