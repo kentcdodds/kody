@@ -1515,25 +1515,14 @@ html.is-settled {
 	min-width: 0;
 }
 
+/* Quiet card-link: same tile chrome as a static fan item. Pointer and
+   the global :focus-visible ring are the only affordances. */
 .landing-path-fan-link {
 	flex: 1 1 auto;
 	width: 100%;
 	color: inherit;
 	text-decoration: none;
 	cursor: pointer;
-}
-
-.landing-path-fan-link:hover {
-	border-color: color-mix(
-		in oklch,
-		var(--color-primary) 40%,
-		var(--color-border)
-	);
-	background-color: color-mix(in oklch, var(--color-primary) 8%, transparent);
-}
-
-.landing-path-fan-link:hover .landing-path-fan-title {
-	color: var(--color-primary-text);
 }
 
 .landing-path-fan-item .landing-path-kicker {

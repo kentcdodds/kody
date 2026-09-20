@@ -1,8 +1,8 @@
 import { type IconName } from '#universal/icon.tsx'
 
 /**
- * Homepage “Trigger it / No inference” example cards. Each card is a
- * same-origin docs link so the tile and the deep-dive stay one contract.
+ * Homepage “Trigger it / No inference” example cards. Each tile is a
+ * quiet same-origin docs link (pointer + focus ring, no CTA chrome).
  */
 export const landingFactoryBeats = [
 	{

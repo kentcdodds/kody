@@ -32,10 +32,11 @@ site-perf owns landing budgets. The `/` hero is a two-column layout: headline
 plus signup CTAs (anonymous sessions) beside a first-party YouTube light player
 with a horizontal video chooser; the lantern/agent orbit sits below that row.
 The factory “Trigger it” cards (Flake Hunter, Sentry Issues, Agent inbox,
-Purchase thanks) are same-origin links to `/docs/flake-hunter`,
-`/docs/sentry-issues`, `/docs/agent-inbox`, and `/docs/purchase-thanks`.
-Signed-in visitors still see the player and chooser. Chooser membership and
-order come from the unlisted playlist `PLBPBUA8boGLA`. Client navigations load
+Purchase thanks) are quiet same-origin links to `/docs/flake-hunter`,
+`/docs/sentry-issues`, `/docs/agent-inbox`, and `/docs/purchase-thanks` (pointer
+and focus ring only; no extra labels or hover chrome). Signed-in visitors still
+see the player and chooser. Chooser membership and order come from the unlisted
+playlist `PLBPBUA8boGLA`. Client navigations load
 `GET /landing-hero-videos.json`. Embeds include the public catalog playlist.
 Chooser ids are on the YouTube allowlist for `/youtube-thumb` without a banner.
 `/?youtubeId=<id>` opens the site-wide allowlisted YouTube overlay on those
