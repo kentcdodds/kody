@@ -7,6 +7,12 @@ import {
 } from '#universal/landing-agent-orbit.ts'
 import { heroBaseImage } from '#universal/landing-images.ts'
 import {
+	landingKodyLanternGlass,
+	landingKodyLanternOrbs,
+	landingOrbitLightTone,
+	landingPrimitiveColorVar,
+} from '#universal/landing-lantern.ts'
+import {
 	listAllWalkthroughHosts,
 	type WalkthroughHost,
 	type WalkthroughHostPick,
@@ -290,7 +296,8 @@ function tetherFollow(agents: ReadonlyArray<LandingHeroAgent>) {
 }
 
 /** Invisible track plus travelling orbs. Lights start hidden; `tetherFollow`
- *  places them. No connector line or glow stroke is painted. */
+ *  places them. No connector line or glow stroke is painted. Each tether's
+ *  lights take one of the five primitive colors, cycling in ring order. */
 function renderOrbLayer(agents: ReadonlyArray<LandingHeroAgent>) {
 	return (
 		<svg
@@ -310,6 +317,10 @@ function renderOrbLayer(agents: ReadonlyArray<LandingHeroAgent>) {
 							key={agent.label}
 							class="landing-hero-agent-tether"
 							data-agent={String(index)}
+							data-tone={landingOrbitLightTone(index)}
+							style={{
+								'--orb': landingPrimitiveColorVar(landingOrbitLightTone(index)),
+							}}
 						>
 							<path class="landing-hero-agent-track" d={d} fill="none" />
 							<g
@@ -336,6 +347,55 @@ function renderOrbLayer(agents: ReadonlyArray<LandingHeroAgent>) {
 	)
 }
 
+/** The five primitive orbs painted into the glass of the lantern Kody holds.
+ *  Sized from the glass radii and parallaxed with the image so the orbs stay
+ *  seated while the stage moves. */
+function renderKodyLanternOrbs() {
+	const { rx, ry } = landingKodyLanternGlass
+	return (
+		<svg
+			class="landing-hero-agents-orbs"
+			viewBox="-1 -1 2 2"
+			aria-hidden="true"
+			focusable={false}
+			data-depth="-0.06"
+			style={{
+				left: `${lantern.x}%`,
+				top: `${lantern.y}%`,
+				width: `${rx * 2}%`,
+				height: `${ry * 2}%`,
+			}}
+		>
+			{landingKodyLanternOrbs.map((orb) => (
+				<g
+					key={orb.id}
+					class="landing-hero-agents-orb"
+					style={{ '--orb': landingPrimitiveColorVar(orb.id) }}
+				>
+					<circle
+						class="landing-hero-agents-orb-halo"
+						cx={orb.dx}
+						cy={orb.dy}
+						r="0.33"
+					/>
+					<circle
+						class="landing-hero-agents-orb-core"
+						cx={orb.dx}
+						cy={orb.dy}
+						r="0.19"
+					/>
+					<circle
+						class="landing-hero-agents-orb-shine"
+						cx={orb.dx - 0.05}
+						cy={orb.dy - 0.06}
+						r="0.06"
+					/>
+				</g>
+			))}
+		</svg>
+	)
+}
+
 export function LandingHeroAgents(
 	handle: Handle<{ hosts?: WalkthroughHostPick }>,
 ) {
@@ -348,8 +408,9 @@ export function LandingHeroAgents(
 				class="landing-hero-art landing-hero-agents"
 			>
 				<figcaption class="visually-hidden">
-					Kody the koala holding a warmly glowing lantern, with the agents it
-					plugs into floating around it.
+					Kody the koala holding a warmly glowing lantern with five colored orbs
+					inside, one per primitive, with the agents it plugs into floating
+					around it.
 				</figcaption>
 				<div
 					class="landing-hero-agents-stage"
@@ -372,6 +433,7 @@ export function LandingHeroAgents(
 						style={{ left: `${lantern.x}%`, top: `${lantern.y}%` }}
 						data-depth="-0.06"
 					></div>
+					{renderKodyLanternOrbs()}
 					{renderOrbLayer(agents)}
 					<ul
 						aria-label="Agents Kody plugs into"

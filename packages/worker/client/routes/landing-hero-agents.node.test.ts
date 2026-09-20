@@ -1,9 +1,13 @@
+import { jsx } from 'remix/ui/jsx-runtime'
+import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
+import { landingPrimitiveIds } from '#universal/landing-lantern.ts'
 import {
 	listAllWalkthroughHosts,
 	pickWalkthroughHosts,
 } from '#universal/walkthrough-hosts.ts'
 import {
+	LandingHeroAgents,
 	landingHeroLightAt,
 	landingHeroLightProximity,
 	landingHeroLightRate,

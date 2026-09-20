@@ -115,6 +115,22 @@
 	/* Warm light cast by the lantern Kody holds (landing + auth heroes) */
 	--lantern-glow: oklch(0.88 0.11 85 / 0.4);
 	--lantern-glow-dark: oklch(0.8 0.13 80 / 0.55);
+	/* Five primitives, one palette: the lantern orbs, the leader lines to
+	   each word, and the travelling orbit lights all read from these. */
+	--primitive-memory: oklch(0.68 0.21 350);
+	--primitive-secrets: oklch(0.6 0.22 300);
+	--primitive-packages: oklch(0.6 0.2 255);
+	--primitive-jobs: oklch(0.78 0.16 82);
+	--primitive-integrations: oklch(0.66 0.19 148);
+	--primitive-memory-dark: oklch(0.76 0.19 350);
+	--primitive-secrets-dark: oklch(0.72 0.19 300);
+	--primitive-packages-dark: oklch(0.72 0.17 255);
+	--primitive-jobs-dark: oklch(0.85 0.16 85);
+	--primitive-integrations-dark: oklch(0.76 0.19 148);
+	/* Lightness used when a primitive color has to carry text: dark enough
+	   on the light canvas, light enough on graphite. */
+	--primitive-text-l: 0.46;
+	--primitive-text-l-dark: 0.84;
 
 	/* Colors - Dark mode (graphite canvas, brighter green) */
 	--color-primary-dark: oklch(0.72 0.205 145);
@@ -243,6 +259,12 @@
 		--color-warning: var(--color-warning-dark);
 		--color-warning-text: var(--color-warning-text-dark);
 		--lantern-glow: var(--lantern-glow-dark);
+		--primitive-memory: var(--primitive-memory-dark);
+		--primitive-secrets: var(--primitive-secrets-dark);
+		--primitive-packages: var(--primitive-packages-dark);
+		--primitive-jobs: var(--primitive-jobs-dark);
+		--primitive-integrations: var(--primitive-integrations-dark);
+		--primitive-text-l: var(--primitive-text-l-dark);
 		--select-chevron: var(--select-chevron-dark);
 		--line-height-body: var(--line-height-body-dark);
 
@@ -1093,26 +1115,319 @@ html.is-settled {
 	font-weight: 550;
 }
 
+/* Primitives row: the five-orb lantern beside the primitives sentence.
+   Leader lines run orb to word on wide screens (measured from layout by
+   `landing-primitives.tsx`); narrow screens stack and drop them. Stacking:
+   lantern art (0) < leaders (1) < orbs and copy (2) < popover (4). The
+   figure has no z-index so its children can interleave with the overlay. */
 .landing-primitives {
 	position: relative;
-	max-width: 46rem;
+	display: grid;
+	grid-template-columns: minmax(13rem, 17rem) minmax(0, 23rem);
+	justify-content: center;
+	gap: clamp(2.5rem, 7vw, 6rem);
+	align-items: center;
+	max-width: 62rem;
 	margin: clamp(3.25rem, 7vw, 5rem) auto 0;
 	padding: 0 clamp(1.25rem, 4vw, 2.5rem);
-	text-align: center;
+	text-align: left;
+}
+
+.landing-lantern {
+	position: relative;
+	width: 100%;
+	aspect-ratio: 200 / 260;
+	margin: 0;
+}
+
+.landing-lantern-art {
+	position: absolute;
+	inset: 0;
+	z-index: 0;
+	display: block;
+	width: 100%;
+	height: 100%;
+	overflow: visible;
+}
+
+.landing-lantern-glass-stop-a {
+	stop-color: oklch(0.96 0.09 92);
+}
+
+.landing-lantern-glass-stop-b {
+	stop-color: oklch(0.87 0.16 80);
+}
+
+.landing-lantern-glass-stop-c {
+	stop-color: oklch(0.72 0.16 64);
+}
+
+.landing-lantern-halo-stop-a {
+	stop-color: oklch(0.86 0.14 82 / 0.5);
+}
+
+.landing-lantern-halo-stop-b {
+	stop-color: oklch(0.86 0.14 82 / 0);
+}
+
+.landing-lantern-metal-stop-a {
+	stop-color: oklch(0.38 0.012 260);
+}
+
+.landing-lantern-metal-stop-b {
+	stop-color: oklch(0.25 0.012 260);
+}
+
+.landing-lantern-handle-shine {
+	stroke: oklch(0.55 0.012 260 / 0.65);
+}
+
+.landing-lantern-knob {
+	fill: oklch(0.44 0.012 260);
+}
+
+.landing-lantern-lip {
+	fill: oklch(0.21 0.012 260);
+}
+
+.landing-lantern-web line {
+	stroke: oklch(0.99 0.05 90 / 0.5);
+	stroke-width: 0.9;
+}
+
+.landing-lantern-web circle {
+	fill: oklch(1 0.03 90 / 0.85);
+}
+
+.landing-lantern-sparkles circle {
+	fill: oklch(1 0.04 90 / 0.9);
+}
+
+.landing-lantern-glass-shine {
+	fill: oklch(1 0 0 / 0.3);
+}
+
+.landing-lantern-rim-stop-a {
+	stop-color: oklch(0.99 0.04 90 / 0.7);
+}
+
+.landing-lantern-rim-stop-b {
+	stop-color: oklch(0.92 0.16 88 / 0.95);
+}
+
+/* Inner edge darkening so the globe reads as glass, not a flat disc. */
+.landing-lantern-glass-vignette {
+	stroke: oklch(0.55 0.15 52 / 0.18);
+	filter: blur(3px);
+}
+
+.landing-lantern-glass-foot {
+	fill: oklch(0.98 0.1 90 / 0.55);
+	filter: blur(2px);
+}
+
+.landing-lantern-orbs {
+	position: absolute;
+	inset: 0;
+	z-index: 2;
+}
+
+.landing-lantern-orb {
+	position: absolute;
+	left: var(--x);
+	top: var(--y);
+	translate: -50% -50%;
+	display: grid;
+	place-items: center;
+	width: 22%;
+	aspect-ratio: 1;
+	margin: 0;
+	padding: 0;
+	border-radius: 50%;
+	border: 2px solid
+		oklch(from var(--primitive-color) calc(l + 0.22) calc(c * 0.6) h / 0.9);
+	background: radial-gradient(
+		circle at 36% 30%,
+		oklch(from var(--primitive-color) calc(l + 0.16) calc(c * 0.9) h) 0%,
+		var(--primitive-color) 58%,
+		oklch(from var(--primitive-color) calc(l - 0.14) c h) 100%
+	);
+	color: oklch(1 0 0);
+	cursor: pointer;
+	box-shadow:
+		0 0 0.5rem oklch(from var(--primitive-color) l c h / 0.55),
+		0 0 1.4rem oklch(from var(--primitive-color) l c h / 0.35),
+		inset 0 -0.2rem 0.45rem
+			oklch(from var(--primitive-color) calc(l - 0.2) c h / 0.5);
+	transition:
+		scale 0.25s ease,
+		opacity 0.25s ease,
+		box-shadow 0.25s ease,
+		filter 0.25s ease;
+}
+
+/* Soft pulse ring; motion-only, staggered per orb. */
+.landing-lantern-orb::after {
+	content: '';
+	position: absolute;
+	inset: -3px;
+	border-radius: 50%;
+	border: 2px solid oklch(from var(--primitive-color) calc(l + 0.1) c h / 0.6);
+	opacity: 0;
+	pointer-events: none;
+}
+
+.landing-lantern-orb:nth-child(2) {
+	--pulse-delay: 0.55s;
+}
+
+.landing-lantern-orb:nth-child(3) {
+	--pulse-delay: 1.1s;
+}
+
+.landing-lantern-orb:nth-child(4) {
+	--pulse-delay: 1.65s;
+}
+
+.landing-lantern-orb:nth-child(5) {
+	--pulse-delay: 2.2s;
+}
+
+.landing-lantern-orb-glyph {
+	display: grid;
+	place-items: center;
+	width: 54%;
+	height: 54%;
+}
+
+.landing-lantern-orb-glyph svg {
+	width: 100%;
+	height: 100%;
+	overflow: visible;
+	filter: drop-shadow(
+		0 1px 0 oklch(from var(--primitive-color) calc(l - 0.25) c h / 0.5)
+	);
+}
+
+.landing-lantern-orb-glyph svg * {
+	stroke-width: 1.85;
+}
+
+.landing-lantern-orb:hover,
+.landing-lantern-orb:focus-visible,
+.landing-lantern-orb[data-open] {
+	scale: 1.1;
+	box-shadow:
+		0 0 0.7rem oklch(from var(--primitive-color) l c h / 0.75),
+		0 0 2rem oklch(from var(--primitive-color) l c h / 0.5),
+		inset 0 -0.2rem 0.45rem
+			oklch(from var(--primitive-color) calc(l - 0.2) c h / 0.5);
+}
+
+.landing-lantern-orb:focus-visible {
+	outline: 3px solid var(--color-text);
+	outline-offset: 3px;
+}
+
+.landing-primitives[data-active] .landing-lantern-orb:not([data-open]) {
+	opacity: 0.68;
+	scale: 0.94;
+}
+
+/* Leader overlay: viewBox is set to the section's pixel size so paths are
+   written in section pixels. Hidden until the first measurement lands. */
+.landing-primitives-leaders {
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	width: 100%;
+	height: 100%;
+	overflow: visible;
+	pointer-events: none;
+	opacity: 0;
+	transition: opacity 0.4s ease;
+}
+
+.landing-primitives-leaders[data-ready] {
+	opacity: 1;
+}
+
+.landing-leader {
+	color: var(--primitive-color);
+	transition:
+		opacity 0.25s ease,
+		filter 0.25s ease;
+}
+
+.landing-leader path {
+	stroke: currentColor;
+	stroke-linecap: round;
+}
+
+.landing-leader-halo {
+	stroke-width: 7;
+	opacity: 0.1;
+}
+
+.landing-leader-base {
+	stroke-width: 1.25;
+	opacity: 0.32;
+}
+
+.landing-leader-flow {
+	stroke-width: 2.25;
+	stroke-dasharray: 7 29;
+	opacity: 0.75;
+}
+
+.landing-leader-dot {
+	fill: currentColor;
+	opacity: 0.9;
+}
+
+.landing-leader[data-open] {
+	filter: drop-shadow(0 0 4px oklch(from var(--primitive-color) l c h / 0.7));
+}
+
+.landing-leader[data-open] .landing-leader-halo {
+	opacity: 0.3;
+}
+
+.landing-leader[data-open] .landing-leader-base {
+	stroke-width: 2;
+	opacity: 0.95;
+}
+
+.landing-leader[data-open] .landing-leader-flow {
+	stroke-width: 3;
+	opacity: 1;
+}
+
+.landing-primitives[data-active] .landing-leader:not([data-open]) {
+	opacity: 0.2;
+}
+
+.landing-primitives-copy {
+	position: relative;
+	z-index: 2;
 }
 
 .landing-primitives-lead {
 	margin: 0;
-	font-size: 1.18rem;
-	line-height: 1.55;
+	font-size: 1.32rem;
+	line-height: 1.75;
 	text-wrap: pretty;
 }
 
+.landing-primitive-item {
+	white-space: nowrap;
+}
+
 .landing-primitive {
-	position: relative;
 	display: inline;
 }
 
+/* Underlines carry the orb color so the mapping reads without hover. */
 .landing-primitive-word {
 	margin: 0;
 	padding: 0;
@@ -1120,46 +1435,91 @@ html.is-settled {
 	background: none;
 	color: inherit;
 	font: inherit;
+	font-weight: 600;
 	cursor: pointer;
 	text-decoration: underline;
 	text-decoration-style: dashed;
 	text-decoration-thickness: 1.5px;
+	text-decoration-color: oklch(from var(--primitive-color) l c h / 0.8);
 	text-underline-offset: 0.22em;
+	transition:
+		color 0.2s ease,
+		text-decoration-color 0.2s ease;
 }
 
 .landing-primitive-word:hover,
 .landing-primitive-word:focus-visible,
 .landing-primitive[data-open] .landing-primitive-word {
-	color: var(--color-primary-text);
+	color: oklch(from var(--primitive-color) var(--primitive-text-l) c h);
+	text-decoration-color: currentColor;
+	text-decoration-style: solid;
 }
 
 .landing-primitive-word:focus-visible {
-	outline: 2.5px solid var(--color-primary);
+	outline: 2.5px solid
+		oklch(from var(--primitive-color) var(--primitive-text-l) c h);
 	outline-offset: 3px;
 	border-radius: 4px;
 }
 
+.landing-primitives[data-active]
+	.landing-primitive:not([data-open])
+	.landing-primitive-word {
+	color: var(--color-text-muted);
+	text-decoration-color: oklch(from var(--primitive-color) l c h / 0.3);
+}
+
+/* One panel below the copy block for every primitive: the same box wherever
+   the word wrapped, and nothing to overflow a narrow column. */
 .landing-primitive-popover {
 	position: absolute;
-	left: 50%;
-	top: calc(100% + 0.55rem);
+	left: 0;
+	right: 0;
+	top: calc(100% + 0.9rem);
 	z-index: 4;
 	box-sizing: border-box;
-	width: min(22rem, 80vw);
 	margin: 0;
-	padding: 0.85rem 1rem;
-	translate: -50% 0;
+	padding: 0.85rem 1.05rem 0.95rem;
 	text-align: left;
-	font-size: 0.92rem;
-	line-height: 1.45;
+	white-space: normal;
+	font-size: 0.93rem;
+	font-weight: 400;
+	line-height: 1.5;
 	color: var(--color-text);
 	background: var(--color-surface);
 	border: 1px solid var(--color-border);
 	border-radius: 12px;
-	box-shadow: var(--shadow-md);
+	box-shadow:
+		var(--shadow-md),
+		0 0 0 1px oklch(from var(--primitive-color) l c h / 0.18);
 	visibility: hidden;
 	opacity: 0;
-	pointer-events: none;
+	translate: 0 -0.3rem;
+	transition:
+		opacity 0.2s ease,
+		translate 0.2s ease,
+		visibility 0.2s;
+}
+
+.landing-primitive-popover-title {
+	display: flex;
+	align-items: center;
+	gap: 0.45rem;
+	margin-bottom: 0.25rem;
+	font-size: 0.78rem;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: oklch(from var(--primitive-color) var(--primitive-text-l) c h);
+}
+
+.landing-primitive-popover-title::before {
+	content: '';
+	width: 0.55rem;
+	height: 0.55rem;
+	border-radius: 50%;
+	background: var(--primitive-color);
+	box-shadow: 0 0 0.5rem oklch(from var(--primitive-color) l c h / 0.7);
 }
 
 .landing-primitive:hover .landing-primitive-popover,
@@ -1167,6 +1527,7 @@ html.is-settled {
 .landing-primitive[data-open] .landing-primitive-popover {
 	visibility: visible;
 	opacity: 1;
+	translate: 0 0;
 	pointer-events: auto;
 }
 
@@ -1180,6 +1541,94 @@ html.is-settled {
 	margin: 1.1rem 0 0;
 	color: var(--color-text-muted);
 	font-size: 0.98rem;
+}
+
+@keyframes leader-flow {
+	to {
+		stroke-dashoffset: -36;
+	}
+}
+
+@keyframes leader-breathe {
+	from {
+		opacity: 0.08;
+	}
+
+	to {
+		opacity: 0.22;
+	}
+}
+
+@keyframes orb-pulse {
+	from {
+		scale: 1;
+		opacity: 0.7;
+	}
+
+	to {
+		scale: 1.45;
+		opacity: 0;
+	}
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	html.js .landing-leader-flow {
+		animation: leader-flow 1.7s linear infinite;
+	}
+
+	html.js .landing-leader[data-open] .landing-leader-flow {
+		animation-duration: 0.75s;
+	}
+
+	html.js .landing-leader-halo {
+		animation: leader-breathe 2.6s ease-in-out infinite alternate;
+	}
+
+	html.js .landing-leader[data-open] .landing-leader-halo {
+		animation: none;
+	}
+
+	html.js .landing-lantern-orb::after {
+		animation: orb-pulse 2.75s ease-out var(--pulse-delay, 0s) infinite;
+	}
+
+	html.js .landing-lantern-orb[data-open]::after,
+	html.js .landing-primitives[data-active] .landing-lantern-orb::after {
+		animation: none;
+	}
+}
+
+@media (prefers-color-scheme: dark) {
+	.landing-lantern-metal-stop-a {
+		stop-color: oklch(0.46 0.012 260);
+	}
+
+	.landing-lantern-metal-stop-b {
+		stop-color: oklch(0.3 0.012 260);
+	}
+
+	.landing-lantern-metal {
+		stroke: oklch(0.6 0.012 260 / 0.55);
+		stroke-width: 1;
+	}
+
+	.landing-lantern-knob {
+		fill: oklch(0.52 0.012 260);
+	}
+
+	.landing-lantern-lip {
+		fill: oklch(0.26 0.012 260);
+		stroke: oklch(0.5 0.012 260 / 0.5);
+		stroke-width: 1;
+	}
+
+	.landing-lantern-halo-stop-a {
+		stop-color: oklch(0.82 0.14 80 / 0.6);
+	}
+
+	.landing-lantern-glass-stop-c {
+		stop-color: oklch(0.62 0.15 58);
+	}
 }
 
 .landing-vs {
@@ -1378,13 +1827,16 @@ html.is-settled {
 	display: none;
 }
 
+/* Each tether carries one primitive color (`--orb`, set per tether). */
 .landing-hero-agent-light-halo {
-	fill: oklch(0.88 0.13 85 / 0.45);
+	fill: oklch(from var(--orb, oklch(0.88 0.13 85)) l c h / 0.5);
 	filter: blur(0.6px);
 }
 
 .landing-hero-agent-light-core {
-	fill: oklch(0.97 0.05 90);
+	fill: oklch(
+		from var(--orb, oklch(0.97 0.05 90)) calc(l + 0.22) calc(c * 0.45) h
+	);
 }
 
 /* The shared .landing-hero-art glow is placed for the old stage; here the
@@ -1409,6 +1861,32 @@ html.is-settled {
 	);
 	mix-blend-mode: screen;
 	pointer-events: none;
+}
+
+/* Five primitive orbs seated in the glass Kody holds. Same palette as the
+   primitives lantern and the travelling lights. Sits above the image and
+   below the light layer; parallaxes with the image via data-depth. */
+.landing-hero-agents-orbs {
+	position: absolute;
+	z-index: 1;
+	translate: -50% -50%;
+	overflow: visible;
+	pointer-events: none;
+}
+
+.landing-hero-agents-orb-halo {
+	fill: oklch(from var(--orb) l c h / 0.5);
+	filter: blur(0.06px);
+}
+
+.landing-hero-agents-orb-core {
+	fill: oklch(from var(--orb) calc(l + 0.06) c h);
+	stroke: oklch(from var(--orb) calc(l + 0.25) calc(c * 0.5) h / 0.9);
+	stroke-width: 0.03;
+}
+
+.landing-hero-agents-orb-shine {
+	fill: oklch(1 0 0 / 0.75);
 }
 
 .landing-hero-agents-list {
@@ -2480,15 +2958,24 @@ html.is-settled {
 		grid-template-columns: 1fr;
 	}
 
-	.landing-primitive {
-		position: static;
+	.landing-primitives {
+		grid-template-columns: 1fr;
+		gap: 1.5rem;
+		max-width: 46rem;
+		text-align: center;
 	}
 
-	.landing-primitive-popover {
-		left: 0;
-		right: 0;
-		width: auto;
-		translate: none;
+	.landing-lantern {
+		width: min(58vw, 13rem);
+		margin: 0 auto;
+	}
+
+	.landing-primitives-leaders {
+		display: none;
+	}
+
+	.landing-primitives-lead {
+		font-size: 1.12rem;
 	}
 
 	.landing-proof-split {
