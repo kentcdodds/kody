@@ -37,11 +37,6 @@ export function presentLandingHeroVideos(
  */
 export const landingHeroSourcePlaylistId = 'PLBPBUA8boGLA'
 
-/**
- * Public catalog playlist. The homepage lite player does not attach this id.
- */
-export const landingHeroDemoPlaylistId = 'PLXa53KPj2nlE'
-
 export const landingHeroChooserLabelLead = 'Watch Some '
 export const landingHeroChooserLabelEmphasis = 'Demos'
 export const landingHeroChooserLabel = `${landingHeroChooserLabelLead}${landingHeroChooserLabelEmphasis}`

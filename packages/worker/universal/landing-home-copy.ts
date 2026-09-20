@@ -92,7 +92,6 @@ export const landingCompareWithItems = [
 
 export const landingInviteHeadingLead = 'Give your services a '
 export const landingInviteHeadingEmphasis = 'home'
-export const landingInviteHeading = `${landingInviteHeadingLead}${landingInviteHeadingEmphasis}`
 export const landingInviteGuestLead =
 	'Create a free account and connect a service you already use.'
 export const landingInviteSignedInLead =
