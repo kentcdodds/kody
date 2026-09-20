@@ -48,8 +48,6 @@ export const landingLanternOrbs = [
 	y: number
 }>
 
-export type LandingLanternOrb = (typeof landingLanternOrbs)[number]
-
 /** CSS custom property that carries a primitive's color. */
 export function landingPrimitiveColorVar(id: LandingPrimitiveId) {
 	return `var(--primitive-${id})`
