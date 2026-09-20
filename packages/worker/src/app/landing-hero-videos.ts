@@ -4,7 +4,6 @@ import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import {
 	isLandingHeroVideoList,
 	landingHeroSourcePlaylistId,
-	presentLandingHeroVideos,
 	type LandingHeroVideo,
 } from '#universal/landing-hero-copy.ts'
 import {
@@ -21,18 +20,12 @@ import {
 const heroVideosTtlMs = 5 * 60 * 1000
 const heroVideosStaleWhileRevalidateMs = 60 * 60 * 1000
 const youtubeFetchTimeoutMs = 2_500
-export const landingHeroVideosCacheKeyPrefix = 'landing-hero-videos:v4:'
+export const landingHeroVideosCacheKeyPrefix = 'landing-hero-videos:v5:'
 
 type YoutubeFetch = (input: string, init?: RequestInit) => Promise<Response>
 
 export function buildLandingHeroVideosCacheKey(playlistId: string) {
 	return `${landingHeroVideosCacheKeyPrefix}${playlistId}`
-}
-
-function presentUniqueLandingHeroVideos(
-	videos: ReadonlyArray<LandingHeroVideo>,
-) {
-	return presentLandingHeroVideos(uniqueLandingHeroVideos(videos))
 }
 
 function isVitestRuntime() {
@@ -47,9 +40,12 @@ function shouldFetchYoutubePlaylist(fetchImpl?: YoutubeFetch) {
 }
 
 /**
- * Homepage chooser videos in playlist order. KV-backed SWR so `/` stays
- * fast when YouTube is slow. Unit tests stay offline unless a fetch impl is
- * passed. Missing key / failed YouTube fail open to `[]`.
+ * Source playlist videos in playlist order. KV-backed SWR so `/` stays
+ * fast when YouTube is slow. Homepage presentation (omit retired thumbs)
+ * happens at the page boundary via `presentLandingHeroVideos`; this loader
+ * stays unfiltered so the youtube-watch allowlist can reuse the cache.
+ * Unit tests stay offline unless a fetch impl is passed. Missing key /
+ * failed YouTube fail open to `[]`.
  */
 export async function loadLandingHeroVideos(input: {
 	env: Env
@@ -132,15 +128,15 @@ async function fetchPlaylistItemsApi(input: {
 					signal: AbortSignal.timeout(youtubeFetchTimeoutMs),
 				},
 			)
-			if (!response.ok) return presentUniqueLandingHeroVideos(videos)
+			if (!response.ok) return uniqueLandingHeroVideos(videos)
 			const parsed = parseYoutubePlaylistItemsApi(await response.json())
 			videos.push(...parsed.videos)
 			if (!parsed.nextPageToken) break
 			pageToken = parsed.nextPageToken
 		}
-		return presentUniqueLandingHeroVideos(videos)
+		return uniqueLandingHeroVideos(videos)
 	} catch {
-		return presentUniqueLandingHeroVideos(videos)
+		return uniqueLandingHeroVideos(videos)
 	}
 }
 
@@ -167,7 +163,7 @@ async function fetchPlaylistBrowse(input: {
 				signal: AbortSignal.timeout(youtubeFetchTimeoutMs),
 			})
 			if (!response.ok) {
-				if (videos.length > 0) return presentUniqueLandingHeroVideos(videos)
+				if (videos.length > 0) return uniqueLandingHeroVideos(videos)
 				throw new Error(`youtube browse ${String(response.status)}`)
 			}
 			const parsed = parseYoutubePlaylistBrowseJson(await response.json())
@@ -182,9 +178,9 @@ async function fetchPlaylistBrowse(input: {
 			}
 			continuation = parsed.continuation
 		}
-		return presentUniqueLandingHeroVideos(videos)
+		return uniqueLandingHeroVideos(videos)
 	} catch (error) {
-		if (videos.length > 0) return presentUniqueLandingHeroVideos(videos)
+		if (videos.length > 0) return uniqueLandingHeroVideos(videos)
 		throw error
 	}
 }

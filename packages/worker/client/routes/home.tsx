@@ -20,6 +20,8 @@ import { routes } from '#universal/routes.ts'
 import {
 	isLandingHeroVideo,
 	landingHeroChooserLabel,
+	landingHeroChooserLabelEmphasis,
+	landingHeroChooserLabelLead,
 	presentLandingHeroVideos,
 	type LandingHeroVideo as LandingHeroVideoItem,
 } from '#universal/landing-hero-copy.ts'
@@ -37,6 +39,10 @@ import {
 	landingHeroSubheadEmphasis,
 	landingHeroSubheadLead,
 	landingHeroSubheadTail,
+	landingInviteGuestLead,
+	landingInviteHeadingEmphasis,
+	landingInviteHeadingLead,
+	landingInviteSignedInLead,
 	landingProofHeading,
 	landingVsHeading,
 	landingVsItems,
@@ -447,7 +453,8 @@ export function HomeRoute(handle: Handle) {
 				{landingHeroVideos.length > 0 ? (
 					<section aria-labelledby="videos-title" class="landing-videos">
 						<h2 id="videos-title" class="landing-section-heading">
-							{landingHeroChooserLabel}
+							{landingHeroChooserLabelLead}
+							<em>{landingHeroChooserLabelEmphasis}</em>
 						</h2>
 						<LandingHeroVideo videos={landingHeroVideos} />
 					</section>
@@ -467,14 +474,12 @@ export function HomeRoute(handle: Handle) {
 						id="invite-title"
 						class="landing-section-heading landing-invite-title"
 					>
-						Give your agents a <em>home</em>
+						{landingInviteHeadingLead}
+						<em>{landingInviteHeadingEmphasis}</em>
 					</h2>
 					{isSignedIn ? (
 						<div>
-							<p class="landing-invite-lead">
-								You&apos;re in. Connect the agent you already use and start
-								saving packages.
-							</p>
+							<p class="landing-invite-lead">{landingInviteSignedInLead}</p>
 							<p class="landing-invite-cta">
 								<a href={onboardingPath} class="landing-pill">
 									{landingHeroPrimaryCta}
@@ -483,9 +488,7 @@ export function HomeRoute(handle: Handle) {
 						</div>
 					) : (
 						<div>
-							<p class="landing-invite-lead">
-								Create a free account and connect the agent you already use.
-							</p>
+							<p class="landing-invite-lead">{landingInviteGuestLead}</p>
 							<p class="landing-invite-cta">
 								<a href={homepageSignupPath} class="landing-pill">
 									{publicCreateAccountLabel}
@@ -494,19 +497,32 @@ export function HomeRoute(handle: Handle) {
 						</div>
 					)}
 					<ul
-						aria-label="Agents and services that work with Kody"
+						aria-label="Services that work with Kody"
 						class="landing-world-cloud landing-invite-tools"
 					>
-						{landingWorldBrands.map((brand, index) => (
-							<li
-								key={brand.label}
-								class="landing-chip landing-chip-icon"
-								style={chipIconStyle(brand.icon)}
-								mix={revealPop(index * 35)}
-							>
-								{brand.label}
-							</li>
-						))}
+						{landingWorldBrands.map((brand, index) =>
+							'href' in brand && brand.href ? (
+								<li key={brand.label} class="landing-world-link-item">
+									<a
+										href={brand.href}
+										class="landing-chip landing-chip-icon landing-chip-link"
+										style={chipIconStyle(brand.icon)}
+										mix={revealPop(index * 35)}
+									>
+										{brand.label}
+									</a>
+								</li>
+							) : (
+								<li
+									key={brand.label}
+									class="landing-chip landing-chip-icon"
+									style={chipIconStyle(brand.icon)}
+									mix={revealPop(index * 35)}
+								>
+									{brand.label}
+								</li>
+							),
+						)}
 						<li class="landing-world-link-item">
 							<a
 								href={communityHref}

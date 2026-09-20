@@ -50,9 +50,9 @@ test('loadLandingHeroVideos reads Innertube browse order and serves SWR from KV'
 	}
 	const env = { BUNDLE_ARTIFACTS_KV: createMemoryKv() } as Env
 	const loaded = await loadLandingHeroVideos({ env, fetchImpl })
-	expect(loaded).toEqual([second])
+	expect(loaded).toEqual([first, second])
 	const cached = await loadLandingHeroVideos({ env, fetchImpl })
-	expect(cached).toEqual([second])
+	expect(cached).toEqual([first, second])
 	expect(fetches).toBe(1)
 })
 
@@ -81,7 +81,7 @@ test('loadLandingHeroVideos prefers the Data API when a key is set', async () =>
 		env: { YOUTUBE_DATA_API_KEY: 'test-youtube-key' } as Env,
 		fetchImpl,
 	})
-	expect(loaded).toEqual([second])
+	expect(loaded).toEqual([first, second])
 	expect(urls).toHaveLength(1)
 	expect(
 		urls[0]?.startsWith(`${youtubePlaylistItemsApiOrigin}/youtube/v3/`),
@@ -101,7 +101,7 @@ test('loadLandingHeroVideos falls back to Innertube when the Data API fails', as
 		env: { YOUTUBE_DATA_API_KEY: 'bad-key' } as Env,
 		fetchImpl,
 	})
-	expect(loaded).toEqual([second])
+	expect(loaded).toEqual([second, first])
 })
 
 test('loadLandingHeroVideos fails open when YouTube is unreachable', async () => {

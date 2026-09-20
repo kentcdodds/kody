@@ -2,6 +2,8 @@ import { expect, test } from 'vitest'
 import { landingHeroHeadline } from './landing-home-copy.ts'
 import {
 	landingHeroCarouselOmittedVideoIds,
+	landingHeroChooserLabel,
+	landingHeroChooserLabelEmphasis,
 	presentLandingHeroVideos,
 } from './landing-hero-copy.ts'
 
@@ -28,4 +30,9 @@ test('homepage carousel drops the retired hero thumb and retitles leftover Stop 
 	expect(presented[1]?.title).toBe(landingHeroHeadline)
 	expect(JSON.stringify(presented)).not.toMatch(/stop sweating/i)
 	expect(JSON.stringify(presented)).not.toMatch(/\u2014|—/)
+	expect(landingHeroChooserLabel).toBe('Watch Some Demos')
+	expect(
+		landingHeroChooserLabel.endsWith(landingHeroChooserLabelEmphasis),
+	).toBe(true)
+	expect(landingHeroChooserLabelEmphasis).toBe('Demos')
 })

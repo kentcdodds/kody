@@ -1320,7 +1320,8 @@ html.is-settled {
 	}
 }
 
-/* Proof stage: Kody with floating host agents. Connector lines stay off. */
+/* Proof stage: Kody with floating host agents. Connector lines stay off;
+   travelling orbs still run on the SVG track layer. */
 .landing-hero-agents {
 	width: min(100%, 22rem, 58vh);
 	margin: 0 auto;
@@ -1341,8 +1342,11 @@ html.is-settled {
 	height: auto;
 }
 
+/* Orb container. Keep this painted; hide only the track stroke. Lights
+   dissolve into the globe instead of crossing it. Masked on the <svg> box
+   (percentages: the stage is square, so they match viewBox units); the
+   centre tracks the lantern through parallax. */
 .landing-hero-agents-lines {
-	display: none;
 	position: absolute;
 	inset: 0;
 	width: 100%;
@@ -1350,12 +1354,6 @@ html.is-settled {
 	overflow: visible;
 	pointer-events: none;
 	z-index: 2;
-}
-
-/* Strokes and lights dissolve into the globe instead of crossing it. Masked
-   on the <svg> box (percentages: the stage is square, so they match viewBox
-   units); the centre tracks the lantern through parallax. */
-.landing-hero-agents-lines {
 	/* Glass radii ≈ 6.3% × 5.4%; fully clear inside, faded out by ~1.5× that. */
 	mask-image: radial-gradient(
 		ellipse 9.5% 8.2% at var(--lantern-x) var(--lantern-y),
@@ -1369,20 +1367,10 @@ html.is-settled {
 	);
 }
 
-/* Neutral threads; only the travelling lights carry the lantern's warmth. */
-.landing-hero-agent-line {
-	stroke: color-mix(in oklab, var(--color-border) 75%, var(--color-text));
-	stroke-width: 0.4;
-	stroke-linecap: round;
-}
-
-/* Faint soft bloom under each line so they sit in the scene, not on it. */
-.landing-hero-agent-glow {
-	stroke: var(--color-text);
-	stroke-width: 1.4;
-	stroke-linecap: round;
-	opacity: 0.06;
-	filter: blur(0.5px);
+/* Measurement-only path. Orbs travel along it; no connector is drawn. */
+.landing-hero-agent-track {
+	fill: none;
+	stroke: none;
 }
 
 /* Lights are motion-only: no JS or reduced motion leaves the tethers still. */

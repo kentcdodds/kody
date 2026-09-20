@@ -49,7 +49,9 @@ export const landingHeroSourcePlaylistId = 'PLBPBUA8boGLA'
  */
 export const landingHeroDemoPlaylistId = 'PLXa53KPj2nlE'
 
-export const landingHeroChooserLabel = 'More Kody videos'
+export const landingHeroChooserLabelLead = 'Watch Some '
+export const landingHeroChooserLabelEmphasis = 'Demos'
+export const landingHeroChooserLabel = `${landingHeroChooserLabelLead}${landingHeroChooserLabelEmphasis}`
 
 export function isLandingHeroVideo(value: unknown): value is LandingHeroVideo {
 	if (typeof value !== 'object' || value === null) return false

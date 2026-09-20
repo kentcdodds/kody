@@ -11,6 +11,9 @@ import {
 	landingHeroSubhead,
 	landingHeroSubheadEmphasis,
 	landingHomePrimitives,
+	landingInviteGuestLead,
+	landingInviteHeading,
+	landingInviteHeadingEmphasis,
 	landingHomeUiCopyBlob,
 	landingPrimitivesMoreLink,
 	landingVsHeading,
@@ -45,4 +48,9 @@ test('locked homepage copy names the five primitives and has no em dashes', () =
 	expect(landingVsHeading.startsWith('Not another chat')).toBe(true)
 	expect(landingCompareCaption.startsWith('Ask once')).toBe(true)
 	expect(landingPrimitivesMoreLink).toContain('What is Kody')
+	expect(landingInviteHeading).toBe('Give your services a home')
+	expect(landingInviteHeadingEmphasis).toBe('home')
+	expect(landingInviteGuestLead).toBe(
+		'Create a free account and connect a service you already use.',
+	)
 })

@@ -87,6 +87,14 @@ export const landingCompareWithItems = [
 
 export const landingProofHeading = 'See it work'
 
+export const landingInviteHeadingLead = 'Give your services a '
+export const landingInviteHeadingEmphasis = 'home'
+export const landingInviteHeading = `${landingInviteHeadingLead}${landingInviteHeadingEmphasis}`
+export const landingInviteGuestLead =
+	'Create a free account and connect a service you already use.'
+export const landingInviteSignedInLead =
+	'You\u2019re in. Connect a service you already use and start saving packages.'
+
 export function landingHomeUiCopyBlob() {
 	return [
 		landingHeroHeadline,
@@ -106,5 +114,8 @@ export function landingHomeUiCopyBlob() {
 		...landingCompareWithoutItems,
 		...landingCompareWithItems,
 		landingProofHeading,
+		landingInviteHeading,
+		landingInviteGuestLead,
+		landingInviteSignedInLead,
 	].join('\n')
 }

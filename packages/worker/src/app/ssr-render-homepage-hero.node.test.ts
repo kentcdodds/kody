@@ -193,8 +193,19 @@ test('homepage hero uses locked copy, compare, and session-aware connect CTA', a
 	expect(anonymousHtml.indexOf('landing-videos')).toBeLessThan(
 		anonymousHtml.indexOf('id="invite"'),
 	)
-	expect(anonymousHtml).not.toContain('landing-hero-agent-light')
+	expect(anonymousHtml).toContain('landing-hero-agent-light')
+	expect(anonymousHtml).toContain('landing-hero-agent-track')
 	expect(anonymousHtml).not.toContain('landing-hero-agent-line')
+	expect(anonymousHtml).not.toContain('landing-hero-agent-glow')
+	expect(anonymousHtml).toContain('Watch Some ')
+	expect(anonymousHtml).toContain('<em>Demos</em>')
+	expect(anonymousHtml).toContain('Give your services a ')
+	expect(anonymousHtml).toContain(
+		'Create a free account and connect a service you already use.',
+	)
+	expect(anonymousHtml).toContain('aria-label="Services that work with Kody"')
+	expect(anonymousHtml).toContain('href="/docs/github"')
+	expect(anonymousHtml).toContain('href="/docs/slack"')
 
 	const signedIn = await renderAppPage({
 		request: new Request(requestUrl),
@@ -213,4 +224,7 @@ test('homepage hero uses locked copy, compare, and session-aware connect CTA', a
 	expect(signedInHero).toContain(landingHeroSecondaryCta)
 	expect(signedInHtml).toContain('landing-videos')
 	expect(signedInHtml).toContain('landing-hero-agents')
+	expect(signedInHtml).toContain(
+		'You\u2019re in. Connect a service you already use and start saving packages.',
+	)
 })
