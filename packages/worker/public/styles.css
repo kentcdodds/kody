@@ -1520,9 +1520,15 @@ html.is-settled {
 .landing-path-fan-link {
 	flex: 1 1 auto;
 	width: 100%;
+	cursor: pointer;
+}
+
+.landing-path-fan-link:any-link,
+.landing-path-fan-link:hover,
+.landing-path-fan-link:focus,
+.landing-path-fan-link:active {
 	color: inherit;
 	text-decoration: none;
-	cursor: pointer;
 }
 
 .landing-path-fan-item .landing-path-kicker {
