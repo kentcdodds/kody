@@ -10,7 +10,7 @@ import {
 const safeFrameMethods = new Set(['GET', 'HEAD'])
 
 /** Wrap prefetched HTML so `resolveFrame` always returns a `Response`. */
-export function prefetchedFrameResponse(html: string) {
+function prefetchedFrameResponse(html: string) {
 	return new Response(html, {
 		headers: { 'Content-Type': 'text/html; charset=utf-8' },
 	})
