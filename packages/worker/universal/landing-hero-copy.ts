@@ -1,13 +1,4 @@
 import { isYoutubeVideoId } from '#universal/youtube-watch.ts'
-import { landingHeroHeadline as lockedLandingHeroHeadline } from '#universal/landing-home-copy.ts'
-
-/**
- * Homepage hero headline. The live H1 and the home OG card both read this
- * so a wording change cannot update one surface and miss the other.
- */
-export const landingHeroHeadline = lockedLandingHeroHeadline
-
-export const landingHeroCopyPromptLabel = 'Copy the discovery prompt'
 
 export type LandingHeroVideo = {
 	videoId: string

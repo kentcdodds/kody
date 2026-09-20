@@ -804,12 +804,6 @@ test('renderAppPage emits a doctype, meta description, and inlines the styleshee
 	expect(withoutAssetsHtml.startsWith('<!DOCTYPE html>')).toBe(true)
 	expect(withoutAssetsHtml).toContain('href="/styles.css')
 	expect(withoutAssetsHtml).toContain('name="description"')
-	expect(withoutAssetsHtml).toContain(
-		'One home for packages, secrets, memory, and jobs',
-	)
-	expect(withoutAssetsHtml).toContain(
-		'what you build in Cursor still runs in Claude',
-	)
 	// Proof stage: one agent list around Kody, no connector lines.
 	expect(withoutAssetsHtml).toContain('landing-hero-agents')
 	expect(withoutAssetsHtml).toContain('/images/kody-mark.png')
