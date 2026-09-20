@@ -256,12 +256,12 @@ role. User-approved platform feedback is a narrow user-content exception.
 email-verification state (including the latest verification-mail delivery
 outcome), entitlement plan, first-touch marketing attribution fields when
 present, activation first-seen timestamps (email verified, first MCP connection,
-first execute, first saved package), MCP client name when known, last-active
-stamps, `created_at`, `updated_at`, and role assignments. The plan is account
-metadata (it drives quota enforcement), not user content, and admins can change
-it via `/admin/users` or the `adminUserUpdate` MCP capability. Admins can mark
-an account email verified or mint a one-time verify URL via `/admin/users` or
-`adminUserVerify`.
+first execute, first saved package, first secret, first integration, first job),
+MCP client name when known, last-active stamps, `created_at`, `updated_at`, and
+role assignments. The plan is account metadata (it drives quota enforcement),
+not user content, and admins can change it via `/admin/users` or the
+`adminUserUpdate` MCP capability. Admins can mark an account email verified or
+mint a one-time verify URL via `/admin/users` or `adminUserVerify`.
 
 **Admins can see and triage user-approved platform feedback.** The submit
 capability requires `user_confirmed: true` and accepts submissions only from an
