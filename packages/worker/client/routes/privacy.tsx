@@ -60,16 +60,16 @@ export function PrivacyRoute(_handle: Handle) {
 					captured on public-site visits when UTM or landing context is present
 					and associated with the account at signup, first-seen activation
 					timestamps (email verified, first MCP connection, first execute, first
-					saved package), MCP client name when known, last-active day stamps
-					used for return metrics, secrets, memories, packages and their source,
-					jobs, email inboxes and messages, durable storage, MCP server
-					configuration, OAuth grants, package invocation tokens, short-lived
-					execution history, stored community activity events, and any platform
-					feedback you approve for submission. All of this remains scoped to
-					your account except for content you deliberately make public
-					(community listings and a public profile), the narrow admin review of
-					approved platform feedback, and the community activity metadata
-					described below.
+					saved package, first secret, first integration, first job), MCP client
+					name when known, last-active day stamps used for return metrics,
+					secrets, memories, packages and their source, jobs, email inboxes and
+					messages, durable storage, MCP server configuration, OAuth grants,
+					package invocation tokens, short-lived execution history, stored
+					community activity events, and any platform feedback you approve for
+					submission. All of this remains scoped to your account except for
+					content you deliberately make public (community listings and a public
+					profile), the narrow admin review of approved platform feedback, and
+					the community activity metadata described below.
 				</p>
 				<p mix={css(descriptionCss)}>
 					When profile visibility is <strong>public</strong>, display name, bio,
