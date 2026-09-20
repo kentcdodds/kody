@@ -1492,10 +1492,10 @@ html.is-settled {
 
 .landing-primitives-more {
 	position: relative;
-	/* Above the word-list popover (stacked in the words layer) so the
-	   hanging panel cannot cover this link. The extra top margin clears
-	   the panel and its shadow on a short lantern. */
-	z-index: 5;
+	/* Stay under the words layer so the mobile bottom sheet (inside that
+	   layer) can paint over this line. The extra top margin clears the
+	   desktop panel and its shadow on a short lantern. */
+	z-index: 0;
 	margin: clamp(3.5rem, 6vw, 4.5rem) 0 0;
 	color: var(--color-text-muted);
 	font-size: 0.98rem;
