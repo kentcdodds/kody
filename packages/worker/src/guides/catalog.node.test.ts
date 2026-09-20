@@ -20,6 +20,7 @@ import {
 	listDocsNavSlugs,
 	unadvertisedDocSlugs,
 } from '#universal/docs-nav.ts'
+import { landingFactoryBeats } from '#universal/landing-factory-beats.ts'
 
 test('guide catalog parses every guide with unique ids and slugs', () => {
 	expect(guides.length).toBeGreaterThanOrEqual(12)
@@ -63,6 +64,20 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 		title: 'Text your agent',
 		category: 'platform',
 	})
+
+	expect(docsNav.find((section) => section.id === 'examples')?.items).toEqual([
+		{ slug: 'flake-hunter', label: 'Flake Hunter' },
+		{ slug: 'sentry-issues', label: 'Sentry Issues' },
+		{ slug: 'agent-inbox', label: 'Agent inbox' },
+		{ slug: 'purchase-thanks', label: 'Purchase thanks' },
+	])
+	for (const beat of landingFactoryBeats) {
+		expect(getGuideBySlug(beat.slug)).toMatchObject({
+			slug: beat.slug,
+			title: beat.title,
+			category: 'platform',
+		})
+	}
 
 	expect(getGuideById('values')?.unadvertised).toBe(true)
 	expect(listGuides().some((guide) => guide.id === 'values')).toBe(false)

@@ -104,6 +104,21 @@ test('docs API lists every advertised doc by section and the markdown root is in
 		indexBody.indexOf('/docs/how-kody-works.md'),
 	)
 	expect(indexBody.indexOf('## Concepts')).toBeLessThan(
+		indexBody.indexOf('## Examples'),
+	)
+	expect(indexBody.indexOf('## Examples')).toBeLessThan(
+		indexBody.indexOf('## Packages'),
+	)
+	expect(indexBody.indexOf('/docs/flake-hunter.md')).toBeLessThan(
+		indexBody.indexOf('/docs/sentry-issues.md'),
+	)
+	expect(indexBody.indexOf('/docs/sentry-issues.md')).toBeLessThan(
+		indexBody.indexOf('/docs/agent-inbox.md'),
+	)
+	expect(indexBody.indexOf('/docs/agent-inbox.md')).toBeLessThan(
+		indexBody.indexOf('/docs/purchase-thanks.md'),
+	)
+	expect(indexBody.indexOf('## Concepts')).toBeLessThan(
 		indexBody.indexOf('## Connect a provider'),
 	)
 	expect(indexBody).not.toContain('https://kody.example/docs/values.md')

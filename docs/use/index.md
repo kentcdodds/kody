@@ -34,6 +34,11 @@ MCP-level reference detail those docs link into.
   [Custom secret providers](../guides/secret-providers.md), and
   [Jobs, workflows, and webhooks](../guides/triggers.md) — concept docs for the
   primitives every connected agent shares
+- [Flake Hunter](../guides/flake-hunter.md),
+  [Sentry Issues](../guides/sentry-issues.md),
+  [Agent inbox](../guides/agent-inbox.md), and
+  [Purchase thanks](../guides/purchase-thanks.md) — homepage Trigger it cards as
+  worked examples (cron, webhook, email, event)
 - [Connect a provider](https://kody.codes/docs/connect) — verified walkthroughs
   for connecting Discord, GitHub, Google, and other providers to Kody
 - [How Kody works](../guides/how-kody-works.md) — ask once, save an export,

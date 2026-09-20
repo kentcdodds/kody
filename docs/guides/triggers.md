@@ -154,6 +154,9 @@ nothing else. See [Email primitives](../use/email-primitives.md).
 
 ## Where to go next
 
+- [Flake Hunter](./flake-hunter.md), [Sentry Issues](./sentry-issues.md),
+  [Agent inbox](./agent-inbox.md), [Purchase thanks](./purchase-thanks.md) — the
+  four homepage Trigger it cards as worked examples.
 - [Package lifecycle](./package-lifecycle.md) — testing a scheduled wrapper
   before enabling its schedule.
 - [How Kody works](./how-kody-works.md) — one loop from ad hoc question to a

@@ -3,6 +3,7 @@ import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { resetDataCacheForTests } from '#app/data-cache.ts'
 import { loadHomePageOnboardingData } from '#app/onboarding-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import { landingFactoryBeats } from '#universal/landing-factory-beats.ts'
 import { landingHeroDemoPlaylistId } from '#universal/landing-hero-copy.ts'
 import {
 	landingCompareWithTitle,
@@ -18,6 +19,7 @@ import {
 	landingHomePrimitives,
 	landingVsHeading,
 } from '#universal/landing-home-copy.ts'
+import { routes } from '#universal/routes.ts'
 import { createMemoryKv } from '#worker/test-support/auth-provider-harness.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 import { testOidcSigningEnv } from '#worker/test-support/oidc-signing-env.ts'
@@ -239,4 +241,33 @@ test('homepage hero uses locked copy, compare, and session-aware connect CTA', a
 	expect(signedInHtml).toContain(
 		'You\u2019re in. Connect a service you already use and start saving packages.',
 	)
+})
+
+test('homepage trigger cards link to dedicated example docs', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv()
+	const requestUrl = 'https://example.com/'
+
+	const page = await renderAppPage({
+		request: new Request(requestUrl),
+		env,
+		loaderData: {
+			onboarding: homepageOnboardingFixture(env, requestUrl, false),
+			landingHeroVideos: [...homepageHeroVideos],
+		},
+	})
+	expect(page.status).toBe(200)
+	const html = await page.text()
+	expect(html).toContain('aria-label="Example triggers"')
+	for (const beat of landingFactoryBeats) {
+		const href = routes.docDetail.href({ slug: beat.slug })
+		expect(href).not.toBe('')
+		expect(html).toContain(`href="${href}"`)
+		expect(html).toContain(beat.trigger)
+		expect(html).toContain(beat.title)
+	}
+	expect(html).toContain('landing-path-fan-link')
+	expect(html).toContain('landing-path-fan-slot')
+	expect(html).not.toContain('href=""')
 })

@@ -31,8 +31,12 @@ Anonymous HTML on `/` and several marketing routes is short-CDN-cached. Weekly
 site-perf owns landing budgets. The `/` hero is a two-column layout: headline
 plus signup CTAs (anonymous sessions) beside a first-party YouTube light player
 with a horizontal video chooser; the lantern/agent orbit sits below that row.
-Signed-in visitors still see the player and chooser. Chooser membership and
-order come from the unlisted playlist `PLBPBUA8boGLA`. Client navigations load
+The factory “Trigger it” cards (Flake Hunter, Sentry Issues, Agent inbox,
+Purchase thanks) are quiet same-origin links to `/docs/flake-hunter`,
+`/docs/sentry-issues`, `/docs/agent-inbox`, and `/docs/purchase-thanks` (pointer
+and focus ring only; no extra labels or hover chrome). Signed-in visitors still
+see the player and chooser. Chooser membership and order come from the unlisted
+playlist `PLBPBUA8boGLA`. Client navigations load
 `GET /landing-hero-videos.json`. The lite player embeds the selected chooser
 video only, without a playlist id, so YouTube chrome uses that video's title.
 Chooser ids are on the YouTube allowlist for `/youtube-thumb` without a banner.

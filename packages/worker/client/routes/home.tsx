@@ -13,8 +13,9 @@ import { onboardingPath } from '#client/routes/onboarding-redirect.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { reveal, revealPop } from '#client/reveal.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
+import { landingFactoryBeats } from '#universal/landing-factory-beats.ts'
 import { landingWorldBrands } from '#universal/landing-world-brands.ts'
-import { renderIcon, type IconName } from '#universal/icon.tsx'
+import { renderIcon } from '#universal/icon.tsx'
 import { homepageSignupPath } from '#universal/first-touch-attribution.ts'
 import { routes } from '#universal/routes.ts'
 import {
@@ -89,17 +90,6 @@ const factoryPathSteps = [
 		note: 'Cron, webhook, email, or event.',
 	},
 ] as const
-
-const factoryBeats = [
-	{ trigger: 'Cron', title: 'Flake Hunter', icon: 'target' },
-	{ trigger: 'Webhook', title: 'Sentry Issues', icon: 'warning-triangle' },
-	{ trigger: 'Email', title: 'Agent inbox', icon: 'mail' },
-	{ trigger: 'Event', title: 'Purchase thanks', icon: 'heart' },
-] as const satisfies ReadonlyArray<{
-	trigger: string
-	title: string
-	icon: IconName
-}>
 
 const ecosystemPathSteps = [
 	{
@@ -342,17 +332,22 @@ export function HomeRoute(handle: Handle) {
 						)}
 						<div class="landing-path-stem" aria-hidden="true"></div>
 						<ul class="landing-path-fan" aria-label="Example triggers">
-							{factoryBeats.map((beat, index) => (
+							{landingFactoryBeats.map((beat, index) => (
 								<li
 									key={beat.title}
-									class="landing-path-fan-item"
+									class="landing-path-fan-slot"
 									mix={reveal(index * 70)}
 								>
-									<p class="landing-path-kicker">{beat.trigger}</p>
-									<p class="landing-path-fan-title">
-										{renderIcon(beat.icon, { size: '22' })}
-										{beat.title}
-									</p>
+									<a
+										href={routes.docDetail.href({ slug: beat.slug })}
+										class="landing-path-fan-item landing-path-fan-link"
+									>
+										<span class="landing-path-kicker">{beat.trigger}</span>
+										<span class="landing-path-fan-title">
+											{renderIcon(beat.icon, { size: '22' })}
+											{beat.title}
+										</span>
+									</a>
 								</li>
 							))}
 						</ul>

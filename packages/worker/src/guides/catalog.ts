@@ -16,6 +16,10 @@ import accountSecretSetup from '../../../../docs/guides/account-secret-setup.md'
 import adminEvents from '../../../../docs/guides/admin-events.md'
 import connectYourAgent from '../../../../docs/guides/connect-your-agent.md'
 import firstWin from '../../../../docs/guides/first-win.md'
+import flakeHunter from '../../../../docs/guides/flake-hunter.md'
+import sentryIssues from '../../../../docs/guides/sentry-issues.md'
+import agentInbox from '../../../../docs/guides/agent-inbox.md'
+import purchaseThanks from '../../../../docs/guides/purchase-thanks.md'
 import howKodyWorks from '../../../../docs/guides/how-kody-works.md'
 import searchAndExecute from '../../../../docs/guides/search-and-execute.md'
 import googleOauth from '../../../../docs/guides/google-oauth.md'
@@ -82,6 +86,10 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'text-your-agent', raw: textYourAgent },
 	{ slug: 'triggers', raw: triggers },
 	{ slug: 'platform-efficiency', raw: platformEfficiency },
+	{ slug: 'flake-hunter', raw: flakeHunter },
+	{ slug: 'sentry-issues', raw: sentryIssues },
+	{ slug: 'agent-inbox', raw: agentInbox },
+	{ slug: 'purchase-thanks', raw: purchaseThanks },
 	{ slug: 'package-lifecycle', raw: packageLifecycle },
 	{ slug: 'package-authoring', raw: packageAuthoring },
 	{ slug: 'package-sharing', raw: packageSharing },
