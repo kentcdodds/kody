@@ -173,9 +173,9 @@ test('homepage hero uses locked copy, compare, and session-aware connect CTA', a
 	expect(anonymousHtml).toContain(
 		`/youtube-thumb/${homepageHeroVideos[2].videoId}`,
 	)
-	expect(anonymousHtml).toContain(
-		`data-embed-playlist="${landingHeroDemoPlaylistId}"`,
-	)
+	expect(anonymousHtml).not.toContain('data-embed-playlist')
+	expect(anonymousHtml).not.toContain(landingHeroDemoPlaylistId)
+	expect(anonymousHtml).not.toMatch(/stop sweating/i)
 	expect(anonymousHtml.indexOf('landing-hero')).toBeLessThan(
 		anonymousHtml.indexOf('id="primitives"'),
 	)
