@@ -1193,4 +1193,15 @@ test('execute invoke generates the canonical thin passthrough and rejects code p
 	})
 	expect(both.isError).toBe(true)
 	expect(both.structuredContent.error).toBe(executeInvokeMutualExclusionMessage)
+
+	mockModule.resolveCallerFeatureFlags.mockResolvedValue({
+		'execute-invoke': false,
+	})
+	const killed = await onHandler({
+		invoke: specifier,
+		conversationId: 'conv-invoke-killed',
+	})
+	expect(killed.isError).toBe(true)
+	expect(killed.structuredContent.error).toBe(executeInvokeFlagOffMessage)
+	expect(mockModule.runModuleWithRegistry).toHaveBeenCalledTimes(1)
 })

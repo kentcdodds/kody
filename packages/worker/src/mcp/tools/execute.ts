@@ -340,10 +340,14 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					}
 				}
 
+				// Schema omit/advertise is decided at register. Re-read the
+				// flag here so a kill-switch applies on the next call even
+				// when a legacy session still has invoke in its tool list.
+				const liveFlags = await resolveCallerFeatureFlags(env, callerContext)
 				const resolvedCode = resolveExecuteModuleSource({
 					code,
 					invoke,
-					invokeEnabled,
+					invokeEnabled: liveFlags[executeInvokeFlagKey] === true,
 				})
 
 				// Daily execute quota, consumed before claim/bundling/sandbox

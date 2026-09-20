@@ -91,7 +91,9 @@ export function parseExecuteInvokeSpecifier(raw: string): string {
 
 /**
  * Canonical thin passthrough. Classifies as `thin_single_export` and matches
- * the default-export execute snippet search already teaches.
+ * the default-export execute snippet search already teaches. Named-only
+ * package callables stay on `code`; invoke always default-imports the
+ * package export module.
  */
 export function buildExecuteInvokePassthroughSource(specifier: string): string {
 	return `import ${invokeLocalName} from ${JSON.stringify(specifier)}
