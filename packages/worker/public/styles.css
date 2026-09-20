@@ -1497,6 +1497,11 @@ html.is-settled {
 	gap: 0.85rem;
 }
 
+.landing-path-fan:not(.landing-path-fan-chips) > li {
+	display: flex;
+	min-width: 0;
+}
+
 .landing-path-fan-item {
 	display: flex;
 	flex-direction: column;
@@ -1508,6 +1513,27 @@ html.is-settled {
 	border-radius: 16px;
 	text-align: center;
 	min-width: 0;
+}
+
+.landing-path-fan-link {
+	flex: 1 1 auto;
+	width: 100%;
+	color: inherit;
+	text-decoration: none;
+	cursor: pointer;
+}
+
+.landing-path-fan-link:hover {
+	border-color: color-mix(
+		in oklch,
+		var(--color-primary) 40%,
+		var(--color-border)
+	);
+	background-color: color-mix(in oklch, var(--color-primary) 8%, transparent);
+}
+
+.landing-path-fan-link:hover .landing-path-fan-title {
+	color: var(--color-primary-text);
 }
 
 .landing-path-fan-item .landing-path-kicker {

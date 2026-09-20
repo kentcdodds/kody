@@ -90,6 +90,18 @@ export const docsNav: ReadonlyArray<DocsNavSection> = [
 		],
 	},
 	{
+		id: 'examples',
+		label: 'Examples',
+		description:
+			'Homepage trigger cards as worked examples: cron, webhook, email, and event.',
+		items: [
+			{ slug: 'flake-hunter', label: 'Flake Hunter' },
+			{ slug: 'sentry-issues', label: 'Sentry Issues' },
+			{ slug: 'agent-inbox', label: 'Agent inbox' },
+			{ slug: 'purchase-thanks', label: 'Purchase thanks' },
+		],
+	},
+	{
 		id: 'packages',
 		label: 'Packages',
 		description: 'Turn working code into a package you own, then grow it.',
