@@ -7,10 +7,15 @@ export type LandingHeroVideo = {
 }
 
 /**
- * Public thumb for this clip still paints the retired "Stop Sweating"
- * hero. Keep it off the homepage strip until that artwork changes.
+ * Public thumbs that still paint the retired switching-agents hero
+ * ("Stop Sweating Agent Switching" / "Switch Agents"). Keep them off the
+ * homepage strip until that artwork changes. HTML titles are not enough:
+ * the YouTube poster is the visible text.
  */
-export const landingHeroCarouselOmittedVideoIds = ['iGMkgjXc8Ho'] as const
+export const landingHeroCarouselOmittedVideoIds = [
+	'iGMkgjXc8Ho',
+	'QA0xYMAMjEg',
+] as const
 
 const retiredHeroTitlePattern = /stop sweating/i
 
@@ -39,13 +44,14 @@ export function presentLandingHeroVideos(
 /**
  * Unlisted playlist that owns the homepage chooser: order and membership.
  * Kent adds videos by putting them on this playlist; the Worker reads it at
- * request time (KV SWR). Embeds still use `landingHeroDemoPlaylistId`.
+ * request time (KV SWR). The homepage lite player embeds the selected video
+ * only, without a playlist id, so YouTube player chrome uses that video's
+ * title instead of a catalog first-item title.
  */
 export const landingHeroSourcePlaylistId = 'PLBPBUA8boGLA'
 
 /**
- * Public playlist passed on the lite-player embed so end-of-video
- * recommendations stay in that catalog (more videos than the home chooser).
+ * Public catalog playlist. The homepage lite player does not attach this id.
  */
 export const landingHeroDemoPlaylistId = 'PLXa53KPj2nlE'
 

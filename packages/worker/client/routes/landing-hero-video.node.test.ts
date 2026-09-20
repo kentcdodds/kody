@@ -21,6 +21,10 @@ const fixtureVideos = [
 		videoId: 'o5L5OprLhBg',
 		title: 'Kody fixes a Stripe webhook after we renamed the domain',
 	},
+	{
+		videoId: 'OZKDO9Pzmo0',
+		title: 'Shade automation from an INTENT.md',
+	},
 ] as const
 
 test('nextChooserIndex moves along the strip, wraps at the ends, ignores other keys', () => {
@@ -55,8 +59,8 @@ test('hero video renders playlist order in the player and listbox', async () => 
 	const html = await renderToString(
 		jsx(LandingHeroVideo, { videos: fixtureVideos }),
 	)
-	const omitted = fixtureVideos[0]
-	const presented = fixtureVideos.slice(1)
+	const omitted = fixtureVideos.slice(0, 2)
+	const presented = fixtureVideos.slice(2)
 	const [first, ...rest] = presented
 
 	// Poster, not an embed, until the visitor clicks.
@@ -67,7 +71,9 @@ test('hero video renders playlist order in the player and listbox', async () => 
 	expect(html).toContain('tabindex="0"')
 	expect(html.match(/role="option"/g)).toHaveLength(presented.length)
 	expect(html.match(/aria-selected="true"/g)).toHaveLength(1)
-	expect(html).not.toContain(`/youtube-thumb/${omitted.videoId}`)
+	for (const video of omitted) {
+		expect(html).not.toContain(`/youtube-thumb/${video.videoId}`)
+	}
 	expect(html).toContain(`/youtube-thumb/${first.videoId}`)
 	for (const video of rest) {
 		expect(html).toContain(`/youtube-thumb/${video.videoId}`)
@@ -81,7 +87,9 @@ test('hero video renders playlist order in the player and listbox', async () => 
 	expect(optionThumbs).toEqual(presented.map((video) => video.videoId))
 	expect(html).toContain(first.title)
 	expect(html).toContain(rest[0]?.title)
-	expect(html).toContain(`data-embed-playlist="${landingHeroDemoPlaylistId}"`)
+	expect(html).not.toContain('data-embed-playlist')
+	expect(html).not.toContain(landingHeroDemoPlaylistId)
+	expect(html).not.toMatch(/stop sweating/i)
 })
 
 test('hero video is omitted when the playlist is empty', async () => {

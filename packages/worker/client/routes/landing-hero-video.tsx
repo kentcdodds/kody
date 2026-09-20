@@ -3,7 +3,6 @@ import { on } from '#client/event-mixin.ts'
 import { YouTubeLightPlayer } from '#client/youtube-light-player.tsx'
 import {
 	landingHeroChooserLabel,
-	landingHeroDemoPlaylistId,
 	presentLandingHeroVideos,
 	type LandingHeroVideo,
 } from '#universal/landing-hero-copy.ts'
@@ -160,11 +159,9 @@ export function LandingHeroVideo(
 					data-rise
 					style={{ '--rise': '1' }}
 					class="landing-hero-video"
-					data-embed-playlist={landingHeroDemoPlaylistId}
 				>
 					<YouTubeLightPlayer
 						videoId={selected.videoId}
-						playlistId={landingHeroDemoPlaylistId}
 						title={selected.title}
 						autoplay={chosen}
 						playTestId="landing-hero-video-play"
