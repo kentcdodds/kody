@@ -164,11 +164,16 @@ test('homepage hero uses locked copy, compare, and session-aware connect CTA', a
 	expect(anonymousHtml).toContain('landing-hero-agents')
 	expect(anonymousHtml).toContain('landing-videos')
 	expect(anonymousHtml).toContain('role="listbox"')
-	expect(anonymousHtml).not.toContain(
+	expect(anonymousHtml).toContain(
 		`/youtube-thumb/${homepageHeroVideos[0].videoId}`,
 	)
-	expect(anonymousHtml).not.toContain(
+	expect(anonymousHtml).toContain(
 		`/youtube-thumb/${homepageHeroVideos[1].videoId}`,
+	)
+	expect(
+		anonymousHtml.indexOf(`/youtube-thumb/${homepageHeroVideos[0].videoId}`),
+	).toBeLessThan(
+		anonymousHtml.indexOf(`/youtube-thumb/${homepageHeroVideos[1].videoId}`),
 	)
 	expect(anonymousHtml).toContain(
 		`/youtube-thumb/${homepageHeroVideos[2].videoId}`,
