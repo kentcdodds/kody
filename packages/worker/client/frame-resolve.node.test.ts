@@ -4,6 +4,7 @@ import {
 	assertRenderableFrameResponse,
 	createFrameResolveInit,
 	fetchFrameResolve,
+	rejectCachedDocumentFrameResponse,
 } from './frame-resolve.ts'
 
 test('frame resolve never attaches a body to GET or HEAD, including lowercase methods', () => {
@@ -18,6 +19,7 @@ test('frame resolve never attaches a body to GET or HEAD, including lowercase me
 	})
 	expect(getInit.method).toBe('get')
 	expect(getInit.body).toBeUndefined()
+	expect(getInit.cache).toBe('no-store')
 	expect((getInit.headers as Headers).get(REMIX_FRAME_TARGET_HEADER)).toBe(
 		'community-listings',
 	)
@@ -37,6 +39,50 @@ test('frame resolve never attaches a body to GET or HEAD, including lowercase me
 	expect(postInit.method).toBe('post')
 	expect(postInit.body).toBeInstanceOf(URLSearchParams)
 	expect(String(postInit.body)).toBe('q=remix')
+})
+
+test('fetchFrameResolve misses the cached document URL', async () => {
+	const ok = new Response('<head></head><div>listings</div>', { status: 200 })
+	const fetchMock = vi.fn().mockResolvedValue(ok)
+	vi.stubGlobal('fetch', fetchMock)
+	try {
+		expect(
+			await fetchFrameResolve('/community?sort=newest', {
+				target: 'community-listings',
+			}),
+		).toBe(ok)
+		expect(fetchMock).toHaveBeenCalledWith(
+			'/community?sort=newest&__frame=community-listings',
+			expect.objectContaining({ cache: 'no-store' }),
+		)
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})
+
+test('rejectCachedDocumentFrameResponse refuses a nested document', async () => {
+	const fragment = new Response('<head></head><div>listings</div>', {
+		headers: { 'Content-Type': 'text/html' },
+	})
+	expect(await rejectCachedDocumentFrameResponse(fragment, '/community')).toBe(
+		fragment,
+	)
+
+	const document = new Response(
+		'<!DOCTYPE html><html><body>page</body></html>',
+		{
+			headers: { 'Content-Type': 'text/html' },
+		},
+	)
+	await expect(
+		rejectCachedDocumentFrameResponse(
+			document,
+			'/community',
+			'community-listings',
+		),
+	).rejects.toThrow(
+		'Frame resolve received a cached document for /community target=community-listings',
+	)
 })
 
 test('fetchFrameResolve retries once on GET network TypeErrors only', async () => {

@@ -4,6 +4,7 @@ import {
 	assertRenderableFrameResponse,
 	fetchFrameResolve,
 	prefetchedFrameResponse,
+	rejectCachedDocumentFrameResponse,
 } from '#client/frame-resolve.ts'
 import { preloadClientRouteModules } from '#client/lazy-route.tsx'
 import {
@@ -15,6 +16,7 @@ import { ensureConstructableStylesheets } from './ensure-constructable-styleshee
 import { ensureCryptoRandomUUID } from './ensure-crypto-random-uuid.ts'
 import { ensureObjectHasOwn } from './ensure-object-has-own.ts'
 import { ensurePromiseWithResolvers } from './ensure-promise-with-resolvers.ts'
+import { isFullHtmlDocumentPrefix } from '#universal/frame-constants.ts'
 
 // Remix frame ids call crypto.randomUUID(); some in-app browsers omit it.
 ensureCryptoRandomUUID()
@@ -102,10 +104,19 @@ async function boot() {
 			const cached =
 				method === 'HEAD' ? undefined : consumePrefetchedFrame(src, target)
 			if (cached !== undefined) {
+				if (isFullHtmlDocumentPrefix(cached)) {
+					throw new Error(
+						`Frame resolve received a cached document for ${src}${target ? ` target=${target}` : ''}`,
+					)
+				}
 				return prefetchedFrameResponse(cached)
 			}
 			const response = await fetchFrameResolve(src, options)
-			return assertRenderableFrameResponse(response, src, target)
+			return rejectCachedDocumentFrameResponse(
+				assertRenderableFrameResponse(response, src, target),
+				src,
+				target,
+			)
 		},
 	})
 

@@ -148,6 +148,18 @@ test('community page handler returns bare listings frame HTML for target header'
 	expect(signedInHtml).toContain(
 		'data-testid="community-listing-viewer-install-listing-1"',
 	)
+	const paramResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/community?__frame=community-listings',
+		),
+		params: {},
+		url: new URL('https://example.com/community?__frame=community-listings'),
+	} as never)
+	const paramHtml = await paramResponse.text()
+	expect(paramResponse.headers.get('Cache-Control')).toBe('no-store')
+	expect(paramHtml).toContain('data-testid="community-listings-frame"')
+	expect(paramHtml).not.toContain('<html')
+
 	expect(signedInHtml).toContain('Installed')
 	expect(
 		signedInHtml.indexOf(

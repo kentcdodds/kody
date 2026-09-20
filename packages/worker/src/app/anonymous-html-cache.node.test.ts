@@ -110,6 +110,27 @@ test('anonymous marketing HTML is cacheable only without a session', () => {
 
 	expect(
 		resolveAppPageCacheControl({
+			pathname: '/community',
+			session: null,
+			request: new Request(
+				'https://kody.codes/community?__frame=community-listings',
+			),
+			responseSetsCookie: false,
+		}),
+	).toEqual({ cacheControl: 'no-store' })
+	expect(
+		resolveAppPageCacheControl({
+			pathname: '/community',
+			session: null,
+			request: new Request('https://kody.codes/community', {
+				headers: { 'x-remix-target': 'community-listings' },
+			}),
+			responseSetsCookie: false,
+		}),
+	).toEqual({ cacheControl: 'no-store' })
+
+	expect(
+		resolveAppPageCacheControl({
 			pathname: '/account',
 			session: null,
 			request: request('https://example.com/account'),

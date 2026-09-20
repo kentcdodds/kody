@@ -1,5 +1,5 @@
 import { createMatcher } from 'remix/route-pattern/match'
-import { REMIX_FRAME_TARGET_HEADER } from '#universal/frame-constants.ts'
+import { requestFrameTarget } from '#universal/frame-constants.ts'
 import { type routes } from '#universal/routes.ts'
 import { collectServerTiming } from '#worker/request-context.ts'
 import { applyServerTimingHeader } from '#worker/server-timing.ts'
@@ -99,7 +99,7 @@ export async function handleFrameRequest(
 	env: Env,
 	pathname: string,
 ) {
-	const target = request.headers.get(REMIX_FRAME_TARGET_HEADER)
+	const target = requestFrameTarget(request)
 	if (!target) return null
 
 	const frame = getRegisteredFrame(target)
