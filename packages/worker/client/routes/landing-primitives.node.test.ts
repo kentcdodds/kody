@@ -30,5 +30,6 @@ test('primitives sentence renders dash-underlined disclosures and the what-is-Ko
 	}
 
 	expect(html).toContain('landing-primitive-word')
+	expect(html).not.toContain('data-dismissed')
 	expect(html).not.toContain('\u2014')
 })

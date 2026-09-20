@@ -1164,6 +1164,12 @@ html.is-settled {
 	pointer-events: auto;
 }
 
+.landing-primitive[data-dismissed] .landing-primitive-popover {
+	visibility: hidden;
+	opacity: 0;
+	pointer-events: none;
+}
+
 .landing-primitives-more {
 	margin: 1.1rem 0 0;
 	color: var(--color-text-muted);

@@ -27,10 +27,24 @@ function primitiveSeparator(index: number, count: number) {
 
 export function LandingPrimitives(handle: Handle) {
 	let openId: string | null = null
+	let dismissedId: string | null = null
 
 	function setOpen(id: string | null) {
 		if (openId === id) return
 		openId = id
+		if (id) dismissedId = null
+		handle.update()
+	}
+
+	function dismiss(id: string) {
+		if (openId === id) openId = null
+		dismissedId = id
+		handle.update()
+	}
+
+	function clearDismissed(id: string) {
+		if (dismissedId !== id) return
+		dismissedId = null
 		handle.update()
 	}
 
@@ -48,10 +62,13 @@ export function LandingPrimitives(handle: Handle) {
 						<LandingPrimitiveWord
 							primitive={primitive}
 							open={openId === primitive.id}
+							dismissed={dismissedId === primitive.id}
 							onOpen={() => setOpen(primitive.id)}
 							onClose={() => {
 								if (openId === primitive.id) setOpen(null)
 							}}
+							onDismiss={() => dismiss(primitive.id)}
+							onResume={() => clearDismissed(primitive.id)}
 						/>
 					</span>
 				))}
@@ -71,8 +88,11 @@ function LandingPrimitiveWord(
 	handle: Handle<{
 		primitive: LandingHomePrimitive
 		open: boolean
+		dismissed: boolean
 		onOpen: () => void
 		onClose: () => void
+		onDismiss: () => void
+		onResume: () => void
 	}>,
 ) {
 	const panelId = `${handle.id}-panel`
@@ -84,14 +104,16 @@ function LandingPrimitiveWord(
 		if (!(current instanceof Element)) return
 		if (next instanceof Node && current.contains(next)) return
 		handle.props.onClose()
+		handle.props.onResume()
 	}
 
 	return () => {
-		const { primitive, open, onOpen } = handle.props
+		const { primitive, open, dismissed, onOpen } = handle.props
 		return (
 			<span
 				class="landing-primitive"
 				data-open={open ? '' : undefined}
+				data-dismissed={dismissed ? '' : undefined}
 				mix={[
 					on('mouseenter', onOpen),
 					on('mouseleave', (event: MouseEvent) => {
@@ -105,9 +127,14 @@ function LandingPrimitiveWord(
 						const onKeydown = (event: Event) => {
 							if (!(event instanceof KeyboardEvent)) return
 							if (event.key !== 'Escape') return
-							if (!handle.props.open) return
+							if (
+								!handle.props.open &&
+								!node.matches(':hover, :focus-within')
+							) {
+								return
+							}
 							event.preventDefault()
-							handle.props.onClose()
+							handle.props.onDismiss()
 							const trigger = node.querySelector('button')
 							if (trigger instanceof HTMLElement) trigger.focus()
 						}
@@ -121,6 +148,11 @@ function LandingPrimitiveWord(
 					aria-expanded={open ? 'true' : 'false'}
 					aria-controls={panelId}
 					aria-describedby={panelId}
+					mix={on('keydown', (event: KeyboardEvent) => {
+						if (event.key !== 'Escape') return
+						event.preventDefault()
+						handle.props.onDismiss()
+					})}
 				>
 					{primitive.word}
 				</button>
