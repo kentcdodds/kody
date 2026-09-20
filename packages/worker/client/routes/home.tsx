@@ -1,5 +1,4 @@
 import { type Handle } from 'remix/ui'
-import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import {
@@ -20,13 +19,35 @@ import { renderIcon } from '#universal/icon.tsx'
 import { homepageSignupPath } from '#universal/first-touch-attribution.ts'
 import { routes } from '#universal/routes.ts'
 import {
-	landingHeroCopyPromptLabel,
-	landingHeroHeadlineAccent,
-	landingHeroHeadlineLead,
-	landingHeroHeadlineRest,
 	isLandingHeroVideo,
+	landingHeroChooserLabel,
+	landingHeroChooserLabelEmphasis,
+	landingHeroChooserLabelLead,
+	presentLandingHeroVideos,
 	type LandingHeroVideo as LandingHeroVideoItem,
 } from '#universal/landing-hero-copy.ts'
+import {
+	landingCompareCaption,
+	landingCompareWithItems,
+	landingCompareWithoutItems,
+	landingCompareWithTitle,
+	landingCompareWithoutTitle,
+	landingHeroHeadlineEmphasis,
+	landingHeroHeadlineLead,
+	landingHeroLead,
+	landingHeroPrimaryCta,
+	landingHeroSecondaryCta,
+	landingHeroSubheadEmphasis,
+	landingHeroSubheadLead,
+	landingHeroSubheadTail,
+	landingInviteGuestLead,
+	landingInviteHeadingEmphasis,
+	landingInviteHeadingLead,
+	landingInviteSignedInLead,
+	landingProofHeading,
+	landingVsHeading,
+	landingVsItems,
+} from '#universal/landing-home-copy.ts'
 import { publicCreateAccountLabel } from '#universal/public-signup-copy.ts'
 import {
 	pickWalkthroughHosts,
@@ -35,23 +56,18 @@ import {
 import { LandingHeroAgents } from '#client/routes/landing-hero-agents.tsx'
 import { LandingHeroVideo } from '#client/routes/landing-hero-video.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { LandingByokDemo } from './landing-byok-demo.tsx'
+import {
+	LandingPrimitives,
+	landingPrimitivesSectionId,
+} from '#client/routes/landing-primitives.tsx'
 import { LandingTestimonialsCarousel } from './landing-testimonials-carousel.tsx'
 import { LandingLoopPlayer } from './landing-loop-player.tsx'
 import { WalkthroughHostIntro } from './walkthrough-host-intro.tsx'
 
 /**
- * Public landing page, ported from the redesign prototype
- * (`landing/landing.html`). Flat neutral canvas, one vibrant green accent,
- * centered single-column flow, mascot illustrations doing the explanatory
- * work. Motion is enhance-only (`html.js`) and fully off under
- * `prefers-reduced-motion`.
- *
- * Positioning (public door): stop sweating switching agents. The top fold is
- * H1 + CTAs beside the demo (lite YouTube player); Kody with the host agents
- * tethered around the lantern sits under that row. The H1 matches the home
- * OG card. Factory / npm / packages stay below the fold.
- * The factory closer is the ritual: ask once, save it, trigger it.
+ * Public landing page. Cross-agent continuity is the door: H1, compare,
+ * primitives, and vs come first. Factory / orbit / videos prove it. Motion
+ * is enhance-only (`html.js`) and fully off under `prefers-reduced-motion`.
  *
  * Layout styles live in `public/styles.css` (`.landing-*`) so SSR does not
  * emit a per-node `<style data-rmx>` tag for every marketing block.
@@ -95,9 +111,8 @@ const ecosystemPathSteps = [
 
 const ecosystemTriggers = ['Webhook', 'Cron', 'HTTP', 'App'] as const
 
-const kodyGithubUrl = 'https://github.com/kentcdodds/kody'
-const secretsDocsHref = routes.docDetail.href({ slug: 'secrets' })
 const communityHref = routes.community.href()
+const howItWorksHref = `#${landingPrimitivesSectionId}`
 
 function isHomePath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/'
@@ -118,7 +133,7 @@ async function fetchLandingHeroVideos(signal: AbortSignal) {
 		if (!response.ok || !payload?.ok || !Array.isArray(payload.videos)) {
 			return []
 		}
-		return payload.videos.filter(isLandingHeroVideo)
+		return presentLandingHeroVideos(payload.videos.filter(isLandingHeroVideo))
 	} catch (error) {
 		if (signal.aborted) throw error
 		return []
@@ -152,7 +167,6 @@ type HomePagePayloads = {
 
 export function HomeRoute(handle: Handle) {
 	let loggedIn = false
-	let discoveryPrompt = ''
 	let walkthroughHosts: WalkthroughHostPick | null = null
 	let landingHeroVideos: Array<LandingHeroVideoItem> = []
 	/** Payload last applied to the closure state above. */
@@ -170,12 +184,14 @@ export function HomeRoute(handle: Handle) {
 			// Optional keys stand on their own; apply them even when the
 			// required onboarding key is missing and the fallback fetch runs.
 			if (hosts) walkthroughHosts = hosts
-			if (videos) landingHeroVideos = videos
+			if (videos) landingHeroVideos = presentLandingHeroVideos(videos)
 			if (!onboarding) return null
 			return {
 				onboarding,
 				walkthroughHosts: hosts,
-				landingHeroVideos: videos ?? landingHeroVideos,
+				landingHeroVideos: videos
+					? presentLandingHeroVideos(videos)
+					: landingHeroVideos,
 			}
 		},
 		async load(_href, signal) {
@@ -193,12 +209,11 @@ export function HomeRoute(handle: Handle) {
 
 	function applyOnboardingPayload(payload: OnboardingPayload | null) {
 		loggedIn = payload?.loggedIn === true
-		discoveryPrompt = payload?.discoveryPrompt ?? ''
 	}
 
 	function applyHomePayload(payload: HomePagePayloads) {
 		if (payload.walkthroughHosts) walkthroughHosts = payload.walkthroughHosts
-		landingHeroVideos = payload.landingHeroVideos
+		landingHeroVideos = presentLandingHeroVideos(payload.landingHeroVideos)
 		applyOnboardingPayload(payload.onboarding)
 	}
 
@@ -215,56 +230,94 @@ export function HomeRoute(handle: Handle) {
 		// A failed fallback fetch still settles the door for a visitor.
 		const onboardingReady = appliedPayload !== null || snapshot.kind === 'error'
 		const isSignedIn = onboardingReady && loggedIn
+		const connectHref = isSignedIn ? onboardingPath : homepageSignupPath
 
 		return (
 			<div aria-busy={busy ? 'true' : undefined}>
 				{busy ? renderRoutePendingStatus() : null}
-				<section data-parallax-scope class="landing-hero">
-					<div class="landing-hero-top">
-						<div class="landing-hero-intro">
-							<h1
-								data-rise
-								style={{ '--rise': '0' }}
-								class="landing-hero-title"
-							>
-								<span class="landing-hero-title-line">
-									{landingHeroHeadlineLead} <em>{landingHeroHeadlineAccent}</em>
-								</span>
-								<span class="landing-hero-title-line">
-									{landingHeroHeadlineRest}
-								</span>
-							</h1>
-							{isSignedIn ? null : (
-								<div
-									data-rise
-									style={{ '--rise': '2' }}
-									class="landing-hero-actions"
-								>
-									<a
-										href={homepageSignupPath}
-										class="landing-pill landing-hero-cta"
-									>
-										{publicCreateAccountLabel}
-									</a>
-									{discoveryPrompt ? (
-										<span class="landing-hero-cta landing-hero-copy">
-											<CopyTextButton
-												class="landing-hero-copy-button"
-												value={discoveryPrompt}
-												idleLabel={landingHeroCopyPromptLabel}
-												variant="ghost"
-											/>
-										</span>
-									) : null}
-								</div>
-							)}
+				<section class="landing-hero">
+					<div class="landing-hero-intro">
+						<h1 data-rise style={{ '--rise': '0' }} class="landing-hero-title">
+							{landingHeroHeadlineLead}
+							<em>{landingHeroHeadlineEmphasis}</em>
+						</h1>
+						<h2
+							data-rise
+							style={{ '--rise': '0.6' }}
+							class="landing-hero-subhead"
+						>
+							{landingHeroSubheadLead}
+							<em>{landingHeroSubheadEmphasis}</em>
+							{landingHeroSubheadTail}
+						</h2>
+						<p data-rise style={{ '--rise': '1' }} class="landing-hero-lead">
+							{landingHeroLead}
+						</p>
+						<div
+							data-rise
+							style={{ '--rise': '1.4' }}
+							class="landing-hero-actions"
+						>
+							<a href={connectHref} class="landing-pill landing-hero-cta">
+								{landingHeroPrimaryCta}
+							</a>
+							<a href={howItWorksHref} class="landing-hero-secondary">
+								{landingHeroSecondaryCta}
+							</a>
 						</div>
-						<LandingHeroVideo videos={landingHeroVideos} />
 					</div>
-					<LandingHeroAgents hosts={walkthroughHosts ?? undefined} />
+					<div class="landing-compare">
+						<div class="landing-compare-col">
+							<h3 id="compare-without-title" class="landing-compare-title">
+								{landingCompareWithoutTitle}
+							</h3>
+							<ul
+								aria-labelledby="compare-without-title"
+								class="landing-compare-list"
+							>
+								{landingCompareWithoutItems.map((item) => (
+									<li key={item}>{item}</li>
+								))}
+							</ul>
+						</div>
+						<div class="landing-compare-col landing-compare-col-with">
+							<h3 id="compare-with-title" class="landing-compare-title">
+								{landingCompareWithTitle}
+							</h3>
+							<ul
+								aria-labelledby="compare-with-title"
+								class="landing-compare-list"
+							>
+								{landingCompareWithItems.map((item) => (
+									<li key={item}>{item}</li>
+								))}
+							</ul>
+						</div>
+					</div>
+					<p class="landing-compare-caption">{landingCompareCaption}</p>
 				</section>
 
-				<section aria-labelledby="factory-title" class="landing-factory">
+				<LandingPrimitives />
+
+				<section aria-labelledby="vs-title" class="landing-vs">
+					<h2 id="vs-title" class="landing-section-heading">
+						{landingVsHeading}
+					</h2>
+					<ul class="landing-vs-list">
+						{landingVsItems.map((item) => (
+							<li key={item.kicker} class="landing-vs-item" mix={reveal()}>
+								<p class="landing-vs-kicker">{item.kicker}</p>
+								<p class="landing-vs-body">{item.body}</p>
+							</li>
+						))}
+					</ul>
+				</section>
+
+				<section
+					id="durable-software"
+					aria-labelledby="factory-title"
+					class="landing-factory"
+				>
 					<h2 id="factory-title" class="landing-section-heading">
 						From ad hoc prompts to <em>durable software</em>
 					</h2>
@@ -303,36 +356,40 @@ export function HomeRoute(handle: Handle) {
 						<span>Ask once.</span> <span>Save it.</span>{' '}
 						<span>Trigger it.</span>
 					</p>
-					<p class="landing-factory-close">
-						Kody has the primitives for your agent to build you{' '}
-						<strong>pretty much anything</strong>. What will{' '}
-						<strong>you</strong> build?
-					</p>
-					<section
-						aria-labelledby="walkthrough-title"
-						class="landing-walkthrough-story notranslate"
-						translate="no"
-					>
-						<h2
-							id="walkthrough-title"
-							class="landing-section-heading landing-walkthrough-heading"
+				</section>
+
+				<section aria-labelledby="proof-title" class="landing-proof">
+					<h2 id="proof-title" class="landing-section-heading">
+						{landingProofHeading}
+					</h2>
+					<div class="landing-proof-split">
+						<LandingHeroAgents hosts={walkthroughHosts ?? undefined} />
+						<section
+							aria-labelledby="walkthrough-title"
+							class="landing-walkthrough-story notranslate"
+							translate="no"
 						>
-							Watch some example conversations
-						</h2>
-						{walkthroughHosts ? (
-							<div class="landing-walkthrough-intro">
-								<WalkthroughHostIntro
-									variant="picker"
-									hosts={walkthroughHosts}
-									onHostsChange={(next) => {
-										walkthroughHosts = next
-										handle.update()
-									}}
-								/>
-							</div>
-						) : null}
-						<LandingLoopPlayer hosts={walkthroughHosts ?? undefined} />
-					</section>
+							<h3
+								id="walkthrough-title"
+								class="landing-section-heading landing-walkthrough-heading"
+							>
+								Watch some example conversations
+							</h3>
+							{walkthroughHosts ? (
+								<div class="landing-walkthrough-intro">
+									<WalkthroughHostIntro
+										variant="picker"
+										hosts={walkthroughHosts}
+										onHostsChange={(next) => {
+											walkthroughHosts = next
+											handle.update()
+										}}
+									/>
+								</div>
+							) : null}
+							<LandingLoopPlayer hosts={walkthroughHosts ?? undefined} />
+						</section>
+					</div>
 				</section>
 
 				<section
@@ -388,72 +445,15 @@ export function HomeRoute(handle: Handle) {
 					/>
 				</section>
 
-				<section aria-labelledby="byok-title" class="landing-byok">
-					<img
-						{...landingArtAttrs('kody-keys')}
-						alt="Kody holding up a set of golden keys"
-						class="landing-byok-art"
-						mix={reveal()}
-					/>
-					<div class="landing-byok-copy">
-						<h2 id="byok-title" class="landing-section-heading">
-							A <em>secure</em> vault for your <em>secrets</em>.
+				{landingHeroVideos.length > 0 ? (
+					<section aria-labelledby="videos-title" class="landing-videos">
+						<h2 id="videos-title" class="landing-section-heading">
+							{landingHeroChooserLabelLead}
+							<em>{landingHeroChooserLabelEmphasis}</em>
 						</h2>
-						<LandingByokDemo hosts={walkthroughHosts ?? undefined} />
-						<p class="landing-split-copy">
-							<strong>Encrypted keys the agent never sees.</strong> You create
-							the connection; secrets stay out of the prompt.{' '}
-							<a href={secretsDocsHref} class="landing-inline-link">
-								How secrets work
-							</a>
-							.
-						</p>
-					</div>
-				</section>
-
-				<section aria-labelledby="world-title" class="landing-world">
-					<h2 id="world-title" class="landing-section-heading">
-						It already speaks <em>your tools</em>
-					</h2>
-					<p class="landing-world-lead">
-						Works with the agents and services you already use. Browse public
-						packages, fork them with your agent, and make them yours.
-					</p>
-					<ul
-						aria-label="Agents, developer services, and community packages that work with Kody"
-						class="landing-world-cloud"
-					>
-						{landingWorldBrands.map((brand, index) => (
-							<li
-								key={brand.label}
-								class="landing-chip landing-chip-icon"
-								style={chipIconStyle(brand.icon)}
-								mix={revealPop(index * 35)}
-							>
-								{brand.label}
-							</li>
-						))}
-						<li class="landing-world-link-item">
-							<a
-								href={communityHref}
-								class="landing-chip landing-chip-muted landing-chip-link"
-								mix={revealPop(landingWorldBrands.length * 35)}
-							>
-								Community packages
-							</a>
-						</li>
-					</ul>
-				</section>
-
-				<section aria-labelledby="trust-title" class="landing-trust">
-					<h2 id="trust-title" class="landing-section-heading">
-						Check out Kody&apos;s Source on GitHub
-					</h2>
-					<p>
-						Kody&apos;s {renderGithubRepoLink('source is open')} — read it, fork
-						it, self-host it, and {renderGithubRepoLink('star the repo')}.
-					</p>
-				</section>
+						<LandingHeroVideo videos={landingHeroVideos} />
+					</section>
+				) : null}
 
 				<section
 					id="invite"
@@ -469,25 +469,21 @@ export function HomeRoute(handle: Handle) {
 						id="invite-title"
 						class="landing-section-heading landing-invite-title"
 					>
-						Give your agents a <em>home</em>
+						{landingInviteHeadingLead}
+						<em>{landingInviteHeadingEmphasis}</em>
 					</h2>
 					{isSignedIn ? (
 						<div>
-							<p class="landing-invite-lead">
-								You&apos;re in. Connect the agent you already use and start
-								saving packages.
-							</p>
+							<p class="landing-invite-lead">{landingInviteSignedInLead}</p>
 							<p class="landing-invite-cta">
 								<a href={onboardingPath} class="landing-pill">
-									Connect your agent
+									{landingHeroPrimaryCta}
 								</a>
 							</p>
 						</div>
 					) : (
 						<div>
-							<p class="landing-invite-lead">
-								Create a free account and connect the agent you already use.
-							</p>
+							<p class="landing-invite-lead">{landingInviteGuestLead}</p>
 							<p class="landing-invite-cta">
 								<a href={homepageSignupPath} class="landing-pill">
 									{publicCreateAccountLabel}
@@ -495,6 +491,43 @@ export function HomeRoute(handle: Handle) {
 							</p>
 						</div>
 					)}
+					<ul
+						aria-label="Services that work with Kody"
+						class="landing-world-cloud landing-invite-tools"
+					>
+						{landingWorldBrands.map((brand, index) =>
+							'href' in brand && brand.href ? (
+								<li key={brand.label} class="landing-world-link-item">
+									<a
+										href={brand.href}
+										class="landing-chip landing-chip-icon landing-chip-link"
+										style={chipIconStyle(brand.icon)}
+										mix={revealPop(index * 35)}
+									>
+										{brand.label}
+									</a>
+								</li>
+							) : (
+								<li
+									key={brand.label}
+									class="landing-chip landing-chip-icon"
+									style={chipIconStyle(brand.icon)}
+									mix={revealPop(index * 35)}
+								>
+									{brand.label}
+								</li>
+							),
+						)}
+						<li class="landing-world-link-item">
+							<a
+								href={communityHref}
+								class="landing-chip landing-chip-muted landing-chip-link"
+								mix={revealPop(landingWorldBrands.length * 35)}
+							>
+								Community packages
+							</a>
+						</li>
+					</ul>
 				</section>
 			</div>
 		)
@@ -524,18 +557,5 @@ function renderLandingPathSteps(
 				</li>
 			))}
 		</ol>
-	)
-}
-
-function renderGithubRepoLink(label: string) {
-	return (
-		<a
-			href={kodyGithubUrl}
-			target="_blank"
-			rel="noreferrer noopener"
-			class="landing-inline-link"
-		>
-			{label}
-		</a>
 	)
 }

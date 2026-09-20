@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { type Page } from '@playwright/test'
+import { landingHeroHeadline } from '../packages/worker/universal/landing-home-copy.ts'
 import { expect, test } from './playwright-utils.ts'
 
 type Theme = 'light' | 'dark'
@@ -19,7 +20,8 @@ const publicRoutes: RouteScenario[] = [
 		ready: async (page) => {
 			await expect(
 				page.getByRole('heading', {
-					name: /Stop Sweating Switching Agents/i,
+					name: landingHeroHeadline,
+					exact: true,
 				}),
 			).toBeVisible()
 		},

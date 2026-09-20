@@ -42,6 +42,13 @@ export function SiteFooter(handle: Handle<SiteFooterProps>) {
 					<a href="/faq">FAQ</a>
 					<a href="/support">Support</a>
 					<a href="/blog">Blog</a>
+					<a
+						href="https://github.com/kentcdodds/kody"
+						target="_blank"
+						rel="noreferrer noopener"
+					>
+						GitHub
+					</a>
 					<a href="/privacy">Privacy</a>
 					<a href="/terms">Terms</a>
 					{handle.props.loggedIn ? (

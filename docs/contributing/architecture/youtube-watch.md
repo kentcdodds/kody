@@ -12,11 +12,10 @@ banner stay external and do not get rewritten to `/?youtubeId=`.
 - **Homepage hero**: `/` two-column player + video chooser
   (`landing-hero-video.tsx`). The chooser list and order come from the unlisted
   playlist `landingHeroSourcePlaylistId` (`PLBPBUA8boGLA`), loaded at request
-  time and KV-cached with SWR. Embeds pass the public catalog playlist
-  `landingHeroDemoPlaylistId` (`PLXa53KPj2nlE`) so end-of-video recommendations
-  stay in that larger set. Chooser ids are allowlisted when thumbs or
-  `?youtubeId=` load playlists, so `/youtube-thumb/:id` works for those videos
-  without a banner.
+  time and KV-cached with SWR. The homepage lite player embeds the selected
+  chooser video only, without a playlist id, so YouTube player chrome uses that
+  video's title. Chooser ids are allowlisted when thumbs or `?youtubeId=` load
+  playlists, so `/youtube-thumb/:id` works for those videos without a banner.
 - **Thumbnail proxy**: `GET /youtube-thumb/:videoId` (404 unless allowlisted).
   Fetches `maxresdefault.jpg` first (1280×720), then `sddefault.jpg`, then
   `hqdefault.jpg` when a higher quality is missing.
@@ -58,17 +57,17 @@ overlay playlist id in `packages/worker/wrangler.jsonc` so shared `/?youtubeId=`
 links work without a banner. The Atom feed is not the full catalog and is not
 the homepage chooser source.
 
-Failed playlist fetches fail open: env extra ids and banner hrefs still work. A
-failed homepage playlist fetch fails open to an empty chooser.
+Failed playlist fetches fail open: env extra ids and banner hrefs stay in the
+allowlist. A failed homepage playlist fetch fails open to an empty chooser.
 
 SSR documents other than `/` without `?youtubeId=` skip both the overlay Atom
-fetch and the homepage hero playlist fetch. They still merge env extras, the
-sample id, and enabled-banner hrefs (from the same `listEnabledSiteBanners` read
-as the site-banner loader). Home starts that shared banner read next to auth so
+fetch and the homepage hero playlist fetch. They merge env extras, the sample
+id, and enabled-banner hrefs (from the same `listEnabledSiteBanners` read as the
+site-banner loader). Home starts that shared banner read next to auth so
 signed-in `/` (always `no-store`) does not wait for banners only after those
-finish. `?youtubeId=` HTML and `/youtube-thumb/:videoId` still load playlists
+finish. `?youtubeId=` HTML and `/youtube-thumb/:videoId` load playlists
 (including hero chooser ids). Shared watch links are full document loads, so
-they still resolve playlist ids.
+they resolve playlist ids.
 
 Homepage `/` always loads the chooser playlist for SSR (and
 `GET /landing-hero-videos.json` for client navigations), even when the request

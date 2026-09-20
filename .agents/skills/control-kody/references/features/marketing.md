@@ -37,7 +37,8 @@ Purchase thanks) are quiet same-origin links to `/docs/flake-hunter`,
 and focus ring only; no extra labels or hover chrome). Signed-in visitors still
 see the player and chooser. Chooser membership and order come from the unlisted
 playlist `PLBPBUA8boGLA`. Client navigations load
-`GET /landing-hero-videos.json`. Embeds include the public catalog playlist.
+`GET /landing-hero-videos.json`. The lite player embeds the selected chooser
+video only, without a playlist id, so YouTube chrome uses that video's title.
 Chooser ids are on the YouTube allowlist for `/youtube-thumb` without a banner.
 `/?youtubeId=<id>` opens the site-wide allowlisted YouTube overlay on those
 routes; unknown or disallowed ids do not open the player. Enabled site banners

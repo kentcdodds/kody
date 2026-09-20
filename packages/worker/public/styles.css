@@ -773,56 +773,66 @@ html.is-settled {
 	text-align: center;
 }
 
-.landing-hero-top {
-	display: grid;
-	grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
-	gap: clamp(1.5rem, 4vw, 3rem);
-	align-items: center;
-	text-align: left;
-}
-
 .landing-hero-intro {
 	display: flex;
 	flex-direction: column;
-	align-items: stretch;
-	align-self: start;
-	min-width: 0;
-	container-type: inline-size;
+	align-items: center;
+	max-width: 46rem;
+	margin-inline: auto;
 }
 
 .landing-hero-title {
 	margin: 0;
-	display: flex;
-	flex-direction: column;
-	align-items: flex-start;
-	/* Size from the intro column so "Switching Agents" stays on one line.
-	   Skip a rem floor: it beats 13.2cqi when the root font is enlarged, and
-	   nowrap would overflow. Keep a rem/vw fallback for browsers without cqi. */
-	font-size: clamp(2.15rem, 5.2vw, 4.05rem);
-	font-size: min(13.2cqi, 4.05rem);
+	font-size: clamp(2.05rem, 4.6vw, 3.45rem);
 	font-weight: 760;
-	line-height: 1.02;
+	line-height: 1.08;
 	letter-spacing: -0.03em;
 	font-variation-settings: 'opsz' 96;
-	text-wrap: wrap;
+	text-wrap: balance;
 }
 
-.landing-hero-title-line {
-	white-space: nowrap;
-}
-
-.landing-hero-title em {
+.landing-hero-title em,
+.landing-hero-subhead em {
 	font-style: normal;
 	color: var(--color-primary-text);
 }
 
+.landing-hero-subhead {
+	margin: 1.15rem 0 0;
+	font-size: clamp(1.25rem, 2.4vw, 1.7rem);
+	font-weight: 650;
+	letter-spacing: -0.02em;
+	line-height: 1.25;
+	text-wrap: balance;
+}
+
+.landing-hero-lead {
+	margin: 0.95rem 0 0;
+	color: var(--color-text-muted);
+	font-size: 1.12rem;
+	line-height: 1.5;
+	max-width: 42ch;
+	text-wrap: pretty;
+}
+
 .landing-hero-actions {
-	margin-top: 1.6rem;
+	margin-top: 1.7rem;
 	display: flex;
-	flex-direction: column;
-	align-items: stretch;
-	gap: 0.75rem;
-	width: 100%;
+	flex-wrap: wrap;
+	justify-content: center;
+	align-items: center;
+	gap: 0.85rem 1.25rem;
+}
+
+.landing-hero-secondary {
+	font: 650 1rem/1 var(--font-display);
+	color: var(--color-primary-text);
+	text-decoration-thickness: 1.5px;
+	text-underline-offset: 3px;
+}
+
+.landing-hero-secondary:hover {
+	color: var(--color-text);
 }
 
 .landing-hero-media {
@@ -1026,23 +1036,227 @@ html.is-settled {
 }
 
 .landing-hero-cta {
-	width: 100%;
 	box-sizing: border-box;
 }
 
-.landing-hero-copy {
-	display: flex;
+.landing-compare {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: clamp(1rem, 2.5vw, 1.5rem);
+	margin: clamp(2.5rem, 5vw, 3.5rem) auto 0;
+	max-width: 52rem;
+	text-align: left;
 }
 
-.landing-hero-copy-button,
-.landing-hero-copy :where(button) {
-	width: 100%;
+.landing-compare-col {
+	padding: 1.25rem 1.3rem 1.35rem;
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: 16px;
 }
 
-@media (max-width: 800px) {
-	.landing-hero-top {
-		grid-template-columns: 1fr;
-	}
+.landing-compare-col-with {
+	border-color: color-mix(
+		in oklch,
+		var(--color-primary) 40%,
+		var(--color-border)
+	);
+	background: color-mix(
+		in oklch,
+		var(--color-primary) 7%,
+		var(--color-surface)
+	);
+}
+
+.landing-compare-title {
+	margin: 0;
+	font-size: 1.05rem;
+	font-weight: 700;
+	letter-spacing: -0.015em;
+}
+
+.landing-compare-list {
+	margin: 0.85rem 0 0;
+	padding-left: 1.15rem;
+	color: var(--color-text-muted);
+	display: grid;
+	gap: 0.45rem;
+	font-size: 0.98rem;
+	line-height: 1.4;
+	text-wrap: pretty;
+}
+
+.landing-compare-caption {
+	margin: 1.1rem auto 0;
+	color: var(--color-text-muted);
+	font-size: 0.98rem;
+	font-weight: 550;
+}
+
+.landing-primitives {
+	position: relative;
+	max-width: 46rem;
+	margin: clamp(3.25rem, 7vw, 5rem) auto 0;
+	padding: 0 clamp(1.25rem, 4vw, 2.5rem);
+	text-align: center;
+}
+
+.landing-primitives-lead {
+	margin: 0;
+	font-size: 1.18rem;
+	line-height: 1.55;
+	text-wrap: pretty;
+}
+
+.landing-primitive {
+	position: relative;
+	display: inline;
+}
+
+.landing-primitive-word {
+	margin: 0;
+	padding: 0;
+	border: none;
+	background: none;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+	text-decoration: underline;
+	text-decoration-style: dashed;
+	text-decoration-thickness: 1.5px;
+	text-underline-offset: 0.22em;
+}
+
+.landing-primitive-word:hover,
+.landing-primitive-word:focus-visible,
+.landing-primitive[data-open] .landing-primitive-word {
+	color: var(--color-primary-text);
+}
+
+.landing-primitive-word:focus-visible {
+	outline: 2.5px solid var(--color-primary);
+	outline-offset: 3px;
+	border-radius: 4px;
+}
+
+.landing-primitive-popover {
+	position: absolute;
+	left: 50%;
+	top: calc(100% + 0.55rem);
+	z-index: 4;
+	box-sizing: border-box;
+	width: min(22rem, 80vw);
+	margin: 0;
+	padding: 0.85rem 1rem;
+	translate: -50% 0;
+	text-align: left;
+	font-size: 0.92rem;
+	line-height: 1.45;
+	color: var(--color-text);
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: 12px;
+	box-shadow: var(--shadow-md);
+	visibility: hidden;
+	opacity: 0;
+	pointer-events: none;
+}
+
+.landing-primitive:hover .landing-primitive-popover,
+.landing-primitive:focus-within .landing-primitive-popover,
+.landing-primitive[data-open] .landing-primitive-popover {
+	visibility: visible;
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.landing-primitive[data-dismissed] .landing-primitive-popover {
+	visibility: hidden;
+	opacity: 0;
+	pointer-events: none;
+}
+
+.landing-primitives-more {
+	margin: 1.1rem 0 0;
+	color: var(--color-text-muted);
+	font-size: 0.98rem;
+}
+
+.landing-vs {
+	max-width: 46rem;
+	margin: clamp(3.25rem, 7vw, 5rem) auto 0;
+	padding: 0 clamp(1.25rem, 4vw, 2.5rem);
+	text-align: center;
+}
+
+.landing-vs-list {
+	list-style: none;
+	margin: 1.75rem 0 0;
+	padding: 0;
+	display: grid;
+	gap: 1.15rem;
+	text-align: left;
+}
+
+.landing-vs-item {
+	padding: 1.15rem 1.25rem;
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: 16px;
+}
+
+.landing-vs-kicker {
+	margin: 0;
+	font-size: 1.05rem;
+	font-weight: 700;
+	letter-spacing: -0.015em;
+}
+
+.landing-vs-body {
+	margin: 0.45rem 0 0;
+	color: var(--color-text-muted);
+	font-size: 1rem;
+	line-height: 1.5;
+	text-wrap: pretty;
+}
+
+.landing-proof {
+	max-width: 72rem;
+	margin: 0 auto;
+	padding: clamp(3rem, 6vw, 5rem) clamp(1.25rem, 4vw, 2.5rem);
+	text-align: center;
+}
+
+.landing-proof-split {
+	display: grid;
+	grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+	gap: clamp(1.5rem, 4vw, 2.75rem);
+	align-items: start;
+	margin-top: clamp(1.75rem, 4vw, 2.5rem);
+}
+
+.landing-proof .landing-walkthrough-story {
+	margin: 0;
+	max-width: none;
+}
+
+.landing-proof .landing-hero-art {
+	margin-top: 0;
+}
+
+.landing-videos {
+	max-width: 46rem;
+	margin: 0 auto;
+	padding: clamp(2.5rem, 5vw, 4rem) clamp(1.25rem, 4vw, 2.5rem);
+	text-align: center;
+}
+
+.landing-videos .landing-section-heading {
+	margin-bottom: 1.25rem;
+}
+
+.landing-invite-tools {
+	margin-top: 2.25rem;
 }
 
 .landing-hero-art {
@@ -1106,12 +1320,11 @@ html.is-settled {
 	}
 }
 
-/* Hero stage: Kody with the host agents tethered to his lantern. Tethers are
-   drawn over him so they visibly reach the globe; balls of lantern light
-   travel them (frame-driven, shown only with JS + motion OK). */
+/* Proof stage: Kody with floating host agents. Connector lines stay off;
+   travelling orbs still run on the SVG track layer. */
 .landing-hero-agents {
-	width: min(100%, 40rem);
-	margin: 2.5rem auto 0;
+	width: min(100%, 22rem, 58vh);
+	margin: 0 auto;
 }
 
 .landing-hero-agents-stage {
@@ -1129,6 +1342,10 @@ html.is-settled {
 	height: auto;
 }
 
+/* Orb container. Keep this painted; hide only the track stroke. Lights
+   dissolve into the globe instead of crossing it. Masked on the <svg> box
+   (percentages: the stage is square, so they match viewBox units); the
+   centre tracks the lantern through parallax. */
 .landing-hero-agents-lines {
 	position: absolute;
 	inset: 0;
@@ -1137,12 +1354,6 @@ html.is-settled {
 	overflow: visible;
 	pointer-events: none;
 	z-index: 2;
-}
-
-/* Strokes and lights dissolve into the globe instead of crossing it. Masked
-   on the <svg> box (percentages: the stage is square, so they match viewBox
-   units); the centre tracks the lantern through parallax. */
-.landing-hero-agents-lines {
 	/* Glass radii ≈ 6.3% × 5.4%; fully clear inside, faded out by ~1.5× that. */
 	mask-image: radial-gradient(
 		ellipse 9.5% 8.2% at var(--lantern-x) var(--lantern-y),
@@ -1156,20 +1367,10 @@ html.is-settled {
 	);
 }
 
-/* Neutral threads; only the travelling lights carry the lantern's warmth. */
-.landing-hero-agent-line {
-	stroke: color-mix(in oklab, var(--color-border) 75%, var(--color-text));
-	stroke-width: 0.4;
-	stroke-linecap: round;
-}
-
-/* Faint soft bloom under each line so they sit in the scene, not on it. */
-.landing-hero-agent-glow {
-	stroke: var(--color-text);
-	stroke-width: 1.4;
-	stroke-linecap: round;
-	opacity: 0.06;
-	filter: blur(0.5px);
+/* Measurement-only path. Orbs travel along it; no connector is drawn. */
+.landing-hero-agent-track {
+	fill: none;
+	stroke: none;
 }
 
 /* Lights are motion-only: no JS or reduced motion leaves the tethers still. */
@@ -1292,8 +1493,7 @@ html.is-settled {
 
 @media (max-width: 640px) {
 	.landing-hero-agents {
-		width: min(100%, 26rem);
-		margin-top: 1.35rem;
+		width: min(100%, 18rem, 58vh);
 	}
 
 	.landing-hero-agent {
@@ -1573,19 +1773,6 @@ html.is-settled {
 
 .landing-factory-ritual span {
 	white-space: nowrap;
-}
-
-.landing-factory-close {
-	margin: clamp(2.25rem, 4.5vw, 3.25rem) auto 0;
-	color: var(--color-text-muted);
-	font-size: 1.02rem;
-	max-width: 42ch;
-	text-wrap: balance;
-}
-
-.landing-factory-close strong {
-	color: var(--color-text);
-	font-weight: 650;
 }
 
 .landing-walkthrough-story {
@@ -2310,6 +2497,25 @@ html.is-settled {
 }
 
 @media (max-width: 800px) {
+	.landing-compare {
+		grid-template-columns: 1fr;
+	}
+
+	.landing-primitive {
+		position: static;
+	}
+
+	.landing-primitive-popover {
+		left: 0;
+		right: 0;
+		width: auto;
+		translate: none;
+	}
+
+	.landing-proof-split {
+		grid-template-columns: 1fr;
+	}
+
 	.landing-section-heading {
 		font-size: 2rem;
 	}

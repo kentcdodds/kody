@@ -9,10 +9,11 @@ Operator tools. Seed and preview users are **not** admin.
 `/admin/platform-integrations`, `/admin/provider-marks`, `/admin/codemods`,
 `/admin/community-reports`, `/admin/insights`, `/admin/platform-feedback`,
 `/admin/system-email`). `/admin/insights` shows launch MRR, paid mix, the
-stamp-based activation funnel (overall and since 2026-09-10), active-user
-windows, MCP client mix, entitlement ladders, open platform feedback, and
-estimated Dynamic Worker cost vs catalog list pay, with a Risk panel for
-catalog-paid accounts over list MRR, unpaid users at
+stamp-based activation funnel (overall and since 2026-09-10), the Analytics
+Engine onboarding funnel (unique users per stage for 7 and 28 days; sampled
+floor), active-user windows, MCP client mix, entitlement ladders, open platform
+feedback, and estimated Dynamic Worker cost vs catalog list pay, with a Risk
+panel for catalog-paid accounts over list MRR, unpaid users at
 ≥$1 / 500 unique days
 (50% of the $2 included-bucket alert), and Standard/Pro
 rows whose `stripe_price_id` is missing or not in the catalog.

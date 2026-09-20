@@ -20,7 +20,7 @@ import {
 const heroVideosTtlMs = 5 * 60 * 1000
 const heroVideosStaleWhileRevalidateMs = 60 * 60 * 1000
 const youtubeFetchTimeoutMs = 2_500
-export const landingHeroVideosCacheKeyPrefix = 'landing-hero-videos:v3:'
+export const landingHeroVideosCacheKeyPrefix = 'landing-hero-videos:v5:'
 
 type YoutubeFetch = (input: string, init?: RequestInit) => Promise<Response>
 
@@ -40,9 +40,13 @@ function shouldFetchYoutubePlaylist(fetchImpl?: YoutubeFetch) {
 }
 
 /**
- * Homepage chooser videos in playlist order. KV-backed SWR so `/` stays
- * fast when YouTube is slow. Unit tests stay offline unless a fetch impl is
- * passed. Missing key / failed YouTube fail open to `[]`.
+ * Source playlist videos in playlist order. KV-backed SWR so `/` stays
+ * fast when YouTube is slow. Homepage presentation (playlist order,
+ * leftover title cleanup) happens at the page boundary via
+ * `presentLandingHeroVideos`; this loader stays unfiltered so the
+ * youtube-watch allowlist can reuse the cache.
+ * Unit tests stay offline unless a fetch impl is passed. Missing key /
+ * failed YouTube fail open to `[]`.
  */
 export async function loadLandingHeroVideos(input: {
 	env: Env

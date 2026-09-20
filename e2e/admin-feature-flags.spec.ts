@@ -1,4 +1,29 @@
-import { expect, test } from './playwright-utils.ts'
+import {
+	expect,
+	test,
+	waitForClientHydration,
+	type Locator,
+	type Page,
+} from './playwright-utils.ts'
+
+async function waitForAdminFeatureFlagsHydrated(page: Page) {
+	await expect(
+		page.getByRole('heading', { name: 'Admin feature flags' }),
+	).toBeVisible()
+	// Save / Remove are preventDefault + fetch to /admin/feature-flags.json.
+	// Before hydration a native POST hits the HTML route and does not persist,
+	// and type="button" Remove is a silent no-op.
+	await waitForClientHydration(page)
+}
+
+async function saveGlobalStateAndReload(page: Page, demoFlagSection: Locator) {
+	await demoFlagSection
+		.getByRole('button', { name: 'Save', exact: true })
+		.click()
+	await expect(page.getByText(/Saved global state/)).toBeVisible()
+	await page.reload()
+	await waitForAdminFeatureFlagsHydrated(page)
+}
 
 test('admin feature flags: global toggle and per-user override visibility', async ({
 	page,
@@ -29,9 +54,7 @@ test('admin feature flags: global toggle and per-user override visibility', asyn
 	await page.getByRole('link', { name: 'Admin', exact: true }).click()
 	await page.getByRole('link', { name: 'Feature flags', exact: true }).click()
 	await expect(page).toHaveURL(/\/admin\/feature-flags\/?$/)
-	await expect(
-		page.getByRole('heading', { name: 'Admin feature flags' }),
-	).toBeVisible()
+	await waitForAdminFeatureFlagsHydrated(page)
 
 	const demoFlagSection = page
 		.getByRole('heading', { name: 'demo-indicator' })
@@ -41,10 +64,7 @@ test('admin feature flags: global toggle and per-user override visibility', asyn
 	const audienceSelect = demoFlagSection.getByLabel('Audience')
 	if (await enabledCheckbox.isChecked()) {
 		await enabledCheckbox.uncheck()
-		await demoFlagSection
-			.getByRole('button', { name: 'Save', exact: true })
-			.click()
-		await page.reload()
+		await saveGlobalStateAndReload(page, demoFlagSection)
 		await expect(page.getByTestId('demo-indicator')).toHaveCount(0)
 	}
 
@@ -52,11 +72,7 @@ test('admin feature flags: global toggle and per-user override visibility', asyn
 	// defaultValue as an attribute (ignored by <select>); options need selected.
 	await audienceSelect.selectOption('experiments_opt_in')
 	await demoFlagSection.getByLabel('Note').fill(`e2e-audience-${runId}`)
-	await demoFlagSection
-		.getByRole('button', { name: 'Save', exact: true })
-		.click()
-	await expect(page.getByText(/Saved global state/)).toBeVisible()
-	await page.reload()
+	await saveGlobalStateAndReload(page, demoFlagSection)
 	await expect(audienceSelect).toHaveValue('experiments_opt_in')
 
 	// Restore everyone before enabling: seeded users are not experiments-opted-in,
@@ -64,18 +80,12 @@ test('admin feature flags: global toggle and per-user override visibility', asyn
 	await audienceSelect.selectOption('everyone')
 	await enabledCheckbox.check()
 	await demoFlagSection.getByLabel('Note').fill(`e2e-global-${runId}`)
-	await demoFlagSection
-		.getByRole('button', { name: 'Save', exact: true })
-		.click()
-	await page.reload()
+	await saveGlobalStateAndReload(page, demoFlagSection)
 	await expect(page.getByTestId('demo-indicator')).toBeVisible()
 	await expect(audienceSelect).toHaveValue('everyone')
 
 	await enabledCheckbox.uncheck()
-	await demoFlagSection
-		.getByRole('button', { name: 'Save', exact: true })
-		.click()
-	await page.reload()
+	await saveGlobalStateAndReload(page, demoFlagSection)
 	await expect(page.getByTestId('demo-indicator')).toHaveCount(0)
 
 	await demoFlagSection.getByLabel('Username').fill(memberUser.username)
@@ -108,6 +118,7 @@ test('admin feature flags: global toggle and per-user override visibility', asyn
 		mode: 'login',
 	})
 	await page.goto('/admin/feature-flags')
+	await waitForAdminFeatureFlagsHydrated(page)
 	await expect(memberOverrideRow).toBeVisible()
 	await memberOverrideRow
 		.getByRole('button', { name: 'Remove', exact: true })

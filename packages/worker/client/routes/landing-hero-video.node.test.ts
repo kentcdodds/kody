@@ -21,6 +21,10 @@ const fixtureVideos = [
 		videoId: 'o5L5OprLhBg',
 		title: 'Kody fixes a Stripe webhook after we renamed the domain',
 	},
+	{
+		videoId: 'OZKDO9Pzmo0',
+		title: 'Shade automation from an INTENT.md',
+	},
 ] as const
 
 test('nextChooserIndex moves along the strip, wraps at the ends, ignores other keys', () => {
@@ -77,8 +81,10 @@ test('hero video renders playlist order in the player and listbox', async () => 
 	].map((match) => match[1])
 	expect(optionThumbs).toEqual(fixtureVideos.map((video) => video.videoId))
 	expect(html).toContain(first.title)
-	expect(html).toContain(rest[1]?.title)
-	expect(html).toContain(`data-embed-playlist="${landingHeroDemoPlaylistId}"`)
+	expect(html).toContain(rest[0]?.title)
+	expect(html).not.toContain('data-embed-playlist')
+	expect(html).not.toContain(landingHeroDemoPlaylistId)
+	expect(html).not.toMatch(/stop sweating/i)
 })
 
 test('hero video is omitted when the playlist is empty', async () => {
