@@ -3,9 +3,15 @@
  * Keep these strings exact. Do not invent positioning or swap in synonyms.
  */
 
-export const landingHeroHeadline =
-	'You shouldn\u2019t have to start over in every agent.'
-export const landingHeroSubhead = 'The software platform your agents share'
+export const landingHeroHeadlineLead =
+	'You shouldn\u2019t have to start over in '
+export const landingHeroHeadlineEmphasis = 'every agent.'
+export const landingHeroHeadline = `${landingHeroHeadlineLead}${landingHeroHeadlineEmphasis}`
+
+export const landingHeroSubheadLead = 'Kody is the '
+export const landingHeroSubheadEmphasis = 'software platform'
+export const landingHeroSubheadTail = ' your agents share'
+export const landingHeroSubhead = `${landingHeroSubheadLead}${landingHeroSubheadEmphasis}${landingHeroSubheadTail}`
 export const landingHeroLead =
 	'One home for packages, secrets, memory, and jobs, so what you build in Cursor still runs in Claude.'
 export const landingHeroPrimaryCta = 'Connect your agent'

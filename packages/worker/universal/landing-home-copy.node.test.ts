@@ -4,10 +4,12 @@ import {
 	landingCompareWithItems,
 	landingCompareWithoutItems,
 	landingHeroHeadline,
+	landingHeroHeadlineEmphasis,
 	landingHeroLead,
 	landingHeroPrimaryCta,
 	landingHeroSecondaryCta,
 	landingHeroSubhead,
+	landingHeroSubheadEmphasis,
 	landingHomePrimitives,
 	landingHomeUiCopyBlob,
 	landingPrimitivesMoreLink,
@@ -27,8 +29,16 @@ test('locked homepage copy names the five primitives and has no em dashes', () =
 	expect(landingCompareWithoutItems).toHaveLength(3)
 	expect(landingCompareWithItems).toHaveLength(3)
 	expect(landingHomeUiCopyBlob()).not.toMatch(/\u2014|—/)
-	expect(landingHeroHeadline.includes('start over')).toBe(true)
-	expect(landingHeroSubhead.includes('software platform')).toBe(true)
+	expect(landingHeroHeadline).toBe(
+		'You shouldn\u2019t have to start over in every agent.',
+	)
+	expect(landingHeroHeadline.endsWith(landingHeroHeadlineEmphasis)).toBe(true)
+	expect(landingHeroHeadlineEmphasis).toBe('every agent.')
+	expect(landingHeroSubhead).toBe(
+		'Kody is the software platform your agents share',
+	)
+	expect(landingHeroSubhead.includes(landingHeroSubheadEmphasis)).toBe(true)
+	expect(landingHeroSubheadEmphasis).toBe('software platform')
 	expect(landingHeroLead.includes('Cursor')).toBe(true)
 	expect(landingHeroPrimaryCta).toContain('Connect')
 	expect(landingHeroSecondaryCta).toContain('how it works')

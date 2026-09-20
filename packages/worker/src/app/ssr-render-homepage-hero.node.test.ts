@@ -7,11 +7,14 @@ import { landingHeroDemoPlaylistId } from '#universal/landing-hero-copy.ts'
 import {
 	landingCompareWithTitle,
 	landingCompareWithoutTitle,
-	landingHeroHeadline,
+	landingHeroHeadlineEmphasis,
+	landingHeroHeadlineLead,
 	landingHeroLead,
 	landingHeroPrimaryCta,
 	landingHeroSecondaryCta,
-	landingHeroSubhead,
+	landingHeroSubheadEmphasis,
+	landingHeroSubheadLead,
+	landingHeroSubheadTail,
 	landingHomePrimitives,
 	landingVsHeading,
 } from '#universal/landing-home-copy.ts'
@@ -135,8 +138,11 @@ test('homepage hero uses locked copy, compare, and session-aware connect CTA', a
 	expect(anonymous.status).toBe(200)
 	const anonymousHtml = await anonymous.text()
 	const anonymousHero = landingHeroMarkup(anonymousHtml)
-	expect(anonymousHero).toContain(landingHeroHeadline)
-	expect(anonymousHero).toContain(landingHeroSubhead)
+	expect(anonymousHero).toContain(landingHeroHeadlineLead)
+	expect(anonymousHero).toContain(`<em>${landingHeroHeadlineEmphasis}</em>`)
+	expect(anonymousHero).toContain(landingHeroSubheadLead)
+	expect(anonymousHero).toContain(`<em>${landingHeroSubheadEmphasis}</em>`)
+	expect(anonymousHero).toContain(landingHeroSubheadTail)
 	expect(anonymousHero).toContain(landingHeroLead)
 	expect(anonymousHero).toContain(landingHeroPrimaryCta)
 	expect(anonymousHero).toContain(landingHeroSecondaryCta)

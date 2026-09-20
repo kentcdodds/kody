@@ -29,11 +29,14 @@ import {
 	landingCompareWithoutItems,
 	landingCompareWithTitle,
 	landingCompareWithoutTitle,
-	landingHeroHeadline,
+	landingHeroHeadlineEmphasis,
+	landingHeroHeadlineLead,
 	landingHeroLead,
 	landingHeroPrimaryCta,
 	landingHeroSecondaryCta,
-	landingHeroSubhead,
+	landingHeroSubheadEmphasis,
+	landingHeroSubheadLead,
+	landingHeroSubheadTail,
 	landingProofHeading,
 	landingVsHeading,
 	landingVsItems,
@@ -239,14 +242,17 @@ export function HomeRoute(handle: Handle) {
 				<section class="landing-hero">
 					<div class="landing-hero-intro">
 						<h1 data-rise style={{ '--rise': '0' }} class="landing-hero-title">
-							{landingHeroHeadline}
+							{landingHeroHeadlineLead}
+							<em>{landingHeroHeadlineEmphasis}</em>
 						</h1>
 						<h2
 							data-rise
 							style={{ '--rise': '0.6' }}
 							class="landing-hero-subhead"
 						>
-							{landingHeroSubhead}
+							{landingHeroSubheadLead}
+							<em>{landingHeroSubheadEmphasis}</em>
+							{landingHeroSubheadTail}
 						</h2>
 						<p data-rise style={{ '--rise': '1' }} class="landing-hero-lead">
 							{landingHeroLead}

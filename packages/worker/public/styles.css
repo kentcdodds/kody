@@ -791,13 +791,18 @@ html.is-settled {
 	text-wrap: balance;
 }
 
+.landing-hero-title em,
+.landing-hero-subhead em {
+	font-style: normal;
+	color: var(--color-primary-text);
+}
+
 .landing-hero-subhead {
 	margin: 1.15rem 0 0;
 	font-size: clamp(1.25rem, 2.4vw, 1.7rem);
 	font-weight: 650;
 	letter-spacing: -0.02em;
 	line-height: 1.25;
-	color: var(--color-primary-text);
 	text-wrap: balance;
 }
 
