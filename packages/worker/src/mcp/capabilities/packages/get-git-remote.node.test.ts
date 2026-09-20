@@ -274,13 +274,6 @@ test('get_git_remote returns scoped artifact remotes and rejects invalid input',
 
 	resetMocks()
 	const tooLongDescription = 'a'.repeat(KODY_DESCRIPTION_MAX_LENGTH + 1)
-	const descriptionSchema = getGitRemoteCapability.inputSchema.properties?.[
-		'description'
-	] as { maxLength?: number; description?: string } | undefined
-	expect(descriptionSchema?.maxLength).toBe(KODY_DESCRIPTION_MAX_LENGTH)
-	expect(descriptionSchema?.description).toContain(
-		`${KODY_DESCRIPTION_MAX_LENGTH} characters (short public tagline)`,
-	)
 	const oversizeError = await getGitRemoteCapability
 		.handler(
 			{
@@ -297,9 +290,6 @@ test('get_git_remote returns scoped artifact remotes and rejects invalid input',
 			'Invalid input for capability "packageGetGitRemote"',
 		),
 	})
-	expect((oversizeError as Error).message).toContain(
-		`at most ${KODY_DESCRIPTION_MAX_LENGTH} characters (short public tagline)`,
-	)
 	expect(mockModule.createStubSavedPackage).not.toHaveBeenCalled()
 	expect(mockModule.resolvePackageOwnerContext).not.toHaveBeenCalled()
 

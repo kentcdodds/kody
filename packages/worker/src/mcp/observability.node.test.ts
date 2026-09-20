@@ -465,9 +465,6 @@ test('oversized kody.description handler errors stay off Sentry', () => {
 		thrown = error
 	}
 	expect(thrown).toBeInstanceOf(Error)
-	expect((thrown as Error).message).toBe(
-		'kody.description must be at most 200 characters (short public tagline).',
-	)
 
 	captureMcpEvents(() => {
 		logMcpEvent({

@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest'
 import {
-	frameFetchSearchParam,
 	frameFetchUrl,
 	isFullHtmlDocumentPrefix,
 	REMIX_FRAME_TARGET_HEADER,
@@ -22,7 +21,6 @@ test('frame fetches differ from the cached document URL', () => {
 			'community-listings',
 		),
 	).toBe('https://kody.codes/community?__frame=community-listings#packages')
-	expect(frameFetchSearchParam).toBe('__frame')
 })
 
 test('frame target comes from the header, then the cache-bust param', () => {

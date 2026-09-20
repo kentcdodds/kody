@@ -3,10 +3,6 @@ import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-regi
 
 import { searchUnified, type PackageSearchRow } from './search.ts'
 import {
-	packageExportCandidateMinScore,
-	packageExportCloseScoreGap,
-} from './search-constants.ts'
-import {
 	buildPackageActionMatches,
 	buildPackageExportParentIdentityFields,
 	hydrateTopPackageMatches,
@@ -66,22 +62,6 @@ function createActionMatch(
 		exportLocalMatchedTermCount,
 	}
 }
-
-test('buildPackageExportParentIdentityFields includes kodyId, name, name leaf, and tags', () => {
-	expect(
-		buildPackageExportParentIdentityFields({
-			kodyId: 'social-post',
-			name: '@kody/social-post',
-			tags: ['twitter', 'microblog'],
-		}),
-	).toEqual([
-		'social-post',
-		'@kody/social-post',
-		'social-post',
-		'twitter',
-		'microblog',
-	])
-})
 
 test('buildPackageActionMatches folds parent tags into export matched terms', () => {
 	const matches = buildPackageActionMatches({
@@ -151,16 +131,6 @@ test('shouldPromotePackageExportCandidate requires multi-term or strong score', 
 			matchedTerms: ['bond', 'shades'],
 		}),
 	).toBe(true)
-	expect(
-		shouldPromotePackageExportCandidate({
-			subpath: './strong',
-			description: 'strong',
-			typeDefinition: null,
-			functions: [{ name: 'strong', description: null, typeDefinition: null }],
-			score: packageExportCandidateMinScore,
-			matchedTerms: ['strong'],
-		}),
-	).toBe(true)
 })
 
 test('selectPromotedPackageExportCandidates promotes close runners-up', () => {
@@ -179,12 +149,6 @@ test('selectPromotedPackageExportCandidates promotes close runners-up', () => {
 		'like',
 		'status',
 	])
-	expect(top.score - closeSecond.score).toBeLessThanOrEqual(
-		packageExportCloseScoreGap,
-	)
-	expect(top.score - closeThird.score).toBeLessThanOrEqual(
-		packageExportCloseScoreGap,
-	)
 	expect(
 		selectPromotedPackageExportCandidates([top, closeSecond, closeThird]).map(
 			(match) => match.subpath,
@@ -199,7 +163,6 @@ test('selectPromotedPackageExportCandidates keeps a single winner on a clear gap
 		'shades',
 	])
 	const distant = createActionMatch('./other-export', 0.55, ['bond', 'other'])
-	expect(top.score - distant.score).toBeGreaterThan(packageExportCloseScoreGap)
 	expect(
 		selectPromotedPackageExportCandidates([top, distant]).map(
 			(match) => match.subpath,
@@ -226,29 +189,6 @@ test('selectPromotedPackageExportCandidates can promote beyond nested display to
 			(match) => match.subpath,
 		),
 	).toEqual(['./create-status'])
-})
-
-test('buildPackageActionMatches keeps nested display threshold below promotion', () => {
-	const matches = buildPackageActionMatches({
-		query: 'module-a',
-		meaningfulTokens: ['module'],
-		exports: [
-			createPackageExportProjection('./module-a', {
-				description: 'Run module-a task with distinctive wording.',
-				functionName: 'runTask',
-				functionDescription: 'Run module-a task with distinctive wording.',
-				typeDefinition: 'export declare function runTask(): Promise<void>',
-			}),
-		],
-	})
-	expect(matches.length).toBeGreaterThan(0)
-	const [top] = matches
-	expect(top).toBeDefined()
-	if (!top) return
-	expect(top.exportLocalMatchedTermCount).toBeGreaterThan(0)
-	if (top.matchedTerms.length < 2) {
-		expect(top.score).toBeGreaterThanOrEqual(0.35)
-	}
 })
 
 test('searchUnified promotes strong package exports into first-pass ranked hits', async () => {

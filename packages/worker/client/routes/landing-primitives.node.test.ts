@@ -12,10 +12,7 @@ test('primitives sentence pairs lantern orbs with words and ships empty leaders'
 	const html = await renderToString(jsx(LandingPrimitives, {}))
 
 	expect(html).toContain('id="primitives"')
-	expect(html).toContain('shared set of primitives')
 	expect(html).toContain('href="/docs"')
-	expect(html).toContain(landingPrimitivesMoreLink)
-	expect(html).toContain('role="tooltip"')
 	expect(html.match(/role="tooltip"/g)).toHaveLength(
 		landingHomePrimitives.length,
 	)

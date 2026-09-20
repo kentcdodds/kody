@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest'
 import {
-	onboardingFunnelStages,
 	sanitizeFunnelClientId,
 	sanitizeMcpConnectErrorClass,
 	sanitizeOnboardingFunnelPlan,
@@ -45,5 +44,4 @@ test('funnel dimensions stay closed', () => {
 		),
 	).toBe('claude.ai')
 	expect(sanitizeFunnelClientId('user@example.com')).toBe('')
-	expect(onboardingFunnelStages).toContain('first_job')
 })

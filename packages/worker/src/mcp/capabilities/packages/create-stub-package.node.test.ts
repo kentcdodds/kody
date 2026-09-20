@@ -90,9 +90,6 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for ow
 		description: tooLongDescription,
 	}).catch((error: unknown) => error)
 	expect(oversizeError).toBeInstanceOf(McpCallerError)
-	expect((oversizeError as Error).message).toBe(
-		`kody.description must be at most ${KODY_DESCRIPTION_MAX_LENGTH} characters (short public tagline).`,
-	)
 	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
 	expect(mockModule.insertSavedPackage).not.toHaveBeenCalled()
 

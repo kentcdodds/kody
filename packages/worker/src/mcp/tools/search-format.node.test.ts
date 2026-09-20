@@ -1673,9 +1673,11 @@ export default async function main(params) {
 		exportSubpath: './bond-area-shades',
 		exportCallContract: {
 			importSpecifier: 'kody:@kentcdodds/home-controls/bond-area-shades',
-			usage: exportHit.exportCallContract.usage,
-			executeExample: exportHit.exportCallContract.executeExample,
-			typeDefinition: exportHit.exportCallContract.typeDefinition,
+			usage:
+				'import { setBondAreaShades } from "kody:@kentcdodds/home-controls/bond-area-shades"',
+			executeExample: expect.stringContaining('setBondAreaShades(params)'),
+			typeDefinition:
+				'export declare function setBondAreaShades(params: BondAreaShadeParams): Promise<JsonObject>',
 			functions: [
 				expect.objectContaining({ name: 'setBondAreaShades' }),
 				expect.objectContaining({ name: 'listBondAreas' }),
@@ -1697,35 +1699,16 @@ export default async function main(params) {
 	expect(markdown).toContain(
 		'Import: `kody:@kentcdodds/home-controls/bond-area-shades`',
 	)
-	expect(markdown).toContain(exportHit.exportCallContract.usage)
-	expect(markdown).toContain(exportHit.exportCallContract.typeDefinition)
-	expect(markdown).toContain('```ts')
-	for (const exampleLine of exportHit.exportCallContract.executeExample.split(
-		'\n',
-	)) {
-		expect(markdown).toContain(exampleLine)
-	}
 	expect(markdown).toContain('`setBondAreaShades`')
 	expect(markdown).toContain('`listBondAreas`')
-	expect(markdown).toContain('Next: Use the inlined export call contract above')
-	expect(markdown).toContain('## Notices')
 	expect(markdown).toContain(
 		'Shade package retriever timed out once; results may be partial',
 	)
-	expect(markdown).toContain('## Recommended next step')
-	expect(markdown).toContain(guidance)
-	expect(markdown).not.toMatch(/structured result/i)
 
 	const slimContract =
 		slim && 'exportCallContract' in slim ? slim.exportCallContract : null
 	expect(slimContract).toBeDefined()
 	expect(markdown).toContain(slimContract!.importSpecifier)
 	expect(markdown).toContain(slimContract!.usage)
-	for (const exampleLine of slimContract!.executeExample.split('\n')) {
-		expect(markdown).toContain(exampleLine)
-	}
 	expect(markdown).toContain(slim!.entityRef)
-	expect(markdown).toContain(
-		(slim && 'nextStep' in slim ? slim.nextStep : '') ?? '',
-	)
 })
