@@ -254,7 +254,7 @@ export function App(handle: Handle<AppProps>) {
 		const loginHref = buildAuthLink('/login', oauthRedirectTo)
 		// Redesigned pages own their own layout (gutters, measures, max-width
 		// container), so `<main>` must not add its generic padding on top. The
-		// landing page also owns its own signup close (the "Give your agents
+		// landing page also owns its own signup close (the "Give your services
 		// a home" section). The redesigned auth screens (login/signup) are a
 		// standalone two-panel canvas with their own brand link, theme toggle,
 		// and "back" corner — the prototype renders them without the site

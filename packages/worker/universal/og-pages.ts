@@ -1,4 +1,8 @@
-import { landingHeroHeadline } from '#universal/landing-hero-copy.ts'
+import {
+	landingHeroHeadline,
+	landingHeroLead,
+	landingHeroSubhead,
+} from '#universal/landing-home-copy.ts'
 
 /**
  * Registry of public pages that get a Satori-generated OG image at
@@ -23,14 +27,11 @@ export type PublicOgPage = {
 
 export const publicOgPages = {
 	home: {
-		// Same headline as the homepage H1. Subtitle stays the supporting line
-		// on the OG card after the live hero dropped its subhead.
+		// Same headline and supporting lines as the live homepage hero.
 		imageTitle: landingHeroHeadline,
-		imageSubtitle:
-			"For all the agents you use today,\nand the ones you'll use tomorrow",
-		ogTitle: `${landingHeroHeadline} — Kody`,
-		ogDescription:
-			"For all the agents you use today, and the ones you'll use tomorrow.",
+		imageSubtitle: landingHeroSubhead,
+		ogTitle: `${landingHeroHeadline} · Kody`,
+		ogDescription: landingHeroLead,
 		path: '/',
 	},
 	community: {

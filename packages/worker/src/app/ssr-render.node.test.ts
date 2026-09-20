@@ -804,15 +804,16 @@ test('renderAppPage emits a doctype, meta description, and inlines the styleshee
 	expect(withoutAssetsHtml.startsWith('<!DOCTYPE html>')).toBe(true)
 	expect(withoutAssetsHtml).toContain('href="/styles.css')
 	expect(withoutAssetsHtml).toContain('name="description"')
-	expect(withoutAssetsHtml).toContain('For all the agents you use today,')
-	expect(withoutAssetsHtml).toContain('and the ones you&#39;ll use tomorrow')
-	// Hero stage: one agent list around Kody, every token tethered by a line.
+	// Proof stage: one agent list around Kody, travelling orbs, no connector
+	// lines.
 	expect(withoutAssetsHtml).toContain('landing-hero-agents')
 	expect(withoutAssetsHtml).toContain('/images/kody-mark.png')
 	expect(
 		withoutAssetsHtml.match(/aria-label="Agents Kody plugs into"/g),
 	).toEqual(['aria-label="Agents Kody plugs into"'])
 	expect(withoutAssetsHtml).toContain('landing-hero-agent-light')
+	expect(withoutAssetsHtml).toContain('landing-hero-agent-track')
+	expect(withoutAssetsHtml).not.toContain('landing-hero-agent-line')
 	expect(withoutAssetsHtml).toContain('class="landing-path-rail"')
 	expect(withoutAssetsHtml).toContain('href="/images/hero/kody-base-640.webp"')
 	expect(withoutAssetsHtml).toContain('kody-base-960.webp')
@@ -957,7 +958,7 @@ test('renderAppPage embeds the homepage factory-loop conversation teaser', async
 	expect(html).toContain('aria-label="Skip to the end"')
 	expect(html).toContain('class="landing-loop-status-dot"')
 	expect(html).toContain('class="landing-path-rail"')
-	expect(html).toContain('href="/docs/secrets"')
+	expect(html).toContain('href="/docs"')
 	expect(html).toContain('href="/community"')
 })
 
