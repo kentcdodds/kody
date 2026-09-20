@@ -10,6 +10,7 @@
  * so one isolate is reused for the UTC day.
  */
 
+import { executeToolDescription } from '#mcp/instructions/execute-tool-description.ts'
 import { executeInvokeFlagKey } from '#universal/feature-flags/registry.ts'
 import { buildPackageImportSpecifier } from '#worker/package-registry/package-import-specifier.ts'
 import {
@@ -25,26 +26,20 @@ export const executeInvokeUnsupportedSpecifierMessage =
 	'Unsupported execute invoke specifier. Use a kody:@scope/package/export (or @scope/package#export) package import, not a URL.'
 
 export const executeInvokeMutualExclusionMessage =
-	'execute accepts either code or invoke, not both. Pass a package export specifier in invoke, or a module string in code.'
+	'execute accepts either code or invoke, not both.'
 
 export const executeInvokeMissingInputMessage =
 	'execute requires code or invoke.'
 
 export const executeInvokeFlagOffMessage =
-	'execute invoke is an experiment. Opt in at /account/experiments. An operator must enable the execute-invoke flag for the experiments_opt_in audience.'
+	'execute invoke is an experiment. Opt in at /account/experiments, then an operator enables execute-invoke for experiments_opt_in.'
 
 export const executeInvokeFieldDescription =
-	'Package export specifier to run as a thin passthrough — the same module as import action from "kody:@scope/package/export" plus a default export that calls it with params. Accepts kody:@scope/package/export or @scope/package#export. Mutually exclusive with code. Vary args via params so the same graph is reused.'
+	'Package export specifier (kody:@scope/package/export or @scope/package#export). Mutually exclusive with code. Same thin passthrough as a static kody:@ import plus default export(params). Vary args via params.'
 
-export const executeToolDescriptionWithInvoke = `Run one ephemeral ESM module, or pass invoke with a kody:@scope/package/export specifier to mint the same thin passthrough. Discover the capability with search. Prefer invoke or a package import over rewriting helpers. Project large results before returning (e.g. { id, subject, snippet }). Same user and module graph reuse one isolate for the UTC day — vary args via params.
+export const executeToolDescriptionWithInvoke = `${executeToolDescription}
 
-invoke: "kody:@scope/package/export"
-// params: { ... }
-
-import { kody } from 'kody:runtime'
-export default async function main(params) {
-  return await kody.capability_id(params)
-}`
+Or pass invoke: "kody:@scope/package/export" (mutually exclusive with code) to mint that same thin passthrough. Vary args via params.`
 
 function looksLikeUrl(value: string) {
 	return /:\/\//.test(value)

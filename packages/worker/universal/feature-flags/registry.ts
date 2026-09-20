@@ -110,13 +110,13 @@ export const featureFlagDefinitions = [
 		defaultEnabled: false,
 		defaultAudience: 'experiments_opt_in',
 		description:
-			'MCP execute `invoke` shortcut: generate the canonical thin kody:@ passthrough for a saved or platform package export, then run the existing execute path. Off by default. Operators enable it with audience experiments_opt_in so only /account/experiments members see the field. Delete the flag and gate sites when the experiment ends.',
+			'MCP execute `invoke` shortcut: mint the canonical thin kody:@ passthrough for a package export, then run the existing execute path. Off by default; enable with audience experiments_opt_in. Delete the flag and gate sites when the experiment ends.',
 		successMetric: {
 			eventType: 'dynamic_worker_day',
 			measure: 'event_count',
 			goal: 'decrease',
 			hypothesis:
-				'A stable invoke-generated thin passthrough reuses one Dynamic Worker per package export instead of a new isolate per rewritten glue module, so experiment users burn fewer unique worker-days on the execute surface.',
+				'Invoke-generated thin passthrough reuses one Dynamic Worker per package export, so experiment users burn fewer unique worker-days on execute.',
 		},
 	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
