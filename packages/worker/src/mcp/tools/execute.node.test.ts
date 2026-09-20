@@ -23,6 +23,7 @@ import {
 	executeInvokeMutualExclusionMessage,
 	executeToolDescriptionWithInvoke,
 } from '#mcp/execute-invoke.ts'
+import type * as AccessControlModule from '#mcp/capabilities/access-control.ts'
 import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
@@ -60,15 +61,17 @@ vi.mock('#mcp/capabilities/registry.ts', () => ({
 		mockModule.getCapabilityRegistryForContext(...args),
 }))
 
-vi.mock('#mcp/capabilities/access-control.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#mcp/capabilities/access-control.ts')>()
-	return {
-		...actual,
-		resolveCallerFeatureFlags: (...args: Array<unknown>) =>
-			mockModule.resolveCallerFeatureFlags(...args),
-	}
-})
+vi.mock(
+	'#mcp/capabilities/access-control.ts',
+	async (importOriginal: () => Promise<typeof AccessControlModule>) => {
+		const actual = await importOriginal()
+		return {
+			...actual,
+			resolveCallerFeatureFlags: (...args: Array<unknown>) =>
+				mockModule.resolveCallerFeatureFlags(...args),
+		}
+	},
+)
 
 vi.mock('#worker/package-invocations/service.ts', () => ({
 	createExecutePackageInvokeTools: (...args: Array<unknown>) =>
