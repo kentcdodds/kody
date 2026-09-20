@@ -7,8 +7,6 @@ import {
 } from '#universal/landing-agent-orbit.ts'
 import { heroBaseImage } from '#universal/landing-images.ts'
 import {
-	landingKodyLanternGlass,
-	landingKodyLanternOrbs,
 	landingOrbitLightTone,
 	landingPrimitiveColorVar,
 } from '#universal/landing-lantern.ts'
@@ -19,8 +17,8 @@ import {
 } from '#universal/walkthrough-hosts.ts'
 
 /**
- * Proof stage: Kody holds the lantern while the agents you already use
- * float around as logo tokens. Connector lines stay off; travelling orbs
+ * Proof stage: Kody holds the five-orb lantern while the agents you already
+ * use float around as logo tokens. Connector lines stay off; travelling orbs
  * still run both ways on the same clocks. Orbit positions live in
  * `#universal/landing-agent-orbit` so OG cards can compose the same still.
  */
@@ -347,55 +345,6 @@ function renderOrbLayer(agents: ReadonlyArray<LandingHeroAgent>) {
 	)
 }
 
-/** The five primitive orbs painted into the glass of the lantern Kody holds.
- *  Sized from the glass radii and parallaxed with the image so the orbs stay
- *  seated while the stage moves. */
-function renderKodyLanternOrbs() {
-	const { rx, ry } = landingKodyLanternGlass
-	return (
-		<svg
-			class="landing-hero-agents-orbs"
-			viewBox="-1 -1 2 2"
-			aria-hidden="true"
-			focusable={false}
-			data-depth="-0.06"
-			style={{
-				left: `${lantern.x}%`,
-				top: `${lantern.y}%`,
-				width: `${rx * 2}%`,
-				height: `${ry * 2}%`,
-			}}
-		>
-			{landingKodyLanternOrbs.map((orb) => (
-				<g
-					key={orb.id}
-					class="landing-hero-agents-orb"
-					style={{ '--orb': landingPrimitiveColorVar(orb.id) }}
-				>
-					<circle
-						class="landing-hero-agents-orb-halo"
-						cx={orb.dx}
-						cy={orb.dy}
-						r="0.33"
-					/>
-					<circle
-						class="landing-hero-agents-orb-core"
-						cx={orb.dx}
-						cy={orb.dy}
-						r="0.19"
-					/>
-					<circle
-						class="landing-hero-agents-orb-shine"
-						cx={orb.dx - 0.05}
-						cy={orb.dy - 0.06}
-						r="0.06"
-					/>
-				</g>
-			))}
-		</svg>
-	)
-}
-
 export function LandingHeroAgents(
 	handle: Handle<{ hosts?: WalkthroughHostPick }>,
 ) {
@@ -433,7 +382,6 @@ export function LandingHeroAgents(
 						style={{ left: `${lantern.x}%`, top: `${lantern.y}%` }}
 						data-depth="-0.06"
 					></div>
-					{renderKodyLanternOrbs()}
 					{renderOrbLayer(agents)}
 					<ul
 						aria-label="Agents Kody plugs into"

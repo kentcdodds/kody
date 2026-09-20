@@ -37,7 +37,8 @@ test('lantern orbs and words are paired disclosures for one popover each', async
 	const html = await renderToString(jsx(LandingPrimitives, {}))
 
 	expect(html).toContain('class="landing-lantern"')
-	expect(html).toContain('landing-lantern-art')
+	expect(html).toContain('kody-primitives-lantern-480.webp')
+	expect(html).toContain('kody-primitives-lantern.webp 839w')
 	expect(html.match(/class="landing-lantern-orb"/g)).toHaveLength(
 		landingLanternOrbs.length,
 	)

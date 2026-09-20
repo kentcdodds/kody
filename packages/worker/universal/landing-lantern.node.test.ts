@@ -1,9 +1,10 @@
 import { expect, test } from 'vitest'
 import { landingHomePrimitives } from './landing-home-copy.ts'
 import {
-	landingKodyLanternOrbs,
+	landingLanternImage,
 	landingLanternOrbs,
 	landingLeaderOrbAnchor,
+	landingLeaderOrbExit,
 	landingLeaderPath,
 	landingLeaderSide,
 	landingLeaderWordAnchor,
@@ -15,7 +16,6 @@ import {
 test('lantern orbs cover every homepage primitive exactly once, in copy order', () => {
 	const copyIds = landingHomePrimitives.map((primitive) => primitive.id)
 	expect(landingLanternOrbs.map((orb) => orb.id)).toEqual(copyIds)
-	expect(landingKodyLanternOrbs.map((orb) => orb.id)).toEqual(copyIds)
 	expect([...landingPrimitiveIds]).toEqual(copyIds)
 	for (const orb of landingLanternOrbs) {
 		expect(orb.x).toBeGreaterThan(0)
@@ -23,9 +23,11 @@ test('lantern orbs cover every homepage primitive exactly once, in copy order', 
 		expect(orb.y).toBeGreaterThan(0)
 		expect(orb.y).toBeLessThan(100)
 	}
-	for (const orb of landingKodyLanternOrbs) {
-		expect(Math.hypot(orb.dx, orb.dy)).toBeLessThan(0.8)
-	}
+	expect(landingLanternImage.srcSet).toContain(landingLanternImage.src)
+	expect(landingLanternImage.width / landingLanternImage.height).toBeCloseTo(
+		839 / 1235,
+		3,
+	)
 	expect(landingPrimitiveColorVar('jobs')).toBe('var(--primitive-jobs)')
 })
 
@@ -68,6 +70,14 @@ test('leaders land on the word edge that faces the orb and arrive vertically', (
 			origin,
 		),
 	).toEqual({ x: 60, y: 220 })
+
+	const exit = landingLeaderOrbExit({ x: 60, y: 220 }, { x: 160, y: 220 }, 50)
+	expect(exit.x).toBeCloseTo(60 + 50 * 0.86, 5)
+	expect(exit.y).toBe(220)
+	expect(landingLeaderOrbExit({ x: 1, y: 1 }, { x: 1, y: 1 }, 50)).toEqual({
+		x: 1,
+		y: 1,
+	})
 
 	const from = { x: 60, y: 220 }
 	const to = { x: 430, y: 114 }

@@ -1136,7 +1136,7 @@ html.is-settled {
 .landing-lantern {
 	position: relative;
 	width: 100%;
-	aspect-ratio: 200 / 260;
+	aspect-ratio: 839 / 1235;
 	margin: 0;
 }
 
@@ -1147,83 +1147,8 @@ html.is-settled {
 	display: block;
 	width: 100%;
 	height: 100%;
-	overflow: visible;
-}
-
-.landing-lantern-glass-stop-a {
-	stop-color: oklch(0.96 0.09 92);
-}
-
-.landing-lantern-glass-stop-b {
-	stop-color: oklch(0.87 0.16 80);
-}
-
-.landing-lantern-glass-stop-c {
-	stop-color: oklch(0.72 0.16 64);
-}
-
-.landing-lantern-halo-stop-a {
-	stop-color: oklch(0.86 0.14 82 / 0.5);
-}
-
-.landing-lantern-halo-stop-b {
-	stop-color: oklch(0.86 0.14 82 / 0);
-}
-
-.landing-lantern-metal-stop-a {
-	stop-color: oklch(0.38 0.012 260);
-}
-
-.landing-lantern-metal-stop-b {
-	stop-color: oklch(0.25 0.012 260);
-}
-
-.landing-lantern-handle-shine {
-	stroke: oklch(0.55 0.012 260 / 0.65);
-}
-
-.landing-lantern-knob {
-	fill: oklch(0.44 0.012 260);
-}
-
-.landing-lantern-lip {
-	fill: oklch(0.21 0.012 260);
-}
-
-.landing-lantern-web line {
-	stroke: oklch(0.99 0.05 90 / 0.5);
-	stroke-width: 0.9;
-}
-
-.landing-lantern-web circle {
-	fill: oklch(1 0.03 90 / 0.85);
-}
-
-.landing-lantern-sparkles circle {
-	fill: oklch(1 0.04 90 / 0.9);
-}
-
-.landing-lantern-glass-shine {
-	fill: oklch(1 0 0 / 0.3);
-}
-
-.landing-lantern-rim-stop-a {
-	stop-color: oklch(0.99 0.04 90 / 0.7);
-}
-
-.landing-lantern-rim-stop-b {
-	stop-color: oklch(0.92 0.16 88 / 0.95);
-}
-
-/* Inner edge darkening so the globe reads as glass, not a flat disc. */
-.landing-lantern-glass-vignette {
-	stroke: oklch(0.55 0.15 52 / 0.18);
-	filter: blur(3px);
-}
-
-.landing-lantern-glass-foot {
-	fill: oklch(0.98 0.1 90 / 0.55);
-	filter: blur(2px);
+	object-fit: contain;
+	filter: drop-shadow(0 1.2rem 2.2rem oklch(0.75 0.15 75 / 0.28));
 }
 
 .landing-lantern-orbs {
@@ -1232,47 +1157,37 @@ html.is-settled {
 	z-index: 2;
 }
 
+/* Hotspots over the painted orbs. Invisible at rest apart from the pulse
+   ring; hover, focus, or open lights a ring in the orb's color. Dimmed
+   orbs get a translucent canvas-colored veil. */
 .landing-lantern-orb {
 	position: absolute;
 	left: var(--x);
 	top: var(--y);
 	translate: -50% -50%;
-	display: grid;
-	place-items: center;
-	width: 22%;
+	width: 22.5%;
 	aspect-ratio: 1;
 	margin: 0;
 	padding: 0;
+	border: none;
 	border-radius: 50%;
-	border: 2px solid
-		oklch(from var(--primitive-color) calc(l + 0.22) calc(c * 0.6) h / 0.9);
-	background: radial-gradient(
-		circle at 36% 30%,
-		oklch(from var(--primitive-color) calc(l + 0.16) calc(c * 0.9) h) 0%,
-		var(--primitive-color) 58%,
-		oklch(from var(--primitive-color) calc(l - 0.14) c h) 100%
-	);
-	color: oklch(1 0 0);
+	background: transparent;
 	cursor: pointer;
-	box-shadow:
-		0 0 0.5rem oklch(from var(--primitive-color) l c h / 0.55),
-		0 0 1.4rem oklch(from var(--primitive-color) l c h / 0.35),
-		inset 0 -0.2rem 0.45rem
-			oklch(from var(--primitive-color) calc(l - 0.2) c h / 0.5);
+	box-shadow: 0 0 0 0 oklch(from var(--primitive-color) l c h / 0);
 	transition:
-		scale 0.25s ease,
-		opacity 0.25s ease,
 		box-shadow 0.25s ease,
-		filter 0.25s ease;
+		background-color 0.25s ease,
+		scale 0.25s ease;
+	-webkit-tap-highlight-color: transparent;
 }
 
 /* Soft pulse ring; motion-only, staggered per orb. */
 .landing-lantern-orb::after {
 	content: '';
 	position: absolute;
-	inset: -3px;
+	inset: -2px;
 	border-radius: 50%;
-	border: 2px solid oklch(from var(--primitive-color) calc(l + 0.1) c h / 0.6);
+	border: 2px solid oklch(from var(--primitive-color) calc(l + 0.1) c h / 0.7);
 	opacity: 0;
 	pointer-events: none;
 }
@@ -1293,45 +1208,23 @@ html.is-settled {
 	--pulse-delay: 2.2s;
 }
 
-.landing-lantern-orb-glyph {
-	display: grid;
-	place-items: center;
-	width: 54%;
-	height: 54%;
-}
-
-.landing-lantern-orb-glyph svg {
-	width: 100%;
-	height: 100%;
-	overflow: visible;
-	filter: drop-shadow(
-		0 1px 0 oklch(from var(--primitive-color) calc(l - 0.25) c h / 0.5)
-	);
-}
-
-.landing-lantern-orb-glyph svg * {
-	stroke-width: 1.85;
-}
-
 .landing-lantern-orb:hover,
 .landing-lantern-orb:focus-visible,
 .landing-lantern-orb[data-open] {
-	scale: 1.1;
+	scale: 1.06;
 	box-shadow:
-		0 0 0.7rem oklch(from var(--primitive-color) l c h / 0.75),
-		0 0 2rem oklch(from var(--primitive-color) l c h / 0.5),
-		inset 0 -0.2rem 0.45rem
-			oklch(from var(--primitive-color) calc(l - 0.2) c h / 0.5);
+		0 0 0 3px oklch(from var(--primitive-color) calc(l + 0.12) c h / 0.95),
+		0 0 1.1rem 0.3rem oklch(from var(--primitive-color) l c h / 0.55),
+		0 0 2.4rem 0.6rem oklch(from var(--primitive-color) l c h / 0.3);
 }
 
 .landing-lantern-orb:focus-visible {
 	outline: 3px solid var(--color-text);
-	outline-offset: 3px;
+	outline-offset: 5px;
 }
 
 .landing-primitives[data-active] .landing-lantern-orb:not([data-open]) {
-	opacity: 0.68;
-	scale: 0.94;
+	background-color: oklch(from var(--color-background) l c h / 0.42);
 }
 
 /* Leader overlay: viewBox is set to the section's pixel size so paths are
@@ -1346,6 +1239,20 @@ html.is-settled {
 	pointer-events: none;
 	opacity: 0;
 	transition: opacity 0.4s ease;
+	/* Faint inside the glass (the painted orbs stay legible), full strength
+	   past the rim. The centre and radius are written from layout. */
+	mask-image: radial-gradient(
+		circle var(--glass-r, 0px) at var(--glass-x, -1000px)
+			var(--glass-y, -1000px),
+		rgb(0 0 0 / 0.28) 74%,
+		black 100%
+	);
+	-webkit-mask-image: radial-gradient(
+		circle var(--glass-r, 0px) at var(--glass-x, -1000px)
+			var(--glass-y, -1000px),
+		rgb(0 0 0 / 0.28) 74%,
+		black 100%
+	);
 }
 
 .landing-primitives-leaders[data-ready] {
@@ -1598,39 +1505,6 @@ html.is-settled {
 	}
 }
 
-@media (prefers-color-scheme: dark) {
-	.landing-lantern-metal-stop-a {
-		stop-color: oklch(0.46 0.012 260);
-	}
-
-	.landing-lantern-metal-stop-b {
-		stop-color: oklch(0.3 0.012 260);
-	}
-
-	.landing-lantern-metal {
-		stroke: oklch(0.6 0.012 260 / 0.55);
-		stroke-width: 1;
-	}
-
-	.landing-lantern-knob {
-		fill: oklch(0.52 0.012 260);
-	}
-
-	.landing-lantern-lip {
-		fill: oklch(0.26 0.012 260);
-		stroke: oklch(0.5 0.012 260 / 0.5);
-		stroke-width: 1;
-	}
-
-	.landing-lantern-halo-stop-a {
-		stop-color: oklch(0.82 0.14 80 / 0.6);
-	}
-
-	.landing-lantern-glass-stop-c {
-		stop-color: oklch(0.62 0.15 58);
-	}
-}
-
 .landing-vs {
 	max-width: 46rem;
 	margin: clamp(3.25rem, 7vw, 5rem) auto 0;
@@ -1861,32 +1735,6 @@ html.is-settled {
 	);
 	mix-blend-mode: screen;
 	pointer-events: none;
-}
-
-/* Five primitive orbs seated in the glass Kody holds. Same palette as the
-   primitives lantern and the travelling lights. Sits above the image and
-   below the light layer; parallaxes with the image via data-depth. */
-.landing-hero-agents-orbs {
-	position: absolute;
-	z-index: 1;
-	translate: -50% -50%;
-	overflow: visible;
-	pointer-events: none;
-}
-
-.landing-hero-agents-orb-halo {
-	fill: oklch(from var(--orb) l c h / 0.5);
-	filter: blur(0.06px);
-}
-
-.landing-hero-agents-orb-core {
-	fill: oklch(from var(--orb) calc(l + 0.06) c h);
-	stroke: oklch(from var(--orb) calc(l + 0.25) calc(c * 0.5) h / 0.9);
-	stroke-width: 0.03;
-}
-
-.landing-hero-agents-orb-shine {
-	fill: oklch(1 0 0 / 0.75);
 }
 
 .landing-hero-agents-list {

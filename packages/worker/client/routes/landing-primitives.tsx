@@ -9,7 +9,9 @@ import {
 	type LandingHomePrimitive,
 } from '#universal/landing-home-copy.ts'
 import {
+	landingLanternGlass,
 	landingLeaderOrbAnchor,
+	landingLeaderOrbExit,
 	landingLeaderPath,
 	landingLeaderSide,
 	landingLeaderWordAnchor,
@@ -53,12 +55,30 @@ function leaderFollow() {
 		const svg = node.querySelector<SVGSVGElement>('.landing-primitives-leaders')
 		if (!svg) return
 		const lead = node.querySelector<HTMLElement>('.landing-primitives-lead')
+		const lanternArt = node.querySelector<HTMLElement>('.landing-lantern-art')
 
 		const draw = () => {
 			if (getComputedStyle(svg).display === 'none') return
 			const origin = node.getBoundingClientRect()
 			if (origin.width === 0) return
 			svg.setAttribute('viewBox', `0 0 ${origin.width} ${origin.height}`)
+			if (lanternArt) {
+				// Lines run faint inside the glass and come up to full strength
+				// as they leave it (see the mask in styles.css).
+				const art = lanternArt.getBoundingClientRect()
+				svg.style.setProperty(
+					'--glass-x',
+					`${art.left - origin.left + art.width * landingLanternGlass.x}px`,
+				)
+				svg.style.setProperty(
+					'--glass-y',
+					`${art.top - origin.top + art.height * landingLanternGlass.y}px`,
+				)
+				svg.style.setProperty(
+					'--glass-r',
+					`${art.width * landingLanternGlass.r}px`,
+				)
+			}
 			for (const id of landingPrimitiveIds) {
 				const orb = node.querySelector<HTMLElement>(`[data-orb="${id}"]`)
 				const word = node.querySelector<HTMLElement>(`[data-word="${id}"]`)
@@ -67,12 +87,14 @@ function leaderFollow() {
 				)
 				if (!orb || !word || !leader) continue
 				const wordRect = word.getBoundingClientRect()
-				const from = landingLeaderOrbAnchor(orb.getBoundingClientRect(), origin)
-				const side = landingLeaderSide(from, {
+				const orbRect = orb.getBoundingClientRect()
+				const centre = landingLeaderOrbAnchor(orbRect, origin)
+				const side = landingLeaderSide(centre, {
 					top: wordRect.top - origin.top,
 					bottom: wordRect.bottom - origin.top,
 				})
 				const to = landingLeaderWordAnchor(wordRect, origin, side)
+				const from = landingLeaderOrbExit(centre, to, orbRect.width / 2)
 				const d = landingLeaderPath(from, to, side)
 				for (const path of leader.querySelectorAll('path')) {
 					path.setAttribute('d', d)
