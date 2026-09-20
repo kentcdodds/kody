@@ -280,7 +280,11 @@ export function HomeRoute(handle: Handle) {
 						<div class="landing-path-stem" aria-hidden="true"></div>
 						<ul class="landing-path-fan" aria-label="Example triggers">
 							{landingFactoryBeats.map((beat, index) => (
-								<li key={beat.title} mix={reveal(index * 70)}>
+								<li
+									key={beat.title}
+									class="landing-path-fan-slot"
+									mix={reveal(index * 70)}
+								>
 									<a
 										href={routes.docDetail.href({ slug: beat.slug })}
 										class="landing-path-fan-item landing-path-fan-link"

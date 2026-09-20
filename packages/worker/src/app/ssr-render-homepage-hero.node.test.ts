@@ -194,5 +194,6 @@ test('homepage trigger cards link to dedicated example docs', async () => {
 		expect(html).toContain(beat.title)
 	}
 	expect(html).toContain('landing-path-fan-link')
+	expect(html).toContain('landing-path-fan-slot')
 	expect(html).not.toContain('href=""')
 })

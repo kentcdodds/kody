@@ -1497,7 +1497,7 @@ html.is-settled {
 	gap: 0.85rem;
 }
 
-.landing-path-fan:not(.landing-path-fan-chips) > li {
+.landing-path-fan-slot {
 	display: flex;
 	min-width: 0;
 }
