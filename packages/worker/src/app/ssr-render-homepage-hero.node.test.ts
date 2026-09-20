@@ -4,6 +4,17 @@ import { resetDataCacheForTests } from '#app/data-cache.ts'
 import { loadHomePageOnboardingData } from '#app/onboarding-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { landingHeroDemoPlaylistId } from '#universal/landing-hero-copy.ts'
+import {
+	landingCompareWithTitle,
+	landingCompareWithoutTitle,
+	landingHeroHeadline,
+	landingHeroLead,
+	landingHeroPrimaryCta,
+	landingHeroSecondaryCta,
+	landingHeroSubhead,
+	landingHomePrimitives,
+	landingVsHeading,
+} from '#universal/landing-home-copy.ts'
 import { createMemoryKv } from '#worker/test-support/auth-provider-harness.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 import { testOidcSigningEnv } from '#worker/test-support/oidc-signing-env.ts'
@@ -107,7 +118,7 @@ function homepageOnboardingFixture(
 	})
 }
 
-test('homepage hero headline and session-aware CTAs', async () => {
+test('homepage hero uses locked copy, compare, and session-aware connect CTA', async () => {
 	resetDataCacheForTests()
 	setAuthSessionSecret(testCookieSecret)
 	const env = createTestEnv()
@@ -122,33 +133,59 @@ test('homepage hero headline and session-aware CTAs', async () => {
 		},
 	})
 	expect(anonymous.status).toBe(200)
-	const anonymousHero = landingHeroMarkup(await anonymous.text())
-	expect(anonymousHero).toContain('landing-hero-actions')
-	expect(anonymousHero).toContain('landing-hero-title-line')
-	expect(anonymousHero).toContain('Create a free account')
-	expect(anonymousHero).toContain('Copy the discovery prompt')
-	expect(anonymousHero).toContain('landing-hero-top')
-	expect(anonymousHero).toContain('landing-hero-video')
-	expect(anonymousHero).toContain(
+	const anonymousHtml = await anonymous.text()
+	const anonymousHero = landingHeroMarkup(anonymousHtml)
+	expect(anonymousHero).toContain(landingHeroHeadline)
+	expect(anonymousHero).toContain(landingHeroSubhead)
+	expect(anonymousHero).toContain(landingHeroLead)
+	expect(anonymousHero).toContain(landingHeroPrimaryCta)
+	expect(anonymousHero).toContain(landingHeroSecondaryCta)
+	expect(anonymousHero).toContain('href="#primitives"')
+	expect(anonymousHero).toContain('/signup?utm_source=kody.codes')
+	expect(anonymousHero).toContain(landingCompareWithoutTitle)
+	expect(anonymousHero).toContain(landingCompareWithTitle)
+	expect(anonymousHero).not.toContain('landing-hero-video')
+	expect(anonymousHero).not.toContain('landing-hero-agents')
+	expect(anonymousHtml).toContain('id="primitives"')
+	expect(anonymousHtml).toContain(landingVsHeading)
+	expect(anonymousHtml).toContain('href="/docs"')
+	expect(anonymousHtml).toContain(landingHomePrimitives[0]!.body)
+	expect(anonymousHtml).toContain('landing-proof')
+	expect(anonymousHtml).toContain('landing-hero-agents')
+	expect(anonymousHtml).toContain('landing-videos')
+	expect(anonymousHtml).toContain('role="listbox"')
+	expect(anonymousHtml).toContain(
 		`/youtube-thumb/${homepageHeroVideos[0].videoId}`,
 	)
-	expect(anonymousHero).toContain('role="listbox"')
-	const optionThumbs = [
-		...anonymousHero.matchAll(
-			/role="option"[\s\S]*?\/youtube-thumb\/([A-Za-z0-9_-]{11})/g,
-		),
-	].map((match) => match[1])
-	expect(optionThumbs).toEqual(homepageHeroVideos.map((video) => video.videoId))
-	for (const video of homepageHeroVideos) {
-		expect(anonymousHero).toContain(`/youtube-thumb/${video.videoId}`)
-	}
-	expect(anonymousHero).toContain(
+	expect(anonymousHtml).toContain(
 		`data-embed-playlist="${landingHeroDemoPlaylistId}"`,
 	)
-	expect(anonymousHero).toContain('landing-hero-agents')
-	expect(anonymousHero.indexOf('landing-hero-top')).toBeLessThan(
-		anonymousHero.indexOf('landing-hero-agents'),
+	expect(anonymousHtml.indexOf('landing-hero')).toBeLessThan(
+		anonymousHtml.indexOf('id="primitives"'),
 	)
+	expect(anonymousHtml.indexOf('id="primitives"')).toBeLessThan(
+		anonymousHtml.indexOf('landing-vs'),
+	)
+	expect(anonymousHtml.indexOf('landing-vs')).toBeLessThan(
+		anonymousHtml.indexOf('id="durable-software"'),
+	)
+	expect(anonymousHtml.indexOf('id="durable-software"')).toBeLessThan(
+		anonymousHtml.indexOf('landing-proof'),
+	)
+	expect(anonymousHtml.indexOf('landing-proof')).toBeLessThan(
+		anonymousHtml.indexOf('landing-testimonials'),
+	)
+	expect(anonymousHtml.indexOf('landing-testimonials')).toBeLessThan(
+		anonymousHtml.indexOf('landing-ecosystem'),
+	)
+	expect(anonymousHtml.indexOf('landing-ecosystem')).toBeLessThan(
+		anonymousHtml.indexOf('landing-videos'),
+	)
+	expect(anonymousHtml.indexOf('landing-videos')).toBeLessThan(
+		anonymousHtml.indexOf('id="invite"'),
+	)
+	expect(anonymousHtml).not.toContain('landing-hero-agent-light')
+	expect(anonymousHtml).not.toContain('landing-hero-agent-line')
 
 	const signedIn = await renderAppPage({
 		request: new Request(requestUrl),
@@ -159,10 +196,12 @@ test('homepage hero headline and session-aware CTAs', async () => {
 		},
 	})
 	expect(signedIn.status).toBe(200)
-	const signedInHero = landingHeroMarkup(await signedIn.text())
-	expect(signedInHero).not.toContain('landing-hero-actions')
-	expect(signedInHero).not.toContain('Create a free account')
-	expect(signedInHero).not.toContain('Copy the discovery prompt')
-	expect(signedInHero).toContain('landing-hero-video')
-	expect(signedInHero).toContain('landing-hero-agents')
+	const signedInHtml = await signedIn.text()
+	const signedInHero = landingHeroMarkup(signedInHtml)
+	expect(signedInHero).toContain(landingHeroPrimaryCta)
+	expect(signedInHero).toContain('href="/onboarding"')
+	expect(signedInHero).not.toContain('/signup?utm_source=kody.codes')
+	expect(signedInHero).toContain(landingHeroSecondaryCta)
+	expect(signedInHtml).toContain('landing-videos')
+	expect(signedInHtml).toContain('landing-hero-agents')
 })

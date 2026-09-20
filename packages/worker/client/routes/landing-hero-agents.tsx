@@ -1,9 +1,8 @@
-import { type Handle, ref } from 'remix/ui'
+import { type Handle } from 'remix/ui'
 import { stageParallax } from '#client/hero-stage.tsx'
 import {
 	landingLantern,
 	landingOrbitAgents,
-	landingOrbitTetherPath,
 } from '#universal/landing-agent-orbit.ts'
 import { heroBaseImage } from '#universal/landing-images.ts'
 import {
@@ -13,22 +12,10 @@ import {
 } from '#universal/walkthrough-hosts.ts'
 
 /**
- * Hero stage: Kody holds the lantern while the agents you already use float
- * around as logo tokens, each tethered to the lantern by a bézier. Balls of
- * lantern light run both ways on independent clocks (driven by the same
- * frame loop that keeps the tethers attached; motion-only), so several are
- * in flight at once and the overlaps keep shifting — inbound reads as the
- * agents feeding the account, outbound as Kody answering back.
- *
- * Tethers sit in front of Kody so every line and light visibly arrives at
- * the lantern instead of vanishing behind his body; a radial mask centred on
- * the globe dissolves them into its glow rather than drawing across it.
- * Replaces the old hub-and-spoke chip arc and the separate "Meet Kody" stage.
- *
- * Coordinates are percentages of the square stage; the SVG line layer shares
- * the 0–100 viewBox so SSR draws the tethers at rest, and `tetherFollow`
- * keeps them pinned once tokens and Kody start moving. Orbit positions live
- * in `#universal/landing-agent-orbit` so OG cards can compose the same still.
+ * Proof stage: Kody holds the lantern while the agents you already use
+ * float around as logo tokens. Connector lines stay off; the tokens keep
+ * their drift. Orbit positions live in `#universal/landing-agent-orbit` so
+ * OG cards can compose the same still.
  */
 
 /** Slot motion. Identities come from the SSR-shuffled catalog: pinned hosts
@@ -168,189 +155,6 @@ export function landingHeroLightProximity(input: {
  *  in front of the backdrop. */
 const tokenDepth = '0.32'
 
-const tetherPath = landingOrbitTetherPath
-
-/** Keep every tether pinned to its token and to the lantern while both move
- *  (drift, pointer parallax), and move each light along its tether. Positions
- *  are read from layout each frame and written back as viewBox units, so the
- *  SVG itself never transforms. Runs only while the stage is on screen; under
- *  reduced motion nothing moves and lights stay hidden, so a single pass
- *  after layout (and on resize) is enough. */
-function tetherFollow(agents: ReadonlyArray<LandingHeroAgent>) {
-	return ref((node: Element, signal: AbortSignal) => {
-		const kody = node.querySelector<HTMLElement>('.landing-hero-agents-kody')
-		const lines = node.querySelector<SVGSVGElement>(
-			'.landing-hero-agents-lines',
-		)
-		const tiles = [
-			...node.querySelectorAll<HTMLElement>('.landing-hero-agent-tile'),
-		]
-		const tethers = [
-			...node.querySelectorAll<SVGGElement>('.landing-hero-agent-tether'),
-		]
-		if (!kody || !lines || tiles.length === 0) return
-
-		let clock = 0
-		let lastNow = performance.now()
-		let pointer: { x: number; y: number } | null = null
-		const finePointer = matchMedia('(hover: hover) and (pointer: fine)')
-
-		const draw = () => {
-			const now = performance.now()
-			const dt = Math.min(0.05, (now - lastNow) / 1000)
-			lastNow = now
-			const stage = node.getBoundingClientRect()
-			if (stage.width === 0) return
-			const toUnits = (px: number, py: number) => ({
-				x: ((px - stage.left) / stage.width) * 100,
-				y: ((py - stage.top) / stage.height) * 100,
-			})
-			const kodyRect = kody.getBoundingClientRect()
-			const lanternPx = {
-				x: kodyRect.left + (kodyRect.width * lantern.x) / 100,
-				y: kodyRect.top + (kodyRect.height * lantern.y) / 100,
-			}
-			clock +=
-				dt *
-				landingHeroLightRate(
-					landingHeroLightProximity({
-						lantern: lanternPx,
-						pointer,
-						viewport: {
-							width: window.innerWidth,
-							height: window.innerHeight,
-						},
-						finePointer: finePointer.matches,
-					}),
-				)
-			const seconds = clock
-			const end = toUnits(lanternPx.x, lanternPx.y)
-			// The stage is square, so viewBox units double as percentages.
-			lines.style.setProperty('--lantern-x', `${end.x}%`)
-			lines.style.setProperty('--lantern-y', `${end.y}%`)
-			const starts = tiles.map((tile) => {
-				const rect = tile.getBoundingClientRect()
-				return toUnits(rect.left + rect.width / 2, rect.top + rect.height / 2)
-			})
-			for (const tether of tethers) {
-				const index = Number(tether.dataset.agent)
-				const start = starts[index]
-				const agent = agents[index]
-				if (!start || !agent) continue
-				const d = tetherPath(start.x, start.y, end.x, end.y)
-				for (const path of tether.querySelectorAll('path')) {
-					path.setAttribute('d', d)
-				}
-				const line = tether.querySelector<SVGPathElement>(
-					'.landing-hero-agent-line',
-				)
-				const lights = tether.querySelectorAll<SVGGElement>(
-					'g.landing-hero-agent-light',
-				)
-				if (!line || lights.length === 0) continue
-				const length = line.getTotalLength()
-				for (const light of lights) {
-					const direction = light.dataset.direction === 'out' ? 'out' : 'in'
-					const at = landingHeroLightAt(agent, seconds, direction)
-					if (!at) {
-						light.setAttribute('opacity', '0')
-						continue
-					}
-					const point = line.getPointAtLength(at.progress * length)
-					light.setAttribute(
-						'transform',
-						`translate(${point.x} ${point.y}) scale(${at.scale})`,
-					)
-					light.setAttribute('opacity', String(at.opacity))
-				}
-			}
-		}
-
-		const motionOk = matchMedia('(prefers-reduced-motion: no-preference)')
-		let raf: number | null = null
-		let visible = false
-		const tick = () => {
-			raf = null
-			draw()
-			if (visible && motionOk.matches) raf = requestAnimationFrame(tick)
-		}
-		const wake = () => {
-			lastNow = performance.now()
-			if (raf == null) raf = requestAnimationFrame(tick)
-		}
-
-		const observer = new IntersectionObserver(([entry]) => {
-			visible = entry?.isIntersecting ?? false
-			wake()
-		})
-		observer.observe(node)
-		window.addEventListener(
-			'pointermove',
-			(event) => {
-				if (!(event instanceof PointerEvent)) return
-				pointer = { x: event.clientX, y: event.clientY }
-			},
-			{ signal, passive: true },
-		)
-		window.addEventListener('resize', wake, { signal })
-		motionOk.addEventListener('change', wake, { signal })
-		finePointer.addEventListener('change', wake, { signal })
-		wake()
-		signal.addEventListener('abort', () => {
-			observer.disconnect()
-			if (raf != null) cancelAnimationFrame(raf)
-		})
-	})
-}
-
-/** The SVG of every tether, drawn over Kody. Lights start hidden;
- *  `tetherFollow` places them. */
-function renderTetherLayer(agents: ReadonlyArray<LandingHeroAgent>) {
-	return (
-		<svg
-			class="landing-hero-agents-lines"
-			viewBox="0 0 100 100"
-			aria-hidden="true"
-			style={{
-				'--lantern-x': `${lantern.x}%`,
-				'--lantern-y': `${lantern.y}%`,
-			}}
-		>
-			<g class="landing-hero-agents-tethers">
-				{agents.map((agent, index) => {
-					const d = tetherPath(agent.x, agent.y, lantern.x, lantern.y)
-					return (
-						<g
-							key={agent.label}
-							class="landing-hero-agent-tether"
-							data-agent={String(index)}
-						>
-							<path class="landing-hero-agent-glow" d={d} fill="none" />
-							<path class="landing-hero-agent-line" d={d} fill="none" />
-							<g
-								class="landing-hero-agent-light"
-								data-direction="in"
-								opacity="0"
-							>
-								<circle class="landing-hero-agent-light-halo" r="2.4" />
-								<circle class="landing-hero-agent-light-core" r="0.85" />
-							</g>
-							<g
-								class="landing-hero-agent-light"
-								data-direction="out"
-								opacity="0"
-							>
-								<circle class="landing-hero-agent-light-halo" r="2.4" />
-								<circle class="landing-hero-agent-light-core" r="0.85" />
-							</g>
-						</g>
-					)
-				})}
-			</g>
-		</svg>
-	)
-}
-
 export function LandingHeroAgents(
 	handle: Handle<{ hosts?: WalkthroughHostPick }>,
 ) {
@@ -364,12 +168,9 @@ export function LandingHeroAgents(
 			>
 				<figcaption class="visually-hidden">
 					Kody the koala holding a warmly glowing lantern, with the agents it
-					plugs into floating around it, each connected to Kody.
+					plugs into floating around it.
 				</figcaption>
-				<div
-					class="landing-hero-agents-stage"
-					mix={[stageParallax(), tetherFollow(agents)]}
-				>
+				<div class="landing-hero-agents-stage" mix={stageParallax()}>
 					<img
 						src={heroBaseImage.src}
 						srcSet={heroBaseImage.srcSet}
@@ -387,7 +188,6 @@ export function LandingHeroAgents(
 						style={{ left: `${lantern.x}%`, top: `${lantern.y}%` }}
 						data-depth="-0.06"
 					></div>
-					{renderTetherLayer(agents)}
 					<ul
 						aria-label="Agents Kody plugs into"
 						class="landing-hero-agents-list"

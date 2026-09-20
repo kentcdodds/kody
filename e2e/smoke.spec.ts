@@ -18,7 +18,7 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	).toBeVisible()
 	await expect(
 		page.getByRole('heading', {
-			name: /Stop Sweating Switching Agents/i,
+			name: /start over in every agent/i,
 		}),
 	).toBeVisible()
 

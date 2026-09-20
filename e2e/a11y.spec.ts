@@ -19,7 +19,7 @@ const publicRoutes: RouteScenario[] = [
 		ready: async (page) => {
 			await expect(
 				page.getByRole('heading', {
-					name: /Stop Sweating Switching Agents/i,
+					name: /start over in every agent/i,
 				}),
 			).toBeVisible()
 		},
