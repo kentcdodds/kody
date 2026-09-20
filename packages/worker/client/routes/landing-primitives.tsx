@@ -13,25 +13,27 @@ import {
 	landingLeaderOrbAnchor,
 	landingLeaderOrbExit,
 	landingLeaderPath,
-	landingLeaderSide,
 	landingLeaderWordAnchor,
 	landingPrimitiveColorVar,
 	landingPrimitiveIds,
 	type LandingPrimitiveId,
 } from '#universal/landing-lantern.ts'
-import { LandingLantern } from '#client/routes/landing-lantern.tsx'
+import {
+	LandingLantern,
+	pointerHovers,
+} from '#client/routes/landing-lantern.tsx'
 
 /**
- * Homepage primitives row: the five-orb lantern beside the primitives
- * sentence. Each orb and each named word is a disclosure for the same
- * popover: hover, focus, or click opens one; Escape, blur, and leaving close
+ * Homepage primitives block: the locked intro line, then the five-orb
+ * lantern with the five words listed beside it, then the learn-more line.
+ * Each orb and each word is a disclosure for the same popover: hover, focus, or click opens one; Escape, blur, and leaving close
  * it. Escape does not move focus, so a hovered trigger stays dismissed
  * instead of reopening on focusin. Opening another primitive dismisses the
  * previous one so :hover and :focus-within cannot stack two panels.
  *
- * Leader lines run from each orb to its word. They are measured from layout
- * (orb centre to the word's underline) and redrawn on resize and font load,
- * so they track wrapping. The overlay is `display: none` on narrow screens
+ * Leader lines run from each orb to the colored dot before its word. They
+ * are measured from layout and redrawn on resize and font load, so they
+ * track wrapping. The overlay is `display: none` on narrow screens
  * and the measurement skips while it is hidden. No-JS keeps the definitions
  * in the document for read-out and simply has no lines.
  */
@@ -40,26 +42,18 @@ export const landingPrimitivesSectionId = 'primitives'
 
 const whatIsKodyHref = docHref('what-is-kody')
 
-/** Punctuation that follows each word. It stays glued to the word (the
- *  button is an atomic inline, so a bare comma could otherwise wrap onto
- *  the next line); the space after it is the break opportunity. */
-function primitiveTail(index: number, count: number) {
-	if (index === count - 1) return '.'
-	if (index === count - 2) return ', and'
-	return ','
-}
-
 /** Measure orbs and words, then write the leader paths in section pixels. */
 function leaderFollow() {
 	return ref((node: Element, signal: AbortSignal) => {
 		const svg = node.querySelector<SVGSVGElement>('.landing-primitives-leaders')
-		if (!svg) return
-		const lead = node.querySelector<HTMLElement>('.landing-primitives-lead')
+		const stage = node.querySelector<HTMLElement>('.landing-primitives-stage')
+		if (!svg || !stage) return
+		const words = node.querySelector<HTMLElement>('.landing-primitives-words')
 		const lanternArt = node.querySelector<HTMLElement>('.landing-lantern-art')
 
 		const draw = () => {
 			if (getComputedStyle(svg).display === 'none') return
-			const origin = node.getBoundingClientRect()
+			const origin = stage.getBoundingClientRect()
 			if (origin.width === 0) return
 			svg.setAttribute('viewBox', `0 0 ${origin.width} ${origin.height}`)
 			if (lanternArt) {
@@ -81,28 +75,18 @@ function leaderFollow() {
 			}
 			for (const id of landingPrimitiveIds) {
 				const orb = node.querySelector<HTMLElement>(`[data-orb="${id}"]`)
-				const word = node.querySelector<HTMLElement>(`[data-word="${id}"]`)
+				const dot = node.querySelector<HTMLElement>(`[data-dot="${id}"]`)
 				const leader = svg.querySelector<SVGGElement>(
 					`[data-primitive="${id}"]`,
 				)
-				if (!orb || !word || !leader) continue
-				const wordRect = word.getBoundingClientRect()
+				if (!orb || !dot || !leader) continue
 				const orbRect = orb.getBoundingClientRect()
 				const centre = landingLeaderOrbAnchor(orbRect, origin)
-				const side = landingLeaderSide(centre, {
-					top: wordRect.top - origin.top,
-					bottom: wordRect.bottom - origin.top,
-				})
-				const to = landingLeaderWordAnchor(wordRect, origin, side)
+				const to = landingLeaderWordAnchor(dot.getBoundingClientRect(), origin)
 				const from = landingLeaderOrbExit(centre, to, orbRect.width / 2)
-				const d = landingLeaderPath(from, to, side)
+				const d = landingLeaderPath(from, to)
 				for (const path of leader.querySelectorAll('path')) {
 					path.setAttribute('d', d)
-				}
-				const dot = leader.querySelector('circle')
-				if (dot) {
-					dot.setAttribute('cx', String(to.x))
-					dot.setAttribute('cy', String(to.y))
 				}
 			}
 			svg.dataset.ready = ''
@@ -118,8 +102,8 @@ function leaderFollow() {
 		}
 
 		const observer = new ResizeObserver(schedule)
-		observer.observe(node)
-		if (lead) observer.observe(lead)
+		observer.observe(stage)
+		if (words) observer.observe(words)
 		window.addEventListener('resize', schedule, { signal })
 		const narrow = matchMedia('(max-width: 800px)')
 		narrow.addEventListener('change', schedule, { signal })
@@ -151,7 +135,6 @@ function renderLeaders(activeId: LandingPrimitiveId | null) {
 					<path class="landing-leader-halo" fill="none" />
 					<path class="landing-leader-base" fill="none" />
 					<path class="landing-leader-flow" fill="none" />
-					<circle class="landing-leader-dot" r="3" />
 				</g>
 			))}
 		</svg>
@@ -212,51 +195,49 @@ export function LandingPrimitives(handle: Handle) {
 	return () => (
 		<section
 			id={landingPrimitivesSectionId}
-			aria-label="Kody primitives"
+			aria-labelledby="primitives-title"
 			class="landing-primitives"
 			data-active={openId ?? undefined}
 			mix={follow}
 		>
-			<LandingLantern
-				activeId={openId}
-				panelId={panelId}
-				onOpen={setOpen}
-				onToggle={toggle}
-				onClose={close}
-				onDismiss={dismiss}
-				onResume={clearDismissed}
-			/>
-			{renderLeaders(openId)}
-			<div class="landing-primitives-copy">
-				<p class="landing-primitives-lead">
-					{landingPrimitivesIntroLead}
-					{landingHomePrimitives.map((primitive, index) => (
-						<span key={primitive.id}>
-							<span class="landing-primitive-item">
-								<LandingPrimitiveWord
-									primitive={primitive}
-									panelId={panelId(primitive.id)}
-									open={openId === primitive.id}
-									dismissed={dismissedId === primitive.id}
-									onOpen={() => setOpen(primitive.id)}
-									onToggle={() => toggle(primitive.id)}
-									onClose={() => close(primitive.id)}
-									onDismiss={() => dismiss(primitive.id)}
-									onResume={() => clearDismissed(primitive.id)}
-								/>
-								{primitiveTail(index, landingHomePrimitives.length)}
-							</span>
-							{index < landingHomePrimitives.length - 1 ? ' ' : null}
-						</span>
+			<h2 id="primitives-title" class="landing-primitives-lead">
+				{landingPrimitivesIntroLead}
+			</h2>
+			<div class="landing-primitives-stage">
+				<LandingLantern
+					activeId={openId}
+					panelId={panelId}
+					onOpen={setOpen}
+					onToggle={toggle}
+					onClose={close}
+					onDismiss={dismiss}
+					onResume={clearDismissed}
+				/>
+				{renderLeaders(openId)}
+				<ul class="landing-primitives-words" aria-label="The five primitives">
+					{landingHomePrimitives.map((primitive) => (
+						<li key={primitive.id} class="landing-primitive-item">
+							<LandingPrimitiveWord
+								primitive={primitive}
+								panelId={panelId(primitive.id)}
+								open={openId === primitive.id}
+								dismissed={dismissedId === primitive.id}
+								onOpen={() => setOpen(primitive.id)}
+								onToggle={() => toggle(primitive.id)}
+								onClose={() => close(primitive.id)}
+								onDismiss={() => dismiss(primitive.id)}
+								onResume={() => clearDismissed(primitive.id)}
+							/>
+						</li>
 					))}
-				</p>
-				<p class="landing-primitives-more">
-					{landingPrimitivesMoreLead}{' '}
-					<a href={whatIsKodyHref} class="landing-inline-link">
-						{landingPrimitivesMoreLink}
-					</a>
-				</p>
+				</ul>
 			</div>
+			<p class="landing-primitives-more">
+				{landingPrimitivesMoreLead}{' '}
+				<a href={whatIsKodyHref} class="landing-inline-link">
+					{landingPrimitivesMoreLink}
+				</a>
+			</p>
 		</section>
 	)
 }
@@ -295,8 +276,11 @@ function LandingPrimitiveWord(
 					'--primitive-color': landingPrimitiveColorVar(primitive.id),
 				}}
 				mix={[
-					on('mouseenter', onOpen),
+					on('mouseenter', () => {
+						if (pointerHovers()) onOpen()
+					}),
 					on('mouseleave', (event: MouseEvent) => {
+						if (!pointerHovers()) return
 						closeIfLeaving(event.currentTarget, event.relatedTarget)
 					}),
 					on('focusin', onOpen),
@@ -320,6 +304,11 @@ function LandingPrimitiveWord(
 					}),
 				]}
 			>
+				<span
+					class="landing-primitive-dot"
+					data-dot={primitive.id}
+					aria-hidden="true"
+				></span>
 				<button
 					type="button"
 					class="landing-primitive-word"

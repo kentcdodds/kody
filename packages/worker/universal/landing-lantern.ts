@@ -61,53 +61,31 @@ export function landingOrbitLightTone(index: number): LandingPrimitiveId {
 
 export type LandingLeaderPoint = { x: number; y: number }
 
-/** Which edge of the word a leader lands on. */
-export type LandingLeaderSide = 'top' | 'bottom'
-
 /**
- * A leader lands on the edge of the word that faces its orb: words above the
- * orb are entered from below, words below it from above. The curve then
- * rises or falls once instead of looping past the word and back.
- */
-export function landingLeaderSide(
-	orb: LandingLeaderPoint,
-	word: { top: number; bottom: number },
-): LandingLeaderSide {
-	const wordMid = (word.top + word.bottom) / 2
-	return wordMid < orb.y ? 'bottom' : 'top'
-}
-
-/**
- * Cubic from an orb centre to the word anchor. It leaves the glass on a
- * horizontal tangent and arrives vertically, from above or below, so the
- * last stretch drops onto the word rather than running along the line of
- * text. Coordinates are pixels relative to the primitives section; the
- * SVG's viewBox is set to the section size so units map one to one.
+ * Cubic from an orb to the word's dot with horizontal tangents at both
+ * ends: it leaves the glass sideways and glides into the dot from the
+ * left. Coordinates are pixels relative to the stage; the SVG's viewBox is
+ * set to the stage size so units map one to one.
  */
 export function landingLeaderPath(
 	from: LandingLeaderPoint,
 	to: LandingLeaderPoint,
-	side: LandingLeaderSide = 'bottom',
 ) {
 	const dx = to.x - from.x
-	const dy = to.y - from.y
-	const reach = Math.max(Math.abs(dx) * 0.45, 24)
-	const lift = Math.min(Math.max(Math.abs(dy) * 0.5, 18), 56)
+	const reach = Math.max(Math.abs(dx) * 0.5, 24)
 	const c1 = { x: from.x + reach, y: from.y }
-	const c2 = { x: to.x, y: side === 'top' ? to.y - lift : to.y + lift }
+	const c2 = { x: to.x - reach * 0.6, y: to.y }
 	return `M${round(from.x)} ${round(from.y)} C${round(c1.x)} ${round(c1.y)} ${round(c2.x)} ${round(c2.y)} ${round(to.x)} ${round(to.y)}`
 }
 
-/** Word anchor: centred just past the chosen edge of the word box. */
+/** Word anchor: the left edge of the colored dot before the word. */
 export function landingLeaderWordAnchor(
-	rect: { left: number; width: number; top: number; bottom: number },
+	rect: { left: number; top: number; height: number },
 	origin: { left: number; top: number },
-	side: LandingLeaderSide = 'bottom',
 ): LandingLeaderPoint {
 	return {
-		x: rect.left + rect.width / 2 - origin.left,
-		y:
-			side === 'top' ? rect.top - origin.top - 4 : rect.bottom - origin.top + 4,
+		x: rect.left - origin.left - 2,
+		y: rect.top + rect.height / 2 - origin.top,
 	}
 }
 

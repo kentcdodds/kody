@@ -20,6 +20,13 @@ import {
  * `#universal/landing-lantern` so measurement and art stay in one place.
  */
 
+/** Hover only opens on devices that hover. Touch taps fire synthetic
+ *  mouseenter/mouseleave around the click, which would close what the tap
+ *  just opened. Evaluated per event so a mouse plugged into a tablet counts. */
+export function pointerHovers() {
+	return matchMedia('(hover: hover)').matches
+}
+
 function primitiveById(id: LandingPrimitiveId): LandingHomePrimitive {
 	return landingHomePrimitives.find((primitive) => primitive.id === id)!
 }
@@ -78,8 +85,12 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 								aria-controls={panelId(orb.id)}
 								aria-describedby={panelId(orb.id)}
 								mix={[
-									on('mouseenter', () => onOpen(orb.id)),
-									on('mouseleave', () => leave(orb.id)),
+									on('mouseenter', () => {
+										if (pointerHovers()) onOpen(orb.id)
+									}),
+									on('mouseleave', () => {
+										if (pointerHovers()) leave(orb.id)
+									}),
 									on('focusin', () => onOpen(orb.id)),
 									on('focusout', () => leave(orb.id)),
 									on('click', () => onToggle(orb.id)),

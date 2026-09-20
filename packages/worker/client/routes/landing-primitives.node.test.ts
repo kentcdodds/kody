@@ -27,7 +27,16 @@ test('primitives sentence renders dash-underlined disclosures and the what-is-Ko
 	}
 
 	expect(html).toContain('landing-primitive-word')
-	expect(html).toContain('landing-primitive-item')
+	expect(html).toContain('id="primitives-title"')
+	expect(html).toContain('landing-primitives-stage')
+	expect(html).toContain('landing-primitives-words')
+	expect(html.match(/data-dot="/g)).toHaveLength(landingHomePrimitives.length)
+	expect(html.indexOf('id="primitives-title"')).toBeLessThan(
+		html.indexOf('landing-lantern'),
+	)
+	expect(html.indexOf('landing-primitives-words')).toBeLessThan(
+		html.indexOf(landingPrimitivesMoreLink),
+	)
 	expect(html).not.toContain('data-dismissed')
 	expect(html).not.toContain('data-active')
 	expect(html).not.toContain('\u2014')

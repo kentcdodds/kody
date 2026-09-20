@@ -18,7 +18,7 @@ export const landingHeroPrimaryCta = 'Connect your agent'
 export const landingHeroSecondaryCta = 'See how it works'
 
 export const landingPrimitivesIntroLead =
-	'Kody gives your agents a shared set of primitives: '
+	'Kody gives your agents a shared set of primitives.'
 export const landingPrimitivesMoreLead = 'Want the full picture?'
 export const landingPrimitivesMoreLink = 'What is Kody?'
 
