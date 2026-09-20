@@ -60,9 +60,11 @@ SSR (fail loud in dev).
   `options.target` (the frame `name`) when fetching `src`, and `frameFetchUrl`
   adds `__frame=<name>` so the request misses the document cache. Non-GET frame
   navigations forward `options.method` and `options.formData`. The resolver
-  returns the `Response` so Remix can read redirects and the body. A body that
-  starts with `<!doctype` or `<html` is rejected instead of rendered into the
-  frame.
+  returns the `Response` so Remix can read redirects and the body. A named-frame
+  body that starts with `<!doctype` or `<html` is rejected instead of rendered
+  into that frame (a document would nest another shell). Document
+  soft-navigations reload the top frame through the same resolver with no
+  `target`; a full document is the page and is rendered.
 - Server `handleFrameRequest` reads the header, then `__frame`, and selects the
   registered frame. The visible page URL is unchanged: `src` on `<Frame>` stays
   the route `href()`.
