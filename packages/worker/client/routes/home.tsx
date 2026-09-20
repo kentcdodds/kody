@@ -369,24 +369,26 @@ export function HomeRoute(handle: Handle) {
 							class="landing-walkthrough-story notranslate"
 							translate="no"
 						>
-							<h3
-								id="walkthrough-title"
-								class="landing-section-heading landing-walkthrough-heading"
-							>
-								Watch some example conversations
-							</h3>
-							{walkthroughHosts ? (
-								<div class="landing-walkthrough-intro">
-									<WalkthroughHostIntro
-										variant="picker"
-										hosts={walkthroughHosts}
-										onHostsChange={(next) => {
-											walkthroughHosts = next
-											handle.update()
-										}}
-									/>
-								</div>
-							) : null}
+							<div class="landing-walkthrough-copy">
+								<h3
+									id="walkthrough-title"
+									class="landing-section-heading landing-walkthrough-heading"
+								>
+									Watch some example conversations
+								</h3>
+								{walkthroughHosts ? (
+									<div class="landing-walkthrough-intro">
+										<WalkthroughHostIntro
+											variant="picker"
+											hosts={walkthroughHosts}
+											onHostsChange={(next) => {
+												walkthroughHosts = next
+												handle.update()
+											}}
+										/>
+									</div>
+								) : null}
+							</div>
 							<LandingLoopPlayer hosts={walkthroughHosts ?? undefined} />
 						</section>
 					</div>

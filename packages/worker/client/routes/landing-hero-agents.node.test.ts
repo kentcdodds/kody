@@ -1,9 +1,13 @@
+import { jsx } from 'remix/ui/jsx-runtime'
+import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
+import { landingPrimitiveIds } from '#universal/landing-lantern.ts'
 import {
 	listAllWalkthroughHosts,
 	pickWalkthroughHosts,
 } from '#universal/walkthrough-hosts.ts'
 import {
+	LandingHeroAgents,
 	landingHeroLightAt,
 	landingHeroLightProximity,
 	landingHeroLightRate,
@@ -113,4 +117,18 @@ test('hero tether lights travel inbound to the lantern and outbound to the agent
 			finePointer: false,
 		}),
 	).toBeLessThan(0.5)
+})
+
+test('orbit lights carry the five primitive colors and paint no connector', async () => {
+	const html = await renderToString(jsx(LandingHeroAgents, {}))
+
+	const tones = [...html.matchAll(/data-tone="([a-z]+)"/g)].map(
+		(match) => match[1],
+	)
+	expect(tones).toHaveLength(landingHeroSlots.length)
+	expect(new Set(tones)).toEqual(new Set(landingPrimitiveIds))
+	expect(html).toContain('--orb: var(--primitive-memory)')
+	expect(html).toContain('landing-hero-agent-track')
+	expect(html).not.toContain('landing-hero-agent-line')
+	expect(html).not.toContain('landing-hero-agent-glow')
 })

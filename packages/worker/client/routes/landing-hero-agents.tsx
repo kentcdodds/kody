@@ -7,14 +7,18 @@ import {
 } from '#universal/landing-agent-orbit.ts'
 import { heroBaseImage } from '#universal/landing-images.ts'
 import {
+	landingOrbitLightTone,
+	landingPrimitiveColorVar,
+} from '#universal/landing-lantern.ts'
+import {
 	listAllWalkthroughHosts,
 	type WalkthroughHost,
 	type WalkthroughHostPick,
 } from '#universal/walkthrough-hosts.ts'
 
 /**
- * Proof stage: Kody holds the lantern while the agents you already use
- * float around as logo tokens. Connector lines stay off; travelling orbs
+ * Proof stage: Kody holds the five-orb lantern while the agents you already
+ * use float around as logo tokens. Connector lines stay off; travelling orbs
  * still run both ways on the same clocks. Orbit positions live in
  * `#universal/landing-agent-orbit` so OG cards can compose the same still.
  */
@@ -290,7 +294,8 @@ function tetherFollow(agents: ReadonlyArray<LandingHeroAgent>) {
 }
 
 /** Invisible track plus travelling orbs. Lights start hidden; `tetherFollow`
- *  places them. No connector line or glow stroke is painted. */
+ *  places them. No connector line or glow stroke is painted. Each tether's
+ *  lights take one of the five primitive colors, cycling in ring order. */
 function renderOrbLayer(agents: ReadonlyArray<LandingHeroAgent>) {
 	return (
 		<svg
@@ -310,6 +315,10 @@ function renderOrbLayer(agents: ReadonlyArray<LandingHeroAgent>) {
 							key={agent.label}
 							class="landing-hero-agent-tether"
 							data-agent={String(index)}
+							data-tone={landingOrbitLightTone(index)}
+							style={{
+								'--orb': landingPrimitiveColorVar(landingOrbitLightTone(index)),
+							}}
 						>
 							<path class="landing-hero-agent-track" d={d} fill="none" />
 							<g
@@ -348,8 +357,9 @@ export function LandingHeroAgents(
 				class="landing-hero-art landing-hero-agents"
 			>
 				<figcaption class="visually-hidden">
-					Kody the koala holding a warmly glowing lantern, with the agents it
-					plugs into floating around it.
+					Kody the koala holding a warmly glowing lantern with five colored orbs
+					inside, one per primitive, with the agents it plugs into floating
+					around it.
 				</figcaption>
 				<div
 					class="landing-hero-agents-stage"
