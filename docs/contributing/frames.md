@@ -33,10 +33,20 @@ if (frameResponse) return frameResponse
 Passing the request pathname (rather than a fixed `href()`) lets the frame match
 parameterized routes via `pathnameMatchesFrameRoute`.
 
-`handleFrameRequest` checks `x-remix-target` (see `frame-constants.ts`). When
-the header matches a frame registered for that pathname, it returns bare
-fragment HTML with `Cache-Control: no-store`. Otherwise it returns `null` and
-the handler falls through to the full page.
+`handleFrameRequest` checks `x-remix-target` (see `frame-constants.ts`), and
+falls back to the `__frame` query param when a proxy kept the URL and dropped
+the header. When that target matches a frame registered for the pathname, it
+returns bare fragment HTML with `Cache-Control: no-store`. Otherwise it returns
+`null` and the handler falls through to the full page.
+
+Frame fetches must not reuse the cached document for `src`. Anonymous HTML is
+cached by URL (browser, Worker `caches.default`, Cloudflare), and none of those
+keys include `x-remix-target`. The client therefore fetches
+`frameFetchUrl(src, target)`, which appends `__frame=<name>`, and both the
+Worker cache and `resolveAppPageCacheControl` refuse to store or serve a
+document for a request that carries the header or that param. Inserting a cached
+`<!doctype html>` response into the frame redraws the shell, including the same
+frame, so the page nests copies of itself.
 
 SSR inlines frames via the same registry: `ssr-render.tsx` calls
 `resolveRegisteredFrameHtml` inside `resolveFrame`. Unknown targets throw during
@@ -47,10 +57,15 @@ SSR (fail loud in dev).
 - Constant: `REMIX_FRAME_TARGET_HEADER` (`x-remix-target`) in
   `frame-constants.ts`.
 - Client `entry.tsx` `resolveFrame(src, options)` sets the header to
-  `options.target` (the frame `name`) when fetching `src`. Non-GET frame
+  `options.target` (the frame `name`) when fetching `src`, and `frameFetchUrl`
+  adds `__frame=<name>` so the request misses the document cache. Non-GET frame
   navigations forward `options.method` and `options.formData`. The resolver
-  returns the `Response` so Remix can read redirects and the body.
-- Server `handleFrameRequest` reads the header and selects the registered frame.
+  returns the `Response` so Remix can read redirects and the body. A body that
+  starts with `<!doctype` or `<html` is rejected instead of rendered into the
+  frame.
+- Server `handleFrameRequest` reads the header, then `__frame`, and selects the
+  registered frame. The visible page URL is unchanged: `src` on `<Frame>` stays
+  the route `href()`.
 
 ## Auth scoping
 

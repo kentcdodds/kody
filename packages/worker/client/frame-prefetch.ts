@@ -1,4 +1,8 @@
-import { REMIX_FRAME_TARGET_HEADER } from '#universal/frame-constants.ts'
+import {
+	frameFetchUrl,
+	isFullHtmlDocumentPrefix,
+	REMIX_FRAME_TARGET_HEADER,
+} from '#universal/frame-constants.ts'
 
 type FrameCacheKey = string
 
@@ -29,11 +33,18 @@ export async function prefetchFrame(
 		if (target) {
 			headers.set(REMIX_FRAME_TARGET_HEADER, target)
 		}
-		const response = await fetch(src, { headers, signal })
+		const response = await fetch(frameFetchUrl(src, target), {
+			headers,
+			signal,
+			cache: 'no-store',
+		})
 		if (signal.aborted) return
 		if (!response.ok) return
 		const text = await response.text()
 		if (signal.aborted) return
+		// A document in the prefetch cache becomes the frame body and nests
+		// another shell. Drop it and let resolveFrame fetch again.
+		if (isFullHtmlDocumentPrefix(text)) return
 		frameCache.set(makeCacheKey(src, target), text)
 	} catch {
 		// Prefetch failures degrade to the normal resolveFrame fetch.

@@ -3,12 +3,15 @@
  * response that sets a cookie stay `no-store`. The origin Worker stores
  * cookie-less GET responses in `caches.default` keyed on canonical origin +
  * pathname + search plus a `__accept=html` marker; markdown-preferring
- * `Accept` values (`prefersMarkdown`) bypass the store. Hits restore the miss
- * `Vary` (`Cookie`, plus `Accept` on negotiated routes) so intermediary
- * caches still split on the session cookie.
+ * `Accept` values (`prefersMarkdown`) bypass the store. Frame fetches
+ * (`x-remix-target` or the `__frame` query param) bypass it too: those caches
+ * key on the URL, and returning the document nests another site shell inside
+ * the frame. Hits restore the miss `Vary` (`Cookie`, plus `Accept` on
+ * negotiated routes) so intermediary caches still split on the session cookie.
  */
 
 import { createMatcher } from 'remix/route-pattern/match'
+import { requestBypassesAnonymousDocumentCache } from '#universal/frame-constants.ts'
 import { routes } from '#universal/routes.ts'
 import { requestHasSiteBannerDismissCookie } from '#universal/site-banner-cookie.ts'
 
@@ -100,6 +103,11 @@ export function resolveAppPageCacheControl(input: {
 		return { cacheControl: 'no-store' }
 	}
 	if (requestHasSiteBannerDismissCookie(input.request)) {
+		return { cacheControl: 'no-store' }
+	}
+	// Frame reloads share the page URL. Caching that response stores the
+	// document where the frame expected a fragment.
+	if (requestBypassesAnonymousDocumentCache(input.request)) {
 		return { cacheControl: 'no-store' }
 	}
 	if (!isCacheableAnonymousPath(input.pathname)) {

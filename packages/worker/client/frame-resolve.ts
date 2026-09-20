@@ -1,6 +1,10 @@
 import { type ResolveFrameOptions } from 'remix/ui'
 import { isBrowserFetchNetworkError } from '#client/browser-fetch-network-error.ts'
-import { REMIX_FRAME_TARGET_HEADER } from '#universal/frame-constants.ts'
+import {
+	frameFetchUrl,
+	isFullHtmlDocumentPrefix,
+	REMIX_FRAME_TARGET_HEADER,
+} from '#universal/frame-constants.ts'
 
 const safeFrameMethods = new Set(['GET', 'HEAD'])
 
@@ -20,7 +24,13 @@ export function createFrameResolveInit(options?: ResolveFrameOptions) {
 	if (options?.target) {
 		headers.set(REMIX_FRAME_TARGET_HEADER, options.target)
 	}
-	const init: RequestInit = { headers, signal: options?.signal }
+	// `no-store` keeps the browser HTTP cache from replaying a document that
+	// was stored for the same URL under a different frame header.
+	const init: RequestInit = {
+		headers,
+		signal: options?.signal,
+		cache: 'no-store',
+	}
 	const method = options?.method?.trim()
 	if (method) {
 		init.method = method
@@ -44,8 +54,9 @@ export async function fetchFrameResolve(
 	options?: ResolveFrameOptions,
 ) {
 	const init = createFrameResolveInit(options)
+	const url = frameFetchUrl(src, options?.target)
 	try {
-		return await fetch(src, init)
+		return await fetch(url, init)
 	} catch (error: unknown) {
 		if (
 			!isBrowserFetchNetworkError(error) ||
@@ -53,7 +64,7 @@ export async function fetchFrameResolve(
 		) {
 			throw error
 		}
-		return await fetch(src, init)
+		return await fetch(url, init)
 	}
 }
 
@@ -77,6 +88,30 @@ export function assertRenderableFrameResponse(
 		)
 	}
 	return response
+}
+
+/**
+ * A frame reload must be a fragment. A cached document (`<!doctype` / `<html>`)
+ * inserted into the frame redraws the whole shell, and that shell contains
+ * the same frame, so the copies recurse.
+ */
+export async function rejectCachedDocumentFrameResponse(
+	response: Response,
+	src: string,
+	target?: string,
+) {
+	const prefix = await readResponsePrefix(response)
+	if (!isFullHtmlDocumentPrefix(prefix)) return response
+	throw new Error(
+		`Frame resolve received a cached document for ${src}${target ? ` target=${target}` : ''}`,
+	)
+}
+
+async function readResponsePrefix(response: Response) {
+	// Read the clone to completion. Cancelling a one-shot reader hangs in
+	// Node's fetch implementation, and frame bodies are small fragments.
+	const text = await response.clone().text()
+	return text.slice(0, 64)
 }
 
 function isSafeFrameMethod(method: string) {

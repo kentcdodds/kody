@@ -113,6 +113,20 @@ test('anonymous HTML Cache API stores only cookie-less 200 HTML with the shared 
 			canonicalEnv,
 		),
 	).toBe(true)
+	expect(
+		isAnonymousHtmlCacheRequest(
+			new Request('https://kody.codes/community', {
+				headers: { 'x-remix-target': 'community-listings' },
+			}),
+			canonicalEnv,
+		),
+	).toBe(false)
+	expect(
+		isAnonymousHtmlCacheRequest(
+			new Request('https://kody.codes/community?__frame=community-listings'),
+			canonicalEnv,
+		),
+	).toBe(false)
 
 	expect(
 		isAnonymousHtmlCacheRequest(
