@@ -5,6 +5,7 @@ import {
 	createFrameResolveInit,
 	fetchFrameResolve,
 	rejectCachedDocumentFrameResponse,
+	resolveClientFrame,
 } from './frame-resolve.ts'
 
 test('frame resolve never attaches a body to GET or HEAD, including lowercase methods', () => {
@@ -74,6 +75,10 @@ test('rejectCachedDocumentFrameResponse refuses a nested document', async () => 
 			headers: { 'Content-Type': 'text/html' },
 		},
 	)
+	// Target-less soft navigation reloads the top frame. The document is the page.
+	expect(
+		await rejectCachedDocumentFrameResponse(document, 'https://kody.codes/'),
+	).toBe(document)
 	await expect(
 		rejectCachedDocumentFrameResponse(
 			document,
@@ -83,6 +88,98 @@ test('rejectCachedDocumentFrameResponse refuses a nested document', async () => 
 	).rejects.toThrow(
 		'Frame resolve received a cached document for /community target=community-listings',
 	)
+})
+
+test('resolveClientFrame accepts a document without a frame target and rejects one for a named frame', async () => {
+	const documentHtml = '<!DOCTYPE html><html><body>page</body></html>'
+	const fragmentHtml = '<head></head><div>listings</div>'
+	const htmlResponse = (body: string, status = 200) =>
+		new Response(body, {
+			status,
+			headers: { 'Content-Type': 'text/html; charset=utf-8' },
+		})
+	const fetchMock = vi.fn()
+	vi.stubGlobal('fetch', fetchMock)
+	const miss = () => undefined
+	try {
+		fetchMock.mockResolvedValueOnce(htmlResponse(documentHtml))
+		const home = await resolveClientFrame(
+			'https://kody.codes/',
+			undefined,
+			miss,
+		)
+		expect(await home.text()).toBe(documentHtml)
+		expect(fetchMock).toHaveBeenCalledWith(
+			'https://kody.codes/',
+			expect.objectContaining({ cache: 'no-store' }),
+		)
+
+		fetchMock.mockResolvedValueOnce(htmlResponse(documentHtml))
+		const community = await resolveClientFrame('/community', {}, miss)
+		expect(await community.text()).toBe(documentHtml)
+		expect(fetchMock).toHaveBeenLastCalledWith(
+			'/community',
+			expect.objectContaining({ cache: 'no-store' }),
+		)
+
+		const cachedDocument = await resolveClientFrame(
+			'/',
+			undefined,
+			() => documentHtml,
+		)
+		expect(await cachedDocument.text()).toBe(documentHtml)
+
+		await expect(
+			resolveClientFrame(
+				'/community',
+				{ target: 'community-listings' },
+				() => documentHtml,
+			),
+		).rejects.toThrow(
+			'Frame resolve received a cached document for /community target=community-listings',
+		)
+
+		fetchMock.mockResolvedValueOnce(htmlResponse(documentHtml))
+		await expect(
+			resolveClientFrame('/community', { target: 'community-listings' }, miss),
+		).rejects.toThrow(
+			'Frame resolve received a cached document for /community target=community-listings',
+		)
+		expect(fetchMock).toHaveBeenLastCalledWith(
+			'/community?__frame=community-listings',
+			expect.objectContaining({ cache: 'no-store' }),
+		)
+		const namedInit = fetchMock.mock.calls.at(-1)?.[1] as RequestInit
+		expect((namedInit.headers as Headers).get(REMIX_FRAME_TARGET_HEADER)).toBe(
+			'community-listings',
+		)
+
+		fetchMock.mockResolvedValueOnce(htmlResponse(fragmentHtml))
+		const listings = await resolveClientFrame(
+			'/community?sort=newest',
+			{ target: 'community-listings' },
+			miss,
+		)
+		expect(await listings.text()).toBe(fragmentHtml)
+		expect(fetchMock).toHaveBeenLastCalledWith(
+			'/community?sort=newest&__frame=community-listings',
+			expect.objectContaining({ cache: 'no-store' }),
+		)
+
+		const cachedFragment = await resolveClientFrame(
+			'/community',
+			{ target: 'community-listings' },
+			() => fragmentHtml,
+		)
+		expect(await cachedFragment.text()).toBe(fragmentHtml)
+
+		fetchMock.mockResolvedValueOnce(htmlResponse(documentHtml, 500))
+		await expect(
+			resolveClientFrame('https://kody.codes/', undefined, miss),
+		).rejects.toThrow('Frame resolve failed (500) for https://kody.codes/')
+	} finally {
+		vi.unstubAllGlobals()
+	}
 })
 
 test('frame resolve retry keeps the cache-busting URL', async () => {

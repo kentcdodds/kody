@@ -1,5 +1,6 @@
 import { type ResolveFrameOptions } from 'remix/ui'
 import { isBrowserFetchNetworkError } from '#client/browser-fetch-network-error.ts'
+import { consumePrefetchedFrame } from '#client/frame-prefetch.ts'
 import {
 	frameFetchUrl,
 	isFullHtmlDocumentPrefix,
@@ -9,7 +10,7 @@ import {
 const safeFrameMethods = new Set(['GET', 'HEAD'])
 
 /** Wrap prefetched HTML so `resolveFrame` always returns a `Response`. */
-export function prefetchedFrameResponse(html: string) {
+function prefetchedFrameResponse(html: string) {
 	return new Response(html, {
 		headers: { 'Content-Type': 'text/html; charset=utf-8' },
 	})
@@ -91,19 +92,55 @@ export function assertRenderableFrameResponse(
 }
 
 /**
- * A frame reload must be a fragment. A cached document (`<!doctype` / `<html>`)
- * inserted into the frame redraws the whole shell, and that shell contains
- * the same frame, so the copies recurse.
+ * Named-frame reloads must be fragments. A cached document (`<!doctype` /
+ * `<html>`) inserted into that frame redraws the whole shell, and that shell
+ * contains the same frame, so the copies recurse.
+ *
+ * Document soft-navigations reload the top frame with no name, so `target` is
+ * omitted. A full document is the page itself and must not throw (KODY-7Y).
  */
+function rejectCachedDocumentHtml(html: string, src: string, target?: string) {
+	if (!target || !isFullHtmlDocumentPrefix(html)) return
+	throw new Error(
+		`Frame resolve received a cached document for ${src} target=${target}`,
+	)
+}
+
 export async function rejectCachedDocumentFrameResponse(
 	response: Response,
 	src: string,
 	target?: string,
 ) {
+	if (!target) return response
 	const prefix = await readResponsePrefix(response)
-	if (!isFullHtmlDocumentPrefix(prefix)) return response
-	throw new Error(
-		`Frame resolve received a cached document for ${src}${target ? ` target=${target}` : ''}`,
+	rejectCachedDocumentHtml(prefix, src, target)
+	return response
+}
+
+/**
+ * Client `resolveFrame`. Prefetch hits skip the network; otherwise the fetch
+ * uses `__frame` + `no-store` when `target` is set.
+ */
+export async function resolveClientFrame(
+	src: string,
+	options?: ResolveFrameOptions,
+	consumePrefetch: (
+		src: string,
+		target: string | undefined,
+	) => string | undefined = consumePrefetchedFrame,
+) {
+	const target = options?.target
+	const method = options?.method?.trim().toUpperCase()
+	const cached = method === 'HEAD' ? undefined : consumePrefetch(src, target)
+	if (cached !== undefined) {
+		rejectCachedDocumentHtml(cached, src, target)
+		return prefetchedFrameResponse(cached)
+	}
+	const response = await fetchFrameResolve(src, options)
+	return rejectCachedDocumentFrameResponse(
+		assertRenderableFrameResponse(response, src, target),
+		src,
+		target,
 	)
 }
 

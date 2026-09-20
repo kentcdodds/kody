@@ -1,11 +1,5 @@
 import { run } from 'remix/ui'
-import { consumePrefetchedFrame } from '#client/frame-prefetch.ts'
-import {
-	assertRenderableFrameResponse,
-	fetchFrameResolve,
-	prefetchedFrameResponse,
-	rejectCachedDocumentFrameResponse,
-} from '#client/frame-resolve.ts'
+import { resolveClientFrame } from '#client/frame-resolve.ts'
 import { preloadClientRouteModules } from '#client/lazy-route.tsx'
 import {
 	captureClientException,
@@ -16,7 +10,6 @@ import { ensureConstructableStylesheets } from './ensure-constructable-styleshee
 import { ensureCryptoRandomUUID } from './ensure-crypto-random-uuid.ts'
 import { ensureObjectHasOwn } from './ensure-object-has-own.ts'
 import { ensurePromiseWithResolvers } from './ensure-promise-with-resolvers.ts'
-import { isFullHtmlDocumentPrefix } from '#universal/frame-constants.ts'
 
 // Remix frame ids call crypto.randomUUID(); some in-app browsers omit it.
 ensureCryptoRandomUUID()
@@ -99,24 +92,7 @@ async function boot() {
 			return requireClientExport(exportName, mod[exportName])
 		},
 		async resolveFrame(src, options) {
-			const target = options?.target
-			const method = options?.method?.trim().toUpperCase()
-			const cached =
-				method === 'HEAD' ? undefined : consumePrefetchedFrame(src, target)
-			if (cached !== undefined) {
-				if (isFullHtmlDocumentPrefix(cached)) {
-					throw new Error(
-						`Frame resolve received a cached document for ${src}${target ? ` target=${target}` : ''}`,
-					)
-				}
-				return prefetchedFrameResponse(cached)
-			}
-			const response = await fetchFrameResolve(src, options)
-			return rejectCachedDocumentFrameResponse(
-				assertRenderableFrameResponse(response, src, target),
-				src,
-				target,
-			)
+			return resolveClientFrame(src, options)
 		},
 	})
 
