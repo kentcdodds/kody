@@ -107,6 +107,10 @@ const homepageHeroVideos = [
 		videoId: 'o5L5OprLhBg',
 		title: 'Kody fixes a Stripe webhook after we renamed the domain',
 	},
+	{
+		videoId: 'OZKDO9Pzmo0',
+		title: 'Shade automation from an INTENT.md',
+	},
 ] as const
 
 function homepageOnboardingFixture(
@@ -163,8 +167,11 @@ test('homepage hero uses locked copy, compare, and session-aware connect CTA', a
 	expect(anonymousHtml).not.toContain(
 		`/youtube-thumb/${homepageHeroVideos[0].videoId}`,
 	)
-	expect(anonymousHtml).toContain(
+	expect(anonymousHtml).not.toContain(
 		`/youtube-thumb/${homepageHeroVideos[1].videoId}`,
+	)
+	expect(anonymousHtml).toContain(
+		`/youtube-thumb/${homepageHeroVideos[2].videoId}`,
 	)
 	expect(anonymousHtml).toContain(
 		`data-embed-playlist="${landingHeroDemoPlaylistId}"`,

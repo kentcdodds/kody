@@ -7,10 +7,15 @@ export type LandingHeroVideo = {
 }
 
 /**
- * Public thumb for this clip still paints the retired "Stop Sweating"
- * hero. Keep it off the homepage strip until that artwork changes.
+ * Public thumbs that still paint the retired switching-agents hero
+ * ("Stop Sweating Agent Switching" / "Switch Agents"). Keep them off the
+ * homepage strip until that artwork changes. HTML titles are not enough:
+ * the YouTube poster is the visible text.
  */
-export const landingHeroCarouselOmittedVideoIds = ['iGMkgjXc8Ho'] as const
+export const landingHeroCarouselOmittedVideoIds = [
+	'iGMkgjXc8Ho',
+	'QA0xYMAMjEg',
+] as const
 
 const retiredHeroTitlePattern = /stop sweating/i
 
