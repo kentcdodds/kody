@@ -35,17 +35,25 @@ export const landingLanternImage = {
  *  radius as a fraction of width. Used to fade leaders inside the glass. */
 export const landingLanternGlass = { x: 0.5, y: 0.545, r: 0.46 } as const
 
-/** Orb centres in the still, percent of width and height. */
+/**
+ * Orb centres (percent of width and height) and disc diameters (percent of
+ * width) in the still. Fitted as discs against each orb's hue (inside minus
+ * surrounding annulus), not as hue centroids: the painted glow is brighter
+ * below and left of each orb and pulled centroids off the disc. The painted
+ * orbs are not all the same size, so each hotspot carries its own diameter
+ * and the highlight ring hugs its disc.
+ */
 export const landingLanternOrbs = [
-	{ id: 'memory', x: 50.2, y: 44 },
-	{ id: 'secrets', x: 25.6, y: 53.2 },
-	{ id: 'packages', x: 74.1, y: 53.4 },
-	{ id: 'jobs', x: 31.9, y: 68.8 },
-	{ id: 'integrations', x: 67.8, y: 68.8 },
+	{ id: 'memory', x: 50.1, y: 43.9, size: 20 },
+	{ id: 'secrets', x: 25.7, y: 53.3, size: 22.4 },
+	{ id: 'packages', x: 74.9, y: 54.3, size: 22.8 },
+	{ id: 'jobs', x: 35.4, y: 68.3, size: 22.8 },
+	{ id: 'integrations', x: 67.5, y: 69, size: 21.4 },
 ] as const satisfies ReadonlyArray<{
 	id: LandingPrimitiveId
 	x: number
 	y: number
+	size: number
 }>
 
 /** CSS custom property that carries a primitive's color. */

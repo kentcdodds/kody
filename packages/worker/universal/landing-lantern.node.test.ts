@@ -21,6 +21,8 @@ test('lantern orbs cover every homepage primitive exactly once, in copy order', 
 		expect(orb.x).toBeLessThan(100)
 		expect(orb.y).toBeGreaterThan(0)
 		expect(orb.y).toBeLessThan(100)
+		expect(orb.size).toBeGreaterThan(15)
+		expect(orb.size).toBeLessThan(30)
 	}
 	expect(landingLanternImage.srcSet).toContain(landingLanternImage.src)
 	expect(landingLanternImage.width / landingLanternImage.height).toBeCloseTo(

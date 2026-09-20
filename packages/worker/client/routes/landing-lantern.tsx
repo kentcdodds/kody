@@ -78,6 +78,7 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 								style={{
 									'--x': `${orb.x}%`,
 									'--y': `${orb.y}%`,
+									'--size': `${orb.size}%`,
 									'--primitive-color': landingPrimitiveColorVar(orb.id),
 								}}
 								aria-label={`${primitive.word} primitive`}
