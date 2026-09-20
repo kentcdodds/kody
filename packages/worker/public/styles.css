@@ -1598,17 +1598,26 @@ html.is-settled {
 .landing-proof-split {
 	display: grid;
 	grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
-	gap: clamp(1.5rem, 4vw, 2.75rem);
-	align-items: start;
+	column-gap: clamp(1.5rem, 4vw, 2.75rem);
 	margin-top: clamp(1.75rem, 4vw, 2.5rem);
+	/* Heading stack is row 1. The orbit and the conversation card share
+	   row 2 so the art centers on the card, not the heading. */
+	align-items: center;
 }
 
 .landing-proof .landing-walkthrough-story {
+	display: grid;
+	grid-template-rows: subgrid;
+	grid-column: 2;
+	grid-row: 1 / span 2;
+	align-items: center;
 	margin: 0;
 	max-width: none;
 }
 
 .landing-proof .landing-hero-art {
+	grid-column: 1;
+	grid-row: 2;
 	margin-top: 0;
 }
 
@@ -2897,6 +2906,17 @@ html.is-settled {
 
 	.landing-proof-split {
 		grid-template-columns: 1fr;
+		row-gap: clamp(1.5rem, 4vw, 2.75rem);
+	}
+
+	.landing-proof .landing-walkthrough-story,
+	.landing-proof .landing-hero-art {
+		grid-column: auto;
+		grid-row: auto;
+	}
+
+	.landing-proof .landing-walkthrough-story {
+		display: block;
 	}
 
 	.landing-section-heading {
