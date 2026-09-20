@@ -1444,6 +1444,9 @@ html.is-settled {
 		0 0 0 1px oklch(from var(--primitive-color) l c h / 0.18);
 	visibility: hidden;
 	opacity: 0;
+	/* Hidden and fading panels must not catch clicks on the link below.
+	   Open state turns pointer events back on. */
+	pointer-events: none;
 	translate: 0 -0.3rem;
 	transition:
 		opacity 0.2s ease,
@@ -1489,8 +1492,11 @@ html.is-settled {
 
 .landing-primitives-more {
 	position: relative;
-	z-index: 0;
-	margin: clamp(1.75rem, 4vw, 2.5rem) 0 0;
+	/* Above the word-list popover (stacked in the words layer) so the
+	   hanging panel cannot cover this link. The extra top margin clears
+	   the panel and its shadow on a short lantern. */
+	z-index: 5;
+	margin: clamp(3.5rem, 6vw, 4.5rem) 0 0;
 	color: var(--color-text-muted);
 	font-size: 0.98rem;
 }
