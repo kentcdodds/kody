@@ -64,7 +64,7 @@ export async function fetchFrameResolve(
 		) {
 			throw error
 		}
-		return await fetch(src, init)
+		return await fetch(url, init)
 	}
 }
 

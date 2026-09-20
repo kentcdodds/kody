@@ -85,6 +85,31 @@ test('rejectCachedDocumentFrameResponse refuses a nested document', async () => 
 	)
 })
 
+test('frame resolve retry keeps the cache-busting URL', async () => {
+	const ok = new Response('<div>listings</div>', { status: 200 })
+	const fetchMock = vi
+		.fn()
+		.mockRejectedValueOnce(new TypeError('Load failed'))
+		.mockResolvedValueOnce(ok)
+	vi.stubGlobal('fetch', fetchMock)
+	try {
+		await fetchFrameResolve('/community', { target: 'community-listings' })
+		const frameUrl = '/community?__frame=community-listings'
+		expect(fetchMock).toHaveBeenNthCalledWith(
+			1,
+			frameUrl,
+			expect.objectContaining({ cache: 'no-store' }),
+		)
+		expect(fetchMock).toHaveBeenNthCalledWith(
+			2,
+			frameUrl,
+			expect.objectContaining({ cache: 'no-store' }),
+		)
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})
+
 test('fetchFrameResolve retries once on GET network TypeErrors only', async () => {
 	const ok = new Response('<html></html>', { status: 200 })
 	const getRetry = vi
