@@ -20,7 +20,7 @@ import {
 } from '#universal/landing-lantern.ts'
 import {
 	LandingLantern,
-	pointerHovers,
+	hoverPointer,
 } from '#client/routes/landing-lantern.tsx'
 
 /**
@@ -276,11 +276,11 @@ function LandingPrimitiveWord(
 					'--primitive-color': landingPrimitiveColorVar(primitive.id),
 				}}
 				mix={[
-					on('mouseenter', () => {
-						if (pointerHovers()) onOpen()
+					on('pointerenter', (event: PointerEvent) => {
+						if (hoverPointer(event)) onOpen()
 					}),
-					on('mouseleave', (event: MouseEvent) => {
-						if (!pointerHovers()) return
+					on('pointerleave', (event: PointerEvent) => {
+						if (!hoverPointer(event)) return
 						closeIfLeaving(event.currentTarget, event.relatedTarget)
 					}),
 					on('focusin', onOpen),
