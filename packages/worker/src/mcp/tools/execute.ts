@@ -5,6 +5,13 @@ import {
 } from '@modelcontextprotocol/sdk/types.js'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { z } from 'zod'
+import { resolveCallerFeatureFlags } from '#mcp/capabilities/access-control.ts'
+import {
+	executeInvokeFieldDescription,
+	executeInvokeFlagKey,
+	executeToolDescriptionWithInvoke,
+	resolveExecuteModuleSource,
+} from '#mcp/execute-invoke.ts'
 import { executeToolDescription } from '#mcp/instructions/execute-tool-description.ts'
 import {
 	defaultExecutionResponseLimitBytes,
@@ -160,21 +167,38 @@ export const executeToolOutputSchema = {
 		.describe('Relevant stored memories surfaced for this call.'),
 }
 
+const executeCodeFieldDescription =
+	'Single ESM module string with imports/exports and a default export to execute. Imports may be arbitrary npm packages compatible with the Cloudflare Workers runtime; prefer packages over rewriting helpers.'
+
 export async function registerExecuteTool(agent: McpRegistrationAgent) {
 	const icons = buildKodyToolIcons(agent.getCallerContext().baseUrl)
+	const featureFlags = await resolveCallerFeatureFlags(
+		agent.getEnv(),
+		agent.getCallerContext(),
+	)
+	const invokeEnabled = featureFlags[executeInvokeFlagKey] === true
 	agent.server.registerTool(
 		executeTool.name,
 		{
 			title: executeTool.title,
-			description: executeTool.description,
+			description: invokeEnabled
+				? executeToolDescriptionWithInvoke
+				: executeTool.description,
 			outputSchema: executeToolOutputSchema,
 			...(icons ? { icons } : {}),
 			inputSchema: {
-				code: z
-					.string()
-					.describe(
-						'Single ESM module string with imports/exports and a default export to execute. Imports may be arbitrary npm packages compatible with the Cloudflare Workers runtime; prefer packages over rewriting helpers.',
-					),
+				code: invokeEnabled
+					? z.string().optional().describe(executeCodeFieldDescription)
+					: z.string().describe(executeCodeFieldDescription),
+				...(invokeEnabled
+					? {
+							invoke: z
+								.string()
+								.min(1)
+								.optional()
+								.describe(executeInvokeFieldDescription),
+						}
+					: {}),
 				params: z
 					.record(z.string(), z.unknown())
 					.optional()
@@ -205,13 +229,15 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 		async (
 			{
 				code,
+				invoke,
 				params,
 				responseLimit,
 				conversationId,
 				memoryContext,
 				idempotencyKey,
 			}: {
-				code: string
+				code?: string
+				invoke?: string
 				params?: Record<string, unknown>
 				responseLimit?: number
 				conversationId?: string
@@ -314,6 +340,16 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					}
 				}
 
+				// Schema omit/advertise is decided at register. Re-read the
+				// flag here so a kill-switch applies on the next call even
+				// when a legacy session still has invoke in its tool list.
+				const liveFlags = await resolveCallerFeatureFlags(env, callerContext)
+				const resolvedCode = resolveExecuteModuleSource({
+					code,
+					invoke,
+					invokeEnabled: liveFlags[executeInvokeFlagKey] === true,
+				})
+
 				// Daily execute quota, consumed before claim/bundling/sandbox
 				// so over-limit calls cost nothing and do not poison a key.
 				if (callerContext.user?.userId) {
@@ -394,7 +430,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							return await runModuleWithRegistry(
 								env,
 								callerContext,
-								code,
+								resolvedCode,
 								params,
 								{
 									executorExports: agent.getLoopbackExports(),
@@ -460,7 +496,8 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					callerContext,
 					conversationId: resolvedConversationId,
 					hostCounts: rawFetchHosts.hostCounts(),
-					usedIntegrationAuthHelpers: codeUsesIntegrationAuthHelpers(code),
+					usedIntegrationAuthHelpers:
+						codeUsesIntegrationAuthHelpers(resolvedCode),
 				})
 				const runId =
 					typeof result.runId === 'string'

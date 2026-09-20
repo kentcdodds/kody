@@ -94,7 +94,10 @@ of learning a new MCP tool per capability.
 Pass **`code`**: a single module string. Import runtime helpers from
 `kody:runtime` and call builtins as `kody.capabilityId(params)`. MCP server
 tools are `kody.mcp["name"].tool_name(params)`. Known package exports use a
-static `kody:@scope/package/export` import.
+static `kody:@scope/package/export` import. When the `execute-invoke` experiment
+is on for the caller, pass **`invoke`** with that specifier instead of writing
+the thin passthrough by hand — mutually exclusive with `code`. See
+[Execute and workflows](../use/execute.md).
 
 Optional **`params`** is a JSON object passed as the first argument to that
 default export. Name the argument `params`. Capability search detail already

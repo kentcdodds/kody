@@ -183,7 +183,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// First-seen search funnel claim sits on the shared activation stamp
 		// that platform search already calls: local dry-run 5_128_692 against
 		// the previous 5_128_000 budget.
-		maxEntryBytes: 5_130_000,
+		// MCP execute `invoke` codegen (flag-gated schema field, specifier
+		// parse, thin passthrough) spilled ~3 KB into the platform entry:
+		// CI dry-run 5_133_007 against the previous 5_130_000 budget.
+		maxEntryBytes: 5_135_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,

@@ -42,6 +42,7 @@ export type AdminFeatureFlag = {
 	key: string
 	description: string | null
 	defaultEnabled: boolean | null
+	defaultAudience: FeatureFlagAudience | null
 	stale: boolean
 	successMetric: FeatureFlagSuccessMetric | null
 	metricReadout?: AdminFeatureFlagMetricReadout

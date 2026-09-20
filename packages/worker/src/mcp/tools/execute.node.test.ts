@@ -17,6 +17,13 @@ import {
 	wrapDownstreamMcpToolResult,
 } from '#mcp/downstream-mcp-result.ts'
 import { formatRawFetchHostNudge } from '#mcp/raw-fetch-host-nudge.ts'
+import {
+	buildExecuteInvokePassthroughSource,
+	executeInvokeFlagOffMessage,
+	executeInvokeMutualExclusionMessage,
+	executeToolDescriptionWithInvoke,
+} from '#mcp/execute-invoke.ts'
+import type * as AccessControlModule from '#mcp/capabilities/access-control.ts'
 import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
@@ -39,6 +46,9 @@ const mockModule = vi.hoisted(() => ({
 	getRunRecordByIdempotencyKey: vi.fn(async () => null),
 	claimRunRecord: vi.fn(async () => null),
 	finishRunRecord: vi.fn(async () => undefined),
+	resolveCallerFeatureFlags: vi.fn(async () => ({
+		'execute-invoke': false,
+	})),
 }))
 
 vi.mock('#mcp/run-kody-registry.ts', () => ({
@@ -50,6 +60,18 @@ vi.mock('#mcp/capabilities/registry.ts', () => ({
 	getCapabilityRegistryForContext: (...args: Array<unknown>) =>
 		mockModule.getCapabilityRegistryForContext(...args),
 }))
+
+vi.mock(
+	'#mcp/capabilities/access-control.ts',
+	async (importOriginal: () => Promise<typeof AccessControlModule>) => {
+		const actual = await importOriginal()
+		return {
+			...actual,
+			resolveCallerFeatureFlags: (...args: Array<unknown>) =>
+				mockModule.resolveCallerFeatureFlags(...args),
+		}
+	},
+)
 
 vi.mock('#worker/package-invocations/service.ts', () => ({
 	createExecutePackageInvokeTools: (...args: Array<unknown>) =>
@@ -132,9 +154,13 @@ async function getExecuteRegistration(
 		state?: Record<string, unknown>
 		setState?: (state: Record<string, unknown>) => void
 		waitUntil?: (promise: Promise<unknown>) => void
+		invokeEnabled?: boolean
 	} = {},
 ) {
 	vi.clearAllMocks()
+	mockModule.resolveCallerFeatureFlags.mockResolvedValue({
+		'execute-invoke': agentExtras.invokeEnabled === true,
+	})
 	const registerTool = vi.fn()
 
 	await registerExecuteTool({
@@ -151,9 +177,13 @@ async function getExecuteRegistration(
 	expect(registerTool).toHaveBeenCalledTimes(1)
 	return registerTool.mock.calls[0] as [
 		string,
-		{ description: string },
+		{
+			description: string
+			inputSchema: Record<string, unknown>
+		},
 		(input: {
-			code: string
+			code?: string
+			invoke?: string
 			responseLimit?: number
 			conversationId?: string
 		}) => Promise<{
@@ -184,7 +214,9 @@ async function getExecuteHandler(
 ) {
 	const [, , handler] = await getExecuteRegistration(callerContext, agentExtras)
 	return handler as (input: {
-		code: string
+		code?: string
+		invoke?: string
+		params?: Record<string, unknown>
 		responseLimit?: number
 		conversationId?: string
 		idempotencyKey?: string
@@ -1104,4 +1136,72 @@ test('successful execute completion schedules a fail-open fleet heartbeat and ca
 	expect(failure.isError).toBe(true)
 	expect(heartbeatMock.scheduleFleetExecuteLastSuccess).not.toHaveBeenCalled()
 	heartbeatMock.scheduleFleetExecuteLastSuccess.mockReset()
+})
+
+test('execute invoke is omitted when the flag is off and rejected if sent', async () => {
+	const [offName, offConfig] = await getExecuteRegistration()
+	expect(offName).toBe('execute')
+	expect(offConfig.inputSchema).not.toHaveProperty('invoke')
+	expect(offConfig.description).not.toContain('invoke:')
+
+	const offHandler = await getExecuteHandler()
+	const rejected = await offHandler({
+		invoke: 'kody:@acme/github/listRepos',
+		conversationId: 'conv-invoke-off',
+	})
+	expect(rejected.isError).toBe(true)
+	expect(rejected.structuredContent.error).toBe(executeInvokeFlagOffMessage)
+	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
+})
+
+test('execute invoke generates the canonical thin passthrough and rejects code plus invoke', async () => {
+	const [, onConfig, onHandler] = await getExecuteRegistration(
+		{
+			baseUrl: 'https://example.com',
+			user: { userId: 'user-1' },
+		},
+		{ invokeEnabled: true },
+	)
+	expect(onConfig.inputSchema).toHaveProperty('invoke')
+	expect(onConfig.description).toBe(executeToolDescriptionWithInvoke)
+
+	const specifier = 'kody:@acme/github/listRepos'
+	const expectedCode = buildExecuteInvokePassthroughSource(specifier)
+	mockPerformanceSequence(10, 20)
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		result: { ok: true },
+		logs: [],
+	})
+	const invoked = await onHandler({
+		invoke: '@acme/github#listRepos',
+		params: { limit: 5 },
+		conversationId: 'conv-invoke-on',
+	})
+	expect(invoked.isError).toBe(false)
+	expect(mockModule.runModuleWithRegistry).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.anything(),
+		expectedCode,
+		{ limit: 5 },
+		expect.anything(),
+	)
+
+	const both = await onHandler({
+		code: 'export default async function main() { return 1 }',
+		invoke: specifier,
+		conversationId: 'conv-invoke-both',
+	})
+	expect(both.isError).toBe(true)
+	expect(both.structuredContent.error).toBe(executeInvokeMutualExclusionMessage)
+
+	mockModule.resolveCallerFeatureFlags.mockResolvedValue({
+		'execute-invoke': false,
+	})
+	const killed = await onHandler({
+		invoke: specifier,
+		conversationId: 'conv-invoke-killed',
+	})
+	expect(killed.isError).toBe(true)
+	expect(killed.structuredContent.error).toBe(executeInvokeFlagOffMessage)
+	expect(mockModule.runModuleWithRegistry).toHaveBeenCalledTimes(1)
 })

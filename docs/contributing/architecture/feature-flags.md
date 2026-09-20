@@ -12,7 +12,10 @@ mutations).
 - `universal/feature-flags/registry.ts` — the typed flag registry
   (`featureFlagDefinitions`, `FeatureFlagKey`). Flags are created and removed
   only via code review by editing this array; every gate site is compile-checked
-  against it. Flags should also declare a `successMetric` (see below).
+  against it. Flags should also declare a `successMetric` (see below). Optional
+  `defaultAudience` (`everyone` when omitted) is used when no global row exists
+  and as the first-insert default when an operator enables a flag without an
+  explicit audience.
 - `universal/feature-flags/types.ts` — dependency-free transport types shared
   with the client bundle.
 - `service.ts` — evaluation (`isFeatureEnabled`, `getFeatureFlagsForUser`,
@@ -108,6 +111,20 @@ experiment is off. Offline/deterministic search skips Jev and uses hybrid order.
 See [Search](../../use/search.md) for skip reasons, telemetry, and Gateway
 requirements. Enable for dogfood with
 `adminFeatureFlagOverride({ key: "jev-search-rerank", username: "kentcdodds", enabled: true })`.
+Remove the flag and gate sites when the experiment ends.
+
+`execute-invoke` is an experiment (default **off**, registry
+`defaultAudience: experiments_opt_in`) for the MCP `execute` `invoke` shortcut.
+When on for a caller, the execute tool advertises `invoke` (a
+`kody:@scope/package/export` specifier) and generates the same thin passthrough
+source a careful agent would write, then runs the existing execute path. When
+off, `invoke` is omitted from the tool schema and rejected if sent. The declared
+`successMetric` is `dynamic_worker_day` event count, goal decrease: stable
+invoke-generated graphs should reuse one isolate per package export instead of
+burning a unique worker-day per rewritten glue module. Exposures are recorded
+when the MCP execute tool is registered (invoke offered). Enable for experiment
+members with
+`adminFeatureFlagSet({ key: "execute-invoke", enabled: true, audience: "experiments_opt_in" })`.
 Remove the flag and gate sites when the experiment ends.
 
 `compute-overage-charging` is a billing gate, not an experiment (no

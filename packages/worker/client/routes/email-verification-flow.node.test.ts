@@ -60,6 +60,7 @@ test('email verification redirect helpers preserve safe targets and reject open 
 			'package-share-grants': false,
 			'secret-providers': false,
 			'jev-search-rerank': false,
+			'execute-invoke': false,
 		},
 	}
 	const verifiedUser: SessionInfo = {
