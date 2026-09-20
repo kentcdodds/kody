@@ -205,12 +205,17 @@ function createFeatureFlagsTestDb(
 							? null
 							: String(params[3])
 					const note = noteParam ?? globals.get(key)?.note ?? ''
-					const audienceParam =
+					const exists = globals.has(key)
+					const insertAudience =
 						params[4] === null || params[4] === undefined
-							? null
+							? 'everyone'
 							: String(params[4])
-					const audience =
-						audienceParam ?? globals.get(key)?.audience ?? 'everyone'
+					const updateAudienceParam = params[7]
+					const audience = exists
+						? updateAudienceParam === null || updateAudienceParam === undefined
+							? (globals.get(key)?.audience ?? 'everyone')
+							: String(updateAudienceParam)
+						: insertAudience
 					const updatedBy = Number(params[5])
 					const updatedAt = nextTimestamp()
 					globals.set(key, {
@@ -335,6 +340,7 @@ test('isFeatureEnabled falls back to registry default when no DB state exists', 
 		'package-share-grants': false,
 		'secret-providers': false,
 		'jev-search-rerank': false,
+		'execute-invoke': false,
 	})
 })
 
@@ -512,6 +518,7 @@ test('user override wins over global off and global on; clear restores evaluatio
 		'package-share-grants': false,
 		'secret-providers': false,
 		'jev-search-rerank': false,
+		'execute-invoke': false,
 	})
 
 	await setFeatureFlagGlobalState(db, {
@@ -548,6 +555,7 @@ test('getFeatureFlagEvaluationsForUser reports assignment sources', async () => 
 		'package-share-grants': { enabled: false, source: 'default' },
 		'secret-providers': { enabled: false, source: 'default' },
 		'jev-search-rerank': { enabled: false, source: 'default' },
+		'execute-invoke': { enabled: false, source: 'default' },
 	})
 
 	await setFeatureFlagGlobalState(db, {
@@ -635,7 +643,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 	})
 
 	const listed = await listFeatureFlagsForAdmin(db)
-	expect(listed).toHaveLength(8)
+	expect(listed).toHaveLength(9)
 
 	const charging = listed.find(
 		(flag) => flag.key === 'compute-overage-charging',
@@ -668,10 +676,24 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 		key: 'jev-search-rerank',
 		stale: false,
 		defaultEnabled: false,
+		defaultAudience: 'everyone',
 		successMetric: {
 			eventType: 'execute',
 			measure: 'event_count',
 			goal: 'increase',
+		},
+	})
+
+	const executeInvoke = listed.find((flag) => flag.key === 'execute-invoke')
+	expect(executeInvoke).toMatchObject({
+		key: 'execute-invoke',
+		stale: false,
+		defaultEnabled: false,
+		defaultAudience: 'experiments_opt_in',
+		successMetric: {
+			eventType: 'dynamic_worker_day',
+			measure: 'event_count',
+			goal: 'decrease',
 		},
 	})
 
@@ -714,6 +736,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 		key: 'retired-flag',
 		description: null,
 		defaultEnabled: null,
+		defaultAudience: null,
 		stale: true,
 		successMetric: null,
 		global: {
@@ -732,6 +755,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 		key: 'orphan-override',
 		description: null,
 		defaultEnabled: null,
+		defaultAudience: null,
 		stale: true,
 		successMetric: null,
 		global: null,
@@ -850,4 +874,23 @@ test('experiments_opt_in audience requires users.experiments_opt_in; overrides s
 			updatedBy: 1,
 		}),
 	).rejects.toThrow(/audience must be one of/)
+})
+
+test('execute-invoke first insert without audience uses registry defaultAudience', async () => {
+	const db = createFeatureFlagsTestDb({
+		users: [
+			{ id: 7, username: 'opted', experiments_opt_in: 1 },
+			{ id: 8, username: 'plain', experiments_opt_in: 0 },
+		],
+	})
+
+	await setFeatureFlagGlobalState(db, {
+		key: 'execute-invoke',
+		enabled: true,
+		rolloutPercent: null,
+		updatedBy: 1,
+	})
+	expect(db.globals.get('execute-invoke')?.audience).toBe('experiments_opt_in')
+	await expect(isFeatureEnabled(db, 'execute-invoke', 7)).resolves.toBe(true)
+	await expect(isFeatureEnabled(db, 'execute-invoke', 8)).resolves.toBe(false)
 })

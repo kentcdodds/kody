@@ -14,6 +14,10 @@
  * notice strongly recommending one everywhere else.
  */
 
+import {
+	defaultFeatureFlagAudience,
+	type FeatureFlagAudience,
+} from './audiences.ts'
 import { type UsageEventType } from '#universal/usage-event-types.ts'
 
 export type FeatureFlagSuccessMetricMeasure =
@@ -36,6 +40,12 @@ export type FeatureFlagDefinition = {
 	key: string
 	description: string
 	defaultEnabled: boolean
+	/**
+	 * Audience used when no global row exists, and as the first-insert
+	 * default when an operator enables the flag without an explicit
+	 * audience. Omit for `everyone`.
+	 */
+	defaultAudience?: FeatureFlagAudience
 	successMetric?: FeatureFlagSuccessMetric
 }
 
@@ -95,6 +105,20 @@ export const featureFlagDefinitions = [
 				'Wider recall plus selective Jev Score filtering surfaces better next hops for paid users, so agents follow ranked search with execute more often in the same conversation.',
 		},
 	},
+	{
+		key: 'execute-invoke',
+		defaultEnabled: false,
+		defaultAudience: 'experiments_opt_in',
+		description:
+			'MCP execute `invoke` shortcut: generate the canonical thin kody:@ passthrough for a saved or platform package export, then run the existing execute path. Off by default. Operators enable it with audience experiments_opt_in so only /account/experiments members see the field. Delete the flag and gate sites when the experiment ends.',
+		successMetric: {
+			eventType: 'dynamic_worker_day',
+			measure: 'event_count',
+			goal: 'decrease',
+			hypothesis:
+				'A stable invoke-generated thin passthrough reuses one Dynamic Worker per package export instead of a new isolate per rewritten glue module, so experiment users burn fewer unique worker-days on the execute surface.',
+		},
+	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
 export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']
@@ -107,6 +131,8 @@ export const secretProvidersFlagKey =
 
 export const jevSearchRerankFlagKey =
 	'jev-search-rerank' satisfies FeatureFlagKey
+
+export const executeInvokeFlagKey = 'execute-invoke' satisfies FeatureFlagKey
 
 export const featureFlagKeys: ReadonlyArray<FeatureFlagKey> =
 	featureFlagDefinitions.map((definition) => definition.key)
@@ -160,4 +186,12 @@ export function getFeatureFlagDefinition(
 		throw new Error(`Unknown feature flag key: ${key}`)
 	}
 	return definition
+}
+
+export function getFeatureFlagDefaultAudience(
+	key: FeatureFlagKey,
+): FeatureFlagAudience {
+	return (
+		getFeatureFlagDefinition(key).defaultAudience ?? defaultFeatureFlagAudience
+	)
 }

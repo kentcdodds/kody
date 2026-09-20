@@ -512,7 +512,10 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 										/>
 									</label>
 									{renderAdminFeatureFlagAudienceField({
-										audience: flag.global?.audience,
+										audience:
+											flag.global?.audience ??
+											flag.defaultAudience ??
+											undefined,
 										disabled: isMutating,
 									})}
 									<label mix={css(fieldCss)}>
@@ -575,9 +578,9 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 								) : (
 									<p mix={css({ margin: 0, color: colors.textMuted })}>
 										No global row yet — saving creates one. Empty rollout means
-										all users when enabled. Audience defaults to everyone;
-										choose Experiments opt-in to limit the flag to
-										`/account/experiments` members.
+										all users when enabled. Audience starts from the flag's
+										registry default; choose Experiments opt-in to limit the
+										flag to `/account/experiments` members.
 									</p>
 								)}
 							</form>

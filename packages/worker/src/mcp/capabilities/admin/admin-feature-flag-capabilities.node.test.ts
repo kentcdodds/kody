@@ -218,12 +218,17 @@ function createFeatureFlagCapabilityTestDb(input: {
 							? null
 							: String(params[3])
 					const note = noteParam ?? globals.get(key)?.note ?? ''
-					const audienceParam =
+					const exists = globals.has(key)
+					const insertAudience =
 						params[4] === null || params[4] === undefined
-							? null
+							? 'everyone'
 							: String(params[4])
-					const audience =
-						audienceParam ?? globals.get(key)?.audience ?? 'everyone'
+					const updateAudienceParam = params[7]
+					const audience = exists
+						? updateAudienceParam === null || updateAudienceParam === undefined
+							? (globals.get(key)?.audience ?? 'everyone')
+							: String(updateAudienceParam)
+						: insertAudience
 					const updatedBy = Number(params[5])
 					const updatedAt = nextTimestamp()
 					globals.set(key, {

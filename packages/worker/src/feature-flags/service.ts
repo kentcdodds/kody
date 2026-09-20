@@ -7,6 +7,7 @@ import {
 import {
 	featureFlagDefinitions,
 	featureFlagKeys,
+	getFeatureFlagDefaultAudience,
 	getFeatureFlagDefinition,
 	isFeatureFlagKey,
 	type FeatureFlagKey,
@@ -108,9 +109,10 @@ function evaluateFlagState(input: {
 		audience: FeatureFlagAudience
 	} | null
 	defaultEnabled: boolean
+	defaultAudience: FeatureFlagAudience
 	experimentsOptIn: boolean
 }): FeatureFlagEvaluation {
-	const audience = input.global?.audience ?? defaultFeatureFlagAudience
+	const audience = input.global?.audience ?? input.defaultAudience
 	if (input.overrideEnabled !== null) {
 		return applyAudienceGate({
 			evaluation: { enabled: input.overrideEnabled, source: 'override' },
@@ -266,6 +268,7 @@ export async function evaluateFeatureFlag(
 				}
 			: null,
 		defaultEnabled: getFeatureFlagDefinition(key).defaultEnabled,
+		defaultAudience: getFeatureFlagDefaultAudience(key),
 		experimentsOptIn,
 	})
 }
@@ -373,6 +376,7 @@ export async function getFeatureFlagEvaluationsForUser(
 					}
 				: null,
 			defaultEnabled: getFeatureFlagDefinition(key).defaultEnabled,
+			defaultAudience: getFeatureFlagDefaultAudience(key),
 			experimentsOptIn,
 		})
 	}
@@ -407,10 +411,11 @@ export async function setFeatureFlagGlobalState(
 	// callers omit the field to preserve an existing operator value.
 	const note = normalizeFeatureFlagNote(input.note)
 	const audience = normalizeFeatureFlagAudience(input.audience)
+	const insertAudience = audience ?? getFeatureFlagDefaultAudience(input.key)
 	await db
 		.prepare(
 			`INSERT INTO feature_flags (key, enabled, rollout_percent, note, audience, updated_by, updated_at)
-			 VALUES (?, ?, ?, COALESCE(?, ''), COALESCE(?, 'everyone'), ?, CURRENT_TIMESTAMP)
+			 VALUES (?, ?, ?, COALESCE(?, ''), ?, ?, CURRENT_TIMESTAMP)
 			 ON CONFLICT(key) DO UPDATE SET
 				enabled = excluded.enabled,
 				rollout_percent = excluded.rollout_percent,
@@ -424,7 +429,7 @@ export async function setFeatureFlagGlobalState(
 			input.enabled ? 1 : 0,
 			input.rolloutPercent,
 			note,
-			audience,
+			insertAudience,
 			input.updatedBy,
 			note,
 			audience,
@@ -517,6 +522,7 @@ export async function listFeatureFlagsForAdmin(
 			key: definition.key,
 			description: definition.description,
 			defaultEnabled: definition.defaultEnabled,
+			defaultAudience: getFeatureFlagDefaultAudience(definition.key),
 			stale: false,
 			successMetric:
 				getFeatureFlagDefinition(definition.key).successMetric ?? null,
@@ -548,6 +554,7 @@ export async function listFeatureFlagsForAdmin(
 			key,
 			description: null,
 			defaultEnabled: null,
+			defaultAudience: null,
 			stale: true,
 			successMetric: null,
 			global: global

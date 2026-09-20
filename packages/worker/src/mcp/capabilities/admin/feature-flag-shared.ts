@@ -53,6 +53,7 @@ export const adminFeatureFlagSchema = z.object({
 	key: z.string(),
 	description: z.string().nullable(),
 	defaultEnabled: z.boolean().nullable(),
+	defaultAudience: z.enum(['everyone', 'experiments_opt_in']).nullable(),
 	stale: z.boolean(),
 	successMetric: featureFlagSuccessMetricSchema.nullable(),
 	metricReadout: adminFeatureFlagMetricReadoutSchema.optional(),
