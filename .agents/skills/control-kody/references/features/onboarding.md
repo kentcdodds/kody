@@ -38,11 +38,11 @@ node tools/control-kody.ts preview -- \
   `control-kody doctor` and `dev:ensure`. `dev:ensure` waits for a starting
   leftover instead of killing it mid-reload. Do not dump one onboarding
   component to static HTML.
-- Step 3 completion is two known agent ecosystems, not raw grant count and not
-  unique `clientId`s. Cursor Local and Cursor Cloud are one ecosystem. An
-  unlabeled client does not count and does not disable a named tab. A Cursor
-  Cloud grant also marks Grok Bot connected. Account → Connected agents is the
-  grouped inbound list (logos for known kinds, newest-first). That first second
+- Step 3 completion is two known agent ecosystems. Cursor Local and Cursor Cloud
+  are one ecosystem. Disable a tab when a grant names that host. An unlabeled
+  client adds no ecosystem, and the other tabs stay available. A Cursor Cloud
+  grant also marks Grok Bot connected. Account → Connected agents is the grouped
+  inbound list (logos for known kinds, newest-first). That first second
   ecosystem also records the one-time 14-day Standard gift
   (`secondAgentStandardGift` on `/onboarding.json`).
 - The Discord invite sits below the step wizard. First-use setup (search,

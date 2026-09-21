@@ -10,8 +10,8 @@ category: platform
 # Secret setup URL reference
 
 Use the hosted **`/account/secrets/new`** page whenever the user needs to enter
-a secret value such as an API key or personal access token. The agent must never
-see the secret value.
+a secret value such as an API key or personal access token. Secrets stay on the
+setup page; send the URL and wait until they confirm save.
 
 If the secret will power a downstream package or package app, open
 `search({ entity: "guide:integration_bootstrap" })` before building that
@@ -28,7 +28,8 @@ Use it when:
   `secretJwtSign`) is missing
 - the user needs to rotate a stored secret value
 
-Do **not** ask the user to paste secrets into chat.
+Send the `/account/secrets/new` URL and have them paste into **Secret value** on
+that page.
 
 ## URL format
 
@@ -68,11 +69,11 @@ read and use the user's secrets without an `allowed_packages` grant; updating or
 deleting a user secret from package code still requires that grant. Only the
 account owner can add a package to that grant on the secret editor or
 `/account/secrets/approve` — a focused Allow page like `/connect/secrets`.
-`secretLock` returns that approval URL; it does not apply the grant. Send the
-link and wait. Removing a grant is also website-only. When an **unadopted
-community-forked** package needs access to one or more **existing** user
-secrets, either adopt it after reviewing the source or send the user an approval
-link — do not ask them to recreate the secrets.
+`secretLock` returns that approval URL. Send the link and wait until they
+confirm. The grant is written on that page. Removing a grant is also
+website-only. When an **unadopted community-forked** package needs access to one
+or more **existing** user secrets, either adopt it after reviewing the source or
+send the approval link so they keep the secrets they already saved.
 
 - Single secret:
   `/account/secrets/user/{secretName}?package_id={savedPackageId}&package={kodyId}`

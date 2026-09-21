@@ -146,11 +146,11 @@ on the pull request.
 3. After creating the app, click **Generate a new client secret** and copy the
    client ID and secret.
 
-GitHub supports S256 PKCE and recommends it, but PKCE does not replace the
-client secret — the secret is still required at the token endpoint, so the Kody
-flow is `confidential`. OAuth App tokens have no scheduled expiry and there are
-no refresh tokens, but GitHub revokes a token after a year without use; revoke
-the grant from GitHub settings to kill one sooner.
+GitHub supports S256 PKCE and recommends it. The client secret stays required at
+the token endpoint, so the Kody flow is `confidential`. OAuth App tokens have no
+scheduled expiry and there are no refresh tokens, but GitHub revokes a token
+after a year without use; revoke the grant from GitHub settings to kill one
+sooner.
 
 ### Connect to Kody
 
