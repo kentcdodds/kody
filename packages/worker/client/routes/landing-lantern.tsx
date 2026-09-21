@@ -1,23 +1,23 @@
 import { type Handle } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
+import { lanternOrbMotion } from '#client/routes/landing-lantern-motion.ts'
 import {
 	landingHomePrimitives,
 	type LandingHomePrimitive,
 } from '#universal/landing-home-copy.ts'
 import {
 	landingLanternImage,
+	landingLanternOrbArt,
 	landingLanternOrbs,
 	landingPrimitiveColorVar,
 	type LandingPrimitiveId,
 } from '#universal/landing-lantern.ts'
 
 /**
- * Five-orb lantern beside the primitives sentence. The art is Kent's
- * standalone lantern still (`kody-primitives-lantern.webp`, orbs painted
- * in). Five transparent buttons sit over the painted orbs so each can take
- * hover, focus, and tap, open the matching primitive popover, and anchor
- * the leader line drawn by the parent section. Orb centres come from
- * `#universal/landing-lantern` so measurement and art stay in one place.
+ * Six-orb lantern beside the primitives sentence. The shell is static.
+ * Each orb image sits inside its hotspot button, centered on the painted
+ * disc, so the highlight ring, the disc, and the leader rim share one
+ * centre while the button moves.
  */
 
 /** Hover opens for mice and pens only. A touch tap fires synthetic enter
@@ -39,20 +39,29 @@ export type LandingLanternProps = {
 	onClose: (id: LandingPrimitiveId) => void
 	onDismiss: (id: LandingPrimitiveId) => void
 	onResume: (id: LandingPrimitiveId) => void
+	/** Hero reuse: same physics and layers, no disclosures. */
+	decorative?: boolean
 }
 
 export function LandingLantern(handle: Handle<LandingLanternProps>) {
+	const motion = lanternOrbMotion()
+
 	function leave(id: LandingPrimitiveId) {
 		handle.props.onClose(id)
 		handle.props.onResume(id)
 	}
 
 	return () => {
-		const { activeId, panelId, onOpen, onToggle, onDismiss } = handle.props
+		const { activeId, panelId, onOpen, onToggle, onDismiss, decorative } =
+			handle.props
 		return (
-			<figure class="landing-lantern">
+			<figure
+				class="landing-lantern"
+				data-decorative={decorative ? '' : undefined}
+				mix={motion}
+			>
 				<figcaption class="visually-hidden">
-					A lantern holding five glowing orbs, one for each Kody primitive.
+					A lantern holding six glowing orbs, one for each Kody primitive.
 				</figcaption>
 				<img
 					src={landingLanternImage.src}
@@ -68,6 +77,37 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 					{landingLanternOrbs.map((orb) => {
 						const primitive = primitiveById(orb.id)
 						const open = activeId === orb.id
+						const art = (
+							<img
+								src={landingLanternOrbArt[orb.id]}
+								alt=""
+								decoding="async"
+								draggable="false"
+								class="landing-lantern-orb-art"
+								data-orb-art={orb.id}
+								data-open={open ? '' : undefined}
+							/>
+						)
+						const pose = {
+							'--x': `${orb.x}%`,
+							'--y': `${orb.y}%`,
+							'--size': `${orb.size}%`,
+							'--art': `${orb.art}%`,
+							'--primitive-color': landingPrimitiveColorVar(orb.id),
+						}
+						if (decorative) {
+							return (
+								<span
+									key={orb.id}
+									class="landing-lantern-orb"
+									data-orb={orb.id}
+									style={pose}
+									aria-hidden="true"
+								>
+									{art}
+								</span>
+							)
+						}
 						return (
 							<button
 								key={orb.id}
@@ -75,12 +115,7 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 								class="landing-lantern-orb"
 								data-orb={orb.id}
 								data-open={open ? '' : undefined}
-								style={{
-									'--x': `${orb.x}%`,
-									'--y': `${orb.y}%`,
-									'--size': `${orb.size}%`,
-									'--primitive-color': landingPrimitiveColorVar(orb.id),
-								}}
+								style={pose}
 								aria-label={`${primitive.word} primitive`}
 								aria-expanded={open ? 'true' : 'false'}
 								aria-controls={panelId(orb.id)}
@@ -101,7 +136,9 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 										onDismiss(orb.id)
 									}),
 								]}
-							></button>
+							>
+								{art}
+							</button>
 						)
 					})}
 				</div>

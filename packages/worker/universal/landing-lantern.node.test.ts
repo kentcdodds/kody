@@ -1,10 +1,57 @@
 import { expect, test } from 'vitest'
+import { landingHomePrimitives } from './landing-home-copy.ts'
 import {
+	landingLanternImage,
+	landingLanternOrbs,
 	landingLeaderOrbAnchor,
 	landingLeaderOrbExit,
 	landingLeaderPath,
 	landingLeaderWordAnchor,
+	landingOrbitLightTone,
+	landingPrimitiveColorVar,
+	landingPrimitiveIds,
 } from './landing-lantern.ts'
+
+test('lantern orbs cover every homepage primitive exactly once, in copy order', () => {
+	const copyIds = landingHomePrimitives.map((primitive) => primitive.id)
+	expect(landingLanternOrbs.map((orb) => orb.id)).toEqual(copyIds)
+	expect([...landingPrimitiveIds]).toEqual(copyIds)
+	const packagesOrb = landingLanternOrbs.find((orb) => orb.id === 'packages')!
+	for (const orb of landingLanternOrbs) {
+		expect(orb.x).toBeGreaterThan(0)
+		expect(orb.x).toBeLessThan(100)
+		expect(orb.y).toBeGreaterThan(0)
+		expect(orb.y).toBeLessThan(100)
+		expect(orb.size).toBe(packagesOrb.size)
+		expect(orb.size).toBe(16.2)
+		expect(orb.art).toBeGreaterThan(orb.size)
+		expect(orb.art / orb.size).toBeGreaterThan(1.03)
+		expect(orb.art / orb.size).toBeLessThan(1.08)
+	}
+	expect(landingLanternImage.srcSet).toContain(landingLanternImage.src)
+	expect(landingLanternImage.src).toContain('lantern-shell')
+	expect(landingLanternImage.width).toBe(863)
+	expect(landingLanternImage.height).toBe(1242)
+	expect(landingPrimitiveColorVar('triggers')).toBe('var(--primitive-triggers)')
+	expect(landingPrimitiveColorVar('apps')).toBe('var(--primitive-apps)')
+})
+
+test('orbit light tones cycle through the six primitive colors', () => {
+	expect(
+		Array.from({ length: 9 }, (_, index) => landingOrbitLightTone(index)),
+	).toEqual([
+		'memory',
+		'secrets',
+		'packages',
+		'triggers',
+		'integrations',
+		'apps',
+		'memory',
+		'secrets',
+		'packages',
+	])
+	expect(landingOrbitLightTone(-1)).toBe('apps')
+})
 
 test('leaders leave the orb rim and glide into the word dot on horizontal tangents', () => {
 	const origin = { left: 10, top: 20 }

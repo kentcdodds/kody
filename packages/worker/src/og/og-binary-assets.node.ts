@@ -85,7 +85,7 @@ function ensureCache(): OgBinaryAssetCache {
 		),
 		// Same pixels as `images/hero/kody-base-640.webp` (PNG for Satori).
 		kodyBaseDataUri: bytesToPngDataUri(readOgAssetFile('kody-base.png')),
-		// Same pixels as `images/kody-primitives-lantern.webp` (PNG for Satori).
+		// Rest pose of the layered homepage lantern (PNG for Satori).
 		kodyPrimitivesLanternDataUri: bytesToPngDataUri(
 			readOgAssetFile('kody-primitives-lantern.png'),
 		),

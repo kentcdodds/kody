@@ -1,6 +1,6 @@
 /**
  * Homepage OG still of the primitives lantern.
- * The lantern PNG is the homepage still (`kody-primitives-lantern.webp`).
+ * The lantern PNG is the homepage lantern at the orbs' rest pose.
  * Leader paths use the same orb geometry and cubic as the live section
  * (`landing-lantern.ts`); Satori cannot measure the DOM, so word anchors
  * are a fixed stack beside the glass.
@@ -47,15 +47,17 @@ const primitiveColors = {
 		memory: '#f153aa',
 		secrets: '#9754ed',
 		packages: '#007df3',
-		jobs: '#eaab05',
+		triggers: '#3dce45',
 		integrations: '#05b047',
+		apps: '#ff4db8',
 	},
 	dark: {
 		memory: '#ff77c2',
 		secrets: '#b884ff',
 		packages: '#53a6ff',
-		jobs: '#fdc436',
+		triggers: '#7dff57',
 		integrations: '#43d066',
+		apps: '#ff8ad4',
 	},
 } as const satisfies Record<OgTheme, Record<LandingPrimitiveId, string>>
 

@@ -25,8 +25,11 @@ test('primitives sentence pairs lantern orbs with words and ships empty leaders'
 	expect(html.match(/aria-expanded="false"/g)).toHaveLength(
 		landingHomePrimitives.length * 2,
 	)
-	expect(html).toContain('kody-primitives-lantern-480.webp')
-	expect(html).toContain('kody-primitives-lantern.webp 839w')
+	expect(html).toContain('kody-primitives-lantern-shell-480.webp')
+	expect(html).toContain('kody-primitives-lantern-shell.webp 863w')
+	expect(html.match(/class="landing-lantern-orb-art"/g)).toHaveLength(
+		landingLanternOrbs.length,
+	)
 	expect(html.indexOf('id="primitives-title"')).toBeLessThan(
 		html.indexOf('landing-lantern'),
 	)
@@ -39,6 +42,7 @@ test('primitives sentence pairs lantern orbs with words and ships empty leaders'
 		expect(html).toContain(primitive.body)
 		expect(html).toContain(`data-word="${primitive.id}"`)
 		expect(html).toContain(`data-orb="${primitive.id}"`)
+		expect(html).toContain(`data-orb-art="${primitive.id}"`)
 		expect(html).toContain(`data-primitive="${primitive.id}"`)
 		expect(html).toContain(`aria-label="${primitive.word} primitive"`)
 		expect(html).toContain(
@@ -63,5 +67,13 @@ test('primitives sentence pairs lantern orbs with words and ships empty leaders'
 	expect(html).not.toMatch(/class="landing-leader-flow"[^>]*\sd="/)
 	expect(html).not.toContain('data-dismissed')
 	expect(html).not.toContain('data-active')
-	expect(html).not.toContain('\u2014')
+	expect(html).toContain(
+		'Subscriptions, emails, webhooks, and schedules that wake packages you own — no chat left open.',
+	)
+	expect(
+		html.replace(
+			'Subscriptions, emails, webhooks, and schedules that wake packages you own — no chat left open.',
+			'',
+		),
+	).not.toContain('\u2014')
 })

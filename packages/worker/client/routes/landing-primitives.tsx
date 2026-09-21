@@ -22,6 +22,7 @@ import {
 	LandingLantern,
 	hoverPointer,
 } from '#client/routes/landing-lantern.tsx'
+import { lanternOrbMotionEvent } from '#client/routes/landing-lantern-motion.ts'
 
 /**
  * Homepage primitives block: the locked intro line, then the five-orb
@@ -100,6 +101,9 @@ function leaderFollow() {
 				draw()
 			})
 		}
+
+		// Same frame as the orb step, so the leaders meet the moving rims.
+		node.addEventListener(lanternOrbMotionEvent, draw, { signal })
 
 		const observer = new ResizeObserver(schedule)
 		observer.observe(stage)
@@ -214,7 +218,7 @@ export function LandingPrimitives(handle: Handle) {
 					onResume={clearDismissed}
 				/>
 				{renderLeaders(openId)}
-				<ul class="landing-primitives-words" aria-label="The five primitives">
+				<ul class="landing-primitives-words" aria-label="The six primitives">
 					{landingHomePrimitives.map((primitive) => (
 						<li key={primitive.id} class="landing-primitive-item">
 							<LandingPrimitiveWord
