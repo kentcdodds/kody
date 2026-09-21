@@ -243,7 +243,11 @@ export function InstallDeepLink(
 export function PluginPrimaryInstall(
 	handle: Handle<{
 		href: string
-		label: 'Add to Cursor' | 'Add to Grok Bot'
+		label:
+			| 'Add to Cursor'
+			| 'Add to Cursor Local'
+			| 'Add to Cursor Cloud'
+			| 'Add to Grok Bot'
 		alternativeValue?: string
 		alternativeCopyLabel?: string
 	}>,

@@ -1,11 +1,11 @@
 /**
- * Durable one-gift-per-user Standard overlay. Triggered when unique inbound
- * MCP OAuth clientIds first cross 2. Uses PR1 unique-client counts; does not
- * recount grants itself.
+ * Durable one-gift-per-user Standard overlay. Triggered when known connected
+ * agent ecosystems first reach 2. Callers pass that count; this module does
+ * not recount grants.
  */
 
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
-import { hasSecondConnectedMcpClient } from '#universal/connected-mcp-agents.ts'
+import { hasSecondAgentEcosystem } from '#universal/onboarding-agent-ecosystems.ts'
 import { parseStoredPlanName } from '#universal/plans.ts'
 import {
 	describeSecondAgentStandardGift,
@@ -34,14 +34,14 @@ type GiftUserRow = {
 
 /**
  * Safe evaluator for authorize completion and grant-list pages. Missing
- * `prepare` skips both write and read. A failed listing or unique-client
+ * `prepare` skips both write and read. A failed listing or an ecosystem
  * count below 2 skips the write but still returns the persisted ledger so
  * `/onboarding.json` does not hide an already-granted gift.
  */
 export async function maybeEvaluateSecondAgentStandardGift(input: {
 	db?: D1Database
 	stableUserId: string
-	uniqueClientCount: number
+	ecosystemCount: number
 	listingFailed?: boolean
 	now?: Date
 }): Promise<SecondAgentStandardGiftState> {
@@ -49,14 +49,11 @@ export async function maybeEvaluateSecondAgentStandardGift(input: {
 		return describeSecondAgentStandardGift({})
 	}
 	try {
-		if (
-			!input.listingFailed &&
-			hasSecondConnectedMcpClient(input.uniqueClientCount)
-		) {
+		if (!input.listingFailed && hasSecondAgentEcosystem(input.ecosystemCount)) {
 			await evaluateSecondAgentStandardGift({
 				db: input.db,
 				stableUserId: input.stableUserId,
-				uniqueClientCount: input.uniqueClientCount,
+				ecosystemCount: input.ecosystemCount,
 				now: input.now,
 			})
 		}
@@ -96,17 +93,17 @@ export async function loadSecondAgentStandardGift(
 }
 
 /**
- * Record the one gift when unique inbound clients first reach 2.
+ * Record the one gift when known ecosystems first reach 2.
  * Idempotent: a second event returns the existing row and does not rewrite
  * expires_at or Stripe.
  */
 export async function evaluateSecondAgentStandardGift(input: {
 	db: D1Database
 	stableUserId: string
-	uniqueClientCount: number
+	ecosystemCount: number
 	now?: Date
 }): Promise<SecondAgentStandardGiftEvaluation> {
-	if (!hasSecondConnectedMcpClient(input.uniqueClientCount)) {
+	if (!hasSecondAgentEcosystem(input.ecosystemCount)) {
 		return { outcome: 'below_threshold' }
 	}
 	const now = input.now ?? new Date()

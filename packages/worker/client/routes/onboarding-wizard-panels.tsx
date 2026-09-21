@@ -23,7 +23,10 @@ import {
 	type OnboardingConnectedAgentListItem,
 	type OnboardingWizardStepNumber,
 } from '#universal/onboarding-process.ts'
-import { onboardingSecondAgentGreyedPresentation } from '#universal/onboarding-agent-ecosystems.ts'
+import {
+	onboardingSecondAgentGreyedPresentation,
+	onboardingStep3EcosystemGroups,
+} from '#universal/onboarding-agent-ecosystems.ts'
 import { buildAuthLink } from '#client/auth-links.ts'
 import {
 	AgentPickerMark,
@@ -33,7 +36,6 @@ import {
 	type McpClientKind,
 	type OnboardingAgentChooserPick,
 	canonicalOnboardingAgentChooser,
-	onboardingAgentLabel,
 } from '#client/routes/onboarding-mcp-clients.ts'
 import { CopyCard } from '#client/routes/onboarding-mcp-client-cards.tsx'
 import { OnboardingStep2Prompt } from '#client/routes/onboarding-step-2-prompt.tsx'
@@ -207,15 +209,8 @@ export function renderSecondAgentPanel(
 		awaitingConnect?: boolean
 	},
 ) {
-	const firstLabel = props.firstAgent
-		? onboardingAgentLabel(props.firstAgent)
-		: null
 	const connectedAgents = props.connectedAgents ?? []
-	const greyed = onboardingSecondAgentGreyedPresentation(
-		props.firstAgent,
-		firstLabel,
-		connectedAgents,
-	)
+	const greyed = onboardingSecondAgentGreyedPresentation(connectedAgents)
 	const accessWinMade = onboardingAccessWinMadeLine({
 		memorySubject: props.accessWinMemorySubject,
 		packageName: props.persistedPackageName,
@@ -276,6 +271,7 @@ export function renderSecondAgentPanel(
 				search={props.search ?? ''}
 				agentHref={onboardingSecondAgentHref}
 				pickerLede={onboardingSecondAgentLede}
+				ecosystemGroups={onboardingStep3EcosystemGroups}
 				greyedAgents={greyed.greyedAgents}
 				greyedReasons={greyed.greyedReasons}
 				greyedTitles={greyed.greyedTitles}

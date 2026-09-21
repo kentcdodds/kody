@@ -21,6 +21,7 @@ import {
 import { renderIcon } from '#universal/icon.tsx'
 import {
 	type OnboardingSecondAgentDisableReason,
+	type OnboardingStep3EcosystemGroup,
 	onboardingSecondAgentDisableHint,
 } from '#universal/onboarding-agent-ecosystems.ts'
 import { onboardingAgentHref } from '#universal/onboarding-process.ts'
@@ -55,6 +56,7 @@ type OnboardingMcpClientTabsProps = {
 	>
 	greyedTitles?: Partial<Record<McpClientKind, string>>
 	greyedReason?: string | null
+	ecosystemGroups?: ReadonlyArray<OnboardingStep3EcosystemGroup>
 }
 
 function AgentMarkIcon(
@@ -206,6 +208,20 @@ function renderAgentAuthHint(
 ) {
 	const productionPlugin = isDefaultKodyMcpUrl(mcpServerUrl)
 	switch (kind) {
+		case 'cursor-local':
+			return (
+				<>
+					Open Cursor on this computer, add the plugin, then click{' '}
+					<strong>Authenticate</strong> in the MCP list.
+				</>
+			)
+		case 'cursor-cloud':
+			return (
+				<>
+					Open a Cursor cloud agent, add the plugin, then click{' '}
+					<strong>Authenticate</strong>. Grok Bot uses this connection.
+				</>
+			)
 		case 'cursor':
 			return surface === 'mobile' ? (
 				<>
@@ -334,6 +350,7 @@ function renderAgentAuthHint(
  * Step 1: pick one agent, then show only that host's install path and
  * authenticate hint. Featured hosts are the first chooser; other named
  * hosts are under More; **Not listed** is the generic MCP URL path.
+ * Step 3 passes `ecosystemGroups` and renders those groups instead.
  */
 export function OnboardingMcpClientTabs(
 	handle: Handle<OnboardingMcpClientTabsProps>,
@@ -348,18 +365,71 @@ export function OnboardingMcpClientTabs(
 		const greyedAgents = handle.props.greyedAgents ?? []
 		const greyedReasons = handle.props.greyedReasons ?? {}
 		const greyedTitles = handle.props.greyedTitles ?? {}
+		const ecosystemGroups = handle.props.ecosystemGroups
+		const prefetchAgentIds = ecosystemGroups?.flatMap((group) => [
+			...group.agents,
+		])
 		handle.queueTask(() => {
 			const hrefs = onboardingAgentPickerPrefetchHrefs(
 				selectedAgent,
 				chooser,
 				search,
 				agentHref,
+				prefetchAgentIds,
 			)
 			const key = hrefs.join('\0')
 			if (key === warmedKey) return
 			warmedKey = key
 			prefetchRouteHrefs(hrefs)
 		})
+
+		if (!selectedAgent && ecosystemGroups && ecosystemGroups.length > 0) {
+			return (
+				<div
+					data-testid="onboarding-agent-picker"
+					data-picker="ecosystem"
+					mix={css(installLayoutCss)}
+				>
+					<p mix={css(pickerLedeCss)} id="onboarding-agent-picker-label">
+						{handle.props.pickerLede ??
+							'Choose the agent you want to connect first. You can add others later.'}
+					</p>
+					<div
+						data-testid="onboarding-ecosystem-picker"
+						mix={css(ecosystemPickerCss)}
+					>
+						{ecosystemGroups.map((group) => {
+							const labelId = `onboarding-ecosystem-${group.id}-label`
+							return (
+								<section
+									key={group.id}
+									data-testid={`onboarding-ecosystem-${group.id}`}
+									aria-labelledby={labelId}
+									mix={css(ecosystemGroupCss)}
+								>
+									<h3 id={labelId} mix={css(ecosystemLabelCss)}>
+										{group.label}
+									</h3>
+									<AgentPickerGrid
+										ids={group.agents.map((id) => ({
+											id,
+											viewport: 'both' as const,
+										}))}
+										labelledBy={labelId}
+										search={search}
+										agentHref={agentHref}
+										greyedAgents={greyedAgents}
+										greyedReasons={greyedReasons}
+										greyedTitles={greyedTitles}
+										greyedReason={handle.props.greyedReason ?? null}
+									/>
+								</section>
+							)
+						})}
+					</div>
+				</div>
+			)
+		}
 
 		if (!selectedAgent) {
 			return (
@@ -536,7 +606,7 @@ export function AgentPickerGrid(
 				const greyedTitles = handle.props.greyedTitles ?? {}
 				const search = handle.props.search ?? ''
 				const greyed = greyedAgents.includes(id)
-				const reason = greyedReasons[id] ?? 'same-ecosystem'
+				const reason = greyedReasons[id] ?? 'connected'
 				const title = greyedTitles[id] ?? handle.props.greyedReason ?? null
 				return (
 					<li key={id} mix={css(onboardingViewportCss(shown, 'list-item'))}>
@@ -593,6 +663,25 @@ const pickerLedeCss = {
 	margin: 0,
 	color: colors.textMuted,
 	maxWidth: '72ch',
+}
+
+const ecosystemPickerCss = {
+	display: 'grid',
+	gap: '1.25rem',
+}
+
+const ecosystemGroupCss = {
+	display: 'grid',
+	gap: '0.5rem',
+}
+
+const ecosystemLabelCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.sm,
+	fontWeight: typography.fontWeight.semibold,
+	letterSpacing: '0.04em',
+	textTransform: 'uppercase' as const,
 }
 
 const pickerGridCss = {

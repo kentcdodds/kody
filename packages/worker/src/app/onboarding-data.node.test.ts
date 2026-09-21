@@ -226,7 +226,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 	})
 	expect(withTwoClients).toMatchObject({
 		hasMcpClient: true,
-		hasSecondMcpClient: true,
+		hasSecondMcpClient: false,
 		needsOnboarding: false,
 		connectedAgents: [
 			{ clientId: 'client-a', kind: null },
@@ -266,8 +266,71 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 	})
 	expect(withPagedSecondClient).toMatchObject({
 		hasMcpClient: true,
-		hasSecondMcpClient: true,
+		hasSecondMcpClient: false,
 	})
+
+	const dualCursor = await loadOnboardingData({
+		env: {
+			OAUTH_PROVIDER: {
+				listUserGrants: vi.fn(async () => ({
+					items: [
+						{
+							id: 'grant-local',
+							clientId: 'cursor-local-client',
+							redirectUri: 'cursor://anysphere.cursor-mcp/oauth/callback',
+						},
+						{
+							id: 'grant-cloud',
+							clientId: 'cursor-cloud-client',
+							redirectUri: 'https://www.cursor.com/agents/mcp/oauth/callback',
+						},
+					],
+				})),
+				lookupClient: vi.fn(async (clientId: string) => ({
+					clientId,
+					clientName: 'Cursor',
+				})),
+			},
+		},
+		requestUrl: 'http://localhost:3742/onboarding',
+		stableUserId: 'user-1',
+		username: 'u-b',
+		emailVerified: true,
+	})
+	expect(dualCursor.connectedAgents.map((agent) => agent.kind)).toEqual([
+		'cursor-cloud',
+		'cursor-local',
+	])
+	expect(dualCursor.hasSecondMcpClient).toBe(false)
+
+	const cursorAndClaude = await loadOnboardingData({
+		env: {
+			OAUTH_PROVIDER: {
+				listUserGrants: vi.fn(async () => ({
+					items: [
+						{
+							id: 'grant-cursor',
+							clientId: 'cursor-client',
+							redirectUri: 'http://localhost:8787/callback',
+						},
+						{
+							id: 'grant-claude',
+							clientId: 'claude-client',
+						},
+					],
+				})),
+				lookupClient: vi.fn(async (clientId: string) => ({
+					clientId,
+					clientName: clientId === 'claude-client' ? 'Claude Code' : 'Cursor',
+				})),
+			},
+		},
+		requestUrl: 'http://localhost:3742/onboarding',
+		stableUserId: 'user-1',
+		username: 'u-b',
+		emailVerified: true,
+	})
+	expect(cursorAndClaude.hasSecondMcpClient).toBe(true)
 
 	const unverifiedWithGrant = await loadOnboardingData({
 		env: {

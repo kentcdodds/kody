@@ -7,7 +7,7 @@ import {
 	loadOnboardingAccessWinMemorySubject,
 	readOnboardingChecklistDismissed,
 } from '#mcp/onboarding-checklist.ts'
-import { hasSecondConnectedMcpClient } from '#universal/connected-mcp-agents.ts'
+import { hasSecondConnectedMcpClient } from '#universal/onboarding-agent-ecosystems.ts'
 import { loadInboundMcpConnectionState } from '#worker/connected-mcp-agents.ts'
 import { type OAuthGrantListHelpers } from '#worker/oauth-grants.ts'
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
@@ -258,7 +258,7 @@ async function loadOnboardingResumeProgress(
 	return {
 		hasMcpClient: inbound.uniqueClientCount > 0,
 		hasAccessWin,
-		hasSecondMcpClient: hasSecondConnectedMcpClient(inbound.uniqueClientCount),
+		hasSecondMcpClient: hasSecondConnectedMcpClient(inbound.agents),
 	}
 }
 

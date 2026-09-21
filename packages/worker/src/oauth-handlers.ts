@@ -40,7 +40,10 @@ import {
 	listUserOAuthGrantsForClient,
 	revokeOAuthGrant,
 } from '#worker/oauth-grants.ts'
-import { hasSecondConnectedMcpClient } from '#universal/connected-mcp-agents.ts'
+import {
+	countConnectedAgentEcosystems,
+	hasSecondConnectedMcpClient,
+} from '#universal/onboarding-agent-ecosystems.ts'
 import { loadInboundMcpConnectionState } from '#worker/connected-mcp-agents.ts'
 import { maybeEvaluateSecondAgentStandardGift } from '#worker/entitlements/second-agent-standard-gift.ts'
 import {
@@ -98,14 +101,12 @@ async function evaluateSecondAgentGiftAfterAuthorize(
 		getOAuthHelpers(env),
 		stableUserId,
 	)
-	if (
-		!inbound.listingFailed &&
-		hasSecondConnectedMcpClient(inbound.uniqueClientCount)
-	) {
+	const ecosystemCount = countConnectedAgentEcosystems(inbound.agents)
+	if (!inbound.listingFailed && hasSecondConnectedMcpClient(inbound.agents)) {
 		await maybeEvaluateSecondAgentStandardGift({
 			db: env.APP_DB,
 			stableUserId,
-			uniqueClientCount: inbound.uniqueClientCount,
+			ecosystemCount,
 			listingFailed: inbound.listingFailed,
 		})
 	}

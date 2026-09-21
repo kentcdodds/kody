@@ -1,8 +1,8 @@
 /**
- * Inbound MCP OAuth connections: unique-client counting and best-effort
- * labels. Source of truth is provider grants (`clientId`), not
- * `users.mcp_client_name` (first-touch) or `user_mcp_oauth_clients`
- * (user-minted confidential clients).
+ * Inbound MCP OAuth connections: best-effort labels. Source of truth is
+ * provider grants (`clientId`), not `users.mcp_client_name` (first-touch)
+ * or `user_mcp_oauth_clients` (user-minted confidential clients).
+ * Second-agent completion counts ecosystems, not these client ids.
  */
 
 import {
@@ -63,6 +63,8 @@ const clientNameKindRules = [
 		kind: 'claude-desktop',
 		needles: ['claude desktop', 'claude.ai', 'claude'],
 	},
+	{ kind: 'cursor-cloud', needles: ['cursor cloud', 'cursor-cloud'] },
+	{ kind: 'cursor-local', needles: ['cursor local', 'cursor-local'] },
 	{ kind: 'cursor', needles: ['cursor'] },
 	{ kind: 'gemini', needles: ['gemini'] },
 	{ kind: 'grok', needles: ['grok'] },
@@ -105,10 +107,6 @@ export function countUniqueOAuthClientIds(
 	grants: ReadonlyArray<{ clientId?: string | null }>,
 ): number {
 	return uniqueOAuthClientIds(grants).length
-}
-
-export function hasSecondConnectedMcpClient(uniqueClientCount: number) {
-	return uniqueClientCount >= 2
 }
 
 export function oauthGrantCreatedAtIso(
@@ -248,8 +246,7 @@ export function labelInboundMcpClient(
 ): LabeledInboundMcpClient {
 	const clientId = signals.clientId.trim()
 	const clientName = signals.clientName?.trim() || null
-	const kind =
-		kindFromClientName(clientName) ?? kindFromHosts(collectSignalHosts(signals))
+	const kind = kindFromInboundSignals(signals)
 	if (kind) {
 		return { kind, label: mcpClientById(kind).label }
 	}
@@ -274,6 +271,58 @@ export function classifyMcpClientName(clientName: string | null): {
 	const trimmed = clientName?.trim() || ''
 	if (trimmed) return { kind: null, label: trimmed }
 	return { kind: null, label: 'Unknown' }
+}
+
+/**
+ * Cursor registers every surface on the client. The grant's redirect URI
+ * is the surface that actually authorized.
+ */
+const cursorCloudGrantRedirectMarkers = [
+	'://www.cursor.com/agents/mcp/oauth/callback',
+	'://cursor.com/agents/mcp/oauth/callback',
+]
+
+const cursorLocalGrantRedirectMarkers = [
+	'cursor://anysphere.cursor-mcp/oauth/callback',
+	'://localhost:8787/callback',
+	'://127.0.0.1:8787/callback',
+]
+
+function cursorSurfaceFromGrantRedirect(
+	redirectUri: string | null | undefined,
+): 'local' | 'cloud' | null {
+	const value = redirectUri?.trim().toLowerCase()
+	if (!value) return null
+	if (
+		cursorCloudGrantRedirectMarkers.some((marker) => value.includes(marker))
+	) {
+		return 'cloud'
+	}
+	if (
+		cursorLocalGrantRedirectMarkers.some((marker) => value.includes(marker))
+	) {
+		return 'local'
+	}
+	return null
+}
+
+function kindFromInboundSignals(
+	signals: InboundMcpClientSignals,
+): McpClientKind | null {
+	const named = kindFromClientName(signals.clientName?.trim() || null)
+	if (
+		named &&
+		named !== 'cursor' &&
+		named !== 'cursor-local' &&
+		named !== 'cursor-cloud'
+	) {
+		return named
+	}
+	const surface = cursorSurfaceFromGrantRedirect(signals.grantRedirectUri)
+	if (surface === 'cloud') return 'cursor-cloud'
+	if (surface === 'local') return 'cursor-local'
+	if (named) return named
+	return kindFromHosts(collectSignalHosts(signals))
 }
 
 function kindFromClientName(clientName: string | null): McpClientKind | null {

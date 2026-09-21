@@ -214,7 +214,7 @@ test('step 2 shows one prompt and a search waiting spinner', async () => {
 	expect(started).toContain('data-connected="true"')
 })
 
-test('step 3 greys the first-agent ecosystem and folds in a portability proof', async () => {
+test('step 3 groups ecosystems and folds in a portability proof', async () => {
 	const picker = await renderToString(
 		secondAgentPanel({
 			firstAgent: 'codex',
@@ -224,13 +224,16 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 	)
 	expect(picker).toContain('Connect a second agent')
 	expect(picker).toContain('Standard free for 2 weeks')
+	expect(picker).toContain('data-picker="ecosystem"')
+	expect(picker).toContain('data-testid="onboarding-ecosystem-cursor"')
+	expect(picker).toContain('data-testid="onboarding-ecosystem-openai"')
 	expect(picker).toContain('data-testid="onboarding-agent-chatgpt"')
-	expect(picker).toContain('data-greyed="true"')
-	expect(picker).toContain('Same ecosystem')
 	expect(picker).toContain('href="/onboarding/step-3/claude-code"')
-	expect(picker).toContain('href="/onboarding/step-3/cursor"')
-	expect(picker).not.toContain('href="/onboarding/step-3/chatgpt"')
-	expect(picker).not.toContain('href="/onboarding/step-3/codex"')
+	expect(picker).toContain('href="/onboarding/step-3/cursor-local"')
+	expect(picker).toContain('href="/onboarding/step-3/cursor-cloud"')
+	expect(picker).toContain('href="/onboarding/step-3/chatgpt"')
+	expect(picker).toContain('href="/onboarding/step-3/codex"')
+	expect(picker).not.toContain('data-greyed="true"')
 	expect(picker).not.toContain('data-testid="onboarding-portability-proof"')
 	expect(picker).not.toContain('data-testid="onboarding-access-win-made"')
 	expect(picker).toContain('href="/community"')
@@ -346,14 +349,14 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 	expect(markCss).toContain('width: 1cap')
 	expect(markCss).toContain('height: 1cap')
 	expect(markCss).toContain('vertical-align: baseline')
-	expect(labeled).toContain('data-greyed-reason="same-ecosystem"')
 	expect(labeled).toContain('data-greyed-reason="connected"')
 	expect(labeled).toContain('data-testid="onboarding-agent-gemini"')
-	expect(labeled).toContain('data-testid="onboarding-agent-cursor"')
+	expect(labeled).toContain('data-testid="onboarding-agent-cursor-local"')
 	expect(labeled).toContain('data-testid="onboarding-agent-chatgpt"')
 	expect(labeled).toContain('data-testid="onboarding-agent-devin"')
-	expect(labeled).not.toContain('href="/onboarding/step-3/gemini"')
-	expect(labeled).not.toContain('href="/onboarding/step-3/cursor"')
+	expect(labeled).toContain('href="/onboarding/step-3/gemini"')
+	expect(labeled).toContain('href="/onboarding/step-3/cursor-local"')
+	expect(labeled).toContain('href="/onboarding/step-3/cursor-cloud"')
 	expect(labeled).not.toContain('href="/onboarding/step-3/chatgpt"')
 	expect(labeled).not.toContain('href="/onboarding/step-3/devin"')
 	expect(labeled).not.toContain('href="/onboarding/step-3/codex"')
@@ -361,7 +364,7 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 	expect(labeled).toContain('href="/onboarding/step-3/claude-code"')
 	expect(labeled).toContain('href="/onboarding/step-3/grok-bot"')
 	expect(labeled).toContain('href="/onboarding/step-3/not-listed"')
-	expect(labeled).toContain('Same ecosystem')
+	expect(labeled).toContain('Already connected.')
 
 	const notListed = await renderToString(
 		renderSecondAgentPanel({

@@ -82,12 +82,14 @@ about you.
 
 ## Step 3 — Connect a second agent
 
-Step 3 is where Kody earns the name. Pick an agent from a different ecosystem
-than the first (same-vendor hosts stay unavailable for this step), connect it
-the same way, then paste the portability prompt. The new agent loads
-`search({ entity: "guide:portability" })`, searches your account, and reuses the
-memory or package you just made — in a different product, with no setup
-repeated.
+Step 3 is where Kody earns the name. Hosts are grouped by ecosystem: Cursor
+(Local, Cloud, and Grok Bot — Grok Bot shares a Cursor Cloud connection),
+Claude, ChatGPT, and the rest. Pick a host from a different ecosystem than the
+one already connected. A tab turns off only for a host Kody already knows is
+connected. Connect it the same way, then paste the portability prompt. The new
+agent loads `search({ entity: "guide:portability" })`, searches your account,
+and reuses the memory or package you just made — in a different product, with no
+setup repeated.
 
 Connecting that second agent unlocks the Standard plan free for two weeks, once
 per account.

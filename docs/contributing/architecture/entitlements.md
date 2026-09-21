@@ -28,7 +28,7 @@ at `packages/worker/universal/plans.ts`.
   `readCurrentEntitlementResourceUsage` (UserMeter-authoritative for
   `storage_bytes` and daily resources).
 - `second-agent-standard-gift.ts` (universal + worker) — one 14-day public
-  Standard overlay when unique inbound MCP OAuth `clientId`s first reach 2.
+  Standard overlay when known connected agent ecosystems first reach 2.
   `describeSecondAgentStandardGift` is the flag for lifecycle email /
   PackagedSingleClient. Enforcement goes through `getUserEntitlement`; Stripe is
   not mutated.
@@ -106,14 +106,15 @@ linked. `plan` on those records remains the grant that Manage plan edits.
 
 ### Second-agent Standard gift
 
-When a user first reaches two unique inbound MCP OAuth `clientId`s, Kody records
-one 14-day public Standard overlay. The gate is that second unique client
-(activation), not day-0 signup. `users.second_agent_standard_gift_granted_at` is
-the write-once ledger (one gift per user).
-`users.second_agent_standard_gift_expires_at` is set only when the base
-effective plan is still `free`; NULL means the account was already
-Standard/Pro/max and Stripe was not touched. There is no existing helper that
-extends a remaining Stripe period, and mutating `trial_end` / period end is
+When a user first reaches two known connected agent ecosystems, Kody records one
+14-day public Standard overlay. The gate is that second ecosystem (activation),
+not day-0 signup and not a second OAuth `clientId` for the same ecosystem. Two
+Cursor auth contexts are one ecosystem. An unlabeled client does not add an
+ecosystem. `users.second_agent_standard_gift_granted_at` is the write-once
+ledger (one gift per user). `users.second_agent_standard_gift_expires_at` is set
+only when the base effective plan is still `free`; NULL means the account was
+already Standard/Pro/max and Stripe was not touched. There is no existing helper
+that extends a remaining Stripe period, and mutating `trial_end` / period end is
 payment-adjacent.
 
 `getUserEntitlement` and compute-overage invoicing overlay Standard through
@@ -121,9 +122,9 @@ payment-adjacent.
 and the base rank is still below Standard. The gift never lowers a paid or
 manual grant. Expiry is read-time (no sweeper). Authorize completion and
 grant-list pages (onboarding payload, Account → Connections) call
-`maybeEvaluateSecondAgentStandardGift`, which skips the write when unique
-clients are below 2 or listing failed, but still reads the persisted ledger so
-`/onboarding.json` does not hide an already-granted gift. Missing
+`maybeEvaluateSecondAgentStandardGift`, which skips the write when known
+ecosystems are below 2 or listing failed, but still reads the persisted ledger
+so `/onboarding.json` does not hide an already-granted gift. Missing
 `APP_DB.prepare` skips both write and read.
 
 `describeSecondAgentStandardGift` / `SecondAgentStandardGiftState` is the flag

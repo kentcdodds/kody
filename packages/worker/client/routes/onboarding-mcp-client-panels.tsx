@@ -110,10 +110,18 @@ export function renderPanelContent(
 ) {
 	switch (kind) {
 		case 'cursor':
+		case 'cursor-local':
+		case 'cursor-cloud':
 			return (
 				<PluginPrimaryInstall
 					href={kodyCursorMarketplaceUrl}
-					label="Add to Cursor"
+					label={
+						kind === 'cursor-cloud'
+							? 'Add to Cursor Cloud'
+							: kind === 'cursor-local'
+								? 'Add to Cursor Local'
+								: 'Add to Cursor'
+					}
 					alternativeValue={kodyCursorAddPluginCommand}
 					alternativeCopyLabel="Copy /add-plugin kody"
 				/>
@@ -476,6 +484,7 @@ export function renderPanelWarning(
 ) {
 	switch (kind) {
 		case 'cursor':
+		case 'cursor-local':
 			return surface === 'mobile' ? (
 				<ClientWarning>
 					This is not a full editor on a phone. Open cursor.com to kick off and
@@ -536,6 +545,7 @@ export function renderPanelWarning(
 					CLI later on a computer.
 				</ClientWarning>
 			) : null
+		case 'cursor-cloud':
 		case 'copilot':
 		case 'copilot-app':
 		case 'devin':

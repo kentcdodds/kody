@@ -4,7 +4,8 @@
  * Step 2 and Step 3 URLs do not carry the first agent. The payload's
  * `connectedAgents` can recover a named host on return visits; this session
  * remembers the explicit picker choice so Step 2 can say "Copy a prompt to
- * Cursor…" and Step 3 can grey the same-ecosystem family in the same tab.
+ * Cursor…". Step 3 reads connected grants, not this pick, when it disables
+ * a tab.
  */
 
 import {
@@ -34,8 +35,8 @@ function asSelectedAgent(value: unknown): McpClientKind | null {
 export function rememberOnboardingSelectedAgent(agent: McpClientKind) {
 	if (!isBrowserRuntime()) return
 	// `other` is the overflow / generic-MCP path, not a first-agent identity.
-	// Visiting /onboarding/step-1/not-listed must not wipe a named pick —
-	// Step 3 greying and the same-ecosystem deep-link guard both read this.
+	// Visiting /onboarding/step-1/not-listed must not wipe a named pick.
+	// Step 2 copy still reads this session value.
 	const stored = asSelectedAgent(agent)
 	if (!stored) return
 	browserRemembered = stored
