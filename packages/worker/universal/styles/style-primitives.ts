@@ -802,8 +802,8 @@ export const descriptionCss = {
 }
 
 /**
- * Native `<details>` / `<summary>` treatment used by account entity
- * explainers and the public FAQ. Keep new disclosures on this object
+ * Native `<details>` / `<summary>` treatment used by the public FAQ and
+ * other in-flow disclosures. Keep new disclosures on this object
  * instead of inventing a second accordion.
  */
 export const nativeDisclosureCss = {

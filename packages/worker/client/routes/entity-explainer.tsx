@@ -1,7 +1,16 @@
 import { css, type Handle } from 'remix/ui'
+import { listenToRouterNavigation } from '#client/client-router.tsx'
+import { dismissOpenPopoverPanel } from '#client/site-header.tsx'
+import { renderIcon } from '#universal/icon.tsx'
 import { routes } from '#universal/routes.ts'
 import { docHref } from '#universal/docs-nav.ts'
-import { nativeDisclosureCss } from '#universal/styles/style-primitives.ts'
+import { hoverMq } from '#universal/styles/style-primitives.ts'
+import {
+	colors,
+	radius,
+	shadows,
+	typography,
+} from '#universal/styles/tokens.ts'
 
 type EntityExplainerLink = {
 	href: string
@@ -36,7 +45,6 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		match: accountSection(routes.accountEmail.href()),
 		paragraphs: [
 			"Every Kody account gets a personal inbox at your username on this deployment's email domain. Inbound mail is stored so automations can react to it, and your agent can send you notify-self messages or reply to stored threads.",
-			'Use the inbox as an automation trigger — invoices to a +tag address, alerts from a job, or a daily digest that stays quiet until something actually happened. Compose and reply through your agent; this page is for browsing, classifying, and inspecting messages.',
 		],
 		learnMore: [
 			{
@@ -51,7 +59,6 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		match: accountSection(routes.accountJobs.href()),
 		paragraphs: [
 			'A job is scheduled work that runs in the cloud on Cloudflare Workers, whether or not your computer is on. Package-owned jobs live with the saved package that declares them.',
-			'Use a job for recurring or interval work that belongs to a package. From here you can inspect schedules, run a job now, and toggle kill switch or Preserve. Deferred one-shots belong on Workflows.',
 		],
 		learnMore: [
 			{
@@ -65,8 +72,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		question: 'What is a workflow?',
 		match: accountSection(routes.accountWorkflows.href()),
 		paragraphs: [
-			'A workflow is a deferred or long-running run created through kody:runtime workflows.create. Inline workflows carry their code; package workflows call a published export. Unlike jobs, workflows are one-shot durable work rather than recurring schedules.',
-			'Use this page to inspect status, run time, and errors, and to cancel a run that has not finished yet.',
+			'A workflow is one-shot durable work, not a recurring schedule. Inline workflows carry their code; package workflows call a published export.',
 		],
 		learnMore: [
 			{
@@ -80,8 +86,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		question: 'What is a webhook?',
 		match: accountSection(routes.accountWebhooks.href()),
 		paragraphs: [
-			'A webhook is an inbound HTTP endpoint a package declares in package.json#kody.webhooks. Each name binds one export; when a provider such as GitHub, Stripe, or Sentry (or your own trusted client) POSTs to the minted URL, Kody runs that export.',
-			"The URL is a credential and belongs to the package that declares it. This list shows every webhook across your packages; open one to mint, reveal, copy, rotate, or disable its URL in that package's settings. Agents connected over MCP can mint an opaque handle and apply it to GitHub on your behalf, but the URL itself only ever shows in package settings.",
+			'A webhook is an inbound HTTP endpoint a package declares. The minted URL is a credential: when a provider POSTs to it, Kody runs that package’s export.',
 		],
 		learnMore: [
 			{
@@ -95,8 +100,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		question: 'What is a secret?',
 		match: accountSection(routes.accountSecrets.href()),
 		paragraphs: [
-			'A secret is a credential Kody stores for you — an API key, personal access token, or OAuth token. Your agent references secrets by name; Kody substitutes them at the network boundary and never returns the raw value to chat.',
-			'Use secrets so your agent can call the services you already use without pasting keys into the conversation. Add API keys here; connect OAuth apps from Integrations.',
+			'A secret is a credential Kody stores for you — an API key or token. Your agent references it by name; Kody substitutes the value at the network boundary and never returns it to chat.',
 		],
 		learnMore: [
 			{
@@ -110,9 +114,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		question: 'What is an integration?',
 		match: accountSection(routes.accountIntegrations.href()),
 		paragraphs: [
-			'An integration is a connected service — usually OAuth — so Kody can act as you on that provider. You register your own OAuth client, and tokens land as your secrets.',
-			'Use an integration when a provider needs a signed-in connection rather than a static API key. Tokens land as your secrets. Scope connections deliberately and revoke unused ones.',
-			'The connection is yours. Packages use it; they do not own it. An integration is not a package and not an MCP server.',
+			'An integration is a connected service — usually OAuth — so Kody can act as you on that provider. The connection is yours: packages use it, they do not own it.',
 		],
 		learnMore: [
 			packagesIntegrationsMcpGuide,
@@ -128,7 +130,6 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		match: accountSection(routes.accountConnections.href()),
 		paragraphs: [
 			'A connection is an AI host — Cursor, Claude, ChatGPT, Codex, a CLI — that has authorized against this Kody account over MCP. Every connected host reaches the same memories, secrets, packages, jobs, and email; Kody is the home they share, not a gateway.',
-			'Add connection is its own page: it lists every agent Kody knows how to connect and shows that host’s install steps; the MCP URL works for any other host that speaks MCP. Revoke a host you no longer use from the connected list. Sign-in providers such as GitHub and Google stay on Overview. Remote MCP servers Kody calls on your behalf live on MCP servers.',
 		],
 		learnMore: [
 			{
@@ -143,9 +144,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		question: 'What is an MCP server?',
 		match: accountSection(routes.accountMcpServers.href()),
 		paragraphs: [
-			'Kody can act as an MCP client: you add a remote MCP server, and its tools become callable as kody.mcp["server-name"].tool_name(...). This is the inverse of connecting your agent to Kody.',
-			'Use this when another product already exposes MCP tools you want your Kody-connected agent to reach. Add a URL plus a bearer token, or complete OAuth when the server requires it.',
-			'This is how agents connect, not package runtime. Prefer packages as the surface agents reach through Kody MCP.',
+			'An MCP server here is a remote server Kody calls for you. Its tools become callable from your agent, the inverse of connecting your agent to Kody.',
 		],
 		learnMore: [packagesIntegrationsMcpGuide],
 	},
@@ -154,8 +153,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		question: 'What is a memory?',
 		match: accountSection(routes.accountMemories.href()),
 		paragraphs: [
-			'A memory is a durable fact or preference Kody keeps about you across conversations — things like a preferred language or how you like to be notified. Agents retrieve a few relevant memories per task and must verify before writing.',
-			'Browse, filter, and delete memories here. Ask your agent to remember something important; do not store secrets or credentials as memories.',
+			'A memory is a durable fact or preference Kody keeps about you across conversations. Agents retrieve a few relevant ones per task. Do not store secrets here.',
 		],
 		learnMore: [
 			{
@@ -169,8 +167,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		question: 'What is a shared package?',
 		match: accountSection(routes.accountShared.href()),
 		paragraphs: [
-			'Shared packages are invitations from one paid Kody account to another to use a package. Guests can read source and invoke. They cannot publish, write, or create jobs, apps, webhooks, or subscriptions on the shared package.',
-			'Accept is required. Pin stays on the accepted publish until you approve a later one. Follow auto-accepts future publishes. Raw secret values stay hidden.',
+			'A shared package is an invitation from one paid Kody account to another. Guests can read source and invoke. They cannot publish, write, or create jobs, apps, webhooks, or subscriptions.',
 		],
 		learnMore: [
 			{
@@ -184,8 +181,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		question: 'What is waiting?',
 		match: accountSection(routes.accountWaiting.href()),
 		paragraphs: [
-			'Waiting is the current-state queue of things only you can clear: verify email, reconnect an MCP server, promote a locked-package publish, confirm a pending email change, or finish setup.',
-			'Items disappear when the gate clears. Activity is run history. Email is your mailbox. Vendor outages and operator work do not show up here.',
+			'Waiting is the queue of things only you can clear: verify email, reconnect an MCP server, promote a locked-package publish, confirm a pending email change, or finish setup.',
 		],
 	},
 	{
@@ -193,8 +189,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		question: 'What are experiments?',
 		match: accountSection(routes.accountExperiments.href()),
 		paragraphs: [
-			'Experiments is an opt-in for early, unfinished work. Turning it on puts your account in the experiments audience so feature flags that target that audience can include you.',
-			'Opting in does not enable every experiment by itself — each flag still needs to be on for you. You can opt out anytime on this page.',
+			'Experiments is an opt-in for early, unfinished work. It puts your account in the experiments audience. Each flag still has to be on for you, and you can opt out anytime.',
 		],
 	},
 	{
@@ -202,8 +197,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		question: 'What is activity?',
 		match: accountSection(routes.accountActivity.href()),
 		paragraphs: [
-			'Activity is a short execution history for jobs, package apps, webhooks, and other runtimes. Open errors shows failures with logs and triage (open, ignored, or resolved). Recent runs lists the last week of successes and errors from the same records.',
-			'Use Open errors to decide whether to ignore, resolve, or fix a failure. Switch to Recent runs to see what ran. Your agent can review the same data through the runs capabilities. A later successful run for the same job automatically resolves earlier open errors.',
+			'Activity is a short execution history for jobs, package apps, webhooks, and other runtimes: open errors with logs and triage, plus the last week of runs.',
 		],
 	},
 	{
@@ -211,8 +205,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		question: 'What is usage?',
 		match: accountSection(routes.accountUsage.href()),
 		paragraphs: [
-			'Usage is how much of your plan you have consumed — stored email, job slots, workflow concurrency, and other finite entitlements.',
-			'Check this page when something is quota-gated or you are deciding whether to upgrade. Limits are per signed-in user.',
+			'Usage is how much of your plan you have consumed — stored email, job slots, workflow concurrency, and other finite entitlements. Limits are per signed-in user.',
 		],
 		learnMore: [
 			{
@@ -226,8 +219,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		question: 'What is community?',
 		match: (pathname) => pathname === routes.community.href(),
 		paragraphs: [
-			"Community is the public catalog of published packages on this deployment. A listing is a pinned snapshot of someone else's package, not a live link to their private copy.",
-			'Browse and search without an account. Installing creates a fork you own — you can change it, schedule it, and publish your own version. Prefer a close public package before creating one from scratch.',
+			'Community is the public catalog of published packages on this deployment. Installing creates a fork you own.',
 		],
 		learnMore: [
 			{
@@ -251,38 +243,141 @@ export function resolveEntityExplainer(
 	}
 }
 
-const entityExplainerCss = {
-	...nativeDisclosureCss,
-	maxWidth: '60ch',
-}
+/** One anchor for the single explainer mounted on a page. */
+const entityExplainerAnchor = '--entity-explainer'
 
 type EntityExplainerProps = {
 	copy: EntityExplainerCopy
-	marginTop?: string
 }
 
+/**
+ * Info button beside a page title. The panel is a declarative popover so
+ * the shortened copy and its links work from server HTML: light dismiss,
+ * Escape, and clicks, without a scroll lock.
+ */
 export function EntityExplainer(handle: Handle<EntityExplainerProps>) {
-	return () => (
-		<details
-			data-entity-explainer={handle.props.copy.id}
-			mix={css({
-				...entityExplainerCss,
-				...(handle.props.marginTop
-					? { marginTop: handle.props.marginTop }
-					: {}),
-			})}
-		>
-			<summary>{handle.props.copy.question}</summary>
-			<div>
-				{handle.props.copy.paragraphs.map((paragraph) => (
-					<p key={paragraph}>{paragraph}</p>
-				))}
-				{handle.props.copy.learnMore?.map((link) => (
-					<p key={link.href}>
-						<a href={link.href}>{link.label}</a>
+	const panelId = `entity-explainer-${handle.props.copy.id}`
+	listenToRouterNavigation(handle, () => {
+		dismissOpenPopoverPanel(document.getElementById(panelId))
+	})
+
+	return () => {
+		const copy = handle.props.copy
+		const titleId = `${panelId}-title`
+		return (
+			<>
+				<button
+					type="button"
+					popovertarget={panelId}
+					aria-label={copy.question}
+					data-entity-explainer-trigger={copy.id}
+					mix={css(entityExplainerButtonCss)}
+				>
+					{renderIcon('information', { size: '1.35rem' })}
+				</button>
+				<div
+					id={panelId}
+					popover
+					role="dialog"
+					aria-labelledby={titleId}
+					data-entity-explainer={copy.id}
+					mix={css(entityExplainerPanelCss)}
+				>
+					<p id={titleId} mix={css(entityExplainerTitleCss)}>
+						{copy.question}
 					</p>
-				))}
-			</div>
-		</details>
-	)
+					{copy.paragraphs.map((paragraph) => (
+						<p key={paragraph} mix={css(entityExplainerBodyCss)}>
+							{paragraph}
+						</p>
+					))}
+					{copy.learnMore?.map((link) => (
+						<a
+							key={link.href}
+							href={link.href}
+							mix={css(entityExplainerLinkCss)}
+						>
+							{link.label}
+						</a>
+					))}
+				</div>
+			</>
+		)
+	}
+}
+
+const entityExplainerButtonCss = {
+	display: 'inline-flex',
+	flex: 'none',
+	alignItems: 'center',
+	justifyContent: 'center',
+	width: '2.75rem',
+	height: '2.75rem',
+	marginInline: '-0.2rem',
+	padding: 0,
+	border: 'none',
+	borderRadius: radius.full,
+	background: 'transparent',
+	color: colors.textMuted,
+	cursor: 'pointer',
+	anchorName: entityExplainerAnchor,
+	[hoverMq]: {
+		'&:hover': {
+			color: colors.text,
+			backgroundColor: colors.primarySoft,
+		},
+	},
+	'&:focus-visible': {
+		outline: `2px solid ${colors.primary}`,
+		outlineOffset: '2px',
+	},
+}
+
+const entityExplainerPanelCss = {
+	// Leave `display` unset so a closed popover keeps the UA `display: none`.
+	positionAnchor: entityExplainerAnchor,
+	positionArea: 'bottom span-right',
+	positionTryFallbacks: 'flip-block, flip-inline',
+	inset: 'auto',
+	width: 'min(28rem, calc(100vw - 2.5rem))',
+	maxHeight: 'min(70dvh, 24rem)',
+	overflow: 'auto',
+	gap: '0.7rem',
+	margin: '0.45rem',
+	padding: '1rem 1.1rem',
+	border: `1px solid ${colors.border}`,
+	borderRadius: radius.lg,
+	background: colors.surface,
+	color: colors.text,
+	boxShadow: shadows.md,
+	boxSizing: 'border-box' as const,
+	'&:popover-open': {
+		display: 'grid',
+	},
+}
+
+const entityExplainerTitleCss = {
+	margin: 0,
+	fontWeight: typography.fontWeight.bold,
+	fontSize: '1.05rem',
+	letterSpacing: '-0.02em',
+	lineHeight: 1.25,
+}
+
+const entityExplainerBodyCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: '0.98rem',
+	lineHeight: 1.5,
+	textWrap: 'pretty' as const,
+}
+
+const entityExplainerLinkCss = {
+	color: colors.primaryText,
+	fontWeight: typography.fontWeight.semibold,
+	fontSize: typography.fontSize.sm,
+	width: 'fit-content',
+	minHeight: '44px',
+	display: 'inline-flex',
+	alignItems: 'center',
 }

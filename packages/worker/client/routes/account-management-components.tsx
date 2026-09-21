@@ -250,6 +250,8 @@ type AccountManagementHeaderProps = {
 	title: string
 	description: string
 	actions?: AccountManagementSlot
+	/** Sits beside the H1. Account pages pass the entity-explainer button. */
+	titleAside?: AccountManagementSlot
 }
 
 export function AccountManagementHeader(
@@ -265,19 +267,29 @@ export function AccountManagementHeader(
 				flexWrap: 'wrap',
 			})}
 		>
-			<div mix={css({ display: 'grid', gap: '0.6rem' })}>
-				<h1
+			<div mix={css({ display: 'grid', gap: '0.6rem', minWidth: 0 })}>
+				<div
 					mix={css({
-						fontSize: 'clamp(2rem, 4vw, 2.7rem)',
-						fontWeight: 760,
-						letterSpacing: '-0.026em',
-						lineHeight: 1.08,
-						color: colors.text,
-						margin: 0,
+						display: 'flex',
+						alignItems: 'center',
+						gap: '0.15rem',
+						minWidth: 0,
 					})}
 				>
-					{handle.props.title}
-				</h1>
+					<h1
+						mix={css({
+							fontSize: 'clamp(2rem, 4vw, 2.7rem)',
+							fontWeight: 760,
+							letterSpacing: '-0.026em',
+							lineHeight: 1.08,
+							color: colors.text,
+							margin: 0,
+						})}
+					>
+						{handle.props.title}
+					</h1>
+					{handle.props.titleAside ?? null}
+				</div>
 				<p mix={css({ color: colors.textMuted, margin: 0 })}>
 					{handle.props.description}
 				</p>
@@ -456,9 +468,12 @@ type AccountPageHeaderProps = {
 }
 
 /**
- * Header plus the account-sections subnav. Account pages use this the same
- * way admin pages use AdminPageHeader, so user-specific destinations live
- * under the account layout instead of crowding the top-level nav.
+ * Account-sections subnav plus the page title. The desktop rail is
+ * absolutely positioned in the shell, so it stays in the left track. The
+ * phone menu is in normal flow and comes first, above the H1. An entity
+ * explainer, when this page has one, is the info button beside the H1.
+ * Account pages use this the same way admin pages use AdminPageHeader, so
+ * user-specific destinations live under the account layout.
  */
 export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 	return () => {
@@ -482,12 +497,6 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 
 		return (
 			<>
-				<AccountManagementHeader
-					title={handle.props.title}
-					description={handle.props.description}
-					actions={handle.props.actions}
-				/>
-				{explainer ? <EntityExplainer copy={explainer} /> : null}
 				<AccountManagementLinkNav
 					label="Account sections"
 					items={navItems.map((item) => ({
@@ -496,6 +505,12 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 						icon: item.icon,
 						active: isAccountNavItemActive(item.href, currentPath),
 					}))}
+				/>
+				<AccountManagementHeader
+					title={handle.props.title}
+					description={handle.props.description}
+					actions={handle.props.actions}
+					titleAside={explainer ? <EntityExplainer copy={explainer} /> : null}
 				/>
 			</>
 		)

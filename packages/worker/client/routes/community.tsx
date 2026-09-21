@@ -91,18 +91,18 @@ export function CommunityRoute(handle: Handle) {
 			<section mix={css(communityPageCss)}>
 				<header mix={css(communityHeadCss)}>
 					<div>
-						<h1 data-rise style={{ '--rise': '0' }} mix={css(headTitleCss)}>
-							Take what others
-							<br />
-							built. <em>Make it yours.</em>
-						</h1>
+						<div mix={css(communityTitleRowCss)}>
+							<h1 data-rise style={{ '--rise': '0' }} mix={css(headTitleCss)}>
+								Take what others
+								<br />
+								built. <em>Make it yours.</em>
+							</h1>
+							{explainer ? <EntityExplainer copy={explainer} /> : null}
+						</div>
 						<p data-rise style={{ '--rise': '1' }} mix={css(headSubCss)}>
 							Browse packages shared by Kody users. Fork with your agent and
 							adapt them to your goals.
 						</p>
-						{explainer ? (
-							<EntityExplainer copy={explainer} marginTop="1.15rem" />
-						) : null}
 						<form
 							data-rise
 							data-focus-container
@@ -205,6 +205,16 @@ const communityHeadCss = {
 	'@media (max-width: 720px)': {
 		gridTemplateColumns: '1fr',
 		textAlign: 'center' as const,
+	},
+}
+
+const communityTitleRowCss = {
+	display: 'flex',
+	alignItems: 'center',
+	gap: '0.15rem',
+	minWidth: 0,
+	'@media (max-width: 720px)': {
+		justifyContent: 'center',
 	},
 }
 
