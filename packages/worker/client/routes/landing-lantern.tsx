@@ -92,11 +92,13 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 								data-open={open ? '' : undefined}
 							/>
 						)
+						// Unitless shares of lantern width. Percentages make
+						// `calc(100% * var(--art) / var(--size))` invalid in Firefox.
 						const pose = {
 							'--x': `${orb.x}%`,
 							'--y': `${orb.y}%`,
-							'--size': `${orb.size}%`,
-							'--art': `${orb.art}%`,
+							'--size': `${orb.size}`,
+							'--art': `${orb.art}`,
 							'--primitive-color': landingPrimitiveColorVar(orb.id),
 						}
 						if (decorative) {

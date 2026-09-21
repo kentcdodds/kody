@@ -1166,13 +1166,16 @@ html.is-settled {
 }
 
 /* Orb cutout, centered in the hotspot. Width is the sprite as a share
-   of the disc so the painted circle, not the glow, lines up with the ring. */
+   of the disc so the painted circle, not the glow, lines up with the ring.
+   `--art` and `--size` are unitless shares of lantern width. Dividing
+   those as percentages needs typed arithmetic, which Firefox rejects,
+   and the sprite then paints at its intrinsic size. */
 .landing-lantern-orb-art {
 	position: absolute;
 	z-index: 0;
 	left: 50%;
 	top: 50%;
-	width: calc(var(--art) / var(--size) * 100%);
+	width: calc(100% * var(--art) / var(--size));
 	height: auto;
 	translate: -50% -50%;
 	pointer-events: none;
@@ -1198,7 +1201,7 @@ html.is-settled {
 	left: var(--x);
 	top: var(--y);
 	translate: -50% -50%;
-	width: var(--size, 16.2%);
+	width: calc(var(--size, 16.2) * 1%);
 	overflow: visible;
 	aspect-ratio: 1;
 	margin: 0;
@@ -1215,13 +1218,15 @@ html.is-settled {
 	-webkit-tap-highlight-color: transparent;
 }
 
-/* Soft pulse ring; motion-only, staggered per orb. */
+/* Soft pulse ring; motion-only, staggered per orb. The stroke uses
+   the open label color (`--primitive-text-l` on the primitive). */
 .landing-lantern-orb::after {
 	content: '';
 	position: absolute;
 	inset: -2px;
 	border-radius: 50%;
-	border: 2px solid oklch(from var(--primitive-color) calc(l + 0.1) c h / 0.7);
+	border: 2px solid
+		oklch(from var(--primitive-color) var(--primitive-text-l) c h);
 	opacity: 0;
 	pointer-events: none;
 }

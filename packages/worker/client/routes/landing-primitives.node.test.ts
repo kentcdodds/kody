@@ -62,6 +62,13 @@ test('primitives sentence pairs lantern orbs with words and ships empty leaders'
 		expect(html).toContain(`id="${panelIds[0]}"`)
 	}
 
+	// Unitless so Firefox can divide art by size. Percentages need typed
+	// arithmetic and the sprite falls back to its intrinsic box.
+	for (const orb of landingLanternOrbs) {
+		expect(html).toContain(`--size: ${orb.size};`)
+		expect(html).toContain(`--art: ${orb.art};`)
+	}
+
 	expect(html.match(/data-dot="/g)).toHaveLength(landingHomePrimitives.length)
 	expect(html.match(/class="landing-leader"/g)).toHaveLength(
 		landingHomePrimitives.length,
