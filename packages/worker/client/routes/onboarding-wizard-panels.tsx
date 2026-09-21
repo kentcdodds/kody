@@ -252,6 +252,7 @@ export function renderSecondAgentPanel(
 			{renderConnectAgentStatus({
 				loggedIn: props.loggedIn,
 				hasMcpClient: props.hasSecondMcpClient,
+				anyGrantCompletesStep: true,
 				connectedAgents,
 				selectedAgent: props.selectedAgent,
 				selectedAgentLabel: props.selectedAgentLabel,
@@ -318,6 +319,7 @@ export function renderSecondAgentPanel(
 						hasMcpClient: props.hasSecondMcpClient,
 						selectedAgent: props.selectedAgent,
 						connectedAgents,
+						anyGrantCompletesStep: true,
 					}),
 				})}
 				lastStep={{
@@ -425,7 +427,12 @@ function connectedAgentsOnCard(
 	agents: ReadonlyArray<OnboardingConnectedAgentListItem> | undefined,
 ) {
 	const unique = uniqueOnboardingConnectedAgents(agents ?? [])
-	if (!selectedAgent || selectedAgent === 'other') return unique
+	if (selectedAgent === 'other') {
+		return unique.filter(
+			(agent) => agent.kind == null || agent.kind === 'other',
+		)
+	}
+	if (!selectedAgent) return unique
 	return unique.filter((agent) => agent.kind === selectedAgent)
 }
 
@@ -441,11 +448,12 @@ function cardShowsConnectedStatus(props: {
 	hasMcpClient: boolean
 	selectedAgent: McpClientKind | null
 	connectedAgents?: ReadonlyArray<OnboardingConnectedAgentListItem>
+	/** Step 3 is done when any second grant exists, not when the selected kind matches. */
+	anyGrantCompletesStep?: boolean
 }) {
 	if (!props.hasMcpClient) return false
-	// Picker (no host selected): any real grant is "you are connected".
-	if (!props.selectedAgent) return true
-	// A named card, including Not listed, never borrows another host's grant.
+	if (props.anyGrantCompletesStep) return true
+	if (!props.selectedAgent || props.selectedAgent === 'other') return true
 	return selectedAgentIsConnected(props.selectedAgent, props.connectedAgents)
 }
 
@@ -457,14 +465,18 @@ function waitingForAgentLabel(selectedAgentLabel: string | null) {
 
 function connectWaitLabel(props: {
 	awaitingConnect?: boolean
+	hasMcpClient?: boolean
 	selectedAgent: McpClientKind | null
 	selectedAgentLabel: string | null
 	connectedAgents?: ReadonlyArray<OnboardingConnectedAgentListItem>
 	connected?: boolean
 }) {
 	if (!props.awaitingConnect) return null
+	const genericHostDone =
+		props.selectedAgent === 'other' && props.hasMcpClient === true
 	if (
 		props.connected ||
+		genericHostDone ||
 		selectedAgentIsConnected(props.selectedAgent, props.connectedAgents)
 	) {
 		return null
@@ -481,6 +493,7 @@ function renderConnectAgentStatus(props: {
 	search?: string
 	loginHref?: string
 	connectedLabel?: string
+	anyGrantCompletesStep?: boolean
 }) {
 	if (cardShowsConnectedStatus(props)) {
 		return (
@@ -494,9 +507,9 @@ function renderConnectAgentStatus(props: {
 					connected: true,
 					connectedLabel:
 						props.connectedLabel ??
-						(props.selectedAgentLabel
-							? `${props.selectedAgentLabel} is connected`
-							: 'You are connected'),
+						(props.selectedAgent === 'other' || !props.selectedAgentLabel
+							? 'You are connected'
+							: `${props.selectedAgentLabel} is connected`),
 					waitingLabel: 'Waiting for your agent to connect…',
 				})}
 			</div>

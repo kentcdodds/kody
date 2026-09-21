@@ -237,15 +237,20 @@ export function resolveOnboardingFirstAgentKind(
 		return rememberedKind
 	}
 	let oldest: { kind: McpClientKind; connectedAt: string } | null = null
+	let undated: McpClientKind | null = null
 	for (const agent of connectedAgents) {
 		const kind = agent.kind
 		const connectedAt = agent.connectedAt
-		if (!kind || kind === 'other' || !connectedAt) continue
+		if (!kind || kind === 'other') continue
+		if (!connectedAt) {
+			undated ??= kind
+			continue
+		}
 		if (!oldest || connectedAt < oldest.connectedAt) {
 			oldest = { kind, connectedAt }
 		}
 	}
-	return oldest?.kind ?? null
+	return oldest?.kind ?? undated
 }
 
 export function onboardingConnectedListSeparator(

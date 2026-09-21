@@ -67,7 +67,7 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(cursor).toContain('Cursor connection docs')
 	expect(
 		cursor.match(/data-onboarding-connect-action="true"/g)?.length ?? 0,
-	).toBeGreaterThanOrEqual(2)
+	).toBeGreaterThanOrEqual(1)
 	expect(cursor).toContain(cursorMcpGuideUrl)
 	expect(cursor).not.toContain(
 		`claude mcp add --transport http -s user kody ${defaultKodyMcpUrl}`,

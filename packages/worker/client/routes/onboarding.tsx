@@ -2,6 +2,7 @@ import { type Handle, css, ref } from 'remix/ui'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
+import { onboardingCopiedConnectActionEvent } from '#client/copy-text-button.tsx'
 import { discardRenderPrefetches } from '#client/intent-prefetch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import {
@@ -298,14 +299,18 @@ export function OnboardingRoute(handle: Handle) {
 	let connectActionAgent: McpClientKind | null = null
 	let connectActionTarget: McpClientKind | null = null
 
-	function noteOnboardingConnectAction(event: { target: EventTarget | null }) {
-		const target = event.target
-		if (typeof Element === 'undefined' || !(target instanceof Element)) return
-		if (!target.closest('[data-onboarding-connect-action]')) return
+	function armConnectWait() {
 		const agent = connectActionTarget
 		if (!agent || connectActionAgent === agent) return
 		connectActionAgent = agent
 		handle.update()
+	}
+
+	function noteOnboardingConnectAction(event: { target: EventTarget | null }) {
+		const target = event.target
+		if (typeof Element === 'undefined' || !(target instanceof Element)) return
+		if (!target.closest('[data-onboarding-connect-action]')) return
+		armConnectWait()
 	}
 
 	function selectStep(step: OnboardingStep) {
@@ -507,7 +512,11 @@ export function OnboardingRoute(handle: Handle) {
 
 		return (
 			<section
-				mix={[css(onboardCss), on('click', noteOnboardingConnectAction)]}
+				mix={[
+					css(onboardCss),
+					on('click', noteOnboardingConnectAction),
+					on(onboardingCopiedConnectActionEvent, () => armConnectWait()),
+				]}
 				aria-busy={busy ? 'true' : undefined}
 			>
 				{busy ? renderRoutePendingStatus() : null}

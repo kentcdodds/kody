@@ -11,6 +11,9 @@ import {
 	mergeCss,
 } from '#universal/styles/style-primitives.ts'
 
+export const onboardingCopiedConnectActionEvent =
+	'kody-onboarding-connect-copied'
+
 type CopyTextButtonProps = {
 	value: string
 	idleLabel?: string
@@ -107,10 +110,17 @@ export function CopyTextButton(handle: Handle<CopyTextButtonProps>) {
 	let copyState: CopyState = 'idle'
 	let resetTimerId: ReturnType<typeof setTimeout> | null = null
 
-	async function copyValue() {
+	async function copyValue(source: EventTarget | null) {
 		try {
 			await writeClipboardText(handle.props.value)
 			copyState = 'copied'
+			if (handle.props.signalsConnectAction && source instanceof HTMLElement) {
+				source.dispatchEvent(
+					new CustomEvent(onboardingCopiedConnectActionEvent, {
+						bubbles: true,
+					}),
+				)
+			}
 		} catch {
 			copyState = 'error'
 		}
@@ -146,9 +156,6 @@ export function CopyTextButton(handle: Handle<CopyTextButtonProps>) {
 			// button's own name: `aria-label` overrides the label text, so a named
 			// button would keep reading "Copy package id" after it had copied.
 			aria-describedby={`${handle.id}-copy-status`}
-			data-onboarding-connect-action={
-				handle.props.signalsConnectAction ? 'true' : undefined
-			}
 			mix={[
 				css(
 					getCopyButtonCss(
@@ -156,7 +163,10 @@ export function CopyTextButton(handle: Handle<CopyTextButtonProps>) {
 						handle.props.size,
 					),
 				),
-				on('click', () => void copyValue()),
+				on('click', (event) => {
+					const source = event.currentTarget
+					void copyValue(source instanceof EventTarget ? source : null)
+				}),
 			]}
 		>
 			{renderLabel('idle', handle.props.idleLabel ?? 'Copy')}
