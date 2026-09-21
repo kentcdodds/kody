@@ -7,10 +7,12 @@ import { AdminCommunityReportsRoute } from '#client/routes/admin-community-repor
 import {
 	AccountManagementInlineLinkNav,
 	AccountManagementLinkNav,
+	AccountPageHeader,
 	IdValue,
 	MetadataGrid,
 	TimestampValue,
 } from '#client/routes/account-management-components.tsx'
+import { routes } from '#universal/routes.ts'
 
 /**
  * `css()` emits one `@layer rmx.<class> { .<class> { … } }` block per class, so
@@ -136,4 +138,39 @@ test('community reports page keeps one admin rail and an in-flow status filter',
 	expect(html).toContain('aria-label="Admin sections"')
 	expect(html).toContain('aria-label="Report status"')
 	expect(html).toContain('href="/admin/community-reports?status=resolved"')
+})
+
+test('account page header puts the phone section menu above the heading', async () => {
+	const connectionsHtml = await renderToString(
+		jsx(AccountPageHeader, {
+			title: 'Connections',
+			description:
+				'The agents connected to this Kody account, and how to connect another.',
+			currentHref: routes.accountConnections.href(),
+		}),
+	)
+	const menu = connectionsHtml.indexOf('>Account sections</span>')
+	const heading = connectionsHtml.indexOf('<h1')
+	const trigger = connectionsHtml.indexOf(
+		'data-entity-explainer-trigger="connections"',
+	)
+	const description = connectionsHtml.indexOf('The agents connected')
+	expect(menu).toBeGreaterThan(-1)
+	expect(heading).toBeGreaterThan(menu)
+	expect(trigger).toBeGreaterThan(heading)
+	expect(description).toBeGreaterThan(trigger)
+	expect(connectionsHtml).toContain('data-icon="information"')
+	expect(connectionsHtml).toContain('data-account-nav')
+
+	const billingHtml = await renderToString(
+		jsx(AccountPageHeader, {
+			title: 'Billing',
+			description: 'Plan and invoices.',
+			currentHref: routes.accountBilling.href(),
+		}),
+	)
+	expect(billingHtml.indexOf('<h1')).toBeGreaterThan(
+		billingHtml.indexOf('>Account sections</span>'),
+	)
+	expect(billingHtml).not.toContain('data-entity-explainer')
 })
