@@ -146,11 +146,17 @@ function AgentSurfaceLabel(handle: Handle<{ agent: McpClientKind }>) {
 	}
 }
 
-function AgentHelpLink(handle: Handle<{ agent: McpClientKind }>) {
+function AgentHelpLink(
+	handle: Handle<{
+		agent: McpClientKind
+		surface: OnboardingAgentSurface
+	}>,
+) {
 	return () => {
-		const help = onboardingAgentHelp(handle.props.agent)
+		const help = onboardingAgentHelp(handle.props.agent, handle.props.surface)
 		return (
 			<p mix={css(agentHelpCss)}>
+				Need help?{' '}
 				<a
 					href={help.href}
 					target="_blank"
@@ -446,7 +452,10 @@ export function AgentSurfaceInstructions(
 		<>
 			<div
 				data-surface="desktop"
-				mix={css(onboardingViewportCss('desktop-only', 'grid'))}
+				mix={[
+					css(onboardingViewportCss('desktop-only', 'grid')),
+					css(agentSurfaceStackCss),
+				]}
 			>
 				<div mix={css(selectedPanelCss)}>
 					{renderPanelContent(
@@ -455,7 +464,7 @@ export function AgentSurfaceInstructions(
 						handle.props.highlights,
 						'desktop',
 					)}
-					<AgentHelpLink agent={handle.props.agent} />
+					<AgentHelpLink agent={handle.props.agent} surface="desktop" />
 					{renderPanelWarning(handle.props.agent, 'desktop')}
 				</div>
 				<AgentAuthCallout
@@ -466,7 +475,10 @@ export function AgentSurfaceInstructions(
 			</div>
 			<div
 				data-surface="mobile"
-				mix={css(onboardingViewportCss('mobile-only', 'grid'))}
+				mix={[
+					css(onboardingViewportCss('mobile-only', 'grid')),
+					css(agentSurfaceStackCss),
+				]}
 			>
 				<div mix={css(selectedPanelCss)}>
 					{renderPanelContent(
@@ -475,7 +487,7 @@ export function AgentSurfaceInstructions(
 						handle.props.highlights,
 						'mobile',
 					)}
-					<AgentHelpLink agent={handle.props.agent} />
+					<AgentHelpLink agent={handle.props.agent} surface="mobile" />
 					{renderPanelWarning(handle.props.agent, 'mobile')}
 				</div>
 				<AgentAuthCallout
@@ -568,6 +580,13 @@ export function AgentPickerGrid(
 const installLayoutCss = {
 	display: 'grid',
 	gap: '1.15rem',
+}
+
+/* Warning and authenticate callouts are siblings of the instruction
+   stack. Without a gap they sit flush and read as one block. */
+const agentSurfaceStackCss = {
+	gap: '1rem',
+	alignContent: 'start' as const,
 }
 
 const pickerLedeCss = {

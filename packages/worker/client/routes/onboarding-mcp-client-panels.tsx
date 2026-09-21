@@ -42,6 +42,56 @@ import {
 	PrimaryActionLink,
 } from './onboarding-mcp-client-cards.tsx'
 
+function ConnectCopyCard(
+	handle: Handle<{
+		label: string
+		value: string
+		copyLabel: string
+		variant?: 'pill' | 'ghost'
+		lang?: string | null
+		highlights?: Record<string, HighlightedCode>
+	}>,
+) {
+	return () => (
+		<CopyCard
+			highlights={handle.props.highlights}
+			label={handle.props.label}
+			value={handle.props.value}
+			copyLabel={handle.props.copyLabel}
+			variant={handle.props.variant}
+			lang={handle.props.lang}
+			signalsConnectAction
+		/>
+	)
+}
+
+function ConnectCopyCardDetails(
+	handle: Handle<{
+		label: string
+		value: string
+		copyLabel: string
+		summaryLead: string
+		summaryCode?: string
+		variant?: 'pill' | 'ghost'
+		lang?: string | null
+		highlights?: Record<string, HighlightedCode>
+	}>,
+) {
+	return () => (
+		<CopyCardDetails
+			highlights={handle.props.highlights}
+			summaryLead={handle.props.summaryLead}
+			summaryCode={handle.props.summaryCode}
+			label={handle.props.label}
+			value={handle.props.value}
+			copyLabel={handle.props.copyLabel}
+			variant={handle.props.variant}
+			lang={handle.props.lang}
+			signalsConnectAction
+		/>
+	)
+}
+
 function ChatGptPluginAction(_handle: Handle<object>) {
 	return () => (
 		<PrimaryActionLink
@@ -72,7 +122,7 @@ export function renderPanelContent(
 			const appIconUrl = buildKodyAppIconUrl(mcpServerUrl)
 			const developerApp = (
 				<>
-					<CopyCard
+					<ConnectCopyCard
 						highlights={highlights}
 						label="MCP URL"
 						value={mcpServerUrl}
@@ -103,7 +153,7 @@ export function renderPanelContent(
 			if (surface === 'mobile') {
 				const mobileMcp = (
 					<>
-						<CopyCard
+						<ConnectCopyCard
 							highlights={highlights}
 							label="MCP URL"
 							value={mcpServerUrl}
@@ -125,7 +175,7 @@ export function renderPanelContent(
 			const desktopMcp = (
 				<>
 					<PrimaryActionLink href={codexDeepLink} label="Open Codex" />
-					<CopyCard
+					<ConnectCopyCard
 						highlights={highlights}
 						label="codex CLI"
 						value={codexCommand}
@@ -133,7 +183,7 @@ export function renderPanelContent(
 						variant="pill"
 						lang="sh"
 					/>
-					<CopyCard
+					<ConnectCopyCard
 						highlights={highlights}
 						label="~/.codex/config.toml"
 						value={codexToml}
@@ -154,7 +204,7 @@ export function renderPanelContent(
 		}
 		case 'claude-desktop':
 			return (
-				<CopyCard
+				<ConnectCopyCard
 					highlights={highlights}
 					label="MCP URL"
 					value={mcpServerUrl}
@@ -169,7 +219,7 @@ export function renderPanelContent(
 						label="Open Connectors"
 						external
 					/>
-					<CopyCard
+					<ConnectCopyCard
 						highlights={highlights}
 						label="MCP URL"
 						value={mcpServerUrl}
@@ -183,7 +233,7 @@ export function renderPanelContent(
 			const grokCliToml = buildGrokCliMcpToml(mcpServerUrl)
 			return (
 				<>
-					<CopyCard
+					<ConnectCopyCard
 						highlights={highlights}
 						label="grok CLI"
 						value={grokCliCommand}
@@ -191,7 +241,7 @@ export function renderPanelContent(
 						variant="pill"
 						lang="sh"
 					/>
-					<CopyCardDetails
+					<ConnectCopyCardDetails
 						highlights={highlights}
 						summaryLead="Or merge this into"
 						summaryCode="~/.grok/config.toml"
@@ -229,7 +279,7 @@ export function renderPanelContent(
 			const claudeCodeJson = buildClaudeCodeMcpJson(mcpServerUrl)
 			if (surface === 'mobile') {
 				return (
-					<CopyCard
+					<ConnectCopyCard
 						highlights={highlights}
 						label="MCP URL"
 						value={mcpServerUrl}
@@ -239,14 +289,14 @@ export function renderPanelContent(
 			}
 			return (
 				<>
-					<CopyCard
+					<ConnectCopyCard
 						highlights={highlights}
 						label="claude CLI"
 						value={claudeCodeCommand}
 						copyLabel="Copy command"
 						lang="sh"
 					/>
-					<CopyCardDetails
+					<ConnectCopyCardDetails
 						highlights={highlights}
 						summaryLead="Or merge this into a project"
 						summaryCode=".mcp.json"
@@ -263,14 +313,14 @@ export function renderPanelContent(
 			const openCodeJson = buildOpenCodeMcpJson(mcpServerUrl)
 			return (
 				<>
-					<CopyCard
+					<ConnectCopyCard
 						highlights={highlights}
 						label="opencode CLI"
 						value={openCodeCommand}
 						copyLabel="Copy command"
 						lang="sh"
 					/>
-					<CopyCardDetails
+					<ConnectCopyCardDetails
 						highlights={highlights}
 						summaryLead="Or add this to"
 						summaryCode="opencode.json"
@@ -287,21 +337,21 @@ export function renderPanelContent(
 			const openClawJson = buildOpenClawMcpJson(mcpServerUrl)
 			return (
 				<>
-					<CopyCard
+					<ConnectCopyCard
 						highlights={highlights}
 						label="openclaw CLI"
 						value={openClawCommand}
 						copyLabel="Copy command"
 						lang="sh"
 					/>
-					<CopyCard
+					<ConnectCopyCard
 						highlights={highlights}
 						label="openclaw mcp login"
 						value={openClawMcpLoginCommand}
 						copyLabel="Copy command"
 						lang="sh"
 					/>
-					<CopyCardDetails
+					<ConnectCopyCardDetails
 						highlights={highlights}
 						summaryLead="Or merge this into"
 						summaryCode="~/.openclaw/openclaw.json"
@@ -320,7 +370,7 @@ export function renderPanelContent(
 			const copilotCliJson = buildCopilotCliMcpJson(mcpServerUrl)
 			if (surface === 'mobile') {
 				return (
-					<CopyCard
+					<ConnectCopyCard
 						highlights={highlights}
 						label="MCP URL"
 						value={mcpServerUrl}
@@ -332,14 +382,14 @@ export function renderPanelContent(
 				<>
 					<InstallDeepLink href={installUrl} label="Add to VS Code" />
 					<p>Or run this for Copilot CLI:</p>
-					<CopyCard
+					<ConnectCopyCard
 						highlights={highlights}
 						label="copilot CLI"
 						value={copilotCliCommand}
 						copyLabel="Copy command"
 						lang="sh"
 					/>
-					<CopyCardDetails
+					<ConnectCopyCardDetails
 						highlights={highlights}
 						summaryLead="Or merge this into"
 						summaryCode=".vscode/mcp.json"
@@ -348,7 +398,7 @@ export function renderPanelContent(
 						copyLabel="Copy JSON"
 						lang="json"
 					/>
-					<CopyCardDetails
+					<ConnectCopyCardDetails
 						highlights={highlights}
 						summaryLead="Or merge this into"
 						summaryCode="~/.copilot/mcp-config.json"
@@ -362,7 +412,7 @@ export function renderPanelContent(
 		}
 		case 'devin':
 			return (
-				<CopyCard
+				<ConnectCopyCard
 					highlights={highlights}
 					label="MCP URL"
 					value={mcpServerUrl}
@@ -371,7 +421,7 @@ export function renderPanelContent(
 			)
 		case 'gemini':
 			return (
-				<CopyCard
+				<ConnectCopyCard
 					highlights={highlights}
 					label="MCP URL"
 					value={mcpServerUrl}
@@ -382,7 +432,7 @@ export function renderPanelContent(
 			const copilotCliJson = buildCopilotCliMcpJson(mcpServerUrl)
 			return (
 				<>
-					<CopyCard
+					<ConnectCopyCard
 						highlights={highlights}
 						label="MCP URL"
 						value={mcpServerUrl}
@@ -390,7 +440,7 @@ export function renderPanelContent(
 					/>
 					{surface === 'mobile' ? null : (
 						<>
-							<CopyCardDetails
+							<ConnectCopyCardDetails
 								highlights={highlights}
 								summaryLead="Or merge this into"
 								summaryCode="~/.copilot/mcp-config.json"
@@ -406,7 +456,7 @@ export function renderPanelContent(
 		}
 		case 'other':
 			return (
-				<CopyCard
+				<ConnectCopyCard
 					highlights={highlights}
 					label="MCP URL"
 					value={mcpServerUrl}

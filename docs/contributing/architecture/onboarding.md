@@ -38,11 +38,15 @@ the connected label stays "You've connected a second agent." When the
 second-agent Standard gift is active, that status adds "Standard is free for 2
 weeks." Step 3 copy advertises "Connect a second agent and get Standard free for
 2 weeks." Same-ecosystem greying stays picker UX only. `/onboarding` resumes at
-that step instead of always opening the Step 1 picker, and every wizard step
-lists already-connected hosts so a return visit cannot hide Cursor or Claude
-Desktop. Account → Connections (`/account/connections`) lists those inbound
-hosts grouped by display name, with public logos for known kinds, newest-first
-sort, best-effort labels, and per-`clientId` revoke. That list is not
+that step instead of always opening the Step 1 picker. The Step 1 and Step 3
+pickers, and Step 2, list already-connected hosts so a return visit cannot hide
+Cursor or Claude Desktop. A selected-agent card names only that host: another
+client's connection does not mark this one connected and does not put its logo
+on the card. A remembered picker choice is not a grant. When a different host
+actually authorized, Step 2 and Step 3 follow that grant instead of the pick.
+Account → Connections (`/account/connections`) lists those inbound hosts grouped
+by display name, with public logos for known kinds, newest-first sort,
+best-effort labels, and per-`clientId` revoke. That list is not
 `users.mcp_client_name` (first-touch) and not `/account/mcp-oauth-clients`
 (user-minted confidential clients).
 

@@ -21,6 +21,8 @@ type CopyCardProps = {
 	variant?: 'pill' | 'ghost'
 	lang?: string | null
 	highlights?: Record<string, HighlightedCode>
+	/** Connect-flow copies only. Prompt copies leave this unset. */
+	signalsConnectAction?: boolean
 }
 
 /**
@@ -39,6 +41,7 @@ export function CopyCard(handle: Handle<CopyCardProps>) {
 						value={handle.props.value}
 						idleLabel={handle.props.copyLabel}
 						variant={handle.props.variant ?? 'ghost'}
+						signalsConnectAction={handle.props.signalsConnectAction}
 					/>
 				</div>
 			</div>
@@ -111,6 +114,7 @@ export function CopyCardDetails(handle: Handle<CopyCardDetailsProps>) {
 				copyLabel={handle.props.copyLabel}
 				lang={handle.props.lang}
 				variant={handle.props.variant}
+				signalsConnectAction={handle.props.signalsConnectAction}
 			/>
 		</OnboardingManualDetails>
 	)
@@ -205,6 +209,7 @@ export function PrimaryActionLink(
 				href={handle.props.href}
 				target={handle.props.external ? '_blank' : undefined}
 				rel={handle.props.external ? 'noreferrer noopener' : undefined}
+				data-onboarding-connect-action="true"
 				mix={css(deepLinkButtonCss)}
 			>
 				{handle.props.label}
@@ -221,7 +226,11 @@ export function InstallDeepLink(
 ) {
 	return () => (
 		<div mix={css(deepLinkCss)}>
-			<a href={handle.props.href} mix={css(deepLinkButtonCss)}>
+			<a
+				href={handle.props.href}
+				data-onboarding-connect-action="true"
+				mix={css(deepLinkButtonCss)}
+			>
 				{handle.props.label}
 			</a>
 			<small mix={css(deepLinkNoteCss)}>
@@ -241,7 +250,11 @@ export function PluginPrimaryInstall(
 ) {
 	return () => (
 		<div data-testid="onboarding-mcp-plugin-primary" mix={css(deepLinkCss)}>
-			<a href={handle.props.href} mix={css(deepLinkButtonCss)}>
+			<a
+				href={handle.props.href}
+				data-onboarding-connect-action="true"
+				mix={css(deepLinkButtonCss)}
+			>
 				{handle.props.label}
 			</a>
 			{handle.props.alternativeValue ? (
@@ -255,6 +268,7 @@ export function PluginPrimaryInstall(
 						idleLabel="Copy"
 						variant="chip"
 						ariaLabel={handle.props.alternativeCopyLabel}
+						signalsConnectAction
 					/>
 				</p>
 			) : null}

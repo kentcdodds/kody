@@ -12,14 +12,15 @@ const discoveryPrompt =
 	"I'm deciding whether Kody (https://example.com) would be useful for me. Read https://example.com/docs/what-is-kody and then interview me to find out what Kody could do for me."
 
 function connectPanel(selected: {
-	agent: 'cursor' | null
+	agent: 'claude-desktop' | 'cursor' | null
 	label: string | null
 	loggedIn?: boolean
 	hasMcpClient?: boolean
 	search?: string
+	awaitingConnect?: boolean
 	connectedAgents?: Array<{
 		label: string
-		kind?: 'claude-desktop' | 'cursor'
+		kind?: 'chatgpt' | 'claude-desktop' | 'cursor'
 	}>
 }) {
 	return renderConnectAgentPanel({
@@ -35,6 +36,7 @@ function connectPanel(selected: {
 		mcpServerUrl: defaultKodyMcpUrl,
 		mcpHighlights: {},
 		search: selected.search,
+		awaitingConnect: selected.awaitingConnect,
 	})
 }
 
@@ -68,12 +70,14 @@ function secondAgentPanel(selected: {
 	hasSecondMcpClient?: boolean
 	secondAgentGiftActive?: boolean
 	search?: string
+	awaitingConnect?: boolean
 	accessWinMemorySubject?: string | null
 	persistedPackageName?: string | null
 	connectedAgents?: Array<{
 		label: string
 		kind?:
 			| 'chatgpt'
+			| 'claude-code'
 			| 'claude-desktop'
 			| 'codex'
 			| 'copilot'
@@ -98,6 +102,7 @@ function secondAgentPanel(selected: {
 		mcpServerUrl: defaultKodyMcpUrl,
 		mcpHighlights: {},
 		search: selected.search,
+		awaitingConnect: selected.awaitingConnect,
 		accessWinMemorySubject: selected.accessWinMemorySubject,
 		persistedPackageName: selected.persistedPackageName,
 	})
@@ -133,13 +138,53 @@ test('step 1 title names the selected agent and offers a text change link', asyn
 	)
 	expect(connected).toContain('Cursor is connected')
 	expect(connected).toContain('data-testid="onboarding-connected-agents"')
-	expect(connected).toContain('data-agent-kind="claude-desktop"')
+	expect(connected).toContain('data-agent-kind="cursor"')
+	expect(connected).not.toContain('data-agent-kind="claude-desktop"')
+
+	const claudeWhileChatGpt = await renderToString(
+		connectPanel({
+			agent: 'claude-desktop',
+			label: 'Claude Desktop',
+			loggedIn: true,
+			hasMcpClient: true,
+			connectedAgents: [{ label: 'ChatGPT.com', kind: 'chatgpt' }],
+		}),
+	)
+	expect(claudeWhileChatGpt).not.toContain('data-connected="true"')
+	expect(claudeWhileChatGpt).not.toContain('ChatGPT.com')
+	expect(claudeWhileChatGpt).not.toContain(
+		'data-testid="onboarding-connected-agents"',
+	)
+	expect(claudeWhileChatGpt).toContain('data-testid="onboarding-wizard-next"')
+
+	const claudeWithoutGrantList = await renderToString(
+		connectPanel({
+			agent: 'claude-desktop',
+			label: 'Claude Desktop',
+			loggedIn: true,
+			hasMcpClient: true,
+		}),
+	)
+	expect(claudeWithoutGrantList).not.toContain('data-connected="true"')
+
+	const waitingToConnect = await renderToString(
+		connectPanel({
+			agent: 'cursor',
+			label: 'Cursor',
+			loggedIn: true,
+			awaitingConnect: true,
+		}),
+	)
+	expect(waitingToConnect).toContain('data-testid="onboarding-connect-wait"')
+	expect(waitingToConnect).toContain('Waiting for Cursor to connect')
+	expect(waitingToConnect).not.toContain('data-testid="onboarding-wizard-next"')
 })
 
 test('step 2 shows one prompt and a search waiting spinner', async () => {
 	const unconnected = await renderToString(accessPanel({}))
 	expect(unconnected).toContain('data-testid="onboarding-wizard-next"')
 	expect(unconnected).toContain('data-testid="onboarding-unconnected-prompt"')
+	expect(unconnected).not.toContain('data-onboarding-connect-action')
 
 	const waiting = await renderToString(
 		accessPanel({
@@ -209,7 +254,22 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 		}),
 	)
 	expect(selected).toContain('Connect Claude Code')
-	expect(selected).toContain('Waiting for Claude Code to connect')
+	expect(selected).not.toContain('Waiting for Claude Code to connect')
+	expect(selected).toContain('data-testid="onboarding-wizard-explore-packages"')
+
+	const waitingForSecond = await renderToString(
+		secondAgentPanel({
+			firstAgent: 'codex',
+			agent: 'claude-code',
+			label: 'Claude Code',
+			awaitingConnect: true,
+		}),
+	)
+	expect(waitingForSecond).toContain('data-testid="onboarding-connect-wait"')
+	expect(waitingForSecond).toContain('Waiting for Claude Code to connect')
+	expect(waitingForSecond).not.toContain(
+		'data-testid="onboarding-wizard-explore-packages"',
+	)
 	expect(selected).toContain('data-testid="onboarding-portability-proof"')
 	expect(selected).toContain(
 		'data-testid="onboarding-portability-guide-pointer"',
@@ -222,6 +282,7 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 			agent: 'claude-code',
 			label: 'Claude Code',
 			hasSecondMcpClient: true,
+			connectedAgents: [{ label: 'Claude Code', kind: 'claude-code' }],
 		}),
 	)
 	expect(connected).toContain("You've connected a second agent.")
@@ -234,6 +295,7 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 			label: 'Claude Code',
 			hasSecondMcpClient: true,
 			secondAgentGiftActive: true,
+			connectedAgents: [{ label: 'Claude Code', kind: 'claude-code' }],
 		}),
 	)
 	expect(gifted).toContain(

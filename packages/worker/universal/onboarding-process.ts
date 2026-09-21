@@ -200,10 +200,25 @@ export function uniqueOnboardingConnectedAgents(
 	return unique
 }
 
+function namedConnectedAgentKinds(
+	connectedAgents: ReadonlyArray<{
+		kind?: McpClientKind | null
+	}>,
+) {
+	const kinds = new Set<McpClientKind>()
+	for (const agent of connectedAgents) {
+		const kind = agent.kind
+		if (!kind || kind === 'other') continue
+		kinds.add(kind)
+	}
+	return kinds
+}
+
 /**
- * Step 1 identity for Step 2 copy and Step 3 greying. Prefer the explicit
- * picker choice; on return visits fall back to the earliest dated named
- * inbound host so a cleared session still names Cursor / Claude Desktop.
+ * Step 1 identity for Step 2 copy and Step 3 greying. The remembered picker
+ * choice only counts when that host has actually connected, or when nothing
+ * has connected yet. A ChatGPT grant must not keep a Claude pick as the
+ * connected agent.
  */
 export function resolveOnboardingFirstAgentKind(
 	remembered: McpClientKind | null | undefined,
@@ -212,17 +227,31 @@ export function resolveOnboardingFirstAgentKind(
 		connectedAt?: string | null
 	}> = [],
 ): McpClientKind | null {
-	if (remembered && remembered !== 'other') return remembered
+	const rememberedKind =
+		remembered && remembered !== 'other' ? remembered : null
+	const connectedKinds = namedConnectedAgentKinds(connectedAgents)
+	const hasConnectedHost = connectedAgents.length > 0
+	if (
+		rememberedKind &&
+		(!hasConnectedHost || connectedKinds.has(rememberedKind))
+	) {
+		return rememberedKind
+	}
 	let oldest: { kind: McpClientKind; connectedAt: string } | null = null
+	let undated: McpClientKind | null = null
 	for (const agent of connectedAgents) {
 		const kind = agent.kind
 		const connectedAt = agent.connectedAt
-		if (!kind || kind === 'other' || !connectedAt) continue
+		if (!kind || kind === 'other') continue
+		if (!connectedAt) {
+			undated ??= kind
+			continue
+		}
 		if (!oldest || connectedAt < oldest.connectedAt) {
 			oldest = { kind, connectedAt }
 		}
 	}
-	return oldest?.kind ?? null
+	return oldest?.kind ?? undated
 }
 
 export function onboardingConnectedListSeparator(

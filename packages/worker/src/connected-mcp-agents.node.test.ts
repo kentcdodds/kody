@@ -114,6 +114,75 @@ test('inbound connection state pages grants and counts unique clientIds', async 
 	})
 })
 
+test('a ChatGPT grant never marks Claude connected, including a phone callback with no client name', async () => {
+	const chatgpt = await loadInboundMcpConnectionState(
+		createHelpers({
+			grants: [
+				{
+					id: 'grant-chatgpt',
+					clientId: 'https://chatgpt.com/oauth/vG3/client.json',
+					redirectUri: 'https://chatgpt.com/connector/oauth/vG3',
+					createdAt: 1_700_000_200,
+				},
+			],
+			clients: {
+				'https://chatgpt.com/oauth/vG3/client.json': {
+					clientName: 'ChatGPT',
+					redirectUris: ['https://chatgpt.com/connector/oauth/vG3'],
+				},
+			},
+		}),
+		'user-phone',
+	)
+	expect(chatgpt.uniqueClientCount).toBe(1)
+	expect(chatgpt.agents.map((agent) => agent.kind)).toEqual(['chatgpt'])
+	expect(chatgpt.agents[0]).toMatchObject({ label: 'ChatGPT.com' })
+
+	const phoneWithoutName = await loadInboundMcpConnectionState(
+		createHelpers({
+			grants: [
+				{
+					id: 'grant-phone',
+					clientId: 'https://chatgpt.com/oauth/claude-model/client.json',
+					redirectUri:
+						'https://chatgpt.com/backend-api/aip/connectors/callback',
+					createdAt: 1_700_000_300,
+				},
+			],
+		}),
+		'user-phone',
+	)
+	expect(phoneWithoutName.agents.map((agent) => agent.kind)).toEqual([
+		'chatgpt',
+	])
+	expect(
+		phoneWithoutName.agents.some((agent) => agent.kind === 'claude-desktop'),
+	).toBe(false)
+
+	const nameBeatsAClaudeRedirect = await loadInboundMcpConnectionState(
+		createHelpers({
+			grants: [
+				{
+					id: 'grant-mixed',
+					clientId: 'opaque-chatgpt-client',
+					redirectUri: 'https://claude.ai/api/mcp/auth_callback',
+					createdAt: 1_700_000_400,
+				},
+			],
+			clients: {
+				'opaque-chatgpt-client': {
+					clientName: 'ChatGPT',
+					redirectUris: ['https://claude.ai/api/mcp/auth_callback'],
+				},
+			},
+		}),
+		'user-phone',
+	)
+	expect(nameBeatsAClaudeRedirect.agents.map((agent) => agent.kind)).toEqual([
+		'chatgpt',
+	])
+})
+
 test('inbound labels fall back when lookupClient is missing or throws', async () => {
 	const withoutLookup = await loadInboundMcpConnectionState(
 		{

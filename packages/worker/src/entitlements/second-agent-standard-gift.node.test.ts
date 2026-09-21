@@ -9,8 +9,13 @@ import {
 	maybeEvaluateSecondAgentStandardGift,
 } from './second-agent-standard-gift.ts'
 
-const now = new Date('2026-09-07T12:00:00.000Z')
-const giftExpiresAt = '2026-09-21T12:00:00.000Z'
+const secondAgentStandardGiftDurationMs = 14 * 24 * 60 * 60 * 1000
+// Grant yesterday so the wall-clock entitlement read still sees an active gift.
+// A fixed 2026-09-21 expiry goes stale the afternoon it lands.
+const now = new Date(Date.now() - 24 * 60 * 60 * 1000)
+const giftExpiresAt = new Date(
+	now.getTime() + secondAgentStandardGiftDurationMs,
+).toISOString()
 
 async function createGiftTestDb(input: {
 	email: string
@@ -107,7 +112,7 @@ async function assertSecondAgentGiftOnScenarioClock() {
 		db: free.db,
 		stableUserId: free.stableUserId,
 		uniqueClientCount: 3,
-		now: new Date('2026-09-08T12:00:00.000Z'),
+		now: new Date(now.getTime() + 24 * 60 * 60 * 1000),
 	})
 	expect(second.outcome).toBe('already_granted')
 	if (second.outcome !== 'already_granted') {

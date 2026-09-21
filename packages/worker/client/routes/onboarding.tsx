@@ -1,6 +1,8 @@
 import { type Handle, css, ref } from 'remix/ui'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { on } from '#client/event-mixin.ts'
+import { onboardingCopiedConnectActionEvent } from '#client/copy-text-button.tsx'
 import { discardRenderPrefetches } from '#client/intent-prefetch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import {
@@ -36,6 +38,7 @@ import {
 	type OnboardingPayload,
 } from '#client/routes/onboarding-payload.ts'
 import {
+	type McpClientKind,
 	type OnboardingAgentChooserPick,
 	onboardingAgentLabel,
 	onboardingDataHref,
@@ -53,7 +56,7 @@ import {
 	renderConnectAgentPanel,
 	renderSecondAgentPanel,
 } from '#client/routes/onboarding-wizard-panels.tsx'
-import { renderWizardStepsNav } from '#client/routes/onboarding-wizard-chrome.tsx'
+import { WizardStepsNav } from '#client/routes/onboarding-wizard-chrome.tsx'
 import { ProviderIcon } from '#client/provider-icons.tsx'
 import { resolveOnboardingPendingVerificationPath } from '#client/routes/onboarding-redirect.ts'
 import { colors, transitions, typography } from '#universal/styles/tokens.ts'
@@ -293,6 +296,22 @@ export function OnboardingRoute(handle: Handle) {
 	}
 
 	let agentChooser: OnboardingAgentChooserPick | null = null
+	let connectActionAgent: McpClientKind | null = null
+	let connectActionTarget: McpClientKind | null = null
+
+	function armConnectWait() {
+		const agent = connectActionTarget
+		if (!agent || connectActionAgent === agent) return
+		connectActionAgent = agent
+		handle.update()
+	}
+
+	function noteOnboardingConnectAction(event: { target: EventTarget | null }) {
+		const target = event.target
+		if (typeof Element === 'undefined' || !(target instanceof Element)) return
+		if (!target.closest('[data-onboarding-connect-action]')) return
+		armConnectWait()
+	}
 
 	function selectStep(step: OnboardingStep) {
 		panelAnimationArmed = true
@@ -482,13 +501,24 @@ export function OnboardingRoute(handle: Handle) {
 		const selectedAgentLabel = visibleSelectedAgent
 			? onboardingAgentLabel(visibleSelectedAgent)
 			: null
+		connectActionTarget = status === 'ready' ? visibleSelectedAgent : null
+		const awaitingConnect =
+			visibleSelectedAgent != null &&
+			connectActionAgent === visibleSelectedAgent
 		const connectedAgentLabel =
 			firstAgent && firstAgent !== 'other'
 				? onboardingAgentLabel(firstAgent)
 				: null
 
 		return (
-			<section mix={css(onboardCss)} aria-busy={busy ? 'true' : undefined}>
+			<section
+				mix={[
+					css(onboardCss),
+					on('click', noteOnboardingConnectAction),
+					on(onboardingCopiedConnectActionEvent, () => armConnectWait()),
+				]}
+				aria-busy={busy ? 'true' : undefined}
+			>
 				{busy ? renderRoutePendingStatus() : null}
 				<header mix={css(onboardHeadCss)}>
 					<h1 data-rise style={{ '--rise': '0' }}>
@@ -504,13 +534,13 @@ export function OnboardingRoute(handle: Handle) {
 
 				{status === 'ready' ? (
 					<>
-						{renderWizardStepsNav({
-							activeStep,
-							hasMcpClient,
-							accessWin: hasAccessWin,
-							hasSecondMcpClient,
-							stepHref: (step) => buildStepHref(step, currentHref),
-						})}
+						<WizardStepsNav
+							activeStep={activeStep}
+							hasMcpClient={hasMcpClient}
+							accessWin={hasAccessWin}
+							hasSecondMcpClient={hasSecondMcpClient}
+							stepHref={(step) => buildStepHref(step, currentHref)}
+						/>
 
 						{activeStep === 1
 							? renderConnectAgentPanel({
@@ -526,6 +556,7 @@ export function OnboardingRoute(handle: Handle) {
 									mcpServerUrl,
 									mcpHighlights: mcpHighlights ?? {},
 									search: readRouterSearch(handle),
+									awaitingConnect,
 								})
 							: null}
 
@@ -561,6 +592,7 @@ export function OnboardingRoute(handle: Handle) {
 									search: readRouterSearch(handle),
 									accessWinMemorySubject,
 									persistedPackageName,
+									awaitingConnect,
 								})
 							: null}
 					</>

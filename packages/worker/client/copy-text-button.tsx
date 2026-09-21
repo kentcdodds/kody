@@ -11,6 +11,9 @@ import {
 	mergeCss,
 } from '#universal/styles/style-primitives.ts'
 
+export const onboardingCopiedConnectActionEvent =
+	'kody-onboarding-connect-copied'
+
 type CopyTextButtonProps = {
 	value: string
 	idleLabel?: string
@@ -32,6 +35,11 @@ type CopyTextButtonProps = {
 	 * "Copy" entries says nothing about which id each one takes.
 	 */
 	ariaLabel?: string
+	/**
+	 * Onboarding connect only: copying this command is a deliberate connect
+	 * action, so the wizard may start waiting on the grant.
+	 */
+	signalsConnectAction?: boolean
 }
 
 type CopyState = 'idle' | 'copied' | 'error'
@@ -102,10 +110,17 @@ export function CopyTextButton(handle: Handle<CopyTextButtonProps>) {
 	let copyState: CopyState = 'idle'
 	let resetTimerId: ReturnType<typeof setTimeout> | null = null
 
-	async function copyValue() {
+	async function copyValue(source: EventTarget | null) {
 		try {
 			await writeClipboardText(handle.props.value)
 			copyState = 'copied'
+			if (handle.props.signalsConnectAction && source instanceof HTMLElement) {
+				source.dispatchEvent(
+					new CustomEvent(onboardingCopiedConnectActionEvent, {
+						bubbles: true,
+					}),
+				)
+			}
 		} catch {
 			copyState = 'error'
 		}
@@ -148,7 +163,10 @@ export function CopyTextButton(handle: Handle<CopyTextButtonProps>) {
 						handle.props.size,
 					),
 				),
-				on('click', () => void copyValue()),
+				on('click', (event) => {
+					const source = event.currentTarget
+					void copyValue(source instanceof EventTarget ? source : null)
+				}),
 			]}
 		>
 			{renderLabel('idle', handle.props.idleLabel ?? 'Copy')}
