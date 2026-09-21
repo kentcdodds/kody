@@ -65,6 +65,7 @@ export function renderConnectAgentPanel(
 		agentChooser: OnboardingAgentChooserPick | null
 		mcpServerUrl: string
 		mcpHighlights: Record<string, HighlightedCode>
+		awaitingConnect?: boolean
 	},
 ) {
 	return (
@@ -87,7 +88,9 @@ export function renderConnectAgentPanel(
 				tilt: '2deg',
 			})}
 			{renderConnectAgentStatus(props)}
-			{renderConnectedAgentsLine(props.connectedAgents)}
+			{renderConnectedAgentsLine(
+				connectedAgentsOnCard(props.selectedAgent, props.connectedAgents),
+			)}
 			<OnboardingMcpClientTabs
 				mcpServerUrl={props.mcpServerUrl}
 				highlights={props.mcpHighlights}
@@ -99,6 +102,7 @@ export function renderConnectAgentPanel(
 				activeStep={props.activeStep}
 				onSelectStep={props.onSelectStep}
 				confirmUnconnectedNext={!props.hasMcpClient}
+				connectWaitLabel={connectWaitLabel(props)}
 			/>
 		</section>
 	)
@@ -200,6 +204,7 @@ export function renderSecondAgentPanel(
 		mcpHighlights: Record<string, HighlightedCode>
 		accessWinMemorySubject?: string | null
 		persistedPackageName?: string | null
+		awaitingConnect?: boolean
 	},
 ) {
 	const firstLabel = props.firstAgent
@@ -247,6 +252,7 @@ export function renderSecondAgentPanel(
 			{renderConnectAgentStatus({
 				loggedIn: props.loggedIn,
 				hasMcpClient: props.hasSecondMcpClient,
+				connectedAgents,
 				selectedAgent: props.selectedAgent,
 				selectedAgentLabel: props.selectedAgentLabel,
 				search: props.search,
@@ -258,7 +264,9 @@ export function renderSecondAgentPanel(
 					props.secondAgentGiftActive === true,
 				),
 			})}
-			{renderConnectedAgentsLine(connectedAgents)}
+			{renderConnectedAgentsLine(
+				connectedAgentsOnCard(props.selectedAgent, connectedAgents),
+			)}
 			<OnboardingMcpClientTabs
 				mcpServerUrl={props.mcpServerUrl}
 				highlights={props.mcpHighlights}
@@ -301,6 +309,17 @@ export function renderSecondAgentPanel(
 			<WizardNavigation
 				activeStep={props.activeStep}
 				onSelectStep={props.onSelectStep}
+				connectWaitLabel={connectWaitLabel({
+					awaitingConnect: props.awaitingConnect,
+					selectedAgent: props.selectedAgent,
+					selectedAgentLabel: props.selectedAgentLabel,
+					connectedAgents,
+					connected: cardShowsConnectedStatus({
+						hasMcpClient: props.hasSecondMcpClient,
+						selectedAgent: props.selectedAgent,
+						connectedAgents,
+					}),
+				})}
 				lastStep={{
 					exploreHref: onboardingExplorePackagesHref(),
 				}}
@@ -401,16 +420,72 @@ function renderConnectedAgentsLine(
 	)
 }
 
+function connectedAgentsOnCard(
+	selectedAgent: McpClientKind | null,
+	agents: ReadonlyArray<OnboardingConnectedAgentListItem> | undefined,
+) {
+	const unique = uniqueOnboardingConnectedAgents(agents ?? [])
+	if (!selectedAgent || selectedAgent === 'other') return unique
+	return unique.filter((agent) => agent.kind === selectedAgent)
+}
+
+function selectedAgentIsConnected(
+	selectedAgent: McpClientKind | null,
+	agents: ReadonlyArray<OnboardingConnectedAgentListItem> | undefined,
+) {
+	if (!selectedAgent || selectedAgent === 'other') return false
+	return connectedAgentsOnCard(selectedAgent, agents).length > 0
+}
+
+function cardShowsConnectedStatus(props: {
+	hasMcpClient: boolean
+	selectedAgent: McpClientKind | null
+	connectedAgents?: ReadonlyArray<OnboardingConnectedAgentListItem>
+}) {
+	if (!props.hasMcpClient) return false
+	if (!props.selectedAgent) return true
+	if (props.selectedAgent === 'other') return false
+	// No kind list: the step flag is the only signal (Step 3's "a second
+	// agent" line). Once names are known, the card may only claim the
+	// agent it is actually connecting.
+	if (!props.connectedAgents || props.connectedAgents.length === 0) return true
+	return selectedAgentIsConnected(props.selectedAgent, props.connectedAgents)
+}
+
+function waitingForAgentLabel(selectedAgentLabel: string | null) {
+	return selectedAgentLabel
+		? `Waiting for ${selectedAgentLabel} to connect…`
+		: 'Waiting for your agent to connect…'
+}
+
+function connectWaitLabel(props: {
+	awaitingConnect?: boolean
+	selectedAgent: McpClientKind | null
+	selectedAgentLabel: string | null
+	connectedAgents?: ReadonlyArray<OnboardingConnectedAgentListItem>
+	connected?: boolean
+}) {
+	if (!props.awaitingConnect) return null
+	if (
+		props.connected ||
+		selectedAgentIsConnected(props.selectedAgent, props.connectedAgents)
+	) {
+		return null
+	}
+	return waitingForAgentLabel(props.selectedAgentLabel)
+}
+
 function renderConnectAgentStatus(props: {
 	loggedIn: boolean
 	hasMcpClient: boolean
+	connectedAgents?: ReadonlyArray<OnboardingConnectedAgentListItem>
 	selectedAgent: McpClientKind | null
 	selectedAgentLabel: string | null
 	search?: string
 	loginHref?: string
 	connectedLabel?: string
 }) {
-	if (props.hasMcpClient) {
+	if (cardShowsConnectedStatus(props)) {
 		return (
 			<div
 				mix={css(connectStatusCss)}
@@ -447,17 +522,7 @@ function renderConnectAgentStatus(props: {
 			</a>
 		)
 	}
-	return (
-		<div mix={css(connectStatusCss)} role="status" aria-live="polite">
-			{connectStatusContent({
-				connected: false,
-				connectedLabel: 'You are connected',
-				waitingLabel: props.selectedAgentLabel
-					? `Waiting for ${props.selectedAgentLabel} to connect…`
-					: 'Waiting for your agent to connect…',
-			})}
-		</div>
-	)
+	return null
 }
 
 const wizardPanelCss = {

@@ -401,70 +401,50 @@ export const grokBotInstallUrl = `grokbot://app/v1/plugin/add?id=${kodyMarketpla
 export const grokBotConnectPluginsUrl =
 	'https://cursor.com/help/grok-bot/connect-plugins'
 
-/** Vendor or Kody help for the selected onboarding host. */
-export function onboardingAgentHelp(id: McpClientKind): {
-	href: string
-	label: string
-} {
+function onboardingAgentHelpHref(id: McpClientKind) {
 	switch (id) {
 		case 'cursor':
-			return { href: cursorMcpGuideUrl, label: 'Cursor MCP help' }
+			return cursorMcpGuideUrl
 		case 'chatgpt':
-			return {
-				href: kodyConnectYourAgentUrl,
-				label: 'Connect your agent help',
-			}
 		case 'codex':
-			return {
-				href: kodyConnectYourAgentUrl,
-				label: 'Connect your agent help',
-			}
-		case 'claude-desktop':
-			return {
-				href: claudeCustomConnectorsGuideUrl,
-				label: 'Claude connectors help',
-			}
-		case 'grok':
-			return { href: grokCustomMcpGuideUrl, label: 'Grok connector help' }
-		case 'grok-cli':
-			return { href: grokCliMcpGuideUrl, label: 'Grok CLI MCP help' }
-		case 'grok-bot':
-			return { href: grokBotConnectPluginsUrl, label: 'Grok Bot plugin help' }
 		case 'claude-code':
-			return {
-				href: kodyConnectYourAgentUrl,
-				label: 'Connect your agent help',
-			}
 		case 'opencode':
-			return {
-				href: kodyConnectYourAgentUrl,
-				label: 'Connect your agent help',
-			}
-		case 'copilot':
-			return { href: copilotCliMcpGuideUrl, label: 'Copilot CLI MCP help' }
-		case 'copilot-app':
-			return { href: copilotAppCustomizeGuideUrl, label: 'Copilot app help' }
 		case 'devin':
-			return {
-				href: kodyConnectYourAgentUrl,
-				label: 'Connect your agent help',
-			}
 		case 'gemini':
-			return {
-				href: kodyConnectYourAgentUrl,
-				label: 'Connect your agent help',
-			}
-		case 'openclaw':
-			return { href: openClawMcpGuideUrl, label: 'OpenClaw MCP help' }
 		case 'other':
-			return {
-				href: kodyConnectYourAgentUrl,
-				label: 'Connect your agent help',
-			}
+			return kodyConnectYourAgentUrl
+		case 'claude-desktop':
+			return claudeCustomConnectorsGuideUrl
+		case 'grok':
+			return grokCustomMcpGuideUrl
+		case 'grok-cli':
+			return grokCliMcpGuideUrl
+		case 'grok-bot':
+			return grokBotConnectPluginsUrl
+		case 'copilot':
+			return copilotCliMcpGuideUrl
+		case 'copilot-app':
+			return copilotAppCustomizeGuideUrl
+		case 'openclaw':
+			return openClawMcpGuideUrl
 		default: {
 			const exhaustive: never = id
 			return exhaustive
 		}
+	}
+}
+
+/** Same shape on every card: the agent name, then connection docs. */
+export function onboardingAgentHelp(
+	id: McpClientKind,
+	surface: OnboardingAgentSurface = 'desktop',
+): {
+	href: string
+	label: string
+} {
+	return {
+		href: onboardingAgentHelpHref(id),
+		label: `${onboardingAgentLabel(id, surface)} connection docs`,
 	}
 }
 

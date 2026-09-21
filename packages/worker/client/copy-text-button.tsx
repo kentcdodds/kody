@@ -32,6 +32,11 @@ type CopyTextButtonProps = {
 	 * "Copy" entries says nothing about which id each one takes.
 	 */
 	ariaLabel?: string
+	/**
+	 * Onboarding connect only: copying this command is a deliberate connect
+	 * action, so the wizard may start waiting on the grant.
+	 */
+	signalsConnectAction?: boolean
 }
 
 type CopyState = 'idle' | 'copied' | 'error'
@@ -141,6 +146,9 @@ export function CopyTextButton(handle: Handle<CopyTextButtonProps>) {
 			// button's own name: `aria-label` overrides the label text, so a named
 			// button would keep reading "Copy package id" after it had copied.
 			aria-describedby={`${handle.id}-copy-status`}
+			data-onboarding-connect-action={
+				handle.props.signalsConnectAction ? 'true' : undefined
+			}
 			mix={[
 				css(
 					getCopyButtonCss(
