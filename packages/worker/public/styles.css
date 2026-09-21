@@ -1192,6 +1192,10 @@ html.is-settled {
 	-webkit-user-drag: none;
 }
 
+/* Sprite halos, pulse rings, and hover bloom live on this layer. The
+   shell's dark lip is behind it (the frame only covers the outer metal),
+   so the layer is clipped to the glass. The path is set from
+   `landingLanternOrbClipPath`. */
 .landing-lantern-orbs {
 	position: absolute;
 	inset: 0;

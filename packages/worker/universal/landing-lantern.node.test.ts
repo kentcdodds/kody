@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import { landingHomePrimitives } from './landing-home-copy.ts'
 import {
 	landingLanternImage,
+	landingLanternOrbClipPath,
 	landingLanternOrbs,
 	landingLeaderOrbAnchor,
 	landingLeaderOrbExit,
@@ -35,6 +36,42 @@ test('lantern orbs cover every homepage primitive exactly once, in copy order', 
 	expect(landingPrimitiveColorVar('triggers')).toBe('var(--primitive-triggers)')
 	expect(landingPrimitiveColorVar('apps')).toBe('var(--primitive-apps)')
 })
+
+test('orb clip keeps glow off the shell lip the frame does not cover', () => {
+	const clip = landingLanternOrbClipPath()
+	expect(clip.startsWith('polygon(')).toBe(true)
+	// Dark lip under the cap (between the outer metal and the bright glass).
+	expect(clipContains(clip, 50, 31.8)).toBe(false)
+	// Dark lip on the pedestal.
+	expect(clipContains(clip, 50, 83.8)).toBe(false)
+	expect(clipContains(clip, 50, 38.5)).toBe(true)
+	expect(clipContains(clip, 50, 74.5)).toBe(true)
+	expect(clipContains(clip, 50, 54.5)).toBe(true)
+	expect(clipContains(clip, 2, 54.5)).toBe(false)
+})
+
+function clipContains(clip: string, x: number, y: number) {
+	const points = [
+		...clip.matchAll(/(-?\d+(?:\.\d+)?)% (-?\d+(?:\.\d+)?)%/g),
+	].map((match) => [Number(match[1]), Number(match[2])])
+	let inside = false
+	for (
+		let index = 0, previous = points.length - 1;
+		index < points.length;
+		previous = index++
+	) {
+		const current = points[index]!
+		const prior = points[previous]!
+		const crosses =
+			current[1]! > y !== prior[1]! > y &&
+			x <
+				((prior[0]! - current[0]!) * (y - current[1]!)) /
+					(prior[1]! - current[1]!) +
+					current[0]!
+		if (crosses) inside = !inside
+	}
+	return inside
+}
 
 test('orbit light tones cycle through the six primitive colors', () => {
 	expect(

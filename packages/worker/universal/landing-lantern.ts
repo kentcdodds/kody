@@ -60,6 +60,18 @@ export const landingLanternOrbArt = {
 export const landingLanternGlass = { x: 0.5, y: 0.545, r: 0.46 } as const
 
 /**
+ * Glass the orbs may paint on, as fractions of lantern height. Tighter than
+ * the outer metal (`landingLanternAperture` in the motion module): the dark
+ * lip under the cap and on the pedestal is in the shell, behind the orbs,
+ * so the frame does not cover it. Measured where that lip gives way to the
+ * bright glass.
+ */
+export const landingLanternGlowAperture = {
+	top: 0.326,
+	bottom: 0.822,
+} as const
+
+/**
  * Orb centres (percent of width and height), shared disc diameter (percent
  * of width), and sprite width (percent of width). `size` is the painted
  * disc, so the hotspot, ring, collision radius, and leader rim match it.
@@ -81,6 +93,66 @@ export const landingLanternOrbs = [
 	size: number
 	art: number
 }>
+
+/**
+ * Clip for the orb layer. The sprite halo, pulse ring, and hover bloom all
+ * paint with the discs, and the shell lip sits behind them, so the clip has
+ * to cover the glow and not only the hard disc. Polygon of the glass ellipse
+ * cut by `landingLanternGlowAperture`, in percentages of the lantern box.
+ */
+export function landingLanternOrbClipPath() {
+	const { width, height } = landingLanternImage
+	const rx = landingLanternGlass.r
+	const ry = landingLanternGlass.r * (width / height)
+	const { x: cx, y: cy } = landingLanternGlass
+	const top = landingLanternGlowAperture.top
+	const bottom = landingLanternGlowAperture.bottom
+	const points: Array<readonly [number, number]> = []
+	const nyTop = (top - cy) / ry
+	const nyBottom = (bottom - cy) / ry
+	const xOnEllipse = (ny: number, side: -1 | 1) =>
+		cx + side * Math.sqrt(Math.max(0, 1 - ny * ny)) * rx
+	const topLeft: readonly [number, number] = [xOnEllipse(nyTop, -1), top]
+	const topRight: readonly [number, number] = [xOnEllipse(nyTop, 1), top]
+	const bottomRight: readonly [number, number] = [
+		xOnEllipse(nyBottom, 1),
+		bottom,
+	]
+	const bottomLeft: readonly [number, number] = [
+		xOnEllipse(nyBottom, -1),
+		bottom,
+	]
+	points.push(topLeft, topRight)
+	pushArc(points, topRight, bottomRight, cx, cy, rx, ry)
+	points.push(bottomRight, bottomLeft)
+	pushArc(points, bottomLeft, topLeft, cx, cy, rx, ry)
+	const percent = (value: number) => `${Math.round(value * 1000) / 10}%`
+	return `polygon(${points
+		.map(([x, y]) => `${percent(x)} ${percent(y)}`)
+		.join(',')})`
+}
+
+/** Walk the glass ellipse clockwise from `from` to `to`, not repeating ends. */
+function pushArc(
+	points: Array<readonly [number, number]>,
+	from: readonly [number, number],
+	to: readonly [number, number],
+	cx: number,
+	cy: number,
+	rx: number,
+	ry: number,
+) {
+	const angle = (point: readonly [number, number]) =>
+		Math.atan2((point[1] - cy) / ry, (point[0] - cx) / rx)
+	let start = angle(from)
+	let end = angle(to)
+	if (end <= start) end += Math.PI * 2
+	const steps = 10
+	for (let step = 1; step < steps; step++) {
+		const theta = start + ((end - start) * step) / steps
+		points.push([cx + Math.cos(theta) * rx, cy + Math.sin(theta) * ry])
+	}
+}
 
 /** CSS custom property that carries a primitive's color. */
 export function landingPrimitiveColorVar(id: LandingPrimitiveId) {

@@ -6,7 +6,10 @@ import {
 	landingHomePrimitives,
 	landingPrimitivesMoreLink,
 } from '#universal/landing-home-copy.ts'
-import { landingLanternOrbs } from '#universal/landing-lantern.ts'
+import {
+	landingLanternOrbClipPath,
+	landingLanternOrbs,
+} from '#universal/landing-lantern.ts'
 
 test('primitives sentence pairs lantern orbs with words and ships empty leaders', async () => {
 	const html = await renderToString(jsx(LandingPrimitives, {}))
@@ -29,6 +32,7 @@ test('primitives sentence pairs lantern orbs with words and ships empty leaders'
 	expect(html.indexOf('landing-lantern-orbs')).toBeLessThan(
 		html.indexOf('landing-lantern-frame'),
 	)
+	expect(html).toContain(`clip-path: ${landingLanternOrbClipPath()}`)
 	expect(html.match(/class="landing-lantern-orb-art"/g)).toHaveLength(
 		landingLanternOrbs.length,
 	)
