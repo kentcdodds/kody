@@ -1119,8 +1119,8 @@ html.is-settled {
    words listed beside it, then the learn-more line. Leader lines run orb to
    word inside the stage on wide screens (measured from layout by
    `landing-primitives.tsx`); narrow screens stack and drop them. Stacking
-   inside the stage: lantern art (0) < leaders (1) < orbs and words (2) <
-   popover (4). */
+   inside the stage: lantern shell (0) < leaders (1) < orb layers and words
+   (2) < popover (4). */
 .landing-primitives {
 	position: relative;
 	max-width: 58rem;
@@ -1143,7 +1143,7 @@ html.is-settled {
 .landing-lantern {
 	position: relative;
 	width: 100%;
-	aspect-ratio: 839 / 1235;
+	aspect-ratio: 863 / 1242;
 	margin: 0;
 }
 
@@ -1158,15 +1158,31 @@ html.is-settled {
 	filter: drop-shadow(0 1.2rem 2.2rem oklch(0.75 0.15 75 / 0.28));
 }
 
+/* Orb cutout, centered on its disc. The motion loop writes `transform`
+   in pixels; `translate` keeps the sprite centered without fighting it. */
+.landing-lantern-orb-art {
+	position: absolute;
+	z-index: 2;
+	left: var(--x);
+	top: var(--y);
+	width: var(--art);
+	height: auto;
+	translate: -50% -50%;
+	pointer-events: none;
+	user-select: none;
+	-webkit-user-drag: none;
+}
+
 .landing-lantern-orbs {
 	position: absolute;
 	inset: 0;
 	z-index: 2;
 }
 
-/* Hotspots over the painted orbs. Invisible at rest apart from the pulse
-   ring; hover, focus, or open lights a ring in the orb's color. Dimmed
-   orbs get a translucent canvas-colored veil. */
+/* Hotspots over the orb layers. Invisible at rest apart from the pulse
+   ring; hover, focus, or open lights a ring in the orb's color. A dimmed
+   orb fades its layer rather than painting a veil, so the glyph stays
+   centered in the moving glow. */
 .landing-lantern-orb {
 	position: absolute;
 	left: var(--x);
@@ -1230,8 +1246,8 @@ html.is-settled {
 	outline-offset: 5px;
 }
 
-.landing-primitives[data-active] .landing-lantern-orb:not([data-open]) {
-	background-color: oklch(from var(--color-background) l c h / 0.42);
+.landing-primitives[data-active] .landing-lantern-orb-art:not([data-open]) {
+	opacity: 0.58;
 }
 
 /* Leader overlay: viewBox is set to the section's pixel size so paths are

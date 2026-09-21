@@ -16,19 +16,20 @@ test('lantern orbs cover every homepage primitive exactly once, in copy order', 
 	const copyIds = landingHomePrimitives.map((primitive) => primitive.id)
 	expect(landingLanternOrbs.map((orb) => orb.id)).toEqual(copyIds)
 	expect([...landingPrimitiveIds]).toEqual(copyIds)
+	const packagesOrb = landingLanternOrbs.find((orb) => orb.id === 'packages')!
 	for (const orb of landingLanternOrbs) {
 		expect(orb.x).toBeGreaterThan(0)
 		expect(orb.x).toBeLessThan(100)
 		expect(orb.y).toBeGreaterThan(0)
 		expect(orb.y).toBeLessThan(100)
-		expect(orb.size).toBeGreaterThan(15)
-		expect(orb.size).toBeLessThan(30)
+		// One disc for every primitive, including memory.
+		expect(orb.size).toBe(packagesOrb.size)
+		expect(orb.art).toBeGreaterThan(orb.size)
 	}
 	expect(landingLanternImage.srcSet).toContain(landingLanternImage.src)
-	expect(landingLanternImage.width / landingLanternImage.height).toBeCloseTo(
-		839 / 1235,
-		3,
-	)
+	expect(landingLanternImage.src).toContain('lantern-shell')
+	expect(landingLanternImage.width).toBe(863)
+	expect(landingLanternImage.height).toBe(1242)
 	expect(landingPrimitiveColorVar('jobs')).toBe('var(--primitive-jobs)')
 })
 

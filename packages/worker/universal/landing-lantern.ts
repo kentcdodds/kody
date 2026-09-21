@@ -1,12 +1,12 @@
 import { type LandingHomePrimitive } from '#universal/landing-home-copy.ts'
 
 /**
- * Five-orb lantern for the homepage primitives section. Orb centres are
- * percentages of the lantern still (`kody-primitives-lantern.webp`),
- * measured from the painted orbs, and each is keyed to a
+ * Five-orb lantern for the homepage primitives section. The shell (frame,
+ * glass, and glow) and each primitive orb are separate layers, keyed to a
  * `landingHomePrimitives` id so the copy stays the single source of words
- * and definitions. Colors live in `styles.css` as `--primitive-<id>` so the
- * orbit lights and the leader lines share one palette.
+ * and definitions. Orb centres are percentages of the shell. Colors live in
+ * `styles.css` as `--primitive-<id>` so the orbit lights and the leader
+ * lines share one palette.
  */
 
 export type LandingPrimitiveId = LandingHomePrimitive['id']
@@ -19,41 +19,50 @@ export const landingPrimitiveIds = [
 	'integrations',
 ] as const satisfies ReadonlyArray<LandingPrimitiveId>
 
-/** Kent's standalone lantern, trimmed to its alpha box. */
+/** Empty lantern: frame, glass, and glow, with no colored orbs. */
 export const landingLanternImage = {
-	src: '/images/kody-primitives-lantern-480.webp',
+	src: '/images/lantern/kody-primitives-lantern-shell-480.webp',
 	srcSet: [
-		'/images/kody-primitives-lantern-480.webp 480w',
-		'/images/kody-primitives-lantern.webp 839w',
+		'/images/lantern/kody-primitives-lantern-shell-480.webp 480w',
+		'/images/lantern/kody-primitives-lantern-shell.webp 863w',
 	].join(', '),
 	sizes: '(max-width: 800px) 58vw, 17rem',
-	width: 839,
-	height: 1235,
+	width: 863,
+	height: 1242,
 } as const
 
-/** Glass globe in the still: centre as fractions of width and height,
+/** Orb cutouts. Each sprite is centered on its disc in the shell. */
+export const landingLanternOrbArt = {
+	memory: '/images/lantern/kody-primitives-orb-memory.webp',
+	secrets: '/images/lantern/kody-primitives-orb-secrets.webp',
+	packages: '/images/lantern/kody-primitives-orb-packages.webp',
+	jobs: '/images/lantern/kody-primitives-orb-jobs.webp',
+	integrations: '/images/lantern/kody-primitives-orb-integrations.webp',
+} as const satisfies Record<LandingPrimitiveId, string>
+
+/** Glass globe in the shell: centre as fractions of width and height,
  *  radius as a fraction of width. Used to fade leaders inside the glass. */
 export const landingLanternGlass = { x: 0.5, y: 0.545, r: 0.46 } as const
 
 /**
- * Orb centres (percent of width and height) and disc diameters (percent of
- * width) in the still. Fitted as discs against each orb's hue (inside minus
- * surrounding annulus), not as hue centroids: the painted glow is brighter
- * below and left of each orb and pulled centroids off the disc. The painted
- * orbs are not all the same size, so each hotspot carries its own diameter
- * and the highlight ring hugs its disc.
+ * Orb centres (percent of width and height), shared disc diameter (percent
+ * of width), and sprite width (percent of width). Every hotspot is the
+ * packages disc, so memory matches packages and the glyph stays in the
+ * middle of its glow while the layer moves. `art` is larger than `size`
+ * so the transparent glow around the disc is not clipped.
  */
 export const landingLanternOrbs = [
-	{ id: 'memory', x: 50.1, y: 43.9, size: 20 },
-	{ id: 'secrets', x: 25.7, y: 53.3, size: 22.4 },
-	{ id: 'packages', x: 74.9, y: 54.3, size: 22.8 },
-	{ id: 'jobs', x: 35.4, y: 68.3, size: 22.8 },
-	{ id: 'integrations', x: 67.5, y: 69, size: 21.4 },
+	{ id: 'memory', x: 50.1, y: 43.9, size: 22.8, art: 24.03 },
+	{ id: 'secrets', x: 25.7, y: 53.3, size: 22.8, art: 23.94 },
+	{ id: 'packages', x: 74.9, y: 54.3, size: 22.8, art: 23.84 },
+	{ id: 'jobs', x: 35.4, y: 68.3, size: 22.8, art: 23.84 },
+	{ id: 'integrations', x: 67.2, y: 69.6, size: 22.8, art: 23.66 },
 ] as const satisfies ReadonlyArray<{
 	id: LandingPrimitiveId
 	x: number
 	y: number
 	size: number
+	art: number
 }>
 
 /** CSS custom property that carries a primitive's color. */

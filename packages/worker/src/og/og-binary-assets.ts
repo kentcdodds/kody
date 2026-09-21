@@ -21,7 +21,7 @@ const OG_ASSET_URLS = {
 	// PNG of the homepage hero (`images/hero/kody-base-*.webp`) — Satori/resvg
 	// need PNG; pixels match the live landing base (chips/tethers drawn on top).
 	kodyBase: 'https://assets.local/og/kody-base.png',
-	// PNG of the homepage primitives lantern (`images/kody-primitives-lantern.webp`).
+	// PNG of the homepage lantern at the orbs' rest pose.
 	kodyPrimitivesLantern: 'https://assets.local/og/kody-primitives-lantern.png',
 	kodyDiscord: 'https://assets.local/og/kody-discord.png',
 	kodyLogo: 'https://assets.local/og/kody-logo.png',

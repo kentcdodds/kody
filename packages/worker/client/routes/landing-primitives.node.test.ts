@@ -46,11 +46,17 @@ test('lantern orbs and words are paired disclosures for one popover each', async
 	const html = await renderToString(jsx(LandingPrimitives, {}))
 
 	expect(html).toContain('class="landing-lantern"')
-	expect(html).toContain('kody-primitives-lantern-480.webp')
-	expect(html).toContain('kody-primitives-lantern.webp 839w')
+	expect(html).toContain('kody-primitives-lantern-shell-480.webp')
+	expect(html).toContain('kody-primitives-lantern-shell.webp 863w')
 	expect(html.match(/class="landing-lantern-orb"/g)).toHaveLength(
 		landingLanternOrbs.length,
 	)
+	expect(html.match(/class="landing-lantern-orb-art"/g)).toHaveLength(
+		landingLanternOrbs.length,
+	)
+	for (const orb of landingLanternOrbs) {
+		expect(html).toContain(`data-orb-art="${orb.id}"`)
+	}
 	// Every orb and every word is a collapsed disclosure that controls and
 	// is described by the same tooltip id.
 	expect(html.match(/aria-expanded="false"/g)).toHaveLength(

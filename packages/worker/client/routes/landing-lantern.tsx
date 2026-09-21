@@ -1,23 +1,24 @@
 import { type Handle } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
+import { lanternOrbMotion } from '#client/routes/landing-lantern-motion.ts'
 import {
 	landingHomePrimitives,
 	type LandingHomePrimitive,
 } from '#universal/landing-home-copy.ts'
 import {
 	landingLanternImage,
+	landingLanternOrbArt,
 	landingLanternOrbs,
 	landingPrimitiveColorVar,
 	type LandingPrimitiveId,
 } from '#universal/landing-lantern.ts'
 
 /**
- * Five-orb lantern beside the primitives sentence. The art is Kent's
- * standalone lantern still (`kody-primitives-lantern.webp`, orbs painted
- * in). Five transparent buttons sit over the painted orbs so each can take
- * hover, focus, and tap, open the matching primitive popover, and anchor
- * the leader line drawn by the parent section. Orb centres come from
- * `#universal/landing-lantern` so measurement and art stay in one place.
+ * Five-orb lantern beside the primitives sentence. The shell is static.
+ * Each primitive is its own transparent layer, centered on the disc, and a
+ * button of that disc tracks the layer so hover, focus, tap, and the
+ * highlight ring follow the orb. The parent section draws the leader from
+ * the button's live box.
  */
 
 /** Hover opens for mice and pens only. A touch tap fires synthetic enter
@@ -42,6 +43,8 @@ export type LandingLanternProps = {
 }
 
 export function LandingLantern(handle: Handle<LandingLanternProps>) {
+	const motion = lanternOrbMotion()
+
 	function leave(id: LandingPrimitiveId) {
 		handle.props.onClose(id)
 		handle.props.onResume(id)
@@ -50,7 +53,7 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 	return () => {
 		const { activeId, panelId, onOpen, onToggle, onDismiss } = handle.props
 		return (
-			<figure class="landing-lantern">
+			<figure class="landing-lantern" mix={motion}>
 				<figcaption class="visually-hidden">
 					A lantern holding five glowing orbs, one for each Kody primitive.
 				</figcaption>
@@ -64,6 +67,26 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 					alt=""
 					class="landing-lantern-art"
 				/>
+				{landingLanternOrbs.map((orb) => {
+					const open = activeId === orb.id
+					return (
+						<img
+							key={orb.id}
+							src={landingLanternOrbArt[orb.id]}
+							alt=""
+							decoding="async"
+							draggable="false"
+							class="landing-lantern-orb-art"
+							data-orb-art={orb.id}
+							data-open={open ? '' : undefined}
+							style={{
+								'--x': `${orb.x}%`,
+								'--y': `${orb.y}%`,
+								'--art': `${orb.art}%`,
+							}}
+						/>
+					)
+				})}
 				<div class="landing-lantern-orbs">
 					{landingLanternOrbs.map((orb) => {
 						const primitive = primitiveById(orb.id)

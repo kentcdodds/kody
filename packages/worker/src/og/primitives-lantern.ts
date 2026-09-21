@@ -1,6 +1,6 @@
 /**
  * Homepage OG still of the primitives lantern.
- * The lantern PNG is the homepage still (`kody-primitives-lantern.webp`).
+ * The lantern PNG is the homepage lantern at the orbs' rest pose.
  * Leader paths use the same orb geometry and cubic as the live section
  * (`landing-lantern.ts`); Satori cannot measure the DOM, so word anchors
  * are a fixed stack beside the glass.
