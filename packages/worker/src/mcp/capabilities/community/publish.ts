@@ -33,7 +33,7 @@ export const communityPublishCapability = defineDomainCapability(
 			package_id: z
 				.string()
 				.min(1)
-				.describe('Saved package id to publish as a community listing.'),
+				.describe('Saved package id to publish as a public package.'),
 			package_scope: z
 				.string()
 				.min(1)

@@ -11,7 +11,7 @@ export const communitySetFeaturedCapability = defineDomainCapability(
 	{
 		name: 'communitySetFeatured',
 		description:
-			'Admin-only curation: mark a public community listing as an onboarding starter package, or remove the mark. Featured is editorial placement on /onboarding, not a safety review.',
+			'Admin-only curation: mark a public package as an onboarding starter package, or remove the mark. Featured is editorial placement on /onboarding, not a safety review.',
 		keywords: [
 			'community',
 			'featured',
@@ -29,7 +29,7 @@ export const communitySetFeaturedCapability = defineDomainCapability(
 			listing_id: z
 				.string()
 				.min(1)
-				.describe('Community listing id to mark or unmark as featured.'),
+				.describe('Catalog entry id to mark or unmark as featured.'),
 			featured: z
 				.boolean()
 				.describe(

@@ -21,10 +21,7 @@ export const communityUnpublishCapability = defineDomainCapability(
 		idempotent: false,
 		destructive: true,
 		inputSchema: z.object({
-			listing_id: z
-				.string()
-				.min(1)
-				.describe('Community listing id to unpublish.'),
+			listing_id: z.string().min(1).describe('Catalog entry id to unpublish.'),
 			confirm_name: z
 				.string()
 				.min(1)
@@ -54,7 +51,7 @@ export const communityUnpublishCapability = defineDomainCapability(
 			})
 			if (!listing || listing.ownerUserId !== owner.ownerUserId) {
 				throw new McpCallerError(
-					`Community listing "${args.listing_id}" was not found.`,
+					`Catalog entry "${args.listing_id}" was not found.`,
 				)
 			}
 			if (args.confirm_name.trim() !== listing.kodyId) {

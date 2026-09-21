@@ -43,7 +43,7 @@ export class CommunityListingPublishedDispatchCancelledError extends Error {
 
 	constructor(listingId: string) {
 		super(
-			`Community listing "${listingId}" is no longer active for published-event dispatch.`,
+			`Catalog entry "${listingId}" is no longer active for published-event dispatch.`,
 		)
 		this.name = 'CommunityListingPublishedDispatchCancelledError'
 		this.listingId = listingId
