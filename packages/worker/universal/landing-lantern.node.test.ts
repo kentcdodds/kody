@@ -30,24 +30,28 @@ test('lantern orbs cover every homepage primitive exactly once, in copy order', 
 		expect(orb.art / orb.size).toBeLessThan(1.08)
 	}
 	expect(landingLanternImage.srcSet).toContain(landingLanternImage.src)
-	expect(landingLanternImage.src).toContain('lantern-shell')
+	expect(landingLanternImage.src).toContain('kody-primitives-lantern-480.webp')
 	expect(landingLanternImage.width).toBe(863)
 	expect(landingLanternImage.height).toBe(1242)
 	expect(landingPrimitiveColorVar('triggers')).toBe('var(--primitive-triggers)')
 	expect(landingPrimitiveColorVar('apps')).toBe('var(--primitive-apps)')
 })
 
-test('orb clip keeps glow off the shell lip the frame does not cover', () => {
+test('orb clip follows the metal cap and base and stays inside the glass', () => {
 	const clip = landingLanternOrbClipPath()
 	expect(clip.startsWith('polygon(')).toBe(true)
-	// Dark lip under the cap (between the outer metal and the bright glass).
-	expect(clipContains(clip, 50, 31.8)).toBe(false)
-	// Dark lip on the pedestal.
-	expect(clipContains(clip, 50, 83.8)).toBe(false)
+	// On the cap, above the lip.
+	expect(clipContains(clip, 50, 30)).toBe(false)
+	// Just inside the glass, under the cap.
+	expect(clipContains(clip, 50, 34)).toBe(true)
+	// On the base.
+	expect(clipContains(clip, 50, 85)).toBe(false)
+	expect(clipContains(clip, 50, 82)).toBe(true)
 	expect(clipContains(clip, 50, 38.5)).toBe(true)
 	expect(clipContains(clip, 50, 74.5)).toBe(true)
 	expect(clipContains(clip, 50, 54.5)).toBe(true)
 	expect(clipContains(clip, 2, 54.5)).toBe(false)
+	expect(clipContains(clip, 98, 54.5)).toBe(false)
 })
 
 function clipContains(clip: string, x: number, y: number) {

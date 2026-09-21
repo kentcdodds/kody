@@ -1,12 +1,13 @@
 import { type LandingHomePrimitive } from '#universal/landing-home-copy.ts'
 
 /**
- * Six-orb lantern for the homepage primitives section. The shell (glass
- * and glow), the metal frame, and each primitive orb are separate layers,
- * keyed to a `landingHomePrimitives` id so the copy stays the single source
- * of words and definitions. Orb centres are percentages of the shell.
- * Colors live in `styles.css` as `--primitive-<id>` so the orbit lights
- * and the leader lines share one palette.
+ * Six-orb lantern for the homepage primitives section. The lantern is one
+ * still (glass, glow, and metal together). Each primitive orb is an overlay
+ * clipped to the opening inside the frame, keyed to a `landingHomePrimitives`
+ * id so the copy stays the single source of words and definitions. Orb
+ * centres are percentages of that still. Colors live in `styles.css` as
+ * `--primitive-<id>` so the orbit lights and the leader lines share one
+ * palette.
  */
 
 export type LandingPrimitiveId = LandingHomePrimitive['id']
@@ -20,29 +21,17 @@ export const landingPrimitiveIds = [
 	'apps',
 ] as const satisfies ReadonlyArray<LandingPrimitiveId>
 
-/** Glass and glow only. The metal cap, handle, and base are a second
- *  layer (`landingLanternFrame`) so they paint above the orbs. */
+/** The whole lantern. Metal and glass stay in one image so the frame edge
+ *  cannot open a seam against the page. */
 export const landingLanternImage = {
-	src: '/images/lantern/kody-primitives-lantern-shell-480.webp',
+	src: '/images/lantern/kody-primitives-lantern-480.webp',
 	srcSet: [
-		'/images/lantern/kody-primitives-lantern-shell-480.webp 480w',
-		'/images/lantern/kody-primitives-lantern-shell.webp 863w',
+		'/images/lantern/kody-primitives-lantern-480.webp 480w',
+		'/images/lantern/kody-primitives-lantern.webp 863w',
 	].join(', '),
 	sizes: '(max-width: 800px) 58vw, 17rem',
 	width: 863,
 	height: 1242,
-} as const
-
-/** Metal cap, handle, and base, aligned to `landingLanternImage`. */
-export const landingLanternFrame = {
-	src: '/images/lantern/kody-primitives-lantern-frame-480.webp',
-	srcSet: [
-		'/images/lantern/kody-primitives-lantern-frame-480.webp 480w',
-		'/images/lantern/kody-primitives-lantern-frame.webp 863w',
-	].join(', '),
-	sizes: landingLanternImage.sizes,
-	width: landingLanternImage.width,
-	height: landingLanternImage.height,
 } as const
 
 /** Orb cutouts. Each sprite is centered on its disc in the shell. */
@@ -60,16 +49,68 @@ export const landingLanternOrbArt = {
 export const landingLanternGlass = { x: 0.5, y: 0.545, r: 0.46 } as const
 
 /**
- * Glass the orbs may paint on, as fractions of lantern height. Tighter than
- * the outer metal (`landingLanternAperture` in the motion module): the dark
- * lip under the cap and on the pedestal is in the shell, behind the orbs,
- * so the frame does not cover it. Measured where that lip gives way to the
- * bright glass.
+ * Underside of the cap and top of the base, as fractions of the lantern.
+ * Sampled along the metal where it meets the glass. The orb clip follows
+ * these lips, and the glass ellipse everywhere the metal does not cut in.
  */
-const landingLanternGlowAperture = {
-	top: 0.326,
-	bottom: 0.822,
-} as const
+const landingLanternCapLip = [
+	[0.2, 0.246],
+	[0.225, 0.305],
+	[0.25, 0.307],
+	[0.275, 0.297],
+	[0.3, 0.289],
+	[0.324, 0.291],
+	[0.35, 0.299],
+	[0.375, 0.304],
+	[0.4, 0.31],
+	[0.425, 0.312],
+	[0.45, 0.312],
+	[0.475, 0.315],
+	[0.501, 0.314],
+	[0.525, 0.312],
+	[0.55, 0.311],
+	[0.575, 0.307],
+	[0.6, 0.299],
+	[0.625, 0.305],
+	[0.65, 0.304],
+	[0.676, 0.303],
+	[0.7, 0.297],
+	[0.725, 0.294],
+	[0.75, 0.298],
+	[0.775, 0.303],
+	[0.8, 0.245],
+] as const satisfies ReadonlyArray<readonly [number, number]>
+
+const landingLanternBaseLip = [
+	[0.2, 0.831],
+	[0.225, 0.836],
+	[0.25, 0.839],
+	[0.275, 0.841],
+	[0.3, 0.841],
+	[0.324, 0.842],
+	[0.35, 0.841],
+	[0.375, 0.842],
+	[0.4, 0.842],
+	[0.425, 0.843],
+	[0.45, 0.844],
+	[0.475, 0.845],
+	[0.501, 0.844],
+	[0.525, 0.844],
+	[0.55, 0.845],
+	[0.575, 0.848],
+	[0.6, 0.843],
+	[0.625, 0.846],
+	[0.65, 0.841],
+	[0.676, 0.84],
+	[0.7, 0.837],
+	[0.725, 0.835],
+	[0.75, 0.833],
+	[0.775, 0.829],
+	[0.8, 0.827],
+] as const satisfies ReadonlyArray<readonly [number, number]>
+
+/** Keep the clip just inside the metal pixel the lip was measured on. */
+const landingLanternLipInset = 0.004
 
 /**
  * Orb centres (percent of width and height), shared disc diameter (percent
@@ -95,63 +136,59 @@ export const landingLanternOrbs = [
 }>
 
 /**
- * Clip for the orb layer. The sprite halo, pulse ring, and hover bloom all
- * paint with the discs, and the shell lip sits behind them, so the clip has
- * to cover the glow and not only the hard disc. Polygon of the glass ellipse
- * cut by `landingLanternGlowAperture`, in percentages of the lantern box.
+ * Clip for the orb overlay. The sprite halo, pulse ring, and hover bloom
+ * paint with the discs, so the clip is the glass opening: under the cap,
+ * above the base, and inside the globe. It follows the metal where the
+ * frame cuts into the glass, and the glass ellipse on the bare sides.
  */
 export function landingLanternOrbClipPath() {
 	const { width, height } = landingLanternImage
 	const rx = landingLanternGlass.r
 	const ry = landingLanternGlass.r * (width / height)
 	const { x: cx, y: cy } = landingLanternGlass
-	const top = landingLanternGlowAperture.top
-	const bottom = landingLanternGlowAperture.bottom
-	const points: Array<readonly [number, number]> = []
-	const nyTop = (top - cy) / ry
-	const nyBottom = (bottom - cy) / ry
-	const xOnEllipse = (ny: number, side: -1 | 1) =>
-		cx + side * Math.sqrt(Math.max(0, 1 - ny * ny)) * rx
-	const topLeft: readonly [number, number] = [xOnEllipse(nyTop, -1), top]
-	const topRight: readonly [number, number] = [xOnEllipse(nyTop, 1), top]
-	const bottomRight: readonly [number, number] = [
-		xOnEllipse(nyBottom, 1),
-		bottom,
-	]
-	const bottomLeft: readonly [number, number] = [
-		xOnEllipse(nyBottom, -1),
-		bottom,
-	]
-	points.push(topLeft, topRight)
-	pushArc(points, topRight, bottomRight, cx, cy, rx, ry)
-	points.push(bottomRight, bottomLeft)
-	pushArc(points, bottomLeft, topLeft, cx, cy, rx, ry)
+	const samples = 36
+	const top: Array<readonly [number, number]> = []
+	const bottom: Array<readonly [number, number]> = []
+	for (let index = 0; index <= samples; index++) {
+		const x = cx - rx + (2 * rx * index) / samples
+		const nx = (x - cx) / rx
+		const span = Math.sqrt(Math.max(0, 1 - nx * nx)) * ry
+		const ellipseTop = cy - span
+		const ellipseBottom = cy + span
+		const cap = lipAt(landingLanternCapLip, x)
+		const base = lipAt(landingLanternBaseLip, x)
+		const yTop = Math.max(
+			ellipseTop,
+			cap == null ? ellipseTop : cap + landingLanternLipInset,
+		)
+		const yBottom = Math.min(
+			ellipseBottom,
+			base == null ? ellipseBottom : base - landingLanternLipInset,
+		)
+		if (yBottom - yTop < 0.01) continue
+		top.push([x, yTop])
+		bottom.push([x, yBottom])
+	}
+	const points = [...top, ...bottom.reverse()]
 	const percent = (value: number) => `${Math.round(value * 1000) / 10}%`
 	return `polygon(${points
 		.map(([x, y]) => `${percent(x)} ${percent(y)}`)
 		.join(',')})`
 }
 
-/** Walk the glass ellipse clockwise from `from` to `to`, not repeating ends. */
-function pushArc(
-	points: Array<readonly [number, number]>,
-	from: readonly [number, number],
-	to: readonly [number, number],
-	cx: number,
-	cy: number,
-	rx: number,
-	ry: number,
-) {
-	const angle = (point: readonly [number, number]) =>
-		Math.atan2((point[1] - cy) / ry, (point[0] - cx) / rx)
-	let start = angle(from)
-	let end = angle(to)
-	if (end <= start) end += Math.PI * 2
-	const steps = 10
-	for (let step = 1; step < steps; step++) {
-		const theta = start + ((end - start) * step) / steps
-		points.push([cx + Math.cos(theta) * rx, cy + Math.sin(theta) * ry])
+function lipAt(samples: ReadonlyArray<readonly [number, number]>, x: number) {
+	const first = samples[0]
+	const last = samples[samples.length - 1]
+	if (!first || !last || x < first[0] || x > last[0]) return null
+	for (let index = 1; index < samples.length; index++) {
+		const previous = samples[index - 1]!
+		const current = samples[index]!
+		if (x > current[0]) continue
+		const span = current[0] - previous[0]
+		const t = span === 0 ? 0 : (x - previous[0]) / span
+		return previous[1] + (current[1] - previous[1]) * t
 	}
+	return last[1]
 }
 
 /** CSS custom property that carries a primitive's color. */

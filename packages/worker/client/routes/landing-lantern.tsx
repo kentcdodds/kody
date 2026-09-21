@@ -6,7 +6,6 @@ import {
 	type LandingHomePrimitive,
 } from '#universal/landing-home-copy.ts'
 import {
-	landingLanternFrame,
 	landingLanternImage,
 	landingLanternOrbArt,
 	landingLanternOrbClipPath,
@@ -16,10 +15,10 @@ import {
 } from '#universal/landing-lantern.ts'
 
 /**
- * Six-orb lantern beside the primitives sentence. The shell is static.
- * Each orb image sits inside its hotspot button, centered on the painted
- * disc, so the highlight ring, the disc, and the leader rim share one
- * centre while the button moves.
+ * Six-orb lantern beside the primitives sentence. The lantern still is one
+ * image. Each orb sits in an overlay clipped to the opening inside the
+ * frame, centered on its hotspot, so the highlight ring, the disc, and the
+ * leader rim share one centre while the button moves.
  */
 
 /** Hover opens for mice and pens only. A touch tap fires synthetic enter
@@ -147,16 +146,6 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 						)
 					})}
 				</div>
-				<img
-					src={landingLanternFrame.src}
-					srcSet={landingLanternFrame.srcSet}
-					sizes={landingLanternFrame.sizes}
-					width={landingLanternFrame.width}
-					height={landingLanternFrame.height}
-					decoding="async"
-					alt=""
-					class="landing-lantern-frame"
-				/>
 			</figure>
 		)
 	}
