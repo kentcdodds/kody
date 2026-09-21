@@ -37,18 +37,19 @@ export const landingLanternGlass = { x: 0.5, y: 0.545, r: 0.46 } as const
 
 /**
  * Orb centres (percent of width and height) and disc diameters (percent of
- * width) in the still. Fitted as discs against each orb's hue (inside minus
- * surrounding annulus), not as hue centroids: the painted glow is brighter
- * below and left of each orb and pulled centroids off the disc. The painted
- * orbs are not all the same size, so each hotspot carries its own diameter
- * and the highlight ring hugs its disc.
+ * width) in the still. Every hotspot is the packages disc. Memory was
+ * painted smaller, and secrets and integrations a little smaller, so those
+ * orbs are scaled in the still to this diameter and the highlight ring
+ * matches. Centres stay on the discs. Secrets, jobs, and integrations
+ * glyphs already sat on those centres; their glows were brighter off to
+ * one side, so the still slides each glow onto its glyph.
  */
 export const landingLanternOrbs = [
-	{ id: 'memory', x: 50.1, y: 43.9, size: 20 },
-	{ id: 'secrets', x: 25.7, y: 53.3, size: 22.4 },
+	{ id: 'memory', x: 50.1, y: 43.9, size: 22.8 },
+	{ id: 'secrets', x: 25.7, y: 53.3, size: 22.8 },
 	{ id: 'packages', x: 74.9, y: 54.3, size: 22.8 },
 	{ id: 'jobs', x: 35.4, y: 68.3, size: 22.8 },
-	{ id: 'integrations', x: 67.5, y: 69, size: 21.4 },
+	{ id: 'integrations', x: 67.5, y: 69, size: 22.8 },
 ] as const satisfies ReadonlyArray<{
 	id: LandingPrimitiveId
 	x: number

@@ -16,13 +16,17 @@ test('lantern orbs cover every homepage primitive exactly once, in copy order', 
 	const copyIds = landingHomePrimitives.map((primitive) => primitive.id)
 	expect(landingLanternOrbs.map((orb) => orb.id)).toEqual(copyIds)
 	expect([...landingPrimitiveIds]).toEqual(copyIds)
+	const packagesSize = landingLanternOrbs.find(
+		(orb) => orb.id === 'packages',
+	)!.size
 	for (const orb of landingLanternOrbs) {
 		expect(orb.x).toBeGreaterThan(0)
 		expect(orb.x).toBeLessThan(100)
 		expect(orb.y).toBeGreaterThan(0)
 		expect(orb.y).toBeLessThan(100)
-		expect(orb.size).toBeGreaterThan(15)
-		expect(orb.size).toBeLessThan(30)
+		// Every hotspot matches the packages disc, including memory
+		// which used to be painted smaller.
+		expect(orb.size).toBe(packagesSize)
 	}
 	expect(landingLanternImage.srcSet).toContain(landingLanternImage.src)
 	expect(landingLanternImage.width / landingLanternImage.height).toBeCloseTo(
