@@ -4,6 +4,7 @@ export {
 	ensureOgBinaryAssetsReady,
 	getBricolageGrotesqueLatin700FontData,
 	getKodyBaseDataUri,
+	getKodyPrimitivesLanternDataUri,
 	getLandingAgentIconDataUri,
 	getKodyDiscordDataUri,
 	getKodyLogoDataUri,

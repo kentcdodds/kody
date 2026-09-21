@@ -1,4 +1,5 @@
 import { createAgentsHero } from '#worker/og/agents-hero.ts'
+import { createPrimitivesLantern } from '#worker/og/primitives-lantern.ts'
 import { getKodyDiscordDataUri } from '#worker/og/og-image-assets.ts'
 import { getOgPalette, type OgTheme } from '#worker/og/palette.ts'
 import { type PublicOgPage } from '#universal/og-pages.ts'
@@ -43,10 +44,12 @@ function pageSubtitleMaxWidth(page: PublicOgPage): number {
 	return page.path === '/' ? PAGE_TITLE_WIDTH : PAGE_SUBTITLE_WIDTH
 }
 
-type PageHeroKind = 'lantern' | 'discord'
+type PageHeroKind = 'agents' | 'primitives' | 'discord'
 
 function getPageHeroKind(page: PublicOgPage): PageHeroKind {
-	return page.path === '/discord' ? 'discord' : 'lantern'
+	if (page.path === '/') return 'primitives'
+	if (page.path === '/discord') return 'discord'
+	return 'agents'
 }
 
 function createHeroHalo(input: {
@@ -75,8 +78,11 @@ function createHeroHalo(input: {
 					},
 				},
 			}
-		case 'lantern':
+		case 'agents':
 			// Warm glow is composed inside `createAgentsHero` on the lantern.
+			return null
+		case 'primitives':
+			// The homepage still carries its own orb light.
 			return null
 		default: {
 			const _exhaustive: never = input.kind
@@ -111,8 +117,10 @@ function createPageHero(input: {
 					},
 				},
 			}
-		case 'lantern':
+		case 'agents':
 			return createAgentsHero(input.theme ?? 'dark')
+		case 'primitives':
+			return createPrimitivesLantern(input.theme ?? 'dark')
 		default: {
 			const _exhaustive: never = input.kind
 			throw new Error(`Unhandled page hero: ${_exhaustive}`)
