@@ -44,7 +44,6 @@ import {
 	landingInviteHeadingEmphasis,
 	landingInviteHeadingLead,
 	landingInviteSignedInLead,
-	landingProofHeading,
 	landingVsHeading,
 	landingVsItems,
 } from '#universal/landing-home-copy.ts'
@@ -358,39 +357,24 @@ export function HomeRoute(handle: Handle) {
 					</p>
 				</section>
 
-				<section aria-labelledby="proof-title" class="landing-proof">
-					<h2 id="proof-title" class="landing-section-heading">
-						{landingProofHeading}
-					</h2>
+				<section class="landing-proof">
 					<div class="landing-proof-split">
 						<LandingHeroAgents hosts={walkthroughHosts ?? undefined} />
-						<section
-							aria-labelledby="walkthrough-title"
-							class="landing-walkthrough-story notranslate"
-							translate="no"
-						>
-							<div class="landing-walkthrough-copy">
-								<h3
-									id="walkthrough-title"
-									class="landing-section-heading landing-walkthrough-heading"
-								>
-									Watch some example conversations
-								</h3>
+						<div class="landing-walkthrough-story notranslate" translate="no">
+							<div class="landing-walkthrough-intro">
 								{walkthroughHosts ? (
-									<div class="landing-walkthrough-intro">
-										<WalkthroughHostIntro
-											variant="picker"
-											hosts={walkthroughHosts}
-											onHostsChange={(next) => {
-												walkthroughHosts = next
-												handle.update()
-											}}
-										/>
-									</div>
+									<WalkthroughHostIntro
+										variant="picker"
+										hosts={walkthroughHosts}
+										onHostsChange={(next) => {
+											walkthroughHosts = next
+											handle.update()
+										}}
+									/>
 								) : null}
 							</div>
 							<LandingLoopPlayer hosts={walkthroughHosts ?? undefined} />
-						</section>
+						</div>
 					</div>
 				</section>
 

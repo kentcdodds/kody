@@ -85,8 +85,6 @@ export const landingCompareWithItems = [
 	'Trigger the same package from cron, webhook, email, or any connected agent',
 ] as const
 
-export const landingProofHeading = 'See it work'
-
 export const landingInviteHeadingLead = 'Give your services a '
 export const landingInviteHeadingEmphasis = 'home'
 export const landingInviteHeading = `${landingInviteHeadingLead}${landingInviteHeadingEmphasis}`
@@ -113,7 +111,6 @@ export function landingHomeUiCopyBlob() {
 		landingCompareCaption,
 		...landingCompareWithoutItems,
 		...landingCompareWithItems,
-		landingProofHeading,
 		landingInviteHeading,
 		landingInviteGuestLead,
 		landingInviteSignedInLead,

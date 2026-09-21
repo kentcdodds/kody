@@ -1597,7 +1597,11 @@ html.is-settled {
 .landing-proof {
 	max-width: 72rem;
 	margin: 0 auto;
-	padding: clamp(3rem, 6vw, 5rem) clamp(1.25rem, 4vw, 2.5rem);
+	/* Top pad is the whole gap under the factory ritual. There is no
+	   heading between them, so it stays tighter than a normal section
+	   break. Bottom stays a full break before testimonials. */
+	padding: clamp(0.75rem, 2vw, 1.5rem) clamp(1.25rem, 4vw, 2.5rem)
+		clamp(3rem, 6vw, 5rem);
 	text-align: center;
 }
 
@@ -1605,9 +1609,8 @@ html.is-settled {
 	display: grid;
 	grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
 	column-gap: clamp(1.5rem, 4vw, 2.75rem);
-	margin-top: clamp(1.75rem, 4vw, 2.5rem);
-	/* Heading stack is row 1. The orbit and the conversation card share
-	   row 2 so the art centers on the card, not the heading. */
+	/* Picker is row 1. The orbit and the conversation card share row 2
+	   so the art centers on the card, not the picker. */
 	align-items: center;
 }
 
@@ -1960,7 +1963,7 @@ html.is-settled {
 	max-width: 72rem;
 	margin-inline: auto;
 	padding: clamp(3.5rem, 8vw, 6.5rem) clamp(1.25rem, 4vw, 2.5rem)
-		clamp(2rem, 4vw, 3.5rem);
+		clamp(0.5rem, 1.5vw, 1rem);
 	text-align: center;
 }
 
@@ -2164,10 +2167,6 @@ html.is-settled {
 .landing-walkthrough-story {
 	margin: clamp(3.75rem, 8vw, 6rem) auto 0;
 	max-width: 40rem;
-}
-
-.landing-walkthrough-heading {
-	margin: 0 0 1.35rem;
 }
 
 .landing-walkthrough-intro {
@@ -2951,7 +2950,7 @@ html.is-settled {
 	}
 
 	.landing-factory {
-		padding: 3.25rem 1.25rem 1.75rem;
+		padding: 3.25rem 1.25rem 0.5rem;
 	}
 
 	.landing-loop-chat {
