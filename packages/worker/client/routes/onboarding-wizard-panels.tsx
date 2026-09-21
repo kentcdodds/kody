@@ -429,7 +429,24 @@ function connectedAgentsOnCard(
 		)
 	}
 	if (!selectedAgent) return unique
-	return unique.filter((agent) => agent.kind === selectedAgent)
+	return unique.filter((agent) =>
+		connectedKindMatchesCard(selectedAgent, agent.kind),
+	)
+}
+
+/**
+ * The Step 1 Cursor card is the generic host. A grant we can tell is Local or
+ * Cloud still belongs on that card. Grok Bot stays its own host.
+ */
+function connectedKindMatchesCard(
+	card: McpClientKind,
+	kind: McpClientKind | null | undefined,
+) {
+	if (!kind) return false
+	if (kind === card) return true
+	return (
+		card === 'cursor' && (kind === 'cursor-local' || kind === 'cursor-cloud')
+	)
 }
 
 function selectedAgentIsConnected(

@@ -178,6 +178,48 @@ test('step 1 title names the selected agent and offers a text change link', asyn
 	expect(waitingToConnect).toContain('data-testid="onboarding-connect-wait"')
 	expect(waitingToConnect).toContain('Waiting for Cursor to connect')
 	expect(waitingToConnect).not.toContain('data-testid="onboarding-wizard-next"')
+
+	const cursorLocalGrant = await renderToString(
+		connectPanel({
+			agent: 'cursor',
+			label: 'Cursor',
+			loggedIn: true,
+			hasMcpClient: true,
+			awaitingConnect: true,
+			connectedAgents: [{ label: 'Cursor Local', kind: 'cursor-local' }],
+		}),
+	)
+	expect(cursorLocalGrant).toContain('Cursor is connected')
+	expect(cursorLocalGrant).toContain('data-testid="onboarding-wizard-next"')
+	expect(cursorLocalGrant).not.toContain('Waiting for Cursor to connect')
+
+	const cursorCloudGrant = await renderToString(
+		connectPanel({
+			agent: 'cursor',
+			label: 'Cursor',
+			loggedIn: true,
+			hasMcpClient: true,
+			awaitingConnect: true,
+			connectedAgents: [{ label: 'Cursor Cloud', kind: 'cursor-cloud' }],
+		}),
+	)
+	expect(cursorCloudGrant).toContain('Cursor is connected')
+	expect(cursorCloudGrant).not.toContain('Waiting for Cursor to connect')
+
+	const grokBotOnCursorCard = await renderToString(
+		connectPanel({
+			agent: 'cursor',
+			label: 'Cursor',
+			loggedIn: true,
+			hasMcpClient: true,
+			awaitingConnect: true,
+			connectedAgents: [{ label: 'Grok Bot', kind: 'grok-bot' }],
+		}),
+	)
+	expect(grokBotOnCursorCard).toContain('Waiting for Cursor to connect')
+	expect(grokBotOnCursorCard).not.toContain(
+		'data-testid="onboarding-wizard-next"',
+	)
 })
 
 test('step 2 shows one prompt and a search waiting spinner', async () => {
