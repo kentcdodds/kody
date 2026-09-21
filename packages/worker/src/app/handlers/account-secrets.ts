@@ -204,10 +204,6 @@ async function handleSaveOauthAppAction(input: {
 	const flow = readOptionalString(input.body, 'flow')
 	const usePkce = readOptionalBoolean(input.body, 'usePkce')
 	const clientId = readOptionalString(input.body, 'clientId')
-	const clientSecretSecretName = readOptionalString(
-		input.body,
-		'clientSecretSecretName',
-	)
 	const scopeSeparator = readRawOptionalString(input.body, 'scopeSeparator')
 	const extraAuthorizeParams = readStringRecord(
 		input.body,
@@ -270,7 +266,6 @@ async function handleSaveOauthAppAction(input: {
 			userId: input.user.mcpUser.userId,
 			provider,
 			clientSecret: readOptionalString(input.body, 'clientSecret'),
-			clientSecretSecretName,
 		})
 		if (clientSecret) {
 			await persistUserOauthAppClientSecret({
@@ -333,10 +328,6 @@ async function handleConnectOauthAction(input: {
 	const flow = readOptionalString(input.body, 'flow')
 	const usePkce = readOptionalBoolean(input.body, 'usePkce')
 	const clientId = readOptionalString(input.body, 'clientId')
-	const clientSecretSecretName = readOptionalString(
-		input.body,
-		'clientSecretSecretName',
-	)
 	const allowedHosts = normalizeAllowedHosts(
 		readStringArray(input.body, 'allowedHosts'),
 	)
@@ -420,7 +411,6 @@ async function handleConnectOauthAction(input: {
 		userId: input.user.mcpUser.userId,
 		provider: integrationName,
 		clientSecret: readOptionalString(input.body, 'clientSecret'),
-		clientSecretSecretName,
 	})
 	const saved = await getJoinedIntegration({
 		env: input.env,
@@ -537,10 +527,6 @@ async function handleOAuthExchangeAction(input: {
 
 	const tokenUrl = readOptionalString(input.body, 'tokenUrl')
 	const flow = readOptionalString(input.body, 'flow') ?? 'pkce'
-	const clientSecretSecretName = readOptionalString(
-		input.body,
-		'clientSecretSecretName',
-	)
 	const allowedHosts = normalizeAllowedHosts(
 		readStringArray(input.body, 'allowedHosts'),
 	)
@@ -574,7 +560,6 @@ async function handleOAuthExchangeAction(input: {
 			userId: input.user.mcpUser.userId,
 			provider: readOptionalString(input.body, 'provider') ?? '',
 			clientSecret: readOptionalString(input.body, 'clientSecret'),
-			clientSecretSecretName,
 		})
 		if (!clientSecret) {
 			return jsonResponse(
@@ -708,7 +693,6 @@ async function resolveConnectClientSecret(input: {
 	userId: string
 	provider: string
 	clientSecret?: string | null
-	clientSecretSecretName?: string | null
 }): Promise<string | null> {
 	const inline = input.clientSecret?.trim()
 	if (inline) return inline
@@ -721,16 +705,7 @@ async function resolveConnectClientSecret(input: {
 		})
 		if (fromApp) return fromApp
 	}
-	const leftoverName = input.clientSecretSecretName?.trim()
-	if (!leftoverName) return null
-	const resolved = await resolveSecret({
-		env: input.env,
-		userId: input.userId,
-		name: leftoverName,
-		scope: 'user',
-		storageContext: { sessionId: null, appId: null, packageId: null },
-	})
-	return resolved.found ? (resolved.value ?? null) : null
+	return null
 }
 
 async function listConnectClientSecretSlugs(input: {
