@@ -87,12 +87,21 @@ async function assertSecondAgentGiftOnScenarioClock() {
 			expiresAt: giftExpiresAt,
 		},
 	})
-	expect(
-		await getUserEntitlement(free.db, {
-			userId: free.stableUserId,
-			email: 'free-gift@example.com',
-		}),
-	).toEqual({ plan: 'standard', ladder: 'public' })
+	// The gift fixture expires at noon UTC on 2026-09-21. Entitlement reads
+	// the wall clock, so pin it to the grant time or this assertion flips
+	// to free once that noon has passed.
+	vi.useFakeTimers()
+	vi.setSystemTime(now)
+	try {
+		expect(
+			await getUserEntitlement(free.db, {
+				userId: free.stableUserId,
+				email: 'free-gift@example.com',
+			}),
+		).toEqual({ plan: 'standard', ladder: 'public' })
+	} finally {
+		vi.useRealTimers()
+	}
 
 	const second = await evaluateSecondAgentStandardGift({
 		db: free.db,

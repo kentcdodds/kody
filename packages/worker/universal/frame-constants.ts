@@ -7,7 +7,7 @@ export const REMIX_FRAME_TARGET_HEADER = 'x-remix-target'
  * `x-remix-target`. A frame reload of the page URL would otherwise receive the
  * cached document and nest another copy of the shell inside the frame.
  */
-export const frameFetchSearchParam = '__frame'
+const frameFetchSearchParam = '__frame'
 
 export function frameFetchUrl(src: string, target: string | undefined) {
 	if (!target) return src

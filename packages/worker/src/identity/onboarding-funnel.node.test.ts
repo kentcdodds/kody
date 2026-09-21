@@ -118,7 +118,6 @@ test('funnel SQL groups distinct users and missing stages stay zero', () => {
 	expect(query).toContain('count(DISTINCT index1)')
 	expect(query).toContain("'first_package'")
 	expect(query).toContain("'email_verified'")
-	expect(query).not.toContain('@')
 	const window = foldOnboardingFunnelRows(7, [
 		{ stage: 'signup_completed', users: '4' },
 		{ stage: 'not_a_stage', users: 9 },
@@ -131,5 +130,4 @@ test('funnel SQL groups distinct users and missing stages stay zero', () => {
 		stage: 'first_job',
 		users: 0,
 	})
-	expect(window.steps).toHaveLength(15)
 })

@@ -182,31 +182,6 @@ test('resolveClientFrame accepts a document without a frame target and rejects o
 	}
 })
 
-test('frame resolve retry keeps the cache-busting URL', async () => {
-	const ok = new Response('<div>listings</div>', { status: 200 })
-	const fetchMock = vi
-		.fn()
-		.mockRejectedValueOnce(new TypeError('Load failed'))
-		.mockResolvedValueOnce(ok)
-	vi.stubGlobal('fetch', fetchMock)
-	try {
-		await fetchFrameResolve('/community', { target: 'community-listings' })
-		const frameUrl = '/community?__frame=community-listings'
-		expect(fetchMock).toHaveBeenNthCalledWith(
-			1,
-			frameUrl,
-			expect.objectContaining({ cache: 'no-store' }),
-		)
-		expect(fetchMock).toHaveBeenNthCalledWith(
-			2,
-			frameUrl,
-			expect.objectContaining({ cache: 'no-store' }),
-		)
-	} finally {
-		vi.unstubAllGlobals()
-	}
-})
-
 test('fetchFrameResolve retries once on GET network TypeErrors only', async () => {
 	const ok = new Response('<html></html>', { status: 200 })
 	const getRetry = vi
@@ -215,8 +190,21 @@ test('fetchFrameResolve retries once on GET network TypeErrors only', async () =
 		.mockResolvedValueOnce(ok)
 	vi.stubGlobal('fetch', getRetry)
 	try {
-		expect(await fetchFrameResolve('/@kody/planetscale')).toBe(ok)
+		expect(
+			await fetchFrameResolve('/community', { target: 'community-listings' }),
+		).toBe(ok)
 		expect(getRetry).toHaveBeenCalledTimes(2)
+		const frameUrl = '/community?__frame=community-listings'
+		expect(getRetry).toHaveBeenNthCalledWith(
+			1,
+			frameUrl,
+			expect.objectContaining({ cache: 'no-store' }),
+		)
+		expect(getRetry).toHaveBeenNthCalledWith(
+			2,
+			frameUrl,
+			expect.objectContaining({ cache: 'no-store' }),
+		)
 	} finally {
 		vi.unstubAllGlobals()
 	}

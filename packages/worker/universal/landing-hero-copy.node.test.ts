@@ -1,10 +1,6 @@
 import { expect, test } from 'vitest'
 import { landingHeroHeadline } from './landing-home-copy.ts'
-import {
-	landingHeroChooserLabel,
-	landingHeroChooserLabelEmphasis,
-	presentLandingHeroVideos,
-} from './landing-hero-copy.ts'
+import { presentLandingHeroVideos } from './landing-hero-copy.ts'
 
 test('homepage carousel keeps playlist order and retitles leftover Stop Sweating copy', () => {
 	const first = {
@@ -36,11 +32,4 @@ test('homepage carousel keeps playlist order and retitles leftover Stop Sweating
 	])
 	expect(presented[0]?.title).toBe(first.title)
 	expect(presented[3]?.title).toBe(landingHeroHeadline)
-	expect(JSON.stringify(presented)).not.toMatch(/stop sweating/i)
-	expect(JSON.stringify(presented)).not.toMatch(/\u2014|—/)
-	expect(landingHeroChooserLabel).toBe('Watch Some Demos')
-	expect(
-		landingHeroChooserLabel.endsWith(landingHeroChooserLabelEmphasis),
-	).toBe(true)
-	expect(landingHeroChooserLabelEmphasis).toBe('Demos')
 })

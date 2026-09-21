@@ -321,9 +321,7 @@ function renderByokCursorPointer() {
  * Motion is enhance-only (`html.js` + `is-playing` after hydrate) and
  * off under `prefers-reduced-motion: reduce`.
  */
-export function LandingByokDemo(
-	handle: Handle<{ hosts?: WalkthroughHostPick }>,
-) {
+function LandingByokDemo(handle: Handle<{ hosts?: WalkthroughHostPick }>) {
 	return () => {
 		const host = pickByokDemoHost(handle.props.hosts)
 		return (

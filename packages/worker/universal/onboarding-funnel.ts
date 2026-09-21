@@ -12,7 +12,6 @@ import { waitingFirstUseIds } from './waiting.ts'
 
 export {
 	onboardingFunnelStageLabels,
-	onboardingFunnelStages,
 	sanitizeFunnelClientId,
 	sanitizeMcpConnectErrorClass,
 	sanitizeOnboardingFunnelPlan,

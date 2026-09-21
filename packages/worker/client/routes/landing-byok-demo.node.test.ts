@@ -4,7 +4,6 @@ import {
 	pickWalkthroughHosts,
 } from '#universal/walkthrough-hosts.ts'
 import {
-	LandingByokDemo,
 	landingByokBeelineCubic,
 	landingByokCubicPoint,
 	landingByokDemoShouldAnimate,
@@ -14,8 +13,6 @@ import {
 } from './landing-byok-demo.tsx'
 
 test('BYOK cursor follows the walkthrough chooser coding host', () => {
-	// Kept off the homepage this pass; docs will reuse the same component.
-	expect(typeof LandingByokDemo).toBe('function')
 	const catalogCoding = listCodingWalkthroughHosts()[0]!
 	const fallback = pickByokDemoHost()
 	expect(fallback.id).toBe(catalogCoding.id)

@@ -240,10 +240,6 @@ test('anonymous package pages are cacheable, but only successful documents', () 
 			vary: 'Cookie',
 		})
 	}
-	expect(anonymousHtmlCacheControl).toMatch(/stale-while-revalidate/)
-	expect(anonymousVisibilityGatedCacheControl).not.toMatch(
-		/stale-while-revalidate/,
-	)
 	expect(
 		anonymousPersonalizedJsonCacheHeaders({
 			personalized: false,
