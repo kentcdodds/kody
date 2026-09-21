@@ -1776,6 +1776,12 @@ html.is-settled {
 	width: 100%;
 }
 
+/* Hero orbs are art, not controls. */
+.landing-lantern[data-decorative] .landing-lantern-orb {
+	pointer-events: none;
+	cursor: default;
+}
+
 /* Orb container. Keep this painted; hide only the track stroke. Lights
    dissolve into the globe instead of crossing it. Masked on the <svg> box
    (percentages: the stage is square, so they match viewBox units); the
@@ -1788,14 +1794,16 @@ html.is-settled {
 	overflow: visible;
 	pointer-events: none;
 	z-index: 2;
-	/* Glass radii ≈ 6.3% × 5.4%; fully clear inside, faded out by ~1.5× that. */
+	/* Glass radius is 0.46 of a lantern that is 42% of this square stage
+	   (~19.3%). Fully clear inside that disc; the fade finishes at ~1.5×
+	   so inbound lights dissolve into the globe instead of crossing orbs. */
 	mask-image: radial-gradient(
-		ellipse 9.5% 8.2% at var(--lantern-x) var(--lantern-y),
+		ellipse 29.3% 29.3% at var(--lantern-x) var(--lantern-y),
 		transparent 66%,
 		black 100%
 	);
 	-webkit-mask-image: radial-gradient(
-		ellipse 9.5% 8.2% at var(--lantern-x) var(--lantern-y),
+		ellipse 29.3% 29.3% at var(--lantern-x) var(--lantern-y),
 		transparent 66%,
 		black 100%
 	);

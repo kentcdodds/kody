@@ -131,4 +131,9 @@ test('orbit lights carry the primitive colors and paint no connector', async () 
 	expect(html).toContain('landing-hero-agent-track')
 	expect(html).not.toContain('landing-hero-agent-line')
 	expect(html).not.toContain('landing-hero-agent-glow')
+	expect(html).toContain('data-decorative')
+	expect(html.match(/<span\b[^>]*class="landing-lantern-orb"/g)).toHaveLength(
+		landingPrimitiveIds.length,
+	)
+	expect(html).not.toContain('<button')
 })

@@ -1,5 +1,5 @@
 /**
- * Soft motion for the five homepage lantern orbs.
+ * Soft motion for the six homepage lantern orbs.
  *
  * Coordinates are fractions of the lantern width, including y, so a circle
  * in this space is a circle in pixels (the still is taller than it is wide).
@@ -16,7 +16,7 @@ import {
 } from '#universal/landing-lantern.ts'
 
 /** Lantern height divided by width. Turns a height percent into width fractions. */
-export const landingLanternAspect =
+const landingLanternAspect =
 	landingLanternImage.height / landingLanternImage.width
 
 /**
@@ -72,11 +72,7 @@ export type LanternOrbBody = {
 }
 
 /** Rest pose of one painted orb, in the motion's width-fraction space. */
-export function landingLanternOrbHome(orb: {
-	x: number
-	y: number
-	size: number
-}) {
+function landingLanternOrbHome(orb: { x: number; y: number; size: number }) {
 	return {
 		x: orb.x / 100,
 		y: (orb.y / 100) * landingLanternAspect,

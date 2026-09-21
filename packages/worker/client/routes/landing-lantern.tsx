@@ -55,7 +55,11 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 		const { activeId, panelId, onOpen, onToggle, onDismiss, decorative } =
 			handle.props
 		return (
-			<figure class="landing-lantern" mix={motion}>
+			<figure
+				class="landing-lantern"
+				data-decorative={decorative ? '' : undefined}
+				mix={motion}
+			>
 				<figcaption class="visually-hidden">
 					A lantern holding six glowing orbs, one for each Kody primitive.
 				</figcaption>
@@ -73,6 +77,37 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 					{landingLanternOrbs.map((orb) => {
 						const primitive = primitiveById(orb.id)
 						const open = activeId === orb.id
+						const art = (
+							<img
+								src={landingLanternOrbArt[orb.id]}
+								alt=""
+								decoding="async"
+								draggable="false"
+								class="landing-lantern-orb-art"
+								data-orb-art={orb.id}
+								data-open={open ? '' : undefined}
+							/>
+						)
+						const pose = {
+							'--x': `${orb.x}%`,
+							'--y': `${orb.y}%`,
+							'--size': `${orb.size}%`,
+							'--art': `${orb.art}%`,
+							'--primitive-color': landingPrimitiveColorVar(orb.id),
+						}
+						if (decorative) {
+							return (
+								<span
+									key={orb.id}
+									class="landing-lantern-orb"
+									data-orb={orb.id}
+									style={pose}
+									aria-hidden="true"
+								>
+									{art}
+								</span>
+							)
+						}
 						return (
 							<button
 								key={orb.id}
@@ -80,51 +115,29 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 								class="landing-lantern-orb"
 								data-orb={orb.id}
 								data-open={open ? '' : undefined}
-								style={{
-									'--x': `${orb.x}%`,
-									'--y': `${orb.y}%`,
-									'--size': `${orb.size}%`,
-									'--art': `${orb.art}%`,
-									'--primitive-color': landingPrimitiveColorVar(orb.id),
-								}}
-								aria-hidden={decorative ? 'true' : undefined}
-								tabIndex={decorative ? -1 : undefined}
-								aria-label={
-									decorative ? undefined : `${primitive.word} primitive`
-								}
-								aria-expanded={decorative ? undefined : open ? 'true' : 'false'}
-								aria-controls={decorative ? undefined : panelId(orb.id)}
-								aria-describedby={decorative ? undefined : panelId(orb.id)}
-								mix={
-									decorative
-										? []
-										: [
-												on('pointerenter', (event: PointerEvent) => {
-													if (hoverPointer(event)) onOpen(orb.id)
-												}),
-												on('pointerleave', (event: PointerEvent) => {
-													if (hoverPointer(event)) leave(orb.id)
-												}),
-												on('focusin', () => onOpen(orb.id)),
-												on('focusout', () => leave(orb.id)),
-												on('click', () => onToggle(orb.id)),
-												on('keydown', (event: KeyboardEvent) => {
-													if (event.key !== 'Escape') return
-													event.preventDefault()
-													onDismiss(orb.id)
-												}),
-											]
-								}
+								style={pose}
+								aria-label={`${primitive.word} primitive`}
+								aria-expanded={open ? 'true' : 'false'}
+								aria-controls={panelId(orb.id)}
+								aria-describedby={panelId(orb.id)}
+								mix={[
+									on('pointerenter', (event: PointerEvent) => {
+										if (hoverPointer(event)) onOpen(orb.id)
+									}),
+									on('pointerleave', (event: PointerEvent) => {
+										if (hoverPointer(event)) leave(orb.id)
+									}),
+									on('focusin', () => onOpen(orb.id)),
+									on('focusout', () => leave(orb.id)),
+									on('click', () => onToggle(orb.id)),
+									on('keydown', (event: KeyboardEvent) => {
+										if (event.key !== 'Escape') return
+										event.preventDefault()
+										onDismiss(orb.id)
+									}),
+								]}
 							>
-								<img
-									src={landingLanternOrbArt[orb.id]}
-									alt=""
-									decoding="async"
-									draggable="false"
-									class="landing-lantern-orb-art"
-									data-orb-art={orb.id}
-									data-open={open ? '' : undefined}
-								/>
+								{art}
 							</button>
 						)
 					})}
