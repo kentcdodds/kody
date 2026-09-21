@@ -22,11 +22,8 @@ test('lantern orbs cover every homepage primitive exactly once, in copy order', 
 		expect(orb.x).toBeLessThan(100)
 		expect(orb.y).toBeGreaterThan(0)
 		expect(orb.y).toBeLessThan(100)
-		// One disc for every primitive, including memory. 17.1 is 75% of
-		// the first layered fit (22.8), shared by the sprite, hotspot,
-		// and collision radius.
 		expect(orb.size).toBe(packagesOrb.size)
-		expect(orb.size).toBe(17.1)
+		expect(orb.size).toBe(16.2)
 		expect(orb.art).toBeGreaterThan(orb.size)
 		expect(orb.art / orb.size).toBeGreaterThan(1.03)
 		expect(orb.art / orb.size).toBeLessThan(1.08)
@@ -35,23 +32,25 @@ test('lantern orbs cover every homepage primitive exactly once, in copy order', 
 	expect(landingLanternImage.src).toContain('lantern-shell')
 	expect(landingLanternImage.width).toBe(863)
 	expect(landingLanternImage.height).toBe(1242)
-	expect(landingPrimitiveColorVar('jobs')).toBe('var(--primitive-jobs)')
+	expect(landingPrimitiveColorVar('triggers')).toBe('var(--primitive-triggers)')
+	expect(landingPrimitiveColorVar('apps')).toBe('var(--primitive-apps)')
 })
 
-test('orbit light tones cycle through the five primitive colors', () => {
+test('orbit light tones cycle through the six primitive colors', () => {
 	expect(
-		Array.from({ length: 8 }, (_, index) => landingOrbitLightTone(index)),
+		Array.from({ length: 9 }, (_, index) => landingOrbitLightTone(index)),
 	).toEqual([
 		'memory',
 		'secrets',
 		'packages',
-		'jobs',
+		'triggers',
 		'integrations',
+		'apps',
 		'memory',
 		'secrets',
 		'packages',
 	])
-	expect(landingOrbitLightTone(-1)).toBe('integrations')
+	expect(landingOrbitLightTone(-1)).toBe('apps')
 })
 
 test('leaders leave the orb rim and glide into the word dot on horizontal tangents', () => {

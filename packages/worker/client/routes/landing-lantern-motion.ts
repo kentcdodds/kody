@@ -43,7 +43,7 @@ export function lanternOrbMotion() {
 					? `translate3d(${dx.toFixed(2)}px, ${dy.toFixed(2)}px, 0)`
 					: ''
 				for (const el of node.querySelectorAll<HTMLElement>(
-					`[data-orb="${body.id}"], [data-orb-art="${body.id}"]`,
+					`[data-orb="${body.id}"]`,
 				)) {
 					if (transform) el.style.transform = transform
 					else el.style.removeProperty('transform')

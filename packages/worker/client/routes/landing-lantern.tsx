@@ -14,11 +14,10 @@ import {
 } from '#universal/landing-lantern.ts'
 
 /**
- * Five-orb lantern beside the primitives sentence. The shell is static.
- * Each primitive is its own transparent layer, centered on the disc, and a
- * button of that disc tracks the layer so hover, focus, tap, and the
- * highlight ring follow the orb. The parent section draws the leader from
- * the button's live box.
+ * Six-orb lantern beside the primitives sentence. The shell is static.
+ * Each orb image sits inside its hotspot button, centered on the painted
+ * disc, so the highlight ring, the disc, and the leader rim share one
+ * centre while the button moves.
  */
 
 /** Hover opens for mice and pens only. A touch tap fires synthetic enter
@@ -40,6 +39,8 @@ export type LandingLanternProps = {
 	onClose: (id: LandingPrimitiveId) => void
 	onDismiss: (id: LandingPrimitiveId) => void
 	onResume: (id: LandingPrimitiveId) => void
+	/** Hero reuse: same physics and layers, no disclosures. */
+	decorative?: boolean
 }
 
 export function LandingLantern(handle: Handle<LandingLanternProps>) {
@@ -51,11 +52,12 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 	}
 
 	return () => {
-		const { activeId, panelId, onOpen, onToggle, onDismiss } = handle.props
+		const { activeId, panelId, onOpen, onToggle, onDismiss, decorative } =
+			handle.props
 		return (
 			<figure class="landing-lantern" mix={motion}>
 				<figcaption class="visually-hidden">
-					A lantern holding five glowing orbs, one for each Kody primitive.
+					A lantern holding six glowing orbs, one for each Kody primitive.
 				</figcaption>
 				<img
 					src={landingLanternImage.src}
@@ -67,26 +69,6 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 					alt=""
 					class="landing-lantern-art"
 				/>
-				{landingLanternOrbs.map((orb) => {
-					const open = activeId === orb.id
-					return (
-						<img
-							key={orb.id}
-							src={landingLanternOrbArt[orb.id]}
-							alt=""
-							decoding="async"
-							draggable="false"
-							class="landing-lantern-orb-art"
-							data-orb-art={orb.id}
-							data-open={open ? '' : undefined}
-							style={{
-								'--x': `${orb.x}%`,
-								'--y': `${orb.y}%`,
-								'--art': `${orb.art}%`,
-							}}
-						/>
-					)
-				})}
 				<div class="landing-lantern-orbs">
 					{landingLanternOrbs.map((orb) => {
 						const primitive = primitiveById(orb.id)
@@ -102,29 +84,48 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 									'--x': `${orb.x}%`,
 									'--y': `${orb.y}%`,
 									'--size': `${orb.size}%`,
+									'--art': `${orb.art}%`,
 									'--primitive-color': landingPrimitiveColorVar(orb.id),
 								}}
-								aria-label={`${primitive.word} primitive`}
-								aria-expanded={open ? 'true' : 'false'}
-								aria-controls={panelId(orb.id)}
-								aria-describedby={panelId(orb.id)}
-								mix={[
-									on('pointerenter', (event: PointerEvent) => {
-										if (hoverPointer(event)) onOpen(orb.id)
-									}),
-									on('pointerleave', (event: PointerEvent) => {
-										if (hoverPointer(event)) leave(orb.id)
-									}),
-									on('focusin', () => onOpen(orb.id)),
-									on('focusout', () => leave(orb.id)),
-									on('click', () => onToggle(orb.id)),
-									on('keydown', (event: KeyboardEvent) => {
-										if (event.key !== 'Escape') return
-										event.preventDefault()
-										onDismiss(orb.id)
-									}),
-								]}
-							></button>
+								aria-hidden={decorative ? 'true' : undefined}
+								tabIndex={decorative ? -1 : undefined}
+								aria-label={
+									decorative ? undefined : `${primitive.word} primitive`
+								}
+								aria-expanded={decorative ? undefined : open ? 'true' : 'false'}
+								aria-controls={decorative ? undefined : panelId(orb.id)}
+								aria-describedby={decorative ? undefined : panelId(orb.id)}
+								mix={
+									decorative
+										? []
+										: [
+												on('pointerenter', (event: PointerEvent) => {
+													if (hoverPointer(event)) onOpen(orb.id)
+												}),
+												on('pointerleave', (event: PointerEvent) => {
+													if (hoverPointer(event)) leave(orb.id)
+												}),
+												on('focusin', () => onOpen(orb.id)),
+												on('focusout', () => leave(orb.id)),
+												on('click', () => onToggle(orb.id)),
+												on('keydown', (event: KeyboardEvent) => {
+													if (event.key !== 'Escape') return
+													event.preventDefault()
+													onDismiss(orb.id)
+												}),
+											]
+								}
+							>
+								<img
+									src={landingLanternOrbArt[orb.id]}
+									alt=""
+									decoding="async"
+									draggable="false"
+									class="landing-lantern-orb-art"
+									data-orb-art={orb.id}
+									data-open={open ? '' : undefined}
+								/>
+							</button>
 						)
 					})}
 				</div>

@@ -39,7 +39,15 @@ test('primitives sentence renders dash-underlined disclosures and the what-is-Ko
 	)
 	expect(html).not.toContain('data-dismissed')
 	expect(html).not.toContain('data-active')
-	expect(html).not.toContain('\u2014')
+	expect(html).toContain(
+		'Subscriptions, emails, webhooks, and schedules that wake packages you own — no chat left open.',
+	)
+	expect(
+		html.replace(
+			'Subscriptions, emails, webhooks, and schedules that wake packages you own — no chat left open.',
+			'',
+		),
+	).not.toContain('\u2014')
 })
 
 test('lantern orbs and words are paired disclosures for one popover each', async () => {

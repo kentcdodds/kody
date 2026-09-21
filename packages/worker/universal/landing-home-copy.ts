@@ -39,14 +39,19 @@ export const landingHomePrimitives = [
 		body: 'Durable software you own. An agent writes it once; any connected agent can run it.',
 	},
 	{
-		id: 'jobs',
-		word: 'jobs',
-		body: 'Cron, webhooks, email, and events that run the package. Often with no model in the loop.',
+		id: 'triggers',
+		word: 'triggers',
+		body: 'Subscriptions, emails, webhooks, and schedules that wake packages you own — no chat left open.',
 	},
 	{
 		id: 'integrations',
 		word: 'integrations',
 		body: 'Signed-in connections to the tools you already use (GitHub, Discord, Google, and more), reusable from any agent.',
+	},
+	{
+		id: 'apps',
+		word: 'apps',
+		body: 'A hosted page a package serves, so the work is something you open instead of another turn in chat.',
 	},
 ] as const
 

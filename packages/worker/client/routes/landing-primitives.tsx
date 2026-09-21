@@ -218,7 +218,7 @@ export function LandingPrimitives(handle: Handle) {
 					onResume={clearDismissed}
 				/>
 				{renderLeaders(openId)}
-				<ul class="landing-primitives-words" aria-label="The five primitives">
+				<ul class="landing-primitives-words" aria-label="The six primitives">
 					{landingHomePrimitives.map((primitive) => (
 						<li key={primitive.id} class="landing-primitive-item">
 							<LandingPrimitiveWord

@@ -24,7 +24,7 @@ function countPaths(
 	return self + countPaths(node.props.children)
 }
 
-test('homepage OG lantern lists the five primitives and draws a leader each', async () => {
+test('homepage OG lantern lists every primitive and draws a leader each', async () => {
 	await ensureOgBinaryAssetsReady()
 	const markup: SatoriElement = createPrimitivesLantern('dark')
 	expect(collectText(markup)).toEqual(

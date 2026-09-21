@@ -119,7 +119,7 @@ test('hero tether lights travel inbound to the lantern and outbound to the agent
 	).toBeLessThan(0.5)
 })
 
-test('orbit lights carry the five primitive colors and paint no connector', async () => {
+test('orbit lights carry the primitive colors and paint no connector', async () => {
 	const html = await renderToString(jsx(LandingHeroAgents, {}))
 
 	const tones = [...html.matchAll(/data-tone="([a-z]+)"/g)].map(

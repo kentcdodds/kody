@@ -1,7 +1,7 @@
 import { type LandingHomePrimitive } from '#universal/landing-home-copy.ts'
 
 /**
- * Five-orb lantern for the homepage primitives section. The shell (frame,
+ * Six-orb lantern for the homepage primitives section. The shell (frame,
  * glass, and glow) and each primitive orb are separate layers, keyed to a
  * `landingHomePrimitives` id so the copy stays the single source of words
  * and definitions. Orb centres are percentages of the shell. Colors live in
@@ -15,8 +15,9 @@ export const landingPrimitiveIds = [
 	'memory',
 	'secrets',
 	'packages',
-	'jobs',
+	'triggers',
 	'integrations',
+	'apps',
 ] as const satisfies ReadonlyArray<LandingPrimitiveId>
 
 /** Empty lantern: frame, glass, and glow, with no colored orbs. */
@@ -36,8 +37,9 @@ export const landingLanternOrbArt = {
 	memory: '/images/lantern/kody-primitives-orb-memory.webp',
 	secrets: '/images/lantern/kody-primitives-orb-secrets.webp',
 	packages: '/images/lantern/kody-primitives-orb-packages.webp',
-	jobs: '/images/lantern/kody-primitives-orb-jobs.webp',
+	triggers: '/images/lantern/kody-primitives-orb-triggers.webp',
 	integrations: '/images/lantern/kody-primitives-orb-integrations.webp',
+	apps: '/images/lantern/kody-primitives-orb-apps.webp',
 } as const satisfies Record<LandingPrimitiveId, string>
 
 /** Glass globe in the shell: centre as fractions of width and height,
@@ -46,19 +48,19 @@ export const landingLanternGlass = { x: 0.5, y: 0.545, r: 0.46 } as const
 
 /**
  * Orb centres (percent of width and height), shared disc diameter (percent
- * of width), and sprite width (percent of width). Every hotspot is the
- * packages disc, so memory matches packages and the glyph stays in the
- * middle of its glow while the layer moves. `size` and `art` are 75% of
- * the first layered fit, so the picture, the collision radius, and the
- * hotspot shrink together. `art` stays a little larger than `size` so the
- * glow around the disc is not clipped.
+ * of width), and sprite width (percent of width). `size` is the painted
+ * disc, so the hotspot, ring, collision radius, and leader rim match it.
+ * `art` is the slightly larger sprite, cropped so that disc sits in the
+ * middle of the image. Six discs at 16.2 stay inside the glass with room
+ * to drift.
  */
 export const landingLanternOrbs = [
-	{ id: 'memory', x: 50.1, y: 43.9, size: 17.1, art: 18.02 },
-	{ id: 'secrets', x: 25.7, y: 53.3, size: 17.1, art: 17.96 },
-	{ id: 'packages', x: 74.9, y: 54.3, size: 17.1, art: 17.88 },
-	{ id: 'jobs', x: 35.4, y: 68.3, size: 17.1, art: 17.88 },
-	{ id: 'integrations', x: 67.2, y: 69.6, size: 17.1, art: 17.75 },
+	{ id: 'memory', x: 50, y: 38.5, size: 16.2, art: 16.94 },
+	{ id: 'secrets', x: 29, y: 50, size: 16.2, art: 16.94 },
+	{ id: 'packages', x: 71, y: 50, size: 16.2, art: 16.95 },
+	{ id: 'triggers', x: 34, y: 63, size: 16.2, art: 16.94 },
+	{ id: 'integrations', x: 66, y: 63, size: 16.2, art: 16.93 },
+	{ id: 'apps', x: 50, y: 74.5, size: 16.2, art: 16.91 },
 ] as const satisfies ReadonlyArray<{
 	id: LandingPrimitiveId
 	x: number

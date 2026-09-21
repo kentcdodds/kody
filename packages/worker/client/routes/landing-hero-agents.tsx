@@ -1,14 +1,16 @@
 import { type Handle, ref } from 'remix/ui'
 import { stageParallax } from '#client/hero-stage.tsx'
+import { LandingLantern } from '#client/routes/landing-lantern.tsx'
 import {
 	landingLantern,
 	landingOrbitAgents,
 	landingOrbitTetherPath,
 } from '#universal/landing-agent-orbit.ts'
-import { heroBaseImage } from '#universal/landing-images.ts'
 import {
+	landingLanternGlass,
 	landingOrbitLightTone,
 	landingPrimitiveColorVar,
+	type LandingPrimitiveId,
 } from '#universal/landing-lantern.ts'
 import {
 	listAllWalkthroughHosts,
@@ -17,10 +19,10 @@ import {
 } from '#universal/walkthrough-hosts.ts'
 
 /**
- * Proof stage: Kody holds the five-orb lantern while the agents you already
- * use float around as logo tokens. Connector lines stay off; travelling orbs
- * still run both ways on the same clocks. Orbit positions live in
- * `#universal/landing-agent-orbit` so OG cards can compose the same still.
+ * Proof stage: the same six-orb lantern as the primitives section, with the
+ * agents you already use floating around it. Connector lines stay off;
+ * travelling orbs still run both ways on the same clocks. Orbit positions
+ * live in `#universal/landing-agent-orbit`.
  */
 
 /** Slot motion. Identities come from the SSR-shuffled catalog: pinned hosts
@@ -170,7 +172,7 @@ const tetherPath = landingOrbitTetherPath
  *  a single pass after layout (and on resize) is enough. */
 function tetherFollow(agents: ReadonlyArray<LandingHeroAgent>) {
 	return ref((node: Element, signal: AbortSignal) => {
-		const kody = node.querySelector<HTMLElement>('.landing-hero-agents-kody')
+		const kody = node.querySelector<HTMLElement>('.landing-hero-lantern')
 		const lines = node.querySelector<SVGSVGElement>(
 			'.landing-hero-agents-lines',
 		)
@@ -199,8 +201,8 @@ function tetherFollow(agents: ReadonlyArray<LandingHeroAgent>) {
 			})
 			const kodyRect = kody.getBoundingClientRect()
 			const lanternPx = {
-				x: kodyRect.left + (kodyRect.width * lantern.x) / 100,
-				y: kodyRect.top + (kodyRect.height * lantern.y) / 100,
+				x: kodyRect.left + kodyRect.width * landingLanternGlass.x,
+				y: kodyRect.top + kodyRect.height * landingLanternGlass.y,
 			}
 			clock +=
 				dt *
@@ -295,7 +297,7 @@ function tetherFollow(agents: ReadonlyArray<LandingHeroAgent>) {
 
 /** Invisible track plus travelling orbs. Lights start hidden; `tetherFollow`
  *  places them. No connector line or glow stroke is painted. Each tether's
- *  lights take one of the five primitive colors, cycling in ring order. */
+ *  lights take one of the primitive colors, cycling in ring order. */
 function renderOrbLayer(agents: ReadonlyArray<LandingHeroAgent>) {
 	return (
 		<svg
@@ -357,29 +359,28 @@ export function LandingHeroAgents(
 				class="landing-hero-art landing-hero-agents"
 			>
 				<figcaption class="visually-hidden">
-					Kody the koala holding a warmly glowing lantern with five colored orbs
-					inside, one per primitive, with the agents it plugs into floating
-					around it.
+					A lantern of six glowing orbs, one for each primitive, with the agents
+					it plugs into floating around it.
 				</figcaption>
 				<div
 					class="landing-hero-agents-stage"
 					mix={[stageParallax(), tetherFollow(agents)]}
 				>
-					<img
-						src={heroBaseImage.src}
-						srcSet={heroBaseImage.srcSet}
-						sizes={heroBaseImage.sizes}
-						width={heroBaseImage.width}
-						height={heroBaseImage.height}
-						fetchPriority="high"
-						decoding="async"
-						data-depth="-0.06"
-						alt=""
-						class="landing-hero-agents-kody"
-					/>
+					<div class="landing-hero-lantern" data-depth="-0.06">
+						<LandingLantern
+							decorative
+							activeId={null}
+							panelId={(id: LandingPrimitiveId) => id}
+							onOpen={() => {}}
+							onToggle={() => {}}
+							onClose={() => {}}
+							onDismiss={() => {}}
+							onResume={() => {}}
+						/>
+					</div>
 					<div
 						class="landing-hero-agents-glow"
-						style={{ left: `${lantern.x}%`, top: `${lantern.y}%` }}
+						style={{ left: '50%', top: '46%' }}
 						data-depth="-0.06"
 					></div>
 					{renderOrbLayer(agents)}

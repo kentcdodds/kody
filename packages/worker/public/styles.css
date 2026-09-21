@@ -115,18 +115,20 @@
 	/* Warm light cast by the lantern Kody holds (landing + auth heroes) */
 	--lantern-glow: oklch(0.88 0.11 85 / 0.4);
 	--lantern-glow-dark: oklch(0.8 0.13 80 / 0.55);
-	/* Five primitives, one palette: the lantern orbs, the leader lines to
+	/* Six primitives, one palette: the lantern orbs, the leader lines to
 	   each word, and the travelling orbit lights all read from these. */
 	--primitive-memory: oklch(0.68 0.21 350);
 	--primitive-secrets: oklch(0.6 0.22 300);
 	--primitive-packages: oklch(0.6 0.2 255);
-	--primitive-jobs: oklch(0.78 0.16 82);
+	--primitive-triggers: oklch(0.78 0.21 145);
 	--primitive-integrations: oklch(0.66 0.19 148);
+	--primitive-apps: oklch(0.72 0.24 345);
 	--primitive-memory-dark: oklch(0.76 0.19 350);
 	--primitive-secrets-dark: oklch(0.72 0.19 300);
 	--primitive-packages-dark: oklch(0.72 0.17 255);
-	--primitive-jobs-dark: oklch(0.85 0.16 85);
+	--primitive-triggers-dark: oklch(0.86 0.19 145);
 	--primitive-integrations-dark: oklch(0.76 0.19 148);
+	--primitive-apps-dark: oklch(0.8 0.18 345);
 	/* Lightness used when a primitive color has to carry text: dark enough
 	   on the light canvas, light enough on graphite. */
 	--primitive-text-l: 0.46;
@@ -262,8 +264,9 @@
 		--primitive-memory: var(--primitive-memory-dark);
 		--primitive-secrets: var(--primitive-secrets-dark);
 		--primitive-packages: var(--primitive-packages-dark);
-		--primitive-jobs: var(--primitive-jobs-dark);
+		--primitive-triggers: var(--primitive-triggers-dark);
 		--primitive-integrations: var(--primitive-integrations-dark);
+		--primitive-apps: var(--primitive-apps-dark);
 		--primitive-text-l: var(--primitive-text-l-dark);
 		--select-chevron: var(--select-chevron-dark);
 		--line-height-body: var(--line-height-body-dark);
@@ -1132,7 +1135,7 @@ html.is-settled {
 .landing-primitives-stage {
 	position: relative;
 	display: grid;
-	grid-template-columns: minmax(12rem, 16rem) minmax(0, 14rem);
+	grid-template-columns: minmax(13rem, 18rem) minmax(0, 15rem);
 	justify-content: center;
 	gap: clamp(2.5rem, 7vw, 6rem);
 	align-items: center;
@@ -1158,14 +1161,14 @@ html.is-settled {
 	filter: drop-shadow(0 1.2rem 2.2rem oklch(0.75 0.15 75 / 0.28));
 }
 
-/* Orb cutout, centered on its disc. The motion loop writes `transform`
-   in pixels; `translate` keeps the sprite centered without fighting it. */
+/* Orb cutout, centered in the hotspot. Width is the sprite as a share
+   of the disc so the painted circle, not the glow, lines up with the ring. */
 .landing-lantern-orb-art {
 	position: absolute;
-	z-index: 2;
-	left: var(--x);
-	top: var(--y);
-	width: var(--art);
+	z-index: 0;
+	left: 50%;
+	top: 50%;
+	width: calc(var(--art) / var(--size) * 100%);
 	height: auto;
 	translate: -50% -50%;
 	pointer-events: none;
@@ -1188,7 +1191,8 @@ html.is-settled {
 	left: var(--x);
 	top: var(--y);
 	translate: -50% -50%;
-	width: var(--size, 17.1%);
+	width: var(--size, 16.2%);
+	overflow: visible;
 	aspect-ratio: 1;
 	margin: 0;
 	padding: 0;
@@ -1231,14 +1235,28 @@ html.is-settled {
 	--pulse-delay: 2.2s;
 }
 
+.landing-lantern-orb:nth-child(6) {
+	--pulse-delay: 2.75s;
+}
+
 .landing-lantern-orb:hover,
 .landing-lantern-orb:focus-visible,
 .landing-lantern-orb[data-open] {
 	scale: 1.06;
 	box-shadow:
-		0 0 0 3px oklch(from var(--primitive-color) calc(l + 0.12) c h / 0.95),
-		0 0 1.1rem 0.3rem oklch(from var(--primitive-color) l c h / 0.55),
-		0 0 2.4rem 0.6rem oklch(from var(--primitive-color) l c h / 0.3);
+		0 0 1.1rem 0.15rem oklch(from var(--primitive-color) l c h / 0.45),
+		0 0 2.2rem 0.4rem oklch(from var(--primitive-color) l c h / 0.22);
+}
+
+/* The ring is a circle on the hotspot box, painted above the sprite so
+   an uneven glow cannot shove it off the disc. */
+.landing-lantern-orb:hover::after,
+.landing-lantern-orb:focus-visible::after,
+.landing-lantern-orb[data-open]::after {
+	z-index: 1;
+	opacity: 1;
+	inset: -1px;
+	border-width: 3px;
 }
 
 .landing-lantern-orb:focus-visible {
@@ -1742,6 +1760,20 @@ html.is-settled {
 	display: block;
 	width: 100%;
 	height: auto;
+}
+
+/* Same six-orb lantern as the primitives section, glass centred in the ring. */
+.landing-hero-lantern {
+	position: absolute;
+	z-index: 1;
+	left: 50%;
+	top: 46%;
+	width: 42%;
+	translate: -50% -54.5%;
+}
+
+.landing-hero-lantern .landing-lantern {
+	width: 100%;
 }
 
 /* Orb container. Keep this painted; hide only the track stroke. Lights
@@ -2909,7 +2941,7 @@ html.is-settled {
 	}
 
 	.landing-lantern {
-		width: min(58vw, 13rem);
+		width: min(64vw, 15rem);
 		margin: 0 auto;
 	}
 

@@ -20,18 +20,28 @@ import {
 	landingVsItems,
 } from './landing-home-copy.ts'
 
-test('locked homepage copy names the five primitives and has no em dashes', () => {
+test('locked homepage copy names the six primitives', () => {
 	expect(landingHomePrimitives.map((item) => item.word)).toEqual([
 		'memory',
 		'secrets',
 		'packages',
-		'jobs',
+		'triggers',
 		'integrations',
+		'apps',
 	])
+	expect(
+		landingHomePrimitives.find((item) => item.id === 'triggers')?.body,
+	).toBe(
+		'Subscriptions, emails, webhooks, and schedules that wake packages you own — no chat left open.',
+	)
 	expect(landingVsItems).toHaveLength(3)
 	expect(landingCompareWithoutItems).toHaveLength(3)
 	expect(landingCompareWithItems).toHaveLength(3)
-	expect(landingHomeUiCopyBlob()).not.toMatch(/\u2014|—/)
+	const withoutTriggersBody = landingHomeUiCopyBlob().replace(
+		'Subscriptions, emails, webhooks, and schedules that wake packages you own — no chat left open.',
+		'',
+	)
+	expect(withoutTriggersBody).not.toMatch(/\u2014|—/)
 	expect(landingHeroHeadline).toBe(
 		'You shouldn\u2019t have to start over in every agent.',
 	)

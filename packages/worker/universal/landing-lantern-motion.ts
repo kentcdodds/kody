@@ -54,8 +54,9 @@ const phases: Record<LandingPrimitiveId, number> = {
 	memory: 0.5,
 	secrets: 2.05,
 	packages: 3.7,
-	jobs: 5.15,
+	triggers: 5.15,
 	integrations: 1.15,
+	apps: 6.4,
 }
 
 export type LanternOrbBody = {
