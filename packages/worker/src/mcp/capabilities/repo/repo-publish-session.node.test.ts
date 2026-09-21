@@ -115,7 +115,7 @@ test('repoPublishSession skips absorb notice for self-authored packages', async 
 	resetMocks()
 	mockModule.absorbCommunityForkUpstream.mockRejectedValue(
 		new CommunityActionError(
-			'Package "demo" is self-authored and has no community listing to absorb.',
+			'Package "demo" is self-authored and has no catalog entry to absorb.',
 		),
 	)
 	const ctx = createCtx()

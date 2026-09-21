@@ -597,7 +597,7 @@ export async function publishCommunityListing(input: {
 	)
 	if (existingListing?.status === 'delisted') {
 		throw new CommunityActionError(
-			`Community listing for package "${input.packageId}" was delisted by an admin and cannot be re-published.`,
+			`Catalog entry for package "${input.packageId}" was delisted by an admin and cannot be re-published.`,
 		)
 	}
 
@@ -689,7 +689,7 @@ export async function publishCommunityListing(input: {
 			})
 			if (!updated) {
 				throw new CommunityActionError(
-					`Community listing for package "${input.packageId}" was delisted by an admin and cannot be re-published.`,
+					`Catalog entry for package "${input.packageId}" was delisted by an admin and cannot be re-published.`,
 				)
 			}
 		} else {
@@ -757,7 +757,7 @@ export async function publishCommunityListing(input: {
 		includeDelisted: true,
 	})
 	if (!listing) {
-		throw new Error(`Community listing "${listingId}" could not be loaded.`)
+		throw new Error(`Catalog entry "${listingId}" could not be loaded.`)
 	}
 	await updateSavedPackage(input.env.APP_DB, {
 		userId: input.userId,
@@ -810,7 +810,7 @@ export async function unpublishCommunityListing(input: {
 		// or another owner's listing). CommunityActionError keeps them on
 		// mcp-event lines and out of Sentry (KODY-CLOUDFLARE-4N).
 		throw new CommunityActionError(
-			`Community listing "${input.listingId}" was not found.`,
+			`Catalog entry "${input.listingId}" was not found.`,
 		)
 	}
 	if (listing.status === 'delisted') {
@@ -825,7 +825,7 @@ export async function unpublishCommunityListing(input: {
 	})
 	if (!deleted) {
 		throw new CommunityActionError(
-			`Community listing "${input.listingId}" was not found.`,
+			`Catalog entry "${input.listingId}" was not found.`,
 		)
 	}
 
@@ -863,12 +863,12 @@ export async function setCommunityListingFeatured(input: {
 	})
 	if (!listing) {
 		throw new CommunityActionError(
-			`Community listing "${input.listingId}" was not found.`,
+			`Catalog entry "${input.listingId}" was not found.`,
 		)
 	}
 	if (input.featured && listing.status !== 'active') {
 		throw new CommunityActionError(
-			'Delisted community listings cannot be featured.',
+			'Delisted catalog entries cannot be featured.',
 		)
 	}
 	await setCommunityListingFeaturedAt(input.env.APP_DB, {
@@ -881,9 +881,7 @@ export async function setCommunityListingFeatured(input: {
 		includeDelisted: true,
 	})
 	if (!updated) {
-		throw new Error(
-			`Community listing "${input.listingId}" could not be loaded.`,
-		)
+		throw new Error(`Catalog entry "${input.listingId}" could not be loaded.`)
 	}
 	return updated
 }
@@ -1328,7 +1326,7 @@ export async function prepareCommunityFork(
 	])
 	if (!listing) {
 		throw new CommunityActionError(
-			`Community listing "${input.listingId}" was not found.`,
+			`Catalog entry "${input.listingId}" was not found.`,
 		)
 	}
 	const source = await getEntitySourceById(input.env.APP_DB, listing.sourceId)
@@ -1375,7 +1373,7 @@ export async function prepareCommunityFork(
 	}
 	if (!files) {
 		throw new Error(
-			`Community listing snapshot for "${input.listingId}" was not found.`,
+			`Catalog entry snapshot for "${input.listingId}" was not found.`,
 		)
 	}
 	originCommit = filesCommit
@@ -1390,7 +1388,7 @@ export async function prepareCommunityFork(
 
 	const packageJsonContent = files['package.json']
 	if (!packageJsonContent) {
-		throw new Error('Community listing snapshot is missing package.json.')
+		throw new Error('Catalog entry snapshot is missing package.json.')
 	}
 
 	const targetKodyId = input.kodyId?.trim() || listing.kodyId
@@ -1860,7 +1858,7 @@ export async function absorbCommunityForkUpstream(input: {
 	})
 	if (!fork) {
 		throw new CommunityActionError(
-			`Package "${savedPackage.kodyId}" is self-authored and has no community listing to absorb.`,
+			`Package "${savedPackage.kodyId}" is self-authored and has no catalog entry to absorb.`,
 		)
 	}
 
@@ -1870,7 +1868,7 @@ export async function absorbCommunityForkUpstream(input: {
 	})
 	if (!listing) {
 		throw new CommunityActionError(
-			`The source community listing for package "${savedPackage.kodyId}" is no longer active.`,
+			`The source catalog entry for package "${savedPackage.kodyId}" is no longer active.`,
 		)
 	}
 	const originCommit = input.originCommit?.trim() || listing.pinnedCommit
@@ -1921,7 +1919,7 @@ export async function rateCommunityListing(input: {
 	})
 	if (!listing) {
 		throw new CommunityActionError(
-			`Community listing "${input.listingId}" was not found.`,
+			`Catalog entry "${input.listingId}" was not found.`,
 		)
 	}
 	if (listing.ownerUserId === input.userId) {
@@ -1934,9 +1932,7 @@ export async function rateCommunityListing(input: {
 	})
 	if (!fork) {
 		// Precondition the agent can clear: fork first, then rate.
-		throw new CommunityActionError(
-			'Fork this community listing before rating it.',
-		)
+		throw new CommunityActionError('Fork this public package before rating it.')
 	}
 
 	const rating = await upsertCommunityRating(input.env.APP_DB, {
@@ -1970,7 +1966,7 @@ export async function reportCommunityListing(input: {
 	})
 	if (!listing) {
 		throw new CommunityActionError(
-			`Community listing "${input.listingId}" was not found.`,
+			`Catalog entry "${input.listingId}" was not found.`,
 		)
 	}
 
