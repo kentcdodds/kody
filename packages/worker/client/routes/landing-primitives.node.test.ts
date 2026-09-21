@@ -27,6 +27,11 @@ test('primitives sentence pairs lantern orbs with words and ships empty leaders'
 	)
 	expect(html).toContain('kody-primitives-lantern-shell-480.webp')
 	expect(html).toContain('kody-primitives-lantern-shell.webp 863w')
+	expect(html).toContain('kody-primitives-lantern-frame-480.webp')
+	expect(html).toContain('kody-primitives-lantern-frame.webp 863w')
+	expect(html.indexOf('landing-lantern-orbs')).toBeLessThan(
+		html.indexOf('landing-lantern-frame'),
+	)
 	expect(html.match(/class="landing-lantern-orb-art"/g)).toHaveLength(
 		landingLanternOrbs.length,
 	)

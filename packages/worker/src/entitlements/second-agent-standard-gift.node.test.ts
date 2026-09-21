@@ -41,6 +41,17 @@ async function createGiftTestDb(input: {
 }
 
 test('first unique-client cross grants 14-day Standard; later events and paid tiers do not', async () => {
+	// The gift's stored expiry is 2026-09-21. Entitlement reads the wall
+	// clock, so pin it to the scenario date or the gift looks expired.
+	vi.useFakeTimers({ now })
+	try {
+		await assertSecondAgentGiftOnScenarioClock()
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+async function assertSecondAgentGiftOnScenarioClock() {
 	const free = await createGiftTestDb({
 		email: 'free-gift@example.com',
 	})
@@ -169,7 +180,7 @@ test('first unique-client cross grants 14-day Standard; later events and paid ti
 		now,
 	})
 	expect(replayPaid.outcome).toBe('already_granted')
-})
+}
 
 test('maybeEvaluate skips writes without prepare and keeps an existing gift below two clients', async () => {
 	const warn = vi.spyOn(console, 'warn')

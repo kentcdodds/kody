@@ -115,18 +115,21 @@
 	/* Warm light cast by the lantern Kody holds (landing + auth heroes) */
 	--lantern-glow: oklch(0.88 0.11 85 / 0.4);
 	--lantern-glow-dark: oklch(0.8 0.13 80 / 0.55);
-	/* Six primitives, one palette: the lantern orbs, the leader lines to
-	   each word, and the travelling orbit lights all read from these. */
-	--primitive-memory: oklch(0.68 0.21 350);
+	/* Six primitives, one palette: the lantern orbs, the leader lines,
+	   word dots, popovers, and orbit lights all read from these. Hues
+	   follow the orb art — memory red (not apps magenta), secrets purple,
+	   packages blue, triggers yellow, integrations green (the plug, not
+	   the old lightning lime), apps magenta. */
+	--primitive-memory: oklch(0.63 0.22 29);
 	--primitive-secrets: oklch(0.6 0.22 300);
 	--primitive-packages: oklch(0.6 0.2 255);
-	--primitive-triggers: oklch(0.78 0.21 145);
+	--primitive-triggers: oklch(0.78 0.16 96);
 	--primitive-integrations: oklch(0.66 0.19 148);
 	--primitive-apps: oklch(0.72 0.24 345);
-	--primitive-memory-dark: oklch(0.76 0.19 350);
+	--primitive-memory-dark: oklch(0.72 0.17 29);
 	--primitive-secrets-dark: oklch(0.72 0.19 300);
 	--primitive-packages-dark: oklch(0.72 0.17 255);
-	--primitive-triggers-dark: oklch(0.86 0.19 145);
+	--primitive-triggers-dark: oklch(0.89 0.17 96);
 	--primitive-integrations-dark: oklch(0.76 0.19 148);
 	--primitive-apps-dark: oklch(0.8 0.18 345);
 	/* Lightness used when a primitive color has to carry text: dark enough
@@ -1150,15 +1153,28 @@ html.is-settled {
 	margin: 0;
 }
 
-.landing-lantern-art {
+.landing-lantern-art,
+.landing-lantern-frame {
 	position: absolute;
 	inset: 0;
-	z-index: 0;
 	display: block;
 	width: 100%;
 	height: 100%;
 	object-fit: contain;
+	pointer-events: none;
+}
+
+.landing-lantern-art {
+	z-index: 0;
+	/* Shadow stays on the glass. A filter on the frame would paint that
+	   blur over the orbs, because the frame sits above them. */
 	filter: drop-shadow(0 1.2rem 2.2rem oklch(0.75 0.15 75 / 0.28));
+}
+
+/* Cap, handle, and base. Above the orbs so a disc that reaches the
+   metal reads as inside the glass instead of painted on the frame. */
+.landing-lantern-frame {
+	z-index: 3;
 }
 
 /* Orb cutout, centered in the hotspot. Width is the sprite as a share

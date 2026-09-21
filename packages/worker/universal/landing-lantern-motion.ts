@@ -29,6 +29,16 @@ export const landingLanternCavity = {
 	r: 0.448,
 } as const
 
+/**
+ * The lid and the base bite into that circle. Fractions of lantern height,
+ * measured from the neutral metal in the shell: bottom of the cap, top of
+ * the base. A disc centre may not cross them.
+ */
+export const landingLanternAperture = {
+	top: 0.304,
+	bottom: 0.845,
+} as const
+
 /** How far a full-motion wander target sits from the orb's home, in width fractions. */
 const roam = 0.09
 
@@ -146,17 +156,31 @@ function wanderTarget(body: LanternOrbBody, time: number, amplitude: number) {
 	return clampToCavity(x, y, body.radius)
 }
 
-/** Keep a centre inside the glass, inset by the orb's own radius. */
+/** Keep a centre inside the glass and clear of the lid and base. */
 export function clampToCavity(x: number, y: number, radius: number) {
 	const dx = x - landingLanternCavity.x
 	const dy = y - landingLanternCavity.y
 	const distance = Math.hypot(dx, dy)
 	const limit = landingLanternCavity.r - radius - wallSkin
-	if (distance <= limit || distance === 0) return { x, y }
-	const scale = limit / distance
+	let nextX = x
+	let nextY = y
+	if (distance > limit && distance !== 0) {
+		const scale = limit / distance
+		nextX = landingLanternCavity.x + dx * scale
+		nextY = landingLanternCavity.y + dy * scale
+	}
+	const band = apertureWindow(radius)
+	if (nextY < band.top) nextY = band.top
+	if (nextY > band.bottom) nextY = band.bottom
+	return { x: nextX, y: nextY }
+}
+
+/** Disc-centre limits, in the motion's width-fraction space. */
+function apertureWindow(radius: number) {
 	return {
-		x: landingLanternCavity.x + dx * scale,
-		y: landingLanternCavity.y + dy * scale,
+		top: landingLanternAperture.top * landingLanternAspect + radius + wallSkin,
+		bottom:
+			landingLanternAperture.bottom * landingLanternAspect - radius - wallSkin,
 	}
 }
 
@@ -208,6 +232,16 @@ function containOrbs(bodies: Array<LanternOrbBody>) {
 		if (outward > 0) {
 			body.vx -= outward * nx
 			body.vy -= outward * ny
+		}
+	}
+	for (const body of bodies) {
+		const band = apertureWindow(body.radius)
+		if (body.y < band.top) {
+			body.y = band.top
+			if (body.vy < 0) body.vy = 0
+		} else if (body.y > band.bottom) {
+			body.y = band.bottom
+			if (body.vy > 0) body.vy = 0
 		}
 	}
 }

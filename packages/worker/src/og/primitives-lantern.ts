@@ -39,23 +39,24 @@ const WORD_ROW = 46
 const DOT_SIZE = 12
 
 /**
- * Same tokens as `--primitive-*` / `--primitive-*-dark` in styles.css, baked
- * to sRGB because Satori does not resolve oklch.
+ * sRGB of `--primitive-*` / `--primitive-*-dark` in styles.css. Satori does
+ * not resolve oklch. Memory is the brain's red, triggers the lightning's
+ * yellow; integrations stays the plug's green.
  */
-const primitiveColors = {
+export const landingPrimitiveOgColors = {
 	light: {
-		memory: '#f153aa',
+		memory: '#f13b2e',
 		secrets: '#9754ed',
 		packages: '#007df3',
-		triggers: '#3dce45',
+		triggers: '#d6b603',
 		integrations: '#05b047',
 		apps: '#ff4db8',
 	},
 	dark: {
-		memory: '#ff77c2',
+		memory: '#fd7464',
 		secrets: '#b884ff',
 		packages: '#53a6ff',
-		triggers: '#7dff57',
+		triggers: '#fcd936',
 		integrations: '#43d066',
 		apps: '#ff8ad4',
 	},
@@ -95,7 +96,7 @@ function createLeaders(theme: OgTheme): SatoriElement {
 	const glassR = LANTERN_WIDTH * landingLanternGlass.r
 	const paths: Array<SatoriElement> = []
 	for (const word of wordCentres()) {
-		const colour = primitiveColors[theme][word.id]
+		const colour = landingPrimitiveOgColors[theme][word.id]
 		const orb = orbCentre(word.id)
 		const to = { x: LANTERN_WIDTH + WORD_GAP, y: word.y }
 		const from = landingLeaderOrbExit(orb, to, orb.radius)
@@ -157,7 +158,7 @@ function createLeaders(theme: OgTheme): SatoriElement {
 function createWords(theme: OgTheme): Array<SatoriElement> {
 	const palette = getOgPalette(theme)
 	return wordCentres().map((word) => {
-		const colour = primitiveColors[theme][word.id]
+		const colour = landingPrimitiveOgColors[theme][word.id]
 		// Separate annotations so the two style objects are not unified into
 		// one type with optional keys (`undefined` is not a Satori style value).
 		const dot: SatoriElement = {
