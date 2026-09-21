@@ -125,18 +125,16 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 		type: 'mcp-server',
 	})
 	expect(() => parseEntityRef('home-controls:package')).toThrow(
-		'Entity refs are "{type}:{id}". Use "package:home-controls", not "home-controls:package".',
+		/Entity type must be one of/,
 	)
 	expect(() =>
 		parseEntityRef('home-controls:package#bond-area-shades'),
-	).toThrow(
-		'Entity refs are "{type}:{id}". Use "package:home-controls#bond-area-shades", not "home-controls:package#bond-area-shades".',
-	)
+	).toThrow(/Entity type must be one of/)
 	expect(() => parseEntityRef('mcp:home:set_pin:capability')).toThrow(
-		'Entity refs are "{type}:{id}". Use "capability:mcp:home:set_pin", not "mcp:home:set_pin:capability".',
+		/Entity type must be one of/,
 	)
 	expect(() => parseEntityRef('home:mcp-server')).toThrow(
-		'Entity refs are "{type}:{id}". Use "mcp-server:home", not "home:mcp-server".',
+		/Entity type must be one of/,
 	)
 
 	const structuredMatches = toSlimStructuredMatches({

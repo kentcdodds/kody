@@ -32,18 +32,6 @@ export function buildEntityRef(
 	return section ? `${ref}#${section}` : ref
 }
 
-export function formatLegacySearchEntityRefError(input: {
-	id: string
-	type: SearchEntityType
-	section?: string
-}) {
-	const next = buildEntityRef(input.id, input.type, input.section)
-	const previous = input.section
-		? `${input.id}:${input.type}#${input.section}`
-		: `${input.id}:${input.type}`
-	return `Entity refs are "{type}:{id}". Use ${JSON.stringify(next)}, not ${JSON.stringify(previous)}.`
-}
-
 export function buildCapabilityUsage(spec: {
 	name: string
 	source?: CapabilitySpec['source']
@@ -279,18 +267,6 @@ export function parseEntityRef(entity: string): {
 		return section
 			? { id: rest, type: firstSegment, section }
 			: { id: rest, type: firstSegment }
-	}
-	const lastColon = withoutSection.lastIndexOf(':')
-	const lastSegment = withoutSection.slice(lastColon + 1).trim()
-	const legacyId = withoutSection.slice(0, lastColon).trim()
-	if (isSearchEntityRefType(lastSegment) && legacyId) {
-		throw new McpCallerError(
-			formatLegacySearchEntityRefError({
-				id: legacyId,
-				type: lastSegment,
-				...(section ? { section } : {}),
-			}),
-		)
 	}
 	throw new McpCallerError(
 		`Entity type must be one of: ${formatSearchEntityRefTypeList()}.`,
