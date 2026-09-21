@@ -1,12 +1,13 @@
 import { type LandingHomePrimitive } from '#universal/landing-home-copy.ts'
 
 /**
- * Six-orb lantern for the homepage primitives section. The shell (glass
- * and glow), the metal frame, and each primitive orb are separate layers,
- * keyed to a `landingHomePrimitives` id so the copy stays the single source
- * of words and definitions. Orb centres are percentages of the shell.
- * Colors live in `styles.css` as `--primitive-<id>` so the orbit lights
- * and the leader lines share one palette.
+ * Six-orb lantern for the homepage primitives section. The lantern is one
+ * still (glass, glow, and metal together). Each primitive orb is an overlay
+ * clipped to the opening inside the frame, keyed to a `landingHomePrimitives`
+ * id so the copy stays the single source of words and definitions. Orb
+ * centres are percentages of that still. Colors live in `styles.css` as
+ * `--primitive-<id>` so the orbit lights and the leader lines share one
+ * palette.
  */
 
 export type LandingPrimitiveId = LandingHomePrimitive['id']
@@ -20,29 +21,17 @@ export const landingPrimitiveIds = [
 	'apps',
 ] as const satisfies ReadonlyArray<LandingPrimitiveId>
 
-/** Glass and glow only. The metal cap, handle, and base are a second
- *  layer (`landingLanternFrame`) so they paint above the orbs. */
+/** The whole lantern. Metal and glass stay in one image so the frame edge
+ *  cannot open a seam against the page. */
 export const landingLanternImage = {
-	src: '/images/lantern/kody-primitives-lantern-shell-480.webp',
+	src: '/images/lantern/kody-primitives-lantern-480.webp',
 	srcSet: [
-		'/images/lantern/kody-primitives-lantern-shell-480.webp 480w',
-		'/images/lantern/kody-primitives-lantern-shell.webp 863w',
+		'/images/lantern/kody-primitives-lantern-480.webp 480w',
+		'/images/lantern/kody-primitives-lantern.webp 863w',
 	].join(', '),
 	sizes: '(max-width: 800px) 58vw, 17rem',
 	width: 863,
 	height: 1242,
-} as const
-
-/** Metal cap, handle, and base, aligned to `landingLanternImage`. */
-export const landingLanternFrame = {
-	src: '/images/lantern/kody-primitives-lantern-frame-480.webp',
-	srcSet: [
-		'/images/lantern/kody-primitives-lantern-frame-480.webp 480w',
-		'/images/lantern/kody-primitives-lantern-frame.webp 863w',
-	].join(', '),
-	sizes: landingLanternImage.sizes,
-	width: landingLanternImage.width,
-	height: landingLanternImage.height,
 } as const
 
 /** Orb cutouts. Each sprite is centered on its disc in the shell. */
@@ -55,21 +44,68 @@ export const landingLanternOrbArt = {
 	apps: '/images/lantern/kody-primitives-orb-apps.webp',
 } as const satisfies Record<LandingPrimitiveId, string>
 
-/** Glass globe in the shell: centre as fractions of width and height,
- *  radius as a fraction of width. Used to fade leaders inside the glass. */
+/** Glass globe: centre as fractions of width and height, radius as a
+ *  fraction of width. Used to fade leaders inside the glass. */
 export const landingLanternGlass = { x: 0.5, y: 0.545, r: 0.46 } as const
 
 /**
- * Glass the orbs may paint on, as fractions of lantern height. Tighter than
- * the outer metal (`landingLanternAperture` in the motion module): the dark
- * lip under the cap and on the pedestal is in the shell, behind the orbs,
- * so the frame does not cover it. Measured where that lip gives way to the
- * bright glass.
+ * Inner edge of the frame, as fractions of the still. Traced where the
+ * glass glow meets the metal: under the cap, around the globe, and above
+ * the base. The orb overlay stops on this line.
  */
-const landingLanternGlowAperture = {
-	top: 0.326,
-	bottom: 0.822,
-} as const
+const landingLanternFrameOpening = [
+	[0.021, 0.49],
+	[0.042, 0.451],
+	[0.059, 0.427],
+	[0.101, 0.383],
+	[0.143, 0.353],
+	[0.163, 0.341],
+	[0.226, 0.313],
+	[0.243, 0.312],
+	[0.302, 0.322],
+	[0.389, 0.329],
+	[0.448, 0.332],
+	[0.553, 0.332],
+	[0.66, 0.326],
+	[0.72, 0.32],
+	[0.758, 0.312],
+	[0.772, 0.312],
+	[0.834, 0.34],
+	[0.866, 0.358],
+	[0.907, 0.39],
+	[0.925, 0.407],
+	[0.952, 0.442],
+	[0.98, 0.494],
+	[0.98, 0.641],
+	[0.963, 0.676],
+	[0.928, 0.721],
+	[0.9, 0.746],
+	[0.869, 0.769],
+	[0.866, 0.787],
+	[0.845, 0.795],
+	[0.841, 0.799],
+	[0.838, 0.799],
+	[0.834, 0.793],
+	[0.827, 0.794],
+	[0.768, 0.808],
+	[0.681, 0.82],
+	[0.528, 0.827],
+	[0.435, 0.826],
+	[0.351, 0.822],
+	[0.292, 0.817],
+	[0.24, 0.81],
+	[0.198, 0.801],
+	[0.177, 0.794],
+	[0.163, 0.792],
+	[0.16, 0.8],
+	[0.153, 0.8],
+	[0.129, 0.787],
+	[0.125, 0.765],
+	[0.09, 0.739],
+	[0.052, 0.699],
+	[0.038, 0.68],
+	[0.021, 0.647],
+] as const satisfies ReadonlyArray<readonly [number, number]>
 
 /**
  * Orb centres (percent of width and height), shared disc diameter (percent
@@ -95,63 +131,14 @@ export const landingLanternOrbs = [
 }>
 
 /**
- * Clip for the orb layer. The sprite halo, pulse ring, and hover bloom all
- * paint with the discs, and the shell lip sits behind them, so the clip has
- * to cover the glow and not only the hard disc. Polygon of the glass ellipse
- * cut by `landingLanternGlowAperture`, in percentages of the lantern box.
+ * Clip for the orb overlay. The sprite halo, pulse ring, and hover bloom
+ * paint with the discs, so the clip is the opening inside the frame.
  */
 export function landingLanternOrbClipPath() {
-	const { width, height } = landingLanternImage
-	const rx = landingLanternGlass.r
-	const ry = landingLanternGlass.r * (width / height)
-	const { x: cx, y: cy } = landingLanternGlass
-	const top = landingLanternGlowAperture.top
-	const bottom = landingLanternGlowAperture.bottom
-	const points: Array<readonly [number, number]> = []
-	const nyTop = (top - cy) / ry
-	const nyBottom = (bottom - cy) / ry
-	const xOnEllipse = (ny: number, side: -1 | 1) =>
-		cx + side * Math.sqrt(Math.max(0, 1 - ny * ny)) * rx
-	const topLeft: readonly [number, number] = [xOnEllipse(nyTop, -1), top]
-	const topRight: readonly [number, number] = [xOnEllipse(nyTop, 1), top]
-	const bottomRight: readonly [number, number] = [
-		xOnEllipse(nyBottom, 1),
-		bottom,
-	]
-	const bottomLeft: readonly [number, number] = [
-		xOnEllipse(nyBottom, -1),
-		bottom,
-	]
-	points.push(topLeft, topRight)
-	pushArc(points, topRight, bottomRight, cx, cy, rx, ry)
-	points.push(bottomRight, bottomLeft)
-	pushArc(points, bottomLeft, topLeft, cx, cy, rx, ry)
 	const percent = (value: number) => `${Math.round(value * 1000) / 10}%`
-	return `polygon(${points
+	return `polygon(${landingLanternFrameOpening
 		.map(([x, y]) => `${percent(x)} ${percent(y)}`)
 		.join(',')})`
-}
-
-/** Walk the glass ellipse clockwise from `from` to `to`, not repeating ends. */
-function pushArc(
-	points: Array<readonly [number, number]>,
-	from: readonly [number, number],
-	to: readonly [number, number],
-	cx: number,
-	cy: number,
-	rx: number,
-	ry: number,
-) {
-	const angle = (point: readonly [number, number]) =>
-		Math.atan2((point[1] - cy) / ry, (point[0] - cx) / rx)
-	let start = angle(from)
-	let end = angle(to)
-	if (end <= start) end += Math.PI * 2
-	const steps = 10
-	for (let step = 1; step < steps; step++) {
-		const theta = start + ((end - start) * step) / steps
-		points.push([cx + Math.cos(theta) * rx, cy + Math.sin(theta) * ry])
-	}
 }
 
 /** CSS custom property that carries a primitive's color. */

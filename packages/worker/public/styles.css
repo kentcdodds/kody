@@ -1125,7 +1125,7 @@ html.is-settled {
    words listed beside it, then the learn-more line. Leader lines run orb to
    word inside the stage on wide screens (measured from layout by
    `landing-primitives.tsx`); narrow screens stack and drop them. Stacking
-   inside the stage: lantern shell (0) < leaders (1) < orb layers and words
+   inside the stage: lantern (0) < leaders (1) < orb layers and words
    (2) < popover (4). */
 .landing-primitives {
 	position: relative;
@@ -1153,28 +1153,16 @@ html.is-settled {
 	margin: 0;
 }
 
-.landing-lantern-art,
-.landing-lantern-frame {
+.landing-lantern-art {
 	position: absolute;
 	inset: 0;
+	z-index: 0;
 	display: block;
 	width: 100%;
 	height: 100%;
 	object-fit: contain;
 	pointer-events: none;
-}
-
-.landing-lantern-art {
-	z-index: 0;
-	/* Shadow stays on the glass. A filter on the frame would paint that
-	   blur over the orbs, because the frame sits above them. */
 	filter: drop-shadow(0 1.2rem 2.2rem oklch(0.75 0.15 75 / 0.28));
-}
-
-/* Cap, handle, and base. Above the orbs so a disc that reaches the
-   metal reads as inside the glass instead of painted on the frame. */
-.landing-lantern-frame {
-	z-index: 3;
 }
 
 /* Orb cutout, centered in the hotspot. Width is the sprite as a share
@@ -1192,9 +1180,8 @@ html.is-settled {
 	-webkit-user-drag: none;
 }
 
-/* Sprite halos, pulse rings, and hover bloom live on this layer. The
-   shell's dark lip is behind it (the frame only covers the outer metal),
-   so the layer is clipped to the glass. The path is set from
+/* Sprite halos, pulse rings, and hover bloom live on this layer, clipped
+   to the opening inside the frame. The path is set from
    `landingLanternOrbClipPath`. */
 .landing-lantern-orbs {
 	position: absolute;
