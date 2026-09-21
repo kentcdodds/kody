@@ -1188,7 +1188,7 @@ html.is-settled {
 	left: var(--x);
 	top: var(--y);
 	translate: -50% -50%;
-	width: var(--size, 22.5%);
+	width: var(--size, 17.1%);
 	aspect-ratio: 1;
 	margin: 0;
 	padding: 0;

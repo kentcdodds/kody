@@ -22,9 +22,14 @@ test('lantern orbs cover every homepage primitive exactly once, in copy order', 
 		expect(orb.x).toBeLessThan(100)
 		expect(orb.y).toBeGreaterThan(0)
 		expect(orb.y).toBeLessThan(100)
-		// One disc for every primitive, including memory.
+		// One disc for every primitive, including memory. 17.1 is 75% of
+		// the first layered fit (22.8), shared by the sprite, hotspot,
+		// and collision radius.
 		expect(orb.size).toBe(packagesOrb.size)
+		expect(orb.size).toBe(17.1)
 		expect(orb.art).toBeGreaterThan(orb.size)
+		expect(orb.art / orb.size).toBeGreaterThan(1.03)
+		expect(orb.art / orb.size).toBeLessThan(1.08)
 	}
 	expect(landingLanternImage.srcSet).toContain(landingLanternImage.src)
 	expect(landingLanternImage.src).toContain('lantern-shell')

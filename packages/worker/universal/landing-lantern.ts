@@ -48,15 +48,17 @@ export const landingLanternGlass = { x: 0.5, y: 0.545, r: 0.46 } as const
  * Orb centres (percent of width and height), shared disc diameter (percent
  * of width), and sprite width (percent of width). Every hotspot is the
  * packages disc, so memory matches packages and the glyph stays in the
- * middle of its glow while the layer moves. `art` is larger than `size`
- * so the transparent glow around the disc is not clipped.
+ * middle of its glow while the layer moves. `size` and `art` are 75% of
+ * the first layered fit, so the picture, the collision radius, and the
+ * hotspot shrink together. `art` stays a little larger than `size` so the
+ * glow around the disc is not clipped.
  */
 export const landingLanternOrbs = [
-	{ id: 'memory', x: 50.1, y: 43.9, size: 22.8, art: 24.03 },
-	{ id: 'secrets', x: 25.7, y: 53.3, size: 22.8, art: 23.94 },
-	{ id: 'packages', x: 74.9, y: 54.3, size: 22.8, art: 23.84 },
-	{ id: 'jobs', x: 35.4, y: 68.3, size: 22.8, art: 23.84 },
-	{ id: 'integrations', x: 67.2, y: 69.6, size: 22.8, art: 23.66 },
+	{ id: 'memory', x: 50.1, y: 43.9, size: 17.1, art: 18.02 },
+	{ id: 'secrets', x: 25.7, y: 53.3, size: 17.1, art: 17.96 },
+	{ id: 'packages', x: 74.9, y: 54.3, size: 17.1, art: 17.88 },
+	{ id: 'jobs', x: 35.4, y: 68.3, size: 17.1, art: 17.88 },
+	{ id: 'integrations', x: 67.2, y: 69.6, size: 17.1, art: 17.75 },
 ] as const satisfies ReadonlyArray<{
 	id: LandingPrimitiveId
 	x: number
