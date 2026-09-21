@@ -443,12 +443,9 @@ function cardShowsConnectedStatus(props: {
 	connectedAgents?: ReadonlyArray<OnboardingConnectedAgentListItem>
 }) {
 	if (!props.hasMcpClient) return false
+	// Picker (no host selected): any real grant is "you are connected".
 	if (!props.selectedAgent) return true
-	if (props.selectedAgent === 'other') return false
-	// No kind list: the step flag is the only signal (Step 3's "a second
-	// agent" line). Once names are known, the card may only claim the
-	// agent it is actually connecting.
-	if (!props.connectedAgents || props.connectedAgents.length === 0) return true
+	// A named card, including Not listed, never borrows another host's grant.
 	return selectedAgentIsConnected(props.selectedAgent, props.connectedAgents)
 }
 

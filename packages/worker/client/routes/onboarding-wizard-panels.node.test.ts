@@ -77,6 +77,7 @@ function secondAgentPanel(selected: {
 		label: string
 		kind?:
 			| 'chatgpt'
+			| 'claude-code'
 			| 'claude-desktop'
 			| 'codex'
 			| 'copilot'
@@ -155,6 +156,16 @@ test('step 1 title names the selected agent and offers a text change link', asyn
 		'data-testid="onboarding-connected-agents"',
 	)
 	expect(claudeWhileChatGpt).toContain('data-testid="onboarding-wizard-next"')
+
+	const claudeWithoutGrantList = await renderToString(
+		connectPanel({
+			agent: 'claude-desktop',
+			label: 'Claude Desktop',
+			loggedIn: true,
+			hasMcpClient: true,
+		}),
+	)
+	expect(claudeWithoutGrantList).not.toContain('data-connected="true"')
 
 	const waitingToConnect = await renderToString(
 		connectPanel({
@@ -271,6 +282,7 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 			agent: 'claude-code',
 			label: 'Claude Code',
 			hasSecondMcpClient: true,
+			connectedAgents: [{ label: 'Claude Code', kind: 'claude-code' }],
 		}),
 	)
 	expect(connected).toContain("You've connected a second agent.")
@@ -283,6 +295,7 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 			label: 'Claude Code',
 			hasSecondMcpClient: true,
 			secondAgentGiftActive: true,
+			connectedAgents: [{ label: 'Claude Code', kind: 'claude-code' }],
 		}),
 	)
 	expect(gifted).toContain(

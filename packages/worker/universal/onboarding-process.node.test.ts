@@ -247,6 +247,26 @@ test('resume step is the first unfinished wizard step, else step 3', () => {
 		resolveOnboardingFirstAgentKind('claude-desktop', [
 			{ kind: 'cursor', connectedAt: '2026-09-08T17:00:00.000Z' },
 		]),
+	).toBe('cursor')
+	expect(
+		resolveOnboardingFirstAgentKind('claude-desktop', [
+			{
+				kind: 'chatgpt',
+				connectedAt: '2026-09-08T17:00:00.000Z',
+			},
+		]),
+	).toBe('chatgpt')
+	expect(resolveOnboardingFirstAgentKind('claude-desktop', [])).toBe(
+		'claude-desktop',
+	)
+	expect(
+		resolveOnboardingFirstAgentKind('claude-desktop', [
+			{
+				kind: 'claude-desktop',
+				connectedAt: '2026-09-08T18:00:00.000Z',
+			},
+			{ kind: 'chatgpt', connectedAt: '2026-09-08T17:00:00.000Z' },
+		]),
 	).toBe('claude-desktop')
 	expect(
 		resolveOnboardingFirstAgentKind(null, [
