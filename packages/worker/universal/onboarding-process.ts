@@ -230,9 +230,10 @@ export function resolveOnboardingFirstAgentKind(
 	const rememberedKind =
 		remembered && remembered !== 'other' ? remembered : null
 	const connectedKinds = namedConnectedAgentKinds(connectedAgents)
+	const hasConnectedHost = connectedAgents.length > 0
 	if (
 		rememberedKind &&
-		(connectedKinds.size === 0 || connectedKinds.has(rememberedKind))
+		(!hasConnectedHost || connectedKinds.has(rememberedKind))
 	) {
 		return rememberedKind
 	}

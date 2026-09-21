@@ -278,6 +278,11 @@ test('resume step is the first unfinished wizard step, else step 3', () => {
 			{ kind: 'chatgpt', connectedAt: null },
 		]),
 	).toBe('chatgpt')
+	expect(
+		resolveOnboardingFirstAgentKind('claude-desktop', [
+			{ kind: null, connectedAt: '2026-09-08T17:00:00.000Z' },
+		]),
+	).toBeNull()
 })
 
 test('search leftover notice lists remaining wizard steps, not a quest', () => {

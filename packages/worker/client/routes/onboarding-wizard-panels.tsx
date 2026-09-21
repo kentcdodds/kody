@@ -453,7 +453,12 @@ function cardShowsConnectedStatus(props: {
 }) {
 	if (!props.hasMcpClient) return false
 	if (props.anyGrantCompletesStep) return true
-	if (!props.selectedAgent || props.selectedAgent === 'other') return true
+	if (!props.selectedAgent) return true
+	if (props.selectedAgent === 'other') {
+		return (props.connectedAgents ?? []).some(
+			(agent) => agent.kind == null || agent.kind === 'other',
+		)
+	}
 	return selectedAgentIsConnected(props.selectedAgent, props.connectedAgents)
 }
 
@@ -473,7 +478,10 @@ function connectWaitLabel(props: {
 }) {
 	if (!props.awaitingConnect) return null
 	const genericHostDone =
-		props.selectedAgent === 'other' && props.hasMcpClient === true
+		props.selectedAgent === 'other' &&
+		(props.connectedAgents ?? []).some(
+			(agent) => agent.kind == null || agent.kind === 'other',
+		)
 	if (
 		props.connected ||
 		genericHostDone ||
