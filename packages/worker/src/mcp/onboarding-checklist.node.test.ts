@@ -126,7 +126,7 @@ test('checklist derives wizard steps from grants and an access win, not integrat
 	})
 	expect(twoGrantsSameClient).toContain('Connect a second agent')
 
-	const twoUniqueClients = await buildOnboardingSearchNotice({
+	const twoUniqueUnlabeledClients = await buildOnboardingSearchNotice({
 		env: {
 			...env,
 			OAUTH_PROVIDER: {
@@ -141,7 +141,64 @@ test('checklist derives wizard steps from grants and an access win, not integrat
 		userId,
 		baseUrl: 'https://kody.example',
 	})
-	expect(twoUniqueClients).toBeNull()
+	expect(twoUniqueUnlabeledClients).toContain('Connect a second agent')
+
+	const dualCursorContexts = await buildOnboardingSearchNotice({
+		env: {
+			...env,
+			OAUTH_PROVIDER: {
+				listUserGrants: async () => ({
+					items: [
+						{
+							id: 'grant-local',
+							clientId: 'cursor-local-client',
+							redirectUri: 'cursor://anysphere.cursor-mcp/oauth/callback',
+						},
+						{
+							id: 'grant-cloud',
+							clientId: 'cursor-cloud-client',
+							redirectUri: 'https://www.cursor.com/agents/mcp/oauth/callback',
+						},
+					],
+				}),
+				lookupClient: async (clientId: string) => ({
+					clientId,
+					clientName: 'Cursor',
+				}),
+			},
+		},
+		userId,
+		baseUrl: 'https://kody.example',
+	})
+	expect(dualCursorContexts).toContain('Connect a second agent')
+
+	const twoEcosystems = await buildOnboardingSearchNotice({
+		env: {
+			...env,
+			OAUTH_PROVIDER: {
+				listUserGrants: async () => ({
+					items: [
+						{
+							id: 'grant-cursor',
+							clientId: 'cursor-client',
+							redirectUri: 'http://localhost:8787/callback',
+						},
+						{
+							id: 'grant-claude',
+							clientId: 'claude-client',
+						},
+					],
+				}),
+				lookupClient: async (clientId: string) => ({
+					clientId,
+					clientName: clientId === 'claude-client' ? 'Claude Code' : 'Cursor',
+				}),
+			},
+		},
+		userId,
+		baseUrl: 'https://kody.example',
+	})
+	expect(twoEcosystems).toBeNull()
 
 	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(false)
 	await dismissOnboardingChecklist({ env, userId })
