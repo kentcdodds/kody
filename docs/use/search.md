@@ -169,14 +169,13 @@ a tight size budget does not drop them.
 To inspect one hit, call **search** again with **`entity`** set to
 `"{type}:{id}"` where **`type`** is `capability`, `guide`, `integration`,
 `mcp-server`, `package`, or `secret`. The first `:` is the type; the id may
-itself contain colons (`capability:mcp:home:set_pin`). Refs that put the type
-last (`home-controls:package`) fail with an error that shows the required
-`{type}:{id}` shape. Guide entities return the official markdown (the same
-bundled body as the web `/docs` pages) when it fits the search response budget.
-Oversized guides return a table of contents instead of truncating mid-document.
-Open one heading with `"guide:{id}#{slug}"` (for example
-`guide:package_subscriptions#repo.pushed`). Official guide headings themselves
-must fit the remaining budget after the search entity header
+itself contain colons (`capability:mcp:home:set_pin`). Unknown types and
+malformed refs return an invalid-entity error. Guide entities return the
+official markdown (the same bundled body as the web `/docs` pages) when it fits
+the search response budget. Oversized guides return a table of contents instead
+of truncating mid-document. Open one heading with `"guide:{id}#{slug}"` (for
+example `guide:package_subscriptions#repo.pushed`). Official guide headings
+themselves must fit the remaining budget after the search entity header
 (`kody-custom/no-oversized-guide-section`). Package entities use the same hash
 form for one export: `"package:{id}#{subpath}"` (for example
 `package:home-controls#bond-area-shades` or
