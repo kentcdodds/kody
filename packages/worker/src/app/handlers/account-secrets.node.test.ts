@@ -292,7 +292,6 @@ test('save_oauth_app does not delete user secrets after persisting a client-secr
 				flow: 'confidential',
 				clientId: 'slack-client-id',
 				clientSecret: 'slack-client-secret',
-				clientSecretSecretName: 'slackClientSecret',
 			}),
 		}),
 		params: {},
@@ -1338,15 +1337,11 @@ test('account secrets API loads selected secret values and deletes the selected 
 	)
 })
 
-test('oauth_exchange resolves secrets, maps provider failures, and forwards exchange styles', async () => {
+test('oauth_exchange maps provider failures and forwards exchange styles', async () => {
 	const fetchMock = vi.fn()
 	vi.stubGlobal('fetch', fetchMock)
 	const handler = createAccountSecretsApiHandler(createEnv())
 
-	mockModule.resolveSecret.mockResolvedValueOnce({
-		found: true,
-		value: 'notion-client-secret',
-	})
 	fetchMock.mockResolvedValueOnce(
 		new Response(
 			JSON.stringify({
@@ -1371,7 +1366,7 @@ test('oauth_exchange resolves secrets, maps provider failures, and forwards exch
 					redirect_uri: 'https://example.com/connect/oauth',
 				}).toString(),
 				flow: 'confidential',
-				clientSecretSecretName: 'notionClientSecret',
+				clientSecret: 'notion-client-secret',
 				allowedHosts: ['api.notion.com'],
 			}),
 		}),
@@ -1383,18 +1378,8 @@ test('oauth_exchange resolves secrets, maps provider failures, and forwards exch
 		access_token: 'notion-access',
 		refresh_token: 'notion-refresh',
 	})
-	expect(mockModule.resolveSecret).toHaveBeenCalledWith(
-		expect.objectContaining({
-			name: 'notionClientSecret',
-			scope: 'user',
-		}),
-	)
 	expect(fetchMock).toHaveBeenCalledTimes(1)
 
-	mockModule.resolveSecret.mockResolvedValueOnce({
-		found: true,
-		value: 'slack-client-secret',
-	})
 	fetchMock.mockResolvedValueOnce(
 		new Response(JSON.stringify({ access_token: 'slack-access' }), {
 			status: 200,
@@ -1417,7 +1402,7 @@ test('oauth_exchange resolves secrets, maps provider failures, and forwards exch
 				}).toString(),
 				flow: 'confidential',
 				tokenExchangeStyle: 'form',
-				clientSecretSecretName: 'slackClientSecret',
+				clientSecret: 'slack-client-secret',
 				allowedHosts: ['slack.com'],
 			}),
 		}),
@@ -1429,10 +1414,6 @@ test('oauth_exchange resolves secrets, maps provider failures, and forwards exch
 		access_token: 'slack-access',
 	})
 
-	mockModule.resolveSecret.mockResolvedValueOnce({
-		found: true,
-		value: 'canva-client-secret',
-	})
 	fetchMock.mockResolvedValueOnce(
 		new Response(
 			JSON.stringify({
@@ -1458,7 +1439,7 @@ test('oauth_exchange resolves secrets, maps provider failures, and forwards exch
 					code_verifier: 'pkce-verifier',
 				}).toString(),
 				flow: 'confidential',
-				clientSecretSecretName: 'canvaClientSecret',
+				clientSecret: 'canva-client-secret',
 				allowedHosts: ['api.canva.com'],
 			}),
 		}),
@@ -1472,10 +1453,6 @@ test('oauth_exchange resolves secrets, maps provider failures, and forwards exch
 	})
 	expect(fetchMock).toHaveBeenCalledTimes(3)
 
-	mockModule.resolveSecret.mockResolvedValueOnce({
-		found: true,
-		value: 'notion-client-secret',
-	})
 	fetchMock.mockResolvedValueOnce(
 		new Response(
 			JSON.stringify({
@@ -1500,7 +1477,7 @@ test('oauth_exchange resolves secrets, maps provider failures, and forwards exch
 					redirect_uri: 'https://example.com/connect/oauth',
 				}).toString(),
 				flow: 'confidential',
-				clientSecretSecretName: 'notionClientSecret',
+				clientSecret: 'notion-client-secret',
 				allowedHosts: ['api.notion.com'],
 			}),
 		}),
@@ -1541,9 +1518,6 @@ test('connect oauth persists usePkce for confidential + PKCE providers like Canv
 				usePkce: true,
 				tokenExchangeStyle: 'basic-form',
 				clientId: 'canva-client-id-value',
-				clientSecretSecretName: 'canvaClientSecret',
-				accessTokenSecretName: 'canvaAccessToken',
-				refreshTokenSecretName: 'canvaRefreshToken',
 				allowedHosts: ['api.canva.com'],
 				tokenPayload: {
 					access_token: 'access-token',
