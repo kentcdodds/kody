@@ -1,12 +1,12 @@
 import { type LandingHomePrimitive } from '#universal/landing-home-copy.ts'
 
 /**
- * Six-orb lantern for the homepage primitives section. The shell (frame,
- * glass, and glow) and each primitive orb are separate layers, keyed to a
- * `landingHomePrimitives` id so the copy stays the single source of words
- * and definitions. Orb centres are percentages of the shell. Colors live in
- * `styles.css` as `--primitive-<id>` so the orbit lights and the leader
- * lines share one palette.
+ * Six-orb lantern for the homepage primitives section. The shell (glass
+ * and glow), the metal frame, and each primitive orb are separate layers,
+ * keyed to a `landingHomePrimitives` id so the copy stays the single source
+ * of words and definitions. Orb centres are percentages of the shell.
+ * Colors live in `styles.css` as `--primitive-<id>` so the orbit lights
+ * and the leader lines share one palette.
  */
 
 export type LandingPrimitiveId = LandingHomePrimitive['id']
@@ -20,7 +20,8 @@ export const landingPrimitiveIds = [
 	'apps',
 ] as const satisfies ReadonlyArray<LandingPrimitiveId>
 
-/** Empty lantern: frame, glass, and glow, with no colored orbs. */
+/** Glass and glow only. The metal cap, handle, and base are a second
+ *  layer (`landingLanternFrame`) so they paint above the orbs. */
 export const landingLanternImage = {
 	src: '/images/lantern/kody-primitives-lantern-shell-480.webp',
 	srcSet: [
@@ -30,6 +31,18 @@ export const landingLanternImage = {
 	sizes: '(max-width: 800px) 58vw, 17rem',
 	width: 863,
 	height: 1242,
+} as const
+
+/** Metal cap, handle, and base, aligned to `landingLanternImage`. */
+export const landingLanternFrame = {
+	src: '/images/lantern/kody-primitives-lantern-frame-480.webp',
+	srcSet: [
+		'/images/lantern/kody-primitives-lantern-frame-480.webp 480w',
+		'/images/lantern/kody-primitives-lantern-frame.webp 863w',
+	].join(', '),
+	sizes: landingLanternImage.sizes,
+	width: landingLanternImage.width,
+	height: landingLanternImage.height,
 } as const
 
 /** Orb cutouts. Each sprite is centered on its disc in the shell. */
@@ -74,7 +87,7 @@ export function landingPrimitiveColorVar(id: LandingPrimitiveId) {
 	return `var(--primitive-${id})`
 }
 
-/** Palette tone for the nth orbit light; cycles through the five colors. */
+/** Palette tone for the nth orbit light; cycles through the six colors. */
 export function landingOrbitLightTone(index: number): LandingPrimitiveId {
 	const count = landingPrimitiveIds.length
 	return landingPrimitiveIds[((index % count) + count) % count]!

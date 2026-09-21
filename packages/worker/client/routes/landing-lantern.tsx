@@ -6,6 +6,7 @@ import {
 	type LandingHomePrimitive,
 } from '#universal/landing-home-copy.ts'
 import {
+	landingLanternFrame,
 	landingLanternImage,
 	landingLanternOrbArt,
 	landingLanternOrbs,
@@ -142,6 +143,16 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 						)
 					})}
 				</div>
+				<img
+					src={landingLanternFrame.src}
+					srcSet={landingLanternFrame.srcSet}
+					sizes={landingLanternFrame.sizes}
+					width={landingLanternFrame.width}
+					height={landingLanternFrame.height}
+					decoding="async"
+					alt=""
+					class="landing-lantern-frame"
+				/>
 			</figure>
 		)
 	}

@@ -1,12 +1,22 @@
 import { expect, test } from 'vitest'
-import { landingLanternOrbs } from './landing-lantern.ts'
+import { landingLanternImage, landingLanternOrbs } from './landing-lantern.ts'
 import {
 	clampToCavity,
 	createLanternOrbBodies,
+	landingLanternAperture,
 	landingLanternCavity,
 	stepLanternOrbMotion,
 	type LanternOrbBody,
 } from './landing-lantern-motion.ts'
+
+const lanternAspect = landingLanternImage.height / landingLanternImage.width
+
+function insideAperture(body: { y: number; radius: number }) {
+	const top = landingLanternAperture.top * lanternAspect + body.radius + 0.008
+	const bottom =
+		landingLanternAperture.bottom * lanternAspect - body.radius - 0.008
+	return body.y >= top - 1e-6 && body.y <= bottom + 1e-6
+}
 
 function simulate(seconds: number, amplitude: number) {
 	let bodies = createLanternOrbBodies()
@@ -36,7 +46,20 @@ function simulate(seconds: number, amplitude: number) {
 			)
 			const limit = landingLanternCavity.r - body.radius - 0.008
 			expect(fromCentre).toBeLessThanOrEqual(limit + 1e-6)
-			if (limit - fromCentre < 0.01) wallTouches++
+			const top =
+				landingLanternAperture.top * lanternAspect + body.radius + 0.008
+			const bottom =
+				landingLanternAperture.bottom * lanternAspect - body.radius - 0.008
+			// The lid and base are the walls the cluster actually meets. The
+			// circle is still a bound, just further out at the poles.
+			if (
+				limit - fromCentre < 0.01 ||
+				body.y - top < 0.01 ||
+				bottom - body.y < 0.01
+			) {
+				wallTouches++
+			}
+			expect(insideAperture(body)).toBe(true)
 		}
 		for (let i = 0; i < bodies.length; i++) {
 			for (let j = i + 1; j < bodies.length; j++) {
@@ -100,6 +123,16 @@ test('orb motion floats slowly inside the glass and bumps instead of bouncing', 
 	const outward = (after.vx * nx + after.vy * ny) / Math.hypot(nx, ny)
 	expect(outward).toBeLessThan(0.02)
 	expect(clampToCavity(2, 2, 0.1).x).toBeLessThan(landingLanternCavity.x + 1)
+	const raised = structuredClone(rested) satisfies Array<LanternOrbBody>
+	const memory = raised[0]!
+	memory.y = 0.05
+	memory.vy = -0.2
+	const heldDown = stepLanternOrbMotion(raised, 1 / 60, {
+		time: 0,
+		amplitude: 0,
+	})
+	expect(insideAperture(heldDown[0]!)).toBe(true)
+	expect(heldDown[0]!.vy).toBeGreaterThanOrEqual(0)
 
 	const pair = structuredClone(rested) satisfies Array<LanternOrbBody>
 	const left = pair[0]!
@@ -115,7 +148,7 @@ test('orb motion floats slowly inside the glass and bumps instead of bouncing', 
 	left.vx = 0.04
 	right.vx = -0.04
 	const met = stepLanternOrbMotion(pair, 1 / 60, { time: 0, amplitude: 0 })
-	const rel = (met[0]!.vx - met[2]!.vx) * 1 + (met[0]!.vy - met[2]!.vy) * 0
+	const rel = met[0]!.vx - met[2]!.vx
 	expect(rel).toBeGreaterThan(-0.01)
 	expect(rel).toBeLessThan(0.02)
 })
