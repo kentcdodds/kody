@@ -51,3 +51,44 @@ test('renderPageOgImage renders each theme differently', async () => {
 	// the halo all switch on it, so the two encodings cannot coincide.
 	expect(Buffer.from(light).equals(Buffer.from(dark))).toBe(false)
 })
+
+test('homepage og query values render different cards and unknown stays default', async () => {
+	const fallback = await renderPageOgImage({ page: publicOgPages.home })
+	const unknown = await renderPageOgImage({
+		page: publicOgPages.home,
+		homeOg: 'nope',
+	})
+	const triggers = await renderPageOgImage({
+		page: publicOgPages.home,
+		homeOg: 'triggers',
+	})
+	const memory = await renderPageOgImage({
+		page: publicOgPages.home,
+		homeOg: 'memory',
+	})
+	const pricingWithQuery = await renderPageOgImage({
+		page: publicOgPages.pricing,
+		homeOg: 'triggers',
+	})
+	const pricing = await renderPageOgImage({ page: publicOgPages.pricing })
+
+	expectPngBytes(triggers)
+	expectPngBytes(memory)
+	expect(Buffer.from(unknown).equals(Buffer.from(fallback))).toBe(true)
+	expect(Buffer.from(triggers).equals(Buffer.from(fallback))).toBe(false)
+	expect(Buffer.from(triggers).equals(Buffer.from(memory))).toBe(false)
+
+	const switchCard = await renderPageOgImage({
+		page: publicOgPages.home,
+		homeOg: 'switch',
+	})
+	const cursorClaude = await renderPageOgImage({
+		page: publicOgPages.home,
+		homeOg: 'cursor-claude',
+	})
+	expectPngBytes(switchCard)
+	expectPngBytes(cursorClaude)
+	expect(Buffer.from(switchCard).equals(Buffer.from(cursorClaude))).toBe(false)
+	expect(Buffer.from(switchCard).equals(Buffer.from(fallback))).toBe(false)
+	expect(Buffer.from(pricingWithQuery).equals(Buffer.from(pricing))).toBe(true)
+})

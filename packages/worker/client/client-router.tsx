@@ -100,6 +100,12 @@ function getCurrentDocumentPath() {
 	return `${window.location.pathname}${window.location.search}`
 }
 
+/** Call after a `replaceState` that is not a router navigation. */
+export function syncLastNotifiedDocumentPath() {
+	if (typeof window === 'undefined') return
+	lastNotifiedDocumentPath = getCurrentDocumentPath()
+}
+
 /**
  * Areas whose pages sit inside a persistent shell (a sticky rail beside the
  * content). Moving between them is tab switching, not page-to-page
@@ -880,7 +886,7 @@ async function runNavigationWithLoader(
 		// navigations. Resolve from the shared registry (+ loader data for
 		// dynamic routes) here so every route stays in sync without per-page
 		// wiring.
-		applyDocumentHead(destination.pathname, loadedData)
+		applyDocumentHead(destination.pathname, loadedData, destination.search)
 
 		const finish = () => dispatchNavigationEnd(navigationEndDetail)
 		commitHistory(nextPath, options, finish)
@@ -907,7 +913,7 @@ async function runNavigationWithLoader(
 		// current URL) have no href change to trigger a route's fallback
 		// refetch, so mark the destination stale for routes to consume.
 		markNavigationDataStale(nextPath)
-		applyDocumentHead(destination.pathname)
+		applyDocumentHead(destination.pathname, undefined, destination.search)
 		const finish = () => dispatchNavigationEnd(navigationEndDetail)
 		commitHistory(nextPath, options, finish)
 	} finally {

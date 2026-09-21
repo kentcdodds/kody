@@ -4,6 +4,7 @@ import { resetDataCacheForTests } from '#app/data-cache.ts'
 import { loadHomePageOnboardingData } from '#app/onboarding-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { landingFactoryBeats } from '#universal/landing-factory-beats.ts'
+import { getHomeOgVariant } from '#universal/home-og-variants.ts'
 import { landingHeroPrimaryCta } from '#universal/landing-home-copy.ts'
 import { createMemoryKv } from '#worker/test-support/auth-provider-harness.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
@@ -176,4 +177,52 @@ test('homepage hero uses locked copy, compare, and session-aware connect CTA', a
 	expect(signedInHero).not.toContain('/signup?utm_source=kody.codes')
 	expect(signedInHtml).toContain('landing-videos')
 	expect(signedInHtml).toContain('landing-hero-agents')
+})
+
+test('homepage ?og= points crawlers at that card and keeps the canonical url clean', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv()
+	const triggers = getHomeOgVariant('triggers')
+	expect(triggers).not.toBeNull()
+	if (!triggers) return
+
+	const variantRequestUrl =
+		'https://example.com/?og=triggers&utm_source=youtube#primitives'
+	const variant = await renderAppPage({
+		request: new Request(variantRequestUrl),
+		env,
+		loaderData: {
+			onboarding: homepageOnboardingFixture(env, variantRequestUrl, false),
+			landingHeroVideos: [...homepageHeroVideos],
+		},
+	})
+	expect(variant.status).toBe(200)
+	const variantHtml = await variant.text()
+	const imageUrl = 'https://example.com/og/home.png?og=triggers'
+	expect(variantHtml).toContain(`property="og:image" content="${imageUrl}"`)
+	expect(variantHtml).toContain(`name="twitter:image" content="${imageUrl}"`)
+	expect(variantHtml).toContain(
+		`property="og:title" content="${triggers.ogTitle}"`,
+	)
+	expect(variantHtml).toContain('rel="canonical" href="https://example.com/"')
+	expect(variantHtml).not.toContain('og:url" content="https://example.com/?og=')
+
+	const unknown = await renderAppPage({
+		request: new Request('https://example.com/?og=nope'),
+		env,
+		loaderData: {
+			onboarding: homepageOnboardingFixture(
+				env,
+				'https://example.com/?og=nope',
+				false,
+			),
+			landingHeroVideos: [...homepageHeroVideos],
+		},
+	})
+	const unknownHtml = await unknown.text()
+	expect(unknownHtml).toContain(
+		'property="og:image" content="https://example.com/og/home.png"',
+	)
+	expect(unknownHtml).not.toContain('/og/home.png?og=')
 })

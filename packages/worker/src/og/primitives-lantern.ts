@@ -90,13 +90,80 @@ function wordCentres(): Array<{
 	}))
 }
 
-function createLeaders(theme: OgTheme): SatoriElement {
+function leaderInk(
+	id: LandingPrimitiveId,
+	highlight: LandingPrimitiveId | null,
+) {
+	if (!highlight) {
+		return { halo: 0.28, core: 0.95, coreWidth: 2.6 }
+	}
+	if (id === highlight) {
+		return { halo: 0.55, core: 1, coreWidth: 3.6 }
+	}
+	return { halo: 0.08, core: 0.2, coreWidth: 2.2 }
+}
+
+/** Ring the baked orb so a share card can point at one primitive. */
+function createOrbAccent(
+	theme: OgTheme,
+	id: LandingPrimitiveId,
+): SatoriElement {
+	const orb = orbCentre(id)
+	const colour = landingPrimitiveOgColors[theme][id]
+	return {
+		type: 'svg',
+		props: {
+			width: LANTERN_WIDTH,
+			height: LANTERN_HEIGHT,
+			viewBox: `0 0 ${LANTERN_WIDTH} ${LANTERN_HEIGHT}`,
+			style: {
+				position: 'absolute',
+				left: 0,
+				top: 0,
+				width: LANTERN_WIDTH,
+				height: LANTERN_HEIGHT,
+			},
+			children: [
+				{
+					type: 'circle',
+					props: {
+						cx: orb.x,
+						cy: orb.y,
+						r: orb.radius + 11,
+						fill: 'none',
+						stroke: colour,
+						strokeWidth: 10,
+						strokeOpacity: 0.35,
+					},
+				},
+				{
+					type: 'circle',
+					props: {
+						cx: orb.x,
+						cy: orb.y,
+						r: orb.radius + 4,
+						fill: 'none',
+						stroke: colour,
+						strokeWidth: 4,
+						strokeOpacity: 1,
+					},
+				},
+			],
+		},
+	}
+}
+
+function createLeaders(
+	theme: OgTheme,
+	highlight: LandingPrimitiveId | null,
+): SatoriElement {
 	const glassX = LANTERN_WIDTH * landingLanternGlass.x
 	const glassY = LANTERN_HEIGHT * landingLanternGlass.y
 	const glassR = LANTERN_WIDTH * landingLanternGlass.r
 	const paths: Array<SatoriElement> = []
 	for (const word of wordCentres()) {
 		const colour = landingPrimitiveOgColors[theme][word.id]
+		const ink = leaderInk(word.id, highlight)
 		const orb = orbCentre(word.id)
 		const to = { x: LANTERN_WIDTH + WORD_GAP, y: word.y }
 		const from = landingLeaderOrbExit(orb, to, orb.radius)
@@ -109,7 +176,7 @@ function createLeaders(theme: OgTheme): SatoriElement {
 				stroke: colour,
 				strokeWidth: 8,
 				strokeLinecap: 'round',
-				strokeOpacity: 0.28,
+				strokeOpacity: ink.halo,
 			},
 		})
 		paths.push({
@@ -118,9 +185,9 @@ function createLeaders(theme: OgTheme): SatoriElement {
 				d,
 				fill: 'none',
 				stroke: colour,
-				strokeWidth: 2.6,
+				strokeWidth: ink.coreWidth,
 				strokeLinecap: 'round',
-				strokeOpacity: 0.95,
+				strokeOpacity: ink.core,
 			},
 		})
 	}
@@ -155,10 +222,20 @@ function createLeaders(theme: OgTheme): SatoriElement {
 	}
 }
 
-function createWords(theme: OgTheme): Array<SatoriElement> {
+function createWords(
+	theme: OgTheme,
+	highlight: LandingPrimitiveId | null,
+): Array<SatoriElement> {
 	const palette = getOgPalette(theme)
 	return wordCentres().map((word) => {
 		const colour = landingPrimitiveOgColors[theme][word.id]
+		const emphasized = highlight === word.id
+		const fontSize = emphasized ? WORD_FONT_SIZE + 4 : WORD_FONT_SIZE
+		const labelColor = emphasized
+			? colour
+			: highlight
+				? palette.textMuted
+				: palette.text
 		// Separate annotations so the two style objects are not unified into
 		// one type with optional keys (`undefined` is not a Satori style value).
 		const dot: SatoriElement = {
@@ -179,11 +256,11 @@ function createWords(theme: OgTheme): Array<SatoriElement> {
 			props: {
 				style: {
 					fontFamily: 'Bricolage Grotesque',
-					fontSize: WORD_FONT_SIZE,
+					fontSize,
 					fontWeight: 700,
 					lineHeight: 1,
 					letterSpacing: '-0.02em',
-					color: palette.text,
+					color: labelColor,
 					whiteSpace: 'nowrap',
 				},
 				children: word.word,
@@ -195,10 +272,10 @@ function createWords(theme: OgTheme): Array<SatoriElement> {
 				style: {
 					position: 'absolute',
 					left: LANTERN_WIDTH + WORD_GAP - DOT_SIZE / 2,
-					top: word.y - WORD_FONT_SIZE / 2,
+					top: word.y - fontSize / 2,
 					display: 'flex',
 					alignItems: 'center',
-					height: WORD_FONT_SIZE,
+					height: fontSize,
 				},
 				children: [dot, label],
 			},
@@ -209,6 +286,7 @@ function createWords(theme: OgTheme): Array<SatoriElement> {
 /** Lantern plus energy lines to the five homepage primitives. */
 export function createPrimitivesLantern(
 	theme: OgTheme = 'dark',
+	highlight: LandingPrimitiveId | null = null,
 ): SatoriElement {
 	return {
 		type: 'div',
@@ -238,8 +316,9 @@ export function createPrimitivesLantern(
 						},
 					},
 				},
-				createLeaders(theme),
-				...createWords(theme),
+				...(highlight ? [createOrbAccent(theme, highlight)] : []),
+				createLeaders(theme, highlight),
+				...createWords(theme, highlight),
 			],
 		},
 	}

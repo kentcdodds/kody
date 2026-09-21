@@ -54,6 +54,7 @@ import { InternalErrorPage } from './internal-error-page.tsx'
 import { SiteBanner } from './site-banner.tsx'
 import { YouTubeWatchOverlay } from './youtube-watch-overlay.tsx'
 import { scheduleConsumeAccountCreatedFathomSignal } from './fathom-events.ts'
+import { stripHomeOgQueryFromLocation } from './strip-home-og-query.ts'
 import {
 	captureFirstTouchAttributionFromLocation,
 	clearStoredFirstTouchAttribution,
@@ -194,6 +195,8 @@ export function App(handle: Handle<AppProps>) {
 		}
 		// Fathom loads deferred; retry briefly so OAuth ?accountCreated=1 is not dropped.
 		scheduleConsumeAccountCreatedFathomSignal()
+		// Share links carry `?og=` for crawlers. Humans should not keep it.
+		stripHomeOgQueryFromLocation()
 		if (handle.props.embeddedSession === undefined) {
 			handle.queueTask(() => {
 				queueSessionRefresh()
@@ -208,6 +211,7 @@ export function App(handle: Handle<AppProps>) {
 			handle.update()
 		})
 		listenToRouterNavigationEnd(handle, (detail) => {
+			stripHomeOgQueryFromLocation()
 			const nextPathname = new URL(detail.location, window.location.origin)
 				.pathname
 			if (nextPathname === lastFocusManagedPathname) return

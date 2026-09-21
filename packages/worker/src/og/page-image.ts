@@ -1,8 +1,13 @@
+import {
+	applyHomeOgVariant,
+	getHomeOgVariant,
+} from '#universal/home-og-variants.ts'
+import { type LandingPrimitiveId } from '#universal/landing-lantern.ts'
+import { type PublicOgPage } from '#universal/og-pages.ts'
 import { createAgentsHero } from '#worker/og/agents-hero.ts'
 import { createPrimitivesLantern } from '#worker/og/primitives-lantern.ts'
 import { getKodyDiscordDataUri } from '#worker/og/og-image-assets.ts'
 import { getOgPalette, type OgTheme } from '#worker/og/palette.ts'
-import { type PublicOgPage } from '#universal/og-pages.ts'
 import {
 	createOgFrame,
 	ensureRenderPipelineReady,
@@ -94,6 +99,7 @@ function createHeroHalo(input: {
 function createPageHero(input: {
 	kind: PageHeroKind
 	theme?: OgTheme
+	highlight?: LandingPrimitiveId | null
 }): SatoriElement {
 	switch (input.kind) {
 		case 'discord':
@@ -120,7 +126,10 @@ function createPageHero(input: {
 		case 'agents':
 			return createAgentsHero(input.theme ?? 'dark')
 		case 'primitives':
-			return createPrimitivesLantern(input.theme ?? 'dark')
+			return createPrimitivesLantern(
+				input.theme ?? 'dark',
+				input.highlight ?? null,
+			)
 		default: {
 			const _exhaustive: never = input.kind
 			throw new Error(`Unhandled page hero: ${_exhaustive}`)
@@ -131,6 +140,7 @@ function createPageHero(input: {
 function createPageOgMarkup(input: {
 	page: PublicOgPage
 	theme?: OgTheme
+	highlight?: LandingPrimitiveId | null
 }): SatoriElement {
 	const palette = getOgPalette(input.theme)
 	const heroKind = getPageHeroKind(input.page)
@@ -209,11 +219,34 @@ function createPageOgMarkup(input: {
 							],
 						},
 					},
-					createPageHero({ kind: heroKind, theme: input.theme }),
+					createPageHero({
+						kind: heroKind,
+						theme: input.theme,
+						highlight: input.highlight,
+					}),
 				],
 			},
 		},
 	})
+}
+
+/**
+ * Homepage `?og=` swaps the card copy and, for lantern and triggers doors,
+ * rings one orb. Unknown keys and every other page keep the default card.
+ */
+function resolveRenderedPage(input: {
+	page: PublicOgPage
+	homeOg?: string | null
+}): { page: PublicOgPage; highlight: LandingPrimitiveId | null } {
+	if (input.page.path !== '/') {
+		return { page: input.page, highlight: null }
+	}
+	const variant = getHomeOgVariant(input.homeOg)
+	if (!variant) return { page: input.page, highlight: null }
+	return {
+		page: applyHomeOgVariant(input.page, variant),
+		highlight: variant.highlight,
+	}
 }
 
 /** Render the generic OG image for a registered public page. */
@@ -221,7 +254,17 @@ export async function renderPageOgImage(input: {
 	page: PublicOgPage
 	theme?: OgTheme
 	assets?: OgAssetsFetcher
+	/** Raw `og` query value. Only `/` (the home card) honors it. */
+	homeOg?: string | null
 }): Promise<Uint8Array<ArrayBuffer>> {
 	await ensureRenderPipelineReady({ assets: input.assets })
-	return renderOgImage(createPageOgMarkup(input), { assets: input.assets })
+	const rendered = resolveRenderedPage(input)
+	return renderOgImage(
+		createPageOgMarkup({
+			page: rendered.page,
+			theme: input.theme,
+			highlight: rendered.highlight,
+		}),
+		{ assets: input.assets },
+	)
 }

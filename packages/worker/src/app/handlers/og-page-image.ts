@@ -12,16 +12,26 @@ export function createOgPageImageHandler(env: Env) {
 				return new Response('Not found', { status: 404 })
 			}
 
+			const requestUrl = new URL(request.url)
 			// `?theme=light` renders the pale variant; anything else falls back to
 			// the default rather than erroring, since crawlers own these URLs.
-			const theme = parseOgTheme(new URL(request.url).searchParams.get('theme'))
+			const theme = parseOgTheme(requestUrl.searchParams.get('theme'))
+			// Homepage `?og=` is a distinct card. Unknown values render the
+			// default home image. Other pages ignore the param.
+			const homeOg =
+				params.page === 'home' ? requestUrl.searchParams.get('og') : null
 
 			// Lazy import (sanctioned exception to the no-inline-imports rule):
 			// the OG renderer pulls in satori and @resvg/resvg-wasm plus two wasm
 			// binaries, which would otherwise bloat isolate cold starts for a
 			// route that is only hit by social-media crawlers.
 			const { renderPageOgImage } = await import('#worker/og/page-image.ts')
-			const png = await renderPageOgImage({ page, theme, assets: env.ASSETS })
+			const png = await renderPageOgImage({
+				page,
+				theme,
+				assets: env.ASSETS,
+				homeOg,
+			})
 
 			return new Response(png, {
 				status: 200,
