@@ -9,6 +9,7 @@ import {
 	landingLanternFrame,
 	landingLanternImage,
 	landingLanternOrbArt,
+	landingLanternOrbClipPath,
 	landingLanternOrbs,
 	landingPrimitiveColorVar,
 	type LandingPrimitiveId,
@@ -74,7 +75,10 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 					alt=""
 					class="landing-lantern-art"
 				/>
-				<div class="landing-lantern-orbs">
+				<div
+					class="landing-lantern-orbs"
+					style={{ 'clip-path': landingLanternOrbClipPath() }}
+				>
 					{landingLanternOrbs.map((orb) => {
 						const primitive = primitiveById(orb.id)
 						const open = activeId === orb.id
