@@ -154,6 +154,23 @@ test('homepage hero uses locked copy, compare, and session-aware connect CTA', a
 	expect(anonymousHtml).toContain('landing-hero-agent-track')
 	expect(anonymousHtml).toContain('href="/docs/github"')
 	expect(anonymousHtml).toContain('href="/docs/slack"')
+	const inviteTools =
+		anonymousHtml.match(
+			/<ul[^>]*class="[^"]*landing-invite-tools[^"]*"[\s\S]*?<\/ul>/,
+		)?.[0] ?? ''
+	for (const label of [
+		'GitHub',
+		'Linear',
+		'Sentry',
+		'Cloudflare',
+		'Slack',
+		'Public packages',
+	]) {
+		expect(inviteTools).toContain(label)
+	}
+	for (const icon of ['github', 'linear', 'sentry', 'cloudflare', 'slack']) {
+		expect(inviteTools).toContain(`/images/icons/${icon}.svg`)
+	}
 	expect(anonymousHtml).toContain('aria-label="Example triggers"')
 	for (const beat of landingFactoryBeats) {
 		expect(anonymousHtml).toContain(`href="/docs/${beat.slug}"`)
