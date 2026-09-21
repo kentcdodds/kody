@@ -1585,6 +1585,8 @@ html.is-settled {
 	}
 
 	html.js .landing-lantern-orb[data-open]::after,
+	html.js .landing-lantern-orb:hover::after,
+	html.js .landing-lantern-orb:focus-visible::after,
 	html.js .landing-primitives[data-active] .landing-lantern-orb::after {
 		animation: none;
 	}
