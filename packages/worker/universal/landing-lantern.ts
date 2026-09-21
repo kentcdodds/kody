@@ -44,73 +44,68 @@ export const landingLanternOrbArt = {
 	apps: '/images/lantern/kody-primitives-orb-apps.webp',
 } as const satisfies Record<LandingPrimitiveId, string>
 
-/** Glass globe in the shell: centre as fractions of width and height,
- *  radius as a fraction of width. Used to fade leaders inside the glass. */
+/** Glass globe: centre as fractions of width and height, radius as a
+ *  fraction of width. Used to fade leaders inside the glass. */
 export const landingLanternGlass = { x: 0.5, y: 0.545, r: 0.46 } as const
 
 /**
- * Underside of the cap and top of the base, as fractions of the lantern.
- * Sampled along the metal where it meets the glass. The orb clip follows
- * these lips, and the glass ellipse everywhere the metal does not cut in.
+ * Inner edge of the frame, as fractions of the still. Traced where the
+ * glass glow meets the metal: under the cap, around the globe, and above
+ * the base. The orb overlay stops on this line.
  */
-const landingLanternCapLip = [
-	[0.2, 0.246],
-	[0.225, 0.305],
-	[0.25, 0.307],
-	[0.275, 0.297],
-	[0.3, 0.289],
-	[0.324, 0.291],
-	[0.35, 0.299],
-	[0.375, 0.304],
-	[0.4, 0.31],
-	[0.425, 0.312],
-	[0.45, 0.312],
-	[0.475, 0.315],
-	[0.501, 0.314],
-	[0.525, 0.312],
-	[0.55, 0.311],
-	[0.575, 0.307],
-	[0.6, 0.299],
-	[0.625, 0.305],
-	[0.65, 0.304],
-	[0.676, 0.303],
-	[0.7, 0.297],
-	[0.725, 0.294],
-	[0.75, 0.298],
-	[0.775, 0.303],
-	[0.8, 0.245],
+const landingLanternFrameOpening = [
+	[0.021, 0.49],
+	[0.042, 0.451],
+	[0.059, 0.427],
+	[0.101, 0.383],
+	[0.143, 0.353],
+	[0.163, 0.341],
+	[0.226, 0.313],
+	[0.243, 0.312],
+	[0.302, 0.322],
+	[0.389, 0.329],
+	[0.448, 0.332],
+	[0.553, 0.332],
+	[0.66, 0.326],
+	[0.72, 0.32],
+	[0.758, 0.312],
+	[0.772, 0.312],
+	[0.834, 0.34],
+	[0.866, 0.358],
+	[0.907, 0.39],
+	[0.925, 0.407],
+	[0.952, 0.442],
+	[0.98, 0.494],
+	[0.98, 0.641],
+	[0.963, 0.676],
+	[0.928, 0.721],
+	[0.9, 0.746],
+	[0.869, 0.769],
+	[0.866, 0.787],
+	[0.845, 0.795],
+	[0.841, 0.799],
+	[0.838, 0.799],
+	[0.834, 0.793],
+	[0.827, 0.794],
+	[0.768, 0.808],
+	[0.681, 0.82],
+	[0.528, 0.827],
+	[0.435, 0.826],
+	[0.351, 0.822],
+	[0.292, 0.817],
+	[0.24, 0.81],
+	[0.198, 0.801],
+	[0.177, 0.794],
+	[0.163, 0.792],
+	[0.16, 0.8],
+	[0.153, 0.8],
+	[0.129, 0.787],
+	[0.125, 0.765],
+	[0.09, 0.739],
+	[0.052, 0.699],
+	[0.038, 0.68],
+	[0.021, 0.647],
 ] as const satisfies ReadonlyArray<readonly [number, number]>
-
-const landingLanternBaseLip = [
-	[0.2, 0.831],
-	[0.225, 0.836],
-	[0.25, 0.839],
-	[0.275, 0.841],
-	[0.3, 0.841],
-	[0.324, 0.842],
-	[0.35, 0.841],
-	[0.375, 0.842],
-	[0.4, 0.842],
-	[0.425, 0.843],
-	[0.45, 0.844],
-	[0.475, 0.845],
-	[0.501, 0.844],
-	[0.525, 0.844],
-	[0.55, 0.845],
-	[0.575, 0.848],
-	[0.6, 0.843],
-	[0.625, 0.846],
-	[0.65, 0.841],
-	[0.676, 0.84],
-	[0.7, 0.837],
-	[0.725, 0.835],
-	[0.75, 0.833],
-	[0.775, 0.829],
-	[0.8, 0.827],
-] as const satisfies ReadonlyArray<readonly [number, number]>
-
-/** Keep the clip just inside the metal pixel the lip was measured on. */
-const landingLanternLipInset = 0.004
 
 /**
  * Orb centres (percent of width and height), shared disc diameter (percent
@@ -137,58 +132,13 @@ export const landingLanternOrbs = [
 
 /**
  * Clip for the orb overlay. The sprite halo, pulse ring, and hover bloom
- * paint with the discs, so the clip is the glass opening: under the cap,
- * above the base, and inside the globe. It follows the metal where the
- * frame cuts into the glass, and the glass ellipse on the bare sides.
+ * paint with the discs, so the clip is the opening inside the frame.
  */
 export function landingLanternOrbClipPath() {
-	const { width, height } = landingLanternImage
-	const rx = landingLanternGlass.r
-	const ry = landingLanternGlass.r * (width / height)
-	const { x: cx, y: cy } = landingLanternGlass
-	const samples = 36
-	const top: Array<readonly [number, number]> = []
-	const bottom: Array<readonly [number, number]> = []
-	for (let index = 0; index <= samples; index++) {
-		const x = cx - rx + (2 * rx * index) / samples
-		const nx = (x - cx) / rx
-		const span = Math.sqrt(Math.max(0, 1 - nx * nx)) * ry
-		const ellipseTop = cy - span
-		const ellipseBottom = cy + span
-		const cap = lipAt(landingLanternCapLip, x)
-		const base = lipAt(landingLanternBaseLip, x)
-		const yTop = Math.max(
-			ellipseTop,
-			cap == null ? ellipseTop : cap + landingLanternLipInset,
-		)
-		const yBottom = Math.min(
-			ellipseBottom,
-			base == null ? ellipseBottom : base - landingLanternLipInset,
-		)
-		if (yBottom - yTop < 0.01) continue
-		top.push([x, yTop])
-		bottom.push([x, yBottom])
-	}
-	const points = [...top, ...bottom.reverse()]
 	const percent = (value: number) => `${Math.round(value * 1000) / 10}%`
-	return `polygon(${points
+	return `polygon(${landingLanternFrameOpening
 		.map(([x, y]) => `${percent(x)} ${percent(y)}`)
 		.join(',')})`
-}
-
-function lipAt(samples: ReadonlyArray<readonly [number, number]>, x: number) {
-	const first = samples[0]
-	const last = samples[samples.length - 1]
-	if (!first || !last || x < first[0] || x > last[0]) return null
-	for (let index = 1; index < samples.length; index++) {
-		const previous = samples[index - 1]!
-		const current = samples[index]!
-		if (x > current[0]) continue
-		const span = current[0] - previous[0]
-		const t = span === 0 ? 0 : (x - previous[0]) / span
-		return previous[1] + (current[1] - previous[1]) * t
-	}
-	return last[1]
 }
 
 /** CSS custom property that carries a primitive's color. */
