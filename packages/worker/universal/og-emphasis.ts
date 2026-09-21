@@ -26,13 +26,22 @@ export function parseOgEmphasis(text: string): Array<OgEmphasisRun> {
 		.filter((part) => part.text.length > 0)
 }
 
-/** Meta copy: drop `**` and join hard breaks with single spaces. */
+/**
+ * Meta copy: drop balanced `**` on each line, then join hard breaks with
+ * single spaces. Lines are parsed separately so a stray marker on one line
+ * cannot put asterisks back into the others. That matches the PNG, which
+ * also parses one line at a time.
+ */
 export function stripOgEmphasis(text: string): string {
-	return parseOgEmphasis(text)
-		.map((part) => part.text)
-		.join('')
+	return text
 		.split('\n')
-		.map((line) => line.replace(/\s+/g, ' ').trim())
+		.map((line) =>
+			parseOgEmphasis(line)
+				.map((part) => part.text)
+				.join('')
+				.replace(/\s+/g, ' ')
+				.trim(),
+		)
 		.filter((line) => line.length > 0)
 		.join(' ')
 }

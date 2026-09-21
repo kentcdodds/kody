@@ -32,6 +32,7 @@ test('stripOgEmphasis drops markers and collapses hard line breaks', () => {
 		stripOgEmphasis('The **software**\n**platform** your\nagents share'),
 	).toBe('The software platform your agents share')
 	expect(stripOgEmphasis('odd ** marker')).toBe('odd ** marker')
+	expect(stripOgEmphasis('Good **copy**\nstray **')).toBe('Good copy stray **')
 	expect(
 		stripOgEmphasis('Packages and jobs that don\u2019t need a chat open'),
 	).toBe('Packages and jobs that don\u2019t need a chat open')
