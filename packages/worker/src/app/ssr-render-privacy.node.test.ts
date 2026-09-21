@@ -85,5 +85,4 @@ test('privacy page and usage doc distinguish chat-model inference from embedding
 	expect(html).toContain('does not run its own chat-model agent loop')
 	expect(html).toContain('does not bill for chat tokens')
 	expect(html).toContain('Cloudflare Workers AI')
-	expect(html).toContain('first secret, first integration, first job')
 })

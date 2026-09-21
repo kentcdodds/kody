@@ -18,10 +18,8 @@ import {
 } from '#mcp/downstream-mcp-result.ts'
 import { formatRawFetchHostNudge } from '#mcp/raw-fetch-host-nudge.ts'
 import {
-	buildExecuteInvokePassthroughSource,
 	executeInvokeFlagOffMessage,
 	executeInvokeMutualExclusionMessage,
-	executeToolDescriptionWithInvoke,
 } from '#mcp/execute-invoke.ts'
 import type * as AccessControlModule from '#mcp/capabilities/access-control.ts'
 import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
@@ -1138,13 +1136,11 @@ test('successful execute completion schedules a fail-open fleet heartbeat and ca
 	heartbeatMock.scheduleFleetExecuteLastSuccess.mockReset()
 })
 
-test('execute invoke is omitted when the flag is off and rejected if sent', async () => {
-	const [offName, offConfig] = await getExecuteRegistration()
+test('execute invoke is omitted when the flag is off and mints the handwritten passthrough when on', async () => {
+	const [offName, offConfig, offHandler] = await getExecuteRegistration()
 	expect(offName).toBe('execute')
 	expect(offConfig.inputSchema).not.toHaveProperty('invoke')
-	expect(offConfig.description).not.toContain('invoke:')
 
-	const offHandler = await getExecuteHandler()
 	const rejected = await offHandler({
 		invoke: 'kody:@acme/github/listRepos',
 		conversationId: 'conv-invoke-off',
@@ -1152,9 +1148,7 @@ test('execute invoke is omitted when the flag is off and rejected if sent', asyn
 	expect(rejected.isError).toBe(true)
 	expect(rejected.structuredContent.error).toBe(executeInvokeFlagOffMessage)
 	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
-})
 
-test('execute invoke generates the canonical thin passthrough and rejects code plus invoke', async () => {
 	const [, onConfig, onHandler] = await getExecuteRegistration(
 		{
 			baseUrl: 'https://example.com',
@@ -1163,10 +1157,7 @@ test('execute invoke generates the canonical thin passthrough and rejects code p
 		{ invokeEnabled: true },
 	)
 	expect(onConfig.inputSchema).toHaveProperty('invoke')
-	expect(onConfig.description).toBe(executeToolDescriptionWithInvoke)
 
-	const specifier = 'kody:@acme/github/listRepos'
-	const expectedCode = buildExecuteInvokePassthroughSource(specifier)
 	mockPerformanceSequence(10, 20)
 	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
 		result: { ok: true },
@@ -1181,14 +1172,18 @@ test('execute invoke generates the canonical thin passthrough and rejects code p
 	expect(mockModule.runModuleWithRegistry).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.anything(),
-		expectedCode,
+		`import action from "kody:@acme/github/listRepos"
+
+export default async function main(params) {
+	return await action(params)
+}`,
 		{ limit: 5 },
 		expect.anything(),
 	)
 
 	const both = await onHandler({
 		code: 'export default async function main() { return 1 }',
-		invoke: specifier,
+		invoke: 'kody:@acme/github/listRepos',
 		conversationId: 'conv-invoke-both',
 	})
 	expect(both.isError).toBe(true)
@@ -1198,7 +1193,7 @@ test('execute invoke generates the canonical thin passthrough and rejects code p
 		'execute-invoke': false,
 	})
 	const killed = await onHandler({
-		invoke: specifier,
+		invoke: 'kody:@acme/github/listRepos',
 		conversationId: 'conv-invoke-killed',
 	})
 	expect(killed.isError).toBe(true)

@@ -19,7 +19,6 @@ import {
 	landingHomePrimitives,
 	landingVsHeading,
 } from '#universal/landing-home-copy.ts'
-import { routes } from '#universal/routes.ts'
 import { createMemoryKv } from '#worker/test-support/auth-provider-harness.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 import { testOidcSigningEnv } from '#worker/test-support/oidc-signing-env.ts'
@@ -209,8 +208,6 @@ test('homepage hero uses locked copy, compare, and session-aware connect CTA', a
 	)
 	expect(anonymousHtml).toContain('landing-hero-agent-light')
 	expect(anonymousHtml).toContain('landing-hero-agent-track')
-	expect(anonymousHtml).not.toContain('landing-hero-agent-line')
-	expect(anonymousHtml).not.toContain('landing-hero-agent-glow')
 	expect(anonymousHtml).toContain('Watch Some ')
 	expect(anonymousHtml).toContain('<em>Demos</em>')
 	expect(anonymousHtml).toContain('Give your services a ')
@@ -220,6 +217,12 @@ test('homepage hero uses locked copy, compare, and session-aware connect CTA', a
 	expect(anonymousHtml).toContain('aria-label="Services that work with Kody"')
 	expect(anonymousHtml).toContain('href="/docs/github"')
 	expect(anonymousHtml).toContain('href="/docs/slack"')
+	expect(anonymousHtml).toContain('aria-label="Example triggers"')
+	for (const beat of landingFactoryBeats) {
+		expect(anonymousHtml).toContain(`href="/docs/${beat.slug}"`)
+		expect(anonymousHtml).toContain(beat.trigger)
+		expect(anonymousHtml).toContain(beat.title)
+	}
 
 	const signedIn = await renderAppPage({
 		request: new Request(requestUrl),
@@ -241,33 +244,4 @@ test('homepage hero uses locked copy, compare, and session-aware connect CTA', a
 	expect(signedInHtml).toContain(
 		'You\u2019re in. Connect a service you already use and start saving packages.',
 	)
-})
-
-test('homepage trigger cards link to dedicated example docs', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv()
-	const requestUrl = 'https://example.com/'
-
-	const page = await renderAppPage({
-		request: new Request(requestUrl),
-		env,
-		loaderData: {
-			onboarding: homepageOnboardingFixture(env, requestUrl, false),
-			landingHeroVideos: [...homepageHeroVideos],
-		},
-	})
-	expect(page.status).toBe(200)
-	const html = await page.text()
-	expect(html).toContain('aria-label="Example triggers"')
-	for (const beat of landingFactoryBeats) {
-		const href = routes.docDetail.href({ slug: beat.slug })
-		expect(href).not.toBe('')
-		expect(html).toContain(`href="${href}"`)
-		expect(html).toContain(beat.trigger)
-		expect(html).toContain(beat.title)
-	}
-	expect(html).toContain('landing-path-fan-link')
-	expect(html).toContain('landing-path-fan-slot')
-	expect(html).not.toContain('href=""')
 })

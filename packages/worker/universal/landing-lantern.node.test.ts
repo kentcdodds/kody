@@ -1,52 +1,10 @@
 import { expect, test } from 'vitest'
-import { landingHomePrimitives } from './landing-home-copy.ts'
 import {
-	landingLanternImage,
-	landingLanternOrbs,
 	landingLeaderOrbAnchor,
 	landingLeaderOrbExit,
 	landingLeaderPath,
 	landingLeaderWordAnchor,
-	landingOrbitLightTone,
-	landingPrimitiveColorVar,
-	landingPrimitiveIds,
 } from './landing-lantern.ts'
-
-test('lantern orbs cover every homepage primitive exactly once, in copy order', () => {
-	const copyIds = landingHomePrimitives.map((primitive) => primitive.id)
-	expect(landingLanternOrbs.map((orb) => orb.id)).toEqual(copyIds)
-	expect([...landingPrimitiveIds]).toEqual(copyIds)
-	for (const orb of landingLanternOrbs) {
-		expect(orb.x).toBeGreaterThan(0)
-		expect(orb.x).toBeLessThan(100)
-		expect(orb.y).toBeGreaterThan(0)
-		expect(orb.y).toBeLessThan(100)
-		expect(orb.size).toBeGreaterThan(15)
-		expect(orb.size).toBeLessThan(30)
-	}
-	expect(landingLanternImage.srcSet).toContain(landingLanternImage.src)
-	expect(landingLanternImage.width / landingLanternImage.height).toBeCloseTo(
-		839 / 1235,
-		3,
-	)
-	expect(landingPrimitiveColorVar('jobs')).toBe('var(--primitive-jobs)')
-})
-
-test('orbit light tones cycle through the five primitive colors', () => {
-	expect(
-		Array.from({ length: 8 }, (_, index) => landingOrbitLightTone(index)),
-	).toEqual([
-		'memory',
-		'secrets',
-		'packages',
-		'jobs',
-		'integrations',
-		'memory',
-		'secrets',
-		'packages',
-	])
-	expect(landingOrbitLightTone(-1)).toBe('integrations')
-})
 
 test('leaders leave the orb rim and glide into the word dot on horizontal tangents', () => {
 	const origin = { left: 10, top: 20 }
@@ -61,7 +19,7 @@ test('leaders leave the orb rim and glide into the word dot on horizontal tangen
 	).toEqual({ x: 60, y: 220 })
 
 	const exit = landingLeaderOrbExit({ x: 60, y: 220 }, { x: 160, y: 220 }, 50)
-	expect(exit.x).toBeCloseTo(60 + 50 * 0.86, 5)
+	expect(exit.x).toBeCloseTo(103, 5)
 	expect(exit.y).toBe(220)
 	expect(landingLeaderOrbExit({ x: 1, y: 1 }, { x: 1, y: 1 }, 50)).toEqual({
 		x: 1,

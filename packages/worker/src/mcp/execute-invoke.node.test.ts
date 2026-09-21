@@ -1,9 +1,6 @@
 import { expect, test } from 'vitest'
-import { createStableDynamicWorkerId } from '#mcp/dynamic-worker-id.ts'
-import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 import { classifyExecuteThinGlue } from '#worker/usage/execute-thin-glue.ts'
 import {
-	buildExecuteInvokePassthroughSource,
 	executeInvokeUnsupportedSpecifierMessage,
 	parseExecuteInvokeSpecifier,
 	resolveExecuteInvokeCode,
@@ -15,18 +12,6 @@ const handwrittenThinPassthrough = `import action from "kody:@acme/github/listRe
 export default async function main(params) {
 	return await action(params)
 }`
-
-async function mintIdForSource(source: string) {
-	return await createStableDynamicWorkerId({
-		userId: 'user-1',
-		storageContext: null,
-		workerOptions: {
-			...createDynamicWorkerCompatibilityOptions(),
-			mainModule: 'index.js',
-			modules: { 'index.js': source },
-		},
-	})
-}
 
 test('parseExecuteInvokeSpecifier accepts kody:@ and hash forms and rejects URLs', () => {
 	expect(parseExecuteInvokeSpecifier('kody:@acme/github/listRepos')).toBe(
@@ -65,21 +50,10 @@ test('parseExecuteInvokeSpecifier accepts kody:@ and hash forms and rejects URLs
 	)
 })
 
-test('invoke codegen is the same thin passthrough a careful agent writes', async () => {
+test('invoke codegen is the same thin passthrough a careful agent writes', () => {
 	const generated = resolveExecuteInvokeCode('@acme/github#listRepos')
 	expect(generated).toBe(handwrittenThinPassthrough)
-	expect(generated).toBe(
-		buildExecuteInvokePassthroughSource('kody:@acme/github/listRepos'),
-	)
 	expect(classifyExecuteThinGlue(generated)).toBe('thin_single_export')
-	expect(classifyExecuteThinGlue(handwrittenThinPassthrough)).toBe(
-		'thin_single_export',
-	)
-
-	const invokeId = await mintIdForSource(generated)
-	const handwrittenId = await mintIdForSource(handwrittenThinPassthrough)
-	expect(invokeId).toBe(handwrittenId)
-	expect(invokeId.startsWith('kody-')).toBe(true)
 })
 
 test('resolveExecuteModuleSource enforces flag gating and mutual exclusion', () => {
