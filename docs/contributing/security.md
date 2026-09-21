@@ -535,21 +535,14 @@ guarded by a bearer secret comparison.
 
 - Saved secrets are encrypted at rest with AES-GCM under `SECRET_STORE_KEY` and
   scoped by `userId` (`packages/worker/src/mcp/secrets/`). Ciphertexts are
-  versioned (`v2.<iv>.<ct>`) and bound via AES-GCM additional authenticated data
-  to their purpose and owning identity (`user:<userId>` for user secrets,
-  `app:<slug>` for platform OAuth client secrets), so a ciphertext copied into
-  another user's row fails to decrypt. User-facing decrypt accepts only `v2`.
-  Unversioned (2-part) payloads are invalid on read. The operator pass at
-  `POST /__maintenance/reencrypt-secrets` decrypts that leftover shape with a
-  maintenance-only helper, re-encrypts as `v2` (same KEK; optimistic compare so
-  a concurrent user rotation wins; decrypt failures are counted and left
-  unchanged), and is the restore path after a D1 export sealed before the
-  2026-08-17 format-upgrade pass. Integration-owned OAuth tokens and user-lane
-  client secrets live only as ciphertext on `user_integrations` /
-  `user_oauth_apps`; they are not stored in `secret_entries`. A 2-part
-  ciphertext carries no AAD, so a copied row would decrypt under the maintenance
-  helper until rewritten. Row swaps already require write access to the
-  database, so this is defense-in-depth, not a standing hole.
+  `v2.<iv>.<ct>` and bound via AES-GCM additional authenticated data to their
+  purpose and owning identity (`user:<userId>` for user secrets, `app:<slug>`
+  for platform OAuth client secrets), so a ciphertext copied into another user's
+  row fails to decrypt. Integration-owned OAuth tokens and user-lane client
+  secrets live only as ciphertext on `user_integrations` / `user_oauth_apps`;
+  they are not stored in `secret_entries`. Row swaps already require write
+  access to the database, so AAD binding is defense-in-depth, not a standing
+  hole.
 - `SECRET_STORE_KEY` is escrowed for disaster recovery as a passphrase-sealed
   blob in the DR backup bucket (solo operator; see
   [Disaster recovery](./disaster-recovery.md) and

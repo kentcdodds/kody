@@ -2,13 +2,11 @@ import { expect, test, vi } from 'vitest'
 import {
 	decryptPlatformOauthClientSecret,
 	decryptSecretValue,
-	decryptUnversionedCiphertext,
 	encryptSecretValue,
 	encryptPlatformOauthClientSecret,
 	encryptWebhookUrlSecret,
 	decryptWebhookUrlSecret,
 	platformOauthAppContext,
-	secretCiphertextPurposes,
 	userSecretContext,
 	userWebhookUrlSecretContext,
 } from './crypto.ts'
@@ -35,7 +33,7 @@ test('secret encryption round-trips and rejects wrong keys or malformed payloads
 	).rejects.toThrow('Unable to decrypt secret value.')
 })
 
-test('secret AAD/versioning binds identity context, platform OAuth slugs, and rejects unversioned payloads', async () => {
+test('secret AAD/versioning binds identity context, platform OAuth slugs, and rejects malformed payloads', async () => {
 	const env = { SECRET_STORE_KEY: primaryKey }
 	const encrypted = await encryptSecretValue(
 		env,
@@ -102,42 +100,9 @@ test('secret AAD/versioning binds identity context, platform OAuth slugs, and re
 		),
 	).rejects.toThrow('Unable to decrypt webhook URL secret.')
 
-	// Reproduce the pre-v2 format: AES-GCM with no AAD, `<iv>.<ciphertext>`.
-	const digest = await crypto.subtle.digest(
-		'SHA-256',
-		new TextEncoder().encode(`mcp-secret-store:${primaryKey}`),
-	)
-	const key = await crypto.subtle.importKey('raw', digest, 'AES-GCM', false, [
-		'encrypt',
-	])
-	const legacyIv = crypto.getRandomValues(new Uint8Array(12))
-	const legacyCiphertext = new Uint8Array(
-		await crypto.subtle.encrypt(
-			{ name: 'AES-GCM', iv: legacyIv },
-			key,
-			new TextEncoder().encode('legacy-value'),
-		),
-	)
-	const toBase64Url = (bytes: Uint8Array) =>
-		btoa(String.fromCharCode(...bytes))
-			.replaceAll('+', '-')
-			.replaceAll('/', '_')
-			.replace(/=+$/, '')
-	const legacyPayload = `${toBase64Url(legacyIv)}.${toBase64Url(legacyCiphertext)}`
-
 	await expect(
-		decryptSecretValue(env, legacyPayload, userSecretContext('user-a')),
+		decryptSecretValue(env, `${iv}.${ciphertext}`, userSecretContext('user-a')),
 	).rejects.toThrow('Unable to decrypt secret value.')
-	await expect(
-		decryptSecretValue(env, legacyPayload, userSecretContext('user-b')),
-	).rejects.toThrow('Unable to decrypt secret value.')
-	expect(
-		await decryptUnversionedCiphertext(
-			env,
-			secretCiphertextPurposes.secretStore,
-			legacyPayload,
-		),
-	).toBe('legacy-value')
 })
 
 test('secret store CryptoKey derivation is cached across encrypt and decrypt', async () => {

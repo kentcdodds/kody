@@ -55,7 +55,6 @@ import { handleDrExportRequest } from '#worker/dr/dr-export-maintenance.ts'
 import { handleDoPitrRequest } from '#worker/dr/do-pitr-maintenance.ts'
 import { handleMailboxImportRequest } from '#worker/dr/mailbox-import-maintenance.ts'
 import { handleStatusIncidentEventRequest } from '#worker/status-incidents/maintenance.ts'
-import { handleSecretReencryptRequest } from './secret-reencrypt-maintenance.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 import { getLegacyHostRedirectResponse } from '#worker/app-legacy-redirect.ts'
 import { isRuntimeWorkerOwnedRequest } from '#worker/runtime-worker-routing.ts'
@@ -285,10 +284,6 @@ const appHandler = withCors({
 
 		if (url.pathname === '/__maintenance/status-incidents') {
 			return handleStatusIncidentEventRequest(request, env, ctx)
-		}
-
-		if (url.pathname === '/__maintenance/reencrypt-secrets') {
-			return handleSecretReencryptRequest(request, env)
 		}
 
 		if (url.pathname.startsWith('/__maintenance/')) {
