@@ -41,22 +41,23 @@ so the user can paste immediately.
 
 ## Query params
 
-| Param             | Required | Description                                                                                                                                                  |
-| ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `name`            | yes      | Secret name (for example `exampleApiKey`).                                                                                                                   |
-| `description`     | no       | Human-readable description shown in the UI.                                                                                                                  |
-| `expiresAt`       | no       | Optional UTC ISO expiry (`2026-12-01T00:00:00.000Z`) or a `YYYY-MM-DD` date stored as midnight UTC. Prefills the Expires field. Leave omitted for no expiry. |
-| `allowedHosts`    | no       | Comma-separated hosts to review for approval.                                                                                                                |
-| `allowedPackages` | no       | Comma-separated saved package ids to review for approval.                                                                                                    |
-| `scope`           | no       | `user` (default) or `package`.                                                                                                                               |
-| `packageId`       | no       | Required when `scope=package`. Use the saved package id that owns the secret.                                                                                |
+| Param             | Required | Description                                                                                                                                                                                                                                                           |
+| ----------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`            | yes      | Secret name (for example `exampleApiKey`).                                                                                                                                                                                                                            |
+| `description`     | no       | Human-readable description shown in the UI.                                                                                                                                                                                                                           |
+| `expiresAt`       | no       | Optional. Kody’s cutoff for sending the secret, separate from the provider token’s own expiration. UTC ISO (`2026-12-01T00:00:00.000Z`) or a `YYYY-MM-DD` date stored as midnight UTC. Prefills Expires. Leave omitted and Kody keeps the secret until it is deleted. |
+| `allowedHosts`    | no       | Comma-separated hosts to review for approval.                                                                                                                                                                                                                         |
+| `allowedPackages` | no       | Comma-separated saved package ids to review for approval.                                                                                                                                                                                                             |
+| `scope`           | no       | `user` (default) or `package`.                                                                                                                                                                                                                                        |
+| `packageId`       | no       | Required when `scope=package`. Use the saved package id that owns the secret.                                                                                                                                                                                         |
 
 ## Approval policy reminders
 
-- Saving a secret does **not** approve outbound hosts.
-- The account form prefills the requested hosts and packages for review.
-- Host approval uses the dedicated **`/connect/secrets`** page (`name` / `names`
-  and `hosts`). Package grants use `/account/secrets/approve`.
+- A prefilled `allowedHosts` list is on the form under **Where this secret can
+  be sent**. Saving writes that list with the secret.
+- When the save URL omitted hosts, or a later call says a host is not approved,
+  open **`/connect/secrets`** (`name` / `names` and `hosts`). Package grants use
+  `/account/secrets/approve`.
 - `hosts` must be hostname-shaped. Truncated or path-bearing values are rejected
   on that page and are not written to `allowedHosts`.
 

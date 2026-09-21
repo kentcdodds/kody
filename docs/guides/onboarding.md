@@ -34,6 +34,11 @@ Agent notes — for AI agents driving first-run from a copied onboarding prompt:
 - Integration difficulty: MCP is the easy path, a PAT/API key is harder and
   more powerful, OAuth is hardest and most powerful. Say that out loud before
   you start a setup.
+- Integration setup is one heading at a time. When a first win needs a GitHub
+  token, open `search({ entity: "guide:provider_github#create-a-token" })`,
+  then the next heading that section names (`#save-the-token`, then
+  `#confirm-the-call`). Open `#pull-request-readiness` when writing that
+  package.
 - Once they have made something useful, send them to Step 3
   (`/onboarding/step-3`) to connect another agent and reuse that same thing.
 - Paths like /onboarding are relative to the origin you fetched this guide
@@ -86,11 +91,14 @@ Then follow the matching playbook. One small win, then send them to
 ### Check if a PR is ready to ship
 
 Same spirit as the homepage demo: one useful check becomes a durable package
-they can run from any agent. Open `search({ entity: "guide:provider_github" })`
-if they need a token, then `search({ entity: "guide:package_lifecycle" })` and
-`search({ entity: "guide:package_authoring" })`. Persist a small checklist
-export (reviews, CI, mergeable). Smoke-test from execute, then save the package
-they own.
+they can run from any agent. When they need a token, open
+`search({ entity: "guide:provider_github#create-a-token" })` and follow the next
+heading that page names. When you write the checklist, open
+`search({ entity: "guide:provider_github#pull-request-readiness" })` — check
+runs, commit statuses, reviews, and `mergeable` are separate reads. Then
+`search({ entity: "guide:package_lifecycle" })` and
+`search({ entity: "guide:package_authoring" })`. Smoke-test from execute, then
+save the package they own.
 
 ### Ping me when something needs me
 

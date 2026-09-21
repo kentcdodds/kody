@@ -101,7 +101,9 @@ export function SecretEditorFields(handle: Handle<SecretEditorFieldsProps>) {
 						]}
 					/>
 					<p mix={css({ margin: 0, color: colors.textMuted })}>
-						Leave empty for no expiry. Stored as a UTC timestamp.
+						Optional. Leave this empty and Kody keeps the secret until you
+						delete it. This is Kody’s cutoff, separate from the provider’s own
+						expiration.
 					</p>
 				</label>
 
