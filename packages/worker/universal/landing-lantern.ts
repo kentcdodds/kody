@@ -66,7 +66,7 @@ export const landingLanternGlass = { x: 0.5, y: 0.545, r: 0.46 } as const
  * so the frame does not cover it. Measured where that lip gives way to the
  * bright glass.
  */
-export const landingLanternGlowAperture = {
+const landingLanternGlowAperture = {
 	top: 0.326,
 	bottom: 0.822,
 } as const
