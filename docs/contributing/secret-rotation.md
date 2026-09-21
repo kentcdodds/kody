@@ -15,9 +15,8 @@ saved-secret confidentiality.
 
 Cookie signing and saved-secret encryption use separate Worker secrets:
 
-- **Cookie signing** uses `COOKIE_SECRET` only.
-- **Saved-secret encryption** requires `SECRET_STORE_KEY`. There is no legacy
-  decryption fallback.
+- **Cookie signing** uses `COOKIE_SECRET`.
+- **Saved-secret encryption** uses `SECRET_STORE_KEY`.
 
 ## Rotating `COOKIE_SECRET`
 
