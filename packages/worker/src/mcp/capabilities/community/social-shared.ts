@@ -35,12 +35,12 @@ export const communityProfilePackageSchema = z.object({
 		.string()
 		.nullable()
 		.describe(
-			'Last time the package was published to its community listing, or null when it has no active listing.',
+			'Last time the package was published to its catalog entry, or null when it has no active listing.',
 		),
 	needs_republish: z
 		.boolean()
 		.describe(
-			'True when the active community listing pin is behind the package published commit. False when there is no listing, or the pin matches. Do not derive this from updated_at versus published_at.',
+			'True when the active catalog entry pin is behind the package published commit. False when there is no listing, or the pin matches. Do not derive this from updated_at versus published_at.',
 		),
 	hidden: z
 		.boolean()

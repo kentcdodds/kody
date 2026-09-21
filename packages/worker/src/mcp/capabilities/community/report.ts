@@ -9,13 +9,13 @@ export const communityReportCapability = defineDomainCapability(
 	{
 		name: 'communityReport',
 		description:
-			'Report a community listing to deployment admins. Reports include the reporter identity and are not anonymous.',
+			'Report a public package to deployment admins. Reports include the reporter identity and are not anonymous.',
 		keywords: ['community', 'report', 'abuse', 'moderation', 'listing'],
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
 		inputSchema: z.object({
-			listing_id: z.string().min(1).describe('Community listing id to report.'),
+			listing_id: z.string().min(1).describe('Catalog entry id to report.'),
 			reason: z
 				.string()
 				.min(1)

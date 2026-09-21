@@ -6,5 +6,5 @@ export function buildConnectOauthWhatsNextPrompt(input: {
 	service: string
 	connectionName: string
 }): string {
-	return `I just connected to ${input.service} with ${input.connectionName}. What should we do next? Is there a community package we can fork or one we can build to make using this integration easier?`
+	return `I just connected to ${input.service} with ${input.connectionName}. What should we do next? Is there a public package we can fork or one we can build to make using this integration easier?`
 }

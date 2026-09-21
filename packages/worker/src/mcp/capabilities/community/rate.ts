@@ -9,13 +9,13 @@ export const communityRateCapability = defineDomainCapability(
 	{
 		name: 'communityRate',
 		description:
-			'Rate a community listing after forking it. Stars measure usefulness (1–5); adaptation_effort measures how hard it was to adapt (1 = trivial, 5 = very hard). Ratings feed community search ranking.',
+			'Rate a public package after forking it. Stars measure usefulness (1–5); adaptation_effort measures how hard it was to adapt (1 = trivial, 5 = very hard). Ratings feed community search ranking.',
 		keywords: ['community', 'rate', 'rating', 'stars', 'fork', 'review'],
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
 		inputSchema: z.object({
-			listing_id: z.string().min(1).describe('Community listing id to rate.'),
+			listing_id: z.string().min(1).describe('Catalog entry id to rate.'),
 			stars: z
 				.number()
 				.int()

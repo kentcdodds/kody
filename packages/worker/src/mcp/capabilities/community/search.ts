@@ -38,7 +38,7 @@ export const communitySearchCapability = defineDomainCapability(
 		inputSchema: z.object({
 			query: z
 				.string()
-				.describe('Natural-language search query for community listings.'),
+				.describe('Natural-language search query for public packages.'),
 			limit: z
 				.number()
 				.int()
