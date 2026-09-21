@@ -1,12 +1,14 @@
 /**
  * Homepage `?og=` share-card variants.
  *
- * Headlines and subtitles are Marley's locked copy. `og:title` is the H1
- * and `og:description` is the sub, with no extra suffix. The default home
- * card (no param) stays in `og-pages.ts`.
+ * Headlines and subtitles are the locked homepage Open Graph copy. `**` marks
+ * words the PNG paints in the accent colour. `og:title` is the H1 and
+ * `og:description` is the sub, with those markers removed and hard line breaks
+ * collapsed to spaces. The default home card (no param) stays in `og-pages.ts`.
  */
 
 import { type LandingPrimitiveId } from '#universal/landing-lantern.ts'
+import { stripOgEmphasis } from '#universal/og-emphasis.ts'
 import { type PublicOgPage } from '#universal/og-pages.ts'
 
 const homeOgQueryParam = 'og'
@@ -49,92 +51,93 @@ const homeOgVariants = {
 	switch: {
 		group: 'icp',
 		highlight: null,
-		imageTitle: 'Switch agents. Keep the work.',
-		imageSubtitle: 'Memory, secrets, and packages that travel with you',
+		imageTitle: '**Switch** agents.\n**Keep** the work.',
+		imageSubtitle: 'Memory, secrets, and automations that travel with you',
 	},
 	'cursor-claude': {
 		group: 'icp',
 		highlight: null,
-		imageTitle: 'Built in Cursor. Run it in Claude.',
+		imageTitle: '**Build it**\nwith Cursor.\n**Run it**\nwith Claude.',
 		imageSubtitle: 'One package graph every agent can call',
 	},
 	skills: {
 		group: 'icp',
 		highlight: null,
-		imageTitle: 'Turn a skill into software you own',
-		imageSubtitle: 'Save it once. Invoke it from any MCP host',
+		imageTitle: 'Turn a skill into\n**software**',
+		imageSubtitle: 'Faster, cheaper, portable, and more reliable',
 	},
 	forever: {
 		group: 'icp',
 		highlight: null,
-		imageTitle: 'Say it once. Run it forever.',
-		imageSubtitle: "Packages and jobs that don't need a chat open",
+		imageTitle: 'Say it once.\nRun it **forever**.',
+		imageSubtitle: 'Packages and jobs that don\u2019t need a chat open',
 	},
 	secrets: {
 		group: 'icp',
 		highlight: 'secrets',
-		imageTitle: 'Secrets your agents can use, not read',
+		imageTitle: '**Secrets**\nyour agents\ncan use, not read',
 		imageSubtitle: 'The vault stays yours across every host',
 	},
 	shared: {
 		group: 'icp',
 		highlight: null,
-		imageTitle: 'The software platform your agents share',
+		imageTitle: 'The **software**\n**platform** your\nagents share',
 		imageSubtitle: 'One home for memory, packages, and jobs',
 	},
 	memory: {
 		group: 'lantern',
 		highlight: 'memory',
-		imageTitle: 'Stop re-explaining yourself to every agent',
+		imageTitle: '**Stop**\nre-explaining\nyourself to\nevery agent',
 		imageSubtitle: 'Shared memory your agents actually use',
 	},
 	packages: {
 		group: 'lantern',
 		highlight: 'packages',
-		imageTitle: 'Own the answer as a package',
-		imageSubtitle: 'Invoke it from any MCP host',
+		imageTitle: '**Custom software**\nfor your **agents**',
+		imageSubtitle: 'Invoke from your agent, any trigger, or even a custom app',
 	},
 	integrations: {
 		group: 'lantern',
 		highlight: 'integrations',
-		imageTitle: 'Connect the tools. Keep the software',
-		imageSubtitle: 'Integrations your packages call, not chat glue',
+		imageTitle: 'Connect the tools\n**once**',
+		imageSubtitle: 'One MCP server connects to all of your stuff',
 	},
 	apps: {
 		group: 'lantern',
 		highlight: 'apps',
-		imageTitle: 'Your agents share a real app surface',
-		imageSubtitle: 'Connect services. Keep the software',
+		imageTitle: 'Sometimes you\njust want a **UI**',
+		imageSubtitle: 'The agent builds it for you, it integrates with everything',
 	},
 	triggers: {
 		group: 'triggers-door',
 		highlight: 'triggers',
-		imageTitle: 'When it fires, your package runs',
-		imageSubtitle: 'Email, cron, and webhooks into software you own',
+		imageTitle: 'Invoke\ndeterministic\ncode from\n**anything**',
+		imageSubtitle:
+			'Trigger from email, cron, webhooks, events, and even a custom UI',
 	},
 	webhooks: {
 		group: 'triggers-door',
 		highlight: 'triggers',
-		imageTitle: 'Events in. Owned software out.',
-		imageSubtitle: 'Webhooks that wake packages you control',
+		imageTitle: 'Trigger **anything**\nfrom webhooks',
+		imageSubtitle: 'Connect everything you own with personal software',
 	},
 	email: {
 		group: 'triggers-door',
 		highlight: 'triggers',
-		imageTitle: 'When the email lands, the package runs',
-		imageSubtitle: 'Mail that starts work \u2014 not another inbox tab',
+		imageTitle: 'Run code from\nyour **email**',
+		imageSubtitle: 'Connect everything you own with personal software',
 	},
 	cron: {
 		group: 'triggers-door',
 		highlight: 'triggers',
-		imageTitle: 'Say it once. Run it on a schedule.',
-		imageSubtitle: 'Jobs that keep going with no chat open',
+		imageTitle: 'Put your\nautomations\non a schedule',
+		imageSubtitle: 'Connect everything you own with personal software',
 	},
 	subscriptions: {
 		group: 'triggers-door',
 		highlight: 'triggers',
-		imageTitle: 'When the subscription fires, the package runs',
-		imageSubtitle: 'Stripe and billing events into software you own',
+		imageTitle: 'Subscribe and\nemit custom\nevents',
+		imageSubtitle: 'Connect everything you own with personal software',
 	},
 } as const satisfies Record<HomeOgVariantId, HomeOgVariantEntry>
 
@@ -159,7 +162,7 @@ export function getHomeOgVariant(
 		highlight: entry.highlight,
 		imageTitle: entry.imageTitle,
 		imageSubtitle: entry.imageSubtitle,
-		ogTitle: entry.imageTitle,
+		ogTitle: stripOgEmphasis(entry.imageTitle),
 		ogDescription: entry.imageSubtitle,
 	}
 }

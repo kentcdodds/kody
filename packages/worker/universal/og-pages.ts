@@ -1,7 +1,7 @@
-import {
-	landingHeroHeadline,
-	landingHeroLead,
-} from '#universal/landing-home-copy.ts'
+import { stripOgEmphasis } from '#universal/og-emphasis.ts'
+
+const homeOgImageTitle = 'Don\u2019t **start over**\nwith every agent'
+const homeOgImageSubtitle = 'The software platform your agents share'
 
 /**
  * Registry of public pages that get a Satori-generated OG image at
@@ -26,12 +26,13 @@ export type PublicOgPage = {
 
 export const publicOgPages = {
 	home: {
-		// Shorter than the homepage hero so the share card stays a couplet.
-		// The newline is the 1200×630 break (after "over"), not a wording change.
-		imageTitle: "Don't start over\nwith every agent",
-		imageSubtitle: 'The software platform your agents share',
-		ogTitle: `${landingHeroHeadline} · Kody`,
-		ogDescription: landingHeroLead,
+		// Locked share card. `**` is accent emphasis in the PNG. The newline is
+		// the 1200×630 break (after "over"), not a wording change. Meta uses
+		// the same words with the markers removed.
+		imageTitle: homeOgImageTitle,
+		imageSubtitle: homeOgImageSubtitle,
+		ogTitle: stripOgEmphasis(homeOgImageTitle),
+		ogDescription: homeOgImageSubtitle,
 		path: '/',
 	},
 	community: {

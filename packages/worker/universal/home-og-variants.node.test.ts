@@ -4,6 +4,7 @@ import {
 	absolutizeDocumentHead,
 	resolveDocumentHead,
 } from '#universal/document-head.ts'
+import { stripOgEmphasis } from '#universal/og-emphasis.ts'
 import { publicOgPages } from '#universal/og-pages.ts'
 import {
 	applyHomeOgVariant,
@@ -37,7 +38,6 @@ test('every locked homepage og key resolves and unknown keys do not', () => {
 	for (const id of homeOgVariantIds) {
 		const variant = getHomeOgVariant(id)
 		expect(variant?.id).toBe(id)
-		expect(variant?.ogTitle).toBe(variant?.imageTitle)
 		expect(variant?.ogDescription).toBe(variant?.imageSubtitle)
 		expect(homeOgImagePath(id)).toBe(`/og/home.png?og=${id}`)
 	}
@@ -86,72 +86,97 @@ test('lantern keys ring that primitive and triggers doors ring triggers', () => 
 	}
 })
 
-test('share meta uses Marley locked headlines with no extra suffix', () => {
+test('share meta uses the locked headlines with markers stripped', () => {
 	const locked = {
-		switch: [
-			'Switch agents. Keep the work.',
-			'Memory, secrets, and packages that travel with you',
-		],
-		'cursor-claude': [
-			'Built in Cursor. Run it in Claude.',
-			'One package graph every agent can call',
-		],
-		skills: [
-			'Turn a skill into software you own',
-			'Save it once. Invoke it from any MCP host',
-		],
-		forever: [
-			'Say it once. Run it forever.',
-			"Packages and jobs that don't need a chat open",
-		],
-		secrets: [
-			'Secrets your agents can use, not read',
-			'The vault stays yours across every host',
-		],
-		shared: [
-			'The software platform your agents share',
-			'One home for memory, packages, and jobs',
-		],
-		memory: [
-			'Stop re-explaining yourself to every agent',
-			'Shared memory your agents actually use',
-		],
-		packages: ['Own the answer as a package', 'Invoke it from any MCP host'],
-		integrations: [
-			'Connect the tools. Keep the software',
-			'Integrations your packages call, not chat glue',
-		],
-		apps: [
-			'Your agents share a real app surface',
-			'Connect services. Keep the software',
-		],
-		triggers: [
-			'When it fires, your package runs',
-			'Email, cron, and webhooks into software you own',
-		],
-		webhooks: [
-			'Events in. Owned software out.',
-			'Webhooks that wake packages you control',
-		],
-		email: [
-			'When the email lands, the package runs',
-			'Mail that starts work \u2014 not another inbox tab',
-		],
-		cron: [
-			'Say it once. Run it on a schedule.',
-			'Jobs that keep going with no chat open',
-		],
-		subscriptions: [
-			'When the subscription fires, the package runs',
-			'Stripe and billing events into software you own',
-		],
+		switch: {
+			imageTitle: '**Switch** agents.\n**Keep** the work.',
+			ogTitle: 'Switch agents. Keep the work.',
+			subtitle: 'Memory, secrets, and automations that travel with you',
+		},
+		'cursor-claude': {
+			imageTitle: '**Build it**\nwith Cursor.\n**Run it**\nwith Claude.',
+			ogTitle: 'Build it with Cursor. Run it with Claude.',
+			subtitle: 'One package graph every agent can call',
+		},
+		skills: {
+			imageTitle: 'Turn a skill into\n**software**',
+			ogTitle: 'Turn a skill into software',
+			subtitle: 'Faster, cheaper, portable, and more reliable',
+		},
+		forever: {
+			imageTitle: 'Say it once.\nRun it **forever**.',
+			ogTitle: 'Say it once. Run it forever.',
+			subtitle: 'Packages and jobs that don\u2019t need a chat open',
+		},
+		secrets: {
+			imageTitle: '**Secrets**\nyour agents\ncan use, not read',
+			ogTitle: 'Secrets your agents can use, not read',
+			subtitle: 'The vault stays yours across every host',
+		},
+		shared: {
+			imageTitle: 'The **software**\n**platform** your\nagents share',
+			ogTitle: 'The software platform your agents share',
+			subtitle: 'One home for memory, packages, and jobs',
+		},
+		memory: {
+			imageTitle: '**Stop**\nre-explaining\nyourself to\nevery agent',
+			ogTitle: 'Stop re-explaining yourself to every agent',
+			subtitle: 'Shared memory your agents actually use',
+		},
+		packages: {
+			imageTitle: '**Custom software**\nfor your **agents**',
+			ogTitle: 'Custom software for your agents',
+			subtitle: 'Invoke from your agent, any trigger, or even a custom app',
+		},
+		integrations: {
+			imageTitle: 'Connect the tools\n**once**',
+			ogTitle: 'Connect the tools once',
+			subtitle: 'One MCP server connects to all of your stuff',
+		},
+		apps: {
+			imageTitle: 'Sometimes you\njust want a **UI**',
+			ogTitle: 'Sometimes you just want a UI',
+			subtitle: 'The agent builds it for you, it integrates with everything',
+		},
+		triggers: {
+			imageTitle: 'Invoke\ndeterministic\ncode from\n**anything**',
+			ogTitle: 'Invoke deterministic code from anything',
+			subtitle:
+				'Trigger from email, cron, webhooks, events, and even a custom UI',
+		},
+		webhooks: {
+			imageTitle: 'Trigger **anything**\nfrom webhooks',
+			ogTitle: 'Trigger anything from webhooks',
+			subtitle: 'Connect everything you own with personal software',
+		},
+		email: {
+			imageTitle: 'Run code from\nyour **email**',
+			ogTitle: 'Run code from your email',
+			subtitle: 'Connect everything you own with personal software',
+		},
+		cron: {
+			imageTitle: 'Put your\nautomations\non a schedule',
+			ogTitle: 'Put your automations on a schedule',
+			subtitle: 'Connect everything you own with personal software',
+		},
+		subscriptions: {
+			imageTitle: 'Subscribe and\nemit custom\nevents',
+			ogTitle: 'Subscribe and emit custom events',
+			subtitle: 'Connect everything you own with personal software',
+		},
 	} as const
 	for (const id of homeOgVariantIds) {
 		const variant = getHomeOgVariant(id)
-		expect(variant?.imageTitle).toBe(locked[id][0])
-		expect(variant?.imageSubtitle).toBe(locked[id][1])
-		expect(variant?.ogTitle).toBe(locked[id][0])
-		expect(variant?.ogDescription).toBe(locked[id][1])
+		const row = locked[id]
+		expect(variant?.imageTitle).toBe(row.imageTitle)
+		expect(variant?.imageSubtitle).toBe(row.subtitle)
+		expect(variant?.ogTitle).toBe(row.ogTitle)
+		expect(variant?.ogDescription).toBe(row.subtitle)
+		expect(stripOgEmphasis(row.imageTitle)).toBe(row.ogTitle)
+		// Same budget as TITLE_MAX_LENGTH in page-image.ts. Markers and
+		// breaks count, so a line that only fits after truncation would
+		// lose a word or an emphasis span.
+		expect(row.imageTitle.length).toBeLessThanOrEqual(60)
 	}
 	const switchHead = absolutizeDocumentHead(
 		resolveDocumentHead('/', undefined, '?og=switch'),
@@ -168,11 +193,19 @@ test('share meta uses Marley locked headlines with no extra suffix', () => {
 		'https://kody.codes/og/home.png?og=cursor-claude',
 	)
 	expect(switchHead.og?.imageUrl).not.toBe(cursorHead.og?.imageUrl)
-	expect(switchHead.og?.title).toBe(locked.switch[0])
-	expect(switchHead.og?.description).toBe(locked.switch[1])
-	expect(publicOgPages.home.imageTitle).toContain("Don't start over")
+	expect(switchHead.og?.title).toBe(locked.switch.ogTitle)
+	expect(switchHead.og?.description).toBe(locked.switch.subtitle)
+	expect(publicOgPages.home.imageTitle).toBe(
+		'Don\u2019t **start over**\nwith every agent',
+	)
+	expect(publicOgPages.home.ogTitle).toBe(
+		'Don\u2019t start over with every agent',
+	)
 	expect(publicOgPages.home.imageSubtitle).toBe(
 		'The software platform your agents share',
+	)
+	expect(publicOgPages.home.ogDescription).toBe(
+		publicOgPages.home.imageSubtitle,
 	)
 })
 
