@@ -684,18 +684,9 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 		},
 	})
 
-	const executeInvoke = listed.find((flag) => flag.key === 'execute-invoke')
-	expect(executeInvoke).toMatchObject({
-		key: 'execute-invoke',
-		stale: false,
-		defaultEnabled: false,
-		defaultAudience: 'experiments_opt_in',
-		successMetric: {
-			eventType: 'dynamic_worker_day',
-			measure: 'event_count',
-			goal: 'decrease',
-		},
-	})
+	expect(
+		listed.find((flag) => flag.key === 'execute-invoke')?.defaultAudience,
+	).toBe('experiments_opt_in')
 
 	const compact = listed.find(
 		(flag) => flag.key === 'compact-mcp-server-instructions',

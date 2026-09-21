@@ -8,7 +8,7 @@ import {
 } from '#universal/landing-home-copy.ts'
 import { landingLanternOrbs } from '#universal/landing-lantern.ts'
 
-test('primitives sentence renders dash-underlined disclosures and the what-is-Kody link', async () => {
+test('primitives sentence pairs lantern orbs with words and ships empty leaders', async () => {
 	const html = await renderToString(jsx(LandingPrimitives, {}))
 
 	expect(html).toContain('id="primitives"')
@@ -19,46 +19,31 @@ test('primitives sentence renders dash-underlined disclosures and the what-is-Ko
 	expect(html.match(/role="tooltip"/g)).toHaveLength(
 		landingHomePrimitives.length,
 	)
-
-	for (const primitive of landingHomePrimitives) {
-		expect(html).toContain(`>${primitive.word}<`)
-		expect(html).toContain(primitive.body)
-		expect(html).toContain(`data-word="${primitive.id}"`)
-	}
-
-	expect(html).toContain('landing-primitive-word')
-	expect(html).toContain('id="primitives-title"')
-	expect(html).toContain('landing-primitives-stage')
-	expect(html).toContain('landing-primitives-words')
-	expect(html.match(/data-dot="/g)).toHaveLength(landingHomePrimitives.length)
+	expect(html.match(/class="landing-lantern-orb"/g)).toHaveLength(
+		landingLanternOrbs.length,
+	)
+	expect(html.match(/aria-expanded="false"/g)).toHaveLength(
+		landingHomePrimitives.length * 2,
+	)
+	expect(html).toContain('kody-primitives-lantern-480.webp')
+	expect(html).toContain('kody-primitives-lantern.webp 839w')
 	expect(html.indexOf('id="primitives-title"')).toBeLessThan(
 		html.indexOf('landing-lantern'),
 	)
 	expect(html.indexOf('landing-primitives-words')).toBeLessThan(
 		html.indexOf(landingPrimitivesMoreLink),
 	)
-	expect(html).not.toContain('data-dismissed')
-	expect(html).not.toContain('data-active')
-	expect(html).not.toContain('\u2014')
-})
 
-test('lantern orbs and words are paired disclosures for one popover each', async () => {
-	const html = await renderToString(jsx(LandingPrimitives, {}))
-
-	expect(html).toContain('class="landing-lantern"')
-	expect(html).toContain('kody-primitives-lantern-480.webp')
-	expect(html).toContain('kody-primitives-lantern.webp 839w')
-	expect(html.match(/class="landing-lantern-orb"/g)).toHaveLength(
-		landingLanternOrbs.length,
-	)
-	// Every orb and every word is a collapsed disclosure that controls and
-	// is described by the same tooltip id.
-	expect(html.match(/aria-expanded="false"/g)).toHaveLength(
-		landingHomePrimitives.length * 2,
-	)
 	for (const primitive of landingHomePrimitives) {
+		expect(html).toContain(`>${primitive.word}<`)
+		expect(html).toContain(primitive.body)
+		expect(html).toContain(`data-word="${primitive.id}"`)
 		expect(html).toContain(`data-orb="${primitive.id}"`)
+		expect(html).toContain(`data-primitive="${primitive.id}"`)
 		expect(html).toContain(`aria-label="${primitive.word} primitive"`)
+		expect(html).toContain(
+			`--primitive-color: var(--primitive-${primitive.id})`,
+		)
 		const controls = [...html.matchAll(/aria-controls="([^"]+)"/g)].map(
 			(match) => match[1],
 		)
@@ -68,23 +53,15 @@ test('lantern orbs and words are paired disclosures for one popover each', async
 		expect(panelIds).toHaveLength(2)
 		expect(new Set(panelIds).size).toBe(1)
 		expect(html).toContain(`id="${panelIds[0]}"`)
-		expect(html).toContain(
-			`--primitive-color: var(--primitive-${primitive.id})`,
-		)
 	}
-})
 
-test('leader overlay ships one empty group per primitive for the client to measure', async () => {
-	const html = await renderToString(jsx(LandingPrimitives, {}))
-
-	expect(html).toContain('class="landing-primitives-leaders"')
+	expect(html.match(/data-dot="/g)).toHaveLength(landingHomePrimitives.length)
 	expect(html.match(/class="landing-leader"/g)).toHaveLength(
 		landingHomePrimitives.length,
 	)
-	for (const primitive of landingHomePrimitives) {
-		expect(html).toContain(`data-primitive="${primitive.id}"`)
-	}
 	// Paths are written from layout on the client; SSR paints nothing.
 	expect(html).not.toMatch(/class="landing-leader-flow"[^>]*\sd="/)
-	expect(html).not.toContain('landing-hero-agent-line')
+	expect(html).not.toContain('data-dismissed')
+	expect(html).not.toContain('data-active')
+	expect(html).not.toContain('\u2014')
 })

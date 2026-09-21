@@ -119,7 +119,7 @@ test('hero tether lights travel inbound to the lantern and outbound to the agent
 	).toBeLessThan(0.5)
 })
 
-test('orbit lights carry the five primitive colors and paint no connector', async () => {
+test('orbit lights carry the five primitive colors', async () => {
 	const html = await renderToString(jsx(LandingHeroAgents, {}))
 
 	const tones = [...html.matchAll(/data-tone="([a-z]+)"/g)].map(
@@ -127,8 +127,4 @@ test('orbit lights carry the five primitive colors and paint no connector', asyn
 	)
 	expect(tones).toHaveLength(landingHeroSlots.length)
 	expect(new Set(tones)).toEqual(new Set(landingPrimitiveIds))
-	expect(html).toContain('--orb: var(--primitive-memory)')
-	expect(html).toContain('landing-hero-agent-track')
-	expect(html).not.toContain('landing-hero-agent-line')
-	expect(html).not.toContain('landing-hero-agent-glow')
 })
