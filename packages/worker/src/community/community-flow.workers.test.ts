@@ -394,7 +394,7 @@ test('public package flow works end-to-end through capability handlers', async (
 	).rejects.toSatisfy(
 		(error: unknown) =>
 			error instanceof CommunityActionError &&
-			error.message === 'Fork this community listing before rating it.',
+			error.message === 'Fork this public package before rating it.',
 	)
 
 	await communityRateCapability.handler(
@@ -559,7 +559,7 @@ test('public package flow works end-to-end through capability handlers', async (
 			listingId,
 			featured: true,
 		}),
-	).rejects.toThrow('Delisted community listings cannot be featured.')
+	).rejects.toThrow('Delisted catalog entries cannot be featured.')
 
 	await banCommunityUser({
 		env: testEnv,
