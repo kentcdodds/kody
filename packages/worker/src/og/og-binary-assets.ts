@@ -21,6 +21,8 @@ const OG_ASSET_URLS = {
 	// PNG of the homepage hero (`images/hero/kody-base-*.webp`) — Satori/resvg
 	// need PNG; pixels match the live landing base (chips/tethers drawn on top).
 	kodyBase: 'https://assets.local/og/kody-base.png',
+	// PNG of the homepage primitives lantern (`images/kody-primitives-lantern.webp`).
+	kodyPrimitivesLantern: 'https://assets.local/og/kody-primitives-lantern.png',
 	kodyDiscord: 'https://assets.local/og/kody-discord.png',
 	kodyLogo: 'https://assets.local/og/kody-logo.png',
 } as const
@@ -41,6 +43,7 @@ type OgBinaryAssetCache = {
 	kodyPatternDarkDataUri: string
 	kodyPatternLightDataUri: string
 	kodyBaseDataUri: string
+	kodyPrimitivesLanternDataUri: string
 	kodyDiscordDataUri: string
 	kodyLogoDataUri: string
 	agentIconSvgs: AgentIconSvgById
@@ -112,6 +115,7 @@ async function loadOgBinaryAssets(
 		kodyPatternDark,
 		kodyPatternLight,
 		kodyBase,
+		kodyPrimitivesLantern,
 		kodyDiscord,
 		kodyLogo,
 		...iconResults
@@ -121,6 +125,7 @@ async function loadOgBinaryAssets(
 		fetchAssetBytes(assets, OG_ASSET_URLS.kodyPatternDark),
 		fetchAssetBytes(assets, OG_ASSET_URLS.kodyPatternLight),
 		fetchAssetBytes(assets, OG_ASSET_URLS.kodyBase),
+		fetchAssetBytes(assets, OG_ASSET_URLS.kodyPrimitivesLantern),
 		fetchAssetBytes(assets, OG_ASSET_URLS.kodyDiscord),
 		fetchAssetBytes(assets, OG_ASSET_URLS.kodyLogo),
 		...iconFetches,
@@ -137,6 +142,7 @@ async function loadOgBinaryAssets(
 		kodyPatternDarkDataUri: bytesToPngDataUri(kodyPatternDark),
 		kodyPatternLightDataUri: bytesToPngDataUri(kodyPatternLight),
 		kodyBaseDataUri: bytesToPngDataUri(kodyBase),
+		kodyPrimitivesLanternDataUri: bytesToPngDataUri(kodyPrimitivesLantern),
 		kodyDiscordDataUri: bytesToPngDataUri(kodyDiscord),
 		kodyLogoDataUri: bytesToPngDataUri(kodyLogo),
 		agentIconSvgs,
@@ -194,6 +200,10 @@ export function getKodyPatternDataUri(theme: 'light' | 'dark'): string {
 
 export function getKodyBaseDataUri(): string {
 	return requireCache().kodyBaseDataUri
+}
+
+export function getKodyPrimitivesLanternDataUri(): string {
+	return requireCache().kodyPrimitivesLanternDataUri
 }
 
 export function getLandingAgentIconDataUri(

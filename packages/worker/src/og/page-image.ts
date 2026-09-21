@@ -1,4 +1,5 @@
 import { createAgentsHero } from '#worker/og/agents-hero.ts'
+import { createPrimitivesLantern } from '#worker/og/primitives-lantern.ts'
 import { getKodyDiscordDataUri } from '#worker/og/og-image-assets.ts'
 import { getOgPalette, type OgTheme } from '#worker/og/palette.ts'
 import { type PublicOgPage } from '#universal/og-pages.ts'
@@ -13,11 +14,42 @@ import {
 
 const TITLE_MAX_LENGTH = 60
 const SUBTITLE_MAX_LENGTH = 160
+const PAGE_TITLE_WIDTH = 580
+/** Other pages wrap inside this measure. Home uses the title column so its one-line subtitle fits. */
+const PAGE_SUBTITLE_WIDTH = 560
 
-type PageHeroKind = 'lantern' | 'discord'
+function ogTextLines(text: string, maxLength: number): Array<string> {
+	return truncateOgText(text, maxLength)
+		.split('\n')
+		.filter((line) => line.length > 0)
+}
+
+/**
+ * A single string lets Satori wrap. Author `\n` breaks become one node per
+ * line, which is the only way a hard break survives in this renderer.
+ */
+function ogTextChildren(
+	lines: Array<string>,
+): SatoriElement['props']['children'] {
+	if (lines.length <= 1) return lines[0] ?? ''
+	return lines.map((line) => ({
+		type: 'div',
+		props: { children: line },
+	}))
+}
+
+function pageSubtitleMaxWidth(page: PublicOgPage): number {
+	// "The software platform your agents share" is 564px at 30px. A 560
+	// measure drops "agents share"; the title column keeps it one line.
+	return page.path === '/' ? PAGE_TITLE_WIDTH : PAGE_SUBTITLE_WIDTH
+}
+
+type PageHeroKind = 'agents' | 'primitives' | 'discord'
 
 function getPageHeroKind(page: PublicOgPage): PageHeroKind {
-	return page.path === '/discord' ? 'discord' : 'lantern'
+	if (page.path === '/') return 'primitives'
+	if (page.path === '/discord') return 'discord'
+	return 'agents'
 }
 
 function createHeroHalo(input: {
@@ -46,8 +78,11 @@ function createHeroHalo(input: {
 					},
 				},
 			}
-		case 'lantern':
+		case 'agents':
 			// Warm glow is composed inside `createAgentsHero` on the lantern.
+			return null
+		case 'primitives':
+			// The homepage still carries its own orb light.
 			return null
 		default: {
 			const _exhaustive: never = input.kind
@@ -82,8 +117,10 @@ function createPageHero(input: {
 					},
 				},
 			}
-		case 'lantern':
+		case 'agents':
 			return createAgentsHero(input.theme ?? 'dark')
+		case 'primitives':
+			return createPrimitivesLantern(input.theme ?? 'dark')
 		default: {
 			const _exhaustive: never = input.kind
 			throw new Error(`Unhandled page hero: ${_exhaustive}`)
@@ -98,6 +135,7 @@ function createPageOgMarkup(input: {
 	const palette = getOgPalette(input.theme)
 	const heroKind = getPageHeroKind(input.page)
 	const halo = createHeroHalo({ kind: heroKind, theme: input.theme })
+	const titleLines = ogTextLines(input.page.imageTitle, TITLE_MAX_LENGTH)
 	return createOgFrame({
 		theme: input.theme,
 		children: {
@@ -116,7 +154,7 @@ function createPageOgMarkup(input: {
 						type: 'div',
 						props: {
 							style: {
-								width: 580,
+								width: PAGE_TITLE_WIDTH,
 								display: 'flex',
 								flexDirection: 'column',
 								position: 'relative',
@@ -133,18 +171,24 @@ function createPageOgMarkup(input: {
 											letterSpacing: '-0.03em',
 											marginBottom: 24,
 											color: palette.text,
+											// Satori's default flex row would place hard-broken
+											// lines side by side. Single-line titles stay on the
+											// default so their wrap is unchanged.
+											...(titleLines.length > 1
+												? {
+														display: 'flex',
+														flexDirection: 'column' as const,
+													}
+												: {}),
 										},
-										children: truncateOgText(
-											input.page.imageTitle,
-											TITLE_MAX_LENGTH,
-										),
+										children: ogTextChildren(titleLines),
 									},
 								},
 								{
 									type: 'div',
 									props: {
 										style: {
-											maxWidth: 560,
+											maxWidth: pageSubtitleMaxWidth(input.page),
 											display: 'flex',
 											flexDirection: 'column',
 											// Sized and toned for a feed thumbnail rather than a
@@ -153,15 +197,13 @@ function createPageOgMarkup(input: {
 											lineHeight: 1.36,
 											color: palette.textReading,
 										},
-										children: truncateOgText(
+										children: ogTextLines(
 											input.page.imageSubtitle,
 											SUBTITLE_MAX_LENGTH,
-										)
-											.split('\n')
-											.map((line) => ({
-												type: 'div',
-												props: { children: line },
-											})),
+										).map((line) => ({
+											type: 'div',
+											props: { children: line },
+										})),
 									},
 								},
 							],

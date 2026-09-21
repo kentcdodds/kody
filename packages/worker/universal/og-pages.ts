@@ -1,7 +1,6 @@
 import {
 	landingHeroHeadline,
 	landingHeroLead,
-	landingHeroSubhead,
 } from '#universal/landing-home-copy.ts'
 
 /**
@@ -27,9 +26,10 @@ export type PublicOgPage = {
 
 export const publicOgPages = {
 	home: {
-		// Same headline and supporting lines as the live homepage hero.
-		imageTitle: landingHeroHeadline,
-		imageSubtitle: landingHeroSubhead,
+		// Shorter than the homepage hero so the share card stays a couplet.
+		// The newline is the 1200×630 break (after "over"), not a wording change.
+		imageTitle: "Don't start over\nwith every agent",
+		imageSubtitle: 'The software platform your agents share',
 		ogTitle: `${landingHeroHeadline} · Kody`,
 		ogDescription: landingHeroLead,
 		path: '/',

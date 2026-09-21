@@ -22,6 +22,7 @@ type OgBinaryAssetCache = {
 	kodyPatternDarkDataUri: string
 	kodyPatternLightDataUri: string
 	kodyBaseDataUri: string
+	kodyPrimitivesLanternDataUri: string
 	kodyDiscordDataUri: string
 	kodyLogoDataUri: string
 	agentIconSvgs: AgentIconSvgById
@@ -84,6 +85,10 @@ function ensureCache(): OgBinaryAssetCache {
 		),
 		// Same pixels as `images/hero/kody-base-640.webp` (PNG for Satori).
 		kodyBaseDataUri: bytesToPngDataUri(readOgAssetFile('kody-base.png')),
+		// Same pixels as `images/kody-primitives-lantern.webp` (PNG for Satori).
+		kodyPrimitivesLanternDataUri: bytesToPngDataUri(
+			readOgAssetFile('kody-primitives-lantern.png'),
+		),
 		kodyDiscordDataUri: bytesToPngDataUri(readOgAssetFile('kody-discord.png')),
 		kodyLogoDataUri: bytesToPngDataUri(readOgAssetFile('kody-logo.png')),
 		agentIconSvgs: loadAgentIconSvgs(),
@@ -119,6 +124,10 @@ export function getKodyPatternDataUri(theme: 'light' | 'dark'): string {
 
 export function getKodyBaseDataUri(): string {
 	return ensureCache().kodyBaseDataUri
+}
+
+export function getKodyPrimitivesLanternDataUri(): string {
+	return ensureCache().kodyPrimitivesLanternDataUri
 }
 
 export function getLandingAgentIconDataUri(
