@@ -203,8 +203,8 @@ agent-callable package API.
 The `/connect/oauth` success page shows a **What's next?** prompt the user can
 copy into their agent. The prompt names the resolved provider and the saved
 connection (for example `google` / `google-work`) and asks whether to fork a
-community package or build a helpers package. The same prompt is in the
-`nextSteps` JSON on the connect success response.
+public package or build a helpers package. The same prompt is in the `nextSteps`
+JSON on the connect success response.
 
 Do not treat connect success as “the Google/GitHub/etc. package is ready.” Next
 step is smoke-test auth, then `communitySearch` (preferring `trusted`) or create

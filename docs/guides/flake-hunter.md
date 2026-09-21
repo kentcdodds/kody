@@ -17,8 +17,8 @@ your laptop is closed, with no model in the loop and no tokens spent.
 
 Live public package:
 [`@kentcdodds/e2e-flake-hunter`](https://kody.codes/@kentcdodds/e2e-flake-hunter).
-Fork that listing when you want the same hunt on your repo. The primitive is
-documented in [Jobs, workflows, and webhooks](./triggers.md).
+Fork that public package when you want the same hunt on your repo. The primitive
+is documented in [Jobs, workflows, and webhooks](./triggers.md).
 
 ## The job
 
@@ -125,11 +125,10 @@ Paste one of these into an agent already connected to your Kody account.
 | `/account/jobs`     | The `daily` row, enable/disable, timezone, and "run now"                    |
 | `/account/activity` | Failures and recent runs for that job                                       |
 | Your inbox          | Mail only when the sweep found something worth saying                       |
-| Package listing     | Public page at `/@username/e2e-flake-hunter` after you publish a named copy |
+| Package page        | Public page at `/@username/e2e-flake-hunter` after you publish a named copy |
 
 The homepage card is a tile with the kicker **Cron** and the title **Flake
-Hunter**. It links here so the marketing example and the docs stay the same
-story.
+Hunter**. It links here.
 
 ## Where to go next
 

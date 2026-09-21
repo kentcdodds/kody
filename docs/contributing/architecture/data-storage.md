@@ -500,9 +500,6 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `required_hosts_json`, `usage_mode` / `allowed_packages_json`, and access /
   refresh token ciphertext. The non-secret `client_id` is stored inline on the
   owning app row.
-- `user_openapi_bindings` / `user_openapi_binding_operations`
-  (`0001-squashed-init.sql`): leftover squash-create tables. Migration `0037`
-  drops them. Do not add new readers or writers.
 
 App access pattern:
 
@@ -1458,9 +1455,6 @@ on write unless a migration backfills existing rows.
   `user_oauth_apps`. Those columns are the only credential store — there are no
   `*_secret_name` pointers and the values are not in `secret_entries`. Account
   export redacts the ciphertext columns.
-- `user_openapi_bindings` / `user_openapi_binding_operations` JSON columns
-  (`0001-squashed-init.sql`) are leftover squash-create shapes. Migration `0037`
-  drops the tables. Do not add new parsers.
 
 ### Durable Object id contracts
 

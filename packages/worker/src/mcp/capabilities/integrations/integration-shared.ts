@@ -108,20 +108,6 @@ export const integrationSaveSchema = z
 		flow: z.enum(integrationFlowValues).optional(),
 		usePkce: z.boolean().nullable().optional(),
 		clientId: z.string().min(1).optional(),
-		/**
-		 * @deprecated Ignored. User-lane client secrets live encrypted on the
-		 * app row. Kept so existing callers that still send a secret-store name
-		 * do not fail `.strict()` validation.
-		 */
-		clientSecretSecretName: z.string().min(1).nullable().optional(),
-		/**
-		 * @deprecated Ignored. Access tokens live encrypted on the connection.
-		 */
-		accessTokenSecretName: z.string().min(1).optional(),
-		/**
-		 * @deprecated Ignored. Refresh tokens live encrypted on the connection.
-		 */
-		refreshTokenSecretName: z.string().min(1).nullable().optional(),
 		requiredHosts: z.array(z.string()).optional(),
 		tokenExchangeStyle: z.enum(tokenExchangeStyleValues).nullable().optional(),
 		authorization: integrationAuthorizationSchema.nullable().optional(),

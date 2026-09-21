@@ -17,11 +17,6 @@ const inputSchema = z
 			.min(1)
 			.describe('OAuth app slug whose client credentials should be rotated.'),
 		clientId: z.string().min(1).describe('New OAuth client id (inline value).'),
-		/**
-		 * @deprecated Ignored. Client secrets live encrypted on the app row.
-		 * Rotate the secret value from /account/integrations.
-		 */
-		clientSecretSecretName: z.string().min(1).nullable().optional(),
 	})
 	.strict()
 

@@ -23,10 +23,10 @@ never Kent), and posts a one-liner that the draft is ready. Draft only. Never
 send.
 
 The homepage calls this an **event** because the interesting fact is the
-purchase, not the HTTP door. Kent's listing uses a Stripe webhook as the way
-that fact arrives, then treats the verified checkout as the event that starts
-the thank-you. You can also emit `@you/purchase.completed` from one package and
-subscribe from another.
+purchase, not the HTTP door. Kent's public package uses a Stripe webhook as the
+way that fact arrives, then treats the verified checkout as the event that
+starts the thank-you. You can also emit `@you/purchase.completed` from one
+package and subscribe from another.
 
 Subscriptions and package-emitted topics:
 [Subscriptions and events](./package-subscriptions.md). Vendor POST ingress:
@@ -38,7 +38,7 @@ Subscriptions and package-emitted topics:
 **One package, vendor ingress.** Stripe POSTs `checkout.session.completed`. The
 handler fetch-back verifies the event id (the body is untrusted; only `id` is
 used), keeps successful paid checkouts, and calls `thankPurchase`. That is
-Kent's listing.
+Kent's public package.
 
 ```ts
 import handleStripeWebhook from 'kody:@you/stripe-purchase-thanks/handle-stripe-webhook'

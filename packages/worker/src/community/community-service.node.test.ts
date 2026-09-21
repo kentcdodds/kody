@@ -556,7 +556,7 @@ test('unpublishCommunityListing treats missing or unowned listings as CommunityA
 	).rejects.toSatisfy(
 		(error: unknown) =>
 			error instanceof CommunityActionError &&
-			error.message === 'Community listing "missing-listing" was not found.',
+			error.message === 'Catalog entry "missing-listing" was not found.',
 	)
 
 	mockModule.getCommunityListingById.mockResolvedValue(
@@ -1095,7 +1095,7 @@ test('rateCommunityListing rejects ratings without a prior fork as CommunityActi
 	).rejects.toSatisfy(
 		(error: unknown) =>
 			error instanceof CommunityActionError &&
-			error.message === 'Fork this community listing before rating it.',
+			error.message === 'Fork this public package before rating it.',
 	)
 	expect(mockModule.upsertCommunityRating).not.toHaveBeenCalled()
 })

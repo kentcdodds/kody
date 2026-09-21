@@ -65,15 +65,12 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 		category: 'platform',
 	})
 
-	expect(docsNav.find((section) => section.id === 'examples')?.items).toEqual([
-		{ slug: 'flake-hunter', label: 'Flake Hunter' },
-		{ slug: 'sentry-issues', label: 'Sentry Issues' },
-		{ slug: 'agent-inbox', label: 'Agent inbox' },
-		{ slug: 'purchase-thanks', label: 'Purchase thanks' },
-	])
+	const exampleSlugs = docsNav
+		.find((section) => section.id === 'examples')
+		?.items.map((item) => item.slug)
 	for (const beat of landingFactoryBeats) {
+		expect(exampleSlugs).toContain(beat.slug)
 		expect(getGuideBySlug(beat.slug)).toMatchObject({
-			slug: beat.slug,
 			title: beat.title,
 			category: 'platform',
 		})

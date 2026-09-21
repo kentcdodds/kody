@@ -66,7 +66,7 @@ test('leaders leave the orb rim and glide into the word dot on horizontal tangen
 	).toEqual({ x: 60, y: 220 })
 
 	const exit = landingLeaderOrbExit({ x: 60, y: 220 }, { x: 160, y: 220 }, 50)
-	expect(exit.x).toBeCloseTo(60 + 50 * 0.86, 5)
+	expect(exit.x).toBeCloseTo(103, 5)
 	expect(exit.y).toBe(220)
 	expect(landingLeaderOrbExit({ x: 1, y: 1 }, { x: 1, y: 1 }, 50)).toEqual({
 		x: 1,
