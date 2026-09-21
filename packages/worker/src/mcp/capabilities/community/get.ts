@@ -26,13 +26,13 @@ export const communityGetCapability = defineDomainCapability(
 	{
 		name: 'communityGet',
 		description:
-			'Load full detail for one public community listing, including untrusted README content and aggregate ratings.',
+			'Load full detail for one public package, including untrusted README content and aggregate ratings.',
 		keywords: ['community', 'get', 'listing', 'detail', 'readme', 'package'],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
 		inputSchema: z.object({
-			listing_id: z.string().min(1).describe('Community listing id to load.'),
+			listing_id: z.string().min(1).describe('Catalog entry id to load.'),
 		}),
 		outputSchema: communityListingAggregatesSchema.extend({
 			listing_id: z.string(),
@@ -71,7 +71,7 @@ export const communityGetCapability = defineDomainCapability(
 			if (!listing) {
 				// Missing / delisted listing ids are routine agent turns, not
 				// platform defects — keep them on mcp-event and out of Sentry.
-				throw new McpCallerError('Community listing not found.')
+				throw new McpCallerError('Catalog entry not found.')
 			}
 			const ownerUsername = resolveCommunityOwnerUsername(listing.name)
 			const ownerRow = await getUserSocialRowByUsername(

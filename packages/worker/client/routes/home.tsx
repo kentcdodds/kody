@@ -510,7 +510,7 @@ export function HomeRoute(handle: Handle) {
 								class="landing-chip landing-chip-muted landing-chip-link"
 								mix={revealPop(landingWorldBrands.length * 35)}
 							>
-								Community packages
+								Public packages
 							</a>
 						</li>
 					</ul>

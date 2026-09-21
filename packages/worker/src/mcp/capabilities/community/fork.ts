@@ -17,13 +17,13 @@ export const communityForkCapability = defineDomainCapability(
 	{
 		name: 'communityFork',
 		description:
-			'Fork a community listing into an inert package source in your scope. The fork cannot run until you review the code and publish through a repo session. Pass a package name leaf (or `@owner/leaf`) when you already have a package with the same leaf.',
+			'Fork a public package into an inert package source in your scope. The fork cannot run until you review the code and publish through a repo session. Pass a package name leaf (or `@owner/leaf`) when you already have a package with the same leaf.',
 		keywords: ['community', 'fork', 'copy', 'listing', 'package', 'import'],
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
 		inputSchema: z.object({
-			listing_id: z.string().min(1).describe('Community listing id to fork.'),
+			listing_id: z.string().min(1).describe('Catalog entry id to fork.'),
 			kody_id: z
 				.string()
 				.min(1)
@@ -65,7 +65,7 @@ export const communityForkCapability = defineDomainCapability(
 				progress: 1,
 				total: 2,
 				message:
-					'Forking the community listing into your scope — photocopy whirring…',
+					'Forking the public package into your scope — photocopy whirring…',
 			})
 			const kodyId =
 				args.kody_id === undefined

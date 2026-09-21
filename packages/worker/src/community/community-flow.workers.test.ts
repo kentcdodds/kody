@@ -547,7 +547,7 @@ test('public package flow works end-to-end through capability handlers', async (
 
 	await expect(
 		communityGetCapability.handler({ listing_id: listingId }, forkerCtx),
-	).rejects.toThrow('Community listing not found.')
+	).rejects.toThrow('Catalog entry not found.')
 
 	await expect(
 		communityPublishCapability.handler({ package_id: packageId }, ownerCtx),

@@ -40,6 +40,6 @@ test('communityGet throws McpCallerError when the listing is missing', async () 
 
 	expect(error).toBeInstanceOf(McpCallerError)
 	expect(error).toMatchObject({
-		message: 'Community listing not found.',
+		message: 'Catalog entry not found.',
 	})
 })
