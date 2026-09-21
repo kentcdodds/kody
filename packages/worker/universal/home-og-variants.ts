@@ -9,7 +9,7 @@
 import { type LandingPrimitiveId } from '#universal/landing-lantern.ts'
 import { type PublicOgPage } from '#universal/og-pages.ts'
 
-export const homeOgQueryParam = 'og'
+const homeOgQueryParam = 'og'
 
 export const homeOgVariantIds = [
 	'switch',
@@ -31,7 +31,7 @@ export const homeOgVariantIds = [
 
 export type HomeOgVariantId = (typeof homeOgVariantIds)[number]
 
-export type HomeOgVariantGroup = 'icp' | 'lantern' | 'triggers-door'
+type HomeOgVariantGroup = 'icp' | 'lantern' | 'triggers-door'
 
 type HomeOgVariantEntry = {
 	group: HomeOgVariantGroup
