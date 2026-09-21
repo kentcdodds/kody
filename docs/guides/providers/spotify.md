@@ -145,14 +145,14 @@ Changing scopes means reconnecting: `/connect/oauth?provider=spotify` with a new
 
 A saved integration is auth credentials only. Finish by putting maintained
 helpers in front of it. There is no live official `@kody/spotify` package, so
-this path is a person-account community listing — review the source, then fork
-only because it is not an official `@kody/*` helper.
+this path is a person-account public package — review the source, then fork only
+because it is not an official `@kody/*` helper.
 
-1. Find the listing with `communitySearch({ query: 'spotify' })` — the
-   `@kentcdodds/spotify` listing wraps playback, playlists, search, library, and
+1. Find the package with `communitySearch({ query: 'spotify' })` — the
+   `@kentcdodds/spotify` package wraps playback, playlists, search, library, and
    devices. It is not admin-trusted, so review the forked source before
    publishing (forks land inert until you publish them).
-2. Fork it with `communityFork` (or click **Install** on the listing page).
+2. Fork it with `communityFork` (or click **Install** on the package page).
 3. Check the fork's README **Required setup**: the default account maps to an
    integration named `spotify` — the name this guide's connect link uses, so the
    primary lane works as-is. Remove the `spotify-family` second-account wiring

@@ -63,28 +63,29 @@ limits.
 
 </details>
 
-Community listings are excluded from general `search`. When you need durable
-reusable behavior and nothing in the user's account fits, call `communitySearch`
-for a close public package. If the other person should use your live package
-instead of their own copy, [share it](/docs/package-sharing).
+Public packages in the Community catalog are excluded from general `search`.
+When you need durable reusable behavior and nothing in the user's account fits,
+call `communitySearch` for a close public package. If the other person should
+use your live package instead of their own copy,
+[share it](/docs/package-sharing).
 
-If a listing is close to the user's goal:
+If a public package is close to the user's goal:
 
 1. Inspect it with `communityGet`.
 2. Fork with `communityFork` (or point the user at one-click install on the
-   listing detail page).
+   package page).
 3. Review the forked source, adapt it to the user's intent (including human
    `README.md` / `## Intent` and agent `AGENTS.md`), then publish. Publish
    checks require both files.
 
 Do not reimplement from scratch when a public package is already close. Create a
-new package only when no suitable listing exists.
+new package only when no suitable public package exists.
 
 ### Create a repo-backed package
 
 Create or extend a saved package when behavior is reusable, expected to evolve,
 or needs a named package-owned schedule that evolves with its implementation,
-and no suitable community listing (or existing saved package) covers it. If the
+and no suitable public package (or existing saved package) covers it. If the
 implementation needs a library that does not fit a Worker isolate, keep this
 package as the orchestrator and offload the heavy process — see
 [Offload work that does not fit a Worker isolate](./heavy-work-offload.md). The
@@ -236,9 +237,9 @@ explicitly asked to delete that package.
 
 1. Load the package with `packageGet` or `packageList`.
 2. Show the owner the package name and that delete removes jobs, storage,
-   secrets, tokens, the public listing if one exists, and Artifacts repos.
-   Existing forks of a listing keep their copies. A community fork record for
-   the deleted package itself is removed. This cannot be undone.
+   secrets, tokens, the catalog entry if one exists, and Artifacts repos.
+   Existing forks of that public package keep their copies. A community fork
+   record for the deleted package itself is removed. This cannot be undone.
 3. Wait for the owner to type the package name.
 4. Call `packageDelete` with the scoped name (or `package_id` when the name is
    not known) and `confirm_name` matching that name exactly. The capability

@@ -18,9 +18,9 @@ itself.
 
 Live public package:
 [`@kentcdodds/sentry-triage`](https://kody.codes/@kentcdodds/sentry-triage).
-Fork that listing when you want the same issue door on your Sentry projects. The
-HTTP contract is in [Inbound webhooks](../use/webhooks.md). The "which trigger"
-guide is [Jobs, workflows, and webhooks](./triggers.md).
+Fork that public package when you want the same issue door on your Sentry
+projects. The HTTP contract is in [Inbound webhooks](../use/webhooks.md). The
+"which trigger" guide is [Jobs, workflows, and webhooks](./triggers.md).
 
 ## The knock
 
@@ -100,9 +100,9 @@ dispatches `./process-sentry-webhook` through `workflows.create` with a bounded
 `{ payloadKey, issueId, resource, action }` object. A late, large Sentry POST
 does not have to finish triage inside the webhook budget.
 
-Rotate keeps the previous URL live for 24 hours, or until the first accepted
-delivery arrives on the new URL. `/account/webhooks` lists every webhook across
-packages.
+Rotate, reveal, and the cross-package index live on the package settings
+**Webhooks** section and `/account/webhooks`. The rotate overlap window is in
+[Inbound webhooks](../use/webhooks.md).
 
 ## Example prompts
 

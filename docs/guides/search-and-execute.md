@@ -37,7 +37,7 @@ This page is the playbook for those two calls. The same tools drive the loop in
 
 **search** finds built-in capabilities, official guides, saved packages, saved
 integrations, connected MCP servers, and secret references (names and metadata —
-never secret values). Public community listings live in the `community` domain
+never secret values). Public packages live in the `community` domain
 (`communitySearch`, `communityGet`); see
 [Public packages](../use/community-packages.md).
 
@@ -246,6 +246,16 @@ export default async function main() {
 ```json
 {
 	"code": "import whatShipped from 'kody:@you/favorite-bot-ships/whatShipped'\n\nexport default async function main() {\n\treturn await whatShipped()\n}"
+}
+```
+
+When the `execute-invoke` experiment is on for the caller, the same static
+import can be `invoke` instead of a hand-written `code` string:
+
+```json
+{
+	"invoke": "kody:@you/favorite-bot-ships/whatShipped",
+	"params": {}
 }
 ```
 

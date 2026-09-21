@@ -250,16 +250,16 @@ exports, auth, or APIs.
 Put feature lists, API surface, auth notes, and longer human guidance in
 `README.md` (including `## Intent`), agent runbooks in `AGENTS.md`,
 `kody.searchText`, and [export JSDoc](#export-jsdoc) — not in
-`kody.description`. Community listings and Open Graph share cards reuse this
-field, so keep it concise.
+`kody.description`. Catalog cards and Open Graph share cards reuse this field,
+so keep it concise.
 
 ## `kody.category` (community browse)
 
-Public community listings browse by a closed category. Set
+The Community catalog browses public packages by a closed category. Set
 `package.json#kody.category` to one of `integrations`, `examples`,
 `productivity`, `apps`, or `utilities` before making the package public. When
 the field is omitted, Kody infers a category from well-known tags such as
-`github` or `zero-auth`, or files the listing under Other. Tags stay freeform
+`github` or `zero-auth`, or files the package under Other. Tags stay freeform
 search keywords; do not use `kody.tags` as a second category vocabulary.
 
 ## Package visibility
