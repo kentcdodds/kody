@@ -18,11 +18,12 @@ Read in order for a full tour, or jump to a topic.
 ## Docs
 
 The user-facing docs site is [kody.codes/docs](https://kody.codes/docs): an
-introduction, Get started, Concepts, Packages, Integrations, and per-provider
-connection walkthroughs. Every page is also raw markdown (`/docs/<slug>.md`),
-indexed at [kody.codes/llms.txt](https://kody.codes/llms.txt), and available to
-connected agents as `search({ entity: "guide:{id}" })`. The pages below are the
-MCP-level reference detail those docs link into.
+introduction, Get started, Concepts, Examples, Packages, Integrations, and
+per-provider connection walkthroughs. Every page is also raw markdown
+(`/docs/<slug>.md`), indexed at
+[kody.codes/llms.txt](https://kody.codes/llms.txt), and available to connected
+agents as `search({ entity: "guide:{id}" })`. The pages below are the MCP-level
+reference detail those docs link into.
 
 - [What is Kody?](../guides/what-is-kody.md) — the introduction: what Kody is
   and is not, what you cannot get elsewhere, the building blocks

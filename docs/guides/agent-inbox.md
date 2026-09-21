@@ -23,9 +23,8 @@ the question is "can my spouse text Kody?"
 Live public behavior:
 [`@kentcdodds/grok-bot`](https://kody.codes/@kentcdodds/grok-bot)
 `./handle-email-message-received`. Mail to `kentcdodds+patch@inbox.kody.codes`
-(and the same plus-tag on retired inbox hosts) wakes that bot with a thread
-briefing. Cold mail from strangers is ignored. Unaliased mail returns
-`{ handled: false }` so another subscriber can still run.
+wakes that bot with a thread briefing. Cold mail from strangers is ignored.
+Unaliased mail returns `{ handled: false }` so another subscriber can still run.
 
 The storage contract is [Email primitives](../use/email-primitives.md). The
 event contract is [Subscriptions and events](./package-subscriptions.md).
