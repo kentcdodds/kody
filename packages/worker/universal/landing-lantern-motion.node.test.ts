@@ -100,4 +100,22 @@ test('orb motion floats slowly inside the glass and bumps instead of bouncing', 
 	const outward = (after.vx * nx + after.vy * ny) / Math.hypot(nx, ny)
 	expect(outward).toBeLessThan(0.02)
 	expect(clampToCavity(2, 2, 0.1).x).toBeLessThan(landingLanternCavity.x + 1)
+
+	const pair = structuredClone(rested) satisfies Array<LanternOrbBody>
+	const left = pair[0]!
+	const right = pair[2]!
+	left.x = landingLanternCavity.x - 0.04
+	left.y = landingLanternCavity.y
+	right.x = landingLanternCavity.x + 0.04
+	right.y = landingLanternCavity.y
+	left.homeX = left.x
+	left.homeY = left.y
+	right.homeX = right.x
+	right.homeY = right.y
+	left.vx = 0.04
+	right.vx = -0.04
+	const met = stepLanternOrbMotion(pair, 1 / 60, { time: 0, amplitude: 0 })
+	const rel = (met[0]!.vx - met[2]!.vx) * 1 + (met[0]!.vy - met[2]!.vy) * 0
+	expect(rel).toBeGreaterThan(-0.01)
+	expect(rel).toBeLessThan(0.02)
 })

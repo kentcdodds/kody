@@ -181,10 +181,11 @@ function separateOrbs(bodies: Array<LanternOrbBody>) {
 			b.y += ny * push
 			const closing = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny
 			if (closing > 0) {
-				a.vx -= closing * nx
-				a.vy -= closing * ny
-				b.vx += closing * nx
-				b.vy += closing * ny
+				// Split the closing speed so the pair stops, instead of bouncing.
+				a.vx -= closing * nx * 0.5
+				a.vy -= closing * ny * 0.5
+				b.vx += closing * nx * 0.5
+				b.vy += closing * ny * 0.5
 			}
 		}
 	}
