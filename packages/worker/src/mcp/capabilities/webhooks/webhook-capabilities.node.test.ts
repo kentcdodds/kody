@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -468,4 +469,39 @@ test('webhookDeliveryList round-trips explicit outcomes', async () => {
 		['rejected-1', 'rejected'],
 		['failed-1', 'failed'],
 	])
+})
+
+test('webhookDeliveryList treats a missing package and an unminted URL as caller errors', async () => {
+	mockModule.listRunRecords.mockReset()
+	mockModule.getWebhookEndpointByKey.mockReset()
+	mockModule.resolveSavedPackage.mockResolvedValue(null)
+	const ctx = createCapabilityContext()
+
+	const missingPackage = await webhookDeliveryListCapability
+		.handler({ packageId: 'missing-pkg', webhookName: 'sentry' }, ctx)
+		.catch((error: unknown) => error)
+	expect(missingPackage).toBeInstanceOf(McpCallerError)
+	expect(missingPackage).toMatchObject({
+		message: 'Saved package "missing-pkg" was not found for this user.',
+	})
+	expect(mockModule.getWebhookEndpointByKey).not.toHaveBeenCalled()
+	expect(mockModule.listRunRecords).not.toHaveBeenCalled()
+
+	mockModule.resolveSavedPackage.mockResolvedValue({
+		id: 'pkg-1',
+		kodyId: 'sentry-bridge',
+		name: '@user/sentry-bridge',
+		userId: 'user-1',
+		sourceId: 'src-1',
+	})
+	mockModule.getWebhookEndpointByKey.mockResolvedValue(null)
+
+	const unminted = await webhookDeliveryListCapability
+		.handler({ kodyId: 'sentry-bridge', webhookName: 'sentry' }, ctx)
+		.catch((error: unknown) => error)
+	expect(unminted).toBeInstanceOf(McpCallerError)
+	expect(unminted).toMatchObject({
+		message: 'Webhook URL has not been minted. Call webhookUrlMint first.',
+	})
+	expect(mockModule.listRunRecords).not.toHaveBeenCalled()
 })

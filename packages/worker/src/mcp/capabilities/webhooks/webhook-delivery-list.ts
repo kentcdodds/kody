@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -121,7 +122,7 @@ export const webhookDeliveryListCapability = defineDomainCapability(
 				packageIdOrKodyId,
 			})
 			if (!savedPackage) {
-				throw new Error(
+				throw new McpCallerError(
 					`Saved package "${packageIdOrKodyId}" was not found for this user.`,
 				)
 			}
@@ -132,7 +133,7 @@ export const webhookDeliveryListCapability = defineDomainCapability(
 				webhookName,
 			})
 			if (!mint) {
-				throw new Error(
+				throw new McpCallerError(
 					'Webhook URL has not been minted. Call webhookUrlMint first.',
 				)
 			}
