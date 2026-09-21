@@ -136,7 +136,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 	// domain; everything request-scoped keeps using getAppBaseUrl.
 	const origin = getCanonicalAppBaseUrl({ env, requestUrl: request.url })
 	const documentHead = absolutizeDocumentHead(
-		resolveDocumentHead(requestUrl.pathname, pageLoaderData),
+		resolveDocumentHead(requestUrl.pathname, pageLoaderData, requestUrl.search),
 		origin,
 	)
 	if (title !== undefined) {

@@ -6,6 +6,11 @@ import { oauthPaths } from '#universal/oauth-paths.ts'
 import { routePattern } from '#universal/route-pattern.ts'
 import { routes } from '#universal/routes.ts'
 import { docHref, docsIntroSlug } from '#universal/docs-nav.ts'
+import {
+	homeOgImagePath,
+	readHomeOgVariant,
+	applyHomeOgVariant,
+} from '#universal/home-og-variants.ts'
 import { publicOgPages, type PublicOgPageId } from '#universal/og-pages.ts'
 
 const DEFAULT_DOCUMENT_TITLE = 'kody'
@@ -69,6 +74,7 @@ export type ResolvedDocumentHead = {
 
 type DocumentHeadContext = {
 	pathname: string
+	search: string
 	params: Record<string, string | undefined>
 	loaderData?: Partial<AppLoaderData>
 }
@@ -118,6 +124,28 @@ function communityListingHead({
 			title,
 			description: truncateText(shell.description, 200),
 			imagePath: `/community/${shell.listingId}/og.png`,
+		},
+	}
+}
+
+/**
+ * `/?og=<key>` shares a variant card. The canonical URL stays `/` so the
+ * unfurl target does not keep the query. Unknown keys keep the default home
+ * card. The browser strips `og` after load; crawlers only see this HTML.
+ */
+function homeDocumentHead(
+	context: DocumentHeadContext,
+): DocumentHeadDescriptor {
+	const head = publicPageHead('home', DEFAULT_DOCUMENT_TITLE)
+	const variant = readHomeOgVariant(context.search)
+	if (!variant || !head.og) return head
+	const page = applyHomeOgVariant(publicOgPages.home, variant)
+	return {
+		...head,
+		og: {
+			title: page.ogTitle,
+			description: page.ogDescription,
+			imagePath: homeOgImagePath(variant.id),
 		},
 	}
 }
@@ -175,7 +203,7 @@ function docDetailHead({
  * navigations keep `<head>` in sync without per-route wiring.
  */
 const routeDocumentHeads = {
-	[routePattern(routes.home)]: publicPageHead('home', DEFAULT_DOCUMENT_TITLE),
+	[routePattern(routes.home)]: homeDocumentHead,
 	[routePattern(routes.account)]: titleOnly('Account'),
 	[routePattern(routes.accountBilling)]: titleOnly('Billing'),
 	[routePattern(routes.accountBillingSuccess)]: titleOnly("You're in"),
@@ -469,6 +497,7 @@ const documentHeadMatcher = (() => {
 export function resolveDocumentHead(
 	pathname: string,
 	loaderData?: Partial<AppLoaderData>,
+	search = '',
 ): DocumentHeadDescriptor {
 	const match = documentHeadMatcher.match(new URL(pathname, documentHeadOrigin))
 	if (!match) {
@@ -480,6 +509,7 @@ export function resolveDocumentHead(
 		typeof resolver === 'function'
 			? resolver({
 					pathname,
+					search,
 					params: match.params,
 					loaderData,
 				})

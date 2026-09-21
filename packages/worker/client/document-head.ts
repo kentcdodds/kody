@@ -121,6 +121,7 @@ function applyResolvedDocumentHead(resolved: ResolvedDocumentHead) {
 export function applyDocumentHead(
 	pathname: string,
 	loaderData?: Partial<AppLoaderData>,
+	search = '',
 ): void {
 	if (typeof document === 'undefined') return
 	// Reuse the canonical origin the server rendered with so SPA navigations
@@ -131,7 +132,7 @@ export function applyDocumentHead(
 			.querySelector(`meta[name="${CANONICAL_ORIGIN_META_NAME}"]`)
 			?.getAttribute('content') || window.location.origin
 	const resolved = absolutizeDocumentHead(
-		resolveDocumentHead(pathname, loaderData),
+		resolveDocumentHead(pathname, loaderData, search),
 		canonicalOrigin,
 	)
 	applyResolvedDocumentHead(resolved)

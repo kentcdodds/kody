@@ -5,6 +5,7 @@ import { expect, test } from 'vitest'
 import { landingHomePrimitives } from '#universal/landing-home-copy.ts'
 import { landingPrimitiveIds } from '#universal/landing-lantern.ts'
 import { ensureOgBinaryAssetsReady } from '#worker/og/og-image-assets.ts'
+import { getOgPalette } from '#worker/og/palette.ts'
 import { type SatoriChild, type SatoriElement } from '#worker/og/render.ts'
 import {
 	createPrimitivesLantern,
@@ -117,4 +118,41 @@ test('primitive leader colors follow the orb hues, not the old pink and lime', (
 	expect(hueDelta(css.light.triggers, css.light.integrations)).toBeGreaterThan(
 		30,
 	)
+})
+
+function collectByType(
+	node: SatoriChild | Array<SatoriChild> | undefined,
+	type: string,
+): Array<SatoriElement> {
+	if (node == null || typeof node === 'string') return []
+	if (Array.isArray(node)) {
+		return node.flatMap((child) => collectByType(child, type))
+	}
+	const self = node.type === type ? [node] : []
+	return [...self, ...collectByType(node.props.children, type)]
+}
+
+test('a highlighted primitive rings its orb and accents only that word', async () => {
+	await ensureOgBinaryAssetsReady()
+	const plain = createPrimitivesLantern('dark')
+	const triggers = createPrimitivesLantern('dark', 'triggers')
+	expect(collectByType(plain, 'circle')).toEqual([])
+	const circles = collectByType(triggers, 'circle')
+	expect(circles.map((circle) => circle.props.stroke)).toEqual([
+		landingPrimitiveOgColors.dark.triggers,
+		landingPrimitiveOgColors.dark.triggers,
+	])
+	expect(collectText(triggers)).toEqual(
+		landingHomePrimitives.map((primitive) => primitive.word),
+	)
+	const labels = new Map<string, string>()
+	for (const node of collectByType(triggers, 'div')) {
+		const text = node.props.children
+		const color = node.props.style?.color
+		if (typeof text === 'string' && typeof color === 'string') {
+			labels.set(text, color)
+		}
+	}
+	expect(labels.get('triggers')).toBe(landingPrimitiveOgColors.dark.triggers)
+	expect(labels.get('memory')).toBe(getOgPalette('dark').textMuted)
 })
