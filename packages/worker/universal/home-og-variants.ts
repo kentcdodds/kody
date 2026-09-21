@@ -1,10 +1,9 @@
 /**
  * Homepage `?og=` share-card variants.
  *
- * Draft headlines and subtitles. The OG review thread in #marley-market
- * lists the locked keys and doors, but not the headline/subcopy. Marley
- * should replace each string with locked copy before ship. Tone follows
- * the homepage (no em dashes).
+ * Headlines and subtitles are Marley's locked copy. `og:title` is the H1
+ * and `og:description` is the sub, with no extra suffix. The default home
+ * card (no param) stays in `og-pages.ts`.
  */
 
 import { type LandingPrimitiveId } from '#universal/landing-lantern.ts'
@@ -50,92 +49,92 @@ const homeOgVariants = {
 	switch: {
 		group: 'icp',
 		highlight: null,
-		imageTitle: 'Switch agents.\nKeep the work.',
-		imageSubtitle: 'The platform your agents share',
+		imageTitle: 'Switch agents. Keep the work.',
+		imageSubtitle: 'Memory, secrets, and packages that travel with you',
 	},
 	'cursor-claude': {
 		group: 'icp',
 		highlight: null,
-		imageTitle: 'Built in Cursor.\nRuns in Claude.',
-		imageSubtitle: 'Packages, secrets, and memory stay',
+		imageTitle: 'Built in Cursor. Run it in Claude.',
+		imageSubtitle: 'One package graph every agent can call',
 	},
 	skills: {
 		group: 'icp',
 		highlight: null,
-		imageTitle: 'A skill becomes\na package.',
-		imageSubtitle: 'Run it from any connected agent',
+		imageTitle: 'Turn a skill into software you own',
+		imageSubtitle: 'Save it once. Invoke it from any MCP host',
 	},
 	forever: {
 		group: 'icp',
 		highlight: null,
-		imageTitle: 'Schedule it once.\nIt keeps running.',
-		imageSubtitle: 'No chat left open',
+		imageTitle: 'Say it once. Run it forever.',
+		imageSubtitle: "Packages and jobs that don't need a chat open",
 	},
 	secrets: {
 		group: 'icp',
 		highlight: 'secrets',
-		imageTitle: 'Keys the model\nnever sees.',
-		imageSubtitle: 'Use a connection without reading the key',
+		imageTitle: 'Secrets your agents can use, not read',
+		imageSubtitle: 'The vault stays yours across every host',
 	},
 	shared: {
 		group: 'icp',
 		highlight: null,
-		imageTitle: 'One home your\nagents share.',
-		imageSubtitle: 'Packages, secrets, memory, and jobs',
+		imageTitle: 'The software platform your agents share',
+		imageSubtitle: 'One home for memory, packages, and jobs',
 	},
 	memory: {
 		group: 'lantern',
 		highlight: 'memory',
-		imageTitle: "Don't re-explain\nthe same project.",
-		imageSubtitle: 'Facts your agents can search later',
+		imageTitle: 'Stop re-explaining yourself to every agent',
+		imageSubtitle: 'Shared memory your agents actually use',
 	},
 	packages: {
 		group: 'lantern',
 		highlight: 'packages',
-		imageTitle: 'Write it once.\nAny agent runs it.',
-		imageSubtitle: 'Durable software you own',
+		imageTitle: 'Own the answer as a package',
+		imageSubtitle: 'Invoke it from any MCP host',
 	},
 	integrations: {
 		group: 'lantern',
 		highlight: 'integrations',
-		imageTitle: 'Connect a tool\nonce.',
-		imageSubtitle: 'GitHub, Discord, Google, and more',
+		imageTitle: 'Connect the tools. Keep the software',
+		imageSubtitle: 'Integrations your packages call, not chat glue',
 	},
 	apps: {
 		group: 'lantern',
 		highlight: 'apps',
-		imageTitle: 'A page you open,\nnot another chat.',
-		imageSubtitle: 'A hosted page a package serves',
+		imageTitle: 'Your agents share a real app surface',
+		imageSubtitle: 'Connect services. Keep the software',
 	},
 	triggers: {
 		group: 'triggers-door',
 		highlight: 'triggers',
-		imageTitle: 'Wake the work\nwithout a chat.',
-		imageSubtitle: 'Email, webhooks, cron, and subscriptions',
+		imageTitle: 'When it fires, your package runs',
+		imageSubtitle: 'Email, cron, and webhooks into software you own',
 	},
 	webhooks: {
 		group: 'triggers-door',
 		highlight: 'triggers',
-		imageTitle: 'Webhook in.\nYour package runs.',
-		imageSubtitle: 'No chat left open',
+		imageTitle: 'Events in. Owned software out.',
+		imageSubtitle: 'Webhooks that wake packages you control',
 	},
 	email: {
 		group: 'triggers-door',
 		highlight: 'triggers',
-		imageTitle: 'Mail comes in.\nYour package runs.',
-		imageSubtitle: 'No chat left open',
+		imageTitle: 'When the email lands, the package runs',
+		imageSubtitle: 'Mail that starts work \u2014 not another inbox tab',
 	},
 	cron: {
 		group: 'triggers-door',
 		highlight: 'triggers',
-		imageTitle: 'On a schedule.\nYour package runs.',
-		imageSubtitle: 'No chat left open',
+		imageTitle: 'Say it once. Run it on a schedule.',
+		imageSubtitle: 'Jobs that keep going with no chat open',
 	},
 	subscriptions: {
 		group: 'triggers-door',
 		highlight: 'triggers',
-		imageTitle: 'Subscription in.\nYour package runs.',
-		imageSubtitle: 'No chat left open',
+		imageTitle: 'When the subscription fires, the package runs',
+		imageSubtitle: 'Stripe and billing events into software you own',
 	},
 } as const satisfies Record<HomeOgVariantId, HomeOgVariantEntry>
 
@@ -160,7 +159,7 @@ export function getHomeOgVariant(
 		highlight: entry.highlight,
 		imageTitle: entry.imageTitle,
 		imageSubtitle: entry.imageSubtitle,
-		ogTitle: `${entry.imageTitle.replaceAll('\n', ' ')} · Kody`,
+		ogTitle: entry.imageTitle,
 		ogDescription: entry.imageSubtitle,
 	}
 }

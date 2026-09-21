@@ -77,5 +77,18 @@ test('homepage og query values render different cards and unknown stays default'
 	expect(Buffer.from(unknown).equals(Buffer.from(fallback))).toBe(true)
 	expect(Buffer.from(triggers).equals(Buffer.from(fallback))).toBe(false)
 	expect(Buffer.from(triggers).equals(Buffer.from(memory))).toBe(false)
+
+	const switchCard = await renderPageOgImage({
+		page: publicOgPages.home,
+		homeOg: 'switch',
+	})
+	const cursorClaude = await renderPageOgImage({
+		page: publicOgPages.home,
+		homeOg: 'cursor-claude',
+	})
+	expectPngBytes(switchCard)
+	expectPngBytes(cursorClaude)
+	expect(Buffer.from(switchCard).equals(Buffer.from(cursorClaude))).toBe(false)
+	expect(Buffer.from(switchCard).equals(Buffer.from(fallback))).toBe(false)
 	expect(Buffer.from(pricingWithQuery).equals(Buffer.from(pricing))).toBe(true)
 })
