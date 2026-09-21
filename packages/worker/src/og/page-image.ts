@@ -3,6 +3,7 @@ import {
 	getHomeOgVariant,
 } from '#universal/home-og-variants.ts'
 import { type LandingPrimitiveId } from '#universal/landing-lantern.ts'
+import { parseOgEmphasis, type OgEmphasisRun } from '#universal/og-emphasis.ts'
 import { type PublicOgPage } from '#universal/og-pages.ts'
 import { createAgentsHero } from '#worker/og/agents-hero.ts'
 import { createPrimitivesLantern } from '#worker/og/primitives-lantern.ts'
@@ -17,7 +18,7 @@ import {
 	type SatoriElement,
 } from '#worker/og/render.ts'
 
-const TITLE_MAX_LENGTH = 60
+export const TITLE_MAX_LENGTH = 60
 const SUBTITLE_MAX_LENGTH = 160
 const PAGE_TITLE_WIDTH = 580
 /** Other pages wrap inside this measure. Home uses the title column so its one-line subtitle fits. */
@@ -41,6 +42,62 @@ function ogTextChildren(
 		type: 'div',
 		props: { children: line },
 	}))
+}
+
+/**
+ * Satori's normal white-space drops a run's leading and trailing U+0020, so
+ * adjacent flex spans paint "Don'tstart". NBSP is the same width in the
+ * display face and survives that trim. Colour stays on the span; the space
+ * can sit on either neighbour.
+ */
+function keepRunBoundarySpaces(text: string): string {
+	return text.replace(/^ +| +$/g, (spaces) => '\u00A0'.repeat(spaces.length))
+}
+
+/**
+ * `**span**` in an H1 becomes a run in `primaryText`. The display face is
+ * already the extra-bold cut, matching the landing `<em>` (accent colour,
+ * same weight). Subtitles stay plain strings.
+ */
+function ogEmphasisLine(
+	runs: Array<OgEmphasisRun>,
+	accent: string,
+): SatoriElement {
+	return {
+		type: 'div',
+		props: {
+			style: {
+				display: 'flex',
+				flexDirection: 'row',
+				flexWrap: 'nowrap',
+			},
+			children: runs.map((run) => ({
+				type: 'span',
+				props: {
+					...(run.emphasis ? { style: { color: accent } } : {}),
+					children: keepRunBoundarySpaces(run.text),
+				},
+			})),
+		},
+	}
+}
+
+export function ogTitleChildren(input: {
+	text: string
+	maxLength: number
+	accent: string
+}): { lineCount: number; children: SatoriElement['props']['children'] } {
+	const lines = ogTextLines(input.text, input.maxLength)
+	const parsed = lines.map((line) => parseOgEmphasis(line))
+	const emphasized = parsed.some((runs) => runs.some((run) => run.emphasis))
+	if (!emphasized) {
+		return { lineCount: lines.length, children: ogTextChildren(lines) }
+	}
+	const nodes = parsed.map((runs) => ogEmphasisLine(runs, input.accent))
+	return {
+		lineCount: nodes.length,
+		children: nodes.length <= 1 ? (nodes[0] ?? '') : nodes,
+	}
 }
 
 function pageSubtitleMaxWidth(page: PublicOgPage): number {
@@ -145,7 +202,11 @@ function createPageOgMarkup(input: {
 	const palette = getOgPalette(input.theme)
 	const heroKind = getPageHeroKind(input.page)
 	const halo = createHeroHalo({ kind: heroKind, theme: input.theme })
-	const titleLines = ogTextLines(input.page.imageTitle, TITLE_MAX_LENGTH)
+	const title = ogTitleChildren({
+		text: input.page.imageTitle,
+		maxLength: TITLE_MAX_LENGTH,
+		accent: palette.primaryText,
+	})
 	return createOgFrame({
 		theme: input.theme,
 		children: {
@@ -184,14 +245,14 @@ function createPageOgMarkup(input: {
 											// Satori's default flex row would place hard-broken
 											// lines side by side. Single-line titles stay on the
 											// default so their wrap is unchanged.
-											...(titleLines.length > 1
+											...(title.lineCount > 1
 												? {
 														display: 'flex',
 														flexDirection: 'column' as const,
 													}
 												: {}),
 										},
-										children: ogTextChildren(titleLines),
+										children: title.children,
 									},
 								},
 								{
