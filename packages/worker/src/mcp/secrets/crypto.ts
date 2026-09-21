@@ -6,14 +6,10 @@ import {
 const ivBytes = 12
 
 /**
- * Ciphertext format version. `v2` payloads (`v2.<iv>.<ciphertext>`) bind the
- * AES-GCM ciphertext to an additional-authenticated-data (AAD) string built
- * from the purpose plus an identity context (e.g. the owning user), so a
- * ciphertext copied into another row fails to decrypt. Two-part payloads
- * (`<iv>.<ciphertext>`, no AAD) are invalid on the user-facing decrypt path.
- * The operator pass at `POST /__maintenance/reencrypt-secrets` can still
- * decrypt that shape so a restored pre-upgrade D1 export can be rewritten
- * to v2 before serving.
+ * Ciphertext format version. Payloads are `v2.<iv>.<ciphertext>` bound to an
+ * AES-GCM additional-authenticated-data (AAD) string built from the purpose
+ * plus an identity context (e.g. the owning user), so a ciphertext copied
+ * into another row fails to decrypt.
  */
 const ciphertextVersion = 'v2'
 
@@ -96,33 +92,6 @@ async function decryptWithKey(
 	return textDecoder.decode(plaintext)
 }
 
-/**
- * Decrypt a pre-AAD 2-part payload (`<iv>.<ciphertext>`). Used only by the
- * operator re-encrypt pass so a restored pre-upgrade D1 export can be
- * rewritten to v2 before serving. User-facing decrypt rejects this shape.
- */
-async function decryptUnversionedWithKey(
-	keySecret: string,
-	purpose: string,
-	payload: string,
-) {
-	const parts = payload.split('.')
-	const [ivPart, ciphertextPart] = parts
-	if (parts.length !== 2 || !ivPart || !ciphertextPart) {
-		throw new Error('Invalid encrypted secret payload.')
-	}
-	const key = await deriveEncryptionKey(keySecret, purpose)
-	const plaintext = await crypto.subtle.decrypt(
-		{
-			name: 'AES-GCM',
-			iv: base64UrlToBytes(ivPart),
-		},
-		key,
-		base64UrlToBytes(ciphertextPart),
-	)
-	return textDecoder.decode(plaintext)
-}
-
 const secretStorePurpose = 'mcp-secret-store'
 
 /**
@@ -137,31 +106,6 @@ const userOauthAccessTokenPurpose = 'user-oauth-access-token'
 const userOauthRefreshTokenPurpose = 'user-oauth-refresh-token'
 const userOauthClientSecretPurpose = 'user-oauth-client-secret'
 const webhookUrlSecretPurpose = 'webhook-url-secret'
-
-/** Purpose strings for the maintenance-only unversioned decrypt path. */
-export const secretCiphertextPurposes = {
-	secretStore: secretStorePurpose,
-	platformOauthClientSecret: platformOauthClientSecretPurpose,
-	userOauthAccessToken: userOauthAccessTokenPurpose,
-	userOauthRefreshToken: userOauthRefreshTokenPurpose,
-	userOauthClientSecret: userOauthClientSecretPurpose,
-	webhookUrlSecret: webhookUrlSecretPurpose,
-} as const
-
-export type SecretCiphertextPurpose =
-	(typeof secretCiphertextPurposes)[keyof typeof secretCiphertextPurposes]
-
-/**
- * Decrypt a pre-AAD 2-part payload. Operator re-encrypt only; user-facing
- * decrypt wrappers reject this shape.
- */
-export async function decryptUnversionedCiphertext(
-	env: Pick<Env, 'SECRET_STORE_KEY'>,
-	purpose: SecretCiphertextPurpose,
-	payload: string,
-) {
-	return decryptUnversionedWithKey(env.SECRET_STORE_KEY, purpose, payload)
-}
 
 /** AAD context for a user-owned secret ciphertext. */
 export function userSecretContext(userId: string) {

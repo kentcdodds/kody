@@ -132,11 +132,6 @@ test('public route hardening rejects retired connector paths, unknown paths, and
 			secret: env.STATUS_INCIDENT_EVENT_SECRET,
 			notConfiguredMessage: 'MCP execute health probe is not configured',
 		},
-		{
-			path: '/__maintenance/reencrypt-secrets',
-			secret: env.CAPABILITY_REINDEX_SECRET,
-			notConfiguredMessage: 'Secret re-encryption is not configured',
-		},
 	] as const
 
 	for (const route of registeredMaintenanceRoutes) {
