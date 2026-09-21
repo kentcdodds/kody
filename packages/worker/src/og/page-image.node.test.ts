@@ -3,6 +3,7 @@ import {
 	getHomeOgVariant,
 	homeOgVariantIds,
 } from '#universal/home-og-variants.ts'
+import { parseOgEmphasis } from '#universal/og-emphasis.ts'
 import { publicOgPages } from '#universal/og-pages.ts'
 import { getOgPalette } from '#worker/og/palette.ts'
 import { truncateOgText } from '#worker/og/render.ts'
@@ -121,7 +122,7 @@ test('homepage H1 emphasis is an accent run and plain titles stay a string', () 
 					flexWrap: 'nowrap',
 				},
 				children: [
-					{ type: 'span', props: { children: 'Don\u2019t ' } },
+					{ type: 'span', props: { children: 'Don\u2019t\u00A0' } },
 					{
 						type: 'span',
 						props: { style: { color: accent }, children: 'start over' },
@@ -148,6 +149,93 @@ test('homepage H1 emphasis is an accent run and plain titles stay a string', () 
 		accent,
 	})
 	expect(plain).toEqual({ lineCount: 1, children: 'Public packages' })
+})
+
+function collectTitleText(node: unknown): string {
+	if (typeof node === 'string') return node
+	if (Array.isArray(node)) return node.map(collectTitleText).join('')
+	if (node && typeof node === 'object' && 'props' in node) {
+		const props = node.props
+		if (props && typeof props === 'object' && 'children' in props) {
+			return collectTitleText(props.children)
+		}
+	}
+	return ''
+}
+
+function emphasisStyles(node: unknown): Array<unknown> {
+	if (!node || typeof node !== 'object') return []
+	if (Array.isArray(node)) return node.flatMap(emphasisStyles)
+	if (!('props' in node)) return []
+	const props = node.props
+	if (!props || typeof props !== 'object') return []
+	const style =
+		'style' in props && props.style && typeof props.style === 'object'
+			? props.style
+			: null
+	const nested = 'children' in props ? emphasisStyles(props.children) : []
+	return style && 'color' in style ? [style, ...nested] : nested
+}
+
+function boundarySpacesAsNbsp(line: string): string {
+	return parseOgEmphasis(line)
+		.map((run) =>
+			run.text.replace(/^ +| +$/g, (spaces) => '\u00A0'.repeat(spaces.length)),
+		)
+		.join('')
+}
+
+test('emphasized H1 runs keep a space at the colour boundary', () => {
+	const accent = getOgPalette('dark').primaryText
+	const titles = [
+		publicOgPages.home.imageTitle,
+		...homeOgVariantIds.map((id) => getHomeOgVariant(id)?.imageTitle),
+	]
+	for (const title of titles) {
+		if (!title?.includes('**')) continue
+		for (const line of title.split('\n')) {
+			if (!line.includes('**')) continue
+			const painted = ogTitleChildren({
+				text: line,
+				maxLength: TITLE_MAX_LENGTH,
+				accent,
+			})
+			expect(collectTitleText(painted.children)).toBe(
+				boundarySpacesAsNbsp(line),
+			)
+			for (const style of emphasisStyles(painted.children)) {
+				expect(style).toEqual({ color: accent })
+			}
+		}
+	}
+
+	expect(
+		collectTitleText(
+			ogTitleChildren({
+				text: 'Don\u2019t **start over**',
+				maxLength: TITLE_MAX_LENGTH,
+				accent,
+			}).children,
+		),
+	).toBe('Don\u2019t\u00A0start over')
+	expect(
+		collectTitleText(
+			ogTitleChildren({
+				text: '**Switch** agents. **Keep** the work.',
+				maxLength: TITLE_MAX_LENGTH,
+				accent,
+			}).children,
+		),
+	).toBe('Switch\u00A0agents.\u00A0Keep\u00A0the work.')
+	expect(
+		collectTitleText(
+			ogTitleChildren({
+				text: '**Switch **agents',
+				maxLength: TITLE_MAX_LENGTH,
+				accent,
+			}).children,
+		),
+	).toBe('Switch\u00A0agents')
 })
 
 test('locked homepage headlines fit the title budget without an ellipsis', () => {

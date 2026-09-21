@@ -45,9 +45,19 @@ function ogTextChildren(
 }
 
 /**
+ * Satori's normal white-space drops a run's leading and trailing U+0020, so
+ * adjacent flex spans paint "Don'tstart". NBSP is the same width in the
+ * display face and survives that trim. Colour stays on the span; the space
+ * can sit on either neighbour.
+ */
+function keepRunBoundarySpaces(text: string): string {
+	return text.replace(/^ +| +$/g, (spaces) => '\u00A0'.repeat(spaces.length))
+}
+
+/**
  * `**span**` in an H1 becomes a run in `primaryText`. The display face is
- * already the extra-bold cut, matching the landing `<em>` (accent, same
- * weight). Subtitles stay plain strings.
+ * already the extra-bold cut, matching the landing `<em>` (accent colour,
+ * same weight). Subtitles stay plain strings.
  */
 function ogEmphasisLine(
 	runs: Array<OgEmphasisRun>,
@@ -65,7 +75,7 @@ function ogEmphasisLine(
 				type: 'span',
 				props: {
 					...(run.emphasis ? { style: { color: accent } } : {}),
-					children: run.text,
+					children: keepRunBoundarySpaces(run.text),
 				},
 			})),
 		},
