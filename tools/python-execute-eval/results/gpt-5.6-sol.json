@@ -1,0 +1,158 @@
+{
+	"suite": "python-execute-experiment",
+	"model": "gpt-5.6-sol",
+	"backend": {
+		"python": "cpython",
+		"typescript": "node"
+	},
+	"ranAt": "2026-09-22T05:47:54.501Z",
+	"rows": [
+		{
+			"model": "gpt-5.6-sol",
+			"language": "python",
+			"taskId": "notes-crud",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 397,
+			"elapsedMs": 238
+		},
+		{
+			"model": "gpt-5.6-sol",
+			"language": "typescript",
+			"taskId": "notes-crud",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 469,
+			"elapsedMs": 1
+		},
+		{
+			"model": "gpt-5.6-sol",
+			"language": "python",
+			"taskId": "http-json",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 192,
+			"elapsedMs": 218
+		},
+		{
+			"model": "gpt-5.6-sol",
+			"language": "typescript",
+			"taskId": "http-json",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 221,
+			"elapsedMs": 1
+		},
+		{
+			"model": "gpt-5.6-sol",
+			"language": "python",
+			"taskId": "csv-wrangle",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 360,
+			"elapsedMs": 213
+		},
+		{
+			"model": "gpt-5.6-sol",
+			"language": "typescript",
+			"taskId": "csv-wrangle",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 508,
+			"elapsedMs": 0
+		},
+		{
+			"model": "gpt-5.6-sol",
+			"language": "python",
+			"taskId": "stats-stdlib",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 248,
+			"elapsedMs": 222
+		},
+		{
+			"model": "gpt-5.6-sol",
+			"language": "typescript",
+			"taskId": "stats-stdlib",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 627,
+			"elapsedMs": 0
+		},
+		{
+			"model": "gpt-5.6-sol",
+			"language": "python",
+			"taskId": "search-then-read",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 166,
+			"elapsedMs": 227
+		},
+		{
+			"model": "gpt-5.6-sol",
+			"language": "typescript",
+			"taskId": "search-then-read",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 211,
+			"elapsedMs": 0
+		},
+		{
+			"model": "gpt-5.6-sol",
+			"language": "python",
+			"taskId": "recover-missing-note",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 229,
+			"elapsedMs": 218
+		},
+		{
+			"model": "gpt-5.6-sol",
+			"language": "typescript",
+			"taskId": "recover-missing-note",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 306,
+			"elapsedMs": 1
+		},
+		{
+			"model": "gpt-5.6-sol",
+			"language": "python",
+			"taskId": "numpy-mean",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 100,
+			"elapsedMs": 217,
+			"taxonomy": "missing_lib",
+			"error": "blocked module: numpy"
+		},
+		{
+			"model": "gpt-5.6-sol",
+			"language": "typescript",
+			"taskId": "numpy-mean",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 192,
+			"elapsedMs": 0
+		}
+	],
+	"summary": {
+		"passed": 14,
+		"failed": 0,
+		"totalRetries": 0,
+		"byLanguage": {
+			"python": {
+				"passed": 7,
+				"failed": 0,
+				"totalCodeChars": 1692,
+				"medianElapsedMs": 218
+			},
+			"typescript": {
+				"passed": 7,
+				"failed": 0,
+				"totalCodeChars": 2534,
+				"medianElapsedMs": 0
+			}
+		}
+	}
+}
