@@ -451,6 +451,23 @@ test('sqlQuery caps large result sets and sets truncated', async () => {
 	})
 	expect(exact.truncated).toBe(false)
 	expect(exact.rowCount).toBe(maxStorageSqlQueryRows)
+
+	// packageStorage always sends writable:true; WITH … SELECT must still
+	// abort at the row cap (not drain the recursive cursor to completion).
+	const cteRead = await runner.sqlQuery({
+		query: `with recursive seq(i) as (
+			select 1
+			union all
+			select i + 1 from seq where i < ?
+		)
+		select i as value from seq`,
+		params: [overCap],
+		writable: true,
+	})
+	expect(cteRead.truncated).toBe(true)
+	expect(cteRead.rowCount).toBe(maxStorageSqlQueryRows)
+	expect(cteRead.rows).toHaveLength(maxStorageSqlQueryRows)
+	expect(cteRead.rowsRead).toBeLessThan(overCap)
 })
 
 test('sqlQuery drains RETURNING writes past the row cap so mutations finish', async () => {

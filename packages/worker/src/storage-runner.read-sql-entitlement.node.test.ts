@@ -71,6 +71,7 @@ const {
 	createStorageBytesEntitlementRunCache,
 	createStorageKodyTools,
 	isReadOnlyStorageSqlQuery,
+	isStorageSqlReturningMutation,
 	readOnlyStorageSqlDeniedMessage,
 	storageEstimateReadRetryDelaysMs,
 } = await import('#worker/storage-runner.ts')
@@ -126,6 +127,23 @@ test('writable storageSql skips read-only fan-out and enforces mutating entitlem
 		isReadOnlyStorageSqlQuery('SELECT 1; CREATE TABLE skills (id TEXT)'),
 	).toBe(false)
 	expect(isReadOnlyStorageSqlQuery('')).toBe(false)
+
+	expect(isStorageSqlReturningMutation('INSERT INTO t VALUES (1)')).toBe(true)
+	expect(isStorageSqlReturningMutation('UPDATE t SET x = 1')).toBe(true)
+	expect(isStorageSqlReturningMutation('DELETE FROM t')).toBe(true)
+	expect(isStorageSqlReturningMutation('REPLACE INTO t VALUES (1)')).toBe(true)
+	expect(
+		isStorageSqlReturningMutation(
+			'WITH s AS (SELECT 1 AS i) INSERT INTO t SELECT i FROM s RETURNING i',
+		),
+	).toBe(true)
+	expect(
+		isStorageSqlReturningMutation(
+			'WITH recursive seq(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM seq WHERE i < 10) SELECT i FROM seq',
+		),
+	).toBe(false)
+	expect(isStorageSqlReturningMutation('SELECT 1')).toBe(false)
+	expect(isStorageSqlReturningMutation('CREATE TABLE t (id TEXT)')).toBe(false)
 
 	mockModule.getEstimatedBytes.mockClear()
 	mockModule.listUserStorageBucketEstimates.mockClear()

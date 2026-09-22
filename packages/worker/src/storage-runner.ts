@@ -435,6 +435,42 @@ export function isReadOnlyStorageSqlQuery(query: string) {
 	)
 }
 
+const storageSqlReturningMutationVerbs = [
+	'insert',
+	'update',
+	'delete',
+	'replace',
+] as const
+
+/** Keyword token match for INSERT/UPDATE/DELETE/REPLACE after a WITH clause. */
+const storageSqlReturningMutationVerbInWithPattern =
+	/(?:^|[^a-z0-9_])(?:insert|update|delete|replace)(?:[^a-z0-9_]|$)/
+
+/**
+ * True when `query` can mutate while yielding rows (SQLite RETURNING on
+ * INSERT / UPDATE / DELETE / REPLACE, including after a WITH clause).
+ *
+ * Used by {@link cursorToSqlResult} drainOverflow: only these statements must
+ * keep stepping past the row cap so the write finishes. Pure reads — including
+ * `WITH … SELECT` sent with `writable: true` from packageStorage — stop early.
+ */
+export function isStorageSqlReturningMutation(query: string) {
+	const trimmed = query.trim()
+	if (!trimmed) {
+		return false
+	}
+	const normalized = trimmed.toLowerCase()
+	for (const verb of storageSqlReturningMutationVerbs) {
+		if (normalized.startsWith(verb)) {
+			return true
+		}
+	}
+	if (!normalized.startsWith('with')) {
+		return false
+	}
+	return storageSqlReturningMutationVerbInWithPattern.test(normalized)
+}
+
 export const readOnlyStorageSqlDeniedMessage =
 	'Read-only storage.sql only allows a single SELECT, EXPLAIN, or schema PRAGMA statement. Pass writable: true to allow multi-statement or mutating queries.'
 
@@ -641,7 +677,7 @@ class StorageRunnerBase extends DurableObject<Env> {
 			...params,
 		)
 		const drainOverflow =
-			Boolean(input.writable) && !isReadOnlyStorageSqlQuery(query)
+			Boolean(input.writable) && isStorageSqlReturningMutation(query)
 		return cursorToSqlResult(cursor, { drainOverflow })
 	}
 }
