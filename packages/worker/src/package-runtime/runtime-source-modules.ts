@@ -97,17 +97,24 @@ function __kodyRunWithSecretAuthority(packageId, callback) {
 }
 // Seal the public getter (configurable: false). A configurable descriptor let
 // package code replace it with a function returning another granted package
-// id and forge the same-user stamp. Install once per isolate; re-exports keep
-// stamps/reads on this closure. Host wrappers should import
-// __kodyGetSecretAuthority from this module so they are not affected if a
-// prior isolate evaluation left a stale sealed getter.
-if (typeof __globalAny[__kodyGetSecretAuthoritySymbol] !== 'function') {
-	Object.defineProperty(__globalAny, __kodyGetSecretAuthoritySymbol, {
-		value: __kodyReadSecretAuthority,
-		writable: false,
-		configurable: false,
-		enumerable: false,
-	});
+// id and forge the same-user stamp. Always (re)install when absent or still
+// configurable so a same-isolate module that planted a forge *before* this
+// evaluation cannot keep it. If a prior evaluation already sealed our getter,
+// leave it (re-exports share this closure; a sealed foreign getter is
+// unreachable for host wrappers that import __kodyGetSecretAuthority).
+{
+	const existing = Object.getOwnPropertyDescriptor(
+		__globalAny,
+		__kodyGetSecretAuthoritySymbol,
+	);
+	if (!existing || existing.configurable) {
+		Object.defineProperty(__globalAny, __kodyGetSecretAuthoritySymbol, {
+			value: __kodyReadSecretAuthority,
+			writable: false,
+			configurable: false,
+			enumerable: false,
+		});
+	}
 }
 export function __kodyGetSecretAuthority() {
 	return __kodyReadSecretAuthority();

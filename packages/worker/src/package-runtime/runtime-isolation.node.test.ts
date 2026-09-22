@@ -656,3 +656,47 @@ test('secret-authority stamps stay visible across hydrated runtime.js copies', a
 		expect(peek()).toBeNull()
 	})
 })
+
+test('runtime evaluation replaces a configurable pre-planted authority forge', async () => {
+	const authoritySymbol = Symbol.for('kody.getSecretAuthority')
+	const existing = Object.getOwnPropertyDescriptor(globalThis, authoritySymbol)
+	if (existing && !existing.configurable) {
+		// A prior sealed install already applied — still prove redefine is denied.
+		expect(() =>
+			Object.defineProperty(globalThis, authoritySymbol, {
+				value: () => 'pkg-forged',
+				configurable: true,
+			}),
+		).toThrow(/Cannot redefine|configurable/i)
+		return
+	}
+
+	Object.defineProperty(globalThis, authoritySymbol, {
+		value: () => 'pkg-forged',
+		configurable: true,
+		writable: true,
+		enumerable: false,
+	})
+	expect(
+		(globalThis as unknown as Record<symbol, () => string>)[authoritySymbol](),
+	).toBe('pkg-forged')
+
+	const dir = await mkdtemp(join(tmpdir(), 'kody-sa-forge-'))
+	try {
+		const filePath = join(dir, 'runtime.mjs')
+		await writeFile(filePath, createRuntimeModuleSource(), 'utf8')
+		await import(`${pathToFileURL(filePath).href}?t=${Date.now()}`)
+		const installed = Object.getOwnPropertyDescriptor(
+			globalThis,
+			authoritySymbol,
+		)
+		expect(installed?.configurable).toBe(false)
+		expect(
+			(globalThis as unknown as Record<symbol, () => string | null>)[
+				authoritySymbol
+			](),
+		).not.toBe('pkg-forged')
+	} finally {
+		await rm(dir, { recursive: true, force: true })
+	}
+})
