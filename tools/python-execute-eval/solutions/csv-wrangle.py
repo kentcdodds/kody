@@ -6,8 +6,10 @@ def main(params):
     totals = {}
     for row in csv.DictReader(io.StringIO(params["csv"])):
         sku = row["sku"]
-        item = totals.setdefault(sku, {"qty": 0, "revenue": 0})
-        quantity = int(row["qty"])
-        item["qty"] += quantity
-        item["revenue"] += quantity * float(row["price"])
+        qty = int(row["qty"])
+        revenue = qty * float(row["price"])
+        current = totals.get(sku, {"qty": 0, "revenue": 0.0})
+        current["qty"] += qty
+        current["revenue"] += revenue
+        totals[sku] = current
     return {"by_sku": totals}
