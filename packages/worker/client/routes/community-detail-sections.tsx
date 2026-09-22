@@ -1,11 +1,6 @@
 import { type RemixNode, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
-import {
-	ActionButtonLoader,
-	installProgressWords,
-} from '#client/action-button-loader.tsx'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
-import { getCommunityPackageHrefFromName } from '#universal/community-links.ts'
 import { routes } from '#universal/routes.ts'
 import {
 	type AccountPackageDetail,
@@ -15,7 +10,6 @@ import { AccountPackageOwnerDetails } from '#client/routes/account-package-owner
 import { colors, transitions, typography } from '#universal/styles/tokens.ts'
 import {
 	getGhostButtonCss,
-	getPillButtonCss,
 	getSurfaceCardCss,
 	mergeCss,
 	pageHeadCss,
@@ -101,11 +95,8 @@ export function renderOwnerPackageSection(props: OwnerPackageSectionProps) {
 }
 
 export type InstallStripProps = {
-	installState: 'idle' | 'confirming' | 'submitting' | 'error'
 	installMessage: string | null
 	installOutcome: CommunityInstallOutcome | null
-	onConfirmInstall: () => void
-	onCancelInstall: () => void
 }
 
 export function renderInstallStrip(props: InstallStripProps) {
@@ -114,49 +105,11 @@ export function renderInstallStrip(props: InstallStripProps) {
 			? `Installed as ${props.installOutcome.targetName}.`
 			: `Forked as ${props.installOutcome.targetName}; it needs adaptation before it can run.`
 		: ''
-	const installedPackageHref = props.installOutcome
-		? getCommunityPackageHrefFromName(props.installOutcome.targetName)
-		: null
 	return (
 		<div data-testid="community-install" mix={css(installStripCss)}>
 			<p role="status" mix={css(visuallyHiddenCss)}>
 				{installAnnouncement}
 			</p>
-			{props.installState === 'submitting' ? (
-				<p mix={css(installProgressCss)} role="status">
-					<ActionButtonLoader label="Installing" words={installProgressWords} />
-				</p>
-			) : null}
-			{props.installState === 'confirming' ? (
-				<div
-					mix={css(cautionCardCss)}
-					data-testid="community-install-warning"
-					role="status"
-				>
-					<p mix={css({ margin: 0 })}>
-						This listing is from another account. Installing creates a fork you
-						own. It can need adaptation before it can run.
-					</p>
-					<div mix={css(buttonRowCss)}>
-						<button
-							mix={[
-								on('click', props.onConfirmInstall),
-								css(primaryPillButtonCss),
-							]}
-						>
-							Install
-						</button>
-						<button
-							mix={[
-								on('click', props.onCancelInstall),
-								css(smallGhostButtonCss),
-							]}
-						>
-							Cancel
-						</button>
-					</div>
-				</div>
-			) : null}
 			{props.installOutcome ? (
 				<div
 					data-testid="community-install-next-steps"
@@ -165,32 +118,16 @@ export function renderInstallStrip(props: InstallStripProps) {
 					<p mix={css({ margin: 0 })} aria-hidden="true">
 						{installAnnouncement}
 					</p>
-					<div mix={css(buttonRowCss)}>
-						{installedPackageHref ? (
-							<a href={installedPackageHref} mix={css(primaryPillLinkCss)}>
-								{props.installOutcome.status === 'installed'
-									? 'Open package'
-									: 'Open fork'}
-							</a>
-						) : (
-							<a
-								href={routes.accountPackages.href()}
-								mix={css(primaryPillLinkCss)}
-							>
-								Open packages
-							</a>
-						)}
-						<CopyTextButton
-							value={props.installOutcome.agentPrompt}
-							idleLabel={
-								props.installOutcome.status === 'installed'
-									? 'Use in agent'
-									: 'Copy setup prompt'
-							}
-							variant="ghost"
-							size="sm"
-						/>
-					</div>
+					{props.installOutcome.status === 'installed' ? (
+						<div mix={css(buttonRowCss)}>
+							<CopyTextButton
+								value={props.installOutcome.agentPrompt}
+								idleLabel="Use in agent"
+								variant="ghost"
+								size="sm"
+							/>
+						</div>
+					) : null}
 				</div>
 			) : null}
 			{props.installMessage ? (
@@ -444,37 +381,10 @@ const installStripCss = {
 	gap: '0.75rem',
 }
 
-const installProgressCss = {
-	margin: '1.2rem 0 0',
-	color: colors.textMuted,
-	fontSize: '0.95rem',
-}
-
 /* The prototype's smaller `.account-form .button` sizing. */
 const smallGhostButtonCss = mergeCss(getGhostButtonCss(), {
 	fontSize: '0.95rem',
 	padding: '0.75rem 1.3rem',
-})
-
-const primaryPillButtonCss = getPillButtonCss()
-const primaryPillLinkCss = mergeCss(getPillButtonCss(), {
-	textDecoration: 'none',
-	display: 'inline-flex',
-	alignItems: 'center',
-})
-
-/** Gold/amber caution — same family as fork-outdated, not the danger voice. */
-const cautionAccent = 'oklch(0.72 0.14 85)'
-
-const cautionCardCss = mergeCss(getSurfaceCardCss(), {
-	marginTop: '1.2rem',
-	borderColor: cautionAccent,
-	padding: '1.1rem 1.3rem',
-	display: 'grid',
-	gap: '0.9rem',
-	'& p': {
-		fontSize: '0.95rem',
-	},
 })
 
 const nextStepsCardCss = mergeCss(getSurfaceCardCss(), {

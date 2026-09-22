@@ -13,6 +13,7 @@ import {
 	shortCommunityCommit,
 } from '#universal/community-display.ts'
 import { renderIcon } from '#universal/icon.tsx'
+import { renderPackageTitleActions } from '#universal/package-title-actions.tsx'
 import {
 	communityTagListCss,
 	communityTagPillCss,
@@ -102,6 +103,17 @@ export function CommunityDetailContent(
 				iconUrl: markUrl,
 				iconName: listing?.name ?? kodyId,
 				animate: true,
+				titleActions: listing
+					? renderPackageTitleActions({
+							viewerIsOwner,
+							loggedIn,
+							returnTo,
+							listingName: listing.name,
+							ownerUsername: listing.ownerUsername,
+							trusted: listing.trusted,
+							viewerInstall: listing.viewerInstall ?? null,
+						})
+					: null,
 			})}
 
 			{shareGrant?.status === 'pending' ? (
@@ -131,48 +143,15 @@ export function CommunityDetailContent(
 				</section>
 			) : null}
 
-			{listing ? (
-				<header data-rise style={{ '--rise': '2' }} mix={css(listingHeadCss)}>
-					<div mix={css(listingBadgeGroupCss)}>
-						{listing.sourceAhead ? (
-							publishCompareHref ? (
-								<a
-									href={publishCompareHref}
-									data-testid="community-detail-source-ahead-badge"
-									title="Review the unpublished HEAD changes, then publish them."
-									mix={css(badgeLinkCss)}
-								>
-									HEAD ahead of published
-								</a>
-							) : (
-								<span
-									data-testid="community-detail-source-ahead-badge"
-									title="Default-branch HEAD is newer than the last package publish. Source at HEAD is already public; runtime still uses the published commit."
-									mix={css(badgeCss)}
-								>
-									HEAD ahead of published
-								</span>
-							)
-						) : null}
-						{listing.featured ? (
-							<span
-								data-testid="community-detail-featured-badge"
-								title="An admin featured this package as an onboarding starter install."
-								mix={css(badgeCss)}
-							>
-								Featured
-							</span>
-						) : null}
-						{renderCommunityViewerInstallBadge({
-							listing,
-							variant: 'detail',
-							loggedIn,
-							returnTo,
-							viewerIsOwner,
-						})}
-					</div>
-				</header>
-			) : null}
+			{listing
+				? renderListingHead({
+						listing,
+						loggedIn,
+						returnTo,
+						viewerIsOwner,
+						publishCompareHref,
+					})
+				: null}
 
 			{packageAppHref ? (
 				<div
@@ -264,6 +243,61 @@ export function CommunityDetailContent(
 				</>
 			) : null}
 		</div>
+	)
+}
+
+function renderListingHead(input: {
+	listing: PublicCommunityListing
+	loggedIn: boolean
+	returnTo: string
+	viewerIsOwner: boolean
+	publishCompareHref?: string | null
+}) {
+	const viewerBadge = renderCommunityViewerInstallBadge({
+		listing: input.listing,
+		variant: 'detail',
+		loggedIn: input.loggedIn,
+		returnTo: input.returnTo,
+		viewerIsOwner: input.viewerIsOwner,
+	})
+	if (!input.listing.sourceAhead && !input.listing.featured && !viewerBadge) {
+		return null
+	}
+	return (
+		<header data-rise style={{ '--rise': '2' }} mix={css(listingHeadCss)}>
+			<div mix={css(listingBadgeGroupCss)}>
+				{input.listing.sourceAhead ? (
+					input.publishCompareHref ? (
+						<a
+							href={input.publishCompareHref}
+							data-testid="community-detail-source-ahead-badge"
+							title="Review the unpublished HEAD changes, then publish them."
+							mix={css(badgeLinkCss)}
+						>
+							HEAD ahead of published
+						</a>
+					) : (
+						<span
+							data-testid="community-detail-source-ahead-badge"
+							title="Default-branch HEAD is newer than the last package publish. Source at HEAD is already public; runtime still uses the published commit."
+							mix={css(badgeCss)}
+						>
+							HEAD ahead of published
+						</span>
+					)
+				) : null}
+				{input.listing.featured ? (
+					<span
+						data-testid="community-detail-featured-badge"
+						title="An admin featured this package as an onboarding starter install."
+						mix={css(badgeCss)}
+					>
+						Featured
+					</span>
+				) : null}
+				{viewerBadge}
+			</div>
+		</header>
 	)
 }
 

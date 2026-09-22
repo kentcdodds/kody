@@ -60,9 +60,9 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 					404,
 				)
 			}
-			// Official `@kody/*` listings are first-party and skip confirm.
-			// Third-party listings still need the explicit acknowledgement
-			// the UI shows before calling this endpoint.
+			// Official `@kody/*` listings are first-party and skip acknowledgement.
+			// Third-party listings require acknowledged: true. The listing page
+			// sends that flag when the viewer clicks the shield icon.
 			const official = isOfficialCommunityListing({ name: listing.name })
 			if (!official && parsed.data.acknowledged !== true) {
 				return jsonResponse(

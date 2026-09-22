@@ -81,7 +81,7 @@ function createSnapshotFilesWorkspace(files: Record<string, string>) {
  * installer's account — the fork is kept as an inert source so an agent can
  * resume it through `repoOpenSession`, and no package is published.
  *
- * Callers are responsible for the install confirm gate: public listings
+ * Callers are responsible for the acknowledgement gate: public listings
  * must only reach this after the user explicitly acknowledged the risk.
  */
 export async function installCommunityListing(input: {

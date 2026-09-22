@@ -17,6 +17,11 @@ import { NotFoundPage } from '#client/not-found-page.tsx'
 import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
+import { installProgressWords } from '#client/action-button-loader.tsx'
+import {
+	startPackageTitleInstallProgress,
+	stopPackageTitleInstallProgress,
+} from '#client/package-title-install-progress.ts'
 import { decideCommunityInstallClick } from '#client/routes/community-detail-install.ts'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
@@ -51,8 +56,9 @@ import { postPackageShareAction } from './package-share-client.ts'
  * Files / Settings tabs, tags, quiet meta row) stays server-rendered in the
  * `community-detail` frame — see `src/app/community-detail-content.tsx` —
  * while this shell renders the README as `.prose`, admin tools, and the
- * report disclosure. Install / Installed / Fork outdated live in the frame
- * next to Featured. Owner controls live on `/settings`.
+ * report disclosure. Fork, verify, open, outdated, and copy-setup live as
+ * icons beside the package name in the frame. Owner controls live on
+ * `/settings`.
  */
 
 function getCurrentListingId(handle: Handle) {
@@ -65,7 +71,7 @@ export function CommunityDetailRoute(handle: Handle) {
 	let featured = false
 	let featureState: 'idle' | 'submitting' | 'error' = 'idle'
 	let featureMessage: string | null = null
-	let installState: 'idle' | 'confirming' | 'submitting' | 'error' = 'idle'
+	let installState: 'idle' | 'submitting' | 'error' = 'idle'
 	let installMessage: string | null = null
 	let installOutcome: CommunityInstallOutcome | null = null
 	let readmeContent: string | null = null
@@ -132,6 +138,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		featured = snapshot.featured
 		featureState = 'idle'
 		featureMessage = null
+		stopPackageTitleInstallProgress({ restore: false })
 		installState = 'idle'
 		installMessage = null
 		installOutcome = null
@@ -379,6 +386,7 @@ export function CommunityDetailRoute(handle: Handle) {
 
 		installState = 'submitting'
 		installMessage = null
+		startPackageTitleInstallProgress(installProgressWords)
 		handle.update()
 
 		try {
@@ -391,7 +399,8 @@ export function CommunityDetailRoute(handle: Handle) {
 						'Content-Type': 'application/json',
 					},
 					credentials: 'include',
-					// The user already confirmed on the listing page.
+					// The title control is the acknowledgement. Third-party installs
+					// still require this flag; the tooltip carries the warning.
 					body: JSON.stringify({ acknowledged: true }),
 				},
 			)
@@ -402,12 +411,14 @@ export function CommunityDetailRoute(handle: Handle) {
 			const payload = await readJson<CommunityInstallApiPayload>(response)
 			// A late response for a previous listing must not overwrite the
 			// state of the listing currently on screen.
-			if (getCurrentListingId(handle) !== listingId) return
-			if (response.status === 409 && payload?.requiresAcknowledgement) {
-				installState = 'confirming'
-				installMessage = null
-				handle.update()
+			if (getCurrentListingId(handle) !== listingId) {
+				stopPackageTitleInstallProgress({ restore: false })
 				return
+			}
+			if (response.status === 409 && payload?.requiresAcknowledgement) {
+				throw new Error(
+					payload.error ?? 'Unable to install this public package.',
+				)
 			}
 			if (
 				!response.ok ||
@@ -429,11 +440,16 @@ export function CommunityDetailRoute(handle: Handle) {
 				failedChecks: payload.failedChecks ?? [],
 			}
 			installState = 'idle'
+			stopPackageTitleInstallProgress({ restore: false })
 			handle.update()
 			const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)
 			if (frame) void frame.reload()
 		} catch (error) {
-			if (getCurrentListingId(handle) !== listingId) return
+			if (getCurrentListingId(handle) !== listingId) {
+				stopPackageTitleInstallProgress({ restore: false })
+				return
+			}
+			stopPackageTitleInstallProgress()
 			installState = 'error'
 			installMessage =
 				error instanceof Error
@@ -452,18 +468,12 @@ export function CommunityDetailRoute(handle: Handle) {
 		const decision = decideCommunityInstallClick({
 			installState,
 			alreadyInstalled: installOutcome != null,
-			official: control.getAttribute('data-official') === 'true',
 		})
 		switch (decision) {
 			case 'ignore':
 				return
 			case 'submit':
 				void submitInstall()
-				return
-			case 'confirm':
-				installState = 'confirming'
-				installMessage = null
-				handle.update()
 				return
 			default: {
 				const exhaustive: never = decision
@@ -623,14 +633,8 @@ export function CommunityDetailRoute(handle: Handle) {
 					<>
 						{listingId
 							? renderInstallStrip({
-									installState,
 									installMessage,
 									installOutcome,
-									onConfirmInstall: () => void submitInstall(),
-									onCancelInstall: () => {
-										installState = 'idle'
-										handle.update()
-									},
 								})
 							: null}
 

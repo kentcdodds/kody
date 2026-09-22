@@ -1,30 +1,24 @@
-export type CommunityInstallUiState =
-	| 'idle'
-	| 'confirming'
-	| 'submitting'
-	| 'error'
+export type CommunityInstallUiState = 'idle' | 'submitting' | 'error'
 
-export type CommunityInstallClickDecision = 'ignore' | 'submit' | 'confirm'
+export type CommunityInstallClickDecision = 'ignore' | 'submit'
 
 /**
- * The Install pill lives in the server frame, so it stays clickable while
- * the client is submitting, confirming, or waiting for a reload. Ignore
- * those clicks. Official `@kody/*` listings install on the first click;
- * third-party listings still take one generic confirm.
+ * The fork control lives in the server frame, so it stays clickable while
+ * the client is submitting or waiting for a reload. Ignore those clicks.
+ * Another-account listings warn in the control's tooltip; the click itself
+ * starts the fork.
  */
 export function decideCommunityInstallClick(input: {
 	installState: CommunityInstallUiState
 	alreadyInstalled: boolean
-	official?: boolean
 }): CommunityInstallClickDecision {
 	if (input.alreadyInstalled) return 'ignore'
 	switch (input.installState) {
 		case 'submitting':
-		case 'confirming':
 			return 'ignore'
 		case 'idle':
 		case 'error':
-			return input.official ? 'submit' : 'confirm'
+			return 'submit'
 		default: {
 			const exhaustive: never = input.installState
 			throw new Error(`Unhandled install state: ${String(exhaustive)}`)

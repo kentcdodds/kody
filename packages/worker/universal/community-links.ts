@@ -23,7 +23,7 @@ export function parseListingOwnerUsername(name: string) {
 
 /**
  * Official / first-party catalog listings (`@kody/*`). These skip the
- * third-party install confirm — they are implicitly trusted.
+ * third-party acknowledgement gate — they are implicitly trusted.
  */
 export function isOfficialCommunityListing(input: {
 	name?: string | null

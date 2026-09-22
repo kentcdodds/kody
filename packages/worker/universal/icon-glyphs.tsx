@@ -3,7 +3,7 @@
 import { type RemixNode } from 'remix/ui'
 
 /**
- * Inner paths from Iconic (https://iconic.app) free SVG icons.
+ * Inner paths from Iconic (https://iconic.app) SVG icons.
  * 24×24 bounding box, 1.5px stroke. Cropping lives in `icon.tsx`.
  */
 export const iconNames = [
@@ -60,6 +60,11 @@ export const iconNames = [
 	'star',
 	'heart',
 	'eye',
+	'git-fork',
+	'link-break',
+	'clipboard',
+	'arrow-up-right',
+	'shield-tick',
 ] as const
 
 export type IconName = (typeof iconNames)[number]
@@ -1146,6 +1151,152 @@ export const iconGlyphs = {
 				stroke-linecap="round"
 				stroke-linejoin="round"
 				stroke-width="1.5"
+			/>
+		</>
+	),
+	'git-fork': () => (
+		<>
+			<path
+				stroke="currentColor"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="1.5"
+				d="M9.25 7C9.25 8.24264 8.24264 9.25 7 9.25C5.75736 9.25 4.75 8.24264 4.75 7C4.75 5.75736 5.75736 4.75 7 4.75C8.24264 4.75 9.25 5.75736 9.25 7Z"
+			/>
+			<path
+				stroke="currentColor"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="1.5"
+				d="M19.25 7C19.25 8.24264 18.2426 9.25 17 9.25C15.7574 9.25 14.75 8.24264 14.75 7C14.75 5.75736 15.7574 4.75 17 4.75C18.2426 4.75 19.25 5.75736 19.25 7Z"
+			/>
+			<path
+				stroke="currentColor"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="1.5"
+				d="M14.25 17C14.25 18.2426 13.2426 19.25 12 19.25C10.7574 19.25 9.75 18.2426 9.75 17C9.75 15.7574 10.7574 14.75 12 14.75C13.2426 14.75 14.25 15.7574 14.25 17Z"
+			/>
+			<path
+				stroke="currentColor"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="1.5"
+				d="M6.75 9.5V10.25C6.75 11.3546 7.64543 12.25 8.75 12.25H12M17.25 9.5V10.25C17.25 11.3546 16.3546 12.25 15.25 12.25H12M12 12.25V14.5"
+			/>
+		</>
+	),
+	'link-break': () => (
+		<>
+			<path
+				stroke="currentColor"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="1.5"
+				d="M17.75 12.25L18 12C19.6569 10.3431 19.6569 7.65685 18 6C16.3431 4.34314 13.6569 4.34314 12 6L11.75 6.25"
+			/>
+			<path
+				stroke="currentColor"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="1.5"
+				d="M6.24996 11.75L5.99996 12C4.34311 13.6569 4.34311 16.3431 5.99996 18C7.65682 19.6569 10.3431 19.6569 12 18L12.25 17.75"
+			/>
+			<path
+				stroke="currentColor"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="1.5"
+				d="M8.25 4.75V6.25"
+			/>
+			<path
+				stroke="currentColor"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="1.5"
+				d="M15.75 17.75V19.25"
+			/>
+			<path
+				stroke="currentColor"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="1.5"
+				d="M6.25 8.25H4.75"
+			/>
+			<path
+				stroke="currentColor"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="1.5"
+				d="M19.25 15.75H17.75"
+			/>
+		</>
+	),
+	clipboard: () => (
+		<>
+			<path
+				stroke="currentColor"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="1.5"
+				d="M9 6.75H7.75C6.64543 6.75 5.75 7.64543 5.75 8.75V17.25C5.75 18.3546 6.64543 19.25 7.75 19.25H16.25C17.3546 19.25 18.25 18.3546 18.25 17.25V8.75C18.25 7.64543 17.3546 6.75 16.25 6.75H15"
+			/>
+			<path
+				stroke="currentColor"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="1.5"
+				d="M14 8.25H10C9.44772 8.25 9 7.80228 9 7.25V5.75C9 5.19772 9.44772 4.75 10 4.75H14C14.5523 4.75 15 5.19772 15 5.75V7.25C15 7.80228 14.5523 8.25 14 8.25Z"
+			/>
+			<path
+				stroke="currentColor"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="1.5"
+				d="M9.75 12.25H14.25"
+			/>
+			<path
+				stroke="currentColor"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="1.5"
+				d="M9.75 15.25H14.25"
+			/>
+		</>
+	),
+	'arrow-up-right': () => (
+		<>
+			<path
+				stroke="currentColor"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="1.5"
+				d="M17.25 15.25V6.75H8.75"
+			/>
+			<path
+				stroke="currentColor"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="1.5"
+				d="M17 7L6.75 17.25"
+			/>
+		</>
+	),
+	'shield-tick': () => (
+		<>
+			<path
+				stroke="currentColor"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="1.5"
+				d="M12 4.75L4.75002 8C4.75002 8 4.00002 19.25 12 19.25C20 19.25 19.25 8 19.25 8L12 4.75Z"
+			/>
+			<path
+				stroke="currentColor"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="1.5"
+				d="M9.75 12.75L11 14.25L14.25 9.75"
 			/>
 		</>
 	),

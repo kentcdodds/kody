@@ -20,7 +20,7 @@ export const installProgressWords = [
 	'Wiring',
 ] as const
 
-const defaultWordHoldMs = 2600
+export const installProgressWordHoldMs = 2600
 
 const dotColumns = 3
 const dotRows = 3
@@ -129,7 +129,7 @@ export function ActionButtonLoader(handle: Handle<ActionButtonLoaderProps>) {
 			wordIndex += 1
 			if (wordIndex >= (handle.props.words?.length ?? 0) - 1) stopRotation()
 			handle.update()
-		}, handle.props.wordHoldMs ?? defaultWordHoldMs)
+		}, handle.props.wordHoldMs ?? installProgressWordHoldMs)
 		handle.signal.addEventListener('abort', stopRotation)
 	}
 
