@@ -121,10 +121,14 @@ const __kodyEvaluateFetchPatchedSymbol = Symbol.for('kody.evaluateFetchPatched')
 if (!globalThis[__kodyEvaluateFetchPatchedSymbol]) {
 	const __kodyNativeFetch = globalThis.fetch.bind(globalThis);
 	globalThis.fetch = (input, init) => {
-		const authority =
-			typeof __kodyGetSecretAuthority === 'function'
-				? String(__kodyGetSecretAuthority() ?? '').trim()
-				: '';
+		const authority = String(
+			(typeof __kodyGetSecretAuthority === 'function'
+				? __kodyGetSecretAuthority()
+				: typeof globalThis[Symbol.for('kody.getSecretAuthority')] ===
+					  'function'
+					? globalThis[Symbol.for('kody.getSecretAuthority')]()
+					: '') ?? '',
+		).trim();
 		const headers = new Headers(
 			init?.headers ??
 				(input && typeof input === 'object' && 'headers' in input
@@ -223,10 +227,14 @@ function createKodyProxy(runtimeBridge, mcpServerNames) {
 			},
 		});
 	function attachSecretAuthorityArgs(args) {
-		const authority =
-			typeof __kodyGetSecretAuthority === 'function'
-				? String(__kodyGetSecretAuthority() ?? '').trim()
-				: '';
+		const authority = String(
+			(typeof __kodyGetSecretAuthority === 'function'
+				? __kodyGetSecretAuthority()
+				: typeof globalThis[Symbol.for('kody.getSecretAuthority')] ===
+					  'function'
+					? globalThis[Symbol.for('kody.getSecretAuthority')]()
+					: '') ?? '',
+		).trim();
 		if (args == null || typeof args !== 'object' || Array.isArray(args)) {
 			return args;
 		}
@@ -307,10 +315,14 @@ function createRealtimeProxy(runtimeBridge) {
 
 function createPackageSecretsProxy(runtimeBridge) {
 	const secretArgs = (alias) => {
-		const authority =
-			typeof __kodyGetSecretAuthority === 'function'
-				? String(__kodyGetSecretAuthority() ?? '').trim()
-				: '';
+		const authority = String(
+			(typeof __kodyGetSecretAuthority === 'function'
+				? __kodyGetSecretAuthority()
+				: typeof globalThis[Symbol.for('kody.getSecretAuthority')] ===
+					  'function'
+					? globalThis[Symbol.for('kody.getSecretAuthority')]()
+					: '') ?? '',
+		).trim();
 		const args = { alias };
 		if (authority) {
 			args[${JSON.stringify(secretAuthorityArgName)}] = authority;
