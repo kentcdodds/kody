@@ -7,6 +7,7 @@ import { AdminCommunityReportsRoute } from '#client/routes/admin-community-repor
 import {
 	AccountManagementInlineLinkNav,
 	AccountManagementLinkNav,
+	AccountManagementShell,
 	AccountPageHeader,
 	IdValue,
 	MetadataGrid,
@@ -102,12 +103,16 @@ test('inline link nav stays in flow and is not a second account rail', async () 
 	)
 	expect(railHtml).toContain('data-account-nav')
 	const railRules = readRulesFor(railHtml, 'nav')
-	// Sticky in the shell's first column. An absolute full-height track does
-	// not grow a short page, so the last links painted over the footer.
-	expect(railRules).toContain('position: sticky')
-	expect(railRules).not.toContain('position: absolute')
-	expect(railRules).toContain('max-height: calc(100dvh - 6.5rem)')
-	expect(railRules).toContain('overflow-y: auto')
+	// The rail is the shell's left track: as tall as the content, clipped so
+	// it cannot paint over the footer. The link column inside sticks and
+	// scrolls. A min-height on the shell would leave a blank band on short
+	// pages, so the track does not reserve one.
+	expect(railRules).toContain('position: absolute')
+	expect(railRules).toContain('bottom: 0')
+	expect(railRules).toContain('overflow: clip')
+	expect(railHtml).toContain('position: sticky')
+	expect(railHtml).toContain('max-height: min(100%, calc(100dvh - 6.5rem))')
+	expect(railHtml).toContain('overflow-y: auto')
 	expect(railHtml).toContain('<details')
 	expect(railHtml).toContain('>Admin sections</span>')
 	expect(railHtml).toContain('data-icon="menu"')
@@ -144,6 +149,21 @@ test('community reports page keeps one admin rail and an in-flow status filter',
 	expect(html).toContain('aria-label="Admin sections"')
 	expect(html).toContain('aria-label="Report status"')
 	expect(html).toContain('href="/admin/community-reports?status=resolved"')
+})
+
+test('account shell sizes to its content instead of a reserved rail height', async () => {
+	const html = await renderToString(
+		jsx(AccountManagementShell, {
+			children: jsx(AccountPageHeader, {
+				title: 'Webhooks',
+				description: 'Inbound webhook URLs.',
+				currentHref: routes.accountWebhooks.href(),
+			}),
+		}),
+	)
+	expect(html).toContain('position: relative')
+	expect(html).toContain('bottom: 0')
+	expect(html).toContain('overflow: clip')
 })
 
 test('account page header puts the phone section menu above the heading', async () => {

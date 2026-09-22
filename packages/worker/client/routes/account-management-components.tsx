@@ -196,39 +196,33 @@ export function AccountManagementShell(
 				display: 'grid',
 				gap: spacing.xl,
 				alignItems: 'start',
-				// Prototype `.account` layout: 200px sticky nav rail beside the
-				// content column, 72rem total. The rail is the first grid column
-				// and only exists when the section nav is present — nav-less
-				// shell users (onboarding, pending verification) keep the plain
-				// column. The rail starts at the gutter so it lines up with the
-				// header's brand. It spans every content row, so its own height
-				// is part of the shell and a short page cannot leave the links
-				// hanging over the footer. Note: `css()` classes each live in
-				// their own cascade sub-layer, so child spacing must stay on the
-				// shell's `gap`, never on per-child margins a child's own class
-				// would silently beat.
+				// Prototype `.account` layout: 200px rail beside the content
+				// column, 72rem total. The rail is absolutely positioned in a
+				// left track and only exists when the section nav is present —
+				// nav-less shell users (onboarding, pending verification) keep
+				// the plain column. The rail starts at the gutter so it lines
+				// up with the header's brand. Its box is the shell (top and
+				// bottom), and the link column scrolls inside that box, so a
+				// short page stays as tall as its content. A fixed min-height
+				// here leaves a blank band above the footer. Note: `css()`
+				// classes each live in their own cascade sub-layer, so child
+				// spacing must stay on the shell's `gap`, never on per-child
+				// margins a child's own class would silently beat.
 				'&:has(> [data-account-nav])': {
-					gridTemplateColumns: '200px minmax(0, 1fr)',
-					columnGap: 'clamp(2rem, 5vw, 4.5rem)',
-					rowGap: accountSectionGap,
-					// `align-content` defaults to `stretch`, which hands leftover
-					// space to the auto-sized tracks. Keep sections packed at the
-					// start when the rail is the taller column.
+					position: 'relative',
+					gap: accountSectionGap,
+					paddingLeft: `calc(${pageGutter} + 200px + clamp(2rem, 5vw, 4.5rem))`,
 					alignContent: 'start',
-					'& > :not([data-account-nav])': {
-						gridColumn: '2',
-						minWidth: 0,
-						...(handle.props.maxWidth
-							? { maxWidth: handle.props.maxWidth }
-							: {}),
-					},
+					...(handle.props.maxWidth
+						? {
+								'& > *:not([data-account-nav])': {
+									maxWidth: handle.props.maxWidth,
+								},
+							}
+						: {}),
 					[accountManagementNarrowMq]: {
-						gridTemplateColumns: 'minmax(0, 1fr)',
-						columnGap: 0,
-						rowGap: spacing.xl,
-						'& > :not([data-account-nav])': {
-							gridColumn: '1',
-						},
+						paddingLeft: pageGutter,
+						gap: spacing.xl,
 					},
 				},
 				...(handle.props.maxWidth

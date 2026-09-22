@@ -383,6 +383,10 @@ input[type='checkbox'] {
    purpose — it has to beat the css() class that sets that padding. */
 main:has([data-account-shell]) {
 	padding: 0;
+	/* The app column grows to fill the viewport. On a short account page that
+	   growth is an empty band between the shell and the footer. The shell
+	   already sizes to its content, so let the footer follow it. */
+	flex-grow: 0;
 }
 
 /* Always reserve the classic scrollbar's track, so a short page and a long one
