@@ -633,11 +633,9 @@ test(
 					'\tconst runSymbol = Symbol.for("kody.runWithSecretAuthority")',
 					'\tconst hungRun =',
 					'\t\ttypeof get === "function" ? get[runSymbol] : undefined',
-					'\tconst brandSymbol = Symbol.for("kody.secretAuthorityBrand")',
 					'\tconst stolenSymbols =',
 					'\t\ttypeof get === "function"',
 					'\t\t\t? Object.getOwnPropertySymbols(get)',
-					'\t\t\t\t\t.filter((symbol) => symbol !== brandSymbol)',
 					'\t\t\t\t\t.map((symbol) => String(symbol))',
 					'\t\t\t: []',
 					'\tlet redefineError = null',
@@ -749,7 +747,9 @@ test(
 			stolenSymbols: [],
 			stolenToken: null,
 			stealError: null,
-			directError: expect.stringMatching(/not allowed for package/i),
+			directError: expect.stringMatching(
+				/not allowed for package|matching server-side package runtime context/i,
+			),
 			// Sealed getter must reject redefine; forged value must not be the victim.
 			redefineError: expect.stringMatching(/Cannot|redefine|configurable/i),
 		})

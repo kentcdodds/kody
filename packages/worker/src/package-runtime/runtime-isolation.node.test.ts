@@ -701,12 +701,14 @@ test('runtime evaluation replaces a configurable pre-planted authority forge', a
 	}
 })
 
-test('runtime evaluation rejects a sealed foreign authority forge', async () => {
+test('module secret-authority export ignores a sealed foreign global forge', async () => {
 	const { Worker } = await import('node:worker_threads')
 	const source = createRuntimeModuleSource()
 	const result = await new Promise<{
 		ok: boolean
 		error: string
+		globalValue: string | null
+		moduleValue: string | null
 	}>((resolve, reject) => {
 		const worker = new Worker(
 			`
@@ -726,12 +728,27 @@ Object.defineProperty(globalThis, authoritySymbol, {
 const filePath = join(tmpdir(), \`kody-sa-sealed-\${Date.now()}.mjs\`)
 writeFileSync(filePath, ${JSON.stringify(source)})
 try {
-	await import(pathToFileURL(filePath).href)
-	parentPort.postMessage({ ok: false, error: 'expected throw' })
+	const mod = await import(pathToFileURL(filePath).href)
+	const globalValue =
+		typeof globalThis[authoritySymbol] === 'function'
+			? globalThis[authoritySymbol]()
+			: null
+	const moduleValue =
+		typeof mod.__kodyGetSecretAuthority === 'function'
+			? mod.__kodyGetSecretAuthority()
+			: null
+	parentPort.postMessage({
+		ok: globalValue === 'pkg-forged' && moduleValue === null,
+		error: '',
+		globalValue,
+		moduleValue,
+	})
 } catch (error) {
 	parentPort.postMessage({
-		ok: /secret-authority getter sealed by foreign install/.test(String(error)),
+		ok: false,
 		error: String(error),
+		globalValue: null,
+		moduleValue: null,
 	})
 } finally {
 	try {
@@ -753,8 +770,8 @@ try {
 			}
 		})
 	})
+	expect(result.error).toBe('')
 	expect(result.ok).toBe(true)
-	expect(result.error).toMatch(
-		/secret-authority getter sealed by foreign install/,
-	)
+	expect(result.globalValue).toBe('pkg-forged')
+	expect(result.moduleValue).toBeNull()
 })
