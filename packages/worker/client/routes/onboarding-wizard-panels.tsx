@@ -209,6 +209,9 @@ export function renderSecondAgentPanel(
 		awaitingConnect?: boolean
 	},
 ) {
+	const selectedAgent =
+		props.selectedAgent === 'other' ? null : props.selectedAgent
+	const selectedAgentLabel = selectedAgent ? props.selectedAgentLabel : null
 	const connectedAgents = props.connectedAgents ?? []
 	const greyed = onboardingSecondAgentGreyedPresentation(connectedAgents)
 	const accessWinMade = onboardingAccessWinMadeLine({
@@ -225,10 +228,10 @@ export function renderSecondAgentPanel(
 			{renderAgentPanelHead({
 				kicker: 'Step 3',
 				titleId: 'connect-second-title',
-				title: props.selectedAgentLabel
-					? `Connect ${props.selectedAgentLabel}`
+				title: selectedAgentLabel
+					? `Connect ${selectedAgentLabel}`
 					: 'Connect a second agent',
-				selectedAgent: props.selectedAgent,
+				selectedAgent,
 				changeHref: onboardingSecondAgentHref(null, props.search ?? ''),
 				artSrc: '/images/kody-mcp-plug.webp',
 				artAlt: 'Kody plugging a cable into a warmly glowing port on a laptop',
@@ -239,7 +242,7 @@ export function renderSecondAgentPanel(
 					{accessWinMade}
 				</p>
 			) : null}
-			{props.selectedAgent ? (
+			{selectedAgent ? (
 				<p mix={css(panelLedeCss)} data-testid="onboarding-second-agent-lede">
 					{onboardingSecondAgentLede}
 				</p>
@@ -249,24 +252,21 @@ export function renderSecondAgentPanel(
 				hasMcpClient: props.hasSecondMcpClient,
 				anyGrantCompletesStep: true,
 				connectedAgents,
-				selectedAgent: props.selectedAgent,
-				selectedAgentLabel: props.selectedAgentLabel,
+				selectedAgent,
+				selectedAgentLabel,
 				search: props.search,
-				loginHref: onboardingSecondAgentHref(
-					props.selectedAgent,
-					props.search ?? '',
-				),
+				loginHref: onboardingSecondAgentHref(selectedAgent, props.search ?? ''),
 				connectedLabel: onboardingSecondAgentConnectedStatusLabel(
 					props.secondAgentGiftActive === true,
 				),
 			})}
 			{renderConnectedAgentsLine(
-				connectedAgentsOnCard(props.selectedAgent, connectedAgents),
+				connectedAgentsOnCard(selectedAgent, connectedAgents),
 			)}
 			<OnboardingMcpClientTabs
 				mcpServerUrl={props.mcpServerUrl}
 				highlights={props.mcpHighlights}
-				selectedAgent={props.selectedAgent}
+				selectedAgent={selectedAgent}
 				chooser={props.agentChooser ?? canonicalOnboardingAgentChooser()}
 				search={props.search ?? ''}
 				agentHref={onboardingSecondAgentHref}
@@ -276,7 +276,7 @@ export function renderSecondAgentPanel(
 				greyedReasons={greyed.greyedReasons}
 				greyedTitles={greyed.greyedTitles}
 			/>
-			{props.selectedAgent ? (
+			{selectedAgent ? (
 				<div
 					data-testid="onboarding-portability-proof"
 					mix={css(promptBlockCss)}
@@ -308,12 +308,12 @@ export function renderSecondAgentPanel(
 				onSelectStep={props.onSelectStep}
 				connectWaitLabel={connectWaitLabel({
 					awaitingConnect: props.awaitingConnect,
-					selectedAgent: props.selectedAgent,
-					selectedAgentLabel: props.selectedAgentLabel,
+					selectedAgent,
+					selectedAgentLabel,
 					connectedAgents,
 					connected: cardShowsConnectedStatus({
 						hasMcpClient: props.hasSecondMcpClient,
-						selectedAgent: props.selectedAgent,
+						selectedAgent,
 						connectedAgents,
 						anyGrantCompletesStep: true,
 					}),

@@ -396,6 +396,21 @@ test('invalid onboarding agent or service paths redirect to that step', async ()
 		new URL(badSecondAgent.headers.get('Location') ?? '', 'https://example.com')
 			.pathname,
 	).toBe('/onboarding/step-3')
+
+	const step3NotListed = await handler.handler(
+		new RequestContext(
+			new Request(
+				'https://example.com/onboarding/step-3/not-listed?redirectTo=%2F',
+			),
+		),
+	)
+	expect(step3NotListed.status).toBe(302)
+	const step3NotListedLocation = new URL(
+		step3NotListed.headers.get('Location') ?? '',
+		'https://example.com',
+	)
+	expect(step3NotListedLocation.pathname).toBe('/onboarding/step-3')
+	expect(step3NotListedLocation.search).toBe('?redirectTo=%2F')
 })
 
 test('onboarding persist chrome uses the newest saved-package name', async () => {
