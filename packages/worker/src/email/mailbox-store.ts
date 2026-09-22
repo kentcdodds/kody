@@ -66,6 +66,46 @@ export type MailboxUpsertResult = {
 	accepted: boolean
 }
 
+/**
+ * Every `email_messages` column except the two body texts. Kept in schema
+ * order so a new metadata column is an obvious omission next to the DDL.
+ */
+export const mailboxMessageMetadataColumnList = [
+	'id',
+	'direction',
+	'inbox_id',
+	'thread_id',
+	'sender_identity_id',
+	'from_address',
+	'envelope_from',
+	'to_addresses_json',
+	'cc_addresses_json',
+	'bcc_addresses_json',
+	'reply_to_addresses_json',
+	'subject',
+	'message_id_header',
+	'in_reply_to_header',
+	'references_json',
+	'headers_json',
+	'auth_results',
+	'raw_mime_key',
+	'raw_size',
+	'processing_status',
+	'classification',
+	'classification_reason',
+	'provider_message_id',
+	'delivery_status',
+	'delivery_status_at',
+	'error',
+	'received_at',
+	'sent_at',
+	'created_at',
+	'updated_at',
+] as const
+
+const mailboxMessageMetadataColumns =
+	mailboxMessageMetadataColumnList.join(', ')
+
 const mailboxRestorePendingMetaKey = 'restore_pending'
 const mailboxDrillResultMetaKeys = {
 	present: 'drill_result_present',
@@ -700,6 +740,31 @@ export class MailboxStore {
 		return row ? mapMailboxMessageRow(row) : null
 	}
 
+	/**
+	 * Page queries omit `text_body` and `html_body` (each capped at 64 KiB).
+	 * SQLite leaves unselected overflow pages unread, and the Durable Object
+	 * RPC does not carry them. `getMessage` and the other single-row reads
+	 * still return bodies. List and search rows report those fields as null.
+	 */
+	private queryMessageMetadataPage(input: {
+		clauses: Array<string>
+		params: Array<SqlStorageValue>
+		limit: number
+		offset: number
+	}): Array<Record<string, SqlStorageValue>> {
+		return this.sql
+			.exec<Record<string, SqlStorageValue>>(
+				`SELECT ${mailboxMessageMetadataColumns} FROM email_messages
+				WHERE ${input.clauses.join(' AND ')}
+				ORDER BY created_at DESC, id DESC
+				LIMIT ? OFFSET ?`,
+				...input.params,
+				input.limit,
+				input.offset,
+			)
+			.toArray()
+	}
+
 	listMessages(input: MailboxListMessagesInput): {
 		messages: Array<MailboxMessageRecord>
 		nextCursor: string | null
@@ -713,16 +778,12 @@ export class MailboxStore {
 		}
 		const offset =
 			input.cursor == null ? normalizeMailboxOffset(input.offset) : 0
-		params.push(limit + 1, offset)
-		const rows = this.sql
-			.exec<Record<string, SqlStorageValue>>(
-				`SELECT * FROM email_messages
-				WHERE ${clauses.join(' AND ')}
-				ORDER BY created_at DESC, id DESC
-				LIMIT ? OFFSET ?`,
-				...params,
-			)
-			.toArray()
+		const rows = this.queryMessageMetadataPage({
+			clauses,
+			params,
+			limit: limit + 1,
+			offset,
+		})
 		const hasMore = rows.length > limit
 		const pageRows = hasMore ? rows.slice(0, limit) : rows
 		const last = pageRows[pageRows.length - 1]
@@ -750,16 +811,12 @@ export class MailboxStore {
 			...input,
 			query: input.query,
 		})
-		params.push(limit, offset)
-		const rows = this.sql
-			.exec<Record<string, SqlStorageValue>>(
-				`SELECT * FROM email_messages
-				WHERE ${clauses.join(' AND ')}
-				ORDER BY created_at DESC, id DESC
-				LIMIT ? OFFSET ?`,
-				...params,
-			)
-			.toArray()
+		const rows = this.queryMessageMetadataPage({
+			clauses,
+			params,
+			limit,
+			offset,
+		})
 		return { messages: rows.map(mapMailboxMessageRow) }
 	}
 
