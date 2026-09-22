@@ -1,5 +1,5 @@
-import numpy as np
+import numpy
 
 
 def main(params):
-    return {"mean": round(float(np.mean(params["values"])), 6)}
+    return {"mean": round(float(numpy.mean(params["values"])), 6)}

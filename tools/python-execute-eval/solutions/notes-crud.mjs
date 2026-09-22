@@ -1,12 +1,20 @@
 import { kody } from 'kody:runtime'
 
 export default async function main(params) {
-	for (const op of params.ops) {
-		if (op.op === 'write') {
-			await kody.call('notes.write', { id: op.id, text: op.text })
-		} else if (op.op === 'remove') {
-			await kody.call('notes.remove', { id: op.id })
+	for (const operation of params.ops) {
+		switch (operation.op) {
+			case 'write':
+				await kody.call('notes.write', {
+					id: operation.id,
+					text: operation.text,
+				})
+				break
+			case 'remove':
+				await kody.call('notes.remove', { id: operation.id })
+				break
+			default:
+				throw new Error(`Unknown operation: ${operation.op}`)
 		}
 	}
-	return await kody.call('notes.list', {})
+	return kody.call('notes.list', {})
 }
