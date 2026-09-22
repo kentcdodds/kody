@@ -42,9 +42,10 @@ node tools/control-kody.ts request GET /community.json --skip-login
   stay links.
 - Package settings 404 for anyone who is not the owner.
 - Official `@kody/*` listings install from a fork icon beside the package name.
-  Listings from another account use a double-check icon. The tooltip asks the
-  viewer to verify the listing; the click sends `acknowledged: true` (the
-  install endpoint responds `409` without it).
+  Listings from another account use the same fork icon and `createDoubleCheck`.
+  The tooltip asks the viewer to verify the listing; the first click arms
+  Confirm fork and the second click sends `acknowledged: true` (the install
+  endpoint responds `409` without it).
 - Admin **featured** is editorial catalog placement on `/community` and listing
   detail (and slim names in the onboarding persist-prompt payload). It is not a
   wizard Step 2 card.

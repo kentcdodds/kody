@@ -1,7 +1,9 @@
 import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
 import {
+	CONFIRM_FORK_LABEL,
 	decideCommunityInstallClick,
+	paintPackageTitleInstallConfirm,
 	shouldResetInstallOnShellSnapshot,
 } from './community-detail-install.ts'
 import {
@@ -14,26 +16,97 @@ test('decideCommunityInstallClick starts a fork from idle or error and ignores a
 		decideCommunityInstallClick({
 			installState: 'idle',
 			alreadyInstalled: false,
+			requiresConfirm: false,
+			confirmed: false,
 		}),
 	).toBe('submit')
 	expect(
 		decideCommunityInstallClick({
 			installState: 'submitting',
 			alreadyInstalled: false,
+			requiresConfirm: false,
+			confirmed: false,
 		}),
 	).toBe('ignore')
 	expect(
 		decideCommunityInstallClick({
 			installState: 'idle',
 			alreadyInstalled: true,
+			requiresConfirm: false,
+			confirmed: false,
 		}),
 	).toBe('ignore')
 	expect(
 		decideCommunityInstallClick({
 			installState: 'error',
 			alreadyInstalled: false,
+			requiresConfirm: false,
+			confirmed: false,
 		}),
 	).toBe('submit')
+})
+
+test('other-account listings arm on the first click and fork on the second', () => {
+	expect(
+		decideCommunityInstallClick({
+			installState: 'idle',
+			alreadyInstalled: false,
+			requiresConfirm: true,
+			confirmed: false,
+		}),
+	).toBe('arm')
+	expect(
+		decideCommunityInstallClick({
+			installState: 'idle',
+			alreadyInstalled: false,
+			requiresConfirm: true,
+			confirmed: true,
+		}),
+	).toBe('submit')
+	expect(
+		decideCommunityInstallClick({
+			installState: 'error',
+			alreadyInstalled: false,
+			requiresConfirm: true,
+			confirmed: false,
+		}),
+	).toBe('arm')
+	expect(
+		decideCommunityInstallClick({
+			installState: 'submitting',
+			alreadyInstalled: false,
+			requiresConfirm: true,
+			confirmed: true,
+		}),
+	).toBe('ignore')
+})
+
+test('paintPackageTitleInstallConfirm swaps the fork label for Confirm fork', () => {
+	const tooltip = { textContent: 'This listing is from another account.' }
+	const attributes = new Map<string, string>([
+		['data-title-idle-label', 'Fork'],
+		['data-title-idle-tooltip', 'This listing is from another account.'],
+		['aria-label', 'Fork'],
+	])
+	const control = {
+		getAttribute(name: string) {
+			return attributes.get(name) ?? null
+		},
+		setAttribute(name: string, value: string) {
+			attributes.set(name, value)
+		},
+		querySelector(selector: string) {
+			return selector === '[data-title-status-tooltip]' ? tooltip : null
+		},
+	}
+
+	paintPackageTitleInstallConfirm(control, true)
+	expect(attributes.get('aria-label')).toBe(CONFIRM_FORK_LABEL)
+	expect(tooltip.textContent).toBe(CONFIRM_FORK_LABEL)
+
+	paintPackageTitleInstallConfirm(control, false)
+	expect(attributes.get('aria-label')).toBe('Fork')
+	expect(tooltip.textContent).toBe('This listing is from another account.')
 })
 
 test('a same-listing shell snapshot keeps an in-flight install', () => {

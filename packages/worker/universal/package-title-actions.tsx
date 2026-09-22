@@ -98,8 +98,8 @@ function renderStatusControl(input: PackageTitleActionsInput) {
 	}
 	return renderInstallControl({
 		kind: 'verify',
-		icon: 'two-checkmarks',
-		label: OTHER_ACCOUNT_FORK_TOOLTIP,
+		icon: 'git-fork',
+		label: FORK_TITLE_TOOLTIP,
 		tooltip: OTHER_ACCOUNT_FORK_TOOLTIP,
 		loggedIn: input.loggedIn,
 		loginHref,
@@ -290,4 +290,8 @@ const titleSpinnerCss = {
 	height: titleIconSize,
 	border: `1.5px solid ${colors.border}`,
 	borderTopColor: colors.primary,
+	// `inline-block` would otherwise beat the `hidden` attribute in idle.
+	'&[hidden]': {
+		display: 'none',
+	},
 }
