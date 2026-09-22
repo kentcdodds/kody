@@ -32,6 +32,7 @@ const mockModule = vi.hoisted(() => ({
 			rowCount: 0,
 			rowsRead: 0,
 			rowsWritten: input.writable ? 1 : 0,
+			truncated: false,
 		}),
 	),
 }))

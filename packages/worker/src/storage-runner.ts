@@ -27,6 +27,8 @@ import { kodyCallDispatcherName } from '#worker/kody-evaluate-bindings.ts'
 
 const defaultStorageExportPageSize = 250
 const maxStorageExportPageSize = 1_000
+/** Cap for StorageRunner sqlQuery row materialization (matches export max). */
+export const maxStorageSqlQueryRows = maxStorageExportPageSize
 const maxConcurrentStorageEstimateReads = 16
 /**
  * Backoff pauses between estimate read attempts (attempts = length + 1).
@@ -109,6 +111,12 @@ type StorageSqlResult = {
 	rowCount: number
 	rowsRead: number
 	rowsWritten: number
+	/**
+	 * True when the cursor held more rows than {@link maxStorageSqlQueryRows}.
+	 * The returned `rows` / `rowCount` stop at the cap; callers should page
+	 * with LIMIT/OFFSET (or equivalent) rather than relying on a full scan.
+	 */
+	truncated: boolean
 }
 
 type StorageListResult = StorageExportResult
@@ -477,13 +485,22 @@ async function withStorageEstimateReadTimeout<T>(
 function cursorToSqlResult(
 	cursor: SqlStorageCursor<Record<string, StorageSqlValue>>,
 ): StorageSqlResult {
-	const rows = cursor.toArray()
+	const rows: Array<Record<string, StorageSqlValue>> = []
+	let truncated = false
+	for (const row of cursor) {
+		if (rows.length >= maxStorageSqlQueryRows) {
+			truncated = true
+			break
+		}
+		rows.push(row)
+	}
 	return {
 		columns: [...cursor.columnNames],
 		rows,
 		rowCount: rows.length,
 		rowsRead: cursor.rowsRead,
 		rowsWritten: cursor.rowsWritten,
+		truncated,
 	}
 }
 

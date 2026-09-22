@@ -121,6 +121,7 @@ test('storageQuery denies package runtimes buckets their package does not own', 
 		rowCount: 1,
 		rowsRead: 1,
 		rowsWritten: 0,
+		truncated: false,
 	})
 	const ownBucketResult = await storageQueryCapability.handler(
 		{

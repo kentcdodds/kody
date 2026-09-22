@@ -978,6 +978,7 @@ export function createStorageRunnerBinding() {
 					rowCount: 1,
 					rowsRead: 1,
 					rowsWritten: 0,
+					truncated: false,
 				}),
 			}
 		},

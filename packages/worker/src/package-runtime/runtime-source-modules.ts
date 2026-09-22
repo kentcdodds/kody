@@ -36,9 +36,9 @@ export function createRuntimeModuleSource() {
 	//
 	// Hydration used to install another full copy of this module under each
 	// published-artifact prefix. Those copies now re-export this root module
-	// so the stamp ALS is created once in this closure. The ALS instance is
-	// never published on globalThis. Later full evaluations (bundler inlining)
-	// reuse the first getter and its hidden runner instead of a raw ALS.
+	// so the stamp ALS is created once in this closure. The ALS instance and
+	// stamp runner stay module-local (never hung off Symbol.for / globalThis);
+	// only a read-only current-stamp getter is published for host wrappers.
 	//
 	// This module is evaluated at most once per isolate path, but dynamic
 	// workers with identical code are cached and reused across executions
@@ -75,37 +75,35 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 
 const __kodyRuntimeStorageSymbol = Symbol.for('kody.runtimeStorage');
 const __kodyGetSecretAuthoritySymbol = Symbol.for('kody.getSecretAuthority');
-const __kodyRunSecretAuthoritySymbol = Symbol.for('kody.runWithSecretAuthority');
 const __globalAny = /** @type {any} */ (globalThis);
 const __kodyRuntimeStorage =
 	__globalAny[__kodyRuntimeStorageSymbol] ??
 	(__globalAny[__kodyRuntimeStorageSymbol] = new AsyncLocalStorage());
+// Stamp ALS + runner stay in this module closure. Artifact-prefixed runtime
+// copies re-export this root module (createRuntimeModuleReexportSource) so
+// the ALS is created once. Do NOT hang the runner off globalThis / Symbol.for:
+// package code can steal Symbol.for keys via Object.getOwnPropertySymbols and
+// forge another granted package's stamp in the same user isolate.
+const __kodySecretAuthorityAls = new AsyncLocalStorage();
+function __kodyReadSecretAuthority() {
+	const current = __kodySecretAuthorityAls.getStore();
+	return typeof current === 'string' && current.trim() ? current.trim() : null;
+}
+function __kodyRunWithSecretAuthority(packageId, callback) {
+	return __kodySecretAuthorityAls.run(packageId, callback);
+}
+// Host fetch / kody.* wrappers may read the current stamp via this getter.
+// Writable stamp control is intentionally not installed on globalThis.
 if (typeof __globalAny[__kodyGetSecretAuthoritySymbol] !== 'function') {
-	const als = new AsyncLocalStorage();
-	const get = () => {
-		const current = als.getStore();
-		return typeof current === 'string' && current.trim() ? current.trim() : null;
-	};
 	Object.defineProperty(__globalAny, __kodyGetSecretAuthoritySymbol, {
-		value: get,
-		writable: false,
-		configurable: false,
-		enumerable: false,
-	});
-	Object.defineProperty(get, __kodyRunSecretAuthoritySymbol, {
-		value: (packageId, callback) => als.run(packageId, callback),
+		value: __kodyReadSecretAuthority,
 		writable: false,
 		configurable: false,
 		enumerable: false,
 	});
 }
 export function __kodyGetSecretAuthority() {
-	const get = __globalAny[__kodyGetSecretAuthoritySymbol];
-	return typeof get === 'function' ? get() : null;
-}
-function __kodyRunWithSecretAuthority(packageId, callback) {
-	const run = __globalAny[__kodyGetSecretAuthoritySymbol]?.[__kodyRunSecretAuthoritySymbol];
-	return typeof run === 'function' ? run(packageId, callback) : callback();
+	return __kodyReadSecretAuthority();
 }
 
 export function __kodyRunInRuntime(runtime, callback) {
