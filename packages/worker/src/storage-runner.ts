@@ -484,13 +484,24 @@ async function withStorageEstimateReadTimeout<T>(
 
 function cursorToSqlResult(
 	cursor: SqlStorageCursor<Record<string, StorageSqlValue>>,
+	options?: {
+		/**
+		 * When true, keep stepping after the row cap so statements that yield
+		 * rows while mutating (INSERT/UPDATE/DELETE … RETURNING) finish.
+		 * Read-only SELECT/EXPLAIN/PRAGMA can stop early — they do not write.
+		 */
+		drainOverflow?: boolean
+	},
 ): StorageSqlResult {
 	const rows: Array<Record<string, StorageSqlValue>> = []
 	let truncated = false
 	for (const row of cursor) {
 		if (rows.length >= maxStorageSqlQueryRows) {
 			truncated = true
-			break
+			if (!options?.drainOverflow) {
+				break
+			}
+			continue
 		}
 		rows.push(row)
 	}
@@ -629,7 +640,9 @@ class StorageRunnerBase extends DurableObject<Env> {
 			query,
 			...params,
 		)
-		return cursorToSqlResult(cursor)
+		const drainOverflow =
+			Boolean(input.writable) && !isReadOnlyStorageSqlQuery(query)
+		return cursorToSqlResult(cursor, { drainOverflow })
 	}
 }
 

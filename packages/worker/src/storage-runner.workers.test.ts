@@ -453,6 +453,42 @@ test('sqlQuery caps large result sets and sets truncated', async () => {
 	expect(exact.rowCount).toBe(maxStorageSqlQueryRows)
 })
 
+test('sqlQuery drains RETURNING writes past the row cap so mutations finish', async () => {
+	await ensureStorageRunnerTestSchema()
+	const storageId = createExecuteStorageId()
+	const runner = storageRunnerRpc({
+		env,
+		userId: 'user-123',
+		storageId,
+	})
+
+	await runner.sqlQuery({
+		query:
+			'create table if not exists returning_bulk (id integer primary key, value integer)',
+		writable: true,
+	})
+	const overCap = maxStorageSqlQueryRows + 40
+	const inserted = await runner.sqlQuery({
+		query: `with recursive seq(i) as (
+			select 1
+			union all
+			select i + 1 from seq where i < ?
+		)
+		insert into returning_bulk (value) select i from seq returning value`,
+		params: [overCap],
+		writable: true,
+	})
+	expect(inserted.truncated).toBe(true)
+	expect(inserted.rowCount).toBe(maxStorageSqlQueryRows)
+	expect(inserted.rows).toHaveLength(maxStorageSqlQueryRows)
+	expect(inserted.rowsWritten).toBeGreaterThanOrEqual(overCap)
+
+	const count = await runner.sqlQuery({
+		query: 'select count(*) as n from returning_bulk',
+	})
+	expect(count.rows[0]).toEqual({ n: overCap })
+})
+
 test('storage runner enforces read-only SQL policy for mutations, multi-statement queries, and literal semicolons', async () => {
 	await ensureStorageRunnerTestSchema()
 	const storageId = createExecuteStorageId()
