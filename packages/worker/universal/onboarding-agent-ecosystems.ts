@@ -4,9 +4,9 @@
  * is that host. An unlabeled client and a remembered picker choice do not
  * disable tabs and do not count as their own ecosystem.
  *
- * Cursor Local, Cursor Cloud, an unclassified Cursor grant, and Grok Bot
- * share the Cursor ecosystem. A Cursor Cloud grant also marks Grok Bot
- * connected, because Grok Bot uses that connection.
+ * Cursor Local, Cursor Cloud, an unclassified Cursor grant, Grok Bot,
+ * Grok.com, and Grok CLI share the Grok ecosystem. A Cursor Cloud grant also
+ * marks Grok Bot connected, because Grok Bot uses that connection.
  */
 
 import { type McpClientKind } from '#universal/onboarding-mcp-clients.ts'
@@ -14,9 +14,15 @@ import { type McpClientKind } from '#universal/onboarding-mcp-clients.ts'
 const onboardingAgentEcosystems = {
 	openai: ['chatgpt', 'codex'],
 	anthropic: ['claude-desktop', 'claude-code'],
-	xai: ['grok', 'grok-cli'],
+	xai: [
+		'cursor',
+		'cursor-local',
+		'cursor-cloud',
+		'grok-bot',
+		'grok',
+		'grok-cli',
+	],
 	github: ['copilot', 'copilot-app'],
-	cursor: ['cursor', 'cursor-local', 'cursor-cloud', 'grok-bot'],
 	google: ['gemini'],
 	cognition: ['devin'],
 	sst: ['opencode'],
@@ -64,9 +70,9 @@ export type OnboardingStep3EcosystemGroup = {
  */
 export const onboardingStep3EcosystemGroups = [
 	{
-		id: 'cursor',
-		label: 'Cursor',
-		agents: ['cursor-local', 'cursor-cloud', 'grok-bot'],
+		id: 'xai',
+		label: 'Grok',
+		agents: ['cursor-local', 'cursor-cloud', 'grok-bot', 'grok', 'grok-cli'],
 	},
 	{
 		id: 'anthropic',
@@ -82,11 +88,6 @@ export const onboardingStep3EcosystemGroups = [
 		id: 'github',
 		label: 'GitHub',
 		agents: ['copilot', 'copilot-app'],
-	},
-	{
-		id: 'xai',
-		label: 'Grok',
-		agents: ['grok', 'grok-cli'],
 	},
 	{
 		id: 'google',
@@ -147,7 +148,7 @@ export function onboardingConnectedChooserKinds(
 
 /**
  * Distinct ecosystems among grants we can name. Unlabeled clients and
- * `other` add nothing. Two Cursor contexts are one ecosystem.
+ * `other` add nothing. Cursor and Grok hosts are one ecosystem.
  */
 export function countConnectedAgentEcosystems(
 	connectedAgents: ReadonlyArray<OnboardingConnectedAgentKind>,
