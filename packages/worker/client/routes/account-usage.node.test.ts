@@ -1,9 +1,12 @@
+import { jsx } from 'remix/ui/jsx-runtime'
+import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
 import {
 	type AccountUsageComputeOverage,
 	type AccountUsageEntitlementConsumption,
 } from '#universal/loader-data.ts'
 import {
+	UsageResourceName,
 	computeAccountUsageOverageNotice,
 	formatEntitlementUsedPercent,
 	hotterUsagePercent,
@@ -113,6 +116,33 @@ test('hotterUsagePercent uses the closer of daily and weekly windows', () => {
 	expect(
 		hotterUsagePercent(entitlement({ percentOfLimit: null, week: undefined })),
 	).toBeNull()
+})
+
+test('usage resource name keeps the explanation in a popover', async () => {
+	const html = await renderToString(
+		jsx(UsageResourceName, {
+			id: 'execute_calls_per_day',
+			label: 'Execute calls',
+			whatCounts: 'MCP execute tool runs today (UTC).',
+			howToReduce: 'Run fewer execute calls today or this week.',
+			note: 'High daily headroom for bursts; the weekly total keeps it sustainable.',
+		}),
+	)
+	expect(html).toContain('>Execute calls</span>')
+	expect(html).toContain('popovertarget="usage-resource-execute_calls_per_day"')
+	expect(html).toContain('aria-label="What counts toward Execute calls"')
+	const panelAt = html.indexOf(
+		'data-usage-resource-panel="execute_calls_per_day"',
+	)
+	expect(panelAt).toBeGreaterThan(-1)
+	const panel = html.slice(panelAt)
+	expect(panel).toContain('MCP execute tool runs today (UTC).')
+	expect(panel).toContain('Run fewer execute calls today or this week.')
+	expect(panel).toContain('High daily headroom for bursts')
+	// The label row itself is only the name. The sentences live in the popover.
+	const labelRow = html.slice(0, panelAt)
+	expect(labelRow).not.toContain('MCP execute tool runs today')
+	expect(labelRow).not.toContain('Run fewer execute calls')
 })
 
 test('formatEntitlementUsedPercent shows today and this week', () => {
