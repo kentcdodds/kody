@@ -217,8 +217,9 @@ test('exporter progresses phases with mocked bindings and S3, writing summary la
 	expect(
 		shouldRunDrExportWatchdogCron(new Date('2026-07-23T06:20:00.000Z')),
 	).toBe(false)
-	// Catch-up cadence: never inside the nightly window, one tick per 15
-	// minutes outside it.
+	// Catch-up cadence: never inside the nightly window; every 5-minute tick
+	// outside it (aligned with the worker cron). 12:05 is on-boundary (runs);
+	// 12:07 is off-boundary (skips).
 	expect(
 		shouldRunDrExportCatchUpCron(new Date('2026-07-23T01:45:00.000Z')),
 	).toBe(false)
@@ -227,6 +228,9 @@ test('exporter progresses phases with mocked bindings and S3, writing summary la
 	).toBe(true)
 	expect(
 		shouldRunDrExportCatchUpCron(new Date('2026-07-23T12:05:00.000Z')),
+	).toBe(true)
+	expect(
+		shouldRunDrExportCatchUpCron(new Date('2026-07-23T12:07:00.000Z')),
 	).toBe(false)
 	expect(
 		shouldRunDrExportCatchUpCron(new Date('2026-07-23T00:15:00.000Z')),
@@ -240,7 +244,7 @@ test('exporter progresses phases with mocked bindings and S3, writing summary la
 	expect(
 		await runDrExportTick({
 			env: { DR_EXPORT_ENABLED: 'true' } as unknown as Env,
-			now: new Date('2026-07-23T00:25:00.000Z'),
+			now: new Date('2026-07-23T00:26:00.000Z'),
 		}),
 	).toMatchObject({ skipped: true, reason: 'outside-nightly-window' })
 
@@ -567,7 +571,7 @@ test('daytime catch-up resumes a stranded previous day until its summary is writ
 		expect(
 			await runDrExportTick({
 				env,
-				now: new Date('2026-07-24T12:05:00.000Z'),
+				now: new Date('2026-07-24T12:07:00.000Z'),
 				timeBudgetMs: 60_000,
 				s3: client,
 			}),
@@ -594,7 +598,7 @@ test('daytime catch-up resumes a stranded previous day until its summary is writ
 		// With the day complete, later cadence ticks exit cheaply.
 		const idle = await runDrExportTick({
 			env,
-			now: new Date('2026-07-24T12:15:00.000Z'),
+			now: new Date('2026-07-24T12:05:00.000Z'),
 			timeBudgetMs: 60_000,
 			s3: client,
 		})
@@ -649,7 +653,8 @@ test('catch-up prefers the oldest stranded day in the lookback', async () => {
 		BUNDLE_ARTIFACTS_KV: { get: async () => null },
 		STORAGE_RUNNER: {},
 	} as unknown as Env
-	for (const day of ['2026-07-20', '2026-07-21', '2026-07-22', '2026-07-23']) {
+	// One day just outside the 14-day lookback, plus three days inside it.
+	for (const day of ['2026-07-08', '2026-07-21', '2026-07-22', '2026-07-23']) {
 		await client.put(
 			`staging/${day}/exporter/progress.json`,
 			JSON.stringify(__testOnlyCreateInitialProgress(day, now)),
@@ -668,14 +673,14 @@ test('catch-up prefers the oldest stranded day in the lookback', async () => {
 		skipped: false,
 		summaryWritten: true,
 	})
-	expect(await client.getText(stagingSummaryKey('2026-07-20'))).toBeNull()
+	expect(await client.getText(stagingSummaryKey('2026-07-08'))).toBeNull()
 	expect(await client.getText(stagingSummaryKey('2026-07-21'))).not.toBeNull()
 	expect(await client.getText(stagingSummaryKey('2026-07-22'))).toBeNull()
 	expect(await client.getText(stagingSummaryKey('2026-07-23'))).toBeNull()
 
 	const yesterday = await runDrExportTick({
 		env,
-		now: new Date('2026-07-23T12:15:00.000Z'),
+		now: new Date('2026-07-23T12:05:00.000Z'),
 		timeBudgetMs: 60_000,
 		s3: client,
 	})
@@ -688,7 +693,7 @@ test('catch-up prefers the oldest stranded day in the lookback', async () => {
 
 	const today = await runDrExportTick({
 		env,
-		now: new Date('2026-07-23T12:30:00.000Z'),
+		now: new Date('2026-07-23T12:10:00.000Z'),
 		timeBudgetMs: 60_000,
 		s3: client,
 	})
@@ -697,7 +702,7 @@ test('catch-up prefers the oldest stranded day in the lookback', async () => {
 		mode: 'catch-up',
 		summaryWritten: true,
 	})
-	expect(await client.getText(stagingSummaryKey('2026-07-20'))).toBeNull()
+	expect(await client.getText(stagingSummaryKey('2026-07-08'))).toBeNull()
 })
 
 test('catch-up honors an active progress lease and resumes after it expires', async () => {

@@ -203,16 +203,16 @@ export function shouldRunDrExportCron(now: Date) {
 }
 
 /**
- * Daytime catch-up cadence: outside the nightly window, one tick every 15
- * minutes resumes the oldest stranded day in the lookback until its summary
- * is written. A single tick still spends at most the normal ~20 s budget,
- * so daytime blast radius is bounded while a stranded night finishes within
- * a few hours. Ticks with no stranded day exit after two cheap HEAD-style
- * checks per lookback day.
+ * Daytime catch-up cadence: outside the nightly window, every worker cron
+ * tick (every 5 minutes) resumes the oldest stranded day in the lookback
+ * until its summary is written. A single tick still spends at most the
+ * normal ~20 s budget, so daytime blast radius stays bounded while backlog
+ * drains ~3× faster than the previous 15-minute cadence. Ticks with no
+ * stranded day exit after two cheap HEAD-style checks per lookback day.
  */
 export function shouldRunDrExportCatchUpCron(now: Date) {
 	if (shouldRunDrExportCron(now)) return false
-	return now.getUTCMinutes() % 15 === 0
+	return now.getUTCMinutes() % 5 === 0
 }
 
 /**

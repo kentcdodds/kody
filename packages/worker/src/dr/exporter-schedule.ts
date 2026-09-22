@@ -17,20 +17,26 @@ export function shouldRunDrExportCron(now: Date) {
  * stuck-day check) scan for stranded staging: a day whose
  * `exporter/progress.json` exists but whose `exporter/summary.json` was never
  * written because the nightly window closed first.
+ *
+ * Sized above the observed steady-state finish time (~2.5–3 days of
+ * nightly + catch-up for ~500 Mailbox owners) so a day cannot age out of
+ * the window mid-phase the way 2026-09-12..2026-09-22 did under a 2-day
+ * lookback. Keep in sync with `sealRecentCompleteDays` so a newly written
+ * summary is still within the hourly seal scan.
  */
-export const drExportCatchUpLookbackDays = 2
+export const drExportCatchUpLookbackDays = 14
 
 /**
- * Daytime catch-up cadence: outside the nightly window, one tick every 15
- * minutes resumes the oldest stranded day in the lookback until its summary
- * is written. A single tick still spends at most the normal ~20 s budget,
- * so daytime blast radius is bounded while a stranded night finishes within
- * a few hours. Ticks with no stranded day exit after two cheap HEAD-style
- * checks per lookback day.
+ * Daytime catch-up cadence: outside the nightly window, every worker cron
+ * tick (every 5 minutes) resumes the oldest stranded day in the lookback
+ * until its summary is written. A single tick still spends at most the
+ * normal ~20 s budget, so daytime blast radius stays bounded while backlog
+ * drains ~3× faster than the previous 15-minute cadence. Ticks with no
+ * stranded day exit after two cheap HEAD-style checks per lookback day.
  */
 export function shouldRunDrExportCatchUpCron(now: Date) {
 	if (shouldRunDrExportCron(now)) return false
-	return now.getUTCMinutes() % 15 === 0
+	return now.getUTCMinutes() % 5 === 0
 }
 
 /**
