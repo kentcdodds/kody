@@ -67,9 +67,8 @@ import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
  * agent · Make something useful · Connect a second agent), one surface panel
  * at a time with hand-tilted mascot art. Step 1 picks one agent. Step 2 is
  * one prompt that tells the agent to retrieve the onboarding guide. Step 3
- * looks like Step 1 and greys the same-ecosystem family plus every already
- * connected named host, then folds in a portability proof that reuses what
- * Step 2 made.
+ * groups hosts by ecosystem and disables tabs for hosts a grant already
+ * names, then folds in a portability proof that reuses what Step 2 made.
  */
 
 type OnboardingStep = OnboardingWizardStepNumber
@@ -479,11 +478,7 @@ export function OnboardingRoute(handle: Handle) {
 		)
 		const visibleSelectedAgent =
 			activeStep === 3
-				? resolveOnboardingStep3SelectedAgent(
-						firstAgent,
-						selectedAgent,
-						connectedAgents,
-					)
+				? resolveOnboardingStep3SelectedAgent(selectedAgent, connectedAgents)
 				: selectedAgent
 		if (
 			activeStep === 3 &&

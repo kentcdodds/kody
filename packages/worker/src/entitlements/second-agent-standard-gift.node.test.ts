@@ -45,7 +45,7 @@ async function createGiftTestDb(input: {
 	return { db, stableUserId }
 }
 
-test('first unique-client cross grants 14-day Standard; later events and paid tiers do not', async () => {
+test('first second-ecosystem grant gives 14-day Standard; later events and paid tiers do not', async () => {
 	// The gift's stored expiry is 2026-09-21. Entitlement reads the wall
 	// clock, so pin it to the scenario date or the gift looks expired.
 	vi.useFakeTimers({ now })
@@ -65,7 +65,7 @@ async function assertSecondAgentGiftOnScenarioClock() {
 		await evaluateSecondAgentStandardGift({
 			db: free.db,
 			stableUserId: free.stableUserId,
-			uniqueClientCount: 1,
+			ecosystemCount: 1,
 			now,
 		}),
 	).toEqual({ outcome: 'below_threshold' })
@@ -79,7 +79,7 @@ async function assertSecondAgentGiftOnScenarioClock() {
 	const first = await evaluateSecondAgentStandardGift({
 		db: free.db,
 		stableUserId: free.stableUserId,
-		uniqueClientCount: 2,
+		ecosystemCount: 2,
 		now,
 	})
 	expect(first).toEqual({
@@ -111,7 +111,7 @@ async function assertSecondAgentGiftOnScenarioClock() {
 	const second = await evaluateSecondAgentStandardGift({
 		db: free.db,
 		stableUserId: free.stableUserId,
-		uniqueClientCount: 3,
+		ecosystemCount: 3,
 		now: new Date(now.getTime() + 24 * 60 * 60 * 1000),
 	})
 	expect(second.outcome).toBe('already_granted')
@@ -144,7 +144,7 @@ async function assertSecondAgentGiftOnScenarioClock() {
 	const paidStandardGift = await evaluateSecondAgentStandardGift({
 		db: paidStandard.db,
 		stableUserId: paidStandard.stableUserId,
-		uniqueClientCount: 2,
+		ecosystemCount: 2,
 		now,
 	})
 	expect(paidStandardGift).toEqual({
@@ -171,7 +171,7 @@ async function assertSecondAgentGiftOnScenarioClock() {
 	const paidProGift = await evaluateSecondAgentStandardGift({
 		db: paidPro.db,
 		stableUserId: paidPro.stableUserId,
-		uniqueClientCount: 2,
+		ecosystemCount: 2,
 		now,
 	})
 	expect(paidProGift.outcome).toBe('granted')
@@ -190,7 +190,7 @@ async function assertSecondAgentGiftOnScenarioClock() {
 	const replayPaid = await evaluateSecondAgentStandardGift({
 		db: paidPro.db,
 		stableUserId: paidPro.stableUserId,
-		uniqueClientCount: 4,
+		ecosystemCount: 4,
 		now,
 	})
 	expect(replayPaid.outcome).toBe('already_granted')
@@ -202,7 +202,7 @@ test('maybeEvaluate skips writes without prepare and keeps an existing gift belo
 		maybeEvaluateSecondAgentStandardGift({
 			db: {} as D1Database,
 			stableUserId: 'user-1',
-			uniqueClientCount: 2,
+			ecosystemCount: 2,
 		}),
 	).resolves.toEqual({
 		received: false,
@@ -220,13 +220,13 @@ test('maybeEvaluate skips writes without prepare and keeps an existing gift belo
 	await evaluateSecondAgentStandardGift({
 		db: gifted.db,
 		stableUserId: gifted.stableUserId,
-		uniqueClientCount: 2,
+		ecosystemCount: 2,
 		now,
 	})
 	const afterRevoke = await maybeEvaluateSecondAgentStandardGift({
 		db: gifted.db,
 		stableUserId: gifted.stableUserId,
-		uniqueClientCount: 1,
+		ecosystemCount: 1,
 		now,
 	})
 	expect(afterRevoke).toEqual({
@@ -239,7 +239,7 @@ test('maybeEvaluate skips writes without prepare and keeps an existing gift belo
 	const afterFailedListing = await maybeEvaluateSecondAgentStandardGift({
 		db: gifted.db,
 		stableUserId: gifted.stableUserId,
-		uniqueClientCount: 2,
+		ecosystemCount: 2,
 		listingFailed: true,
 		now,
 	})

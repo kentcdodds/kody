@@ -8,6 +8,8 @@ import { breakpoints } from '#universal/styles/tokens.ts'
 
 export type McpClientKind =
 	| 'cursor'
+	| 'cursor-local'
+	| 'cursor-cloud'
 	| 'chatgpt'
 	| 'codex'
 	| 'claude-desktop'
@@ -34,6 +36,8 @@ export type McpClientTab = {
 
 export const mcpClientTabs = [
 	{ id: 'cursor', label: 'Cursor', isNonCodingAgent: false },
+	{ id: 'cursor-local', label: 'Cursor Local', isNonCodingAgent: false },
+	{ id: 'cursor-cloud', label: 'Cursor Cloud', isNonCodingAgent: false },
 	{ id: 'chatgpt', label: 'ChatGPT.com', isNonCodingAgent: true },
 	{ id: 'codex', label: 'Codex', isNonCodingAgent: false },
 	{ id: 'claude-desktop', label: 'Claude Desktop', isNonCodingAgent: true },
@@ -287,6 +291,8 @@ export function onboardingAgentIconName(
 ): string | null {
 	switch (id) {
 		case 'cursor':
+		case 'cursor-local':
+		case 'cursor-cloud':
 			return 'cursor'
 		case 'claude-code':
 			return 'claudecode'
@@ -404,6 +410,8 @@ export const grokBotConnectPluginsUrl =
 function onboardingAgentHelpHref(id: McpClientKind) {
 	switch (id) {
 		case 'cursor':
+		case 'cursor-local':
+		case 'cursor-cloud':
 			return cursorMcpGuideUrl
 		case 'chatgpt':
 		case 'codex':

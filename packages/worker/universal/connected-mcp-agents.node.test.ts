@@ -9,7 +9,6 @@ import {
 	classifyMcpClientName,
 	countUniqueOAuthClientIds,
 	groupConnectedAgents,
-	hasSecondConnectedMcpClient,
 	labelInboundMcpClient,
 	latestConnectedAt,
 	oauthGrantCreatedAtIso,
@@ -44,8 +43,6 @@ test('unique client counting treats two grants for the same client as one', () =
 			{ clientId: 'client-b' },
 		]),
 	).toBe(2)
-	expect(hasSecondConnectedMcpClient(1)).toBe(false)
-	expect(hasSecondConnectedMcpClient(2)).toBe(true)
 })
 
 test('inbound labels prefer a known kind, then clientName, then hostname, then a truncated clientId', () => {
@@ -71,6 +68,43 @@ test('inbound labels prefer a known kind, then clientName, then hostname, then a
 			clientName: 'Cursor',
 		}),
 	).toEqual({ kind: 'cursor', label: 'Cursor' })
+
+	expect(
+		labelInboundMcpClient({
+			clientId: 'cursor-ide',
+			clientName: 'Cursor',
+			grantRedirectUri: 'cursor://anysphere.cursor-mcp/oauth/callback',
+		}),
+	).toEqual({ kind: 'cursor-local', label: 'Cursor Local' })
+
+	expect(
+		labelInboundMcpClient({
+			clientId: 'cursor-agent',
+			clientName: 'Cursor',
+			grantRedirectUri: 'https://www.cursor.com/agents/mcp/oauth/callback',
+		}),
+	).toEqual({ kind: 'cursor-cloud', label: 'Cursor Cloud' })
+
+	expect(
+		labelInboundMcpClient({
+			clientId: 'cursor-registered-all',
+			clientName: 'Cursor',
+			redirectUris: [
+				'cursor://anysphere.cursor-mcp/oauth/callback',
+				'https://www.cursor.com/agents/mcp/oauth/callback',
+				'http://localhost:8787/callback',
+			],
+			grantRedirectUri: 'http://localhost:8787/callback',
+		}),
+	).toEqual({ kind: 'cursor-local', label: 'Cursor Local' })
+
+	expect(
+		labelInboundMcpClient({
+			clientId: 'grok-bot-client',
+			clientName: 'Grok Bot',
+			grantRedirectUri: 'https://www.cursor.com/agents/mcp/oauth/callback',
+		}),
+	).toEqual({ kind: 'grok-bot', label: 'Grok Bot' })
 
 	expect(
 		labelInboundMcpClient({

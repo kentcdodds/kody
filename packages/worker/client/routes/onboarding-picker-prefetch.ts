@@ -22,12 +22,12 @@ export function onboardingAgentPickerPrefetchHrefs(
 	chooser: OnboardingAgentChooserPick = canonicalOnboardingAgentChooser(),
 	search = '',
 	agentHref: OnboardingAgentHref = onboardingAgentHref,
+	agentIds?: ReadonlyArray<McpClientKind>,
 ): Array<string> {
 	if (!selectedAgent) {
-		const ids: Array<McpClientKind> = [
-			...onboardingPickerAgentIds(chooser),
-			'other',
-		]
+		const ids: Array<McpClientKind> = agentIds
+			? [...agentIds]
+			: [...onboardingPickerAgentIds(chooser), 'other']
 		return ids.map((id) => agentHref(id, search))
 	}
 	if (selectedAgent === 'other') {

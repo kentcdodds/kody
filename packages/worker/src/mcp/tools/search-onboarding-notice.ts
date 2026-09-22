@@ -2,7 +2,7 @@ import {
 	formatOnboardingSearchNotice,
 	remainingOnboardingWizardLabels,
 } from '#universal/onboarding-process.ts'
-import { hasSecondConnectedMcpClient } from '#universal/connected-mcp-agents.ts'
+import { hasSecondConnectedMcpClient } from '#universal/onboarding-agent-ecosystems.ts'
 import {
 	loadOnboardingAccessWin,
 	readOnboardingChecklistDismissed,
@@ -42,9 +42,7 @@ export async function buildOnboardingSearchNotice(input: {
 		const remaining = remainingOnboardingWizardLabels({
 			hasMcpClient: inbound.uniqueClientCount > 0,
 			hasAccessWin,
-			hasSecondMcpClient: hasSecondConnectedMcpClient(
-				inbound.uniqueClientCount,
-			),
+			hasSecondMcpClient: hasSecondConnectedMcpClient(inbound.agents),
 		})
 		return formatOnboardingSearchNotice(remaining, input.baseUrl)
 	} catch {

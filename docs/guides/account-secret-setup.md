@@ -10,8 +10,8 @@ category: platform
 # Secret setup URL reference
 
 Use the hosted **`/account/secrets/new`** page whenever the user needs to enter
-a secret value such as an API key or personal access token. The agent must never
-see the secret value.
+a secret value such as an API key or personal access token. Secrets stay on the
+setup page; send the URL and wait until they confirm save.
 
 If the secret will power a downstream package or package app, open
 `search({ entity: "guide:integration_bootstrap" })` before building that
@@ -28,7 +28,8 @@ Use it when:
   `secretJwtSign`) is missing
 - the user needs to rotate a stored secret value
 
-Do **not** ask the user to paste secrets into chat.
+Send the `/account/secrets/new` URL and have them paste into **Secret value** on
+that page.
 
 ## URL format
 
@@ -41,22 +42,23 @@ so the user can paste immediately.
 
 ## Query params
 
-| Param             | Required | Description                                                                                                                                                  |
-| ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `name`            | yes      | Secret name (for example `exampleApiKey`).                                                                                                                   |
-| `description`     | no       | Human-readable description shown in the UI.                                                                                                                  |
-| `expiresAt`       | no       | Optional UTC ISO expiry (`2026-12-01T00:00:00.000Z`) or a `YYYY-MM-DD` date stored as midnight UTC. Prefills the Expires field. Leave omitted for no expiry. |
-| `allowedHosts`    | no       | Comma-separated hosts to review for approval.                                                                                                                |
-| `allowedPackages` | no       | Comma-separated saved package ids to review for approval.                                                                                                    |
-| `scope`           | no       | `user` (default) or `package`.                                                                                                                               |
-| `packageId`       | no       | Required when `scope=package`. Use the saved package id that owns the secret.                                                                                |
+| Param             | Required | Description                                                                                                                                                                                                                                                           |
+| ----------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`            | yes      | Secret name (for example `exampleApiKey`).                                                                                                                                                                                                                            |
+| `description`     | no       | Human-readable description shown in the UI.                                                                                                                                                                                                                           |
+| `expiresAt`       | no       | Optional. Kody’s cutoff for sending the secret, separate from the provider token’s own expiration. UTC ISO (`2026-12-01T00:00:00.000Z`) or a `YYYY-MM-DD` date stored as midnight UTC. Prefills Expires. Leave omitted and Kody keeps the secret until it is deleted. |
+| `allowedHosts`    | no       | Comma-separated hosts to review for approval.                                                                                                                                                                                                                         |
+| `allowedPackages` | no       | Comma-separated saved package ids to review for approval.                                                                                                                                                                                                             |
+| `scope`           | no       | `user` (default) or `package`.                                                                                                                                                                                                                                        |
+| `packageId`       | no       | Required when `scope=package`. Use the saved package id that owns the secret.                                                                                                                                                                                         |
 
 ## Approval policy reminders
 
-- Saving a secret does **not** approve outbound hosts.
-- The account form prefills the requested hosts and packages for review.
-- Host approval uses the dedicated **`/connect/secrets`** page (`name` / `names`
-  and `hosts`). Package grants use `/account/secrets/approve`.
+- A prefilled `allowedHosts` list is on the form under **Where this secret can
+  be sent**. Saving writes that list with the secret.
+- When the save URL omitted hosts, or a later call says a host is not approved,
+  open **`/connect/secrets`** (`name` / `names` and `hosts`). Package grants use
+  `/account/secrets/approve`.
 - `hosts` must be hostname-shaped. Truncated or path-bearing values are rejected
   on that page and are not written to `allowedHosts`.
 
@@ -67,11 +69,11 @@ read and use the user's secrets without an `allowed_packages` grant; updating or
 deleting a user secret from package code still requires that grant. Only the
 account owner can add a package to that grant on the secret editor or
 `/account/secrets/approve` — a focused Allow page like `/connect/secrets`.
-`secretLock` returns that approval URL; it does not apply the grant. Send the
-link and wait. Removing a grant is also website-only. When an **unadopted
-community-forked** package needs access to one or more **existing** user
-secrets, either adopt it after reviewing the source or send the user an approval
-link — do not ask them to recreate the secrets.
+`secretLock` returns that approval URL. Send the link and wait until they
+confirm. The grant is written on that page. Removing a grant is also
+website-only. When an **unadopted community-forked** package needs access to one
+or more **existing** user secrets, either adopt it after reviewing the source or
+send the approval link so they keep the secrets they already saved.
 
 - Single secret:
   `/account/secrets/user/{secretName}?package_id={savedPackageId}&package={kodyId}`

@@ -7,10 +7,11 @@ import {
 } from '#worker/onboarding-prompts.ts'
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
 import { listDisconnectedOnboardingFeaturedMcpServers } from '#universal/onboarding-mcp-chooser.ts'
+import { type ConnectedMcpAgent } from '#universal/connected-mcp-agents.ts'
 import {
-	type ConnectedMcpAgent,
+	countConnectedAgentEcosystems,
 	hasSecondConnectedMcpClient,
-} from '#universal/connected-mcp-agents.ts'
+} from '#universal/onboarding-agent-ecosystems.ts'
 import {
 	type OnboardingChecklistLoaderData,
 	type OnboardingCustomMcpServer,
@@ -174,19 +175,18 @@ export async function loadOnboardingData(input: {
 		input.env.OAUTH_PROVIDER,
 		input.stableUserId,
 	)
+	const connectedAgents = toOnboardingConnectedAgents(inbound.agents)
+	const ecosystemCount = countConnectedAgentEcosystems(connectedAgents)
 	const secondAgentStandardGift = await maybeEvaluateSecondAgentStandardGift({
 		db: input.env.APP_DB,
 		stableUserId: input.stableUserId,
-		uniqueClientCount: inbound.uniqueClientCount,
+		ecosystemCount,
 		listingFailed: inbound.listingFailed,
 	})
-	const connectedAgents = toOnboardingConnectedAgents(inbound.agents)
 	const hasMcpClient = inbound.uniqueClientCount > 0
-	// Unique inbound clientIds, not raw grant count and not attribution to
-	// the selected Step 3 host. ≥ 2 means a second agent connected.
-	const hasSecondMcpClient = hasSecondConnectedMcpClient(
-		inbound.uniqueClientCount,
-	)
+	// Known ecosystems, not raw grant count and not clientId count. Two
+	// Cursor auth contexts are one ecosystem.
+	const hasSecondMcpClient = hasSecondConnectedMcpClient(connectedAgents)
 	// Incomplete setup means either the account email is still unverified or no
 	// MCP host has authorized yet. An unverified account with a leftover grant
 	// still needs onboarding until verification is finished.

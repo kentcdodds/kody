@@ -1,12 +1,12 @@
 /**
- * Product rule for onboarding Step 3: grey hosts in the same vendor family
- * as the agent the person started with, plus every named host already in
- * the Connected list. The second connect must be a different ecosystem so
- * Kody's shared home is the point — not a second client of the same
- * company, and not a host that is already authorized.
+ * Onboarding Step 3 counts a second agent by ecosystem, and the picker
+ * groups hosts the same way. A tab is disabled only when a connected grant
+ * is that host. An unlabeled client and a remembered picker choice do not
+ * disable tabs and do not count as their own ecosystem.
  *
- * `other` is an unknown vendor. It never shares a family with a named host,
- * and Not listed stays available even when the first pick was unlisted.
+ * Cursor Local, Cursor Cloud, an unclassified Cursor grant, and Grok Bot
+ * share the Cursor ecosystem. A Cursor Cloud grant also marks Grok Bot
+ * connected, because Grok Bot uses that connection.
  */
 
 import { type McpClientKind } from '#universal/onboarding-mcp-clients.ts'
@@ -14,9 +14,9 @@ import { type McpClientKind } from '#universal/onboarding-mcp-clients.ts'
 const onboardingAgentEcosystems = {
 	openai: ['chatgpt', 'codex'],
 	anthropic: ['claude-desktop', 'claude-code'],
-	xai: ['grok', 'grok-cli', 'grok-bot'],
+	xai: ['grok', 'grok-cli'],
 	github: ['copilot', 'copilot-app'],
-	cursor: ['cursor'],
+	cursor: ['cursor', 'cursor-local', 'cursor-cloud', 'grok-bot'],
 	google: ['gemini'],
 	cognition: ['devin'],
 	sst: ['opencode'],
@@ -52,7 +52,74 @@ function onboardingSameEcosystemAgents(
 	return onboardingAgentEcosystems[onboardingAgentEcosystem(agent)]
 }
 
-export type OnboardingSecondAgentDisableReason = 'same-ecosystem' | 'connected'
+export type OnboardingStep3EcosystemGroup = {
+	id: OnboardingAgentEcosystemId
+	label: string
+	agents: ReadonlyArray<McpClientKind>
+}
+
+/**
+ * Step 3 chooser. Generic `cursor` stays off this list: that kind means we
+ * could not tell Local from Cloud, so neither tab is the one we know.
+ */
+export const onboardingStep3EcosystemGroups = [
+	{
+		id: 'cursor',
+		label: 'Cursor',
+		agents: ['cursor-local', 'cursor-cloud', 'grok-bot'],
+	},
+	{
+		id: 'anthropic',
+		label: 'Claude',
+		agents: ['claude-code', 'claude-desktop'],
+	},
+	{
+		id: 'openai',
+		label: 'ChatGPT',
+		agents: ['chatgpt', 'codex'],
+	},
+	{
+		id: 'github',
+		label: 'GitHub',
+		agents: ['copilot', 'copilot-app'],
+	},
+	{
+		id: 'xai',
+		label: 'Grok',
+		agents: ['grok', 'grok-cli'],
+	},
+	{
+		id: 'google',
+		label: 'Gemini',
+		agents: ['gemini'],
+	},
+	{
+		id: 'cognition',
+		label: 'Devin',
+		agents: ['devin'],
+	},
+	{
+		id: 'sst',
+		label: 'OpenCode',
+		agents: ['opencode'],
+	},
+	{
+		id: 'openclaw',
+		label: 'OpenClaw',
+		agents: ['openclaw'],
+	},
+	{
+		id: 'other',
+		label: 'Another host',
+		agents: ['other'],
+	},
+] as const satisfies ReadonlyArray<OnboardingStep3EcosystemGroup>
+
+export function onboardingStep3AgentIds(): Array<McpClientKind> {
+	return onboardingStep3EcosystemGroups.flatMap((group) => [...group.agents])
+}
+
+export type OnboardingSecondAgentDisableReason = 'connected'
 
 export type OnboardingGreyedSecondAgent = {
 	id: McpClientKind
@@ -79,30 +146,52 @@ export function onboardingConnectedChooserKinds(
 }
 
 /**
- * Hosts Step 3 greys: the first-agent vendor family, plus every named host
- * already in the Connected list. Same-ecosystem wins when both apply.
+ * Distinct ecosystems among grants we can name. Unlabeled clients and
+ * `other` add nothing. Two Cursor contexts are one ecosystem.
+ */
+export function countConnectedAgentEcosystems(
+	connectedAgents: ReadonlyArray<OnboardingConnectedAgentKind>,
+): number {
+	const ecosystems = new Set<OnboardingAgentEcosystemId>()
+	for (const kind of onboardingConnectedChooserKinds(connectedAgents)) {
+		ecosystems.add(onboardingAgentEcosystem(kind))
+	}
+	return ecosystems.size
+}
+
+/** True when two known ecosystems are connected. */
+export function hasSecondConnectedMcpClient(
+	connectedAgents: ReadonlyArray<OnboardingConnectedAgentKind>,
+): boolean {
+	return countConnectedAgentEcosystems(connectedAgents) >= 2
+}
+
+export function hasSecondAgentEcosystem(ecosystemCount: number) {
+	return ecosystemCount >= 2
+}
+
+/**
+ * Hosts Step 3 disables: named grants we already classified, plus Grok Bot
+ * when Cursor Cloud is connected.
  */
 export function listOnboardingGreyedSecondAgents(
-	firstAgent: McpClientKind | null,
 	connectedAgents: ReadonlyArray<OnboardingConnectedAgentKind> = [],
 ): Array<OnboardingGreyedSecondAgent> {
+	const known = onboardingConnectedChooserKinds(connectedAgents)
 	const greyed = new Map<McpClientKind, OnboardingSecondAgentDisableReason>()
-	if (firstAgent && firstAgent !== 'other') {
-		for (const id of onboardingSameEcosystemAgents(firstAgent)) {
-			greyed.set(id, 'same-ecosystem')
-		}
+	for (const id of known) {
+		greyed.set(id, 'connected')
 	}
-	for (const id of onboardingConnectedChooserKinds(connectedAgents)) {
-		if (!greyed.has(id)) greyed.set(id, 'connected')
+	if (known.includes('cursor-cloud')) {
+		greyed.set('grok-bot', 'connected')
 	}
 	return [...greyed].map(([id, reason]) => ({ id, reason }))
 }
 
 export function onboardingGreyedSecondAgents(
-	firstAgent: McpClientKind | null,
 	connectedAgents: ReadonlyArray<OnboardingConnectedAgentKind> = [],
 ): Array<McpClientKind> {
-	return listOnboardingGreyedSecondAgents(firstAgent, connectedAgents).map(
+	return listOnboardingGreyedSecondAgents(connectedAgents).map(
 		(entry) => entry.id,
 	)
 }
@@ -111,17 +200,16 @@ export function isOnboardingSameEcosystemAgent(
 	firstAgent: McpClientKind | null,
 	candidate: McpClientKind,
 ): boolean {
-	if (!firstAgent) return false
+	if (!firstAgent || firstAgent === 'other') return false
 	return onboardingSameEcosystemAgents(firstAgent).includes(candidate)
 }
 
 export function onboardingSecondAgentDisableReason(
 	candidate: McpClientKind,
-	firstAgent: McpClientKind | null,
 	connectedAgents: ReadonlyArray<OnboardingConnectedAgentKind> = [],
 ): OnboardingSecondAgentDisableReason | null {
 	return (
-		listOnboardingGreyedSecondAgents(firstAgent, connectedAgents).find(
+		listOnboardingGreyedSecondAgents(connectedAgents).find(
 			(entry) => entry.id === candidate,
 		)?.reason ?? null
 	)
@@ -131,8 +219,6 @@ export function onboardingSecondAgentDisableHint(
 	reason: OnboardingSecondAgentDisableReason,
 ): string {
 	switch (reason) {
-		case 'same-ecosystem':
-			return 'Same ecosystem'
 		case 'connected':
 			return 'Connected'
 		default: {
@@ -143,22 +229,18 @@ export function onboardingSecondAgentDisableHint(
 }
 
 function onboardingSecondAgentDisableTitle(
-	reason: OnboardingSecondAgentDisableReason,
-	firstAgent: McpClientKind | null,
-	firstAgentLabel: string | null,
+	id: McpClientKind,
+	connectedAgents: ReadonlyArray<OnboardingConnectedAgentKind>,
 ): string {
-	switch (reason) {
-		case 'same-ecosystem':
-			return firstAgent && firstAgentLabel
-				? onboardingSameEcosystemDisabledReason(firstAgent, firstAgentLabel)
-				: "Pick a different ecosystem so Kody's home is portable."
-		case 'connected':
-			return 'Already connected. Pick a host that is not in your Connected list.'
-		default: {
-			const exhaustive: never = reason
-			return exhaustive
-		}
+	const known = onboardingConnectedChooserKinds(connectedAgents)
+	if (
+		id === 'grok-bot' &&
+		known.includes('cursor-cloud') &&
+		!known.includes('grok-bot')
+	) {
+		return 'Connected with Cursor Cloud. Grok Bot uses that connection.'
 	}
+	return 'Already connected.'
 }
 
 type OnboardingSecondAgentGreyedPresentation = {
@@ -170,11 +252,9 @@ type OnboardingSecondAgentGreyedPresentation = {
 }
 
 export function onboardingSecondAgentGreyedPresentation(
-	firstAgent: McpClientKind | null,
-	firstAgentLabel: string | null,
 	connectedAgents: ReadonlyArray<OnboardingConnectedAgentKind> = [],
 ): OnboardingSecondAgentGreyedPresentation {
-	const entries = listOnboardingGreyedSecondAgents(firstAgent, connectedAgents)
+	const entries = listOnboardingGreyedSecondAgents(connectedAgents)
 	const greyedReasons: Partial<
 		Record<McpClientKind, OnboardingSecondAgentDisableReason>
 	> = {}
@@ -182,9 +262,8 @@ export function onboardingSecondAgentGreyedPresentation(
 	for (const entry of entries) {
 		greyedReasons[entry.id] = entry.reason
 		greyedTitles[entry.id] = onboardingSecondAgentDisableTitle(
-			entry.reason,
-			firstAgent,
-			firstAgentLabel,
+			entry.id,
+			connectedAgents,
 		)
 	}
 	return {
@@ -194,32 +273,14 @@ export function onboardingSecondAgentGreyedPresentation(
 	}
 }
 
-/** Step 3 deep links to a greyed host fall back to the picker. */
+/** Step 3 deep links to a known-connected host fall back to the picker. */
 export function resolveOnboardingStep3SelectedAgent(
-	firstAgent: McpClientKind | null,
 	selectedAgent: McpClientKind | null,
 	connectedAgents: ReadonlyArray<OnboardingConnectedAgentKind> = [],
 ): McpClientKind | null {
 	if (!selectedAgent) return null
-	if (
-		onboardingSecondAgentDisableReason(
-			selectedAgent,
-			firstAgent,
-			connectedAgents,
-		)
-	) {
+	if (onboardingSecondAgentDisableReason(selectedAgent, connectedAgents)) {
 		return null
 	}
 	return selectedAgent
-}
-
-function onboardingSameEcosystemDisabledReason(
-	firstAgent: McpClientKind,
-	firstAgentLabel: string,
-): string {
-	const family = onboardingSameEcosystemAgents(firstAgent)
-	if (family.length === 1) {
-		return `You started with ${firstAgentLabel}. Pick a different ecosystem so Kody's home is portable.`
-	}
-	return `Same ecosystem as ${firstAgentLabel}. Pick a different vendor so Kody's home is portable.`
 }

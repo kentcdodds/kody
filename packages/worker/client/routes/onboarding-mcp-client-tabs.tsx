@@ -6,8 +6,6 @@ import {
 	type OnboardingAgentSurface,
 	type OnboardingAgentViewport,
 	canonicalOnboardingAgentChooser,
-	codexMcpLoginCommand,
-	isDefaultKodyMcpUrl,
 	onboardingAgentHelp,
 	onboardingAgentIconName,
 	onboardingAgentLabel,
@@ -15,12 +13,11 @@ import {
 	onboardingNotListedAgentIds,
 	onboardingPickerAgentIds,
 	onboardingViewportCss,
-	openClawMcpLoginCommand,
-	openCodeMcpAuthCommand,
 } from '#client/routes/onboarding-mcp-clients.ts'
 import { renderIcon } from '#universal/icon.tsx'
 import {
 	type OnboardingSecondAgentDisableReason,
+	type OnboardingStep3EcosystemGroup,
 	onboardingSecondAgentDisableHint,
 } from '#universal/onboarding-agent-ecosystems.ts'
 import { onboardingAgentHref } from '#universal/onboarding-process.ts'
@@ -30,11 +27,9 @@ import {
 	transitions,
 	typography,
 } from '#universal/styles/tokens.ts'
-import {
-	getAccentCalloutCss,
-	hoverMq,
-} from '#universal/styles/style-primitives.ts'
+import { hoverMq } from '#universal/styles/style-primitives.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
+import { AgentAuthCallout } from './onboarding-agent-auth-callout.tsx'
 import {
 	renderPanelContent,
 	renderPanelWarning,
@@ -55,6 +50,7 @@ type OnboardingMcpClientTabsProps = {
 	>
 	greyedTitles?: Partial<Record<McpClientKind, string>>
 	greyedReason?: string | null
+	ecosystemGroups?: ReadonlyArray<OnboardingStep3EcosystemGroup>
 }
 
 function AgentMarkIcon(
@@ -170,170 +166,11 @@ function AgentHelpLink(
 	}
 }
 
-function AgentAuthCallout(
-	handle: Handle<{
-		agent: McpClientKind
-		surface: OnboardingAgentSurface
-		mcpServerUrl: string
-	}>,
-) {
-	return () => (
-		<div
-			mix={css(authNoteCss)}
-			role="note"
-			data-testid="onboarding-authenticate-callout"
-		>
-			<strong>Authenticate Kody before you continue</strong>
-			<span>
-				{renderAgentAuthHint(
-					handle.props.agent,
-					handle.props.surface,
-					handle.props.mcpServerUrl,
-				)}
-			</span>
-			<span>
-				Approve the <strong>{new URL(handle.props.mcpServerUrl).host}</strong>{' '}
-				OAuth window. This is the step that connects your agent to your factory.
-			</span>
-		</div>
-	)
-}
-
-function renderAgentAuthHint(
-	kind: McpClientKind,
-	surface: OnboardingAgentSurface,
-	mcpServerUrl: string,
-) {
-	const productionPlugin = isDefaultKodyMcpUrl(mcpServerUrl)
-	switch (kind) {
-		case 'cursor':
-			return surface === 'mobile' ? (
-				<>
-					After installing the plugin, open Cursor on the web and complete{' '}
-					<strong>Authenticate</strong> if it asks.
-				</>
-			) : (
-				<>
-					After installing the plugin, open the Cursor MCP list and click{' '}
-					<strong>Authenticate</strong>.
-				</>
-			)
-		case 'claude-code':
-			return surface === 'mobile' ? (
-				<>Complete OAuth in the Claude app under Settings → Connectors.</>
-			) : (
-				<>
-					After install, enter <code>/mcp</code> → Kody →{' '}
-					<strong>Authenticate</strong>.
-				</>
-			)
-		case 'chatgpt':
-			return productionPlugin ? (
-				<>Complete OAuth when ChatGPT prompts you after adding the plugin.</>
-			) : (
-				<>Complete OAuth when ChatGPT prompts you after creating the app.</>
-			)
-		case 'codex':
-			if (surface === 'mobile') {
-				return productionPlugin ? (
-					<>
-						Complete OAuth when the ChatGPT app prompts you after adding the
-						plugin.
-					</>
-				) : (
-					<>Complete OAuth when the ChatGPT app prompts you.</>
-				)
-			}
-			return productionPlugin ? (
-				<>
-					After adding the plugin, complete OAuth when ChatGPT prompts you. If
-					you used the Codex CLI instead, run{' '}
-					<code>{codexMcpLoginCommand}</code>.
-				</>
-			) : (
-				<>
-					Run <code>{codexMcpLoginCommand}</code> if OAuth does not start
-					automatically.
-				</>
-			)
-		case 'claude-desktop':
-			return <>Complete OAuth in Settings → Connectors.</>
-		case 'grok':
-			return (
-				<>Complete OAuth when Grok prompts you after adding the connector.</>
-			)
-		case 'grok-cli':
-			return surface === 'mobile' ? (
-				<>
-					Authenticate on a computer. In the TUI, <code>/mcps</code> then{' '}
-					<strong>i</strong>. Or change selection and choose{' '}
-					<strong>Grok Bot</strong>.
-				</>
-			) : (
-				<>
-					OAuth opens on first use. In the TUI, <code>/mcps</code> then{' '}
-					<strong>i</strong> authenticates. <code>grok mcp doctor kody</code>{' '}
-					checks the connection.
-				</>
-			)
-		case 'grok-bot':
-			return surface === 'mobile' ? (
-				<>
-					After adding the plugin, complete <strong>Authorize</strong> when Grok
-					Bot prompts you on your phone or on a computer.
-				</>
-			) : (
-				<>
-					After adding the plugin, complete <strong>Authorize</strong> when Grok
-					Bot prompts you.
-				</>
-			)
-		case 'opencode':
-			return surface === 'mobile' ? (
-				<>Authenticate on a computer if prompted.</>
-			) : (
-				<>
-					Run <code>{openCodeMcpAuthCommand}</code> if prompted.
-				</>
-			)
-		case 'openclaw':
-			return surface === 'mobile' ? (
-				<>
-					Save the server in the Control UI, then run{' '}
-					<code>{openClawMcpLoginCommand}</code> on a computer. Approve the Kody
-					OAuth window.
-				</>
-			) : (
-				<>
-					Run <code>{openClawMcpLoginCommand}</code> after the server is saved.
-					Approve the Kody OAuth window.
-				</>
-			)
-		case 'copilot':
-			return surface === 'mobile' ? (
-				<>Complete OAuth when the GitHub or Copilot app opens it.</>
-			) : (
-				<>Complete OAuth when VS Code or Copilot CLI opens it.</>
-			)
-		case 'copilot-app':
-			return <>Complete OAuth when the Copilot app opens it.</>
-		case 'devin':
-			return <>Complete OAuth when Devin opens it.</>
-		case 'gemini':
-			return <>Complete OAuth when Gemini or Jules prompts you.</>
-		case 'other':
-			return <>Complete OAuth when the host opens it.</>
-		default: {
-			const exhaustive: never = kind
-			return exhaustive
-		}
-	}
-}
-
 /**
  * Step 1: pick one agent, then show only that host's install path and
  * authenticate hint. Featured hosts are the first chooser; other named
  * hosts are under More; **Not listed** is the generic MCP URL path.
+ * Step 3 passes `ecosystemGroups` and renders those groups instead.
  */
 export function OnboardingMcpClientTabs(
 	handle: Handle<OnboardingMcpClientTabsProps>,
@@ -348,18 +185,71 @@ export function OnboardingMcpClientTabs(
 		const greyedAgents = handle.props.greyedAgents ?? []
 		const greyedReasons = handle.props.greyedReasons ?? {}
 		const greyedTitles = handle.props.greyedTitles ?? {}
+		const ecosystemGroups = handle.props.ecosystemGroups
+		const prefetchAgentIds = ecosystemGroups?.flatMap((group) => [
+			...group.agents,
+		])
 		handle.queueTask(() => {
 			const hrefs = onboardingAgentPickerPrefetchHrefs(
 				selectedAgent,
 				chooser,
 				search,
 				agentHref,
+				prefetchAgentIds,
 			)
 			const key = hrefs.join('\0')
 			if (key === warmedKey) return
 			warmedKey = key
 			prefetchRouteHrefs(hrefs)
 		})
+
+		if (!selectedAgent && ecosystemGroups && ecosystemGroups.length > 0) {
+			return (
+				<div
+					data-testid="onboarding-agent-picker"
+					data-picker="ecosystem"
+					mix={css(installLayoutCss)}
+				>
+					<p mix={css(pickerLedeCss)} id="onboarding-agent-picker-label">
+						{handle.props.pickerLede ??
+							'Choose the agent you want to connect first. You can add others later.'}
+					</p>
+					<div
+						data-testid="onboarding-ecosystem-picker"
+						mix={css(ecosystemPickerCss)}
+					>
+						{ecosystemGroups.map((group) => {
+							const labelId = `onboarding-ecosystem-${group.id}-label`
+							return (
+								<section
+									key={group.id}
+									data-testid={`onboarding-ecosystem-${group.id}`}
+									aria-labelledby={labelId}
+									mix={css(ecosystemGroupCss)}
+								>
+									<h3 id={labelId} mix={css(ecosystemLabelCss)}>
+										{group.label}
+									</h3>
+									<AgentPickerGrid
+										ids={group.agents.map((id) => ({
+											id,
+											viewport: 'both' as const,
+										}))}
+										labelledBy={labelId}
+										search={search}
+										agentHref={agentHref}
+										greyedAgents={greyedAgents}
+										greyedReasons={greyedReasons}
+										greyedTitles={greyedTitles}
+										greyedReason={handle.props.greyedReason ?? null}
+									/>
+								</section>
+							)
+						})}
+					</div>
+				</div>
+			)
+		}
 
 		if (!selectedAgent) {
 			return (
@@ -536,7 +426,7 @@ export function AgentPickerGrid(
 				const greyedTitles = handle.props.greyedTitles ?? {}
 				const search = handle.props.search ?? ''
 				const greyed = greyedAgents.includes(id)
-				const reason = greyedReasons[id] ?? 'same-ecosystem'
+				const reason = greyedReasons[id] ?? 'connected'
 				const title = greyedTitles[id] ?? handle.props.greyedReason ?? null
 				return (
 					<li key={id} mix={css(onboardingViewportCss(shown, 'list-item'))}>
@@ -593,6 +483,25 @@ const pickerLedeCss = {
 	margin: 0,
 	color: colors.textMuted,
 	maxWidth: '72ch',
+}
+
+const ecosystemPickerCss = {
+	display: 'grid',
+	gap: '1.25rem',
+}
+
+const ecosystemGroupCss = {
+	display: 'grid',
+	gap: '0.5rem',
+}
+
+const ecosystemLabelCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.sm,
+	fontWeight: typography.fontWeight.semibold,
+	letterSpacing: '0.04em',
+	textTransform: 'uppercase' as const,
 }
 
 const pickerGridCss = {
@@ -744,24 +653,4 @@ const agentHelpCss = {
 		margin: '0 0 1rem',
 	},
 	fontSize: typography.fontSize.sm,
-}
-
-const authNoteCss = {
-	...getAccentCalloutCss({ accentColor: colors.primary }),
-	gap: '0.55rem',
-	padding: '1.2rem 1.35rem',
-	borderLeftWidth: '6px',
-	backgroundColor: `oklch(from ${colors.primary} l c h / 0.14)`,
-	boxShadow: `0 10px 28px oklch(from ${colors.primary} l c h / 0.12)`,
-	'& > strong': {
-		font: `750 1.2rem/1.15 ${typography.fontFamilyDisplay}`,
-		color: colors.primaryText,
-	},
-	'& > span': {
-		color: colors.text,
-		lineHeight: 1.5,
-	},
-	'& code': {
-		font: '600 0.9em ui-monospace, "SF Mono", Menlo, monospace',
-	},
 }

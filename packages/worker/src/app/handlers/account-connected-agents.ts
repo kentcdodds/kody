@@ -9,7 +9,10 @@ import {
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { hasSecondConnectedMcpClient } from '#universal/connected-mcp-agents.ts'
+import {
+	countConnectedAgentEcosystems,
+	hasSecondConnectedMcpClient,
+} from '#universal/onboarding-agent-ecosystems.ts'
 import {
 	loadInboundMcpConnectionState,
 	revokeConnectedMcpAgent,
@@ -40,14 +43,12 @@ export async function loadAccountConnectedAgentsData(input: {
 	const state = await loadInboundMcpConnectionState(helpers, stableUserId, {
 		env: input.env,
 	})
-	if (
-		!state.listingFailed &&
-		hasSecondConnectedMcpClient(state.uniqueClientCount)
-	) {
+	const ecosystemCount = countConnectedAgentEcosystems(state.agents)
+	if (!state.listingFailed && hasSecondConnectedMcpClient(state.agents)) {
 		await maybeEvaluateSecondAgentStandardGift({
 			db: input.env.APP_DB,
 			stableUserId,
-			uniqueClientCount: state.uniqueClientCount,
+			ecosystemCount,
 			listingFailed: state.listingFailed,
 		})
 	}

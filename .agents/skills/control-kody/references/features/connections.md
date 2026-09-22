@@ -48,7 +48,7 @@ node tools/control-kody.ts request GET /account/connections/new/cursor
   Connected is grant `createdAt`. That list is not `users.mcp_client_name` and
   not minted MCP OAuth clients (`/account/mcp-oauth-clients`).
 - The grid reuses onboarding's `AgentPickerGrid` with `viewport: 'both'` on
-  every entry, so the phone/desktop split and greyed same-ecosystem cards that
-  onboarding applies do not appear here.
+  every entry. Every named agent shows on phone and desktop. Step 3’s known-host
+  disables stay on the onboarding chooser.
 - `/account/connections.json` is the sign-in provider (GitHub, Google, …) list
   on Overview, not this page's data.

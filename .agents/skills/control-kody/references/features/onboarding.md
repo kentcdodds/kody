@@ -3,7 +3,7 @@
 Three-step wizard after signup: connect an agent, make something useful (one
 prompt plus first search; the onboarding guide offers six first-win choices),
 then connect a second agent from a different ecosystem. Step 3 advertises
-Standard free for 2 weeks on that second unique inbound client, pastes a
+Standard free for 2 weeks once a second known ecosystem is connected, pastes a
 portability-guide prompt, and, when the payload has a known memory subject or
 package name, shows a short "You made …" chip.
 
@@ -38,10 +38,13 @@ node tools/control-kody.ts preview -- \
   `control-kody doctor` and `dev:ensure`. `dev:ensure` waits for a starting
   leftover instead of killing it mid-reload. Do not dump one onboarding
   component to static HTML.
-- Step 3 completion is unique inbound OAuth `clientId`s ≥ 2, not raw grant
-  count. Account → Connected agents is the grouped inbound list (logos for known
-  kinds, newest-first). That first cross also records the one-time 14-day
-  Standard gift (`secondAgentStandardGift` on `/onboarding.json`).
+- Step 3 completion is two known agent ecosystems. Cursor Local and Cursor Cloud
+  are one ecosystem. Disable a tab when a grant names that host. An unlabeled
+  client adds no ecosystem, and the other tabs stay available. A Cursor Cloud
+  grant also marks Grok Bot connected. Account → Connected agents is the grouped
+  inbound list (logos for known kinds, newest-first). That first second
+  ecosystem also records the one-time 14-day Standard gift
+  (`secondAgentStandardGift` on `/onboarding.json`).
 - The Discord invite sits below the step wizard. First-use setup (search,
   memory, execute, package, job, integration, secret, Discord membership) is on
   Waiting.
