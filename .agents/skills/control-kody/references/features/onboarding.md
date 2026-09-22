@@ -13,7 +13,9 @@ Signed-in visit to `/onboarding` (resumes at the first unfinished step; finished
 accounts land on Step 3 so connected agents stay visible). Step 1 is
 `/onboarding/step-1` (optional `:agent`). Step 2 is `/onboarding/step-2`. Step 3
 is `/onboarding/step-3` (optional `:agent`). Leftover
-`/onboarding/step-2/:service` URLs redirect to Step 2. Also linked from account.
+`/onboarding/step-2/:service` URLs redirect to Step 2. Leftover
+`/onboarding/step-3/not-listed` URLs return to the Step 3 ecosystem picker. Also
+linked from account.
 
 ## Drive it
 
@@ -38,13 +40,13 @@ node tools/control-kody.ts preview -- \
   `control-kody doctor` and `dev:ensure`. `dev:ensure` waits for a starting
   leftover instead of killing it mid-reload. Do not dump one onboarding
   component to static HTML.
-- Step 3 completion is two known agent ecosystems. Cursor Local and Cursor Cloud
-  are one ecosystem. Disable a tab when a grant names that host. An unlabeled
-  client adds no ecosystem, and the other tabs stay available. A Cursor Cloud
-  grant also marks Grok Bot connected. Account → Connected agents is the grouped
-  inbound list (logos for known kinds, newest-first). That first second
-  ecosystem also records the one-time 14-day Standard gift
-  (`secondAgentStandardGift` on `/onboarding.json`).
+- Step 3 completion is two known agent ecosystems. Cursor Local, Cursor Cloud,
+  Grok Bot, Grok.com, and Grok CLI sit in the Grok ecosystem. Disable a tab when
+  a grant names that host. An unlabeled client adds no ecosystem, and the other
+  tabs stay available. A Cursor Cloud grant also marks Grok Bot connected.
+  Account → Connected agents is the grouped inbound list (logos for known kinds,
+  newest-first). That first second ecosystem also records the one-time 14-day
+  Standard gift (`secondAgentStandardGift` on `/onboarding.json`).
 - The Discord invite sits below the step wizard. First-use setup (search,
   memory, execute, package, job, integration, secret, Discord membership) is on
   Waiting.

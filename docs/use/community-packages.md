@@ -139,9 +139,9 @@ with a yellow **Fork outdated** control when the fork is behind (click copies an
 absorb prompt and links to the listing files at the pin) or a calm **Fork
 ahead** badge linking to those files when the pin is already in the fork's
 history — that ahead badge is website UI only. The listing detail page uses a
-link-break icon for that same outdated action and keeps the **Fork ahead**
-badge. For an outdated fork, compare origin HEAD with your package, port useful
-changes, keep your customizations, then publish with `repoPublishSession` and
+link-break icon for that same outdated action and a **Fork ahead** badge. For an
+outdated fork, compare origin HEAD with your package, port useful changes, keep
+your customizations, then publish with `repoPublishSession` and
 `absorbed_upstream_commit` so the behind-upstream banner clears.
 
 ## One-click install
@@ -159,14 +159,14 @@ the current stage.
 A current fork shows an open icon that links to the fork. An outdated fork shows
 a link-break icon in that slot; the click copies the absorb prompt and opens the
 listing files at the pin. When the fork needs a setup prompt, a clipboard icon
-beside the status icon copies it. An installed fork still offers **Use in
-agent** under the listing.
+beside the status icon copies it. An installed fork offers **Use in agent**
+under the listing.
 
-Catalog cards still show **Installed**, **Forked**, **Fork outdated**, and
-**Fork ahead**. The detail page keeps **Fork ahead**. Install forks the listing
-into your account and, when the fork passes publish checks, publishes it as a
-live saved package. **Publishing activates the package right away** — declared
-jobs are scheduled.
+Catalog cards show **Installed**, **Forked**, **Fork outdated**, and **Fork
+ahead**. The detail page shows **Fork ahead**. Install forks the listing into
+your account and, when the fork passes publish checks, publishes it as a live
+saved package. **Publishing activates the package right away** — declared jobs
+are scheduled.
 
 When checks fail — most commonly because the package imports code from the
 original author's scope (`kody:@originuser/...`) — nothing is published. The
@@ -294,5 +294,5 @@ cross-user data flows are the public listing snapshot, aggregate ratings, and
 
 Stable owner **user ids** are not required for browsing: package name scope and
 public profiles reveal the owner's **username** (as package URLs do). Search
-summaries may still omit a stable owner id (`owner_anonymous`) while linking by
+summaries may omit a stable owner id (`owner_anonymous`) while linking by
 username when the owner profile is public.

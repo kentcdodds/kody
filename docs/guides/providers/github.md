@@ -228,8 +228,8 @@ instead of hand-rolled API calls.
 3. Check the fork's README **Required setup**: the default `bot` account reads
    the `githubAccessToken` secret — the exact name
    [Save the token](#save-the-token) uses, so no adaptation is needed for the
-   PAT lane. For OAuth, remap the account to the `github` integration name when
-   the package supports that.
+   saved token. For OAuth, remap the account to the `github` integration name
+   when the package supports that.
 4. Verify the fork against your credentials from `execute`:
 
 ```ts
