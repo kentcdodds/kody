@@ -139,7 +139,7 @@ test('Add connection opens its own page with the client wall, then a host step (
 	expect(requests.duplicates(), requests.paths.join(', ')).toEqual([])
 	requests.reset()
 	// Every named client is a card and none is greyed or hidden by viewport.
-	await expect(grid.getByRole('link')).toHaveCount(15)
+	await expect(grid.getByRole('link')).toHaveCount(16)
 	await expect(grid.locator('[data-greyed="true"]')).toHaveCount(0)
 	await expect(page.getByTestId('onboarding-agent-claude-code')).toBeVisible()
 	await expect(page.getByTestId('onboarding-agent-grok')).toBeVisible()
