@@ -385,8 +385,8 @@ forward-fix, or when you want Git history and CI to match what is live.
 2. ✅ Validate must succeed on that `main` push (same gate as
    `npm run validate`: format, lint, typecheck, Node/Workers tests, Playwright
    E2E, MCP E2E, worker builds, startup, primitives, migrations, deploy
-   guardrails, docs checkers). CI Validate jobs time out at 10–15 minutes (E2E
-   15).
+   guardrails, docs checkers, production dependency audit). CI Validate jobs
+   time out at 10–15 minutes (E2E 15).
 3. 🚀 Deploy (production) then runs because Validate completed on `main`.
    `sha-guard` deploys **only** the current `origin/main` HEAD. Path-filtered
    push deploys skip unchanged workers; the production job timeout is 20

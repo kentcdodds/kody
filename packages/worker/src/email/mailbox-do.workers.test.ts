@@ -3,6 +3,7 @@ import { expect, test } from 'vitest'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { emailAttachmentBlobKey, emailRawMimeKey } from './blob-keys.ts'
 import { mapMailboxMessageRow } from './mailbox-mappers.ts'
+import { mailboxMessageMetadataColumnList } from './mailbox-store.ts'
 import { Mailbox } from './mailbox-do.ts'
 import {
 	assertMailboxThrows,
@@ -939,4 +940,112 @@ test('Mailbox direct and batch delivery-event writes detach tombstoned messages'
 			{ id: 'event-tombstone-direct', messageId: null },
 		]),
 	)
+})
+
+test('list and search omit bodies that getMessage returns', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const ownerId = uniqueUserId('bodies')
+	const mailbox = rpcFor(ownerId)
+	const olderAt = '2026-07-01T12:00:00.000Z'
+	const newerAt = '2026-07-02T12:00:00.000Z'
+	const thread = baseThread({ id: 'thread-bodies', lastMessageAt: newerAt })
+	const older = baseMessage(ownerId, {
+		id: 'msg-older-body',
+		threadId: thread.id,
+		createdAt: olderAt,
+		updatedAt: olderAt,
+		receivedAt: olderAt,
+		subject: 'Older plain note',
+		fromAddress: 'older@example.com',
+		senderIdentityId: 'sender-older',
+		inReplyToHeader: '<parent-older@example.com>',
+		references: ['<root-older@example.com>'],
+		headers: { 'x-kody-test': 'older' },
+		authResults: 'spf=pass',
+		textBody: 'older plain body',
+		htmlBody: '<p>older html body</p>',
+		classificationReason: 'kept',
+		providerMessageId: 'provider-older',
+		deliveryStatus: 'delivered',
+		deliveryStatusAt: olderAt,
+		error: 'older-error',
+		sentAt: olderAt,
+	})
+	const newer = baseMessage(ownerId, {
+		id: 'msg-newer-body',
+		threadId: thread.id,
+		createdAt: newerAt,
+		updatedAt: newerAt,
+		receivedAt: newerAt,
+		subject: 'Newer search needle',
+		fromAddress: 'newer@example.com',
+		senderIdentityId: 'sender-newer',
+		inReplyToHeader: '<parent-newer@example.com>',
+		references: ['<root-newer@example.com>'],
+		headers: { 'x-kody-test': 'newer' },
+		authResults: 'dkim=pass',
+		textBody: 'newer plain body',
+		htmlBody: '<p>newer html body</p>',
+		classificationReason: 'kept',
+		providerMessageId: 'provider-newer',
+		deliveryStatus: 'delivered',
+		deliveryStatusAt: newerAt,
+		error: 'newer-error',
+		sentAt: newerAt,
+	})
+	await mailbox.upsertMessageGraph({ ownerId, thread, message: older })
+	await mailbox.upsertMessageGraph({ ownerId, thread, message: newer })
+	await runInDurableObject(
+		stubFor(ownerId),
+		async (_instance: Mailbox, state) => {
+			const columns = state.storage.sql
+				.exec<{ name: string }>(`PRAGMA table_info(email_messages)`)
+				.toArray()
+				.map((row) => row.name)
+			expect(columns).toEqual(
+				expect.arrayContaining(['text_body', 'html_body']),
+			)
+			expect(
+				columns.filter((name) => name !== 'text_body' && name !== 'html_body'),
+			).toEqual([...mailboxMessageMetadataColumnList])
+		},
+	)
+
+	const olderFull = await mailbox.getMessage({ messageId: older.id })
+	const newerFull = await mailbox.getMessage({ messageId: newer.id })
+	expect(olderFull).toMatchObject({
+		textBody: 'older plain body',
+		htmlBody: '<p>older html body</p>',
+	})
+	expect(newerFull).toMatchObject({
+		textBody: 'newer plain body',
+		htmlBody: '<p>newer html body</p>',
+	})
+	if (!olderFull || !newerFull) {
+		throw new Error('Expected getMessage to return both stored messages.')
+	}
+
+	function withoutBodies(message: NonNullable<typeof olderFull>) {
+		return { ...message, textBody: null, htmlBody: null }
+	}
+	const firstPage = await mailbox.listMessages({ limit: 1 })
+	expect(firstPage.messages).toEqual([withoutBodies(newerFull)])
+	expect(firstPage.nextCursor).toEqual(expect.any(String))
+	const cursorPage = await mailbox.listMessages({
+		limit: 1,
+		cursor: firstPage.nextCursor ?? undefined,
+	})
+	expect(cursorPage.messages).toEqual([withoutBodies(olderFull)])
+	expect(cursorPage.nextCursor).toBeNull()
+	const offsetPage = await mailbox.listMessages({ limit: 1, offset: 1 })
+	expect(offsetPage.messages).toEqual([withoutBodies(olderFull)])
+
+	const searched = await mailbox.searchMessages({ query: 'needle', limit: 10 })
+	expect(searched.messages).toEqual([withoutBodies(newerFull)])
+	const searchedBySender = await mailbox.searchMessages({
+		query: 'older@example.com',
+		limit: 10,
+		offset: 0,
+	})
+	expect(searchedBySender.messages).toEqual([withoutBodies(olderFull)])
 })

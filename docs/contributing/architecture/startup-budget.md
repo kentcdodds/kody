@@ -69,13 +69,14 @@ non-library caller to find which of our modules imported it.
    again. Shared helpers (`{domain}/shared.ts`) are the supported static entry
    points, so keep them light: helpers, not schema catalogs.
 2. **Heavy libraries load on first use.** `isomorphic-git` goes through
-   `packages/worker/src/repo/isomorphic-git-lazy.ts`; the MCP server SDK goes
-   through `loadMcpServerModule()` in
-   `packages/worker/src/mcp/protocol-metrics.ts` and the lazy stateless-lane /
-   legacy-lane loaders in `mcp-auth.ts` and `origin-handler.ts`. The platform
-   worker is the exception: the `MCP` Durable Object class extends the agents
-   SDK base class at module scope, so that worker carries the SDK cost by
-   design.
+   `packages/worker/src/repo/isomorphic-git-lazy.ts`, including platform
+   `RepoSession`. A static `isomorphic-git` import on that entry evaluates the
+   library during startup. The MCP server SDK goes through
+   `loadMcpServerModule()` in `packages/worker/src/mcp/protocol-metrics.ts` and
+   the lazy stateless-lane / legacy-lane loaders in `mcp-auth.ts` and
+   `origin-handler.ts`. The platform worker is the exception: the `MCP` Durable
+   Object class extends the agents SDK base class at module scope, so that
+   worker carries the SDK cost by design.
 3. **No module-scope formatters or wasm on the startup path.** Build `Intl.*`
    objects on first use (see `universal/dynamic-worker-cost.ts`). Keep
    WebAssembly imports inside modules that are only reached lazily.

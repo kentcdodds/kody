@@ -429,8 +429,10 @@ test('max-plan plus-tag inbox stores a large multipart/related inline PNG', asyn
 			rawSize: message.rawSize,
 		}),
 	])
-	const stored = page.messages[0]
-	if (!stored) throw new Error('Expected the large inbound message.')
+	const listed = page.messages[0]
+	if (!listed) throw new Error('Expected the large inbound message.')
+	const stored = await mailbox.getMessage({ messageId: listed.id })
+	if (!stored) throw new Error('Expected getMessage to load the stored body.')
 	if (!stored.inboxId) throw new Error('Expected the default inbox id.')
 	if (!stored.rawMimeKey) throw new Error('Expected a stored raw MIME key.')
 	expect(stored.htmlBody).toContain(`cid:${inboundInlinePngContentId}`)
@@ -535,8 +537,10 @@ test('max-plan inbox stores oversized related mail by omitting the large part', 
 			classification: 'accepted',
 		}),
 	])
-	const stored = page.messages[0]
-	if (!stored) throw new Error('Expected the reduced inbound message.')
+	const listed = page.messages[0]
+	if (!listed) throw new Error('Expected the reduced inbound message.')
+	const stored = await mailbox.getMessage({ messageId: listed.id })
+	if (!stored) throw new Error('Expected getMessage to load the stored body.')
 	if (!stored.rawMimeKey) throw new Error('Expected a stored raw MIME key.')
 	expect(stored.htmlBody).toContain('Budget alert')
 	expect(stored.rawSize).toBeLessThanOrEqual(

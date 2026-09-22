@@ -22,7 +22,8 @@ figures below were measured directly against the repository (2026-08-30).
 - `npm run validate` is the single authoritative gate: format, lint, typecheck,
   node/workers/e2e/mcp test suites, build checks for every worker, migrations,
   deploy guardrails, temporal-docs and decision-record checks, the file-size
-  ratchet, and knip dead-code analysis.
+  ratchet, knip dead-code analysis, and `audit:prod` (production dependencies,
+  failing on moderate or higher).
 - `tools/file-size-ratchet.json` enforces budgets of 800 lines for client routes
   and 2,000 lines for node test files. Files may only shrink out of the
   grandfathered list; new oversized files fail CI.

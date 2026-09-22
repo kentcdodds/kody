@@ -40,14 +40,14 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   Playwright E2E, MCP E2E, `backup:build`, `status:build`, `nx-cache:build`,
   `jobs:build`, `runtime:build`, `platform:build`, `primitives:check`,
   `migrations:check`, `deploy-guardrails:check`, `docs:check-temporal`,
-  `docs:check-decisions`, and `mermaid:check` in parallel, reporting every
-  failure (sibling checks are not aborted on the first failure, including when
-  one of the docs or mermaid checks fails). The unit-test and Playwright legs
-  set `CI=1` so timeouts, worker limits, and Nx cache hashes match the contended
-  parallel layout used in GitHub Actions. CI runs the same checks as parallel
-  jobs (🧹 Static, 🧪 Node, ☁️ Workers, 🔌 MCP, 🎭 E2E, aggregated by ✅
-  Validate). If `npm run validate` passes locally, CI will pass. Trusted writers
-  (Cloud Agent environments, and same-repo validate) set
+  `docs:check-decisions`, `mermaid:check`, and `audit:prod` in parallel,
+  reporting every failure (sibling checks are not aborted on the first failure,
+  including when one of the docs or mermaid checks fails). The unit-test and
+  Playwright legs set `CI=1` so timeouts, worker limits, and Nx cache hashes
+  match the contended parallel layout used in GitHub Actions. CI runs the same
+  checks as parallel jobs (🧹 Static, 🧪 Node, ☁️ Workers, 🔌 MCP, 🎭 E2E,
+  aggregated by ✅ Validate). If `npm run validate` passes locally, CI will
+  pass. Trusted writers (Cloud Agent environments, and same-repo validate) set
   `NX_SELF_HOSTED_REMOTE_CACHE_SERVER` and the write token so Nx uploads task
   artifacts to `https://nx-cache.kody.codes`. Fork `pull_request` validate uses
   the read token and can only GET (see

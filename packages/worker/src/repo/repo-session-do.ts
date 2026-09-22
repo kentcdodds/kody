@@ -1,8 +1,6 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
-import rawGit from 'isomorphic-git'
-import http from 'isomorphic-git/http/web'
 import {
 	Workspace,
 	WorkspaceFileSystem,
@@ -135,6 +133,7 @@ import {
 	type KodyPublishGitNoteChecks,
 } from './publish-git-notes.ts'
 import { createIsomorphicGitFs } from './isomorphic-git-fs.ts'
+import { loadIsomorphicGit, type IsomorphicGit } from './isomorphic-git-lazy.ts'
 import {
 	isTransientArtifactsGitError,
 	runArtifactsGitWithRetry,
@@ -171,7 +170,7 @@ type CachedRepoSessionState = {
 	source: EntitySourceRow
 }
 
-type RawGitPushInput = Parameters<typeof rawGit.push>[0]
+type RawGitPushInput = Parameters<IsomorphicGit['git']['push']>[0]
 
 function nowIso() {
 	return new Date().toISOString()
@@ -639,7 +638,8 @@ class RepoSessionBase extends DurableObject<Env> {
 		force?: boolean
 	}) {
 		const auth = buildArtifactsGitAuth({ token: input.token })
-		return rawGit.push({
+		const { git, http } = await loadIsomorphicGit()
+		return git.push({
 			fs: this.rawGitFileSystem as RawGitPushInput['fs'],
 			http,
 			dir: repoSessionWorkspacePrefix,
@@ -672,7 +672,8 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	private async deleteRemoteBranch(input: { branch: string; token: string }) {
 		const auth = buildArtifactsGitAuth({ token: input.token })
-		return rawGit.push({
+		const { git, http } = await loadIsomorphicGit()
+		return git.push({
 			fs: this.rawGitFileSystem as RawGitPushInput['fs'],
 			http,
 			dir: repoSessionWorkspacePrefix,
@@ -2065,6 +2066,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			throw new Error('Provide at least one path to restore.')
 		}
 		const commit = input.commit ?? sessionRow.base_commit
+		const { git } = await loadIsomorphicGit()
 		const plannedRestores: Array<{
 			path: string
 			workspacePath: string
@@ -2078,7 +2080,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				throw new Error('Restore paths cannot be empty.')
 			}
 			try {
-				const result = await rawGit.readBlob({
+				const result = await git.readBlob({
 					fs: this.rawGitFileSystem,
 					dir: repoSessionWorkspacePrefix,
 					oid: commit,
