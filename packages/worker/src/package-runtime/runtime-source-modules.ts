@@ -82,15 +82,17 @@ const __kodyRuntimeStorage =
 // Stamp ALS + runner stay module-local (re-exports share one evaluation).
 // Do not hang the runner on Symbol.for — package code can steal it.
 const __kodySecretAuthorityAls = new AsyncLocalStorage();
+const __kodySecretAuthorityBrand = Symbol.for('kody.secretAuthorityBrand');
 function __kodyReadSecretAuthority() {
 	const current = __kodySecretAuthorityAls.getStore();
 	return typeof current === 'string' && current.trim() ? current.trim() : null;
 }
+__kodyReadSecretAuthority[__kodySecretAuthorityBrand] = true;
 function __kodyRunWithSecretAuthority(packageId, callback) {
 	return __kodySecretAuthorityAls.run(packageId, callback);
 }
 // Sealed global getter for back-compat readers. Reinstall when absent or
-// still configurable so a pre-planted forge cannot stick.
+// still configurable. A sealed foreign getter fails closed (throw).
 {
 	const existing = Object.getOwnPropertyDescriptor(
 		__globalAny,
@@ -103,6 +105,8 @@ function __kodyRunWithSecretAuthority(packageId, callback) {
 			configurable: false,
 			enumerable: false,
 		});
+	} else if (existing.value?.[__kodySecretAuthorityBrand] !== true) {
+		throw new Error('kody:runtime secret-authority getter sealed by foreign install');
 	}
 }
 export function __kodyGetSecretAuthority() {

@@ -700,3 +700,61 @@ test('runtime evaluation replaces a configurable pre-planted authority forge', a
 		await rm(dir, { recursive: true, force: true })
 	}
 })
+
+test('runtime evaluation rejects a sealed foreign authority forge', async () => {
+	const { Worker } = await import('node:worker_threads')
+	const source = createRuntimeModuleSource()
+	const result = await new Promise<{
+		ok: boolean
+		error: string
+	}>((resolve, reject) => {
+		const worker = new Worker(
+			`
+import { parentPort } from 'node:worker_threads'
+import { writeFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { pathToFileURL } from 'node:url'
+
+const authoritySymbol = Symbol.for('kody.getSecretAuthority')
+Object.defineProperty(globalThis, authoritySymbol, {
+	value: () => 'pkg-forged',
+	configurable: false,
+	writable: false,
+	enumerable: false,
+})
+const filePath = join(tmpdir(), \`kody-sa-sealed-\${Date.now()}.mjs\`)
+writeFileSync(filePath, ${JSON.stringify(source)})
+try {
+	await import(pathToFileURL(filePath).href)
+	parentPort.postMessage({ ok: false, error: 'expected throw' })
+} catch (error) {
+	parentPort.postMessage({
+		ok: /secret-authority getter sealed by foreign install/.test(String(error)),
+		error: String(error),
+	})
+} finally {
+	try {
+		rmSync(filePath, { force: true })
+	} catch {
+		// ignore cleanup failures in the worker
+	}
+}
+`,
+			{ eval: true, type: 'module' },
+		)
+		worker.on('message', resolve)
+		worker.on('error', reject)
+		worker.on('exit', (code) => {
+			if (code !== 0) {
+				reject(
+					new Error(`sealed-forge worker exited with code ${String(code)}`),
+				)
+			}
+		})
+	})
+	expect(result.ok).toBe(true)
+	expect(result.error).toMatch(
+		/secret-authority getter sealed by foreign install/,
+	)
+})
