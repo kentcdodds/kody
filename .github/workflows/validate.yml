@@ -158,6 +158,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run mermaid:check
 
+      - name: 🔐 Production dependency audit
+        if: ${{ !cancelled() }}
+        run: npm run audit:prod
+
   node:
     runs-on: ubuntu-latest
     name: 🧪 Node
