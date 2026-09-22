@@ -1,6 +1,9 @@
 import { type Handle } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
-import { lanternOrbMotion } from '#client/routes/landing-lantern-motion.ts'
+import {
+	lanternOrbMotion,
+	lanternOrbReleaseEvent,
+} from '#client/routes/landing-lantern-motion.ts'
 import {
 	landingHomePrimitives,
 	type LandingHomePrimitive,
@@ -133,7 +136,7 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 									on('pointerleave', (event: PointerEvent) => {
 										if (!hoverPointer(event)) return
 										// A captured drag leaves the hotspot without
-										// ending the grab. Releasing closes it.
+										// ending the grab. The release event closes it.
 										const current = event.currentTarget
 										if (
 											current instanceof Element &&
@@ -143,6 +146,7 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 										}
 										leave(orb.id)
 									}),
+									on(lanternOrbReleaseEvent, () => leave(orb.id)),
 									on('focusin', () => onOpen(orb.id)),
 									on('focusout', () => leave(orb.id)),
 									on('click', () => onToggle(orb.id)),

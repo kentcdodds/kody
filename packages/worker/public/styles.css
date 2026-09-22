@@ -1242,6 +1242,20 @@ html.is-settled {
 	z-index: 3;
 }
 
+/* A flick moves the disc off a still pointer, which leaves :hover stuck. */
+.landing-lantern-orb[data-suppress-hover]:hover:not([data-open]),
+.landing-lantern-orb[data-suppress-hover]:focus-visible:not([data-open]) {
+	scale: 1;
+	box-shadow: 0 0 0 0 oklch(from var(--primitive-color) l c h / 0);
+}
+
+.landing-lantern-orb[data-suppress-hover]:hover:not([data-open])::after,
+.landing-lantern-orb[data-suppress-hover]:focus-visible:not(
+		[data-open]
+	)::after {
+	opacity: 0;
+}
+
 .landing-lantern-orb:nth-child(2) {
 	--pulse-delay: 0.55s;
 }

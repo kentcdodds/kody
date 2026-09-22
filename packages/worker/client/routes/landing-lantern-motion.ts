@@ -13,6 +13,9 @@ import { type LandingPrimitiveId } from '#universal/landing-lantern.ts'
 /** Bubbles from the lantern so the leader overlay can redraw in the same frame. */
 export const lanternOrbMotionEvent = 'lantern-orb-motion'
 
+/** Fired on an orb when a drag ends, so the word can close without pointerleave. */
+export const lanternOrbReleaseEvent = 'lantern-orb-release'
+
 /** Movement before a press becomes a drag, so a tap can still open the word. */
 const dragSlopPx = 8
 
@@ -81,7 +84,12 @@ export function lanternOrbMotion() {
 
 		const tick = (now: number) => {
 			raf = null
-			const gesture = hold !== null || bodies.some((body) => body.coasting)
+			// A held orb is direct manipulation. A coast only keeps the loop
+			// alive while motion is allowed, so turning reduced motion on
+			// mid-toss snaps every orb back to rest.
+			const gesture =
+				hold !== null ||
+				(motionOk.matches && bodies.some((body) => body.coasting))
 			if (!motionOk.matches && !gesture) {
 				bodies = createLanternOrbBodies()
 				time = 0
@@ -181,9 +189,20 @@ export function lanternOrbMotion() {
 			pointerId = null
 			grabbedId = null
 			hold = null
+			const released = dragged
 			dragged = false
 			samples = []
 			clearGrabChrome()
+			if (released && id) {
+				const orb = node.querySelector<HTMLElement>(`[data-orb="${id}"]`)
+				if (orb) {
+					// The disc moves out from under a still pointer, so
+					// pointerleave never fires and the word would stay open.
+					orb.dataset.suppressHover = ''
+					if (document.activeElement === orb) orb.blur()
+					orb.dispatchEvent(new Event(lanternOrbReleaseEvent))
+				}
+			}
 			wake()
 		}
 
@@ -290,7 +309,20 @@ export function lanternOrbMotion() {
 			},
 			{ capture: true, signal },
 		)
-		window.addEventListener('pointermove', onPointerMove, { signal })
+		window.addEventListener(
+			'pointermove',
+			(event) => {
+				if (pointerId === null) {
+					for (const el of node.querySelectorAll<HTMLElement>(
+						'[data-suppress-hover]',
+					)) {
+						delete el.dataset.suppressHover
+					}
+				}
+				onPointerMove(event)
+			},
+			{ signal },
+		)
 		window.addEventListener('pointerup', onPointerUp, { signal })
 		window.addEventListener('pointercancel', onPointerCancel, { signal })
 
