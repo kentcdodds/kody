@@ -732,7 +732,10 @@ test(
 			stolenToken: null,
 			stealError: null,
 			directError: expect.stringMatching(/not allowed for package/i),
-			getAuthority: null,
+			// Steal runs as the importer, so the read-only getter may show the
+			// importer stamp. The attack is forging *another* package's stamp via
+			// Symbol.for — hungRunType/stolenSymbols prove that path is gone.
+			getAuthority: importer.packageId,
 		})
 	},
 )
