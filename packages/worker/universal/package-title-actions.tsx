@@ -25,7 +25,7 @@ const FORK_TITLE_TOOLTIP = 'Fork'
 const OPEN_FORK_TOOLTIP = 'Open fork'
 const COPY_SETUP_PROMPT_TOOLTIP = 'Copy setup prompt'
 
-const titleIconSize = '0.72em'
+const titleIconSize = '0.95em'
 const statusTooltipId = 'package-title-status-tooltip'
 const copyTooltipId = 'package-title-copy-tooltip'
 

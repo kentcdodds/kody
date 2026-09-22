@@ -128,12 +128,14 @@ export function renderPackageRepoChrome(input: {
 						</span>
 					)}
 					<span mix={css(slashCss)}>/</span>
-					<span>{input.kodyId}</span>
-					{input.titleActions}
-					{renderPackageStatusSignifiers({
-						isPrivate: input.isPrivate,
-						isListed,
-					})}
+					<span data-testid="package-title-name" mix={css(titleNameCss)}>
+						<span mix={css(titleLeafCss)}>{input.kodyId}</span>
+						{input.titleActions}
+						{renderPackageStatusSignifiers({
+							isPrivate: input.isPrivate,
+							isListed,
+						})}
+					</span>
 				</h1>
 			</header>
 			{input.description ? (
@@ -187,6 +189,22 @@ const titleCss = {
 	lineHeight: 1.15,
 	overflowWrap: 'anywhere' as const,
 	minWidth: 0,
+}
+
+// Keep the leaf name with its status icons. A wrap between them parks the
+// verify/fork control on the package mark, where it reads as a badge.
+const titleNameCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	gap: '0.45rem',
+	flexWrap: 'nowrap' as const,
+	minWidth: 0,
+	maxWidth: '100%',
+}
+
+const titleLeafCss = {
+	minWidth: 0,
+	overflowWrap: 'anywhere' as const,
 }
 
 const slashCss = {
