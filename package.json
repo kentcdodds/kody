@@ -83,6 +83,7 @@
     "typecheck": "node tools/run-nx.ts run worker:typecheck && tsc --noEmit -p packages/backup-control-plane/tsconfig.json && tsc --noEmit -p packages/status/tsconfig.json && tsc --noEmit -p packages/jobs-worker/tsconfig.json && tsc --noEmit -p packages/highlight-worker/tsconfig.json && tsc --noEmit -p packages/nx-cache/tsconfig.json",
     "test": "node tools/run-nx.ts run worker:test",
     "test:node": "node tools/run-nx.ts run worker:test-node",
+    "eval:python-execute": "node tools/python-execute-eval/run.mjs",
     "test:workers": "node tools/run-nx.ts run worker:test-workers",
     "test:push": "CI=1 npm run test:node && CI=1 npm run test:workers",
     "inspect": "npx -y @mcpjam/inspector inspector",

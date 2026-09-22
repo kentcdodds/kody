@@ -61,6 +61,7 @@ test('email verification redirect helpers preserve safe targets and reject open 
 			'secret-providers': false,
 			'jev-search-rerank': false,
 			'execute-invoke': false,
+			'python-execute': false,
 		},
 	}
 	const verifiedUser: SessionInfo = {

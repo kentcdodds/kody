@@ -72,7 +72,7 @@ function isDeterministicallyHashableWorkerModule(
 	if (typeof moduleValue === 'string') return true
 	if (moduleValue === null || typeof moduleValue !== 'object') return false
 	const record = moduleValue as Record<string, unknown>
-	for (const key of ['js', 'cjs', 'text'] as const) {
+	for (const key of ['js', 'cjs', 'text', 'py'] as const) {
 		const value = record[key]
 		if (value !== undefined && typeof value !== 'string') return false
 	}
@@ -90,6 +90,7 @@ function isDeterministicallyHashableWorkerModule(
 			key !== 'js' &&
 			key !== 'cjs' &&
 			key !== 'text' &&
+			key !== 'py' &&
 			key !== 'data' &&
 			key !== 'json'
 		) {

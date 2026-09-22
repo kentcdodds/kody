@@ -29,6 +29,14 @@ import {
 } from '#mcp/downstream-mcp-result.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { runModuleWithRegistry } from '#mcp/run-kody-registry.ts'
+import {
+	pythonExecuteFlagKey,
+	resolvePythonExecuteRequest,
+} from '#mcp/python-execute/language.ts'
+import {
+	runPythonExecute,
+	type PythonExecuteMetrics,
+} from '#mcp/python-execute/run-python-execute.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import { createProgressReporter, type McpToolCallExtra } from '#mcp/progress.ts'
 import {
@@ -157,6 +165,12 @@ export const executeToolOutputSchema = {
 		.array(z.unknown())
 		.optional()
 		.describe('Console output captured from the sandboxed module.'),
+	python: z
+		.unknown()
+		.optional()
+		.describe(
+			'Experimental Python execute metrics: backend, codeChars, elapsedMs, cpuMs, taxonomy, workerId. Present when language is python.',
+		),
 	warnings: z
 		.array(z.string())
 		.optional()
@@ -177,13 +191,17 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 		agent.getCallerContext(),
 	)
 	const invokeEnabled = featureFlags[executeInvokeFlagKey] === true
+	const pythonEnabled = featureFlags[pythonExecuteFlagKey] === true
 	agent.server.registerTool(
 		executeTool.name,
 		{
 			title: executeTool.title,
-			description: invokeEnabled
-				? executeToolDescriptionWithInvoke
-				: executeTool.description,
+			description: withPythonExecuteDescription(
+				invokeEnabled
+					? executeToolDescriptionWithInvoke
+					: executeTool.description,
+				pythonEnabled,
+			),
 			outputSchema: executeToolOutputSchema,
 			...(icons ? { icons } : {}),
 			inputSchema: {
@@ -223,6 +241,16 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					.describe(
 						`Optional idempotency key (max ${runRecordMaxIdempotencyKeyLength} chars). Reusing a key returns the retained or in-progress run without re-executing; use its runId with runGet after a transport timeout. Omit for ordinary calls.`,
 					),
+				...(pythonEnabled
+					? {
+							language: z
+								.enum(['typescript', 'python'])
+								.optional()
+								.describe(
+									'Module language. Omit or pass typescript for an ESM default export. python runs one module that defines async def main(params) or def main(params) and calls await kody.call(name, args). Vary args via params.',
+								),
+						}
+					: {}),
 			},
 			annotations: executeTool.annotations,
 		},
@@ -235,6 +263,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				conversationId,
 				memoryContext,
 				idempotencyKey,
+				language,
 			}: {
 				code?: string
 				invoke?: string
@@ -243,6 +272,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				conversationId?: string
 				memoryContext?: z.infer<typeof memoryContextInputField>
 				idempotencyKey?: string
+				language?: 'typescript' | 'python'
 			},
 			toolExtra?: McpToolCallExtra,
 		) => {
@@ -344,11 +374,20 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				// flag here so a kill-switch applies on the next call even
 				// when a legacy session still has invoke in its tool list.
 				const liveFlags = await resolveCallerFeatureFlags(env, callerContext)
-				const resolvedCode = resolveExecuteModuleSource({
+				const pythonRequest = resolvePythonExecuteRequest({
 					code,
 					invoke,
-					invokeEnabled: liveFlags[executeInvokeFlagKey] === true,
+					language,
+					pythonEnabled: liveFlags[pythonExecuteFlagKey] === true,
 				})
+				const resolvedCode =
+					pythonRequest.language === 'python'
+						? pythonRequest.code
+						: resolveExecuteModuleSource({
+								code,
+								invoke,
+								invokeEnabled: liveFlags[executeInvokeFlagKey] === true,
+							})
 
 				// Daily execute quota, consumed before claim/bundling/sandbox
 				// so over-limit calls cost nothing and do not poison a key.
@@ -427,10 +466,21 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 								})
 							: undefined
 						try {
+							if (pythonRequest.language === 'python') {
+								return await runPythonExecute({
+									env,
+									callerContext,
+									code: resolvedCode ?? '',
+									params,
+									capabilityRegistry: registry,
+									runRecordHandle: claimedRunHandle,
+									waitUntil,
+								})
+							}
 							return await runModuleWithRegistry(
 								env,
 								callerContext,
-								resolvedCode,
+								resolvedCode ?? '',
 								params,
 								{
 									executorExports: agent.getLoopbackExports(),
@@ -496,8 +546,9 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					callerContext,
 					conversationId: resolvedConversationId,
 					hostCounts: rawFetchHosts.hostCounts(),
-					usedIntegrationAuthHelpers:
-						codeUsesIntegrationAuthHelpers(resolvedCode),
+					usedIntegrationAuthHelpers: codeUsesIntegrationAuthHelpers(
+						resolvedCode ?? '',
+					),
 				})
 				const runId =
 					typeof result.runId === 'string'
@@ -538,6 +589,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							errorDetails,
 							...entitlementStructuredContent(result.error),
 							logs: result.logs ?? [],
+							...pythonMetricsField(result),
 							...(rawFetchHostNudges.length > 0
 								? { warnings: rawFetchHostNudges }
 								: {}),
@@ -720,6 +772,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							: {}),
 						result: structuredResultValue.value,
 						logs: result.logs ?? [],
+						...pythonMetricsField(result),
 						...(rawFetchHostNudges.length > 0
 							? { warnings: rawFetchHostNudges }
 							: {}),
@@ -730,6 +783,21 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			}
 		},
 	)
+}
+
+function withPythonExecuteDescription(
+	description: string,
+	pythonEnabled: boolean,
+) {
+	if (!pythonEnabled) return description
+	return `${description}
+
+When language is python, code is one Python module that defines async def main(params) or def main(params). Call capabilities with await kody.call(name, args). Vary args via params.`
+}
+
+function pythonMetricsField(result: object) {
+	if (!('python' in result) || !result.python) return {}
+	return { python: result.python as PythonExecuteMetrics }
 }
 
 function normalizeExecuteIdempotencyKey(

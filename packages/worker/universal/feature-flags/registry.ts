@@ -119,6 +119,20 @@ export const featureFlagDefinitions = [
 				'Invoke-generated thin passthrough reuses one Dynamic Worker per package export, so experiment users burn fewer unique worker-days on execute.',
 		},
 	},
+	{
+		key: 'python-execute',
+		defaultEnabled: false,
+		defaultAudience: 'experiments_opt_in',
+		description:
+			'Experimental Python execute and in-memory Python package invoke. Off by default. When on for a caller, MCP execute accepts language python and meta.pythonPackageInvoke appears in search. TypeScript execute stays the default. Delete the flag and gate sites when the experiment ends.',
+		successMetric: {
+			eventType: 'execute',
+			measure: 'avg_duration_ms',
+			goal: 'decrease',
+			hypothesis:
+				'Callers who can run Python execute finish execute calls with less wall-clock time on average than callers left on TypeScript-only execute.',
+		},
+	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
 export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']
@@ -133,6 +147,8 @@ export const jevSearchRerankFlagKey =
 	'jev-search-rerank' satisfies FeatureFlagKey
 
 export const executeInvokeFlagKey = 'execute-invoke' satisfies FeatureFlagKey
+
+export const pythonExecuteFlagKey = 'python-execute' satisfies FeatureFlagKey
 
 export const featureFlagKeys: ReadonlyArray<FeatureFlagKey> =
 	featureFlagDefinitions.map((definition) => definition.key)

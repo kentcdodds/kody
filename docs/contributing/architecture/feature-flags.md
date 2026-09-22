@@ -127,6 +127,19 @@ members with
 `adminFeatureFlagSet({ key: "execute-invoke", enabled: true, audience: "experiments_opt_in" })`.
 Remove the flag and gate sites when the experiment ends.
 
+`python-execute` is an experiment (default **off**, registry
+`defaultAudience: experiments_opt_in`) for a Python `execute` language and
+`pythonPackageInvoke`. When on for a caller, MCP `execute` accepts
+`language: "python"` (one module with `main(params)` and
+`await kody.call(name, args)`, bridged through the `PythonCapabilityBridge`
+loopback export) and search lists the in-memory package invoke capability.
+TypeScript execute is unchanged when `language` is omitted. The declared
+`successMetric` is `execute` average duration, goal decrease. Enable for
+experiment members with
+`adminFeatureFlagSet({ key: "python-execute", enabled: true, audience: "experiments_opt_in" })`.
+Remove the flag and gate sites when the experiment ends. The bakeoff harness
+lives at `tools/python-execute-eval/`.
+
 `compute-overage-charging` is a billing gate, not an experiment (no
 `successMetric`). Registry default is **on**. When on, the
 `compute_overage_billing` lane creates standalone Stripe invoices for

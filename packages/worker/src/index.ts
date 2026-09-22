@@ -11,6 +11,7 @@ import { RepoSessionIndex } from './repo/repo-session-index-do.ts'
 import { PackageRealtimeSession } from '#worker/package-runtime/realtime-session.ts'
 import { DynamicCallableWorkflow } from '#worker/package-runtime/package-workflows.ts'
 import { KodyFetchGateway } from '#mcp/fetch-gateway.ts'
+import { PythonCapabilityBridge } from '#mcp/python-execute/capability-bridge.ts'
 import { PackageAppRuntimeBridge } from '#worker/package-runtime/package-app.ts'
 import { OAuthPurgeCoordinator } from './oauth-purge.ts'
 import { originWorkerHandler } from './origin-handler.ts'
@@ -40,6 +41,7 @@ export {
 	RepoSession,
 	RepoSessionIndex,
 	KodyFetchGateway,
+	PythonCapabilityBridge,
 	McpClientHub,
 	MCP,
 	JobsHost,

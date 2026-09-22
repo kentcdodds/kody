@@ -21,6 +21,7 @@ import {
 	executeInvokeFlagOffMessage,
 	executeInvokeMutualExclusionMessage,
 } from '#mcp/execute-invoke.ts'
+import { pythonExecuteFlagOffMessage } from '#mcp/python-execute/language.ts'
 import type * as AccessControlModule from '#mcp/capabilities/access-control.ts'
 import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
@@ -46,6 +47,7 @@ const mockModule = vi.hoisted(() => ({
 	finishRunRecord: vi.fn(async () => undefined),
 	resolveCallerFeatureFlags: vi.fn(async () => ({
 		'execute-invoke': false,
+		'python-execute': false,
 	})),
 }))
 
@@ -153,11 +155,13 @@ async function getExecuteRegistration(
 		setState?: (state: Record<string, unknown>) => void
 		waitUntil?: (promise: Promise<unknown>) => void
 		invokeEnabled?: boolean
+		pythonEnabled?: boolean
 	} = {},
 ) {
 	vi.clearAllMocks()
 	mockModule.resolveCallerFeatureFlags.mockResolvedValue({
 		'execute-invoke': agentExtras.invokeEnabled === true,
+		'python-execute': agentExtras.pythonEnabled === true,
 	})
 	const registerTool = vi.fn()
 
@@ -182,6 +186,8 @@ async function getExecuteRegistration(
 		(input: {
 			code?: string
 			invoke?: string
+			language?: 'typescript' | 'python'
+			params?: Record<string, unknown>
 			responseLimit?: number
 			conversationId?: string
 		}) => Promise<{
@@ -199,6 +205,7 @@ async function getExecuteRegistration(
 				}
 				result: unknown
 				logs: Array<unknown>
+				python?: unknown
 				error?: string
 			}
 			isError: boolean
@@ -214,6 +221,7 @@ async function getExecuteHandler(
 	return handler as (input: {
 		code?: string
 		invoke?: string
+		language?: 'typescript' | 'python'
 		params?: Record<string, unknown>
 		responseLimit?: number
 		conversationId?: string
@@ -237,6 +245,7 @@ async function getExecuteHandler(
 			}
 			result: unknown
 			logs: Array<unknown>
+			python?: unknown
 			error?: string
 			errorDetails?: unknown
 			entitlement?: {
@@ -1191,6 +1200,7 @@ export default async function main(params) {
 
 	mockModule.resolveCallerFeatureFlags.mockResolvedValue({
 		'execute-invoke': false,
+		'python-execute': false,
 	})
 	const killed = await onHandler({
 		invoke: 'kody:@acme/github/listRepos',
@@ -1199,4 +1209,64 @@ export default async function main(params) {
 	expect(killed.isError).toBe(true)
 	expect(killed.structuredContent.error).toBe(executeInvokeFlagOffMessage)
 	expect(mockModule.runModuleWithRegistry).toHaveBeenCalledTimes(1)
+})
+
+test('execute routes language python through the experimental runner when the flag is on', async () => {
+	const pythonModule = await import('#mcp/python-execute/run-python-execute.ts')
+	const [, config, handler] = await getExecuteRegistration(
+		{
+			baseUrl: 'https://example.com',
+			user: { userId: 'user-1' },
+		},
+		{ pythonEnabled: true },
+	)
+	expect(config.inputSchema).toHaveProperty('language')
+	expect(config.description).toContain('language is python')
+	const spy = vi.spyOn(pythonModule, 'runPythonExecute').mockResolvedValue({
+		result: { marker: 'py' },
+		logs: [],
+		serverTiming: [{ name: 'python-execute', durationMs: 4 }],
+		python: {
+			backend: 'worker-loader',
+			codeChars: 42,
+			elapsedMs: 4,
+			cpuMs: null,
+			taxonomy: null,
+			workerId: 'kody-py',
+		},
+	})
+	mockPerformanceSequence(10, 20)
+	const response = await handler({
+		code: 'async def main(params):\n    return params\n',
+		language: 'python',
+		params: { n: 1 },
+		conversationId: 'conv-py',
+	})
+	expect(response.isError).toBe(false)
+	expect(response.structuredContent.result).toEqual({ marker: 'py' })
+	expect(response.structuredContent.python).toMatchObject({
+		backend: 'worker-loader',
+		taxonomy: null,
+	})
+	expect(spy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			code: 'async def main(params):\n    return params\n',
+			params: { n: 1 },
+		}),
+	)
+	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
+	spy.mockRestore()
+
+	mockModule.resolveCallerFeatureFlags.mockResolvedValue({
+		'execute-invoke': false,
+		'python-execute': false,
+	})
+	const rejected = await handler({
+		code: 'async def main(params):\n    return params\n',
+		language: 'python',
+		conversationId: 'conv-py-off',
+	})
+	expect(rejected.isError).toBe(true)
+	expect(rejected.structuredContent.error).toBe(pythonExecuteFlagOffMessage)
+	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
 })

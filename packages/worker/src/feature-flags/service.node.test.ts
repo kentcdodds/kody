@@ -341,6 +341,7 @@ test('isFeatureEnabled falls back to registry default when no DB state exists', 
 		'secret-providers': false,
 		'jev-search-rerank': false,
 		'execute-invoke': false,
+		'python-execute': false,
 	})
 })
 
@@ -519,6 +520,7 @@ test('user override wins over global off and global on; clear restores evaluatio
 		'secret-providers': false,
 		'jev-search-rerank': false,
 		'execute-invoke': false,
+		'python-execute': false,
 	})
 
 	await setFeatureFlagGlobalState(db, {
@@ -556,6 +558,7 @@ test('getFeatureFlagEvaluationsForUser reports assignment sources', async () => 
 		'secret-providers': { enabled: false, source: 'default' },
 		'jev-search-rerank': { enabled: false, source: 'default' },
 		'execute-invoke': { enabled: false, source: 'default' },
+		'python-execute': { enabled: false, source: 'default' },
 	})
 
 	await setFeatureFlagGlobalState(db, {
@@ -643,7 +646,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 	})
 
 	const listed = await listFeatureFlagsForAdmin(db)
-	expect(listed).toHaveLength(9)
+	expect(listed).toHaveLength(10)
 
 	const charging = listed.find(
 		(flag) => flag.key === 'compute-overage-charging',
@@ -687,6 +690,17 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 	expect(
 		listed.find((flag) => flag.key === 'execute-invoke')?.defaultAudience,
 	).toBe('experiments_opt_in')
+	expect(
+		listed.find((flag) => flag.key === 'python-execute')?.defaultAudience,
+	).toBe('experiments_opt_in')
+	expect(listed.find((flag) => flag.key === 'python-execute')).toMatchObject({
+		defaultEnabled: false,
+		successMetric: {
+			eventType: 'execute',
+			measure: 'avg_duration_ms',
+			goal: 'decrease',
+		},
+	})
 
 	const compact = listed.find(
 		(flag) => flag.key === 'compact-mcp-server-instructions',

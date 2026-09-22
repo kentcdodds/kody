@@ -9,6 +9,12 @@ import { entitlementStructuredContent } from '#mcp/entitlement-metadata.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { runModuleWithRegistry } from '#mcp/run-kody-registry.ts'
+import { resolveCallerFeatureFlags } from '#mcp/capabilities/access-control.ts'
+import {
+	pythonExecuteFlagKey,
+	resolvePythonExecuteRequest,
+} from '#mcp/python-execute/language.ts'
+import { runPythonExecute } from '#mcp/python-execute/run-python-execute.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import {
@@ -43,6 +49,10 @@ const executeOutputSchema = z.object({
 	errorDetails: z.unknown().optional(),
 	entitlement: z.unknown().optional(),
 	logs: z.array(z.unknown()),
+	python: z
+		.unknown()
+		.optional()
+		.describe('Experimental Python execute metrics when language is python.'),
 	serverTiming: z
 		.array(
 			z.object({
@@ -94,6 +104,12 @@ export const executeCapability = defineDomainCapability(
 				.describe(
 					`Optional caller-supplied idempotency key (max ${runRecordMaxIdempotencyKeyLength} chars). When set, persist the run eagerly with a bounded result snapshot and replay finished/in-progress outcomes instead of re-executing. Key-less execute stays on-failure-only.`,
 				),
+			language: z
+				.enum(['typescript', 'python'])
+				.optional()
+				.describe(
+					'Omit or pass typescript for an ESM default export. python is the python-execute experiment: one module with async def main(params) or def main(params), calling await kody.call(name, args).',
+				),
 		}),
 		outputSchema: executeOutputSchema,
 		async handler(
@@ -103,6 +119,7 @@ export const executeCapability = defineDomainCapability(
 				responseLimit?: number
 				conversationId?: string
 				idempotencyKey?: string
+				language?: 'typescript' | 'python'
 			},
 			ctx: CapabilityContext,
 		) {
@@ -219,26 +236,56 @@ export const executeCapability = defineDomainCapability(
 			let result: ExecuteResult & {
 				runId?: string
 				serverTiming?: Array<{ name: string; durationMs: number }>
+				python?: unknown
 			}
 			try {
-				result = await runModuleWithRegistry(
-					ctx.env,
-					callerContext,
-					args.code,
-					args.params,
-					{
+				const pythonRequest = resolvePythonExecuteRequest({
+					code: args.code,
+					language: args.language,
+					pythonEnabled:
+						args.language === 'python'
+							? (await resolveCallerFeatureFlags(ctx.env, callerContext))[
+									pythonExecuteFlagKey
+								] === true
+							: false,
+				})
+				if (pythonRequest.language === 'python') {
+					// registry.ts imports this domain. Load it after init.
+					const { getCapabilityRegistryForContext } =
+						await import('#mcp/capabilities/registry.ts')
+					const registry = await getCapabilityRegistryForContext({
+						env: ctx.env,
+						callerContext,
+					})
+					result = await runPythonExecute({
+						env: ctx.env,
+						callerContext,
+						code: pythonRequest.code ?? args.code,
+						params: args.params,
+						capabilityRegistry: registry,
 						runRecordHandle: claimedRunHandle,
 						waitUntil: ctx.waitUntil,
-						reportProgress: ctx.reportProgress,
-						runRecord: {
-							surface: 'execute',
-							name: null,
-							storageId: existingStorageId,
-							idempotencyKey,
-							metadata: { conversationId },
+					})
+				} else {
+					result = await runModuleWithRegistry(
+						ctx.env,
+						callerContext,
+						args.code,
+						args.params,
+						{
+							runRecordHandle: claimedRunHandle,
+							waitUntil: ctx.waitUntil,
+							reportProgress: ctx.reportProgress,
+							runRecord: {
+								surface: 'execute',
+								name: null,
+								storageId: existingStorageId,
+								idempotencyKey,
+								metadata: { conversationId },
+							},
 						},
-					},
-				)
+					)
+				}
 			} catch (cause) {
 				if (claimedRunHandle) {
 					const current = await getRunRecord({
@@ -289,6 +336,7 @@ export const executeCapability = defineDomainCapability(
 					errorDetails: getExecutionErrorDetails(result.error),
 					...entitlementStructuredContent(result.error),
 					logs,
+					...(result.python ? { python: result.python } : {}),
 					...(serverTiming ? { serverTiming } : {}),
 				}
 			}
@@ -310,6 +358,7 @@ export const executeCapability = defineDomainCapability(
 					: {}),
 				result: limitedResult.value,
 				logs,
+				...(result.python ? { python: result.python } : {}),
 				...(serverTiming ? { serverTiming } : {}),
 			}
 		},

@@ -12,6 +12,7 @@ test('platform worker exports KodyFetchGateway for MCP execute loopback', async 
 		.map((name) => name.trim())
 		.filter(Boolean)
 	expect(names).toContain('KodyFetchGateway')
+	expect(names).toContain('PythonCapabilityBridge')
 	expect(source).toMatch(
 		/import \{ KodyFetchGateway \} from '#mcp\/fetch-gateway\.ts'/,
 	)

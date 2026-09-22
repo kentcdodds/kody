@@ -4,6 +4,7 @@ export type WorkerLoaderModule =
 			js?: string
 			cjs?: string
 			text?: string
+			py?: string
 			data?: ArrayBuffer
 			json?: object
 	  }

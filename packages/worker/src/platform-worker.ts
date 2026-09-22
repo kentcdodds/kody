@@ -4,6 +4,7 @@ import {
 	platformWorkerHealthPath,
 } from '@kody-internal/shared/platform-worker.ts'
 import { KodyFetchGateway } from '#mcp/fetch-gateway.ts'
+import { PythonCapabilityBridge } from '#mcp/python-execute/capability-bridge.ts'
 import { PackageAppRuntimeBridge } from '#worker/package-runtime/package-app.ts'
 import { refuseNonCanonicalProductionHost } from '#app/canonical-host.ts'
 import { McpClientHub } from './mcp-client/hub.ts'
@@ -31,6 +32,8 @@ import { getWorkerSentryOptions } from './sentry-options.ts'
  * graph that fans into it) runs inside the platform-owned `MCP` Durable
  * Object and looks up those exports on **this** script, the same way
  * `kody-runtime` exports its own gateway instead of calling back into origin.
+ * `PythonCapabilityBridge` is the experimental Python `kody.call` loopback
+ * on this same script.
  */
 export {
 	MCP,
@@ -43,6 +46,7 @@ export {
 	StripePlanRefresh,
 	KodyFetchGateway,
 	PackageAppRuntimeBridge,
+	PythonCapabilityBridge,
 }
 
 const platformWorkerHandler = {

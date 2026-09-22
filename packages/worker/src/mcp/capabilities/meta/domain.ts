@@ -9,6 +9,7 @@ import { metaPlatformFeedbackSubmitCapability } from './meta-platform-feedback-s
 import { metaGetCurrentUserCapability } from './meta-get-current-user.ts'
 import { metaGetMcpServerInstructionsCapability } from './meta-get-mcp-server-instructions.ts'
 import { executeCapability } from './execute.ts'
+import { pythonPackageInvokeCapability } from './python-package-invoke.ts'
 import { metaListCapabilitiesCapability } from './meta-list-capabilities.ts'
 import { metaSetMcpServerInstructionsCapability } from './meta-set-mcp-server-instructions.ts'
 import { searchCapability } from './search.ts'
@@ -31,6 +32,7 @@ export const metaDomain = defineDomain({
 	capabilities: [
 		searchCapability,
 		executeCapability,
+		pythonPackageInvokeCapability,
 		metaListCapabilitiesCapability,
 		metaGetCurrentUserCapability,
 		metaGetMcpServerInstructionsCapability,

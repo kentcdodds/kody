@@ -18,6 +18,7 @@ function createFlagMap(enabled: boolean): CallerFeatureFlags {
 		'secret-providers': false,
 		'jev-search-rerank': false,
 		'execute-invoke': false,
+		'python-execute': false,
 	}
 }
 

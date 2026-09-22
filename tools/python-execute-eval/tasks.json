@@ -1,0 +1,83 @@
+{
+	"suite": "python-execute-experiment",
+	"description": "Fixed reference solutions for the Python vs TypeScript execute bakeoff. Agent-authored attempts replace the solution files; goldens stay.",
+	"tasks": [
+		{
+			"id": "notes-crud",
+			"category": "crud",
+			"params": {
+				"ops": [
+					{ "op": "write", "id": "a", "text": "hello" },
+					{ "op": "write", "id": "b", "text": "world" },
+					{ "op": "remove", "id": "a" }
+				]
+			},
+			"golden": { "notes": [{ "id": "b", "text": "world" }] },
+			"python": "solutions/notes-crud.py",
+			"typescript": "solutions/notes-crud.mjs"
+		},
+		{
+			"id": "http-json",
+			"category": "http",
+			"params": { "url": "https://example.test/items/3" },
+			"golden": { "status": 200, "value": 3 },
+			"python": "solutions/http-json.py",
+			"typescript": "solutions/http-json.mjs"
+		},
+		{
+			"id": "csv-wrangle",
+			"category": "data-wrangling",
+			"params": {
+				"csv": "sku,qty,price\na,2,1.5\nb,1,4\na,3,1.5\n"
+			},
+			"golden": {
+				"by_sku": {
+					"a": { "qty": 5, "revenue": 7.5 },
+					"b": { "qty": 1, "revenue": 4 }
+				}
+			},
+			"python": "solutions/csv-wrangle.py",
+			"typescript": "solutions/csv-wrangle.mjs"
+		},
+		{
+			"id": "stats-stdlib",
+			"category": "numeric",
+			"params": { "values": [1, 2, 3, 4, 5, 100] },
+			"golden": { "mean": 19.166667, "median": 3.5, "pstdev": 36.172811 },
+			"python": "solutions/stats-stdlib.py",
+			"typescript": "solutions/stats-stdlib.mjs"
+		},
+		{
+			"id": "search-then-read",
+			"category": "multi-step",
+			"seed": { "notes": [{ "id": "b", "text": "world" }] },
+			"params": { "query": "world" },
+			"golden": { "id": "b", "text": "world" },
+			"python": "solutions/search-then-read.py",
+			"typescript": "solutions/search-then-read.mjs"
+		},
+		{
+			"id": "recover-missing-note",
+			"category": "error-recovery",
+			"params": { "id": "missing" },
+			"golden": { "recovered": true, "reason": "note missing: missing" },
+			"python": "solutions/recover-missing-note.py",
+			"typescript": "solutions/recover-missing-note.mjs"
+		},
+		{
+			"id": "numpy-mean",
+			"category": "numeric",
+			"params": { "values": [1, 2, 3, 4, 5, 100] },
+			"python": {
+				"solution": "solutions/numpy-mean.py",
+				"expect": "failure",
+				"taxonomy": "missing_lib"
+			},
+			"typescript": {
+				"solution": "solutions/numpy-mean.mjs",
+				"expect": "value",
+				"golden": { "mean": 19.166667 }
+			}
+		}
+	]
+}
