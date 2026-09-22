@@ -217,8 +217,9 @@ test('exporter progresses phases with mocked bindings and S3, writing summary la
 	expect(
 		shouldRunDrExportWatchdogCron(new Date('2026-07-23T06:20:00.000Z')),
 	).toBe(false)
-	// Catch-up cadence: never inside the nightly window; every */5 tick
-	// outside it (aligned with the worker cron).
+	// Catch-up cadence: never inside the nightly window; every 5-minute tick
+	// outside it (aligned with the worker cron). 12:05 is on-boundary (runs);
+	// 12:07 is off-boundary (skips).
 	expect(
 		shouldRunDrExportCatchUpCron(new Date('2026-07-23T01:45:00.000Z')),
 	).toBe(false)

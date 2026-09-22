@@ -763,10 +763,12 @@ export async function sealFullBackupDay(
 
 /**
  * How many UTC days (including today) the hourly seal scan covers. Must be
- * ≥ `drExportCatchUpLookbackDays + 1` so a summary written by catch-up for
- * the oldest lookback day is still eligible before it ages out of sealing.
+ * ≥ `drExportCatchUpLookbackDays + 2` so the oldest catch-up day remains
+ * eligible after midnight when a summary lands after the final `:45` scan
+ * of the previous UTC day (lookback 14 → today+14 = 15 calendar days;
+ * +1 more day covers that overnight gap).
  */
-export const sealRecentCompleteDayCount = 15
+const sealRecentCompleteDayCount = 16
 
 export async function sealRecentCompleteDays(
 	env: BackupEnvironment,
