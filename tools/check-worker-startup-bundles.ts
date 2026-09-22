@@ -250,7 +250,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Onboarding ecosystem count plus Cursor Local/Cloud grant labels
 		// sit on the inbound grant path runtime already loads: CI dry-run
 		// 3_808_070 against the previous 3_808_000 budget.
-		maxEntryBytes: 3_809_000,
+		// Module-local secret-authority ALS (no Symbol.for runner) plus the
+		// sealed reinstallable getter: CI dry-run 3_809_234 against the
+		// previous 3_809_000 budget (local dry-run 3_808_685).
+		maxEntryBytes: 3_810_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',

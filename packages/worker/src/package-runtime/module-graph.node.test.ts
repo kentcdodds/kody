@@ -987,6 +987,28 @@ test('statically imported saved package sources get stamped with their own packa
 	)
 })
 
+test('refreshKodyRuntimeModules evaluates the full runtime once for artifact-only graphs', () => {
+	const prefix =
+		'.__kody_packages__/@kentcdodds/example/.__published_bundle__/ab'
+	const primary = `${prefix}/.__kody_virtual__/runtime.js`
+	const nested = `${prefix}/nested/.__kody_virtual__/runtime.js`
+	const refreshed = refreshKodyRuntimeModules(
+		{
+			[`${prefix}/entry.js`]: `import "./.__kody_virtual__/runtime.js";
+import "./nested/.__kody_virtual__/runtime.js";
+export default async function run() { return null }`,
+			[primary]: 'stale-primary',
+			[nested]: 'stale-nested',
+		},
+		{ includeDefaultRuntimePath: false },
+	)
+	expect(refreshed[primary]).toBe(createRuntimeModuleSource())
+	expect(refreshed[nested]).toBe(
+		createRuntimeModuleReexportSource(nested, primary),
+	)
+	expect(refreshed['.__kody_virtual__/runtime.js']).toBeUndefined()
+})
+
 test('refreshKodyRuntimeModules regenerates stale per-package runtime modules and their sibling shared runtime', () => {
 	const packageId = crypto.randomUUID()
 	const nestedPrefix =

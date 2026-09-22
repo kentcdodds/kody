@@ -272,12 +272,16 @@ return {
 	rowCount: result.rowCount,
 	rowsRead: result.rowsRead,
 	rowsWritten: result.rowsWritten,
+	truncated: result.truncated,
 }
 ```
 
 Read query rows from **`result.rows`**. The other fields are useful for
 inspection and debugging, especially when validating whether a query read or
-wrote storage.
+wrote storage. `sql(...)` returns at most 1000 rows and sets `truncated: true`
+when more matched — page with `LIMIT`/`OFFSET` (or a keyset) for larger results.
+Mutating statements that yield rows (`INSERT`/`UPDATE`/`DELETE … RETURNING`)
+still finish the write when truncated; only the returned row list is capped.
 
 For dedicated inspection, use:
 

@@ -36,9 +36,9 @@ export function createRuntimeModuleSource() {
 	//
 	// Hydration used to install another full copy of this module under each
 	// published-artifact prefix. Those copies now re-export this root module
-	// so the stamp ALS is created once in this closure. The ALS instance is
-	// never published on globalThis. Later full evaluations (bundler inlining)
-	// reuse the first getter and its hidden runner instead of a raw ALS.
+	// so the stamp ALS is created once in this closure. The ALS instance and
+	// stamp runner stay module-local (never hung off Symbol.for / globalThis);
+	// only a read-only current-stamp getter is published for host wrappers.
 	//
 	// This module is evaluated at most once per isolate path, but dynamic
 	// workers with identical code are cached and reused across executions
@@ -75,37 +75,39 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 
 const __kodyRuntimeStorageSymbol = Symbol.for('kody.runtimeStorage');
 const __kodyGetSecretAuthoritySymbol = Symbol.for('kody.getSecretAuthority');
-const __kodyRunSecretAuthoritySymbol = Symbol.for('kody.runWithSecretAuthority');
 const __globalAny = /** @type {any} */ (globalThis);
 const __kodyRuntimeStorage =
 	__globalAny[__kodyRuntimeStorageSymbol] ??
 	(__globalAny[__kodyRuntimeStorageSymbol] = new AsyncLocalStorage());
-if (typeof __globalAny[__kodyGetSecretAuthoritySymbol] !== 'function') {
-	const als = new AsyncLocalStorage();
-	const get = () => {
-		const current = als.getStore();
-		return typeof current === 'string' && current.trim() ? current.trim() : null;
-	};
-	Object.defineProperty(__globalAny, __kodyGetSecretAuthoritySymbol, {
-		value: get,
-		writable: false,
-		configurable: false,
-		enumerable: false,
-	});
-	Object.defineProperty(get, __kodyRunSecretAuthoritySymbol, {
-		value: (packageId, callback) => als.run(packageId, callback),
-		writable: false,
-		configurable: false,
-		enumerable: false,
-	});
-}
-export function __kodyGetSecretAuthority() {
-	const get = __globalAny[__kodyGetSecretAuthoritySymbol];
-	return typeof get === 'function' ? get() : null;
+// Stamp ALS + runner stay module-local (re-exports share one evaluation).
+// Do not hang the runner on Symbol.for — package code can steal it.
+const __kodySecretAuthorityAls = new AsyncLocalStorage();
+function __kodyReadSecretAuthority() {
+	const current = __kodySecretAuthorityAls.getStore();
+	return typeof current === 'string' && current.trim() ? current.trim() : null;
 }
 function __kodyRunWithSecretAuthority(packageId, callback) {
-	const run = __globalAny[__kodyGetSecretAuthoritySymbol]?.[__kodyRunSecretAuthoritySymbol];
-	return typeof run === 'function' ? run(packageId, callback) : callback();
+	return __kodySecretAuthorityAls.run(packageId, callback);
+}
+// Sealed global getter for back-compat readers. Reinstall when absent or
+// still configurable. A sealed pre-planted getter cannot be replaced —
+// host wrappers prefer the module export so that forge cannot stamp.
+{
+	const existing = Object.getOwnPropertyDescriptor(
+		__globalAny,
+		__kodyGetSecretAuthoritySymbol,
+	);
+	if (!existing || existing.configurable) {
+		Object.defineProperty(__globalAny, __kodyGetSecretAuthoritySymbol, {
+			value: __kodyReadSecretAuthority,
+			writable: false,
+			configurable: false,
+			enumerable: false,
+		});
+	}
+}
+export function __kodyGetSecretAuthority() {
+	return __kodyReadSecretAuthority();
 }
 
 export function __kodyRunInRuntime(runtime, callback) {
@@ -730,20 +732,40 @@ export function isCanonicalKodyRuntimeModulePath(modulePath: string) {
 }
 
 /**
- * Artifact-prefixed `runtime.js` copies re-export the graph-root runtime so
- * the stamp ALS is created once. A second full evaluation would write one
- * store while fetch / `kody.*` read another, or require putting the ALS on
- * `globalThis` where package code can forge it.
+ * Prefixed `runtime.js` copies re-export one shared runtime root so the stamp
+ * ALS is created once. A second full evaluation would write one store while
+ * fetch / `kody.*` read another, or require putting the ALS runner on
+ * `globalThis` where package code can steal it via Symbol.for.
  */
-export function createRuntimeModuleReexportSource(modulePath: string) {
+export function createRuntimeModuleReexportSource(
+	modulePath: string,
+	rootPath: string = runtimeModulePath,
+) {
 	const specifier = createRelativeImportSpecifier(
 		normalizeWorkspaceModulePath(modulePath),
-		runtimeModulePath,
+		normalizeWorkspaceModulePath(rootPath),
 	)
 	return `
 export * from ${JSON.stringify(specifier)};
 export { default } from ${JSON.stringify(specifier)};
 `.trim()
+}
+
+function pickPrimaryRuntimeModulePath(paths: Iterable<string>) {
+	const normalized = [...new Set([...paths].map(normalizeWorkspaceModulePath))]
+	if (normalized.length === 0) {
+		return runtimeModulePath
+	}
+	// Prefer the graph-canonical root when present; otherwise the shortest
+	// `.../.__kody_virtual__/runtime.js` path so artifact-only graphs still
+	// evaluate the full runtime exactly once.
+	if (normalized.includes(runtimeModulePath)) {
+		return runtimeModulePath
+	}
+	normalized.sort(
+		(left, right) => left.length - right.length || left.localeCompare(right),
+	)
+	return normalized[0]!
 }
 
 export function buildPackageRuntimeModulePath(packageId: string) {
@@ -879,47 +901,56 @@ export function refreshKodyRuntimeModules(
 ): WorkerLoaderModules {
 	const refreshed: WorkerLoaderModules = { ...modules }
 	const includeCanonicalRoot = options?.includeDefaultRuntimePath !== false
+	const runtimePaths = new Set(
+		collectReferencedRuntimeModulePaths(modules, options),
+	)
 	if (includeCanonicalRoot) {
-		refreshed[runtimeModulePath] = createRuntimeModuleSource()
+		runtimePaths.add(runtimeModulePath)
 	}
-	for (const modulePath of collectReferencedRuntimeModulePaths(
-		modules,
-		options,
-	)) {
+	const packageRuntimeEntries = [
+		...collectReferencedPackageRuntimeModulePaths(modules),
+	]
+	for (const [modulePath] of packageRuntimeEntries) {
+		runtimePaths.add(
+			normalizeWorkspaceModulePath(
+				joinPath(dirname(dirname(modulePath)), 'runtime.js'),
+			),
+		)
+	}
+	// Artifact-only graphs omit the canonical root and used to materialize a
+	// full runtime copy at every prefix. That created multiple stamp ALS
+	// instances while `globalThis[Symbol.for('kody.getSecretAuthority')]`
+	// kept the first getter — stamps wrote one store and reads saw another.
+	// Evaluate the full runtime once at the primary path; every other copy
+	// re-exports that root.
+	const primaryRuntimePath = includeCanonicalRoot
+		? runtimeModulePath
+		: pickPrimaryRuntimeModulePath(runtimePaths)
+	for (const modulePath of runtimePaths) {
 		refreshed[modulePath] = runtimeModuleSourceForPath(modulePath, {
-			includeCanonicalRoot,
+			primaryRuntimePath,
 		})
 	}
-	for (const [
-		modulePath,
-		packageId,
-	] of collectReferencedPackageRuntimeModulePaths(modules)) {
+	for (const [modulePath, packageId] of packageRuntimeEntries) {
 		refreshed[modulePath] = createPackageRuntimeModuleSource(packageId)
-		// The regenerated per-package module imports its sibling shared runtime
-		// module; make sure that target exists even when nothing else in the
-		// scanned modules referenced it.
-		const siblingRuntimePath = normalizeWorkspaceModulePath(
-			joinPath(dirname(dirname(modulePath)), 'runtime.js'),
-		)
-		refreshed[siblingRuntimePath] = runtimeModuleSourceForPath(
-			siblingRuntimePath,
-			{ includeCanonicalRoot },
-		)
 	}
 	return refreshed
 }
 
 function runtimeModuleSourceForPath(
 	modulePath: string,
-	options: { includeCanonicalRoot: boolean },
+	options: { primaryRuntimePath: string },
 ) {
 	if (
-		isCanonicalKodyRuntimeModulePath(modulePath) ||
-		!options.includeCanonicalRoot
+		normalizeWorkspaceModulePath(modulePath) ===
+		normalizeWorkspaceModulePath(options.primaryRuntimePath)
 	) {
 		return createRuntimeModuleSource()
 	}
-	return createRuntimeModuleReexportSource(modulePath)
+	return createRuntimeModuleReexportSource(
+		modulePath,
+		options.primaryRuntimePath,
+	)
 }
 
 function isStrippableKodyRuntimeModulePath(modulePath: string) {

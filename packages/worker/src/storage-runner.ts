@@ -27,6 +27,8 @@ import { kodyCallDispatcherName } from '#worker/kody-evaluate-bindings.ts'
 
 const defaultStorageExportPageSize = 250
 const maxStorageExportPageSize = 1_000
+/** Cap for StorageRunner sqlQuery row materialization (matches export max). */
+export const maxStorageSqlQueryRows = maxStorageExportPageSize
 const maxConcurrentStorageEstimateReads = 16
 /**
  * Backoff pauses between estimate read attempts (attempts = length + 1).
@@ -109,6 +111,12 @@ type StorageSqlResult = {
 	rowCount: number
 	rowsRead: number
 	rowsWritten: number
+	/**
+	 * True when the cursor held more rows than {@link maxStorageSqlQueryRows}.
+	 * The returned `rows` / `rowCount` stop at the cap; callers should page
+	 * with LIMIT/OFFSET (or equivalent) rather than relying on a full scan.
+	 */
+	truncated: boolean
 }
 
 type StorageListResult = StorageExportResult
@@ -427,6 +435,42 @@ export function isReadOnlyStorageSqlQuery(query: string) {
 	)
 }
 
+const storageSqlReturningMutationVerbs = [
+	'insert',
+	'update',
+	'delete',
+	'replace',
+] as const
+
+/** Keyword token match for INSERT/UPDATE/DELETE/REPLACE after a WITH clause. */
+const storageSqlReturningMutationVerbInWithPattern =
+	/(?:^|[^a-z0-9_])(?:insert|update|delete|replace)(?:[^a-z0-9_]|$)/
+
+/**
+ * True when `query` can mutate while yielding rows (SQLite RETURNING on
+ * INSERT / UPDATE / DELETE / REPLACE, including after a WITH clause).
+ *
+ * Used by {@link cursorToSqlResult} drainOverflow: only these statements must
+ * keep stepping past the row cap so the write finishes. Pure reads — including
+ * `WITH … SELECT` sent with `writable: true` from packageStorage — stop early.
+ */
+export function isStorageSqlReturningMutation(query: string) {
+	const trimmed = query.trim()
+	if (!trimmed) {
+		return false
+	}
+	const normalized = trimmed.toLowerCase()
+	for (const verb of storageSqlReturningMutationVerbs) {
+		if (normalized.startsWith(verb)) {
+			return true
+		}
+	}
+	if (!normalized.startsWith('with')) {
+		return false
+	}
+	return storageSqlReturningMutationVerbInWithPattern.test(normalized)
+}
+
 export const readOnlyStorageSqlDeniedMessage =
 	'Read-only storage.sql only allows a single SELECT, EXPLAIN, or schema PRAGMA statement. Pass writable: true to allow multi-statement or mutating queries.'
 
@@ -476,14 +520,34 @@ async function withStorageEstimateReadTimeout<T>(
 
 function cursorToSqlResult(
 	cursor: SqlStorageCursor<Record<string, StorageSqlValue>>,
+	options?: {
+		/**
+		 * When true, keep stepping after the row cap so statements that yield
+		 * rows while mutating (INSERT/UPDATE/DELETE … RETURNING) finish.
+		 * Read-only SELECT/EXPLAIN/PRAGMA can stop early — they do not write.
+		 */
+		drainOverflow?: boolean
+	},
 ): StorageSqlResult {
-	const rows = cursor.toArray()
+	const rows: Array<Record<string, StorageSqlValue>> = []
+	let truncated = false
+	for (const row of cursor) {
+		if (rows.length >= maxStorageSqlQueryRows) {
+			truncated = true
+			if (!options?.drainOverflow) {
+				break
+			}
+			continue
+		}
+		rows.push(row)
+	}
 	return {
 		columns: [...cursor.columnNames],
 		rows,
 		rowCount: rows.length,
 		rowsRead: cursor.rowsRead,
 		rowsWritten: cursor.rowsWritten,
+		truncated,
 	}
 }
 
@@ -612,7 +676,9 @@ class StorageRunnerBase extends DurableObject<Env> {
 			query,
 			...params,
 		)
-		return cursorToSqlResult(cursor)
+		const drainOverflow =
+			Boolean(input.writable) && isStorageSqlReturningMutation(query)
+		return cursorToSqlResult(cursor, { drainOverflow })
 	}
 }
 

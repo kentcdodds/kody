@@ -656,3 +656,122 @@ test('secret-authority stamps stay visible across hydrated runtime.js copies', a
 		expect(peek()).toBeNull()
 	})
 })
+
+test('runtime evaluation replaces a configurable pre-planted authority forge', async () => {
+	const authoritySymbol = Symbol.for('kody.getSecretAuthority')
+	const existing = Object.getOwnPropertyDescriptor(globalThis, authoritySymbol)
+	if (existing && !existing.configurable) {
+		// A prior sealed install already applied — still prove redefine is denied.
+		expect(() =>
+			Object.defineProperty(globalThis, authoritySymbol, {
+				value: () => 'pkg-forged',
+				configurable: true,
+			}),
+		).toThrow(/Cannot redefine|configurable/i)
+		return
+	}
+
+	Object.defineProperty(globalThis, authoritySymbol, {
+		value: () => 'pkg-forged',
+		configurable: true,
+		writable: true,
+		enumerable: false,
+	})
+	expect(
+		(globalThis as unknown as Record<symbol, () => string>)[authoritySymbol](),
+	).toBe('pkg-forged')
+
+	const dir = await mkdtemp(join(tmpdir(), 'kody-sa-forge-'))
+	try {
+		const filePath = join(dir, 'runtime.mjs')
+		await writeFile(filePath, createRuntimeModuleSource(), 'utf8')
+		await import(`${pathToFileURL(filePath).href}?t=${Date.now()}`)
+		const installed = Object.getOwnPropertyDescriptor(
+			globalThis,
+			authoritySymbol,
+		)
+		expect(installed?.configurable).toBe(false)
+		expect(
+			(globalThis as unknown as Record<symbol, () => string | null>)[
+				authoritySymbol
+			](),
+		).not.toBe('pkg-forged')
+	} finally {
+		await rm(dir, { recursive: true, force: true })
+	}
+})
+
+test('module secret-authority export ignores a sealed foreign global forge', async () => {
+	const { Worker } = await import('node:worker_threads')
+	const source = createRuntimeModuleSource()
+	const result = await new Promise<{
+		ok: boolean
+		error: string
+		globalValue: string | null
+		moduleValue: string | null
+	}>((resolve, reject) => {
+		const worker = new Worker(
+			`
+import { parentPort } from 'node:worker_threads'
+import { writeFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { pathToFileURL } from 'node:url'
+
+const authoritySymbol = Symbol.for('kody.getSecretAuthority')
+Object.defineProperty(globalThis, authoritySymbol, {
+	value: () => 'pkg-forged',
+	configurable: false,
+	writable: false,
+	enumerable: false,
+})
+const filePath = join(tmpdir(), \`kody-sa-sealed-\${Date.now()}.mjs\`)
+writeFileSync(filePath, ${JSON.stringify(source)})
+try {
+	const mod = await import(pathToFileURL(filePath).href)
+	const globalValue =
+		typeof globalThis[authoritySymbol] === 'function'
+			? globalThis[authoritySymbol]()
+			: null
+	const moduleValue =
+		typeof mod.__kodyGetSecretAuthority === 'function'
+			? mod.__kodyGetSecretAuthority()
+			: null
+	parentPort.postMessage({
+		ok: globalValue === 'pkg-forged' && moduleValue === null,
+		error: '',
+		globalValue,
+		moduleValue,
+	})
+} catch (error) {
+	parentPort.postMessage({
+		ok: false,
+		error: String(error),
+		globalValue: null,
+		moduleValue: null,
+	})
+} finally {
+	try {
+		rmSync(filePath, { force: true })
+	} catch {
+		// ignore cleanup failures in the worker
+	}
+}
+`,
+			{ eval: true, type: 'module' },
+		)
+		worker.on('message', resolve)
+		worker.on('error', reject)
+		worker.on('exit', (code) => {
+			if (code !== 0) {
+				reject(
+					new Error(`sealed-forge worker exited with code ${String(code)}`),
+				)
+			}
+		})
+	})
+	expect(result.error).toBe('')
+	expect(result.ok).toBe(true)
+	expect(result.globalValue).toBe('pkg-forged')
+	expect(result.moduleValue).toBeNull()
+})

@@ -290,6 +290,12 @@ export default async function listItems() {
 }
 ```
 
+`sql(...)` returns at most 1000 rows and sets `truncated: true` when more
+matched. Page large reads with `LIMIT`/`OFFSET` (or a keyset). Mutating
+statements that yield rows (`INSERT`/`UPDATE`/`DELETE … RETURNING`) still finish
+the write when truncated — only the returned row list is capped. See
+[Execute → Storage](./execute.md#storage) for the full result shape.
+
 `packageStorage()` identity comes from the bundler, not from source code: the
 publish pipeline stamps each module with the saved package it originated from,
 and execution grants bucket access only from that recorded provenance — the

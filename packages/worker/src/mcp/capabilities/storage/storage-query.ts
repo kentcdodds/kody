@@ -26,6 +26,7 @@ const outputSchema = z.object({
 	row_count: z.number(),
 	rows_read: z.number(),
 	rows_written: z.number(),
+	truncated: z.boolean(),
 	writable: z.boolean(),
 })
 
@@ -92,6 +93,7 @@ export const storageQueryCapability = defineDomainCapability(
 					row_count: result.rowCount,
 					rows_read: result.rowsRead,
 					rows_written: result.rowsWritten,
+					truncated: result.truncated,
 					writable,
 				}
 			} catch (error) {

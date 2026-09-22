@@ -265,10 +265,7 @@ test(
 					"import { packageSecrets } from 'kody:runtime'",
 					'export default async function wake() {',
 					'\tconst token = await packageSecrets.get("wakeToken")',
-					'\tconst getAuthority = globalThis[Symbol.for("kody.getSecretAuthority")]',
-					'\tconst authority =',
-					'\t\ttypeof getAuthority === "function" ? getAuthority() : null',
-					'\treturn { token, authority }',
+					'\treturn { token }',
 					'}',
 				].join('\n'),
 			},
@@ -367,7 +364,6 @@ test(
 		expect(executeImport.error).toBeUndefined()
 		expect(executeImport.result).toEqual({
 			token: 'wake-secret-value',
-			authority: wake.packageId,
 		})
 
 		const enterAsA = await runBundledModuleWithRegistry(
@@ -449,7 +445,6 @@ test(
 		expect(runAsBImportA.error).toBeUndefined()
 		expect(runAsBImportA.result).toEqual({
 			token: 'wake-secret-value',
-			authority: wake.packageId,
 		})
 
 		const runAsBSteal = await runBundledModuleWithRegistry(
@@ -549,7 +544,7 @@ test(
 		)
 		expect(runAsBRequestA.error).toBeUndefined()
 		expect(runAsBRequestA.result).toEqual({
-			stamped: { token: 'wake-secret-value', authority: wake.packageId },
+			stamped: { token: 'wake-secret-value' },
 			error: expect.stringMatching(/not allowed for package/i),
 		})
 
@@ -575,5 +570,190 @@ test(
 		)
 		expect(executeUnstamped.error).toBeUndefined()
 		expect(executeUnstamped.result).toEqual({ bound: false })
+	},
+)
+
+test(
+	'Symbol.for steal cannot forge secret authority for another granted package',
+	{ timeout: 90_000 },
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		await ensureSecretAuthorityTestSchema()
+		const userId = `user-${crypto.randomUUID()}`
+		const wake = await publishPackage({
+			userId,
+			name: '@kentcdodds/grok-bot',
+			kodyId: 'grok-bot',
+			sourceFiles: {
+				'package.json': JSON.stringify({
+					name: '@kentcdodds/grok-bot',
+					exports: { './wake': './src/wake.ts' },
+					kody: {
+						id: 'grok-bot',
+						description: 'Wake helper',
+						secretMounts: {
+							wakeToken: { name: 'wakeToken', scope: 'user' },
+						},
+					},
+				}),
+				'src/wake.ts': [
+					"import { packageSecrets } from 'kody:runtime'",
+					'export default async function wake() {',
+					'\treturn { token: await packageSecrets.get("wakeToken") }',
+					'}',
+				].join('\n'),
+			},
+			exports: [{ artifactName: './wake', entryPoint: 'src/wake.ts' }],
+		})
+		const importer = await publishPackage({
+			userId,
+			name: '@kentcdodds/dependent',
+			kodyId: 'dependent',
+			sourceFiles: {
+				'package.json': JSON.stringify({
+					name: '@kentcdodds/dependent',
+					exports: {
+						'./steal-authority': './src/steal-authority.ts',
+					},
+					kody: {
+						id: 'dependent',
+						description: 'Dependent',
+						dependencies: { '@kentcdodds/grok-bot': '*' },
+						secretMounts: {
+							wakeToken: { name: 'wakeToken', scope: 'user' },
+						},
+					},
+				}),
+				'src/steal-authority.ts': [
+					"import { packageSecrets } from 'kody:runtime'",
+					`const victimPackageId = ${JSON.stringify(wake.packageId)}`,
+					'export default async function stealAuthority() {',
+					'\tconst authoritySymbol = Symbol.for("kody.getSecretAuthority")',
+					'\tconst get = globalThis[authoritySymbol]',
+					'\tconst runSymbol = Symbol.for("kody.runWithSecretAuthority")',
+					'\tconst hungRun =',
+					'\t\ttypeof get === "function" ? get[runSymbol] : undefined',
+					'\tconst stolenSymbols =',
+					'\t\ttypeof get === "function"',
+					'\t\t\t? Object.getOwnPropertySymbols(get)',
+					'\t\t\t\t\t.map((symbol) => String(symbol))',
+					'\t\t\t: []',
+					'\tlet redefineError = null',
+					'\ttry {',
+					'\t\tObject.defineProperty(globalThis, authoritySymbol, {',
+					'\t\t\tvalue: () => victimPackageId,',
+					'\t\t\twritable: false,',
+					'\t\t\tconfigurable: true,',
+					'\t\t\tenumerable: false,',
+					'\t\t})',
+					'\t} catch (error) {',
+					'\t\tredefineError =',
+					'\t\t\terror instanceof Error ? error.message : String(error)',
+					'\t}',
+					'\tconst getAfterRedefine = globalThis[authoritySymbol]',
+					'\tconst forgedAfterRedefine =',
+					'\t\ttypeof getAfterRedefine === "function"',
+					'\t\t\t? getAfterRedefine()',
+					'\t\t\t: getAfterRedefine',
+					'\tlet stolenToken = null',
+					'\tlet stealError = null',
+					'\tif (typeof hungRun === "function") {',
+					'\t\ttry {',
+					'\t\t\tstolenToken = await hungRun(victimPackageId, () =>',
+					'\t\t\t\tpackageSecrets.get("wakeToken"),',
+					'\t\t\t)',
+					'\t\t} catch (error) {',
+					'\t\t\tstealError =',
+					'\t\t\t\terror instanceof Error ? error.message : String(error)',
+					'\t\t}',
+					'\t}',
+					'\tlet directError = null',
+					'\ttry {',
+					'\t\tawait packageSecrets.get("wakeToken")',
+					'\t} catch (error) {',
+					'\t\tdirectError =',
+					'\t\t\terror instanceof Error ? error.message : String(error)',
+					'\t}',
+					'\treturn {',
+					'\t\thungRunType: typeof hungRun,',
+					'\t\tstolenSymbols,',
+					'\t\tstolenToken,',
+					'\t\tstealError,',
+					'\t\tdirectError,',
+					'\t\tredefineError,',
+					'\t\tforgedAfterRedefine,',
+					'\t\tgetAuthority: typeof get === "function" ? get() : null,',
+					'\t}',
+					'}',
+				].join('\n'),
+			},
+			exports: [
+				{
+					artifactName: './steal-authority',
+					entryPoint: 'src/steal-authority.ts',
+				},
+			],
+		})
+		await markUnadoptedFork({
+			userId,
+			packageId: wake.packageId,
+			sourceId: wake.sourceId,
+			kodyId: 'grok-bot',
+		})
+		await markUnadoptedFork({
+			userId,
+			packageId: importer.packageId,
+			sourceId: importer.sourceId,
+			kodyId: 'dependent',
+		})
+		await saveSecret({
+			env,
+			userId,
+			scope: 'user',
+			name: 'wakeToken',
+			value: 'wake-secret-value',
+		})
+		await lockSecretToPackage({
+			env,
+			userId,
+			name: 'wakeToken',
+			packageId: wake.packageId,
+		})
+
+		const stealBundle = await buildKodyModuleBundle({
+			env,
+			baseUrl: 'https://kody.dev',
+			userId,
+			sourceFiles: {
+				'entry.ts': [
+					"import stealAuthority from 'kody:@kentcdodds/dependent/steal-authority'",
+					'export default async function main() {',
+					'\treturn await stealAuthority()',
+					'}',
+				].join('\n'),
+			},
+			entryPoint: 'entry.ts',
+		})
+		const stolen = await runBundledModuleWithRegistry(
+			env,
+			createCallerContext(userId),
+			stealBundle,
+			undefined,
+			{ skipCapabilityRegistry: true },
+		)
+		expect(stolen.error).toBeUndefined()
+		expect(stolen.result).toMatchObject({
+			hungRunType: 'undefined',
+			stolenSymbols: [],
+			stolenToken: null,
+			stealError: null,
+			directError: expect.stringMatching(
+				/not allowed for package|matching server-side package runtime context/i,
+			),
+			// Sealed getter must reject redefine; forged value must not be the victim.
+			redefineError: expect.stringMatching(/Cannot|redefine|configurable/i),
+		})
+		expect(stolen.result.forgedAfterRedefine).not.toBe(wake.packageId)
+		expect(stolen.result.getAuthority).not.toBe(wake.packageId)
 	},
 )
