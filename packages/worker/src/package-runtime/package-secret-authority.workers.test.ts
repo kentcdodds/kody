@@ -265,10 +265,7 @@ test(
 					"import { packageSecrets } from 'kody:runtime'",
 					'export default async function wake() {',
 					'\tconst token = await packageSecrets.get("wakeToken")',
-					'\tconst getAuthority = globalThis[Symbol.for("kody.getSecretAuthority")]',
-					'\tconst authority =',
-					'\t\ttypeof getAuthority === "function" ? getAuthority() : null',
-					'\treturn { token, authority }',
+					'\treturn { token }',
 					'}',
 				].join('\n'),
 			},
@@ -367,7 +364,6 @@ test(
 		expect(executeImport.error).toBeUndefined()
 		expect(executeImport.result).toEqual({
 			token: 'wake-secret-value',
-			authority: wake.packageId,
 		})
 
 		const enterAsA = await runBundledModuleWithRegistry(
@@ -449,7 +445,6 @@ test(
 		expect(runAsBImportA.error).toBeUndefined()
 		expect(runAsBImportA.result).toEqual({
 			token: 'wake-secret-value',
-			authority: wake.packageId,
 		})
 
 		const runAsBSteal = await runBundledModuleWithRegistry(
@@ -549,7 +544,7 @@ test(
 		)
 		expect(runAsBRequestA.error).toBeUndefined()
 		expect(runAsBRequestA.result).toEqual({
-			stamped: { token: 'wake-secret-value', authority: wake.packageId },
+			stamped: { token: 'wake-secret-value' },
 			error: expect.stringMatching(/not allowed for package/i),
 		})
 
@@ -633,7 +628,8 @@ test(
 					"import { packageSecrets } from 'kody:runtime'",
 					`const victimPackageId = ${JSON.stringify(wake.packageId)}`,
 					'export default async function stealAuthority() {',
-					'\tconst get = globalThis[Symbol.for("kody.getSecretAuthority")]',
+					'\tconst authoritySymbol = Symbol.for("kody.getSecretAuthority")',
+					'\tconst get = globalThis[authoritySymbol]',
 					'\tconst runSymbol = Symbol.for("kody.runWithSecretAuthority")',
 					'\tconst hungRun =',
 					'\t\ttypeof get === "function" ? get[runSymbol] : undefined',
@@ -641,6 +637,23 @@ test(
 					'\t\ttypeof get === "function"',
 					'\t\t\t? Object.getOwnPropertySymbols(get).map((symbol) => String(symbol))',
 					'\t\t\t: []',
+					'\tlet redefineError = null',
+					'\ttry {',
+					'\t\tObject.defineProperty(globalThis, authoritySymbol, {',
+					'\t\t\tvalue: () => victimPackageId,',
+					'\t\t\twritable: false,',
+					'\t\t\tconfigurable: true,',
+					'\t\t\tenumerable: false,',
+					'\t\t})',
+					'\t} catch (error) {',
+					'\t\tredefineError =',
+					'\t\t\terror instanceof Error ? error.message : String(error)',
+					'\t}',
+					'\tconst getAfterRedefine = globalThis[authoritySymbol]',
+					'\tconst forgedAfterRedefine =',
+					'\t\ttypeof getAfterRedefine === "function"',
+					'\t\t\t? getAfterRedefine()',
+					'\t\t\t: getAfterRedefine',
 					'\tlet stolenToken = null',
 					'\tlet stealError = null',
 					'\tif (typeof hungRun === "function") {',
@@ -666,6 +679,8 @@ test(
 					'\t\tstolenToken,',
 					'\t\tstealError,',
 					'\t\tdirectError,',
+					'\t\tredefineError,',
+					'\t\tforgedAfterRedefine,',
 					'\t\tgetAuthority: typeof get === "function" ? get() : null,',
 					'\t}',
 					'}',
@@ -726,16 +741,16 @@ test(
 			{ skipCapabilityRegistry: true },
 		)
 		expect(stolen.error).toBeUndefined()
-		expect(stolen.result).toEqual({
+		expect(stolen.result).toMatchObject({
 			hungRunType: 'undefined',
 			stolenSymbols: [],
 			stolenToken: null,
 			stealError: null,
 			directError: expect.stringMatching(/not allowed for package/i),
-			// Steal runs as the importer, so the read-only getter may show the
-			// importer stamp. The attack is forging *another* package's stamp via
-			// Symbol.for — hungRunType/stolenSymbols prove that path is gone.
-			getAuthority: importer.packageId,
+			// Sealed getter must reject redefine; forged value must not be the victim.
+			redefineError: expect.stringMatching(/Cannot|redefine|configurable/i),
 		})
+		expect(stolen.result.forgedAfterRedefine).not.toBe(wake.packageId)
+		expect(stolen.result.getAuthority).not.toBe(wake.packageId)
 	},
 )

@@ -27,6 +27,7 @@ import {
 	createPublishedPackageAppBundleCacheKey,
 	hydrateKodyRuntimeModules,
 } from './module-graph.ts'
+import { runtimeModulePath } from './module-graph-paths.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './published-source-dependencies.ts'
 import {
 	loadPublishedBundleArtifactByIdentity,
@@ -99,6 +100,7 @@ function createPackageAppWorkerSource(input: { mainModule: string }) {
 	return `
 import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { __kodyGetSecretAuthority } from ${JSON.stringify(`./${runtimeModulePath}`)};
 
 const __kodyRuntimeStorageSymbol = Symbol.for('kody.runtimeStorage');
 // Resolve the AsyncLocalStorage instance synchronously at module load,
@@ -120,8 +122,8 @@ if (!globalThis[__kodyEvaluateFetchPatchedSymbol]) {
 	const __kodyNativeFetch = globalThis.fetch.bind(globalThis);
 	globalThis.fetch = (input, init) => {
 		const authority =
-			typeof globalThis[Symbol.for('kody.getSecretAuthority')] === 'function'
-				? String(globalThis[Symbol.for('kody.getSecretAuthority')]() ?? '').trim()
+			typeof __kodyGetSecretAuthority === 'function'
+				? String(__kodyGetSecretAuthority() ?? '').trim()
 				: '';
 		const headers = new Headers(
 			init?.headers ??
@@ -221,10 +223,9 @@ function createKodyProxy(runtimeBridge, mcpServerNames) {
 			},
 		});
 	function attachSecretAuthorityArgs(args) {
-		const getSecretAuthority = globalThis[Symbol.for('kody.getSecretAuthority')];
 		const authority =
-			typeof getSecretAuthority === 'function'
-				? String(getSecretAuthority() ?? '').trim()
+			typeof __kodyGetSecretAuthority === 'function'
+				? String(__kodyGetSecretAuthority() ?? '').trim()
 				: '';
 		if (args == null || typeof args !== 'object' || Array.isArray(args)) {
 			return args;
@@ -306,10 +307,9 @@ function createRealtimeProxy(runtimeBridge) {
 
 function createPackageSecretsProxy(runtimeBridge) {
 	const secretArgs = (alias) => {
-		const getSecretAuthority = globalThis[Symbol.for('kody.getSecretAuthority')];
 		const authority =
-			typeof getSecretAuthority === 'function'
-				? String(getSecretAuthority() ?? '').trim()
+			typeof __kodyGetSecretAuthority === 'function'
+				? String(__kodyGetSecretAuthority() ?? '').trim()
 				: '';
 		const args = { alias };
 		if (authority) {

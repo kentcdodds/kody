@@ -84,6 +84,9 @@ const __kodyRuntimeStorage =
 // the ALS is created once. Do NOT hang the runner off globalThis / Symbol.for:
 // package code can steal Symbol.for keys via Object.getOwnPropertySymbols and
 // forge another granted package's stamp in the same user isolate.
+// Host fetch / kody.* wrappers must import __kodyGetSecretAuthority from this
+// module. A sealed read-only global getter remains only as a back-compat
+// bridge (configurable:false so package code cannot replace it with a forge).
 const __kodySecretAuthorityAls = new AsyncLocalStorage();
 function __kodyReadSecretAuthority() {
 	const current = __kodySecretAuthorityAls.getStore();
@@ -92,17 +95,20 @@ function __kodyReadSecretAuthority() {
 function __kodyRunWithSecretAuthority(packageId, callback) {
 	return __kodySecretAuthorityAls.run(packageId, callback);
 }
-// Host fetch / kody.* wrappers may read the current stamp via this getter.
-// Writable stamp control is intentionally not installed on globalThis.
-// Rebind on every evaluation (configurable: true): workers vitest reuses
-// isolates across tests, and a stale non-configurable getter from a prior
-// evaluation would read a dead ALS while this module stamps a new one.
-Object.defineProperty(__globalAny, __kodyGetSecretAuthoritySymbol, {
-	value: __kodyReadSecretAuthority,
-	writable: false,
-	configurable: true,
-	enumerable: false,
-});
+// Seal the public getter (configurable: false). A configurable descriptor let
+// package code replace it with a function returning another granted package
+// id and forge the same-user stamp. Install once per isolate; re-exports keep
+// stamps/reads on this closure. Host wrappers should import
+// __kodyGetSecretAuthority from this module so they are not affected if a
+// prior isolate evaluation left a stale sealed getter.
+if (typeof __globalAny[__kodyGetSecretAuthoritySymbol] !== 'function') {
+	Object.defineProperty(__globalAny, __kodyGetSecretAuthoritySymbol, {
+		value: __kodyReadSecretAuthority,
+		writable: false,
+		configurable: false,
+		enumerable: false,
+	});
+}
 export function __kodyGetSecretAuthority() {
 	return __kodyReadSecretAuthority();
 }
