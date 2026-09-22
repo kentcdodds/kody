@@ -247,7 +247,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// First-seen execute/search/secret/job funnel claim lives on the
 		// shared activation-stamp module that runtime execute already calls:
 		// local dry-run 3_806_157 against the previous 3_805_000 budget.
-		maxEntryBytes: 3_808_000,
+		// Onboarding ecosystem count plus Cursor Local/Cloud grant labels
+		// sit on the inbound grant path runtime already loads: CI dry-run
+		// 3_808_070 against the previous 3_808_000 budget.
+		maxEntryBytes: 3_809_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',
