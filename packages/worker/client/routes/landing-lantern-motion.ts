@@ -148,7 +148,7 @@ export function lanternOrbMotion() {
 		const isOrbId = (value: string | undefined): value is LandingPrimitiveId =>
 			bodies.some((body) => body.id === value)
 
-		const endGrab = (flick: boolean) => {
+		const endGrab = (flick: boolean, clientX: number, clientY: number) => {
 			if (pointerId === null) return
 			const id = grabbedId
 			const pose = hold
@@ -193,17 +193,42 @@ export function lanternOrbMotion() {
 			dragged = false
 			samples = []
 			clearGrabChrome()
-			if (released && id) {
-				const orb = node.querySelector<HTMLElement>(`[data-orb="${id}"]`)
-				if (orb) {
-					// The disc moves out from under a still pointer, so
-					// pointerleave never fires and the word would stay open.
-					orb.dataset.suppressHover = ''
-					if (document.activeElement === orb) orb.blur()
-					orb.dispatchEvent(new Event(lanternOrbReleaseEvent))
-				}
-			}
+			if (released && id) releaseHover(id, clientX, clientY)
 			wake()
+		}
+
+		const releaseHover = (
+			id: LandingPrimitiveId,
+			clientX: number,
+			clientY: number,
+		) => {
+			const orb = node.querySelector<HTMLElement>(`[data-orb="${id}"]`)
+			if (!orb) return
+			// The disc can move out from under a still pointer, so
+			// pointerleave never fires and the word would stay open.
+			orb.dataset.suppressHover = ''
+			if (document.activeElement === orb) orb.blur()
+			orb.dispatchEvent(new Event(lanternOrbReleaseEvent))
+			const coasting = bodies.some((body) => body.id === id && body.coasting)
+			if (coasting) return
+			// A drop that stays under the cursor is a real hover. A toss
+			// keeps the flag until a later move is no longer over the disc,
+			// so an early move cannot clear it before the disc leaves.
+			const hit = document.elementFromPoint(clientX, clientY)
+			if (hit instanceof Node && orb.contains(hit)) {
+				delete orb.dataset.suppressHover
+			}
+		}
+
+		const clearSuppressedHover = (event: PointerEvent) => {
+			if (pointerId !== null) return
+			const hit = document.elementFromPoint(event.clientX, event.clientY)
+			for (const el of node.querySelectorAll<HTMLElement>(
+				'[data-suppress-hover]',
+			)) {
+				if (hit instanceof Node && el.contains(hit)) continue
+				delete el.dataset.suppressHover
+			}
 		}
 
 		const onPointerDown = (event: PointerEvent) => {
@@ -290,12 +315,12 @@ export function lanternOrbMotion() {
 					}
 				}
 			}
-			endGrab(true)
+			endGrab(true, event.clientX, event.clientY)
 		}
 
 		const onPointerCancel = (event: PointerEvent) => {
 			if (event.pointerId !== pointerId) return
-			endGrab(false)
+			endGrab(false, event.clientX, event.clientY)
 		}
 
 		node.addEventListener('pointerdown', onPointerDown, { signal })
@@ -312,13 +337,7 @@ export function lanternOrbMotion() {
 		window.addEventListener(
 			'pointermove',
 			(event) => {
-				if (pointerId === null) {
-					for (const el of node.querySelectorAll<HTMLElement>(
-						'[data-suppress-hover]',
-					)) {
-						delete el.dataset.suppressHover
-					}
-				}
+				clearSuppressedHover(event)
 				onPointerMove(event)
 			},
 			{ signal },

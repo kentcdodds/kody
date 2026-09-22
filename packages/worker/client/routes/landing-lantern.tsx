@@ -131,7 +131,17 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 								aria-describedby={panelId(orb.id)}
 								mix={[
 									on('pointerenter', (event: PointerEvent) => {
-										if (hoverPointer(event)) onOpen(orb.id)
+										if (!hoverPointer(event)) return
+										const current = event.currentTarget
+										// A toss can slide back under a still pointer.
+										// That is not a new hover, so the word stays shut.
+										if (
+											current instanceof HTMLElement &&
+											current.dataset.suppressHover != null
+										) {
+											return
+										}
+										onOpen(orb.id)
 									}),
 									on('pointerleave', (event: PointerEvent) => {
 										if (!hoverPointer(event)) return
