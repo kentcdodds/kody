@@ -1,0 +1,179 @@
+{
+	"model": "claude-opus-4-6",
+	"ranAt": "2026-09-22T05:41:13.228Z",
+	"runs": [
+		{
+			"model": "claude-opus-4-6",
+			"language": "python",
+			"taskId": "notes-crud",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 304,
+			"elapsedMs": 276,
+			"taxonomy": null,
+			"error": null
+		},
+		{
+			"model": "claude-opus-4-6",
+			"language": "typescript",
+			"taskId": "notes-crud",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 337,
+			"elapsedMs": 1,
+			"taxonomy": null,
+			"error": null
+		},
+		{
+			"model": "claude-opus-4-6",
+			"language": "python",
+			"taskId": "http-json",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 169,
+			"elapsedMs": 217,
+			"taxonomy": null,
+			"error": null
+		},
+		{
+			"model": "claude-opus-4-6",
+			"language": "typescript",
+			"taskId": "http-json",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 215,
+			"elapsedMs": 1,
+			"taxonomy": null,
+			"error": null
+		},
+		{
+			"model": "claude-opus-4-6",
+			"language": "python",
+			"taskId": "csv-wrangle",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 417,
+			"elapsedMs": 218,
+			"taxonomy": null,
+			"error": null
+		},
+		{
+			"model": "claude-opus-4-6",
+			"language": "typescript",
+			"taskId": "csv-wrangle",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 452,
+			"elapsedMs": 1,
+			"taxonomy": null,
+			"error": null
+		},
+		{
+			"model": "claude-opus-4-6",
+			"language": "python",
+			"taskId": "stats-stdlib",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 237,
+			"elapsedMs": 240,
+			"taxonomy": null,
+			"error": null
+		},
+		{
+			"model": "claude-opus-4-6",
+			"language": "typescript",
+			"taskId": "stats-stdlib",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 518,
+			"elapsedMs": 0,
+			"taxonomy": null,
+			"error": null
+		},
+		{
+			"model": "claude-opus-4-6",
+			"language": "python",
+			"taskId": "search-then-read",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 180,
+			"elapsedMs": 221,
+			"taxonomy": null,
+			"error": null
+		},
+		{
+			"model": "claude-opus-4-6",
+			"language": "typescript",
+			"taskId": "search-then-read",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 234,
+			"elapsedMs": 0,
+			"taxonomy": null,
+			"error": null
+		},
+		{
+			"model": "claude-opus-4-6",
+			"language": "python",
+			"taskId": "recover-missing-note",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 236,
+			"elapsedMs": 216,
+			"taxonomy": null,
+			"error": null
+		},
+		{
+			"model": "claude-opus-4-6",
+			"language": "typescript",
+			"taskId": "recover-missing-note",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 268,
+			"elapsedMs": 0,
+			"taxonomy": null,
+			"error": null
+		},
+		{
+			"model": "claude-opus-4-6",
+			"language": "python",
+			"taskId": "numpy-mean",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 122,
+			"elapsedMs": 211,
+			"taxonomy": "missing_lib",
+			"error": "blocked module: numpy"
+		},
+		{
+			"model": "claude-opus-4-6",
+			"language": "typescript",
+			"taskId": "numpy-mean",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 182,
+			"elapsedMs": 1,
+			"taxonomy": null,
+			"error": null
+		}
+	],
+	"summary": {
+		"python": {
+			"passed": 7,
+			"total": 7,
+			"passRate": "7/7",
+			"medianCodeChars": 236,
+			"totalCodeChars": 1665
+		},
+		"typescript": {
+			"passed": 7,
+			"total": 7,
+			"passRate": "7/7",
+			"medianCodeChars": 268,
+			"totalCodeChars": 2206
+		},
+		"pythonCheaper": true,
+		"pythonBetter": false,
+		"verdict": "Tied on pass rate; Python is more concise"
+	}
+}
