@@ -1,4 +1,5 @@
 import { type Handle, css } from 'remix/ui'
+import { renderIcon } from '#universal/icon.tsx'
 import { adminGrantDiffersFromSubscription } from '#universal/account-plan-display.ts'
 import {
 	type AccountUsageComputeOverage,
@@ -25,12 +26,14 @@ import { chartColor, formatIntegerNumber } from '#client/charts/chart-theme.ts'
 import {
 	colors,
 	radius,
+	shadows,
 	spacing,
 	typography,
 } from '#universal/styles/tokens.ts'
 import {
 	descriptionCss,
 	getAccentCalloutCss,
+	hoverMq,
 	primaryLinkCss,
 } from '#universal/styles/style-primitives.ts'
 
@@ -181,6 +184,141 @@ function groupEntitlementRows(rows: Array<AccountUsageEntitlementConsumption>) {
 		}))
 		.filter((entry) => entry.rows.length > 0)
 }
+
+type UsageResourceNameProps = {
+	id: string
+	label: string
+	whatCounts: string
+	howToReduce: string
+	/** Extra sentence that used to sit under the label, such as the weekly cap note. */
+	note?: string
+}
+
+/**
+ * Resource label plus the long "what counts / how to reduce" copy in a
+ * popover. The table stays scannable; the explanation stays one click away
+ * and is not clipped by the cell's overflow.
+ */
+export function UsageResourceName(handle: Handle<UsageResourceNameProps>) {
+	return () => {
+		const { id, label, whatCounts, howToReduce, note } = handle.props
+		const panelId = `usage-resource-${id}`
+		const anchor = `--usage-resource-${id}`
+		return (
+			<span
+				mix={css({
+					display: 'flex',
+					alignItems: 'center',
+					gap: '0.35rem',
+					minWidth: 0,
+					width: '100%',
+				})}
+			>
+				<span
+					mix={css({
+						fontWeight: typography.fontWeight.medium,
+						color: colors.text,
+						// The cell is nowrap and the table columns are fixed, so a
+						// long name would paint over the info button. Shrink the
+						// label and keep the button in the row.
+						flex: '0 1 auto',
+						minWidth: 0,
+						overflow: 'hidden',
+						textOverflow: 'ellipsis',
+						whiteSpace: 'nowrap',
+					})}
+				>
+					{label}
+				</span>
+				<button
+					type="button"
+					popovertarget={panelId}
+					aria-label={`What counts toward ${label}`}
+					data-usage-resource-tip={id}
+					mix={css({
+						...usageTipButtonCss,
+						anchorName: anchor,
+					})}
+				>
+					{renderIcon('information', { size: '1.05rem' })}
+				</button>
+				<div
+					id={panelId}
+					popover
+					role="dialog"
+					aria-label={label}
+					data-usage-resource-panel={id}
+					mix={css({
+						...usageTipPanelCss,
+						positionAnchor: anchor,
+					})}
+				>
+					<p mix={css(usageTipBodyCss)}>{whatCounts}</p>
+					<p mix={css(usageTipBodyCss)}>{howToReduce}</p>
+					{note ? <p mix={css(usageTipBodyCss)}>{note}</p> : null}
+				</div>
+			</span>
+		)
+	}
+}
+
+const usageTipButtonCss = {
+	display: 'inline-flex',
+	flex: 'none',
+	alignItems: 'center',
+	justifyContent: 'center',
+	width: '1.75rem',
+	height: '1.75rem',
+	padding: 0,
+	border: 'none',
+	borderRadius: radius.full,
+	background: 'transparent',
+	color: colors.textMuted,
+	cursor: 'pointer',
+	[hoverMq]: {
+		'&:hover': {
+			color: colors.text,
+			backgroundColor: colors.primarySoft,
+		},
+	},
+	'&:focus-visible': {
+		outline: `2px solid ${colors.primary}`,
+		outlineOffset: '2px',
+	},
+}
+
+const usageTipPanelCss = {
+	// Leave `display` unset so a closed popover keeps the UA `display: none`.
+	positionArea: 'bottom span-right',
+	positionTryFallbacks: 'flip-block, flip-inline',
+	inset: 'auto',
+	width: 'min(24rem, calc(100vw - 2.5rem))',
+	maxHeight: 'min(70dvh, 20rem)',
+	overflow: 'auto',
+	gap: '0.55rem',
+	margin: '0.35rem',
+	padding: '0.85rem 1rem',
+	border: `1px solid ${colors.border}`,
+	borderRadius: radius.lg,
+	background: colors.surface,
+	color: colors.text,
+	boxShadow: shadows.md,
+	boxSizing: 'border-box' as const,
+	'&:popover-open': {
+		display: 'grid',
+	},
+}
+
+const usageTipBodyCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.sm,
+	lineHeight: 1.45,
+	textWrap: 'pretty' as const,
+}
+
+const weeklyUsageNote =
+	'High daily headroom for bursts; the weekly total keeps it sustainable.'
 
 function renderUsageProgressBar(item: AccountUsageEntitlementConsumption) {
 	const percent = usageProgressPercent(item)
@@ -372,26 +510,12 @@ export function AccountUsageRoute(handle: Handle) {
 									id: item.resource,
 									cells: {
 										resource: (
-											<span mix={css({ display: 'grid', gap: spacing.xs })}>
-												<span
-													mix={css({
-														fontWeight: typography.fontWeight.medium,
-														color: colors.text,
-													})}
-												>
-													{item.label}
-												</span>
-												<span
-													mix={css({
-														fontSize: typography.fontSize.sm,
-														color: colors.textMuted,
-														lineHeight: 1.4,
-														whiteSpace: 'normal',
-													})}
-												>
-													{item.whatCounts} {item.howToReduce}
-												</span>
-											</span>
+											<UsageResourceName
+												id={item.resource}
+												label={item.label}
+												whatCounts={item.whatCounts}
+												howToReduce={item.howToReduce}
+											/>
 										),
 										current: formatIntegerNumber(item.current),
 										include: formatIntegerNumber(item.include),
@@ -469,29 +593,13 @@ export function AccountUsageRoute(handle: Handle) {
 										id: item.resource,
 										cells: {
 											resource: (
-												<span mix={css({ display: 'grid', gap: spacing.xs })}>
-													<span
-														mix={css({
-															fontWeight: typography.fontWeight.medium,
-															color: colors.text,
-														})}
-													>
-														{item.label}
-													</span>
-													<span
-														mix={css({
-															fontSize: typography.fontSize.sm,
-															color: colors.textMuted,
-															lineHeight: 1.4,
-															whiteSpace: 'normal',
-														})}
-													>
-														{item.whatCounts} {item.howToReduce}
-														{item.week
-															? ' High daily headroom for bursts; weekly total keeps it sustainable.'
-															: ''}
-													</span>
-												</span>
+												<UsageResourceName
+													id={item.resource}
+													label={item.label}
+													whatCounts={item.whatCounts}
+													howToReduce={item.howToReduce}
+													note={item.week ? weeklyUsageNote : undefined}
+												/>
 											),
 											current: item.week
 												? `${formatCurrentValue(item)} today · ${formatIntegerNumber(item.week.current)} this week`

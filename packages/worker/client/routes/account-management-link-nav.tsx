@@ -120,13 +120,16 @@ export function AccountManagementLinkNav(
 					data-account-nav
 					mix={css({
 						// Prototype `.account-nav`: a 200px rail beside the
-						// content. The nav fills the shell's absolute left track
-						// (full height, so the sticky inner column has the whole
-						// page to stick through). Named so a view transition
-						// lifts it out of `<main>` / `page`. Intra-shell tab
-						// clicks skip VT. Leaving/entering the shell fades this
-						// name (styles.css) so the old rail is not pinned as a
-						// ghost on the destination. The group stays still so
+						// content. The nav fills the shell's left track (top
+						// and bottom), so it is exactly as tall as the content
+						// and cannot paint over the footer. `overflow: clip`
+						// hides any link that would spill out without becoming
+						// a scroll container, which would trap the sticky
+						// column below. Named so a view transition lifts it out
+						// of `<main>` / `page`. Intra-shell tab clicks skip VT.
+						// Leaving/entering the shell fades this name
+						// (styles.css) so the old rail is not pinned as a ghost
+						// on the destination. The group stays still so
 						// account↔admin (rail on both sides) does not morph.
 						// Below 860px the rail hides and the details menu below
 						// takes over — wrapping twelve pills ate a screen of
@@ -136,6 +139,7 @@ export function AccountManagementLinkNav(
 						top: 0,
 						bottom: 0,
 						width: '200px',
+						overflow: 'clip',
 						viewTransitionName: 'account-nav',
 						[accountManagementNarrowMq]: {
 							display: 'none',
@@ -144,11 +148,18 @@ export function AccountManagementLinkNav(
 				>
 					<div
 						mix={css({
+							// Sticks under the site header on a long page. The
+							// cap is the shell (`100%`) and the viewport, so a
+							// short page scrolls the links inside the content
+							// box instead of growing a blank band under it.
 							position: 'sticky',
 							top: '5rem',
 							display: 'flex',
 							flexDirection: 'column',
 							gap: '0.15rem',
+							maxHeight: 'min(100%, calc(100dvh - 6.5rem))',
+							overflowY: 'auto',
+							overscrollBehavior: 'contain',
 						})}
 					>
 						{renderAccountNavLinks(handle.props.items, accountNavLinkCss)}

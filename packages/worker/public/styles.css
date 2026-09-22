@@ -383,6 +383,16 @@ input[type='checkbox'] {
    purpose — it has to beat the css() class that sets that padding. */
 main:has([data-account-shell]) {
 	padding: 0;
+	/* Don't stretch a short account page into a viewport-tall column. The
+	   shell is content-sized; main and the app frame must be too, or the
+	   footer sits in a blank band. min-height 0 beats the root and the
+	   app frame's 100vh (this file, and a css() layer). */
+	flex-grow: 0;
+}
+
+#root:has([data-account-shell]),
+[data-app-frame]:has([data-account-shell]) {
+	min-height: 0;
 }
 
 /* Always reserve the classic scrollbar's track, so a short page and a long one
