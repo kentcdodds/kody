@@ -131,7 +131,17 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 										if (hoverPointer(event)) onOpen(orb.id)
 									}),
 									on('pointerleave', (event: PointerEvent) => {
-										if (hoverPointer(event)) leave(orb.id)
+										if (!hoverPointer(event)) return
+										// A captured drag leaves the hotspot without
+										// ending the grab. Releasing closes it.
+										const current = event.currentTarget
+										if (
+											current instanceof Element &&
+											current.hasPointerCapture(event.pointerId)
+										) {
+											return
+										}
+										leave(orb.id)
 									}),
 									on('focusin', () => onOpen(orb.id)),
 									on('focusout', () => leave(orb.id)),
