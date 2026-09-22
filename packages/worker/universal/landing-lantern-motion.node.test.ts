@@ -5,6 +5,7 @@ import {
 	createLanternOrbBodies,
 	landingLanternAperture,
 	landingLanternCavity,
+	lanternFlickVelocity,
 	stepLanternOrbMotion,
 	type LanternOrbBody,
 } from './landing-lantern-motion.ts'
@@ -60,6 +61,7 @@ function simulate(seconds: number, amplitude: number) {
 				wallTouches++
 			}
 			expect(insideAperture(body)).toBe(true)
+			expect(body.coasting).toBe(false)
 		}
 		for (let i = 0; i < bodies.length; i++) {
 			for (let j = i + 1; j < bodies.length; j++) {
@@ -151,4 +153,120 @@ test('orb motion floats slowly inside the glass and bumps instead of bouncing', 
 	const rel = met[0]!.vx - met[2]!.vx
 	expect(rel).toBeGreaterThan(-0.01)
 	expect(rel).toBeLessThan(0.02)
+})
+
+test('a grab flicks an orb into the glass and into the other orbs', () => {
+	const rested = createLanternOrbBodies()
+	const memory = rested.find((body) => body.id === 'memory')!
+	const homeX = memory.x
+	const held = stepLanternOrbMotion(rested, 1 / 60, {
+		time: 1,
+		amplitude: 1,
+		hold: { id: 'memory', x: 0.5, y: landingLanternCavity.y, vx: 1.4, vy: 0 },
+	})
+	expect(rested.find((body) => body.id === 'memory')!.x).toBe(homeX)
+	const grabbed = held.find((body) => body.id === 'memory')!
+	expect(grabbed.coasting).toBe(true)
+	expect(grabbed.x).toBeGreaterThan(0.45)
+	expect(grabbed.x).toBeLessThan(0.55)
+	expect(grabbed.vx).toBeCloseTo(1.4, 5)
+	expect(insideAperture(grabbed)).toBe(true)
+
+	const flick = lanternFlickVelocity(
+		[
+			{ x: 0.2, y: 0.7, t: 0 },
+			{ x: 0.55, y: 0.7, t: 1020 },
+			{ x: 0.7, y: 0.68, t: 1100 },
+		],
+		1100,
+	)
+	expect(flick.vx).toBeCloseTo(0.15 / 0.08, 5)
+	expect(flick.vy).toBeCloseTo(-0.02 / 0.08, 5)
+	expect(lanternFlickVelocity([{ x: 0, y: 0, t: 0 }], 10)).toEqual({
+		vx: 0,
+		vy: 0,
+	})
+
+	const tossed = structuredClone(rested) satisfies Array<LanternOrbBody>
+	const flyer = tossed.find((body) => body.id === 'secrets')!
+	flyer.x = landingLanternCavity.x
+	flyer.y = landingLanternCavity.y
+	flyer.vx = 1.5
+	flyer.vy = 0
+	flyer.coasting = true
+	const coast = stepLanternOrbMotion(tossed, 1 / 60, {
+		time: 0,
+		amplitude: 0,
+	})
+	const coasted = coast.find((body) => body.id === 'secrets')!
+	expect(coasted.x).toBeGreaterThan(flyer.x + 0.01)
+	expect(coasted.coasting).toBe(true)
+
+	const againstGlass = structuredClone(rested) satisfies Array<LanternOrbBody>
+	const wall = againstGlass.find((body) => body.id === 'packages')!
+	wall.x = landingLanternCavity.x + landingLanternCavity.r
+	wall.y = landingLanternCavity.y
+	wall.vx = 1.2
+	wall.vy = 0
+	wall.coasting = true
+	const bounced = stepLanternOrbMotion(againstGlass, 1 / 60, {
+		time: 0,
+		amplitude: 0,
+	}).find((body) => body.id === 'packages')!
+	expect(bounced.vx).toBeLessThan(0)
+	expect(insideAperture(bounced)).toBe(true)
+
+	const pair = structuredClone(rested) satisfies Array<LanternOrbBody>
+	const left = pair.find((body) => body.id === 'triggers')!
+	const right = pair.find((body) => body.id === 'integrations')!
+	left.x = landingLanternCavity.x - 0.05
+	left.y = landingLanternCavity.y
+	right.x = landingLanternCavity.x + 0.05
+	right.y = landingLanternCavity.y
+	left.vx = 1.1
+	left.vy = 0
+	left.coasting = true
+	right.vx = 0
+	right.vy = 0
+	const knocked = stepLanternOrbMotion(pair, 1 / 60, {
+		time: 0,
+		amplitude: 0,
+	})
+	const knockedRight = knocked.find((body) => body.id === 'integrations')!
+	const knockedLeft = knocked.find((body) => body.id === 'triggers')!
+	expect(knockedRight.vx).toBeGreaterThan(0.3)
+	expect(knockedRight.coasting).toBe(true)
+	expect(knockedLeft.vx).toBeLessThan(left.vx)
+
+	let bodies = structuredClone(rested) satisfies Array<LanternOrbBody>
+	const apps = bodies.find((body) => body.id === 'apps')!
+	apps.x = landingLanternCavity.x
+	apps.y = landingLanternCavity.y
+	apps.vx = 1.8
+	apps.vy = -0.6
+	apps.coasting = true
+	let peakNeighbour = 0
+	for (let step = 0; step < 5 * 60; step++) {
+		bodies = stepLanternOrbMotion(bodies, 1 / 60, {
+			time: step / 60,
+			amplitude: 1,
+		})
+		for (const body of bodies) {
+			const fromCentre = Math.hypot(
+				body.x - landingLanternCavity.x,
+				body.y - landingLanternCavity.y,
+			)
+			const limit = landingLanternCavity.r - body.radius - 0.008
+			expect(fromCentre).toBeLessThanOrEqual(limit + 1e-6)
+			expect(insideAperture(body)).toBe(true)
+			if (step < 40 && body.id !== 'apps') {
+				peakNeighbour = Math.max(peakNeighbour, Math.hypot(body.vx, body.vy))
+			}
+		}
+	}
+	expect(peakNeighbour).toBeGreaterThan(0.15)
+	for (const body of bodies) {
+		expect(body.coasting).toBe(false)
+		expect(Math.hypot(body.vx, body.vy)).toBeLessThan(0.08)
+	}
 })

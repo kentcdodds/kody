@@ -1,6 +1,9 @@
 import { type Handle } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
-import { lanternOrbMotion } from '#client/routes/landing-lantern-motion.ts'
+import {
+	lanternOrbMotion,
+	lanternOrbReleaseEvent,
+} from '#client/routes/landing-lantern-motion.ts'
 import {
 	landingHomePrimitives,
 	type LandingHomePrimitive,
@@ -128,11 +131,32 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 								aria-describedby={panelId(orb.id)}
 								mix={[
 									on('pointerenter', (event: PointerEvent) => {
-										if (hoverPointer(event)) onOpen(orb.id)
+										if (!hoverPointer(event)) return
+										const current = event.currentTarget
+										// A toss can slide back under a still pointer.
+										// That is not a new hover, so the word stays shut.
+										if (
+											current instanceof HTMLElement &&
+											current.dataset.suppressHover != null
+										) {
+											return
+										}
+										onOpen(orb.id)
 									}),
 									on('pointerleave', (event: PointerEvent) => {
-										if (hoverPointer(event)) leave(orb.id)
+										if (!hoverPointer(event)) return
+										// A captured drag leaves the hotspot without
+										// ending the grab. The release event closes it.
+										const current = event.currentTarget
+										if (
+											current instanceof Element &&
+											current.hasPointerCapture(event.pointerId)
+										) {
+											return
+										}
+										leave(orb.id)
 									}),
+									on(lanternOrbReleaseEvent, () => leave(orb.id)),
 									on('focusin', () => onOpen(orb.id)),
 									on('focusout', () => leave(orb.id)),
 									on('click', () => onToggle(orb.id)),

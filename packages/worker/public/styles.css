@@ -1209,7 +1209,9 @@ html.is-settled {
 	border: none;
 	border-radius: 50%;
 	background: transparent;
-	cursor: pointer;
+	cursor: grab;
+	touch-action: none;
+	user-select: none;
 	box-shadow: 0 0 0 0 oklch(from var(--primitive-color) l c h / 0);
 	transition:
 		box-shadow 0.25s ease,
@@ -1229,6 +1231,26 @@ html.is-settled {
 		oklch(from var(--primitive-color) var(--primitive-text-l) c h);
 	opacity: 0;
 	pointer-events: none;
+}
+
+.landing-lantern[data-grabbing],
+.landing-lantern[data-grabbing] .landing-lantern-orb {
+	cursor: grabbing;
+}
+
+.landing-lantern-orb[data-grabbed] {
+	z-index: 3;
+}
+
+/* A flick moves the disc off a still pointer, which leaves :hover stuck.
+   Keyboard focus keeps its own ring. */
+.landing-lantern-orb[data-suppress-hover]:hover:not([data-open]) {
+	scale: 1;
+	box-shadow: 0 0 0 0 oklch(from var(--primitive-color) l c h / 0);
+}
+
+.landing-lantern-orb[data-suppress-hover]:hover:not([data-open])::after {
+	opacity: 0;
 }
 
 .landing-lantern-orb:nth-child(2) {
