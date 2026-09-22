@@ -39,7 +39,7 @@ test('ecosystems follow vendor families, with Cursor hosts on Grok', () => {
 	}
 })
 
-test('step 3 groups hosts by ecosystem and keeps Not listed', () => {
+test('step 3 groups named hosts by ecosystem', () => {
 	expect(onboardingStep3EcosystemGroups.map((group) => group.id)).toEqual([
 		'xai',
 		'anthropic',
@@ -49,7 +49,6 @@ test('step 3 groups hosts by ecosystem and keeps Not listed', () => {
 		'cognition',
 		'sst',
 		'openclaw',
-		'other',
 	])
 	expect(onboardingStep3EcosystemGroups.map((group) => group.label)).toEqual([
 		'Grok',
@@ -60,7 +59,6 @@ test('step 3 groups hosts by ecosystem and keeps Not listed', () => {
 		'Devin',
 		'OpenCode',
 		'OpenClaw',
-		'Another host',
 	])
 	expect(onboardingStep3AgentIds()).toContain('cursor-local')
 	expect(onboardingStep3AgentIds()).toContain('cursor-cloud')
@@ -68,6 +66,11 @@ test('step 3 groups hosts by ecosystem and keeps Not listed', () => {
 	expect(onboardingStep3AgentIds()).toContain('grok')
 	expect(onboardingStep3AgentIds()).toContain('grok-cli')
 	expect(onboardingStep3AgentIds()).not.toContain('cursor')
+	expect(onboardingStep3AgentIds()).not.toContain('other')
+	const github = onboardingStep3EcosystemGroups.find(
+		(group) => group.id === 'github',
+	)
+	expect(github?.agents).toEqual(['copilot', 'copilot-app'])
 	const grok = onboardingStep3EcosystemGroups.find(
 		(group) => group.id === 'xai',
 	)
@@ -221,8 +224,8 @@ test('step 3 deep links drop known-connected hosts and keep the rest', () => {
 		resolveOnboardingStep3SelectedAgent('cursor-local', [{ kind: 'cursor' }]),
 	).toBe('cursor-local')
 	expect(resolveOnboardingStep3SelectedAgent('other', [{ kind: null }])).toBe(
-		'other',
+		null,
 	)
-	expect(resolveOnboardingStep3SelectedAgent('other')).toBe('other')
+	expect(resolveOnboardingStep3SelectedAgent('other')).toBeNull()
 	expect(resolveOnboardingStep3SelectedAgent('cursor')).toBe('cursor')
 })

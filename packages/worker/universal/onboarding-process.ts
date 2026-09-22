@@ -395,7 +395,11 @@ export function onboardingSecondAgentHref(
 	agent: McpClientKind | null,
 	search = '',
 ) {
-	if (!agent) return `${routes.onboardingStep3.href()}${search}`
+	// Step 3 lists every named host under its ecosystem. `other` is Step 1's
+	// Not listed path, not a second-agent choice.
+	if (!agent || agent === 'other') {
+		return `${routes.onboardingStep3.href()}${search}`
+	}
 	return `${routes.onboardingStep3Agent.href({
 		agent: onboardingAgentPathSegment(agent),
 	})}${search}`
@@ -437,6 +441,8 @@ export function parseOnboardingPathname(
 			return { step: 3, agent: null, valid: false }
 		}
 		const agent = readOnboardingAgentSegment(segment)
+		// Bookmarks to Step 3 Not listed fall back to the ecosystem picker.
+		if (agent === 'other') return { step: 3, agent: null, valid: false }
 		return { step: 3, agent, valid: agent != null }
 	}
 	return null

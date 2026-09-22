@@ -80,9 +80,7 @@ test('the derived checklist covers verify-email plus each wizard step', () => {
 	expect(onboardingSecondAgentHref('claude-code')).toBe(
 		'/onboarding/step-3/claude-code',
 	)
-	expect(onboardingSecondAgentHref('other')).toBe(
-		'/onboarding/step-3/not-listed',
-	)
+	expect(onboardingSecondAgentHref('other')).toBe('/onboarding/step-3')
 	expect(onboardingSecondAgentHref(null, '?redirectTo=%2F')).toBe(
 		'/onboarding/step-3?redirectTo=%2F',
 	)
@@ -124,8 +122,8 @@ test('the derived checklist covers verify-email plus each wizard step', () => {
 	})
 	expect(parseOnboardingPathname('/onboarding/step-3/not-listed')).toEqual({
 		step: 3,
-		agent: 'other',
-		valid: true,
+		agent: null,
+		valid: false,
 	})
 	expect(parseOnboardingPathname('/onboarding/step-3/nope')?.valid).toBe(false)
 	expect(parseOnboardingPathname('/account')).toBeNull()

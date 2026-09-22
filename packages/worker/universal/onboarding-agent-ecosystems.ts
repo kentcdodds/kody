@@ -67,6 +67,9 @@ export type OnboardingStep3EcosystemGroup = {
 /**
  * Step 3 chooser. Generic `cursor` stays off this list: that kind means we
  * could not tell Local from Cloud, so neither tab is the one we know.
+ * `other` stays off too. Every named host already belongs to an ecosystem
+ * here, so a Not listed bucket would only repeat Copilot App, Grok.com, and
+ * the rest of the catalog.
  */
 export const onboardingStep3EcosystemGroups = [
 	{
@@ -108,11 +111,6 @@ export const onboardingStep3EcosystemGroups = [
 		id: 'openclaw',
 		label: 'OpenClaw',
 		agents: ['openclaw'],
-	},
-	{
-		id: 'other',
-		label: 'Another host',
-		agents: ['other'],
 	},
 ] as const satisfies ReadonlyArray<OnboardingStep3EcosystemGroup>
 
@@ -279,7 +277,7 @@ export function resolveOnboardingStep3SelectedAgent(
 	selectedAgent: McpClientKind | null,
 	connectedAgents: ReadonlyArray<OnboardingConnectedAgentKind> = [],
 ): McpClientKind | null {
-	if (!selectedAgent) return null
+	if (!selectedAgent || selectedAgent === 'other') return null
 	if (onboardingSecondAgentDisableReason(selectedAgent, connectedAgents)) {
 		return null
 	}

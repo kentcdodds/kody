@@ -415,10 +415,16 @@ test('step 3 groups ecosystems and folds in a portability proof', async () => {
 	expect(labeled).not.toContain('href="/onboarding/step-3/copilot"')
 	expect(labeled).toContain('href="/onboarding/step-3/claude-code"')
 	expect(labeled).toContain('href="/onboarding/step-3/grok-bot"')
-	expect(labeled).toContain('href="/onboarding/step-3/not-listed"')
 	expect(labeled).toContain('Already connected.')
+	const githubSection = labeled.slice(
+		labeled.indexOf('data-testid="onboarding-ecosystem-github"'),
+		labeled.indexOf('data-testid="onboarding-ecosystem-google"'),
+	)
+	expect(githubSection).toContain('>GitHub<')
+	expect(githubSection).toContain('Copilot App')
+	expect(githubSection).toContain('data-testid="onboarding-agent-copilot-app"')
 
-	const notListed = await renderToString(
+	const notListedDeepLink = await renderToString(
 		renderSecondAgentPanel({
 			entrance: css({}),
 			activeStep: 3,
@@ -427,15 +433,22 @@ test('step 3 groups ecosystems and folds in a portability proof', async () => {
 			hasSecondMcpClient: false,
 			connectedAgents: [{ label: 'Zephyr' }, { label: 'Kody' }],
 			firstAgent: 'other',
-			selectedAgent: null,
-			selectedAgentLabel: null,
+			selectedAgent: 'other',
+			selectedAgentLabel: 'Not listed',
 			agentChooser: null,
 			mcpServerUrl: defaultKodyMcpUrl,
 			mcpHighlights: {},
 		}),
 	)
-	expect(notListed).toContain('href="/onboarding/step-3/not-listed"')
-	expect(notListed).toContain('data-testid="onboarding-agent-other"')
-	expect(notListed).toContain('data-agent-kind="unknown"')
-	expect(notListed).not.toContain('data-greyed="true"')
+	expect(notListedDeepLink).toContain('Connect a second agent')
+	expect(notListedDeepLink).toContain('data-picker="ecosystem"')
+	expect(notListedDeepLink).toContain('data-testid="onboarding-ecosystem-xai"')
+	expect(notListedDeepLink).toContain('Grok.com')
+	expect(notListedDeepLink).toContain('data-testid="onboarding-agent-grok"')
+	expect(notListedDeepLink).toContain(
+		'data-testid="onboarding-ecosystem-github"',
+	)
+	expect(notListedDeepLink).toContain('Copilot App')
+	expect(notListedDeepLink).toContain('data-agent-kind="unknown"')
+	expect(notListedDeepLink).not.toContain('data-greyed="true"')
 })
