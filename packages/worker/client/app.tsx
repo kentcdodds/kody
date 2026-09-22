@@ -278,6 +278,7 @@ export function App(handle: Handle<AppProps>) {
 					<NavigationProgress />
 					<ScrollRestoration />
 					<div
+						data-app-frame
 						mix={css({
 							width: '100%',
 							minHeight: '100vh',
