@@ -1,5 +1,20 @@
-import { installProgressWordHoldMs } from '#client/action-button-loader.tsx'
 import { PACKAGE_TITLE_STATUS_SELECTOR } from '#universal/package-title-actions.tsx'
+
+/**
+ * The stages a one-click community install walks: fork the snapshot, run the
+ * package checks, then refresh the saved-package projection. The title spinner
+ * holds on the last word instead of looping.
+ */
+export const installProgressWords = [
+	'Forking',
+	'Copying',
+	'Checking',
+	'Bundling',
+	'Publishing',
+	'Wiring',
+] as const
+
+export const installProgressWordHoldMs = 2600
 
 const listingAttribute = 'data-package-title-listing'
 

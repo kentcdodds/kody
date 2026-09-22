@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from 'vitest'
-import { installProgressWordHoldMs } from '#client/action-button-loader.tsx'
 import {
+	installProgressWordHoldMs,
 	releasePackageTitleInstallProgress,
 	showPackageTitleInstallProgress,
 	startPackageTitleInstallProgress,

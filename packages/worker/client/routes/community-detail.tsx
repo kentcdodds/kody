@@ -17,8 +17,8 @@ import { NotFoundPage } from '#client/not-found-page.tsx'
 import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { installProgressWords } from '#client/action-button-loader.tsx'
 import {
+	installProgressWords,
 	releasePackageTitleInstallProgress,
 	startPackageTitleInstallProgress,
 	stopPackageTitleInstallProgress,

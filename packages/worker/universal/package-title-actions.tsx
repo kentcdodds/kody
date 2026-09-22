@@ -19,11 +19,11 @@ import {
 import { colors } from '#universal/styles/tokens.ts'
 
 export const PACKAGE_TITLE_STATUS_SELECTOR = '[data-package-title-status]'
-export const OTHER_ACCOUNT_FORK_TOOLTIP =
+const OTHER_ACCOUNT_FORK_TOOLTIP =
 	'This listing is from another account. Verify it before using.'
-export const FORK_TITLE_TOOLTIP = 'Fork'
-export const OPEN_FORK_TOOLTIP = 'Open fork'
-export const COPY_SETUP_PROMPT_TOOLTIP = 'Copy setup prompt'
+const FORK_TITLE_TOOLTIP = 'Fork'
+const OPEN_FORK_TOOLTIP = 'Open fork'
+const COPY_SETUP_PROMPT_TOOLTIP = 'Copy setup prompt'
 
 const titleIconSize = '0.72em'
 const statusTooltipId = 'package-title-status-tooltip'
