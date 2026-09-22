@@ -1,0 +1,158 @@
+{
+	"model": "grok-4.7",
+	"suite": "python-execute-experiment",
+	"ranAt": "2026-09-22T05:40:27.567Z",
+	"harness": "npm run eval:python-execute",
+	"attemptsDir": "tools/python-execute-eval/results/grok-4.7",
+	"rows": [
+		{
+			"model": "grok-4.7",
+			"language": "python",
+			"taskId": "notes-crud",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 308,
+			"elapsedMs": 273
+		},
+		{
+			"model": "grok-4.7",
+			"language": "typescript",
+			"taskId": "notes-crud",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 335,
+			"elapsedMs": 1
+		},
+		{
+			"model": "grok-4.7",
+			"language": "python",
+			"taskId": "http-json",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 169,
+			"elapsedMs": 219
+		},
+		{
+			"model": "grok-4.7",
+			"language": "typescript",
+			"taskId": "http-json",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 215,
+			"elapsedMs": 1
+		},
+		{
+			"model": "grok-4.7",
+			"language": "python",
+			"taskId": "csv-wrangle",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 375,
+			"elapsedMs": 220
+		},
+		{
+			"model": "grok-4.7",
+			"language": "typescript",
+			"taskId": "csv-wrangle",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 610,
+			"elapsedMs": 0
+		},
+		{
+			"model": "grok-4.7",
+			"language": "python",
+			"taskId": "stats-stdlib",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 248,
+			"elapsedMs": 232
+		},
+		{
+			"model": "grok-4.7",
+			"language": "typescript",
+			"taskId": "stats-stdlib",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 598,
+			"elapsedMs": 0
+		},
+		{
+			"model": "grok-4.7",
+			"language": "python",
+			"taskId": "search-then-read",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 176,
+			"elapsedMs": 228
+		},
+		{
+			"model": "grok-4.7",
+			"language": "typescript",
+			"taskId": "search-then-read",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 224,
+			"elapsedMs": 0
+		},
+		{
+			"model": "grok-4.7",
+			"language": "python",
+			"taskId": "recover-missing-note",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 226,
+			"elapsedMs": 222
+		},
+		{
+			"model": "grok-4.7",
+			"language": "typescript",
+			"taskId": "recover-missing-note",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 256,
+			"elapsedMs": 0
+		},
+		{
+			"model": "grok-4.7",
+			"language": "python",
+			"taskId": "numpy-mean",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 93,
+			"elapsedMs": 228,
+			"taxonomy": "missing_lib",
+			"error": "blocked module: numpy"
+		},
+		{
+			"model": "grok-4.7",
+			"language": "typescript",
+			"taskId": "numpy-mean",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 194,
+			"elapsedMs": 0
+		}
+	],
+	"summary": {
+		"passRate": {
+			"python": "7/7",
+			"typescript": "7/7"
+		},
+		"medianCodeChars": {
+			"python": 226,
+			"typescript": 256
+		},
+		"totalCodeChars": {
+			"python": 1595,
+			"typescript": 2432
+		},
+		"medianElapsedMs": {
+			"python": 228,
+			"typescript": 0
+		},
+		"pythonCheaper": true,
+		"pythonBetter": false,
+		"assessment": "Both languages passed 7/7 on the first attempt (retries 0). Python source was cheaper: 1595 chars total vs 2432, median 226 vs 256, with the gap on csv-wrangle and stats-stdlib where the stdlib does the work. numpy-mean Python passed the spec by failing with missing_lib (blocked module: numpy). Equal correctness and smaller source do not make Python better for Kody execute: local elapsed is a CPython process start per task, and a new Python isolate cold start is about 1.4s."
+	}
+}
