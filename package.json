@@ -84,6 +84,7 @@
     "test": "node tools/run-nx.ts run worker:test",
     "test:node": "node tools/run-nx.ts run worker:test-node",
     "eval:python-execute": "node tools/python-execute-eval/run.mjs",
+    "eval:python-execute:latency": "node tools/python-execute-eval/measure-dynamic-worker-latency.mjs",
     "test:workers": "node tools/run-nx.ts run worker:test-workers",
     "test:push": "CI=1 npm run test:node && CI=1 npm run test:workers",
     "inspect": "npx -y @mcpjam/inspector inspector",

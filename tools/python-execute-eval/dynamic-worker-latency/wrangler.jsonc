@@ -1,0 +1,7 @@
+{
+	"name": "python-execute-latency",
+	"main": "latency-worker.js",
+	"compatibility_date": "2026-04-16",
+	"compatibility_flags": ["nodejs_compat"],
+	"worker_loaders": [{ "binding": "LOADER" }],
+}
