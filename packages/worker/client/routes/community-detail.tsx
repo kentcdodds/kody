@@ -23,7 +23,10 @@ import {
 	startPackageTitleInstallProgress,
 	stopPackageTitleInstallProgress,
 } from '#client/package-title-install-progress.ts'
-import { decideCommunityInstallClick } from '#client/routes/community-detail-install.ts'
+import {
+	decideCommunityInstallClick,
+	shouldResetInstallOnShellSnapshot,
+} from '#client/routes/community-detail-install.ts'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
 import {
@@ -139,12 +142,22 @@ export function CommunityDetailRoute(handle: Handle) {
 		featured = snapshot.featured
 		featureState = 'idle'
 		featureMessage = null
-		releasePackageTitleInstallProgress(
+		const releasedProgress = releasePackageTitleInstallProgress(
 			getListingPageRef(pathname)?.listingId ?? null,
 		)
-		installState = 'idle'
-		installMessage = null
-		installOutcome = null
+		// Same-listing snapshots arrive after the fork control is already
+		// clickable. Clearing `submitting` here would let a second click start
+		// another install while the first POST and spinner are still active.
+		if (
+			shouldResetInstallOnShellSnapshot({
+				installState,
+				releasedProgress,
+			})
+		) {
+			installState = 'idle'
+			installMessage = null
+			installOutcome = null
+		}
 		readmeContent = snapshot.readmeContent
 		readmeFences = snapshot.readmeFences ?? []
 		hasAgentsDocs = snapshot.hasAgentsDocs

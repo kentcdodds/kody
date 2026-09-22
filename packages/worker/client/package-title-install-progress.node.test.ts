@@ -104,6 +104,7 @@ test('install progress stays on the listing that started it', () => {
 		['Forking', 'Copying', 'Checking'],
 		'listing-a',
 	)
+	expect(releasePackageTitleInstallProgress('listing-a')).toBe(false)
 	expect(origin.attributes.get('aria-label')).toBe('Forking')
 	expect(origin.spinner.hidden).toBe(false)
 

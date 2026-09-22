@@ -25,3 +25,17 @@ export function decideCommunityInstallClick(input: {
 		}
 	}
 }
+
+/**
+ * A shell snapshot for the listing that is already installing must leave
+ * `installState` as `submitting`. The frame control stays clickable, and
+ * idle would start a second POST beside the one still in flight.
+ * `releasedProgress` is true only when that snapshot is a different listing.
+ */
+export function shouldResetInstallOnShellSnapshot(input: {
+	installState: CommunityInstallUiState
+	releasedProgress: boolean
+}): boolean {
+	if (input.releasedProgress) return true
+	return input.installState !== 'submitting'
+}

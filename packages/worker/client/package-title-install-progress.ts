@@ -163,6 +163,7 @@ export function stopPackageTitleInstallProgress(options?: {
  * Navigation left the listing that owns the active run. `null` means this page
  * has no listing id yet (left package pages, or the destination id is still
  * unknown), so any run is restored and cleared. Returns whether a run ended.
+ * False means the caller must keep an in-flight install for this listing.
  */
 export function releasePackageTitleInstallProgress(
 	listingId: string | null,

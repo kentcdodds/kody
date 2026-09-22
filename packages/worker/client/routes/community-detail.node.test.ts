@@ -1,6 +1,9 @@
 import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
-import { decideCommunityInstallClick } from './community-detail-install.ts'
+import {
+	decideCommunityInstallClick,
+	shouldResetInstallOnShellSnapshot,
+} from './community-detail-install.ts'
 import {
 	renderInstallStrip,
 	renderReadmeSection,
@@ -31,6 +34,33 @@ test('decideCommunityInstallClick starts a fork from idle or error and ignores a
 			alreadyInstalled: false,
 		}),
 	).toBe('submit')
+})
+
+test('a same-listing shell snapshot keeps an in-flight install', () => {
+	expect(
+		shouldResetInstallOnShellSnapshot({
+			installState: 'submitting',
+			releasedProgress: false,
+		}),
+	).toBe(false)
+	expect(
+		shouldResetInstallOnShellSnapshot({
+			installState: 'submitting',
+			releasedProgress: true,
+		}),
+	).toBe(true)
+	expect(
+		shouldResetInstallOnShellSnapshot({
+			installState: 'idle',
+			releasedProgress: false,
+		}),
+	).toBe(true)
+	expect(
+		shouldResetInstallOnShellSnapshot({
+			installState: 'error',
+			releasedProgress: false,
+		}),
+	).toBe(true)
 })
 
 test('install strip shows next steps after a successful install', async () => {
