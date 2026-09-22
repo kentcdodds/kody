@@ -1,0 +1,171 @@
+{
+	"model": "claude-sonnet-4-6",
+	"suite": "python-execute-experiment",
+	"backend": {
+		"python": "cpython",
+		"typescript": "node"
+	},
+	"ranAt": "2026-09-22T05:43:51.536Z",
+	"runs": [
+		{
+			"model": "claude-sonnet-4-6",
+			"language": "python",
+			"taskId": "notes-crud",
+			"category": "crud",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 330,
+			"elapsedMs": 288
+		},
+		{
+			"model": "claude-sonnet-4-6",
+			"language": "typescript",
+			"taskId": "notes-crud",
+			"category": "crud",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 358,
+			"elapsedMs": 1
+		},
+		{
+			"model": "claude-sonnet-4-6",
+			"language": "python",
+			"taskId": "http-json",
+			"category": "http",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 169,
+			"elapsedMs": 221
+		},
+		{
+			"model": "claude-sonnet-4-6",
+			"language": "typescript",
+			"taskId": "http-json",
+			"category": "http",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 215,
+			"elapsedMs": 1
+		},
+		{
+			"model": "claude-sonnet-4-6",
+			"language": "python",
+			"taskId": "csv-wrangle",
+			"category": "data-wrangling",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 426,
+			"elapsedMs": 221
+		},
+		{
+			"model": "claude-sonnet-4-6",
+			"language": "typescript",
+			"taskId": "csv-wrangle",
+			"category": "data-wrangling",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 594,
+			"elapsedMs": 1
+		},
+		{
+			"model": "claude-sonnet-4-6",
+			"language": "python",
+			"taskId": "stats-stdlib",
+			"category": "numeric",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 355,
+			"elapsedMs": 247
+		},
+		{
+			"model": "claude-sonnet-4-6",
+			"language": "typescript",
+			"taskId": "stats-stdlib",
+			"category": "numeric",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 633,
+			"elapsedMs": 0
+		},
+		{
+			"model": "claude-sonnet-4-6",
+			"language": "python",
+			"taskId": "search-then-read",
+			"category": "multi-step",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 270,
+			"elapsedMs": 229
+		},
+		{
+			"model": "claude-sonnet-4-6",
+			"language": "typescript",
+			"taskId": "search-then-read",
+			"category": "multi-step",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 296,
+			"elapsedMs": 1
+		},
+		{
+			"model": "claude-sonnet-4-6",
+			"language": "python",
+			"taskId": "recover-missing-note",
+			"category": "error-recovery",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 227,
+			"elapsedMs": 239
+		},
+		{
+			"model": "claude-sonnet-4-6",
+			"language": "typescript",
+			"taskId": "recover-missing-note",
+			"category": "error-recovery",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 251,
+			"elapsedMs": 0
+		},
+		{
+			"model": "claude-sonnet-4-6",
+			"language": "python",
+			"taskId": "numpy-mean",
+			"category": "numeric",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 129,
+			"elapsedMs": 216,
+			"taxonomy": "missing_lib",
+			"error": "blocked module: numpy"
+		},
+		{
+			"model": "claude-sonnet-4-6",
+			"language": "typescript",
+			"taskId": "numpy-mean",
+			"category": "numeric",
+			"passed": true,
+			"retries": 0,
+			"codeChars": 228,
+			"elapsedMs": 1
+		}
+	],
+	"summary": {
+		"passed": 14,
+		"failed": 0,
+		"byLanguage": {
+			"python": {
+				"passed": 7,
+				"failed": 0,
+				"totalCodeChars": 1906,
+				"medianElapsedMs": 229
+			},
+			"typescript": {
+				"passed": 7,
+				"failed": 0,
+				"totalCodeChars": 2575,
+				"medianElapsedMs": 1
+			}
+		}
+	}
+}
