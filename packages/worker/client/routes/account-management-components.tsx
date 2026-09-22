@@ -197,38 +197,38 @@ export function AccountManagementShell(
 				gap: spacing.xl,
 				alignItems: 'start',
 				// Prototype `.account` layout: 200px sticky nav rail beside the
-				// content column, 72rem total. The rail is an absolutely
-				// positioned full-height track (so the content keeps its normal
-				// single-column flow and gap) and only exists when the section
-				// nav is present — nav-less shell users (onboarding, pending
-				// verification) keep the plain column. The rail starts at the
-				// gutter so it lines up with the header's brand. Note: `css()` classes
-				// each live in their own cascade sub-layer, so child spacing
-				// must stay on the shell's `gap`, never on per-child margins a
-				// child's own class would silently beat.
+				// content column, 72rem total. The rail is the first grid column
+				// and only exists when the section nav is present — nav-less
+				// shell users (onboarding, pending verification) keep the plain
+				// column. The rail starts at the gutter so it lines up with the
+				// header's brand. It spans every content row, so its own height
+				// is part of the shell and a short page cannot leave the links
+				// hanging over the footer. Note: `css()` classes each live in
+				// their own cascade sub-layer, so child spacing must stay on the
+				// shell's `gap`, never on per-child margins a child's own class
+				// would silently beat.
 				'&:has(> [data-account-nav])': {
-					position: 'relative',
-					gap: accountSectionGap,
-					paddingLeft: `calc(${pageGutter} + 200px + clamp(2rem, 5vw, 4.5rem))`,
-					// The absolute rail contributes no height; keep room so a
-					// short page never lets the nav spill over the footer.
-					minHeight: '40rem',
-					// …and keep that reserved height out of the rows. `align-content`
-					// defaults to `stretch`, which hands the leftover space to the
-					// auto-sized tracks, so a page shorter than the floor grew a gap
-					// between every section instead of ending early.
+					gridTemplateColumns: '200px minmax(0, 1fr)',
+					columnGap: 'clamp(2rem, 5vw, 4.5rem)',
+					rowGap: accountSectionGap,
+					// `align-content` defaults to `stretch`, which hands leftover
+					// space to the auto-sized tracks. Keep sections packed at the
+					// start when the rail is the taller column.
 					alignContent: 'start',
-					...(handle.props.maxWidth
-						? {
-								'& > *:not([data-account-nav])': {
-									maxWidth: handle.props.maxWidth,
-								},
-							}
-						: {}),
+					'& > :not([data-account-nav])': {
+						gridColumn: '2',
+						minWidth: 0,
+						...(handle.props.maxWidth
+							? { maxWidth: handle.props.maxWidth }
+							: {}),
+					},
 					[accountManagementNarrowMq]: {
-						paddingLeft: pageGutter,
-						minHeight: 0,
-						gap: spacing.xl,
+						gridTemplateColumns: 'minmax(0, 1fr)',
+						columnGap: 0,
+						rowGap: spacing.xl,
+						'& > :not([data-account-nav])': {
+							gridColumn: '1',
+						},
 					},
 				},
 				...(handle.props.maxWidth

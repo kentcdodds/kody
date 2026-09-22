@@ -101,7 +101,13 @@ test('inline link nav stays in flow and is not a second account rail', async () 
 		}),
 	)
 	expect(railHtml).toContain('data-account-nav')
-	expect(readRulesFor(railHtml, 'nav')).toContain('position: absolute')
+	const railRules = readRulesFor(railHtml, 'nav')
+	// Sticky in the shell's first column. An absolute full-height track does
+	// not grow a short page, so the last links painted over the footer.
+	expect(railRules).toContain('position: sticky')
+	expect(railRules).not.toContain('position: absolute')
+	expect(railRules).toContain('max-height: calc(100dvh - 6.5rem)')
+	expect(railRules).toContain('overflow-y: auto')
 	expect(railHtml).toContain('<details')
 	expect(railHtml).toContain('>Admin sections</span>')
 	expect(railHtml).toContain('data-icon="menu"')

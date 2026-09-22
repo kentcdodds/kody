@@ -2,7 +2,7 @@ import { css, ref, type Handle } from 'remix/ui'
 import { routerEvents } from '#client/client-router.tsx'
 import { renderIcon, type IconName } from '#universal/icon.tsx'
 import { colors, transitions } from '#universal/styles/tokens.ts'
-import { hoverMq, pageGutter } from '#universal/styles/style-primitives.ts'
+import { hoverMq } from '#universal/styles/style-primitives.ts'
 
 /** Account nav collapses to a wrapping row below this width (prototype 860px). */
 export const accountManagementNarrowMq = '@media (max-width: 860px)'
@@ -119,23 +119,31 @@ export function AccountManagementLinkNav(
 					aria-label={handle.props.label}
 					data-account-nav
 					mix={css({
-						// Prototype `.account-nav`: a 200px rail beside the
-						// content. The nav fills the shell's absolute left track
-						// (full height, so the sticky inner column has the whole
-						// page to stick through). Named so a view transition
-						// lifts it out of `<main>` / `page`. Intra-shell tab
-						// clicks skip VT. Leaving/entering the shell fades this
-						// name (styles.css) so the old rail is not pinned as a
-						// ghost on the destination. The group stays still so
+						// Prototype `.account-nav`: a 200px rail in the shell's
+						// first column. The rail is a grid item that spans every
+						// content row, so a short page (webhooks, waiting) grows
+						// to fit it instead of letting the links paint over the
+						// footer. `sticky` keeps it under the site header on a
+						// long page, and the max-height scroll keeps a short
+						// viewport from clipping the last links outside the
+						// shell. Named so a view transition lifts it out of
+						// `<main>` / `page`. Intra-shell tab clicks skip VT.
+						// Leaving/entering the shell fades this name
+						// (styles.css) so the old rail is not pinned as a ghost
+						// on the destination. The group stays still so
 						// account↔admin (rail on both sides) does not morph.
 						// Below 860px the rail hides and the details menu below
 						// takes over — wrapping twelve pills ate a screen of
 						// vertical room on a phone.
-						position: 'absolute',
-						left: pageGutter,
-						top: 0,
-						bottom: 0,
+						position: 'sticky',
+						top: '5rem',
+						alignSelf: 'start',
+						gridColumn: '1',
+						gridRow: '1 / -1',
 						width: '200px',
+						maxHeight: 'calc(100dvh - 6.5rem)',
+						overflowY: 'auto',
+						overscrollBehavior: 'contain',
 						viewTransitionName: 'account-nav',
 						[accountManagementNarrowMq]: {
 							display: 'none',
@@ -144,8 +152,6 @@ export function AccountManagementLinkNav(
 				>
 					<div
 						mix={css({
-							position: 'sticky',
-							top: '5rem',
 							display: 'flex',
 							flexDirection: 'column',
 							gap: '0.15rem',
@@ -187,7 +193,7 @@ export function AccountManagementLinkNav(
 /**
  * In-flow pill row for filters and other secondary link sets. Do not use
  * `AccountManagementLinkNav` for this — that component is the unique
- * `[data-account-nav]` rail the shell absolutely positions, so a second
+ * `[data-account-nav]` rail the shell places in its first column, so a second
  * instance stacks on top of the admin/account sections.
  */
 export function AccountManagementInlineLinkNav(
