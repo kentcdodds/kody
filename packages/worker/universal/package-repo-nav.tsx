@@ -1,6 +1,6 @@
 /** @jsxImportSource remix/ui */
 /** @jsxRuntime automatic */
-import { css } from 'remix/ui'
+import { type RemixNode, css } from 'remix/ui'
 import { IdentityIconMark } from '#universal/identity-icon-mark.tsx'
 import { getPackageSettingsHref } from '#universal/package-files.ts'
 import { renderPackageStatusSignifiers } from '#universal/package-status-signifiers.tsx'
@@ -74,6 +74,7 @@ export function renderPackageRepoChrome(input: {
 	iconName?: string
 	iconTestId?: string
 	animate?: boolean
+	titleActions?: RemixNode
 }) {
 	const backHref = input.viewerIsOwner
 		? routes.profile.href({ username: input.username })
@@ -128,6 +129,7 @@ export function renderPackageRepoChrome(input: {
 					)}
 					<span mix={css(slashCss)}>/</span>
 					<span>{input.kodyId}</span>
+					{input.titleActions}
 					{renderPackageStatusSignifiers({
 						isPrivate: input.isPrivate,
 						isListed,

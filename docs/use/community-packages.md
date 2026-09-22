@@ -134,34 +134,43 @@ If the listing owner later pushes to a public default branch, your fork keeps
 the snapshot you copied. `packageGet` / `packageList` / search set
 `listing_ahead` / `listingAhead` only when the listing pin is not an ancestor of
 your fork tip (the fork is behind or diverged). SHA inequality alone is not
-enough. Your `/@username` profile and the listing page replace Installed /
-Forked with a yellow **Fork outdated** control when the fork is behind (click
-copies an absorb prompt and links to the listing files at the pin) or a calm
-**Fork ahead** badge linking to those files when the pin is already in the
-fork's history — that ahead badge is website UI only. For an outdated fork,
-compare origin HEAD with your package, port useful changes, keep your
-customizations, then publish with `repoPublishSession` and
+enough. Your `/@username` profile and catalog cards replace Installed / Forked
+with a yellow **Fork outdated** control when the fork is behind (click copies an
+absorb prompt and links to the listing files at the pin) or a calm **Fork
+ahead** badge linking to those files when the pin is already in the fork's
+history — that ahead badge is website UI only. The listing detail page uses a
+link-break icon for that same outdated action and keeps the **Fork ahead**
+badge. For an outdated fork, compare origin HEAD with your package, port useful
+changes, keep your customizations, then publish with `repoPublishSession` and
 `absorbed_upstream_commit` so the behind-upstream banner clears.
 
 ## One-click install
 
-Each listing detail page has an **Install** pill for signed-in users. Logged-out
-visitors get the same pill as a login link. Official `@kody/*` listings install
-on the first click — they are first-party platform packages and skip the
-confirm. Third-party listings still ask once (`acknowledged: true` on
-`POST /community/:listingId/install.json`, or the endpoint responds `409`).
-After install, the page shows **Open package** (or **Open fork**) and **Use in
-agent** so you are not left on a dead listing.
+The listing detail page puts the install control beside the package name.
+Official `@kody/*` listings show a fork icon and install on the first click —
+they are first-party platform packages. Listings from another account show a
+double-check icon. Its tooltip says the listing is from another account and to
+verify it before using; the click starts the install and sends
+`acknowledged: true` on `POST /community/:listingId/install.json` (the endpoint
+responds `409` without that flag). Logged-out visitors get the same icon as a
+login link. While the fork runs, that slot shows a spinner whose tooltip names
+the current stage.
 
-If you already have a saved package with the same slug, or a fork of that
-listing, cards and the detail page show **Installed** or **Forked** instead.
-Install forks the listing into your account and, when the fork passes publish
-checks, publishes it as a live saved package. **Publishing activates the package
-right away** — declared jobs are scheduled.
+A current fork shows an open icon that links to the fork. An outdated fork shows
+a link-break icon in that slot; the click copies the absorb prompt and opens the
+listing files at the pin. When the fork needs a setup prompt, a clipboard icon
+beside the status icon copies it. An installed fork still offers **Use in
+agent** under the listing.
+
+Catalog cards still show **Installed**, **Forked**, **Fork outdated**, and
+**Fork ahead**. The detail page keeps **Fork ahead**. Install forks the listing
+into your account and, when the fork passes publish checks, publishes it as a
+live saved package. **Publishing activates the package right away** — declared
+jobs are scheduled.
 
 When checks fail — most commonly because the package imports code from the
 original author's scope (`kody:@originuser/...`) — nothing is published. The
-fork stays **inert**, and the **Forked** pill copies a prompt so your agent can
+fork stays **inert**, and the clipboard icon copies a prompt so your agent can
 review, adapt, and publish it through a repo session.
 
 One-click install is a **UI-only** flow. Agents use `communityFork` plus a repo

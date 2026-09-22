@@ -187,13 +187,12 @@ test('community detail handler returns bare detail frame HTML for target header'
 	} as never)
 	const signedInHtml = await signedInResponse.text()
 	expect(signedInHtml).toContain('data-testid="package-repo-chrome"')
-	expect(signedInHtml).toContain(
-		'data-testid="community-detail-viewer-install-badge"',
-	)
-	expect(signedInHtml).toContain('Installed')
+	expect(signedInHtml).toContain('data-package-title-status="open"')
+	expect(signedInHtml).toContain('data-icon="arrow-up-right"')
+	expect(signedInHtml).toContain('href="/@burhan/github-triage"')
 	expect(
-		signedInHtml.indexOf('data-testid="community-detail-viewer-install-badge"'),
-	).toBeGreaterThan(signedInHtml.indexOf('data-testid="package-repo-nav"'))
+		signedInHtml.indexOf('data-testid="package-title-actions"'),
+	).toBeLessThan(signedInHtml.indexOf('data-testid="package-repo-nav"'))
 })
 
 test('community detail Files tab uses the looked-up default branch', async () => {

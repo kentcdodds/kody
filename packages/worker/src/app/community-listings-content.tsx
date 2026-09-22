@@ -22,11 +22,7 @@ import {
 	renderCopyPromptPill,
 	renderForkAheadPill,
 } from '#universal/fork-outdated-copy-button.tsx'
-import { routes } from '#universal/routes.ts'
-import {
-	getCommunityListingHref,
-	isOfficialCommunityListing,
-} from '#universal/community-links.ts'
+import { getCommunityListingHref } from '#universal/community-links.ts'
 import { renderCommunityListingName } from '#universal/community-listing-name.tsx'
 import { communityStatusPillBoxCss } from '#universal/community-status-pill.ts'
 import {
@@ -38,7 +34,6 @@ import { type CommunityIndexGroup } from '#universal/loader-data.ts'
 import { colors, transitions } from '#universal/styles/tokens.ts'
 import {
 	getSurfaceCardCss,
-	hoverMq,
 	mergeCss,
 	visuallyHiddenCss,
 } from '#universal/styles/style-primitives.ts'
@@ -307,13 +302,13 @@ export function renderCommunityViewerInstallBadge(input: {
 	if (input.viewerIsOwner) return null
 	const install = input.listing.viewerInstall
 	if (install?.listingAhead && install.listingAheadPrompt) {
+		// The package title's link-break icon owns this action on the detail
+		// page. Listing cards keep the pill.
+		if (input.variant === 'detail') return null
 		return renderCopyPromptPill({
 			label: 'Fork outdated',
 			prompt: install.listingAheadPrompt,
-			testId:
-				input.variant === 'card'
-					? `community-listing-ahead-${input.listing.id}`
-					: 'community-detail-listing-ahead-badge',
+			testId: `community-listing-ahead-${input.listing.id}`,
 			tooltip: FORK_OUTDATED_COPY_TOOLTIP,
 			tone: 'outdated',
 			href: install.listingDiffHref,
@@ -329,10 +324,10 @@ export function renderCommunityViewerInstallBadge(input: {
 		})
 	}
 	if (install) {
-		const testId =
-			input.variant === 'card'
-				? `community-listing-viewer-install-${input.listing.id}`
-				: 'community-detail-viewer-install-badge'
+		// Detail uses the title's open-fork icon (and clipboard when a setup
+		// prompt exists). Cards keep Installed / Forked.
+		if (input.variant === 'detail') return null
+		const testId = `community-listing-viewer-install-${input.listing.id}`
 		if (install.status === 'installed') {
 			return (
 				<span data-testid={testId} mix={css(communityViewerInstallStatusCss)}>
@@ -348,36 +343,7 @@ export function renderCommunityViewerInstallBadge(input: {
 			tone: 'badge',
 		})
 	}
-	if (input.variant !== 'detail') return null
-	const loginHref = routes.login.href(null, {
-		searchParams: { redirectTo: input.returnTo ?? routes.community.href() },
-	})
-	if (!input.loggedIn) {
-		return (
-			<a
-				href={loginHref}
-				data-testid="community-detail-install"
-				data-community-install=""
-				mix={css(communityInstallPillCss)}
-			>
-				Install
-			</a>
-		)
-	}
-	return (
-		<button
-			type="button"
-			data-testid="community-detail-install"
-			data-community-install=""
-			data-official={
-				isOfficialCommunityListing(input.listing) ? 'true' : 'false'
-			}
-			data-trusted={input.listing.trusted ? 'true' : 'false'}
-			mix={css(communityInstallPillCss)}
-		>
-			Install
-		</button>
-	)
+	return null
 }
 
 export function CommunityListingsContent(
@@ -653,23 +619,6 @@ export const communityBadgePillCss = {
 	color: colors.primaryText,
 	backgroundColor: `oklch(from ${colors.primary} l c h / 0.13)`,
 	cursor: 'help',
-}
-
-export const communityInstallPillCss = {
-	...communityBadgePillCss,
-	appearance: 'none' as const,
-	textDecoration: 'none',
-	cursor: 'pointer',
-	[hoverMq]: {
-		'&:hover': {
-			backgroundColor: `oklch(from ${colors.primary} l c h / 0.2)`,
-			color: colors.primaryText,
-		},
-	},
-	'&:focus-visible': {
-		outline: `2px solid ${colors.primary}`,
-		outlineOffset: '2px',
-	},
 }
 
 const listingBadgeGroupCss = {

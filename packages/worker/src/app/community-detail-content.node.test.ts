@@ -44,10 +44,19 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		...detailBase,
 		loggedIn: true,
 	})
+	expect(installHtml).toContain('data-testid="package-title-actions"')
 	expect(installHtml).toContain('data-testid="community-detail-install"')
 	expect(installHtml).toContain('data-community-install')
+	expect(installHtml).toContain('data-package-title-status="verify"')
+	expect(installHtml).toContain('data-icon="two-checkmarks"')
 	expect(installHtml).toContain('data-official="false"')
 	expect(installHtml).toContain('data-trusted="false"')
+	expect(installHtml).toContain(
+		'This listing is from another account. Verify it before using.',
+	)
+	expect(
+		installHtml.indexOf('data-testid="package-title-actions"'),
+	).toBeLessThan(installHtml.indexOf('data-testid="package-repo-nav"'))
 
 	const officialHtml = await renderCommunityDetailContentHtml({
 		...detailBase,
@@ -63,6 +72,8 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		loggedIn: true,
 	})
 	expect(officialHtml).toContain('data-official="true"')
+	expect(officialHtml).toContain('data-package-title-status="fork"')
+	expect(officialHtml).toContain('data-icon="git-fork"')
 
 	const agentPrompt =
 		'Call packageGet for @me/github-triage and adapt it to my needs.'
@@ -83,12 +94,34 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		},
 		loggedIn: true,
 	})
-	expect(installedHtml).toContain(
-		'data-testid="community-detail-viewer-install-badge"',
-	)
+	expect(installedHtml).toContain('data-package-title-status="open"')
+	expect(installedHtml).toContain('data-icon="arrow-up-right"')
+	expect(installedHtml).toContain('href="/@me/github-triage"')
 	expect(installedHtml).not.toContain('data-copy-prompt')
 	expect(installedHtml).not.toContain(agentPrompt)
 	expect(installedHtml).not.toContain('data-testid="community-detail-install"')
+
+	const adaptHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
+		listing: {
+			...sampleListing,
+			viewerInstall: {
+				status: 'adaptation_required',
+				targetName: '@me/github-triage',
+				agentPrompt,
+				packageId: null,
+				listingAhead: false,
+				listingAheadPrompt: null,
+				forkAhead: false,
+				listingDiffHref: null,
+			},
+		},
+		loggedIn: true,
+	})
+	expect(adaptHtml).toContain('data-package-title-status="open"')
+	expect(adaptHtml).toContain('data-testid="package-title-copy-setup"')
+	expect(adaptHtml).toContain('data-icon="clipboard"')
+	expect(adaptHtml).toContain(agentPrompt)
 
 	const sourceAheadHtml = await renderCommunityDetailContentHtml({
 		...detailBase,
@@ -142,9 +175,7 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		viewerIsOwner: true,
 		loggedIn: true,
 	})
-	expect(ownInstalledHtml).not.toContain(
-		'data-testid="community-detail-viewer-install-badge"',
-	)
+	expect(ownInstalledHtml).not.toContain('data-testid="package-title-actions"')
 	expect(ownInstalledHtml).not.toContain(
 		'data-testid="community-detail-install"',
 	)
@@ -170,14 +201,11 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		returnTo: '/community',
 		loggedIn: true,
 	})
-	expect(aheadHtml).toContain(
-		'data-testid="community-detail-listing-ahead-badge"',
-	)
+	expect(aheadHtml).toContain('data-package-title-status="outdated"')
+	expect(aheadHtml).toContain('data-icon="link-break"')
 	expect(aheadHtml).toContain('data-fork-outdated-copy')
+	expect(aheadHtml).toContain('data-copy-prompt')
 	expect(aheadHtml).toContain(aheadPrompt)
-	expect(aheadHtml).not.toContain(
-		'data-testid="community-detail-viewer-install-badge"',
-	)
 	expect(aheadHtml).not.toContain('data-testid="community-detail-install"')
 	expect(aheadHtml).toContain(
 		'href="/@kentcdodds/github-triage/tree/commit-new"',
