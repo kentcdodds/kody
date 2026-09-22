@@ -8,7 +8,12 @@ Use the repo capabilities when you want to inspect or modify package source
 directly. Search `package:{id}#{subpath}` returns one export contract;
 `packageGet` returns the full export array plus secret FYI. To read `README.md`,
 `AGENTS.md`, or other package files, open a session with `repoOpenSession` and
-call `repoReadFile`. One-shot reads should `repoDiscardSession` when finished.
+call `repoReadFile`. `path` accepts a fragment: `#L165` (that line plus
+surrounding context), `#L165-L180` (that inclusive range), or a Markdown heading
+slug such as `README.md#export-jsdoc`. A missing anchor fails instead of
+returning the whole file. The same fragments work on
+`search({ entity: "package:{id}#{path}" })` when you only need one file.
+One-shot reads should `repoDiscardSession` when finished.
 
 ## When to use repo sessions vs. a local git remote
 
@@ -119,7 +124,8 @@ Use the other repo capabilities when you need more control over the session:
 - discover current sessions with `repoListSessions` before you know a
   `session_id`; it defaults to active sessions and can be filtered by `status`
   or `source_id`
-- browse files with `repoTree` and `repoReadFile`
+- browse files with `repoTree` and `repoReadFile` (`path` may end in `#L165`,
+  `#L165-L180`, or a Markdown `#heading-slug`)
 - search the workspace with `repoSearch`
 - inspect status with `repoGetCheckStatus`
 - repair drift with `repoRebaseSession`

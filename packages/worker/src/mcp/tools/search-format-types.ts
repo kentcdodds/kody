@@ -376,10 +376,17 @@ export type SearchEntityDetailStructured =
 			category: 'platform' | 'provider'
 			slug: string
 			body: string
-			bodyMode: 'full' | 'toc' | 'section'
+			bodyMode: 'full' | 'toc' | 'section' | 'lines'
 			section: {
 				title: string
 				slug: string
+			} | null
+			lines: {
+				startLine: number
+				endLine: number
+				requestedStartLine: number
+				requestedEndLine: number
+				totalLines: number
 			} | null
 			sections: Array<{
 				title: string
@@ -486,6 +493,36 @@ export type SearchEntityDetailStructured =
 			hidden: boolean
 			platformScope?: string | null
 			referencedTypesTruncated?: true
+	  }
+	| {
+			kind: 'entity'
+			type: 'package'
+			detailMode: 'file'
+			id: string
+			entityRef: string
+			title: string
+			description: string
+			usage: string
+			packageId: string
+			kodyId: string
+			name: string
+			path: string
+			content: string
+			truncated: boolean
+			anchor: {
+				kind: 'lines' | 'heading'
+				requested: string
+				startLine: number
+				endLine: number
+				requestedStartLine: number
+				requestedEndLine: number
+				totalLines: number
+				heading: {
+					title: string
+					slug: string
+					level: number
+				} | null
+			} | null
 	  }
 	| {
 			kind: 'entity'

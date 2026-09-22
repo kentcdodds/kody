@@ -30,6 +30,7 @@ import {
 	formatPackageExportEntityDetail,
 	formatUnknownPackageExportError,
 } from '../package-export-search-detail.ts'
+import { formatPackageFileEntityDetail } from '../package-file-search-detail.ts'
 import {
 	maxFusedPackageCandidates,
 	maxPackageExportCandidatesPerPackage,
@@ -748,20 +749,26 @@ export const packageSearchEntityPlugin = {
 				exportProjection.exports,
 				detail.section,
 			)
-			if (!exportDetail) {
-				throw new McpCallerError(
-					formatUnknownPackageExportError({
-						entityRef: buildEntityRef(detail.record.kodyId, 'package'),
-						section: detail.section,
-						exports: exportProjection.exports,
-					}),
-				)
+			if (exportDetail) {
+				return formatPackageExportEntityDetail({
+					detail,
+					exportDetail,
+					includeBoilerplate: options?.includeBoilerplate ?? true,
+				})
 			}
-			return formatPackageExportEntityDetail({
+			const fileDetail = formatPackageFileEntityDetail({
 				detail,
-				exportDetail,
+				section: detail.section,
 				includeBoilerplate: options?.includeBoilerplate ?? true,
 			})
+			if (fileDetail) return fileDetail
+			throw new McpCallerError(
+				formatUnknownPackageExportError({
+					entityRef: buildEntityRef(detail.record.kodyId, 'package'),
+					section: detail.section,
+					exports: exportProjection.exports,
+				}),
+			)
 		}
 		const exportDetails = exportProjection.exports.map((exportDetail) => ({
 			subpath: exportDetail.subpath,

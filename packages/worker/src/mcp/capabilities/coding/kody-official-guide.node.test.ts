@@ -88,3 +88,38 @@ test('codingGuideGet serves public bundled guides and hides admin-only docs from
 	expect(adminResult.title).toBe('Admin events')
 	expect(adminResult.body).toContain('fleet.entitlement.crossed')
 })
+
+test('codingGuideGet focuses line anchors and rejects lines past the end', async () => {
+	const line = await kodyOfficialGuideCapability.handler(
+		{ guide: 'package_authoring', section: 'L1' },
+		ctx,
+	)
+	expect(line.bodyMode).toBe('lines')
+	expect(line.section).toBeNull()
+	expect(line.lines).toMatchObject({
+		requestedStartLine: 1,
+		requestedEndLine: 1,
+	})
+	expect(line.body).toContain('guide:package_authoring#L1')
+	expect(line.body).toContain('1|')
+
+	const range = await kodyOfficialGuideCapability.handler(
+		{ guide: 'package_authoring', section: 'L1-L3' },
+		ctx,
+	)
+	expect(range.bodyMode).toBe('lines')
+	expect(range.lines).toMatchObject({
+		requestedStartLine: 1,
+		requestedEndLine: 3,
+		startLine: 1,
+		endLine: 3,
+	})
+	expect(range.body).toContain('3|')
+
+	await expect(
+		kodyOfficialGuideCapability.handler(
+			{ guide: 'package_authoring', section: 'L999999' },
+			ctx,
+		),
+	).rejects.toThrow(/past the end/)
+})

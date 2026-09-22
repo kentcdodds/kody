@@ -93,6 +93,28 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 		type: 'guide',
 		section: 'repo.pushed',
 	})
+	expect(parseEntityRef('guide:package_authoring#L165')).toEqual({
+		id: 'package_authoring',
+		type: 'guide',
+		section: 'L165',
+	})
+	expect(parseEntityRef('guide:package_authoring#L165-L180')).toEqual({
+		id: 'package_authoring',
+		type: 'guide',
+		section: 'L165-L180',
+	})
+	expect(parseEntityRef('package:home-controls#src/index.ts#L165')).toEqual({
+		id: 'home-controls',
+		type: 'package',
+		section: 'src/index.ts#L165',
+	})
+	expect(
+		parseEntityRef('package:home-controls#README.md#export-jsdoc'),
+	).toEqual({
+		id: 'home-controls',
+		type: 'package',
+		section: 'README.md#export-jsdoc',
+	})
 	expect(parseEntityRef('package:home-controls#bond-area-shades')).toEqual({
 		id: 'home-controls',
 		type: 'package',

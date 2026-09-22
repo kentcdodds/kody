@@ -79,7 +79,7 @@ export function buildRecommendedNextStep(
 		return `Inspect integration detail with \`search({ entity: "integration:${topMatch.integrationName}" })\` and then run a minimal authenticated \`execute\` smoke test before building or calling integration-backed code.`
 	}
 	if (topMatch?.type === 'guide') {
-		return `Open the official guide with \`search({ entity: "guide:${topMatch.id}" })\`. Oversized guides return a table of contents; open a heading with \`guide:{id}#{slug}\`.`
+		return `Open the official guide with \`search({ entity: "guide:${topMatch.id}" })\`. Oversized guides return a table of contents; open a heading with \`guide:{id}#{slug}\` or lines with \`guide:{id}#L165\` / \`guide:{id}#L165-L180\`.`
 	}
 	if (topMatch?.type === 'capability') {
 		const accessor = buildKodyCapabilityAccessor(topMatch)

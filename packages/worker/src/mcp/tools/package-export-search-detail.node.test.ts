@@ -296,3 +296,83 @@ test('oversized referenced types keep the signature and type names', () => {
 	)
 	expect(formatted.markdown.length).toBeLessThanOrEqual(1_200)
 })
+
+test('package file fragments focus headings and line ranges without replacing export subpaths', () => {
+	const heading = formatEntityDetailMarkdown(
+		createHomeControlsDetail('README.md#intent'),
+	)
+	expect(heading.structured).toMatchObject({
+		detailMode: 'file',
+		entityRef: 'package:home-controls#README.md#intent',
+		path: 'README.md',
+		anchor: {
+			kind: 'heading',
+			heading: { slug: 'intent', title: 'Intent' },
+		},
+	})
+	if (heading.structured.detailMode !== 'file') {
+		throw new Error('expected package file detail')
+	}
+	expect(heading.structured.content).toContain('Control shades and lights.')
+	expect(heading.structured.content).not.toContain('# Home controls')
+
+	const numbered = Array.from(
+		{ length: 200 },
+		(_, index) => `line ${String(index + 1)}`,
+	).join('\n')
+	const lineDetail = createHomeControlsDetail('src/focus.ts#L165')
+	lineDetail.files['src/focus.ts'] = numbered
+	const line = formatEntityDetailMarkdown(lineDetail)
+	expect(line.structured).toMatchObject({
+		detailMode: 'file',
+		path: 'src/focus.ts',
+		anchor: {
+			kind: 'lines',
+			requestedStartLine: 165,
+			requestedEndLine: 165,
+			startLine: 145,
+			endLine: 185,
+		},
+	})
+	if (line.structured.detailMode !== 'file') {
+		throw new Error('expected package file detail')
+	}
+	expect(line.structured.content).toContain('165|line 165')
+	expect(line.structured.content).not.toContain('144|line 144')
+
+	const rangeDetail = createHomeControlsDetail('src/focus.ts#L165-L180')
+	rangeDetail.files['src/focus.ts'] = numbered
+	const range = formatEntityDetailMarkdown(rangeDetail)
+	expect(range.structured).toMatchObject({
+		detailMode: 'file',
+		anchor: {
+			kind: 'lines',
+			requestedStartLine: 165,
+			requestedEndLine: 180,
+			startLine: 165,
+			endLine: 180,
+		},
+	})
+	if (range.structured.detailMode !== 'file') {
+		throw new Error('expected package file detail')
+	}
+	expect(range.structured.content).not.toContain('164|line 164')
+	expect(range.structured.content).not.toContain('181|line 181')
+
+	const exportStillWins = formatEntityDetailMarkdown(
+		createHomeControlsDetail('bond-area-shades'),
+	)
+	expect(exportStillWins.structured).toMatchObject({ detailMode: 'export' })
+
+	expect(() =>
+		formatEntityDetailMarkdown(createHomeControlsDetail('src/missing.ts')),
+	).toThrow(/Unknown file "src\/missing.ts"/)
+	expect(() =>
+		formatEntityDetailMarkdown(
+			createHomeControlsDetail('src/bond-area-shades.ts#L999'),
+		),
+	).toThrow(McpCallerError)
+	expect(() =>
+		formatEntityDetailMarkdown(createHomeControlsDetail('not-an-export')),
+	).toThrow(/Unknown export "not-an-export"/)
+})

@@ -252,12 +252,39 @@ export const repoOpenSessionOutputSchema = repoSessionInfoSchema.extend({
 })
 
 export const repoReadFileInputSchema = repoSessionIdSchema.extend({
-	path: z.string().min(1).describe('Repo-relative file path to read.'),
+	path: z
+		.string()
+		.min(1)
+		.describe(
+			'Repo-relative file path to read. Append #L165, #L165-L180, or a Markdown heading slug (#export-jsdoc) to return that region. A missing anchor fails instead of returning the whole file.',
+		),
+})
+
+export const repoReadFileAnchorSchema = z.object({
+	kind: z.enum(['lines', 'heading']),
+	requested: z.string(),
+	start_line: z.number().int(),
+	end_line: z.number().int(),
+	requested_start_line: z.number().int(),
+	requested_end_line: z.number().int(),
+	total_lines: z.number().int(),
+	heading: z
+		.object({
+			title: z.string(),
+			slug: z.string(),
+			level: z.number().int(),
+		})
+		.nullable(),
 })
 
 export const repoReadFileOutputSchema = z.object({
 	path: z.string(),
 	content: z.string().nullable(),
+	anchor: repoReadFileAnchorSchema
+		.optional()
+		.describe(
+			'Set when path included a # fragment. start_line/end_line are the returned window; a single #L165 line includes surrounding context.',
+		),
 })
 
 export const repoWriteFileEditSchema = z.object({

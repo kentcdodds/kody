@@ -159,7 +159,9 @@ Without local filesystem or git access:
 
 1. Create the complete UTF-8 text package with `packageSave`, or inspect
    existing package metadata with `packageGet`. For `README.md`, `AGENTS.md`,
-   and source, open a repo session (`repoOpenSession` + `repoReadFile`).
+   and source, open a repo session (`repoOpenSession` + `repoReadFile`; `path`
+   accepts `#L165`, `#L165-L180`, or a Markdown heading slug) or one file with
+   `search({ entity: "package:{id}#{path}" })`.
 2. Use `repoEditFiles`, `repoCommit`, and `repoRunChecks` for repo-backed edits
    and validation.
 3. Publish with `repoPublishSession`.
