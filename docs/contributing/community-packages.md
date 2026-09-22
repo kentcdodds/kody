@@ -77,12 +77,14 @@ the platform walks the **listing origin** Artifacts repo from the absorb marker.
 The fork is a new repo and does not contain origin SHAs. `listing_ahead`
 /`listingAhead` are true only when the listing pin is **not** an ancestor of
 that absorb marker (behind or diverged). If the pin is an ancestor — or ancestry
-cannot be proven — the relation is **ahead**: account and community UI show a
-**Fork ahead** link to the listing files at the pin, and MCP search /
-`packageGet` / `packageList` omit any ahead flag or next step. Outdated UI keeps
-the yellow **Fork outdated** copy-prompt control (also linked to that listing
-tree). Clearing an outdated banner is done by publishing with
-`repoPublishSession` and `absorbed_upstream_commit`; that does not copy files.
+cannot be proven — the relation is **ahead**: catalog cards, the owner profile,
+and listing detail show a **Fork ahead** badge linking to the listing files at
+the pin, and MCP search / `packageGet` / `packageList` omit any ahead flag or
+next step. When the fork is behind, catalog cards and the owner profile show a
+yellow **Fork outdated** copy-prompt control (linked to that listing tree);
+listing detail uses a link-break icon for the same action. Clearing an outdated
+banner is done by publishing with `repoPublishSession` and
+`absorbed_upstream_commit`; that does not copy files.
 
 `community_listings` enforces one listing per `(owner_user_id, package_id)`.
 Admin **delist** sets `status = 'delisted'`, blocks owner re-publish, and blocks
@@ -109,11 +111,16 @@ wizard itself is connect an agent, make something useful (one prompt), then
 connect a second agent — see [Onboarding process](./architecture/onboarding.md).
 Official `@kody/*` listings are catalog and fork source — person accounts run
 the owned copy, not the platform package. One-click install on listing detail
-skips the confirm for official `@kody/*` packages. `/community` cards and
-listing detail overlay a per-request `viewerInstall` when the viewer already has
-a matching slug saved package or a `community_forks` row for that listing, so
-those surfaces show **Installed** / **Forked** (or Copy prompt) instead of
-Install.
+puts a fork icon beside the name for official `@kody/*` packages and a
+double-check icon for listings from another account (the click sends
+`acknowledged: true`; the endpoint responds `409` without it). `/community`
+cards overlay a per-request `viewerInstall` when the viewer already has a
+matching slug saved package or a `community_forks` row, so those cards show
+**Installed** / **Forked** / **Fork outdated** / **Fork ahead**. Listing detail
+uses title-slot icons for install, an open icon for a current fork, a link-break
+icon for an outdated fork, a clipboard when a setup prompt exists, and a **Fork
+ahead** badge when the pin is already in the fork history. An installed fork
+offers **Use in agent** under the listing.
 
 Reports survive listing deletion via denormalized listing name and owner on the
 report row.

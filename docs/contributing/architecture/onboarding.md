@@ -22,8 +22,9 @@ wake when the host can be woken, Slack/Raycast webhook, or something else) and
 the agent does one small win from their pick. The page shows a spinner until
 Kody observes that first successful `search` (or an existing access win: memory,
 execute, or saved package). Leftover `/onboarding/step-2/:service` URLs redirect
-to Step 2. Hosted / platform OAuth is not the onboarding path; new connects are
-bring-your-own.
+to Step 2. Leftover `/onboarding/step-3/not-listed` URLs return to the Step 3
+ecosystem picker. Hosted / platform OAuth is not the onboarding path; new
+connects are bring-your-own.
 
 Step 3 groups the agent picker by ecosystem (Grok, Claude, ChatGPT, and the
 rest). Cursor Local and Cursor Cloud are separate tabs when the grant redirect

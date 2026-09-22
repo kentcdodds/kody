@@ -48,9 +48,11 @@ node tools/control-kody.ts request GET /community.json --skip-login
 - Admin **featured** is editorial catalog placement on `/community` and listing
   detail (and slim names in the onboarding persist-prompt payload). It is not a
   wizard Step 2 card.
-- Fork pills are **Fork outdated** when the listing pin is not an ancestor of
-  the fork tip, or **Fork ahead** when that pin is already in the fork history
-  (website UI only). SHA inequality alone is not enough. That is separate from
-  **HEAD ahead of published** on the package Repo tab.
+- Catalog cards show **Fork outdated** when the listing pin is not an ancestor
+  of the fork tip, or **Fork ahead** when that pin is already in the fork
+  history (website UI only). The listing detail page uses a link-break icon for
+  that outdated action and a **Fork ahead** badge. SHA inequality alone is not
+  enough. That is separate from **HEAD ahead of published** on the package Repo
+  tab.
 - Own-profile **Needs republish** (`listing=ahead`) is listing pin behind
   `published_commit`. Guests do not see that filter.
