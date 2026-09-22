@@ -1252,3 +1252,55 @@ test('browser Sentry filters drop Remix reconcile insertBefore NotFoundError (KO
 		}),
 	).not.toBeNull()
 })
+
+test('browser Sentry filters drop CrabApple navigator.userAgent hard-spoof noise (KODY-80)', () => {
+	const crabAppleUserAgentSpoofMessage =
+		'Error: [CrabApple] Failed to hard-spoof navigator.userAgent: TypeError: Cannot redefine property: userAgent'
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'Error',
+						value: crabAppleUserAgentSpoofMessage,
+						stacktrace: {
+							frames: [
+								{ function: '<anonymous>' },
+								{ function: 'spoofBrowserAndPlatform' },
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent(
+			{
+				exception: {
+					values: [{ type: 'Error', value: 'something else' }],
+				},
+			},
+			new Error(crabAppleUserAgentSpoofMessage),
+		),
+	).toBeNull()
+	// Same redefine TypeError without the CrabApple marker stays visible.
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value: 'TypeError: Cannot redefine property: userAgent',
+						stacktrace: {
+							frames: [
+								{ function: '<anonymous>' },
+								{ function: 'spoofBrowserAndPlatform' },
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+})

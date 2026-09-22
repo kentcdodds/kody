@@ -1349,6 +1349,57 @@ function filterRemixReconcileInsertBeforeNotFoundSentryEvent<
 	return event
 }
 
+/**
+ * Drop CrabApple's failed hard-spoof of `navigator.userAgent`. An injected
+ * script labeled CrabApple redefines that property; modern Safari throws
+ * `TypeError: Cannot redefine property: userAgent`, and the script wraps it
+ * as `[CrabApple] Failed to hard-spoof navigator.userAgent`. The event
+ * reaches Sentry from anonymous / `spoofBrowserAndPlatform` frames on the
+ * host page (production issue 7746637649 / KODY-80, Safari 17.4 on
+ * https://kody.codes/). There are no chrome-extension frames on this event.
+ *
+ * Drop when the exception value or originalException message includes
+ * `[CrabApple]` and either `hard-spoof navigator.userAgent` or
+ * `Cannot redefine property: userAgent`. Keep the same TypeError when the
+ * CrabApple marker is absent.
+ */
+function isCrabAppleUserAgentSpoofMessage(message: string) {
+	if (!message.includes('[CrabApple]')) return false
+	return (
+		message.includes('hard-spoof navigator.userAgent') ||
+		message.includes('Cannot redefine property: userAgent')
+	)
+}
+
+function isCrabAppleUserAgentSpoofError(error: unknown) {
+	if (typeof error === 'string') {
+		return isCrabAppleUserAgentSpoofMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isCrabAppleUserAgentSpoofMessage(error.message)
+}
+
+function isCrabAppleUserAgentSpoofSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	if (isCrabAppleUserAgentSpoofError(originalException)) return true
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' && isCrabAppleUserAgentSpoofMessage(message),
+	)
+}
+
+function filterCrabAppleUserAgentSpoofSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (isCrabAppleUserAgentSpoofSentryEvent(event, originalException)) {
+		return null
+	}
+	return event
+}
+
 /** Combined browser beforeSend / capture gate used by the client SDK. */
 export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	event: T,
@@ -1481,6 +1532,11 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 			event,
 			originalException,
 		) === null
+	) {
+		return null
+	}
+	if (
+		filterCrabAppleUserAgentSpoofSentryEvent(event, originalException) === null
 	) {
 		return null
 	}
