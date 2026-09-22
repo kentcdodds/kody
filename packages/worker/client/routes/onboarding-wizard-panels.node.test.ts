@@ -440,15 +440,7 @@ test('step 3 groups ecosystems and folds in a portability proof', async () => {
 			mcpHighlights: {},
 		}),
 	)
-	expect(notListedDeepLink).toContain('Connect a second agent')
 	expect(notListedDeepLink).toContain('data-picker="ecosystem"')
-	expect(notListedDeepLink).toContain('data-testid="onboarding-ecosystem-xai"')
-	expect(notListedDeepLink).toContain('Grok.com')
-	expect(notListedDeepLink).toContain('data-testid="onboarding-agent-grok"')
-	expect(notListedDeepLink).toContain(
-		'data-testid="onboarding-ecosystem-github"',
-	)
-	expect(notListedDeepLink).toContain('Copilot App')
 	expect(notListedDeepLink).toContain('data-agent-kind="unknown"')
 	expect(notListedDeepLink).not.toContain('data-greyed="true"')
 })

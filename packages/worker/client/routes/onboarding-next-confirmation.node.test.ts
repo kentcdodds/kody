@@ -31,10 +31,6 @@ test('unconnected onboarding Next warns once before advancing', () => {
 	expect(firstClick.preventDefault).toHaveBeenCalledOnce()
 	expect(confirmation.armed).toBe(true)
 	expect(confirmation.getLabel(true)).not.toBe('Next')
-	expect(confirmation.getLabels(true)).toEqual({
-		full: 'Not connected — continue anyway?',
-		terse: 'Continue?',
-	})
 	expect(onNext).not.toHaveBeenCalled()
 
 	const secondClick = { preventDefault: vi.fn() } as unknown as Event

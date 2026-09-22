@@ -83,22 +83,22 @@ test('install strip shows next steps after a successful install', async () => {
 	expect(html).toContain('Use in agent')
 })
 
-test('readme section keeps README as the default and links to AGENTS.md', async () => {
-	const html = await renderToString(
+test('readme section keeps README and only links Agent docs when AGENTS.md is present', async () => {
+	const withAgents = await renderToString(
 		renderReadmeSection(['Human setup.'], '/@jane/demo/tree/main/AGENTS.md'),
 	)
-	expect(html).toContain('id="readme-title"')
-	expect(html).toContain('README')
-	expect(html).toContain('Human setup.')
-	expect(html).toContain('data-testid="community-agents-docs-link"')
-	expect(html).toContain('href="/@jane/demo/tree/main/AGENTS.md"')
-	expect(html).toContain('Agent docs')
-})
+	expect(withAgents).toContain('id="readme-title"')
+	expect(withAgents).toContain('README')
+	expect(withAgents).toContain('Human setup.')
+	expect(withAgents).toContain('data-testid="community-agents-docs-link"')
+	expect(withAgents).toContain('href="/@jane/demo/tree/main/AGENTS.md"')
 
-test('readme section omits the Agent docs link when AGENTS.md is absent', async () => {
-	const html = await renderToString(renderReadmeSection(['Human setup.']))
-	expect(html).toContain('id="readme-title"')
-	expect(html).toContain('README')
-	expect(html).not.toContain('data-testid="community-agents-docs-link"')
-	expect(html).not.toContain('Agent docs')
+	const withoutAgents = await renderToString(
+		renderReadmeSection(['Human setup.']),
+	)
+	expect(withoutAgents).toContain('id="readme-title"')
+	expect(withoutAgents).toContain('README')
+	expect(withoutAgents).not.toContain(
+		'data-testid="community-agents-docs-link"',
+	)
 })

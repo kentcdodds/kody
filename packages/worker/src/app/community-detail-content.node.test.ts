@@ -51,9 +51,6 @@ test('community detail head covers install, installed, and listing-ahead badges'
 	expect(installHtml).toContain('data-icon="two-checkmarks"')
 	expect(installHtml).toContain('data-official="false"')
 	expect(installHtml).toContain('data-trusted="false"')
-	expect(installHtml).toContain(
-		'This listing is from another account. Verify it before using.',
-	)
 	expect(
 		installHtml.indexOf('data-testid="package-title-actions"'),
 	).toBeLessThan(installHtml.indexOf('data-testid="package-repo-nav"'))

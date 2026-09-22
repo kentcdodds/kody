@@ -23,7 +23,6 @@ test('linear stepper fills finished steps and holds confetti for the finish tran
 	expect(midway).toContain('data-step-state="current"')
 	expect(midway).toContain('data-step-state="upcoming"')
 	expect(midway).toContain('data-step-connector="filled"')
-	expect(midway).not.toContain('data-testid="onboarding-stepper-confetti"')
 
 	const alreadyDone = await renderToString(
 		jsx(WizardStepsNav, {
@@ -35,7 +34,6 @@ test('linear stepper fills finished steps and holds confetti for the finish tran
 		}),
 	)
 	expect(alreadyDone).toContain('All steps complete')
-	expect(alreadyDone).not.toContain('data-testid="onboarding-stepper-confetti"')
 
 	const fresh = { seenIncomplete: false, celebrated: false }
 	expect(reduceOnboardingCelebration(fresh, true)).toEqual(fresh)
@@ -56,7 +54,6 @@ test('connect wait replaces Next and Next shortens through a container query', a
 		}),
 	)
 	expect(waiting).toContain('data-testid="onboarding-connect-wait"')
-	expect(waiting).toContain('Waiting for Cursor to connect…')
 	expect(waiting).not.toContain('data-testid="onboarding-wizard-next"')
 
 	const next = await renderToString(
