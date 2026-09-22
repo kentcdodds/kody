@@ -267,7 +267,17 @@ test('step 3 groups ecosystems and folds in a portability proof', async () => {
 	expect(picker).toContain('Connect a second agent')
 	expect(picker).toContain('Standard free for 2 weeks')
 	expect(picker).toContain('data-picker="ecosystem"')
-	expect(picker).toContain('data-testid="onboarding-ecosystem-cursor"')
+	expect(picker).toContain('data-testid="onboarding-ecosystem-xai"')
+	const grokSection = picker.slice(
+		picker.indexOf('data-testid="onboarding-ecosystem-xai"'),
+		picker.indexOf('data-testid="onboarding-ecosystem-anthropic"'),
+	)
+	expect(grokSection).toContain('>Grok<')
+	expect(grokSection).toContain('Cursor Local')
+	expect(grokSection).toContain('Cursor Cloud')
+	expect(grokSection).toContain('Grok Bot')
+	expect(grokSection).toContain('Grok.com')
+	expect(grokSection).toContain('Grok CLI')
 	expect(picker).toContain('data-testid="onboarding-ecosystem-openai"')
 	expect(picker).toContain('data-testid="onboarding-agent-chatgpt"')
 	expect(picker).toContain('href="/onboarding/step-3/claude-code"')

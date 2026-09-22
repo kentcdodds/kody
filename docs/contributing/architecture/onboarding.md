@@ -25,22 +25,22 @@ execute, or saved package). Leftover `/onboarding/step-2/:service` URLs redirect
 to Step 2. Hosted / platform OAuth is not the onboarding path; new connects are
 bring-your-own.
 
-Step 3 groups the agent picker by ecosystem (Cursor, Claude, ChatGPT, and the
+Step 3 groups the agent picker by ecosystem (Grok, Claude, ChatGPT, and the
 rest). Cursor Local and Cursor Cloud are separate tabs when the grant redirect
 shows which surface authorized. An unclassified Cursor grant (client name
-Cursor, no surface on the grant redirect) counts as the Cursor ecosystem and
+Cursor, no surface on the grant redirect) counts as the Grok ecosystem and
 disables neither Local nor Cloud. A Cursor Cloud grant also marks Grok Bot
-connected, and Grok Bot sits in the Cursor ecosystem. Tabs disable only for
-hosts a grant already names. After the person picks a host, a short
-portability-proof prompt is folded into the same step so the new agent looks up
-[`portability`](../../guides/portability.md)
+connected. Cursor Local, Cursor Cloud, Grok Bot, Grok.com, and Grok CLI sit in
+that Grok ecosystem. Tabs disable only for hosts a grant already names. After
+the person picks a host, a short portability-proof prompt is folded into the
+same step so the new agent looks up [`portability`](../../guides/portability.md)
 (`search({ entity: "guide:portability" })`) and reuses what Step 2 made. When
 the onboarding payload has a known memory subject or saved-package name, Step 3
 shows a short "You made …" chip (truncated subject and `@scope/kody-id`, or
 hidden if nothing sensible). `hasSecondMcpClient` is two known ecosystems, not
 raw grant count, not unique `clientId`s, and not attribution to the selected
-host — two Cursor auth contexts are one ecosystem, and an unlabeled client does
-not count as its own. The connected label stays "You've connected a second
+host — Cursor hosts and Grok hosts are one ecosystem, and an unlabeled client
+does not count as its own. The connected label stays "You've connected a second
 agent." When the second-agent Standard gift is active, that status adds
 "Standard is free for 2 weeks." Step 3 copy advertises "Connect a second agent
 and get Standard free for 2 weeks." `/onboarding` resumes at that step instead
