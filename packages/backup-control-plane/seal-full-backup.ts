@@ -761,10 +761,17 @@ export async function sealFullBackupDay(
 	return { kind: 'sealed', day, manifestKey, alreadySealed: false }
 }
 
+/**
+ * How many UTC days (including today) the hourly seal scan covers. Must be
+ * ≥ `drExportCatchUpLookbackDays + 1` so a summary written by catch-up for
+ * the oldest lookback day is still eligible before it ages out of sealing.
+ */
+export const sealRecentCompleteDayCount = 15
+
 export async function sealRecentCompleteDays(
 	env: BackupEnvironment,
 	scheduledAt: Date,
-	dayCount = 3,
+	dayCount = sealRecentCompleteDayCount,
 ): Promise<void> {
 	const errors: Array<unknown> = []
 	for (let offset = 0; offset < dayCount; offset += 1) {
