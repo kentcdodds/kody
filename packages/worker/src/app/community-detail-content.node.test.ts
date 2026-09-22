@@ -247,6 +247,16 @@ test('package chrome is shared for public listings and private owner packages', 
 	expect(
 		publicHtml.indexOf('data-testid="community-listing-icon-detail"'),
 	).toBeLessThan(publicHtml.indexOf('<h1'))
+	const titleNameAt = publicHtml.indexOf('data-testid="package-title-name"')
+	const leafNameAt = publicHtml.indexOf('>github-triage<', titleNameAt)
+	const titleActionsAt = publicHtml.indexOf(
+		'data-testid="package-title-actions"',
+		titleNameAt,
+	)
+	expect(titleNameAt).toBeGreaterThan(-1)
+	expect(leafNameAt).toBeGreaterThan(titleNameAt)
+	expect(titleActionsAt).toBeGreaterThan(leafNameAt)
+	expect(titleActionsAt).toBeLessThan(publicHtml.indexOf('</h1>', titleNameAt))
 	expect(publicHtml).toContain('data-testid="package-repo-nav-repo"')
 	expect(publicHtml).toContain('data-testid="package-repo-nav-files"')
 	expect(publicHtml).not.toContain('data-testid="package-repo-nav-settings"')
@@ -288,6 +298,11 @@ test('package chrome is shared for public listings and private owner packages', 
 	expect(privateHtml).toContain('data-visibility="private"')
 	expect(privateHtml).toContain('data-signifier="private"')
 	expect(privateHtml).toContain('data-icon="lock"')
+	const privateNameAt = privateHtml.indexOf('data-testid="package-title-name"')
+	expect(privateNameAt).toBeGreaterThan(-1)
+	expect(
+		privateHtml.indexOf('data-signifier="private"', privateNameAt),
+	).toBeGreaterThan(privateNameAt)
 	expect(privateHtml).toContain('title="Private"')
 	expect(privateHtml).not.toContain('data-signifier="unpublished"')
 	expect(privateHtml).not.toMatch(/>Private</)
