@@ -79,14 +79,8 @@ const __globalAny = /** @type {any} */ (globalThis);
 const __kodyRuntimeStorage =
 	__globalAny[__kodyRuntimeStorageSymbol] ??
 	(__globalAny[__kodyRuntimeStorageSymbol] = new AsyncLocalStorage());
-// Stamp ALS + runner stay in this module closure. Artifact-prefixed runtime
-// copies re-export this root module (createRuntimeModuleReexportSource) so
-// the ALS is created once. Do NOT hang the runner off globalThis / Symbol.for:
-// package code can steal Symbol.for keys via Object.getOwnPropertySymbols and
-// forge another granted package's stamp in the same user isolate.
-// Host fetch / kody.* wrappers must import __kodyGetSecretAuthority from this
-// module. A sealed read-only global getter remains only as a back-compat
-// bridge (configurable:false so package code cannot replace it with a forge).
+// Stamp ALS + runner stay module-local (re-exports share one evaluation).
+// Do not hang the runner on Symbol.for — package code can steal it.
 const __kodySecretAuthorityAls = new AsyncLocalStorage();
 function __kodyReadSecretAuthority() {
 	const current = __kodySecretAuthorityAls.getStore();
@@ -95,13 +89,8 @@ function __kodyReadSecretAuthority() {
 function __kodyRunWithSecretAuthority(packageId, callback) {
 	return __kodySecretAuthorityAls.run(packageId, callback);
 }
-// Seal the public getter (configurable: false). A configurable descriptor let
-// package code replace it with a function returning another granted package
-// id and forge the same-user stamp. Always (re)install when absent or still
-// configurable so a same-isolate module that planted a forge *before* this
-// evaluation cannot keep it. If a prior evaluation already sealed our getter,
-// leave it (re-exports share this closure; a sealed foreign getter is
-// unreachable for host wrappers that import __kodyGetSecretAuthority).
+// Sealed global getter for back-compat readers. Reinstall when absent or
+// still configurable so a pre-planted forge cannot stick.
 {
 	const existing = Object.getOwnPropertyDescriptor(
 		__globalAny,
