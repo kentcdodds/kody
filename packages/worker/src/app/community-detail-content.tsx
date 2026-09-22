@@ -108,6 +108,7 @@ export function CommunityDetailContent(
 							viewerIsOwner,
 							loggedIn,
 							returnTo,
+							listingId: listing.id,
 							listingName: listing.name,
 							ownerUsername: listing.ownerUsername,
 							trusted: listing.trusted,

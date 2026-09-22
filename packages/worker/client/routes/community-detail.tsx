@@ -19,6 +19,7 @@ import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { installProgressWords } from '#client/action-button-loader.tsx'
 import {
+	releasePackageTitleInstallProgress,
 	startPackageTitleInstallProgress,
 	stopPackageTitleInstallProgress,
 } from '#client/package-title-install-progress.ts'
@@ -138,7 +139,9 @@ export function CommunityDetailRoute(handle: Handle) {
 		featured = snapshot.featured
 		featureState = 'idle'
 		featureMessage = null
-		stopPackageTitleInstallProgress({ restore: false })
+		releasePackageTitleInstallProgress(
+			getListingPageRef(pathname)?.listingId ?? null,
+		)
 		installState = 'idle'
 		installMessage = null
 		installOutcome = null
@@ -386,7 +389,7 @@ export function CommunityDetailRoute(handle: Handle) {
 
 		installState = 'submitting'
 		installMessage = null
-		startPackageTitleInstallProgress(installProgressWords)
+		startPackageTitleInstallProgress(installProgressWords, listingId)
 		handle.update()
 
 		try {
@@ -410,9 +413,9 @@ export function CommunityDetailRoute(handle: Handle) {
 			}
 			const payload = await readJson<CommunityInstallApiPayload>(response)
 			// A late response for a previous listing must not overwrite the
-			// state of the listing currently on screen.
+			// state of the listing currently on screen, or stop a newer run.
 			if (getCurrentListingId(handle) !== listingId) {
-				stopPackageTitleInstallProgress({ restore: false })
+				stopPackageTitleInstallProgress({ listingId, restore: true })
 				return
 			}
 			if (response.status === 409 && payload?.requiresAcknowledgement) {
@@ -440,16 +443,16 @@ export function CommunityDetailRoute(handle: Handle) {
 				failedChecks: payload.failedChecks ?? [],
 			}
 			installState = 'idle'
-			stopPackageTitleInstallProgress({ restore: false })
+			stopPackageTitleInstallProgress({ listingId, restore: false })
 			handle.update()
 			const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)
 			if (frame) void frame.reload()
 		} catch (error) {
 			if (getCurrentListingId(handle) !== listingId) {
-				stopPackageTitleInstallProgress({ restore: false })
+				stopPackageTitleInstallProgress({ listingId, restore: true })
 				return
 			}
-			stopPackageTitleInstallProgress()
+			stopPackageTitleInstallProgress({ listingId })
 			installState = 'error'
 			installMessage =
 				error instanceof Error
@@ -483,7 +486,15 @@ export function CommunityDetailRoute(handle: Handle) {
 	}
 
 	listenToRouterNavigation(handle, () => {
-		if (!getListingPageRef(readRouterPathname(handle))) return
+		const ref = getListingPageRef(readRouterPathname(handle))
+		// The path has already changed. Restore the listing that owned the
+		// spinner before a later tick can observe the destination control.
+		if (releasePackageTitleInstallProgress(ref?.listingId ?? null)) {
+			installState = 'idle'
+			installMessage = null
+			installOutcome = null
+		}
+		if (!ref) return
 
 		const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)
 		if (!frame) return

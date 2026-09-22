@@ -33,6 +33,7 @@ type PackageTitleActionsInput = {
 	viewerIsOwner: boolean
 	loggedIn: boolean
 	returnTo: string
+	listingId: string
 	listingName: string
 	ownerUsername: string
 	trusted: boolean
@@ -92,17 +93,19 @@ function renderStatusControl(input: PackageTitleActionsInput) {
 			loginHref,
 			official: true,
 			trusted: input.trusted,
+			listingId: input.listingId,
 		})
 	}
 	return renderInstallControl({
 		kind: 'verify',
-		icon: 'shield-tick',
+		icon: 'two-checkmarks',
 		label: OTHER_ACCOUNT_FORK_TOOLTIP,
 		tooltip: OTHER_ACCOUNT_FORK_TOOLTIP,
 		loggedIn: input.loggedIn,
 		loginHref,
 		official: false,
 		trusted: input.trusted,
+		listingId: input.listingId,
 	})
 }
 
@@ -146,11 +149,13 @@ function renderInstallControl(input: {
 	loginHref: string
 	official: boolean
 	trusted: boolean
+	listingId: string
 }) {
 	const shared = {
 		'data-testid': 'community-detail-install',
 		'data-package-title-status': input.kind,
 		'data-package-title-idle': input.kind,
+		'data-package-title-listing': input.listingId,
 		'data-title-idle-label': input.label,
 		'data-title-idle-tooltip': input.tooltip,
 		'data-community-install': '',

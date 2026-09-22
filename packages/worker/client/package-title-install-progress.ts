@@ -1,9 +1,21 @@
 import { installProgressWordHoldMs } from '#client/action-button-loader.tsx'
 import { PACKAGE_TITLE_STATUS_SELECTOR } from '#universal/package-title-actions.tsx'
 
-let progressTimer: ReturnType<typeof setInterval> | null = null
+const listingAttribute = 'data-package-title-listing'
 
-function isStatusControl(value: unknown): value is HTMLElement {
+type StatusControl = HTMLElement
+
+type ProgressRun = {
+	listingId: string | null
+	control: StatusControl
+	timer: ReturnType<typeof setInterval> | null
+}
+
+let activeRun: ProgressRun | null = null
+/** Control painted by show() when no run is active, so stop() can restore it. */
+let shownControl: StatusControl | null = null
+
+function isStatusControl(value: unknown): value is StatusControl {
 	return (
 		value != null &&
 		typeof value === 'object' &&
@@ -13,7 +25,7 @@ function isStatusControl(value: unknown): value is HTMLElement {
 	)
 }
 
-function statusControl() {
+function queryStatusControl() {
 	if (typeof document === 'undefined') return null
 	const control = document.querySelector(PACKAGE_TITLE_STATUS_SELECTOR)
 	return isStatusControl(control) ? control : null
@@ -30,15 +42,28 @@ function setHidden(element: unknown, hidden: boolean) {
 	;(element as { hidden: boolean }).hidden = hidden
 }
 
-/**
- * Reveal the spinner in the package-title status slot and set its tooltip to
- * the live install stage. Only the fork and verify controls host that slot.
- */
-export function showPackageTitleInstallProgress(word: string) {
-	const control = statusControl()
-	if (!control) return
+function canHostProgress(control: StatusControl) {
 	const idle = control.getAttribute('data-package-title-idle')
-	if (idle !== 'fork' && idle !== 'verify') return
+	return idle === 'fork' || idle === 'verify'
+}
+
+/**
+ * A run may only paint the control captured when it started. After navigation
+ * that node is either detached or stamped with another listing; touching the
+ * document's current status control would spin the destination listing.
+ */
+function controlStillOwnsRun(run: ProgressRun) {
+	if ('isConnected' in run.control && run.control.isConnected === false) {
+		return false
+	}
+	if (run.listingId === null) return true
+	const stamped = run.control.getAttribute(listingAttribute)
+	if (!stamped) return true
+	return stamped === run.listingId
+}
+
+function paintProgress(control: StatusControl, word: string) {
+	if (!canHostProgress(control)) return false
 	control.setAttribute('data-package-title-status', 'progress')
 	control.setAttribute('aria-busy', 'true')
 	control.setAttribute('aria-label', word)
@@ -48,19 +73,10 @@ export function showPackageTitleInstallProgress(word: string) {
 	if (tooltip) tooltip.textContent = word
 	const live = control.querySelector('[data-title-status-live]')
 	if (live) live.textContent = word
+	return true
 }
 
-/** Stop the stage timer. Restore the idle icon when the install did not finish. */
-export function stopPackageTitleInstallProgress(options?: {
-	restore?: boolean
-}) {
-	if (progressTimer !== null) {
-		clearInterval(progressTimer)
-		progressTimer = null
-	}
-	if (options?.restore === false) return
-	const control = statusControl()
-	if (!control) return
+function restoreControl(control: StatusControl) {
 	if (control.getAttribute('data-package-title-status') !== 'progress') return
 	const idle = control.getAttribute('data-package-title-idle')
 	if (idle) control.setAttribute('data-package-title-status', idle)
@@ -76,28 +92,115 @@ export function stopPackageTitleInstallProgress(options?: {
 	if (live) live.textContent = ''
 }
 
+function finishRun(run: ProgressRun, restore: boolean) {
+	if (run.timer !== null) {
+		clearInterval(run.timer)
+		run.timer = null
+	}
+	if (activeRun === run) activeRun = null
+	if (!restore || !controlStillOwnsRun(run)) return
+	restoreControl(run.control)
+}
+
+/**
+ * Reveal the spinner in the package-title status slot and set its tooltip to
+ * the live install stage. Only the fork and verify controls host that slot.
+ * An active run paints the control it captured, never a freshly queried one.
+ */
+export function showPackageTitleInstallProgress(word: string) {
+	const control = activeRun?.control ?? queryStatusControl()
+	if (!control) return
+	if (activeRun && !controlStillOwnsRun(activeRun)) return
+	if (!paintProgress(control, word)) return
+	if (!activeRun) shownControl = control
+}
+
+/**
+ * Stop the stage timer. When `listingId` is set, a run for a different listing
+ * is left alone so a late response cannot clear the listing now on screen.
+ * Restore the captured control unless the install finished and the frame is
+ * about to replace it.
+ */
+export function stopPackageTitleInstallProgress(options?: {
+	restore?: boolean
+	listingId?: string | null
+}) {
+	if (!activeRun) {
+		const control = shownControl
+		shownControl = null
+		if (options?.restore === false || !control) return
+		restoreControl(control)
+		return
+	}
+	if (
+		options &&
+		'listingId' in options &&
+		activeRun.listingId !== options.listingId
+	) {
+		return
+	}
+	const run = activeRun
+	shownControl = null
+	finishRun(run, options?.restore !== false)
+}
+
+/**
+ * Navigation left the listing that owns the active run. `null` means this page
+ * has no listing id yet (left package pages, or the destination id is still
+ * unknown), so any run is restored and cleared. Returns whether a run ended.
+ */
+export function releasePackageTitleInstallProgress(
+	listingId: string | null,
+): boolean {
+	if (!activeRun) return false
+	if (listingId !== null && activeRun.listingId === listingId) return false
+	finishRun(activeRun, true)
+	shownControl = null
+	return true
+}
+
 /**
  * Walk the same install stages the old button loader named, holding on the
- * last word instead of looping.
+ * last word instead of looping. The control is captured once; later ticks
+ * never query the document. Starting another listing restores the previous
+ * control first.
  */
-export function startPackageTitleInstallProgress(words: ReadonlyArray<string>) {
-	stopPackageTitleInstallProgress({ restore: false })
+export function startPackageTitleInstallProgress(
+	words: ReadonlyArray<string>,
+	listingId?: string | null,
+) {
+	if (activeRun) finishRun(activeRun, true)
+	shownControl = null
 	if (words.length === 0) return
-	let index = 0
-	showPackageTitleInstallProgress(words[0] ?? '')
+	const control = queryStatusControl()
+	if (!control || !canHostProgress(control)) return
+	const run: ProgressRun = {
+		listingId: listingId ?? null,
+		control,
+		timer: null,
+	}
+	activeRun = run
+	paintProgress(control, words[0] ?? '')
 	if (words.length === 1) return
-	progressTimer = setInterval(() => {
-		index += 1
-		if (index >= words.length) {
-			stopPackageTitleInstallProgress({ restore: false })
+	let index = 0
+	run.timer = setInterval(() => {
+		if (activeRun !== run) return
+		if (!controlStillOwnsRun(run)) {
+			finishRun(run, false)
 			return
 		}
-		showPackageTitleInstallProgress(words[index] ?? '')
-		if (index >= words.length - 1) {
-			if (progressTimer !== null) {
-				clearInterval(progressTimer)
-				progressTimer = null
+		index += 1
+		if (index >= words.length) {
+			if (run.timer !== null) {
+				clearInterval(run.timer)
+				run.timer = null
 			}
+			return
+		}
+		paintProgress(run.control, words[index] ?? '')
+		if (index >= words.length - 1 && run.timer !== null) {
+			clearInterval(run.timer)
+			run.timer = null
 		}
 	}, installProgressWordHoldMs)
 }

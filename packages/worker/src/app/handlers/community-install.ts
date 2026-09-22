@@ -62,7 +62,7 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 			}
 			// Official `@kody/*` listings are first-party and skip acknowledgement.
 			// Third-party listings require acknowledged: true. The listing page
-			// sends that flag when the viewer clicks the shield icon.
+			// sends that flag when the viewer clicks the double-check icon.
 			const official = isOfficialCommunityListing({ name: listing.name })
 			if (!official && parsed.data.acknowledged !== true) {
 				return jsonResponse(

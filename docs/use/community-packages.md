@@ -149,8 +149,8 @@ changes, keep your customizations, then publish with `repoPublishSession` and
 The listing detail page puts the install control beside the package name.
 Official `@kody/*` listings show a fork icon and install on the first click —
 they are first-party platform packages. Listings from another account show a
-shield-with-check icon. Its tooltip says the listing is from another account and
-to verify it before using; the click starts the install and sends
+double-check icon. Its tooltip says the listing is from another account and to
+verify it before using; the click starts the install and sends
 `acknowledged: true` on `POST /community/:listingId/install.json` (the endpoint
 responds `409` without that flag). Logged-out visitors get the same icon as a
 login link. While the fork runs, that slot shows a spinner whose tooltip names

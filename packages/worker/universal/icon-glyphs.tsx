@@ -64,7 +64,7 @@ export const iconNames = [
 	'link-break',
 	'clipboard',
 	'arrow-up-right',
-	'shield-tick',
+	'two-checkmarks',
 ] as const
 
 export type IconName = (typeof iconNames)[number]
@@ -1282,21 +1282,14 @@ export const iconGlyphs = {
 			/>
 		</>
 	),
-	'shield-tick': () => (
+	'two-checkmarks': () => (
 		<>
 			<path
 				stroke="currentColor"
 				stroke-linecap="round"
 				stroke-linejoin="round"
 				stroke-width="1.5"
-				d="M12 4.75L4.75002 8C4.75002 8 4.00002 19.25 12 19.25C20 19.25 19.25 8 19.25 8L12 4.75Z"
-			/>
-			<path
-				stroke="currentColor"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-				stroke-width="1.5"
-				d="M9.75 12.75L11 14.25L14.25 9.75"
+				d="m5.75 12.464 2.833 2.786c1.417-4.179 4.667-6.5 4.667-6.5m5 0s-4.25 2.321-5.667 6.5l-1.102-1.083"
 			/>
 		</>
 	),
