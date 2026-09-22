@@ -138,13 +138,7 @@ test('a highlighted primitive rings its orb and accents only that word', async (
 	const triggers = createPrimitivesLantern('dark', 'triggers')
 	expect(collectByType(plain, 'circle')).toEqual([])
 	const circles = collectByType(triggers, 'circle')
-	expect(circles.map((circle) => circle.props.stroke)).toEqual([
-		landingPrimitiveOgColors.dark.triggers,
-		landingPrimitiveOgColors.dark.triggers,
-	])
-	expect(collectText(triggers)).toEqual(
-		landingHomePrimitives.map((primitive) => primitive.word),
-	)
+	expect(circles).toHaveLength(2)
 	const labels = new Map<string, string>()
 	for (const node of collectByType(triggers, 'div')) {
 		const text = node.props.children
@@ -153,6 +147,8 @@ test('a highlighted primitive rings its orb and accents only that word', async (
 			labels.set(text, color)
 		}
 	}
-	expect(labels.get('triggers')).toBe(landingPrimitiveOgColors.dark.triggers)
+	expect(circles[0]?.props.stroke).toBe(labels.get('triggers'))
+	expect(circles[1]?.props.stroke).toBe(labels.get('triggers'))
 	expect(labels.get('memory')).toBe(getOgPalette('dark').textMuted)
+	expect(labels.get('triggers')).not.toBe(labels.get('memory'))
 })

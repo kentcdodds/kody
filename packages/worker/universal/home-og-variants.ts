@@ -147,7 +147,7 @@ export type HomeOgVariant = HomeOgVariantEntry & {
 	ogDescription: string
 }
 
-export function isHomeOgVariantId(value: string): value is HomeOgVariantId {
+function isHomeOgVariantId(value: string): value is HomeOgVariantId {
 	return Object.hasOwn(homeOgVariants, value)
 }
 

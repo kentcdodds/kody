@@ -52,12 +52,6 @@ function onboardingAgentEcosystem(
 	return ecosystem
 }
 
-function onboardingSameEcosystemAgents(
-	agent: McpClientKind,
-): ReadonlyArray<McpClientKind> {
-	return onboardingAgentEcosystems[onboardingAgentEcosystem(agent)]
-}
-
 export type OnboardingStep3EcosystemGroup = {
 	id: OnboardingAgentEcosystemId
 	label: string
@@ -113,10 +107,6 @@ export const onboardingStep3EcosystemGroups = [
 		agents: ['openclaw'],
 	},
 ] as const satisfies ReadonlyArray<OnboardingStep3EcosystemGroup>
-
-export function onboardingStep3AgentIds(): Array<McpClientKind> {
-	return onboardingStep3EcosystemGroups.flatMap((group) => [...group.agents])
-}
 
 export type OnboardingSecondAgentDisableReason = 'connected'
 
@@ -185,22 +175,6 @@ export function listOnboardingGreyedSecondAgents(
 		greyed.set('grok-bot', 'connected')
 	}
 	return [...greyed].map(([id, reason]) => ({ id, reason }))
-}
-
-export function onboardingGreyedSecondAgents(
-	connectedAgents: ReadonlyArray<OnboardingConnectedAgentKind> = [],
-): Array<McpClientKind> {
-	return listOnboardingGreyedSecondAgents(connectedAgents).map(
-		(entry) => entry.id,
-	)
-}
-
-export function isOnboardingSameEcosystemAgent(
-	firstAgent: McpClientKind | null,
-	candidate: McpClientKind,
-): boolean {
-	if (!firstAgent || firstAgent === 'other') return false
-	return onboardingSameEcosystemAgents(firstAgent).includes(candidate)
 }
 
 export function onboardingSecondAgentDisableReason(

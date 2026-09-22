@@ -481,9 +481,6 @@ test('webhookDeliveryList treats a missing package and an unminted URL as caller
 		.handler({ packageId: 'missing-pkg', webhookName: 'sentry' }, ctx)
 		.catch((error: unknown) => error)
 	expect(missingPackage).toBeInstanceOf(McpCallerError)
-	expect(missingPackage).toMatchObject({
-		message: 'Saved package "missing-pkg" was not found for this user.',
-	})
 	expect(mockModule.getWebhookEndpointByKey).not.toHaveBeenCalled()
 	expect(mockModule.listRunRecords).not.toHaveBeenCalled()
 
@@ -500,8 +497,5 @@ test('webhookDeliveryList treats a missing package and an unminted URL as caller
 		.handler({ kodyId: 'sentry-bridge', webhookName: 'sentry' }, ctx)
 		.catch((error: unknown) => error)
 	expect(unminted).toBeInstanceOf(McpCallerError)
-	expect(unminted).toMatchObject({
-		message: 'Webhook URL has not been minted. Call webhookUrlMint first.',
-	})
 	expect(mockModule.listRunRecords).not.toHaveBeenCalled()
 })

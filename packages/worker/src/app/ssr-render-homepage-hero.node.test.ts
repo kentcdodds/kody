@@ -4,7 +4,6 @@ import { resetDataCacheForTests } from '#app/data-cache.ts'
 import { loadHomePageOnboardingData } from '#app/onboarding-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { landingFactoryBeats } from '#universal/landing-factory-beats.ts'
-import { getHomeOgVariant } from '#universal/home-og-variants.ts'
 import { landingHeroPrimaryCta } from '#universal/landing-home-copy.ts'
 import { createMemoryKv } from '#worker/test-support/auth-provider-harness.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
@@ -200,10 +199,6 @@ test('homepage ?og= points crawlers at that card and keeps the canonical url cle
 	resetDataCacheForTests()
 	setAuthSessionSecret(testCookieSecret)
 	const env = createTestEnv()
-	const triggers = getHomeOgVariant('triggers')
-	expect(triggers).not.toBeNull()
-	if (!triggers) return
-
 	const variantRequestUrl =
 		'https://example.com/?og=triggers&utm_source=youtube#primitives'
 	const variant = await renderAppPage({
@@ -220,7 +215,7 @@ test('homepage ?og= points crawlers at that card and keeps the canonical url cle
 	expect(variantHtml).toContain(`property="og:image" content="${imageUrl}"`)
 	expect(variantHtml).toContain(`name="twitter:image" content="${imageUrl}"`)
 	expect(variantHtml).toContain(
-		`property="og:title" content="${triggers.ogTitle}"`,
+		'property="og:title" content="Invoke deterministic code from anything"',
 	)
 	expect(variantHtml).toContain('rel="canonical" href="https://example.com/"')
 	expect(variantHtml).not.toContain('og:url" content="https://example.com/?og=')

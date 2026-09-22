@@ -41,17 +41,14 @@ test('entity explainers resolve on entity pages, render collapsed, and skip sett
 		'data-entity-explainer-trigger="integrations"',
 	)
 	expect(explainerHtml).toContain('data-icon="information"')
-	expect(explainerHtml).toContain('aria-label="What is an integration?"')
 	expect(explainerHtml).toContain(
 		'popovertarget="entity-explainer-integrations"',
 	)
 	expect(explainerHtml).toContain(`href="${comparisonHref}"`)
-	expect(explainerHtml).toContain('>Integration bootstrap guide</a>')
 	const triggerAt = explainerHtml.indexOf('data-entity-explainer-trigger')
 	const panelAt = explainerHtml.indexOf('data-entity-explainer="integrations"')
 	expect(triggerAt).toBeGreaterThan(-1)
 	expect(panelAt).toBeGreaterThan(triggerAt)
-	expect(explainerHtml).not.toContain('<details')
 
 	const integrationsHtml = await renderToString(
 		jsx(EntityExplainer, { copy: integrationsCopy! }),

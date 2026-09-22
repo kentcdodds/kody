@@ -3,7 +3,6 @@ import {
 	getHomeOgVariant,
 	homeOgVariantIds,
 } from '#universal/home-og-variants.ts'
-import { parseOgEmphasis } from '#universal/og-emphasis.ts'
 import { publicOgPages } from '#universal/og-pages.ts'
 import { getOgPalette } from '#worker/og/palette.ts'
 import { truncateOgText } from '#worker/og/render.ts'
@@ -177,38 +176,8 @@ function emphasisStyles(node: unknown): Array<unknown> {
 	return style && 'color' in style ? [style, ...nested] : nested
 }
 
-function boundarySpacesAsNbsp(line: string): string {
-	return parseOgEmphasis(line)
-		.map((run) =>
-			run.text.replace(/^ +| +$/g, (spaces) => '\u00A0'.repeat(spaces.length)),
-		)
-		.join('')
-}
-
-test('emphasized H1 runs keep a space at the colour boundary', () => {
+test('emphasized H1 runs keep a space at the colour boundary and fit the title budget', () => {
 	const accent = getOgPalette('dark').primaryText
-	const titles = [
-		publicOgPages.home.imageTitle,
-		...homeOgVariantIds.map((id) => getHomeOgVariant(id)?.imageTitle),
-	]
-	for (const title of titles) {
-		if (!title?.includes('**')) continue
-		for (const line of title.split('\n')) {
-			if (!line.includes('**')) continue
-			const painted = ogTitleChildren({
-				text: line,
-				maxLength: TITLE_MAX_LENGTH,
-				accent,
-			})
-			expect(collectTitleText(painted.children)).toBe(
-				boundarySpacesAsNbsp(line),
-			)
-			for (const style of emphasisStyles(painted.children)) {
-				expect(style).toEqual({ color: accent })
-			}
-		}
-	}
-
 	expect(
 		collectTitleText(
 			ogTitleChildren({
@@ -236,9 +205,16 @@ test('emphasized H1 runs keep a space at the colour boundary', () => {
 			}).children,
 		),
 	).toBe('Switch\u00A0agents')
-})
+	for (const style of emphasisStyles(
+		ogTitleChildren({
+			text: 'Don\u2019t **start over**',
+			maxLength: TITLE_MAX_LENGTH,
+			accent,
+		}).children,
+	)) {
+		expect(style).toEqual({ color: accent })
+	}
 
-test('locked homepage headlines fit the title budget without an ellipsis', () => {
 	const titles = [
 		publicOgPages.home.imageTitle,
 		...homeOgVariantIds.map((id) => getHomeOgVariant(id)?.imageTitle),

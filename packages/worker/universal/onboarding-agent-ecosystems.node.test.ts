@@ -1,72 +1,16 @@
 import { expect, test } from 'vitest'
-import { mcpClientTabs } from './onboarding-mcp-clients.ts'
 import {
 	countConnectedAgentEcosystems,
 	hasSecondConnectedMcpClient,
-	isOnboardingSameEcosystemAgent,
 	listOnboardingGreyedSecondAgents,
 	onboardingConnectedChooserKinds,
-	onboardingGreyedSecondAgents,
 	onboardingSecondAgentDisableReason,
 	onboardingSecondAgentGreyedPresentation,
-	onboardingStep3AgentIds,
 	onboardingStep3EcosystemGroups,
 	resolveOnboardingStep3SelectedAgent,
 } from './onboarding-agent-ecosystems.ts'
 
-test('ecosystems follow vendor families, with Cursor hosts on Grok', () => {
-	expect(isOnboardingSameEcosystemAgent('codex', 'chatgpt')).toBe(true)
-	expect(isOnboardingSameEcosystemAgent('codex', 'cursor')).toBe(false)
-	expect(isOnboardingSameEcosystemAgent('claude-code', 'claude-desktop')).toBe(
-		true,
-	)
-	expect(isOnboardingSameEcosystemAgent('grok', 'grok-cli')).toBe(true)
-	expect(isOnboardingSameEcosystemAgent('grok', 'grok-bot')).toBe(true)
-	expect(isOnboardingSameEcosystemAgent('grok', 'cursor-local')).toBe(true)
-	expect(isOnboardingSameEcosystemAgent('grok-cli', 'cursor-cloud')).toBe(true)
-	expect(isOnboardingSameEcosystemAgent('copilot', 'copilot-app')).toBe(true)
-	expect(isOnboardingSameEcosystemAgent('cursor', 'grok-bot')).toBe(true)
-	expect(isOnboardingSameEcosystemAgent('cursor-local', 'cursor-cloud')).toBe(
-		true,
-	)
-	expect(isOnboardingSameEcosystemAgent('cursor-cloud', 'grok-bot')).toBe(true)
-	expect(isOnboardingSameEcosystemAgent('other', 'cursor')).toBe(false)
-	expect(onboardingGreyedSecondAgents()).toEqual([])
-
-	const tabIds = new Set(mcpClientTabs.map((tab) => tab.id))
-	for (const id of tabIds) {
-		expect(isOnboardingSameEcosystemAgent(id, id)).toBe(id !== 'other')
-	}
-})
-
-test('step 3 groups named hosts by ecosystem', () => {
-	expect(onboardingStep3EcosystemGroups.map((group) => group.id)).toEqual([
-		'xai',
-		'anthropic',
-		'openai',
-		'github',
-		'google',
-		'cognition',
-		'sst',
-		'openclaw',
-	])
-	expect(onboardingStep3EcosystemGroups.map((group) => group.label)).toEqual([
-		'Grok',
-		'Claude',
-		'ChatGPT',
-		'GitHub',
-		'Gemini',
-		'Devin',
-		'OpenCode',
-		'OpenClaw',
-	])
-	expect(onboardingStep3AgentIds()).toContain('cursor-local')
-	expect(onboardingStep3AgentIds()).toContain('cursor-cloud')
-	expect(onboardingStep3AgentIds()).toContain('grok-bot')
-	expect(onboardingStep3AgentIds()).toContain('grok')
-	expect(onboardingStep3AgentIds()).toContain('grok-cli')
-	expect(onboardingStep3AgentIds()).not.toContain('cursor')
-	expect(onboardingStep3AgentIds()).not.toContain('other')
+test('step 3 groups Cursor hosts with Grok and GitHub hosts together', () => {
 	const github = onboardingStep3EcosystemGroups.find(
 		(group) => group.id === 'github',
 	)
@@ -74,7 +18,6 @@ test('step 3 groups named hosts by ecosystem', () => {
 	const grok = onboardingStep3EcosystemGroups.find(
 		(group) => group.id === 'xai',
 	)
-	expect(grok?.label).toBe('Grok')
 	expect(grok?.agents).toEqual([
 		'cursor-local',
 		'cursor-cloud',

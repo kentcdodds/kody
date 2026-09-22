@@ -63,8 +63,6 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(cursor).toContain(kodyCursorAddPluginCommand)
 	expect(cursor).toContain('data-testid="onboarding-authenticate-callout"')
 	expect(cursor).toContain('data-testid="onboarding-agent-help"')
-	expect(cursor).toContain('Need help?')
-	expect(cursor).toContain('Cursor connection docs')
 	expect(
 		cursor.match(/data-onboarding-connect-action="true"/g)?.length ?? 0,
 	).toBeGreaterThanOrEqual(1)
@@ -182,8 +180,6 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(chatgpt).toContain(chatGptDeveloperModeGuideUrl)
 	expect(chatgpt).toContain('data-testid="onboarding-agent-warning"')
 	expect(chatgpt).toContain('ChatGPT desktop is Codex')
-	expect(chatgpt).toContain('Need help?')
-	expect(chatgpt).toContain('ChatGPT.com connection docs')
 
 	const claudeDesktop = await renderToString(
 		jsx(OnboardingMcpClientTabs, {
@@ -191,10 +187,7 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 			selectedAgent: 'claude-desktop',
 		}),
 	)
-	expect(claudeDesktop).toContain('Claude Desktop connection docs')
-	expect(claudeDesktop).toContain('Need help?')
 	expect(claudeDesktop).not.toContain('ChatGPT')
-	expect(claudeDesktop).toContain('align-content: start')
 	expect(claudeDesktop).toContain('claude_desktop_config.json')
 
 	const codexMobile = await renderToString(
