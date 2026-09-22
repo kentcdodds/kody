@@ -204,9 +204,10 @@ exhaustive.
   package-scoped secrets (names and `package_id`, never values). Search
   `package:{id}#{subpath}` is the agent-facing door for one export contract.
   `packageGet` returns the full export array and secret FYI. `packageGet` does
-  not return `README.md`, `AGENTS.md`, or source files. For those, open a repo
-  session (`repoOpenSession` + `repoReadFile`) or clone with
-  `packageGetGitRemote`.
+  not return `README.md`, `AGENTS.md`, or source files. Open one file with
+  `package:{id}#{path}` (`#L165`, `#L165-L180`, or a Markdown heading slug). For
+  the tree or edits, open a repo session (`repoOpenSession` + `repoReadFile`,
+  same fragments on `path`) or clone with `packageGetGitRemote`.
 
 ### Package reuse
 

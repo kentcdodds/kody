@@ -15,7 +15,7 @@ Find built-in capabilities, official guides, saved packages, integrations, conne
 
 **query** — compact ranked markdown + structured matches (same actionable substance on both channels; major MCP clients usually load one). Empty or broad queries return a domain index; search again with a more specific query. Domain ids appear on capability hits. Connected MCP servers appear as server hits (name, instructions); do not expect every remote tool in unscoped results. Prefer a matching package export hit over only the parent package when it fits the task. High-confidence export hits may include an inlined call contract (import + types + execute example) on both markdown and structured — use it; otherwise open \`entity\` for the full contract.
 
-**entity: "{type}:{id}"** — detail for one hit (\`capability\` | \`guide\` | \`integration\` | \`mcp-server\` | \`package\` | \`secret\`), or 1–10 refs. The first \`:\` is the type; ids may contain colons (\`capability:mcp:home:set_pin\`). Guide detail is the full markdown when it fits the response budget; oversized guides return a table of contents. Open a heading with \`guide:{id}#{slug}\` (for example \`guide:package_subscriptions#repo.pushed\`). Open one package export contract with \`package:{id}#{subpath}\` (for example \`package:home-controls#bond-area-shades\`). Capability detail includes an execute snippet. MCP server detail lists discovered tools; after that, call \`kody.mcp["name"].tool_name(args)\`.
+**entity: "{type}:{id}"** — detail for one hit (\`capability\` | \`guide\` | \`integration\` | \`mcp-server\` | \`package\` | \`secret\`), or 1–10 refs. The first \`:\` is the type; ids may contain colons (\`capability:mcp:home:set_pin\`). Guide detail is the full markdown when it fits the response budget; oversized guides return a table of contents. Open a heading with \`guide:{id}#{slug}\` or lines with \`guide:{id}#L165\` / \`#L165-L180\`. Open one export with \`package:{id}#{subpath}\` (for example \`package:home-controls#bond-area-shades\`). Open one file with \`package:{id}#README.md#slug\` or \`package:{id}#src/file.ts#L165\`. An export subpath still wins. Capability detail includes an execute snippet. MCP server detail lists discovered tools; after that, call \`kody.mcp["name"].tool_name(args)\`.
 
 Example arguments:
 - \`{ "query": "send a message" }\`
@@ -49,7 +49,7 @@ export const searchToolInputSchema = {
 		])
 		.optional()
 		.describe(
-			'Optional exact entity reference "{type}:{id}" (capability, guide, integration, mcp-server, package, or secret), or an array of 1–10 refs to batch related detail lookups. Guide refs accept "#{heading}" to open one section. Package refs accept "#{subpath}" to open one export contract (leading "./" is optional). Use "mcp-server:{name}" to list tools on a connected MCP server.',
+			'Optional exact entity reference "{type}:{id}" (capability, guide, integration, mcp-server, package, or secret), or an array of 1–10 refs to batch related detail lookups. Guide refs accept "#{heading}" or a line anchor "#L165" / "#L165-L180". Package refs accept "#{subpath}" to open one export contract (leading "./" is optional), or "#{path}" / "#{path}#L165" / "#{path}#heading" to open one file. A fragment that matches an export subpath still opens that export. Use "mcp-server:{name}" to list tools on a connected MCP server.',
 		),
 	domain: z
 		.string()

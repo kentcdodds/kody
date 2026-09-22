@@ -7,6 +7,10 @@ export function guideSectionModeLine(slug: string) {
 	return `- Section: \`${slug}\``
 }
 
+export function guideLinesModeLine(label: string) {
+	return `- Lines: \`${label}\``
+}
+
 export function buildGuideDetailHeaderLines(input: {
 	id: string
 	description: string

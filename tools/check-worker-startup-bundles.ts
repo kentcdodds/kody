@@ -186,7 +186,12 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// MCP execute `invoke` codegen (flag-gated schema field, specifier
 		// parse, thin passthrough) spilled ~3 KB into the platform entry:
 		// CI dry-run 5_133_007 against the previous 5_130_000 budget.
-		maxEntryBytes: 5_135_000,
+		// File fragment anchors land here too: platform MCP statically
+		// registers search, and esbuild keeps the lazy repo/coding domains
+		// in this same entry, so line-anchor and file-anchor cannot stay
+		// on runtime alone. CI dry-run 5_145_618 against the previous
+		// 5_135_000 budget.
+		maxEntryBytes: 5_146_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
@@ -253,7 +258,11 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Module-local secret-authority ALS (no Symbol.for runner) plus the
 		// sealed reinstallable getter: CI dry-run 3_809_234 against the
 		// previous 3_809_000 budget (local dry-run 3_808_685).
-		maxEntryBytes: 3_810_000,
+		// File fragment anchors (`#L165`, `#L165-L180`, markdown heading
+		// slugs) on search entity, repoReadFile, and package file open pull
+		// line-anchor and file-anchor into runtime: CI dry-run 3_820_542
+		// against the previous 3_810_000 budget.
+		maxEntryBytes: 3_821_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',

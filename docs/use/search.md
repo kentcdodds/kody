@@ -174,16 +174,20 @@ malformed refs return an invalid-entity error. Guide entities return the
 official markdown (the same bundled body as the web `/docs` pages) when it fits
 the search response budget. Oversized guides return a table of contents instead
 of truncating mid-document. Open one heading with `"guide:{id}#{slug}"` (for
-example `guide:package_subscriptions#repo.pushed`). Official guide headings
-themselves must fit the remaining budget after the search entity header
+example `guide:package_subscriptions#repo.pushed`). Open a line with
+`"guide:{id}#L165"` or a range with `"guide:{id}#L165-L180"` (uppercase `L`; a
+single line includes surrounding context). A missing heading or line fails
+instead of returning the whole guide. Official guide headings themselves must
+fit the remaining budget after the search entity header
 (`kody-custom/no-oversized-guide-section`). Package entities use the same hash
 form for one export: `"package:{id}#{subpath}"` (for example
 `package:home-controls#bond-area-shades` or
-`package:home-controls#./bond-area-shades`). That heading returns the import
-specifier, JSDoc purpose, a ready-to-run **execute** snippet, `typeDefinition`,
-`functions` when the module is multi-callable, `referencedTypes`, and a JSDoc
-`@example` when present. Capability entities additionally include a ready-to-run
-**execute** snippet plus `inputTypeDefinition` / `outputTypeDefinition`.
+`package:home-controls#./bond-area-shades`). That export fragment returns the
+import specifier, JSDoc purpose, a ready-to-run **execute** snippet,
+`typeDefinition`, `functions` when the module is multi-callable,
+`referencedTypes`, and a JSDoc `@example` when present. Capability entities
+additionally include a ready-to-run **execute** snippet plus
+`inputTypeDefinition` / `outputTypeDefinition`.
 
 Pass an **array of 1–10 entity refs** when you need several related details at
 once (for example a create/poll MCP pair). Each ref resolves independently:
@@ -195,6 +199,8 @@ Examples:
 - `guide:package_authoring`
 - `guide:package_apps#asset-urls`
 - `guide:package_subscriptions#repo.pushed`
+- `guide:package_authoring#L165`
+- `guide:package_authoring#L165-L180`
 - `["guide:package_authoring", "guide:package_lifecycle"]`
 - `capability:codingGuideGet`
 - `["capability:mcp:linear:create_issue", "capability:mcp:linear:get_issue"]`
@@ -203,6 +209,9 @@ Examples:
 - `mcp-server:mcp:home`
 - `package:my-package`
 - `package:home-controls#bond-area-shades`
+- `package:home-controls#README.md#export-jsdoc`
+- `package:home-controls#src/index.ts#L165`
+- `package:home-controls#src/index.ts#L165-L180`
 - `package:550e8400-e29b-41d4-a716-446655440000`
 - `integration:spotify`
 - `secret:githubPat`
@@ -212,7 +221,7 @@ hits; `search({ entity: "guide:package_authoring" })` returns the bundled
 markdown, or a contents index when that file exceeds the response budget. Prefer
 that over executing `codingGuideGet` just to read a guide. `codingGuideGet` is
 for execute-module code that needs the body programmatically and accepts the
-same optional `section` heading.
+same optional `section` heading or line anchor (`L165`, `L165-L180`).
 
 There is **no separate `detail` flag** on search. Deeper inspection uses
 **`entity`**, not a different mode of the same ranked query.
@@ -241,10 +250,17 @@ community fork is outdated (the listing pin is not an ancestor of the fork tip),
 detail includes `listingAhead: true` and a one-line absorb next step
 (`communityGet`, then `repoPublishSession` with `absorbed_upstream_commit`).
 Ranked package hits include that same notice only when the fork is outdated.
-`packageGet` does not return files. For the full README, `AGENTS.md`, and
-source, open a repo session (`repoOpenSession` + `repoReadFile`) or clone with
-`packageGetGitRemote`. See [Repo sessions](./repo-sessions.md). Search
-`guide:package_authoring` for inbound webhooks and maintenance workflows.
+`packageGet` does not return files. Open one package file with
+`package:{id}#{path}` (`package:{id}#README.md`,
+`package:{id}#README.md#export-jsdoc`, `package:{id}#src/file.ts#L165`, or
+`package:{id}#src/file.ts#L165-L180`). A fragment that matches an export subpath
+still opens that export. Markdown heading slugs use the same rules as guide
+headings. A missing file, heading, or line fails instead of returning the whole
+file. For the tree, or to edit, open a repo session (`repoOpenSession` +
+`repoReadFile`) or clone with `packageGetGitRemote`. `repoReadFile` accepts the
+same `#L165`, `#L165-L180`, and Markdown heading fragments on `path`. See
+[Repo sessions](./repo-sessions.md). Search `guide:package_authoring` for
+inbound webhooks and maintenance workflows.
 
 Capability detail shows the exact runtime pattern for **execute**:
 

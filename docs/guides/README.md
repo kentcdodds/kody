@@ -19,7 +19,8 @@ Surfaces:
   `/docs/llms.txt`) is the compact index.
 - **`search({ entity: "guide:{id}" })`** over MCP — pass the stable frontmatter
   `id` (for example `guide:package_authoring`). Oversized docs return a table of
-  contents; open a heading with `guide:{id}#{slug}`.
+  contents; open a heading with `guide:{id}#{slug}`, or lines with
+  `guide:{id}#L165` / `guide:{id}#L165-L180`.
 - **Legacy `/guides*`** — every old URL 308s to its `/docs*` twin
   (`packages/worker/src/app/handlers/legacy-guides-redirect.ts`).
 

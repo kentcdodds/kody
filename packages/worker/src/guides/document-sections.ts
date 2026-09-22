@@ -1,3 +1,11 @@
+import {
+	FileAnchorError,
+	formatLineExcerpt,
+	formatRequestedLineLabel,
+	parseLineAnchor,
+	splitSourceLines,
+} from './line-anchor.ts'
+
 export type DocumentHeading = {
 	level: number
 	title: string
@@ -6,11 +14,20 @@ export type DocumentHeading = {
 	end: number
 }
 
+type ResolvedDocumentLines = {
+	startLine: number
+	endLine: number
+	requestedStartLine: number
+	requestedEndLine: number
+	totalLines: number
+}
+
 export type ResolvedDocumentSection = {
-	mode: 'full' | 'toc' | 'section'
+	mode: 'full' | 'toc' | 'section' | 'lines'
 	markdown: string
 	headings: Array<DocumentHeading>
 	selected: DocumentHeading | null
+	lines: ResolvedDocumentLines | null
 }
 
 const headingLinePattern = /^(#{1,6})\s+(.+?)\s*$/
@@ -127,6 +144,20 @@ export function resolveMarkdownDocument(input: {
 }): ResolvedDocumentSection {
 	const headings = parseDocumentHeadings(input.markdown)
 	if (input.section != null) {
+		const lineAnchor = parseLineAnchor(input.section)
+		if (lineAnchor.status === 'invalid') {
+			throw new Error(lineAnchor.message)
+		}
+		if (lineAnchor.status === 'ok') {
+			return resolveLineAnchor({
+				markdown: input.markdown,
+				maxChars: input.maxChars,
+				entityRef: input.entityRef,
+				headings,
+				startLine: lineAnchor.startLine,
+				endLine: lineAnchor.endLine,
+			})
+		}
 		const selected = findDocumentHeading(headings, input.section)
 		if (!selected) {
 			const available = requestableHeadings(headings)
@@ -151,6 +182,7 @@ export function resolveMarkdownDocument(input: {
 			markdown: input.markdown,
 			headings,
 			selected: null,
+			lines: null,
 		}
 	}
 
@@ -162,6 +194,48 @@ export function resolveMarkdownDocument(input: {
 		}),
 		headings,
 		selected: null,
+		lines: null,
+	}
+}
+
+function resolveLineAnchor(input: {
+	markdown: string
+	maxChars: number
+	entityRef: string
+	headings: Array<DocumentHeading>
+	startLine: number
+	endLine: number
+}): ResolvedDocumentSection {
+	const label = `${input.entityRef}#${formatRequestedLineLabel({
+		requestedStartLine: input.startLine,
+		requestedEndLine: input.endLine,
+	})}`
+	try {
+		const excerpt = formatLineExcerpt({
+			label,
+			lines: splitSourceLines(input.markdown),
+			startLine: input.startLine,
+			endLine: input.endLine,
+			maxChars: input.maxChars,
+		})
+		return {
+			mode: 'lines',
+			markdown: excerpt.content,
+			headings: input.headings,
+			selected: null,
+			lines: {
+				startLine: excerpt.startLine,
+				endLine: excerpt.endLine,
+				requestedStartLine: excerpt.requestedStartLine,
+				requestedEndLine: excerpt.requestedEndLine,
+				totalLines: excerpt.totalLines,
+			},
+		}
+	} catch (error) {
+		if (error instanceof FileAnchorError) {
+			throw new Error(error.message, { cause: error })
+		}
+		throw error
 	}
 }
 
@@ -183,6 +257,7 @@ function resolveSelectedSection(input: {
 			markdown: sectionMarkdown,
 			headings: input.headings,
 			selected: input.selected,
+			lines: null,
 		}
 	}
 
@@ -196,6 +271,7 @@ function resolveSelectedSection(input: {
 			markdown: `${sectionMarkdown.slice(0, budget)}${footer}`,
 			headings: input.headings,
 			selected: input.selected,
+			lines: null,
 		}
 	}
 
@@ -208,6 +284,7 @@ function resolveSelectedSection(input: {
 		}),
 		headings: input.headings,
 		selected: input.selected,
+		lines: null,
 	}
 }
 

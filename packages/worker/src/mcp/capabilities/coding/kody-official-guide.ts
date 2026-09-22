@@ -31,7 +31,7 @@ const advertisedGuides = guideMetadataList.filter(
 function buildCapabilityDescription(): string {
 	return [
 		'Load an official Kody guide from execute-module code (markdown, bundled from the kody repository).',
-		'Prefer `search({ entity: "guide:{id}" })` to read a guide — do not execute this capability just to load documentation. Oversized guides return a table of contents; pass `section` or use `guide:{id}#{slug}` on search.',
+		'Prefer `search({ entity: "guide:{id}" })` to read a guide — do not execute this capability just to load documentation. Oversized guides return a table of contents; pass `section` or use `guide:{id}#{slug}` on search. Line anchors use `section: "L165"` or `section: "L165-L180"` (same as `guide:{id}#L165`).',
 		'Use this from execute-module code when you need the markdown body programmatically.',
 		'The `guide` input lists each available id. Discover guides with `search({ query: "… guide" })`.',
 	].join('\n')
@@ -56,7 +56,7 @@ const inputSchema = z.object({
 		.min(1)
 		.optional()
 		.describe(
-			'Optional heading title or slug. Oversized guides return a table of contents until a section is requested.',
+			'Optional heading title or slug, or a line anchor (`L165`, `L165-L180`). Oversized guides return a table of contents until a heading is requested. A missing heading or line fails instead of returning the whole guide.',
 		),
 })
 
@@ -68,9 +68,9 @@ const outputSchema = z.object({
 			'Markdown body, a heading section, or a table of contents when the bundled guide exceeds the search response budget.',
 		),
 	bodyMode: z
-		.enum(['full', 'toc', 'section'])
+		.enum(['full', 'toc', 'section', 'lines'])
 		.describe(
-			'Whether body is the full guide, a contents index, or one requested heading.',
+			'Whether body is the full guide, a contents index, one requested heading, or a line anchor.',
 		),
 	section: z
 		.object({
@@ -79,6 +79,18 @@ const outputSchema = z.object({
 		})
 		.nullable()
 		.describe('The resolved heading when bodyMode is section.'),
+	lines: z
+		.object({
+			startLine: z.number().int(),
+			endLine: z.number().int(),
+			requestedStartLine: z.number().int(),
+			requestedEndLine: z.number().int(),
+			totalLines: z.number().int(),
+		})
+		.nullable()
+		.describe(
+			'The resolved line window when bodyMode is lines. startLine/endLine include context around a single requested line.',
+		),
 	sections: z
 		.array(
 			z.object({
@@ -88,7 +100,7 @@ const outputSchema = z.object({
 			}),
 		)
 		.describe(
-			'Headings that can be requested with section or guide:{id}#{slug}.',
+			'Headings that can be requested with section or guide:{id}#{slug}. Line anchors use L165 or L165-L180.',
 		),
 })
 
@@ -134,6 +146,7 @@ export const kodyOfficialGuideCapability = defineDomainCapability(
 							slug: resolved.selected.slug,
 						}
 					: null,
+				lines: resolved.lines,
 				sections: resolved.headings
 					.filter((heading) => heading.level >= 2)
 					.map((heading) => ({

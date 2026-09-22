@@ -3,6 +3,7 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import { guideMetadataList } from '#worker/guide-catalog-modules.ts'
 import { resolveMarkdownDocument } from '#worker/guides/document-sections.ts'
 import { type GuideMetadata } from '#worker/guides/guide-types.ts'
+import { formatRequestedLineLabel } from '#worker/guides/line-anchor.ts'
 import { lexicalScore } from '#worker/vectorize/scoring.ts'
 
 import { type SearchEntityPlugin } from '../search-entity-plugin.ts'
@@ -10,6 +11,7 @@ import { maxChars } from '../search-constants.ts'
 import {
 	buildGuideDetailHeaderLines,
 	guideContentsModeLine,
+	guideLinesModeLine,
 	guideSearchBodyBudget,
 	guideSectionModeLine,
 } from '../guide-search-budget.ts'
@@ -177,9 +179,14 @@ export const guideSearchEntityPlugin = {
 				{ cause: error },
 			)
 		}
-		const selectedRef = resolved.selected
-			? buildEntityRef(detail.id, 'guide', resolved.selected.slug)
-			: entityRef
+		const lineLabel = resolved.lines
+			? formatRequestedLineLabel(resolved.lines)
+			: null
+		const selectedRef = lineLabel
+			? buildEntityRef(detail.id, 'guide', lineLabel)
+			: resolved.selected
+				? buildEntityRef(detail.id, 'guide', resolved.selected.slug)
+				: entityRef
 		const modeLines = guideDetailModeLines(resolved)
 		const bodyLines = [...headerLines, ...modeLines, '', resolved.markdown]
 		return {
@@ -204,6 +211,7 @@ export const guideSearchEntityPlugin = {
 							slug: resolved.selected.slug,
 						}
 					: null,
+				lines: resolved.lines,
 				sections: resolved.headings
 					.filter((heading) => heading.level >= 2)
 					.map((heading) => ({
@@ -220,8 +228,9 @@ export const guideSearchEntityPlugin = {
 } satisfies SearchEntityPlugin<'guide'>
 
 function guideDetailModeLines(resolved: {
-	mode: 'full' | 'toc' | 'section'
+	mode: 'full' | 'toc' | 'section' | 'lines'
 	selected: { slug: string } | null
+	lines: { requestedStartLine: number; requestedEndLine: number } | null
 }) {
 	switch (resolved.mode) {
 		case 'full':
@@ -231,6 +240,10 @@ function guideDetailModeLines(resolved: {
 		case 'section':
 			return resolved.selected
 				? [guideSectionModeLine(resolved.selected.slug)]
+				: []
+		case 'lines':
+			return resolved.lines
+				? [guideLinesModeLine(formatRequestedLineLabel(resolved.lines))]
 				: []
 		default: {
 			const exhaustive: never = resolved.mode

@@ -40,8 +40,14 @@ To add a search entity:
    parsing accepts the new entity-backed type (first `:` is the type; the id may
    contain colons). Unknown types and malformed refs share the same
    invalid-entity error. Guide and package entity refs also accept a hash
-   fragment (`guide:{id}#{slug}`, `package:{id}#{subpath}`); other types reject
-   fragments in `resolveEntityDetail`.
+   fragment. Guides: `guide:{id}#{slug}` for a heading, or `guide:{id}#L165` /
+   `guide:{id}#L165-L180` for lines (uppercase `L`, checked before heading
+   lookup). Packages: `package:{id}#{subpath}` for one export. A package
+   fragment that is not an export subpath and names a source file
+   (`package:{id}#README.md#export-jsdoc`, `package:{id}#src/file.ts#L165`)
+   opens that file. Other entity types reject fragments in
+   `resolveEntityDetail`. Missing file anchors fail instead of returning the
+   whole file.
 9. For entity-backed types, update the public allowed-type lists so agents and
    docs stay in sync:
    - `search-tool-definition.ts` (tool description and `entity` input schema

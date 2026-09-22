@@ -119,6 +119,87 @@ test('document sections parse headings, skip fences, and resolve by slug or titl
 	expect(truncated.markdown.length).toBeLessThanOrEqual(160)
 })
 
+test('document sections resolve line anchors before heading slugs', () => {
+	const numbered = Array.from(
+		{ length: 200 },
+		(_, index) => `line ${String(index + 1)}`,
+	).join('\n')
+	const line = resolveMarkdownDocument({
+		markdown: numbered,
+		maxChars: 10_000,
+		entityRef: 'guide:demo',
+		section: 'L165',
+	})
+	expect(line.mode).toBe('lines')
+	expect(line.lines).toMatchObject({
+		requestedStartLine: 165,
+		requestedEndLine: 165,
+		startLine: 145,
+		endLine: 185,
+		totalLines: 200,
+	})
+	expect(line.markdown).toContain('165|line 165')
+	expect(line.markdown).not.toContain('144|line 144')
+	expect(line.selected).toBeNull()
+
+	const range = resolveMarkdownDocument({
+		markdown: numbered,
+		maxChars: 10_000,
+		entityRef: 'guide:demo',
+		section: 'L165-L180',
+	})
+	expect(range.mode).toBe('lines')
+	expect(range.lines).toMatchObject({
+		requestedStartLine: 165,
+		requestedEndLine: 180,
+		startLine: 165,
+		endLine: 180,
+	})
+	expect(range.markdown).not.toContain('164|line 164')
+	expect(range.markdown).not.toContain('181|line 181')
+
+	const titled = [
+		'# Title',
+		'',
+		'## l165',
+		'',
+		'Heading body.',
+		'',
+		'## Other',
+		'',
+		'Other body.',
+		...Array.from({ length: 200 }, (_, index) => `pad ${String(index + 1)}`),
+	].join('\n')
+	const heading = resolveMarkdownDocument({
+		markdown: titled,
+		maxChars: 10_000,
+		entityRef: 'guide:demo',
+		section: 'l165',
+	})
+	expect(heading.mode).toBe('section')
+	expect(heading.selected?.slug).toBe('l165')
+	expect(heading.markdown).toContain('Heading body.')
+	expect(heading.markdown).not.toContain('Other body.')
+
+	const lineWins = resolveMarkdownDocument({
+		markdown: titled,
+		maxChars: 10_000,
+		entityRef: 'guide:demo',
+		section: 'L165',
+	})
+	expect(lineWins.mode).toBe('lines')
+	expect(lineWins.markdown).not.toContain('Heading body.')
+
+	expect(() =>
+		resolveMarkdownDocument({
+			markdown: numbered,
+			maxChars: 10_000,
+			entityRef: 'guide:demo',
+			section: 'L999',
+		}),
+	).toThrow(/Line 999 is past the end of guide:demo#L999/)
+})
+
 test('document sections keep info-string fence lines inside the open block', () => {
 	const nestedFence = [
 		'# Title',
