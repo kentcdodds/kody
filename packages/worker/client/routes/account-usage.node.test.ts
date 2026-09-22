@@ -129,6 +129,8 @@ test('usage resource name keeps the explanation in a popover', async () => {
 		}),
 	)
 	expect(html).toContain('>Execute calls</span>')
+	expect(html).toContain('text-overflow: ellipsis')
+	expect(html).toContain('white-space: nowrap')
 	expect(html).toContain('popovertarget="usage-resource-execute_calls_per_day"')
 	expect(html).toContain('aria-label="What counts toward Execute calls"')
 	const panelAt = html.indexOf(

@@ -207,18 +207,25 @@ export function UsageResourceName(handle: Handle<UsageResourceNameProps>) {
 		return (
 			<span
 				mix={css({
-					display: 'inline-flex',
+					display: 'flex',
 					alignItems: 'center',
-					gap: '0.15rem',
+					gap: '0.35rem',
 					minWidth: 0,
-					maxWidth: '100%',
+					width: '100%',
 				})}
 			>
 				<span
 					mix={css({
 						fontWeight: typography.fontWeight.medium,
 						color: colors.text,
+						// The cell is nowrap and the table columns are fixed, so a
+						// long name would paint over the info button. Shrink the
+						// label and keep the button in the row.
+						flex: '0 1 auto',
 						minWidth: 0,
+						overflow: 'hidden',
+						textOverflow: 'ellipsis',
+						whiteSpace: 'nowrap',
 					})}
 				>
 					{label}
