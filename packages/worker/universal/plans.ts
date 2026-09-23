@@ -257,10 +257,10 @@ export type PlanLimits = {
 	 * webhooks, HTTP package-export invocations, package subscriptions,
 	 * and package-backed workflow steps. Sibling of
 	 * {@link PlanLimits.maxExecuteCallsPerDay} (MCP execute only) and
-	 * {@link PlanLimits.maxJobRunsPerDay} (scheduled jobs). Ladder numbers
-	 * match job runs — same cost class (saved-package sandbox work) — so
-	 * billing stays coherent until product sets distinct automation
-	 * ceilings.
+	 * {@link PlanLimits.maxJobRunsPerDay} (scheduled jobs). Daily only —
+	 * no weekly window. Public Free sits modestly above job runs. Public
+	 * Standard, Pro, and `max` are burst-friendly above job runs. Legacy
+	 * Standard/Pro stay at the earlier job-matched ceilings.
 	 */
 	maxAutomationInvocationsPerDay: number
 	/**
@@ -400,7 +400,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxOutboundFetchesPerDay: 1_000,
 		maxOutboundFetchesPerWeek: 2_500,
 		maxJobRunsPerDay: 500,
-		maxAutomationInvocationsPerDay: 500,
+		// Modestly above job runs (500).
+		maxAutomationInvocationsPerDay: 1_000,
 		minJobIntervalMs: 15 * 60 * 1000,
 		maxUniqueWorkerDaysPerMonth: 50,
 		maxDurableObjectRowsReadPerMonth: 500_000_000,
@@ -425,7 +426,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxOutboundFetchesPerDay: 15_000,
 		maxOutboundFetchesPerWeek: 40_000,
 		maxJobRunsPerDay: 1_500,
-		maxAutomationInvocationsPerDay: 1_500,
+		// Burst-friendly above job runs (1_500).
+		maxAutomationInvocationsPerDay: 10_000,
 		minJobIntervalMs: 15 * 60 * 1000,
 		maxUniqueWorkerDaysPerMonth: 350,
 		maxDurableObjectRowsReadPerMonth: 5_000_000_000,
@@ -451,7 +453,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxOutboundFetchesPerDay: 50_000,
 		maxOutboundFetchesPerWeek: 120_000,
 		maxJobRunsPerDay: 8_000,
-		maxAutomationInvocationsPerDay: 8_000,
+		// Burst-friendly above job runs (8_000).
+		maxAutomationInvocationsPerDay: 50_000,
 		minJobIntervalMs: 5 * 60 * 1000,
 		maxUniqueWorkerDaysPerMonth: 2_000,
 		maxDurableObjectRowsReadPerMonth: 20_000_000_000,
@@ -489,9 +492,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		// job runs. `max` ceilings stay on that earlier Pro table; they
 		// still dominate every paid plan.
 		maxJobRunsPerDay: 40_000,
-		// Same cost class as job runs (saved-package sandbox). Match that
-		// ceiling until product publishes distinct automation numbers.
-		maxAutomationInvocationsPerDay: 40_000,
+		// Burst-friendly above job runs (40_000).
+		maxAutomationInvocationsPerDay: 200_000,
 		minJobIntervalMs: 0,
 		maxUniqueWorkerDaysPerMonth: 25_000,
 		// Dominates public Pro (20B). Operator cap only.
@@ -506,7 +508,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
  * Unique-worker-day and Durable Object rows-read includes match the
  * public table. Those allotments are not hard-cut and not billed for
  * legacy accounts (`computeMeteringPolicy.legacyMonthlyMeters`). User
- * warning emails do not cover them.
+ * warning emails do not cover them. Automation daily ceilings stay at
+ * the earlier job-matched values (Standard 10_000, Pro 20_000).
  */
 export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
 	standard: {

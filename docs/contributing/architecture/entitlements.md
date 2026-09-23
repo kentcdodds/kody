@@ -172,9 +172,11 @@ limits, so granting `max` never reduces email capacity (`email_message_bytes`
 stays at standard/pro parity because the per-message persist ceiling is a
 platform bound, not a scalable quota). Compute rate limits on `max`
 (`execute_calls_per_day`, `outbound_fetches_per_day`, `job_runs_per_day`,
-`automation_invocations_per_day`, `concurrent_workflows`) are operator runaway
-caps sized from production usage with at least 2× busy-day headroom, and they
-still dominate every paid plan. All other resources use the ordinary
+`concurrent_workflows`) are operator runaway caps sized from production usage
+with at least 2× busy-day headroom, and they still dominate every paid plan.
+`automation_invocations_per_day` on `max` is the public burst-friendly ceiling
+above job runs (200,000 vs 40,000). Legacy Standard/Pro automation stays at the
+earlier job-matched values. All other resources use the ordinary
 `planLimits.max` numbers.
 
 | Resource                         | Limit   |
@@ -192,7 +194,7 @@ still dominate every paid plan. All other resources use the ordinary
 | `execute_calls_per_day`          | 25,000  |
 | `outbound_fetches_per_day`       | 80,000  |
 | `job_runs_per_day`               | 40,000  |
-| `automation_invocations_per_day` | 40,000  |
+| `automation_invocations_per_day` | 200,000 |
 
 ## Compute rate limits
 
@@ -231,8 +233,9 @@ close the metering → enforcement loop for the compute surfaces
   package-backed workflow steps. Nested invokes from MCP execute or package
   runtime do not consume again. This meter is a sibling of execute and jobs —
   webhook floods do not burn `execute_calls_per_day`, and MCP execute does not
-  burn `automation_invocations_per_day`. Ladder numbers currently match
-  `job_runs_per_day` (same cost class).
+  burn `automation_invocations_per_day`. Public Free sits modestly above
+  `job_runs_per_day`. Public Standard, Pro, and `max` are burst-friendly above
+  job runs. Legacy Standard/Pro stay at the earlier job-matched ceilings.
 - **Job interval floor** (`planLimits.*.minJobIntervalMs`) applies to free and
   public Standard (15 minutes) and public Pro (5 minutes). `0` still means no
   extra floor (`max`, and legacy Standard/Pro). The floor is asserted on create
