@@ -11,6 +11,7 @@ import {
 } from './tools/local-origin-dev-config.ts'
 import { writeLocalPlatformDevConfig } from './tools/local-platform-dev-config.ts'
 import { writeLocalRuntimeDevConfig } from './tools/local-runtime-dev-config.ts'
+import { resolveLocalD1PersistPath } from './tools/local-d1-persist.ts'
 import { ensureGuideCatalogModules } from './tools/build-guide-catalog-modules.ts'
 import { ensureWorkerBundlerModules } from './tools/build-worker-bundler-modules.ts'
 import { markdownAsText } from './tools/vite-markdown-as-text.ts'
@@ -26,7 +27,7 @@ const envName = process.env.CLOUDFLARE_ENV?.trim() || 'production'
 if (!process.env.CLOUDFLARE_ENV?.trim()) {
 	process.env.CLOUDFLARE_ENV = envName
 }
-const persistPath = process.env.WRANGLER_PERSIST_TO ?? '.wrangler/state'
+const persistPath = resolveLocalD1PersistPath()
 const wranglerConfigPath =
 	process.env.KODY_WRANGLER_CONFIG ?? 'packages/worker/wrangler.jsonc'
 const isOriginDeployBuild = Boolean(process.env.KODY_WRANGLER_CONFIG)

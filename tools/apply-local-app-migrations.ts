@@ -1,4 +1,14 @@
 import { spawnSync } from 'node:child_process'
+import {
+	ensureWorkerEnvFile,
+	workerEnvExampleRelativePath,
+	workerEnvRelativePath,
+} from './ensure-dev.ts'
+import { resolveLocalD1PersistPath } from './local-d1-persist.ts'
+import { isExecutedDirectly } from './node-runtime.ts'
+import { jobsWorkerWranglerConfigPath } from './wrangler-env-config.ts'
+
+const workerEnvFileArgument = `--env-file=${workerEnvRelativePath}`
 
 function localPersistenceArguments(arguments_: ReadonlyArray<string>) {
 	const allowed: Array<string> = []
@@ -20,27 +30,62 @@ function localPersistenceArguments(arguments_: ReadonlyArray<string>) {
 	return allowed
 }
 
-const passthroughArguments = localPersistenceArguments(process.argv.slice(2))
-// Pre-squash local databases carry full migration history in d1_migrations;
-// the guard rewrites that bookkeeping to the squashed baseline (and refuses
-// anything unexpected) before the regular apply runs.
-const bookkeepingArguments = [
-	'tools/ci/reset-migration-bookkeeping.ts',
-	'--local',
-	...passthroughArguments,
-]
-const migrationArguments = [
-	'--env-file=packages/worker/.env',
-	'./wrangler-env.ts',
-	'd1',
-	'migrations',
-	'apply',
-	'APP_DB',
-	'--local',
-	...passthroughArguments,
-]
+export function resolveLocalMigrationPersistArguments(
+	argv: ReadonlyArray<string>,
+	env: NodeJS.ProcessEnv = process.env,
+) {
+	const passthrough = localPersistenceArguments(argv)
+	const hasPersist = passthrough.some(
+		(argument) =>
+			argument === '--persist-to' || argument.startsWith('--persist-to='),
+	)
+	if (hasPersist) return passthrough
+	return ['--persist-to', resolveLocalD1PersistPath({ env })]
+}
 
-function runWrangler(arguments_: ReadonlyArray<string>) {
+function applyCommand(
+	binding: string,
+	persistArguments: ReadonlyArray<string>,
+	extra: ReadonlyArray<string> = [],
+) {
+	return [
+		workerEnvFileArgument,
+		'./wrangler-env.ts',
+		'd1',
+		'migrations',
+		'apply',
+		binding,
+		'--local',
+		...extra,
+		...persistArguments,
+	]
+}
+
+/**
+ * APP_DB, AUDIT_DB, and JOBS_DB migrations for one local persist directory.
+ * Bookkeeping reset stays APP_DB-only; it rewrites pre-squash `d1_migrations`
+ * rows before the regular apply.
+ */
+export function buildLocalMigrationCommands(input: {
+	argv: ReadonlyArray<string>
+	env?: NodeJS.ProcessEnv
+}) {
+	const persistArguments = resolveLocalMigrationPersistArguments(
+		input.argv,
+		input.env,
+	)
+	return [
+		['tools/ci/reset-migration-bookkeeping.ts', '--local', ...persistArguments],
+		applyCommand('APP_DB', persistArguments),
+		applyCommand('AUDIT_DB', persistArguments),
+		applyCommand('JOBS_DB', persistArguments, [
+			'--config',
+			jobsWorkerWranglerConfigPath,
+		]),
+	]
+}
+
+function runNode(arguments_: ReadonlyArray<string>) {
 	return spawnSync(process.execPath, arguments_, {
 		cwd: process.cwd(),
 		encoding: 'utf8',
@@ -49,16 +94,27 @@ function runWrangler(arguments_: ReadonlyArray<string>) {
 	})
 }
 
-const bookkeeping = runWrangler(bookkeepingArguments)
-process.stdout.write(bookkeeping.stdout)
-process.stderr.write(bookkeeping.stderr)
-if (bookkeeping.status !== 0) {
-	process.exit(bookkeeping.status ?? 1)
+function main() {
+	// `npm run dev` loads this file with `--env-file`. Create it here so a
+	// fresh `migrate:local` has the file before Wrangler starts.
+	const envFile = ensureWorkerEnvFile()
+	if (envFile.created) {
+		console.log(
+			`Created ${workerEnvRelativePath} from ${workerEnvExampleRelativePath}`,
+		)
+	}
+	for (const command of buildLocalMigrationCommands({
+		argv: process.argv.slice(2),
+	})) {
+		const result = runNode(command)
+		process.stdout.write(result.stdout ?? '')
+		process.stderr.write(result.stderr ?? '')
+		if (result.status !== 0) {
+			process.exit(result.status ?? 1)
+		}
+	}
 }
 
-const apply = runWrangler(migrationArguments)
-process.stdout.write(apply.stdout)
-process.stderr.write(apply.stderr)
-if (apply.status !== 0) {
-	process.exit(apply.status ?? 1)
+if (isExecutedDirectly(import.meta.url)) {
+	main()
 }

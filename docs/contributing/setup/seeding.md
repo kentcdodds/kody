@@ -6,8 +6,18 @@ See the [setup index](./index.md) for the other setup pages.
 - Local D1 (default):
   - `npm run migrate:local`
   - `node tools/seed-test-data.ts --local`
+- `npm run migrate:local` applies `APP_DB`, `AUDIT_DB`, and `JOBS_DB` under
+  `.wrangler/state`, the directory Vite persists (`persistState.path`,
+  overridable with `WRANGLER_PERSIST_TO`). `npm run dev` reads that same
+  directory. `node tools/seed-test-data.ts --local` inserts the fixture users
+  into that `APP_DB`.
+- `npm run migrate:local` copies `packages/worker/.env.example` to
+  `packages/worker/.env` when that file is missing (the same copy
+  `npm run dev:ensure` performs) before it loads the file.
 - Local D1 with custom persisted state:
   - `node tools/seed-test-data.ts --local --persist-to .wrangler/state/e2e`
+  - `npm run migrate:e2e` applies the same three databases to
+    `.wrangler/state/e2e`
 - Remote D1:
   - `node tools/seed-test-data.ts --remote --config <wrangler-config-path>`
   - Add `--env <name>` when the config uses environment-scoped bindings and the
@@ -39,7 +49,7 @@ tracking table would still mark the migrations as applied, so re-running them
 would recreate nothing):
 
 1. Delete local persisted state:
-   - `rm -rf .wrangler/state`
+   - `rm -rf .wrangler/state packages/worker/.wrangler packages/jobs-worker/.wrangler`
 2. Re-apply migrations:
    - `npm run migrate:local`
 3. Seed test account:

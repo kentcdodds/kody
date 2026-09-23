@@ -32,11 +32,13 @@ Prerequisites, install, and `npm run dev` notes. See the
 - **Exporting from an existing remote D1**: export the remote database to a
   local SQLite file with `tools/export-d1-remote-to-sqlite.sh`, then copy only
   the tables you need into the local Kody database.
-- Copy `packages/worker/.env.example` to `packages/worker/.env` before starting
-  any work, then update secrets as needed. The example includes placeholder
-  values for `COOKIE_SECRET` and `SECRET_STORE_KEY`; all environments must set
-  both secrets (see
+- `packages/worker/.env` supplies local secrets for `npm run dev`. Copy it from
+  `packages/worker/.env.example`, then update secrets as needed. The example
+  includes placeholder values for `COOKIE_SECRET` and `SECRET_STORE_KEY`; all
+  environments must set both secrets (see
   [`docs/contributing/secret-rotation.md`](../secret-rotation.md)).
+  `npm run dev:ensure` and `npm run migrate:local` perform that copy when the
+  file is missing.
 - `npm run dev:ensure` reuses a healthy origin `/health` on 3742–3751 (prints
   `App running at http://localhost:<port>` and exits 0), waits for a stale
   kody/workerd leftover that is listening but not serving before replacing it,

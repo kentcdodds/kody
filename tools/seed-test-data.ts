@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { basename } from 'node:path'
 import { fail, runWrangler } from './ci/resource-utils.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
+import { resolveLocalD1PersistPath } from './local-d1-persist.ts'
 import { isExecutedDirectly } from './node-runtime.ts'
 import { buildSeedIntegrationSql, buildSeedUserSql } from './seed-sql.ts'
 import { usernameFromEmail } from '../packages/worker/src/identity/username.ts'
@@ -198,13 +199,18 @@ export function shouldSeedCompanionAccount(
 	return options.local && options.email !== regularTestEmail
 }
 
-function executeSeedSql(sql: string, options: CliOptions) {
+export function buildSeedWranglerArgs(
+	sql: string,
+	options: CliOptions,
+	env: NodeJS.ProcessEnv = process.env,
+) {
 	const args = ['d1', 'execute', 'APP_DB', '--command', sql]
 	if (options.local) {
-		args.push('--local')
-		if (options.persistTo) {
-			args.push('--persist-to', options.persistTo)
-		}
+		args.push(
+			'--local',
+			'--persist-to',
+			resolveLocalD1PersistPath({ explicit: options.persistTo, env }),
+		)
 	}
 	if (options.remote) {
 		args.push('--remote')
@@ -218,8 +224,11 @@ function executeSeedSql(sql: string, options: CliOptions) {
 	if (existsSync(resolveWranglerConfigPath(configPath, process.cwd()))) {
 		args.push('--config', configPath)
 	}
+	return args
+}
 
-	const result = runWrangler(args)
+function executeSeedSql(sql: string, options: CliOptions) {
+	const result = runWrangler(buildSeedWranglerArgs(sql, options))
 	if (result.status !== 0) {
 		fail('Failed to write seed user directly to D1.')
 	}

@@ -78,6 +78,10 @@ placeholder values that work for local development.
 npm run migrate:local
 ```
 
+This writes `APP_DB`, `AUDIT_DB`, and `JOBS_DB` under `.wrangler/state` (the
+directory `npm run dev` persists) and copies `packages/worker/.env` from
+`.env.example` when the file is missing.
+
 3. Start local development:
 
 ```bash
@@ -122,7 +126,8 @@ alone, so the workflow runs that ensure step before migrations/deploy.
 
 For non-interactive or automated setup:
 
-1. Ensure `packages/worker/.env` exists (copy from `.env.example` if missing).
+1. Ensure `packages/worker/.env` exists. `npm run migrate:local` copies it from
+   `.env.example` when it is missing.
 2. Run migrations and the full validation gate:
 
 ```bash

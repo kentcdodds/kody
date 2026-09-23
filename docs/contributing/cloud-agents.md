@@ -136,9 +136,9 @@ dispatcher. The command is a no-op on machines without `~/.cursor/agent-hooks`.
 ## Environment file
 
 Copy `packages/worker/.env.example` to `packages/worker/.env` if missing.
-`dev:ensure` does this copy itself. `COOKIE_SECRET` and `SECRET_STORE_KEY` are
-required for local dev. The file does not create D1, KV, or Durable Object
-bindings.
+`dev:ensure` and `migrate:local` do this copy themselves. `COOKIE_SECRET` and
+`SECRET_STORE_KEY` are required for local dev. The file does not create D1, KV,
+or Durable Object bindings.
 
 ## Seeding a test account
 
@@ -147,7 +147,8 @@ After `npm run migrate:local`, seed the local fixture logins per
 the `admin` role) and `jane@example.com` / `ilikecode` (regular account). These
 credentials are local test fixtures only. The seed script resolves the worker
 Wrangler config automatically (same default as `wrangler-env.ts`), so
-`node tools/seed-test-data.ts --local` works without extra flags.
+`node tools/seed-test-data.ts --local` works without extra flags. Migrate and
+seed write D1 under `.wrangler/state`, the directory Vite persists.
 
 ## Local limitations
 
