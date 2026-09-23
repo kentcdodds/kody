@@ -11,6 +11,7 @@ import {
 } from '#mcp/secrets/errors.ts'
 import { buildBasicAuthSecretPlaceholder } from '#mcp/secrets/placeholders.ts'
 import * as secretService from '#mcp/secrets/service.ts'
+import * as shareGrants from '#worker/package-registry/share-grants.ts'
 import * as communityRepo from '#worker/community/repo.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import * as packageRepo from '#worker/package-registry/repo.ts'
@@ -328,6 +329,9 @@ test('fetch gateway requires package approval before resolving user secrets', as
 			createdAt: '2026-01-01T00:00:00.000Z',
 			updatedAt: '2026-01-01T00:00:00.000Z',
 		})
+	const ownerRemapSpy = vi
+		.spyOn(shareGrants, 'resolvePackageStorageOwnerUserId')
+		.mockImplementation(async (input) => input.callerUserId)
 	const forkSpy = vi
 		.spyOn(communityRepo, 'getCommunityForkByForkedPackageId')
 		.mockResolvedValue({
@@ -381,6 +385,7 @@ test('fetch gateway requires package approval before resolving user secrets', as
 		expect(resolveSpy).toHaveBeenCalledTimes(2)
 	} finally {
 		packageSpy.mockRestore()
+		ownerRemapSpy.mockRestore()
 		forkSpy.mockRestore()
 		resolveSpy.mockRestore()
 	}
@@ -1625,5 +1630,85 @@ test('executeGatewayFetch rejects when allowOutboundFetch is false', async () =>
 		expect(recordUsageSpy).not.toHaveBeenCalled()
 	} finally {
 		recordUsageSpy.mockRestore()
+	}
+})
+
+test('fetch gateway remaps share-grant secret resolution to the package owner', async () => {
+	const request = new Request('https://example.com/api', {
+		headers: {
+			Authorization: 'Bearer {{secret:ownerMountedToken|scope=user}}',
+			'x-kody-secret-authority': 'shared-pkg',
+		},
+	})
+	const guestProps = {
+		...props,
+		userId: 'guest-user',
+		storageContext: {
+			sessionId: null,
+			appId: 'shared-pkg',
+			packageId: 'shared-pkg',
+			storageId: 'shared-pkg',
+		},
+		grantedSecretAuthorityPackageIds: ['shared-pkg'],
+	}
+	const ownerSpy = vi
+		.spyOn(shareGrants, 'resolvePackageStorageOwnerUserId')
+		.mockResolvedValue('owner-user')
+	const packageSpy = vi
+		.spyOn(packageRepo, 'getSavedPackageById')
+		.mockResolvedValue({
+			id: 'shared-pkg',
+			userId: 'owner-user',
+			kodyId: 'shared-tools',
+			name: '@owner/shared-tools',
+			description: '',
+			tags: [],
+			searchText: null,
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			sourceId: 'source-shared',
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+		})
+	const forkSpy = vi
+		.spyOn(communityRepo, 'getCommunityForkByForkedPackageId')
+		.mockResolvedValue(null)
+	const resolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockResolvedValue({
+			found: true,
+			value: 'owner-secret-value',
+			scope: 'user',
+			allowedHosts: ['example.com'],
+			allowedPackages: [],
+		})
+	try {
+		const transformed = await expandSecretPlaceholders({
+			request,
+			props: guestProps,
+			env,
+		})
+		expect(ownerSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				callerUserId: 'guest-user',
+				packageId: 'shared-pkg',
+			}),
+		)
+		expect(resolveSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: 'owner-user',
+				name: 'ownerMountedToken',
+				scope: 'user',
+			}),
+		)
+		expect(transformed.headers.get('Authorization')).toBe(
+			'Bearer owner-secret-value',
+		)
+	} finally {
+		ownerSpy.mockRestore()
+		packageSpy.mockRestore()
+		forkSpy.mockRestore()
+		resolveSpy.mockRestore()
 	}
 })

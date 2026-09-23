@@ -276,6 +276,14 @@ test('createExecuteHelperPrelude exposes sandbox oauth and secret helper binding
 	).toBe(
 		'{{secret-basic:username=paypalClientId,password=paypalClientSecret|scope=user}}',
 	)
+	expect(
+		helpers.secretHeaders.basic({
+			usernameSecret: '{{secret:paypalClientId|scope=user}}',
+			passwordSecret: '{{secret:paypalClientSecret|scope=user}}',
+		}),
+	).toBe(
+		'{{secret-basic:username=paypalClientId,password=paypalClientSecret|scope=user}}',
+	)
 
 	const platform = createPlatformKody()
 	const platformCalls: Array<string> = []

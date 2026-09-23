@@ -34,6 +34,7 @@ import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { resolveSecret, type ResolvedSecret } from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
+import { resolvePackageStorageOwnerUserId } from '#worker/package-registry/share-grants.ts'
 import {
 	createProviderHostDeniedMessage,
 	createProviderNoWebsitesMessage,
@@ -437,17 +438,31 @@ export async function expandSecretPlaceholders(input: {
 		referencedSecrets.length > 0 ||
 		referencedIntegrationTokens.length > 0 ||
 		referencedProviderSecrets.length > 0
-	const userId = hasReferencedSecrets
+	const callerUserId = hasReferencedSecrets
 		? requireFetchUserId(input.props)
 		: input.props.userId
+	// Share-grant package runs: resolve mounted/package secrets as the
+	// package owner (same stamp remap as packageSecrets.get / secret
+	// providers). Do not put owner id in the placeholder — remap from
+	// trusted packageId + share grant at the platform use site.
+	// Remap only for saved-secret placeholders. Integration tokens stay on
+	// the caller; provider secrets do their own owner remap.
+	const secretUserId =
+		callerUserId && authorityPackageId && referencedSecrets.length > 0
+			? await resolvePackageStorageOwnerUserId({
+					db: input.env.APP_DB,
+					callerUserId,
+					packageId: authorityPackageId,
+				})
+			: callerUserId
 	const resolvedSecretResults = await Promise.all(
 		referencedSecrets.map(async (referenced) => {
-			if (!userId) {
+			if (!secretUserId) {
 				throw new Error(fetchSecretAuthRequiredMessage)
 			}
 			const resolved = await resolveSecret({
 				env: input.env,
-				userId,
+				userId: secretUserId,
 				name: referenced.name,
 				scope: referenced.scope,
 				storageContext,
@@ -456,7 +471,7 @@ export async function expandSecretPlaceholders(input: {
 				throw new Error(
 					await createUnresolvedSecretMessage({
 						env: input.env,
-						userId,
+						userId: secretUserId,
 						name: referenced.name,
 						scope: referenced.scope,
 						storageContext,
@@ -467,7 +482,7 @@ export async function expandSecretPlaceholders(input: {
 			await assertPackageCanAccessResolvedSecret({
 				env: input.env,
 				baseUrl: input.props.baseUrl,
-				userId,
+				userId: secretUserId,
 				storageContext,
 				authorityPackageId,
 				secretName: referenced.name,
@@ -478,19 +493,19 @@ export async function expandSecretPlaceholders(input: {
 	)
 	const resolvedIntegrationTokens = await Promise.all(
 		referencedIntegrationTokens.map(async (name) => {
-			if (!userId) {
+			if (!callerUserId) {
 				throw new Error(fetchSecretAuthRequiredMessage)
 			}
 			await assertCanUseIntegration({
 				env: input.env,
 				baseUrl: input.props.baseUrl,
-				userId,
+				userId: callerUserId,
 				name,
 				packageId: input.props.storageContext?.packageId ?? null,
 			})
 			const value = await resolveIntegrationAccessToken({
 				env: input.env,
-				userId,
+				userId: callerUserId,
 				name,
 			})
 			if (!value) {
@@ -501,13 +516,13 @@ export async function expandSecretPlaceholders(input: {
 	)
 	const resolvedProviderSecrets = await Promise.all(
 		referencedProviderSecrets.map(async (referenced) => {
-			if (!userId) {
+			if (!callerUserId) {
 				throw new Error(fetchSecretAuthRequiredMessage)
 			}
 			const resolved = await resolveProviderSecretForFetch({
 				env: input.env as Env,
 				baseUrl: input.props.baseUrl,
-				userId,
+				userId: callerUserId,
 				provider: referenced.provider,
 				ref: referenced.ref,
 				storageContext,
@@ -607,11 +622,11 @@ export async function expandSecretPlaceholders(input: {
 			),
 			normalizedHost,
 		})
-		if (userId && referencedIntegrationTokens.length > 0) {
+		if (callerUserId && referencedIntegrationTokens.length > 0) {
 			for (const name of referencedIntegrationTokens) {
 				const joined = await getJoinedIntegration({
 					env: input.env,
-					userId,
+					userId: callerUserId,
 					name,
 				})
 				if (!joined) {
