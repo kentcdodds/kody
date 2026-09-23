@@ -140,6 +140,12 @@ function unescapeStringLiteralText(text: string) {
 	)
 }
 
+function percentDecodeText(text: string) {
+	return text.replace(/%([0-9a-f]{2})/gi, (_match, hex: string) =>
+		String.fromCharCode(Number.parseInt(hex, 16)),
+	)
+}
+
 /**
  * Whether one resolved module specifier addresses a bundler-generated virtual
  * module. The shared runtime exports stamp helpers that enter secret
@@ -148,25 +154,28 @@ function unescapeStringLiteralText(text: string) {
  * resolved); percent-encoding is decoded too so the check fails closed.
  */
 export function specifierTargetsKodyVirtualModule(specifier: string) {
-	if (kodyVirtualModulePattern.test(specifier)) return true
-	try {
-		return kodyVirtualModulePattern.test(decodeURIComponent(specifier))
-	} catch {
-		return false
-	}
+	return (
+		kodyVirtualModulePattern.test(specifier) ||
+		(specifier.includes('%') &&
+			kodyVirtualModulePattern.test(percentDecodeText(specifier)))
+	)
 }
 
 /**
  * Cheap pre-filter: whether file text names the virtual directory at all,
- * including JS/JSON string-escaped spellings. Callers treat a hit as "inspect
- * the resolved specifiers", or as a rejection when the file cannot be
- * inspected precisely.
+ * including JS/JSON string-escaped and percent-encoded spellings. Callers
+ * treat a hit as "inspect the resolved specifiers", or as a rejection when
+ * the file cannot be inspected precisely.
  */
 export function textMentionsKodyVirtualModule(text: string) {
+	if (kodyVirtualModulePattern.test(text)) return true
+	const unescaped = text.includes('\\') ? unescapeStringLiteralText(text) : text
+	if (unescaped !== text && kodyVirtualModulePattern.test(unescaped)) {
+		return true
+	}
 	return (
-		kodyVirtualModulePattern.test(text) ||
-		(text.includes('\\') &&
-			kodyVirtualModulePattern.test(unescapeStringLiteralText(text)))
+		unescaped.includes('%') &&
+		kodyVirtualModulePattern.test(percentDecodeText(unescaped))
 	)
 }
 

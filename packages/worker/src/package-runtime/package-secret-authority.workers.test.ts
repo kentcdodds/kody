@@ -975,6 +975,10 @@ test(
 			},
 			{
 				importLine:
+					"import * as runtime from '/.%5F%5Fkody_virtual%5F%5F/runtime.js'",
+			},
+			{
+				importLine:
 					"const runtime = require('../.__kody_virtual__/runtime.js')",
 			},
 			{
@@ -1058,7 +1062,8 @@ test(
 					}),
 					'entry.ts': [
 						'// virtual:.__kody_virtual__/runtime.js',
-						"const note = 'bundled from .__kody_virtual__/runtime.js'",
+						"import type { RuntimeShape } from '../.__kody_virtual__/runtime.js'",
+						"const note: RuntimeShape | string = 'bundled from .__kody_virtual__/runtime.js'",
 						'export default async function main() {',
 						'\treturn { note }',
 						'}',

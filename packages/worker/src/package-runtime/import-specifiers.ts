@@ -163,7 +163,8 @@ function readStaticSpecifierNode(node: unknown): string | null {
  * Every statically known specifier the bundler resolves for a module:
  * `import` / `export … from`, `import()` and `require()` with a literal or
  * substitution-free template argument, and TypeScript `import x =
- * require()`. Returns null when the source does not parse, so callers can
+ * require()`. Type-only imports and exports are erased before bundling and
+ * are skipped. Returns null when the source does not parse, so callers can
  * fail closed instead of treating unparseable code as import-free.
  */
 export function collectBundlerResolvedSpecifiers(
@@ -197,6 +198,13 @@ export function collectBundlerResolvedSpecifiers(
 			case 'ImportDeclaration':
 			case 'ExportAllDeclaration':
 			case 'ExportNamedDeclaration':
+				if (!isTypeOnlyImportOrExport(typedNode)) remember(typedNode.source)
+				break
+			case 'TSImportEqualsDeclaration':
+				if ((typedNode as { importKind?: unknown }).importKind === 'type') {
+					return
+				}
+				break
 			case 'ImportExpression':
 				remember(typedNode.source)
 				break
