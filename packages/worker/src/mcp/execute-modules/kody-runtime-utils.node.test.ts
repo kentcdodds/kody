@@ -276,6 +276,8 @@ test('createExecuteHelperPrelude exposes sandbox oauth and secret helper binding
 	).toBe(
 		'{{secret-basic:username=paypalClientId,password=paypalClientSecret|scope=user}}',
 	)
+	// packageSecrets.get(...) opaque refs pass straight into secretHeaders.basic
+	// without package code parsing the placeholder.
 	expect(
 		helpers.secretHeaders.basic({
 			usernameSecret: '{{secret:paypalClientId|scope=user}}',

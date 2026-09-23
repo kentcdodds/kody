@@ -406,8 +406,11 @@ export async function resolvePackageMountedSecret(input: {
 		resolved,
 	})
 	// Opaque ref only — decrypted plaintext stays on the host. Package /
-	// execute JS must never observe `resolved.value`. Platform use sites
-	// (fetch gateway, secretHeaders, secretJwtSign) resolve the placeholder.
+	// execute JS must never observe `resolved.value`. The placeholder carries
+	// name+scope only (never owner id — that would be caller-forgeable).
+	// Share-grant resolution remaps to the package owner at platform use
+	// sites via the trusted package authority stamp (fetch gateway,
+	// secretHeaders → fetch, secretJwtSign).
 	const scope = resolved.scope ?? mount.scope ?? 'user'
 	return {
 		alias: input.alias,

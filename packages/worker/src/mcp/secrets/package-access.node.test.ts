@@ -661,31 +661,34 @@ test('shared package mounts resolve secrets as the owner, not the guest', async 
 		scope: 'package',
 		allowedPackages: [],
 	})
-	await expect(
-		resolvePackageMountedSecret({
-			env: { APP_DB: {} as D1Database } as Env,
-			packageId: 'pkg-1',
-			alias: 'notesToken',
-			callerContext: {
-				baseUrl: 'https://example.com',
-				user: {
-					userId: 'guest-1',
-					email: 'guest@example.com',
-					displayName: 'Guest',
-				},
-				repoContext: null,
-				storageContext: {
-					sessionId: null,
-					packageId: 'pkg-1',
-					storageId: 'pkg-1',
-				},
+	const mounted = await resolvePackageMountedSecret({
+		env: { APP_DB: {} as D1Database } as Env,
+		packageId: 'pkg-1',
+		alias: 'notesToken',
+		callerContext: {
+			baseUrl: 'https://example.com',
+			user: {
+				userId: 'guest-1',
+				email: 'guest@example.com',
+				displayName: 'Guest',
 			},
-		}),
-	).resolves.toMatchObject({
+			repoContext: null,
+			storageContext: {
+				sessionId: null,
+				packageId: 'pkg-1',
+				storageId: 'pkg-1',
+			},
+		},
+	})
+	expect(mounted).toMatchObject({
 		alias: 'notesToken',
 		ref: '{{secret:ownerNotesToken|scope=package}}',
 		scope: 'package',
 	})
+	// Host-issued opacity: name+scope only — no owner id callers could forge.
+	expect(mounted.ref).not.toContain('owner-1')
+	expect(mounted.ref).not.toContain('guest-1')
+	expect(JSON.stringify(mounted)).not.toContain('owner-token')
 	expect(mockModule.loadPackageManifestBySourceId).toHaveBeenCalledWith(
 		expect.objectContaining({ userId: 'owner-1' }),
 	)
