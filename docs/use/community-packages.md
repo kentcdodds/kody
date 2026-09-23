@@ -150,11 +150,12 @@ your customizations, then publish with `repoPublishSession` and
 The listing detail page puts the install control beside the package name.
 Official `@kody/*` listings show a fork icon and install on the first click —
 they are first-party platform packages. Listings from another account use the
-same fork icon. The tooltip says the listing is from another account and to
-verify it before using; the first click arms **Confirm fork** and the second
-click starts the install and sends `acknowledged: true` on
-`POST /community/:listingId/install.json` (the endpoint responds `409` without
-that flag). Blur cancels the confirm. Logged-out visitors get the same icon as a
+same fork icon. The tooltip says “This was built by another user. Verify it
+before using. Click again to confirm fork.” The first click arms that control
+and the second click on the same control starts the install and sends
+`acknowledged: true` on `POST /community/:listingId/install.json` (the endpoint
+responds `409` without that flag). Clicking elsewhere, navigating, or leaving
+the control clears the armed state. Logged-out visitors get the same icon as a
 login link and sign in on the first click. While the fork runs, that slot shows
 a spinner whose tooltip names the current stage.
 

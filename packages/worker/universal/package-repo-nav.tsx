@@ -196,7 +196,7 @@ const titleCss = {
 const titleNameCss = {
 	display: 'inline-flex',
 	alignItems: 'center',
-	gap: '0.45rem',
+	gap: '0.75rem',
 	flexWrap: 'nowrap' as const,
 	minWidth: 0,
 	maxWidth: '100%',

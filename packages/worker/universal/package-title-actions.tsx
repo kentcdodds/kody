@@ -20,12 +20,12 @@ import { colors } from '#universal/styles/tokens.ts'
 
 export const PACKAGE_TITLE_STATUS_SELECTOR = '[data-package-title-status]'
 const OTHER_ACCOUNT_FORK_TOOLTIP =
-	'This listing is from another account. Verify it before using.'
+	'This was built by another user. Verify it before using. Click again to confirm fork.'
 const FORK_TITLE_TOOLTIP = 'Fork'
 const OPEN_FORK_TOOLTIP = 'Open fork'
 const COPY_SETUP_PROMPT_TOOLTIP = 'Copy setup prompt'
 
-const titleIconSize = '0.95em'
+const titleIconSize = '1.15em'
 const statusTooltipId = 'package-title-status-tooltip'
 const copyTooltipId = 'package-title-copy-tooltip'
 
@@ -254,7 +254,7 @@ function renderIconControl(input: {
 const titleActionsCss = {
 	display: 'inline-flex',
 	alignItems: 'center',
-	gap: '0.35rem',
+	gap: '0.6rem',
 	flex: 'none',
 }
 

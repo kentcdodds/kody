@@ -112,9 +112,12 @@ connect a second agent — see [Onboarding process](./architecture/onboarding.md
 Official `@kody/*` listings are catalog and fork source — person accounts run
 the owned copy, not the platform package. One-click install on listing detail
 puts a fork icon beside the name for official `@kody/*` packages. Listings from
-another account use the same fork icon and `createDoubleCheck` (first click arms
-**Confirm fork**; the second click sends `acknowledged: true`; the endpoint
-responds `409` without it). User-facing install UX:
+another account use the same fork icon and `createDoubleCheck` (the tooltip is
+“This was built by another user. Verify it before using. Click again to confirm
+fork.”; the first click arms that control; the second click sends
+`acknowledged: true`; clicking elsewhere, navigating, or leaving the control
+clears the armed state; the endpoint responds `409` without the flag).
+User-facing install UX:
 [Public packages](../use/community-packages.md#one-click-install). `/community`
 cards overlay a per-request `viewerInstall` when the viewer already has a
 matching slug saved package or a `community_forks` row, so those cards show
@@ -333,9 +336,9 @@ Client routes: `packages/worker/client/routes/community*`
   or JavaScript.
 - `/community/:listingId` — the same page by listing id; redirects to the
   canonical URL. Metadata, ratings, README, one-click install (login required;
-  other-account listings arm **Confirm fork** via `createDoubleCheck`; official
-  `@kody/*` install on first click), fork prompt, and report link (report
-  requires login)
+  other-account listings arm via `createDoubleCheck` and fork on the second
+  click; official `@kody/*` install on first click), fork prompt, and report
+  link (report requires login)
 - `/community/:listingId/icon/:iconCommit` — cached package icon or generated
   fallback; serves the current icon commit or the pinned snapshot commit, and
   rejects stale commit URLs
