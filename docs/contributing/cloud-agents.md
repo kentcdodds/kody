@@ -118,10 +118,10 @@ dispatcher. The command is a no-op on machines without `~/.cursor/agent-hooks`.
   verification opens that real origin (for example `/onboarding`); do not
   substitute a `renderToString` dump of one component.
 - `npm run dev` starts the optional Cloudflare API mock, then Vite so origin SSR
-  and the client hydrate in one workerd graph. Generated platform, runtime,
-  jobs, and highlight configs join as Vite auxiliary workers (local D1/KV/DO
-  persistence). Non-TTY sessions print `App running at` only after `/health`
-  responds.
+  and the client hydrate in one workerd graph. Generated platform, runtime, and
+  jobs configs join as Vite auxiliary workers, with the committed highlight
+  config (local D1/KV/DO persistence). Non-TTY sessions print `App running at`
+  only after `/health` responds.
 - Default worker port is **3742** (`cli.ts`); the CLI picks a free port when
   3742 is taken and prints `App running at http://localhost:<port>`.
 - Run long-lived interactive `npm run dev` in tmux so the session survives tool
