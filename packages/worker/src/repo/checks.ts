@@ -439,6 +439,11 @@ declare module "kody:runtime" {
   export const events: KodyEventsRuntime;
   export const packageSecrets:
     | {
+        /**
+         * Opaque \`{{secret:name|scope=…}}\` placeholder after mount + grant
+         * checks. Never decrypted plaintext — put the string in secret-aware
+         * fetch / secretHeaders / secretJwtSign so the host resolves it.
+         */
         get(alias: string): Promise<string>;
         has(alias: string): Promise<boolean>;
       }

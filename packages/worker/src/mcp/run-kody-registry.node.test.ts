@@ -975,7 +975,7 @@ test('runModuleWithRegistry forwards package context', async () => {
 			return {
 				alias,
 				name: 'discordBotTokenKentPersonalAutomation',
-				value: 'bot-token',
+				ref: '{{secret:discordBotTokenKentPersonalAutomation|scope=user}}',
 				scope: 'user',
 				packageId: 'package-123',
 				kodyId: 'discord-gateway',
@@ -1031,7 +1031,7 @@ export default async function run() {
 		await expect(
 			providerFns?.packageSecretGet({ alias: 'token' }),
 		).resolves.toEqual({
-			value: 'bot-token',
+			value: '{{secret:discordBotTokenKentPersonalAutomation|scope=user}}',
 		})
 		expect(resolvePackageMountedSecretSpy).toHaveBeenCalledWith({
 			env,
@@ -1046,7 +1046,7 @@ export default async function run() {
 				packageId: 'pkg-a-forged',
 			}),
 		).resolves.toEqual({
-			value: 'bot-token',
+			value: '{{secret:discordBotTokenKentPersonalAutomation|scope=user}}',
 		})
 		expect(resolvePackageMountedSecretSpy).toHaveBeenCalledWith({
 			env,
@@ -1062,7 +1062,7 @@ export default async function run() {
 				[secretAuthorityArgName]: 'package-123',
 			}),
 		).resolves.toEqual({
-			value: 'bot-token',
+			value: '{{secret:discordBotTokenKentPersonalAutomation|scope=user}}',
 		})
 		expect(resolvePackageMountedSecretSpy).toHaveBeenCalledWith({
 			env,

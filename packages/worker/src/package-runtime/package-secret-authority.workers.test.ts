@@ -366,8 +366,11 @@ test(
 		)
 		expect(executeImport.error).toBeUndefined()
 		expect(executeImport.result).toEqual({
-			token: 'wake-secret-value',
+			token: '{{secret:wakeToken|scope=user}}',
 		})
+		expect(JSON.stringify(executeImport.result)).not.toContain(
+			'wake-secret-value',
+		)
 
 		const enterAsA = await runBundledModuleWithRegistry(
 			env,
@@ -408,7 +411,10 @@ test(
 			},
 		)
 		expect(enterAsA.error).toBeUndefined()
-		expect(enterAsA.result).toEqual({ token: 'wake-secret-value' })
+		expect(enterAsA.result).toEqual({
+			token: '{{secret:wakeToken|scope=user}}',
+		})
+		expect(JSON.stringify(enterAsA.result)).not.toContain('wake-secret-value')
 
 		const runAsBImportA = await runBundledModuleWithRegistry(
 			env,
@@ -447,8 +453,11 @@ test(
 		)
 		expect(runAsBImportA.error).toBeUndefined()
 		expect(runAsBImportA.result).toEqual({
-			token: 'wake-secret-value',
+			token: '{{secret:wakeToken|scope=user}}',
 		})
+		expect(JSON.stringify(runAsBImportA.result)).not.toContain(
+			'wake-secret-value',
+		)
 
 		const runAsBSteal = await runBundledModuleWithRegistry(
 			env,
@@ -547,9 +556,12 @@ test(
 		)
 		expect(runAsBRequestA.error).toBeUndefined()
 		expect(runAsBRequestA.result).toEqual({
-			stamped: { token: 'wake-secret-value' },
+			stamped: { token: '{{secret:wakeToken|scope=user}}' },
 			error: expect.stringMatching(/not allowed for package/i),
 		})
+		expect(JSON.stringify(runAsBRequestA.result)).not.toContain(
+			'wake-secret-value',
+		)
 
 		const executeUnstamped = await runBundledModuleWithRegistry(
 			env,
@@ -890,7 +902,7 @@ test(
 			packageId: wake.packageId,
 		})
 		const expectedForgeResult = {
-			legit: { value: { token: 'wake-secret-value' } },
+			legit: { value: { token: '{{secret:wakeToken|scope=user}}' } },
 			exportedInternals: [],
 			viaNamespace: { value: 'no-helper' },
 			viaComputedImport: {

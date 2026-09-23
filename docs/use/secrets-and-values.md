@@ -28,6 +28,15 @@ read a secret locked only to A — including by passing A's id to
 carries that authority. Access rules are covered in
 [Package approval](#package-approval).
 
+`packageSecrets.get(alias)` (and `kody.packageSecretGet`) return an **opaque
+`{{secret:…}}` placeholder** after mount and grant checks succeed — never
+decrypted plaintext. Put that string in a secret-aware `fetch` header/URL/body,
+or pass it to `secretHeaders.basic` / `kody.secretJwtSign` (both accept saved
+secret names **or** opaque refs). Only platform use sites resolve it. Package
+and execute JavaScript never receive plaintext from `get`. A secret-aware
+`fetch` may send the value to an **approved** host; that host's response is not
+redacted for echoed credentials — treat response bodies as untrusted.
+
 **`kody.secretSet(...)`** persists a value that is already available inside
 execution (for example an API key the package just minted). It does not return
 secret values. Do not use it for OAuth access or refresh tokens —
@@ -69,8 +78,9 @@ provider binding. Search does not crawl vaults. Bind providers on
 
 When an API requires Basic Auth derived from two saved secrets, import
 **`secretHeaders`** from **`kody:runtime`** and put the opaque helper result in
-the outbound fetch header. This example uses a placeholder API host and generic
-client credential secret names:
+the outbound fetch header. `usernameSecret` / `passwordSecret` accept a saved
+secret name **or** an opaque `{{secret:…}}` ref from `packageSecrets.get`. This
+example uses a placeholder API host and generic client credential secret names:
 
 ```ts
 import { secretHeaders } from 'kody:runtime'
@@ -105,7 +115,8 @@ algorithm. It never returns key material.
 
 The caller supplies the JWT header and claims, then performs any provider-
 specific token exchange with ordinary **`fetch`**. Pass the saved secret as
-**`private_key_secret_name`** (the signing-key secret: PKCS#8 PEM for asymmetric
+**`private_key_secret_name`** — a saved secret name **or** an opaque
+`{{secret:…}}` ref from `packageSecrets.get` (PKCS#8 PEM for asymmetric
 algorithms, HMAC key material for HS*). For service-account JSON secrets, pass
 **`private_key_json_field: "private_key"`** to sign with that field. Supported
 algorithms:

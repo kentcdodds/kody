@@ -10,6 +10,8 @@ import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { createMissingSecretMessage } from '#mcp/secrets/errors.ts'
 import * as secretService from '#mcp/secrets/service.ts'
+import * as packageAccess from '#mcp/secrets/package-access.ts'
+import * as shareGrants from '#worker/package-registry/share-grants.ts'
 import { jwtSignCapability } from './jwt-sign.ts'
 import { decodeHmacKeyMaterial, extractSecretMaterial } from './jwt-signing.ts'
 
@@ -714,5 +716,111 @@ test('decodeHmacKeyMaterial accepts encodings and rejects invalid input without 
 	} catch (error) {
 		expect(error).toBeInstanceOf(Error)
 		expect((error as Error).message).not.toContain(invalid)
+	}
+})
+
+test('secretJwtSign accepts opaque {{secret:…}} refs from packageSecrets.get', async () => {
+	const { privateKey, publicKey } = createKeyPair()
+	const resolveSecretSpy = vi.spyOn(secretService, 'resolveSecret')
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+	const env = {} as Env
+
+	try {
+		resolveSecretSpy.mockResolvedValue({
+			found: true,
+			value: privateKey,
+			scope: 'user',
+			allowedHosts: [],
+			allowedPackages: [],
+		})
+
+		const signed = await jwtSignCapability.handler(
+			{
+				private_key_secret_name: '{{secret:serviceAccountKey|scope=user}}',
+				algorithm: 'RS256',
+				claims: {
+					iss: 'service@example.com',
+					sub: 'user@example.com',
+					aud: 'https://example.com/token',
+					iat: 1,
+					exp: 3601,
+				},
+			},
+			{ env, callerContext },
+		)
+		expect(signed.jwt.split('.')).toHaveLength(3)
+		expect(resolveSecretSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: 'user-123',
+				name: 'serviceAccountKey',
+				scope: 'user',
+			}),
+		)
+		expect(JSON.stringify(signed)).not.toContain('PRIVATE KEY')
+		expect(publicKey).toContain('PUBLIC KEY')
+	} finally {
+		resolveSecretSpy.mockRestore()
+	}
+})
+
+test('secretJwtSign remaps share-grant guests to the package owner stamp', async () => {
+	const { privateKey } = createKeyPair()
+	const resolveSecretSpy = vi.spyOn(secretService, 'resolveSecret')
+	const ownerSpy = vi
+		.spyOn(shareGrants, 'resolvePackageStorageOwnerUserId')
+		.mockResolvedValue('owner-user')
+	const accessSpy = vi
+		.spyOn(packageAccess, 'assertPackageCanAccessResolvedSecret')
+		.mockResolvedValue(undefined)
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'guest-user' },
+		storageContext: {
+			sessionId: null,
+			appId: null,
+			packageId: 'shared-pkg',
+			storageId: null,
+		},
+	})
+	const env = { APP_DB: {} } as Env
+
+	try {
+		resolveSecretSpy.mockResolvedValue({
+			found: true,
+			value: privateKey,
+			scope: 'user',
+			allowedHosts: [],
+			allowedPackages: [],
+		})
+
+		await jwtSignCapability.handler(
+			{
+				private_key_secret_name: '{{secret:ownerSigningKey|scope=user}}',
+				algorithm: 'RS256',
+				claims: { sub: 'guest@example.com', iat: 1, exp: 3601 },
+			},
+			{ env, callerContext },
+		)
+
+		expect(ownerSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				callerUserId: 'guest-user',
+				packageId: 'shared-pkg',
+			}),
+		)
+		expect(resolveSecretSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: 'owner-user',
+				name: 'ownerSigningKey',
+				scope: 'user',
+			}),
+		)
+	} finally {
+		resolveSecretSpy.mockRestore()
+		ownerSpy.mockRestore()
+		accessSpy.mockRestore()
 	}
 })
