@@ -37,9 +37,10 @@ import {
 	packageSourcePrefix,
 	rootSourcePrefix,
 	dynamicPackageImportProxyPrefix,
+	configReferencesKodyVirtualModule,
 	publicRuntimeModulePath,
-	referencesKodyVirtualModule,
 	resolveRelativeModulePath,
+	specifierTargetsKodyVirtualModule,
 	resolveWorkspaceSourceFilePath,
 	runtimeModulePath,
 } from './module-graph-paths.ts'
@@ -418,21 +419,36 @@ function ensurePublicRuntimeModule(state: RewriteState) {
 }
 
 const bundlerScriptSourcePathPattern = /\.(?:[cm]?[jt]sx?)$/i
-const bundlerLoadableSourcePathPattern = /\.(?:[cm]?[jt]sx?|jsonc?|toml)$/i
+const bundlerConfigSourcePathPattern = /\.(?:jsonc?|toml)$/i
 
 /**
  * Covers every package-authored file handed to the bundler, including
  * `node_modules/` and config copied without import rewriting (package.json
  * `exports` / `imports` / `main` and wrangler `main` / `alias` could
- * otherwise point there).
+ * otherwise point there). Script files are checked by their parsed import
+ * specifiers, not raw text: a comment or string that names the directory
+ * (for example an esbuild `// virtual:` marker in committed bundle output)
+ * never resolves a module and must not fail the build.
  */
 function assertNoKodyVirtualModuleReference(filePath: string, content: string) {
 	if (isTypeDeclarationFilePath(filePath)) return
-	if (!bundlerLoadableSourcePathPattern.test(filePath)) return
-	if (!referencesKodyVirtualModule(content)) return
-	throw new Error(
-		buildInternalKodyVirtualImportMessage(`Package source "${filePath}"`),
-	)
+	if (bundlerScriptSourcePathPattern.test(filePath)) {
+		const reachesVirtualModule = collectLiteralImportNodes(content).some(
+			(node) => specifierTargetsKodyVirtualModule(node.specifier),
+		)
+		if (!reachesVirtualModule) return
+		throw new Error(
+			buildInternalKodyVirtualImportMessage(`Package source "${filePath}"`),
+		)
+	}
+	if (
+		bundlerConfigSourcePathPattern.test(filePath) &&
+		configReferencesKodyVirtualModule(content)
+	) {
+		throw new Error(
+			buildInternalKodyVirtualImportMessage(`Package config "${filePath}"`),
+		)
+	}
 }
 
 async function rewriteKodyImports(input: {

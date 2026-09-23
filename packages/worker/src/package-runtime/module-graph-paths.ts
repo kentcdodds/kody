@@ -141,17 +141,34 @@ function unescapeStringLiteralText(text: string) {
 }
 
 /**
- * Package-authored files must never address bundler-generated virtual
- * modules: the shared runtime exports stamp helpers that enter secret
- * authority for an arbitrary package id. The bundler resolves JS/JSON string
- * escapes before path lookup, so escaped spellings are checked too, and the
- * match is case-insensitive so the check fails closed.
+ * Whether one resolved module specifier addresses a bundler-generated virtual
+ * module. The shared runtime exports stamp helpers that enter secret
+ * authority for an arbitrary package id, so package imports must never reach
+ * it. Callers pass parser-decoded specifier values (JS string escapes already
+ * resolved); percent-encoding is decoded too so the check fails closed.
  */
-export function referencesKodyVirtualModule(text: string) {
+export function specifierTargetsKodyVirtualModule(specifier: string) {
+	if (kodyVirtualModulePattern.test(specifier)) return true
+	try {
+		return kodyVirtualModulePattern.test(decodeURIComponent(specifier))
+	} catch {
+		return false
+	}
+}
+
+const kodyVirtualSpecifierTokenPattern = /["'`][^"'`\s]*__kody_virtual__/i
+
+/**
+ * Manifest and config text (JSON, JSONC, TOML) whose quoted, specifier-shaped
+ * values (`main`, `exports`, wrangler `alias`, …) point into the virtual
+ * directory. Only a quoted token with no whitespace before the segment
+ * matches, so prose that merely mentions the directory does not fail.
+ */
+export function configReferencesKodyVirtualModule(text: string) {
+	if (kodyVirtualSpecifierTokenPattern.test(text)) return true
 	return (
-		kodyVirtualModulePattern.test(text) ||
-		(text.includes('\\') &&
-			kodyVirtualModulePattern.test(unescapeStringLiteralText(text)))
+		text.includes('\\') &&
+		kodyVirtualSpecifierTokenPattern.test(unescapeStringLiteralText(text))
 	)
 }
 
