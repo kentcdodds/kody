@@ -129,7 +129,7 @@ sequenceDiagram
 	Bucket-->>Host: same A bucket as the import path
 	Host->>Mounts: packageSecrets.get alias
 	Note over Mounts: stamp and run are both A
-	Mounts-->>Host: A's kody.secretMounts
+	Mounts-->>Host: opaque {{secret:…}} ref (never plaintext)
 	Host->>Gateway: fetch with user secret placeholder
 	Note over Gateway: storageContext.packageId is A
 	Gateway-->>Host: allowed_packages must include A

@@ -55,7 +55,8 @@ the things that should not live in one chat window:
 - **Memory** — durable facts and preferences on the account, surfaced to every
   connected agent.
 - **Secrets** — API keys and OAuth grants your code can use but your agent can
-  never read. There is deliberately no `secret_get`.
+  never read (mount `get` returns an opaque placeholder only). There is
+  deliberately no plaintext `secret_get`.
 - **Packages** — code your agent wrote once and saved, callable from any agent,
   with exports, a hosted app surface, and its own storage.
 - **Jobs, workflows, and webhooks** — the triggers that run those packages on a

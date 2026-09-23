@@ -1372,9 +1372,9 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			packageId,
 			alias: input.alias,
 		})
-		this.secretRedactor.track(resolved.value)
+		// Opaque placeholder string only — never track or return plaintext.
 		return {
-			value: resolved.value,
+			value: resolved.ref,
 		}
 	}
 

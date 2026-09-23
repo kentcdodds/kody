@@ -8,6 +8,7 @@ import {
 	createPackageSecretAccessDeniedBatchMessage,
 	createPackageSecretAccessDeniedMessage,
 } from './errors.ts'
+import { buildSecretPlaceholder } from './placeholders.ts'
 import { createUnresolvedSecretMessage } from './unresolved-secret.ts'
 import { resolveSecret, type ResolvedSecret } from './service.ts'
 import { type SecretScope } from './types.ts'
@@ -167,6 +168,13 @@ export async function assertPackageCanAccessResolvedSecret(input: {
 	 * `storageContext.packageId` (the run) is used.
 	 */
 	authorityPackageId?: string | null
+	/**
+	 * When false, skip implicit self-authored package access. Share-grant
+	 * owner remaps at fetch/JWT use sites must pass false so a guest cannot
+	 * open the owner's full user keychain — only `allowed_packages` grants.
+	 * Defaults to true.
+	 */
+	allowImplicitUserSecretAccess?: boolean
 }) {
 	const { authorityPackageId: packageId } = resolveCallerSecretAuthority({
 		storageContext: input.storageContext,
@@ -197,7 +205,9 @@ export async function assertPackageCanAccessResolvedSecret(input: {
 		)
 	}
 	const intent = input.intent ?? 'use'
+	const allowImplicit = input.allowImplicitUserSecretAccess ?? true
 	if (
+		allowImplicit &&
 		intent === 'use' &&
 		(await savedPackageHasImplicitUserSecretReadAccess({
 			db: input.env.APP_DB,
@@ -404,11 +414,21 @@ export async function resolvePackageMountedSecret(input: {
 		secretName: mount.name,
 		resolved,
 	})
+	// Opaque ref only — decrypted plaintext stays on the host. Package /
+	// execute JS must never observe `resolved.value`. The placeholder carries
+	// name+scope only (never owner id — that would be caller-forgeable).
+	// Share-grant resolution remaps to the package owner at platform use
+	// sites via the trusted package authority stamp (fetch gateway,
+	// secretHeaders → fetch, secretJwtSign).
+	const scope = resolved.scope ?? mount.scope ?? 'user'
 	return {
 		alias: input.alias,
 		name: mount.name,
-		value: resolved.value,
-		scope: resolved.scope ?? mount.scope ?? 'user',
+		ref: buildSecretPlaceholder({
+			name: mount.name,
+			scope,
+		}),
+		scope,
 		packageId: packageInfo.savedPackage.id,
 		kodyId: packageInfo.savedPackage.kodyId,
 	}

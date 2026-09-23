@@ -586,9 +586,6 @@ const {
 	PackageAppRuntimeBridge,
 } = await import('./package-app.ts')
 
-const { redactedSecretText } =
-	await import('#mcp/secrets/execution-secret-redactor.ts')
-
 function createPackageAppRuntimeBridgeForTest(input?: {
 	packageStorageGrantIds?: Array<string>
 }) {
@@ -1448,11 +1445,16 @@ test('buildPackageAppWorker skips published artifact lookup when publishedCommit
 	expect(packageAppRuntimeMock.buildKodyAppBundle).toHaveBeenCalledTimes(1)
 })
 
-test('package app runtime bridge redacts secrets in finish payload and merges metadata via waitUntil', async () => {
+test('package app runtime bridge returns opaque secret refs and merges metadata via waitUntil', async () => {
 	resetPackageAppRuntimeMocks()
-	const secretValue = 'pkg-app-secret-value-9f3c'
+	const opaqueRef = '{{secret:apiToken|scope=user}}'
 	packageAppRuntimeMock.resolvePackageMountedSecret.mockResolvedValue({
-		value: secretValue,
+		alias: 'api-token',
+		name: 'apiToken',
+		ref: opaqueRef,
+		scope: 'user',
+		packageId: 'package-1',
+		kodyId: 'demo',
 	})
 	let resolveFinish: (() => void) | undefined
 	const finishGate = new Promise<void>((resolve) => {
@@ -1479,7 +1481,8 @@ test('package app runtime bridge redacts secrets in finish payload and merges me
 
 	await expect(
 		bridge.packageSecretGet({ alias: 'api-token' }),
-	).resolves.toEqual({ value: secretValue })
+	).resolves.toEqual({ value: opaqueRef })
+	expect(opaqueRef).not.toContain('pkg-app-secret')
 
 	await expect(
 		bridge.packageRuntimeRunFinish({
@@ -1489,13 +1492,13 @@ test('package app runtime bridge redacts secrets in finish payload and merges me
 			logs: [
 				{
 					level: 'log',
-					message: `token=${secretValue}`,
+					message: `token=${opaqueRef}`,
 				},
-				`also ${secretValue}`,
+				`also ${opaqueRef}`,
 			],
 			error: {
 				name: 'Error',
-				message: `boom ${secretValue}`,
+				message: `boom ${opaqueRef}`,
 			},
 		}),
 	).resolves.toEqual({ ok: true })
@@ -1523,60 +1526,33 @@ test('package app runtime bridge redacts secrets in finish payload and merges me
 		logs: [
 			{
 				level: 'log',
-				message: `token=${redactedSecretText}`,
+				message: `token=${opaqueRef}`,
 			},
-			`also ${redactedSecretText}`,
+			`also ${opaqueRef}`,
 		],
 		error: {
 			name: 'Error',
-			message: `boom ${redactedSecretText}`,
+			message: `boom ${opaqueRef}`,
 		},
 	})
-	let finishInput = packageAppRuntimeMock.finishRunRecord.mock
-		.calls[0]?.[0] as {
-		logs: Array<unknown>
-		error: { message: string }
-	}
-	expect(JSON.stringify(finishInput.logs)).not.toContain(secretValue)
-	expect(finishInput.error.message).not.toContain(secretValue)
-
-	const thrownSecretValue = 'pkg-app-thrown-secret-value-4a1b'
-	packageAppRuntimeMock.resolvePackageMountedSecret.mockResolvedValue({
-		value: thrownSecretValue,
-	})
-	packageAppRuntimeMock.finishRunRecord.mockClear()
-	waitUntilTasks.length = 0
-
-	await bridge.packageSecretGet({ alias: 'api-token' })
-	await bridge.packageRuntimeRunFinish({
-		run: null,
-		status: 'error',
-		logs: [{ level: 'error', message: thrownSecretValue }],
-		error: new Error(`failed with ${thrownSecretValue}`),
-	})
-	await Promise.all(waitUntilTasks)
-
-	finishInput = packageAppRuntimeMock.finishRunRecord.mock.calls[0]?.[0] as {
-		logs: Array<{ message: string }>
-		error: Error
-	}
-	expect(finishInput.logs[0]?.message).toBe(redactedSecretText)
-	expect(finishInput.error).toBeInstanceOf(Error)
-	expect(finishInput.error.message).toBe(`failed with ${redactedSecretText}`)
-	expect(finishInput.error.message).not.toContain(thrownSecretValue)
 })
 
 test('package app secret mounts ignore author-selected packageId and honor the stamp field', async () => {
 	resetPackageAppRuntimeMocks()
 	packageAppRuntimeMock.resolvePackageMountedSecret.mockResolvedValue({
-		value: 'pkg-app-secret-value',
+		alias: 'api-token',
+		name: 'apiToken',
+		ref: '{{secret:apiToken|scope=user}}',
+		scope: 'user',
+		packageId: 'package-1',
+		kodyId: 'demo',
 	})
 	const { bridge } = createPackageAppRuntimeBridgeForTest({
 		packageStorageGrantIds: ['package-1', 'pkg-a'],
 	})
 	await expect(
 		bridge.packageSecretGet({ alias: 'api-token', packageId: 'pkg-a' }),
-	).resolves.toEqual({ value: 'pkg-app-secret-value' })
+	).resolves.toEqual({ value: '{{secret:apiToken|scope=user}}' })
 	expect(
 		packageAppRuntimeMock.resolvePackageMountedSecret,
 	).toHaveBeenCalledWith(
@@ -1592,7 +1568,7 @@ test('package app secret mounts ignore author-selected packageId and honor the s
 			packageId: 'package-1',
 			[secretAuthorityArgName]: 'pkg-a',
 		}),
-	).resolves.toEqual({ value: 'pkg-app-secret-value' })
+	).resolves.toEqual({ value: '{{secret:apiToken|scope=user}}' })
 	expect(
 		packageAppRuntimeMock.resolvePackageMountedSecret,
 	).toHaveBeenCalledWith(

@@ -1,4 +1,5 @@
 import { kodyCallDispatcherName } from '#worker/kody-evaluate-bindings.ts'
+import { parseSecretNameOrPlaceholder } from '#mcp/secrets/placeholders.ts'
 import {
 	assertIntegrationHostAllowed,
 	IntegrationHostNotAllowedError,
@@ -61,16 +62,22 @@ export type OAuthClientCredentialsInput = {
 
 export const secretHeaders = {
 	basic(input: BasicAuthSecretHeaderInput) {
+		const username = parseSecretNameOrPlaceholder(
+			input.usernameSecret,
+			'usernameSecret',
+		)
+		const password = parseSecretNameOrPlaceholder(
+			input.passwordSecret,
+			'passwordSecret',
+		)
 		return buildBasicAuthSecretPlaceholder({
-			usernameSecret: normalizeSecretName(
-				input.usernameSecret,
-				'usernameSecret',
-			),
-			passwordSecret: normalizeSecretName(
-				input.passwordSecret,
-				'passwordSecret',
-			),
-			scope: normalizeOptionalSecretScope(input.scope),
+			usernameSecret: username.name,
+			passwordSecret: password.name,
+			scope: resolveBasicAuthSecretScope({
+				explicitScope: input.scope,
+				usernameScope: username.scope,
+				passwordScope: password.scope,
+			}),
 		})
 	},
 }
@@ -241,21 +248,29 @@ function buildBasicAuthSecretPlaceholder(input: {
 		: `{{secret-basic:username=${input.usernameSecret},password=${input.passwordSecret}}}`
 }
 
-function normalizeSecretName(value: string, fieldName: string) {
-	const normalized = value.trim()
-	if (!/^[a-zA-Z0-9._-]+$/.test(normalized)) {
-		throw new Error(
-			`${fieldName} must be a saved secret name using letters, numbers, dots, underscores, or hyphens.`,
-		)
-	}
-	return normalized
-}
-
 function normalizeOptionalSecretScope(scope: SecretScope | null | undefined) {
 	if (scope == null) return null
 	if (scope === 'package' || scope === 'session' || scope === 'user')
 		return scope
 	throw new Error(`Unsupported secret scope "${scope}".`)
+}
+
+function resolveBasicAuthSecretScope(input: {
+	explicitScope: SecretScope | null | undefined
+	usernameScope: SecretScope | null
+	passwordScope: SecretScope | null
+}) {
+	const explicit = normalizeOptionalSecretScope(input.explicitScope)
+	if (explicit != null) return explicit
+	const { usernameScope, passwordScope } = input
+	if (usernameScope == null) return passwordScope
+	if (passwordScope == null) return usernameScope
+	if (usernameScope !== passwordScope) {
+		throw new Error(
+			'usernameSecret and passwordSecret opaque refs disagree on scope. Pass scope explicitly or use matching refs.',
+		)
+	}
+	return usernameScope
 }
 
 function resolveRequestUrl(
@@ -404,27 +419,66 @@ const __kodyIsMissingAccessTokenSecretError = (error, providerName) => {
       \`Integration "\${providerName}" does not have a stored access token.\`
   );
 };
-const __kodyNormalizeSecretName = (value, fieldName) => {
-  const normalized = String(value ?? '').trim();
-  if (!/^[a-zA-Z0-9._-]+$/.test(normalized)) {
+const __kodyParseSecretNameOrPlaceholder = (value, fieldName) => {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed) {
     throw new Error(
-      \`\${fieldName} must be a saved secret name using letters, numbers, dots, underscores, or hyphens.\`,
+      \`\${fieldName} is required.\`,
     );
   }
-  return normalized;
+  if (trimmed.startsWith('{{') && trimmed.endsWith('}}')) {
+    const match = /^\\{\\{secret:([a-zA-Z0-9._-]+)(?:\\|scope=(session|package|user))?\\}}$/.exec(trimmed);
+    if (!match) {
+      throw new Error(
+        \`\${fieldName} must be a saved secret name or a single {{secret:…}} opaque ref.\`,
+      );
+    }
+    const scope = match[2];
+    return {
+      name: match[1],
+      scope:
+        scope === 'package' || scope === 'session' || scope === 'user'
+          ? scope
+          : null,
+    };
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(trimmed)) {
+    throw new Error(
+      \`\${fieldName} must be a saved secret name using letters, numbers, dots, underscores, or hyphens, or a single {{secret:…}} opaque ref.\`,
+    );
+  }
+  return { name: trimmed, scope: null };
 };
 const __kodyNormalizeOptionalSecretScope = (scope) => {
   if (scope == null) return null;
   if (scope === 'package' || scope === 'session' || scope === 'user') return scope;
   throw new Error(\`Unsupported secret scope "\${scope}".\`);
 };
+const __kodyResolveBasicAuthSecretScope = (input) => {
+  const explicit = __kodyNormalizeOptionalSecretScope(input.explicitScope);
+  if (explicit != null) return explicit;
+  const usernameScope = input.usernameScope;
+  const passwordScope = input.passwordScope;
+  if (usernameScope == null) return passwordScope;
+  if (passwordScope == null) return usernameScope;
+  if (usernameScope !== passwordScope) {
+    throw new Error(
+      'usernameSecret and passwordSecret opaque refs disagree on scope. Pass scope explicitly or use matching refs.',
+    );
+  }
+  return usernameScope;
+};
 const __kodyBuildBasicAuthSecretPlaceholder = (input) => {
-  const usernameSecret = __kodyNormalizeSecretName(input.usernameSecret, 'usernameSecret');
-  const passwordSecret = __kodyNormalizeSecretName(input.passwordSecret, 'passwordSecret');
-  const scope = __kodyNormalizeOptionalSecretScope(input.scope);
+  const username = __kodyParseSecretNameOrPlaceholder(input.usernameSecret, 'usernameSecret');
+  const password = __kodyParseSecretNameOrPlaceholder(input.passwordSecret, 'passwordSecret');
+  const scope = __kodyResolveBasicAuthSecretScope({
+    explicitScope: input.scope,
+    usernameScope: username.scope,
+    passwordScope: password.scope,
+  });
   return scope
-    ? \`{{secret-basic:username=\${usernameSecret},password=\${passwordSecret}|scope=\${scope}}}\`
-    : \`{{secret-basic:username=\${usernameSecret},password=\${passwordSecret}}}\`;
+    ? \`{{secret-basic:username=\${username.name},password=\${password.name}|scope=\${scope}}}\`
+    : \`{{secret-basic:username=\${username.name},password=\${password.name}}}\`;
 };
 const secretHeaders = {
   basic(input) {

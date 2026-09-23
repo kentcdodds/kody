@@ -48,6 +48,10 @@ export type PackageStorageToolOptions = {
 }
 
 export type PackageSecretToolOptions = {
+	/**
+	 * Opaque `{{secret:…}}` placeholder after mount + grant checks. Never
+	 * decrypted plaintext — only platform use sites resolve it.
+	 */
 	get: (alias: string, packageId?: string | null) => Promise<string>
 	has: (alias: string, packageId?: string | null) => Promise<boolean>
 	/**
