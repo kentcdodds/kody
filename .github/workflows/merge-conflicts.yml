@@ -1,0 +1,46 @@
+name: Report merge conflicts
+
+# pull_request workflows do not start when GitHub cannot build the merge
+# commit (mergeable_state=dirty). This file lives on the default branch and
+# still runs. The job stays green: a pull_request_target run is recorded on
+# the default-branch SHA, and a failed job would mark that commit failed.
+# The script writes 🚧 Merge conflicts on the head SHA instead, which is what
+# `gh pr checks` reads. It never checks out or executes pull request code.
+on:
+  pull_request_target:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: read
+
+jobs:
+  merge-conflicts:
+    runs-on: ubuntu-latest
+    name: Report merge conflicts
+    timeout-minutes: 5
+    steps:
+      - name: 📦 Checkout default branch
+        uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+
+      - name: 🚧 Report merge conflicts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node tools/ci/merge-conflict-check.ts
