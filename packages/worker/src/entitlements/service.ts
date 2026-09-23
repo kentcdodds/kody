@@ -757,6 +757,7 @@ export async function readEntitlementResourceUsage(input: {
 		case 'execute_calls_per_day':
 		case 'outbound_fetches_per_day':
 		case 'job_runs_per_day':
+		case 'automation_invocations_per_day':
 			// Authoritative daily counters live in UserMeter. Callers must use
 			// consumeDailyEntitlement / readDailyEntitlementResourceUsage /
 			// readCurrentEntitlementResourceUsage. There is no D1 daily-counter

@@ -82,6 +82,10 @@ const limitGroups: ReadonlyArray<LimitGroup> = [
 			{ label: 'Outbound fetches per week', key: 'maxOutboundFetchesPerWeek' },
 			{ label: 'Job runs per day', key: 'maxJobRunsPerDay' },
 			{
+				label: 'Automation invocations per day',
+				key: 'maxAutomationInvocationsPerDay',
+			},
+			{
 				label: 'Unique worker days per month',
 				key: 'maxUniqueWorkerDaysPerMonth',
 			},

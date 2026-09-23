@@ -64,6 +64,30 @@ test('public Free/Standard/Pro have weekly execute and outbound windows; max and
 		resolveWeeklyPlanLimit('pro', 'outbound_fetches_per_day', 'legacy'),
 	).toBeNull()
 	expect(resolveWeeklyPlanLimit('free', 'job_runs_per_day')).toBeNull()
+	expect(
+		resolveWeeklyPlanLimit('free', 'automation_invocations_per_day'),
+	).toBeNull()
+})
+
+test('automation_invocations_per_day matches the job_runs ladder', () => {
+	expect(resolvePlanLimit('free', 'automation_invocations_per_day')).toBe(
+		resolvePlanLimit('free', 'job_runs_per_day'),
+	)
+	expect(resolvePlanLimit('standard', 'automation_invocations_per_day')).toBe(
+		resolvePlanLimit('standard', 'job_runs_per_day'),
+	)
+	expect(resolvePlanLimit('pro', 'automation_invocations_per_day')).toBe(
+		resolvePlanLimit('pro', 'job_runs_per_day'),
+	)
+	expect(resolvePlanLimit('max', 'automation_invocations_per_day')).toBe(
+		resolvePlanLimit('max', 'job_runs_per_day'),
+	)
+	expect(
+		resolvePlanLimit('standard', 'automation_invocations_per_day', 'legacy'),
+	).toBe(resolvePlanLimit('standard', 'job_runs_per_day', 'legacy'))
+	expect(
+		resolvePlanLimit('pro', 'automation_invocations_per_day', 'legacy'),
+	).toBe(resolvePlanLimit('pro', 'job_runs_per_day', 'legacy'))
 })
 
 test('parseEntitlementLadder treats blank as public and rejects unknown names', () => {

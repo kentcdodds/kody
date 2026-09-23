@@ -308,7 +308,10 @@ export async function invokeSavedPackageModule(input: {
 		externalRunRecordHandle: claimed.handle,
 	})
 	switch (outcome.kind) {
-		case 'artifact-unavailable': {
+		case 'artifact-unavailable':
+		case 'pre-execution-denied': {
+			// Nothing ran: free the key so a later retry (quota reset, limit
+			// bump, or artifact prepare) is not stuck replaying this response.
 			const release = await releasePackageInvocationRecord({
 				env: input.env,
 				userId: input.actor.userId,
@@ -325,7 +328,9 @@ export async function invokeSavedPackageModule(input: {
 								status: 500,
 								code: 'idempotency_conflict_unresolved',
 								message:
-									'Transient artifact preparation lost its invocation claim.',
+									outcome.kind === 'artifact-unavailable'
+										? 'Transient artifact preparation lost its invocation claim.'
+										: 'Pre-execution denial lost its invocation claim.',
 								idempotencyKey: input.idempotencyKey,
 							})
 				}

@@ -103,6 +103,7 @@ export function buildJsonErrorResponse(input: {
 	message: string
 	idempotencyKey?: string
 	replayed?: boolean
+	details?: unknown
 }) {
 	return {
 		status: input.status,
@@ -111,6 +112,9 @@ export function buildJsonErrorResponse(input: {
 			error: {
 				code: input.code,
 				message: input.message,
+				...(input.details !== undefined
+					? { details: toJsonSafeValue(input.details) }
+					: {}),
 			},
 			...(input.idempotencyKey
 				? {

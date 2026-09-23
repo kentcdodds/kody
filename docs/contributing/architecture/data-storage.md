@@ -765,9 +765,9 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
 **12**):
 
 - `daily_counters` — authoritative UTC-day counters for `email_sends_per_day`,
-  `email_receives_per_day`, `execute_calls_per_day`, and
-  `outbound_fetches_per_day` (`resource`, `day`, `count`, monotonic `revision`,
-  `updated_at`).
+  `email_receives_per_day`, `execute_calls_per_day`, `outbound_fetches_per_day`,
+  `job_runs_per_day`, and `automation_invocations_per_day` (`resource`, `day`,
+  `count`, monotonic `revision`, `updated_at`).
 - `inbound_delivery_claims` — idempotency ledger keyed by inbound `delivery_id`
   (scoped by DO identity, so the primary key is delivery id alone). Records the
   claim's resource/day, post-charge counter, revision, and `claimed_at` so
