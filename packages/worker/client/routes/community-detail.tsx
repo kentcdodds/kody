@@ -567,14 +567,11 @@ export function CommunityDetailRoute(handle: Handle) {
 			installMessage = null
 			installOutcome = null
 		}
-		if (
-			shouldResetInstallConfirm({
-				confirmedListingId: installConfirmListingId,
-				listingId: ref?.listingId ?? null,
-			})
-		) {
-			resetInstallConfirm()
-		}
+		// Navigation reloads the title frame, so the rebuilt control is idle
+		// Fork even when the listing id is unchanged. Drop the armed flag
+		// here; a same-listing shell snapshot keeps it because that path
+		// does not remount the painted Confirm fork control.
+		resetInstallConfirm()
 		if (!ref) return
 
 		const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)

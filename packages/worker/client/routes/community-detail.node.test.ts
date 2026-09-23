@@ -164,6 +164,8 @@ test('install confirm is armed only for the listing that received the first clic
 			listingId: 'listing-b',
 		}),
 	).toBe(false)
+	// Same-listing snapshots keep Confirm fork. Navigation always remounts
+	// the frame, so that path resets even when the listing id matches.
 })
 
 test('a same-listing shell snapshot keeps an in-flight install', () => {
