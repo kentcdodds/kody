@@ -114,21 +114,21 @@ export type RunLogLevel = (typeof runLogLevelValues)[number]
  * When a surface's `running` row is written.
  *
  * - `eager`: a `running` row is written at begin so an evicted or hung run is
- *   still visible. Used by every surface a user cannot watch interactively.
+ *   still visible, and both success and error persist. Used by ad-hoc
+ *   `execute` (with or without an idempotency key) and every other surface
+ *   except key-less package export. Successful execute runs therefore show up
+ *   in Activity the same way jobs and webhooks do.
  * - `on-failure`: nothing is persisted unless the run ends in `error`. Used
- *   only by key-less `execute`, which is the highest-volume surface and already
- *   returns its result (and logs) inline to the caller. Success counts for
- *   key-less `execute` come from Analytics Engine via usage metering, not from
- *   run records. When the caller supplies an `idempotencyKey`, execute upgrades
- *   to `eager` so a client-side transport timeout can still recover the outcome
- *   via `runGet` / keyed replay.
+ *   only by key-less `export` (the lean `packages.invoke` path). That caller
+ *   already holds the result inline, and the user-visible history is the
+ *   parent execute, job, webhook, or app run. An execute `idempotencyKey`
+ *   claims the row for replay; it does not decide whether a success is stored.
  */
 export type RunPersistence = 'eager' | 'on-failure'
 
 export function runPersistenceForSurface(surface: RunSurface): RunPersistence {
 	switch (surface) {
 		case 'execute':
-			return 'on-failure'
 		case 'export':
 		case 'subscription':
 		case 'app_fetch':
@@ -170,18 +170,14 @@ export type RunRecordContext = {
 
 /**
  * Persistence for one begin/finish pair. Same as
- * {@link runPersistenceForSurface} except the idempotency key toggles the two
- * caller-facing surfaces: keyed `execute` upgrades to `eager`, and key-less
- * `export` (the lean `packages.invoke` path, which has no ledger row and
- * returns its result inline) downgrades to `on-failure`.
+ * {@link runPersistenceForSurface} except key-less `export` (the lean
+ * `packages.invoke` path, which has no ledger row and returns its result
+ * inline) downgrades to `on-failure`.
  */
 export function runPersistenceForContext(
 	context: Pick<RunRecordContext, 'surface' | 'idempotencyKey'>,
 ): RunPersistence {
 	const key = context.idempotencyKey?.trim()
-	if (context.surface === 'execute' && key) {
-		return 'eager'
-	}
 	if (context.surface === 'export' && !key) {
 		return 'on-failure'
 	}

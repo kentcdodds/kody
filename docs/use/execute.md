@@ -161,8 +161,8 @@ workflows.
 A timeout means Kody stopped observing the sandbox. Kody cooperatively aborts
 nested package work where the execution model allows it, but already-started
 remote work and side effects may still complete. Do not blindly retry a
-timed-out side-effecting call: key-less successful execute calls are not written
-to Activity, so the timeout can leave you unsure whether the effect happened.
+timed-out side-effecting call. The run is written to Activity when it finishes,
+so check **Recent runs** or `runList` before starting another sandbox.
 
 Pass an optional **`idempotencyKey`** (string, max 256 characters) when the call
 must be recoverable:
@@ -183,8 +183,9 @@ must be recoverable:
   or retrying the same key then returns that terminal outcome instead of
   `inProgress` forever.
 
-Omit the key for ordinary short calls; key-less execute stays on-failure-only so
-Activity is not flooded with successful one-offs.
+Omit the key for ordinary short calls. Those runs are still listed in Activity
+when they finish. Pass a key when a retry must return the retained result
+instead of running again.
 
 To read field shapes while coding, use **search** with
 **`entity: "capability:{name}"`** for builtin capability type definitions, or

@@ -62,22 +62,18 @@ handled errors are pruned first, then successes, while open errors are retained
 last. Soft triage never deletes immediately: every row remains inspectable until
 normal retention prunes it. Payload bodies for inbound webhooks are never stored
 — only delivery metadata, a bounded handler-result snapshot when available, and
-logs. Package exports and keyed execute runs similarly retain a small
+logs. Stored execute runs, package exports, and webhook deliveries keep a small
 `metadata.result` snapshot (truncated when large).
 
-## Successful key-less `execute` calls are not listed
+## Ad-hoc `execute` runs are listed
 
-Ad-hoc MCP **`execute`** calls that succeed **without** an `idempotencyKey` are
-**not** written to Activity. You already get the result and logs in the tool
-response, and success volume is tracked separately for usage. **Failed**
-`execute` calls do appear, and execute calls that pass an `idempotencyKey` are
-recorded eagerly (including successes) so a client-side timeout can recover via
-`runGet` or a keyed retry. Every other surface (jobs, webhooks, package apps,
-workflows, exports, and so on) records both success and error.
+Ad-hoc MCP **`execute`** calls are written to Activity on success and on
+failure, with or without an `idempotencyKey`. Open errors hides successes;
+switch to **Recent runs** or filter status to success to see them. Jobs,
+webhooks, package apps, and workflows are recorded the same way.
 
-If a successful one-off `execute` without a key is missing from Activity, that
-is expected — check the original tool result instead. See
-[Execute and workflows](./execute.md) for keyed recovery.
+An **`idempotencyKey`** is for replaying one call after a client timeout, not
+for whether the run is listed. See [Execute and workflows](./execute.md).
 
 ## React to failures from a package
 

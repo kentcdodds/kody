@@ -66,7 +66,7 @@ export const runListCapability = defineDomainCapability(
 	{
 		name: 'runList',
 		description:
-			'List recent execution history across jobs, webhooks, package apps, workflows, and other runtimes so you can debug failures or inspect what ran. Key-less successful ad-hoc execute runs are intentionally not recorded (only execute failures are, plus execute calls that supplied an idempotencyKey); every other surface records both success and error. Terminal rows may include a bounded metadata.result snapshot. By default, ignored/resolved error runs are hidden (error_triage defaults to open); use runUpdate or runUpdateBulk to triage noise, or pass error_triage all/ignored/resolved to inspect those rows. Pass status success (or omit status with error_triage all) for a recent "what ran" list. Records are retained about 30 days, capped per user, and cap-pruned in this order: handled errors, successes, then open errors.',
+			'List recent execution history across jobs, webhooks, package apps, workflows, ad-hoc execute, and other runtimes so you can debug failures or inspect what ran. Ad-hoc execute runs are included for both success and error. Terminal rows may include a bounded metadata.result snapshot. By default, ignored/resolved error runs are hidden (error_triage defaults to open); use runUpdate or runUpdateBulk to triage noise, or pass error_triage all/ignored/resolved to inspect those rows. Pass status success (or omit status with error_triage all) for a recent "what ran" list. Records are retained about 30 days, capped per user, and cap-pruned in this order: handled errors, successes, then open errors.',
 		keywords: [
 			'run',
 			'runs',
