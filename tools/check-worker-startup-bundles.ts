@@ -197,7 +197,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Background-lane suspension gate (same modules as runtime) adds
 		// ~1.1 KB on top: local dry-run 5_149_225 against the previous
 		// 5_149_000 budget.
-		maxEntryBytes: 5_150_000,
+		// Opaque packageSecrets.get + share-grant remap / derived-ops on the
+		// platform startup graph: local dry-run 5_151_668 against the previous
+		// 5_150_000 budget.
+		maxEntryBytes: 5_153_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
