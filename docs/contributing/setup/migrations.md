@@ -19,18 +19,19 @@ in [Seed test account](./seeding.md).
   deployed. New migration files that only exist on your branch can be revised
   freely until they land in `main`; once deployed, any schema correction should
   ship as a new migration instead.
-- `npm run migrations:check` (also run by `npm run validate` and the pre-commit
-  hook) enforces the naming rules above against the checked-in, append-only
-  `tools/migration-ledger.json`. When adding a migration, append its filename
-  and SHA-256 digest to the ledger; never edit or remove an existing ledger
-  entry. The check compares historical entries and SQL contents with a
-  pre-change Git commit: CI supplies the PR base or push-before SHA, local
-  branches use their `main` merge base, and main/detached checkouts fall back to
-  the first parent. `HEAD` itself is never trusted. CI fetches complete history;
-  local and cloud checkouts must retain or fetch `origin/main`. If no pre-change
-  commit is available, validation fails safely once migrations exist beyond the
-  frozen bootstrap baseline. Migration SQL is hashed with canonical LF line
-  endings, and `.gitattributes` enforces LF checkouts.
+- `npm run migrations:check` (also run by `npm run validate`, and by the
+  pre-commit hook when the staged diff is not docs-only) enforces the naming
+  rules above against the checked-in, append-only `tools/migration-ledger.json`.
+  When adding a migration, append its filename and SHA-256 digest to the ledger;
+  never edit or remove an existing ledger entry. The check compares historical
+  entries and SQL contents with a pre-change Git commit: CI supplies the PR base
+  or push-before SHA, local branches use their `main` merge base, and
+  main/detached checkouts fall back to the first parent. `HEAD` itself is never
+  trusted. CI fetches complete history; local and cloud checkouts must retain or
+  fetch `origin/main`. If no pre-change commit is available, validation fails
+  safely once migrations exist beyond the frozen bootstrap baseline. Migration
+  SQL is hashed with canonical LF line endings, and `.gitattributes` enforces LF
+  checkouts.
 - Duplicate prefixes are always rejected. The 2026-08-04 migration-history
   squash collapsed the pre-launch history into `0001-squashed-init.sql` (full
   schema plus migration-seeded platform rows); the pre-squash files remain in

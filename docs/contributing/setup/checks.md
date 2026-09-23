@@ -3,35 +3,48 @@
 Husky hooks, `npm run validate`, and the test commands that gate commits and
 pushes. See the [setup index](./index.md) for the other setup pages.
 
-- `git commit` runs the Husky `pre-commit` hook, which formats staged
-  JavaScript/TypeScript/JSON/Markdown/CSS files with `oxfmt`, applies
-  `oxlint --fix` to staged JavaScript/TypeScript files, runs `npm run typecheck`
-  for the repo, and runs `npm run migrations:check` before the commit is
-  created.
-- `git push` runs the Husky `pre-push` hook, which executes `npm run test:push`
-  (`CI=1` `test:node` + `test:workers`) so pushes are blocked when those suites
-  fail. Those are the same Nx targets the CI Node / Workers jobs run, so a
-  remote-cache hit is possible after push. Playwright E2E stays in
-  `npm run validate` and the CI E2E job. The push hook stops short of that suite
-  because Playwright E2E is heavier than the unit gate, and a failed e2e leg
-  skips the unit gate when the push is retried with `--no-verify`. Bundler
-  artifacts live under `src/node_modules/.kody-generated/`. Local origin
-  development uses Vite; `wrangler-env.ts` still wraps D1/types and sibling
-  worker deploys. Playwright sets `CLOUDFLARE_ENV=test` so Vite skips
-  platform/runtime auxiliary workers. Cursor Cloud Agent VMs keep Cursor's hook
-  dispatcher as `core.hooksPath` and compose Husky through
-  `npm run hooks:ensure` (`prepare` runs it after `husky`; Cloud Agent
-  environment `start` should run it too) so `pre-push` still reaches `.husky/_`
-  — see [cloud-agents.md](../cloud-agents.md#git-hooks). Vitest's default
-  `testTimeout` is 20s so the workers pool's first Durable Object RPC in a file
-  (~10s) does not fail the default budget (see
+- `git commit` runs the Husky `pre-commit` hook. It formats staged
+  JavaScript/TypeScript/JSON/Markdown/CSS files with `oxfmt` and applies
+  `oxlint --fix` to staged JavaScript/TypeScript files. When the staged diff
+  includes a path that is not docs-only, or when that diff cannot be listed, it
+  also runs `npm run typecheck` and `npm run migrations:check`. A docs-only diff
+  skips those two commands. Docs-only means every path is under `docs/`, ends in
+  `.md`, `.mdx`, or `.mdc`, or is a `LICENSE` / `LICENCE` / `COPYING` / `NOTICE`
+  text file. A source file in the same commit, including a comment-only edit or
+  a source file renamed to markdown, runs both checks.
+- `git push` runs the Husky `pre-push` hook. It executes `npm run test:push`
+  (`CI=1` `test:node` + `test:workers`) when any updated ref changes a path that
+  is not docs-only, or when the pushed paths cannot be listed. A docs-only range
+  skips the suites. Deleting a remote branch skips them. An update diffs the
+  remote tip against the local tip, so a later docs-only push does not retest
+  commits already on the remote. A new branch diffs against the merge base of
+  `origin/HEAD`, `origin/main`, or `main` (never the branch being created).
+  Those suites are the same Nx targets the CI Node / Workers jobs run, so a
+  remote-cache hit is possible after a push that runs them. Bundled guides and
+  other markdown are docs-only, so the local suites skip them.
+  `npm run validate` and CI run those suites for every pull request. Playwright
+  E2E stays in `npm run validate` and the CI E2E job. The push hook stops short
+  of that suite because Playwright E2E is heavier than the unit gate, and a
+  failed e2e leg skips the unit gate when the push is retried with
+  `--no-verify`. Bundler artifacts live under
+  `src/node_modules/.kody-generated/`. Local origin development uses Vite;
+  `wrangler-env.ts` still wraps D1/types and sibling worker deploys. Playwright
+  sets `CLOUDFLARE_ENV=test` so Vite skips platform/runtime auxiliary workers.
+  Cursor Cloud Agent VMs keep Cursor's hook dispatcher as `core.hooksPath` and
+  compose Husky through `npm run hooks:ensure` (`prepare` runs it after `husky`;
+  Cloud Agent environment `start` should run it too) so `pre-push` still reaches
+  `.husky/_` — see [cloud-agents.md](../cloud-agents.md#git-hooks). Vitest's
+  default `testTimeout` is 20s so the workers pool's first Durable Object RPC in
+  a file (~10s) does not fail the default budget (see
   [decision 0011](../decisions/0011-workers-unit-pool-harness.md)); the push
   gate also sets `CI=1` so worker count and Nx cache hashes match GitHub
   Actions.
 - Because the commit hook already enforces formatting, lint fixes, and
-  typechecking, agents do not need to run those checks separately before every
-  commit unless they want earlier feedback or are validating a larger change set
-  before opening a PR.
+  typechecking for commits that include code, agents do not need to run those
+  checks separately before every code commit unless they want earlier feedback
+  or are validating a larger change set before opening a PR. Docs-only commits
+  format staged markdown. Typecheck and the unit suites for those commits stay
+  on `npm run validate` and CI.
 - Push-time hooks intentionally stop short of `npm run validate`; Playwright
   E2E, MCP E2E, and repo-wide format checks remain explicit checks because they
   are heavier than the push gate.

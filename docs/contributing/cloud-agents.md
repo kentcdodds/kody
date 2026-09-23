@@ -67,7 +67,9 @@ dispatcher with Husky: `core.hooksPath` stays on the dispatcher,
 `.cursor-original-hooks-path` points at `.husky/_`, and `pre-push` /
 `pre-commit` / `commit-msg` become dispatcher symlinks when those user scripts
 exist. `git push` then runs `npm run test:push` (`test:node` + `test:workers`)
-and can upload those Nx remote-cache artifacts before GitHub Actions starts.
+when the push changes a non-docs path, and can upload those Nx remote-cache
+artifacts before GitHub Actions starts. A docs-only push skips the suites.
+
 Playwright E2E is not in the push hook: that suite is heavier than the unit
 gate, and a failed e2e leg skips the unit gate when the push is retried with
 `--no-verify`. Bundler artifacts live under `src/node_modules/.kody-generated/`
