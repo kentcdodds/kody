@@ -13,10 +13,10 @@ This page is the policy for humans and agents. Do not write entries under
 
 ## Labels
 
-| Label              | Purpose                                                           |
-| ------------------ | ----------------------------------------------------------------- |
-| `friction`         | Marks a repo papercut. Applied by the issue form and by `create`. |
-| `friction-skipped` | Daily sweep will not re-investigate until this label is removed.  |
+| Label              | Purpose                                                                 |
+| ------------------ | ----------------------------------------------------------------------- |
+| `friction`         | Marks a repo papercut. Applied by the issue form, `create`, and `file`. |
+| `friction-skipped` | Daily sweep will not re-investigate until this label is removed.        |
 
 This repository does not define labels in-tree (no `.github/labels.yml`). Create
 or update them with the GitHub API or `gh label create` / `gh label edit`. The
@@ -32,10 +32,22 @@ Humans can use the
 [Friction issue form](../../.github/ISSUE_TEMPLATE/friction.yml), which applies
 the `friction` label.
 
-Agents create through `kody:@kentcdodds/friction-log/create` via Kody MCP
-`execute`. The export always applies the `friction` label, prefixes the title
-with `Friction:`, and reuses or labels an existing open issue with the same
-title.
+Agents file one issue through `kody:@kentcdodds/friction-log/create` via Kody
+MCP `execute`. The export always applies the `friction` label, prefixes the
+title with `Friction:`, and reuses or labels an existing open issue with the
+same title.
+
+Agents file a batch through `kody:@kentcdodds/friction-log/file` (several
+papercuts from one session, including the
+[ship-pr](../../.agents/skills/ship-pr/SKILL.md) leftover pass). Ship-pr uses
+`./file` before the Discord summary.
+[file-friction](../../.agents/skills/file-friction/SKILL.md) is the short entry
+point outside that pass. `./file` dedupes with the same title rules as
+`./create`, prefixes `Friction:`, applies `friction` through the create path,
+and returns `{ ok, dryRun, filed, reused, skipped }`. `commentOnReuse` defaults
+to true (a reuse posts the new body as a comment). Pass `items` (one papercut
+per entry) or the same fields as a single papercut. An empty `items` array files
+nothing.
 
 Do not use `gh issue create` or `kody:@kentcdodds/github/request` POST to
 `/repos/kentcdodds/kody/issues`. Those paths can omit the `friction` label, so
@@ -55,12 +67,31 @@ export default async function main() {
 }
 ```
 
-`body` is accepted instead of the structured fields. `dryRun: true` previews
-without posting.
+```ts
+import fileFriction from 'kody:@kentcdodds/friction-log/file'
 
-Write one issue per papercut. Include what you were doing, the unexpected cost,
-the workaround, and enough reproduction to investigate without the original
-session. Omit secrets, tokens, and unrelated private content.
+export default async function main() {
+	return await fileFriction({
+		items: [
+			{
+				title: 'what hurt',
+				whatHappened: '...',
+				whatYouWanted: '...',
+				howToReproduce: '...',
+				cost: '...',
+			},
+		],
+	})
+}
+```
+
+`body` is accepted instead of the structured fields on both exports.
+`dryRun: true` previews without posting.
+
+Write one issue per papercut (`./file` still opens one issue per `items` entry).
+Include what you were doing, the unexpected cost, the workaround, and enough
+reproduction to investigate without the original session. Omit secrets, tokens,
+and unrelated private content.
 
 Fix obvious, low-risk friction in the current change when it is already in
 scope. Still mention the fix. File an issue only for leftover or out-of-scope
@@ -138,7 +169,8 @@ finish, record `failed` with what you learned.
 
 | Export                                         | Purpose                                        |
 | ---------------------------------------------- | ---------------------------------------------- |
-| `kody:@kentcdodds/friction-log/create`         | File a `friction` issue (always labeled).      |
+| `kody:@kentcdodds/friction-log/create`         | File one `friction` issue (always labeled).    |
+| `kody:@kentcdodds/friction-log/file`           | Batch papercuts (ship-pr leftover pass).       |
 | `kody:@kentcdodds/friction-log/scan`           | Read-only label eligibility scan. No agent.    |
 | `kody:@kentcdodds/friction-log/sweep`          | Scan and optionally spawn (`dryRun`, `force`). |
 | `kody:@kentcdodds/friction-log/pause`          | Kill switch: stop spawning.                    |
