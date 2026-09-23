@@ -2,7 +2,7 @@ export type CommunityInstallUiState = 'idle' | 'submitting' | 'error'
 
 export type CommunityInstallClickDecision = 'ignore' | 'arm' | 'submit'
 
-export const CONFIRM_FORK_LABEL = 'Confirm fork'
+const CONFIRM_FORK_LABEL = 'Confirm fork'
 
 type ConfirmControl = {
 	getAttribute(name: string): string | null

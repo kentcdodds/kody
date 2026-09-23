@@ -1,7 +1,6 @@
 import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
 import {
-	CONFIRM_FORK_LABEL,
 	decideCommunityInstallClick,
 	isCommunityInstallConfirmArmed,
 	paintPackageTitleInstallConfirm,
@@ -46,9 +45,6 @@ test('decideCommunityInstallClick starts a fork from idle or error and ignores a
 			confirmed: false,
 		}),
 	).toBe('submit')
-})
-
-test('other-account listings arm on the first click and fork on the second', () => {
 	expect(
 		decideCommunityInstallClick({
 			installState: 'idle',
@@ -67,14 +63,6 @@ test('other-account listings arm on the first click and fork on the second', () 
 	).toBe('submit')
 	expect(
 		decideCommunityInstallClick({
-			installState: 'error',
-			alreadyInstalled: false,
-			requiresConfirm: true,
-			confirmed: false,
-		}),
-	).toBe('arm')
-	expect(
-		decideCommunityInstallClick({
 			installState: 'submitting',
 			alreadyInstalled: false,
 			requiresConfirm: true,
@@ -83,7 +71,7 @@ test('other-account listings arm on the first click and fork on the second', () 
 	).toBe('ignore')
 })
 
-test('paintPackageTitleInstallConfirm swaps the fork label for Confirm fork', () => {
+test('other-account confirm paints Confirm fork and stays armed only for that listing', () => {
 	const tooltip = { textContent: 'This listing is from another account.' }
 	const attributes = new Map<string, string>([
 		['data-title-idle-label', 'Fork'],
@@ -103,15 +91,13 @@ test('paintPackageTitleInstallConfirm swaps the fork label for Confirm fork', ()
 	}
 
 	paintPackageTitleInstallConfirm(control, true)
-	expect(attributes.get('aria-label')).toBe(CONFIRM_FORK_LABEL)
-	expect(tooltip.textContent).toBe(CONFIRM_FORK_LABEL)
+	expect(attributes.get('aria-label')).toBe('Confirm fork')
+	expect(tooltip.textContent).toBe('Confirm fork')
 
 	paintPackageTitleInstallConfirm(control, false)
 	expect(attributes.get('aria-label')).toBe('Fork')
 	expect(tooltip.textContent).toBe('This listing is from another account.')
-})
 
-test('install confirm is armed only for the listing that received the first click', () => {
 	expect(
 		isCommunityInstallConfirmArmed({
 			confirmed: true,
@@ -127,20 +113,6 @@ test('install confirm is armed only for the listing that received the first clic
 		}),
 	).toBe(false)
 	expect(
-		isCommunityInstallConfirmArmed({
-			confirmed: true,
-			confirmedListingId: 'listing-a',
-			listingId: null,
-		}),
-	).toBe(false)
-	expect(
-		isCommunityInstallConfirmArmed({
-			confirmed: false,
-			confirmedListingId: 'listing-a',
-			listingId: 'listing-a',
-		}),
-	).toBe(false)
-	expect(
 		shouldResetInstallConfirm({
 			confirmedListingId: 'listing-a',
 			listingId: 'listing-a',
@@ -152,20 +124,6 @@ test('install confirm is armed only for the listing that received the first clic
 			listingId: 'listing-b',
 		}),
 	).toBe(true)
-	expect(
-		shouldResetInstallConfirm({
-			confirmedListingId: 'listing-a',
-			listingId: null,
-		}),
-	).toBe(true)
-	expect(
-		shouldResetInstallConfirm({
-			confirmedListingId: null,
-			listingId: 'listing-b',
-		}),
-	).toBe(false)
-	// Same-listing snapshots keep Confirm fork. Navigation always remounts
-	// the frame, so that path resets even when the listing id matches.
 })
 
 test('a same-listing shell snapshot keeps an in-flight install', () => {

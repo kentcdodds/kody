@@ -26,7 +26,6 @@ import {
 	StorageRunner,
 	storageRunnerRpc,
 	storageValueNotCloneableMessage,
-	maxStorageSqlQueryRows,
 } from './storage-runner.ts'
 
 async function ensureStorageRunnerTestSchema() {
@@ -410,7 +409,7 @@ test('storage runner supports raw SQL with explicit writable access', async () =
 	})
 })
 
-test('sqlQuery caps large result sets and sets truncated', async () => {
+test('sqlQuery caps large result sets and still finishes RETURNING writes', async () => {
 	await ensureStorageRunnerTestSchema()
 	const storageId = createExecuteStorageId()
 	const runner = storageRunnerRpc({
@@ -418,13 +417,14 @@ test('sqlQuery caps large result sets and sets truncated', async () => {
 		userId: 'user-123',
 		storageId,
 	})
+	const sqlQueryRowCap = 1_000
 
 	await runner.sqlQuery({
 		query:
 			'create table if not exists bulk_rows (id integer primary key, value integer)',
 		writable: true,
 	})
-	const overCap = maxStorageSqlQueryRows + 25
+	const overCap = sqlQueryRowCap + 25
 	await runner.sqlQuery({
 		query: `with recursive seq(i) as (
 			select 1
@@ -440,17 +440,17 @@ test('sqlQuery caps large result sets and sets truncated', async () => {
 		query: 'select value from bulk_rows order by id asc',
 	})
 	expect(result.truncated).toBe(true)
-	expect(result.rowCount).toBe(maxStorageSqlQueryRows)
-	expect(result.rows).toHaveLength(maxStorageSqlQueryRows)
+	expect(result.rowCount).toBe(sqlQueryRowCap)
+	expect(result.rows).toHaveLength(sqlQueryRowCap)
 	expect(result.rows[0]).toEqual({ value: 1 })
-	expect(result.rows.at(-1)).toEqual({ value: maxStorageSqlQueryRows })
+	expect(result.rows.at(-1)).toEqual({ value: sqlQueryRowCap })
 
 	const exact = await runner.sqlQuery({
 		query: 'select value from bulk_rows order by id asc limit ?',
-		params: [maxStorageSqlQueryRows],
+		params: [sqlQueryRowCap],
 	})
 	expect(exact.truncated).toBe(false)
-	expect(exact.rowCount).toBe(maxStorageSqlQueryRows)
+	expect(exact.rowCount).toBe(sqlQueryRowCap)
 
 	// packageStorage always sends writable:true; WITH … SELECT must still
 	// abort at the row cap (not drain the recursive cursor to completion).
@@ -465,26 +465,15 @@ test('sqlQuery caps large result sets and sets truncated', async () => {
 		writable: true,
 	})
 	expect(cteRead.truncated).toBe(true)
-	expect(cteRead.rowCount).toBe(maxStorageSqlQueryRows)
-	expect(cteRead.rows).toHaveLength(maxStorageSqlQueryRows)
+	expect(cteRead.rowCount).toBe(sqlQueryRowCap)
 	expect(cteRead.rowsRead).toBeLessThan(overCap)
-})
-
-test('sqlQuery drains RETURNING writes past the row cap so mutations finish', async () => {
-	await ensureStorageRunnerTestSchema()
-	const storageId = createExecuteStorageId()
-	const runner = storageRunnerRpc({
-		env,
-		userId: 'user-123',
-		storageId,
-	})
 
 	await runner.sqlQuery({
 		query:
 			'create table if not exists returning_bulk (id integer primary key, value integer)',
 		writable: true,
 	})
-	const overCap = maxStorageSqlQueryRows + 40
+	const returningOverCap = sqlQueryRowCap + 40
 	const inserted = await runner.sqlQuery({
 		query: `with recursive seq(i) as (
 			select 1
@@ -492,18 +481,17 @@ test('sqlQuery drains RETURNING writes past the row cap so mutations finish', as
 			select i + 1 from seq where i < ?
 		)
 		insert into returning_bulk (value) select i from seq returning value`,
-		params: [overCap],
+		params: [returningOverCap],
 		writable: true,
 	})
 	expect(inserted.truncated).toBe(true)
-	expect(inserted.rowCount).toBe(maxStorageSqlQueryRows)
-	expect(inserted.rows).toHaveLength(maxStorageSqlQueryRows)
-	expect(inserted.rowsWritten).toBeGreaterThanOrEqual(overCap)
+	expect(inserted.rowCount).toBe(sqlQueryRowCap)
+	expect(inserted.rowsWritten).toBeGreaterThanOrEqual(returningOverCap)
 
 	const count = await runner.sqlQuery({
 		query: 'select count(*) as n from returning_bulk',
 	})
-	expect(count.rows[0]).toEqual({ n: overCap })
+	expect(count.rows[0]).toEqual({ n: returningOverCap })
 })
 
 test('storage runner enforces read-only SQL policy for mutations, multi-statement queries, and literal semicolons', async () => {

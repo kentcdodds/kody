@@ -24,7 +24,7 @@ export const sealDayStepName = 'seal-full-backup-day'
  * Incomplete days throw a non-retryable BackupError so the instance stays
  * errored until an operator starts it again.
  */
-export const sealDayStepConfig = {
+const sealDayStepConfig = {
 	retries: { limit: 4, delay: '30 seconds' },
 	timeout: '15 minutes',
 } as const

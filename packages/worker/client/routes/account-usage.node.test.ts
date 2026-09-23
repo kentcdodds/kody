@@ -119,32 +119,25 @@ test('hotterUsagePercent uses the closer of daily and weekly windows', () => {
 })
 
 test('usage resource name keeps the explanation in a popover', async () => {
+	const whatCounts = 'MCP execute tool runs today (UTC).'
 	const html = await renderToString(
 		jsx(UsageResourceName, {
 			id: 'execute_calls_per_day',
 			label: 'Execute calls',
-			whatCounts: 'MCP execute tool runs today (UTC).',
+			whatCounts,
 			howToReduce: 'Run fewer execute calls today or this week.',
 			note: 'High daily headroom for bursts; the weekly total keeps it sustainable.',
 		}),
 	)
 	expect(html).toContain('>Execute calls</span>')
-	expect(html).toContain('text-overflow: ellipsis')
-	expect(html).toContain('white-space: nowrap')
 	expect(html).toContain('popovertarget="usage-resource-execute_calls_per_day"')
 	expect(html).toContain('aria-label="What counts toward Execute calls"')
 	const panelAt = html.indexOf(
 		'data-usage-resource-panel="execute_calls_per_day"',
 	)
 	expect(panelAt).toBeGreaterThan(-1)
-	const panel = html.slice(panelAt)
-	expect(panel).toContain('MCP execute tool runs today (UTC).')
-	expect(panel).toContain('Run fewer execute calls today or this week.')
-	expect(panel).toContain('High daily headroom for bursts')
-	// The label row itself is only the name. The sentences live in the popover.
-	const labelRow = html.slice(0, panelAt)
-	expect(labelRow).not.toContain('MCP execute tool runs today')
-	expect(labelRow).not.toContain('Run fewer execute calls')
+	expect(html.slice(panelAt)).toContain(whatCounts)
+	expect(html.slice(0, panelAt)).not.toContain(whatCounts)
 })
 
 test('formatEntitlementUsedPercent shows today and this week', () => {

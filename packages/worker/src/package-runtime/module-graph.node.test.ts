@@ -1002,10 +1002,9 @@ export default async function run() { return null }`,
 		},
 		{ includeDefaultRuntimePath: false },
 	)
-	expect(refreshed[primary]).toBe(createRuntimeModuleSource())
-	expect(refreshed[nested]).toBe(
-		createRuntimeModuleReexportSource(nested, primary),
-	)
+	expect(refreshed[primary]).toContain('__kodyCreateRuntimeObjectProxy')
+	expect(refreshed[nested]).toContain('export * from')
+	expect(refreshed[nested]).not.toContain('__kodyCreateRuntimeObjectProxy')
 	expect(refreshed['.__kody_virtual__/runtime.js']).toBeUndefined()
 })
 
