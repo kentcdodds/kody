@@ -999,6 +999,14 @@ test(
 			},
 			{
 				importLine:
+					"const runtime = require(('../.__kody_virtual__/runtime.js' as string)!)",
+			},
+			{
+				importLine:
+					"const runtime = require(<string>'../.__kody_virtual__/runtime.js')",
+			},
+			{
+				importLine:
 					"import * as runtime from '/.__kody_virtual__/runtime.js' <<<",
 			},
 			{

@@ -139,7 +139,30 @@ export function collectLiteralImportNodes(
 	return nodes.sort((left, right) => left.start - right.start)
 }
 
-function readStaticSpecifierNode(node: unknown): string | null {
+const typeOnlyWrapperNodeTypes = new Set([
+	'ParenthesizedExpression',
+	'TSAsExpression',
+	'TSSatisfiesExpression',
+	'TSTypeAssertion',
+	'TSNonNullExpression',
+])
+
+function unwrapTypeOnlyExpression(node: unknown): unknown {
+	let current = node
+	while (
+		current != null &&
+		typeof current === 'object' &&
+		typeOnlyWrapperNodeTypes.has(String((current as { type?: unknown }).type))
+	) {
+		current = (current as { expression?: unknown }).expression
+	}
+	return current
+}
+
+function readStaticSpecifierNode(wrapped: unknown): string | null {
+	// `require(('x' as string))` type-strips to `require('x')`, which the
+	// bundler resolves, so parentheses and TS assertions must not hide it.
+	const node = unwrapTypeOnlyExpression(wrapped)
 	const literal = readLiteralStringNode(node)
 	if (literal) return literal.specifier
 	if (node == null || typeof node !== 'object') return null
