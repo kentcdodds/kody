@@ -331,8 +331,9 @@ Code deploys are automated by the production deploy workflow
 (`.github/workflows/deploy.yml` job `deploy-status-worker`) when a `main` push
 changes `packages/status/`, and on every manual `workflow_dispatch` of that
 workflow. The job deploys with the production-account `CLOUDFLARE_API_TOKEN`,
-sets `BUILD_COMMIT` to the deploy SHA, and syncs the same token as the Worker
-secret `CLOUDFLARE_API_TOKEN` so the status worker can send operator alert email
+sets `BUILD_COMMIT` to the deploy SHA, and syncs the Email Sending-only
+`CLOUDFLARE_STATUS_API_TOKEN` GitHub secret as the Worker secret
+`CLOUDFLARE_API_TOKEN` so the status worker can send operator alert email
 through the Cloudflare Email REST API (from `ALERT_EMAIL_FROM` to
 `ALERT_EMAIL_TO`, both non-secret vars in `packages/status/wrangler.jsonc`).
 Without that secret, alert sends are skipped and logged.
@@ -531,19 +532,33 @@ from `packages/worker/.env`.
 
 Configure these GitHub Actions secrets and variables for workflows:
 
-- `CLOUDFLARE_API_TOKEN` (Workers deploy + D1 edit access on the correct
-  account; also reused for remote AI and Cloudflare API workflows that run with
-  account secrets + package workflows)
-- `CLOUDFLARE_RUNTIME_API_TOKEN` (optional; the value uploaded to the
-  `kody-runtime` Worker as its `CLOUDFLARE_API_TOKEN` secret. The runtime lane
+- `CLOUDFLARE_API_TOKEN` (deploy token: Workers deploy + D1 edit access on the
+  correct account for wrangler and `tools/ci` resource ensure; also reused for
+  remote AI and Cloudflare API workflows that run with account secrets + package
+  workflows. The production deploy never uploads it to a Worker.)
+- `CLOUDFLARE_APP_API_TOKEN` (required for production deploys; uploaded to
+  `kody-production` and `kody-platform` as their `CLOUDFLARE_API_TOKEN` Worker
+  secret. Needs `Account · Email Sending · Edit`, `Account · Artifacts · Edit`,
+  `Account · Account Analytics · Read` (Analytics Engine SQL for admin insights
+  and usage rollups), and `Account · Queues · Edit` (Artifacts push
+  event-subscription lookup and cleanup).)
+- `CLOUDFLARE_RUNTIME_API_TOKEN` (required for production deploys; uploaded to
+  `kody-runtime` as its `CLOUDFLARE_API_TOKEN` Worker secret. The runtime lane
   executes package capabilities in-process, and the only Cloudflare REST APIs
   those reach are Email Sending (`/email/sending/send`) and Artifacts
   (`/artifacts/namespaces/...`, including repo token minting, which has no
   binding equivalent), so this token needs exactly
   `Account · Email Sending · Edit` and `Account · Artifacts · Edit`. Workers AI,
   Images, Vectorize, D1, and Queues are reached through bindings or are not used
-  by the runtime lane. When unset, the deploy falls back to
-  `CLOUDFLARE_API_TOKEN`.)
+  by the runtime lane.)
+- `CLOUDFLARE_STATUS_API_TOKEN` (required for production deploys; uploaded to
+  `kody-status` as its `CLOUDFLARE_API_TOKEN` Worker secret for operator alert
+  email. Needs only `Account · Email Sending · Edit`.)
+- Production deploys fail before any resource, migration, or secret change when
+  `CLOUDFLARE_APP_API_TOKEN`, `CLOUDFLARE_RUNTIME_API_TOKEN`, or
+  `CLOUDFLARE_STATUS_API_TOKEN` is unset or equals `CLOUDFLARE_API_TOKEN`
+  (`tools/ci/check-worker-cloudflare-tokens.ts`). There is no fallback to the
+  deploy token.
 - `CLOUDFLARE_ACCOUNT_ID` (required GitHub Actions **variable** for Cloudflare
   resource provisioning and Email Service)
 - `CLOUDFLARE_ZONE_ID` (required GitHub Actions **variable** for the zone that

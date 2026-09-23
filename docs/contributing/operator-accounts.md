@@ -139,22 +139,26 @@ Optional public-signup bot protection. Signup uses Turnstile when both
 
 ### API tokens
 
-GitHub Actions and Workers share these **names**.
-[#2010](https://github.com/kentcdodds/kody/issues/2010) tracks splitting the
-combined production token into least-privilege deploy / runtime / app tokens.
-`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_RUNTIME_API_TOKEN` may still be the same
-value.
+Every Worker reads its Cloudflare REST token as the Worker secret
+`CLOUDFLARE_API_TOKEN`, but production uploads a different least-privilege
+GitHub secret to each Worker
+([#2010](https://github.com/kentcdodds/kody/issues/2010)). The deploy token is
+never uploaded to a Worker, and `.github/workflows/deploy.yml` fails before any
+resource, migration, or secret change when a Worker-scoped token is unset or
+equals the deploy token (`tools/ci/check-worker-cloudflare-tokens.ts`).
 
-| Name (GitHub Actions unless noted)   | Holder                                                        | Purpose                                                                              |
-| ------------------------------------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `CLOUDFLARE_API_TOKEN`               | Actions + origin/platform/jobs/status/nx-cache Workers        | Deploy, resource ensure, Email REST, Analytics Engine SQL, Artifacts REST            |
-| `CLOUDFLARE_RUNTIME_API_TOKEN`       | Actions → `kody-runtime` Worker secret `CLOUDFLARE_API_TOKEN` | Email Sending + Artifacts only (falls back to the deploy token if unset)             |
-| `CLOUDFLARE_ACCOUNT_ID`              | Actions **variable** + Worker var                             | Account id for REST / ensure                                                         |
-| `CLOUDFLARE_ZONE_ID`                 | Actions **variable**                                          | Zone that owns the user-email sending domain                                         |
-| `DR_DEPLOY_TOKEN`                    | Actions                                                       | Deploy `kody-production-d1-backups` in the DR account                                |
-| `DR_BACKUP_ADMIN_TOKEN`              | Actions (never a Worker secret)                               | Reconcile DR R2 lock/lifecycle                                                       |
-| `DRILL_API_TOKEN`                    | DR Worker secret                                              | Isolated drill-account D1                                                            |
-| Control-plane `CLOUDFLARE_API_TOKEN` | DR Worker secret                                              | Production-account D1 Edit (export + import). Separate from the Actions deploy token |
+| Name (GitHub Actions unless noted)   | Holder                                                                             | Purpose                                                                              |
+| ------------------------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `CLOUDFLARE_API_TOKEN`               | Actions only (wrangler + `tools/ci`)                                               | Deploy and resource ensure. Never a Worker secret                                    |
+| `CLOUDFLARE_APP_API_TOKEN`           | Actions → `kody-production` + `kody-platform` Worker secret `CLOUDFLARE_API_TOKEN` | Email Sending Edit, Artifacts Edit, Account Analytics Read, Queues Edit (required)   |
+| `CLOUDFLARE_RUNTIME_API_TOKEN`       | Actions → `kody-runtime` Worker secret `CLOUDFLARE_API_TOKEN`                      | Email Sending Edit + Artifacts Edit (required)                                       |
+| `CLOUDFLARE_STATUS_API_TOKEN`        | Actions → `kody-status` Worker secret `CLOUDFLARE_API_TOKEN`                       | Email Sending Edit for operator alert email (required)                               |
+| `CLOUDFLARE_ACCOUNT_ID`              | Actions **variable** + Worker var                                                  | Account id for REST / ensure                                                         |
+| `CLOUDFLARE_ZONE_ID`                 | Actions **variable**                                                               | Zone that owns the user-email sending domain                                         |
+| `DR_DEPLOY_TOKEN`                    | Actions                                                                            | Deploy `kody-production-d1-backups` in the DR account                                |
+| `DR_BACKUP_ADMIN_TOKEN`              | Actions (never a Worker secret)                                                    | Reconcile DR R2 lock/lifecycle                                                       |
+| `DRILL_API_TOKEN`                    | DR Worker secret                                                                   | Isolated drill-account D1                                                            |
+| Control-plane `CLOUDFLARE_API_TOKEN` | DR Worker secret                                                                   | Production-account D1 Edit (export + import). Separate from the Actions deploy token |
 
 `AI_GATEWAY_ID` / `AI_GATEWAY_ID_PREVIEW` are optional Worker secrets (Gateway
 id, not a Cloudflare API token). For `typesafe/jev`, the configured gateway must
@@ -201,7 +205,8 @@ Dashboard: repo **Settings → Secrets and variables → Actions**.
 
 From `.github/workflows/*.yml` (automatic `GITHUB_TOKEN` omitted):
 
-`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_RUNTIME_API_TOKEN`, `COOKIE_SECRET`,
+`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_APP_API_TOKEN`,
+`CLOUDFLARE_RUNTIME_API_TOKEN`, `CLOUDFLARE_STATUS_API_TOKEN`, `COOKIE_SECRET`,
 `SECRET_STORE_KEY`, `AI_GATEWAY_ID`, `AI_GATEWAY_ID_PREVIEW`, `SENTRY_DSN`,
 `SENTRY_AUTH_TOKEN`, `CAPABILITY_REINDEX_SECRET`, `OAUTH_GITHUB_CLIENT_ID`,
 `OAUTH_GITHUB_CLIENT_SECRET`, `OAUTH_GOOGLE_CLIENT_ID`,
