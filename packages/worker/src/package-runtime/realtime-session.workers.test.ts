@@ -282,7 +282,34 @@ test('package realtime session closes open sockets without running hooks once th
 				deliveredCount: 0,
 				sessionIds: [],
 			})
+			const connect = await anyInstance.fetch(
+				new Request('https://package-realtime.invalid/session/connect', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						Upgrade: 'websocket',
+					},
+					body: JSON.stringify({
+						binding: anyInstance.stateSnapshot.binding,
+						facet: 'main',
+						request: {
+							url: 'https://example.com/packages/example/realtime',
+							method: 'GET',
+							headers: {},
+						},
+					}),
+				}),
+			)
+			expect(connect.status).toBe(403)
+			await expect(connect.json()).resolves.toMatchObject({
+				ok: false,
+				error: { code: 'account_suspended' },
+			})
+			expect(Object.keys(anyInstance.stateSnapshot.sessions)).toEqual([
+				'session-1',
+			])
 			expect(closes).toEqual([
+				[1008, 'account-suspended'],
 				[1008, 'account-suspended'],
 				[1008, 'account-suspended'],
 				[1008, 'account-suspended'],

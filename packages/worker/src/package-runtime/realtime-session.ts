@@ -714,6 +714,13 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		} catch (error) {
 			delete this.stateSnapshot.sessions[sessionId]
 			await this.persistState()
+			if (isAccountSuspendedError(error)) {
+				this.closeAllSockets(1008, 'account-suspended')
+				return Response.json(
+					{ ok: false, error: { code: error.code, message: error.message } },
+					{ status: 403 },
+				)
+			}
 			try {
 				server.close(1011, 'connect hook failed')
 			} catch {
