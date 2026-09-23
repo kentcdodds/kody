@@ -2,8 +2,13 @@ import { expect, test, vi } from 'vitest'
 import {
 	d1LockRetryBaseDelayMs,
 	isRetryableD1LockError,
+	isRetryableD1LockMessage,
 	runD1WithRetry,
 } from './d1-retry.ts'
+
+// KODY-81: live Cloudflare `reference =` tokens include `_`.
+const underscoredD1InternalErrorReference =
+	'e_Gz3hrU_5c47162d21d24e238a5c25e98b89ee39'
 
 test('runD1WithRetry matches lock errors, retries them, and rethrows other failures immediately', async () => {
 	expect(
@@ -47,10 +52,37 @@ test('runD1WithRetry matches lock errors, retries them, and rethrows other failu
 		),
 	).toBe(true)
 	expect(
+		isRetryableD1LockMessage(
+			`D1_ERROR: internal error; reference = ${underscoredD1InternalErrorReference}`,
+		),
+	).toBe(true)
+	expect(
+		isRetryableD1LockMessage(
+			`Error: D1_ERROR: internal error; reference = ${underscoredD1InternalErrorReference}`,
+		),
+	).toBe(true)
+	expect(
+		isRetryableD1LockError(
+			new Error(
+				`D1_ERROR: internal error; reference = ${underscoredD1InternalErrorReference}`,
+			),
+		),
+	).toBe(true)
+	expect(
+		isRetryableD1LockMessage(
+			'D1_ERROR: internal error; reference = e-Gz3hrU-5c47162d21d24e238a5c25e98b89ee39',
+		),
+	).toBe(true)
+	expect(
 		isRetryableD1LockError(
 			new Error(
 				'Internal error in D1 DB storage caused object to be reset; reference = 8t4dqqpoq1ctvjr8kca8fl4c',
 			),
+		),
+	).toBe(true)
+	expect(
+		isRetryableD1LockMessage(
+			'Internal error in D1 DB storage caused object to be reset; reference = 8t4d_qqpo-q1ctvjr8kca8fl4c',
 		),
 	).toBe(true)
 	expect(
@@ -61,7 +93,13 @@ test('runD1WithRetry matches lock errors, retries them, and rethrows other failu
 	expect(
 		isRetryableD1LockError(new Error('queue is overloaded while uploading...')),
 	).toBe(false)
+	expect(isRetryableD1LockMessage('internal error')).toBe(false)
 	expect(isRetryableD1LockError(new Error('internal error'))).toBe(false)
+	expect(
+		isRetryableD1LockMessage(
+			'Error: D1_ERROR: internal error while writing mcp_agent_sessions',
+		),
+	).toBe(false)
 	expect(
 		isRetryableD1LockError(
 			new Error(

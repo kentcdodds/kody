@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
+import { d1LockRetryBaseDelayMs } from '#worker/d1-retry.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
 	listMcpAgentSessionsForUser,
@@ -50,6 +51,45 @@ test('MCP agent session registry is idempotent and user scoped', async () => {
 	await expect(listMcpAgentSessionsForUser(db, 'user-a')).resolves.toEqual([
 		{ doId: 'do-a' },
 	])
+})
+
+test('registerMcpAgentSession retries a transient D1 internal error with an underscored reference', async () => {
+	let attempts = 0
+	const db = {
+		prepare() {
+			return {
+				bind() {
+					return {
+						async run() {
+							attempts += 1
+							if (attempts === 1) {
+								throw new Error(
+									'D1_ERROR: internal error; reference = e_Gz3hrU_5c47162d21d24e238a5c25e98b89ee39',
+								)
+							}
+						},
+						async first() {
+							return { owned: 1 }
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+
+	vi.useFakeTimers()
+	try {
+		const resultPromise = registerMcpAgentSession({
+			db,
+			userId: 'user-a',
+			doId: 'do-a',
+		})
+		await vi.advanceTimersByTimeAsync(d1LockRetryBaseDelayMs)
+		await expect(resultPromise).resolves.toBeUndefined()
+		expect(attempts).toBe(2)
+	} finally {
+		vi.useRealTimers()
+	}
 })
 
 test('cold MCP session owner discovery reads persisted Agents SDK props', async () => {

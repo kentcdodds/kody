@@ -1,3 +1,4 @@
+import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { parseMcpCallerContext, type McpServerProps } from './context.ts'
 
 export type McpAgentSession = {
@@ -9,24 +10,26 @@ export async function registerMcpAgentSession(input: {
 	userId: string
 	doId: string
 }) {
-	await input.db
-		.prepare(
-			`INSERT INTO mcp_agent_sessions (do_id, user_id)
-			VALUES (?, ?)
-			ON CONFLICT(do_id) DO NOTHING`,
-		)
-		.bind(input.doId, input.userId)
-		.run()
-	const owned = await input.db
-		.prepare(
-			`SELECT 1 AS owned FROM mcp_agent_sessions
-			WHERE do_id = ? AND user_id = ?`,
-		)
-		.bind(input.doId, input.userId)
-		.first<{ owned: number }>()
-	if (owned?.owned !== 1) {
-		throw new Error('MCP agent session Durable Object ownership conflict.')
-	}
+	await runD1WithRetry(async () => {
+		await input.db
+			.prepare(
+				`INSERT INTO mcp_agent_sessions (do_id, user_id)
+				VALUES (?, ?)
+				ON CONFLICT(do_id) DO NOTHING`,
+			)
+			.bind(input.doId, input.userId)
+			.run()
+		const owned = await input.db
+			.prepare(
+				`SELECT 1 AS owned FROM mcp_agent_sessions
+				WHERE do_id = ? AND user_id = ?`,
+			)
+			.bind(input.doId, input.userId)
+			.first<{ owned: number }>()
+		if (owned?.owned !== 1) {
+			throw new Error('MCP agent session Durable Object ownership conflict.')
+		}
+	})
 }
 
 export async function listMcpAgentSessionsForUser(

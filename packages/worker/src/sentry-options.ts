@@ -250,9 +250,10 @@ export const durableObjectInstanceInactiveCloseMessage =
  * reset` (see `d1-retry.ts`): not an application defect — DO storage hit an
  * internal fault. Require `reference =` and this exact phrasing so bare /
  * unrelated "Durable Object storage …" messages stay Sentry-visible.
+ * Reference ids use the same alphabet as D1: alphanumeric, plus `_` or `-`.
  */
 const durableObjectStorageObjectResetPattern =
-	/^internal error in Durable Object storage caused object to be reset;\s*reference\s*=\s*[A-Za-z0-9]+$/i
+	/^internal error in Durable Object storage caused object to be reset;\s*reference\s*=\s*[A-Za-z0-9_-]+$/i
 
 function normalizeDurableObjectIsolateResetMessage(message: string) {
 	const withoutErrorPrefix = message.trim().replace(/^Error:\s*/i, '')
