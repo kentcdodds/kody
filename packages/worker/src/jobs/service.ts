@@ -64,6 +64,7 @@ import {
 	type PlanName,
 } from '#universal/plans.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
+import { isAccountSuspendedError } from '#worker/account/account-suspension.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from '#worker/package-runtime/published-source-dependencies.ts'
 import {
 	normalizePackageWorkspacePath,
@@ -1356,13 +1357,14 @@ export async function executeJobOnce(input: {
 					error: formatJobError(error),
 					logs: [],
 				}
-				// Daily job-run quota denials happen before sandbox work.
-				// Still return an error outcome so schedules advance, but do
-				// not emit job_run usage or else every post-limit tick
-				// inflates rollups while the UserMeter counter stays capped.
+				// Daily job-run quota denials and account suspension happen
+				// before sandbox work. Still return an error outcome so
+				// schedules advance, but do not emit job_run usage or else
+				// every denied tick inflates rollups.
 				if (
 					!isEntitlementLimitError(error) &&
-					!isComputeOverageLimitError(error)
+					!isComputeOverageLimitError(error) &&
+					!isAccountSuspendedError(error)
 				) {
 					completedOccurrence = true
 				}

@@ -14,6 +14,7 @@ import {
 } from '#worker/email/service.ts'
 import { getInternalEmailMessageById } from '#worker/email/mailbox-internal-read.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
+import { isAccountSuspendedError } from '#worker/account/account-suspension.ts'
 import {
 	buildPackageInvocationStorageId,
 	createRepoContext,
@@ -41,9 +42,10 @@ import {
  * One saved-package module execution, uncoupled from durability:
  *
  * - `completed`: the sandbox ran and the export succeeded.
- * - `failed`: the sandbox ran and errored, the module/export was missing, or
- *   an unexpected error interrupted the run. Keyed callers persist this as a
- *   terminal ledger state.
+ * - `failed`: the sandbox ran and errored, the module/export was missing, the
+ *   owning account is suspended (403 `account_suspended`), or an unexpected
+ *   error interrupted the run. Keyed callers persist this as a terminal
+ *   ledger state.
  * - `artifact-unavailable`: artifact preparation failed transiently before
  *   any sandbox work started. Nothing executed, so keyed callers release
  *   their claim and key-less callers can simply retry.
@@ -120,6 +122,10 @@ export async function runSavedPackageModuleOnce(
 ): Promise<SavedPackageModuleRunOutcome> {
 	let executionStarted = false
 	try {
+		const user = await resolveBackgroundMcpUser(
+			input.env.APP_DB,
+			input.actor.userId,
+		)
 		const { artifact, source: sourceRow } =
 			input.preloadedModuleArtifact ??
 			(await ensureModuleArtifact({
@@ -140,10 +146,7 @@ export async function runSavedPackageModuleOnce(
 		const callerContext = createMcpCallerContext({
 			baseUrl: input.baseUrl,
 			executionOrigin: 'background',
-			user: await resolveBackgroundMcpUser(
-				input.env.APP_DB,
-				input.actor.userId,
-			),
+			user,
 			storageContext: {
 				sessionId: null,
 				appId: input.savedPackage.id,
@@ -377,6 +380,19 @@ export async function runSavedPackageModuleOnce(
 			result: persistedArtifacts.result,
 		}
 	} catch (error) {
+		if (isAccountSuspendedError(error)) {
+			return {
+				kind: 'failed',
+				response: buildJsonErrorResponse({
+					status: 403,
+					code: error.code,
+					message: error.message,
+					idempotencyKey: input.idempotencyKey ?? undefined,
+				}),
+				logs: [],
+				error,
+			}
+		}
 		if (
 			!executionStarted &&
 			!isMissingPackageModuleError(error) &&

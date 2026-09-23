@@ -2,8 +2,9 @@
  * Platform account suspension and outbound-email pause reads.
  *
  * `users.suspended_at` is an operator-set kill switch checked at the
- * browser-session, MCP, and email chokepoints (unlike a community ban,
- * which only blocks community-surface actions). `users.email_outbound_paused_at`
+ * browser-session, MCP, package-app, webhook-ingress, background-identity
+ * (`resolveBackgroundMcpUser`), and email chokepoints (unlike a community
+ * ban, which only blocks community-surface actions). `users.email_outbound_paused_at`
  * is the automatic outbound-email pause set by the delivery-event abuse
  * monitor (see `#worker/email/outbound-abuse.ts`); both are cleared by an
  * admin from the admin users page.
@@ -14,6 +15,28 @@ import { normalizeStableUserId } from '#worker/user-id.ts'
 
 export const accountSuspendedMessage =
 	'This account is suspended. Email support@kody.codes to appeal.'
+
+export const accountSuspendedErrorCode = 'account_suspended' as const
+
+/**
+ * Thrown when background work (jobs, package invocations, workflows,
+ * retrievers, realtime hooks) resolves the identity of a suspended account.
+ * Not transient: callers must not retry it as an infrastructure blip.
+ */
+export class AccountSuspendedError extends Error {
+	readonly code = accountSuspendedErrorCode
+
+	constructor() {
+		super(accountSuspendedMessage)
+		this.name = 'AccountSuspendedError'
+	}
+}
+
+export function isAccountSuspendedError(
+	error: unknown,
+): error is AccountSuspendedError {
+	return error instanceof AccountSuspendedError
+}
 
 export type AccountRestrictions = {
 	suspendedAt: string | null

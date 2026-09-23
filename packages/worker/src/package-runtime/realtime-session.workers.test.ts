@@ -1,6 +1,9 @@
 import { env } from 'cloudflare:workers'
 import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
+import { seedAccount } from '#worker/test-support/workers-seed.ts'
+import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	packageRealtimeSessionRpc,
 	PackageRealtimeSession,
@@ -179,4 +182,80 @@ test('package realtime session broadcast and disconnect paths tolerate partial d
 		expect(response.status).toBe(200)
 		await expect(response.json()).resolves.toEqual({ ok: true })
 	})
+})
+
+test('package realtime session closes open sockets without running hooks once the owner is suspended', async () => {
+	await ensureUsersTestSchema({
+		db: env.APP_DB,
+		columns: ['email_verified_at'],
+	})
+	const email = `realtime-suspended-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(email)
+	await seedAccount({
+		db: env.APP_DB,
+		email,
+		username: `rtsusp-${crypto.randomUUID().slice(0, 8)}`,
+		stableUserId: userId,
+	})
+	await env.APP_DB.prepare(
+		`UPDATE users SET suspended_at = ? WHERE stable_user_id = ?`,
+	)
+		.bind(new Date().toISOString(), userId)
+		.run()
+	const binding = createBinding({ userId })
+
+	await runInDurableObject(
+		getStub(binding),
+		async (instance: PackageRealtimeSession) => {
+			const anyInstance = instance as unknown as {
+				stateSnapshot: {
+					binding: unknown
+					sessions: Record<string, unknown>
+				}
+				persistState: () => Promise<void>
+				loadSessionId: (ws: WebSocket) => string | null
+				getPackageAppWorker: () => Promise<never>
+				closeAllSockets: (code: number, reason: string) => void
+				handleWebSocketMessage: (
+					ws: WebSocket,
+					message: string,
+				) => Promise<void>
+			}
+			anyInstance.stateSnapshot = {
+				binding: {
+					userId: binding.userId,
+					packageId: binding.packageId,
+					kodyId: binding.kodyId,
+					sourceId: binding.sourceId,
+					baseUrl: binding.baseUrl,
+				},
+				sessions: {
+					'session-1': {
+						id: 'session-1',
+						facet: 'main',
+						connectedAt: '2026-09-23T00:00:00.000Z',
+						lastSeenAt: '2026-09-23T00:00:00.000Z',
+						topics: [],
+					},
+				},
+			}
+			anyInstance.persistState = async () => undefined
+			anyInstance.loadSessionId = () => 'session-1'
+			let hookWorkerRequested = false
+			anyInstance.getPackageAppWorker = async () => {
+				hookWorkerRequested = true
+				throw new Error('Suspended accounts must not reach package hooks.')
+			}
+			const closes: Array<[number, string]> = []
+			anyInstance.closeAllSockets = (code, reason) => {
+				closes.push([code, reason])
+			}
+
+			await expect(
+				anyInstance.handleWebSocketMessage({} as WebSocket, 'hello'),
+			).resolves.toBeUndefined()
+			expect(hookWorkerRequested).toBe(false)
+			expect(closes).toEqual([[1008, 'account-suspended']])
+		},
+	)
 })
