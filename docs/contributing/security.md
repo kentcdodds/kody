@@ -599,11 +599,11 @@ blast radius:
   outbound send throws). Background lanes — jobs, package invocations and
   subscriptions, workflows, retrievers, and realtime hooks — share one choke
   point: `resolveBackgroundMcpUser` throws `AccountSuspendedError`, which
-  package invocations surface as 403 `account_suspended`. That resolver caches
-  identities per isolate for 60 seconds, so a new suspension can take up to that
-  long to stop background work already warm in an isolate. Set and cleared
-  through the audited `suspend_user` / `unsuspend_user` actions on
-  `POST /admin/users.json`.
+  package invocations surface as 403 `account_suspended` and workflow steps
+  raise as a non-retryable failure. That resolver caches identities per isolate
+  for 60 seconds, so a new suspension can take up to that long to stop
+  background work already warm in an isolate. Set and cleared through the
+  audited `suspend_user` / `unsuspend_user` actions on `POST /admin/users.json`.
 - **Automatic outbound-email pause (`users.email_outbound_paused_at`).** The
   delivery queue evaluates provider delivery events
   (`packages/worker/src/email/outbound-abuse.ts`): one spam complaint, or five

@@ -12,6 +12,7 @@ import {
 	type WorkflowEvent,
 	type WorkflowStep,
 } from 'cloudflare:workers'
+import { NonRetryableError } from 'cloudflare:workflows'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
@@ -31,6 +32,11 @@ import {
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
+import {
+	AccountSuspendedError,
+	accountSuspendedErrorCode,
+	isAccountSuspendedError,
+} from '#worker/account/account-suspension.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import {
 	beginRunRecord,
@@ -1386,13 +1392,25 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 					: 'execute inline workflow code',
 				workflowStepDoConfig,
 				async () => {
-					if (payload.sourceType === 'package') {
-						return await this.invokePackageWorkflowExport(
+					try {
+						if (payload.sourceType === 'package') {
+							return await this.invokePackageWorkflowExport(
+								payload,
+								event.instanceId,
+							)
+						}
+						return await this.invokeInlineWorkflowCode(
 							payload,
 							event.instanceId,
 						)
+					} catch (error) {
+						// Suspension stays in force across step retries, so fail the
+						// step once instead of waiting out the retry backoff.
+						if (isAccountSuspendedError(error)) {
+							throw new NonRetryableError(error.message, error.name)
+						}
+						throw error
 					}
-					return await this.invokeInlineWorkflowCode(payload, event.instanceId)
 				},
 			)
 		} catch (error) {
@@ -1510,6 +1528,11 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				ephemeral: true,
 				executorTimeoutMs: workflowExecutorTimeoutMs,
 			})
+			if (
+				readWorkflowInvocationErrorCode(response) === accountSuspendedErrorCode
+			) {
+				throw new AccountSuspendedError()
+			}
 			if (response.status < 200 || response.status >= 300) {
 				throwWorkflowInvocationFailure(response)
 			}

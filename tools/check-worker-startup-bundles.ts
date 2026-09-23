@@ -192,7 +192,7 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// on runtime alone. CI dry-run 5_145_618 against the previous
 		// 5_135_000 budget.
 		// Background-lane suspension gate (same modules as runtime) adds
-		// ~0.7 KB: local dry-run 5_146_365 against the previous 5_146_000
+		// ~0.9 KB: local dry-run 5_146_521 against the previous 5_146_000
 		// budget (main 5_145_651).
 		maxEntryBytes: 5_147_000,
 		forbiddenSources: [
@@ -267,8 +267,9 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// against the previous 3_810_000 budget.
 		// Background-lane suspension gate (`AccountSuspendedError` in the
 		// background resolver, package-invocation 403 mapping, realtime
-		// per-hook check and socket close) adds ~0.7 KB: local dry-run
-		// 3_821_268 against the previous 3_821_000 budget (main 3_820_551).
+		// per-hook check and socket close, non-retryable workflow step) adds
+		// ~0.9 KB: local dry-run 3_821_424 against the previous 3_821_000
+		// budget (main 3_820_551).
 		maxEntryBytes: 3_822_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
