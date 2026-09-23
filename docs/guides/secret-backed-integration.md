@@ -70,16 +70,17 @@ smoke-test path is unclear.
      browser-side forms, or hosted callbacks.
 8. After the package is saved or published, finish package secret approval when
    needed.
-   - Self-authored packages and adopted forks (`communityForkAdopt`) get
-     automatic read/use access to user secrets (mutations still need an
-     `allowed_packages` grant); unadopted community forks still need explicit
-     package approval for read/use, or adoption after review.
+   - Self-authored packages and owner-adopted forks get automatic read/use
+     access to user secrets (mutations still need an `allowed_packages` grant);
+     unadopted community forks still need explicit package approval for
+     read/use, or adoption after review.
    - An ad hoc `execute` smoke test does **not** grant package secret access for
      community forks.
    - Read `pending_secret_package_approvals` from `packageSave` or
      `packagePublishExternalPush` (null for self-authored / adopted packages).
-   - When present, either review the source and call `communityForkAdopt`, or
-     send `bulk_approval_url` / each `approval_url`.
+   - When present, either review the source and send the owner the adoption link
+     from `communityForkAdopt` (agents cannot adopt), or send
+     `bulk_approval_url` / each `approval_url`.
    - Wait for the user to approve or for adoption (when required), then verify
      from `execute` with a static `kody:@scope/package/export` import before
      treating the package as complete. Prefer a read-only export or a
@@ -201,7 +202,8 @@ Avoid these mistakes:
 - treating an ad hoc `execute` smoke test as package secret approval for a
   community-forked package
 - marking an unadopted community-forked secret-using package complete without
-  adopting after review (`communityForkAdopt`) or sending package approval links
-  (prefer the bulk approval URL when multiple secrets need access)
+  sending the adoption link after review (`communityForkAdopt`) or package
+  approval links (prefer the bulk approval URL when multiple secrets need
+  access)
 - inventing a provider-specific flow when one or two secrets plus a smoke test
   would do

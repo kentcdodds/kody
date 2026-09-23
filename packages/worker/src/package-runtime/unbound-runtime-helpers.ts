@@ -1,6 +1,9 @@
 import { parseModuleSource } from '#worker/module-source.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
-import { isKodyRuntimeModulePath } from './module-graph.ts'
+import {
+	isKodyPublicRuntimeModulePath,
+	isKodyRuntimeModulePath,
+} from './module-graph.ts'
 
 /**
  * Optional `kody:runtime` exports intentionally stay falsy (`undefined` /
@@ -278,7 +281,11 @@ function isRuntimeModuleSpecifier(specifier: string) {
 	if (specifier === 'kody:runtime') return true
 	// Bundled module graphs rewrite `kody:runtime` to a relative path of the
 	// virtual runtime module (see `rewriteKodyImports` in `module-graph.ts`).
-	return isKodyRuntimeModulePath(specifier.replace(/^(\.\.?\/)+/, ''))
+	const modulePath = specifier.replace(/^(\.\.?\/)+/, '')
+	return (
+		isKodyRuntimeModulePath(modulePath) ||
+		isKodyPublicRuntimeModulePath(modulePath)
+	)
 }
 
 function* iterateModuleSourceTexts(

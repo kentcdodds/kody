@@ -164,11 +164,15 @@ A saved package is a repo with the package extension activated. Four concepts:
   build via `rootPackageId`, and statically imported package sources) get their
   `kody:runtime` import rewritten to a per-package virtual runtime module,
   `.__kody_virtual__/package-runtime/<hex(packageId)>.js`, which re-exports the
-  shared runtime and overrides `packageStorage` / `packageSecrets` with variants
-  that close over the package's immutable id. The closure survives esbuild
-  inlining, so per-module identity holds even after the graph collapses into one
-  module. Hydration regenerates per-package runtime modules from the id encoded
-  in the path, exactly like the shared runtime module.
+  shared runtime's public names (an explicit allowlist, never `export *`) and
+  overrides `packageStorage` / `packageSecrets` with variants that close over
+  the package's immutable id. Unstamped modules rewrite to the same allowlist at
+  `.__kody_virtual__/public-runtime.js`. Package files must not reference
+  `.__kody_virtual__/` directly; the build rejects them and computed `import()`
+  of those paths throws. The closure survives esbuild inlining, so per-module
+  identity holds even after the graph collapses into one module. Hydration
+  regenerates per-package runtime modules from the id encoded in the path,
+  exactly like the shared runtime module.
 - The stamp routes identity but is not the security boundary. At execution,
   `packageStorage()` bucket access and stamp-aligned secret authority are
   granted only from host-controlled provenance metadata: the run's own package
@@ -417,11 +421,13 @@ instructions.
 The event deliberately omits admin notes, reviewer fields, revision,
 `updated_at`, roles, plan, and unrelated account content. This is a narrow
 exception for feedback shown to and explicitly approved by the user before
-submission; it does not grant package runtime general admin roles or access to
-other user data. Submitter username and email are snapshots stored with the
-submission; retries never resolve mutable live profile data, so profile changes
-cannot alter the request hash. Legacy rows without submitter snapshots retain
-null username/email. Copies already delivered outside Kody, including Discord
+submission. Receiving the event grants no role or access to other user data; the
+handler runs as the admin owner with that owner's existing roles (see
+[Background and package callers](./architecture/authorization.md#background-and-package-callers)).
+Submitter username and email are snapshots stored with the submission; retries
+never resolve mutable live profile data, so profile changes cannot alter the
+request hash. Legacy rows without submitter snapshots retain null
+username/email. Copies already delivered outside Kody, including Discord
 messages, cannot be recalled and may remain after Kody account deletion under
 the deployment operator's retention and deletion controls. Such copies contain
 only the exact approved feedback and attribution, never unrelated account

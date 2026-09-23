@@ -230,6 +230,7 @@ const {
 	listCommunityIndexOverview,
 	forkCommunityListing,
 	adoptCommunityFork,
+	inspectCommunityForkAdoption,
 	absorbCommunityForkUpstream,
 } = await import('./service.ts')
 
@@ -1656,7 +1657,7 @@ test('adoptCommunityFork rejects self-authored packages and short review summari
 			packageId: 'package-1',
 			reviewSummary: 'short',
 		}),
-	).rejects.toThrow(/review_summary/)
+	).rejects.toThrow(/review note of at least 10 characters/)
 })
 
 test('adoptCommunityFork is idempotent when already adopted and isolates by user', async () => {
@@ -1702,13 +1703,90 @@ test('adoptCommunityFork is idempotent when already adopted and isolates by user
 	expect(mockModule.markCommunityForkAdopted).not.toHaveBeenCalled()
 })
 
-test('adoptCommunityFork rejects a foreign scoped package name before lookup', async () => {
+test('adoptCommunityFork keeps the first adoption when a concurrent adopt wins', async () => {
+	const unadoptedFork = {
+		id: 'fork-1',
+		listingId: 'listing-1',
+		forkerUserId: 'user-2',
+		originCommit: 'commit-1',
+		forkedPackageId: 'package-fork-1',
+		forkedSourceId: 'fork-source-1',
+		targetKodyId: 'discord-gateway-fork',
+		createdAt: '2026-07-01T00:00:00.000Z',
+		adoptedAt: null,
+		adoptionNote: null,
+	}
+	mockModule.getSavedPackageById.mockResolvedValue({
+		...validSavedPackage(),
+		id: 'package-fork-1',
+		userId: 'user-2',
+		kodyId: 'discord-gateway-fork',
+	})
+	mockModule.getCommunityForkByForkedPackageId
+		.mockResolvedValueOnce(unadoptedFork)
+		.mockResolvedValueOnce({
+			...unadoptedFork,
+			adoptedAt: '2026-07-10T00:00:00.000Z',
+			adoptionNote: 'First tab review note.',
+		})
+	mockModule.markCommunityForkAdopted.mockResolvedValue(null)
+
+	const result = await adoptCommunityFork({
+		env: createEnv(),
+		userId: 'user-2',
+		packageId: 'package-fork-1',
+		reviewSummary: 'Second tab review note.',
+	})
+	expect(result).toMatchObject({
+		alreadyAdopted: true,
+		adoptedAt: '2026-07-10T00:00:00.000Z',
+	})
+	expect(mockModule.markCommunityForkAdopted).toHaveBeenCalledOnce()
+})
+
+test('inspectCommunityForkAdoption reports adoption state without writing it', async () => {
+	mockModule.getSavedPackageByKodyId.mockResolvedValue({
+		...validSavedPackage(),
+		id: 'package-fork-1',
+		userId: 'user-2',
+		kodyId: 'discord-gateway-fork',
+	})
+	mockModule.getCommunityForkByForkedPackageId.mockResolvedValue({
+		id: 'fork-1',
+		listingId: 'listing-1',
+		forkerUserId: 'user-2',
+		originCommit: 'commit-1',
+		forkedPackageId: 'package-fork-1',
+		forkedSourceId: 'fork-source-1',
+		targetKodyId: 'discord-gateway-fork',
+		createdAt: '2026-07-01T00:00:00.000Z',
+		adoptedAt: null,
+		adoptionNote: null,
+	})
+
 	await expect(
-		adoptCommunityFork({
+		inspectCommunityForkAdoption({
+			env: createEnvWithUsername('jane'),
+			userId: 'user-2',
+			kodyId: 'discord-gateway-fork',
+		}),
+	).resolves.toEqual({
+		packageId: 'package-fork-1',
+		kodyId: 'discord-gateway-fork',
+		ownerScope: 'jane',
+		listingId: 'listing-1',
+		originCommit: 'commit-1',
+		adoptedAt: null,
+	})
+	expect(mockModule.markCommunityForkAdopted).not.toHaveBeenCalled()
+})
+
+test('inspectCommunityForkAdoption rejects a foreign scoped package name before lookup', async () => {
+	await expect(
+		inspectCommunityForkAdoption({
 			env: createEnvWithUsername('jane'),
 			userId: 'user-2',
 			kodyId: '@other/discord-gateway-fork',
-			reviewSummary: 'Reviewed gateway auth and host allowlists.',
 		}),
 	).rejects.toSatisfy(
 		(error: unknown) =>

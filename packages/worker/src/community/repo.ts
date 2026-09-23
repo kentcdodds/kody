@@ -1019,7 +1019,8 @@ export async function markCommunityForkAdopted(
 		.prepare(
 			`UPDATE community_forks
 			SET adopted_at = ?, adoption_note = ?
-			WHERE forked_package_id = ? AND forker_user_id = ?`,
+			WHERE forked_package_id = ? AND forker_user_id = ?
+				AND adopted_at IS NULL`,
 		)
 		.bind(
 			input.adoptedAt,

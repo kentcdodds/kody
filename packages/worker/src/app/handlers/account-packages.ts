@@ -1,5 +1,6 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
+import { handleAccountPackageAdoptAction } from '#app/account-package-adopt.ts'
 import { handleAccountPackageDeleteAction } from '#app/account-package-delete.ts'
 import { handleAccountPackagePublishLockAction } from '#app/account-package-publish-lock.ts'
 import { handleAccountPackageTokenAction } from '#app/account-package-tokens.ts'
@@ -128,6 +129,14 @@ export function createAccountPackagesApiHandler(env: Env) {
 				body,
 			})
 			if (deleteResponse) return deleteResponse
+
+			const adoptResponse = await handleAccountPackageAdoptAction({
+				env,
+				request,
+				user,
+				body,
+			})
+			if (adoptResponse) return adoptResponse
 
 			const action = readTrimmedStringOrEmpty(body, 'action')
 			if (action === 'absorb-listing') {

@@ -322,15 +322,16 @@ When a package will use user-scoped secrets (`{{secret:name}}` placeholders or
 
 1. Ensure each secret exists (open `search({ entity: "guide:connect_secret" })`
    / `search({ entity: "guide:secret_backed_integration" })`).
-2. Self-authored packages and community forks adopted with `communityForkAdopt`
+2. Self-authored packages and community forks the owner adopted on the website
    after a real source review get automatic read/use access to user secrets
    (host approval still applies; `secretSet` / `secretDelete` still need an
    `allowed_packages` grant). After save/publish, read
    `pending_secret_package_approvals` from the tool result — it is non-null only
    for unadopted community forks.
-3. When pending approvals are present, either review the fork source and call
-   `communityForkAdopt` with a `review_summary`, or send the user
-   `bulk_approval_url` / each `approval_url`.
+3. When pending approvals are present, either review the fork source and send
+   the user the `approval_url` from `communityForkAdopt` (only the owner can
+   adopt, on the website), or send the user `bulk_approval_url` / each
+   `approval_url`.
 4. Wait for approval or adoption (when required), then smoke-test from `execute`
    with a static `kody:@scope/package/export` import. Use a read-only export or
    a package-supported dry-run input that actually reads the approved secret

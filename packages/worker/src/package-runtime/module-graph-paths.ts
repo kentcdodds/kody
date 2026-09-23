@@ -2,6 +2,7 @@ import { normalizePackageExportKey } from '#worker/package-registry/manifest.ts'
 import { parseKodyPackageSpecifier } from './package-import-resolution.ts'
 
 export const runtimeModulePath = '.__kody_virtual__/runtime.js'
+export const publicRuntimeModulePath = '.__kody_virtual__/public-runtime.js'
 export const packageRuntimeModulePrefix = '.__kody_virtual__/package-runtime'
 export const packageManifestPath = 'package.json'
 export const wranglerConfigPaths = [
@@ -120,6 +121,38 @@ export function createPackageSpecifierFromProxyPath(modulePath: string) {
 			? `/${exportName.replace(/^\.?\//, '')}`
 			: ''
 	return `capabilities:${packageName}${exportSuffix}`
+}
+
+const kodyVirtualModulePattern = /__kody_virtual__/i
+
+function unescapeStringLiteralText(text: string) {
+	return text.replace(
+		/\\(?:u\{([0-9a-f]+)\}|u([0-9a-f]{4})|x([0-9a-f]{2})|\r\n|[\s\S])/gi,
+		(match, braced?: string, unicode?: string, hex?: string) => {
+			const code = braced ?? unicode ?? hex
+			if (code != null) {
+				const codePoint = Number.parseInt(code, 16)
+				return codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : ''
+			}
+			const escaped = match.slice(1)
+			return /^(?:\r\n|[\n\r\u2028\u2029])$/.test(escaped) ? '' : escaped
+		},
+	)
+}
+
+/**
+ * Package-authored files must never address bundler-generated virtual
+ * modules: the shared runtime exports stamp helpers that enter secret
+ * authority for an arbitrary package id. The bundler resolves JS/JSON string
+ * escapes before path lookup, so escaped spellings are checked too, and the
+ * match is case-insensitive so the check fails closed.
+ */
+export function referencesKodyVirtualModule(text: string) {
+	return (
+		kodyVirtualModulePattern.test(text) ||
+		(text.includes('\\') &&
+			kodyVirtualModulePattern.test(unescapeStringLiteralText(text)))
+	)
 }
 
 export function normalizeWorkspaceModulePath(path: string) {

@@ -191,10 +191,13 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// in this same entry, so line-anchor and file-anchor cannot stay
 		// on runtime alone. CI dry-run 5_145_618 against the previous
 		// 5_135_000 budget.
+		// Allowlisted kody:runtime facades and the .__kody_virtual__ guards
+		// ride the same module-graph code: local dry-run 5_147_977 against
+		// the previous 5_146_000 budget (main measured 5_145_651 locally).
 		// Background-lane suspension gate (same modules as runtime) adds
-		// ~1.4 KB: local dry-run 5_147_047 against the previous 5_146_000
-		// budget (main 5_145_651).
-		maxEntryBytes: 5_148_000,
+		// ~1.1 KB on top: local dry-run 5_149_088 against the previous
+		// 5_149_000 budget.
+		maxEntryBytes: 5_150_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
@@ -265,12 +268,16 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// slugs) on search entity, repoReadFile, and package file open pull
 		// line-anchor and file-anchor into runtime: CI dry-run 3_820_542
 		// against the previous 3_810_000 budget.
+		// Allowlisted kody:runtime facades, the .__kody_virtual__ build
+		// rejection, and the hardened computed import() guard: CI dry-run
+		// 3_822_747 (local 3_822_879 with the node_modules rewrite) against
+		// the previous 3_821_000 budget.
 		// Background-lane suspension gate (`AccountSuspendedError` in the
 		// background resolver, package-invocation 403 mapping, realtime
 		// per-hook and emit/broadcast checks, pre-ledger invoke check,
-		// non-retryable workflow step) adds ~1.4 KB: local dry-run 3_821_951
-		// against the previous 3_821_000 budget (main 3_820_551).
-		maxEntryBytes: 3_823_000,
+		// non-retryable workflow step) adds ~1.1 KB on top: local dry-run
+		// 3_823_995 against the previous 3_824_000 budget.
+		maxEntryBytes: 3_825_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',
