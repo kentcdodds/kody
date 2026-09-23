@@ -25,6 +25,7 @@ import {
 	stopPackageTitleInstallProgress,
 } from '#client/package-title-install-progress.ts'
 import {
+	createPackageTitleInstallArm,
 	decideCommunityInstallClick,
 	isCommunityInstallConfirmArmed,
 	paintPackageTitleInstallConfirm,
@@ -85,7 +86,13 @@ export function CommunityDetailRoute(handle: Handle) {
 	let installOutcome: CommunityInstallOutcome | null = null
 	const installConfirm = createDoubleCheck(handle)
 	let installConfirmListingId: string | null = null
-	let outsideInstallClickListening = false
+	const installArm = createPackageTitleInstallArm({
+		confirm: installConfirm,
+		getListingId: () => installConfirmListingId,
+		setListingId: (listingId) => {
+			installConfirmListingId = listingId
+		},
+	})
 	let readmeContent: string | null = null
 	let readmeFences: Array<HighlightedCode> = []
 	let hasAgentsDocs = false
@@ -173,7 +180,7 @@ export function CommunityDetailRoute(handle: Handle) {
 				listingId: snapshotListingId,
 			})
 		) {
-			resetInstallConfirm()
+			installArm.reset()
 		}
 		readmeContent = snapshot.readmeContent
 		readmeFences = snapshot.readmeFences ?? []
@@ -492,56 +499,6 @@ export function CommunityDetailRoute(handle: Handle) {
 		}
 	}
 
-	function stopOutsideInstallClick() {
-		if (!outsideInstallClickListening || typeof document === 'undefined') return
-		outsideInstallClickListening = false
-		document.removeEventListener('click', handleOutsideInstallClick, true)
-	}
-
-	function startOutsideInstallClick() {
-		if (outsideInstallClickListening || typeof document === 'undefined') return
-		outsideInstallClickListening = true
-		document.addEventListener('click', handleOutsideInstallClick, true)
-	}
-
-	function resetInstallConfirm() {
-		installConfirm.reset()
-		installConfirmListingId = null
-		stopOutsideInstallClick()
-	}
-
-	function armedInstallControl() {
-		const listingId = installConfirmListingId
-		if (!listingId || typeof document === 'undefined') return null
-		for (const control of document.querySelectorAll(
-			'[data-community-install]',
-		)) {
-			if (control.getAttribute('data-package-title-listing') === listingId) {
-				return control
-			}
-		}
-		return null
-	}
-
-	function disarmInstallConfirm() {
-		if (!installConfirm.doubleCheck) return
-		const control = armedInstallControl()
-		resetInstallConfirm()
-		if (control) paintPackageTitleInstallConfirm(control, false)
-	}
-
-	function handleOutsideInstallClick(event: Event) {
-		const target = event.target
-		const element =
-			target instanceof Element
-				? target
-				: target instanceof Node
-					? target.parentElement
-					: null
-		if (element?.closest('[data-community-install]')) return
-		disarmInstallConfirm()
-	}
-
 	function handleCommunityInstallClick(event: Event) {
 		const target = event.target
 		if (!(target instanceof Element)) return
@@ -549,7 +506,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		// A click that does not move focus never fires focusout. Drop the
 		// armed flag here so the next click on the fork icon has to arm again.
 		if (!control) {
-			disarmInstallConfirm()
+			installArm.disarm()
 			return
 		}
 		const loginLink = control instanceof HTMLAnchorElement
@@ -571,18 +528,12 @@ export function CommunityDetailRoute(handle: Handle) {
 				return
 			case 'arm':
 				event.preventDefault()
-				installConfirm.arm()
-				installConfirmListingId = listingId
-				paintPackageTitleInstallConfirm(control, true)
-				if (control instanceof HTMLElement) control.focus()
-				// Capture already ran for this click, so the listener cannot
-				// disarm the click that armed the control.
-				startOutsideInstallClick()
+				installArm.arm(control, listingId)
 				return
 			case 'submit':
 				if (loginLink) return
 				event.preventDefault()
-				resetInstallConfirm()
+				installArm.reset()
 				void submitInstall()
 				return
 			default: {
@@ -608,7 +559,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		}
 		const next = event.relatedTarget
 		if (next instanceof Node && control.contains(next)) return
-		resetInstallConfirm()
+		installArm.reset()
 		paintPackageTitleInstallConfirm(control, false)
 	}
 
@@ -625,7 +576,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		// Fork even when the listing id is unchanged. Drop the armed flag
 		// here; a same-listing shell snapshot keeps it because that path
 		// does not remount the painted Confirm fork control.
-		resetInstallConfirm()
+		installArm.reset()
 		if (!ref) return
 
 		const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)
