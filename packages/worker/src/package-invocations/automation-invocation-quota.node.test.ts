@@ -186,6 +186,67 @@ test('automation_invocations_per_day at quota fails before sandbox and leaves ex
 	expect(automation).toMatchObject({ outcome: 'ready', count: limit })
 })
 
+test('keyed automation quota denial releases the claim so a later retry can succeed', async () => {
+	prepareSuccessfulExport()
+	const db = createDatabase()
+	const { env, meter } = createEnvWithUserMeter(db)
+	const token = createToken()
+	const day = utcDayKey()
+	const limit = planLimits.free.maxAutomationInvocationsPerDay
+	const idempotencyKey = 'automation-quota-retry'
+
+	await meter.seed({
+		userId: token.userId,
+		resource: automationInvocationsPerDayResource,
+		day,
+		count: limit,
+	})
+
+	const denied = await invokePackageExport({
+		env,
+		baseUrl: 'https://example.test',
+		token,
+		request: {
+			packageIdOrKodyId: '@owner/pkg',
+			exportName: './dispatch-message-created',
+			params: { n: 1 },
+			idempotencyKey,
+			source: 'webhook',
+		},
+	})
+	expect(denied.status).toBe(429)
+	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
+	expect(
+		db.runLog.ledgerRows.find((row) => row.idempotencyKey === idempotencyKey),
+	).toBeUndefined()
+
+	// initialize() is insert-once; drop the counter so a retry can consume.
+	const userRows = meter.metersByUser.get(token.userId)
+	expect(userRows).toBeDefined()
+	userRows?.delete(`${automationInvocationsPerDayResource}\0${day}`)
+	await meter.seed({
+		userId: token.userId,
+		resource: automationInvocationsPerDayResource,
+		day,
+		count: 0,
+	})
+
+	const retried = await invokePackageExport({
+		env,
+		baseUrl: 'https://example.test',
+		token,
+		request: {
+			packageIdOrKodyId: '@owner/pkg',
+			exportName: './dispatch-message-created',
+			params: { n: 1 },
+			idempotencyKey,
+			source: 'webhook',
+		},
+	})
+	expect(retried.status).toBe(200)
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+})
+
 test('execute_calls_per_day flood does not burn automation_invocations_per_day', async () => {
 	clearInvokeContractCachesForTests()
 	const db = createDatabase()

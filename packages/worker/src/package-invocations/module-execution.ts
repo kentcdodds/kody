@@ -59,6 +59,10 @@ import {
  * - `artifact-unavailable`: artifact preparation failed transiently before
  *   any sandbox work started. Nothing executed, so keyed callers release
  *   their claim and key-less callers can simply retry.
+ * - `pre-execution-denied`: a gate before sandbox work rejected the invoke
+ *   (today: daily automation quota). Same release semantics as
+ *   `artifact-unavailable` so a keyed retry can succeed after the UTC day
+ *   rolls or the limit rises; do not terminal-store the 429 under the key.
  *
  * `logs` / `result` / `error` carry what the registry would otherwise feed
  * its own run-record finish, for keyed callers that own the run record via
@@ -78,6 +82,7 @@ export type SavedPackageModuleRunOutcome =
 			error: unknown
 	  }
 	| { kind: 'artifact-unavailable'; response: PackageInvocationResponse }
+	| { kind: 'pre-execution-denied'; response: PackageInvocationResponse }
 
 export type SavedPackageModuleRunInput = {
 	env: Env
@@ -174,7 +179,7 @@ export async function runSavedPackageModuleOnce(
 			} catch (error) {
 				if (isEntitlementLimitError(error)) {
 					return {
-						kind: 'failed',
+						kind: 'pre-execution-denied',
 						response: buildJsonErrorResponse({
 							status: 429,
 							code: entitlementLimitErrorCode,
@@ -182,8 +187,6 @@ export async function runSavedPackageModuleOnce(
 							idempotencyKey: input.idempotencyKey ?? undefined,
 							details: error.details,
 						}),
-						logs: [],
-						error,
 					}
 				}
 				throw error
