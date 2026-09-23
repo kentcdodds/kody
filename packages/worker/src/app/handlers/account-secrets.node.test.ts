@@ -1337,6 +1337,138 @@ test('account secrets API loads selected secret values and deletes the selected 
 	)
 })
 
+test('account secrets JSON accepts create as the same write as save and names unknown actions', async () => {
+	const handler = createAccountSecretsApiHandler(createEnv())
+	const createdAt = new Date(0).toISOString()
+	mockModule.saveSecret.mockClear()
+
+	const invalid = await handler.handler({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'add',
+				scope: 'user',
+				name: 'previewSeed',
+				value: 'preview-seed-value',
+			}),
+		}),
+		params: {},
+	} as never)
+	expect(invalid.status).toBe(400)
+	await expect(invalid.json()).resolves.toEqual({
+		ok: false,
+		error:
+			'Invalid action. Expected one of: save, create, delete, approve, reject, save_oauth_app, connect_oauth, oauth_exchange.',
+	})
+	expect(mockModule.saveSecret).not.toHaveBeenCalled()
+
+	function secretRow(name: string) {
+		return {
+			name,
+			scope: 'user' as const,
+			description: '',
+			packageId: null,
+			allowedHosts: [] as Array<string>,
+			allowedPackages: [] as Array<string>,
+			createdAt,
+			updatedAt: createdAt,
+			expiresAt: null,
+			ttlMs: null,
+		}
+	}
+
+	mockModule.saveSecret.mockClear()
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
+	mockModule.listSecrets
+		.mockResolvedValueOnce([])
+		.mockResolvedValueOnce([secretRow('previewSeed')])
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'preview-seed-value',
+	})
+
+	const created = await handler.handler({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'create',
+				scope: 'user',
+				name: 'previewSeed',
+				value: 'preview-seed-value',
+			}),
+		}),
+		params: {},
+	} as never)
+	expect(created.status).toBe(200)
+	await expect(created.json()).resolves.toMatchObject({
+		ok: true,
+		selectedSecret: {
+			id: 'user::::previewSeed',
+			name: 'previewSeed',
+			scope: 'user',
+			value: 'preview-seed-value',
+		},
+	})
+	expect(mockModule.saveSecret).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'stable-user-1',
+			name: 'previewSeed',
+			value: 'preview-seed-value',
+			scope: 'user',
+		}),
+	)
+
+	mockModule.saveSecret.mockClear()
+	mockModule.setSecretAllowedHosts.mockClear()
+	mockModule.listSecrets
+		.mockResolvedValueOnce([])
+		.mockResolvedValueOnce([secretRow('editorSeed')])
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'editor-seed-value',
+	})
+
+	const saved = await handler.handler({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'save',
+				scope: 'user',
+				name: 'editorSeed',
+				value: 'editor-seed-value',
+				allowedHosts: ['api.example.com'],
+			}),
+		}),
+		params: {},
+	} as never)
+	expect(saved.status).toBe(200)
+	await expect(saved.json()).resolves.toMatchObject({
+		ok: true,
+		selectedSecret: {
+			id: 'user::::editorSeed',
+			name: 'editorSeed',
+			value: 'editor-seed-value',
+		},
+	})
+	expect(mockModule.saveSecret).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'editorSeed',
+			value: 'editor-seed-value',
+			scope: 'user',
+		}),
+	)
+	expect(mockModule.setSecretAllowedHosts).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'editorSeed',
+			allowedHosts: ['api.example.com'],
+		}),
+	)
+})
+
 test('oauth_exchange maps provider failures and forwards exchange styles', async () => {
 	const fetchMock = vi.fn()
 	vi.stubGlobal('fetch', fetchMock)
