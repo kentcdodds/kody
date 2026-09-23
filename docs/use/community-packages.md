@@ -122,11 +122,12 @@ Your agent should:
 5. Rewrite the README **`## Intent`** section for your goals.
 6. Publish via `repoPublishSession`. Repo checks fail if cross-scope imports
    remain.
-7. Optionally call `communityForkAdopt` from an interactive MCP agent (with a
-   short `review_summary`) after a real source review, so the fork gets the same
+7. Optionally adopt the fork after a real source review, so it gets the same
    automatic secret read/use access as self-authored packages (see
-   [Secrets and host approval](./secrets-and-values.md)). Package apps, jobs,
-   webhooks, and other package runtimes cannot adopt.
+   [Secrets and host approval](./secrets-and-values.md)). Only you can adopt,
+   signed in on the package's **Settings** page (**Community fork** section).
+   `communityForkAdopt` returns that link; agents, `execute`, package apps,
+   jobs, webhooks, and other package runtimes cannot adopt.
 
 Only after publish does the package become a live saved package in your account.
 
@@ -277,9 +278,9 @@ Use the MCP `community` domain:
 - `communityGet` — fetch one listing's metadata and aggregates (including owner
   profile linkage when the owner is public)
 - `communityFork` — copy HEAD into your account (inert until published)
-- `communityForkAdopt` — mark a reviewed fork as adopted, granting it
-  self-authored-like secret read/use access (see
-  [Secrets and host approval](./secrets-and-values.md))
+- `communityForkAdopt` — return the website link where you adopt a reviewed
+  fork, granting it self-authored-like secret read/use access (see
+  [Secrets and host approval](./secrets-and-values.md)); it never adopts
 - `communityRate` — rate a listing after forking
 - `communityReport` — report a listing (requires login)
 - `communitySetFeatured` — admin-only: feature or unfeature a listing

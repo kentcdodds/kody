@@ -1612,11 +1612,19 @@ export type AccountPackageListItem = {
 	forkAhead: AccountPackageForkAhead | null
 }
 
+export type AccountPackageCommunityFork = {
+	listingName: string | null
+	adoptedAt: string | null
+	adoptionNote: string | null
+}
+
 export type AccountPackageDetail = AccountPackageListItem & {
 	searchText: string | null
 	exports: Array<string> | null
 	tokens: Array<AccountPackageToken>
 	publishedCommit: string | null
+	/** Null for self-authored packages (no `community_forks` row). */
+	communityFork: AccountPackageCommunityFork | null
 }
 
 type AccountPackagePublishDiffFile = {

@@ -283,7 +283,8 @@ Capabilities:
 - `communitySearch`
 - `communityGet`
 - `communityFork`
-- `communityForkAdopt` (interactive MCP only; package runtimes cannot adopt)
+- `communityForkAdopt` (read-only: returns the website adoption link; only the
+  signed-in account session adopts via `POST /account/packages.json`)
 - `communityRate`
 - `communityProfileGet` / `communityProfileUpdate`
 - `communityReport`
