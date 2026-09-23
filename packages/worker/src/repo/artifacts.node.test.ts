@@ -496,6 +496,7 @@ test('resolveArtifactDefaultBranchHead reuses a provided token and still works w
 		expect.objectContaining({
 			url: 'https://x:art_v1_throwaway@acct.artifacts.cloudflare.net/git/default/repo-1.git',
 			prefix: 'refs/heads/main',
+			protocolVersion: 1,
 		}),
 	)
 

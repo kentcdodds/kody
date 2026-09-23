@@ -5,6 +5,7 @@ import {
 	isArtifactsGitTransientErrorMessage,
 	isArtifactsGitTransientHttpErrorMessage,
 	isIsomorphicGitPackfileCorruptionError,
+	isArtifactsGitTimeoutError,
 	isTransientArtifactsGitError,
 	isTransientArtifactsGitHttpError,
 	isTransientArtifactsGitHttpStatus,
@@ -108,6 +109,28 @@ test('Artifacts git HTTP helpers classify transient statuses, wrap messages, and
 		/HTTP Error: 500/,
 	)
 	expect(persistent).toHaveBeenCalledTimes(3)
+
+	const timeout = new Error('Artifacts git request timed out after 8000ms.')
+	timeout.name = 'ArtifactsGitTimeoutError'
+	expect(isArtifactsGitTimeoutError(timeout)).toBe(true)
+	expect(isTransientArtifactsGitError(timeout)).toBe(true)
+	expect(isArtifactsGitTimeoutError(new Error('unrelated timeout'))).toBe(false)
+	expect(
+		isArtifactsGitTransientErrorMessage(
+			'packageGetGitRemote timed out reading the Artifacts git remote. Artifacts listServerRefs failed for https://example.test/repo.git: Artifacts git request timed out after 8000ms.',
+		),
+	).toBe(true)
+	expect(
+		isArtifactsGitTransientErrorMessage('request timed out after 8000ms'),
+	).toBe(false)
+	const timedOutThenOk = vi
+		.fn()
+		.mockRejectedValueOnce(timeout)
+		.mockResolvedValueOnce([{ ref: 'refs/heads/main', oid: 'after-timeout' }])
+	await expect(
+		runArtifactsGitWithRetry(timedOutThenOk, [0, 0]),
+	).resolves.toEqual([{ ref: 'refs/heads/main', oid: 'after-timeout' }])
+	expect(timedOutThenOk).toHaveBeenCalledTimes(2)
 })
 
 test('Artifacts git packfile corruption is transient, wrapped for git clone, and retried', async () => {

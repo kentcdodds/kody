@@ -11,6 +11,7 @@ import {
 	resolveArtifactDefaultBranchHead,
 	resolveExistingArtifactSourceRepo,
 } from './artifacts.ts'
+import { isArtifactsGitTimeoutError } from './artifacts-git-retry.ts'
 import { type EntitySourceRow } from './types.ts'
 
 export const productionPackageSourceSafetyPolicy =
@@ -252,6 +253,17 @@ export async function assertPublishedPackageSourceRepoHead(input: {
 			head = await resolveArtifactDefaultBranchHead({ repo })
 		}
 	} catch (error) {
+		if (isArtifactsGitTimeoutError(error)) {
+			throw new Error(
+				[
+					`${input.operation} timed out reading the Artifacts git remote.`,
+					'Retry the call.',
+					'Package authoring can use packageSave when packageGetGitRemote keeps timing out.',
+					getErrorMessage(error),
+				].join(' '),
+				{ cause: error },
+			)
+		}
 		const message = getErrorMessage(error)
 		throw new Error(
 			buildSourceRecoveryProblemMessage({

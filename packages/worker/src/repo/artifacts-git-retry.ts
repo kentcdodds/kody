@@ -9,6 +9,11 @@ import {
  * (KODY-CLOUDFLARE-4Y / 4Z / 50). Short retries paper over the blip without
  * treating it as an application defect.
  *
+ * The same hop can also stall with no status (isomorphic-git's web client
+ * does not abort `fetch`). A deadline error is transient for the same
+ * reason: retry, then surface the timeout instead of holding the caller
+ * until the MCP client gives up.
+ *
  * Separately, upload-pack sometimes returns HTTP 200 with a truncated or
  * corrupt pack body; isomorphic-git then throws InternalError containing
  * "Packfile payload corrupted" when verifying the pack on first
@@ -79,10 +84,32 @@ export function isIsomorphicGitPackfileCorruptionError(error: unknown) {
 	return false
 }
 
+/**
+ * Deadline fired around an Artifacts git HTTP request. Matches the wrapper
+ * thrown by the bounded git client and a raw `AbortSignal.timeout`
+ * `TimeoutError` if one escapes unwrapped.
+ */
+export function isArtifactsGitTimeoutError(error: unknown) {
+	for (const entry of getErrorCauseChain(error)) {
+		if (!(entry instanceof Error)) continue
+		if (
+			entry.name === 'ArtifactsGitTimeoutError' ||
+			entry.name === 'TimeoutError'
+		) {
+			return true
+		}
+		if (isArtifactsGitTimeoutMessage(entry.message)) {
+			return true
+		}
+	}
+	return false
+}
+
 export function isTransientArtifactsGitError(error: unknown) {
 	return (
 		isTransientArtifactsGitHttpError(error) ||
-		isIsomorphicGitPackfileCorruptionError(error)
+		isIsomorphicGitPackfileCorruptionError(error) ||
+		isArtifactsGitTimeoutError(error)
 	)
 }
 
@@ -114,8 +141,13 @@ export function isArtifactsGitPackfileCorruptionSentryMessage(message: string) {
 export function isArtifactsGitTransientErrorMessage(message: string) {
 	return (
 		isArtifactsGitTransientHttpErrorMessage(message) ||
-		isArtifactsGitPackfileCorruptionSentryMessage(message)
+		isArtifactsGitPackfileCorruptionSentryMessage(message) ||
+		isArtifactsGitTimeoutMessage(message)
 	)
+}
+
+export function isArtifactsGitTimeoutMessage(message: string) {
+	return /Artifacts git request timed out after \d+ms/.test(message)
 }
 
 function describeArtifactRemote(remote: string) {
