@@ -135,6 +135,7 @@ import {
 } from './community-icon.ts'
 import {
 	type CommunityForkActor,
+	type CommunityForkRecord,
 	type CommunityListingRecord,
 	type CommunityListingSearchResult,
 	type CommunityListingWithAggregates,
@@ -1819,16 +1820,19 @@ export async function adoptCommunityFork(input: {
 		userId: input.userId,
 		packageId: input.packageId,
 	})
-	if (fork.adoptedAt) {
-		return {
-			packageId: savedPackage.id,
-			kodyId: savedPackage.kodyId,
-			listingId: fork.listingId,
-			originCommit: fork.originCommit,
-			adoptedAt: fork.adoptedAt,
-			alreadyAdopted: true,
-		}
-	}
+	const existingAdoption = (current: CommunityForkRecord | null) =>
+		current?.adoptedAt
+			? {
+					packageId: savedPackage.id,
+					kodyId: savedPackage.kodyId,
+					listingId: current.listingId,
+					originCommit: current.originCommit,
+					adoptedAt: current.adoptedAt,
+					alreadyAdopted: true,
+				}
+			: null
+	const alreadyAdopted = existingAdoption(fork)
+	if (alreadyAdopted) return alreadyAdopted
 
 	const adoptedAt = new Date().toISOString()
 	const updated = await markCommunityForkAdopted(input.env.APP_DB, {
@@ -1837,6 +1841,15 @@ export async function adoptCommunityFork(input: {
 		adoptionNote: reviewSummary,
 		adoptedAt,
 	})
+	if (!updated) {
+		const concurrentAdoption = existingAdoption(
+			await getCommunityForkByForkedPackageId(input.env.APP_DB, {
+				forkerUserId: input.userId,
+				forkedPackageId: savedPackage.id,
+			}),
+		)
+		if (concurrentAdoption) return concurrentAdoption
+	}
 	if (!updated?.adoptedAt) {
 		throw new CommunityActionError(
 			`Community fork for package "${savedPackage.kodyId}" could not be adopted.`,
