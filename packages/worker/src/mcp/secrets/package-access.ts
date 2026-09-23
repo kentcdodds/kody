@@ -168,6 +168,13 @@ export async function assertPackageCanAccessResolvedSecret(input: {
 	 * `storageContext.packageId` (the run) is used.
 	 */
 	authorityPackageId?: string | null
+	/**
+	 * When false, skip implicit self-authored package access. Share-grant
+	 * owner remaps at fetch/JWT use sites must pass false so a guest cannot
+	 * open the owner's full user keychain — only `allowed_packages` grants.
+	 * Defaults to true.
+	 */
+	allowImplicitUserSecretAccess?: boolean
 }) {
 	const { authorityPackageId: packageId } = resolveCallerSecretAuthority({
 		storageContext: input.storageContext,
@@ -198,7 +205,9 @@ export async function assertPackageCanAccessResolvedSecret(input: {
 		)
 	}
 	const intent = input.intent ?? 'use'
+	const allowImplicit = input.allowImplicitUserSecretAccess ?? true
 	if (
+		allowImplicit &&
 		intent === 'use' &&
 		(await savedPackageHasImplicitUserSecretReadAccess({
 			db: input.env.APP_DB,

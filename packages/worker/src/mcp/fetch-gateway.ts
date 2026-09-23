@@ -487,6 +487,9 @@ export async function expandSecretPlaceholders(input: {
 				authorityPackageId,
 				secretName: referenced.name,
 				resolved,
+				// Share-grant remap resolves as the owner; do not inherit the
+				// owner's implicit self-authored keychain for the guest.
+				allowImplicitUserSecretAccess: secretUserId === callerUserId,
 			})
 			return { referenced, resolved, value: resolved.value }
 		}),

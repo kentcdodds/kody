@@ -211,6 +211,30 @@ test('package secret access grants cover owned, self-authored, forked, adopted, 
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
 })
 
+test('assertPackageCanAccessResolvedSecret denies implicit access when allowImplicitUserSecretAccess is false', async () => {
+	mockModule.isShareGrantedForeignPackage.mockResolvedValue(false)
+	mockModule.getSavedPackageById.mockResolvedValue(savedPackage)
+	mockModule.getCommunityForkByForkedPackageId.mockResolvedValue(null)
+
+	await expect(
+		assertPackageCanAccessResolvedSecret(
+			accessInput({
+				allowImplicitUserSecretAccess: false,
+			}),
+		),
+	).rejects.toBeInstanceOf(PackageSecretAccessDeniedError)
+
+	await assertPackageCanAccessResolvedSecret(
+		accessInput({
+			resolved: {
+				...userSecretResolved,
+				allowedPackages: ['pkg-1'],
+			},
+			allowImplicitUserSecretAccess: false,
+		}),
+	)
+})
+
 test('package secret access authorizes the stamp package, not the importing run', async () => {
 	mockModule.getSavedPackageById.mockResolvedValueOnce({
 		...savedPackage,

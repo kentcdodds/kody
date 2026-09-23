@@ -137,6 +137,7 @@ export const jwtSignCapability = defineDomainCapability(
 				authorityPackageId,
 				secretName,
 				resolved,
+				allowImplicitUserSecretAccess: secretUserId === user.userId,
 			})
 
 			const secretMaterial = extractSecretMaterial({
