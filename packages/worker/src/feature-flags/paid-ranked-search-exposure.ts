@@ -41,7 +41,7 @@ export async function recordPaidRankedSearchFlagExposure(
 	try {
 		if (!input.planEligible) return
 		const db = input.env.APP_DB
-		if (!db) return
+		if (!db || typeof db.prepare !== 'function') return
 		const stableUserId = normalizeStableUserId(input.stableUserId ?? '')
 		if (!stableUserId) return
 		const flagKey = input.flagKey ?? jevSearchRerankFlagKey
