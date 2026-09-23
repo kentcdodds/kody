@@ -109,7 +109,8 @@ the kody-named resources below — they are intentional cross-account leftovers.
 **DR / backup stack (this runbook):**
 
 - Worker `kody-production-d1-backups` (hourly + nightly crons)
-- Workflows `kody-production-d1-backup` and `kody-production-dr-restore`
+- Workflows `kody-production-d1-backup`, `kody-production-dr-restore`, and
+  `kody-production-seal-day`
 - Locked R2 bucket `kody-production-backups`
 - Custom domain `kody-dr.kentcdodds.com`
 
@@ -230,7 +231,9 @@ Contract: `packages/shared/src/backup-staging.ts`.
    before source checks, so hourly seal does not treat them as incomplete when a
    later-configured database is absent. The sealed full-manifest `d1ManifestKey`
    still points at the primary APP_DB export. Hourly freshness also attempts to
-   seal the last sixteen complete days; the UI can seal a day on demand.
+   seal the last sixteen complete days synchronously. The UI seal action
+   enqueues workflow `kody-production-seal-day` for that day and returns
+   immediately; it does not run the seal inside the browser request.
 
 ### Restore-safe row sizes
 
@@ -411,15 +414,16 @@ backup SQL. See [Secret rotation](./secret-rotation.md).
 
 Routes (all require Access JWT):
 
-| Method | Path                       | Action                                                                                                                             |
-| ------ | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `GET`  | `/`                        | Dashboard: enable gates, source identity, live D1 size, escrow presence, 14-day D1/staging/seal status with signature verification |
-| `POST` | `/actions/run-backup`      | Enqueue today's D1 backup Workflow for every configured source (APP_DB and JOBS_DB)                                                |
-| `POST` | `/actions/seal-day`        | Verify staging + every configured D1 manifest and seal `daily/full/{day}/...`                                                      |
-| `POST` | `/actions/run-drill`       | Isolated restore drill of one selected database (fresh D1 in `DRILL_ACCOUNT_ID`, never production)                                 |
-| `POST` | `/actions/restore/prepare` | Validate sealed day; issue 10-minute HMAC confirm token                                                                            |
-| `POST` | `/actions/restore/execute` | Require typed exact `SOURCE_DATABASE_NAME` + valid token; start restore Workflow                                                   |
-| `GET`  | `/restore-status?id=...`   | Poll restore Workflow status                                                                                                       |
+| Method | Path                       | Action                                                                                                                                           |
+| ------ | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET`  | `/`                        | Dashboard: enable gates, source identity, live D1 size, escrow presence, 14-day D1/staging/seal status with signature verification               |
+| `POST` | `/actions/run-backup`      | Enqueue today's D1 backup Workflow for every configured source (APP_DB and JOBS_DB)                                                              |
+| `POST` | `/actions/seal-day`        | Enqueue workflow `kody-production-seal-day` for that day (`seal-day-<day>`), then redirect to its status page. Does not seal inside the request. |
+| `POST` | `/actions/run-drill`       | Isolated restore drill of one selected database (fresh D1 in `DRILL_ACCOUNT_ID`, never production)                                               |
+| `POST` | `/actions/restore/prepare` | Validate sealed day; issue 10-minute HMAC confirm token                                                                                          |
+| `POST` | `/actions/restore/execute` | Require typed exact `SOURCE_DATABASE_NAME` + valid token; start restore Workflow                                                                 |
+| `GET`  | `/seal-status?id=...`      | Poll seal Workflow status (in progress, sealed, already sealed, or incomplete reason)                                                            |
+| `GET`  | `/restore-status?id=...`   | Poll restore Workflow status                                                                                                                     |
 
 ### Isolated restore drill
 
@@ -840,8 +844,8 @@ Work top-to-bottom. Leave gates false until the matching gate item is done.
 - [ ] `DR_DEPLOY_TOKEN` is set; optional R2-admin `DR_BACKUP_ADMIN_TOKEN`
       reconciles policy when accessible and logs a non-blocking skip otherwise;
       the control plane deploys to the DR account; `BACKUP_BUCKET` bound;
-      Workflows `kody-production-d1-backup` and `kody-production-dr-restore`
-      present; public bucket access off.
+      Workflows `kody-production-d1-backup`, `kody-production-dr-restore`, and
+      `kody-production-seal-day` present; public bucket access off.
 - [ ] UI loads only through Access; unauthenticated and wrong-email JWTs
       get 403.
 

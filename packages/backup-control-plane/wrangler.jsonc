@@ -21,6 +21,11 @@
 			"name": "kody-production-dr-restore",
 			"class_name": "ProductionDrRestoreWorkflow",
 		},
+		{
+			"binding": "SEAL_WORKFLOW",
+			"name": "kody-production-seal-day",
+			"class_name": "ProductionSealDayWorkflow",
+		},
 	],
 	"r2_buckets": [
 		{

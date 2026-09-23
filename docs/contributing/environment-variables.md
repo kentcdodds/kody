@@ -508,7 +508,8 @@ Actions logs a reconciliation skip and deploys normally. The admin token is
 never installed as a Worker secret. Enable gates and source identity vars live
 in that package's `wrangler.jsonc`.
 
-Workflow bindings are `BACKUP_WORKFLOW` and `RESTORE_WORKFLOW`.
+Workflow bindings are `BACKUP_WORKFLOW`, `RESTORE_WORKFLOW`, and
+`SEAL_WORKFLOW`.
 
 Non-secret vars:
 

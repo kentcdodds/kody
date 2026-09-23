@@ -25,7 +25,7 @@ import {
 	renderRestoreAlreadyStartedPage,
 	renderRestorePreparePage,
 	renderRestoreStatusPage,
-	renderSealResult,
+	renderSealStatusPage,
 } from './control-plane-ui.ts'
 import {
 	restoreWorkflowInstanceId,
@@ -36,8 +36,13 @@ import {
 	verifyRestoreConfirmToken,
 } from './restore-confirm-token.ts'
 import { runRestoreDrill } from './restore-drill.ts'
-import { sealFullBackupDay } from './seal-full-backup.ts'
-import { enqueueBackup } from './workflow-trigger.ts'
+import {
+	dayFromSealWorkflowInstanceId,
+	describeSealStatus,
+	sealDayWorkflowInstanceId,
+	sealStatusResponseStatus,
+} from './seal-day-run.ts'
+import { enqueueBackup, enqueueWorkflow } from './workflow-trigger.ts'
 
 async function readForm(request: Request): Promise<URLSearchParams> {
 	const contentType = request.headers.get('content-type') ?? ''
@@ -53,6 +58,16 @@ async function readForm(request: Request): Promise<URLSearchParams> {
 		return params
 	}
 	return new URLSearchParams(await request.text())
+}
+
+function seeOther(location: string): Response {
+	return new Response(null, {
+		status: 303,
+		headers: {
+			location,
+			'cache-control': 'no-store',
+		},
+	})
 }
 
 function requireDay(value: string | null): string {
@@ -73,6 +88,49 @@ async function handleAuthenticated(
 
 	if (request.method === 'GET' && path === '/') {
 		return htmlResponse(await renderDashboard(env))
+	}
+
+	if (request.method === 'GET' && path === '/seal-status') {
+		const id = url.searchParams.get('id')
+		if (!id) {
+			return htmlResponse(
+				renderMessagePage('Seal status', 'Missing workflow id.', {
+					danger: true,
+				}),
+				400,
+			)
+		}
+		const day = dayFromSealWorkflowInstanceId(id)
+		if (day === null) {
+			return htmlResponse(
+				renderMessagePage('Seal status', 'Unknown seal workflow id.', {
+					danger: true,
+				}),
+				400,
+			)
+		}
+		try {
+			const instance = await env.SEAL_WORKFLOW.get(id)
+			const status = await instance.status()
+			const view = describeSealStatus({
+				status: status.status,
+				error: status.error,
+				output: status.output,
+			})
+			return htmlResponse(
+				renderSealStatusPage({ day, instanceId: id, view }),
+				sealStatusResponseStatus(view),
+			)
+		} catch (error) {
+			return htmlResponse(
+				renderMessagePage(
+					'Seal status',
+					`Unable to read workflow status: ${error instanceof Error ? error.message : 'unknown error'}`,
+					{ danger: true },
+				),
+				404,
+			)
+		}
 	}
 
 	if (request.method === 'GET' && path === '/restore-status') {
@@ -154,42 +212,17 @@ async function handleAuthenticated(
 		}
 		case '/actions/seal-day': {
 			const day = requireDay(form.get('day'))
-			const result = await sealFullBackupDay(env, day)
-			switch (result.kind) {
-				case 'sealed':
-					safeLog({
-						event: 'ui-seal-day',
-						status: 'success',
-						day,
-						manifestKey: result.manifestKey,
-					})
-					return htmlResponse(
-						renderSealResult(
-							result.alreadySealed
-								? `Day ${day} was already sealed at ${result.manifestKey}.`
-								: `Sealed day ${day} at ${result.manifestKey}.`,
-						),
-					)
-				case 'incomplete':
-					safeLog({
-						event: 'ui-seal-day',
-						status: 'failure',
-						day,
-						errorCode: result.reason,
-					})
-					return htmlResponse(
-						renderMessagePage(
-							'Seal day incomplete',
-							`Day ${day} is not ready to seal (${result.reason}).`,
-							{ danger: true },
-						),
-						409,
-					)
-				default: {
-					const exhaustive: never = result
-					throw exhaustive
-				}
-			}
+			const instanceId = sealDayWorkflowInstanceId(day)
+			await enqueueWorkflow(env.SEAL_WORKFLOW, instanceId, { day })
+			safeLog({
+				event: 'ui-seal-day',
+				status: 'success',
+				day,
+				instanceId,
+			})
+			const location = new URL('/seal-status', request.url)
+			location.searchParams.set('id', instanceId)
+			return seeOther(location.toString())
 		}
 		case '/actions/run-drill': {
 			const day = requireDay(form.get('day'))

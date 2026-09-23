@@ -43,6 +43,7 @@ function rsaJwksAndSigner() {
 const routes: Array<{ method: string; path: string }> = [
 	{ method: 'GET', path: '/' },
 	{ method: 'GET', path: '/restore-status?id=demo' },
+	{ method: 'GET', path: '/seal-status?id=seal-day-2026-09-22' },
 	{ method: 'POST', path: '/actions/run-backup' },
 	{ method: 'POST', path: '/actions/seal-day' },
 	{ method: 'POST', path: '/actions/run-drill' },
