@@ -496,11 +496,36 @@ export function CommunityDetailRoute(handle: Handle) {
 		installConfirmListingId = null
 	}
 
+	function armedInstallControl() {
+		const listingId = installConfirmListingId
+		if (!listingId || typeof document === 'undefined') return null
+		for (const control of document.querySelectorAll(
+			'[data-community-install]',
+		)) {
+			if (control.getAttribute('data-package-title-listing') === listingId) {
+				return control
+			}
+		}
+		return null
+	}
+
+	function disarmInstallConfirm() {
+		if (!installConfirm.doubleCheck) return
+		const control = armedInstallControl()
+		resetInstallConfirm()
+		if (control) paintPackageTitleInstallConfirm(control, false)
+	}
+
 	function handleCommunityInstallClick(event: Event) {
 		const target = event.target
 		if (!(target instanceof Element)) return
 		const control = target.closest('[data-community-install]')
-		if (!control) return
+		// A click that does not move focus never fires focusout. Drop the
+		// armed flag here so the next click on the fork icon has to arm again.
+		if (!control) {
+			disarmInstallConfirm()
+			return
+		}
 		const loginLink = control instanceof HTMLAnchorElement
 		const official = control.getAttribute('data-official') === 'true'
 		const listingId = control.getAttribute('data-package-title-listing')
