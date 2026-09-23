@@ -34,6 +34,11 @@ import {
 	withLocalAppDbRemediation,
 } from './control-kody/local-app-db.ts'
 import {
+	defaultPlaywrightBrowsersJsonPath,
+	inspectPlaywrightBrowsers,
+	type PlaywrightBrowserCheck,
+} from './control-kody/playwright-browsers.ts'
+import {
 	defaultDumpFile,
 	formatContainsFailure,
 	missingContainsNeedles,
@@ -63,7 +68,7 @@ const usageLines = [
 	'Drive and verify the Kody app without throwaway scripts.',
 	'',
 	'Commands:',
-	'  doctor          Check Node, Playwright, hooks, /health, and local APP_DB',
+	'  doctor          Check Node, Playwright browser revision, hooks, /health, and local APP_DB',
 	'  dev             Start or reuse the local origin (npm run dev:ensure)',
 	'  login           POST /auth and write a session cookie',
 	'  request         Authenticated HTTP as the current session',
@@ -367,38 +372,12 @@ export type DoctorDeps = {
 	nodeVersion: string
 	homeDir: string
 	hooksPath: string | null
-	playwrightMarkerExists: (homeDir: string) => boolean
+	inspectPlaywright: (homeDir: string) => PlaywrightBrowserCheck
 	probeHealth: (origin: string) => Promise<boolean>
 	ports: ReadonlyArray<number>
 	origin: string | null
 	persistRoot: string
 	probeLocalLogin?: (origin: string) => Promise<LocalLoginProbe>
-}
-
-export function playwrightBrowsersInstalled(homeDir: string) {
-	const root = path.join(homeDir, '.cache', 'ms-playwright')
-	if (!existsSync(root)) return false
-	try {
-		const entries = readdirSync(root, { withFileTypes: true })
-		const installed = new Set(
-			entries
-				.filter(
-					(entry) =>
-						entry.isDirectory() &&
-						existsSync(path.join(root, entry.name, 'INSTALLATION_COMPLETE')),
-				)
-				.map((entry) => entry.name),
-		)
-		const hasChromium = [...installed].some((name) =>
-			name.startsWith('chromium-'),
-		)
-		const hasHeadlessShell = [...installed].some((name) =>
-			name.startsWith('chromium_headless_shell-'),
-		)
-		return hasChromium && hasHeadlessShell
-	} catch {
-		return false
-	}
 }
 
 export async function runDoctor(deps: DoctorDeps): Promise<DoctorReport> {
@@ -413,13 +392,11 @@ export async function runDoctor(deps: DoctorDeps): Promise<DoctorReport> {
 			: `Node ${deps.nodeVersion} is below 26. Prepend nvm's Node 26 bin to PATH. See docs/contributing/cloud-agents.md.`,
 	})
 
-	const playwrightOk = deps.playwrightMarkerExists(deps.homeDir)
+	const playwright = deps.inspectPlaywright(deps.homeDir)
 	checks.push({
 		name: 'playwright',
-		ok: playwrightOk,
-		detail: playwrightOk
-			? 'Playwright INSTALLATION_COMPLETE marker present'
-			: 'Playwright browsers missing. Do not run playwright install on this VM; unzip per docs/contributing/cloud-agents.md.',
+		ok: playwright.ok,
+		detail: playwright.detail,
 	})
 
 	const hooksOk = Boolean(deps.hooksPath && deps.hooksPath.length > 0)
@@ -780,7 +757,11 @@ export function defaultDoctorDeps(origin: string | null = null): DoctorDeps {
 		nodeVersion: process.version,
 		homeDir: homedir(),
 		hooksPath: readGitHooksPath(),
-		playwrightMarkerExists: playwrightBrowsersInstalled,
+		inspectPlaywright: (homeDir) =>
+			inspectPlaywrightBrowsers({
+				homeDir,
+				browsersJsonPath: defaultPlaywrightBrowsersJsonPath(repoRootFromHere()),
+			}),
 		probeHealth: (value) => isWorkerHealthOk(value),
 		ports: workerPortRange(),
 		origin,

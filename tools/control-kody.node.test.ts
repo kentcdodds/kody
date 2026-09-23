@@ -16,7 +16,6 @@ import {
 	loginToOrigin,
 	localSeedEmail,
 	parseControlArgs,
-	playwrightBrowsersInstalled,
 	isGitAncestor,
 	readHealth,
 	repoRootFromHere,
@@ -202,7 +201,11 @@ test('control-kody parses commands, maps every required route, and drives a seed
 		nodeVersion: 'v26.1.2',
 		homeDir: tmpdir(),
 		hooksPath: '.husky',
-		playwrightMarkerExists: () => true,
+		inspectPlaywright: () => ({
+			ok: true,
+			detail:
+				'Playwright chromium-1234 and chromium_headless_shell-1234 INSTALLATION_COMPLETE',
+		}),
 		probeHealth: async () => true,
 		ports: [3742],
 		origin: 'http://localhost:3742',
@@ -222,12 +225,22 @@ test('control-kody parses commands, maps every required route, and drives a seed
 		'health',
 		'local-d1',
 	])
+	expect(doctor.checks.find((check) => check.name === 'playwright')).toEqual({
+		name: 'playwright',
+		ok: true,
+		detail:
+			'Playwright chromium-1234 and chromium_headless_shell-1234 INSTALLATION_COMPLETE',
+	})
 
 	const oldNode = await runDoctor({
 		nodeVersion: 'v22.14.0',
 		homeDir: tmpdir(),
 		hooksPath: null,
-		playwrightMarkerExists: () => false,
+		inspectPlaywright: () => ({
+			ok: false,
+			detail:
+				'Playwright revision missing (chromium-1234, chromium_headless_shell-1234). Unzip per docs/contributing/cloud-agents.md.',
+		}),
 		probeHealth: async () => false,
 		ports: [3742],
 		origin: null,
@@ -237,7 +250,12 @@ test('control-kody parses commands, maps every required route, and drives a seed
 	expect(oldNode.checks.find((check) => check.name === 'node')?.detail).toMatch(
 		/below 26/,
 	)
-	expect(playwrightBrowsersInstalled(tmpdir())).toBe(false)
+	expect(oldNode.checks.find((check) => check.name === 'playwright')).toEqual({
+		name: 'playwright',
+		ok: false,
+		detail:
+			'Playwright revision missing (chromium-1234, chromium_headless_shell-1234). Unzip per docs/contributing/cloud-agents.md.',
+	})
 
 	await withAuthServer(
 		(request, response) => {
@@ -373,7 +391,11 @@ test('doctor local-d1 fails when local seed login fails', async () => {
 		nodeVersion: 'v26.1.2',
 		homeDir: tmpdir(),
 		hooksPath: '.husky',
-		playwrightMarkerExists: () => true,
+		inspectPlaywright: () => ({
+			ok: true,
+			detail:
+				'Playwright chromium-1234 and chromium_headless_shell-1234 INSTALLATION_COMPLETE',
+		}),
 		probeHealth: async () => true,
 		ports: [3742],
 		origin: 'http://localhost:3742',
