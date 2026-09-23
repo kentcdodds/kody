@@ -6,6 +6,7 @@ export interface BackupEnvironment {
 	BACKUP_BUCKET: R2Bucket
 	BACKUP_WORKFLOW: Workflow
 	RESTORE_WORKFLOW: Workflow
+	SEAL_WORKFLOW: Workflow
 	CLOUDFLARE_API_TOKEN: string
 	SOURCE_ACCOUNT_ID: string
 	SOURCE_DATABASE_ID: string

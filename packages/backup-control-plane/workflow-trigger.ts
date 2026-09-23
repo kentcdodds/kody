@@ -20,11 +20,8 @@ interface WorkflowHandle {
 	restart(): Promise<void>
 }
 
-interface WorkflowStarter {
-	create(options: {
-		id: string
-		params: ScheduledBackupPayload
-	}): Promise<unknown>
+interface WorkflowStarter<Params> {
+	create(options: { id: string; params: Params }): Promise<unknown>
 	get(id: string): Promise<WorkflowHandle>
 }
 
@@ -47,17 +44,13 @@ export function primaryBackupTimeForDay(scheduledAt: Date): Date {
 	)
 }
 
-export async function enqueueBackup(
-	workflow: WorkflowStarter,
-	databaseId: string,
-	payload: ScheduledBackupPayload,
+export async function enqueueWorkflow<Params>(
+	workflow: WorkflowStarter<Params>,
+	id: string,
+	params: Params,
 ): Promise<EnqueueResult> {
-	const id = workflowInstanceId(databaseId, payload.day)
 	try {
-		await workflow.create({
-			id,
-			params: payload,
-		})
+		await workflow.create({ id, params })
 		return 'created'
 	} catch (createError) {
 		let instance: WorkflowHandle
@@ -92,8 +85,20 @@ export async function enqueueBackup(
 	}
 }
 
+export async function enqueueBackup(
+	workflow: WorkflowStarter<ScheduledBackupPayload>,
+	databaseId: string,
+	payload: ScheduledBackupPayload,
+): Promise<EnqueueResult> {
+	return enqueueWorkflow(
+		workflow,
+		workflowInstanceId(databaseId, payload.day),
+		payload,
+	)
+}
+
 export async function enqueueBackupRetry(
-	workflow: WorkflowStarter,
+	workflow: WorkflowStarter<ScheduledBackupPayload>,
 	databaseId: string,
 	payload: ScheduledBackupPayload,
 	scheduledAt: Date,

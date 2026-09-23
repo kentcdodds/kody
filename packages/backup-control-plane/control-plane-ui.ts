@@ -20,6 +20,7 @@ import { type DrillReport } from './restore-drill.ts'
 import { type ProductionRestoreProgress } from './production-restore.ts'
 import { type RestoreConfirmToken } from './restore-confirm-token.ts'
 import { readFullManifest } from './seal-full-backup.ts'
+import { type SealStatusView } from './seal-day-run.ts'
 import { readSqlRestorability } from './sql-statement-stats.ts'
 
 const DASHBOARD_DAY_COUNT = 14
@@ -410,6 +411,7 @@ ${options.flashHtml ?? ''}
 			<button type="submit">Run isolated restore drill</button>
 		</form>
 	</div>
+	<p>Seal day queues the work and returns immediately. The status page shows progress, success, or why the day is not ready.</p>
 </section>
 <section class="panel danger">
 	<h2>Production restore (dangerous)</h2>
@@ -448,8 +450,57 @@ export function renderEnqueueResult(day: string, result: string): string {
 	)
 }
 
-export function renderSealResult(details: string): string {
-	return renderMessagePage('Seal day', details)
+export function renderSealStatusPage(input: {
+	day: string
+	instanceId: string
+	view: SealStatusView
+}): string {
+	const refreshUrl = `/seal-status?id=${encodeURIComponent(input.instanceId)}`
+	let title = 'Seal day'
+	let message = ''
+	let danger = false
+	switch (input.view.kind) {
+		case 'pending':
+			message = `Seal for ${input.day} is ${input.view.status}. This page refreshes until the workflow finishes.`
+			break
+		case 'sealed':
+			message = input.view.alreadySealed
+				? `Day ${input.day} was already sealed at ${input.view.manifestKey}.`
+				: `Sealed day ${input.day} at ${input.view.manifestKey}.`
+			break
+		case 'incomplete':
+			title = 'Seal day incomplete'
+			danger = true
+			message = `Day ${input.day} is not ready to seal (${input.view.reason}).`
+			break
+		case 'failed':
+			title = 'Seal day failed'
+			danger = true
+			message = input.view.message
+			break
+		default: {
+			const exhaustive: never = input.view
+			throw exhaustive
+		}
+	}
+	const body = `
+<header>
+	<h1>${escapeHtml(title)}</h1>
+	<p>Workflow instance <code>${escapeHtml(input.instanceId)}</code></p>
+</header>
+<section class="panel${danger ? ' danger' : ''}">
+	<p>${escapeHtml(message)}</p>
+	<p>
+		<a class="button" href="${escapeHtml(refreshUrl)}">Refresh</a>
+		<a class="button" href="/">Back to dashboard</a>
+	</p>
+	${
+		input.view.kind === 'pending'
+			? `<meta http-equiv="refresh" content="5;url=${escapeHtml(refreshUrl)}"/>`
+			: ''
+	}
+</section>`
+	return layout(title, body, { danger })
 }
 
 export function renderDrillReport(report: DrillReport): string {

@@ -750,7 +750,33 @@ export async function sealFullBackupDay(
 		sealedAt: now.toISOString(),
 		buildCommit: summary.buildCommit,
 	})
-	await putImmutableFullManifest(env.BACKUP_BUCKET, manifestKey, fullManifest)
+	try {
+		await putImmutableFullManifest(env.BACKUP_BUCKET, manifestKey, fullManifest)
+	} catch (error) {
+		if (
+			!(error instanceof BackupError) ||
+			error.code !== 'full-manifest-conflict'
+		) {
+			throw error
+		}
+		// A concurrent seal (hourly cron and the operator workflow) can sign a
+		// different sealedAt for the same bytes. Keep the manifest that landed.
+		const winner = await readFullManifest(env.BACKUP_BUCKET, manifestKey)
+		if (
+			winner !== null &&
+			winner.payload.day === day &&
+			(await verifyBackupFullManifestSignature(env, winner))
+		) {
+			safeLog({
+				event: 'full-backup-already-sealed',
+				status: 'success',
+				day,
+				manifestKey,
+			})
+			return { kind: 'sealed', day, manifestKey, alreadySealed: true }
+		}
+		throw error
+	}
 	safeLog({
 		event: 'full-backup-sealed',
 		status: 'success',
