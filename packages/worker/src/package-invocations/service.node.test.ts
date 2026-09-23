@@ -494,7 +494,7 @@ test('invokePackageExport enforces idempotency replay, mismatch, corruption, and
 		error: {
 			code: 'idempotency_mismatch',
 			message:
-				'This idempotency key has already been used for a different package invocation request.',
+				'This idempotency key has already been used for a different package invocation request. Send a new Idempotency-Key to run again.',
 		},
 		idempotency: {
 			key: 'evt-mismatch',
@@ -917,6 +917,59 @@ test('invokePackageExport stores terminal failures for execution errors and miss
 		},
 		logs: ['before-error'],
 	})
+
+	const callsAfterFailure =
+		repoMockModule.runBundledModuleWithRegistry.mock.calls.length
+	const replayedFailure = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-2',
+			source: 'discord-gateway',
+		},
+	})
+	expect(replayedFailure.status).toBe(500)
+	expect(replayedFailure.body).toMatchObject({
+		ok: false,
+		error: {
+			code: 'execution_failed',
+			message: 'Discord downstream failed',
+		},
+		idempotency: { key: 'evt-2', replayed: true },
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry.mock.calls.length).toBe(
+		callsAfterFailure,
+	)
+
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		result: { reply: 'registered' },
+		logs: [],
+	})
+	const freshAttempt = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-2:attempt-2',
+			source: 'discord-gateway',
+		},
+	})
+	expect(freshAttempt.status).toBe(200)
+	expect(freshAttempt.body).toMatchObject({
+		ok: true,
+		result: { reply: 'registered' },
+		idempotency: { key: 'evt-2:attempt-2', replayed: false },
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry.mock.calls.length).toBe(
+		callsAfterFailure + 1,
+	)
 
 	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
 		error: new Error('Durable Object reset because its code was updated.'),

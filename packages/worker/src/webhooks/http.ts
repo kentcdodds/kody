@@ -60,6 +60,22 @@ import {
 	webhookSyncInvocationTimeoutMs,
 } from './types.ts'
 
+const replayedInvocationFailureMessage =
+	'This Idempotency-Key already stored a failed attempt. Send a new Idempotency-Key to run the export again.'
+
+function isReplayedInvocationFailure(body: unknown) {
+	if (!body || typeof body !== 'object' || Array.isArray(body)) return false
+	const idempotency = (body as Record<string, unknown>)['idempotency']
+	if (
+		!idempotency ||
+		typeof idempotency !== 'object' ||
+		Array.isArray(idempotency)
+	) {
+		return false
+	}
+	return (idempotency as Record<string, unknown>)['replayed'] === true
+}
+
 function decodePathComponent(value: string) {
 	try {
 		return decodeURIComponent(value)
@@ -816,13 +832,17 @@ export async function handleWebhookIngressRequest(
 			waitUntil,
 		})
 		if (!ok) {
+			const replayedFailure = isReplayedInvocationFailure(response.body)
 			return jsonResponse(
 				{
 					ok: false,
 					error: {
 						code: 'invocation_failed',
-						message: 'Bound package export invocation failed.',
+						message: replayedFailure
+							? replayedInvocationFailureMessage
+							: 'Bound package export invocation failed.',
 					},
+					...(replayedFailure ? { idempotency: { replayed: true } } : {}),
 				},
 				{ status: 502 },
 			)

@@ -138,12 +138,17 @@ The identity key is:
 
 Behavior:
 
-- same request + same idempotency key => stored response replayed
-- same idempotency key + different payload => `409 idempotency_mismatch`
+- same request + same idempotency key => stored response replayed, including a
+  stored failure
+- same idempotency key + different payload => `409 idempotency_mismatch` (send a
+  new key to run again)
 - duplicate while first invocation is still active =>
-  `409 invocation_in_progress`
+  `409 invocation_in_progress` (that key stays on the conflict; a new key starts
+  another attempt)
 
-This makes duplicate event deliveries safe when the proxy retries.
+A proxy retry that must run the export again sends a new idempotency key per
+attempt. Reusing the key returns the stored outcome instead of starting another
+attempt.
 
 ## Response shape
 

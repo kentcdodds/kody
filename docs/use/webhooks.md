@@ -313,12 +313,21 @@ Arrays and non-objects are **400** `invalid_params`. Default
 `{ webhook, request }`.
 
 Send **`Idempotency-Key`** (standard header). In `params` mode, JSON
-`idempotencyKey` is accepted when the header is absent. Same key + same payload
-replays the stored result. On `sync`, a different payload is **409**
-`idempotency_mismatch` and an in-progress key is **409**
-`invocation_in_progress`. `ack` still returns **202** after enqueue; the
-consumer records the ledger outcome. This works without HMAC — the URL secret is
-the credential.
+`idempotencyKey` is accepted when the header is absent. The key names one stored
+attempt. Same key + same payload replays that attempt's outcome, including a
+stored failure, and does not run the export again. On `sync`, that replay is
+**502** `invocation_failed` and tells the caller to send a new key. A different
+payload on the same key is **409** `idempotency_mismatch`. An in-progress key is
+**409** `invocation_in_progress` until that attempt finishes. `ack` still
+returns **202** after enqueue; the consumer records the ledger outcome. This
+works without HMAC — the URL secret is the credential.
+
+Transport retries that must run the export again send a **new**
+`Idempotency-Key` per attempt. A failed LinkedIn register, or any other
+register-style call, is that case: put an attempt nonce in the key
+(`linkedin-register:<uploadId>:<nonce>`). Keep one key only when the caller
+wants that attempt's stored outcome. Reusing the key across those retries
+replays the failure or stays on **409**.
 
 Caller keys use the same package-invocation idempotency ledger as
 `replay.deliveryIdHeader`. Delivery-id keys still match by id alone (vendor

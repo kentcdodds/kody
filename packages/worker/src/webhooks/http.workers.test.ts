@@ -1482,3 +1482,140 @@ test('rotate overlap accepts the previous URL until the new URL is used or the g
 	})
 	expect(currentAfterExpiry.status).toBe(202)
 })
+
+test('a failed sync register replays on the same Idempotency-Key and runs again with a new key', async () => {
+	silenceExpectedConsoleWarns(['activation-run-record-failed'])
+	await ensureSchema(env.APP_DB)
+	await env.APP_DB.prepare(`DELETE FROM webhook_endpoints`).run()
+	await env.APP_DB.prepare(`DELETE FROM saved_packages`).run()
+	await env.APP_DB.prepare(`DELETE FROM users`).run()
+
+	const userId = await seedOwner()
+	await clearRunRecords({ env, userId })
+	const urlSecret = 'linkedin-register-secret'
+	await mintWebhook({
+		userId,
+		webhookName: 'register-video-upload',
+		urlSecret,
+		id: 'mint-linkedin-register',
+	})
+	declareWebhook({
+		name: 'register-video-upload',
+		responseMode: 'sync',
+		inputMode: 'params',
+	})
+
+	const ledger = new Map<string, ResolvableInvocationRecord>()
+	let exportInvocations = 0
+	mocks.invokePackageExport.mockReset()
+	mocks.invokePackageExport.mockImplementation(
+		async (input: { request: PackageInvocationRequest }) => {
+			const key = input.request.idempotencyKey
+			if (!key) throw new Error('register webhook expected an Idempotency-Key')
+			const requestHash = await createRequestHash({
+				packageId: input.request.packageIdOrKodyId,
+				exportName: input.request.exportName,
+				params: input.request.params,
+				source: input.request.source ?? null,
+				topic: input.request.topic ?? null,
+			})
+			const existing = ledger.get(key)
+			if (existing) {
+				return resolveExistingInvocation({
+					record: existing,
+					requestHash,
+					idempotencyKey: key,
+				})
+			}
+			exportInvocations += 1
+			const response =
+				exportInvocations === 1
+					? {
+							status: 500,
+							body: {
+								ok: false,
+								error: {
+									code: 'execution_failed',
+									message: 'route is required',
+								},
+								idempotency: { key, replayed: false },
+							},
+						}
+					: {
+							status: 200,
+							body: {
+								ok: true,
+								result: { uploadUrl: 'https://upload.example/video' },
+								idempotency: { key, replayed: false },
+							},
+						}
+			ledger.set(key, {
+				requestHash,
+				status: exportInvocations === 1 ? 'failed' : 'completed',
+				storedResponse: response,
+			})
+			return response
+		},
+	)
+
+	const registerBody = JSON.stringify({
+		route: 'linkedin/register-video-upload',
+		params: { fileSizeBytes: 12, confirm: true },
+	})
+	const staleKey = 'linkedin-register:video-1'
+	const freshKey = 'linkedin-register:video-1:attempt-2'
+	const first = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'register-video-upload',
+		urlSecret,
+		body: registerBody,
+		headers: { 'Idempotency-Key': staleKey },
+	})
+	expect(first.status).toBe(502)
+	expect(await first.json()).toEqual({
+		ok: false,
+		error: {
+			code: 'invocation_failed',
+			message: 'Bound package export invocation failed.',
+		},
+	})
+
+	const retried = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'register-video-upload',
+		urlSecret,
+		body: registerBody,
+		headers: { 'Idempotency-Key': staleKey },
+	})
+	expect(retried.status).toBe(502)
+	expect(await retried.json()).toEqual({
+		ok: false,
+		error: {
+			code: 'invocation_failed',
+			message:
+				'This Idempotency-Key already stored a failed attempt. Send a new Idempotency-Key to run the export again.',
+		},
+		idempotency: { replayed: true },
+	})
+	expect(exportInvocations).toBe(1)
+
+	const fresh = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'register-video-upload',
+		urlSecret,
+		body: registerBody,
+		headers: { 'Idempotency-Key': freshKey },
+	})
+	expect(fresh.status).toBe(200)
+	expect(await fresh.json()).toMatchObject({
+		ok: true,
+		result: { uploadUrl: 'https://upload.example/video' },
+	})
+	expect(exportInvocations).toBe(2)
+	const keys = mocks.invokePackageExport.mock.calls.map(
+		(call) =>
+			(call[0] as { request: { idempotencyKey: string } }).request
+				.idempotencyKey,
+	)
+	expect(keys).toEqual([staleKey, staleKey, freshKey])
+})

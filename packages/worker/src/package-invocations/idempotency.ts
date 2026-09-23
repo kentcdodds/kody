@@ -74,7 +74,7 @@ export function resolveExistingInvocation(input: {
 			status: 409,
 			code: 'idempotency_mismatch',
 			message:
-				'This idempotency key has already been used for a different package invocation request.',
+				'This idempotency key has already been used for a different package invocation request. Send a new Idempotency-Key to run again.',
 			idempotencyKey: input.idempotencyKey,
 		})
 	}
@@ -83,7 +83,7 @@ export function resolveExistingInvocation(input: {
 			status: 409,
 			code: 'invocation_in_progress',
 			message:
-				'This idempotency key is already processing for the requested package export.',
+				'This idempotency key is already processing for the requested package export. Retrying this key stays on this conflict; a new Idempotency-Key starts another attempt.',
 			idempotencyKey: input.idempotencyKey,
 		})
 	}

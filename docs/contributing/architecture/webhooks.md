@@ -57,11 +57,14 @@ invoke-token envelope (`params` plus optional `idempotencyKey`, `source`, and
 include a nested `params` object next to other keys stays intact.
 `Idempotency-Key` (or JSON `idempotencyKey` in params mode) maps to the same
 package-invocation ledger with payload hashing (`include`): same key + same
-first argument replays. On `sync`, mismatch and in-progress are **409**. `ack`
-returns **202** after enqueue; the queue consumer applies the same ledger
-asynchronously. Request-mode caller keys hash the JSON body so `receivedAt` does
-not break retries. Delivery-id keys stay `ignore`. HMAC stays optional; the URL
-secret is enough for a trusted client.
+first argument replays, including a stored failure. On `sync`, a replayed
+failure is **502** `invocation_failed` and tells the caller to send a new key;
+mismatch and in-progress are **409**. A transport retry that must run the export
+again (a failed register, for example) sends a new `Idempotency-Key` per
+attempt, with an attempt nonce. `ack` returns **202** after enqueue; the queue
+consumer applies the same ledger asynchronously. Request-mode caller keys hash
+the JSON body so `receivedAt` does not break retries. Delivery-id keys stay
+`ignore`. HMAC stays optional; the URL secret is enough for a trusted client.
 
 `rateLimitPerMinute` overrides the default 60/min ceiling per minted endpoint.
 600/min is the documented maximum for gateway fan-in. The limiter still bounds a
