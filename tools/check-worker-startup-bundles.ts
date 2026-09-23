@@ -205,7 +205,8 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// secrets on main: local dry-run 5_153_557 against the previous
 		// 5_153_000 budget.
 		// Jev paid ranked-search exposure recording (dedicated site + shared
-		// evaluation cache on MCP search) on the same entry.
+		// evaluation cache on MCP search) on the same entry: local dry-run
+		// 5_155_481 against the previous 5_154_000 budget.
 		maxEntryBytes: 5_156_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
@@ -296,7 +297,8 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// local dry-run 3_828_451 against the previous 3_828_000 budget.
 		// Jev paid ranked-search exposure recording (dedicated site + shared
 		// evaluation cache helpers on the search path that runtime already
-		// loads) on the same entry.
+		// loads) on the same entry: local dry-run 3_830_371 against the
+		// previous 3_829_000 budget.
 		maxEntryBytes: 3_831_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
