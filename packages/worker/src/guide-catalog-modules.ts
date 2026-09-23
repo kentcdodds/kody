@@ -18,8 +18,9 @@ import { type Guide, type GuideMetadata } from './guides/guide-types.ts'
  * *execution* stays deferred until the `import()` call runs. The generated
  * `./generated/guide-catalog.mjs` file stays behind `import()`, so Vite
  * origin emits it as a hashed SSR chunk and Wrangler sibling workers still
- * match the `generated/*.mjs` `find_additional_modules` rule. Either way it
- * is excluded from the main script and only fetched, parsed, and evaluated
+ * match the allowlisted `generated/guide-catalog.mjs` find_additional_modules
+ * rule. Either way it is excluded from the main script and only fetched,
+ * parsed, and evaluated
  * when a request actually opens a `guide:{id}` entity or calls the
  * `codingGuideGet` handler.
  * Merely ranking guide metadata does not add catalog parse/link cost to

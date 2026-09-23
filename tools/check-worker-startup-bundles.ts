@@ -1,5 +1,12 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises'
+import {
+	mkdtemp,
+	readdir,
+	readFile,
+	rm,
+	stat,
+	writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
@@ -8,6 +15,11 @@ import { ensureGuideCatalogModules } from './build-guide-catalog-modules.ts'
 import { ensureWorkerBundlerModules } from './build-worker-bundler-modules.ts'
 import { isExecutedDirectly, resolveLocalBinary } from './node-runtime.ts'
 import { writeRuntimeDryRunConfig } from './local-runtime-dev-config.ts'
+import {
+	expectedKodyGeneratedUploadNames,
+	guideGeneratedModuleNames,
+	strayKodyGeneratedModuleName,
+} from './worker-additional-module-allowlist.ts'
 import {
 	buildOriginProductionViteBundle,
 	findOriginViteDeferredAssets,
@@ -62,17 +74,8 @@ const sharedDeferredGuideSources = [
  */
 const guideCatalogGeneratedModuleSourcePath =
 	'/packages/worker/src/generated/guide-catalog.mjs'
-const guideCatalogGeneratedModuleRelativePath = path.join(
-	'generated',
-	'guide-catalog.mjs',
-)
 const workerBundlerGeneratedModuleSourcePath =
 	'/packages/worker/.generated/worker-bundler.mjs'
-const workerBundlerGeneratedModuleRelativePath = path.join(
-	'node_modules',
-	'.kody-generated',
-	'worker-bundler.mjs',
-)
 /**
  * `#worker/oauth-helpers.ts` loads the OAuth provider from this generated
  * module when `OAUTH_PROVIDER` is absent. Origin imports the library
@@ -81,11 +84,6 @@ const workerBundlerGeneratedModuleRelativePath = path.join(
  */
 const oauthProviderGeneratedModuleSourcePath =
 	'/packages/worker/.generated/oauth-provider.mjs'
-const oauthProviderGeneratedModuleRelativePath = path.join(
-	'node_modules',
-	'.kody-generated',
-	'oauth-provider.mjs',
-)
 const oauthProviderPackageSourcePath =
 	'/node_modules/@cloudflare/workers-oauth-provider/'
 /**
@@ -95,16 +93,6 @@ const oauthProviderPackageSourcePath =
  */
 const packageAppRemixGeneratedModuleSourcePath =
 	'/packages/worker/.generated/package-app-remix.mjs'
-const packageAppRemixGeneratedModuleRelativePath = path.join(
-	'node_modules',
-	'.kody-generated',
-	'package-app-remix.mjs',
-)
-const workerBundlerWasmRelativePath = path.join(
-	'node_modules',
-	'.kody-generated',
-	'esbuild.wasm',
-)
 
 const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 	{
@@ -379,39 +367,74 @@ function assertDeferredSourcesStayOutOfMain(
 	}
 }
 
+const strayKodyGeneratedModuleMarker = 'export const stray = 1\n'
+
+/**
+ * Writes the Friction #2504 reproduction file when that path is empty. A
+ * `*.mjs` glob would upload it; the allowlist must leave it out of the
+ * dry-run. Refuses to overwrite a different file at the same path.
+ */
+async function plantStrayKodyGeneratedModule(strayPath: string) {
+	try {
+		await writeFile(strayPath, strayKodyGeneratedModuleMarker, { flag: 'wx' })
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+		const existing = await readFile(strayPath, 'utf8')
+		if (existing !== strayKodyGeneratedModuleMarker) {
+			throw new Error(
+				`${strayPath} already exists and is not the startup-check stray module. Move it aside so the allowlist regression can run.`,
+			)
+		}
+	}
+}
+
+async function readUploadedModuleNames(directory: string) {
+	let names: Array<string>
+	try {
+		names = await readdir(directory)
+	} catch {
+		return []
+	}
+	return names.filter((name) => name.endsWith('.mjs') || name.endsWith('.wasm'))
+}
+
+function assertExactModuleSet(
+	actual: ReadonlyArray<string>,
+	expected: ReadonlyArray<string>,
+	label: string,
+) {
+	const missing = expected.filter((name) => !actual.includes(name))
+	const extra = actual.filter((name) => !expected.includes(name))
+	if (missing.length === 0 && extra.length === 0) return
+	const details = [
+		missing.length > 0 ? `missing ${missing.join(', ')}` : null,
+		extra.length > 0 ? `unexpected ${extra.join(', ')}` : null,
+	].filter((detail) => detail !== null)
+	throw new Error(
+		`${label}: ${details.join('; ')} (find_additional_modules allowlist regression?).`,
+	)
+}
+
 async function assertWranglerAdditionalModules(
 	outputDir: string,
 	name: string,
 ) {
-	try {
-		await stat(path.join(outputDir, guideCatalogGeneratedModuleRelativePath))
-	} catch {
-		throw new Error(
-			`${name} startup bundle did not emit ${guideCatalogGeneratedModuleRelativePath} as a separate additional module (find_additional_modules regression?).`,
-		)
-	}
-	try {
-		await stat(path.join(outputDir, workerBundlerGeneratedModuleRelativePath))
-		await stat(path.join(outputDir, workerBundlerWasmRelativePath))
-	} catch {
-		throw new Error(
-			`${name} startup bundle did not emit ${workerBundlerGeneratedModuleRelativePath} and ${workerBundlerWasmRelativePath} as separate additional modules (find_additional_modules regression?).`,
-		)
-	}
-	try {
-		await stat(path.join(outputDir, oauthProviderGeneratedModuleRelativePath))
-	} catch {
-		throw new Error(
-			`${name} startup bundle did not emit ${oauthProviderGeneratedModuleRelativePath} as a separate additional module (find_additional_modules regression?).`,
-		)
-	}
-	try {
-		await stat(path.join(outputDir, packageAppRemixGeneratedModuleRelativePath))
-	} catch {
-		throw new Error(
-			`${name} startup bundle did not emit ${packageAppRemixGeneratedModuleRelativePath} as a separate additional module (find_additional_modules regression?).`,
-		)
-	}
+	const [kodyNames, guideNames] = await Promise.all([
+		readUploadedModuleNames(
+			path.join(outputDir, 'node_modules', '.kody-generated'),
+		),
+		readUploadedModuleNames(path.join(outputDir, 'generated')),
+	])
+	assertExactModuleSet(
+		kodyNames,
+		expectedKodyGeneratedUploadNames(),
+		`${name} .kody-generated additional modules`,
+	)
+	assertExactModuleSet(
+		guideNames,
+		guideGeneratedModuleNames,
+		`${name} generated guide modules`,
+	)
 }
 
 function assertOriginViteDeferredChunks(
@@ -562,8 +585,16 @@ async function inspectStartupBundle(
 export async function checkWorkerStartupBundles() {
 	await Promise.all([ensureWorkerBundlerModules(), ensureGuideCatalogModules()])
 	const outputRoot = await mkdtemp(path.join(tmpdir(), 'kody-startup-bundles-'))
+	const strayPath = path.join(
+		repoRoot,
+		'packages/worker/src/node_modules/.kody-generated',
+		strayKodyGeneratedModuleName,
+	)
 	const wranglerBinary = resolveLocalBinary('wrangler')
+	let removeStray = false
 	try {
+		await plantStrayKodyGeneratedModule(strayPath)
+		removeStray = true
 		const results = await Promise.all(
 			startupBundles.map((definition) =>
 				inspectStartupBundle(definition, outputRoot, wranglerBinary),
@@ -575,7 +606,10 @@ export async function checkWorkerStartupBundles() {
 			)
 		}
 	} finally {
-		await rm(outputRoot, { recursive: true, force: true })
+		await Promise.all([
+			removeStray ? rm(strayPath, { force: true }) : undefined,
+			rm(outputRoot, { recursive: true, force: true }),
+		])
 	}
 }
 

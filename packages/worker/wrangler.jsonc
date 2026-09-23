@@ -77,18 +77,30 @@
 			// — does not see those files. `wrangler-env.ts` also clears that
 			// collector's esbuild `watchFiles` / `watchDirs` (Friction #1789).
 			// Guide catalog stays in `src/generated/`.
+			//
+			// Each glob is one generated filename. A `*.mjs` glob would also
+			// upload a stray file left in that directory (Friction #2504).
+			// Keep this list equal to `tools/worker-additional-module-allowlist.ts`.
 			"type": "ESModule",
 			"globs": [
-				"generated/*.mjs",
-				"./generated/*.mjs",
-				"node_modules/.kody-generated/*.mjs",
-				"./node_modules/.kody-generated/*.mjs",
+				"generated/guide-catalog.mjs",
+				"generated/guide-metadata.mjs",
+				"./generated/guide-catalog.mjs",
+				"./generated/guide-metadata.mjs",
+				"node_modules/.kody-generated/worker-bundler.mjs",
+				"node_modules/.kody-generated/worker-bundler-typescript.mjs",
+				"node_modules/.kody-generated/oauth-provider.mjs",
+				"node_modules/.kody-generated/package-app-remix.mjs",
+				"./node_modules/.kody-generated/worker-bundler.mjs",
+				"./node_modules/.kody-generated/worker-bundler-typescript.mjs",
+				"./node_modules/.kody-generated/oauth-provider.mjs",
+				"./node_modules/.kody-generated/package-app-remix.mjs",
 			],
 			"fallthrough": true,
 		},
 		{
 			"type": "CompiledWasm",
-			"globs": ["node_modules/.kody-generated/*.wasm"],
+			"globs": ["node_modules/.kody-generated/esbuild.wasm"],
 			"fallthrough": true,
 		},
 	],

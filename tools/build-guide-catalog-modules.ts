@@ -46,7 +46,7 @@ import { isExecutedDirectly } from './node-runtime.ts'
  *   to statically import; costs no per-guide parsing at runtime.
  * - `guide-catalog.mjs` — the full parsed catalog (with bodies, links
  *   rewritten the same way `#worker/guides/catalog.ts` does). Matches the
- *   `generated/*.mjs` `find_additional_modules` rule in `wrangler.jsonc`, so
+ *   allowlisted `generated/guide-catalog.mjs` rule in `wrangler.jsonc`, so
  *   Wrangler uploads it as a separate external module, excluded from the
  *   main worker script, that only loads when the *dynamic* `import()` in
  *   `#worker/guide-catalog-modules.ts` actually runs — unlike an ordinary
