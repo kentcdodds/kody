@@ -241,6 +241,43 @@ function createCallerContext(userId: string) {
 	})
 }
 
+/**
+ * Published-artifact modules share the runtime whose stamp ALS the sealed
+ * `Symbol.for('kody.getSecretAuthority')` getter reads. A root
+ * `buildKodyModuleBundle` entry, with or without `rootPackageId`, evaluates
+ * its own copy. Forgery written only there, and even a legitimate `wake()`
+ * call, misses that ALS and fails closed without proving the bypass is closed.
+ *
+ * The victim is granted only as a direct static dependency of this entry. A
+ * transitive import through the attack artifact is not. Esbuild drops a bare
+ * `void wake`, so this entry reads `typeof wake` to keep the import. The
+ * positive control is the published attack calling `wake` in the same run: the
+ * secret ref comes back, and a probe passed into `wake` reads the victim id
+ * from the sealed getter only when that attack shares the live stamp.
+ */
+function secretAuthorityForgeryExecuteEntry(attackSpecifier: string) {
+	return [
+		`import attack from '${attackSpecifier}'`,
+		"import wake from 'kody:@kentcdodds/grok-bot/wake'",
+		'export default async function main() {',
+		'\treturn { importedWake: typeof wake, attack: await attack() }',
+		'}',
+	].join('\n')
+}
+
+function victimWakeModuleSource() {
+	return [
+		"import { packageSecrets } from 'kody:runtime'",
+		'export default async function wake(probe) {',
+		'\tconst duringStamp = typeof probe === "function" ? probe() : null',
+		'\treturn {',
+		'\t\ttoken: await packageSecrets.get("wakeToken"),',
+		'\t\tduringStamp,',
+		'\t}',
+		'}',
+	].join('\n')
+}
+
 test(
 	'stamped imports use A-only secret grants; the importing run cannot read them directly',
 	{ timeout: 90_000 },
@@ -611,12 +648,7 @@ test(
 						},
 					},
 				}),
-				'src/wake.ts': [
-					"import { packageSecrets } from 'kody:runtime'",
-					'export default async function wake() {',
-					'\treturn { token: await packageSecrets.get("wakeToken") }',
-					'}',
-				].join('\n'),
+				'src/wake.ts': victimWakeModuleSource(),
 			},
 			exports: [{ artifactName: './wake', entryPoint: 'src/wake.ts' }],
 		})
@@ -641,9 +673,14 @@ test(
 				}),
 				'src/steal-authority.ts': [
 					"import { packageSecrets } from 'kody:runtime'",
+					"import wake from 'kody:@kentcdodds/grok-bot/wake'",
 					`const victimPackageId = ${JSON.stringify(wake.packageId)}`,
 					'export default async function stealAuthority() {',
 					'\tconst authoritySymbol = Symbol.for("kody.getSecretAuthority")',
+					'\tconst legit = await wake(() => {',
+					'\t\tconst getDuring = globalThis[authoritySymbol]',
+					'\t\treturn typeof getDuring === "function" ? getDuring() : null',
+					'\t})',
 					'\tconst get = globalThis[authoritySymbol]',
 					'\tconst runSymbol = Symbol.for("kody.runWithSecretAuthority")',
 					'\tconst hungRun =',
@@ -690,6 +727,8 @@ test(
 					'\t\t\terror instanceof Error ? error.message : String(error)',
 					'\t}',
 					'\treturn {',
+					'\t\tlegit,',
+					'\t\tgetterType: typeof get,',
 					'\t\thungRunType: typeof hungRun,',
 					'\t\tstolenSymbols,',
 					'\t\tstolenToken,',
@@ -735,41 +774,44 @@ test(
 			packageId: wake.packageId,
 		})
 
-		const stealBundle = await buildKodyModuleBundle({
-			env,
-			baseUrl: 'https://kody.dev',
-			userId,
-			sourceFiles: {
-				'entry.ts': [
-					"import stealAuthority from 'kody:@kentcdodds/dependent/steal-authority'",
-					'export default async function main() {',
-					'\treturn await stealAuthority()',
-					'}',
-				].join('\n'),
-			},
-			entryPoint: 'entry.ts',
-		})
 		const stolen = await runBundledModuleWithRegistry(
 			env,
 			createCallerContext(userId),
-			stealBundle,
+			await buildKodyModuleBundle({
+				env,
+				baseUrl: 'https://kody.dev',
+				userId,
+				sourceFiles: {
+					'entry.ts': secretAuthorityForgeryExecuteEntry(
+						'kody:@kentcdodds/dependent/steal-authority',
+					),
+				},
+				entryPoint: 'entry.ts',
+			}),
 			undefined,
 			{ skipCapabilityRegistry: true },
 		)
 		expect(stolen.error).toBeUndefined()
-		expect(stolen.result).toMatchObject({
+		expect(stolen.result.importedWake).toBe('function')
+		const attack = stolen.result.attack
+		expect(attack.legit).toEqual({
+			token: '{{secret:wakeToken|scope=user}}',
+			duringStamp: wake.packageId,
+		})
+		expect(attack).toMatchObject({
+			getterType: 'function',
 			hungRunType: 'undefined',
 			stolenSymbols: [],
 			stolenToken: null,
 			stealError: null,
 			directError: expect.stringMatching(
-				/not allowed for package|matching server-side package runtime context/i,
+				/^Secret "wakeToken" is not allowed for package "dependent"/,
 			),
-			// Sealed getter must reject redefine; forged value must not be the victim.
 			redefineError: expect.stringMatching(/Cannot|redefine|configurable/i),
+			forgedAfterRedefine: null,
+			getAuthority: null,
 		})
-		expect(stolen.result.forgedAfterRedefine).not.toBe(wake.packageId)
-		expect(stolen.result.getAuthority).not.toBe(wake.packageId)
+		expect(JSON.stringify(stolen.result)).not.toContain('wake-secret-value')
 	},
 )
 
@@ -796,12 +838,7 @@ test(
 						},
 					},
 				}),
-				'src/wake.ts': [
-					"import { packageSecrets } from 'kody:runtime'",
-					'export default async function wake() {',
-					'\treturn { token: await packageSecrets.get("wakeToken") }',
-					'}',
-				].join('\n'),
+				'src/wake.ts': victimWakeModuleSource(),
 			},
 			exports: [{ artifactName: './wake', entryPoint: 'src/wake.ts' }],
 		})
@@ -833,7 +870,12 @@ test(
 			'\treturn "no-helper"',
 			'}',
 			'export default async function forge() {',
-			'\tconst legit = await attempt(() => wake())',
+			'\tconst legit = await attempt(() =>',
+			'\t\twake(() => {',
+			'\t\t\tconst getDuring = globalThis[Symbol.for("kody.getSecretAuthority")]',
+			'\t\t\treturn typeof getDuring === "function" ? getDuring() : null',
+			'\t\t}),',
+			'\t)',
 			'\tconst exportedInternals = Object.keys(runtime).filter((key) =>',
 			'\t\tkey.startsWith("__kody"),',
 			'\t)',
@@ -870,11 +912,17 @@ test(
 			sourceFiles: {
 				'package.json': JSON.stringify({
 					name: '@kentcdodds/dependent',
-					exports: {},
-					kody: { id: 'dependent', description: 'Dependent' },
+					exports: { './forge': './src/forge.ts' },
+					kody: {
+						id: 'dependent',
+						description: 'Dependent',
+						dependencies: { '@kentcdodds/grok-bot': '*' },
+					},
 				}),
+				'src/forge.ts': forgeSource,
+				...dependencyLoaderFiles,
 			},
-			exports: [],
+			exports: [{ artifactName: './forge', entryPoint: 'src/forge.ts' }],
 		})
 		await markUnadoptedFork({
 			userId,
@@ -901,8 +949,32 @@ test(
 			name: 'wakeToken',
 			packageId: wake.packageId,
 		})
-		const expectedForgeResult = {
-			legit: { value: { token: '{{secret:wakeToken|scope=user}}' } },
+		const forged = await runBundledModuleWithRegistry(
+			env,
+			createCallerContext(userId),
+			await buildKodyModuleBundle({
+				env,
+				baseUrl: 'https://kody.dev',
+				userId,
+				sourceFiles: {
+					'entry.ts': secretAuthorityForgeryExecuteEntry(
+						'kody:@kentcdodds/dependent/forge',
+					),
+				},
+				entryPoint: 'entry.ts',
+			}),
+			undefined,
+			{ skipCapabilityRegistry: true },
+		)
+		expect(forged.error).toBeUndefined()
+		expect(forged.result.importedWake).toBe('function')
+		expect(forged.result.attack).toEqual({
+			legit: {
+				value: {
+					token: '{{secret:wakeToken|scope=user}}',
+					duringStamp: wake.packageId,
+				},
+			},
 			exportedInternals: [],
 			viaNamespace: { value: 'no-helper' },
 			viaComputedImport: {
@@ -911,62 +983,8 @@ test(
 			viaDependencyImport: {
 				error: expect.stringMatching(/internal Kody runtime module/i),
 			},
-		}
-
-		const stampedForge = await runBundledModuleWithRegistry(
-			env,
-			createCallerContext(userId),
-			await buildKodyModuleBundle({
-				env,
-				baseUrl: 'https://kody.dev',
-				userId,
-				sourceFiles: {
-					'package.json': JSON.stringify({
-						name: '@kentcdodds/dependent',
-						exports: { './forge': './src/forge.ts' },
-						kody: {
-							id: 'dependent',
-							description: 'Dependent',
-							dependencies: { '@kentcdodds/grok-bot': '*' },
-							secretMounts: {
-								wakeToken: { name: 'wakeToken', scope: 'user' },
-							},
-						},
-					}),
-					'src/forge.ts': forgeSource,
-					...dependencyLoaderFiles,
-				},
-				entryPoint: 'src/forge.ts',
-				rootPackageId: importer.packageId,
-			}),
-			undefined,
-			{
-				skipCapabilityRegistry: true,
-				packageContext: {
-					packageId: importer.packageId,
-					kodyId: 'dependent',
-					sourceId: importer.sourceId,
-				},
-			},
-		)
-		expect(stampedForge.error).toBeUndefined()
-		expect(stampedForge.result).toEqual(expectedForgeResult)
-
-		const unstampedForge = await runBundledModuleWithRegistry(
-			env,
-			createCallerContext(userId),
-			await buildKodyModuleBundle({
-				env,
-				baseUrl: 'https://kody.dev',
-				userId,
-				sourceFiles: { 'entry.ts': forgeSource, ...dependencyLoaderFiles },
-				entryPoint: 'entry.ts',
-			}),
-			undefined,
-			{ skipCapabilityRegistry: true },
-		)
-		expect(unstampedForge.error).toBeUndefined()
-		expect(unstampedForge.result).toEqual(expectedForgeResult)
+		})
+		expect(JSON.stringify(forged.result)).not.toContain('wake-secret-value')
 
 		for (const { importLine, extraFiles } of [
 			{
