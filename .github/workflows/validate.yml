@@ -142,6 +142,10 @@ jobs:
             ${{ github.event.pull_request.base.sha || github.event.before || ''
             }}
 
+      - name: 🔒 Lockfile peer drift
+        if: ${{ !cancelled() }}
+        run: npm run lockfile:check
+
       - name: 🛡️ Deploy guardrails
         if: ${{ !cancelled() }}
         run: npm run deploy-guardrails:check

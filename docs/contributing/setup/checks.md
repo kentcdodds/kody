@@ -40,23 +40,28 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   Playwright E2E, MCP E2E, `backup:build`, `status:build`, `nx-cache:build`,
   `jobs:build`, `runtime:build`, `platform:build`, `primitives:check`,
   `migrations:check`, `deploy-guardrails:check`, `docs:check-temporal`,
-  `docs:check-decisions`, `mermaid:check`, and `audit:prod` in parallel,
-  reporting every failure (sibling checks are not aborted on the first failure,
-  including when one of the docs or mermaid checks fails). The unit-test and
-  Playwright legs set `CI=1` so timeouts, worker limits, and Nx cache hashes
-  match the contended parallel layout used in GitHub Actions. CI runs the same
-  checks as parallel jobs (🧹 Static, 🧪 Node, ☁️ Workers, 🔌 MCP, 🎭 E2E,
-  aggregated by ✅ Validate). If `npm run validate` passes locally, CI will
-  pass. Trusted writers (Cloud Agent environments, and same-repo validate) set
-  `NX_SELF_HOSTED_REMOTE_CACHE_SERVER` and the write token so Nx uploads task
-  artifacts to `https://nx-cache.kody.codes`. Fork `pull_request` validate uses
-  the read token and can only GET (see
+  `docs:check-decisions`, `mermaid:check`, `audit:prod`, and `lockfile:check` in
+  parallel, reporting every failure (sibling checks are not aborted on the first
+  failure, including when one of the docs or mermaid checks fails). The
+  unit-test and Playwright legs set `CI=1` so timeouts, worker limits, and Nx
+  cache hashes match the contended parallel layout used in GitHub Actions. CI
+  runs the same checks as parallel jobs (🧹 Static, 🧪 Node, ☁️ Workers, 🔌 MCP,
+  🎭 E2E, aggregated by ✅ Validate). If `npm run validate` passes locally, CI
+  will pass. Trusted writers (Cloud Agent environments, and same-repo validate)
+  set `NX_SELF_HOSTED_REMOTE_CACHE_SERVER` and the write token so Nx uploads
+  task artifacts to `https://nx-cache.kody.codes`. Fork `pull_request` validate
+  uses the read token and can only GET (see
   [decision 0019](../decisions/0019-self-hosted-nx-remote-cache.md),
   [decision 0038](../decisions/0038-no-nx-cloud-read-write-cache-tokens.md),
   [decision 0040](../decisions/0040-same-repo-writers-may-put-nx-cache.md), and
   [`packages/nx-cache/readme.md`](../../../packages/nx-cache/readme.md)). Those
   cached scripts run through `tools/run-nx.ts` so a mid-run remote-cache
   transport flake cannot fail validate after the tasks already succeeded.
+- `npm run lockfile:check` fails when a locked direct dependency sits inside its
+  declared range but outside a peer range that range can still reach.
+  `npm install` rewrites `package-lock.json` for that drift (including an
+  optional peer). The check keeps a Cloud Agent environment install from leaving
+  a dirty lockfile on a fresh checkout.
 - `npm run deploy-guardrails:check` protects reviewed Durable Object migration
   history and bindings in both Wrangler configs, requires exact allowlisting for
   class deletion, and rejects destructive Cloudflare CLI operations in
