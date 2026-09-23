@@ -119,9 +119,13 @@ function considerFairExposure(
 ) {
 	if (enabled) state.sawOn = true
 	else state.sawOff = true
-	if (state.latestFairAt === null || at >= state.latestFairAt) {
+	if (state.latestFairAt === null || at > state.latestFairAt) {
 		state.latestFairAt = at
 		state.latestFairEnabled = enabled
+	} else if (at === state.latestFairAt && state.latestFairEnabled !== enabled) {
+		// Equal-timestamp on+off is ambiguous; leave null so buildReadout
+		// excludes via mixed (sawOn && sawOff) rather than iteration order.
+		state.latestFairEnabled = null
 	}
 }
 
