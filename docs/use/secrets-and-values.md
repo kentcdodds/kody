@@ -28,6 +28,12 @@ read a secret locked only to A — including by passing A's id to
 carries that authority. Access rules are covered in
 [Package approval](#package-approval).
 
+`packageSecrets.get(alias)` (and `kody.packageSecretGet`) return an **opaque
+`{{secret:…}}` placeholder** after mount and grant checks succeed — never
+decrypted plaintext. Put that string in a secret-aware `fetch` header/URL/body,
+or use `secretHeaders` / `kody.secretJwtSign`, so only platform use sites
+resolve it. Package and execute JavaScript must not observe secret values.
+
 **`kody.secretSet(...)`** persists a value that is already available inside
 execution (for example an API key the package just minted). It does not return
 secret values. Do not use it for OAuth access or refresh tokens —

@@ -224,7 +224,7 @@ function createPackageSecretTools(input: {
 					packageId: resolveAuthorityPackageId(requestedPackageId),
 					alias,
 				})
-			).value,
+			).ref,
 		has: async (alias: string, requestedPackageId?: string | null) => {
 			try {
 				await resolvePackageMountedSecret({

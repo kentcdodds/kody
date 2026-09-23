@@ -8,6 +8,7 @@ import {
 	createPackageSecretAccessDeniedBatchMessage,
 	createPackageSecretAccessDeniedMessage,
 } from './errors.ts'
+import { buildSecretPlaceholder } from './placeholders.ts'
 import { createUnresolvedSecretMessage } from './unresolved-secret.ts'
 import { resolveSecret, type ResolvedSecret } from './service.ts'
 import { type SecretScope } from './types.ts'
@@ -404,11 +405,18 @@ export async function resolvePackageMountedSecret(input: {
 		secretName: mount.name,
 		resolved,
 	})
+	// Opaque ref only — decrypted plaintext stays on the host. Package /
+	// execute JS must never observe `resolved.value`. Platform use sites
+	// (fetch gateway, secretHeaders, secretJwtSign) resolve the placeholder.
+	const scope = resolved.scope ?? mount.scope ?? 'user'
 	return {
 		alias: input.alias,
 		name: mount.name,
-		value: resolved.value,
-		scope: resolved.scope ?? mount.scope ?? 'user',
+		ref: buildSecretPlaceholder({
+			name: mount.name,
+			scope,
+		}),
+		scope,
 		packageId: packageInfo.savedPackage.id,
 		kodyId: packageInfo.savedPackage.kodyId,
 	}

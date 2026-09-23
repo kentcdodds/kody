@@ -15,7 +15,9 @@ category: platform
 
 A secret is a credential stored on your Kody account — an API key, a personal
 access token, a webhook signing secret, a private key. Your agent can write code
-that uses a secret. It can never read one.
+that uses a secret. It can never read one — including via `packageSecrets.get`,
+which returns only an opaque `{{secret:…}}` placeholder for platform use sites
+(fetch, `secretHeaders`, `secretJwtSign`) to resolve.
 
 ## The rule: there is no `secret_get`
 
