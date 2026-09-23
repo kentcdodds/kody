@@ -902,7 +902,7 @@ test(
 			packageId: wake.packageId,
 		})
 		const expectedForgeResult = {
-			legit: { value: { token: 'wake-secret-value' } },
+			legit: { value: { token: '{{secret:wakeToken|scope=user}}' } },
 			exportedInternals: [],
 			viaNamespace: { value: 'no-helper' },
 			viaComputedImport: {

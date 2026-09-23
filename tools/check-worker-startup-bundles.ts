@@ -269,7 +269,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// rejection, and the hardened computed import() guard: CI dry-run
 		// 3_822_747 (local 3_822_879 with the node_modules rewrite) against
 		// the previous 3_821_000 budget.
-		maxEntryBytes: 3_824_000,
+		// Opaque packageSecrets.get + share-grant owner remap / derived-ops
+		// parsing on the runtime startup graph: CI dry-run 3_824_901 against
+		// the previous 3_824_000 budget.
+		maxEntryBytes: 3_826_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',
