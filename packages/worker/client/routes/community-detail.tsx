@@ -85,6 +85,7 @@ export function CommunityDetailRoute(handle: Handle) {
 	let installOutcome: CommunityInstallOutcome | null = null
 	const installConfirm = createDoubleCheck(handle)
 	let installConfirmListingId: string | null = null
+	let outsideInstallClickListening = false
 	let readmeContent: string | null = null
 	let readmeFences: Array<HighlightedCode> = []
 	let hasAgentsDocs = false
@@ -491,9 +492,22 @@ export function CommunityDetailRoute(handle: Handle) {
 		}
 	}
 
+	function stopOutsideInstallClick() {
+		if (!outsideInstallClickListening || typeof document === 'undefined') return
+		outsideInstallClickListening = false
+		document.removeEventListener('click', handleOutsideInstallClick, true)
+	}
+
+	function startOutsideInstallClick() {
+		if (outsideInstallClickListening || typeof document === 'undefined') return
+		outsideInstallClickListening = true
+		document.addEventListener('click', handleOutsideInstallClick, true)
+	}
+
 	function resetInstallConfirm() {
 		installConfirm.reset()
 		installConfirmListingId = null
+		stopOutsideInstallClick()
 	}
 
 	function armedInstallControl() {
@@ -514,6 +528,18 @@ export function CommunityDetailRoute(handle: Handle) {
 		const control = armedInstallControl()
 		resetInstallConfirm()
 		if (control) paintPackageTitleInstallConfirm(control, false)
+	}
+
+	function handleOutsideInstallClick(event: Event) {
+		const target = event.target
+		const element =
+			target instanceof Element
+				? target
+				: target instanceof Node
+					? target.parentElement
+					: null
+		if (element?.closest('[data-community-install]')) return
+		disarmInstallConfirm()
 	}
 
 	function handleCommunityInstallClick(event: Event) {
@@ -549,6 +575,9 @@ export function CommunityDetailRoute(handle: Handle) {
 				installConfirmListingId = listingId
 				paintPackageTitleInstallConfirm(control, true)
 				if (control instanceof HTMLElement) control.focus()
+				// Capture already ran for this click, so the listener cannot
+				// disarm the click that armed the control.
+				startOutsideInstallClick()
 				return
 			case 'submit':
 				if (loginLink) return
