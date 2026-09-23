@@ -153,8 +153,9 @@ subscriptions, and other package invocations), and the checks do not look at
 unattended from package code owned by an admin; see
 [Background and package callers](./architecture/authorization.md#background-and-package-callers).
 Do **not** cache role or permission decisions into Vectorize metadata, OAuth
-grants, package state, or session-scoped data; role revocation must take effect
-on the next request.
+grants, package state, or session-scoped data. Interactive requests reload roles
+every time, so revocation takes effect on the next request; background callers
+pick it up once the 60-second background identity cache expires.
 
 ### Feature-flag-gated capabilities
 

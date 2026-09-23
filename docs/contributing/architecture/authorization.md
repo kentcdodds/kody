@@ -256,10 +256,11 @@ owner and carries that owner's current roles and permissions.
 (`packages/worker/src/identity/background-mcp-user.ts`) loads them from D1 with
 `getUserRolesAndPermissions` for every `executionOrigin: 'background'` caller it
 builds: package jobs, inbound webhook handlers, package subscription handlers,
-package exports invoked from other package code, package workflows, retrievers,
-and package realtime sessions. The per-binding identity cache holds a resolved
-user for up to 60 seconds, so a role change reaches background callers on the
-next resolution after that window.
+package exports invoked from other package code, package workflows, and
+retrievers. The per-binding identity cache holds a resolved user for up to 60
+seconds, so a revoked role can still pass background checks until that entry
+expires and the owner is resolved again. Interactive MCP and browser requests
+reload roles on every request.
 
 `requiredRole` / `requiredPermission` checks compare against those roles and do
 not inspect `executionOrigin`. No admin capability has an interactive-only gate,
@@ -270,11 +271,15 @@ specific non-admin capabilities (for example `communityForkAdopt`,
 `packageAppFetch`, `packageSubscriptionDispatch`, and platform-feedback submit);
 they are per-capability contracts, not part of role evaluation.
 
-The package-app runtime bridge
-(`packages/worker/src/package-runtime/package-app.ts`) builds its caller context
-from session props without roles, so direct capability calls from a package
-app's HTTP handler do not see admin capabilities. Package exports that app code
-invokes run through the background path above and do carry the owner's roles.
+Package app HTTP handlers and realtime hooks call capabilities through the
+package-app runtime bridge
+(`packages/worker/src/package-runtime/package-app.ts`). The bridge builds its
+caller context from worker props (user id, email, display name) without roles,
+so those direct capability calls do not see admin capabilities. That holds for
+realtime hooks even though the realtime session resolves a role-bearing context
+when it builds the app worker; only identity fields reach the bridge. Package
+exports that app or realtime code invokes run through the background path above
+and do carry the owner's roles.
 
 Treat any package saved on an admin account as running with full admin reach.
 See the residual-risk entry in
