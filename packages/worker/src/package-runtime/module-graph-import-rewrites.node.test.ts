@@ -830,7 +830,7 @@ export default {
 		  }
 		| undefined
 	expect(staticRewriteCall?.files?.['.__kody_root__/app.ts']).toContain(
-		'../.__kody_virtual__/runtime.js',
+		'../.__kody_virtual__/public-runtime.js',
 	)
 	expect(staticRewriteCall?.files?.['.__kody_root__/app.ts']).not.toContain(
 		"'kody:runtime'",
@@ -881,7 +881,7 @@ export default {
 		  }
 		| undefined
 	expect(dynamicRewriteCall?.files?.['.__kody_root__/app.ts']).toContain(
-		'import("../.__kody_virtual__/runtime.js")',
+		'import("../.__kody_virtual__/public-runtime.js")',
 	)
 	expect(dynamicRewriteCall?.files?.['.__kody_root__/app.ts']).not.toContain(
 		"import('kody:runtime')",

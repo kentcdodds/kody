@@ -191,7 +191,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// in this same entry, so line-anchor and file-anchor cannot stay
 		// on runtime alone. CI dry-run 5_145_618 against the previous
 		// 5_135_000 budget.
-		maxEntryBytes: 5_146_000,
+		// Allowlisted kody:runtime facades and the .__kody_virtual__ guards
+		// ride the same module-graph code: local dry-run 5_147_977 against
+		// the previous 5_146_000 budget (main measured 5_145_651 locally).
+		maxEntryBytes: 5_149_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
@@ -262,7 +265,11 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// slugs) on search entity, repoReadFile, and package file open pull
 		// line-anchor and file-anchor into runtime: CI dry-run 3_820_542
 		// against the previous 3_810_000 budget.
-		maxEntryBytes: 3_821_000,
+		// Allowlisted kody:runtime facades, the .__kody_virtual__ build
+		// rejection, and the hardened computed import() guard: CI dry-run
+		// 3_822_747 (local 3_822_879 with the node_modules rewrite) against
+		// the previous 3_821_000 budget.
+		maxEntryBytes: 3_824_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',

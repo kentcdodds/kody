@@ -3,6 +3,7 @@ export {
 	createPackageRuntimeModuleSource,
 	createRuntimeModuleReexportSource,
 	createRuntimeModuleSource,
+	isKodyPublicRuntimeModulePath,
 	isKodyRuntimeModulePath,
 	parsePackageRuntimeModulePathPackageId,
 	refreshKodyRuntimeModules,

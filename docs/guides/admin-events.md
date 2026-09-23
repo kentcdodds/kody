@@ -16,6 +16,11 @@ These topics fan out only to packages saved by users who hold the admin role at
 dispatch time. A non-admin package may declare them; it never receives the
 event. Role revocation applies on the next dispatch.
 
+Handlers run unattended as the package owner and carry that owner's admin role,
+so they can call admin capabilities (for example `adminUserList` or
+`adminSystemEmailGet`) without a signed-in session. Only save packages you trust
+on an admin account: their code has the same admin reach you do.
+
 Public package subscription topics live in
 [Subscriptions and events](./package-subscriptions.md).
 
@@ -119,12 +124,12 @@ the payload or its request hash. Rows without submitter snapshots retain null
 The event deliberately omits admin notes, reviewer fields, revision and update
 metadata, roles, plan, and unrelated account content. This narrow delivery
 exception applies only to the exact feedback the user approved after an agent
-showed the proposed summary and details and asked first. It does not grant
-package runtime general admin roles or general access to user data. Notification
-copies already delivered outside Kody cannot be recalled and may remain after
-Kody account deletion under the deployment operator's retention and deletion
-controls. Such copies contain only the exact approved feedback and attribution,
-never unrelated account content.
+showed the proposed summary and details and asked first. Receiving the event
+grants no role or user-data access beyond what the admin owner already holds.
+Notification copies already delivered outside Kody cannot be recalled and may
+remain after Kody account deletion under the deployment operator's retention and
+deletion controls. Such copies contain only the exact approved feedback and
+attribution, never unrelated account content.
 
 The feedback row is durable before Kody awaits the small Queue enqueue. Enqueue
 failure is logged but does not change the successful MCP response, avoiding a
