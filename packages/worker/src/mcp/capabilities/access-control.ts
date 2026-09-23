@@ -11,7 +11,10 @@ import {
 	type FeatureFlagKey,
 	featureFlagKeys,
 } from '#universal/feature-flags/registry.ts'
-import { getFeatureFlagEvaluationsForUser } from '#worker/feature-flags/service.ts'
+import {
+	getFeatureFlagEvaluationsForUser,
+	type FeatureFlagEvaluation,
+} from '#worker/feature-flags/service.ts'
 import { normalizeStableUserId } from '#worker/user-id.ts'
 import {
 	type McpAuthDenialReason,
@@ -74,6 +77,57 @@ async function resolveFeatureFlagUserId(
 	return row?.id ?? null
 }
 
+type CallerFeatureFlagResolution = {
+	stableUserId: string
+	evaluations: Record<FeatureFlagKey, FeatureFlagEvaluation>
+}
+
+const callerFeatureFlagResolutions = new WeakMap<
+	McpCallerContext,
+	Promise<CallerFeatureFlagResolution | null>
+>()
+
+async function loadCallerFeatureFlagResolution(
+	env: Env,
+	callerContext: McpCallerContext,
+): Promise<CallerFeatureFlagResolution | null> {
+	let promise = callerFeatureFlagResolutions.get(callerContext)
+	if (!promise) {
+		promise = (async (): Promise<CallerFeatureFlagResolution | null> => {
+			if (!env.APP_DB) return null
+			if (!callerContext.user?.userId) return null
+			try {
+				const stableUserId = normalizeStableUserId(callerContext.user.userId)
+				if (!stableUserId) return null
+				const userId = await resolveFeatureFlagUserId(env.APP_DB, stableUserId)
+				if (userId === null) return null
+				const evaluations = await getFeatureFlagEvaluationsForUser(
+					env.APP_DB,
+					userId,
+				)
+				return { stableUserId, evaluations }
+			} catch {
+				return null
+			}
+		})()
+		callerFeatureFlagResolutions.set(callerContext, promise)
+	}
+	return await promise
+}
+
+/**
+ * Full per-request flag evaluations (enabled + assignment source), cached on
+ * the caller context so search behavior and dedicated exposure recording
+ * share one assignment.
+ */
+export async function resolveCallerFeatureFlagEvaluations(
+	env: Env,
+	callerContext: McpCallerContext,
+): Promise<Record<FeatureFlagKey, FeatureFlagEvaluation> | null> {
+	const resolution = await loadCallerFeatureFlagResolution(env, callerContext)
+	return resolution?.evaluations ?? null
+}
+
 /**
  * Resolve the caller's evaluated feature-flag map once per request. Used by
  * registry filtering (search/list) so access checks stay synchronous.
@@ -90,25 +144,15 @@ export async function resolveCallerFeatureFlags(
 	env: Env,
 	callerContext: McpCallerContext,
 ): Promise<CallerFeatureFlags> {
-	if (!env.APP_DB) return disabledFeatureFlags()
-	if (!callerContext.user?.userId) return disabledFeatureFlags()
-	try {
-		const stableUserId = normalizeStableUserId(callerContext.user.userId)
-		if (!stableUserId) return disabledFeatureFlags()
-		const userId = await resolveFeatureFlagUserId(env.APP_DB, stableUserId)
-		if (userId === null) return disabledFeatureFlags()
-		const evaluations = await getFeatureFlagEvaluationsForUser(
-			env.APP_DB,
-			userId,
-		)
-		await recordFeatureFlagExposures(env, { stableUserId, evaluations })
-		return Object.fromEntries(
-			featureFlagKeys.map((key) => [key, evaluations[key].enabled]),
-		) as Record<FeatureFlagKey, boolean>
-	} catch {
-		// Fail closed: gated capabilities stay hidden when evaluation fails.
-		return disabledFeatureFlags()
-	}
+	const resolution = await loadCallerFeatureFlagResolution(env, callerContext)
+	if (!resolution) return disabledFeatureFlags()
+	await recordFeatureFlagExposures(env, {
+		stableUserId: resolution.stableUserId,
+		evaluations: resolution.evaluations,
+	})
+	return Object.fromEntries(
+		featureFlagKeys.map((key) => [key, resolution.evaluations[key].enabled]),
+	) as Record<FeatureFlagKey, boolean>
 }
 
 export function callerCanAccessCapability(

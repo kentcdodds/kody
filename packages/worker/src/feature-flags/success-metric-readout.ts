@@ -5,13 +5,16 @@
  * flag exposures (see `exposure.ts`) with the usage-metering event stream
  * over the current UTC month to date, split by exposure cohort:
  *
- * - Users with any `override`-sourced exposure are excluded from the
- *   comparison (hand-picked users are selection-biased) and reported as
- *   `overrideUsers`.
- * - Users who saw both values inside the window are excluded as
- *   `mixedUsers`.
- * - Everyone else lands in the `on` or `off` cohort, and their usage events
- *   for the declared `eventType` are aggregated per cohort.
+ * - Users with any `override`-sourced exposure are excluded from the on/off
+ *   comparison (hand-picked users are selection-biased). Their usage is
+ *   aggregated into the separate `override` cohort so dogfood volume stays
+ *   visible.
+ * - Users who saw both fair (non-override) values inside the window are
+ *   counted as `mixedUsers` and excluded from on/off (month-level usage
+ *   cannot be split at the switch without contaminating the later cohort).
+ * - Everyone else lands in the `on` or `off` cohort from their only fair
+ *   value, and their usage events for the declared `eventType` are
+ *   aggregated per cohort.
  *
  * Like usage rollups, the data source depends on the environment: with the
  * Analytics Engine bindings and Cloudflare REST credentials
@@ -60,6 +63,9 @@ type UserExposureState = {
 	sawOn: boolean
 	sawOff: boolean
 	sawOverride: boolean
+	/** Latest non-override on/off; null when the user only has override rows. */
+	latestFairEnabled: boolean | null
+	latestFairAt: string | null
 }
 
 type UserUsageAggregate = {
@@ -90,6 +96,39 @@ function finalizeCohort(cohort: FeatureFlagMetricCohort, durationMs: number) {
 		cohort.eventCount > 0 ? durationMs / cohort.eventCount : null
 }
 
+function applyUsageToCohort(
+	cohort: FeatureFlagMetricCohort,
+	totalsSide: { durationMs: number },
+	usage: UserUsageAggregate | undefined,
+) {
+	cohort.users += 1
+	if (!usage) return
+	cohort.eventCount += usage.eventCount
+	cohort.errorCount += usage.errorCount
+	totalsSide.durationMs += usage.totalDurationMs
+}
+
+/**
+ * Prefer the chronologically latest fair exposure. ISO timestamps and
+ * `YYYY-MM-DD` day stamps both compare correctly as strings.
+ */
+function considerFairExposure(
+	state: UserExposureState,
+	enabled: boolean,
+	at: string,
+) {
+	if (enabled) state.sawOn = true
+	else state.sawOff = true
+	if (state.latestFairAt === null || at > state.latestFairAt) {
+		state.latestFairAt = at
+		state.latestFairEnabled = enabled
+	} else if (at === state.latestFairAt && state.latestFairEnabled !== enabled) {
+		// Equal-timestamp on+off is ambiguous; leave null so buildReadout
+		// excludes via mixed (sawOn && sawOff) rather than iteration order.
+		state.latestFairEnabled = null
+	}
+}
+
 function buildReadout(input: {
 	exposuresByUser: Map<string, UserExposureState>
 	usageByUser: Map<string, UserUsageAggregate>
@@ -98,37 +137,43 @@ function buildReadout(input: {
 }): AdminFeatureFlagMetricReadout {
 	const on = emptyCohort()
 	const off = emptyCohort()
+	const override = emptyCohort()
 	let overrideUsers = 0
 	let mixedUsers = 0
-	const totals = { on: { durationMs: 0 }, off: { durationMs: 0 } }
+	const totals = {
+		on: { durationMs: 0 },
+		off: { durationMs: 0 },
+		override: { durationMs: 0 },
+	}
 	for (const [userId, state] of input.exposuresByUser) {
+		const usage = input.usageByUser.get(userId)
 		if (state.sawOverride) {
 			overrideUsers += 1
+			applyUsageToCohort(override, totals.override, usage)
 			continue
 		}
 		if (state.sawOn && state.sawOff) {
+			// Mid-window switchers stay out of on/off: month-level usage
+			// aggregates cannot be split at the switch, so assigning by latest
+			// would contaminate the later cohort with pre-switch events.
 			mixedUsers += 1
 			continue
 		}
-		if (!state.sawOn && !state.sawOff) continue
-		const cohort = state.sawOn ? on : off
-		const totalsSide = state.sawOn ? totals.on : totals.off
-		cohort.users += 1
-		const usage = input.usageByUser.get(userId)
-		if (usage) {
-			cohort.eventCount += usage.eventCount
-			cohort.errorCount += usage.errorCount
-			totalsSide.durationMs += usage.totalDurationMs
-		}
+		if (state.latestFairEnabled === null) continue
+		const cohort = state.latestFairEnabled ? on : off
+		const totalsSide = state.latestFairEnabled ? totals.on : totals.off
+		applyUsageToCohort(cohort, totalsSide, usage)
 	}
 	finalizeCohort(on, totals.on.durationMs)
 	finalizeCohort(off, totals.off.durationMs)
+	finalizeCohort(override, totals.override.durationMs)
 	return {
 		status: 'ok',
 		windowStart: input.windowStart,
 		windowEnd: input.windowEnd,
 		on,
 		off,
+		override,
 		overrideUsers,
 		mixedUsers,
 	}
@@ -165,9 +210,9 @@ function toDateTimeArgument(iso: string) {
 
 type AnalyticsExposureRow = {
 	user_id: string
-	on_count: number | string
-	off_count: number | string
-	override_count: number | string
+	state: string
+	source: string
+	last_ts: string
 }
 
 type AnalyticsUsageRow = {
@@ -196,13 +241,13 @@ async function loadReadoutFromAnalyticsEngine(input: {
 	const exposuresQuery = `
 SELECT
 	blob1 AS user_id,
-	sum(if(blob3 = 'on' AND blob4 != 'override', _sample_interval, 0)) AS on_count,
-	sum(if(blob3 = 'off' AND blob4 != 'override', _sample_interval, 0)) AS off_count,
-	sum(if(blob4 = 'override', _sample_interval, 0)) AS override_count
+	blob3 AS state,
+	blob4 AS source,
+	max(blob5) AS last_ts
 FROM ${resolveFlagExposuresDataset(input.env)}
 WHERE ${timeFilter}
 	AND blob2 = '${assertSqlSafeIdentifier(input.flagKey)}'
-GROUP BY blob1
+GROUP BY blob1, blob3, blob4
 FORMAT JSON
 `.trim()
 	const usageQuery = `
@@ -234,11 +279,19 @@ FORMAT JSON
 	const exposuresByUser = new Map<string, UserExposureState>()
 	for (const row of exposureRows) {
 		if (!row.user_id) continue
-		exposuresByUser.set(row.user_id, {
-			sawOn: toCount(row.on_count) > 0,
-			sawOff: toCount(row.off_count) > 0,
-			sawOverride: toCount(row.override_count) > 0,
-		})
+		const state = exposuresByUser.get(row.user_id) ?? {
+			sawOn: false,
+			sawOff: false,
+			sawOverride: false,
+			latestFairEnabled: null,
+			latestFairAt: null,
+		}
+		if (row.source === 'override') {
+			state.sawOverride = true
+		} else {
+			considerFairExposure(state, row.state === 'on', row.last_ts || '')
+		}
+		exposuresByUser.set(row.user_id, state)
 	}
 	const usageByUser = new Map<string, UserUsageAggregate>()
 	for (const row of usageRows) {
@@ -261,6 +314,8 @@ type D1ExposureRow = {
 	user_id: string
 	enabled: number
 	source: string
+	last_day: string
+	last_updated: string | null
 }
 
 type D1UsageRow = {
@@ -282,7 +337,9 @@ async function loadReadoutFromD1(input: {
 	const windowEndDay = window.windowEnd.slice(0, 'YYYY-MM-DD'.length)
 	const exposureResult = await input.db
 		.prepare(
-			`SELECT user_id, enabled, source
+			`SELECT user_id, enabled, source,
+				MAX(day) AS last_day,
+				MAX(updated_at) AS last_updated
 			 FROM feature_flag_exposure_rollups
 			 WHERE flag_key = ? AND day >= ? AND day <= ?
 			 GROUP BY user_id, enabled, source`,
@@ -295,10 +352,15 @@ async function loadReadoutFromD1(input: {
 			sawOn: false,
 			sawOff: false,
 			sawOverride: false,
+			latestFairEnabled: null,
+			latestFairAt: null,
 		}
-		if (row.source === 'override') state.sawOverride = true
-		else if (row.enabled === 1) state.sawOn = true
-		else state.sawOff = true
+		if (row.source === 'override') {
+			state.sawOverride = true
+		} else {
+			const at = row.last_updated || row.last_day || ''
+			considerFairExposure(state, row.enabled === 1, at)
+		}
 		exposuresByUser.set(row.user_id, state)
 	}
 	const usageResult = await input.db

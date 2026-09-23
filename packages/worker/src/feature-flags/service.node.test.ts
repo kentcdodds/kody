@@ -676,7 +676,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 		key: 'jev-search-rerank',
 		stale: false,
 		defaultEnabled: false,
-		defaultAudience: 'everyone',
+		defaultAudience: 'experiments_opt_in',
 		successMetric: {
 			eventType: 'execute',
 			measure: 'event_count',

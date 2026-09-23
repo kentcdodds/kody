@@ -1,6 +1,7 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
 	callerHasRole,
+	resolveCallerFeatureFlagEvaluations,
 	resolveCallerFeatureFlags,
 } from '#mcp/capabilities/access-control.ts'
 import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
@@ -16,6 +17,7 @@ import {
 import { consumeSearchRateLimit } from '#worker/search-rate-limit.ts'
 import { getUserPlan } from '#worker/entitlements/service.ts'
 import { isPaidPlan } from '#universal/plans.ts'
+import { recordPaidRankedSearchFlagExposure } from '#worker/feature-flags/paid-ranked-search-exposure.ts'
 
 import { resolvePackageIdentitySearch } from './package-search-identity.ts'
 import { buildExactPackageSearchResult, searchUnified } from './search-core.ts'
@@ -229,11 +231,15 @@ async function executeSearchListWithinBudget(
 	warnings = searchRows.warnings
 	const retrieverRun = await retrieverRunPromise
 	warnings.push(...retrieverRun.warnings)
-	const featureFlags = await resolveCallerFeatureFlags(
+	// Warm the per-request evaluation cache and record evaluation-site
+	// exposures for other measured flags.
+	await resolveCallerFeatureFlags(input.env, input.callerContext)
+	const evaluations = await resolveCallerFeatureFlagEvaluations(
 		input.env,
 		input.callerContext,
 	)
-	const jevRerankEnabled = featureFlags[jevSearchRerankFlagKey] === true
+	const jevEvaluation = evaluations?.[jevSearchRerankFlagKey]
+	const jevRerankEnabled = jevEvaluation?.enabled === true
 	const plan =
 		input.userId && input.env.APP_DB
 			? await getUserPlan(input.env.APP_DB, {
@@ -260,6 +266,17 @@ async function executeSearchListWithinBudget(
 		...(jevRerankPlanEligible ? { jevRerankPlanEligible: true } : {}),
 	})
 	phaseTimings.searchUnifiedMs = elapsedMs(searchUnifiedStart)
+	// Only ranked-path results include jevRerank telemetry. Domain index /
+	// overview / empty-query short-circuits stay outside the experiment frame.
+	if (result.telemetry.jevRerank && jevEvaluation) {
+		await recordPaidRankedSearchFlagExposure({
+			env: input.env,
+			stableUserId: input.userId,
+			planEligible: jevRerankPlanEligible,
+			evaluation: jevEvaluation,
+			flagKey: jevSearchRerankFlagKey,
+		})
+	}
 	capabilityGuidance = result.guidance
 	const returnsDomainIndex =
 		result.matches.length > 0 &&

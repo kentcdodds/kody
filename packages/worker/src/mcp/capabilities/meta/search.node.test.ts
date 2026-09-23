@@ -137,6 +137,21 @@ vi.mock('#mcp/capabilities/access-control.ts', async (importOriginal) => {
 			if (mockFeatureFlags.override) return mockFeatureFlags.override
 			return actual.resolveCallerFeatureFlags(...args)
 		},
+		resolveCallerFeatureFlagEvaluations: async (
+			...args: Parameters<typeof actual.resolveCallerFeatureFlagEvaluations>
+		) => {
+			if (mockFeatureFlags.override) {
+				return Object.fromEntries(
+					Object.entries(mockFeatureFlags.override).map(([key, enabled]) => [
+						key,
+						{ enabled, source: 'global' as const },
+					]),
+				) as Awaited<
+					ReturnType<typeof actual.resolveCallerFeatureFlagEvaluations>
+				>
+			}
+			return actual.resolveCallerFeatureFlagEvaluations(...args)
+		},
 	}
 })
 

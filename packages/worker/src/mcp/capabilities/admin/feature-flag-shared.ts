@@ -43,6 +43,7 @@ export const adminFeatureFlagMetricReadoutSchema = z.discriminatedUnion(
 			windowEnd: z.string(),
 			on: featureFlagMetricCohortSchema,
 			off: featureFlagMetricCohortSchema,
+			override: featureFlagMetricCohortSchema,
 			overrideUsers: z.number().int().min(0),
 			mixedUsers: z.number().int().min(0),
 		}),
