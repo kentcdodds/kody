@@ -2,13 +2,14 @@
  * Dedicated exposure writes for flags with
  * `exposureRecording: 'paid-ranked-search'` (currently `jev-search-rerank`).
  *
- * The experiment frame is paid users who run list-mode ranked search:
+ * The experiment frame is paid users who run list-mode **ranked** search:
  * - on = flag evaluates enabled (Jev-eligible; necessity may still skip Score)
  * - off = flag evaluates disabled (comparable control)
  * - free / anonymous / unresolved accounts: no exposure (outside the frame)
  *
- * Assignment source still comes from flag evaluation so override dogfood is
- * tagged and excluded from on/off cohort comparisons in the admin readout.
+ * Callers must pass the same `FeatureFlagEvaluation` used to drive search so
+ * exposure assignment cannot disagree with treatment. Assignment source still
+ * tags override dogfood for exclusion from on/off cohort comparisons.
  */
 
 import {
@@ -21,12 +22,14 @@ import {
 	recordFeatureFlagExposures,
 	type FeatureFlagExposureEnv,
 } from './exposure.ts'
-import { evaluateFeatureFlag } from './service.ts'
+import { type FeatureFlagEvaluation } from './service.ts'
 
 export type PaidRankedSearchExposureInput = {
-	env: FeatureFlagExposureEnv & { APP_DB?: D1Database }
+	env: FeatureFlagExposureEnv
 	stableUserId: string | null | undefined
 	planEligible: boolean
+	/** Same evaluation that gated the ranked-search Jev path. */
+	evaluation: FeatureFlagEvaluation
 	/** Override for tests; defaults to the Jev search flag. */
 	flagKey?: FeatureFlagKey
 }
@@ -40,23 +43,15 @@ export async function recordPaidRankedSearchFlagExposure(
 ): Promise<void> {
 	try {
 		if (!input.planEligible) return
-		const db = input.env.APP_DB
-		if (!db || typeof db.prepare !== 'function') return
 		const stableUserId = normalizeStableUserId(input.stableUserId ?? '')
 		if (!stableUserId) return
 		const flagKey = input.flagKey ?? jevSearchRerankFlagKey
 		if (getFeatureFlagExposureRecording(flagKey) !== 'paid-ranked-search') {
 			return
 		}
-		const row = await db
-			.prepare(`SELECT id FROM users WHERE stable_user_id = ?`)
-			.bind(stableUserId)
-			.first<{ id: number }>()
-		if (!row) return
-		const evaluation = await evaluateFeatureFlag(db, flagKey, row.id)
 		await recordFeatureFlagExposures(input.env, {
 			stableUserId,
-			evaluations: { [flagKey]: evaluation },
+			evaluations: { [flagKey]: input.evaluation },
 			recordingSite: 'dedicated',
 		})
 	} catch (error) {

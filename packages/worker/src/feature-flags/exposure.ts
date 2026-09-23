@@ -122,7 +122,11 @@ async function writeExposureRollups(
 	timestamp: string,
 ) {
 	const db = env.APP_DB
-	if (!db) {
+	if (
+		!db ||
+		typeof db.batch !== 'function' ||
+		typeof db.prepare !== 'function'
+	) {
 		console.debug('flag-exposure-skipped', 'missing APP_DB binding')
 		return
 	}

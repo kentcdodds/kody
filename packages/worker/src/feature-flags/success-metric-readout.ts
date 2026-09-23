@@ -10,9 +10,8 @@
  *   aggregated into the separate `override` cohort so dogfood volume stays
  *   visible.
  * - Users who saw both fair (non-override) values inside the window are
- *   counted as `mixedUsers` but still assigned to on/off by their **latest**
- *   fair exposure (so a mid-month enable or opt-in does not empty the on
- *   cohort).
+ *   counted as `mixedUsers` and excluded from on/off (month-level usage
+ *   cannot be split at the switch without contaminating the later cohort).
  * - Everyone else lands in the `on` or `off` cohort from their only fair
  *   value, and their usage events for the declared `eventType` are
  *   aggregated per cohort.
@@ -150,7 +149,11 @@ function buildReadout(input: {
 			continue
 		}
 		if (state.sawOn && state.sawOff) {
+			// Mid-window switchers stay out of on/off: month-level usage
+			// aggregates cannot be split at the switch, so assigning by latest
+			// would contaminate the later cohort with pre-switch events.
 			mixedUsers += 1
+			continue
 		}
 		if (state.latestFairEnabled === null) continue
 		const cohort = state.latestFairEnabled ? on : off

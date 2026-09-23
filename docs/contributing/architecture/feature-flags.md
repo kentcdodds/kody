@@ -114,12 +114,14 @@ requirements.
 
 **Success-metric exposure (F5):** this flag sets
 `exposureRecording: 'paid-ranked-search'`. Exposures are **not** written at the
-generic app/MCP evaluation chokepoints. They are written once per paid list-mode
-ranked search: `on` when the flag evaluates enabled (Jev-eligible — necessity
-may still skip Score), `off` when it evaluates disabled. Free and anonymous
-searchers are outside the experiment frame. Assignment `source` still comes from
-flag evaluation, so override dogfood is tagged and excluded from on/off (shown
-as the override cohort). Enable for dogfood with
+generic app/MCP evaluation chokepoints. They are written after list-mode search
+completes a **ranked** path (when `telemetry.jevRerank` is present) for **paid**
+users only: `on` when the same flag evaluation that gated search is enabled
+(Jev-eligible — necessity may still skip Score), `off` when it is disabled.
+Empty query / domain index / domain overview short-circuits stay outside the
+frame. Free and anonymous searchers are outside the frame. Assignment `source`
+still comes from that evaluation, so override dogfood is tagged and excluded
+from on/off (shown as the override cohort). Enable for dogfood with
 `adminFeatureFlagOverride({ key: "jev-search-rerank", username: "kentcdodds", enabled: true })`
 or via experiments opt-in while the global audience is `experiments_opt_in`.
 Remove the flag and gate sites when the experiment ends.
@@ -214,8 +216,8 @@ declared `eventType` over the current UTC month to date, splits users into
 on/off cohorts, and aggregates event count, error rate, and average duration per
 cohort. Users with any override-sourced exposure are excluded from on/off and
 aggregated into `override`. Users who saw both fair values inside the window are
-counted as `mixedUsers` but assigned to on/off by their **latest** fair exposure
-(so a mid-month enable or experiments opt-in does not empty the on cohort). The
-admin UI (`/admin/feature-flags`) and `adminFeatureFlagList` attach this readout
-to every measured flag. The comparison is decision support for a human — "keep
-rolling out or kill it" stays an operator call, not an automated one.
+counted as `mixedUsers` and excluded from on/off (month-level usage cannot be
+split at the switch without contaminating the later cohort). The admin UI
+(`/admin/feature-flags`) and `adminFeatureFlagList` attach this readout to every
+measured flag. The comparison is decision support for a human — "keep rolling
+out or kill it" stays an operator call, not an automated one.

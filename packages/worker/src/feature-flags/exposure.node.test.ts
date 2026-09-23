@@ -91,83 +91,32 @@ test('evaluation chokepoint skips paid-ranked-search flags; dedicated site recor
 	})
 })
 
-test('recordPaidRankedSearchFlagExposure writes only for paid eligible users', async () => {
+test('recordPaidRankedSearchFlagExposure writes the caller evaluation for paid users only', async () => {
 	const writeDataPoint = vi.fn()
 	const stableUserId = 'b'.repeat(64)
-	const prepare = vi.fn((query: string) => {
-		if (query.includes('experiments_opt_in')) {
-			return {
-				bind() {
-					return {
-						async first() {
-							return { experiments_opt_in: 1 }
-						},
-					}
-				},
-			}
-		}
-		if (query.includes('stable_user_id')) {
-			return {
-				bind() {
-					return {
-						async first() {
-							return { id: 7 }
-						},
-					}
-				},
-			}
-		}
-		if (query.includes('feature_flag_user_overrides')) {
-			return {
-				bind() {
-					return {
-						async first() {
-							return null
-						},
-					}
-				},
-			}
-		}
-		if (query.includes('FROM feature_flags')) {
-			return {
-				bind() {
-					return {
-						async first() {
-							return {
-								enabled: 1,
-								rollout_percent: null,
-								audience: 'experiments_opt_in',
-							}
-						},
-					}
-				},
-			}
-		}
-		throw new Error(`unexpected query: ${query}`)
-	})
+	const evaluation = { enabled: true, source: 'global' as const }
 
 	await recordPaidRankedSearchFlagExposure({
 		env: {
-			APP_DB: { prepare } as unknown as D1Database,
 			FLAG_EXPOSURES: {
 				writeDataPoint,
 			} as unknown as AnalyticsEngineDataset,
 		},
 		stableUserId,
 		planEligible: false,
+		evaluation,
 	})
 	expect(writeDataPoint).not.toHaveBeenCalled()
-	expect(prepare).not.toHaveBeenCalled()
 
 	await recordPaidRankedSearchFlagExposure({
 		env: {
-			APP_DB: { prepare } as unknown as D1Database,
 			FLAG_EXPOSURES: {
 				writeDataPoint,
 			} as unknown as AnalyticsEngineDataset,
 		},
 		stableUserId,
 		planEligible: true,
+		evaluation,
 	})
 	expect(writeDataPoint).toHaveBeenCalledTimes(1)
 	expect(writeDataPoint.mock.calls[0]?.[0]).toMatchObject({

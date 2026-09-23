@@ -24,8 +24,8 @@ export type FeatureFlagMetricCohort = {
  * from recorded exposures joined with usage events over the current UTC
  * month to date. Users with any `override`-sourced exposure are excluded
  * from on/off (selection bias) and aggregated into `override`. Users who
- * saw both fair values inside the window are counted as `mixedUsers` but
- * still assigned to on/off by their latest fair exposure.
+ * saw both fair values inside the window are counted as `mixedUsers` and
+ * excluded from on/off (month-level usage cannot be split at the switch).
  */
 export type AdminFeatureFlagMetricReadout =
 	| { status: 'unavailable'; reason: string }

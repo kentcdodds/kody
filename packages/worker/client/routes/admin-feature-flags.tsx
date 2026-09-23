@@ -404,8 +404,8 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 														),
 													},
 													{
-														label: 'Switched mid-window',
-														value: `${flag.metricReadout.mixedUsers} user(s) (assigned by latest fair exposure)`,
+														label: 'Excluded',
+														value: `${flag.metricReadout.overrideUsers} override · ${flag.metricReadout.mixedUsers} mixed-exposure`,
 													},
 												]}
 											/>
@@ -420,8 +420,9 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 												{flag.metricReadout.windowEnd.slice(0, 10)} (current
 												month to date). Override users are excluded from on/off
 												because they are hand-picked (their usage is still shown
-												above). Users who saw both fair values are assigned by
-												their latest non-override exposure.
+												above). Mixed-exposure users saw both fair values inside
+												the window and are excluded so month-level usage is not
+												mis-attributed across the switch.
 											</p>
 										</>
 									) : flag.metricReadout?.status === 'unavailable' ? (

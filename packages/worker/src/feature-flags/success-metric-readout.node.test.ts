@@ -59,7 +59,7 @@ function createReadoutTestDb(input: {
 	return { db: db as unknown as D1Database, queries }
 }
 
-test('D1 readout assigns mixed users by latest fair exposure and surfaces override usage', async () => {
+test('D1 readout excludes mixed users from on/off and surfaces override usage', async () => {
 	const { db, queries } = createReadoutTestDb({
 		exposures: [
 			{
@@ -150,11 +150,11 @@ test('D1 readout assigns mixed users by latest fair exposure and surfaces overri
 		windowStart: '2026-07-01T00:00:00.000Z',
 		windowEnd: '2026-07-15T12:00:00.000Z',
 		on: {
-			users: 3,
-			eventCount: 30,
-			errorCount: 3,
-			errorRate: 0.1,
-			avgDurationMs: 40,
+			users: 2,
+			eventCount: 10,
+			errorCount: 2,
+			errorRate: 0.2,
+			avgDurationMs: 100,
 		},
 		off: {
 			users: 1,
@@ -181,7 +181,7 @@ test('D1 readout assigns mixed users by latest fair exposure and surfaces overri
 	expect(queries[1]?.params).toEqual(['execute', '2026-07'])
 })
 
-test('Analytics Engine readout joins exposures and usage by latest fair state', async () => {
+test('Analytics Engine readout joins exposures and usage; mixed stay excluded', async () => {
 	const fetchMock = vi.fn(async (_url: unknown, init: unknown) => {
 		const query = String((init as { body: string }).body)
 		if (query.includes('kody_flag_exposures')) {
@@ -269,7 +269,7 @@ test('Analytics Engine readout joins exposures and usage by latest fair state', 
 		expect(fetchMock).toHaveBeenCalledTimes(2)
 		expect(readout).toMatchObject({
 			status: 'ok',
-			on: { users: 2, eventCount: 10, errorCount: 1 },
+			on: { users: 1, eventCount: 4, errorCount: 1 },
 			off: { users: 1, eventCount: 5, errorCount: 5, errorRate: 1 },
 			override: { users: 1, eventCount: 50, errorCount: 0 },
 			overrideUsers: 1,

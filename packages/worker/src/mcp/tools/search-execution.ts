@@ -1,6 +1,7 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
 	callerHasRole,
+	resolveCallerFeatureFlagEvaluations,
 	resolveCallerFeatureFlags,
 } from '#mcp/capabilities/access-control.ts'
 import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
@@ -230,11 +231,15 @@ async function executeSearchListWithinBudget(
 	warnings = searchRows.warnings
 	const retrieverRun = await retrieverRunPromise
 	warnings.push(...retrieverRun.warnings)
-	const featureFlags = await resolveCallerFeatureFlags(
+	// Warm the per-request evaluation cache and record evaluation-site
+	// exposures for other measured flags.
+	await resolveCallerFeatureFlags(input.env, input.callerContext)
+	const evaluations = await resolveCallerFeatureFlagEvaluations(
 		input.env,
 		input.callerContext,
 	)
-	const jevRerankEnabled = featureFlags[jevSearchRerankFlagKey] === true
+	const jevEvaluation = evaluations?.[jevSearchRerankFlagKey]
+	const jevRerankEnabled = jevEvaluation?.enabled === true
 	const plan =
 		input.userId && input.env.APP_DB
 			? await getUserPlan(input.env.APP_DB, {
@@ -243,14 +248,6 @@ async function executeSearchListWithinBudget(
 				})
 			: 'free'
 	const jevRerankPlanEligible = isPaidPlan(plan)
-	// Jev success-metric exposures: paid ranked-search only (not the generic
-	// MCP/app evaluation chokepoints). Free opt-ins stay outside the frame.
-	await recordPaidRankedSearchFlagExposure({
-		env: input.env,
-		stableUserId: input.userId,
-		planEligible: jevRerankPlanEligible,
-		flagKey: jevSearchRerankFlagKey,
-	})
 	const searchUnifiedStart = performance.now()
 	result = await searchUnified({
 		env: input.env,
@@ -269,6 +266,17 @@ async function executeSearchListWithinBudget(
 		...(jevRerankPlanEligible ? { jevRerankPlanEligible: true } : {}),
 	})
 	phaseTimings.searchUnifiedMs = elapsedMs(searchUnifiedStart)
+	// Only ranked-path results include jevRerank telemetry. Domain index /
+	// overview / empty-query short-circuits stay outside the experiment frame.
+	if (result.telemetry.jevRerank && jevEvaluation) {
+		await recordPaidRankedSearchFlagExposure({
+			env: input.env,
+			stableUserId: input.userId,
+			planEligible: jevRerankPlanEligible,
+			evaluation: jevEvaluation,
+			flagKey: jevSearchRerankFlagKey,
+		})
+	}
 	capabilityGuidance = result.guidance
 	const returnsDomainIndex =
 		result.matches.length > 0 &&
