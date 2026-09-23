@@ -507,7 +507,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		const decision = decideCommunityInstallClick({
 			installState: loginLink ? 'idle' : installState,
 			alreadyInstalled: loginLink ? false : installOutcome != null,
-			requiresConfirm: !official,
+			requiresConfirm: !loginLink && !official,
 			confirmed: isCommunityInstallConfirmArmed({
 				confirmed: installConfirm.doubleCheck,
 				confirmedListingId: installConfirmListingId,

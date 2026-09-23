@@ -154,8 +154,8 @@ verify it before using; the first click arms **Confirm fork** and the second
 click starts the install and sends `acknowledged: true` on
 `POST /community/:listingId/install.json` (the endpoint responds `409` without
 that flag). Blur cancels the confirm. Logged-out visitors get the same icon as a
-login link (second click after confirm). While the fork runs, that slot shows a
-spinner whose tooltip names the current stage.
+login link and sign in on the first click. While the fork runs, that slot shows
+a spinner whose tooltip names the current stage.
 
 A current fork shows an open icon that links to the fork. An outdated fork shows
 a link-break icon in that slot; the click copies the absorb prompt and opens the
