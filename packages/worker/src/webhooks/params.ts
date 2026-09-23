@@ -23,11 +23,26 @@ export type WebhookParamsModeResolution =
 	| { ok: true; params: Record<string, unknown> }
 	| { ok: false; code: 'invalid_params' }
 
+const webhookInvokeEnvelopeKeys = new Set([
+	'params',
+	'idempotencyKey',
+	'source',
+	'topic',
+])
+
+function isWebhookInvokeEnvelope(
+	json: Record<string, unknown>,
+): json is Record<string, unknown> & { params: Record<string, unknown> } {
+	if (!isWebhookJsonObject(json['params'])) return false
+	return Object.keys(json).every((key) => webhookInvokeEnvelopeKeys.has(key))
+}
+
 /**
  * `inputMode: "params"` first argument. The parsed JSON object is the export
- * argument. When that object has a `params` property that is itself a JSON
- * object, the platform unwraps it so invoke-token callers can POST the same
- * `{ params, idempotencyKey }` envelope.
+ * argument. Unwrap only the invoke-token envelope (`params` plus optional
+ * `idempotencyKey`, `source`, and `topic`) so leftover token callers can POST
+ * the same body. Application payloads that happen to include a nested
+ * `params` object next to other keys stay intact.
  */
 export function resolveWebhookParamsModeFirstArg(
 	json: unknown,
@@ -35,9 +50,8 @@ export function resolveWebhookParamsModeFirstArg(
 	if (!isWebhookJsonObject(json)) {
 		return { ok: false, code: 'invalid_params' }
 	}
-	const nested = json['params']
-	if (isWebhookJsonObject(nested)) {
-		return { ok: true, params: nested }
+	if (isWebhookInvokeEnvelope(json)) {
+		return { ok: true, params: json.params }
 	}
 	return { ok: true, params: json }
 }

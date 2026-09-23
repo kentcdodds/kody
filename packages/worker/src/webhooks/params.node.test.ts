@@ -29,10 +29,27 @@ test('params-mode first-arg unwrap and caller Idempotency-Key resolution', () =>
 		params: { messageId: 'm-2', content: 'invoke' },
 		idempotencyKey: 'evt-2',
 		source: 'discord-gateway',
+		topic: 'discord.message.created',
 	}
 	expect(resolveWebhookParamsModeFirstArg(envelope)).toEqual({
 		ok: true,
 		params: { messageId: 'm-2', content: 'invoke' },
+	})
+	expect(
+		resolveWebhookParamsModeFirstArg({
+			params: { fileSizeBytes: 12 },
+		}),
+	).toEqual({
+		ok: true,
+		params: { fileSizeBytes: 12 },
+	})
+	const routed = {
+		route: 'linkedin/register-video-upload',
+		params: { fileSizeBytes: 12, confirm: true },
+	}
+	expect(resolveWebhookParamsModeFirstArg(routed)).toEqual({
+		ok: true,
+		params: routed,
 	})
 	expect(
 		resolveWebhookParamsModeFirstArg({
