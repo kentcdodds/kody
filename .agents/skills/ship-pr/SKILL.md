@@ -47,7 +47,9 @@ CodeRabbit when the change is **high** risk (or the user explicitly asks).
    `{ prUrl, status: 'ready' }` (or owner/repo/prNumber).
 2. Wait for CI — `gh pr checks` (or compose `loop-on-ci` / `fix-ci`).
 3. Fix failures; for **medium+**, wait on AI reviewer(s) (Bugbot first; see
-   above for CodeRabbit) and address valid feedback. Rebase only when actually
+   above for CodeRabbit) and address valid feedback. While the PR is open, also
+   fix obvious in-scope low-risk repo friction you are already touching, mention
+   the fix, and let CI finish again before merging. Rebase only when actually
    unmergeable. For **medium+**, also run `npm run control-kody -- preview` (or
    `npm run preview:manual-test`) as the seeded user **with data for this
    change** (`control-kody request` / `--request`; do not cat the cookie into
@@ -76,17 +78,16 @@ When policy + risk allow: squash-merge via `kody:@kentcdodds/github/pr/merge`
 ## Leftover friction
 
 After the merge or park decision (or when ending the run), and before the
-Discord summary, scan the session for leftover out-of-scope repo papercuts:
-confusing docs, flaky local-only tests, secret-handshake commands, lying types,
-Cloud Agent VM gotchas this PR does not already fix.
+Discord summary, scan the session for leftover out-of-scope repo papercuts this
+PR did not fix: confusing docs, flaky local-only tests, secret-handshake
+commands, lying types, Cloud Agent VM gotchas. Do not push more commits onto a
+merged PR. In-scope fixes belong in the loop above, while the PR is open.
 
-Fix obvious in-scope low-risk friction in the PR when you are already touching
-that area, and mention the fix. File leftovers with
-`kody:@kentcdodds/friction-log/file` via Kody MCP `execute` (`items`, one
-papercut each). Include `whatHappened`, `whatYouWanted`, `howToReproduce`, and
-`cost` when known. Omit secrets. If there is nothing to file, skip the call or
-pass empty `items`. Do not invent papercuts. Do not use `gh issue create` or a
-raw GitHub issue POST.
+File those leftovers with `kody:@kentcdodds/friction-log/file` via Kody MCP
+`execute` (`items`, one papercut each). Include `whatHappened`, `whatYouWanted`,
+`howToReproduce`, and `cost` when known. Omit secrets. If there is nothing to
+file, skip the call or pass empty `items`. Do not invent papercuts. Do not use
+`gh issue create` or a raw GitHub issue POST.
 
 Policy: [friction log](../../../docs/contributing/friction-log.md). Outside this
 pass: [file-friction](../file-friction/SKILL.md).
