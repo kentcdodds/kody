@@ -1159,6 +1159,27 @@ test('first-party trusted webhooks accept Idempotency-Key, params mode, and a hi
 	expect(directCall.request.params).toEqual({ videoId: 'v-1' })
 	expect(directCall.request.idempotencyKey).toBe('evt-direct-1')
 
+	const routedBody = JSON.stringify({
+		route: 'linkedin/register-video-upload',
+		params: { fileSizeBytes: 12, confirm: true },
+	})
+	const routed = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'message-created',
+		urlSecret,
+		body: routedBody,
+		headers: { 'Idempotency-Key': 'evt-routed-1' },
+	})
+	expect(routed.status).toBe(200)
+	const routedCall = mocks.invokePackageExport.mock.calls.at(-1)?.[0] as {
+		request: { params: Record<string, unknown>; idempotencyKey: string }
+	}
+	expect(routedCall.request.params).toEqual({
+		route: 'linkedin/register-video-upload',
+		params: { fileSizeBytes: 12, confirm: true },
+	})
+	expect(routedCall.request.idempotencyKey).toBe('evt-routed-1')
+
 	const invalidParams = await postWebhook({
 		packageKodyId: 'sentry-bridge',
 		webhookName: 'message-created',

@@ -305,8 +305,9 @@ applies the same idempotency ledger.
 
 `inputMode: "params"` passes a JSON object as the export's **first argument**,
 matching invocation-token `params`. If the body is the invoke envelope
-(`{ "params": { … }, "idempotencyKey": "…" }`), the platform unwraps `params`. A
-top-level JSON object without a `params` object is the first argument as-is.
+(`{ "params": { … } }` with optional `idempotencyKey`, `source`, and `topic`),
+the platform unwraps `params`. A top-level JSON object that is not that envelope
+is the first argument as-is, even when it also has a nested `params` object.
 Arrays and non-objects are **400** `invalid_params`. Default
 `inputMode: "request"` is unchanged: the export still receives
 `{ webhook, request }`.

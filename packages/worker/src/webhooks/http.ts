@@ -180,8 +180,7 @@ function invalidParamsResponse() {
 			ok: false,
 			error: {
 				code: 'invalid_params',
-				message:
-					'inputMode "params" requires a JSON object body. When the body has a params object, that object is the export argument.',
+				message: 'inputMode "params" requires a JSON object body.',
 			},
 		},
 		{ status: 400 },

@@ -51,15 +51,17 @@ is rotated.
   acknowledgement.
 
 `inputMode: "params"` is the first-party trusted-client contract. The bound
-export's first argument is the parsed JSON object. When that object has a
-`params` property that is itself a JSON object, the platform unwraps it
-(invoke-token envelope). `Idempotency-Key` (or JSON `idempotencyKey` in params
-mode) maps to the same package-invocation ledger with payload hashing
-(`include`): same key + same first argument replays. On `sync`, mismatch and
-in-progress are **409**. `ack` returns **202** after enqueue; the queue consumer
-applies the same ledger asynchronously. Request-mode caller keys hash the JSON
-body so `receivedAt` does not break retries. Delivery-id keys stay `ignore`.
-HMAC stays optional; the URL secret is enough for a trusted client.
+export's first argument is the parsed JSON object. When that object is the
+invoke-token envelope (`params` plus optional `idempotencyKey`, `source`, and
+`topic`), the platform unwraps `params`. An application payload that happens to
+include a nested `params` object next to other keys stays intact.
+`Idempotency-Key` (or JSON `idempotencyKey` in params mode) maps to the same
+package-invocation ledger with payload hashing (`include`): same key + same
+first argument replays. On `sync`, mismatch and in-progress are **409**. `ack`
+returns **202** after enqueue; the queue consumer applies the same ledger
+asynchronously. Request-mode caller keys hash the JSON body so `receivedAt` does
+not break retries. Delivery-id keys stay `ignore`. HMAC stays optional; the URL
+secret is enough for a trusted client.
 
 `rateLimitPerMinute` overrides the default 60/min ceiling per minted endpoint.
 600/min is the documented maximum for gateway fan-in. The limiter still bounds a
