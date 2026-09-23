@@ -397,8 +397,15 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 														),
 													},
 													{
-														label: 'Excluded',
-														value: `${flag.metricReadout.overrideUsers} override user(s) · ${flag.metricReadout.mixedUsers} mixed-exposure user(s)`,
+														label: 'Override (excluded)',
+														value: summarizeMetricCohort(
+															flag.successMetric.measure,
+															flag.metricReadout.override,
+														),
+													},
+													{
+														label: 'Switched mid-window',
+														value: `${flag.metricReadout.mixedUsers} user(s) (assigned by latest fair exposure)`,
 													},
 												]}
 											/>
@@ -411,9 +418,10 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 											>
 												Window: {flag.metricReadout.windowStart.slice(0, 10)} to{' '}
 												{flag.metricReadout.windowEnd.slice(0, 10)} (current
-												month to date). Override users are excluded because they
-												are hand-picked; mixed users saw both values inside the
-												window.
+												month to date). Override users are excluded from on/off
+												because they are hand-picked (their usage is still shown
+												above). Users who saw both fair values are assigned by
+												their latest non-override exposure.
 											</p>
 										</>
 									) : flag.metricReadout?.status === 'unavailable' ? (

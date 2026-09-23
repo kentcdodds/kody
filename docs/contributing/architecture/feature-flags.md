@@ -100,7 +100,8 @@ end-to-end (`e2e/admin-feature-flags.spec.ts`). Experiment flags such as
 `compact-mcp-server-instructions` live in the same registry and are removed in
 the same way: delete the definition and every gate site.
 
-`jev-search-rerank` is a kill switch (default **off**) for improved ranked MCP
+`jev-search-rerank` is a kill switch (default **off**, registry
+`defaultAudience: experiments_opt_in`) for improved ranked MCP
 `search({ query })`. When the flag is on, **paid** plans (`standard` / `pro` /
 `max`) widen hybrid recall and may run Workers AI `typesafe/jev` Score through
 AI Gateway when the post-hybrid pool looks ambiguous. Free and anonymous never
@@ -109,8 +110,18 @@ counter. Pricing-page “improved search” copy is gated by the same flag
 (`isFeatureFlagEnabled` on the session) so the claim is not visible while the
 experiment is off. Offline/deterministic search skips Jev and uses hybrid order.
 See [Search](../../use/search.md) for skip reasons, telemetry, and Gateway
-requirements. Enable for dogfood with
-`adminFeatureFlagOverride({ key: "jev-search-rerank", username: "kentcdodds", enabled: true })`.
+requirements.
+
+**Success-metric exposure (F5):** this flag sets
+`exposureRecording: 'paid-ranked-search'`. Exposures are **not** written at the
+generic app/MCP evaluation chokepoints. They are written once per paid list-mode
+ranked search: `on` when the flag evaluates enabled (Jev-eligible — necessity
+may still skip Score), `off` when it evaluates disabled. Free and anonymous
+searchers are outside the experiment frame. Assignment `source` still comes from
+flag evaluation, so override dogfood is tagged and excluded from on/off (shown
+as the override cohort). Enable for dogfood with
+`adminFeatureFlagOverride({ key: "jev-search-rerank", username: "kentcdodds", enabled: true })`
+or via experiments opt-in while the global audience is `experiments_opt_in`.
 Remove the flag and gate sites when the experiment ends.
 
 `execute-invoke` is an experiment (default **off**, registry
@@ -180,25 +191,31 @@ recommending one everywhere else.
 ### Exposures
 
 Current flag state cannot reconstruct who was inside a percentage rollout last
-week, so measured flags record **exposures** at the two evaluation chokepoints
-(the app session flag cache and the MCP caller flag resolver):
-`(stable user id, flag key, on/off, assignment source, timestamp)`. The write
-path mirrors usage metering — the `FLAG_EXPOSURES` Analytics Engine dataset in
+week, so measured flags record **exposures** at their configured write site
+`(stable user id, flag key, on/off, assignment source, timestamp)`. Most flags
+use the two evaluation chokepoints (the app session flag cache and the MCP
+caller flag resolver). Flags with `exposureRecording: 'paid-ranked-search'`
+(Jev) write only from paid list-mode ranked search so free opt-ins and
+non-search traffic stay outside that experiment frame. The write path mirrors
+usage metering — the `FLAG_EXPOSURES` Analytics Engine dataset in
 production/preview, the D1 `feature_flag_exposure_rollups` table (migration
 `0001-squashed-init.sql`, 90-day retention) in local dev and tests — and never
 throws.
 
 The assignment source (`default` / `global` / `rollout` / `override`) is what
 keeps the readout honest: `override` users are hand-picked and excluded from
-comparisons, while `rollout` users are deterministically bucketed.
+on/off comparisons (their usage is still shown as the override cohort), while
+`rollout` users are deterministically bucketed.
 
 ### Readout
 
 `success-metric-readout.ts` joins exposures with the usage event stream for the
 declared `eventType` over the current UTC month to date, splits users into
-on/off cohorts (excluding override and mixed-exposure users, reported
-separately), and aggregates event count, error rate, and average duration per
-cohort. The admin UI (`/admin/feature-flags`) and `adminFeatureFlagList` attach
-this readout to every measured flag. The comparison is decision support for a
-human — "keep rolling out or kill it" stays an operator call, not an automated
-one.
+on/off cohorts, and aggregates event count, error rate, and average duration per
+cohort. Users with any override-sourced exposure are excluded from on/off and
+aggregated into `override`. Users who saw both fair values inside the window are
+counted as `mixedUsers` but assigned to on/off by their **latest** fair exposure
+(so a mid-month enable or experiments opt-in does not empty the on cohort). The
+admin UI (`/admin/feature-flags`) and `adminFeatureFlagList` attach this readout
+to every measured flag. The comparison is decision support for a human — "keep
+rolling out or kill it" stays an operator call, not an automated one.

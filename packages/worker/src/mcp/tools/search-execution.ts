@@ -16,6 +16,7 @@ import {
 import { consumeSearchRateLimit } from '#worker/search-rate-limit.ts'
 import { getUserPlan } from '#worker/entitlements/service.ts'
 import { isPaidPlan } from '#universal/plans.ts'
+import { recordPaidRankedSearchFlagExposure } from '#worker/feature-flags/paid-ranked-search-exposure.ts'
 
 import { resolvePackageIdentitySearch } from './package-search-identity.ts'
 import { buildExactPackageSearchResult, searchUnified } from './search-core.ts'
@@ -242,6 +243,14 @@ async function executeSearchListWithinBudget(
 				})
 			: 'free'
 	const jevRerankPlanEligible = isPaidPlan(plan)
+	// Jev success-metric exposures: paid ranked-search only (not the generic
+	// MCP/app evaluation chokepoints). Free opt-ins stay outside the frame.
+	await recordPaidRankedSearchFlagExposure({
+		env: input.env,
+		stableUserId: input.userId,
+		planEligible: jevRerankPlanEligible,
+		flagKey: jevSearchRerankFlagKey,
+	})
 	const searchUnifiedStart = performance.now()
 	result = await searchUnified({
 		env: input.env,

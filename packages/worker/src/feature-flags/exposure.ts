@@ -1,13 +1,16 @@
 /**
  * Feature-flag success-metric exposure recording.
  *
- * For every flag that declares a `successMetric` in the registry, the two
- * per-request evaluation chokepoints (the app session flag cache and the MCP
- * caller flag resolver) record which value the user saw and how it was
- * assigned. Exposures are what make the admin metric readout honest: current
- * flag state cannot reconstruct who was inside a percentage rollout last
- * week, and hand-picked override users must be excluded from on/off
- * comparisons.
+ * For every flag that declares a `successMetric` in the registry, exposures
+ * record which value the user saw and how it was assigned. Most flags write
+ * at the two evaluation chokepoints (the app session flag cache and the MCP
+ * caller flag resolver). Flags with `exposureRecording: 'paid-ranked-search'`
+ * (Jev) write only from paid list-mode ranked search so free opt-ins and
+ * non-search traffic stay outside the experiment frame.
+ *
+ * Exposures are what make the admin metric readout honest: current flag state
+ * cannot reconstruct who was inside a percentage rollout last week, and
+ * hand-picked override users must be excluded from on/off comparisons.
  *
  * The write path mirrors `packages/worker/src/usage/record-usage.ts`:
  *
@@ -25,6 +28,7 @@
 
 import {
 	measuredFeatureFlagKeys,
+	recordsFeatureFlagExposureAtEvaluation,
 	type FeatureFlagKey,
 } from '#universal/feature-flags/registry.ts'
 import { type FeatureFlagEvaluation } from './service.ts'
@@ -44,10 +48,16 @@ ON CONFLICT (flag_key, user_id, day, enabled, source) DO UPDATE SET
 	updated_at = excluded.updated_at
 `.trim()
 
+export type FeatureFlagExposureRecordingSite = 'evaluation' | 'dedicated'
+
 /**
  * Record one exposure per measured flag in `evaluations` for the given
  * stable user id. Flags without a registry `successMetric` are skipped, so
  * request volume for unmeasured flags never reaches a sink.
+ *
+ * `recordingSite: 'evaluation'` (default) also skips flags that declare a
+ * dedicated exposure path (for example `paid-ranked-search`). Pass
+ * `'dedicated'` from that path so those flags still write.
  */
 export async function recordFeatureFlagExposures(
 	env: FeatureFlagExposureEnv,
@@ -55,13 +65,18 @@ export async function recordFeatureFlagExposures(
 		stableUserId: string
 		evaluations: Partial<Record<FeatureFlagKey, FeatureFlagEvaluation>>
 		timestamp?: string
+		recordingSite?: FeatureFlagExposureRecordingSite
 	},
 ): Promise<void> {
 	try {
 		if (!input.stableUserId) return
-		const exposures = Object.entries(input.evaluations).filter(([key]) =>
-			measuredFeatureFlagKeys.has(key as FeatureFlagKey),
-		) as Array<[FeatureFlagKey, FeatureFlagEvaluation]>
+		const recordingSite = input.recordingSite ?? 'evaluation'
+		const exposures = Object.entries(input.evaluations).filter(([key]) => {
+			const flagKey = key as FeatureFlagKey
+			if (!measuredFeatureFlagKeys.has(flagKey)) return false
+			if (recordingSite === 'dedicated') return true
+			return recordsFeatureFlagExposureAtEvaluation(flagKey)
+		}) as Array<[FeatureFlagKey, FeatureFlagEvaluation]>
 		if (exposures.length === 0) return
 		const timestamp = input.timestamp ?? new Date().toISOString()
 		if (env.FLAG_EXPOSURES && env.WRANGLER_IS_LOCAL_DEV !== 'true') {
