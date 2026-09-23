@@ -201,9 +201,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// platform startup graph: local dry-run 5_151_668 against the previous
 		// 5_150_000 budget.
 		// Sibling daily automation quota (`automation_invocations_per_day`)
-		// spills into the platform MCP invoke graph (fits in opaque-secrets
-		// headroom above).
-		maxEntryBytes: 5_153_000,
+		// spills into the platform MCP invoke graph. Combined with opaque
+		// secrets on main: local dry-run 5_153_557 against the previous
+		// 5_153_000 budget.
+		maxEntryBytes: 5_154_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
@@ -289,8 +290,9 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// opaque-secrets graph growth: raise reviewed budget to 3_828_000.
 		// Sibling daily automation quota (`automation_invocations_per_day`)
 		// on package-invocation module-execution pulls entitlement consume
-		// into runtime (fits within the opaque-secrets + suspension headroom).
-		maxEntryBytes: 3_828_000,
+		// into runtime. Combined with opaque-secrets + suspension on main:
+		// local dry-run 3_828_451 against the previous 3_828_000 budget.
+		maxEntryBytes: 3_829_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',
