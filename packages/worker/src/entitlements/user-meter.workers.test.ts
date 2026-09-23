@@ -903,6 +903,7 @@ test('UserMeter storage RPCs, authoritative export state, and purge work additiv
 		'email_sends_per_day',
 		'execute_calls_per_day',
 		'job_runs_per_day',
+		'automation_invocations_per_day',
 		'outbound_fetches_per_day',
 	] as const) {
 		await meter.initialize({

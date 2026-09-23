@@ -172,35 +172,38 @@ limits, so granting `max` never reduces email capacity (`email_message_bytes`
 stays at standard/pro parity because the per-message persist ceiling is a
 platform bound, not a scalable quota). Compute rate limits on `max`
 (`execute_calls_per_day`, `outbound_fetches_per_day`, `job_runs_per_day`,
-`concurrent_workflows`) are operator runaway caps sized from production usage
-with at least 2× busy-day headroom, and they still dominate every paid plan. All
-other resources use the ordinary `planLimits.max` numbers.
+`automation_invocations_per_day`, `concurrent_workflows`) are operator runaway
+caps sized from production usage with at least 2× busy-day headroom, and they
+still dominate every paid plan. All other resources use the ordinary
+`planLimits.max` numbers.
 
-| Resource                   | Limit   |
-| -------------------------- | ------- |
-| `email_sends_per_day`      | 10,000  |
-| `email_receives_per_day`   | 20,000  |
-| `stored_email_messages`    | 100,000 |
-| `email_message_bytes`      | 768 KiB |
-| `concurrent_workflows`     | 200     |
-| `scheduled_jobs`           | 5,000   |
-| `saved_packages`           | 10,000  |
-| `repo_sessions`            | 20,000  |
-| `secrets`                  | 10,000  |
-| `storage_bytes`            | 100 GiB |
-| `execute_calls_per_day`    | 25,000  |
-| `outbound_fetches_per_day` | 80,000  |
-| `job_runs_per_day`         | 40,000  |
+| Resource                         | Limit   |
+| -------------------------------- | ------- |
+| `email_sends_per_day`            | 10,000  |
+| `email_receives_per_day`         | 20,000  |
+| `stored_email_messages`          | 100,000 |
+| `email_message_bytes`            | 768 KiB |
+| `concurrent_workflows`           | 200     |
+| `scheduled_jobs`                 | 5,000   |
+| `saved_packages`                 | 10,000  |
+| `repo_sessions`                  | 20,000  |
+| `secrets`                        | 10,000  |
+| `storage_bytes`                  | 100 GiB |
+| `execute_calls_per_day`          | 25,000  |
+| `outbound_fetches_per_day`       | 80,000  |
+| `job_runs_per_day`               | 40,000  |
+| `automation_invocations_per_day` | 40,000  |
 
 ## Compute rate limits
 
-`execute_calls_per_day`, `outbound_fetches_per_day`, and `job_runs_per_day` are
-daily-counter resources (same mechanism as `email_sends_per_day`, consumed
-atomically with `consumeDailyEntitlement`). Public Free/Standard/Pro also apply
-a UTC-week hard cap on execute and outbound fetches (Monday–Sunday, summed from
-the same UserMeter daily rows). Whichever window hits first blocks. `max` and
-legacy Standard/Pro stay daily-only. They close the metering → enforcement loop
-for the compute surfaces `usage-metering.md` already observes:
+`execute_calls_per_day`, `outbound_fetches_per_day`, `job_runs_per_day`, and
+`automation_invocations_per_day` are daily-counter resources (same mechanism as
+`email_sends_per_day`, consumed atomically with `consumeDailyEntitlement`).
+Public Free/Standard/Pro also apply a UTC-week hard cap on execute and outbound
+fetches (Monday–Sunday, summed from the same UserMeter daily rows). Whichever
+window hits first blocks. `max` and legacy Standard/Pro stay daily-only. They
+close the metering → enforcement loop for the compute surfaces
+`usage-metering.md` already observes:
 
 - **Execute calls** are consumed at the top of the MCP `execute` tool handler
   (`packages/worker/src/mcp/tools/execute.ts`) before any bundling or sandbox
@@ -221,6 +224,15 @@ for the compute surfaces `usage-metering.md` already observes:
   (`packages/worker/src/jobs/service.ts`) after caller-context resolution and
   before sandbox work, so over-limit ticks fail cheaply. This is separate from
   `scheduled_jobs` (how many job rows an account may own).
+- **Automation invocations** are consumed in `runSavedPackageModuleOnce`
+  (`packages/worker/src/package-invocations/module-execution.ts`) after artifact
+  prep and before sandbox work for top-level always-on entrypoints: inbound
+  webhooks, HTTP package-export invocations, package subscriptions, and
+  package-backed workflow steps. Nested invokes from MCP execute or package
+  runtime do not consume again. This meter is a sibling of execute and jobs —
+  webhook floods do not burn `execute_calls_per_day`, and MCP execute does not
+  burn `automation_invocations_per_day`. Ladder numbers currently match
+  `job_runs_per_day` (same cost class).
 - **Job interval floor** (`planLimits.*.minJobIntervalMs`) applies to free and
   public Standard (15 minutes) and public Pro (5 minutes). `0` still means no
   extra floor (`max`, and legacy Standard/Pro). The floor is asserted on create
@@ -235,18 +247,19 @@ authoritative in the per-user `UserMeter` Durable Object; see
 ## UserMeter
 
 Daily rate-style resources (`email_sends_per_day`, `email_receives_per_day`,
-`execute_calls_per_day`, `outbound_fetches_per_day`, `job_runs_per_day`) are
-**authoritative in the per-user `UserMeter` Durable Object** (`USER_METER`
-binding). Code lives in `packages/worker/src/entitlements/user-meter-do.ts` and
-`user-meter-client.ts`; storage layout and naming are documented in
-[Data storage](./data-storage.md). UserMeter also stores first-seen Dynamic
-Worker ids per UTC day so usage metering can record `dynamic_worker_day` without
-double-counting, and inbound MCP OAuth last-used stamps so Account → Connections
-can show which host is safe to revoke. `PlanLimits.maxUniqueWorkerDaysPerMonth`
-is the public included allotment (Free 50, Standard 350, Pro 2,000) shown on
-`/pricing`. `PlanLimits.maxDurableObjectRowsReadPerMonth` is the public included
-Durable Object rows-read allotment (Free 0.5B, Standard 5B, Pro 20B). Those two
-fields are the only customer-facing monthly overage meters. They are not in
+`execute_calls_per_day`, `outbound_fetches_per_day`, `job_runs_per_day`,
+`automation_invocations_per_day`) are **authoritative in the per-user
+`UserMeter` Durable Object** (`USER_METER` binding). Code lives in
+`packages/worker/src/entitlements/user-meter-do.ts` and `user-meter-client.ts`;
+storage layout and naming are documented in [Data storage](./data-storage.md).
+UserMeter also stores first-seen Dynamic Worker ids per UTC day so usage
+metering can record `dynamic_worker_day` without double-counting, and inbound
+MCP OAuth last-used stamps so Account → Connections can show which host is safe
+to revoke. `PlanLimits.maxUniqueWorkerDaysPerMonth` is the public included
+allotment (Free 50, Standard 350, Pro 2,000) shown on `/pricing`.
+`PlanLimits.maxDurableObjectRowsReadPerMonth` is the public included Durable
+Object rows-read allotment (Free 0.5B, Standard 5B, Pro 20B). Those two fields
+are the only customer-facing monthly overage meters. They are not in
 `entitlementResources`, so `assertWithinEntitlement` does not hard-cut them.
 Hourly user warning emails cover approaching (80%) and reached (100%) includes
 for both public and legacy accounts. User-facing overage list prices live on
@@ -884,21 +897,22 @@ workflows via RunLog, and similar).
 
 ## Enforcement points
 
-| Resource                   | Enforcement point                                                                                                                                                                                                                                                                                                                                                                   |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `scheduled_jobs`           | Full-addition preflight in `syncPackageJobsForPackage` in `packages/worker/src/jobs/service.ts` (package sync subtracts same-sync removals before checking, so replacements do not consume an extra slot). Free and public Standard also assert `minJobIntervalMs` (15 minutes); public Pro asserts 5 minutes. Existing faster jobs keep their schedule on identity-only refreshes. |
-| `saved_packages`           | new-package branch of `packageSave` and projection insert                                                                                                                                                                                                                                                                                                                           |
-| `repo_sessions`            | `repoOpenSession` before creating a new session                                                                                                                                                                                                                                                                                                                                     |
-| `email_sends_per_day`      | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`)                                                                                                                                                                                                                                                                                                 |
-| `email_receives_per_day`   | `handleInboundEmail` (`consumeDailyEntitlement`; same plan limits; refund only on `RetryableInboundStorageError`)                                                                                                                                                                                                                                                                   |
-| `stored_email_messages`    | `handleInboundEmail` before storage (`assertWithinEntitlement`; `max` caps from `planLimits.max`). Users free slots with `emailMessageDelete` or the delete action on `/account/email` (Mailbox `deleteMessageWithBlobs`; count is live Mailbox `countMessages`)                                                                                                                    |
-| `email_message_bytes`      | `handleInboundEmail` after inbound reduction (`assertWithinEntitlement` on kept raw size via `resolvePlanLimit`). Wire size above 25 MiB (`maxSurvivableInboundRawBytes`) rejects at SMTP. Mail between the persist cap and 25 MiB is reduced (text kept, oversized parts omitted) and stored.                                                                                      |
-| `secrets`                  | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                                                                                                                                                                                                                                                                                    |
-| `concurrent_workflows`     | `createDynamicCallableWorkflow` (`reserveWorkflowProjectionSlot` + `assertWithinEntitlement` getCurrent; `max` = 5,000)                                                                                                                                                                                                                                                             |
-| `execute_calls_per_day`    | MCP `execute` tool handler (`consumeDailyEntitlement` before bundling/sandbox)                                                                                                                                                                                                                                                                                                      |
-| `outbound_fetches_per_day` | `executeGatewayFetch` (`consumeDailyEntitlement` before secret expansion)                                                                                                                                                                                                                                                                                                           |
-| `job_runs_per_day`         | `executeJobOnce` (`consumeDailyEntitlement` before sandbox work; cron, interval, and run-now)                                                                                                                                                                                                                                                                                       |
-| `storage_bytes`            | UserMeter DO reserve via `assertWithinStorageBytesEntitlement` (atomic `reserveStorageBytes`; cold zero-init bootstrap; required `env.USER_METER`); StorageRunner write tools/app RPCs (`getCurrent` check-only for bucket component)                                                                                                                                               |
+| Resource                         | Enforcement point                                                                                                                                                                                                                                                                                                                                                                   |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scheduled_jobs`                 | Full-addition preflight in `syncPackageJobsForPackage` in `packages/worker/src/jobs/service.ts` (package sync subtracts same-sync removals before checking, so replacements do not consume an extra slot). Free and public Standard also assert `minJobIntervalMs` (15 minutes); public Pro asserts 5 minutes. Existing faster jobs keep their schedule on identity-only refreshes. |
+| `saved_packages`                 | new-package branch of `packageSave` and projection insert                                                                                                                                                                                                                                                                                                                           |
+| `repo_sessions`                  | `repoOpenSession` before creating a new session                                                                                                                                                                                                                                                                                                                                     |
+| `email_sends_per_day`            | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`)                                                                                                                                                                                                                                                                                                 |
+| `email_receives_per_day`         | `handleInboundEmail` (`consumeDailyEntitlement`; same plan limits; refund only on `RetryableInboundStorageError`)                                                                                                                                                                                                                                                                   |
+| `stored_email_messages`          | `handleInboundEmail` before storage (`assertWithinEntitlement`; `max` caps from `planLimits.max`). Users free slots with `emailMessageDelete` or the delete action on `/account/email` (Mailbox `deleteMessageWithBlobs`; count is live Mailbox `countMessages`)                                                                                                                    |
+| `email_message_bytes`            | `handleInboundEmail` after inbound reduction (`assertWithinEntitlement` on kept raw size via `resolvePlanLimit`). Wire size above 25 MiB (`maxSurvivableInboundRawBytes`) rejects at SMTP. Mail between the persist cap and 25 MiB is reduced (text kept, oversized parts omitted) and stored.                                                                                      |
+| `secrets`                        | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                                                                                                                                                                                                                                                                                    |
+| `concurrent_workflows`           | `createDynamicCallableWorkflow` (`reserveWorkflowProjectionSlot` + `assertWithinEntitlement` getCurrent; `max` = 5,000)                                                                                                                                                                                                                                                             |
+| `execute_calls_per_day`          | MCP `execute` tool handler (`consumeDailyEntitlement` before bundling/sandbox)                                                                                                                                                                                                                                                                                                      |
+| `outbound_fetches_per_day`       | `executeGatewayFetch` (`consumeDailyEntitlement` before secret expansion)                                                                                                                                                                                                                                                                                                           |
+| `job_runs_per_day`               | `executeJobOnce` (`consumeDailyEntitlement` before sandbox work; cron, interval, and run-now)                                                                                                                                                                                                                                                                                       |
+| `automation_invocations_per_day` | `runSavedPackageModuleOnce` (`consumeDailyEntitlement` before sandbox for top-level webhook / package-export / subscription / workflow invokes; not nested execute or package-runtime invokes)                                                                                                                                                                                      |
+| `storage_bytes`                  | UserMeter DO reserve via `assertWithinStorageBytesEntitlement` (atomic `reserveStorageBytes`; cold zero-init bootstrap; required `env.USER_METER`); StorageRunner write tools/app RPCs (`getCurrent` check-only for bucket component)                                                                                                                                               |
 
 ## Billing
 

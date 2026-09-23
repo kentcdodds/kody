@@ -15,6 +15,15 @@ import {
 import { getInternalEmailMessageById } from '#worker/email/mailbox-internal-read.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
 import { isAccountSuspendedError } from '#worker/account/account-suspension.ts'
+import { consumeDailyEntitlement } from '#worker/entitlements/service.ts'
+import {
+	entitlementLimitErrorCode,
+	isEntitlementLimitError,
+} from '#worker/entitlements/errors.ts'
+import {
+	automationInvocationsPerDayResource,
+	shouldConsumeAutomationInvocationEntitlement,
+} from './automation-invocation-entitlement.ts'
 import {
 	buildPackageInvocationStorageId,
 	createRepoContext,
@@ -144,6 +153,43 @@ export async function runSavedPackageModuleOnce(
 						id: artifact.packageContext.sourceId,
 						userId: input.actor.userId,
 					})
+		if (
+			shouldConsumeAutomationInvocationEntitlement({
+				actorTokenId: input.actor.tokenId,
+				source: input.source,
+				runtimeInvokeDepth: input.runtimeInvokeDepth ?? 0,
+			})
+		) {
+			// Sibling daily automation quota before sandbox work so over-limit
+			// webhooks / package-export / subscription / workflow invokes cost
+			// nothing. Failed attempts still count. Distinct from MCP
+			// execute_calls_per_day and scheduled job_runs_per_day.
+			try {
+				await consumeDailyEntitlement({
+					db: input.env.APP_DB,
+					env: input.env,
+					userId: input.actor.userId,
+					email: user.email,
+					resource: automationInvocationsPerDayResource,
+				})
+			} catch (error) {
+				if (isEntitlementLimitError(error)) {
+					return {
+						kind: 'failed',
+						response: buildJsonErrorResponse({
+							status: 429,
+							code: entitlementLimitErrorCode,
+							message: error.message,
+							idempotencyKey: input.idempotencyKey ?? undefined,
+							details: error.details,
+						}),
+						logs: [],
+						error,
+					}
+				}
+				throw error
+			}
+		}
 		const callerContext = createMcpCallerContext({
 			baseUrl: input.baseUrl,
 			executionOrigin: 'background',

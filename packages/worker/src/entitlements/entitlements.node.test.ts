@@ -202,6 +202,7 @@ async function readMeterDailyCount(input: {
 		| 'execute_calls_per_day'
 		| 'outbound_fetches_per_day'
 		| 'job_runs_per_day'
+		| 'automation_invocations_per_day'
 	now: Date
 }) {
 	const result = await userMeterRpc({
