@@ -49,10 +49,11 @@ export const d1DbOverloadedTooManyQueuedMessage =
  * Same retry / Sentry-drop class as SQLITE_BUSY and binding transport blips.
  * Require the `reference =` token and only these known D1 phrasings so bare
  * "internal error" (or unrelated "internal error while …") from app code
- * stays non-retryable and Sentry-visible.
+ * stays non-retryable and Sentry-visible. Cloudflare reference ids are
+ * alphanumeric and may include `_` or `-`.
  */
 const d1InternalErrorReferencePattern =
-	/^internal error(?: in D1 DB storage caused object to be reset)?;\s*reference\s*=\s*[A-Za-z0-9]+$/i
+	/^internal error(?: in D1 DB storage caused object to be reset)?;\s*reference\s*=\s*[A-Za-z0-9_-]+$/i
 
 function stripD1ErrorPrefixes(message: string) {
 	return message
