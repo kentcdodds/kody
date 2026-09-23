@@ -191,7 +191,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// in this same entry, so line-anchor and file-anchor cannot stay
 		// on runtime alone. CI dry-run 5_145_618 against the previous
 		// 5_135_000 budget.
-		maxEntryBytes: 5_146_000,
+		// Background-lane suspension gate (same modules as runtime) adds
+		// ~0.7 KB: local dry-run 5_146_365 against the previous 5_146_000
+		// budget (main 5_145_651).
+		maxEntryBytes: 5_147_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
@@ -262,7 +265,11 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// slugs) on search entity, repoReadFile, and package file open pull
 		// line-anchor and file-anchor into runtime: CI dry-run 3_820_542
 		// against the previous 3_810_000 budget.
-		maxEntryBytes: 3_821_000,
+		// Background-lane suspension gate (`AccountSuspendedError` in the
+		// background resolver, package-invocation 403 mapping, realtime
+		// per-hook check and socket close) adds ~0.7 KB: local dry-run
+		// 3_821_268 against the previous 3_821_000 budget (main 3_820_551).
+		maxEntryBytes: 3_822_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',
