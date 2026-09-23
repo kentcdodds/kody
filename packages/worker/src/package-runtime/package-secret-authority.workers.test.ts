@@ -974,6 +974,35 @@ test(
 					"import * as runtime from '/.\\x5f\\x5fkody_virtual\\u005f\\u005f/runtime.js'",
 			},
 			{
+				importLine:
+					"const runtime = require('../.__kody_virtual__/runtime.js')",
+			},
+			{
+				importLine:
+					"import runtime = require('../.__kody_virtual__/runtime.js')",
+			},
+			{
+				importLine:
+					"import * as runtime from '/.__kody_virtual__/runtime.js' <<<",
+			},
+			{
+				importLine: "import * as runtime from 'cjs-loader'",
+				extraFiles: {
+					'node_modules/cjs-loader/package.json': JSON.stringify({
+						name: 'cjs-loader',
+						main: './index.js',
+					}),
+					'node_modules/cjs-loader/index.js':
+						"module.exports = require('../../.__kody_virtual__/runtime.js')",
+				},
+			},
+			{
+				importLine: "import * as runtime from 'evil'",
+				extraFiles: {
+					'wrangler.toml': 'main = """\n./.__kody_virtual__/runtime.js"""\n',
+				},
+			},
+			{
 				importLine: "import * as runtime from 'evil'",
 				extraFiles: {
 					'wrangler.jsonc': JSON.stringify({

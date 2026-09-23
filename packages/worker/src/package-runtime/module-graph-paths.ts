@@ -156,19 +156,17 @@ export function specifierTargetsKodyVirtualModule(specifier: string) {
 	}
 }
 
-const kodyVirtualSpecifierTokenPattern = /["'`][^"'`\s]*__kody_virtual__/i
-
 /**
- * Manifest and config text (JSON, JSONC, TOML) whose quoted, specifier-shaped
- * values (`main`, `exports`, wrangler `alias`, …) point into the virtual
- * directory. Only a quoted token with no whitespace before the segment
- * matches, so prose that merely mentions the directory does not fail.
+ * Cheap pre-filter: whether file text names the virtual directory at all,
+ * including JS/JSON string-escaped spellings. Callers treat a hit as "inspect
+ * the resolved specifiers", or as a rejection when the file cannot be
+ * inspected precisely.
  */
-export function configReferencesKodyVirtualModule(text: string) {
-	if (kodyVirtualSpecifierTokenPattern.test(text)) return true
+export function textMentionsKodyVirtualModule(text: string) {
 	return (
-		text.includes('\\') &&
-		kodyVirtualSpecifierTokenPattern.test(unescapeStringLiteralText(text))
+		kodyVirtualModulePattern.test(text) ||
+		(text.includes('\\') &&
+			kodyVirtualModulePattern.test(unescapeStringLiteralText(text)))
 	)
 }
 
