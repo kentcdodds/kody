@@ -339,16 +339,23 @@ test(
 			sourceFiles: {
 				'entry.ts': [
 					"import run, { greet } from 'kody:@kentcdodds/artifact-dep'",
-					"import { __kodyMeterStaticPackageExport } from 'kody:runtime'",
+					"import * as runtime from 'kody:runtime'",
 					'export default async function main() {',
-					'\t// Forge a stamp for a package this bundle does not statically',
-					'\t// depend on: the host must drop it silently.',
-					'\tconst forged = __kodyMeterStaticPackageExport(',
-					"\t\t'pkg-not-a-dependency',",
-					"\t\t() => 'forged-ok',",
-					'\t)',
-					'\tconst forgedValue = forged()',
-					'\treturn { ran: await run(), greeting: greet("kody"), forgedValue }',
+					'\t// The stamp helper is bundler-internal, so forge an event for a',
+					'\t// package this bundle does not statically depend on through the',
+					'\t// run store meter: the host must drop it silently.',
+					'\tconst meter = globalThis[Symbol.for("kody.runtimeStorage")]',
+					'\t\t?.getStore?.()?.__kodyStaticCallMeter',
+					'\tmeter.report({',
+					"\t\tpackageId: 'pkg-not-a-dependency',",
+					'\t\tdurationMs: 1,',
+					"\t\toutcome: 'success',",
+					'\t})',
+					'\treturn {',
+					'\t\tran: await run(),',
+					'\t\tgreeting: greet("kody"),',
+					'\t\tmeterHelperExported: "__kodyMeterStaticPackageExport" in runtime,',
+					'\t}',
 					'}',
 				].join('\n'),
 			},
@@ -366,7 +373,7 @@ test(
 		expect(result.result).toEqual({
 			ran: 'artifact-ok',
 			greeting: 'hello kody',
-			forgedValue: 'forged-ok',
+			meterHelperExported: false,
 		})
 
 		// The forged event fires before the two granted ones; once the granted
