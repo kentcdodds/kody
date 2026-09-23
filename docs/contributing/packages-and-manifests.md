@@ -164,11 +164,15 @@ A saved package is a repo with the package extension activated. Four concepts:
   build via `rootPackageId`, and statically imported package sources) get their
   `kody:runtime` import rewritten to a per-package virtual runtime module,
   `.__kody_virtual__/package-runtime/<hex(packageId)>.js`, which re-exports the
-  shared runtime and overrides `packageStorage` / `packageSecrets` with variants
-  that close over the package's immutable id. The closure survives esbuild
-  inlining, so per-module identity holds even after the graph collapses into one
-  module. Hydration regenerates per-package runtime modules from the id encoded
-  in the path, exactly like the shared runtime module.
+  shared runtime's public names (an explicit allowlist, never `export *`) and
+  overrides `packageStorage` / `packageSecrets` with variants that close over
+  the package's immutable id. Unstamped modules rewrite to the same allowlist at
+  `.__kody_virtual__/public-runtime.js`. Package files must not reference
+  `.__kody_virtual__/` directly; the build rejects them and computed `import()`
+  of those paths throws. The closure survives esbuild inlining, so per-module
+  identity holds even after the graph collapses into one module. Hydration
+  regenerates per-package runtime modules from the id encoded in the path,
+  exactly like the shared runtime module.
 - The stamp routes identity but is not the security boundary. At execution,
   `packageStorage()` bucket access and stamp-aligned secret authority are
   granted only from host-controlled provenance metadata: the run's own package
