@@ -417,11 +417,13 @@ instructions.
 The event deliberately omits admin notes, reviewer fields, revision,
 `updated_at`, roles, plan, and unrelated account content. This is a narrow
 exception for feedback shown to and explicitly approved by the user before
-submission; it does not grant package runtime general admin roles or access to
-other user data. Submitter username and email are snapshots stored with the
-submission; retries never resolve mutable live profile data, so profile changes
-cannot alter the request hash. Legacy rows without submitter snapshots retain
-null username/email. Copies already delivered outside Kody, including Discord
+submission. Receiving the event grants no role or access to other user data; the
+handler runs as the admin owner with that owner's existing roles (see
+[Background and package callers](./architecture/authorization.md#background-and-package-callers)).
+Submitter username and email are snapshots stored with the submission; retries
+never resolve mutable live profile data, so profile changes cannot alter the
+request hash. Legacy rows without submitter snapshots retain null
+username/email. Copies already delivered outside Kody, including Discord
 messages, cannot be recalled and may remain after Kody account deletion under
 the deployment operator's retention and deletion controls. Such copies contain
 only the exact approved feedback and attribution, never unrelated account

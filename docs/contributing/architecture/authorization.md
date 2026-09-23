@@ -247,6 +247,44 @@ ineligible capabilities out of discovery, and the normalized execute-time guard
 is the security boundary. The platform-feedback review capabilities use the role
 gate; they do not create a general-purpose cross-user query helper.
 
+### Background and package callers
+
+Admin role membership is a property of the account, not of an interactive
+session. Package code that runs without a human present acts as the package
+owner and carries that owner's current roles and permissions.
+`resolveBackgroundMcpUser`
+(`packages/worker/src/identity/background-mcp-user.ts`) loads them from D1 with
+`getUserRolesAndPermissions` for every `executionOrigin: 'background'` caller it
+builds: package jobs, inbound webhook handlers, package subscription handlers,
+package exports invoked from other package code, package workflows, and
+retrievers. The per-binding identity cache holds a resolved user for up to 60
+seconds, so a revoked role can still pass background checks until that entry
+expires and the owner is resolved again. Interactive MCP and browser requests
+reload roles on every request.
+
+`requiredRole` / `requiredPermission` checks compare against those roles and do
+not inspect `executionOrigin`. No admin capability has an interactive-only gate,
+so package code owned by an admin can call admin-gated capabilities (for example
+`adminUserList` from a scheduled job) unattended, with the same reach as that
+admin calling them from an MCP session. Interactive-only gates exist on a few
+specific non-admin capabilities (for example `communityForkAdopt`,
+`packageAppFetch`, `packageSubscriptionDispatch`, and platform-feedback submit);
+they are per-capability contracts, not part of role evaluation.
+
+Package app HTTP handlers and realtime hooks call capabilities through the
+package-app runtime bridge
+(`packages/worker/src/package-runtime/package-app.ts`). The bridge builds its
+caller context from worker props (user id, email, display name) without roles,
+so those direct capability calls do not see admin capabilities. That holds for
+realtime hooks even though the realtime session resolves a role-bearing context
+when it builds the app worker; only identity fields reach the bridge. Package
+exports that app or realtime code invokes run through the background path above
+and do carry the owner's roles.
+
+Treat any package saved on an admin account as running with full admin reach.
+See the residual-risk entry in
+[Security](../security.md#accepted-residual-risks-and-out-of-scope-items).
+
 ## Privacy boundary
 
 The admin role is an **account-administration** role, not a general data-access
@@ -313,13 +351,15 @@ warning, and a trusted `/admin/platform-feedback?feedbackId=<encoded id>` deep
 link. The warning and `_untrusted` names require notification handlers to treat
 the text as user-authored data, not instructions. The event omits admin notes,
 reviewer fields, revision, `updated_at`, roles, plan, and unrelated account
-content. Package runtime caller contexts do not carry admin roles, so the fresh
-consumer-time fan-out is the authorization boundary rather than a handler role
-check. This remains a narrow exception only for feedback shown to and explicitly
-approved by the user; it does not grant package runtime general admin roles.
-Username and email are stored submission-time snapshots. Package events never
-resolve mutable live profile data, and persisted feedback rows always carry both
-snapshots.
+content. The fresh consumer-time fan-out is the authorization boundary for who
+receives the event; handlers do not re-check roles. The handler itself runs as
+the admin package owner with that owner's roles (see
+[Background and package callers](#background-and-package-callers)). This remains
+a narrow exception only for feedback shown to and explicitly approved by the
+user; receiving the event grants no role or data access beyond what the owner
+already holds. Username and email are stored submission-time snapshots. Package
+events never resolve mutable live profile data, and persisted feedback rows
+always carry both snapshots.
 
 Submission awaits only Queue enqueue after persistence. An enqueue failure is
 logged without changing the successful response, preventing duplicate feedback
@@ -556,4 +596,6 @@ assignment happens through the admin UI.
 - `packages/worker/src/app/handlers/admin-users.ts` — users admin API
 - `packages/worker/src/app/handlers/admin-roles.ts` — roles admin API
 - `packages/worker/src/mcp-auth-user-context.ts` — MCP role loading
+- `packages/worker/src/identity/background-mcp-user.ts` — background package
+  caller role loading
 - `packages/worker/src/mcp/capabilities/meta/require-permission.ts` — MCP guard
