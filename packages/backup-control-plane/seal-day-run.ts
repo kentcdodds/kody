@@ -86,13 +86,13 @@ export async function runSealDay(
 	)
 }
 
-export function sealIncompleteReason(message: string): string | null {
+function sealIncompleteReason(message: string): string | null {
 	if (!message.includes('is not ready to seal')) return null
 	const code = errorCode(new Error(message))
 	return code === 'unexpected-error' ? null : code
 }
 
-export function readSealedDayOutput(output: unknown): SealedDayResult | null {
+function readSealedDayOutput(output: unknown): SealedDayResult | null {
 	if (output === null || typeof output !== 'object' || Array.isArray(output)) {
 		return null
 	}

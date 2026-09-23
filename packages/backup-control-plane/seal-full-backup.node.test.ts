@@ -182,6 +182,34 @@ async function seedCompleteDay(
 	return { env, day, sqlKey }
 }
 
+test('sealFullBackupDay adopts a valid manifest that wins a concurrent seal', async () => {
+	const bucket = new MemoryBucket()
+	const { env, day } = await seedCompleteDay(bucket)
+	const first = await sealFullBackupDay(
+		env,
+		day,
+		new Date(`${day}T04:00:00.000Z`),
+	)
+	assert.equal(first.kind, 'sealed')
+	const manifestKey = sealedFullManifestKey(day)
+	const winner = await bucket.get(manifestKey)
+	assert.ok(winner)
+	const winnerText = await winner.text()
+	await bucket.delete(manifestKey)
+	bucket.raceOnNextPut(manifestKey, winnerText)
+
+	const second = await sealFullBackupDay(
+		env,
+		day,
+		new Date(`${day}T04:05:00.000Z`),
+	)
+	assert.equal(second.kind, 'sealed')
+	if (second.kind !== 'sealed') return
+	assert.equal(second.alreadySealed, true)
+	const kept = await bucket.get(manifestKey)
+	assert.equal(kept === null ? null : await kept.text(), winnerText)
+})
+
 test('sealFullBackupDay seals a complete day and is idempotent', async () => {
 	const bucket = new MemoryBucket()
 	const { env, day } = await seedCompleteDay(bucket)

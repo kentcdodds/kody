@@ -11,7 +11,7 @@ import { type BackupEnvironment } from './backup-types.ts'
 import { runSealDay } from './seal-day-run.ts'
 import { withNonRetryableBackupErrors } from './workflow-step-boundary.ts'
 
-export type SealDayWorkflowPayload = {
+type SealDayWorkflowPayload = {
 	day: string
 }
 
