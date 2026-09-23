@@ -200,10 +200,14 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Opaque packageSecrets.get + share-grant remap / derived-ops on the
 		// platform startup graph: local dry-run 5_151_668 against the previous
 		// 5_150_000 budget.
+		// Sibling daily automation quota (`automation_invocations_per_day`)
+		// spills into the platform MCP invoke graph. Combined with opaque
+		// secrets on main: local dry-run 5_153_557 against the previous
+		// 5_153_000 budget.
 		// Specifier-aware .__kody_virtual__ build check (bundler-resolved
 		// specifier collector incl. require(), JSON value walk) adds ~1.9 KB:
-		// local dry-run 5_153_525 against the previous 5_153_000 budget.
-		maxEntryBytes: 5_155_000,
+		// local dry-run 5_155_690 against the previous 5_154_000 budget.
+		maxEntryBytes: 5_157_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
@@ -287,9 +291,14 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// non-retryable workflow step) adds ~1.1 KB on top: local dry-run
 		// 3_824_132 against the previous 3_824_000 budget (main). Combined with
 		// opaque-secrets graph growth: raise reviewed budget to 3_828_000.
-		// Specifier-aware .__kody_virtual__ build check adds ~1.9 KB: local
-		// dry-run 3_828_418 against the previous 3_828_000 budget.
-		maxEntryBytes: 3_830_000,
+		// Sibling daily automation quota (`automation_invocations_per_day`)
+		// on package-invocation module-execution pulls entitlement consume
+		// into runtime. Combined with opaque-secrets + suspension on main:
+		// local dry-run 3_828_451 against the previous 3_828_000 budget.
+		// Specifier-aware .__kody_virtual__ build check (bundler-resolved
+		// specifier collector incl. require(), JSON value walk) adds ~1.9 KB:
+		// local dry-run 3_830_583 against the previous 3_829_000 budget.
+		maxEntryBytes: 3_832_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',

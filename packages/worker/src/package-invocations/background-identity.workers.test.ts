@@ -26,7 +26,10 @@ test('subscription execution exposes the owner account identity to metaGetCurren
 	const userId = 'a'.repeat(64)
 	const email = 'subscription-owner@example.com'
 	const displayName = 'Subscription Owner'
-	await ensureUsersTestSchema({ db: env.APP_DB })
+	await ensureUsersTestSchema({
+		db: env.APP_DB,
+		columns: ['stripe_plan'],
+	})
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
 			username,

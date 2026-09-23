@@ -122,7 +122,7 @@ export const entitlementResourceVisibility: Record<
 		group: 'daily',
 		kind: 'counter',
 		whatCounts:
-			'MCP execute tool runs today (UTC), including failed attempts. Public plans also cap the UTC week.',
+			'MCP execute tool runs today (UTC), including failed attempts. Does not include webhooks, package-export HTTP invocations, subscriptions, or jobs. Public plans also cap the UTC week.',
 		howToReduce:
 			'Run fewer execute calls today or this week, or upgrade your plan.',
 	},
@@ -138,8 +138,16 @@ export const entitlementResourceVisibility: Record<
 		group: 'daily',
 		kind: 'counter',
 		whatCounts:
-			'Scheduled job executions today (UTC), including failed attempts and run-now.',
+			'Scheduled job executions today (UTC), including failed attempts and run-now. Separate from automation invocations (webhooks / package exports).',
 		howToReduce: 'Run fewer jobs today, space them out, or upgrade your plan.',
+	},
+	automation_invocations_per_day: {
+		group: 'daily',
+		kind: 'counter',
+		whatCounts:
+			'Always-on automation entrypoints today (UTC): inbound webhooks, HTTP package-export invocations, package subscriptions, and package-backed workflow steps. Separate from MCP execute and scheduled job runs.',
+		howToReduce:
+			'Trigger fewer webhooks or package invocations today, or upgrade your plan.',
 	},
 }
 
@@ -150,6 +158,7 @@ export const accountUsageEntitlementResources = [
 	'execute_calls_per_day',
 	'outbound_fetches_per_day',
 	'job_runs_per_day',
+	'automation_invocations_per_day',
 	'repos',
 	'saved_packages',
 	'scheduled_jobs',

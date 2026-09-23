@@ -4,6 +4,7 @@ import {
 	createPackageRuntimeInvokeTools,
 	createPackageEventTools,
 } from '#worker/package-invocations/service.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
 export const packageInvocationsRepoMockModule = (() => {
 	const loadPackageManifestBySourceId = vi.fn()
@@ -422,6 +423,8 @@ export function createEnv(
 	db: ReturnType<typeof createDatabase>,
 	overrides: Record<string, unknown> = {},
 ) {
+	const meter =
+		overrides['USER_METER'] == null ? createInMemoryUserMeterEnv() : null
 	return {
 		APP_DB: db,
 		RUN_LOG: db.runLog.namespace,
@@ -430,8 +433,26 @@ export function createEnv(
 			put: async () => undefined,
 			delete: async () => undefined,
 		},
+		...(meter ? { USER_METER: meter.env.USER_METER } : {}),
 		...overrides,
 	} as unknown as Env
+}
+
+/**
+ * Env plus the in-memory UserMeter harness so tests can seed daily counters.
+ */
+export function createEnvWithUserMeter(
+	db: ReturnType<typeof createDatabase>,
+	overrides: Record<string, unknown> = {},
+) {
+	const meter = createInMemoryUserMeterEnv()
+	return {
+		env: createEnv(db, {
+			USER_METER: meter.env.USER_METER,
+			...overrides,
+		}),
+		meter,
+	}
 }
 
 export function createToken(

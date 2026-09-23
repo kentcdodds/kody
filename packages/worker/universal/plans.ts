@@ -253,6 +253,17 @@ export type PlanLimits = {
 	 */
 	maxJobRunsPerDay: number
 	/**
+	 * Maximum always-on automation invocations per UTC day: inbound
+	 * webhooks, HTTP package-export invocations, package subscriptions,
+	 * and package-backed workflow steps. Sibling of
+	 * {@link PlanLimits.maxExecuteCallsPerDay} (MCP execute only) and
+	 * {@link PlanLimits.maxJobRunsPerDay} (scheduled jobs). Ladder numbers
+	 * match job runs — same cost class (saved-package sandbox work) — so
+	 * billing stays coherent until product sets distinct automation
+	 * ceilings.
+	 */
+	maxAutomationInvocationsPerDay: number
+	/**
 	 * Fastest allowed recurring job interval on this plan. `0` means no extra
 	 * floor beyond the schedule itself. Enforced when a schedule is created
 	 * or changed — existing faster jobs are grandfathered.
@@ -293,6 +304,7 @@ export const entitlementResources = [
 	'execute_calls_per_day',
 	'outbound_fetches_per_day',
 	'job_runs_per_day',
+	'automation_invocations_per_day',
 ] as const
 
 export type EntitlementResource = (typeof entitlementResources)[number]
@@ -313,6 +325,7 @@ export const entitlementResourceLabels: Record<EntitlementResource, string> = {
 	execute_calls_per_day: 'execute calls per day',
 	outbound_fetches_per_day: 'outbound fetches per day',
 	job_runs_per_day: 'job runs per day',
+	automation_invocations_per_day: 'automation invocations per day',
 }
 
 /**
@@ -387,6 +400,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxOutboundFetchesPerDay: 1_000,
 		maxOutboundFetchesPerWeek: 2_500,
 		maxJobRunsPerDay: 500,
+		maxAutomationInvocationsPerDay: 500,
 		minJobIntervalMs: 15 * 60 * 1000,
 		maxUniqueWorkerDaysPerMonth: 50,
 		maxDurableObjectRowsReadPerMonth: 500_000_000,
@@ -411,6 +425,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxOutboundFetchesPerDay: 15_000,
 		maxOutboundFetchesPerWeek: 40_000,
 		maxJobRunsPerDay: 1_500,
+		maxAutomationInvocationsPerDay: 1_500,
 		minJobIntervalMs: 15 * 60 * 1000,
 		maxUniqueWorkerDaysPerMonth: 350,
 		maxDurableObjectRowsReadPerMonth: 5_000_000_000,
@@ -436,6 +451,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxOutboundFetchesPerDay: 50_000,
 		maxOutboundFetchesPerWeek: 120_000,
 		maxJobRunsPerDay: 8_000,
+		maxAutomationInvocationsPerDay: 8_000,
 		minJobIntervalMs: 5 * 60 * 1000,
 		maxUniqueWorkerDaysPerMonth: 2_000,
 		maxDurableObjectRowsReadPerMonth: 20_000_000_000,
@@ -473,6 +489,9 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		// job runs. `max` ceilings stay on that earlier Pro table; they
 		// still dominate every paid plan.
 		maxJobRunsPerDay: 40_000,
+		// Same cost class as job runs (saved-package sandbox). Match that
+		// ceiling until product publishes distinct automation numbers.
+		maxAutomationInvocationsPerDay: 40_000,
 		minJobIntervalMs: 0,
 		maxUniqueWorkerDaysPerMonth: 25_000,
 		// Dominates public Pro (20B). Operator cap only.
@@ -507,6 +526,7 @@ export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
 		maxOutboundFetchesPerDay: 20_000,
 		maxOutboundFetchesPerWeek: null,
 		maxJobRunsPerDay: 10_000,
+		maxAutomationInvocationsPerDay: 10_000,
 		minJobIntervalMs: 0,
 		maxUniqueWorkerDaysPerMonth: 350,
 		maxDurableObjectRowsReadPerMonth: 5_000_000_000,
@@ -528,6 +548,7 @@ export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
 		maxOutboundFetchesPerDay: 40_000,
 		maxOutboundFetchesPerWeek: null,
 		maxJobRunsPerDay: 20_000,
+		maxAutomationInvocationsPerDay: 20_000,
 		minJobIntervalMs: 0,
 		maxUniqueWorkerDaysPerMonth: 2_000,
 		maxDurableObjectRowsReadPerMonth: 20_000_000_000,
@@ -661,6 +682,8 @@ export function resolvePlanLimit(
 			return limits.maxOutboundFetchesPerDay
 		case 'job_runs_per_day':
 			return limits.maxJobRunsPerDay
+		case 'automation_invocations_per_day':
+			return limits.maxAutomationInvocationsPerDay
 		default: {
 			const exhaustive: never = resource
 			throw new Error(`Unknown entitlement resource: ${String(exhaustive)}`)
