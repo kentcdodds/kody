@@ -197,7 +197,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Background-lane suspension gate (same modules as runtime) adds
 		// ~1.1 KB on top: local dry-run 5_149_225 against the previous
 		// 5_149_000 budget.
-		maxEntryBytes: 5_150_000,
+		// Specifier-aware .__kody_virtual__ build check (bundler-resolved
+		// specifier collector incl. require(), JSON value walk): local
+		// dry-run 5_151_081 against the previous 5_150_000 budget.
+		maxEntryBytes: 5_152_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
@@ -277,7 +280,9 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// connect, per-hook, and emit/broadcast checks, pre-ledger invoke check,
 		// non-retryable workflow step) adds ~1.1 KB on top: local dry-run
 		// 3_824_132 against the previous 3_824_000 budget.
-		maxEntryBytes: 3_825_000,
+		// Specifier-aware .__kody_virtual__ build check: CI dry-run 3_825_728
+		// (local 3_825_988) against the previous 3_825_000 budget.
+		maxEntryBytes: 3_827_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',
