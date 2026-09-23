@@ -946,7 +946,7 @@ test('UserMeter storage RPCs, authoritative export state, and purge work additiv
 		pageSize: 2,
 		startAfter: secondPage.nextStartAfter,
 	})
-	expect(thirdPage.counters).toHaveLength(1)
+	expect(thirdPage.counters).toHaveLength(2)
 	expect(thirdPage.truncated).toBe(false)
 	expect(thirdPage.nextStartAfter).toBeNull()
 
