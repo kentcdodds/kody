@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { adoptCommunityFork } from '#worker/community/service.ts'
+import { inspectCommunityForkAdoption } from '#worker/community/service.ts'
 import {
 	packageIdLookupDescription,
 	packageNameLookupDescription,
@@ -8,6 +8,7 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { buildCommunityForkAdoptionHref } from '#universal/community-fork-adoption.ts'
 
 const communityForkAdoptPackageRuntimeErrorMessage =
 	'communityForkAdopt is unavailable from package runtime contexts. Call it from an interactive MCP agent after reviewing the fork source.'
@@ -37,7 +38,7 @@ export const communityForkAdoptCapability = defineDomainCapability(
 	{
 		name: 'communityForkAdopt',
 		description:
-			'Mark a community-forked package as reviewed and trusted by you. Adoption keeps fork provenance but grants self-authored-like read/use access to your user secrets (mutations still need an allowed_packages grant). Call only from an interactive MCP agent after reviewing the package source. Include what was reviewed in `review_summary`. Package runtimes cannot adopt.',
+			'Return a website adoption URL for a community-forked package. Adoption keeps fork provenance but grants self-authored-like read/use access to your user secrets (mutations still need an allowed_packages grant). This capability never adopts: only the account owner can adopt, signed in on the package settings page, after reviewing the source. Send the approval_url to the user and wait; never treat this call as adoption.',
 		keywords: [
 			'community',
 			'fork',
@@ -46,8 +47,9 @@ export const communityForkAdoptCapability = defineDomainCapability(
 			'trust',
 			'package',
 			'secret',
+			'approval',
 		],
-		readOnly: false,
+		readOnly: true,
 		idempotent: true,
 		destructive: false,
 		inputSchema: z.object({
@@ -61,40 +63,46 @@ export const communityForkAdoptCapability = defineDomainCapability(
 				.min(1)
 				.optional()
 				.describe(packageNameLookupDescription),
-			review_summary: z
-				.string()
-				.min(10)
-				.describe(
-					'What you reviewed in the forked code and why it is trusted enough to treat as your own for user-secret read/use.',
-				),
 		}),
 		outputSchema: z.object({
-			adopted: z.literal(true),
-			already_adopted: z.boolean(),
+			status: z.enum(['approval_required', 'already_adopted']),
 			package_id: z.string(),
 			kody_id: z.string(),
 			listing_id: z.string(),
 			origin_commit: z.string(),
-			adopted_at: z.string(),
+			adopted_at: z.string().nullable(),
+			approval_url: z.string(),
+			message: z.string(),
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
 			assertDirectMcpCaller(ctx.callerContext)
-			const result = await adoptCommunityFork({
+			const state = await inspectCommunityForkAdoption({
 				env: ctx.env,
 				userId: user.userId,
 				packageId: args.package_id,
 				kodyId: args.kody_id,
-				reviewSummary: args.review_summary,
 			})
+			const approvalUrl = new URL(
+				buildCommunityForkAdoptionHref({
+					username: state.ownerScope,
+					kodyId: state.kodyId,
+				}),
+				ctx.callerContext.baseUrl,
+			).toString()
 			return {
-				adopted: true as const,
-				already_adopted: result.alreadyAdopted,
-				package_id: result.packageId,
-				kody_id: result.kodyId,
-				listing_id: result.listingId,
-				origin_commit: result.originCommit,
-				adopted_at: result.adoptedAt,
+				status: state.adoptedAt
+					? ('already_adopted' as const)
+					: ('approval_required' as const),
+				package_id: state.packageId,
+				kody_id: state.kodyId,
+				listing_id: state.listingId,
+				origin_commit: state.originCommit,
+				adopted_at: state.adoptedAt,
+				approval_url: approvalUrl,
+				message: state.adoptedAt
+					? `Package "${state.kodyId}" is already adopted.`
+					: `Agents cannot adopt community forks. Send the owner to ${approvalUrl} to review the source and adopt "${state.kodyId}" on the website.`,
 			}
 		},
 	},

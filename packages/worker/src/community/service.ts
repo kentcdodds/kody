@@ -1,6 +1,7 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { parseListingOwnerUsername } from '#universal/community-links.ts'
+import { communityForkAdoptionReviewNoteMinLength } from '#universal/community-fork-adoption.ts'
 import {
 	communityIndexOverviewCandidateLimitPerCategory,
 	communityIndexOverviewLimitPerCategory,
@@ -1718,26 +1719,18 @@ async function resolveOwnedCommunityPackageNameLeaf(input: {
 	}
 }
 
-export async function adoptCommunityFork(input: {
+async function resolveCommunityForkForAdoption(input: {
 	env: Env
 	userId: string
 	packageId?: string
 	kodyId?: string
-	reviewSummary: string
-}): Promise<AdoptCommunityForkResult> {
+}) {
 	const packageIdCount =
 		(input.packageId !== undefined ? 1 : 0) +
 		(input.kodyId !== undefined ? 1 : 0)
 	if (packageIdCount !== 1) {
 		throw new CommunityActionError(
 			'Provide exactly one of `package_id` or the package name leaf.',
-		)
-	}
-
-	const reviewSummary = input.reviewSummary.trim()
-	if (reviewSummary.length < 10) {
-		throw new CommunityActionError(
-			'Adoption requires a review_summary of at least 10 characters describing what was reviewed and why the fork is trusted.',
 		)
 	}
 
@@ -1773,6 +1766,59 @@ export async function adoptCommunityFork(input: {
 			`Package "${savedPackage.kodyId}" is already self-authored; adoption is not needed.`,
 		)
 	}
+	return { savedPackage, fork }
+}
+
+export type CommunityForkAdoptionState = {
+	packageId: string
+	kodyId: string
+	ownerScope: string
+	listingId: string
+	originCommit: string
+	adoptedAt: string | null
+}
+
+export async function inspectCommunityForkAdoption(input: {
+	env: Env
+	userId: string
+	packageId?: string
+	kodyId?: string
+}): Promise<CommunityForkAdoptionState> {
+	const { savedPackage, fork } = await resolveCommunityForkForAdoption(input)
+	return {
+		packageId: savedPackage.id,
+		kodyId: savedPackage.kodyId,
+		ownerScope: await getPackageScopeByUserId(input.env.APP_DB, input.userId),
+		listingId: fork.listingId,
+		originCommit: fork.originCommit,
+		adoptedAt: fork.adoptedAt,
+	}
+}
+
+/**
+ * Widens implicit user-secret read/use for the fork. Only the signed-in
+ * website account session may call this: MCP `execute` runs imported package
+ * code with the agent's caller context, so any MCP/runtime path would let an
+ * unadopted fork adopt itself.
+ */
+export async function adoptCommunityFork(input: {
+	env: Env
+	userId: string
+	packageId: string
+	reviewSummary: string
+}): Promise<AdoptCommunityForkResult> {
+	const reviewSummary = input.reviewSummary.trim()
+	if (reviewSummary.length < communityForkAdoptionReviewNoteMinLength) {
+		throw new CommunityActionError(
+			`Adoption requires a review note of at least ${communityForkAdoptionReviewNoteMinLength} characters describing what was reviewed and why the fork is trusted.`,
+		)
+	}
+
+	const { savedPackage, fork } = await resolveCommunityForkForAdoption({
+		env: input.env,
+		userId: input.userId,
+		packageId: input.packageId,
+	})
 	if (fork.adoptedAt) {
 		return {
 			packageId: savedPackage.id,
