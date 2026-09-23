@@ -986,6 +986,47 @@ test(
 					"import * as runtime from '/.\\x5f\\x5fkody_virtual\\u005f\\u005f/runtime.js'",
 			},
 			{
+				importLine:
+					"import * as runtime from '/.%5F%5Fkody_virtual%5F%5F/runtime.js'",
+			},
+			{
+				importLine:
+					"const runtime = require('../.__kody_virtual__/runtime.js')",
+			},
+			{
+				importLine:
+					"import runtime = require('../.__kody_virtual__/runtime.js')",
+			},
+			{
+				importLine:
+					"const runtime = require(('../.__kody_virtual__/runtime.js' as string)!)",
+			},
+			{
+				importLine:
+					"const runtime = require(<string>'../.__kody_virtual__/runtime.js')",
+			},
+			{
+				importLine:
+					"import * as runtime from '/.__kody_virtual__/runtime.js' <<<",
+			},
+			{
+				importLine: "import * as runtime from 'cjs-loader'",
+				extraFiles: {
+					'node_modules/cjs-loader/package.json': JSON.stringify({
+						name: 'cjs-loader',
+						main: './index.js',
+					}),
+					'node_modules/cjs-loader/index.js':
+						"module.exports = require('../../.__kody_virtual__/runtime.js')",
+				},
+			},
+			{
+				importLine: "import * as runtime from 'evil'",
+				extraFiles: {
+					'wrangler.toml': 'main = """\n./.__kody_virtual__/runtime.js"""\n',
+				},
+			},
+			{
 				importLine: "import * as runtime from 'evil'",
 				extraFiles: {
 					'wrangler.jsonc': JSON.stringify({
@@ -1021,6 +1062,42 @@ test(
 				}),
 			).rejects.toThrow(/internal Kody runtime module/i)
 		}
+
+		// Naming the directory without importing it must still build: an
+		// esbuild `// virtual:` marker in committed bundle output, a string,
+		// and manifest prose are not module references.
+		const mentionsOnly = await runBundledModuleWithRegistry(
+			env,
+			createCallerContext(userId),
+			await buildKodyModuleBundle({
+				env,
+				baseUrl: 'https://kody.dev',
+				userId,
+				sourceFiles: {
+					'package.json': JSON.stringify({
+						name: '@kentcdodds/mentions-only',
+						description: 'Notes on .__kody_virtual__/runtime.js internals',
+						exports: { '.': './entry.ts' },
+						kody: { id: 'mentions-only', description: 'Mentions only' },
+					}),
+					'entry.ts': [
+						'// virtual:.__kody_virtual__/runtime.js',
+						"import type { RuntimeShape } from '../.__kody_virtual__/runtime.js'",
+						"const note: RuntimeShape | string = 'bundled from .__kody_virtual__/runtime.js'",
+						'export default async function main() {',
+						'\treturn { note }',
+						'}',
+					].join('\n'),
+				},
+				entryPoint: 'entry.ts',
+			}),
+			undefined,
+			{ skipCapabilityRegistry: true },
+		)
+		expect(mentionsOnly.error).toBeUndefined()
+		expect(mentionsOnly.result).toEqual({
+			note: 'bundled from .__kody_virtual__/runtime.js',
+		})
 	},
 )
 

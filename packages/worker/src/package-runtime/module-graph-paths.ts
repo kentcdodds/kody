@@ -140,18 +140,42 @@ function unescapeStringLiteralText(text: string) {
 	)
 }
 
+function percentDecodeText(text: string) {
+	return text.replace(/%([0-9a-f]{2})/gi, (_match, hex: string) =>
+		String.fromCharCode(Number.parseInt(hex, 16)),
+	)
+}
+
 /**
- * Package-authored files must never address bundler-generated virtual
- * modules: the shared runtime exports stamp helpers that enter secret
- * authority for an arbitrary package id. The bundler resolves JS/JSON string
- * escapes before path lookup, so escaped spellings are checked too, and the
- * match is case-insensitive so the check fails closed.
+ * Whether one resolved module specifier addresses a bundler-generated virtual
+ * module. The shared runtime exports stamp helpers that enter secret
+ * authority for an arbitrary package id, so package imports must never reach
+ * it. Callers pass parser-decoded specifier values (JS string escapes already
+ * resolved); percent-encoding is decoded too so the check fails closed.
  */
-export function referencesKodyVirtualModule(text: string) {
+export function specifierTargetsKodyVirtualModule(specifier: string) {
 	return (
-		kodyVirtualModulePattern.test(text) ||
-		(text.includes('\\') &&
-			kodyVirtualModulePattern.test(unescapeStringLiteralText(text)))
+		kodyVirtualModulePattern.test(specifier) ||
+		(specifier.includes('%') &&
+			kodyVirtualModulePattern.test(percentDecodeText(specifier)))
+	)
+}
+
+/**
+ * Cheap pre-filter: whether file text names the virtual directory at all,
+ * including JS/JSON string-escaped and percent-encoded spellings. Callers
+ * treat a hit as "inspect the resolved specifiers", or as a rejection when
+ * the file cannot be inspected precisely.
+ */
+export function textMentionsKodyVirtualModule(text: string) {
+	if (kodyVirtualModulePattern.test(text)) return true
+	const unescaped = text.includes('\\') ? unescapeStringLiteralText(text) : text
+	if (unescaped !== text && kodyVirtualModulePattern.test(unescaped)) {
+		return true
+	}
+	return (
+		unescaped.includes('%') &&
+		kodyVirtualModulePattern.test(percentDecodeText(unescaped))
 	)
 }
 

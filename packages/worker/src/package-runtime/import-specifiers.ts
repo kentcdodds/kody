@@ -139,6 +139,123 @@ export function collectLiteralImportNodes(
 	return nodes.sort((left, right) => left.start - right.start)
 }
 
+const typeOnlyWrapperNodeTypes = new Set([
+	'ParenthesizedExpression',
+	'TSAsExpression',
+	'TSSatisfiesExpression',
+	'TSTypeAssertion',
+	'TSNonNullExpression',
+])
+
+function unwrapTypeOnlyExpression(node: unknown): unknown {
+	let current = node
+	while (
+		current != null &&
+		typeof current === 'object' &&
+		typeOnlyWrapperNodeTypes.has(String((current as { type?: unknown }).type))
+	) {
+		current = (current as { expression?: unknown }).expression
+	}
+	return current
+}
+
+function readStaticSpecifierNode(wrapped: unknown): string | null {
+	// `require(('x' as string))` type-strips to `require('x')`, which the
+	// bundler resolves, so parentheses and TS assertions must not hide it.
+	const node = unwrapTypeOnlyExpression(wrapped)
+	const literal = readLiteralStringNode(node)
+	if (literal) return literal.specifier
+	if (node == null || typeof node !== 'object') return null
+	const template = node as {
+		type?: string
+		expressions?: Array<unknown>
+		quasis?: Array<{ value?: { cooked?: unknown } }>
+	}
+	if (
+		template.type === 'TemplateLiteral' &&
+		template.expressions?.length === 0 &&
+		template.quasis?.length === 1
+	) {
+		const cooked = template.quasis[0]?.value?.cooked
+		return typeof cooked === 'string' ? cooked : null
+	}
+	return null
+}
+
+/**
+ * Every statically known specifier the bundler resolves for a module:
+ * `import` / `export … from`, `import()` and `require()` with a literal or
+ * substitution-free template argument, and TypeScript `import x =
+ * require()`. Type-only imports and exports are erased before bundling and
+ * are skipped. Returns null when the source does not parse, so callers can
+ * fail closed instead of treating unparseable code as import-free.
+ */
+export function collectBundlerResolvedSpecifiers(
+	source: string,
+): Array<string> | null {
+	let program: unknown
+	try {
+		program = parseModuleSource(source)
+	} catch {
+		return null
+	}
+	const specifiers: Array<string> = []
+	const remember = (node: unknown) => {
+		const specifier = readStaticSpecifierNode(node)
+		if (specifier != null) specifiers.push(specifier)
+	}
+	function visit(node: unknown): void {
+		if (node == null || typeof node !== 'object') return
+		if (Array.isArray(node)) {
+			for (const item of node) visit(item)
+			return
+		}
+		if (!('type' in node)) return
+		const typedNode = node as ModuleAstNode & {
+			source?: unknown
+			callee?: { type?: string; name?: unknown }
+			arguments?: Array<unknown>
+			expression?: unknown
+		}
+		switch (typedNode.type) {
+			case 'ImportDeclaration':
+			case 'ExportAllDeclaration':
+			case 'ExportNamedDeclaration':
+				if (!isTypeOnlyImportOrExport(typedNode)) remember(typedNode.source)
+				break
+			case 'TSImportEqualsDeclaration':
+				if ((typedNode as { importKind?: unknown }).importKind === 'type') {
+					return
+				}
+				break
+			case 'ImportExpression':
+				remember(typedNode.source)
+				break
+			case 'CallExpression':
+				if (
+					typedNode.callee?.type === 'Import' ||
+					(typedNode.callee?.type === 'Identifier' &&
+						typedNode.callee.name === 'require')
+				) {
+					remember(typedNode.arguments?.[0])
+				}
+				break
+			case 'TSExternalModuleReference':
+				remember(typedNode.expression)
+				break
+			default:
+				break
+		}
+		for (const value of Object.values(
+			typedNode as unknown as Record<string, unknown>,
+		)) {
+			if (value != null && typeof value === 'object') visit(value)
+		}
+	}
+	visit(program)
+	return specifiers
+}
+
 export function collectLiteralImportSpecifiers(
 	source: string,
 	options?: { includeTypeOnly?: boolean },

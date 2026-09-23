@@ -23,6 +23,7 @@ import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './publishe
 import { isTypeDeclarationFilePath } from './static-kody-imports.ts'
 import { assertNotSealedSecretProviderExport } from '#mcp/secrets/secret-providers/sealed-export.ts'
 import {
+	collectBundlerResolvedSpecifiers,
 	collectDynamicImportExpressionNodes,
 	collectLiteralImportNodes,
 } from './import-specifiers.ts'
@@ -38,8 +39,9 @@ import {
 	rootSourcePrefix,
 	dynamicPackageImportProxyPrefix,
 	publicRuntimeModulePath,
-	referencesKodyVirtualModule,
 	resolveRelativeModulePath,
+	specifierTargetsKodyVirtualModule,
+	textMentionsKodyVirtualModule,
 	resolveWorkspaceSourceFilePath,
 	runtimeModulePath,
 } from './module-graph-paths.ts'
@@ -418,7 +420,49 @@ function ensurePublicRuntimeModule(state: RewriteState) {
 }
 
 const bundlerScriptSourcePathPattern = /\.(?:[cm]?[jt]sx?)$/i
-const bundlerLoadableSourcePathPattern = /\.(?:[cm]?[jt]sx?|jsonc?|toml)$/i
+const bundlerConfigSourcePathPattern = /\.(?:jsonc?|toml)$/i
+
+function jsonValueTargetsKodyVirtualModule(value: unknown): boolean {
+	if (typeof value === 'string') {
+		return !/\s/.test(value) && specifierTargetsKodyVirtualModule(value)
+	}
+	if (Array.isArray(value)) {
+		return value.some(jsonValueTargetsKodyVirtualModule)
+	}
+	if (value != null && typeof value === 'object') {
+		return Object.values(value).some(jsonValueTargetsKodyVirtualModule)
+	}
+	return false
+}
+
+/**
+ * Whether a package-authored file can make the bundler resolve a module in
+ * the virtual directory. Scripts are judged by the specifiers the bundler
+ * resolves (`import`, `export … from`, literal `import()` / `require()`), so
+ * a comment or string that only names the directory (for example an esbuild
+ * `// virtual:` marker in committed bundle output) still builds. JSON is
+ * judged by whitespace-free string values (`main`, `exports`, `alias`, …),
+ * so prose does not match. Files that mention the directory but cannot be
+ * inspected precisely (unparseable scripts, JSONC with comments, TOML) fail
+ * closed.
+ */
+function fileReachesKodyVirtualModule(filePath: string, content: string) {
+	if (!textMentionsKodyVirtualModule(content)) return false
+	if (bundlerScriptSourcePathPattern.test(filePath)) {
+		const specifiers = collectBundlerResolvedSpecifiers(content)
+		return (
+			specifiers == null || specifiers.some(specifierTargetsKodyVirtualModule)
+		)
+	}
+	if (/\.jsonc?$/i.test(filePath)) {
+		try {
+			return jsonValueTargetsKodyVirtualModule(JSON.parse(content))
+		} catch {
+			return true
+		}
+	}
+	return bundlerConfigSourcePathPattern.test(filePath)
+}
 
 /**
  * Covers every package-authored file handed to the bundler, including
@@ -428,11 +472,11 @@ const bundlerLoadableSourcePathPattern = /\.(?:[cm]?[jt]sx?|jsonc?|toml)$/i
  */
 function assertNoKodyVirtualModuleReference(filePath: string, content: string) {
 	if (isTypeDeclarationFilePath(filePath)) return
-	if (!bundlerLoadableSourcePathPattern.test(filePath)) return
-	if (!referencesKodyVirtualModule(content)) return
-	throw new Error(
-		buildInternalKodyVirtualImportMessage(`Package source "${filePath}"`),
-	)
+	if (!fileReachesKodyVirtualModule(filePath, content)) return
+	const label = bundlerScriptSourcePathPattern.test(filePath)
+		? `Package source "${filePath}"`
+		: `Package config "${filePath}"`
+	throw new Error(buildInternalKodyVirtualImportMessage(label))
 }
 
 async function rewriteKodyImports(input: {

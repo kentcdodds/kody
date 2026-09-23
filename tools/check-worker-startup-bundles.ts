@@ -207,7 +207,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Jev paid ranked-search exposure recording (dedicated site + shared
 		// evaluation cache on MCP search) on the same entry: local dry-run
 		// 5_155_481 against the previous 5_154_000 budget.
-		maxEntryBytes: 5_156_000,
+		// Specifier-aware .__kody_virtual__ build check (bundler-resolved
+		// specifier collector incl. require(), JSON value walk) adds ~1.9 KB:
+		// local dry-run 5_157_613 against the previous 5_156_000 budget.
+		maxEntryBytes: 5_159_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
@@ -299,7 +302,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// evaluation cache helpers on the search path that runtime already
 		// loads) on the same entry: local dry-run 3_830_371 against the
 		// previous 3_829_000 budget.
-		maxEntryBytes: 3_831_000,
+		// Specifier-aware .__kody_virtual__ build check (bundler-resolved
+		// specifier collector incl. require(), JSON value walk) adds ~1.9 KB:
+		// local dry-run 3_832_503 against the previous 3_831_000 budget.
+		maxEntryBytes: 3_834_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',

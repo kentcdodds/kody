@@ -26,10 +26,12 @@ the grant is the security boundary.
    `.__kody_virtual__/public-runtime.js`. Both re-export an explicit allowlist
    of public `kody:runtime` names. The shared runtime's stamp helpers
    (`__kodyCreatePackageBoundSecrets`, `__kodyMeterStaticPackageExport`, …)
-   enter secret authority for any id, so they stay bundler-internal: package
-   files that reference `.__kody_virtual__/` fail the build, and computed
-   `import()` of those paths throws. See `createPackageRuntimeModuleSource`,
-   `createPublicRuntimeModuleSource`, and `rewriteKodyImports`.
+   enter secret authority for any id, so they stay bundler-internal: an import
+   specifier (or a manifest / wrangler path value) that targets
+   `.__kody_virtual__/` fails the build, and computed `import()` of those paths
+   throws. Comments and strings that only name the directory build fine. See
+   `createPackageRuntimeModuleSource`, `createPublicRuntimeModuleSource`, and
+   `rewriteKodyImports`.
 2. **Grant (host).** `collectPackageStorageGrantIds` in
    `packages/worker/src/mcp/run-kody-registry.ts` builds the set from
    host-controlled provenance only:
