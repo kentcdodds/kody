@@ -69,19 +69,33 @@ test('public Free/Standard/Pro have weekly execute and outbound windows; max and
 	).toBeNull()
 })
 
-test('automation_invocations_per_day matches the job_runs ladder', () => {
-	expect(resolvePlanLimit('free', 'automation_invocations_per_day')).toBe(
-		resolvePlanLimit('free', 'job_runs_per_day'),
-	)
+test('public automation ceilings sit above job runs; legacy stays job-matched', () => {
+	expect(resolvePlanLimit('free', 'automation_invocations_per_day')).toBe(1_000)
 	expect(resolvePlanLimit('standard', 'automation_invocations_per_day')).toBe(
-		resolvePlanLimit('standard', 'job_runs_per_day'),
+		10_000,
 	)
-	expect(resolvePlanLimit('pro', 'automation_invocations_per_day')).toBe(
-		resolvePlanLimit('pro', 'job_runs_per_day'),
-	)
+	expect(resolvePlanLimit('pro', 'automation_invocations_per_day')).toBe(50_000)
 	expect(resolvePlanLimit('max', 'automation_invocations_per_day')).toBe(
-		resolvePlanLimit('max', 'job_runs_per_day'),
+		200_000,
 	)
+	expect(
+		resolvePlanLimit('free', 'automation_invocations_per_day'),
+	).toBeGreaterThan(resolvePlanLimit('free', 'job_runs_per_day'))
+	expect(
+		resolvePlanLimit('standard', 'automation_invocations_per_day'),
+	).toBeGreaterThan(resolvePlanLimit('standard', 'job_runs_per_day'))
+	expect(
+		resolvePlanLimit('pro', 'automation_invocations_per_day'),
+	).toBeGreaterThan(resolvePlanLimit('pro', 'job_runs_per_day'))
+	expect(
+		resolvePlanLimit('max', 'automation_invocations_per_day'),
+	).toBeGreaterThan(resolvePlanLimit('max', 'job_runs_per_day'))
+	expect(
+		resolvePlanLimit('standard', 'automation_invocations_per_day', 'legacy'),
+	).toBe(10_000)
+	expect(
+		resolvePlanLimit('pro', 'automation_invocations_per_day', 'legacy'),
+	).toBe(20_000)
 	expect(
 		resolvePlanLimit('standard', 'automation_invocations_per_day', 'legacy'),
 	).toBe(resolvePlanLimit('standard', 'job_runs_per_day', 'legacy'))
