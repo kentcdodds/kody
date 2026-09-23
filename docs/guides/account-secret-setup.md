@@ -64,7 +64,7 @@ so the user can paste immediately.
 
 ## Package approval URLs (after a package exists)
 
-Self-authored packages and adopted community forks (`communityForkAdopt`) can
+Self-authored packages and community forks the owner adopted on the website can
 read and use the user's secrets without an `allowed_packages` grant; updating or
 deleting a user secret from package code still requires that grant. Only the
 account owner can add a package to that grant on the secret editor or

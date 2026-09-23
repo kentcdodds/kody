@@ -905,7 +905,7 @@ test('buildKodyModuleBundle stamps root modules with a per-package runtime modul
 		createPackageRuntimeModuleSource(rootPackageId),
 	)
 
-	// Without root provenance the same source keeps the shared runtime module
+	// Without root provenance the same source uses the public runtime facade
 	// (whose packageStorage falls back to the run's own package context).
 	mockModule.createWorker.mockReset()
 	mockModule.createWorker.mockResolvedValue(
@@ -925,7 +925,7 @@ test('buildKodyModuleBundle stamps root modules with a per-package runtime modul
 		| { files?: Record<string, string> }
 		| undefined
 	expect(unstampedCall?.files?.['.__kody_root__/entry.ts']).toContain(
-		'../.__kody_virtual__/runtime.js',
+		'../.__kody_virtual__/public-runtime.js',
 	)
 	expect(unstampedCall?.files?.['.__kody_root__/entry.ts']).not.toContain(
 		'package-runtime/',
@@ -978,9 +978,9 @@ test('statically imported saved package sources get stamped with their own packa
 	expect(call?.files?.[stampedModulePath]).toBe(
 		createPackageRuntimeModuleSource('pkg-1'),
 	)
-	// …while the unprovenanced root entry keeps the shared runtime module.
+	// …while the unprovenanced root entry uses the public runtime facade.
 	expect(call?.files?.['.__kody_root__/entry.ts']).toContain(
-		'../.__kody_virtual__/runtime.js',
+		'../.__kody_virtual__/public-runtime.js',
 	)
 	expect(call?.files?.['.__kody_root__/entry.ts']).not.toContain(
 		'package-runtime/',

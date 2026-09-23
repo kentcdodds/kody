@@ -120,7 +120,7 @@ package-app surfaces:
     addresses redacted and bounded to 200 characters) and a Sentry event tagged
     `scheduled.lane`, so a lane that fails every hour is visible without Workers
     Logs. Both are best-effort: an `AUDIT_DB` or Sentry outage is logged and
-    skipped, not fatal. Operators run one pass interactively with the admin-only
+    skipped, not fatal. Operators run one pass on demand with the admin-only
     `adminUnverifiedAccountPurgeRun` MCP capability (`dryRun` previews the next
     claim page; results carry stable user ids, never emails or usernames).
     Password signups are the only unverified path; social-login accounts are
@@ -130,13 +130,16 @@ package-app surfaces:
     `POST /password-reset/confirm` disables TOTP, deletes passkeys and
     `oauth_connections`, and tells the owner in the confirmation email.
     Signed-in `POST /account/password.json` leaves those factors in place.
-15. **User-secret trust grants are never applied by package runtimes.**
+15. **User-secret trust grants are never applied by MCP or package runtimes.**
     `secretLock` returns a website approval URL and does not write
-    `allowed_packages`. `communityForkAdopt` widens implicit user-secret
-    read/use for a fork and is restricted to an interactive MCP caller with
-    empty package/app/storage context (same class of gate as `packageAppFetch`
-    and platform-feedback submit). Package apps, jobs, webhooks, and other
-    package runtimes cannot adopt or grant themselves secrets.
+    `allowed_packages`. Community fork adoption widens implicit user-secret
+    read/use for a fork, so only the signed-in account session writes it
+    (`adopt-community-fork` on `POST /account/packages.json`, from the package
+    settings page). `communityForkAdopt` is read-only and returns that link.
+    Interactive `execute` runs imported package code with the agent's caller
+    context, so no `kody.*` capability may adopt: an unadopted fork would adopt
+    itself. Package apps, jobs, webhooks, and other package runtimes cannot
+    adopt or grant themselves secrets.
 
 ## First-party HTTP security headers
 
@@ -683,6 +686,17 @@ change to these decisions here so future agents do not relitigate them.
   platform `/__platform/health`, and runtime `/__runtime/health` answer on the
   workers.dev trigger so deploy and status probes can hit the script directly.
   The rest of those hostnames return `404`.
+- **Admin roles apply to package code running as an admin owner.** Jobs, inbound
+  webhook handlers, package subscriptions, and other background package
+  invocations resolve the owner's current roles
+  (`packages/worker/src/identity/background-mcp-user.ts`), and admin capability
+  checks do not require an interactive session. Package code saved on an admin
+  account can call admin-gated capabilities unattended, so installing an
+  untrusted package there carries the full admin blast radius. There is no
+  separate isolation model for admin-owned package code; separate service
+  principals are one possible future design
+  ([#2393](https://github.com/kentcdodds/kody/issues/2393)). See
+  [Background and package callers](./architecture/authorization.md#background-and-package-callers).
 - **Package inbound webhook replay protection is opt-in.** HMAC over the raw
   body without a `replay` declaration does not bind a timestamp or delivery id,
   so a captured signed payload can be replayed until the URL secret is rotated.

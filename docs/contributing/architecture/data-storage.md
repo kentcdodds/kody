@@ -446,8 +446,8 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   require package context. Search ranks user-scoped secret references only. User
   secrets are auto-granted for read/use to self-authored packages (no
   `community_forks` row for that `saved_packages.id` + `userId`) and adopted
-  forks (`community_forks.adopted_at` set via `communityForkAdopt`). Person
-  accounts do not run official platform packages
+  forks (`community_forks.adopted_at`, set only by the signed-in owner on the
+  package settings page). Person accounts do not run official platform packages
   ([0036](../decisions/0036-platform-packages-fork-only.md)). Unadopted
   community forks (`community_forks.forked_package_id`, indexed in the squashed
   baseline) still require an explicit `allowed_packages` grant on every package

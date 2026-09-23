@@ -37,17 +37,21 @@ import {
 	packageSourcePrefix,
 	rootSourcePrefix,
 	dynamicPackageImportProxyPrefix,
+	publicRuntimeModulePath,
+	referencesKodyVirtualModule,
 	resolveRelativeModulePath,
 	resolveWorkspaceSourceFilePath,
 	runtimeModulePath,
 } from './module-graph-paths.ts'
 import {
+	buildInternalKodyVirtualImportMessage,
 	buildPackageRuntimeModulePath,
 	createComputedDynamicImportGuardSource,
 	createRemovedDynamicKodyImportHelperSource,
 	createMeteredPackageImportProxySource,
 	createPackageImportProxySource,
 	createPackageRuntimeModuleSource,
+	createPublicRuntimeModuleSource,
 	createRuntimeModuleSource,
 	iterateModuleSourceTexts,
 	refreshKodyRuntimeModules,
@@ -247,6 +251,7 @@ async function ensurePackageLoaded(
 	state.packages.set(packageKey, entry)
 	for (const [filePath, content] of Object.entries(loaded.files)) {
 		const normalizedPath = normalizePackageWorkspacePath(filePath)
+		assertNoKodyVirtualModuleReference(normalizedPath, content)
 		const targetPath = joinPath(entry.prefix, normalizedPath)
 		if (isTypeDeclarationFilePath(normalizedPath)) {
 			state.files[targetPath] = content
@@ -407,6 +412,29 @@ function ensurePackageRuntimeModule(state: RewriteState, packageId: string) {
 	return modulePath
 }
 
+function ensurePublicRuntimeModule(state: RewriteState) {
+	state.files[publicRuntimeModulePath] ??= createPublicRuntimeModuleSource()
+	return publicRuntimeModulePath
+}
+
+const bundlerScriptSourcePathPattern = /\.(?:[cm]?[jt]sx?)$/i
+const bundlerLoadableSourcePathPattern = /\.(?:[cm]?[jt]sx?|jsonc?|toml)$/i
+
+/**
+ * Covers every package-authored file handed to the bundler, including
+ * `node_modules/` and config copied without import rewriting (package.json
+ * `exports` / `imports` / `main` and wrangler `main` / `alias` could
+ * otherwise point there).
+ */
+function assertNoKodyVirtualModuleReference(filePath: string, content: string) {
+	if (isTypeDeclarationFilePath(filePath)) return
+	if (!bundlerLoadableSourcePathPattern.test(filePath)) return
+	if (!referencesKodyVirtualModule(content)) return
+	throw new Error(
+		buildInternalKodyVirtualImportMessage(`Package source "${filePath}"`),
+	)
+}
+
 async function rewriteKodyImports(input: {
 	state: RewriteState
 	source: string
@@ -429,7 +457,7 @@ async function rewriteKodyImports(input: {
 		if (node.specifier === 'kody:runtime') {
 			const runtimeTargetPath = input.sourcePackageId
 				? ensurePackageRuntimeModule(input.state, input.sourcePackageId)
-				: runtimeModulePath
+				: ensurePublicRuntimeModule(input.state)
 			replacements.push({
 				start: node.start,
 				end: node.end,
@@ -551,11 +579,27 @@ export async function prepareKodyGraphFiles(input: {
 		const normalizedSourcePath = normalizePackageWorkspacePath(filePath)
 		if (
 			isBundlerRootConfigPath(normalizedSourcePath) ||
-			isBundlerRootDependencyPath(normalizedSourcePath)
+			isBundlerRootDependencyPath(normalizedSourcePath) ||
+			reachableRootFiles.has(normalizedSourcePath)
 		) {
+			assertNoKodyVirtualModuleReference(normalizedSourcePath, content)
+		}
+		if (isBundlerRootConfigPath(normalizedSourcePath)) {
 			files[normalizedSourcePath] = content
 		}
 		if (isBundlerRootDependencyPath(normalizedSourcePath)) {
+			// Same rewrite dependency packages get in ensurePackageLoaded, so
+			// computed import() in installed dependency code hits the guard.
+			files[normalizedSourcePath] =
+				bundlerScriptSourcePathPattern.test(normalizedSourcePath) &&
+				!isTypeDeclarationFilePath(normalizedSourcePath)
+					? await rewriteKodyImports({
+							state,
+							source: content,
+							modulePath: normalizedSourcePath,
+							sourcePackageId: state.rootPackageId,
+						})
+					: content
 			continue
 		}
 		const normalizedPath = joinPath(rootSourcePrefix, normalizedSourcePath)

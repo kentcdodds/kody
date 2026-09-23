@@ -22,7 +22,10 @@ import {
 } from '#worker/package-invocations/repo.ts'
 import { readPagination } from '#worker/query-params.ts'
 import { recordServerTiming } from '#worker/request-context.ts'
-import { getCommunityListingByOwnerAndPackage } from '#worker/community/repo.ts'
+import {
+	getCommunityForkByForkedPackageId,
+	getCommunityListingByOwnerAndPackage,
+} from '#worker/community/repo.ts'
 import {
 	getSavedPackageWithCommunityProvenanceById,
 	getSavedPackageWithCommunityProvenanceByKodyId,
@@ -221,7 +224,7 @@ async function toDetail(input: {
 	record: SavedPackageWithCommunityProvenanceRecord
 	hasCommunityListing: boolean
 }): Promise<AccountPackageDetail> {
-	const [tokens, exports, source] = await Promise.all([
+	const [tokens, exports, source, communityFork] = await Promise.all([
 		listPackageInvocationTokensByPackageId({
 			db: input.env.APP_DB,
 			userId: input.userId,
@@ -234,6 +237,12 @@ async function toDetail(input: {
 			sourceId: input.record.sourceId,
 		}),
 		getEntitySourceById(input.env.APP_DB, input.record.sourceId),
+		input.record.sourceListingId == null
+			? Promise.resolve(null)
+			: getCommunityForkByForkedPackageId(input.env.APP_DB, {
+					forkerUserId: input.userId,
+					forkedPackageId: input.record.id,
+				}),
 	])
 	return {
 		...toListItem(
@@ -249,6 +258,13 @@ async function toDetail(input: {
 			source?.user_id === input.userId
 				? (source.published_commit ?? null)
 				: null,
+		communityFork: communityFork
+			? {
+					listingName: input.record.listingName,
+					adoptedAt: communityFork.adoptedAt,
+					adoptionNote: communityFork.adoptionNote,
+				}
+			: null,
 	}
 }
 

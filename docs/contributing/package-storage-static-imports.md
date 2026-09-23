@@ -22,8 +22,14 @@ the grant is the security boundary.
 1. **Stamp (bundler).** Modules that originate from a saved package rewrite
    `kody:runtime` to `.__kody_virtual__/package-runtime/<hex(packageId)>.js`.
    That module closes `packageStorage` and `packageSecrets` over the declaring
-   package UUID. Ad hoc execute entry code is unstamped. See
-   `createPackageRuntimeModuleSource` and `rewriteKodyImports`.
+   package UUID. Ad hoc execute entry code is unstamped and rewrites to
+   `.__kody_virtual__/public-runtime.js`. Both re-export an explicit allowlist
+   of public `kody:runtime` names. The shared runtime's stamp helpers
+   (`__kodyCreatePackageBoundSecrets`, `__kodyMeterStaticPackageExport`, …)
+   enter secret authority for any id, so they stay bundler-internal: package
+   files that reference `.__kody_virtual__/` fail the build, and computed
+   `import()` of those paths throws. See `createPackageRuntimeModuleSource`,
+   `createPublicRuntimeModuleSource`, and `rewriteKodyImports`.
 2. **Grant (host).** `collectPackageStorageGrantIds` in
    `packages/worker/src/mcp/run-kody-registry.ts` builds the set from
    host-controlled provenance only:
