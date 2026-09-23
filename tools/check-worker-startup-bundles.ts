@@ -284,6 +284,9 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// non-retryable workflow step) adds ~1.1 KB on top: local dry-run
 		// 3_824_132 against the previous 3_824_000 budget (main). Combined with
 		// opaque-secrets graph growth: raise reviewed budget to 3_828_000.
+		// Sibling daily automation quota (`automation_invocations_per_day`)
+		// on package-invocation module-execution pulls entitlement consume
+		// into runtime (fits within the opaque-secrets + suspension headroom).
 		maxEntryBytes: 3_828_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,

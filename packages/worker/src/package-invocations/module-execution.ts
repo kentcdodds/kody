@@ -156,7 +156,6 @@ export async function runSavedPackageModuleOnce(
 		if (
 			shouldConsumeAutomationInvocationEntitlement({
 				actorTokenId: input.actor.tokenId,
-				source: input.source,
 				runtimeInvokeDepth: input.runtimeInvokeDepth ?? 0,
 			})
 		) {
