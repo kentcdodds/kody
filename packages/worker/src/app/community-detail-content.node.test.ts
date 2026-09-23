@@ -48,8 +48,11 @@ test('community detail head covers install, installed, and listing-ahead badges'
 	expect(installHtml).toContain('data-testid="community-detail-install"')
 	expect(installHtml).toContain('data-community-install')
 	expect(installHtml).toContain('data-package-title-status="verify"')
-	expect(installHtml).toContain('data-icon="two-checkmarks"')
+	expect(installHtml).toContain('data-icon="git-fork"')
 	expect(installHtml).toContain('data-official="false"')
+	expect(installHtml).toContain(
+		'This listing is from another account. Verify it before using.',
+	)
 	expect(installHtml).toContain('data-trusted="false"')
 	expect(
 		installHtml.indexOf('data-testid="package-title-actions"'),

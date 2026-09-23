@@ -40,6 +40,9 @@ export function createDoubleCheck(handle: Handle) {
 		reset() {
 			setDoubleCheck(false)
 		},
+		arm() {
+			setDoubleCheck(true)
+		},
 		getButtonMix<Props extends ButtonLikeProps>(props?: Props) {
 			const buttonProps = props ?? ({} as Props)
 

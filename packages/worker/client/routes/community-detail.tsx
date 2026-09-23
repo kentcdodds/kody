@@ -11,6 +11,7 @@ import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
+import { createDoubleCheck } from '#client/double-check.ts'
 import { on } from '#client/event-mixin.ts'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { NotFoundPage } from '#client/not-found-page.tsx'
@@ -25,6 +26,9 @@ import {
 } from '#client/package-title-install-progress.ts'
 import {
 	decideCommunityInstallClick,
+	isCommunityInstallConfirmArmed,
+	paintPackageTitleInstallConfirm,
+	shouldResetInstallConfirm,
 	shouldResetInstallOnShellSnapshot,
 } from '#client/routes/community-detail-install.ts'
 import { type AppLoaderData } from '#universal/loader-data.ts'
@@ -61,8 +65,9 @@ import { postPackageShareAction } from './package-share-client.ts'
  * `community-detail` frame — see `src/app/community-detail-content.tsx` —
  * while this shell renders the README as `.prose`, admin tools, and the
  * report disclosure. Fork, verify, open, outdated, and copy-setup live as
- * icons beside the package name in the frame. Owner controls live on
- * `/settings`.
+ * icons beside the package name in the frame. Other-account listings use
+ * the same fork icon and `createDoubleCheck` before the POST. Owner
+ * controls live on `/settings`.
  */
 
 function getCurrentListingId(handle: Handle) {
@@ -78,6 +83,8 @@ export function CommunityDetailRoute(handle: Handle) {
 	let installState: 'idle' | 'submitting' | 'error' = 'idle'
 	let installMessage: string | null = null
 	let installOutcome: CommunityInstallOutcome | null = null
+	const installConfirm = createDoubleCheck(handle)
+	let installConfirmListingId: string | null = null
 	let readmeContent: string | null = null
 	let readmeFences: Array<HighlightedCode> = []
 	let hasAgentsDocs = false
@@ -157,6 +164,15 @@ export function CommunityDetailRoute(handle: Handle) {
 			installState = 'idle'
 			installMessage = null
 			installOutcome = null
+		}
+		const snapshotListingId = getListingPageRef(pathname)?.listingId ?? null
+		if (
+			shouldResetInstallConfirm({
+				confirmedListingId: installConfirmListingId,
+				listingId: snapshotListingId,
+			})
+		) {
+			resetInstallConfirm()
 		}
 		readmeContent = snapshot.readmeContent
 		readmeFences = snapshot.readmeFences ?? []
@@ -475,20 +491,44 @@ export function CommunityDetailRoute(handle: Handle) {
 		}
 	}
 
+	function resetInstallConfirm() {
+		installConfirm.reset()
+		installConfirmListingId = null
+	}
+
 	function handleCommunityInstallClick(event: Event) {
 		const target = event.target
 		if (!(target instanceof Element)) return
 		const control = target.closest('[data-community-install]')
-		if (!control || control instanceof HTMLAnchorElement) return
-		event.preventDefault()
+		if (!control) return
+		const loginLink = control instanceof HTMLAnchorElement
+		const official = control.getAttribute('data-official') === 'true'
+		const listingId = control.getAttribute('data-package-title-listing')
 		const decision = decideCommunityInstallClick({
-			installState,
-			alreadyInstalled: installOutcome != null,
+			installState: loginLink ? 'idle' : installState,
+			alreadyInstalled: loginLink ? false : installOutcome != null,
+			requiresConfirm: !loginLink && !official,
+			confirmed: isCommunityInstallConfirmArmed({
+				confirmed: installConfirm.doubleCheck,
+				confirmedListingId: installConfirmListingId,
+				listingId,
+			}),
 		})
 		switch (decision) {
 			case 'ignore':
+				if (!loginLink) event.preventDefault()
+				return
+			case 'arm':
+				event.preventDefault()
+				installConfirm.arm()
+				installConfirmListingId = listingId
+				paintPackageTitleInstallConfirm(control, true)
+				if (control instanceof HTMLElement) control.focus()
 				return
 			case 'submit':
+				if (loginLink) return
+				event.preventDefault()
+				resetInstallConfirm()
 				void submitInstall()
 				return
 			default: {
@@ -496,6 +536,26 @@ export function CommunityDetailRoute(handle: Handle) {
 				throw new Error(`Unhandled install click: ${String(exhaustive)}`)
 			}
 		}
+	}
+
+	function handleCommunityInstallFocusOut(event: FocusEvent) {
+		const target = event.target
+		if (!(target instanceof Element)) return
+		const control = target.closest('[data-community-install]')
+		if (
+			!control ||
+			!isCommunityInstallConfirmArmed({
+				confirmed: installConfirm.doubleCheck,
+				confirmedListingId: installConfirmListingId,
+				listingId: control.getAttribute('data-package-title-listing'),
+			})
+		) {
+			return
+		}
+		const next = event.relatedTarget
+		if (next instanceof Node && control.contains(next)) return
+		resetInstallConfirm()
+		paintPackageTitleInstallConfirm(control, false)
 	}
 
 	listenToRouterNavigation(handle, () => {
@@ -507,6 +567,11 @@ export function CommunityDetailRoute(handle: Handle) {
 			installMessage = null
 			installOutcome = null
 		}
+		// Navigation reloads the title frame, so the rebuilt control is idle
+		// Fork even when the listing id is unchanged. Drop the armed flag
+		// here; a same-listing shell snapshot keeps it because that path
+		// does not remount the painted Confirm fork control.
+		resetInstallConfirm()
 		if (!ref) return
 
 		const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)
@@ -632,7 +697,11 @@ export function CommunityDetailRoute(handle: Handle) {
 				: null
 		return (
 			<article
-				mix={[css(detailArticleCss), on('click', handleCommunityInstallClick)]}
+				mix={[
+					css(detailArticleCss),
+					on('click', handleCommunityInstallClick),
+					on('focusout', handleCommunityInstallFocusOut),
+				]}
 			>
 				<Frame name={COMMUNITY_DETAIL_TARGET} src={frameSrc} />
 

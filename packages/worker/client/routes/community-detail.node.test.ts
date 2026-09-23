@@ -1,7 +1,11 @@
 import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
 import {
+	CONFIRM_FORK_LABEL,
 	decideCommunityInstallClick,
+	isCommunityInstallConfirmArmed,
+	paintPackageTitleInstallConfirm,
+	shouldResetInstallConfirm,
 	shouldResetInstallOnShellSnapshot,
 } from './community-detail-install.ts'
 import {
@@ -14,26 +18,154 @@ test('decideCommunityInstallClick starts a fork from idle or error and ignores a
 		decideCommunityInstallClick({
 			installState: 'idle',
 			alreadyInstalled: false,
+			requiresConfirm: false,
+			confirmed: false,
 		}),
 	).toBe('submit')
 	expect(
 		decideCommunityInstallClick({
 			installState: 'submitting',
 			alreadyInstalled: false,
+			requiresConfirm: false,
+			confirmed: false,
 		}),
 	).toBe('ignore')
 	expect(
 		decideCommunityInstallClick({
 			installState: 'idle',
 			alreadyInstalled: true,
+			requiresConfirm: false,
+			confirmed: false,
 		}),
 	).toBe('ignore')
 	expect(
 		decideCommunityInstallClick({
 			installState: 'error',
 			alreadyInstalled: false,
+			requiresConfirm: false,
+			confirmed: false,
 		}),
 	).toBe('submit')
+})
+
+test('other-account listings arm on the first click and fork on the second', () => {
+	expect(
+		decideCommunityInstallClick({
+			installState: 'idle',
+			alreadyInstalled: false,
+			requiresConfirm: true,
+			confirmed: false,
+		}),
+	).toBe('arm')
+	expect(
+		decideCommunityInstallClick({
+			installState: 'idle',
+			alreadyInstalled: false,
+			requiresConfirm: true,
+			confirmed: true,
+		}),
+	).toBe('submit')
+	expect(
+		decideCommunityInstallClick({
+			installState: 'error',
+			alreadyInstalled: false,
+			requiresConfirm: true,
+			confirmed: false,
+		}),
+	).toBe('arm')
+	expect(
+		decideCommunityInstallClick({
+			installState: 'submitting',
+			alreadyInstalled: false,
+			requiresConfirm: true,
+			confirmed: true,
+		}),
+	).toBe('ignore')
+})
+
+test('paintPackageTitleInstallConfirm swaps the fork label for Confirm fork', () => {
+	const tooltip = { textContent: 'This listing is from another account.' }
+	const attributes = new Map<string, string>([
+		['data-title-idle-label', 'Fork'],
+		['data-title-idle-tooltip', 'This listing is from another account.'],
+		['aria-label', 'Fork'],
+	])
+	const control = {
+		getAttribute(name: string) {
+			return attributes.get(name) ?? null
+		},
+		setAttribute(name: string, value: string) {
+			attributes.set(name, value)
+		},
+		querySelector(selector: string) {
+			return selector === '[data-title-status-tooltip]' ? tooltip : null
+		},
+	}
+
+	paintPackageTitleInstallConfirm(control, true)
+	expect(attributes.get('aria-label')).toBe(CONFIRM_FORK_LABEL)
+	expect(tooltip.textContent).toBe(CONFIRM_FORK_LABEL)
+
+	paintPackageTitleInstallConfirm(control, false)
+	expect(attributes.get('aria-label')).toBe('Fork')
+	expect(tooltip.textContent).toBe('This listing is from another account.')
+})
+
+test('install confirm is armed only for the listing that received the first click', () => {
+	expect(
+		isCommunityInstallConfirmArmed({
+			confirmed: true,
+			confirmedListingId: 'listing-a',
+			listingId: 'listing-a',
+		}),
+	).toBe(true)
+	expect(
+		isCommunityInstallConfirmArmed({
+			confirmed: true,
+			confirmedListingId: 'listing-a',
+			listingId: 'listing-b',
+		}),
+	).toBe(false)
+	expect(
+		isCommunityInstallConfirmArmed({
+			confirmed: true,
+			confirmedListingId: 'listing-a',
+			listingId: null,
+		}),
+	).toBe(false)
+	expect(
+		isCommunityInstallConfirmArmed({
+			confirmed: false,
+			confirmedListingId: 'listing-a',
+			listingId: 'listing-a',
+		}),
+	).toBe(false)
+	expect(
+		shouldResetInstallConfirm({
+			confirmedListingId: 'listing-a',
+			listingId: 'listing-a',
+		}),
+	).toBe(false)
+	expect(
+		shouldResetInstallConfirm({
+			confirmedListingId: 'listing-a',
+			listingId: 'listing-b',
+		}),
+	).toBe(true)
+	expect(
+		shouldResetInstallConfirm({
+			confirmedListingId: 'listing-a',
+			listingId: null,
+		}),
+	).toBe(true)
+	expect(
+		shouldResetInstallConfirm({
+			confirmedListingId: null,
+			listingId: 'listing-b',
+		}),
+	).toBe(false)
+	// Same-listing snapshots keep Confirm fork. Navigation always remounts
+	// the frame, so that path resets even when the listing id matches.
 })
 
 test('a same-listing shell snapshot keeps an in-flight install', () => {
