@@ -204,7 +204,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// spills into the platform MCP invoke graph. Combined with opaque
 		// secrets on main: local dry-run 5_153_557 against the previous
 		// 5_153_000 budget.
-		maxEntryBytes: 5_154_000,
+		// Jev paid ranked-search exposure recording (dedicated site + shared
+		// evaluation cache on MCP search) on the same entry: local dry-run
+		// 5_155_481 against the previous 5_154_000 budget.
+		maxEntryBytes: 5_156_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
@@ -292,7 +295,11 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// on package-invocation module-execution pulls entitlement consume
 		// into runtime. Combined with opaque-secrets + suspension on main:
 		// local dry-run 3_828_451 against the previous 3_828_000 budget.
-		maxEntryBytes: 3_829_000,
+		// Jev paid ranked-search exposure recording (dedicated site + shared
+		// evaluation cache helpers on the search path that runtime already
+		// loads) on the same entry: local dry-run 3_830_371 against the
+		// previous 3_829_000 budget.
+		maxEntryBytes: 3_831_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',
