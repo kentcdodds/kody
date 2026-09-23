@@ -757,3 +757,223 @@ test(
 		expect(stolen.result.getAuthority).not.toBe(wake.packageId)
 	},
 )
+
+test(
+	'kody:runtime stamp helpers and virtual runtime paths cannot forge secret authority for another granted package',
+	{ timeout: 90_000 },
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		await ensureSecretAuthorityTestSchema()
+		const userId = `user-${crypto.randomUUID()}`
+		const wake = await publishPackage({
+			userId,
+			name: '@kentcdodds/grok-bot',
+			kodyId: 'grok-bot',
+			sourceFiles: {
+				'package.json': JSON.stringify({
+					name: '@kentcdodds/grok-bot',
+					exports: { './wake': './src/wake.ts' },
+					kody: {
+						id: 'grok-bot',
+						description: 'Wake helper',
+						secretMounts: {
+							wakeToken: { name: 'wakeToken', scope: 'user' },
+						},
+					},
+				}),
+				'src/wake.ts': [
+					"import { packageSecrets } from 'kody:runtime'",
+					'export default async function wake() {',
+					'\treturn { token: await packageSecrets.get("wakeToken") }',
+					'}',
+				].join('\n'),
+			},
+			exports: [{ artifactName: './wake', entryPoint: 'src/wake.ts' }],
+		})
+		const forgeSource = [
+			"import * as runtime from 'kody:runtime'",
+			"import wake from 'kody:@kentcdodds/grok-bot/wake'",
+			`const victimPackageId = ${JSON.stringify(wake.packageId)}`,
+			'async function attempt(run) {',
+			'\ttry {',
+			'\t\treturn { value: await run() }',
+			'\t} catch (error) {',
+			'\t\treturn { error: error instanceof Error ? error.message : String(error) }',
+			'\t}',
+			'}',
+			'async function readVictimSecret(helpers) {',
+			'\tif (typeof helpers?.__kodyCreatePackageBoundSecrets === "function") {',
+			'\t\treturn await helpers',
+			'\t\t\t.__kodyCreatePackageBoundSecrets(victimPackageId)',
+			'\t\t\t.get("wakeToken")',
+			'\t}',
+			'\tif (typeof helpers?.__kodyMeterStaticPackageExport === "function") {',
+			'\t\tconst forged = helpers.__kodyMeterStaticPackageExport(',
+			'\t\t\tvictimPackageId,',
+			'\t\t\t() => runtime.kody.packageSecretGet({ alias: "wakeToken" }),',
+			'\t\t)',
+			'\t\treturn (await forged())?.value',
+			'\t}',
+			'\treturn "no-helper"',
+			'}',
+			'export default async function forge() {',
+			'\tconst legit = await attempt(() => wake())',
+			'\tconst exportedInternals = Object.keys(runtime).filter((key) =>',
+			'\t\tkey.startsWith("__kody"),',
+			'\t)',
+			'\tconst viaNamespace = await attempt(() => readVictimSecret(runtime))',
+			'\tconst virtualRuntimePath = ["", ".__kody" + "_virtual__", "runtime.js"].join("/")',
+			'\tconst viaComputedImport = await attempt(async () =>',
+			'\t\treadVictimSecret(await import(virtualRuntimePath)),',
+			'\t)',
+			'\treturn { legit, exportedInternals, viaNamespace, viaComputedImport }',
+			'}',
+		].join('\n')
+		const importer = await publishPackage({
+			userId,
+			name: '@kentcdodds/dependent',
+			kodyId: 'dependent',
+			sourceFiles: {
+				'package.json': JSON.stringify({
+					name: '@kentcdodds/dependent',
+					exports: {},
+					kody: { id: 'dependent', description: 'Dependent' },
+				}),
+			},
+			exports: [],
+		})
+		await markUnadoptedFork({
+			userId,
+			packageId: wake.packageId,
+			sourceId: wake.sourceId,
+			kodyId: 'grok-bot',
+		})
+		await markUnadoptedFork({
+			userId,
+			packageId: importer.packageId,
+			sourceId: importer.sourceId,
+			kodyId: 'dependent',
+		})
+		await saveSecret({
+			env,
+			userId,
+			scope: 'user',
+			name: 'wakeToken',
+			value: 'wake-secret-value',
+		})
+		await lockSecretToPackage({
+			env,
+			userId,
+			name: 'wakeToken',
+			packageId: wake.packageId,
+		})
+		const expectedForgeResult = {
+			legit: { value: { token: 'wake-secret-value' } },
+			exportedInternals: [],
+			viaNamespace: { value: 'no-helper' },
+			viaComputedImport: {
+				error: expect.stringMatching(/internal Kody runtime module/i),
+			},
+		}
+
+		const stampedForge = await runBundledModuleWithRegistry(
+			env,
+			createCallerContext(userId),
+			await buildKodyModuleBundle({
+				env,
+				baseUrl: 'https://kody.dev',
+				userId,
+				sourceFiles: {
+					'package.json': JSON.stringify({
+						name: '@kentcdodds/dependent',
+						exports: { './forge': './src/forge.ts' },
+						kody: {
+							id: 'dependent',
+							description: 'Dependent',
+							dependencies: { '@kentcdodds/grok-bot': '*' },
+							secretMounts: {
+								wakeToken: { name: 'wakeToken', scope: 'user' },
+							},
+						},
+					}),
+					'src/forge.ts': forgeSource,
+				},
+				entryPoint: 'src/forge.ts',
+				rootPackageId: importer.packageId,
+			}),
+			undefined,
+			{
+				skipCapabilityRegistry: true,
+				packageContext: {
+					packageId: importer.packageId,
+					kodyId: 'dependent',
+					sourceId: importer.sourceId,
+				},
+			},
+		)
+		expect(stampedForge.error).toBeUndefined()
+		expect(stampedForge.result).toEqual(expectedForgeResult)
+
+		const unstampedForge = await runBundledModuleWithRegistry(
+			env,
+			createCallerContext(userId),
+			await buildKodyModuleBundle({
+				env,
+				baseUrl: 'https://kody.dev',
+				userId,
+				sourceFiles: { 'entry.ts': forgeSource },
+				entryPoint: 'entry.ts',
+			}),
+			undefined,
+			{ skipCapabilityRegistry: true },
+		)
+		expect(unstampedForge.error).toBeUndefined()
+		expect(unstampedForge.result).toEqual(expectedForgeResult)
+
+		for (const { importLine, extraFiles } of [
+			{
+				importLine: "import * as runtime from '/.__kody_virtual__/runtime.js'",
+			},
+			{
+				importLine:
+					"import * as runtime from './.__kody_virtual__/package-runtime/00.js'",
+			},
+			{ importLine: "export * from '../.__kody_virtual__/runtime.js'" },
+			{
+				importLine:
+					"const runtime = await import('/.__kody_virtual__/runtime.js')",
+			},
+			{
+				importLine:
+					"import * as runtime from '/.\\x5f\\x5fkody_virtual\\u005f\\u005f/runtime.js'",
+			},
+			{
+				importLine: "import * as runtime from 'evil'",
+				extraFiles: {
+					'node_modules/evil/package.json': JSON.stringify({
+						name: 'evil',
+						main: '../../.__kody_virtual__/runtime.js',
+					}),
+				},
+			},
+		] as Array<{ importLine: string; extraFiles?: Record<string, string> }>) {
+			await expect(
+				buildKodyModuleBundle({
+					env,
+					baseUrl: 'https://kody.dev',
+					userId,
+					sourceFiles: {
+						...extraFiles,
+						'entry.ts': [
+							importLine,
+							'export default async function main() {',
+							'\treturn null',
+							'}',
+						].join('\n'),
+					},
+					entryPoint: 'entry.ts',
+				}),
+			).rejects.toThrow(/internal Kody runtime module/i)
+		}
+	},
+)
