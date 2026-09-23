@@ -53,8 +53,10 @@ is rotated.
 `inputMode: "params"` is the first-party trusted-client contract. The bound
 export's first argument is the parsed JSON object. When that object is the
 invoke-token envelope (`params` plus optional `idempotencyKey`, `source`, and
-`topic`), the platform unwraps `params`. An application payload that happens to
-include a nested `params` object next to other keys stays intact.
+`topic`), the platform unwraps `params`. `idempotencyKey` counts only as a
+non-empty string, and `source` / `topic` only as a string or null. An
+application payload that includes a nested `params` object next to other keys
+(`route`, `dryRun`, or a reserved key with a non-metadata value) stays intact.
 `Idempotency-Key` (or JSON `idempotencyKey` in params mode) maps to the same
 package-invocation ledger with payload hashing (`include`): same key + same
 first argument replays. On `sync`, mismatch and in-progress are **409**. `ack`

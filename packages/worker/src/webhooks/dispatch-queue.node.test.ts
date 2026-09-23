@@ -279,6 +279,36 @@ test('queue dispatch unwraps params-mode first args and hashes request-mode call
 		}),
 	)
 
+	const routedBody = JSON.stringify({
+		route: 'linkedin/register-video-upload',
+		dryRun: false,
+		params: { fileSizeBytes: 12 },
+	})
+	const routedParamsMode = queuedDispatchMessage({
+		...createMessage(),
+		inputMode: 'params',
+		params: {
+			...createMessage().params,
+			request: {
+				...createMessage().params.request,
+				body: routedBody,
+				json: { ignored: true },
+			},
+		},
+	})
+	await expect(
+		processWebhookDispatch(routedParamsMode, {} as Env),
+	).resolves.toBe('terminal')
+	expect(mocks.dispatchWebhookInvocation).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			params: {
+				route: 'linkedin/register-video-upload',
+				dryRun: false,
+				params: { fileSizeBytes: 12 },
+			},
+		}),
+	)
+
 	const uniqueKeyRequestMode = queuedDispatchMessage(createMessage())
 	await expect(
 		processWebhookDispatch(uniqueKeyRequestMode, {} as Env),

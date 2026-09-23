@@ -45,11 +45,59 @@ test('params-mode first-arg unwrap and caller Idempotency-Key resolution', () =>
 	})
 	const routed = {
 		route: 'linkedin/register-video-upload',
+		dryRun: false,
 		params: { fileSizeBytes: 12, confirm: true },
 	}
 	expect(resolveWebhookParamsModeFirstArg(routed)).toEqual({
 		ok: true,
 		params: routed,
+	})
+	const routedWithEnvelopeKeys = {
+		route: 'x',
+		dryRun: true,
+		params: { a: 1 },
+		idempotencyKey: 'evt-1',
+		source: 'promo-scheduler',
+		topic: 'linkedin',
+	}
+	expect(resolveWebhookParamsModeFirstArg(routedWithEnvelopeKeys)).toEqual({
+		ok: true,
+		params: routedWithEnvelopeKeys,
+	})
+	const topicObject = {
+		params: { page: 1 },
+		topic: { category: 'news' },
+	}
+	expect(resolveWebhookParamsModeFirstArg(topicObject)).toEqual({
+		ok: true,
+		params: topicObject,
+	})
+	const numericIdempotencyKey = {
+		params: { a: 1 },
+		idempotencyKey: 12,
+	}
+	expect(resolveWebhookParamsModeFirstArg(numericIdempotencyKey)).toEqual({
+		ok: true,
+		params: numericIdempotencyKey,
+	})
+	const blankIdempotencyKey = {
+		params: { a: 1 },
+		idempotencyKey: '   ',
+	}
+	expect(resolveWebhookParamsModeFirstArg(blankIdempotencyKey)).toEqual({
+		ok: true,
+		params: blankIdempotencyKey,
+	})
+	expect(
+		resolveWebhookParamsModeFirstArg({
+			params: { a: 1 },
+			idempotencyKey: 'evt-1',
+			source: null,
+			topic: null,
+		}),
+	).toEqual({
+		ok: true,
+		params: { a: 1 },
 	})
 	expect(
 		resolveWebhookParamsModeFirstArg({
