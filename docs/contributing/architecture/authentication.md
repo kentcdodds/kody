@@ -260,9 +260,13 @@ Platform suspension (`users.suspended_at`, set by admins from `/admin/users`)
 follows the same chokepoint pattern and also fails closed: browser session
 resolution treats a suspended session as signed out (`readAuthenticatedAppUser`
 / `loadSessionInfo`), `handleMcpRequest` rejects with a `403 account_suspended`
-JSON response after the verification gate, and both email directions reject
-(inbound with a bounded `account-suspension` rejection event, outbound with an
-error). See the "Abuse controls" section of [`security.md`](../security.md).
+JSON response after the verification gate, package-app owner resolution refuses
+to serve, webhook ingress rejects with `403 account_suspended`, background
+identity resolution (`resolveBackgroundMcpUser`) throws `AccountSuspendedError`
+for jobs, package invocations, workflows, retrievers, and realtime hooks, and
+both email directions reject (inbound with a bounded `account-suspension`
+rejection event, outbound with an error). See the "Abuse controls" section of
+[`security.md`](../security.md).
 
 - **Email capabilities**: every capability in the MCP `email` domain calls
   `requireVerifiedEmailAccountUser`

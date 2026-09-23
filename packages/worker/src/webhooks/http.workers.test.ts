@@ -119,10 +119,16 @@ async function ensureSchema(db: D1Database) {
 				email TEXT NOT NULL UNIQUE,
 				password_hash TEXT NOT NULL,
 				stable_user_id TEXT NOT NULL,
-				deleting_at TEXT
+				deleting_at TEXT,
+				suspended_at TEXT
 			)`,
 		)
 		.run()
+	try {
+		await db.prepare(`ALTER TABLE users ADD COLUMN suspended_at TEXT`).run()
+	} catch {
+		// Column already present on newer schemas.
+	}
 	await db
 		.prepare(
 			`CREATE TABLE IF NOT EXISTS saved_packages (
@@ -698,6 +704,58 @@ test('webhook delivery records explicit rejected and failed outcomes', async () 
 		outcome: 'failed',
 		httpStatus: 502,
 	})
+})
+
+test('webhook ingress rejects suspended owners before any dispatch', async () => {
+	silenceExpectedConsoleWarns(['activation-run-record-failed'])
+	await ensureSchema(env.APP_DB)
+	await env.APP_DB.prepare(`DELETE FROM webhook_endpoints`).run()
+	await env.APP_DB.prepare(`DELETE FROM saved_packages`).run()
+	await env.APP_DB.prepare(`DELETE FROM users`).run()
+
+	const userId = await seedOwner()
+	await clearRunRecords({ env, userId })
+	const urlSecret = 'url-secret-plain'
+	await mintWebhook({ userId, webhookName: 'ack-hook', urlSecret })
+	await mintWebhook({
+		userId,
+		webhookName: 'sync-hook',
+		urlSecret,
+		id: 'mint-sync-suspended',
+	})
+	await env.APP_DB.prepare(
+		`UPDATE users SET suspended_at = ? WHERE stable_user_id = ?`,
+	)
+		.bind('2026-09-23T00:00:00.000Z', userId)
+		.run()
+
+	mocks.invokePackageExport.mockReset()
+	mocks.enqueueWebhookDispatch.mockReset()
+
+	for (const hook of [
+		{ name: 'ack-hook', responseMode: 'ack' as const },
+		{ name: 'sync-hook', responseMode: 'sync' as const },
+	]) {
+		declareWebhook(hook)
+		const response = await postWebhook({
+			packageKodyId: 'sentry-bridge',
+			webhookName: hook.name,
+			urlSecret,
+		})
+		expect(response.status).toBe(403)
+		await expect(response.json()).resolves.toMatchObject({
+			ok: false,
+			error: { code: 'account_suspended' },
+		})
+		const deliveries = await listDeliveries(userId, hook.name)
+		expect(deliveries[0]?.metadata).toMatchObject({
+			outcome: 'rejected',
+			httpStatus: 403,
+		})
+		expect(deliveries[0]?.errorMessage).toBe('account_suspended')
+	}
+	expect(mocks.invokePackageExport).not.toHaveBeenCalled()
+	expect(mocks.enqueueWebhookDispatch).not.toHaveBeenCalled()
 })
 
 function encodeBody(text: string) {

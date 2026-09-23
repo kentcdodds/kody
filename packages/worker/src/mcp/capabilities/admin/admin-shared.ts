@@ -74,7 +74,7 @@ export const adminUserMetadataSchema = z.object({
 		.string()
 		.nullable()
 		.describe(
-			'Set when the account is platform-suspended (blocked at session, MCP, and email chokepoints).',
+			'Set when the account is platform-suspended (blocks sessions, MCP, package apps, webhooks, jobs and other background work, and email).',
 		),
 	email_outbound_paused_at: z
 		.string()

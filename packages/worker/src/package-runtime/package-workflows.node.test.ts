@@ -1,4 +1,9 @@
+import { NonRetryableError } from 'cloudflare:workflows'
 import { expect, test, vi } from 'vitest'
+import {
+	AccountSuspendedError,
+	accountSuspendedMessage,
+} from '#worker/account/account-suspension.ts'
 import {} from '#worker/package-runtime/workflow-statuses.ts'
 import { type WorkflowProjectionUpsertInput } from '#worker/run-records/service.ts'
 import {
@@ -29,13 +34,18 @@ vi.mock('#mcp/run-kody-registry.ts', () => ({
 		invocationMocks.runModuleWithRegistry(...args),
 }))
 
-vi.mock('#worker/identity/background-mcp-user.ts', () => ({
-	resolveBackgroundMcpUser: async (_db: D1Database, userId: string) => ({
+const backgroundUserMocks = vi.hoisted(() => ({
+	resolveBackgroundMcpUser: vi.fn(async (_db: D1Database, userId: string) => ({
 		userId,
 		email: `${userId}@example.com`,
 		username: userId,
 		displayName: userId,
-	}),
+	})),
+}))
+
+vi.mock('#worker/identity/background-mcp-user.ts', () => ({
+	resolveBackgroundMcpUser: (db: D1Database, userId: string) =>
+		backgroundUserMocks.resolveBackgroundMcpUser(db, userId),
 }))
 
 vi.mock('#worker/run-records/service.ts', () => ({
@@ -586,6 +596,88 @@ test('DynamicCallableWorkflowBase marks package export error responses as workfl
 			'kody.mcp[\\"home\\"].bond_shade_set_position',
 		),
 	})
+})
+
+test('suspended owners fail inline and package workflow steps once without retries', async () => {
+	const env = {
+		APP_DB: createWorkflowRunsDatabase(),
+		APP_BASE_URL: 'https://app.example.com',
+	} as Env
+	const bodies = [
+		{
+			code: 'export default async function main() { return { ok: true } }',
+			idempotencyKey: 'suspended-inline',
+		},
+		{
+			packageId: 'pkg-1',
+			exportName: './workflow-run-event',
+			idempotencyKey: 'suspended-package',
+		},
+	]
+	for (const body of bodies) {
+		runRecordMocks.resetProjections()
+		const binding = createStatefulWorkflowBinding()
+		env.DYNAMIC_CALLABLE_WORKFLOWS = binding.workflow
+		const created = await createDynamicCallableWorkflow({
+			env,
+			userId: 'user-1',
+			packageContext: null,
+			body: { ...body, runAt: '2026-05-03T12:34:56.000Z' },
+		})
+		const queued = binding.instances.get(created.id)
+		if (!queued?.params) throw new Error('Expected queued workflow payload.')
+		invocationMocks.runModuleWithRegistry.mockReset()
+		invocationMocks.invokePackageExport.mockReset()
+		// The inline path resolves the owner itself; the package path gets the
+		// structured 403 that module execution returns for a suspended owner.
+		backgroundUserMocks.resolveBackgroundMcpUser.mockRejectedValueOnce(
+			new AccountSuspendedError(),
+		)
+		invocationMocks.invokePackageExport.mockResolvedValueOnce({
+			status: 403,
+			body: {
+				ok: false,
+				error: { code: 'account_suspended', message: accountSuspendedMessage },
+			},
+		})
+
+		const workflow = new DynamicCallableWorkflowBase(
+			{ waitUntil: vi.fn() } as unknown as ExecutionContext,
+			env,
+		)
+		const stepDo = vi.fn(
+			async (_name: string, _config: unknown, callback: () => unknown) =>
+				await callback(),
+		)
+		await expect(
+			workflow.run(
+				{
+					payload: queued.params as never,
+					timestamp: new Date(),
+					instanceId: created.id,
+				},
+				{ sleepUntil: vi.fn(), do: stepDo } as unknown as WorkflowStep,
+			),
+		).rejects.toSatisfy(
+			(error: unknown) =>
+				error instanceof NonRetryableError &&
+				error.name === 'AccountSuspendedError' &&
+				error.message === accountSuspendedMessage,
+		)
+		expect(invocationMocks.runModuleWithRegistry).not.toHaveBeenCalled()
+		expect(
+			runRecordMocks.listForUser('user-1').find((row) => row.id === created.id),
+		).toMatchObject({ status: 'errored', lastError: accountSuspendedMessage })
+		backgroundUserMocks.resolveBackgroundMcpUser.mockReset()
+		backgroundUserMocks.resolveBackgroundMcpUser.mockImplementation(
+			async (_db: D1Database, userId: string) => ({
+				userId,
+				email: `${userId}@example.com`,
+				username: userId,
+				displayName: userId,
+			}),
+		)
+	}
 })
 
 test('DynamicCallableWorkflowBase rejects package export redirect responses', async () => {

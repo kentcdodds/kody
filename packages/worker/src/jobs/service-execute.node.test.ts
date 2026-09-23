@@ -6,6 +6,10 @@ import { saveSecret } from '#mcp/secrets/service.ts'
 import { saveValue } from '#mcp/values/service.ts'
 import { executeJobOnce } from './service.ts'
 import { type JobRecord } from './types.ts'
+import {
+	AccountSuspendedError,
+	accountSuspendedMessage,
+} from '#worker/account/account-suspension.ts'
 import { TransientJobExecutionError } from './execution-safety.ts'
 import {
 	identityMockModule,
@@ -192,6 +196,61 @@ test('executeJobOnce background execution workflow', async () => {
 				callerContext,
 			}),
 		).rejects.toBeInstanceOf(TransientJobExecutionError)
+	}
+
+	// Phase: suspended account halts the job before sandbox work
+	{
+		const usageModule = await import('#worker/usage/record-usage.ts')
+		const recordUsageSpy = vi
+			.spyOn(usageModule, 'recordUsage')
+			.mockResolvedValue(undefined)
+		const executeSpy = vi.spyOn(
+			await import('#mcp/run-kody-registry.ts'),
+			'runBundledModuleWithRegistry',
+		)
+		const callerContext = createBaseCallerContext()
+		const env = createJobServiceTestEnv({ APP_DB: createDatabase() })
+		identityMockModule.resolveBackgroundMcpUser.mockRejectedValueOnce(
+			new AccountSuspendedError(),
+		)
+		const job: JobRecord = {
+			version: 1,
+			id: 'job-suspended',
+			userId: callerContext.user.userId,
+			name: 'Suspended owner',
+			sourceId: 'source-suspended',
+			publishedCommit: null,
+			storageId: 'job:job-suspended',
+			schedule: { type: 'interval', every: '1h' },
+			timezone: 'UTC',
+			enabled: true,
+			killSwitchEnabled: false,
+			preserved: false,
+			expiresAt: null,
+			createdAt: '2026-08-08T00:00:00.000Z',
+			updatedAt: '2026-08-08T00:00:00.000Z',
+			nextRunAt: '2026-08-08T01:00:00.000Z',
+			runCount: 0,
+			successCount: 0,
+			errorCount: 0,
+		}
+
+		try {
+			const outcome = await executeJobOnce({
+				env,
+				job,
+				callerContext,
+			})
+			expect(outcome.execution).toMatchObject({
+				ok: false,
+				error: accountSuspendedMessage,
+			})
+			expect(executeSpy).not.toHaveBeenCalled()
+			expect(recordUsageSpy).not.toHaveBeenCalled()
+		} finally {
+			executeSpy.mockRestore()
+			recordUsageSpy.mockRestore()
+		}
 	}
 
 	// Phase: writable storage binding and interactive origin override
