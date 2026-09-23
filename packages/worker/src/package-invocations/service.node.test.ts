@@ -173,6 +173,54 @@ test('invokePackageExport refuses a suspended owner before loading or running pa
 	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
 })
 
+test('a suspended owner cannot replay a stored keyed response, and the denial is not stored', async () => {
+	const db = createDatabase()
+	seedPackageResolution()
+	repoMockModule.runBundledModuleWithRegistry.mockClear()
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		result: { reply: 'stored before suspension' },
+		logs: [],
+	})
+	const invoke = () =>
+		invokePackageExport({
+			env: createEnv(db),
+			baseUrl: 'https://kody.dev',
+			token: createToken({}),
+			request: {
+				packageIdOrKodyId: 'discord-gateway',
+				exportName: 'dispatch-message-created',
+				params: { content: 'hi' },
+				idempotencyKey: 'evt-replay-while-suspended',
+				topic: 'discord.message.created',
+			},
+		})
+
+	const first = await invoke()
+	expect(first.status).toBe(200)
+
+	backgroundUserMocks.resolveBackgroundMcpUser.mockRejectedValueOnce(
+		new AccountSuspendedError(),
+	)
+	const whileSuspended = await invoke()
+	expect(whileSuspended.status).toBe(403)
+	expect(whileSuspended.body).toMatchObject({
+		ok: false,
+		error: { code: 'account_suspended' },
+	})
+	expect(JSON.stringify(whileSuspended.body)).not.toContain(
+		'stored before suspension',
+	)
+
+	const afterUnsuspend = await invoke()
+	expect(afterUnsuspend.status).toBe(200)
+	expect(afterUnsuspend.body).toMatchObject({
+		ok: true,
+		idempotency: { replayed: true },
+		result: { reply: 'stored before suspension' },
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+})
+
 test('package runtime can dynamically invoke the current published export from another package', async () => {
 	const db = createDatabase()
 	seedRuntimeDispatchPackages()

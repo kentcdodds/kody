@@ -43,9 +43,10 @@ import {
  *
  * - `completed`: the sandbox ran and the export succeeded.
  * - `failed`: the sandbox ran and errored, the module/export was missing, the
- *   owning account is suspended (403 `account_suspended`), or an unexpected
- *   error interrupted the run. Keyed callers persist this as a terminal
- *   ledger state.
+ *   owning account is suspended (403 `account_suspended`; the keyed path
+ *   checks this before claiming, so it only lands here mid-invocation), or an
+ *   unexpected error interrupted the run. Keyed callers persist this as a
+ *   terminal ledger state.
  * - `artifact-unavailable`: artifact preparation failed transiently before
  *   any sandbox work started. Nothing executed, so keyed callers release
  *   their claim and key-less callers can simply retry.

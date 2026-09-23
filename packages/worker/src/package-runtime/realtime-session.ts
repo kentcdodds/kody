@@ -2,7 +2,10 @@ import { DurableObject } from 'cloudflare:workers'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { buildFacetName } from '#mcp/app-runner-facet-names.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
-import { isAccountSuspendedError } from '#worker/account/account-suspension.ts'
+import {
+	accountSuspendedErrorCode,
+	isAccountSuspendedError,
+} from '#worker/account/account-suspension.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
@@ -745,12 +748,24 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		if (request.method === 'POST' && url.pathname.endsWith('/emit')) {
 			const body = (await request.json()) as PackageRealtimeEmitPayload
 			await this.initializeBinding(body.binding)
+			if (await this.closeSocketsIfOwnerSuspended(body.binding)) {
+				return Response.json({
+					delivered: false,
+					reason: accountSuspendedErrorCode,
+				} satisfies PackageRealtimeEmitResult)
+			}
 			return Response.json(await this.emitToSession(body.sessionId, body.data))
 		}
 
 		if (request.method === 'POST' && url.pathname.endsWith('/broadcast')) {
 			const body = (await request.json()) as PackageRealtimeBroadcastPayload
 			await this.initializeBinding(body.binding)
+			if (await this.closeSocketsIfOwnerSuspended(body.binding)) {
+				return Response.json({
+					deliveredCount: 0,
+					sessionIds: [],
+				} satisfies PackageRealtimeBroadcastResult)
+			}
 			return Response.json(
 				await this.broadcast({
 					facet: body.facet,
@@ -847,6 +862,20 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 			return
 		}
 		await this.applyHookActions(sessionId, actions)
+	}
+
+	private async closeSocketsIfOwnerSuspended(
+		binding: PackageRealtimeBindingState,
+	) {
+		const suspended = await resolveBackgroundMcpUser(
+			this.env.APP_DB,
+			binding.userId,
+		).then(
+			() => false,
+			(error: unknown) => isAccountSuspendedError(error),
+		)
+		if (suspended) this.closeAllSockets(1008, 'account-suspended')
+		return suspended
 	}
 
 	private closeAllSockets(code: number, reason: string) {

@@ -220,6 +220,7 @@ test('package realtime session closes open sockets without running hooks once th
 					ws: WebSocket,
 					message: string,
 				) => Promise<void>
+				fetch: (request: Request) => Promise<Response>
 			}
 			anyInstance.stateSnapshot = {
 				binding: {
@@ -256,6 +257,36 @@ test('package realtime session closes open sockets without running hooks once th
 			).resolves.toBeUndefined()
 			expect(hookWorkerRequested).toBe(false)
 			expect(closes).toEqual([[1008, 'account-suspended']])
+
+			const post = (path: string, body: Record<string, unknown>) =>
+				anyInstance.fetch(
+					new Request(`https://package-realtime.invalid/session/${path}`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							binding: anyInstance.stateSnapshot.binding,
+							...body,
+						}),
+					}),
+				)
+			const emitted = await post('emit', {
+				sessionId: 'session-1',
+				data: { type: 'hello' },
+			})
+			await expect(emitted.json()).resolves.toEqual({
+				delivered: false,
+				reason: 'account_suspended',
+			})
+			const broadcast = await post('broadcast', { data: { type: 'hello' } })
+			await expect(broadcast.json()).resolves.toEqual({
+				deliveredCount: 0,
+				sessionIds: [],
+			})
+			expect(closes).toEqual([
+				[1008, 'account-suspended'],
+				[1008, 'account-suspended'],
+				[1008, 'account-suspended'],
+			])
 		},
 	)
 })
