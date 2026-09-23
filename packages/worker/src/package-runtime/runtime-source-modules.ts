@@ -10,6 +10,7 @@ import {
 	createRelativeImportSpecifier,
 	normalizeWorkspaceModulePath,
 	packageRuntimeModulePrefix,
+	publicRuntimeModulePath,
 	resolveRelativeModulePath,
 	runtimeModulePath,
 } from './module-graph-paths.ts'
@@ -792,9 +793,54 @@ export function parsePackageRuntimeModulePathPackageId(modulePath: string) {
 }
 
 /**
+ * Late-bound `kody:runtime` exports that package code may import verbatim
+ * from the shared runtime. `packageStorage`, `packageSecrets`, `default`, and
+ * `KodyRuntime` are added per facade. Everything else the shared runtime
+ * exports (stamp, bound-secret, bound-storage, and metering helpers) is
+ * bundler-internal: it can enter secret authority for any package id, so
+ * package-facing modules must list exports explicitly, never `export *`.
+ */
+const kodyRuntimeSharedExportNames = [
+	'kody',
+	'createAuthenticatedFetch',
+	'secretHeaders',
+	'oauthClientCredentials',
+	'packageContext',
+	'email',
+	'workflows',
+	'packages',
+	'events',
+] as const
+
+/**
+ * `kody:runtime` target for modules without saved-package provenance (ad hoc
+ * execute code, unstamped roots). Same public surface as the shared runtime,
+ * minus the bundler-internal helpers.
+ */
+export function createPublicRuntimeModuleSource() {
+	const exportNames = [
+		...kodyRuntimeSharedExportNames,
+		'packageStorage',
+		'packageSecrets',
+		'KodyRuntime',
+		'default',
+	]
+	return `
+export { ${exportNames.join(', ')} } from './runtime.js';
+`.trim()
+}
+
+export function isKodyPublicRuntimeModulePath(modulePath: string) {
+	return (
+		modulePath === publicRuntimeModulePath ||
+		modulePath.endsWith(`/${publicRuntimeModulePath}`)
+	)
+}
+
+/**
  * Virtual runtime module for one saved package: re-exports the shared
- * runtime and overrides `packageStorage` with a variant bound to the
- * package's immutable id. The bundler rewrites `kody:runtime` imports in
+ * runtime's public surface and overrides `packageStorage` with a variant
+ * bound to the package's immutable id. The bundler rewrites `kody:runtime` imports in
  * modules that originate from that package to this module, so
  * `packageStorage()` keeps resolving to the declaring package's bucket even
  * when the module is statically imported into a foreign execution context.
@@ -807,7 +853,7 @@ export function createPackageRuntimeModuleSource(packageId: string) {
 	// `.__kody_virtual__/runtime.js`), in every graph or artifact prefix.
 	const baseRuntimeSpecifier = '../runtime.js'
 	return `
-export * from ${JSON.stringify(baseRuntimeSpecifier)};
+export { ${kodyRuntimeSharedExportNames.join(', ')} } from ${JSON.stringify(baseRuntimeSpecifier)};
 import __kodyBaseRuntimeDefault, { __kodyCreatePackageBoundStorage, __kodyCreatePackageBoundSecrets } from ${JSON.stringify(
 		baseRuntimeSpecifier,
 	)};
@@ -893,6 +939,30 @@ function collectReferencedPackageRuntimeModulePaths(
 	return packageRuntimePaths
 }
 
+function collectReferencedPublicRuntimeModulePaths(
+	modules: WorkerLoaderModules,
+) {
+	const publicRuntimePaths = new Set<string>()
+	const remember = (modulePath: string) => {
+		const normalizedPath = normalizeWorkspaceModulePath(modulePath)
+		if (isKodyPublicRuntimeModulePath(normalizedPath)) {
+			publicRuntimePaths.add(normalizedPath)
+		}
+	}
+	for (const modulePath of Object.keys(modules)) {
+		remember(modulePath)
+	}
+	for (const [modulePath, source] of iterateModuleSourceTexts(modules)) {
+		for (const node of collectLiteralImportNodes(source)) {
+			const resolvedPath = resolveRelativeModulePath(modulePath, node.specifier)
+			if (resolvedPath) {
+				remember(resolvedPath)
+			}
+		}
+	}
+	return publicRuntimePaths
+}
+
 export function refreshKodyRuntimeModules(
 	modules: WorkerLoaderModules,
 	options?: {
@@ -917,6 +987,12 @@ export function refreshKodyRuntimeModules(
 			),
 		)
 	}
+	const publicRuntimePaths = collectReferencedPublicRuntimeModulePaths(modules)
+	for (const modulePath of publicRuntimePaths) {
+		runtimePaths.add(
+			normalizeWorkspaceModulePath(joinPath(dirname(modulePath), 'runtime.js')),
+		)
+	}
 	// Artifact-only graphs omit the canonical root and used to materialize a
 	// full runtime copy at every prefix. That created multiple stamp ALS
 	// instances while `globalThis[Symbol.for('kody.getSecretAuthority')]`
@@ -933,6 +1009,9 @@ export function refreshKodyRuntimeModules(
 	}
 	for (const [modulePath, packageId] of packageRuntimeEntries) {
 		refreshed[modulePath] = createPackageRuntimeModuleSource(packageId)
+	}
+	for (const modulePath of publicRuntimePaths) {
+		refreshed[modulePath] = createPublicRuntimeModuleSource()
 	}
 	return refreshed
 }
@@ -956,6 +1035,7 @@ function runtimeModuleSourceForPath(
 function isStrippableKodyRuntimeModulePath(modulePath: string) {
 	return (
 		isKodyRuntimeModulePath(modulePath) ||
+		isKodyPublicRuntimeModulePath(modulePath) ||
 		parsePackageRuntimeModulePathPackageId(modulePath) != null
 	)
 }
@@ -1082,14 +1162,34 @@ ${createPackageImportProxySource(input)}
 `.trim()
 }
 
+export function buildInternalKodyVirtualImportMessage(label: string) {
+	return (
+		`${label} references an internal Kody runtime module (.__kody_virtual__/). ` +
+		`Import public helpers from "kody:runtime" instead.`
+	)
+}
+
 export function createComputedDynamicImportGuardSource(input: {
 	helperName: string
 }) {
+	// Coerce once, exactly as import() would, so a specifier object cannot
+	// pass the check with one toString() and load a different path.
 	return `
 const ${input.helperName} = async (specifier) => {
-	if (typeof specifier === 'string' && specifier.startsWith(${JSON.stringify(
-		packageSpecifierPrefix,
-	)})) {
+	const resolvedSpecifier = \`\${specifier}\`;
+	let decodedSpecifier = resolvedSpecifier;
+	try {
+		decodedSpecifier = decodeURIComponent(resolvedSpecifier);
+	} catch {}
+	if (
+		/__kody_virtual__/i.test(resolvedSpecifier) ||
+		/__kody_virtual__/i.test(decodedSpecifier)
+	) {
+		throw new Error(
+			${JSON.stringify(buildInternalKodyVirtualImportMessage('Dynamic import'))},
+		);
+	}
+	if (resolvedSpecifier.startsWith(${JSON.stringify(packageSpecifierPrefix)})) {
 		const runtimeStorage = globalThis[Symbol.for('kody.runtimeStorage')];
 		const packages = runtimeStorage?.getStore?.()?.packages;
 		if (packages == null || typeof packages.invoke !== 'function') {
@@ -1100,11 +1200,11 @@ const ${input.helperName} = async (specifier) => {
 		return {
 			default: async (params) =>
 				params === undefined
-					? await packages.invoke(specifier)
-					: await packages.invoke(specifier, { params }),
+					? await packages.invoke(resolvedSpecifier)
+					: await packages.invoke(resolvedSpecifier, { params }),
 		};
 	}
-	return await import(specifier);
+	return await import(resolvedSpecifier);
 };
 `.trim()
 }
