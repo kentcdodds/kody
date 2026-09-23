@@ -146,9 +146,15 @@ reject unauthorized calls, even if a test or internal caller accidentally passes
 an unfiltered registry.
 
 Role and permission checks use the authenticated MCP caller context for the
-current request. Do **not** cache role or permission decisions into Vectorize
-metadata, OAuth grants, package state, or session-scoped data; role revocation
-must take effect on the next request.
+current request. That context carries the account owner's roles for interactive
+MCP sessions and for background package callers alike (jobs, webhooks,
+subscriptions, and other package invocations), and the checks do not look at
+`executionOrigin`. A `requiredRole: 'admin'` capability is therefore callable
+unattended from package code owned by an admin; see
+[Background and package callers](./architecture/authorization.md#background-and-package-callers).
+Do **not** cache role or permission decisions into Vectorize metadata, OAuth
+grants, package state, or session-scoped data; role revocation must take effect
+on the next request.
 
 ### Feature-flag-gated capabilities
 
