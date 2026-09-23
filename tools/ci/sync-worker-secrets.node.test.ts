@@ -116,6 +116,29 @@ test('NAME=SOURCE specs upload the source variable under the worker secret name'
 		vi.unstubAllEnvs()
 	}
 
+	// Required specs fail closed on the empty string GitHub Actions renders for
+	// an unset secret instead of silently skipping it.
+	vi.stubEnv('CLOUDFLARE_API_TOKEN', 'deploy-token')
+	vi.stubEnv('CLOUDFLARE_RUNTIME_API_TOKEN', '')
+	const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
+		throw new Error('process.exit called')
+	}) as never)
+	consoleError.mockImplementation(() => {})
+	try {
+		await expect(
+			buildSecrets({
+				...baseOptions,
+				setFromEnv: ['CLOUDFLARE_API_TOKEN=CLOUDFLARE_RUNTIME_API_TOKEN'],
+			}),
+		).rejects.toThrow('process.exit called')
+		expect(consoleError).toHaveBeenCalledWith(
+			'Missing required environment variable: CLOUDFLARE_RUNTIME_API_TOKEN',
+		)
+	} finally {
+		exitSpy.mockRestore()
+		vi.unstubAllEnvs()
+	}
+
 	const spawnEnv = buildSpawnEnv(
 		{
 			...baseOptions,

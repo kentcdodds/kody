@@ -261,6 +261,9 @@ function parseSetPair(pair: string) {
  * alias form lets a worker receive a different value than the variable of the
  * same name in the deploy shell (for example a narrower `CLOUDFLARE_API_TOKEN`
  * than the one wrangler itself authenticates with).
+ *
+ * `--set-from-env` rejects empty values: GitHub Actions renders an unset
+ * secret as `''`, so accepting it would silently skip a required secret.
  */
 export function parseEnvSourceSpec(spec: string) {
 	const separator = spec.indexOf('=')
@@ -292,7 +295,7 @@ export async function buildSecrets(options: CliOptions) {
 	for (const spec of options.setFromEnv) {
 		const { key, sourceKey } = parseEnvSourceSpec(spec)
 		const value = process.env[sourceKey]
-		if (typeof value !== 'string') {
+		if (typeof value !== 'string' || value.length === 0) {
 			fail(`Missing required environment variable: ${sourceKey}`)
 		}
 		secrets.set(key, value)
