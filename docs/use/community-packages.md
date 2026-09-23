@@ -78,16 +78,16 @@ The catalog defaults to **Best**. **Newest** orders by last community publish.
 **Featured** is editorial placement only — not a safety badge. There is no
 trusted-listing review mark.
 
-The detail page opens with the README. The facts row shows **Version** from
-`package.json#version` when the author set a string (same label on catalog
-cards), plus license, last publish date, and the pinned commit. Next to
-**Featured** (when present) a pill says **Install**, **Installed**, **Forked**,
-or **Fork outdated** / **Fork ahead**. When default-branch HEAD is newer than
-the last package publish, a **HEAD ahead of published** badge appears. Owners
-click that badge to review the unpublished file diff and publish HEAD. You can
-also ask your agent to use `communitySearch` or `communityGet`. After
-`communityPublish`, confirm `license`, `pinned_commit`, and the other listing
-fields match intent — see
+The Repo tab shows package chrome first: the name, then the install control
+beside it for non-owners (see [One-click install](#one-click-install)). Below
+that, a badge row can show **HEAD ahead of published**, **Featured**, and **Fork
+ahead**. Owners click **HEAD ahead of published** to review the unpublished file
+diff and publish HEAD. The facts block lists version from `package.json#version`
+when the author set a string (same label on catalog cards), plus license, last
+publish date, pinned commit, rating, forks, and adaptation effort. The README
+renders under the frame. You can also ask your agent to use `communitySearch` or
+`communityGet`. After `communityPublish`, confirm `license`, `pinned_commit`,
+and the other listing fields match intent — see
 [Listing verification](../guides/package-apps.md#listing-verification) in the
 package apps guide.
 

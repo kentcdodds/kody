@@ -10,7 +10,9 @@ The account rail ("Account sections") lists every account page plus Repositories
 (`/@username`, the canonical repository list) and Connections
 (`/account/connections`, connected agents). Experiments opt-in lives at
 `/account/experiments`. The rail is rendered by `AccountPageHeader` in
-`packages/worker/client/routes/account-management-components.tsx`.
+`packages/worker/client/routes/account-management-components.tsx`. Below 860px
+it collapses to a `<details>` menu. On short pages the rail scrolls inside the
+content box.
 
 ## How to get there
 

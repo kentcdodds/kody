@@ -84,12 +84,13 @@ Use the MCP `email` domain:
   the plan's `email_message_bytes` per-message cap.
 - `emailAttachmentGet` returns stored attachment bytes by attachment id.
 - `emailMessageList` lists stored inbound and outbound messages. Rows include
-  `classification` and `classification_reason`; pass an optional
-  `classification` filter (`accepted` or `quarantined`) to narrow the list.
+  `classification` and `classification_reason` and omit parsed bodies; pass an
+  optional `classification` filter (`accepted` or `quarantined`) to narrow the
+  list. Call `emailMessageGet` when a handler needs body text.
 - `emailMessageSearch` searches stored messages by case-insensitive substring
   match against the subject, header `From`, and envelope sender. It accepts the
   same `inbox_id` / `direction` / `processing_status` / `delivery_status`
-  filters and limit caps as `emailMessageList`.
+  filters and limit caps as `emailMessageList`. Search rows also omit bodies.
 - `emailMessageGet` returns parsed bodies, headers, thread metadata, and
   attachment metadata.
 - `emailMessageDelete` deletes one stored inbound or outbound message owned by

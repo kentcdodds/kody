@@ -285,9 +285,10 @@ still finish the write when truncated; only the returned row list is capped.
 
 For dedicated inspection, use:
 
-- **`storageExport`** — export one storage bucket as JSON
+- **`storageExport`** — export one storage bucket as JSON (`page_size` max 1000)
 - **`storageQuery`** — run SQL against one storage bucket (read-only by default,
-  opt into writes explicitly)
+  opt into writes explicitly). Returns at most 1000 rows and sets
+  `truncated: true` when more matched — same cap as `sql(...)`.
 
 Both are scoped to the caller. Code running as a saved package (invocations,
 jobs, package apps, retrievers) may name only buckets that package owns — its

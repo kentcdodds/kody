@@ -134,10 +134,10 @@ it with fresh Workflow step state and a new export rather than replaying the
 cached pending poll sequence. Hourly freshness is stale unless every configured
 database is fresh.
 
-The operator **Seal day** action does not run the seal on the HTTP request. It
-enqueues workflow `kody-production-seal-day` (instance id `seal-day-<day>`) and
-redirects to `/seal-status`. The hourly `sealRecentCompleteDays` scan on the
-freshness cron stays a synchronous `sealFullBackupDay` call.
+The operator **Seal day** action enqueues workflow `kody-production-seal-day`
+(instance id `seal-day-<day>`) and redirects to `/seal-status`. The hourly
+`sealRecentCompleteDays` scan on the freshness cron is a synchronous
+`sealFullBackupDay` call.
 
 ## Deploy
 

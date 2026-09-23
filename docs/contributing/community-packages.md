@@ -112,15 +112,17 @@ connect a second agent — see [Onboarding process](./architecture/onboarding.md
 Official `@kody/*` listings are catalog and fork source — person accounts run
 the owned copy, not the platform package. One-click install on listing detail
 puts a fork icon beside the name for official `@kody/*` packages. Listings from
-another account use the same fork icon and `createDoubleCheck` (second click
-sends `acknowledged: true`; the endpoint responds `409` without it).
-`/community` cards overlay a per-request `viewerInstall` when the viewer already
-has a matching slug saved package or a `community_forks` row, so those cards
-show **Installed** / **Forked** / **Fork outdated** / **Fork ahead**. Listing
-detail uses title-slot icons for install, an open icon for a current fork, a
-link-break icon for an outdated fork, a clipboard when a setup prompt exists,
-and a **Fork ahead** badge when the pin is already in the fork history. An
-installed fork offers **Use in agent** under the listing.
+another account use the same fork icon and `createDoubleCheck` (first click arms
+**Confirm fork**; the second click sends `acknowledged: true`; the endpoint
+responds `409` without it). User-facing install UX:
+[Public packages](../use/community-packages.md#one-click-install). `/community`
+cards overlay a per-request `viewerInstall` when the viewer already has a
+matching slug saved package or a `community_forks` row, so those cards show
+**Installed** / **Forked** / **Fork outdated** / **Fork ahead**. Listing detail
+uses title-slot icons for install, an open icon for a current fork, a link-break
+icon for an outdated fork, a clipboard when a setup prompt exists, and a **Fork
+ahead** badge when the pin is already in the fork history. An installed fork
+offers **Use in agent** under the listing.
 
 Reports survive listing deletion via denormalized listing name and owner on the
 report row.
@@ -329,8 +331,10 @@ Client routes: `packages/worker/client/routes/community*`
   responses are `nosniff` + `Content-Disposition: inline` and never `text/html`
   or JavaScript.
 - `/community/:listingId` — the same page by listing id; redirects to the
-  canonical URL. Metadata, ratings, README, one-click install (requires login
-  and a generic confirm), fork prompt, and report link (report requires login)
+  canonical URL. Metadata, ratings, README, one-click install (login required;
+  other-account listings arm **Confirm fork** via `createDoubleCheck`; official
+  `@kody/*` install on first click), fork prompt, and report link (report
+  requires login)
 - `/community/:listingId/icon/:iconCommit` — cached package icon or generated
   fallback; serves the current icon commit or the pinned snapshot commit, and
   rejects stale commit URLs
