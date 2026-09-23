@@ -2,9 +2,10 @@
 name: ship-pr
 description: >
   Babysit a PR: iterate with AI reviewers and CI until green, get it ready,
-  optionally squash-merge as Kody and watch the deploy, then send a Discord
-  summary. Medium risk waits for AI reviewer(s) and addresses valid feedback.
-  Use when a pull request needs to be shepherded to done.
+  optionally squash-merge as Kody and watch the deploy, file leftover repo
+  papercuts through friction-log/file, then send a Discord summary. Medium risk
+  waits for AI reviewer(s) and addresses valid feedback. Use when a pull request
+  needs to be shepherded to done.
 ---
 
 # Ship PR
@@ -71,6 +72,42 @@ Batch related expand steps into fewer PRs when risk posture allows.
 When policy + risk allow: squash-merge via `kody:@kentcdodds/github/pr/merge`
 `{ prUrl, mergeMethod: 'squash' }`, watch deploy. Useful: `pr/get-checks`,
 `request`, `graphql` on the same package.
+
+## Leftover friction
+
+After the merge or park decision (or when ending the run), and before the
+Discord summary, scan the session for leftover out-of-scope repo papercuts:
+confusing docs, flaky local-only tests, secret-handshake commands, lying types,
+Cloud Agent VM gotchas this PR does not already fix.
+
+Fix obvious in-scope low-risk friction in the PR when you are already touching
+that area, and mention the fix. File leftovers with
+`kody:@kentcdodds/friction-log/file` via Kody MCP `execute` (`items`, one
+papercut each). Include `whatHappened`, `whatYouWanted`, `howToReproduce`, and
+`cost` when known. Omit secrets. If there is nothing to file, skip the call or
+pass empty `items`. Do not invent papercuts. Do not use `gh issue create` or a
+raw GitHub issue POST.
+
+Policy: [friction log](../../../docs/contributing/friction-log.md). Outside this
+pass: [file-friction](../file-friction/SKILL.md).
+
+```javascript
+import fileFriction from 'kody:@kentcdodds/friction-log/file'
+
+export default async function main() {
+	return fileFriction({
+		items: [
+			{
+				title: 'what hurt',
+				whatHappened: '...',
+				whatYouWanted: '...',
+				howToReproduce: '...',
+				cost: '...',
+			},
+		],
+	})
+}
+```
 
 ## Done → Discord
 
