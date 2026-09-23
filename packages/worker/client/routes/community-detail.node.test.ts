@@ -3,7 +3,9 @@ import { expect, test } from 'vitest'
 import {
 	CONFIRM_FORK_LABEL,
 	decideCommunityInstallClick,
+	isCommunityInstallConfirmArmed,
 	paintPackageTitleInstallConfirm,
+	shouldResetInstallConfirm,
 	shouldResetInstallOnShellSnapshot,
 } from './community-detail-install.ts'
 import {
@@ -107,6 +109,61 @@ test('paintPackageTitleInstallConfirm swaps the fork label for Confirm fork', ()
 	paintPackageTitleInstallConfirm(control, false)
 	expect(attributes.get('aria-label')).toBe('Fork')
 	expect(tooltip.textContent).toBe('This listing is from another account.')
+})
+
+test('install confirm is armed only for the listing that received the first click', () => {
+	expect(
+		isCommunityInstallConfirmArmed({
+			confirmed: true,
+			confirmedListingId: 'listing-a',
+			listingId: 'listing-a',
+		}),
+	).toBe(true)
+	expect(
+		isCommunityInstallConfirmArmed({
+			confirmed: true,
+			confirmedListingId: 'listing-a',
+			listingId: 'listing-b',
+		}),
+	).toBe(false)
+	expect(
+		isCommunityInstallConfirmArmed({
+			confirmed: true,
+			confirmedListingId: 'listing-a',
+			listingId: null,
+		}),
+	).toBe(false)
+	expect(
+		isCommunityInstallConfirmArmed({
+			confirmed: false,
+			confirmedListingId: 'listing-a',
+			listingId: 'listing-a',
+		}),
+	).toBe(false)
+	expect(
+		shouldResetInstallConfirm({
+			confirmedListingId: 'listing-a',
+			listingId: 'listing-a',
+		}),
+	).toBe(false)
+	expect(
+		shouldResetInstallConfirm({
+			confirmedListingId: 'listing-a',
+			listingId: 'listing-b',
+		}),
+	).toBe(true)
+	expect(
+		shouldResetInstallConfirm({
+			confirmedListingId: 'listing-a',
+			listingId: null,
+		}),
+	).toBe(true)
+	expect(
+		shouldResetInstallConfirm({
+			confirmedListingId: null,
+			listingId: 'listing-b',
+		}),
+	).toBe(false)
 })
 
 test('a same-listing shell snapshot keeps an in-flight install', () => {

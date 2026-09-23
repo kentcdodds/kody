@@ -38,6 +38,26 @@ export function decideCommunityInstallClick(input: {
 	}
 }
 
+export function isCommunityInstallConfirmArmed(input: {
+	confirmed: boolean
+	confirmedListingId: string | null
+	listingId: string | null
+}): boolean {
+	return (
+		input.confirmed &&
+		input.confirmedListingId != null &&
+		input.confirmedListingId === input.listingId
+	)
+}
+
+export function shouldResetInstallConfirm(input: {
+	confirmedListingId: string | null
+	listingId: string | null
+}): boolean {
+	if (input.confirmedListingId == null) return false
+	return input.confirmedListingId !== input.listingId
+}
+
 export function paintPackageTitleInstallConfirm(
 	control: ConfirmControl,
 	armed: boolean,

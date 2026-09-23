@@ -26,7 +26,9 @@ import {
 } from '#client/package-title-install-progress.ts'
 import {
 	decideCommunityInstallClick,
+	isCommunityInstallConfirmArmed,
 	paintPackageTitleInstallConfirm,
+	shouldResetInstallConfirm,
 	shouldResetInstallOnShellSnapshot,
 } from '#client/routes/community-detail-install.ts'
 import { type AppLoaderData } from '#universal/loader-data.ts'
@@ -82,6 +84,7 @@ export function CommunityDetailRoute(handle: Handle) {
 	let installMessage: string | null = null
 	let installOutcome: CommunityInstallOutcome | null = null
 	const installConfirm = createDoubleCheck(handle)
+	let installConfirmListingId: string | null = null
 	let readmeContent: string | null = null
 	let readmeFences: Array<HighlightedCode> = []
 	let hasAgentsDocs = false
@@ -161,7 +164,15 @@ export function CommunityDetailRoute(handle: Handle) {
 			installState = 'idle'
 			installMessage = null
 			installOutcome = null
-			installConfirm.reset()
+		}
+		const snapshotListingId = getListingPageRef(pathname)?.listingId ?? null
+		if (
+			shouldResetInstallConfirm({
+				confirmedListingId: installConfirmListingId,
+				listingId: snapshotListingId,
+			})
+		) {
+			resetInstallConfirm()
 		}
 		readmeContent = snapshot.readmeContent
 		readmeFences = snapshot.readmeFences ?? []
@@ -480,6 +491,11 @@ export function CommunityDetailRoute(handle: Handle) {
 		}
 	}
 
+	function resetInstallConfirm() {
+		installConfirm.reset()
+		installConfirmListingId = null
+	}
+
 	function handleCommunityInstallClick(event: Event) {
 		const target = event.target
 		if (!(target instanceof Element)) return
@@ -487,11 +503,16 @@ export function CommunityDetailRoute(handle: Handle) {
 		if (!control) return
 		const loginLink = control instanceof HTMLAnchorElement
 		const official = control.getAttribute('data-official') === 'true'
+		const listingId = control.getAttribute('data-package-title-listing')
 		const decision = decideCommunityInstallClick({
 			installState: loginLink ? 'idle' : installState,
 			alreadyInstalled: loginLink ? false : installOutcome != null,
 			requiresConfirm: !official,
-			confirmed: installConfirm.doubleCheck,
+			confirmed: isCommunityInstallConfirmArmed({
+				confirmed: installConfirm.doubleCheck,
+				confirmedListingId: installConfirmListingId,
+				listingId,
+			}),
 		})
 		switch (decision) {
 			case 'ignore':
@@ -500,13 +521,14 @@ export function CommunityDetailRoute(handle: Handle) {
 			case 'arm':
 				event.preventDefault()
 				installConfirm.arm()
+				installConfirmListingId = listingId
 				paintPackageTitleInstallConfirm(control, true)
 				if (control instanceof HTMLElement) control.focus()
 				return
 			case 'submit':
 				if (loginLink) return
 				event.preventDefault()
-				installConfirm.reset()
+				resetInstallConfirm()
 				void submitInstall()
 				return
 			default: {
@@ -520,10 +542,19 @@ export function CommunityDetailRoute(handle: Handle) {
 		const target = event.target
 		if (!(target instanceof Element)) return
 		const control = target.closest('[data-community-install]')
-		if (!control || !installConfirm.doubleCheck) return
+		if (
+			!control ||
+			!isCommunityInstallConfirmArmed({
+				confirmed: installConfirm.doubleCheck,
+				confirmedListingId: installConfirmListingId,
+				listingId: control.getAttribute('data-package-title-listing'),
+			})
+		) {
+			return
+		}
 		const next = event.relatedTarget
 		if (next instanceof Node && control.contains(next)) return
-		installConfirm.reset()
+		resetInstallConfirm()
 		paintPackageTitleInstallConfirm(control, false)
 	}
 
@@ -535,7 +566,14 @@ export function CommunityDetailRoute(handle: Handle) {
 			installState = 'idle'
 			installMessage = null
 			installOutcome = null
-			installConfirm.reset()
+		}
+		if (
+			shouldResetInstallConfirm({
+				confirmedListingId: installConfirmListingId,
+				listingId: ref?.listingId ?? null,
+			})
+		) {
+			resetInstallConfirm()
 		}
 		if (!ref) return
 
