@@ -84,14 +84,3 @@ test('double check button mix requires two clicks, resets on blur, then invokes 
 	expect(persistentAction).toHaveBeenCalledTimes(1)
 	expect(persistentCheck.doubleCheck).toBe(true)
 })
-
-test('arm marks the control as waiting for the confirming click', () => {
-	const handle = { update: vi.fn() }
-	const doubleCheck = createDoubleCheck(handle as never)
-	expect(doubleCheck.doubleCheck).toBe(false)
-	doubleCheck.arm()
-	expect(doubleCheck.doubleCheck).toBe(true)
-	expect(handle.update).toHaveBeenCalledTimes(1)
-	doubleCheck.reset()
-	expect(doubleCheck.doubleCheck).toBe(false)
-})

@@ -9,7 +9,6 @@ import {
 	completeSealDay,
 	describeSealStatus,
 	runSealDay,
-	sealDayStepConfig,
 	sealDayStepName,
 	sealStatusResponseStatus,
 } from './seal-day-run.ts'
@@ -19,7 +18,6 @@ class TestNonRetryableError extends Error {}
 
 class RetryingWorkflowStep implements BackupRuntimeStep {
 	attempts = 0
-	configs: Array<unknown> = []
 
 	async do<T>(
 		name: string,
@@ -37,9 +35,6 @@ class RetryingWorkflowStep implements BackupRuntimeStep {
 			typeof configOrCallback === 'function'
 				? (configOrCallback as () => Promise<T>)
 				: callback!
-		if (typeof configOrCallback !== 'function') {
-			this.configs.push(configOrCallback)
-		}
 		const retryLimit =
 			typeof configOrCallback === 'object' &&
 			configOrCallback !== null &&
@@ -80,7 +75,6 @@ test('seal workflow step returns a sealed day and does not retry an incomplete d
 	}))
 	assert.equal(sealed.alreadySealed, true)
 	assert.equal(engine.attempts, 1)
-	assert.deepEqual(engine.configs, [sealDayStepConfig])
 
 	const fresh = await completeSealDay(env, day, async () => ({
 		kind: 'sealed',

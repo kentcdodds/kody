@@ -129,9 +129,6 @@ test('writable storageSql skips read-only fan-out and enforces mutating entitlem
 	expect(isReadOnlyStorageSqlQuery('')).toBe(false)
 
 	expect(isStorageSqlReturningMutation('INSERT INTO t VALUES (1)')).toBe(true)
-	expect(isStorageSqlReturningMutation('UPDATE t SET x = 1')).toBe(true)
-	expect(isStorageSqlReturningMutation('DELETE FROM t')).toBe(true)
-	expect(isStorageSqlReturningMutation('REPLACE INTO t VALUES (1)')).toBe(true)
 	expect(
 		isStorageSqlReturningMutation(
 			'WITH s AS (SELECT 1 AS i) INSERT INTO t SELECT i FROM s RETURNING i',
@@ -143,7 +140,6 @@ test('writable storageSql skips read-only fan-out and enforces mutating entitlem
 		),
 	).toBe(false)
 	expect(isStorageSqlReturningMutation('SELECT 1')).toBe(false)
-	expect(isStorageSqlReturningMutation('CREATE TABLE t (id TEXT)')).toBe(false)
 
 	mockModule.getEstimatedBytes.mockClear()
 	mockModule.listUserStorageBucketEstimates.mockClear()

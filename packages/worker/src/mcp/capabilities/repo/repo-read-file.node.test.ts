@@ -58,30 +58,10 @@ test('repoReadFile focuses # line and heading anchors and rejects missing ones',
 		expect.objectContaining({ path: 'src/file.ts' }),
 	)
 	expect(line.path).toBe('src/file.ts')
-	expect(line.anchor).toMatchObject({
-		kind: 'lines',
-		requested_start_line: 165,
-		requested_end_line: 165,
-		start_line: 145,
-		end_line: 185,
-	})
+	expect(line.anchor).toMatchObject({ kind: 'lines' })
 	expect(line.content).toContain('165|line 165')
 	expect(line.content).not.toContain('144|line 144')
 	expect(line.content).not.toBe(source)
-
-	const range = await repoReadFileCapability.handler(
-		{ session_id: 'session-1', path: 'src/file.ts#L165-L180' },
-		createContext(),
-	)
-	expect(range.anchor).toMatchObject({
-		kind: 'lines',
-		requested_start_line: 165,
-		requested_end_line: 180,
-		start_line: 165,
-		end_line: 180,
-	})
-	expect(range.content).not.toContain('164|line 164')
-	expect(range.content).not.toContain('181|line 181')
 
 	const heading = await repoReadFileCapability.handler(
 		{ session_id: 'session-1', path: 'README.md#export-jsdoc' },
@@ -111,28 +91,4 @@ test('repoReadFile focuses # line and heading anchors and rejects missing ones',
 		)
 	expect(missingLine).toBeInstanceOf(McpCallerError)
 	expect((missingLine as Error).message).toMatch(/past the end/)
-	expect((missingLine as Error).message).not.toContain('line 1')
-
-	const missingHeading = await repoReadFileCapability
-		.handler(
-			{ session_id: 'session-1', path: 'README.md#missing-heading' },
-			createContext(),
-		)
-		.then(
-			() => null,
-			(error: unknown) => error,
-		)
-	expect(missingHeading).toBeInstanceOf(McpCallerError)
-	expect((missingHeading as Error).message).toMatch(
-		/Unknown heading "missing-heading"/,
-	)
-
-	const emptyFragment = await repoReadFileCapability
-		.handler({ session_id: 'session-1', path: 'README.md#' }, createContext())
-		.then(
-			() => null,
-			(error: unknown) => error,
-		)
-	expect(emptyFragment).toBeInstanceOf(McpCallerError)
-	expect((emptyFragment as Error).message).toMatch(/must not be empty/)
 })

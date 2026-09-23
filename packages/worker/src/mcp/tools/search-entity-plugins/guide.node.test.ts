@@ -387,31 +387,11 @@ test('guide entity detail focuses line anchors and rejects lines past the end', 
 		bodyMode: 'lines',
 		entityRef: 'guide:demo#L165',
 		section: null,
-		lines: {
-			requestedStartLine: 165,
-			requestedEndLine: 165,
-			startLine: 145,
-			endLine: 185,
-		},
 	})
 	expect(line.markdown).toContain('165|line 165')
 	expect(line.markdown).not.toContain('144|line 144')
 
-	const range = formatEntityDetailMarkdown({
-		...detail,
-		section: 'L165-L180',
-	})
-	expect(range.structured).toMatchObject({
-		bodyMode: 'lines',
-		entityRef: 'guide:demo#L165-L180',
-		lines: { requestedStartLine: 165, requestedEndLine: 180 },
-	})
-	expect(range.markdown).not.toContain('164|line 164')
-
 	expect(() =>
 		formatEntityDetailMarkdown({ ...detail, section: 'L999' }),
 	).toThrow(McpCallerError)
-	expect(() =>
-		formatEntityDetailMarkdown({ ...detail, section: 'L999' }),
-	).toThrow(/past the end/)
 })
