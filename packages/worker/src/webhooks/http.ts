@@ -3,6 +3,11 @@ import {
 	AccountDeletionInProgressError,
 	assertAccountWritable,
 } from '#worker/account/deletion-state.ts'
+import {
+	accountSuspendedErrorCode,
+	accountSuspendedMessage,
+	isAccountSuspended,
+} from '#worker/account/account-suspension.ts'
 import { checkRateLimit } from '#app/rate-limit.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
@@ -414,6 +419,35 @@ export async function handleWebhookIngressRequest(
 				},
 			},
 			{ status: 409 },
+		)
+	}
+
+	if (
+		await isAccountSuspended({
+			db: env.APP_DB,
+			stableUserId: endpoint.userId,
+		})
+	) {
+		await recordWebhookDelivery({
+			env,
+			endpoint,
+			kodyId: savedPackage.kodyId,
+			outcome: 'rejected',
+			httpStatus: 403,
+			error: accountSuspendedErrorCode,
+			payloadBytes: 0,
+			startedAt: receivedAt,
+			waitUntil,
+		})
+		return jsonResponse(
+			{
+				ok: false,
+				error: {
+					code: accountSuspendedErrorCode,
+					message: accountSuspendedMessage,
+				},
+			},
+			{ status: 403 },
 		)
 	}
 

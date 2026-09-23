@@ -3,7 +3,7 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	accountSuspendedMessage,
 	getAccountRestrictionsByStableUserId,
-} from '#app/account-suspension.ts'
+} from '#worker/account/account-suspension.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'

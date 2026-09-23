@@ -2,6 +2,10 @@ import { DurableObject } from 'cloudflare:workers'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { buildFacetName } from '#mcp/app-runner-facet-names.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
+import {
+	accountSuspendedErrorCode,
+	isAccountSuspendedError,
+} from '#worker/account/account-suspension.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
@@ -405,13 +409,7 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 	}
 
 	private async purgeSessionState() {
-		for (const socket of this.ctx.getWebSockets()) {
-			try {
-				socket.close(1000, 'account-deleted')
-			} catch {
-				// Ignore sockets that are already closing.
-			}
-		}
+		this.closeAllSockets(1000, 'account-deleted')
 		this.stateSnapshot = createInitialState()
 		this.cachedAppWorkerKey = null
 		this.cachedAppWorkerKeyLookup = null
@@ -596,6 +594,10 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		binding: PackageRealtimeBindingState
 		payload: PackageRealtimeHookInput
 	}) {
+		// The build input (including its caller identity) outlives a single
+		// event, so re-check suspension per hook; the resolver's short cache
+		// keeps this off the D1 hot path.
+		await resolveBackgroundMcpUser(this.env.APP_DB, input.binding.userId)
 		const appWorker = await this.getPackageAppWorker(input.binding)
 		const entrypoint = appWorker.stub.getEntrypoint(
 			appWorker.entrypointName,
@@ -712,6 +714,13 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		} catch (error) {
 			delete this.stateSnapshot.sessions[sessionId]
 			await this.persistState()
+			if (isAccountSuspendedError(error)) {
+				this.closeAllSockets(1008, 'account-suspended')
+				return Response.json(
+					{ ok: false, error: { code: error.code, message: error.message } },
+					{ status: 403 },
+				)
+			}
 			try {
 				server.close(1011, 'connect hook failed')
 			} catch {
@@ -746,12 +755,24 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		if (request.method === 'POST' && url.pathname.endsWith('/emit')) {
 			const body = (await request.json()) as PackageRealtimeEmitPayload
 			await this.initializeBinding(body.binding)
+			if (await this.closeSocketsIfOwnerSuspended(body.binding)) {
+				return Response.json({
+					delivered: false,
+					reason: accountSuspendedErrorCode,
+				} satisfies PackageRealtimeEmitResult)
+			}
 			return Response.json(await this.emitToSession(body.sessionId, body.data))
 		}
 
 		if (request.method === 'POST' && url.pathname.endsWith('/broadcast')) {
 			const body = (await request.json()) as PackageRealtimeBroadcastPayload
 			await this.initializeBinding(body.binding)
+			if (await this.closeSocketsIfOwnerSuspended(body.binding)) {
+				return Response.json({
+					deliveredCount: 0,
+					sessionIds: [],
+				} satisfies PackageRealtimeBroadcastResult)
+			}
 			return Response.json(
 				await this.broadcast({
 					facet: body.facet,
@@ -831,16 +852,47 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		if (!session || !binding) return
 		session.lastSeenAt = new Date().toISOString()
 		await this.persistState()
-		const actions = await this.resolveRealtimeHookResult({
-			binding,
-			payload: {
-				event: 'message',
-				facet: session.facet,
-				session: createSessionRecord(session),
-				message: decodeInboundMessage(message),
-			},
-		})
+		let actions: Array<PackageRealtimeAction>
+		try {
+			actions = await this.resolveRealtimeHookResult({
+				binding,
+				payload: {
+					event: 'message',
+					facet: session.facet,
+					session: createSessionRecord(session),
+					message: decodeInboundMessage(message),
+				},
+			})
+		} catch (error) {
+			if (!isAccountSuspendedError(error)) throw error
+			this.closeAllSockets(1008, 'account-suspended')
+			return
+		}
 		await this.applyHookActions(sessionId, actions)
+	}
+
+	private async closeSocketsIfOwnerSuspended(
+		binding: PackageRealtimeBindingState,
+	) {
+		const suspended = await resolveBackgroundMcpUser(
+			this.env.APP_DB,
+			binding.userId,
+		).then(
+			() => false,
+			(error: unknown) => isAccountSuspendedError(error),
+		)
+		if (suspended) this.closeAllSockets(1008, 'account-suspended')
+		return suspended
+	}
+
+	private closeAllSockets(code: number, reason: string) {
+		for (const socket of this.ctx.getWebSockets()) {
+			try {
+				socket.close(code, reason)
+			} catch {
+				// Ignore sockets that are already closing.
+			}
+		}
 	}
 
 	private async handleDisconnect(
@@ -858,15 +910,21 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		delete this.stateSnapshot.sessions[sessionId]
 		await this.persistState()
 		if (!session || !binding) return
-		const actions = await this.resolveRealtimeHookResult({
-			binding,
-			payload: {
-				event: 'disconnect',
-				facet: session.facet,
-				session: createSessionRecord(session),
-				close,
-			},
-		})
+		let actions: Array<PackageRealtimeAction>
+		try {
+			actions = await this.resolveRealtimeHookResult({
+				binding,
+				payload: {
+					event: 'disconnect',
+					facet: session.facet,
+					session: createSessionRecord(session),
+					close,
+				},
+			})
+		} catch (error) {
+			if (isAccountSuspendedError(error)) return
+			throw error
+		}
 		await this.applyHookActions(sessionId, actions, session)
 	}
 }

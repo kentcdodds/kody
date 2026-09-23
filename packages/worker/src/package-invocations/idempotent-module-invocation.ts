@@ -11,6 +11,8 @@ import {
 	type RunRecordHandle,
 } from '#worker/run-records/types.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
+import { isAccountSuspendedError } from '#worker/account/account-suspension.ts'
+import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
 import {
 	buildPackageInvocationStorageId,
 	resolveInvocationRuntimeName,
@@ -102,6 +104,25 @@ export async function invokeSavedPackageModule(input: {
 	executorTimeoutMs?: number | null
 	signal?: AbortSignal
 }) {
+	// Before the ledger: a suspended owner must neither replay a stored
+	// response nor leave a terminal denial that outlives the suspension.
+	// Other identity failures fall through to module execution, which
+	// reports them as before.
+	const suspension = await resolveBackgroundMcpUser(
+		input.env.APP_DB,
+		input.actor.userId,
+	).then(
+		() => null,
+		(error: unknown) => (isAccountSuspendedError(error) ? error : null),
+	)
+	if (suspension) {
+		return buildJsonErrorResponse({
+			status: 403,
+			code: suspension.code,
+			message: suspension.message,
+			idempotencyKey: input.idempotencyKey,
+		})
+	}
 	const requestHash = await createRequestHash({
 		packageId: input.savedPackage.id,
 		exportName: input.invocationName,

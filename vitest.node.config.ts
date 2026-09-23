@@ -72,6 +72,13 @@ export default mergeConfig(
 						'packages/worker/src/test-support/cloudflare-workers-stub.ts',
 					),
 				},
+				{
+					find: 'cloudflare:workflows',
+					replacement: resolve(
+						rootDir,
+						'packages/worker/src/test-support/cloudflare-workflows-stub.ts',
+					),
+				},
 				// The generated deferred module lives under a `node_modules/`
 				// path, which vite-node would externalize (so the
 				// `cloudflare:workers` alias above would not reach it). Point node

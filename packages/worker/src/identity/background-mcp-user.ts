@@ -1,4 +1,5 @@
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
+import { AccountSuspendedError } from '#worker/account/account-suspension.ts'
 import { getUserRolesAndPermissions } from './permissions-db.ts'
 import { resolveDisplayName } from './username.ts'
 
@@ -32,7 +33,7 @@ async function loadBackgroundMcpUser(
 ): Promise<McpUserContext> {
 	const user = await db
 		.prepare(
-			`SELECT id, email, username, display_name
+			`SELECT id, email, username, display_name, suspended_at
 			 FROM users
 			 WHERE stable_user_id = ?`,
 		)
@@ -42,9 +43,13 @@ async function loadBackgroundMcpUser(
 			email: string
 			username: string
 			display_name: string | null
+			suspended_at: string | null
 		}>()
 	if (!user) {
 		throw new Error(`Background MCP user was not found: ${userId}`)
+	}
+	if (user.suspended_at) {
+		throw new AccountSuspendedError()
 	}
 	const profileDisplayName = user.display_name?.trim()
 
@@ -107,9 +112,15 @@ async function loadBackgroundMcpUser(
 /**
  * Resolve account identity for background execution from its stable user id.
  *
+ * This is the suspension choke point for background lanes (jobs, package
+ * invocations and subscriptions, workflows, retrievers, realtime hooks):
+ * a suspended account throws `AccountSuspendedError` instead of resolving.
+ *
  * The short per-binding cache deduplicates nested and bursty package calls
  * while allowing account profile changes to propagate without isolate-wide
- * invalidation machinery. Rejected reads are evicted immediately.
+ * invalidation machinery, so a new suspension reaches an isolate that already
+ * cached the account within the cache TTL. Rejected reads (including
+ * suspension) are evicted immediately, so unsuspending takes effect at once.
  */
 export async function resolveBackgroundMcpUser(
 	db: D1Database,
