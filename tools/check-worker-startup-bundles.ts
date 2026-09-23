@@ -200,6 +200,9 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Opaque packageSecrets.get + share-grant remap / derived-ops on the
 		// platform startup graph: local dry-run 5_151_668 against the previous
 		// 5_150_000 budget.
+		// Sibling daily automation quota (`automation_invocations_per_day`)
+		// spills into the platform MCP invoke graph (fits in opaque-secrets
+		// headroom above).
 		maxEntryBytes: 5_153_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
