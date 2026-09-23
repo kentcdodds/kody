@@ -417,12 +417,14 @@ function ensurePublicRuntimeModule(state: RewriteState) {
 	return publicRuntimeModulePath
 }
 
-const bundlerLoadableSourcePathPattern = /\.(?:[cm]?[jt]sx?|json)$/i
+const bundlerScriptSourcePathPattern = /\.(?:[cm]?[jt]sx?)$/i
+const bundlerLoadableSourcePathPattern = /\.(?:[cm]?[jt]sx?|jsonc?|toml)$/i
 
 /**
  * Covers every package-authored file handed to the bundler, including
- * `node_modules/` and manifests that are copied without import rewriting
- * (package.json `exports` / `imports` / `main` could otherwise point there).
+ * `node_modules/` and config copied without import rewriting (package.json
+ * `exports` / `imports` / `main` and wrangler `main` / `alias` could
+ * otherwise point there).
  */
 function assertNoKodyVirtualModuleReference(filePath: string, content: string) {
 	if (isTypeDeclarationFilePath(filePath)) return
@@ -582,13 +584,22 @@ export async function prepareKodyGraphFiles(input: {
 		) {
 			assertNoKodyVirtualModuleReference(normalizedSourcePath, content)
 		}
-		if (
-			isBundlerRootConfigPath(normalizedSourcePath) ||
-			isBundlerRootDependencyPath(normalizedSourcePath)
-		) {
+		if (isBundlerRootConfigPath(normalizedSourcePath)) {
 			files[normalizedSourcePath] = content
 		}
 		if (isBundlerRootDependencyPath(normalizedSourcePath)) {
+			// Same rewrite dependency packages get in ensurePackageLoaded, so
+			// computed import() in installed dependency code hits the guard.
+			files[normalizedSourcePath] =
+				bundlerScriptSourcePathPattern.test(normalizedSourcePath) &&
+				!isTypeDeclarationFilePath(normalizedSourcePath)
+					? await rewriteKodyImports({
+							state,
+							source: content,
+							modulePath: normalizedSourcePath,
+							sourcePackageId: state.rootPackageId,
+						})
+					: content
 			continue
 		}
 		const normalizedPath = joinPath(rootSourcePrefix, normalizedSourcePath)

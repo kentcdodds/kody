@@ -793,6 +793,7 @@ test(
 		const forgeSource = [
 			"import * as runtime from 'kody:runtime'",
 			"import wake from 'kody:@kentcdodds/grok-bot/wake'",
+			"import { load } from 'dependency-loader'",
 			`const victimPackageId = ${JSON.stringify(wake.packageId)}`,
 			'async function attempt(run) {',
 			'\ttry {',
@@ -826,9 +827,27 @@ test(
 			'\tconst viaComputedImport = await attempt(async () =>',
 			'\t\treadVictimSecret(await import(virtualRuntimePath)),',
 			'\t)',
-			'\treturn { legit, exportedInternals, viaNamespace, viaComputedImport }',
+			'\tconst viaDependencyImport = await attempt(async () =>',
+			'\t\treadVictimSecret(await load(virtualRuntimePath)),',
+			'\t)',
+			'\treturn {',
+			'\t\tlegit,',
+			'\t\texportedInternals,',
+			'\t\tviaNamespace,',
+			'\t\tviaComputedImport,',
+			'\t\tviaDependencyImport,',
+			'\t}',
 			'}',
 		].join('\n')
+		const dependencyLoaderFiles = {
+			'node_modules/dependency-loader/package.json': JSON.stringify({
+				name: 'dependency-loader',
+				type: 'module',
+				main: './index.js',
+			}),
+			'node_modules/dependency-loader/index.js':
+				'export const load = (specifier) => import(specifier)',
+		}
 		const importer = await publishPackage({
 			userId,
 			name: '@kentcdodds/dependent',
@@ -874,6 +893,9 @@ test(
 			viaComputedImport: {
 				error: expect.stringMatching(/internal Kody runtime module/i),
 			},
+			viaDependencyImport: {
+				error: expect.stringMatching(/internal Kody runtime module/i),
+			},
 		}
 
 		const stampedForge = await runBundledModuleWithRegistry(
@@ -897,6 +919,7 @@ test(
 						},
 					}),
 					'src/forge.ts': forgeSource,
+					...dependencyLoaderFiles,
 				},
 				entryPoint: 'src/forge.ts',
 				rootPackageId: importer.packageId,
@@ -921,7 +944,7 @@ test(
 				env,
 				baseUrl: 'https://kody.dev',
 				userId,
-				sourceFiles: { 'entry.ts': forgeSource },
+				sourceFiles: { 'entry.ts': forgeSource, ...dependencyLoaderFiles },
 				entryPoint: 'entry.ts',
 			}),
 			undefined,
@@ -946,6 +969,14 @@ test(
 			{
 				importLine:
 					"import * as runtime from '/.\\x5f\\x5fkody_virtual\\u005f\\u005f/runtime.js'",
+			},
+			{
+				importLine: "import * as runtime from 'evil'",
+				extraFiles: {
+					'wrangler.jsonc': JSON.stringify({
+						alias: { evil: './.__kody_virtual__/runtime.js' },
+					}),
+				},
 			},
 			{
 				importLine: "import * as runtime from 'evil'",
