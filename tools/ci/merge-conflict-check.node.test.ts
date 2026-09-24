@@ -8,6 +8,7 @@ import {
 	mergeConflictCheckName,
 	pollMergeability,
 	reportMergeConflictCheck,
+	reportOpenPullRequestMergeConflicts,
 	type PullRequestMergeability,
 } from './merge-conflict-check.ts'
 
@@ -250,11 +251,115 @@ test('main fails closed when the head SHA is missing', async () => {
 	}
 })
 
+test('a base-branch push refreshes every open pull request head check', async () => {
+	const dirtySha = 'a'.repeat(40)
+	const cleanSha = 'b'.repeat(40)
+	const calls: Array<{ method: string; url: string; body: unknown }> = []
+	const fetchImpl: typeof fetch = (input, init) => {
+		const url = String(input)
+		const method = init?.method ?? 'GET'
+		const body =
+			typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
+		calls.push({ method, url, body })
+		if (url.includes('/pulls?')) {
+			return Promise.resolve(
+				Response.json([
+					{ number: 7, head: { sha: dirtySha } },
+					{ number: 8, head: { sha: cleanSha } },
+				]),
+			)
+		}
+		if (url.endsWith('/pulls/7')) {
+			return Promise.resolve(
+				Response.json(pull({ mergeable: false, mergeable_state: 'dirty' })),
+			)
+		}
+		if (url.endsWith('/pulls/8')) {
+			return Promise.resolve(
+				Response.json(pull({ mergeable: true, mergeable_state: 'clean' })),
+			)
+		}
+		if (method === 'POST' && url.endsWith('/check-runs')) {
+			return Promise.resolve(Response.json({ id: calls.length }))
+		}
+		if (method === 'PATCH') {
+			return Promise.resolve(Response.json({ id: 1 }))
+		}
+		return Promise.resolve(new Response('unexpected', { status: 500 }))
+	}
+	const code = await reportOpenPullRequestMergeConflicts({
+		token: 'test-token',
+		repository: 'kentcdodds/kody',
+		baseRef: 'main',
+		fetchImpl,
+		sleep: () => Promise.resolve(),
+		maxAttempts: 2,
+		concurrency: 2,
+	})
+	expect(code).toBe(0)
+	const list = calls.find((call) => call.url.includes('/pulls?'))
+	expect(list?.url).toContain('state=open')
+	expect(list?.url).toContain('base=main')
+	const headShas = calls
+		.filter((call) => call.method === 'POST')
+		.map((call) => headShaFrom(call.body))
+		.sort()
+	expect(headShas).toEqual([cleanSha, dirtySha].sort())
+	const conclusions = calls
+		.filter((call) => call.method === 'PATCH')
+		.map((call) => conclusionFrom(call.body))
+		.sort()
+	expect(conclusions).toEqual(['failure', 'success'])
+})
+
+test('an open pull request scan fails closed when the list is unreadable', async () => {
+	const fetchImpl: typeof fetch = () =>
+		Promise.resolve(Response.json({ unexpected: true }))
+	await expect(
+		reportOpenPullRequestMergeConflicts({
+			token: 'test-token',
+			repository: 'kentcdodds/kody',
+			baseRef: 'main',
+			fetchImpl,
+			maxAttempts: 1,
+		}),
+	).rejects.toThrow('Open pull request list was not an array')
+})
+
+test('main fails closed for an unknown mode or a scan without a base ref', async () => {
+	const previousExitCode = process.exitCode
+	consoleError.mockImplementation(() => {})
+	try {
+		await main({
+			GITHUB_TOKEN: 'test-token',
+			GITHUB_REPOSITORY: 'kentcdodds/kody',
+			MERGE_CONFLICT_MODE: 'open-pulls',
+		})
+		expect(process.exitCode).toBe(1)
+		process.exitCode = 0
+		await main({
+			GITHUB_TOKEN: 'test-token',
+			GITHUB_REPOSITORY: 'kentcdodds/kody',
+			MERGE_CONFLICT_MODE: 'validate',
+			PR_NUMBER: '12',
+			HEAD_SHA: headSha,
+		})
+		expect(process.exitCode).toBe(1)
+	} finally {
+		process.exitCode = previousExitCode
+	}
+})
+
 test('the workflow posts the check from the default branch and does not run pull request code', () => {
 	const workflow = readFileSync('.github/workflows/merge-conflicts.yml', 'utf8')
 	const source = readFileSync('tools/ci/merge-conflict-check.ts', 'utf8')
 	expect(workflow).toContain('name: Report merge conflicts')
 	expect(workflow).toContain('pull_request_target:')
+	expect(workflow).toContain('push:')
+	expect(workflow).toContain('- edited')
+	expect(workflow).toContain('github.event.changes.base')
+	expect(workflow).toContain("'open-pulls'")
+	expect(workflow).not.toContain('npm run validate')
 	expect(workflow).toContain(
 		'ref: ${{ github.event.repository.default_branch }}',
 	)
@@ -349,6 +454,20 @@ function fakeGithub(pulls: Array<ReturnType<typeof pull>>): {
 			state.failPulls = value
 		},
 	}
+}
+
+function headShaFrom(body: unknown) {
+	if (typeof body !== 'object' || body === null || !('head_sha' in body)) {
+		return ''
+	}
+	return typeof body.head_sha === 'string' ? body.head_sha : ''
+}
+
+function conclusionFrom(body: unknown) {
+	if (typeof body !== 'object' || body === null || !('conclusion' in body)) {
+		return ''
+	}
+	return typeof body.conclusion === 'string' ? body.conclusion : ''
 }
 
 function checkSummary(body: unknown) {

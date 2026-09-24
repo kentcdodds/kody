@@ -5,12 +5,18 @@ import { isExecutedDirectly } from '../node-runtime.ts'
  * `dirty`: it cannot build the merge commit, so Validate, Preview, and CLA
  * never report a check. This command runs from the default-branch
  * `pull_request_target` workflow, which still starts, and writes a check onto
- * the head SHA. It does not check out or execute pull request code.
+ * the head SHA. A push to the base branch reruns that check for every open
+ * pull request, because the head commit does not move when the base does.
+ * Retargeting the base does the same. It does not check out or execute pull
+ * request code, and it does not run Validate.
  */
 export const mergeConflictCheckName = '🚧 Merge conflicts'
 
 export const mergeConflictPollAttempts = 20
 export const mergeConflictPollDelayMs = 3_000
+const openPullRequestPageSize = 100
+const openPullRequestMaxPages = 20
+const openPullRequestScanConcurrency = 4
 
 const githubApiVersion = '2022-11-28'
 const safeBaseRefPattern = /^[A-Za-z0-9._/-]+$/
@@ -177,10 +183,67 @@ export async function reportMergeConflictCheck(input: {
 	}
 }
 
+export async function reportOpenPullRequestMergeConflicts(input: {
+	token: string
+	repository: string
+	baseRef: string
+	detailsUrl?: string
+	fetchImpl?: FetchLike
+	sleep?: (ms: number) => Promise<void>
+	maxAttempts?: number
+	delayMs?: number
+	concurrency?: number
+}): Promise<number> {
+	const fetchImpl = input.fetchImpl ?? fetch
+	const { owner, repo } = parseRepository(input.repository)
+	const client = createGithubClient({
+		token: input.token,
+		owner,
+		repo,
+		fetchImpl,
+		detailsUrl: input.detailsUrl,
+	})
+	const pulls = await client.listOpenPullRequests(input.baseRef)
+	const codes: Array<number> = []
+	await mapPool(
+		pulls,
+		input.concurrency ?? openPullRequestScanConcurrency,
+		async (pullRequest) => {
+			codes.push(
+				await reportMergeConflictCheck({
+					token: input.token,
+					repository: input.repository,
+					pullNumber: pullRequest.number,
+					headSha: pullRequest.headSha,
+					detailsUrl: input.detailsUrl,
+					fetchImpl,
+					sleep: input.sleep,
+					maxAttempts: input.maxAttempts,
+					delayMs: input.delayMs,
+				}),
+			)
+		},
+	)
+	return codes.some((code) => code !== 0) ? 1 : 0
+}
+
 export async function main(env: NodeJS.ProcessEnv = process.env) {
 	try {
 		const token = requiredEnv(env, 'GITHUB_TOKEN')
 		const repository = requiredEnv(env, 'GITHUB_REPOSITORY')
+		const mode = env.MERGE_CONFLICT_MODE
+		if (mode === 'open-pulls') {
+			process.exitCode = await reportOpenPullRequestMergeConflicts({
+				token,
+				repository,
+				baseRef: requiredEnv(env, 'BASE_REF'),
+				detailsUrl: workflowRunUrl(env),
+			})
+			return
+		}
+		if (mode !== undefined && mode !== 'pull-request') {
+			throw new Error(`Unknown MERGE_CONFLICT_MODE ${mode}`)
+		}
 		const pullNumber = parsePullNumber(requiredEnv(env, 'PR_NUMBER'))
 		const headSha = parseHeadSha(requiredEnv(env, 'HEAD_SHA'))
 		process.exitCode = await reportMergeConflictCheck({
@@ -287,9 +350,15 @@ function delay(ms: number) {
 	})
 }
 
+type ListedPullRequest = {
+	number: number
+	headSha: string
+}
+
 type GithubClient = {
 	openCheck: (headSha: string) => Promise<number>
 	readPullRequest: (pullNumber: number) => Promise<PullRequestMergeability>
+	listOpenPullRequests: (baseRef: string) => Promise<Array<ListedPullRequest>>
 	completeCheck: (
 		checkRunId: number,
 		result: ResolvedMergeability,
@@ -356,6 +425,21 @@ function createGithubClient(input: {
 			)
 			return parsePullRequest(payload)
 		},
+		async listOpenPullRequests(baseRef) {
+			const pulls: Array<ListedPullRequest> = []
+			for (let page = 1; page <= openPullRequestMaxPages; page += 1) {
+				const payload = await github(
+					'GET',
+					`${repoPath}/pulls?state=open&base=${encodeURIComponent(baseRef)}&per_page=${String(openPullRequestPageSize)}&page=${String(page)}`,
+				)
+				const pagePulls = parseOpenPullRequestPage(payload)
+				pulls.push(...pagePulls)
+				if (pagePulls.length < openPullRequestPageSize) return pulls
+			}
+			throw new Error(
+				`More than ${String(openPullRequestMaxPages * openPullRequestPageSize)} open pull requests target ${baseRef}`,
+			)
+		},
 		async completeCheck(checkRunId, result) {
 			const output = describeMergeConflictCheck(result)
 			await github('PATCH', `${repoPath}/check-runs/${String(checkRunId)}`, {
@@ -402,6 +486,52 @@ function readCheckRunId(payload: unknown) {
 		throw new Error('GitHub check run response did not include an id')
 	}
 	return payload.id
+}
+
+async function mapPool<T>(
+	items: ReadonlyArray<T>,
+	concurrency: number,
+	run: (item: T) => Promise<void>,
+) {
+	if (concurrency < 1) {
+		throw new Error('concurrency must be at least 1')
+	}
+	let next = 0
+	const workers = Array.from(
+		{ length: Math.min(concurrency, items.length) },
+		async () => {
+			while (next < items.length) {
+				const index = next
+				next += 1
+				const item = items[index]
+				if (item === undefined) return
+				await run(item)
+			}
+		},
+	)
+	await Promise.all(workers)
+}
+
+function parseOpenPullRequestPage(payload: unknown): Array<ListedPullRequest> {
+	if (!Array.isArray(payload)) {
+		throw new Error('Open pull request list was not an array')
+	}
+	return payload.map((entry) => {
+		if (typeof entry !== 'object' || entry === null) {
+			throw new Error('Open pull request entry was not an object')
+		}
+		const record = entry as { number?: unknown; head?: { sha?: unknown } }
+		if (typeof record.number !== 'number') {
+			throw new Error('Open pull request entry is missing a number')
+		}
+		const headSha = record.head?.sha
+		if (typeof headSha !== 'string' || !/^[0-9a-f]{40}$/i.test(headSha)) {
+			throw new Error(
+				`Open pull request ${String(record.number)} is missing a head SHA`,
+			)
+		}
+		return { number: record.number, headSha }
+	})
 }
 
 function parsePullRequest(payload: unknown): PullRequestMergeability {

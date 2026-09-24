@@ -2,11 +2,16 @@ name: Report merge conflicts
 
 # pull_request workflows do not start when GitHub cannot build the merge
 # commit (mergeable_state=dirty). This file lives on the default branch and
-# still runs. The job stays green: a pull_request_target run is recorded on
-# the default-branch SHA, and a failed job would mark that commit failed.
-# The script writes 🚧 Merge conflicts on the head SHA instead, which is what
-# `gh pr checks` reads. It never checks out or executes pull request code.
+# still runs. The job stays green: a pull_request_target or push run is
+# recorded on the default-branch SHA, and a failed job would mark that commit
+# failed. The script writes 🚧 Merge conflicts on each pull request head SHA,
+# which is what `gh pr checks` reads. A push to the base branch and a base
+# retarget rerun that check, because the head commit does not move in those
+# cases. The job never checks out or executes pull request code.
 on:
+  push:
+    branches:
+      - main
   pull_request_target:
     branches:
       - main
@@ -15,6 +20,7 @@ on:
       - reopened
       - synchronize
       - ready_for_review
+      - edited
 
 permissions:
   contents: read
@@ -25,7 +31,11 @@ jobs:
   merge-conflicts:
     runs-on: ubuntu-latest
     name: Report merge conflicts
-    timeout-minutes: 5
+    timeout-minutes: 15
+    # Title and body edits do not change mergeability. Base retargets do.
+    if: >-
+      github.event_name == 'push' || github.event.action != 'edited' ||
+      github.event.changes.base
     steps:
       - name: 📦 Checkout default branch
         uses: actions/checkout@v6.0.2
@@ -41,6 +51,11 @@ jobs:
       - name: 🚧 Report merge conflicts
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MERGE_CONFLICT_MODE: >-
+            ${{ github.event_name == 'push' && 'open-pulls' || 'pull-request' }}
+          BASE_REF: >-
+            ${{ github.event_name == 'push' && github.ref_name ||
+            github.event.pull_request.base.ref }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node tools/ci/merge-conflict-check.ts
