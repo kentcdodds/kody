@@ -5,7 +5,11 @@ import { communityForkAdoptCapability } from '#mcp/capabilities/community/adopt.
 import { communityDomain } from '#mcp/capabilities/community/domain.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
-import { lockSecretToPackage, saveSecret } from '#mcp/secrets/service.ts'
+import {
+	lockSecretToPackage,
+	saveSecret,
+	setSecretAllowedHosts,
+} from '#mcp/secrets/service.ts'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import {
@@ -798,6 +802,10 @@ test(
 			token: '{{secret:wakeToken|scope=user}}',
 			duringStamp: wake.packageId,
 		})
+		// Shared stamp ALS makes Symbol.for('kody.getSecretAuthority') a live
+		// read of the current meter stamp. The steal module is itself metered as
+		// `dependent`, so after wake() returns the getter still reports that id —
+		// not null (the old dual-ALS quirk) and never the victim package id.
 		expect(attack).toMatchObject({
 			getterType: 'function',
 			hungRunType: 'undefined',
@@ -808,9 +816,11 @@ test(
 				/^Secret "wakeToken" is not allowed for package "dependent"/,
 			),
 			redefineError: expect.stringMatching(/Cannot|redefine|configurable/i),
-			forgedAfterRedefine: null,
-			getAuthority: null,
+			forgedAfterRedefine: importer.packageId,
+			getAuthority: importer.packageId,
 		})
+		expect(attack.forgedAfterRedefine).not.toBe(wake.packageId)
+		expect(attack.getAuthority).not.toBe(wake.packageId)
 		expect(JSON.stringify(stolen.result)).not.toContain('wake-secret-value')
 	},
 )
@@ -1246,5 +1256,132 @@ test(
 			.bind(fork.packageId, userId)
 			.first<{ adopted_at: string | null; adoption_note: string | null }>()
 		expect(forkRow).toEqual({ adopted_at: null, adoption_note: null })
+	},
+)
+
+test(
+	'execute static import stamps package-scoped secrets for outbound fetch',
+	{ timeout: 90_000 },
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		await ensureSecretAuthorityTestSchema()
+		const userId = `user-${crypto.randomUUID()}`
+		const wake = await publishPackage({
+			userId,
+			name: '@kentcdodds/grok-bot',
+			kodyId: 'grok-bot',
+			sourceFiles: {
+				'package.json': JSON.stringify({
+					name: '@kentcdodds/grok-bot',
+					exports: { './wake': './src/wake.ts' },
+					kody: {
+						id: 'grok-bot',
+						description: 'Wake helper',
+						secretMounts: {
+							wakeToken: { name: 'wakeToken', scope: 'package' },
+						},
+					},
+				}),
+				'src/wake.ts': [
+					"import { packageSecrets } from 'kody:runtime'",
+					'export default async function wake(probe) {',
+					'\tconst duringStamp = typeof probe === "function" ? probe() : null',
+					'\tconst token = await packageSecrets.get("wakeToken")',
+					'\tlet fetchOutcome',
+					'\ttry {',
+					'\t\tconst response = await fetch("https://example.com/wake", {',
+					'\t\t\tmethod: "POST",',
+					'\t\t\theaders: { Authorization: `Bearer ${token}` },',
+					'\t\t})',
+					'\t\tfetchOutcome = { ok: true, status: response.status }',
+					'\t} catch (error) {',
+					'\t\tfetchOutcome = {',
+					'\t\t\tok: false,',
+					'\t\t\terror: error instanceof Error ? error.message : String(error),',
+					'\t\t}',
+					'\t}',
+					'\treturn { token, duringStamp, fetchOutcome }',
+					'}',
+				].join('\n'),
+			},
+			exports: [{ artifactName: './wake', entryPoint: 'src/wake.ts' }],
+		})
+		await markUnadoptedFork({
+			userId,
+			packageId: wake.packageId,
+			sourceId: wake.sourceId,
+			kodyId: 'grok-bot',
+		})
+		const storageContext = {
+			sessionId: null,
+			appId: null,
+			packageId: wake.packageId,
+			storageId: wake.packageId,
+		}
+		await saveSecret({
+			env,
+			userId,
+			scope: 'package',
+			name: 'wakeToken',
+			value: 'package-wake-secret-value',
+			storageContext,
+		})
+		await setSecretAllowedHosts({
+			env,
+			userId,
+			scope: 'package',
+			name: 'wakeToken',
+			allowedHosts: ['example.com'],
+			storageContext,
+		})
+
+		const executeImportBundle = await buildKodyModuleBundle({
+			env,
+			baseUrl: 'https://kody.dev',
+			userId,
+			sourceFiles: {
+				'entry.ts': [
+					"import wake from 'kody:@kentcdodds/grok-bot/wake'",
+					'export default async function main() {',
+					'\treturn await wake(() => {',
+					'\t\tconst getDuring = globalThis[Symbol.for("kody.getSecretAuthority")]',
+					'\t\treturn typeof getDuring === "function" ? getDuring() : null',
+					'\t})',
+					'}',
+				].join('\n'),
+			},
+			entryPoint: 'entry.ts',
+		})
+		const bundleSource = Object.values(executeImportBundle.modules ?? {})
+			.filter((source): source is string => typeof source === 'string')
+			.join('\n')
+		// Runtime must stay external so stamp ALS is not duplicated inside the
+		// execute bundle (hydrate installs the single shared runtime module).
+		expect(bundleSource).not.toMatch(/new AsyncLocalStorage/)
+		expect(bundleSource).toMatch(/__kodyMeterStaticPackageExport/)
+
+		const executeImport = await runBundledModuleWithRegistry(
+			env,
+			createCallerContext(userId),
+			executeImportBundle,
+			undefined,
+			{ skipCapabilityRegistry: true },
+		)
+		expect(executeImport.error).toBeUndefined()
+		const result = executeImport.result as {
+			token: string
+			duringStamp: string | null
+			fetchOutcome: { ok: true; status: number } | { ok: false; error: string }
+		}
+		expect(result.token).toBe('{{secret:wakeToken|scope=package}}')
+		expect(JSON.stringify(result)).not.toContain('package-wake-secret-value')
+		expect(result.duringStamp).toBe(wake.packageId)
+		// Stamp must make the package-scoped secret visible to outbound fetch.
+		// Network/mock failures are out of scope; visibility errors are the bug.
+		if (!result.fetchOutcome.ok) {
+			expect(result.fetchOutcome.error).not.toMatch(
+				/not visible from this runtime|exists in package scope|matching server-side package runtime context|Package-scoped secrets are only available/i,
+			)
+		}
 	},
 )

@@ -594,8 +594,36 @@ export function __kodyMeterStaticPackageExport(packageId, exportValue) {
 			);
 		},
 		apply(target, thisArg, argumentsList) {
+			const startedAtMs = Date.now();
+			// Async callees must be awaited inside ALS.run so the stamp
+			// survives awaits in the callee body (workerd loses ALS when the
+			// sync run() callback only *returns* a Promise). Sync callees
+			// stay synchronous.
+			if (target.constructor.name === 'AsyncFunction') {
+				return __kodyRunWithSecretAuthority(packageId, async () => {
+					try {
+						const value = await Reflect.apply(
+							target,
+							thisArg,
+							argumentsList,
+						);
+						__kodyRecordStaticPackageCall(
+							packageId,
+							startedAtMs,
+							'success',
+						);
+						return value;
+					} catch (error) {
+						__kodyRecordStaticPackageCall(
+							packageId,
+							startedAtMs,
+							'error',
+						);
+						throw error;
+					}
+				});
+			}
 			const invoke = () => {
-				const startedAtMs = Date.now();
 				let result;
 				try {
 					result = Reflect.apply(target, thisArg, argumentsList);
@@ -613,8 +641,18 @@ export function __kodyMeterStaticPackageExport(packageId, exportValue) {
 				// settlement.
 				if (result instanceof Promise) {
 					result.then(
-						() => __kodyRecordStaticPackageCall(packageId, startedAtMs, 'success'),
-						() => __kodyRecordStaticPackageCall(packageId, startedAtMs, 'error'),
+						() =>
+							__kodyRecordStaticPackageCall(
+								packageId,
+								startedAtMs,
+								'success',
+							),
+						() =>
+							__kodyRecordStaticPackageCall(
+								packageId,
+								startedAtMs,
+								'error',
+							),
 					);
 					return result;
 				}
