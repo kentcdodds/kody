@@ -210,9 +210,7 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Specifier-aware .__kody_virtual__ build check (bundler-resolved
 		// specifier collector incl. require(), JSON value walk) adds ~1.9 KB:
 		// local dry-run 5_157_613 against the previous 5_156_000 budget.
-		// Recent-search bare-import guard shares that module graph: local
-		// dry-run 5_160_995 against the previous 5_159_000 budget.
-		maxEntryBytes: 5_162_000,
+		maxEntryBytes: 5_159_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
@@ -307,11 +305,7 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Specifier-aware .__kody_virtual__ build check (bundler-resolved
 		// specifier collector incl. require(), JSON value walk) adds ~1.9 KB:
 		// local dry-run 3_832_503 against the previous 3_831_000 budget.
-		// Recent-search pagination patch keeps the published artifact unless
-		// bare imports are already installed. That walker sits on the runtime
-		// graph: CI dry-run 3_835_497, local dry-run 3_835_886, against the
-		// previous 3_834_000 budget.
-		maxEntryBytes: 3_837_000,
+		maxEntryBytes: 3_834_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',
