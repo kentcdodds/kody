@@ -72,6 +72,7 @@ const clientNameKindRules = [
 	{ kind: 'devin', needles: ['devin'] },
 	{ kind: 'opencode', needles: ['opencode', 'open code'] },
 	{ kind: 'openclaw', needles: ['openclaw', 'open claw'] },
+	// Token-boundary match for bare `muse` so OpenMuse / openmuse stay distinct.
 	{ kind: 'muse', needles: ['muse code', 'muse-code', 'musecode', 'muse'] },
 ] as const satisfies ReadonlyArray<{
 	kind: McpClientKind
@@ -88,7 +89,9 @@ const hostKindRules = [
 	{ kind: 'devin', hosts: ['devin.ai', 'app.devin.ai'] },
 	{ kind: 'opencode', hosts: ['opencode.ai'] },
 	{ kind: 'openclaw', hosts: ['openclaw.ai'] },
-	{ kind: 'muse', hosts: ['muse.ai', 'meta.ai', 'dev.meta.ai'] },
+	// Muse Code docs/OAuth live under dev.meta.ai — not muse.ai (video) or
+	// blanket meta.ai (unrelated Meta products).
+	{ kind: 'muse', hosts: ['dev.meta.ai'] },
 ] as const satisfies ReadonlyArray<{
 	kind: McpClientKind
 	hosts: ReadonlyArray<string>
@@ -331,11 +334,24 @@ function kindFromClientName(clientName: string | null): McpClientKind | null {
 	if (!clientName) return null
 	const normalized = clientName.toLowerCase()
 	for (const rule of clientNameKindRules) {
-		if (rule.needles.some((needle) => normalized.includes(needle))) {
+		if (
+			rule.needles.some((needle) => clientNameMatchesNeedle(normalized, needle))
+		) {
 			return rule.kind
 		}
 	}
 	return null
+}
+
+/**
+ * Match a needle as a whole token (or phrase), not an arbitrary substring.
+ * Bare `muse` must not classify OpenMuse / openmuse as Muse.
+ */
+function clientNameMatchesNeedle(normalizedClientName: string, needle: string) {
+	const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+	return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`).test(
+		normalizedClientName,
+	)
 }
 
 function kindFromHosts(hosts: ReadonlyArray<string>): McpClientKind | null {
