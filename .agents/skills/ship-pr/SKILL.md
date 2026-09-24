@@ -78,16 +78,24 @@ When policy + risk allow: squash-merge via `kody:@kentcdodds/github/pr/merge`
 ## Leftover friction
 
 After the merge or park decision (or when ending the run), and before the
-Discord summary, scan the session for leftover out-of-scope repo papercuts this
-PR did not fix: confusing docs, flaky local-only tests, secret-handshake
-commands, lying types, Cloud Agent VM gotchas. Do not push more commits onto a
-merged PR. In-scope fixes belong in the loop above, while the PR is open.
+Discord summary, scan the session for leftover out-of-scope papercuts this PR
+did not fix. Judge filing and in-scope fixes by the principles in the
+[friction log](../../../docs/contributing/friction-log.md): durable recurring
+pain with a clear owner; platform vs package routing; prefer one clear contract
+over aliases, compat layers, or owner-hardcoded special-cases. Do not push more
+commits onto a merged PR. In-scope fixes belong in the loop above, while the PR
+is open.
 
-File those leftovers with `kody:@kentcdodds/friction-log/file` via Kody MCP
-`execute` (`items`, one papercut each). Include `whatHappened`, `whatYouWanted`,
-`howToReproduce`, and `cost` when known. Omit secrets. If there is nothing to
-file, skip the call or pass empty `items`. Do not invent papercuts. Do not use
-`gh issue create` or a raw GitHub issue POST.
+File leftovers that meet the bar with `kody:@kentcdodds/friction-log/file` via
+Kody MCP `execute`. Always pass required
+`target: { host: 'github' | 'kody', repo: string }` plus `items` (one papercut
+each). Include `whatHappened`, `whatYouWanted`, `howToReproduce`, and `cost`
+when known. Platform leftovers use
+`{ host: 'github', repo: 'kentcdodds/kody' }`. Package-owned leftovers use
+`host: 'kody'` (wakes Patch; until #2575 co-import
+`kody:@kentcdodds/grok-bot/wake` in the same module). Omit secrets. If nothing
+meets the bar, skip the call or pass empty `items`. Do not invent papercuts. Do
+not use `gh issue create` or a raw GitHub issue POST.
 
 Policy: [friction log](../../../docs/contributing/friction-log.md). Outside this
 pass: [file-friction](../file-friction/SKILL.md).
@@ -97,6 +105,7 @@ import fileFriction from 'kody:@kentcdodds/friction-log/file'
 
 export default async function main() {
 	return fileFriction({
+		target: { host: 'github', repo: 'kentcdodds/kody' },
 		items: [
 			{
 				title: 'what hurt',

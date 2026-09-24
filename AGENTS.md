@@ -10,7 +10,7 @@ This file is intentionally brief. Detailed instructions live in focused docs:
 
 - Contributor documentation map:
   - [docs/contributing/index.md](./docs/contributing/index.md)
-- Friction log (repo papercuts; one issue via
+- Friction log (when/where to file, how to judge fixes; one issue via
   `kody:@kentcdodds/friction-log/create`, ship-pr leftovers via
   `kody:@kentcdodds/friction-log/file`, never raw GitHub):
   [docs/contributing/friction-log.md](./docs/contributing/friction-log.md)

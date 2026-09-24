@@ -252,6 +252,18 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	expect(filterSentryEvent(bareInternalWithoutPackfile)).toBe(
 		bareInternalWithoutPackfile,
 	)
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'packageGetGitRemote timed out reading the Artifacts git remote. Retry the call. Artifacts listServerRefs failed for https://acct.artifacts.cloudflare.net/git/production/repo-1.git: Artifacts git request timed out after 8000ms.',
+					},
+				],
+			},
+		}),
+	).toBeNull()
 
 	// Bare Agents MCP session teardown abort (`ctx.abort("destroyed")`) —
 	// KODY-CLOUDFLARE-4K. Wrapped "stream was destroyed" forms stay visible.

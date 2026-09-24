@@ -30,8 +30,8 @@ style, tests, MCP capabilities, and runtime architecture.
   the same change, or open a GitHub issue)
 - [Planned breaking changes](./planned-breaking-changes.md) (leftovers that
   still work and will be removed later, including `kody_id` / `kody.id`)
-- [Friction log](./friction-log.md) (one issue via
-  `kody:@kentcdodds/friction-log/create`, ship-pr leftovers via
+- [Friction log](./friction-log.md) (when/where to file and how to judge fixes;
+  one issue via `kody:@kentcdodds/friction-log/create`, ship-pr leftovers via
   `kody:@kentcdodds/friction-log/file`; daily Cursor agent investigates)
 
 ## Code and tooling
