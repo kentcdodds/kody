@@ -76,6 +76,18 @@ test('skips mergeable PRs and enqueues conflicted or unknown heads', () => {
 	expect(
 		decidePrCheckEnqueue(pull({ number: 1, mergeable: null }), true),
 	).toMatchObject({ action: 'enqueue', reason: 'mergeable-unknown' })
+	expect(
+		decidePrCheckEnqueue(pull({ number: 1, mergeable: false }), true, 'closed'),
+	).toMatchObject({ action: 'cleanup', reason: 'closed' })
+	expect(
+		decidePrCheckEnqueue(pull({ number: 1, mergeable: true }), true, 'closed'),
+	).toEqual({ action: 'skip', reason: 'mergeable' })
+	expect(
+		decidePrCheckEnqueue(pull({ number: 1, fork: true }), true, 'closed'),
+	).toEqual({ action: 'skip', reason: 'fork' })
+	expect(
+		decidePrCheckEnqueue(pull({ number: 1, draft: true }), true, 'closed'),
+	).toEqual({ action: 'skip', reason: 'draft' })
 })
 
 test('parses a pull payload and refuses a missing head repo', () => {
@@ -160,18 +172,26 @@ test('conflict enqueue workflows call Validate and Preview without workflow_disp
 	)
 	expect(validate).toContain('workflow_call:')
 	expect(validate).toContain('inputs.base_sha')
-	expect(validate).toContain('github.head_ref || github.ref_name')
+	expect(validate).toContain(
+		'github.event.pull_request.number || inputs.pr_number || github.ref',
+	)
 	expect(preview).toContain(
 		"github.event_name == 'push' && inputs.pr_number != ''",
 	)
 	expect(preview).toContain('pull_request_target')
+	expect(preview).toContain("inputs.action == 'cleanup'")
 	for (const source of [enqueueValidate, enqueuePreview]) {
 		expect(source).toContain('pull_request_target:')
+		expect(source).toContain('opened')
+		expect(source).toContain('reopened')
 		expect(source).toContain('branches-ignore:')
 		expect(source).toContain('./.github/actions/decide-pr-check-enqueue')
 		expect(source).not.toContain('workflow_dispatch')
 		expect(source).toContain('head.repo.fork == false')
+		expect(source).toContain('github.event.pull_request.number || github.ref')
 	}
+	expect(enqueuePreview).toContain('closed')
+	expect(enqueueValidate).not.toContain('closed')
 	expect(enqueueValidate).toContain('./.github/workflows/validate.yml')
 	expect(enqueuePreview).toContain('./.github/workflows/preview.yml')
 	expect(enqueuePreview).toContain('secrets: inherit')

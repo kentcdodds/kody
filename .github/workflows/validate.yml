@@ -15,6 +15,11 @@ on:
   workflow_dispatch:
   workflow_call:
     inputs:
+      pr_number:
+        description: PR number so a push enqueue cancels the pull_request run
+        required: false
+        type: string
+        default: ''
       base_sha:
         description: PR base SHA when the caller event has no pull_request payload
         required: false
@@ -44,10 +49,12 @@ env:
     github.event.pull_request.head.repo.fork != true &&
     secrets.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN || '' }}
 
-# Branch name, not event name, so a conflict enqueue (push /
-# pull_request_target) and a later pull_request run cancel each other.
+# PR number, not branch name or event name. A push enqueue passes
+# inputs.pr_number so it cancels the pull_request run for that PR. Fork
+# PRs keep their own numbers, and a main push stays on github.ref, so a
+# fork branch named main cannot cancel main.
 concurrency:
-  group: validate-${{ github.head_ref || github.ref_name }}
+  group: validate-${{ github.event.pull_request.number || inputs.pr_number || github.ref }}
   cancel-in-progress: true
 
 # Same checks as `npm run validate`, split across runners so CPU-heavy suites

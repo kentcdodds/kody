@@ -4,13 +4,15 @@ import { isExecutedDirectly } from '../node-runtime.ts'
 
 /**
  * GitHub does not create `pull_request` workflow runs while a PR has merge
- * conflicts, including `synchronize` (force-push and fast-forward) and
- * `ready_for_review`. Validate and Preview listen to those events, so a
- * conflicted head gets no checks. Callers enqueue the reusable workflows
- * from `push` and `pull_request_target` (`ready_for_review`) only in that
- * gap. A mergeable PR skips so the `pull_request` run stays the only one.
- * Forks and drafts never enqueue: `pull_request_target` must not hand this
- * repo's secrets to a fork.
+ * conflicts. That includes `opened`, `reopened`, `synchronize`
+ * (force-push and fast-forward), and `ready_for_review`. Validate and
+ * Preview listen to those events, so a conflicted head gets no checks.
+ * Callers enqueue the reusable workflows from `push` and from
+ * `pull_request_target` only in that gap. A mergeable PR skips so the
+ * `pull_request` run stays the only one. Closing a conflicted same-repo PR
+ * enqueues Preview cleanup, because the `pull_request` `closed` run is
+ * suppressed too. Forks and drafts never enqueue: `pull_request_target`
+ * must not hand this repo's secrets to a fork.
  */
 
 const mergeablePollAttempts = 8
@@ -44,6 +46,11 @@ export type EnqueueDecision =
 			reason: 'conflict' | 'mergeable-unknown'
 			pullRequest: OpenPullRequest
 	  }
+	| {
+			action: 'cleanup'
+			reason: 'closed'
+			pullRequest: OpenPullRequest
+	  }
 
 export function enqueueTriggerEvent(eventName: string) {
 	return eventName === 'push' || eventName === 'pull_request_target'
@@ -66,11 +73,24 @@ export function selectOpenPullRequest(
 export function decidePrCheckEnqueue(
 	pullRequest: OpenPullRequest | null,
 	pollExhausted: boolean,
+	eventAction: string | null = null,
 ): EnqueueDecision {
 	if (!pullRequest) return { action: 'skip', reason: 'no-pr' }
 	if (pullRequest.fork) return { action: 'skip', reason: 'fork' }
-	if (pullRequest.draft) return { action: 'skip', reason: 'draft' }
 	if (pullRequest.baseRef !== 'main') return { action: 'skip', reason: 'base' }
+	if (eventAction === 'closed') {
+		// Drafts never deployed. A mergeable close still gets the
+		// pull_request cleanup run.
+		if (pullRequest.draft) return { action: 'skip', reason: 'draft' }
+		if (pullRequest.mergeable === true) {
+			return { action: 'skip', reason: 'mergeable' }
+		}
+		if (pullRequest.mergeable === null && !pollExhausted) {
+			return { action: 'wait' }
+		}
+		return { action: 'cleanup', reason: 'closed', pullRequest }
+	}
+	if (pullRequest.draft) return { action: 'skip', reason: 'draft' }
 	if (pullRequest.mergeable === true) {
 		return { action: 'skip', reason: 'mergeable' }
 	}
@@ -129,6 +149,7 @@ export async function resolvePrCheckEnqueue(input: {
 	branch: string
 	repository: string
 	eventPullNumber: number | null
+	eventAction?: string | null
 	github: GithubClient
 }): Promise<EnqueueDecision> {
 	if (!enqueueTriggerEvent(input.eventName)) {
@@ -165,8 +186,9 @@ export async function resolvePrCheckEnqueue(input: {
 		)
 	}
 
+	const eventAction = input.eventAction ?? null
 	let pullRequest = await load()
-	let decision = decidePrCheckEnqueue(pullRequest, false)
+	let decision = decidePrCheckEnqueue(pullRequest, false, eventAction)
 	for (
 		let attempt = 0;
 		attempt < mergeablePollAttempts && decision.action === 'wait';
@@ -174,10 +196,10 @@ export async function resolvePrCheckEnqueue(input: {
 	) {
 		await input.github.sleep(mergeablePollDelayMs)
 		pullRequest = await load()
-		decision = decidePrCheckEnqueue(pullRequest, false)
+		decision = decidePrCheckEnqueue(pullRequest, false, eventAction)
 	}
 	if (decision.action === 'wait') {
-		decision = decidePrCheckEnqueue(pullRequest, true)
+		decision = decidePrCheckEnqueue(pullRequest, true, eventAction)
 	}
 	return decision
 }
@@ -197,6 +219,11 @@ function eventPullNumber(eventName: string, event: unknown) {
 	const pullRequest = isRecord(event.pull_request) ? event.pull_request : null
 	const number = pullRequest?.number
 	return typeof number === 'number' ? number : null
+}
+
+function eventAction(eventName: string, event: unknown) {
+	if (eventName !== 'pull_request_target' || !isRecord(event)) return null
+	return typeof event.action === 'string' ? event.action : null
 }
 
 async function main() {
@@ -220,6 +247,7 @@ async function main() {
 		branch: process.env.GITHUB_REF_NAME ?? '',
 		repository,
 		eventPullNumber: eventPullNumber(eventName, event),
+		eventAction: eventAction(eventName, event),
 		github: {
 			sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 			getJson: async (path) => {
@@ -248,6 +276,7 @@ async function main() {
 			throw new Error('pr-check-enqueue: mergeable still unknown after polling')
 		case 'skip':
 			writeOutput('enqueue', 'false')
+			writeOutput('cleanup', 'false')
 			writeOutput('reason', decision.reason)
 			writeOutput('pr_number', '')
 			writeOutput('base_sha', '')
@@ -255,6 +284,15 @@ async function main() {
 			return
 		case 'enqueue':
 			writeOutput('enqueue', 'true')
+			writeOutput('cleanup', 'false')
+			writeOutput('reason', decision.reason)
+			writeOutput('pr_number', String(decision.pullRequest.number))
+			writeOutput('base_sha', decision.pullRequest.baseSha)
+			writeOutput('head_sha', decision.pullRequest.headSha)
+			return
+		case 'cleanup':
+			writeOutput('enqueue', 'false')
+			writeOutput('cleanup', 'true')
 			writeOutput('reason', decision.reason)
 			writeOutput('pr_number', String(decision.pullRequest.number))
 			writeOutput('base_sha', decision.pullRequest.baseSha)

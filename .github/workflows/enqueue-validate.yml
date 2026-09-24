@@ -13,6 +13,8 @@ on:
       - main
   pull_request_target:
     types:
+      - opened
+      - reopened
       - ready_for_review
     branches:
       - main
@@ -21,8 +23,10 @@ permissions:
   contents: read
   pull-requests: read
 
+# PR number, not branch name, so two fork PRs that share a head branch do
+# not cancel each other. Push uses the full ref, which stays inside this repo.
 concurrency:
-  group: enqueue-validate-${{ github.head_ref || github.ref_name }}
+  group: enqueue-validate-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -39,6 +43,7 @@ jobs:
         github.event.pull_request.draft == false)
     outputs:
       enqueue: ${{ steps.decide.outputs.enqueue }}
+      pr_number: ${{ steps.decide.outputs.pr_number }}
       base_sha: ${{ steps.decide.outputs.base_sha }}
     steps:
       - name: 📦 Checkout
@@ -61,5 +66,6 @@ jobs:
     if: needs.decide.outputs.enqueue == 'true'
     uses: ./.github/workflows/validate.yml
     with:
+      pr_number: ${{ needs.decide.outputs.pr_number }}
       base_sha: ${{ needs.decide.outputs.base_sha }}
     secrets: inherit

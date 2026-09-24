@@ -43,6 +43,11 @@ on:
         required: false
         type: string
         default: ''
+      action:
+        description: deploy, or cleanup for a conflicted close
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -71,10 +76,12 @@ jobs:
         github.event.pull_request.head.repo.fork == false &&
         github.event.pull_request.draft == false) ||
       (github.event_name == 'pull_request_target' &&
-        github.event.action == 'ready_for_review' &&
+        github.event.action != 'closed' &&
+        inputs.action != 'cleanup' &&
         github.event.pull_request.head.repo.fork == false &&
         github.event.pull_request.draft == false) ||
-      (github.event_name == 'push' && inputs.pr_number != '') ||
+      (github.event_name == 'push' && inputs.pr_number != '' &&
+        inputs.action != 'cleanup') ||
       (github.event_name == 'workflow_dispatch' &&
         inputs.action == 'deploy')
     env:
@@ -830,11 +837,21 @@ jobs:
       (github.event_name == 'pull_request' &&
         github.event.action == 'closed' &&
         github.event.pull_request.head.repo.fork == false) ||
+      (github.event_name == 'pull_request_target' &&
+        github.event.action == 'closed' &&
+        github.event.pull_request.head.repo.fork == false) ||
       (github.event_name == 'workflow_dispatch' &&
-        inputs.action == 'cleanup')
+        inputs.action == 'cleanup') ||
+      (inputs.action == 'cleanup' && inputs.pr_number != '' &&
+        github.event.pull_request.head.repo.fork != true)
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
+        with:
+          # pull_request_target defaults to the base. Keep that. Never the
+          # PR head: cleanup must run trusted code only.
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
       - name: 🟢 Setup Node
         uses: actions/setup-node@v6
@@ -851,7 +868,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
           INPUT_TARGET: ${{ inputs.target }}
           INPUT_PR_NUMBER: ${{ inputs.pr_number }}
           INPUT_PREVIEW_NAME: ${{ inputs.preview_name }}
@@ -859,7 +876,7 @@ jobs:
           set -euo pipefail
           APP_NAME="kody"
 
-          if [ "$EVENT_NAME" = "pull_request" ]; then
+          if [ "$EVENT_NAME" = "pull_request" ] || [ "$EVENT_NAME" = "pull_request_target" ]; then
             PREVIEW_KIND="pr"
             PREVIEW_ID="$PR_NUMBER"
           else
@@ -907,14 +924,14 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           EVENT_NAME: ${{ github.event_name }}
-          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number || '' }}
           INPUT_TARGET: ${{ inputs.target }}
           INPUT_PR_NUMBER: ${{ inputs.pr_number }}
         with:
           script: |
             const eventName = process.env.EVENT_NAME;
             let envName;
-            if (eventName === "pull_request") {
+            if (eventName === "pull_request" || eventName === "pull_request_target") {
               const n = process.env.PR_NUMBER;
               if (!n) {
                 core.info("No PR number on event; skipping GitHub deployment delete.");
@@ -984,7 +1001,7 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           EVENT_NAME: ${{ github.event_name }}
-          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number || '' }}
           INPUT_TARGET: ${{ inputs.target }}
           INPUT_PR_NUMBER: ${{ inputs.pr_number }}
           HAS_PREVIEW_ENVIRONMENT_ADMIN_TOKEN:
@@ -998,7 +1015,7 @@ jobs:
             const hasAdminToken =
               process.env.HAS_PREVIEW_ENVIRONMENT_ADMIN_TOKEN === "true";
             let envName;
-            if (eventName === "pull_request") {
+            if (eventName === "pull_request" || eventName === "pull_request_target") {
               const n = process.env.PR_NUMBER;
               if (!n) {
                 core.info("No PR number on event; skipping GitHub environment delete.");

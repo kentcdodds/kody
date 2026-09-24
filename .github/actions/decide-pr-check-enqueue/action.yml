@@ -5,8 +5,11 @@ description: >
 
 outputs:
   enqueue:
-    description: true when the caller should run the reusable workflow
+    description: true when the caller should run Validate or deploy Preview
     value: ${{ steps.decide.outputs.enqueue }}
+  cleanup:
+    description: true when the caller should clean up a conflicted closed PR
+    value: ${{ steps.decide.outputs.cleanup }}
   reason:
     description: Why enqueue was or was not chosen
     value: ${{ steps.decide.outputs.reason }}
