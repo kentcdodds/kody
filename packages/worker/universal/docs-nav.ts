@@ -85,6 +85,7 @@ export const docsNav: ReadonlyArray<DocsNavSection> = [
 				label: 'Packages vs integrations vs MCP',
 			},
 			{ slug: 'text-your-agent', label: 'Text your agent' },
+			{ slug: 'openmuse', label: 'OpenMuse and Kody' },
 			{ slug: 'triggers', label: 'Jobs, workflows, and webhooks' },
 			{ slug: 'platform-efficiency', label: 'Runtime and efficiency' },
 		],

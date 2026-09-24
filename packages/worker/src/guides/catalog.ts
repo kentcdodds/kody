@@ -41,6 +41,7 @@ import platformEfficiency from '../../../../docs/guides/platform-efficiency.md'
 import packagesIntegrationsMcp from '../../../../docs/guides/packages-integrations-mcp.md'
 import packageSubscriptions from '../../../../docs/guides/package-subscriptions.md'
 import textYourAgent from '../../../../docs/guides/text-your-agent.md'
+import openmuse from '../../../../docs/guides/openmuse.md'
 import platformFriction from '../../../../docs/guides/platform-friction.md'
 import providerDiscord from '../../../../docs/guides/providers/discord.md'
 import providerGithub from '../../../../docs/guides/providers/github.md'
@@ -84,6 +85,7 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'secret-providers', raw: secretProviders },
 	{ slug: 'packages-integrations-mcp', raw: packagesIntegrationsMcp },
 	{ slug: 'text-your-agent', raw: textYourAgent },
+	{ slug: 'openmuse', raw: openmuse },
 	{ slug: 'triggers', raw: triggers },
 	{ slug: 'platform-efficiency', raw: platformEfficiency },
 	{ slug: 'flake-hunter', raw: flakeHunter },
