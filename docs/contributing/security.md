@@ -694,16 +694,22 @@ change to these decisions here so future agents do not relitigate them.
   platform `/__platform/health`, and runtime `/__runtime/health` answer on the
   workers.dev trigger so deploy and status probes can hit the script directly.
   The rest of those hostnames return `404`.
-- **Admin roles apply to package code running as an admin owner.** Jobs, inbound
-  webhook handlers, package subscriptions, and other background package
-  invocations resolve the owner's current roles
-  (`packages/worker/src/identity/background-mcp-user.ts`), and admin capability
-  checks do not require an interactive session. Package code saved on an admin
-  account can call admin-gated capabilities unattended, so installing an
-  untrusted package there carries the full admin blast radius. There is no
-  separate isolation model for admin-owned package code; separate service
-  principals are one possible future design
-  ([#2393](https://github.com/kentcdodds/kody/issues/2393)). See
+- **Admin roles apply to package code running as an admin owner — including
+  mutations with cross-user / fleet blast.** Jobs, inbound webhook handlers,
+  package subscriptions, and other background package invocations resolve the
+  owner's current roles (`packages/worker/src/identity/background-mcp-user.ts`),
+  and admin capability checks do not require an interactive session. That reach
+  is not read-only: admin-owned package, job, and webhook code can invoke admin
+  mutations (anything that uses `adminMutationCapabilityAccess`, plus other
+  admin-gated write paths). The concrete cross-user blast includes
+  `adminPackageCodemodApply` (fleet-applies a codemod and republishes other
+  users' published package trees), and the same unattended path can call other
+  high-blast mutations such as `adminUserCreate`, `adminFeatureFlagSet`, and
+  `adminSystemEmailSend`. Installing an untrusted package on an admin account
+  therefore carries that blast radius. This is accepted residual, not a silent
+  interactive-only mutation gate. Deferred alternatives include gating admin
+  mutations on `executionOrigin: 'interactive'`, and/or separate service
+  principals ([#2393](https://github.com/kentcdodds/kody/issues/2393)). See
   [Background and package callers](./architecture/authorization.md#background-and-package-callers).
 - **Package inbound webhook replay protection is opt-in.** HMAC over the raw
   body without a `replay` declaration does not bind a timestamp or delivery id,
