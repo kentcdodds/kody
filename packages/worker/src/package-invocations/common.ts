@@ -143,7 +143,7 @@ export function normalizeNullableString(value: string | null | undefined) {
 export function buildSavedPackageNotFoundMessage(packageIdOrKodyId: string) {
 	const message = `Saved package ${JSON.stringify(packageIdOrKodyId)} was not found for this user.`
 	if (!npmScopedPackageNamePattern.test(packageIdOrKodyId)) return message
-	return `${message} Dynamic package invocation uses the bare kodyId (for example, "github"), not the npm-scoped package name (for example, "@kentcdodds/github").`
+	return `${message} Dynamic package invocation uses the bare kodyId (for example, "github"), not the npm-scoped package name (for example, "@acme/github").`
 }
 
 export function buildPackageInvocationStorageId(packageId: string) {

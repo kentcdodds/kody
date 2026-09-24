@@ -419,7 +419,7 @@ export function buildPastDueEmail(input: {
 export function buildUserErrorRateEmail(input: {
 	appBaseUrl: string
 	activityUrl: string
-	triagePackageUrl: string
+	supportUrl: string
 	errorCount: number
 	eventCount: number
 }) {
@@ -430,14 +430,14 @@ export function buildUserErrorRateEmail(input: {
 	return renderTransactionalEmail({
 		appBaseUrl: input.appBaseUrl,
 		subject: 'Your Kody runs are erroring more than usual',
-		preheader: 'A look at the failures, and a package that can help.',
+		preheader: 'A look at the failures, and where to get help.',
 		heading: 'A few runs need attention',
 		body: [
 			`This month Kody recorded ${input.errorCount.toLocaleString('en-US')} errors across ${input.eventCount.toLocaleString('en-US')} runs (${percent}%).`,
-			'Review the activity log, or fork Kent’s issue-triage package so a cloud agent can inspect the failures for you.',
+			'Review the activity log, or contact support if you need help sorting out the failures.',
 		],
 		action: { label: 'Review account activity', url: input.activityUrl },
-		afterAction: [`Loop-safe Cursor triage package: ${input.triagePackageUrl}`],
+		afterAction: [`Support: ${input.supportUrl}`],
 		illustration: {
 			src: '/images/kody-lantern.png',
 			alt: '',

@@ -18,8 +18,8 @@ export type FrictionLogPolicyCheckResult = {
 
 /**
  * Keep the contributing friction-log page aligned with label-based skip.
- * The hosted @kentcdodds/friction-log package owns runtime eligibility; this
- * repo owns the agent-facing policy copy agents load from main.
+ * The hosted friction-log package owns runtime eligibility; this repo owns the
+ * agent-facing policy copy agents load from main.
  */
 export function checkFrictionLogPolicyContent(
 	content: string,
