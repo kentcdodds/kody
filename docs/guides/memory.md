@@ -16,9 +16,11 @@ A memory is a durable fact or preference attached to your Kody account. Say it
 once in one agent and every other agent connected to the same account can use
 it. That is the whole point: memory follows the person, not the product.
 
-Facts saved only inside a host — Claude's memory, Codex notes, Cursor rules that
-are not also Kody memories — are invisible to your other agents. Kody is the
-system of record for the assistant state you want to keep.
+Your agents have their own memory too: Claude's memory, Codex notes, Cursor
+rules, a personal agent's notes on your machine. Those are good at what that one
+host needs, and you can keep using them. They are also invisible to every other
+agent you connect. Put the facts you want every agent to know in Kody memory;
+Kody is the system of record for the state that should follow you.
 
 ## What a memory is for
 

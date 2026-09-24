@@ -12,10 +12,15 @@ category: platform
 
 # Connect your agent
 
-Kody is an MCP server. You use it from Cursor, ChatGPT, Codex, Claude Desktop,
-Claude Code, Copilot, Grok, Gemini, OpenCode, OpenClaw, Devin, or any other
-agent that supports MCP — not from a separate Kody chat app. Getting started is
-three steps, and the in-app page at `/onboarding` walks you through each one.
+Kody is the home your agents share, and you reach it over MCP. Keep using the
+agent you like: Cursor, ChatGPT, Codex, Claude Desktop, Claude Code, Copilot,
+Grok, Gemini, OpenCode, OpenClaw, Devin, or any other agent that supports MCP.
+That agent stays the place you talk and work. Kody adds memory, secrets it never
+reads, saved packages, and jobs that every agent you connect can share. There is
+no separate Kody chat app to learn.
+
+Getting started is three steps, and the in-app page at `/onboarding` walks you
+through each one.
 
 ## Before you start
 

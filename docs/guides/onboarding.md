@@ -56,8 +56,8 @@ agent gains durable state that outlives the chat: memory, secrets, saved
 packages, jobs, workflows, and apps. Work runs in Kody's cloud. You can keep
 that agent or switch to another without rebuilding the stack.
 
-You do not chat with Kody directly. Your agent supplies the intelligence. Kody
-holds the result.
+You do not chat with Kody directly. You talk to your agent; it does the
+reasoning and uses your computer. Kody holds what should outlive the chat.
 
 ## What Kody is not
 
@@ -65,7 +65,8 @@ Kody is not a gateway that exists to connect APIs for your agent. It is not
 middleware that sits in front of every SaaS login. Integrations and MCP servers
 are available when a job needs them. They are supporting cast.
 
-If the person leaves thinking "I signed up to wire APIs," this briefing failed.
+Success is the person seeing one useful thing they made and own, not a list of
+wired APIs.
 
 ## Start with a first win
 

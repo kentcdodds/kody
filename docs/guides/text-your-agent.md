@@ -3,42 +3,40 @@ id: text_your_agent
 title: Text your agent
 summary:
   How to let a spouse or friend talk to *your agent* over a familiar chat
-  surface (iMessage worked example). Surface vs brain vs tools: the agent
-  holds the conversation; Kody is memory, secrets, packages, and jobs - not
-  the chat buddy. Covers OpenClaw/Bezalel/Grok Bot patterns and a simpler SMS
-  path with Twilio.
+  surface (iMessage worked example). Surface vs brain vs home: the agent holds
+  the conversation; Kody is the home it reaches into for memory, secrets,
+  packages, and jobs. Covers OpenClaw/Bezalel/Grok Bot patterns and a simpler
+  SMS path with Twilio.
 category: platform
 ---
 
 # Text your agent
 
-Someone asks: "Can my spouse text Kody?"
+Your spouse or a friend can text your agent from iMessage, SMS, or Discord and
+get answers shaped by your preferences, calendars, and packages. The
+conversation happens with an **agent**. That agent reaches into Kody for the
+durable stuff: memory, secrets, packages, jobs, and webhooks. Keep those three
+layers straight and "text my robot" becomes a wiring problem you can solve with
+tools that already exist.
 
-The short answer is no - and that is the useful answer. You do not chat with
-Kody. You chat with an **agent**. That agent uses Kody for the durable stuff:
-memory, secrets, packages, jobs, and webhooks. Once you keep those three layers
-straight, "text my robot" stops being a product feature request and becomes a
-wiring problem you can solve with tools that already exist.
-
-This page is the practical guide and the worked example for the FAQ line in
-[What is Kody?](./what-is-kody.md).
+[What is Kody?](./what-is-kody.md) describes how your agent and Kody split the
+work in general. This page is the worked example for a chat surface.
 
 ## The three layers
 
 Name them once and keep them:
 
-| Layer            | What it is                                    | Examples                                                |
-| ---------------- | --------------------------------------------- | ------------------------------------------------------- |
-| **Surface**      | Where humans already talk                     | iMessage, SMS, Discord, Slack, email                    |
-| **Brain**        | The agent host that holds the conversation    | OpenClaw, Pi, Grok Bot / Cursor, Claude, ChatGPT, Codex |
-| **Tools / home** | Shared durable state the agent calls over MCP | Kody (memory, secrets, packages, jobs, webhooks)        |
+| Layer            | What it is                                    | Examples                                                          |
+| ---------------- | --------------------------------------------- | ----------------------------------------------------------------- |
+| **Surface**      | Where humans already talk                     | iMessage, SMS, Discord, Slack, email                              |
+| **Brain**        | The agent host that holds the conversation    | OpenClaw, OpenMuse, Pi, Grok Bot / Cursor, Claude, ChatGPT, Codex |
+| **Tools / home** | Shared durable state the agent calls over MCP | Kody (memory, secrets, packages, jobs, webhooks)                  |
 
 The surface never has to know about Kody. Kody never has to become a chat app.
 The brain sits in the middle: it receives the human message, reasons, calls Kody
-when it needs tools or memory, and replies on the same surface.
-
-If you leave thinking "I signed up so I could DM Kody," this page failed the
-same way [What is Kody?](./what-is-kody.md) says it fails.
+when it needs tools or memory, and replies on the same surface. Some personal
+agents bring their own surface too (a phone or web chat), and the split stays
+the same.
 
 ## Worked example: iMessage
 
@@ -145,7 +143,7 @@ Same split as iMessage. Different surface. See
 
 ## Where to go next
 
-- [What is Kody?](./what-is-kody.md) - "You do not chat with Kody"
+- [What is Kody?](./what-is-kody.md) - how your agent and Kody split the work
 - [Packages, integrations, and MCP servers](./packages-integrations-mcp.md) -
   keep those three from collapsing into each other
 - [Connect your agent](./connect-your-agent.md) - wire the brain to the home

@@ -16,9 +16,10 @@ account already has an address. Mail that arrives there is stored and emits
 `email.message.received`. "Forward it to Kody" is a valid trigger for people and
 systems that can send email but cannot call an API.
 
-This is not a "chat with Kody" inbox. You still chat with an agent. The inbox is
-a door into a package you own. See [Text your agent](./text-your-agent.md) if
-the question is "can my spouse text Kody?"
+The inbox is a door into a package you own. Conversations stay with your agent,
+and a package can wake that agent when a message needs one, the way Kent's
+grok-bot does below. To give people a familiar chat surface for your agent, see
+[Text your agent](./text-your-agent.md).
 
 Live public behavior:
 [`@kentcdodds/grok-bot`](https://kody.codes/@kentcdodds/grok-bot)

@@ -12,14 +12,14 @@ ogImage: /images/kody-factory-map-og.jpg
 
 # The Kody factory map
 
-Kody is a hosted factory for capabilities your assistant can discover, combine,
-and keep running. Your assistant connects to Kody over MCP and starts with two
-tools:
+Kody is the home your agents share, laid out as a hosted factory: capabilities
+your agent can discover, combine, and keep running after the conversation ends.
+Your agent connects to Kody over MCP and starts with two tools:
 
 - **`search`** finds capabilities, official guides, saved packages,
   integrations, connected MCP servers, and relevant memories. Unscoped results
   rank the MCP server, not every remote tool. Search before building so the
-  assistant can reuse what you already have.
+  agent can reuse what you already have.
 - **`execute`** runs a temporary TypeScript module on Kody's servers. It can
   compose discovered capabilities, call connected services, and import exports
   from packages you own.
@@ -32,7 +32,7 @@ Those two doors lead to a set of user-isolated primitives.
 
 **Secrets** are private credentials stored for your Kody account. Runtime code
 refers to them by placeholder or an approved package mount; Kody does not return
-the saved secret value to the assistant. See [Secrets](./secrets.md).
+the saved secret value to the agent. See [Secrets](./secrets.md).
 
 **Integrations** are saved connections to external services. OAuth-backed
 integrations keep their token bundles server-side. Remote MCP servers expose
@@ -86,7 +86,9 @@ state, source configuration, or credentials. See [Shared memory](./memory.md).
 Hosted Kody cannot see your Mac's disk, your local Obsidian vault, local-only
 CLI processes, `localhost`, or devices reachable only on your home network.
 Installing a desktop MCP server does not make it reachable from Kody's
-Cloudflare Workers.
+Cloudflare Workers. A local agent can still use those things directly in the
+conversation; the boundary matters when a package or job needs them while that
+agent is not running.
 
 To bring a local capability into the factory, run an MCP server beside the local
 resource and expose that server through a protected public HTTPS route. The
