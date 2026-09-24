@@ -25,7 +25,9 @@
 				{ "env": "CI" },
 				"{workspaceRoot}/vitest*.ts",
 				"{workspaceRoot}/tools/**/*",
-				"{workspaceRoot}/packages/mock-servers/cloudflare/**/*"
+				"{workspaceRoot}/packages/mock-servers/cloudflare/**/*",
+				"{workspaceRoot}/skills-lock.json",
+				"{workspaceRoot}/.agents/skills/ship-pr/**/*"
 			]
 		},
 		"test-node": {
@@ -36,7 +38,9 @@
 				{ "env": "CI" },
 				"{workspaceRoot}/vitest*.ts",
 				"{workspaceRoot}/tools/**/*",
-				"{workspaceRoot}/packages/mock-servers/cloudflare/**/*"
+				"{workspaceRoot}/packages/mock-servers/cloudflare/**/*",
+				"{workspaceRoot}/skills-lock.json",
+				"{workspaceRoot}/.agents/skills/ship-pr/**/*"
 			]
 		},
 		"test-workers": {
