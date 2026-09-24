@@ -106,7 +106,7 @@ test('error-rate emails skip below-threshold users and claim once per month', as
 	}
 	expect(payload.to).toBe('hot@example.com')
 	expect(payload.html).toContain('https://kody.codes/account/activity')
-	expect(payload.text).toContain('/@kentcdodds/kody-issue-triage')
+	expect(payload.text).toContain('/support')
 	expect(
 		store.get(
 			userErrorRateEmailKvKey({ userId: 'user-hot', month: '2026-08' }),

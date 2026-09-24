@@ -174,12 +174,12 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	const errorRate = buildUserErrorRateEmail({
 		appBaseUrl: 'https://kody.codes',
 		activityUrl: 'https://kody.codes/account/activity',
-		triagePackageUrl: 'https://kody.codes/@kentcdodds/kody-issue-triage',
+		supportUrl: 'https://kody.codes/support',
 		errorCount: 10,
 		eventCount: 40,
 	})
 	expect(errorRate.html).toContain('https://kody.codes/account/activity')
-	expect(errorRate.text).toContain('/@kentcdodds/kody-issue-triage')
+	expect(errorRate.text).toContain('/support')
 	expect(errorRate.html).toContain('25%')
 
 	const hostileSummary = '</p><script>alert(1)</script>Setup is confusing'
