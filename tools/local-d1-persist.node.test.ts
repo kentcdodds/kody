@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
 import { buildLocalMigrationCommands } from './apply-local-app-migrations.ts'
-import { resolveLocalD1PersistPath } from './local-d1-persist.ts'
+import {
+	envWithWorkerPersistFile,
+	resolveLocalD1PersistPath,
+} from './local-d1-persist.ts'
 import { buildSeedWranglerArgs, parseArgs } from './seed-test-data.ts'
 
 function persistPathFromArgs(args: ReadonlyArray<string>) {
@@ -89,4 +92,43 @@ test('explicit persist-to wins over WRANGLER_PERSIST_TO, and remote seed skips i
 		env,
 	)
 	expect(persistPathFromArgs(explicitSeed)).toBe('.wrangler/state/e2e')
+})
+
+test('worker .env WRANGLER_PERSIST_TO reaches migrate and seed unless the shell or flag sets one', () => {
+	const file = [
+		'# local override',
+		'COOKIE_SECRET=local',
+		'export WRANGLER_PERSIST_TO=".wrangler/state/from-file"',
+	].join('\n')
+	const fromFile = envWithWorkerPersistFile({}, file)
+	expect(fromFile.WRANGLER_PERSIST_TO).toBe('.wrangler/state/from-file')
+	const migrated = buildLocalMigrationCommands({ argv: [], env: fromFile })
+	for (const command of migrated) {
+		expect(persistPathFromArgs(command)).toBe('.wrangler/state/from-file')
+	}
+	const seeded = buildSeedWranglerArgs(
+		'select 1',
+		parseArgs(['--local']),
+		fromFile,
+	)
+	expect(persistPathFromArgs(seeded)).toBe('.wrangler/state/from-file')
+
+	const shellWins = envWithWorkerPersistFile(
+		{ WRANGLER_PERSIST_TO: '.wrangler/state/from-shell' },
+		file,
+	)
+	expect(
+		persistPathFromArgs(
+			buildLocalMigrationCommands({ argv: [], env: shellWins })[1] ?? [],
+		),
+	).toBe('.wrangler/state/from-shell')
+
+	const flagged = buildLocalMigrationCommands({
+		argv: ['--persist-to', '.wrangler/state/e2e'],
+		env: fromFile,
+	})
+	expect(persistPathFromArgs(flagged[1] ?? [])).toBe('.wrangler/state/e2e')
+
+	expect(envWithWorkerPersistFile({}, 'WRANGLER_PERSIST_TO=')).toEqual({})
+	expect(envWithWorkerPersistFile({}, undefined)).toEqual({})
 })

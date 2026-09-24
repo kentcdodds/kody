@@ -7,10 +7,12 @@ See the [setup index](./index.md) for the other setup pages.
   - `npm run migrate:local`
   - `node tools/seed-test-data.ts --local`
 - `npm run migrate:local` applies `APP_DB`, `AUDIT_DB`, and `JOBS_DB` under
-  `.wrangler/state`, the directory Vite persists (`persistState.path`,
-  overridable with `WRANGLER_PERSIST_TO`). `npm run dev` reads that same
-  directory. `node tools/seed-test-data.ts --local` inserts the fixture users
-  into that `APP_DB`.
+  `.wrangler/state`, the directory Vite persists (`persistState.path`).
+  `WRANGLER_PERSIST_TO` in the shell or in `packages/worker/.env` selects
+  another directory for `npm run dev`, `npm run migrate:local`, and local seed.
+  A shell value wins over the file. `--persist-to` wins over both.
+  `node tools/seed-test-data.ts --local` inserts the fixture users into that
+  `APP_DB`.
 - `npm run migrate:local` copies `packages/worker/.env.example` to
   `packages/worker/.env` when that file is missing (the same copy
   `npm run dev:ensure` performs) before it loads the file.

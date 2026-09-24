@@ -4,7 +4,10 @@ import {
 	workerEnvExampleRelativePath,
 	workerEnvRelativePath,
 } from './ensure-dev.ts'
-import { resolveLocalD1PersistPath } from './local-d1-persist.ts'
+import {
+	localPersistEnv,
+	resolveLocalD1PersistPath,
+} from './local-d1-persist.ts'
 import { isExecutedDirectly } from './node-runtime.ts'
 import { jobsWorkerWranglerConfigPath } from './wrangler-env-config.ts'
 
@@ -105,6 +108,7 @@ function main() {
 	}
 	for (const command of buildLocalMigrationCommands({
 		argv: process.argv.slice(2),
+		env: localPersistEnv(process.env, envFile.path),
 	})) {
 		const result = runNode(command)
 		process.stdout.write(result.stdout ?? '')
