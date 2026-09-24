@@ -1,9 +1,9 @@
 # Connect your agent
 
 Kody is an MCP server. You use it from Cursor, ChatGPT, Codex, Claude Desktop,
-Grok.com, Grok CLI, Grok Bot, Claude Code, OpenCode, OpenClaw, Devin, Gemini,
-GitHub Copilot (VS Code or CLI), the GitHub Copilot app, or any other AI agent
-that supports MCP — not from a separate Kody chat app.
+Grok.com, Grok CLI, Grok Bot, Claude Code, OpenCode, OpenClaw, Muse, Devin,
+Gemini, GitHub Copilot (VS Code or CLI), the GitHub Copilot app, or any other AI
+agent that supports MCP — not from a separate Kody chat app.
 
 The three-step Get started flow lives in
 [Connect your agent](../guides/connect-your-agent.md) and on `/onboarding`. This
@@ -135,6 +135,12 @@ you only have the MCP URL.
   live connection. Or in the Control UI: Settings → MCP → Add server, choose
   Streamable HTTP, and paste the MCP URL. See OpenClaw's
   [MCP docs](https://docs.openclaw.ai/tools/mcp).
+- **Muse** — A Kody connector/plugin has been submitted for
+  [Muse Code](https://dev.meta.ai/docs/muse-code/) and is pending review. Until
+  it appears in Muse's directory, install with the
+  [Kody CLI](https://github.com/kody-bot/cli): `npx @kodycodes/cli install`
+  (pass `--mcp-url <url>` on preview or local origins). After OAuth succeeds,
+  you may need to paste a localhost URL into the Muse chat.
 - **Open WebUI** — Add an MCP Streamable HTTP connection to this deployment’s
   MCP URL and use **OAuth 2.1** (dynamic registration) first. Enabling the tool
   in a chat must open the Kody authorize window. If that window never opens on

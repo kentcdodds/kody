@@ -23,6 +23,7 @@ export type McpClientKind =
 	| 'devin'
 	| 'gemini'
 	| 'openclaw'
+	| 'muse'
 	| 'other'
 
 export type OnboardingAgentSurface = 'desktop' | 'mobile'
@@ -51,6 +52,7 @@ export const mcpClientTabs = [
 	{ id: 'devin', label: 'Devin', isNonCodingAgent: false },
 	{ id: 'gemini', label: 'Gemini', isNonCodingAgent: true },
 	{ id: 'openclaw', label: 'OpenClaw', isNonCodingAgent: false },
+	{ id: 'muse', label: 'Muse', isNonCodingAgent: false },
 	{ id: 'other', label: 'Other', isNonCodingAgent: false },
 ] as const satisfies ReadonlyArray<McpClientTab>
 
@@ -58,11 +60,13 @@ export const mcpClientTabs = [
  * Desktop chooser: coding agents first, then the highest-traffic chat hosts
  * that are not already represented. Devin stands in for Devin Desktop
  * (ex-Windsurf). OpenCode is the Cline / OpenCode slot. OpenClaw is the
- * local-first personal-AI slot. ChatGPT.com, Claude Desktop, and Gemini
- * fill the three leftover seats after OpenClaw so the auto-fill desktop
- * grid lands on complete rows with Not listed (12 cards). Grok.com,
- * Grok CLI, and the Copilot app stay under Not listed (Copilot
- * desktop/CLI is already featured; Aider is not a Kody connect path yet).
+ * local-first personal-AI slot. Muse is Meta's Muse Code CLI slot.
+ * ChatGPT.com, Claude Desktop, and Grok Bot fill the leftover seats so
+ * the auto-fill desktop grid lands on complete rows with Not listed
+ * (12 cards). Gemini stays under More on desktop (still featured on
+ * mobile). Grok.com, Grok CLI, and the Copilot app stay under Not listed
+ * (Copilot desktop/CLI is already featured; Aider is not a Kody connect
+ * path yet).
  */
 export const onboardingDesktopFeaturedAgentIds = [
 	'claude-code',
@@ -72,16 +76,16 @@ export const onboardingDesktopFeaturedAgentIds = [
 	'devin',
 	'opencode',
 	'openclaw',
+	'muse',
 	'chatgpt',
 	'claude-desktop',
-	'gemini',
 	'grok-bot',
 ] as const satisfies ReadonlyArray<McpClientKind>
 
 /**
  * Phone chooser: only hosts with a real mobile app. Desktop-only CLIs and
- * IDEs (Claude Code, Devin, Codex, Copilot CLI, OpenCode, OpenClaw, Cursor)
- * stay off this list and appear under Not listed on a phone.
+ * IDEs (Claude Code, Devin, Codex, Copilot CLI, OpenCode, OpenClaw, Muse,
+ * Cursor) stay off this list and appear under Not listed on a phone.
  */
 export const onboardingMobileFeaturedAgentIds = [
 	'chatgpt',
@@ -318,6 +322,8 @@ export function onboardingAgentIconName(
 			return 'gemini'
 		case 'openclaw':
 			return 'openclaw'
+		case 'muse':
+			return 'muse'
 		case 'other':
 			return null
 		default: {
@@ -387,6 +393,12 @@ const grokCliMcpGuideUrl = 'https://docs.x.ai/build/features/mcp-servers'
 /** OpenClaw Control UI + CLI docs for adding a remote MCP server. */
 const openClawMcpGuideUrl = 'https://docs.openclaw.ai/tools/mcp'
 
+/** Muse Code docs on Meta’s developer site (not muse.ai — unrelated video). */
+export const musePlatformUrl = 'https://dev.meta.ai/docs/muse-code/'
+
+/** Official Kody CLI (interim Muse connect path until the Muse connector lands). */
+export const kodyCliRepoUrl = 'https://github.com/kody-bot/cli'
+
 /** Cursor Marketplace listing for the official Kody plugin (production). */
 export const kodyCursorMarketplaceUrl = 'https://cursor.com/marketplace/kody'
 
@@ -435,6 +447,8 @@ function onboardingAgentHelpHref(id: McpClientKind) {
 			return copilotAppCustomizeGuideUrl
 		case 'openclaw':
 			return openClawMcpGuideUrl
+		case 'muse':
+			return kodyCliRepoUrl
 		default: {
 			const exhaustive: never = id
 			return exhaustive

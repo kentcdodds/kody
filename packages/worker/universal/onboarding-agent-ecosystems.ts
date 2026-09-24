@@ -27,6 +27,7 @@ const onboardingAgentEcosystems = {
 	cognition: ['devin'],
 	sst: ['opencode'],
 	openclaw: ['openclaw'],
+	muse: ['muse'],
 	other: ['other'],
 } as const satisfies Record<string, ReadonlyArray<McpClientKind>>
 
@@ -105,6 +106,11 @@ export const onboardingStep3EcosystemGroups = [
 		id: 'openclaw',
 		label: 'OpenClaw',
 		agents: ['openclaw'],
+	},
+	{
+		id: 'muse',
+		label: 'Muse',
+		agents: ['muse'],
 	},
 ] as const satisfies ReadonlyArray<OnboardingStep3EcosystemGroup>
 

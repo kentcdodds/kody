@@ -126,6 +126,59 @@ test('inbound labels prefer a known kind, then clientName, then hostname, then a
 		label: 'Unknown',
 	})
 
+	expect(classifyMcpClientName('Muse Code')).toEqual({
+		kind: 'muse',
+		label: 'Muse',
+	})
+	expect(classifyMcpClientName('Muse')).toEqual({
+		kind: 'muse',
+		label: 'Muse',
+	})
+	expect(classifyMcpClientName('muse-code')).toEqual({
+		kind: 'muse',
+		label: 'Muse',
+	})
+	expect(classifyMcpClientName('OpenMuse')).toEqual({
+		kind: null,
+		label: 'OpenMuse',
+	})
+	expect(classifyMcpClientName('openmuse')).toEqual({
+		kind: null,
+		label: 'openmuse',
+	})
+	expect(
+		labelInboundMcpClient({
+			clientId: 'openmuse-oauth',
+			clientName: 'OpenMuse',
+			clientUri: 'https://openmuse.example/',
+		}),
+	).toEqual({ kind: null, label: 'OpenMuse' })
+	expect(
+		labelInboundMcpClient({
+			clientId: 'muse-code-oauth',
+			clientName: 'Muse Code',
+			grantRedirectUri: 'https://dev.meta.ai/oauth/callback',
+		}),
+	).toEqual({ kind: 'muse', label: 'Muse' })
+	expect(
+		labelInboundMcpClient({
+			clientId: 'https://dev.meta.ai/oauth/client.json',
+			grantRedirectUri: 'https://dev.meta.ai/oauth/callback',
+		}),
+	).toEqual({ kind: 'muse', label: 'Muse' })
+	expect(
+		labelInboundMcpClient({
+			clientId: 'https://muse.ai/oauth/client.json',
+			grantRedirectUri: 'https://muse.ai/oauth/callback',
+		}),
+	).toEqual({ kind: null, label: 'muse.ai' })
+	expect(
+		labelInboundMcpClient({
+			clientId: 'https://meta.ai/oauth/client.json',
+			grantRedirectUri: 'https://www.meta.ai/oauth/callback',
+		}),
+	).toEqual({ kind: null, label: 'meta.ai' })
+
 	expect(
 		labelInboundMcpClient({
 			clientId: 'https://unknown.example/oauth/client.json',

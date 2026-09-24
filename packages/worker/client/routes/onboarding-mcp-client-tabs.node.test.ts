@@ -37,6 +37,8 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(picker).toContain('data-testid="onboarding-agent-grok-bot"')
 	expect(picker).toContain('data-testid="onboarding-agent-openclaw"')
 	expect(picker).toContain('href="/onboarding/step-1/openclaw"')
+	expect(picker).toContain('data-testid="onboarding-agent-muse"')
+	expect(picker).toContain('href="/onboarding/step-1/muse"')
 	expect(picker).toContain('href="/onboarding/step-1/chatgpt"')
 	expect(picker).toContain('href="/onboarding/step-1/claude-desktop"')
 	expect(picker).toContain('href="/onboarding/step-1/gemini"')
@@ -49,6 +51,7 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(picker).toContain('href="/onboarding/step-1/grok"')
 	expect(picker).toContain('/images/icons/cursor.svg')
 	expect(picker).toContain('/images/icons/grokbot.svg')
+	expect(picker).toContain('/images/icons/muse.svg')
 
 	const cursor = await renderToString(
 		jsx(OnboardingMcpClientTabs, {
@@ -101,6 +104,7 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(other).toContain('data-testid="onboarding-agent-grok"')
 	expect(other).toContain('data-testid="onboarding-agent-cursor"')
 	expect(other).toContain('data-testid="onboarding-agent-devin"')
+	expect(other).toContain('data-testid="onboarding-agent-gemini"')
 	expect(other).not.toContain(grokBotInstallUrl)
 
 	const previewUrl = 'http://localhost:3742/mcp'
@@ -160,6 +164,22 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(openclaw).toContain('openclaw mcp login kody')
 	expect(openclaw).toContain('data-surface="mobile"')
 	expect(openclaw).toContain('on a computer')
+
+	const muse = await renderToString(
+		jsx(OnboardingMcpClientTabs, {
+			mcpServerUrl: defaultKodyMcpUrl,
+			selectedAgent: 'muse',
+		}),
+	)
+	expect(muse).toContain('data-agent="muse"')
+	expect(muse).toContain('npx @kodycodes/cli install')
+	expect(muse).toContain('https://github.com/kody-bot/cli')
+	expect(muse).toContain('https://dev.meta.ai/docs/muse-code/')
+	expect(muse).toContain('pending review')
+	expect(muse).toContain('paste a localhost URL')
+	expect(muse).toContain('data-testid="onboarding-agent-help"')
+	expect(muse).toContain('data-testid="onboarding-agent-warning"')
+	expect(muse).toContain('pending review')
 
 	const chatgpt = await renderToString(
 		jsx(OnboardingMcpClientTabs, {
