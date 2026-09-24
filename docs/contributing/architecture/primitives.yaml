@@ -96,7 +96,6 @@ primitives:
       worker for job execution.
     code:
       - packages/jobs-worker/
-      - tools/local-jobs-dev-config.ts
     docs:
       - docs/contributing/decisions/0016-mono-worker-extraction.md
       - docs/contributing/architecture/jobs-worker-migration-runbook.md

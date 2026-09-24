@@ -26,11 +26,9 @@ description:
   origin `env` gets `WRANGLER_IS_LOCAL_DEV` and mock `CLOUDFLARE_API_*` vars
   (the Cloudflare Vite plugin does not map process env onto Worker bindings).
   Jobs and highlight join as Vite auxiliary workers in every serve, including
-  `CLOUDFLARE_ENV=test`. Jobs uses
-  `packages/jobs-worker/wrangler-local-dev.generated.json` so it registers under
-  the origin `JOBS` service name. Generated platform and runtime configs join
-  only outside the test env. Default port 3742; the CLI picks the next free port
-  if taken.
+  `CLOUDFLARE_ENV=test`. Generated platform and runtime configs join only
+  outside the test env. Default port 3742; the CLI picks the next free port if
+  taken.
 - Local dev uses `--env production` (CLOUDFLARE_ENV defaults to production in
   `wrangler-env.ts`).
 - Migrate + seed login: `npm run migrate:local` then
@@ -52,24 +50,20 @@ Origin Vite serve uses the same pattern for the primary config:
 `packages/worker/wrangler-local-dev.generated.json` and injects
 `WRANGLER_IS_LOCAL_DEV`, mock `CLOUDFLARE_API_*`, and `APP_BASE_URL` into
 `vars`. Worker secrets stay in `packages/worker/.env` / `.dev.vars`.
-`wrangler-env.ts` still never passes the committed runtime, platform, or jobs
-configs to `wrangler dev` directly: `tools/local-runtime-dev-config.ts`,
-`tools/local-platform-dev-config.ts`, and `tools/local-jobs-dev-config.ts`
-generate `wrangler-local-dev.generated.json` next to each committed config
-(gitignored) on each dev start. Those files pin the secondary registered names
-to `kody-runtime`, `kody-platform`, and the origin `JOBS` service (`kody-jobs`
-in production, `kody-jobs-test` in the test env). The jobs config also points
-that env's `HOST` binding at the origin's local dev name (`kody-<env>`), so
-local preview reaches `kody-preview` instead of the committed `kody`
-placeholder. Runtime and platform also drop each secondary `ai` binding and
-rewrite Durable Object migrations for local replay
-(`tools/local-dev-migrations.ts`: transfers become `new_sqlite_classes`,
-create-then-delete pairs such as `PackageServiceInstance` are elided), and
-inject `APP_BASE_URL`, `COOKIE_SECRET`, `SECRET_STORE_KEY`, and
-`WRANGLER_IS_LOCAL_DEV` from the dev process env. Runtime still rewrites any
-remaining `script_name: "kody"` refs to the primary's dev name (`kody-<env>`).
-If runtime-owned paths 503 with `Worker "kody-runtime" not found` or a secondary
-worker 500s on missing vars, inspect those generated files first.
+`wrangler-env.ts` still never passes the committed runtime or platform configs
+to `wrangler dev` directly: `tools/local-runtime-dev-config.ts` and
+`tools/local-platform-dev-config.ts` generate
+`wrangler-local-dev.generated.json` next to each committed config (gitignored)
+on each dev start. Those files pin the secondary registered names to
+`kody-runtime` and `kody-platform`, drop each secondary `ai` binding, rewrite
+Durable Object migrations for local replay (`tools/local-dev-migrations.ts`:
+transfers become `new_sqlite_classes`, create-then-delete pairs such as
+`PackageServiceInstance` are elided), and inject `APP_BASE_URL`,
+`COOKIE_SECRET`, `SECRET_STORE_KEY`, and `WRANGLER_IS_LOCAL_DEV` from the dev
+process env. Runtime still rewrites any remaining `script_name: "kody"` refs to
+the primary's dev name (`kody-<env>`). If runtime-owned paths 503 with
+`Worker "kody-runtime" not found` or a secondary worker 500s on missing vars,
+inspect those generated files first.
 
 If `npm run dev` or `npm run runtime:build` / startup-bundle dry-run fails with
 `Cannot apply deleted_classes migration to non-existent class PackageServiceInstance`,
