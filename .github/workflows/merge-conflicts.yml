@@ -66,6 +66,9 @@ jobs:
           BASE_REF: >-
             ${{ github.event_name == 'push' && github.ref_name ||
             github.event.pull_request.base.ref }}
+          BASE_SHA: >-
+            ${{ github.event_name == 'push' && github.sha ||
+            github.event.pull_request.base.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node tools/ci/merge-conflict-check.ts

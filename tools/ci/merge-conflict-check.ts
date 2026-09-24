@@ -7,8 +7,10 @@ import { isExecutedDirectly } from '../node-runtime.ts'
  * `pull_request_target` workflow, which still starts, and writes a check onto
  * the head SHA. A push to the base branch reruns that check for every open
  * pull request, because the head commit does not move when the base does.
- * Retargeting the base does the same. It does not check out or execute pull
- * request code, and it does not run Validate.
+ * Retargeting the base does the same. A published mergeable_state is ignored
+ * until the pull request's base SHA is the commit this run is checking, so a
+ * cached result from the previous tip cannot stay green. It does not check
+ * out or execute pull request code, and it does not run Validate.
  */
 export const mergeConflictCheckName = '🚧 Merge conflicts'
 
@@ -27,6 +29,7 @@ export type PullRequestMergeability = {
 	mergeable: boolean | null
 	mergeableState: string
 	baseRef: string
+	baseSha: string
 	draft: boolean
 }
 
@@ -101,12 +104,15 @@ export async function pollMergeability(input: {
 	sleep: (ms: number) => Promise<void>
 	maxAttempts: number
 	delayMs: number
+	expectedBaseSha: string
 }): Promise<ResolvedMergeability> {
 	let latest: PullRequestMergeability | null = null
 	for (let attempt = 1; attempt <= input.maxAttempts; attempt += 1) {
 		latest = await input.read()
 		const kind = classifyMergeability(latest)
-		if (kind !== 'pending') {
+		// GitHub can keep the previous mergeable_state after the base moves.
+		// base.sha is that previous tip until the new calculation is stored.
+		if (kind !== 'pending' && sameSha(latest.baseSha, input.expectedBaseSha)) {
 			return {
 				kind,
 				baseRef: latest.baseRef,
@@ -116,11 +122,16 @@ export async function pollMergeability(input: {
 		}
 		if (attempt < input.maxAttempts) await input.sleep(input.delayMs)
 	}
+	const staleBase =
+		latest !== null && !sameSha(latest.baseSha, input.expectedBaseSha)
 	return {
 		kind: 'undetermined',
 		baseRef: latest?.baseRef ?? '',
 		mergeableState: latest?.mergeableState ?? 'unknown',
 		draft: latest?.draft ?? false,
+		detail: staleBase
+			? `Pull request base ${latest.baseSha || 'is missing'}, not ${input.expectedBaseSha}.`
+			: undefined,
 	}
 }
 
@@ -129,6 +140,7 @@ export async function reportMergeConflictCheck(input: {
 	repository: string
 	pullNumber: number
 	headSha: string
+	expectedBaseSha: string
 	detailsUrl?: string
 	fetchImpl?: FetchLike
 	sleep?: (ms: number) => Promise<void>
@@ -152,6 +164,7 @@ export async function reportMergeConflictCheck(input: {
 			sleep: input.sleep ?? delay,
 			maxAttempts: input.maxAttempts ?? mergeConflictPollAttempts,
 			delayMs: input.delayMs ?? mergeConflictPollDelayMs,
+			expectedBaseSha: input.expectedBaseSha,
 		})
 		await client.completeCheck(checkRunId, result)
 		// This job is recorded on the default-branch SHA. Exit 0 after the
@@ -187,6 +200,7 @@ export async function reportOpenPullRequestMergeConflicts(input: {
 	token: string
 	repository: string
 	baseRef: string
+	expectedBaseSha: string
 	detailsUrl?: string
 	fetchImpl?: FetchLike
 	sleep?: (ms: number) => Promise<void>
@@ -215,6 +229,7 @@ export async function reportOpenPullRequestMergeConflicts(input: {
 					repository: input.repository,
 					pullNumber: pullRequest.number,
 					headSha: pullRequest.headSha,
+					expectedBaseSha: input.expectedBaseSha,
 					detailsUrl: input.detailsUrl,
 					fetchImpl,
 					sleep: input.sleep,
@@ -237,6 +252,10 @@ export async function main(env: NodeJS.ProcessEnv = process.env) {
 				token,
 				repository,
 				baseRef: requiredEnv(env, 'BASE_REF'),
+				expectedBaseSha: parseCommitSha(
+					requiredEnv(env, 'BASE_SHA'),
+					'BASE_SHA',
+				),
 				detailsUrl: workflowRunUrl(env),
 			})
 			return
@@ -245,12 +264,13 @@ export async function main(env: NodeJS.ProcessEnv = process.env) {
 			throw new Error(`Unknown MERGE_CONFLICT_MODE ${mode}`)
 		}
 		const pullNumber = parsePullNumber(requiredEnv(env, 'PR_NUMBER'))
-		const headSha = parseHeadSha(requiredEnv(env, 'HEAD_SHA'))
+		const headSha = parseCommitSha(requiredEnv(env, 'HEAD_SHA'), 'HEAD_SHA')
 		process.exitCode = await reportMergeConflictCheck({
 			token,
 			repository,
 			pullNumber,
 			headSha,
+			expectedBaseSha: parseCommitSha(requiredEnv(env, 'BASE_SHA'), 'BASE_SHA'),
 			detailsUrl: workflowRunUrl(env),
 		})
 	} catch (error) {
@@ -321,11 +341,15 @@ function parsePullNumber(value: string) {
 	return Number(value)
 }
 
-function parseHeadSha(value: string) {
+function parseCommitSha(value: string, name: string) {
 	if (!/^[0-9a-f]{40}$/i.test(value)) {
-		throw new Error('Expected HEAD_SHA to be a 40-character commit SHA')
+		throw new Error(`Expected ${name} to be a 40-character commit SHA`)
 	}
 	return value
+}
+
+function sameSha(left: string, right: string) {
+	return left.toLowerCase() === right.toLowerCase()
 }
 
 function requiredEnv(env: NodeJS.ProcessEnv, name: string) {
@@ -542,7 +566,7 @@ function parsePullRequest(payload: unknown): PullRequestMergeability {
 		mergeable?: unknown
 		mergeable_state?: unknown
 		draft?: unknown
-		base?: { ref?: unknown }
+		base?: { ref?: unknown; sha?: unknown }
 	}
 	const mergeable =
 		record.mergeable === null || typeof record.mergeable === 'boolean'
@@ -551,10 +575,16 @@ function parsePullRequest(payload: unknown): PullRequestMergeability {
 	const mergeableState =
 		typeof record.mergeable_state === 'string' ? record.mergeable_state : ''
 	const baseRef = typeof record.base?.ref === 'string' ? record.base.ref : ''
+	const baseSha =
+		typeof record.base?.sha === 'string' &&
+		/^[0-9a-f]{40}$/i.test(record.base.sha)
+			? record.base.sha
+			: ''
 	return {
 		mergeable,
 		mergeableState,
 		baseRef,
+		baseSha,
 		draft: record.draft === true,
 	}
 }

@@ -13,6 +13,8 @@ import {
 } from './merge-conflict-check.ts'
 
 const headSha = 'a'.repeat(40)
+const baseSha = 'c'.repeat(40)
+const previousBaseSha = 'd'.repeat(40)
 
 test('only a dirty pull request is treated as a merge conflict', () => {
 	expect(
@@ -98,6 +100,7 @@ test('polling waits until GitHub finishes computing mergeability', async () => {
 		},
 		maxAttempts: 3,
 		delayMs: 25,
+		expectedBaseSha: baseSha,
 	})
 	expect(result.kind).toBe('clear')
 	expect(result.mergeableState).toBe('behind')
@@ -116,9 +119,54 @@ test('polling fails closed when mergeability stays unknown', async () => {
 		sleep: () => Promise.resolve(),
 		maxAttempts: 3,
 		delayMs: 1,
+		expectedBaseSha: baseSha,
 	})
 	expect(result.kind).toBe('undetermined')
 	expect(reads).toBe(3)
+})
+
+test('polling ignores a cached result for the previous base tip', async () => {
+	const reads = [
+		mergeability({
+			mergeable: true,
+			mergeableState: 'clean',
+			baseSha: previousBaseSha,
+		}),
+		mergeability({ mergeable: false, mergeableState: 'dirty' }),
+	]
+	const result = await pollMergeability({
+		read: () => {
+			const next = reads.shift()
+			if (!next) throw new Error('missing mergeability fixture')
+			return Promise.resolve(next)
+		},
+		sleep: () => Promise.resolve(),
+		maxAttempts: 3,
+		delayMs: 1,
+		expectedBaseSha: baseSha,
+	})
+	expect(result.kind).toBe('conflicted')
+	expect(reads).toHaveLength(0)
+})
+
+test('polling fails closed when the base SHA never matches', async () => {
+	const result = await pollMergeability({
+		read: () =>
+			Promise.resolve(
+				mergeability({
+					mergeable: true,
+					mergeableState: 'behind',
+					baseSha: previousBaseSha,
+				}),
+			),
+		sleep: () => Promise.resolve(),
+		maxAttempts: 2,
+		delayMs: 1,
+		expectedBaseSha: baseSha,
+	})
+	expect(result.kind).toBe('undetermined')
+	expect(result.detail).toContain(previousBaseSha)
+	expect(result.detail).toContain(baseSha)
 })
 
 test('a dirty pull request fails a check on the head SHA', async () => {
@@ -130,6 +178,7 @@ test('a dirty pull request fails a check on the head SHA', async () => {
 		repository: 'kentcdodds/kody',
 		pullNumber: 2483,
 		headSha,
+		expectedBaseSha: baseSha,
 		detailsUrl: 'https://github.com/kentcdodds/kody/actions/runs/7',
 		fetchImpl: github.fetchImpl,
 		sleep: () => Promise.resolve(),
@@ -173,6 +222,7 @@ test('a mergeable pull request completes the check successfully', async () => {
 		repository: 'kentcdodds/kody',
 		pullNumber: 12,
 		headSha,
+		expectedBaseSha: baseSha,
 		fetchImpl: github.fetchImpl,
 		sleep: () => Promise.resolve(),
 		maxAttempts: 4,
@@ -196,6 +246,7 @@ test('an API error completes the open check as a failure', async () => {
 		repository: 'kentcdodds/kody',
 		pullNumber: 12,
 		headSha,
+		expectedBaseSha: baseSha,
 		fetchImpl: github.fetchImpl,
 		sleep: () => Promise.resolve(),
 		maxAttempts: 1,
@@ -224,6 +275,7 @@ test('a failed check creation still fails the process', async () => {
 		repository: 'kentcdodds/kody',
 		pullNumber: 12,
 		headSha,
+		expectedBaseSha: baseSha,
 		fetchImpl,
 	})
 	expect(code).toBe(1)
@@ -291,6 +343,7 @@ test('a base-branch push refreshes every open pull request head check', async ()
 		token: 'test-token',
 		repository: 'kentcdodds/kody',
 		baseRef: 'main',
+		expectedBaseSha: baseSha,
 		fetchImpl,
 		sleep: () => Promise.resolve(),
 		maxAttempts: 2,
@@ -312,6 +365,58 @@ test('a base-branch push refreshes every open pull request head check', async ()
 	expect(conclusions).toEqual(['failure', 'success'])
 })
 
+test('a base-branch push does not publish a cached result for the previous tip', async () => {
+	const calls: Array<{ method: string; url: string; body: unknown }> = []
+	let reads = 0
+	const fetchImpl: typeof fetch = (input, init) => {
+		const url = String(input)
+		const method = init?.method ?? 'GET'
+		const body =
+			typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
+		calls.push({ method, url, body })
+		if (url.includes('/pulls?')) {
+			return Promise.resolve(
+				Response.json([{ number: 7, head: { sha: headSha } }]),
+			)
+		}
+		if (url.endsWith('/pulls/7')) {
+			reads += 1
+			return Promise.resolve(
+				Response.json(
+					pull({
+						mergeable: reads === 1,
+						mergeable_state: reads === 1 ? 'clean' : 'dirty',
+						baseSha: reads === 1 ? previousBaseSha : baseSha,
+					}),
+				),
+			)
+		}
+		if (method === 'POST' && url.endsWith('/check-runs')) {
+			return Promise.resolve(Response.json({ id: 4 }))
+		}
+		if (method === 'PATCH') {
+			return Promise.resolve(Response.json({ id: 4 }))
+		}
+		return Promise.resolve(new Response('unexpected', { status: 500 }))
+	}
+	const code = await reportOpenPullRequestMergeConflicts({
+		token: 'test-token',
+		repository: 'kentcdodds/kody',
+		baseRef: 'main',
+		expectedBaseSha: baseSha,
+		fetchImpl,
+		sleep: () => Promise.resolve(),
+		maxAttempts: 3,
+		concurrency: 1,
+	})
+	expect(code).toBe(0)
+	expect(reads).toBe(2)
+	const completed = calls.filter((call) => call.method === 'PATCH')
+	expect(completed).toHaveLength(1)
+	expect(conclusionFrom(completed[0]?.body)).toBe('failure')
+	expect(checkSummary(completed[0]?.body)).toContain('conflicts with main')
+})
+
 test('an open pull request scan fails closed when the list is unreadable', async () => {
 	const fetchImpl: typeof fetch = () =>
 		Promise.resolve(Response.json({ unexpected: true }))
@@ -320,6 +425,7 @@ test('an open pull request scan fails closed when the list is unreadable', async
 			token: 'test-token',
 			repository: 'kentcdodds/kody',
 			baseRef: 'main',
+			expectedBaseSha: baseSha,
 			fetchImpl,
 			maxAttempts: 1,
 		}),
@@ -334,6 +440,14 @@ test('main fails closed for an unknown mode or a scan without a base ref', async
 			GITHUB_TOKEN: 'test-token',
 			GITHUB_REPOSITORY: 'kentcdodds/kody',
 			MERGE_CONFLICT_MODE: 'open-pulls',
+		})
+		expect(process.exitCode).toBe(1)
+		process.exitCode = 0
+		await main({
+			GITHUB_TOKEN: 'test-token',
+			GITHUB_REPOSITORY: 'kentcdodds/kody',
+			MERGE_CONFLICT_MODE: 'open-pulls',
+			BASE_REF: 'main',
 		})
 		expect(process.exitCode).toBe(1)
 		process.exitCode = 0
@@ -360,6 +474,9 @@ test('the workflow posts the check from the default branch and does not run pull
 	expect(workflow).toContain('github.event.changes.base')
 	expect(workflow).toContain('github.event.changes.base.ref.from')
 	expect(workflow).toContain("'open-pulls'")
+	expect(workflow).toContain('BASE_SHA:')
+	expect(workflow).toContain('github.sha')
+	expect(workflow).toContain('github.event.pull_request.base.sha')
 	const pullRequestTarget = workflow.slice(
 		workflow.indexOf('pull_request_target:'),
 	)
@@ -384,11 +501,13 @@ function mergeability(input: {
 	mergeable: boolean | null
 	mergeableState: string
 	draft?: boolean
+	baseSha?: string
 }): PullRequestMergeability {
 	return {
 		mergeable: input.mergeable,
 		mergeableState: input.mergeableState,
 		baseRef: 'main',
+		baseSha: input.baseSha ?? baseSha,
 		draft: input.draft ?? false,
 	}
 }
@@ -397,12 +516,13 @@ function pull(input: {
 	mergeable: boolean | null
 	mergeable_state: string
 	draft?: boolean
+	baseSha?: string
 }) {
 	return {
 		mergeable: input.mergeable,
 		mergeable_state: input.mergeable_state,
 		draft: input.draft ?? false,
-		base: { ref: 'main' },
+		base: { ref: 'main', sha: input.baseSha ?? baseSha },
 	}
 }
 
