@@ -813,7 +813,7 @@ export default async () => await email.getMessage('m-1')`,
 	}
 })
 
-test('runBundledModuleWithRegistry finishes execute run records on failure only', async () => {
+test('runBundledModuleWithRegistry records execute run success and failure', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
@@ -834,7 +834,7 @@ test('runBundledModuleWithRegistry finishes execute run records on failure only'
 		id: 'run-execute-1',
 		userId: 'user-execute-records',
 		startedAt: '2026-07-26T00:00:00.000Z',
-		persistence: 'on-failure' as const,
+		persistence: 'eager' as const,
 		context: {
 			surface: 'execute' as const,
 			name: null,
@@ -850,11 +850,7 @@ test('runBundledModuleWithRegistry finishes execute run records on failure only'
 	const finishSpy = vi
 		.spyOn(runRecords, 'finishRunRecord')
 		.mockImplementation(async (input) => {
-			const current = input.handle
-			if (!current) return
-			if (current.persistence === 'on-failure' && input.status === 'success') {
-				return
-			}
+			if (!input.handle) return
 			persistedStatuses.push(input.status)
 		})
 	let executeResult: { result: unknown; error?: unknown; logs: Array<string> } =
@@ -887,6 +883,7 @@ test('runBundledModuleWithRegistry finishes execute run records on failure only'
 			},
 		)
 		expect(success.error).toBeUndefined()
+		expect(success.runId).toBe(handle.id)
 		expect(beginSpy).toHaveBeenCalledWith(
 			expect.objectContaining({
 				userId: 'user-execute-records',
@@ -901,6 +898,7 @@ test('runBundledModuleWithRegistry finishes execute run records on failure only'
 				handle,
 				status: 'success',
 				logs: ['success log'],
+				result: 'ok',
 			}),
 		)
 		expect(handle.context.metadata).toEqual(
@@ -909,10 +907,11 @@ test('runBundledModuleWithRegistry finishes execute run records on failure only'
 				sandboxMs: expect.any(Number),
 			}),
 		)
-		expect(persistedStatuses).toEqual([])
+		expect(persistedStatuses).toEqual(['success'])
 
 		beginSpy.mockClear()
 		finishSpy.mockClear()
+		persistedStatuses.length = 0
 		executeResult = {
 			result: undefined,
 			error: mcpExecutor.createExecutorSandboxTimeoutMessage(2_500),
@@ -936,6 +935,7 @@ test('runBundledModuleWithRegistry finishes execute run records on failure only'
 		expect(failure.error).toBe(
 			mcpExecutor.createExecutorSandboxTimeoutMessage(2_500),
 		)
+		expect(failure.runId).toBe(handle.id)
 		expect(finishSpy).toHaveBeenCalledWith(
 			expect.objectContaining({
 				handle,

@@ -349,12 +349,12 @@ export function AccountActivityRoute(handle: Handle) {
 								fontSize: typography.fontSize.sm,
 							})}
 						>
-							Successful ad-hoc execute runs are not recorded (only failures
-							are). Run records are kept for about {retentionDays} days. Open
-							errors is the default view. Recent runs lists the last 7 days
-							across successes, running work, and errors. Ignored and resolved
-							errors stay hidden from Open errors until you change the triage
-							filter.
+							Ad-hoc execute runs are kept on success and on failure, the same
+							as jobs and webhooks. Run records are kept for about{' '}
+							{retentionDays} days. Open errors is the default view. Recent runs
+							lists the last 7 days across successes, running work, and errors.
+							Ignored and resolved errors stay hidden from Open errors until you
+							change the triage filter.
 						</p>
 
 						{showRunNotFound ? (

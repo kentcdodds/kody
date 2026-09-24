@@ -48,23 +48,22 @@ Add new members there — never invent ad hoc surface strings at call sites.
 
 ## Persistence policy
 
-`runPersistenceForSurface(surface)` returns:
+`runPersistenceForSurface(surface)` returns **`eager` for every surface**,
+including `export`. A `running` row is written at begin so an evicted or hung
+run is still visible in history, and both success and error persist. Ad-hoc
+`execute` is eager with or without an `idempotencyKey`, so successful one-off
+executes show up in Activity the same way jobs and webhooks do.
 
-- **`eager`** — every surface except `execute`. A `running` row is written at
-  begin so an evicted or hung run is still visible in history.
-- **`on-failure`** — key-less `execute` only. Nothing is persisted unless the
-  run ends in `error`.
+`runPersistenceForContext(context)` is what begin/finish actually use. It
+matches that surface default, except **key-less `export` downgrades to
+`on-failure`**: nothing is persisted unless the run ends in `error`.
 
-`runPersistenceForContext(context)` is what begin/finish actually use: same as
-the surface default, except **`execute` with a caller-supplied `idempotencyKey`
-upgrades to `eager`**.
-
-Key-less `execute` stays on-failure because it is the highest-volume surface and
-already returns its result (and logs) inline to the caller. Success counts for
-key-less ad-hoc execute come from Analytics Engine via
-[usage metering](./usage-metering.md), not from run records. Users who look for
-successful key-less `execute` rows in Activity will not find them; that is
-intentional.
+Key-less package export stays on-failure because it is the lean hot path: the
+caller already holds the result inline, and the user-visible history is the
+parent execute, job, webhook, or app run. An execute `idempotencyKey` does not
+change persistence. It claims the row so a client timeout can poll `runGet` or
+retry the same key. Success counts for every surface, including ad-hoc execute,
+also land in Analytics Engine via [usage metering](./usage-metering.md).
 
 When an external MCP client times out (for example MCP error `-32001`) while the
 sandbox continues, a keyed execute call still has a recoverable record: the
@@ -134,7 +133,7 @@ Rules:
   is stored under `metadata.result` after a bounded snapshot
   (`runRecordMaxResultSnapshotBytes`, currently 4 KiB). Oversized values become
   `{ __truncated__: true, preview }`. Eager surfaces that produce a handler
-  return value (at minimum webhook deliveries and package exports, plus keyed
+  return value (at minimum webhook deliveries, package exports, and ad-hoc
   execute) should pass it so `runGet` can show what the handler returned.
 - Keyed execute claims the idempotency key through `claimRunRecord` (awaited DO
   RPC) before sandbox work so a concurrent retry sees `running` or the terminal
@@ -365,8 +364,9 @@ run path. There is no Queue for this topic.
 
 **Usage metering** and run records are the aggregates/records pair: metering is
 sampling-tolerant and quota-oriented; run records are user-facing history.
-Successful key-less ad-hoc `execute` appears only in metering. Keyed execute
-successes are retained as run records so timed-out clients can recover.
+Ad-hoc `execute` successes are retained as run records and counted in metering.
+An idempotency key on execute is what makes a timed-out client able to replay
+that same result.
 
 **Sentry** must not open issues for user-authored failures. Boundaries that know
 the code is user-supplied throw `UserCodeError`

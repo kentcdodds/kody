@@ -228,24 +228,56 @@ test('write surfaces journey', async () => {
 	})
 	expect(waitDetail?.run.status).toBe('success')
 
-	// --- execute surface: on-failure policy (no persist on success, one row on error) ---
+	// --- execute is eager (success and error persist); key-less export stays on-failure ---
 	const userId5 = uniqueUserId('execute-policy')
 	const successHandle = beginRunRecord({
 		env,
 		userId: userId5,
 		context: baseContext({ surface: 'execute', name: 'ok' }),
 	})
-	expect(successHandle?.persistence).toBe('on-failure')
+	expect(successHandle?.persistence).toBe('eager')
 	await finishRunRecord({
 		env,
 		handle: successHandle,
 		status: 'success',
+		result: { ok: true },
+		logs: ['persisted'],
+	})
+	const successDetail = await getRunRecord({
+		env,
+		userId: userId5,
+		runId: successHandle!.id,
+	})
+	expect(successDetail?.run.status).toBe('success')
+	expect(successDetail?.run.surface).toBe('execute')
+	expect(successDetail?.run.name).toBe('ok')
+	expect(successDetail?.run.idempotencyKey).toBeNull()
+	expect(successDetail?.logs.map((entry) => entry.message)).toEqual([
+		'persisted',
+	])
+	expect(successDetail?.run.metadata['result']).toEqual({ ok: true })
+
+	const leanExport = beginRunRecord({
+		env,
+		userId: userId5,
+		context: baseContext({ surface: 'export', name: 'lean-ok' }),
+	})
+	expect(leanExport?.persistence).toBe('on-failure')
+	await finishRunRecord({
+		env,
+		handle: leanExport,
+		status: 'success',
+		result: { ignored: true },
 		logs: ['should not persist'],
 	})
-	expect(await listRunRecords({ env, userId: userId5 })).toEqual({
-		runs: [],
-		nextCursor: null,
-	})
+	expect(
+		await listRunRecords({
+			env,
+			userId: userId5,
+			filter: { surface: 'export' },
+		}),
+	).toEqual({ runs: [], nextCursor: null })
+
 	const errorHandle = beginRunRecord({
 		env,
 		userId: userId5,
@@ -258,12 +290,18 @@ test('write surfaces journey', async () => {
 		error: new Error('execute failed'),
 		logs: ['error log'],
 	})
-	const execPage = await listRunRecords({ env, userId: userId5 })
-	expect(execPage.runs).toHaveLength(1)
-	expect(execPage.runs[0]?.status).toBe('error')
-	expect(execPage.runs[0]?.errorName).toBe('Error')
-	expect(execPage.runs[0]?.errorMessage).toBe('execute failed')
-	expect(execPage.runs[0]?.surface).toBe('execute')
+	const execPage = await listRunRecords({
+		env,
+		userId: userId5,
+		filter: { surface: 'execute' },
+	})
+	expect(execPage.runs).toHaveLength(2)
+	const errorRun = execPage.runs.find((run) => run.id === errorHandle!.id)
+	expect(errorRun?.status).toBe('error')
+	expect(errorRun?.errorName).toBe('Error')
+	expect(errorRun?.errorMessage).toBe('execute failed')
+	expect(errorRun?.surface).toBe('execute')
+	expect(execPage.runs.map((run) => run.id)).toContain(successHandle!.id)
 })
 
 test('logs round-trip in sequence order and keep only the newest 200', async () => {
@@ -1862,6 +1900,78 @@ test(
 	},
 )
 
+test(
+	'a successful key-less execute run is listed with its result snapshot',
+	{ timeout: 60_000 },
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		const userId = uniqueUserId('sandbox-execute-success')
+		const callerContext = createMcpCallerContext({
+			baseUrl: 'https://kody.dev',
+			user: {
+				userId,
+				email: 'sandbox-execute-success@example.com',
+				displayName: 'Sandbox Execute Success',
+			},
+		})
+		const bundle = await buildKodyModuleBundle({
+			env,
+			baseUrl: 'https://kody.dev',
+			userId,
+			sourceFiles: {
+				'entry.ts': [
+					'export default async function main() {',
+					"\tconsole.log('smoke ok')",
+					'\treturn { ok: true }',
+					'}',
+				].join('\n'),
+			},
+			entryPoint: 'entry.ts',
+		})
+		const result = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			bundle,
+			undefined,
+			{
+				skipCapabilityRegistry: true,
+				runRecord: {
+					surface: 'execute',
+					name: 'smoke',
+				},
+			},
+		)
+		expect(result.error).toBeUndefined()
+		expect(result.result).toEqual({ ok: true })
+		expect(result.runId).toEqual(expect.any(String))
+
+		const page = await listRunRecords({
+			env,
+			userId,
+			filter: { surface: 'execute', status: 'success', name: 'smoke' },
+		})
+		expect(page.runs.map((run) => run.id)).toEqual([result.runId])
+		expect(page.runs[0]?.idempotencyKey).toBeNull()
+
+		const detail = await getRunRecord({
+			env,
+			userId,
+			runId: result.runId!,
+		})
+		expect(detail?.logs.map((entry) => [entry.level, entry.message])).toEqual([
+			['log', 'smoke ok'],
+		])
+		expect(detail?.run.metadata['result']).toEqual({ ok: true })
+
+		const summary = await summarizeRunRecords({ env, userId })
+		expect(summary.total).toBe(1)
+		expect(summary.errors).toBe(0)
+		expect(summary.bySurface).toEqual([
+			{ surface: 'execute', total: 1, errors: 0 },
+		])
+	},
+)
+
 test('keyed execute claims eagerly, retains bounded result, and replays without a second claim', async () => {
 	const userId = uniqueUserId('keyed-execute')
 	const key = `execute-key-${crypto.randomUUID()}`
@@ -1936,25 +2046,33 @@ test('keyed execute claims eagerly, retains bounded result, and replays without 
 		}),
 	})
 
-	// Key-less execute success still does not persist.
+	// Key-less execute success is retained the same way, without a replay key.
 	const keyless = beginRunRecord({
 		env,
 		userId,
 		context: { surface: 'execute', name: 'keyless-ok' },
 	})
-	expect(keyless?.persistence).toBe('on-failure')
+	expect(keyless?.persistence).toBe('eager')
 	await finishRunRecord({
 		env,
 		handle: keyless,
 		status: 'success',
-		result: { ignored: true },
+		result: { kept: true },
 	})
 	const page = await listRunRecords({
 		env,
 		userId,
 		filter: { surface: 'execute' },
 	})
-	expect(page.runs.map((run) => run.id)).toEqual([first.handle.id])
+	expect(page.runs.map((run) => run.id)).toEqual([keyless!.id, first.handle.id])
+	const keylessDetail = await getRunRecord({
+		env,
+		userId,
+		runId: keyless!.id,
+	})
+	expect(keylessDetail?.run.status).toBe('success')
+	expect(keylessDetail?.run.idempotencyKey).toBeNull()
+	expect(keylessDetail?.run.metadata['result']).toEqual({ kept: true })
 })
 
 test('idempotency lookup is surface-scoped and abandon releases running claims', async () => {

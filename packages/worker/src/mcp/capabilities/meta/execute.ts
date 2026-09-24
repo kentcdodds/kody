@@ -92,7 +92,7 @@ export const executeCapability = defineDomainCapability(
 				.max(runRecordMaxIdempotencyKeyLength)
 				.optional()
 				.describe(
-					`Optional caller-supplied idempotency key (max ${runRecordMaxIdempotencyKeyLength} chars). When set, persist the run eagerly with a bounded result snapshot and replay finished/in-progress outcomes instead of re-executing. Key-less execute stays on-failure-only.`,
+					`Optional caller-supplied idempotency key (max ${runRecordMaxIdempotencyKeyLength} chars). When set, replay a finished or in-progress run with the same key instead of starting another sandbox. Omit it for ordinary calls; those runs are still kept in Activity.`,
 				),
 		}),
 		outputSchema: executeOutputSchema,
