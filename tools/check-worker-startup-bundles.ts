@@ -305,7 +305,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Specifier-aware .__kody_virtual__ build check (bundler-resolved
 		// specifier collector incl. require(), JSON value walk) adds ~1.9 KB:
 		// local dry-run 3_832_503 against the previous 3_831_000 budget.
-		maxEntryBytes: 3_834_000,
+		// Protocol v1 Artifacts ref discovery and the bounded git HTTP client
+		// sit on the artifacts module runtime already loads: CI dry-run
+		// 3_834_166 against the previous 3_834_000 budget.
+		maxEntryBytes: 3_835_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',
