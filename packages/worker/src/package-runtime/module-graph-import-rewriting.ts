@@ -19,7 +19,12 @@ import {
 	resolveSavedPackageImport,
 } from './package-import-resolution.ts'
 import { loadPublishedBundleArtifactByIdentity } from './published-bundle-artifacts.ts'
-import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './published-source-dependencies.ts'
+import {
+	assertPublishedSourceCanRebuildWithoutInstallingDeps,
+	canRebuildPublishedSourceWithoutInstallingDeps,
+	publishedSourceBareImportsAreInstalled,
+} from './published-source-dependencies.ts'
+import { applyXSearchRecentPaginationPatch } from './x-search-recent-pagination.ts'
 import { isTypeDeclarationFilePath } from './static-kody-imports.ts'
 import { assertNotSealedSecretProviderExport } from '#mcp/secrets/secret-providers/sealed-export.ts'
 import {
@@ -86,6 +91,12 @@ export type LoadedKodyGraphPackage = LoadedPackageSource & {
 	platformScope: string | null
 	shareOwned?: boolean
 	storageOwnerUserId?: string
+	/**
+	 * The published importable artifact was built from source that did not
+	 * forward recent-search `next_token`. The snapshot can be bundled from
+	 * source, so the proxy uses the patched files instead of that artifact.
+	 */
+	skipPublishedArtifacts?: boolean
 }
 
 export type LoadedKodyGraphPackages = Map<string, LoadedKodyGraphPackage>
@@ -124,6 +135,7 @@ async function maybeEnsurePublishedArtifactTarget(input: {
 	specifier: string
 	loaded: LoadedKodyGraphPackage
 }): Promise<string | null> {
+	if (input.loaded.skipPublishedArtifacts) return null
 	if (!input.loaded.source.published_commit) {
 		return null
 	}
@@ -241,17 +253,25 @@ async function ensurePackageLoaded(
 		userId: resolution.sourceOwnerUserId,
 		sourceId: row.sourceId,
 	})
+	const patched = applyXSearchRecentPaginationPatch(loaded.files)
+	const usePatchedSource =
+		patched.changed &&
+		canRebuildPublishedSourceWithoutInstallingDeps(patched.files) &&
+		publishedSourceBareImportsAreInstalled(patched.files)
+	const packageFiles = usePatchedSource ? patched.files : loaded.files
 	const entry = {
 		...loaded,
+		files: packageFiles,
 		row,
 		prefix: joinPath(packageSourcePrefix, packageKey),
 		sourceOwnerUserId: resolution.sourceOwnerUserId,
 		platformScope: resolution.platformScope,
 		shareOwned: resolution.shareOwned,
 		storageOwnerUserId: resolution.storageOwnerUserId,
+		skipPublishedArtifacts: usePatchedSource,
 	}
 	state.packages.set(packageKey, entry)
-	for (const [filePath, content] of Object.entries(loaded.files)) {
+	for (const [filePath, content] of Object.entries(packageFiles)) {
 		const normalizedPath = normalizePackageWorkspacePath(filePath)
 		assertNoKodyVirtualModuleReference(normalizedPath, content)
 		const targetPath = joinPath(entry.prefix, normalizedPath)
@@ -592,17 +612,18 @@ export async function prepareKodyGraphFiles(input: {
 	rootPackageId?: string | null
 	allowPlatformScopes?: boolean
 }) {
+	const sourceFiles = applyXSearchRecentPaginationPatch(input.sourceFiles).files
 	const files: Record<string, string> = {
 		[runtimeModulePath]: createRuntimeModuleSource(),
 	}
-	const rootPackage = readRootPackage(input.sourceFiles)
+	const rootPackage = readRootPackage(sourceFiles)
 	const entryPoint =
 		resolveWorkspaceSourceFilePath({
-			files: input.sourceFiles,
+			files: sourceFiles,
 			path: input.entryPoint,
 		}) ?? normalizePackageWorkspacePath(input.entryPoint)
 	const reachableRootFiles = collectReachableSourceFilePaths({
-		files: input.sourceFiles,
+		files: sourceFiles,
 		entryPoint,
 		rootPackage,
 	})
@@ -611,7 +632,7 @@ export async function prepareKodyGraphFiles(input: {
 		baseUrl: input.baseUrl,
 		userId: input.userId,
 		files,
-		sourceFiles: input.sourceFiles,
+		sourceFiles,
 		rootPackage,
 		rootPackageId: input.rootPackageId?.trim() || null,
 		allowPlatformScopes: input.allowPlatformScopes === true,
@@ -619,7 +640,7 @@ export async function prepareKodyGraphFiles(input: {
 		dynamicPackageImports: new Map(),
 		packages: new Map(),
 	}
-	for (const [filePath, content] of Object.entries(input.sourceFiles)) {
+	for (const [filePath, content] of Object.entries(sourceFiles)) {
 		const normalizedSourcePath = normalizePackageWorkspacePath(filePath)
 		if (
 			isBundlerRootConfigPath(normalizedSourcePath) ||

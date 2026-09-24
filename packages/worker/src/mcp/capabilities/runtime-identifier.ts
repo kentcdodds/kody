@@ -56,6 +56,18 @@ export function snakeToCamelIdentifier(name: string) {
 	)
 }
 
+/**
+ * `integrationGet` → `integration_get`. Names that are already snake_case or a
+ * single word are unchanged. Callers use this only to add aliases; canonical
+ * capability ids stay camelCase.
+ */
+export function camelToSnakeIdentifier(name: string) {
+	return name
+		.replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+		.replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+		.toLowerCase()
+}
+
 export function isJavaScriptIdentifier(name: string) {
 	return identifierPattern.test(name) && !javascriptReservedWords.has(name)
 }
