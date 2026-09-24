@@ -37,6 +37,21 @@ test('every valid pick is a coding host, a chat host, and a third host of either
 	expect(
 		listChatWalkthroughHosts().some((host) => host.id === 'grok-bot'),
 	).toBe(true)
+	expect(listCodingWalkthroughHosts().some((host) => host.id === 'muse')).toBe(
+		true,
+	)
+	expect(listAllWalkthroughHosts().some((host) => host.id === 'muse')).toBe(
+		true,
+	)
+	expect(
+		walkthroughHostCatalog.find((host) => host.id === 'muse'),
+	).toMatchObject({
+		label: 'Muse',
+		icon: 'muse',
+		company: 'meta',
+		kind: 'coding',
+	})
+	expect(picks.some((pick) => pick.coding.id === 'muse')).toBe(true)
 	expect(picks.some((pick) => pick.coding.id === 'grok-bot')).toBe(true)
 	expect(picks.some((pick) => pick.invoke.id === 'grok-bot')).toBe(true)
 	expect(

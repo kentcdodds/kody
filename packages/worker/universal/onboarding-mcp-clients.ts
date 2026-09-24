@@ -84,8 +84,8 @@ export const onboardingDesktopFeaturedAgentIds = [
 
 /**
  * Phone chooser: only hosts with a real mobile app. Desktop-only CLIs and
- * IDEs (Claude Code, Devin, Codex, Copilot CLI, OpenCode, OpenClaw, Cursor)
- * stay off this list and appear under Not listed on a phone.
+ * IDEs (Claude Code, Devin, Codex, Copilot CLI, OpenCode, OpenClaw, Muse,
+ * Cursor) stay off this list and appear under Not listed on a phone.
  */
 export const onboardingMobileFeaturedAgentIds = [
 	'chatgpt',
