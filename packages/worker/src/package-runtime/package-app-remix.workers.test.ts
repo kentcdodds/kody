@@ -4,6 +4,7 @@ import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { createRemixPackageAppFiles } from '#worker/test-support/remix-package-app-fixture.ts'
 import { buildKodyAppBundle, buildKodyAppClientBundle } from './module-graph.ts'
+import { refreshKodyRuntimeModules } from './runtime-source-modules.ts'
 import { packageAppClientModuleNamePattern } from './package-app-client-module-name.ts'
 
 const appBasePath = '/packages/remix-notes'
@@ -89,11 +90,14 @@ test(
 		expect(code).not.toContain('React.createElement')
 
 		const wrapperModule = 'test-entry.js'
+		// buildKodyAppBundle strips host runtime (and now leaves it external);
+		// refresh reinstalls the shared runtime the way package-app serve does.
+		const modules = refreshKodyRuntimeModules(bundle.modules)
 		const worker = env.APP_LOADER.load({
 			...createDynamicWorkerCompatibilityOptions(),
 			mainModule: wrapperModule,
 			modules: {
-				...bundle.modules,
+				...modules,
 				[wrapperModule]: createTestWrapperSource(bundle.mainModule),
 			},
 		})
@@ -318,11 +322,14 @@ test(
 		expect(typeof mainSource).toBe('string')
 		expect(mainSource as string).not.toContain('kody:app')
 		const wrapperModule = 'test-entry.js'
+		// buildKodyAppBundle strips host runtime (and now leaves it external);
+		// refresh reinstalls the shared runtime the way package-app serve does.
+		const modules = refreshKodyRuntimeModules(bundle.modules)
 		const worker = env.APP_LOADER.load({
 			...createDynamicWorkerCompatibilityOptions(),
 			mainModule: wrapperModule,
 			modules: {
-				...bundle.modules,
+				...modules,
 				[wrapperModule]: createTestWrapperSource(bundle.mainModule),
 			},
 		})
