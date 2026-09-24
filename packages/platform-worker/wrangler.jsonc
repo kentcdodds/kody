@@ -40,18 +40,29 @@
 			"fallthrough": true,
 		},
 		{
+			// Allowlisted generated filenames only. A `*.mjs` glob uploads
+			// stray files under `node_modules/.kody-generated/` (Friction #2504).
+			// Keep this list equal to `tools/worker-additional-module-allowlist.ts`.
 			"type": "ESModule",
 			"globs": [
-				"generated/*.mjs",
-				"./generated/*.mjs",
-				"node_modules/.kody-generated/*.mjs",
-				"./node_modules/.kody-generated/*.mjs",
+				"generated/guide-catalog.mjs",
+				"generated/guide-metadata.mjs",
+				"./generated/guide-catalog.mjs",
+				"./generated/guide-metadata.mjs",
+				"node_modules/.kody-generated/worker-bundler.mjs",
+				"node_modules/.kody-generated/worker-bundler-typescript.mjs",
+				"node_modules/.kody-generated/oauth-provider.mjs",
+				"node_modules/.kody-generated/package-app-remix.mjs",
+				"./node_modules/.kody-generated/worker-bundler.mjs",
+				"./node_modules/.kody-generated/worker-bundler-typescript.mjs",
+				"./node_modules/.kody-generated/oauth-provider.mjs",
+				"./node_modules/.kody-generated/package-app-remix.mjs",
 			],
 			"fallthrough": true,
 		},
 		{
 			"type": "CompiledWasm",
-			"globs": ["node_modules/.kody-generated/*.wasm"],
+			"globs": ["node_modules/.kody-generated/esbuild.wasm"],
 			"fallthrough": true,
 		},
 	],
