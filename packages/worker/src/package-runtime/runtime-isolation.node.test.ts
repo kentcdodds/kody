@@ -654,6 +654,28 @@ test('secret-authority stamps stay visible across hydrated runtime.js copies', a
 		}
 		expect(stamped()).toBe('pkg-artifact')
 		expect(peek()).toBeNull()
+
+		// constructor.name is package-controlled; null must not break metering
+		// or async ALS selection (intrinsic prototype is used instead).
+		const syncNullCtor = () => peek()
+		Object.defineProperty(syncNullCtor, 'constructor', { value: null })
+		const stampedSyncNullCtor = siblingCopy.__kodyMeterStaticPackageExport(
+			'pkg-null-ctor',
+			syncNullCtor,
+		)
+		expect(stampedSyncNullCtor()).toBe('pkg-null-ctor')
+
+		const asyncNullCtor = async () => {
+			await Promise.resolve()
+			return peek()
+		}
+		Object.defineProperty(asyncNullCtor, 'constructor', { value: null })
+		const stampedAsyncNullCtor = siblingCopy.__kodyMeterStaticPackageExport(
+			'pkg-async-null-ctor',
+			asyncNullCtor,
+		)
+		expect(await stampedAsyncNullCtor()).toBe('pkg-async-null-ctor')
+		expect(peek()).toBeNull()
 	})
 })
 

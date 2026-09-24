@@ -11,6 +11,8 @@ import { type RuntimeBundle } from './runtime-bundle-types.ts'
 import {
 	createRelativeImportSpecifier,
 	joinPath,
+	normalizeWorkspaceModulePath,
+	resolveRelativeModulePath,
 	rootSourcePrefix,
 	resolveWorkspaceSourceFilePath,
 } from './module-graph-paths.ts'
@@ -29,12 +31,76 @@ import {
 	createAppEntrypointSource,
 	createExecuteEntrypointSource,
 	createImportableEntrypointSource,
+	isKodyRuntimeModulePath,
 	stripKodyRuntimeModules,
 } from './runtime-source-modules.ts'
 
 const packageAppBundleCache =
 	createPublishedPackagePromiseCache<RuntimeBundle>()
 const moduleBundleCache = createPublishedPackagePromiseCache<RuntimeBundle>()
+
+type EsbuildRuntimeResolveArgs = {
+	path: string
+	resolveDir: string
+	kind: string
+}
+
+type EsbuildRuntimePluginBuild = {
+	onResolve(
+		options: { filter: RegExp },
+		callback: (
+			args: EsbuildRuntimeResolveArgs,
+		) => { path: string; external: true } | undefined,
+	): void
+}
+
+/**
+ * Keep the shared `.__kody_virtual__/runtime.js` module out of the esbuild
+ * graph. Inlining it duplicates the stamp AsyncLocalStorage: metering writes
+ * one store while the sealed Symbol.for getter (and host fetch capture) read
+ * another. Package/public runtime facades stay inlined — they are thin
+ * binders that import the shared runtime. Strip + hydrate already install one
+ * shared runtime module; externalizing makes that the only ALS owner.
+ */
+export function createKodyRuntimeExternalsPlugin() {
+	return {
+		name: 'kody-runtime-externals',
+		setup(build: EsbuildRuntimePluginBuild) {
+			build.onResolve({ filter: /.*/ }, (args) => {
+				if (args.kind === 'entry-point') return
+				const resolved = resolveKodyRuntimeExternalPath(
+					args.resolveDir ?? '',
+					args.path,
+				)
+				if (resolved == null || !isKodyRuntimeModulePath(resolved)) {
+					return
+				}
+				// Emit a root-relative specifier so Worker Loader resolves the
+				// hydrated module key and refresh can see the import.
+				return {
+					path: resolved.startsWith('./') ? resolved : `./${resolved}`,
+					external: true,
+				}
+			})
+		},
+	}
+}
+
+function resolveKodyRuntimeExternalPath(resolveDir: string, specifier: string) {
+	if (specifier.startsWith('./') || specifier.startsWith('../')) {
+		const fromPath = resolveDir
+			? `${normalizeWorkspaceModulePath(resolveDir)}/__importer__`
+			: '__importer__'
+		return resolveRelativeModulePath(fromPath, specifier)
+	}
+	const normalized = normalizeWorkspaceModulePath(
+		specifier.startsWith('/') ? specifier.slice(1) : specifier,
+	)
+	// Specifiers like `./.__kody_virtual__/runtime.js` already match relative.
+	return isKodyRuntimeModulePath(normalized) ? normalized : null
+}
+
+const kodyRuntimeExternalsPlugin = createKodyRuntimeExternalsPlugin()
 
 async function createWorkerBundle(input: {
 	files: Record<string, string>
@@ -51,6 +117,9 @@ async function createWorkerBundle(input: {
 		files,
 		entryPoint: input.entryPoint,
 		...createPackageAppJsxBundleOptions(input.sourceFiles ?? input.files),
+		__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired: [
+			kodyRuntimeExternalsPlugin,
+		],
 	})
 }
 
