@@ -37,6 +37,7 @@ import { assertCallerCanAccessCapability } from '#mcp/capabilities/access-contro
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { type Capability } from '#mcp/capabilities/types.ts'
 import { createRemovedValueWriteError } from '#mcp/capabilities/values/shared.ts'
+import { aliasSnakeCaseKodyTools } from '#mcp/kody-tool-aliases.ts'
 import {
 	type KodyMcpServerMetadata,
 	type KodyResolvedProvider,
@@ -390,11 +391,11 @@ async function buildKodyToolContext(
 		...runtimeHelperKodyToolSets.map(({ tools }) => tools),
 	) as AdditionalKodyTools
 	return {
-		tools: {
+		tools: aliasSnakeCaseKodyTools({
 			...capabilityKodyTools,
 			...runtimeHelperKodyTools,
 			...additionalTools,
-		},
+		}),
 		mcpServers,
 	}
 }

@@ -20,6 +20,7 @@ import {
 } from '#mcp/run-kody-registry.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { createRemovedValueWriteError } from '#mcp/capabilities/values/shared.ts'
+import { resolveKodyCapabilityName } from '#mcp/kody-tool-aliases.ts'
 import { listVisibleEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
 import { createAuthenticatedFetch } from '#mcp/execute-modules/kody-runtime-utils.ts'
 import {
@@ -1128,7 +1129,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	}
 
 	async callCapability(input: { name: string; args?: unknown }) {
-		const name = input.name.trim()
+		const requestedName = input.name.trim()
 		const { args, requestedPackageId } = takeSecretAuthorityFromCapabilityArgs([
 			input.args ?? {},
 		])
@@ -1137,12 +1138,18 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			env: this.env,
 			callerContext,
 		})
+		const name =
+			requestedName === 'value_set'
+				? requestedName
+				: resolveKodyCapabilityName(requestedName, capabilityMap)
 		const capability = capabilityMap[name]
-		if (name === 'value_set' || !capability) {
-			if (name === 'value_set') {
+		if (requestedName === 'value_set' || !capability) {
+			if (requestedName === 'value_set') {
 				throw createRemovedValueWriteError()
 			}
-			throw new Error(`Package app capability "${name}" is not available.`)
+			throw new Error(
+				`Package app capability "${requestedName}" is not available.`,
+			)
 		}
 		const invoke = () =>
 			capability.handler((args[0] ?? {}) as Record<string, unknown>, {
