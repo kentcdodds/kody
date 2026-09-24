@@ -68,6 +68,26 @@ export function buildPublishedCommitHeadMismatchCallerMessage(
 	].join(' ')
 }
 
+export function buildArtifactsGitReadTimeoutMessage(input: {
+	operation: string
+	reason: string
+}) {
+	const lines = [
+		`${input.operation} timed out reading the Artifacts git remote.`,
+		'Retry the call.',
+	]
+	// packageSave is the authoring fallback for a hung packageGetGitRemote.
+	// repoOpenSession has no overwrite lane, so that sentence would send an
+	// agent away from the session it was opening.
+	if (input.operation === 'packageGetGitRemote') {
+		lines.push(
+			'Package authoring can use packageSave when packageGetGitRemote keeps timing out.',
+		)
+	}
+	lines.push(input.reason)
+	return lines.join(' ')
+}
+
 function buildDestructiveOverwriteConfirmationMessage(input: {
 	source: EntitySourceRow
 	operation: string
@@ -255,12 +275,10 @@ export async function assertPublishedPackageSourceRepoHead(input: {
 	} catch (error) {
 		if (isArtifactsGitTimeoutError(error)) {
 			throw new Error(
-				[
-					`${input.operation} timed out reading the Artifacts git remote.`,
-					'Retry the call.',
-					'Package authoring can use packageSave when packageGetGitRemote keeps timing out.',
-					getErrorMessage(error),
-				].join(' '),
+				buildArtifactsGitReadTimeoutMessage({
+					operation: input.operation,
+					reason: getErrorMessage(error),
+				}),
 				{ cause: error },
 			)
 		}
