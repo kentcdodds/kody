@@ -20,7 +20,7 @@ node tools/control-kody.ts request GET /account/waiting --dump --contains 'Waiti
 node tools/control-kody.ts map waiting
 node tools/control-kody.ts map --check
 node tools/control-kody.ts health --sha <merge-sha>
-node tools/control-kody.ts preview -- --request 'GET /account/waiting.json' --check /account/waiting
+node tools/control-kody.ts preview --pr 42 --request 'GET /account/waiting.json' --check /account/waiting
 node tools/control-kody.ts package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]
 ```
 
@@ -31,8 +31,12 @@ After `login`, keep using `request` for HTML and JSON assertions. Do **not**
 `cat` the session cookie into `curl` or Python. `--dump` writes the raw body to
 `.tmp/control-kody-body`. `--contains <text>` fails unless that substring is in
 the body. Cookie files are bound to the origin that created them; `request`
-re-logs in if a leftover cookie is rejected (HTTP 401 or a login-page HTML
-body).
+fetches GET/HEAD first and only POSTs `/auth` when the response is HTTP 401 or
+login HTML. Public pages such as `/pricing` do not need a session. Mutating
+methods log in first when no cookie exists.
+
+`preview` forwards `--pr`, `--request`, and `--check` to `preview:manual-test`.
+A `--` separator is optional.
 
 `doctor` (and a failed local `login`) print `npm run migrate:local` plus
 `node tools/seed-test-data.ts --local` when local APP_DB was never migrated or

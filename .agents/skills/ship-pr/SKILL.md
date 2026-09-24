@@ -50,10 +50,17 @@ CodeRabbit when the change is **high** risk (or the user explicitly asks).
    above for CodeRabbit) and address valid feedback. While the PR is open, also
    fix obvious in-scope low-risk repo friction you are already touching, mention
    the fix, and let CI finish again before merging. Rebase only when actually
-   unmergeable. For **medium+**, also run `npm run control-kody -- preview` (or
-   `npm run preview:manual-test`) as the seeded user **with data for this
-   change** (`control-kody request` / `--request`; do not cat the cookie into
-   curl or Python — see [control-kody](../control-kody/SKILL.md) and
+   unmergeable. Immediately before merge, recheck tip-of-main mergeability
+   (`gh pr view --json mergeable,mergeStateStatus`). If GitHub flipped the PR to
+   CONFLICTING after green checks, fetch `origin/main`, rebase once, push, and
+   wait for CI again. Recheck mergeability after that recovery CI succeeds and
+   before merging. If it is still CONFLICTING after the single rebase, stop and
+   report the conflict — do not rebase again, and do not treat “green then
+   conflicting” as a surprise dead-end. For **medium+**, also run
+   `npm run control-kody -- preview` (or `npm run preview:manual-test`) as the
+   seeded user **with data for this change** (`control-kody request` /
+   `--request`; do not cat the cookie into curl or Python — see
+   [control-kody](../control-kody/SKILL.md) and
    [preview-manual-test](../preview-manual-test/SKILL.md)). After merge,
    `npm run control-kody -- health --origin https://kody.codes --sha <merge>`.
 4. Green + (medium+: valid feedback cleared) → break.

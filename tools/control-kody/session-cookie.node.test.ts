@@ -49,6 +49,15 @@ test('login HTML on an account path refreshes the session', () => {
 			rawBody: '{"ok":false}',
 		}),
 	).toBe(true)
+	expect(
+		shouldRefreshSession({
+			skipLogin: false,
+			status: 200,
+			path: '/account/values.json',
+			rawBody: loginHtml,
+			method: 'POST',
+		}),
+	).toBe(true)
 })
 
 test('a login nav link on a real account page does not refresh the session', () => {
@@ -64,15 +73,6 @@ test('a login nav link on a real account page does not refresh the session', () 
 			path: '/account/waiting',
 			rawBody: waitingHtml,
 			method: 'GET',
-		}),
-	).toBe(false)
-	expect(
-		shouldRefreshSession({
-			skipLogin: false,
-			status: 200,
-			path: '/account/values.json',
-			rawBody: loginHtml,
-			method: 'POST',
 		}),
 	).toBe(false)
 })
