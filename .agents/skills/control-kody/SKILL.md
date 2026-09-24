@@ -31,8 +31,9 @@ After `login`, keep using `request` for HTML and JSON assertions. Do **not**
 `cat` the session cookie into `curl` or Python. `--dump` writes the raw body to
 `.tmp/control-kody-body`. `--contains <text>` fails unless that substring is in
 the body. Cookie files are bound to the origin that created them; `request`
-fetches first and only POSTs `/auth` when the response is HTTP 401 or login
-HTML. Public pages such as `/pricing` do not need a session.
+fetches GET/HEAD first and only POSTs `/auth` when the response is HTTP 401 or
+login HTML. Public pages such as `/pricing` do not need a session. Mutating
+methods log in first when no cookie exists.
 
 `preview` forwards `--pr`, `--request`, and `--check` to `preview:manual-test`.
 A `--` separator is optional.

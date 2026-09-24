@@ -643,6 +643,87 @@ test('control-kody request re-logs in when HTML redirects to login', async () =>
 	}
 })
 
+test('control-kody request logs in before a mutating call when no cookie exists', async () => {
+	const dir = await mkdtemp(
+		path.join(tmpdir(), 'control-kody-post-login-first-'),
+	)
+	try {
+		const seen: Array<{ method?: string; url?: string; cookie?: string }> = []
+		await withAuthServer(
+			(request, response) => {
+				seen.push({
+					method: request.method,
+					url: request.url ?? '/',
+					cookie: request.headers.cookie,
+				})
+				const url = request.url ?? '/'
+				if (request.method === 'POST' && url === '/auth') {
+					response.setHeader('Set-Cookie', 'kody_session=fresh; Path=/')
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ ok: true }))
+					return
+				}
+				if (url === '/docs/secret-providers/opt-in') {
+					if (request.headers.cookie !== 'kody_session=fresh') {
+						response.statusCode = 302
+						response.setHeader('Location', '/login')
+						response.end()
+						return
+					}
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ ok: true, optedIn: true }))
+					return
+				}
+				if (url === '/login') {
+					response.setHeader('Content-Type', 'text/html')
+					response.end(
+						'<link rel="canonical" href="http://127.0.0.1/login" data-kody-head="canonical" />',
+					)
+					return
+				}
+				response.statusCode = 404
+				response.end('missing')
+			},
+			async (origin) => {
+				const code = await runCommand(
+					parseControlArgs([
+						'request',
+						'POST',
+						'/docs/secret-providers/opt-in',
+						'--origin',
+						origin,
+						'--cookie-file',
+						path.join(dir, 'cookie'),
+						'--json',
+					]),
+				)
+				expect(code).toBe(0)
+				expect(seen[0]).toEqual(
+					expect.objectContaining({ method: 'POST', url: '/auth' }),
+				)
+				expect(
+					seen.some(
+						(hit) =>
+							hit.method === 'POST' &&
+							hit.url === '/docs/secret-providers/opt-in' &&
+							hit.cookie === 'kody_session=fresh',
+					),
+				).toBe(true)
+				expect(
+					seen.some(
+						(hit) =>
+							hit.method === 'POST' &&
+							hit.url === '/docs/secret-providers/opt-in' &&
+							!hit.cookie,
+					),
+				).toBe(false)
+			},
+		)
+	} finally {
+		await rm(dir, { recursive: true, force: true })
+	}
+})
+
 test('control-kody request logs in after a 401 when no cookie file exists', async () => {
 	const dir = await mkdtemp(path.join(tmpdir(), 'control-kody-auth-after-401-'))
 	try {

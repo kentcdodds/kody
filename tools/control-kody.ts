@@ -94,8 +94,9 @@ const usageLines = [
 	'preview forwards its flags to preview:manual-test (--pr, --request, --check).',
 	'A `--` separator is optional. Example: preview --pr 42 --check /account',
 	'',
-	'request fetches first and only POSTs /auth when the response is 401 or',
-	'login HTML. Public pages such as /pricing do not need a session.',
+	'request fetches GET/HEAD first and only POSTs /auth when the response is',
+	'401 or login HTML. Public pages such as /pricing do not need a session.',
+	'Mutating methods log in first when no cookie exists.',
 	'',
 	'Docs: docs/contributing/control-kody.md',
 ]
@@ -868,6 +869,17 @@ async function runCommand(options: ControlKodyOptions) {
 			}
 			const origin = await resolveOrigin(options)
 			let cookieHeader = readCookieFile(options.cookieFile, origin)
+			const method = options.request.method.toUpperCase()
+			if (
+				!options.skipLogin &&
+				!cookieHeader &&
+				method !== 'GET' &&
+				method !== 'HEAD'
+			) {
+				const loggedIn = await loginAndStoreCookie(origin, options)
+				if (!loggedIn.ok) return 1
+				cookieHeader = loggedIn.cookieHeader
+			}
 			let result = await requestAsSession({
 				origin,
 				spec: options.request,

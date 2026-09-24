@@ -47,7 +47,5 @@ export function shouldRefreshSession(input: {
 	if (input.skipLogin) return false
 	if (input.status === 401) return true
 	if (input.path === '/login') return false
-	const method = (input.method ?? 'GET').toUpperCase()
-	if (method !== 'GET' && method !== 'HEAD') return false
 	return looksLikeLoginHtml(input.rawBody)
 }
