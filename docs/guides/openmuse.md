@@ -154,6 +154,9 @@ const agent = new BuiltInAgent({
 })
 ```
 
+OpenMuse only pulls `@ai-sdk/mcp` and `@modelcontextprotocol/sdk` in through
+CopilotKit, so add both as direct dependencies of its server first.
+
 `kodyOAuth` is an `OAuthClientProvider` from the
 [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk).
 Kody authenticates MCP clients with OAuth 2.1; there is no static API key for
