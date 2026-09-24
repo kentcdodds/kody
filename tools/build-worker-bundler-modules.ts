@@ -26,8 +26,10 @@ import { isExecutedDirectly } from './node-runtime.ts'
  * evaluated on every isolate cold start even though only repo checks use it.
  * With `find_additional_modules` enabled in `wrangler.jsonc`, these generated
  * `.mjs` files upload as separate external modules that only load when the
- * repo-check paths actually import them. The OAuth provider rides the same
- * lane: origin's `fetch` wrapper imports it statically, but
+ * repo-check paths actually import them. The rules name each file, so a stray
+ * sibling under `node_modules/.kody-generated/` is not uploaded (Friction
+ * #2504). The OAuth provider rides the same lane: origin's `fetch` wrapper
+ * imports it statically, but
  * `#worker/oauth-helpers.ts` needs it only when `OAUTH_PROVIDER` is absent
  * (scheduled purge lane, the `MCP` Durable Object on kody-platform), and the
  * platform/runtime startup entries must not carry it.
