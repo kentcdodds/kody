@@ -184,6 +184,6 @@ test('webhookSyntheticDispatch requires a signed-in MCP user (owner path)', asyn
 			},
 			ctx as never,
 		),
-	).rejects.toThrow()
+	).rejects.toThrow(/Authenticated MCP user is required/)
 	expect(mocks.dispatchSyntheticWebhookForUser).not.toHaveBeenCalled()
 })
