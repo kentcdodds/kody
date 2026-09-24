@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import {
 	mkdtemp,
 	readdir,
@@ -18,7 +19,6 @@ import { writeRuntimeDryRunConfig } from './local-runtime-dev-config.ts'
 import {
 	expectedKodyGeneratedUploadNames,
 	guideGeneratedModuleNames,
-	strayKodyGeneratedModuleName,
 } from './worker-additional-module-allowlist.ts'
 import {
 	buildOriginProductionViteBundle,
@@ -370,22 +370,13 @@ function assertDeferredSourcesStayOutOfMain(
 const strayKodyGeneratedModuleMarker = 'export const stray = 1\n'
 
 /**
- * Writes the Friction #2504 reproduction file when that path is empty. A
- * `*.mjs` glob would upload it; the allowlist must leave it out of the
- * dry-run. Refuses to overwrite a different file at the same path.
+ * Creates this run's Friction #2504 fixture with `wx`. A `*.mjs` glob would
+ * upload it; the allowlist must leave it out of the dry-run. The caller
+ * deletes the file only after this create succeeds, so a pre-existing module
+ * and any other run's fixture stay on disk.
  */
 async function plantStrayKodyGeneratedModule(strayPath: string) {
-	try {
-		await writeFile(strayPath, strayKodyGeneratedModuleMarker, { flag: 'wx' })
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-		const existing = await readFile(strayPath, 'utf8')
-		if (existing !== strayKodyGeneratedModuleMarker) {
-			throw new Error(
-				`${strayPath} already exists and is not the startup-check stray module. Move it aside so the allowlist regression can run.`,
-			)
-		}
-	}
+	await writeFile(strayPath, strayKodyGeneratedModuleMarker, { flag: 'wx' })
 }
 
 async function readUploadedModuleNames(directory: string) {
@@ -588,7 +579,7 @@ export async function checkWorkerStartupBundles() {
 	const strayPath = path.join(
 		repoRoot,
 		'packages/worker/src/node_modules/.kody-generated',
-		strayKodyGeneratedModuleName,
+		`stray-experiment-${String(process.pid)}-${randomUUID()}.mjs`,
 	)
 	const wranglerBinary = resolveLocalBinary('wrangler')
 	let removeStray = false
