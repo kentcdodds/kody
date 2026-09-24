@@ -27,10 +27,21 @@ https://kody.codes/account/secrets” note with no body is not proof.
 - `GET|POST /account/secrets.json`
 - `GET|POST /account/secret-providers.json`
 
+`POST /account/secrets.json` writes with `action: "save"`. `name`, `value`, and
+`scope` are required. Omit `currentId` to create a secret; pass `currentId` to
+update one. An unknown action is HTTP 400 `Invalid action.`
+
+Seed a preview secret with `save`:
+
+```bash
+node tools/control-kody.ts request POST /account/secrets.json '{"action":"save","scope":"user","name":"previewSeed","value":"preview-seed-value","allowedHosts":["api.example.com"]}'
+```
+
 ## Gotchas
 
 - Never paste secret values into chat, PRs, or execute params.
-- Preview seed starts with zero secrets.
+- Preview seed starts with zero secrets. Create one with the `save` POST above
+  before asserting rows.
 - `/connect/secrets` rejects hosts that are not hostname-shaped (truncated
   tokens, paths, empty values). Those must not appear as a successful Allow
   target, and they must not land in `allowedHosts`.
