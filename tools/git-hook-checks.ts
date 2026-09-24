@@ -47,7 +47,9 @@ const licenseBasenamePattern =
 const newRefBaseCandidates = ['origin/HEAD', 'origin/main', 'main'] as const
 
 function normalizeHookPath(filePath: string) {
-	return filePath.replaceAll('\\', '/').replace(/^\.?\//, '')
+	// Git path output uses `/` even on Windows. A literal backslash is part of
+	// the filename, so do not treat it as a separator.
+	return filePath.replace(/^\.\//, '')
 }
 
 export function isDocsOnlyHookPath(filePath: string) {

@@ -50,6 +50,7 @@ test('docs-only hook paths skip expensive checks and any code path keeps them', 
 	)
 	expect(isDocsOnlyHookPath('.github/workflows/validate.yml')).toBe(false)
 	expect(isDocsOnlyHookPath('../packages/worker/src/app.ts')).toBe(false)
+	expect(isDocsOnlyHookPath('docs\\feature.ts')).toBe(false)
 
 	const docsPaths = ['docs/contributing/security.md', 'README.md', 'LICENSE']
 	expect(
