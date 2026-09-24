@@ -22,6 +22,7 @@ import { loadPublishedBundleArtifactByIdentity } from './published-bundle-artifa
 import {
 	assertPublishedSourceCanRebuildWithoutInstallingDeps,
 	canRebuildPublishedSourceWithoutInstallingDeps,
+	publishedSourceBareImportsAreInstalled,
 } from './published-source-dependencies.ts'
 import { applyXSearchRecentPaginationPatch } from './x-search-recent-pagination.ts'
 import { isTypeDeclarationFilePath } from './static-kody-imports.ts'
@@ -255,7 +256,8 @@ async function ensurePackageLoaded(
 	const patched = applyXSearchRecentPaginationPatch(loaded.files)
 	const usePatchedSource =
 		patched.changed &&
-		canRebuildPublishedSourceWithoutInstallingDeps(patched.files)
+		canRebuildPublishedSourceWithoutInstallingDeps(patched.files) &&
+		publishedSourceBareImportsAreInstalled(patched.files)
 	const packageFiles = usePatchedSource ? patched.files : loaded.files
 	const entry = {
 		...loaded,

@@ -1156,8 +1156,12 @@ test('buildKodyModuleBundle follows self kody imports when recording reachable d
 	)
 })
 
-function unpatchedXSearchRecentFiles(input?: { dependencies?: boolean }) {
+function unpatchedXSearchRecentFiles(input?: {
+	dependencies?: boolean
+	bareImport?: string
+}) {
 	const client = [
+		...(input?.bareImport ? [`import '${input.bareImport}'`] : []),
 		'export async function searchRecent(params) {',
 		'\tconst query = cleanObject({',
 		'\t\tquery: params.query,',
@@ -1347,4 +1351,66 @@ test('search-recent keeps its published artifact when source cannot be rebuilt',
 		path.endsWith('/src/client.ts'),
 	)?.[1]
 	expect(client).not.toContain('next_token: params.nextToken')
+})
+
+test('search-recent keeps its published artifact when a bare import is not installed', async () => {
+	mockModule.createWorker.mockResolvedValue(createBundleResult('bare-import'))
+	mockModule.getSavedPackageByName.mockResolvedValue(
+		createSavedPackageRecord({
+			name: '@kentcdodds/x',
+			kodyId: 'x',
+		}),
+	)
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(
+		unpatchedXSearchRecentFiles({ bareImport: 'some-client' }),
+	)
+	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
+		row: { id: 'artifact-1' },
+		artifact: {
+			version: 1,
+			kind: 'importable-module',
+			artifactName: './search-recent',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+			entryPoint: 'src/search-recent.ts',
+			mainModule: 'dist/search-recent.js',
+			modules: {
+				'dist/search-recent.js':
+					'export default async function staleSearch() { return "stale" }',
+			},
+			dependencies: [],
+			packageContext: {
+				packageId: 'pkg-1',
+				kodyId: 'x',
+				sourceId: 'source-1',
+			},
+			createdAt: '2026-09-11T00:00:00.000Z',
+		},
+	})
+
+	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+	await buildKodyModuleBundle({
+		env: { APP_DB: {}, REPO_SESSION: {} } as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/local-package',
+				exports: { '.': './index.js' },
+				kody: { id: 'local-package', description: 'Local package' },
+			}),
+			'index.js':
+				'import searchRecent from "kody:@kentcdodds/x/search-recent"\nexport default searchRecent\n',
+		},
+		entryPoint: 'index.js',
+	})
+
+	expect(mockModule.loadPublishedBundleArtifactByIdentity).toHaveBeenCalled()
+	const workerInput = mockModule.createWorker.mock.calls[0]?.[0] as
+		| { files?: Record<string, string> }
+		| undefined
+	const artifact = Object.values(workerInput?.files ?? {}).find((source) =>
+		source.includes('return "stale"'),
+	)
+	expect(artifact).toContain('return "stale"')
 })
