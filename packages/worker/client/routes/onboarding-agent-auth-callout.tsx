@@ -163,6 +163,19 @@ function renderAgentAuthHint(
 					Approve the Kody OAuth window.
 				</>
 			)
+		case 'muse':
+			return surface === 'mobile' ? (
+				<>
+					Run the Kody CLI on a computer, then complete OAuth. After OAuth
+					succeeds, you may need to paste a localhost URL into the Muse chat.
+				</>
+			) : (
+				<>
+					Run the Kody CLI install, then complete OAuth when prompted. After
+					OAuth succeeds, you may need to paste a localhost URL into the Muse
+					chat.
+				</>
+			)
 		case 'copilot':
 			return surface === 'mobile' ? (
 				<>Complete OAuth when the GitHub or Copilot app opens it.</>

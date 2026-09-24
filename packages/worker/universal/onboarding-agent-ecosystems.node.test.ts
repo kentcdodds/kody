@@ -25,6 +25,10 @@ test('step 3 groups Cursor hosts with Grok and GitHub hosts together', () => {
 		'grok',
 		'grok-cli',
 	])
+	const muse = onboardingStep3EcosystemGroups.find(
+		(group) => group.id === 'muse',
+	)
+	expect(muse?.agents).toEqual(['muse'])
 })
 
 test('step 3 disables only known connections, and Cursor Cloud marks Grok Bot', () => {

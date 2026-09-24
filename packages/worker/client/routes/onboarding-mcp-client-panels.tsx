@@ -14,6 +14,7 @@ import {
 	buildOpenClawMcpJson,
 	buildOpenCodeMcpAddCommand,
 	buildOpenCodeMcpJson,
+	buildKodyCliInstallCommand,
 	buildVsCodeInstallUrl,
 	buildVsCodeMcpJson,
 	chatGptDeveloperModeGuideUrl,
@@ -23,10 +24,12 @@ import {
 	isDefaultKodyMcpUrl,
 	kodyAppIconFilename,
 	kodyChatGptPluginUrl,
+	kodyCliRepoUrl,
 	kodyCursorAddPluginCommand,
 	kodyCursorMarketplaceUrl,
 	type McpClientKind,
 	type OnboardingAgentSurface,
+	musePlatformUrl,
 	openClawMcpLoginCommand,
 } from '#client/routes/onboarding-mcp-clients.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
@@ -371,6 +374,44 @@ export function renderPanelContent(
 				</>
 			)
 		}
+		case 'muse': {
+			const installCommand = buildKodyCliInstallCommand(mcpServerUrl)
+			return (
+				<>
+					<p>
+						Until the connector appears in Muse&apos;s directory, install with
+						the{' '}
+						<a href={kodyCliRepoUrl} target="_blank" rel="noreferrer">
+							Kody CLI
+						</a>{' '}
+						(
+						<a href={musePlatformUrl} target="_blank" rel="noreferrer">
+							muse.ai/platform
+						</a>
+						).
+					</p>
+					<ConnectCopyCard
+						highlights={highlights}
+						label="Kody CLI"
+						value={installCommand}
+						copyLabel="Copy command"
+						variant="pill"
+						lang="sh"
+					/>
+					<ConnectCopyCard
+						highlights={highlights}
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+						variant="pill"
+					/>
+					<p>
+						After OAuth succeeds, you may need to paste a localhost URL into the
+						Muse chat.
+					</p>
+				</>
+			)
+		}
 		case 'copilot': {
 			const vsCodeJson = buildVsCodeMcpJson(mcpServerUrl)
 			const installUrl = buildVsCodeInstallUrl(mcpServerUrl)
@@ -545,6 +586,14 @@ export function renderPanelWarning(
 					CLI later on a computer.
 				</ClientWarning>
 			) : null
+		case 'muse':
+			return (
+				<ClientWarning>
+					{surface === 'mobile'
+						? "Muse Code is for a computer. Change selection and pick a host with a mobile app, or run these steps later on a computer. A Kody connector/plugin has been submitted on Muse's platform and is pending review. Until it lands, use the Kody CLI."
+						: "A Kody connector/plugin has been submitted on Muse's platform and is pending review. Until it lands, use the Kody CLI."}
+				</ClientWarning>
+			)
 		case 'cursor-cloud':
 		case 'copilot':
 		case 'copilot-app':

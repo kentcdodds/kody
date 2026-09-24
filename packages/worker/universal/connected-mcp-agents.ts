@@ -72,6 +72,7 @@ const clientNameKindRules = [
 	{ kind: 'devin', needles: ['devin'] },
 	{ kind: 'opencode', needles: ['opencode', 'open code'] },
 	{ kind: 'openclaw', needles: ['openclaw', 'open claw'] },
+	{ kind: 'muse', needles: ['muse code', 'muse-code', 'musecode', 'muse'] },
 ] as const satisfies ReadonlyArray<{
 	kind: McpClientKind
 	needles: ReadonlyArray<string>
@@ -87,6 +88,7 @@ const hostKindRules = [
 	{ kind: 'devin', hosts: ['devin.ai', 'app.devin.ai'] },
 	{ kind: 'opencode', hosts: ['opencode.ai'] },
 	{ kind: 'openclaw', hosts: ['openclaw.ai'] },
+	{ kind: 'muse', hosts: ['muse.ai', 'meta.ai', 'dev.meta.ai'] },
 ] as const satisfies ReadonlyArray<{
 	kind: McpClientKind
 	hosts: ReadonlyArray<string>

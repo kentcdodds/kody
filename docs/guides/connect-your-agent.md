@@ -14,10 +14,10 @@ category: platform
 
 Kody is the home your agents share, and you reach it over MCP. Keep using the
 agent you like: Cursor, ChatGPT, Codex, Claude Desktop, Claude Code, Copilot,
-Grok, Gemini, OpenCode, OpenClaw, Devin, or any other agent that supports MCP.
-That agent stays the place you talk and work. Kody adds memory, secrets it never
-reads, saved packages, and jobs that every agent you connect can share. There is
-no separate Kody chat app to learn.
+Grok, Gemini, OpenCode, OpenClaw, Muse, Devin, or any other agent that supports
+MCP. That agent stays the place you talk and work. Kody adds memory, secrets it
+never reads, saved packages, and jobs that every agent you connect can share.
+There is no separate Kody chat app to learn.
 
 Getting started is three steps, and the in-app page at `/onboarding` walks you
 through each one.
@@ -63,8 +63,8 @@ for the server card.
 Using packages that already exist works well from non-coding agents: Claude
 Desktop, ChatGPT, Grok, Gemini, the Copilot app. Creating or editing packages is
 smoother from a coding agent — Cursor, Claude Code, Codex, Copilot CLI,
-OpenCode, Devin, OpenClaw — because those hosts edit files and iterate on code
-easily. Either kind can be first; the home is the same.
+OpenCode, Devin, OpenClaw, Muse — because those hosts edit files and iterate on
+code easily. Either kind can be first; the home is the same.
 
 ## Step 2 — Make something useful
 
