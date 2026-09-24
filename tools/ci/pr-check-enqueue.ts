@@ -79,9 +79,9 @@ export function decidePrCheckEnqueue(
 	if (pullRequest.fork) return { action: 'skip', reason: 'fork' }
 	if (pullRequest.baseRef !== 'main') return { action: 'skip', reason: 'base' }
 	if (eventAction === 'closed') {
-		// Drafts never deployed. A mergeable close still gets the
-		// pull_request cleanup run.
-		if (pullRequest.draft) return { action: 'skip', reason: 'draft' }
+		// A ready PR can be flipped to draft after Preview deployed.
+		// Still clean that conflicted close up. A mergeable close keeps
+		// the pull_request cleanup run.
 		if (pullRequest.mergeable === true) {
 			return { action: 'skip', reason: 'mergeable' }
 		}

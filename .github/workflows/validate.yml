@@ -21,7 +21,8 @@ on:
         type: string
         default: ''
       base_sha:
-        description: PR base SHA when the caller event has no pull_request payload
+        description:
+          PR base SHA when the caller event has no pull_request payload
         required: false
         type: string
         default: ''
@@ -54,7 +55,9 @@ env:
 # PRs keep their own numbers, and a main push stays on github.ref, so a
 # fork branch named main cannot cancel main.
 concurrency:
-  group: validate-${{ github.event.pull_request.number || inputs.pr_number || github.ref }}
+  group:
+    validate-${{ github.event.pull_request.number || inputs.pr_number ||
+    github.ref }}
   cancel-in-progress: true
 
 # Same checks as `npm run validate`, split across runners so CPU-heavy suites
@@ -79,7 +82,9 @@ jobs:
           # Migration immutability validation compares against the PR merge
           # base and must never silently fall back to an editable ledger.
           fetch-depth: 0
-          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.ref }}
+          ref:
+            ${{ github.event_name == 'pull_request_target' &&
+            github.event.pull_request.head.sha || github.ref }}
           persist-credentials: false
 
       - name: 🧰 Setup
@@ -198,7 +203,9 @@ jobs:
           # Node coverage includes migration immutability helpers that need a
           # trusted pre-change Git base (same as migrations:check).
           fetch-depth: 0
-          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.ref }}
+          ref:
+            ${{ github.event_name == 'pull_request_target' &&
+            github.event.pull_request.head.sha || github.ref }}
           persist-credentials: false
 
       - name: 🧰 Setup
@@ -227,7 +234,9 @@ jobs:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
         with:
-          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.ref }}
+          ref:
+            ${{ github.event_name == 'pull_request_target' &&
+            github.event.pull_request.head.sha || github.ref }}
           persist-credentials: false
 
       - name: 🧰 Setup
@@ -253,7 +262,9 @@ jobs:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
         with:
-          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.ref }}
+          ref:
+            ${{ github.event_name == 'pull_request_target' &&
+            github.event.pull_request.head.sha || github.ref }}
           persist-credentials: false
 
       - name: 🧰 Setup
@@ -278,7 +289,9 @@ jobs:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
         with:
-          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.ref }}
+          ref:
+            ${{ github.event_name == 'pull_request_target' &&
+            github.event.pull_request.head.sha || github.ref }}
           persist-credentials: false
 
       - name: 🧰 Setup

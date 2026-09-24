@@ -4,8 +4,8 @@ name: 🔁 Enqueue Validate
 # pull_request_target run, whose GitHub head SHA is the base branch.
 run-name: >-
   enqueue validate ${{ github.event.pull_request.number && format('#{0} ',
-  github.event.pull_request.number) || '' }}${{ github.event.pull_request.head.sha
-  || github.sha }}
+  github.event.pull_request.number) || '' }}${{
+  github.event.pull_request.head.sha || github.sha }}
 
 on:
   push:
@@ -84,12 +84,10 @@ jobs:
       - decide
       - validate
     if: >-
-      always() &&
-      github.event_name == 'pull_request_target' &&
+      always() && github.event_name == 'pull_request_target' &&
       github.event.pull_request.head.repo.fork == false &&
-      needs.decide.outputs.enqueue == 'true' &&
-      needs.validate.result != 'cancelled' &&
-      needs.validate.result != 'skipped'
+      needs.decide.outputs.enqueue == 'true' && needs.validate.result !=
+      'cancelled' && needs.validate.result != 'skipped'
     permissions:
       checks: write
     runs-on: ubuntu-latest

@@ -2,8 +2,8 @@ name: 🔁 Enqueue Preview
 
 run-name: >-
   enqueue preview ${{ github.event.pull_request.number && format('#{0} ',
-  github.event.pull_request.number) || '' }}${{ github.event.pull_request.head.sha
-  || github.sha }}
+  github.event.pull_request.number) || '' }}${{
+  github.event.pull_request.head.sha || github.sha }}
 
 on:
   push:
@@ -74,12 +74,13 @@ jobs:
   preview:
     needs: decide
     if: >-
-      needs.decide.outputs.enqueue == 'true' ||
-      needs.decide.outputs.cleanup == 'true'
+      needs.decide.outputs.enqueue == 'true' || needs.decide.outputs.cleanup ==
+      'true'
     uses: ./.github/workflows/preview.yml
     with:
       pr_number: ${{ needs.decide.outputs.pr_number }}
-      action: ${{ needs.decide.outputs.cleanup == 'true' && 'cleanup' || 'deploy' }}
+      action:
+        ${{ needs.decide.outputs.cleanup == 'true' && 'cleanup' || 'deploy' }}
     secrets: inherit
 
   publish:
@@ -87,12 +88,10 @@ jobs:
       - decide
       - preview
     if: >-
-      always() &&
-      github.event_name == 'pull_request_target' &&
+      always() && github.event_name == 'pull_request_target' &&
       github.event.pull_request.head.repo.fork == false &&
-      needs.decide.outputs.enqueue == 'true' &&
-      needs.preview.result != 'cancelled' &&
-      needs.preview.result != 'skipped'
+      needs.decide.outputs.enqueue == 'true' && needs.preview.result !=
+      'cancelled' && needs.preview.result != 'skipped'
     permissions:
       checks: write
     runs-on: ubuntu-latest

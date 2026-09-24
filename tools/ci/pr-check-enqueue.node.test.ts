@@ -86,8 +86,12 @@ test('skips mergeable PRs and enqueues conflicted or unknown heads', () => {
 		decidePrCheckEnqueue(pull({ number: 1, fork: true }), true, 'closed'),
 	).toEqual({ action: 'skip', reason: 'fork' })
 	expect(
-		decidePrCheckEnqueue(pull({ number: 1, draft: true }), true, 'closed'),
-	).toEqual({ action: 'skip', reason: 'draft' })
+		decidePrCheckEnqueue(
+			pull({ number: 1, draft: true, mergeable: false }),
+			true,
+			'closed',
+		),
+	).toMatchObject({ action: 'cleanup', reason: 'closed' })
 })
 
 test('parses a pull payload and refuses a missing head repo', () => {
@@ -173,7 +177,7 @@ test('conflict enqueue workflows call Validate and Preview without workflow_disp
 	expect(validate).toContain('workflow_call:')
 	expect(validate).toContain('inputs.base_sha')
 	expect(validate).toContain(
-		'github.event.pull_request.number || inputs.pr_number || github.ref',
+		'github.event.pull_request.number || inputs.pr_number ||',
 	)
 	expect(preview).toContain(
 		"github.event_name == 'push' && inputs.pr_number != ''",
