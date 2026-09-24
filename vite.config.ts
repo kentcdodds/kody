@@ -9,7 +9,6 @@ import {
 	collectLocalOriginDevVars,
 	writeLocalOriginDevConfig,
 } from './tools/local-origin-dev-config.ts'
-import { writeLocalJobsDevConfig } from './tools/local-jobs-dev-config.ts'
 import { writeLocalPlatformDevConfig } from './tools/local-platform-dev-config.ts'
 import { writeLocalRuntimeDevConfig } from './tools/local-runtime-dev-config.ts'
 import { resolveLocalD1PersistPath } from './tools/local-d1-persist.ts'
@@ -70,16 +69,9 @@ export default defineConfig(async ({ command }) => {
 		})
 		// Jobs + highlight stay attached in the test env (Playwright e2e).
 		// Platform/runtime have no test env and stay skipped there.
-		// The jobs config is generated so its registered name matches the
-		// origin JOBS service (`kody-jobs`, not `kody-jobs-production`).
-		const jobsDevConfigPath = await writeLocalJobsDevConfig({
-			jobsConfigPath: 'packages/jobs-worker/wrangler.jsonc',
-			originConfigPath: wranglerConfigPath,
-			envName,
-		})
 		auxiliaryWorkers.push(
 			{
-				configPath: jobsDevConfigPath,
+				configPath: 'packages/jobs-worker/wrangler.jsonc',
 				devOnly: true,
 			},
 			{

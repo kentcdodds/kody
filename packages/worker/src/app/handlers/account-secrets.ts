@@ -81,30 +81,6 @@ type ConnectOauthHostApprovalLink = {
 
 type SecretApprovalAction = 'approve' | 'reject'
 
-/**
- * POST `/account/secrets.json` verbs. `create` is the same write as `save`
- * (create when `currentId` is omitted, update when it is set). Preview agents
- * seed with `create`; the account editor sends `save`.
- */
-const accountSecretsPostActions = [
-	'save',
-	'create',
-	'delete',
-	'approve',
-	'reject',
-	'save_oauth_app',
-	'connect_oauth',
-	'oauth_exchange',
-] as const
-
-type AccountSecretsPostAction = (typeof accountSecretsPostActions)[number]
-
-function isAccountSecretsPostAction(
-	action: string,
-): action is AccountSecretsPostAction {
-	return (accountSecretsPostActions as ReadonlyArray<string>).includes(action)
-}
-
 export function createAccountSecretsHandler(env: Env) {
 	return {
 		middleware: [],
@@ -164,66 +140,54 @@ export function createAccountSecretsApiHandler(env: Env) {
 			}
 
 			const action = readString(body, 'action')
-			if (!action || !isAccountSecretsPostAction(action)) {
-				return jsonResponse(
-					{
-						ok: false,
-						error: `Invalid action. Expected one of: ${accountSecretsPostActions.join(', ')}.`,
-					},
-					400,
-				)
+			if (action === 'approve' || action === 'reject') {
+				return handleApprovalAction({
+					request,
+					env,
+					user,
+					action,
+				})
+			}
+			if (action === 'save') {
+				return handleSaveAction({
+					request,
+					env,
+					user,
+					body,
+				})
+			}
+			if (action === 'delete') {
+				return handleDeleteAction({
+					request,
+					env,
+					user,
+					body,
+				})
+			}
+			if (action === 'save_oauth_app') {
+				return handleSaveOauthAppAction({
+					env,
+					user,
+					body,
+				})
+			}
+			if (action === 'connect_oauth') {
+				return handleConnectOauthAction({
+					request,
+					env,
+					user,
+					body,
+				})
+			}
+			if (action === 'oauth_exchange') {
+				return handleOAuthExchangeAction({
+					env,
+					user,
+					body,
+				})
 			}
 
-			switch (action) {
-				case 'approve':
-				case 'reject':
-					return handleApprovalAction({
-						request,
-						env,
-						user,
-						action,
-					})
-				case 'save':
-				case 'create':
-					return handleSaveAction({
-						request,
-						env,
-						user,
-						body,
-					})
-				case 'delete':
-					return handleDeleteAction({
-						request,
-						env,
-						user,
-						body,
-					})
-				case 'save_oauth_app':
-					return handleSaveOauthAppAction({
-						env,
-						user,
-						body,
-					})
-				case 'connect_oauth':
-					return handleConnectOauthAction({
-						request,
-						env,
-						user,
-						body,
-					})
-				case 'oauth_exchange':
-					return handleOAuthExchangeAction({
-						env,
-						user,
-						body,
-					})
-				default: {
-					const _exhaustive: never = action
-					throw new Error(
-						`Unsupported account secrets action: ${String(_exhaustive)}`,
-					)
-				}
-			}
+			return jsonResponse({ ok: false, error: 'Invalid action.' }, 400)
 		},
 	} satisfies Action<typeof routes.accountSecretsApi>
 }

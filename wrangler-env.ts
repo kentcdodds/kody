@@ -23,7 +23,6 @@ import {
 	writeLocalRuntimeDevConfig,
 	writeRuntimeDryRunConfig,
 } from './tools/local-runtime-dev-config.ts'
-import { writeLocalJobsDevConfig } from './tools/local-jobs-dev-config.ts'
 import { writeLocalPlatformDevConfig } from './tools/local-platform-dev-config.ts'
 import { runWranglerDeployWithRetry } from './tools/wrangler-deploy-retry.ts'
 
@@ -55,21 +54,14 @@ if (
 	commandArgs.push('--config', defaultWranglerConfigPath)
 	// Multi-worker local dev (ADR 0016): the main worker's JOBS service
 	// binding targets the jobs worker, so `wrangler dev` runs both configs
-	// together and resolves the service bindings in-process. The secondary
-	// config is generated so wrangler does not register it as
-	// `<name>-<env>` (see tools/local-jobs-dev-config.ts).
+	// together and resolves the service bindings in-process.
 	if (
 		isDevCommand &&
 		existsSync(
 			resolveWranglerConfigPath(jobsWorkerWranglerConfigPath, process.cwd()),
 		)
 	) {
-		const jobsDevConfigPath = await writeLocalJobsDevConfig({
-			jobsConfigPath: jobsWorkerWranglerConfigPath,
-			originConfigPath: defaultWranglerConfigPath,
-			envName,
-		})
-		commandArgs.push('--config', jobsDevConfigPath)
+		commandArgs.push('--config', jobsWorkerWranglerConfigPath)
 	}
 	if (
 		isDevCommand &&
