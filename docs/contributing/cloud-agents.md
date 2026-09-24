@@ -93,6 +93,15 @@ Cloud Agent environment `start` should run `npm run hooks:ensure` so a snapshot
 boot that skips `npm ci` still composes hooks after Cursor installs the
 dispatcher. The command is a no-op on machines without `~/.cursor/agent-hooks`.
 
+## Dependency install
+
+Cloud Agent environment setup and local setup both run `npm install`. CI runs
+`npm ci`. `npm install` keeps `package-lock.json` unchanged when every locked
+direct dependency satisfies the peer ranges its declared range can still reach,
+including optional peers. `npm run lockfile:check` (part of `npm run validate`
+and the CI static job) rejects a lockfile `npm install` would rewrite, such as
+an `@cloudflare/workers-types` pin older than wrangler's peer range.
+
 ## Quick commands
 
 | Task               | Command                                                                                                                                                                     |
