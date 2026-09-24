@@ -1,9 +1,11 @@
 import { DurableObjectOAuthClientProvider } from 'agents/mcp/do-oauth-client-provider'
+import { shouldPreserveMcpOAuthRefreshToken } from './oauth-refresh-single-flight.ts'
 import {
 	clientIdFromMcpOAuthTokenStorageKey,
 	mcpOAuthRefreshTokenStorageKey,
 	mcpOAuthServerStoragePrefix,
 	parseStoredMcpOAuthRefreshToken,
+	preservedMcpOAuthRefreshToken,
 	restoreReadableMcpOAuthTokens,
 	withPreservedMcpOAuthRefreshToken,
 } from './oauth-token-recovery.ts'
@@ -92,8 +94,10 @@ type McpOAuthSaveTokens = Parameters<
  * discovery so the next authorize URL can still advertise scopes.
  * `invalidateCredentials` for `tokens`, `client`, or `all` infers
  * `clientId` when it is missing, deletes leftover `/token` keys and the
- * sidecar so a rejected grant cannot be replayed, and skips a `tokens`
- * wipe when a save completed after the invalidate was requested.
+ * sidecar so a rejected grant cannot be replayed, skips a `tokens` wipe
+ * when a save completed after the invalidate was requested, and skips a
+ * `tokens` wipe when this isolate already rotated that refresh token and
+ * the issued token has not itself been rejected.
  */
 export function createMcpClientOAuthProvider(
 	storage: DurableObjectStorage,
@@ -177,6 +181,14 @@ function installMcpOAuthTokenPreservation(
 				const stored = await collectStoredMcpOAuthTokenSources(provider)
 				if (!readProviderString(provider, 'clientId') && stored.clientId) {
 					provider.clientId = stored.clientId
+				}
+				if (
+					scope === 'tokens' &&
+					shouldPreserveMcpOAuthRefreshToken(
+						preservedMcpOAuthRefreshToken(stored.sources),
+					)
+				) {
+					return
 				}
 				await invalidateCredentials(scope)
 				if (scope !== 'all' && scope !== 'client' && scope !== 'tokens') {

@@ -147,10 +147,16 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
    tries `connectToServer` with the stored tokens first so the MCP SDK can
    refresh; it only remints authorization state when that cannot restore `ready`
    and no authorization URL is available, or when the callback URL changed.
-   Token blobs stay in place unless the callback URL changed.
-   Authorization-server reuse of a rotating refresh token still requires a human
-   re-auth. The account page offers Reconnect when automatic recovery cannot
-   finish.
+   Token blobs stay in place unless the callback URL changed. Overlapping
+   refresh-token grants for the same stored refresh token share one
+   token-endpoint request in the hub isolate. Later callers in that window reuse
+   the response, including a rotated refresh token, so an authorization server
+   that revokes the family on reuse is not asked to redeem the same token twice.
+   `invalidateCredentials('tokens')` keeps the stored refresh token when that
+   rotation already succeeded and the issued token has not itself been rejected.
+   A refresh token the authorization server has already rejected still requires
+   a human re-auth. The account page offers Reconnect when automatic recovery
+   cannot finish.
 6. The route redirects to `/account/mcp-servers/:serverId?auth=success|error`
    when the callback resolves to a server (including failures), or
    `/account/mcp-servers?auth=error` when it does not, for user feedback. Tokens

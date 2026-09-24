@@ -48,6 +48,7 @@ import {
 	reconnectMcpServerOptions,
 } from './reconnect.ts'
 import { sanitizeStoredMcpSessions } from './restore.ts'
+import { installMcpOAuthRefreshSingleFlight } from './oauth-refresh-single-flight.ts'
 import { withStaticTransportHeaders } from './transport-headers.ts'
 import { clearLiveMcpTransportSession } from './transport-session.ts'
 import {
@@ -114,6 +115,10 @@ class McpClientHubBase extends DurableObject<Env> {
 
 	constructor(state: DurableObjectState, env: Env) {
 		super(state, env)
+		// Patch fetch before the manager restores transports. Those transports
+		// capture `fetch` at construction, and overlapping 401s must share one
+		// refresh-token redemption.
+		installMcpOAuthRefreshSingleFlight()
 		// The manager creates this table during lifecycle start, but
 		// `sanitizeStoredMcpSessions` reads it before start so the table must
 		// exist first.
