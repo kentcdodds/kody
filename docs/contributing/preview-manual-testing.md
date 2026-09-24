@@ -17,7 +17,9 @@ From the repo root, on a pushed PR branch, with `gh` authenticated:
 npm run preview:manual-test
 ```
 
-Same thing: `node tools/preview-manual-test.ts`.
+Same thing: `node tools/preview-manual-test.ts`, or
+`npm run control-kody -- preview --pr <n>` (flags after `preview` go to this
+script; a `--` separator is optional).
 
 The script signs in as the preview seed user and keeps that session. The seed
 account starts **empty** except the user row — there are no secrets, packages,

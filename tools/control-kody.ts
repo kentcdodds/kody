@@ -61,6 +61,8 @@ import {
 export const localSeedEmail = 'jane@example.com'
 export const localSeedPassword = 'ilikecode'
 export const localAdminEmail = 'kody@example.com'
+export const controlKodyUserAgent =
+	'Mozilla/5.0 (compatible; KodyControlKody/1.0; +https://github.com/kentcdodds/kody)'
 
 const usageLines = [
 	'Usage: node tools/control-kody.ts <command> [options]',
@@ -72,7 +74,7 @@ const usageLines = [
 	'  dev             Start or reuse the local origin (npm run dev:ensure)',
 	'  login           POST /auth and write a session cookie',
 	'  request         Authenticated HTTP as the current session',
-	'  preview         PR preview smoke (wraps preview:manual-test)',
+	'  preview         PR preview smoke (forwards flags to preview:manual-test)',
 	'  health          GET /health and optionally assert commitSha',
 	'  map             List or print a Feature Map entry; --check for drift',
 	'  package-create  Create a stub saved package via MCP (preview data)',
@@ -88,6 +90,12 @@ const usageLines = [
 	'  --description <t>    Optional package-create stub description',
 	'  --head-ahead         package-create: push one unpublished commit',
 	'  --help               Print this help',
+	'',
+	'preview forwards its flags to preview:manual-test (--pr, --request, --check).',
+	'A `--` separator is optional. Example: preview --pr 42 --check /account',
+	'',
+	'request fetches first and only POSTs /auth when the response is 401 or',
+	'login HTML. Public pages such as /pricing do not need a session.',
 	'',
 	'Docs: docs/contributing/control-kody.md',
 ]
@@ -213,10 +221,10 @@ export function parseControlArgs(argv: Array<string>): ControlKodyOptions {
 
 	if (options.command === 'preview') {
 		const separator = rest.indexOf('--')
-		options.previewArgv = separator === -1 ? rest : rest.slice(separator + 1)
 		if (separator === -1) {
-			parseSharedFlags(rest, options)
+			options.previewArgv = rest
 		} else {
+			options.previewArgv = rest.slice(separator + 1)
 			parseSharedFlags(rest.slice(0, separator), options)
 		}
 		return options
@@ -532,7 +540,10 @@ export async function loginToOrigin(input: {
 	const fetchImpl = input.fetchImpl ?? fetch
 	const response = await fetchImpl(`${input.origin}/auth`, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
+		headers: {
+			'Content-Type': 'application/json',
+			'User-Agent': controlKodyUserAgent,
+		},
 		body: JSON.stringify({
 			email: input.email,
 			password: input.password,
@@ -581,6 +592,7 @@ export async function requestAsSession(input: {
 	const fetchImpl = input.fetchImpl ?? fetch
 	const headers: Record<string, string> = {
 		Accept: 'application/json, text/html',
+		'User-Agent': controlKodyUserAgent,
 	}
 	if (input.cookieHeader) headers.Cookie = input.cookieHeader
 	if (input.spec.body !== null) headers['Content-Type'] = 'application/json'
@@ -638,7 +650,9 @@ export async function readHealth(input: {
 	isAncestor?: (ancestor: string, descendant: string) => boolean
 }) {
 	const fetchImpl = input.fetchImpl ?? fetch
-	const response = await fetchImpl(healthUrlForOrigin(input.origin))
+	const response = await fetchImpl(healthUrlForOrigin(input.origin), {
+		headers: { 'User-Agent': controlKodyUserAgent },
+	})
 	let body: unknown = null
 	try {
 		body = await response.json()
@@ -854,11 +868,6 @@ async function runCommand(options: ControlKodyOptions) {
 			}
 			const origin = await resolveOrigin(options)
 			let cookieHeader = readCookieFile(options.cookieFile, origin)
-			if (!options.skipLogin && !cookieHeader) {
-				const loggedIn = await loginAndStoreCookie(origin, options)
-				if (!loggedIn.ok) return 1
-				cookieHeader = loggedIn.cookieHeader
-			}
 			let result = await requestAsSession({
 				origin,
 				spec: options.request,

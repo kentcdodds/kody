@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { expect, test } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import {
+	controlKodyUserAgent,
 	credentialsForOrigin,
 	defaultFeaturesDir,
 	defaultRoutesPath,
@@ -107,6 +108,11 @@ test('control-kody parses commands, maps every required route, and drives a seed
 	expect(parseControlArgs(['preview', '--', '--pr', '42']).previewArgv).toEqual(
 		['--pr', '42'],
 	)
+	expect(
+		parseControlArgs(['preview', '--pr', '42', '--check', '/account/waiting'])
+			.previewArgv,
+	).toEqual(['--pr', '42', '--check', '/account/waiting'])
+	expect(usageLines.join('\n')).toMatch(/preview --pr 42/)
 	expect(
 		parseControlArgs([
 			'package-create',
@@ -630,6 +636,120 @@ test('control-kody request re-logs in when HTML redirects to login', async () =>
 					]),
 				)
 				expect(code).toBe(0)
+			},
+		)
+	} finally {
+		await rm(dir, { recursive: true, force: true })
+	}
+})
+
+test('control-kody request logs in after a 401 when no cookie file exists', async () => {
+	const dir = await mkdtemp(path.join(tmpdir(), 'control-kody-auth-after-401-'))
+	try {
+		await withAuthServer(
+			(request, response) => {
+				const url = request.url ?? '/'
+				if (request.method === 'POST' && url === '/auth') {
+					response.setHeader('Set-Cookie', 'kody_session=fresh; Path=/')
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ ok: true }))
+					return
+				}
+				if (url === '/account/waiting.json') {
+					if (request.headers.cookie !== 'kody_session=fresh') {
+						response.statusCode = 401
+						response.end('{"ok":false}')
+						return
+					}
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ items: [] }))
+					return
+				}
+				response.statusCode = 404
+				response.end('missing')
+			},
+			async (origin) => {
+				const cookieFile = path.join(dir, 'cookie')
+				const code = await runCommand(
+					parseControlArgs([
+						'request',
+						'GET',
+						'/account/waiting.json',
+						'--origin',
+						origin,
+						'--cookie-file',
+						cookieFile,
+						'--json',
+					]),
+				)
+				expect(code).toBe(0)
+				expect(readFileSync(cookieFile, 'utf8')).toBe(
+					formatCookieFile(origin, 'kody_session=fresh'),
+				)
+			},
+		)
+	} finally {
+		await rm(dir, { recursive: true, force: true })
+	}
+})
+
+test('control-kody request fetches public HTML without posting /auth', async () => {
+	const dir = await mkdtemp(path.join(tmpdir(), 'control-kody-public-html-'))
+	try {
+		const seen: Array<{ method?: string; url?: string; ua?: string }> = []
+		await withAuthServer(
+			(request, response) => {
+				seen.push({
+					method: request.method,
+					url: request.url ?? '/',
+					ua: request.headers['user-agent'],
+				})
+				const url = request.url ?? '/'
+				if (request.method === 'POST' && url === '/auth') {
+					response.statusCode = 400
+					response.setHeader('Content-Type', 'application/json')
+					response.end(
+						JSON.stringify({
+							error: 'Please complete the human verification challenge.',
+						}),
+					)
+					return
+				}
+				if (url === '/pricing') {
+					response.setHeader('Content-Type', 'text/html')
+					response.end('<h1>Automation invocations per day</h1>')
+					return
+				}
+				response.statusCode = 404
+				response.end('missing')
+			},
+			async (origin) => {
+				const code = await runCommand(
+					parseControlArgs([
+						'request',
+						'GET',
+						'/pricing',
+						'--origin',
+						origin,
+						'--cookie-file',
+						path.join(dir, 'cookie'),
+						'--contains',
+						'Automation invocations per day',
+						'--json',
+					]),
+				)
+				expect(code).toBe(0)
+				expect(
+					seen.some((hit) => hit.method === 'POST' && hit.url === '/auth'),
+				).toBe(false)
+				expect(
+					seen.some(
+						(hit) =>
+							hit.method === 'GET' &&
+							hit.url === '/pricing' &&
+							hit.ua === controlKodyUserAgent,
+					),
+				).toBe(true)
 			},
 		)
 	} finally {

@@ -17,7 +17,7 @@ Prefer [`control-kody`](../control-kody/SKILL.md) when you also need `doctor`,
 local login, Feature Map lookup, or a `/health` SHA check:
 
 ```bash
-npm run control-kody -- preview -- --request 'GET /onboarding.json' --check /onboarding/step-2
+npm run control-kody -- preview --pr 42 --request 'GET /onboarding.json' --check /onboarding/step-2
 ```
 
 ## Command

@@ -13,7 +13,7 @@ npm run control-kody -- request GET /account/waiting --dump --contains 'Waiting'
 npm run control-kody -- map waiting
 npm run control-kody -- map --check
 npm run control-kody -- health --sha <commit>
-npm run control-kody -- preview -- --pr 42 --check /account/waiting
+npm run control-kody -- preview --pr 42 --check /account/waiting
 npm run control-kody -- package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]
 ```
 
@@ -48,7 +48,12 @@ Feature Map PR.
 After `login`, keep using `request` for HTML and JSON assertions. Do not `cat`
 the session cookie into `curl` or Python. `request --dump` writes the raw body
 to `.tmp/control-kody-body`. `request --contains <text>` fails unless that
-substring is in the body.
+substring is in the body. `request` fetches first and only POSTs `/auth` when
+the response is HTTP 401 or login HTML, so public pages such as `/pricing` do
+not need a session.
+
+`preview` forwards its flags to `preview:manual-test`. `--pr`, `--request`, and
+`--check` work without a `--` separator.
 
 `doctor` checks local APP_DB readiness. A failed local `login` (unmigrated or
 unseeded D1) prints:
