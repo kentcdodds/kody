@@ -264,12 +264,17 @@ reload roles on every request.
 
 `requiredRole` / `requiredPermission` checks compare against those roles and do
 not inspect `executionOrigin`. No admin capability has an interactive-only gate,
-so package code owned by an admin can call admin-gated capabilities (for example
-`adminUserList` from a scheduled job) unattended, with the same reach as that
-admin calling them from an MCP session. Interactive-only gates exist on a few
-specific non-admin capabilities (for example `communityForkAdopt`,
-`packageAppFetch`, `packageSubscriptionDispatch`, and platform-feedback submit);
-they are per-capability contracts, not part of role evaluation.
+so package code owned by an admin can call admin-gated capabilities unattended —
+reads and mutations alike — with the same reach as that admin calling them from
+an MCP session. That includes fleet-wide / cross-user mutations such as
+`adminPackageCodemodApply` (republishes other users' published packages), and
+other high-blast writes such as `adminUserCreate`, `adminFeatureFlagSet`, and
+`adminSystemEmailSend`. Interactive-only gates exist on a few specific non-admin
+capabilities (for example `communityForkAdopt`, `packageAppFetch`,
+`packageSubscriptionDispatch`, and platform-feedback submit); they are
+per-capability contracts, not part of role evaluation. Interactive-only
+`executionOrigin` gates for admin mutations, and separate service principals,
+are deferred designs — not applied as a silent gate on these capabilities.
 
 Package app HTTP handlers and realtime hooks call capabilities through the
 package-app runtime bridge
@@ -281,8 +286,8 @@ when it builds the app worker; only identity fields reach the bridge. Package
 exports that app or realtime code invokes run through the background path above
 and do carry the owner's roles.
 
-Treat any package saved on an admin account as running with full admin reach.
-See the residual-risk entry in
+Treat any package saved on an admin account as running with full admin reach,
+including those mutations. See the residual-risk entry in
 [Security](../security.md#accepted-residual-risks-and-out-of-scope-items).
 
 ## Privacy boundary
