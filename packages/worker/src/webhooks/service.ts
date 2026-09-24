@@ -44,6 +44,25 @@ import {
 	type WebhookEndpointRecord,
 } from './types.ts'
 
+import { utf8ByteLength } from '@kody-internal/shared/backup-restore-safety.ts'
+import { readPreExecutionPackageInvocationInfrastructureCode } from '#worker/package-invocations/infrastructure-codes.ts'
+import {
+	dispatchWebhookInvocation,
+	readWebhookInvocationResult,
+	recordWebhookDelivery,
+} from './delivery.ts'
+import { collectSafeWebhookHeaders } from './headers.ts'
+import {
+	buildWebhookExportParams,
+	resolveWebhookParamsModeFirstArg,
+} from './params.ts'
+import {
+	buildFreshSyntheticWebhookIdempotencyKey,
+	buildWebhookInputModeMismatchMessage,
+	buildWebhookNotMintedMessage,
+	stripUntrustedWebhookSyntheticFields,
+} from './synthetic.ts'
+
 export type ListedWebhook = {
 	packageId: string
 	packageKodyId: string
@@ -573,5 +592,260 @@ export async function revealWebhookUrlForWebsite(input: {
 		handle: formatWebhookUrlHandle(resolved.endpoint.id),
 		urlHost: resolved.urlHost,
 		url: resolved.url,
+	}
+}
+
+export type SyntheticWebhookRequestFixture = {
+	method?: string
+	headers?: Record<string, string>
+	body?: string
+	json?: unknown
+	contentType?: string
+}
+
+export type SyntheticWebhookDispatchResult = {
+	packageId: string
+	packageKodyId: string
+	webhookName: string
+	inputMode: 'request' | 'params'
+	synthetic: true
+	status: number
+	runId: string
+	idempotencyKey: string
+	result?: unknown
+	error?: { code: string; message: string }
+}
+
+/**
+ * Interactive-MCP synthetic smoke test for one minted package webhook.
+ * Skips public URL + HMAC, invokes the bound export with a caller fixture,
+ * marks the Activity webhook run `synthetic: true`, and burns automation
+ * usage through the normal `internal:webhook:` invocation token.
+ */
+export async function dispatchSyntheticWebhookForUser(input: {
+	env: Env
+	userId: string
+	baseUrl: string
+	packageId?: string
+	kodyId?: string
+	webhookName: string
+	request?: SyntheticWebhookRequestFixture
+	params?: Record<string, unknown>
+}): Promise<SyntheticWebhookDispatchResult> {
+	const webhookName = input.webhookName.trim()
+	if (!webhookName) throw new McpCallerError('webhookName is required.')
+
+	const hasRequest = input.request !== undefined
+	const hasParams = input.params !== undefined
+	if (hasRequest === hasParams) {
+		throw new McpCallerError(
+			'Provide exactly one of `request` (inputMode request) or `params` (inputMode params).',
+		)
+	}
+
+	const savedPackage = await resolveOwnedPackage({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		packageId: input.packageId,
+		kodyId: input.kodyId,
+	})
+	const declared = await loadDeclaredWebhook({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.userId,
+		savedPackage,
+		webhookName,
+	})
+	const endpoint = await getWebhookEndpointByKey({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		packageId: savedPackage.id,
+		webhookName,
+	})
+	if (!endpoint) {
+		throw new McpCallerError(
+			buildWebhookNotMintedMessage({
+				kodyId: savedPackage.kodyId,
+				webhookName,
+			}),
+		)
+	}
+
+	const providedMode: 'request' | 'params' = hasParams ? 'params' : 'request'
+	if (declared.inputMode !== providedMode) {
+		throw new McpCallerError(
+			buildWebhookInputModeMismatchMessage({
+				webhookName,
+				inputMode: declared.inputMode,
+				provided: providedMode,
+			}),
+		)
+	}
+
+	const startedAt = new Date().toISOString()
+	const invocationId = crypto.randomUUID()
+	const idempotencyKey = buildFreshSyntheticWebhookIdempotencyKey()
+
+	let exportParams: Record<string, unknown>
+	let payloadBytes: number
+
+	if (declared.inputMode === 'params') {
+		const resolved = resolveWebhookParamsModeFirstArg(input.params)
+		if (!resolved.ok) {
+			throw new McpCallerError(
+				'params fixture must be a JSON object for inputMode "params".',
+			)
+		}
+		exportParams = {
+			...stripUntrustedWebhookSyntheticFields(resolved.params),
+			synthetic: true,
+		}
+		payloadBytes = utf8ByteLength(JSON.stringify(exportParams) ?? '{}')
+	} else {
+		const fixture = input.request ?? {}
+		const headers = new Headers()
+		for (const [name, value] of Object.entries(fixture.headers ?? {})) {
+			if (typeof value === 'string') headers.set(name, value)
+		}
+		let bodyText: string
+		if (typeof fixture.body === 'string') {
+			bodyText = fixture.body
+		} else if (fixture.json !== undefined) {
+			bodyText = JSON.stringify(fixture.json)
+			if (!headers.has('content-type')) {
+				headers.set('content-type', 'application/json')
+			}
+		} else {
+			bodyText = ''
+		}
+		if (fixture.contentType) {
+			headers.set('content-type', fixture.contentType)
+		}
+		const method = (fixture.method ?? 'POST').toUpperCase()
+		const request = new Request('https://kody.synthetic/webhook', {
+			method,
+			headers,
+			body: method === 'GET' || method === 'HEAD' ? undefined : bodyText,
+		})
+		const safeHeaders = collectSafeWebhookHeaders(request)
+		const requestParams = buildWebhookExportParams({
+			packageKodyId: savedPackage.kodyId,
+			webhookName,
+			request,
+			bodyText,
+			receivedAt: startedAt,
+			headers: safeHeaders,
+		})
+		exportParams = {
+			...requestParams,
+			synthetic: true,
+		}
+		payloadBytes = utf8ByteLength(bodyText)
+	}
+
+	const finish = async (inputFinish: {
+		status: number
+		outcome: 'delivered' | 'failed'
+		error?: string | null
+		result?: unknown
+		errorBody?: { code: string; message: string }
+	}): Promise<SyntheticWebhookDispatchResult> => {
+		const record = await recordWebhookDelivery({
+			env: input.env,
+			endpoint,
+			kodyId: savedPackage.kodyId,
+			outcome: inputFinish.outcome,
+			httpStatus:
+				inputFinish.outcome === 'delivered' ? inputFinish.status : 502,
+			error: inputFinish.error ?? null,
+			payloadBytes,
+			invocationId,
+			result: inputFinish.result,
+			startedAt,
+			requirePersistence: true,
+			synthetic: true,
+		})
+		if (!record) {
+			throw new Error('Webhook synthetic delivery record was not persisted.')
+		}
+		return {
+			packageId: savedPackage.id,
+			packageKodyId: savedPackage.kodyId,
+			webhookName,
+			inputMode: declared.inputMode,
+			synthetic: true,
+			status: inputFinish.status,
+			runId: record.id,
+			idempotencyKey,
+			...(inputFinish.outcome === 'delivered'
+				? { result: inputFinish.result }
+				: {
+						error: inputFinish.errorBody ?? {
+							code: 'invocation_failed',
+							message:
+								inputFinish.error ??
+								`Webhook export invocation failed with HTTP ${inputFinish.status}.`,
+						},
+					}),
+		}
+	}
+
+	try {
+		const response = await dispatchWebhookInvocation({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			endpoint,
+			packageKodyId: savedPackage.kodyId,
+			exportName: declared.exportName,
+			params: exportParams,
+			idempotencyKey,
+		})
+		const retryableCode =
+			readPreExecutionPackageInvocationInfrastructureCode(response)
+		if (retryableCode) {
+			throw new Error(
+				`Retryable package invocation infrastructure response: ${retryableCode}.`,
+			)
+		}
+		const ok = response.status >= 200 && response.status < 300
+		const result = readWebhookInvocationResult(response.body)
+		if (ok) {
+			return await finish({
+				status: response.status,
+				outcome: 'delivered',
+				result,
+			})
+		}
+		const errorRecord =
+			response.body && typeof response.body === 'object'
+				? ((response.body as Record<string, unknown>)['error'] as
+						| Record<string, unknown>
+						| undefined)
+				: undefined
+		return await finish({
+			status: response.status,
+			outcome: 'failed',
+			error: `invocation_status_${response.status}`,
+			result,
+			errorBody: {
+				code: String(errorRecord?.['code'] ?? 'invocation_failed'),
+				message: String(
+					errorRecord?.['message'] ??
+						`Webhook export invocation failed with HTTP ${response.status}.`,
+				),
+			},
+		})
+	} catch (error) {
+		if (error instanceof McpCallerError) throw error
+		const message = error instanceof Error ? error.message : 'invocation_failed'
+		return await finish({
+			status: 502,
+			outcome: 'failed',
+			error: message,
+			errorBody: {
+				code: 'invocation_failed',
+				message,
+			},
+		})
 	}
 }

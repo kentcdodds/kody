@@ -33,6 +33,11 @@ deliberately visible irreversible-side-effect guard says otherwise.
 - Together with [Package app fetch](./package-app-fetch.md) as part of
   post-publish verification
 
+For inbound webhooks, use `webhookSyntheticDispatch` after mint (see
+[Inbound webhooks — Synthetic smoke test](./webhooks.md#synthetic-smoke-test)).
+That capability is the webhook sibling of this subscription smoke test — not a
+package-local `dryRun` field.
+
 Use `packageSubscriptionsList` first to confirm the topic and handler path. Use
 real platform events for end-to-end delivery, admin-role gates, filters, and
 multi-package fan-out. Reuse another package from a job or subscription with a

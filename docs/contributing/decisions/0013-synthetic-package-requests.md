@@ -82,6 +82,7 @@ agents can run before treating the publish complete.
 - Authors who smoke-test handlers with real side effects should use fixture
   inputs or a deliberately visible irreversible-side-effect guard — the platform
   does not simulate or sandbox package side effects.
-- Revisit only if agents routinely need synthetic calls into services, jobs, or
-  webhooks — those surfaces stay on their existing invoke or ingress paths for
-  now.
+- Webhook synthetic smoke tests now use interactive-MCP
+  `webhookSyntheticDispatch` (minted webhook, real side effects, automation
+  usage). Services and jobs stay on their existing invoke paths unless a later
+  decision revisits them.
