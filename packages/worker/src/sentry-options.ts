@@ -428,8 +428,10 @@ export function filterCloudflareOpaqueInternalErrorSentryEvent(
  * corruption when upload-pack returns a bad pack body (KODY-CLOUDFLARE-55 /
  * 56). Call sites retry briefly; exhausted HTTP failures keep the stable
  * `Artifacts listServerRefs|git fetch|git clone failed for …: HTTP Error: NNN`
- * wrapper. Packfile corruption is matched by its unique phrase even when bare
- * (clone paths historically threw unwrapped InternalError).
+ * wrapper, the same operations timing out (`Artifacts git request timed out
+ * after Nms`), and packfile corruption. Packfile corruption is matched by its
+ * unique phrase even when bare (clone paths historically threw unwrapped
+ * InternalError).
  */
 export function isArtifactsGitTransientHttpErrorSentryEvent(event: ErrorEvent) {
 	return sentryEventMessages(event).some(
@@ -619,9 +621,10 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// INTERNAL_ERROR wording) with no support reference are dropped the
 		// same way — see filterCloudflareOpaqueInternalErrorSentryEvent.
 		// Artifacts git protocol HTTP 5xx / 429 wrappers (listServerRefs /
-		// git fetch / git clone) and isomorphic-git "Packfile payload
-		// corrupted" events are dropped the same way after brief call-site
-		// retries — see filterArtifactsGitTransientHttpErrorSentryEvent.
+		// git fetch / git clone), stalled info/refs deadlines, and
+		// isomorphic-git "Packfile payload corrupted" events are dropped the
+		// same way after brief call-site retries — see
+		// filterArtifactsGitTransientHttpErrorSentryEvent.
 		// Bare Durable Object abort token `destroyed` from Agents MCP session
 		// teardown (`ctx.abort("destroyed")`) is dropped the same way — see
 		// filterMcpAgentSessionDestroyedAbortSentryEvent. Expected CIMD

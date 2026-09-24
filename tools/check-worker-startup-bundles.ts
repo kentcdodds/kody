@@ -210,7 +210,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Specifier-aware .__kody_virtual__ build check (bundler-resolved
 		// specifier collector incl. require(), JSON value walk) adds ~1.9 KB:
 		// local dry-run 5_157_613 against the previous 5_156_000 budget.
-		maxEntryBytes: 5_159_000,
+		// Protocol v1 Artifacts ref discovery and the bounded git HTTP client
+		// also sit on the platform artifacts graph: CI dry-run 5_159_055
+		// against the previous 5_159_000 budget.
+		maxEntryBytes: 5_160_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
@@ -305,7 +308,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Specifier-aware .__kody_virtual__ build check (bundler-resolved
 		// specifier collector incl. require(), JSON value walk) adds ~1.9 KB:
 		// local dry-run 3_832_503 against the previous 3_831_000 budget.
-		maxEntryBytes: 3_834_000,
+		// Protocol v1 Artifacts ref discovery and the bounded git HTTP client
+		// sit on the artifacts module runtime already loads: CI dry-run
+		// 3_834_166 against the previous 3_834_000 budget.
+		maxEntryBytes: 3_835_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',

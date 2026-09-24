@@ -11,6 +11,7 @@ import {
 	resolveArtifactDefaultBranchHead,
 	resolveExistingArtifactSourceRepo,
 } from './artifacts.ts'
+import { isArtifactsGitTimeoutError } from './artifacts-git-retry.ts'
 import { type EntitySourceRow } from './types.ts'
 
 export const productionPackageSourceSafetyPolicy =
@@ -65,6 +66,26 @@ export function buildPublishedCommitHeadMismatchCallerMessage(
 		'Publish the current Artifacts HEAD with packagePublishExternalPush (or wait for the reconcile job), then retry.',
 		'Repo sessions open from the published commit and refuse to start while unpublished remote commits are present.',
 	].join(' ')
+}
+
+export function buildArtifactsGitReadTimeoutMessage(input: {
+	operation: string
+	reason: string
+}) {
+	const lines = [
+		`${input.operation} timed out reading the Artifacts git remote.`,
+		'Retry the call.',
+	]
+	// packageSave is the authoring fallback for a hung packageGetGitRemote.
+	// repoOpenSession has no overwrite lane, so that sentence would send an
+	// agent away from the session it was opening.
+	if (input.operation === 'packageGetGitRemote') {
+		lines.push(
+			'Package authoring can use packageSave when packageGetGitRemote keeps timing out.',
+		)
+	}
+	lines.push(input.reason)
+	return lines.join(' ')
 }
 
 function buildDestructiveOverwriteConfirmationMessage(input: {
@@ -252,6 +273,15 @@ export async function assertPublishedPackageSourceRepoHead(input: {
 			head = await resolveArtifactDefaultBranchHead({ repo })
 		}
 	} catch (error) {
+		if (isArtifactsGitTimeoutError(error)) {
+			throw new Error(
+				buildArtifactsGitReadTimeoutMessage({
+					operation: input.operation,
+					reason: getErrorMessage(error),
+				}),
+				{ cause: error },
+			)
+		}
 		const message = getErrorMessage(error)
 		throw new Error(
 			buildSourceRecoveryProblemMessage({

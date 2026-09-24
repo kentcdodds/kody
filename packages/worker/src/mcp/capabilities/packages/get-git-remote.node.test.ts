@@ -249,6 +249,27 @@ test('get_git_remote returns scoped artifact remotes and rejects invalid input',
 	expect(
 		writeResult.setup_commands.every((command) => typeof command === 'string'),
 	).toBe(true)
+	expect(mockModule.listServerRefs).toHaveBeenCalledWith(
+		expect.objectContaining({
+			protocolVersion: 1,
+			prefix: 'refs/heads/main',
+		}),
+	)
+
+	resetMocks()
+	mockPackageSource()
+	const timeout = new Error('Artifacts git request timed out after 8000ms.')
+	timeout.name = 'ArtifactsGitTimeoutError'
+	mockModule.listServerRefs.mockRejectedValue(timeout)
+	await expect(
+		getGitRemoteCapability.handler(
+			{ package_id: 'package-1' },
+			createContext(),
+		),
+	).rejects.toThrow(
+		/packageGetGitRemote timed out reading the Artifacts git remote[\s\S]*packageSave/,
+	)
+	expect(mockModule.listServerRefs).toHaveBeenCalledTimes(3)
 
 	resetMocks()
 	const readSetup = mockPackageSource()

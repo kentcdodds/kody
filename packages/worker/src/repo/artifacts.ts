@@ -3,6 +3,7 @@ import {
 	CloudflareApiError,
 	createCloudflareRestClient,
 } from '#mcp/cloudflare/cloudflare-rest-client.ts'
+import { createArtifactsGitHttp } from './artifacts-git-http.ts'
 import {
 	runArtifactsGitWithRetry,
 	wrapArtifactsGitHttpError,
@@ -868,13 +869,20 @@ export async function listArtifactServerRefs(input: {
 		remote: input.remote,
 		token: input.token,
 	})
-	const { git, http } = await loadIsomorphicGit()
+	const { git } = await loadIsomorphicGit()
+	// Protocol v2 follows info/refs with an ls-refs POST. Clone and push
+	// already use protocol v1, which returns the ref list in that single
+	// advertisement. The extra POST can stall with no HTTP status, and
+	// package repos are small enough that client-side prefix filtering is
+	// enough. The bounded HTTP client aborts a stalled advertisement so
+	// retries can finish inside a normal MCP tool timeout.
 	return runArtifactsGitWithRetry(() =>
 		git.listServerRefs({
-			http,
+			http: createArtifactsGitHttp(),
 			url,
 			prefix: input.prefix,
 			symrefs: true,
+			protocolVersion: 1,
 		}),
 	)
 }
