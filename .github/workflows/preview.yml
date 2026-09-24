@@ -36,6 +36,13 @@ on:
         description: Optional preview name override (target=branch)
         required: false
         type: string
+  workflow_call:
+    inputs:
+      pr_number:
+        description: Open PR number when the caller event has no pull_request payload
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -43,9 +50,9 @@ permissions:
 
 concurrency:
   group: >-
-    preview-${{ github.event.pull_request.number || format('{0}-{1}',
-    inputs.target, inputs.target == 'pr' && inputs.pr_number ||
-    inputs.preview_name || github.ref_name) }}
+    preview-${{ github.event.pull_request.number || (github.event_name == 'push'
+    && inputs.pr_number) || format('{0}-{1}', inputs.target, inputs.target ==
+    'pr' && inputs.pr_number || inputs.preview_name || github.ref_name) }}
   cancel-in-progress: true
 
 jobs:
@@ -63,11 +70,22 @@ jobs:
         github.event.action != 'closed' &&
         github.event.pull_request.head.repo.fork == false &&
         github.event.pull_request.draft == false) ||
+      (github.event_name == 'pull_request_target' &&
+        github.event.action == 'ready_for_review' &&
+        github.event.pull_request.head.repo.fork == false &&
+        github.event.pull_request.draft == false) ||
+      (github.event_name == 'push' && inputs.pr_number != '') ||
       (github.event_name == 'workflow_dispatch' &&
         inputs.action == 'deploy')
+    env:
+      PREVIEW_COMMIT_SHA: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
+        with:
+          # pull_request_target's default ref is the base branch. Deploy the
+          # PR head. Other events keep github.sha (merge commit or pushed tip).
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
 
       - name: 🟢 Setup Node
         uses: actions/setup-node@v6
@@ -81,7 +99,7 @@ jobs:
       - name: 🧾 Collect deploy info
         id: deploy_info
         env:
-          DEPLOY_COMMIT_SHA: ${{ github.sha }}
+          DEPLOY_COMMIT_SHA: ${{ env.PREVIEW_COMMIT_SHA }}
           DEPLOY_ENVIRONMENT: preview
           DEPLOY_PR_NUMBER:
             ${{ github.event.pull_request.number || inputs.pr_number }}
@@ -99,7 +117,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
           INPUT_TARGET: ${{ inputs.target }}
           INPUT_PR_NUMBER: ${{ inputs.pr_number }}
           INPUT_PREVIEW_NAME: ${{ inputs.preview_name }}
@@ -107,9 +125,13 @@ jobs:
           set -euo pipefail
           APP_NAME="kody"
 
-          if [ "$EVENT_NAME" = "pull_request" ]; then
+          if [ "$EVENT_NAME" = "pull_request" ] || [ "$EVENT_NAME" = "pull_request_target" ] || [ "$EVENT_NAME" = "push" ]; then
             PREVIEW_KIND="pr"
             PREVIEW_ID="$PR_NUMBER"
+            if [ -z "$PREVIEW_ID" ]; then
+              echo "PR number is required for preview deploy" >&2
+              exit 1
+            fi
           else
             PREVIEW_KIND="$INPUT_TARGET"
             PREVIEW_ID=""
@@ -328,7 +350,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_ENV: preview
-          DEPLOY_COMMIT_SHA: ${{ github.sha }}
+          DEPLOY_COMMIT_SHA: ${{ env.PREVIEW_COMMIT_SHA }}
           APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
         run: |
           set -euo pipefail
@@ -342,7 +364,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_ENV: preview
-          DEPLOY_COMMIT_SHA: ${{ github.sha }}
+          DEPLOY_COMMIT_SHA: ${{ env.PREVIEW_COMMIT_SHA }}
           APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
           WRANGLER_CONFIG:
             ${{ steps.jobs_resources.outputs.jobs_wrangler_bootstrap_config }}
@@ -370,7 +392,7 @@ jobs:
           WRANGLER_CONFIG:
             ${{ steps.platform_config.outputs.platform_bootstrap_wrangler_config
             }}
-          DEPLOY_COMMIT_SHA: ${{ github.sha }}
+          DEPLOY_COMMIT_SHA: ${{ env.PREVIEW_COMMIT_SHA }}
         run: |
           set -euo pipefail
           npm run deploy -- --name "$PLATFORM_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}"
@@ -385,7 +407,7 @@ jobs:
             ${{ steps.runtime_config.outputs.runtime_worker_name }}
           WRANGLER_CONFIG:
             ${{ steps.runtime_config.outputs.runtime_wrangler_config }}
-          DEPLOY_COMMIT_SHA: ${{ github.sha }}
+          DEPLOY_COMMIT_SHA: ${{ env.PREVIEW_COMMIT_SHA }}
         run: |
           set -euo pipefail
           echo "worker_name=$RUNTIME_WORKER_NAME" >> "$GITHUB_OUTPUT"
@@ -407,7 +429,7 @@ jobs:
             ${{ steps.platform_config.outputs.platform_worker_name }}
           WRANGLER_CONFIG:
             ${{ steps.platform_config.outputs.platform_wrangler_config }}
-          DEPLOY_COMMIT_SHA: ${{ github.sha }}
+          DEPLOY_COMMIT_SHA: ${{ env.PREVIEW_COMMIT_SHA }}
         run: |
           set -euo pipefail
           echo "worker_name=$PLATFORM_WORKER_NAME" >> "$GITHUB_OUTPUT"
@@ -429,7 +451,7 @@ jobs:
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
           ORIGIN_DEPLOY_MODE: ${{ steps.resources.outputs.origin_deploy_mode }}
           ORIGIN_ENTRY: ${{ steps.resources.outputs.origin_entry }}
-          DEPLOY_COMMIT_SHA: ${{ github.sha }}
+          DEPLOY_COMMIT_SHA: ${{ env.PREVIEW_COMMIT_SHA }}
           APP_DEPLOY_INFO: ${{ steps.deploy_info.outputs.app_deploy_info }}
         run: |
           set -euo pipefail
@@ -452,7 +474,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_ENV: preview
-          DEPLOY_COMMIT_SHA: ${{ github.sha }}
+          DEPLOY_COMMIT_SHA: ${{ env.PREVIEW_COMMIT_SHA }}
           APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
           WRANGLER_CONFIG:
             ${{ steps.jobs_resources.outputs.jobs_wrangler_config }}
@@ -520,7 +542,7 @@ jobs:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
-          APP_COMMIT_SHA: ${{ github.sha }}
+          APP_COMMIT_SHA: ${{ env.PREVIEW_COMMIT_SHA }}
         run: |
           set -euo pipefail
           if [ -z "${SENTRY_AUTH_TOKEN:-}" ] || [ -z "${SENTRY_ORG:-}" ] || [ -z "${SENTRY_PROJECT:-}" ]; then
@@ -544,7 +566,7 @@ jobs:
         shell: bash
         env:
           PREVIEW_URL: ${{ steps.deploy_preview.outputs.url }}
-          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+          EXPECTED_COMMIT_SHA: ${{ env.PREVIEW_COMMIT_SHA }}
         run: |
           set -euo pipefail
 
@@ -586,7 +608,7 @@ jobs:
         shell: bash
         env:
           PLATFORM_URL: ${{ steps.deploy_platform.outputs.url }}
-          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+          EXPECTED_COMMIT_SHA: ${{ env.PREVIEW_COMMIT_SHA }}
         run: |
           set -euo pipefail
 
@@ -628,7 +650,7 @@ jobs:
         shell: bash
         env:
           RUNTIME_URL: ${{ steps.deploy_runtime.outputs.url }}
-          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+          EXPECTED_COMMIT_SHA: ${{ env.PREVIEW_COMMIT_SHA }}
         run: |
           set -euo pipefail
 
@@ -711,10 +733,12 @@ jobs:
 
       - name: 💬 Comment Preview URL on PR
         if: >-
-          github.event_name == 'pull_request' &&
-          steps.deploy_preview.outputs.url != ''
+          steps.deploy_preview.outputs.url != '' && (github.event_name ==
+          'pull_request' || github.event_name == 'pull_request_target' ||
+          github.event_name == 'push')
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
           PREVIEW_URL: ${{ steps.deploy_preview.outputs.url }}
           PREVIEW_VERSION_URL:
             '${{ steps.deploy_preview.outputs.version_preview_url }}'
@@ -764,7 +788,11 @@ jobs:
             const body = bodyLines.join("\n");
 
             const { owner, repo } = context.repo;
-            const issue_number = context.payload.pull_request.number;
+            const issue_number = Number(process.env.PR_NUMBER);
+            if (!Number.isInteger(issue_number) || issue_number <= 0) {
+              core.setFailed("PR number is required to comment the preview URL.");
+              return;
+            }
 
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner,

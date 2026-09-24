@@ -13,6 +13,13 @@ on:
       - synchronize
       - ready_for_review
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      base_sha:
+        description: PR base SHA when the caller event has no pull_request payload
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -20,7 +27,8 @@ permissions:
 # Pin CI=1 (not GitHub's CI=true) so Nx cache hashes match local
 # `validate` / `test:push`. Anyone who can push already has the write
 # token locally, so same-repo validate (push, workflow_dispatch, and
-# non-fork pull_request) presents it too. Fork PRs use the read token
+# non-fork pull_request) presents it too. pull_request_target jobs run
+# only for non-forks and use the same write token. Fork PRs use the read token
 # only: a missing read secret stays empty and does not fall through
 # to write. Literal secret refs only — do not index `secrets[...]`
 # (overprovisions the whole secrets context). Nx treats an
@@ -36,10 +44,10 @@ env:
     github.event.pull_request.head.repo.fork != true &&
     secrets.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN || '' }}
 
+# Branch name, not event name, so a conflict enqueue (push /
+# pull_request_target) and a later pull_request run cancel each other.
 concurrency:
-  group: >-
-    validate-${{ github.event_name }}-${{ github.event.pull_request.number ||
-    github.ref }}
+  group: validate-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 # Same checks as `npm run validate`, split across runners so CPU-heavy suites
@@ -52,8 +60,11 @@ jobs:
     name: 🧹 Static
     timeout-minutes: 10
     if: >-
-      github.event_name != 'pull_request' || github.event.pull_request.draft ==
-      false
+      github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.draft ==
+      false) || (github.event_name == 'pull_request_target' &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.fork == false)
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
@@ -61,6 +72,7 @@ jobs:
           # Migration immutability validation compares against the PR merge
           # base and must never silently fall back to an editable ledger.
           fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.ref }}
           persist-credentials: false
 
       - name: 🧰 Setup
@@ -139,8 +151,8 @@ jobs:
           # PRs trust the fetched base SHA; main pushes trust the pre-push SHA.
           # The validator rejects this value if it resolves to HEAD.
           MIGRATION_VALIDATION_BASE: >-
-            ${{ github.event.pull_request.base.sha || github.event.before || ''
-            }}
+            ${{ github.event.pull_request.base.sha || inputs.base_sha ||
+            github.event.before || '' }}
 
       - name: 🛡️ Deploy guardrails
         if: ${{ !cancelled() }}
@@ -167,8 +179,11 @@ jobs:
     name: 🧪 Node
     timeout-minutes: 15
     if: >-
-      github.event_name != 'pull_request' || github.event.pull_request.draft ==
-      false
+      github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.draft ==
+      false) || (github.event_name == 'pull_request_target' &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.fork == false)
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
@@ -176,6 +191,7 @@ jobs:
           # Node coverage includes migration immutability helpers that need a
           # trusted pre-change Git base (same as migrations:check).
           fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.ref }}
           persist-credentials: false
 
       - name: 🧰 Setup
@@ -187,20 +203,24 @@ jobs:
         run: npm run test:node
         env:
           MIGRATION_VALIDATION_BASE: >-
-            ${{ github.event.pull_request.base.sha || github.event.before || ''
-            }}
+            ${{ github.event.pull_request.base.sha || inputs.base_sha ||
+            github.event.before || '' }}
 
   workers:
     runs-on: ubuntu-latest
     name: ☁️ Workers
     timeout-minutes: 15
     if: >-
-      github.event_name != 'pull_request' || github.event.pull_request.draft ==
-      false
+      github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.draft ==
+      false) || (github.event_name == 'pull_request_target' &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.fork == false)
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
         with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.ref }}
           persist-credentials: false
 
       - name: 🧰 Setup
@@ -217,12 +237,16 @@ jobs:
     name: 🔌 MCP
     timeout-minutes: 10
     if: >-
-      github.event_name != 'pull_request' || github.event.pull_request.draft ==
-      false
+      github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.draft ==
+      false) || (github.event_name == 'pull_request_target' &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.fork == false)
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
         with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.ref }}
           persist-credentials: false
 
       - name: 🧰 Setup
@@ -238,12 +262,16 @@ jobs:
     name: 🎭 E2E
     timeout-minutes: 15
     if: >-
-      github.event_name != 'pull_request' || github.event.pull_request.draft ==
-      false
+      github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.draft ==
+      false) || (github.event_name == 'pull_request_target' &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.fork == false)
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
         with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.ref }}
           persist-credentials: false
 
       - name: 🧰 Setup
@@ -305,8 +333,12 @@ jobs:
     # A sibling job timeout still fails this job: the workflow is not
     # cancelled, and that child result is cancelled != success.
     if: >-
-      always() && !cancelled() && (github.event_name != 'pull_request' ||
-      github.event.pull_request.draft == false)
+      always() && !cancelled() && (github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' || (github.event_name ==
+      'pull_request' && github.event.pull_request.draft == false) ||
+      (github.event_name == 'pull_request_target' &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.fork == false))
     steps:
       - name: ✅ All checks passed
         if: >-

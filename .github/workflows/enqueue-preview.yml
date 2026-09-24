@@ -1,0 +1,61 @@
+name: 🔁 Enqueue Preview
+
+run-name: >-
+  enqueue preview ${{ github.event.pull_request.number && format('#{0} ',
+  github.event.pull_request.number) || '' }}${{ github.event.pull_request.head.sha
+  || github.sha }}
+
+on:
+  push:
+    branches-ignore:
+      - main
+  pull_request_target:
+    types:
+      - ready_for_review
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: enqueue-preview-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  decide:
+    name: 🔁 Decide
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Same checkout rule as Enqueue Validate: base SHA only, no PR head.
+    if: >-
+      github.event_name != 'pull_request_target' ||
+      (github.event.pull_request.head.repo.fork == false &&
+        github.event.pull_request.draft == false)
+    outputs:
+      enqueue: ${{ steps.decide.outputs.enqueue }}
+      pr_number: ${{ steps.decide.outputs.pr_number }}
+    steps:
+      - name: 📦 Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+
+      - name: Decide
+        id: decide
+        uses: ./.github/actions/decide-pr-check-enqueue
+
+  preview:
+    needs: decide
+    if: needs.decide.outputs.enqueue == 'true'
+    uses: ./.github/workflows/preview.yml
+    with:
+      pr_number: ${{ needs.decide.outputs.pr_number }}
+    secrets: inherit

@@ -8,6 +8,7 @@ import {
 	cookieHeaderFromSetCookie,
 	deriveSiblingWorkerUrl,
 	displayTitleMentionsPr,
+	previewRunCoversHead,
 	evaluateAppHealth,
 	evaluatePlatformHealth,
 	evaluateRuntimeHealth,
@@ -208,6 +209,25 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 	expect(displayTitleMentionsPr('Preview #4', 4)).toBe(true)
 	expect(displayTitleMentionsPr('Preview #4 from main', 4)).toBe(true)
 	expect(displayTitleMentionsPr(undefined, 4)).toBe(false)
+	const head = 'abc123def456'
+	expect(
+		previewRunCoversHead(
+			{ headSha: 'basesha', displayTitle: `enqueue preview #42 ${head}` },
+			{ number: 42, headRefOid: head },
+		),
+	).toBe(true)
+	expect(
+		previewRunCoversHead(
+			{ headSha: head, displayTitle: '🔎 Preview' },
+			{ number: 42, headRefOid: head },
+		),
+	).toBe(true)
+	expect(
+		previewRunCoversHead(
+			{ headSha: 'basesha', displayTitle: 'enqueue preview #42 other' },
+			{ number: 42, headRefOid: head },
+		),
+	).toBe(false)
 
 	expect(flattenGhJsonPages([{ body: 'a' }, { body: 'b' }])).toEqual([
 		{ body: 'a' },

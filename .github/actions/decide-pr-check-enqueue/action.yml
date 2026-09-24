@@ -1,0 +1,31 @@
+name: Decide PR check enqueue
+description: >
+  Enqueue Validate or Preview when GitHub will not run pull_request workflows
+  because the PR has merge conflicts. Skips mergeable, draft, and fork PRs.
+
+outputs:
+  enqueue:
+    description: true when the caller should run the reusable workflow
+    value: ${{ steps.decide.outputs.enqueue }}
+  reason:
+    description: Why enqueue was or was not chosen
+    value: ${{ steps.decide.outputs.reason }}
+  pr_number:
+    description: Open same-repo PR number
+    value: ${{ steps.decide.outputs.pr_number }}
+  base_sha:
+    description: PR base SHA
+    value: ${{ steps.decide.outputs.base_sha }}
+  head_sha:
+    description: PR head SHA
+    value: ${{ steps.decide.outputs.head_sha }}
+
+runs:
+  using: composite
+  steps:
+    - name: Decide
+      id: decide
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: node tools/ci/pr-check-enqueue.ts

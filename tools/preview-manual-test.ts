@@ -451,6 +451,21 @@ export function displayTitleMentionsPr(
 	return new RegExp(`(?:^|\\D)#${prNumber}(?:\\D|$)`).test(displayTitle)
 }
 
+const enqueuePreviewWorkflow = 'enqueue-preview.yml'
+
+export function previewRunCoversHead(
+	run: { headSha?: string; displayTitle?: string },
+	pr: { number: number; headRefOid: string },
+) {
+	if (run.headSha && run.headSha === pr.headRefOid) return true
+	const title = run.displayTitle ?? ''
+	if (!pr.headRefOid) return false
+	return (
+		displayTitleMentionsPr(title, pr.number) &&
+		title.toLowerCase().includes(pr.headRefOid.toLowerCase())
+	)
+}
+
 export function flattenGhJsonPages(parsed: unknown): Array<unknown> {
 	if (!Array.isArray(parsed)) return []
 	if (parsed.length > 0 && Array.isArray(parsed[0])) {
@@ -841,6 +856,7 @@ type PrView = {
 	url: string
 	isDraft: boolean
 	headRefOid: string
+	headRefName?: string
 }
 
 type IssueComment = { body?: string }
@@ -1034,7 +1050,12 @@ async function loadPullRequest(
 	options: PreviewManualTestOptions,
 	deps: PreviewManualTestDeps,
 ): Promise<PrView> {
-	const args = ['pr', 'view', '--json', 'number,url,isDraft,headRefOid']
+	const args = [
+		'pr',
+		'view',
+		'--json',
+		'number,url,isDraft,headRefOid,headRefName',
+	]
 	if (options.prNumber !== null) {
 		args.splice(2, 0, String(options.prNumber))
 	}
@@ -1065,25 +1086,61 @@ async function loadPreviewComment(
 	return match?.body ?? null
 }
 
+async function listWorkflowRuns(
+	deps: PreviewManualTestDeps,
+	workflow: string,
+	commit: string | null,
+	branch?: string,
+) {
+	const args = [
+		'run',
+		'list',
+		'--workflow',
+		workflow,
+		'--json',
+		'databaseId,status,conclusion,headSha,event,url,displayTitle',
+		'--limit',
+		'20',
+	]
+	if (commit) args.push('--commit', commit)
+	if (branch) args.push('--branch', branch)
+	return ghJson<Array<WorkflowRun>>(deps, args)
+}
+
+function withPrHead(run: WorkflowRun, pr: PrView): WorkflowRun {
+	if (run.headSha === pr.headRefOid) return run
+	return { ...run, headSha: pr.headRefOid }
+}
+
 async function loadPreviewWorkflow(
 	pr: PrView,
 	deps: PreviewManualTestDeps,
 ): Promise<WorkflowRun | null> {
-	const runs = await ghJson<Array<WorkflowRun>>(deps, [
-		'run',
-		'list',
-		'--workflow',
-		'preview.yml',
-		'--commit',
+	const direct = await listWorkflowRuns(deps, 'preview.yml', pr.headRefOid)
+	const directHit = direct.find((run) => previewRunCoversHead(run, pr))
+	if (directHit) return directHit
+	// Conflicted heads never start preview.yml. enqueue-preview.yml calls it
+	// from push (head SHA matches) or ready_for_review (title carries the SHA
+	// because pull_request_target records the base SHA).
+	const enqueuedByCommit = await listWorkflowRuns(
+		deps,
+		enqueuePreviewWorkflow,
 		pr.headRefOid,
-		'--json',
-		'databaseId,status,conclusion,headSha,event,url,displayTitle',
-		'--limit',
-		'10',
-	])
+	)
+	const enqueuedHit = enqueuedByCommit.find((run) =>
+		previewRunCoversHead(run, pr),
+	)
+	if (enqueuedHit) return withPrHead(enqueuedHit, pr)
+	const recent = await listWorkflowRuns(
+		deps,
+		enqueuePreviewWorkflow,
+		null,
+		pr.headRefName,
+	)
+	const titled = recent.find((run) => previewRunCoversHead(run, pr))
+	if (titled) return withPrHead(titled, pr)
 	return (
-		runs.find((run) => run.headSha === pr.headRefOid) ??
-		runs.find((run) => displayTitleMentionsPr(run.displayTitle, pr.number)) ??
+		direct.find((run) => displayTitleMentionsPr(run.displayTitle, pr.number)) ??
 		null
 	)
 }

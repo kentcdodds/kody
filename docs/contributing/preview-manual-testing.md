@@ -125,8 +125,12 @@ its own worker against `.wrangler/state/e2e`.
   treat a healthy worker as the new commit until that happens.
 
 Do not `gh workflow run preview.yml` with `target=pr` to "force" a PR preview.
-That dispatch checks out the workflow's ref (usually `main`), not the PR head.
-Pushing to the PR (or marking it ready) is the deploy trigger.
+That dispatch checks out the workflow's ref (usually `main`), not the PR head,
+and Cloud Agent tokens cannot `workflow_dispatch`. Pushing to the PR, including
+a conflicted or force-pushed head, or marking it ready, enqueues 🔎 Preview.
+GitHub does not start `pull_request` workflows while the PR has merge conflicts;
+`enqueue-preview.yml` starts 🔎 Preview from `push` and from `ready_for_review`
+in that case.
 
 ## Resource reset
 

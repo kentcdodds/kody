@@ -1,0 +1,65 @@
+name: 🔁 Enqueue Validate
+
+# Display title carries the PR head so tooling can match a
+# pull_request_target run, whose GitHub head SHA is the base branch.
+run-name: >-
+  enqueue validate ${{ github.event.pull_request.number && format('#{0} ',
+  github.event.pull_request.number) || '' }}${{ github.event.pull_request.head.sha
+  || github.sha }}
+
+on:
+  push:
+    branches-ignore:
+      - main
+  pull_request_target:
+    types:
+      - ready_for_review
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: enqueue-validate-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  decide:
+    name: 🔁 Decide
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Checkout stays on github.sha. For pull_request_target that is the base
+    # branch, never the PR head, so this job cannot run fork code. The called
+    # Validate workflow checks out the head only after the fork guard.
+    if: >-
+      github.event_name != 'pull_request_target' ||
+      (github.event.pull_request.head.repo.fork == false &&
+        github.event.pull_request.draft == false)
+    outputs:
+      enqueue: ${{ steps.decide.outputs.enqueue }}
+      base_sha: ${{ steps.decide.outputs.base_sha }}
+    steps:
+      - name: 📦 Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+
+      - name: Decide
+        id: decide
+        uses: ./.github/actions/decide-pr-check-enqueue
+
+  validate:
+    needs: decide
+    if: needs.decide.outputs.enqueue == 'true'
+    uses: ./.github/workflows/validate.yml
+    with:
+      base_sha: ${{ needs.decide.outputs.base_sha }}
+    secrets: inherit
