@@ -41,6 +41,8 @@ import {
 } from './repo.ts'
 import {
 	isWebhookPreviousUrlLive,
+	webhookIdempotencyKeyHeader,
+	webhookMaxPayloadBytes,
 	type WebhookEndpointRecord,
 } from './types.ts'
 
@@ -704,8 +706,17 @@ export async function dispatchSyntheticWebhookForUser(input: {
 	} else {
 		const fixture = input.request ?? {}
 		const headers = new Headers()
-		for (const [name, value] of Object.entries(fixture.headers ?? {})) {
-			if (typeof value === 'string') headers.set(name, value)
+		try {
+			for (const [name, value] of Object.entries(fixture.headers ?? {})) {
+				if (typeof value === 'string') headers.set(name, value)
+			}
+			if (fixture.contentType) {
+				headers.set('content-type', fixture.contentType)
+			}
+		} catch (error) {
+			throw new McpCallerError(
+				`Invalid request fixture header: ${error instanceof Error ? error.message : String(error)}`,
+			)
 		}
 		let bodyText: string
 		if (typeof fixture.body === 'string') {
@@ -718,16 +729,36 @@ export async function dispatchSyntheticWebhookForUser(input: {
 		} else {
 			bodyText = ''
 		}
-		if (fixture.contentType) {
-			headers.set('content-type', fixture.contentType)
+		payloadBytes = utf8ByteLength(bodyText)
+		if (payloadBytes > webhookMaxPayloadBytes) {
+			throw new McpCallerError(
+				`Fixture exceeds the ${String(webhookMaxPayloadBytes)}-byte webhook payload limit (${String(payloadBytes)} bytes).`,
+			)
 		}
 		const method = (fixture.method ?? 'POST').toUpperCase()
-		const request = new Request('https://kody.synthetic/webhook', {
-			method,
-			headers,
-			body: method === 'GET' || method === 'HEAD' ? undefined : bodyText,
-		})
-		const safeHeaders = collectSafeWebhookHeaders(request)
+		let request: Request
+		try {
+			request = new Request('https://kody.synthetic/webhook', {
+				method,
+				headers,
+				body: method === 'GET' || method === 'HEAD' ? undefined : bodyText,
+			})
+		} catch (error) {
+			throw new McpCallerError(
+				`Invalid request fixture method: ${error instanceof Error ? error.message : String(error)}`,
+			)
+		}
+		const extraAllowedHeaders = [
+			...(declared.verification ? [declared.verification.header] : []),
+			...(declared.replay?.timestampHeader
+				? [declared.replay.timestampHeader]
+				: []),
+			...(declared.replay?.deliveryIdHeader
+				? [declared.replay.deliveryIdHeader]
+				: []),
+			webhookIdempotencyKeyHeader,
+		]
+		const safeHeaders = collectSafeWebhookHeaders(request, extraAllowedHeaders)
 		const requestParams = buildWebhookExportParams({
 			packageKodyId: savedPackage.kodyId,
 			webhookName,
@@ -740,7 +771,12 @@ export async function dispatchSyntheticWebhookForUser(input: {
 			...requestParams,
 			synthetic: true,
 		}
-		payloadBytes = utf8ByteLength(bodyText)
+	}
+
+	if (payloadBytes > webhookMaxPayloadBytes) {
+		throw new McpCallerError(
+			`Fixture exceeds the ${String(webhookMaxPayloadBytes)}-byte webhook payload limit (${String(payloadBytes)} bytes).`,
+		)
 	}
 
 	const finish = async (inputFinish: {
@@ -790,8 +826,9 @@ export async function dispatchSyntheticWebhookForUser(input: {
 		}
 	}
 
+	let response: Awaited<ReturnType<typeof dispatchWebhookInvocation>>
 	try {
-		const response = await dispatchWebhookInvocation({
+		response = await dispatchWebhookInvocation({
 			env: input.env,
 			baseUrl: input.baseUrl,
 			endpoint,
@@ -807,34 +844,6 @@ export async function dispatchSyntheticWebhookForUser(input: {
 				`Retryable package invocation infrastructure response: ${retryableCode}.`,
 			)
 		}
-		const ok = response.status >= 200 && response.status < 300
-		const result = readWebhookInvocationResult(response.body)
-		if (ok) {
-			return await finish({
-				status: response.status,
-				outcome: 'delivered',
-				result,
-			})
-		}
-		const errorRecord =
-			response.body && typeof response.body === 'object'
-				? ((response.body as Record<string, unknown>)['error'] as
-						| Record<string, unknown>
-						| undefined)
-				: undefined
-		return await finish({
-			status: response.status,
-			outcome: 'failed',
-			error: `invocation_status_${response.status}`,
-			result,
-			errorBody: {
-				code: String(errorRecord?.['code'] ?? 'invocation_failed'),
-				message: String(
-					errorRecord?.['message'] ??
-						`Webhook export invocation failed with HTTP ${response.status}.`,
-				),
-			},
-		})
 	} catch (error) {
 		if (error instanceof McpCallerError) throw error
 		const message = error instanceof Error ? error.message : 'invocation_failed'
@@ -848,4 +857,33 @@ export async function dispatchSyntheticWebhookForUser(input: {
 			},
 		})
 	}
+
+	const ok = response.status >= 200 && response.status < 300
+	const result = readWebhookInvocationResult(response.body)
+	if (ok) {
+		return await finish({
+			status: response.status,
+			outcome: 'delivered',
+			result,
+		})
+	}
+	const errorRecord =
+		response.body && typeof response.body === 'object'
+			? ((response.body as Record<string, unknown>)['error'] as
+					| Record<string, unknown>
+					| undefined)
+			: undefined
+	return await finish({
+		status: response.status,
+		outcome: 'failed',
+		error: `invocation_status_${response.status}`,
+		result,
+		errorBody: {
+			code: String(errorRecord?.['code'] ?? 'invocation_failed'),
+			message: String(
+				errorRecord?.['message'] ??
+					`Webhook export invocation failed with HTTP ${response.status}.`,
+			),
+		},
+	})
 }

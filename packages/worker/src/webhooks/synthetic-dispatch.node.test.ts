@@ -282,3 +282,91 @@ test('dispatchSyntheticWebhookForUser is owner-scoped (missing package for user)
 	).rejects.toThrow(/not found for this user/)
 	expect(mocks.dispatchWebhookInvocation).not.toHaveBeenCalled()
 })
+
+test('dispatchSyntheticWebhookForUser forwards declared verification headers like ingress', async () => {
+	mockPackage({ inputMode: 'request' })
+	mocks.listPackageWebhooks.mockReturnValue([
+		{
+			name: 'hook',
+			exportName: './handle-hook',
+			description: null,
+			responseMode: 'ack',
+			inputMode: 'request',
+			rateLimitPerMinute: 60,
+			verification: {
+				type: 'hmac-sha256',
+				header: 'x-acme-signature',
+				secretName: 'acmeWebhookSecret',
+				encoding: 'hex',
+			},
+			replay: {
+				timestampHeader: 'x-acme-timestamp',
+				deliveryIdHeader: 'x-acme-delivery',
+			},
+		},
+	])
+
+	await dispatchSyntheticWebhookForUser({
+		env: { APP_DB: {} } as Env,
+		userId: 'user-1',
+		baseUrl: 'https://heykody.dev',
+		kodyId: 'demo',
+		webhookName: 'hook',
+		request: {
+			json: { ok: true },
+			headers: {
+				'x-acme-signature': 'sig',
+				'x-acme-timestamp': '1',
+				'x-acme-delivery': 'd1',
+			},
+		},
+	})
+
+	expect(mocks.collectSafeWebhookHeaders).toHaveBeenCalledWith(
+		expect.any(Request),
+		expect.arrayContaining([
+			'x-acme-signature',
+			'x-acme-timestamp',
+			'x-acme-delivery',
+			'Idempotency-Key',
+		]),
+	)
+})
+
+test('dispatchSyntheticWebhookForUser rejects fixtures over the ingress payload cap', async () => {
+	mockPackage({ inputMode: 'request' })
+	await expect(
+		dispatchSyntheticWebhookForUser({
+			env: { APP_DB: {} } as Env,
+			userId: 'user-1',
+			baseUrl: 'https://heykody.dev',
+			kodyId: 'demo',
+			webhookName: 'hook',
+			request: {
+				body: 'x'.repeat(1_048_577),
+			},
+		}),
+	).rejects.toThrow(/payload limit/)
+	expect(mocks.dispatchWebhookInvocation).not.toHaveBeenCalled()
+})
+
+test('dispatchSyntheticWebhookForUser does not re-finish a successful invoke as failed when persistence throws', async () => {
+	mockPackage({ inputMode: 'params' })
+	mocks.recordWebhookDelivery.mockRejectedValueOnce(
+		new Error('Webhook synthetic delivery record was not persisted.'),
+	)
+	await expect(
+		dispatchSyntheticWebhookForUser({
+			env: { APP_DB: {} } as Env,
+			userId: 'user-1',
+			baseUrl: 'https://heykody.dev',
+			kodyId: 'demo',
+			webhookName: 'hook',
+			params: { ok: true },
+		}),
+	).rejects.toThrow(/not persisted/)
+	expect(mocks.recordWebhookDelivery).toHaveBeenCalledTimes(1)
+	expect(mocks.recordWebhookDelivery).toHaveBeenCalledWith(
+		expect.objectContaining({ outcome: 'delivered' }),
+	)
+})
