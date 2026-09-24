@@ -1155,3 +1155,196 @@ test('buildKodyModuleBundle follows self kody imports when recording reachable d
 		'.__kody_packages__/@alice/reachable-package/src/index.js',
 	)
 })
+
+function unpatchedXSearchRecentFiles(input?: { dependencies?: boolean }) {
+	const client = [
+		'export async function searchRecent(params) {',
+		'\tconst query = cleanObject({',
+		'\t\tquery: params.query,',
+		'\t\tmax_results: params.maxResults || params.max_results || 10,',
+		"\t\t'tweet.fields': params.tweetFields,",
+		'\t})',
+		"\tconst path = '/tweets/search/recent'",
+		'\treturn query',
+		'}',
+		'function cleanObject(input) { return input }',
+	].join('\n')
+	return {
+		source: {
+			id: 'source-1',
+			published_commit: 'commit-1',
+		},
+		manifest: {
+			name: '@kentcdodds/x',
+			exports: {
+				'./search-recent': './src/search-recent.ts',
+			},
+			kody: {
+				id: 'x',
+				description: 'X',
+			},
+			...(input?.dependencies ? { dependencies: { marked: '^1.0.0' } } : {}),
+		},
+		files: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/x',
+				...(input?.dependencies ? { dependencies: { marked: '^1.0.0' } } : {}),
+			}),
+			'src/search-recent.ts':
+				'import { searchRecent } from "./client.ts"\nexport default async function searchRecentEntrypoint(params) { return await searchRecent(params) }\n',
+			'src/client.ts': client,
+		},
+	}
+}
+
+test('search-recent pagination patch skips a stale published artifact', async () => {
+	mockModule.createWorker.mockImplementation(
+		async (input: { files: Record<string, string>; entryPoint: string }) => ({
+			mainModule: input.entryPoint,
+			modules: input.files,
+			dependencies: [],
+		}),
+	)
+	mockModule.getSavedPackageByName.mockResolvedValue(
+		createSavedPackageRecord({
+			name: '@kentcdodds/x',
+			kodyId: 'x',
+		}),
+	)
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(
+		unpatchedXSearchRecentFiles(),
+	)
+	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
+		row: { id: 'artifact-1' },
+		artifact: {
+			version: 1,
+			kind: 'importable-module',
+			artifactName: './search-recent',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+			entryPoint: 'src/search-recent.ts',
+			mainModule: 'dist/search-recent.js',
+			modules: {
+				'dist/search-recent.js':
+					'export default async function staleSearch() { return "stale" }',
+			},
+			dependencies: [],
+			packageContext: {
+				packageId: 'pkg-1',
+				kodyId: 'x',
+				sourceId: 'source-1',
+			},
+			createdAt: '2026-09-11T00:00:00.000Z',
+		},
+	})
+
+	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+	await buildKodyModuleBundle({
+		env: { APP_DB: {}, REPO_SESSION: {} } as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/local-package',
+				exports: { '.': './index.js' },
+				kody: { id: 'local-package', description: 'Local package' },
+			}),
+			'index.js':
+				'import searchRecent from "kody:@kentcdodds/x/search-recent"\nexport default searchRecent\n',
+		},
+		entryPoint: 'index.js',
+	})
+
+	expect(
+		mockModule.loadPublishedBundleArtifactByIdentity,
+	).not.toHaveBeenCalled()
+	const workerInput = mockModule.createWorker.mock.calls[0]?.[0] as
+		| { files?: Record<string, string> }
+		| undefined
+	const files = workerInput?.files ?? {}
+	const client = Object.entries(files).find(
+		([path]) =>
+			path.includes('@kentcdodds/x/') && path.endsWith('/src/client.ts'),
+	)?.[1]
+	expect(client).toContain('next_token: params.nextToken || params.next_token,')
+	expect(
+		Object.keys(files).some((path) => path.includes('.__published_bundle__')),
+	).toBe(false)
+	const proxy = Object.values(files).find((source) =>
+		source.includes('search-recent.ts'),
+	)
+	expect(proxy).toContain('search-recent.ts')
+})
+
+test('search-recent keeps its published artifact when source cannot be rebuilt', async () => {
+	mockModule.createWorker.mockImplementation(
+		async (input: { files: Record<string, string>; entryPoint: string }) => ({
+			mainModule: input.entryPoint,
+			modules: input.files,
+			dependencies: [],
+		}),
+	)
+	mockModule.getSavedPackageByName.mockResolvedValue(
+		createSavedPackageRecord({
+			name: '@kentcdodds/x',
+			kodyId: 'x',
+		}),
+	)
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(
+		unpatchedXSearchRecentFiles({ dependencies: true }),
+	)
+	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
+		row: { id: 'artifact-1' },
+		artifact: {
+			version: 1,
+			kind: 'importable-module',
+			artifactName: './search-recent',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+			entryPoint: 'src/search-recent.ts',
+			mainModule: 'dist/search-recent.js',
+			modules: {
+				'dist/search-recent.js':
+					'export default async function staleSearch() { return "stale" }',
+			},
+			dependencies: [],
+			packageContext: {
+				packageId: 'pkg-1',
+				kodyId: 'x',
+				sourceId: 'source-1',
+			},
+			createdAt: '2026-09-11T00:00:00.000Z',
+		},
+	})
+
+	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+	await buildKodyModuleBundle({
+		env: { APP_DB: {}, REPO_SESSION: {} } as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/local-package',
+				exports: { '.': './index.js' },
+				kody: { id: 'local-package', description: 'Local package' },
+			}),
+			'index.js':
+				'import searchRecent from "kody:@kentcdodds/x/search-recent"\nexport default searchRecent\n',
+		},
+		entryPoint: 'index.js',
+	})
+
+	expect(mockModule.loadPublishedBundleArtifactByIdentity).toHaveBeenCalled()
+	const workerInput = mockModule.createWorker.mock.calls[0]?.[0] as
+		| { files?: Record<string, string> }
+		| undefined
+	const files = workerInput?.files ?? {}
+	const artifact = Object.entries(files).find(([path]) =>
+		path.includes('.__published_bundle__'),
+	)?.[1]
+	expect(artifact).toContain('return "stale"')
+	const client = Object.entries(files).find(([path]) =>
+		path.endsWith('/src/client.ts'),
+	)?.[1]
+	expect(client).not.toContain('next_token: params.nextToken')
+})

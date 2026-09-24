@@ -25,17 +25,29 @@ function getMissingInstalledDependencies(input: {
 	)
 }
 
+export function canRebuildPublishedSourceWithoutInstallingDeps(
+	sourceFiles: Record<string, string>,
+) {
+	const dependencies = getDeclaredPackageDependencies(sourceFiles)
+	if (dependencies.length === 0) return true
+	return (
+		getMissingInstalledDependencies({
+			sourceFiles,
+			dependencies,
+		}).length === 0
+	)
+}
+
 export function assertPublishedSourceCanRebuildWithoutInstallingDeps(input: {
 	sourceFiles: Record<string, string>
 	bundleLabel: string
 }) {
+	if (canRebuildPublishedSourceWithoutInstallingDeps(input.sourceFiles)) return
 	const dependencies = getDeclaredPackageDependencies(input.sourceFiles)
-	if (dependencies.length === 0) return
 	const missingDependencies = getMissingInstalledDependencies({
 		sourceFiles: input.sourceFiles,
 		dependencies,
 	})
-	if (missingDependencies.length === 0) return
 	throw new Error(
 		`${input.bundleLabel} declares npm dependencies (${missingDependencies
 			.map((dependency) => `"${dependency}"`)
