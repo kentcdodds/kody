@@ -358,7 +358,12 @@ test('the workflow posts the check from the default branch and does not run pull
 	expect(workflow).toContain('push:')
 	expect(workflow).toContain('- edited')
 	expect(workflow).toContain('github.event.changes.base')
+	expect(workflow).toContain('github.event.changes.base.ref.from')
 	expect(workflow).toContain("'open-pulls'")
+	const pullRequestTarget = workflow.slice(
+		workflow.indexOf('pull_request_target:'),
+	)
+	expect(pullRequestTarget).not.toContain('\n    branches:')
 	expect(workflow).not.toContain('npm run validate')
 	expect(workflow).toContain(
 		'ref: ${{ github.event.repository.default_branch }}',

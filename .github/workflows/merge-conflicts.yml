@@ -7,14 +7,15 @@ name: Report merge conflicts
 # failed. The script writes 🚧 Merge conflicts on each pull request head SHA,
 # which is what `gh pr checks` reads. A push to the base branch and a base
 # retarget rerun that check, because the head commit does not move in those
-# cases. The job never checks out or executes pull request code.
+# cases. pull_request_target has no branches filter: GitHub matches that
+# filter on the new base, so a retarget away from the default branch would
+# never start and the previous head check would stay in place. The job
+# never checks out or executes pull request code.
 on:
   push:
     branches:
       - main
   pull_request_target:
-    branches:
-      - main
     types:
       - opened
       - reopened
@@ -32,10 +33,19 @@ jobs:
     runs-on: ubuntu-latest
     name: Report merge conflicts
     timeout-minutes: 15
-    # Title and body edits do not change mergeability. Base retargets do.
+    # Title and body edits do not change mergeability. Pull requests that
+    # do not target the default branch are skipped, except an edit that just
+    # moved one off that branch: the head SHA is unchanged, so this run
+    # replaces the previous check with the result against the new base.
     if: >-
-      github.event_name == 'push' || github.event.action != 'edited' ||
-      github.event.changes.base
+      github.event_name == 'push' ||
+      (
+        (
+          github.event.pull_request.base.ref == github.event.repository.default_branch ||
+          github.event.changes.base.ref.from == github.event.repository.default_branch
+        ) &&
+        (github.event.action != 'edited' || github.event.changes.base)
+      )
     steps:
       - name: 📦 Checkout default branch
         uses: actions/checkout@v6.0.2
