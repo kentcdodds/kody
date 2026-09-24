@@ -38,8 +38,7 @@ jobs:
     # moved one off that branch: the head SHA is unchanged, so this run
     # replaces the previous check with the result against the new base.
     if: >-
-      github.event_name == 'push' ||
-      (
+      github.event_name == 'push' || (
         (
           github.event.pull_request.base.ref == github.event.repository.default_branch ||
           github.event.changes.base.ref.from == github.event.repository.default_branch
