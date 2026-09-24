@@ -21,6 +21,9 @@ export const adminCapabilityAccess = {
 	destructive: false,
 } as const
 
+// Admin mutations stay callable from admin-owned background package/job/webhook
+// callers (no executionOrigin gate). Accepted residual: cross-user / fleet blast
+// such as adminPackageCodemodApply. See docs/contributing/security.md.
 export const adminMutationCapabilityAccess = {
 	requiredRole: 'admin',
 	readOnly: false,
