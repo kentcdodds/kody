@@ -8,6 +8,7 @@ import {
 	isJobIntervalFloorError,
 } from '#worker/entitlements/errors.ts'
 import { isSearchRateLimitError } from '#worker/search-rate-limit-error.ts'
+import { PackageNameInputError } from '#worker/package-registry/package-name.ts'
 import { PackageScopeAccessError } from '#worker/package-registry/package-owner.ts'
 import { isKodyDescriptionLengthMessage } from '#worker/package-registry/types.ts'
 import { isRepoLargeFileMessage } from '#worker/repo/large-file-policy.ts'
@@ -130,6 +131,15 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 	if (
 		getErrorCauseChain(cause).some(
 			(entry) => entry instanceof PackageScopeAccessError,
+		)
+	) {
+		return true
+	}
+	// Empty, mismatched-scope, or invalid package names. Agents must use the
+	// leaf or their own "@owner/…" form. KODY-83.
+	if (
+		getErrorCauseChain(cause).some(
+			(entry) => entry instanceof PackageNameInputError,
 		)
 	) {
 		return true

@@ -40,6 +40,8 @@ const { PackageSecretAccessDeniedError } =
 	await import('./secrets/package-access.ts')
 const { CommunityActionError } = await import('#worker/community/errors.ts')
 const { EntitlementLimitError } = await import('#worker/entitlements/errors.ts')
+const { PackageNameInputError, normalizePackageNameInput } =
+	await import('#worker/package-registry/package-name.ts')
 const { PackageScopeAccessError } =
 	await import('#worker/package-registry/package-owner.ts')
 const { UserCodeError } = await import('#worker/user-code-error.ts')
@@ -454,6 +456,53 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 			detail: undefined,
 		}),
 	)
+	expect(sentryMock.captureMessage).not.toHaveBeenCalled()
+})
+
+test('mismatched package name input stays off Sentry', () => {
+	let thrown: unknown
+	try {
+		normalizePackageNameInput({
+			value: '@kody/google',
+			ownerScope: 'grant',
+			action: 'resolve',
+		})
+	} catch (error) {
+		thrown = error
+	}
+	expect(thrown).toBeInstanceOf(PackageNameInputError)
+	expect((thrown as Error).message).toBe(
+		'Cannot use package name "@kody/google": scope "@kody" does not match the acting owner "@grant". Use the leaf after "/" or "@grant/…".',
+	)
+
+	captureMcpEvents(() => {
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'packageGetGitRemote',
+			domain: 'packages',
+			capabilitySource: 'builtin',
+			failurePhase: 'handler',
+			errorName: 'PackageNameInputError',
+			errorMessage: (thrown as PackageNameInputError).message,
+			cause: thrown,
+		})
+	})
+	expect(sentryMock.captureException).not.toHaveBeenCalled()
+	expect(sentryMock.captureMessage).not.toHaveBeenCalled()
+
+	captureMcpEvents(() => {
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'packageGetGitRemote',
+			domain: 'packages',
+			capabilitySource: 'builtin',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage: 'package lookup failed',
+			cause: new Error('package lookup failed', { cause: thrown }),
+		})
+	})
+	expect(sentryMock.captureException).not.toHaveBeenCalled()
 	expect(sentryMock.captureMessage).not.toHaveBeenCalled()
 })
 
