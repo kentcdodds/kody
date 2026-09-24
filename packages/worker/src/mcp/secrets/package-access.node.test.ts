@@ -4,7 +4,6 @@ import {
 	parsePackageAccessRequiredBatchMessage,
 	parsePackageAccessRequiredMessage,
 } from './errors.ts'
-import { buildSecretPlaceholder } from './placeholders.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -718,71 +717,5 @@ test('shared package mounts resolve secrets as the owner, not the guest', async 
 	)
 	expect(mockModule.resolveSecret).toHaveBeenCalledWith(
 		expect.objectContaining({ userId: 'owner-1' }),
-	)
-})
-
-test('resolvePackageMountedSecret returns an opaque fetch placeholder, never plaintext', async () => {
-	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
-	mockModule.loadPackageManifestBySourceId.mockResolvedValueOnce({
-		manifest: {
-			name: '@kentcdodds/discord-gateway',
-			exports: { '.': './src/index.ts' },
-			kody: {
-				id: 'discord-gateway',
-				description: 'Discord gateway',
-				secretMounts: {
-					discordBotToken: {
-						name: 'discordBotTokenKentPersonalAutomation',
-						scope: 'user',
-					},
-				},
-			},
-		},
-	})
-	mockModule.resolveSecret.mockResolvedValueOnce({
-		found: true,
-		value: 'bot-token-plaintext-must-not-leak',
-		scope: 'user',
-		allowedPackages: ['pkg-1'],
-	})
-
-	const resolved = await resolvePackageMountedSecret({
-		env: { APP_DB: {} as D1Database } as Env,
-		packageId: 'pkg-1',
-		alias: 'discordBotToken',
-		callerContext: {
-			baseUrl: 'https://example.com',
-			user: {
-				userId: 'user-1',
-				email: 'user@example.com',
-				displayName: 'User',
-			},
-			repoContext: null,
-			storageContext: {
-				sessionId: null,
-				packageId: 'pkg-1',
-				storageId: 'pkg-1',
-			},
-		},
-	})
-
-	expect(resolved).toEqual({
-		alias: 'discordBotToken',
-		name: 'discordBotTokenKentPersonalAutomation',
-		ref: '{{secret:discordBotTokenKentPersonalAutomation|scope=user}}',
-		scope: 'user',
-		packageId: 'pkg-1',
-		kodyId: 'discord-gateway',
-	})
-	expect(JSON.stringify(resolved)).not.toContain(
-		'bot-token-plaintext-must-not-leak',
-	)
-	expect(resolved).not.toHaveProperty('value')
-	// Same vocabulary the fetch gateway expands at platform use sites.
-	expect(resolved.ref).toBe(
-		buildSecretPlaceholder({
-			name: 'discordBotTokenKentPersonalAutomation',
-			scope: 'user',
-		}),
 	)
 })

@@ -269,6 +269,14 @@ test('generated kody provider and executor module sources stay bundle-safe', () 
 	expect(moduleSource).toContain('from "node:async_hooks"')
 	expect(moduleSource).toContain('__kodyEvaluateFetchStorage.run')
 	expect(moduleSource).toContain('.call("recordFetch", "[]")')
+	// Stamp must be read before awaiting host recordFetch RPC — ALS may not
+	// survive that await, and ad-hoc execute has no run packageId fallback.
+	const authorityIdx = moduleSource.indexOf(
+		'globalThis[Symbol.for("kody.getSecretAuthority")]',
+	)
+	const recordFetchIdx = moduleSource.indexOf('.call("recordFetch", "[]")')
+	expect(authorityIdx).toBeGreaterThan(-1)
+	expect(authorityIdx).toBeLessThan(recordFetchIdx)
 	expect(moduleSource).toContain('const __kodyMcp =')
 	expect(moduleSource).toContain('getOwnPropertyDescriptor')
 	expect(moduleSource).toContain(

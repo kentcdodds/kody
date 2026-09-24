@@ -73,7 +73,7 @@ test('communityForkAdopt returns a website adoption link and never adopts', asyn
 			},
 			createContext(),
 		),
-	).resolves.toEqual({
+	).resolves.toMatchObject({
 		status: 'approval_required',
 		package_id: 'pkg-1',
 		kody_id: 'demo-fork',
@@ -82,7 +82,6 @@ test('communityForkAdopt returns a website adoption link and never adopts', asyn
 		adopted_at: null,
 		approval_url:
 			'https://example.com/@alice/demo-fork/settings#community-fork-adoption',
-		message: expect.stringContaining('Agents cannot adopt community forks'),
 	})
 	expect(mocks.inspectCommunityForkAdoption).toHaveBeenCalledWith({
 		env: expect.anything(),

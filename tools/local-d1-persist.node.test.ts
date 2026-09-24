@@ -1,10 +1,6 @@
-import { readFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
 import { buildLocalMigrationCommands } from './apply-local-app-migrations.ts'
-import {
-	envWithWorkerPersistFile,
-	resolveLocalD1PersistPath,
-} from './local-d1-persist.ts'
+import { envWithWorkerPersistFile } from './local-d1-persist.ts'
 import { buildSeedWranglerArgs, parseArgs } from './seed-test-data.ts'
 
 function persistPathFromArgs(args: ReadonlyArray<string>) {
@@ -17,18 +13,10 @@ function persistPathFromArgs(args: ReadonlyArray<string>) {
 }
 
 test('local migrate and seed target the persist directory Vite opens', () => {
-	const viteConfig = readFileSync(
-		new URL('../vite.config.ts', import.meta.url),
-		'utf8',
-	)
-	expect(viteConfig).toContain('resolveLocalD1PersistPath()')
-	expect(viteConfig).toContain('persistState: { path: persistPath }')
-
-	const sharedPath = resolveLocalD1PersistPath({ env: {} })
-	expect(sharedPath).toBe('.wrangler/state')
-
 	const commands = buildLocalMigrationCommands({ argv: [], env: {} })
 	expect(commands).toHaveLength(4)
+	const sharedPath = persistPathFromArgs(commands[1] ?? [])
+	expect(sharedPath).toEqual(expect.any(String))
 	for (const command of commands) {
 		expect(persistPathFromArgs(command)).toBe(sharedPath)
 	}

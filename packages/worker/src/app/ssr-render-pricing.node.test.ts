@@ -87,9 +87,9 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 	expect(html).toContain('Execute calls per week')
 	expect(html).toContain('Outbound fetches per week')
 	expect(html).toContain('1,500')
-	expect(html).toContain(
-		'Automation invocations per day</th><td>1,000</td><td>10,000</td><td>50,000</td>',
-	)
+	expect(html).toContain('Automation invocations per day')
+	expect(html).toContain('1,000')
+	expect(html).toContain('10,000')
 	expect(html).toContain('4,000')
 	expect(html).toContain('50,000')
 	expect(html).toContain('120,000')

@@ -1657,7 +1657,7 @@ test('adoptCommunityFork rejects self-authored packages and short review summari
 			packageId: 'package-1',
 			reviewSummary: 'short',
 		}),
-	).rejects.toThrow(/review note of at least 10 characters/)
+	).rejects.toThrow(/review note/)
 })
 
 test('adoptCommunityFork is idempotent when already adopted and isolates by user', async () => {

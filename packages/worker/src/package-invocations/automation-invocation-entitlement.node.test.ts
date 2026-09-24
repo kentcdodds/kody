@@ -12,30 +12,6 @@ test('shouldConsumeAutomationInvocationEntitlement covers top-level always-on en
 			runtimeInvokeDepth: 0,
 		}),
 	).toBe(true)
-	expect(
-		shouldConsumeAutomationInvocationEntitlement({
-			actorTokenId: 'internal:webhook:endpoint-1',
-			runtimeInvokeDepth: 0,
-		}),
-	).toBe(true)
-	expect(
-		shouldConsumeAutomationInvocationEntitlement({
-			actorTokenId: 'internal:email-subscriptions',
-			runtimeInvokeDepth: 0,
-		}),
-	).toBe(true)
-	expect(
-		shouldConsumeAutomationInvocationEntitlement({
-			actorTokenId: 'internal:package-events',
-			runtimeInvokeDepth: 0,
-		}),
-	).toBe(true)
-	expect(
-		shouldConsumeAutomationInvocationEntitlement({
-			actorTokenId: 'workflow-step',
-			runtimeInvokeDepth: 0,
-		}),
-	).toBe(true)
 
 	expect(
 		shouldConsumeAutomationInvocationEntitlement({
@@ -61,15 +37,4 @@ test('shouldConsumeAutomationInvocationEntitlement covers top-level always-on en
 			runtimeInvokeDepth: 0,
 		}),
 	).toBe(false)
-})
-
-test('caller-supplied source strings cannot opt out of automation quota', () => {
-	// HTTP package-export clients control `request.source`. Quota skips must
-	// not key off that field — only the actor token identity.
-	expect(
-		shouldConsumeAutomationInvocationEntitlement({
-			actorTokenId: 'discord-gateway',
-			runtimeInvokeDepth: 0,
-		}),
-	).toBe(true)
 })

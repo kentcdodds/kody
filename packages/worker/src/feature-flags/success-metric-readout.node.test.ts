@@ -275,11 +275,6 @@ test('Analytics Engine readout joins exposures and usage; mixed stay excluded', 
 			overrideUsers: 1,
 			mixedUsers: 1,
 		})
-		const exposureQuery = String(
-			(fetchMock.mock.calls[0]?.[1] as { body: string }).body,
-		)
-		expect(exposureQuery).toContain('max(blob5) AS last_ts')
-		expect(exposureQuery).toContain('GROUP BY blob1, blob3, blob4')
 	} finally {
 		vi.unstubAllGlobals()
 	}

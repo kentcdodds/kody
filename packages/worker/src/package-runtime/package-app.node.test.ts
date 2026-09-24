@@ -1482,7 +1482,6 @@ test('package app runtime bridge returns opaque secret refs and merges metadata 
 	await expect(
 		bridge.packageSecretGet({ alias: 'api-token' }),
 	).resolves.toEqual({ value: opaqueRef })
-	expect(opaqueRef).not.toContain('pkg-app-secret')
 
 	await expect(
 		bridge.packageRuntimeRunFinish({

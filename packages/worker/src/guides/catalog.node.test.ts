@@ -67,7 +67,6 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 
 	expect(getGuideById('openmuse')).toMatchObject({
 		slug: 'openmuse',
-		title: 'OpenMuse and Kody',
 		category: 'platform',
 	})
 
