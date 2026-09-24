@@ -12,7 +12,8 @@ When you connect Google or GitHub to Kody, there's no one-click "Sign in with
 Google" button that just works. Instead, you go to the provider, create your own
 OAuth app, register the redirect URI, and then connect it at
 [kody.codes/connect/oauth](https://kody.codes/connect/oauth). The product's own
-copy is upfront about the cost: "a few minutes of setup instead of one click."
+copy is upfront about the cost: "Bring-your-own takes a few minutes of setup;
+your agent does the tedious parts."
 
 I want to explain why it works that way, because it looks like a missing feature
 and it's actually a design decision. One I'd make again.
