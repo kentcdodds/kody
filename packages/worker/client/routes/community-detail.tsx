@@ -25,6 +25,7 @@ import {
 	stopPackageTitleInstallProgress,
 } from '#client/package-title-install-progress.ts'
 import {
+	createPackageTitleInstallArm,
 	decideCommunityInstallClick,
 	isCommunityInstallConfirmArmed,
 	paintPackageTitleInstallConfirm,
@@ -85,6 +86,13 @@ export function CommunityDetailRoute(handle: Handle) {
 	let installOutcome: CommunityInstallOutcome | null = null
 	const installConfirm = createDoubleCheck(handle)
 	let installConfirmListingId: string | null = null
+	const installArm = createPackageTitleInstallArm({
+		confirm: installConfirm,
+		getListingId: () => installConfirmListingId,
+		setListingId: (listingId) => {
+			installConfirmListingId = listingId
+		},
+	})
 	let readmeContent: string | null = null
 	let readmeFences: Array<HighlightedCode> = []
 	let hasAgentsDocs = false
@@ -172,7 +180,7 @@ export function CommunityDetailRoute(handle: Handle) {
 				listingId: snapshotListingId,
 			})
 		) {
-			resetInstallConfirm()
+			installArm.reset()
 		}
 		readmeContent = snapshot.readmeContent
 		readmeFences = snapshot.readmeFences ?? []
@@ -491,16 +499,16 @@ export function CommunityDetailRoute(handle: Handle) {
 		}
 	}
 
-	function resetInstallConfirm() {
-		installConfirm.reset()
-		installConfirmListingId = null
-	}
-
 	function handleCommunityInstallClick(event: Event) {
 		const target = event.target
 		if (!(target instanceof Element)) return
 		const control = target.closest('[data-community-install]')
-		if (!control) return
+		// A click that does not move focus never fires focusout. Drop the
+		// armed flag here so the next click on the fork icon has to arm again.
+		if (!control) {
+			installArm.disarm()
+			return
+		}
 		const loginLink = control instanceof HTMLAnchorElement
 		const official = control.getAttribute('data-official') === 'true'
 		const listingId = control.getAttribute('data-package-title-listing')
@@ -520,15 +528,12 @@ export function CommunityDetailRoute(handle: Handle) {
 				return
 			case 'arm':
 				event.preventDefault()
-				installConfirm.arm()
-				installConfirmListingId = listingId
-				paintPackageTitleInstallConfirm(control, true)
-				if (control instanceof HTMLElement) control.focus()
+				installArm.arm(control, listingId)
 				return
 			case 'submit':
 				if (loginLink) return
 				event.preventDefault()
-				resetInstallConfirm()
+				installArm.reset()
 				void submitInstall()
 				return
 			default: {
@@ -554,7 +559,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		}
 		const next = event.relatedTarget
 		if (next instanceof Node && control.contains(next)) return
-		resetInstallConfirm()
+		installArm.reset()
 		paintPackageTitleInstallConfirm(control, false)
 	}
 
@@ -571,7 +576,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		// Fork even when the listing id is unchanged. Drop the armed flag
 		// here; a same-listing shell snapshot keeps it because that path
 		// does not remount the painted Confirm fork control.
-		resetInstallConfirm()
+		installArm.reset()
 		if (!ref) return
 
 		const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)

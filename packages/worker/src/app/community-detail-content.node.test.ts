@@ -51,6 +51,10 @@ test('community detail head covers install, installed, and listing-ahead badges'
 	expect(installHtml).toContain('data-icon="git-fork"')
 	expect(installHtml).toContain('data-official="false"')
 	expect(installHtml).toContain('data-trusted="false"')
+	expect(installHtml).toContain(
+		'This was built by another user. Verify it before using. Click again to confirm fork.',
+	)
+	expect(installHtml).toContain('aria-label="Fork"')
 	expect(
 		installHtml.indexOf('data-testid="package-title-actions"'),
 	).toBeLessThan(installHtml.indexOf('data-testid="package-repo-nav"'))
@@ -71,6 +75,8 @@ test('community detail head covers install, installed, and listing-ahead badges'
 	expect(officialHtml).toContain('data-official="true"')
 	expect(officialHtml).toContain('data-package-title-status="fork"')
 	expect(officialHtml).toContain('data-icon="git-fork"')
+	expect(officialHtml).toContain('data-title-idle-tooltip="Fork"')
+	expect(officialHtml).toContain('>Fork</span>')
 
 	const agentPrompt =
 		'Call packageGet for @me/github-triage and adapt it to my needs.'

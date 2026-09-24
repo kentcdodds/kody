@@ -7,7 +7,7 @@ const CONFIRM_FORK_LABEL = 'Confirm fork'
 type ConfirmControl = {
 	getAttribute(name: string): string | null
 	setAttribute(name: string, value: string): void
-	querySelector(selector: string): { textContent: string } | null
+	querySelector(selector: string): { textContent: string | null } | null
 }
 
 /**
@@ -56,6 +56,86 @@ export function shouldResetInstallConfirm(input: {
 }): boolean {
 	if (input.confirmedListingId == null) return false
 	return input.confirmedListingId !== input.listingId
+}
+
+type InstallConfirmFlag = {
+	readonly doubleCheck: boolean
+	reset(): void
+	arm(): void
+}
+
+/**
+ * While the other-account fork icon is armed, a page-level click outside
+ * that control clears it even when the click never moves focus. The listener
+ * exists only for the armed window. It is attached after the arming click so
+ * capture on that click cannot clear the flag it just set.
+ */
+export function createPackageTitleInstallArm(input: {
+	confirm: InstallConfirmFlag
+	getListingId(): string | null
+	setListingId(listingId: string | null): void
+}) {
+	let listening = false
+
+	function stopOutsideClick() {
+		if (!listening || typeof document === 'undefined') return
+		listening = false
+		document.removeEventListener('click', handleOutsideClick, true)
+	}
+
+	function reset() {
+		input.confirm.reset()
+		input.setListingId(null)
+		stopOutsideClick()
+	}
+
+	function armedControl() {
+		const listingId = input.getListingId()
+		if (!listingId || typeof document === 'undefined') return null
+		for (const control of document.querySelectorAll(
+			'[data-community-install]',
+		)) {
+			if (control.getAttribute('data-package-title-listing') === listingId) {
+				return control
+			}
+		}
+		return null
+	}
+
+	function disarm() {
+		if (!input.confirm.doubleCheck) return
+		const control = armedControl()
+		reset()
+		if (control) paintPackageTitleInstallConfirm(control, false)
+	}
+
+	function handleOutsideClick(event: Event) {
+		const target = event.target
+		const element =
+			target instanceof Element
+				? target
+				: target instanceof Node
+					? target.parentElement
+					: null
+		if (element?.closest('[data-community-install]')) return
+		disarm()
+	}
+
+	function startOutsideClick() {
+		if (listening || typeof document === 'undefined') return
+		listening = true
+		document.addEventListener('click', handleOutsideClick, true)
+	}
+
+	function arm(control: Element, listingId: string | null) {
+		input.confirm.arm()
+		input.setListingId(listingId)
+		paintPackageTitleInstallConfirm(control, true)
+		if (control instanceof HTMLElement) control.focus()
+		startOutsideClick()
+	}
+
+	return { reset, disarm, arm }
 }
 
 export function paintPackageTitleInstallConfirm(
