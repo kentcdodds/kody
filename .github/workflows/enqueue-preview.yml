@@ -15,9 +15,13 @@ on:
     branches:
       - main
 
+# deployments: write is required even though cleanup does not run on these
+# events. GitHub rejects the caller at startup unless it allows every
+# permission a nested preview.yml job requests, including cleanup.
 permissions:
   contents: read
   pull-requests: write
+  deployments: write
 
 concurrency:
   group: enqueue-preview-${{ github.head_ref || github.ref_name }}
@@ -28,6 +32,9 @@ jobs:
     name: 🔁 Decide
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     # Same checkout rule as Enqueue Validate: base SHA only, no PR head.
     if: >-
       github.event_name != 'pull_request_target' ||
