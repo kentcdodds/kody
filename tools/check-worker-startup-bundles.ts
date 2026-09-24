@@ -311,7 +311,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Protocol v1 Artifacts ref discovery and the bounded git HTTP client
 		// sit on the artifacts module runtime already loads: CI dry-run
 		// 3_834_166 against the previous 3_834_000 budget.
-		maxEntryBytes: 3_835_000,
+		// Execute static-import secret stamp: shared root-runtime external
+		// (one ALS) plus sync stamp capture before recordFetch (#2575): CI
+		// dry-run 3_835_583 against the previous 3_835_000 budget.
+		maxEntryBytes: 3_837_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',

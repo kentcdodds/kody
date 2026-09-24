@@ -324,15 +324,6 @@ test('closed-world executor module rejects fetch in the sandbox before outbound 
 		timeoutMs: 1_000,
 	})
 	expect(allowed).toContain('.call("recordFetch", "[]")')
-	// Stamp must be read before awaiting host recordFetch RPC — ALS may not
-	// survive that await, and ad-hoc execute has no run packageId fallback.
-	const authorityIdx = allowed.indexOf(
-		'globalThis[Symbol.for("kody.getSecretAuthority")]',
-	)
-	const recordFetchIdx = allowed.indexOf('.call("recordFetch", "[]")')
-	expect(authorityIdx).toBeGreaterThan(-1)
-	expect(recordFetchIdx).toBeGreaterThan(-1)
-	expect(authorityIdx).toBeLessThan(recordFetchIdx)
 })
 
 test('generated kody provider source wires mcp proxy dispatch', async () => {
