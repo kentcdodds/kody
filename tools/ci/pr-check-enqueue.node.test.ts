@@ -192,9 +192,11 @@ test('conflict enqueue workflows call Validate and Preview without workflow_disp
 	}
 	expect(enqueuePreview).toContain('closed')
 	expect(enqueueValidate).not.toContain('closed')
+	expect(enqueueValidate).toContain('checks: write')
 	expect(enqueueValidate).toContain('./.github/workflows/validate.yml')
 	expect(enqueuePreview).toContain('./.github/workflows/preview.yml')
 	expect(enqueuePreview).toContain('secrets: inherit')
 	expect(enqueuePreview).toContain('deployments: write')
+	expect(enqueuePreview).toContain('checks: write')
 	expect(decideAction).toContain('tools/ci/pr-check-enqueue.ts')
 })

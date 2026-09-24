@@ -19,9 +19,12 @@ on:
     branches:
       - main
 
+# checks: write lets a pull_request_target run publish ✅ Validate on the
+# PR head. GitHub records that event's own checks on the base SHA.
 permissions:
   contents: read
   pull-requests: read
+  checks: write
 
 # PR number, not branch name, so two fork PRs that share a head branch do
 # not cancel each other. Push uses the full ref, which stays inside this repo.
@@ -34,6 +37,9 @@ jobs:
     name: 🔁 Decide
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     # Checkout stays on github.sha. For pull_request_target that is the base
     # branch, never the PR head, so this job cannot run fork code. The called
     # Validate workflow checks out the head only after the fork guard.
@@ -69,3 +75,46 @@ jobs:
       pr_number: ${{ needs.decide.outputs.pr_number }}
       base_sha: ${{ needs.decide.outputs.base_sha }}
     secrets: inherit
+
+  # pull_request_target check suites are attached to the base SHA. Publish
+  # the same conclusion on the PR head so the head's required check exists.
+  # Push runs already attach to the head, so this job stays skipped there.
+  publish:
+    needs:
+      - decide
+      - validate
+    if: >-
+      always() &&
+      github.event_name == 'pull_request_target' &&
+      github.event.pull_request.head.repo.fork == false &&
+      needs.decide.outputs.enqueue == 'true' &&
+      needs.validate.result != 'cancelled' &&
+      needs.validate.result != 'skipped'
+    permissions:
+      checks: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Publish head check
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          VALIDATE_RESULT: ${{ needs.validate.result }}
+        with:
+          script: |
+            const sha = process.env.HEAD_SHA;
+            const result = process.env.VALIDATE_RESULT;
+            if (!sha) {
+              core.setFailed("Missing pull request head SHA.");
+              return;
+            }
+            const conclusion = result === "success" ? "success" : "failure";
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: "✅ Validate",
+              head_sha: sha,
+              status: "completed",
+              conclusion,
+              details_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
