@@ -58,9 +58,12 @@ configs to `wrangler dev` directly: `tools/local-runtime-dev-config.ts`,
 generate `wrangler-local-dev.generated.json` next to each committed config
 (gitignored) on each dev start. Those files pin the secondary registered names
 to `kody-runtime`, `kody-platform`, and the origin `JOBS` service (`kody-jobs`
-in production, `kody-jobs-test` in the test env). Runtime and platform also drop
-each secondary `ai` binding and rewrite Durable Object migrations for local
-replay (`tools/local-dev-migrations.ts`: transfers become `new_sqlite_classes`,
+in production, `kody-jobs-test` in the test env). The jobs config also points
+that env's `HOST` binding at the origin's local dev name (`kody-<env>`), so
+local preview reaches `kody-preview` instead of the committed `kody`
+placeholder. Runtime and platform also drop each secondary `ai` binding and
+rewrite Durable Object migrations for local replay
+(`tools/local-dev-migrations.ts`: transfers become `new_sqlite_classes`,
 create-then-delete pairs such as `PackageServiceInstance` are elided), and
 inject `APP_BASE_URL`, `COOKIE_SECRET`, `SECRET_STORE_KEY`, and
 `WRANGLER_IS_LOCAL_DEV` from the dev process env. Runtime still rewrites any

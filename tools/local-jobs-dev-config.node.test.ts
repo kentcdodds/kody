@@ -12,10 +12,14 @@ const committedJobsConfigPath = 'packages/jobs-worker/wrangler.jsonc'
 test('local jobs dev config registers under the origin JOBS service name', async () => {
 	const committed = parseJsonc<{
 		name?: string
-		env?: { production?: { name?: string } }
+		env?: {
+			production?: { name?: string }
+			preview?: { services?: Array<{ binding?: string; service?: string }> }
+		}
 	}>(await readFile(committedJobsConfigPath, 'utf8'))
 	expect(committed.name).toBe('kody-jobs')
 	expect(committed.env?.production?.name).toBeUndefined()
+	expect(hostService(committed.env?.preview?.services)).toBe('kody')
 	expect(
 		unstable_readConfig({
 			config: committedJobsConfigPath,
@@ -56,6 +60,9 @@ test('local jobs dev config registers under the origin JOBS service name', async
 		expect(
 			unstable_readConfig({ config: productionPath, env: 'production' }).name,
 		).toBe('kody-jobs')
+		expect(
+			unstable_readConfig({ config: originConfigPath, env: 'production' }).name,
+		).toBe('kody-production')
 		expect(hostService(production.env?.production?.services)).toBe(
 			'kody-production',
 		)
@@ -66,7 +73,12 @@ test('local jobs dev config registers under the origin JOBS service name', async
 			envName: 'test',
 		})
 		const testConfig = parseJsonc<{
-			env?: { test?: { name?: string } }
+			env?: {
+				test?: {
+					name?: string
+					services?: Array<{ binding?: string; service?: string }>
+				}
+			}
 		}>(await readFile(testPath, 'utf8'))
 		expect(testConfig.env?.test?.name).toBe('kody-jobs-test')
 		expect(testConfig.env?.test?.name).toBe(
@@ -75,6 +87,29 @@ test('local jobs dev config registers under the origin JOBS service name', async
 		expect(unstable_readConfig({ config: testPath, env: 'test' }).name).toBe(
 			'kody-jobs-test',
 		)
+		expect(hostService(testConfig.env?.test?.services)).toBe('kody-test')
+
+		const previewPath = await writeLocalJobsDevConfig({
+			jobsConfigPath,
+			originConfigPath,
+			envName: 'preview',
+		})
+		const preview = parseJsonc<{
+			env?: {
+				preview?: {
+					name?: string
+					services?: Array<{ binding?: string; service?: string }>
+				}
+			}
+		}>(await readFile(previewPath, 'utf8'))
+		expect(preview.env?.preview?.name).toBe('kody-jobs')
+		expect(
+			unstable_readConfig({ config: originConfigPath, env: 'preview' }).name,
+		).toBe('kody-preview')
+		expect(hostService(preview.env?.preview?.services)).toBe('kody-preview')
+		expect(
+			unstable_readConfig({ config: previewPath, env: 'preview' }).name,
+		).toBe('kody-jobs')
 	} finally {
 		await rm(tempDir, { recursive: true, force: true })
 	}
