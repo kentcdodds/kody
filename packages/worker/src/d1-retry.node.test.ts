@@ -85,6 +85,19 @@ test('runD1WithRetry matches lock errors, retries them, and rethrows other failu
 			'Internal error in D1 DB storage caused object to be reset; reference = 8t4d_qqpo-q1ctvjr8kca8fl4c',
 		),
 	).toBe(true)
+	// KODY-82: D1 can surface DO-storage object-reset under D1_ERROR:.
+	expect(
+		isRetryableD1LockMessage(
+			'D1_ERROR: Internal error in Durable Object storage caused object to be reset; reference = b44vvje0qcq0ubd9ea522366',
+		),
+	).toBe(true)
+	expect(
+		isRetryableD1LockError(
+			new Error(
+				'Error: D1_ERROR: Internal error in Durable Object storage caused object to be reset; reference = b44vvje0qcq0ubd9ea522366',
+			),
+		),
+	).toBe(true)
 	expect(
 		isRetryableD1LockError(
 			new Error('Network connection lost while uploading...'),
@@ -105,6 +118,11 @@ test('runD1WithRetry matches lock errors, retries them, and rethrows other failu
 			new Error(
 				'D1_ERROR: Internal error in D1 DB storage caused object to be reset',
 			),
+		),
+	).toBe(false)
+	expect(
+		isRetryableD1LockMessage(
+			'D1_ERROR: Internal error in Durable Object storage caused object to be reset',
 		),
 	).toBe(false)
 	expect(isRetryableD1LockError(new Error('syntax error near SELECT'))).toBe(

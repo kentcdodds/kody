@@ -43,17 +43,19 @@ export const d1DbOverloadedTooManyQueuedMessage =
 
 /**
  * Cloudflare D1 opaque platform failures with a support reference, e.g.
- * `D1_ERROR: internal error; reference = <id>` and
- * `D1_ERROR: Internal error in D1 DB storage caused object to be reset; reference = <id>`.
- * Not an application defect — D1's storage/backend hit an internal fault.
- * Same retry / Sentry-drop class as SQLITE_BUSY and binding transport blips.
- * Require the `reference =` token and only these known D1 phrasings so bare
- * "internal error" (or unrelated "internal error while …") from app code
- * stays non-retryable and Sentry-visible. Cloudflare reference ids are
- * alphanumeric and may include `_` or `-`.
+ * `D1_ERROR: internal error; reference = <id>`,
+ * `D1_ERROR: Internal error in D1 DB storage caused object to be reset; reference = <id>`,
+ * and `D1_ERROR: Internal error in Durable Object storage caused object to be
+ * reset; reference = <id>` (KODY-82 — D1 is DO-backed; the binding can surface
+ * either storage phrasing). Not an application defect — D1's storage/backend
+ * hit an internal fault. Same retry / Sentry-drop class as SQLITE_BUSY and
+ * binding transport blips. Require the `reference =` token and only these
+ * known phrasings so bare "internal error" (or unrelated "internal error
+ * while …") from app code stays non-retryable and Sentry-visible. Cloudflare
+ * reference ids are alphanumeric and may include `_` or `-`.
  */
 const d1InternalErrorReferencePattern =
-	/^internal error(?: in D1 DB storage caused object to be reset)?;\s*reference\s*=\s*[A-Za-z0-9_-]+$/i
+	/^internal error(?: in (?:D1 DB|Durable Object) storage caused object to be reset)?;\s*reference\s*=\s*[A-Za-z0-9_-]+$/i
 
 function stripD1ErrorPrefixes(message: string) {
 	return message
@@ -140,11 +142,12 @@ function withAttemptTimeout<T>(
  * exports block other requests), binding "Network connection lost"
  * transport blips, "D1 DB is overloaded. Requests queued for too long" /
  * "D1 DB is overloaded. Too many requests queued" capacity blips, and opaque
- * D1 "internal error …; reference = …" platform faults (including storage
- * object-reset). D1 does not automatically retry write queries, so cron lanes
- * and long-running retention batches need application-level backoff when they
- * overlap with concurrent writers, an in-flight export, a brief D1 session
- * drop, a D1 capacity spike, or a D1 backend blip.
+ * D1 "internal error …; reference = …" platform faults (including D1 DB and
+ * Durable Object storage object-reset). D1 does not automatically retry write
+ * queries, so cron lanes and long-running retention batches need
+ * application-level backoff when they overlap with concurrent writers, an
+ * in-flight export, a brief D1 session drop, a D1 capacity spike, or a D1
+ * backend blip.
  *
  * When `attemptTimeoutMs` is set, a hung attempt is also retried so a single
  * idle-database stall cannot consume an outer deadline.

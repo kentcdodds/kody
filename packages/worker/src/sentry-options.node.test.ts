@@ -600,6 +600,32 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 			},
 		}),
 	).toBeNull()
+	// KODY-82: D1 bindings surface DO-storage resets under D1_ERROR: (optionally
+	// after Error:). Same drop class as bare / Error:-prefixed DO forms above.
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'D1_ERROR: Internal error in Durable Object storage caused object to be reset; reference = b44vvje0qcq0ubd9ea522366',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'Error: D1_ERROR: Internal error in Durable Object storage caused object to be reset; reference = b44vvje0qcq0ubd9ea522366',
+					},
+				],
+			},
+		}),
+	).toBeNull()
 	expect(
 		filterSentryEvent({
 			exception: {
@@ -673,6 +699,20 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	}
 	expect(filterSentryEvent(unreferencedDoStorageReset)).toBe(
 		unreferencedDoStorageReset,
+	)
+
+	const unreferencedDoStorageResetWithD1Prefix = {
+		exception: {
+			values: [
+				{
+					value:
+						'D1_ERROR: Internal error in Durable Object storage caused object to be reset',
+				},
+			],
+		},
+	}
+	expect(filterSentryEvent(unreferencedDoStorageResetWithD1Prefix)).toBe(
+		unreferencedDoStorageResetWithD1Prefix,
 	)
 
 	const unrelatedDoFailure = {
