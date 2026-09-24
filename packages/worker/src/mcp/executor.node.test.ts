@@ -264,9 +264,13 @@ test('generated kody provider and executor module sources stay bundle-safe', () 
 	expect(moduleSource).toContain('from "node:async_hooks"')
 	expect(moduleSource).toContain('__kodyEvaluateFetchStorage.run')
 	expect(moduleSource).toContain('.call("recordFetch", "[]")')
-	expect(
-		moduleSource.indexOf('globalThis[Symbol.for("kody.getSecretAuthority")]'),
-	).toBeLessThan(moduleSource.indexOf('.call("recordFetch", "[]")'))
+	const authorityIdx = moduleSource.indexOf(
+		'globalThis[Symbol.for("kody.getSecretAuthority")]',
+	)
+	expect(authorityIdx).toBeGreaterThan(-1)
+	expect(authorityIdx).toBeLessThan(
+		moduleSource.indexOf('.call("recordFetch", "[]")'),
+	)
 	expect(moduleSource).toContain('const __kodyMcp =')
 	expect(moduleSource).toContain('getOwnPropertyDescriptor')
 	expect(moduleSource).toContain(
@@ -297,12 +301,7 @@ test('generated kody provider and executor module sources stay bundle-safe', () 
 test('closed-world executor module rejects fetch in the sandbox before outbound RPC', () => {
 	const denied = createExecutorModuleSource({
 		code: 'async () => "ok"',
-		providers: [
-			{
-				name: 'kody',
-				fns: {},
-			},
-		],
+		providers: [{ name: 'kody', fns: {} }],
 		shadowGlobalThis: false,
 		timeoutMs: 1_000,
 		allowOutboundFetch: false,
@@ -312,12 +311,7 @@ test('closed-world executor module rejects fetch in the sandbox before outbound 
 
 	const allowed = createExecutorModuleSource({
 		code: 'async () => "ok"',
-		providers: [
-			{
-				name: 'kody',
-				fns: {},
-			},
-		],
+		providers: [{ name: 'kody', fns: {} }],
 		shadowGlobalThis: false,
 		timeoutMs: 1_000,
 	})
