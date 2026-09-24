@@ -246,11 +246,13 @@ export const durableObjectInstanceInactiveCloseMessage =
  * Cloudflare Durable Object SQLite storage opaque platform fault with a
  * support reference, e.g.
  * `Internal error in Durable Object storage caused object to be reset; reference = <id>`.
- * Same class as D1's `Internal error in D1 DB storage caused object to be
- * reset` (see `d1-retry.ts`): not an application defect — DO storage hit an
- * internal fault. Require `reference =` and this exact phrasing so bare /
- * unrelated "Durable Object storage …" messages stay Sentry-visible.
- * Reference ids use the same alphabet as D1: alphanumeric, plus `_` or `-`.
+ * D1 bindings can surface the same DO-storage reset under optional `Error:` /
+ * `D1_ERROR:` prefixes (KODY-82). Same class as D1's `Internal error in D1 DB
+ * storage caused object to be reset` (see `d1-retry.ts`): not an application
+ * defect — DO storage hit an internal fault. Require `reference =` and this
+ * exact phrasing so bare / unrelated "Durable Object storage …" messages stay
+ * Sentry-visible. Reference ids use the same alphabet as D1: alphanumeric,
+ * plus `_` or `-`.
  */
 const durableObjectStorageObjectResetPattern =
 	/^internal error in Durable Object storage caused object to be reset;\s*reference\s*=\s*[A-Za-z0-9_-]+$/i
@@ -262,9 +264,22 @@ function normalizeDurableObjectIsolateResetMessage(message: string) {
 		: `${withoutErrorPrefix}.`
 }
 
+/**
+ * Strip the same optional platform prefixes D1 bindings attach (`Error:` then
+ * `D1_ERROR:`) before matching the anchored DO-storage reset sentence. Same
+ * order as `stripD1ErrorPrefixes` in `d1-retry.ts`.
+ */
+function normalizeDurableObjectStorageObjectResetMessage(message: string) {
+	return message
+		.trim()
+		.replace(/^Error:\s*/i, '')
+		.replace(/^D1_ERROR:\s*/i, '')
+}
+
 export function isDurableObjectStorageObjectResetMessage(message: string) {
-	const withoutErrorPrefix = message.trim().replace(/^Error:\s*/i, '')
-	return durableObjectStorageObjectResetPattern.test(withoutErrorPrefix)
+	return durableObjectStorageObjectResetPattern.test(
+		normalizeDurableObjectStorageObjectResetMessage(message),
+	)
 }
 
 /**
@@ -613,7 +628,8 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// Object platform reset strings (memory/CPU limits, DO SQLite
 		// SQLITE_NOMEM, deploy-time code updates, blockConcurrencyWhile
 		// timeouts, DO storage operation timeouts, and DO storage object-reset
-		// with a support reference) are dropped the same way — see
+		// with a support reference — including D1_ERROR:-prefixed forms D1
+		// bindings emit) are dropped the same way — see
 		// filterDurableObjectIsolateResetSentryEvent. Bare Durable Object queue
 		// saturation strings ("… overloaded. Requests queued for too long", etc.)
 		// are dropped the same way — see filterDurableObjectOverloadedSentryEvent.
