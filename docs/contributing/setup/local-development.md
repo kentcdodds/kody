@@ -47,8 +47,10 @@ Prerequisites, install, and `npm run dev` notes. See the
 - `npm run dev` starts the Cloudflare API mock, then Vite (`@pitlane/dev` +
   `@cloudflare/vite-plugin`) so origin SSR runs inside workerd with client HMR.
   Jobs and highlight join as Vite auxiliary workers in every serve, including
-  `CLOUDFLARE_ENV=test`. Platform and runtime join only outside the test env.
-  Origin `env` bindings come from generated
+  `CLOUDFLARE_ENV=test`. Jobs is a generated config
+  (`packages/jobs-worker/wrangler-local-dev.generated.json`) so it registers
+  under the origin `JOBS` service name. Platform and runtime join only outside
+  the test env. Origin `env` bindings come from generated
   `packages/worker/wrangler-local-dev.generated.json` (`WRANGLER_IS_LOCAL_DEV`
   and mock `CLOUDFLARE_API_*`). It sets `CLOUDFLARE_API_BASE_URL`,
   `CLOUDFLARE_API_TOKEN`, and `CLOUDFLARE_ACCOUNT_ID` to the local Cloudflare
