@@ -54,10 +54,6 @@ Both `create` and `file` require
 | **Another GitHub repo** with its own friction label workflow                             | `{ host: 'github', repo: 'owner/repo' }`                                                                     | GitHub `friction` issue on that `owner/repo`.                                                   |
 | **A Kody package** (saved package README, export shape, package job, package-owned docs) | `{ host: 'kody', repo: '@owner/leaf' }` (or the package’s kody id / identity string the live export accepts) | Wakes **Patch** via grok-bot. No GitHub issue.                                                  |
 
-Until the execute stamp fix in #2575 lands, calling `host: 'kody'` from MCP
-`execute` may need co-importing `kody:@kentcdodds/grok-bot/wake` in the same
-module so the wake export is stamped — see the package’s AGENTS notes.
-
 ## How to fix
 
 For builders, the daily sweep, and in-scope ship-pr fixes:
@@ -156,8 +152,6 @@ Package-owned example (`host: 'kody'` wakes Patch; no GitHub issue):
 
 ```ts
 import fileFriction from 'kody:@kentcdodds/friction-log/file'
-// Until #2575: co-import wake so MCP execute stamps grok-bot.
-import 'kody:@kentcdodds/grok-bot/wake'
 
 export default async function main() {
 	return await fileFriction({

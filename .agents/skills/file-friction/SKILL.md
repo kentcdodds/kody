@@ -21,8 +21,7 @@ not help the next agent. `create` / `file` soft-skip the same shapes.
 - Platform / this repo → `{ host: 'github', repo: 'kentcdodds/kody' }` (never
   raw `gh`).
 - Kody package → `{ host: 'kody', repo: '@owner/leaf' }` (wakes Patch; no GitHub
-  issue). Until #2575, co-import `kody:@kentcdodds/grok-bot/wake` in the same
-  execute module when using `host: 'kody'`.
+  issue).
 
 File leftovers with `kody:@kentcdodds/friction-log/file` via Kody MCP `execute`
 (`target` + `items`, one papercut each). Omit secrets. If there is nothing that

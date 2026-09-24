@@ -92,10 +92,9 @@ Kody MCP `execute`. Always pass required
 each). Include `whatHappened`, `whatYouWanted`, `howToReproduce`, and `cost`
 when known. Platform leftovers use
 `{ host: 'github', repo: 'kentcdodds/kody' }`. Package-owned leftovers use
-`host: 'kody'` (wakes Patch; until #2575 co-import
-`kody:@kentcdodds/grok-bot/wake` in the same module). Omit secrets. If nothing
-meets the bar, skip the call or pass empty `items`. Do not invent papercuts. Do
-not use `gh issue create` or a raw GitHub issue POST.
+`host: 'kody'` (wakes Patch). Omit secrets. If nothing meets the bar, skip the
+call or pass empty `items`. Do not invent papercuts. Do not use
+`gh issue create` or a raw GitHub issue POST.
 
 Policy: [friction log](../../../docs/contributing/friction-log.md). Outside this
 pass: [file-friction](../file-friction/SKILL.md).

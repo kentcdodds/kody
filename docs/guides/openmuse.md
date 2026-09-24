@@ -107,11 +107,11 @@ schedule, put it in Kody.
 
 ## Connect OpenMuse to Kody
 
-Kody is an MCP server at `https://kody.codes/mcp`. OpenMuse (as of its September
-2026 alpha) does not ship a Kody connector or a settings screen for adding MCP
-servers. It is a template you clone and change, and the agents it runs are
-CopilotKit agents that do speak MCP. So connecting the two means wiring Kody
-into the harness behind OpenMuse. There are two ways to do that.
+Kody is an MCP server at `https://kody.codes/mcp`. OpenMuse does not ship a Kody
+connector or a settings screen for adding MCP servers. It is a template you
+clone and change, and the agents it runs are CopilotKit agents that do speak
+MCP. Connecting the two means wiring Kody into the harness behind OpenMuse.
+There are two ways to do that.
 
 ### Before you start
 
