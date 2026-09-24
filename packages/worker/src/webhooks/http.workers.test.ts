@@ -1219,6 +1219,7 @@ test('first-party trusted webhooks accept Idempotency-Key, params mode, and a hi
 
 	const routedBody = JSON.stringify({
 		route: 'linkedin/register-video-upload',
+		dryRun: false,
 		params: { fileSizeBytes: 12, confirm: true },
 	})
 	const routed = await postWebhook({
@@ -1234,6 +1235,7 @@ test('first-party trusted webhooks accept Idempotency-Key, params mode, and a hi
 	}
 	expect(routedCall.request.params).toEqual({
 		route: 'linkedin/register-video-upload',
+		dryRun: false,
 		params: { fileSizeBytes: 12, confirm: true },
 	})
 	expect(routedCall.request.idempotencyKey).toBe('evt-routed-1')

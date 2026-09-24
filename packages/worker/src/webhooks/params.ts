@@ -30,19 +30,37 @@ const webhookInvokeEnvelopeKeys = new Set([
 	'topic',
 ])
 
+function isOptionalEnvelopeString(value: unknown) {
+	return value === undefined || value === null || typeof value === 'string'
+}
+
 function isWebhookInvokeEnvelope(
 	json: Record<string, unknown>,
 ): json is Record<string, unknown> & { params: Record<string, unknown> } {
 	if (!isWebhookJsonObject(json['params'])) return false
-	return Object.keys(json).every((key) => webhookInvokeEnvelopeKeys.has(key))
+	if (!Object.keys(json).every((key) => webhookInvokeEnvelopeKeys.has(key))) {
+		return false
+	}
+	const idempotencyKey = json['idempotencyKey']
+	if (
+		idempotencyKey !== undefined &&
+		(typeof idempotencyKey !== 'string' || idempotencyKey.trim().length === 0)
+	) {
+		return false
+	}
+	return (
+		isOptionalEnvelopeString(json['source']) &&
+		isOptionalEnvelopeString(json['topic'])
+	)
 }
 
 /**
  * `inputMode: "params"` first argument. The parsed JSON object is the export
- * argument. Unwrap only the invoke-token envelope (`params` plus optional
- * `idempotencyKey`, `source`, and `topic`) so leftover token callers can POST
- * the same body. Application payloads that happen to include a nested
- * `params` object next to other keys stay intact.
+ * argument. Unwrap only a valid invoke-token envelope (`params` plus optional
+ * non-empty `idempotencyKey`, and `source` / `topic` as a string or null) so
+ * leftover token callers can POST the same body. Sibling fields such as
+ * `route` and `dryRun` stay on the export argument. A reserved key whose
+ * value is not envelope metadata stays on that argument too.
  */
 export function resolveWebhookParamsModeFirstArg(
 	json: unknown,
