@@ -213,7 +213,11 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		// Protocol v1 Artifacts ref discovery and the bounded git HTTP client
 		// also sit on the platform artifacts graph: CI dry-run 5_159_055
 		// against the previous 5_159_000 budget.
-		maxEntryBytes: 5_160_000,
+		// Execute static-import secret stamp (shared root-runtime external +
+		// sync stamp capture / AsyncFunction ALS) spills into the platform
+		// MCP execute graph: CI dry-run 5_160_693 against the previous
+		// 5_160_000 budget (#2575).
+		maxEntryBytes: 5_162_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
