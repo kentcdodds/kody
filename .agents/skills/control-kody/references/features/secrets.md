@@ -24,13 +24,30 @@ https://kody.codes/account/secrets” note with no body is not proof.
 
 ## APIs
 
-- `GET|POST /account/secrets.json`
+- `GET /account/secrets.json`
+- `POST /account/secrets.json` with `action`:
+  - `save` — create or update a user or package secret. `create` is the same
+    write. Omit `currentId` to create; pass `currentId` to update. The account
+    editor sends `save`.
+  - `delete` — `{ "action": "delete", "currentId" }`
+  - `approve` / `reject` — host or package grant on the approval URL
+  - `save_oauth_app`, `connect_oauth`, `oauth_exchange` — OAuth connect
 - `GET|POST /account/secret-providers.json`
+
+An unknown `action` is HTTP 400
+`Invalid action. Expected one of: save, create, delete, approve, reject, save_oauth_app, connect_oauth, oauth_exchange.`
+
+Seed a preview secret with `save` or `create` (same write):
+
+```bash
+node tools/control-kody.ts request POST /account/secrets.json '{"action":"save","scope":"user","name":"previewSeed","value":"preview-seed-value","allowedHosts":["api.example.com"]}'
+```
 
 ## Gotchas
 
 - Never paste secret values into chat, PRs, or execute params.
-- Preview seed starts with zero secrets.
+- Preview seed starts with zero secrets. Create one with the `save` or `create`
+  POST above before asserting rows.
 - `/connect/secrets` rejects hosts that are not hostname-shaped (truncated
   tokens, paths, empty values). Those must not appear as a successful Allow
   target, and they must not land in `allowedHosts`.
