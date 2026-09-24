@@ -197,6 +197,8 @@ test('conflict enqueue workflows call Validate and Preview without workflow_disp
 	expect(enqueuePreview).toContain('closed')
 	expect(enqueueValidate).not.toContain('closed')
 	expect(enqueueValidate).toContain('checks: write')
+	expect(enqueueValidate).toContain('needs.decide.outputs.head_sha')
+	expect(enqueuePreview).toContain('needs.decide.outputs.head_sha')
 	expect(enqueueValidate).toContain('./.github/workflows/validate.yml')
 	expect(enqueuePreview).toContain('./.github/workflows/preview.yml')
 	expect(enqueuePreview).toContain('secrets: inherit')

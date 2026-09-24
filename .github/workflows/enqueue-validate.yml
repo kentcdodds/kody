@@ -19,8 +19,9 @@ on:
     branches:
       - main
 
-# checks: write lets a pull_request_target run publish ✅ Validate on the
-# PR head. GitHub records that event's own checks on the base SHA.
+# checks: write publishes ✅ Validate on the PR head. A called job is
+# named `validate / ✅ Validate`, and pull_request_target records its suite
+# on the base SHA. The plain name is what the head's required check is.
 permissions:
   contents: read
   pull-requests: read
@@ -51,6 +52,7 @@ jobs:
       enqueue: ${{ steps.decide.outputs.enqueue }}
       pr_number: ${{ steps.decide.outputs.pr_number }}
       base_sha: ${{ steps.decide.outputs.base_sha }}
+      head_sha: ${{ steps.decide.outputs.head_sha }}
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
@@ -76,16 +78,16 @@ jobs:
       base_sha: ${{ needs.decide.outputs.base_sha }}
     secrets: inherit
 
-  # pull_request_target check suites are attached to the base SHA. Publish
-  # the same conclusion on the PR head so the head's required check exists.
-  # Push runs already attach to the head, so this job stays skipped there.
+  # Push and pull_request_target both need the plain check name on the
+  # PR head. Push uses the decided head SHA. The event head SHA is set on
+  # pull_request_target. Forks never enqueue, and this if refuses them too.
   publish:
     needs:
       - decide
       - validate
     if: >-
-      always() && github.event_name == 'pull_request_target' &&
-      github.event.pull_request.head.repo.fork == false &&
+      always() && (github.event_name == 'push' ||
+      github.event.pull_request.head.repo.fork == false) &&
       needs.decide.outputs.enqueue == 'true' && needs.validate.result !=
       'cancelled' && needs.validate.result != 'skipped'
     permissions:
@@ -96,7 +98,9 @@ jobs:
       - name: Publish head check
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA:
+            ${{ github.event.pull_request.head.sha ||
+            needs.decide.outputs.head_sha }}
           VALIDATE_RESULT: ${{ needs.validate.result }}
         with:
           script: |

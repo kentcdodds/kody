@@ -22,7 +22,8 @@ on:
 # cleanup. GitHub rejects the caller at startup unless it allows every
 # permission a nested preview.yml job requests.
 # checks: write publishes 🔎 Deploy Preview Resources on the PR head.
-# pull_request_target otherwise records that check on the base SHA.
+# A called job is prefixed, and pull_request_target records its suite on
+# the base SHA. Push uses the decided head SHA.
 permissions:
   contents: read
   pull-requests: write
@@ -55,6 +56,7 @@ jobs:
       enqueue: ${{ steps.decide.outputs.enqueue }}
       cleanup: ${{ steps.decide.outputs.cleanup }}
       pr_number: ${{ steps.decide.outputs.pr_number }}
+      head_sha: ${{ steps.decide.outputs.head_sha }}
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
@@ -88,8 +90,8 @@ jobs:
       - decide
       - preview
     if: >-
-      always() && github.event_name == 'pull_request_target' &&
-      github.event.pull_request.head.repo.fork == false &&
+      always() && (github.event_name == 'push' ||
+      github.event.pull_request.head.repo.fork == false) &&
       needs.decide.outputs.enqueue == 'true' && needs.preview.result !=
       'cancelled' && needs.preview.result != 'skipped'
     permissions:
@@ -100,7 +102,9 @@ jobs:
       - name: Publish head check
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA:
+            ${{ github.event.pull_request.head.sha ||
+            needs.decide.outputs.head_sha }}
           PREVIEW_RESULT: ${{ needs.preview.result }}
         with:
           script: |
