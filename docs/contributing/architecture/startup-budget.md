@@ -92,7 +92,9 @@ three times with `wrangler check startup` and compares the best sample to
 reading and well below the level that made uploads flaky, so the check catches a
 re-eagerised domain graph or a new heavy import without failing on runner noise.
 It complements `worker-startup-bundles:check`, which bounds bytes and
-import-graph boundaries deterministically.
+import-graph boundaries deterministically. Byte ceilings live in
+`tools/worker-startup-bundle-budget.json`. Append measured notes to
+`tools/worker-startup-bundle-notes.md` instead of rewriting the checker.
 
 When a change buys headroom, lower the budget in the same PR. Raise a budget
 only with a written justification in the PR description.
