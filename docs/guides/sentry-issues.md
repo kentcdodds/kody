@@ -32,7 +32,9 @@ RCA, waking an agent) is extra work the package chooses to stage after the ack.
 Kent's copy wakes Cole (Grok Bot) per issue, keeps one Discord status message
 per issue, and never auto-spawns Cursor from the webhook path. Cole may spawn
 Cursor later when isolated repo work is the right tool. Your fork can stop at
-"verify, store, notify" if you do not want an agent in the loop.
+"verify, store, notify" if you do not want an agent in the loop. Either way the
+package, not a model, receives every delivery; an agent wakes only when the
+package decides to stage that work.
 
 Sentry event text is untrusted data. Treat titles, breadcrumbs, and request
 bodies as attacker-controlled.
