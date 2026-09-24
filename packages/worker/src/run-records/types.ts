@@ -114,15 +114,16 @@ export type RunLogLevel = (typeof runLogLevelValues)[number]
  * When a surface's `running` row is written.
  *
  * - `eager`: a `running` row is written at begin so an evicted or hung run is
- *   still visible, and both success and error persist. Used by ad-hoc
- *   `execute` (with or without an idempotency key) and every other surface
- *   except key-less package export. Successful execute runs therefore show up
- *   in Activity the same way jobs and webhooks do.
- * - `on-failure`: nothing is persisted unless the run ends in `error`. Used
- *   only by key-less `export` (the lean `packages.invoke` path). That caller
- *   already holds the result inline, and the user-visible history is the
- *   parent execute, job, webhook, or app run. An execute `idempotencyKey`
- *   claims the row for replay; it does not decide whether a success is stored.
+ *   still visible, and both success and error persist.
+ *   {@link runPersistenceForSurface} returns this for every surface, including
+ *   `export`. Successful ad-hoc execute runs therefore show up in Activity the
+ *   same way jobs and webhooks do.
+ * - `on-failure`: nothing is persisted unless the run ends in `error`.
+ *   {@link runPersistenceForContext} selects this only for key-less `export`
+ *   (the lean `packages.invoke` path). That caller already holds the result
+ *   inline, and the user-visible history is the parent execute, job, webhook,
+ *   or app run. An execute `idempotencyKey` claims the row for replay; it does
+ *   not decide whether a success is stored.
  */
 export type RunPersistence = 'eager' | 'on-failure'
 

@@ -48,18 +48,15 @@ Add new members there — never invent ad hoc surface strings at call sites.
 
 ## Persistence policy
 
-`runPersistenceForSurface(surface)` returns:
+`runPersistenceForSurface(surface)` returns **`eager` for every surface**,
+including `export`. A `running` row is written at begin so an evicted or hung
+run is still visible in history, and both success and error persist. Ad-hoc
+`execute` is eager with or without an `idempotencyKey`, so successful one-off
+executes show up in Activity the same way jobs and webhooks do.
 
-- **`eager`** — every surface except key-less `export`. A `running` row is
-  written at begin so an evicted or hung run is still visible in history, and
-  both success and error persist. Ad-hoc `execute` is eager with or without an
-  `idempotencyKey`, so successful one-off executes show up in Activity the same
-  way jobs and webhooks do.
-- **`on-failure`** — key-less `export` only. Nothing is persisted unless the run
-  ends in `error`.
-
-`runPersistenceForContext(context)` is what begin/finish actually use: same as
-the surface default, except **key-less `export` downgrades to `on-failure`**.
+`runPersistenceForContext(context)` is what begin/finish actually use. It
+matches that surface default, except **key-less `export` downgrades to
+`on-failure`**: nothing is persisted unless the run ends in `error`.
 
 Key-less package export stays on-failure because it is the lean hot path: the
 caller already holds the result inline, and the user-visible history is the
