@@ -34,26 +34,29 @@ Prefer fewer high-signal issues over a long backlog of transients. Search open
 `kody:@kentcdodds/friction-log/scan`). Comment on a match instead of opening a
 duplicate.
 
+`create` / `file` also **soft-skip** (no throw; result lands in `skipped`) when
+qualify fails: missing/invalid `target`, no reproducible gap, or
+session-bound/transient shape. Treat soft-skip as “do not file,” not as a
+retry-with-aliases signal.
+
 Fix obvious, low-risk friction in the current change when it is already in
 scope. Still mention the fix. File an issue only for leftover or out-of-scope
 papercuts that still meet the bar above.
 
 ## Where it belongs
 
-| Ownership                                                                                                | Route                                                                                                                 |
-| -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| **Platform / this GitHub repo** (`kentcdodds/kody` docs, harness, worker contracts, contributor tooling) | File a `friction` issue through `@kentcdodds/friction-log` (never raw `gh issue create` or a raw GitHub issues POST). |
-| **A Kody package** (saved package README, export shape, package job, package-owned docs)                 | Route to **package ownership** (Patch / package maintainers), not a platform GitHub friction issue by default.        |
+Both `create` and `file` require
+`target: { host: 'github' | 'kody', repo: string }`.
 
-When `kody:@kentcdodds/friction-log` supports naming a target repository or host
-(`github` for this repo vs `kody` for a package identity, or the live
-equivalent), pass that so routing is explicit. A Kody-target filing should wake
-Patch rather than land as a platform GitHub issue.
+| Ownership                                                                                | `target`                                                                                                     | Route                                                                                           |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| **Platform / this GitHub repo** (docs, harness, worker contracts, contributor tooling)   | `{ host: 'github', repo: 'kentcdodds/kody' }`                                                                | GitHub `friction` issue on that repo (never raw `gh issue create` or a raw GitHub issues POST). |
+| **Another GitHub repo** with its own friction label workflow                             | `{ host: 'github', repo: 'owner/repo' }`                                                                     | GitHub `friction` issue on that `owner/repo`.                                                   |
+| **A Kody package** (saved package README, export shape, package job, package-owned docs) | `{ host: 'kody', repo: '@owner/leaf' }` (or the package’s kody id / identity string the live export accepts) | Wakes **Patch** via grok-bot. No GitHub issue.                                                  |
 
-Until those fields exist on the live exports, still prefer waking Patch /
-package maintainers for package-only pain instead of opening a platform
-`friction` issue. Do not invent argument names: follow the live
-`kody:@kentcdodds/friction-log` create/file contracts when calling.
+Until the execute stamp fix in #2575 lands, calling `host: 'kody'` from MCP
+`execute` may need co-importing `kody:@kentcdodds/grok-bot/wake` in the same
+module so the wake export is stamped — see the package’s AGENTS notes.
 
 ## How to fix
 
@@ -91,23 +94,25 @@ Humans can use the
 [Friction issue form](../../.github/ISSUE_TEMPLATE/friction.yml), which applies
 the `friction` label.
 
-Agents file one issue through `kody:@kentcdodds/friction-log/create` via Kody
-MCP `execute`. The export always applies the `friction` label, prefixes the
-title with `Friction:`, and reuses or labels an existing open issue with the
-same title. Prefer qualify-before-create when the live package documents that
-flow (search / match first, then create only if needed).
+Agents file through `kody:@kentcdodds/friction-log/create` or `./file` via Kody
+MCP `execute`. Always pass `target`. For `host: 'github'`, the export applies
+the `friction` label, prefixes the title with `Friction:`, and reuses or labels
+an existing open issue with the same title. Qualify runs first and soft-skips
+when the papercut fails the bar.
 
 Agents file a batch through `kody:@kentcdodds/friction-log/file` (several
 papercuts from one session, including the
 [ship-pr](../../.agents/skills/ship-pr/SKILL.md) leftover pass). Ship-pr uses
 `./file` before the Discord summary.
 [file-friction](../../.agents/skills/file-friction/SKILL.md) is the short entry
-point outside that pass. `./file` dedupes with the same title rules as
-`./create`, prefixes `Friction:`, applies `friction` through the create path,
-and returns `{ ok, dryRun, filed, reused, skipped }`. `commentOnReuse` defaults
-to true (a reuse posts the new body as a comment). Pass `items` (one papercut
-per entry) or the same fields as a single papercut. An empty `items` array files
-nothing.
+point outside that pass. `./file` takes one required `target` for the whole
+batch. On github it dedupes with the same title rules as `./create`, prefixes
+`Friction:`, applies `friction` through the create path, and returns
+`{ ok, dryRun, filed, reused, woke, skipped }`. On kody, wakes land in `woke`
+(not GitHub issues). Soft-skips land in `skipped`. `commentOnReuse` defaults to
+true for github (a reuse posts the new body as a comment). Pass `items` (one
+papercut per entry) or the same fields as a single papercut. An empty `items`
+array files nothing.
 
 Do not use `gh issue create` or `kody:@kentcdodds/github/request` POST to
 `/repos/kentcdodds/kody/issues`. Those paths can omit the `friction` label, so
@@ -118,13 +123,12 @@ import createFrictionIssue from 'kody:@kentcdodds/friction-log/create'
 
 export default async function main() {
 	return await createFrictionIssue({
+		target: { host: 'github', repo: 'kentcdodds/kody' },
 		title: 'what hurt',
 		whatHappened: '...',
 		whatYouWanted: '...',
 		howToReproduce: '...',
 		cost: '...',
-		// When the live export supports it: name the target repo/host
-		// (github vs kody). Follow the package contract; do not invent fields.
 	})
 }
 ```
@@ -134,6 +138,30 @@ import fileFriction from 'kody:@kentcdodds/friction-log/file'
 
 export default async function main() {
 	return await fileFriction({
+		target: { host: 'github', repo: 'kentcdodds/kody' },
+		items: [
+			{
+				title: 'what hurt',
+				whatHappened: '...',
+				whatYouWanted: '...',
+				howToReproduce: '...',
+				cost: '...',
+			},
+		],
+	})
+}
+```
+
+Package-owned example (`host: 'kody'` wakes Patch; no GitHub issue):
+
+```ts
+import fileFriction from 'kody:@kentcdodds/friction-log/file'
+// Until #2575: co-import wake so MCP execute stamps grok-bot.
+import 'kody:@kentcdodds/grok-bot/wake'
+
+export default async function main() {
+	return await fileFriction({
+		target: { host: 'kody', repo: '@owner/package-leaf' },
 		items: [
 			{
 				title: 'what hurt',
@@ -150,11 +178,10 @@ export default async function main() {
 `body` is accepted instead of the structured fields on both exports.
 `dryRun: true` previews without posting.
 
-Write one issue per papercut (`./file` still opens one issue per `items` entry).
-Include what you were doing, the unexpected cost, the workaround, and enough
-reproduction to investigate without the original session. Omit secrets, tokens,
-and unrelated private content. Name the target repository when the package
-supports it.
+Write one issue per papercut (`./file` still opens one github issue — or one
+Patch wake — per `items` entry). Include what you were doing, the unexpected
+cost, the workaround, and enough reproduction to investigate without the
+original session. Omit secrets, tokens, and unrelated private content.
 
 ## Daily investigation
 
@@ -229,8 +256,8 @@ finish, record `failed` with what you learned.
 
 | Export                                         | Purpose                                        |
 | ---------------------------------------------- | ---------------------------------------------- |
-| `kody:@kentcdodds/friction-log/create`         | File one `friction` issue (always labeled).    |
-| `kody:@kentcdodds/friction-log/file`           | Batch papercuts (ship-pr leftover pass).       |
+| `kody:@kentcdodds/friction-log/create`         | File one papercut (`target` required).         |
+| `kody:@kentcdodds/friction-log/file`           | Batch papercuts (`target` required).           |
 | `kody:@kentcdodds/friction-log/scan`           | Read-only label eligibility scan. No agent.    |
 | `kody:@kentcdodds/friction-log/sweep`          | Scan and optionally spawn (`dryRun`, `force`). |
 | `kody:@kentcdodds/friction-log/pause`          | Kill switch: stop spawning.                    |

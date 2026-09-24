@@ -87,11 +87,15 @@ commits onto a merged PR. In-scope fixes belong in the loop above, while the PR
 is open.
 
 File leftovers that meet the bar with `kody:@kentcdodds/friction-log/file` via
-Kody MCP `execute` (`items`, one papercut each). Include `whatHappened`,
-`whatYouWanted`, `howToReproduce`, and `cost` when known. Name the target
-repository when the live export supports it. Omit secrets. If nothing meets the
-bar, skip the call or pass empty `items`. Do not invent papercuts. Do not use
-`gh issue create` or a raw GitHub issue POST.
+Kody MCP `execute`. Always pass required
+`target: { host: 'github' | 'kody', repo: string }` plus `items` (one papercut
+each). Include `whatHappened`, `whatYouWanted`, `howToReproduce`, and `cost`
+when known. Platform leftovers use
+`{ host: 'github', repo: 'kentcdodds/kody' }`. Package-owned leftovers use
+`host: 'kody'` (wakes Patch; until #2575 co-import
+`kody:@kentcdodds/grok-bot/wake` in the same module). Omit secrets. If nothing
+meets the bar, skip the call or pass empty `items`. Do not invent papercuts. Do
+not use `gh issue create` or a raw GitHub issue POST.
 
 Policy: [friction log](../../../docs/contributing/friction-log.md). Outside this
 pass: [file-friction](../file-friction/SKILL.md).
@@ -101,6 +105,7 @@ import fileFriction from 'kody:@kentcdodds/friction-log/file'
 
 export default async function main() {
 	return fileFriction({
+		target: { host: 'github', repo: 'kentcdodds/kody' },
 		items: [
 			{
 				title: 'what hurt',
