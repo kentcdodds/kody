@@ -5,6 +5,7 @@ import {
 	invalidPackageNameMessage,
 	mismatchedPackageScopeMessage,
 	normalizePackageNameInput,
+	PackageNameInputError,
 } from './package-name.ts'
 
 test('normalizePackageNameInput accepts a leaf, strips a matching scope, and rejects a foreign scope', () => {
@@ -36,6 +37,13 @@ test('normalizePackageNameInput accepts a leaf, strips a matching scope, and rej
 			ownerScope: 'grant',
 			action: 'create',
 		}),
+	).toThrow(PackageNameInputError)
+	expect(() =>
+		normalizePackageNameInput({
+			value: '@other/mailchimp',
+			ownerScope: 'grant',
+			action: 'create',
+		}),
 	).toThrow(
 		mismatchedPackageScopeMessage({
 			value: '@other/mailchimp',
@@ -50,6 +58,13 @@ test('normalizePackageNameInput accepts a leaf, strips a matching scope, and rej
 			ownerScope: 'grant',
 			action: 'create',
 		}),
+	).toThrow(PackageNameInputError)
+	expect(() =>
+		normalizePackageNameInput({
+			value: 'Not_A_Valid_Id',
+			ownerScope: 'grant',
+			action: 'create',
+		}),
 	).toThrow(
 		invalidPackageNameMessage({
 			value: 'Not_A_Valid_Id',
@@ -57,6 +72,28 @@ test('normalizePackageNameInput accepts a leaf, strips a matching scope, and rej
 			action: 'create',
 		}),
 	)
+
+	expect(() =>
+		normalizePackageNameInput({
+			value: '',
+			ownerScope: 'grant',
+			action: 'resolve',
+		}),
+	).toThrow(PackageNameInputError)
+	expect(() =>
+		normalizePackageNameInput({
+			value: '@grant/Mailchimp',
+			ownerScope: 'grant',
+			action: 'resolve',
+		}),
+	).toThrow(PackageNameInputError)
+	expect(() =>
+		normalizePackageNameInput({
+			value: 'grant/mailchimp',
+			ownerScope: 'grant',
+			action: 'resolve',
+		}),
+	).toThrow(PackageNameInputError)
 
 	expect(getPackageNameLeaf('@kentcdodds/cursor-cloud-agents')).toBe(
 		'cursor-cloud-agents',

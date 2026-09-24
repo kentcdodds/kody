@@ -54,6 +54,18 @@ export function mismatchedPackageScopeMessage(input: {
 }
 
 /**
+ * Caller-clearable package name rejection (empty, mismatched owner scope, or
+ * invalid leaf/format). Observability treats it like `PackageScopeAccessError`
+ * and keeps it off Sentry (KODY-83).
+ */
+export class PackageNameInputError extends Error {
+	constructor(message: string) {
+		super(message)
+		this.name = 'PackageNameInputError'
+	}
+}
+
+/**
  * Accept a leaf (`mailchimp`) or scoped name (`@grant/mailchimp`).
  * Matching owner scope is stripped; a different scope is rejected.
  */
@@ -65,7 +77,7 @@ export function normalizePackageNameInput(input: {
 	const value = input.value.trim()
 	const ownerScope = input.ownerScope.trim().replace(/^@/, '').toLowerCase()
 	if (!value) {
-		throw new Error(
+		throw new PackageNameInputError(
 			invalidPackageNameMessage({
 				value: input.value,
 				ownerScope,
@@ -79,7 +91,7 @@ export function normalizePackageNameInput(input: {
 		const requestedScope = (scoped[1] ?? '').toLowerCase()
 		const leaf = scoped[2] ?? ''
 		if (requestedScope !== ownerScope) {
-			throw new Error(
+			throw new PackageNameInputError(
 				mismatchedPackageScopeMessage({
 					value: input.value,
 					requestedScope,
@@ -88,7 +100,7 @@ export function normalizePackageNameInput(input: {
 			)
 		}
 		if (!packageNameLeafPattern.test(leaf)) {
-			throw new Error(
+			throw new PackageNameInputError(
 				invalidPackageNameMessage({
 					value: input.value,
 					ownerScope,
@@ -100,7 +112,7 @@ export function normalizePackageNameInput(input: {
 	}
 
 	if (value.startsWith('@') || value.includes('/')) {
-		throw new Error(
+		throw new PackageNameInputError(
 			invalidPackageNameMessage({
 				value: input.value,
 				ownerScope,
@@ -110,7 +122,7 @@ export function normalizePackageNameInput(input: {
 	}
 
 	if (!packageNameLeafPattern.test(value)) {
-		throw new Error(
+		throw new PackageNameInputError(
 			invalidPackageNameMessage({
 				value: input.value,
 				ownerScope,
