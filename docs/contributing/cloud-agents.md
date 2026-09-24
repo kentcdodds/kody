@@ -39,6 +39,13 @@ manually with native `unzip`:
    headless via the separate headless-shell binary, so both are required).
 4. `chmod +x` the `chrome` and `chrome-headless-shell` binaries.
 
+`control-kody doctor` reads the `chromium` and `chromium-headless-shell`
+revisions from `node_modules/playwright-core/browsers.json`. It passes only when
+both `~/.cache/ms-playwright/chromium-<rev>/INSTALLATION_COMPLETE` and
+`chromium_headless_shell-<rev>/INSTALLATION_COMPLETE` exist. A marker from
+another revision fails, and the failure prints the unzip steps for that
+revision.
+
 ## Nx remote cache
 
 Validate and `test:push` write Nx task artifacts. Those stay local unless the

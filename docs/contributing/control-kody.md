@@ -19,6 +19,13 @@ npm run control-kody -- package-create --origin <preview> --package-name <leaf-o
 
 Same entry: `node tools/control-kody.ts`.
 
+`doctor` checks Node 26, the Playwright browser revision in
+`node_modules/playwright-core/browsers.json`, git `core.hooksPath`, origin
+`/health`, and local APP_DB. Playwright passes only when `chromium-<rev>` and
+`chromium_headless_shell-<rev>` each contain `INSTALLATION_COMPLETE`. A missing
+revision fails with the unzip steps in
+[Cursor Cloud Agent notes](./cloud-agents.md).
+
 `health --sha` succeeds when `/health` `commitSha` equals the argument, uniquely
 starts with it (git short SHA, 7+ characters), or is a descendant that contains
 it (`git merge-base --is-ancestor`). A later main HEAD deploy still counts as
