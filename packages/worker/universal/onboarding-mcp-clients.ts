@@ -393,8 +393,8 @@ const grokCliMcpGuideUrl = 'https://docs.x.ai/build/features/mcp-servers'
 /** OpenClaw Control UI + CLI docs for adding a remote MCP server. */
 const openClawMcpGuideUrl = 'https://docs.openclaw.ai/tools/mcp'
 
-/** Muse platform / product page. */
-export const musePlatformUrl = 'https://muse.ai/platform'
+/** Muse Code docs on Meta’s developer site (not muse.ai — unrelated video). */
+export const musePlatformUrl = 'https://dev.meta.ai/docs/muse-code/'
 
 /** Official Kody CLI (interim Muse connect path until the Muse connector lands). */
 export const kodyCliRepoUrl = 'https://github.com/kody-bot/cli'

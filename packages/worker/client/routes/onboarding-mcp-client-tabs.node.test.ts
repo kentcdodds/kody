@@ -174,7 +174,7 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(muse).toContain('data-agent="muse"')
 	expect(muse).toContain('npx @kodycodes/cli install')
 	expect(muse).toContain('https://github.com/kody-bot/cli')
-	expect(muse).toContain('https://muse.ai/platform')
+	expect(muse).toContain('https://dev.meta.ai/docs/muse-code/')
 	expect(muse).toContain('pending review')
 	expect(muse).toContain('paste a localhost URL')
 	expect(muse).toContain('data-testid="onboarding-agent-help"')

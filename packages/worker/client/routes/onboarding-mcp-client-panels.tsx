@@ -386,7 +386,7 @@ export function renderPanelContent(
 						</a>{' '}
 						(
 						<a href={musePlatformUrl} target="_blank" rel="noreferrer">
-							muse.ai/platform
+							dev.meta.ai
 						</a>
 						).
 					</p>
@@ -590,8 +590,8 @@ export function renderPanelWarning(
 			return (
 				<ClientWarning>
 					{surface === 'mobile'
-						? "Muse Code is for a computer. Change selection and pick a host with a mobile app, or run these steps later on a computer. A Kody connector/plugin has been submitted on Muse's platform and is pending review. Until it lands, use the Kody CLI."
-						: "A Kody connector/plugin has been submitted on Muse's platform and is pending review. Until it lands, use the Kody CLI."}
+						? 'Muse Code is for a computer. Change selection and pick a host with a mobile app, or run these steps later on a computer. A Kody connector/plugin has been submitted for Muse Code and is pending review. Until it lands, use the Kody CLI.'
+						: 'A Kody connector/plugin has been submitted for Muse Code and is pending review. Until it lands, use the Kody CLI.'}
 				</ClientWarning>
 			)
 		case 'cursor-cloud':

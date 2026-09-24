@@ -135,9 +135,9 @@ you only have the MCP URL.
   live connection. Or in the Control UI: Settings → MCP → Add server, choose
   Streamable HTTP, and paste the MCP URL. See OpenClaw's
   [MCP docs](https://docs.openclaw.ai/tools/mcp).
-- **Muse** — A Kody connector/plugin has been submitted on
-  [Muse's platform](https://muse.ai/platform) and is pending review. Until it
-  appears in Muse's directory, install with the
+- **Muse** — A Kody connector/plugin has been submitted for
+  [Muse Code](https://dev.meta.ai/docs/muse-code/) and is pending review. Until
+  it appears in Muse's directory, install with the
   [Kody CLI](https://github.com/kody-bot/cli): `npx @kodycodes/cli install`
   (pass `--mcp-url <url>` on preview or local origins). After OAuth succeeds,
   you may need to paste a localhost URL into the Muse chat.
