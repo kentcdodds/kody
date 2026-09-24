@@ -97,6 +97,9 @@ MCP Durable Object. UserMeter schema v12 inbound MCP last-used RPCs add a few KB
   capture / AsyncFunction ALS) spills into the platform MCP execute graph: CI
   dry-run 5_160_693 against the previous 5_160_000 budget (#2575).
 - Reviewed ceiling 5_162_000.
+- `webhookSyntheticDispatch` (interactive-MCP synthetic webhook smoke test)
+  extends the webhooks MCP domain platform already evaluates: local dry-run
+  5_172_095 against the previous 5_162_000 budget. Reviewed ceiling 5_182_000.
 
 ## runtime
 
@@ -185,3 +188,7 @@ runtime path if this budget is raised again.
   plus sync stamp capture before recordFetch (#2575): CI dry-run 3_835_583
   against the previous 3_835_000 budget.
 - Reviewed ceiling 3_837_000.
+- `webhookSyntheticDispatch` (interactive-MCP synthetic webhook smoke test)
+  lands in the same webhooks MCP domain graph runtime already evaluates: local
+  dry-run 3_846_966 against the previous 3_837_000 budget. Reviewed ceiling
+  3_857_000.

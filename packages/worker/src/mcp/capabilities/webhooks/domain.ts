@@ -7,6 +7,7 @@ import { webhookListCapability } from './webhook-list.ts'
 import { webhookUrlApplyCapability } from './webhook-url-apply.ts'
 import { webhookUrlMintCapability } from './webhook-url-mint.ts'
 import { webhookUrlRotateCapability } from './webhook-url-rotate.ts'
+import { webhookSyntheticDispatchCapability } from './webhook-synthetic-dispatch.ts'
 
 export const webhooksDomain = defineDomain({
 	name: capabilityDomainNames.webhooks,
@@ -25,6 +26,8 @@ export const webhooksDomain = defineDomain({
 		'mint',
 		'rotate',
 		'apply',
+		'synthetic',
+		'smoke',
 	],
 	capabilities: [
 		webhookListCapability,
@@ -34,5 +37,6 @@ export const webhooksDomain = defineDomain({
 		webhookEnableCapability,
 		webhookDisableCapability,
 		webhookDeliveryListCapability,
+		webhookSyntheticDispatchCapability,
 	],
 })

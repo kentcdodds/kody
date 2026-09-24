@@ -146,8 +146,9 @@ nothing else. See [Email primitives](../use/email-primitives.md).
 - A schedule is optional, not the point. If the person cannot name a time they
   want something to happen, leave the trigger off and let them ask.
 - Test before you enable: import the wrapper from `execute`, smoke-test a
-  subscription from interactive MCP with `packageSubscriptionDispatch`, or send
-  yourself one webhook.
+  subscription from interactive MCP with `packageSubscriptionDispatch`, or
+  smoke-test a minted webhook with `webhookSyntheticDispatch` (not the same as a
+  package-local `dryRun` field on trusted-client POSTs).
 - Keep the wrapper quiet. Notify only when there is news; an empty digest every
   morning trains people to ignore the real one.
 - Failures and recent runs for every trigger live on `/account/activity`.

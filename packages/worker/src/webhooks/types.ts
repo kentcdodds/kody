@@ -107,6 +107,8 @@ export type WebhookExportParams = {
 		body: string
 		json: unknown | null
 	}
+	/** Platform-only trust marker for interactive MCP synthetic dispatch. */
+	synthetic?: true
 }
 
 export const webhookMaxPayloadBytes = 1 * 1024 * 1024

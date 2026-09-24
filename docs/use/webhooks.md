@@ -93,11 +93,13 @@ Use the MCP `webhooks` domain:
    (`/@<username>/<packageKodyId>/settings#webhooks`).
 
 Other capabilities: `webhookList` (declarations joined with minted handle /
-enabled state), `webhookUrlRotate`, `webhookEnable`, `webhookDisable`, and
-`webhookDeliveryList` (metadata only; bodies are never stored). The same
-delivery history also appears under [Activity](./activity.md)
-(`/account/activity` and the `runs` capabilities). List, mint, rotate, and apply
-never return the credential URL.
+enabled state), `webhookUrlRotate`, `webhookEnable`, `webhookDisable`,
+`webhookDeliveryList` (metadata only; bodies are never stored), and
+`webhookSyntheticDispatch` (interactive-MCP smoke test for a minted webhook —
+see [Synthetic smoke test](#synthetic-smoke-test)). The same delivery history
+also appears under [Activity](./activity.md) (`/account/activity` and the `runs`
+capabilities). List, mint, rotate, apply, and synthetic dispatch never return
+the credential URL.
 
 ## Manage webhook URLs in package settings
 
@@ -282,6 +284,34 @@ window:
 `stripe-signature` reads `t=<unix>` from the header. Deliveries whose timestamp
 is missing, unparseable, or older than `toleranceSeconds` (default 300) are
 rejected with the same generic 401 as a bad HMAC.
+
+## Synthetic smoke test
+
+After mint, smoke-test the bound export from **interactive MCP** with
+`webhookSyntheticDispatch` instead of POSTing a real provider delivery to
+yourself. Search the `webhooks` domain, then call:
+
+```json
+{
+	"kodyId": "@you/sentry-bridge",
+	"webhookName": "sentry",
+	"request": {
+		"json": { "action": "created" }
+	}
+}
+```
+
+For `inputMode: "params"` webhooks, pass `params` (the first-arg object) instead
+of `request`. The platform skips the public URL and HMAC path, marks the
+Activity webhook run `synthetic: true`, and counts the invoke against automation
+usage like a normal delivery. **Side effects are real.** The capability is
+owner-only and unavailable from package jobs, subscriptions, webhooks, or other
+package runtimes. It never returns `url` / `url_secret`.
+
+Do not confuse platform synthetic dispatch with a package-local `dryRun` field
+on trusted-client POSTs — those are unrelated contracts. Sibling fields such as
+`route` and `dryRun` on `params`-mode fixtures are preserved for the export; the
+platform only sets top-level `synthetic: true`.
 
 ## Trusted clients
 

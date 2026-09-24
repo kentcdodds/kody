@@ -23,6 +23,8 @@ export async function recordWebhookDelivery(input: {
 	startedAt: string
 	waitUntil?: (promise: Promise<unknown>) => void
 	requirePersistence?: boolean
+	/** Platform-marked synthetic smoke test (interactive MCP only). */
+	synthetic?: boolean
 }) {
 	const status = input.outcome === 'delivered' ? 'success' : 'error'
 	const record = await recordRunRecord({
@@ -39,6 +41,7 @@ export async function recordWebhookDelivery(input: {
 				httpStatus: input.httpStatus,
 				payloadBytes: input.payloadBytes,
 				outcome: input.outcome,
+				...(input.synthetic === true ? { synthetic: true } : {}),
 			},
 		},
 		status,

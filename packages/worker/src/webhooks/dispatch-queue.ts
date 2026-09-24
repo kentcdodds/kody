@@ -16,6 +16,7 @@ import {
 	buildWebhookCallerIdempotencyHashParams,
 	resolveWebhookParamsModeFirstArg,
 } from './params.ts'
+import { stripUntrustedWebhookSyntheticFields } from './synthetic.ts'
 
 const webhookDispatchRetryDelaySeconds = 30
 const retryableInvocationErrorCodes = new Set([
@@ -38,7 +39,10 @@ function resolveWebhookDispatchInvocation(
 			message.params.request.json,
 		)
 		if (!resolved.ok) return resolved
-		return { ok: true, params: resolved.params }
+		return {
+			ok: true,
+			params: stripUntrustedWebhookSyntheticFields(resolved.params),
+		}
 	}
 	return {
 		ok: true,

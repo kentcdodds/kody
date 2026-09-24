@@ -47,6 +47,7 @@ import {
 	readWebhookCallerIdempotencyKey,
 	resolveWebhookParamsModeFirstArg,
 } from './params.ts'
+import { stripUntrustedWebhookSyntheticFields } from './synthetic.ts'
 import {
 	clearWebhookEndpointPreviousUrlSecret,
 	getWebhookEndpointByKey,
@@ -620,7 +621,9 @@ export async function handleWebhookIngressRequest(
 		})
 		return invalidParamsResponse()
 	}
-	const exportParams = paramsMode?.ok ? paramsMode.params : requestParams
+	const exportParams = paramsMode?.ok
+		? stripUntrustedWebhookSyntheticFields(paramsMode.params)
+		: requestParams
 	const deliveryId = crypto.randomUUID()
 	const callerIdempotencyKey = readWebhookCallerIdempotencyKey({
 		request,
