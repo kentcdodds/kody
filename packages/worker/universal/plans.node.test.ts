@@ -1,12 +1,20 @@
 import { expect, test } from 'vitest'
 import {
 	formatDurableObjectRowsRead,
+	hasHigherPublicPlan,
 	parseEntitlementLadder,
 	resolveEntitlementLadderAfterPaidAccessChange,
 	resolvePlanLimit,
 	resolvePlanLimits,
 	resolveWeeklyPlanLimit,
 } from './plans.ts'
+
+test('hasHigherPublicPlan is true only below the top public self-serve SKU', () => {
+	expect(hasHigherPublicPlan('free')).toBe(true)
+	expect(hasHigherPublicPlan('standard')).toBe(true)
+	expect(hasHigherPublicPlan('pro')).toBe(false)
+	expect(hasHigherPublicPlan('max')).toBe(false)
+})
 
 test('formatDurableObjectRowsRead uses billion-scale labels', () => {
 	expect(formatDurableObjectRowsRead(500_000_000)).toBe('0.5B')

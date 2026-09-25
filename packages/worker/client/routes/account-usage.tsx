@@ -36,6 +36,7 @@ import {
 	hoverMq,
 	primaryLinkCss,
 } from '#universal/styles/style-primitives.ts'
+import { hasHigherPublicPlan } from '#universal/plans.ts'
 
 const usageApiPath = '/account/usage.json'
 const billingPath = '/account/billing'
@@ -78,6 +79,37 @@ export function hotterUsagePercent(
 	)
 	if (percents.length === 0) return null
 	return Math.max(...percents)
+}
+
+/**
+ * True when a hard daily/weekly/stock entitlement is at or over its cap.
+ * Monthly compute includes (`group: 'monthly'`) allow billed overage for
+ * paid plans, so they never count as a hard "Limit reached."
+ */
+export function hasReachedEntitlementLimit(
+	item: Pick<
+		AccountUsageEntitlementConsumption,
+		'percentOfLimit' | 'week' | 'group'
+	>,
+) {
+	if (item.group === 'monthly') return false
+	return (
+		(item.percentOfLimit !== null && item.percentOfLimit >= 1) ||
+		(item.week?.percentOfLimit != null && item.week.percentOfLimit >= 1)
+	)
+}
+
+export function accountUsageWarningsPanelTitle(
+	warnings: ReadonlyArray<
+		Pick<
+			AccountUsageEntitlementConsumption,
+			'percentOfLimit' | 'week' | 'group'
+		>
+	>,
+) {
+	return warnings.some(hasReachedEntitlementLimit)
+		? 'Limit reached'
+		: 'Approaching limits'
 }
 
 export function formatEntitlementUsedPercent(
@@ -539,8 +571,12 @@ export function AccountUsageRoute(handle: Handle) {
 						</AccountManagementPanel>
 						{usage.warnings.length > 0 ? (
 							<AccountManagementPanel
-								title="Approaching limits"
-								description="These resources are above 80% of your plan limit."
+								title={accountUsageWarningsPanelTitle(usage.warnings)}
+								description={
+									usage.warnings.some(hasReachedEntitlementLimit)
+										? 'These resources are at or over your plan limit.'
+										: 'These resources are above 80% of your plan limit.'
+								}
 							>
 								<ul
 									mix={css({
@@ -557,10 +593,15 @@ export function AccountUsageRoute(handle: Handle) {
 											{item.week
 												? `${formatCurrentValue(item)} / ${formatLimitValue(item)} today (${formatUsagePercent(item.percentOfLimit)}) · ${formatIntegerNumber(item.week.current)} / ${formatIntegerNumber(item.week.limit)} this week (${formatUsagePercent(item.week.percentOfLimit)})`
 												: `${formatCurrentValue(item)} / ${formatLimitValue(item)} (${formatUsagePercent(item.percentOfLimit)})`}
-											. {item.howToReduce}{' '}
-											<a href={billingPath} mix={css(primaryLinkCss)}>
-												Upgrade your plan
-											</a>
+											. {item.howToReduce}
+											{hasHigherPublicPlan(usage.plan) ? (
+												<>
+													{' '}
+													<a href={billingPath} mix={css(primaryLinkCss)}>
+														Upgrade your plan
+													</a>
+												</>
+											) : null}
 										</li>
 									))}
 								</ul>

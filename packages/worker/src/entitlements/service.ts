@@ -982,7 +982,7 @@ export async function assertWithinStorageBytesEntitlement(input: {
 					plan,
 					limit,
 					current,
-					upgradeHint: buildEntitlementUpgradeHint('storage_bytes'),
+					upgradeHint: buildEntitlementUpgradeHint('storage_bytes', plan),
 				})
 			}
 			// Real user with no DO row: zero-initialize, then retry. The
@@ -1000,7 +1000,7 @@ export async function assertWithinStorageBytesEntitlement(input: {
 				plan,
 				limit,
 				current: result.bytes,
-				upgradeHint: buildEntitlementUpgradeHint('storage_bytes'),
+				upgradeHint: buildEntitlementUpgradeHint('storage_bytes', plan),
 			})
 		}
 
@@ -1064,7 +1064,7 @@ export async function assertWithinEntitlement(
 			plan,
 			limit,
 			current,
-			upgradeHint: buildEntitlementUpgradeHint(input.resource),
+			upgradeHint: buildEntitlementUpgradeHint(input.resource, plan),
 		})
 	}
 }
@@ -1138,7 +1138,7 @@ export async function consumeDailyEntitlement(
 				limit: weekLimit,
 				current: result.weekCount ?? 0,
 				window: 'week',
-				upgradeHint: buildEntitlementUpgradeHint(resource),
+				upgradeHint: buildEntitlementUpgradeHint(resource, plan),
 			})
 		}
 		throw new EntitlementLimitError({
@@ -1146,7 +1146,7 @@ export async function consumeDailyEntitlement(
 			plan,
 			limit,
 			current: result.count,
-			upgradeHint: buildEntitlementUpgradeHint(resource),
+			upgradeHint: buildEntitlementUpgradeHint(resource, plan),
 		})
 	}
 }

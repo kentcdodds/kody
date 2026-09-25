@@ -14,8 +14,8 @@ at `packages/worker/universal/plans.ts`.
   `legacyPlanLimits` table for continuous Standard/Pro, `max` email caps
   (`maxPlanEmailLimits`), the `EntitlementResource` registry,
   `resolvePlanLimit(plan, resource, ladder?)`, `resolvePlanLimits`,
-  `getPlanRank`, `parsePlanName` (strict, untrusted input),
-  `parseStoredPlanName` (stored-column reads), `parseEntitlementLadder`,
+  `getPlanRank`, `hasHigherPublicPlan`, `parsePlanName` (strict, untrusted
+  input), `parseStoredPlanName` (stored-column reads), `parseEntitlementLadder`,
   `resolveEntitlementLadderAfterPaidAccessChange`, and
   `resolveEffectivePlan(manual, stripe)`.
 - `errors.ts` — the one typed error (`EntitlementLimitError`) and the one

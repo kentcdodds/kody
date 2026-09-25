@@ -15,6 +15,7 @@
 import {
 	computeMeteringPolicy,
 	computeOverageRatesUsd,
+	hasHigherPublicPlan,
 	type EntitlementLadder,
 	type PlanName,
 	resolvePlanLimits,
@@ -103,8 +104,7 @@ export const computeOverageResourceVisibility = {
 		kind: 'counter',
 		whatCounts:
 			'SQLite rows read by your Durable Object package storage this UTC month.',
-		howToReduce:
-			'Read less from package storage, cache repeated queries, or upgrade your plan.',
+		howToReduce: 'Read less from package storage, cache repeated queries.',
 	},
 } as const satisfies Record<
 	ComputeOverageWarningResource,
@@ -258,22 +258,42 @@ export function resolveComputeOverageDisposition(
 /**
  * Actionable reduction + billing next step for one monthly compute meter.
  * Disposition is optional: omit it for the generic under-include prompt.
+ * Plan-aware: Pro/Max omit self-serve upgrade offers; payment-method and
+ * overage-rate guidance still apply when relevant.
  */
 export function buildComputeOverageHowToReduce(
 	resource: ComputeOverageWarningResource,
-	disposition?: ComputeOverageDisposition | null,
+	disposition: ComputeOverageDisposition | null | undefined,
+	plan: PlanName,
 ): string {
-	const base = computeOverageResourceVisibility[resource].howToReduce
-	const billing = computeOverageBillingGuidance(resource, disposition)
+	const base = buildComputeOverageReduceBase(resource, plan)
+	const billing = computeOverageBillingGuidance(resource, disposition, plan)
 	return billing ? `${base} ${billing}` : base
+}
+
+function buildComputeOverageReduceBase(
+	resource: ComputeOverageWarningResource,
+	plan: PlanName,
+) {
+	const base = computeOverageResourceVisibility[resource].howToReduce
+	if (
+		resource === 'durable_object_rows_read' &&
+		hasHigherPublicPlan(plan) &&
+		base.endsWith('.')
+	) {
+		return `${base.slice(0, -1)}, or upgrade your plan.`
+	}
+	return base
 }
 
 function computeOverageBillingGuidance(
 	resource: ComputeOverageWarningResource,
-	disposition?: ComputeOverageDisposition | null,
+	disposition: ComputeOverageDisposition | null | undefined,
+	plan: PlanName,
 ): string {
 	const uniqueWorkerDayRate = `$${computeOverageRatesUsd.uniqueWorkerDay}`
 	const rowsReadRate = `$${computeOverageRatesUsd.durableObjectRowsReadPerMillion} per million`
+	const canUpgrade = hasHigherPublicPlan(plan)
 	switch (disposition) {
 		case 'soft_block':
 			return 'Upgrade your plan or add a payment method at /account/billing. Free accounts without a payment method are asked to upgrade instead of being charged for overage.'
@@ -293,9 +313,14 @@ function computeOverageBillingGuidance(
 		case 'skip_audience':
 		case undefined:
 		case null:
-			return resource === 'unique_worker_days'
-				? `Upgrade your plan for a higher include, or add a payment method to continue on public-ladder overage at ${uniqueWorkerDayRate} per unique worker day.`
-				: 'Upgrade your plan for a higher include, or add a payment method to continue on public-ladder overage.'
+			if (resource === 'unique_worker_days') {
+				return canUpgrade
+					? `Upgrade your plan for a higher include, or add a payment method to continue on public-ladder overage at ${uniqueWorkerDayRate} per unique worker day.`
+					: `Add a payment method to continue on public-ladder overage at ${uniqueWorkerDayRate} per unique worker day.`
+			}
+			return canUpgrade
+				? 'Upgrade your plan for a higher include, or add a payment method to continue on public-ladder overage.'
+				: 'Add a payment method to continue on public-ladder overage.'
 		default: {
 			const exhaustive: never = disposition
 			throw new Error(

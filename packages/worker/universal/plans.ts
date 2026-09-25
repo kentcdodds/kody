@@ -78,6 +78,28 @@ export function isPaidPlan(plan: PlanName): boolean {
 }
 
 /**
+ * Whether a higher plan is available as a self-serve upgrade destination.
+ *
+ * Free and Standard can upgrade on the public ladder. Pro is the top public
+ * self-serve SKU. Max is manual-only and must not be treated as a purchase
+ * destination from Pro (or as a further self-serve step from Max itself).
+ */
+export function hasHigherPublicPlan(plan: PlanName): boolean {
+	switch (plan) {
+		case 'free':
+		case 'standard':
+			return true
+		case 'pro':
+		case 'max':
+			return false
+		default: {
+			const exhaustive: never = plan
+			throw new Error(`Unknown plan: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/**
  * Rank order for comparing manual grants vs Stripe subscription plans.
  * Higher rank wins. free(0) < standard(1) < pro(2) < max(3).
  */

@@ -827,7 +827,7 @@ test('execute tool replays finished keyed runs and reports in-progress without r
 	})
 
 	const quotaLimit = planLimits.free.maxExecuteCallsPerDay
-	const quotaHint = buildEntitlementUpgradeHint('execute_calls_per_day')
+	const quotaHint = buildEntitlementUpgradeHint('execute_calls_per_day', 'free')
 	const quotaMessage = buildEntitlementLimitMessage({
 		code: entitlementLimitErrorCode,
 		resource: 'execute_calls_per_day',
@@ -1034,7 +1034,7 @@ test('execute tool attaches entitlement metadata on denials and quota, not on su
 	expect(success.structuredContent).not.toHaveProperty('entitlement')
 
 	const stockLimit = planLimits.free.maxSavedPackages
-	const stockHint = buildEntitlementUpgradeHint('saved_packages')
+	const stockHint = buildEntitlementUpgradeHint('saved_packages', 'free')
 	const stockDenial = new EntitlementLimitError({
 		resource: 'saved_packages',
 		plan: 'free',
@@ -1067,7 +1067,7 @@ test('execute tool attaches entitlement metadata on denials and quota, not on su
 	const quotaEmail = 'quota-metadata@example.com'
 	const quotaUserId = await createStableUserIdFromEmail(quotaEmail)
 	const quotaLimit = planLimits.free.maxExecuteCallsPerDay
-	const quotaHint = buildEntitlementUpgradeHint('execute_calls_per_day')
+	const quotaHint = buildEntitlementUpgradeHint('execute_calls_per_day', 'free')
 	await userMeter.seed({
 		userId: quotaUserId,
 		resource: 'execute_calls_per_day',
