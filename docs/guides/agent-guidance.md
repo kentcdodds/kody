@@ -42,7 +42,7 @@ Ask in order:
    ([Package authoring — Export JSDoc](./package-authoring.md#export-jsdoc)).
 2. **Is this about one package's intent, workflow, or agent runbook?** Put it in
    `README.md` and/or `AGENTS.md`
-   ([Package authoring — Package docs](./package-authoring.md#package-docs-readmemd--agentsmd)).
+   ([Package authoring — Package docs](./package-authoring.md#package-docs-readme.md-agents.md)).
 3. **Is this a durable fact about the person or account, not about a package?**
    Put it in [memory](./memory.md) (`metaMemoryVerify` then `metaMemoryUpsert`).
 4. **Is this rare always-on session policy that every conversation must see?**
