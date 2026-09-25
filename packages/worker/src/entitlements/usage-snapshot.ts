@@ -10,6 +10,7 @@ import {
 } from '#universal/plans.ts'
 import {
 	accountUsageEntitlementResources,
+	buildEntitlementHowToReduce,
 	entitlementResourceVisibility,
 	type EntitlementResourceGroup,
 	type EntitlementResourceVisibilityKind,
@@ -124,7 +125,7 @@ export async function readEntitlementUsageSnapshot(input: {
 				group: visibility.group,
 				kind: visibility.kind,
 				whatCounts: visibility.whatCounts,
-				howToReduce: visibility.howToReduce,
+				howToReduce: buildEntitlementHowToReduce(resource, input.plan),
 				current,
 				limit,
 				percentOfLimit,

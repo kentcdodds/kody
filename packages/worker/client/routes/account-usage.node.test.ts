@@ -5,10 +5,13 @@ import {
 	type AccountUsageComputeOverage,
 	type AccountUsageEntitlementConsumption,
 } from '#universal/loader-data.ts'
+import { hasHigherPublicPlan } from '#universal/plans.ts'
 import {
 	UsageResourceName,
+	accountUsageWarningsPanelTitle,
 	computeAccountUsageOverageNotice,
 	formatEntitlementUsedPercent,
+	hasReachedEntitlementLimit,
 	hotterUsagePercent,
 } from './account-usage.tsx'
 
@@ -154,4 +157,52 @@ test('formatEntitlementUsedPercent shows today and this week', () => {
 			}),
 		),
 	).toBe('20% today · 90% this week')
+})
+
+test('warnings panel title is Limit reached at 100% daily or weekly', () => {
+	expect(
+		accountUsageWarningsPanelTitle([
+			entitlement({
+				percentOfLimit: 0.85,
+				overEightyPercent: true,
+			}),
+		]),
+	).toBe('Approaching limits')
+	expect(
+		hasReachedEntitlementLimit(
+			entitlement({
+				percentOfLimit: 0.85,
+				overEightyPercent: true,
+			}),
+		),
+	).toBe(false)
+
+	const weeklyAtLimit = entitlement({
+		percentOfLimit: 0.2,
+		overEightyPercent: true,
+		week: {
+			current: 400,
+			limit: 400,
+			percentOfLimit: 1,
+			overEightyPercent: true,
+		},
+	})
+	expect(hasReachedEntitlementLimit(weeklyAtLimit)).toBe(true)
+	expect(accountUsageWarningsPanelTitle([weeklyAtLimit])).toBe('Limit reached')
+
+	expect(
+		accountUsageWarningsPanelTitle([
+			entitlement({
+				percentOfLimit: 1,
+				overEightyPercent: true,
+			}),
+		]),
+	).toBe('Limit reached')
+})
+
+test('top public plans hide the Upgrade your plan CTA gate', () => {
+	expect(hasHigherPublicPlan('pro')).toBe(false)
+	expect(hasHigherPublicPlan('max')).toBe(false)
+	expect(hasHigherPublicPlan('free')).toBe(true)
+	expect(hasHigherPublicPlan('standard')).toBe(true)
 })

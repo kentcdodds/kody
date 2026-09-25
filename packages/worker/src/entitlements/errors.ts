@@ -8,6 +8,7 @@ import {
 import {
 	entitlementResourceLabels,
 	formatMinJobInterval,
+	hasHigherPublicPlan,
 	isWeeklyComputeWindowResource,
 	parsePlanName,
 	weeklyEntitlementResourceLabel,
@@ -32,9 +33,14 @@ export type EntitlementLimitErrorDetails = {
 	window?: EntitlementLimitWindow
 }
 
-export function buildEntitlementUpgradeHint(resource: EntitlementResource) {
+export function buildEntitlementUpgradeHint(
+	resource: EntitlementResource,
+	plan: PlanName,
+) {
 	const label = entitlementResourceLabels[resource]
-	return `Remove or finish existing ${label} you no longer need, or upgrade your plan at /account/billing.`
+	const reduceGuidance = `Remove or finish existing ${label} you no longer need.`
+	if (!hasHigherPublicPlan(plan)) return reduceGuidance
+	return `${reduceGuidance.slice(0, -1)}, or upgrade your plan at /account/billing.`
 }
 
 /**
@@ -143,7 +149,8 @@ export type JobIntervalFloorErrorDetails = {
 	upgradeHint: string
 }
 
-export function buildJobIntervalFloorUpgradeHint() {
+export function buildJobIntervalFloorUpgradeHint(plan: PlanName) {
+	if (!hasHigherPublicPlan(plan)) return 'Space this job out.'
 	return 'Space this job out, or upgrade at /account/billing.'
 }
 
@@ -326,7 +333,8 @@ export class JobIntervalFloorError extends Error {
 	) {
 		const fullDetails: JobIntervalFloorErrorDetails = {
 			code: jobIntervalFloorErrorCode,
-			upgradeHint: details.upgradeHint ?? buildJobIntervalFloorUpgradeHint(),
+			upgradeHint:
+				details.upgradeHint ?? buildJobIntervalFloorUpgradeHint(details.plan),
 			plan: details.plan,
 			minIntervalMs: details.minIntervalMs,
 		}

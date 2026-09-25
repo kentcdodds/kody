@@ -5,10 +5,12 @@ import {
 	buildEntitlementLimitMessage,
 	buildEntitlementUpgradeHint,
 	buildJobIntervalFloorMessage,
+	buildJobIntervalFloorUpgradeHint,
 	jobIntervalFloorErrorCode,
 	parseEntitlementLimitMessage,
 	parseJobIntervalFloorMessage,
 } from './errors.ts'
+import { buildEntitlementHowToReduce } from './resource-visibility.ts'
 import {
 	legacyPlanLimits,
 	parseStripePlanName,
@@ -225,10 +227,14 @@ test('entitlement limit messages always identify a known plan name', () => {
 		plan: 'max' as const,
 		limit: 100,
 		current: 100,
-		upgradeHint: buildEntitlementUpgradeHint('concurrent_workflows'),
+		upgradeHint: buildEntitlementUpgradeHint('concurrent_workflows', 'max'),
 	}
 	const message = buildEntitlementLimitMessage(details)
 	expect(parseEntitlementLimitMessage(message)).toEqual(details)
+	expect(details.upgradeHint).toBe(
+		'Remove or finish existing concurrent workflows you no longer need.',
+	)
+	expect(details.upgradeHint).not.toMatch(/upgrade/i)
 
 	const weeklyDetails = {
 		code: 'entitlement_limit_exceeded' as const,
@@ -237,11 +243,21 @@ test('entitlement limit messages always identify a known plan name', () => {
 		limit: 400,
 		current: 400,
 		window: 'week' as const,
-		upgradeHint: buildEntitlementUpgradeHint('execute_calls_per_day'),
+		upgradeHint: buildEntitlementUpgradeHint('execute_calls_per_day', 'free'),
 	}
 	expect(
 		parseEntitlementLimitMessage(buildEntitlementLimitMessage(weeklyDetails)),
 	).toEqual(weeklyDetails)
+	expect(weeklyDetails.upgradeHint).toMatch(/upgrade your plan/)
+	expect(
+		buildEntitlementUpgradeHint('execute_calls_per_day', 'pro'),
+	).not.toMatch(/upgrade/i)
+	expect(
+		buildEntitlementUpgradeHint('execute_calls_per_day', 'max'),
+	).not.toMatch(/upgrade/i)
+	expect(
+		buildEntitlementUpgradeHint('execute_calls_per_day', 'standard'),
+	).toMatch(/upgrade your plan/)
 	expect(
 		parseEntitlementLimitMessage(
 			'Plan limit reached: this deployment allows at most 100 concurrent workflows and you currently have 100. hint',
@@ -252,6 +268,42 @@ test('entitlement limit messages always identify a known plan name', () => {
 			'Plan limit reached: your "enterprise" plan allows at most 100 concurrent workflows and you currently have 100. hint',
 		),
 	).toBeNull()
+})
+
+test('top public plans omit upgrade clauses from hints and howToReduce', () => {
+	for (const plan of ['pro', 'max'] as const) {
+		expect(buildEntitlementHowToReduce('execute_calls_per_day', plan)).toBe(
+			'Run fewer execute calls today or this week.',
+		)
+		expect(
+			buildEntitlementHowToReduce('execute_calls_per_day', plan),
+		).not.toMatch(/upgrade/i)
+		expect(
+			buildEntitlementUpgradeHint('execute_calls_per_day', plan),
+		).not.toMatch(/upgrade/i)
+		expect(buildJobIntervalFloorUpgradeHint(plan)).toBe('Space this job out.')
+		const denial = new EntitlementLimitError({
+			resource: 'execute_calls_per_day',
+			plan,
+			limit: 400,
+			current: 400,
+			window: 'week',
+			upgradeHint: buildEntitlementUpgradeHint('execute_calls_per_day', plan),
+		})
+		// MCP nextStep is the upgradeHint; Pro/Max must not push billing upgrade.
+		expect(denial.details.upgradeHint).not.toMatch(/upgrade/i)
+		expect(denial.message).toMatch(/^Plan limit reached:/)
+		expect(denial.message).not.toMatch(/upgrade/i)
+	}
+	for (const plan of ['free', 'standard'] as const) {
+		expect(buildEntitlementHowToReduce('execute_calls_per_day', plan)).toBe(
+			'Run fewer execute calls today or this week, or upgrade your plan.',
+		)
+		expect(buildEntitlementUpgradeHint('execute_calls_per_day', plan)).toMatch(
+			/upgrade your plan at \/account\/billing/,
+		)
+		expect(buildJobIntervalFloorUpgradeHint(plan)).toMatch(/upgrade at/)
+	}
 })
 
 test('job interval floor messages parse back to known plan and interval', () => {
