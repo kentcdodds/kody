@@ -10,6 +10,7 @@
  * so one isolate is reused for the UTC day.
  */
 
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { executeToolDescription } from '#mcp/instructions/execute-tool-description.ts'
 import { executeInvokeFlagKey } from '#universal/feature-flags/registry.ts'
 import { buildPackageImportSpecifier } from '#worker/package-registry/package-import-specifier.ts'
@@ -53,10 +54,10 @@ function looksLikeUrl(value: string) {
 export function parseExecuteInvokeSpecifier(raw: string): string {
 	const trimmed = raw.trim()
 	if (!trimmed) {
-		throw new Error(executeInvokeUnsupportedSpecifierMessage)
+		throw new McpCallerError(executeInvokeUnsupportedSpecifierMessage)
 	}
 	if (looksLikeUrl(trimmed) && !trimmed.startsWith(packageSpecifierPrefix)) {
-		throw new Error(executeInvokeUnsupportedSpecifierMessage)
+		throw new McpCallerError(executeInvokeUnsupportedSpecifierMessage)
 	}
 
 	let value = trimmed
@@ -68,7 +69,7 @@ export function parseExecuteInvokeSpecifier(raw: string): string {
 			.trim()
 			.replace(/^\.\//, '')
 		if (!before || value.includes('#', hashIndex + 1)) {
-			throw new Error(executeInvokeUnsupportedSpecifierMessage)
+			throw new McpCallerError(executeInvokeUnsupportedSpecifierMessage)
 		}
 		value = after ? `${before}/${after}` : before
 	}
@@ -78,14 +79,14 @@ export function parseExecuteInvokeSpecifier(raw: string): string {
 	}
 
 	if (!value.startsWith(packageSpecifierPrefix)) {
-		throw new Error(executeInvokeUnsupportedSpecifierMessage)
+		throw new McpCallerError(executeInvokeUnsupportedSpecifierMessage)
 	}
 
 	try {
 		const parsed = parseKodyPackageSpecifier(value)
 		return buildPackageImportSpecifier(parsed.packageName, parsed.exportName)
 	} catch {
-		throw new Error(executeInvokeUnsupportedSpecifierMessage)
+		throw new McpCallerError(executeInvokeUnsupportedSpecifierMessage)
 	}
 }
 
@@ -118,10 +119,10 @@ export function resolveExecuteModuleSource(input: {
 	const invoke = input.invoke?.trim() ? input.invoke : undefined
 
 	if (invoke && !input.invokeEnabled) {
-		throw new Error(executeInvokeFlagOffMessage)
+		throw new McpCallerError(executeInvokeFlagOffMessage)
 	}
 	if (code && invoke) {
-		throw new Error(executeInvokeMutualExclusionMessage)
+		throw new McpCallerError(executeInvokeMutualExclusionMessage)
 	}
 	if (invoke) {
 		return resolveExecuteInvokeCode(invoke)
@@ -130,7 +131,7 @@ export function resolveExecuteModuleSource(input: {
 		return code
 	}
 	if (input.invokeEnabled) {
-		throw new Error(executeInvokeMissingInputMessage)
+		throw new McpCallerError(executeInvokeMissingInputMessage)
 	}
-	throw new Error(executeInvokeMissingInputMessage)
+	throw new McpCallerError(executeInvokeMissingInputMessage)
 }

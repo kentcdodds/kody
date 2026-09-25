@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { classifyExecuteThinGlue } from '#worker/usage/execute-thin-glue.ts'
 import {
 	executeInvokeUnsupportedSpecifierMessage,
@@ -34,17 +35,30 @@ test('parseExecuteInvokeSpecifier accepts kody:@ and hash forms and rejects URLs
 	)
 
 	expect(() => parseExecuteInvokeSpecifier('https://example.com/pkg')).toThrow(
+		McpCallerError,
+	)
+	expect(() => parseExecuteInvokeSpecifier('https://example.com/pkg')).toThrow(
 		executeInvokeUnsupportedSpecifierMessage,
+	)
+	expect(() => parseExecuteInvokeSpecifier('github.com/acme/pkg')).toThrow(
+		McpCallerError,
 	)
 	expect(() => parseExecuteInvokeSpecifier('github.com/acme/pkg')).toThrow(
 		executeInvokeUnsupportedSpecifierMessage,
 	)
 	expect(() => parseExecuteInvokeSpecifier('kody:runtime')).toThrow(
+		McpCallerError,
+	)
+	expect(() => parseExecuteInvokeSpecifier('kody:runtime')).toThrow(
 		executeInvokeUnsupportedSpecifierMessage,
+	)
+	expect(() => parseExecuteInvokeSpecifier('kody:@acme')).toThrow(
+		McpCallerError,
 	)
 	expect(() => parseExecuteInvokeSpecifier('kody:@acme')).toThrow(
 		executeInvokeUnsupportedSpecifierMessage,
 	)
+	expect(() => parseExecuteInvokeSpecifier('')).toThrow(McpCallerError)
 	expect(() => parseExecuteInvokeSpecifier('')).toThrow(
 		executeInvokeUnsupportedSpecifierMessage,
 	)
@@ -62,6 +76,12 @@ test('resolveExecuteModuleSource enforces flag gating and mutual exclusion', () 
 			invoke: 'kody:@acme/github/listRepos',
 			invokeEnabled: false,
 		}),
+	).toThrow(McpCallerError)
+	expect(() =>
+		resolveExecuteModuleSource({
+			invoke: 'kody:@acme/github/listRepos',
+			invokeEnabled: false,
+		}),
 	).toThrow(/execute invoke is an experiment/)
 	expect(() =>
 		resolveExecuteModuleSource({
@@ -69,7 +89,19 @@ test('resolveExecuteModuleSource enforces flag gating and mutual exclusion', () 
 			invoke: 'kody:@acme/github/listRepos',
 			invokeEnabled: true,
 		}),
+	).toThrow(McpCallerError)
+	expect(() =>
+		resolveExecuteModuleSource({
+			code: 'export default async function main() { return 1 }',
+			invoke: 'kody:@acme/github/listRepos',
+			invokeEnabled: true,
+		}),
 	).toThrow(/either code or invoke/)
+	expect(() =>
+		resolveExecuteModuleSource({
+			invokeEnabled: true,
+		}),
+	).toThrow(McpCallerError)
 	expect(() =>
 		resolveExecuteModuleSource({
 			invokeEnabled: true,
