@@ -135,12 +135,11 @@ you only have the MCP URL.
   live connection. Or in the Control UI: Settings → MCP → Add server, choose
   Streamable HTTP, and paste the MCP URL. See OpenClaw's
   [MCP docs](https://docs.openclaw.ai/tools/mcp).
-- **Muse** — A Kody connector/plugin has been submitted for
-  [Muse Code](https://dev.meta.ai/docs/muse-code/) and is pending review. Until
-  it appears in Muse's directory, install with the
-  [Kody CLI](https://github.com/kody-bot/cli): `npx @kodycodes/cli install`
-  (pass `--mcp-url <url>` on preview or local origins). After OAuth succeeds,
-  you may need to paste a localhost URL into the Muse chat.
+- **Muse** — [Muse Code](https://dev.meta.ai/docs/muse-code/) does not list a
+  Kody connector. Install with the [Kody CLI](https://github.com/kody-bot/cli):
+  `npx @kodycodes/cli install` (pass `--mcp-url <url>` on preview or local
+  origins). After OAuth succeeds, you may need to paste a localhost URL into the
+  Muse chat.
 - **Open WebUI** — Add an MCP Streamable HTTP connection to this deployment’s
   MCP URL and use **OAuth 2.1** (dynamic registration) first. Enabling the tool
   in a chat must open the Kody authorize window. If that window never opens on
