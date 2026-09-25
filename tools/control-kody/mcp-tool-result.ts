@@ -60,10 +60,24 @@ export function readExecuteResult(toolResult: unknown) {
 		)
 		throw new Error(`execute failed: ${text}`)
 	}
-	if (structured.result === undefined || structured.result === null) {
-		throw new Error('execute returned no result.')
+	return structured.result ?? null
+}
+
+export function readSearchResult(toolResult: unknown) {
+	const payload = readMcpToolPayload(toolResult)
+	if (!payload || typeof payload !== 'object') return payload
+	const structured = payload as { result?: unknown; error?: unknown }
+	if (structured.error) {
+		const text = mcpToolErrorText(
+			toolResult as CallToolResult,
+			structured.error,
+		)
+		throw new Error(`search failed: ${text}`)
 	}
-	return structured.result
+	if (Object.hasOwn(structured, 'result')) {
+		return structured.result ?? null
+	}
+	return payload
 }
 
 function mcpToolContentText(record: CallToolResult) {

@@ -399,8 +399,11 @@ function parseSharedFlags(
 			}
 			case '--limit': {
 				const raw = requireValue(argv[index + 1], '--limit')
-				const parsed = Number.parseInt(raw, 10)
-				if (!Number.isFinite(parsed) || parsed < 1) {
+				if (!/^[1-9]\d*$/.test(raw)) {
+					throw new ControlKodyError('--limit must be a positive integer')
+				}
+				const parsed = Number(raw)
+				if (!Number.isSafeInteger(parsed) || parsed < 1) {
 					throw new ControlKodyError('--limit must be a positive integer')
 				}
 				options.limit = parsed

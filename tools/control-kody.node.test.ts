@@ -181,6 +181,18 @@ test('control-kody parses commands, maps every required route, and drives a seed
 			limit: 5,
 		}),
 	)
+	expect(() =>
+		parseControlArgs([
+			'search',
+			'--query',
+			'packageSave',
+			'--limit',
+			'10garbage',
+		]),
+	).toThrow(/--limit must be a positive integer/)
+	expect(() =>
+		parseControlArgs(['search', '--query', 'packageSave', '--limit', '1.5']),
+	).toThrow(/--limit must be a positive integer/)
 	expect(() => parseControlArgs(['nope'])).toThrow(/Unknown command/)
 	await expect(
 		runCommand(

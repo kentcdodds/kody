@@ -8,7 +8,11 @@ import {
 	readJsonObjectFile,
 	searchAppMcp,
 } from './mcp-call.ts'
-import { readExecuteResult, readMcpToolPayload } from './mcp-tool-result.ts'
+import {
+	readExecuteResult,
+	readMcpToolPayload,
+	readSearchResult,
+} from './mcp-tool-result.ts'
 
 test('control-kody MCP execute and search reuse the OAuth client and print structured results', async () => {
 	const parent = await mkdtemp(path.join(tmpdir(), 'control-kody-mcp-'))
@@ -82,7 +86,8 @@ test('control-kody MCP execute and search reuse the OAuth client and print struc
 						return {
 							isError: false,
 							structuredContent: {
-								matches: [{ id: 'packageSave' }],
+								conversationId: 'conv-1',
+								result: { matches: [{ id: 'packageSave' }] },
 							},
 						}
 					},
@@ -114,6 +119,21 @@ test('control-kody MCP execute and search reuse the OAuth client and print struc
 				structuredContent: { result: { ok: true } },
 			}),
 		).toEqual({ ok: true })
+		expect(
+			readExecuteResult({
+				isError: false,
+				structuredContent: { result: null },
+			}),
+		).toBeNull()
+		expect(
+			readSearchResult({
+				isError: false,
+				structuredContent: {
+					conversationId: 'conv-1',
+					result: { matches: [{ id: 'packageSave' }] },
+				},
+			}),
+		).toEqual({ matches: [{ id: 'packageSave' }] })
 		expect(() =>
 			readExecuteResult({
 				isError: true,

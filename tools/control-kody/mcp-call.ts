@@ -8,7 +8,7 @@ import { isProductionKodyOrigin } from './package-create.ts'
 import {
 	defaultMcpCallOptions,
 	readExecuteResult,
-	readMcpToolPayload,
+	readSearchResult,
 	type McpCallConnection,
 } from './mcp-tool-result.ts'
 
@@ -86,7 +86,7 @@ export async function searchAppMcp(input: {
 		password: input.password,
 		tool: 'search',
 		arguments: arguments_,
-		readResult: readMcpToolPayload,
+		readResult: readSearchResult,
 		connect: input.connect,
 	})
 }
