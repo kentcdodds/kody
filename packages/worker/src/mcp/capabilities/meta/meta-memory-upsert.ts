@@ -82,7 +82,7 @@ export const metaMemoryUpsertCapability = defineDomainCapability(
 	{
 		name: 'metaMemoryUpsert',
 		description:
-			'Create a new memory when `memory_id` is omitted, or update an existing memory when `memory_id` is provided. Agents must run `metaMemoryVerify` first and decide the next action themselves. Do not blindly write durable memory without verification.',
+			'Create a new memory when `memory_id` is omitted, or update an existing memory when `memory_id` is provided. Agents must run `metaMemoryVerify` first and decide the next action themselves. Do not blindly write durable memory without verification. If the candidate is really package- or export-scoped guidance, do not upsert — update package docs or JSDoc instead (see search({ entity: "guide:agent_guidance" }), Where agent guidance lives / /docs/agent-guidance).',
 		keywords: [
 			'memory',
 			'upsert',
@@ -90,6 +90,9 @@ export const metaMemoryUpsertCapability = defineDomainCapability(
 			'update',
 			'verify-first',
 			'long-term memory',
+			'agent guidance',
+			'package docs',
+			'jsdoc',
 		],
 		readOnly: false,
 		idempotent: false,

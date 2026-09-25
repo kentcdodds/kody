@@ -6,7 +6,7 @@ https://github.com/kentcdodds/kody/tree/main/docs/use`
 export const quickStartInstructions = `Start here
 - Almost every task: \`search({ query })\` first; pass \`domain\` to narrow (domain ids listed below).
 - One-off work / smoke tests: \`execute\`. Durable reusable behavior: a package (after \`communitySearch\` when nothing in-account fits).
-- Official docs (guides): \`search({ entity: "guide:{id}" })\` for a known id (\`package_authoring\`, \`package_apps\`, \`package_lifecycle\`, \`integration_bootstrap\`, \`oauth\`, \`memory\`, \`secrets\`, \`triggers\`, or a resolved \`provider_<slug>\`). Discover with \`search({ query: "… guide" })\`, then open that exact entity ref. Oversized guides return a table of contents; open a heading with \`guide:{id}#{slug}\` or lines with \`guide:{id}#L165\` / \`guide:{id}#L165-L180\`. Skip \`codingGuideGet\` unless execute-module code needs the markdown body.
+- Official docs (guides): \`search({ entity: "guide:{id}" })\` for a known id (\`package_authoring\`, \`package_apps\`, \`package_lifecycle\`, \`integration_bootstrap\`, \`oauth\`, \`memory\`, \`agent_guidance\`, \`secrets\`, \`triggers\`, or a resolved \`provider_<slug>\`). Discover with \`search({ query: "… guide" })\`, then open that exact entity ref. Oversized guides return a table of contents; open a heading with \`guide:{id}#{slug}\` or lines with \`guide:{id}#L165\` / \`guide:{id}#L165-L180\`. Skip \`codingGuideGet\` unless execute-module code needs the markdown body.
 - Blockers the signed-in human must clear (expired OAuth, expired secrets, MCP reconnects): \`waitingSummary\` or \`/account/waiting\`.`
 
 export const packageLifecycleInstructions = `Package lifecycle (primary mental model):
@@ -22,7 +22,8 @@ export const conventionInstructions = `Conventions:
 - Package state: source is the repo; credentials are secrets keyed by saved package id; runtime state and knobs are \`packageStorage()\`; versioned config lives in the repo; schedules are jobs.
 - When sharing a public package with a human, use its \`public_url\` (\`/@username/kody-id\`); never construct \`/community/{listing_id}\` for people.
 - Discover capabilities with \`search\`; entity detail includes the exact call shape. Memory writes are verify-first: \`metaMemoryVerify\` before upsert/delete.
-- Durable user facts and preferences belong in memories. The optional MCP instruction overlay (\`metaGetMcpServerInstructions\` / \`metaSetMcpServerInstructions\`) is only for rare always-on session policy — not package inventory (popular packages are hinted automatically). Overlay updates apply to new MCP sessions.`
+- Durable user facts and preferences belong in memories. The optional MCP instruction overlay (\`metaGetMcpServerInstructions\` / \`metaSetMcpServerInstructions\`) is only for rare always-on session policy — not package inventory (popular packages are hinted automatically). Overlay updates apply to new MCP sessions.
+- Before writing guidance into memories or the MCP overlay, check \`search({ entity: "guide:agent_guidance" })\` (Where agent guidance lives). Package- or export-scoped guidance belongs in package docs or JSDoc, not those layers.`
 
 export const domainHeadingInstructions =
 	'Domains (scope discovery with `search({ query, domain })` or list one with `search({ domain })`)'

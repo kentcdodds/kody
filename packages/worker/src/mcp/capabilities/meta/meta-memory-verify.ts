@@ -49,8 +49,17 @@ export const metaMemoryVerifyCapability = defineDomainCapability(
 	{
 		name: 'metaMemoryVerify',
 		description:
-			'Always run this capability before writing or deleting memory. Submit the candidate memory, review the related memories returned here, then decide whether to upsert, delete, both, or do nothing. Do not upsert memory blindly.',
-		keywords: ['memory', 'verify', 'related memories', 'dedupe', 'search'],
+			'Always run this capability before writing or deleting memory. Submit the candidate memory, review the related memories returned here, then decide whether to upsert, delete, both, or do nothing. Do not upsert memory blindly. If the candidate is really package- or export-scoped guidance, do not upsert — update package docs or JSDoc instead (see search({ entity: "guide:agent_guidance" }), Where agent guidance lives / /docs/agent-guidance).',
+		keywords: [
+			'memory',
+			'verify',
+			'related memories',
+			'dedupe',
+			'search',
+			'agent guidance',
+			'package docs',
+			'jsdoc',
+		],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,

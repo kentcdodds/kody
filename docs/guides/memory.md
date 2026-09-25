@@ -47,7 +47,8 @@ Kody has a home for each kind of state, and memory is only one of them:
 | An OAuth login                         | An integration                        |
 
 If the fact is about a package's job rather than about you, it does not belong
-in memory.
+in memory. Choosing among MCP server instructions, package docs, export JSDoc,
+and memory is covered in [Where agent guidance lives](./agent-guidance.md).
 
 ## How memories surface
 
@@ -99,6 +100,8 @@ included only when you turn on **Include deleted**.
 
 ## Where to go next
 
+- [Where agent guidance lives](./agent-guidance.md) — choose among MCP
+  instructions, package docs, JSDoc, and memory before writing guidance.
 - [Connect your agent](./connect-your-agent.md) — Step 3 is a second agent
   reusing a memory the first one saved.
 - [Email and memories](./first-win.md) — an optional playbook that turns a
