@@ -33,32 +33,6 @@ export const wranglerAdditionalModuleConfigPaths = [
 	'packages/runtime-worker/wrangler.jsonc',
 ] as const
 
-function bareAndSpecifierGlobs(
-	directory: string,
-	names: ReadonlyArray<string>,
-) {
-	return [
-		...names.map((name) => `${directory}/${name}`),
-		...names.map((name) => `./${directory}/${name}`),
-	]
-}
-
-export function expectedEsModuleGlobs() {
-	return [
-		...bareAndSpecifierGlobs('generated', guideGeneratedModuleNames),
-		...bareAndSpecifierGlobs(
-			'node_modules/.kody-generated',
-			kodyGeneratedEsModuleNames,
-		),
-	]
-}
-
-export function expectedCompiledWasmGlobs() {
-	return kodyGeneratedWasmNames.map(
-		(name) => `node_modules/.kody-generated/${name}`,
-	)
-}
-
 export function expectedKodyGeneratedUploadNames() {
 	return [...kodyGeneratedEsModuleNames, ...kodyGeneratedWasmNames]
 }

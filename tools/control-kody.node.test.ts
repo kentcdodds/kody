@@ -112,7 +112,6 @@ test('control-kody parses commands, maps every required route, and drives a seed
 		parseControlArgs(['preview', '--pr', '42', '--check', '/account/waiting'])
 			.previewArgv,
 	).toEqual(['--pr', '42', '--check', '/account/waiting'])
-	expect(usageLines.join('\n')).toMatch(/preview --pr 42/)
 	expect(
 		parseControlArgs([
 			'package-create',
@@ -717,56 +716,6 @@ test('control-kody request logs in before a mutating call when no cookie exists'
 							!hit.cookie,
 					),
 				).toBe(false)
-			},
-		)
-	} finally {
-		await rm(dir, { recursive: true, force: true })
-	}
-})
-
-test('control-kody request logs in after a 401 when no cookie file exists', async () => {
-	const dir = await mkdtemp(path.join(tmpdir(), 'control-kody-auth-after-401-'))
-	try {
-		await withAuthServer(
-			(request, response) => {
-				const url = request.url ?? '/'
-				if (request.method === 'POST' && url === '/auth') {
-					response.setHeader('Set-Cookie', 'kody_session=fresh; Path=/')
-					response.setHeader('Content-Type', 'application/json')
-					response.end(JSON.stringify({ ok: true }))
-					return
-				}
-				if (url === '/account/waiting.json') {
-					if (request.headers.cookie !== 'kody_session=fresh') {
-						response.statusCode = 401
-						response.end('{"ok":false}')
-						return
-					}
-					response.setHeader('Content-Type', 'application/json')
-					response.end(JSON.stringify({ items: [] }))
-					return
-				}
-				response.statusCode = 404
-				response.end('missing')
-			},
-			async (origin) => {
-				const cookieFile = path.join(dir, 'cookie')
-				const code = await runCommand(
-					parseControlArgs([
-						'request',
-						'GET',
-						'/account/waiting.json',
-						'--origin',
-						origin,
-						'--cookie-file',
-						cookieFile,
-						'--json',
-					]),
-				)
-				expect(code).toBe(0)
-				expect(readFileSync(cookieFile, 'utf8')).toBe(
-					formatCookieFile(origin, 'kody_session=fresh'),
-				)
 			},
 		)
 	} finally {

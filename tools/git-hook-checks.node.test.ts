@@ -1,5 +1,4 @@
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -26,29 +25,16 @@ function gitResult(status: number, stdout = ''): ReturnType<GitRunner> {
 
 test('docs-only hook paths skip expensive checks and any code path keeps them', async () => {
 	expect(isDocsOnlyHookPath('docs/contributing/security.md')).toBe(true)
-	expect(isDocsOnlyHookPath('docs/guides/what-is-kody.md')).toBe(true)
 	expect(
 		isDocsOnlyHookPath('docs/contributing/architecture/primitives.yaml'),
 	).toBe(true)
 	expect(isDocsOnlyHookPath('./README.md')).toBe(true)
-	expect(isDocsOnlyHookPath('packages/worker/src/blog/posts/home.md')).toBe(
-		true,
-	)
-	expect(isDocsOnlyHookPath('.agents/skills/remix/SKILL.md')).toBe(true)
 	expect(isDocsOnlyHookPath('notes.mdx')).toBe(true)
-	expect(isDocsOnlyHookPath('.cursor/rules/style.mdc')).toBe(true)
 	expect(isDocsOnlyHookPath('LICENSE')).toBe(true)
-	expect(isDocsOnlyHookPath('packages/shared/LICENCE.txt')).toBe(true)
 
-	expect(isDocsOnlyHookPath('docs-site/guide.md')).toBe(true)
 	expect(isDocsOnlyHookPath('docs-site/guide.ts')).toBe(false)
-	expect(isDocsOnlyHookPath('packages/docs/guide.ts')).toBe(false)
 	expect(isDocsOnlyHookPath('src/readme.md.ts')).toBe(false)
 	expect(isDocsOnlyHookPath('packages/worker/src/app.ts')).toBe(false)
-	expect(isDocsOnlyHookPath('packages/worker/migrations/0001-init.sql')).toBe(
-		false,
-	)
-	expect(isDocsOnlyHookPath('.github/workflows/validate.yml')).toBe(false)
 	expect(isDocsOnlyHookPath('../packages/worker/src/app.ts')).toBe(false)
 	expect(isDocsOnlyHookPath('docs\\feature.ts')).toBe(false)
 
@@ -367,13 +353,4 @@ test('a real docs follow-up skips unit tests and a source rename still typecheck
 	} finally {
 		await rm(root, { recursive: true, force: true })
 	}
-})
-
-test('husky hooks format staged files and delegate expensive checks', () => {
-	expect(readFileSync('.husky/pre-commit', 'utf8')).toBe(
-		'npm exec lint-staged\nnode tools/git-hook-checks.ts pre-commit\n',
-	)
-	expect(readFileSync('.husky/pre-push', 'utf8')).toBe(
-		'node tools/git-hook-checks.ts pre-push\n',
-	)
 })

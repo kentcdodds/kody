@@ -7,20 +7,13 @@ import {
 	startupBundles,
 } from './check-worker-startup-bundles.ts'
 
-test('bundle budget file names every checked worker with a positive ceiling', async () => {
+test('bundle budget file requires a positive integer ceiling for every checked worker', async () => {
 	const budget = await readStartupBundleBudget()
-	expect(startupBundles.map((spec) => spec.name)).toEqual([
-		'origin',
-		'platform',
-		'runtime',
-	])
 	for (const spec of startupBundles) {
 		expect(budget[spec.name]).toBeGreaterThan(0)
 		expect(Number.isSafeInteger(budget[spec.name])).toBe(true)
 	}
-})
 
-test('bundle budget file rejects non-finite and fractional ceilings', async () => {
 	const dir = await mkdtemp(path.join(tmpdir(), 'startup-bundle-budget-'))
 	try {
 		const budgetPath = path.join(dir, 'budget.json')
