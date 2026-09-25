@@ -1,6 +1,20 @@
 import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 
+// Handler tests exercise the local construction path. Slim-origin forward
+// coverage lives in package-app-serve-slim-origin.node.test.ts.
+vi.mock('#worker/runtime-worker-service.ts', () => ({
+	hasLocalPackageAppRuntimeBridge: () => true,
+	getRuntimeWorkerService: () => null,
+	requireLocalPackageAppRuntimeBridge: () => {
+		throw new Error(
+			'requireLocalPackageAppRuntimeBridge should not run when buildPackageAppWorker is mocked',
+		)
+	},
+	packageAppRuntimeBridgeMissingMessage: 'bridge-missing',
+	packageAppRuntimeForwardUnavailableMessage: 'forward-unavailable',
+}))
+
 const mockModule = vi.hoisted(() => ({
 	captureException: vi.fn(),
 	getSentryClient: vi.fn(() => ({
