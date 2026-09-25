@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import  { type PackageAppServeOwner } from './package-app-serve.ts'
+import { type PackageAppServeOwner } from './package-app-serve.ts'
 import { packageAppRuntimeForwardUnavailableMessage } from '#worker/runtime-worker-service.ts'
 
 const runtimeForwardMock = vi.hoisted(() => ({
