@@ -283,6 +283,7 @@
 				{
 					"binding": "RUNTIME_WORKER",
 					"service": "kody-runtime",
+					"entrypoint": "RuntimeWorkerService",
 				},
 				{
 					"binding": "JOBS",
@@ -776,6 +777,7 @@
 				{
 					"binding": "RUNTIME_WORKER",
 					"service": "kody-runtime",
+					"entrypoint": "RuntimeWorkerService",
 				},
 				{
 					"binding": "JOBS",

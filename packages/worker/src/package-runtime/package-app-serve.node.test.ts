@@ -3,6 +3,21 @@ import type * as PackageSourceModule from '#worker/package-registry/source.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { servePackageAppRequest } from './package-app-serve.ts'
 
+// Existing serve tests exercise the local construction path (index/platform/
+// runtime scripts that export PackageAppRuntimeBridge). Slim-origin forward
+// coverage lives in package-app-serve-slim-origin.node.test.ts.
+vi.mock('#worker/runtime-worker-service.ts', () => ({
+	hasLocalPackageAppRuntimeBridge: () => true,
+	getRuntimeWorkerService: () => null,
+	requireLocalPackageAppRuntimeBridge: () => {
+		throw new Error(
+			'requireLocalPackageAppRuntimeBridge should not run in serve unit tests that mock buildPackageAppWorker',
+		)
+	},
+	packageAppRuntimeBridgeMissingMessage: 'bridge-missing',
+	packageAppRuntimeForwardUnavailableMessage: 'forward-unavailable',
+}))
+
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),

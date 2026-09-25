@@ -74,7 +74,11 @@ function buildMainGeneratedConfig(envName: string) {
 			],
 		},
 		services: [
-			{ binding: 'RUNTIME_WORKER', service: 'kody-runtime' },
+			{
+				binding: 'RUNTIME_WORKER',
+				service: 'kody-runtime',
+				entrypoint: 'RuntimeWorkerService',
+			},
 			{ binding: 'JOBS', service: 'kody-pr-7-jobs', entrypoint: 'JobsService' },
 		],
 		d1_databases: [

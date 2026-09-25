@@ -31,6 +31,11 @@ import {
 } from '#worker/package-runtime/package-app-synthetic.ts'
 import { packageRealtimeSessionRpc } from '#worker/package-runtime/realtime-session.ts'
 import { wantsJson } from '#worker/utils.ts'
+import {
+	getRuntimeWorkerService,
+	hasLocalPackageAppRuntimeBridge,
+	packageAppRuntimeForwardUnavailableMessage,
+} from '#worker/runtime-worker-service.ts'
 
 export type PackageAppServeOwner = {
 	userId: string
@@ -370,6 +375,32 @@ export async function servePackageAppRequest(input: {
 	packagePath: PackageAppPath
 	dispatch?: PackageAppTrustedDispatch
 }) {
+	// Slim origin (production-worker / preview) does not export
+	// PackageAppRuntimeBridge (ADR 0034). HTTP package-app routes are already
+	// forwarded wholesale via isRuntimeWorkerOwnedRequest; this gate covers the
+	// remaining in-process path (stateless MCP packageAppFetch → serve).
+	// One contract: local bridge, or RUNTIME_WORKER RPC — never construct here
+	// without either.
+	if (!hasLocalPackageAppRuntimeBridge()) {
+		const runtime = getRuntimeWorkerService(input.env)
+		if (!runtime) {
+			return createPackageAppErrorResponse({
+				request: input.request,
+				kind: 'host-setup',
+				kodyId: input.packagePath.kodyId,
+				packageName: input.packagePath.kodyId,
+				synthetic: input.dispatch?.synthetic === true,
+				cause: packageAppRuntimeForwardUnavailableMessage,
+			})
+		}
+		return runtime.servePackageApp({
+			request: input.request,
+			owner: input.owner,
+			packagePath: input.packagePath,
+			dispatch: input.dispatch,
+		})
+	}
+
 	const { request, env, owner, packagePath, dispatch } = input
 	const requestUrl = new URL(request.url)
 	const { kodyId } = packagePath
