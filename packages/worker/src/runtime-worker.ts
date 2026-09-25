@@ -66,16 +66,13 @@ export class RuntimeWorkerService
 	async fetch(request: Request): Promise<Response> {
 		// Reuse the same Sentry wrap as the default export so wholesale
 		// runtime-owned traffic keeps exception capture via this named entrypoint.
-		return Sentry.withSentry(
-			(env: Env) => getWorkerSentryOptions(env),
-			{
-				async fetch(request: Request, env: Env, ctx: ExecutionContext) {
-					return runWithDynamicWorkerEvaluationBudget(
-						async () => await fetchRuntimeWorkerRequest(request, env, ctx),
-					)
-				},
+		return Sentry.withSentry((env: Env) => getWorkerSentryOptions(env), {
+			async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+				return runWithDynamicWorkerEvaluationBudget(
+					async () => await fetchRuntimeWorkerRequest(request, env, ctx),
+				)
 			},
-		).fetch(request, this.env, this.ctx)
+		}).fetch(request, this.env, this.ctx)
 	}
 
 	async servePackageApp(input: RuntimePackageAppServeInput): Promise<Response> {
