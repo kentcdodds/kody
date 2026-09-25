@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -6,6 +7,8 @@ import {
 	webhookUrlApplyGithubContentTypes,
 	webhookUrlApplyHttpMethods,
 	webhookUrlApplyPlaceholder,
+	type WebhookUrlApplyDestination,
+	type WebhookUrlApplyHttpDestination,
 } from '#worker/webhooks/apply.ts'
 import { applyWebhookUrlForUser } from '#worker/webhooks/service.ts'
 import {
@@ -92,6 +95,12 @@ const httpDestinationSchema = z
 			.describe(
 				'Optional host-approved secret sent as Authorization Bearer. Host must be approved for the destination URL.',
 			),
+		user_confirmed: z
+			.literal(true)
+			.optional()
+			.describe(
+				`Required for type "http". Set true only after showing the owner the exact method, destination URL, ${webhookUrlApplyPlaceholder} injection sites, headers, body template, and auth mode, and receiving explicit approval for that outbound registration. Owner settings paste is consent; silent model-chosen apply is not.`,
+			),
 	})
 	.superRefine((destination, ctx) => {
 		const url = destination.url.trim()
@@ -131,12 +140,100 @@ export const webhookUrlApplyDestinationSchema = z.discriminatedUnion('type', [
 	httpDestinationSchema,
 ])
 
+type HttpApplyDestinationInput = z.infer<typeof httpDestinationSchema>
+
+const httpApplyInteractiveOnlyErrorMessage =
+	'webhookUrlApply destination type "http" is only available from an interactive MCP agent flow after the owner explicitly approves the exact outbound destination. Package jobs, subscriptions, webhooks, and other package runtimes cannot register arbitrary apply destinations.'
+
+function assertInteractiveHttpApplyCaller(callerContext: {
+	executionOrigin?: string
+	storageContext?: {
+		packageId?: string | null
+		appId?: string | null
+		storageId?: string | null
+	} | null
+}) {
+	if (callerContext.executionOrigin !== 'interactive') {
+		throw new McpCallerError(httpApplyInteractiveOnlyErrorMessage)
+	}
+	const storageContext = callerContext.storageContext
+	const packageId = storageContext?.packageId?.trim() ?? ''
+	const appId = storageContext?.appId?.trim() ?? ''
+	const storageId = storageContext?.storageId?.trim() ?? ''
+	if (packageId || appId || storageId) {
+		throw new McpCallerError(httpApplyInteractiveOnlyErrorMessage)
+	}
+}
+
+function listWebhookUrlInjectionSites(destination: HttpApplyDestinationInput) {
+	const sites: Array<string> = []
+	if (destination.url.includes(webhookUrlApplyPlaceholder)) sites.push('url')
+	for (const [name, value] of Object.entries(destination.headers ?? {})) {
+		if (value.includes(webhookUrlApplyPlaceholder)) {
+			sites.push(`header:${name}`)
+		}
+	}
+	if ((destination.body ?? '').includes(webhookUrlApplyPlaceholder)) {
+		sites.push('body')
+	}
+	return sites
+}
+
+function describeHttpApplyAuth(destination: HttpApplyDestinationInput) {
+	const secretName = destination.secretName?.trim()
+	if (secretName) return `secretName=${secretName}`
+	const integration = destination.integration?.trim()
+	if (integration) return `integration=${integration}`
+	const authorizationHeader = Object.entries(destination.headers ?? {}).find(
+		([name]) => name.toLowerCase() === 'authorization',
+	)
+	if (authorizationHeader) {
+		return `header:${authorizationHeader[0]} (caller-supplied)`
+	}
+	return 'none'
+}
+
+export function buildHttpApplyConfirmationMessage(
+	destination: HttpApplyDestinationInput,
+) {
+	const method = (destination.method ?? 'POST').toUpperCase()
+	const url = destination.url.trim()
+	const injectionSites = listWebhookUrlInjectionSites(destination)
+	const headerLines = Object.entries(destination.headers ?? {}).map(
+		([name, value]) => `${name}=${value}`,
+	)
+	const body = destination.body ?? ''
+	return [
+		'HTTP webhookUrlApply requires explicit owner approval for this outbound registration (prompt-injection / confused-deputy protection). Show the owner this exact destination, wait for explicit approval, then retry with destination.user_confirmed: true.',
+		'',
+		`method: ${method}`,
+		`url: ${url}`,
+		`${webhookUrlApplyPlaceholder} injection sites: ${injectionSites.join(', ') || '(none)'}`,
+		`headers: ${headerLines.length > 0 ? headerLines.join('; ') : '(none)'}`,
+		`body: ${body.length > 0 ? body : '(none)'}`,
+		`auth: ${describeHttpApplyAuth(destination)}`,
+	].join('\n')
+}
+
+function assertHttpApplyUserConfirmed(destination: HttpApplyDestinationInput) {
+	if (destination.user_confirmed === true) return
+	throw new McpCallerError(buildHttpApplyConfirmationMessage(destination))
+}
+
+function toApplyDestination(
+	destination: z.infer<typeof webhookUrlApplyDestinationSchema>,
+): WebhookUrlApplyDestination {
+	if (destination.type === 'github') return destination
+	const { user_confirmed: _userConfirmed, ...httpDestination } = destination
+	return httpDestination satisfies WebhookUrlApplyHttpDestination
+}
+
 export const webhookUrlApplyCapability = defineDomainCapability(
 	capabilityDomainNames.webhooks,
 	{
 		name: 'webhookUrlApply',
 		description:
-			'Register a minted webhook URL at a destination without exposing the credential. Pass the handle from webhookUrlMint, webhookUrlRotate, or webhookList. Destination type github creates the repo hook via the user GitHub integration (or a host-approved GitHub token). Destination type http performs an outbound HTTPS request and substitutes {{webhookUrl}} server-side into url/headers/body. Returns ok, remote_id, and url_host only — never the credential URL.',
+			'Register a minted webhook URL at a destination without exposing the credential. Pass the handle from webhookUrlMint, webhookUrlRotate, or webhookList. Destination type github creates the repo hook via the user GitHub integration (or a host-approved GitHub token). Destination type http performs an outbound HTTPS request and substitutes {{webhookUrl}} server-side into url/headers/body — interactive MCP only, and only after showing the owner the exact destination and setting user_confirmed: true. Returns ok, remote_id, and url_host only — never the credential URL.',
 		keywords: [
 			'webhook',
 			'apply',
@@ -145,6 +242,7 @@ export const webhookUrlApplyCapability = defineDomainCapability(
 			'http',
 			'handle',
 			'destination',
+			'confirm',
 		],
 		readOnly: false,
 		idempotent: false,
@@ -161,13 +259,17 @@ export const webhookUrlApplyCapability = defineDomainCapability(
 		outputSchema: webhookUrlApplyResultSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			if (args.destination.type === 'http') {
+				assertInteractiveHttpApplyCaller(ctx.callerContext)
+				assertHttpApplyUserConfirmed(args.destination)
+			}
 			const applied = await applyWebhookUrlForUser({
 				env: ctx.env,
 				userId: user.userId,
 				email: user.email,
 				username: user.username,
 				handle: args.handle,
-				destination: args.destination,
+				destination: toApplyDestination(args.destination),
 				requestUrl: ctx.callerContext.baseUrl,
 				waitUntil: ctx.waitUntil,
 			})

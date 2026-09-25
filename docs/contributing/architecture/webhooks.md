@@ -203,7 +203,10 @@ current URL. `webhookUrlMint` / `webhookUrlRotate` return an opaque `handle`
 (`whh_<id>`) and `url_host`. `webhookUrlApply` resolves the handle inside Kody
 and registers the URL through a destination adapter: typed `github` (repo hooks
 via the user GitHub integration or a host-approved token) or generic `http`
-(outbound HTTPS with server-side `{{webhookUrl}}` substitution). The credential
-is injected server-side and never returned to the model. Delivery history is in
-the per-user `RunLog` Durable Object (`webhook` surface), not in D1. See
+(outbound HTTPS with server-side `{{webhookUrl}}` substitution). Generic `http`
+is interactive-only and requires `user_confirmed: true` after the agent surfaces
+the exact destination (method, URL, injection sites, headers, body, auth) —
+silent model-chosen apply is rejected. The credential is injected server-side
+and never returned to the model. Delivery history is in the per-user `RunLog`
+Durable Object (`webhook` surface), not in D1. See
 [Data storage](./data-storage.md) and [Run records](./run-records.md).

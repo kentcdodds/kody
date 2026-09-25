@@ -141,7 +141,11 @@ hook URL are redacted.
 Owner rationale: the signed-in owner can already reveal and paste the URL from
 package settings. Opaque apply exists so agents can register that same
 credential without pulling plaintext into model context — including at
-caller-chosen HTTPS endpoints, not only typed vendor adapters.
+caller-chosen HTTPS endpoints, not only typed vendor adapters. Settings
+reveal/paste is owner consent. Silent model-chosen apply to an arbitrary URL is
+not: prompt injection could POST the long-lived credential to an attacker
+endpoint. Generic `http` therefore requires an interactive hard confirm that
+surfaces the exact destination before the outbound request runs.
 
 GitHub (creates `POST /repos/{owner}/{repo}/hooks` on `api.github.com`):
 
@@ -167,6 +171,14 @@ decoded/re-encoded). The placeholder is required. Destination URLs must be
 `https://`. Redirects are not followed. Auth is optional via `secretName` or
 `integration` (Bearer), or a caller-supplied `Authorization` header — not both.
 
+Unlike typed `github` (already gated by the owner's GitHub integration / host-
+approved token), `http` lets the model choose an arbitrary outbound target. That
+path is **interactive MCP only** and requires `user_confirmed: true` after the
+agent shows the owner the exact method, URL, `{{webhookUrl}}` injection sites,
+headers, body template, and auth mode. Calling without confirmation returns that
+summary in the error and does not send the request. Package runtimes cannot use
+`http` apply.
+
 ```ts
 await kody.webhooks.webhookUrlApply({
 	handle,
@@ -177,6 +189,7 @@ await kody.webhooks.webhookUrlApply({
 		headers: { 'Content-Type': 'application/json' },
 		body: '{"webhookUrl":"{{webhookUrl}}"}',
 		secretName: 'hooksRegistrationToken',
+		user_confirmed: true, // only after owner approves the exact destination above
 	},
 })
 ```
