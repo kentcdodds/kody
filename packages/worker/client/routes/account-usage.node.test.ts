@@ -198,6 +198,20 @@ test('warnings panel title is Limit reached at 100% daily or weekly', () => {
 			}),
 		]),
 	).toBe('Limit reached')
+
+	const computeIncludeAtLimit = entitlement({
+		resource: 'unique_worker_days',
+		group: 'monthly',
+		percentOfLimit: 1,
+		overEightyPercent: true,
+	})
+	expect(hasReachedEntitlementLimit(computeIncludeAtLimit)).toBe(false)
+	expect(accountUsageWarningsPanelTitle([computeIncludeAtLimit])).toBe(
+		'Approaching limits',
+	)
+	expect(
+		accountUsageWarningsPanelTitle([computeIncludeAtLimit, weeklyAtLimit]),
+	).toBe('Limit reached')
 })
 
 test('top public plans hide the Upgrade your plan CTA gate', () => {

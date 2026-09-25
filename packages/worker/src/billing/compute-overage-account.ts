@@ -79,6 +79,7 @@ export async function readAccountComputeOverage(input: {
 				percentOfLimit: uniqueWorkerDayPercent,
 				disposition,
 				legacyUnbilled: overage.legacyUnbilled,
+				plan: input.plan,
 			}),
 			toComputeMeter({
 				resource: 'durable_object_rows_read',
@@ -87,6 +88,7 @@ export async function readAccountComputeOverage(input: {
 				percentOfLimit: durableObjectRowsReadPercent,
 				disposition,
 				legacyUnbilled: overage.legacyUnbilled,
+				plan: input.plan,
 			}),
 		],
 		disposition,
@@ -129,6 +131,7 @@ function toComputeMeter(input: {
 	percentOfLimit: number
 	disposition: ComputeOverageDisposition
 	legacyUnbilled: boolean
+	plan: PlanName
 }) {
 	const visibility = computeOverageResourceVisibility[input.resource]
 	return {
@@ -142,6 +145,7 @@ function toComputeMeter(input: {
 				: input.percentOfLimit >= 1
 					? input.disposition
 					: 'skip_zero',
+			input.plan,
 		),
 		current: input.current,
 		include: input.include,

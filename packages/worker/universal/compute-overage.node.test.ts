@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import {
+	buildComputeOverageHowToReduce,
 	computeMonthlyOverage,
 	computeOverageBillingPolicy,
 	computeOverageIncludePercent,
@@ -249,4 +250,49 @@ test('previousUtcMonthKey walks across year boundaries', () => {
 	expect(previousUtcMonthKey(new Date('2026-09-06T12:00:00.000Z'))).toBe(
 		'2026-08',
 	)
+})
+
+test('compute overage howToReduce omits upgrade for Pro and Max', () => {
+	const free = buildComputeOverageHowToReduce(
+		'unique_worker_days',
+		'skip_zero',
+		'free',
+	)
+	expect(free).toMatch(/Upgrade your plan for a higher include/)
+	expect(free).toMatch(/payment method/)
+
+	const standard = buildComputeOverageHowToReduce(
+		'durable_object_rows_read',
+		'skip_zero',
+		'standard',
+	)
+	expect(standard).toMatch(/or upgrade your plan/)
+	expect(standard).toMatch(/Upgrade your plan for a higher include/)
+
+	for (const plan of ['pro', 'max'] as const) {
+		const uniqueWorkerDays = buildComputeOverageHowToReduce(
+			'unique_worker_days',
+			'skip_zero',
+			plan,
+		)
+		expect(uniqueWorkerDays).not.toMatch(/upgrade/i)
+		expect(uniqueWorkerDays).toMatch(/payment method/)
+		expect(uniqueWorkerDays).toMatch(/public-ladder overage/)
+
+		const rowsRead = buildComputeOverageHowToReduce(
+			'durable_object_rows_read',
+			'skip_zero',
+			plan,
+		)
+		expect(rowsRead).not.toMatch(/upgrade/i)
+		expect(rowsRead).toMatch(/payment method/)
+
+		const invoiced = buildComputeOverageHowToReduce(
+			'unique_worker_days',
+			'invoice',
+			plan,
+		)
+		expect(invoiced).not.toMatch(/upgrade/i)
+		expect(invoiced).toMatch(/billed at/)
+	}
 })

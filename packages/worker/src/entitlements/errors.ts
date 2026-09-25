@@ -222,9 +222,10 @@ export type ComputeOverageLimitErrorDetails = {
 
 export function buildComputeOverageUpgradeHint(
 	resource: ComputeOverageWarningResource,
-	disposition?: ComputeOverageDisposition | null,
+	disposition: ComputeOverageDisposition | null | undefined,
+	plan: PlanName,
 ) {
-	return buildComputeOverageHowToReduce(resource, disposition)
+	return buildComputeOverageHowToReduce(resource, disposition, plan)
 }
 
 /**
@@ -300,7 +301,11 @@ export class ComputeOverageLimitError extends Error {
 				computeOverageResourceVisibility[details.resource].whatCounts,
 			upgradeHint:
 				details.upgradeHint ??
-				buildComputeOverageUpgradeHint(details.resource, details.disposition),
+				buildComputeOverageUpgradeHint(
+					details.resource,
+					details.disposition,
+					details.plan,
+				),
 			disposition: details.disposition,
 		}
 		super(buildComputeOverageLimitMessage(fullDetails))

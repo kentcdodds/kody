@@ -82,12 +82,17 @@ export function hotterUsagePercent(
 }
 
 /**
- * True when daily or weekly usage is at or over the hard cap. Used for the
- * warnings panel title so 100% reads as "Limit reached", not "Approaching".
+ * True when a hard daily/weekly/stock entitlement is at or over its cap.
+ * Monthly compute includes (`group: 'monthly'`) allow billed overage for
+ * paid plans, so they never count as a hard "Limit reached."
  */
 export function hasReachedEntitlementLimit(
-	item: Pick<AccountUsageEntitlementConsumption, 'percentOfLimit' | 'week'>,
+	item: Pick<
+		AccountUsageEntitlementConsumption,
+		'percentOfLimit' | 'week' | 'group'
+	>,
 ) {
+	if (item.group === 'monthly') return false
 	return (
 		(item.percentOfLimit !== null && item.percentOfLimit >= 1) ||
 		(item.week?.percentOfLimit != null && item.week.percentOfLimit >= 1)
@@ -96,7 +101,10 @@ export function hasReachedEntitlementLimit(
 
 export function accountUsageWarningsPanelTitle(
 	warnings: ReadonlyArray<
-		Pick<AccountUsageEntitlementConsumption, 'percentOfLimit' | 'week'>
+		Pick<
+			AccountUsageEntitlementConsumption,
+			'percentOfLimit' | 'week' | 'group'
+		>
 	>,
 ) {
 	return warnings.some(hasReachedEntitlementLimit)

@@ -697,6 +697,7 @@ async function readComputeOverageWarnings(input: {
 			howToReduce: buildComputeOverageHowToReduce(
 				resource,
 				overage.legacyUnbilled ? 'skip_legacy' : 'skip_zero',
+				input.plan,
 			),
 		}
 	})
