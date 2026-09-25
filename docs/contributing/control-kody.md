@@ -15,6 +15,8 @@ npm run control-kody -- map --check
 npm run control-kody -- health --sha <commit>
 npm run control-kody -- preview --pr 42 --check /account/waiting
 npm run control-kody -- package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]
+npm run control-kody -- execute --origin <preview> --code-file fixture.ts [--params-file params.json]
+npm run control-kody -- search --origin <preview> --query "packageSave" [--domain packages]
 ```
 
 Same entry: `node tools/control-kody.ts`.
@@ -86,6 +88,12 @@ the package page can show **HEAD ahead of published**. Do not POST a create
 action to `/account/packages.json` — that endpoint has no package-create action.
 Logged-in preview testing does not require agents to hand-roll an MCP OAuth
 dance — the CLI does it for them. The command refuses `https://kody.codes`.
+
+`execute` and `search` use the same OAuth client against a preview or local
+origin. `execute` reads an ESM module from `--code-file` (default export) and
+optional JSON `--params-file`. `search` takes `--query`, and optionally
+`--domain`, `--entity`, and `--limit`. Both refuse `https://kody.codes`. Do not
+hand-write a throwaway MCP client script for preview fixtures.
 
 ## Daily garden
 

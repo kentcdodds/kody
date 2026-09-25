@@ -61,7 +61,10 @@ CodeRabbit when the change is **high** risk (or the user explicitly asks).
    seeded user **with data for this change** (`control-kody request` /
    `--request`; do not cat the cookie into curl or Python — see
    [control-kody](../control-kody/SKILL.md) and
-   [preview-manual-test](../preview-manual-test/SKILL.md)). After merge,
+   [preview-manual-test](../preview-manual-test/SKILL.md)). Admin-gated states
+   (suspension, outbound-email pause, account deletion) cannot be set on the
+   public preview seed; local admin plus Workers or unit tests count as
+   sufficient evidence. After merge,
    `npm run control-kody -- health --origin https://kody.codes --sha <merge>`.
 4. Green + (medium+: valid feedback cleared) → break.
 5. Push → repeat.

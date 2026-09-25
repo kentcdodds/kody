@@ -64,4 +64,10 @@ This does not replace `npm run validate`.
 4. Record what you saw on the PR.
 
 `GET /mcp` is 401 without OAuth; `/admin` is 403 (seed account is not admin).
-Neither is a regression.
+Neither is a regression. Admin-gated states (suspension, outbound-email pause,
+account deletion) cannot be set on preview; use the local admin seed plus
+Workers or unit tests. For MCP `execute` / `search` fixtures, use
+`control-kody execute` / `search` — do not hand-roll OAuth. Two `packageSave`
+packages on the seed account share implicit user-secret read; locked-secret
+denial needs an unadopted community fork. See
+[preview-manual-testing.md](../../../docs/contributing/preview-manual-testing.md).

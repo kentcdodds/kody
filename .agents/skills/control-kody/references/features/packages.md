@@ -59,12 +59,10 @@ node tools/control-kody.ts preview -- \
 ```
 
 `--head-ahead` pushes one unpublished commit so the Repo tab can show **HEAD
-ahead of published**. That flag needs a minted Artifacts write remote. If
-`packageGetGitRemote` fails with source-safety `account not found`, the stub
-package still exists (check `/@username/:kodyId`) but HEAD-ahead cannot be
-pushed on that preview. `--kody-id` is an alias for `--package-name`. To prove
-delete, create a package with `package-create`, then delete it and assert the
-empty state.
+ahead of published**. That flag needs a minted Artifacts write remote.
+`--kody-id` is an alias for `--package-name`. To prove delete, create a package
+with `package-create`, then delete it and assert the empty state. Arbitrary MCP
+fixtures use `control-kody execute` / `search` against the same origin.
 
 ## APIs
 

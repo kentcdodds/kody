@@ -137,6 +137,50 @@ test('control-kody parses commands, maps every required route, and drives a seed
 	expect(usageLines.join('\n')).toMatch(/package-create/)
 	expect(usageLines.join('\n')).toMatch(/--package-name/)
 	expect(usageLines.join('\n')).toMatch(/--head-ahead/)
+	expect(usageLines.join('\n')).toMatch(/execute/)
+	expect(usageLines.join('\n')).toMatch(/--code-file/)
+	expect(usageLines.join('\n')).toMatch(/search/)
+	expect(
+		parseControlArgs([
+			'execute',
+			'--code-file',
+			'fixture.ts',
+			'--params-file',
+			'params.json',
+			'--origin',
+			'https://kody-pr-9.kody.workers.dev',
+			'--json',
+		]),
+	).toEqual(
+		expect.objectContaining({
+			command: 'execute',
+			codeFile: 'fixture.ts',
+			paramsFile: 'params.json',
+			json: true,
+			origin: 'https://kody-pr-9.kody.workers.dev',
+		}),
+	)
+	expect(
+		parseControlArgs([
+			'search',
+			'--query',
+			'packageSave',
+			'--domain',
+			'packages',
+			'--entity',
+			'capability:packageSave',
+			'--limit',
+			'5',
+		]),
+	).toEqual(
+		expect.objectContaining({
+			command: 'search',
+			query: 'packageSave',
+			domain: 'packages',
+			entity: 'capability:packageSave',
+			limit: 5,
+		}),
+	)
 	expect(() => parseControlArgs(['nope'])).toThrow(/Unknown command/)
 	await expect(
 		runCommand(
@@ -173,6 +217,40 @@ test('control-kody parses commands, maps every required route, and drives a seed
 				'preview-pkg',
 				'--origin',
 				'https://kody.codes.',
+			]),
+		),
+	).rejects.toThrow(/refuses to run against https:\/\/kody\.codes/)
+	await expect(
+		runCommand(
+			parseControlArgs([
+				'execute',
+				'--origin',
+				'https://kody-pr-9.kody.workers.dev',
+			]),
+		),
+	).rejects.toThrow(/requires --code-file/)
+	await expect(
+		runCommand(
+			parseControlArgs([
+				'execute',
+				'--code-file',
+				'fixture.ts',
+				'--origin',
+				'https://kody.codes',
+			]),
+		),
+	).rejects.toThrow(/refuses to run against https:\/\/kody\.codes/)
+	await expect(
+		runCommand(parseControlArgs(['search', '--origin', 'http://127.0.0.1:9'])),
+	).rejects.toThrow(/requires --query, --entity, or --domain/)
+	await expect(
+		runCommand(
+			parseControlArgs([
+				'search',
+				'--query',
+				'packageSave',
+				'--origin',
+				'https://kody.codes',
 			]),
 		),
 	).rejects.toThrow(/refuses to run against https:\/\/kody\.codes/)
