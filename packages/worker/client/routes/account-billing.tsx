@@ -33,6 +33,10 @@ import {
 	resolveActiveStripePlan,
 } from '#client/routes/account-billing-plans.tsx'
 import {
+	billingPortalPath,
+	navigateBillingPortalOnPrimaryClick,
+} from './billing-portal-navigation.ts'
+import {
 	colors,
 	radius,
 	spacing,
@@ -56,7 +60,6 @@ const jsonRequestHeaders = {
 }
 const billingCancellationFeedbackApiPath =
 	'/account/billing/cancellation-feedback.json'
-const billingPortalPath = '/account/billing/portal'
 
 type SubscriptionStatusTone = 'ok' | 'warn' | 'action' | 'muted'
 /** Where `POST /account/billing/checkout.json` sends the browser next. */
@@ -634,16 +637,23 @@ export function AccountBillingRoute(handle: Handle) {
 										alignItems: 'center',
 									})}
 								>
+									{/* Soft-nav fetch follows the Stripe 302 and fails (KODY-88). */}
 									<a
 										href={billingPortalPath}
-										mix={css({
-											...(statusInfo?.tone === 'action'
-												? primaryButtonCss
-												: secondaryButtonCss),
-											display: 'inline-block',
-											textDecoration: 'none',
-											textAlign: 'center',
-										})}
+										data-rmx-document
+										mix={[
+											on('click', (event) => {
+												navigateBillingPortalOnPrimaryClick(event)
+											}),
+											css({
+												...(statusInfo?.tone === 'action'
+													? primaryButtonCss
+													: secondaryButtonCss),
+												display: 'inline-block',
+												textDecoration: 'none',
+												textAlign: 'center',
+											}),
+										]}
 									>
 										Manage subscription
 									</a>
