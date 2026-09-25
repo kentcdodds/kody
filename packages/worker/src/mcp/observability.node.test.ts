@@ -36,6 +36,7 @@ const { logMcpEvent } = await import('./observability.ts')
 const { assertKodyDescriptionLength, KODY_DESCRIPTION_MAX_LENGTH } =
 	await import('#worker/package-registry/types.ts')
 const { McpCallerError } = await import('./caller-error.ts')
+const { executeInvokeMissingInputMessage } = await import('./execute-invoke.ts')
 const { PackageSecretAccessDeniedError } =
 	await import('./secrets/package-access.ts')
 const { CommunityActionError } = await import('#worker/community/errors.ts')
@@ -500,6 +501,29 @@ test('mismatched package name input stays off Sentry', () => {
 			errorName: 'Error',
 			errorMessage: 'package lookup failed',
 			cause: new Error('package lookup failed', { cause: thrown }),
+		})
+	})
+	expect(sentryMock.captureException).not.toHaveBeenCalled()
+	expect(sentryMock.captureMessage).not.toHaveBeenCalled()
+})
+
+test('execute missing code/invoke caller errors stay off Sentry', () => {
+	const cause = new McpCallerError(executeInvokeMissingInputMessage)
+	expect(cause.message).toBe('execute requires code or invoke.')
+
+	captureMcpEvents(() => {
+		logMcpEvent({
+			category: 'mcp',
+			tool: 'execute',
+			toolName: 'execute',
+			outcome: 'failure',
+			durationMs: 3,
+			baseUrl: 'https://example.com',
+			hasUser: true,
+			userId: 'user-1',
+			errorName: 'McpCallerError',
+			errorMessage: cause.message,
+			cause,
 		})
 	})
 	expect(sentryMock.captureException).not.toHaveBeenCalled()
