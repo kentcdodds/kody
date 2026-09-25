@@ -59,7 +59,10 @@ and confirm before proceeding.
 
 ## Package docs (`README.md` + `AGENTS.md`)
 
-Publish requires two non-empty root files. They are not interchangeable.
+Publish requires two non-empty root files. They are not interchangeable. Package
+docs and export JSDoc are two layers of progressive disclosure for agent
+guidance; see [Where agent guidance lives](./agent-guidance.md) before stuffing
+package specifics into memories or MCP server instructions.
 
 - **`README.md`** — human-focused. What the package does, who it is for,
   prerequisites, setup, and how a person knows it is working. Include a concise
@@ -135,7 +138,9 @@ Call the root export from `execute` after publish.
 Search detail (`entity: "package:…"`) shows an Exports table whose **Purpose**
 column comes from each export's JSDoc. When JSDoc is missing, Purpose falls back
 to the generic string `Package export.` Agents skim that column first when
-choosing among sibling exports.
+choosing among sibling exports. Export-specific limits and call gotchas belong
+here, not in MCP server instructions or account memories
+([Where agent guidance lives](./agent-guidance.md)).
 
 TypeScript types and the export name give call shape when present. They do not
 say **when** or **why** to pick one export over another. README `## Intent` is

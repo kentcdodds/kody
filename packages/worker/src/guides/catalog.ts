@@ -27,6 +27,7 @@ import kodyFactory from '../../../../docs/guides/kody-factory.md'
 import localMcpTunnels from '../../../../docs/guides/local-mcp-tunnels.md'
 import heavyWorkOffload from '../../../../docs/guides/heavy-work-offload.md'
 import memory from '../../../../docs/guides/memory.md'
+import agentGuidance from '../../../../docs/guides/agent-guidance.md'
 import quickExample from '../../../../docs/guides/quick-example.md'
 import integrationBootstrap from '../../../../docs/guides/integration-bootstrap.md'
 import lockedGmailDrafts from '../../../../docs/guides/locked-gmail-drafts.md'
@@ -81,6 +82,7 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'portability', raw: portability },
 	{ slug: 'first-win', raw: firstWin },
 	{ slug: 'memory', raw: memory },
+	{ slug: 'agent-guidance', raw: agentGuidance },
 	{ slug: 'secrets', raw: secrets },
 	{ slug: 'secret-providers', raw: secretProviders },
 	{ slug: 'packages-integrations-mcp', raw: packagesIntegrationsMcp },
