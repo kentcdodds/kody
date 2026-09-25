@@ -31,6 +31,10 @@ import {
 } from '#worker/package-runtime/package-app-synthetic.ts'
 import { packageRealtimeSessionRpc } from '#worker/package-runtime/realtime-session.ts'
 import { wantsJson } from '#worker/utils.ts'
+import {
+	getRuntimeWorkerService,
+	hasLocalPackageAppRuntimeBridge,
+} from '#worker/runtime-worker-service.ts'
 
 export type PackageAppServeOwner = {
 	userId: string
@@ -370,6 +374,21 @@ export async function servePackageAppRequest(input: {
 	packagePath: PackageAppPath
 	dispatch?: PackageAppTrustedDispatch
 }) {
+	// Slim origin (production-worker / preview) does not export
+	// PackageAppRuntimeBridge (ADR 0034). When RUNTIME_WORKER is configured,
+	// construction belongs on the runtime worker — one ownership path.
+	if (!hasLocalPackageAppRuntimeBridge()) {
+		const runtime = getRuntimeWorkerService(input.env)
+		if (runtime) {
+			return runtime.servePackageApp({
+				request: input.request,
+				owner: input.owner,
+				packagePath: input.packagePath,
+				dispatch: input.dispatch,
+			})
+		}
+	}
+
 	const { request, env, owner, packagePath, dispatch } = input
 	const requestUrl = new URL(request.url)
 	const { kodyId } = packagePath

@@ -1,13 +1,17 @@
 import * as Sentry from '@sentry/cloudflare'
+import { WorkerEntrypoint } from 'cloudflare:workers'
 import {
 	buildRuntimeWorkerHealth,
 	runtimeWorkerHealthPath,
+	type RuntimePackageAppServeInput,
+	type RuntimeWorkerServiceContract,
 } from '@kody-internal/shared/runtime-worker.ts'
 import { StorageRunner } from './storage-runner.ts'
 import { RunLog } from './run-records/run-log-do.ts'
 import { PackageRealtimeSession } from '#worker/package-runtime/realtime-session.ts'
 import { DynamicCallableWorkflow } from '#worker/package-runtime/package-workflows.ts'
 import { PackageAppRuntimeBridge } from '#worker/package-runtime/package-app.ts'
+import { servePackageAppRequest } from '#worker/package-runtime/package-app-serve.ts'
 import { KodyFetchGateway } from '#mcp/fetch-gateway.ts'
 import { getWorkerSentryOptions } from './sentry-options.ts'
 import {
@@ -38,6 +42,10 @@ import { runWithDynamicWorkerEvaluationBudget } from '#worker/dynamic-worker-eva
  * `ctx.exports` entrypoints for dynamically loaded package isolates, so this
  * script exports its own instances rather than calling back into the main
  * Worker.
+ *
+ * `RuntimeWorkerService` is the named `RUNTIME_WORKER` entrypoint: `.fetch`
+ * keeps wholesale HTTP forward, and `servePackageApp` serves package apps for
+ * slim-origin callers that lack `PackageAppRuntimeBridge` (ADR 0034).
  */
 export {
 	StorageRunner,
@@ -46,6 +54,33 @@ export {
 	DynamicCallableWorkflow,
 	PackageAppRuntimeBridge,
 	KodyFetchGateway,
+}
+
+/**
+ * Named entrypoint for the origin `RUNTIME_WORKER` service binding.
+ */
+export class RuntimeWorkerService
+	extends WorkerEntrypoint<Env>
+	implements RuntimeWorkerServiceContract
+{
+	async fetch(request: Request): Promise<Response> {
+		return runWithDynamicWorkerEvaluationBudget(
+			async () => await fetchRuntimeWorkerRequest(request, this.env, this.ctx),
+		)
+	}
+
+	async servePackageApp(input: RuntimePackageAppServeInput): Promise<Response> {
+		return runWithDynamicWorkerEvaluationBudget(
+			async () =>
+				await servePackageAppRequest({
+					request: input.request,
+					env: this.env,
+					owner: input.owner,
+					packagePath: input.packagePath,
+					dispatch: input.dispatch,
+				}),
+		)
+	}
 }
 
 const runtimeWorkerHandler = {
