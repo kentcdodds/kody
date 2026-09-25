@@ -234,6 +234,27 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 	)
 	expect(
 		webhookUrlApplyDestinationSchema.safeParse({
+			type: 'http',
+			url: 'https://hooks.example/register',
+			body: '{"url":"{{webhookUrl}}"}',
+		}).success,
+	).toBe(true)
+	expect(
+		webhookUrlApplyDestinationSchema.safeParse({
+			type: 'http',
+			url: 'https://hooks.example/register',
+			body: '{"ok":true}',
+		}).success,
+	).toBe(false)
+	expect(
+		webhookUrlApplyDestinationSchema.safeParse({
+			type: 'http',
+			url: 'http://hooks.example/register',
+			body: '{"url":"{{webhookUrl}}"}',
+		}).success,
+	).toBe(false)
+	expect(
+		webhookUrlApplyDestinationSchema.safeParse({
 			type: 'https',
 			url: 'https://attacker.example/exfil',
 			body: '{"url":"{{webhookUrl}}"}',

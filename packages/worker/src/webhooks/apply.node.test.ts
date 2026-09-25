@@ -336,3 +336,149 @@ test('webhookUrlApply rejects dot-only GitHub slugs', async () => {
 		}),
 	).rejects.toThrow('GitHub owner')
 })
+
+test('webhookUrlApply registers via http destination with {{webhookUrl}} substitution', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	const revealed = await revealWebhookUrlForWebsite({
+		env,
+		userId,
+		username: 'owner',
+		target: { handle: minted.handle },
+	})
+	const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+		expect(url).toBe('https://hooks.example/register')
+		expect(init?.method).toBe('POST')
+		expect(init?.redirect).toBe('manual')
+		const headers = new Headers(init?.headers)
+		expect(headers.has('Authorization')).toBe(false)
+		expect(headers.get('Content-Type')).toBe('application/json')
+		const body = JSON.parse(String(init?.body)) as { url: string }
+		expect(body.url).toBe(revealed.url)
+		return new Response(JSON.stringify({ id: 'reg-9', url: revealed.url }), {
+			status: 200,
+		})
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: {
+			type: 'http',
+			url: 'https://hooks.example/register',
+			headers: { 'Content-Type': 'application/json' },
+			body: '{"url":"{{webhookUrl}}"}',
+		},
+	})
+
+	expect(applied).toEqual({
+		ok: true,
+		urlHost: 'heykody.dev',
+		httpStatus: 200,
+		remoteId: 'reg-9',
+		error: null,
+	})
+	expect(JSON.stringify(applied)).not.toContain(revealed.url)
+	expect(JSON.stringify(applied)).not.toContain(
+		revealed.url.slice(revealed.url.lastIndexOf('/') + 1),
+	)
+	expect(fetchMock).toHaveBeenCalledTimes(1)
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply http destination rejects missing {{webhookUrl}} placeholder', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	const fetchMock = vi.fn()
+	vi.stubGlobal('fetch', fetchMock)
+
+	await expect(
+		applyWebhookUrlForUser({
+			env,
+			userId,
+			username: 'owner',
+			handle: minted.handle,
+			destination: {
+				type: 'http',
+				url: 'https://hooks.example/register',
+				body: '{"ok":true}',
+			},
+		}),
+	).rejects.toThrow('{{webhookUrl}}')
+	expect(fetchMock).not.toHaveBeenCalled()
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply http destination does not follow redirects', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+		expect(init?.redirect).toBe('manual')
+		return new Response(null, {
+			status: 302,
+			headers: { Location: 'https://attacker.example/exfil' },
+		})
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: {
+			type: 'http',
+			url: 'https://hooks.example/register',
+			body: '{"url":"{{webhookUrl}}"}',
+		},
+	})
+
+	expect(applied).toEqual({
+		ok: false,
+		urlHost: 'heykody.dev',
+		httpStatus: 302,
+		remoteId: null,
+		error: 'Destination redirected. Apply does not follow redirects.',
+	})
+	expect(fetchMock).toHaveBeenCalledTimes(1)
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply http destination encodes {{webhookUrl}} in the request URL', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	const revealed = await revealWebhookUrlForWebsite({
+		env,
+		userId,
+		username: 'owner',
+		target: { handle: minted.handle },
+	})
+	const fetchMock = vi.fn(async (url: string) => {
+		expect(url).toBe(
+			`https://hooks.example/register?callback=${encodeURIComponent(revealed.url)}`,
+		)
+		return new Response(JSON.stringify({ id: 7 }), { status: 201 })
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: {
+			type: 'http',
+			method: 'PUT',
+			url: 'https://hooks.example/register?callback={{webhookUrl}}',
+		},
+	})
+
+	expect(applied).toEqual({
+		ok: true,
+		urlHost: 'heykody.dev',
+		httpStatus: 201,
+		remoteId: '7',
+		error: null,
+	})
+	expect(JSON.stringify(applied)).not.toContain(revealed.url)
+	vi.unstubAllGlobals()
+})
