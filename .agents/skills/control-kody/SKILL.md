@@ -22,6 +22,8 @@ node tools/control-kody.ts map --check
 node tools/control-kody.ts health --sha <merge-sha>
 node tools/control-kody.ts preview --pr 42 --request 'GET /account/waiting.json' --check /account/waiting
 node tools/control-kody.ts package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]
+node tools/control-kody.ts execute --origin <preview> --code-file fixture.ts [--params-file params.json]
+node tools/control-kody.ts search --origin <preview> --query "packageSave" [--domain packages]
 ```
 
 `--kody-id` is an alias for `--package-name`.
@@ -58,6 +60,10 @@ before opening a Feature Map PR.
 - Preview: `me@kentcdodds.com` / `ilikecode` (non-admin, empty until you create
   data through JSON APIs, or `package-create` for a saved package)
 - `/admin` 403 and `/mcp` 401 are expected for those seeds
+- Admin-gated states cannot be preview-tested with the public seed; use the
+  local admin account plus Workers or unit tests
+- `execute` / `search` reuse the same seed session on preview or local; they
+  refuse `https://kody.codes`
 
 ## Proof
 

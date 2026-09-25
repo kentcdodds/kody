@@ -705,6 +705,11 @@ fresh export for a past day. After the summary exists, the next hourly
 control-plane seal covers the day if it is within the 16-day seal lookback;
 otherwise seal it from the admin UI (`POST /actions/seal-day`).
 
+From Kody MCP `execute`, pass `"maxTicks": 1` and loop until `summaryWritten` or
+`already-complete`. Each tick can use the full ~20 s export budget; `maxTicks`
+2+ holds the MCP request open past the client timeout (~60 s). Shell `curl` can
+keep the default of 5.
+
 Hourly freshness does not SHA-256 the SQL bytes; drills do. Page yourself on
 `freshness-unrestorable` (the SQL contains statements D1 cannot import),
 `freshness-stale`, size-ceiling hits, missing manifests or required SQL stats,

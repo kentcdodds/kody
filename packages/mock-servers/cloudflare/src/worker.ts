@@ -540,11 +540,8 @@ async function handleDashboard(
 async function handleEmailSend(
 	request: Request,
 	env: MockCloudflareEnv,
-	accountId: string,
+	_accountId: string,
 ) {
-	if (accountId !== fixtureAccount.id) {
-		return errorEnvelope(404, 1002, 'account not found')
-	}
 	const body = await readJsonBody(request)
 	if (body === null) {
 		return errorEnvelope(400, 1001, 'invalid JSON body')
@@ -592,9 +589,6 @@ async function handleArtifactsRepos(
 		url: URL
 	},
 ) {
-	if (input.accountId !== fixtureAccount.id) {
-		return errorEnvelope(404, 1002, 'account not found')
-	}
 	const tokenHash = await getTokenPartition(env)
 	const state = getMockArtifactsState(env, {
 		tokenHash,
@@ -677,9 +671,6 @@ async function handleArtifactsRepoInfo(
 		repoName: string
 	},
 ) {
-	if (input.accountId !== fixtureAccount.id) {
-		return errorEnvelope(404, 1002, 'account not found')
-	}
 	const tokenHash = await getTokenPartition(env)
 	const state = getMockArtifactsState(env, {
 		tokenHash,
@@ -701,9 +692,6 @@ async function handleArtifactsTokens(
 		namespace: string
 	},
 ) {
-	if (input.accountId !== fixtureAccount.id) {
-		return errorEnvelope(404, 1002, 'account not found')
-	}
 	const body = await readJsonBody(request)
 	if (body === null) {
 		return errorEnvelope(400, 1001, 'invalid JSON body')
@@ -743,9 +731,6 @@ async function handleArtifactsFork(
 		url: URL
 	},
 ) {
-	if (input.accountId !== fixtureAccount.id) {
-		return errorEnvelope(404, 1002, 'account not found')
-	}
 	const body = await readJsonBody(request)
 	if (body === null) {
 		return errorEnvelope(400, 1001, 'invalid JSON body')
@@ -807,9 +792,6 @@ async function handleArtifactsMockSourceSnapshot(
 		url: URL
 	},
 ) {
-	if (input.accountId !== fixtureAccount.id) {
-		return errorEnvelope(404, 1002, 'account not found')
-	}
 	const tokenHash = await getTokenPartition(env)
 	const state = getMockArtifactsState(env, {
 		tokenHash,

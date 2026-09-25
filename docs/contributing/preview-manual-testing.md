@@ -31,6 +31,15 @@ same user. For a saved package, use `package-create` (not a create action on
 npm run control-kody -- package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]
 ```
 
+For arbitrary MCP `execute` or `search` as the same seed user (fixtures,
+`jobRunNow`, probing `kody:runtime`), use the CLI instead of a throwaway OAuth
+script:
+
+```bash
+npm run control-kody -- execute --origin <preview> --code-file fixture.ts [--params-file params.json]
+npm run control-kody -- search --origin <preview> --query "packageSave"
+```
+
 JSON APIs still cover other account data:
 
 ```bash
@@ -82,7 +91,12 @@ seeded remotely):
 
 The script signs in through `POST /auth` (Turnstile is off on preview). Sign in
 in a browser at `/login` with Email + Password and the **Sign in** button.
-`/admin` is expected to 403.
+`/admin` is expected to 403. Preview credentials are public, so the seed is
+intentionally non-admin. States that only an admin can set (account suspension,
+outbound-email pause, account deletion kickoff, fleet feature flags) cannot be
+reproduced on preview. For those paths, sufficient evidence is the local admin
+seed (`kody@example.com` / `ilikecode`) plus targeted Workers or unit tests —
+not a preview `/admin` session and not raw D1 writes.
 
 Do not seed preview D1 from the agent VM with `tools/ci/preview-resources.ts`
 unless you are an operator with Cloudflare credentials. Create user data through
@@ -92,11 +106,21 @@ the product JSON APIs (`/account/*.json` in
 Those JSON endpoints are the same ones the UI posts to. Package creation is
 MCP-only (`packageGetGitRemote({ create: true, kody_id })` with the package name
 leaf or `@owner/leaf`); there is no create action on
-`POST /account/packages.json`.
+`POST /account/packages.json`. Arbitrary MCP `execute` / `search` uses
+`control-kody execute` / `search` against the same origin.
 
 `/mcp` stays OAuth-protected; an unauthenticated GET is 401 by design. Logged-in
 preview testing does not require agents to hand-roll an MCP OAuth dance — the
 CLI does it for them.
+
+Two `packageSave` packages on the seed account are both self-authored and share
+implicit user-secret read. That is not a locked-secret denial test. To preview
+the denial path, publish a listing, install or `communityFork` it under a
+different `kody_id`, skip adoption (`community_forks.adopted_at` stays null),
+lock the user secret to the original package, then run the fork. Workers
+coverage in `package-secret-authority.workers.test.ts` is authoritative for the
+denial path; see
+[Package approval](../use/secrets-and-values.md#package-approval).
 
 ## Logged-in data and UI pass
 

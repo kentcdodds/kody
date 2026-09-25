@@ -89,4 +89,45 @@ test('Cloudflare mock implements the Artifacts REST workflow used in local dev',
 		result?: { files?: Record<string, string> }
 	}
 	expect(destPayload.result?.files).toEqual(sourceFiles)
+
+	const previewAccountId = 'preview-real-account-abc'
+	const previewEnv = {
+		CLOUDFLARE_ACCOUNT_ID: previewAccountId,
+		CLOUDFLARE_API_TOKEN: mock.token,
+		CLOUDFLARE_API_BASE_URL: mock.origin,
+	} as Env
+	const previewBinding = getArtifactsBinding(previewEnv)
+	const previewRepo = `preview-${crypto.randomUUID()}`
+	const previewCreated = await previewBinding.create(previewRepo, {
+		description: 'Preview account path',
+		readOnly: false,
+	})
+	expect(previewCreated.name).toBe(previewRepo)
+	const previewGet = await previewBinding.get(previewRepo)
+	expect(previewGet.status).toBe('ready')
+	if (previewGet.status !== 'ready') {
+		throw new Error(`Expected ${previewRepo} to exist for the preview account.`)
+	}
+	await expect(
+		previewGet.repo.createToken('write', 120),
+	).resolves.toMatchObject({
+		scope: 'write',
+	})
+	await writeArtifactSourceSnapshot({
+		env: {
+			...previewEnv,
+			CLOUDFLARE_API_SOURCE_SNAPSHOTS: 'true',
+		},
+		repoId: previewRepo,
+		files: sourceFiles,
+	})
+	const previewSnapshot = await fetch(
+		`${mock.origin}/client/v4/accounts/${previewAccountId}/artifacts/namespaces/default/repos/${previewRepo}/mock-source-snapshot`,
+		{ headers: { Authorization: `Bearer ${mock.token}` } },
+	)
+	expect(previewSnapshot.status).toBe(200)
+	const previewPayload = (await previewSnapshot.json()) as {
+		result?: { files?: Record<string, string> }
+	}
+	expect(previewPayload.result?.files).toEqual(sourceFiles)
 }, 75_000)

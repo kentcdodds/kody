@@ -29,6 +29,12 @@ import {
 	isProductionKodyOrigin,
 } from './control-kody/package-create.ts'
 import {
+	executeAppMcp,
+	formatMcpCallReport,
+	readJsonObjectFile,
+	searchAppMcp,
+} from './control-kody/mcp-call.ts'
+import {
 	formatLocalAppDbRemediation,
 	isLocalAppOrigin,
 	withLocalAppDbRemediation,
@@ -78,6 +84,8 @@ const usageLines = [
 	'  health          GET /health and optionally assert commitSha',
 	'  map             List or print a Feature Map entry; --check for drift',
 	'  package-create  Create a stub saved package via MCP (preview data)',
+	'  execute         Run an MCP execute module as the seed user',
+	'  search          Run MCP search as the seed user',
 	'',
 	'Common options:',
 	'  --origin <url>       App origin (default: healthy local 3742-3751)',
@@ -89,6 +97,12 @@ const usageLines = [
 	'  --kody-id <slug>     Alias for --package-name',
 	'  --description <t>    Optional package-create stub description',
 	'  --head-ahead         package-create: push one unpublished commit',
+	'  --code-file <p>      Required for execute (ESM module with default export)',
+	'  --params-file <p>    Optional JSON object passed to execute',
+	'  --query <text>       search query',
+	'  --domain <id>        Optional search domain',
+	'  --entity <ref>       Optional search entity ref',
+	'  --limit <n>          Optional search result limit',
 	'  --help               Print this help',
 	'',
 	'preview forwards its flags to preview:manual-test (--pr, --request, --check).',
@@ -110,6 +124,8 @@ export type ControlKodyCommand =
 	| 'health'
 	| 'map'
 	| 'package-create'
+	| 'execute'
+	| 'search'
 	| 'help'
 
 export type ControlKodyOptions = {
@@ -133,6 +149,12 @@ export type ControlKodyOptions = {
 	kodyId: string | null
 	description: string | null
 	headAhead: boolean
+	codeFile: string | null
+	paramsFile: string | null
+	query: string | null
+	domain: string | null
+	entity: string | null
+	limit: number | null
 }
 
 export class ControlKodyError extends Error {
@@ -188,6 +210,12 @@ export function parseControlArgs(argv: Array<string>): ControlKodyOptions {
 		kodyId: null,
 		description: null,
 		headAhead: false,
+		codeFile: null,
+		paramsFile: null,
+		query: null,
+		domain: null,
+		entity: null,
+		limit: null,
 	}
 
 	const [command, ...rest] = argv
@@ -211,6 +239,8 @@ export function parseControlArgs(argv: Array<string>): ControlKodyOptions {
 		'health',
 		'map',
 		'package-create',
+		'execute',
+		'search',
 		'help',
 	]
 	if (!commands.includes(command as ControlKodyCommand)) {
@@ -340,6 +370,44 @@ function parseSharedFlags(
 			}
 			case '--head-ahead': {
 				options.headAhead = true
+				break
+			}
+			case '--code-file': {
+				options.codeFile = requireValue(argv[index + 1], '--code-file')
+				index += 1
+				break
+			}
+			case '--params-file': {
+				options.paramsFile = requireValue(argv[index + 1], '--params-file')
+				index += 1
+				break
+			}
+			case '--query': {
+				options.query = requireValue(argv[index + 1], '--query')
+				index += 1
+				break
+			}
+			case '--domain': {
+				options.domain = requireValue(argv[index + 1], '--domain')
+				index += 1
+				break
+			}
+			case '--entity': {
+				options.entity = requireValue(argv[index + 1], '--entity')
+				index += 1
+				break
+			}
+			case '--limit': {
+				const raw = requireValue(argv[index + 1], '--limit')
+				if (!/^[1-9]\d*$/.test(raw)) {
+					throw new ControlKodyError('--limit must be a positive integer')
+				}
+				const parsed = Number(raw)
+				if (!Number.isSafeInteger(parsed) || parsed < 1) {
+					throw new ControlKodyError('--limit must be a positive integer')
+				}
+				options.limit = parsed
+				index += 1
 				break
 			}
 			default: {
@@ -987,6 +1055,73 @@ async function runCommand(options: ControlKodyOptions) {
 			} else {
 				console.log(formatPackageCreateReport(report))
 				console.log(`cookie-file ${options.cookieFile}`)
+			}
+			return 0
+		}
+		case 'execute': {
+			if (!options.codeFile) {
+				throw new ControlKodyError(
+					'execute requires --code-file <path-to-esm-module>',
+				)
+			}
+			const origin = await resolveOrigin(options)
+			if (isProductionKodyOrigin(origin)) {
+				throw new ControlKodyError(
+					'execute refuses to run against https://kody.codes',
+				)
+			}
+			const defaults = credentialsForOrigin(origin)
+			const params = options.paramsFile
+				? await readJsonObjectFile(options.paramsFile)
+				: undefined
+			const report = await executeAppMcp({
+				origin,
+				email: options.email ?? defaults.email,
+				password: options.password ?? defaults.password,
+				code: readFileSync(options.codeFile, 'utf8'),
+				params,
+			})
+			if (report.cookieHeader) {
+				await writeCookieFile(options.cookieFile, report.cookieHeader, origin)
+			}
+			if (options.json) {
+				const { cookieHeader: _cookieHeader, ...publicReport } = report
+				printJson({ ...publicReport, cookieFile: options.cookieFile })
+			} else {
+				console.log(formatMcpCallReport(report))
+			}
+			return 0
+		}
+		case 'search': {
+			if (!options.query && !options.entity && !options.domain) {
+				throw new ControlKodyError(
+					'search requires --query, --entity, or --domain',
+				)
+			}
+			const origin = await resolveOrigin(options)
+			if (isProductionKodyOrigin(origin)) {
+				throw new ControlKodyError(
+					'search refuses to run against https://kody.codes',
+				)
+			}
+			const defaults = credentialsForOrigin(origin)
+			const report = await searchAppMcp({
+				origin,
+				email: options.email ?? defaults.email,
+				password: options.password ?? defaults.password,
+				query: options.query ?? undefined,
+				domain: options.domain ?? undefined,
+				entity: options.entity ?? undefined,
+				limit: options.limit ?? undefined,
+			})
+			if (report.cookieHeader) {
+				await writeCookieFile(options.cookieFile, report.cookieHeader, origin)
+			}
+			if (options.json) {
+				const { cookieHeader: _cookieHeader, ...publicReport } = report
+				printJson({ ...publicReport, cookieFile: options.cookieFile })
+			} else {
+				console.log(formatMcpCallReport(report))
 			}
 			return 0
 		}

@@ -427,7 +427,10 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
 - `CLOUDFLARE_ACCOUNT_ID` — Cloudflare account id required by the Cloudflare
   Email Service REST API fallback used by local mocks and preview deploys. This
   is a Worker var (not a secret) and should match the account behind
-  `CLOUDFLARE_API_TOKEN`.
+  `CLOUDFLARE_API_TOKEN`. When `CLOUDFLARE_API_BASE_URL` points at the in-repo
+  Cloudflare mock, the account id is a path segment for mock state partitioning;
+  the mock accepts the caller's authenticated account id (preview keeps the real
+  account id).
 - `CLOUDFLARE_API_BASE_URL` — API base URL; defaults to
   `https://api.cloudflare.com` when unset, including for outbound email sending.
   Local `npm run dev` sets this to the Cloudflare mock Worker unless
