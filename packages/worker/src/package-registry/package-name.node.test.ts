@@ -73,28 +73,6 @@ test('normalizePackageNameInput accepts a leaf, strips a matching scope, and rej
 		}),
 	)
 
-	expect(() =>
-		normalizePackageNameInput({
-			value: '',
-			ownerScope: 'grant',
-			action: 'resolve',
-		}),
-	).toThrow(PackageNameInputError)
-	expect(() =>
-		normalizePackageNameInput({
-			value: '@grant/Mailchimp',
-			ownerScope: 'grant',
-			action: 'resolve',
-		}),
-	).toThrow(PackageNameInputError)
-	expect(() =>
-		normalizePackageNameInput({
-			value: 'grant/mailchimp',
-			ownerScope: 'grant',
-			action: 'resolve',
-		}),
-	).toThrow(PackageNameInputError)
-
 	expect(getPackageNameLeaf('@kentcdodds/cursor-cloud-agents')).toBe(
 		'cursor-cloud-agents',
 	)

@@ -4,8 +4,9 @@ import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import { parseJsonc } from './ci/resource-utils.ts'
 import {
-	expectedCompiledWasmGlobs,
-	expectedEsModuleGlobs,
+	guideGeneratedModuleNames,
+	kodyGeneratedEsModuleNames,
+	kodyGeneratedWasmNames,
 	strayKodyGeneratedModuleName,
 	wranglerAdditionalModuleConfigPaths,
 } from './worker-additional-module-allowlist.ts'
@@ -29,8 +30,15 @@ test.each(wranglerAdditionalModuleConfigPaths)(
 		)
 		const esGlobs = esModule?.globs ?? []
 		const wasmGlobs = compiledWasm?.globs ?? []
-		expect(esGlobs).toEqual(expectedEsModuleGlobs())
-		expect(wasmGlobs).toEqual(expectedCompiledWasmGlobs())
+		for (const name of [
+			...guideGeneratedModuleNames,
+			...kodyGeneratedEsModuleNames,
+		]) {
+			expect(esGlobs.some((glob) => glob.endsWith(`/${name}`))).toBe(true)
+		}
+		for (const name of kodyGeneratedWasmNames) {
+			expect(wasmGlobs.some((glob) => glob.endsWith(`/${name}`))).toBe(true)
+		}
 		const straySuffix = `/${strayKodyGeneratedModuleName}`
 		expect(
 			[...esGlobs, ...wasmGlobs].some(

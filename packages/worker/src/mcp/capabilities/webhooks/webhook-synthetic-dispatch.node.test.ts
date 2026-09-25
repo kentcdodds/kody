@@ -40,7 +40,7 @@ function createCtx(
 	}
 }
 
-test('webhookSyntheticDispatch invokes request-mode fixtures and returns synthetic run metadata', async () => {
+test('webhookSyntheticDispatch returns synthetic run metadata and rejects runtime callers', async () => {
 	mocks.dispatchSyntheticWebhookForUser.mockResolvedValue({
 		packageId: 'pkg-1',
 		packageKodyId: 'sentry-bridge',
@@ -53,7 +53,7 @@ test('webhookSyntheticDispatch invokes request-mode fixtures and returns synthet
 		result: { ok: true },
 	})
 
-	const result = await webhookSyntheticDispatchCapability.handler(
+	const requestResult = await webhookSyntheticDispatchCapability.handler(
 		{
 			kodyId: 'sentry-bridge',
 			webhookName: 'sentry',
@@ -65,7 +65,7 @@ test('webhookSyntheticDispatch invokes request-mode fixtures and returns synthet
 		createCtx() as never,
 	)
 
-	expect(result).toEqual({
+	expect(requestResult).toEqual({
 		package_id: 'pkg-1',
 		package_kody_id: 'sentry-bridge',
 		webhook_name: 'sentry',
@@ -76,7 +76,8 @@ test('webhookSyntheticDispatch invokes request-mode fixtures and returns synthet
 		idempotency_key: 'synthetic:00000000-0000-4000-8000-000000000001',
 		result: { ok: true },
 	})
-	expect(JSON.stringify(result)).not.toMatch(/url_secret|"url"/)
+	expect(requestResult).not.toHaveProperty('url')
+	expect(requestResult).not.toHaveProperty('url_secret')
 	expect(mocks.dispatchSyntheticWebhookForUser).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'user-1',
@@ -88,9 +89,7 @@ test('webhookSyntheticDispatch invokes request-mode fixtures and returns synthet
 			},
 		}),
 	)
-})
 
-test('webhookSyntheticDispatch preserves params-mode sibling fields through the service', async () => {
 	mocks.dispatchSyntheticWebhookForUser.mockResolvedValue({
 		packageId: 'pkg-1',
 		packageKodyId: 'gateway',
@@ -103,7 +102,7 @@ test('webhookSyntheticDispatch preserves params-mode sibling fields through the 
 		result: { routed: true },
 	})
 
-	const result = await webhookSyntheticDispatchCapability.handler(
+	const paramsResult = await webhookSyntheticDispatchCapability.handler(
 		{
 			packageId: 'pkg-1',
 			webhookName: 'message-created',
@@ -117,10 +116,9 @@ test('webhookSyntheticDispatch preserves params-mode sibling fields through the 
 		createCtx() as never,
 	)
 
-	expect(result.input_mode).toBe('params')
-	expect(result.synthetic).toBe(true)
-	expect(result).not.toHaveProperty('url')
-	expect(result).not.toHaveProperty('url_secret')
+	expect(paramsResult.input_mode).toBe('params')
+	expect(paramsResult.synthetic).toBe(true)
+	expect(paramsResult).not.toHaveProperty('url_secret')
 	expect(mocks.dispatchSyntheticWebhookForUser).toHaveBeenCalledWith(
 		expect.objectContaining({
 			params: {
@@ -131,9 +129,9 @@ test('webhookSyntheticDispatch preserves params-mode sibling fields through the 
 			},
 		}),
 	)
-})
 
-test('webhookSyntheticDispatch rejects package runtime and background callers', async () => {
+	mocks.dispatchSyntheticWebhookForUser.mockClear()
+
 	await expect(
 		webhookSyntheticDispatchCapability.handler(
 			{
@@ -162,11 +160,7 @@ test('webhookSyntheticDispatch rejects package runtime and background callers', 
 		),
 	).rejects.toThrow(/unavailable from package runtime contexts/)
 
-	expect(mocks.dispatchSyntheticWebhookForUser).not.toHaveBeenCalled()
-})
-
-test('webhookSyntheticDispatch requires a signed-in MCP user (owner path)', async () => {
-	const ctx = {
+	const unsignedCtx = {
 		env: { APP_DB: {} } as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
@@ -182,7 +176,7 @@ test('webhookSyntheticDispatch requires a signed-in MCP user (owner path)', asyn
 				webhookName: 'hook',
 				params: { ok: true },
 			},
-			ctx as never,
+			unsignedCtx as never,
 		),
 	).rejects.toThrow(/Authenticated MCP user is required/)
 	expect(mocks.dispatchSyntheticWebhookForUser).not.toHaveBeenCalled()

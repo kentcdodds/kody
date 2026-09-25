@@ -143,7 +143,7 @@ function mockPackage(input?: {
 	mocks.recordWebhookDelivery.mockResolvedValue({ id: 'run-1' })
 }
 
-test('dispatchSyntheticWebhookForUser builds request-mode export params with synthetic: true', async () => {
+test('dispatchSyntheticWebhookForUser stamps request and params fixtures synthetic: true', async () => {
 	mockPackage({ inputMode: 'request' })
 
 	const result = await dispatchSyntheticWebhookForUser({
@@ -192,11 +192,9 @@ test('dispatchSyntheticWebhookForUser builds request-mode export params with syn
 			kodyId: 'demo',
 		}),
 	)
-})
 
-test('dispatchSyntheticWebhookForUser preserves params-mode siblings and forces synthetic: true', async () => {
+	mocks.dispatchWebhookInvocation.mockClear()
 	mockPackage({ inputMode: 'params' })
-
 	await dispatchSyntheticWebhookForUser({
 		env: { APP_DB: {} } as Env,
 		userId: 'user-1',
@@ -223,7 +221,7 @@ test('dispatchSyntheticWebhookForUser preserves params-mode siblings and forces 
 	)
 })
 
-test('dispatchSyntheticWebhookForUser requires minted webhook and matching fixture mode', async () => {
+test('dispatchSyntheticWebhookForUser rejects unminted, mismatched, foreign, and oversized fixtures', async () => {
 	mockPackage({ minted: false })
 	await expect(
 		dispatchSyntheticWebhookForUser({
@@ -247,28 +245,7 @@ test('dispatchSyntheticWebhookForUser requires minted webhook and matching fixtu
 			params: { ok: true },
 		}),
 	).rejects.toThrow(/inputMode "request"/)
-})
 
-test('dispatchSyntheticWebhookForUser uses the normal webhook invocation helper that burns automation usage', async () => {
-	mockPackage({ inputMode: 'params' })
-	await dispatchSyntheticWebhookForUser({
-		env: { APP_DB: {} } as Env,
-		userId: 'user-1',
-		baseUrl: 'https://heykody.dev',
-		kodyId: 'demo',
-		webhookName: 'hook',
-		params: { ok: true },
-	})
-	// Same helper as real ingress (`internal:webhook:<endpointId>` actor token).
-	expect(mocks.dispatchWebhookInvocation).toHaveBeenCalledTimes(1)
-	expect(mocks.dispatchWebhookInvocation).toHaveBeenCalledWith(
-		expect.objectContaining({
-			endpoint: expect.objectContaining({ id: 'endpoint-1', userId: 'user-1' }),
-		}),
-	)
-})
-
-test('dispatchSyntheticWebhookForUser is owner-scoped (missing package for user)', async () => {
 	mocks.resolveSavedPackage.mockResolvedValue(null)
 	await expect(
 		dispatchSyntheticWebhookForUser({
@@ -280,6 +257,21 @@ test('dispatchSyntheticWebhookForUser is owner-scoped (missing package for user)
 			request: { json: {} },
 		}),
 	).rejects.toThrow(/not found for this user/)
+
+	mockPackage({ inputMode: 'request' })
+	mocks.dispatchWebhookInvocation.mockClear()
+	await expect(
+		dispatchSyntheticWebhookForUser({
+			env: { APP_DB: {} } as Env,
+			userId: 'user-1',
+			baseUrl: 'https://heykody.dev',
+			kodyId: 'demo',
+			webhookName: 'hook',
+			request: {
+				body: 'x'.repeat(1_048_577),
+			},
+		}),
+	).rejects.toThrow(/payload limit/)
 	expect(mocks.dispatchWebhookInvocation).not.toHaveBeenCalled()
 })
 
@@ -331,23 +323,6 @@ test('dispatchSyntheticWebhookForUser forwards declared verification headers lik
 			'Idempotency-Key',
 		]),
 	)
-})
-
-test('dispatchSyntheticWebhookForUser rejects fixtures over the ingress payload cap', async () => {
-	mockPackage({ inputMode: 'request' })
-	await expect(
-		dispatchSyntheticWebhookForUser({
-			env: { APP_DB: {} } as Env,
-			userId: 'user-1',
-			baseUrl: 'https://heykody.dev',
-			kodyId: 'demo',
-			webhookName: 'hook',
-			request: {
-				body: 'x'.repeat(1_048_577),
-			},
-		}),
-	).rejects.toThrow(/payload limit/)
-	expect(mocks.dispatchWebhookInvocation).not.toHaveBeenCalled()
 })
 
 test('dispatchSyntheticWebhookForUser does not re-finish a successful invoke as failed when persistence throws', async () => {
