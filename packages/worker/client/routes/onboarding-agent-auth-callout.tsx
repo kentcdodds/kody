@@ -4,6 +4,7 @@ import {
 	type OnboardingAgentSurface,
 	codexMcpLoginCommand,
 	isDefaultKodyMcpUrl,
+	museMcpLoginCommand,
 	openClawMcpLoginCommand,
 	openCodeMcpAuthCommand,
 } from '#client/routes/onboarding-mcp-clients.ts'
@@ -166,14 +167,17 @@ function renderAgentAuthHint(
 		case 'muse':
 			return surface === 'mobile' ? (
 				<>
-					Run the Kody CLI on a computer, then complete OAuth. After OAuth
+					On a computer, merge Kody into{' '}
+					<code>~/.config/muse/settings.json</code>, run{' '}
+					<code>{museMcpLoginCommand}</code>, then complete OAuth. After OAuth
 					succeeds, you may need to paste a localhost URL into the Muse chat.
 				</>
 			) : (
 				<>
-					Run the Kody CLI install, then complete OAuth when prompted. After
-					OAuth succeeds, you may need to paste a localhost URL into the Muse
-					chat.
+					Run <code>{museMcpLoginCommand}</code> after saving{' '}
+					<code>~/.config/muse/settings.json</code>, then complete OAuth when
+					prompted. After OAuth succeeds, you may need to paste a localhost URL
+					into the Muse chat.
 				</>
 			)
 		case 'copilot':
