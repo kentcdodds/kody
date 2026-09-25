@@ -379,7 +379,7 @@ export function renderPanelContent(
 			return (
 				<>
 					<p>
-						Until the connector appears in Muse&apos;s directory, install with
+						Muse&apos;s directory does not list a Kody connector. Install with
 						the{' '}
 						<a href={kodyCliRepoUrl} target="_blank" rel="noreferrer">
 							Kody CLI
@@ -590,8 +590,8 @@ export function renderPanelWarning(
 			return (
 				<ClientWarning>
 					{surface === 'mobile'
-						? 'Muse Code is for a computer. Change selection and pick a host with a mobile app, or run these steps later on a computer. A Kody connector/plugin has been submitted for Muse Code and is pending review. Until it lands, use the Kody CLI.'
-						: 'A Kody connector/plugin has been submitted for Muse Code and is pending review. Until it lands, use the Kody CLI.'}
+						? "Muse Code is for a computer. Change selection and pick a host with a mobile app, or run these steps later on a computer. Muse's directory does not list a Kody connector. Use the Kody CLI."
+						: "Muse's directory does not list a Kody connector. Use the Kody CLI."}
 				</ClientWarning>
 			)
 		case 'cursor-cloud':

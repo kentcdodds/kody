@@ -31,7 +31,9 @@ reference detail those docs link into.
   find the right thing, then run it
 - [Connect your agent](../guides/connect-your-agent.md) — the three-step Get
   started flow for people
-- [Shared memory](../guides/memory.md), [Secrets](../guides/secrets.md),
+- [Shared memory](../guides/memory.md),
+  [Where agent guidance lives](../guides/agent-guidance.md),
+  [Secrets](../guides/secrets.md),
   [Custom secret providers](../guides/secret-providers.md), and
   [Jobs, workflows, and webhooks](../guides/triggers.md) — concept docs for the
   primitives every connected agent shares
@@ -91,7 +93,9 @@ reference detail those docs link into.
 - [Package app fetch](./package-app-fetch.md) — platform-marked real-surface
   `app_fetch` smoke tests after publish
 - [Synthetic event dispatch](./synthetic-event-dispatch.md) — interactive MCP
-  post-publish smoke test for one subscription handler
+  post-publish smoke test for one subscription handler; webhook sibling is
+  `webhookSyntheticDispatch` on
+  [Inbound webhooks](./webhooks.md#synthetic-smoke-test)
 - [Waiting](./waiting.md) — current-state items only you can clear
   (`/account/waiting` and `waitingSummary`)
 - [Activity](./activity.md) — failures and recent runs for jobs, apps, webhooks,

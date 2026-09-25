@@ -396,7 +396,7 @@ const openClawMcpGuideUrl = 'https://docs.openclaw.ai/tools/mcp'
 /** Muse Code docs on Meta’s developer site (not muse.ai — unrelated video). */
 export const musePlatformUrl = 'https://dev.meta.ai/docs/muse-code/'
 
-/** Official Kody CLI (interim Muse connect path until the Muse connector lands). */
+/** Official Kody CLI (Muse connect path; Muse's directory does not list a Kody connector). */
 export const kodyCliRepoUrl = 'https://github.com/kody-bot/cli'
 
 /** Cursor Marketplace listing for the official Kody plugin (production). */

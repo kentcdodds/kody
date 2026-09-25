@@ -148,8 +148,17 @@ consumer's 15-minute wall-clock limit before later messages are acknowledged.
   `previous_url_secret_hash`.
 - Plaintext URL secrets and verification secrets are never logged. URL secrets
   are hashed for ingress and stored encrypted for `webhookUrlApply` and the
-  owner reveal in package settings. MCP mint, rotate, list, and apply never
-  return the credential URL. Verification secrets stay in the secrets primitive.
+  owner reveal in package settings. MCP mint, rotate, list, apply, and synthetic
+  dispatch never return the credential URL. Verification secrets stay in the
+  secrets primitive.
+
+`webhookSyntheticDispatch` is the interactive-MCP smoke test for one minted
+webhook. It skips the public URL and HMAC path, invokes the bound export with a
+caller fixture, marks the Activity webhook run `synthetic: true`, and counts
+against automation usage like a normal delivery. Side effects are real.
+Owner-only; unavailable from package jobs, subscriptions, webhooks, or other
+package runtimes. End-user call shape:
+[`docs/use/webhooks.md`](../../use/webhooks.md#synthetic-smoke-test).
 
 ## Owner UI
 
