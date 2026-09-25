@@ -1283,6 +1283,35 @@ export type PackageWebhookListItem = {
 }
 
 /** `/account/webhooks.json`: every declared webhook across the owner's packages. */
+
+export type ConnectWebhookApplyLoaderData =
+	| {
+			ok: true
+			handle: string
+			fingerprint: string
+			packageId: string
+			packageKodyId: string
+			packageName: string
+			webhookName: string
+			destination: {
+				method: string
+				url: string
+				headers: Array<{ name: string; value: string }>
+				body: string
+				secretName: string | null
+				integration: string | null
+				injectionSites: Array<string>
+				auth: string
+			}
+			alreadyGranted: boolean
+	  }
+	| {
+			ok: false
+			error: string
+			handle: string | null
+			fingerprint: string | null
+	  }
+
 export type AccountWebhooksLoaderData = {
 	ok: true
 	username: string
@@ -2200,6 +2229,7 @@ export type AppLoaderData = {
 	accountEmailDestinations?: AccountEmailDestinationsLoaderData
 	accountConnectedAgents?: AccountConnectedAgentsLoaderData
 	accountWebhooks?: AccountWebhooksLoaderData
+	connectWebhookApply?: ConnectWebhookApplyLoaderData
 	onboarding?: OnboardingLoaderData
 	connectOauth?: ConnectOauthLoaderData
 	pendingVerification?: PendingVerificationLoaderData

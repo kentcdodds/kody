@@ -173,11 +173,14 @@ decoded/re-encoded). The placeholder is required. Destination URLs must be
 
 Unlike typed `github` (already gated by the owner's GitHub integration / host-
 approved token), `http` lets the model choose an arbitrary outbound target. That
-path is **interactive MCP only** and requires `user_confirmed: true` after the
-agent shows the owner the exact method, URL, `{{webhookUrl}}` injection sites,
-headers, body template, and auth mode. Calling without confirmation returns that
-summary in the error and does not send the request. Package runtimes cannot use
-`http` apply.
+path is **interactive MCP only** and reuses the same **account owner approval
+flow** as secret host approval (`/connect/secrets`), secret package grants, and
+locked-package publish approval: the capability returns an `approval_url` to
+`/connect/webhook-apply` with the exact method, URL, `{{webhookUrl}}` injection
+sites, headers, body template, and auth mode. The signed-in owner Allows on the
+website (writing a durable destination grant); the agent then retries and the
+outbound request runs. Package runtimes cannot use `http` apply. Agents never
+grant access and never see the webhook credential.
 
 ```ts
 await kody.webhooks.webhookUrlApply({
@@ -189,9 +192,10 @@ await kody.webhooks.webhookUrlApply({
 		headers: { 'Content-Type': 'application/json' },
 		body: '{"webhookUrl":"{{webhookUrl}}"}',
 		secretName: 'hooksRegistrationToken',
-		user_confirmed: true, // only after owner approves the exact destination above
 	},
 })
+// If approval is required, send the owner approval_url (/connect/webhook-apply),
+// wait for Allow, then retry the same call.
 ```
 
 Prefer `http` for Workers, CRC shims, and any provider API that accepts a

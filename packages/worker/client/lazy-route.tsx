@@ -364,6 +364,7 @@ registerPreloadPatterns(
 		routePattern(routes.onboardingStep3Agent),
 		routePattern(routes.connectOauth),
 		routePattern(routes.connectSecrets),
+		routePattern(routes.connectWebhookApply),
 		oauthPaths.authorize,
 	],
 	{

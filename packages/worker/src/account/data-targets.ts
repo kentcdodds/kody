@@ -346,6 +346,8 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'email_sender_identities' },
 	{ kind: 'user_id', table: 'email_sender_rules' },
 	{ kind: 'user_id', table: 'webhook_endpoints' },
+	{ kind: 'user_id', table: 'webhook_apply_destination_pending' },
+	{ kind: 'user_id', table: 'webhook_apply_destination_grants' },
 	{
 		kind: 'user_columns',
 		table: 'platform_feedback',

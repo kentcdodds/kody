@@ -8,9 +8,9 @@ import {
 	webhookUrlApplyHttpMethods,
 	webhookUrlApplyPlaceholder,
 	type WebhookUrlApplyDestination,
-	type WebhookUrlApplyHttpDestination,
 } from '#worker/webhooks/apply.ts'
 import { applyWebhookUrlForUser } from '#worker/webhooks/service.ts'
+import { requireWebhookApplyDestinationGrantOrPending } from '#worker/webhooks/apply-destination-approval.ts'
 import {
 	toAppliedWebhookCapability,
 	webhookUrlApplyResultSchema,
@@ -95,12 +95,6 @@ const httpDestinationSchema = z
 			.describe(
 				'Optional host-approved secret sent as Authorization Bearer. Host must be approved for the destination URL.',
 			),
-		user_confirmed: z
-			.literal(true)
-			.optional()
-			.describe(
-				`Required for type "http". Set true only after showing the owner the exact method, destination URL, ${webhookUrlApplyPlaceholder} injection sites, headers, body template, and auth mode, and receiving explicit approval for that outbound registration. Owner settings paste is consent; silent model-chosen apply is not.`,
-			),
 	})
 	.superRefine((destination, ctx) => {
 		const url = destination.url.trim()
@@ -165,67 +159,38 @@ function assertInteractiveHttpApplyCaller(callerContext: {
 	}
 }
 
-function listWebhookUrlInjectionSites(destination: HttpApplyDestinationInput) {
-	const sites: Array<string> = []
-	if (destination.url.includes(webhookUrlApplyPlaceholder)) sites.push('url')
-	for (const [name, value] of Object.entries(destination.headers ?? {})) {
-		if (value.includes(webhookUrlApplyPlaceholder)) {
-			sites.push(`header:${name}`)
-		}
+async function assertHttpApplyDestinationApproved(input: {
+	env: Env
+	userId: string
+	handle: string
+	destination: HttpApplyDestinationInput
+	baseUrl: string
+}) {
+	try {
+		const gate = await requireWebhookApplyDestinationGrantOrPending({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			handle: input.handle,
+			destination: input.destination,
+			baseUrl: input.baseUrl,
+		})
+		if (gate.status === 'granted') return
+		throw new McpCallerError(gate.message)
+	} catch (error) {
+		if (error instanceof McpCallerError) throw error
+		throw new McpCallerError(
+			error instanceof Error
+				? error.message
+				: 'Unable to check webhook apply approval.',
+			{ cause: error },
+		)
 	}
-	if ((destination.body ?? '').includes(webhookUrlApplyPlaceholder)) {
-		sites.push('body')
-	}
-	return sites
-}
-
-function describeHttpApplyAuth(destination: HttpApplyDestinationInput) {
-	const secretName = destination.secretName?.trim()
-	if (secretName) return `secretName=${secretName}`
-	const integration = destination.integration?.trim()
-	if (integration) return `integration=${integration}`
-	const authorizationHeader = Object.entries(destination.headers ?? {}).find(
-		([name]) => name.toLowerCase() === 'authorization',
-	)
-	if (authorizationHeader) {
-		return `header:${authorizationHeader[0]} (caller-supplied)`
-	}
-	return 'none'
-}
-
-export function buildHttpApplyConfirmationMessage(
-	destination: HttpApplyDestinationInput,
-) {
-	const method = (destination.method ?? 'POST').toUpperCase()
-	const url = destination.url.trim()
-	const injectionSites = listWebhookUrlInjectionSites(destination)
-	const headerLines = Object.entries(destination.headers ?? {}).map(
-		([name, value]) => `${name}=${value}`,
-	)
-	const body = destination.body ?? ''
-	return [
-		'HTTP webhookUrlApply requires explicit owner approval for this outbound registration (prompt-injection / confused-deputy protection). Show the owner this exact destination, wait for explicit approval, then retry with destination.user_confirmed: true.',
-		'',
-		`method: ${method}`,
-		`url: ${url}`,
-		`${webhookUrlApplyPlaceholder} injection sites: ${injectionSites.join(', ') || '(none)'}`,
-		`headers: ${headerLines.length > 0 ? headerLines.join('; ') : '(none)'}`,
-		`body: ${body.length > 0 ? body : '(none)'}`,
-		`auth: ${describeHttpApplyAuth(destination)}`,
-	].join('\n')
-}
-
-function assertHttpApplyUserConfirmed(destination: HttpApplyDestinationInput) {
-	if (destination.user_confirmed === true) return
-	throw new McpCallerError(buildHttpApplyConfirmationMessage(destination))
 }
 
 function toApplyDestination(
 	destination: z.infer<typeof webhookUrlApplyDestinationSchema>,
 ): WebhookUrlApplyDestination {
-	if (destination.type === 'github') return destination
-	const { user_confirmed: _userConfirmed, ...httpDestination } = destination
-	return httpDestination satisfies WebhookUrlApplyHttpDestination
+	return destination
 }
 
 export const webhookUrlApplyCapability = defineDomainCapability(
@@ -233,7 +198,7 @@ export const webhookUrlApplyCapability = defineDomainCapability(
 	{
 		name: 'webhookUrlApply',
 		description:
-			'Register a minted webhook URL at a destination without exposing the credential. Pass the handle from webhookUrlMint, webhookUrlRotate, or webhookList. Destination type github creates the repo hook via the user GitHub integration (or a host-approved GitHub token). Destination type http performs an outbound HTTPS request and substitutes {{webhookUrl}} server-side into url/headers/body — interactive MCP only, and only after showing the owner the exact destination and setting user_confirmed: true. Returns ok, remote_id, and url_host only — never the credential URL.',
+			'Register a minted webhook URL at a destination without exposing the credential. Pass the handle from webhookUrlMint, webhookUrlRotate, or webhookList. Destination type github creates the repo hook via the user GitHub integration (or a host-approved GitHub token). Destination type http performs an outbound HTTPS request and substitutes {{webhookUrl}} server-side into url/headers/body — interactive MCP only, and only after the owner Approves the exact destination via the same account approval flow as /connect/secrets host approval (approval_url → website Allow → durable grant → retry). Returns ok, remote_id, and url_host only — never the credential URL.',
 		keywords: [
 			'webhook',
 			'apply',
@@ -242,7 +207,7 @@ export const webhookUrlApplyCapability = defineDomainCapability(
 			'http',
 			'handle',
 			'destination',
-			'confirm',
+			'approval',
 		],
 		readOnly: false,
 		idempotent: false,
@@ -261,7 +226,13 @@ export const webhookUrlApplyCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			if (args.destination.type === 'http') {
 				assertInteractiveHttpApplyCaller(ctx.callerContext)
-				assertHttpApplyUserConfirmed(args.destination)
+				await assertHttpApplyDestinationApproved({
+					env: ctx.env,
+					userId: user.userId,
+					handle: args.handle,
+					destination: args.destination,
+					baseUrl: ctx.callerContext.baseUrl,
+				})
 			}
 			const applied = await applyWebhookUrlForUser({
 				env: ctx.env,

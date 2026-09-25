@@ -370,6 +370,10 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		onboardingArea,
 		(m) => m.connectSecretsRouteLoader,
 	),
+	[routePattern(routes.connectWebhookApply)]: lazyRouteLoader(
+		onboardingArea,
+		(m) => m.connectWebhookApplyRouteLoader,
+	),
 	[routePattern(routes.pendingVerification)]: lazyRouteLoader(
 		authArea,
 		(m) => m.pendingVerificationRouteLoader,
@@ -686,6 +690,9 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.connectSecrets)]: (
 		<LazyOnboardingRoute render={(m) => <m.ConnectSecretsRoute />} />
+	),
+	[routePattern(routes.connectWebhookApply)]: (
+		<LazyOnboardingRoute render={(m) => <m.ConnectWebhookApplyRoute />} />
 	),
 	[oauthPaths.authorize]: (
 		<LazyOnboardingRoute render={(m) => <m.OAuthAuthorizeRoute />} />

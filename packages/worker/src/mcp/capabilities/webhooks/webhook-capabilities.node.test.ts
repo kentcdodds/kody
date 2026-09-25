@@ -41,16 +41,22 @@ vi.mock('#worker/run-records/service.ts', () => ({
 		mockModule.listRunRecords(...args),
 }))
 
+const approvalMock = vi.hoisted(() => ({
+	requireWebhookApplyDestinationGrantOrPending: vi.fn(),
+}))
+
+vi.mock('#worker/webhooks/apply-destination-approval.ts', () => ({
+	requireWebhookApplyDestinationGrantOrPending: (...args: Array<unknown>) =>
+		approvalMock.requireWebhookApplyDestinationGrantOrPending(...args),
+}))
+
 const { webhookListCapability } = await import('./webhook-list.ts')
 const { webhookUrlMintCapability } = await import('./webhook-url-mint.ts')
 const { webhookUrlRotateCapability } = await import('./webhook-url-rotate.ts')
 const { webhookEnableCapability } = await import('./webhook-enable.ts')
 const { webhookDisableCapability } = await import('./webhook-disable.ts')
-const {
-	webhookUrlApplyCapability,
-	webhookUrlApplyDestinationSchema,
-	buildHttpApplyConfirmationMessage,
-} = await import('./webhook-url-apply.ts')
+const { webhookUrlApplyCapability, webhookUrlApplyDestinationSchema } =
+	await import('./webhook-url-apply.ts')
 const { webhookDeliveryListCapability } =
 	await import('./webhook-delivery-list.ts')
 
@@ -533,7 +539,7 @@ test('webhookDeliveryList treats a missing package and an unminted URL as caller
 	expect(mockModule.listRunRecords).not.toHaveBeenCalled()
 })
 
-test('webhookUrlApply http destination requires interactive owner confirmation before outbound registration', async () => {
+test('webhookUrlApply http destination requires owner website approval before outbound registration', async () => {
 	const destination = {
 		type: 'http' as const,
 		url: 'https://hooks.example/register',
@@ -547,34 +553,50 @@ test('webhookUrlApply http destination requires interactive owner confirmation b
 	)
 
 	mockModule.applyWebhookUrlForUser.mockClear()
+	approvalMock.requireWebhookApplyDestinationGrantOrPending.mockReset()
+	approvalMock.requireWebhookApplyDestinationGrantOrPending.mockResolvedValue({
+		status: 'approval_required',
+		fingerprint: 'fp-1',
+		approvalUrl:
+			'https://heykody.dev/connect/webhook-apply?handle=whh_ep-1&fingerprint=fp-1',
+		destination: {
+			method: 'POST',
+			url: destination.url,
+			headers: [{ name: 'Content-Type', value: 'application/json' }],
+			body: destination.body,
+			secretName: destination.secretName,
+			integration: null,
+			injectionSites: ['body'],
+			auth: 'secretName=hooksRegistrationToken',
+		},
+		message:
+			'HTTP webhookUrlApply requires owner approval\n\napproval_url: https://heykody.dev/connect/webhook-apply?handle=whh_ep-1&fingerprint=fp-1\nmethod: POST\nurl: https://hooks.example/register\n{{webhookUrl}} injection sites: body\nauth: secretName=hooksRegistrationToken',
+	})
+
 	const ctx = createCapabilityContext()
 	await expect(
 		webhookUrlApplyCapability.handler({ handle: 'whh_ep-1', destination }, ctx),
-	).rejects.toThrow(/destination\.user_confirmed: true/)
+	).rejects.toThrow(/approval_url:/)
+	await expect(
+		webhookUrlApplyCapability.handler({ handle: 'whh_ep-1', destination }, ctx),
+	).rejects.toThrow('/connect/webhook-apply')
 	await expect(
 		webhookUrlApplyCapability.handler({ handle: 'whh_ep-1', destination }, ctx),
 	).rejects.toThrow('https://hooks.example/register')
-	await expect(
-		webhookUrlApplyCapability.handler({ handle: 'whh_ep-1', destination }, ctx),
-	).rejects.toThrow('secretName=hooksRegistrationToken')
 	expect(mockModule.applyWebhookUrlForUser).not.toHaveBeenCalled()
-
-	const confirmation = buildHttpApplyConfirmationMessage(destination)
-	expect(confirmation).toContain('method: POST')
-	expect(confirmation).toContain('{{webhookUrl}} injection sites: body')
-	expect(confirmation).toContain('secretName=hooksRegistrationToken')
 
 	await expect(
 		webhookUrlApplyCapability.handler(
-			{
-				handle: 'whh_ep-1',
-				destination: { ...destination, user_confirmed: true },
-			},
+			{ handle: 'whh_ep-1', destination },
 			createCapabilityContext({ executionOrigin: 'background' }),
 		),
-	).rejects.toThrow(/interactive MCP agent flow/)
+	).rejects.toThrow(/interactive/)
 	expect(mockModule.applyWebhookUrlForUser).not.toHaveBeenCalled()
 
+	approvalMock.requireWebhookApplyDestinationGrantOrPending.mockResolvedValue({
+		status: 'granted',
+		fingerprint: 'fp-1',
+	})
 	mockModule.applyWebhookUrlForUser.mockResolvedValue({
 		ok: true,
 		urlHost: 'heykody.dev',
@@ -584,10 +606,7 @@ test('webhookUrlApply http destination requires interactive owner confirmation b
 	})
 	await expect(
 		webhookUrlApplyCapability.handler(
-			{
-				handle: 'whh_ep-1',
-				destination: { ...destination, user_confirmed: true },
-			},
+			{ handle: 'whh_ep-1', destination },
 			createCapabilityContext({ executionOrigin: 'interactive' }),
 		),
 	).resolves.toEqual({
