@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import  { type PackageAppServeOwner } from './package-app-serve.ts'
+import { packageAppRuntimeForwardUnavailableMessage } from '#worker/runtime-worker-service.ts'
 
 const runtimeForwardMock = vi.hoisted(() => ({
 	hasLocalPackageAppRuntimeBridge: vi.fn(() => true),
@@ -10,12 +11,17 @@ const runtimeForwardMock = vi.hoisted(() => ({
 	createPackageAppCallerContext: vi.fn(),
 }))
 
-vi.mock('#worker/runtime-worker-service.ts', () => ({
-	hasLocalPackageAppRuntimeBridge: () =>
-		runtimeForwardMock.hasLocalPackageAppRuntimeBridge(),
-	getRuntimeWorkerService: (...args: Array<unknown>) =>
-		runtimeForwardMock.getRuntimeWorkerService(...args),
-}))
+vi.mock('#worker/runtime-worker-service.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/runtime-worker-service.ts')>()
+	return {
+		...actual,
+		hasLocalPackageAppRuntimeBridge: () =>
+			runtimeForwardMock.hasLocalPackageAppRuntimeBridge(),
+		getRuntimeWorkerService: (...args: Array<unknown>) =>
+			runtimeForwardMock.getRuntimeWorkerService(...args),
+	}
+})
 
 vi.mock('#worker/package-invocations/module-artifacts.ts', () => ({
 	resolveSavedPackage: (...args: Array<unknown>) =>
@@ -94,14 +100,16 @@ test('servePackageAppRequest stays local when PackageAppRuntimeBridge is availab
 	expect(runtimeForwardMock.resolveSavedPackage).toHaveBeenCalled()
 })
 
-test('servePackageAppRequest stays local when RUNTIME_WORKER is unset even without the bridge', async () => {
+test('servePackageAppRequest fails closed when PackageAppRuntimeBridge and RUNTIME_WORKER are both missing', async () => {
 	runtimeForwardMock.hasLocalPackageAppRuntimeBridge.mockReturnValue(false)
 	runtimeForwardMock.getRuntimeWorkerService.mockReturnValue(null)
-	runtimeForwardMock.resolveSavedPackage.mockResolvedValue(null)
 
 	const response = await servePackageAppRequest(createServeInput({} as Env))
 
-	expect(response.status).toBe(404)
+	expect(response.status).toBe(500)
+	const body = (await response.json()) as { cause?: string }
+	expect(body.cause).toBe(packageAppRuntimeForwardUnavailableMessage)
 	expect(runtimeForwardMock.servePackageApp).not.toHaveBeenCalled()
-	expect(runtimeForwardMock.resolveSavedPackage).toHaveBeenCalled()
+	expect(runtimeForwardMock.resolveSavedPackage).not.toHaveBeenCalled()
+	expect(runtimeForwardMock.buildPackageAppWorker).not.toHaveBeenCalled()
 })

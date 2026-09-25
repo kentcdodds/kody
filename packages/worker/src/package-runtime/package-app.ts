@@ -3,6 +3,7 @@ import {
 	exports as workerExports,
 	waitUntil as scheduleWorkerWaitUntil,
 } from 'cloudflare:workers'
+import { requireLocalPackageAppRuntimeBridge } from '#worker/runtime-worker-service.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
 	getPackageAppEntryPath,
@@ -1930,7 +1931,7 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 		mainModule,
 		modules,
 		env: {
-			[packageAppRuntimeBindingName]: workerExports.PackageAppRuntimeBridge({
+			[packageAppRuntimeBindingName]: requireLocalPackageAppRuntimeBridge()({
 				props: {
 					baseUrl: input.baseUrl,
 					userId: input.userId,
