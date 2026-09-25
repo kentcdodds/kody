@@ -11,6 +11,7 @@ import {
 	buildGrokCliMcpToml,
 	buildKodyAppIconUrl,
 	buildKodyCliInstallCommand,
+	buildMuseSettingsJson,
 	buildOpenClawMcpAddCommand,
 	buildOpenClawMcpJson,
 	buildOpenCodeMcpAddCommand,
@@ -20,6 +21,7 @@ import {
 	defaultKodyMcpUrl,
 	isDefaultKodyMcpUrl,
 	mcpClientTabs,
+	museMcpLoginCommand,
 	onboardingDataHref,
 	onboardingDesktopFeaturedAgentIds,
 	onboardingMobileFeaturedAgentIds,
@@ -165,6 +167,17 @@ test('onboarding MCP client builders emit the structured configs each host expec
 			},
 		},
 	})
+	expect(JSON.parse(buildMuseSettingsJson(mcpServerUrl))).toEqual({
+		schema_version: 1,
+		mcp_servers: {
+			kody: {
+				transport: 'streamable_http',
+				url: mcpServerUrl,
+				mode: 'optional',
+			},
+		},
+	})
+	expect(museMcpLoginCommand).toBe('muse mcp login kody')
 	expect(buildCodexMcpToml(mcpServerUrl)).toBe(
 		['[mcp_servers.kody]', `url = "${mcpServerUrl}"`, ''].join('\n'),
 	)

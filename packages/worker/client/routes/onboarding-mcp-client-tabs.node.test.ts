@@ -11,6 +11,7 @@ import {
 	kodyChatGptPluginUrl,
 	kodyCursorAddPluginCommand,
 	kodyCursorMarketplaceUrl,
+	museMcpGuideUrl,
 } from './onboarding-mcp-clients.ts'
 
 test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok Bot surfaces', async () => {
@@ -172,10 +173,13 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 		}),
 	)
 	expect(muse).toContain('data-agent="muse"')
-	expect(muse).toContain('npx @kodycodes/cli install')
-	expect(muse).toContain('https://github.com/kody-bot/cli')
-	expect(muse).toContain('https://dev.meta.ai/docs/muse-code/')
-	expect(muse).toContain('does not list a Kody connector')
+	expect(muse).toContain('muse mcp login kody')
+	expect(muse).toContain('~/.config/muse/settings.json')
+	expect(muse).toContain('streamable_http')
+	expect(muse).toContain(museMcpGuideUrl)
+	expect(muse).toContain('Do not paste npx @kodycodes/cli install')
+	expect(muse).not.toContain('npx @kodycodes/cli install</')
+	expect(muse).not.toContain('https://github.com/kody-bot/cli')
 	expect(muse).toContain('paste a localhost URL')
 	expect(muse).toContain('data-testid="onboarding-agent-help"')
 	expect(muse).toContain('data-testid="onboarding-agent-warning"')

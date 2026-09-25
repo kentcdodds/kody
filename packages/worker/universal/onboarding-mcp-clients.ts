@@ -393,11 +393,11 @@ const grokCliMcpGuideUrl = 'https://docs.x.ai/build/features/mcp-servers'
 /** OpenClaw Control UI + CLI docs for adding a remote MCP server. */
 const openClawMcpGuideUrl = 'https://docs.openclaw.ai/tools/mcp'
 
-/** Muse Code docs on Meta’s developer site (not muse.ai — unrelated video). */
-export const musePlatformUrl = 'https://dev.meta.ai/docs/muse-code/'
-
-/** Official Kody CLI (Muse connect path; Muse's directory does not list a Kody connector). */
-export const kodyCliRepoUrl = 'https://github.com/kody-bot/cli'
+/**
+ * Muse Code MCP + OAuth docs (`mcp_servers` in settings, `muse mcp login`).
+ * Extending page covers remote streamable_http servers and OAuth sign-in.
+ */
+export const museMcpGuideUrl = 'https://dev.meta.ai/docs/muse-code/extending/'
 
 /** Cursor Marketplace listing for the official Kody plugin (production). */
 export const kodyCursorMarketplaceUrl = 'https://cursor.com/marketplace/kody'
@@ -448,7 +448,7 @@ function onboardingAgentHelpHref(id: McpClientKind) {
 		case 'openclaw':
 			return openClawMcpGuideUrl
 		case 'muse':
-			return kodyCliRepoUrl
+			return museMcpGuideUrl
 		default: {
 			const exhaustive: never = id
 			return exhaustive
@@ -648,6 +648,27 @@ export function buildOpenClawMcpJson(mcpServerUrl: string) {
 	})
 }
 
+/**
+ * Muse Code user settings (`~/.config/muse/settings.json`). Merge the
+ * `mcp_servers.kody` entry into an existing file; new files need
+ * `schema_version: 1`.
+ */
+export function buildMuseSettingsJson(mcpServerUrl: string) {
+	return prettyJson({
+		schema_version: 1,
+		mcp_servers: {
+			kody: {
+				transport: 'streamable_http',
+				url: mcpServerUrl,
+				mode: 'optional',
+			},
+		},
+	})
+}
+
+/** Muse OAuth for a remote server declared in `mcp_servers`. */
+export const museMcpLoginCommand = 'muse mcp login kody'
+
 /** Codex shared `~/.codex/config.toml` streamable HTTP entry. */
 export function buildCodexMcpToml(mcpServerUrl: string) {
 	return [
@@ -696,6 +717,7 @@ export function collectOnboardingMcpSnippets(mcpServerUrl: string) {
 		{ code: buildCopilotCliAddCommand(mcpServerUrl), lang: 'sh' },
 		{ code: buildVsCodeMcpJson(mcpServerUrl), lang: 'json' },
 		{ code: buildCopilotCliMcpJson(mcpServerUrl), lang: 'json' },
-		{ code: buildKodyCliInstallCommand(mcpServerUrl), lang: 'sh' },
+		{ code: buildMuseSettingsJson(mcpServerUrl), lang: 'json' },
+		{ code: museMcpLoginCommand, lang: 'sh' },
 	]
 }

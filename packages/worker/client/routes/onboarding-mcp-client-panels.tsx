@@ -14,7 +14,7 @@ import {
 	buildOpenClawMcpJson,
 	buildOpenCodeMcpAddCommand,
 	buildOpenCodeMcpJson,
-	buildKodyCliInstallCommand,
+	buildMuseSettingsJson,
 	buildVsCodeInstallUrl,
 	buildVsCodeMcpJson,
 	chatGptDeveloperModeGuideUrl,
@@ -24,12 +24,12 @@ import {
 	isDefaultKodyMcpUrl,
 	kodyAppIconFilename,
 	kodyChatGptPluginUrl,
-	kodyCliRepoUrl,
 	kodyCursorAddPluginCommand,
 	kodyCursorMarketplaceUrl,
 	type McpClientKind,
 	type OnboardingAgentSurface,
-	musePlatformUrl,
+	museMcpGuideUrl,
+	museMcpLoginCommand,
 	openClawMcpLoginCommand,
 } from '#client/routes/onboarding-mcp-clients.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
@@ -375,39 +375,38 @@ export function renderPanelContent(
 			)
 		}
 		case 'muse': {
-			const installCommand = buildKodyCliInstallCommand(mcpServerUrl)
+			const museSettingsJson = buildMuseSettingsJson(mcpServerUrl)
 			return (
 				<>
 					<p>
-						Muse&apos;s directory does not list a Kody connector. Install with
-						the{' '}
-						<a href={kodyCliRepoUrl} target="_blank" rel="noreferrer">
-							Kody CLI
-						</a>{' '}
-						(
-						<a href={musePlatformUrl} target="_blank" rel="noreferrer">
-							dev.meta.ai
+						Add Kody to Muse Code via <code>~/.config/muse/settings.json</code>,
+						then sign in with <code>muse mcp login</code> (
+						<a href={museMcpGuideUrl} target="_blank" rel="noreferrer">
+							Muse MCP docs
 						</a>
 						).
 					</p>
+					<ConnectCopyCardDetails
+						highlights={highlights}
+						summaryLead="Merge into"
+						summaryCode="~/.config/muse/settings.json"
+						label="~/.config/muse/settings.json"
+						value={museSettingsJson}
+						copyLabel="Copy JSON"
+						variant="pill"
+						lang="json"
+					/>
 					<ConnectCopyCard
 						highlights={highlights}
-						label="Kody CLI"
-						value={installCommand}
+						label="muse mcp login"
+						value={museMcpLoginCommand}
 						copyLabel="Copy command"
 						variant="pill"
 						lang="sh"
 					/>
-					<ConnectCopyCard
-						highlights={highlights}
-						label="MCP URL"
-						value={mcpServerUrl}
-						copyLabel="Copy MCP URL"
-						variant="pill"
-					/>
 					<p>
-						After OAuth succeeds, you may need to paste a localhost URL into the
-						Muse chat.
+						After OAuth succeeds, headless Muse may ask you to paste a localhost
+						URL into the Muse chat.
 					</p>
 				</>
 			)
@@ -590,8 +589,8 @@ export function renderPanelWarning(
 			return (
 				<ClientWarning>
 					{surface === 'mobile'
-						? "Muse Code is for a computer. Change selection and pick a host with a mobile app, or run these steps later on a computer. Muse's directory does not list a Kody connector. Use the Kody CLI."
-						: "Muse's directory does not list a Kody connector. Use the Kody CLI."}
+						? "Muse Code is for a computer. Change selection and pick a host with a mobile app, or run these steps later on a computer. Do not paste npx @kodycodes/cli install into Muse chat — that runs in Muse's Linux VM and cannot configure Muse."
+						: "Do not paste npx @kodycodes/cli install into Muse chat — that runs in Muse's Linux VM and cannot configure Muse."}
 				</ClientWarning>
 			)
 		case 'cursor-cloud':
