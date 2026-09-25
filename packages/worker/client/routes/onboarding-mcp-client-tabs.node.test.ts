@@ -176,6 +176,12 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(muse).toContain('muse mcp login kody')
 	expect(muse).toContain('~/.config/muse/settings.json')
 	expect(muse).toContain('streamable_http')
+	expect(muse).not.toMatch(
+		/<details(?![^>]*\bopen\b)[^>]*data-testid="onboarding-mcp-manual-json"/,
+	)
+	expect(muse.indexOf('~/.config/muse/settings.json')).toBeLessThan(
+		muse.indexOf('muse mcp login kody'),
+	)
 	expect(muse).toContain(museMcpGuideUrl)
 	expect(muse).toContain('Do not paste npx @kodycodes/cli install')
 	expect(muse).not.toContain('npx @kodycodes/cli install</')

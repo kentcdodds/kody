@@ -386,10 +386,8 @@ export function renderPanelContent(
 						</a>
 						).
 					</p>
-					<ConnectCopyCardDetails
+					<ConnectCopyCard
 						highlights={highlights}
-						summaryLead="Merge into"
-						summaryCode="~/.config/muse/settings.json"
 						label="~/.config/muse/settings.json"
 						value={museSettingsJson}
 						copyLabel="Copy JSON"
