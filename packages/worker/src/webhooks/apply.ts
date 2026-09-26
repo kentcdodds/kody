@@ -456,6 +456,23 @@ export function isFormUrlEncodedContentType(contentType: string | null) {
 	)
 }
 
+export function isJsonContentType(contentType: string | null) {
+	if (!contentType) return false
+	return (
+		contentType.split(';', 1)[0]!.trim().toLowerCase() === 'application/json'
+	)
+}
+
+/** Escape a value for splicing into a JSON string literal (quotes/backslashes). */
+export function escapeForJsonString(value: string) {
+	return JSON.stringify(value).slice(1, -1)
+}
+
+/** Form-urlencoded serialization of a single value (spaces become `+`). */
+export function formEncodeApplicationValue(value: string) {
+	return new URLSearchParams({ v: value }).toString().slice('v='.length)
+}
+
 export function countWebhookUrlPlaceholdersInFormBody(body: string) {
 	let count = 0
 	const params = new URLSearchParams(body)
@@ -818,18 +835,27 @@ async function dispatchHttpApply(input: {
 	}
 	let resolvedBody: string | undefined
 	if (body.length > 0) {
-		resolvedBody = isFormUrlEncodedContentType(contentType)
-			? substituteApplyPlaceholdersInFormBody(
-					body,
-					input.webhookUrl,
-					webhookSecret,
-				)
-			: substituteApplyPlaceholders(
-					body,
-					input.webhookUrl,
-					webhookSecret,
-					false,
-				)
+		if (isFormUrlEncodedContentType(contentType)) {
+			resolvedBody = substituteApplyPlaceholdersInFormBody(
+				body,
+				input.webhookUrl,
+				webhookSecret,
+			)
+		} else if (isJsonContentType(contentType)) {
+			resolvedBody = substituteApplyPlaceholders(
+				body,
+				escapeForJsonString(input.webhookUrl),
+				webhookSecret !== null ? escapeForJsonString(webhookSecret) : null,
+				false,
+			)
+		} else {
+			resolvedBody = substituteApplyPlaceholders(
+				body,
+				input.webhookUrl,
+				webhookSecret,
+				false,
+			)
+		}
 	}
 	const auth = await authorizeApplyRequest({
 		env: input.env,
@@ -857,6 +883,10 @@ async function dispatchHttpApply(input: {
 		secrets.push(webhookSecret)
 		const encoded = encodeURIComponent(webhookSecret)
 		if (encoded !== webhookSecret) secrets.push(encoded)
+		const jsonEscaped = escapeForJsonString(webhookSecret)
+		if (jsonEscaped !== webhookSecret) secrets.push(jsonEscaped)
+		const formEncoded = formEncodeApplicationValue(webhookSecret)
+		if (formEncoded !== webhookSecret) secrets.push(formEncoded)
 	}
 	return sendAuthorizedApplyRequest({
 		url: resolvedUrl,

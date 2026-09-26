@@ -794,6 +794,76 @@ test('webhookUrlApply redacts {{webhookSecret}} from destination error bodies', 
 	vi.unstubAllGlobals()
 })
 
+test('webhookUrlApply JSON-escapes {{webhookSecret}} with special characters', async () => {
+	const { userId, env, minted } = await mintOwnerWebhookWithVerification()
+	const hookSecret = 'hook"with\\quotes\nand\tnewline'
+	mockGithubIntegration()
+	secretMocks.resolveSecretForHost.mockResolvedValue({
+		found: true,
+		value: hookSecret,
+		allowedHosts: ['api.github.com'],
+		scope: 'user',
+	})
+	const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+		const raw = String(init?.body)
+		expect(raw).toContain(JSON.stringify(hookSecret).slice(1, -1))
+		const body = JSON.parse(raw) as { config: { secret: string } }
+		expect(body.config.secret).toBe(hookSecret)
+		return new Response(JSON.stringify({ id: 100 }), { status: 201 })
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: githubHooksHttpDestination({ includeWebhookSecret: true }),
+	})
+
+	expect(applied.ok).toBe(true)
+	expect(JSON.stringify(applied)).not.toContain(hookSecret)
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply redacts form-encoded {{webhookSecret}} (+ for spaces) from errors', async () => {
+	const { userId, env, minted } = await mintOwnerWebhookWithVerification()
+	const hookSecret = 'hook secret with spaces'
+	secretMocks.resolveSecretForHost.mockResolvedValue({
+		found: true,
+		value: hookSecret,
+		allowedHosts: ['hooks.example'],
+		scope: 'user',
+	})
+	const formEncoded = new URLSearchParams({ v: hookSecret })
+		.toString()
+		.slice('v='.length)
+	expect(formEncoded).toContain('+')
+	const fetchMock = vi.fn(async () => {
+		return new Response(`bad callback ${formEncoded}`, { status: 400 })
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: {
+			type: 'http',
+			url: 'https://hooks.example/register',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: `url=${encodeURIComponent('{{webhookUrl}}')}&secret=${encodeURIComponent('{{webhookSecret}}')}`,
+		},
+	})
+
+	expect(applied.ok).toBe(false)
+	expect(applied.error ?? '').not.toContain(hookSecret)
+	expect(applied.error ?? '').not.toContain(formEncoded)
+	expect(applied.error ?? '').toContain('[redacted]')
+	vi.unstubAllGlobals()
+})
+
 test('webhookUrlApply without {{webhookSecret}} still works for unsigned webhooks', async () => {
 	const { userId, env, minted } = await mintOwnerWebhook()
 	const revealed = await revealWebhookUrlForWebsite({
