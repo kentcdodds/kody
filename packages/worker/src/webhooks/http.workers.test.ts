@@ -274,6 +274,11 @@ function declareWebhook(input: {
 		toleranceSeconds?: number
 		deliveryIdHeader?: string
 	}
+	challenge?:
+		| { type: 'x-activity-crc'; secretName: string }
+		| { type: 'websub-hub'; secretName?: string }
+		| { type: 'meta-hub'; secretName: string }
+		| { type: 'slack-url-verification'; secretName?: string }
 }) {
 	mocks.loadPackageManifestBySourceId.mockResolvedValue({
 		manifest: {
@@ -295,6 +300,7 @@ function declareWebhook(input: {
 							: {}),
 						...(input.verification ? { verification: input.verification } : {}),
 						...(input.replay ? { replay: input.replay } : {}),
+						...(input.challenge ? { challenge: input.challenge } : {}),
 					},
 				],
 			},
@@ -1483,4 +1489,194 @@ test('rotate overlap accepts the previous URL until the new URL is used or the g
 		urlSecret: currentSecret,
 	})
 	expect(currentAfterExpiry.status).toBe(202)
+})
+
+test('subscription challenges answer on minted URLs without invoking exports', async () => {
+	silenceExpectedConsoleWarns(['activation-run-record-failed'])
+	await ensureSchema(env.APP_DB)
+	await env.APP_DB.prepare(`DELETE FROM webhook_endpoints`).run()
+	await env.APP_DB.prepare(`DELETE FROM saved_packages`).run()
+	await env.APP_DB.prepare(`DELETE FROM users`).run()
+
+	const userId = await seedOwner()
+	await clearRunRecords({ env, userId })
+	const urlSecret = 'url-secret-plain'
+	await mintWebhook({ userId, webhookName: 'activity-event', urlSecret })
+	mocks.invokePackageExport.mockClear()
+	mocks.resolveSecret.mockReset()
+
+	declareWebhook({
+		name: 'activity-event',
+		challenge: { type: 'x-activity-crc', secretName: 'xConsumerSecret' },
+	})
+	mocks.resolveSecret.mockResolvedValue({
+		found: true,
+		value: 'consumer-secret',
+	})
+
+	const crcToken = 'x-crc-token'
+	const ctx = createExecutionContext()
+	const crcResponse = await handleWebhookIngressRequest(
+		new Request(
+			`https://test.kody.dev/@alice/webhooks/sentry-bridge/activity-event/${urlSecret}?crc_token=${crcToken}`,
+			{ method: 'GET' },
+		),
+		env,
+		ctx,
+	)
+	await waitOnExecutionContext(ctx)
+	expect(crcResponse.status).toBe(200)
+	const crcJson = (await crcResponse.json()) as { response_token: string }
+	expect(crcJson.response_token).toMatch(/^sha256=/)
+	expect(mocks.invokePackageExport).not.toHaveBeenCalled()
+	expect(await listDeliveries(userId, 'activity-event')).toEqual([])
+
+	mocks.resolveSecret.mockResolvedValue({ found: false })
+	const missingSecretCtx = createExecutionContext()
+	const missingSecret = await handleWebhookIngressRequest(
+		new Request(
+			`https://test.kody.dev/@alice/webhooks/sentry-bridge/activity-event/${urlSecret}?crc_token=${crcToken}`,
+			{ method: 'GET' },
+		),
+		env,
+		missingSecretCtx,
+	)
+	await waitOnExecutionContext(missingSecretCtx)
+	expect(missingSecret.status).toBe(401)
+
+	declareWebhook({
+		name: 'activity-event',
+		challenge: { type: 'meta-hub', secretName: 'metaVerify' },
+	})
+	mocks.resolveSecret.mockResolvedValue({ found: true, value: 'meta-token' })
+	const metaOkCtx = createExecutionContext()
+	const metaOk = await handleWebhookIngressRequest(
+		new Request(
+			`https://test.kody.dev/@alice/webhooks/sentry-bridge/activity-event/${urlSecret}?hub.mode=subscribe&hub.verify_token=meta-token&hub.challenge=99`,
+			{ method: 'GET' },
+		),
+		env,
+		metaOkCtx,
+	)
+	await waitOnExecutionContext(metaOkCtx)
+	expect(metaOk.status).toBe(200)
+	expect(await metaOk.text()).toBe('99')
+
+	const metaWrongCtx = createExecutionContext()
+	const metaWrong = await handleWebhookIngressRequest(
+		new Request(
+			`https://test.kody.dev/@alice/webhooks/sentry-bridge/activity-event/${urlSecret}?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=99`,
+			{ method: 'GET' },
+		),
+		env,
+		metaWrongCtx,
+	)
+	await waitOnExecutionContext(metaWrongCtx)
+	expect(metaWrong.status).toBe(401)
+
+	declareWebhook({
+		name: 'activity-event',
+		challenge: { type: 'websub-hub', secretName: 'hubVerify' },
+	})
+	mocks.resolveSecret.mockResolvedValue({ found: true, value: 'hub-token' })
+	const websubOkCtx = createExecutionContext()
+	const websubOk = await handleWebhookIngressRequest(
+		new Request(
+			`https://test.kody.dev/@alice/webhooks/sentry-bridge/activity-event/${urlSecret}?hub.mode=subscribe&hub.challenge=yt&hub.verify_token=hub-token`,
+			{ method: 'GET' },
+		),
+		env,
+		websubOkCtx,
+	)
+	await waitOnExecutionContext(websubOkCtx)
+	expect(websubOk.status).toBe(200)
+	expect(await websubOk.text()).toBe('yt')
+
+	declareWebhook({
+		name: 'activity-event',
+		challenge: {
+			type: 'slack-url-verification',
+			secretName: 'slackSigningSecret',
+		},
+	})
+	mocks.resolveSecret.mockResolvedValue({ found: false })
+	const slackBody = JSON.stringify({
+		type: 'url_verification',
+		challenge: 'slack-challenge',
+	})
+	const slackMissing = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'activity-event',
+		urlSecret,
+		body: slackBody,
+	})
+	expect(slackMissing.status).toBe(401)
+	expect(mocks.invokePackageExport).not.toHaveBeenCalled()
+
+	mocks.resolveSecret.mockResolvedValue({
+		found: true,
+		value: 'slack-signing-secret',
+	})
+	const timestamp = String(Math.floor(Date.now() / 1000))
+	const base = new TextEncoder().encode(`v0:${timestamp}:${slackBody}`)
+	const signature = await computeWebhookHmacSignature({
+		algorithm: 'hmac-sha256',
+		secret: 'slack-signing-secret',
+		body: base.buffer.slice(
+			base.byteOffset,
+			base.byteOffset + base.byteLength,
+		) as ArrayBuffer,
+		encoding: 'hex',
+		prefix: 'v0=',
+	})
+	const slackOk = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'activity-event',
+		urlSecret,
+		body: slackBody,
+		headers: {
+			'x-slack-request-timestamp': timestamp,
+			'x-slack-signature': signature,
+		},
+	})
+	expect(slackOk.status).toBe(200)
+	expect(await slackOk.json()).toEqual({ challenge: 'slack-challenge' })
+	expect(mocks.invokePackageExport).not.toHaveBeenCalled()
+
+	const noChallengeGetCtx = createExecutionContext()
+	declareWebhook({ name: 'activity-event' })
+	const noChallengeGet = await handleWebhookIngressRequest(
+		new Request(
+			`https://test.kody.dev/@alice/webhooks/sentry-bridge/activity-event/${urlSecret}?crc_token=x`,
+			{ method: 'GET' },
+		),
+		env,
+		noChallengeGetCtx,
+	)
+	await waitOnExecutionContext(noChallengeGetCtx)
+	expect(noChallengeGet.status).toBe(405)
+	expect(noChallengeGet.headers.get('Allow')).toBe('POST')
+
+	await env.APP_DB.prepare(
+		`UPDATE users SET suspended_at = ? WHERE stable_user_id = ?`,
+	)
+		.bind('2026-07-24T12:00:00.000Z', userId)
+		.run()
+	declareWebhook({
+		name: 'activity-event',
+		challenge: { type: 'meta-hub', secretName: 'metaVerify' },
+	})
+	mocks.resolveSecret.mockResolvedValue({ found: true, value: 'meta-token' })
+	const suspendedChallengeCtx = createExecutionContext()
+	const suspendedChallenge = await handleWebhookIngressRequest(
+		new Request(
+			`https://test.kody.dev/@alice/webhooks/sentry-bridge/activity-event/${urlSecret}?hub.mode=subscribe&hub.verify_token=meta-token&hub.challenge=99`,
+			{ method: 'GET' },
+		),
+		env,
+		suspendedChallengeCtx,
+	)
+	await waitOnExecutionContext(suspendedChallengeCtx)
+	expect(suspendedChallenge.status).toBe(403)
+	expect(await listDeliveries(userId, 'activity-event')).toEqual([])
 })

@@ -123,6 +123,7 @@ function mockPackage(input?: {
 			rateLimitPerMinute: 60,
 			verification: null,
 			replay: null,
+			challenge: null,
 		},
 	])
 	mocks.getWebhookEndpointByKey.mockResolvedValue(

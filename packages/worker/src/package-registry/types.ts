@@ -144,6 +144,48 @@ export type PackageWebhookVerification = z.infer<
 	typeof packageWebhookVerificationSchema
 >
 
+/**
+ * Platform-handled ownership quizzes on the minted webhook URL. Challenge
+ * requests never invoke package code: the worker answers from query/body +
+ * optional named secret only. `secretName` is the same secret-store name
+ * pattern as `verification.secretName`.
+ */
+export const webhookChallengeTypeValues = [
+	'x-activity-crc',
+	'websub-hub',
+	'meta-hub',
+	'slack-url-verification',
+] as const
+export type WebhookChallengeType = (typeof webhookChallengeTypeValues)[number]
+
+export const packageWebhookChallengeSchema = z.discriminatedUnion('type', [
+	z.object({
+		type: z.literal('x-activity-crc'),
+		secretName: z.string().min(1),
+	}),
+	z.object({
+		type: z.literal('websub-hub'),
+		/** When set, `hub.verify_token` must match this secret. */
+		secretName: z.string().min(1).optional(),
+	}),
+	z.object({
+		type: z.literal('meta-hub'),
+		secretName: z.string().min(1),
+	}),
+	z.object({
+		type: z.literal('slack-url-verification'),
+		/**
+		 * When set, the challenge POST must carry a valid Slack signing
+		 * signature for this signing secret (`X-Slack-Signature`).
+		 */
+		secretName: z.string().min(1).optional(),
+	}),
+])
+
+export type PackageWebhookChallenge = z.infer<
+	typeof packageWebhookChallengeSchema
+>
+
 const webhookTimestampFormatSchema = z.string().superRefine((value, ctx) => {
 	if (
 		!(webhookTimestampFormatValues as ReadonlyArray<string>).includes(value)
@@ -204,6 +246,7 @@ export const packageWebhookDefinitionSchema = z
 			.optional(),
 		verification: packageWebhookVerificationSchema.optional(),
 		replay: packageWebhookReplaySchema.optional(),
+		challenge: packageWebhookChallengeSchema.optional(),
 	})
 	.superRefine((webhook, ctx) => {
 		if (

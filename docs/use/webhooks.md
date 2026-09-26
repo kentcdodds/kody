@@ -69,6 +69,10 @@ Rules:
 - `verification.signedPayload` is `'body'` (default) or `'timestamp.body'`. Use
   `'timestamp.body'` when the provider HMAC covers
   `` `${timestamp}.${rawBody}` ``.
+- `challenge` is optional. When set, the platform answers the provider's
+  ownership quiz on the **same minted URL** (GET CRC / hub challenge, or Slack
+  `url_verification` POST) without invoking your export. See
+  [Subscription challenges](#subscription-challenges).
 - `replay` is optional. Without it, body-only HMAC is **replayable**: anyone who
   observes one legitimate signed delivery can POST it again. Opt in per webhook
   with a timestamp window and/or a unique delivery id. Trusted clients send
@@ -198,17 +202,22 @@ await kody.webhooks.webhookUrlApply({
 // wait for Allow, then retry the same call.
 ```
 
-Prefer `http` for Workers, CRC shims, and any provider API that accepts a
-callback URL field. Do not invent per-vendor apply adapters when a single HTTPS
+Prefer `http` for Workers and any provider API that accepts a callback URL
+field. Providers that need an ownership quiz (X Activity CRC, WebSub / YouTube,
+Meta, Slack URL verification) use a declared
+[`challenge`](#subscription-challenges) on the webhook — you do not need a shim
+Worker for those. Do not invent per-vendor apply adapters when a single HTTPS
 registration request is enough. The owner path (settings reveal/paste) remains
 available.
 
 ## Ingress URL
 
-`POST https://<origin>/@<username>/webhooks/<packageKodyId>/<webhookName>/<urlSecret>`
+`GET|POST https://<origin>/@<username>/webhooks/<packageKodyId>/<webhookName>/<urlSecret>`
 
 - Unknown / unminted / disabled / renamed-away / wrong secret → **404** (no
   distinction).
+- `GET` is allowed only when the webhook declares a GET-capable
+  [`challenge`](#subscription-challenges); otherwise **405**.
 - Payload > **1 MB** → **413**.
 - Rate limit per minted webhook → **429**. Default **60**/min; override with
   `rateLimitPerMinute` up to **600**.
@@ -224,6 +233,85 @@ platform persistence failure does not duplicate a completed export. Package
 exports still have the normal execution limit (about 90 seconds); packages that
 exceed it receive an explicit timeout failure and should split or checkpoint
 their work.
+
+## Subscription challenges
+
+Some providers prove URL ownership with a fixed quiz before they send events:
+HMAC a `crc_token`, echo a hub challenge, or return a Slack `challenge`. Kody
+answers those on the minted webhook URL **in the platform** — the bound export
+never runs for the quiz, and challenge handling does not mutate account state,
+call MCP, or fetch outbound.
+
+Declare one `challenge` object next to (or instead of, when the provider has no
+POST HMAC) `verification`:
+
+| `challenge.type`         | Method                                         | What the platform does                                     | `secretName`                                            |
+| ------------------------ | ---------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------- |
+| `x-activity-crc`         | GET `crc_token`                                | JSON `{ response_token: "sha256=" + base64(HMAC-SHA256) }` | **Required** (X consumer secret)                        |
+| `websub-hub`             | GET `hub.mode` + `hub.challenge`               | Echo challenge as `text/plain`                             | Optional; when set, `hub.verify_token` must match       |
+| `meta-hub`               | GET `hub.mode=subscribe` + `hub.challenge`     | Echo challenge as `text/plain` after verify-token match    | **Required** (Meta verify token)                        |
+| `slack-url-verification` | POST `{ type: "url_verification", challenge }` | JSON `{ challenge }`                                       | Optional; when set, Slack signing signature must verify |
+
+`secretName` is the same named secret-store reference as
+`verification.secretName` — never an inline value. Later vendor POSTs still go
+through normal URL-secret + optional HMAC verification; only verified deliveries
+reach the export.
+
+### X Activity (CRC) example for `@kentcdodds/x`
+
+```json
+{
+	"name": "activity-event",
+	"export": "./activity-event",
+	"challenge": {
+		"type": "x-activity-crc",
+		"secretName": "xConsumerSecret"
+	},
+	"verification": {
+		"type": "hmac-sha256",
+		"header": "X-Twitter-Webhooks-Signature",
+		"secretName": "xConsumerSecret",
+		"encoding": "base64",
+		"prefix": "sha256="
+	}
+}
+```
+
+Store the X consumer secret with `secretSet` under `xConsumerSecret`, mint the
+webhook, then register the revealed URL directly with X. CRC GETs never invoke
+`./activity-event`; activity POSTs do, after HMAC verification.
+
+### Meta hub example
+
+```json
+{
+	"name": "meta-webhook",
+	"export": "./handle-meta",
+	"challenge": {
+		"type": "meta-hub",
+		"secretName": "metaVerifyToken"
+	}
+}
+```
+
+### Slack Events example
+
+```json
+{
+	"name": "slack-events",
+	"export": "./handle-slack-event",
+	"challenge": {
+		"type": "slack-url-verification",
+		"secretName": "slackSigningSecret"
+	}
+}
+```
+
+When `challenge.secretName` is set, the platform verifies Slack's
+`X-Slack-Signature` on the quiz POST (`` `v0:${timestamp}:${body}` ``) before
+echoing. Event POSTs still use the normal delivery path — declare a matching
+`verification` block when those deliveries must also verify Slack signing (the
+URL secret alone is enough only for trusted setups that omit HMAC).
 
 ## Payload shape seen by the package export
 
