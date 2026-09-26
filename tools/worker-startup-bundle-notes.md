@@ -200,3 +200,6 @@ runtime path if this budget is raised again.
   Authorization conflict checks grew the runtime entry: CI dry-run 3_863_102
   against the previous 3_863_000 budget (plus local auth-redaction helpers).
   Reviewed ceiling 3_870_000.
+- Generic `webhookUrlApply` http destination + `/connect/webhook-apply` approval
+  UI spill into the platform entry (shared web/connect graph): CI dry-run
+  5_188_429 against the previous 5_182_000 budget. Reviewed ceiling 5_190_000.
