@@ -229,11 +229,36 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 		remoteId: '4242',
 		error: null,
 	})
+	const githubHooksDestination = {
+		type: 'http' as const,
+		url: 'https://api.github.com/repos/acme/api/hooks',
+		method: 'POST' as const,
+		headers: {
+			Accept: 'application/vnd.github+json',
+			'Content-Type': 'application/json',
+			'X-GitHub-Api-Version': '2022-11-28',
+		},
+		body: JSON.stringify({
+			name: 'web',
+			active: true,
+			events: ['push', 'pull_request'],
+			config: {
+				url: '{{webhookUrl}}',
+				content_type: 'json',
+				insecure_ssl: '0',
+			},
+		}),
+		integration: 'github',
+	}
+	approvalMock.requireWebhookApplyDestinationGrantOrPending.mockResolvedValue({
+		status: 'granted',
+		fingerprint: 'fp-github-hooks',
+	})
 	await expect(
 		webhookUrlApplyCapability.handler(
 			{
 				handle: 'whh_ep-1',
-				destination: { type: 'github', owner: 'acme', repo: 'api' },
+				destination: githubHooksDestination,
 			},
 			ctx,
 		),
@@ -247,7 +272,7 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 	expect(mockModule.applyWebhookUrlForUser).toHaveBeenCalledWith(
 		expect.objectContaining({
 			handle: 'whh_ep-1',
-			destination: { type: 'github', owner: 'acme', repo: 'api' },
+			destination: githubHooksDestination,
 		}),
 	)
 	expect(
@@ -284,14 +309,10 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 			owner: 'acme',
 			repo: 'api',
 		}).success,
-	).toBe(true)
-	expect(
-		webhookUrlApplyDestinationSchema.safeParse({
-			type: 'github',
-			owner: '..',
-			repo: 'api',
-		}).success,
 	).toBe(false)
+	expect(
+		webhookUrlApplyDestinationSchema.safeParse(githubHooksDestination).success,
+	).toBe(true)
 
 	await expect(
 		webhookDisableCapability.handler(

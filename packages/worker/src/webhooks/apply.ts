@@ -8,17 +8,9 @@ import { getJoinedIntegration } from '#worker/integrations/service.ts'
 import { refreshIntegrationTokens } from '#worker/integrations/token-refresh.ts'
 import { type JoinedIntegration } from '#worker/integrations/types.ts'
 import {
-	listPackageWebhooks,
-	type PackageWebhookManifestEntry,
-} from '#worker/package-registry/manifest.ts'
-import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
-import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
-import {
 	collectWebhookCredentialSecrets,
 	redactWebhookCredentials,
 } from './redact.ts'
-
-export const webhookUrlApplyGithubContentTypes = ['json', 'form'] as const
 
 export const webhookUrlApplyHttpMethods = [
 	'GET',
@@ -30,18 +22,6 @@ export const webhookUrlApplyHttpMethods = [
 
 /** Server-side substitution token for the minted credential URL. */
 export const webhookUrlApplyPlaceholder = '{{webhookUrl}}'
-
-export type WebhookUrlApplyGithubDestination = {
-	type: 'github'
-	owner: string
-	repo: string
-	events?: Array<string>
-	contentType?: (typeof webhookUrlApplyGithubContentTypes)[number]
-	active?: boolean
-	integration?: string
-	secretName?: string
-	hookSecretName?: string
-}
 
 export type WebhookUrlApplyHttpDestination = {
 	type: 'http'
@@ -56,9 +36,7 @@ export type WebhookUrlApplyHttpDestination = {
 	secretName?: string
 }
 
-export type WebhookUrlApplyDestination =
-	| WebhookUrlApplyGithubDestination
-	| WebhookUrlApplyHttpDestination
+export type WebhookUrlApplyDestination = WebhookUrlApplyHttpDestination
 
 export type WebhookUrlApplyResult = {
 	ok: boolean
@@ -72,7 +50,6 @@ const applyResponseBodyMaxBytes = 16_384
 const applyRequestBodyMaxBytes = 64_384
 const applyErrorSnippetMaxChars = 300
 const applyRequestTimeoutMs = 15_000
-const defaultGithubEvents = ['push'] as const
 const applyHttpMaxHeaderCount = 32
 
 function integrationAllowedHosts(joined: JoinedIntegration) {
@@ -110,81 +87,6 @@ function assertDestinationHostAllowed(input: {
 	)
 }
 
-async function loadDeclaredWebhookIfPresent(input: {
-	env: Env
-	baseUrl: string
-	userId: string
-	savedPackage: SavedPackageRecord
-	webhookName: string
-}): Promise<PackageWebhookManifestEntry | null> {
-	let loaded
-	try {
-		loaded = await loadPackageManifestBySourceId({
-			env: input.env,
-			baseUrl: input.baseUrl,
-			userId: input.userId,
-			sourceId: input.savedPackage.sourceId,
-		})
-	} catch {
-		throw new McpCallerError(
-			'Could not load the package manifest to read webhook verification. Retry after the package source is available.',
-		)
-	}
-	return (
-		listPackageWebhooks(loaded.manifest).find(
-			(webhook) => webhook.name === input.webhookName,
-		) ?? null
-	)
-}
-
-function assertGithubRepoSlug(value: string, label: 'owner' | 'repository') {
-	if (value === '.' || value === '..' || !/^[A-Za-z0-9_.-]+$/.test(value)) {
-		throw new McpCallerError(`Must be a GitHub ${label} slug.`)
-	}
-}
-
-async function resolveHookSigningSecret(input: {
-	env: Env
-	userId: string
-	packageId: string
-	baseUrl: string
-	secretName: string
-}) {
-	const resolved = await resolveSecretForHost({
-		env: input.env,
-		userId: input.userId,
-		name: input.secretName,
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: input.packageId,
-		},
-		host: 'api.github.com',
-	})
-	if (!resolved.found || !resolved.value) {
-		throw new McpCallerError(
-			`Secret "${input.secretName}" was not found for this user.`,
-		)
-	}
-	if (!resolved.allowedHosts.includes('api.github.com')) {
-		const approvalUrl = buildSecretHostApprovalUrl({
-			baseUrl: input.baseUrl,
-			name: input.secretName,
-			scope: resolved.scope ?? 'user',
-			requestedHost: 'api.github.com',
-			storageContext: {
-				sessionId: null,
-				appId: null,
-				packageId: input.packageId,
-			},
-		})
-		throw new McpCallerError(
-			`Secret "${input.secretName}" is not approved for host "api.github.com". Approve it at ${approvalUrl}.`,
-		)
-	}
-	return resolved.value
-}
-
 async function authorizeApplyRequest(input: {
 	env: Env
 	userId: string
@@ -195,10 +97,6 @@ async function authorizeApplyRequest(input: {
 	url: string
 	integration?: string
 	secretName?: string
-	/** When set, used if neither secretName nor integration is provided. */
-	defaultIntegration?: string | null
-	/** When false, missing auth is allowed (http destinations). Default true. */
-	requireAuthorization?: boolean
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<{
 	authorization: string | null
@@ -252,48 +150,41 @@ async function authorizeApplyRequest(input: {
 		}
 	}
 
-	const fallback = input.defaultIntegration?.trim() || ''
-	const name = integrationName || fallback
-	if (!name) {
-		if (input.requireAuthorization === false) {
-			return { authorization: null, retryAuthorization: null }
-		}
-		throw new McpCallerError(
-			'Provide integration or secretName to authorize the apply request.',
-		)
+	if (!integrationName) {
+		return { authorization: null, retryAuthorization: null }
 	}
 	const joined = await getJoinedIntegration({
 		env: input.env,
 		userId: input.userId,
-		name,
+		name: integrationName,
 	})
 	if (!joined) {
 		throw new McpCallerError(
-			`Integration "${name}" was not found. Connect it at /connect/oauth?provider=${encodeURIComponent(name)} or pass secretName for a host-approved token.`,
+			`Integration "${integrationName}" was not found. Connect it at /connect/oauth?provider=${encodeURIComponent(integrationName)} or pass secretName for a host-approved token.`,
 		)
 	}
 	await assertCanUseIntegration({
 		env: input.env,
 		baseUrl: input.baseUrl,
 		userId: input.userId,
-		name,
+		name: integrationName,
 		packageId: input.packageId,
 		packageKodyId: input.packageKodyId,
 	})
 	assertDestinationHostAllowed({
 		joined,
-		integrationName: name,
+		integrationName,
 		url: input.url,
 	})
 	const readToken = async () => {
 		const token = await resolveIntegrationAccessToken({
 			env: input.env,
 			userId: input.userId,
-			name,
+			name: integrationName,
 		})
 		if (!token) {
 			throw new McpCallerError(
-				`Integration "${name}" does not have a stored access token. Reconnect at /connect/oauth?provider=${encodeURIComponent(name)}.`,
+				`Integration "${integrationName}" does not have a stored access token. Reconnect at /connect/oauth?provider=${encodeURIComponent(integrationName)}.`,
 			)
 		}
 		return `Bearer ${token}`
@@ -305,7 +196,7 @@ async function authorizeApplyRequest(input: {
 				env: input.env,
 				userId: input.userId,
 				userEmail: input.userEmail ?? undefined,
-				name,
+				name: integrationName,
 				baseUrl: input.baseUrl,
 				packageId: input.packageId,
 				packageKodyId: input.packageKodyId,
@@ -486,104 +377,6 @@ async function sendAuthorizedApplyRequest(input: {
 		remoteId,
 		error: String(redactWebhookCredentials(snippet, secrets) ?? snippet),
 	}
-}
-
-async function dispatchGithubApply(input: {
-	env: Env
-	userId: string
-	userEmail?: string | null
-	baseUrl: string
-	packageId: string
-	packageKodyId: string
-	webhookName: string
-	savedPackage: SavedPackageRecord
-	webhookUrl: string
-	urlSecret: string
-	destination: WebhookUrlApplyGithubDestination
-	waitUntil?: (promise: Promise<unknown>) => void
-}): Promise<WebhookUrlApplyResult> {
-	const owner = input.destination.owner.trim()
-	const repo = input.destination.repo.trim()
-	assertGithubRepoSlug(owner, 'owner')
-	assertGithubRepoSlug(repo, 'repository')
-	const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks`
-	const declared = await loadDeclaredWebhookIfPresent({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.userId,
-		savedPackage: input.savedPackage,
-		webhookName: input.webhookName,
-	})
-	const hookSecretName =
-		input.destination.hookSecretName?.trim() ||
-		declared?.verification?.secretName ||
-		''
-	const hookSecret = hookSecretName
-		? await resolveHookSigningSecret({
-				env: input.env,
-				userId: input.userId,
-				packageId: input.packageId,
-				baseUrl: input.baseUrl,
-				secretName: hookSecretName,
-			})
-		: null
-	const config: Record<string, string> = {
-		url: input.webhookUrl,
-		content_type: input.destination.contentType ?? 'json',
-		insecure_ssl: '0',
-	}
-	if (hookSecret) config.secret = hookSecret
-	const body = JSON.stringify({
-		name: 'web',
-		active: input.destination.active !== false,
-		events: input.destination.events?.length
-			? input.destination.events
-			: [...defaultGithubEvents],
-		config,
-	})
-	const auth = await authorizeApplyRequest({
-		env: input.env,
-		userId: input.userId,
-		userEmail: input.userEmail,
-		baseUrl: input.baseUrl,
-		packageId: input.packageId,
-		packageKodyId: input.packageKodyId,
-		url,
-		integration: input.destination.integration,
-		secretName: input.destination.secretName,
-		defaultIntegration: 'github',
-		requireAuthorization: true,
-		waitUntil: input.waitUntil,
-	})
-	const secrets = [
-		...collectWebhookCredentialSecrets({
-			url: input.webhookUrl,
-			urlSecret: input.urlSecret,
-		}),
-		...collectAuthorizationSecretsForRedaction({
-			authorization: auth.authorization,
-		}),
-	]
-	if (hookSecret) secrets.push(hookSecret)
-	if (!auth.authorization || !auth.retryAuthorization) {
-		throw new McpCallerError(
-			'GitHub apply requires authorization via integration or secretName.',
-		)
-	}
-	return sendAuthorizedApplyRequest({
-		url,
-		method: 'POST',
-		headers: {
-			Accept: 'application/vnd.github+json',
-			'Content-Type': 'application/json',
-			'User-Agent': 'kody',
-			'X-GitHub-Api-Version': '2022-11-28',
-		},
-		body,
-		authorization: auth.authorization,
-		retryAuthorization: auth.retryAuthorization,
-		secrets,
-	})
 }
 
 function countWebhookUrlPlaceholders(value: string) {
@@ -820,8 +613,6 @@ async function dispatchHttpApply(input: {
 		url: resolvedUrl,
 		integration: input.destination.integration,
 		secretName: input.destination.secretName,
-		defaultIntegration: null,
-		requireAuthorization: false,
 		waitUntil: input.waitUntil,
 	})
 	const secrets = [
@@ -852,8 +643,6 @@ export async function dispatchWebhookUrlApply(input: {
 	baseUrl: string
 	packageId: string
 	packageKodyId: string
-	webhookName: string
-	savedPackage: SavedPackageRecord
 	webhookUrl: string
 	urlSecret: string
 	urlHost: string
@@ -862,22 +651,6 @@ export async function dispatchWebhookUrlApply(input: {
 }): Promise<WebhookUrlApplyResult> {
 	let result: WebhookUrlApplyResult
 	switch (input.destination.type) {
-		case 'github':
-			result = await dispatchGithubApply({
-				env: input.env,
-				userId: input.userId,
-				userEmail: input.userEmail,
-				baseUrl: input.baseUrl,
-				packageId: input.packageId,
-				packageKodyId: input.packageKodyId,
-				webhookName: input.webhookName,
-				savedPackage: input.savedPackage,
-				webhookUrl: input.webhookUrl,
-				urlSecret: input.urlSecret,
-				destination: input.destination,
-				waitUntil: input.waitUntil,
-			})
-			break
 		case 'http':
 			result = await dispatchHttpApply({
 				env: input.env,

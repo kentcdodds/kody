@@ -196,7 +196,7 @@ runtime path if this budget is raised again.
   owner-approval grants land on the same webhooks MCP domain graph runtime
   already evaluates: CI dry-run 3_862_510 against the previous 3_857_000 budget.
   Reviewed ceiling 3_863_000.
-- Auth-token redaction for webhookUrlApply http/github destinations plus MCP
+- Auth-token redaction for webhookUrlApply http destinations plus MCP
   Authorization conflict checks grew the runtime entry: CI dry-run 3_863_102
   against the previous 3_863_000 budget (plus local auth-redaction helpers).
   Reviewed ceiling 3_870_000.
