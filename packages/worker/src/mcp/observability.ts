@@ -10,6 +10,7 @@ import {
 import { isSearchRateLimitError } from '#worker/search-rate-limit-error.ts'
 import { PackageNameInputError } from '#worker/package-registry/package-name.ts'
 import { PackageScopeAccessError } from '#worker/package-registry/package-owner.ts'
+import { SavedPackageNotFoundError } from '#worker/package-runtime/package-import-resolution.ts'
 import { isKodyDescriptionLengthMessage } from '#worker/package-registry/types.ts'
 import { isRepoLargeFileMessage } from '#worker/repo/large-file-policy.ts'
 import {
@@ -140,6 +141,16 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 	if (
 		getErrorCauseChain(cause).some(
 			(entry) => entry instanceof PackageNameInputError,
+		)
+	) {
+		return true
+	}
+	// `kody:@scope/pkg` import (or equivalent resolve) for a package the
+	// caller does not have. Agents must fork/install or fix the specifier.
+	// KODY-86.
+	if (
+		getErrorCauseChain(cause).some(
+			(entry) => entry instanceof SavedPackageNotFoundError,
 		)
 	) {
 		return true

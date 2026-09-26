@@ -5,6 +5,18 @@ import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 
 export const packageSpecifierPrefix = 'kody:@'
 
+/**
+ * Caller referenced a `kody:@scope/pkg` import that is not installed for this
+ * user. Observability treats it like `PackageNameInputError` and keeps it off
+ * Sentry (KODY-86).
+ */
+export class SavedPackageNotFoundError extends Error {
+	constructor(packageName: string) {
+		super(`Saved package "${packageName}" was not found for this user.`)
+		this.name = 'SavedPackageNotFoundError'
+	}
+}
+
 export type KodyPackageSpecifier = {
 	packageName: string
 	exportName: string

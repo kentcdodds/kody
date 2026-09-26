@@ -45,6 +45,8 @@ const { PackageNameInputError, normalizePackageNameInput } =
 	await import('#worker/package-registry/package-name.ts')
 const { PackageScopeAccessError } =
 	await import('#worker/package-registry/package-owner.ts')
+const { SavedPackageNotFoundError } =
+	await import('#worker/package-runtime/package-import-resolution.ts')
 const { UserCodeError } = await import('#worker/user-code-error.ts')
 
 function captureMcpEvents(run: () => void) {
@@ -501,6 +503,43 @@ test('mismatched package name input stays off Sentry', () => {
 			errorName: 'Error',
 			errorMessage: 'package lookup failed',
 			cause: new Error('package lookup failed', { cause: thrown }),
+		})
+	})
+	expect(sentryMock.captureException).not.toHaveBeenCalled()
+	expect(sentryMock.captureMessage).not.toHaveBeenCalled()
+})
+
+test('missing saved package import stays off Sentry', () => {
+	const thrown = new SavedPackageNotFoundError('@distilledtom/google')
+	expect(thrown.message).toBe(
+		'Saved package "@distilledtom/google" was not found for this user.',
+	)
+
+	captureMcpEvents(() => {
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'packageSave',
+			domain: 'packages',
+			capabilitySource: 'builtin',
+			failurePhase: 'handler',
+			errorName: 'SavedPackageNotFoundError',
+			errorMessage: thrown.message,
+			cause: thrown,
+		})
+	})
+	expect(sentryMock.captureException).not.toHaveBeenCalled()
+	expect(sentryMock.captureMessage).not.toHaveBeenCalled()
+
+	captureMcpEvents(() => {
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'packageSave',
+			domain: 'packages',
+			capabilitySource: 'builtin',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage: 'package graph rewrite failed',
+			cause: new Error('package graph rewrite failed', { cause: thrown }),
 		})
 	})
 	expect(sentryMock.captureException).not.toHaveBeenCalled()
