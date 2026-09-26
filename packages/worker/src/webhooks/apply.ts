@@ -649,31 +649,18 @@ export async function dispatchWebhookUrlApply(input: {
 	destination: WebhookUrlApplyDestination
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<WebhookUrlApplyResult> {
-	let result: WebhookUrlApplyResult
-	switch (input.destination.type) {
-		case 'http':
-			result = await dispatchHttpApply({
-				env: input.env,
-				userId: input.userId,
-				userEmail: input.userEmail,
-				baseUrl: input.baseUrl,
-				packageId: input.packageId,
-				packageKodyId: input.packageKodyId,
-				webhookUrl: input.webhookUrl,
-				urlSecret: input.urlSecret,
-				destination: input.destination,
-				waitUntil: input.waitUntil,
-			})
-			break
-		default: {
-			const exhaustive: never = input.destination
-			throw new McpCallerError(
-				`Unsupported webhook apply destination type: ${String(
-					(exhaustive as { type?: unknown }).type,
-				)}.`,
-			)
-		}
-	}
+	const result = await dispatchHttpApply({
+		env: input.env,
+		userId: input.userId,
+		userEmail: input.userEmail,
+		baseUrl: input.baseUrl,
+		packageId: input.packageId,
+		packageKodyId: input.packageKodyId,
+		webhookUrl: input.webhookUrl,
+		urlSecret: input.urlSecret,
+		destination: input.destination,
+		waitUntil: input.waitUntil,
+	})
 	const secrets = collectWebhookCredentialSecrets({
 		url: input.webhookUrl,
 		urlSecret: input.urlSecret,
