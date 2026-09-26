@@ -93,7 +93,7 @@ Use the MCP `webhooks` domain:
    `type: "github"` for repository hooks (connected `github` integration or a
    host-approved GitHub token), or `type: "http"` to POST/PUT the minted URL
    into any HTTPS registration endpoint via `{{webhookUrl}}` substitution. The
-   owner can still copy the URL from the package's
+   owner can copy the URL from the package's
    [settings page](#manage-webhook-urls-in-package-settings)
    (`/@<username>/<packageKodyId>/settings#webhooks`) when that is simpler.
 
@@ -175,8 +175,8 @@ decoded/re-encoded). The placeholder is required. Destination URLs must be
 `https://`. Redirects are not followed. Auth is optional via `secretName` or
 `integration` (Bearer), or a caller-supplied `Authorization` header — not both.
 
-Unlike typed `github` (already gated by the owner's GitHub integration / host-
-approved token), `http` lets the model choose an arbitrary outbound target. That
+Typed `github` is gated by the owner's GitHub integration or a host-approved
+token. Generic `http` lets the model choose an arbitrary outbound target. That
 path is **interactive MCP only** and reuses the same **account owner approval
 flow** as secret host approval (`/connect/secrets`), secret package grants, and
 locked-package publish approval: the capability returns an `approval_url` to
@@ -207,8 +207,8 @@ field. Providers that need an ownership quiz (X Activity CRC, WebSub / YouTube,
 Meta, Slack URL verification) use a declared
 [`challenge`](#subscription-challenges) on the webhook — you do not need a shim
 Worker for those. Do not invent per-vendor apply adapters when a single HTTPS
-registration request is enough. The owner path (settings reveal/paste) remains
-available.
+registration request is enough. The owner can also reveal and paste the URL from
+package settings.
 
 ## Ingress URL
 

@@ -14,6 +14,10 @@ card.
 `/account/webhooks` (account rail → Webhooks) is a read-only index across
 packages; each row deep-links to the card above.
 
+Generic `http` `webhookUrlApply` destinations require owner Allow at
+`/connect/webhook-apply?handle=…&fingerprint=…` (same approval family as
+`/connect/secrets`). Typed `github` apply does not use this page.
+
 ## Drive it
 
 ```bash
@@ -36,6 +40,10 @@ node tools/control-kody.ts request GET /account/webhooks.json
   origin follows the request so previews show their own host.
 - `GET /account/webhooks.json` — `{ ok, username, webhooks[] }` across every
   package; read-only (POST is 405).
+- `GET|POST /account/webhooks/approve-apply.json` — owner approval for a pending
+  generic `http` apply (`handle` + `fingerprint` query). GET returns the
+  destination summary. POST `{ action: "approve" | "reject" }` writes or
+  discards the durable grant. The HTML twin is `/connect/webhook-apply`.
 
 ## Gotchas
 
@@ -49,6 +57,10 @@ node tools/control-kody.ts request GET /account/webhooks.json
   Rotate keeps the previous URL active for 24 hours, or until the first accepted
   delivery arrives on the new URL; the card shows “Previous URL active until …”
   during that overlap. Only enabled cards show the overlap row.
-- `reveal` on a legacy mint without `url_secret_encrypted` is a 400; the card
-  offers Rotate instead.
+- `reveal` on a mint without `url_secret_encrypted` is a 400; the card offers
+  Rotate instead.
+- Seed accounts have no pending apply grants. To exercise
+  `/connect/webhook-apply`, mint a webhook and call `webhookUrlApply` with
+  `type: "http"` from interactive MCP as that user, then open the returned
+  `approval_url`.
 - Every intent writes an `account` audit event (`webhook_url_reveal`, …).

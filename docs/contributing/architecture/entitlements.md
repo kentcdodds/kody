@@ -20,6 +20,9 @@ at `packages/worker/universal/plans.ts`.
   `resolveEffectivePlan(manual, stripe)`.
 - `errors.ts` — the one typed error (`EntitlementLimitError`) and the one
   user-facing message builder every enforcement point uses.
+  `buildEntitlementUpgradeHint` (and the job-interval / compute-overage
+  siblings) omit the self-serve upgrade clause unless
+  `hasHigherPublicPlan(plan)` is true.
 - `service.ts` — `getUserEntitlement` / `getUserPlan`,
   `getCachedUserEntitlement` / `getCachedUserPlan` (60s TTL enforcement cache),
   `assertWithinEntitlement`, built-in D1 usage counters, the daily-counter
@@ -693,16 +696,31 @@ the stable programmatic contract:
 ```
 
 The `message` is built by `buildEntitlementLimitMessage` and is the single
-user-facing string across MCP and UI surfaces:
+user-facing string across MCP and UI surfaces. `upgradeHint` includes a
+self-serve billing offer only when `hasHigherPublicPlan(plan)` is true (Free and
+Standard). Pro is the top public SKU and Max is manual-only, so those plans get
+reduce-only hints. `/account/usage` follows the same gate: the warnings panel
+omits the Upgrade link, and its title is **Limit reached** when a hard
+daily/weekly/stock cap is at 100% (monthly compute includes do not count).
+
+Free/Standard example:
+
+> Plan limit reached: your "standard" plan allows at most 15 scheduled jobs and
+> you currently have 15. Remove or finish existing scheduled jobs you no longer
+> need, or upgrade your plan at /account/billing.
+
+Pro/Max example:
 
 > Plan limit reached: your "pro" plan allows at most 75 scheduled jobs and you
 > currently have 75. Remove or finish existing scheduled jobs you no longer
-> need, or upgrade your plan at /account/billing.
+> need.
 
 Rules:
 
 - `details.plan` is always a known plan name; denial messages always quote that
   plan name.
+- `details.upgradeHint` is reduce-only when there is no higher public plan. Do
+  not append a billing CTA at the enforcement point.
 - Never compose a custom denial message at an enforcement point; change the
   builder if the message needs work.
 - Never catch and rewrap `EntitlementLimitError` (use `isEntitlementLimitError`

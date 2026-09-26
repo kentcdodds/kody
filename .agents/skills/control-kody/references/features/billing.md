@@ -23,10 +23,13 @@ copy. Public-ladder execute and outbound fetches show today and this UTC week
 (Monday–Sunday); whichever window hits first blocks. Public-ladder overage uses
 the list rates on `/pricing`. Monthly includes follow the effective plan at
 invoice time, including an unexpired second-agent gift or referral Standard
-overlay. Referral share links set a one-week last-wins `kody_ref` cookie; signup
-persists the referrer then. Referral rewards fire on the referee's first
-qualifying paid Stripe invoice (not a trial) after both emails are verified; do
-not invent a paid invoice from this environment.
+overlay. The usage warnings panel titles **Limit reached** when a hard
+daily/weekly/stock cap is at 100%, and the Upgrade link appears only when
+`hasHigherPublicPlan` is true (Free and Standard; not Pro or Max). Referral
+share links set a one-week last-wins `kody_ref` cookie; signup persists the
+referrer then. Referral rewards fire on the referee's first qualifying paid
+Stripe invoice (not a trial) after both emails are verified; do not invent a
+paid invoice from this environment.
 
 ## APIs
 
