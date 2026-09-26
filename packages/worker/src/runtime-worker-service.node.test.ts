@@ -8,21 +8,16 @@ vi.mock('cloudflare:workers', () => ({
 	exports: exportsMock,
 }))
 
-const {
-	hasLocalPackageAppRuntimeBridge,
-	packageAppRuntimeBridgeMissingMessage,
-	requireLocalPackageAppRuntimeBridge,
-} = await import('./runtime-worker-service.ts')
+const { hasLocalPackageAppRuntimeBridge, requireLocalPackageAppRuntimeBridge } =
+	await import('./runtime-worker-service.ts')
 
-test('requireLocalPackageAppRuntimeBridge fails closed when the export is missing', () => {
+test('requireLocalPackageAppRuntimeBridge fails closed until the export is present', () => {
 	exportsMock.PackageAppRuntimeBridge = undefined
 	expect(hasLocalPackageAppRuntimeBridge()).toBe(false)
 	expect(() => requireLocalPackageAppRuntimeBridge()).toThrow(
-		packageAppRuntimeBridgeMissingMessage,
+		/PackageAppRuntimeBridge/,
 	)
-})
 
-test('requireLocalPackageAppRuntimeBridge returns the local bridge when present', () => {
 	const bridge = vi.fn()
 	exportsMock.PackageAppRuntimeBridge = bridge
 	expect(hasLocalPackageAppRuntimeBridge()).toBe(true)

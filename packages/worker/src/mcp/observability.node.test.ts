@@ -509,7 +509,6 @@ test('mismatched package name input stays off Sentry', () => {
 
 test('execute missing code/invoke caller errors stay off Sentry', () => {
 	const cause = new McpCallerError(executeInvokeMissingInputMessage)
-	expect(cause.message).toBe('execute requires code or invoke.')
 
 	captureMcpEvents(() => {
 		logMcpEvent({

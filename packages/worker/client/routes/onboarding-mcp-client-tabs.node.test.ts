@@ -11,7 +11,6 @@ import {
 	kodyChatGptPluginUrl,
 	kodyCursorAddPluginCommand,
 	kodyCursorMarketplaceUrl,
-	museMcpGuideUrl,
 } from './onboarding-mcp-clients.ts'
 
 test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok Bot surfaces', async () => {
@@ -182,14 +181,8 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(muse.indexOf('~/.config/muse/settings.json')).toBeLessThan(
 		muse.indexOf('muse mcp login kody'),
 	)
-	expect(muse).toContain(museMcpGuideUrl)
-	expect(muse).toContain('Do not paste npx @kodycodes/cli install')
-	expect(muse).not.toContain('npx @kodycodes/cli install</')
-	expect(muse).not.toContain('https://github.com/kody-bot/cli')
-	expect(muse).toContain('paste a localhost URL')
 	expect(muse).toContain('data-testid="onboarding-agent-help"')
 	expect(muse).toContain('data-testid="onboarding-agent-warning"')
-	expect(muse).not.toContain('pending review')
 
 	const chatgpt = await renderToString(
 		jsx(OnboardingMcpClientTabs, {

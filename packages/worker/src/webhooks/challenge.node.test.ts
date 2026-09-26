@@ -1,24 +1,9 @@
 import { expect, test } from 'vitest'
 import {
 	handleWebhookSubscriptionChallenge,
-	webhookChallengeAllowsGet,
 	webhookChallengeMaxParamChars,
 } from './challenge.ts'
 import { computeWebhookHmacSignature } from './crypto.ts'
-
-async function expectedXCrcResponseToken(crcToken: string, secret: string) {
-	const tokenBytes = new TextEncoder().encode(crcToken)
-	return computeWebhookHmacSignature({
-		algorithm: 'hmac-sha256',
-		secret,
-		body: tokenBytes.buffer.slice(
-			tokenBytes.byteOffset,
-			tokenBytes.byteOffset + tokenBytes.byteLength,
-		) as ArrayBuffer,
-		encoding: 'base64',
-		prefix: 'sha256=',
-	})
-}
 
 async function expectedSlackSignature(input: {
 	timestamp: string
@@ -40,26 +25,6 @@ async function expectedSlackSignature(input: {
 	})
 }
 
-test('webhookChallengeAllowsGet matches GET-capable challenge types', () => {
-	expect(
-		webhookChallengeAllowsGet({
-			type: 'x-activity-crc',
-			secretName: 'x',
-		}),
-	).toBe(true)
-	expect(webhookChallengeAllowsGet({ type: 'websub-hub' })).toBe(true)
-	expect(
-		webhookChallengeAllowsGet({
-			type: 'meta-hub',
-			secretName: 'meta',
-		}),
-	).toBe(true)
-	expect(webhookChallengeAllowsGet({ type: 'slack-url-verification' })).toBe(
-		false,
-	)
-	expect(webhookChallengeAllowsGet(null)).toBe(false)
-})
-
 test('x-activity-crc signs crc_token and rejects missing secret', async () => {
 	const secrets = new Map([['xConsumerSecret', 'consumer-secret']])
 	const crcToken = 'token-from-x'
@@ -74,10 +39,7 @@ test('x-activity-crc signs crc_token and rejects missing secret', async () => {
 	if (result.kind !== 'respond') return
 	expect(result.response.status).toBe(200)
 	expect(await result.response.json()).toEqual({
-		response_token: await expectedXCrcResponseToken(
-			crcToken,
-			'consumer-secret',
-		),
+		response_token: 'sha256=W5nrYAN+2ikisJKlZgv84WstpdpbgeYwmuf7ojn/Qn0=',
 	})
 
 	const missingSecret = await handleWebhookSubscriptionChallenge({

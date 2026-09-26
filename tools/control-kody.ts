@@ -1168,7 +1168,7 @@ async function runCommand(options: ControlKodyOptions) {
 	}
 }
 
-export { usageLines, runCommand }
+export { runCommand }
 
 if (isExecutedDirectly(import.meta.url)) {
 	void runCommand(parseControlArgs(process.argv.slice(2)))

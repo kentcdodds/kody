@@ -23,7 +23,7 @@ export { executeInvokeFlagKey }
 
 const invokeLocalName = 'action'
 
-export const executeInvokeUnsupportedSpecifierMessage =
+const executeInvokeUnsupportedSpecifierMessage =
 	'Unsupported execute invoke specifier. Use a kody:@scope/package/export (or @scope/package#export) package import, not a URL.'
 
 export const executeInvokeMutualExclusionMessage =

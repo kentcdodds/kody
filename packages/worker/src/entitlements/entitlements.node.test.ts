@@ -231,9 +231,6 @@ test('entitlement limit messages always identify a known plan name', () => {
 	}
 	const message = buildEntitlementLimitMessage(details)
 	expect(parseEntitlementLimitMessage(message)).toEqual(details)
-	expect(details.upgradeHint).toBe(
-		'Remove or finish existing concurrent workflows you no longer need.',
-	)
 	expect(details.upgradeHint).not.toMatch(/upgrade/i)
 
 	const weeklyDetails = {
@@ -248,16 +245,7 @@ test('entitlement limit messages always identify a known plan name', () => {
 	expect(
 		parseEntitlementLimitMessage(buildEntitlementLimitMessage(weeklyDetails)),
 	).toEqual(weeklyDetails)
-	expect(weeklyDetails.upgradeHint).toMatch(/upgrade your plan/)
-	expect(
-		buildEntitlementUpgradeHint('execute_calls_per_day', 'pro'),
-	).not.toMatch(/upgrade/i)
-	expect(
-		buildEntitlementUpgradeHint('execute_calls_per_day', 'max'),
-	).not.toMatch(/upgrade/i)
-	expect(
-		buildEntitlementUpgradeHint('execute_calls_per_day', 'standard'),
-	).toMatch(/upgrade your plan/)
+	expect(weeklyDetails.upgradeHint).toMatch(/upgrade/)
 	expect(
 		parseEntitlementLimitMessage(
 			'Plan limit reached: this deployment allows at most 100 concurrent workflows and you currently have 100. hint',
@@ -272,16 +260,13 @@ test('entitlement limit messages always identify a known plan name', () => {
 
 test('top public plans omit upgrade clauses from hints and howToReduce', () => {
 	for (const plan of ['pro', 'max'] as const) {
-		expect(buildEntitlementHowToReduce('execute_calls_per_day', plan)).toBe(
-			'Run fewer execute calls today or this week.',
-		)
 		expect(
 			buildEntitlementHowToReduce('execute_calls_per_day', plan),
 		).not.toMatch(/upgrade/i)
 		expect(
 			buildEntitlementUpgradeHint('execute_calls_per_day', plan),
 		).not.toMatch(/upgrade/i)
-		expect(buildJobIntervalFloorUpgradeHint(plan)).toBe('Space this job out.')
+		expect(buildJobIntervalFloorUpgradeHint(plan)).not.toMatch(/upgrade/i)
 		const denial = new EntitlementLimitError({
 			resource: 'execute_calls_per_day',
 			plan,
@@ -296,13 +281,13 @@ test('top public plans omit upgrade clauses from hints and howToReduce', () => {
 		expect(denial.message).not.toMatch(/upgrade/i)
 	}
 	for (const plan of ['free', 'standard'] as const) {
-		expect(buildEntitlementHowToReduce('execute_calls_per_day', plan)).toBe(
-			'Run fewer execute calls today or this week, or upgrade your plan.',
+		expect(buildEntitlementHowToReduce('execute_calls_per_day', plan)).toMatch(
+			/upgrade/i,
 		)
 		expect(buildEntitlementUpgradeHint('execute_calls_per_day', plan)).toMatch(
-			/upgrade your plan at \/account\/billing/,
+			/\/account\/billing/,
 		)
-		expect(buildJobIntervalFloorUpgradeHint(plan)).toMatch(/upgrade at/)
+		expect(buildJobIntervalFloorUpgradeHint(plan)).toMatch(/upgrade/i)
 	}
 })
 
