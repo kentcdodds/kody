@@ -1,8 +1,8 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
-import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import {
 	applyWebhookUrlForUser,
 	mintWebhookUrlForUser,
@@ -108,7 +108,93 @@ function mockGithubIntegration() {
 	integrationMocks.assertCanUseIntegration.mockResolvedValue(undefined)
 }
 
+function githubHooksHttpDestination(input?: {
+	owner?: string
+	repo?: string
+	events?: Array<string>
+	includeWebhookSecret?: boolean
+}) {
+	const owner = input?.owner ?? 'acme'
+	const repo = input?.repo ?? 'api'
+	const events = input?.events ?? ['push', 'pull_request']
+	const config: Record<string, string> = {
+		url: '{{webhookUrl}}',
+		content_type: 'json',
+		insecure_ssl: '0',
+	}
+	if (input?.includeWebhookSecret) {
+		config.secret = '{{webhookSecret}}'
+	}
+	return {
+		type: 'http' as const,
+		url: `https://api.github.com/repos/${owner}/${repo}/hooks`,
+		method: 'POST' as const,
+		headers: {
+			Accept: 'application/vnd.github+json',
+			'Content-Type': 'application/json',
+			'User-Agent': 'kody',
+			'X-GitHub-Api-Version': '2022-11-28',
+		},
+		body: JSON.stringify({
+			name: 'web',
+			active: true,
+			events,
+			config,
+		}),
+		integration: 'github',
+	}
+}
+
+async function mintOwnerWebhookWithVerification() {
+	const minted = await mintOwnerWebhook()
+	vi.mocked(loadPackageManifestBySourceId).mockResolvedValue({
+		manifest: {
+			name: '@owner/sentry-bridge',
+			exports: {
+				'./handle-sentry-webhook': './src/handle-sentry-webhook.ts',
+			},
+			kody: {
+				id: 'sentry-bridge',
+				description: 'Sentry bridge',
+				webhooks: [
+					{
+						name: 'sentry',
+						export: './handle-sentry-webhook',
+						responseMode: 'ack',
+						verification: {
+							type: 'hmac-sha256',
+							header: 'x-hub-signature-256',
+							secretName: 'githubWebhookSecret',
+							encoding: 'hex',
+						},
+					},
+				],
+			},
+		},
+	} as never)
+	return minted
+}
+
 async function mintOwnerWebhook() {
+	vi.mocked(loadPackageManifestBySourceId).mockResolvedValue({
+		manifest: {
+			name: '@owner/sentry-bridge',
+			exports: {
+				'./handle-sentry-webhook': './src/handle-sentry-webhook.ts',
+			},
+			kody: {
+				id: 'sentry-bridge',
+				description: 'Sentry bridge',
+				webhooks: [
+					{
+						name: 'sentry',
+						export: './handle-sentry-webhook',
+						responseMode: 'ack',
+					},
+				],
+			},
+		},
+	} as never)
 	const userId = await createStableUserIdFromEmail('owner@example.com')
 	const { env, db } = createEnv(userId)
 	await db
@@ -125,6 +211,7 @@ async function mintOwnerWebhook() {
 		kodyId: 'sentry-bridge',
 		webhookName: 'sentry',
 	})
+	secretMocks.resolveSecretForHost.mockReset()
 	return { userId, env, db, minted }
 }
 
@@ -166,7 +253,7 @@ function createEnv(userId: string) {
 	}
 }
 
-test('webhookUrlApply registers a GitHub hook from a handle without exposing the URL', async () => {
+test('webhookUrlApply registers a GitHub repo hook via http destination without exposing the URL', async () => {
 	const { userId, env, db, minted } = await mintOwnerWebhook()
 	const revealed = await revealWebhookUrlForWebsite({
 		env,
@@ -178,11 +265,20 @@ test('webhookUrlApply registers a GitHub hook from a handle without exposing the
 
 	const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
 		expect(url).toBe('https://api.github.com/repos/acme/api/hooks')
+		expect(init?.method).toBe('POST')
 		expect(init?.redirect).toBe('manual')
+		const headers = new Headers(init?.headers)
+		expect(headers.get('Accept')).toBe('application/vnd.github+json')
+		expect(headers.get('Content-Type')).toBe('application/json')
+		expect(headers.get('User-Agent')).toBe('kody')
+		expect(headers.get('X-GitHub-Api-Version')).toBe('2022-11-28')
+		expect(headers.get('Authorization')).toBe('Bearer ghs_test')
 		const body = JSON.parse(String(init?.body)) as {
 			config: { url: string }
+			events: Array<string>
 		}
 		expect(body.config.url).toBe(revealed.url)
+		expect(body.events).toEqual(['push', 'pull_request'])
 		return new Response(
 			JSON.stringify({
 				id: 4242,
@@ -198,12 +294,7 @@ test('webhookUrlApply registers a GitHub hook from a handle without exposing the
 		userId,
 		username: 'owner',
 		handle: minted.handle,
-		destination: {
-			type: 'github',
-			owner: 'acme',
-			repo: 'api',
-			events: ['push', 'pull_request'],
-		},
+		destination: githubHooksHttpDestination(),
 	})
 
 	expect(applied).toEqual({
@@ -239,7 +330,7 @@ test('webhookUrlApply registers a GitHub hook from a handle without exposing the
 			userId,
 			username: 'owner',
 			handle: minted.handle,
-			destination: { type: 'github', owner: 'acme', repo: 'api' },
+			destination: githubHooksHttpDestination(),
 		}),
 	).rejects.toThrow('not recoverable')
 
@@ -263,7 +354,7 @@ test('webhookUrlApply does not follow credential-bearing redirects', async () =>
 		userId,
 		username: 'owner',
 		handle: minted.handle,
-		destination: { type: 'github', owner: 'acme', repo: 'api' },
+		destination: githubHooksHttpDestination(),
 	})
 
 	expect(applied).toEqual({
@@ -275,66 +366,6 @@ test('webhookUrlApply does not follow credential-bearing redirects', async () =>
 	})
 	expect(fetchMock).toHaveBeenCalledTimes(1)
 	vi.unstubAllGlobals()
-})
-
-test('webhookUrlApply fails when the package manifest cannot be loaded', async () => {
-	const { userId, env, minted } = await mintOwnerWebhook()
-	mockGithubIntegration()
-	vi.mocked(loadPackageManifestBySourceId).mockRejectedValueOnce(
-		new Error('Saved package source bindings are not available.'),
-	)
-
-	await expect(
-		applyWebhookUrlForUser({
-			env,
-			userId,
-			username: 'owner',
-			handle: minted.handle,
-			destination: { type: 'github', owner: 'acme', repo: 'api' },
-		}),
-	).rejects.toThrow('Could not load the package manifest')
-})
-
-test('webhookUrlApply fails when a configured hook secret cannot be resolved', async () => {
-	const { userId, env, minted } = await mintOwnerWebhook()
-	mockGithubIntegration()
-	secretMocks.resolveSecretForHost.mockResolvedValue({
-		found: false,
-	})
-	const fetchMock = vi.fn()
-	vi.stubGlobal('fetch', fetchMock)
-
-	await expect(
-		applyWebhookUrlForUser({
-			env,
-			userId,
-			username: 'owner',
-			handle: minted.handle,
-			destination: {
-				type: 'github',
-				owner: 'acme',
-				repo: 'api',
-				hookSecretName: 'githubHookSecret',
-			},
-		}),
-	).rejects.toThrow('githubHookSecret')
-	expect(fetchMock).not.toHaveBeenCalled()
-	vi.unstubAllGlobals()
-})
-
-test('webhookUrlApply rejects dot-only GitHub slugs', async () => {
-	const { userId, env, minted } = await mintOwnerWebhook()
-	mockGithubIntegration()
-
-	await expect(
-		applyWebhookUrlForUser({
-			env,
-			userId,
-			username: 'owner',
-			handle: minted.handle,
-			destination: { type: 'github', owner: '..', repo: 'api' },
-		}),
-	).rejects.toThrow('GitHub owner')
 })
 
 test('webhookUrlApply registers via http destination with {{webhookUrl}} substitution', async () => {
@@ -666,5 +697,207 @@ test('webhookUrlApply redacts refreshed Authorization tokens after 401 retry', a
 	expect(applied.error ?? '').not.toContain(encodeURIComponent(refreshedToken))
 	expect(applied.error ?? '').toContain('[redacted]')
 	expect(integrationMocks.refreshIntegrationTokens).toHaveBeenCalled()
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply injects {{webhookSecret}} from verification.secretName', async () => {
+	const { userId, env, minted } = await mintOwnerWebhookWithVerification()
+	const revealed = await revealWebhookUrlForWebsite({
+		env,
+		userId,
+		username: 'owner',
+		target: { handle: minted.handle },
+	})
+	const hookSecret = 'hook_signing_secret_value'
+	mockGithubIntegration()
+	secretMocks.resolveSecretForHost.mockResolvedValue({
+		found: true,
+		value: hookSecret,
+		allowedHosts: ['api.github.com'],
+		scope: 'user',
+	})
+	const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+		const body = JSON.parse(String(init?.body)) as {
+			config: { url: string; secret: string }
+		}
+		expect(body.config.url).toBe(revealed.url)
+		expect(body.config.secret).toBe(hookSecret)
+		return new Response(JSON.stringify({ id: 99 }), { status: 201 })
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: githubHooksHttpDestination({ includeWebhookSecret: true }),
+	})
+
+	expect(applied.ok).toBe(true)
+	expect(applied.remoteId).toBe('99')
+	expect(JSON.stringify(applied)).not.toContain(hookSecret)
+	expect(secretMocks.resolveSecretForHost).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'githubWebhookSecret',
+			host: 'api.github.com',
+		}),
+	)
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply rejects {{webhookSecret}} when verification.secretName is missing', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	mockGithubIntegration()
+	const fetchMock = vi.fn()
+	vi.stubGlobal('fetch', fetchMock)
+
+	await expect(
+		applyWebhookUrlForUser({
+			env,
+			userId,
+			username: 'owner',
+			handle: minted.handle,
+			destination: githubHooksHttpDestination({ includeWebhookSecret: true }),
+		}),
+	).rejects.toThrow(/verification\.secretName/)
+	expect(fetchMock).not.toHaveBeenCalled()
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply redacts {{webhookSecret}} from destination error bodies', async () => {
+	const { userId, env, minted } = await mintOwnerWebhookWithVerification()
+	const hookSecret = 'hook_signing_secret_for_redaction'
+	mockGithubIntegration()
+	secretMocks.resolveSecretForHost.mockResolvedValue({
+		found: true,
+		value: hookSecret,
+		allowedHosts: ['api.github.com'],
+		scope: 'user',
+	})
+	const fetchMock = vi.fn(async () => {
+		return new Response(`invalid secret ${hookSecret}`, { status: 400 })
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: githubHooksHttpDestination({ includeWebhookSecret: true }),
+	})
+
+	expect(applied.ok).toBe(false)
+	expect(applied.error ?? '').not.toContain(hookSecret)
+	expect(applied.error ?? '').toContain('[redacted]')
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply JSON-escapes {{webhookSecret}} with special characters', async () => {
+	const { userId, env, minted } = await mintOwnerWebhookWithVerification()
+	const hookSecret = 'hook"with\\quotes\nand\tnewline'
+	mockGithubIntegration()
+	secretMocks.resolveSecretForHost.mockResolvedValue({
+		found: true,
+		value: hookSecret,
+		allowedHosts: ['api.github.com'],
+		scope: 'user',
+	})
+	const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+		const raw = String(init?.body)
+		expect(raw).toContain(JSON.stringify(hookSecret).slice(1, -1))
+		const body = JSON.parse(raw) as { config: { secret: string } }
+		expect(body.config.secret).toBe(hookSecret)
+		return new Response(JSON.stringify({ id: 100 }), { status: 201 })
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: githubHooksHttpDestination({ includeWebhookSecret: true }),
+	})
+
+	expect(applied.ok).toBe(true)
+	expect(JSON.stringify(applied)).not.toContain(hookSecret)
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply redacts form-encoded {{webhookSecret}} (+ for spaces) from errors', async () => {
+	const { userId, env, minted } = await mintOwnerWebhookWithVerification()
+	const hookSecret = 'hook secret with spaces'
+	secretMocks.resolveSecretForHost.mockResolvedValue({
+		found: true,
+		value: hookSecret,
+		allowedHosts: ['hooks.example'],
+		scope: 'user',
+	})
+	const formEncoded = new URLSearchParams({ v: hookSecret })
+		.toString()
+		.slice('v='.length)
+	expect(formEncoded).toContain('+')
+	const fetchMock = vi.fn(async () => {
+		return new Response(`bad callback ${formEncoded}`, { status: 400 })
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: {
+			type: 'http',
+			url: 'https://hooks.example/register',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: `url=${encodeURIComponent('{{webhookUrl}}')}&secret=${encodeURIComponent('{{webhookSecret}}')}`,
+		},
+	})
+
+	expect(applied.ok).toBe(false)
+	expect(applied.error ?? '').not.toContain(hookSecret)
+	expect(applied.error ?? '').not.toContain(formEncoded)
+	expect(applied.error ?? '').toContain('[redacted]')
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply without {{webhookSecret}} still works for unsigned webhooks', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	const revealed = await revealWebhookUrlForWebsite({
+		env,
+		userId,
+		username: 'owner',
+		target: { handle: minted.handle },
+	})
+	const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+		const body = JSON.parse(String(init?.body)) as {
+			url: string
+			secret?: string
+		}
+		expect(body.url).toBe(revealed.url)
+		expect(body.secret).toBeUndefined()
+		return new Response(JSON.stringify({ id: 'unsigned-1' }), { status: 200 })
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: {
+			type: 'http',
+			url: 'https://hooks.example/register',
+			headers: { 'Content-Type': 'application/json' },
+			body: '{"url":"{{webhookUrl}}"}',
+		},
+	})
+
+	expect(applied.ok).toBe(true)
+	expect(applied.remoteId).toBe('unsigned-1')
+	expect(secretMocks.resolveSecretForHost).not.toHaveBeenCalled()
 	vi.unstubAllGlobals()
 })

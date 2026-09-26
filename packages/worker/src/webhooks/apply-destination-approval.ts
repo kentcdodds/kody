@@ -1,10 +1,12 @@
 import { sha256Hex } from '@kody-internal/shared/sha256.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
+	countWebhookSecretPlaceholdersInFormBody,
 	countWebhookUrlPlaceholdersInFormBody,
 	isFormUrlEncodedContentType,
 	webhookUrlApplyHttpMethods,
 	webhookUrlApplyPlaceholder,
+	webhookUrlApplySecretPlaceholder,
 	type WebhookUrlApplyHttpDestination,
 } from './apply.ts'
 import { formatWebhookUrlHandle, parseWebhookUrlHandle } from './handle.ts'
@@ -70,20 +72,37 @@ function listInjectionSites(destination: {
 			? destination.url
 			: destination.url.slice(0, fragmentIndex)
 	if (urlWithoutFragment.includes(webhookUrlApplyPlaceholder)) sites.push('url')
+	if (urlWithoutFragment.includes(webhookUrlApplySecretPlaceholder)) {
+		sites.push(`url:${webhookUrlApplySecretPlaceholder}`)
+	}
 	for (const [name, value] of Object.entries(destination.headers)) {
 		if (value.includes(webhookUrlApplyPlaceholder)) {
 			sites.push(`header:${name}`)
+		}
+		if (value.includes(webhookUrlApplySecretPlaceholder)) {
+			sites.push(`header:${name}:${webhookUrlApplySecretPlaceholder}`)
 		}
 	}
 	const contentType =
 		Object.entries(destination.headers).find(
 			([name]) => name.toLowerCase() === 'content-type',
 		)?.[1] ?? null
-	const bodyHasLiteral = destination.body.includes(webhookUrlApplyPlaceholder)
-	const bodyHasFormEncoded =
+	const bodyHasUrlLiteral = destination.body.includes(
+		webhookUrlApplyPlaceholder,
+	)
+	const bodyHasUrlFormEncoded =
 		isFormUrlEncodedContentType(contentType) &&
 		countWebhookUrlPlaceholdersInFormBody(destination.body) >= 1
-	if (bodyHasLiteral || bodyHasFormEncoded) sites.push('body')
+	if (bodyHasUrlLiteral || bodyHasUrlFormEncoded) sites.push('body')
+	const bodyHasSecretLiteral = destination.body.includes(
+		webhookUrlApplySecretPlaceholder,
+	)
+	const bodyHasSecretFormEncoded =
+		isFormUrlEncodedContentType(contentType) &&
+		countWebhookSecretPlaceholdersInFormBody(destination.body) >= 1
+	if (bodyHasSecretLiteral || bodyHasSecretFormEncoded) {
+		sites.push(`body:${webhookUrlApplySecretPlaceholder}`)
+	}
 	return sites
 }
 
@@ -180,7 +199,7 @@ export function buildWebhookApplyDestinationApprovalRequiredMessage(input: {
 		`approval_url: ${input.approvalUrl}`,
 		`method: ${input.destination.method}`,
 		`url: ${input.destination.url}`,
-		`${webhookUrlApplyPlaceholder} injection sites: ${input.destination.injectionSites.join(', ') || '(none)'}`,
+		`${webhookUrlApplyPlaceholder}/${webhookUrlApplySecretPlaceholder} injection sites: ${input.destination.injectionSites.join(', ') || '(none)'}`,
 		`headers: ${headerLines.length > 0 ? headerLines.join('; ') : '(none)'}`,
 		`body: ${input.destination.body.length > 0 ? input.destination.body : '(none)'}`,
 		`auth: ${input.destination.auth}`,

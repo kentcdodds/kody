@@ -2,8 +2,8 @@
 
 Kody inbound webhooks are **package-centered**: you declare them in
 `package.json#kody.webhooks`, mint an opaque handle with `webhookUrlMint`, then
-register the credential with `webhookUrlApply` (GitHub repository hooks or a
-generic HTTPS destination) or copy the URL yourself from the package's
+register the credential with `webhookUrlApply` (generic HTTPS, including the
+GitHub Hooks API) or copy the URL yourself from the package's
 [settings page](#manage-webhook-urls-in-package-settings). MCP and execute never
 return the credential URL or `url_secret`. Each delivery invokes the bound
 package export.
@@ -89,12 +89,11 @@ Use the MCP `webhooks` domain:
    `verification.secretName` (for example `sentryWebhookSecret`).
 3. Call `webhookUrlMint` with the scoped package name (or `package_id` when the
    name is not known) and `webhookName`.
-4. Call `webhookUrlApply` with the returned `handle` and a destination. Use
-   `type: "github"` for repository hooks (connected `github` integration or a
-   host-approved GitHub token), or `type: "http"` to POST/PUT the minted URL
-   into any HTTPS registration endpoint via `{{webhookUrl}}` substitution. The
-   owner can copy the URL from the package's
-   [settings page](#manage-webhook-urls-in-package-settings)
+4. Call `webhookUrlApply` with the returned `handle` and a `type: "http"`
+   destination. Kody POSTs/PUTs the minted URL into any HTTPS registration
+   endpoint via `{{webhookUrl}}` substitution (for example GitHub's
+   `POST /repos/{owner}/{repo}/hooks`). The owner can copy the URL from the
+   package's [settings page](#manage-webhook-urls-in-package-settings)
    (`/@<username>/<packageKodyId>/settings#webhooks`) when that is simpler.
 
 Other capabilities: `webhookList` (declarations joined with minted handle /
@@ -126,9 +125,9 @@ package declares, joined with its minted state, one card per webhook:
   webhooks answer 404.
 
 The URL is the human path. Agents get the handle and `url_host` through MCP and
-either apply the handle (`github` or `http`) or ask the owner to copy the URL
-from package settings. Mints that predate encrypted secret storage cannot be
-shown; the card offers Rotate for those.
+either apply the handle (`type: "http"`) or ask the owner to copy the URL from
+package settings. Mints that predate encrypted secret storage cannot be shown;
+the card offers Rotate for those.
 
 `/account/webhooks` (account rail → Webhooks) is a read-only index of every
 webhook across your packages. Each row links to the owning package's Webhooks
@@ -137,54 +136,41 @@ section; nothing is minted or revealed from the index.
 ### Apply a handle to a destination
 
 `webhookUrlApply` resolves the handle inside Kody and registers the URL through
-a destination adapter. The model never sees the secret: Kody injects the minted
-URL server-side and returns only
+an outbound HTTPS request (`type: "http"`). The model never sees the secret:
+Kody injects the minted URL server-side via `{{webhookUrl}}` and returns only
 `{ ok, url_host, http_status, remote_id, error }`. Remote bodies that echo the
 hook URL are redacted.
 
 Owner rationale: the signed-in owner can already reveal and paste the URL from
 package settings. Opaque apply exists so agents can register that same
 credential without pulling plaintext into model context — including at
-caller-chosen HTTPS endpoints, not only typed vendor adapters. Settings
-reveal/paste is owner consent. Silent model-chosen apply to an arbitrary URL is
-not: prompt injection could POST the long-lived credential to an attacker
-endpoint. Generic `http` therefore requires an interactive hard confirm that
-surfaces the exact destination before the outbound request runs.
-
-GitHub (creates `POST /repos/{owner}/{repo}/hooks` on `api.github.com`):
-
-```ts
-await kody.webhooks.webhookUrlApply({
-	handle,
-	destination: {
-		type: 'github',
-		owner: 'acme',
-		repo: 'api',
-		events: ['push', 'pull_request'],
-		integration: 'github',
-	},
-})
-```
-
-Authorize with the user's GitHub OAuth integration (default `github`) or a
-host-approved GitHub token (`secretName`).
+caller-chosen HTTPS endpoints. Settings reveal/paste is owner consent. Silent
+model-chosen apply to an arbitrary URL is not: prompt injection could POST the
+long-lived credential to an attacker endpoint. Generic `http` therefore requires
+an interactive hard confirm that surfaces the exact destination before the
+outbound request runs.
 
 Generic HTTPS (`type: "http"`) — Kody sends the request and substitutes
-`{{webhookUrl}}` into `url`, header values, and/or `body` (form bodies are
-decoded/re-encoded). The placeholder is required. Destination URLs must be
-`https://`. Redirects are not followed. Auth is optional via `secretName` or
-`integration` (Bearer), or a caller-supplied `Authorization` header — not both.
+`{{webhookUrl}}` (and optional `{{webhookSecret}}`) into `url`, header values,
+and/or `body` (form bodies are decoded/re-encoded). `{{webhookUrl}}` is
+required. `{{webhookSecret}}` injects the **resolved value** of the package
+webhook's declared `verification.secretName` (the HMAC key material, not the
+secret name string), resolved for the destination request host under the same
+host-approval rules as other secrets — never returned to MCP. Destination URLs
+must be `https://`. Redirects are not followed. Auth is optional via
+`secretName` or `integration` (Bearer), or a caller-supplied `Authorization`
+header — not both. Destination `secretName` / `integration` authorize the
+outbound request; they are not the webhook HMAC signing secret.
 
-Typed `github` is gated by the owner's GitHub integration or a host-approved
-token. Generic `http` lets the model choose an arbitrary outbound target. That
-path is **interactive MCP only** and reuses the same **account owner approval
-flow** as secret host approval (`/connect/secrets`), secret package grants, and
-locked-package publish approval: the capability returns an `approval_url` to
-`/connect/webhook-apply` with the exact method, URL, `{{webhookUrl}}` injection
-sites, headers, body template, and auth mode. The signed-in owner Allows on the
-website (writing a durable destination grant); the agent then retries and the
-outbound request runs. Package runtimes cannot use `http` apply. Agents never
-grant access and never see the webhook credential.
+That path is **interactive MCP only** and reuses the same **account owner
+approval flow** as secret host approval (`/connect/secrets`), secret package
+grants, and locked-package publish approval: the capability returns an
+`approval_url` to `/connect/webhook-apply` with the exact method, URL,
+`{{webhookUrl}}` / `{{webhookSecret}}` injection sites, headers, body template,
+and auth mode. The signed-in owner Allows on the website (writing a durable
+destination grant); the agent then retries and the outbound request runs.
+Package runtimes cannot use `http` apply. Agents never grant access and never
+see the webhook credential.
 
 ```ts
 await kody.webhooks.webhookUrlApply({
@@ -201,6 +187,49 @@ await kody.webhooks.webhookUrlApply({
 // If approval is required, send the owner approval_url (/connect/webhook-apply),
 // wait for Allow, then retry the same call.
 ```
+
+GitHub repository hooks use the same `http` path against the Hooks API
+(`POST https://api.github.com/repos/{owner}/{repo}/hooks`). Put `{{webhookUrl}}`
+in `config.url`, include `User-Agent: kody` (GitHub requires a User-Agent), send
+the GitHub Accept / API-Version headers, and authorize with
+`integration: 'github'` (or a host-approved token via `secretName`). When the
+package webhook declares HMAC `verification.secretName`, put `{{webhookSecret}}`
+in `config.secret` so GitHub signs deliveries:
+
+```ts
+await kody.webhooks.webhookUrlApply({
+	handle,
+	destination: {
+		type: 'http',
+		url: 'https://api.github.com/repos/acme/api/hooks',
+		method: 'POST',
+		headers: {
+			Accept: 'application/vnd.github+json',
+			'Content-Type': 'application/json',
+			'User-Agent': 'kody',
+			'X-GitHub-Api-Version': '2022-11-28',
+		},
+		body: JSON.stringify({
+			name: 'web',
+			active: true,
+			events: ['push', 'pull_request'],
+			config: {
+				url: '{{webhookUrl}}',
+				content_type: 'json',
+				insecure_ssl: '0',
+				secret: '{{webhookSecret}}',
+			},
+		}),
+		integration: 'github',
+	},
+})
+```
+
+`{{webhookSecret}}` injects the **resolved HMAC secret value** from the named
+secret in `verification.secretName` (not the name string itself). If the
+placeholder is present but that declaration is missing, or the secret is missing
+/ not approved for the destination host, apply fails with a clear error. Omit
+`{{webhookSecret}}` when the webhook has no HMAC verification.
 
 Prefer `http` for Workers and any provider API that accepts a callback URL
 field. Providers that need an ownership quiz (X Activity CRC, WebSub / YouTube,

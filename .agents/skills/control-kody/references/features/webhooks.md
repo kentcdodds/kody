@@ -16,7 +16,7 @@ packages; each row deep-links to the card above.
 
 Generic `http` `webhookUrlApply` destinations require owner Allow at
 `/connect/webhook-apply?handle=…&fingerprint=…` (same approval family as
-`/connect/secrets`). Typed `github` apply does not use this page.
+`/connect/secrets`). Every apply destination uses this page.
 
 ## Drive it
 

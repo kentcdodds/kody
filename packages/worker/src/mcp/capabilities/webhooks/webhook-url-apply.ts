@@ -5,9 +5,9 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
 	httpDestinationIncludesWebhookUrlPlaceholder,
-	webhookUrlApplyGithubContentTypes,
 	webhookUrlApplyHttpMethods,
 	webhookUrlApplyPlaceholder,
+	webhookUrlApplySecretPlaceholder,
 	type WebhookUrlApplyDestination,
 } from '#worker/webhooks/apply.ts'
 import { applyWebhookUrlForUser } from '#worker/webhooks/service.ts'
@@ -17,45 +17,6 @@ import {
 	webhookUrlApplyResultSchema,
 } from './shared.ts'
 
-const githubSlugSchema = z
-	.string()
-	.min(1)
-	.regex(/^[A-Za-z0-9_.-]+$/, 'Must be a GitHub owner or repository slug.')
-	.refine(
-		(value) => value !== '.' && value !== '..',
-		'Must be a GitHub owner or repository slug.',
-	)
-
-const githubDestinationSchema = z.object({
-	type: z.literal('github'),
-	owner: githubSlugSchema,
-	repo: githubSlugSchema,
-	events: z.array(z.string().min(1)).optional(),
-	contentType: z.enum(webhookUrlApplyGithubContentTypes).optional(),
-	active: z.boolean().optional(),
-	integration: z
-		.string()
-		.min(1)
-		.optional()
-		.describe(
-			'OAuth integration name. Defaults to "github" when secretName is omitted.',
-		),
-	secretName: z
-		.string()
-		.min(1)
-		.optional()
-		.describe(
-			'Host-approved GitHub token secret. Use instead of an OAuth integration.',
-		),
-	hookSecretName: z
-		.string()
-		.min(1)
-		.optional()
-		.describe(
-			'Optional HMAC secret name to set as the GitHub hook secret. Defaults to the package webhook verification.secretName when present.',
-		),
-})
-
 const httpDestinationSchema = z
 	.object({
 		type: z.literal('http'),
@@ -63,7 +24,7 @@ const httpDestinationSchema = z
 			.string()
 			.min(1)
 			.describe(
-				`HTTPS registration endpoint. May include ${webhookUrlApplyPlaceholder} for server-side URL injection.`,
+				`HTTPS registration endpoint. May include ${webhookUrlApplyPlaceholder} and ${webhookUrlApplySecretPlaceholder} for server-side injection.`,
 			),
 		method: z
 			.enum(webhookUrlApplyHttpMethods)
@@ -73,14 +34,14 @@ const httpDestinationSchema = z
 			.record(z.string(), z.string())
 			.optional()
 			.describe(
-				`Optional request headers. Values may include ${webhookUrlApplyPlaceholder}.`,
+				`Optional request headers. Values may include ${webhookUrlApplyPlaceholder} and ${webhookUrlApplySecretPlaceholder}.`,
 			),
 		body: z
 			.string()
 			.max(64_384)
 			.optional()
 			.describe(
-				`Optional request body template. May include ${webhookUrlApplyPlaceholder}.`,
+				`Optional request body template. May include ${webhookUrlApplyPlaceholder} and ${webhookUrlApplySecretPlaceholder}.`,
 			),
 		integration: z
 			.string()
@@ -147,10 +108,7 @@ const httpDestinationSchema = z
 		}
 	})
 
-export const webhookUrlApplyDestinationSchema = z.discriminatedUnion('type', [
-	githubDestinationSchema,
-	httpDestinationSchema,
-])
+export const webhookUrlApplyDestinationSchema = httpDestinationSchema
 
 type HttpApplyDestinationInput = z.infer<typeof httpDestinationSchema>
 
@@ -216,7 +174,7 @@ export const webhookUrlApplyCapability = defineDomainCapability(
 	{
 		name: 'webhookUrlApply',
 		description:
-			'Register a minted webhook URL at a destination without exposing the credential. Pass the handle from webhookUrlMint, webhookUrlRotate, or webhookList. Destination type github creates the repo hook via the user GitHub integration (or a host-approved GitHub token). Destination type http performs an outbound HTTPS request and substitutes {{webhookUrl}} server-side into url/headers/body — interactive MCP only, and only after the owner Approves the exact destination via the same account approval flow as /connect/secrets host approval (approval_url → website Allow → durable grant → retry). Returns ok, remote_id, and url_host only — never the credential URL.',
+			'Register a minted webhook URL at an HTTPS destination without exposing the credential. Pass the handle from webhookUrlMint, webhookUrlRotate, or webhookList. Destination type http performs an outbound HTTPS request and substitutes {{webhookUrl}} (and optional {{webhookSecret}} — the resolved HMAC value from verification.secretName, for the destination host) server-side into url/headers/body — interactive MCP only, and only after the owner Approves the exact destination via the same account approval flow as /connect/secrets host approval (approval_url → website Allow → durable grant → retry). For GitHub repository hooks, POST https://api.github.com/repos/{owner}/{repo}/hooks with User-Agent kody, {{webhookUrl}} in config.url, {{webhookSecret}} in config.secret when HMAC is declared, and integration "github" (or a host-approved token). Returns ok, remote_id, and url_host only — never the credential URL or signing secret.',
 		keywords: [
 			'webhook',
 			'apply',
@@ -242,16 +200,14 @@ export const webhookUrlApplyCapability = defineDomainCapability(
 		outputSchema: webhookUrlApplyResultSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			if (args.destination.type === 'http') {
-				assertInteractiveHttpApplyCaller(ctx.callerContext)
-				await assertHttpApplyDestinationApproved({
-					env: ctx.env,
-					userId: user.userId,
-					handle: args.handle,
-					destination: args.destination,
-					baseUrl: ctx.callerContext.baseUrl,
-				})
-			}
+			assertInteractiveHttpApplyCaller(ctx.callerContext)
+			await assertHttpApplyDestinationApproved({
+				env: ctx.env,
+				userId: user.userId,
+				handle: args.handle,
+				destination: args.destination,
+				baseUrl: ctx.callerContext.baseUrl,
+			})
 			const applied = await applyWebhookUrlForUser({
 				env: ctx.env,
 				userId: user.userId,

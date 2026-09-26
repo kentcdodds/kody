@@ -18,8 +18,6 @@ import {
 	redactWebhookCredentials,
 } from './redact.ts'
 
-export const webhookUrlApplyGithubContentTypes = ['json', 'form'] as const
-
 export const webhookUrlApplyHttpMethods = [
 	'GET',
 	'POST',
@@ -31,34 +29,26 @@ export const webhookUrlApplyHttpMethods = [
 /** Server-side substitution token for the minted credential URL. */
 export const webhookUrlApplyPlaceholder = '{{webhookUrl}}'
 
-export type WebhookUrlApplyGithubDestination = {
-	type: 'github'
-	owner: string
-	repo: string
-	events?: Array<string>
-	contentType?: (typeof webhookUrlApplyGithubContentTypes)[number]
-	active?: boolean
-	integration?: string
-	secretName?: string
-	hookSecretName?: string
-}
+/**
+ * Server-side substitution token for the package webhook's declared
+ * verification.secretName value (resolved for the destination host).
+ */
+export const webhookUrlApplySecretPlaceholder = '{{webhookSecret}}'
 
 export type WebhookUrlApplyHttpDestination = {
 	type: 'http'
-	/** HTTPS registration endpoint. May include {{webhookUrl}}. */
+	/** HTTPS registration endpoint. May include {{webhookUrl}} / {{webhookSecret}}. */
 	url: string
 	method?: (typeof webhookUrlApplyHttpMethods)[number]
-	/** Header values may include {{webhookUrl}}. */
+	/** Header values may include {{webhookUrl}} / {{webhookSecret}}. */
 	headers?: Record<string, string>
-	/** Request body template; may include {{webhookUrl}}. */
+	/** Request body template; may include {{webhookUrl}} / {{webhookSecret}}. */
 	body?: string
 	integration?: string
 	secretName?: string
 }
 
-export type WebhookUrlApplyDestination =
-	| WebhookUrlApplyGithubDestination
-	| WebhookUrlApplyHttpDestination
+export type WebhookUrlApplyDestination = WebhookUrlApplyHttpDestination
 
 export type WebhookUrlApplyResult = {
 	ok: boolean
@@ -72,7 +62,6 @@ const applyResponseBodyMaxBytes = 16_384
 const applyRequestBodyMaxBytes = 64_384
 const applyErrorSnippetMaxChars = 300
 const applyRequestTimeoutMs = 15_000
-const defaultGithubEvents = ['push'] as const
 const applyHttpMaxHeaderCount = 32
 
 function integrationAllowedHosts(joined: JoinedIntegration) {
@@ -137,54 +126,6 @@ async function loadDeclaredWebhookIfPresent(input: {
 	)
 }
 
-function assertGithubRepoSlug(value: string, label: 'owner' | 'repository') {
-	if (value === '.' || value === '..' || !/^[A-Za-z0-9_.-]+$/.test(value)) {
-		throw new McpCallerError(`Must be a GitHub ${label} slug.`)
-	}
-}
-
-async function resolveHookSigningSecret(input: {
-	env: Env
-	userId: string
-	packageId: string
-	baseUrl: string
-	secretName: string
-}) {
-	const resolved = await resolveSecretForHost({
-		env: input.env,
-		userId: input.userId,
-		name: input.secretName,
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: input.packageId,
-		},
-		host: 'api.github.com',
-	})
-	if (!resolved.found || !resolved.value) {
-		throw new McpCallerError(
-			`Secret "${input.secretName}" was not found for this user.`,
-		)
-	}
-	if (!resolved.allowedHosts.includes('api.github.com')) {
-		const approvalUrl = buildSecretHostApprovalUrl({
-			baseUrl: input.baseUrl,
-			name: input.secretName,
-			scope: resolved.scope ?? 'user',
-			requestedHost: 'api.github.com',
-			storageContext: {
-				sessionId: null,
-				appId: null,
-				packageId: input.packageId,
-			},
-		})
-		throw new McpCallerError(
-			`Secret "${input.secretName}" is not approved for host "api.github.com". Approve it at ${approvalUrl}.`,
-		)
-	}
-	return resolved.value
-}
-
 async function authorizeApplyRequest(input: {
 	env: Env
 	userId: string
@@ -195,10 +136,6 @@ async function authorizeApplyRequest(input: {
 	url: string
 	integration?: string
 	secretName?: string
-	/** When set, used if neither secretName nor integration is provided. */
-	defaultIntegration?: string | null
-	/** When false, missing auth is allowed (http destinations). Default true. */
-	requireAuthorization?: boolean
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<{
 	authorization: string | null
@@ -252,48 +189,41 @@ async function authorizeApplyRequest(input: {
 		}
 	}
 
-	const fallback = input.defaultIntegration?.trim() || ''
-	const name = integrationName || fallback
-	if (!name) {
-		if (input.requireAuthorization === false) {
-			return { authorization: null, retryAuthorization: null }
-		}
-		throw new McpCallerError(
-			'Provide integration or secretName to authorize the apply request.',
-		)
+	if (!integrationName) {
+		return { authorization: null, retryAuthorization: null }
 	}
 	const joined = await getJoinedIntegration({
 		env: input.env,
 		userId: input.userId,
-		name,
+		name: integrationName,
 	})
 	if (!joined) {
 		throw new McpCallerError(
-			`Integration "${name}" was not found. Connect it at /connect/oauth?provider=${encodeURIComponent(name)} or pass secretName for a host-approved token.`,
+			`Integration "${integrationName}" was not found. Connect it at /connect/oauth?provider=${encodeURIComponent(integrationName)} or pass secretName for a host-approved token.`,
 		)
 	}
 	await assertCanUseIntegration({
 		env: input.env,
 		baseUrl: input.baseUrl,
 		userId: input.userId,
-		name,
+		name: integrationName,
 		packageId: input.packageId,
 		packageKodyId: input.packageKodyId,
 	})
 	assertDestinationHostAllowed({
 		joined,
-		integrationName: name,
+		integrationName,
 		url: input.url,
 	})
 	const readToken = async () => {
 		const token = await resolveIntegrationAccessToken({
 			env: input.env,
 			userId: input.userId,
-			name,
+			name: integrationName,
 		})
 		if (!token) {
 			throw new McpCallerError(
-				`Integration "${name}" does not have a stored access token. Reconnect at /connect/oauth?provider=${encodeURIComponent(name)}.`,
+				`Integration "${integrationName}" does not have a stored access token. Reconnect at /connect/oauth?provider=${encodeURIComponent(integrationName)}.`,
 			)
 		}
 		return `Bearer ${token}`
@@ -305,7 +235,7 @@ async function authorizeApplyRequest(input: {
 				env: input.env,
 				userId: input.userId,
 				userEmail: input.userEmail ?? undefined,
-				name,
+				name: integrationName,
 				baseUrl: input.baseUrl,
 				packageId: input.packageId,
 				packageKodyId: input.packageKodyId,
@@ -488,130 +418,34 @@ async function sendAuthorizedApplyRequest(input: {
 	}
 }
 
-async function dispatchGithubApply(input: {
-	env: Env
-	userId: string
-	userEmail?: string | null
-	baseUrl: string
-	packageId: string
-	packageKodyId: string
-	webhookName: string
-	savedPackage: SavedPackageRecord
-	webhookUrl: string
-	urlSecret: string
-	destination: WebhookUrlApplyGithubDestination
-	waitUntil?: (promise: Promise<unknown>) => void
-}): Promise<WebhookUrlApplyResult> {
-	const owner = input.destination.owner.trim()
-	const repo = input.destination.repo.trim()
-	assertGithubRepoSlug(owner, 'owner')
-	assertGithubRepoSlug(repo, 'repository')
-	const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks`
-	const declared = await loadDeclaredWebhookIfPresent({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.userId,
-		savedPackage: input.savedPackage,
-		webhookName: input.webhookName,
-	})
-	const hookSecretName =
-		input.destination.hookSecretName?.trim() ||
-		declared?.verification?.secretName ||
-		''
-	const hookSecret = hookSecretName
-		? await resolveHookSigningSecret({
-				env: input.env,
-				userId: input.userId,
-				packageId: input.packageId,
-				baseUrl: input.baseUrl,
-				secretName: hookSecretName,
-			})
-		: null
-	const config: Record<string, string> = {
-		url: input.webhookUrl,
-		content_type: input.destination.contentType ?? 'json',
-		insecure_ssl: '0',
-	}
-	if (hookSecret) config.secret = hookSecret
-	const body = JSON.stringify({
-		name: 'web',
-		active: input.destination.active !== false,
-		events: input.destination.events?.length
-			? input.destination.events
-			: [...defaultGithubEvents],
-		config,
-	})
-	const auth = await authorizeApplyRequest({
-		env: input.env,
-		userId: input.userId,
-		userEmail: input.userEmail,
-		baseUrl: input.baseUrl,
-		packageId: input.packageId,
-		packageKodyId: input.packageKodyId,
-		url,
-		integration: input.destination.integration,
-		secretName: input.destination.secretName,
-		defaultIntegration: 'github',
-		requireAuthorization: true,
-		waitUntil: input.waitUntil,
-	})
-	const secrets = [
-		...collectWebhookCredentialSecrets({
-			url: input.webhookUrl,
-			urlSecret: input.urlSecret,
-		}),
-		...collectAuthorizationSecretsForRedaction({
-			authorization: auth.authorization,
-		}),
-	]
-	if (hookSecret) secrets.push(hookSecret)
-	if (!auth.authorization || !auth.retryAuthorization) {
-		throw new McpCallerError(
-			'GitHub apply requires authorization via integration or secretName.',
-		)
-	}
-	return sendAuthorizedApplyRequest({
-		url,
-		method: 'POST',
-		headers: {
-			Accept: 'application/vnd.github+json',
-			'Content-Type': 'application/json',
-			'User-Agent': 'kody',
-			'X-GitHub-Api-Version': '2022-11-28',
-		},
-		body,
-		authorization: auth.authorization,
-		retryAuthorization: auth.retryAuthorization,
-		secrets,
-	})
-}
-
-function countWebhookUrlPlaceholders(value: string) {
+function countPlaceholders(value: string, placeholder: string) {
 	let count = 0
 	let index = 0
 	while (true) {
-		const next = value.indexOf(webhookUrlApplyPlaceholder, index)
+		const next = value.indexOf(placeholder, index)
 		if (next === -1) break
 		count += 1
-		index = next + webhookUrlApplyPlaceholder.length
+		index = next + placeholder.length
 	}
 	return count
 }
 
-function countWebhookUrlPlaceholdersInUrl(value: string) {
+function countPlaceholdersInUrl(value: string, placeholder: string) {
 	const fragmentIndex = value.indexOf('#')
-	return countWebhookUrlPlaceholders(
+	return countPlaceholders(
 		fragmentIndex === -1 ? value : value.slice(0, fragmentIndex),
+		placeholder,
 	)
 }
 
-function substituteWebhookUrlPlaceholder(
+function substitutePlaceholder(
 	value: string,
-	webhookUrl: string,
+	placeholder: string,
+	replacement: string,
 	encode: boolean,
 ) {
-	const replacement = encode ? encodeURIComponent(webhookUrl) : webhookUrl
-	return value.split(webhookUrlApplyPlaceholder).join(replacement)
+	const encoded = encode ? encodeURIComponent(replacement) : replacement
+	return value.split(placeholder).join(encoded)
 }
 
 export function isFormUrlEncodedContentType(contentType: string | null) {
@@ -622,12 +456,39 @@ export function isFormUrlEncodedContentType(contentType: string | null) {
 	)
 }
 
+export function isJsonContentType(contentType: string | null) {
+	if (!contentType) return false
+	return (
+		contentType.split(';', 1)[0]!.trim().toLowerCase() === 'application/json'
+	)
+}
+
+/** Escape a value for splicing into a JSON string literal (quotes/backslashes). */
+export function escapeForJsonString(value: string) {
+	return JSON.stringify(value).slice(1, -1)
+}
+
+/** Form-urlencoded serialization of a single value (spaces become `+`). */
+export function formEncodeApplicationValue(value: string) {
+	return new URLSearchParams({ v: value }).toString().slice('v='.length)
+}
+
 export function countWebhookUrlPlaceholdersInFormBody(body: string) {
 	let count = 0
 	const params = new URLSearchParams(body)
 	for (const [key, value] of params) {
-		count += countWebhookUrlPlaceholders(key)
-		count += countWebhookUrlPlaceholders(value)
+		count += countPlaceholders(key, webhookUrlApplyPlaceholder)
+		count += countPlaceholders(value, webhookUrlApplyPlaceholder)
+	}
+	return count
+}
+
+export function countWebhookSecretPlaceholdersInFormBody(body: string) {
+	let count = 0
+	const params = new URLSearchParams(body)
+	for (const [key, value] of params) {
+		count += countPlaceholders(key, webhookUrlApplySecretPlaceholder)
+		count += countPlaceholders(value, webhookUrlApplySecretPlaceholder)
 	}
 	return count
 }
@@ -642,12 +503,13 @@ export function httpDestinationIncludesWebhookUrlPlaceholder(destination: {
 	const headerEntries = Object.entries(headers)
 	const body = destination.body ?? ''
 	let placeholderCount =
-		countWebhookUrlPlaceholdersInUrl(urlTemplate) +
+		countPlaceholdersInUrl(urlTemplate, webhookUrlApplyPlaceholder) +
 		headerEntries.reduce(
-			(sum, [, value]) => sum + countWebhookUrlPlaceholders(value),
+			(sum, [, value]) =>
+				sum + countPlaceholders(value, webhookUrlApplyPlaceholder),
 			0,
 		) +
-		countWebhookUrlPlaceholders(body)
+		countPlaceholders(body, webhookUrlApplyPlaceholder)
 	if (placeholderCount >= 1) return true
 	const contentType =
 		headerEntries.find(
@@ -655,6 +517,32 @@ export function httpDestinationIncludesWebhookUrlPlaceholder(destination: {
 		)?.[1] ?? null
 	if (!isFormUrlEncodedContentType(contentType)) return false
 	return countWebhookUrlPlaceholdersInFormBody(body) >= 1
+}
+
+export function httpDestinationIncludesWebhookSecretPlaceholder(destination: {
+	url: string
+	headers?: Record<string, string>
+	body?: string
+}) {
+	const urlTemplate = destination.url.trim()
+	const headers = destination.headers ?? {}
+	const headerEntries = Object.entries(headers)
+	const body = destination.body ?? ''
+	let placeholderCount =
+		countPlaceholdersInUrl(urlTemplate, webhookUrlApplySecretPlaceholder) +
+		headerEntries.reduce(
+			(sum, [, value]) =>
+				sum + countPlaceholders(value, webhookUrlApplySecretPlaceholder),
+			0,
+		) +
+		countPlaceholders(body, webhookUrlApplySecretPlaceholder)
+	if (placeholderCount >= 1) return true
+	const contentType =
+		headerEntries.find(
+			([name]) => name.toLowerCase() === 'content-type',
+		)?.[1] ?? null
+	if (!isFormUrlEncodedContentType(contentType)) return false
+	return countWebhookSecretPlaceholdersInFormBody(body) >= 1
 }
 
 function collectAuthorizationSecretsForRedaction(input: {
@@ -682,16 +570,66 @@ function collectAuthorizationSecretsForRedaction(input: {
 	return secrets
 }
 
-function substituteWebhookUrlInFormBody(body: string, webhookUrl: string) {
+function substituteApplyPlaceholdersInFormBody(
+	body: string,
+	webhookUrl: string,
+	webhookSecret: string | null,
+) {
 	const params = new URLSearchParams(body)
 	const next = new URLSearchParams()
 	for (const [key, value] of params) {
-		next.append(
-			substituteWebhookUrlPlaceholder(key, webhookUrl, false),
-			substituteWebhookUrlPlaceholder(value, webhookUrl, false),
+		let nextKey = substitutePlaceholder(
+			key,
+			webhookUrlApplyPlaceholder,
+			webhookUrl,
+			false,
 		)
+		let nextValue = substitutePlaceholder(
+			value,
+			webhookUrlApplyPlaceholder,
+			webhookUrl,
+			false,
+		)
+		if (webhookSecret !== null) {
+			nextKey = substitutePlaceholder(
+				nextKey,
+				webhookUrlApplySecretPlaceholder,
+				webhookSecret,
+				false,
+			)
+			nextValue = substitutePlaceholder(
+				nextValue,
+				webhookUrlApplySecretPlaceholder,
+				webhookSecret,
+				false,
+			)
+		}
+		next.append(nextKey, nextValue)
 	}
 	return next.toString()
+}
+
+function substituteApplyPlaceholders(
+	value: string,
+	webhookUrl: string,
+	webhookSecret: string | null,
+	encode: boolean,
+) {
+	let next = substitutePlaceholder(
+		value,
+		webhookUrlApplyPlaceholder,
+		webhookUrl,
+		encode,
+	)
+	if (webhookSecret !== null) {
+		next = substitutePlaceholder(
+			next,
+			webhookUrlApplySecretPlaceholder,
+			webhookSecret,
+			encode,
+		)
+	}
+	return next
 }
 
 function assertHttpsDestinationUrl(url: string) {
@@ -755,9 +693,10 @@ function validateHttpDestinationTemplate(
 			`Destination must include ${webhookUrlApplyPlaceholder} in url, headers, or body so the minted URL is injected server-side.`,
 		)
 	}
-	const urlForValidation = substituteWebhookUrlPlaceholder(
+	const urlForValidation = substituteApplyPlaceholders(
 		urlTemplate,
 		'https://webhook.invalid/apply',
+		'webhook-secret-placeholder',
 		true,
 	)
 	assertHttpsDestinationUrl(urlForValidation)
@@ -775,6 +714,63 @@ function validateHttpDestinationTemplate(
 	return { urlTemplate, headers, body, method }
 }
 
+async function resolveWebhookVerificationSecretForDestination(input: {
+	env: Env
+	userId: string
+	baseUrl: string
+	packageId: string
+	savedPackage: SavedPackageRecord
+	webhookName: string
+	destinationHost: string
+}): Promise<string> {
+	const declared = await loadDeclaredWebhookIfPresent({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.userId,
+		savedPackage: input.savedPackage,
+		webhookName: input.webhookName,
+	})
+	const secretName = declared?.verification?.secretName?.trim() ?? ''
+	if (!secretName) {
+		throw new McpCallerError(
+			`Destination includes ${webhookUrlApplySecretPlaceholder} but webhook "${input.webhookName}" has no verification.secretName.`,
+		)
+	}
+	const resolved = await resolveSecretForHost({
+		env: input.env,
+		userId: input.userId,
+		name: secretName,
+		storageContext: {
+			sessionId: null,
+			appId: null,
+			packageId: input.packageId,
+		},
+		host: input.destinationHost,
+	})
+	if (!resolved.found || !resolved.value) {
+		throw new McpCallerError(
+			`Secret "${secretName}" was not found for this user.`,
+		)
+	}
+	if (!resolved.allowedHosts.includes(input.destinationHost)) {
+		const approvalUrl = buildSecretHostApprovalUrl({
+			baseUrl: input.baseUrl,
+			name: secretName,
+			scope: resolved.scope ?? 'user',
+			requestedHost: input.destinationHost,
+			storageContext: {
+				sessionId: null,
+				appId: null,
+				packageId: input.packageId,
+			},
+		})
+		throw new McpCallerError(
+			`Secret "${secretName}" is not approved for host "${input.destinationHost}". Approve it at ${approvalUrl}.`,
+		)
+	}
+	return resolved.value
+}
+
 async function dispatchHttpApply(input: {
 	env: Env
 	userId: string
@@ -782,6 +778,8 @@ async function dispatchHttpApply(input: {
 	baseUrl: string
 	packageId: string
 	packageKodyId: string
+	webhookName: string
+	savedPackage: SavedPackageRecord
 	webhookUrl: string
 	urlSecret: string
 	destination: WebhookUrlApplyHttpDestination
@@ -793,22 +791,71 @@ async function dispatchHttpApply(input: {
 		Object.entries(headers).find(
 			([name]) => name.toLowerCase() === 'content-type',
 		)?.[1] ?? null
+	const needsWebhookSecret = httpDestinationIncludesWebhookSecretPlaceholder({
+		url: urlTemplate,
+		headers,
+		body,
+	})
+	const hostProbeUrl = assertHttpsDestinationUrl(
+		substituteApplyPlaceholders(
+			urlTemplate,
+			input.webhookUrl,
+			needsWebhookSecret ? 'webhook-secret-placeholder' : null,
+			true,
+		),
+	)
+	const destinationHost = normalizeHost(hostProbeUrl.hostname)
+	const webhookSecret = needsWebhookSecret
+		? await resolveWebhookVerificationSecretForDestination({
+				env: input.env,
+				userId: input.userId,
+				baseUrl: input.baseUrl,
+				packageId: input.packageId,
+				savedPackage: input.savedPackage,
+				webhookName: input.webhookName,
+				destinationHost,
+			})
+		: null
 	const resolvedUrl = assertHttpsDestinationUrl(
-		substituteWebhookUrlPlaceholder(urlTemplate, input.webhookUrl, true),
+		substituteApplyPlaceholders(
+			urlTemplate,
+			input.webhookUrl,
+			webhookSecret,
+			true,
+		),
 	).toString()
 	const resolvedHeaders: Record<string, string> = {}
 	for (const [name, value] of Object.entries(headers)) {
-		resolvedHeaders[name] = substituteWebhookUrlPlaceholder(
+		resolvedHeaders[name] = substituteApplyPlaceholders(
 			value,
 			input.webhookUrl,
+			webhookSecret,
 			false,
 		)
 	}
 	let resolvedBody: string | undefined
 	if (body.length > 0) {
-		resolvedBody = isFormUrlEncodedContentType(contentType)
-			? substituteWebhookUrlInFormBody(body, input.webhookUrl)
-			: substituteWebhookUrlPlaceholder(body, input.webhookUrl, false)
+		if (isFormUrlEncodedContentType(contentType)) {
+			resolvedBody = substituteApplyPlaceholdersInFormBody(
+				body,
+				input.webhookUrl,
+				webhookSecret,
+			)
+		} else if (isJsonContentType(contentType)) {
+			resolvedBody = substituteApplyPlaceholders(
+				body,
+				escapeForJsonString(input.webhookUrl),
+				webhookSecret !== null ? escapeForJsonString(webhookSecret) : null,
+				false,
+			)
+		} else {
+			resolvedBody = substituteApplyPlaceholders(
+				body,
+				input.webhookUrl,
+				webhookSecret,
+				false,
+			)
+		}
 	}
 	const auth = await authorizeApplyRequest({
 		env: input.env,
@@ -820,8 +867,6 @@ async function dispatchHttpApply(input: {
 		url: resolvedUrl,
 		integration: input.destination.integration,
 		secretName: input.destination.secretName,
-		defaultIntegration: null,
-		requireAuthorization: false,
 		waitUntil: input.waitUntil,
 	})
 	const secrets = [
@@ -834,6 +879,15 @@ async function dispatchHttpApply(input: {
 			headers: resolvedHeaders,
 		}),
 	]
+	if (webhookSecret) {
+		secrets.push(webhookSecret)
+		const encoded = encodeURIComponent(webhookSecret)
+		if (encoded !== webhookSecret) secrets.push(encoded)
+		const jsonEscaped = escapeForJsonString(webhookSecret)
+		if (jsonEscaped !== webhookSecret) secrets.push(jsonEscaped)
+		const formEncoded = formEncodeApplicationValue(webhookSecret)
+		if (formEncoded !== webhookSecret) secrets.push(formEncoded)
+	}
 	return sendAuthorizedApplyRequest({
 		url: resolvedUrl,
 		method,
@@ -860,47 +914,20 @@ export async function dispatchWebhookUrlApply(input: {
 	destination: WebhookUrlApplyDestination
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<WebhookUrlApplyResult> {
-	let result: WebhookUrlApplyResult
-	switch (input.destination.type) {
-		case 'github':
-			result = await dispatchGithubApply({
-				env: input.env,
-				userId: input.userId,
-				userEmail: input.userEmail,
-				baseUrl: input.baseUrl,
-				packageId: input.packageId,
-				packageKodyId: input.packageKodyId,
-				webhookName: input.webhookName,
-				savedPackage: input.savedPackage,
-				webhookUrl: input.webhookUrl,
-				urlSecret: input.urlSecret,
-				destination: input.destination,
-				waitUntil: input.waitUntil,
-			})
-			break
-		case 'http':
-			result = await dispatchHttpApply({
-				env: input.env,
-				userId: input.userId,
-				userEmail: input.userEmail,
-				baseUrl: input.baseUrl,
-				packageId: input.packageId,
-				packageKodyId: input.packageKodyId,
-				webhookUrl: input.webhookUrl,
-				urlSecret: input.urlSecret,
-				destination: input.destination,
-				waitUntil: input.waitUntil,
-			})
-			break
-		default: {
-			const exhaustive: never = input.destination
-			throw new McpCallerError(
-				`Unsupported webhook apply destination type: ${String(
-					(exhaustive as { type?: unknown }).type,
-				)}.`,
-			)
-		}
-	}
+	const result = await dispatchHttpApply({
+		env: input.env,
+		userId: input.userId,
+		userEmail: input.userEmail,
+		baseUrl: input.baseUrl,
+		packageId: input.packageId,
+		packageKodyId: input.packageKodyId,
+		webhookName: input.webhookName,
+		savedPackage: input.savedPackage,
+		webhookUrl: input.webhookUrl,
+		urlSecret: input.urlSecret,
+		destination: input.destination,
+		waitUntil: input.waitUntil,
+	})
 	const secrets = collectWebhookCredentialSecrets({
 		url: input.webhookUrl,
 		urlSecret: input.urlSecret,

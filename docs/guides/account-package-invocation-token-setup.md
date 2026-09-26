@@ -3,8 +3,8 @@ id: package_invocation_token_setup
 title: External HTTP knock
 summary:
   Map leftover invocation-token callers to inbound webhooks. One webhook name
-  binds one export; mint a handle with `webhookUrlMint`, register GitHub hooks
-  with `webhookUrlApply`, and POST JSON.
+  binds one export; mint a handle with `webhookUrlMint`, register destinations
+  with `webhookUrlApply` (`type: "http"`), and POST JSON.
 unadvertised: true
 category: platform
 ---
@@ -17,12 +17,12 @@ bearer grant.
 
 ## Destination map
 
-| Job                                  | Destination            | How                                                                                                                                        |
-| ------------------------------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Vendor POST (Sentry, GitHub, Stripe) | inbound webhooks       | `kody.webhooks` with `inputMode: "request"`, optional HMAC + `replay`, `webhookUrlMint`, then `webhookUrlApply` (GitHub or generic `http`) |
-| First-party trusted client           | inbound webhooks       | `inputMode: "params"`, `Idempotency-Key`, `sync` or `ack`, one webhook per export                                                          |
-| Multi-export / `*` token             | one webhook per export | No wildcard URL. Declare each export the client actually calls.                                                                            |
-| Author composition                   | import / workflows     | Static `import`, `import(specifier)`, or workflows. Not HTTP.                                                                              |
+| Job                                  | Destination            | How                                                                                                                                                                  |
+| ------------------------------------ | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Vendor POST (Sentry, GitHub, Stripe) | inbound webhooks       | `kody.webhooks` with `inputMode: "request"`, optional HMAC + `replay`, `webhookUrlMint`, then `webhookUrlApply` (`type: "http"`; GitHub Hooks API via the same path) |
+| First-party trusted client           | inbound webhooks       | `inputMode: "params"`, `Idempotency-Key`, `sync` or `ack`, one webhook per export                                                                                    |
+| Multi-export / `*` token             | one webhook per export | No wildcard URL. Declare each export the client actually calls.                                                                                                      |
+| Author composition                   | import / workflows     | Static `import`, `import(specifier)`, or workflows. Not HTTP.                                                                                                        |
 
 Discord gateways, YouTube WebSub, Raycast extensions, and social-launch clients
 mint one webhook handle per export and POST JSON. Vendor HMAC handlers stay on
