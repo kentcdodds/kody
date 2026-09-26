@@ -532,6 +532,8 @@ export async function applyWebhookUrlForUser(input: {
 		baseUrl: resolved.baseUrl,
 		packageId: resolved.savedPackage.id,
 		packageKodyId: resolved.savedPackage.kodyId,
+		webhookName: resolved.endpoint.webhookName,
+		savedPackage: resolved.savedPackage,
 		webhookUrl: resolved.url,
 		urlSecret: resolved.urlSecret,
 		urlHost: resolved.urlHost,

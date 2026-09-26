@@ -217,13 +217,16 @@ The previous ciphertext is not stored: reveal and apply always rebuild the
 current URL. `webhookUrlMint` / `webhookUrlRotate` return an opaque `handle`
 (`whh_<id>`) and `url_host`. `webhookUrlApply` resolves the handle inside Kody
 and registers the URL through an outbound HTTPS request (`type: "http"` with
-server-side `{{webhookUrl}}` substitution). Apply is interactive-only and reuses
-the account owner approval flow (same family as `/connect/secrets` host
-approval, secret package grants, and locked-package publish approval): deny with
-`approval_url` to `/connect/webhook-apply`, owner Allow writes a durable
-destination fingerprint grant, then retry. Silent model-chosen apply is
-rejected. GitHub repository hooks use the same `http` path against
-`https://api.github.com/repos/{owner}/{repo}/hooks`. The credential is injected
-server-side and never returned to the model. Delivery history is in the per-user
-`RunLog` Durable Object (`webhook` surface), not in D1. See
+server-side `{{webhookUrl}}` substitution, and optional `{{webhookSecret}}` from
+the webhook's `verification.secretName` resolved for the destination host).
+Apply is interactive-only and reuses the account owner approval flow (same
+family as `/connect/secrets` host approval, secret package grants, and
+locked-package publish approval): deny with `approval_url` to
+`/connect/webhook-apply`, owner Allow writes a durable destination fingerprint
+grant, then retry. Silent model-chosen apply is rejected. GitHub repository
+hooks use the same `http` path against
+`https://api.github.com/repos/{owner}/{repo}/hooks` with `{{webhookSecret}}` in
+`config.secret` when HMAC is declared. The credential and signing secret are
+injected server-side and never returned to the model. Delivery history is in the
+per-user `RunLog` Durable Object (`webhook` surface), not in D1. See
 [Data storage](./data-storage.md) and [Run records](./run-records.md).

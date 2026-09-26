@@ -7,6 +7,7 @@ import {
 	httpDestinationIncludesWebhookUrlPlaceholder,
 	webhookUrlApplyHttpMethods,
 	webhookUrlApplyPlaceholder,
+	webhookUrlApplySecretPlaceholder,
 	type WebhookUrlApplyDestination,
 } from '#worker/webhooks/apply.ts'
 import { applyWebhookUrlForUser } from '#worker/webhooks/service.ts'
@@ -23,7 +24,7 @@ const httpDestinationSchema = z
 			.string()
 			.min(1)
 			.describe(
-				`HTTPS registration endpoint. May include ${webhookUrlApplyPlaceholder} for server-side URL injection.`,
+				`HTTPS registration endpoint. May include ${webhookUrlApplyPlaceholder} and ${webhookUrlApplySecretPlaceholder} for server-side injection.`,
 			),
 		method: z
 			.enum(webhookUrlApplyHttpMethods)
@@ -33,14 +34,14 @@ const httpDestinationSchema = z
 			.record(z.string(), z.string())
 			.optional()
 			.describe(
-				`Optional request headers. Values may include ${webhookUrlApplyPlaceholder}.`,
+				`Optional request headers. Values may include ${webhookUrlApplyPlaceholder} and ${webhookUrlApplySecretPlaceholder}.`,
 			),
 		body: z
 			.string()
 			.max(64_384)
 			.optional()
 			.describe(
-				`Optional request body template. May include ${webhookUrlApplyPlaceholder}.`,
+				`Optional request body template. May include ${webhookUrlApplyPlaceholder} and ${webhookUrlApplySecretPlaceholder}.`,
 			),
 		integration: z
 			.string()
@@ -173,7 +174,7 @@ export const webhookUrlApplyCapability = defineDomainCapability(
 	{
 		name: 'webhookUrlApply',
 		description:
-			'Register a minted webhook URL at an HTTPS destination without exposing the credential. Pass the handle from webhookUrlMint, webhookUrlRotate, or webhookList. Destination type http performs an outbound HTTPS request and substitutes {{webhookUrl}} server-side into url/headers/body — interactive MCP only, and only after the owner Approves the exact destination via the same account approval flow as /connect/secrets host approval (approval_url → website Allow → durable grant → retry). For GitHub repository hooks, POST https://api.github.com/repos/{owner}/{repo}/hooks with {{webhookUrl}} in config.url and integration "github" (or a host-approved token). Apply does not inject named secrets into the body — for HMAC-verified GitHub hooks, set config.secret in GitHub to the same value as verification.secretName (package settings or a package export that resolves the secret server-side). Returns ok, remote_id, and url_host only — never the credential URL.',
+			'Register a minted webhook URL at an HTTPS destination without exposing the credential. Pass the handle from webhookUrlMint, webhookUrlRotate, or webhookList. Destination type http performs an outbound HTTPS request and substitutes {{webhookUrl}} (and optional {{webhookSecret}} from the webhook verification.secretName, resolved for the destination host) server-side into url/headers/body — interactive MCP only, and only after the owner Approves the exact destination via the same account approval flow as /connect/secrets host approval (approval_url → website Allow → durable grant → retry). For GitHub repository hooks, POST https://api.github.com/repos/{owner}/{repo}/hooks with {{webhookUrl}} in config.url, {{webhookSecret}} in config.secret when HMAC is declared, and integration "github" (or a host-approved token). Returns ok, remote_id, and url_host only — never the credential URL or signing secret.',
 		keywords: [
 			'webhook',
 			'apply',
