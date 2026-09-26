@@ -791,6 +791,8 @@ export const accountExportRedactedColumnsByTable: Readonly<
 		'url_secret_encrypted',
 		'previous_url_secret_hash',
 	],
+	webhook_apply_destination_pending: ['destination_json'],
+	webhook_apply_destination_grants: ['destination_json'],
 }
 
 // Cross-user export rows can include another user's stable id. Keep the

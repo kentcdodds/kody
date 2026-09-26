@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
+import { httpDestinationIncludesWebhookUrlPlaceholder } from './apply.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -480,5 +481,93 @@ test('webhookUrlApply http destination encodes {{webhookUrl}} in the request URL
 		error: null,
 	})
 	expect(JSON.stringify(applied)).not.toContain(revealed.url)
+	vi.unstubAllGlobals()
+})
+
+test('httpDestinationIncludesWebhookUrlPlaceholder accepts form-encoded {{webhookUrl}}', () => {
+	expect(
+		httpDestinationIncludesWebhookUrlPlaceholder({
+			url: 'https://hooks.example/register',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: `callback=${encodeURIComponent('{{webhookUrl}}')}`,
+		}),
+	).toBe(true)
+})
+
+test('httpDestinationIncludesWebhookUrlPlaceholder rejects form body without placeholder', () => {
+	expect(
+		httpDestinationIncludesWebhookUrlPlaceholder({
+			url: 'https://hooks.example/register',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: 'callback=https%3A%2F%2Fexample.com',
+		}),
+	).toBe(false)
+})
+
+test('webhookUrlApply http destination accepts form-encoded {{webhookUrl}} body', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	const revealed = await revealWebhookUrlForWebsite({
+		env,
+		userId,
+		username: 'owner',
+		target: { handle: minted.handle },
+	})
+	const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+		const body = String(init?.body)
+		expect(body).toContain(encodeURIComponent(revealed.url))
+		return new Response(JSON.stringify({ id: 'form-1' }), { status: 200 })
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: {
+			type: 'http',
+			url: 'https://hooks.example/register',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: `callback=${encodeURIComponent('{{webhookUrl}}')}`,
+		},
+	})
+
+	expect(applied.ok).toBe(true)
+	expect(fetchMock).toHaveBeenCalledTimes(1)
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply redacts percent-encoded webhook URL in destination error bodies', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	const revealed = await revealWebhookUrlForWebsite({
+		env,
+		userId,
+		username: 'owner',
+		target: { handle: minted.handle },
+	})
+	const fetchMock = vi.fn(async () => {
+		return new Response(
+			`invalid callback ${encodeURIComponent(revealed.url)}`,
+			{ status: 400 },
+		)
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: {
+			type: 'http',
+			url: 'https://hooks.example/register',
+			body: '{"url":"{{webhookUrl}}"}',
+		},
+	})
+
+	expect(applied.ok).toBe(false)
+	expect(applied.error ?? '').not.toContain(revealed.url)
+	expect(applied.error ?? '').not.toContain(encodeURIComponent(revealed.url))
+	expect(applied.error ?? '').toContain('[redacted]')
 	vi.unstubAllGlobals()
 })

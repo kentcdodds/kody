@@ -4,6 +4,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
+	httpDestinationIncludesWebhookUrlPlaceholder,
 	webhookUrlApplyGithubContentTypes,
 	webhookUrlApplyHttpMethods,
 	webhookUrlApplyPlaceholder,
@@ -105,9 +106,13 @@ const httpDestinationSchema = z
 				message: 'Destination url must be https.',
 			})
 		}
-		const headerValues = Object.values(destination.headers ?? {})
-		const haystack = [url, ...headerValues, destination.body ?? ''].join('\n')
-		if (!haystack.includes(webhookUrlApplyPlaceholder)) {
+		if (
+			!httpDestinationIncludesWebhookUrlPlaceholder({
+				url,
+				headers: destination.headers,
+				body: destination.body,
+			})
+		) {
 			ctx.addIssue({
 				code: 'custom',
 				message: `Destination must include ${webhookUrlApplyPlaceholder} in url, headers, or body.`,

@@ -604,6 +604,41 @@ function isFormUrlEncodedContentType(contentType: string | null) {
 	)
 }
 
+function countWebhookUrlPlaceholdersInFormBody(body: string) {
+	let count = 0
+	const params = new URLSearchParams(body)
+	for (const [key, value] of params) {
+		count += countWebhookUrlPlaceholders(key)
+		count += countWebhookUrlPlaceholders(value)
+	}
+	return count
+}
+
+export function httpDestinationIncludesWebhookUrlPlaceholder(destination: {
+	url: string
+	headers?: Record<string, string>
+	body?: string
+}) {
+	const urlTemplate = destination.url.trim()
+	const headers = destination.headers ?? {}
+	const headerEntries = Object.entries(headers)
+	const body = destination.body ?? ''
+	let placeholderCount =
+		countWebhookUrlPlaceholders(urlTemplate) +
+		headerEntries.reduce(
+			(sum, [, value]) => sum + countWebhookUrlPlaceholders(value),
+			0,
+		) +
+		countWebhookUrlPlaceholders(body)
+	if (placeholderCount >= 1) return true
+	const contentType =
+		headerEntries.find(
+			([name]) => name.toLowerCase() === 'content-type',
+		)?.[1] ?? null
+	if (!isFormUrlEncodedContentType(contentType)) return false
+	return countWebhookUrlPlaceholdersInFormBody(body) >= 1
+}
+
 function substituteWebhookUrlInFormBody(body: string, webhookUrl: string) {
 	const params = new URLSearchParams(body)
 	const next = new URLSearchParams()
@@ -666,14 +701,13 @@ function validateHttpDestinationTemplate(
 	if (method === 'GET' && body.length > 0) {
 		throw new McpCallerError('Destination body is not allowed with GET.')
 	}
-	const placeholderCount =
-		countWebhookUrlPlaceholders(urlTemplate) +
-		headerEntries.reduce(
-			(sum, [, value]) => sum + countWebhookUrlPlaceholders(value),
-			0,
-		) +
-		countWebhookUrlPlaceholders(body)
-	if (placeholderCount < 1) {
+	if (
+		!httpDestinationIncludesWebhookUrlPlaceholder({
+			url: urlTemplate,
+			headers,
+			body,
+		})
+	) {
 		throw new McpCallerError(
 			`Destination must include ${webhookUrlApplyPlaceholder} in url, headers, or body so the minted URL is injected server-side.`,
 		)

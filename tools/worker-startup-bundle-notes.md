@@ -192,3 +192,7 @@ runtime path if this budget is raised again.
   lands in the same webhooks MCP domain graph runtime already evaluates: local
   dry-run 3_846_966 against the previous 3_837_000 budget. Reviewed ceiling
   3_857_000.
+- Generic `webhookUrlApply` http destination plus `/connect/webhook-apply`
+  owner-approval grants land on the same webhooks MCP domain graph runtime
+  already evaluates: CI dry-run 3_862_510 against the previous 3_857_000 budget.
+  Reviewed ceiling 3_863_000.

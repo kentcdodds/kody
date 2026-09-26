@@ -201,6 +201,12 @@ test('every accountUserDataTargets kind has a shared match builder and export gu
 		]),
 	)
 	expect(
+		accountExportRedactedColumnsByTable.webhook_apply_destination_pending,
+	).toEqual(['destination_json'])
+	expect(
+		accountExportRedactedColumnsByTable.webhook_apply_destination_grants,
+	).toEqual(['destination_json'])
+	expect(
 		accountExportForeignUserIdColumnsByTable.community_activity_events,
 	).toEqual(expect.arrayContaining(['actor_user_id']))
 	expect(accountExportRedactedForeignUserId.length).toBeGreaterThan(0)
