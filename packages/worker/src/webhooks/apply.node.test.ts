@@ -132,6 +132,7 @@ function githubHooksHttpDestination(input?: {
 		headers: {
 			Accept: 'application/vnd.github+json',
 			'Content-Type': 'application/json',
+			'User-Agent': 'kody',
 			'X-GitHub-Api-Version': '2022-11-28',
 		},
 		body: JSON.stringify({
@@ -269,6 +270,7 @@ test('webhookUrlApply registers a GitHub repo hook via http destination without 
 		const headers = new Headers(init?.headers)
 		expect(headers.get('Accept')).toBe('application/vnd.github+json')
 		expect(headers.get('Content-Type')).toBe('application/json')
+		expect(headers.get('User-Agent')).toBe('kody')
 		expect(headers.get('X-GitHub-Api-Version')).toBe('2022-11-28')
 		expect(headers.get('Authorization')).toBe('Bearer ghs_test')
 		const body = JSON.parse(String(init?.body)) as {

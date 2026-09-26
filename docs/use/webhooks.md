@@ -153,13 +153,14 @@ outbound request runs.
 Generic HTTPS (`type: "http"`) — Kody sends the request and substitutes
 `{{webhookUrl}}` (and optional `{{webhookSecret}}`) into `url`, header values,
 and/or `body` (form bodies are decoded/re-encoded). `{{webhookUrl}}` is
-required. `{{webhookSecret}}` injects the package webhook's declared
-`verification.secretName` value, resolved for the destination request host under
-the same host-approval rules as other secrets — never returned to MCP.
-Destination URLs must be `https://`. Redirects are not followed. Auth is
-optional via `secretName` or `integration` (Bearer), or a caller-supplied
-`Authorization` header — not both. Destination `secretName` / `integration`
-authorize the outbound request; they are not the webhook HMAC signing secret.
+required. `{{webhookSecret}}` injects the **resolved value** of the package
+webhook's declared `verification.secretName` (the HMAC key material, not the
+secret name string), resolved for the destination request host under the same
+host-approval rules as other secrets — never returned to MCP. Destination URLs
+must be `https://`. Redirects are not followed. Auth is optional via
+`secretName` or `integration` (Bearer), or a caller-supplied `Authorization`
+header — not both. Destination `secretName` / `integration` authorize the
+outbound request; they are not the webhook HMAC signing secret.
 
 That path is **interactive MCP only** and reuses the same **account owner
 approval flow** as secret host approval (`/connect/secrets`), secret package
@@ -189,10 +190,11 @@ await kody.webhooks.webhookUrlApply({
 
 GitHub repository hooks use the same `http` path against the Hooks API
 (`POST https://api.github.com/repos/{owner}/{repo}/hooks`). Put `{{webhookUrl}}`
-in `config.url`, send the GitHub Accept / API-Version headers, and authorize
-with `integration: 'github'` (or a host-approved token via `secretName`). When
-the package webhook declares HMAC `verification.secretName`, put
-`{{webhookSecret}}` in `config.secret` so GitHub signs deliveries:
+in `config.url`, include `User-Agent: kody` (GitHub requires a User-Agent), send
+the GitHub Accept / API-Version headers, and authorize with
+`integration: 'github'` (or a host-approved token via `secretName`). When the
+package webhook declares HMAC `verification.secretName`, put `{{webhookSecret}}`
+in `config.secret` so GitHub signs deliveries:
 
 ```ts
 await kody.webhooks.webhookUrlApply({
@@ -204,6 +206,7 @@ await kody.webhooks.webhookUrlApply({
 		headers: {
 			Accept: 'application/vnd.github+json',
 			'Content-Type': 'application/json',
+			'User-Agent': 'kody',
 			'X-GitHub-Api-Version': '2022-11-28',
 		},
 		body: JSON.stringify({
@@ -222,10 +225,11 @@ await kody.webhooks.webhookUrlApply({
 })
 ```
 
-If `{{webhookSecret}}` is present but the webhook has no
-`verification.secretName`, or that secret is missing / not approved for the
-destination host, apply fails with a clear error. Omit `{{webhookSecret}}` when
-the webhook has no HMAC verification.
+`{{webhookSecret}}` injects the **resolved HMAC secret value** from the named
+secret in `verification.secretName` (not the name string itself). If the
+placeholder is present but that declaration is missing, or the secret is missing
+/ not approved for the destination host, apply fails with a clear error. Omit
+`{{webhookSecret}}` when the webhook has no HMAC verification.
 
 Prefer `http` for Workers and any provider API that accepts a callback URL
 field. Providers that need an ownership quiz (X Activity CRC, WebSub / YouTube,
