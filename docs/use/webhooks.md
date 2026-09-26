@@ -309,9 +309,9 @@ webhook, then register the revealed URL directly with X. CRC GETs never invoke
 
 When `challenge.secretName` is set, the platform verifies Slack's
 `X-Slack-Signature` on the quiz POST (`` `v0:${timestamp}:${body}` ``) before
-echoing. Event POSTs still use the normal delivery path; add a matching
-`verification` block when you want HMAC on those deliveries (or rely on the URL
-secret alone for trusted setups).
+echoing. Event POSTs still use the normal delivery path — declare a matching
+`verification` block when those deliveries must also verify Slack signing (the
+URL secret alone is enough only for trusted setups that omit HMAC).
 
 ## Payload shape seen by the package export
 

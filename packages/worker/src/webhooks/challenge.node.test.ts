@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	handleWebhookSubscriptionChallenge,
 	webhookChallengeAllowsGet,
+	webhookChallengeMaxParamChars,
 } from './challenge.ts'
 import { computeWebhookHmacSignature } from './crypto.ts'
 
@@ -96,6 +97,17 @@ test('x-activity-crc signs crc_token and rejects missing secret', async () => {
 	expect(missingToken.kind).toBe('respond')
 	if (missingToken.kind !== 'respond') return
 	expect(missingToken.response.status).toBe(400)
+
+	const oversized = await handleWebhookSubscriptionChallenge({
+		request: new Request(
+			`https://example.test/hook?crc_token=${'x'.repeat(webhookChallengeMaxParamChars + 1)}`,
+		),
+		challenge: { type: 'x-activity-crc', secretName: 'xConsumerSecret' },
+		resolveSecret: async (name) => secrets.get(name) ?? null,
+	})
+	expect(oversized.kind).toBe('respond')
+	if (oversized.kind !== 'respond') return
+	expect(oversized.response.status).toBe(400)
 
 	const post = await handleWebhookSubscriptionChallenge({
 		request: new Request('https://example.test/hook?crc_token=token', {

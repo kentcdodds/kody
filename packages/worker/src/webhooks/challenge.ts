@@ -9,6 +9,9 @@ export type WebhookChallengeHandleResult =
 	| { kind: 'not_challenge' }
 	| { kind: 'respond'; response: Response }
 
+/** Caps challenge query/body tokens so oversized probes cannot inflate HMAC work. */
+export const webhookChallengeMaxParamChars = 4_096
+
 function plainTextResponse(body: string, status = 200) {
 	return new Response(body, {
 		status,
@@ -43,6 +46,22 @@ function challengeBadRequestResponse(message: string) {
 		},
 		{ status: 400 },
 	)
+}
+
+function challengeParamTooLongResponse(paramName: string) {
+	return challengeBadRequestResponse(
+		`Challenge parameter "${paramName}" exceeds the ${webhookChallengeMaxParamChars}-character limit.`,
+	)
+}
+
+function assertChallengeParamLength(
+	value: string,
+	paramName: string,
+): Response | null {
+	if (value.length > webhookChallengeMaxParamChars) {
+		return challengeParamTooLongResponse(paramName)
+	}
+	return null
 }
 
 async function resolveChallengeSecret(input: {
@@ -80,6 +99,8 @@ async function handleXActivityCrc(input: {
 			),
 		}
 	}
+	const tooLong = assertChallengeParamLength(crcToken, 'crc_token')
+	if (tooLong) return { kind: 'respond', response: tooLong }
 	const secret = await resolveChallengeSecret({
 		secretName: input.secretName,
 		resolveSecret: input.resolveSecret,
@@ -140,6 +161,13 @@ async function handleWebsubHub(input: {
 			),
 		}
 	}
+	const challengeTooLong = assertChallengeParamLength(
+		challenge,
+		'hub.challenge',
+	)
+	if (challengeTooLong) {
+		return { kind: 'respond', response: challengeTooLong }
+	}
 	if (input.secretName) {
 		const secret = await resolveChallengeSecret({
 			secretName: input.secretName,
@@ -147,6 +175,13 @@ async function handleWebsubHub(input: {
 		})
 		if (!secret.ok) return { kind: 'respond', response: secret.response }
 		const verifyToken = params.get('hub.verify_token') ?? ''
+		const verifyTooLong = assertChallengeParamLength(
+			verifyToken,
+			'hub.verify_token',
+		)
+		if (verifyTooLong) {
+			return { kind: 'respond', response: verifyTooLong }
+		}
 		if (!(await timingSafeEqualString(verifyToken, secret.value))) {
 			return {
 				kind: 'respond',
@@ -196,6 +231,20 @@ async function handleMetaHub(input: {
 				'Meta hub challenge requires hub.challenge.',
 			),
 		}
+	}
+	const challengeTooLong = assertChallengeParamLength(
+		challenge,
+		'hub.challenge',
+	)
+	if (challengeTooLong) {
+		return { kind: 'respond', response: challengeTooLong }
+	}
+	const verifyTooLong = assertChallengeParamLength(
+		verifyToken,
+		'hub.verify_token',
+	)
+	if (verifyTooLong) {
+		return { kind: 'respond', response: verifyTooLong }
 	}
 	const secret = await resolveChallengeSecret({
 		secretName: input.secretName,
@@ -273,6 +322,8 @@ async function handleSlackUrlVerification(input: {
 			),
 		}
 	}
+	const tooLong = assertChallengeParamLength(challenge, 'challenge')
+	if (tooLong) return { kind: 'respond', response: tooLong }
 	if (input.secretName) {
 		const secret = await resolveChallengeSecret({
 			secretName: input.secretName,

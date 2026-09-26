@@ -1656,4 +1656,27 @@ test('subscription challenges answer on minted URLs without invoking exports', a
 	await waitOnExecutionContext(noChallengeGetCtx)
 	expect(noChallengeGet.status).toBe(405)
 	expect(noChallengeGet.headers.get('Allow')).toBe('POST')
+
+	await env.APP_DB.prepare(
+		`UPDATE users SET suspended_at = ? WHERE stable_user_id = ?`,
+	)
+		.bind('2026-07-24T12:00:00.000Z', userId)
+		.run()
+	declareWebhook({
+		name: 'activity-event',
+		challenge: { type: 'meta-hub', secretName: 'metaVerify' },
+	})
+	mocks.resolveSecret.mockResolvedValue({ found: true, value: 'meta-token' })
+	const suspendedChallengeCtx = createExecutionContext()
+	const suspendedChallenge = await handleWebhookIngressRequest(
+		new Request(
+			`https://test.kody.dev/@alice/webhooks/sentry-bridge/activity-event/${urlSecret}?hub.mode=subscribe&hub.verify_token=meta-token&hub.challenge=99`,
+			{ method: 'GET' },
+		),
+		env,
+		suspendedChallengeCtx,
+	)
+	await waitOnExecutionContext(suspendedChallengeCtx)
+	expect(suspendedChallenge.status).toBe(403)
+	expect(await listDeliveries(userId, 'activity-event')).toEqual([])
 })
