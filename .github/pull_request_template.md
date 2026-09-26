@@ -10,6 +10,15 @@
 
 <!-- What changed. Short bullets are fine. -->
 
+## Referenced issues and PRs
+
+<!--
+Use a GitHub closing keyword (Fixes / Closes / Resolves #1234) when this PR
+actually fixes an issue so merge auto-closes it. A bare #1234 mention does not
+close issues. For related work that this PR does not fully fix, use a
+non-closing reference (Related to #1234, or a plain link).
+-->
+
 ## Testing
 
 <!-- What you ran or verified (validate, focused suites, production evidence). -->
