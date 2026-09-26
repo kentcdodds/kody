@@ -236,6 +236,7 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 		headers: {
 			Accept: 'application/vnd.github+json',
 			'Content-Type': 'application/json',
+			'User-Agent': 'kody',
 			'X-GitHub-Api-Version': '2022-11-28',
 		},
 		body: JSON.stringify({
