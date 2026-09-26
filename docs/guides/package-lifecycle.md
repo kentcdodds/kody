@@ -219,8 +219,13 @@ export default async function main() {
 For exports that send messages, write remote records, charge accounts, or make
 other external mutations, prefer a package-specific `dryRun` input. Implement it
 so the export performs validation and returns a preview while skipping the
-mutation. `dryRun` is a package contract, not an automatic Kody runtime flag;
-test the dry-run path first.
+mutation. Include intent-critical mode fields in that preview (reply vs new
+post, send vs draft, and similar) so confirmation is about what will happen, not
+only that validation passed. Validate live and dry-run inputs at the **export**
+entrypoint with the same strict contract — see
+[Runtime input checking](./package-authoring.md#runtime-input-checking) (exposed
+exports only; internal helpers can rely on TypeScript). `dryRun` is a package
+contract, not an automatic Kody runtime flag; test the dry-run path first.
 
 Immediately before any live external mutation, obtain explicit user confirmation
 that identifies the target and scope of the mutation. Do not infer confirmation

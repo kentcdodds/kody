@@ -110,8 +110,8 @@ if needed.
 
 - [Shared memory](./memory.md) — what belongs in memory and the verify-first
   write path.
-- [Package authoring](./package-authoring.md) — README / AGENTS.md and Export
-  JSDoc contracts.
+- [Package authoring](./package-authoring.md) — README / AGENTS.md, Export
+  JSDoc, and runtime input checking for agent-facing exports.
 - [Search and execute](./search-and-execute.md) — how agents discover guides and
   package detail.
 - [Packages, integrations, and MCP servers](./packages-integrations-mcp.md) —
