@@ -184,7 +184,18 @@ await kody.webhooks.webhookUrlApply({
 GitHub repository hooks use the same `http` path against the Hooks API
 (`POST https://api.github.com/repos/{owner}/{repo}/hooks`). Put `{{webhookUrl}}`
 in `config.url`, send the GitHub Accept / API-Version headers, and authorize
-with `integration: 'github'` (or a host-approved token via `secretName`):
+with `integration: 'github'` (or a host-approved token via `secretName`). Apply
+substitutes only `{{webhookUrl}}` — it does **not** inject named secrets into
+the body. Destination `secretName` / `integration` authorize the outbound
+request as Bearer; they are not GitHub's hook signing secret.
+
+If the package webhook declares HMAC `verification.secretName`, GitHub must also
+have that same value as the hook's `config.secret` so deliveries include a valid
+`x-hub-signature-256`. Set it in the GitHub UI after revealing the URL from
+[package settings](#manage-webhook-urls-in-package-settings), or create the hook
+from a package export that resolves the named secret server-side. Do not put the
+signing secret in the apply `body` template (that would put it in model
+context).
 
 ```ts
 await kody.webhooks.webhookUrlApply({
@@ -206,6 +217,8 @@ await kody.webhooks.webhookUrlApply({
 				url: '{{webhookUrl}}',
 				content_type: 'json',
 				insecure_ssl: '0',
+				// Omit config.secret here. For HMAC verification, set the hook
+				// secret in GitHub to the same value as verification.secretName.
 			},
 		}),
 		integration: 'github',
