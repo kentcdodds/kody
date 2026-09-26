@@ -131,7 +131,7 @@ Call the root export from `execute` after publish.
 
 ## Edge cases
 
-Reject unknown input keys on publish/send exports; see
+On exposed exports that publish or send, reject unknown input keys; see
 `guide:package_authoring#runtime-input-checking`.
 ````
 
@@ -145,8 +145,8 @@ here, not in MCP server instructions or account memories
 ([Where agent guidance lives](./agent-guidance.md)).
 
 TypeScript types and the export name give call shape when present. They do not
-say **when** or **why** to pick one export over another, and they do not protect
-callers who pass plain objects through `execute` (see
+say **when** or **why** to pick one export over another, and on exposed exports
+they do not protect callers who pass plain objects through `execute` (see
 [Runtime input checking](#runtime-input-checking)). README `## Intent` is
 package-scoped and often does not name every export. Neither replaces per-export
 JSDoc.
@@ -198,18 +198,21 @@ same as a missing README `## Intent` section.
 
 ## Runtime input checking
 
-Agents call package exports through `execute` with plain objects. TypeScript
-types on the export do not run at call time, so a guessed or mistyped key is
-easy to ship. For exports that publish, send, write remote records, or otherwise
-change external intent, validate inputs at runtime and prefer one clear
-contract.
+This rule applies to **exposed exports** — the package surface agents call
+through `execute` with plain objects. Internal helpers and modules can rely on
+TypeScript; do not prescribe Remix Schema or fail-on-unknown for internal code.
 
-1. **Fail on unknown keys (strict).** Parse the call object with a schema that
-   rejects unrecognized fields. Prefer
+On those export boundaries, TypeScript types do not run at call time, so a
+guessed or mistyped key is easy to ship. For exports that publish, send, write
+remote records, or otherwise change external intent, validate inputs at runtime
+and prefer one clear contract.
+
+1. **Fail on unknown keys (strict).** At the export entrypoint, parse the call
+   object with a schema that rejects unrecognized fields. Prefer
    [`remix/data-schema`](https://www.npmjs.com/package/@remix-run/data-schema)
-   over Zod when choosing a schema library for packages (smaller and faster in
-   Worker isolates). Remix Schema's `object()` strips unknown keys by default —
-   pass `{ unknownKeys: 'error' }` for agent-facing inputs:
+   over Zod when choosing a schema library for those boundaries (smaller and
+   faster in Worker isolates). Remix Schema's `object()` strips unknown keys by
+   default — pass `{ unknownKeys: 'error' }` for agent-facing export inputs:
 
    ```ts
    import { object, optional, parse, string } from 'remix/data-schema'
