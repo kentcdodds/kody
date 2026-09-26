@@ -387,11 +387,22 @@ forward-fix, or when you want Git history and CI to match what is live.
    E2E, MCP E2E, worker builds, startup, primitives, migrations, deploy
    guardrails, docs checkers, production dependency audit). CI Validate jobs
    time out at 10–15 minutes (E2E 15).
-3. 🚀 Deploy (production) then runs because Validate completed on `main`.
-   `sha-guard` deploys **only** the current `origin/main` HEAD. Path-filtered
-   push deploys skip unchanged workers; the production job timeout is 20
-   minutes, jobs/highlight 8 minutes each. Wall time is one Validate cycle plus
-   one Deploy cycle. The deploy job applies `APP_DB` / `AUDIT_DB` migrations,
+3. 🚀 Deploy (production) then runs because Validate completed on `main`. GitHub
+   still enqueues a Deploy `workflow_run` when a Validate run completes with a
+   non-success conclusion (for example the previous `main` Validate cancelled by
+   `cancel-in-progress`). That run's jobs are all skipped because `sha-guard`
+   requires `workflow_run.conclusion == success`. Wait for ✅ Validate success
+   on the merge SHA, then watch the subsequent Deploy run. Do not treat the
+   all-skipped run as a failed deploy or poll production `/health` against the
+   previous SHA. `sha-guard` deploys **only** the current `origin/main` HEAD.
+   Path-filtered push deploys skip unchanged workers. Optional workers (backup
+   control plane, status, nx-cache) path-filter against a 15-commit lookback
+   from the deploy SHA, so a Validate gap longer than that window can leave
+   those workers on an older tree even when `main` still contains the change.
+   Manual `workflow_dispatch` on current `main` HEAD force-deploys every worker,
+   including those optional ones. The production job timeout is 20 minutes,
+   jobs/highlight 8 minutes each. Wall time is one Validate cycle plus one
+   Deploy cycle. The deploy job applies `APP_DB` / `AUDIT_DB` migrations,
    uploads platform → runtime → origin, health-checks, and runs execute smoke.
 
 `workflow_dispatch` on `.github/workflows/deploy.yml` has **no inputs**. It is

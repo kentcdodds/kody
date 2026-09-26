@@ -79,7 +79,9 @@ function.
 
 The production deploy workflow can also be started manually from GitHub Actions
 via **Run workflow** on `main`. The manual path verifies that the selected
-commit is the current `origin/main` HEAD before it deploys.
+commit is the current `origin/main` HEAD before it deploys, and force-deploys
+every worker (including optional ones the 15-commit path-filter lookback can
+skip after a long Validate gap). See [rollback](../rollback.md).
 
 If you ever need to do the same operations manually, use:
 
