@@ -1,6 +1,8 @@
 import { sha256Hex } from '@kody-internal/shared/sha256.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
+	countWebhookUrlPlaceholdersInFormBody,
+	isFormUrlEncodedContentType,
 	webhookUrlApplyHttpMethods,
 	webhookUrlApplyPlaceholder,
 	type WebhookUrlApplyHttpDestination,
@@ -62,13 +64,26 @@ function listInjectionSites(destination: {
 	body: string
 }) {
 	const sites: Array<string> = []
-	if (destination.url.includes(webhookUrlApplyPlaceholder)) sites.push('url')
+	const fragmentIndex = destination.url.indexOf('#')
+	const urlWithoutFragment =
+		fragmentIndex === -1
+			? destination.url
+			: destination.url.slice(0, fragmentIndex)
+	if (urlWithoutFragment.includes(webhookUrlApplyPlaceholder)) sites.push('url')
 	for (const [name, value] of Object.entries(destination.headers)) {
 		if (value.includes(webhookUrlApplyPlaceholder)) {
 			sites.push(`header:${name}`)
 		}
 	}
-	if (destination.body.includes(webhookUrlApplyPlaceholder)) sites.push('body')
+	const contentType =
+		Object.entries(destination.headers).find(
+			([name]) => name.toLowerCase() === 'content-type',
+		)?.[1] ?? null
+	const bodyHasLiteral = destination.body.includes(webhookUrlApplyPlaceholder)
+	const bodyHasFormEncoded =
+		isFormUrlEncodedContentType(contentType) &&
+		countWebhookUrlPlaceholdersInFormBody(destination.body) >= 1
+	if (bodyHasLiteral || bodyHasFormEncoded) sites.push('body')
 	return sites
 }
 

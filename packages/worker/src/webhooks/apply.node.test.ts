@@ -640,3 +640,74 @@ test('webhookUrlApplyDestinationSchema rejects Authorization combined with secre
 	})
 	expect(parsed.success).toBe(false)
 })
+
+test('httpDestinationIncludesWebhookUrlPlaceholder ignores URL fragment-only placeholders', () => {
+	expect(
+		httpDestinationIncludesWebhookUrlPlaceholder({
+			url: 'https://hooks.example/register#{{webhookUrl}}',
+			headers: { 'Content-Type': 'application/json' },
+			body: '{"ok":true}',
+		}),
+	).toBe(false)
+})
+
+test('webhookUrlApply redacts refreshed Authorization tokens after 401 retry', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	const initialToken = 'tok_initial_apply_auth'
+	const refreshedToken = 'tok_refreshed_apply_auth'
+	let tokenCalls = 0
+	integrationMocks.getJoinedIntegration.mockResolvedValue({
+		lane: 'user',
+		app: {
+			apiBaseUrl: 'https://hooks.example',
+			requiredHosts: ['hooks.example'],
+		},
+		connection: {
+			name: 'hooks',
+			requiredHosts: ['hooks.example'],
+			usageMode: 'any',
+			allowedPackageIds: [],
+		},
+	})
+	integrationMocks.resolveIntegrationAccessToken.mockImplementation(
+		async () => {
+			tokenCalls += 1
+			return tokenCalls === 1 ? initialToken : refreshedToken
+		},
+	)
+	integrationMocks.assertCanUseIntegration.mockResolvedValue(undefined)
+	integrationMocks.refreshIntegrationTokens.mockResolvedValue(undefined)
+
+	const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+		const auth = new Headers(init?.headers).get('Authorization') ?? ''
+		if (auth.includes(initialToken)) {
+			return new Response('unauthorized', { status: 401 })
+		}
+		return new Response(`invalid ${encodeURIComponent(auth)}`, { status: 400 })
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: {
+			type: 'http',
+			url: 'https://hooks.example/register',
+			body: '{"url":"{{webhookUrl}}"}',
+			integration: 'hooks',
+		},
+	})
+
+	expect(applied.ok).toBe(false)
+	expect(applied.error ?? '').not.toContain(initialToken)
+	expect(applied.error ?? '').not.toContain(refreshedToken)
+	expect(applied.error ?? '').not.toContain(
+		encodeURIComponent(`Bearer ${refreshedToken}`),
+	)
+	expect(applied.error ?? '').not.toContain(encodeURIComponent(refreshedToken))
+	expect(applied.error ?? '').toContain('[redacted]')
+	expect(integrationMocks.refreshIntegrationTokens).toHaveBeenCalled()
+	vi.unstubAllGlobals()
+})

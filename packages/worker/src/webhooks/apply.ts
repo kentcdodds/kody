@@ -433,10 +433,18 @@ async function sendAuthorizedApplyRequest(input: {
 			error: 'Destination redirected. Apply does not follow redirects.',
 		}
 	}
+	let secrets = [...input.secrets]
 	if (response.status === 401 && input.retryAuthorization) {
 		await response.body?.cancel()
+		const retryAuthorization = await input.retryAuthorization()
+		secrets = [
+			...secrets,
+			...collectAuthorizationSecretsForRedaction({
+				authorization: retryAuthorization,
+			}),
+		]
 		const retryHeaders = new Headers(input.headers)
-		retryHeaders.set('Authorization', await input.retryAuthorization())
+		retryHeaders.set('Authorization', retryAuthorization)
 		response = await fetchApplyDestination({
 			url: input.url,
 			method: input.method,
@@ -455,9 +463,7 @@ async function sendAuthorizedApplyRequest(input: {
 		}
 	}
 	const rawBody = await readApplyResponseBody(response)
-	const redactedBody = String(
-		redactWebhookCredentials(rawBody, input.secrets) ?? '',
-	)
+	const redactedBody = String(redactWebhookCredentials(rawBody, secrets) ?? '')
 	const payload = parseJsonPayload(redactedBody)
 	const remoteId = extractRemoteId(payload)
 	if (response.ok) {
@@ -478,7 +484,7 @@ async function sendAuthorizedApplyRequest(input: {
 		urlHost: '',
 		httpStatus: response.status,
 		remoteId,
-		error: String(redactWebhookCredentials(snippet, input.secrets) ?? snippet),
+		error: String(redactWebhookCredentials(snippet, secrets) ?? snippet),
 	}
 }
 
@@ -592,6 +598,13 @@ function countWebhookUrlPlaceholders(value: string) {
 	return count
 }
 
+function countWebhookUrlPlaceholdersInUrl(value: string) {
+	const fragmentIndex = value.indexOf('#')
+	return countWebhookUrlPlaceholders(
+		fragmentIndex === -1 ? value : value.slice(0, fragmentIndex),
+	)
+}
+
 function substituteWebhookUrlPlaceholder(
 	value: string,
 	webhookUrl: string,
@@ -601,7 +614,7 @@ function substituteWebhookUrlPlaceholder(
 	return value.split(webhookUrlApplyPlaceholder).join(replacement)
 }
 
-function isFormUrlEncodedContentType(contentType: string | null) {
+export function isFormUrlEncodedContentType(contentType: string | null) {
 	if (!contentType) return false
 	return (
 		contentType.split(';', 1)[0]!.trim().toLowerCase() ===
@@ -609,7 +622,7 @@ function isFormUrlEncodedContentType(contentType: string | null) {
 	)
 }
 
-function countWebhookUrlPlaceholdersInFormBody(body: string) {
+export function countWebhookUrlPlaceholdersInFormBody(body: string) {
 	let count = 0
 	const params = new URLSearchParams(body)
 	for (const [key, value] of params) {
@@ -629,7 +642,7 @@ export function httpDestinationIncludesWebhookUrlPlaceholder(destination: {
 	const headerEntries = Object.entries(headers)
 	const body = destination.body ?? ''
 	let placeholderCount =
-		countWebhookUrlPlaceholders(urlTemplate) +
+		countWebhookUrlPlaceholdersInUrl(urlTemplate) +
 		headerEntries.reduce(
 			(sum, [, value]) => sum + countWebhookUrlPlaceholders(value),
 			0,
@@ -657,9 +670,14 @@ function collectAuthorizationSecretsForRedaction(input: {
 	]
 	for (const value of candidates) {
 		if (!value) continue
-		secrets.push(value)
+		const variants = [value]
 		const bearerMatch = /^Bearer\s+(.+)$/i.exec(value.trim())
-		if (bearerMatch?.[1]) secrets.push(bearerMatch[1])
+		if (bearerMatch?.[1]) variants.push(bearerMatch[1])
+		for (const variant of variants) {
+			secrets.push(variant)
+			const encoded = encodeURIComponent(variant)
+			if (encoded !== variant) secrets.push(encoded)
+		}
 	}
 	return secrets
 }

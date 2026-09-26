@@ -65,3 +65,39 @@ test('approval url and message use the shared /connect/webhook-apply owner flow'
 	expect(message).toContain('method: PUT')
 	expect(message).toContain(destination.auth)
 })
+
+test('approval message lists form-encoded {{webhookUrl}} body injection sites', async () => {
+	const destinationInput = {
+		type: 'http' as const,
+		url: 'https://hooks.example/register',
+		method: 'POST' as const,
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: `callback=${encodeURIComponent('{{webhookUrl}}')}`,
+	}
+	const destination = toHttpApplyDestinationSnapshot(destinationInput)
+	expect(destination.injectionSites).toContain('body')
+
+	const fingerprint = await fingerprintHttpApplyDestination(destinationInput)
+	const approvalUrl = buildWebhookApplyDestinationApprovalUrl({
+		baseUrl: 'https://heykody.dev',
+		handle: 'whh_ep-1',
+		fingerprint,
+	})
+	const message = buildWebhookApplyDestinationApprovalRequiredMessage({
+		approvalUrl,
+		destination,
+	})
+	expect(message).toMatch(/injection sites:.*\bbody\b/)
+	expect(message).not.toMatch(/injection sites:\s*\(none\)/)
+})
+
+test('approval snapshot ignores fragment-only url placeholders', () => {
+	const destination = toHttpApplyDestinationSnapshot({
+		type: 'http',
+		url: 'https://hooks.example/register#{{webhookUrl}}',
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: '{"ok":true}',
+	})
+	expect(destination.injectionSites).not.toContain('url')
+})
