@@ -77,6 +77,7 @@ export type ListedWebhook = {
 	rateLimitPerMinute: number
 	verification: PackageWebhookManifestEntry['verification']
 	replay: PackageWebhookManifestEntry['replay']
+	challenge: PackageWebhookManifestEntry['challenge']
 	minted: boolean
 	handle: string | null
 	urlHost: string | null
@@ -232,6 +233,7 @@ export async function listWebhooksForUser(input: {
 				rateLimitPerMinute: webhook.rateLimitPerMinute,
 				verification: webhook.verification,
 				replay: webhook.replay,
+				challenge: webhook.challenge,
 				minted: mint !== undefined,
 				handle: mint ? formatWebhookUrlHandle(mint.id) : null,
 				urlHost: mint ? urlHost : null,

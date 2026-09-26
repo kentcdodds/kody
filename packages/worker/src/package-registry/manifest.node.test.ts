@@ -450,6 +450,7 @@ test('parseAuthoredPackageJson accepts kody.webhooks and rejects unknown exports
 				encoding: 'hex',
 			},
 			replay: null,
+			challenge: null,
 		},
 	])
 	expect(manifest.kody.webhooks).toEqual([
@@ -566,6 +567,7 @@ test('parseAuthoredPackageJson accepts kody.webhooks and rejects unknown exports
 			rateLimitPerMinute: 600,
 			verification: null,
 			replay: null,
+			challenge: null,
 		},
 	])
 
@@ -665,6 +667,7 @@ test('parseAuthoredPackageJson accepts webhook replay fields and rejects unknown
 				timestampFormat: 'stripe-signature',
 				toleranceSeconds: 300,
 			},
+			challenge: null,
 		},
 	])
 
@@ -693,6 +696,103 @@ test('parseAuthoredPackageJson accepts webhook replay fields and rejects unknown
 			manifestPath: 'package.json',
 		}),
 	).toThrow(/Unknown webhook replay timestampFormat "rfc-2822"/)
+})
+
+test('parseAuthoredPackageJson accepts webhook subscription challenges', () => {
+	const manifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/x',
+			exports: {
+				'./activity-event': './src/activity-event.ts',
+			},
+			kody: {
+				id: 'x',
+				description: 'X activity',
+				webhooks: [
+					{
+						name: 'activity-event',
+						export: './activity-event',
+						challenge: {
+							type: 'x-activity-crc',
+							secretName: 'xConsumerSecret',
+						},
+						verification: {
+							type: 'hmac-sha256',
+							header: 'X-Twitter-Webhooks-Signature',
+							secretName: 'xConsumerSecret',
+							encoding: 'base64',
+							prefix: 'sha256=',
+						},
+					},
+				],
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+	expect(buildPackageSearchProjection(manifest).webhooks).toEqual([
+		{
+			name: 'activity-event',
+			exportName: './activity-event',
+			description: null,
+			responseMode: 'ack',
+			inputMode: 'request',
+			rateLimitPerMinute: 60,
+			verification: {
+				type: 'hmac-sha256',
+				header: 'X-Twitter-Webhooks-Signature',
+				secretName: 'xConsumerSecret',
+				encoding: 'base64',
+				prefix: 'sha256=',
+			},
+			replay: null,
+			challenge: {
+				type: 'x-activity-crc',
+				secretName: 'xConsumerSecret',
+			},
+		},
+	])
+
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/x',
+				exports: { './activity-event': './src/activity-event.ts' },
+				kody: {
+					id: 'x',
+					description: 'X activity',
+					webhooks: [
+						{
+							name: 'activity-event',
+							export: './activity-event',
+							challenge: { type: 'unknown-quiz', secretName: 'x' },
+						},
+					],
+				},
+			}),
+			manifestPath: 'package.json',
+		}),
+	).toThrow(/challenge/)
+
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/x',
+				exports: { './activity-event': './src/activity-event.ts' },
+				kody: {
+					id: 'x',
+					description: 'X activity',
+					webhooks: [
+						{
+							name: 'activity-event',
+							export: './activity-event',
+							challenge: { type: 'x-activity-crc' },
+						},
+					],
+				},
+			}),
+			manifestPath: 'package.json',
+		}),
+	).toThrow(/secretName/)
 })
 
 test('parseAuthoredPackageJson rejects unsupported or invalid kody manifest extensions', () => {

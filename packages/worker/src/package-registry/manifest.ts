@@ -8,6 +8,7 @@ import {
 	type AuthoredPackageJson,
 	type PackageExportTarget,
 	type PackageRetrieverScope,
+	type PackageWebhookChallenge,
 } from './types.ts'
 
 const packageManifestPath = 'package.json'
@@ -356,6 +357,7 @@ export type PackageWebhookManifestEntry = {
 		toleranceSeconds?: number
 		deliveryIdHeader?: string
 	} | null
+	challenge: PackageWebhookChallenge | null
 }
 
 export function listPackageWebhooks(
@@ -400,6 +402,7 @@ export function listPackageWebhooks(
 							: {}),
 					}
 				: null,
+			challenge: webhook.challenge ?? null,
 		}))
 		.sort((left, right) => left.name.localeCompare(right.name))
 }

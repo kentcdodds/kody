@@ -100,6 +100,23 @@ function replayValue(webhook: PackageWebhookListItem) {
 	return parts.length > 0 ? parts.join(' · ') : 'Not configured'
 }
 
+function challengeValue(webhook: PackageWebhookListItem) {
+	const challenge = webhook.challenge
+	if (!challenge) return 'Not configured'
+	return (
+		<span mix={css({ display: 'grid', gap: spacing.xs })}>
+			<span>
+				<code>{challenge.type}</code>
+			</span>
+			{challenge.secretName ? (
+				<span mix={css({ color: colors.textMuted })}>
+					secret <code>{challenge.secretName}</code>
+				</span>
+			) : null}
+		</span>
+	)
+}
+
 /**
  * One declared webhook on package settings: metadata, the URL slot (Mint /
  * Reveal + Copy / Hide), and the Rotate and Enable / Disable actions. The
@@ -162,6 +179,7 @@ export function renderPackageWebhookCard(input: {
 						value: `${webhook.rateLimitPerMinute} / min`,
 					},
 					{ label: 'Verification', value: verificationValue(webhook) },
+					{ label: 'Challenge', value: challengeValue(webhook) },
 					{ label: 'Replay protection', value: replayValue(webhook) },
 					{
 						label: 'Handle',

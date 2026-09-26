@@ -1246,6 +1246,11 @@ type PackageWebhookReplay = {
 	deliveryIdHeader?: string
 } | null
 
+type PackageWebhookChallenge = {
+	type: 'x-activity-crc' | 'websub-hub' | 'meta-hub' | 'slack-url-verification'
+	secretName?: string
+} | null
+
 /**
  * One declared package webhook joined with its minted URL state. Never
  * carries the credential URL or `url_secret`: the settings section fetches
@@ -1266,6 +1271,7 @@ export type PackageWebhookListItem = {
 	rateLimitPerMinute: number
 	verification: PackageWebhookVerification
 	replay: PackageWebhookReplay
+	challenge: PackageWebhookChallenge
 	minted: boolean
 	handle: string | null
 	urlHost: string | null

@@ -16,6 +16,10 @@ import { listPackageWebhooks } from '#worker/package-registry/manifest.ts'
 import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import {
+	handleWebhookSubscriptionChallenge,
+	webhookChallengeAllowsGet,
+} from './challenge.ts'
+import {
 	buildWebhookDeliveryIdempotencyKey,
 	buildWebhookTimestampBodyPayload,
 	isWebhookTimestampWithinTolerance,
@@ -294,6 +298,39 @@ async function runWithTimeout<T>(
 	}
 }
 
+function methodNotAllowedResponse(allow: string) {
+	return jsonResponse(
+		{
+			ok: false,
+			error: {
+				code: 'method_not_allowed',
+				message: 'Method not allowed.',
+			},
+		},
+		{ status: 405, headers: { Allow: allow } },
+	)
+}
+
+async function resolveWebhookChallengeSecret(input: {
+	env: Env
+	userId: string
+	packageId: string
+	secretName: string
+}) {
+	const resolved = await resolveSecret({
+		env: input.env,
+		userId: input.userId,
+		name: input.secretName,
+		storageContext: {
+			sessionId: null,
+			appId: null,
+			packageId: input.packageId,
+		},
+	})
+	if (!resolved.found || !resolved.value) return null
+	return resolved.value
+}
+
 export async function handleWebhookIngressRequest(
 	request: Request,
 	env: Env,
@@ -302,17 +339,8 @@ export async function handleWebhookIngressRequest(
 	const pathname = new URL(request.url).pathname
 	const route = parseWebhookIngressPath(pathname)
 	if (!route) return notFoundResponse()
-	if (request.method !== 'POST') {
-		return jsonResponse(
-			{
-				ok: false,
-				error: {
-					code: 'method_not_allowed',
-					message: 'Method not allowed.',
-				},
-			},
-			{ status: 405, headers: { Allow: 'POST' } },
-		)
+	if (request.method !== 'POST' && request.method !== 'GET') {
+		return methodNotAllowedResponse('GET, POST')
 	}
 
 	const receivedAt = new Date().toISOString()
@@ -452,6 +480,33 @@ export async function handleWebhookIngressRequest(
 		)
 	}
 
+	const resolveChallengeSecret = (secretName: string) =>
+		resolveWebhookChallengeSecret({
+			env,
+			userId: endpoint.userId,
+			packageId: endpoint.packageId,
+			secretName,
+		})
+
+	// Subscription challenges are answered by the platform only — never invoke
+	// package code, never record delivery history, never mutate kody state.
+	if (declared.challenge && request.method === 'GET') {
+		const challengeResult = await handleWebhookSubscriptionChallenge({
+			request,
+			challenge: declared.challenge,
+			resolveSecret: resolveChallengeSecret,
+		})
+		if (challengeResult.kind === 'respond') {
+			return challengeResult.response
+		}
+	}
+
+	if (request.method !== 'POST') {
+		return methodNotAllowedResponse(
+			webhookChallengeAllowsGet(declared.challenge) ? 'GET, POST' : 'POST',
+		)
+	}
+
 	const bodyResult = await readBodyWithCap(request, webhookMaxPayloadBytes)
 	if (!bodyResult.ok) {
 		await recordWebhookDelivery({
@@ -473,6 +528,18 @@ export async function handleWebhookIngressRequest(
 		bodyBytes.byteOffset + bodyBytes.byteLength,
 	) as ArrayBuffer
 	const bodyText = new TextDecoder().decode(bodyBytes)
+
+	if (declared.challenge?.type === 'slack-url-verification') {
+		const challengeResult = await handleWebhookSubscriptionChallenge({
+			request,
+			challenge: declared.challenge,
+			resolveSecret: resolveChallengeSecret,
+			bodyText,
+		})
+		if (challengeResult.kind === 'respond') {
+			return challengeResult.response
+		}
+	}
 
 	const rejectUnauthorized = (error: string) =>
 		rejectUnauthorizedSignature({

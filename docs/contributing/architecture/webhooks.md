@@ -22,10 +22,19 @@ slug `name`, an `export` that must exist in `package.json#exports` (one name ↔
 one export; no `*`), optional `responseMode` (`ack` default / `sync`), optional
 `inputMode` (`request` default / `params`), optional `rateLimitPerMinute`
 (default 60, max 600), optional HMAC `verification` that references a
-secret-store name (`secretName`) — never an inline secret — and optional
+secret-store name (`secretName`) — never an inline secret — optional `challenge`
+for platform-handled ownership quizzes on the same minted URL, and optional
 `replay` for timestamp windows and delivery-id dedupe. Parsing and export
 existence checks live in `parseAuthoredPackageJson` / `listPackageWebhooks`
 (`packages/worker/src/package-registry/`).
+
+`challenge` is answered entirely by the ingress worker
+(`packages/worker/src/webhooks/challenge.ts`). Supported types:
+`x-activity-crc`, `websub-hub`, `meta-hub`, `slack-url-verification`. Challenge
+requests never call `invokePackageExport`, never write delivery/run history, and
+never perform outbound fetch or MCP. They may resolve a named secret for HMAC or
+verify-token compare. After the quiz succeeds, later vendor POSTs still use the
+normal URL-secret + optional HMAC path.
 
 HMAC `verification` signs the raw body by default (`signedPayload` omitted or
 `'body'`). Set `signedPayload` to `'timestamp.body'` when the provider HMAC
@@ -73,11 +82,12 @@ Declaring a webhook does **not** open ingress. A minted URL secret in D1 does.
 
 ## Ingress path
 
-Route: `POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
+Route: `GET|POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
 
 1. Worker `fetch` in `packages/worker/src/index.ts` matches the path early. The
-   path is also registered in `routes.ts` / `router.ts`, and `/@*/webhooks/*` is
-   in `run_worker_first` for all Wrangler environments.
+   path is also registered in `routes.ts` / `router.ts` (POST action), and
+   `/@*/webhooks/*` is in `run_worker_first` for all Wrangler environments. GET
+   challenges are handled by the early Worker path (not the Remix POST action).
 2. Resolve username → user; resolve `packageKodyId` to a saved package owned by
    that user; load minted row keyed by `(user_id, package_id, webhook_name)`.
 3. Unminted, disabled, missing declaration (after republish rename/remove), or
@@ -88,24 +98,29 @@ Route: `POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
    during rotate overlap, the previous hash. The previous URL stays active for
    24 hours or until the first POST on the new URL that is accepted for dispatch
    (ack enqueue or sync invoke), whichever comes first. HMAC, rate limit,
-   payload, and declaration rejects do not retire the previous URL. An expired
-   previous hash is treated as unknown.
+   payload, declaration rejects, and challenge quizzes do not retire the
+   previous URL. An expired previous hash is treated as unknown.
 5. After a matching URL secret, enforce per-webhook rate limit (declared
    `rateLimitPerMinute` when the name is still live, otherwise the default 60,
    max 600) → **429** (no delivery history on the limited path). Missing
    declaration after republish rename/remove still **404**s and records a
-   rejected delivery, but only after that limit. Payload cap 1 MB → **413**.
-6. When verification is declared, resolve `secretName` from the owner's secret
-   store (user/package scope via package storage context). Missing secret or
-   HMAC mismatch → **401**, with a clear delivery-log error for missing secrets.
-   When `replay.timestampHeader` is declared, a missing, unparseable, or stale
-   timestamp is rejected with the same generic **401** before dispatch (and
-   before any run record that implies acceptance). When
-   `replay.deliveryIdHeader` is declared, a missing id is rejected the same way;
-   present ids become the invocation idempotency key.
-7. Dispatch via `invokePackageExport` with a synthetic internal token scoped to
+   rejected delivery, but only after that limit.
+6. When `challenge` is declared and the request matches that quiz (GET for CRC /
+   hub types; Slack `url_verification` POST), answer via
+   `handleWebhookSubscriptionChallenge` and return — no package invoke, no
+   delivery row. Non-matching POSTs continue. GET without a matching challenge
+   declaration → **405**.
+7. Payload cap 1 MB → **413**. When verification is declared, resolve
+   `secretName` from the owner's secret store (user/package scope via package
+   storage context). Missing secret or HMAC mismatch → **401**, with a clear
+   delivery-log error for missing secrets. When `replay.timestampHeader` is
+   declared, a missing, unparseable, or stale timestamp is rejected with the
+   same generic **401** before dispatch (and before any run record that implies
+   acceptance). When `replay.deliveryIdHeader` is declared, a missing id is
+   rejected the same way; present ids become the invocation idempotency key.
+8. Dispatch via `invokePackageExport` with a synthetic internal token scoped to
    the owning user / package / export, `source: 'webhook'`.
-8. `ack`: await enqueue to `kody-webhook-dispatch`, then return **202**. The
+9. `ack`: await enqueue to `kody-webhook-dispatch`, then return **202**. The
    queue consumer owns the full invocation and its terminal writes, so work is
    not tied to the post-response `waitUntil` window. A failed enqueue returns
    **503** so the provider can retry. Queue messages omit reconstructed
@@ -114,10 +129,10 @@ Route: `POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
    `webhook-dispatch-payload:v1:{userId}:{deliveryId}` when the serialized
    message would exceed a conservative 120 KB ceiling beneath Cloudflare Queues'
    128 KB limit. `sync`: await (30s) and return export JSON, **502** on failure.
-9. Authenticated deliveries (and post-auth rejects such as HMAC / size / missing
-   declaration) record a `webhook` surface run record (no payload body). See
-   [Run records](./run-records.md). URL-secret mismatches and pre-auth rate
-   limits still write no delivery history.
+10. Authenticated deliveries (and post-auth rejects such as HMAC / size /
+    missing declaration) record a `webhook` surface run record (no payload
+    body). See [Run records](./run-records.md). URL-secret mismatches, pre-auth
+    rate limits, and subscription challenges still write no delivery history.
 
 Ack messages carry the accepted delivery id, idempotency key, scoped endpoint
 identity, export name, and already-authenticated payload (inline `body`, or a
