@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { httpDestinationIncludesWebhookUrlPlaceholder } from './apply.ts'
+import { webhookUrlApplyDestinationSchema } from '#mcp/capabilities/webhooks/webhook-url-apply.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -570,4 +571,72 @@ test('webhookUrlApply redacts percent-encoded webhook URL in destination error b
 	expect(applied.error ?? '').not.toContain(encodeURIComponent(revealed.url))
 	expect(applied.error ?? '').toContain('[redacted]')
 	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply redacts Bearer tokens from secretName auth in destination errors', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	const token = 'tok_super_secret_apply_auth'
+	secretMocks.resolveSecretForHost.mockResolvedValue({
+		found: true,
+		value: token,
+		allowedHosts: ['hooks.example'],
+		scope: 'user',
+	})
+	const fetchMock = vi.fn(async () => {
+		return new Response(`unauthorized Bearer ${token}`, { status: 401 })
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: {
+			type: 'http',
+			url: 'https://hooks.example/register',
+			body: '{"url":"{{webhookUrl}}"}',
+			secretName: 'hooksToken',
+		},
+	})
+
+	expect(applied.ok).toBe(false)
+	expect(applied.error ?? '').not.toContain(token)
+	expect(applied.error ?? '').toContain('[redacted]')
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply rejects Authorization header combined with secretName before fetch', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	const fetchMock = vi.fn()
+	vi.stubGlobal('fetch', fetchMock)
+
+	await expect(
+		applyWebhookUrlForUser({
+			env,
+			userId,
+			username: 'owner',
+			handle: minted.handle,
+			destination: {
+				type: 'http',
+				url: 'https://hooks.example/register',
+				headers: { Authorization: 'Bearer manual' },
+				body: '{"url":"{{webhookUrl}}"}',
+				secretName: 'hooksToken',
+			},
+		}),
+	).rejects.toThrow(/Authorization/)
+	expect(fetchMock).not.toHaveBeenCalled()
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApplyDestinationSchema rejects Authorization combined with secretName', () => {
+	const parsed = webhookUrlApplyDestinationSchema.safeParse({
+		type: 'http',
+		url: 'https://hooks.example/register',
+		headers: { Authorization: 'Bearer manual' },
+		body: '{"url":"{{webhookUrl}}"}',
+		secretName: 'hooksToken',
+	})
+	expect(parsed.success).toBe(false)
 })

@@ -124,6 +124,19 @@ const httpDestinationSchema = z
 				message: 'Provide either integration or secretName, not both.',
 			})
 		}
+		const hasAuthorizationHeader = Object.keys(destination.headers ?? {}).some(
+			(name) => name.toLowerCase() === 'authorization',
+		)
+		const hasAuthSource = Boolean(
+			destination.secretName?.trim() || destination.integration?.trim(),
+		)
+		if (hasAuthorizationHeader && hasAuthSource) {
+			ctx.addIssue({
+				code: 'custom',
+				message:
+					'Provide Authorization in headers, or secretName/integration, not both.',
+			})
+		}
 		const method = (destination.method ?? 'POST').toUpperCase()
 		if (method === 'GET' && (destination.body?.length ?? 0) > 0) {
 			ctx.addIssue({

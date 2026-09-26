@@ -549,10 +549,15 @@ async function dispatchGithubApply(input: {
 		requireAuthorization: true,
 		waitUntil: input.waitUntil,
 	})
-	const secrets = collectWebhookCredentialSecrets({
-		url: input.webhookUrl,
-		urlSecret: input.urlSecret,
-	})
+	const secrets = [
+		...collectWebhookCredentialSecrets({
+			url: input.webhookUrl,
+			urlSecret: input.urlSecret,
+		}),
+		...collectAuthorizationSecretsForRedaction({
+			authorization: auth.authorization,
+		}),
+	]
 	if (hookSecret) secrets.push(hookSecret)
 	if (!auth.authorization || !auth.retryAuthorization) {
 		throw new McpCallerError(
@@ -637,6 +642,26 @@ export function httpDestinationIncludesWebhookUrlPlaceholder(destination: {
 		)?.[1] ?? null
 	if (!isFormUrlEncodedContentType(contentType)) return false
 	return countWebhookUrlPlaceholdersInFormBody(body) >= 1
+}
+
+function collectAuthorizationSecretsForRedaction(input: {
+	authorization: string | null
+	headers?: Record<string, string>
+}) {
+	const secrets: Array<string> = []
+	const candidates = [
+		input.authorization,
+		...Object.entries(input.headers ?? {})
+			.filter(([name]) => name.toLowerCase() === 'authorization')
+			.map(([, value]) => value),
+	]
+	for (const value of candidates) {
+		if (!value) continue
+		secrets.push(value)
+		const bearerMatch = /^Bearer\s+(.+)$/i.exec(value.trim())
+		if (bearerMatch?.[1]) secrets.push(bearerMatch[1])
+	}
+	return secrets
 }
 
 function substituteWebhookUrlInFormBody(body: string, webhookUrl: string) {
@@ -781,10 +806,16 @@ async function dispatchHttpApply(input: {
 		requireAuthorization: false,
 		waitUntil: input.waitUntil,
 	})
-	const secrets = collectWebhookCredentialSecrets({
-		url: input.webhookUrl,
-		urlSecret: input.urlSecret,
-	})
+	const secrets = [
+		...collectWebhookCredentialSecrets({
+			url: input.webhookUrl,
+			urlSecret: input.urlSecret,
+		}),
+		...collectAuthorizationSecretsForRedaction({
+			authorization: auth.authorization,
+			headers: resolvedHeaders,
+		}),
+	]
 	return sendAuthorizedApplyRequest({
 		url: resolvedUrl,
 		method,
