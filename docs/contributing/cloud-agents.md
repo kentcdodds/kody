@@ -104,6 +104,13 @@ including optional peers. `npm run lockfile:check` (part of `npm run validate`
 and the CI static job) rejects a lockfile `npm install` would rewrite, such as
 an `@cloudflare/workers-types` pin older than wrangler's peer range.
 
+## GitHub CLI
+
+Cloud Agent `gh` can read issues, PRs, and checks. It cannot post PR
+review-thread replies (`403`). Reply with `kody:@kentcdodds/github/request`
+(kody-bot) or Cursor `ManagePullRequest` `post_comment` / `in_reply_to`. See
+[ship-pr](../../.agents/skills/ship-pr/SKILL.md).
+
 ## Quick commands
 
 | Task               | Command                                                                                                                                                                     |

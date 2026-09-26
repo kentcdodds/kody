@@ -52,18 +52,18 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   executes `format:check`, `lint`, `typecheck`, `test:node`, `test:workers`,
   Playwright E2E, MCP E2E, `backup:build`, `status:build`, `nx-cache:build`,
   `jobs:build`, `runtime:build`, `platform:build`, `primitives:check`,
-  `migrations:check`, `deploy-guardrails:check`, `docs:check-temporal`,
-  `docs:check-decisions`, `mermaid:check`, `audit:prod`, and `lockfile:check` in
-  parallel, reporting every failure (sibling checks are not aborted on the first
-  failure, including when one of the docs or mermaid checks fails). The
-  unit-test and Playwright legs set `CI=1` so timeouts, worker limits, and Nx
-  cache hashes match the contended parallel layout used in GitHub Actions. CI
-  runs the same checks as parallel jobs (🧹 Static, 🧪 Node, ☁️ Workers, 🔌 MCP,
-  🎭 E2E, aggregated by ✅ Validate). If `npm run validate` passes locally, CI
-  will pass. Trusted writers (Cloud Agent environments, and same-repo validate)
-  set `NX_SELF_HOSTED_REMOTE_CACHE_SERVER` and the write token so Nx uploads
-  task artifacts to `https://nx-cache.kody.codes`. Fork `pull_request` validate
-  uses the read token and can only GET (see
+  `migrations:check`, `deploy-guardrails:check`, `workflows:check`,
+  `docs:check-temporal`, `docs:check-decisions`, `mermaid:check`, `audit:prod`,
+  and `lockfile:check` in parallel, reporting every failure (sibling checks are
+  not aborted on the first failure, including when one of the docs or mermaid
+  checks fails). The unit-test and Playwright legs set `CI=1` so timeouts,
+  worker limits, and Nx cache hashes match the contended parallel layout used in
+  GitHub Actions. CI runs the same checks as parallel jobs (🧹 Static, 🧪 Node,
+  ☁️ Workers, 🔌 MCP, 🎭 E2E, aggregated by ✅ Validate). If `npm run validate`
+  passes locally, CI will pass. Trusted writers (Cloud Agent environments, and
+  same-repo validate) set `NX_SELF_HOSTED_REMOTE_CACHE_SERVER` and the write
+  token so Nx uploads task artifacts to `https://nx-cache.kody.codes`. Fork
+  `pull_request` validate uses the read token and can only GET (see
   [decision 0019](../decisions/0019-self-hosted-nx-remote-cache.md),
   [decision 0038](../decisions/0038-no-nx-cloud-read-write-cache-tokens.md),
   [decision 0040](../decisions/0040-same-repo-writers-may-put-nx-cache.md), and
@@ -79,6 +79,11 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   history and bindings in both Wrangler configs, requires exact allowlisting for
   class deletion, and rejects destructive Cloudflare CLI operations in
   automatically triggered GitHub Actions jobs.
+- `npm run workflows:check` (`tools/check-workflow-refs.ts`) rejects
+  `steps.<id>.outputs` and `needs.<id>` references in `.github/workflows/*.yml`
+  that do not name an existing step or job id. GitHub resolves those
+  misspellings to empty strings instead of failing the run, so a typo in
+  `deploy.yml` would otherwise first appear on a production deploy.
 - `npm run validate:fix` runs `format` + `lint:fix` and is the explicit opt-in
   for mutating auto-fixes. It is never required to pass `validate`.
 - `npm run format` applies formatting updates on its own.

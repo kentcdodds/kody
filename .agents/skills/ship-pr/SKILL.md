@@ -31,6 +31,12 @@ comments). Never comment `bugbot run` or `cursor review` yourself, including via
 `gh` or GitHub request as kody-bot. Trigger with `kody:@kentcdodds/bugbot` using
 `{ prUrl }` or `{ owner, repo, prNumber }`. Do not pass a GitHub account.
 
+Cloud Agent `gh` cannot post PR review-thread replies (403). Use
+`kody:@kentcdodds/github/request` (default `bot` account) to `POST`
+`/repos/{owner}/{repo}/pulls/{pull_number}/comments/{comment_id}/replies`, or
+Cursor `ManagePullRequest` `post_comment` with `in_reply_to`. Do not stall
+ship-pr waiting on a `gh api` reply that will never post.
+
 ```javascript
 import triggerBugbot from 'kody:@kentcdodds/bugbot'
 
@@ -45,7 +51,10 @@ CodeRabbit when the change is **high** risk (or the user explicitly asks).
 
 1. Mark ready — `kody:@kentcdodds/github/pr/set-review-status`
    `{ prUrl, status: 'ready' }` (or owner/repo/prNumber).
-2. Wait for CI — `gh pr checks` (or compose `loop-on-ci` / `fix-ci`).
+2. Wait for CI — `gh pr checks` (or compose `loop-on-ci` / `fix-ci`). Ignore a
+   failure event whose SHA is not the current PR `headRefOid`
+   (`gh pr view --json headRefOid`). Checks for an abandoned commit are not a
+   red PR; wait on the new head.
 3. Fix failures; for **medium+**, wait on AI reviewer(s) (Bugbot first; see
    above for CodeRabbit) and address valid feedback. While the PR is open, also
    fix obvious in-scope low-risk repo friction you are already touching, mention
@@ -66,6 +75,11 @@ CodeRabbit when the change is **high** risk (or the user explicitly asks).
    public preview seed; local admin plus Workers or unit tests count as
    sufficient evidence. After merge,
    `npm run control-kody -- health --origin https://kody.codes --sha <merge>`.
+   After a `main` merge, GitHub may show an all-skipped 🚀 Deploy (production)
+   run while ✅ Validate is still in progress (a cancelled prior Validate
+   `workflow_run` starts Deploy, and `sha-guard` requires success). Wait for
+   Validate success on the merge SHA, then watch the subsequent Deploy run. Do
+   not poll production `/health` against the previous SHA from a skipped Deploy.
 4. Green + (medium+: valid feedback cleared) → break.
 5. Push → repeat.
 

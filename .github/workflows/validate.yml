@@ -150,6 +150,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run deploy-guardrails:check
 
+      - name: 🧾 Workflow refs
+        if: ${{ !cancelled() }}
+        run: npm run workflows:check
+
       - name: 📚 Docs (temporal)
         if: ${{ !cancelled() }}
         run: npm run docs:check-temporal

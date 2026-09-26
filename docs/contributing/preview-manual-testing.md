@@ -113,6 +113,15 @@ leaf or `@owner/leaf`); there is no create action on
 preview testing does not require agents to hand-roll an MCP OAuth dance — the
 CLI does it for them.
 
+`emailSend` on a PR preview still stores the mailbox row (so `emailMessageGet`
+and `GET /account/email.json?selected=` can read the text and HTML bodies).
+Provider delivery fails with Cloudflare's
+`could not find domain config of sending domain` because the per-preview inbox
+host (`user-me@inbox.kody-pr-<n>.…workers.dev`) is not a configured sending
+domain. Treat `status: "failed"` plus that error as the expected preview send;
+the stored row is the body round-trip. Production and local mock/REST fallbacks
+are the paths that actually deliver.
+
 Two `packageSave` packages on the seed account are both self-authored and share
 implicit user-secret read. That is not a locked-secret denial test. To preview
 the denial path, publish a listing, install or `communityFork` it under a

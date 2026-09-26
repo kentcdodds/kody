@@ -267,8 +267,11 @@ content-addressed `blobs/sha256/`.
 
 Code deploys are automated by the production deploy workflow
 (`.github/workflows/deploy.yml` job `deploy-backup-control-plane`) when a `main`
-push changes `packages/backup-control-plane/` or `packages/shared/src/backup-*`,
-and on every manual `workflow_dispatch` of that workflow. The job uses
+push changes `packages/backup-control-plane/` or `packages/shared/src/backup-*`
+inside the 15-commit path-filter lookback, and on every manual
+`workflow_dispatch` of that workflow. A longer Validate gap can skip the job
+even when `main` still contains those paths; dispatch Deploy on current `main`
+HEAD to force the control plane (and every other worker) live. The job uses
 `DR_DEPLOY_TOKEN` + `DR_BACKUP_ACCOUNT_ID` (never the production-account
 `CLOUDFLARE_API_TOKEN`) and sets `BUILD_COMMIT` to the deploy SHA. Worker
 secrets on the control plane remain one-time / out-of-band.
@@ -329,13 +332,16 @@ Component probes do not use the status hostname.
 
 Code deploys are automated by the production deploy workflow
 (`.github/workflows/deploy.yml` job `deploy-status-worker`) when a `main` push
-changes `packages/status/`, and on every manual `workflow_dispatch` of that
-workflow. The job deploys with the production-account `CLOUDFLARE_API_TOKEN`,
-sets `BUILD_COMMIT` to the deploy SHA, and syncs the same token as the Worker
-secret `CLOUDFLARE_API_TOKEN` so the status worker can send operator alert email
-through the Cloudflare Email REST API (from `ALERT_EMAIL_FROM` to
-`ALERT_EMAIL_TO`, both non-secret vars in `packages/status/wrangler.jsonc`).
-Without that secret, alert sends are skipped and logged.
+changes `packages/status/` inside the 15-commit path-filter lookback, and on
+every manual `workflow_dispatch` of that workflow. A longer Validate gap can
+skip the job even when `main` still contains those paths; dispatch Deploy on
+current `main` HEAD to force it. The job deploys with the production-account
+`CLOUDFLARE_API_TOKEN`, sets `BUILD_COMMIT` to the deploy SHA, and syncs the
+same token as the Worker secret `CLOUDFLARE_API_TOKEN` so the status worker can
+send operator alert email through the Cloudflare Email REST API (from
+`ALERT_EMAIL_FROM` to `ALERT_EMAIL_TO`, both non-secret vars in
+`packages/status/wrangler.jsonc`). Without that secret, alert sends are skipped
+and logged.
 
 MCP execute evidence on the status page is a timestamp-only last-success
 heartbeat from real authenticated execute completions, plus at most one hourly
