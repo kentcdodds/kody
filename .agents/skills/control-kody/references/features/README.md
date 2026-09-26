@@ -37,7 +37,8 @@ Then drive the surface with `login`, `request`, `preview`, and `health`. Run
 - [jobs](./jobs.md) — `/account/jobs`
 - [workflows](./workflows.md) — `/account/workflows`
 - [webhooks](./webhooks.md) — `/@username/kodyId/settings#webhooks` (index at
-  `/account/webhooks`)
+  `/account/webhooks`; generic `http` apply approval at
+  `/connect/webhook-apply`)
 - [activity](./activity.md) — `/account/activity`
 - [waiting](./waiting.md) — `/account/waiting`
 - [experiments](./experiments.md) — `/account/experiments`
