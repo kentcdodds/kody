@@ -41,6 +41,15 @@ vi.mock('#worker/run-records/service.ts', () => ({
 		mockModule.listRunRecords(...args),
 }))
 
+const approvalMock = vi.hoisted(() => ({
+	requireWebhookApplyDestinationGrantOrPending: vi.fn(),
+}))
+
+vi.mock('#worker/webhooks/apply-destination-approval.ts', () => ({
+	requireWebhookApplyDestinationGrantOrPending: (...args: Array<unknown>) =>
+		approvalMock.requireWebhookApplyDestinationGrantOrPending(...args),
+}))
+
 const { webhookListCapability } = await import('./webhook-list.ts')
 const { webhookUrlMintCapability } = await import('./webhook-url-mint.ts')
 const { webhookUrlRotateCapability } = await import('./webhook-url-rotate.ts')
@@ -51,11 +60,20 @@ const { webhookUrlApplyCapability, webhookUrlApplyDestinationSchema } =
 const { webhookDeliveryListCapability } =
 	await import('./webhook-delivery-list.ts')
 
-function createCapabilityContext() {
+function createCapabilityContext(input?: {
+	executionOrigin?: 'interactive' | 'background'
+	storageContext?: {
+		packageId?: string | null
+		appId?: string | null
+		storageId?: string | null
+	} | null
+}) {
 	return {
 		env: { APP_DB: {} as D1Database } as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
+			executionOrigin: input?.executionOrigin ?? 'interactive',
+			storageContext: input?.storageContext,
 			user: {
 				userId: 'user-1',
 				email: 'user@example.com',
@@ -232,6 +250,27 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 			destination: { type: 'github', owner: 'acme', repo: 'api' },
 		}),
 	)
+	expect(
+		webhookUrlApplyDestinationSchema.safeParse({
+			type: 'http',
+			url: 'https://hooks.example/register',
+			body: '{"url":"{{webhookUrl}}"}',
+		}).success,
+	).toBe(true)
+	expect(
+		webhookUrlApplyDestinationSchema.safeParse({
+			type: 'http',
+			url: 'https://hooks.example/register',
+			body: '{"ok":true}',
+		}).success,
+	).toBe(false)
+	expect(
+		webhookUrlApplyDestinationSchema.safeParse({
+			type: 'http',
+			url: 'http://hooks.example/register',
+			body: '{"url":"{{webhookUrl}}"}',
+		}).success,
+	).toBe(false)
 	expect(
 		webhookUrlApplyDestinationSchema.safeParse({
 			type: 'https',
@@ -498,4 +537,99 @@ test('webhookDeliveryList treats a missing package and an unminted URL as caller
 		.catch((error: unknown) => error)
 	expect(unminted).toBeInstanceOf(McpCallerError)
 	expect(mockModule.listRunRecords).not.toHaveBeenCalled()
+})
+
+test('webhookUrlApply http destination requires owner website approval before outbound registration', async () => {
+	const destination = {
+		type: 'http' as const,
+		url: 'https://hooks.example/register',
+		method: 'POST' as const,
+		headers: { 'Content-Type': 'application/json' },
+		body: '{"url":"{{webhookUrl}}"}',
+		secretName: 'hooksRegistrationToken',
+	}
+	expect(webhookUrlApplyDestinationSchema.safeParse(destination).success).toBe(
+		true,
+	)
+
+	mockModule.applyWebhookUrlForUser.mockClear()
+	approvalMock.requireWebhookApplyDestinationGrantOrPending.mockReset()
+	approvalMock.requireWebhookApplyDestinationGrantOrPending.mockResolvedValue({
+		status: 'approval_required',
+		fingerprint: 'fp-1',
+		approvalUrl:
+			'https://heykody.dev/connect/webhook-apply?handle=whh_ep-1&fingerprint=fp-1',
+		destination: {
+			method: 'POST',
+			url: destination.url,
+			headers: [{ name: 'Content-Type', value: 'application/json' }],
+			body: destination.body,
+			secretName: destination.secretName,
+			integration: null,
+			injectionSites: ['body'],
+			auth: 'secretName=hooksRegistrationToken',
+		},
+		message:
+			'HTTP webhookUrlApply requires owner approval\n\napproval_url: https://heykody.dev/connect/webhook-apply?handle=whh_ep-1&fingerprint=fp-1\nmethod: POST\nurl: https://hooks.example/register\n{{webhookUrl}} injection sites: body\nauth: secretName=hooksRegistrationToken',
+	})
+
+	const ctx = createCapabilityContext()
+	await expect(
+		webhookUrlApplyCapability.handler({ handle: 'whh_ep-1', destination }, ctx),
+	).rejects.toThrow(/approval_url:/)
+	await expect(
+		webhookUrlApplyCapability.handler({ handle: 'whh_ep-1', destination }, ctx),
+	).rejects.toThrow('/connect/webhook-apply')
+	await expect(
+		webhookUrlApplyCapability.handler({ handle: 'whh_ep-1', destination }, ctx),
+	).rejects.toThrow('https://hooks.example/register')
+	expect(mockModule.applyWebhookUrlForUser).not.toHaveBeenCalled()
+
+	await expect(
+		webhookUrlApplyCapability.handler(
+			{ handle: 'whh_ep-1', destination },
+			createCapabilityContext({ executionOrigin: 'background' }),
+		),
+	).rejects.toThrow(/interactive/)
+	expect(mockModule.applyWebhookUrlForUser).not.toHaveBeenCalled()
+
+	approvalMock.requireWebhookApplyDestinationGrantOrPending.mockResolvedValue({
+		status: 'granted',
+		fingerprint: 'fp-1',
+	})
+	mockModule.applyWebhookUrlForUser.mockResolvedValue({
+		ok: true,
+		urlHost: 'heykody.dev',
+		httpStatus: 200,
+		remoteId: 'reg-1',
+		error: null,
+	})
+	await expect(
+		webhookUrlApplyCapability.handler(
+			{ handle: 'whh_ep-1', destination },
+			createCapabilityContext({ executionOrigin: 'interactive' }),
+		),
+	).resolves.toEqual({
+		ok: true,
+		url_host: 'heykody.dev',
+		http_status: 200,
+		remote_id: 'reg-1',
+		error: null,
+	})
+	expect(mockModule.applyWebhookUrlForUser).toHaveBeenCalledWith(
+		expect.objectContaining({
+			handle: 'whh_ep-1',
+			destination: {
+				type: 'http',
+				url: 'https://hooks.example/register',
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: '{"url":"{{webhookUrl}}"}',
+				secretName: 'hooksRegistrationToken',
+			},
+		}),
+	)
+	expect(
+		mockModule.applyWebhookUrlForUser.mock.calls.at(-1)?.[0].destination,
+	).not.toHaveProperty('user_confirmed')
 })

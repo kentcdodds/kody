@@ -267,6 +267,10 @@
 		{
 			"filename": "0066-users-first-activation-stamps.sql",
 			"sha256": "21d202ce5e1bd4f2db70f9e148710df1dd7d5ad5eedf2b427948e5bc6fe552d5"
+		},
+		{
+			"filename": "0067-webhook-apply-destination-approvals.sql",
+			"sha256": "a95ff1e06ac1b6439927be2c15ebd4b4b4967ce492671fa4107dc7d21c05efeb"
 		}
 	]
 }

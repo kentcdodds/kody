@@ -501,9 +501,10 @@ payloads and the distinction between live HEAD and package publish.
 
 Inbound HTTP webhooks are declared under `package.json#kody.webhooks` and bound
 to a package export. Declaring a webhook does not open ingress — mint a handle
-with `webhookUrlMint` first, then `webhookUrlApply` to register a first-class
-destination (GitHub repository hooks). Full contract, signature examples, and
-payload shape: [Inbound webhooks](./webhooks.md).
+with `webhookUrlMint` first, then `webhookUrlApply` to register a destination
+(`github` repository hooks or generic `http` with `{{webhookUrl}}`). Full
+contract, signature examples, and payload shape:
+[Inbound webhooks](./webhooks.md).
 
 ## Package-owned jobs
 

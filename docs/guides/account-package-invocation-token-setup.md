@@ -17,12 +17,12 @@ bearer grant.
 
 ## Destination map
 
-| Job                                  | Destination            | How                                                                                                                        |
-| ------------------------------------ | ---------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Vendor POST (Sentry, GitHub, Stripe) | inbound webhooks       | `kody.webhooks` with `inputMode: "request"`, optional HMAC + `replay`, `webhookUrlMint`, then `webhookUrlApply` for GitHub |
-| First-party trusted client           | inbound webhooks       | `inputMode: "params"`, `Idempotency-Key`, `sync` or `ack`, one webhook per export                                          |
-| Multi-export / `*` token             | one webhook per export | No wildcard URL. Declare each export the client actually calls.                                                            |
-| Author composition                   | import / workflows     | Static `import`, `import(specifier)`, or workflows. Not HTTP.                                                              |
+| Job                                  | Destination            | How                                                                                                                                        |
+| ------------------------------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Vendor POST (Sentry, GitHub, Stripe) | inbound webhooks       | `kody.webhooks` with `inputMode: "request"`, optional HMAC + `replay`, `webhookUrlMint`, then `webhookUrlApply` (GitHub or generic `http`) |
+| First-party trusted client           | inbound webhooks       | `inputMode: "params"`, `Idempotency-Key`, `sync` or `ack`, one webhook per export                                                          |
+| Multi-export / `*` token             | one webhook per export | No wildcard URL. Declare each export the client actually calls.                                                                            |
+| Author composition                   | import / workflows     | Static `import`, `import(specifier)`, or workflows. Not HTTP.                                                                              |
 
 Discord gateways, YouTube WebSub, Raycast extensions, and social-launch clients
 mint one webhook handle per export and POST JSON. Vendor HMAC handlers stay on

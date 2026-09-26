@@ -1,5 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
+import { httpDestinationIncludesWebhookUrlPlaceholder } from './apply.ts'
+import { webhookUrlApplyDestinationSchema } from '#mcp/capabilities/webhooks/webhook-url-apply.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -335,4 +337,377 @@ test('webhookUrlApply rejects dot-only GitHub slugs', async () => {
 			destination: { type: 'github', owner: '..', repo: 'api' },
 		}),
 	).rejects.toThrow('GitHub owner')
+})
+
+test('webhookUrlApply registers via http destination with {{webhookUrl}} substitution', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	const revealed = await revealWebhookUrlForWebsite({
+		env,
+		userId,
+		username: 'owner',
+		target: { handle: minted.handle },
+	})
+	const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+		expect(url).toBe('https://hooks.example/register')
+		expect(init?.method).toBe('POST')
+		expect(init?.redirect).toBe('manual')
+		const headers = new Headers(init?.headers)
+		expect(headers.has('Authorization')).toBe(false)
+		expect(headers.get('Content-Type')).toBe('application/json')
+		const body = JSON.parse(String(init?.body)) as { url: string }
+		expect(body.url).toBe(revealed.url)
+		return new Response(JSON.stringify({ id: 'reg-9', url: revealed.url }), {
+			status: 200,
+		})
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: {
+			type: 'http',
+			url: 'https://hooks.example/register',
+			headers: { 'Content-Type': 'application/json' },
+			body: '{"url":"{{webhookUrl}}"}',
+		},
+	})
+
+	expect(applied).toEqual({
+		ok: true,
+		urlHost: 'heykody.dev',
+		httpStatus: 200,
+		remoteId: 'reg-9',
+		error: null,
+	})
+	expect(JSON.stringify(applied)).not.toContain(revealed.url)
+	expect(JSON.stringify(applied)).not.toContain(
+		revealed.url.slice(revealed.url.lastIndexOf('/') + 1),
+	)
+	expect(fetchMock).toHaveBeenCalledTimes(1)
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply http destination rejects missing {{webhookUrl}} placeholder', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	const fetchMock = vi.fn()
+	vi.stubGlobal('fetch', fetchMock)
+
+	await expect(
+		applyWebhookUrlForUser({
+			env,
+			userId,
+			username: 'owner',
+			handle: minted.handle,
+			destination: {
+				type: 'http',
+				url: 'https://hooks.example/register',
+				body: '{"ok":true}',
+			},
+		}),
+	).rejects.toThrow('{{webhookUrl}}')
+	expect(fetchMock).not.toHaveBeenCalled()
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply http destination does not follow redirects', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+		expect(init?.redirect).toBe('manual')
+		return new Response(null, {
+			status: 302,
+			headers: { Location: 'https://attacker.example/exfil' },
+		})
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: {
+			type: 'http',
+			url: 'https://hooks.example/register',
+			body: '{"url":"{{webhookUrl}}"}',
+		},
+	})
+
+	expect(applied).toEqual({
+		ok: false,
+		urlHost: 'heykody.dev',
+		httpStatus: 302,
+		remoteId: null,
+		error: 'Destination redirected. Apply does not follow redirects.',
+	})
+	expect(fetchMock).toHaveBeenCalledTimes(1)
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply http destination encodes {{webhookUrl}} in the request URL', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	const revealed = await revealWebhookUrlForWebsite({
+		env,
+		userId,
+		username: 'owner',
+		target: { handle: minted.handle },
+	})
+	const fetchMock = vi.fn(async (url: string) => {
+		expect(url).toBe(
+			`https://hooks.example/register?callback=${encodeURIComponent(revealed.url)}`,
+		)
+		return new Response(JSON.stringify({ id: 7 }), { status: 201 })
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: {
+			type: 'http',
+			method: 'PUT',
+			url: 'https://hooks.example/register?callback={{webhookUrl}}',
+		},
+	})
+
+	expect(applied).toEqual({
+		ok: true,
+		urlHost: 'heykody.dev',
+		httpStatus: 201,
+		remoteId: '7',
+		error: null,
+	})
+	expect(JSON.stringify(applied)).not.toContain(revealed.url)
+	vi.unstubAllGlobals()
+})
+
+test('httpDestinationIncludesWebhookUrlPlaceholder accepts form-encoded {{webhookUrl}}', () => {
+	expect(
+		httpDestinationIncludesWebhookUrlPlaceholder({
+			url: 'https://hooks.example/register',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: `callback=${encodeURIComponent('{{webhookUrl}}')}`,
+		}),
+	).toBe(true)
+})
+
+test('httpDestinationIncludesWebhookUrlPlaceholder rejects form body without placeholder', () => {
+	expect(
+		httpDestinationIncludesWebhookUrlPlaceholder({
+			url: 'https://hooks.example/register',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: 'callback=https%3A%2F%2Fexample.com',
+		}),
+	).toBe(false)
+})
+
+test('webhookUrlApply http destination accepts form-encoded {{webhookUrl}} body', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	const revealed = await revealWebhookUrlForWebsite({
+		env,
+		userId,
+		username: 'owner',
+		target: { handle: minted.handle },
+	})
+	const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+		const body = String(init?.body)
+		expect(body).toContain(encodeURIComponent(revealed.url))
+		return new Response(JSON.stringify({ id: 'form-1' }), { status: 200 })
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: {
+			type: 'http',
+			url: 'https://hooks.example/register',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: `callback=${encodeURIComponent('{{webhookUrl}}')}`,
+		},
+	})
+
+	expect(applied.ok).toBe(true)
+	expect(fetchMock).toHaveBeenCalledTimes(1)
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply redacts percent-encoded webhook URL in destination error bodies', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	const revealed = await revealWebhookUrlForWebsite({
+		env,
+		userId,
+		username: 'owner',
+		target: { handle: minted.handle },
+	})
+	const fetchMock = vi.fn(async () => {
+		return new Response(
+			`invalid callback ${encodeURIComponent(revealed.url)}`,
+			{ status: 400 },
+		)
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: {
+			type: 'http',
+			url: 'https://hooks.example/register',
+			body: '{"url":"{{webhookUrl}}"}',
+		},
+	})
+
+	expect(applied.ok).toBe(false)
+	expect(applied.error ?? '').not.toContain(revealed.url)
+	expect(applied.error ?? '').not.toContain(encodeURIComponent(revealed.url))
+	expect(applied.error ?? '').toContain('[redacted]')
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply redacts Bearer tokens from secretName auth in destination errors', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	const token = 'tok_super_secret_apply_auth'
+	secretMocks.resolveSecretForHost.mockResolvedValue({
+		found: true,
+		value: token,
+		allowedHosts: ['hooks.example'],
+		scope: 'user',
+	})
+	const fetchMock = vi.fn(async () => {
+		return new Response(`unauthorized Bearer ${token}`, { status: 401 })
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: {
+			type: 'http',
+			url: 'https://hooks.example/register',
+			body: '{"url":"{{webhookUrl}}"}',
+			secretName: 'hooksToken',
+		},
+	})
+
+	expect(applied.ok).toBe(false)
+	expect(applied.error ?? '').not.toContain(token)
+	expect(applied.error ?? '').toContain('[redacted]')
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply rejects Authorization header combined with secretName before fetch', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	const fetchMock = vi.fn()
+	vi.stubGlobal('fetch', fetchMock)
+
+	await expect(
+		applyWebhookUrlForUser({
+			env,
+			userId,
+			username: 'owner',
+			handle: minted.handle,
+			destination: {
+				type: 'http',
+				url: 'https://hooks.example/register',
+				headers: { Authorization: 'Bearer manual' },
+				body: '{"url":"{{webhookUrl}}"}',
+				secretName: 'hooksToken',
+			},
+		}),
+	).rejects.toThrow(/Authorization/)
+	expect(fetchMock).not.toHaveBeenCalled()
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApplyDestinationSchema rejects Authorization combined with secretName', () => {
+	const parsed = webhookUrlApplyDestinationSchema.safeParse({
+		type: 'http',
+		url: 'https://hooks.example/register',
+		headers: { Authorization: 'Bearer manual' },
+		body: '{"url":"{{webhookUrl}}"}',
+		secretName: 'hooksToken',
+	})
+	expect(parsed.success).toBe(false)
+})
+
+test('httpDestinationIncludesWebhookUrlPlaceholder ignores URL fragment-only placeholders', () => {
+	expect(
+		httpDestinationIncludesWebhookUrlPlaceholder({
+			url: 'https://hooks.example/register#{{webhookUrl}}',
+			headers: { 'Content-Type': 'application/json' },
+			body: '{"ok":true}',
+		}),
+	).toBe(false)
+})
+
+test('webhookUrlApply redacts refreshed Authorization tokens after 401 retry', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	const initialToken = 'tok_initial_apply_auth'
+	const refreshedToken = 'tok_refreshed_apply_auth'
+	let tokenCalls = 0
+	integrationMocks.getJoinedIntegration.mockResolvedValue({
+		lane: 'user',
+		app: {
+			apiBaseUrl: 'https://hooks.example',
+			requiredHosts: ['hooks.example'],
+		},
+		connection: {
+			name: 'hooks',
+			requiredHosts: ['hooks.example'],
+			usageMode: 'any',
+			allowedPackageIds: [],
+		},
+	})
+	integrationMocks.resolveIntegrationAccessToken.mockImplementation(
+		async () => {
+			tokenCalls += 1
+			return tokenCalls === 1 ? initialToken : refreshedToken
+		},
+	)
+	integrationMocks.assertCanUseIntegration.mockResolvedValue(undefined)
+	integrationMocks.refreshIntegrationTokens.mockResolvedValue(undefined)
+
+	const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+		const auth = new Headers(init?.headers).get('Authorization') ?? ''
+		if (auth.includes(initialToken)) {
+			return new Response('unauthorized', { status: 401 })
+		}
+		return new Response(`invalid ${encodeURIComponent(auth)}`, { status: 400 })
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: {
+			type: 'http',
+			url: 'https://hooks.example/register',
+			body: '{"url":"{{webhookUrl}}"}',
+			integration: 'hooks',
+		},
+	})
+
+	expect(applied.ok).toBe(false)
+	expect(applied.error ?? '').not.toContain(initialToken)
+	expect(applied.error ?? '').not.toContain(refreshedToken)
+	expect(applied.error ?? '').not.toContain(
+		encodeURIComponent(`Bearer ${refreshedToken}`),
+	)
+	expect(applied.error ?? '').not.toContain(encodeURIComponent(refreshedToken))
+	expect(applied.error ?? '').toContain('[redacted]')
+	expect(integrationMocks.refreshIntegrationTokens).toHaveBeenCalled()
+	vi.unstubAllGlobals()
 })

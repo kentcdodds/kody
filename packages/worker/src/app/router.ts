@@ -187,6 +187,8 @@ import {
 } from '#app/handlers/auth-provider.ts'
 import { createConnectOauthHandler } from '#app/handlers/connect-oauth.ts'
 import { createConnectSecretsHandler } from '#app/handlers/connect-secrets.ts'
+import { createConnectWebhookApplyHandler } from '#app/handlers/connect-webhook-apply.ts'
+import { createAccountWebhooksApproveApplyApiHandler } from '#app/handlers/account-webhooks-approve-apply.ts'
 import {
 	createCommunityApiHandler,
 	createCommunityHandler,
@@ -513,6 +515,10 @@ export function createAppRouter(env: Env) {
 			accountWorkflowsApiPost: createAccountWorkflowsApiHandler(env),
 			accountWebhooks: createAccountWebhooksHandler(env),
 			accountWebhooksApi: createAccountWebhooksApiHandler(env),
+			accountWebhooksApproveApplyApi:
+				createAccountWebhooksApproveApplyApiHandler(env),
+			accountWebhooksApproveApplyApiPost:
+				createAccountWebhooksApproveApplyApiHandler(env),
 			accountActivity: createAccountActivityHandler(env),
 			accountActivityDetail: createAccountActivityHandler(env),
 			accountActivityApi: createAccountActivityApiHandler(env),
@@ -600,6 +606,7 @@ export function createAppRouter(env: Env) {
 			stripeWebhook: createStripeWebhookHandler(env),
 			connectOauth: createConnectOauthHandler(env),
 			connectSecrets: createConnectSecretsHandler(env),
+			connectWebhookApply: createConnectWebhookApplyHandler(env),
 			auth: createAuthHandler(env),
 			authProvidersApi: createAuthProvidersApiHandler(env),
 			authProviderStart: createAuthProviderStartHandler(env),

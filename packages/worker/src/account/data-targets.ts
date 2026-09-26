@@ -346,6 +346,8 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'email_sender_identities' },
 	{ kind: 'user_id', table: 'email_sender_rules' },
 	{ kind: 'user_id', table: 'webhook_endpoints' },
+	{ kind: 'user_id', table: 'webhook_apply_destination_pending' },
+	{ kind: 'user_id', table: 'webhook_apply_destination_grants' },
 	{
 		kind: 'user_columns',
 		table: 'platform_feedback',
@@ -789,6 +791,8 @@ export const accountExportRedactedColumnsByTable: Readonly<
 		'url_secret_encrypted',
 		'previous_url_secret_hash',
 	],
+	webhook_apply_destination_pending: ['destination_json'],
+	webhook_apply_destination_grants: ['destination_json'],
 }
 
 // Cross-user export rows can include another user's stable id. Keep the

@@ -192,3 +192,14 @@ runtime path if this budget is raised again.
   lands in the same webhooks MCP domain graph runtime already evaluates: local
   dry-run 3_846_966 against the previous 3_837_000 budget. Reviewed ceiling
   3_857_000.
+- Generic `webhookUrlApply` http destination plus `/connect/webhook-apply`
+  owner-approval grants land on the same webhooks MCP domain graph runtime
+  already evaluates: CI dry-run 3_862_510 against the previous 3_857_000 budget.
+  Reviewed ceiling 3_863_000.
+- Auth-token redaction for webhookUrlApply http/github destinations plus MCP
+  Authorization conflict checks grew the runtime entry: CI dry-run 3_863_102
+  against the previous 3_863_000 budget (plus local auth-redaction helpers).
+  Reviewed ceiling 3_870_000.
+- Generic `webhookUrlApply` http destination + `/connect/webhook-apply` approval
+  UI spill into the platform entry (shared web/connect graph): CI dry-run
+  5_188_429 against the previous 5_182_000 budget. Reviewed ceiling 5_190_000.

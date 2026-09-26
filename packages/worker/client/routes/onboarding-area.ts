@@ -8,3 +8,8 @@ export {
 	OAuthAuthorizeRoute,
 	oauthAuthorizeRouteLoader,
 } from './oauth-authorize.tsx'
+
+export {
+	ConnectWebhookApplyRoute,
+	connectWebhookApplyRouteLoader,
+} from './connect-webhook-apply.tsx'

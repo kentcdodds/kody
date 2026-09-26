@@ -16,6 +16,7 @@ export const routes = route({
 	openaiAppsChallenge: '/.well-known/openai-apps-challenge',
 	connectOauth: '/connect/oauth',
 	connectSecrets: '/connect/secrets',
+	connectWebhookApply: '/connect/webhook-apply',
 	integrationLogo: '/integrations/logos/:integrationSlug',
 	providerMarkLogo: '/integrations/provider-marks/:slug',
 	accountIntegrations: '/account/integrations',
@@ -80,6 +81,10 @@ export const routes = route({
 	// which is where mint / reveal / rotate / enable-disable live.
 	accountWebhooks: '/account/webhooks',
 	accountWebhooksApi: '/account/webhooks.json',
+	accountWebhooksApproveApplyApi: '/account/webhooks/approve-apply.json',
+	accountWebhooksApproveApplyApiPost: post(
+		'/account/webhooks/approve-apply.json',
+	),
 	accountActivity: '/account/activity',
 	accountActivityDetail: '/account/activity/:runId',
 	accountActivityApi: '/account/activity.json',

@@ -12,7 +12,7 @@ import { webhookSyntheticDispatchCapability } from './webhook-synthetic-dispatch
 export const webhooksDomain = defineDomain({
 	name: capabilityDomainNames.webhooks,
 	description:
-		'Package-declared inbound webhooks with minted handles. Rotate keeps the previous URL live briefly. Register first-class destinations with webhookUrlApply — credential URLs never appear in tool output.',
+		'Package-declared inbound webhooks with minted handles. Rotate keeps the previous URL live briefly. Register destinations with webhookUrlApply (github, or http with {{webhookUrl}} substitution after interactive owner confirm) — credential URLs never appear in tool output.',
 	keywords: [
 		'webhook',
 		'inbound',
@@ -20,6 +20,7 @@ export const webhooksDomain = defineDomain({
 		'package.json#kody.webhooks',
 		'sentry',
 		'github',
+		'http',
 		'stripe',
 		'signature',
 		'hmac',
