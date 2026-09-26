@@ -68,6 +68,11 @@ jobs:
 		{
 			file: 'deploy.yml',
 			line: 10,
+			message: 'needs.first is not declared in job "second" needs.',
+		},
+		{
+			file: 'deploy.yml',
+			line: 10,
 			message:
 				'needs.missing references a job id that does not exist in this workflow.',
 		},
@@ -76,6 +81,61 @@ jobs:
 			line: 9,
 			message:
 				'needs: missing-job references a job id that does not exist in this workflow.',
+		},
+	])
+})
+
+test('rejects a flow-list needs typo and an undeclared needs context', () => {
+	const source = `
+jobs:
+  sha-guard:
+    steps:
+      - run: echo hi
+  deploy:
+    needs: [sha-guard, typo]
+    if: needs.sha-guard.outputs.ok == 'true'
+    steps:
+      - run: echo hi
+  other:
+    if: needs.sha-guard.outputs.ok == 'true'
+    steps:
+      - run: echo hi
+`
+	expect(checkWorkflowSource('deploy.yml', source)).toEqual([
+		{
+			file: 'deploy.yml',
+			line: 7,
+			message:
+				'needs: typo references a job id that does not exist in this workflow.',
+		},
+		{
+			file: 'deploy.yml',
+			line: 12,
+			message: 'needs.sha-guard is not declared in job "other" needs.',
+		},
+	])
+})
+
+test('does not treat a with: id as a step id', () => {
+	const source = `
+jobs:
+  deploy:
+    steps:
+      - name: Config
+        id: runtime_config
+        run: echo hi
+      - name: Action
+        uses: actions/example@v1
+        with:
+          id: runtime_config
+      - run: echo \${{ steps.ghost.outputs.unused }}
+`
+	expect(checkWorkflowSource('deploy.yml', source)).toEqual([
+		{
+			file: 'deploy.yml',
+			line: 12,
+			message:
+				'steps.ghost.outputs references a step id that does not exist in job "deploy".',
 		},
 	])
 })

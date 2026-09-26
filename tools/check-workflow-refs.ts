@@ -13,11 +13,13 @@ import { isExecutedDirectly } from './node-runtime.ts'
 export const defaultWorkflowDirectory = path.join('.github', 'workflows')
 
 const jobIdPattern = /^ {2}([A-Za-z0-9_-]+):\s*$/
-const stepIdPattern = /^\s+id:\s*([A-Za-z0-9_-]+)\s*$/
+const stepIdPattern = /^ {8}id:\s*([A-Za-z0-9_-]+)\s*$/
+const stepIdOnDashPattern = /^ {6}- id:\s*([A-Za-z0-9_-]+)\s*$/
 const stepOutputRefPattern = /\bsteps\.([A-Za-z0-9_-]+)\.outputs\b/g
 const needsRefPattern = /\bneeds\.([A-Za-z0-9_-]+)\b/g
 const needsListItemPattern = /^ {6}-\s+([A-Za-z0-9_-]+)\s*$/
 const needsInlinePattern = /^ {4}needs:\s+([A-Za-z0-9_-]+)\s*$/
+const needsFlowListPattern = /^ {4}needs:\s*\[([^\]]*)\]\s*$/
 const needsListHeaderPattern = /^ {4}needs:\s*$/
 
 export type WorkflowRefIssue = {
@@ -77,10 +79,19 @@ function collectJobBlocks(source: string): Array<JobBlock> {
 function collectStepIds(job: JobBlock): Set<string> {
 	const ids = new Set<string>()
 	for (const line of job.lines) {
-		const match = stepIdPattern.exec(stripComment(line))
+		const stripped = stripComment(line)
+		const match =
+			stepIdPattern.exec(stripped) ?? stepIdOnDashPattern.exec(stripped)
 		if (match?.[1]) ids.add(match[1])
 	}
 	return ids
+}
+
+function parseNeedsFlowIds(list: string): Array<string> {
+	return list
+		.split(',')
+		.map((part) => part.trim().replace(/^['"]|['"]$/g, ''))
+		.filter((id) => /^[A-Za-z0-9_-]+$/.test(id))
 }
 
 function collectNeedsListIds(
@@ -90,6 +101,14 @@ function collectNeedsListIds(
 	let inNeedsList = false
 	for (const [offset, rawLine] of job.lines.entries()) {
 		const line = stripComment(rawLine)
+		const flow = needsFlowListPattern.exec(line)
+		if (flow?.[1] !== undefined) {
+			for (const id of parseNeedsFlowIds(flow[1])) {
+				refs.push({ id, line: job.startLine + offset })
+			}
+			inNeedsList = false
+			continue
+		}
 		const inline = needsInlinePattern.exec(line)
 		if (inline?.[1]) {
 			refs.push({ id: inline[1], line: job.startLine + offset })
@@ -123,6 +142,8 @@ export function checkWorkflowSource(
 
 	for (const job of jobs) {
 		const stepIds = collectStepIds(job)
+		const declaredNeeds = collectNeedsListIds(job)
+		const declaredNeedIds = new Set(declaredNeeds.map((needed) => needed.id))
 		for (const [offset, rawLine] of job.lines.entries()) {
 			const line = stripComment(rawLine)
 			const lineNumber = job.startLine + offset
@@ -139,16 +160,26 @@ export function checkWorkflowSource(
 
 			for (const match of line.matchAll(needsRefPattern)) {
 				const neededJobId = match[1]
-				if (!neededJobId || jobIds.has(neededJobId)) continue
-				issues.push({
-					file,
-					line: lineNumber,
-					message: `needs.${neededJobId} references a job id that does not exist in this workflow.`,
-				})
+				if (!neededJobId) continue
+				if (!jobIds.has(neededJobId)) {
+					issues.push({
+						file,
+						line: lineNumber,
+						message: `needs.${neededJobId} references a job id that does not exist in this workflow.`,
+					})
+					continue
+				}
+				if (!declaredNeedIds.has(neededJobId)) {
+					issues.push({
+						file,
+						line: lineNumber,
+						message: `needs.${neededJobId} is not declared in job "${job.id}" needs.`,
+					})
+				}
 			}
 		}
 
-		for (const needed of collectNeedsListIds(job)) {
+		for (const needed of declaredNeeds) {
 			if (jobIds.has(needed.id)) continue
 			issues.push({
 				file,
