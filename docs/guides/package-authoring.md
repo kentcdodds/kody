@@ -4,9 +4,10 @@ title: Package authoring
 summary:
   START HERE when creating or materially changing a Kody package: package
   shape, required README.md (human) and AGENTS.md (agent), README Intent
-  section, per-export JSDoc (search Purpose), personal-details hygiene
-  before going public, secret-using package approval checklist, and
-  scope-update guidance without adding new primitives.
+  section, per-export JSDoc (search Purpose), strict runtime input
+  checking for agent-facing exports, personal-details hygiene before going
+  public, secret-using package approval checklist, and scope-update
+  guidance without adding new primitives.
 category: platform
 ---
 
@@ -130,7 +131,8 @@ Call the root export from `execute` after publish.
 
 ## Edge cases
 
-…
+Reject unknown input keys on publish/send exports; see
+`guide:package_authoring#runtime-input-checking`.
 ````
 
 ## Export JSDoc
@@ -143,7 +145,9 @@ here, not in MCP server instructions or account memories
 ([Where agent guidance lives](./agent-guidance.md)).
 
 TypeScript types and the export name give call shape when present. They do not
-say **when** or **why** to pick one export over another. README `## Intent` is
+say **when** or **why** to pick one export over another, and they do not protect
+callers who pass plain objects through `execute` (see
+[Runtime input checking](#runtime-input-checking)). README `## Intent` is
 package-scoped and often does not name every export. Neither replaces per-export
 JSDoc.
 
@@ -191,6 +195,63 @@ export default async function formatReport(input: {
 
 Treat missing or generic Purpose (`Package export.`) as unfinished work, the
 same as a missing README `## Intent` section.
+
+## Runtime input checking
+
+Agents call package exports through `execute` with plain objects. TypeScript
+types on the export do not run at call time, so a guessed or mistyped key is
+easy to ship. For exports that publish, send, write remote records, or otherwise
+change external intent, validate inputs at runtime and prefer one clear
+contract.
+
+1. **Fail on unknown keys (strict).** Parse the call object with a schema that
+   rejects unrecognized fields. Prefer
+   [`remix/data-schema`](https://www.npmjs.com/package/@remix-run/data-schema)
+   over Zod when choosing a schema library for packages (smaller and faster in
+   Worker isolates). Remix Schema's `object()` strips unknown keys by default —
+   pass `{ unknownKeys: 'error' }` for agent-facing inputs:
+
+   ```ts
+   import { object, optional, parse, string } from 'remix/data-schema'
+
+   const createPostInput = object(
+   	{
+   		text: string(),
+   		reply: optional(
+   			object({ in_reply_to_tweet_id: string() }, { unknownKeys: 'error' }),
+   		),
+   	},
+   	{ unknownKeys: 'error' },
+   )
+
+   export default async function createPost(raw: unknown) {
+   	const input = parse(createPostInput, raw)
+   	// …
+   }
+   ```
+
+2. **Do not silently strip unknown params when a wrong key could change
+   intent.** Examples: reply vs new post, send vs draft, update vs create. If
+   the caller meant something the schema does not accept, reject with an error
+   that names the unknown key and the accepted shape. Silent drop turns a wrong
+   call into a successful action with the wrong meaning.
+
+3. **One documented contract — no alias sprawl.** Prefer a single canonical
+   field name. If a package intentionally accepts a synonym, map it explicitly
+   in code and document that mapping in export JSDoc (and `AGENTS.md` when it is
+   an agent gotcha). Do not invent broad alias or compat layers for guessed
+   keys.
+
+4. **Surface intent-critical mode in dry-run and confirm results.** When the
+   export supports `dryRun` (or similar preview) or returns a confirmation
+   payload, include the fields that show what will happen — for example that
+   this is a reply to a specific id, or a new standalone post. Agents and humans
+   confirm mode from that result, not from the raw input alone. See
+   [Package lifecycle](./package-lifecycle.md) for when to use `dryRun` before
+   live mutations.
+
+Document the accepted input shape in export JSDoc `@param` / `@example`. Put
+agent-facing gotchas (strict keys, dry-run mode fields) in `AGENTS.md`.
 
 ## Package app routing
 
