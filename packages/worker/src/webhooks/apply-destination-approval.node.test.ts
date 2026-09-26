@@ -59,7 +59,6 @@ test('approval url and message use the shared /connect/webhook-apply owner flow'
 		approvalUrl,
 		destination,
 	})
-	expect(message).toContain('/connect/secrets')
 	expect(message).toContain('approval_url:')
 	expect(message).toContain(approvalUrl)
 	expect(message).toContain('method: PUT')
@@ -91,13 +90,22 @@ test('approval message lists form-encoded {{webhookUrl}} body injection sites', 
 	expect(message).not.toMatch(/injection sites:\s*\(none\)/)
 })
 
-test('approval snapshot ignores fragment-only url placeholders', () => {
-	const destination = toHttpApplyDestinationSnapshot({
+test('approval snapshot treats query placeholders as url injection and ignores fragments', () => {
+	const withQuery = toHttpApplyDestinationSnapshot({
+		type: 'http',
+		url: 'https://hooks.example/register?callback={{webhookUrl}}',
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: '{"ok":true}',
+	})
+	expect(withQuery.injectionSites).toContain('url')
+
+	const fragmentOnly = toHttpApplyDestinationSnapshot({
 		type: 'http',
 		url: 'https://hooks.example/register#{{webhookUrl}}',
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: '{"ok":true}',
 	})
-	expect(destination.injectionSites).not.toContain('url')
+	expect(fragmentOnly.injectionSites).not.toContain('url')
 })

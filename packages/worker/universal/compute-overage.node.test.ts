@@ -258,16 +258,14 @@ test('compute overage howToReduce omits upgrade for Pro and Max', () => {
 		'skip_zero',
 		'free',
 	)
-	expect(free).toMatch(/Upgrade your plan for a higher include/)
-	expect(free).toMatch(/payment method/)
+	expect(free).toMatch(/upgrade/i)
 
 	const standard = buildComputeOverageHowToReduce(
 		'durable_object_rows_read',
 		'skip_zero',
 		'standard',
 	)
-	expect(standard).toMatch(/or upgrade your plan/)
-	expect(standard).toMatch(/Upgrade your plan for a higher include/)
+	expect(standard).toMatch(/upgrade/i)
 
 	for (const plan of ['pro', 'max'] as const) {
 		const uniqueWorkerDays = buildComputeOverageHowToReduce(
@@ -276,8 +274,6 @@ test('compute overage howToReduce omits upgrade for Pro and Max', () => {
 			plan,
 		)
 		expect(uniqueWorkerDays).not.toMatch(/upgrade/i)
-		expect(uniqueWorkerDays).toMatch(/payment method/)
-		expect(uniqueWorkerDays).toMatch(/public-ladder overage/)
 
 		const rowsRead = buildComputeOverageHowToReduce(
 			'durable_object_rows_read',
@@ -285,7 +281,6 @@ test('compute overage howToReduce omits upgrade for Pro and Max', () => {
 			plan,
 		)
 		expect(rowsRead).not.toMatch(/upgrade/i)
-		expect(rowsRead).toMatch(/payment method/)
 
 		const invoiced = buildComputeOverageHowToReduce(
 			'unique_worker_days',

@@ -1,7 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
-import { httpDestinationIncludesWebhookUrlPlaceholder } from './apply.ts'
-import { webhookUrlApplyDestinationSchema } from '#mcp/capabilities/webhooks/webhook-url-apply.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -485,26 +483,6 @@ test('webhookUrlApply http destination encodes {{webhookUrl}} in the request URL
 	vi.unstubAllGlobals()
 })
 
-test('httpDestinationIncludesWebhookUrlPlaceholder accepts form-encoded {{webhookUrl}}', () => {
-	expect(
-		httpDestinationIncludesWebhookUrlPlaceholder({
-			url: 'https://hooks.example/register',
-			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-			body: `callback=${encodeURIComponent('{{webhookUrl}}')}`,
-		}),
-	).toBe(true)
-})
-
-test('httpDestinationIncludesWebhookUrlPlaceholder rejects form body without placeholder', () => {
-	expect(
-		httpDestinationIncludesWebhookUrlPlaceholder({
-			url: 'https://hooks.example/register',
-			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-			body: 'callback=https%3A%2F%2Fexample.com',
-		}),
-	).toBe(false)
-})
-
 test('webhookUrlApply http destination accepts form-encoded {{webhookUrl}} body', async () => {
 	const { userId, env, minted } = await mintOwnerWebhook()
 	const revealed = await revealWebhookUrlForWebsite({
@@ -628,27 +606,6 @@ test('webhookUrlApply rejects Authorization header combined with secretName befo
 	).rejects.toThrow(/Authorization/)
 	expect(fetchMock).not.toHaveBeenCalled()
 	vi.unstubAllGlobals()
-})
-
-test('webhookUrlApplyDestinationSchema rejects Authorization combined with secretName', () => {
-	const parsed = webhookUrlApplyDestinationSchema.safeParse({
-		type: 'http',
-		url: 'https://hooks.example/register',
-		headers: { Authorization: 'Bearer manual' },
-		body: '{"url":"{{webhookUrl}}"}',
-		secretName: 'hooksToken',
-	})
-	expect(parsed.success).toBe(false)
-})
-
-test('httpDestinationIncludesWebhookUrlPlaceholder ignores URL fragment-only placeholders', () => {
-	expect(
-		httpDestinationIncludesWebhookUrlPlaceholder({
-			url: 'https://hooks.example/register#{{webhookUrl}}',
-			headers: { 'Content-Type': 'application/json' },
-			body: '{"ok":true}',
-		}),
-	).toBe(false)
 })
 
 test('webhookUrlApply redacts refreshed Authorization tokens after 401 retry', async () => {

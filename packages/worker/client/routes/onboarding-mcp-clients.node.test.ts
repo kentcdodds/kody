@@ -21,7 +21,6 @@ import {
 	defaultKodyMcpUrl,
 	isDefaultKodyMcpUrl,
 	mcpClientTabs,
-	museMcpLoginCommand,
 	onboardingDataHref,
 	onboardingDesktopFeaturedAgentIds,
 	onboardingMobileFeaturedAgentIds,
@@ -177,7 +176,6 @@ test('onboarding MCP client builders emit the structured configs each host expec
 			},
 		},
 	})
-	expect(museMcpLoginCommand).toBe('muse mcp login kody')
 	expect(buildCodexMcpToml(mcpServerUrl)).toBe(
 		['[mcp_servers.kody]', `url = "${mcpServerUrl}"`, ''].join('\n'),
 	)

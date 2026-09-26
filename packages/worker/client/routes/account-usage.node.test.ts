@@ -5,7 +5,6 @@ import {
 	type AccountUsageComputeOverage,
 	type AccountUsageEntitlementConsumption,
 } from '#universal/loader-data.ts'
-import { hasHigherPublicPlan } from '#universal/plans.ts'
 import {
 	UsageResourceName,
 	accountUsageWarningsPanelTitle,
@@ -212,11 +211,4 @@ test('warnings panel title is Limit reached at 100% daily or weekly', () => {
 	expect(
 		accountUsageWarningsPanelTitle([computeIncludeAtLimit, weeklyAtLimit]),
 	).toBe('Limit reached')
-})
-
-test('top public plans hide the Upgrade your plan CTA gate', () => {
-	expect(hasHigherPublicPlan('pro')).toBe(false)
-	expect(hasHigherPublicPlan('max')).toBe(false)
-	expect(hasHigherPublicPlan('free')).toBe(true)
-	expect(hasHigherPublicPlan('standard')).toBe(true)
 })

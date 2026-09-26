@@ -574,15 +574,13 @@ test('webhookUrlApply http destination requires owner website approval before ou
 	})
 
 	const ctx = createCapabilityContext()
-	await expect(
-		webhookUrlApplyCapability.handler({ handle: 'whh_ep-1', destination }, ctx),
-	).rejects.toThrow(/approval_url:/)
-	await expect(
-		webhookUrlApplyCapability.handler({ handle: 'whh_ep-1', destination }, ctx),
-	).rejects.toThrow('/connect/webhook-apply')
-	await expect(
-		webhookUrlApplyCapability.handler({ handle: 'whh_ep-1', destination }, ctx),
-	).rejects.toThrow('https://hooks.example/register')
+	const approvalRequired = await webhookUrlApplyCapability
+		.handler({ handle: 'whh_ep-1', destination }, ctx)
+		.catch((error: unknown) => error)
+	expect(approvalRequired).toBeInstanceOf(Error)
+	expect(String(approvalRequired)).toMatch(/approval_url:/)
+	expect(String(approvalRequired)).toContain('/connect/webhook-apply')
+	expect(String(approvalRequired)).toContain('https://hooks.example/register')
 	expect(mockModule.applyWebhookUrlForUser).not.toHaveBeenCalled()
 
 	await expect(

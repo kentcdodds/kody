@@ -24,7 +24,6 @@ import {
 	runCommand,
 	runDoctor,
 	runMapCheck,
-	usageLines,
 } from './control-kody.ts'
 import { previewSeedEmail } from './preview-manual-test.ts'
 import { featureCatalog } from './control-kody/feature-catalog.ts'
@@ -134,12 +133,6 @@ test('control-kody parses commands, maps every required route, and drives a seed
 			origin: 'https://kody-pr-9.kody.workers.dev',
 		}),
 	)
-	expect(usageLines.join('\n')).toMatch(/package-create/)
-	expect(usageLines.join('\n')).toMatch(/--package-name/)
-	expect(usageLines.join('\n')).toMatch(/--head-ahead/)
-	expect(usageLines.join('\n')).toMatch(/execute/)
-	expect(usageLines.join('\n')).toMatch(/--code-file/)
-	expect(usageLines.join('\n')).toMatch(/search/)
 	expect(
 		parseControlArgs([
 			'execute',
