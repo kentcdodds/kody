@@ -720,7 +720,7 @@ test('decodeHmacKeyMaterial accepts encodings and rejects invalid input without 
 })
 
 test('secretJwtSign accepts opaque {{secret:…}} refs from packageSecrets.get', async () => {
-	const { privateKey, publicKey } = createKeyPair()
+	const { privateKey } = createKeyPair()
 	const resolveSecretSpy = vi.spyOn(secretService, 'resolveSecret')
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
@@ -760,7 +760,6 @@ test('secretJwtSign accepts opaque {{secret:…}} refs from packageSecrets.get',
 			}),
 		)
 		expect(JSON.stringify(signed)).not.toContain('PRIVATE KEY')
-		expect(publicKey).toContain('PUBLIC KEY')
 	} finally {
 		resolveSecretSpy.mockRestore()
 	}

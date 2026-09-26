@@ -1,8 +1,5 @@
 import { expect, test } from 'vitest'
-import {
-	buildSecretPlaceholder,
-	parseSecretNameOrPlaceholder,
-} from './placeholders.ts'
+import { parseSecretNameOrPlaceholder } from './placeholders.ts'
 
 test('parseSecretNameOrPlaceholder accepts bare names and opaque refs', () => {
 	expect(parseSecretNameOrPlaceholder('apiToken', 'field')).toEqual({
@@ -17,7 +14,7 @@ test('parseSecretNameOrPlaceholder accepts bare names and opaque refs', () => {
 	})
 	expect(
 		parseSecretNameOrPlaceholder(
-			buildSecretPlaceholder({ name: 'mountedKey', scope: 'package' }),
+			'{{secret:mountedKey|scope=package}}',
 			'field',
 		),
 	).toEqual({

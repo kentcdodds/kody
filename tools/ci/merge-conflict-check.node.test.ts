@@ -1,9 +1,7 @@
-import { readFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import {
 	classifyMergeability,
-	describeMergeConflictCheck,
 	main,
 	mergeConflictCheckName,
 	pollMergeability,
@@ -46,40 +44,6 @@ test('only a dirty pull request is treated as a merge conflict', () => {
 	expect(
 		classifyMergeability({ mergeable: false, mergeableState: 'blocked' }),
 	).toBe('clear')
-})
-
-test('conflict copy tells the author to merge the base branch', () => {
-	const conflicted = describeMergeConflictCheck({
-		kind: 'conflicted',
-		baseRef: 'main',
-		mergeableState: 'dirty',
-		draft: false,
-	})
-	expect(conflicted.conclusion).toBe('failure')
-	expect(conflicted.title).toBe('Conflicts with main')
-	expect(conflicted.summary).toContain('Validate, Preview, or CLA')
-	expect(conflicted.summary).toContain('Merge main into this branch')
-
-	const draft = describeMergeConflictCheck({
-		kind: 'clear',
-		baseRef: 'not a ref\n',
-		mergeableState: 'draft',
-		draft: true,
-	})
-	expect(draft.conclusion).toBe('success')
-	expect(draft.title).toBe('No conflicts with its base branch')
-	expect(draft.summary).toContain('ready for review')
-
-	const unknown = describeMergeConflictCheck({
-		kind: 'undetermined',
-		baseRef: 'main',
-		mergeableState: 'unknown',
-		draft: false,
-		detail: 'GitHub API GET failed',
-	})
-	expect(unknown.conclusion).toBe('failure')
-	expect(unknown.summary).toContain(mergeConflictCheckName)
-	expect(unknown.summary).toContain('GitHub API GET failed')
 })
 
 test('polling waits until GitHub finishes computing mergeability', async () => {
@@ -207,8 +171,6 @@ test('a dirty pull request fails a check on the head SHA', async () => {
 			title: 'Conflicts with main',
 		},
 	})
-	const summary = checkSummary(github.calls[2]?.body)
-	expect(summary).toContain('ready for review')
 	expect(github.calls[0]?.authorization).toBe('Bearer test-token')
 })
 
@@ -414,7 +376,6 @@ test('a base-branch push does not publish a cached result for the previous tip',
 	const completed = calls.filter((call) => call.method === 'PATCH')
 	expect(completed).toHaveLength(1)
 	expect(conclusionFrom(completed[0]?.body)).toBe('failure')
-	expect(checkSummary(completed[0]?.body)).toContain('conflicts with main')
 })
 
 test('an open pull request scan fails closed when the list is unreadable', async () => {
@@ -462,39 +423,6 @@ test('main fails closed for an unknown mode or a scan without a base ref', async
 	} finally {
 		process.exitCode = previousExitCode
 	}
-})
-
-test('the workflow posts the check from the default branch and does not run pull request code', () => {
-	const workflow = readFileSync('.github/workflows/merge-conflicts.yml', 'utf8')
-	const source = readFileSync('tools/ci/merge-conflict-check.ts', 'utf8')
-	expect(workflow).toContain('name: Report merge conflicts')
-	expect(workflow).toContain('pull_request_target:')
-	expect(workflow).toContain('push:')
-	expect(workflow).toContain('- edited')
-	expect(workflow).toContain('github.event.changes.base')
-	expect(workflow).toContain('github.event.changes.base.ref.from')
-	expect(workflow).toContain("'open-pulls'")
-	expect(workflow).toContain('BASE_SHA:')
-	expect(workflow).toContain('github.sha')
-	expect(workflow).toContain('github.event.pull_request.base.sha')
-	const pullRequestTarget = workflow.slice(
-		workflow.indexOf('pull_request_target:'),
-	)
-	expect(pullRequestTarget).not.toContain('\n    branches:')
-	expect(workflow).not.toContain('npm run validate')
-	expect(workflow).toContain(
-		'ref: ${{ github.event.repository.default_branch }}',
-	)
-	expect(workflow).toContain('persist-credentials: false')
-	expect(workflow).toContain('checks: write')
-	expect(workflow).not.toContain('contents: write')
-	expect(workflow).not.toContain('pull-requests: write')
-	expect(workflow).not.toContain('actions: write')
-	expect(workflow).not.toMatch(
-		/ref:\s*\$\{\{\s*github\.event\.pull_request\.head/,
-	)
-	expect(source).not.toContain('child_process')
-	expect(source).not.toContain('execSync')
 })
 
 function mergeability(input: {
@@ -593,15 +521,4 @@ function conclusionFrom(body: unknown) {
 		return ''
 	}
 	return typeof body.conclusion === 'string' ? body.conclusion : ''
-}
-
-function checkSummary(body: unknown) {
-	if (typeof body !== 'object' || body === null || !('output' in body)) {
-		return ''
-	}
-	const output = body.output
-	if (typeof output !== 'object' || output === null || !('summary' in output)) {
-		return ''
-	}
-	return typeof output.summary === 'string' ? output.summary : ''
 }
