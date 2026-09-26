@@ -17,6 +17,7 @@ import {
 	parseKodyPackageSpecifier,
 	packageSpecifierPrefix,
 	resolveSavedPackageImport,
+	SavedPackageNotFoundError,
 } from './package-import-resolution.ts'
 import { loadPublishedBundleArtifactByIdentity } from './published-bundle-artifacts.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './published-source-dependencies.ts'
@@ -230,9 +231,7 @@ async function ensurePackageLoaded(
 				packageName: parsed.packageName,
 			})
 		}
-		throw new Error(
-			`Saved package "${parsed.packageName}" was not found for this user.`,
-		)
+		throw new SavedPackageNotFoundError(parsed.packageName)
 	}
 	const { row } = resolution
 	const loaded = await loadPackageSourceBySourceId({

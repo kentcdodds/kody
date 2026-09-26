@@ -20,6 +20,7 @@ import {
 	parseKodyPackageSpecifier,
 	packageSpecifierPrefix,
 	resolveSavedPackageImport,
+	SavedPackageNotFoundError,
 } from './package-import-resolution.ts'
 import {
 	collectStaticKodyPackageImportsFromFiles,
@@ -221,11 +222,12 @@ export async function resolveDirectKodyDependenciesForEntryPoint(input: {
 					userId: input.userId,
 					packageIdOrKodyId: parsed.packageName,
 				})
-				throw new Error(
-					plainRepo
-						? buildPlainRepoPromotionErrorMessage(parsed.packageName)
-						: `Saved package "${parsed.packageName}" was not found for this user.`,
-				)
+				if (plainRepo) {
+					throw new Error(
+						buildPlainRepoPromotionErrorMessage(parsed.packageName),
+					)
+				}
+				throw new SavedPackageNotFoundError(parsed.packageName)
 			}
 			const { row } = resolution
 			const loaded =

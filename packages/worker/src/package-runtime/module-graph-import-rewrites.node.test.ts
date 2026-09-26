@@ -650,9 +650,12 @@ test('buildKodyModuleBundle rejects kody id shorthand imports', async () => {
 	mockModule.getSavedPackageByName.mockResolvedValue(null)
 
 	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+	const { SavedPackageNotFoundError } =
+		await import('./package-import-resolution.ts')
 
-	await expect(
-		buildKodyModuleBundle({
+	let thrown: unknown
+	try {
+		await buildKodyModuleBundle({
 			env: {
 				APP_DB: {},
 				REPO_SESSION: {},
@@ -674,8 +677,12 @@ test('buildKodyModuleBundle rejects kody id shorthand imports', async () => {
 					'import followUp from "kody:@example-package/follow-up-on-pr-agent"\nexport default followUp\n',
 			},
 			entryPoint: 'index.js',
-		}),
-	).rejects.toThrow(
+		})
+	} catch (error) {
+		thrown = error
+	}
+	expect(thrown).toBeInstanceOf(SavedPackageNotFoundError)
+	expect((thrown as Error).message).toBe(
 		'Saved package "@example-package/follow-up-on-pr-agent" was not found for this user.',
 	)
 
