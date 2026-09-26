@@ -126,8 +126,10 @@ only.
 
 Deployed by `.github/workflows/deploy.yml` (path-filtered job, like the backup
 control plane) with `npm run status:deploy`. The `CLOUDFLARE_API_TOKEN` Worker
-secret (Email Sending permission) is synced at deploy time; without it, alert
-emails are skipped and logged.
+secret is synced at deploy time from the Email Sending-only
+`CLOUDFLARE_STATUS_API_TOKEN` GitHub secret (never the deploy token); the deploy
+fails when that secret is unset. Without the Worker secret, alert emails are
+skipped and logged.
 
 Wrangler attaches `status.kody.codes` as a custom domain. The deploy healthcheck
 probes that host's `/health`. Other component probes do not depend on the status

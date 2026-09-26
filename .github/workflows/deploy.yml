@@ -439,6 +439,30 @@ jobs:
           node-version: 26
           cache: npm
 
+      # Cloudflare token split (#2010). CLOUDFLARE_API_TOKEN is the deploy
+      # token: wrangler and tools/ci authenticate with it, and it is never
+      # uploaded to a Worker. Each Worker's CLOUDFLARE_API_TOKEN secret comes
+      # from its own narrower GitHub secret, overwritten on every sync so no
+      # Worker keeps a stale deploy-scope value:
+      #   kody-production, kody-platform <- CLOUDFLARE_APP_API_TOKEN
+      #   kody-runtime                   <- CLOUDFLARE_RUNTIME_API_TOKEN
+      #   kody-status                    <- CLOUDFLARE_STATUS_API_TOKEN
+      # There is no fallback to the deploy token. Check before any resource,
+      # migration, or secret mutation so a missing token fails the deploy
+      # instead of leaving it half-applied.
+      - name: 🔒 Require Worker-scoped Cloudflare tokens
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_APP_API_TOKEN: ${{ secrets.CLOUDFLARE_APP_API_TOKEN }}
+          CLOUDFLARE_RUNTIME_API_TOKEN:
+            ${{ secrets.CLOUDFLARE_RUNTIME_API_TOKEN }}
+          CLOUDFLARE_STATUS_API_TOKEN:
+            ${{ secrets.CLOUDFLARE_STATUS_API_TOKEN }}
+        run: >
+          node tools/ci/check-worker-cloudflare-tokens.ts
+          CLOUDFLARE_APP_API_TOKEN CLOUDFLARE_RUNTIME_API_TOKEN
+          CLOUDFLARE_STATUS_API_TOKEN
+
       - name: 📥 Install Dependencies
         run: npm ci
 
@@ -506,6 +530,7 @@ jobs:
       - name: 🔐 Sync Cloudflare Secrets (bulk)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_APP_API_TOKEN: ${{ secrets.CLOUDFLARE_APP_API_TOKEN }}
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
           COOKIE_SECRET: ${{ secrets.COOKIE_SECRET }}
           SECRET_STORE_KEY: ${{ secrets.SECRET_STORE_KEY }}
@@ -538,8 +563,8 @@ jobs:
           node tools/ci/sync-worker-secrets.ts --env production --config
           "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET
           --set-from-env-optional SECRET_STORE_KEY --set-from-env-optional
-          AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN
-          --set-from-env-optional CLOUDFLARE_API_TOKEN --set-from-env-optional
+          AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --set-from-env
+          CLOUDFLARE_API_TOKEN=CLOUDFLARE_APP_API_TOKEN --set-from-env-optional
           CAPABILITY_REINDEX_SECRET --set-from-env-optional GITHUB_CLIENT_ID
           --set-from-env-optional GITHUB_CLIENT_SECRET --set-from-env-optional
           GOOGLE_CLIENT_ID --set-from-env-optional GOOGLE_CLIENT_SECRET
@@ -564,8 +589,8 @@ jobs:
       # runtime-Worker compromise cannot reach them.
       # The runtime Worker's CLOUDFLARE_API_TOKEN comes from the narrower
       # CLOUDFLARE_RUNTIME_API_TOKEN GitHub secret (Email Sending + Artifacts
-      # only; see docs/contributing/environment-variables.md). It falls back
-      # to the deploy token until that secret exists.
+      # only; see docs/contributing/environment-variables.md). It is required
+      # and never falls back to the deploy token.
       # --env "" with --name: wrangler secret bulk still suffixes -<env>
       # even when --name is set, so --env production would write
       # COOKIE_SECRET to kody-runtime-production while deploy uploads
@@ -577,8 +602,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_RUNTIME_API_TOKEN:
-            ${{ secrets.CLOUDFLARE_RUNTIME_API_TOKEN ||
-            secrets.CLOUDFLARE_API_TOKEN }}
+            ${{ secrets.CLOUDFLARE_RUNTIME_API_TOKEN }}
           WRANGLER_CONFIG:
             ${{ steps.runtime_config.outputs.runtime_wrangler_config }}
           COOKIE_SECRET: ${{ secrets.COOKIE_SECRET }}
@@ -589,8 +613,7 @@ jobs:
           node tools/ci/sync-worker-secrets.ts --env "" --name kody-runtime
           --config "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET
           --set-from-env-optional SECRET_STORE_KEY --set-from-env-optional
-          AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN
-          --set-from-env-optional
+          AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --set-from-env
           CLOUDFLARE_API_TOKEN=CLOUDFLARE_RUNTIME_API_TOKEN
 
       # Platform worker is trusted (same secret set as origin): MCP Durable
@@ -602,6 +625,7 @@ jobs:
           steps.resources.outputs.origin_deploy_mode == 'fresh'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_APP_API_TOKEN: ${{ secrets.CLOUDFLARE_APP_API_TOKEN }}
           WRANGLER_CONFIG:
             ${{ steps.platform_config.outputs.platform_wrangler_config }}
           COOKIE_SECRET: ${{ secrets.COOKIE_SECRET }}
@@ -634,8 +658,8 @@ jobs:
           node tools/ci/sync-worker-secrets.ts --env "" --name kody-platform
           --config "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET
           --set-from-env-optional SECRET_STORE_KEY --set-from-env-optional
-          AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN
-          --set-from-env-optional CLOUDFLARE_API_TOKEN --set-from-env-optional
+          AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --set-from-env
+          CLOUDFLARE_API_TOKEN=CLOUDFLARE_APP_API_TOKEN --set-from-env-optional
           CAPABILITY_REINDEX_SECRET --set-from-env-optional GITHUB_CLIENT_ID
           --set-from-env-optional GITHUB_CLIENT_SECRET --set-from-env-optional
           GOOGLE_CLIENT_ID --set-from-env-optional GOOGLE_CLIENT_SECRET
@@ -1183,6 +1207,15 @@ jobs:
           node-version: 26
           cache: npm
 
+      - name: 🔒 Require status Worker Cloudflare token
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_STATUS_API_TOKEN:
+            ${{ secrets.CLOUDFLARE_STATUS_API_TOKEN }}
+        run: >
+          node tools/ci/check-worker-cloudflare-tokens.ts
+          CLOUDFLARE_STATUS_API_TOKEN
+
       - name: 📥 Install Dependencies
         run: npm ci
 
@@ -1219,11 +1252,18 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_STATUS_API_TOKEN:
+            ${{ secrets.CLOUDFLARE_STATUS_API_TOKEN }}
         run: |
           set -euo pipefail
           # The status worker sends alert email through the Cloudflare Email
-          # REST API using the same account token the deploy uses.
-          printf '%s' "$CLOUDFLARE_API_TOKEN" | npx wrangler secret put \
+          # REST API. Wrangler authenticates with the deploy token; the Worker
+          # secret is the Email Sending-only CLOUDFLARE_STATUS_API_TOKEN.
+          if [ -z "${CLOUDFLARE_STATUS_API_TOKEN:-}" ]; then
+            echo "Missing GitHub Actions secret CLOUDFLARE_STATUS_API_TOKEN." >&2
+            exit 1
+          fi
+          printf '%s' "$CLOUDFLARE_STATUS_API_TOKEN" | npx wrangler secret put \
             CLOUDFLARE_API_TOKEN --config packages/status/wrangler.jsonc
 
       - name: 🔐 Sync status incident event secret

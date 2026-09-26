@@ -57,8 +57,8 @@
 		"ALERT_EMAIL_FROM": "kody@kody.codes",
 		"STATUS_ALERT_DAILY_LIMIT": "6",
 		// Production Kody Cloudflare account (same as the main worker); the
-		// matching CLOUDFLARE_API_TOKEN with Email Sending permission is a
-		// Worker secret set by the deploy workflow.
+		// matching CLOUDFLARE_API_TOKEN (Email Sending only) is a Worker secret
+		// the deploy workflow syncs from CLOUDFLARE_STATUS_API_TOKEN.
 		"CLOUDFLARE_ACCOUNT_ID": "a99ee2e72728dd52902ef288b7b1447d",
 		"BUILD_COMMIT": "REPLACE_AT_DEPLOY_TIME",
 	},
