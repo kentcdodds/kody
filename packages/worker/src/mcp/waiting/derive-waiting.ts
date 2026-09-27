@@ -443,6 +443,7 @@ async function collectEntitlementCaps(
 			usageUserId: user.stableUserId,
 			plan: entitlement.plan,
 			ladder: entitlement.ladder,
+			creditWallet: entitlement.creditWallet,
 			now,
 		})
 		return snapshot.resources

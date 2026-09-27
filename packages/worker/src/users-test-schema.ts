@@ -102,6 +102,10 @@ const alwaysAdditiveColumns: Record<string, UsersColumnDefinition> = {
 	second_agent_standard_gift_granted_at: { create: 'TEXT' },
 	second_agent_standard_gift_expires_at: { create: 'TEXT' },
 	referral_standard_credit_expires_at: { create: 'TEXT' },
+	stripe_credits_eligible: {
+		create: `INTEGER NOT NULL DEFAULT 0 CHECK (stripe_credits_eligible IN (0, 1))`,
+		alter: `INTEGER NOT NULL DEFAULT 0`,
+	},
 }
 
 /**

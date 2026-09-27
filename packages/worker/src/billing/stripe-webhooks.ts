@@ -44,6 +44,11 @@ import {
 	StripeWebhookSignatureError,
 	verifyStripeWebhookSignature,
 } from './stripe-webhook-signature.ts'
+import {
+	applyCreditTopUpFromCheckoutSession,
+	creditTopUpMetadataKey,
+	CreditTopUpError,
+} from './credit-top-ups.ts'
 
 const stripeEventSchema = object({
 	id: string(),
@@ -138,6 +143,15 @@ async function handleCheckoutSessionCompleted(input: {
 	const stableUserIdHint =
 		session.metadata?.['kody_stable_user_id']?.trim() || null
 
+	if (session.metadata?.[creditTopUpMetadataKey] === '1') {
+		await handleCreditTopUpCompleted({
+			env: input.env,
+			sessionId: session.id,
+			now: input.now,
+		})
+		return
+	}
+
 	try {
 		await linkStripeCustomerFromCheckoutSessionAttribution({
 			env: input.env,
@@ -177,6 +191,34 @@ async function handleCheckoutSessionCompleted(input: {
 					)
 				}
 			}
+		}
+		throw error
+	}
+}
+
+async function handleCreditTopUpCompleted(input: {
+	env: Env
+	sessionId: string
+	now?: Date
+}) {
+	try {
+		const result = await applyCreditTopUpFromCheckoutSession({
+			env: input.env,
+			sessionId: input.sessionId,
+			now: input.now ?? new Date(),
+		})
+		if (!result.applied) {
+			console.info('stripe_webhook_credit_top_up_replay', {
+				sessionId: input.sessionId,
+			})
+		}
+	} catch (error) {
+		if (error instanceof CreditTopUpError) {
+			console.error('stripe_webhook_credit_top_up_skipped', {
+				code: error.code,
+				sessionId: input.sessionId,
+			})
+			return
 		}
 		throw error
 	}

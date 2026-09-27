@@ -319,8 +319,7 @@ export const EnvSchema = object({
 	STRIPE_WEBHOOK_SECRET: optionalNonEmptyStringSchema,
 	// Override for tests/mocks; defaults to https://api.stripe.com.
 	STRIPE_API_BASE_URL: optionalUrlStringSchema,
-	STRIPE_STANDARD_PRICE_ID: optionalNonEmptyStringSchema,
-	STRIPE_STANDARD_YEARLY_PRICE_ID: optionalNonEmptyStringSchema,
+	// Purchasable Pro ($12 / $120) with the prepaid credit wallet.
 	STRIPE_PRO_PRICE_ID: optionalNonEmptyStringSchema,
 	STRIPE_PRO_YEARLY_PRICE_ID: optionalNonEmptyStringSchema,
 	// Stripe Billing Portal configuration (`bpc_...`) used for Manage

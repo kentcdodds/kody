@@ -108,7 +108,7 @@ export type UserEntitlementWarningKind =
 
 export function buildUserEntitlementWarningEmail(input: {
 	appBaseUrl: string
-	billingUrl: string
+	creditsUrl: string
 	usageUrl: string
 	kind: UserEntitlementWarningKind
 	warnings: Array<{
@@ -136,7 +136,7 @@ export function buildUserEntitlementWarningEmail(input: {
 		preheader: copy.preheader,
 		heading: copy.heading,
 		body: [copy.intro, ...lines],
-		action: { label: 'Review your plan', url: input.billingUrl },
+		action: { label: 'Add credits', url: input.creditsUrl },
 		afterAction: [
 			`You can also see every limit on your usage page: ${input.usageUrl}`,
 		],
@@ -365,6 +365,73 @@ export function buildBillingSuccessEmail(input: {
 			height: 96,
 		},
 		footnote: "You're receiving this because you subscribed to a Kody plan.",
+	})
+}
+
+const creditsIllustration = {
+	src: '/images/kody-lantern.png',
+	alt: '',
+	width: 96,
+	height: 96,
+}
+
+export function buildCreditsAutoRefilledEmail(input: {
+	appBaseUrl: string
+	creditsUrl: string
+	amountLabel: string
+	balanceLabel: string
+}) {
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: `Kody added ${input.amountLabel} in credits`,
+		preheader: `Auto-refill added ${input.amountLabel}. Balance: ${input.balanceLabel}.`,
+		heading: 'Credits auto-refilled',
+		body: [
+			`Auto-refill added ${input.amountLabel} to your Kody credits. Your balance is now ${input.balanceLabel}.`,
+		],
+		action: { label: 'Manage credits', url: input.creditsUrl },
+		illustration: creditsIllustration,
+		footnote:
+			"You're receiving this because auto-refill notices are on. Turn them off on your credits page.",
+	})
+}
+
+export function buildCreditsMonthlyCapEmail(input: {
+	appBaseUrl: string
+	creditsUrl: string
+}) {
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: 'Kody credits hit your monthly auto-refill cap',
+		preheader: 'Auto-refill is paused until next month or a higher cap.',
+		heading: 'Monthly auto-refill cap reached',
+		body: [
+			'Your credits are low, but another auto-refill would pass the monthly cap you set. Add credits or raise the cap to keep higher limits unlocked.',
+		],
+		action: { label: 'Manage credits', url: input.creditsUrl },
+		illustration: creditsIllustration,
+		footnote:
+			"You're receiving this because monthly cap notices are on. Turn them off on your credits page.",
+	})
+}
+
+export function buildCreditsLowBalanceEmail(input: {
+	appBaseUrl: string
+	creditsUrl: string
+	balanceLabel: string
+}) {
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: 'Your Kody credits are running low',
+		preheader: `Balance: ${input.balanceLabel}.`,
+		heading: 'Credits running low',
+		body: [
+			`Your Kody credit balance is ${input.balanceLabel}. At $0, higher limits lock again until you add credits.`,
+		],
+		action: { label: 'Add credits', url: input.creditsUrl },
+		illustration: creditsIllustration,
+		footnote:
+			"You're receiving this because low-balance notices are on. Turn them off on your credits page.",
 	})
 }
 

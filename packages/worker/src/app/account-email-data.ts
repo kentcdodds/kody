@@ -264,11 +264,17 @@ async function loadUsage(input: {
 				plan,
 				'stored_email_messages',
 				entitlement.ladder,
+				entitlement.creditWallet,
 			),
 		},
 		sends_today: {
 			count: sendsToday,
-			limit: resolvePlanLimit(plan, 'email_sends_per_day', entitlement.ladder),
+			limit: resolvePlanLimit(
+				plan,
+				'email_sends_per_day',
+				entitlement.ladder,
+				entitlement.creditWallet,
+			),
 		},
 		receives_today: {
 			count: receivesToday,
@@ -276,12 +282,14 @@ async function loadUsage(input: {
 				plan,
 				'email_receives_per_day',
 				entitlement.ladder,
+				entitlement.creditWallet,
 			),
 		},
 		max_message_bytes: resolvePlanLimit(
 			plan,
 			'email_message_bytes',
 			entitlement.ladder,
+			entitlement.creditWallet,
 		),
 	}
 }

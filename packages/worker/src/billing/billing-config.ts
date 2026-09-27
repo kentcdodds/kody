@@ -8,15 +8,16 @@ import { type StripeSubscription } from './stripe-client.ts'
 
 export type BillingEnv = {
 	STRIPE_SECRET_KEY?: string
-	STRIPE_STANDARD_PRICE_ID?: string
-	STRIPE_STANDARD_YEARLY_PRICE_ID?: string
 	STRIPE_PRO_PRICE_ID?: string
 	STRIPE_PRO_YEARLY_PRICE_ID?: string
 	STRIPE_BILLING_PORTAL_CONFIGURATION_ID?: string
 }
 
 export type BillingInterval = 'month' | 'year'
-export type PurchasablePlan = 'standard' | 'pro'
+/** The only self-serve paid plan: Pro ($12) with the prepaid credit wallet. */
+export type PurchasablePlan = 'pro'
+/** Plans a Stripe price can grant (purchasable Pro plus retired prices). */
+export type StripeGrantedPlan = 'standard' | 'pro'
 
 /**
  * Statuses whose subscriptions keep paid entitlements. `past_due` is
@@ -51,16 +52,23 @@ export function subscriptionHasPrice(
 }
 
 /**
- * Retired production prices that still have live subscribers.
- * Checkout uses the configured Standard $12 / Pro $49 ids; these historical
- * ids stay active in Stripe ($20 / $29 / $288) and must resolve to
- * standard/pro so existing subscriptions do not drop to free.
- * Standard $5 (`price_1Tv3W2…`) has one customer through 2026-09-08.
+ * Retired production prices that still have live subscribers. Checkout only
+ * sells the configured Pro price ({@link getProPriceId}); these ids stay
+ * active in Stripe and must keep resolving to standard/pro so existing
+ * subscriptions keep their plan (no mass migration). None of them is
+ * wallet-eligible. Delete an id once no subscriber remains on it (#2617).
+ *
+ * - Standard $12 / $120 (the 2026-09 public Standard) and historical $5.
+ * - Pro $49 / $480 (the 2026-09 public Pro) and historical $20 / $29 / $288.
  */
 export const retiredStandardPriceIds = [
+	'price_1U3sg6LAQpAnsYszGeL2nc8O',
+	'price_1U3sg6LAQpAnsYszqq9abwIY',
 	'price_1Tv3W2LAQpAnsYszSr4PGBkE',
 ] as const
 export const retiredProPriceIds = [
+	'price_1UChg1LAQpAnsYszAYn6eGgt',
+	'price_1UChg2LAQpAnsYszKAFCR778',
 	'price_1U1AISLAQpAnsYszIQvRJNhl',
 	'price_1U3sg6LAQpAnsYszlVpEIFGx',
 	'price_1U3sg7LAQpAnsYszpozAEFUi',
@@ -79,10 +87,16 @@ const subscriptionStatusSignalRank: Record<string, number> = {
 export type ResolvedSubscriptionPlan = {
 	stripePlan: PlanName | null
 	/**
+	 * True when the subscription that granted `stripePlan` uses the
+	 * configured (purchasable) Pro price. Persisted on
+	 * `users.stripe_credits_eligible`; the only path to a credit wallet.
+	 */
+	creditsEligible: boolean
+	/**
 	 * Billing interval of the subscription that granted `stripePlan`, when its
-	 * price is one of the configured monthly/yearly ids. Null for retired
-	 * prices or metadata-only matches, so the UI cannot offer an interval
-	 * switch it cannot describe.
+	 * price is the configured monthly/yearly Pro id. Null for retired prices
+	 * or metadata-only matches, so the UI cannot offer an interval switch it
+	 * cannot describe.
 	 */
 	stripeInterval: BillingInterval | null
 	/**
@@ -102,19 +116,11 @@ export function isBillingConfigured(env: BillingEnv) {
 
 /**
  * Stripe Billing Portal configuration (`bpc_...`) whose subscription-update
- * flow lists Kody's Standard/Pro prices with `always_invoice` proration.
+ * flow lists the purchasable Pro prices with `always_invoice` proration.
  * Unset deployments use the Stripe account's default portal configuration.
  */
 export function getBillingPortalConfigurationId(env: BillingEnv) {
 	return env.STRIPE_BILLING_PORTAL_CONFIGURATION_ID?.trim() || null
-}
-
-export function getStandardPriceId(env: BillingEnv) {
-	return env.STRIPE_STANDARD_PRICE_ID?.trim() || null
-}
-
-export function getStandardYearlyPriceId(env: BillingEnv) {
-	return env.STRIPE_STANDARD_YEARLY_PRICE_ID?.trim() || null
 }
 
 export function getProPriceId(env: BillingEnv) {
@@ -132,14 +138,7 @@ export function parseBillingInterval(value: unknown): BillingInterval | null {
 }
 
 export function getPurchasablePlans(env: BillingEnv): Array<PurchasablePlan> {
-	return [
-		...(getStandardPriceId(env) || getStandardYearlyPriceId(env)
-			? (['standard'] as const)
-			: []),
-		...(getProPriceId(env) || getProYearlyPriceId(env)
-			? (['pro'] as const)
-			: []),
-	]
+	return getProPriceId(env) || getProYearlyPriceId(env) ? ['pro'] : []
 }
 
 export function getPriceIdForPlan(
@@ -148,17 +147,6 @@ export function getPriceIdForPlan(
 	interval: BillingInterval = 'month',
 ): string | null {
 	switch (plan) {
-		case 'standard':
-			switch (interval) {
-				case 'month':
-					return getStandardPriceId(env)
-				case 'year':
-					return getStandardYearlyPriceId(env)
-				default: {
-					const exhaustive: never = interval
-					throw new Error(`Unknown billing interval: ${String(exhaustive)}`)
-				}
-			}
 		case 'pro':
 			switch (interval) {
 				case 'month':
@@ -177,6 +165,20 @@ export function getPriceIdForPlan(
 	}
 }
 
+/** Configured Pro price ids (monthly and yearly): the wallet-eligible prices. */
+export function getCreditsEligiblePriceIds(env: BillingEnv): Array<string> {
+	return collectPriceIds([getProPriceId(env), getProYearlyPriceId(env)])
+}
+
+export function isCreditsEligiblePriceId(
+	env: BillingEnv,
+	priceId: string | null | undefined,
+): boolean {
+	const trimmed = priceId?.trim()
+	if (!trimmed) return false
+	return getCreditsEligiblePriceIds(env).includes(trimmed)
+}
+
 function collectPriceIds(
 	ids: ReadonlyArray<string | null | undefined>,
 ): Array<string> {
@@ -193,15 +195,11 @@ function collectPriceIds(
 
 export function getMatchingPriceIdsForPlan(
 	env: BillingEnv,
-	plan: PurchasablePlan,
+	plan: StripeGrantedPlan,
 ): Array<string> {
 	switch (plan) {
 		case 'standard':
-			return collectPriceIds([
-				getStandardPriceId(env),
-				getStandardYearlyPriceId(env),
-				...retiredStandardPriceIds,
-			])
+			return collectPriceIds([...retiredStandardPriceIds])
 		case 'pro':
 			return collectPriceIds([
 				getProPriceId(env),
@@ -290,12 +288,8 @@ function intervalFromSubscription(
 	subscription: StripeSubscription,
 	env: BillingEnv,
 ): BillingInterval | null {
-	const monthlyPriceIds = new Set(
-		collectPriceIds([getStandardPriceId(env), getProPriceId(env)]),
-	)
-	const yearlyPriceIds = new Set(
-		collectPriceIds([getStandardYearlyPriceId(env), getProYearlyPriceId(env)]),
-	)
+	const monthlyPriceIds = new Set(collectPriceIds([getProPriceId(env)]))
+	const yearlyPriceIds = new Set(collectPriceIds([getProYearlyPriceId(env)]))
 	for (const item of subscription.items.data) {
 		if (yearlyPriceIds.has(item.price.id)) return 'year'
 		if (monthlyPriceIds.has(item.price.id)) return 'month'
@@ -351,6 +345,7 @@ export function resolveSubscriptionPlan(
 	let stripePlan: PlanName | null = null
 	let stripeInterval: BillingInterval | null = null
 	let stripePriceId: string | null = null
+	let creditsEligible = false
 	let soonestCancelAt: number | null = null
 
 	for (const subscription of selectPlanRetainingSubscriptions(subscriptions)) {
@@ -360,13 +355,22 @@ export function resolveSubscriptionPlan(
 			proPriceIds,
 		)
 		const nextPlan = pickHigherPlan(stripePlan, subscriptionPlan)
-		if (subscriptionPlan && nextPlan !== stripePlan) {
+		const grantingPriceId = subscriptionPlan
+			? grantingPriceIdFromSubscription(subscription, subscriptionPlan, env)
+			: null
+		const subscriptionCreditsEligible =
+			subscriptionPlan === 'pro' &&
+			isCreditsEligiblePriceId(env, grantingPriceId)
+		// Same rank (a retired Pro alongside the purchasable Pro): prefer the
+		// wallet-eligible subscription so credits are not hidden.
+		const upgradesToCredits =
+			subscriptionPlan === nextPlan &&
+			subscriptionCreditsEligible &&
+			!creditsEligible
+		if (subscriptionPlan && (nextPlan !== stripePlan || upgradesToCredits)) {
 			stripeInterval = intervalFromSubscription(subscription, env)
-			stripePriceId = grantingPriceIdFromSubscription(
-				subscription,
-				subscriptionPlan,
-				env,
-			)
+			stripePriceId = grantingPriceId
+			creditsEligible = subscriptionCreditsEligible
 		}
 		stripePlan = nextPlan
 		if (
@@ -380,6 +384,7 @@ export function resolveSubscriptionPlan(
 
 	return {
 		stripePlan,
+		creditsEligible,
 		stripeInterval,
 		stripePriceId,
 		cancelAt:

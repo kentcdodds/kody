@@ -11,6 +11,7 @@ import {
 	assertWithinEntitlement,
 	assertWithinStorageBytesEntitlement,
 	estimateEntitlementStorageEntryBytes,
+	readCreditWalletStateForPlan,
 } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { normalizeEmailAddress, normalizeSubject } from './address.ts'
@@ -246,7 +247,7 @@ export async function handleInboundEmail(
 			// getUserPlan / isAccountEmailVerified) so a mismatched identity pair
 			// cannot apply another account's plan or verification state.
 			const accountRow = await env.APP_DB.prepare(
-				`SELECT plan, stripe_plan, entitlement_ladder, email_verified_at, suspended_at FROM users
+				`SELECT plan, stripe_plan, entitlement_ladder, stripe_credits_eligible, email_verified_at, suspended_at FROM users
 			WHERE email = ? AND stable_user_id = ?`,
 			)
 				.bind(identity.email, userId)
@@ -254,18 +255,25 @@ export async function handleInboundEmail(
 					plan: string
 					stripe_plan: string | null
 					entitlement_ladder: string | null
+					stripe_credits_eligible: number | null
 					email_verified_at: string | null
 					suspended_at: string | null
 				}>()
+			const accountPlan = resolveEffectivePlan(
+				// A scoped miss keeps the existing synthetic-account fallback.
+				// A present row must satisfy the plan storage contract.
+				accountRow ? parseStoredPlanName(accountRow.plan) : 'max',
+				accountRow?.stripe_plan ?? null,
+			)
 			const account = {
 				email: identity.email,
-				plan: resolveEffectivePlan(
-					// A scoped miss keeps the existing synthetic-account fallback.
-					// A present row must satisfy the plan storage contract.
-					accountRow ? parseStoredPlanName(accountRow.plan) : 'max',
-					accountRow?.stripe_plan ?? null,
-				),
+				plan: accountPlan,
 				ladder: parseEntitlementLadder(accountRow?.entitlement_ladder),
+				creditWallet: await readCreditWalletStateForPlan(env.APP_DB, {
+					stableUserId: userId,
+					plan: accountPlan,
+					stripeCreditsEligible: accountRow?.stripe_credits_eligible,
+				}),
 				emailVerified: Boolean(accountRow?.email_verified_at),
 				suspended: Boolean(accountRow?.suspended_at),
 			}
@@ -394,6 +402,7 @@ export async function handleInboundEmail(
 				account.plan,
 				'email_message_bytes',
 				account.ladder,
+				account.creditWallet,
 			)
 			let prepared
 			try {
@@ -494,6 +503,7 @@ export async function handleInboundEmail(
 						account.plan,
 						'email_receives_per_day',
 						account.ladder,
+						account.creditWallet,
 					)
 					const receivesToday = await readUserInboundReceiveCount({
 						db: env.APP_DB,
@@ -549,6 +559,7 @@ export async function handleInboundEmail(
 							account.plan,
 							'email_receives_per_day',
 							account.ladder,
+							account.creditWallet,
 						),
 						now: quotaNow,
 					})

@@ -271,43 +271,34 @@ safely. Manual `users.plan` grants apply regardless.
   production deploy when set.
 - `STRIPE_API_BASE_URL` — optional API base URL; defaults to
   `https://api.stripe.com` when unset. Override for tests/mocks.
-- `STRIPE_STANDARD_PRICE_ID` — Stripe Price id for the $12/month `standard`
-  plan.
-- `STRIPE_STANDARD_YEARLY_PRICE_ID` — Stripe Price id for the
-  $120/year
-  `standard` plan ($10/month billed annually).
-- `STRIPE_PRO_PRICE_ID` — Stripe Price id for the public $49/month `pro`
-  checkout price (`price_1UChg1LAQpAnsYszAYn6eGgt` on `prod_V1ChgPPenrxsAX` in
-  production).
-- `STRIPE_PRO_YEARLY_PRICE_ID` — Stripe Price id for the public
-  $480/year
-  `pro` checkout price (`price_1UChg2LAQpAnsYszKAFCR778`, $40/month
-  billed annually).
+- `STRIPE_PRO_PRICE_ID` — Stripe Price id for the purchasable $12/month Pro, the
+  only self-serve paid plan and the only plan with the prepaid credit wallet
+  (`users.stripe_credits_eligible`). Production leaves it unset until the new
+  price exists; reusing a retired Standard or Pro id here would make those
+  subscribers wallet-eligible.
+- `STRIPE_PRO_YEARLY_PRICE_ID` — Stripe Price id for the purchasable $120/year
+  Pro.
 - `STRIPE_BILLING_PORTAL_CONFIGURATION_ID` — optional Stripe Billing Portal
   configuration id (`bpc_...`) passed as `configuration` when creating portal
   sessions for Manage subscription and for plan changes by existing subscribers.
   The production configuration enables `subscription_update` with
-  `proration_behavior=always_invoice`, allows price switches among the public
-  Standard $12/$120 and Pro $49/$480 checkout prices, cancel at period end,
-  payment method and customer updates, and invoice history. Previous Pro list
-  prices stay active in Stripe off-portal so existing subscribers keep their
-  plan. When unset (preview, test, local), Stripe uses the account's default
-  portal configuration.
+  `proration_behavior=always_invoice`, cancel at period end, payment method and
+  customer updates, and invoice history; its product list should offer only the
+  purchasable Pro. Switching to Pro from Kody uses the
+  `subscription_update_confirm` flow pinned to the Pro price. When unset
+  (preview, test, local), Stripe uses the account's default portal
+  configuration.
 
 Each price id independently enables authenticated Checkout and subscription
 matching for its tier and interval; leaving a monthly or yearly id unset makes
 only that interval unavailable for purchase. Price ids and the portal
 configuration id are public (non-secret) values committed as production Wrangler
-vars in `packages/worker/wrangler.jsonc`, not Worker secrets. Historical
-$5
-Standard and previous Pro monthly/yearly price ids remain in
+vars in `packages/worker/wrangler.jsonc`, not Worker secrets. The retired
+Standard ($12/$120, $5) and Pro ($49/$480 and earlier) price ids remain in
 `retiredStandardPriceIds` / `retiredProPriceIds` in
 `packages/worker/src/billing/billing-config.ts` so existing subscribers keep
-their plan after checkout ids rotate. Those retired Pro prices stay active
-off-portal; the Stripe Billing Portal configuration
-(`STRIPE_BILLING_PORTAL_CONFIGURATION_ID`) lists only the public Standard
-$12/$120 and Pro $49/$480
-checkout prices.
+their plan (no mass migration). Retired prices are never wallet-eligible; delete
+each id once no subscriber remains on it.
 
 Dashboard-side dunning (not an environment variable, recorded here so it
 survives re-provisioning): the production Stripe account has every customer

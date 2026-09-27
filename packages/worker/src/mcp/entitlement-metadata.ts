@@ -48,7 +48,7 @@ export type McpEntitlementMetadata =
 			current: number
 			whatCounts: string
 			upgradeHint: string
-			disposition: ComputeOverageLimitErrorDetails['disposition']
+			creditsStatus: ComputeOverageLimitErrorDetails['creditsStatus']
 			mechanic?: string
 	  }
 
@@ -116,7 +116,7 @@ function toComputeOverageLimitMetadata(
 		current: details.current,
 		whatCounts: details.whatCounts,
 		upgradeHint: details.upgradeHint,
-		disposition: details.disposition,
+		creditsStatus: details.creditsStatus,
 		...(details.resource === 'unique_worker_days'
 			? { mechanic: uniqueWorkerDayMechanic }
 			: {}),

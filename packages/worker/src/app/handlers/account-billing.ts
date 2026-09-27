@@ -110,13 +110,9 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 				plan?: unknown
 				interval?: unknown
 			} | null
-			const plan =
-				body?.plan === 'standard' || body?.plan === 'pro' ? body.plan : null
+			const plan = body?.plan === 'pro' ? body.plan : null
 			if (!plan) {
-				return jsonResponse(
-					{ ok: false, error: 'Choose Standard or Pro.' },
-					400,
-				)
+				return jsonResponse({ ok: false, error: 'Choose Pro.' }, 400)
 			}
 			const interval = parseBillingInterval(body?.interval)
 			if (!interval) {
@@ -130,7 +126,7 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 				return jsonResponse(
 					{
 						ok: false,
-						error: `${plan === 'standard' ? 'Standard' : 'Pro'} checkout is not configured on this deployment.`,
+						error: 'Pro checkout is not configured on this deployment.',
 					},
 					409,
 				)
@@ -151,8 +147,9 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 					// An existing subscriber must change plans on their current
 					// subscription. A second Checkout Session would create a second
 					// subscription that bills alongside the first (the plan resolver
-					// grants the higher tier across all of them), so route plan
-					// switches through the portal's prorated update flow instead.
+					// grants the higher tier across all of them), so route switches
+					// to Pro through the portal's prorated confirm flow, pinned to
+					// the Pro price so a retired price is never offered.
 					const planRetaining = selectPlanRetainingSubscriptions(
 						await listSubscriptions(env, customerId),
 					)
@@ -164,6 +161,17 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 								409,
 							)
 						}
+						const subscriptionItemId = subscription.items.data.find(
+							(item) => item.id,
+						)?.id
+						if (!subscriptionItemId) {
+							const portal = await createBillingPortalSession(env, {
+								customerId,
+								returnUrl: billingUrl,
+								configuration: getBillingPortalConfigurationId(env),
+							})
+							return jsonResponse({ ok: true, url: portal.url, mode: 'portal' })
+						}
 						const updatedUrl = new URL(billingUrl)
 						updatedUrl.searchParams.set('billing', 'updated')
 						const portal = await createBillingPortalSession(env, {
@@ -171,8 +179,10 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 							returnUrl: billingUrl,
 							configuration: getBillingPortalConfigurationId(env),
 							flowData: {
-								type: 'subscription_update',
+								type: 'subscription_update_confirm',
 								subscriptionId: subscription.id,
+								subscriptionItemId,
+								priceId,
 								afterCompletionRedirectUrl: updatedUrl.toString(),
 							},
 						})

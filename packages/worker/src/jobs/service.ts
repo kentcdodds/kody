@@ -60,6 +60,7 @@ import {
 } from '#worker/entitlements/service.ts'
 import {
 	resolvePlanLimits,
+	type CreditWalletState,
 	type EntitlementLadder,
 	type PlanName,
 } from '#universal/plans.ts'
@@ -746,6 +747,7 @@ export async function syncPackageJobsForPackage(input: {
 					assertJobScheduleIntervalFloor({
 						plan,
 						ladder: entitlement.ladder,
+						creditWallet: entitlement.creditWallet,
 						schedule,
 						timezone,
 					})
@@ -794,6 +796,7 @@ export async function syncPackageJobsForPackage(input: {
 						assertJobScheduleIntervalFloor({
 							plan,
 							ladder: entitlement.ladder,
+							creditWallet: entitlement.creditWallet,
 							schedule,
 							timezone,
 						})
@@ -824,6 +827,7 @@ export async function syncPackageJobsForPackage(input: {
 				assertJobScheduleIntervalFloor({
 					plan,
 					ladder: entitlement.ladder,
+					creditWallet: entitlement.creditWallet,
 					schedule,
 					timezone,
 				})
@@ -896,12 +900,14 @@ function packageJobNeedsIntervalFloor(input: {
 function assertJobScheduleIntervalFloor(input: {
 	plan: PlanName
 	ladder?: EntitlementLadder
+	creditWallet?: CreditWalletState
 	schedule: JobSchedule
 	timezone?: string | null
 }) {
 	const minIntervalMs = resolvePlanLimits(
 		input.plan,
 		input.ladder ?? 'public',
+		input.creditWallet ?? 'none',
 	).minJobIntervalMs
 	if (minIntervalMs <= 0) return
 	const intervalMs = estimateScheduleMinIntervalMs({

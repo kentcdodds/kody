@@ -32,9 +32,12 @@ import { type EmailVerificationDelivery } from '#universal/email-verification-de
 import { type IntegrationAuthFailureView } from '#universal/connection-trouble.ts'
 import { type WaitingItem } from '#universal/waiting.ts'
 import { type OnboardingFunnelStage } from '#universal/onboarding-funnel-point.ts'
-import { type EntitlementLadder } from '#universal/plans.ts'
 import {
-	type ComputeOverageDisposition,
+	type CreditWalletState,
+	type EntitlementLadder,
+} from '#universal/plans.ts'
+import {
+	type ComputeIncludeCreditsStatus,
 	type ComputeOverageWarningResource,
 } from '#universal/compute-overage.ts'
 import {
@@ -364,6 +367,25 @@ export type AdminUsersLoaderData = {
 	total: number
 	availableRoles: Array<RoleName>
 	availablePlans: Array<AdminPlanName>
+}
+
+export type AdminCreditLedgerItem = AccountCreditsLedgerItem & {
+	/** Admin who granted (admin grants only). */
+	grantedByUsername: string | null
+	note: string | null
+}
+
+/** Admin view of one account's credit wallet (grant panel + audit). */
+export type AdminCreditWalletSummary = {
+	ok: true
+	stableUserId: string
+	username: string
+	plan: AdminPlanName
+	/** Purchasable Pro: credits unlock limits and debit usage. */
+	eligible: boolean
+	unlocked: boolean
+	balanceMicroUsd: number
+	recent: Array<AdminCreditLedgerItem>
 }
 
 export type AdminCreatedUserSetup = {
@@ -2275,6 +2297,7 @@ export type AppLoaderData = {
 	oauthAuthorize?: OAuthAuthorizeLoaderData
 	accountBilling?: AccountBillingLoaderData
 	accountBillingSuccess?: AccountBillingSuccessLoaderData
+	accountCredits?: AccountCreditsLoaderData
 	accountUsage?: AccountUsageLoaderData
 	accountWaiting?: AccountWaitingLoaderData
 	accountExperiments?: AccountExperimentsLoaderData
@@ -2300,12 +2323,73 @@ export type AccountBillingLoaderData = {
 	cancelAt: string | null
 	/** Stripe subscription status from on-page refresh; null if unknown/unavailable. */
 	subscriptionStatus: string | null
-	purchasablePlans: Array<'standard' | 'pro'>
+	purchasablePlans: Array<'pro'>
+	/** Stripe subscription uses the purchasable Pro price (credit wallet). */
+	creditsEligible: boolean
+	/** Deep link to prepaid credits. */
+	creditsHref: '/account/credits'
 	/** Deep link to the account usage page (limits / consumption). */
 	usageHref: '/account/usage'
 	referralProgram: ReferralProgramSummary | null
 	error?: string
 	/** Success notice mapped from `?billing=<code>` (e.g. a completed plan change). */
+	notice?: string
+}
+
+export type AccountCreditsLimit = {
+	resource: string
+	label: string
+	/** Hard cap with a $0 balance. */
+	base: number
+	/** Cap while the balance is above $0. */
+	unlocked: number
+}
+
+export type AccountCreditsLedgerItem = {
+	id: string
+	kind: 'top_up' | 'auto_refill' | 'admin_grant' | 'debit'
+	amountMicroUsd: number
+	description: string
+	createdAt: string
+}
+
+export type AccountCreditsLoaderData = {
+	ok: true
+	configured: boolean
+	/**
+	 * Purchasable Pro with the credit wallet. False renders the
+	 * switch-to-Pro prompt (Free, retired Standard/Pro, manual grants).
+	 */
+	eligible: boolean
+	plan: AdminPlanName
+	/** Checkout for the purchasable Pro is configured. */
+	canSwitchToPro: boolean
+	billingHref: '/account/billing'
+	balanceMicroUsd: number
+	/** Balance above $0 on an eligible wallet: unlocked limits apply. */
+	unlocked: boolean
+	packsCents: Array<number>
+	customMinCents: number
+	customMaxCents: number
+	autoRefill: {
+		enabled: boolean
+		thresholdCents: number | null
+		amountCents: number | null
+		monthlyCapCents: number | null
+		minThresholdCents: number
+		refilledThisMonthCents: number
+		/** A top-up saved a card for off-session refills. */
+		hasPaymentMethod: boolean
+	}
+	notify: {
+		autoRefilled: boolean
+		monthlyCap: boolean
+		lowBalance: boolean
+	}
+	limits: Array<AccountCreditsLimit>
+	rates: Array<{ meter: string; label: string }>
+	recent: Array<AccountCreditsLedgerItem>
+	error?: string
 	notice?: string
 }
 
@@ -2344,15 +2428,16 @@ type AccountUsageComputeMeter = {
 	include: number
 	percentOfLimit: number
 	overEightyPercent: boolean
+	creditsStatus: ComputeIncludeCreditsStatus
 }
 
 export type AccountUsageComputeOverage = {
 	meters: Array<AccountUsageComputeMeter>
-	disposition: ComputeOverageDisposition
-	totalCents: number
-	chargingEnabled: boolean
-	hasStripeCustomer: boolean
-	legacyUnbilled: boolean
+	creditWallet: CreditWalletState
+	/** Past-include state across both meters (worst meter wins). */
+	creditsStatus: ComputeIncludeCreditsStatus
+	/** This month's above-include usage at credit debit rates. */
+	creditsCostMicroUsd: number
 }
 
 export type AccountUsageLoaderData = {

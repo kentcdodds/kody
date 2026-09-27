@@ -29,10 +29,10 @@ meter.
   run: the same user and published graph reuse one isolate; a different graph or
   a different user is a different isolate.
 
-Each plan includes a monthly unique-worker-day allotment. Public-ladder overage
-uses the published unique-worker-day rate on
-[Pricing](https://kody.codes/pricing). Account usage (`/account/usage` and
-`usageGet`) reports the meter with what counts.
+Each plan includes a monthly unique-worker-day allotment. On Pro with prepaid
+credits, usage above it debits the published rate on
+[Pricing](https://kody.codes/pricing); nobody is invoiced for overage. Account
+usage (`/account/usage` and `usageGet`) reports the meter with what counts.
 
 ## Surfaces
 

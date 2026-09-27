@@ -252,13 +252,13 @@ test('referral rewards both parties once on first paid invoice, skips trial, rej
 			userId: referrer.stableUserId,
 			email: referrer.email,
 		}),
-	).toEqual({ plan: 'standard', ladder: 'public' })
+	).toEqual({ plan: 'standard', ladder: 'public', creditWallet: 'none' })
 	expect(
 		await getUserEntitlement(db, {
 			userId: referee.stableUserId,
 			email: referee.email,
 		}),
-	).toEqual({ plan: 'standard', ladder: 'public' })
+	).toEqual({ plan: 'standard', ladder: 'public', creditWallet: 'none' })
 	expect(await referralRow(db, referee.stableUserId)).toMatchObject({
 		status: 'rewarded',
 		reward_invoice_id: 'in_first',

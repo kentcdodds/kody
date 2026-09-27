@@ -4,6 +4,7 @@ import {
 	isWeeklyComputeWindowResource,
 	resolvePlanLimit,
 	resolveWeeklyPlanLimit,
+	type CreditWalletState,
 	type EntitlementLadder,
 	type EntitlementResource,
 	type PlanName,
@@ -83,6 +84,7 @@ export async function readEntitlementUsageSnapshot(input: {
 	usageUserId: string
 	plan: PlanName
 	ladder: EntitlementLadder
+	creditWallet: CreditWalletState
 	now?: Date
 }): Promise<EntitlementUsageSnapshot> {
 	const now = input.now ?? new Date()
@@ -99,7 +101,12 @@ export async function readEntitlementUsageSnapshot(input: {
 							resource,
 							now,
 						})
-			const limit = resolvePlanLimit(input.plan, resource, input.ladder)
+			const limit = resolvePlanLimit(
+				input.plan,
+				resource,
+				input.ladder,
+				input.creditWallet,
+			)
 			// per_unit_max compares one candidate value (no accumulating
 			// usage) and a zero limit means the plan has no allowance, so a
 			// current/limit ratio is meaningless for both.
@@ -112,6 +119,7 @@ export async function readEntitlementUsageSnapshot(input: {
 				userId: input.usageUserId,
 				plan: input.plan,
 				ladder: input.ladder,
+				creditWallet: input.creditWallet,
 				resource,
 				now,
 			})
@@ -125,7 +133,11 @@ export async function readEntitlementUsageSnapshot(input: {
 				group: visibility.group,
 				kind: visibility.kind,
 				whatCounts: visibility.whatCounts,
-				howToReduce: buildEntitlementHowToReduce(resource, input.plan),
+				howToReduce: buildEntitlementHowToReduce(
+					resource,
+					input.plan,
+					input.creditWallet,
+				),
 				current,
 				limit,
 				percentOfLimit,
@@ -148,11 +160,17 @@ async function readWeeklyUsageWindow(input: {
 	userId: string
 	plan: PlanName
 	ladder: EntitlementLadder
+	creditWallet: CreditWalletState
 	resource: EntitlementResource
 	now: Date
 }): Promise<EntitlementUsageWeekWindow | undefined> {
 	if (!isWeeklyComputeWindowResource(input.resource)) return undefined
-	const limit = resolveWeeklyPlanLimit(input.plan, input.resource, input.ladder)
+	const limit = resolveWeeklyPlanLimit(
+		input.plan,
+		input.resource,
+		input.ladder,
+		input.creditWallet,
+	)
 	if (limit === null) return undefined
 	const current = await readWeeklyEntitlementResourceUsage({
 		env: input.env,

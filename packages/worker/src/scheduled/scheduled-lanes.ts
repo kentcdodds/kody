@@ -26,7 +26,7 @@ import { backfillStorageBucketEstimates } from '#worker/storage-buckets/estimate
 import { refreshAdminInsightsRunLogSnapshot } from '#worker/admin/insights-runlog-snapshot.ts'
 import { aggregateUsageRollups } from '#worker/usage/aggregate-rollups.ts'
 import { runDurableObjectDurationAttribution } from '#worker/usage/durable-object-duration-attribution.ts'
-import { runComputeOverageBilling } from '#worker/billing/compute-overage-invoices.ts'
+import { runCreditDebits } from '#worker/billing/credit-debits.ts'
 
 export {
 	isScheduledLaneName,
@@ -142,7 +142,21 @@ export async function runScheduledLane(input: {
 				console.warn('admin-insights-run-log-snapshot-lane-failed', error)
 				runLogSnapshot = { status: 'failed' }
 			}
-			return { ...result, fleetPackageErrorRate, runLogSnapshot }
+			// Credits debit only right after a successful recompute, so they
+			// never read rollups older than this hour.
+			let creditDebits:
+				| Awaited<ReturnType<typeof runCreditDebits>>
+				| { status: 'failed' }
+			try {
+				creditDebits = await runCreditDebits({
+					env: input.env,
+					now: input.scheduledAt,
+				})
+			} catch (error) {
+				console.warn('credit-debits-lane-failed', error)
+				creditDebits = { status: 'failed' }
+			}
+			return { ...result, fleetPackageErrorRate, runLogSnapshot, creditDebits }
 		}
 		case 'durable_object_duration_attribution':
 			return runDurableObjectDurationAttribution({
@@ -150,10 +164,8 @@ export async function runScheduledLane(input: {
 				now: input.scheduledAt,
 			})
 		case 'compute_overage_billing':
-			return runComputeOverageBilling({
-				env: input.env,
-				now: input.scheduledAt,
-			})
+			// Inactive no-op; overage invoicing is retired (#2617).
+			return
 		case 'auth_denial_alert':
 			return checkAuthDenialBurstAndNotify({
 				env: input.env,

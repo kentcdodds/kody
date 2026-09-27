@@ -8,6 +8,7 @@ import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consumption.ts'
 import { readMonthlyComputeUsage } from '#worker/billing/compute-overage-usage.ts'
 import {
+	accountCreditsPath,
 	computeMonthlyOverage,
 	buildComputeOverageHowToReduce,
 	computeOverageIncludePercent,
@@ -17,14 +18,15 @@ import {
 	type ComputeOverageWarningResource,
 } from '#universal/compute-overage.ts'
 import {
-	parseEntitlementLadder,
-	parseStoredPlanName,
 	planLimits,
 	type EntitlementResource,
-	type PlanName,
+	type UserEntitlement,
 } from '#universal/plans.ts'
-import { laterIsoTimestamp } from '#universal/referral-program.ts'
-import { resolveEffectivePlanWithSecondAgentGift } from '#universal/second-agent-standard-gift.ts'
+import {
+	resolveUserEntitlementFromRow,
+	userEntitlementColumnsSql,
+	type UserEntitlementRow,
+} from '#worker/entitlements/service.ts'
 import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
 
 const observeOnlyMetricPlaceholders = observeOnlyUsageEventTypes
@@ -45,7 +47,8 @@ const observeOnlyMetricPlaceholders = observeOnlyUsageEventTypes
  * after 30 days unless an hourly sweep still sees the user over and refreshes
  * the TTL; daily `*_per_day` claims stay scoped to the UTC day. Compute
  * includes use month-qualified stock claims so a July crossing does not
- * suppress August. Legacy Standard/Pro is warned, not billed.
+ * suppress August. The call to action is `/account/credits` (add credits,
+ * or switch to Pro first on Free and retired plans).
  */
 
 export const userEntitlementWarningKvKeyPrefix = 'entitlement-warning-user:v3'
@@ -65,15 +68,12 @@ export const userEntitlementWarningStockClaimTtlSeconds = 30 * 24 * 60 * 60
 const stockPackageThreshold = Math.ceil(planLimits.free.maxSavedPackages * 0.8)
 const stockSecretThreshold = Math.ceil(planLimits.free.maxSecrets * 0.8)
 
-type WarningCandidate = {
+type WarningCandidate = UserEntitlementRow & {
 	stable_user_id: string
 	email: string
-	plan: string
-	stripe_plan: string | null
-	entitlement_ladder: string | null
-	second_agent_standard_gift_expires_at: string | null
-	referral_standard_credit_expires_at: string | null
 }
+
+const candidateColumnsSql = `u.stable_user_id, u.email, ${userEntitlementColumnsSql('u')}`
 
 export type UserWarningResource =
 	| EntitlementResource
@@ -203,29 +203,25 @@ async function warnOneUserIfNeeded(input: {
 	const kv = input.env.BUNDLE_ARTIFACTS_KV
 	if (!kv) return null
 
-	const plan = resolveEffectivePlanWithSecondAgentGift(
-		parseStoredPlanName(input.user.plan),
-		input.user.stripe_plan,
-		laterIsoTimestamp(
-			input.user.second_agent_standard_gift_expires_at,
-			input.user.referral_standard_credit_expires_at,
-		),
-		input.now,
-	)
-	const ladder = parseEntitlementLadder(input.user.entitlement_ladder)
+	const entitlement = await resolveUserEntitlementFromRow({
+		db: input.env.APP_DB,
+		stableUserId: input.user.stable_user_id,
+		row: input.user,
+		now: input.now,
+	})
 	const [consumption, computeWarnings] = await Promise.all([
 		readAdminEntitlementConsumption({
 			env: input.env,
 			usageUserId: input.user.stable_user_id,
-			plan,
-			ladder,
+			plan: entitlement.plan,
+			ladder: entitlement.ladder,
+			creditWallet: entitlement.creditWallet,
 			now: input.now,
 		}),
 		readComputeOverageWarnings({
 			db: input.env.APP_DB,
 			stableUserId: input.user.stable_user_id,
-			plan,
-			ladder,
+			entitlement,
 			now: input.now,
 		}),
 	])
@@ -355,8 +351,8 @@ async function sendThresholdEmailIfNeeded(input: {
 }): Promise<boolean> {
 	if (input.warnings.length === 0) return false
 
-	const billingUrl = new URL(
-		'/account/billing',
+	const creditsUrl = new URL(
+		accountCreditsPath,
 		input.emailConfig.appBaseUrl,
 	).toString()
 	const usageUrl = new URL(
@@ -365,7 +361,7 @@ async function sendThresholdEmailIfNeeded(input: {
 	).toString()
 	const email = buildUserEntitlementWarningEmail({
 		appBaseUrl: input.emailConfig.appBaseUrl,
-		billingUrl,
+		creditsUrl,
 		usageUrl,
 		kind: input.kind,
 		warnings: input.warnings,
@@ -660,8 +656,7 @@ function recentUtcDayKeys(now: Date) {
 async function readComputeOverageWarnings(input: {
 	db: D1Database
 	stableUserId: string
-	plan: PlanName
-	ladder: ReturnType<typeof parseEntitlementLadder>
+	entitlement: UserEntitlement
 	now: Date
 }): Promise<Array<WarningResource>> {
 	const usage = await readMonthlyComputeUsage({
@@ -670,8 +665,9 @@ async function readComputeOverageWarnings(input: {
 		month: utcMonthKey(input.now),
 	})
 	const overage = computeMonthlyOverage({
-		plan: input.plan,
-		ladder: input.ladder,
+		plan: input.entitlement.plan,
+		ladder: input.entitlement.ladder,
+		creditWallet: input.entitlement.creditWallet,
 		uniqueWorkerDays: usage.uniqueWorkerDays,
 		durableObjectRowsRead: usage.durableObjectRowsRead,
 	})
@@ -696,8 +692,8 @@ async function readComputeOverageWarnings(input: {
 			whatCounts: computeOverageResourceVisibility[resource].whatCounts,
 			howToReduce: buildComputeOverageHowToReduce(
 				resource,
-				overage.legacyUnbilled ? 'skip_legacy' : 'skip_zero',
-				input.plan,
+				input.entitlement.plan,
+				input.entitlement.creditWallet,
 			),
 		}
 	})
@@ -712,9 +708,7 @@ export async function listUsersForEntitlementWarningSweep(
 		await Promise.all([
 			db
 				.prepare(
-					`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder,
-					u.second_agent_standard_gift_expires_at,
-					u.referral_standard_credit_expires_at
+					`SELECT ${candidateColumnsSql}
 				 FROM (
 					SELECT user_id, SUM(event_count) AS event_count
 					FROM usage_rollups
@@ -738,9 +732,7 @@ export async function listUsersForEntitlementWarningSweep(
 				.all<WarningCandidate>(),
 			db
 				.prepare(
-					`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder,
-					u.second_agent_standard_gift_expires_at,
-					u.referral_standard_credit_expires_at
+					`SELECT ${candidateColumnsSql}
 				 FROM (
 					SELECT user_id, COUNT(*) AS stock_count
 					FROM saved_packages
@@ -758,9 +750,7 @@ export async function listUsersForEntitlementWarningSweep(
 				.all<WarningCandidate>(),
 			db
 				.prepare(
-					`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder,
-					u.second_agent_standard_gift_expires_at,
-					u.referral_standard_credit_expires_at
+					`SELECT ${candidateColumnsSql}
 				 FROM (
 					SELECT sb.user_id, COUNT(*) AS stock_count
 					FROM secret_entries se
@@ -784,9 +774,7 @@ export async function listUsersForEntitlementWarningSweep(
 				.all<WarningCandidate>(),
 			db
 				.prepare(
-					`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder,
-					u.second_agent_standard_gift_expires_at,
-					u.referral_standard_credit_expires_at
+					`SELECT ${candidateColumnsSql}
 				 FROM (
 					SELECT user_id, event_count
 					FROM usage_rollups
@@ -805,9 +793,7 @@ export async function listUsersForEntitlementWarningSweep(
 				.all<WarningCandidate>(),
 			db
 				.prepare(
-					`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder,
-					u.second_agent_standard_gift_expires_at,
-					u.referral_standard_credit_expires_at
+					`SELECT ${candidateColumnsSql}
 				 FROM (
 					SELECT user_id, event_count
 					FROM usage_rollups

@@ -10,8 +10,6 @@ import {
 import { resolveStripePriceCatalog } from '#worker/billing/stripe-price-catalog.ts'
 
 const catalog = resolveStripePriceCatalog({
-	STRIPE_STANDARD_PRICE_ID: 'price_standard',
-	STRIPE_STANDARD_YEARLY_PRICE_ID: 'price_standard_yearly',
 	STRIPE_PRO_PRICE_ID: 'price_pro',
 	STRIPE_PRO_YEARLY_PRICE_ID: 'price_pro_yearly',
 })
@@ -20,21 +18,21 @@ test('estimatePaidListMrrUsdCents uses catalog list MRR and treats overlays as $
 	expect(
 		estimatePaidListMrrUsdCents({
 			stripePlan: 'standard',
-			stripePriceId: 'price_standard',
+			stripePriceId: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
 			catalog,
 		}),
 	).toEqual({ cents: 1_200, source: 'stripe_catalog' })
 	expect(
 		estimatePaidListMrrUsdCents({
 			stripePlan: 'pro',
-			stripePriceId: 'price_pro_yearly',
+			stripePriceId: 'price_1UChg2LAQpAnsYszKAFCR778',
 			catalog,
 		}),
 	).toEqual({ cents: 4_000, source: 'stripe_catalog' })
 	expect(
 		estimatePaidListMrrUsdCents({
 			stripePlan: null,
-			stripePriceId: 'price_standard',
+			stripePriceId: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
 			catalog,
 		}),
 	).toEqual({ cents: 0, source: 'none' })
@@ -89,7 +87,7 @@ test('toAdminCostVsPay buckets real risk instead of every unpaid penny', () => {
 	const paidLight = toAdminCostVsPay({
 		uniqueWorkerDays: 90,
 		stripePlan: 'standard',
-		stripePriceId: 'price_standard',
+		stripePriceId: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
 		catalog,
 		manualPlan: 'free',
 		username: 'paid-light',
@@ -103,7 +101,7 @@ test('toAdminCostVsPay buckets real risk instead of every unpaid penny', () => {
 	const paidUnderwater = toAdminCostVsPay({
 		uniqueWorkerDays: 7_000,
 		stripePlan: 'standard',
-		stripePriceId: 'price_standard',
+		stripePriceId: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
 		catalog,
 		manualPlan: 'free',
 		username: 'paid-heavy',
@@ -191,7 +189,7 @@ test('toAdminCostVsPay buckets real risk instead of every unpaid penny', () => {
 	const paidOperatorUnderwater = toAdminCostVsPay({
 		uniqueWorkerDays: 7_000,
 		stripePlan: 'standard',
-		stripePriceId: 'price_standard',
+		stripePriceId: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
 		catalog,
 		manualPlan: 'free',
 		username: 'ops-admin',
@@ -220,7 +218,7 @@ test('rankRiskCostConsumers ranks within buckets and drops pennies and operator 
 				username: 'paid-small-deficit',
 				uniqueWorkerDays: 6_100,
 				stripePlan: 'standard',
-				stripePriceId: 'price_standard',
+				stripePriceId: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
 				catalog,
 			}),
 			toAdminCostVsPayConsumer({
@@ -228,7 +226,7 @@ test('rankRiskCostConsumers ranks within buckets and drops pennies and operator 
 				username: 'paid-big-deficit',
 				uniqueWorkerDays: 8_000,
 				stripePlan: 'standard',
-				stripePriceId: 'price_standard',
+				stripePriceId: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
 				catalog,
 			}),
 			toAdminCostVsPayConsumer({
@@ -280,7 +278,7 @@ test('rankRiskCostConsumers ranks within buckets and drops pennies and operator 
 				username: 'ops-admin',
 				uniqueWorkerDays: 7_000,
 				stripePlan: 'standard',
-				stripePriceId: 'price_standard',
+				stripePriceId: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
 				catalog,
 				isOperator: true,
 			}),

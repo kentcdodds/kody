@@ -21,8 +21,6 @@ function jsonResponse(body: unknown, status = 200) {
 function createBillingEnv(
 	overrides: {
 		STRIPE_SECRET_KEY?: string
-		STRIPE_STANDARD_PRICE_ID?: string
-		STRIPE_STANDARD_YEARLY_PRICE_ID?: string
 		STRIPE_PRO_PRICE_ID?: string
 		STRIPE_PRO_YEARLY_PRICE_ID?: string
 		STRIPE_API_BASE_URL?: string
@@ -187,6 +185,7 @@ test('linkStripeCustomerFromCheckoutSession links customer and refreshes stripe_
 	})
 	expect(result).toEqual({
 		stripePlan: 'pro',
+		creditsEligible: true,
 		stripeInterval: 'month',
 		stripePriceId: 'price_pro',
 		cancelAt: null,
@@ -200,6 +199,13 @@ test('linkStripeCustomerFromCheckoutSession links customer and refreshes stripe_
 		stripe_price_id: 'price_pro',
 		stripe_plan_refreshed_at: now.toISOString(),
 	})
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT stripe_credits_eligible FROM users WHERE id = ?`,
+		)
+			.bind(user.id)
+			.first(),
+	).toEqual({ stripe_credits_eligible: 1 })
 	const refreshAlarm = env.STRIPE_PLAN_REFRESH.get(
 		env.STRIPE_PLAN_REFRESH.idFromName(user.stableUserId),
 	)
@@ -463,12 +469,10 @@ test('refreshStripePlanForUser keeps legacy on same-plan renew and drops it afte
 		plan: 'free',
 		stripeCustomerId: 'cus_legacy_refresh',
 		stripePlan: 'standard',
-		stripePriceId: 'price_standard',
+		stripePriceId: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
 		entitlementLadder: 'legacy',
 	})
 	const billingEnv = createBillingEnv({
-		STRIPE_STANDARD_PRICE_ID: 'price_standard',
-		STRIPE_STANDARD_YEARLY_PRICE_ID: 'price_standard_yearly',
 		STRIPE_PRO_PRICE_ID: 'price_pro',
 	})
 
@@ -479,7 +483,9 @@ test('refreshStripePlanForUser keeps legacy on same-plan renew and drops it afte
 					id: 'sub_still_active',
 					status: 'active',
 					cancel_at: null,
-					items: { data: [{ price: { id: 'price_standard' } }] },
+					items: {
+						data: [{ price: { id: 'price_1U3sg6LAQpAnsYszGeL2nc8O' } }],
+					},
 				},
 			],
 		},
@@ -491,13 +497,14 @@ test('refreshStripePlanForUser keeps legacy on same-plan renew and drops it afte
 	})
 	expect(
 		await env.APP_DB.prepare(
-			`SELECT stripe_plan, stripe_price_id, entitlement_ladder FROM users WHERE id = ?`,
+			`SELECT stripe_plan, stripe_price_id, stripe_credits_eligible, entitlement_ladder FROM users WHERE id = ?`,
 		)
 			.bind(user.id)
 			.first(),
 	).toEqual({
 		stripe_plan: 'standard',
-		stripe_price_id: 'price_standard',
+		stripe_price_id: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
+		stripe_credits_eligible: 0,
 		entitlement_ladder: 'legacy',
 	})
 	vi.unstubAllGlobals()
@@ -509,7 +516,9 @@ test('refreshStripePlanForUser keeps legacy on same-plan renew and drops it afte
 					id: 'sub_canceled',
 					status: 'canceled',
 					cancel_at: null,
-					items: { data: [{ price: { id: 'price_standard' } }] },
+					items: {
+						data: [{ price: { id: 'price_1U3sg6LAQpAnsYszGeL2nc8O' } }],
+					},
 				},
 			],
 		},
@@ -535,8 +544,6 @@ test('refreshStripePlanForUser keeps legacy on same-plan renew and drops it afte
 
 test('refreshStripePlanForUser drops legacy when the Stripe plan or price changes', async () => {
 	const billingEnv = createBillingEnv({
-		STRIPE_STANDARD_PRICE_ID: 'price_standard',
-		STRIPE_STANDARD_YEARLY_PRICE_ID: 'price_standard_yearly',
 		STRIPE_PRO_PRICE_ID: 'price_pro',
 	})
 
@@ -547,7 +554,7 @@ test('refreshStripePlanForUser drops legacy when the Stripe plan or price change
 			plan: 'free',
 			stripeCustomerId: 'cus_legacy_plan_change',
 			stripePlan: 'standard',
-			stripePriceId: 'price_standard',
+			stripePriceId: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
 			entitlementLadder: 'legacy',
 		})
 		stubStripeFetch({
@@ -588,7 +595,7 @@ test('refreshStripePlanForUser drops legacy when the Stripe plan or price change
 			plan: 'free',
 			stripeCustomerId: 'cus_legacy_interval_change',
 			stripePlan: 'standard',
-			stripePriceId: 'price_standard',
+			stripePriceId: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
 			entitlementLadder: 'legacy',
 		})
 		stubStripeFetch({
@@ -598,7 +605,9 @@ test('refreshStripePlanForUser drops legacy when the Stripe plan or price change
 						id: 'sub_yearly',
 						status: 'active',
 						cancel_at: null,
-						items: { data: [{ price: { id: 'price_standard_yearly' } }] },
+						items: {
+							data: [{ price: { id: 'price_1U3sg6LAQpAnsYszqq9abwIY' } }],
+						},
 					},
 				],
 			},
@@ -616,7 +625,7 @@ test('refreshStripePlanForUser drops legacy when the Stripe plan or price change
 				.first(),
 		).toEqual({
 			stripe_plan: 'standard',
-			stripe_price_id: 'price_standard_yearly',
+			stripe_price_id: 'price_1U3sg6LAQpAnsYszqq9abwIY',
 			entitlement_ladder: 'public',
 		})
 		vi.unstubAllGlobals()
@@ -640,15 +649,15 @@ test('refreshStripePlanForUser keeps legacy on the first price observation after
 					id: 'sub_first_price',
 					status: 'active',
 					cancel_at: null,
-					items: { data: [{ price: { id: 'price_standard' } }] },
+					items: {
+						data: [{ price: { id: 'price_1U3sg6LAQpAnsYszGeL2nc8O' } }],
+					},
 				},
 			],
 		},
 	})
 	await refreshStripePlanForUser({
-		env: createBillingEnv({
-			STRIPE_STANDARD_PRICE_ID: 'price_standard',
-		}),
+		env: createBillingEnv({}),
 		userId: user.id,
 		customerId: 'cus_legacy_first_price',
 	})
@@ -660,7 +669,7 @@ test('refreshStripePlanForUser keeps legacy on the first price observation after
 			.first(),
 	).toEqual({
 		stripe_plan: 'standard',
-		stripe_price_id: 'price_standard',
+		stripe_price_id: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
 		entitlement_ladder: 'legacy',
 	})
 	vi.unstubAllGlobals()

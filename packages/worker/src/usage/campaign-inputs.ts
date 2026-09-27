@@ -1,4 +1,5 @@
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
+import { readCreditWalletStateForPlan } from '#worker/entitlements/service.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 import { type OAuthGrantListHelpers } from '#worker/oauth-grants.ts'
@@ -34,6 +35,7 @@ export type UsageCampaignCandidate = {
 	plan: string
 	stripe_plan: string | null
 	entitlement_ladder: string | null
+	stripe_credits_eligible?: number | null
 }
 
 /**
@@ -181,6 +183,11 @@ async function readNearStockCap(input: {
 		const limits = resolvePlanLimits(
 			plan,
 			parseEntitlementLadder(input.user.entitlement_ladder),
+			await readCreditWalletStateForPlan(input.db, {
+				stableUserId: input.user.stable_user_id,
+				plan,
+				stripeCreditsEligible: input.user.stripe_credits_eligible,
+			}),
 		)
 		const [packages, secrets] = await Promise.all([
 			input.db

@@ -74,7 +74,7 @@ async function assertSecondAgentGiftOnScenarioClock() {
 			userId: free.stableUserId,
 			email: 'free-gift@example.com',
 		}),
-	).toEqual({ plan: 'free', ladder: 'public' })
+	).toEqual({ plan: 'free', ladder: 'public', creditWallet: 'none' })
 
 	const first = await evaluateSecondAgentStandardGift({
 		db: free.db,
@@ -103,7 +103,7 @@ async function assertSecondAgentGiftOnScenarioClock() {
 				userId: free.stableUserId,
 				email: 'free-gift@example.com',
 			}),
-		).toEqual({ plan: 'standard', ladder: 'public' })
+		).toEqual({ plan: 'standard', ladder: 'public', creditWallet: 'none' })
 	} finally {
 		vi.useRealTimers()
 	}
@@ -162,7 +162,7 @@ async function assertSecondAgentGiftOnScenarioClock() {
 			userId: paidStandard.stableUserId,
 			email: 'paid-standard@example.com',
 		}),
-	).toEqual({ plan: 'standard', ladder: 'public' })
+	).toEqual({ plan: 'standard', ladder: 'public', creditWallet: 'none' })
 
 	const paidPro = await createGiftTestDb({
 		email: 'paid-pro@example.com',
@@ -185,7 +185,7 @@ async function assertSecondAgentGiftOnScenarioClock() {
 			userId: paidPro.stableUserId,
 			email: 'paid-pro@example.com',
 		}),
-	).toEqual({ plan: 'pro', ladder: 'public' })
+	).toEqual({ plan: 'pro', ladder: 'public', creditWallet: 'none' })
 
 	const replayPaid = await evaluateSecondAgentStandardGift({
 		db: paidPro.db,

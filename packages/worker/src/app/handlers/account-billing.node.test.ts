@@ -85,6 +85,8 @@ vi.mock('#worker/billing/stripe-client.ts', async (importOriginal) => {
 	}
 })
 
+const retiredStandardPriceId = 'price_1U3sg6LAQpAnsYszGeL2nc8O'
+
 const authenticatedUser = {
 	userId: 9,
 	username: 'ada',
@@ -112,8 +114,6 @@ function createEnv(overrides: Record<string, unknown> = {}) {
 	return {
 		COOKIE_SECRET: 'test-cookie-secret-0123456789abcdef0123456789',
 		STRIPE_SECRET_KEY: 'sk_test_secret',
-		STRIPE_STANDARD_PRICE_ID: 'price_standard',
-		STRIPE_STANDARD_YEARLY_PRICE_ID: 'price_standard_yearly',
 		STRIPE_PRO_PRICE_ID: 'price_pro',
 		STRIPE_PRO_YEARLY_PRICE_ID: 'price_pro_yearly',
 		APP_DB: createBillingDb(),
@@ -134,14 +134,14 @@ async function postCheckout(env: Env, body: unknown, method: string = 'POST') {
 	} as never)
 }
 
-test('billing checkout selects monthly vs yearly Stripe price ids', async () => {
+test('billing checkout sells only Pro and selects monthly vs yearly Stripe price ids', async () => {
 	mockModule.createCheckoutSession.mockResolvedValue({
 		id: 'cs_test',
 		url: 'https://checkout.stripe.com/c/pay/cs_test',
 	})
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	const unauthorized = await postCheckout(createEnv(), { plan: 'standard' })
+	const unauthorized = await postCheckout(createEnv(), { plan: 'pro' })
 	expect(unauthorized.status).toBe(401)
 	expect(mockModule.createCheckoutSession).not.toHaveBeenCalled()
 
@@ -150,17 +150,21 @@ test('billing checkout selects monthly vs yearly Stripe price ids', async () => 
 	expect(missingPlan.status).toBe(400)
 	expect(await missingPlan.json()).toMatchObject({ ok: false })
 
+	// Retired Standard is no longer sold.
+	const standard = await postCheckout(createEnv(), { plan: 'standard' })
+	expect(standard.status).toBe(400)
+
 	const invalidInterval = await postCheckout(createEnv(), {
-		plan: 'standard',
+		plan: 'pro',
 		interval: 'week',
 	})
 	expect(invalidInterval.status).toBe(400)
 	expect(await invalidInterval.json()).toMatchObject({ ok: false })
 
 	const env = createEnv()
-	const monthlyStandard = await postCheckout(env, { plan: 'standard' })
-	expect(monthlyStandard.status).toBe(200)
-	expect(await monthlyStandard.json()).toEqual({
+	const monthlyPro = await postCheckout(env, { plan: 'pro' })
+	expect(monthlyPro.status).toBe(200)
+	expect(await monthlyPro.json()).toEqual({
 		ok: true,
 		url: 'https://checkout.stripe.com/c/pay/cs_test',
 		mode: 'checkout',
@@ -170,35 +174,12 @@ test('billing checkout selects monthly vs yearly Stripe price ids', async () => 
 	expect(mockModule.createCheckoutSession).toHaveBeenLastCalledWith(
 		env,
 		expect.objectContaining({
-			priceId: 'price_standard',
+			priceId: 'price_pro',
 			customerEmail: 'ada@example.com',
 		}),
 	)
 
-	const yearlyStandard = await postCheckout(env, {
-		plan: 'standard',
-		interval: 'year',
-	})
-	expect(yearlyStandard.status).toBe(200)
-	expect(mockModule.createCheckoutSession).toHaveBeenLastCalledWith(
-		env,
-		expect.objectContaining({ priceId: 'price_standard_yearly' }),
-	)
-
-	const monthlyPro = await postCheckout(env, {
-		plan: 'pro',
-		interval: 'month',
-	})
-	expect(monthlyPro.status).toBe(200)
-	expect(mockModule.createCheckoutSession).toHaveBeenLastCalledWith(
-		env,
-		expect.objectContaining({ priceId: 'price_pro' }),
-	)
-
-	const yearlyPro = await postCheckout(env, {
-		plan: 'pro',
-		interval: 'year',
-	})
+	const yearlyPro = await postCheckout(env, { plan: 'pro', interval: 'year' })
 	expect(yearlyPro.status).toBe(200)
 	expect(mockModule.createCheckoutSession).toHaveBeenLastCalledWith(
 		env,
@@ -206,11 +187,11 @@ test('billing checkout selects monthly vs yearly Stripe price ids', async () => 
 	)
 
 	const yearlyMissing = await postCheckout(
-		createEnv({ STRIPE_STANDARD_YEARLY_PRICE_ID: '' }),
-		{ plan: 'standard', interval: 'year' },
+		createEnv({ STRIPE_PRO_YEARLY_PRICE_ID: '' }),
+		{ plan: 'pro', interval: 'year' },
 	)
 	expect(yearlyMissing.status).toBe(409)
-	expect(mockModule.createCheckoutSession).toHaveBeenCalledTimes(4)
+	expect(mockModule.createCheckoutSession).toHaveBeenCalledTimes(2)
 })
 
 function subscription(input: { id: string; status: string; priceId: string }) {
@@ -218,7 +199,7 @@ function subscription(input: { id: string; status: string; priceId: string }) {
 		id: input.id,
 		status: input.status,
 		cancel_at: null,
-		items: { data: [{ price: { id: input.priceId } }] },
+		items: { data: [{ id: `si_${input.id}`, price: { id: input.priceId } }] },
 	}
 }
 
@@ -240,14 +221,14 @@ test('billing checkout routes existing subscribers through the portal update flo
 		subscription({
 			id: 'sub_old',
 			status: 'canceled',
-			priceId: 'price_standard',
+			priceId: retiredStandardPriceId,
 		}),
 	])
 	const env = createEnv({
 		APP_DB: createBillingDb('cus_existing'),
 		STRIPE_BILLING_PORTAL_CONFIGURATION_ID: 'bpc_kody',
 	})
-	const resubscribe = await postCheckout(env, { plan: 'standard' })
+	const resubscribe = await postCheckout(env, { plan: 'pro' })
 	expect(resubscribe.status).toBe(200)
 	expect(await resubscribe.json()).toEqual({
 		ok: true,
@@ -258,18 +239,19 @@ test('billing checkout routes existing subscribers through the portal update flo
 	expect(mockModule.createCheckoutSession).toHaveBeenLastCalledWith(
 		env,
 		expect.objectContaining({
-			priceId: 'price_standard',
+			priceId: 'price_pro',
 			customerId: 'cus_existing',
 		}),
 	)
 	expect(mockModule.createBillingPortalSession).not.toHaveBeenCalled()
 
-	// Active Standard asking for Pro: portal subscription_update, no Checkout.
+	// Retired Standard switching to Pro: portal confirm flow pinned to the
+	// Pro price, no Checkout.
 	mockModule.listSubscriptions.mockResolvedValueOnce([
 		subscription({
 			id: 'sub_standard',
 			status: 'active',
-			priceId: 'price_standard',
+			priceId: retiredStandardPriceId,
 		}),
 	])
 	const upgrade = await postCheckout(env, { plan: 'pro', interval: 'year' })
@@ -285,8 +267,10 @@ test('billing checkout routes existing subscribers through the portal update flo
 		returnUrl: 'https://example.com/account/billing',
 		configuration: 'bpc_kody',
 		flowData: {
-			type: 'subscription_update',
+			type: 'subscription_update_confirm',
 			subscriptionId: 'sub_standard',
+			subscriptionItemId: 'si_sub_standard',
+			priceId: 'price_pro_yearly',
 			afterCompletionRedirectUrl:
 				'https://example.com/account/billing?billing=updated',
 		},
@@ -298,7 +282,7 @@ test('billing checkout routes existing subscribers through the portal update flo
 		subscription({
 			id: 'sub_standard',
 			status: 'past_due',
-			priceId: 'price_standard',
+			priceId: retiredStandardPriceId,
 		}),
 	])
 	const pastDueSwitch = await postCheckout(env, { plan: 'pro' })
@@ -308,13 +292,13 @@ test('billing checkout routes existing subscribers through the portal update flo
 	// Same price as the current subscription: nothing to change.
 	mockModule.listSubscriptions.mockResolvedValueOnce([
 		subscription({
-			id: 'sub_standard',
+			id: 'sub_pro',
 			status: 'active',
-			priceId: 'price_standard',
+			priceId: 'price_pro',
 		}),
 	])
 	const samePlan = await postCheckout(env, {
-		plan: 'standard',
+		plan: 'pro',
 		interval: 'month',
 	})
 	expect(samePlan.status).toBe(409)
@@ -354,7 +338,7 @@ test('billing checkout routes existing subscribers through the portal update flo
 		subscription({
 			id: 'sub_standard',
 			status: 'active',
-			priceId: 'price_standard',
+			priceId: retiredStandardPriceId,
 		}),
 	])
 	const defaultConfigEnv = createEnv({

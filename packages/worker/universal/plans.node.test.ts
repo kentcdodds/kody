@@ -1,7 +1,13 @@
 import { expect, test } from 'vitest'
 import {
+	creditsUnlockMultiplier,
+	creditsUnlockedLimitFields,
 	formatDurableObjectRowsRead,
+	hasHigherPublicPlan,
 	parseEntitlementLadder,
+	planLimits,
+	proCreditsPlanLimits,
+	resolveCreditWalletState,
 	resolveEntitlementLadderAfterPaidAccessChange,
 	resolvePlanLimit,
 	resolvePlanLimits,
@@ -215,4 +221,89 @@ test('plan or price change drops legacy; resubscribe stays public', () => {
 			nextStripePriceId: 'price_pro',
 		}),
 	).toBe('public')
+})
+
+test('credit wallet state: only an eligible Pro wallet counts; balance > 0 funds it', () => {
+	expect(
+		resolveCreditWalletState({
+			plan: 'pro',
+			creditsEligible: true,
+			balanceMicroUsd: 1,
+		}),
+	).toBe('funded')
+	for (const balanceMicroUsd of [0, -4_000, null, undefined, Number.NaN]) {
+		expect(
+			resolveCreditWalletState({
+				plan: 'pro',
+				creditsEligible: true,
+				balanceMicroUsd,
+			}),
+		).toBe('empty')
+	}
+	// Retired Pro/Standard, Free, and a manual max never get a wallet.
+	for (const plan of ['free', 'standard', 'max'] as const) {
+		expect(
+			resolveCreditWalletState({
+				plan,
+				creditsEligible: true,
+				balanceMicroUsd: 10_000_000,
+			}),
+		).toBe('none')
+	}
+	expect(
+		resolveCreditWalletState({
+			plan: 'pro',
+			creditsEligible: false,
+			balanceMicroUsd: 10_000_000,
+		}),
+	).toBe('none')
+})
+
+test('purchasable Pro has Standard includes; funded wallet multiplies rate/compute limits by 50', () => {
+	expect(proCreditsPlanLimits).toEqual(planLimits.standard)
+	expect(resolvePlanLimits('pro', 'public', 'empty')).toEqual(
+		planLimits.standard,
+	)
+	// Retired $49 Pro keeps its own table.
+	expect(resolvePlanLimits('pro', 'public', 'none')).toEqual(planLimits.pro)
+	const unlocked = resolvePlanLimits('pro', 'public', 'funded')
+	for (const field of creditsUnlockedLimitFields) {
+		const base = proCreditsPlanLimits[field]
+		expect(unlocked[field]).toBe(
+			base === null ? null : base * creditsUnlockMultiplier,
+		)
+	}
+	expect(
+		resolvePlanLimit('pro', 'execute_calls_per_day', 'public', 'empty'),
+	).toBe(500)
+	expect(
+		resolvePlanLimit('pro', 'execute_calls_per_day', 'public', 'funded'),
+	).toBe(25_000)
+	expect(
+		resolveWeeklyPlanLimit('pro', 'execute_calls_per_day', 'public', 'funded'),
+	).toBe(60_000)
+	// Email, stock, storage, concurrency, and the interval floor stay put.
+	for (const resource of [
+		'email_sends_per_day',
+		'email_receives_per_day',
+		'saved_packages',
+		'storage_bytes',
+		'concurrent_workflows',
+	] as const) {
+		expect(resolvePlanLimit('pro', resource, 'public', 'funded')).toBe(
+			resolvePlanLimit('pro', resource, 'public', 'empty'),
+		)
+	}
+	expect(unlocked.minJobIntervalMs).toBe(proCreditsPlanLimits.minJobIntervalMs)
+	expect(unlocked.maxUniqueWorkerDaysPerMonth).toBe(350)
+	// A wallet state never changes non-Pro tables.
+	expect(resolvePlanLimits('free', 'public', 'funded')).toEqual(planLimits.free)
+	expect(resolvePlanLimits('max', 'public', 'funded')).toEqual(planLimits.max)
+})
+
+test('only Free has a higher public plan', () => {
+	expect(hasHigherPublicPlan('free')).toBe(true)
+	for (const plan of ['standard', 'pro', 'max'] as const) {
+		expect(hasHigherPublicPlan(plan)).toBe(false)
+	}
 })

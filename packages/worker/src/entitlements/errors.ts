@@ -1,15 +1,18 @@
 import {
+	accountCreditsPath,
 	buildComputeOverageHowToReduce,
 	computeOverageResourceVisibility,
 	computeOverageWarningResourceLabels,
-	type ComputeOverageDisposition,
+	type ComputeIncludeCreditsStatus,
 	type ComputeOverageWarningResource,
 } from '#universal/compute-overage.ts'
 import {
 	entitlementResourceLabels,
 	formatMinJobInterval,
 	hasHigherPublicPlan,
+	isCreditsUnlockedResource,
 	isWeeklyComputeWindowResource,
+	type CreditWalletState,
 	parsePlanName,
 	weeklyEntitlementResourceLabel,
 	type EntitlementResource,
@@ -33,12 +36,25 @@ export type EntitlementLimitErrorDetails = {
 	window?: EntitlementLimitWindow
 }
 
+/**
+ * Rate/compute limits a funded wallet raises point at credits (Free and
+ * retired plans land on the switch-to-Pro prompt there). An already
+ * unlocked wallet and operator `max` get reduce-only guidance.
+ */
 export function buildEntitlementUpgradeHint(
 	resource: EntitlementResource,
 	plan: PlanName,
+	creditWallet: CreditWalletState = 'none',
 ) {
 	const label = entitlementResourceLabels[resource]
 	const reduceGuidance = `Remove or finish existing ${label} you no longer need.`
+	if (
+		isCreditsUnlockedResource(resource) &&
+		plan !== 'max' &&
+		creditWallet !== 'funded'
+	) {
+		return `${reduceGuidance.slice(0, -1)}, or add credits at ${accountCreditsPath} to raise this limit.`
+	}
 	if (!hasHigherPublicPlan(plan)) return reduceGuidance
 	return `${reduceGuidance.slice(0, -1)}, or upgrade your plan at /account/billing.`
 }
@@ -149,10 +165,8 @@ export type JobIntervalFloorErrorDetails = {
 	upgradeHint: string
 }
 
-export function buildJobIntervalFloorUpgradeHint(plan: PlanName) {
-	if (!hasHigherPublicPlan(plan)) return 'Space this job out.'
-	return 'Space this job out, or upgrade at /account/billing.'
-}
+/** Free and Pro share the 15-minute floor, so there is no upgrade offer. */
+export const jobIntervalFloorUpgradeHint = 'Space this job out.'
 
 export function buildJobIntervalFloorMessage(
 	details: JobIntervalFloorErrorDetails,
@@ -217,22 +231,31 @@ export type ComputeOverageLimitErrorDetails = {
 	current: number
 	whatCounts: string
 	upgradeHint: string
-	disposition: ComputeOverageDisposition
+	creditsStatus: ComputeIncludeCreditsStatus
 }
 
-export function buildComputeOverageUpgradeHint(
-	resource: ComputeOverageWarningResource,
-	disposition: ComputeOverageDisposition | null | undefined,
-	plan: PlanName,
-) {
-	return buildComputeOverageHowToReduce(resource, disposition, plan)
+function creditWalletForStatus(
+	status: ComputeIncludeCreditsStatus,
+): CreditWalletState {
+	switch (status) {
+		case 'debiting_credits':
+			return 'funded'
+		case 'add_credits':
+			return 'empty'
+		case 'within_include':
+		case 'switch_to_pro':
+		case 'not_charged':
+			return 'none'
+		default: {
+			const exhaustive: never = status
+			throw new Error(`Unknown credits status: ${String(exhaustive)}`)
+		}
+	}
 }
 
 /**
- * User-facing denial when an unpaid Free account is over a monthly
- * compute include (soft-block). Paid public-ladder overage invoices
- * instead; legacy is not cut. Enforcement points must not compose
- * their own messages.
+ * User-facing denial for a monthly compute include. Enforcement points must
+ * not compose their own messages.
  */
 export function buildComputeOverageLimitMessage(
 	details: ComputeOverageLimitErrorDetails,
@@ -272,7 +295,7 @@ export function parseComputeOverageLimitMessage(
 			current,
 			whatCounts,
 			upgradeHint,
-			disposition: 'soft_block',
+			creditsStatus: 'add_credits',
 		}
 	}
 	return null
@@ -301,12 +324,12 @@ export class ComputeOverageLimitError extends Error {
 				computeOverageResourceVisibility[details.resource].whatCounts,
 			upgradeHint:
 				details.upgradeHint ??
-				buildComputeOverageUpgradeHint(
+				buildComputeOverageHowToReduce(
 					details.resource,
-					details.disposition,
 					details.plan,
+					creditWalletForStatus(details.creditsStatus),
 				),
-			disposition: details.disposition,
+			creditsStatus: details.creditsStatus,
 		}
 		super(buildComputeOverageLimitMessage(fullDetails))
 		this.name = 'ComputeOverageLimitError'
@@ -338,8 +361,7 @@ export class JobIntervalFloorError extends Error {
 	) {
 		const fullDetails: JobIntervalFloorErrorDetails = {
 			code: jobIntervalFloorErrorCode,
-			upgradeHint:
-				details.upgradeHint ?? buildJobIntervalFloorUpgradeHint(details.plan),
+			upgradeHint: details.upgradeHint ?? jobIntervalFloorUpgradeHint,
 			plan: details.plan,
 			minIntervalMs: details.minIntervalMs,
 		}

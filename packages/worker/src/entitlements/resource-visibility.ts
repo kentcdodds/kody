@@ -1,5 +1,8 @@
+import { accountCreditsPath } from '#universal/compute-overage.ts'
 import {
 	hasHigherPublicPlan,
+	isCreditsUnlockedResource,
+	type CreditWalletState,
 	type EntitlementResource,
 	type PlanName,
 } from '#universal/plans.ts'
@@ -170,22 +173,33 @@ export const entitlementResourceVisibility: Record<
 
 /**
  * Plan-aware reduce-usage guidance for account usage UI, `usageGet`, and
- * warning emails. Omits the self-serve upgrade clause when the plan is
- * already at the top of the public ladder (Pro) or Max.
+ * warning emails. Rate/compute limits a funded wallet raises point at
+ * `/account/credits` unless already unlocked (or `max`). Other resources
+ * keep the upgrade clause only while a higher public plan exists (Free).
  */
 export function buildEntitlementHowToReduce(
 	resource: EntitlementResource,
 	plan: PlanName,
+	creditWallet: CreditWalletState = 'none',
 ) {
 	const visibility = entitlementResourceVisibility[resource]
 	const { howToReduce, upgradeOffer } = visibility
-	if (!upgradeOffer || !hasHigherPublicPlan(plan)) return howToReduce
+	const creditsOffer =
+		isCreditsUnlockedResource(resource) &&
+		plan !== 'max' &&
+		creditWallet !== 'funded'
+	if (!creditsOffer && (!upgradeOffer || !hasHigherPublicPlan(plan))) {
+		return howToReduce
+	}
 	if (!howToReduce.endsWith('.')) {
 		throw new Error(
 			`Entitlement howToReduce for ${resource} must end with a period.`,
 		)
 	}
-	return `${howToReduce.slice(0, -1)}${upgradeOffer}`
+	const offer = creditsOffer
+		? `, or add credits at ${accountCreditsPath} to raise this limit.`
+		: upgradeOffer
+	return `${howToReduce.slice(0, -1)}${offer}`
 }
 
 /** All entitlement resources in display order (grouped). */

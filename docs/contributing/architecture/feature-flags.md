@@ -140,18 +140,6 @@ members with
 `adminFeatureFlagSet({ key: "execute-invoke", enabled: true, audience: "experiments_opt_in" })`.
 Remove the flag and gate sites when the experiment ends.
 
-`compute-overage-charging` is a billing gate, not an experiment (no
-`successMetric`). Registry default is **on**. When on, the
-`compute_overage_billing` lane creates standalone Stripe invoices for
-public-ladder unique worker-day and Durable Object rows-read overage when
-`resolveComputeOverageDisposition` returns `invoice`. Unpaid Free is a
-soft-block. Legacy Standard/Pro stays unbilled. To dry-run without charging, set
-the **global** flag off at `/admin/feature-flags` (or `adminFeatureFlagSet`).
-Global off is a hard gate: a per-user on override cannot charge. A per-user off
-override still dry-runs that account while global is on. A percentage rollout is
-still globally on — in-bucket users charge. D1 evaluation failures fail closed
-(all flags off, so no charges).
-
 `package-share-grants` is a rollout kill switch for person-to-person package
 shares (invite, accept, UI, MCP, and runtime use). Registry default is **off**.
 Signed-in users can opt themselves in from `/docs/package-sharing` (a per-user

@@ -10,8 +10,9 @@ Module: `packages/worker/src/entitlements/` plus the client-safe plan registry
 at `packages/worker/universal/plans.ts`.
 
 - `plans.ts` (`#universal/plans.ts`) — plan names (`free`, `standard`, `pro`,
-  `max`), the public `PlanLimits` config per plan, the pre-cut
-  `legacyPlanLimits` table for continuous Standard/Pro, `max` email caps
+  `max`), the `PlanLimits` config per plan, `proCreditsPlanLimits` and the
+  credit wallet unlock (`CreditWalletState`, `resolveCreditWalletState`), the
+  pre-cut `legacyPlanLimits` table for continuous Standard/Pro, `max` email caps
   (`maxPlanEmailLimits`), the `EntitlementResource` registry,
   `resolvePlanLimit(plan, resource, ladder?)`, `resolvePlanLimits`,
   `getPlanRank`, `hasHigherPublicPlan`, `parsePlanName` (strict, untrusted
@@ -20,9 +21,10 @@ at `packages/worker/universal/plans.ts`.
   `resolveEffectivePlan(manual, stripe)`.
 - `errors.ts` — the one typed error (`EntitlementLimitError`) and the one
   user-facing message builder every enforcement point uses.
-  `buildEntitlementUpgradeHint` (and the job-interval / compute-overage
-  siblings) omit the self-serve upgrade clause unless
-  `hasHigherPublicPlan(plan)` is true.
+  `buildEntitlementUpgradeHint` points rate/compute limits a funded wallet
+  raises at `/account/credits` (reduce-only once unlocked, and for `max`); other
+  resources keep the upgrade clause only when `hasHigherPublicPlan(plan)`
+  (Free).
 - `service.ts` — `getUserEntitlement` / `getUserPlan`,
   `getCachedUserEntitlement` / `getCachedUserPlan` (60s TTL enforcement cache),
   `assertWithinEntitlement`, built-in D1 usage counters, the daily-counter
@@ -120,7 +122,7 @@ already Standard/Pro/max and Stripe was not touched. There is no existing helper
 that extends a remaining Stripe period, and mutating `trial_end` / period end is
 payment-adjacent.
 
-`getUserEntitlement` and compute-overage invoicing overlay Standard through
+`getUserEntitlement` overlays Standard through
 `resolveEffectivePlanWithSecondAgentGift` while `expires_at` is in the future
 and the base rank is still below Standard. The gift never lowers a paid or
 manual grant. Expiry is read-time (no sweeper). Authorize completion and
@@ -143,14 +145,14 @@ referrer for the rest of that window. Signup (password and OAuth) persists a
 pending `referrals` row from the cookie or a same-request share link.
 First-touch UTMs stay write-once and do not carry the referral code. Reward runs
 on `invoice.paid` after the referee's first qualifying paid Stripe invoice
-(`amount_paid > 0`, not a $0 trial, not a compute-overage invoice). Both the
-referrer and the referee receive one stacked month (30 days) of public Standard
-via `users.referral_standard_credit_expires_at`. There is no annual or lifetime
-cap on how many months a referrer can earn. Paid subscribers stack from the
-later of an existing credit and the current paid period end so the month starts
-after paid access rather than overlapping it. Referee invoices use the latest
-line `period.end`. A failed Stripe lookup of the referrer's subscription fails
-the webhook so Stripe can retry instead of stacking from now. Email-verify
+(`amount_paid > 0`, not a $0 trial, not a historical compute-overage invoice).
+Both the referrer and the referee receive one stacked month (30 days) of public
+Standard via `users.referral_standard_credit_expires_at`. There is no annual or
+lifetime cap on how many months a referrer can earn. Paid subscribers stack from
+the later of an existing credit and the current paid period end so the month
+starts after paid access rather than overlapping it. Referee invoices use the
+latest line `period.end`. A failed Stripe lookup of the referrer's subscription
+fails the webhook so Stripe can retry instead of stacking from now. Email-verify
 leaves a held row pending if that lookup fails; the referrer’s later
 `invoice.paid` retries it. Stripe subscriptions are not mutated.
 
@@ -161,8 +163,8 @@ referrer. An unverified party holds the qualifying invoice id on the pending
 row; email verification retries the grant. `/account/billing` shows the share
 link and simple referrer status.
 
-`getUserEntitlement` and compute-overage invoicing overlay Standard through the
-later of the second-agent gift and this referral credit.
+`getUserEntitlement` overlays Standard through the later of the second-agent
+gift and this referral credit.
 
 ### `max` plan limits
 
@@ -198,6 +200,78 @@ earlier job-matched values. All other resources use the ordinary
 | `outbound_fetches_per_day`       | 80,000  |
 | `job_runs_per_day`               | 40,000  |
 | `automation_invocations_per_day` | 200,000 |
+
+## Prepaid credits
+
+Implements v1 of [#2617](https://github.com/kentcdodds/kody/issues/2617). The
+public ladder is Free plus one purchasable **Pro** (`STRIPE_PRO_PRICE_ID` /
+`STRIPE_PRO_YEARLY_PRICE_ID`, $12 / $120). Pro uses `proCreditsPlanLimits`,
+which equals the retired public Standard table. Retired Standard ($12/$120) and
+Pro ($49/$480) subscribers keep their plan and table until they change plan
+(`retiredStandardPriceIds` / `retiredProPriceIds`); checkout only sells Pro.
+
+**Eligibility keys off the Stripe price.** `resolveSubscriptionPlan` sets
+`creditsEligible` when the granting subscription uses a configured Pro price,
+and every Stripe refresh writes it to `users.stripe_credits_eligible`
+(`0069-prepaid-credits.sql`). That separates Pro from retired Standard at the
+same $12. `getUserEntitlement` returns `creditWallet`
+(`resolveCreditWalletState`): `none` unless the effective plan is `pro` and the
+account is eligible, then `funded` when `credit_wallets.balance_micro_usd > 0`
+and `empty` otherwise. Free, retired Standard/Pro, manual grants, and `max` are
+always `none`; an admin grant to them only holds a balance.
+
+**Unlock.** `funded` multiplies the rate/compute limits in
+`creditsUnlockedLimitFields` (execute, outbound fetches, job runs, and
+automation invocations, daily and weekly) by `creditsUnlockMultiplier` (50).
+Email caps, stock limits, storage, concurrency, and the job interval floor do
+not change. Unlocking costs nothing; at $0 the base caps apply again (within the
+60s enforcement cache).
+
+**Debits.** The `usage_aggregation` lane runs `runCreditDebits`
+(`packages/worker/src/billing/credit-debits.ts`) right after it recomputes
+`usage_rollups`, for the prior and current UTC month. Per wallet and debit meter
+(`creditDebitMeters`, open TEXT in D1 so CPU can join), billable units are usage
+above the include; `credit_debit_progress` records units already handled. A
+funded wallet is charged
+`creditDebitCostMicroUsd(next) − creditDebitCostMicroUsd(accounted)`
+($0.004 per unique worker day, $0.002 per million rows read, about 2× Cloudflare
+list). Every other wallet advances progress without a charge, so a later top-up
+never back-charges. The balance can dip below $0 by about an hour of unlocked
+usage; it stays locked until a top-up covers it. Debit ledger ids are
+deterministic per starting position, so an overlapping run rolls back instead of
+charging twice. A new wallet starts its progress at the current month's billable
+units. CPU, Durable Object duration, RunLog rows, and email are not debited.
+Nobody is invoiced for overage; the retired `compute_overage_invoices` table is
+history only.
+
+**Top-ups.** `POST /account/credits/top-up.json` (Pro only) opens a one-off
+Checkout Session (`mode=payment`, `price_data`, card saved with
+`setup_future_usage=off_session`, metadata `kody_credit_top_up`). The
+`/account/credits?topup=success` redirect and the `checkout.session.completed`
+webhook both call `applyCreditTopUpFromCheckoutSession`, which credits Stripe's
+`amount_total` after verifying the signed `client_reference_id`. The unique
+`stripe_reference` makes replays no-ops. Packs are $10 / $25 /
+$50 or a custom
+$5–$500.
+
+**Auto-refill.** Off by default. Turning it on requires a threshold of at least
+$5, an amount, and a monthly cap at least that amount
+(`validateCreditAutoRefillSettings`). After debits, `runCreditAutoRefill`
+charges the saved card off-session when the balance is at or under the threshold
+and the refill fits under this UTC month's cap (`decideCreditAutoRefill`). A
+failed charge backs off 24 hours. The Stripe idempotency key is per user, month,
+and refill number.
+
+**Notices** (checkboxes on `/account/credits`, default on): auto-refilled, hit
+the monthly cap (once per month), and balance at or below $5 (only while
+auto-refill is off, once per crossing).
+
+**Admin grants.** `POST /admin/users/credits.json` (admin users page) and the
+`adminCreditGrant` capability add house-funded credits to any account, including
+the calling admin, without a Stripe charge. Each grant writes a ledger row with
+`granted_by_user_id`, amount, recipient, time, and optional note, plus an admin
+audit event. `adminCreditWalletGet` and `GET /admin/users/credits.json` read the
+balance and recent ledger.
 
 ## Compute rate limits
 
@@ -261,48 +335,21 @@ storage layout and naming are documented in [Data storage](./data-storage.md).
 UserMeter also stores first-seen Dynamic Worker ids per UTC day so usage
 metering can record `dynamic_worker_day` without double-counting, and inbound
 MCP OAuth last-used stamps so Account → Connections can show which host is safe
-to revoke. `PlanLimits.maxUniqueWorkerDaysPerMonth` is the public included
-allotment (Free 50, Standard 350, Pro 2,000) shown on `/pricing`.
-`PlanLimits.maxDurableObjectRowsReadPerMonth` is the public included Durable
-Object rows-read allotment (Free 0.5B, Standard 5B, Pro 20B). Those two fields
-are the only customer-facing monthly overage meters. They are not in
+to revoke. `PlanLimits.maxUniqueWorkerDaysPerMonth` is the included allotment
+(Free 50, purchasable Pro and retired Standard 350, retired Pro 2,000) shown on
+`/pricing`. `PlanLimits.maxDurableObjectRowsReadPerMonth` is the included
+Durable Object rows-read allotment (Free 0.5B, Pro and retired Standard 5B,
+retired Pro 20B). Those two fields are the credit debit meters. They are not in
 `entitlementResources`, so `assertWithinEntitlement` does not hard-cut them.
 Hourly user warning emails cover approaching (80%) and reached (100%) includes
-for both public and legacy accounts. User-facing overage list prices live on
-`computeOverageRatesUsd` (unique worker-day
-$0.0025, Durable Object rows read
-$0.0015 per million — Cloudflare list plus a
-$0.0005 thin margin). Public-ladder
-overage is billed at those rates when `compute-overage-charging` is on (registry
-default: on) and `resolveComputeOverageDisposition` returns `invoice`: paid
-public Standard/Pro with a Stripe customer, or Free that already has a customer.
-Unpaid Free that exceeds includes is a soft-block (upgrade prompt on
-`/account/usage` and the same `whatCounts` / `howToReduce` copy on `usageGet`),
-never a Stripe charge that would fail. `usageGet` and the account usage UI
-include these monthly meters with plain-language guidance; they are not hard
-entitlement cuts. A `ComputeOverageLimitError` (`compute_overage_include_reached`)
-carries that same guidance for execute/jobs structured entitlement errors when
-a soft-block denial is raised. Turn the flag off
-globally at `/admin/feature-flags` to dry-run (ledger rows, no Stripe). Global
-off is a hard gate — a per-user on override cannot charge. A percentage
-rollout is still globally on. Amounts below
-Stripe's $0.50
-USD minimum are recorded as `skip_below_minimum`, not invoiced. Includes are
-resolved from the effective plan and ladder at invoice time (UTC days 1–3),
-including an unexpired second-agent gift or referral Standard credit (the later
-of the two expiry columns, same helper as `getUserEntitlement`). There is no
-month-end plan snapshot; a plan or overlay that is expired when the job runs
-prices the prior month against the then-current includes. D1 evaluation failures
-fail closed (no charges). Execute and outbound fetches are hard daily and weekly
-caps with no overage (`computeMeteringPolicy.executeCallsPerDay`) — an execute
-overage would double-charge the same burn as unique worker days. Durable Object
-duration is observed (Cloudflare-measured GB-s plus the StorageRunner RPC
-wall-clock proxy) and is not billed. Overage is a heavy-tail safety valve only
-(`computeMeteringPolicy.overageRole`): included amounts and the public Pro $49
-price are not sized to monetize via overage. Legacy Standard/Pro accounts are
-not cut and not billed on these allotments
-(`computeMeteringPolicy.legacyMonthlyMeters`); they get the same approaching and
-reached warnings. See [Usage metering](./usage-metering.md).
+for every plan, with `/account/credits` as the call to action. Usage above an
+include debits a funded purchasable-Pro wallet and is not charged otherwise
+(`computeMeteringPolicy.pastIncludeWithoutCredits`); see
+[Prepaid credits](#prepaid-credits). Execute and outbound fetches are hard daily
+and weekly caps (`computeMeteringPolicy.executeCallsPerDay`) that a funded
+wallet raises. Durable Object duration is observed (Cloudflare-measured GB-s
+plus the StorageRunner RPC wall-clock proxy) and is not charged. See
+[Usage metering](./usage-metering.md).
 
 **D1 payload storage bytes** (`storage_bytes`) are **authoritative in
 UserMeter**. `assertWithinStorageBytesEntitlement` uses atomic DO
@@ -696,31 +743,32 @@ the stable programmatic contract:
 ```
 
 The `message` is built by `buildEntitlementLimitMessage` and is the single
-user-facing string across MCP and UI surfaces. `upgradeHint` includes a
-self-serve billing offer only when `hasHigherPublicPlan(plan)` is true (Free and
-Standard). Pro is the top public SKU and Max is manual-only, so those plans get
-reduce-only hints. `/account/usage` follows the same gate: the warnings panel
-omits the Upgrade link, and its title is **Limit reached** when a hard
-daily/weekly/stock cap is at 100% (monthly compute includes do not count).
+user-facing string across MCP and UI surfaces. For rate/compute limits a funded
+wallet raises (`creditsUnlockedResources`), `upgradeHint` points at
+`/account/credits` unless the wallet is already unlocked or the plan is `max`.
+Other resources include a self-serve billing offer only when
+`hasHigherPublicPlan(plan)` is true (Free); the purchasable Pro has the retired
+Standard stock limits, so retired plans get reduce-only hints there. The job
+interval floor hint is always reduce-only (Free and Pro share 15 minutes).
 
-Free/Standard example:
+Rate limit example (Free, Pro with $0, retired plans):
 
-> Plan limit reached: your "standard" plan allows at most 15 scheduled jobs and
-> you currently have 15. Remove or finish existing scheduled jobs you no longer
-> need, or upgrade your plan at /account/billing.
+> Plan limit reached: your "pro" plan allows at most 500 execute calls per day
+> and you currently have 500. Remove or finish existing execute calls per day
+> you no longer need, or add credits at /account/credits to raise this limit.
 
-Pro/Max example:
+Stock limit example (Pro):
 
-> Plan limit reached: your "pro" plan allows at most 75 scheduled jobs and you
-> currently have 75. Remove or finish existing scheduled jobs you no longer
+> Plan limit reached: your "pro" plan allows at most 15 scheduled jobs and you
+> currently have 15. Remove or finish existing scheduled jobs you no longer
 > need.
 
 Rules:
 
 - `details.plan` is always a known plan name; denial messages always quote that
   plan name.
-- `details.upgradeHint` is reduce-only when there is no higher public plan. Do
-  not append a billing CTA at the enforcement point.
+- `details.upgradeHint` comes from `buildEntitlementUpgradeHint`. Do not append
+  a billing or credits CTA at the enforcement point.
 - Never compose a custom denial message at an enforcement point; change the
   builder if the message needs work.
 - Never catch and rewrap `EntitlementLimitError` (use `isEntitlementLimitError`
@@ -940,19 +988,17 @@ workflows via RunLog, and similar).
 Optional Stripe subscription billing lives in `packages/worker/src/billing/`
 (raw `fetch` client — no Stripe SDK; `STRIPE_API_BASE_URL` overrides the API
 host for tests/mocks). Without `STRIPE_SECRET_KEY`, billing surfaces degrade to
-manual plans only. `STRIPE_STANDARD_PRICE_ID` /
-`STRIPE_STANDARD_YEARLY_PRICE_ID` and `STRIPE_PRO_PRICE_ID` /
-`STRIPE_PRO_YEARLY_PRICE_ID` independently enable checkout for their
-corresponding tier and interval; an unset price id only disables purchase of
-that interval. Production checkout uses Standard $12 / $120 and Pro $49 /
-$480.
-`retiredProPriceIds` map historical Pro Stripe price ids to `standard` / `pro`
-entitlements. Yearly price ids resolve the same way.
+manual plans only. `STRIPE_PRO_PRICE_ID` / `STRIPE_PRO_YEARLY_PRICE_ID`
+independently enable checkout for the purchasable Pro ($12 / $120); an unset
+price id only disables purchase of that interval. `retiredStandardPriceIds` /
+`retiredProPriceIds` map the retired Standard ($12/$120, $5) and Pro ($49/$480
+and earlier) price ids to `standard` / `pro` so existing subscribers keep their
+plan; none of them is wallet-eligible.
 
 Checkout sessions are created server-side for authenticated users via
 `POST /account/billing/checkout.json` (Stripe Checkout Session, JSON body
-`{ plan: "standard" | "pro", interval?: "month" | "year" }` defaulting to
-`month`, `mode=subscription`, with a signed `client_reference_id` and
+`{ plan: "pro", interval?: "month" | "year" }` defaulting to `month`,
+`mode=subscription`, with a signed `client_reference_id` and
 `metadata.kody_stable_user_id`). Sessions enable Stripe automatic tax
 (`automatic_tax[enabled]`; Stripe Tax is active on the account and computes 0
 until a registration exists), tax-ID collection for business customers, and
@@ -974,11 +1020,11 @@ When the checkout handler finds a linked `stripe_customer_id`, it lists the
 customer's subscriptions and keeps the plan-retaining ones (`active` /
 `trialing` / `past_due`, the same set `resolveSubscriptionPlan` grants from).
 With exactly one, it creates a Billing Portal session with
-`flow_data[type]=subscription_update` for that subscription (the production
-portal lists only Standard $12/$120 and Pro $49/$480, and prorates with
-`always_invoice`) and returns `{ ok: true, url, mode: 'portal_update' }`; Stripe
-redirects back to `/account/billing?billing=updated` after the customer confirms
-the prorated change. Requesting the price the subscription already has returns
+`flow_data[type]=subscription_update_confirm` that moves that subscription's
+item to the requested Pro price (prorated with `always_invoice`) and returns
+`{ ok: true, url, mode: 'portal_update' }`; Stripe redirects back to
+`/account/billing?billing=updated` after the customer confirms the prorated
+change. Requesting the price the subscription already has returns
 `409 { error: 'You are already on that plan.' }`. More than one plan-retaining
 subscription (legacy double subscriptions) returns the plain portal with
 `mode: 'portal'` so the customer chooses which to keep. Only customers with no
@@ -1056,6 +1102,9 @@ Handled event types:
   `subscriptionStatus` such as `past_due` for UX; does not email users)
 - `invoice.paid` — customer lookup, then the referral reward path when the
   invoice is the referee's first qualifying paid subscription invoice
+- `checkout.session.completed` with `metadata.kody_credit_top_up=1` — credits
+  the prepaid wallet instead of linking a subscription (see
+  [Prepaid credits](#prepaid-credits))
 - Unknown event types — acknowledge `200` after process+record
 
 Idempotency uses the `stripe_webhook_events` table from
@@ -1081,9 +1130,9 @@ instead of acknowledging an unrecoverable stale projection. The
 `stripe_price_id` ships in `0044-users-stripe-price-id.sql`. The alarm DO class
 exists without moving canonical billing data out of D1.
 
-Published prices: Free $0, Standard $12/mo or $120/year ($10/mo billed
-annually), Pro $49/mo or $480/year ($40/mo billed annually). Env vars and deploy
-wiring are documented in
+Published prices: Free $0, Pro $12/mo or $120/year ($10/mo billed annually) with
+prepaid credits. Retired Standard ($12/$120) and Pro ($49/$480) continue for
+existing subscribers only. Env vars and deploy wiring are documented in
 [`../environment-variables.md`](../environment-variables.md).
 
 ## Related tables and coordination

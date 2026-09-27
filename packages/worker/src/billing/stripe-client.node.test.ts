@@ -9,18 +9,14 @@ import {
 	cancelSubscription,
 	createBillingPortalSession,
 	createCheckoutSession,
-	createDraftInvoice,
-	createInvoiceItem,
-	getInvoice,
-	listCustomerInvoices,
-	listInvoiceItemsForInvoice,
+	createCreditTopUpCheckoutSession,
+	createOffSessionPaymentIntent,
 	createProratedRefundCreditNote,
-	finalizeInvoice,
-	payInvoice,
 	creditNoteCapFitAttempts,
 	creditNoteListMaxPages,
 	deleteCustomer,
 	getCheckoutSession,
+	getCreditTopUpCheckoutSession,
 	isAccountDeletionCreditNote,
 	isStripeNothingToRefundError,
 	listCreditNotesForCustomer,
@@ -234,8 +230,8 @@ test('stripe client request contracts for checkout, subscriptions, and portal', 
 		vi.unstubAllGlobals()
 	}
 
-	// Plan changes for existing subscribers open the portal directly on the
-	// subscription_update step with the Kody portal configuration.
+	// Switching an existing subscriber to Pro opens the portal on the
+	// confirm step pinned to the Pro price, with the Kody configuration.
 	const portalFlowFetch = vi.fn(async () =>
 		jsonResponse({ url: 'https://billing.stripe.com/session/flow' }),
 	)
@@ -248,8 +244,10 @@ test('stripe client request contracts for checkout, subscriptions, and portal', 
 				returnUrl: 'https://app.example.com/account/billing',
 				configuration: ' bpc_kody ',
 				flowData: {
-					type: 'subscription_update',
+					type: 'subscription_update_confirm',
 					subscriptionId: 'sub_current',
+					subscriptionItemId: 'si_current',
+					priceId: 'price_pro',
 					afterCompletionRedirectUrl:
 						'https://app.example.com/account/billing?billing=updated',
 				},
@@ -266,10 +264,19 @@ test('stripe client request contracts for checkout, subscriptions, and portal', 
 			'https://app.example.com/account/billing',
 		)
 		expect(body.get('configuration')).toBe('bpc_kody')
-		expect(body.get('flow_data[type]')).toBe('subscription_update')
-		expect(body.get('flow_data[subscription_update][subscription]')).toBe(
-			'sub_current',
-		)
+		expect(body.get('flow_data[type]')).toBe('subscription_update_confirm')
+		expect(
+			body.get('flow_data[subscription_update_confirm][subscription]'),
+		).toBe('sub_current')
+		expect(
+			body.get('flow_data[subscription_update_confirm][items][0][id]'),
+		).toBe('si_current')
+		expect(
+			body.get('flow_data[subscription_update_confirm][items][0][price]'),
+		).toBe('price_pro')
+		expect(
+			body.get('flow_data[subscription_update_confirm][items][0][quantity]'),
+		).toBe('1')
 		expect(body.get('flow_data[after_completion][type]')).toBe('redirect')
 		expect(body.get('flow_data[after_completion][redirect][return_url]')).toBe(
 			'https://app.example.com/account/billing?billing=updated',
@@ -288,8 +295,10 @@ test('stripe client request contracts for checkout, subscriptions, and portal', 
 					customerId: 'cus_portal',
 					returnUrl: 'https://app.example.com/account/billing',
 					flowData: {
-						type: 'subscription_update',
+						type: 'subscription_update_confirm',
 						subscriptionId: '   ',
+						subscriptionItemId: 'si_current',
+						priceId: 'price_pro',
 						afterCompletionRedirectUrl: 'https://app.example.com/account',
 					},
 				},
@@ -1204,166 +1213,90 @@ test('stripe client rejects missing config and maps API failure shapes', async (
 	}
 })
 
-test('standalone invoice helpers send idempotency keys and attach metadata', async () => {
-	const fetchStub = vi.fn(async (url: string | URL) => {
-		const path = String(url)
-		if (path.endsWith('/v1/invoices')) {
-			return jsonResponse({
-				id: 'in_overage_1',
-				status: 'draft',
-				amount_due: 0,
-				currency: 'usd',
-			})
-		}
-		if (path.endsWith('/v1/invoiceitems')) {
-			return jsonResponse({
-				id: 'ii_uwd_1',
-				invoice: 'in_overage_1',
-				amount: 100,
-				currency: 'usd',
-			})
-		}
-		if (path.endsWith('/finalize')) {
-			return jsonResponse({
-				id: 'in_overage_1',
-				status: 'open',
-				amount_due: 100,
-				currency: 'usd',
-			})
-		}
-		if (path.endsWith('/pay')) {
-			return jsonResponse({
-				id: 'in_overage_1',
-				status: 'paid',
-				amount_due: 0,
-				currency: 'usd',
-			})
-		}
-		return jsonResponse({ error: { message: 'unexpected' } }, 500)
-	})
-	vi.stubGlobal('fetch', fetchStub)
-	try {
-		const env = { STRIPE_SECRET_KEY: 'sk_test_secret' }
-		const invoice = await createDraftInvoice(env, {
-			customerId: 'cus_paid',
-			idempotencyKey: 'kody-overage-invoice:user:2026-08',
-			metadata: { kody_compute_overage: '1', kody_overage_month: '2026-08' },
-		})
-		expect(invoice.id).toBe('in_overage_1')
-		const item = await createInvoiceItem(env, {
-			customerId: 'cus_paid',
-			invoiceId: invoice.id,
-			amountCents: 100,
-			description: 'Kody unique worker-day overage',
-			idempotencyKey: 'kody-overage-uwd:user:2026-08',
-			metadata: { kody_compute_overage: '1' },
-		})
-		expect(item.amount).toBe(100)
-		await finalizeInvoice(env, invoice.id, 'kody-overage-finalize:user:2026-08')
-		await payInvoice(env, invoice.id, 'kody-overage-pay:user:2026-08')
-
-		const [draftUrl, draftInit] = fetchStub.mock.calls[0]!
-		expect(String(draftUrl)).toBe('https://api.stripe.com/v1/invoices')
-		expect(draftInit).toMatchObject({
-			method: 'POST',
-			headers: expect.objectContaining({
-				'idempotency-key': 'kody-overage-invoice:user:2026-08',
-			}),
-		})
-		const draftBody = new URLSearchParams(String(draftInit?.body))
-		expect(draftBody.get('customer')).toBe('cus_paid')
-		expect(draftBody.get('auto_advance')).toBe('false')
-		expect(draftBody.get('pending_invoice_items_behavior')).toBe('exclude')
-		expect(draftBody.get('metadata[kody_compute_overage]')).toBe('1')
-
-		const [, itemInit] = fetchStub.mock.calls[1]!
-		expect(itemInit).toMatchObject({
-			headers: expect.objectContaining({
-				'idempotency-key': 'kody-overage-uwd:user:2026-08',
-			}),
-		})
-		const itemBody = new URLSearchParams(String(itemInit?.body))
-		expect(itemBody.get('amount')).toBe('100')
-		expect(itemBody.get('invoice')).toBe('in_overage_1')
-	} finally {
-		vi.unstubAllGlobals()
+test('credit top-up checkout and off-session refill send the expected Stripe contracts', async () => {
+	const env = {
+		STRIPE_SECRET_KEY: 'sk_test_secret',
+		STRIPE_API_BASE_URL: 'https://stripe.mock',
 	}
-})
-
-test('getInvoice and listCustomerInvoices read existing overage invoices', async () => {
-	const fetchStub = vi.fn(async (url: string | URL) => {
-		const parsed = new URL(String(url))
-		if (
-			parsed.pathname === '/v1/invoices' &&
-			parsed.searchParams.get('customer')
-		) {
-			return jsonResponse({
-				data: [
-					{
-						id: 'in_listed',
-						status: 'paid',
-						amount_due: 0,
-						currency: 'usd',
-						metadata: {
-							kody_compute_overage: '1',
-							kody_overage_month: '2026-08',
-						},
-					},
-				],
-			})
-		}
-		if (parsed.pathname === '/v1/invoices/in_listed') {
-			return jsonResponse({
-				id: 'in_listed',
-				status: 'paid',
-				amount_due: 0,
-				currency: 'usd',
-				metadata: { kody_compute_overage: '1' },
-			})
-		}
-		return jsonResponse({ error: { message: 'unexpected' } }, 500)
-	})
-	vi.stubGlobal('fetch', fetchStub)
-	try {
-		const env = { STRIPE_SECRET_KEY: 'sk_test_secret' }
-		const invoice = await getInvoice(env, 'in_listed')
-		expect(invoice.id).toBe('in_listed')
-		const listed = await listCustomerInvoices(env, 'cus_paid')
-		expect(listed).toHaveLength(1)
-		expect(listed[0]?.metadata?.kody_overage_month).toBe('2026-08')
-	} finally {
-		vi.unstubAllGlobals()
-	}
-})
-
-test('listInvoiceItemsForInvoice reads items already on a draft', async () => {
-	const fetchStub = vi.fn(async (url: string | URL) => {
-		const parsed = new URL(String(url))
-		if (parsed.pathname === '/v1/invoiceitems') {
-			expect(parsed.searchParams.get('invoice')).toBe('in_listed')
-			return jsonResponse({
-				data: [
-					{
-						id: 'ii_uwd',
-						invoice: 'in_listed',
-						amount: 100,
-						currency: 'usd',
-						description: 'Kody unique worker-day overage',
-						metadata: { kody_overage_meter: 'unique_worker_days' },
-					},
-				],
-			})
-		}
-		return jsonResponse({ error: { message: 'unexpected' } }, 500)
-	})
-	vi.stubGlobal('fetch', fetchStub)
-	try {
-		const items = await listInvoiceItemsForInvoice(
-			{ STRIPE_SECRET_KEY: 'sk_test_secret' },
-			'in_listed',
+	const fetchMock = vi
+		.fn()
+		.mockResolvedValueOnce(
+			jsonResponse({ id: 'cs_credit', url: 'https://checkout.stripe.com/c' }),
 		)
-		expect(items).toHaveLength(1)
-		expect(items[0]?.metadata?.kody_overage_meter).toBe('unique_worker_days')
+		.mockResolvedValueOnce(
+			jsonResponse({
+				id: 'cs_credit',
+				mode: 'payment',
+				status: 'complete',
+				payment_status: 'paid',
+				amount_total: 2500,
+				currency: 'usd',
+				customer: 'cus_1',
+				client_reference_id: 'ref',
+				metadata: { kody_credit_top_up: '1' },
+				payment_intent: { id: 'pi_1', payment_method: 'pm_1' },
+			}),
+		)
+		.mockResolvedValueOnce(
+			jsonResponse({
+				id: 'pi_refill',
+				status: 'succeeded',
+				amount: 1000,
+				currency: 'usd',
+			}),
+		)
+	vi.stubGlobal('fetch', fetchMock)
+	try {
+		const session = await createCreditTopUpCheckoutSession(env, {
+			customerId: 'cus_1',
+			amountCents: 2500,
+			clientReferenceId: 'ref',
+			successUrl:
+				'https://app.example.com/account/credits?topup=success&session_id={CHECKOUT_SESSION_ID}',
+			cancelUrl: 'https://app.example.com/account/credits',
+			metadata: { kody_credit_top_up: '1', kody_stable_user_id: 'user-1' },
+		})
+		expect(session).toEqual({
+			id: 'cs_credit',
+			url: 'https://checkout.stripe.com/c',
+		})
+		const createBody = new URLSearchParams(
+			String(fetchMock.mock.calls[0]?.[1]?.body),
+		)
+		expect(createBody.get('mode')).toBe('payment')
+		expect(createBody.get('customer')).toBe('cus_1')
+		expect(createBody.get('line_items[0][price_data][unit_amount]')).toBe(
+			'2500',
+		)
+		expect(createBody.get('line_items[0][price_data][currency]')).toBe('usd')
+		expect(createBody.get('payment_intent_data[setup_future_usage]')).toBe(
+			'off_session',
+		)
+		expect(createBody.get('metadata[kody_credit_top_up]')).toBe('1')
+
+		const read = await getCreditTopUpCheckoutSession(env, 'cs_credit')
+		expect(read.payment_intent?.payment_method).toBe('pm_1')
+		expect(String(fetchMock.mock.calls[1]?.[0])).toContain(
+			'expand%5B%5D=payment_intent',
+		)
+
+		const intent = await createOffSessionPaymentIntent(env, {
+			customerId: 'cus_1',
+			paymentMethodId: 'pm_1',
+			amountCents: 1000,
+			description: 'Kody credits auto-refill',
+			idempotencyKey: 'kody-credit-auto-refill:user-1:2026-09:1',
+			metadata: { kody_credit_auto_refill: '1' },
+		})
+		expect(intent.status).toBe('succeeded')
+		const refillInit = fetchMock.mock.calls[2]?.[1] as RequestInit
+		const refillBody = new URLSearchParams(String(refillInit.body))
+		expect(refillBody.get('off_session')).toBe('true')
+		expect(refillBody.get('confirm')).toBe('true')
+		expect(refillBody.get('payment_method')).toBe('pm_1')
+		expect(
+			(refillInit.headers as Record<string, string>)['idempotency-key'],
+		).toBe('kody-credit-auto-refill:user-1:2026-09:1')
 	} finally {
 		vi.unstubAllGlobals()
 	}

@@ -179,7 +179,6 @@ test('authenticated home SSR prefetches flags while loading page data', async ()
 	expect(body.session.featureFlags).toEqual({
 		'demo-indicator': true,
 		'compact-mcp-server-instructions': true,
-		'compute-overage-charging': true,
 		'package-share-grants': false,
 		'secret-providers': false,
 		'jev-search-rerank': false,

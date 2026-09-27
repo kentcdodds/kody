@@ -350,7 +350,6 @@ test('authenticated account SSR batches user/role and flag reads into two round 
 	expect(body.session.featureFlags).toEqual({
 		'demo-indicator': true,
 		'compact-mcp-server-instructions': true,
-		'compute-overage-charging': true,
 		'package-share-grants': false,
 		'secret-providers': false,
 		'jev-search-rerank': false,

@@ -1749,11 +1749,19 @@ Current retention policies:
   rewrites yesterday and today). Deleted and exported with the account.
   `durable_object_duration_coverage_daily` is the fleet-level attributed vs
   total companion (no user data).
-- `compute_overage_invoices`: one ledger row per user per UTC month for unique
-  worker-day and Durable Object rows-read overage. Status is the disposition
-  (`invoice`, `soft_block`, `dry_run`, `skip_legacy`, and the other skips) or
-  `failed`. Stripe invoice ids stay null on non-invoice rows. Durable forever
-  until account deletion/export; `user_id` is the stable user id.
+- `compute_overage_invoices`: historical monthly overage ledger (overage
+  invoicing is retired; nothing writes new rows). Durable forever until account
+  deletion/export; `user_id` is the stable user id.
+- `credit_wallets`: one prepaid credit wallet per `stable_user_id` (balance in
+  micro-USD, auto-refill settings and saved card id, notice opt-outs).
+- `credit_ledger_entries`: append-only top-ups, auto-refills, admin grants (with
+  `granted_by_user_id` and `note`), and debits. `stripe_reference` is unique for
+  idempotent Stripe credits. Deleting an admin anonymizes `granted_by_user_id`
+  to `deleted-user` on recipients' rows.
+- `credit_debit_progress`: per user, UTC month, and debit meter, the billable
+  units above the include already debited or forgiven, so hourly debits stay
+  idempotent. All three credit tables are durable forever until account
+  deletion/export.
 - `feature_flag_exposure_rollups`: local-dev/test flag exposure rollups keep 90
   days by `day` key, matching Analytics Engine retention for the production
   `FLAG_EXPOSURES` exposure stream; the admin metric readout window is the

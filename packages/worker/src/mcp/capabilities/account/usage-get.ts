@@ -71,18 +71,6 @@ export const usageGetCapability = defineDomainCapability(
 				userId: user.userId,
 				email: user.email,
 			})
-			const billing = await db
-				.prepare(
-					user.email
-						? `SELECT id, stripe_customer_id FROM users WHERE email = ? AND stable_user_id = ?`
-						: `SELECT id, stripe_customer_id FROM users WHERE stable_user_id = ?`,
-				)
-				.bind(
-					...(user.email
-						? [user.email.trim().toLowerCase(), user.userId]
-						: [user.userId]),
-				)
-				.first<{ id: number; stripe_customer_id: string | null }>()
 			const [snapshot, computeOverage] = await Promise.all([
 				readEntitlementUsageSnapshot({
 					db,
@@ -90,14 +78,14 @@ export const usageGetCapability = defineDomainCapability(
 					usageUserId: user.userId,
 					plan: entitlement.plan,
 					ladder: entitlement.ladder,
+					creditWallet: entitlement.creditWallet,
 				}),
 				readAccountComputeOverage({
 					db,
-					userId: billing?.id ?? null,
 					stableUserId: user.userId,
 					plan: entitlement.plan,
 					ladder: entitlement.ladder,
-					hasStripeCustomer: Boolean(billing?.stripe_customer_id?.trim()),
+					creditWallet: entitlement.creditWallet,
 					now: new Date(),
 				}),
 			])

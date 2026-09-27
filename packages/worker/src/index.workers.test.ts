@@ -20,6 +20,14 @@ const mocks = vi.hoisted(() => ({
 		count: 0,
 	})),
 	aggregateUsageRollups: vi.fn(async () => ({ skipped: true })),
+	runCreditDebits: vi.fn(async () => ({
+		scanned: 0,
+		debitedUsers: 0,
+		debitedMicroUsd: 0,
+		autoRefilled: 0,
+		failed: 0,
+		done: true,
+	})),
 	refreshAdminInsightsRunLogSnapshot: vi.fn(async () => ({
 		complete: true,
 		snapshotUpdatedAt: '2026-09-10T00:00:00.000Z',
@@ -72,6 +80,10 @@ vi.mock('#app/auth-denial-alerts.ts', () => ({
 
 vi.mock('#worker/usage/aggregate-rollups.ts', () => ({
 	aggregateUsageRollups: mocks.aggregateUsageRollups,
+}))
+
+vi.mock('#worker/billing/credit-debits.ts', () => ({
+	runCreditDebits: mocks.runCreditDebits,
 }))
 
 vi.mock('#worker/admin/insights-runlog-snapshot.ts', () => ({
@@ -136,6 +148,10 @@ test('platform lanes execute with their expected inputs and jobs-owned lanes are
 		expect.objectContaining({ blobs: env.EMAIL_BLOBS }),
 	)
 	expect(mocks.aggregateUsageRollups).toHaveBeenCalledWith(env, scheduledAt)
+	expect(mocks.runCreditDebits).toHaveBeenCalledWith({
+		env,
+		now: scheduledAt,
+	})
 	expect(mocks.refreshAdminInsightsRunLogSnapshot).toHaveBeenCalledWith(
 		expect.objectContaining({ now: scheduledAt }),
 	)

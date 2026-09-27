@@ -1,14 +1,13 @@
-import {
-	parseEntitlementLadder,
-	parseStoredPlanName,
-	parseStripePlanName,
-} from '#universal/plans.ts'
-import { laterIsoTimestamp } from '#universal/referral-program.ts'
-import { resolveEffectivePlanWithSecondAgentGift } from '#universal/second-agent-standard-gift.ts'
+import { parseStoredPlanName, parseStripePlanName } from '#universal/plans.ts'
 import {
 	computeOverageUsageWarningRows,
 	readAccountComputeOverage,
 } from '#worker/billing/compute-overage-account.ts'
+import {
+	resolveUserEntitlementFromRow,
+	userEntitlementColumnsSql,
+	type UserEntitlementRow,
+} from '#worker/entitlements/service.ts'
 import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapshot.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import {
@@ -17,15 +16,9 @@ import {
 	type AccountUsageWeekWindow,
 } from '#universal/loader-data.ts'
 
-type UsageUserRow = {
+type UsageUserRow = UserEntitlementRow & {
 	id: number
-	plan: string
-	stripe_plan: string | null
-	entitlement_ladder: string | null
 	stable_user_id: string
-	stripe_customer_id: string | null
-	second_agent_standard_gift_expires_at: string | null
-	referral_standard_credit_expires_at: string | null
 }
 
 /**
@@ -39,9 +32,7 @@ export async function loadAccountUsageData(input: {
 }): Promise<AccountUsageLoaderData | null> {
 	const now = input.now ?? new Date()
 	const row = await input.env.APP_DB.prepare(
-		`SELECT id, plan, stripe_plan, entitlement_ladder, stable_user_id,
-			stripe_customer_id, second_agent_standard_gift_expires_at,
-			referral_standard_credit_expires_at
+		`SELECT id, stable_user_id, ${userEntitlementColumnsSql()}
 		 FROM users WHERE id = ?`,
 	)
 		.bind(input.userId)
@@ -49,33 +40,29 @@ export async function loadAccountUsageData(input: {
 	if (!row) return null
 
 	const manualPlan = parseStoredPlanName(row.plan)
-	const plan = resolveEffectivePlanWithSecondAgentGift(
-		manualPlan,
-		row.stripe_plan,
-		laterIsoTimestamp(
-			row.second_agent_standard_gift_expires_at,
-			row.referral_standard_credit_expires_at,
-		),
-		now,
-	)
-	const ladder = parseEntitlementLadder(row.entitlement_ladder)
 	const usageUserId = resolveUserStableId(row)
+	const entitlement = await resolveUserEntitlementFromRow({
+		db: input.env.APP_DB,
+		stableUserId: usageUserId,
+		row,
+		now,
+	})
 	const [snapshot, computeOverage] = await Promise.all([
 		readEntitlementUsageSnapshot({
 			db: input.env.APP_DB,
 			env: input.env,
 			usageUserId,
-			plan,
-			ladder,
+			plan: entitlement.plan,
+			ladder: entitlement.ladder,
+			creditWallet: entitlement.creditWallet,
 			now,
 		}),
 		readAccountComputeOverage({
 			db: input.env.APP_DB,
-			userId: row.id,
 			stableUserId: usageUserId,
-			plan,
-			ladder,
-			hasStripeCustomer: Boolean(row.stripe_customer_id?.trim()),
+			plan: entitlement.plan,
+			ladder: entitlement.ladder,
+			creditWallet: entitlement.creditWallet,
 			now,
 		}),
 	])

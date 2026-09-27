@@ -38,6 +38,8 @@ function createUsageTestDb(input: {
 	packageCount?: number
 	uniqueWorkerDays?: number
 	durableObjectRowsRead?: number
+	creditsEligible?: boolean
+	creditBalanceMicroUsd?: number
 }) {
 	const stableUserId = testStableUserIdFromEmail(input.email)
 	return {
@@ -58,8 +60,14 @@ function createUsageTestDb(input: {
 										plan: input.plan,
 										stripe_plan: input.stripePlan ?? null,
 										entitlement_ladder: input.entitlementLadder ?? 'public',
+										stripe_credits_eligible: input.creditsEligible ? 1 : 0,
 										stable_user_id: stableUserId,
 										stripe_customer_id: input.stripeCustomerId ?? null,
+									} as T
+								}
+								if (normalized.includes('from credit_wallets')) {
+									return {
+										balance_micro_usd: input.creditBalanceMicroUsd ?? 0,
 									} as T
 								}
 								if (normalized.includes('from saved_packages')) {
@@ -271,15 +279,16 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 	expect(subscribedData?.plan).toBe('pro')
 	expect(subscribedData?.manualPlan).toBe('free')
 	expect(subscribedData?.stripePlan).toBe('pro')
-	expect(baseline?.computeOverage.disposition).toBe('skip_zero')
+	expect(baseline?.computeOverage.creditsStatus).toBe('within_include')
+	expect(baseline?.computeOverage.creditWallet).toBe('none')
 	expect(baseline?.computeOverage.meters).toHaveLength(2)
 })
 
-test('unpaid Free over compute includes is a soft-block, not a charge', async () => {
+test('Free over compute includes is sent to /account/credits to switch to Pro, not charged', async () => {
 	const now = new Date('2026-07-25T12:00:00.000Z')
 	const { db } = createUsageTestDb({
 		userId: 21,
-		email: 'usage-soft-block@example.com',
+		email: 'usage-free-over@example.com',
 		plan: 'free',
 		uniqueWorkerDays: 60,
 	})
@@ -288,19 +297,21 @@ test('unpaid Free over compute includes is a soft-block, not a charge', async ()
 		userId: 21,
 		now,
 	})
-	expect(data?.computeOverage.disposition).toBe('soft_block')
-	expect(data?.computeOverage.hasStripeCustomer).toBe(false)
-	expect(data?.computeOverage.totalCents).toBeGreaterThan(0)
+	expect(data?.computeOverage.creditsStatus).toBe('switch_to_pro')
 	const uniqueWorkerDays = data?.computeOverage.meters.find(
 		(meter) => meter.resource === 'unique_worker_days',
 	)
 	expect(uniqueWorkerDays?.overEightyPercent).toBe(true)
+	expect(uniqueWorkerDays?.howToReduce).toMatch(
+		/Switch to Pro at \/account\/credits/,
+	)
+	expect(uniqueWorkerDays?.howToReduce).not.toMatch(/payment method|invoice/)
 	expect(
 		data?.warnings.some((row) => row.resource === 'unique_worker_days'),
 	).toBe(true)
 })
 
-test('legacy Standard over compute includes stays unbilled', async () => {
+test('retired Standard over compute includes is not charged and has no wallet', async () => {
 	const now = new Date('2026-07-25T12:00:00.000Z')
 	const { db } = createUsageTestDb({
 		userId: 22,
@@ -310,47 +321,64 @@ test('legacy Standard over compute includes stays unbilled', async () => {
 		entitlementLadder: 'legacy',
 		stripeCustomerId: 'cus_legacy',
 		uniqueWorkerDays: 400,
+		creditBalanceMicroUsd: 5_000_000,
 	})
 	const data = await loadAccountUsageData({
 		env: withUsageEnv({ APP_DB: db }) as Env,
 		userId: 22,
 		now,
 	})
-	expect(data?.computeOverage.legacyUnbilled).toBe(true)
-	expect(data?.computeOverage.disposition).toBe('skip_legacy')
+	expect(data?.computeOverage.creditWallet).toBe('none')
+	expect(data?.computeOverage.creditsStatus).toBe('switch_to_pro')
 	const uniqueWorkerDays = data?.computeOverage.meters.find(
 		(meter) => meter.resource === 'unique_worker_days',
 	)
-	expect(uniqueWorkerDays?.howToReduce).toMatch(/not billed/)
-	expect(uniqueWorkerDays?.howToReduce).not.toMatch(/\$0\.0025/)
+	expect(uniqueWorkerDays?.howToReduce).toMatch(/not charged on your plan/)
 	expect(uniqueWorkerDays?.howToReduce).not.toMatch(/payment method/)
 })
 
-test('legacy Standard approaching compute include stays unbilled copy', async () => {
+test('purchasable Pro with credits shows unlocked limits and debits above the include', async () => {
 	const now = new Date('2026-07-25T12:00:00.000Z')
 	const { db } = createUsageTestDb({
-		userId: 23,
-		email: 'usage-legacy-approaching@example.com',
-		plan: 'standard',
-		stripePlan: 'standard',
-		entitlementLadder: 'legacy',
-		stripeCustomerId: 'cus_legacy_approaching',
-		uniqueWorkerDays: 280,
+		userId: 24,
+		email: 'usage-credits@example.com',
+		plan: 'free',
+		stripePlan: 'pro',
+		creditsEligible: true,
+		creditBalanceMicroUsd: 10_000_000,
+		stripeCustomerId: 'cus_credits',
+		uniqueWorkerDays: 400,
 	})
-	const data = await loadAccountUsageData({
+	const funded = await loadAccountUsageData({
 		env: withUsageEnv({ APP_DB: db }) as Env,
-		userId: 23,
+		userId: 24,
 		now,
 	})
-	expect(data?.computeOverage.legacyUnbilled).toBe(true)
-	expect(data?.computeOverage.disposition).toBe('skip_zero')
-	const uniqueWorkerDays = data?.computeOverage.meters.find(
-		(meter) => meter.resource === 'unique_worker_days',
+	expect(funded?.computeOverage.creditWallet).toBe('funded')
+	expect(funded?.computeOverage.creditsStatus).toBe('debiting_credits')
+	expect(funded?.computeOverage.creditsCostMicroUsd).toBe(50 * 4_000)
+	expect(currentFor(funded, 'execute_calls_per_day')?.limit).toBe(25_000)
+	expect(currentFor(funded, 'email_sends_per_day')?.limit).toBe(200)
+
+	const { db: emptyDb } = createUsageTestDb({
+		userId: 25,
+		email: 'usage-credits-empty@example.com',
+		plan: 'free',
+		stripePlan: 'pro',
+		creditsEligible: true,
+		creditBalanceMicroUsd: 0,
+		stripeCustomerId: 'cus_credits_empty',
+		uniqueWorkerDays: 400,
+	})
+	const empty = await loadAccountUsageData({
+		env: withUsageEnv({ APP_DB: emptyDb }) as Env,
+		userId: 25,
+		now,
+	})
+	expect(empty?.computeOverage.creditWallet).toBe('empty')
+	expect(empty?.computeOverage.creditsStatus).toBe('add_credits')
+	expect(currentFor(empty, 'execute_calls_per_day')?.limit).toBe(500)
+	expect(currentFor(empty, 'execute_calls_per_day')?.howToReduce).toMatch(
+		/add credits at \/account\/credits/,
 	)
-	expect(uniqueWorkerDays?.current).toBe(280)
-	expect(uniqueWorkerDays?.include).toBe(350)
-	expect(uniqueWorkerDays?.overEightyPercent).toBe(true)
-	expect(uniqueWorkerDays?.howToReduce).toMatch(/not billed/)
-	expect(uniqueWorkerDays?.howToReduce).not.toMatch(/\$0\.0025/)
-	expect(uniqueWorkerDays?.howToReduce).not.toMatch(/payment method/)
 })

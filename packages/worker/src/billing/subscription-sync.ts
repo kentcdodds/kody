@@ -93,13 +93,14 @@ export async function refreshStripePlanForUser(input: {
 		: 'public'
 	await input.env.APP_DB.prepare(
 		`UPDATE users
-		 SET stripe_plan = ?, stripe_price_id = ?, stripe_plan_refreshed_at = ?,
-		     entitlement_ladder = ?
+		 SET stripe_plan = ?, stripe_price_id = ?, stripe_credits_eligible = ?,
+		     stripe_plan_refreshed_at = ?, entitlement_ladder = ?
 		 WHERE id = ? AND stripe_customer_id = ?`,
 	)
 		.bind(
 			resolved.stripePlan,
 			resolved.stripePriceId,
+			resolved.creditsEligible ? 1 : 0,
 			now.toISOString(),
 			nextLadder,
 			input.userId,
@@ -417,6 +418,7 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 			})
 			return {
 				stripePlan: null,
+				creditsEligible: false,
 				stripeInterval: null,
 				stripePriceId: null,
 				cancelAt: null,

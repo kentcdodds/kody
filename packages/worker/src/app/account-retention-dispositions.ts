@@ -64,7 +64,25 @@ export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposi
 			table: 'compute_overage_invoices',
 			kind: 'durable_forever',
 			reason:
-				'Monthly compute-overage ledger rows are billing records removed only by account deletion, not by time-based retention.',
+				'Historical compute-overage ledger rows (invoicing is retired) are billing records removed only by account deletion, not by time-based retention.',
+		},
+		{
+			table: 'credit_wallets',
+			kind: 'durable_forever',
+			reason:
+				'Prepaid credit balances and wallet settings are current billing state removed only by account deletion.',
+		},
+		{
+			table: 'credit_ledger_entries',
+			kind: 'durable_forever',
+			reason:
+				'Credit top-ups, auto-refills, admin grants, and debits are the billing and audit record for the balance; removed only by account deletion.',
+		},
+		{
+			table: 'credit_debit_progress',
+			kind: 'durable_forever',
+			reason:
+				'Per-month debit progress keeps hourly debits idempotent; removed only by account deletion.',
 		},
 	] as const
 

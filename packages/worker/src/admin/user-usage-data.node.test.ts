@@ -146,7 +146,7 @@ function createAdminUserUsageTestDb(input: {
 				async first<T>() {
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, plan, stripe_plan, stripe_price_id, entitlement_ladder, stable_user_id from users where stable_user_id = ?',
+							'select id, username, email, plan, stripe_plan, stripe_price_id, entitlement_ladder, stripe_credits_eligible, stable_user_id from users where stable_user_id = ?',
 						)
 					) {
 						return (users.find((user) => user.stable_user_id === params[0]) ??
@@ -354,7 +354,7 @@ test('loadAdminUserUsageData compares catalog list MRR to estimated cost', async
 				email,
 				plan: 'free',
 				stripe_plan: 'standard',
-				stripe_price_id: 'price_standard',
+				stripe_price_id: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
 				stable_user_id: usageUserId,
 			},
 		],
@@ -372,7 +372,6 @@ test('loadAdminUserUsageData compares catalog list MRR to estimated cost', async
 	const data = await loadAdminUserUsageData(
 		withUserMeter({
 			APP_DB: db,
-			STRIPE_STANDARD_PRICE_ID: 'price_standard',
 		}) as Env,
 		usageUserId,
 		new Date('2026-07-05T12:00:00.000Z'),

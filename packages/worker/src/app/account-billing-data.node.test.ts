@@ -94,7 +94,6 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 			stripeCustomerId: 'cus_test',
 		}),
 		STRIPE_SECRET_KEY: 'sk_test',
-		STRIPE_STANDARD_PRICE_ID: 'price_standard',
 		STRIPE_PRO_PRICE_ID: 'price_pro',
 	} as Env
 
@@ -117,7 +116,8 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 	expect(data.subscriptionStatus).toBe('past_due')
 	expect(data.cancelAt).toBe('2026-08-01T00:00:00.000Z')
 	expect(data.usageHref).toBe('/account/usage')
-	expect(data.purchasablePlans).toEqual(['standard', 'pro'])
+	expect(data.purchasablePlans).toEqual(['pro'])
+	expect(data.creditsHref).toBe('/account/credits')
 	expect(data.referralProgram).toEqual(
 		expect.objectContaining({
 			sharePath: '/signup?ref=billing-user',

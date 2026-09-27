@@ -197,6 +197,18 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'user_usage_campaign_sends' },
 	{ kind: 'user_id', table: 'user_tips_email_opt_outs' },
 	{ kind: 'user_id', table: 'compute_overage_invoices' },
+	{ kind: 'user_id', table: 'credit_debit_progress' },
+	// Grants the deleted admin made stay on recipients' ledgers for audit;
+	// only the granter id is anonymized.
+	{
+		kind: 'replace_user_column',
+		table: 'credit_ledger_entries',
+		matchColumn: 'granted_by_user_id',
+		setColumn: 'granted_by_user_id',
+		value: 'deleted-user',
+	},
+	{ kind: 'user_id', table: 'credit_ledger_entries' },
+	{ kind: 'user_id', table: 'credit_wallets' },
 	{
 		kind: 'user_columns',
 		table: 'referrals',

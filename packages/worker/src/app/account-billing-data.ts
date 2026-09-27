@@ -47,7 +47,8 @@ export function resolveBillingErrorMessage(
  * (unlike error codes, which fall back to the raw code).
  */
 const billingNoticeMessages: Record<string, string> = {
-	updated: 'Your plan change is complete. Limits update within a minute.',
+	updated:
+		'Your plan change is complete. Limits update within a minute. Add credits at /account/credits.',
 }
 
 export function resolveBillingNoticeMessage(
@@ -62,6 +63,7 @@ type BillingUserRow = {
 	plan: string
 	username: string | null
 	stripe_plan: string | null
+	stripe_credits_eligible: number | null
 	stripe_customer_id: string | null
 	stripe_plan_refreshed_at: string | null
 	stable_user_id: string
@@ -82,7 +84,8 @@ export async function loadAccountBillingData(input: {
 	const notice = resolveBillingNoticeMessage(input.noticeCode)
 
 	const row = await input.env.APP_DB.prepare(
-		`SELECT plan, username, stripe_plan, stripe_customer_id, stripe_plan_refreshed_at,
+		`SELECT plan, username, stripe_plan, stripe_credits_eligible,
+		        stripe_customer_id, stripe_plan_refreshed_at,
 		        stable_user_id, second_agent_standard_gift_expires_at,
 		        referral_standard_credit_expires_at
 		 FROM users
@@ -93,6 +96,7 @@ export async function loadAccountBillingData(input: {
 
 	const manualPlan: PlanName = row ? parseStoredPlanName(row.plan) : 'max'
 	let stripePlan: PlanName | null = parseStripePlanName(row?.stripe_plan)
+	let creditsEligible = Number(row?.stripe_credits_eligible) === 1
 	let stripeInterval: BillingInterval | null = null
 	let cancelAt: string | null = null
 	let subscriptionStatus: string | null = null
@@ -120,6 +124,7 @@ export async function loadAccountBillingData(input: {
 				now,
 			})
 			stripePlan = refreshed.stripePlan
+			creditsEligible = refreshed.creditsEligible
 			stripeInterval = refreshed.stripeInterval
 			cancelAt = refreshed.cancelAt
 			subscriptionStatus = refreshed.subscriptionStatus
@@ -176,6 +181,8 @@ export async function loadAccountBillingData(input: {
 		cancelAt,
 		subscriptionStatus,
 		purchasablePlans,
+		creditsEligible: stripePlan === 'pro' && creditsEligible,
+		creditsHref: '/account/credits',
 		usageHref: '/account/usage',
 		referralProgram,
 		...(error ? { error } : {}),

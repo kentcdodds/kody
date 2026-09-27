@@ -1,293 +1,128 @@
 import { expect, test } from 'vitest'
 import {
+	accountCreditsPath,
 	buildComputeOverageHowToReduce,
 	computeMonthlyOverage,
-	computeOverageBillingPolicy,
 	computeOverageIncludePercent,
-	previousUtcMonthKey,
-	resolveComputeOverageDisposition,
-	type ComputeOverageDisposition,
+	resolveComputeIncludeCreditsStatus,
 } from './compute-overage.ts'
-import { planLimits } from './plans.ts'
+import { planLimits, proCreditsPlanLimits } from './plans.ts'
 
-test('public-ladder include math bills only the units above the allotment', () => {
-	const free = computeMonthlyOverage({
-		plan: 'free',
-		ladder: 'public',
-		uniqueWorkerDays: planLimits.free.maxUniqueWorkerDaysPerMonth + 12,
-		durableObjectRowsRead:
-			planLimits.free.maxDurableObjectRowsReadPerMonth + 2_000_000,
-	})
-	expect(free.billableUniqueWorkerDays).toBe(12)
-	expect(free.billableDurableObjectRowsRead).toBe(2_000_000)
-	expect(free.uniqueWorkerDayCents).toBe(3)
-	expect(free.durableObjectRowsReadCents).toBe(0)
-	expect(free.totalCents).toBe(3)
-	expect(free.legacyUnbilled).toBe(false)
-
-	const standard = computeMonthlyOverage({
-		plan: 'standard',
-		ladder: 'public',
-		uniqueWorkerDays: planLimits.standard.maxUniqueWorkerDaysPerMonth + 400,
-		durableObjectRowsRead:
-			planLimits.standard.maxDurableObjectRowsReadPerMonth + 10_000_000,
-	})
-	expect(standard.billableUniqueWorkerDays).toBe(400)
-	expect(standard.uniqueWorkerDayCents).toBe(100)
-	expect(standard.durableObjectRowsReadCents).toBe(2)
-	expect(standard.totalCents).toBe(102)
-
-	const atInclude = computeMonthlyOverage({
+test('purchasable Pro uses the retired Standard includes and prices only units above them', () => {
+	const pro = computeMonthlyOverage({
 		plan: 'pro',
 		ladder: 'public',
-		uniqueWorkerDays: planLimits.pro.maxUniqueWorkerDaysPerMonth,
-		durableObjectRowsRead: planLimits.pro.maxDurableObjectRowsReadPerMonth,
+		creditWallet: 'funded',
+		uniqueWorkerDays: 350 + 400,
+		durableObjectRowsRead: 5_000_000_000 + 10_000_000,
 	})
-	expect(atInclude.totalCents).toBe(0)
-})
+	expect(pro.includedUniqueWorkerDays).toBe(350)
+	expect(pro.includedDurableObjectRowsRead).toBe(5_000_000_000)
+	expect(pro.billableUniqueWorkerDays).toBe(400)
+	expect(pro.billableDurableObjectRowsRead).toBe(10_000_000)
+	// 400 × $0.004 + 10 × $0.002 = $1.62
+	expect(pro.creditsCostMicroUsd).toBe(1_620_000)
 
-test('usage at or below the include, junk counts, and max stay at zero cents', () => {
-	expect(
-		computeMonthlyOverage({
-			plan: 'free',
-			ladder: 'public',
-			uniqueWorkerDays: 49,
-			durableObjectRowsRead: 100,
-		}).totalCents,
-	).toBe(0)
-	expect(
-		computeMonthlyOverage({
-			plan: 'pro',
-			ladder: 'public',
-			uniqueWorkerDays: Number.NaN,
-			durableObjectRowsRead: Number.POSITIVE_INFINITY,
-		}),
-	).toMatchObject({
-		billableUniqueWorkerDays: 0,
-		billableDurableObjectRowsRead: 0,
-		totalCents: 0,
-	})
-	expect(
-		computeMonthlyOverage({
-			plan: 'max',
-			ladder: 'public',
-			uniqueWorkerDays: 25_000,
-			durableObjectRowsRead: 200_000_000_000,
-		}).totalCents,
-	).toBe(0)
-})
-
-test('legacy Standard and Pro compute display amounts but stay unbilled', () => {
-	const legacy = computeMonthlyOverage({
+	// Retired $49 Pro keeps its larger include (no wallet).
+	const retiredPro = computeMonthlyOverage({
 		plan: 'pro',
-		ladder: 'legacy',
-		uniqueWorkerDays: 50_000,
-		durableObjectRowsRead: 40_000_000_000,
+		ladder: 'public',
+		creditWallet: 'none',
+		uniqueWorkerDays: 750,
+		durableObjectRowsRead: 0,
 	})
-	expect(legacy.includedUniqueWorkerDays).toBe(2_000)
-	expect(legacy.billableUniqueWorkerDays).toBe(48_000)
-	expect(legacy.uniqueWorkerDayCents).toBe(12_000)
-	expect(legacy.legacyUnbilled).toBe(true)
-	expect(
-		resolveComputeOverageDisposition({
+	expect(retiredPro.includedUniqueWorkerDays).toBe(
+		planLimits.pro.maxUniqueWorkerDaysPerMonth,
+	)
+	expect(retiredPro.billableUniqueWorkerDays).toBe(0)
+})
+
+test('usage at or below the include and junk counts cost nothing', () => {
+	for (const uniqueWorkerDays of [0, -5, Number.NaN, 350]) {
+		const overage = computeMonthlyOverage({
 			plan: 'pro',
-			ladder: 'legacy',
-			overage: legacy,
-			hasStripeCustomer: true,
-			chargingEnabled: true,
-			policy: { ...computeOverageBillingPolicy, audience: 'everyone' },
-		}),
-	).toBe('skip_legacy')
-})
-
-test('quarter-cent unique-worker-day rates round to integer Stripe cents', () => {
-	const oneDay = computeMonthlyOverage({
-		plan: 'free',
-		ladder: 'public',
-		uniqueWorkerDays: 51,
-		durableObjectRowsRead: 0,
-	})
-	expect(oneDay.uniqueWorkerDayUsd).toBe(0.0025)
-	expect(oneDay.uniqueWorkerDayCents).toBe(0)
-
-	const twoDays = computeMonthlyOverage({
-		plan: 'free',
-		ladder: 'public',
-		uniqueWorkerDays: 52,
-		durableObjectRowsRead: 0,
-	})
-	expect(twoDays.uniqueWorkerDayCents).toBe(1)
-})
-
-test('public policy invoices paid customers, soft-blocks unpaid Free, and never bills legacy', () => {
-	const freeOverage = computeMonthlyOverage({
-		plan: 'free',
-		ladder: 'public',
-		uniqueWorkerDays: 60,
-		durableObjectRowsRead: 0,
-	})
-	const paidOverage = computeMonthlyOverage({
-		plan: 'standard',
-		ladder: 'public',
-		uniqueWorkerDays: planLimits.standard.maxUniqueWorkerDaysPerMonth + 200,
-		durableObjectRowsRead: 0,
-	})
-	const belowMinimumOverage = computeMonthlyOverage({
-		plan: 'standard',
-		ladder: 'public',
-		uniqueWorkerDays: planLimits.standard.maxUniqueWorkerDaysPerMonth + 12,
-		durableObjectRowsRead: 0,
-	})
-
-	expect(computeOverageIncludePercent(40, 50)).toBe(0.8)
-	expect(computeOverageIncludePercent(50, 50)).toBe(1)
-	expect(computeOverageIncludePercent(0, 50)).toBe(0)
-
-	const cases: Array<
-		[
-			string,
-			Parameters<typeof resolveComputeOverageDisposition>[0],
-			ComputeOverageDisposition,
-		]
-	> = [
-		[
-			'charging off is dry-run for paid-public with a customer',
-			{
-				plan: 'standard',
-				ladder: 'public',
-				overage: paidOverage,
-				hasStripeCustomer: true,
-				chargingEnabled: false,
-			},
-			'dry_run',
-		],
-		[
-			'unpaid Free is a soft-block, never a Stripe charge',
-			{
-				plan: 'free',
-				ladder: 'public',
-				overage: freeOverage,
-				hasStripeCustomer: false,
-				chargingEnabled: true,
-			},
-			'soft_block',
-		],
-		[
-			'Free with a leftover Stripe customer can invoice when charging is on',
-			{
-				plan: 'free',
-				ladder: 'public',
-				overage: computeMonthlyOverage({
-					plan: 'free',
-					ladder: 'public',
-					uniqueWorkerDays: planLimits.free.maxUniqueWorkerDaysPerMonth + 200,
-					durableObjectRowsRead: 0,
-				}),
-				hasStripeCustomer: true,
-				chargingEnabled: true,
-			},
-			'invoice',
-		],
-		[
-			'public overage below the Stripe USD minimum is not invoiced',
-			{
-				plan: 'standard',
-				ladder: 'public',
-				overage: belowMinimumOverage,
-				hasStripeCustomer: true,
-				chargingEnabled: true,
-			},
-			'skip_below_minimum',
-		],
-		[
-			'paid-public with a customer invoices when charging is on',
-			{
-				plan: 'standard',
-				ladder: 'public',
-				overage: paidOverage,
-				hasStripeCustomer: true,
-				chargingEnabled: true,
-			},
-			'invoice',
-		],
-		[
-			'paid-public without a customer stays dry-run',
-			{
-				plan: 'pro',
-				ladder: 'public',
-				overage: paidOverage,
-				hasStripeCustomer: false,
-				chargingEnabled: true,
-			},
-			'dry_run',
-		],
-		[
-			'zero cents is a skip, not a soft-block',
-			{
-				plan: 'free',
-				ladder: 'public',
-				overage: computeMonthlyOverage({
-					plan: 'free',
-					ladder: 'public',
-					uniqueWorkerDays: 10,
-					durableObjectRowsRead: 0,
-				}),
-				hasStripeCustomer: false,
-				chargingEnabled: true,
-			},
-			'skip_zero',
-		],
-	]
-	for (const [label, input, expected] of cases) {
-		expect(resolveComputeOverageDisposition(input), label).toBe(expected)
+			ladder: 'public',
+			creditWallet: 'empty',
+			uniqueWorkerDays,
+			durableObjectRowsRead:
+				proCreditsPlanLimits.maxDurableObjectRowsReadPerMonth,
+		})
+		expect(overage.billableUniqueWorkerDays).toBe(0)
+		expect(overage.creditsCostMicroUsd).toBe(0)
 	}
+	expect(computeOverageIncludePercent(175, 350)).toBe(0.5)
+	expect(computeOverageIncludePercent(5, 0)).toBe(1)
+	expect(computeOverageIncludePercent(0, 0)).toBe(0)
 })
 
-test('previousUtcMonthKey walks across year boundaries', () => {
-	expect(previousUtcMonthKey(new Date('2026-01-01T00:00:00.000Z'))).toBe(
-		'2025-12',
-	)
-	expect(previousUtcMonthKey(new Date('2026-09-06T12:00:00.000Z'))).toBe(
-		'2026-08',
-	)
+test('credits status separates debiting, add credits, switch to Pro, and operator plans', () => {
+	expect(
+		resolveComputeIncludeCreditsStatus({
+			plan: 'pro',
+			creditWallet: 'funded',
+			pastInclude: false,
+		}),
+	).toBe('within_include')
+	expect(
+		resolveComputeIncludeCreditsStatus({
+			plan: 'pro',
+			creditWallet: 'funded',
+			pastInclude: true,
+		}),
+	).toBe('debiting_credits')
+	expect(
+		resolveComputeIncludeCreditsStatus({
+			plan: 'pro',
+			creditWallet: 'empty',
+			pastInclude: true,
+		}),
+	).toBe('add_credits')
+	for (const plan of ['free', 'standard', 'pro'] as const) {
+		expect(
+			resolveComputeIncludeCreditsStatus({
+				plan,
+				creditWallet: 'none',
+				pastInclude: true,
+			}),
+		).toBe('switch_to_pro')
+	}
+	expect(
+		resolveComputeIncludeCreditsStatus({
+			plan: 'max',
+			creditWallet: 'none',
+			pastInclude: true,
+		}),
+	).toBe('not_charged')
 })
 
-test('compute overage howToReduce omits upgrade for Pro and Max', () => {
-	const free = buildComputeOverageHowToReduce(
+test('howToReduce points every non-operator account at /account/credits without invoicing copy', () => {
+	const empty = buildComputeOverageHowToReduce(
 		'unique_worker_days',
-		'skip_zero',
-		'free',
+		'pro',
+		'empty',
 	)
-	expect(free).toMatch(/upgrade/i)
-
-	const standard = buildComputeOverageHowToReduce(
-		'durable_object_rows_read',
-		'skip_zero',
-		'standard',
-	)
-	expect(standard).toMatch(/upgrade/i)
-
-	for (const plan of ['pro', 'max'] as const) {
-		const uniqueWorkerDays = buildComputeOverageHowToReduce(
-			'unique_worker_days',
-			'skip_zero',
-			plan,
-		)
-		expect(uniqueWorkerDays).not.toMatch(/upgrade/i)
-
-		const rowsRead = buildComputeOverageHowToReduce(
-			'durable_object_rows_read',
-			'skip_zero',
-			plan,
-		)
-		expect(rowsRead).not.toMatch(/upgrade/i)
-
-		const invoiced = buildComputeOverageHowToReduce(
-			'unique_worker_days',
-			'invoice',
-			plan,
-		)
-		expect(invoiced).not.toMatch(/upgrade/i)
-		expect(invoiced).toMatch(/billed at/)
+	expect(empty).toContain(`Add credits at ${accountCreditsPath}`)
+	expect(empty).toContain('$0.004 per unique worker day')
+	expect(
+		buildComputeOverageHowToReduce('durable_object_rows_read', 'pro', 'funded'),
+	).toContain('debits your credits at $0.002 per million rows read')
+	expect(
+		buildComputeOverageHowToReduce('unique_worker_days', 'free', 'none'),
+	).toContain(`Switch to Pro at ${accountCreditsPath}`)
+	expect(
+		buildComputeOverageHowToReduce('unique_worker_days', 'standard', 'none'),
+	).toContain('not charged on your plan')
+	expect(
+		buildComputeOverageHowToReduce('unique_worker_days', 'max', 'none'),
+	).not.toContain(accountCreditsPath)
+	for (const plan of ['free', 'standard', 'pro', 'max'] as const) {
+		for (const wallet of ['none', 'empty', 'funded'] as const) {
+			const text = buildComputeOverageHowToReduce(
+				'unique_worker_days',
+				plan,
+				wallet,
+			)
+			expect(text).not.toMatch(/invoice|payment method|Max\b/)
+		}
 	}
 })

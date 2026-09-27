@@ -7,31 +7,39 @@
 import {
 	getProPriceId,
 	getProYearlyPriceId,
-	getStandardPriceId,
-	getStandardYearlyPriceId,
 	retiredProPriceIds,
 	retiredStandardPriceIds,
 	type BillingInterval,
 	type BillingEnv,
-	type PurchasablePlan,
+	type StripeGrantedPlan,
 } from './billing-config.ts'
 
 export type StripePriceCatalogEntry = {
 	priceId: string
-	plan: PurchasablePlan
+	plan: StripeGrantedPlan
 	interval: BillingInterval
 	/** Recurring list price in USD cents for `interval`. */
 	amountUsdCents: number
 }
 
-const publicStandardMonthlyUsdCents = 1_200
-const publicStandardYearlyUsdCents = 12_000
-const publicProMonthlyUsdCents = 4_900
-const publicProYearlyUsdCents = 48_000
+const proMonthlyUsdCents = 1_200
+const proYearlyUsdCents = 12_000
 
 const retiredPriceCatalog: ReadonlyArray<StripePriceCatalogEntry> = [
 	{
 		priceId: retiredStandardPriceIds[0],
+		plan: 'standard',
+		interval: 'month',
+		amountUsdCents: 1_200,
+	},
+	{
+		priceId: retiredStandardPriceIds[1],
+		plan: 'standard',
+		interval: 'year',
+		amountUsdCents: 12_000,
+	},
+	{
+		priceId: retiredStandardPriceIds[2],
 		plan: 'standard',
 		interval: 'month',
 		amountUsdCents: 500,
@@ -40,16 +48,28 @@ const retiredPriceCatalog: ReadonlyArray<StripePriceCatalogEntry> = [
 		priceId: retiredProPriceIds[0],
 		plan: 'pro',
 		interval: 'month',
-		amountUsdCents: 2_000,
+		amountUsdCents: 4_900,
 	},
 	{
 		priceId: retiredProPriceIds[1],
+		plan: 'pro',
+		interval: 'year',
+		amountUsdCents: 48_000,
+	},
+	{
+		priceId: retiredProPriceIds[2],
+		plan: 'pro',
+		interval: 'month',
+		amountUsdCents: 2_000,
+	},
+	{
+		priceId: retiredProPriceIds[3],
 		plan: 'pro',
 		interval: 'month',
 		amountUsdCents: 2_900,
 	},
 	{
-		priceId: retiredProPriceIds[2],
+		priceId: retiredProPriceIds[4],
 		plan: 'pro',
 		interval: 'year',
 		amountUsdCents: 28_800,
@@ -81,9 +101,9 @@ function addCatalogEntry(
 }
 
 /**
- * Map configured plus retired Standard/Pro price ids to list price and
- * interval. Unknown ids (metadata-only grants) are absent so MRR can skip
- * them instead of inventing a number.
+ * Map the purchasable Pro plus retired Standard/Pro price ids to list price
+ * and interval. Unknown ids (metadata-only grants) are absent so MRR can
+ * skip them instead of inventing a number.
  */
 export function resolveStripePriceCatalog(
 	env: BillingEnv,
@@ -93,28 +113,16 @@ export function resolveStripePriceCatalog(
 		addCatalogEntry(byPriceId, entry)
 	}
 	addCatalogEntry(byPriceId, {
-		priceId: getStandardPriceId(env) ?? '',
-		plan: 'standard',
-		interval: 'month',
-		amountUsdCents: publicStandardMonthlyUsdCents,
-	})
-	addCatalogEntry(byPriceId, {
-		priceId: getStandardYearlyPriceId(env) ?? '',
-		plan: 'standard',
-		interval: 'year',
-		amountUsdCents: publicStandardYearlyUsdCents,
-	})
-	addCatalogEntry(byPriceId, {
 		priceId: getProPriceId(env) ?? '',
 		plan: 'pro',
 		interval: 'month',
-		amountUsdCents: publicProMonthlyUsdCents,
+		amountUsdCents: proMonthlyUsdCents,
 	})
 	addCatalogEntry(byPriceId, {
 		priceId: getProYearlyPriceId(env) ?? '',
 		plan: 'pro',
 		interval: 'year',
-		amountUsdCents: publicProYearlyUsdCents,
+		amountUsdCents: proYearlyUsdCents,
 	})
 	return byPriceId
 }

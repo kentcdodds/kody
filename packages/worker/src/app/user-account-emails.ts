@@ -2,9 +2,14 @@ import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import {
 	buildBillingSuccessEmail,
 	buildConnectAgentEmail,
+	buildCreditsAutoRefilledEmail,
+	buildCreditsLowBalanceEmail,
+	buildCreditsMonthlyCapEmail,
 	buildPastDueEmail,
 	buildPaymentFailedEmail,
 } from '#app/email/messages.ts'
+import { accountCreditsPath } from '#universal/compute-overage.ts'
+import { formatCents, formatMicroUsd } from '#universal/credits.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import {
 	openVerifiedNoMcpCampaignEvent,
@@ -26,6 +31,9 @@ export type UserAccountEmailKind =
 	| 'billing_success'
 	| 'payment_failed'
 	| 'past_due'
+	| 'credits_auto_refilled'
+	| 'credits_monthly_cap'
+	| 'credits_low_balance'
 
 export function userAccountEmailKvKey(input: {
 	userId: string
@@ -241,6 +249,72 @@ export async function sendPastDueEmail(input: {
 			buildPastDueEmail({
 				appBaseUrl: config.appBaseUrl,
 				billingUrl: new URL('/account/billing', config.appBaseUrl).toString(),
+			}),
+	})
+}
+
+export async function sendCreditAutoRefilledEmail(input: {
+	env: Env
+	email: string
+	userId: string
+	paymentIntentId: string
+	amountCents: number
+	balanceMicroUsd: number
+}): Promise<boolean> {
+	return await claimAndSend({
+		env: input.env,
+		to: input.email,
+		userId: input.userId,
+		kind: 'credits_auto_refilled',
+		suffix: input.paymentIntentId,
+		build: (config) =>
+			buildCreditsAutoRefilledEmail({
+				appBaseUrl: config.appBaseUrl,
+				creditsUrl: new URL(accountCreditsPath, config.appBaseUrl).toString(),
+				amountLabel: formatCents(input.amountCents),
+				balanceLabel: formatMicroUsd(input.balanceMicroUsd),
+			}),
+	})
+}
+
+export async function sendCreditMonthlyCapEmail(input: {
+	env: Env
+	email: string
+	userId: string
+	month: string
+}): Promise<boolean> {
+	return await claimAndSend({
+		env: input.env,
+		to: input.email,
+		userId: input.userId,
+		kind: 'credits_monthly_cap',
+		suffix: input.month,
+		build: (config) =>
+			buildCreditsMonthlyCapEmail({
+				appBaseUrl: config.appBaseUrl,
+				creditsUrl: new URL(accountCreditsPath, config.appBaseUrl).toString(),
+			}),
+	})
+}
+
+export async function sendCreditLowBalanceEmail(input: {
+	env: Env
+	email: string
+	userId: string
+	balanceMicroUsd: number
+	now: Date
+}): Promise<boolean> {
+	return await claimAndSend({
+		env: input.env,
+		to: input.email,
+		userId: input.userId,
+		kind: 'credits_low_balance',
+		suffix: input.now.toISOString().slice(0, 'YYYY-MM-DDTHH'.length),
+		build: (config) =>
+			buildCreditsLowBalanceEmail({
+				appBaseUrl: config.appBaseUrl,
+				creditsUrl: new URL(accountCreditsPath, config.appBaseUrl).toString(),
+				balanceLabel: formatMicroUsd(input.balanceMicroUsd),
 			}),
 	})
 }

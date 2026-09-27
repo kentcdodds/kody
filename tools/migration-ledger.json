@@ -275,6 +275,10 @@
 		{
 			"filename": "0068-durable-object-duration-daily.sql",
 			"sha256": "38d50bbc96f0f2815aa3b83123ae11118209488213de6091ba9c10c0f7a4c94a"
+		},
+		{
+			"filename": "0069-prepaid-credits.sql",
+			"sha256": "4a6ae9f73e516a8a9c842963484149f4436692c704a38ee1a352071d961dc397"
 		}
 	]
 }

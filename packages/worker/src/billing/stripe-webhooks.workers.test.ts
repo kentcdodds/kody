@@ -6,6 +6,8 @@ import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createBillingLinkReference } from './billing-config.ts'
 import { buildStripeWebhookSignatureHeader } from './stripe-webhook-signature.ts'
 import { handleStripeWebhookRequest } from './stripe-webhooks.ts'
+import { readCreditWallet } from './credit-wallet.ts'
+import { ensureCreditWalletTestSchema } from './test-schema.ts'
 
 const webhookSecret = 'whsec_test_workers_secret'
 const now = new Date('2026-07-25T12:00:00.000Z')
@@ -673,4 +675,73 @@ test('invoice.paid for a referrer retries held outgoing referrals', async () => 
 	})
 
 	vi.unstubAllGlobals()
+})
+
+test('checkout.session.completed for a credit top-up credits the wallet once and never links a subscription', async () => {
+	await ensureCreditWalletTestSchema(env.APP_DB)
+	const email = `wh-credits-${crypto.randomUUID()}@example.com`
+	const user = await seedUser({
+		email,
+		stripeCustomerId: `cus_${crypto.randomUUID().slice(0, 8)}`,
+		stripePlan: 'pro',
+	})
+	const sessionId = `cs_credit_${crypto.randomUUID().slice(0, 8)}`
+	const fetchStub = vi.fn(async (request: RequestInfo | URL) => {
+		const url = String(request)
+		if (url.includes(`/v1/checkout/sessions/${sessionId}`)) {
+			return jsonResponse({
+				id: sessionId,
+				mode: 'payment',
+				status: 'complete',
+				payment_status: 'paid',
+				amount_total: 2_500,
+				currency: 'usd',
+				customer: 'cus_any',
+				client_reference_id: user.linkReference,
+				metadata: {
+					kody_credit_top_up: '1',
+					kody_stable_user_id: user.stableUserId,
+				},
+				payment_intent: { id: 'pi_credit', payment_method: 'pm_card' },
+			})
+		}
+		return jsonResponse({ error: 'unexpected stripe path' }, 500)
+	})
+	vi.stubGlobal('fetch', fetchStub)
+	try {
+		for (const eventId of ['evt_credit_1', 'evt_credit_2']) {
+			const result = await handleStripeWebhookRequest({
+				env: createWebhookEnv(),
+				request: await signedWebhookRequest({
+					event: {
+						id: eventId,
+						type: 'checkout.session.completed',
+						data: {
+							object: {
+								id: sessionId,
+								customer: 'cus_any',
+								client_reference_id: user.linkReference,
+								metadata: {
+									kody_credit_top_up: '1',
+									kody_stable_user_id: user.stableUserId,
+								},
+							},
+						},
+					},
+				}),
+				now,
+			})
+			expect(result.status).toBe(200)
+		}
+		const wallet = await readCreditWallet(env.APP_DB, user.stableUserId)
+		expect(wallet.balanceMicroUsd).toBe(25_000_000)
+		expect(wallet.autoRefillPaymentMethodId).toBe('pm_card')
+		expect(
+			fetchStub.mock.calls.some(([request]) =>
+				String(request).includes('/v1/subscriptions'),
+			),
+		).toBe(false)
+	} finally {
+		vi.unstubAllGlobals()
+	}
 })

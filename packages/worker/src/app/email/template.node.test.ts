@@ -69,7 +69,7 @@ test('transactional emails escape untrusted content and put action URLs in both 
 
 	const warning = buildUserEntitlementWarningEmail({
 		appBaseUrl: 'https://kody.codes',
-		billingUrl: 'https://kody.codes/account/billing',
+		creditsUrl: 'https://kody.codes/account/credits',
 		usageUrl: 'https://kody.codes/account/usage',
 		kind: 'approaching',
 		warnings: [
@@ -82,13 +82,13 @@ test('transactional emails escape untrusted content and put action URLs in both 
 		],
 	})
 	expect(warning.subject).toContain('approaching')
-	expect(warning.html).toContain('https://kody.codes/account/billing')
+	expect(warning.html).toContain('https://kody.codes/account/credits')
 	expect(warning.text).toContain('https://kody.codes/account/usage')
 	expect(warning.html).toContain('200 of 250 (80%)')
 
 	const reached = buildUserEntitlementWarningEmail({
 		appBaseUrl: 'https://kody.codes',
-		billingUrl: 'https://kody.codes/account/billing',
+		creditsUrl: 'https://kody.codes/account/credits',
 		usageUrl: 'https://kody.codes/account/usage',
 		kind: 'reached',
 		warnings: [

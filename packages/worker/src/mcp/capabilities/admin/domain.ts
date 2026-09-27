@@ -2,6 +2,8 @@ import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { adminAuditLogQueryCapability } from './admin-audit-log-query.ts'
 import { adminCommunityActivityListCapability } from './admin-community-activity-list.ts'
+import { adminCreditGrantCapability } from './admin-credit-grant.ts'
+import { adminCreditWalletGetCapability } from './admin-credit-wallet-get.ts'
 import { adminCommunityOrphanForksCleanupCapability } from './admin-community-orphan-forks-cleanup.ts'
 import { adminFeatureFlagListCapability } from './admin-feature-flag-list.ts'
 import { adminFeatureFlagOverrideCapability } from './admin-feature-flag-override.ts'
@@ -93,6 +95,8 @@ export const adminDomain = defineDomain({
 		'banner',
 		'announcement',
 		'site banner',
+		'credits',
+		'credit grant',
 	],
 	capabilities: [
 		adminUserListCapability,
@@ -125,6 +129,8 @@ export const adminDomain = defineDomain({
 		adminPackageCodemodRevertCapability,
 		adminAuditLogQueryCapability,
 		adminUserUsageCapability,
+		adminCreditWalletGetCapability,
+		adminCreditGrantCapability,
 		adminFeatureFlagListCapability,
 		adminFeatureFlagSetCapability,
 		adminFeatureFlagOverrideCapability,

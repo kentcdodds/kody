@@ -5,7 +5,7 @@ import {
 	buildEntitlementLimitMessage,
 	buildEntitlementUpgradeHint,
 	buildJobIntervalFloorMessage,
-	buildJobIntervalFloorUpgradeHint,
+	jobIntervalFloorUpgradeHint,
 	jobIntervalFloorErrorCode,
 	parseEntitlementLimitMessage,
 	parseJobIntervalFloorMessage,
@@ -96,7 +96,7 @@ function createEntitlementsTestDb(
 						async first<T>() {
 							if (
 								query.includes(
-									'SELECT plan, stripe_plan, entitlement_ladder, second_agent_standard_gift_expires_at, referral_standard_credit_expires_at FROM users',
+									'SELECT plan, stripe_plan, entitlement_ladder, stripe_credits_eligible, second_agent_standard_gift_expires_at, referral_standard_credit_expires_at FROM users',
 								) ||
 								query.includes(
 									'SELECT plan, stripe_plan, entitlement_ladder FROM users',
@@ -245,7 +245,7 @@ test('entitlement limit messages always identify a known plan name', () => {
 	expect(
 		parseEntitlementLimitMessage(buildEntitlementLimitMessage(weeklyDetails)),
 	).toEqual(weeklyDetails)
-	expect(weeklyDetails.upgradeHint).toMatch(/upgrade/)
+	expect(weeklyDetails.upgradeHint).toMatch(/\/account\/credits/)
 	expect(
 		parseEntitlementLimitMessage(
 			'Plan limit reached: this deployment allows at most 100 concurrent workflows and you currently have 100. hint',
@@ -258,37 +258,56 @@ test('entitlement limit messages always identify a known plan name', () => {
 	).toBeNull()
 })
 
-test('top public plans omit upgrade clauses from hints and howToReduce', () => {
-	for (const plan of ['pro', 'max'] as const) {
-		expect(
-			buildEntitlementHowToReduce('execute_calls_per_day', plan),
-		).not.toMatch(/upgrade/i)
+test('rate/compute limit hints point at /account/credits until the wallet is unlocked', () => {
+	for (const plan of ['free', 'standard', 'pro'] as const) {
+		expect(buildEntitlementUpgradeHint('execute_calls_per_day', plan)).toMatch(
+			/add credits at \/account\/credits/,
+		)
+		expect(buildEntitlementHowToReduce('job_runs_per_day', plan)).toMatch(
+			/add credits at \/account\/credits/,
+		)
 		expect(
 			buildEntitlementUpgradeHint('execute_calls_per_day', plan),
-		).not.toMatch(/upgrade/i)
-		expect(buildJobIntervalFloorUpgradeHint(plan)).not.toMatch(/upgrade/i)
+		).not.toMatch(/\/account\/billing/)
+	}
+	expect(
+		buildEntitlementUpgradeHint('execute_calls_per_day', 'pro', 'empty'),
+	).toMatch(/\/account\/credits/)
+	// Already unlocked, or operator max: reduce-only.
+	for (const [plan, wallet] of [
+		['pro', 'funded'],
+		['max', 'none'],
+	] as const) {
+		const hint = buildEntitlementUpgradeHint(
+			'execute_calls_per_day',
+			plan,
+			wallet,
+		)
+		expect(hint).not.toMatch(/credits|upgrade/i)
+		expect(
+			buildEntitlementHowToReduce('execute_calls_per_day', plan, wallet),
+		).not.toMatch(/credits|upgrade/i)
 		const denial = new EntitlementLimitError({
 			resource: 'execute_calls_per_day',
 			plan,
 			limit: 400,
 			current: 400,
 			window: 'week',
-			upgradeHint: buildEntitlementUpgradeHint('execute_calls_per_day', plan),
+			upgradeHint: hint,
 		})
-		// MCP nextStep is the upgradeHint; Pro/Max must not push billing upgrade.
-		expect(denial.details.upgradeHint).not.toMatch(/upgrade/i)
 		expect(denial.message).toMatch(/^Plan limit reached:/)
-		expect(denial.message).not.toMatch(/upgrade/i)
+		expect(denial.message).not.toMatch(/Max/)
 	}
-	for (const plan of ['free', 'standard'] as const) {
-		expect(buildEntitlementHowToReduce('execute_calls_per_day', plan)).toMatch(
-			/upgrade/i,
+	// Stock limits are not unlocked by credits; only Free has an upgrade.
+	expect(buildEntitlementUpgradeHint('saved_packages', 'free')).toMatch(
+		/\/account\/billing/,
+	)
+	for (const plan of ['standard', 'pro', 'max'] as const) {
+		expect(buildEntitlementUpgradeHint('saved_packages', plan)).not.toMatch(
+			/upgrade|credits/i,
 		)
-		expect(buildEntitlementUpgradeHint('execute_calls_per_day', plan)).toMatch(
-			/\/account\/billing/,
-		)
-		expect(buildJobIntervalFloorUpgradeHint(plan)).toMatch(/upgrade/i)
 	}
+	expect(jobIntervalFloorUpgradeHint).toBe('Space this job out.')
 })
 
 test('job interval floor messages parse back to known plan and interval', () => {
@@ -1641,13 +1660,13 @@ test('continuous legacy Standard keeps old execute ceiling; new and resubscribed
 
 	expect(
 		await getUserEntitlement(db, { userId: legacyUserId, email: legacyEmail }),
-	).toEqual({ plan: 'standard', ladder: 'legacy' })
+	).toEqual({ plan: 'standard', ladder: 'legacy', creditWallet: 'none' })
 	expect(
 		await getCachedUserEntitlement(db, {
 			userId: publicUserId,
 			email: publicEmail,
 		}),
-	).toEqual({ plan: 'standard', ladder: 'public' })
+	).toEqual({ plan: 'standard', ladder: 'public', creditWallet: 'none' })
 
 	const legacyLimit = legacyPlanLimits.standard.maxExecuteCallsPerDay
 	const publicLimit = planLimits.standard.maxExecuteCallsPerDay

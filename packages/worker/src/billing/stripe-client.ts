@@ -87,6 +87,7 @@ const createdCheckoutSessionSchema = object({
 })
 
 const subscriptionItemSchema = object({
+	id: optional(string()),
 	price: object({
 		id: string(),
 	}),
@@ -122,39 +123,8 @@ const deletedCustomerSchema = object({
 	deleted: boolean(),
 })
 
-const invoiceSchema = object({
-	id: string(),
-	status: string(),
-	amount_due: number(),
-	currency: string(),
-	metadata: optional(record(string(), string())),
-})
-
-const invoiceListSchema = object({
-	data: array(invoiceSchema),
-})
-
-const invoiceItemSchema = object({
-	id: string(),
-	invoice: nullable(string()),
-	amount: number(),
-	currency: string(),
-	description: optional(string()),
-	metadata: optional(record(string(), string())),
-})
-
-const invoiceItemListSchema = object({
-	data: array(invoiceItemSchema),
-})
-
-export type StripeInvoice = InferOutput<typeof invoiceSchema>
-export type StripeInvoiceItem = InferOutput<typeof invoiceItemSchema>
-
+/** Marks historical compute-overage invoices (invoicing is retired). */
 export const computeOverageInvoiceMetadataKey = 'kody_compute_overage'
-export const computeOverageInvoiceMonthMetadataKey = 'kody_overage_month'
-export const computeOverageMeterMetadataKey = 'kody_overage_meter'
-export const computeOverageMeterUniqueWorkerDays = 'unique_worker_days'
-export const computeOverageMeterDurableObjectRows = 'durable_object_rows_read'
 
 // `amount` is the line's gross amount before discounts and before exclusive
 // tax; `discount_amounts` is only parsed so callers can see it exists. A
@@ -331,7 +301,7 @@ async function stripeRequest(
 	// Resource paths embed customer, subscription, or session ids; keep them
 	// out of logs while preserving the endpoint name for reconciliation.
 	const loggablePath = input.path.replace(
-		/(checkout\/sessions|customers|subscriptions|invoices|invoiceitems|credit_notes)\/(?!preview(?:$|[/?]))[^/?]+/,
+		/(checkout\/sessions|customers|subscriptions|invoices|invoiceitems|credit_notes|payment_intents)\/(?!preview(?:$|[/?]))[^/?]+/,
 		'$1/<redacted>',
 	)
 	let body: unknown = null
@@ -898,220 +868,6 @@ export async function createProratedRefundCreditNote(
 	}
 }
 
-export async function createDraftInvoice(
-	env: StripeEnv,
-	input: {
-		customerId: string
-		idempotencyKey: string
-		metadata: Record<string, string>
-	},
-): Promise<StripeInvoice> {
-	const customerId = input.customerId.trim()
-	if (!customerId) {
-		throw new StripeApiError('Customer id is required.', { status: 400 })
-	}
-	const form: Record<string, string> = {
-		customer: customerId,
-		auto_advance: 'false',
-		collection_method: 'charge_automatically',
-		pending_invoice_items_behavior: 'exclude',
-		'automatic_tax[enabled]': 'true',
-	}
-	for (const [key, value] of Object.entries(input.metadata)) {
-		form[`metadata[${key}]`] = value
-	}
-	const body = await stripeRequest(env, {
-		method: 'POST',
-		path: '/v1/invoices',
-		form,
-		idempotencyKey: input.idempotencyKey,
-	})
-	const parsed = parseSafe(invoiceSchema, body)
-	if (!parsed.success) {
-		throw new StripeApiError('Unexpected Stripe invoice shape.', {
-			status: 502,
-		})
-	}
-	return parsed.value
-}
-
-export async function getInvoice(
-	env: StripeEnv,
-	invoiceId: string,
-): Promise<StripeInvoice> {
-	const trimmed = invoiceId.trim()
-	if (!trimmed) {
-		throw new StripeApiError('Invoice id is required.', { status: 400 })
-	}
-	const body = await stripeRequest(env, {
-		method: 'GET',
-		path: `/v1/invoices/${encodeURIComponent(trimmed)}`,
-	})
-	const parsed = parseSafe(invoiceSchema, body)
-	if (!parsed.success) {
-		throw new StripeApiError('Unexpected Stripe invoice shape.', {
-			status: 502,
-		})
-	}
-	return parsed.value
-}
-
-export async function listCustomerInvoices(
-	env: StripeEnv,
-	customerId: string,
-): Promise<Array<StripeInvoice>> {
-	const trimmed = customerId.trim()
-	if (!trimmed) {
-		throw new StripeApiError('Customer id is required.', { status: 400 })
-	}
-	const body = await stripeRequest(env, {
-		method: 'GET',
-		path: '/v1/invoices',
-		query: {
-			customer: trimmed,
-			limit: '100',
-		},
-	})
-	const parsed = parseSafe(invoiceListSchema, body)
-	if (!parsed.success) {
-		throw new StripeApiError('Unexpected Stripe invoice list shape.', {
-			status: 502,
-		})
-	}
-	return parsed.value.data
-}
-
-export async function listInvoiceItemsForInvoice(
-	env: StripeEnv,
-	invoiceId: string,
-): Promise<Array<StripeInvoiceItem>> {
-	const trimmed = invoiceId.trim()
-	if (!trimmed) {
-		throw new StripeApiError('Invoice id is required.', { status: 400 })
-	}
-	const body = await stripeRequest(env, {
-		method: 'GET',
-		path: '/v1/invoiceitems',
-		query: {
-			invoice: trimmed,
-			limit: '100',
-		},
-	})
-	const parsed = parseSafe(invoiceItemListSchema, body)
-	if (!parsed.success) {
-		throw new StripeApiError('Unexpected Stripe invoice item list shape.', {
-			status: 502,
-		})
-	}
-	return parsed.value.data
-}
-
-export async function createInvoiceItem(
-	env: StripeEnv,
-	input: {
-		customerId: string
-		invoiceId: string
-		amountCents: number
-		description: string
-		idempotencyKey: string
-		metadata: Record<string, string>
-	},
-): Promise<StripeInvoiceItem> {
-	const customerId = input.customerId.trim()
-	const invoiceId = input.invoiceId.trim()
-	const description = input.description.trim()
-	if (!customerId) {
-		throw new StripeApiError('Customer id is required.', { status: 400 })
-	}
-	if (!invoiceId) {
-		throw new StripeApiError('Invoice id is required.', { status: 400 })
-	}
-	if (!description) {
-		throw new StripeApiError('Invoice item description is required.', {
-			status: 400,
-		})
-	}
-	if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) {
-		throw new StripeApiError(
-			'Invoice item amount must be a positive integer.',
-			{
-				status: 400,
-			},
-		)
-	}
-	const form: Record<string, string> = {
-		customer: customerId,
-		invoice: invoiceId,
-		amount: String(input.amountCents),
-		currency: 'usd',
-		description,
-	}
-	for (const [key, value] of Object.entries(input.metadata)) {
-		form[`metadata[${key}]`] = value
-	}
-	const body = await stripeRequest(env, {
-		method: 'POST',
-		path: '/v1/invoiceitems',
-		form,
-		idempotencyKey: input.idempotencyKey,
-	})
-	const parsed = parseSafe(invoiceItemSchema, body)
-	if (!parsed.success) {
-		throw new StripeApiError('Unexpected Stripe invoice item shape.', {
-			status: 502,
-		})
-	}
-	return parsed.value
-}
-
-export async function finalizeInvoice(
-	env: StripeEnv,
-	invoiceId: string,
-	idempotencyKey: string,
-): Promise<StripeInvoice> {
-	const trimmed = invoiceId.trim()
-	if (!trimmed) {
-		throw new StripeApiError('Invoice id is required.', { status: 400 })
-	}
-	const body = await stripeRequest(env, {
-		method: 'POST',
-		path: `/v1/invoices/${encodeURIComponent(trimmed)}/finalize`,
-		form: {},
-		idempotencyKey,
-	})
-	const parsed = parseSafe(invoiceSchema, body)
-	if (!parsed.success) {
-		throw new StripeApiError('Unexpected Stripe invoice shape.', {
-			status: 502,
-		})
-	}
-	return parsed.value
-}
-
-export async function payInvoice(
-	env: StripeEnv,
-	invoiceId: string,
-	idempotencyKey: string,
-): Promise<StripeInvoice> {
-	const trimmed = invoiceId.trim()
-	if (!trimmed) {
-		throw new StripeApiError('Invoice id is required.', { status: 400 })
-	}
-	const body = await stripeRequest(env, {
-		method: 'POST',
-		path: `/v1/invoices/${encodeURIComponent(trimmed)}/pay`,
-		form: {},
-		idempotencyKey,
-	})
-	const parsed = parseSafe(invoiceSchema, body)
-	if (!parsed.success) {
-		throw new StripeApiError('Unexpected Stripe invoice shape.', {
-			status: 502,
-		})
-	}
-	return parsed.value
-}
-
 /**
  * Permanently deletes a Stripe customer after its active subscriptions have
  * been canceled, preventing future invoices for an account that no longer
@@ -1138,20 +894,25 @@ export async function deleteCustomer(
 }
 
 export type BillingPortalFlowData = {
-	type: 'subscription_update'
-	/** Subscription the portal opens directly on its price-change step. */
+	type: 'subscription_update_confirm'
+	/** Subscription the portal confirms a price change for. */
 	subscriptionId: string
+	/** Subscription item whose price changes. */
+	subscriptionItemId: string
+	/** Price the item moves to (the purchasable Pro). */
+	priceId: string
 	/** Where Stripe sends the customer once the update is confirmed. */
 	afterCompletionRedirectUrl: string
 }
 
 /**
  * Creates a Stripe Billing Portal session. Without `flowData` the portal
- * opens on its overview page. With a `subscription_update` flow it opens
- * directly on the price picker for one subscription, so plan changes for
- * existing subscribers are prorated updates instead of second subscriptions.
- * `configuration` pins the portal configuration (which prices are offered,
- * proration behavior); unset uses the Stripe account default.
+ * opens on its overview page. With a `subscription_update_confirm` flow it
+ * opens on the confirmation step for moving one subscription item to one
+ * price, so switching to Pro is a prorated update instead of a second
+ * subscription and cannot land on a retired price.
+ * `configuration` pins the portal configuration (proration behavior);
+ * unset uses the Stripe account default.
  */
 export async function createBillingPortalSession(
 	env: StripeEnv,
@@ -1180,20 +941,27 @@ export async function createBillingPortalSession(
 	}
 	if (input.flowData) {
 		const subscriptionId = input.flowData.subscriptionId.trim()
+		const subscriptionItemId = input.flowData.subscriptionItemId.trim()
+		const priceId = input.flowData.priceId.trim()
 		const afterCompletionRedirectUrl =
 			input.flowData.afterCompletionRedirectUrl.trim()
-		if (!subscriptionId) {
-			throw new StripeApiError('Subscription id is required.', {
-				status: 400,
-			})
+		if (!subscriptionId || !subscriptionItemId || !priceId) {
+			throw new StripeApiError(
+				'Subscription, subscription item, and price ids are required.',
+				{ status: 400 },
+			)
 		}
 		if (!afterCompletionRedirectUrl) {
 			throw new StripeApiError('After-completion redirect URL is required.', {
 				status: 400,
 			})
 		}
+		const flow = 'flow_data[subscription_update_confirm]'
 		form['flow_data[type]'] = input.flowData.type
-		form['flow_data[subscription_update][subscription]'] = subscriptionId
+		form[`${flow}[subscription]`] = subscriptionId
+		form[`${flow}[items][0][id]`] = subscriptionItemId
+		form[`${flow}[items][0][price]`] = priceId
+		form[`${flow}[items][0][quantity]`] = '1'
 		form['flow_data[after_completion][type]'] = 'redirect'
 		form['flow_data[after_completion][redirect][return_url]'] =
 			afterCompletionRedirectUrl
@@ -1211,6 +979,178 @@ export async function createBillingPortalSession(
 				status: 502,
 			},
 		)
+	}
+	return parsed.value
+}
+
+const creditCheckoutSessionSchema = object({
+	id: string(),
+	mode: string(),
+	status: nullable(string()),
+	payment_status: string(),
+	amount_total: nullable(number()),
+	currency: nullable(string()),
+	customer: nullable(string()),
+	client_reference_id: nullable(string()),
+	metadata: optional(nullable(record(string(), string()))),
+	payment_intent: nullable(
+		object({
+			id: string(),
+			payment_method: nullable(string()),
+		}),
+	),
+})
+
+export type StripeCreditCheckoutSession = InferOutput<
+	typeof creditCheckoutSessionSchema
+>
+
+/**
+ * One-off Checkout Session (mode=payment) for a prepaid credit top-up. Card
+ * only, saved for off-session reuse so auto-refill can charge the same card
+ * later. The amount comes from `price_data`; no Stripe Price is needed.
+ */
+export async function createCreditTopUpCheckoutSession(
+	env: StripeEnv,
+	input: {
+		customerId: string
+		amountCents: number
+		clientReferenceId: string
+		successUrl: string
+		cancelUrl: string
+		metadata: Record<string, string>
+	},
+): Promise<{ id: string; url: string }> {
+	const customerId = input.customerId.trim()
+	if (!customerId) {
+		throw new StripeApiError('Customer id is required.', { status: 400 })
+	}
+	if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) {
+		throw new StripeApiError('Top-up amount must be a positive integer.', {
+			status: 400,
+		})
+	}
+	const form: Record<string, string> = {
+		mode: 'payment',
+		customer: customerId,
+		client_reference_id: input.clientReferenceId.trim(),
+		success_url: input.successUrl.trim(),
+		cancel_url: input.cancelUrl.trim(),
+		'payment_method_types[0]': 'card',
+		'payment_intent_data[setup_future_usage]': 'off_session',
+		'line_items[0][quantity]': '1',
+		'line_items[0][price_data][currency]': 'usd',
+		'line_items[0][price_data][unit_amount]': String(input.amountCents),
+		'line_items[0][price_data][product_data][name]': 'Kody credits',
+	}
+	for (const [key, value] of Object.entries(input.metadata)) {
+		const trimmedKey = key.trim()
+		const trimmedValue = value.trim()
+		if (!trimmedKey || !trimmedValue) continue
+		form[`metadata[${trimmedKey}]`] = trimmedValue
+		form[`payment_intent_data[metadata][${trimmedKey}]`] = trimmedValue
+	}
+	const body = await stripeRequest(env, {
+		method: 'POST',
+		path: '/v1/checkout/sessions',
+		form,
+	})
+	const parsed = parseSafe(createdCheckoutSessionSchema, body)
+	const url = parsed.success ? parsed.value.url?.trim() : null
+	if (!parsed.success || !url) {
+		throw new StripeApiError('Unexpected Stripe checkout session shape.', {
+			status: 502,
+		})
+	}
+	return { id: parsed.value.id, url }
+}
+
+/** Read a credit top-up session with its PaymentIntent expanded. */
+export async function getCreditTopUpCheckoutSession(
+	env: StripeEnv,
+	sessionId: string,
+): Promise<StripeCreditCheckoutSession> {
+	const trimmed = sessionId.trim()
+	if (!trimmed) {
+		throw new StripeApiError('Checkout session id is required.', {
+			status: 400,
+		})
+	}
+	const body = await stripeRequest(env, {
+		method: 'GET',
+		path: `/v1/checkout/sessions/${encodeURIComponent(trimmed)}`,
+		query: { 'expand[]': 'payment_intent' },
+	})
+	const parsed = parseSafe(creditCheckoutSessionSchema, body)
+	if (!parsed.success) {
+		throw new StripeApiError('Unexpected Stripe checkout session shape.', {
+			status: 502,
+		})
+	}
+	return parsed.value
+}
+
+const paymentIntentSchema = object({
+	id: string(),
+	status: string(),
+	amount: number(),
+	currency: string(),
+})
+
+export type StripePaymentIntent = InferOutput<typeof paymentIntentSchema>
+
+/**
+ * Charge a saved card off-session (credit auto-refill). Confirms
+ * immediately; a card that needs the customer present comes back with a
+ * non-`succeeded` status or a 402, and the caller treats both as a failed
+ * refill.
+ */
+export async function createOffSessionPaymentIntent(
+	env: StripeEnv,
+	input: {
+		customerId: string
+		paymentMethodId: string
+		amountCents: number
+		description: string
+		idempotencyKey: string
+		metadata: Record<string, string>
+	},
+): Promise<StripePaymentIntent> {
+	const customerId = input.customerId.trim()
+	const paymentMethodId = input.paymentMethodId.trim()
+	if (!customerId || !paymentMethodId) {
+		throw new StripeApiError('Customer and payment method are required.', {
+			status: 400,
+		})
+	}
+	if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) {
+		throw new StripeApiError('Charge amount must be a positive integer.', {
+			status: 400,
+		})
+	}
+	const form: Record<string, string> = {
+		amount: String(input.amountCents),
+		currency: 'usd',
+		customer: customerId,
+		payment_method: paymentMethodId,
+		off_session: 'true',
+		confirm: 'true',
+		description: input.description,
+	}
+	for (const [key, value] of Object.entries(input.metadata)) {
+		form[`metadata[${key}]`] = value
+	}
+	const body = await stripeRequest(env, {
+		method: 'POST',
+		path: '/v1/payment_intents',
+		form,
+		idempotencyKey: input.idempotencyKey,
+	})
+	const parsed = parseSafe(paymentIntentSchema, body)
+	if (!parsed.success) {
+		throw new StripeApiError('Unexpected Stripe payment intent shape.', {
+			status: 502,
+		})
 	}
 	return parsed.value
 }
