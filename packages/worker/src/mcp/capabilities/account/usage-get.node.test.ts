@@ -190,13 +190,13 @@ test('usageGet reports legacy Standard ceilings for grandfathered accounts', asy
 	expect(result.weekStart).toMatch(/^\d{4}-\d{2}-\d{2}$/)
 })
 
-test('usageGet warns on Worker compute with whatCounts and howToReduce', async () => {
+test('usageGet lists Free Worker compute as informational, never as a warning', async () => {
 	const email = 'worker-compute-usage-get@example.com'
 	const userId = testStableUserIdFromEmail(email)
 	const { db } = createUsageTestDb({
 		email,
 		plan: 'free',
-		uniqueWorkerDays: 50,
+		uniqueWorkerDays: 517,
 	})
 	const env = withUsageEnv({ APP_DB: db }) as Env
 	const callerContext = createMcpCallerContext({
@@ -209,12 +209,13 @@ test('usageGet warns on Worker compute with whatCounts and howToReduce', async (
 		(row) => row.resource === 'unique_worker_days',
 	)
 	expect(workerCompute?.label).toBe('Worker compute')
-	expect(workerCompute?.current).toBe(50)
+	expect(workerCompute?.current).toBe(517)
 	expect(workerCompute?.limit).toBe(50)
-	expect(workerCompute?.percent).toBe(1)
-	expect(workerCompute?.overEightyPercent).toBe(true)
 	expect(workerCompute?.whatCounts).not.toMatch(/unique worker day/i)
+	expect(workerCompute?.howToReduce).toContain(
+		'On Free this is informational: it never charges you or stops runs. Execute caps are your limit.',
+	)
 	expect(
 		result.warnings.some((row) => row.resource === 'unique_worker_days'),
-	).toBe(true)
+	).toBe(false)
 })
