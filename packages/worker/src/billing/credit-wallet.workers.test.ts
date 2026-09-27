@@ -139,7 +139,7 @@ test('wallet eligibility: only the purchasable Pro gets a wallet; retired plans 
 	).toBe(1_500)
 })
 
-test('balance > 0 unlocks 50Ã rate limits; debits to $0 re-block at the base cap', async () => {
+test('balance > 0 unlocks 50× rates; stock stays Max; debits to $0 re-block rates', async () => {
 	const user = await seedUser({
 		label: 'credits-unlock',
 		stripePlan: 'pro',
@@ -155,6 +155,23 @@ test('balance > 0 unlocks 50Ã rate limits; debits to $0 re-block at the base 
 			entitlement.creditWallet,
 		),
 	).toBe(500)
+	// Purchasable Pro includes Max stock even with an empty wallet.
+	expect(
+		resolvePlanLimit(
+			entitlement.plan,
+			'saved_packages',
+			entitlement.ladder,
+			entitlement.creditWallet,
+		),
+	).toBe(10_000)
+	expect(
+		resolvePlanLimit(
+			entitlement.plan,
+			'concurrent_workflows',
+			entitlement.ladder,
+			entitlement.creditWallet,
+		),
+	).toBe(200)
 
 	await ensureCreditWallet({
 		db: env.APP_DB,
@@ -173,6 +190,22 @@ test('balance > 0 unlocks 50Ã rate limits; debits to $0 re-block at the base 
 			entitlement.creditWallet,
 		),
 	).toBe(25_000)
+	expect(
+		resolvePlanLimit(
+			entitlement.plan,
+			'saved_packages',
+			entitlement.ladder,
+			entitlement.creditWallet,
+		),
+	).toBe(10_000)
+	expect(
+		resolvePlanLimit(
+			entitlement.plan,
+			'concurrent_workflows',
+			entitlement.ladder,
+			entitlement.creditWallet,
+		),
+	).toBe(200)
 	expect(
 		resolvePlanLimit(
 			entitlement.plan,
@@ -216,6 +249,14 @@ test('balance > 0 unlocks 50Ã rate limits; debits to $0 re-block at the base 
 			entitlement.creditWallet,
 		),
 	).toBe(500)
+	expect(
+		resolvePlanLimit(
+			entitlement.plan,
+			'saved_packages',
+			entitlement.ladder,
+			entitlement.creditWallet,
+		),
+	).toBe(10_000)
 })
 
 test('debits charge only usage above the include, are idempotent, and never back-charge an empty wallet', async () => {

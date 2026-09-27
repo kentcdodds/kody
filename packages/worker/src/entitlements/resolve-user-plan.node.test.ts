@@ -51,7 +51,7 @@ test('gift/referral Pro overlay is not credits-eligible and keeps retired Pro ce
 	).toBe(2_000)
 })
 
-test('purchasable Stripe Pro stays credits-eligible with empty-wallet Standard ceilings', () => {
+test('purchasable Stripe Pro stays credits-eligible with Max stock and Standard rates', () => {
 	const paying = resolveUserPlanFromRow({
 		...freeBase,
 		stripe_plan: 'pro',
@@ -62,13 +62,16 @@ test('purchasable Stripe Pro stays credits-eligible with empty-wallet Standard c
 		ladder: 'public',
 		creditsEligible: true,
 	})
-	expect(resolvePlanLimits(paying.plan, paying.ladder, 'empty')).toEqual(
-		proCreditsPlanLimits,
+	const emptyLimits = resolvePlanLimits(paying.plan, paying.ladder, 'empty')
+	expect(emptyLimits).toEqual(proCreditsPlanLimits)
+	expect(emptyLimits.maxSavedPackages).toBe(planLimits.max.maxSavedPackages)
+	expect(emptyLimits.maxConcurrentWorkflows).toBe(
+		planLimits.max.maxConcurrentWorkflows,
 	)
-	expect(
-		resolvePlanLimits(paying.plan, paying.ladder, 'empty')
-			.maxUniqueWorkerDaysPerMonth,
-	).toBe(350)
+	expect(emptyLimits.maxUniqueWorkerDaysPerMonth).toBe(350)
+	expect(emptyLimits.maxExecuteCallsPerDay).toBe(
+		planLimits.standard.maxExecuteCallsPerDay,
+	)
 })
 
 test('retired Stripe Pro and manual Pro stay on planLimits.pro without a wallet', () => {

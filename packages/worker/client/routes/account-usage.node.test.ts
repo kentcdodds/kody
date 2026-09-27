@@ -190,7 +190,7 @@ test('empty wallet without purchase rights still points at Subscribe to Pro', ()
 		false,
 	)
 	expect(capped).toMatchObject({
-		body: 'Subscribe to Pro to add credits and lift hard caps.',
+		body: 'Subscribe to Pro to add credits and lift rate caps.',
 		action: { label: 'Subscribe to Pro', href: '/account/credits' },
 	})
 })

@@ -259,13 +259,61 @@ test('credit wallet state: only an eligible Pro wallet counts; balance > 0 funds
 	).toBe('none')
 })
 
-test('purchasable Pro has Standard includes; funded wallet multiplies rate/compute limits by 50 up to max', () => {
-	expect(proCreditsPlanLimits).toEqual(planLimits.standard)
-	expect(resolvePlanLimits('pro', 'public', 'empty')).toEqual(
-		planLimits.standard,
+test('purchasable Pro has Max stock always; funded wallet unlocks rates only', () => {
+	const stockFields = [
+		'maxRepos',
+		'maxSavedPackages',
+		'maxScheduledJobs',
+		'maxRepoSessions',
+		'maxSecrets',
+		'maxStorageBytes',
+		'maxConcurrentWorkflows',
+	] as const
+	for (const field of stockFields) {
+		expect(proCreditsPlanLimits[field]).toBe(planLimits.max[field])
+	}
+	// Rates, email, includes, and interval stay on Standard.
+	expect(proCreditsPlanLimits.maxExecuteCallsPerDay).toBe(
+		planLimits.standard.maxExecuteCallsPerDay,
 	)
+	expect(proCreditsPlanLimits.maxEmailSendsPerDay).toBe(
+		planLimits.standard.maxEmailSendsPerDay,
+	)
+	expect(proCreditsPlanLimits.maxUniqueWorkerDaysPerMonth).toBe(350)
+	expect(proCreditsPlanLimits.maxDurableObjectRowsReadPerMonth).toBe(
+		5_000_000_000,
+	)
+	expect(proCreditsPlanLimits.minJobIntervalMs).toBe(
+		planLimits.standard.minJobIntervalMs,
+	)
+
+	const empty = resolvePlanLimits('pro', 'public', 'empty')
+	expect(empty).toEqual(proCreditsPlanLimits)
+	// Empty Pro: Max stock + Standard rates.
+	expect(resolvePlanLimit('pro', 'saved_packages', 'public', 'empty')).toBe(
+		10_000,
+	)
+	expect(resolvePlanLimit('pro', 'secrets', 'public', 'empty')).toBe(10_000)
+	expect(resolvePlanLimit('pro', 'scheduled_jobs', 'public', 'empty')).toBe(
+		5_000,
+	)
+	expect(resolvePlanLimit('pro', 'repos', 'public', 'empty')).toBe(10_000)
+	expect(resolvePlanLimit('pro', 'repo_sessions', 'public', 'empty')).toBe(
+		20_000,
+	)
+	expect(resolvePlanLimit('pro', 'storage_bytes', 'public', 'empty')).toBe(
+		100 * 1024 * 1024 * 1024,
+	)
+	expect(
+		resolvePlanLimit('pro', 'concurrent_workflows', 'public', 'empty'),
+	).toBe(200)
+	expect(
+		resolvePlanLimit('pro', 'execute_calls_per_day', 'public', 'empty'),
+	).toBe(500)
+
 	// Retired $49 Pro keeps its own table.
 	expect(resolvePlanLimits('pro', 'public', 'none')).toEqual(planLimits.pro)
+
 	const unlocked = resolvePlanLimits('pro', 'public', 'funded')
 	for (const field of creditsUnlockedLimitFields) {
 		const base = proCreditsPlanLimits[field]
@@ -278,29 +326,26 @@ test('purchasable Pro has Standard includes; funded wallet multiplies rate/compu
 					: Math.min(base * creditsUnlockMultiplier, ceiling),
 		)
 	}
-	// 50× capped at the max operator ceilings.
+	// Funded keeps the same Max stock as empty; only rates rise.
+	for (const field of stockFields) {
+		expect(unlocked[field]).toBe(empty[field])
+		expect(unlocked[field]).toBe(planLimits.max[field])
+	}
 	expect(unlocked.maxOutboundFetchesPerDay).toBe(80_000)
 	expect(unlocked.maxJobRunsPerDay).toBe(40_000)
 	expect(unlocked.maxAutomationInvocationsPerDay).toBe(200_000)
-	expect(unlocked.maxConcurrentWorkflows).toBe(
-		proCreditsPlanLimits.maxConcurrentWorkflows,
-	)
-	expect(
-		resolvePlanLimit('pro', 'execute_calls_per_day', 'public', 'empty'),
-	).toBe(500)
 	expect(
 		resolvePlanLimit('pro', 'execute_calls_per_day', 'public', 'funded'),
 	).toBe(25_000)
 	expect(
 		resolveWeeklyPlanLimit('pro', 'execute_calls_per_day', 'public', 'funded'),
 	).toBe(60_000)
-	// Email, stock, storage, concurrency, and the interval floor stay put.
+	// Email, UWD/DO includes, and the interval floor stay on Standard.
 	for (const resource of [
 		'email_sends_per_day',
 		'email_receives_per_day',
-		'saved_packages',
-		'storage_bytes',
-		'concurrent_workflows',
+		'stored_email_messages',
+		'email_message_bytes',
 	] as const) {
 		expect(resolvePlanLimit('pro', resource, 'public', 'funded')).toBe(
 			resolvePlanLimit('pro', resource, 'public', 'empty'),
@@ -308,7 +353,9 @@ test('purchasable Pro has Standard includes; funded wallet multiplies rate/compu
 	}
 	expect(unlocked.minJobIntervalMs).toBe(proCreditsPlanLimits.minJobIntervalMs)
 	expect(unlocked.maxUniqueWorkerDaysPerMonth).toBe(350)
-	// A wallet state never changes non-Pro tables.
+	expect(unlocked.maxDurableObjectRowsReadPerMonth).toBe(5_000_000_000)
+	// Non-credits-eligible Pro and non-Pro tables are unchanged by wallet state.
+	expect(resolvePlanLimits('pro', 'public', 'none')).toEqual(planLimits.pro)
 	expect(resolvePlanLimits('free', 'public', 'funded')).toEqual(planLimits.free)
 	expect(resolvePlanLimits('max', 'public', 'funded')).toEqual(planLimits.max)
 })

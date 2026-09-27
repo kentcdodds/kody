@@ -61,8 +61,8 @@ export function computeAccountUsageOverageNotice(
 			return {
 				title: "Over this month's include",
 				body: canBuyCredits
-					? 'Add credits to lift hard caps. Usage above the include then debits credits.'
-					: 'Subscribe to Pro to add credits and lift hard caps.',
+					? 'Add credits to lift rate caps. Usage above the include then debits credits.'
+					: 'Subscribe to Pro to add credits and lift rate caps.',
 				tone: 'warn',
 				action: creditsActionForWallet('empty', plan, canBuyCredits),
 			}

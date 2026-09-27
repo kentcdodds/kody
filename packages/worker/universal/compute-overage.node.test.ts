@@ -101,7 +101,7 @@ test('howToReduce points every non-operator account at /account/credits without 
 		'pro',
 		'empty',
 	)
-	expect(empty).toContain(`Credits at ${accountCreditsPath} lift hard caps`)
+	expect(empty).toContain(`Credits at ${accountCreditsPath} lift rate caps`)
 	expect(empty).not.toMatch(/add credits/i)
 	expect(empty).toContain('$0.004 per worker-compute day')
 	expect(empty).not.toMatch(/unique worker day/i)

@@ -327,7 +327,8 @@ test('rate/compute limit hints point at /account/credits until the wallet is unl
 		expect(denial.message).toMatch(/^Plan limit reached:/)
 		expect(denial.message).not.toMatch(/Max/)
 	}
-	// Stock limits are not unlocked by credits; only Free has an upgrade.
+	// Stock is on the Pro subscription (not a credits unlock); only Free
+	// gets a billing upgrade offer.
 	expect(buildEntitlementUpgradeHint('saved_packages', 'free')).toMatch(
 		/\/account\/billing/,
 	)
@@ -336,6 +337,9 @@ test('rate/compute limit hints point at /account/credits until the wallet is unl
 			/upgrade|credits/i,
 		)
 	}
+	expect(
+		buildEntitlementUpgradeHint('saved_packages', 'pro', 'empty'),
+	).not.toMatch(/credits/i)
 	expect(jobIntervalFloorUpgradeHint).toBe('Space this job out.')
 })
 
