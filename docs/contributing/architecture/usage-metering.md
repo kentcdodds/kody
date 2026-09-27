@@ -22,21 +22,21 @@ One schema covers every chokepoint. It is defined in
 
 ```ts
 type UsageEvent = {
-  userId: string; // required; owning user
-  eventType: UsageEventType; // see the metric table below
-  entityId?: string | null; // metered entity id when one exists
-  durationMs?: number | null; // wall-clock duration of the metered unit
-  cpuMs?: number | null; // CPU time, only when the platform exposes it
-  bytes?: number | null; // bytes moved/stored when meaningful
-  eventCount?: number; // coalesced units in one write; defaults to 1
-  outcome: "success" | "error";
-  timestamp?: string; // ISO 8601; defaults to time of recording
-  surface?: string | null; // closed UWD surface; AE blob6
-  executeShape?: string | null; // execute thin/glue class; AE blob7
-  cacheReuse?: "hit" | "miss" | null; // billing-aligned LOADER reuse; AE blob8
-  codeChars?: number | null; // module-graph text length; AE double4
-  paramsChars?: number | null; // stable JSON length of params; AE double5
-};
+	userId: string // required; owning user
+	eventType: UsageEventType // see the metric table below
+	entityId?: string | null // metered entity id when one exists
+	durationMs?: number | null // wall-clock duration of the metered unit
+	cpuMs?: number | null // CPU time, only when the platform exposes it
+	bytes?: number | null // bytes moved/stored when meaningful
+	eventCount?: number // coalesced units in one write; defaults to 1
+	outcome: 'success' | 'error'
+	timestamp?: string // ISO 8601; defaults to time of recording
+	surface?: string | null // closed UWD surface; AE blob6
+	executeShape?: string | null // execute thin/glue class; AE blob7
+	cacheReuse?: 'hit' | 'miss' | null // billing-aligned LOADER reuse; AE blob8
+	codeChars?: number | null // module-graph text length; AE double4
+	paramsChars?: number | null // stable JSON length of params; AE double5
+}
 ```
 
 `eventType` is a closed union defined in the dependency-free
@@ -416,15 +416,15 @@ Helpers live in `packages/worker/src/usage/agent-package-conversation-uses.ts`.
 ## Helper contract
 
 ```ts
-import { recordUsage } from "#worker/usage/record-usage.ts";
+import { recordUsage } from '#worker/usage/record-usage.ts'
 
 await recordUsage(env, {
-  userId,
-  eventType: "job_run",
-  entityId: job.id,
-  durationMs,
-  outcome: execution.ok ? "success" : "error",
-});
+	userId,
+	eventType: 'job_run',
+	entityId: job.id,
+	durationMs,
+	outcome: execution.ok ? 'success' : 'error',
+})
 ```
 
 Guarantees and rules:
@@ -464,23 +464,23 @@ Guarantees and rules:
    id, the start time, and the outcome. Wrap it:
 
    ```ts
-   const startedAtMs = Date.now();
-   let outcome: "success" | "error" = "success";
+   const startedAtMs = Date.now()
+   let outcome: 'success' | 'error' = 'success'
    try {
-     // existing work
+   	// existing work
    } catch (error) {
-     outcome = "error";
-     throw error;
+   	outcome = 'error'
+   	throw error
    } finally {
-     if (userId) {
-       await recordUsage(env, {
-         userId,
-         eventType: "my_metric",
-         entityId,
-         durationMs: Date.now() - startedAtMs,
-         outcome,
-       });
-     }
+   	if (userId) {
+   		await recordUsage(env, {
+   			userId,
+   			eventType: 'my_metric',
+   			entityId,
+   			durationMs: Date.now() - startedAtMs,
+   			outcome,
+   		})
+   	}
    }
    ```
 
@@ -501,10 +501,10 @@ Guarantees and rules:
    In `*.node.test.ts`, spy on the helper:
 
    ```ts
-   const usageModule = await import("#worker/usage/record-usage.ts");
+   const usageModule = await import('#worker/usage/record-usage.ts')
    const recordUsageSpy = vi
-     .spyOn(usageModule, "recordUsage")
-     .mockResolvedValue(undefined);
+   	.spyOn(usageModule, 'recordUsage')
+   	.mockResolvedValue(undefined)
    ```
 
    Assert one call per metered unit with the expected `userId`, `eventType`,
