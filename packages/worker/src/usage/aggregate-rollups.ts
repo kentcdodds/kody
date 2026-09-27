@@ -223,8 +223,12 @@ function utcMonthBounds(now: Date) {
  * the unit count in `double3`, so those metrics' counts use `double3` when
  * it is set. Blob/double positions match the data point layout in
  * `record-usage.ts`.
+ *
+ * Every `if()` branch must be a Float: Analytics Engine rejects the whole
+ * query (HTTP 422) when one branch is `doubleN` and the other an Integer
+ * literal, so fallbacks are written `1.0` / `0.0`, never `1` / `0`.
  */
-function buildMonthToDateAggregateQuery(
+export function buildMonthToDateAggregateQuery(
 	dataset: string,
 	bounds: { monthStart: string; nextMonthStart: string },
 ) {
@@ -239,7 +243,7 @@ SELECT
 				OR blob2 = 'durable_object_rows_read'
 			) AND double3 > 0,
 			double3,
-			1
+			1.0
 		) * _sample_interval
 	) AS event_count,
 	sum(
@@ -251,9 +255,9 @@ SELECT
 					OR blob2 = 'durable_object_rows_read'
 				) AND double3 > 0,
 				double3,
-				1
+				1.0
 			),
-			0
+			0.0
 		) * _sample_interval
 	) AS error_count,
 	sum(double1 * _sample_interval) AS total_duration_ms,
@@ -262,7 +266,7 @@ SELECT
 		if(
 			blob2 = 'durable_object_gb_seconds'
 			OR blob2 = 'durable_object_rows_read',
-			0,
+			0.0,
 			double3
 		) * _sample_interval
 	) AS total_bytes

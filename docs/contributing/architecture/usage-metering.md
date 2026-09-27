@@ -345,9 +345,12 @@ export does not list them.
    Engine samples under load) and batch-upserts absolute values — an idempotent
    recompute, not increments. Analytics Engine retention (~90 days) always
    covers a full month, so month-to-date recompute is complete; prior months
-   already in D1 stay untouched. The aggregation needs `CLOUDFLARE_ACCOUNT_ID`
-   and `CLOUDFLARE_API_TOKEN` and no-ops with a debug log when either (or the
-   `USAGE_EVENTS` binding) is missing.
+   already in D1 stay untouched. Analytics Engine rejects the whole query
+   (HTTP 422) when an `if()` mixes a `doubleN` branch with an Integer literal,
+   so fallbacks in that query are Float literals (`1.0`, `0.0`);
+   `aggregate-rollups.node.test.ts` guards this. The aggregation needs
+   `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` and no-ops with a debug
+   log when either (or the `USAGE_EVENTS` binding) is missing.
 
    **Local-dev direct fallback:** when `USAGE_EVENTS` is absent (local dev,
    tests), `recordUsage` upserts `usage_rollups` directly per event, so local

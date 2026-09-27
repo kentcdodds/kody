@@ -4,6 +4,7 @@ import {
 	analyticsEngineSqlRetryMaxAttempts,
 	buildDynamicWorkerInvokeReuseQuery,
 	buildDynamicWorkerReuseRatioQuery,
+	buildMonthToDateAggregateQuery,
 	resolveUsageEventsDataset,
 	shouldRunUsageAggregationCron,
 } from './aggregate-rollups.ts'
@@ -805,4 +806,23 @@ test('buildDynamicWorkerReuseRatioQuery compares unique days to invokes and exec
 	expect(query).toContain("blob8 = 'miss'")
 	expect(query).toContain('AS unique_worker_days')
 	expect(query).toContain('AS execute_calls')
+})
+
+test('buildMonthToDateAggregateQuery keeps every if() branch a Float so Analytics Engine accepts it', () => {
+	const query = buildMonthToDateAggregateQuery('kody_usage_events', {
+		monthStart: '2026-09-01 00:00:00',
+		nextMonthStart: '2026-10-01 00:00:00',
+	})
+	// Analytics Engine returns HTTP 422 for `if(cond, double3, 1)` (Double vs
+	// Integer branches), which fails the whole hourly recompute.
+	const integerBranchLines = query
+		.split('\n')
+		.map((line) => line.trim())
+		.filter((line) => /^\d+,?$/.test(line))
+	expect(integerBranchLines).toEqual([])
+	expect(query).toContain('double3,\n\t\t\t1.0\n')
+	expect(query).toContain(
+		'\t\t\t0.0\n\t\t) * _sample_interval\n\t) AS error_count',
+	)
+	expect(query).toContain("OR blob2 = 'durable_object_rows_read',\n\t\t\t0.0,")
 })
