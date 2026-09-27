@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	creditsUnlockMultiplier,
 	creditsUnlockedLimitFields,
+	creditsUnlockedStockLimitFields,
 	formatDurableObjectRowsRead,
 	hasHigherPublicPlan,
 	parseEntitlementLadder,
@@ -259,7 +260,7 @@ test('credit wallet state: only an eligible Pro wallet counts; balance > 0 funds
 	).toBe('none')
 })
 
-test('purchasable Pro has Standard includes; funded wallet multiplies rate/compute limits by 50 up to max', () => {
+test('purchasable Pro has Standard includes; funded wallet unlocks rates and Max stock', () => {
 	expect(proCreditsPlanLimits).toEqual(planLimits.standard)
 	expect(resolvePlanLimits('pro', 'public', 'empty')).toEqual(
 		planLimits.standard,
@@ -278,13 +279,38 @@ test('purchasable Pro has Standard includes; funded wallet multiplies rate/compu
 					: Math.min(base * creditsUnlockMultiplier, ceiling),
 		)
 	}
-	// 50× capped at the max operator ceilings.
+	for (const field of creditsUnlockedStockLimitFields) {
+		expect(unlocked[field]).toBe(planLimits.max[field])
+	}
+	// Empty wallet keeps Standard stock ceilings.
+	expect(resolvePlanLimit('pro', 'saved_packages', 'public', 'empty')).toBe(50)
+	expect(resolvePlanLimit('pro', 'secrets', 'public', 'empty')).toBe(100)
+	expect(resolvePlanLimit('pro', 'scheduled_jobs', 'public', 'empty')).toBe(15)
+	expect(
+		resolvePlanLimit('pro', 'concurrent_workflows', 'public', 'empty'),
+	).toBe(10)
+	// Funded wallet raises stock to Max (not a raw 50× of Standard).
+	expect(resolvePlanLimit('pro', 'saved_packages', 'public', 'funded')).toBe(
+		10_000,
+	)
+	expect(resolvePlanLimit('pro', 'secrets', 'public', 'funded')).toBe(10_000)
+	expect(resolvePlanLimit('pro', 'scheduled_jobs', 'public', 'funded')).toBe(
+		5_000,
+	)
+	expect(
+		resolvePlanLimit('pro', 'concurrent_workflows', 'public', 'funded'),
+	).toBe(200)
+	expect(resolvePlanLimit('pro', 'repos', 'public', 'funded')).toBe(10_000)
+	expect(resolvePlanLimit('pro', 'repo_sessions', 'public', 'funded')).toBe(
+		20_000,
+	)
+	expect(resolvePlanLimit('pro', 'storage_bytes', 'public', 'funded')).toBe(
+		100 * 1024 * 1024 * 1024,
+	)
+	// 50× rate unlock capped at the max operator ceilings.
 	expect(unlocked.maxOutboundFetchesPerDay).toBe(80_000)
 	expect(unlocked.maxJobRunsPerDay).toBe(40_000)
 	expect(unlocked.maxAutomationInvocationsPerDay).toBe(200_000)
-	expect(unlocked.maxConcurrentWorkflows).toBe(
-		proCreditsPlanLimits.maxConcurrentWorkflows,
-	)
 	expect(
 		resolvePlanLimit('pro', 'execute_calls_per_day', 'public', 'empty'),
 	).toBe(500)
@@ -294,13 +320,12 @@ test('purchasable Pro has Standard includes; funded wallet multiplies rate/compu
 	expect(
 		resolveWeeklyPlanLimit('pro', 'execute_calls_per_day', 'public', 'funded'),
 	).toBe(60_000)
-	// Email, stock, storage, concurrency, and the interval floor stay put.
+	// Email, UWD/DO includes, and the interval floor stay on Standard.
 	for (const resource of [
 		'email_sends_per_day',
 		'email_receives_per_day',
-		'saved_packages',
-		'storage_bytes',
-		'concurrent_workflows',
+		'stored_email_messages',
+		'email_message_bytes',
 	] as const) {
 		expect(resolvePlanLimit('pro', resource, 'public', 'funded')).toBe(
 			resolvePlanLimit('pro', resource, 'public', 'empty'),
@@ -308,7 +333,9 @@ test('purchasable Pro has Standard includes; funded wallet multiplies rate/compu
 	}
 	expect(unlocked.minJobIntervalMs).toBe(proCreditsPlanLimits.minJobIntervalMs)
 	expect(unlocked.maxUniqueWorkerDaysPerMonth).toBe(350)
-	// A wallet state never changes non-Pro tables.
+	expect(unlocked.maxDurableObjectRowsReadPerMonth).toBe(5_000_000_000)
+	// Non-credits-eligible Pro and non-Pro tables are unchanged by wallet state.
+	expect(resolvePlanLimits('pro', 'public', 'none')).toEqual(planLimits.pro)
 	expect(resolvePlanLimits('free', 'public', 'funded')).toEqual(planLimits.free)
 	expect(resolvePlanLimits('max', 'public', 'funded')).toEqual(planLimits.max)
 })

@@ -191,7 +191,8 @@ export function PricingRoute(handle: Handle) {
 						<p mix={css(planPriceNoteCss)}>or $120/year</p>
 						<p mix={css(planCopyCss)}>
 							Same {factoryGuideLink()}. More room for jobs, workflows, and
-							daily volume. Add prepaid credits to lift hard caps.
+							daily volume. Add prepaid credits to lift rate caps and
+							stock/concurrency ceilings.
 							{improvedSearchNote}
 						</p>
 						{renderPaidPlanCta(isSignedIn, signedOutCta)}
@@ -270,8 +271,9 @@ export function PricingRoute(handle: Handle) {
 						Prepaid credits
 					</h3>
 					<p mix={css(limitsFootnoteCss)}>
-						Add credits on Pro to lift hard caps. Usage above the monthly
-						include debits {creditDebitRates.unique_worker_days.label} and{' '}
+						Add credits on Pro to lift rate caps and stock/concurrency ceilings
+						toward Max. Usage above the monthly include debits{' '}
+						{creditDebitRates.unique_worker_days.label} and{' '}
 						{creditDebitRates.durable_object_rows_read.label}. No overage
 						invoices.
 					</p>

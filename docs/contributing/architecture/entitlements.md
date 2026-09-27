@@ -21,10 +21,10 @@ at `packages/worker/universal/plans.ts`.
   `resolveEffectivePlan(manual, stripe)`.
 - `errors.ts` — the one typed error (`EntitlementLimitError`) and the one
   user-facing message builder every enforcement point uses.
-  `buildEntitlementUpgradeHint` points rate/compute limits a funded wallet
-  raises at `/account/credits` (reduce-only once unlocked, and for `max`); other
-  resources keep the upgrade clause only when `hasHigherPublicPlan(plan)`
-  (Free).
+  `buildEntitlementUpgradeHint` points rate/compute and stock/concurrency limits
+  a funded wallet raises at `/account/credits` (reduce-only once unlocked, and
+  for `max`); email and other non-unlocked resources keep the upgrade clause
+  only when `hasHigherPublicPlan(plan)` (Free).
 - `service.ts` — `getUserEntitlement` / `getUserPlan`,
   `getCachedUserEntitlement` / `getCachedUserPlan` (60s TTL enforcement cache),
   `assertWithinEntitlement`, built-in D1 usage counters, the daily-counter
@@ -235,9 +235,13 @@ credits and auto-refill still require the purchasable Pro subscription
 `creditsUnlockedLimitFields` (execute, outbound fetches, job runs, and
 automation invocations, daily and weekly) by `creditsUnlockMultiplier` (50),
 capped at the `max` daily ceilings (execute 25,000, outbound 80,000, job runs
-40,000, automation 200,000; `max` has no weekly window). Email caps, stock
-limits, storage, concurrency, and the job interval floor do not change.
-Unlocking costs nothing; at $0 the base caps apply again (within the 60s
+40,000, automation 200,000; `max` has no weekly window). Stock and concurrency
+fields in `creditsUnlockedStockLimitFields` (repos, saved packages, scheduled
+jobs, repo sessions, secrets, storage bytes, concurrent workflows) rise to the
+matching `planLimits.max` ceilings — not a raw 50× of Standard, which would
+overshoot concurrent workflows (50×10 = 500 vs Max 200). Email caps, UWD/DO
+includes, and the job interval floor stay on the Standard/`proCreditsPlanLimits`
+base. Unlocking costs nothing; at $0 the base caps apply again (within the 60s
 enforcement cache).
 
 **Debits.** The `usage_aggregation` lane runs `runCreditDebits`
@@ -771,13 +775,14 @@ the stable programmatic contract:
 ```
 
 The `message` is built by `buildEntitlementLimitMessage` and is the single
-user-facing string across MCP and UI surfaces. For rate/compute limits a funded
-wallet raises (`creditsUnlockedResources`), `upgradeHint` points at
-`/account/credits` unless the wallet is already unlocked or the plan is `max`.
-Other resources include a self-serve billing offer only when
-`hasHigherPublicPlan(plan)` is true (Free); the purchasable Pro has the retired
-Standard stock limits, so retired plans get reduce-only hints there. The job
-interval floor hint is always reduce-only (Free and Pro share 15 minutes).
+user-facing string across MCP and UI surfaces. For rate/compute and
+stock/concurrency limits a funded wallet raises (`creditsUnlockedResources`),
+`upgradeHint` points at `/account/credits` unless the wallet is already unlocked
+or the plan is `max`. Email and other non-unlocked resources include a
+self-serve billing offer only when `hasHigherPublicPlan(plan)` is true (Free).
+The purchasable Pro empty wallet keeps Standard stock; funded raises stock to
+Max. The job interval floor hint is always reduce-only (Free and Pro share 15
+minutes).
 
 Rate limit example (Free, Pro with $0, retired plans):
 
@@ -788,11 +793,11 @@ Rate limit example (Free, Pro with $0, retired plans):
 The wording states what credits do rather than offering a purchase, because gift
 and referral Pro accounts have a wallet but must subscribe before buying.
 
-Stock limit example (Pro):
+Stock limit example (Pro with $0):
 
 > Plan limit reached: your "pro" plan allows at most 15 scheduled jobs and you
 > currently have 15. Remove or finish existing scheduled jobs you no longer
-> need.
+> need; credits at /account/credits raise this limit.
 
 Rules:
 

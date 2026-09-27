@@ -225,8 +225,9 @@ export function resolveEntitlementLadderAfterPaidAccessChange(input: {
  *   {@link proCreditsPlanLimits} apply (hard caps).
  * - `funded` — purchasable Pro with a balance above $0. Rate/compute limits
  *   in {@link creditsUnlockedLimitFields} are multiplied by
- *   {@link creditsUnlockMultiplier} up to the `max` ceilings; past-include
- *   usage debits the wallet.
+ *   {@link creditsUnlockMultiplier} up to the `max` ceilings; stock and
+ *   concurrency fields in {@link creditsUnlockedStockLimitFields} rise to
+ *   the corresponding `max` ceilings; past-include usage debits the wallet.
  */
 export const creditWalletStates = ['none', 'empty', 'funded'] as const
 
@@ -621,9 +622,11 @@ export const proCreditsPlanLimits: PlanLimits = { ...planLimits.standard }
 
 /**
  * A funded wallet multiplies these rate/compute limits, capped at the `max`
- * operator ceilings (daily only: `max` has no weekly window). Email caps,
- * stock limits, storage, concurrency, and the job interval floor are
- * unchanged.
+ * operator ceilings (daily only: `max` has no weekly window). Stock and
+ * concurrency use {@link creditsUnlockedStockLimitFields} (copy of `max`,
+ * not a raw 50× of Standard — that would overshoot concurrent workflows).
+ * Email caps, UWD/DO includes, and the job interval floor stay on the
+ * Standard/`proCreditsPlanLimits` base.
  */
 export const creditsUnlockMultiplier = 50
 
@@ -636,12 +639,33 @@ export const creditsUnlockedLimitFields = [
 	'maxAutomationInvocationsPerDay',
 ] as const satisfies ReadonlyArray<keyof PlanLimits>
 
+/**
+ * Stock and concurrency ceilings a funded wallet raises to the matching
+ * `planLimits.max` values. Not scaled by {@link creditsUnlockMultiplier}.
+ */
+export const creditsUnlockedStockLimitFields = [
+	'maxRepos',
+	'maxSavedPackages',
+	'maxScheduledJobs',
+	'maxRepoSessions',
+	'maxSecrets',
+	'maxStorageBytes',
+	'maxConcurrentWorkflows',
+] as const satisfies ReadonlyArray<keyof PlanLimits>
+
 /** Entitlement resources whose limit a funded wallet raises. */
 export const creditsUnlockedResources = [
 	'execute_calls_per_day',
 	'outbound_fetches_per_day',
 	'job_runs_per_day',
 	'automation_invocations_per_day',
+	'repos',
+	'saved_packages',
+	'scheduled_jobs',
+	'repo_sessions',
+	'secrets',
+	'storage_bytes',
+	'concurrent_workflows',
 ] as const satisfies ReadonlyArray<EntitlementResource>
 
 export function isCreditsUnlockedResource(
@@ -673,7 +697,15 @@ function unlockCreditsLimits(limits: PlanLimits): PlanLimits {
 			limits.maxAutomationInvocationsPerDay,
 			ceiling.maxAutomationInvocationsPerDay,
 		),
+		maxRepos: ceiling.maxRepos,
+		maxSavedPackages: ceiling.maxSavedPackages,
+		maxScheduledJobs: ceiling.maxScheduledJobs,
+		maxRepoSessions: ceiling.maxRepoSessions,
+		maxSecrets: ceiling.maxSecrets,
+		maxStorageBytes: ceiling.maxStorageBytes,
+		maxConcurrentWorkflows: ceiling.maxConcurrentWorkflows,
 	} satisfies Record<(typeof creditsUnlockedLimitFields)[number], unknown> &
+		Record<(typeof creditsUnlockedStockLimitFields)[number], unknown> &
 		PlanLimits
 }
 
@@ -692,7 +724,7 @@ export const cloudflareComputeListUsd = {
  * Monthly compute meters: included usage is free on every plan. Above the
  * include, only a funded purchasable-Pro wallet is debited; nobody is
  * invoiced. Execute and outbound fetches are hard daily + weekly caps (a
- * funded wallet raises them).
+ * funded wallet raises them along with stock/concurrency ceilings).
  */
 export const computeMeteringPolicy = {
 	uniqueWorkerDays: 'included_then_credits',
