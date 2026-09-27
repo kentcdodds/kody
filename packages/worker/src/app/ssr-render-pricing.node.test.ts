@@ -66,7 +66,7 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 		APP_DB: createAnonymousTestDb(),
 		BUNDLE_ARTIFACTS_KV: {},
 		JOB_MANAGER: {},
-	STORAGE_RUNNER: {},
+		STORAGE_RUNNER: {},
 		PACKAGE_REALTIME_SESSION: {},
 		MCP_CLIENT_HUB: {},
 	} as unknown as Env
