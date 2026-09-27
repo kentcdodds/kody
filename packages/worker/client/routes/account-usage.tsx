@@ -36,13 +36,10 @@ import {
 	hoverMq,
 	primaryLinkCss,
 } from '#universal/styles/style-primitives.ts'
-import {
-	creditsUnlockedResources,
-	type CreditWalletState,
-} from '#universal/plans.ts'
+import { type CreditWalletState } from '#universal/plans.ts'
 import {
 	accountCreditsPath,
-	computeOverageWarningResources,
+	warningOffersCredits,
 	type ComputeIncludeCreditsStatus,
 } from '#universal/compute-overage.ts'
 import { formatMicroUsd } from '#universal/credits.ts'
@@ -174,18 +171,6 @@ export function creditsActionForWallet(
 			throw new Error(`Unknown credit wallet state: ${String(exhaustive)}`)
 		}
 	}
-}
-
-/**
- * Credits only help rate/compute limits a funded wallet raises and the
- * monthly compute meters it pays for; stock, email, storage, and
- * concurrency warnings get no credits link.
- */
-export function warningOffersCredits(resource: string): boolean {
-	return (
-		(creditsUnlockedResources as ReadonlyArray<string>).includes(resource) ||
-		(computeOverageWarningResources as ReadonlyArray<string>).includes(resource)
-	)
 }
 
 export function computeAccountUsageOverageNotice(

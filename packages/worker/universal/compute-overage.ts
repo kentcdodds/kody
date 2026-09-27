@@ -13,6 +13,7 @@ import {
 	type CreditDebitMeter,
 } from './credits.ts'
 import {
+	creditsUnlockedResources,
 	type CreditWalletState,
 	type EntitlementLadder,
 	type PlanName,
@@ -211,4 +212,16 @@ function computeOverageCreditsGuidance(
 			throw new Error(`Unknown credit wallet state: ${String(exhaustive)}`)
 		}
 	}
+}
+
+/**
+ * Credits only help rate/compute limits a funded wallet raises and the
+ * monthly compute meters it pays for; stock, email, storage, and
+ * concurrency warnings get no credits link.
+ */
+export function warningOffersCredits(resource: string): boolean {
+	return (
+		(creditsUnlockedResources as ReadonlyArray<string>).includes(resource) ||
+		(computeOverageWarningResources as ReadonlyArray<string>).includes(resource)
+	)
 }

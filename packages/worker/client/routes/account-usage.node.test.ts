@@ -1,5 +1,6 @@
 import { jsx } from 'remix/ui/jsx-runtime'
 import { renderToString } from 'remix/ui/server'
+import { warningOffersCredits } from '#universal/compute-overage.ts'
 import { expect, test } from 'vitest'
 import {
 	type AccountUsageComputeOverage,
@@ -10,7 +11,6 @@ import {
 	accountUsageWarningsPanelTitle,
 	computeAccountUsageOverageNotice,
 	creditsActionForWallet,
-	warningOffersCredits,
 	formatEntitlementUsedPercent,
 	hasReachedEntitlementLimit,
 	hotterUsagePercent,
