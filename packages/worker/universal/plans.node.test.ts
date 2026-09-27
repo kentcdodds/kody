@@ -21,7 +21,7 @@ test('formatDurableObjectRowsRead uses billion-scale labels', () => {
 })
 
 test('resolvePlanLimit uses public numbers unless the legacy ladder applies', () => {
-	expect(resolvePlanLimit('free', 'execute_calls_per_day')).toBe(150)
+	expect(resolvePlanLimit('free', 'execute_calls_per_day')).toBe(100)
 	expect(resolvePlanLimit('standard', 'execute_calls_per_day')).toBe(500)
 	expect(resolvePlanLimit('standard', 'execute_calls_per_day', 'public')).toBe(
 		500,
@@ -33,7 +33,7 @@ test('resolvePlanLimit uses public numbers unless the legacy ladder applies', ()
 	expect(resolvePlanLimit('pro', 'outbound_fetches_per_day')).toBe(50_000)
 	expect(resolvePlanLimit('pro', 'scheduled_jobs', 'legacy')).toBe(150)
 	expect(resolvePlanLimit('pro', 'scheduled_jobs', 'public')).toBe(75)
-	expect(resolvePlanLimit('free', 'execute_calls_per_day', 'legacy')).toBe(150)
+	expect(resolvePlanLimit('free', 'execute_calls_per_day', 'legacy')).toBe(100)
 	expect(resolvePlanLimit('max', 'execute_calls_per_day', 'legacy')).toBe(
 		25_000,
 	)

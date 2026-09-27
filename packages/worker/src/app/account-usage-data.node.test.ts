@@ -284,7 +284,7 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 	expect(subscribedData?.stripePlan).toBe('pro')
 	expect(baseline?.computeOverage.creditsStatus).toBe('within_include')
 	expect(baseline?.computeOverage.creditWallet).toBe('none')
-	expect(baseline?.computeOverage.meters).toHaveLength(2)
+	expect(baseline?.computeOverage.meters).toHaveLength(1)
 })
 
 test('Free over compute includes is sent to /account/credits to switch to Pro, not charged', async () => {
@@ -293,7 +293,7 @@ test('Free over compute includes is sent to /account/credits to switch to Pro, n
 		userId: 21,
 		email: 'usage-free-over@example.com',
 		plan: 'free',
-		uniqueWorkerDays: 60,
+		durableObjectRowsRead: 600_000_000,
 	})
 	const data = await loadAccountUsageData({
 		env: withUsageEnv({ APP_DB: db }) as Env,
@@ -301,16 +301,21 @@ test('Free over compute includes is sent to /account/credits to switch to Pro, n
 		now,
 	})
 	expect(data?.computeOverage.creditsStatus).toBe('switch_to_pro')
-	const uniqueWorkerDays = data?.computeOverage.meters.find(
-		(meter) => meter.resource === 'unique_worker_days',
+	expect(
+		data?.computeOverage.meters.some(
+			(meter) => meter.resource === 'unique_worker_days',
+		),
+	).toBe(false)
+	const durableObjectRows = data?.computeOverage.meters.find(
+		(meter) => meter.resource === 'durable_object_rows_read',
 	)
-	expect(uniqueWorkerDays?.overEightyPercent).toBe(true)
-	expect(uniqueWorkerDays?.howToReduce).toMatch(
+	expect(durableObjectRows?.overEightyPercent).toBe(true)
+	expect(durableObjectRows?.howToReduce).toMatch(
 		/Switch to Pro at \/account\/credits/,
 	)
-	expect(uniqueWorkerDays?.howToReduce).not.toMatch(/payment method|invoice/)
+	expect(durableObjectRows?.howToReduce).not.toMatch(/payment method|invoice/)
 	expect(
-		data?.warnings.some((row) => row.resource === 'unique_worker_days'),
+		data?.warnings.some((row) => row.resource === 'durable_object_rows_read'),
 	).toBe(true)
 })
 
@@ -323,7 +328,7 @@ test('retired Standard over compute includes is not charged and has no wallet', 
 		stripePlan: 'standard',
 		entitlementLadder: 'legacy',
 		stripeCustomerId: 'cus_legacy',
-		uniqueWorkerDays: 400,
+		durableObjectRowsRead: 6_000_000_000,
 		creditBalanceMicroUsd: 5_000_000,
 	})
 	const data = await loadAccountUsageData({
@@ -333,11 +338,11 @@ test('retired Standard over compute includes is not charged and has no wallet', 
 	})
 	expect(data?.computeOverage.creditWallet).toBe('none')
 	expect(data?.computeOverage.creditsStatus).toBe('switch_to_pro')
-	const uniqueWorkerDays = data?.computeOverage.meters.find(
-		(meter) => meter.resource === 'unique_worker_days',
+	const durableObjectRows = data?.computeOverage.meters.find(
+		(meter) => meter.resource === 'durable_object_rows_read',
 	)
-	expect(uniqueWorkerDays?.howToReduce).toMatch(/not charged on your plan/)
-	expect(uniqueWorkerDays?.howToReduce).not.toMatch(/payment method/)
+	expect(durableObjectRows?.howToReduce).toMatch(/not charged on your plan/)
+	expect(durableObjectRows?.howToReduce).not.toMatch(/payment method/)
 })
 
 test('purchasable Pro with credits shows unlocked limits and debits above the include', async () => {
@@ -406,10 +411,15 @@ test('gift Pro keeps retired Pro ceilings without a wallet and cannot buy credit
 	expect(data?.computeOverage.creditWallet).toBe('none')
 	expect(data?.computeOverage.creditsStatus).toBe('within_include')
 	expect(data?.canBuyCredits).toBe(false)
-	const uniqueWorkerDays = data?.computeOverage.meters.find(
-		(meter) => meter.resource === 'unique_worker_days',
+	expect(
+		data?.computeOverage.meters.some(
+			(meter) => meter.resource === 'unique_worker_days',
+		),
+	).toBe(false)
+	const durableObjectRows = data?.computeOverage.meters.find(
+		(meter) => meter.resource === 'durable_object_rows_read',
 	)
-	expect(uniqueWorkerDays?.include).toBe(2_000)
+	expect(durableObjectRows?.include).toBe(20_000_000_000)
 	expect(currentFor(data, 'execute_calls_per_day')?.limit).toBe(1_500)
 	for (const row of [
 		...(data?.entitlementConsumption ?? []),

@@ -702,7 +702,7 @@ test('user entitlement warning infra edges: missing bindings, leftover claims, T
 	)
 })
 
-test('compute include crossings mail for public and legacy without charging copy', async () => {
+test('compute include crossings mail for Durable Object rows-read without charging copy', async () => {
 	sendCloudflareEmail.mockClear()
 	const now = new Date('2026-07-25T12:00:00.000Z')
 	readAdminEntitlementConsumption.mockResolvedValue([])
@@ -718,7 +718,9 @@ test('compute include crossings mail for public and legacy without charging copy
 			},
 		],
 		kv,
-		rollups: [{ metric: 'dynamic_worker_day', event_count: 300 }],
+		rollups: [
+			{ metric: 'durable_object_rows_read', event_count: 4_500_000_000 },
+		],
 	})
 
 	const result = await sendUserEntitlementWarningEmails({ env, now })
@@ -732,13 +734,14 @@ test('compute include crossings mail for public and legacy without charging copy
 	const payload = sendCloudflareEmail.mock.calls[0]?.[1] as {
 		text: string
 	}
-	expect(payload.text).toContain('Unique worker days')
+	expect(payload.text).toContain('Durable Object rows read')
+	expect(payload.text).not.toMatch(/unique worker day/i)
 	expect(
 		store.get(
 			userEntitlementWarningKvKey({
 				userId: stableUserId,
 				kind: 'approaching',
-				resource: 'unique_worker_days',
+				resource: 'durable_object_rows_read',
 				month: '2026-07',
 			}),
 		),
@@ -762,7 +765,9 @@ test('compute warning claims are scoped to the UTC month', async () => {
 			},
 		],
 		kv,
-		rollups: [{ metric: 'dynamic_worker_day', event_count: 300 }],
+		rollups: [
+			{ metric: 'durable_object_rows_read', event_count: 4_500_000_000 },
+		],
 	})
 
 	await sendUserEntitlementWarningEmails({ env, now: july })
@@ -771,7 +776,7 @@ test('compute warning claims are scoped to the UTC month', async () => {
 			userEntitlementWarningKvKey({
 				userId: stableUserId,
 				kind: 'approaching',
-				resource: 'unique_worker_days',
+				resource: 'durable_object_rows_read',
 				month: '2026-07',
 			}),
 		),
@@ -790,7 +795,7 @@ test('compute warning claims are scoped to the UTC month', async () => {
 			userEntitlementWarningKvKey({
 				userId: stableUserId,
 				kind: 'approaching',
-				resource: 'unique_worker_days',
+				resource: 'durable_object_rows_read',
 				month: '2026-08',
 			}),
 		),

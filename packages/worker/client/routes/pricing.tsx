@@ -87,10 +87,6 @@ const limitGroups: ReadonlyArray<LimitGroup> = [
 				key: 'maxAutomationInvocationsPerDay',
 			},
 			{
-				label: 'Unique worker days per month',
-				key: 'maxUniqueWorkerDaysPerMonth',
-			},
-			{
 				label: 'Durable Object rows read per month',
 				key: 'maxDurableObjectRowsReadPerMonth',
 				format: (value) => ({ text: formatDurableObjectRowsRead(value) }),
@@ -271,9 +267,8 @@ export function PricingRoute(handle: Handle) {
 					</h3>
 					<p mix={css(limitsFootnoteCss)}>
 						Add credits on Pro to lift hard caps. Usage above the monthly
-						include debits {creditDebitRates.unique_worker_days.label} and{' '}
-						{creditDebitRates.durable_object_rows_read.label}. No overage
-						invoices.
+						include debits {creditDebitRates.durable_object_rows_read.label}. No
+						overage invoices.
 					</p>
 					<p mix={css(limitsFootnoteCss)}>
 						Execute and outbound fetches are hard daily and weekly caps

@@ -11,6 +11,7 @@ import {
 	creditTopUpMinCents,
 	creditTopUpPackCents,
 } from '#universal/credits.ts'
+import { isCustomerFacingComputeMeter } from '#universal/compute-overage.ts'
 import {
 	creditsUnlockedResources,
 	entitlementResourceLabels,
@@ -165,10 +166,12 @@ export async function loadAccountCreditsData(input: {
 		},
 		notify: wallet.notify,
 		limits: listCreditsUnlockLimits(),
-		rates: creditDebitMeters.map((meter) => ({
-			meter,
-			label: creditDebitRates[meter].label,
-		})),
+		rates: creditDebitMeters
+			.filter((meter) => isCustomerFacingComputeMeter(meter))
+			.map((meter) => ({
+				meter,
+				label: creditDebitRates[meter].label,
+			})),
 		recent: recent.map(toAccountCreditsLedgerItem),
 		...(input.notice ? { notice: input.notice } : {}),
 		...(input.error ? { error: input.error } : {}),

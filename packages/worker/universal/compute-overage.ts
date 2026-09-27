@@ -51,14 +51,31 @@ export const computeOverageWarningResources = [
 export type ComputeOverageWarningResource =
 	(typeof computeOverageWarningResources)[number]
 
+/**
+ * Monthly meters on pricing, `/account/usage`, `usageGet`, and customer
+ * entitlement-warning emails. Unique worker days stay an internal COGS /
+ * credit-debit dimension — not a customer-facing allotment.
+ */
+export const customerFacingComputeOverageMeters = [
+	'durable_object_rows_read',
+] as const satisfies ReadonlyArray<ComputeOverageWarningResource>
+
+export function isCustomerFacingComputeMeter(
+	resource: string,
+): resource is (typeof customerFacingComputeOverageMeters)[number] {
+	return (customerFacingComputeOverageMeters as ReadonlyArray<string>).includes(
+		resource,
+	)
+}
+
 export const computeOverageWarningResourceLabels = {
-	unique_worker_days: 'Unique worker days',
+	unique_worker_days: 'Usage',
 	durable_object_rows_read: 'Durable Object rows read',
 } as const satisfies Record<ComputeOverageWarningResource, string>
 
 /**
  * Factual mechanic line for hot unique-worker-day entitlement/limit
- * payloads. Meter name plus what a unique worker day is — not a playbook.
+ * payloads (admin / internal). Not shown on customer surfaces.
  */
 export const uniqueWorkerDayMechanic =
 	'Meter unique_worker_days: one unique Dynamic Worker isolate (worker id) per UTC day.'

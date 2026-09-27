@@ -5,6 +5,7 @@ import {
 	computeOverageIncludePercent,
 	computeOverageResourceVisibility,
 	computeOverageWarningResourceLabels,
+	isCustomerFacingComputeMeter,
 	resolveComputeIncludeCreditsStatus,
 	type ComputeOverageWarningResource,
 } from '#universal/compute-overage.ts'
@@ -50,7 +51,9 @@ export async function readAccountComputeOverage(input: {
 		uniqueWorkerDays: usage.uniqueWorkerDays,
 		durableObjectRowsRead: usage.durableObjectRowsRead,
 	})
-	const meters = [
+	// Build both meters for creditsStatus / cost; only customer-facing meters
+	// ship to /account/usage and usageGet.
+	const internalMeters = [
 		toComputeMeter({
 			resource: 'unique_worker_days',
 			current: usage.uniqueWorkerDays,
@@ -66,13 +69,16 @@ export async function readAccountComputeOverage(input: {
 			creditWallet: input.creditWallet,
 		}),
 	]
+	const meters = internalMeters.filter((meter) =>
+		isCustomerFacingComputeMeter(meter.resource),
+	)
 	return {
 		meters,
 		creditWallet: input.creditWallet,
 		creditsStatus: resolveComputeIncludeCreditsStatus({
 			plan: input.plan,
 			creditWallet: input.creditWallet,
-			pastInclude: meters.some((meter) => meter.percentOfLimit > 1),
+			pastInclude: internalMeters.some((meter) => meter.percentOfLimit > 1),
 		}),
 		creditsCostMicroUsd: overage.creditsCostMicroUsd,
 	}

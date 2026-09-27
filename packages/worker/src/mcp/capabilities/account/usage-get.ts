@@ -3,7 +3,6 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { emptyCapabilityInputSchema } from '#mcp/capabilities/types.ts'
-import { uniqueWorkerDayMechanic } from '#universal/compute-overage.ts'
 import { planNames } from '#universal/plans.ts'
 import {
 	computeOverageUsageWarningRows,
@@ -40,7 +39,7 @@ export const usageGetCapability = defineDomainCapability(
 	{
 		name: 'usageGet',
 		description:
-			'Read the signed-in user’s entitlement usage against plan limits, including monthly unique worker days (Dynamic Worker isolates) and Durable Object rows-read: per-resource current, limit, percent used, and plain-language guidance on what counts and how to reduce it.',
+			'Read the signed-in user’s entitlement usage against plan limits, including monthly Durable Object rows-read and execute/outbound hard caps: per-resource current, limit, percent used, and plain-language guidance on what counts and how to reduce it.',
 		keywords: [
 			'account',
 			'usage',
@@ -48,8 +47,8 @@ export const usageGetCapability = defineDomainCapability(
 			'limits',
 			'entitlements',
 			'plan',
-			'unique worker days',
-			'dynamic worker',
+			'execute',
+			'durable object',
 		],
 		readOnly: true,
 		idempotent: true,
@@ -117,9 +116,6 @@ export const usageGetCapability = defineDomainCapability(
 				limit: row.limit,
 				percent: row.percentOfLimit,
 				overEightyPercent: row.overEightyPercent,
-				...(row.resource === 'unique_worker_days' && row.overEightyPercent
-					? { mechanic: uniqueWorkerDayMechanic }
-					: {}),
 				...(row.week
 					? {
 							week: {

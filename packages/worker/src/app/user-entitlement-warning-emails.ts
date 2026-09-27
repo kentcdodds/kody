@@ -14,7 +14,7 @@ import {
 	computeOverageIncludePercent,
 	computeOverageResourceVisibility,
 	computeOverageWarningResourceLabels,
-	computeOverageWarningResources,
+	customerFacingComputeOverageMeters,
 	type ComputeOverageWarningResource,
 } from '#universal/compute-overage.ts'
 import {
@@ -40,15 +40,16 @@ const observeOnlyMetricPlaceholders = observeOnlyUsageEventTypes
  * cadence. Failures here must not block the operator events.
  *
  * One email per crossing of 80% or 100% on a specific entitlement or
- * monthly compute include (unique worker-days, Durable Object rows-read).
- * Staying over the same threshold does not mail again. A later drop below
- * that threshold, then a climb back over it, is a new instance. Same-hour
- * crossings of the same kind still batch into one mail. Stock claims expire
- * after 30 days unless an hourly sweep still sees the user over and refreshes
- * the TTL; daily `*_per_day` claims stay scoped to the UTC day. Compute
- * includes use month-qualified stock claims so a July crossing does not
- * suppress August. The call to action is `/account/credits` (add credits,
- * or switch to Pro first on Free and retired plans).
+ * monthly Durable Object rows-read include. Unique worker days stay
+ * internal metering and are not mailed to customers. Staying over the same
+ * threshold does not mail again. A later drop below that threshold, then a
+ * climb back over it, is a new instance. Same-hour crossings of the same
+ * kind still batch into one mail. Stock claims expire after 30 days unless
+ * an hourly sweep still sees the user over and refreshes the TTL; daily
+ * `*_per_day` claims stay scoped to the UTC day. Compute includes use
+ * month-qualified stock claims so a July crossing does not suppress August.
+ * The call to action is `/account/credits` (add credits, or switch to Pro
+ * first on Free and retired plans).
  */
 
 export const userEntitlementWarningKvKeyPrefix = 'entitlement-warning-user:v3'
@@ -679,7 +680,7 @@ async function readComputeOverageWarnings(input: {
 		unique_worker_days: overage.includedUniqueWorkerDays,
 		durable_object_rows_read: overage.includedDurableObjectRowsRead,
 	} as const satisfies Record<ComputeOverageWarningResource, number>
-	return computeOverageWarningResources.map((resource) => {
+	return customerFacingComputeOverageMeters.map((resource) => {
 		const current = currentByResource[resource]
 		const limit = includeByResource[resource]
 		const percentOfLimit = computeOverageIncludePercent(current, limit) ?? 0

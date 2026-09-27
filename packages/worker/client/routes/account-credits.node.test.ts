@@ -55,7 +55,6 @@ function credits(
 			},
 		],
 		rates: [
-			{ meter: 'unique_worker_days', label: '$0.004 per unique worker day' },
 			{
 				meter: 'durable_object_rows_read',
 				label: '$0.002 per million rows read',
@@ -73,7 +72,7 @@ function credits(
 				id: 'entry-2',
 				kind: 'debit',
 				amountMicroUsd: -6_580_000,
-				description: 'Unique worker days above include',
+				description: 'Usage (1,645)',
 				createdAt: '2026-09-21T10:00:00.000Z',
 			},
 		],
@@ -105,11 +104,11 @@ test('eligible wallet shows balance, packs, limits, rates, and recent activity',
 	expect(html).toContain('With $0')
 	expect(html).toContain('With credits')
 	expect(html).toContain('75,000')
-	expect(html).toContain(
-		'$0.004 per unique worker day · $0.002 per million rows read',
-	)
+	expect(html).toContain('$0.002 per million rows read')
+	expect(html).not.toContain('unique worker day')
 	expect(html).toContain('+$25.00')
 	expect(html).toContain('−$6.58')
+	expect(html).toContain('Usage (1,645)')
 	expect(html).toContain('Balance at or below $5')
 	expect(html).not.toContain('Hit monthly cap')
 	expect(html).not.toMatch(/\bMax\b/)

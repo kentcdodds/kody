@@ -425,19 +425,19 @@ test('UserMeter consume denies public execute when the UTC week hits first', asy
 	await meter.initialize({
 		resource: 'execute_calls_per_day',
 		day: utcDayKey(monday),
-		count: 150,
+		count: 100,
 		updatedAt: monday.toISOString(),
 	})
 	await meter.initialize({
 		resource: 'execute_calls_per_day',
 		day: utcDayKey(tuesday),
-		count: 150,
+		count: 100,
 		updatedAt: tuesday.toISOString(),
 	})
 	await meter.initialize({
 		resource: 'execute_calls_per_day',
 		day: utcDayKey(wednesday),
-		count: 99,
+		count: 49,
 		updatedAt: wednesday.toISOString(),
 	})
 	expect(
@@ -447,7 +447,7 @@ test('UserMeter consume denies public execute when the UTC week hits first', asy
 			endDay: utcDayKey(wednesday),
 			now: wednesday.toISOString(),
 		}),
-	).toEqual({ outcome: 'ready', count: 399 })
+	).toEqual({ outcome: 'ready', count: 249 })
 
 	await consumeDailyEntitlement({
 		db: env.APP_DB,
@@ -473,8 +473,8 @@ test('UserMeter consume denies public execute when the UTC week hits first', asy
 	}
 	expect(denied.details).toMatchObject({
 		resource: 'execute_calls_per_day',
-		limit: 400,
-		current: 400,
+		limit: 250,
+		current: 250,
 		window: 'week',
 	})
 }, 30_000)

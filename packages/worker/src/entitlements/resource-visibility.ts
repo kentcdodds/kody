@@ -31,7 +31,7 @@ export const entitlementResourceGroupNotes: Partial<
 	Record<EntitlementResourceGroup, string>
 > = {
 	monthly:
-		'Included unique worker days and Durable Object rows-read this UTC month. Public-ladder overage invoices when a payment method is on file; unpaid Free is asked to upgrade.',
+		'Included Durable Object rows-read this UTC month. On Pro, usage above the include debits prepaid credits; unpaid Free is asked to upgrade.',
 	daily:
 		'Daily counters reset at UTC midnight. Execute and outbound fetches also have a this-week cap (UTC Monday–Sunday). High daily headroom for bursts; weekly total keeps it sustainable.',
 }

@@ -30,7 +30,7 @@ function entitlement(
 		whatCounts: 'Execute calls today (UTC).',
 		howToReduce: 'Run fewer execute calls today or this week.',
 		current: 30,
-		limit: 150,
+		limit: 100,
 		percentOfLimit: 0.2,
 		overEightyPercent: false,
 		...overrides,
@@ -46,12 +46,12 @@ function overage(
 	return {
 		meters: [
 			{
-				resource: 'unique_worker_days',
-				label: 'Unique worker days',
-				whatCounts: 'Counts distinct Dynamic Worker isolates.',
-				howToReduce: 'Keep package code stable.',
-				current: 45,
-				include: 50,
+				resource: 'durable_object_rows_read',
+				label: 'Durable Object rows read',
+				whatCounts: 'SQLite rows read by Durable Object package storage.',
+				howToReduce: 'Read less from package storage.',
+				current: 450_000_000,
+				include: 500_000_000,
 				percentOfLimit,
 				overEightyPercent: percentOfLimit >= 0.8,
 				creditsStatus: percentOfLimit >= 1 ? 'add_credits' : 'within_include',
@@ -221,8 +221,8 @@ test('hotterUsagePercent uses the closer of daily and weekly windows', () => {
 		hotterUsagePercent(
 			entitlement({
 				week: {
-					current: 360,
-					limit: 400,
+					current: 225,
+					limit: 250,
 					percentOfLimit: 0.9,
 					overEightyPercent: true,
 				},
@@ -235,8 +235,8 @@ test('hotterUsagePercent uses the closer of daily and weekly windows', () => {
 				percentOfLimit: 0.95,
 				week: {
 					current: 100,
-					limit: 400,
-					percentOfLimit: 0.25,
+					limit: 250,
+					percentOfLimit: 0.4,
 					overEightyPercent: false,
 				},
 			}),
@@ -275,8 +275,8 @@ test('formatEntitlementUsedPercent shows today and this week', () => {
 		formatEntitlementUsedPercent(
 			entitlement({
 				week: {
-					current: 360,
-					limit: 400,
+					current: 225,
+					limit: 250,
 					percentOfLimit: 0.9,
 					overEightyPercent: true,
 				},
@@ -307,8 +307,8 @@ test('warnings panel title is Limit reached at 100% daily or weekly', () => {
 		percentOfLimit: 0.2,
 		overEightyPercent: true,
 		week: {
-			current: 400,
-			limit: 400,
+			current: 250,
+			limit: 250,
 			percentOfLimit: 1,
 			overEightyPercent: true,
 		},
@@ -326,7 +326,7 @@ test('warnings panel title is Limit reached at 100% daily or weekly', () => {
 	).toBe('Limit reached')
 
 	const computeIncludeAtLimit = entitlement({
-		resource: 'unique_worker_days',
+		resource: 'durable_object_rows_read',
 		group: 'monthly',
 		percentOfLimit: 1,
 		overEightyPercent: true,

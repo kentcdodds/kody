@@ -1,4 +1,3 @@
-import { uniqueWorkerDayMechanic } from '#universal/compute-overage.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	computeOverageLimitErrorCode,
@@ -49,7 +48,6 @@ export type McpEntitlementMetadata =
 			whatCounts: string
 			upgradeHint: string
 			creditsStatus: ComputeOverageLimitErrorDetails['creditsStatus']
-			mechanic?: string
 	  }
 
 export function toMcpEntitlementMetadata(
@@ -117,9 +115,6 @@ function toComputeOverageLimitMetadata(
 		whatCounts: details.whatCounts,
 		upgradeHint: details.upgradeHint,
 		creditsStatus: details.creditsStatus,
-		...(details.resource === 'unique_worker_days'
-			? { mechanic: uniqueWorkerDayMechanic }
-			: {}),
 	}
 }
 

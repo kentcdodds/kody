@@ -452,8 +452,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		// Unique execute is the Dynamic Worker bill. Daily headroom covers a
 		// bursty agent morning; the weekly total keeps a free account from
 		// spending a full week of that headroom every day.
-		maxExecuteCallsPerDay: 150,
-		maxExecuteCallsPerWeek: 400,
+		maxExecuteCallsPerDay: 100,
+		maxExecuteCallsPerWeek: 250,
 		maxOutboundFetchesPerDay: 1_000,
 		maxOutboundFetchesPerWeek: 2_500,
 		maxJobRunsPerDay: 500,

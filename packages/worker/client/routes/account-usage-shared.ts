@@ -85,7 +85,7 @@ export function computeAccountUsageOverageNotice(
 				body:
 					overage.creditWallet === 'funded'
 						? "You are over 80% of this month's include. Usage above it debits your credits."
-						: "You are over 80% of this month's unique worker-day or Durable Object rows-read include.",
+						: "You are over 80% of this month's Durable Object rows-read include.",
 				tone: 'info',
 				action: creditsActionForWallet(
 					overage.creditWallet,
