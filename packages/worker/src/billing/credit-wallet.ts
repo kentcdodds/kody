@@ -350,6 +350,11 @@ export async function grantAdminCredits(input: {
 	}
 }
 
+/**
+ * Save auto-refill and notice settings, creating the wallet row when a
+ * settings save comes before any top-up. A wallet created here keeps a $0
+ * balance; its first funding forgives earlier usage above the include.
+ */
 export async function updateCreditWalletSettings(input: {
 	db: D1Database
 	userId: string
@@ -360,18 +365,24 @@ export async function updateCreditWalletSettings(input: {
 	const nowIso = input.now.toISOString()
 	await input.db
 		.prepare(
-			`UPDATE credit_wallets
-			 SET auto_refill_enabled = ?,
-			     auto_refill_threshold_cents = ?,
-			     auto_refill_amount_cents = ?,
-			     auto_refill_monthly_cap_cents = ?,
-			     notify_auto_refilled = ?,
-			     notify_monthly_cap = ?,
-			     notify_low_balance = ?,
-			     updated_at = ?
-			 WHERE user_id = ?`,
+			`INSERT INTO credit_wallets (
+				user_id, auto_refill_enabled, auto_refill_threshold_cents,
+				auto_refill_amount_cents, auto_refill_monthly_cap_cents,
+				notify_auto_refilled, notify_monthly_cap, notify_low_balance,
+				created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT (user_id) DO UPDATE SET
+				auto_refill_enabled = excluded.auto_refill_enabled,
+				auto_refill_threshold_cents = excluded.auto_refill_threshold_cents,
+				auto_refill_amount_cents = excluded.auto_refill_amount_cents,
+				auto_refill_monthly_cap_cents = excluded.auto_refill_monthly_cap_cents,
+				notify_auto_refilled = excluded.notify_auto_refilled,
+				notify_monthly_cap = excluded.notify_monthly_cap,
+				notify_low_balance = excluded.notify_low_balance,
+				updated_at = excluded.updated_at`,
 		)
 		.bind(
+			input.userId,
 			input.autoRefill.enabled ? 1 : 0,
 			input.autoRefill.thresholdCents,
 			input.autoRefill.amountCents,
@@ -380,7 +391,7 @@ export async function updateCreditWalletSettings(input: {
 			input.notify.monthlyCap ? 1 : 0,
 			input.notify.lowBalance ? 1 : 0,
 			nowIso,
-			input.userId,
+			nowIso,
 		)
 		.run()
 	return await readCreditWallet(input.db, input.userId)
