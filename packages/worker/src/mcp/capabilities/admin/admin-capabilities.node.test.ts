@@ -235,9 +235,10 @@ function createAdminCapabilityTestDb(input: {
 							null) as T | null
 					}
 					if (
-						normalizedQuery.includes(
-							'select id, username, email, plan, stripe_plan, stripe_price_id, entitlement_ladder, stripe_credits_eligible, stable_user_id from users where stable_user_id = ?',
-						)
+						normalizedQuery.includes('from users where stable_user_id = ?') &&
+						normalizedQuery.includes('stripe_price_id') &&
+						normalizedQuery.includes('stripe_credits_eligible') &&
+						normalizedQuery.includes('second_agent_standard_gift_expires_at')
 					) {
 						const user = users.find((row) => row.stable_user_id === params[0])
 						return (
@@ -246,12 +247,22 @@ function createAdminCapabilityTestDb(input: {
 										id: user.id,
 										username: user.username,
 										email: user.email,
-										plan: user.plan ?? 'free',
-										stripe_plan: null,
+										stripe_price_id: null,
 										stable_user_id: user.stable_user_id,
+										plan: user.plan ?? 'free',
+										stripe_plan: user.stripe_plan ?? null,
+										entitlement_ladder: user.entitlement_ladder ?? 'public',
+										stripe_credits_eligible: 0,
+										second_agent_standard_gift_expires_at: null,
+										referral_standard_credit_expires_at: null,
 									}
 								: null
 						) as T | null
+					}
+					if (
+						normalizedQuery.includes('from credit_wallets where user_id = ?')
+					) {
+						return null as T | null
 					}
 					if (
 						normalizedQuery.startsWith(
