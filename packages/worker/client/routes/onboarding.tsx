@@ -478,7 +478,7 @@ export function OnboardingRoute(handle: Handle) {
 		)
 		const visibleSelectedAgent =
 			activeStep === 3
-				? resolveOnboardingStep3SelectedAgent(selectedAgent, connectedAgents)
+				? resolveOnboardingStep3SelectedAgent(selectedAgent)
 				: selectedAgent
 		if (
 			activeStep === 3 &&

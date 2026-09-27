@@ -72,6 +72,8 @@ test('connections page renders the connected list with Add connection, the MCP U
 	expect(html).toContain('aria-label="Connected agents"')
 	expect(html).toContain('data-agent-label="Cursor"')
 	expect(html).toContain('aria-label="Revoke Cursor"')
+	expect(html).toContain('data-testid="connected-agent-view-steps"')
+	expect(html).toContain('href="/account/connections/new/cursor"')
 	expect(html).toMatch(/Last used <span[^>]*>unknown<\/span>/)
 	expect(html).toMatch(
 		/data-testid="account-connections-add"[^>]*>Add connection</,
@@ -93,7 +95,7 @@ test('connections page renders the connected list with Add connection, the MCP U
 	expect(html).toContain('data-icon="box"')
 })
 
-test('Add connection shows every named client on every viewport with none greyed or folded away', async () => {
+test('Add connection shows every named client on every viewport; already-connected hosts stay links with a Connected mark', async () => {
 	const html = await renderConnectionsPage(
 		connectedCursor,
 		routes.accountConnectionNew.href(),
@@ -117,6 +119,14 @@ test('Add connection shows every named client on every viewport with none greyed
 			),
 		)
 	}
+	// Already-connected Cursor keeps a Connected mark and remains a link.
+	expect(html).toMatch(
+		/href="\/account\/connections\/new\/cursor"[^>]*data-greyed="true"/,
+	)
+	expect(html).toContain('data-greyed-reason="connected"')
+	expect(html).toContain(
+		'Already connected. Select to view connect steps again.',
+	)
 	// No card is hidden behind the onboarding phone/desktop media query: every
 	// card `<li>` shares one class whose rules never reach `display: none`.
 	const cards = [

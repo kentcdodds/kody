@@ -1,5 +1,6 @@
 import { type Handle, type RemixNode, css } from 'remix/ui'
 import { createDoubleCheck } from '#client/double-check.ts'
+import { on } from '#client/event-mixin.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { connectedAgentsApiPath } from '#client/routes/account-page-data.ts'
 import {
@@ -8,6 +9,10 @@ import {
 	accountActionsCss,
 } from '#client/routes/account-management-components.tsx'
 import { toast } from '#client/toast.ts'
+import {
+	accountConnectionsNewHref,
+	isAccountConnectionAgent,
+} from '#universal/account-connections.ts'
 import {
 	connectedAgentConnectionLabel,
 	groupConnectedAgents,
@@ -108,7 +113,7 @@ export function createAccountConnectedAgents(handle: Handle) {
 			return (
 				<AccountManagementPanel
 					title="Connected agents"
-					description="AI hosts that have authorized against this Kody account. Same-named hosts are grouped. Labels are best-effort from the host name or redirect."
+					description="AI hosts that have authorized against this Kody account. Same-named hosts are grouped. Labels are best-effort from the host name or redirect. Already connected does not block reconnect — use View connect steps for a second login, new machine, or reinstall."
 					ariaLabel="Connected agents"
 				>
 					{groups.length > 0 ? (
@@ -172,6 +177,21 @@ export function createAccountConnectedAgents(handle: Handle) {
 													fallback="at an unknown time"
 												/>
 											</span>
+											{isAccountConnectionAgent(group.kind) ? (
+												<a
+													href={accountConnectionsNewHref(group.kind)}
+													data-testid="connected-agent-view-steps"
+													data-agent-kind={group.kind}
+													mix={[
+														css(viewStepsLinkCss),
+														on('click', (event) => {
+															event.stopPropagation()
+														}),
+													]}
+												>
+													View connect steps
+												</a>
+											) : null}
 										</summary>
 										<ul
 											mix={css({
@@ -352,6 +372,16 @@ const groupSummaryCss = {
 	gap: spacing.sm,
 	cursor: 'pointer',
 	flexWrap: 'wrap' as const,
+}
+
+const viewStepsLinkCss = {
+	color: colors.primaryText,
+	fontSize: typography.fontSize.sm,
+	fontWeight: typography.fontWeight.medium,
+	textDecoration: 'none',
+	'&:hover': {
+		color: colors.text,
+	},
 }
 
 const connectionRowCss = {

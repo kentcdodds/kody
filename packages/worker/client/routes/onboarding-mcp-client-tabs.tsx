@@ -395,6 +395,10 @@ export function AgentSurfaceInstructions(
  * viewport split (desktop-only hosts hide on a phone); pass
  * `{ id, viewport: 'both' }` entries to show every card everywhere, which
  * is what Add connection on `/account/connections/new` does.
+ *
+ * `greyedAgents` marks hosts Kody already knows are connected. Those cards
+ * stay selectable so someone can re-view connect steps (second login, new
+ * machine, reinstall) — Connected is a badge, not a dead end.
  */
 export function AgentPickerGrid(
 	handle: Handle<{
@@ -425,41 +429,32 @@ export function AgentPickerGrid(
 				const greyedReasons = handle.props.greyedReasons ?? {}
 				const greyedTitles = handle.props.greyedTitles ?? {}
 				const search = handle.props.search ?? ''
-				const greyed = greyedAgents.includes(id)
+				const connectedMark = greyedAgents.includes(id)
 				const reason = greyedReasons[id] ?? 'connected'
 				const title = greyedTitles[id] ?? handle.props.greyedReason ?? null
 				return (
 					<li key={id} mix={css(onboardingViewportCss(shown, 'list-item'))}>
-						{greyed ? (
-							<span
-								data-testid={`onboarding-agent-${id}`}
-								data-greyed="true"
-								data-greyed-reason={reason}
-								aria-disabled="true"
-								title={title ?? undefined}
-								mix={css(pickerCardGreyedCss)}
-							>
-								<AgentPickerMark agent={id} />
-								<strong>
-									<AgentSurfaceLabel agent={id} />
-								</strong>
-								<span mix={css(greyedHintCss)}>
+						<a
+							href={handle.props.agentHref(id, search)}
+							data-testid={`onboarding-agent-${id}`}
+							data-prevent-scroll-reset=""
+							data-greyed={connectedMark ? 'true' : undefined}
+							data-greyed-reason={connectedMark ? reason : undefined}
+							title={connectedMark ? (title ?? undefined) : undefined}
+							mix={css(
+								connectedMark ? pickerCardConnectedMarkCss : pickerCardCss,
+							)}
+						>
+							<AgentPickerMark agent={id} />
+							<strong>
+								<AgentSurfaceLabel agent={id} />
+							</strong>
+							{connectedMark ? (
+								<span mix={css(connectedMarkHintCss)}>
 									{onboardingSecondAgentDisableHint(reason)}
 								</span>
-							</span>
-						) : (
-							<a
-								href={handle.props.agentHref(id, search)}
-								data-testid={`onboarding-agent-${id}`}
-								data-prevent-scroll-reset=""
-								mix={css(pickerCardCss)}
-							>
-								<AgentPickerMark agent={id} />
-								<strong>
-									<AgentSurfaceLabel agent={id} />
-								</strong>
-							</a>
-						)}
+							) : null}
+						</a>
 					</li>
 				)
 			})}
@@ -547,22 +542,12 @@ const pickerCardCss = {
 	},
 }
 
-const pickerCardGreyedCss = {
+const pickerCardConnectedMarkCss = {
 	...pickerCardCss,
-	cursor: 'not-allowed',
-	opacity: 0.45,
-	filter: 'grayscale(1)',
-	pointerEvents: 'none' as const,
-	[hoverMq]: {
-		'&:hover': {
-			borderColor: colors.border,
-			transform: 'none',
-		},
-	},
-	'&:active': { transform: 'none' },
+	borderStyle: 'dashed' as const,
 }
 
-const greyedHintCss = {
+const connectedMarkHintCss = {
 	font: `550 0.72rem/1 ${typography.fontFamilyBody}`,
 	letterSpacing: '0.04em',
 	textTransform: 'uppercase' as const,

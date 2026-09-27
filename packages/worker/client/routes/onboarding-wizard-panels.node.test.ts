@@ -409,13 +409,22 @@ test('step 3 groups ecosystems and folds in a portability proof', async () => {
 	expect(labeled).toContain('href="/onboarding/step-3/gemini"')
 	expect(labeled).toContain('href="/onboarding/step-3/cursor-local"')
 	expect(labeled).toContain('href="/onboarding/step-3/cursor-cloud"')
-	expect(labeled).not.toContain('href="/onboarding/step-3/chatgpt"')
-	expect(labeled).not.toContain('href="/onboarding/step-3/devin"')
-	expect(labeled).not.toContain('href="/onboarding/step-3/codex"')
-	expect(labeled).not.toContain('href="/onboarding/step-3/copilot"')
+	// Already-connected hosts stay links so connect steps can be re-viewed.
+	expect(labeled).toContain('href="/onboarding/step-3/chatgpt"')
+	expect(labeled).toContain('href="/onboarding/step-3/devin"')
+	expect(labeled).toContain('href="/onboarding/step-3/codex"')
+	expect(labeled).toContain('href="/onboarding/step-3/copilot"')
 	expect(labeled).toContain('href="/onboarding/step-3/claude-code"')
 	expect(labeled).toContain('href="/onboarding/step-3/grok-bot"')
-	expect(labeled).toContain('Already connected.')
+	expect(labeled).toContain(
+		'Already connected. Select to view connect steps again.',
+	)
+	expect(labeled).toMatch(
+		/href="\/onboarding\/step-3\/codex"[^>]*data-greyed="true"/,
+	)
+	expect(labeled).toMatch(
+		/href="\/onboarding\/step-3\/chatgpt"[^>]*data-greyed-reason="connected"/,
+	)
 	const githubSection = labeled.slice(
 		labeled.indexOf('data-testid="onboarding-ecosystem-github"'),
 		labeled.indexOf('data-testid="onboarding-ecosystem-google"'),

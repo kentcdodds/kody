@@ -1,8 +1,10 @@
 /**
  * Onboarding Step 3 counts a second agent by ecosystem, and the picker
- * groups hosts the same way. A tab is disabled only when a connected grant
- * is that host. An unlabeled client and a remembered picker choice do not
- * disable tabs and do not count as their own ecosystem.
+ * groups hosts the same way. A connected grant marks that host with a
+ * Connected badge; the card stays selectable so someone can re-view connect
+ * steps (second login, new machine, reinstall). An unlabeled client and a
+ * remembered picker choice do not mark tabs and do not count as their own
+ * ecosystem.
  *
  * Cursor Local, Cursor Cloud, an unclassified Cursor grant, Grok Bot,
  * Grok.com, and Grok CLI share the Grok ecosystem. A Cursor Cloud grant also
@@ -166,8 +168,9 @@ export function hasSecondAgentEcosystem(ecosystemCount: number) {
 }
 
 /**
- * Hosts Step 3 disables: named grants we already classified, plus Grok Bot
- * when Cursor Cloud is connected.
+ * Hosts Step 3 (and Add connection) mark as already connected: named grants
+ * we already classified, plus Grok Bot when Cursor Cloud is connected.
+ * Marked hosts stay selectable so connect steps can be re-viewed.
  */
 export function listOnboardingGreyedSecondAgents(
 	connectedAgents: ReadonlyArray<OnboardingConnectedAgentKind> = [],
@@ -217,9 +220,9 @@ function onboardingSecondAgentDisableTitle(
 		known.includes('cursor-cloud') &&
 		!known.includes('grok-bot')
 	) {
-		return 'Connected with Cursor Cloud. Grok Bot uses that connection.'
+		return 'Connected with Cursor Cloud. Grok Bot uses that connection. Select to view connect steps again.'
 	}
-	return 'Already connected.'
+	return 'Already connected. Select to view connect steps again.'
 }
 
 type OnboardingSecondAgentGreyedPresentation = {
@@ -252,14 +255,14 @@ export function onboardingSecondAgentGreyedPresentation(
 	}
 }
 
-/** Step 3 deep links to a known-connected host fall back to the picker. */
+/**
+ * Step 3 deep links keep a named host so connect steps stay reachable for
+ * already-connected agents. `other` / Not listed is not on the ecosystem
+ * picker, so those URLs fall back to the picker.
+ */
 export function resolveOnboardingStep3SelectedAgent(
 	selectedAgent: McpClientKind | null,
-	connectedAgents: ReadonlyArray<OnboardingConnectedAgentKind> = [],
 ): McpClientKind | null {
 	if (!selectedAgent || selectedAgent === 'other') return null
-	if (onboardingSecondAgentDisableReason(selectedAgent, connectedAgents)) {
-		return null
-	}
 	return selectedAgent
 }

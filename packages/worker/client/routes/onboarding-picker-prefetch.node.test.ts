@@ -69,7 +69,14 @@ test('step 3 picker prefetch uses second-agent hrefs and keeps search', async ()
 	)
 	expect(html).toContain('data-greyed="true"')
 	expect(html).toContain('data-testid="onboarding-agent-chatgpt"')
-	expect(html).not.toContain(
+	// Connected mark keeps the card as a link so connect steps stay reachable.
+	expect(html).toContain(
 		'href="/onboarding/step-3/chatgpt?redirectTo=%2Faccount"',
+	)
+	expect(html).toMatch(
+		/href="\/onboarding\/step-3\/chatgpt\?redirectTo=%2Faccount"[^>]*data-greyed="true"/,
+	)
+	expect(html).toContain(
+		'href="/onboarding/step-3/codex?redirectTo=%2Faccount"',
 	)
 })

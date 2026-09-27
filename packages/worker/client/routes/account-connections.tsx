@@ -31,6 +31,7 @@ import {
 } from '#universal/account-connections.ts'
 import { docHref } from '#universal/docs-nav.ts'
 import { type AccountConnectedAgentsLoaderData } from '#universal/loader-data.ts'
+import { onboardingSecondAgentGreyedPresentation } from '#universal/onboarding-agent-ecosystems.ts'
 import {
 	type McpClientKind,
 	onboardingAgentLabel,
@@ -155,6 +156,7 @@ export function AccountConnectionsRoute(handle: Handle) {
 					? renderReadyView({
 							view,
 							connectedAgents,
+							connectedAgentItems: appliedPayload?.agents ?? [],
 							mcpServerUrl,
 						})
 					: null}
@@ -178,6 +180,7 @@ function renderBackToConnections() {
 function renderReadyView(input: {
 	view: AccountConnectionsView | null
 	connectedAgents: ReturnType<typeof createAccountConnectedAgents>
+	connectedAgentItems: AccountConnectedAgentsLoaderData['agents']
 	mcpServerUrl: string
 }) {
 	if (input.view === null) {
@@ -212,7 +215,10 @@ function renderReadyView(input: {
 				<>
 					{renderBackToConnections()}
 					{input.view.agent === null
-						? renderAgentGrid({ mcpServerUrl: input.mcpServerUrl })
+						? renderAgentGrid({
+								mcpServerUrl: input.mcpServerUrl,
+								connectedAgents: input.connectedAgentItems,
+							})
 						: renderAgentInstructions({
 								agent: input.view.agent,
 								mcpServerUrl: input.mcpServerUrl,
@@ -283,11 +289,17 @@ function renderMcpUrlPanel(input: { mcpServerUrl: string }) {
 	)
 }
 
-function renderAgentGrid(input: { mcpServerUrl: string }) {
+function renderAgentGrid(input: {
+	mcpServerUrl: string
+	connectedAgents: AccountConnectedAgentsLoaderData['agents']
+}) {
+	const connectedMark = onboardingSecondAgentGreyedPresentation(
+		input.connectedAgents,
+	)
 	return (
 		<AccountManagementPanel
 			title="Add connection"
-			description="Pick the agent you want to connect. Every agent Kody knows how to connect is listed here, on every device; the next step shows that host's install path."
+			description="Pick the agent you want to connect — including ones already connected, when you need the steps again for a second login, new machine, or reinstall. Every agent Kody knows how to connect is listed here, on every device; the next step shows that host's install path."
 			ariaLabel="Add connection"
 		>
 			{input.mcpServerUrl ? (
@@ -305,6 +317,9 @@ function renderAgentGrid(input: { mcpServerUrl: string }) {
 						}))}
 						labelledBy="account-connections-add-title"
 						agentHref={(agent) => accountConnectionsNewHref(agent)}
+						greyedAgents={connectedMark.greyedAgents}
+						greyedReasons={connectedMark.greyedReasons}
+						greyedTitles={connectedMark.greyedTitles}
 					/>
 					<div mix={css({ display: 'grid', gap: spacing.sm })}>
 						<p mix={css({ color: colors.textMuted, margin: 0 })}>

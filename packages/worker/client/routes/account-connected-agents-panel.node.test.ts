@@ -108,6 +108,24 @@ test('connected agents panel groups same-name hosts, shows logos, and keeps revo
 	expect(html).toContain('/images/icons/chatgpt.svg')
 	expect(html).toContain('data-testid="connected-agent-mark-fallback"')
 	expect(html).toContain('2 connections')
+	const cursorViewSteps = html.slice(
+		html.indexOf('data-agent-label="Cursor"'),
+		html.indexOf('data-agent-label="Acme Agent"'),
+	)
+	expect(cursorViewSteps).toContain('data-testid="connected-agent-view-steps"')
+	expect(cursorViewSteps).toContain('data-agent-kind="cursor"')
+	expect(cursorViewSteps).toContain('href="/account/connections/new/cursor"')
+	const chatgptViewSteps = html.slice(
+		html.indexOf('data-agent-label="ChatGPT.com"'),
+	)
+	expect(chatgptViewSteps).toContain('data-testid="connected-agent-view-steps"')
+	expect(chatgptViewSteps).toContain('data-agent-kind="chatgpt"')
+	expect(chatgptViewSteps).toContain('href="/account/connections/new/chatgpt"')
+	const acmeBlock = html.slice(
+		html.indexOf('data-agent-label="Acme Agent"'),
+		html.indexOf('data-agent-label="ChatGPT.com"'),
+	)
+	expect(acmeBlock).not.toContain('data-testid="connected-agent-view-steps"')
 
 	const groupOrder = [...html.matchAll(/data-agent-label="([^"]+)"/g)].map(
 		(match) => match[1],

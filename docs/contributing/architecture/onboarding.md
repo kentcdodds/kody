@@ -10,7 +10,7 @@ optional first-win email guide share one contract:
 | Wizard index `/onboarding`               | Redirects to the first unfinished step (Step 3 once Step 2 is done)                       |
 | Wizard Step 1 `/onboarding/step-1`       | Connect an MCP host                                                                       |
 | Wizard Step 2 `/onboarding/step-2`       | Make something useful (one prompt + first `search` + `guide:onboarding` first-win picker) |
-| Wizard Step 3 `/onboarding/step-3`       | Connect a second ecosystem (known hosts disabled; `guide:portability`)                    |
+| Wizard Step 3 `/onboarding/step-3`       | Connect a second ecosystem (connected hosts stay selectable; `guide:portability`)         |
 | Checklist                                | Verify email, complete the three wizard steps, then persist a package                     |
 | [`first-win`](../../guides/first-win.md) | Optional email → reply → memories loop after a host is connected                          |
 
@@ -32,9 +32,11 @@ shows which surface authorized. An unclassified Cursor grant (client name
 Cursor, no surface on the grant redirect) counts as the Grok ecosystem and
 disables neither Local nor Cloud. A Cursor Cloud grant also marks Grok Bot
 connected. Cursor Local, Cursor Cloud, Grok Bot, Grok.com, and Grok CLI sit in
-that Grok ecosystem. Tabs disable only for hosts a grant already names. After
-the person picks a host, a short portability-proof prompt is folded into the
-same step so the new agent looks up [`portability`](../../guides/portability.md)
+that Grok ecosystem. Already-connected hosts keep a Connected badge and stay
+selectable so connect steps can be re-viewed (second login, new machine,
+reinstall). After the person picks a host, a short portability-proof prompt is
+folded into the same step so the new agent looks up
+[`portability`](../../guides/portability.md)
 (`search({ entity: "guide:portability" })`) and reuses what Step 2 made. When
 the onboarding payload has a known memory subject or saved-package name, Step 3
 shows a short "You made …" chip (truncated subject and `@scope/kody-id`, or
@@ -52,8 +54,9 @@ mark this one connected and does not put its logo on the card. A remembered
 picker choice is not a grant. When a different host actually authorized, Step 2
 and Step 3 follow that grant instead of the pick. Account → Connections
 (`/account/connections`) lists those inbound hosts grouped by display name, with
-public logos for known kinds, newest-first sort, best-effort labels, and
-per-`clientId` revoke. That list is not `users.mcp_client_name` (first-touch)
+public logos for known kinds, newest-first sort, best-effort labels,
+per-`clientId` revoke, and **View connect steps** for known kinds (same install
+path as Add connection). That list is not `users.mcp_client_name` (first-touch)
 and not `/account/mcp-oauth-clients` (user-minted confidential clients).
 
 `first-win` is not a wizard step and is not a checklist item. Signed-in

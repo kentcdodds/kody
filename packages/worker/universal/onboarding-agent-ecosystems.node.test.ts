@@ -31,7 +31,7 @@ test('step 3 groups Cursor hosts with Grok and GitHub hosts together', () => {
 	expect(muse?.agents).toEqual(['muse'])
 })
 
-test('step 3 disables only known connections, and Cursor Cloud marks Grok Bot', () => {
+test('step 3 marks known connections, and Cursor Cloud marks Grok Bot', () => {
 	const connected = [
 		{ kind: 'cursor' as const },
 		{ kind: 'claude-desktop' as const },
@@ -96,7 +96,12 @@ test('step 3 disables only known connections, and Cursor Cloud marks Grok Bot', 
 	expect(presentation.greyedAgents).toEqual(['cursor-cloud', 'grok-bot'])
 	expect(presentation.greyedReasons['grok-bot']).toBe('connected')
 	expect(presentation.greyedTitles['grok-bot']).toContain('Cursor Cloud')
-	expect(presentation.greyedTitles['cursor-cloud']).toBe('Already connected.')
+	expect(presentation.greyedTitles['grok-bot']).toContain(
+		'Select to view connect steps again',
+	)
+	expect(presentation.greyedTitles['cursor-cloud']).toBe(
+		'Already connected. Select to view connect steps again.',
+	)
 })
 
 test('a second agent is a second ecosystem, not a second Cursor login', () => {
@@ -151,28 +156,15 @@ test('a second agent is a second ecosystem, not a second Cursor login', () => {
 	).toBe(2)
 })
 
-test('step 3 deep links drop known-connected hosts and keep the rest', () => {
+test('step 3 deep links keep connected hosts and drop Not listed', () => {
 	expect(resolveOnboardingStep3SelectedAgent('chatgpt')).toBe('chatgpt')
 	expect(resolveOnboardingStep3SelectedAgent('codex')).toBe('codex')
 	expect(resolveOnboardingStep3SelectedAgent('claude-code')).toBe('claude-code')
 	expect(resolveOnboardingStep3SelectedAgent(null)).toBeNull()
-	expect(
-		resolveOnboardingStep3SelectedAgent('cursor-cloud', [
-			{ kind: 'cursor-cloud' },
-		]),
-	).toBeNull()
-	expect(
-		resolveOnboardingStep3SelectedAgent('grok-bot', [{ kind: 'cursor-cloud' }]),
-	).toBeNull()
-	expect(
-		resolveOnboardingStep3SelectedAgent('claude-code', [{ kind: 'cursor' }]),
-	).toBe('claude-code')
-	expect(
-		resolveOnboardingStep3SelectedAgent('cursor-local', [{ kind: 'cursor' }]),
-	).toBe('cursor-local')
-	expect(resolveOnboardingStep3SelectedAgent('other', [{ kind: null }])).toBe(
-		null,
+	expect(resolveOnboardingStep3SelectedAgent('cursor-cloud')).toBe(
+		'cursor-cloud',
 	)
+	expect(resolveOnboardingStep3SelectedAgent('grok-bot')).toBe('grok-bot')
 	expect(resolveOnboardingStep3SelectedAgent('other')).toBeNull()
 	expect(resolveOnboardingStep3SelectedAgent('cursor')).toBe('cursor')
 })

@@ -138,9 +138,10 @@ test('Add connection opens its own page with the client wall, then a host step (
 	// route never asks for the same payload a second time.
 	expect(requests.duplicates(), requests.paths.join(', ')).toEqual([])
 	requests.reset()
-	// Every named client is a card and none is greyed or hidden by viewport.
+	// Every named client is a card link. Connected marks (if any) stay on
+	// those links — never a dead-end span — and none is hidden by viewport.
 	await expect(grid.getByRole('link')).toHaveCount(17)
-	await expect(grid.locator('[data-greyed="true"]')).toHaveCount(0)
+	await expect(grid.locator('[data-greyed="true"]:not(a)')).toHaveCount(0)
 	await expect(page.getByTestId('onboarding-agent-claude-code')).toBeVisible()
 	await expect(page.getByTestId('onboarding-agent-grok')).toBeVisible()
 	await expect(page.getByTestId('onboarding-agent-muse')).toBeVisible()

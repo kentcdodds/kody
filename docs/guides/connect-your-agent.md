@@ -90,8 +90,9 @@ about you.
 Step 3 is where Kody earns the name. Hosts are grouped by ecosystem: Grok
 (Cursor Local, Cursor Cloud, Grok Bot, Grok.com, and Grok CLI — Grok Bot shares
 a Cursor Cloud connection), Claude, ChatGPT, and the rest. Pick a host from a
-different ecosystem than the one already connected. A tab turns off only for a
-host Kody already knows is connected. Connect it the same way, then paste the
+different ecosystem than the one already connected. Already-connected hosts keep
+a Connected badge and stay selectable so you can re-view connect steps (second
+login, new machine, reinstall). Connect it the same way, then paste the
 portability prompt. The new agent loads
 `search({ entity: "guide:portability" })`, searches your account, and reuses the
 memory or package you just made — in a different product, with no setup
