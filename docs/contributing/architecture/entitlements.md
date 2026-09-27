@@ -21,10 +21,11 @@ at `packages/worker/universal/plans.ts`.
   `resolveEffectivePlan(manual, stripe)`.
 - `errors.ts` — the one typed error (`EntitlementLimitError`) and the one
   user-facing message builder every enforcement point uses.
-  `buildEntitlementUpgradeHint` points rate/compute limits a funded wallet
-  raises at `/account/credits` (reduce-only once unlocked, and for `max`); stock
-  and other non-unlocked resources keep the upgrade clause only when
-  `hasHigherPublicPlan(plan)` (Free).
+  `buildEntitlementUpgradeHint` uses `entitlementCreditsOffer` for rate/compute
+  includes credits extend (reduce-only once funded, and for `max`); stock and
+  other resources keep the upgrade clause only when `hasHigherPublicPlan(plan)`
+  (Free). `ComputeOverageLimitError` is the include → credits → stop denial for
+  an empty purchasable-Pro wallet past a monthly include.
 - `service.ts` — `getUserEntitlement` / `getUserPlan`,
   `getCachedUserEntitlement` / `getCachedUserPlan` (60s TTL enforcement cache),
   `assertWithinEntitlement`, built-in D1 usage counters, the daily-counter
@@ -211,8 +212,9 @@ Implements v1 of [#2617](https://github.com/kentcdodds/kody/issues/2617). The
 public ladder is Free plus one purchasable **Pro** (`STRIPE_PRO_PRICE_ID` /
 `STRIPE_PRO_YEARLY_PRICE_ID`, $12 / $120). Pro uses `proCreditsPlanLimits`: Max
 stock/concurrency with Standard rates, email, UWD/DO includes, and job interval.
-Retired Standard ($12/$120) and Pro ($49/$480) subscribers keep their plan and
-table until they change plan (`retiredStandardPriceIds` / `retiredProPriceIds`);
+Free stays hard-capped (execute 150/day and 400/week) with no wallet. Retired
+Standard ($12/$120) and Pro ($49/$480) subscribers keep their plan and table
+until they change plan (`retiredStandardPriceIds` / `retiredProPriceIds`);
 checkout only sells Pro.
 
 **Eligibility keys off the Stripe price or an admin decision.**
@@ -232,17 +234,37 @@ admin-eligible. An admin grant to a `none` account only holds a balance. Buying
 credits and auto-refill still require the purchasable Pro subscription
 (`isPayingForCreditsPro`).
 
-**Unlock.** Purchasable Pro (`proCreditsPlanLimits`) always includes Max stock
-and concurrency (repos, saved packages, scheduled jobs, repo sessions, secrets,
-storage bytes, concurrent workflows) — empty or funded. `funded` multiplies only
-the rate/compute limits in `creditsUnlockedLimitFields` (execute, outbound
-fetches, job runs, and automation invocations, daily and weekly) by
-`creditsUnlockMultiplier` (50), capped at the `max` daily ceilings (execute
-25,000, outbound 80,000, job runs 40,000, automation 200,000; `max` has no
-weekly window). Email caps, UWD/DO includes (350 / 5B), and the job interval
-floor stay on the Standard base. Unlocking costs nothing; at $0 the Standard
-rate caps apply again (within the 60s enforcement cache) while Max stock
-remains. Past-include UWD/DO usage only debits a funded wallet.
+**Include → credits → stop.** This is the one customer billing path for
+purchasable Pro ([decision 0051](../decisions/0051-include-credits-stop.md)).
+The $12 / $120 subscription is the seat plus a monthly include: the retired
+Standard rates, email, Worker compute (350 unique worker days), Rows read (5B),
+and job interval floor on `proCreditsPlanLimits`. Past the include, usage runs
+on credits until they are gone, then stops.
+
+- **Stock is not part of the path.** Purchasable Pro always has Max stock and
+  concurrency (repos, saved packages, scheduled jobs, repo sessions, secrets,
+  storage bytes, concurrent workflows), empty or funded.
+- **Rates.** With a positive balance, the rate/compute fields in
+  `creditsUnlockedLimitFields` (execute, outbound fetches, job runs, automation
+  invocations, daily and weekly) can reach `creditsUnlockMultiplier` (50)× the
+  include, capped at the `max` daily ceilings (execute 25,000, outbound 80,000,
+  job runs 40,000, automation 200,000; `max` has no weekly window). At $0 they
+  stop at the include (within the 60s enforcement cache).
+- **Monthly meters.** Worker compute and Rows read past the include debit a
+  funded wallet (see Debits). At $0, `consumeDailyEntitlement` throws
+  `ComputeOverageLimitError` for `pastIncludeStopResources` (execute, job runs,
+  automation invocations) once either meter is past this UTC month's include
+  (`resolvePastIncludeStop`). The check runs before the UserMeter counter, so a
+  stopped attempt spends no daily quota. Outbound fetches are exempt because
+  they happen inside a run that was already admitted. The usage read comes from
+  `usage_rollups` (hourly) behind the 60s entitlement cache, so the stop can
+  trail usage by about an hour; a later top-up forgives that overshoot instead
+  of charging it.
+- Email caps and the job interval floor are not credit-extended.
+
+Internally the 50× figure is a ceiling on how far credits go. Customer copy
+never frames it as something a balance unlocks, and never names Max; the
+`/account/credits` rate card is where customers see the debit rates.
 
 **Debits.** The `usage_aggregation` lane runs `runCreditDebits`
 (`packages/worker/src/billing/credit-debits.ts`) right after it recomputes
@@ -253,16 +275,17 @@ funded wallet is charged
 `creditDebitCostMicroUsd(next) − creditDebitCostMicroUsd(accounted)`
 ($0.004 per unique worker day, $0.002 per million rows read, about 2× Cloudflare
 list). Every other wallet advances progress without a charge, so a later top-up
-never back-charges. The balance can dip below $0 by about an hour of unlocked
-usage; it stays locked until a top-up covers it. Debit ledger ids are
-deterministic per starting position, so an overlapping run rolls back instead of
-charging twice. A new wallet, and a top-up or admin grant that funds an empty
-wallet, advance progress to the billable units already in the rollups for both
-months the lane settles (prior and current), so credits never pay for usage from
-while the wallet was empty. The sweep is bounded per run; `credit_debit_cursor`
-keeps its keyset position so later runs reach every wallet. CPU, Durable Object
-duration, RunLog rows, and email are not debited. Nobody is invoiced for
-overage; the retired `compute_overage_invoices` table is history only.
+never back-charges. The balance can dip below $0 by about an hour of usage past
+the include; past-include usage stays stopped until a top-up covers it. Debit
+ledger ids are deterministic per starting position, so an overlapping run rolls
+back instead of charging twice. A new wallet, and a top-up or admin grant that
+funds an empty wallet, advance progress to the billable units already in the
+rollups for both months the lane settles (prior and current), so credits never
+pay for usage from while the wallet was empty. The sweep is bounded per run;
+`credit_debit_cursor` keeps its keyset position so later runs reach every
+wallet. CPU, Durable Object duration, RunLog rows, and email are not debited.
+Nobody is invoiced for overage; the retired `compute_overage_invoices` table is
+history only.
 
 **Top-ups.** `POST /account/credits/top-up.json` (Pro only) opens a one-off
 Checkout Session (`mode=payment`, `price_data`, card saved with
@@ -375,13 +398,15 @@ retired Pro 20B). Those two fields are the credit debit meters. They are not in
 `entitlementResources`, so `assertWithinEntitlement` does not hard-cut them.
 Hourly user warning emails cover approaching (80%) and reached (100%) includes
 for every plan, with `/account/credits` as the call to action. Usage above an
-include debits a funded purchasable-Pro wallet and is not charged otherwise
-(`computeMeteringPolicy.pastIncludeWithoutCredits`); see
-[Prepaid credits](#prepaid-credits). Execute and outbound fetches are hard daily
-and weekly caps (`computeMeteringPolicy.executeCallsPerDay`) that a funded
-wallet raises. Durable Object duration is observed (Cloudflare-measured GB-s
-plus the StorageRunner RPC wall-clock proxy) and is not charged. See
-[Usage metering](./usage-metering.md).
+include debits a funded purchasable-Pro wallet, stops new compute on an empty
+one (`computeMeteringPolicy.pastIncludeWithEmptyCredits`), and is neither
+charged nor stopped on plans without a wallet
+(`computeMeteringPolicy.pastIncludeWithoutWallet`); see
+[Prepaid credits](#prepaid-credits). Execute and outbound fetches are daily and
+weekly caps (`computeMeteringPolicy.executeCallsPerDay`); on purchasable Pro
+they are the include that credits extend. Durable Object duration is observed
+(Cloudflare-measured GB-s plus the StorageRunner RPC wall-clock proxy) and is
+not charged. See [Usage metering](./usage-metering.md).
 
 **D1 payload storage bytes** (`storage_bytes`) are **authoritative in
 UserMeter**. `assertWithinStorageBytesEntitlement` uses atomic DO
@@ -775,23 +800,35 @@ the stable programmatic contract:
 ```
 
 The `message` is built by `buildEntitlementLimitMessage` and is the single
-user-facing string across MCP and UI surfaces. For rate/compute limits a funded
-wallet raises (`creditsUnlockedResources`), `upgradeHint` points at
-`/account/credits` unless the wallet is already unlocked or the plan is `max`.
-Other resources include a self-serve billing offer only when
-`hasHigherPublicPlan(plan)` is true (Free). Purchasable Pro stock is Max on the
-subscription base table (not a credits unlock), so stock denials are reduce-only
-there. The job interval floor hint is always reduce-only (Free and Pro share 15
-minutes).
+user-facing string across MCP and UI surfaces. For rate/compute limits credits
+extend (`creditsUnlockedResources`), `entitlementCreditsOffer` picks the next
+step: purchasable Pro at $0 adds credits to keep going past the include; a
+funded wallet (at the credits ceiling) and `max` get reduce-only guidance; Free
+gets the Pro upgrade; retired and gift/referral Pro learn that Pro with credits
+runs past its include (they must subscribe before buying). Other resources
+include a self-serve billing offer only when `hasHigherPublicPlan(plan)` is true
+(Free). Purchasable Pro stock is Max on the subscription base table (not
+credit-extended), so stock denials are reduce-only there. The job interval floor
+hint is always reduce-only (Free and Pro share 15 minutes).
 
-Rate limit example (Free, Pro with $0, retired plans):
+Rate limit example (purchasable Pro with $0):
 
 > Plan limit reached: your "pro" plan allows at most 500 execute calls per day
 > and you currently have 500. Remove or finish existing execute calls per day
-> you no longer need; credits at /account/credits raise this limit.
+> you no longer need, or add credits at /account/credits to keep going past your
+> include.
 
-The wording states what credits do rather than offering a purchase, because gift
-and referral Pro accounts have a wallet but must subscribe before buying.
+Monthly include stop (purchasable Pro with $0, `ComputeOverageLimitError`):
+
+> Worker compute include used up: your "pro" plan includes 350 worker-compute
+> days this UTC month and you have used 412. With no credits left, usage past
+> the include stops. Add credits at /account/credits to keep going; usage past
+> the include is charged at $0.004 per worker-compute day. Keep package code
+> stable so the same worker stays warm. …
+
+Customer copy never says a balance "unlocks" or "lifts" limits and never names
+Max; SSR and unit tests forbid that wording on pricing, billing, credits, and
+usage surfaces.
 
 Stock limit example (purchasable Pro):
 

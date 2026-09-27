@@ -106,6 +106,9 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0050 — Package share grants are not platform scope grants](./0050-package-share-grants-are-not-scope-grants.md)
   — person-to-person `package_share_grants` stay separate from admin-minted
   platform `package_scope_grants`; grant `pin` is not an import specifier pin
+- [0051 — Pro bills include → credits → stop](./0051-include-credits-stop.md) —
+  at $0, usage past the include stops; no customer-facing fund-to-unlock rates
+  and no free past-include burn; 50× is a credits ceiling, not a tier
 
 ## Historical / UI / implementation
 

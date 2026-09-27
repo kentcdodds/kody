@@ -359,11 +359,13 @@ reused. Hashable modules still produce a stable id when `userId` is null or
 The customer-facing monthly meters are unique worker days plus Durable Object
 rows-read. Usage above the include debits a funded purchasable-Pro credit wallet
 (`creditDebitRates`: $0.004 per unique worker day, $0.002 per million rows read)
-in the hourly `usage_aggregation` lane, right after the rollup recompute. Nobody
-is invoiced for overage. See [Entitlements](./entitlements.md#prepaid-credits).
-Never add durations across different `eventType` values — that double counts
-nested layers. Within one `eventType`, each chokepoint records exactly one event
-per metered unit, so sums are safe.
+in the hourly `usage_aggregation` lane, right after the rollup recompute. On an
+empty purchasable-Pro wallet, the same rollups stop new execute, job, and
+automation runs once either include is used up. Nobody is invoiced for overage.
+See [Entitlements](./entitlements.md#prepaid-credits). Never add durations
+across different `eventType` values — that double counts nested layers. Within
+one `eventType`, each chokepoint records exactly one event per metered unit, so
+sums are safe.
 
 Admin usage and insights convert `dynamic_worker_day` counts to a **gross**
 Cloudflare estimate (`unique days × $0.002`). The 1,000 included unique

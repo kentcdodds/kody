@@ -29,12 +29,11 @@ meter.
   run: the same user and published graph reuse one isolate; a different graph or
   a different user is a different isolate.
 
-Each plan tracks unique-worker-day cost internally for credits and capacity
-planning. Account usage (`/account/usage` and `usageGet`) surfaces execute caps
-and Durable Object rows-read; unique worker days are not a customer-facing
-meter. On Pro with prepaid credits, usage above the published include debits the
-wallet — see [Pricing](https://kody.codes/pricing). Nobody is invoiced for
-overage.
+Account usage (`/account/usage` and `usageGet`) shows this meter as **Worker
+compute**, next to **Rows read** and the execute caps. Pro includes a monthly
+amount of both. Past the include, usage is charged from prepaid credits until
+they run out, and then usage past the include stops. Free stops at its caps —
+see [Pricing](https://kody.codes/pricing). Nobody is invoiced for overage.
 
 ## Surfaces
 
