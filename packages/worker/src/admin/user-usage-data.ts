@@ -31,6 +31,7 @@ export const adminUsageMetrics = [
 	'dynamic_worker_day',
 	'durable_object_gb_seconds',
 	'durable_object_rows_read',
+	'durable_object_platform_rows_read',
 ] as const satisfies ReadonlyArray<AdminUsageMetric>
 
 /**

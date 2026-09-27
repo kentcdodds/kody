@@ -21,21 +21,23 @@ export const usageEventTypes = [
 	'dynamic_worker_invoke',
 	'durable_object_gb_seconds',
 	'durable_object_rows_read',
+	'durable_object_platform_rows_read',
 ] as const
 
 export type UsageEventType = (typeof usageEventTypes)[number]
 
 /**
  * High-volume observe-only metrics. They still roll up for admin drill-down
- * and monthly overage math (rows-read) but must not drive fleet event-count
- * rankings or entitlement-pressure candidate selection. Rows-read warnings
- * use a dedicated compute-include sweep, not this exclusion list. Duration
- * is never billed.
+ * and monthly overage math (customer rows-read) but must not drive fleet
+ * event-count rankings or entitlement-pressure candidate selection.
+ * Rows-read warnings use a dedicated compute-include sweep, not this
+ * exclusion list. Duration and platform rows-read are never billed.
  */
 export const observeOnlyUsageEventTypes = [
 	'dynamic_worker_invoke',
 	'durable_object_gb_seconds',
 	'durable_object_rows_read',
+	'durable_object_platform_rows_read',
 ] as const satisfies ReadonlyArray<UsageEventType>
 
 /**
@@ -46,6 +48,7 @@ export const observeOnlyUsageEventTypes = [
 export const coalescedCountUsageEventTypes = [
 	'durable_object_gb_seconds',
 	'durable_object_rows_read',
+	'durable_object_platform_rows_read',
 ] as const satisfies ReadonlyArray<UsageEventType>
 
 export function isCoalescedCountUsageEventType(

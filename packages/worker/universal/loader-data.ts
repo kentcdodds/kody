@@ -573,6 +573,7 @@ export type AdminUsageMetric =
 	| 'dynamic_worker_day'
 	| 'durable_object_gb_seconds'
 	| 'durable_object_rows_read'
+	| 'durable_object_platform_rows_read'
 
 export type AdminUsageEntitlementResource =
 	| 'saved_packages'

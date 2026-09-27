@@ -770,8 +770,24 @@ export function storageRunnerRpc(input: {
 		})
 	}
 
+	// Key-value reads on a SQLite-backed Durable Object are billed as rows
+	// read: one per key (including cache hits) and one per listed entry. The
+	// KV API exposes no cursor, so these are the billing units, not a guess.
+	const recordRowsRead = (rowsRead: number) => {
+		recordDurableObjectRowsRead({
+			env: input.env,
+			userId: input.userId,
+			doClass: 'StorageRunner',
+			rowsRead,
+		})
+	}
+
 	return {
-		getValue: (payload: { key: string }) => runner.getValue(payload),
+		getValue: async (payload: { key: string }) => {
+			const result = await runner.getValue(payload)
+			recordRowsRead(1)
+			return result
+		},
 		setValue: async (payload: { key: string; value: unknown }) => {
 			assertCloneableStorageValue(payload.value)
 			registerOwnedBucket()
@@ -792,11 +808,16 @@ export function storageRunnerRpc(input: {
 		// bucket's next mutating write measures it live again.
 		clearStorage: () => runner.clearStorage(),
 		getEstimatedBytes: () => runner.getEstimatedBytes(),
-		listValues: (payload: {
+		listValues: async (payload: {
 			prefix?: string | null
 			pageSize?: number
 			startAfter?: string | null
-		}) => runner.listValues(payload),
+		}) => {
+			const result = await runner.listValues(payload)
+			// The DO lists one extra entry to detect truncation.
+			recordRowsRead(result.entries.length + (result.truncated ? 1 : 0))
+			return result
+		},
 		exportStorage: (payload: {
 			pageSize?: number
 			startAfter?: string | null
@@ -825,12 +846,7 @@ export function storageRunnerRpc(input: {
 			if (mutating) {
 				refreshOwnedBucketEstimate()
 			}
-			void recordDurableObjectRowsRead({
-				env: input.env,
-				userId: input.userId,
-				doClass: 'StorageRunner',
-				rowsRead: result.rowsRead,
-			})
+			recordRowsRead(result.rowsRead)
 			return result
 		},
 	}

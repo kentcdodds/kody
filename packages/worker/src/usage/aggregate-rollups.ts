@@ -19,6 +19,7 @@
  * directly there.
  */
 
+import { coalescedCountUsageEventTypes } from '#universal/usage-event-types.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { listSystemInboundUsageRows } from '#worker/email/system-inbound-delivery-store.ts'
 
@@ -218,10 +219,9 @@ function utcMonthBounds(now: Date) {
 /**
  * Analytics Engine samples data under load, so every aggregate must weight
  * by `_sample_interval`: counts are `sum(_sample_interval)` and value sums
- * are `sum(doubleN * _sample_interval)`. Coalesced
- * `durable_object_gb_seconds` and `durable_object_rows_read` points store
- * the unit count in `double3`, so those metrics' counts use `double3` when
- * it is set. Blob/double positions match the data point layout in
+ * are `sum(doubleN * _sample_interval)`. Coalesced points
+ * (`coalescedCountUsageEventTypes`) store the unit count in `double3`, so
+ * those metrics' counts use `double3` when it is set. Blob/double positions match the data point layout in
  * `record-usage.ts`.
  *
  * Every `if()` branch must be a Float: Analytics Engine rejects the whole
@@ -232,44 +232,26 @@ export function buildMonthToDateAggregateQuery(
 	dataset: string,
 	bounds: { monthStart: string; nextMonthStart: string },
 ) {
+	const coalescedMetrics = `blob2 IN (${coalescedCountUsageEventTypes
+		.map((eventType) => `'${eventType}'`)
+		.join(', ')})`
 	return `
 SELECT
 	blob1 AS user_id,
 	blob2 AS metric,
 	sum(
-		if(
-			(
-				blob2 = 'durable_object_gb_seconds'
-				OR blob2 = 'durable_object_rows_read'
-			) AND double3 > 0,
-			double3,
-			1.0
-		) * _sample_interval
+		if(${coalescedMetrics} AND double3 > 0, double3, 1.0) * _sample_interval
 	) AS event_count,
 	sum(
 		if(
 			blob4 = 'error',
-			if(
-				(
-					blob2 = 'durable_object_gb_seconds'
-					OR blob2 = 'durable_object_rows_read'
-				) AND double3 > 0,
-				double3,
-				1.0
-			),
+			if(${coalescedMetrics} AND double3 > 0, double3, 1.0),
 			0.0
 		) * _sample_interval
 	) AS error_count,
 	sum(double1 * _sample_interval) AS total_duration_ms,
 	sum(double2 * _sample_interval) AS total_cpu_ms,
-	sum(
-		if(
-			blob2 = 'durable_object_gb_seconds'
-			OR blob2 = 'durable_object_rows_read',
-			0.0,
-			double3
-		) * _sample_interval
-	) AS total_bytes
+	sum(if(${coalescedMetrics}, 0.0, double3) * _sample_interval) AS total_bytes
 FROM ${dataset}
 WHERE timestamp >= toDateTime('${bounds.monthStart}')
 	AND timestamp < toDateTime('${bounds.nextMonthStart}')

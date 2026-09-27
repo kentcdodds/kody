@@ -65,6 +65,7 @@ import {
 	runSurfaceValues,
 	workflowProjectionRetentionDays,
 } from './types.ts'
+import { recordDurableObjectPlatformRowsRead } from '#worker/usage/durable-object-rows.ts'
 
 const textEncoder = new TextEncoder()
 const maxAgeDeletesPerFinish = 100
@@ -703,8 +704,10 @@ class RunLogBase extends DurableObject<Env> {
 	private finishesSinceRetentionCache: number | null = null
 	/**
 	 * Per-op SqlStorageCursor.rowsRead/rowsWritten accumulators for this
-	 * isolate. Durable totals use atomic run_log_meta increments (no new AE
-	 * dataset; USAGE_EVENTS would inflate billed overage).
+	 * isolate. Durable totals use atomic run_log_meta increments. Rows read
+	 * also stream to `durable_object_platform_rows_read` (observe-only, never
+	 * in include or overage math) keyed by the DO name, which is the user's
+	 * stable id.
 	 */
 	private sqlBillingByOp = new Map<
 		RunLogSqlBillingOp,
@@ -1055,6 +1058,15 @@ class RunLogBase extends DurableObject<Env> {
 		prev.rowsWritten += rowsWritten
 		prev.calls += 1
 		this.sqlBillingByOp.set(op, prev)
+		const userId = this.ctx.id.name
+		if (userId) {
+			recordDurableObjectPlatformRowsRead({
+				env: this.env,
+				userId,
+				doClass: 'RunLog',
+				rowsRead,
+			})
+		}
 		this.adjustMeta(sqlBillingMetaKey(op, 'rr'), rowsRead)
 		this.adjustMeta(sqlBillingMetaKey(op, 'rw'), rowsWritten)
 		this.adjustMeta(sqlBillingMetaKey(op, 'n'), 1)

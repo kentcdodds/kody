@@ -365,8 +365,9 @@ test('aggregateUsageRollups merges current and previous Analytics months with du
 		`timestamp < toDateTime('2026-07-01 00:00:00')`,
 	)
 	// Sampling-correct aggregates: counts and sums weight by _sample_interval.
-	expect(query).toContain("blob2 = 'durable_object_gb_seconds'")
-	expect(query).toContain("blob2 = 'durable_object_rows_read'")
+	expect(query).toContain(
+		"blob2 IN ('durable_object_gb_seconds', 'durable_object_rows_read', 'durable_object_platform_rows_read')",
+	)
 	expect(query).toContain('double3 > 0')
 	expect(query).toContain('double3')
 	expect(query).toContain('AS event_count')
@@ -820,9 +821,8 @@ test('buildMonthToDateAggregateQuery keeps every if() branch a Float so Analytic
 		.map((line) => line.trim())
 		.filter((line) => /^\d+,?$/.test(line))
 	expect(integerBranchLines).toEqual([])
-	expect(query).toContain('double3,\n\t\t\t1.0\n')
-	expect(query).toContain(
-		'\t\t\t0.0\n\t\t) * _sample_interval\n\t) AS error_count',
-	)
-	expect(query).toContain("OR blob2 = 'durable_object_rows_read',\n\t\t\t0.0,")
+	expect(query).not.toMatch(/,\s*\d+\s*[,)]/)
+	expect(query).toContain('AND double3 > 0, double3, 1.0)')
+	expect(query).toContain('1.0),\n\t\t\t0.0\n')
+	expect(query).toContain(', 0.0, double3)')
 })

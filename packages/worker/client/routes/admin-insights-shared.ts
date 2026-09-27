@@ -85,6 +85,7 @@ export const runtimeDurationMetricLabels: Record<AdminUsageMetric, string> = {
 	dynamic_worker_day: 'Unique worker-days',
 	durable_object_gb_seconds: 'Durable Object duration (GB-s)',
 	durable_object_rows_read: 'Durable Object rows read',
+	durable_object_platform_rows_read: 'Platform DO rows read (RunLog)',
 }
 
 export function formatUsdFromCents(cents: number) {
