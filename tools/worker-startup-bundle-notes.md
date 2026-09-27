@@ -203,3 +203,6 @@ runtime path if this budget is raised again.
 - Generic `webhookUrlApply` http destination + `/connect/webhook-apply` approval
   UI spill into the platform entry (shared web/connect graph): CI dry-run
   5_188_429 against the previous 5_182_000 budget. Reviewed ceiling 5_190_000.
+- `DynamicWorkerUsageTail` (Worker Loader CPU tail, `dynamic_worker_cpu`) is a
+  loopback export on every executor surface, including platform: CI dry-run
+  5_190_394 against the previous 5_190_000 budget. Reviewed ceiling 5_191_000.
