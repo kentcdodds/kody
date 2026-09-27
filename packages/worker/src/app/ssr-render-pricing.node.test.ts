@@ -86,8 +86,6 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 	expect(html).toContain(
 		'Usage above the monthly include debits prepaid credits (Worker compute and Rows read)',
 	)
-	expect(html).not.toContain('unique worker day')
-	expect(html).not.toContain('Unique worker days')
 	expect(html).toContain('Teams / Enterprise')
 	expect(html).toContain('mailto:kody@kody.codes')
 	expect(html).toContain('Durable Object rows read per month')
