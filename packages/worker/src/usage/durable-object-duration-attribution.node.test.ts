@@ -154,7 +154,7 @@ test('the fleet total replaces a truncated per-object sum as the denominator', (
 	expect(result.attributedActiveMs).toBe(4_000)
 })
 
-test('the lane rewrites yesterday and today atomically from Cloudflare analytics', async () => {
+test('the lane rewrites days with analytics atomically and skips lagging empty days', async () => {
 	const { env, batches } = createEnv({ users: ['user-a'] })
 	const fetchStub = vi.fn(async (_url: string, init: RequestInit) => {
 		const { variables } = JSON.parse(String(init.body)) as {
@@ -191,14 +191,19 @@ test('the lane rewrites yesterday and today atomically from Cloudflare analytics
 	expect(result).toMatchObject({
 		status: 'completed',
 		days: [
-			{ day: '2026-09-26', totalActiveMs: 2_000, attributedActiveMs: 2_000 },
-			{ day: '2026-09-27', totalActiveMs: 0, attributedActiveMs: 0 },
+			{
+				day: '2026-09-26',
+				totalActiveMs: 2_000,
+				attributedActiveMs: 2_000,
+				skipped: false,
+			},
+			{ day: '2026-09-27', skipped: true },
 		],
 	})
 	expect(fetchStub.mock.calls[0]?.[0]).toBe(
 		'https://api.cloudflare.com/client/v4/graphql',
 	)
-	expect(batches).toHaveLength(2)
+	expect(batches).toHaveLength(1)
 	expect(batches[0]?.[0]).toMatchObject({
 		sql: 'DELETE FROM durable_object_duration_daily WHERE day = ?',
 		params: ['2026-09-26'],
@@ -210,7 +215,6 @@ test('the lane rewrites yesterday and today atomically from Cloudflare analytics
 		2_000,
 		1,
 	])
-	expect(batches[1]).toHaveLength(2)
 })
 
 test('the lane skips without credentials and surfaces analytics errors', async () => {

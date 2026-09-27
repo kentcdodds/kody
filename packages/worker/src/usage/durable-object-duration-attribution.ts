@@ -65,6 +65,7 @@ export type DurableObjectDurationAttributionResult =
 				objectCount: number
 				attributedObjectCount: number
 				truncated: boolean
+				skipped: boolean
 			}>
 	  }
 
@@ -357,6 +358,20 @@ export async function runDurableObjectDurationAttribution(input: {
 			baseUrl,
 			day,
 		})
+		// No objects at all means analytics have not caught up yet (a fleet
+		// with live users is never fully idle); keep the last good write.
+		if (groups.length === 0) {
+			results.push({
+				day,
+				totalActiveMs: 0,
+				attributedActiveMs: 0,
+				objectCount: 0,
+				attributedObjectCount: 0,
+				truncated: false,
+				skipped: true,
+			})
+			continue
+		}
 		const attribution = attributeDurableObjectActiveTime({
 			groups,
 			owners,
@@ -420,6 +435,7 @@ export async function runDurableObjectDurationAttribution(input: {
 			objectCount: attribution.objectCount,
 			attributedObjectCount: attribution.attributedObjectCount,
 			truncated,
+			skipped: false,
 		})
 	}
 	console.info('durable-object-duration-attribution', JSON.stringify(results))
