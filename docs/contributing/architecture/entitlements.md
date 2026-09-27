@@ -242,8 +242,7 @@ fetches, job runs, and automation invocations, daily and weekly) by
 weekly window). Email caps, UWD/DO includes (350 / 5B), and the job interval
 floor stay on the Standard base. Unlocking costs nothing; at $0 the Standard
 rate caps apply again (within the 60s enforcement cache) while Max stock
-remains. Past-include UWD/DO usage still only debits a funded wallet
-(empty-wallet past-include hard-stop is a separate follow-up).
+remains. Past-include UWD/DO usage only debits a funded wallet.
 
 **Debits.** The `usage_aggregation` lane runs `runCreditDebits`
 (`packages/worker/src/billing/credit-debits.ts`) right after it recomputes
