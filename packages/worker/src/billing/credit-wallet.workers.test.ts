@@ -4,6 +4,7 @@ import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import {
 	grantAdminCreditsToUser,
 	loadAdminCreditWallet,
+	setAdminCreditEligibility,
 } from '#worker/admin/credit-grants.ts'
 import {
 	consumeDailyEntitlement,
@@ -406,6 +407,162 @@ test('admins can grant credits to any account, including themselves, with an aud
 		(await loadAdminCreditWallet(env, { stableUserId: customer.stableUserId }))
 			?.balanceMicroUsd,
 	).toBe(10_000_000)
+})
+
+test('admin eligibility unlocks a manual Pro wallet without Stripe, survives Stripe refreshes, and clearing it holds the balance', async () => {
+	const admin = await seedUser({ label: 'credits-eligibility-admin' })
+	const user = await seedUser({ label: 'credits-manual-pro', plan: 'pro' })
+	const userId = user.stableUserId
+	const executeLimit = async () => {
+		const entitlement = await entitlementFor(user)
+		return resolvePlanLimit(
+			entitlement.plan,
+			'execute_calls_per_day',
+			entitlement.ladder,
+			entitlement.creditWallet,
+		)
+	}
+	// Usage above the Pro include while the wallet was locked.
+	await setRollup({ userId, metric: 'dynamic_worker_day', count: 900 })
+	const granted = await grantAdminCreditsToUser({
+		env,
+		target: { stableUserId: userId },
+		grantedBy: { stableUserId: admin.stableUserId, email: admin.email },
+		amountCents: 100_000,
+		note: undefined,
+		path: '/mcp',
+		audit: false,
+		now,
+	})
+	expect(granted.wallet).toMatchObject({
+		plan: 'pro',
+		eligible: false,
+		adminCreditsEligible: false,
+		unlocked: false,
+		balanceMicroUsd: 1_000_000_000,
+	})
+	expect((await entitlementFor(user)).creditWallet).toBe('none')
+	// Without a wallet, manual Pro keeps the retired Pro table.
+	expect(await executeLimit()).toBe(1_500)
+
+	const enabled = await setAdminCreditEligibility({
+		env,
+		target: { username: granted.wallet.username },
+		creditsEligible: true,
+		note: 'Manual Pro wallet',
+		now,
+	})
+	expect(enabled.previousAdminCreditsEligible).toBe(false)
+	expect(enabled.note).toBe('Manual Pro wallet')
+	expect(enabled.wallet).toMatchObject({
+		plan: 'pro',
+		eligible: true,
+		adminCreditsEligible: true,
+		unlocked: true,
+		balanceMicroUsd: 1_000_000_000,
+	})
+	expect((await entitlementFor(user)).creditWallet).toBe('funded')
+	expect(await executeLimit()).toBe(25_000)
+
+	// Usage from before eligibility is not charged; new usage is.
+	await runCreditDebits({ env, now })
+	expect((await readCreditWallet(env.APP_DB, userId)).balanceMicroUsd).toBe(
+		1_000_000_000,
+	)
+	await setRollup({ userId, metric: 'dynamic_worker_day', count: 1_000 })
+	await runCreditDebits({ env, now })
+	expect((await readCreditWallet(env.APP_DB, userId)).balanceMicroUsd).toBe(
+		1_000_000_000 - 100 * 4_000,
+	)
+
+	// A Stripe refresh rewrites only the Stripe projection.
+	await env.APP_DB.prepare(
+		`UPDATE users SET stripe_credits_eligible = 0 WHERE stable_user_id = ?`,
+	)
+		.bind(userId)
+		.run()
+	expect((await entitlementFor(user)).creditWallet).toBe('funded')
+	const stripeColumns = await env.APP_DB.prepare(
+		`SELECT id, stripe_customer_id, stripe_plan, stripe_price_id
+		 FROM users WHERE stable_user_id = ?`,
+	)
+		.bind(userId)
+		.first<{
+			id: number
+			stripe_customer_id: string | null
+			stripe_plan: string | null
+			stripe_price_id: string | null
+		}>()
+	expect(stripeColumns).toMatchObject({
+		stripe_customer_id: null,
+		stripe_plan: null,
+		stripe_price_id: null,
+	})
+	// Admin eligibility funds the wallet but never enables buying credits.
+	expect(
+		(
+			await loadAccountCreditsUser({
+				env,
+				userId: stripeColumns?.id ?? 0,
+				now,
+			})
+		)?.canBuyCredits,
+	).toBe(false)
+
+	const cleared = await setAdminCreditEligibility({
+		env,
+		target: { email: user.email },
+		creditsEligible: false,
+		note: undefined,
+		now,
+	})
+	expect(cleared.previousAdminCreditsEligible).toBe(true)
+	expect(cleared.wallet).toMatchObject({
+		eligible: false,
+		adminCreditsEligible: false,
+		unlocked: false,
+		balanceMicroUsd: 1_000_000_000 - 100 * 4_000,
+	})
+	expect((await entitlementFor(user)).creditWallet).toBe('none')
+	expect(await executeLimit()).toBe(1_500)
+	await setRollup({ userId, metric: 'dynamic_worker_day', count: 2_000 })
+	await runCreditDebits({ env, now })
+	expect((await readCreditWallet(env.APP_DB, userId)).balanceMicroUsd).toBe(
+		1_000_000_000 - 100 * 4_000,
+	)
+})
+
+test('admin eligibility does not unlock a wallet outside an effective Pro plan', async () => {
+	const manualMax = await seedUser({
+		label: 'credits-eligible-max',
+		plan: 'max',
+	})
+	const free = await seedUser({ label: 'credits-eligible-free' })
+	for (const user of [manualMax, free]) {
+		await topUp({ userId: user.stableUserId, cents: 1_000 })
+		const result = await setAdminCreditEligibility({
+			env,
+			target: { stableUserId: user.stableUserId },
+			creditsEligible: true,
+			note: null,
+			now,
+		})
+		expect(result.wallet).toMatchObject({
+			eligible: false,
+			adminCreditsEligible: true,
+			unlocked: false,
+		})
+		expect((await entitlementFor(user)).creditWallet).toBe('none')
+	}
+	await expect(
+		setAdminCreditEligibility({
+			env,
+			target: { username: `missing-${crypto.randomUUID()}` },
+			creditsEligible: true,
+			note: null,
+			now,
+		}),
+	).rejects.toMatchObject({ status: 404 })
 })
 
 test('auto-refill charges the saved card at the threshold and stops at the monthly cap', async () => {

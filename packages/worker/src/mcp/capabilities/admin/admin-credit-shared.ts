@@ -24,7 +24,12 @@ export const adminCreditWalletSchema = z.object({
 	eligible: z
 		.boolean()
 		.describe(
-			'True on the purchasable Pro: a positive balance unlocks 50× rate limits and past-include usage debits the wallet. Other plans hold the balance without using it.',
+			'True when the effective plan is Pro and the account is credit-eligible (purchasable Pro subscription, admin eligibility, or a Pro overlay): a positive balance unlocks 50× rate limits and past-include usage debits the wallet. Otherwise the balance is held without being used.',
+		),
+	adminCreditsEligible: z
+		.boolean()
+		.describe(
+			'Admin-set eligibility (adminCreditEligibilitySet). Only counts while the effective plan is Pro.',
 		),
 	unlocked: z.boolean(),
 	balanceMicroUsd: z

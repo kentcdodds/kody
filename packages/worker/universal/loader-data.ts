@@ -383,6 +383,8 @@ export type AdminCreditWalletSummary = {
 	plan: AdminPlanName
 	/** Purchasable Pro: credits unlock limits and debit usage. */
 	eligible: boolean
+	/** `users.admin_credits_eligible`: admin-set, never touched by Stripe. */
+	adminCreditsEligible: boolean
 	unlocked: boolean
 	balanceMicroUsd: number
 	recent: Array<AdminCreditLedgerItem>

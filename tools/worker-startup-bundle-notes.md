@@ -228,3 +228,8 @@ runtime path if this budget is raised again.
   plus the `adminCreditGrant` / `adminCreditWalletGet` capabilities and the
   admin credit-grant service: local dry-run 5_206_765 against the previous
   5_196_000 budget. Reviewed ceiling 5_207_500.
+- Admin credit eligibility (`adminCreditEligibilitySet`,
+  `users.admin_credits_eligible`, and the shared `hasStoredCreditsEligibility`
+  resolver): platform local dry-run 5_210_031 against the previous 5_207_500
+  budget, reviewed ceiling 5_211_000; runtime local dry-run 3_885_009 against
+  the previous 3_882_500 budget, reviewed ceiling 3_886_000.

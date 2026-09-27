@@ -273,9 +273,9 @@ safely. Manual `users.plan` grants apply regardless.
   `https://api.stripe.com` when unset. Override for tests/mocks.
 - `STRIPE_PRO_PRICE_ID` — Stripe Price id for the purchasable $12/month Pro
   (`price_1UKHxZLAQpAnsYszwwqZTCCT` on `prod_VKxtLxMdjEkOdu` in production), the
-  only self-serve paid plan and the only plan with the prepaid credit wallet
-  (`users.stripe_credits_eligible`). Reusing a retired Standard or Pro id here
-  would make those subscribers wallet-eligible.
+  only self-serve paid plan and the only Stripe price that grants the prepaid
+  credit wallet (`users.stripe_credits_eligible`). Reusing a retired Standard or
+  Pro id here would make those subscribers wallet-eligible.
 - `STRIPE_PRO_YEARLY_PRICE_ID` — Stripe Price id for the purchasable $120/year
   Pro (`price_1UKHxaLAQpAnsYszlsVHHXjK`).
 - `STRIPE_BILLING_PORTAL_CONFIGURATION_ID` — optional Stripe Billing Portal

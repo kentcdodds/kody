@@ -3,7 +3,8 @@
  * including the signed-in admin. Shared by the admin users page and the
  * `adminCreditGrant` / `adminCreditWalletGet` capabilities so both write
  * the same ledger row (granted_by, amount, recipient, time, note) and the
- * same audit event.
+ * same audit event. `adminCreditEligibilitySet` owns the admin half of
+ * wallet eligibility (`users.admin_credits_eligible`).
  */
 import {
 	type AdminCreditLedgerItem,
@@ -13,9 +14,11 @@ import {
 	creditAdminGrantNoteMaxLength,
 	validateCreditAdminGrantCents,
 } from '#universal/credits.ts'
+import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { auditDatabaseFromEnv, logAuditEvent } from '#worker/audit-log.ts'
 import {
 	ensureCreditWallet,
+	forgiveUnchargedCreditUsage,
 	grantAdminCredits,
 	listCreditLedgerEntries,
 	readCreditWallet,
@@ -42,6 +45,7 @@ export class AdminCreditGrantError extends Error {
 }
 
 type CreditGrantTargetRow = UserEntitlementRow & {
+	id: number
 	stable_user_id: string
 	username: string
 }
@@ -50,7 +54,7 @@ async function loadCreditGrantTarget(
 	db: D1Database,
 	target: AdminUserTarget,
 ): Promise<CreditGrantTargetRow | null> {
-	const columns = `stable_user_id, username, ${userEntitlementColumnsSql()}`
+	const columns = `id, stable_user_id, username, ${userEntitlementColumnsSql()}`
 	if (target.stableUserId !== undefined) {
 		const stableUserId = normalizeStableUserId(target.stableUserId)
 		if (!isStableUserId(stableUserId)) return null
@@ -128,6 +132,7 @@ export async function loadAdminCreditWallet(
 		username: row.username,
 		plan: entitlement.plan,
 		eligible: entitlement.creditWallet !== 'none',
+		adminCreditsEligible: Number(row.admin_credits_eligible) === 1,
 		unlocked: entitlement.creditWallet === 'funded',
 		balanceMicroUsd: wallet.balanceMicroUsd,
 		recent,
@@ -221,4 +226,85 @@ export function formatAdminCreditGrantAuditReason(input: {
 	entryId: string
 }) {
 	return `target_stable_user_id=${input.stableUserId};amount_cents=${input.amountCents};entry_id=${input.entryId}`
+}
+
+/**
+ * Set or clear `users.admin_credits_eligible`. With an effective `pro` plan
+ * (for example a manual `adminUserUpdate` grant) this unlocks the wallet
+ * exactly like the purchasable Pro price: a positive balance lifts limits and
+ * past-include usage debits it. Clearing it leaves the balance on hold. It
+ * never creates Stripe customers or subscriptions, and it does not enable
+ * buying credits or auto-refill. Callers own the audit event
+ * ({@link formatAdminCreditEligibilityAuditReason}).
+ */
+export async function setAdminCreditEligibility(input: {
+	env: Env
+	target: AdminUserTarget
+	creditsEligible: boolean
+	note: unknown
+	now?: Date
+}): Promise<{
+	previousAdminCreditsEligible: boolean
+	note: string | null
+	wallet: AdminCreditWalletSummary
+}> {
+	const note = parseAdminCreditGrantNote(input.note)
+	const db = input.env.APP_DB
+	const now = input.now ?? new Date()
+	const row = await loadCreditGrantTarget(db, input.target)
+	if (!row) throw new AdminCreditGrantError(404, 'User not found.')
+	const previousAdminCreditsEligible = Number(row.admin_credits_eligible) === 1
+	const stableUserId = row.stable_user_id
+	const previous = await resolveUserEntitlementFromRow({
+		db,
+		stableUserId,
+		row,
+		now,
+	})
+	await db
+		.prepare(
+			`UPDATE users SET admin_credits_eligible = ?, updated_at = ? WHERE id = ?`,
+		)
+		.bind(input.creditsEligible ? 1 : 0, utcSqliteTimestamp(now), row.id)
+		.run()
+	const next = await resolveUserEntitlementFromRow({
+		db,
+		stableUserId,
+		row: { ...row, admin_credits_eligible: input.creditsEligible ? 1 : 0 },
+		now,
+	})
+	if (previous.creditWallet === 'none' && next.creditWallet !== 'none') {
+		// Usage from while the wallet was locked is never charged, the same as
+		// funding an empty wallet.
+		await ensureCreditWallet({
+			db,
+			userId: stableUserId,
+			entitlement: next,
+			now,
+		})
+		await forgiveUnchargedCreditUsage({
+			db,
+			userId: stableUserId,
+			entitlement: next,
+			now,
+		})
+	}
+	const wallet = await loadAdminCreditWallet(input.env, { stableUserId })
+	if (!wallet) throw new AdminCreditGrantError(404, 'User not found.')
+	return { previousAdminCreditsEligible, note, wallet }
+}
+
+export function formatAdminCreditEligibilityAuditReason(input: {
+	stableUserId: string
+	creditsEligible: boolean
+	previousAdminCreditsEligible: boolean
+	note: string | null
+}) {
+	const parts = [
+		`target_stable_user_id=${input.stableUserId}`,
+		`admin_credits_eligible=${input.creditsEligible ? 1 : 0}`,
+		`previous=${input.previousAdminCreditsEligible ? 1 : 0}`,
+	]
+	if (input.note) parts.push(`note=${encodeURIComponent(input.note)}`)
+	return parts.join(';')
 }

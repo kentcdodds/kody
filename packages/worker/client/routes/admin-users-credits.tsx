@@ -206,6 +206,10 @@ export function AdminUserCreditsPanel(
 										: `Not eligible (${wallet.plan})`,
 								},
 								{
+									label: 'Admin eligibility',
+									value: wallet.adminCreditsEligible ? 'On' : 'Off',
+								},
+								{
 									label: 'Higher limits',
 									value: wallet.unlocked ? 'On' : 'Off',
 								},
