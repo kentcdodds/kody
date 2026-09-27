@@ -315,17 +315,23 @@ test('purchasable Pro has Max stock always; funded wallet unlocks rates only', (
 	expect(resolvePlanLimits('pro', 'public', 'none')).toEqual(planLimits.pro)
 
 	const unlocked = resolvePlanLimits('pro', 'public', 'funded')
+	const weeklyDailyCeiling = {
+		maxExecuteCallsPerWeek: planLimits.max.maxExecuteCallsPerDay,
+		maxOutboundFetchesPerWeek: planLimits.max.maxOutboundFetchesPerDay,
+	} as const
 	for (const field of creditsUnlockedLimitFields) {
 		const base = proCreditsPlanLimits[field]
-		const ceiling = planLimits.max[field]
+		const ceiling =
+			field === 'maxExecuteCallsPerWeek' ||
+			field === 'maxOutboundFetchesPerWeek'
+				? weeklyDailyCeiling[field] * 7
+				: planLimits.max[field]
 		expect(unlocked[field]).toBe(
-			base === null
-				? null
-				: ceiling === null
-					? base * creditsUnlockMultiplier
-					: Math.min(base * creditsUnlockMultiplier, ceiling),
+			base === null ? null : Math.min(base * creditsUnlockMultiplier, ceiling),
 		)
 	}
+	// The weekly credits ceiling never exceeds seven capped days.
+	expect(unlocked.maxOutboundFetchesPerWeek).toBe(80_000 * 7)
 	// Funded keeps the same Max stock as empty; only rates rise.
 	for (const field of stockFields) {
 		expect(unlocked[field]).toBe(empty[field])

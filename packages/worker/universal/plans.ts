@@ -673,11 +673,12 @@ export function isCreditsUnlockedResource(
 }
 
 /**
- * Entry points that start new compute. On purchasable Pro with an empty
- * wallet, these stop once this UTC month's Worker compute or Rows read
+ * Counted entry points that start new compute. On purchasable Pro with an
+ * empty wallet, these stop once this UTC month's Worker compute or Rows read
  * include is used up, so usage past the include never runs with nothing to
- * charge. Outbound fetches are left out: they happen inside a run that was
- * already admitted, and failing them mid-run would strand half-done work.
+ * charge (hosted package apps take the same stop without a counter).
+ * Outbound fetches are left out: they happen inside a run that was already
+ * admitted, and failing them mid-run would strand half-done work.
  */
 export const pastIncludeStopResources = [
 	'execute_calls_per_day',
@@ -694,8 +695,13 @@ export function isPastIncludeStopResource(
 function unlockCreditsLimits(limits: PlanLimits): PlanLimits {
 	const scale = (value: number, ceiling: number) =>
 		Math.min(value * creditsUnlockMultiplier, ceiling)
-	const scaleWeekly = (value: number | null) =>
-		value === null ? null : value * creditsUnlockMultiplier
+	// A week can never exceed seven capped days, so the weekly ceiling is
+	// bounded by the daily one (otherwise the credits page shows a number
+	// no one can reach).
+	const scaleWeekly = (value: number | null, dailyCeiling: number) =>
+		value === null
+			? null
+			: Math.min(value * creditsUnlockMultiplier, dailyCeiling * 7)
 	const ceiling = planLimits.max
 	return {
 		...limits,
@@ -703,12 +709,18 @@ function unlockCreditsLimits(limits: PlanLimits): PlanLimits {
 			limits.maxExecuteCallsPerDay,
 			ceiling.maxExecuteCallsPerDay,
 		),
-		maxExecuteCallsPerWeek: scaleWeekly(limits.maxExecuteCallsPerWeek),
+		maxExecuteCallsPerWeek: scaleWeekly(
+			limits.maxExecuteCallsPerWeek,
+			ceiling.maxExecuteCallsPerDay,
+		),
 		maxOutboundFetchesPerDay: scale(
 			limits.maxOutboundFetchesPerDay,
 			ceiling.maxOutboundFetchesPerDay,
 		),
-		maxOutboundFetchesPerWeek: scaleWeekly(limits.maxOutboundFetchesPerWeek),
+		maxOutboundFetchesPerWeek: scaleWeekly(
+			limits.maxOutboundFetchesPerWeek,
+			ceiling.maxOutboundFetchesPerDay,
+		),
 		maxJobRunsPerDay: scale(limits.maxJobRunsPerDay, ceiling.maxJobRunsPerDay),
 		maxAutomationInvocationsPerDay: scale(
 			limits.maxAutomationInvocationsPerDay,
