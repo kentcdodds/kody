@@ -1,7 +1,11 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test } from 'vitest'
 
-const productionExportAllowlist = ['JobsHost', 'KodyFetchGateway'] as const
+const productionExportAllowlist = [
+	'DynamicWorkerUsageTail',
+	'JobsHost',
+	'KodyFetchGateway',
+] as const
 
 test('production-worker exports only the slim origin allowlist (ADR 0034)', async () => {
 	const source = await readFile(
