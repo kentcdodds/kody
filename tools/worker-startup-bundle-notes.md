@@ -217,3 +217,11 @@ runtime path if this budget is raised again.
 - Named `client_disconnected` execute finish plus DO-reset backoff abort
   normalization on the runtime execute path: local dry-run 3_870_105 against the
   previous 3_870_000 budget. Reviewed ceiling 3_871_000.
+- Prepaid credits (#2617): wallet-aware entitlement resolution (`creditWallet`,
+  `proCreditsPlanLimits`, credits CTAs in limit hints, and the `credits.ts` /
+  compute-include credits copy) is on every runtime quota check: local dry-run
+  3_881_513 against the previous 3_871_000 budget. Reviewed ceiling 3_882_000.
+- Prepaid credits (#2617) on the platform MCP path: wallet-aware entitlements
+  plus the `adminCreditGrant` / `adminCreditWalletGet` capabilities and the
+  admin credit-grant service: local dry-run 5_206_574 against the previous
+  5_195_000 budget. Reviewed ceiling 5_207_000.
