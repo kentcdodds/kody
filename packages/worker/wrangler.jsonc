@@ -601,11 +601,14 @@
 				// created server-side for authenticated users (no public
 				// Payment Link). STRIPE_PRO_PRICE_ID /
 				// STRIPE_PRO_YEARLY_PRICE_ID are the purchasable Pro ($12 /
-				// $120) with the prepaid credit wallet (#2617). They stay
-				// unset until the new Stripe prices exist: the previous
-				// Standard $12/$120 and Pro $49/$480 ids moved to
-				// retiredStandardPriceIds / retiredProPriceIds, and reusing
-				// either here would make those subscribers wallet-eligible.
+				// $120) on prod_VKxtLxMdjEkOdu ("Kody Pro") with the prepaid
+				// credit wallet (#2617). The previous Standard $12/$120 and
+				// Pro $49/$480 ids (prod_V1ChgPPenrxsAX, now "Kody Pro
+				// (legacy)") live in retiredStandardPriceIds /
+				// retiredProPriceIds; reusing either here would make those
+				// subscribers wallet-eligible.
+				"STRIPE_PRO_PRICE_ID": "price_1UKHxZLAQpAnsYszwwqZTCCT",
+				"STRIPE_PRO_YEARLY_PRICE_ID": "price_1UKHxaLAQpAnsYszlsVHHXjK",
 				// Stripe Billing Portal configuration used by Manage
 				// subscription and by switches to Pro for existing
 				// subscribers (subscription_update_confirm flow pinned to the

@@ -271,13 +271,13 @@ safely. Manual `users.plan` grants apply regardless.
   production deploy when set.
 - `STRIPE_API_BASE_URL` — optional API base URL; defaults to
   `https://api.stripe.com` when unset. Override for tests/mocks.
-- `STRIPE_PRO_PRICE_ID` — Stripe Price id for the purchasable $12/month Pro, the
+- `STRIPE_PRO_PRICE_ID` — Stripe Price id for the purchasable $12/month Pro
+  (`price_1UKHxZLAQpAnsYszwwqZTCCT` on `prod_VKxtLxMdjEkOdu` in production), the
   only self-serve paid plan and the only plan with the prepaid credit wallet
-  (`users.stripe_credits_eligible`). Production leaves it unset until the new
-  price exists; reusing a retired Standard or Pro id here would make those
-  subscribers wallet-eligible.
+  (`users.stripe_credits_eligible`). Reusing a retired Standard or Pro id here
+  would make those subscribers wallet-eligible.
 - `STRIPE_PRO_YEARLY_PRICE_ID` — Stripe Price id for the purchasable $120/year
-  Pro.
+  Pro (`price_1UKHxaLAQpAnsYszlsVHHXjK`).
 - `STRIPE_BILLING_PORTAL_CONFIGURATION_ID` — optional Stripe Billing Portal
   configuration id (`bpc_...`) passed as `configuration` when creating portal
   sessions for Manage subscription and for plan changes by existing subscribers.

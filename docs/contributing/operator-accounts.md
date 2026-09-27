@@ -285,26 +285,30 @@ emails**, **Product catalog**, **Settings → Billing → Customer portal**.
 
 ### Secrets and committed ids
 
-| Name                                     | Kind                    | Notes                                                                                    |
-| ---------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------- |
-| `STRIPE_SECRET_KEY`                      | Actions + Worker secret | Secret API key                                                                           |
-| `STRIPE_WEBHOOK_SECRET`                  | Actions + Worker secret | Endpoint signing secret (`whsec_…`) for `POST /webhooks/stripe`                          |
-| `STRIPE_API_BASE_URL`                    | optional Worker var     | Defaults to `https://api.stripe.com`                                                     |
-| `STRIPE_PRO_PRICE_ID`                    | committed Wrangler var  | Purchasable Pro ($12/month) with the prepaid credit wallet. Unset until the price exists |
-| `STRIPE_PRO_YEARLY_PRICE_ID`             | committed Wrangler var  | Purchasable Pro ($120/year). Unset until the price exists                                |
-| `STRIPE_BILLING_PORTAL_CONFIGURATION_ID` | committed Wrangler var  | `bpc_1UBzc8LAQpAnsYszyBkO2N3F`                                                           |
+| Name                                     | Kind                    | Notes                                                                                                            |
+| ---------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `STRIPE_SECRET_KEY`                      | Actions + Worker secret | Secret API key                                                                                                   |
+| `STRIPE_WEBHOOK_SECRET`                  | Actions + Worker secret | Endpoint signing secret (`whsec_…`) for `POST /webhooks/stripe`                                                  |
+| `STRIPE_API_BASE_URL`                    | optional Worker var     | Defaults to `https://api.stripe.com`                                                                             |
+| `STRIPE_PRO_PRICE_ID`                    | committed Wrangler var  | `price_1UKHxZLAQpAnsYszwwqZTCCT` on `prod_VKxtLxMdjEkOdu` (“Kody Pro”, $12/month) with the prepaid credit wallet |
+| `STRIPE_PRO_YEARLY_PRICE_ID`             | committed Wrangler var  | `price_1UKHxaLAQpAnsYszlsVHHXjK` ($120/year)                                                                     |
+| `STRIPE_BILLING_PORTAL_CONFIGURATION_ID` | committed Wrangler var  | `bpc_1UBzc8LAQpAnsYszyBkO2N3F`                                                                                   |
 
 Retired live prices (still matched in
-`packages/worker/src/billing/billing-config.ts`, never wallet-eligible):
-Standard `price_1U3sg6LAQpAnsYszGeL2nc8O`
-($12), `price_1U3sg6LAQpAnsYszqq9abwIY`
+`packages/worker/src/billing/billing-config.ts`, never wallet-eligible; the
+$49
+Pro product `prod_V1ChgPPenrxsAX` is renamed “Kody Pro (legacy)”): Standard `price_1U3sg6LAQpAnsYszGeL2nc8O`
+($12),
+`price_1U3sg6LAQpAnsYszqq9abwIY`
 ($120/year),
 `price_1Tv3W2LAQpAnsYszSr4PGBkE`
 ($5); Pro
-`price_1UChg1LAQpAnsYszAYn6eGgt` ($49),
-`price_1UChg2LAQpAnsYszKAFCR778` ($480/year), `price_1U1AISLAQpAnsYszIQvRJNhl`,
-`price_1U3sg6LAQpAnsYszlVpEIFGx`, `price_1U3sg7LAQpAnsYszpozAEFUi`. Delete an id
-(and its Stripe price) once no subscriber remains on it.
+`price_1UChg1LAQpAnsYszAYn6eGgt`
+($49),
+`price_1UChg2LAQpAnsYszKAFCR778` ($480/year),
+`price_1U1AISLAQpAnsYszIQvRJNhl`, `price_1U3sg6LAQpAnsYszlVpEIFGx`,
+`price_1U3sg7LAQpAnsYszpozAEFUi`. Delete an id (and its Stripe price) once no
+subscriber remains on it.
 
 Webhook URL: `https://kody.codes/webhooks/stripe`. Handled events in
 `packages/worker/src/billing/stripe-webhooks.ts`:
