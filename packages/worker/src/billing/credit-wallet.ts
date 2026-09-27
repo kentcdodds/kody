@@ -24,6 +24,7 @@ import {
 	type CreditNotifySettings,
 } from '#universal/credits.ts'
 import { type UserEntitlement } from '#universal/plans.ts'
+import { getUserEntitlement } from '#worker/entitlements/service.ts'
 import { readMonthlyComputeUsage } from './compute-overage-usage.ts'
 
 export type CreditWalletRow = {
@@ -110,10 +111,8 @@ export async function readCreditWallet(
 }
 
 /**
- * Create the wallet row on first use. Debit progress for every month the
- * debit lane settles (prior and current UTC month) starts at the usage
- * already above the include, so funding a wallet never back-charges usage
- * from before it existed.
+ * Create the wallet row on first use, with debit progress at the usage
+ * already above the include (see {@link forgiveUnchargedCreditUsage}).
  */
 export async function ensureCreditWallet(input: {
 	db: D1Database
@@ -130,6 +129,23 @@ export async function ensureCreditWallet(input: {
 		.bind(input.userId, nowIso, nowIso)
 		.run()
 	if (!Number(created.meta.changes ?? 0)) return
+	await forgiveUnchargedCreditUsage(input)
+}
+
+/**
+ * Advance debit progress for every month the debit lane settles (prior and
+ * current UTC month) to the usage already above the include. Runs when a
+ * wallet is created and when an empty wallet is funded, so credits never
+ * pay for usage incurred while the wallet was empty. Usage that has not
+ * reached `usage_rollups` yet (under an hour) is still debited later.
+ */
+export async function forgiveUnchargedCreditUsage(input: {
+	db: D1Database
+	userId: string
+	entitlement: UserEntitlement
+	now: Date
+}): Promise<void> {
+	const nowIso = input.now.toISOString()
 	const statements: Array<D1PreparedStatement> = []
 	for (const month of creditDebitMonths(input.now)) {
 		const usage = await readMonthlyComputeUsage({
@@ -152,15 +168,35 @@ export async function ensureCreditWallet(input: {
 			statements.push(
 				input.db
 					.prepare(
-						`INSERT OR IGNORE INTO credit_debit_progress
+						`INSERT INTO credit_debit_progress
 							(user_id, month, meter, accounted_units, updated_at)
-						 VALUES (?, ?, ?, ?, ?)`,
+						 VALUES (?, ?, ?, ?, ?)
+						 ON CONFLICT (user_id, month, meter) DO UPDATE SET
+							accounted_units = MAX(accounted_units, excluded.accounted_units),
+							updated_at = excluded.updated_at`,
 					)
 					.bind(input.userId, month, meter, billableByMeter[meter], nowIso),
 			)
 		}
 	}
 	await input.db.batch(statements)
+}
+
+/** Forgive uncharged usage when a credit is about to fund an empty wallet. */
+async function forgiveBeforeFunding(input: {
+	db: D1Database
+	userId: string
+	now: Date
+}) {
+	const wallet = await readCreditWallet(input.db, input.userId)
+	if (wallet.balanceMicroUsd > 0) return
+	await forgiveUnchargedCreditUsage({
+		...input,
+		entitlement: await getUserEntitlement(input.db, {
+			userId: input.userId,
+			email: null,
+		}),
+	})
 }
 
 /** UTC months the debit lane settles: the prior month, then the current. */
@@ -199,6 +235,7 @@ export async function applyCreditPayment(input: {
 	const nowIso = input.now.toISOString()
 	const amountMicroUsd = input.amountCents * microUsdPerCent
 	const paymentMethodId = input.paymentMethodId?.trim() || null
+	await forgiveBeforeFunding(input)
 	try {
 		await input.db.batch([
 			input.db
@@ -270,6 +307,11 @@ export async function grantAdminCredits(input: {
 	const nowIso = input.now.toISOString()
 	const amountMicroUsd = input.amountCents * microUsdPerCent
 	const entryId = crypto.randomUUID()
+	await forgiveBeforeFunding({
+		db: input.db,
+		userId: input.recipientUserId,
+		now: input.now,
+	})
 	await input.db.batch([
 		input.db
 			.prepare(

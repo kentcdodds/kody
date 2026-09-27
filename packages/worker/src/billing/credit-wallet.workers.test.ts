@@ -504,3 +504,87 @@ test('auto-refill charges the saved card at the threshold and stops at the month
 		vi.unstubAllGlobals()
 	}
 })
+
+test('funding an empty wallet forgives usage from before the top-up', async () => {
+	const user = await seedUser({
+		label: 'credits-refund-gap',
+		stripePlan: 'pro',
+		creditsEligible: true,
+	})
+	const userId = user.stableUserId
+	await ensureCreditWallet({
+		db: env.APP_DB,
+		userId,
+		entitlement: await entitlementFor(user),
+		now,
+	})
+	// Usage grows above the include while the wallet is empty, between
+	// sweeps; the top-up lands before the next sweep.
+	await setRollup({ userId, metric: 'dynamic_worker_day', count: 450 })
+	await topUp({ userId, cents: 1_000 })
+	await runCreditDebits({ env, now })
+	expect((await readCreditWallet(env.APP_DB, userId)).balanceMicroUsd).toBe(
+		10_000_000,
+	)
+	// Usage after the top-up is debited.
+	await setRollup({ userId, metric: 'dynamic_worker_day', count: 460 })
+	await runCreditDebits({ env, now })
+	expect((await readCreditWallet(env.APP_DB, userId)).balanceMicroUsd).toBe(
+		10_000_000 - 10 * 4_000,
+	)
+})
+
+test('the bounded debit sweep resumes from its cursor and wraps at the tail', async () => {
+	const users = [
+		await seedUser({
+			label: 'credits-cursor-a',
+			stripePlan: 'pro',
+			creditsEligible: true,
+		}),
+		await seedUser({
+			label: 'credits-cursor-b',
+			stripePlan: 'pro',
+			creditsEligible: true,
+		}),
+	]
+	const [first, second] = [...users].sort((left, right) =>
+		left.stableUserId.localeCompare(right.stableUserId),
+	)
+	if (!first || !second) throw new Error('Expected two users.')
+	for (const user of [first, second]) {
+		await ensureCreditWallet({
+			db: env.APP_DB,
+			userId: user.stableUserId,
+			entitlement: await entitlementFor(user),
+			now,
+		})
+		await topUp({ userId: user.stableUserId, cents: 1_000 })
+		await setRollup({
+			userId: user.stableUserId,
+			metric: 'dynamic_worker_day',
+			count: 351,
+		})
+	}
+	// A previous bounded run stopped right after `first`.
+	await env.APP_DB.prepare(
+		`UPDATE credit_debit_cursor SET position = ? WHERE singleton = 1`,
+	)
+		.bind(first.stableUserId)
+		.run()
+	await runCreditDebits({ env, now })
+	expect(
+		(await readCreditWallet(env.APP_DB, second.stableUserId)).balanceMicroUsd,
+	).toBe(10_000_000 - 4_000)
+	expect(
+		(await readCreditWallet(env.APP_DB, first.stableUserId)).balanceMicroUsd,
+	).toBe(10_000_000)
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT position FROM credit_debit_cursor WHERE singleton = 1`,
+		).first(),
+	).toEqual({ position: '' })
+	await runCreditDebits({ env, now })
+	expect(
+		(await readCreditWallet(env.APP_DB, first.stableUserId)).balanceMicroUsd,
+	).toBe(10_000_000 - 4_000)
+})
