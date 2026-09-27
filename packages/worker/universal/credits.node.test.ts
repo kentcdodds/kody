@@ -7,6 +7,7 @@ import {
 	defaultCreditAutoRefillSettings,
 	defaultCreditNotifySettings,
 	formatCents,
+	formatEstimatedCreditMicroUsd,
 	formatMicroUsd,
 	microUsdPerCent,
 	validateCreditAdminGrantCents,
@@ -202,4 +203,12 @@ test('money formatting rounds balances toward zero to the cent', () => {
 	expect(formatMicroUsd(12_349_999)).toBe('$12.34')
 	expect(formatMicroUsd(-4_000)).toBe('$0.00')
 	expect(formatMicroUsd(-1_234_000)).toBe('−$1.23')
+})
+
+test('estimated credit formatting keeps sub-cent debit rates visible', () => {
+	expect(formatEstimatedCreditMicroUsd(0)).toBe('$0.00')
+	expect(formatEstimatedCreditMicroUsd(4_000)).toBe('$0.004')
+	expect(formatEstimatedCreditMicroUsd(2_000)).toBe('$0.002')
+	expect(formatEstimatedCreditMicroUsd(6_580_000)).toBe('$6.58')
+	expect(formatEstimatedCreditMicroUsd(-4_000)).toBe('−$0.004')
 })

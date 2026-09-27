@@ -32,6 +32,7 @@ import { chartColor, formatIntegerNumber } from '#client/charts/chart-theme.ts'
 import {
 	creditLowBalanceCents,
 	formatCents,
+	formatEstimatedCreditMicroUsd,
 	formatMicroUsd,
 	validateCreditAutoRefillSettings,
 	validateCreditTopUpCents,
@@ -643,7 +644,7 @@ export function AccountCreditsRoute(handle: Handle) {
 											{formatIntegerNumber(meter.pastInclude)}
 										</td>
 										<td mix={css(debitRateNumericCss)}>
-											{formatMicroUsd(meter.estCreditsMicroUsd)}
+											{formatEstimatedCreditMicroUsd(meter.estCreditsMicroUsd)}
 										</td>
 									</tr>
 								)

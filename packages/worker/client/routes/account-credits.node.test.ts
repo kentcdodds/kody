@@ -158,6 +158,27 @@ test('eligible wallet shows balance, packs, limits, rate card, and recent activi
 	expect(html).not.toContain('Hit monthly cap')
 })
 
+test('rate card keeps sub-cent estimated credits visible', async () => {
+	const html = await renderCreditsPage(
+		credits({
+			debitMeters: [
+				{
+					meter: 'unique_worker_days',
+					label: 'Worker compute',
+					unitRateLabel: '$0.004 per worker-compute day',
+					include: 350,
+					used: 351,
+					pastInclude: 1,
+					percentOfInclude: 351 / 350,
+					estCreditsMicroUsd: 4_000,
+				},
+			],
+			recent: [],
+		}),
+	)
+	expect(html).toContain('>$0.004<')
+})
+
 test('auto-refill on shows its settings, cap notices, and the card note', async () => {
 	const html = await renderCreditsPage(
 		credits({

@@ -304,3 +304,19 @@ export function formatCents(cents: number): string {
 export function formatMicroUsd(microUsd: number): string {
 	return formatCents(Math.trunc(microUsd / microUsdPerCent))
 }
+
+/**
+ * Rate-card estimate label. Debit rates are sub-cent ($0.004 /
+ * $0.002), so truncating to cents would render a real charge as $0.00.
+ * Keeps at least two decimals; adds a third when needed.
+ */
+export function formatEstimatedCreditMicroUsd(microUsd: number): string {
+	if (!Number.isFinite(microUsd) || microUsd === 0) return '$0.00'
+	const sign = microUsd < 0 ? '−' : ''
+	const dollars = Math.abs(microUsd) / 1_000_000
+	const formatted = dollars.toLocaleString('en-US', {
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 3,
+	})
+	return `${sign}$${formatted}`
+}
