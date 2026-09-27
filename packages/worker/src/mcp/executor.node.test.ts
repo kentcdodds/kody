@@ -392,6 +392,34 @@ test('createExecuteExecutor aligns dynamic worker compatibility with shared opti
 	expect(workerOptions).toMatchObject(createDynamicWorkerCompatibilityOptions())
 })
 
+test('createExecuteExecutor attaches the CPU usage tail without changing the worker id', async () => {
+	const withoutTail = createFakeWorkerLoader()
+	await createExecuteExecutor({
+		env: createExecutorTestEnv(withoutTail.loader),
+		exports: createExecutorTestExports(),
+		gatewayProps: createGatewayProps('user-1'),
+	}).execute('async () => "ok"', [{ name: 'kody', fns: {} }])
+	expect(
+		withoutTail.createdOptions.get(withoutTail.ids[0]!)?.tails,
+	).toBeUndefined()
+
+	const withTail = createFakeWorkerLoader()
+	await createExecuteExecutor({
+		env: createExecutorTestEnv(withTail.loader),
+		exports: {
+			KodyFetchGateway: ({ props }: { props: unknown }) => ({ props }),
+			DynamicWorkerUsageTail: ({ props }: { props: unknown }) => ({
+				tailProps: props,
+			}),
+		} as never,
+		gatewayProps: createGatewayProps('user-1'),
+	}).execute('async () => "ok"', [{ name: 'kody', fns: {} }])
+	expect(withTail.ids[0]).toBe(withoutTail.ids[0])
+	expect(withTail.createdOptions.get(withTail.ids[0]!)?.tails).toEqual([
+		{ tailProps: { userId: 'user-1', workerId: withTail.ids[0] } },
+	])
+})
+
 test('createExecuteExecutor gives the fetch gateway a deadline under the sandbox budget', async () => {
 	const readGatewayProps = async (timeoutMs?: number | null) => {
 		const fakeLoader = createFakeWorkerLoader()

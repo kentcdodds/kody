@@ -13,7 +13,7 @@ export const defaultDevEntryPath = './src/index.ts'
 export const defaultProductionEntryPath = './src/production-worker.ts'
 
 /**
- * The only two `ctx.exports` WorkerEntrypoint contracts production actually
+ * The only `ctx.exports` WorkerEntrypoint contracts production actually
  * calls on its own script (see the doc comment on
  * `packages/worker/src/production-worker.ts`). Every other class
  * `index.ts` exports is reached in production only through a cross-script
@@ -21,7 +21,11 @@ export const defaultProductionEntryPath = './src/production-worker.ts'
  * production entry must export exactly this set — nothing more, nothing
  * less.
  */
-export const productionExportAllowlist = ['JobsHost', 'KodyFetchGateway']
+export const productionExportAllowlist = [
+	'DynamicWorkerUsageTail',
+	'JobsHost',
+	'KodyFetchGateway',
+]
 
 type WranglerConfig = {
 	main?: unknown

@@ -22,21 +22,21 @@ One schema covers every chokepoint. It is defined in
 
 ```ts
 type UsageEvent = {
-	userId: string // required; owning user
-	eventType: UsageEventType // see the metric table below
-	entityId?: string | null // metered entity id when one exists
-	durationMs?: number | null // wall-clock duration of the metered unit
-	cpuMs?: number | null // CPU time, only when the platform exposes it
-	bytes?: number | null // bytes moved/stored when meaningful
-	eventCount?: number // coalesced units in one write; defaults to 1
-	outcome: 'success' | 'error'
-	timestamp?: string // ISO 8601; defaults to time of recording
-	surface?: string | null // closed UWD surface; AE blob6
-	executeShape?: string | null // execute thin/glue class; AE blob7
-	cacheReuse?: 'hit' | 'miss' | null // billing-aligned LOADER reuse; AE blob8
-	codeChars?: number | null // module-graph text length; AE double4
-	paramsChars?: number | null // stable JSON length of params; AE double5
-}
+  userId: string; // required; owning user
+  eventType: UsageEventType; // see the metric table below
+  entityId?: string | null; // metered entity id when one exists
+  durationMs?: number | null; // wall-clock duration of the metered unit
+  cpuMs?: number | null; // CPU time, only when the platform exposes it
+  bytes?: number | null; // bytes moved/stored when meaningful
+  eventCount?: number; // coalesced units in one write; defaults to 1
+  outcome: "success" | "error";
+  timestamp?: string; // ISO 8601; defaults to time of recording
+  surface?: string | null; // closed UWD surface; AE blob6
+  executeShape?: string | null; // execute thin/glue class; AE blob7
+  cacheReuse?: "hit" | "miss" | null; // billing-aligned LOADER reuse; AE blob8
+  codeChars?: number | null; // module-graph text length; AE double4
+  paramsChars?: number | null; // stable JSON length of params; AE double5
+};
 ```
 
 `eventType` is a closed union defined in the dependency-free
@@ -63,6 +63,7 @@ events for the admin on/off cohort readout.
 | `email_received`                    | one inbound receive attempt for a routed inbox                                                                                                                                                                                                             | `packages/worker/src/email/inbound.ts` (`handleInboundEmail`, after inbox resolution)                                                                                                                                                                                                                                                                                                                               | email message id (when stored) |
 | `dynamic_worker_day`                | first use of one Dynamic Worker id on a UTC day                                                                                                                                                                                                            | `packages/worker/src/mcp/executor.ts` after `createStableDynamicWorkerId` (sandbox surfaces) and `packages/worker/src/package-runtime/package-app.ts` (`APP_LOADER` with a stable id); uniqueness via `UserMeter.claimDynamicWorkerDay`. Each event carries `surface` (Analytics Engine blob6).                                                                                                                     | worker id                      |
 | `dynamic_worker_invoke`             | one LOADER evaluate (hit or miss) on the execute-sandbox path                                                                                                                                                                                              | `packages/worker/src/mcp/executor.ts` after `claimDynamicWorkerDay`, on every signed-in sandbox surface (execute, job, package_export, workflow, …). Observe-only. `cacheReuse` is `miss` when `claimDynamicWorkerDay.created === true` and `hit` otherwise. Also carries `codeChars`, `paramsChars`, `durationMs`, `surface`, and `executeShape` when known. No worker id, source, params, or package names.       | none                           |
+| `dynamic_worker_cpu`                | one Worker Loader invocation's CPU as measured by Cloudflare (`TraceItem.cpuTime` → `cpuMs`, AE double2; `wallTime` → `durationMs`). Zero is recorded, so `event_count` is tail delivery coverage against `dynamic_worker_invoke`.                         | `DynamicWorkerUsageTail` (`packages/worker/src/usage/dynamic-worker-cpu.ts`), attached as `WorkerCode.tails` by `createExecuteExecutor` on every executor surface when the loopback export exists (origin, platform, runtime). Runs after the response. Package-app `APP_LOADER` isolates do not attach it yet. Observe-only.                                                                                       | worker id                      |
 | `durable_object_gb_seconds`         | one typed per-user Durable Object RPC burst (wall-clock in `durationMs`; admin converts to GB-s at 128 MB). Same-outcome RPCs in one request coalesce into a single Analytics Engine point whose `eventCount` is the RPC count.                            | `createMeteredDurableObjectStub` on `storageRunnerRpc` when `USAGE_EVENTS` is bound. Other per-user RPC factories can adopt the same helper; UserMeter, Mailbox, RunLog, and RepoSessionIndex stay unwrapped so admin usage reads do not inflate the metric. Observe-only / unmetered: excluded from fleet event-count rankings, entitlement-pressure candidate selection, and customer usage emails. Never billed. | DO class name                  |
 | `durable_object_rows_read`          | Customer-controlled StorageRunner SQLite rows read: cursor `rowsRead` from `sqlQuery`, plus key-value reads at Cloudflare's billing unit (1 per `getValue` key, 1 per `listValues` entry including the truncation look-ahead). Zero-row reads are skipped. | `storageRunnerRpc` (`recordDurableObjectRowsRead`). Queued into the same per-burst coalescer as duration, so one run writes one point per (user, class, outcome). Observe-only for fleet event-count rankings and entitlement-pressure selection; monthly overage math and compute-include warning emails read the rollup.                                                                                          | DO class name                  |
 | `durable_object_platform_rows_read` | Rows read by Kody-owned per-user Durable Objects. RunLog only today: every tracked `execSqlTracked` cursor's `rowsRead`, attributed to the DO name (the stable user id via `ctx.id.name`).                                                                 | `RunLog.recordSqlBilling` (`recordDurableObjectPlatformRowsRead`), coalesced like the customer meter. Recorded only when `USAGE_EVENTS` is bound (no per-statement local D1 fallback). Observe-only cost visibility on admin usage; never in include, overage, or warning math.                                                                                                                                     | DO class name                  |
@@ -415,15 +416,15 @@ Helpers live in `packages/worker/src/usage/agent-package-conversation-uses.ts`.
 ## Helper contract
 
 ```ts
-import { recordUsage } from '#worker/usage/record-usage.ts'
+import { recordUsage } from "#worker/usage/record-usage.ts";
 
 await recordUsage(env, {
-	userId,
-	eventType: 'job_run',
-	entityId: job.id,
-	durationMs,
-	outcome: execution.ok ? 'success' : 'error',
-})
+  userId,
+  eventType: "job_run",
+  entityId: job.id,
+  durationMs,
+  outcome: execution.ok ? "success" : "error",
+});
 ```
 
 Guarantees and rules:
@@ -463,23 +464,23 @@ Guarantees and rules:
    id, the start time, and the outcome. Wrap it:
 
    ```ts
-   const startedAtMs = Date.now()
-   let outcome: 'success' | 'error' = 'success'
+   const startedAtMs = Date.now();
+   let outcome: "success" | "error" = "success";
    try {
-   	// existing work
+     // existing work
    } catch (error) {
-   	outcome = 'error'
-   	throw error
+     outcome = "error";
+     throw error;
    } finally {
-   	if (userId) {
-   		await recordUsage(env, {
-   			userId,
-   			eventType: 'my_metric',
-   			entityId,
-   			durationMs: Date.now() - startedAtMs,
-   			outcome,
-   		})
-   	}
+     if (userId) {
+       await recordUsage(env, {
+         userId,
+         eventType: "my_metric",
+         entityId,
+         durationMs: Date.now() - startedAtMs,
+         outcome,
+       });
+     }
    }
    ```
 
@@ -488,7 +489,11 @@ Guarantees and rules:
 
 4. **Populate optional fields when cheap.** `bytes` for transfer-shaped metrics,
    `cpuMs` only when the platform exposes it. Leave fields you cannot measure as
-   `undefined` — do not approximate.
+   `undefined` — do not approximate, and never use wall clock as CPU. Worker
+   Loader CPU arrives through the `dynamic_worker_cpu` tail; other chokepoints
+   (host-side execute, jobs, fetch gateway) have no per-call CPU API and leave
+   `cpuMs` unset. Open-source workerd reports `cpuTime` 0, so real values only
+   appear on deployed Workers.
 5. **Do not change behavior.** No new throws, no altered return values, no added
    latency beyond the awaited write (use `ctx.waitUntil` in DOs if needed).
 6. **Test it.** Pick the flavor with the
@@ -496,10 +501,10 @@ Guarantees and rules:
    In `*.node.test.ts`, spy on the helper:
 
    ```ts
-   const usageModule = await import('#worker/usage/record-usage.ts')
+   const usageModule = await import("#worker/usage/record-usage.ts");
    const recordUsageSpy = vi
-   	.spyOn(usageModule, 'recordUsage')
-   	.mockResolvedValue(undefined)
+     .spyOn(usageModule, "recordUsage")
+     .mockResolvedValue(undefined);
    ```
 
    Assert one call per metered unit with the expected `userId`, `eventType`,

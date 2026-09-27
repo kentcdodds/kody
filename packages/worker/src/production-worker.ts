@@ -1,4 +1,5 @@
 import { KodyFetchGateway } from '#mcp/fetch-gateway.ts'
+import { DynamicWorkerUsageTail } from '#worker/usage/dynamic-worker-cpu.ts'
 import { JobsHost } from './jobs/jobs-host.ts'
 import { originWorkerHandler } from './origin-handler.ts'
 
@@ -25,7 +26,7 @@ import { originWorkerHandler } from './origin-handler.ts'
  * `index.ts` (dev/test, fresh/ambiguous production, and legacy preview
  * origins) does.
  *
- * The two exports kept here are `ctx.exports` WorkerEntrypoint contracts
+ * The exports kept here are `ctx.exports` WorkerEntrypoint contracts
  * production genuinely calls on this script:
  * - `KodyFetchGateway` — the origin-only `/__maintenance/execute-smoke`
  *   deploy check (see `execute-maintenance.ts`) proves this script's own
@@ -34,6 +35,9 @@ import { originWorkerHandler } from './origin-handler.ts'
  * - `JobsHost` — `kody-jobs`' `HOST` service binding calls back into this
  *   script for job execution (see
  *   docs/contributing/architecture/jobs-worker-migration-runbook.md).
+ * - `DynamicWorkerUsageTail` — tail worker attached to the Worker Loader
+ *   isolates those jobs (and the execute smoke) create, recording
+ *   Cloudflare-measured CPU as `dynamic_worker_cpu`.
  *
  * Everything else `index.ts` exports (MCP, McpClientHub,
  * OAuthPurgeCoordinator, UserMeter, Mailbox, RepoSession, RepoSessionIndex,
@@ -43,6 +47,6 @@ import { originWorkerHandler } from './origin-handler.ts'
  * `RUNTIME_WORKER` service forward, never through a local export on this
  * script.
  */
-export { KodyFetchGateway, JobsHost }
+export { KodyFetchGateway, JobsHost, DynamicWorkerUsageTail }
 
 export default originWorkerHandler

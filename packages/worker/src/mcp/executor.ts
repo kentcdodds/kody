@@ -11,6 +11,7 @@ import {
 } from '@kody-internal/shared/error-message.ts'
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { exports as workerExports } from 'cloudflare:workers'
+import { type DynamicWorkerUsageTailProps } from '#worker/usage/dynamic-worker-cpu.ts'
 import {
 	outboundFetchTimeoutMsForExecutor,
 	retrieverOutboundFetchDeniedMessage,
@@ -173,6 +174,12 @@ type DynamicWorkerExecutorInput = {
 	timeout: number
 	signal?: AbortSignal
 	globalOutbound: Fetcher | null
+	/**
+	 * Builds the tail worker that records Cloudflare-measured CPU for this
+	 * isolate (`dynamic_worker_cpu`). Omitted when the loopback export is not
+	 * available; the run is unaffected either way.
+	 */
+	createUsageTail?: (props: DynamicWorkerUsageTailProps) => Fetcher
 	modules?: WorkerLoaderModules
 	gatewayProps: FetchGatewayProps
 	usageEnv: UsageEnv & UserMeterEnv
@@ -582,6 +589,12 @@ export function createExecuteExecutor(input: {
 		globalOutbound: loopbackExports.KodyFetchGateway({
 			props: gatewayProps,
 		}),
+		...(loopbackExports.DynamicWorkerUsageTail
+			? {
+					createUsageTail: (props: DynamicWorkerUsageTailProps) =>
+						loopbackExports.DynamicWorkerUsageTail({ props }),
+				}
+			: {}),
 		modules: input.modules,
 		gatewayProps,
 		usageEnv: input.env,
@@ -660,8 +673,17 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 			const startedAtMs = Date.now()
 			let outcome: 'success' | 'error' = 'success'
 			try {
+				const usageUserId = input.gatewayProps.userId
+				const usageTail =
+					usageUserId && input.createUsageTail
+						? input.createUsageTail({ userId: usageUserId, workerId })
+						: null
 				const entrypoint = input.loader
-					.get(workerId, () => workerOptions)
+					.get(workerId, () =>
+						usageTail
+							? { ...workerOptions, tails: [usageTail] }
+							: workerOptions,
+					)
 					.getEntrypoint() as unknown as DynamicWorkerEntrypoint
 				let response: Awaited<ReturnType<DynamicWorkerEntrypoint['evaluate']>>
 				try {

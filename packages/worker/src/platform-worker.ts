@@ -4,6 +4,7 @@ import {
 	platformWorkerHealthPath,
 } from '@kody-internal/shared/platform-worker.ts'
 import { KodyFetchGateway } from '#mcp/fetch-gateway.ts'
+import { DynamicWorkerUsageTail } from '#worker/usage/dynamic-worker-cpu.ts'
 import { PackageAppRuntimeBridge } from '#worker/package-runtime/package-app.ts'
 import { refuseNonCanonicalProductionHost } from '#app/canonical-host.ts'
 import { McpClientHub } from './mcp-client/hub.ts'
@@ -42,6 +43,7 @@ export {
 	RepoSessionIndex,
 	StripePlanRefresh,
 	KodyFetchGateway,
+	DynamicWorkerUsageTail,
 	PackageAppRuntimeBridge,
 }
 

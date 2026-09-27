@@ -13,6 +13,7 @@ import { DynamicCallableWorkflow } from '#worker/package-runtime/package-workflo
 import { PackageAppRuntimeBridge } from '#worker/package-runtime/package-app.ts'
 import { servePackageAppRequest } from '#worker/package-runtime/package-app-serve.ts'
 import { KodyFetchGateway } from '#mcp/fetch-gateway.ts'
+import { DynamicWorkerUsageTail } from '#worker/usage/dynamic-worker-cpu.ts'
 import { getWorkerSentryOptions } from './sentry-options.ts'
 import {
 	handlePackageInvocationApiRequest,
@@ -54,6 +55,7 @@ export {
 	DynamicCallableWorkflow,
 	PackageAppRuntimeBridge,
 	KodyFetchGateway,
+	DynamicWorkerUsageTail,
 }
 
 /**

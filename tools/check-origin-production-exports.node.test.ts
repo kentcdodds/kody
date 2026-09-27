@@ -63,13 +63,14 @@ const devEntrySource = `
 export {
 	Mailbox,
 	KodyFetchGateway,
+	DynamicWorkerUsageTail,
 	JobsHost,
 }
 export default originWorkerHandler
 `
 
 const productionEntrySource = `
-export { KodyFetchGateway, JobsHost }
+export { KodyFetchGateway, DynamicWorkerUsageTail, JobsHost }
 export default originWorkerHandler
 `
 
@@ -106,14 +107,14 @@ test('rejects the production entry exporting a class outside the allowlist', () 
 		config: createConfig({}),
 		devEntrySource,
 		productionEntrySource: `
-export { Mailbox, KodyFetchGateway, JobsHost }
+export { Mailbox, KodyFetchGateway, DynamicWorkerUsageTail, JobsHost }
 export default originWorkerHandler
 `,
 	})
 	expect(result.ok).toBe(false)
 	expect(result.errors).toEqual([
 		expect.stringContaining(
-			'must export exactly JobsHost, KodyFetchGateway (unexpected Mailbox)',
+			'must export exactly DynamicWorkerUsageTail, JobsHost, KodyFetchGateway (unexpected Mailbox)',
 		),
 	])
 })
@@ -124,14 +125,14 @@ test('rejects the production entry missing an allowlisted export', () => {
 		config: createConfig({}),
 		devEntrySource,
 		productionEntrySource: `
-export { KodyFetchGateway }
+export { KodyFetchGateway, DynamicWorkerUsageTail }
 export default originWorkerHandler
 `,
 	})
 	expect(result.ok).toBe(false)
 	expect(result.errors).toEqual([
 		expect.stringContaining(
-			'must export exactly JobsHost, KodyFetchGateway (missing JobsHost)',
+			'must export exactly DynamicWorkerUsageTail, JobsHost, KodyFetchGateway (missing JobsHost)',
 		),
 	])
 })
@@ -301,7 +302,7 @@ test('rejects a production entry that star-exports hidden runtime names', () => 
 		config: createConfig({}),
 		devEntrySource,
 		productionEntrySource: `
-export { KodyFetchGateway, JobsHost }
+export { KodyFetchGateway, DynamicWorkerUsageTail, JobsHost }
 export * from "./index.ts"
 export default originWorkerHandler
 `,
@@ -316,7 +317,7 @@ export default originWorkerHandler
 		config: createConfig({}),
 		devEntrySource,
 		productionEntrySource: `
-export { KodyFetchGateway, JobsHost }
+export { KodyFetchGateway, DynamicWorkerUsageTail, JobsHost }
 export * as Legacy from "./index.ts"
 export default originWorkerHandler
 `,

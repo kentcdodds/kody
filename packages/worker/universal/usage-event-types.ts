@@ -19,6 +19,7 @@ export const usageEventTypes = [
 	'email_received',
 	'dynamic_worker_day',
 	'dynamic_worker_invoke',
+	'dynamic_worker_cpu',
 	'durable_object_gb_seconds',
 	'durable_object_rows_read',
 	'durable_object_platform_rows_read',
@@ -35,6 +36,7 @@ export type UsageEventType = (typeof usageEventTypes)[number]
  */
 export const observeOnlyUsageEventTypes = [
 	'dynamic_worker_invoke',
+	'dynamic_worker_cpu',
 	'durable_object_gb_seconds',
 	'durable_object_rows_read',
 	'durable_object_platform_rows_read',
