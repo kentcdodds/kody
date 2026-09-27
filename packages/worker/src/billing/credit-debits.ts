@@ -21,7 +21,9 @@
  * units), so an overlapping run collides on the primary key and the whole
  * batch rolls back instead of charging twice.
  *
- * After debits, the lane runs auto-refill and the low-balance notice.
+ * After debits, the lane runs auto-refill and the low-balance notice. Each
+ * run is bounded; `credit_debit_cursor` keeps the keyset position so the
+ * next run continues past the last wallet this one reached.
  */
 import { computeMonthlyOverage } from '#universal/compute-overage.ts'
 import {
@@ -74,7 +76,7 @@ export async function runCreditDebits(input: {
 }): Promise<CreditDebitRunResult> {
 	const db = input.env.APP_DB
 	const months = creditDebitMonths(input.now)
-	let startAfter = ''
+	let startAfter = await readCreditDebitCursor(db)
 	let scanned = 0
 	let debitedUsers = 0
 	let debitedMicroUsd = 0
@@ -111,7 +113,37 @@ export async function runCreditDebits(input: {
 		}
 		startAfter = last.user_id
 	}
+	// Resume where this bounded run stopped; wrap once the tail is reached.
+	await writeCreditDebitCursor({
+		db,
+		position: done ? '' : startAfter,
+		now: input.now,
+	})
 	return { scanned, debitedUsers, debitedMicroUsd, autoRefilled, failed, done }
+}
+
+async function readCreditDebitCursor(db: D1Database): Promise<string> {
+	const row = await db
+		.prepare(`SELECT position FROM credit_debit_cursor WHERE singleton = 1`)
+		.first<{ position: string }>()
+	return row?.position ?? ''
+}
+
+async function writeCreditDebitCursor(input: {
+	db: D1Database
+	position: string
+	now: Date
+}) {
+	await input.db
+		.prepare(
+			`INSERT INTO credit_debit_cursor (singleton, position, updated_at)
+			 VALUES (1, ?, ?)
+			 ON CONFLICT (singleton) DO UPDATE SET
+				position = excluded.position,
+				updated_at = excluded.updated_at`,
+		)
+		.bind(input.position, input.now.toISOString())
+		.run()
 }
 
 async function listCreditDebitCandidates(input: {

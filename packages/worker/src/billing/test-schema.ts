@@ -2,7 +2,7 @@ import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 
 /**
- * Mirrors `0069-prepaid-credits.sql` (ledger and debit progress; wallets
+ * Mirrors `0069-prepaid-credits.sql` (ledger, debit progress, and sweep cursor; wallets
  * come with the shared `users` schema) plus `usage_rollups` for
  * `*.workers.test.ts` suites, which run against an empty local D1.
  */
@@ -34,6 +34,12 @@ export async function ensureCreditWalletTestSchema(db: D1Database) {
 	updated_at TEXT NOT NULL,
 	PRIMARY KEY (user_id, month, meter)
 )`,
+		`CREATE TABLE IF NOT EXISTS credit_debit_cursor (
+	singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1),
+	position TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+)`,
+		`INSERT OR IGNORE INTO credit_debit_cursor (singleton, position) VALUES (1, '')`,
 	]
 	for (const statement of statements) {
 		await db.prepare(statement).run()

@@ -245,10 +245,13 @@ list). Every other wallet advances progress without a charge, so a later top-up
 never back-charges. The balance can dip below $0 by about an hour of unlocked
 usage; it stays locked until a top-up covers it. Debit ledger ids are
 deterministic per starting position, so an overlapping run rolls back instead of
-charging twice. A new wallet starts its progress at the billable units of both
-months the lane settles (prior and current). CPU, Durable Object duration,
-RunLog rows, and email are not debited. Nobody is invoiced for overage; the
-retired `compute_overage_invoices` table is history only.
+charging twice. A new wallet, and a top-up or admin grant that funds an empty
+wallet, advance progress to the billable units already in the rollups for both
+months the lane settles (prior and current), so credits never pay for usage from
+while the wallet was empty. The sweep is bounded per run; `credit_debit_cursor`
+keeps its keyset position so later runs reach every wallet. CPU, Durable Object
+duration, RunLog rows, and email are not debited. Nobody is invoiced for
+overage; the retired `compute_overage_invoices` table is history only.
 
 **Top-ups.** `POST /account/credits/top-up.json` (Pro only) opens a one-off
 Checkout Session (`mode=payment`, `price_data`, card saved with

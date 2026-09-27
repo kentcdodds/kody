@@ -15,6 +15,9 @@
 -- `credit_debit_progress` records how many billable units above the
 -- include each meter has already accounted for this month. `meter` is
 -- open TEXT so CPU (then storage/email) can join without a rebuild.
+-- `credit_debit_cursor` is the platform-owned keyset position of the
+-- bounded hourly debit sweep (last processed wallet user_id), so every
+-- wallet is reached across runs.
 
 ALTER TABLE users ADD COLUMN stripe_credits_eligible INTEGER NOT NULL DEFAULT 0
 	CHECK (stripe_credits_eligible IN (0, 1));
@@ -69,3 +72,11 @@ CREATE TABLE credit_debit_progress (
 	updated_at TEXT NOT NULL,
 	PRIMARY KEY (user_id, month, meter)
 );
+
+CREATE TABLE credit_debit_cursor (
+	singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1),
+	position TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+
+INSERT INTO credit_debit_cursor (singleton, position) VALUES (1, '');
