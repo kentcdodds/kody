@@ -271,8 +271,8 @@ export function PricingRoute(handle: Handle) {
 						Prepaid credits
 					</h3>
 					<p mix={css(limitsFootnoteCss)}>
-						Add credits on Pro to lift rate caps and stock/concurrency ceilings
-						toward Max. Usage above the monthly include debits{' '}
+						Add credits on Pro to lift rate caps and stock/concurrency ceilings.
+						Usage above the monthly include debits{' '}
 						{creditDebitRates.unique_worker_days.label} and{' '}
 						{creditDebitRates.durable_object_rows_read.label}. No overage
 						invoices.

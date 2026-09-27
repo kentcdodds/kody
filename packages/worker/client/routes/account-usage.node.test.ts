@@ -199,17 +199,23 @@ test('warning credits links only on limits credits can raise', () => {
 		'outbound_fetches_per_day',
 		'job_runs_per_day',
 		'automation_invocations_per_day',
+		'repos',
+		'saved_packages',
+		'scheduled_jobs',
+		'repo_sessions',
+		'secrets',
+		'storage_bytes',
+		'concurrent_workflows',
 		'unique_worker_days',
 		'durable_object_rows_read',
 	]) {
 		expect(warningOffersCredits(resource)).toBe(true)
 	}
 	for (const resource of [
-		'saved_packages',
-		'secrets',
 		'email_sends_per_day',
-		'storage_bytes',
-		'concurrent_workflows',
+		'email_receives_per_day',
+		'stored_email_messages',
+		'email_message_bytes',
 	]) {
 		expect(warningOffersCredits(resource)).toBe(false)
 	}
