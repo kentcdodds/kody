@@ -88,6 +88,25 @@ test('control-kody parses commands, maps every required route, and drives a seed
 	expect(
 		parseControlArgs([
 			'request',
+			'POST',
+			'/account/secrets.json',
+			'400',
+			'{"action":"add","scope":"user","name":"badSeed","value":"unused"}',
+		]).request,
+	).toEqual({
+		method: 'POST',
+		path: '/account/secrets.json',
+		expectedStatus: 400,
+		body: {
+			action: 'add',
+			scope: 'user',
+			name: 'badSeed',
+			value: 'unused',
+		},
+	})
+	expect(
+		parseControlArgs([
+			'request',
 			'GET',
 			'/account/waiting',
 			'--dump',
