@@ -153,7 +153,7 @@ export async function loadAccountCreditsData(input: {
 				ladder: user.entitlement.ladder,
 				creditWallet: user.entitlement.creditWallet,
 				now,
-			}),
+			}).catch(() => null),
 		])
 	const configured = isBillingConfigured(input.env)
 	const eligible = user.entitlement.creditWallet !== 'none'
@@ -186,7 +186,9 @@ export async function loadAccountCreditsData(input: {
 		notify: wallet.notify,
 		limits: listCreditsUnlockLimits(),
 		rates,
-		debitMeters: toCreditsDebitMeters(computeOverage.meters),
+		debitMeters: computeOverage
+			? toCreditsDebitMeters(computeOverage.meters)
+			: [],
 		recent: recent.map(toAccountCreditsLedgerItem),
 		...(input.notice ? { notice: input.notice } : {}),
 		...(input.error ? { error: input.error } : {}),
