@@ -20,6 +20,11 @@ import {
 	AccountPageHeader,
 } from '#client/routes/account-management-components.tsx'
 import { renderCreditsDebitRateCard } from '#client/routes/account-credits-rate-card.tsx'
+import {
+	renderActivityPanel,
+	renderCreditsAlarm,
+	renderIncludedComputePanel,
+} from '#client/routes/account-usage-story.tsx'
 import { RecordTable } from '#client/routes/record-table.tsx'
 import { requestProCheckout } from '#client/routes/billing-checkout.ts'
 import {
@@ -572,6 +577,7 @@ export function AccountCreditsRoute(handle: Handle) {
 		const customCents = parseDollarsToCents(customAmountText)
 		return (
 			<>
+				{renderCreditsAlarm(credits.creditsAlarm, { showAction: false })}
 				<AccountManagementPanel title="Balance">
 					<p
 						data-credits-balance
@@ -596,6 +602,13 @@ export function AccountCreditsRoute(handle: Handle) {
 				{credits.canBuyCredits
 					? renderPurchase(credits, settings, topUpDisabled, customCents)
 					: renderPurchaseUnavailable(credits)}
+
+				{renderActivityPanel(credits.activity)}
+
+				{renderIncludedComputePanel({
+					meters: credits.includedCompute,
+					summary: credits.includedComputeSummary,
+				})}
 
 				<AccountManagementPanel title="How far credits go">
 					<p mix={css(descriptionCss)}>
@@ -639,7 +652,9 @@ export function AccountCreditsRoute(handle: Handle) {
 					/>
 				</AccountManagementPanel>
 
-				{renderCreditsDebitRateCard(credits.debitMeters)}
+				{renderCreditsDebitRateCard(credits.debitMeters, {
+					pastIncludeNeedsAttention: !credits.hasCredits,
+				})}
 
 				<AccountManagementPanel title="Recent">
 					{credits.recent.length === 0 ? (

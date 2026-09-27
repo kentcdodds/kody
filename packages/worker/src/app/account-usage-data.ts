@@ -1,4 +1,5 @@
 import { parseStoredPlanName, parseStripePlanName } from '#universal/plans.ts'
+import { loadAccountUsageStory } from '#app/account-usage-story.ts'
 import {
 	computeOverageUsageWarningRows,
 	readAccountComputeOverage,
@@ -67,6 +68,17 @@ export async function loadAccountUsageData(input: {
 			now,
 		}),
 	])
+	const canBuyCredits =
+		entitlement.creditWallet !== 'none' && isPayingForCreditsPro(row)
+	const story = await loadAccountUsageStory({
+		db: input.env.APP_DB,
+		stableUserId: usageUserId,
+		plan: entitlement.plan,
+		creditWallet: entitlement.creditWallet,
+		canBuyCredits,
+		computeOverage,
+		now,
+	})
 
 	return {
 		ok: true,
@@ -81,8 +93,8 @@ export async function loadAccountUsageData(input: {
 			...snapshot.warnings.map(toAccountUsageRow),
 		],
 		computeOverage,
-		canBuyCredits:
-			entitlement.creditWallet !== 'none' && isPayingForCreditsPro(row),
+		canBuyCredits,
+		...story,
 	}
 }
 

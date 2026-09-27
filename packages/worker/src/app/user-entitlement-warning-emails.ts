@@ -13,6 +13,7 @@ import {
 	buildComputeOverageHowToReduce,
 	computeOverageIncludePercent,
 	computeOverageResourceVisibility,
+	computeOverageUnitLabels,
 	computeOverageWarningResourceLabels,
 	customerFacingComputeOverageMeters,
 	type ComputeOverageWarningResource,
@@ -28,6 +29,7 @@ import {
 	type UserEntitlementRow,
 } from '#worker/entitlements/service.ts'
 import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
+import { computeIncludeWarningPutsAccessAtRisk } from '#universal/usage-presentation.ts'
 
 const observeOnlyMetricPlaceholders = observeOnlyUsageEventTypes
 	.map(() => '?')
@@ -40,7 +42,11 @@ const observeOnlyMetricPlaceholders = observeOnlyUsageEventTypes
  * cadence. Failures here must not block the operator events.
  *
  * One email per crossing of 80% or 100% on a specific entitlement or
- * monthly Worker compute / Rows read include. Staying over the same
+ * monthly Worker compute / Rows read include. Include crossings only mail
+ * when they would stop runs (an empty purchasable-Pro wallet): Free and
+ * other wallet-less plans are never charged or stopped by those meters, and
+ * funded wallets get the low-balance / auto-refill cap mails instead.
+ * Staying over the same
  * threshold does not mail again. A later drop below that threshold, then a
  * climb back over it, is a new instance. Same-hour crossings of the same
  * kind still batch into one mail. Stock claims expire after 30 days unless
@@ -87,6 +93,8 @@ type WarningResource = {
 	percentOfLimit: number
 	whatCounts?: string
 	howToReduce?: string
+	/** Monthly include (not a hard cap); worded as include used, never >100%. */
+	include?: { unitLabel: string }
 }
 
 export type UserEntitlementWarningEmailResult =
@@ -241,6 +249,7 @@ async function warnOneUserIfNeeded(input: {
 			...('howToReduce' in item && item.howToReduce
 				? { howToReduce: item.howToReduce }
 				: {}),
+			...('include' in item && item.include ? { include: item.include } : {}),
 		}
 		if (item.percentOfLimit >= userEntitlementReachedThreshold) {
 			reached.push(warning)
@@ -659,6 +668,9 @@ async function readComputeOverageWarnings(input: {
 	entitlement: UserEntitlement
 	now: Date
 }): Promise<Array<WarningResource>> {
+	if (!computeIncludeWarningPutsAccessAtRisk(input.entitlement.creditWallet)) {
+		return []
+	}
 	const usage = await readMonthlyComputeUsage({
 		db: input.db,
 		stableUserId: input.stableUserId,
@@ -690,6 +702,7 @@ async function readComputeOverageWarnings(input: {
 			limit,
 			percentOfLimit,
 			whatCounts: computeOverageResourceVisibility[resource].whatCounts,
+			include: { unitLabel: computeOverageUnitLabels[resource] },
 			howToReduce: buildComputeOverageHowToReduce(
 				resource,
 				input.entitlement.plan,

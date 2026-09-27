@@ -72,19 +72,23 @@ function createKv() {
 	}
 }
 
+type TestUser = {
+	stable_user_id: string
+	email: string
+	plan: string
+	stripe_plan: string | null
+	entitlement_ladder?: string | null
+	stripe_credits_eligible?: number
+}
+
 function createDb(
-	users: Array<{
-		stable_user_id: string
-		email: string
-		plan: string
-		stripe_plan: string | null
-		entitlement_ladder?: string | null
-	}>,
+	users: Array<TestUser>,
 	rollups: Array<{ metric: string; event_count: number }> = [],
 	options: {
-		computeUwdUsers?: Array<(typeof users)[number]>
-		computeDorowsUsers?: Array<(typeof users)[number]>
-		activeUsers?: Array<(typeof users)[number]>
+		computeUwdUsers?: Array<TestUser>
+		computeDorowsUsers?: Array<TestUser>
+		activeUsers?: Array<TestUser>
+		creditBalanceMicroUsd?: number
 	} = {},
 ) {
 	return {
@@ -93,6 +97,14 @@ function createDb(
 			return {
 				bind(..._params: Array<unknown>) {
 					return this
+				},
+				async first<T>() {
+					if (normalized.includes('from credit_wallets')) {
+						return {
+							balance_micro_usd: options.creditBalanceMicroUsd ?? 0,
+						} as T
+					}
+					return null
 				},
 				async all<T>() {
 					if (
@@ -124,24 +136,20 @@ function createDb(
 }
 
 function createEnv(input: {
-	users: Array<{
-		stable_user_id: string
-		email: string
-		plan: string
-		stripe_plan: string | null
-		entitlement_ladder?: string | null
-	}>
+	users: Array<TestUser>
 	kv?: KVNamespace
 	rollups?: Array<{ metric: string; event_count: number }>
-	computeUwdUsers?: Array<(typeof input)['users'][number]>
-	computeDorowsUsers?: Array<(typeof input)['users'][number]>
-	activeUsers?: Array<(typeof input)['users'][number]>
+	computeUwdUsers?: Array<TestUser>
+	computeDorowsUsers?: Array<TestUser>
+	activeUsers?: Array<TestUser>
+	creditBalanceMicroUsd?: number
 }) {
 	return {
 		APP_DB: createDb(input.users, input.rollups, {
 			computeUwdUsers: input.computeUwdUsers,
 			computeDorowsUsers: input.computeDorowsUsers,
 			activeUsers: input.activeUsers,
+			creditBalanceMicroUsd: input.creditBalanceMicroUsd,
 		}),
 		APP_BASE_URL: 'https://kody.codes/',
 		CLOUDFLARE_ACCOUNT_ID: 'acct',
@@ -702,40 +710,45 @@ test('user entitlement warning infra edges: missing bindings, leftover claims, T
 	)
 })
 
-test('compute include crossings mail for Durable Object rows-read without charging copy', async () => {
+const emptyWalletProUser = {
+	stable_user_id: stableUserId,
+	email: 'compute@example.com',
+	plan: 'free',
+	stripe_plan: 'pro',
+	entitlement_ladder: 'public',
+	stripe_credits_eligible: 1,
+} satisfies TestUser
+
+test('compute include crossings mail an empty Pro wallet, worded as include used (never >100%)', async () => {
 	sendCloudflareEmail.mockClear()
 	const now = new Date('2026-07-25T12:00:00.000Z')
 	readAdminEntitlementConsumption.mockResolvedValue([])
 	const { kv, store } = createKv()
-	const env = createEnv({
-		users: [
-			{
-				stable_user_id: stableUserId,
-				email: 'compute@example.com',
-				plan: 'standard',
-				stripe_plan: 'standard',
-				entitlement_ladder: 'legacy',
-			},
-		],
+	const approachingEnv = createEnv({
+		users: [emptyWalletProUser],
 		kv,
 		rollups: [
 			{ metric: 'durable_object_rows_read', event_count: 4_500_000_000 },
 		],
 	})
 
-	const result = await sendUserEntitlementWarningEmails({ env, now })
+	const result = await sendUserEntitlementWarningEmails({
+		env: approachingEnv,
+		now,
+	})
 	expect(result).toEqual({
 		status: 'notified',
 		emailedUsers: 1,
 		emailsSent: 1,
 		warnedResources: 1,
 	})
-	expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
-	const payload = sendCloudflareEmail.mock.calls[0]?.[1] as {
+	const approaching = sendCloudflareEmail.mock.calls[0]?.[1] as {
 		text: string
 	}
-	expect(payload.text).toContain('Rows read')
-	expect(payload.text).not.toMatch(/unique worker day/i)
+	expect(approaching.text).toContain(
+		"Rows read — 90% of this month's include (4,500,000,000 of 5,000,000,000 rows read).",
+	)
+	expect(approaching.text).not.toMatch(/unique worker day|\bUWD\b|\bMax\b/i)
 	expect(
 		store.get(
 			userEntitlementWarningKvKey({
@@ -746,6 +759,106 @@ test('compute include crossings mail for Durable Object rows-read without chargi
 			}),
 		),
 	).toBe(String(now.getTime()))
+
+	sendCloudflareEmail.mockClear()
+	const reachedEnv = createEnv({
+		users: [emptyWalletProUser],
+		kv,
+		rollups: [{ metric: 'dynamic_worker_day', event_count: 3_600 }],
+	})
+	await sendUserEntitlementWarningEmails({
+		env: reachedEnv,
+		now: new Date('2026-07-25T13:00:00.000Z'),
+	})
+	expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
+	const reached = sendCloudflareEmail.mock.calls[0]?.[1] as {
+		text: string
+		html: string
+	}
+	expect(reached.text).toContain(
+		"Worker compute — this month's include is used up (3,600 of 350 worker-compute days).",
+	)
+	expect(reached.text).toContain(
+		'With no credits left, usage past the include stops.',
+	)
+	for (const body of [reached.text, reached.html]) {
+		expect(body).not.toMatch(/\b(?:1(?:0[1-9]|[1-9]\d)|[2-9]\d\d|\d{4,})%/)
+		expect(body).not.toMatch(/unique worker day/i)
+		expect(body).not.toMatch(/\bUWD\b|\bMax\b/)
+	}
+})
+
+test('Free, funded, and wallet-less plans never get Worker compute or Rows read include emails', async () => {
+	readAdminEntitlementConsumption.mockResolvedValue([])
+	const now = new Date('2026-07-25T12:00:00.000Z')
+	const rollups = [
+		{ metric: 'dynamic_worker_day', event_count: 517 },
+		{ metric: 'durable_object_rows_read', event_count: 900_000_000_000 },
+	]
+	for (const [user, creditBalanceMicroUsd] of [
+		[
+			{
+				stable_user_id: stableUserId,
+				email: 'danj@example.com',
+				plan: 'free',
+				stripe_plan: null,
+			},
+			0,
+		],
+		[{ ...emptyWalletProUser, email: 'funded@example.com' }, 20_000_000],
+		[
+			{
+				stable_user_id: stableUserId,
+				email: 'retired@example.com',
+				plan: 'standard',
+				stripe_plan: 'standard',
+				entitlement_ladder: 'legacy',
+			},
+			0,
+		],
+	] as const) {
+		sendCloudflareEmail.mockClear()
+		const { kv, store } = createKv()
+		const result = await sendUserEntitlementWarningEmails({
+			env: createEnv({ users: [user], kv, rollups, creditBalanceMicroUsd }),
+			now,
+		})
+		expect(result, user.email).toEqual({ status: 'no_warnings' })
+		expect(sendCloudflareEmail).not.toHaveBeenCalled()
+		expect([...store.keys()]).toEqual([])
+	}
+})
+
+test('Free still gets accurate execute-limit emails', async () => {
+	sendCloudflareEmail.mockClear()
+	readAdminEntitlementConsumption.mockResolvedValue([
+		consumptionRow({
+			resource: 'execute_calls_per_day',
+			label: 'Execute calls',
+			current: 150,
+			limit: 150,
+		}),
+	])
+	const { kv } = createKv()
+	const result = await sendUserEntitlementWarningEmails({
+		env: createEnv({
+			users: [
+				{
+					stable_user_id: stableUserId,
+					email: 'free-execute@example.com',
+					plan: 'free',
+					stripe_plan: null,
+				},
+			],
+			kv,
+			rollups: [{ metric: 'dynamic_worker_day', event_count: 517 }],
+		}),
+		now: new Date('2026-07-25T12:00:00.000Z'),
+	})
+	expect(result).toMatchObject({ status: 'notified', warnedResources: 1 })
+	const payload = sendCloudflareEmail.mock.calls[0]?.[1] as { text: string }
+	expect(payload.text).toContain('Execute calls — 150 of 150 (100%).')
+	expect(payload.text).not.toContain('Worker compute')
 })
 
 test('compute warning claims are scoped to the UTC month', async () => {
@@ -755,15 +868,7 @@ test('compute warning claims are scoped to the UTC month', async () => {
 	readAdminEntitlementConsumption.mockResolvedValue([])
 	const { kv, store } = createKv()
 	const env = createEnv({
-		users: [
-			{
-				stable_user_id: stableUserId,
-				email: 'compute-month@example.com',
-				plan: 'standard',
-				stripe_plan: 'standard',
-				entitlement_ladder: 'public',
-			},
-		],
+		users: [emptyWalletProUser],
 		kv,
 		rollups: [
 			{ metric: 'durable_object_rows_read', event_count: 4_500_000_000 },

@@ -27,6 +27,7 @@ import {
 	getPurchasablePlans,
 	isBillingConfigured,
 } from '#worker/billing/billing-config.ts'
+import { loadAccountUsageStory } from '#app/account-usage-story.ts'
 import { readAccountComputeOverage } from '#worker/billing/compute-overage-account.ts'
 import {
 	listCreditLedgerEntries,
@@ -162,6 +163,20 @@ export async function loadAccountCreditsData(input: {
 		])
 	const configured = isBillingConfigured(input.env)
 	const eligible = user.entitlement.creditWallet !== 'none'
+	const canBuyCredits = configured && user.canBuyCredits
+	const story = await loadAccountUsageStory({
+		db,
+		stableUserId: user.stableUserId,
+		plan: user.entitlement.plan,
+		creditWallet: user.entitlement.creditWallet,
+		canBuyCredits,
+		computeOverage,
+		now,
+		wallet: {
+			balanceMicroUsd: wallet.balanceMicroUsd,
+			autoRefill: { ...wallet.autoRefill, refilledThisMonthCents },
+		},
+	})
 	const rates = creditDebitMeters
 		.filter((meter) => isCustomerFacingComputeMeter(meter))
 		.map((meter) => ({
@@ -175,7 +190,7 @@ export async function loadAccountCreditsData(input: {
 		plan: user.entitlement.plan,
 		canSwitchToPro:
 			configured && getPurchasablePlans(input.env).includes('pro'),
-		canBuyCredits: configured && user.canBuyCredits,
+		canBuyCredits,
 		billingHref: '/account/billing',
 		balanceMicroUsd: wallet.balanceMicroUsd,
 		hasCredits: user.entitlement.creditWallet === 'funded',
@@ -195,6 +210,7 @@ export async function loadAccountCreditsData(input: {
 			? toCreditsDebitMeters(computeOverage.meters)
 			: [],
 		recent: recent.map(toAccountCreditsLedgerItem),
+		...story,
 		...(input.notice ? { notice: input.notice } : {}),
 		...(input.error ? { error: input.error } : {}),
 	}

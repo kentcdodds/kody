@@ -402,7 +402,15 @@ Durable Object rows-read allotment (Free 0.5B, Pro and retired Standard 5B,
 retired Pro 20B). Those two fields are the credit debit meters. They are not in
 `entitlementResources`, so `assertWithinEntitlement` does not hard-cut them.
 Hourly user warning emails cover approaching (80%) and reached (100%) includes
-for every plan, with `/account/credits` as the call to action. Usage above an
+only when crossing the include would stop runs: an empty purchasable-Pro wallet
+(`computeIncludeWarningPutsAccessAtRisk` in `universal/usage-presentation.ts`).
+Free and other wallet-less plans never get those mails (the include never
+charges or stops them), and funded wallets get the low-balance and auto-refill
+cap mails instead. `/account/credits` and `/account/usage` share the same
+framing from that module: activity (code executions and runs) first, included
+compute as a bar capped at 100% with past-include usage shown as dollars on
+credits, and one credits alarm only when the wallet or access is at risk. Free
+sees Worker compute and Rows read as informational counts only. Usage above an
 include debits a funded purchasable-Pro wallet, stops new compute on an empty
 one (`computeMeteringPolicy.pastIncludeWithEmptyCredits`), and is neither
 charged nor stopped on plans without a wallet

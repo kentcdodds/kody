@@ -274,7 +274,7 @@ export function buildComputeOverageCreditsGuidance(
 		case 'none':
 			if (plan === 'max') return ''
 			return plan === 'free'
-				? `Switch to Pro at ${accountCreditsPath} for a larger include and prepaid credits.`
+				? 'On Free this is informational: it never charges you or stops runs. Execute caps are your limit.'
 				: `Usage above the include is not charged on your plan. Switch to Pro at ${accountCreditsPath} to add credits.`
 		default: {
 			const exhaustive: never = creditWallet

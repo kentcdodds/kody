@@ -38,6 +38,7 @@ function createUsageTestDb(input: {
 	packageCount?: number
 	uniqueWorkerDays?: number
 	durableObjectRowsRead?: number
+	activity?: Record<string, number>
 	creditsEligible?: boolean
 	creditBalanceMicroUsd?: number
 	giftExpiresAt?: string
@@ -102,6 +103,11 @@ function createUsageTestDb(input: {
 											metric: 'durable_object_rows_read',
 											event_count: input.durableObjectRowsRead,
 										})
+									}
+									for (const [metric, count] of Object.entries(
+										input.activity ?? {},
+									)) {
+										results.push({ metric, event_count: count })
 									}
 									return { results }
 								}
@@ -287,13 +293,14 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 	expect(baseline?.computeOverage.meters).toHaveLength(2)
 })
 
-test('Free over compute includes is sent to /account/credits to switch to Pro, not charged', async () => {
+test('Free over compute includes stays informational: activity first, no warning, no alarm', async () => {
 	const now = new Date('2026-07-25T12:00:00.000Z')
 	const { db } = createUsageTestDb({
 		userId: 21,
 		email: 'usage-free-over@example.com',
 		plan: 'free',
-		uniqueWorkerDays: 60,
+		uniqueWorkerDays: 517,
+		activity: { execute: 140, job_run: 3 },
 	})
 	const data = await loadAccountUsageData({
 		env: withUsageEnv({ APP_DB: db }) as Env,
@@ -305,15 +312,28 @@ test('Free over compute includes is sent to /account/credits to switch to Pro, n
 		(meter) => meter.resource === 'unique_worker_days',
 	)
 	expect(workerCompute?.label).toBe('Worker compute')
-	expect(workerCompute?.overEightyPercent).toBe(true)
-	expect(workerCompute?.howToReduce).toMatch(
-		/Switch to Pro at \/account\/credits/,
+	expect(workerCompute?.howToReduce).toContain(
+		'On Free this is informational: it never charges you or stops runs.',
 	)
 	expect(workerCompute?.howToReduce).not.toMatch(/payment method|invoice/)
 	expect(workerCompute?.howToReduce).not.toMatch(/unique worker day/i)
 	expect(
 		data?.warnings.some((row) => row.resource === 'unique_worker_days'),
-	).toBe(true)
+	).toBe(false)
+	expect(data?.creditsAlarm).toBeNull()
+	expect(data?.activity.metrics.slice(0, 2)).toEqual([
+		{ metric: 'execute', label: 'Code executions', count: 140 },
+		{ metric: 'job_run', label: 'Job runs', count: 3 },
+	])
+	expect(data?.includedCompute[0]).toMatchObject({
+		resource: 'unique_worker_days',
+		informational: true,
+		barPercent: 0,
+		tone: 'calm',
+	})
+	expect(
+		JSON.stringify([data?.includedCompute, data?.includedComputeSummary]),
+	).not.toMatch(/\d{3,}%/)
 })
 
 test('retired Standard over compute includes is not charged and has no wallet', async () => {
@@ -362,6 +382,15 @@ test('purchasable Pro with credits runs past the include on credits; at $0 it st
 	expect(funded?.computeOverage.creditWallet).toBe('funded')
 	expect(funded?.computeOverage.creditsStatus).toBe('debiting_credits')
 	expect(funded?.computeOverage.creditsCostMicroUsd).toBe(50 * 4_000)
+	expect(funded?.creditsAlarm).toBeNull()
+	expect(funded?.includedCompute[0]).toMatchObject({
+		barPercent: 100,
+		tone: 'calm',
+		status: 'Include used · $0.20 on credits',
+	})
+	expect(
+		funded?.warnings.some((row) => row.resource === 'unique_worker_days'),
+	).toBe(false)
 	expect(currentFor(funded, 'execute_calls_per_day')?.limit).toBe(25_000)
 	expect(currentFor(funded, 'email_sends_per_day')?.limit).toBe(200)
 
@@ -384,6 +413,17 @@ test('purchasable Pro with credits runs past the include on credits; at $0 it st
 	expect(empty?.computeOverage.creditWallet).toBe('empty')
 	expect(empty?.computeOverage.creditsStatus).toBe('add_credits')
 	expect(empty?.canBuyCredits).toBe(true)
+	expect(empty?.creditsAlarm).toMatchObject({
+		kind: 'include_used_no_credits',
+		action: { label: 'Add credits', href: '/account/credits' },
+	})
+	expect(empty?.includedCompute[0]).toMatchObject({
+		barPercent: 100,
+		tone: 'attention',
+	})
+	expect(
+		empty?.warnings.some((row) => row.resource === 'unique_worker_days'),
+	).toBe(true)
 	expect(currentFor(empty, 'execute_calls_per_day')?.limit).toBe(500)
 	expect(currentFor(empty, 'execute_calls_per_day')?.howToReduce).toMatch(
 		/add credits at \/account\/credits to keep going past your include/,

@@ -1,5 +1,6 @@
 import { renderTransactionalEmail } from '#app/email/template.ts'
 import { type PlatformFeedbackOutcomeStatus } from '#worker/platform-feedback/types.ts'
+import { formatCappedPercent } from '#universal/usage-presentation.ts'
 
 /**
  * Copy for every transactional email, kept free of runtime dependencies so the
@@ -118,12 +119,12 @@ export function buildUserEntitlementWarningEmail(input: {
 		percentOfLimit: number
 		whatCounts?: string
 		howToReduce?: string
+		include?: { unitLabel: string }
 	}>
 }) {
 	const lines = input.warnings.map((warning) => {
-		const percent = Math.round(warning.percentOfLimit * 100)
 		const counts = [
-			`${warning.label} — ${warning.current.toLocaleString('en-US')} of ${warning.limit.toLocaleString('en-US')} (${percent}%).`,
+			formatEntitlementWarningCount(warning),
 			warning.whatCounts,
 			warning.howToReduce,
 		].filter((part): part is string => Boolean(part && part.trim()))
@@ -148,6 +149,25 @@ export function buildUserEntitlementWarningEmail(input: {
 		},
 		footnote: copy.footnote,
 	})
+}
+
+function formatEntitlementWarningCount(warning: {
+	label: string
+	current: number
+	limit: number
+	percentOfLimit: number
+	include?: { unitLabel: string }
+}) {
+	const current = warning.current.toLocaleString('en-US')
+	const limit = warning.limit.toLocaleString('en-US')
+	const percent = formatCappedPercent(warning.percentOfLimit)
+	if (!warning.include) {
+		return `${warning.label} — ${current} of ${limit} (${percent}).`
+	}
+	const counts = `${current} of ${limit} ${warning.include.unitLabel}`
+	return warning.percentOfLimit >= 1
+		? `${warning.label} — this month's include is used up (${counts}).`
+		: `${warning.label} — ${percent} of this month's include (${counts}).`
 }
 
 function entitlementWarningCopy(kind: UserEntitlementWarningKind) {

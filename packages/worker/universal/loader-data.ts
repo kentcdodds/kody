@@ -41,6 +41,11 @@ import {
 	type ComputeOverageWarningResource,
 } from '#universal/compute-overage.ts'
 import {
+	type AccountActivity,
+	type CreditsAlarm,
+	type IncludedComputeMeter,
+} from '#universal/usage-presentation.ts'
+import {
 	type AccountActivityStatusFilter,
 	type AccountActivitySurfaceFilter,
 	type AccountActivityTriageFilter,
@@ -2377,7 +2382,21 @@ export type AccountCreditsDebitMeter = {
 	estCreditsMicroUsd: number
 }
 
-export type AccountCreditsLoaderData = {
+/**
+ * Activity, included compute, and the credits alarm. `/account/credits` and
+ * `/account/usage` both render these so they tell one story.
+ */
+export type AccountUsageStoryData = {
+	/** This UTC month's code executions and runs (the primary busy signal). */
+	activity: AccountActivity
+	/** Worker compute + Rows read vs the monthly include, ready to render. */
+	includedCompute: Array<IncludedComputeMeter>
+	includedComputeSummary: string
+	/** Set only when the wallet or access is actually at risk. */
+	creditsAlarm: CreditsAlarm | null
+}
+
+export type AccountCreditsLoaderData = AccountUsageStoryData & {
 	ok: true
 	configured: boolean
 	/**
@@ -2476,7 +2495,7 @@ export type AccountUsageComputeOverage = {
 	creditsCostMicroUsd: number
 }
 
-export type AccountUsageLoaderData = {
+export type AccountUsageLoaderData = AccountUsageStoryData & {
 	ok: true
 	plan: AdminPlanName
 	manualPlan: AdminPlanName

@@ -37,6 +37,11 @@ accounts without prepaid credits (retired plans or gifted months), keep their
 daily and weekly caps instead — see [Pricing](https://kody.codes/pricing).
 Nobody is invoiced for overage.
 
+On Free, Worker compute past the include is informational: it never charges the
+account or stops runs, and Kody does not email about it. Execute caps are the
+Free limit. Do not spend execute calls diagnosing a high Worker compute count on
+Free; move repeated ad hoc work into packages or triggers instead.
+
 ## Surfaces
 
 The same meter is tagged with the surface that minted the isolate:

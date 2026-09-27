@@ -15,6 +15,7 @@ import {
 	type PlanName,
 } from '#universal/plans.ts'
 import { type AccountUsageComputeOverage } from '#universal/loader-data.ts'
+import { computeIncludeWarningPutsAccessAtRisk } from '#universal/usage-presentation.ts'
 import { readMonthlyComputeUsage } from './compute-overage-usage.ts'
 
 export type ComputeOverageUsageRow = {
@@ -97,9 +98,14 @@ export function toComputeOverageUsageRows(
 	}))
 }
 
+/**
+ * Monthly include rows that belong in usage warnings: only when crossing the
+ * include would stop runs (see {@link computeIncludeWarningPutsAccessAtRisk}).
+ */
 export function computeOverageUsageWarningRows(
 	overage: AccountUsageComputeOverage,
 ): Array<ComputeOverageUsageRow> {
+	if (!computeIncludeWarningPutsAccessAtRisk(overage.creditWallet)) return []
 	return toComputeOverageUsageRows(overage).filter(
 		(row) => row.overEightyPercent,
 	)

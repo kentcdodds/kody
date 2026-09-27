@@ -31,19 +31,20 @@ import {
 } from '#universal/styles/tokens.ts'
 import {
 	descriptionCss,
-	getAccentCalloutCss,
 	hoverMq,
 	primaryLinkCss,
 } from '#universal/styles/style-primitives.ts'
 import {
 	accountCreditsPath,
 	warningOffersCredits,
-	type ComputeIncludeCreditsStatus,
 } from '#universal/compute-overage.ts'
+import { formatCappedPercent } from '#universal/usage-presentation.ts'
+import { creditsActionForWallet } from '#client/routes/account-usage-shared.ts'
 import {
-	computeAccountUsageOverageNotice,
-	creditsActionForWallet,
-} from '#client/routes/account-usage-shared.ts'
+	renderActivityPanel,
+	renderCreditsAlarm,
+	renderIncludedComputePanel,
+} from '#client/routes/account-usage-story.tsx'
 
 const usageApiPath = '/account/usage.json'
 const billingPath = '/account/billing'
@@ -72,8 +73,7 @@ const entitlementGroupNotes: Partial<
 }
 
 function formatUsagePercent(value: number | null) {
-	if (value === null) return '—'
-	return `${Math.round(value * 100)}%`
+	return formatCappedPercent(value)
 }
 
 /** Whichever window is closer to its cap — daily or weekly — is what blocks. */
@@ -145,36 +145,6 @@ function formatUsageValue(resource: string, value: number) {
 		return formatBytes(value)
 	}
 	return formatIntegerNumber(value)
-}
-
-export function renderMeterCreditsStatus(
-	status: ComputeIncludeCreditsStatus,
-	canBuyCredits: boolean,
-) {
-	switch (status) {
-		case 'within_include':
-			return '—'
-		case 'debiting_credits':
-			return 'Debiting credits'
-		case 'add_credits':
-			return (
-				<a href={accountCreditsPath} mix={css(primaryLinkCss)}>
-					{canBuyCredits ? 'Add credits' : 'Subscribe to Pro'}
-				</a>
-			)
-		case 'switch_to_pro':
-			return (
-				<a href={accountCreditsPath} mix={css(primaryLinkCss)}>
-					Switch to Pro
-				</a>
-			)
-		case 'not_charged':
-			return 'Not charged'
-		default: {
-			const exhaustive: never = status
-			throw new Error(`Unknown credits status: ${String(exhaustive)}`)
-		}
-	}
 }
 
 function formatCurrentValue(item: AccountUsageEntitlementConsumption) {
@@ -419,13 +389,6 @@ export function AccountUsageRoute(handle: Handle) {
 		const groupedRows = usage
 			? groupEntitlementRows(usage.entitlementConsumption)
 			: []
-		const computeNotice = usage
-			? computeAccountUsageOverageNotice(
-					usage.computeOverage,
-					usage.plan,
-					usage.canBuyCredits,
-				)
-			: null
 		const warningAction = usage
 			? creditsActionForWallet(
 					usage.computeOverage.creditWallet,
@@ -433,17 +396,12 @@ export function AccountUsageRoute(handle: Handle) {
 					usage.canBuyCredits,
 				)
 			: null
-		const showMeterCredits = usage
-			? usage.computeOverage.meters.some(
-					(meter) => meter.creditsStatus !== 'within_include',
-				)
-			: false
 
 		return (
 			<AccountManagementShell busy={pending && usage !== null}>
 				<AccountPageHeader
 					title="Usage"
-					description="Plan limits, current consumption, and what counts toward each resource."
+					description="Activity, included compute, and plan limits: what counts and how close you are."
 					currentHref={currentHref}
 				/>
 				{message ? (
@@ -516,97 +474,17 @@ export function AccountUsageRoute(handle: Handle) {
 								) : null}
 							</p>
 						</AccountManagementPanel>
-						{computeNotice ? (
-							<div
-								mix={css(
-									getAccentCalloutCss({
-										accentColor:
-											computeNotice.tone === 'warn'
-												? chartColor.amber
-												: colors.primary,
-									}),
-								)}
-							>
-								<p
-									mix={css({
-										margin: 0,
-										fontWeight: typography.fontWeight.semibold,
-										color: colors.text,
-									})}
-								>
-									{computeNotice.title}
-								</p>
-								<p mix={css(descriptionCss)}>{computeNotice.body}</p>
-								{computeNotice.action ? (
-									<p mix={css({ margin: 0 })}>
-										<a
-											href={computeNotice.action.href}
-											mix={css(primaryLinkCss)}
-										>
-											{computeNotice.action.label}
-										</a>
-									</p>
-								) : null}
-							</div>
-						) : null}
-						<AccountManagementPanel
-							title="Monthly compute"
-							description="Worker compute and Rows read against this month's include. Execute and outbound fetches are hard daily and weekly caps. Durable Object duration is unmetered."
-						>
-							<RecordTable
-								mode="none"
-								ariaLabel="Monthly compute usage"
-								scrollHeight="none"
-								columns={[
-									{ key: 'resource', label: 'Resource', primary: true },
-									{ key: 'current', label: 'In use', align: 'end' },
-									{ key: 'include', label: 'Include', align: 'end' },
-									{ key: 'used', label: 'Used', align: 'end' },
-									...(showMeterCredits
-										? [
-												{
-													key: 'credits',
-													label: 'Credits',
-													align: 'end' as const,
-												},
-											]
-										: []),
-								]}
-								rows={usage.computeOverage.meters.map((item) => ({
-									id: item.resource,
-									cells: {
-										resource: (
-											<UsageResourceName
-												id={item.resource}
-												label={item.label}
-												whatCounts={item.whatCounts}
-												howToReduce={item.howToReduce}
-											/>
-										),
-										current: formatIntegerNumber(item.current),
-										include: formatIntegerNumber(item.include),
-										used: (
-											<span
-												mix={css(
-													item.overEightyPercent
-														? {
-																color: chartColor.amber,
-																fontWeight: typography.fontWeight.semibold,
-															}
-														: {},
-												)}
-											>
-												{formatUsagePercent(item.percentOfLimit)}
-											</span>
-										),
-										credits: renderMeterCreditsStatus(
-											item.creditsStatus,
-											usage.canBuyCredits,
-										),
-									},
-								}))}
-							/>
-						</AccountManagementPanel>
+						{renderCreditsAlarm(usage.creditsAlarm, { showAction: true })}
+						{renderActivityPanel(usage.activity, {
+							note:
+								usage.plan === 'free'
+									? 'Free is limited by daily and weekly execute caps, listed under Daily rates.'
+									: undefined,
+						})}
+						{renderIncludedComputePanel({
+							meters: usage.includedCompute,
+							summary: usage.includedComputeSummary,
+						})}
 						{usage.warnings.length > 0 ? (
 							<AccountManagementPanel
 								title={accountUsageWarningsPanelTitle(usage.warnings)}

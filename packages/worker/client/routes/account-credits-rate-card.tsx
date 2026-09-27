@@ -3,6 +3,7 @@ import { chartColor, formatIntegerNumber } from '#client/charts/chart-theme.ts'
 import { accountDisclosureCss } from '#client/routes/account-management-components.tsx'
 import { formatEstimatedCreditMicroUsd } from '#universal/credits.ts'
 import { type AccountCreditsDebitMeter } from '#universal/loader-data.ts'
+import { includeBarPercent } from '#universal/usage-presentation.ts'
 import {
 	colors,
 	radius,
@@ -13,6 +14,7 @@ import {
 /** Collapsed rate card for Worker compute + Rows read on `/account/credits`. */
 export function renderCreditsDebitRateCard(
 	meters: Array<AccountCreditsDebitMeter>,
+	options: { pastIncludeNeedsAttention: boolean },
 ) {
 	if (meters.length === 0) return null
 	return (
@@ -61,11 +63,9 @@ export function renderCreditsDebitRateCard(
 					</thead>
 					<tbody>
 						{meters.map((meter) => {
-							const barPercent = Math.min(
-								100,
-								Math.round(meter.percentOfInclude * 100),
-							)
-							const pastInclude = meter.pastInclude > 0
+							const barPercent = includeBarPercent(meter.percentOfInclude)
+							const attention =
+								options.pastIncludeNeedsAttention && meter.pastInclude > 0
 							return (
 								<tr key={meter.meter} data-credits-debit-meter={meter.meter}>
 									<th scope="row">
@@ -76,7 +76,7 @@ export function renderCreditsDebitRateCard(
 													mix={css({
 														...debitRateBarFillCss,
 														width: `${barPercent}%`,
-														background: pastInclude
+														background: attention
 															? chartColor.amber
 															: chartColor.blue,
 													})}

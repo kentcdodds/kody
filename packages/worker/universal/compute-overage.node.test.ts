@@ -96,7 +96,7 @@ test('credits status separates debiting, add credits, switch to Pro, and operato
 	).toBe('not_charged')
 })
 
-test('howToReduce points every non-operator account at /account/credits without invoicing copy', () => {
+test('howToReduce points wallet and retired accounts at /account/credits; Free stays informational', () => {
 	const empty = buildComputeOverageHowToReduce(
 		'unique_worker_days',
 		'pro',
@@ -113,9 +113,15 @@ test('howToReduce points every non-operator account at /account/credits without 
 	).toContain(
 		'charged from your credits at $0.002 per million rows read and stops when they run out',
 	)
-	expect(
-		buildComputeOverageHowToReduce('unique_worker_days', 'free', 'none'),
-	).toContain(`Switch to Pro at ${accountCreditsPath}`)
+	const free = buildComputeOverageHowToReduce(
+		'unique_worker_days',
+		'free',
+		'none',
+	)
+	expect(free).toContain(
+		'On Free this is informational: it never charges you or stops runs. Execute caps are your limit.',
+	)
+	expect(free).not.toContain(accountCreditsPath)
 	expect(
 		buildComputeOverageHowToReduce('unique_worker_days', 'standard', 'none'),
 	).toContain('not charged on your plan')

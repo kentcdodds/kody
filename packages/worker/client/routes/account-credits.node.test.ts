@@ -8,6 +8,12 @@ import { AccountCreditsRoute } from '#client/routes/account-credits.tsx'
 import { type SessionInfo } from '#client/session.ts'
 import { type AccountCreditsLoaderData } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
+import {
+	includedComputeSummary,
+	presentIncludedCompute,
+	resolveCreditsAlarm,
+	toAccountActivity,
+} from '#universal/usage-presentation.ts'
 
 const session: SessionInfo = {
 	email: 'jane@example.com',
@@ -43,10 +49,39 @@ const sampleDebitMeters: AccountCreditsLoaderData['debitMeters'] = [
 	},
 ]
 
+const pastIncludeFunded = presentIncludedCompute({
+	plan: 'pro',
+	creditWallet: 'funded',
+	meters: [
+		{ resource: 'unique_worker_days', current: 1_995, include: 350 },
+		{
+			resource: 'durable_object_rows_read',
+			current: 1_200_000_000,
+			include: 5_000_000_000,
+		},
+	],
+})
+
 function credits(
 	overrides: Partial<AccountCreditsLoaderData> = {},
 ): AccountCreditsLoaderData {
 	return {
+		activity: toAccountActivity({
+			month: '2026-09',
+			counts: {
+				execute: 4_812,
+				job_run: 96,
+				workflow_run: 12,
+				package_export: 310,
+			},
+		}),
+		includedCompute: pastIncludeFunded,
+		includedComputeSummary: includedComputeSummary({
+			plan: 'pro',
+			creditWallet: 'funded',
+			meters: pastIncludeFunded,
+		}),
+		creditsAlarm: null,
 		ok: true,
 		configured: true,
 		eligible: true,
@@ -261,4 +296,64 @@ test('credits copy never teaches that a balance unlocks higher limits or names M
 			.replaceAll(/<[^>]+>/g, ' ')
 		expect(text).not.toMatch(/unlock|lift|Higher limits|With \$0|\bMax\b/i)
 	}
+})
+
+const overHundredPercent = /\b(?:1(?:0[1-9]|[1-9]\d)|[2-9]\d\d|\d{4,})%/
+
+function visibleText(html: string) {
+	return html
+		.replaceAll(/<style[\s\S]*?<\/style>/g, ' ')
+		.replaceAll(/<script[\s\S]*?<\/script>/g, ' ')
+		.replaceAll(/<[^>]+>/g, ' ')
+}
+
+test('Pro past include: activity first, bar capped at 100%, calm dollars on credits, no alarm', async () => {
+	const html = await renderCreditsPage(credits())
+	const text = visibleText(html)
+	expect(html).toContain('Activity this month')
+	expect(html).toContain('Code executions')
+	expect(html).toContain('4,812')
+	expect(text).toContain('September 2026')
+	expect(text).toContain('Packages and triggers keep work warm')
+	expect(html).toContain('Included compute')
+	expect(html).toContain('data-included-compute-bar="100"')
+	expect(html).toContain('data-included-compute-tone="calm"')
+	expect(text).toContain('Include used · $6.58 on credits')
+	expect(text).toContain('1,995 of 350 worker-compute days included')
+	expect(text).toContain(
+		"Past this month's include, usage runs on credits: $6.58 so far.",
+	)
+	expect(html).not.toContain('data-credits-alarm')
+	expect(html.indexOf('Activity this month')).toBeLessThan(
+		html.indexOf('Included compute'),
+	)
+	expect(text).not.toMatch(overHundredPercent)
+	expect(text).not.toMatch(/unique worker day|\bUWD\b|\bMax\b|overage/i)
+})
+
+test('credits alarm shows only when the wallet is at risk past the include', async () => {
+	const pastIncludeEmpty = presentIncludedCompute({
+		plan: 'pro',
+		creditWallet: 'empty',
+		meters: [{ resource: 'unique_worker_days', current: 400, include: 350 }],
+	})
+	const html = await renderCreditsPage(
+		credits({
+			balanceMicroUsd: 0,
+			hasCredits: false,
+			includedCompute: pastIncludeEmpty,
+			creditsAlarm: resolveCreditsAlarm({
+				creditWallet: 'empty',
+				meters: pastIncludeEmpty,
+				balanceMicroUsd: 0,
+				canBuyCredits: true,
+				autoRefill: null,
+			}),
+		}),
+	)
+	expect(html).toContain('data-credits-alarm="include_used_no_credits"')
+	expect(html).toContain('Runs past the include are stopped')
+	expect(html).toContain('data-included-compute-tone="attention"')
+	expect(html).toContain('data-included-compute-bar="100"')
+	expect(visibleText(html)).not.toMatch(overHundredPercent)
 })

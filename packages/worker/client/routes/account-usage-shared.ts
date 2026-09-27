@@ -1,10 +1,6 @@
-import {
-	type AccountUsageComputeOverage,
-	type AdminPlanName,
-} from '#universal/loader-data.ts'
+import { type AdminPlanName } from '#universal/loader-data.ts'
 import { type CreditWalletState } from '#universal/plans.ts'
 import { accountCreditsPath } from '#universal/compute-overage.ts'
-import { formatMicroUsd } from '#universal/credits.ts'
 
 type CreditsAction = {
 	label: 'Add credits' | 'Switch to Pro' | 'Subscribe to Pro'
@@ -32,72 +28,6 @@ export function creditsActionForWallet(
 		default: {
 			const exhaustive: never = creditWallet
 			throw new Error(`Unknown credit wallet state: ${String(exhaustive)}`)
-		}
-	}
-}
-
-export function computeAccountUsageOverageNotice(
-	overage: AccountUsageComputeOverage,
-	plan: AdminPlanName,
-	canBuyCredits: boolean,
-): {
-	title: string
-	body: string
-	tone: 'info' | 'warn'
-	action: CreditsAction | null
-} | null {
-	const approaching = overage.meters.some(
-		(meter) => meter.overEightyPercent && meter.percentOfLimit < 1,
-	)
-	switch (overage.creditsStatus) {
-		case 'debiting_credits':
-			return {
-				title: 'Using credits',
-				body: `Usage past this month's include is charged from your credits: ${formatMicroUsd(overage.creditsCostMicroUsd)} so far. It stops if credits run out.`,
-				tone: 'info',
-				action: null,
-			}
-		case 'add_credits':
-			return {
-				title: "This month's include is used up",
-				body: canBuyCredits
-					? 'With no credits left, new runs past the include are stopped. Add credits to keep going.'
-					: 'With no credits left, new runs past the include are stopped. Subscribe to Pro to add credits.',
-				tone: 'warn',
-				action: creditsActionForWallet('empty', plan, canBuyCredits),
-			}
-		case 'switch_to_pro':
-			return {
-				title: "Over this month's include",
-				body:
-					plan === 'free'
-						? 'Switch to Pro for a larger include and prepaid credits.'
-						: 'Usage above the include is not charged on your plan. Switch to Pro to add credits.',
-				tone: 'warn',
-				action: { label: 'Switch to Pro', href: accountCreditsPath },
-			}
-		case 'not_charged':
-			return null
-		case 'within_include':
-			if (!approaching) return null
-			return {
-				title: 'Approaching compute includes',
-				body:
-					overage.creditWallet === 'funded'
-						? "You are over 80% of this month's Worker compute or Rows read include. Usage past it is charged from your credits."
-						: overage.creditWallet === 'empty'
-							? "You are over 80% of this month's Worker compute or Rows read include. With no credits, usage past it stops."
-							: "You are over 80% of this month's Worker compute or Rows read include.",
-				tone: 'info',
-				action: creditsActionForWallet(
-					overage.creditWallet,
-					plan,
-					canBuyCredits,
-				),
-			}
-		default: {
-			const exhaustive: never = overage.creditsStatus
-			throw new Error(`Unknown credits status: ${String(exhaustive)}`)
 		}
 	}
 }
