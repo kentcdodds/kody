@@ -552,7 +552,11 @@ test('granting manual Pro after admin eligibility still forgives locked-period u
 		eligible: false,
 		adminCreditsEligible: true,
 	})
-	await updateAdminUserPlan(env.APP_DB, { stableUserId: userId, plan: 'pro' })
+	await updateAdminUserPlan(env.APP_DB, {
+		stableUserId: userId,
+		plan: 'pro',
+		now,
+	})
 	expect((await entitlementFor(user)).creditWallet).toBe('funded')
 	await runCreditDebits({ env, now })
 	expect((await readCreditWallet(env.APP_DB, userId)).balanceMicroUsd).toBe(

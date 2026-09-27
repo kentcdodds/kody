@@ -371,7 +371,7 @@ export async function loadAdminUserByTarget(
  */
 export async function updateAdminUserPlan(
 	db: D1Database,
-	input: AdminUserTarget & { plan: PlanName | null },
+	input: AdminUserTarget & { plan: PlanName | null; now?: Date },
 ): Promise<AdminUserListItem | null> {
 	const existing = await loadAdminUserByTarget(db, input)
 	if (!existing) return null
@@ -381,6 +381,7 @@ export async function updateAdminUserPlan(
 	)
 	if (!existingRow) return null
 
+	const now = input.now ?? new Date()
 	const nextPlan = resolvePlanWrite(input.plan)
 	const stripePlan = parseStripePlanName(existingRow.stripe_plan)
 	const nextLadder = resolveEntitlementLadderAfterPaidAccessChange({
@@ -403,14 +404,14 @@ export async function updateAdminUserPlan(
 				plan: nextPlan,
 				entitlement_ladder: nextLadder,
 			},
-			now: new Date(),
+			now,
 		})
 	}
 	await db
 		.prepare(
 			`UPDATE users SET plan = ?, entitlement_ladder = ?, updated_at = ? WHERE id = ?`,
 		)
-		.bind(nextPlan, nextLadder, utcSqliteTimestamp(), existingRow.id)
+		.bind(nextPlan, nextLadder, utcSqliteTimestamp(now), existingRow.id)
 		.run()
 
 	return loadAdminUserByTarget(db, { stableUserId: existing.stableUserId })
