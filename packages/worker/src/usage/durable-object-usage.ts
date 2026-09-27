@@ -152,12 +152,14 @@ export function queueDurableObjectRowsRead(input: {
 		const rowsRead = Math.trunc(input.rowsRead)
 		const outcome = input.outcome ?? 'success'
 		if (!input.env.USAGE_EVENTS) {
-			void recordUsage(input.env, {
+			recordUsage(input.env, {
 				userId: input.userId,
 				eventType: input.eventType,
 				entityId: input.doClass,
 				eventCount: rowsRead,
 				outcome,
+			}).catch((error: unknown) => {
+				console.debug('durable-object-rows-read-failed', error)
 			})
 			return
 		}
