@@ -3,6 +3,13 @@ import { recordUsage } from './record-usage.ts'
 
 export const dynamicWorkerCpuEventType = 'dynamic_worker_cpu'
 
+/**
+ * Appended to the stable worker id for the Loader cache key of isolates that
+ * carry this tail. Bump it when the tail's WorkerCode contract changes so
+ * cached isolates pick up the new tail instead of keeping the old one.
+ */
+export const dynamicWorkerUsageTailLoaderIdSuffix = '-cpu1'
+
 export type DynamicWorkerUsageTailProps = {
 	userId: string
 	workerId: string
@@ -14,9 +21,11 @@ export type DynamicWorkerUsageTailProps = {
  * recording here adds no latency to the run. `cpuTime` is Cloudflare's own
  * per-invocation CPU measurement; wall time is never used as a CPU stand-in.
  * Props are identity only: `LOADER.get` keeps the first factory's WorkerCode
- * for a worker id, and the id already hashes the user. Zero CPU is still
+ * for a cache id, and the id already hashes the user. Zero CPU is still
  * recorded, so `event_count` doubles as tail delivery coverage against
- * `dynamic_worker_invoke` (tails are best-effort).
+ * `dynamic_worker_invoke` (tails are best-effort). `outcome` is the isolate's
+ * platform outcome (`exceededCpu`, `exception`, …), not the sandbox result:
+ * user code errors are caught inside `evaluate` and still trace as `ok`.
  */
 export class DynamicWorkerUsageTail extends WorkerEntrypoint<
 	Env,
@@ -47,7 +56,7 @@ export async function recordDynamicWorkerCpu(input: {
 		userId: input.props.userId,
 		eventType: dynamicWorkerCpuEventType,
 		entityId: input.props.workerId,
-		cpuMs: Math.round(cpuMs),
+		cpuMs,
 		durationMs: Number.isFinite(wallMs) ? Math.round(wallMs) : null,
 		outcome: input.event.outcome === 'ok' ? 'success' : 'error',
 	})

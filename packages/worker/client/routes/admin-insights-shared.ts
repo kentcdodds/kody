@@ -83,6 +83,7 @@ export const runtimeDurationMetricLabels: Record<AdminUsageMetric, string> = {
 	email_send: 'Email sends',
 	email_received: 'Email receives',
 	dynamic_worker_day: 'Unique worker-days',
+	dynamic_worker_cpu: 'Dynamic Worker CPU (Cloudflare-measured)',
 	durable_object_gb_seconds: 'Durable Object duration (GB-s)',
 	durable_object_rows_read: 'Durable Object rows read',
 	durable_object_platform_rows_read: 'Platform DO rows read (RunLog)',

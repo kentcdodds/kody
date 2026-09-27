@@ -24,7 +24,7 @@ test('records the platform cpuTime, with wall time only as duration', async () =
 			userId: 'user-1',
 			eventType: 'dynamic_worker_cpu',
 			entityId: 'dw_abc',
-			cpuMs: 13,
+			cpuMs: 12.6,
 			durationMs: 830,
 			outcome: 'success',
 		},

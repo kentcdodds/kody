@@ -11,7 +11,10 @@ import {
 } from '@kody-internal/shared/error-message.ts'
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { exports as workerExports } from 'cloudflare:workers'
-import { type DynamicWorkerUsageTailProps } from '#worker/usage/dynamic-worker-cpu.ts'
+import {
+	dynamicWorkerUsageTailLoaderIdSuffix,
+	type DynamicWorkerUsageTailProps,
+} from '#worker/usage/dynamic-worker-cpu.ts'
 import {
 	outboundFetchTimeoutMsForExecutor,
 	retrieverOutboundFetchDeniedMessage,
@@ -678,8 +681,15 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 					usageUserId && input.createUsageTail
 						? input.createUsageTail({ userId: usageUserId, workerId })
 						: null
+				// LOADER.get keeps the first WorkerCode cached for an id, so an
+				// isolate loaded without a tail would never gain one under the
+				// same id. Tailed isolates get their own cache id; metering keeps
+				// `workerId`.
+				const loaderId = usageTail
+					? `${workerId}${dynamicWorkerUsageTailLoaderIdSuffix}`
+					: workerId
 				const entrypoint = input.loader
-					.get(workerId, () =>
+					.get(loaderId, () =>
 						usageTail
 							? { ...workerOptions, tails: [usageTail] }
 							: workerOptions,

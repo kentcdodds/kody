@@ -20,6 +20,7 @@ const usageMetricSchema = z.enum([
 	'email_send',
 	'email_received',
 	'dynamic_worker_day',
+	'dynamic_worker_cpu',
 	'durable_object_gb_seconds',
 	'durable_object_rows_read',
 	'durable_object_platform_rows_read',
