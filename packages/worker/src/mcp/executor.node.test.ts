@@ -1660,7 +1660,8 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 			resource: 'unique_worker_days',
 		},
 	})
-	expect(computeOverageError.message).toMatch(/Dynamic Worker isolates/)
+	expect(computeOverageError.message).toMatch(/Worker compute/)
+	expect(computeOverageError.message).not.toMatch(/unique worker day/i)
 	expect(
 		getExecutionErrorDetails(new Error(computeOverageError.message)),
 	).toMatchObject({
