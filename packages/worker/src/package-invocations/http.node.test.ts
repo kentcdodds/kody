@@ -399,6 +399,7 @@ test('package invocation API validates requests and invokes exports with scoped 
 			topic: 'discord.message.created',
 		},
 		waitUntil: expect.any(Function),
+		signal: expect.any(AbortSignal),
 	})
 	expect(invokeResponse.status).toBe(200)
 	expect(ctx.waitUntil).toHaveBeenCalled()
