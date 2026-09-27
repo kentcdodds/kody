@@ -197,7 +197,7 @@ export function buildEntitlementHowToReduce(
 		)
 	}
 	const offer = creditsOffer
-		? `, or add credits at ${accountCreditsPath} to raise this limit.`
+		? `; credits at ${accountCreditsPath} raise this limit.`
 		: upgradeOffer
 	return `${howToReduce.slice(0, -1)}${offer}`
 }

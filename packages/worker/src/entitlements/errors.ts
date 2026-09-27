@@ -53,7 +53,7 @@ export function buildEntitlementUpgradeHint(
 		plan !== 'max' &&
 		creditWallet !== 'funded'
 	) {
-		return `${reduceGuidance.slice(0, -1)}, or add credits at ${accountCreditsPath} to raise this limit.`
+		return `${reduceGuidance.slice(0, -1)}; credits at ${accountCreditsPath} raise this limit.`
 	}
 	if (!hasHigherPublicPlan(plan)) return reduceGuidance
 	return `${reduceGuidance.slice(0, -1)}, or upgrade your plan at /account/billing.`

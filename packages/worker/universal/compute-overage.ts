@@ -201,7 +201,7 @@ function computeOverageCreditsGuidance(
 		case 'funded':
 			return `Usage above the include debits your credits at ${rate}.`
 		case 'empty':
-			return `Add credits at ${accountCreditsPath} to lift hard caps; usage above the include then debits ${rate}.`
+			return `Credits at ${accountCreditsPath} lift hard caps; usage above the include then debits ${rate}.`
 		case 'none':
 			if (plan === 'max') return ''
 			return plan === 'free'

@@ -264,10 +264,10 @@ test('entitlement limit messages always identify a known plan name', () => {
 test('rate/compute limit hints point at /account/credits until the wallet is unlocked', () => {
 	for (const plan of ['free', 'standard', 'pro'] as const) {
 		expect(buildEntitlementUpgradeHint('execute_calls_per_day', plan)).toMatch(
-			/add credits at \/account\/credits/,
+			/credits at \/account\/credits raise this limit/,
 		)
 		expect(buildEntitlementHowToReduce('job_runs_per_day', plan)).toMatch(
-			/add credits at \/account\/credits/,
+			/credits at \/account\/credits raise this limit/,
 		)
 		expect(
 			buildEntitlementUpgradeHint('execute_calls_per_day', plan),

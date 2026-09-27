@@ -384,7 +384,7 @@ test('purchasable Pro with credits shows unlocked limits and debits above the in
 	expect(empty?.canBuyCredits).toBe(true)
 	expect(currentFor(empty, 'execute_calls_per_day')?.limit).toBe(500)
 	expect(currentFor(empty, 'execute_calls_per_day')?.howToReduce).toMatch(
-		/add credits at \/account\/credits/,
+		/credits at \/account\/credits raise this limit/,
 	)
 })
 
@@ -405,4 +405,10 @@ test('gift Pro with an empty wallet cannot buy credits from the usage page', asy
 	expect(data?.plan).toBe('pro')
 	expect(data?.computeOverage.creditWallet).toBe('empty')
 	expect(data?.canBuyCredits).toBe(false)
+	for (const row of [
+		...(data?.entitlementConsumption ?? []),
+		...(data?.computeOverage.meters ?? []),
+	]) {
+		expect(row.howToReduce).not.toMatch(/add credits/i)
+	}
 })

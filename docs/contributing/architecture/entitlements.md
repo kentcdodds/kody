@@ -764,7 +764,10 @@ Rate limit example (Free, Pro with $0, retired plans):
 
 > Plan limit reached: your "pro" plan allows at most 500 execute calls per day
 > and you currently have 500. Remove or finish existing execute calls per day
-> you no longer need, or add credits at /account/credits to raise this limit.
+> you no longer need; credits at /account/credits raise this limit.
+
+The wording states what credits do rather than offering a purchase, because gift
+and referral Pro accounts have a wallet but must subscribe before buying.
 
 Stock limit example (Pro):
 
