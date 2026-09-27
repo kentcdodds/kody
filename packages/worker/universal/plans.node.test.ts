@@ -304,7 +304,6 @@ test('purchasable Pro has Max stock always; funded wallet unlocks rates only', (
 	expect(resolvePlanLimit('pro', 'storage_bytes', 'public', 'empty')).toBe(
 		100 * 1024 * 1024 * 1024,
 	)
-	// Concurrent workflows: provisional Max pending Kent empty-wallet guard.
 	expect(
 		resolvePlanLimit('pro', 'concurrent_workflows', 'public', 'empty'),
 	).toBe(200)

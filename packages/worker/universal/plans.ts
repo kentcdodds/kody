@@ -615,12 +615,8 @@ export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
  * Purchasable Pro ($12). Applied when the effective plan is `pro` and the
  * credit wallet is not `none` (purchasable Pro price or admin eligibility).
  *
- * Locked stock/concurrency fields match {@link planLimits.max}: repos,
- * packages, jobs, sessions, secrets, storage. Concurrent workflows are
- * currently also Max here as a provisional stand-in pending Kent's
- * empty-wallet guard pick (always-Max vs funded-only concurrency); do not
- * treat that field as product-final until that call lands.
- *
+ * Stock and concurrency match {@link planLimits.max} (repos, packages, jobs,
+ * sessions, secrets, storage, concurrent workflows) — empty or funded.
  * Rate/compute caps, email, UWD/DO includes (350 unique worker days, 5B
  * Durable Object rows read), and the job interval floor match the retired
  * public Standard table. A funded wallet raises only the rate/compute
@@ -634,7 +630,6 @@ export const proCreditsPlanLimits: PlanLimits = {
 	maxRepoSessions: planLimits.max.maxRepoSessions,
 	maxSecrets: planLimits.max.maxSecrets,
 	maxStorageBytes: planLimits.max.maxStorageBytes,
-	// Provisional: Max concurrency pending Kent empty-wallet guard (a/b/c).
 	maxConcurrentWorkflows: planLimits.max.maxConcurrentWorkflows,
 }
 
