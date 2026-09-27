@@ -110,9 +110,10 @@ export async function readCreditWallet(
 }
 
 /**
- * Create the wallet row on first use. The current month's debit progress
- * starts at the usage already above the include, so funding a wallet never
- * back-charges usage from before it existed.
+ * Create the wallet row on first use. Debit progress for every month the
+ * debit lane settles (prior and current UTC month) starts at the usage
+ * already above the include, so funding a wallet never back-charges usage
+ * from before it existed.
  */
 export async function ensureCreditWallet(input: {
 	db: D1Database
@@ -129,34 +130,47 @@ export async function ensureCreditWallet(input: {
 		.bind(input.userId, nowIso, nowIso)
 		.run()
 	if (!Number(created.meta.changes ?? 0)) return
-	const month = utcMonthKey(input.now)
-	const usage = await readMonthlyComputeUsage({
-		db: input.db,
-		stableUserId: input.userId,
-		month,
-	})
-	const overage = computeMonthlyOverage({
-		plan: input.entitlement.plan,
-		ladder: input.entitlement.ladder,
-		creditWallet: input.entitlement.creditWallet,
-		uniqueWorkerDays: usage.uniqueWorkerDays,
-		durableObjectRowsRead: usage.durableObjectRowsRead,
-	})
-	const billableByMeter = {
-		unique_worker_days: overage.billableUniqueWorkerDays,
-		durable_object_rows_read: overage.billableDurableObjectRowsRead,
-	} as const satisfies Record<CreditDebitMeter, number>
-	await input.db.batch(
-		creditDebitMeters.map((meter) =>
-			input.db
-				.prepare(
-					`INSERT OR IGNORE INTO credit_debit_progress
-						(user_id, month, meter, accounted_units, updated_at)
-					 VALUES (?, ?, ?, ?, ?)`,
-				)
-				.bind(input.userId, month, meter, billableByMeter[meter], nowIso),
+	const statements: Array<D1PreparedStatement> = []
+	for (const month of creditDebitMonths(input.now)) {
+		const usage = await readMonthlyComputeUsage({
+			db: input.db,
+			stableUserId: input.userId,
+			month,
+		})
+		const overage = computeMonthlyOverage({
+			plan: input.entitlement.plan,
+			ladder: input.entitlement.ladder,
+			creditWallet: input.entitlement.creditWallet,
+			uniqueWorkerDays: usage.uniqueWorkerDays,
+			durableObjectRowsRead: usage.durableObjectRowsRead,
+		})
+		const billableByMeter = {
+			unique_worker_days: overage.billableUniqueWorkerDays,
+			durable_object_rows_read: overage.billableDurableObjectRowsRead,
+		} as const satisfies Record<CreditDebitMeter, number>
+		for (const meter of creditDebitMeters) {
+			statements.push(
+				input.db
+					.prepare(
+						`INSERT OR IGNORE INTO credit_debit_progress
+							(user_id, month, meter, accounted_units, updated_at)
+						 VALUES (?, ?, ?, ?, ?)`,
+					)
+					.bind(input.userId, month, meter, billableByMeter[meter], nowIso),
+			)
+		}
+	}
+	await input.db.batch(statements)
+}
+
+/** UTC months the debit lane settles: the prior month, then the current. */
+export function creditDebitMonths(now: Date): [string, string] {
+	return [
+		utcMonthKey(
+			new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)),
 		),
-	)
+		utcMonthKey(now),
+	]
 }
 
 function isUniqueConstraintError(error: unknown) {

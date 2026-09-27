@@ -23,7 +23,6 @@
  *
  * After debits, the lane runs auto-refill and the low-balance notice.
  */
-import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import { computeMonthlyOverage } from '#universal/compute-overage.ts'
 import {
 	creditDebitCostMicroUsd,
@@ -39,6 +38,7 @@ import {
 } from '#worker/entitlements/service.ts'
 import { runCreditAutoRefill } from './credit-auto-refill.ts'
 import { sendCreditLowBalanceEmail } from '#app/user-account-emails.ts'
+import { creditDebitMonths } from './credit-wallet.ts'
 import { readMonthlyComputeUsage } from './compute-overage-usage.ts'
 
 export const creditDebitBatchSize = 50
@@ -68,18 +68,12 @@ export type CreditDebitRunResult = {
 	done: boolean
 }
 
-function previousUtcMonthKey(now: Date): string {
-	return utcMonthKey(
-		new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)),
-	)
-}
-
 export async function runCreditDebits(input: {
 	env: Env
 	now: Date
 }): Promise<CreditDebitRunResult> {
 	const db = input.env.APP_DB
-	const months = [previousUtcMonthKey(input.now), utcMonthKey(input.now)]
+	const months = creditDebitMonths(input.now)
 	let startAfter = ''
 	let scanned = 0
 	let debitedUsers = 0

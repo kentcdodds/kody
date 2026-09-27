@@ -59,13 +59,14 @@ async function setRollup(input: {
 	userId: string
 	metric: 'dynamic_worker_day' | 'durable_object_rows_read'
 	count: number
+	month?: string
 }) {
 	await env.APP_DB.prepare(
 		`INSERT INTO usage_rollups (user_id, metric, month, event_count)
 		 VALUES (?, ?, ?, ?)
 		 ON CONFLICT (user_id, metric, month) DO UPDATE SET event_count = excluded.event_count`,
 	)
-		.bind(input.userId, input.metric, month, input.count)
+		.bind(input.userId, input.metric, input.month ?? month, input.count)
 		.run()
 }
 
@@ -219,8 +220,15 @@ test('debits charge only usage above the include, are idempotent, and never back
 		creditsEligible: true,
 	})
 	const userId = user.stableUserId
-	// Usage above the include before the wallet exists is never charged.
+	// Usage above the include before the wallet exists is never charged,
+	// including the prior month the lane still settles.
 	await setRollup({ userId, metric: 'dynamic_worker_day', count: 400 })
+	await setRollup({
+		userId,
+		metric: 'dynamic_worker_day',
+		count: 5_000,
+		month: '2026-08',
+	})
 	await ensureCreditWallet({
 		db: env.APP_DB,
 		userId,
