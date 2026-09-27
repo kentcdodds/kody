@@ -21,6 +21,7 @@ import {
 import { stampFirstMcpConnected } from '#worker/identity/activation-stamps.ts'
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { runWithDynamicWorkerEvaluationBudget } from '#worker/dynamic-worker-evaluation-budget.ts'
+import { runWithInboundRequestSignal } from './inbound-request-signal.ts'
 
 export type State = {
 	searchConversationIdsWithPreamble?: Array<string>
@@ -119,8 +120,10 @@ class MCPBase extends McpAgent<Env, State, Props> {
 		this.ctx.waitUntil(promise)
 	}
 	override async fetch(request: Request): Promise<Response> {
-		return runWithDynamicWorkerEvaluationBudget(
-			async () => await super.fetch(request),
+		return runWithInboundRequestSignal(request.signal, async () =>
+			runWithDynamicWorkerEvaluationBudget(
+				async () => await super.fetch(request),
+			),
 		)
 	}
 	requireDomain() {

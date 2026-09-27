@@ -1,5 +1,11 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
+	createPackageInvocationClientDisconnectedError,
+	isCallerDisconnectAbort,
+	packageInvocationClientDisconnectedErrorName,
+	packageInvocationStartedLog,
+} from '#worker/caller-disconnect.ts'
+import {
 	claimPackageInvocationRecord,
 	finishPackageInvocationRecord,
 	getPackageInvocationRecord,
@@ -286,6 +292,62 @@ export async function invokeSavedPackageModule(input: {
 		claimUpdatedAt: claim.claimUpdatedAt,
 		handle: claim.handle,
 	}
+	const startedLog = packageInvocationStartedLog(claimed.handle?.context.name)
+	let terminalFinishStarted = false
+	let disconnectResponse: ReturnType<typeof buildJsonErrorResponse> | null =
+		null
+	let disconnectFinish: Promise<void> | null = null
+	const finishForCallerDisconnect = () => {
+		const signal = input.signal
+		if (!signal || !isCallerDisconnectAbort(signal)) return
+		if (terminalFinishStarted) return
+		terminalFinishStarted = true
+		const error = createPackageInvocationClientDisconnectedError()
+		disconnectResponse = buildJsonErrorResponse({
+			status: 408,
+			code: packageInvocationClientDisconnectedErrorName,
+			message: error.message,
+			idempotencyKey: input.idempotencyKey,
+		})
+		const pending = finishPackageInvocationRecord({
+			env: input.env,
+			userId: input.actor.userId,
+			handle: claimed.handle,
+			invocationId: claimed.invocationId,
+			claimUpdatedAt: claimed.claimUpdatedAt,
+			ledgerStatus: 'failed',
+			responseJson: boundedResponseJson(disconnectResponse),
+			status: 'error',
+			logs: [startedLog],
+			error,
+			waitUntil: input.waitUntil,
+		}).then(
+			() => undefined,
+			(finishError: unknown) => {
+				console.warn(
+					'package invocation disconnect finish failed',
+					getErrorMessage(finishError),
+				)
+			},
+		)
+		disconnectFinish = pending
+		input.waitUntil?.(pending)
+	}
+	const onCallerDisconnect = () => {
+		finishForCallerDisconnect()
+	}
+	if (input.signal) {
+		if (input.signal.aborted) onCallerDisconnect()
+		else {
+			input.signal.addEventListener('abort', onCallerDisconnect, {
+				once: true,
+			})
+		}
+	}
+	if (terminalFinishStarted) {
+		if (disconnectFinish) await disconnectFinish
+		if (disconnectResponse) return disconnectResponse
+	}
 	const outcome = await runSavedPackageModuleOnce({
 		env: input.env,
 		baseUrl: input.baseUrl,
@@ -307,6 +369,13 @@ export async function invokeSavedPackageModule(input: {
 		signal: input.signal,
 		externalRunRecordHandle: claimed.handle,
 	})
+	input.signal?.removeEventListener('abort', onCallerDisconnect)
+	if (terminalFinishStarted) {
+		if (disconnectFinish) await disconnectFinish
+		if (disconnectResponse) return disconnectResponse
+	}
+	const logsWithStartedLine = (logs: Array<string>) =>
+		logs.includes(startedLog) ? logs : [startedLog, ...logs]
 	switch (outcome.kind) {
 		case 'artifact-unavailable':
 		case 'pre-execution-denied': {
@@ -384,7 +453,7 @@ export async function invokeSavedPackageModule(input: {
 					ledgerStatus: 'failed',
 					responseJson: boundedResponseJson(outcome.response),
 					status: 'error',
-					logs: outcome.logs,
+					logs: logsWithStartedLine(outcome.logs),
 					error: outcome.error,
 					waitUntil: input.waitUntil,
 				})

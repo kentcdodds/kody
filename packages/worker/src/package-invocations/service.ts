@@ -113,6 +113,8 @@ export async function invokePackageExport(input: {
 	ephemeral?: boolean
 	/** Sandbox wall-clock budget; omit for the default ~90s export cap. */
 	executorTimeoutMs?: number | null
+	/** Inbound request abort. Caller disconnect finishes the keyed run. */
+	signal?: AbortSignal
 }): Promise<PackageInvocationResponse> {
 	return await invokePackageExportWithToolFactories({
 		...input,

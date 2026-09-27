@@ -87,7 +87,15 @@ export function createFakeRunLog(
 		string,
 		{ milestone: string; reachedAt: string; packageId: string | null }
 	>()
+	const runLogs = new Map<string, Array<string>>()
 	const clone = <T>(value: T): T => structuredClone(value)
+	const logMessage = (entry: unknown) => {
+		if (typeof entry === 'string') return entry
+		if (entry && typeof entry === 'object' && 'message' in entry) {
+			return String((entry as { message: unknown }).message)
+		}
+		return String(entry)
+	}
 	const findByKey = (key: {
 		tokenId: string
 		packageId: string
@@ -109,6 +117,7 @@ export function createFakeRunLog(
 			>
 			staleBefore: string
 			run: Record<string, unknown> | null
+			initialLogs?: Array<unknown>
 		}) {
 			if (options.failClaim) throw new Error('RunLog unavailable')
 			const now = new Date().toISOString()
@@ -123,10 +132,9 @@ export function createFakeRunLog(
 				}
 				existing.updatedAt = now
 				if (input.run) {
-					runRows.set(
-						String(input.run['id']),
-						clone({ ...input.run, invocationId: existing.id }),
-					)
+					const runId = String(input.run['id'])
+					runRows.set(runId, clone({ ...input.run, invocationId: existing.id }))
+					runLogs.set(runId, (input.initialLogs ?? []).map(logMessage))
 				}
 				return {
 					outcome: 'claimed' as const,
@@ -143,10 +151,12 @@ export function createFakeRunLog(
 				updatedAt: now,
 			})
 			if (input.run) {
+				const runId = String(input.run['id'])
 				runRows.set(
-					String(input.run['id']),
+					runId,
 					clone({ ...input.run, invocationId: input.invocation.id }),
 				)
+				runLogs.set(runId, (input.initialLogs ?? []).map(logMessage))
 			}
 			return {
 				outcome: 'claimed' as const,
@@ -188,7 +198,9 @@ export function createFakeRunLog(
 				ledgerUpdated = true
 			}
 			if (input.run) {
-				const previous = runRows.get(String(input.run['id']))
+				const runId = String(input.run['id'])
+				runLogs.set(runId, input.logs.map(logMessage))
+				const previous = runRows.get(runId)
 				const previousStatus =
 					previous && typeof previous['status'] === 'string'
 						? String(previous['status'])
@@ -330,6 +342,7 @@ export function createFakeRunLog(
 		},
 		ledgerRows,
 		runRows,
+		runLogs,
 		corruptStoredResponses() {
 			for (const row of ledgerRows) {
 				row.responseJson = '{"status":200,"body":null}'

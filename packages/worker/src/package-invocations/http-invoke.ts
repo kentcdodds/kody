@@ -217,6 +217,8 @@ export async function invokePackageExportWithToolFactories(input: {
 	 */
 	ephemeral?: boolean
 	executorTimeoutMs?: number | null
+	/** Inbound request abort. Caller disconnect finishes the keyed run. */
+	signal?: AbortSignal
 }): Promise<PackageInvocationResponse> {
 	const packageIdOrKodyId = input.request.packageIdOrKodyId.trim()
 	if (!packageIdOrKodyId) {
@@ -296,6 +298,7 @@ export async function invokePackageExportWithToolFactories(input: {
 		toolFactories: input.toolFactories,
 		waitUntil: input.waitUntil,
 		executorTimeoutMs: input.executorTimeoutMs,
+		signal: input.signal,
 	}
 
 	if (!idempotencyKey) {

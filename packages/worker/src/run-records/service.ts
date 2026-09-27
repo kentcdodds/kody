@@ -1,4 +1,5 @@
 import { toJsonSafeValue } from '@kody-internal/shared/json-safe-value.ts'
+import { packageInvocationStartedLog } from '#worker/caller-disconnect.ts'
 import { runLogDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { type RunLogAdminInsightsSnapshot } from './admin-insights-snapshot.ts'
 import {
@@ -691,6 +692,20 @@ export async function claimPackageInvocationRecord(input: {
 		invocation: input.invocation,
 		staleBefore: input.staleBefore,
 		run,
+		// Same RPC as the running row: an isolate killed before finish still
+		// has a diagnostic line for Activity and runGet.
+		initialLogs: run
+			? [
+					{
+						sequence: 0,
+						level: 'info',
+						message: packageInvocationStartedLog(
+							input.context?.name ?? input.invocation.exportName,
+						),
+						fieldsJson: null,
+					},
+				]
+			: undefined,
 	})
 	if (claimed.outcome === 'existing') {
 		return claimed

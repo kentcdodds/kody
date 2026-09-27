@@ -158,11 +158,12 @@ workflows.
 
 ### Recovering from MCP client timeouts
 
-A timeout means Kody stopped observing the sandbox. Kody cooperatively aborts
-nested package work where the execution model allows it, but already-started
-remote work and side effects may still complete. Do not blindly retry a
-timed-out side-effecting call. The run is written to Activity when it finishes,
-so check **Recent runs** or `runList` before starting another sandbox.
+A timeout means the MCP client stopped waiting. Kody aborts that inbound
+request's sandbox, including a keyed package invocation nested under it, and
+finishes the run as `errorName=client_disconnected` with a log line. The attempt
+does not stay `running` until platform reconciliation. Already-started remote
+side effects may still complete. Do not blindly retry a timed-out side-effecting
+call. Check **Recent runs** or `runList` before starting another sandbox.
 
 Pass an optional **`idempotencyKey`** (string, max 256 characters) when the call
 must be recoverable:
@@ -176,10 +177,15 @@ must be recoverable:
   sandbox).
 - Retrying while the first attempt is still running returns
   **`inProgress: true`** with the **`runId`** (no duplicate start).
+- A caller disconnect finishes the run as **`errorName=client_disconnected`**.
+  Retrying the same key replays that error. Use a new idempotency key to run the
+  work again.
 - If a keyed run is stranded as `running` (for example the Worker isolate reset
   before the terminal write), Kody reconciles it to an error with
   **`errorName=platform_interrupted`** after a few minutes (platform weather;
-  outcome unknown — not a user-authored package failure). Polling **`runGet`**
+  outcome unknown — not a user-authored package failure). Keyed package
+  invocations write `package invocation started: …` onto the running row before
+  sandbox work, so that reconciled row is not an empty log. Polling **`runGet`**
   or retrying the same key then returns that terminal outcome instead of
   `inProgress` forever.
 

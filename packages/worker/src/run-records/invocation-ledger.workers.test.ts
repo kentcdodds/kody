@@ -550,3 +550,58 @@ test('account export pages runs first, then ledger rows, through one cursor; cle
 		}),
 	).toBeNull()
 })
+
+test('a keyed package invocation keeps its started log when the running row is later interrupted', async () => {
+	const userId = uniqueUserId('started-log')
+	const claimed = await claimPackageInvocationRecord({
+		env,
+		userId,
+		context: exportContext({
+			name: 'listUpcoming',
+			idempotencyKey: 'audit-listupcoming',
+		}),
+		invocation: claimInput({
+			exportName: './list-upcoming',
+			idempotencyKey: 'audit-listupcoming',
+		}),
+		staleBefore: freshStaleBefore(),
+	})
+	expect(claimed.outcome).toBe('claimed')
+	if (claimed.outcome !== 'claimed' || !claimed.handle) {
+		throw new Error('expected a claimed package invocation')
+	}
+	const running = await getRunRecord({
+		env,
+		userId,
+		runId: claimed.handle.id,
+	})
+	expect(running?.run.status).toBe('running')
+	expect(running?.logs.map((entry) => entry.message)).toEqual([
+		'package invocation started: listUpcoming',
+	])
+
+	const staleStartedAt = new Date(
+		Date.now() - runRecordStaleRunningTtlMsShortLived - 5_000,
+	).toISOString()
+	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	await runInDurableObject(stub, async (instance: RunLog, state) => {
+		expect(instance).toBeInstanceOf(RunLog)
+		state.storage.sql.exec(
+			`UPDATE runs SET started_at = ? WHERE id = ?`,
+			staleStartedAt,
+			claimed.handle?.id,
+		)
+	})
+	const interrupted = await getRunRecord({
+		env,
+		userId,
+		runId: claimed.handle.id,
+	})
+	expect(interrupted?.run).toMatchObject({
+		status: 'error',
+		errorName: runRecordPlatformInterruptedErrorName,
+	})
+	expect(interrupted?.logs.map((entry) => entry.message)).toEqual([
+		'package invocation started: listUpcoming',
+	])
+})

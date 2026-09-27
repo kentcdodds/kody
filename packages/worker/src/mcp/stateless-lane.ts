@@ -27,6 +27,7 @@ import {
 	type McpRegistrationAgent,
 } from './mcp-registration-agent.ts'
 import { runWithDynamicWorkerEvaluationBudget } from '#worker/dynamic-worker-evaluation-budget.ts'
+import { runWithInboundRequestSignal } from './inbound-request-signal.ts'
 
 const kodyMcpServerInfo = {
 	name: 'kody-mcp',
@@ -77,14 +78,16 @@ export async function handleStatelessMcpRequest(input: {
 			onerror: (error) => console.warn('mcp-stateless-lane-error', error),
 		},
 	)
-	return runWithDynamicWorkerEvaluationBudget(
-		async () =>
-			await handler.fetch(
-				request,
-				input.parsedBody === undefined
-					? undefined
-					: { parsedBody: input.parsedBody },
-			),
+	return runWithInboundRequestSignal(request.signal, () =>
+		runWithDynamicWorkerEvaluationBudget(
+			async () =>
+				await handler.fetch(
+					request,
+					input.parsedBody === undefined
+						? undefined
+						: { parsedBody: input.parsedBody },
+				),
+		),
 	)
 }
 

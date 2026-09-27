@@ -383,7 +383,7 @@ export async function handlePackageInvocationApiRequest(
 
 	let response: Awaited<ReturnType<typeof invokePackageExport>>
 	try {
-		response = await invokePackageExport({
+		const pending = invokePackageExport({
 			env,
 			baseUrl: getAppBaseUrl({
 				env,
@@ -399,7 +399,17 @@ export async function handlePackageInvocationApiRequest(
 				topic,
 			},
 			waitUntil: waitUntilFromExecutionContext(ctx),
+			signal: request.signal,
 		})
+		// Client disconnect cancels the request task. Keep the invocation
+		// alive long enough to write the terminal run row.
+		ctx?.waitUntil(
+			pending.then(
+				() => undefined,
+				() => undefined,
+			),
+		)
+		response = await pending
 	} catch (error) {
 		if (!(error instanceof AccountDeletionInProgressError)) throw error
 		return jsonResponse(

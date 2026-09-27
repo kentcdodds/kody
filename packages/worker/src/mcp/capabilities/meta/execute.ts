@@ -8,6 +8,7 @@ import {
 import { entitlementStructuredContent } from '#mcp/entitlement-metadata.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { getInboundRequestSignal } from '#mcp/inbound-request-signal.ts'
 import { runModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
@@ -221,7 +222,7 @@ export const executeCapability = defineDomainCapability(
 				serverTiming?: Array<{ name: string; durationMs: number }>
 			}
 			try {
-				result = await runModuleWithRegistry(
+				const execution = runModuleWithRegistry(
 					ctx.env,
 					callerContext,
 					args.code,
@@ -230,6 +231,7 @@ export const executeCapability = defineDomainCapability(
 						runRecordHandle: claimedRunHandle,
 						waitUntil: ctx.waitUntil,
 						reportProgress: ctx.reportProgress,
+						signal: getInboundRequestSignal(),
 						runRecord: {
 							surface: 'execute',
 							name: null,
@@ -239,6 +241,13 @@ export const executeCapability = defineDomainCapability(
 						},
 					},
 				)
+				ctx.waitUntil?.(
+					execution.then(
+						() => undefined,
+						() => undefined,
+					),
+				)
+				result = await execution
 			} catch (cause) {
 				if (claimedRunHandle) {
 					const current = await getRunRecord({

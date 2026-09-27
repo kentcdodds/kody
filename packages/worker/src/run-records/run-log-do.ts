@@ -1374,6 +1374,19 @@ class RunLogBase extends DurableObject<Env> {
 			`DELETE FROM run_logs WHERE run_id = ?`,
 			runId,
 		).run()
+		this.insertLogRows(runId, logs)
+	}
+
+	/**
+	 * Insert log rows for a run that has none yet (claim-time phase line).
+	 * Finish still replaces the set, so a completed attempt keeps sandbox logs.
+	 */
+	private insertInitialLogs(runId: string, logs: Array<RunLogEntryInput>) {
+		if (logs.length === 0) return
+		this.insertLogRows(runId, logs)
+	}
+
+	private insertLogRows(runId: string, logs: Array<RunLogEntryInput>) {
 		const kept = logs.slice(-runRecordMaxLogEntriesPerRun)
 		let insertRowsRead = 0
 		let insertRowsWritten = 0
@@ -2371,6 +2384,12 @@ class RunLogBase extends DurableObject<Env> {
 		staleBefore: string
 		/** Eager `running` run row for this attempt; `null` when the caller owns the run record (workflow-sourced invokes). */
 		run: RunLogRowInput | null
+		/**
+		 * Phase lines written with the running row. They survive an isolate
+		 * kill that never reaches finish; finish replaces them with the
+		 * attempt's terminal logs.
+		 */
+		initialLogs?: Array<RunLogEntryInput>
 	}): Promise<PackageInvocationClaimResult> {
 		const now = new Date().toISOString()
 		const existing = this.findInvocationLedgerRow(input.invocation)
@@ -2389,6 +2408,7 @@ class RunLogBase extends DurableObject<Env> {
 			)
 			if (input.run) {
 				this.insertRunningRun({ ...input.run, invocationId: existing.id })
+				this.insertInitialLogs(input.run.id, input.initialLogs ?? [])
 				await this.ensureRetentionAlarm()
 			}
 			return {
@@ -2421,6 +2441,7 @@ class RunLogBase extends DurableObject<Env> {
 				...input.run,
 				invocationId: input.invocation.id,
 			})
+			this.insertInitialLogs(input.run.id, input.initialLogs ?? [])
 			await this.ensureRetentionAlarm()
 		}
 		return {
@@ -3962,6 +3983,7 @@ export type RunLogRpc = DurableObjectPitrRpc & {
 		invocation: PackageInvocationClaimInput
 		staleBefore: string
 		run: RunLogRowInput | null
+		initialLogs?: Array<RunLogEntryInput>
 	}) => Promise<PackageInvocationClaimResult>
 	getPackageInvocation: (
 		input: PackageInvocationLedgerKey,

@@ -28,6 +28,7 @@ import {
 	validateDownstreamMcpContentBlocks,
 } from '#mcp/downstream-mcp-result.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
+import { getInboundRequestSignal } from '#mcp/inbound-request-signal.ts'
 import { runModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import { createProgressReporter, type McpToolCallExtra } from '#mcp/progress.ts'
@@ -427,7 +428,8 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 								})
 							: undefined
 						try {
-							return await runModuleWithRegistry(
+							const inboundSignal = getInboundRequestSignal()
+							const execution = runModuleWithRegistry(
 								env,
 								callerContext,
 								resolvedCode,
@@ -441,6 +443,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 									runRecordHandle: claimedRunHandle,
 									waitUntil,
 									reportProgress: reportProgress ?? undefined,
+									signal: inboundSignal,
 									runRecord: {
 										surface: 'execute',
 										name: null,
@@ -452,6 +455,16 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 									},
 								},
 							)
+							// Client disconnect cancels the request task. Keep
+							// the sandbox promise alive so its abort handler can
+							// finish the run record.
+							waitUntil?.(
+								execution.then(
+									() => undefined,
+									() => undefined,
+								),
+							)
+							return await execution
 						} catch (cause) {
 							// Bundling the caller-provided module (syntax errors,
 							// unresolved imports) throws before the sandbox runs;
