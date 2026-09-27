@@ -233,18 +233,17 @@ credits and auto-refill still require the purchasable Pro subscription
 (`isPayingForCreditsPro`).
 
 **Unlock.** Purchasable Pro (`proCreditsPlanLimits`) always includes Max stock
-for repos, saved packages, scheduled jobs, repo sessions, secrets, and storage
-bytes — empty or funded. Concurrent workflows are currently also Max on that
-base table as a **provisional** stand-in pending Kent's empty-wallet guard pick
-(always-Max vs funded-only concurrency; past-include hard-stop vs no guard).
-`funded` multiplies only the rate/compute limits in `creditsUnlockedLimitFields`
-(execute, outbound fetches, job runs, and automation invocations, daily and
-weekly) by `creditsUnlockMultiplier` (50), capped at the `max` daily ceilings
-(execute 25,000, outbound 80,000, job runs 40,000, automation 200,000; `max` has
-no weekly window). Email caps, UWD/DO includes (350 / 5B), and the job interval
+and concurrency (repos, saved packages, scheduled jobs, repo sessions, secrets,
+storage bytes, concurrent workflows) — empty or funded. `funded` multiplies only
+the rate/compute limits in `creditsUnlockedLimitFields` (execute, outbound
+fetches, job runs, and automation invocations, daily and weekly) by
+`creditsUnlockMultiplier` (50), capped at the `max` daily ceilings (execute
+25,000, outbound 80,000, job runs 40,000, automation 200,000; `max` has no
+weekly window). Email caps, UWD/DO includes (350 / 5B), and the job interval
 floor stay on the Standard base. Unlocking costs nothing; at $0 the Standard
 rate caps apply again (within the 60s enforcement cache) while Max stock
-remains.
+remains. Past-include UWD/DO usage still only debits a funded wallet
+(empty-wallet past-include hard-stop is a separate follow-up).
 
 **Debits.** The `usage_aggregation` lane runs `runCreditDebits`
 (`packages/worker/src/billing/credit-debits.ts`) right after it recomputes
