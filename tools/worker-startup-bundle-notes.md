@@ -206,3 +206,7 @@ runtime path if this budget is raised again.
 - `DynamicWorkerUsageTail` (Worker Loader CPU tail, `dynamic_worker_cpu`) is a
   loopback export on every executor surface, including platform: CI dry-run
   5_190_394 against the previous 5_190_000 budget. Reviewed ceiling 5_191_000.
+- Cloudflare-measured Durable Object duration on admin user usage (loader data,
+  `admin-user-usage` capability schema, measured-duration helpers) spills into
+  the platform entry: local dry-run 5_191_729 against the previous 5_191_000
+  budget. Reviewed ceiling 5_192_000.
