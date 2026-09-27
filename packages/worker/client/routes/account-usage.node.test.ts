@@ -48,7 +48,7 @@ function overage(
 			{
 				resource: 'unique_worker_days',
 				label: 'Worker compute',
-				whatCounts: 'Counts distinct worker isolates.',
+				whatCounts: 'Counts each distinct worker once per UTC day.',
 				howToReduce: 'Keep package code stable.',
 				current: 45,
 				include: 50,

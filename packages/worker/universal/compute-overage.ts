@@ -96,9 +96,9 @@ export const computeOverageResourceVisibility = {
 		group: 'monthly',
 		kind: 'counter',
 		whatCounts:
-			'Counts distinct worker isolates that run for you on a given UTC day, rolled up for the month. Reusing the same warm isolate typically does not add another day.',
+			'Counts each distinct worker used for your account once per UTC day, rolled up for the month. Reusing the same worker on the same UTC day does not add another unit.',
 		howToReduce:
-			'Keep package code stable so isolates stay warm. For ad hoc execute, reuse the same module graph and vary args via params. Consolidate one-off execute runs into saved packages or jobs.',
+			'Keep package code stable so the same worker stays warm. For ad hoc execute, reuse the same module graph and vary args via params. Consolidate one-off execute runs into saved packages or jobs.',
 	},
 	durable_object_rows_read: {
 		group: 'monthly',
