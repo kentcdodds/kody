@@ -136,7 +136,7 @@ test('wallet eligibility: only the purchasable Pro gets a wallet; retired plans 
 	).toBe(1_500)
 })
 
-test('balance > 0 unlocks 50× rate limits; debits to $0 re-block at the base cap', async () => {
+test('balance > 0 unlocks 50Ã rate limits; debits to $0 re-block at the base cap', async () => {
 	const user = await seedUser({
 		label: 'credits-unlock',
 		stripePlan: 'pro',
@@ -306,6 +306,67 @@ test('retired plans with a balance are never debited', async () => {
 	expect(
 		(await readCreditWallet(env.APP_DB, user.stableUserId)).balanceMicroUsd,
 	).toBe(10_000_000)
+})
+
+test('gift overlay usage above credits include is not back-charged on resubscribe', async () => {
+	const user = await seedUser({
+		label: 'credits-gift-resub',
+		stripePlan: 'pro',
+		creditsEligible: true,
+	})
+	await topUp({ userId: user.stableUserId, cents: 1_000 })
+	await setRollup({
+		userId: user.stableUserId,
+		metric: 'dynamic_worker_day',
+		count: 400,
+	})
+	await runCreditDebits({ env, now })
+	const afterPaid = await readCreditWallet(env.APP_DB, user.stableUserId)
+	// 400 − 350 = 50 billable days × $0.004 = 200_000 µUSD.
+	expect(afterPaid.balanceMicroUsd).toBe(10_000_000 - 200_000)
+
+	// Cancel purchasable Pro while a referral overlay is active.
+	await env.APP_DB.prepare(
+		`UPDATE users
+		 SET stripe_plan = NULL, stripe_credits_eligible = 0,
+		     referral_standard_credit_expires_at = ?
+		 WHERE stable_user_id = ?`,
+	)
+		.bind('2099-01-01T00:00:00.000Z', user.stableUserId)
+		.run()
+	expect(await entitlementFor(user)).toEqual({
+		plan: 'pro',
+		ladder: 'public',
+		creditWallet: 'none',
+	})
+	await setRollup({
+		userId: user.stableUserId,
+		metric: 'dynamic_worker_day',
+		count: 600,
+	})
+	await runCreditDebits({ env, now })
+	expect(
+		(await readCreditWallet(env.APP_DB, user.stableUserId)).balanceMicroUsd,
+	).toBe(afterPaid.balanceMicroUsd)
+
+	// Resubscribe with the remaining funded balance: gift-period days
+	// between 350 and 600 must stay forgiven.
+	await env.APP_DB.prepare(
+		`UPDATE users
+		 SET stripe_plan = 'pro', stripe_credits_eligible = 1,
+		     referral_standard_credit_expires_at = NULL
+		 WHERE stable_user_id = ?`,
+	)
+		.bind(user.stableUserId)
+		.run()
+	expect(await entitlementFor(user)).toMatchObject({
+		plan: 'pro',
+		creditWallet: 'funded',
+	})
+	await runCreditDebits({ env, now })
+	expect(
+		(await readCreditWallet(env.APP_DB, user.stableUserId)).balanceMicroUsd,
+	).toBe(afterPaid.balanceMicroUsd)
 })
 
 test('a replayed top-up credits once', async () => {
