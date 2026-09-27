@@ -98,11 +98,26 @@ export function installPlaywrightBrowsersUnzip(
 	return 0
 }
 
+export function isCloudAgentEnvironment(input: {
+	homeDir: string
+	agentSocketPath?: string
+}) {
+	const socket =
+		input.agentSocketPath ??
+		process.env.CURSOR_AGENT_SOCKET ??
+		'/run/cursor/api.sock'
+	return (
+		existsSync(socket) ||
+		existsSync(path.join(input.homeDir, '.cursor', 'agent-hooks'))
+	)
+}
+
 export function shouldInstallPlaywrightBrowsersWithUnzip(input: {
 	platform: string
 	githubActions: boolean
+	cloudAgent: boolean
 }) {
-	return input.platform === 'linux' && !input.githubActions
+	return input.platform === 'linux' && !input.githubActions && input.cloudAgent
 }
 
 function unzipCommandsForBrowser(input: {
@@ -133,14 +148,19 @@ function unzipCommandsForBrowser(input: {
 			label: `unzip ${input.browser.archiveName}`,
 		},
 		{
+			file: 'chmod',
+			args: ['+x', executablePath],
+			label: `chmod +x ${input.browser.executableRelativePath}`,
+		},
+		{
 			file: 'touch',
 			args: [path.join(dest, playwrightInstallationComplete)],
 			label: `touch ${playwrightInstallationComplete}`,
 		},
 		{
-			file: 'chmod',
-			args: ['+x', executablePath],
-			label: `chmod +x ${input.browser.executableRelativePath}`,
+			file: 'rm',
+			args: ['-f', zipPath],
+			label: `rm ${input.browser.archiveName}`,
 		},
 	]
 }

@@ -99,7 +99,7 @@ function formatMissingPlaywrightBrowsers(input: {
 	const destinations = [input.chromium, input.headlessShell]
 		.map((browser) => path.join(input.cacheRoot, browser.directory))
 		.join(' and ')
-	return `Playwright revision missing (${missingDirectories}). Required ${input.chromium.directory} and ${input.headlessShell.directory}. Do not run playwright install on this VM. Run npm run test:e2e:ensure (native unzip on Linux outside GitHub Actions) or unzip per docs/contributing/cloud-agents.md: curl ${downloads}, unzip into ${destinations}, touch ${playwrightInstallationComplete} in each directory, and chmod +x the chrome and chrome-headless-shell binaries.`
+	return `Playwright revision missing (${missingDirectories}). Required ${input.chromium.directory} and ${input.headlessShell.directory}. Do not run playwright install on this VM. Run npm run test:e2e:ensure (native unzip on Cloud Agent Linux) or unzip per docs/contributing/cloud-agents.md: curl ${downloads}, unzip into ${destinations}, chmod +x the chrome and chrome-headless-shell binaries, then touch ${playwrightInstallationComplete} in each directory.`
 }
 
 export function readChromiumRequirements(

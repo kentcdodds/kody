@@ -93,13 +93,13 @@ pushes. See the [setup index](./index.md) for the other setup pages.
 - `npm run test:e2e:run` ensures Playwright Chromium is installed before the
   suite starts, so `npm run validate` self-heals on a fresh machine.
 - Use `npm run test:e2e:install` when you want to prefetch Playwright browsers
-  ahead of time instead of waiting for the first E2E run. On Linux outside
-  GitHub Actions, `test:e2e:ensure` (which `test:e2e:install` now calls) uses
-  native `unzip` instead of `playwright install`, which hangs on Cloud Agent
-  kernels. CI caches `~/.cache/ms-playwright` and runs `test:e2e:ensure`, so a
-  lockfile-matching cache hit skips the download and never runs `apt-get`
-  (`--with-deps` is local-only; `apt-get update` can hang the E2E job past the
-  15-minute timeout).
+  ahead of time instead of waiting for the first E2E run. On Cloud Agent Linux,
+  `test:e2e:ensure` (the same script `test:e2e:install` runs) uses native
+  `unzip` because `playwright install` hangs on that kernel. Other machines
+  still run `playwright install` (`--with-deps` is local-only). CI caches
+  `~/.cache/ms-playwright` and runs `test:e2e:ensure`, so a lockfile-matching
+  cache hit skips the download and never runs `apt-get` (`apt-get update` can
+  hang the E2E job past the 15-minute timeout).
 - `npm run test:e2e:run` runs the Playwright suite through Nx and depends on a
   cached `worker:prepare-e2e-env` target for `.env` bootstrap plus an uncached
   `worker:prepare-playwright` target that checks the local Chromium install.

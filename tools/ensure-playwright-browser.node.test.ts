@@ -63,6 +63,7 @@ test('ensure skips install when the browsers.json revision markers already exist
 				browsersJsonPath,
 				platform: 'linux',
 				githubActions: false,
+				cloudAgent: true,
 			}),
 		).toBe(0)
 	} finally {
