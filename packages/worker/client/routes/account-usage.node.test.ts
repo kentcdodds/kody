@@ -10,6 +10,7 @@ import {
 	accountUsageWarningsPanelTitle,
 	computeAccountUsageOverageNotice,
 	creditsActionForWallet,
+	warningOffersCredits,
 	formatEntitlementUsedPercent,
 	hasReachedEntitlementLimit,
 	hotterUsagePercent,
@@ -131,6 +132,28 @@ test('credits action follows the wallet: add, switch, or nothing', () => {
 	})
 	expect(creditsActionForWallet('funded', 'pro')).toBeNull()
 	expect(creditsActionForWallet('none', 'max')).toBeNull()
+})
+
+test('warning credits links only on limits credits can raise', () => {
+	for (const resource of [
+		'execute_calls_per_day',
+		'outbound_fetches_per_day',
+		'job_runs_per_day',
+		'automation_invocations_per_day',
+		'unique_worker_days',
+		'durable_object_rows_read',
+	]) {
+		expect(warningOffersCredits(resource)).toBe(true)
+	}
+	for (const resource of [
+		'saved_packages',
+		'secrets',
+		'email_sends_per_day',
+		'storage_bytes',
+		'concurrent_workflows',
+	]) {
+		expect(warningOffersCredits(resource)).toBe(false)
+	}
 })
 
 test('hotterUsagePercent uses the closer of daily and weekly windows', () => {
