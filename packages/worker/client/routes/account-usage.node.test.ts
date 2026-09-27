@@ -12,6 +12,7 @@ import {
 	formatEntitlementUsedPercent,
 	hasReachedEntitlementLimit,
 	hotterUsagePercent,
+	renderMeterCreditsStatus,
 } from './account-usage.tsx'
 import {
 	computeAccountUsageOverageNotice,
@@ -161,6 +162,19 @@ test('gift and referral Pro accounts are sent to subscribe, not to add credits',
 	expect(
 		computeAccountUsageOverageNotice(overage({}), 'pro', false)?.action,
 	).toEqual({ label: 'Subscribe to Pro', href: '/account/credits' })
+})
+
+test('meter credits column offers the purchase the account can make', async () => {
+	const meterCell = (canBuyCredits: boolean) =>
+		renderToString(
+			jsx('span', {
+				children: renderMeterCreditsStatus('add_credits', canBuyCredits),
+			}),
+		)
+	expect(await meterCell(true)).toContain('>Add credits</a>')
+	const gift = await meterCell(false)
+	expect(gift).toContain('>Subscribe to Pro</a>')
+	expect(gift).not.toContain('Add credits')
 })
 
 test('warning credits links only on limits credits can raise', () => {

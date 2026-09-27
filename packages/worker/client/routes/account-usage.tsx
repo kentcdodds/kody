@@ -148,7 +148,10 @@ function formatUsageValue(resource: string, value: number) {
 	return formatIntegerNumber(value)
 }
 
-function renderMeterCreditsStatus(status: ComputeIncludeCreditsStatus) {
+export function renderMeterCreditsStatus(
+	status: ComputeIncludeCreditsStatus,
+	canBuyCredits: boolean,
+) {
 	switch (status) {
 		case 'within_include':
 			return '—'
@@ -157,7 +160,7 @@ function renderMeterCreditsStatus(status: ComputeIncludeCreditsStatus) {
 		case 'add_credits':
 			return (
 				<a href={accountCreditsPath} mix={css(primaryLinkCss)}>
-					Add credits
+					{canBuyCredits ? 'Add credits' : 'Subscribe to Pro'}
 				</a>
 			)
 		case 'switch_to_pro':
@@ -597,7 +600,10 @@ export function AccountUsageRoute(handle: Handle) {
 												{formatUsagePercent(item.percentOfLimit)}
 											</span>
 										),
-										credits: renderMeterCreditsStatus(item.creditsStatus),
+										credits: renderMeterCreditsStatus(
+											item.creditsStatus,
+											usage.canBuyCredits,
+										),
 									},
 								}))}
 							/>
