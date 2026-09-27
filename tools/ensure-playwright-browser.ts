@@ -1,6 +1,15 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import os from 'node:os'
 import { chromium } from '@playwright/test'
+import {
+	defaultPlaywrightBrowsersJsonPath,
+	inspectPlaywrightBrowsers,
+} from './control-kody/playwright-browsers.ts'
+import {
+	installPlaywrightBrowsersUnzip,
+	shouldInstallPlaywrightBrowsersWithUnzip,
+} from './install-playwright-browsers-unzip.ts'
 import { isExecutedDirectly, resolveLocalBinary } from './node-runtime.ts'
 
 export function playwrightChromiumInstallArgs(input: {
@@ -15,17 +24,39 @@ export function playwrightChromiumInstallArgs(input: {
 	return ['install', 'chromium', '--with-deps']
 }
 
-function ensurePlaywrightChromium() {
-	const browserExecutablePath = chromium.executablePath()
-	if (existsSync(browserExecutablePath)) {
-		console.log(
-			`Playwright Chromium already installed at ${browserExecutablePath}.`,
-		)
+export function ensurePlaywrightChromium(
+	input: {
+		homeDir?: string
+		browsersJsonPath?: string
+		platform?: string
+		githubActions?: boolean
+	} = {},
+) {
+	const homeDir = input.homeDir ?? os.homedir()
+	const browsersJsonPath =
+		input.browsersJsonPath ?? defaultPlaywrightBrowsersJsonPath(process.cwd())
+	const installed = inspectPlaywrightBrowsers({ homeDir, browsersJsonPath })
+	if (installed.ok) {
+		console.log(installed.detail)
 		return 0
 	}
 
+	if (
+		shouldInstallPlaywrightBrowsersWithUnzip({
+			platform: input.platform ?? process.platform,
+			githubActions:
+				input.githubActions ?? process.env.GITHUB_ACTIONS === 'true',
+		})
+	) {
+		console.log(
+			`${installed.detail} Using native unzip because playwright install hangs on this kernel.`,
+		)
+		return installPlaywrightBrowsersUnzip({ homeDir, browsersJsonPath })
+	}
+
+	const browserExecutablePath = chromium.executablePath()
 	const installArgs = playwrightChromiumInstallArgs({
-		githubActions: process.env.GITHUB_ACTIONS === 'true',
+		githubActions: input.githubActions ?? process.env.GITHUB_ACTIONS === 'true',
 	})
 	console.log(
 		`Installing Playwright Chromium for E2E tests (${installArgs.join(' ')})...`,
@@ -43,6 +74,12 @@ function ensurePlaywrightChromium() {
 		console.error(
 			'Playwright Chromium install completed, but the browser executable is still missing.',
 		)
+		return 1
+	}
+
+	const afterInstall = inspectPlaywrightBrowsers({ homeDir, browsersJsonPath })
+	if (!afterInstall.ok) {
+		console.error(afterInstall.detail)
 		return 1
 	}
 

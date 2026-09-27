@@ -23,8 +23,12 @@ partway through (around `libwidevinecdm.so`), and `UV_USE_IO_URING=0` does not
 stop it. The browser zip downloads fine; only the built-in extraction hangs.
 
 If browsers are ever missing (e.g. a Playwright version bump changes the
-revision), do **not** rely on `playwright install`. Instead download and extract
-manually with native `unzip`:
+revision), do **not** rely on `playwright install`. Run
+`npm run test:e2e:ensure`: on Linux outside GitHub Actions it downloads the
+`browsers.json` revision and extracts with native `unzip`
+(`tools/install-playwright-browsers-unzip.ts`). A Cloud Agent snapshot install
+should run that after `npm install` so a Playwright bump does not leave stale
+`chromium-1208` markers. To do the same steps by hand:
 
 1. Get the revision + Chrome-for-Testing version from
    `node_modules/playwright-core/browsers.json` and the CDN URL printed by

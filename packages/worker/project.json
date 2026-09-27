@@ -80,7 +80,11 @@
 		},
 		"prepare-playwright": {
 			"executor": "nx:run-commands",
-			"inputs": ["{workspaceRoot}/tools/ensure-playwright-browser.ts"],
+			"inputs": [
+				"{workspaceRoot}/tools/ensure-playwright-browser.ts",
+				"{workspaceRoot}/tools/install-playwright-browsers-unzip.ts",
+				"{workspaceRoot}/tools/control-kody/playwright-browsers.ts"
+			],
 			"options": {
 				"command": "npm run test:e2e:ensure"
 			}
