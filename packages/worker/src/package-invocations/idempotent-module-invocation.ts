@@ -36,7 +36,11 @@ import { type ensureModuleArtifact } from './module-artifacts.ts'
 import { runSavedPackageModuleOnce } from './module-execution.ts'
 import { buildJsonErrorResponse } from './responses.ts'
 import { buildSubscriptionInvocationRunMetadata } from './subscription-envelope.ts'
-import { boundedResponseJson, parseStoredResponse } from './repo.ts'
+import {
+	boundedResponseJson,
+	parseStoredResponse,
+	type PackageInvocationStoredResponse,
+} from './repo.ts'
 
 export const packageInvocationStaleAfterMs = 15 * 60 * 1000
 const packageInvocationPollIntervalMs = 100
@@ -294,8 +298,7 @@ export async function invokeSavedPackageModule(input: {
 	}
 	const startedLog = packageInvocationStartedLog(claimed.handle?.context.name)
 	let disconnectFinishSucceeded = false
-	let disconnectResponse: ReturnType<typeof buildJsonErrorResponse> | null =
-		null
+	let disconnectResponse: PackageInvocationStoredResponse | null = null
 	let disconnectFinish: Promise<void> | null = null
 	const finishForCallerDisconnect = () => {
 		const signal = input.signal
@@ -321,7 +324,20 @@ export async function invokeSavedPackageModule(input: {
 			error,
 			waitUntil: input.waitUntil,
 		}).then(
-			() => {
+			(finished) => {
+				if (!finished.ledgerUpdated) {
+					// Another terminal write won the fence. Replay that durable
+					// result instead of treating the local disconnect 408 as
+					// the stored response (same as completed/failed finishes).
+					disconnectResponse = finished.record
+						? resolveLedgerRecord(finished.record)
+						: buildJsonErrorResponse({
+								status: 500,
+								code: 'idempotency_response_unavailable',
+								message: 'Package invocation result lost its recovery claim.',
+								idempotencyKey: input.idempotencyKey,
+							})
+				}
 				disconnectFinishSucceeded = true
 			},
 			(finishError: unknown) => {

@@ -1518,3 +1518,104 @@ test('disconnect finish failure still allows a terminal ledger finish', async ()
 		consoleWarn.mockReset()
 	}
 })
+
+test('disconnect finish fence loss returns the durable ledger response', async () => {
+	const db = createDatabase()
+	seedPackageResolution()
+	const controller = new AbortController()
+	let sandboxEntered = false
+	const runRecords = await import('#worker/run-records/service.ts')
+	const realFinish = runRecords.finishPackageInvocationRecord
+	const winnerBody = {
+		ok: true,
+		result: { winner: true },
+		idempotency: { key: 'disconnect-fence-loss', replayed: false },
+	}
+	const finishSpy = vi
+		.spyOn(runRecords, 'finishPackageInvocationRecord')
+		.mockImplementationOnce(async (input) => {
+			// Simulate a competing terminal write winning the fence first.
+			await realFinish({
+				...input,
+				ledgerStatus: 'completed',
+				responseJson: JSON.stringify({
+					status: 200,
+					body: winnerBody,
+				}),
+				status: 'success',
+				result: { winner: true },
+				error: undefined,
+			})
+			return realFinish(input)
+		})
+	repoMockModule.runBundledModuleWithRegistry.mockImplementation(
+		async (
+			_env: unknown,
+			_caller: unknown,
+			_bundle: unknown,
+			_params: unknown,
+			options: { signal?: AbortSignal } | undefined,
+		) => {
+			sandboxEntered = true
+			const signal = options?.signal
+			await new Promise((_resolve, reject) => {
+				if (!signal) {
+					reject(new Error('expected the caller abort signal'))
+					return
+				}
+				if (signal.aborted) {
+					reject(signal.reason)
+					return
+				}
+				signal.addEventListener('abort', () => reject(signal.reason), {
+					once: true,
+				})
+			})
+			return { result: { late: true }, logs: ['should-not-win'] }
+		},
+	)
+
+	const request = {
+		packageIdOrKodyId: 'discord-gateway',
+		exportName: 'dispatch-message-created',
+		params: { content: 'hi' },
+		idempotencyKey: 'disconnect-fence-loss',
+	}
+	try {
+		const pending = invokePackageExport({
+			env: createEnv(db),
+			baseUrl: 'https://kody.dev',
+			token: createToken({}),
+			request,
+			signal: controller.signal,
+		})
+		await vi.waitFor(() => {
+			expect(sandboxEntered).toBe(true)
+		})
+		controller.abort()
+		const response = await pending
+		expect(response.status).toBe(200)
+		expect(response.body).toMatchObject({
+			ok: true,
+			result: { winner: true },
+			idempotency: { key: 'disconnect-fence-loss', replayed: true },
+		})
+		expect(response.status).not.toBe(408)
+
+		const replay = await invokePackageExport({
+			env: createEnv(db),
+			baseUrl: 'https://kody.dev',
+			token: createToken({}),
+			request,
+		})
+		expect(replay.status).toBe(200)
+		expect(replay.body).toMatchObject({
+			ok: true,
+			result: { winner: true },
+			idempotency: { key: 'disconnect-fence-loss', replayed: true },
+		})
+		expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+	} finally {
+		finishSpy.mockRestore()
+	}
+})
