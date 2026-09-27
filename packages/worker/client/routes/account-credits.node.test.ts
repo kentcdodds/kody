@@ -20,6 +20,29 @@ const session: SessionInfo = {
 	featureFlags: {} as SessionInfo['featureFlags'],
 }
 
+const sampleDebitMeters: AccountCreditsLoaderData['debitMeters'] = [
+	{
+		meter: 'unique_worker_days',
+		label: 'Worker compute',
+		unitRateLabel: '$0.004 per worker-compute day',
+		include: 350,
+		used: 1_995,
+		pastInclude: 1_645,
+		percentOfInclude: 1_995 / 350,
+		estCreditsMicroUsd: 6_580_000,
+	},
+	{
+		meter: 'durable_object_rows_read',
+		label: 'Rows read',
+		unitRateLabel: '$0.002 per million rows read',
+		include: 5_000_000_000,
+		used: 1_200_000_000,
+		pastInclude: 0,
+		percentOfInclude: 1_200_000_000 / 5_000_000_000,
+		estCreditsMicroUsd: 0,
+	},
+]
+
 function credits(
 	overrides: Partial<AccountCreditsLoaderData> = {},
 ): AccountCreditsLoaderData {
@@ -64,6 +87,7 @@ function credits(
 				label: '$0.002 per million rows read',
 			},
 		],
+		debitMeters: sampleDebitMeters,
 		recent: [
 			{
 				id: 'entry-1',
@@ -100,7 +124,7 @@ function renderCreditsPage(accountCredits: AccountCreditsLoaderData) {
 	)
 }
 
-test('eligible wallet shows balance, packs, limits, rates, and recent activity', async () => {
+test('eligible wallet shows balance, packs, limits, rate card, and recent activity', async () => {
 	const html = await renderCreditsPage(credits())
 	expect(html).toContain('$18.42')
 	expect(html).toContain('Higher limits are on.')
@@ -108,16 +132,30 @@ test('eligible wallet shows balance, packs, limits, rates, and recent activity',
 	expect(html).toContain('With $0')
 	expect(html).toContain('With credits')
 	expect(html).toContain('75,000')
-	expect(html).toContain(
+	expect(html).toContain('How credits are charged')
+	expect(html).toContain('data-credits-rate-card')
+	expect(html).toContain('<table')
+	expect(html).toContain('Worker compute')
+	expect(html).toContain('Rows read')
+	expect(html).toContain('$0.004 per worker-compute day')
+	expect(html).toContain('$0.002 per million rows read')
+	expect(html).toContain('Monthly include')
+	expect(html).toContain('Used this period')
+	expect(html).toContain('Past include')
+	expect(html).toContain('Est. credits this period')
+	expect(html).toContain('1,645')
+	expect(html).toContain('$6.58')
+	expect(html).not.toContain('unique worker day')
+	expect(html).not.toMatch(/\bUWD\b/)
+	expect(html).not.toMatch(/\bMax\b/)
+	expect(html).not.toContain(
 		'$0.004 per worker-compute day · $0.002 per million rows read',
 	)
-	expect(html).not.toContain('unique worker day')
 	expect(html).toContain('+$25.00')
 	expect(html).toContain('−$6.58')
 	expect(html).toContain('Worker compute (1,645)')
 	expect(html).toContain('Balance at or below $5')
 	expect(html).not.toContain('Hit monthly cap')
-	expect(html).not.toMatch(/\bMax\b/)
 })
 
 test('auto-refill on shows its settings, cap notices, and the card note', async () => {
@@ -155,6 +193,7 @@ test('ineligible accounts get one switch-to-Pro prompt', async () => {
 	expect(html).toContain('Credits are available on Pro.')
 	expect(html).toContain('Switch to Pro')
 	expect(html).not.toContain('With credits')
+	expect(html).not.toContain('How credits are charged')
 
 	const noCheckout = await renderCreditsPage(
 		credits({ eligible: false, plan: 'free', canSwitchToPro: false }),

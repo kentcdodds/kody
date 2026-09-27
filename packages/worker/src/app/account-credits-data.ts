@@ -1,10 +1,12 @@
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import {
+	type AccountCreditsDebitMeter,
 	type AccountCreditsLimit,
 	type AccountCreditsLoaderData,
 } from '#universal/loader-data.ts'
 import {
 	creditAutoRefillMinThresholdCents,
+	creditDebitCostMicroUsd,
 	creditDebitMeters,
 	creditDebitRates,
 	creditTopUpMaxCents,
@@ -25,6 +27,7 @@ import {
 	getPurchasablePlans,
 	isBillingConfigured,
 } from '#worker/billing/billing-config.ts'
+import { readAccountComputeOverage } from '#worker/billing/compute-overage-account.ts'
 import {
 	listCreditLedgerEntries,
 	readCreditWallet,
@@ -130,21 +133,36 @@ export async function loadAccountCreditsData(input: {
 	})
 	if (!user) return null
 	const db = input.env.APP_DB
-	const [wallet, refilledThisMonthCents, recent] = await Promise.all([
-		readCreditWallet(db, user.stableUserId),
-		sumCreditAutoRefillCents({
-			db,
-			userId: user.stableUserId,
-			month: utcMonthKey(now),
-		}),
-		listCreditLedgerEntries({
-			db,
-			userId: user.stableUserId,
-			limit: recentLedgerLimit,
-		}),
-	])
+	const [wallet, refilledThisMonthCents, recent, computeOverage] =
+		await Promise.all([
+			readCreditWallet(db, user.stableUserId),
+			sumCreditAutoRefillCents({
+				db,
+				userId: user.stableUserId,
+				month: utcMonthKey(now),
+			}),
+			listCreditLedgerEntries({
+				db,
+				userId: user.stableUserId,
+				limit: recentLedgerLimit,
+			}),
+			readAccountComputeOverage({
+				db,
+				stableUserId: user.stableUserId,
+				plan: user.entitlement.plan,
+				ladder: user.entitlement.ladder,
+				creditWallet: user.entitlement.creditWallet,
+				now,
+			}),
+		])
 	const configured = isBillingConfigured(input.env)
 	const eligible = user.entitlement.creditWallet !== 'none'
+	const rates = creditDebitMeters
+		.filter((meter) => isCustomerFacingComputeMeter(meter))
+		.map((meter) => ({
+			meter,
+			label: creditDebitRates[meter].label,
+		}))
 	return {
 		ok: true,
 		configured,
@@ -167,14 +185,41 @@ export async function loadAccountCreditsData(input: {
 		},
 		notify: wallet.notify,
 		limits: listCreditsUnlockLimits(),
-		rates: creditDebitMeters
-			.filter((meter) => isCustomerFacingComputeMeter(meter))
-			.map((meter) => ({
-				meter,
-				label: creditDebitRates[meter].label,
-			})),
+		rates,
+		debitMeters: toCreditsDebitMeters(computeOverage.meters),
 		recent: recent.map(toAccountCreditsLedgerItem),
 		...(input.notice ? { notice: input.notice } : {}),
 		...(input.error ? { error: input.error } : {}),
 	}
+}
+
+/**
+ * Rate-card rows for the credits page. Reuses the same meters as
+ * `/account/usage` — never invent a second path or a CPU debit.
+ */
+export function toCreditsDebitMeters(
+	meters: Array<{
+		resource: string
+		label: string
+		current: number
+		include: number
+		percentOfLimit: number
+	}>,
+): Array<AccountCreditsDebitMeter> {
+	const rows: Array<AccountCreditsDebitMeter> = []
+	for (const meter of meters) {
+		if (!isCustomerFacingComputeMeter(meter.resource)) continue
+		const pastInclude = Math.max(0, meter.current - meter.include)
+		rows.push({
+			meter: meter.resource,
+			label: meter.label,
+			unitRateLabel: creditDebitRates[meter.resource].label,
+			include: meter.include,
+			used: meter.current,
+			pastInclude,
+			percentOfInclude: meter.percentOfLimit,
+			estCreditsMicroUsd: creditDebitCostMicroUsd(meter.resource, pastInclude),
+		})
+	}
+	return rows
 }

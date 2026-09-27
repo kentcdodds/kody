@@ -2355,6 +2355,28 @@ export type AccountCreditsLedgerItem = {
 	createdAt: string
 }
 
+/**
+ * One credit-debit meter on `/account/credits` (rate card + this-period
+ * usage). Same meter path as `/account/usage`. Customer labels only
+ * (Worker compute / Rows read) — never UWD / Max jargon.
+ */
+export type AccountCreditsDebitMeter = {
+	meter: string
+	label: string
+	/** Published unit rate from `creditDebitRates`. */
+	unitRateLabel: string
+	/** Monthly include for the account's plan / wallet state. */
+	include: number
+	/** Usage this UTC month. */
+	used: number
+	/** Units past the include (billable when the wallet is funded). */
+	pastInclude: number
+	/** `used / include` (same as usage-page meter percent). */
+	percentOfInclude: number
+	/** Estimated credits for `pastInclude` at the published rate. */
+	estCreditsMicroUsd: number
+}
+
 export type AccountCreditsLoaderData = {
 	ok: true
 	configured: boolean
@@ -2395,7 +2417,10 @@ export type AccountCreditsLoaderData = {
 		lowBalance: boolean
 	}
 	limits: Array<AccountCreditsLimit>
+	/** Published debit rate labels (same as each debitMeters unitRateLabel). */
 	rates: Array<{ meter: string; label: string }>
+	/** Worker compute + Rows read rate card and this-period usage. */
+	debitMeters: Array<AccountCreditsDebitMeter>
 	recent: Array<AccountCreditsLedgerItem>
 	error?: string
 	notice?: string
