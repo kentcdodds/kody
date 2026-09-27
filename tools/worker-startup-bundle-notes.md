@@ -232,5 +232,5 @@ runtime path if this budget is raised again.
   `users.admin_credits_eligible`, and the shared `hasStoredCreditsEligibility`
   resolver, and `forgiveCreditUsageBeforeUnlock`): platform local dry-run
   5_210_356 against the previous 5_207_500 budget, reviewed ceiling 5_211_000;
-  runtime local dry-run 3_885_009 against the previous 3_882_500 budget,
+  runtime local dry-run 3_885_335 against the previous 3_882_500 budget,
   reviewed ceiling 3_886_000.

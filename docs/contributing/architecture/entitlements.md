@@ -225,10 +225,10 @@ returns `creditWallet` (`resolveCreditWalletState`): `none` unless the effective
 plan is `pro` and the account is eligible (the Pro price, admin eligibility, or
 the second-agent / referral Pro overlay on Free), then `funded` when
 `credit_wallets.balance_micro_usd > 0` and `empty` otherwise. Free, retired
-Standard/Pro and manual grants without admin eligibility, and `max`, are always
-`none`; an admin grant to them only holds a balance. Buying credits and
-auto-refill still require the purchasable Pro subscription
-(`isPayingForCreditsPro`).
+Standard, and `max` are always `none`. Retired Pro and manual `pro` grants are
+`none` unless admin-eligible. An admin grant to a `none` account only holds a
+balance. Buying credits and auto-refill still require the purchasable Pro
+subscription (`isPayingForCreditsPro`).
 
 **Unlock.** `funded` multiplies the rate/compute limits in
 `creditsUnlockedLimitFields` (execute, outbound fetches, job runs, and
