@@ -1,6 +1,5 @@
 import { type Handle, type RemixNode, css } from 'remix/ui'
 import { createDoubleCheck } from '#client/double-check.ts'
-import { on } from '#client/event-mixin.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { connectedAgentsApiPath } from '#client/routes/account-page-data.ts'
 import {
@@ -131,6 +130,7 @@ export function createAccountConnectedAgents(handle: Handle) {
 									key={group.label}
 									data-testid="connected-agent-group"
 									data-agent-label={group.label}
+									mix={css(groupItemCss)}
 								>
 									<details mix={css(groupDetailsCss)}>
 										<summary mix={css(groupSummaryCss)}>
@@ -177,21 +177,6 @@ export function createAccountConnectedAgents(handle: Handle) {
 													fallback="at an unknown time"
 												/>
 											</span>
-											{isAccountConnectionAgent(group.kind) ? (
-												<a
-													href={accountConnectionsNewHref(group.kind)}
-													data-testid="connected-agent-view-steps"
-													data-agent-kind={group.kind}
-													mix={[
-														css(viewStepsLinkCss),
-														on('click', (event) => {
-															event.stopPropagation()
-														}),
-													]}
-												>
-													View connect steps
-												</a>
-											) : null}
 										</summary>
 										<ul
 											mix={css({
@@ -302,6 +287,17 @@ export function createAccountConnectedAgents(handle: Handle) {
 											})}
 										</ul>
 									</details>
+									{isAccountConnectionAgent(group.kind) ? (
+										<a
+											href={accountConnectionsNewHref(group.kind)}
+											data-testid="connected-agent-view-steps"
+											data-agent-kind={group.kind}
+											data-prevent-scroll-reset=""
+											mix={css(viewStepsLinkCss)}
+										>
+											View connect steps
+										</a>
+									) : null}
 								</li>
 							))}
 						</ul>
@@ -362,7 +358,16 @@ function ConnectedAgentMark(handle: Handle<{ icon: string | null }>) {
 	}
 }
 
+const groupItemCss = {
+	display: 'grid',
+	gridTemplateColumns: 'minmax(0, 1fr) auto',
+	alignItems: 'start',
+	gap: spacing.sm,
+	columnGap: spacing.md,
+}
+
 const groupDetailsCss = {
+	minWidth: 0,
 	'&[open] > summary': { marginBottom: spacing.sm },
 }
 
@@ -379,6 +384,8 @@ const viewStepsLinkCss = {
 	fontSize: typography.fontSize.sm,
 	fontWeight: typography.fontWeight.medium,
 	textDecoration: 'none',
+	whiteSpace: 'nowrap' as const,
+	paddingBlock: '0.2rem',
 	'&:hover': {
 		color: colors.text,
 	},
