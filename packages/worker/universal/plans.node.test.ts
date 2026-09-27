@@ -297,9 +297,6 @@ test('purchasable Pro has Max stock always; funded wallet unlocks rates only', (
 	expect(resolvePlanLimit('pro', 'scheduled_jobs', 'public', 'empty')).toBe(
 		5_000,
 	)
-	expect(
-		resolvePlanLimit('pro', 'concurrent_workflows', 'public', 'empty'),
-	).toBe(200)
 	expect(resolvePlanLimit('pro', 'repos', 'public', 'empty')).toBe(10_000)
 	expect(resolvePlanLimit('pro', 'repo_sessions', 'public', 'empty')).toBe(
 		20_000,
@@ -307,6 +304,10 @@ test('purchasable Pro has Max stock always; funded wallet unlocks rates only', (
 	expect(resolvePlanLimit('pro', 'storage_bytes', 'public', 'empty')).toBe(
 		100 * 1024 * 1024 * 1024,
 	)
+	// Concurrent workflows: provisional Max pending Kent empty-wallet guard.
+	expect(
+		resolvePlanLimit('pro', 'concurrent_workflows', 'public', 'empty'),
+	).toBe(200)
 	expect(
 		resolvePlanLimit('pro', 'execute_calls_per_day', 'public', 'empty'),
 	).toBe(500)
