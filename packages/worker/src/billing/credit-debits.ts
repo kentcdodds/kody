@@ -197,7 +197,8 @@ async function debitOneWallet(input: {
 		return { debitedMicroUsd, autoRefilled: false }
 	}
 	const nextBalance = previousBalance - debitedMicroUsd
-	// Gift and referral Pro overlays hold a wallet but never auto-charge.
+	// Gift and referral Pro overlays are not wallet-eligible (retired Pro
+	// ceilings). Only paying Pro auto-charges.
 	const autoRefill = isPayingForCreditsPro(input.row)
 		? await runCreditAutoRefill({
 				env: input.env,
@@ -232,7 +233,10 @@ type ProgressRow = { meter: string; accounted_units: number }
 
 /**
  * Settle one (user, month): debit the funded wallet for newly billable
- * units, or advance progress without a charge. Exported for tests.
+ * units, or advance progress without a charge. Non-charging settlement
+ * advances progress against at least the purchasable Pro debit baseline
+ * so a later funded return cannot back-charge usage from a larger include
+ * (gift overlay, retired Pro). Exported for tests.
  */
 export async function settleCreditDebitMonth(input: {
 	db: D1Database
@@ -253,9 +257,35 @@ export async function settleCreditDebitMonth(input: {
 		uniqueWorkerDays: usage.uniqueWorkerDays,
 		durableObjectRowsRead: usage.durableObjectRowsRead,
 	})
+	const charge = input.entitlement.creditWallet === 'funded'
+	// When not charging, advance progress against at least the purchasable
+	// Pro debit baseline. Gift/retired Pro ceilings are larger than that
+	// baseline; without this, usage between 350 and 2,000 UWD would leave
+	// progress behind and get back-charged on a later funded return.
+	const progressOverage = charge
+		? overage
+		: (() => {
+				const creditsBaseline = computeMonthlyOverage({
+					plan: 'pro',
+					ladder: 'public',
+					creditWallet: 'empty',
+					uniqueWorkerDays: usage.uniqueWorkerDays,
+					durableObjectRowsRead: usage.durableObjectRowsRead,
+				})
+				return {
+					billableUniqueWorkerDays: Math.max(
+						overage.billableUniqueWorkerDays,
+						creditsBaseline.billableUniqueWorkerDays,
+					),
+					billableDurableObjectRowsRead: Math.max(
+						overage.billableDurableObjectRowsRead,
+						creditsBaseline.billableDurableObjectRowsRead,
+					),
+				}
+			})()
 	const billable: Record<CreditDebitMeter, number> = {
-		unique_worker_days: overage.billableUniqueWorkerDays,
-		durable_object_rows_read: overage.billableDurableObjectRowsRead,
+		unique_worker_days: progressOverage.billableUniqueWorkerDays,
+		durable_object_rows_read: progressOverage.billableDurableObjectRowsRead,
 	}
 	const progressRows = await input.db
 		.prepare(
@@ -270,7 +300,6 @@ export async function settleCreditDebitMonth(input: {
 			Number(row.accounted_units),
 		]),
 	)
-	const charge = input.entitlement.creditWallet === 'funded'
 	const nowIso = input.now.toISOString()
 	const statements: Array<D1PreparedStatement> = []
 	const forgivenUnits: Record<CreditDebitMeter, number> = {

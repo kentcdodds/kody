@@ -219,8 +219,8 @@ export function resolveEntitlementLadderAfterPaidAccessChange(input: {
 /**
  * Prepaid credit wallet state for limit resolution.
  *
- * - `none` — not wallet-eligible (Free, retired Standard/Pro, manual grants,
- *   `max`). Credits never unlock or debit.
+ * - `none` — not wallet-eligible (Free, retired Standard/Pro, gift/referral
+ *   Pro overlays, manual grants, `max`). Credits never unlock or debit.
  * - `empty` — purchasable Pro with a balance at or below $0. Base
  *   {@link proCreditsPlanLimits} apply (hard caps).
  * - `funded` — purchasable Pro with a balance above $0. Rate/compute limits
@@ -240,8 +240,8 @@ export type UserEntitlement = {
 
 /**
  * Wallet state for an effective plan. Only `pro` granted by the purchasable
- * Pro Stripe price is eligible; a manual `max` grant or any other plan
- * resolves to `none`.
+ * Pro Stripe price (`creditsEligible`) is wallet-eligible; gift/referral
+ * overlays, retired Stripe Pro, manual grants, and `max` resolve to `none`.
  */
 export function resolveCreditWalletState(input: {
 	plan: PlanName

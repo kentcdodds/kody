@@ -139,7 +139,7 @@ test('wallet eligibility: only the purchasable Pro gets a wallet; retired plans 
 	).toBe(1_500)
 })
 
-test('balance > 0 unlocks 50× rate limits; debits to $0 re-block at the base cap', async () => {
+test('balance > 0 unlocks 50Ã rate limits; debits to $0 re-block at the base cap', async () => {
 	const user = await seedUser({
 		label: 'credits-unlock',
 		stripePlan: 'pro',
@@ -309,6 +309,67 @@ test('retired plans with a balance are never debited', async () => {
 	expect(
 		(await readCreditWallet(env.APP_DB, user.stableUserId)).balanceMicroUsd,
 	).toBe(10_000_000)
+})
+
+test('gift overlay usage above credits include is not back-charged on resubscribe', async () => {
+	const user = await seedUser({
+		label: 'credits-gift-resub',
+		stripePlan: 'pro',
+		creditsEligible: true,
+	})
+	await topUp({ userId: user.stableUserId, cents: 1_000 })
+	await setRollup({
+		userId: user.stableUserId,
+		metric: 'dynamic_worker_day',
+		count: 400,
+	})
+	await runCreditDebits({ env, now })
+	const afterPaid = await readCreditWallet(env.APP_DB, user.stableUserId)
+	// 400 − 350 = 50 billable days × $0.004 = 200_000 µUSD.
+	expect(afterPaid.balanceMicroUsd).toBe(10_000_000 - 200_000)
+
+	// Cancel purchasable Pro while a referral overlay is active.
+	await env.APP_DB.prepare(
+		`UPDATE users
+		 SET stripe_plan = NULL, stripe_credits_eligible = 0,
+		     referral_standard_credit_expires_at = ?
+		 WHERE stable_user_id = ?`,
+	)
+		.bind('2099-01-01T00:00:00.000Z', user.stableUserId)
+		.run()
+	expect(await entitlementFor(user)).toEqual({
+		plan: 'pro',
+		ladder: 'public',
+		creditWallet: 'none',
+	})
+	await setRollup({
+		userId: user.stableUserId,
+		metric: 'dynamic_worker_day',
+		count: 600,
+	})
+	await runCreditDebits({ env, now })
+	expect(
+		(await readCreditWallet(env.APP_DB, user.stableUserId)).balanceMicroUsd,
+	).toBe(afterPaid.balanceMicroUsd)
+
+	// Resubscribe with the remaining funded balance: gift-period days
+	// between 350 and 600 must stay forgiven.
+	await env.APP_DB.prepare(
+		`UPDATE users
+		 SET stripe_plan = 'pro', stripe_credits_eligible = 1,
+		     referral_standard_credit_expires_at = NULL
+		 WHERE stable_user_id = ?`,
+	)
+		.bind(user.stableUserId)
+		.run()
+	expect(await entitlementFor(user)).toMatchObject({
+		plan: 'pro',
+		creditWallet: 'funded',
+	})
+	await runCreditDebits({ env, now })
+	expect(
+		(await readCreditWallet(env.APP_DB, user.stableUserId)).balanceMicroUsd,
+	).toBe(afterPaid.balanceMicroUsd)
 })
 
 test('a replayed top-up credits once', async () => {
@@ -785,7 +846,7 @@ test('the bounded debit sweep resumes from its cursor and wraps at the tail', as
 	).toBe(10_000_000 - 4_000)
 })
 
-test('gift and referral Pro overlays hold a wallet but only paying Pro can buy credits', async () => {
+test('gift and referral Pro overlays keep retired Pro ceilings without a wallet', async () => {
 	const overlay = await seedUser({
 		label: 'credits-overlay',
 		stripeCustomerId: `cus_${crypto.randomUUID().slice(0, 8)}`,
@@ -814,9 +875,8 @@ test('gift and referral Pro overlays hold a wallet but only paying Pro can buy c
 	})
 	expect(overlayUser?.entitlement).toMatchObject({
 		plan: 'pro',
-		creditWallet: 'empty',
+		creditWallet: 'none',
 	})
-	// A leftover Stripe customer from a cancelled subscription is not Pro.
 	expect(overlayUser?.canBuyCredits).toBe(false)
 	const payingUser = await loadAccountCreditsUser({
 		env,
@@ -824,6 +884,7 @@ test('gift and referral Pro overlays hold a wallet but only paying Pro can buy c
 		now,
 	})
 	expect(payingUser?.canBuyCredits).toBe(true)
+	expect(payingUser?.entitlement.creditWallet).toBe('empty')
 })
 
 test('saving credit settings before any top-up creates the wallet and keeps the settings', async () => {
@@ -909,6 +970,10 @@ test('base entitlement never pairs an overlay plan with Stripe-only eligibility'
 		ladder: 'public',
 		creditWallet: 'none',
 	})
-	// Overlay-aware resolution still gives the overlay the Pro wallet.
-	expect((await entitlementFor(overlay)).creditWallet).toBe('funded')
+	// Overlay-aware resolution grants Pro without a wallet (retired ceilings).
+	expect(await entitlementFor(overlay)).toEqual({
+		plan: 'pro',
+		ladder: 'public',
+		creditWallet: 'none',
+	})
 })

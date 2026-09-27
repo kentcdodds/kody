@@ -388,7 +388,7 @@ test('purchasable Pro with credits shows unlocked limits and debits above the in
 	)
 })
 
-test('gift Pro with an empty wallet cannot buy credits from the usage page', async () => {
+test('gift Pro keeps retired Pro ceilings without a wallet and cannot buy credits', async () => {
 	const now = new Date('2026-07-25T12:00:00.000Z')
 	const { db } = createUsageTestDb({
 		userId: 26,
@@ -403,12 +403,19 @@ test('gift Pro with an empty wallet cannot buy credits from the usage page', asy
 		now,
 	})
 	expect(data?.plan).toBe('pro')
-	expect(data?.computeOverage.creditWallet).toBe('empty')
+	expect(data?.computeOverage.creditWallet).toBe('none')
+	expect(data?.computeOverage.creditsStatus).toBe('within_include')
 	expect(data?.canBuyCredits).toBe(false)
+	const uniqueWorkerDays = data?.computeOverage.meters.find(
+		(meter) => meter.resource === 'unique_worker_days',
+	)
+	expect(uniqueWorkerDays?.include).toBe(2_000)
+	expect(currentFor(data, 'execute_calls_per_day')?.limit).toBe(1_500)
 	for (const row of [
 		...(data?.entitlementConsumption ?? []),
 		...(data?.computeOverage.meters ?? []),
 	]) {
-		expect(row.howToReduce).not.toMatch(/add credits/i)
+		expect(row.howToReduce).not.toMatch(/^add credits/i)
+		expect(row.howToReduce).not.toMatch(/add credits to lift/i)
 	}
 })
