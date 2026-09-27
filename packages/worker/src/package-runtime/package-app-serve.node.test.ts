@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import type * as PackageSourceModule from '#worker/package-registry/source.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
+import { ComputeOverageLimitError } from '#worker/entitlements/errors.ts'
 import { servePackageAppRequest } from './package-app-serve.ts'
 
 // Existing serve tests exercise the local construction path (index/platform/
@@ -625,5 +626,48 @@ test('synthetic host-setup failures return JSON with the underlying cause', asyn
 		},
 		request_path: '/@kentcdodds/packages/prep-fail-app',
 		cause: 'kody.app.runtime was removed; every package app is a fetch handler',
+	})
+})
+
+test('an app past the monthly include with no credits gets a 429 pause page, not a reported failure', async () => {
+	consoleError.mockClear()
+	seedFixture({ kodyId: 'include-used-up-app' })
+	mockModule.buildPackageAppWorker.mockRejectedValueOnce(
+		new ComputeOverageLimitError({
+			resource: 'unique_worker_days',
+			plan: 'pro',
+			limit: 350,
+			current: 351,
+			creditsStatus: 'add_credits',
+		}),
+	)
+
+	const html = await serveHelloWorld({ kodyId: 'include-used-up-app' })
+	expect(html.status).toBe(429)
+	const page = await html.text()
+	expect(page).toContain('Monthly include used up')
+	expect(page).toContain('Add credits at /account/credits to keep going')
+	expect(page.replaceAll(/<style[\s\S]*?<\/style>/g, '')).not.toMatch(
+		/unlock|lift|\bMax\b/i,
+	)
+	expect(consoleError).not.toHaveBeenCalled()
+
+	mockModule.buildPackageAppWorker.mockRejectedValueOnce(
+		new ComputeOverageLimitError({
+			resource: 'durable_object_rows_read',
+			plan: 'pro',
+			limit: 5_000_000_000,
+			current: 5_000_000_001,
+			creditsStatus: 'add_credits',
+		}),
+	)
+	const json = await serveHelloWorld({
+		kodyId: 'include-used-up-app',
+		dispatch: { synthetic: true },
+	})
+	expect(json.status).toBe(429)
+	await expect(json.json()).resolves.toMatchObject({
+		error: 'Monthly include used up',
+		cause: expect.stringContaining('Rows read include used up'),
 	})
 })

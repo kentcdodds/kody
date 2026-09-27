@@ -9,6 +9,7 @@ import {
 import { updateAdminUserPlan } from '#worker/admin/users-data.ts'
 import { ensureRbacTestSchema } from '#worker/test-support/workers-seed.ts'
 import {
+	assertWithinComputeInclude,
 	consumeDailyEntitlement,
 	getUserEntitlement,
 	readDailyEntitlementResourceUsage,
@@ -431,6 +432,21 @@ test('include → credits → stop: an empty Pro wallet runs free within the inc
 	}
 	// Outbound fetches belong to an already admitted run.
 	await consume(past, 'outbound_fetches_per_day')
+	// Hosted package apps have no daily counter but take the same stop.
+	const appStop = await assertWithinComputeInclude({
+		db: env.APP_DB,
+		userId: past.stableUserId,
+		now,
+	}).then(
+		() => null,
+		(caught: unknown) => caught,
+	)
+	expect(isComputeOverageLimitError(appStop)).toBe(true)
+	await assertWithinComputeInclude({
+		db: env.APP_DB,
+		userId: within.stableUserId,
+		now,
+	})
 
 	// Rows read past its include stops the same way.
 	const rows = await seedUser({
@@ -523,7 +539,8 @@ test('include → credits → stop: credits pay past the include, and the stop r
 		current: 600,
 	})
 
-	// Stopped at $0, then credits are added: runs resume and the stretch
+	// Stopped at $0, then credits are added: runs resume right away (the
+	// cached empty wallet is re-checked before stopping), and the stretch
 	// before the stop applied is forgiven, not charged.
 	const resumed = await seedUser({
 		label: 'credits-stop-resumed',
@@ -535,8 +552,18 @@ test('include → credits → stop: credits pay past the include, and the stop r
 		metric: 'dynamic_worker_day',
 		count: 420,
 	})
+	await expectStopped(resumed, 'execute_calls_per_day', {
+		resource: 'unique_worker_days',
+		limit: 350,
+		current: 420,
+	})
 	await topUp({ userId: resumed.stableUserId, cents: 500 })
 	await consume(resumed, 'execute_calls_per_day')
+	await assertWithinComputeInclude({
+		db: env.APP_DB,
+		userId: resumed.stableUserId,
+		now,
+	})
 	await runCreditDebits({ env, now })
 	expect(
 		(await readCreditWallet(env.APP_DB, resumed.stableUserId)).balanceMicroUsd,

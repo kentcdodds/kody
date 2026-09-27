@@ -45,6 +45,7 @@ import {
 	storageRunnerRpc,
 } from '#worker/storage-runner.ts'
 import {
+	assertWithinComputeInclude,
 	estimateEntitlementStorageEntryByteDelta,
 	estimateEntitlementStorageSqlWriteBytes,
 } from '#worker/entitlements/service.ts'
@@ -2005,6 +2006,12 @@ export async function buildPackageAppWorker(input: {
 	 */
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
+	// Apps run package code and read package storage without a daily counter,
+	// so they take the include → credits → stop gate directly.
+	await assertWithinComputeInclude({
+		db: input.env.APP_DB,
+		userId: input.userId,
+	})
 	const publicContext = buildPackageAppPublicContext(input)
 	const cacheKey = createPackageAppWorkerCacheKey({
 		userId: input.userId,

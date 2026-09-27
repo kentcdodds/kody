@@ -8,6 +8,7 @@ import {
 	type PackageAppMount,
 } from '@kody-internal/shared/public-urls.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { isComputeOverageLimitError } from '#worker/entitlements/errors.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import {
 	loadInvokeManifestBySourceId,
@@ -225,6 +226,7 @@ type PackageAppFailureKind =
 	| 'host-setup'
 	| 'package-entrypoint'
 	| 'realtime-connect'
+	| 'include-used-up'
 
 function createPackageAppErrorResponse(input: {
 	request: Request
@@ -256,11 +258,19 @@ function createPackageAppErrorResponse(input: {
 			nextStep:
 				'This has been reported to Kody. Try reconnecting, or ask the package owner to retry after checking the package app.',
 		},
+		'include-used-up': {
+			title: 'Monthly include used up',
+			summary:
+				'This month’s included Pro usage is used up and there are no credits left, so the app is paused.',
+			nextStep:
+				'Add credits at /account/credits to keep going, or wait for the include to reset next UTC month.',
+		},
 	} satisfies Record<
 		PackageAppFailureKind,
 		{ title: string; summary: string; nextStep: string }
 	>
 	const message = messages[input.kind]
+	const status = input.kind === 'include-used-up' ? 429 : 500
 	const requestPath = new URL(input.request.url).pathname
 	const body = {
 		error: message.title,
@@ -274,7 +284,7 @@ function createPackageAppErrorResponse(input: {
 		...(input.synthetic === true && input.cause ? { cause: input.cause } : {}),
 	}
 	if (input.synthetic === true || wantsJson(input.request)) {
-		return Response.json(body, { status: 500 })
+		return Response.json(body, { status })
 	}
 	return createHtmlResponse(
 		html`<!doctype html>
@@ -357,7 +367,7 @@ function createPackageAppErrorResponse(input: {
 					</main>
 				</body>
 			</html>`,
-		{ status: 500 },
+		{ status },
 	)
 }
 
@@ -580,6 +590,16 @@ export async function servePackageAppRequest(input: {
 			dispatch,
 		)
 	} catch (error) {
+		if (isComputeOverageLimitError(error)) {
+			return createPackageAppErrorResponse({
+				request,
+				kind: 'include-used-up',
+				kodyId: savedPackage.kodyId,
+				packageName: savedPackage.name,
+				synthetic: dispatch?.synthetic === true,
+				cause: error.message,
+			})
+		}
 		console.error('Package app handler failed:', error)
 		reportPackageAppFailure({
 			error,

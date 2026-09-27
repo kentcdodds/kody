@@ -10,7 +10,13 @@ import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { packageRealtimeSessionDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
+import {
+	computeOverageLimitErrorCode,
+	isComputeOverageLimitError,
+} from '#worker/entitlements/errors.ts'
 import { buildPackageAppWorker } from './package-app.ts'
+
+const includeUsedUpCloseReason = 'include-used-up'
 
 const sessionStateStorageKey = 'package-realtime-state'
 const sessionTagPrefix = 'session:'
@@ -721,6 +727,20 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 					{ status: 403 },
 				)
 			}
+			if (isComputeOverageLimitError(error)) {
+				this.closeAllSockets(1008, includeUsedUpCloseReason)
+				return Response.json(
+					{
+						ok: false,
+						error: {
+							code: computeOverageLimitErrorCode,
+							message: error.message,
+							details: error.details,
+						},
+					},
+					{ status: 429 },
+				)
+			}
 			try {
 				server.close(1011, 'connect hook failed')
 			} catch {
@@ -864,6 +884,10 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 				},
 			})
 		} catch (error) {
+			if (isComputeOverageLimitError(error)) {
+				this.closeAllSockets(1008, includeUsedUpCloseReason)
+				return
+			}
 			if (!isAccountSuspendedError(error)) throw error
 			this.closeAllSockets(1008, 'account-suspended')
 			return
@@ -922,7 +946,9 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 				},
 			})
 		} catch (error) {
-			if (isAccountSuspendedError(error)) return
+			if (isAccountSuspendedError(error) || isComputeOverageLimitError(error)) {
+				return
+			}
 			throw error
 		}
 		await this.applyHookActions(sessionId, actions, session)

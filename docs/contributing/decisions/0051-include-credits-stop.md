@@ -22,7 +22,8 @@ include is charged from credits, up to about 50× Pro's included limits.
 Purchasable Pro has one billing path: **include → credits → stop**. At
 $0, usage
 past the include stops. For the monthly meters, `consumeDailyEntitlement` throws
-`ComputeOverageLimitError` for execute, job runs, and automation invocations.
+`ComputeOverageLimitError` for execute, job runs, and automation invocations,
+and hosted package apps (HTTP and realtime hooks) take the same stop.
 For rates, the daily and weekly caps stop at the include. There is no free
 past-include burn and no customer-facing "balance above $0
 unlocks higher rates". The 50× figure is a ceiling on how far credits go, not a

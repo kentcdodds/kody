@@ -255,11 +255,16 @@ on credits until they are gone, then stops.
   `ComputeOverageLimitError` for `pastIncludeStopResources` (execute, job runs,
   automation invocations) once either meter is past this UTC month's include
   (`resolvePastIncludeStop`). The check runs before the UserMeter counter, so a
-  stopped attempt spends no daily quota. Outbound fetches are exempt because
-  they happen inside a run that was already admitted. The usage read comes from
-  `usage_rollups` (hourly) behind the 60s entitlement cache, so the stop can
-  trail usage by about an hour; a later top-up forgives that overshoot instead
-  of charging it.
+  stopped attempt spends no daily quota. Hosted package apps have no daily
+  counter, so `buildPackageAppWorker` calls `assertWithinComputeInclude` (the
+  same rule) for HTTP requests and realtime hooks: HTTP gets a `429` "Monthly
+  include used up" page, and realtime sockets close with `include-used-up`.
+  Outbound fetches are exempt because they happen inside a run that was already
+  admitted. The usage read comes from `usage_rollups` (hourly) behind the 60s
+  entitlement cache, so the stop can trail usage by about an hour; a later
+  top-up forgives that overshoot instead of charging it. Before throwing, the
+  stop re-reads the entitlement uncached, so a top-up resumes work immediately
+  in every isolate.
 - Email caps and the job interval floor are not credit-extended.
 
 Internally the 50× figure is a ceiling on how far credits go. Customer copy
