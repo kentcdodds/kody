@@ -26,8 +26,10 @@ import {
 	getCachedUserPlan,
 	getUserEntitlement,
 	getUserPlan,
+	isPayingForCreditsPro,
 	readCurrentEntitlementResourceUsage,
 	refundDailyEntitlement,
+	resolveUserPlanFromRow,
 } from './service.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
@@ -99,7 +101,7 @@ function createEntitlementsTestDb(
 							}
 							if (
 								query.includes(
-									'SELECT plan, stripe_plan, entitlement_ladder, stripe_credits_eligible, second_agent_standard_gift_expires_at, referral_standard_credit_expires_at FROM users',
+									'SELECT plan, stripe_plan, entitlement_ladder, stripe_credits_eligible, admin_credits_eligible, second_agent_standard_gift_expires_at, referral_standard_credit_expires_at FROM users',
 								) ||
 								query.includes(
 									'SELECT plan, stripe_plan, entitlement_ladder FROM users',
@@ -222,6 +224,30 @@ async function readMeterDailyCount(input: {
 }
 
 const plannedEmail = 'planned@example.com'
+
+test('admin credit eligibility counts only on an effective Pro and never enables buying credits', () => {
+	const row = {
+		plan: 'pro',
+		stripe_plan: null,
+		entitlement_ladder: 'public',
+		stripe_credits_eligible: 0,
+		admin_credits_eligible: 1,
+		second_agent_standard_gift_expires_at: null,
+		referral_standard_credit_expires_at: null,
+	}
+	expect(resolveUserPlanFromRow(row).creditsEligible).toBe(true)
+	expect(isPayingForCreditsPro(row)).toBe(false)
+	expect(
+		resolveUserPlanFromRow({ ...row, admin_credits_eligible: 0 })
+			.creditsEligible,
+	).toBe(false)
+	expect(resolveUserPlanFromRow({ ...row, plan: 'max' }).creditsEligible).toBe(
+		false,
+	)
+	expect(resolveUserPlanFromRow({ ...row, plan: 'free' }).creditsEligible).toBe(
+		false,
+	)
+})
 
 test('entitlement limit messages always identify a known plan name', () => {
 	const details = {

@@ -71,6 +71,7 @@ type ActiveUserRow = {
 	stripe_plan: string | null
 	entitlement_ladder: string | null
 	stripe_credits_eligible?: number | null
+	admin_credits_eligible?: number | null
 	event_count: number
 }
 
@@ -521,13 +522,13 @@ async function listActiveUsersForEntitlementSweep(
 ): Promise<Array<ActiveUserRow>> {
 	const rows = await db
 		.prepare(
-			`SELECT u.stable_user_id, u.username, u.plan, u.stripe_plan, u.entitlement_ladder, u.stripe_credits_eligible, SUM(r.event_count) AS event_count
+			`SELECT u.stable_user_id, u.username, u.plan, u.stripe_plan, u.entitlement_ladder, u.stripe_credits_eligible, u.admin_credits_eligible, SUM(r.event_count) AS event_count
 			 FROM usage_rollups r
 			 INNER JOIN users u ON u.stable_user_id = r.user_id
 			 WHERE r.month = ?
 				AND r.metric NOT IN (${observeOnlyMetricPlaceholders})
 				AND u.deleting_at IS NULL
-			 GROUP BY u.stable_user_id, u.username, u.plan, u.stripe_plan, u.entitlement_ladder, u.stripe_credits_eligible
+			 GROUP BY u.stable_user_id, u.username, u.plan, u.stripe_plan, u.entitlement_ladder, u.stripe_credits_eligible, u.admin_credits_eligible
 			 ORDER BY event_count DESC
 			 LIMIT ?`,
 		)

@@ -29,6 +29,7 @@ export type UsageCampaignCandidate = {
 	stripe_plan: string | null
 	entitlement_ladder: string | null
 	stripe_credits_eligible?: number | null
+	admin_credits_eligible?: number | null
 }
 
 /**

@@ -267,7 +267,8 @@ export async function listUsersForUsageCampaignSweep(
 			        u.second_agent_standard_gift_granted_at,
 			        u.second_agent_standard_gift_expires_at,
 			        u.referral_standard_credit_expires_at,
-			        u.plan, u.stripe_plan, u.entitlement_ladder, u.stripe_credits_eligible
+			        u.plan, u.stripe_plan, u.entitlement_ladder, u.stripe_credits_eligible,
+			        u.admin_credits_eligible
 			 FROM users u
 			 LEFT JOIN user_usage_campaigns c ON c.user_id = u.stable_user_id
 			 WHERE u.email_verified_at IS NOT NULL

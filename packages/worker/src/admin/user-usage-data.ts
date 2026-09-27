@@ -50,6 +50,7 @@ type AdminUserUsageUserRow = {
 	stripe_price_id: string | null
 	entitlement_ladder: string | null
 	stripe_credits_eligible: number | null
+	admin_credits_eligible: number | null
 	stable_user_id: string
 }
 
@@ -76,7 +77,7 @@ export async function loadAdminUserUsageData(
 	now: Date = new Date(),
 ): Promise<AdminUserUsageLoaderData | null> {
 	const row = await env.APP_DB.prepare(
-		`SELECT id, username, email, plan, stripe_plan, stripe_price_id, entitlement_ladder, stripe_credits_eligible, stable_user_id FROM users WHERE stable_user_id = ?`,
+		`SELECT id, username, email, plan, stripe_plan, stripe_price_id, entitlement_ladder, stripe_credits_eligible, admin_credits_eligible, stable_user_id FROM users WHERE stable_user_id = ?`,
 	)
 		.bind(stableUserId)
 		.first<AdminUserUsageUserRow>()

@@ -106,6 +106,10 @@ const alwaysAdditiveColumns: Record<string, UsersColumnDefinition> = {
 		create: `INTEGER NOT NULL DEFAULT 0 CHECK (stripe_credits_eligible IN (0, 1))`,
 		alter: `INTEGER NOT NULL DEFAULT 0`,
 	},
+	admin_credits_eligible: {
+		create: `INTEGER NOT NULL DEFAULT 0 CHECK (admin_credits_eligible IN (0, 1))`,
+		alter: `INTEGER NOT NULL DEFAULT 0`,
+	},
 }
 
 /**
