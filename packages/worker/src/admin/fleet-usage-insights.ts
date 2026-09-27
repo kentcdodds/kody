@@ -4,13 +4,7 @@ import {
 	fleetDynamicWorkerCostAlertUsd,
 	toAdminDynamicWorkerCost,
 } from '#universal/dynamic-worker-cost.ts'
-import {
-	parseEntitlementLadder,
-	parseStoredPlanName,
-	resolveEffectivePlan,
-	type EntitlementLadder,
-	type PlanName,
-} from '#universal/plans.ts'
+import { type EntitlementLadder, type PlanName } from '#universal/plans.ts'
 import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
 import {
 	adminFleetCostVsPayDisplayLimit,
@@ -21,7 +15,7 @@ import {
 import { resolveStripePriceCatalog } from '#worker/billing/stripe-price-catalog.ts'
 import { adminUsageMetrics } from '#worker/admin/user-usage-data.ts'
 import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consumption.ts'
-import { readCreditWalletStateForPlan } from '#worker/entitlements/service.ts'
+import { resolveBaseUserEntitlement } from '#worker/entitlements/service.ts'
 import {
 	type AdminInsightsDurationConsumer,
 	type AdminInsightsDynamicWorkerCost,
@@ -194,21 +188,17 @@ export async function loadFleetEntitlementCrossingSnapshots(input: {
 		activeUsers,
 		entitlementSweepConcurrency,
 		async (user) => {
-			const plan = resolveEffectivePlan(
-				parseStoredPlanName(user.plan),
-				user.stripe_plan,
-			)
-			const ladder = parseEntitlementLadder(user.entitlement_ladder)
+			const { plan, ladder, creditWallet } = await resolveBaseUserEntitlement({
+				db: input.env.APP_DB,
+				stableUserId: user.stable_user_id,
+				row: user,
+			})
 			const consumption = await readAdminEntitlementConsumption({
 				env: input.env,
 				usageUserId: user.stable_user_id,
 				plan,
 				ladder,
-				creditWallet: await readCreditWalletStateForPlan(input.env.APP_DB, {
-					stableUserId: user.stable_user_id,
-					plan,
-					stripeCreditsEligible: user.stripe_credits_eligible,
-				}),
+				creditWallet,
 				now: input.now,
 			})
 			snapshots.push({
@@ -485,20 +475,18 @@ async function buildEntitlementPressurePanel(input: {
 		activeUsers,
 		entitlementSweepConcurrency,
 		async (user) => {
-			const plan = toAdminPlanName(
-				resolveEffectivePlan(parseStoredPlanName(user.plan), user.stripe_plan),
-			)
-			const ladder = parseEntitlementLadder(user.entitlement_ladder)
+			const entitlement = await resolveBaseUserEntitlement({
+				db: input.env.APP_DB,
+				stableUserId: user.stable_user_id,
+				row: user,
+			})
+			const plan = toAdminPlanName(entitlement.plan)
 			const consumption = await readAdminEntitlementConsumption({
 				env: input.env,
 				usageUserId: user.stable_user_id,
 				plan,
-				ladder,
-				creditWallet: await readCreditWalletStateForPlan(input.env.APP_DB, {
-					stableUserId: user.stable_user_id,
-					plan,
-					stripeCreditsEligible: user.stripe_credits_eligible,
-				}),
+				ladder: entitlement.ladder,
+				creditWallet: entitlement.creditWallet,
 				now: input.now,
 			})
 			const pressuredResources = consumption

@@ -11,14 +11,9 @@ import {
 	type AdminUsageRollup,
 	type AdminUserUsageLoaderData,
 } from '#universal/loader-data.ts'
-import {
-	parseEntitlementLadder,
-	parseStoredPlanName,
-	resolveEffectivePlan,
-} from '#universal/plans.ts'
 import { toAdminCostVsPay } from '#worker/admin/cost-vs-pay.ts'
 import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consumption.ts'
-import { readCreditWalletStateForPlan } from '#worker/entitlements/service.ts'
+import { resolveBaseUserEntitlement } from '#worker/entitlements/service.ts'
 import { resolveStripePriceCatalog } from '#worker/billing/stripe-price-catalog.ts'
 import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
@@ -87,12 +82,13 @@ export async function loadAdminUserUsageData(
 		.first<AdminUserUsageUserRow>()
 	if (!row) return null
 
-	const plan = resolveEffectivePlan(
-		parseStoredPlanName(row.plan),
-		row.stripe_plan,
-	)
-	const ladder = parseEntitlementLadder(row.entitlement_ladder)
 	const usageUserId = resolveUserStableId(row)
+	const entitlement = await resolveBaseUserEntitlement({
+		db: env.APP_DB,
+		stableUserId: usageUserId,
+		row,
+	})
+	const plan = entitlement.plan
 	const currentMonth = utcMonthKey(now)
 	const today = utcDayKey(now)
 	// Fall through to direct D1 queries when KV is unavailable (some tests
@@ -109,20 +105,14 @@ export async function loadAdminUserUsageData(
 				userId: usageUserId,
 				currentMonth,
 			}),
-			readCreditWalletStateForPlan(env.APP_DB, {
-				stableUserId: usageUserId,
+			readAdminEntitlementConsumption({
+				env,
+				usageUserId,
 				plan,
-				stripeCreditsEligible: row.stripe_credits_eligible,
-			}).then((creditWallet) =>
-				readAdminEntitlementConsumption({
-					env,
-					usageUserId,
-					plan,
-					ladder,
-					creditWallet,
-					now,
-				}),
-			),
+				ladder: entitlement.ladder,
+				creditWallet: entitlement.creditWallet,
+				now,
+			}),
 			userHasAdminRole(env.APP_DB, usageUserId),
 			loadMeasuredDurableObjectDuration({
 				db: env.APP_DB,

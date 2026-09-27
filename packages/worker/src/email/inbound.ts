@@ -1,17 +1,12 @@
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
-import {
-	parseEntitlementLadder,
-	parseStoredPlanName,
-	resolveEffectivePlan,
-	resolvePlanLimit,
-} from '#universal/plans.ts'
+import { resolvePlanLimit } from '#universal/plans.ts'
 import {
 	assertWithinEntitlement,
 	assertWithinStorageBytesEntitlement,
 	estimateEntitlementStorageEntryBytes,
-	readCreditWalletStateForPlan,
+	resolveBaseUserEntitlement,
 } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { normalizeEmailAddress, normalizeSubject } from './address.ts'
@@ -259,21 +254,23 @@ export async function handleInboundEmail(
 					email_verified_at: string | null
 					suspended_at: string | null
 				}>()
-			const accountPlan = resolveEffectivePlan(
-				// A scoped miss keeps the existing synthetic-account fallback.
-				// A present row must satisfy the plan storage contract.
-				accountRow ? parseStoredPlanName(accountRow.plan) : 'max',
-				accountRow?.stripe_plan ?? null,
-			)
+			// A scoped miss keeps the existing synthetic-account fallback. A
+			// present row must satisfy the plan storage contract.
+			const accountEntitlement = await resolveBaseUserEntitlement({
+				db: env.APP_DB,
+				stableUserId: userId,
+				row: accountRow ?? {
+					plan: 'max',
+					stripe_plan: null,
+					entitlement_ladder: null,
+					stripe_credits_eligible: 0,
+				},
+			})
 			const account = {
 				email: identity.email,
-				plan: accountPlan,
-				ladder: parseEntitlementLadder(accountRow?.entitlement_ladder),
-				creditWallet: await readCreditWalletStateForPlan(env.APP_DB, {
-					stableUserId: userId,
-					plan: accountPlan,
-					stripeCreditsEligible: accountRow?.stripe_credits_eligible,
-				}),
+				plan: accountEntitlement.plan,
+				ladder: accountEntitlement.ladder,
+				creditWallet: accountEntitlement.creditWallet,
 				emailVerified: Boolean(accountRow?.email_verified_at),
 				suspended: Boolean(accountRow?.suspended_at),
 			}

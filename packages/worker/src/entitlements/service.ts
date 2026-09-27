@@ -6,9 +6,9 @@ import {
 	parseStoredPlanName,
 	parseStripePlanName,
 	resolveCreditWalletState,
+	resolveEffectivePlan,
 	resolvePlanLimit,
 	resolveWeeklyPlanLimit,
-	type CreditWalletState,
 	type EntitlementResource,
 	type PlanName,
 	type UserEntitlement,
@@ -133,28 +133,40 @@ export async function readCreditWalletBalanceMicroUsd(
 }
 
 /**
- * Wallet state for an already-resolved effective plan (admin sweeps that
- * resolve plans themselves). Reads the balance only when eligible.
+ * Entitlement from the manual grant and Stripe only, without gift or
+ * referral overlays (inbound email and admin sweeps score the base plan).
+ * It resolves the plan itself so an overlay plan can never be paired with
+ * Stripe-only eligibility. Overlay-aware callers use
+ * {@link resolveUserEntitlementFromRow}.
  */
-export async function readCreditWalletStateForPlan(
-	db: D1Database,
-	input: {
-		stableUserId: string
-		plan: PlanName
-		stripeCreditsEligible: number | null | undefined
-	},
-): Promise<CreditWalletState> {
+export async function resolveBaseUserEntitlement(input: {
+	db: D1Database
+	stableUserId: string
+	row: Pick<
+		UserEntitlementRow,
+		'plan' | 'stripe_plan' | 'entitlement_ladder' | 'stripe_credits_eligible'
+	>
+}): Promise<UserEntitlement> {
+	const plan = resolveEffectivePlan(
+		parseStoredPlanName(input.row.plan),
+		input.row.stripe_plan,
+	)
 	const creditsEligible =
-		input.plan === 'pro' && Number(input.stripeCreditsEligible) === 1
-	if (!creditsEligible) return 'none'
-	return resolveCreditWalletState({
-		plan: input.plan,
-		creditsEligible,
-		balanceMicroUsd: await readCreditWalletBalanceMicroUsd(
-			db,
-			input.stableUserId,
-		),
-	})
+		plan === 'pro' && Number(input.row.stripe_credits_eligible) === 1
+	return {
+		plan,
+		ladder: parseEntitlementLadder(input.row.entitlement_ladder),
+		creditWallet: creditsEligible
+			? resolveCreditWalletState({
+					plan,
+					creditsEligible,
+					balanceMicroUsd: await readCreditWalletBalanceMicroUsd(
+						input.db,
+						input.stableUserId,
+					),
+				})
+			: 'none',
+	}
 }
 
 /**
