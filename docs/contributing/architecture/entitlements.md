@@ -225,7 +225,7 @@ returns `creditWallet` (`resolveCreditWalletState`): `none` unless the effective
 plan is `pro` and the account is eligible (the Pro price, admin eligibility, or
 the second-agent / referral Pro overlay on Free), then `funded` when
 `credit_wallets.balance_micro_usd > 0` and `empty` otherwise. Free, retired
-Standard/Pro, manual grants without admin eligibility, and `max` are always
+Standard/Pro and manual grants without admin eligibility, and `max`, are always
 `none`; an admin grant to them only holds a balance. Buying credits and
 auto-refill still require the purchasable Pro subscription
 (`isPayingForCreditsPro`).
@@ -293,8 +293,10 @@ set its manual plan to `pro` (`adminUserUpdate`), fund it (`adminCreditGrant`),
 and call `adminCreditEligibilitySet` with the target (`stableUserId`, `email`,
 or `username`), `creditsEligible: true`, and an optional `note`. It writes an
 admin audit event (target, new and previous value, note), never creates Stripe
-customers or subscriptions, and, when it unlocks the wallet, forgives usage from
-before the flip the same way funding an empty wallet does.
+customers or subscriptions. The steps work in either order: whichever write
+(eligibility or the manual plan) unlocks the wallet first calls
+`forgiveCreditUsageBeforeUnlock`, which advances debit progress to the unlocked
+include before the write, so the unlock never charges for locked-period usage.
 `creditsEligible: false` clears it; the balance stays on hold. Enforcement picks
 the change up within the 60s entitlement cache.
 

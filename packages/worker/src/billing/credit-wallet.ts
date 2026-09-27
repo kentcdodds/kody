@@ -24,7 +24,11 @@ import {
 	type CreditNotifySettings,
 } from '#universal/credits.ts'
 import { type UserEntitlement } from '#universal/plans.ts'
-import { getUserEntitlement } from '#worker/entitlements/service.ts'
+import {
+	getUserEntitlement,
+	resolveUserEntitlementFromRow,
+	type UserEntitlementRow,
+} from '#worker/entitlements/service.ts'
 import { readMonthlyComputeUsage } from './compute-overage-usage.ts'
 
 export type CreditWalletRow = {
@@ -180,6 +184,44 @@ export async function forgiveUnchargedCreditUsage(input: {
 		}
 	}
 	await input.db.batch(statements)
+}
+
+/**
+ * Call before a `users` write that may unlock the wallet (admin eligibility or
+ * a manual plan change), with the row before and after that write. When the
+ * wallet goes from `none` to eligible, forgive usage above the unlocked
+ * include so the unlock never charges for the locked period. Running first
+ * means a concurrent debit sweep still sees the locked wallet, and a failure
+ * leaves the account locked so a retry forgives again.
+ */
+export async function forgiveCreditUsageBeforeUnlock(input: {
+	db: D1Database
+	userId: string
+	current: UserEntitlementRow
+	next: UserEntitlementRow
+	now: Date
+}): Promise<void> {
+	const [previous, next] = await Promise.all([
+		resolveUserEntitlementFromRow({
+			db: input.db,
+			stableUserId: input.userId,
+			row: input.current,
+			now: input.now,
+		}),
+		resolveUserEntitlementFromRow({
+			db: input.db,
+			stableUserId: input.userId,
+			row: input.next,
+			now: input.now,
+		}),
+	])
+	if (previous.creditWallet !== 'none' || next.creditWallet === 'none') return
+	await forgiveUnchargedCreditUsage({
+		db: input.db,
+		userId: input.userId,
+		entitlement: next,
+		now: input.now,
+	})
 }
 
 /** Forgive uncharged usage when a credit is about to fund an empty wallet. */

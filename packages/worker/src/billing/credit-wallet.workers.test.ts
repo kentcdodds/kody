@@ -6,6 +6,8 @@ import {
 	loadAdminCreditWallet,
 	setAdminCreditEligibility,
 } from '#worker/admin/credit-grants.ts'
+import { updateAdminUserPlan } from '#worker/admin/users-data.ts'
+import { ensureRbacTestSchema } from '#worker/test-support/workers-seed.ts'
 import {
 	consumeDailyEntitlement,
 	getUserEntitlement,
@@ -529,6 +531,37 @@ test('admin eligibility unlocks a manual Pro wallet without Stripe, survives Str
 	await runCreditDebits({ env, now })
 	expect((await readCreditWallet(env.APP_DB, userId)).balanceMicroUsd).toBe(
 		1_000_000_000 - 100 * 4_000,
+	)
+})
+
+test('granting manual Pro after admin eligibility still forgives locked-period usage', async () => {
+	const user = await seedUser({ label: 'credits-eligible-then-pro' })
+	await ensureRbacTestSchema(env.APP_DB)
+	const userId = user.stableUserId
+	await topUp({ userId, cents: 1_000 })
+	await setRollup({ userId, metric: 'dynamic_worker_day', count: 900 })
+	const enabled = await setAdminCreditEligibility({
+		env,
+		target: { stableUserId: userId },
+		creditsEligible: true,
+		note: null,
+		now,
+	})
+	expect(enabled.wallet).toMatchObject({
+		plan: 'free',
+		eligible: false,
+		adminCreditsEligible: true,
+	})
+	await updateAdminUserPlan(env.APP_DB, { stableUserId: userId, plan: 'pro' })
+	expect((await entitlementFor(user)).creditWallet).toBe('funded')
+	await runCreditDebits({ env, now })
+	expect((await readCreditWallet(env.APP_DB, userId)).balanceMicroUsd).toBe(
+		10_000_000,
+	)
+	await setRollup({ userId, metric: 'dynamic_worker_day', count: 1_000 })
+	await runCreditDebits({ env, now })
+	expect((await readCreditWallet(env.APP_DB, userId)).balanceMicroUsd).toBe(
+		10_000_000 - 100 * 4_000,
 	)
 })
 

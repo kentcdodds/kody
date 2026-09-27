@@ -18,7 +18,7 @@ import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { auditDatabaseFromEnv, logAuditEvent } from '#worker/audit-log.ts'
 import {
 	ensureCreditWallet,
-	forgiveUnchargedCreditUsage,
+	forgiveCreditUsageBeforeUnlock,
 	grantAdminCredits,
 	listCreditLedgerEntries,
 	readCreditWallet,
@@ -255,10 +255,11 @@ export async function setAdminCreditEligibility(input: {
 	if (!row) throw new AdminCreditGrantError(404, 'User not found.')
 	const previousAdminCreditsEligible = Number(row.admin_credits_eligible) === 1
 	const stableUserId = row.stable_user_id
-	const previous = await resolveUserEntitlementFromRow({
+	await forgiveCreditUsageBeforeUnlock({
 		db,
-		stableUserId,
-		row,
+		userId: stableUserId,
+		current: row,
+		next: { ...row, admin_credits_eligible: input.creditsEligible ? 1 : 0 },
 		now,
 	})
 	await db
@@ -267,28 +268,6 @@ export async function setAdminCreditEligibility(input: {
 		)
 		.bind(input.creditsEligible ? 1 : 0, utcSqliteTimestamp(now), row.id)
 		.run()
-	const next = await resolveUserEntitlementFromRow({
-		db,
-		stableUserId,
-		row: { ...row, admin_credits_eligible: input.creditsEligible ? 1 : 0 },
-		now,
-	})
-	if (previous.creditWallet === 'none' && next.creditWallet !== 'none') {
-		// Usage from while the wallet was locked is never charged, the same as
-		// funding an empty wallet.
-		await ensureCreditWallet({
-			db,
-			userId: stableUserId,
-			entitlement: next,
-			now,
-		})
-		await forgiveUnchargedCreditUsage({
-			db,
-			userId: stableUserId,
-			entitlement: next,
-			now,
-		})
-	}
 	const wallet = await loadAdminCreditWallet(input.env, { stableUserId })
 	if (!wallet) throw new AdminCreditGrantError(404, 'User not found.')
 	return { previousAdminCreditsEligible, note, wallet }
