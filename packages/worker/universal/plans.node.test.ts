@@ -259,7 +259,7 @@ test('credit wallet state: only an eligible Pro wallet counts; balance > 0 funds
 	).toBe('none')
 })
 
-test('purchasable Pro has Standard includes; funded wallet multiplies rate/compute limits by 50', () => {
+test('purchasable Pro has Standard includes; funded wallet multiplies rate/compute limits by 50 up to max', () => {
 	expect(proCreditsPlanLimits).toEqual(planLimits.standard)
 	expect(resolvePlanLimits('pro', 'public', 'empty')).toEqual(
 		planLimits.standard,
@@ -269,10 +269,22 @@ test('purchasable Pro has Standard includes; funded wallet multiplies rate/compu
 	const unlocked = resolvePlanLimits('pro', 'public', 'funded')
 	for (const field of creditsUnlockedLimitFields) {
 		const base = proCreditsPlanLimits[field]
+		const ceiling = planLimits.max[field]
 		expect(unlocked[field]).toBe(
-			base === null ? null : base * creditsUnlockMultiplier,
+			base === null
+				? null
+				: ceiling === null
+					? base * creditsUnlockMultiplier
+					: Math.min(base * creditsUnlockMultiplier, ceiling),
 		)
 	}
+	// 50× capped at the max operator ceilings.
+	expect(unlocked.maxOutboundFetchesPerDay).toBe(80_000)
+	expect(unlocked.maxJobRunsPerDay).toBe(40_000)
+	expect(unlocked.maxAutomationInvocationsPerDay).toBe(200_000)
+	expect(unlocked.maxConcurrentWorkflows).toBe(
+		proCreditsPlanLimits.maxConcurrentWorkflows,
+	)
 	expect(
 		resolvePlanLimit('pro', 'execute_calls_per_day', 'public', 'empty'),
 	).toBe(500)

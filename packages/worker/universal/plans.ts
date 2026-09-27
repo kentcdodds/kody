@@ -225,7 +225,8 @@ export function resolveEntitlementLadderAfterPaidAccessChange(input: {
  *   {@link proCreditsPlanLimits} apply (hard caps).
  * - `funded` — purchasable Pro with a balance above $0. Rate/compute limits
  *   in {@link creditsUnlockedLimitFields} are multiplied by
- *   {@link creditsUnlockMultiplier}; past-include usage debits the wallet.
+ *   {@link creditsUnlockMultiplier} up to the `max` ceilings; past-include
+ *   usage debits the wallet.
  */
 export const creditWalletStates = ['none', 'empty', 'funded'] as const
 
@@ -619,8 +620,10 @@ export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
 export const proCreditsPlanLimits: PlanLimits = { ...planLimits.standard }
 
 /**
- * A funded wallet multiplies these rate/compute limits. Email caps, stock
- * limits, storage, concurrency, and the job interval floor are unchanged.
+ * A funded wallet multiplies these rate/compute limits, capped at the `max`
+ * operator ceilings (daily only: `max` has no weekly window). Email caps,
+ * stock limits, storage, concurrency, and the job interval floor are
+ * unchanged.
  */
 export const creditsUnlockMultiplier = 50
 
@@ -648,18 +651,27 @@ export function isCreditsUnlockedResource(
 }
 
 function unlockCreditsLimits(limits: PlanLimits): PlanLimits {
-	const scale = (value: number) => value * creditsUnlockMultiplier
+	const scale = (value: number, ceiling: number) =>
+		Math.min(value * creditsUnlockMultiplier, ceiling)
 	const scaleWeekly = (value: number | null) =>
-		value === null ? null : scale(value)
+		value === null ? null : value * creditsUnlockMultiplier
+	const ceiling = planLimits.max
 	return {
 		...limits,
-		maxExecuteCallsPerDay: scale(limits.maxExecuteCallsPerDay),
+		maxExecuteCallsPerDay: scale(
+			limits.maxExecuteCallsPerDay,
+			ceiling.maxExecuteCallsPerDay,
+		),
 		maxExecuteCallsPerWeek: scaleWeekly(limits.maxExecuteCallsPerWeek),
-		maxOutboundFetchesPerDay: scale(limits.maxOutboundFetchesPerDay),
+		maxOutboundFetchesPerDay: scale(
+			limits.maxOutboundFetchesPerDay,
+			ceiling.maxOutboundFetchesPerDay,
+		),
 		maxOutboundFetchesPerWeek: scaleWeekly(limits.maxOutboundFetchesPerWeek),
-		maxJobRunsPerDay: scale(limits.maxJobRunsPerDay),
+		maxJobRunsPerDay: scale(limits.maxJobRunsPerDay, ceiling.maxJobRunsPerDay),
 		maxAutomationInvocationsPerDay: scale(
 			limits.maxAutomationInvocationsPerDay,
+			ceiling.maxAutomationInvocationsPerDay,
 		),
 	} satisfies Record<(typeof creditsUnlockedLimitFields)[number], unknown> &
 		PlanLimits
