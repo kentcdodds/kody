@@ -1,11 +1,10 @@
-import { accountCreditsPath } from '#universal/compute-overage.ts'
 import {
 	hasHigherPublicPlan,
-	isCreditsUnlockedResource,
 	type CreditWalletState,
 	type EntitlementResource,
 	type PlanName,
 } from '#universal/plans.ts'
+import { entitlementCreditsOffer } from './errors.ts'
 
 export type EntitlementResourceGroup =
 	| 'monthly'
@@ -31,7 +30,7 @@ export const entitlementResourceGroupNotes: Partial<
 	Record<EntitlementResourceGroup, string>
 > = {
 	monthly:
-		'Included Worker compute and Rows read this UTC month. On Pro, usage above the include debits prepaid credits; unpaid Free is asked to upgrade.',
+		'Included Worker compute and Rows read this UTC month. On Pro, usage past the include is charged from prepaid credits and stops when they run out; Free is asked to upgrade.',
 	daily:
 		'Daily counters reset at UTC midnight. Execute and outbound fetches also have a this-week cap (UTC Monday–Sunday). High daily headroom for bursts; weekly total keeps it sustainable.',
 }
@@ -173,10 +172,10 @@ export const entitlementResourceVisibility: Record<
 
 /**
  * Plan-aware reduce-usage guidance for account usage UI, `usageGet`, and
- * warning emails. Rate/compute limits a funded wallet raises point at
- * `/account/credits` unless already unlocked (or `max`). Other resources
- * (including stock — Max ceilings ship with purchasable Pro) keep the
- * upgrade clause only while a higher public plan exists (Free).
+ * warning emails. Rate/compute includes use the same credits next step as
+ * denials ({@link entitlementCreditsOffer}). Other resources (including
+ * stock, which ships with purchasable Pro) keep the upgrade clause only
+ * while a higher public plan exists (Free).
  */
 export function buildEntitlementHowToReduce(
 	resource: EntitlementResource,
@@ -185,10 +184,7 @@ export function buildEntitlementHowToReduce(
 ) {
 	const visibility = entitlementResourceVisibility[resource]
 	const { howToReduce, upgradeOffer } = visibility
-	const creditsOffer =
-		isCreditsUnlockedResource(resource) &&
-		plan !== 'max' &&
-		creditWallet !== 'funded'
+	const creditsOffer = entitlementCreditsOffer(resource, plan, creditWallet)
 	if (!creditsOffer && (!upgradeOffer || !hasHigherPublicPlan(plan))) {
 		return howToReduce
 	}
@@ -197,9 +193,7 @@ export function buildEntitlementHowToReduce(
 			`Entitlement howToReduce for ${resource} must end with a period.`,
 		)
 	}
-	const offer = creditsOffer
-		? `; credits at ${accountCreditsPath} raise this limit.`
-		: upgradeOffer
+	const offer = creditsOffer ? `, or ${creditsOffer}.` : upgradeOffer
 	return `${howToReduce.slice(0, -1)}${offer}`
 }
 

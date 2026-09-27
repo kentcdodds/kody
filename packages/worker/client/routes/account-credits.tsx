@@ -586,38 +586,44 @@ export function AccountCreditsRoute(handle: Handle) {
 					>
 						{formatMicroUsd(credits.balanceMicroUsd)}
 					</p>
-					{credits.unlocked || credits.canBuyCredits ? (
-						<p mix={css(descriptionCss)}>
-							{credits.unlocked
-								? 'Higher limits are on.'
-								: 'Add credits to lift your limits.'}
-						</p>
-					) : null}
+					<p mix={css(descriptionCss)} data-credits-balance-note>
+						{credits.hasCredits
+							? 'Usage past your monthly include is charged from these credits.'
+							: 'With no credits left, usage past your monthly include stops. Add credits to keep going.'}
+					</p>
 				</AccountManagementPanel>
 
 				{credits.canBuyCredits
 					? renderPurchase(credits, settings, topUpDisabled, customCents)
 					: renderPurchaseUnavailable(credits)}
 
-				<AccountManagementPanel title="Limits">
+				<AccountManagementPanel title="How far credits go">
+					<p mix={css(descriptionCss)}>
+						Pro includes the first column. Past it, usage runs on credits up to
+						the second column, and stops when credits run out.
+					</p>
 					<RecordTable
 						mode="none"
-						ariaLabel="Limits with and without credits"
+						ariaLabel="Included limits and how far credits go"
 						scrollHeight="none"
 						columns={[
 							{ key: 'label', label: 'Limit', primary: true },
-							{ key: 'base', label: 'With $0', align: 'end' },
-							{ key: 'unlocked', label: 'With credits', align: 'end' },
+							{ key: 'included', label: 'Included', align: 'end' },
+							{
+								key: 'creditsCeiling',
+								label: 'On credits, up to',
+								align: 'end',
+							},
 						]}
 						rows={credits.limits.map((limit) => ({
 							id: limit.resource,
 							cells: {
 								label: limit.label,
-								base: formatIntegerNumber(limit.base),
-								unlocked: (
+								included: formatIntegerNumber(limit.included),
+								creditsCeiling: (
 									<span
 										mix={css(
-											credits.unlocked
+											credits.hasCredits
 												? {
 														color: colors.primaryText,
 														fontWeight: typography.fontWeight.semibold,
@@ -625,7 +631,7 @@ export function AccountCreditsRoute(handle: Handle) {
 												: {},
 										)}
 									>
-										{formatIntegerNumber(limit.unlocked)}
+										{formatIntegerNumber(limit.creditsCeiling)}
 									</span>
 								),
 							},
@@ -713,7 +719,7 @@ export function AccountCreditsRoute(handle: Handle) {
 			>
 				<AccountPageHeader
 					title="Credits"
-					description="Prepaid balance for Pro. Above $0, higher limits apply."
+					description="Prepaid balance for Pro. Usage past your monthly include is charged here until it runs out."
 					currentHref={currentHref}
 				/>
 				{pending && credits === null ? (

@@ -2341,10 +2341,10 @@ export type AccountBillingLoaderData = {
 export type AccountCreditsLimit = {
 	resource: string
 	label: string
-	/** Hard cap with a $0 balance. */
-	base: number
-	/** Cap while the balance is above $0. */
-	unlocked: number
+	/** Included with the Pro subscription. */
+	included: number
+	/** How far credits can carry usage past the include. */
+	creditsCeiling: number
 }
 
 export type AccountCreditsLedgerItem = {
@@ -2396,8 +2396,11 @@ export type AccountCreditsLoaderData = {
 	canBuyCredits: boolean
 	billingHref: '/account/billing'
 	balanceMicroUsd: number
-	/** Balance above $0 on an eligible wallet: unlocked limits apply. */
-	unlocked: boolean
+	/**
+	 * Eligible wallet with credits left: usage past the include runs on
+	 * credits. False means usage past the include stops.
+	 */
+	hasCredits: boolean
 	packsCents: Array<number>
 	customMinCents: number
 	customMaxCents: number

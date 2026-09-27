@@ -3,9 +3,11 @@
  * the credits guidance shown next to those meters. Includes live on
  * {@link resolvePlanLimits}; debit rates on `credits.ts`.
  *
- * Nobody is invoiced for usage above an include. A funded purchasable-Pro
- * wallet is debited for it (`billing/credit-debits.ts`); every other
- * account is not charged, bounded by its hard rate caps.
+ * Nobody is invoiced for usage above an include. Purchasable Pro goes
+ * include → credits → stop: a funded wallet is debited for it
+ * (`billing/credit-debits.ts`) and an empty wallet stops new compute
+ * ({@link resolvePastIncludeStop}). Accounts without a wallet are not
+ * charged, bounded by their hard rate caps.
  *
  * Customer surfaces name these meters “Worker compute” and “Rows read”
  * (never Cloudflare “unique worker day” / UWD jargon). Both meters that
@@ -31,7 +33,8 @@ export const accountCreditsPath = '/account/credits'
  * Credits state for one monthly meter:
  * - `within_include` — at or under the include.
  * - `debiting_credits` — above the include; the funded wallet pays.
- * - `add_credits` — above the include on Pro with an empty wallet.
+ * - `add_credits` — above the include on Pro with an empty wallet: new
+ *   compute is stopped until credits are added.
  * - `switch_to_pro` — above the include on Free or retired Standard/Pro
  *   (no wallet; not charged).
  * - `not_charged` — above the include on an operator plan (`max`).
@@ -77,6 +80,12 @@ export function isCustomerFacingComputeMeter(
 export const computeOverageWarningResourceLabels = {
 	unique_worker_days: 'Worker compute',
 	durable_object_rows_read: 'Rows read',
+} as const satisfies Record<ComputeOverageWarningResource, string>
+
+/** Unit nouns for counts ("350 worker-compute days", "5,000,000,000 rows read"). */
+export const computeOverageUnitLabels = {
+	unique_worker_days: 'worker-compute days',
+	durable_object_rows_read: 'rows read',
 } as const satisfies Record<ComputeOverageWarningResource, string>
 
 export type ComputeOverageResourceVisibility = {
@@ -164,6 +173,44 @@ export function computeMonthlyOverage(input: {
 	}
 }
 
+export type PastIncludeStop = {
+	resource: ComputeOverageWarningResource
+	limit: number
+	current: number
+}
+
+/**
+ * The monthly meter that stops new compute on an empty purchasable-Pro
+ * wallet, or `null` when nothing is stopped. Only `empty` stops: a funded
+ * wallet pays past the include, and plans without a wallet keep their hard
+ * rate caps instead. Worker compute wins when both meters are past.
+ */
+export function resolvePastIncludeStop(input: {
+	plan: PlanName
+	ladder: EntitlementLadder
+	creditWallet: CreditWalletState
+	uniqueWorkerDays: number
+	durableObjectRowsRead: number
+}): PastIncludeStop | null {
+	if (input.creditWallet !== 'empty') return null
+	const overage = computeMonthlyOverage(input)
+	if (overage.billableUniqueWorkerDays > 0) {
+		return {
+			resource: 'unique_worker_days',
+			limit: overage.includedUniqueWorkerDays,
+			current: nonNegativeInteger(input.uniqueWorkerDays),
+		}
+	}
+	if (overage.billableDurableObjectRowsRead > 0) {
+		return {
+			resource: 'durable_object_rows_read',
+			limit: overage.includedDurableObjectRowsRead,
+			current: nonNegativeInteger(input.durableObjectRowsRead),
+		}
+	}
+	return null
+}
+
 export function computeOverageIncludePercent(
 	current: number,
 	include: number,
@@ -204,11 +251,16 @@ export function buildComputeOverageHowToReduce(
 	creditWallet: CreditWalletState,
 ): string {
 	const base = computeOverageResourceVisibility[resource].howToReduce
-	const guidance = computeOverageCreditsGuidance(resource, plan, creditWallet)
+	const guidance = buildComputeOverageCreditsGuidance(
+		resource,
+		plan,
+		creditWallet,
+	)
 	return guidance ? `${base} ${guidance}` : base
 }
 
-function computeOverageCreditsGuidance(
+/** The credits next step alone (empty for operator `max`). */
+export function buildComputeOverageCreditsGuidance(
 	resource: ComputeOverageWarningResource,
 	plan: PlanName,
 	creditWallet: CreditWalletState,
@@ -216,9 +268,9 @@ function computeOverageCreditsGuidance(
 	const rate = creditDebitRates[resource].label
 	switch (creditWallet) {
 		case 'funded':
-			return `Usage above the include debits your credits at ${rate}.`
+			return `Usage past the include is charged from your credits at ${rate} and stops when they run out.`
 		case 'empty':
-			return `Credits at ${accountCreditsPath} lift rate caps; usage above the include then debits ${rate}.`
+			return `With no credits left, usage past the include stops. Add credits at ${accountCreditsPath} to keep going; usage past the include is charged at ${rate}.`
 		case 'none':
 			if (plan === 'max') return ''
 			return plan === 'free'

@@ -65,7 +65,7 @@ const planTiers: Array<{
 		price: '$12/month',
 		annualPrice: '$120/year',
 		description:
-			'More room for jobs, workflows, and daily volume. Add credits to lift rate caps.',
+			'More room for jobs, workflows, and daily volume, with a monthly include. Need more? Add prepaid credits.',
 	},
 ]
 

@@ -55,7 +55,7 @@ function credits(
 		canBuyCredits: true,
 		billingHref: '/account/billing',
 		balanceMicroUsd: 18_420_000,
-		unlocked: true,
+		hasCredits: true,
 		packsCents: [1_000, 2_500, 5_000],
 		customMinCents: 500,
 		customMaxCents: 50_000,
@@ -73,8 +73,8 @@ function credits(
 			{
 				resource: 'execute_calls_per_day',
 				label: 'Execute calls per day',
-				base: 1_500,
-				unlocked: 75_000,
+				included: 500,
+				creditsCeiling: 25_000,
 			},
 		],
 		rates: [
@@ -127,11 +127,17 @@ function renderCreditsPage(accountCredits: AccountCreditsLoaderData) {
 test('eligible wallet shows balance, packs, limits, rate card, and recent activity', async () => {
 	const html = await renderCreditsPage(credits())
 	expect(html).toContain('$18.42')
-	expect(html).toContain('Higher limits are on.')
+	expect(html).toContain(
+		'Usage past your monthly include is charged from these credits.',
+	)
 	for (const pack of ['$10', '$25', '$50']) expect(html).toContain(`>${pack}<`)
-	expect(html).toContain('With $0')
-	expect(html).toContain('With credits')
-	expect(html).toContain('75,000')
+	expect(html).toContain('How far credits go')
+	expect(html).toContain('>Included<')
+	expect(html).toContain('On credits, up to')
+	expect(html).toContain('25,000')
+	expect(html).toContain(
+		'Usage within the monthly include is free. Past it, credits pay these rates until they run out; then usage past the include stops.',
+	)
 	expect(html).toContain('How credits are charged')
 	expect(html).toContain('data-credits-rate-card')
 	expect(html).toContain('<table')
@@ -183,7 +189,7 @@ test('auto-refill on shows its settings, cap notices, and the card note', async 
 	const html = await renderCreditsPage(
 		credits({
 			balanceMicroUsd: -120_000,
-			unlocked: false,
+			hasCredits: false,
 			autoRefill: {
 				enabled: true,
 				thresholdCents: 500,
@@ -196,7 +202,9 @@ test('auto-refill on shows its settings, cap notices, and the card note', async 
 		}),
 	)
 	expect(html).toContain('−$0.12')
-	expect(html).toContain('Add credits to lift your limits.')
+	expect(html).toContain(
+		'With no credits left, usage past your monthly include stops. Add credits to keep going.',
+	)
 	expect(html).toContain('value="25"')
 	expect(html).toContain('value="100"')
 	expect(html).toContain('Auto-refilled')
@@ -209,11 +217,11 @@ test('auto-refill on shows its settings, cap notices, and the card note', async 
 
 test('ineligible accounts get one switch-to-Pro prompt', async () => {
 	const html = await renderCreditsPage(
-		credits({ eligible: false, plan: 'standard', unlocked: false }),
+		credits({ eligible: false, plan: 'standard', hasCredits: false }),
 	)
 	expect(html).toContain('Credits are available on Pro.')
 	expect(html).toContain('Switch to Pro')
-	expect(html).not.toContain('With credits')
+	expect(html).not.toContain('How far credits go')
 	expect(html).not.toContain('How credits are charged')
 
 	const noCheckout = await renderCreditsPage(
@@ -231,11 +239,26 @@ test('gift and referral Pro overlays are ineligible for the credits wallet', asy
 			canBuyCredits: false,
 			canSwitchToPro: true,
 			balanceMicroUsd: 0,
-			unlocked: false,
+			hasCredits: false,
 		}),
 	)
 	expect(html).toContain('Credits are available on Pro.')
 	expect(html).toContain('Switch to Pro')
-	expect(html).not.toContain('With credits')
+	expect(html).not.toContain('How far credits go')
 	expect(html).not.toContain('Subscribe to Pro to add credits.')
+})
+
+test('credits copy never teaches that a balance unlocks higher limits or names Max', async () => {
+	for (const data of [
+		credits(),
+		credits({ hasCredits: false, balanceMicroUsd: 0 }),
+		credits({ canBuyCredits: false, hasCredits: false, balanceMicroUsd: 0 }),
+	]) {
+		const html = await renderCreditsPage(data)
+		const text = html
+			.replaceAll(/<style[\s\S]*?<\/style>/g, ' ')
+			.replaceAll(/<script[\s\S]*?<\/script>/g, ' ')
+			.replaceAll(/<[^>]+>/g, ' ')
+		expect(text).not.toMatch(/unlock|lift|Higher limits|With \$0|\bMax\b/i)
+	}
 })

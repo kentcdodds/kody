@@ -2,8 +2,13 @@ import { expect, test, vi } from 'vitest'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { planLimits } from '#universal/plans.ts'
 import { consumeDailyEntitlement } from '#worker/entitlements/service.ts'
+import type * as EntitlementService from '#worker/entitlements/service.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
-import { entitlementLimitErrorCode } from '#worker/entitlements/errors.ts'
+import {
+	ComputeOverageLimitError,
+	computeOverageLimitErrorCode,
+	entitlementLimitErrorCode,
+} from '#worker/entitlements/errors.ts'
 import { invokePackageExport } from './service.ts'
 import { clearInvokeContractCachesForTests } from './invoke-contract-cache.ts'
 import {
@@ -14,6 +19,31 @@ import {
 	seedPackageResolution,
 } from '#worker/test-support/package-invocations.ts'
 import { automationInvocationsPerDayResource } from './automation-invocation-entitlement.ts'
+
+const entitlementServiceMock = vi.hoisted(() => ({
+	stopPastInclude: false,
+}))
+
+vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof EntitlementService>()
+	return {
+		...actual,
+		consumeDailyEntitlement: async (
+			...args: Parameters<typeof actual.consumeDailyEntitlement>
+		) => {
+			if (entitlementServiceMock.stopPastInclude) {
+				throw new ComputeOverageLimitError({
+					resource: 'unique_worker_days',
+					plan: 'pro',
+					limit: 350,
+					current: 351,
+					creditsStatus: 'add_credits',
+				})
+			}
+			return await actual.consumeDailyEntitlement(...args)
+		},
+	}
+})
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
@@ -277,4 +307,44 @@ test('execute_calls_per_day flood does not burn automation_invocations_per_day',
 	expect(automationCount.outcome === 'ready' ? automationCount.count : 0).toBe(
 		0,
 	)
+})
+
+test('an empty Pro wallet past the monthly include gets a 429 stop before sandbox work', async () => {
+	prepareSuccessfulExport()
+	const db = createDatabase()
+	const { env } = createEnvWithUserMeter(db)
+	const token = createToken()
+	entitlementServiceMock.stopPastInclude = true
+	try {
+		const denied = await invokePackageExport({
+			env,
+			baseUrl: 'https://example.test',
+			token,
+			request: {
+				packageIdOrKodyId: '@owner/pkg',
+				exportName: './dispatch-message-created',
+				params: { n: 1 },
+				idempotencyKey: 'automation-past-include',
+				source: 'webhook',
+			},
+		})
+		expect(denied.status).toBe(429)
+		expect(denied.body).toMatchObject({
+			ok: false,
+			error: {
+				code: computeOverageLimitErrorCode,
+				details: {
+					code: computeOverageLimitErrorCode,
+					resource: 'unique_worker_days',
+					plan: 'pro',
+					limit: 350,
+					current: 351,
+					creditsStatus: 'add_credits',
+				},
+			},
+		})
+		expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
+	} finally {
+		entitlementServiceMock.stopPastInclude = false
+	}
 })

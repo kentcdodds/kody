@@ -210,8 +210,12 @@ export function AdminUserCreditsPanel(
 									value: wallet.adminCreditsEligible ? 'On' : 'Off',
 								},
 								{
-									label: 'Higher limits',
-									value: wallet.unlocked ? 'On' : 'Off',
+									label: 'Past include',
+									value: wallet.unlocked
+										? 'Runs on credits'
+										: wallet.eligible
+											? 'Stops (no credits)'
+											: 'Plan hard caps',
 								},
 							]}
 						/>

@@ -88,7 +88,8 @@ test('compute notice points capped accounts at credits, never at invoices', () =
 		true,
 	)
 	expect(emptyWallet).toMatchObject({
-		title: "Over this month's include",
+		title: "This month's include is used up",
+		body: 'With no credits left, new runs past the include are stopped. Add credits to keep going.',
 		tone: 'warn',
 		action: { label: 'Add credits', href: '/account/credits' },
 	})
@@ -120,11 +121,15 @@ test('compute notice points capped accounts at credits, never at invoices', () =
 	)
 	expect(funded).toMatchObject({ title: 'Using credits', action: null })
 	expect(funded?.body).toContain('$1.24')
-	expect(funded?.body).toContain("Usage above this month's include")
+	expect(funded?.body).toContain(
+		"Usage past this month's include is charged from your credits",
+	)
+	expect(funded?.body).toContain('It stops if credits run out.')
 
 	for (const notice of [approaching, emptyWallet, free, funded]) {
 		expect(notice?.body).not.toMatch(/invoice|billed|payment method|overage/i)
 		expect(notice?.body).not.toMatch(/unique worker day/i)
+		expect(notice?.body).not.toMatch(/unlock|lift|\bMax\b/i)
 	}
 
 	expect(
@@ -190,7 +195,7 @@ test('empty wallet without purchase rights still points at Subscribe to Pro', ()
 		false,
 	)
 	expect(capped).toMatchObject({
-		body: 'Subscribe to Pro to add credits and lift rate caps.',
+		body: 'With no credits left, new runs past the include are stopped. Subscribe to Pro to add credits.',
 		action: { label: 'Subscribe to Pro', href: '/account/credits' },
 	})
 })

@@ -11,11 +11,13 @@
  *   already handled. The delta is priced at the cumulative debit rate
  *   (`creditDebitCostMicroUsd(next) - creditDebitCostMicroUsd(accounted)`).
  * - A funded purchasable-Pro wallet is debited for the delta. The balance
- *   can dip below $0 by up to one hour of unlocked usage; it stays locked
- *   until a top-up covers it.
+ *   can dip below $0 by up to one hour of usage past the include; after
+ *   that, past-include runs stop until a top-up covers it
+ *   (include → credits → stop, enforced in `consumeDailyEntitlement`).
  * - Every other wallet (empty, or not eligible) advances progress without
- *   a debit: usage above the include without credits is not charged and is
- *   never back-charged by a later top-up.
+ *   a debit. An empty wallet only gets here through the hour-scale lag
+ *   before the stop applies; that overshoot and wallet-less usage are never
+ *   charged, including by a later top-up.
  *
  * Debit ledger ids are deterministic per (user, month, meter, starting
  * units), so an overlapping run collides on the primary key and the whole

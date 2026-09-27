@@ -44,28 +44,33 @@ import {
 const recentLedgerLimit = 10
 
 /**
- * Base and unlocked numbers for the rate limits a funded wallet raises.
- * Shows numbers only; the unlocked tier has no product name. Stock is on
- * the Pro subscription base table, not listed here.
+ * The Pro include and how far credits can carry usage past it, for the rate
+ * limits credits apply to. Numbers only, framed as a ceiling on credits (not
+ * a tier a balance unlocks). Stock is on the Pro subscription, not listed.
  */
-export function listCreditsUnlockLimits(): Array<AccountCreditsLimit> {
+export function listCreditsCeilingLimits(): Array<AccountCreditsLimit> {
 	const limits: Array<AccountCreditsLimit> = []
 	for (const resource of creditsUnlockedResources) {
 		limits.push({
 			resource,
 			label: entitlementResourceLabels[resource],
-			base: resolvePlanLimit('pro', resource, 'public', 'empty'),
-			unlocked: resolvePlanLimit('pro', resource, 'public', 'funded'),
+			included: resolvePlanLimit('pro', resource, 'public', 'empty'),
+			creditsCeiling: resolvePlanLimit('pro', resource, 'public', 'funded'),
 		})
 		if (!isWeeklyComputeWindowResource(resource)) continue
-		const base = resolveWeeklyPlanLimit('pro', resource, 'public', 'empty')
-		const unlocked = resolveWeeklyPlanLimit('pro', resource, 'public', 'funded')
-		if (base === null || unlocked === null) continue
+		const included = resolveWeeklyPlanLimit('pro', resource, 'public', 'empty')
+		const creditsCeiling = resolveWeeklyPlanLimit(
+			'pro',
+			resource,
+			'public',
+			'funded',
+		)
+		if (included === null || creditsCeiling === null) continue
 		limits.push({
 			resource: `${resource}:week`,
 			label: weeklyEntitlementResourceLabel(resource),
-			base,
-			unlocked,
+			included,
+			creditsCeiling,
 		})
 	}
 	return limits
@@ -173,7 +178,7 @@ export async function loadAccountCreditsData(input: {
 		canBuyCredits: configured && user.canBuyCredits,
 		billingHref: '/account/billing',
 		balanceMicroUsd: wallet.balanceMicroUsd,
-		unlocked: user.entitlement.creditWallet === 'funded',
+		hasCredits: user.entitlement.creditWallet === 'funded',
 		packsCents: [...creditTopUpPackCents],
 		customMinCents: creditTopUpMinCents,
 		customMaxCents: creditTopUpMaxCents,
@@ -184,7 +189,7 @@ export async function loadAccountCreditsData(input: {
 			hasPaymentMethod: Boolean(wallet.autoRefillPaymentMethodId),
 		},
 		notify: wallet.notify,
-		limits: listCreditsUnlockLimits(),
+		limits: listCreditsCeilingLimits(),
 		rates,
 		debitMeters: computeOverage
 			? toCreditsDebitMeters(computeOverage.meters)

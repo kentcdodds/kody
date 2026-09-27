@@ -1,12 +1,14 @@
 import { expect, test } from 'vitest'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
+	ComputeOverageLimitError,
 	EntitlementLimitError,
 	buildEntitlementLimitMessage,
 	buildEntitlementUpgradeHint,
 	buildJobIntervalFloorMessage,
 	jobIntervalFloorUpgradeHint,
 	jobIntervalFloorErrorCode,
+	parseComputeOverageLimitMessage,
 	parseEntitlementLimitMessage,
 	parseJobIntervalFloorMessage,
 } from './errors.ts'
@@ -274,7 +276,9 @@ test('entitlement limit messages always identify a known plan name', () => {
 	expect(
 		parseEntitlementLimitMessage(buildEntitlementLimitMessage(weeklyDetails)),
 	).toEqual(weeklyDetails)
-	expect(weeklyDetails.upgradeHint).toMatch(/\/account\/credits/)
+	expect(weeklyDetails.upgradeHint).toMatch(
+		/upgrade your plan at \/account\/billing/,
+	)
 	expect(
 		parseEntitlementLimitMessage(
 			'Plan limit reached: this deployment allows at most 100 concurrent workflows and you currently have 100. hint',
@@ -287,22 +291,53 @@ test('entitlement limit messages always identify a known plan name', () => {
 	).toBeNull()
 })
 
-test('rate/compute limit hints point at /account/credits until the wallet is unlocked', () => {
-	for (const plan of ['free', 'standard', 'pro'] as const) {
+test('rate/compute include hints: $0 Pro adds credits to keep going, Free upgrades, nobody is told credits unlock limits', () => {
+	const emptyPro = buildEntitlementUpgradeHint(
+		'execute_calls_per_day',
+		'pro',
+		'empty',
+	)
+	expect(emptyPro).toBe(
+		'Remove or finish existing execute calls per day you no longer need, or add credits at /account/credits to keep going past your include.',
+	)
+	expect(buildEntitlementHowToReduce('job_runs_per_day', 'pro', 'empty')).toBe(
+		'Run fewer jobs today, space them out, or add credits at /account/credits to keep going past your include.',
+	)
+	// Free stays hard-capped: the next step is Pro, not credits.
+	expect(buildEntitlementUpgradeHint('execute_calls_per_day', 'free')).toBe(
+		'Remove or finish existing execute calls per day you no longer need, or upgrade your plan at /account/billing.',
+	)
+	expect(buildEntitlementHowToReduce('job_runs_per_day', 'free')).toBe(
+		'Run fewer jobs today, space them out, or upgrade your plan.',
+	)
+	// Retired and gift/referral Pro have no wallet: Pro with credits runs past
+	// its include.
+	for (const plan of ['standard', 'pro'] as const) {
 		expect(buildEntitlementUpgradeHint('execute_calls_per_day', plan)).toMatch(
-			/credits at \/account\/credits raise this limit/,
-		)
-		expect(buildEntitlementHowToReduce('job_runs_per_day', plan)).toMatch(
-			/credits at \/account\/credits raise this limit/,
+			/Pro with prepaid credits at \/account\/credits runs past its include\.$/,
 		)
 		expect(
 			buildEntitlementUpgradeHint('execute_calls_per_day', plan),
 		).not.toMatch(/\/account\/billing/)
 	}
-	expect(
-		buildEntitlementUpgradeHint('execute_calls_per_day', 'pro', 'empty'),
-	).toMatch(/\/account\/credits/)
-	// Already unlocked, or operator max: reduce-only.
+	for (const plan of ['free', 'standard', 'pro', 'max'] as const) {
+		for (const wallet of ['none', 'empty', 'funded'] as const) {
+			for (const resource of [
+				'execute_calls_per_day',
+				'outbound_fetches_per_day',
+				'job_runs_per_day',
+				'automation_invocations_per_day',
+			] as const) {
+				for (const hint of [
+					buildEntitlementUpgradeHint(resource, plan, wallet),
+					buildEntitlementHowToReduce(resource, plan, wallet),
+				]) {
+					expect(hint).not.toMatch(/unlock|lift|raise this limit|\bMax\b/i)
+				}
+			}
+		}
+	}
+	// Funded (already at the credits ceiling), or operator max: reduce-only.
 	for (const [plan, wallet] of [
 		['pro', 'funded'],
 		['max', 'none'],
@@ -1810,4 +1845,40 @@ test('legacy Pro and manual Pro grants keep pre-cut scheduled-job ceilings', asy
 			details: { plan: 'pro', limit: legacyLimit },
 		})
 	}
+})
+
+test('past-include stop message leads with credits, reads in customer units, and round-trips', () => {
+	const workerCompute = new ComputeOverageLimitError({
+		resource: 'unique_worker_days',
+		plan: 'pro',
+		limit: 350,
+		current: 412,
+		creditsStatus: 'add_credits',
+	})
+	expect(workerCompute.message).toMatch(
+		/^Worker compute include used up: your "pro" plan includes 350 worker-compute days this UTC month and you have used 412\. With no credits left, usage past the include stops\. Add credits at \/account\/credits to keep going; usage past the include is charged at \$0\.004 per worker-compute day\. Keep package code stable/,
+	)
+	expect(parseComputeOverageLimitMessage(workerCompute.message)).toEqual(
+		workerCompute.details,
+	)
+
+	const rowsRead = new ComputeOverageLimitError({
+		resource: 'durable_object_rows_read',
+		plan: 'pro',
+		limit: 5_000_000_000,
+		current: 5_000_000_001,
+		creditsStatus: 'add_credits',
+	})
+	expect(rowsRead.message).toContain(
+		'Rows read include used up: your "pro" plan includes 5,000,000,000 rows read this UTC month and you have used 5,000,000,001.',
+	)
+	expect(parseComputeOverageLimitMessage(rowsRead.message)).toEqual(
+		rowsRead.details,
+	)
+	for (const error of [workerCompute, rowsRead]) {
+		expect(error.message).not.toMatch(
+			/unlock|lift|raise|\bMax\b|unique worker day|\bUWD\b/i,
+		)
+	}
+	expect(parseComputeOverageLimitMessage('Plan limit reached: nope')).toBeNull()
 })

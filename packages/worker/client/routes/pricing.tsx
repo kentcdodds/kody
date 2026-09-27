@@ -5,6 +5,7 @@ import { reveal } from '#client/reveal.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { jevSearchRerankFlagKey } from '#universal/feature-flags/registry.ts'
 import {
+	creditsUnlockMultiplier,
 	formatDurableObjectRowsRead,
 	formatMinJobInterval,
 	planLimits,
@@ -186,7 +187,8 @@ export function PricingRoute(handle: Handle) {
 						<p mix={css(planPriceNoteCss)}>or $120/year</p>
 						<p mix={css(planCopyCss)}>
 							Same {factoryGuideLink()}. More room for jobs, workflows, and
-							daily volume. Add prepaid credits to lift rate caps.
+							daily volume, with a monthly include. Need more? Add prepaid
+							credits.
 							{improvedSearchNote}
 						</p>
 						{renderPaidPlanCta(isSignedIn, signedOutCta)}
@@ -264,14 +266,19 @@ export function PricingRoute(handle: Handle) {
 					<h3 id="credits-title" mix={css(creditsTitleCss)}>
 						Prepaid credits
 					</h3>
-					<p mix={css(limitsFootnoteCss)}>
-						Add credits on Pro to lift hard caps. Usage above the monthly
-						include debits prepaid credits (Worker compute and Rows read). No
+					<p mix={css(limitsFootnoteCss)} data-credits-story>
+						Pro includes the usage in the table. Need more? Add prepaid credits
+						and keep going until they run out. Free stops at its limits.
+					</p>
+					<p mix={css(limitsFootnoteCss)} data-credits-small-print>
+						Usage past the include is charged from credits (Worker compute and
+						Rows read), up to {creditsUnlockMultiplier}× Pro&rsquo;s included
+						limits. When credits run out, usage past the include stops. No
 						overage invoices.
 					</p>
 					<p mix={css(limitsFootnoteCss)}>
-						Execute and outbound fetches are hard daily and weekly caps
-						(whichever window hits first blocks). Durable Object duration is
+						Execute calls and outbound fetches count per day and per week;
+						whichever window fills first applies. Durable Object duration is
 						unmetered.
 					</p>
 				</section>

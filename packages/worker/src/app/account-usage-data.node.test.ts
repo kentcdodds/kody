@@ -342,7 +342,7 @@ test('retired Standard over compute includes is not charged and has no wallet', 
 	expect(workerCompute?.howToReduce).not.toMatch(/payment method/)
 })
 
-test('purchasable Pro with credits shows unlocked limits and debits above the include', async () => {
+test('purchasable Pro with credits runs past the include on credits; at $0 it stops at the include', async () => {
 	const now = new Date('2026-07-25T12:00:00.000Z')
 	const { db } = createUsageTestDb({
 		userId: 24,
@@ -386,8 +386,19 @@ test('purchasable Pro with credits shows unlocked limits and debits above the in
 	expect(empty?.canBuyCredits).toBe(true)
 	expect(currentFor(empty, 'execute_calls_per_day')?.limit).toBe(500)
 	expect(currentFor(empty, 'execute_calls_per_day')?.howToReduce).toMatch(
-		/credits at \/account\/credits raise this limit/,
+		/add credits at \/account\/credits to keep going past your include/,
 	)
+	const emptyWorkerCompute = empty?.computeOverage.meters.find(
+		(meter) => meter.resource === 'unique_worker_days',
+	)
+	expect(emptyWorkerCompute?.howToReduce).toMatch(
+		/With no credits left, usage past the include stops/,
+	)
+	for (const data of [funded, empty]) {
+		expect(JSON.stringify(data)).not.toMatch(
+			/unlock|lift rate|raise this limit|\bMax\b/i,
+		)
+	}
 })
 
 test('gift Pro keeps retired Pro ceilings without a wallet and cannot buy credits', async () => {

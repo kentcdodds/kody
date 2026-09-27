@@ -1,7 +1,8 @@
 import {
 	accountCreditsPath,
-	buildComputeOverageHowToReduce,
+	buildComputeOverageCreditsGuidance,
 	computeOverageResourceVisibility,
+	computeOverageUnitLabels,
 	computeOverageWarningResourceLabels,
 	type ComputeIncludeCreditsStatus,
 	type ComputeOverageWarningResource,
@@ -37,10 +38,37 @@ export type EntitlementLimitErrorDetails = {
 }
 
 /**
- * Rate/compute limits a funded wallet raises point at credits (Free and
- * retired plans land on the switch-to-Pro prompt there). An already
- * unlocked wallet and operator `max` get reduce-only guidance. Stock is
- * on the purchasable Pro subscription, not a credits unlock.
+ * Credits next step for a rate/compute include, or `null` when the plan's
+ * ordinary upgrade/reduce guidance applies. Purchasable Pro at $0 is at its
+ * include and keeps going on credits; a funded wallet is already at the
+ * credits ceiling. Free keeps its hard caps (upgrade offer); retired and
+ * gift Pro accounts learn that Pro with credits runs past the include.
+ */
+export function entitlementCreditsOffer(
+	resource: EntitlementResource,
+	plan: PlanName,
+	creditWallet: CreditWalletState,
+): string | null {
+	if (!isCreditsUnlockedResource(resource) || plan === 'max') return null
+	switch (creditWallet) {
+		case 'empty':
+			return `add credits at ${accountCreditsPath} to keep going past your include`
+		case 'funded':
+			return null
+		case 'none':
+			return hasHigherPublicPlan(plan)
+				? null
+				: `Pro with prepaid credits at ${accountCreditsPath} runs past its include`
+		default: {
+			const exhaustive: never = creditWallet
+			throw new Error(`Unknown credit wallet state: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/**
+ * Next step appended to every entitlement denial. Stock is on the
+ * purchasable Pro subscription, so it only offers an upgrade on Free.
  */
 export function buildEntitlementUpgradeHint(
 	resource: EntitlementResource,
@@ -49,12 +77,9 @@ export function buildEntitlementUpgradeHint(
 ) {
 	const label = entitlementResourceLabels[resource]
 	const reduceGuidance = `Remove or finish existing ${label} you no longer need.`
-	if (
-		isCreditsUnlockedResource(resource) &&
-		plan !== 'max' &&
-		creditWallet !== 'funded'
-	) {
-		return `${reduceGuidance.slice(0, -1)}; credits at ${accountCreditsPath} raise this limit.`
+	const creditsOffer = entitlementCreditsOffer(resource, plan, creditWallet)
+	if (creditsOffer) {
+		return `${reduceGuidance.slice(0, -1)}, or ${creditsOffer}.`
 	}
 	if (!hasHigherPublicPlan(plan)) return reduceGuidance
 	return `${reduceGuidance.slice(0, -1)}, or upgrade your plan at /account/billing.`
@@ -255,51 +280,57 @@ function creditWalletForStatus(
 }
 
 /**
- * User-facing denial for a monthly compute include. Enforcement points must
- * not compose their own messages.
+ * User-facing stop when an empty purchasable-Pro wallet has used up a
+ * monthly Worker compute or Rows read include. Enforcement points must not
+ * compose their own messages.
  */
 export function buildComputeOverageLimitMessage(
 	details: ComputeOverageLimitErrorDetails,
 ) {
 	const label = computeOverageWarningResourceLabels[details.resource]
-	return `Monthly compute include reached: your "${details.plan}" plan includes at most ${details.limit} ${label} this UTC month and you currently have ${details.current}. ${details.whatCounts} ${details.upgradeHint}`
+	const unit = computeOverageUnitLabels[details.resource]
+	return `${label} include used up: your "${details.plan}" plan includes ${formatCount(details.limit)} ${unit} this UTC month and you have used ${formatCount(details.current)}. ${details.upgradeHint}`
 }
 
 export function parseComputeOverageLimitMessage(
 	message: string,
 ): ComputeOverageLimitErrorDetails | null {
-	for (const [resource, label] of Object.entries(
+	for (const resource of Object.keys(
 		computeOverageWarningResourceLabels,
-	) as Array<[ComputeOverageWarningResource, string]>) {
+	) as Array<ComputeOverageWarningResource>) {
+		const label = computeOverageWarningResourceLabels[resource]
+		const unit = computeOverageUnitLabels[resource]
 		const match = new RegExp(
-			`^Monthly compute include reached: your "([^"]+)" plan includes at most (\\d+) ${escapeRegex(label)} this UTC month and you currently have (\\d+)\\. (.+)$`,
+			`^${escapeRegex(label)} include used up: your "([^"]+)" plan includes ([\\d,]+) ${escapeRegex(unit)} this UTC month and you have used ([\\d,]+)\\. (.+)$`,
 		).exec(message)
 		if (!match) continue
 
 		const plan = parsePlanName(match[1])
 		if (!plan) return null
-		const limit = Number(match[2])
-		const current = Number(match[3])
-		if (!Number.isSafeInteger(limit) || !Number.isSafeInteger(current)) {
-			return null
-		}
-		const rest = match[4] ?? ''
-		const whatCounts = computeOverageResourceVisibility[resource].whatCounts
-		const upgradeHint = rest.startsWith(whatCounts)
-			? rest.slice(whatCounts.length).trim()
-			: rest
+		const limit = parseCount(match[2])
+		const current = parseCount(match[3])
+		if (limit === null || current === null) return null
 		return {
 			code: computeOverageLimitErrorCode,
 			resource,
 			plan,
 			limit,
 			current,
-			whatCounts,
-			upgradeHint,
+			whatCounts: computeOverageResourceVisibility[resource].whatCounts,
+			upgradeHint: match[4] ?? '',
 			creditsStatus: 'add_credits',
 		}
 	}
 	return null
+}
+
+function formatCount(value: number) {
+	return value.toLocaleString('en-US')
+}
+
+function parseCount(value: string | undefined) {
+	const count = Number((value ?? '').replaceAll(',', ''))
+	return Number.isSafeInteger(count) ? count : null
 }
 
 export class ComputeOverageLimitError extends Error {
@@ -314,22 +345,24 @@ export class ComputeOverageLimitError extends Error {
 			upgradeHint?: string
 		},
 	) {
+		const visibility = computeOverageResourceVisibility[details.resource]
+		const guidance = buildComputeOverageCreditsGuidance(
+			details.resource,
+			details.plan,
+			creditWalletForStatus(details.creditsStatus),
+		)
 		const fullDetails: ComputeOverageLimitErrorDetails = {
 			code: computeOverageLimitErrorCode,
 			resource: details.resource,
 			plan: details.plan,
 			limit: details.limit,
 			current: details.current,
-			whatCounts:
-				details.whatCounts ??
-				computeOverageResourceVisibility[details.resource].whatCounts,
+			whatCounts: details.whatCounts ?? visibility.whatCounts,
 			upgradeHint:
 				details.upgradeHint ??
-				buildComputeOverageHowToReduce(
-					details.resource,
-					details.plan,
-					creditWalletForStatus(details.creditsStatus),
-				),
+				(guidance
+					? `${guidance} ${visibility.howToReduce}`
+					: visibility.howToReduce),
 			creditsStatus: details.creditsStatus,
 		}
 		super(buildComputeOverageLimitMessage(fullDetails))

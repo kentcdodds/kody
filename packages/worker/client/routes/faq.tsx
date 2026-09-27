@@ -159,8 +159,9 @@ const faqItems: ReadonlyArray<FaqItem> = [
 					than every {formatMinJobInterval(freeLimits.minJobIntervalMs)}),{' '}
 					{count.format(freeLimits.maxExecuteCallsPerDay)} execute calls per day
 					({count.format(freeLimits.maxExecuteCallsPerWeek ?? 0)} this week),
-					and the rest of the entitlements on Pricing. Paid plans raise the
-					caps.
+					and the rest of the entitlements on Pricing. Free stops at those caps.
+					Pro adds a larger monthly include, plus prepaid credits when you need
+					more.
 				</p>
 				<p>
 					<a href={routes.pricing.href()}>Plans and pricing</a>

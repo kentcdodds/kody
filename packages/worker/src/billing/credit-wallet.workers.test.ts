@@ -11,8 +11,10 @@ import { ensureRbacTestSchema } from '#worker/test-support/workers-seed.ts'
 import {
 	consumeDailyEntitlement,
 	getUserEntitlement,
+	readDailyEntitlementResourceUsage,
 	resolveBaseUserEntitlement,
 } from '#worker/entitlements/service.ts'
+import { isComputeOverageLimitError } from '#worker/entitlements/errors.ts'
 import { resolvePlanLimit } from '#universal/plans.ts'
 import { loadAccountCreditsUser } from '#app/account-credits-data.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -139,7 +141,7 @@ test('wallet eligibility: only the purchasable Pro gets a wallet; retired plans 
 	).toBe(1_500)
 })
 
-test('balance > 0 unlocks 50× rates; stock stays Max; debits to $0 re-block rates', async () => {
+test('credits carry rates past the include up to 50×; stock stays Max; at $0 rates stop at the include', async () => {
 	const user = await seedUser({
 		label: 'credits-unlock',
 		stripePlan: 'pro',
@@ -333,6 +335,263 @@ test('debits charge only usage above the include, are idempotent, and never back
 	expect((await readCreditWallet(env.APP_DB, userId)).balanceMicroUsd).toBe(
 		5_000_000,
 	)
+})
+
+function consume(
+	user: { email: string; stableUserId: string },
+	resource: Parameters<typeof consumeDailyEntitlement>[0]['resource'],
+) {
+	return consumeDailyEntitlement({
+		db: env.APP_DB,
+		env,
+		userId: user.stableUserId,
+		email: user.email,
+		resource,
+		now,
+	})
+}
+
+async function expectStopped(
+	user: { email: string; stableUserId: string },
+	resource: Parameters<typeof consumeDailyEntitlement>[0]['resource'],
+	expected: { resource: string; limit: number; current: number },
+) {
+	const error = await consume(user, resource).then(
+		() => null,
+		(caught: unknown) => caught,
+	)
+	expect(isComputeOverageLimitError(error)).toBe(true)
+	if (!isComputeOverageLimitError(error)) return
+	expect(error.details).toMatchObject({
+		code: 'compute_overage_include_reached',
+		plan: 'pro',
+		creditsStatus: 'add_credits',
+		...expected,
+	})
+	expect(error.message).toContain('/account/credits')
+	expect(error.message).not.toMatch(/unlock|lift|\bMax\b|unique worker day/i)
+}
+
+const pastIncludeStopped = [
+	'execute_calls_per_day',
+	'job_runs_per_day',
+	'automation_invocations_per_day',
+] as const
+
+test('include → credits → stop: an empty Pro wallet runs free within the include and stops past it', async () => {
+	// Within the include (exactly at 350 / 5B): free, and nothing is debited.
+	const within = await seedUser({
+		label: 'credits-stop-within',
+		stripePlan: 'pro',
+		creditsEligible: true,
+	})
+	await setRollup({
+		userId: within.stableUserId,
+		metric: 'dynamic_worker_day',
+		count: 350,
+	})
+	await setRollup({
+		userId: within.stableUserId,
+		metric: 'durable_object_rows_read',
+		count: 5_000_000_000,
+	})
+	expect((await entitlementFor(within)).creditWallet).toBe('empty')
+	for (const resource of pastIncludeStopped) await consume(within, resource)
+	await runCreditDebits({ env, now })
+	expect(
+		(await readCreditWallet(env.APP_DB, within.stableUserId)).balanceMicroUsd,
+	).toBe(0)
+
+	// Past the Worker compute include with $0: new compute stops, and the
+	// stopped attempt does not spend daily quota.
+	const past = await seedUser({
+		label: 'credits-stop-past',
+		stripePlan: 'pro',
+		creditsEligible: true,
+	})
+	await setRollup({
+		userId: past.stableUserId,
+		metric: 'dynamic_worker_day',
+		count: 351,
+	})
+	for (const resource of pastIncludeStopped) {
+		await expectStopped(past, resource, {
+			resource: 'unique_worker_days',
+			limit: 350,
+			current: 351,
+		})
+		expect(
+			await readDailyEntitlementResourceUsage({
+				env,
+				userId: past.stableUserId,
+				resource,
+				now,
+			}),
+		).toBe(0)
+	}
+	// Outbound fetches belong to an already admitted run.
+	await consume(past, 'outbound_fetches_per_day')
+
+	// Rows read past its include stops the same way.
+	const rows = await seedUser({
+		label: 'credits-stop-rows',
+		stripePlan: 'pro',
+		creditsEligible: true,
+	})
+	await setRollup({
+		userId: rows.stableUserId,
+		metric: 'durable_object_rows_read',
+		count: 5_000_000_001,
+	})
+	await expectStopped(rows, 'execute_calls_per_day', {
+		resource: 'durable_object_rows_read',
+		limit: 5_000_000_000,
+		current: 5_000_000_001,
+	})
+
+	// The stop does not touch Always-Max stock: at $0 purchasable Pro keeps
+	// Max stock and concurrency, and the include rates.
+	const stopped = await entitlementFor(past)
+	expect(stopped.creditWallet).toBe('empty')
+	for (const resource of [
+		'repos',
+		'saved_packages',
+		'scheduled_jobs',
+		'repo_sessions',
+		'secrets',
+		'storage_bytes',
+		'concurrent_workflows',
+	] as const) {
+		expect(
+			resolvePlanLimit(
+				stopped.plan,
+				resource,
+				stopped.ladder,
+				stopped.creditWallet,
+			),
+		).toBe(resolvePlanLimit('max', resource))
+	}
+	expect(
+		resolvePlanLimit(
+			stopped.plan,
+			'execute_calls_per_day',
+			stopped.ladder,
+			stopped.creditWallet,
+		),
+	).toBe(500)
+})
+
+test('include → credits → stop: credits pay past the include, and the stop returns when they run out', async () => {
+	// Funded and past the include: runs, and the debit lane charges credits.
+	const funded = await seedUser({
+		label: 'credits-stop-funded',
+		stripePlan: 'pro',
+		creditsEligible: true,
+	})
+	await topUp({ userId: funded.stableUserId, cents: 1_000 })
+	await setRollup({
+		userId: funded.stableUserId,
+		metric: 'dynamic_worker_day',
+		count: 400,
+	})
+	for (const resource of pastIncludeStopped) await consume(funded, resource)
+	await runCreditDebits({ env, now })
+	// 50 days past the include × $0.004.
+	expect(
+		(await readCreditWallet(env.APP_DB, funded.stableUserId)).balanceMicroUsd,
+	).toBe(10_000_000 - 50 * 4_000)
+
+	// Credits run out: 250 days past the include × $0.004 = $1.00 → $0.
+	const drained = await seedUser({
+		label: 'credits-stop-drained',
+		stripePlan: 'pro',
+		creditsEligible: true,
+	})
+	await topUp({ userId: drained.stableUserId, cents: 100 })
+	await setRollup({
+		userId: drained.stableUserId,
+		metric: 'dynamic_worker_day',
+		count: 350 + 250,
+	})
+	await runCreditDebits({ env, now })
+	expect(
+		(await readCreditWallet(env.APP_DB, drained.stableUserId)).balanceMicroUsd,
+	).toBe(0)
+	await expectStopped(drained, 'execute_calls_per_day', {
+		resource: 'unique_worker_days',
+		limit: 350,
+		current: 600,
+	})
+
+	// Stopped at $0, then credits are added: runs resume and the stretch
+	// before the stop applied is forgiven, not charged.
+	const resumed = await seedUser({
+		label: 'credits-stop-resumed',
+		stripePlan: 'pro',
+		creditsEligible: true,
+	})
+	await setRollup({
+		userId: resumed.stableUserId,
+		metric: 'dynamic_worker_day',
+		count: 420,
+	})
+	await topUp({ userId: resumed.stableUserId, cents: 500 })
+	await consume(resumed, 'execute_calls_per_day')
+	await runCreditDebits({ env, now })
+	expect(
+		(await readCreditWallet(env.APP_DB, resumed.stableUserId)).balanceMicroUsd,
+	).toBe(5_000_000)
+})
+
+test('plans without a wallet are never stopped past the monthly include', async () => {
+	const free = await seedUser({ label: 'credits-stop-free' })
+	const retiredStandard = await seedUser({
+		label: 'credits-stop-retired-standard',
+		stripePlan: 'standard',
+	})
+	const retiredPro = await seedUser({
+		label: 'credits-stop-retired-pro',
+		stripePlan: 'pro',
+	})
+	const manualPro = await seedUser({
+		label: 'credits-stop-manual-pro',
+		plan: 'pro',
+	})
+	const manualMax = await seedUser({ label: 'credits-stop-max', plan: 'max' })
+	for (const user of [
+		free,
+		retiredStandard,
+		retiredPro,
+		manualPro,
+		manualMax,
+	]) {
+		await setRollup({
+			userId: user.stableUserId,
+			metric: 'dynamic_worker_day',
+			count: 100_000,
+		})
+		expect((await entitlementFor(user)).creditWallet).toBe('none')
+		for (const resource of pastIncludeStopped) await consume(user, resource)
+	}
+	// Gift/referral Pro overlays keep retired Pro ceilings without a wallet.
+	const gift = await seedUser({ label: 'credits-stop-gift' })
+	await env.APP_DB.prepare(
+		`UPDATE users SET referral_standard_credit_expires_at = ?
+		 WHERE stable_user_id = ?`,
+	)
+		.bind('2099-01-01T00:00:00.000Z', gift.stableUserId)
+		.run()
+	await setRollup({
+		userId: gift.stableUserId,
+		metric: 'dynamic_worker_day',
+		count: 100_000,
+	})
+	expect(await entitlementFor(gift)).toEqual({
+		plan: 'pro',
+		ladder: 'public',
+		creditWallet: 'none',
+	})
+	for (const resource of pastIncludeStopped) await consume(gift, resource)
 })
 
 test('retired plans with a balance are never debited', async () => {

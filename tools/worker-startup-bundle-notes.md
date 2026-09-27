@@ -234,3 +234,9 @@ runtime path if this budget is raised again.
   5_210_356 against the previous 5_207_500 budget, reviewed ceiling 5_211_000;
   runtime local dry-run 3_885_335 against the previous 3_882_500 budget,
   reviewed ceiling 3_886_000.
+- Include → credits → stop (decision 0051): the empty-wallet past-include stop
+  in `consumeDailyEntitlement` (`resolvePastIncludeStop`, the monthly
+  `usage_rollups` reader, and the reworded `ComputeOverageLimitError` message)
+  runs on every quota check: runtime local dry-run 3_887_293 against the
+  previous 3_886_000 budget, reviewed ceiling 3_888_000; platform local dry-run
+  5_212_314 against the previous 5_211_000 budget, reviewed ceiling 5_213_000.

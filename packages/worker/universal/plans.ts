@@ -215,18 +215,22 @@ export function resolveEntitlementLadderAfterPaidAccessChange(input: {
 }
 
 /**
- * Prepaid credit wallet state for limit resolution.
+ * Prepaid credit wallet state for limit resolution. Purchasable Pro bills
+ * include → credits → stop: the subscription covers the include, usage past
+ * it runs on credits, and at $0 usage past the include stops.
  *
  * - `none` — not wallet-eligible (Free, retired Standard/Pro, gift/referral
- *   Pro overlays, manual grants, `max`). Credits never unlock or debit.
- * - `empty` — purchasable Pro with a balance at or below $0. Base
- *   {@link proCreditsPlanLimits} apply (Max stock/concurrency, Standard
- *   rates/email/includes/interval).
- * - `funded` — purchasable Pro with a balance above $0. Rate/compute limits
- *   in {@link creditsUnlockedLimitFields} are multiplied by
- *   {@link creditsUnlockMultiplier} up to the `max` ceilings; stock stays
- *   at the Max ceilings already on the base table; past-include usage
- *   debits the wallet.
+ *   Pro overlays, manual grants, `max`). Credits are never used or debited;
+ *   these plans keep their own hard caps.
+ * - `empty` — purchasable Pro with a balance at or below $0. The include
+ *   ({@link proCreditsPlanLimits}) applies, and once a monthly Worker
+ *   compute or Rows read include is used up, {@link pastIncludeStopResources}
+ *   stop until credits are added.
+ * - `funded` — purchasable Pro with a balance above $0. Past the include,
+ *   the rate/compute fields in {@link creditsUnlockedLimitFields} can reach
+ *   {@link creditsUnlockMultiplier}× the include (capped at the `max`
+ *   ceilings), and monthly Worker compute / Rows read past the include
+ *   debit the wallet.
  */
 export const creditWalletStates = ['none', 'empty', 'funded'] as const
 
@@ -329,19 +333,20 @@ export type PlanLimits = {
 	 */
 	minJobIntervalMs: number
 	/**
-	 * Included unique Dynamic Worker days per UTC month. Shown on `/pricing`.
-	 * One of the two credit debit meters (with Durable Object rows-read).
-	 * Not in `entitlementResources` (no hard cut). Usage above the include
-	 * debits a funded Pro wallet and is not charged otherwise. Approaching
-	 * and reached warning emails cover this allotment.
+	 * Included unique Dynamic Worker days per UTC month ("Worker compute" on
+	 * customer surfaces). One of the two credit debit meters (with Durable
+	 * Object rows-read). Not in `entitlementResources`. Usage above the
+	 * include debits a funded Pro wallet; an empty Pro wallet stops
+	 * {@link pastIncludeStopResources} instead. Other plans are not charged
+	 * or stopped (their hard rate caps bound it). Approaching and reached
+	 * warning emails cover this allotment.
 	 */
 	maxUniqueWorkerDaysPerMonth: number
 	/**
-	 * Included Durable Object SQLite rows read per UTC month. Shown on
-	 * `/pricing`. The other credit debit meter. Not in
-	 * `entitlementResources` (no hard cut). No duration meter. Usage above
-	 * the include debits a funded Pro wallet and is not charged otherwise.
-	 * Approaching and reached warning emails cover this allotment.
+	 * Included Durable Object SQLite rows read per UTC month ("Rows read").
+	 * The other credit debit meter, with the same include → credits → stop
+	 * rule as {@link PlanLimits.maxUniqueWorkerDaysPerMonth}. No duration
+	 * meter. Approaching and reached warning emails cover this allotment.
 	 */
 	maxDurableObjectRowsReadPerMonth: number
 }
@@ -619,8 +624,8 @@ export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
  * sessions, secrets, storage, concurrent workflows) — empty or funded.
  * Rate/compute caps, email, UWD/DO includes (350 unique worker days, 5B
  * Durable Object rows read), and the job interval floor match the retired
- * public Standard table. A funded wallet raises only the rate/compute
- * fields via {@link unlockCreditsLimits}.
+ * public Standard table: that is the Pro include. Past it, credits carry
+ * the rate/compute fields up to the ceiling from {@link unlockCreditsLimits}.
  */
 export const proCreditsPlanLimits: PlanLimits = {
 	...planLimits.standard,
@@ -634,10 +639,13 @@ export const proCreditsPlanLimits: PlanLimits = {
 }
 
 /**
- * A funded wallet multiplies these rate/compute limits, capped at the `max`
- * operator ceilings (daily only: `max` has no weekly window). Stock,
+ * How far credits carry the rate/compute include: up to this multiple of
+ * the Pro include, capped at the `max` operator ceilings (daily only: `max`
+ * has no weekly window). Applies only while the wallet is funded, so an
+ * empty wallet stops at the include (include → credits → stop). Stock,
  * concurrency, email caps, UWD/DO includes, and the job interval floor stay
- * on {@link proCreditsPlanLimits} (Max stock + Standard rates/includes).
+ * on {@link proCreditsPlanLimits}. Customer copy calls this a ceiling on how
+ * far credits go, never something a balance unlocks.
  */
 export const creditsUnlockMultiplier = 50
 
@@ -650,7 +658,7 @@ export const creditsUnlockedLimitFields = [
 	'maxAutomationInvocationsPerDay',
 ] as const satisfies ReadonlyArray<keyof PlanLimits>
 
-/** Entitlement resources whose limit a funded wallet raises (rates only). */
+/** Entitlement resources credits can carry past the include (rates only). */
 export const creditsUnlockedResources = [
 	'execute_calls_per_day',
 	'outbound_fetches_per_day',
@@ -662,6 +670,25 @@ export function isCreditsUnlockedResource(
 	resource: EntitlementResource,
 ): boolean {
 	return (creditsUnlockedResources as ReadonlyArray<string>).includes(resource)
+}
+
+/**
+ * Entry points that start new compute. On purchasable Pro with an empty
+ * wallet, these stop once this UTC month's Worker compute or Rows read
+ * include is used up, so usage past the include never runs with nothing to
+ * charge. Outbound fetches are left out: they happen inside a run that was
+ * already admitted, and failing them mid-run would strand half-done work.
+ */
+export const pastIncludeStopResources = [
+	'execute_calls_per_day',
+	'job_runs_per_day',
+	'automation_invocations_per_day',
+] as const satisfies ReadonlyArray<EntitlementResource>
+
+export function isPastIncludeStopResource(
+	resource: EntitlementResource,
+): boolean {
+	return (pastIncludeStopResources as ReadonlyArray<string>).includes(resource)
 }
 
 function unlockCreditsLimits(limits: PlanLimits): PlanLimits {
@@ -703,10 +730,12 @@ export const cloudflareComputeListUsd = {
 } as const
 
 /**
- * Monthly compute meters: included usage is free on every plan. Above the
- * include, only a funded purchasable-Pro wallet is debited; nobody is
- * invoiced. Execute and outbound fetches are hard daily + weekly caps (a
- * funded wallet raises them).
+ * Monthly compute meters: included usage is free on every plan. Purchasable
+ * Pro goes include → credits → stop: a funded wallet is debited past the
+ * include, and an empty one stops {@link pastIncludeStopResources}. Plans
+ * without a wallet are neither charged nor stopped past the monthly include;
+ * their hard daily + weekly execute and outbound caps bound them. Nobody is
+ * invoiced.
  */
 export const computeMeteringPolicy = {
 	uniqueWorkerDays: 'included_then_credits',
@@ -714,7 +743,8 @@ export const computeMeteringPolicy = {
 	executeCallsPerDay: 'hard_daily_and_weekly_cap',
 	outboundFetchesPerDay: 'hard_daily_and_weekly_cap',
 	durableObjectDuration: 'unmetered',
-	pastIncludeWithoutCredits: 'not_charged',
+	pastIncludeWithEmptyCredits: 'stopped',
+	pastIncludeWithoutWallet: 'not_charged',
 } as const
 
 /** 15-minute floor on free (and public Standard) recurring jobs. */

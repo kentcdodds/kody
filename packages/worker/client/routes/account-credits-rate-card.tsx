@@ -25,6 +25,17 @@ export function renderCreditsDebitRateCard(
 			})}
 		>
 			<summary>How credits are charged</summary>
+			<p
+				data-credits-rate-card-path
+				mix={css({
+					margin: `0 0 ${spacing.sm}`,
+					fontSize: typography.fontSize.sm,
+					color: colors.textMuted,
+				})}
+			>
+				Usage within the monthly include is free. Past it, credits pay these
+				rates until they run out; then usage past the include stops.
+			</p>
 			<div mix={css({ overflowX: 'auto' })}>
 				<table
 					aria-label="Credit debit rates and usage this period"

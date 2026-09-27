@@ -85,12 +85,23 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 	expect(html).toContain('Pro')
 	expect(html).toContain('$12')
 	expect(html).toContain(
-		'More room for jobs, workflows, and daily volume. Add prepaid credits to lift rate caps.',
+		'More room for jobs, workflows, and daily volume, with a monthly include. Need more? Add prepaid credits.',
 	)
 	expect(html).toContain('Prepaid credits')
+	// Customer story: Free hard-capped; Pro seat + include; credits until
+	// gone; small print on how far credits go and the stop.
 	expect(html).toContain(
-		'Usage above the monthly include debits prepaid credits (Worker compute and Rows read)',
+		'Pro includes the usage in the table. Need more? Add prepaid credits and keep going until they run out. Free stops at its limits.',
 	)
+	expect(html).toContain(
+		'Usage past the include is charged from credits (Worker compute and Rows read), up to 50× Pro’s included limits. When credits run out, usage past the include stops. No overage invoices.',
+	)
+	const text = html
+		.replaceAll(/<script[\s\S]*?<\/script>/g, ' ')
+		.replaceAll(/<style[\s\S]*?<\/style>/g, ' ')
+		.replaceAll(/<[^>]+>/g, ' ')
+	expect(text).not.toMatch(/unlock|lift|raise (the|rate|hard) caps|\bMax\b/i)
+	expect(text).not.toMatch(/unique worker day|\bUWD\b/i)
 	expect(html).toContain('Teams / Enterprise')
 	expect(html).toContain('mailto:kody@kody.codes')
 	expect(html).toContain('Durable Object rows read per month')

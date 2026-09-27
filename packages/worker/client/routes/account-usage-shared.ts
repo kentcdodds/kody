@@ -53,16 +53,16 @@ export function computeAccountUsageOverageNotice(
 		case 'debiting_credits':
 			return {
 				title: 'Using credits',
-				body: `Usage above this month's include is debiting your credits: ${formatMicroUsd(overage.creditsCostMicroUsd)} so far.`,
+				body: `Usage past this month's include is charged from your credits: ${formatMicroUsd(overage.creditsCostMicroUsd)} so far. It stops if credits run out.`,
 				tone: 'info',
 				action: null,
 			}
 		case 'add_credits':
 			return {
-				title: "Over this month's include",
+				title: "This month's include is used up",
 				body: canBuyCredits
-					? 'Add credits to lift rate caps. Usage above the include then debits credits.'
-					: 'Subscribe to Pro to add credits and lift rate caps.',
+					? 'With no credits left, new runs past the include are stopped. Add credits to keep going.'
+					: 'With no credits left, new runs past the include are stopped. Subscribe to Pro to add credits.',
 				tone: 'warn',
 				action: creditsActionForWallet('empty', plan, canBuyCredits),
 			}
@@ -84,8 +84,10 @@ export function computeAccountUsageOverageNotice(
 				title: 'Approaching compute includes',
 				body:
 					overage.creditWallet === 'funded'
-						? "You are over 80% of this month's Worker compute or Rows read include. Usage above it debits your credits."
-						: "You are over 80% of this month's Worker compute or Rows read include.",
+						? "You are over 80% of this month's Worker compute or Rows read include. Usage past it is charged from your credits."
+						: overage.creditWallet === 'empty'
+							? "You are over 80% of this month's Worker compute or Rows read include. With no credits, usage past it stops."
+							: "You are over 80% of this month's Worker compute or Rows read include.",
 				tone: 'info',
 				action: creditsActionForWallet(
 					overage.creditWallet,

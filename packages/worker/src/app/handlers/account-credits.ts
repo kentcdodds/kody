@@ -31,7 +31,8 @@ import {
 import { StripeApiError } from '#worker/billing/stripe-client.ts'
 
 const creditsNoticeMessages: Record<string, string> = {
-	added: 'Credits added. Higher limits apply within a minute.',
+	added:
+		'Credits added. Usage past your monthly include runs on them within a minute.',
 }
 
 const creditsErrorMessages: Record<string, string> = {
