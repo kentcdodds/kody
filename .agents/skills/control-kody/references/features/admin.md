@@ -18,7 +18,8 @@ panel for catalog-paid accounts over list MRR, unpaid users at
 (50% of the $2 included-bucket alert), and Standard/Pro
 rows whose `stripe_price_id` is missing or not in the catalog.
 `/admin/users/:stableUserId` shows the same cost-vs-pay estimate for one
-account.
+account, plus Durable Object duration (Cloudflare-measured GB-s beside the
+StorageRunner RPC wall-clock proxy).
 
 ## Drive it
 

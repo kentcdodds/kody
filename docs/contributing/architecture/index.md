@@ -15,7 +15,7 @@ Production is four product scripts plus independent ops workers. Origin owns
 
 | Script                       | Public surface                         | Owns                                                                                                                                                                         | Binds                                                                        |
 | ---------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `kody-production` (origin)   | `kody.codes`                           | Remix, MCP HTTP, OAuth, inbound email, queue consumers, `JobsHost`                                                                                                           | Platform DOs, runtime DOs / workflows, `RUNTIME_WORKER`, `JOBS`, `HIGHLIGHT` |
+| `kody-production` (origin)   | `kody.codes`                           | Remix, MCP HTTP, OAuth, inbound email, queue consumers, `JobsHost`, `DynamicWorkerUsageTail`                                                                                 | Platform DOs, runtime DOs / workflows, `RUNTIME_WORKER`, `JOBS`, `HIGHLIGHT` |
 | `kody-platform`              | `/__platform/health` only              | `MCP`, `McpClientHub`, `OAuthPurgeCoordinator`, `UserMeter`, `Mailbox`, `RepoSession`, `RepoSessionIndex`, `StripePlanRefresh`, `KodyFetchGateway`, `DynamicWorkerUsageTail` | Shared D1/KV/R2/AI; runtime DOs for package work                             |
 | `kody-runtime`               | `{user}.kody.run`; `/__runtime/health` | `StorageRunner`, `RunLog`, `PackageRealtimeSession`, `DynamicCallableWorkflow`, `KodyFetchGateway`, `DynamicWorkerUsageTail`, `PackageAppRuntimeBridge`                      | Platform DOs, `JOBS`                                                         |
 | `kody-jobs`                  | no public hostname                     | `JobManager`, `JOBS_DB`, `kody-scheduled-dispatch`                                                                                                                           | `HOST` → origin `JobsHost`                                                   |
@@ -86,7 +86,8 @@ wrote during that fetch) so the next cron can skip the synthetic.
   Objects. The rubric for choosing between D1, a per-user Durable Object, and
   Analytics Engine is recorded in decision record
   [0002 — Data placement](../decisions/0002-data-placement.md).
-- [Usage Metering](./usage-metering.md): per-user usage events, the
+- [Usage Metering](./usage-metering.md): per-user usage events (including
+  Cloudflare-measured Worker Loader CPU and Durable Object duration), the
   `recordUsage()` helper contract, the D1 rollup table, and the usage-state
   campaign machine.
 - [Worker startup budget](./startup-budget.md): what counts toward Cloudflare's

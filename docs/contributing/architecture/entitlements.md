@@ -296,8 +296,8 @@ prices the prior month against the then-current includes. D1 evaluation failures
 fail closed (no charges). Execute and outbound fetches are hard daily and weekly
 caps with no overage (`computeMeteringPolicy.executeCallsPerDay`) — an execute
 overage would double-charge the same burn as unique worker days. Durable Object
-duration is unmetered; a later duration rate should stay list plus a thin
-markup. Overage is a heavy-tail safety valve only
+duration is observed (Cloudflare-measured GB-s plus the StorageRunner RPC
+wall-clock proxy) and is not billed. Overage is a heavy-tail safety valve only
 (`computeMeteringPolicy.overageRole`): included amounts and the public Pro $49
 price are not sized to monetize via overage. Legacy Standard/Pro accounts are
 not cut and not billed on these allotments

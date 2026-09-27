@@ -291,6 +291,7 @@ cleanup periods:
 - Feature-flag exposure records: 90 days
 - Daily entitlement counters: 400 days
 - Monthly usage rollups: 24 months
+- Durable Object duration attribution: until account deletion
 - Stripe webhook event records: 30 days
 - Non-current published bundle artifacts: at least 30 days, then eligible for
   removal when no active source or repo session needs them
