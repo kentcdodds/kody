@@ -32,6 +32,8 @@ type PendingDurableObjectUsage = {
 	outcome: UsageOutcome
 	durationMs: number
 	eventCount: number
+	/** First queued event in this bucket; the flush writes this timestamp. */
+	timestamp: string
 }
 
 const pendingByKey = new Map<string, PendingDurableObjectUsage>()
@@ -186,7 +188,11 @@ function queueDurableObjectUsage(input: {
 	durationMs: number
 	units: number
 }) {
-	const key = `${input.eventType}\0${input.userId}\0${input.doClass}\0${input.outcome}`
+	const timestamp = new Date().toISOString()
+	// Buckets never span a UTC month, so a burst that crosses midnight on the
+	// last day cannot move earlier units into the next month's rollup.
+	const month = timestamp.slice(0, 'YYYY-MM'.length)
+	const key = `${input.eventType}\0${input.userId}\0${input.doClass}\0${input.outcome}\0${month}`
 	const existing = pendingByKey.get(key)
 	if (existing) {
 		existing.durationMs += input.durationMs
@@ -200,6 +206,7 @@ function queueDurableObjectUsage(input: {
 			outcome: input.outcome,
 			durationMs: input.durationMs,
 			eventCount: input.units,
+			timestamp,
 		})
 	}
 	scheduleDurableObjectUsageFlush()
@@ -258,6 +265,7 @@ async function flushQueuedDurableObjectUsage() {
 					: {}),
 				eventCount: bucket.eventCount,
 				outcome: bucket.outcome,
+				timestamp: bucket.timestamp,
 			}),
 		),
 	).then(() => undefined)

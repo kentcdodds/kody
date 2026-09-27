@@ -345,12 +345,14 @@ export does not list them.
      empty when unset)
    - `doubles`:
      `[durationMs ?? 0, cpuMs ?? 0, bytes ?? 0, codeChars ?? 0, paramsChars ?? 0]`.
-     Coalesced `durable_object_gb_seconds` and `durable_object_rows_read` points
-     store the coalesced unit count in the third double instead of bytes so
-     hourly rollups can recover `event_count`. `codeChars` is double4
-     (module-graph text length on `dynamic_worker_invoke`). `paramsChars` is
-     double5 (key-sorted JSON length of evaluate `params`; **0** when `params`
-     is omitted, `null`, a non-object, an array, or empty `{}`).
+     Coalesced points (`coalescedCountUsageEventTypes`:
+     `durable_object_gb_seconds`, `durable_object_rows_read`,
+     `durable_object_platform_rows_read`) store the coalesced unit count in the
+     third double instead of bytes so hourly rollups can recover `event_count`.
+     `codeChars` is double4 (module-graph text length on
+     `dynamic_worker_invoke`). `paramsChars` is double5 (key-sorted JSON length
+     of evaluate `params`; **0** when `params` is omitted, `null`, a non-object,
+     an array, or empty `{}`).
 
    Analytics Engine is the analysis store (sampling-tolerant, high cardinality).
    Do not build enforcement on it.
@@ -636,9 +638,9 @@ GROUP BY stage
 - Analytics Engine: query the `kody_usage_events` dataset (SQL API) filtered by
   the `index1` user id; blob/double positions are listed above. Remember that
   Analytics Engine samples: count with `sum(_sample_interval)` and sum values
-  with `sum(doubleN * _sample_interval)`. Coalesced `durable_object_gb_seconds`
-  points store the RPC count in `double3`, so that metric's `event_count` is
-  `sum(if(double3 > 0, double3, 1) * _sample_interval)` and `total_bytes`
+  with `sum(doubleN * _sample_interval)`. Coalesced points store their unit
+  count (RPCs or rows read) in `double3`, so those metrics' `event_count` is
+  `sum(if(double3 > 0, double3, 1.0) * _sample_interval)` and `total_bytes`
   stays 0.
 - D1: `SELECT * FROM usage_rollups WHERE user_id = ?1 AND month = ?2` gives
   every metric for a user's month in one small scan.

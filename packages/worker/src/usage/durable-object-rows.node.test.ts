@@ -97,6 +97,7 @@ test('with Analytics Engine a burst of reads writes one point per metric and cla
 		entityId: 'StorageRunner',
 		eventCount: 600,
 		outcome: 'success',
+		timestamp: expect.any(String),
 	})
 	expect(recordUsage).toHaveBeenCalledWith(env, {
 		userId: 'user-1',
@@ -104,5 +105,6 @@ test('with Analytics Engine a burst of reads writes one point per metric and cla
 		entityId: 'RunLog',
 		eventCount: 42,
 		outcome: 'success',
+		timestamp: expect.any(String),
 	})
 })

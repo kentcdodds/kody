@@ -43,6 +43,11 @@ export const usageMetricSeries: Array<UsageMetricSeries> = [
 		label: 'Durable Object rows read',
 		color: chartColor.amber,
 	},
+	{
+		metric: 'durable_object_platform_rows_read',
+		label: 'Platform DO rows read (RunLog)',
+		color: chartColor.violet,
+	},
 ]
 
 export const monthShortNames = [
