@@ -173,10 +173,10 @@ export const entitlementResourceVisibility: Record<
 
 /**
  * Plan-aware reduce-usage guidance for account usage UI, `usageGet`, and
- * warning emails. Rate/compute and stock/concurrency limits a funded wallet
- * raises point at `/account/credits` unless already unlocked (or `max`).
- * Email and other non-unlocked resources keep the upgrade clause only while
- * a higher public plan exists (Free).
+ * warning emails. Rate/compute limits a funded wallet raises point at
+ * `/account/credits` unless already unlocked (or `max`). Other resources
+ * (including stock — Max ceilings ship with purchasable Pro) keep the
+ * upgrade clause only while a higher public plan exists (Free).
  */
 export function buildEntitlementHowToReduce(
 	resource: EntitlementResource,

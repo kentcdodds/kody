@@ -37,10 +37,10 @@ export type EntitlementLimitErrorDetails = {
 }
 
 /**
- * Rate/compute and stock/concurrency limits a funded wallet raises point at
- * credits (Free and retired plans land on the switch-to-Pro prompt there).
- * An already unlocked wallet and operator `max` get reduce-only guidance.
- * Email caps are not unlocked by credits.
+ * Rate/compute limits a funded wallet raises point at credits (Free and
+ * retired plans land on the switch-to-Pro prompt there). An already
+ * unlocked wallet and operator `max` get reduce-only guidance. Stock is
+ * on the purchasable Pro subscription, not a credits unlock.
  */
 export function buildEntitlementUpgradeHint(
 	resource: EntitlementResource,

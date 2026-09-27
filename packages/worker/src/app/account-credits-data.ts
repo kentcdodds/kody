@@ -40,9 +40,9 @@ import {
 const recentLedgerLimit = 10
 
 /**
- * Base and unlocked numbers for the limits a funded wallet raises (rates
- * and stock/concurrency). Shows numbers only; the unlocked tier has no
- * product name.
+ * Base and unlocked numbers for the rate limits a funded wallet raises.
+ * Shows numbers only; the unlocked tier has no product name. Stock is on
+ * the Pro subscription base table, not listed here.
  */
 export function listCreditsUnlockLimits(): Array<AccountCreditsLimit> {
 	const limits: Array<AccountCreditsLimit> = []

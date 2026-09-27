@@ -2,7 +2,6 @@ import { expect, test } from 'vitest'
 import {
 	creditsUnlockMultiplier,
 	creditsUnlockedLimitFields,
-	creditsUnlockedStockLimitFields,
 	formatDurableObjectRowsRead,
 	hasHigherPublicPlan,
 	parseEntitlementLadder,
@@ -260,13 +259,61 @@ test('credit wallet state: only an eligible Pro wallet counts; balance > 0 funds
 	).toBe('none')
 })
 
-test('purchasable Pro has Standard includes; funded wallet unlocks rates and Max stock', () => {
-	expect(proCreditsPlanLimits).toEqual(planLimits.standard)
-	expect(resolvePlanLimits('pro', 'public', 'empty')).toEqual(
-		planLimits.standard,
+test('purchasable Pro has Max stock always; funded wallet unlocks rates only', () => {
+	const stockFields = [
+		'maxRepos',
+		'maxSavedPackages',
+		'maxScheduledJobs',
+		'maxRepoSessions',
+		'maxSecrets',
+		'maxStorageBytes',
+		'maxConcurrentWorkflows',
+	] as const
+	for (const field of stockFields) {
+		expect(proCreditsPlanLimits[field]).toBe(planLimits.max[field])
+	}
+	// Rates, email, includes, and interval stay on Standard.
+	expect(proCreditsPlanLimits.maxExecuteCallsPerDay).toBe(
+		planLimits.standard.maxExecuteCallsPerDay,
 	)
+	expect(proCreditsPlanLimits.maxEmailSendsPerDay).toBe(
+		planLimits.standard.maxEmailSendsPerDay,
+	)
+	expect(proCreditsPlanLimits.maxUniqueWorkerDaysPerMonth).toBe(350)
+	expect(proCreditsPlanLimits.maxDurableObjectRowsReadPerMonth).toBe(
+		5_000_000_000,
+	)
+	expect(proCreditsPlanLimits.minJobIntervalMs).toBe(
+		planLimits.standard.minJobIntervalMs,
+	)
+
+	const empty = resolvePlanLimits('pro', 'public', 'empty')
+	expect(empty).toEqual(proCreditsPlanLimits)
+	// Empty Pro: Max stock + Standard rates.
+	expect(resolvePlanLimit('pro', 'saved_packages', 'public', 'empty')).toBe(
+		10_000,
+	)
+	expect(resolvePlanLimit('pro', 'secrets', 'public', 'empty')).toBe(10_000)
+	expect(resolvePlanLimit('pro', 'scheduled_jobs', 'public', 'empty')).toBe(
+		5_000,
+	)
+	expect(
+		resolvePlanLimit('pro', 'concurrent_workflows', 'public', 'empty'),
+	).toBe(200)
+	expect(resolvePlanLimit('pro', 'repos', 'public', 'empty')).toBe(10_000)
+	expect(resolvePlanLimit('pro', 'repo_sessions', 'public', 'empty')).toBe(
+		20_000,
+	)
+	expect(resolvePlanLimit('pro', 'storage_bytes', 'public', 'empty')).toBe(
+		100 * 1024 * 1024 * 1024,
+	)
+	expect(
+		resolvePlanLimit('pro', 'execute_calls_per_day', 'public', 'empty'),
+	).toBe(500)
+
 	// Retired $49 Pro keeps its own table.
 	expect(resolvePlanLimits('pro', 'public', 'none')).toEqual(planLimits.pro)
+
 	const unlocked = resolvePlanLimits('pro', 'public', 'funded')
 	for (const field of creditsUnlockedLimitFields) {
 		const base = proCreditsPlanLimits[field]
@@ -279,41 +326,14 @@ test('purchasable Pro has Standard includes; funded wallet unlocks rates and Max
 					: Math.min(base * creditsUnlockMultiplier, ceiling),
 		)
 	}
-	for (const field of creditsUnlockedStockLimitFields) {
+	// Funded keeps the same Max stock as empty; only rates rise.
+	for (const field of stockFields) {
+		expect(unlocked[field]).toBe(empty[field])
 		expect(unlocked[field]).toBe(planLimits.max[field])
 	}
-	// Empty wallet keeps Standard stock ceilings.
-	expect(resolvePlanLimit('pro', 'saved_packages', 'public', 'empty')).toBe(50)
-	expect(resolvePlanLimit('pro', 'secrets', 'public', 'empty')).toBe(100)
-	expect(resolvePlanLimit('pro', 'scheduled_jobs', 'public', 'empty')).toBe(15)
-	expect(
-		resolvePlanLimit('pro', 'concurrent_workflows', 'public', 'empty'),
-	).toBe(10)
-	// Funded wallet raises stock to Max (not a raw 50× of Standard).
-	expect(resolvePlanLimit('pro', 'saved_packages', 'public', 'funded')).toBe(
-		10_000,
-	)
-	expect(resolvePlanLimit('pro', 'secrets', 'public', 'funded')).toBe(10_000)
-	expect(resolvePlanLimit('pro', 'scheduled_jobs', 'public', 'funded')).toBe(
-		5_000,
-	)
-	expect(
-		resolvePlanLimit('pro', 'concurrent_workflows', 'public', 'funded'),
-	).toBe(200)
-	expect(resolvePlanLimit('pro', 'repos', 'public', 'funded')).toBe(10_000)
-	expect(resolvePlanLimit('pro', 'repo_sessions', 'public', 'funded')).toBe(
-		20_000,
-	)
-	expect(resolvePlanLimit('pro', 'storage_bytes', 'public', 'funded')).toBe(
-		100 * 1024 * 1024 * 1024,
-	)
-	// 50× rate unlock capped at the max operator ceilings.
 	expect(unlocked.maxOutboundFetchesPerDay).toBe(80_000)
 	expect(unlocked.maxJobRunsPerDay).toBe(40_000)
 	expect(unlocked.maxAutomationInvocationsPerDay).toBe(200_000)
-	expect(
-		resolvePlanLimit('pro', 'execute_calls_per_day', 'public', 'empty'),
-	).toBe(500)
 	expect(
 		resolvePlanLimit('pro', 'execute_calls_per_day', 'public', 'funded'),
 	).toBe(25_000)

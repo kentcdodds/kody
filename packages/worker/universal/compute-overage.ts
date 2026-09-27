@@ -201,7 +201,7 @@ function computeOverageCreditsGuidance(
 		case 'funded':
 			return `Usage above the include debits your credits at ${rate}.`
 		case 'empty':
-			return `Credits at ${accountCreditsPath} lift rate caps and stock/concurrency ceilings; usage above the include then debits ${rate}.`
+			return `Credits at ${accountCreditsPath} lift rate caps; usage above the include then debits ${rate}.`
 		case 'none':
 			if (plan === 'max') return ''
 			return plan === 'free'
@@ -215,9 +215,10 @@ function computeOverageCreditsGuidance(
 }
 
 /**
- * Credits help rate/compute and stock/concurrency limits a funded wallet
- * raises, plus the monthly compute meters it pays for. Email caps stay off
- * the unlock list, so email warnings get no credits link.
+ * Credits only help rate/compute limits a funded wallet raises and the
+ * monthly compute meters it pays for; stock, email, storage, and
+ * concurrency warnings get no credits link (purchasable Pro stock is on
+ * the subscription base table).
  */
 export function warningOffersCredits(resource: string): boolean {
 	return (

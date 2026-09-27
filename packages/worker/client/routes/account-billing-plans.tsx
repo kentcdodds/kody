@@ -65,7 +65,7 @@ const planTiers: Array<{
 		price: '$12/month',
 		annualPrice: '$120/year',
 		description:
-			'More room for jobs, workflows, and daily volume. Add credits to lift rate caps and stock/concurrency ceilings.',
+			'High stock and concurrency ceilings. Add credits to lift rate caps.',
 	},
 ]
 

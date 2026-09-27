@@ -84,10 +84,8 @@ export function isPaidPlan(plan: PlanName): boolean {
 /**
  * Whether a higher plan is available as a self-serve upgrade destination.
  *
- * Only Free can upgrade: the purchasable Pro has the retired Standard
- * includes, so switching from retired Standard or Pro does not raise stock
- * limits (it adds the credit wallet instead). Max is manual-only and never a
- * purchase destination.
+ * Only Free can upgrade (to purchasable Pro). Retired Standard/Pro are not
+ * destinations; Max is manual-only and never a purchase destination.
  */
 export function hasHigherPublicPlan(plan: PlanName): boolean {
 	switch (plan) {
@@ -222,12 +220,13 @@ export function resolveEntitlementLadderAfterPaidAccessChange(input: {
  * - `none` — not wallet-eligible (Free, retired Standard/Pro, gift/referral
  *   Pro overlays, manual grants, `max`). Credits never unlock or debit.
  * - `empty` — purchasable Pro with a balance at or below $0. Base
- *   {@link proCreditsPlanLimits} apply (hard caps).
+ *   {@link proCreditsPlanLimits} apply (Max stock/concurrency, Standard
+ *   rates/email/includes/interval).
  * - `funded` — purchasable Pro with a balance above $0. Rate/compute limits
  *   in {@link creditsUnlockedLimitFields} are multiplied by
- *   {@link creditsUnlockMultiplier} up to the `max` ceilings; stock and
- *   concurrency fields in {@link creditsUnlockedStockLimitFields} rise to
- *   the corresponding `max` ceilings; past-include usage debits the wallet.
+ *   {@link creditsUnlockMultiplier} up to the `max` ceilings; stock stays
+ *   at the Max ceilings already on the base table; past-include usage
+ *   debits the wallet.
  */
 export const creditWalletStates = ['none', 'empty', 'funded'] as const
 
@@ -613,20 +612,31 @@ export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
 }
 
 /**
- * Purchasable Pro ($12). Includes match the retired public Standard table
- * (350 unique worker days, 5B Durable Object rows read). Applied when the
- * effective plan is `pro` and the granting Stripe price is the configured
- * Pro price ({@link CreditWalletState} is not `none`).
+ * Purchasable Pro ($12). Applied when the effective plan is `pro` and the
+ * credit wallet is not `none` (purchasable Pro price or admin eligibility).
+ *
+ * Stock and concurrency match {@link planLimits.max}. Rate/compute caps,
+ * email, UWD/DO includes (350 unique worker days, 5B Durable Object rows
+ * read), and the job interval floor match the retired public Standard
+ * table. A funded wallet raises only the rate/compute fields via
+ * {@link unlockCreditsLimits}.
  */
-export const proCreditsPlanLimits: PlanLimits = { ...planLimits.standard }
+export const proCreditsPlanLimits: PlanLimits = {
+	...planLimits.standard,
+	maxRepos: planLimits.max.maxRepos,
+	maxSavedPackages: planLimits.max.maxSavedPackages,
+	maxScheduledJobs: planLimits.max.maxScheduledJobs,
+	maxRepoSessions: planLimits.max.maxRepoSessions,
+	maxSecrets: planLimits.max.maxSecrets,
+	maxStorageBytes: planLimits.max.maxStorageBytes,
+	maxConcurrentWorkflows: planLimits.max.maxConcurrentWorkflows,
+}
 
 /**
  * A funded wallet multiplies these rate/compute limits, capped at the `max`
- * operator ceilings (daily only: `max` has no weekly window). Stock and
- * concurrency use {@link creditsUnlockedStockLimitFields} (copy of `max`,
- * not a raw 50× of Standard — that would overshoot concurrent workflows).
- * Email caps, UWD/DO includes, and the job interval floor stay on the
- * Standard/`proCreditsPlanLimits` base.
+ * operator ceilings (daily only: `max` has no weekly window). Stock,
+ * concurrency, email caps, UWD/DO includes, and the job interval floor stay
+ * on {@link proCreditsPlanLimits} (Max stock + Standard rates/includes).
  */
 export const creditsUnlockMultiplier = 50
 
@@ -639,33 +649,12 @@ export const creditsUnlockedLimitFields = [
 	'maxAutomationInvocationsPerDay',
 ] as const satisfies ReadonlyArray<keyof PlanLimits>
 
-/**
- * Stock and concurrency ceilings a funded wallet raises to the matching
- * `planLimits.max` values. Not scaled by {@link creditsUnlockMultiplier}.
- */
-export const creditsUnlockedStockLimitFields = [
-	'maxRepos',
-	'maxSavedPackages',
-	'maxScheduledJobs',
-	'maxRepoSessions',
-	'maxSecrets',
-	'maxStorageBytes',
-	'maxConcurrentWorkflows',
-] as const satisfies ReadonlyArray<keyof PlanLimits>
-
-/** Entitlement resources whose limit a funded wallet raises. */
+/** Entitlement resources whose limit a funded wallet raises (rates only). */
 export const creditsUnlockedResources = [
 	'execute_calls_per_day',
 	'outbound_fetches_per_day',
 	'job_runs_per_day',
 	'automation_invocations_per_day',
-	'repos',
-	'saved_packages',
-	'scheduled_jobs',
-	'repo_sessions',
-	'secrets',
-	'storage_bytes',
-	'concurrent_workflows',
 ] as const satisfies ReadonlyArray<EntitlementResource>
 
 export function isCreditsUnlockedResource(
@@ -697,15 +686,7 @@ function unlockCreditsLimits(limits: PlanLimits): PlanLimits {
 			limits.maxAutomationInvocationsPerDay,
 			ceiling.maxAutomationInvocationsPerDay,
 		),
-		maxRepos: ceiling.maxRepos,
-		maxSavedPackages: ceiling.maxSavedPackages,
-		maxScheduledJobs: ceiling.maxScheduledJobs,
-		maxRepoSessions: ceiling.maxRepoSessions,
-		maxSecrets: ceiling.maxSecrets,
-		maxStorageBytes: ceiling.maxStorageBytes,
-		maxConcurrentWorkflows: ceiling.maxConcurrentWorkflows,
 	} satisfies Record<(typeof creditsUnlockedLimitFields)[number], unknown> &
-		Record<(typeof creditsUnlockedStockLimitFields)[number], unknown> &
 		PlanLimits
 }
 
@@ -724,7 +705,7 @@ export const cloudflareComputeListUsd = {
  * Monthly compute meters: included usage is free on every plan. Above the
  * include, only a funded purchasable-Pro wallet is debited; nobody is
  * invoiced. Execute and outbound fetches are hard daily + weekly caps (a
- * funded wallet raises them along with stock/concurrency ceilings).
+ * funded wallet raises them).
  */
 export const computeMeteringPolicy = {
 	uniqueWorkerDays: 'included_then_credits',

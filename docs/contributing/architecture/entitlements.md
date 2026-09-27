@@ -21,10 +21,10 @@ at `packages/worker/universal/plans.ts`.
   `resolveEffectivePlan(manual, stripe)`.
 - `errors.ts` — the one typed error (`EntitlementLimitError`) and the one
   user-facing message builder every enforcement point uses.
-  `buildEntitlementUpgradeHint` points rate/compute and stock/concurrency limits
-  a funded wallet raises at `/account/credits` (reduce-only once unlocked, and
-  for `max`); email and other non-unlocked resources keep the upgrade clause
-  only when `hasHigherPublicPlan(plan)` (Free).
+  `buildEntitlementUpgradeHint` points rate/compute limits a funded wallet
+  raises at `/account/credits` (reduce-only once unlocked, and for `max`); stock
+  and other non-unlocked resources keep the upgrade clause only when
+  `hasHigherPublicPlan(plan)` (Free).
 - `service.ts` — `getUserEntitlement` / `getUserPlan`,
   `getCachedUserEntitlement` / `getCachedUserPlan` (60s TTL enforcement cache),
   `assertWithinEntitlement`, built-in D1 usage counters, the daily-counter
@@ -209,10 +209,11 @@ earlier job-matched values. All other resources use the ordinary
 
 Implements v1 of [#2617](https://github.com/kentcdodds/kody/issues/2617). The
 public ladder is Free plus one purchasable **Pro** (`STRIPE_PRO_PRICE_ID` /
-`STRIPE_PRO_YEARLY_PRICE_ID`, $12 / $120). Pro uses `proCreditsPlanLimits`,
-which equals the retired public Standard table. Retired Standard ($12/$120) and
-Pro ($49/$480) subscribers keep their plan and table until they change plan
-(`retiredStandardPriceIds` / `retiredProPriceIds`); checkout only sells Pro.
+`STRIPE_PRO_YEARLY_PRICE_ID`, $12 / $120). Pro uses `proCreditsPlanLimits`: Max
+stock/concurrency with Standard rates, email, UWD/DO includes, and job interval.
+Retired Standard ($12/$120) and Pro ($49/$480) subscribers keep their plan and
+table until they change plan (`retiredStandardPriceIds` / `retiredProPriceIds`);
+checkout only sells Pro.
 
 **Eligibility keys off the Stripe price or an admin decision.**
 `resolveSubscriptionPlan` sets `creditsEligible` when the granting subscription
@@ -231,18 +232,17 @@ admin-eligible. An admin grant to a `none` account only holds a balance. Buying
 credits and auto-refill still require the purchasable Pro subscription
 (`isPayingForCreditsPro`).
 
-**Unlock.** `funded` multiplies the rate/compute limits in
-`creditsUnlockedLimitFields` (execute, outbound fetches, job runs, and
-automation invocations, daily and weekly) by `creditsUnlockMultiplier` (50),
-capped at the `max` daily ceilings (execute 25,000, outbound 80,000, job runs
-40,000, automation 200,000; `max` has no weekly window). Stock and concurrency
-fields in `creditsUnlockedStockLimitFields` (repos, saved packages, scheduled
-jobs, repo sessions, secrets, storage bytes, concurrent workflows) rise to the
-matching `planLimits.max` ceilings — not a raw 50× of Standard, which would
-overshoot concurrent workflows (50×10 = 500 vs Max 200). Email caps, UWD/DO
-includes, and the job interval floor stay on the Standard/`proCreditsPlanLimits`
-base. Unlocking costs nothing; at $0 the base caps apply again (within the 60s
-enforcement cache).
+**Unlock.** Purchasable Pro (`proCreditsPlanLimits`) always includes Max
+stock/concurrency (repos, saved packages, scheduled jobs, repo sessions,
+secrets, storage bytes, concurrent workflows) — empty or funded. `funded`
+multiplies only the rate/compute limits in `creditsUnlockedLimitFields`
+(execute, outbound fetches, job runs, and automation invocations, daily and
+weekly) by `creditsUnlockMultiplier` (50), capped at the `max` daily ceilings
+(execute 25,000, outbound 80,000, job runs 40,000, automation 200,000; `max` has
+no weekly window). Email caps, UWD/DO includes (350 / 5B), and the job interval
+floor stay on the Standard base. Unlocking costs nothing; at $0 the Standard
+rate caps apply again (within the 60s enforcement cache) while Max stock
+remains.
 
 **Debits.** The `usage_aggregation` lane runs `runCreditDebits`
 (`packages/worker/src/billing/credit-debits.ts`) right after it recomputes
@@ -775,13 +775,13 @@ the stable programmatic contract:
 ```
 
 The `message` is built by `buildEntitlementLimitMessage` and is the single
-user-facing string across MCP and UI surfaces. For rate/compute and
-stock/concurrency limits a funded wallet raises (`creditsUnlockedResources`),
-`upgradeHint` points at `/account/credits` unless the wallet is already unlocked
-or the plan is `max`. Email and other non-unlocked resources include a
-self-serve billing offer only when `hasHigherPublicPlan(plan)` is true (Free).
-The purchasable Pro empty wallet keeps Standard stock; funded raises stock to
-Max. The job interval floor hint is always reduce-only (Free and Pro share 15
+user-facing string across MCP and UI surfaces. For rate/compute limits a funded
+wallet raises (`creditsUnlockedResources`), `upgradeHint` points at
+`/account/credits` unless the wallet is already unlocked or the plan is `max`.
+Other resources include a self-serve billing offer only when
+`hasHigherPublicPlan(plan)` is true (Free). Purchasable Pro stock is Max on the
+subscription base table (not a credits unlock), so stock denials are reduce-only
+there. The job interval floor hint is always reduce-only (Free and Pro share 15
 minutes).
 
 Rate limit example (Free, Pro with $0, retired plans):
@@ -793,11 +793,11 @@ Rate limit example (Free, Pro with $0, retired plans):
 The wording states what credits do rather than offering a purchase, because gift
 and referral Pro accounts have a wallet but must subscribe before buying.
 
-Stock limit example (Pro with $0):
+Stock limit example (purchasable Pro):
 
-> Plan limit reached: your "pro" plan allows at most 15 scheduled jobs and you
-> currently have 15. Remove or finish existing scheduled jobs you no longer
-> need; credits at /account/credits raise this limit.
+> Plan limit reached: your "pro" plan allows at most 5000 scheduled jobs and you
+> currently have 5000. Remove or finish existing scheduled jobs you no longer
+> need.
 
 Rules:
 

@@ -327,23 +327,18 @@ test('rate/compute limit hints point at /account/credits until the wallet is unl
 		expect(denial.message).toMatch(/^Plan limit reached:/)
 		expect(denial.message).not.toMatch(/Max/)
 	}
-	// Stock and concurrency also unlock with credits (Free still sees the
-	// credits CTA because isCreditsUnlockedResource wins over billing).
+	// Stock is on the Pro subscription (not a credits unlock); only Free
+	// gets a billing upgrade offer.
 	expect(buildEntitlementUpgradeHint('saved_packages', 'free')).toMatch(
-		/\/account\/credits/,
+		/\/account\/billing/,
 	)
-	expect(buildEntitlementUpgradeHint('saved_packages', 'pro', 'empty')).toMatch(
-		/\/account\/credits/,
-	)
+	for (const plan of ['standard', 'pro', 'max'] as const) {
+		expect(buildEntitlementUpgradeHint('saved_packages', plan)).not.toMatch(
+			/upgrade|credits/i,
+		)
+	}
 	expect(
-		buildEntitlementUpgradeHint('saved_packages', 'pro', 'funded'),
-	).not.toMatch(/upgrade|credits/i)
-	expect(buildEntitlementUpgradeHint('saved_packages', 'max')).not.toMatch(
-		/upgrade|credits/i,
-	)
-	// Email stays off the unlock list (abuse-sensitive; Standard caps).
-	expect(
-		buildEntitlementUpgradeHint('email_sends_per_day', 'pro', 'empty'),
+		buildEntitlementUpgradeHint('saved_packages', 'pro', 'empty'),
 	).not.toMatch(/credits/i)
 	expect(jobIntervalFloorUpgradeHint).toBe('Space this job out.')
 })
