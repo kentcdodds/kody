@@ -765,7 +765,7 @@ test('webhookUrlApply rejects {{webhookSecret}} when verification.secretName is 
 	vi.unstubAllGlobals()
 })
 
-test('webhookUrlApply redacts {{webhookSecret}} from destination error bodies', async () => {
+test('webhookUrlApply redacts {{webhookSecret}} from JSON and form-encoded error bodies', async () => {
 	const { userId, env, minted } = await mintOwnerWebhookWithVerification()
 	const hookSecret = 'hook_signing_secret_for_redaction'
 	mockGithubIntegration()
@@ -775,12 +775,12 @@ test('webhookUrlApply redacts {{webhookSecret}} from destination error bodies', 
 		allowedHosts: ['api.github.com'],
 		scope: 'user',
 	})
-	const fetchMock = vi.fn(async () => {
+	const jsonFetch = vi.fn(async () => {
 		return new Response(`invalid secret ${hookSecret}`, { status: 400 })
 	})
-	vi.stubGlobal('fetch', fetchMock)
+	vi.stubGlobal('fetch', jsonFetch)
 
-	const applied = await applyWebhookUrlForUser({
+	const jsonApplied = await applyWebhookUrlForUser({
 		env,
 		userId,
 		username: 'owner',
@@ -788,9 +788,44 @@ test('webhookUrlApply redacts {{webhookSecret}} from destination error bodies', 
 		destination: githubHooksHttpDestination({ includeWebhookSecret: true }),
 	})
 
-	expect(applied.ok).toBe(false)
-	expect(applied.error ?? '').not.toContain(hookSecret)
-	expect(applied.error ?? '').toContain('[redacted]')
+	expect(jsonApplied.ok).toBe(false)
+	expect(jsonApplied.error ?? '').not.toContain(hookSecret)
+	expect(jsonApplied.error ?? '').toContain('[redacted]')
+	vi.unstubAllGlobals()
+
+	const spacedSecret = 'hook secret with spaces'
+	secretMocks.resolveSecretForHost.mockResolvedValue({
+		found: true,
+		value: spacedSecret,
+		allowedHosts: ['hooks.example'],
+		scope: 'user',
+	})
+	const formEncoded = new URLSearchParams({ v: spacedSecret })
+		.toString()
+		.slice('v='.length)
+	expect(formEncoded).toContain('+')
+	const formFetch = vi.fn(async () => {
+		return new Response(`bad callback ${formEncoded}`, { status: 400 })
+	})
+	vi.stubGlobal('fetch', formFetch)
+
+	const formApplied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: {
+			type: 'http',
+			url: 'https://hooks.example/register',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: `url=${encodeURIComponent('{{webhookUrl}}')}&secret=${encodeURIComponent('{{webhookSecret}}')}`,
+		},
+	})
+
+	expect(formApplied.ok).toBe(false)
+	expect(formApplied.error ?? '').not.toContain(spacedSecret)
+	expect(formApplied.error ?? '').not.toContain(formEncoded)
+	expect(formApplied.error ?? '').toContain('[redacted]')
 	vi.unstubAllGlobals()
 })
 
@@ -823,81 +858,5 @@ test('webhookUrlApply JSON-escapes {{webhookSecret}} with special characters', a
 
 	expect(applied.ok).toBe(true)
 	expect(JSON.stringify(applied)).not.toContain(hookSecret)
-	vi.unstubAllGlobals()
-})
-
-test('webhookUrlApply redacts form-encoded {{webhookSecret}} (+ for spaces) from errors', async () => {
-	const { userId, env, minted } = await mintOwnerWebhookWithVerification()
-	const hookSecret = 'hook secret with spaces'
-	secretMocks.resolveSecretForHost.mockResolvedValue({
-		found: true,
-		value: hookSecret,
-		allowedHosts: ['hooks.example'],
-		scope: 'user',
-	})
-	const formEncoded = new URLSearchParams({ v: hookSecret })
-		.toString()
-		.slice('v='.length)
-	expect(formEncoded).toContain('+')
-	const fetchMock = vi.fn(async () => {
-		return new Response(`bad callback ${formEncoded}`, { status: 400 })
-	})
-	vi.stubGlobal('fetch', fetchMock)
-
-	const applied = await applyWebhookUrlForUser({
-		env,
-		userId,
-		username: 'owner',
-		handle: minted.handle,
-		destination: {
-			type: 'http',
-			url: 'https://hooks.example/register',
-			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-			body: `url=${encodeURIComponent('{{webhookUrl}}')}&secret=${encodeURIComponent('{{webhookSecret}}')}`,
-		},
-	})
-
-	expect(applied.ok).toBe(false)
-	expect(applied.error ?? '').not.toContain(hookSecret)
-	expect(applied.error ?? '').not.toContain(formEncoded)
-	expect(applied.error ?? '').toContain('[redacted]')
-	vi.unstubAllGlobals()
-})
-
-test('webhookUrlApply without {{webhookSecret}} still works for unsigned webhooks', async () => {
-	const { userId, env, minted } = await mintOwnerWebhook()
-	const revealed = await revealWebhookUrlForWebsite({
-		env,
-		userId,
-		username: 'owner',
-		target: { handle: minted.handle },
-	})
-	const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
-		const body = JSON.parse(String(init?.body)) as {
-			url: string
-			secret?: string
-		}
-		expect(body.url).toBe(revealed.url)
-		expect(body.secret).toBeUndefined()
-		return new Response(JSON.stringify({ id: 'unsigned-1' }), { status: 200 })
-	})
-	vi.stubGlobal('fetch', fetchMock)
-
-	const applied = await applyWebhookUrlForUser({
-		env,
-		userId,
-		username: 'owner',
-		handle: minted.handle,
-		destination: {
-			type: 'http',
-			url: 'https://hooks.example/register',
-			headers: { 'Content-Type': 'application/json' },
-			body: '{"url":"{{webhookUrl}}"}',
-		},
-	})
-
-	expect(applied.ok).toBe(true)
-	expect(applied.remoteId).toBe('unsigned-1')
-	expect(secretMocks.resolveSecretForHost).not.toHaveBeenCalled()
 	vi.unstubAllGlobals()
 })

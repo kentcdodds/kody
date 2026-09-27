@@ -1,4 +1,3 @@
-import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
 import { expect, test, vi } from 'vitest'
 
 const entitlementMocks = vi.hoisted(() => ({
@@ -243,9 +242,13 @@ test('loadFleetUsageInsights returns bounded consumer rankings and pressure pane
 		},
 	])
 	expect(eventCountBinds.length).toBeGreaterThan(0)
-	expect(
-		eventCountBinds[0]?.slice(1, 1 + observeOnlyUsageEventTypes.length),
-	).toEqual([...observeOnlyUsageEventTypes])
+	expect(eventCountBinds[0]?.slice(1, 6)).toEqual([
+		'dynamic_worker_invoke',
+		'dynamic_worker_cpu',
+		'durable_object_gb_seconds',
+		'durable_object_rows_read',
+		'durable_object_platform_rows_read',
+	])
 	expect(data.topDurationConsumersByMetric).toHaveLength(3)
 	expect(data.topDurationConsumersByMetric[0]?.consumers).toEqual([
 		{

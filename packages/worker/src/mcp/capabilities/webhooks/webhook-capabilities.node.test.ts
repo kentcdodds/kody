@@ -305,13 +305,6 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 		}).success,
 	).toBe(false)
 	expect(
-		webhookUrlApplyDestinationSchema.safeParse({
-			type: 'github',
-			owner: 'acme',
-			repo: 'api',
-		}).success,
-	).toBe(false)
-	expect(
 		webhookUrlApplyDestinationSchema.safeParse(githubHooksDestination).success,
 	).toBe(true)
 

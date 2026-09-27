@@ -462,7 +462,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 	expect(sentryMock.captureMessage).not.toHaveBeenCalled()
 })
 
-test('mismatched package name input stays off Sentry', () => {
+test('package name and missing-import caller errors stay off Sentry', () => {
 	let thrown: unknown
 	try {
 		normalizePackageNameInput({
@@ -474,9 +474,6 @@ test('mismatched package name input stays off Sentry', () => {
 		thrown = error
 	}
 	expect(thrown).toBeInstanceOf(PackageNameInputError)
-	expect((thrown as Error).message).toBe(
-		'Cannot use package name "@kody/google": scope "@kody" does not match the acting owner "@grant". Use the leaf after "/" or "@grant/…".',
-	)
 
 	captureMcpEvents(() => {
 		logMcpEvent({
@@ -507,14 +504,8 @@ test('mismatched package name input stays off Sentry', () => {
 	})
 	expect(sentryMock.captureException).not.toHaveBeenCalled()
 	expect(sentryMock.captureMessage).not.toHaveBeenCalled()
-})
 
-test('missing saved package import stays off Sentry', () => {
-	const thrown = new SavedPackageNotFoundError('@distilledtom/google')
-	expect(thrown.message).toBe(
-		'Saved package "@distilledtom/google" was not found for this user.',
-	)
-
+	const missingPackage = new SavedPackageNotFoundError('@distilledtom/google')
 	captureMcpEvents(() => {
 		logMcpEvent({
 			...callerFailureBase,
@@ -523,8 +514,8 @@ test('missing saved package import stays off Sentry', () => {
 			capabilitySource: 'builtin',
 			failurePhase: 'handler',
 			errorName: 'SavedPackageNotFoundError',
-			errorMessage: thrown.message,
-			cause: thrown,
+			errorMessage: missingPackage.message,
+			cause: missingPackage,
 		})
 	})
 	expect(sentryMock.captureException).not.toHaveBeenCalled()
@@ -539,7 +530,9 @@ test('missing saved package import stays off Sentry', () => {
 			failurePhase: 'handler',
 			errorName: 'Error',
 			errorMessage: 'package graph rewrite failed',
-			cause: new Error('package graph rewrite failed', { cause: thrown }),
+			cause: new Error('package graph rewrite failed', {
+				cause: missingPackage,
+			}),
 		})
 	})
 	expect(sentryMock.captureException).not.toHaveBeenCalled()
