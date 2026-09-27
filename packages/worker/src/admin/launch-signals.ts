@@ -190,7 +190,7 @@ export async function loadAdminLaunchSignals(input: {
 							WHEN (
 								(second_agent_standard_gift_expires_at IS NOT NULL AND second_agent_standard_gift_expires_at > ?)
 								OR (referral_standard_credit_expires_at IS NOT NULL AND referral_standard_credit_expires_at > ?)
-							) THEN 'standard'
+							) THEN 'pro'
 							ELSE COALESCE(plan, 'free')
 						END AS name,
 						COUNT(*) AS n
