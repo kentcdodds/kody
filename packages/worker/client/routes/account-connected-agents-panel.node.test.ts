@@ -300,6 +300,24 @@ test('confirming revoke removes the row immediately and restores it with an erro
 		expect(
 			panel.listAgents().some((agent) => agent.clientId === cursorOld.clientId),
 		).toBe(false)
+
+		// Same clientId with a new grant (reconnect) must reappear.
+		const cursorOldReconnected = {
+			...cursorOld,
+			grantIds: ['grant-old-reconnected'],
+			connectedAt: '2024-09-01T00:00:00.000Z',
+		} satisfies AccountConnectedAgentListItem
+		panel.applyPayload({
+			...listedAgents,
+			agents: [cursorOldReconnected, cursorNew, chatgptOld, chatgptNew, acme],
+		})
+		expect(panel.listAgents().map((agent) => agent.clientId)).toEqual([
+			cursorOld.clientId,
+			cursorNew.clientId,
+			chatgptOld.clientId,
+			chatgptNew.clientId,
+			acme.clientId,
+		])
 	} finally {
 		toast.dismiss()
 		globalThis.fetch = originalFetch

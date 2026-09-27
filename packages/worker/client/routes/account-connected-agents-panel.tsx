@@ -38,12 +38,12 @@ export function createAccountConnectedAgents(handle: Handle) {
 	let agents: Array<AccountConnectedAgentListItem> = []
 	const pendingRevokes = new Set<string>()
 	/**
-	 * After a revoke commits, keep filtering that clientId for this page
-	 * session so a prefetched / in-flight GET cannot restore the row or the
-	 * Add connection Connected mark. Cleared only on revoke failure (restore)
-	 * or a full page load. Same-clientId reconnect in-session needs a reload.
+	 * After a revoke commits, ignore those grant IDs in later payloads so a
+	 * prefetched / in-flight GET cannot restore the row or the Add connection
+	 * Connected mark. Keyed by grant (not clientId) so a same-client reconnect
+	 * with a new grant still appears. Cleared only on revoke failure or reload.
 	 */
-	const revokedClientIds = new Set<string>()
+	const revokedGrantIds = new Set<string>()
 	const revokeChecks = new Map<string, ReturnType<typeof createDoubleCheck>>()
 
 	function getRevokeCheck(clientId: string) {
@@ -54,13 +54,17 @@ export function createAccountConnectedAgents(handle: Handle) {
 		return created
 	}
 
+	function agentSurvivesRevokeFilter(agent: AccountConnectedAgentListItem) {
+		if (pendingRevokes.has(agent.clientId)) return false
+		if (revokedGrantIds.size === 0) return true
+		// Hide only when every listed grant was tombstoned. A new grant under
+		// the same clientId means a fresh reconnect and must stay visible.
+		return agent.grantIds.some((grantId) => !revokedGrantIds.has(grantId))
+	}
+
 	function visibleAgents(next: Array<AccountConnectedAgentListItem>) {
-		if (pendingRevokes.size === 0 && revokedClientIds.size === 0) return next
-		return next.filter(
-			(agent) =>
-				!pendingRevokes.has(agent.clientId) &&
-				!revokedClientIds.has(agent.clientId),
-		)
+		if (pendingRevokes.size === 0 && revokedGrantIds.size === 0) return next
+		return next.filter(agentSurvivesRevokeFilter)
 	}
 
 	function applyPayload(payload: AccountConnectedAgentsLoaderData) {
@@ -97,13 +101,17 @@ export function createAccountConnectedAgents(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to revoke this agent.')
 			}
 			pendingRevokes.delete(clientId)
-			revokedClientIds.add(clientId)
+			for (const grantId of removed.grantIds) {
+				revokedGrantIds.add(grantId)
+			}
 			// Keep the optimistic list. Replacing from this response can put
 			// back a sibling that already committed if that POST listed earlier.
 			toast.success('Agent disconnected.')
 		} catch (error) {
 			pendingRevokes.delete(clientId)
-			revokedClientIds.delete(clientId)
+			for (const grantId of removed.grantIds) {
+				revokedGrantIds.delete(grantId)
+			}
 			if (!agents.some((agent) => agent.clientId === clientId)) {
 				agents = [...agents, removed]
 			}
