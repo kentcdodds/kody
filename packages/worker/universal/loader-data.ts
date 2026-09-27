@@ -2456,6 +2456,8 @@ export type AccountUsageLoaderData = {
 	entitlementConsumption: Array<AccountUsageEntitlementConsumption>
 	warnings: Array<AccountUsageEntitlementConsumption>
 	computeOverage: AccountUsageComputeOverage
+	/** False for gift/referral Pro: an empty wallet there cannot be topped up. */
+	canBuyCredits: boolean
 }
 
 export type AccountWaitingLoaderData = {

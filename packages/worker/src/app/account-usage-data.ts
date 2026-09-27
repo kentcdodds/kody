@@ -4,6 +4,7 @@ import {
 	readAccountComputeOverage,
 } from '#worker/billing/compute-overage-account.ts'
 import {
+	isPayingForCreditsPro,
 	resolveUserEntitlementFromRow,
 	userEntitlementColumnsSql,
 	type UserEntitlementRow,
@@ -80,6 +81,8 @@ export async function loadAccountUsageData(input: {
 			...snapshot.warnings.map(toAccountUsageRow),
 		],
 		computeOverage,
+		canBuyCredits:
+			entitlement.creditWallet !== 'none' && isPayingForCreditsPro(row),
 	}
 }
 

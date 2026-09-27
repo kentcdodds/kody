@@ -166,4 +166,10 @@ test('gift and referral Pro overlays keep the wallet but cannot buy credits', as
 	expect(html).toContain('>Subscribe to Pro<')
 	expect(html).not.toContain('>$10<')
 	expect(html).not.toContain('Auto-refill')
+
+	const empty = await renderCreditsPage(
+		credits({ canBuyCredits: false, balanceMicroUsd: 0, unlocked: false }),
+	)
+	expect(empty).toContain('Subscribe to Pro to add credits.')
+	expect(empty).not.toContain('Add credits to lift your limits.')
 })

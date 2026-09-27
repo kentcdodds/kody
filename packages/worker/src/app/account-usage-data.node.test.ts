@@ -40,6 +40,7 @@ function createUsageTestDb(input: {
 	durableObjectRowsRead?: number
 	creditsEligible?: boolean
 	creditBalanceMicroUsd?: number
+	giftExpiresAt?: string
 }) {
 	const stableUserId = testStableUserIdFromEmail(input.email)
 	return {
@@ -61,6 +62,8 @@ function createUsageTestDb(input: {
 										stripe_plan: input.stripePlan ?? null,
 										entitlement_ladder: input.entitlementLadder ?? 'public',
 										stripe_credits_eligible: input.creditsEligible ? 1 : 0,
+										second_agent_standard_gift_expires_at:
+											input.giftExpiresAt ?? null,
 										stable_user_id: stableUserId,
 										stripe_customer_id: input.stripeCustomerId ?? null,
 									} as T
@@ -375,10 +378,31 @@ test('purchasable Pro with credits shows unlocked limits and debits above the in
 		userId: 25,
 		now,
 	})
+	expect(funded?.canBuyCredits).toBe(true)
 	expect(empty?.computeOverage.creditWallet).toBe('empty')
 	expect(empty?.computeOverage.creditsStatus).toBe('add_credits')
+	expect(empty?.canBuyCredits).toBe(true)
 	expect(currentFor(empty, 'execute_calls_per_day')?.limit).toBe(500)
 	expect(currentFor(empty, 'execute_calls_per_day')?.howToReduce).toMatch(
 		/add credits at \/account\/credits/,
 	)
+})
+
+test('gift Pro with an empty wallet cannot buy credits from the usage page', async () => {
+	const now = new Date('2026-07-25T12:00:00.000Z')
+	const { db } = createUsageTestDb({
+		userId: 26,
+		email: 'usage-gift@example.com',
+		plan: 'free',
+		giftExpiresAt: '2026-08-25T00:00:00.000Z',
+		uniqueWorkerDays: 400,
+	})
+	const data = await loadAccountUsageData({
+		env: withUsageEnv({ APP_DB: db }) as Env,
+		userId: 26,
+		now,
+	})
+	expect(data?.plan).toBe('pro')
+	expect(data?.computeOverage.creditWallet).toBe('empty')
+	expect(data?.canBuyCredits).toBe(false)
 })

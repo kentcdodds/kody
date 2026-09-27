@@ -585,11 +585,13 @@ export function AccountCreditsRoute(handle: Handle) {
 					>
 						{formatMicroUsd(credits.balanceMicroUsd)}
 					</p>
-					<p mix={css(descriptionCss)}>
-						{credits.unlocked
-							? 'Higher limits are on.'
-							: 'Add credits to lift your limits.'}
-					</p>
+					{credits.unlocked || credits.canBuyCredits ? (
+						<p mix={css(descriptionCss)}>
+							{credits.unlocked
+								? 'Higher limits are on.'
+								: 'Add credits to lift your limits.'}
+						</p>
+					) : null}
 				</AccountManagementPanel>
 
 				{credits.canBuyCredits

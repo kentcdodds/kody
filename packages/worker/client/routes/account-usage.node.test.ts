@@ -9,12 +9,14 @@ import {
 import {
 	UsageResourceName,
 	accountUsageWarningsPanelTitle,
-	computeAccountUsageOverageNotice,
-	creditsActionForWallet,
 	formatEntitlementUsedPercent,
 	hasReachedEntitlementLimit,
 	hotterUsagePercent,
 } from './account-usage.tsx'
+import {
+	computeAccountUsageOverageNotice,
+	creditsActionForWallet,
+} from './account-usage-shared.ts'
 
 function entitlement(
 	overrides: Partial<AccountUsageEntitlementConsumption> = {},
@@ -62,7 +64,7 @@ function overage(
 }
 
 test('compute notice points capped accounts at credits, never at invoices', () => {
-	const approaching = computeAccountUsageOverageNotice(overage({}), 'pro')
+	const approaching = computeAccountUsageOverageNotice(overage({}), 'pro', true)
 	expect(approaching).toMatchObject({
 		title: 'Approaching compute includes',
 		action: { label: 'Add credits', href: '/account/credits' },
@@ -71,6 +73,7 @@ test('compute notice points capped accounts at credits, never at invoices', () =
 	const emptyWallet = computeAccountUsageOverageNotice(
 		overage({ percentOfLimit: 1.2, creditsStatus: 'add_credits' }),
 		'pro',
+		true,
 	)
 	expect(emptyWallet).toMatchObject({
 		tone: 'warn',
@@ -84,6 +87,7 @@ test('compute notice points capped accounts at credits, never at invoices', () =
 			creditsStatus: 'switch_to_pro',
 		}),
 		'free',
+		false,
 	)
 	expect(free).toMatchObject({
 		body: 'Switch to Pro for a larger include and prepaid credits.',
@@ -98,6 +102,7 @@ test('compute notice points capped accounts at credits, never at invoices', () =
 			creditsCostMicroUsd: 1_240_000,
 		}),
 		'pro',
+		true,
 	)
 	expect(funded).toMatchObject({ title: 'Using credits', action: null })
 	expect(funded?.body).toContain('$1.24')
@@ -107,7 +112,11 @@ test('compute notice points capped accounts at credits, never at invoices', () =
 	}
 
 	expect(
-		computeAccountUsageOverageNotice(overage({ percentOfLimit: 0.2 }), 'pro'),
+		computeAccountUsageOverageNotice(
+			overage({ percentOfLimit: 0.2 }),
+			'pro',
+			true,
+		),
 	).toBeNull()
 	expect(
 		computeAccountUsageOverageNotice(
@@ -117,21 +126,41 @@ test('compute notice points capped accounts at credits, never at invoices', () =
 				creditsStatus: 'not_charged',
 			}),
 			'max',
+			false,
 		),
 	).toBeNull()
 })
 
 test('credits action follows the wallet: add, switch, or nothing', () => {
-	expect(creditsActionForWallet('empty', 'pro')).toEqual({
+	expect(creditsActionForWallet('empty', 'pro', true)).toEqual({
 		label: 'Add credits',
 		href: '/account/credits',
 	})
-	expect(creditsActionForWallet('none', 'standard')).toEqual({
+	expect(creditsActionForWallet('none', 'standard', false)).toEqual({
 		label: 'Switch to Pro',
 		href: '/account/credits',
 	})
-	expect(creditsActionForWallet('funded', 'pro')).toBeNull()
-	expect(creditsActionForWallet('none', 'max')).toBeNull()
+	expect(creditsActionForWallet('funded', 'pro', true)).toBeNull()
+	expect(creditsActionForWallet('none', 'max', false)).toBeNull()
+})
+
+test('gift and referral Pro accounts are sent to subscribe, not to add credits', () => {
+	expect(creditsActionForWallet('empty', 'pro', false)).toEqual({
+		label: 'Subscribe to Pro',
+		href: '/account/credits',
+	})
+	const capped = computeAccountUsageOverageNotice(
+		overage({ percentOfLimit: 1.2, creditsStatus: 'add_credits' }),
+		'pro',
+		false,
+	)
+	expect(capped).toMatchObject({
+		body: 'Subscribe to Pro to add credits and lift hard caps.',
+		action: { label: 'Subscribe to Pro', href: '/account/credits' },
+	})
+	expect(
+		computeAccountUsageOverageNotice(overage({}), 'pro', false)?.action,
+	).toEqual({ label: 'Subscribe to Pro', href: '/account/credits' })
 })
 
 test('warning credits links only on limits credits can raise', () => {
