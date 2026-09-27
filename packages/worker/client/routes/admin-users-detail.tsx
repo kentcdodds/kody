@@ -43,6 +43,7 @@ import {
 } from './admin-insights-shared.ts'
 import {
 	durableObjectDurationFootnote,
+	measuredDurableObjectDurationFootnote,
 	formatDurableObjectGbSeconds,
 } from '#universal/durable-object-duration.ts'
 
@@ -609,6 +610,52 @@ export function renderAdminUserDetail(props: AdminUserDetailProps) {
 								})}
 							>
 								{durableObjectDurationFootnote}
+							</p>
+							<p
+								mix={css({
+									margin: 0,
+									fontSize: typography.fontSize.sm,
+									fontVariantNumeric: 'tabular-nums',
+								})}
+							>
+								Cloudflare-measured:{' '}
+								{formatDurableObjectGbSeconds(
+									selectedUsage.durableObjectDuration.measured.gbSeconds,
+								)}{' '}
+								(~$
+								{selectedUsage.durableObjectDuration.measured.estimatedUsd.toFixed(
+									2,
+								)}{' '}
+								gross)
+								{selectedUsage.durableObjectDuration.measured.lastDay
+									? ` through ${selectedUsage.durableObjectDuration.measured.lastDay}`
+									: ' — no attributed days yet'}
+							</p>
+							{selectedUsage.durableObjectDuration.measured.byClass.length >
+							0 ? (
+								<p
+									mix={css({
+										margin: 0,
+										fontSize: typography.fontSize.xs,
+										fontVariantNumeric: 'tabular-nums',
+									})}
+								>
+									{selectedUsage.durableObjectDuration.measured.byClass
+										.map(
+											(row) =>
+												`${row.doClass} ${formatDurableObjectGbSeconds(row.gbSeconds)}`,
+										)
+										.join(' · ')}
+								</p>
+							) : null}
+							<p
+								mix={css({
+									margin: 0,
+									color: colors.textMuted,
+									fontSize: typography.fontSize.xs,
+								})}
+							>
+								{measuredDurableObjectDurationFootnote}
 							</p>
 						</div>
 						<div mix={css({ display: 'grid', gap: spacing.md })}>

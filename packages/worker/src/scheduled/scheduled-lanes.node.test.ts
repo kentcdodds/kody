@@ -11,3 +11,12 @@ test('hourly cadence dispatches unverified account purge with retention', () => 
 	expect(offHour.includes('unverified_account_purge')).toBe(false)
 	expect(offHour.includes('compute_overage_billing')).toBe(false)
 })
+
+test('Durable Object duration attribution runs once an hour at minute 20', () => {
+	expect(
+		getScheduledLaneCadence(new Date('2026-09-02T12:20:00.000Z')),
+	).toContain('durable_object_duration_attribution')
+	expect(
+		getScheduledLaneCadence(new Date('2026-09-02T12:00:00.000Z')),
+	).not.toContain('durable_object_duration_attribution')
+})

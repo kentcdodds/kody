@@ -112,6 +112,42 @@ Per-call rows-read points share the ~250 `writeDataPoint` per-invocation budget
 with every other usage event, so they always go through the coalescer
 (`queueDurableObjectRowsRead`) rather than writing one point per query.
 
+### Durable Object duration: estimate vs bill
+
+Cloudflare bills Durable Object duration on wall-clock time an object is active
+and not hibernation-eligible, at 128 MB, against an account-wide include
+(400,000 GB-s/month, then $12.50 per million GB-s). Kody has two per-user views
+of it. Neither is an invoice line.
+
+- **Cloudflare-measured (trustworthy, per object):** the hourly
+  `durable_object_duration_attribution` lane (minute 20;
+  `packages/worker/src/usage/durable-object-duration-attribution.ts`) reads
+  Cloudflare GraphQL `durableObjectsPeriodicGroups.sum.activeTime` per
+  `objectId` for yesterday and today (UTC). It rebuilds `idFromName` for every
+  frozen per-user name (McpClientHub, RunLog, UserMeter, Mailbox,
+  RepoSessionIndex, StripePlanRefresh by stable user id; StorageRunner and
+  RepoSession from `user_storage_buckets`; PackageRealtimeSession from
+  app-bearing `saved_packages`) and writes absolute daily rows to
+  `durable_object_duration_daily`. It writes fleet totals and the attributed
+  share to `durable_object_duration_coverage_daily`. Admin usage shows GB-s
+  (active seconds × 0.128) and gross dollars at list.
+- **Not attributed:** MCP session DOs (named by transport session), JobManager
+  (lives on `kody-jobs`, no origin binding), repo sessions discarded before the
+  lane runs, platform singletons, and objects beyond the top 10,000 by active
+  time on a day (`truncated = 1` on the coverage row). These stay in the day's
+  unattributed total; nothing is guessed.
+- **Why it is still an estimate:** the include and Cloudflare's rounding apply
+  to the account total, isolate sharing does not change per-object billing, and
+  analytics for the current day are partial until the next day's run.
+- **RPC proxy (`durable_object_gb_seconds`):** caller-side StorageRunner RPC
+  wall clock × 0.128. It misses time an object stays active without an RPC
+  (sockets, alarms) and every other class. Keep it for burst shape only; use the
+  Cloudflare-measured view for cost.
+
+The lane uses the origin `CLOUDFLARE_API_TOKEN` (Account Analytics read, same as
+the Analytics Engine SQL API) and fails the lane loudly if Cloudflare rejects
+the query.
+
 ### `package_static_call`: statically imported package export calls
 
 Static imports (`import fn from 'kody:@scope/pkg/export'`) are the default way

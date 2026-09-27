@@ -119,10 +119,29 @@ const outputSchema = z.object({
 				]),
 			}),
 			durableObjectDuration: z.object({
+				/** RPC wall-clock proxy (StorageRunner RPCs only). */
 				gbSeconds: z.number().nonnegative(),
 				durationMs: z.number().nonnegative(),
 				rpcCount: z.number().int().nonnegative(),
 				memoryGb: z.number().nonnegative(),
+				/**
+				 * Cloudflare-measured active time for this user's Durable Objects this
+				 * month. `estimatedUsd` is gross at list before the account include —
+				 * a cost share estimate, not an invoice line.
+				 */
+				measured: z.object({
+					activeMs: z.number().nonnegative(),
+					gbSeconds: z.number().nonnegative(),
+					estimatedUsd: z.number().nonnegative(),
+					lastDay: z.string().nullable(),
+					byClass: z.array(
+						z.object({
+							doClass: z.string(),
+							activeMs: z.number().nonnegative(),
+							gbSeconds: z.number().nonnegative(),
+						}),
+					),
+				}),
 			}),
 		})
 		.nullable(),

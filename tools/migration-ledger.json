@@ -271,6 +271,10 @@
 		{
 			"filename": "0067-webhook-apply-destination-approvals.sql",
 			"sha256": "a95ff1e06ac1b6439927be2c15ebd4b4b4967ce492671fa4107dc7d21c05efeb"
+		},
+		{
+			"filename": "0068-durable-object-duration-daily.sql",
+			"sha256": "38d50bbc96f0f2815aa3b83123ae11118209488213de6091ba9c10c0f7a4c94a"
 		}
 	]
 }

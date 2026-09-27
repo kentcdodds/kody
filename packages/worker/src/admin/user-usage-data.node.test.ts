@@ -290,6 +290,13 @@ test('loadAdminUserUsageData returns null for unknown users and zeroed usage for
 		durationMs: 0,
 		rpcCount: 0,
 		memoryGb: 0.128,
+		measured: {
+			activeMs: 0,
+			gbSeconds: 0,
+			estimatedUsd: 0,
+			lastDay: null,
+			byClass: [],
+		},
 	})
 })
 
@@ -419,6 +426,13 @@ test('loadAdminUserUsageData converts Durable Object RPC duration to observe-onl
 		durationMs: 10_000,
 		rpcCount: 8,
 		memoryGb: 0.128,
+		measured: {
+			activeMs: 0,
+			gbSeconds: 0,
+			estimatedUsd: 0,
+			lastDay: null,
+			byClass: [],
+		},
 	})
 })
 

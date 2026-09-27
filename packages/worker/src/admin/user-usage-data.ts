@@ -1,7 +1,10 @@
 import { cachified, type Cache } from '@epic-web/cachified'
 import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import { toAdminDynamicWorkerCost } from '#universal/dynamic-worker-cost.ts'
-import { toAdminDurableObjectDuration } from '#universal/durable-object-duration.ts'
+import {
+	toAdminDurableObjectDuration,
+	toAdminMeasuredDurableObjectDuration,
+} from '#universal/durable-object-duration.ts'
 import {
 	type AdminUsageMetric,
 	type AdminUsageMonthRollup,
@@ -96,22 +99,28 @@ export async function loadAdminUserUsageData(
 		? createKvCachifiedCache(env.BUNDLE_ARTIFACTS_KV)
 		: null
 
-	const [monthRows, entitlementConsumption, isOperator] = await Promise.all([
-		loadUserMonthRollups({
-			db: env.APP_DB,
-			cache: rollupCache,
-			userId: usageUserId,
-			currentMonth,
-		}),
-		readAdminEntitlementConsumption({
-			env,
-			usageUserId,
-			plan,
-			ladder,
-			now,
-		}),
-		userHasAdminRole(env.APP_DB, usageUserId),
-	])
+	const [monthRows, entitlementConsumption, isOperator, measuredDuration] =
+		await Promise.all([
+			loadUserMonthRollups({
+				db: env.APP_DB,
+				cache: rollupCache,
+				userId: usageUserId,
+				currentMonth,
+			}),
+			readAdminEntitlementConsumption({
+				env,
+				usageUserId,
+				plan,
+				ladder,
+				now,
+			}),
+			userHasAdminRole(env.APP_DB, usageUserId),
+			loadMeasuredDurableObjectDuration({
+				db: env.APP_DB,
+				userId: usageUserId,
+				currentMonth,
+			}),
+		])
 
 	const monthUsage = toMonthUsage(monthRows, currentMonth)
 	const currentMonthUsage =
@@ -145,11 +154,48 @@ export async function loadAdminUserUsageData(
 		entitlementConsumption,
 		warnings: entitlementConsumption.filter((item) => item.overEightyPercent),
 		dynamicWorkerCost: toAdminDynamicWorkerCost(uniqueWorkerDays),
-		durableObjectDuration: toAdminDurableObjectDuration({
-			durationMs: durableObjectUsage?.totalDurationMs ?? 0,
-			rpcCount: durableObjectUsage?.eventCount ?? 0,
-		}),
+		durableObjectDuration: {
+			...toAdminDurableObjectDuration({
+				durationMs: durableObjectUsage?.totalDurationMs ?? 0,
+				rpcCount: durableObjectUsage?.eventCount ?? 0,
+			}),
+			measured: toAdminMeasuredDurableObjectDuration(measuredDuration),
+		},
 		costVsPay,
+	}
+}
+
+/**
+ * Month-to-date Cloudflare-measured DO active time per class for one user.
+ * A missing table (pre-migration test databases) reads as no data.
+ */
+async function loadMeasuredDurableObjectDuration(input: {
+	db: D1Database
+	userId: string
+	currentMonth: string
+}) {
+	try {
+		const rows = await input.db
+			.prepare(
+				`SELECT do_class, SUM(active_ms) AS active_ms, MAX(day) AS last_day
+				 FROM durable_object_duration_daily
+				 WHERE user_id = ? AND day >= ? AND day < ?
+				 GROUP BY do_class`,
+			)
+			.bind(
+				input.userId,
+				`${input.currentMonth}-01`,
+				`${input.currentMonth}-32`,
+			)
+			.all<{ do_class: string; active_ms: number; last_day: string }>()
+		return (rows.results ?? []).map((row) => ({
+			doClass: row.do_class,
+			activeMs: Number(row.active_ms) || 0,
+			lastDay: row.last_day,
+		}))
+	} catch (error) {
+		console.debug('measured-durable-object-duration-read-failed', error)
+		return []
 	}
 }
 

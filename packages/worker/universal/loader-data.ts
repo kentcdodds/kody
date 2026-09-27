@@ -875,10 +875,23 @@ type AdminDynamicWorkerCost = {
 }
 
 type AdminDurableObjectDuration = {
+	/** RPC wall-clock proxy (StorageRunner only). */
 	gbSeconds: number
 	durationMs: number
 	rpcCount: number
 	memoryGb: number
+	/** Cloudflare-measured active time attributed to this user, this month. */
+	measured: AdminMeasuredDurableObjectDuration
+}
+
+type AdminMeasuredDurableObjectDuration = {
+	activeMs: number
+	gbSeconds: number
+	/** Gross at Cloudflare list, before the account-wide include. */
+	estimatedUsd: number
+	/** Latest UTC day with attributed rows; null when none yet. */
+	lastDay: string | null
+	byClass: Array<{ doClass: string; activeMs: number; gbSeconds: number }>
 }
 
 export type AdminInsightsDynamicWorkerCostConsumer = {

@@ -19,6 +19,7 @@ export const scheduledLaneNames = [
 	'job_retention',
 	'unverified_account_purge',
 	'usage_aggregation',
+	'durable_object_duration_attribution',
 	'compute_overage_billing',
 	'auth_denial_alert',
 	'email_delivery_alert',
@@ -162,6 +163,14 @@ export function shouldRunUsageAggregationCron(now: Date) {
 }
 
 /**
+ * Hourly at minute 20: Cloudflare's per-object Durable Object analytics lag
+ * a few minutes, and minute 0 already carries the heavier usage lanes.
+ */
+export function shouldRunDurableObjectDurationAttributionCron(now: Date) {
+	return now.getUTCMinutes() === 20
+}
+
+/**
  * Hourly at minute 0. The lane itself no-ops outside UTC days 1–3
  * (and day 1 hour 0) so usage_aggregation can finish the prior month.
  */
@@ -255,6 +264,9 @@ export function getScheduledLaneCadence(
 	}
 	if (shouldRunUsageAggregationCron(scheduledAt)) {
 		lanes.push('usage_aggregation')
+	}
+	if (shouldRunDurableObjectDurationAttributionCron(scheduledAt)) {
+		lanes.push('durable_object_duration_attribution')
 	}
 	if (shouldRunComputeOverageBillingCron(scheduledAt)) {
 		lanes.push('compute_overage_billing')

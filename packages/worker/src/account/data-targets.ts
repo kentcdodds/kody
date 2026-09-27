@@ -192,6 +192,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'package_invocation_tokens' },
 	{ kind: 'user_id', table: 'user_storage_buckets' },
 	{ kind: 'user_id', table: 'usage_rollups' },
+	{ kind: 'user_id', table: 'durable_object_duration_daily' },
 	{ kind: 'user_id', table: 'user_usage_campaigns' },
 	{ kind: 'user_id', table: 'user_usage_campaign_sends' },
 	{ kind: 'user_id', table: 'user_tips_email_opt_outs' },

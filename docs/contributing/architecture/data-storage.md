@@ -1744,6 +1744,11 @@ Current retention policies:
   until deletion; no TTL.
 - `user_tips_email_opt_outs`: Kody tips opt-out stamp keyed by `stable_user_id`.
   Deleted and exported with the account. Durable until deletion; no TTL.
+- `durable_object_duration_daily`: per-user, per-DO-class, per-UTC-day
+  Cloudflare-measured active milliseconds (absolute; the hourly attribution lane
+  rewrites yesterday and today). Deleted and exported with the account.
+  `durable_object_duration_coverage_daily` is the fleet-level attributed vs
+  total companion (no user data).
 - `compute_overage_invoices`: one ledger row per user per UTC month for unique
   worker-day and Durable Object rows-read overage. Status is the disposition
   (`invoice`, `soft_block`, `dry_run`, `skip_legacy`, and the other skips) or

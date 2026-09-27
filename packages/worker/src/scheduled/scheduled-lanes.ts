@@ -25,6 +25,7 @@ import { cleanupRepoSessionBranches } from '#worker/repo/repo-session-cleanup.ts
 import { backfillStorageBucketEstimates } from '#worker/storage-buckets/estimate-backfill.ts'
 import { refreshAdminInsightsRunLogSnapshot } from '#worker/admin/insights-runlog-snapshot.ts'
 import { aggregateUsageRollups } from '#worker/usage/aggregate-rollups.ts'
+import { runDurableObjectDurationAttribution } from '#worker/usage/durable-object-duration-attribution.ts'
 import { runComputeOverageBilling } from '#worker/billing/compute-overage-invoices.ts'
 
 export {
@@ -143,6 +144,11 @@ export async function runScheduledLane(input: {
 			}
 			return { ...result, fleetPackageErrorRate, runLogSnapshot }
 		}
+		case 'durable_object_duration_attribution':
+			return runDurableObjectDurationAttribution({
+				env: input.env,
+				now: input.scheduledAt,
+			})
 		case 'compute_overage_billing':
 			return runComputeOverageBilling({
 				env: input.env,

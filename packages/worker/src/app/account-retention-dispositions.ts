@@ -55,6 +55,12 @@ export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposi
 				'Per-user durable storage bucket ownership is current state for backup, export, and deletion enumeration; it is removed only by account deletion.',
 		},
 		{
+			table: 'durable_object_duration_daily',
+			kind: 'durable_forever',
+			reason:
+				'Per-user daily Durable Object active-time estimates are usage history (like usage_rollups) removed only by account deletion.',
+		},
+		{
 			table: 'compute_overage_invoices',
 			kind: 'durable_forever',
 			reason:
