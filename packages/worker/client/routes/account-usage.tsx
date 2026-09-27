@@ -66,7 +66,7 @@ const entitlementGroupLabels: Record<
 const entitlementGroupNotes: Partial<
 	Record<AccountUsageEntitlementConsumption['group'], string>
 > = {
-	monthly: 'Included Durable Object rows-read this UTC month.',
+	monthly: 'Included Worker compute and Rows read this UTC month.',
 	daily:
 		'Daily counters reset at UTC midnight. Execute and outbound fetches also have a this-week cap (UTC Monday–Sunday). High daily headroom for bursts; weekly total keeps it sustainable.',
 }
@@ -551,7 +551,7 @@ export function AccountUsageRoute(handle: Handle) {
 						) : null}
 						<AccountManagementPanel
 							title="Monthly compute"
-							description="Durable Object rows-read against this month's include. Execute and outbound fetches are hard daily and weekly caps. Durable Object duration is unmetered."
+							description="Worker compute and Rows read against this month's include. Execute and outbound fetches are hard daily and weekly caps. Durable Object duration is unmetered."
 						>
 							<RecordTable
 								mode="none"

@@ -30,7 +30,7 @@ function entitlement(
 		whatCounts: 'Execute calls today (UTC).',
 		howToReduce: 'Run fewer execute calls today or this week.',
 		current: 30,
-		limit: 100,
+		limit: 150,
 		percentOfLimit: 0.2,
 		overEightyPercent: false,
 		...overrides,
@@ -46,15 +46,26 @@ function overage(
 	return {
 		meters: [
 			{
+				resource: 'unique_worker_days',
+				label: 'Worker compute',
+				whatCounts: 'Counts distinct worker isolates.',
+				howToReduce: 'Keep package code stable.',
+				current: 45,
+				include: 50,
+				percentOfLimit,
+				overEightyPercent: percentOfLimit >= 0.8,
+				creditsStatus: percentOfLimit >= 1 ? 'add_credits' : 'within_include',
+			},
+			{
 				resource: 'durable_object_rows_read',
-				label: 'Durable Object rows read',
+				label: 'Rows read',
 				whatCounts: 'SQLite rows read by Durable Object package storage.',
 				howToReduce: 'Read less from package storage.',
 				current: 450_000_000,
 				include: 500_000_000,
-				percentOfLimit,
+				percentOfLimit: Math.min(percentOfLimit, 0.9),
 				overEightyPercent: percentOfLimit >= 0.8,
-				creditsStatus: percentOfLimit >= 1 ? 'add_credits' : 'within_include',
+				creditsStatus: 'within_include',
 			},
 		],
 		creditWallet: 'empty',
@@ -77,6 +88,7 @@ test('compute notice points capped accounts at credits, never at invoices', () =
 		true,
 	)
 	expect(emptyWallet).toMatchObject({
+		title: "Over this month's include",
 		tone: 'warn',
 		action: { label: 'Add credits', href: '/account/credits' },
 	})
@@ -91,6 +103,7 @@ test('compute notice points capped accounts at credits, never at invoices', () =
 		false,
 	)
 	expect(free).toMatchObject({
+		title: "Over this month's include",
 		body: 'Switch to Pro for a larger include and prepaid credits.',
 		action: { label: 'Switch to Pro', href: '/account/credits' },
 	})
@@ -107,9 +120,11 @@ test('compute notice points capped accounts at credits, never at invoices', () =
 	)
 	expect(funded).toMatchObject({ title: 'Using credits', action: null })
 	expect(funded?.body).toContain('$1.24')
+	expect(funded?.body).toContain("Usage above this month's include")
 
 	for (const notice of [approaching, emptyWallet, free, funded]) {
 		expect(notice?.body).not.toMatch(/invoice|billed|payment method|overage/i)
+		expect(notice?.body).not.toMatch(/unique worker day/i)
 	}
 
 	expect(
@@ -221,8 +236,8 @@ test('hotterUsagePercent uses the closer of daily and weekly windows', () => {
 		hotterUsagePercent(
 			entitlement({
 				week: {
-					current: 225,
-					limit: 250,
+					current: 360,
+					limit: 400,
 					percentOfLimit: 0.9,
 					overEightyPercent: true,
 				},
@@ -235,8 +250,8 @@ test('hotterUsagePercent uses the closer of daily and weekly windows', () => {
 				percentOfLimit: 0.95,
 				week: {
 					current: 100,
-					limit: 250,
-					percentOfLimit: 0.4,
+					limit: 400,
+					percentOfLimit: 0.25,
 					overEightyPercent: false,
 				},
 			}),
@@ -275,8 +290,8 @@ test('formatEntitlementUsedPercent shows today and this week', () => {
 		formatEntitlementUsedPercent(
 			entitlement({
 				week: {
-					current: 225,
-					limit: 250,
+					current: 360,
+					limit: 400,
 					percentOfLimit: 0.9,
 					overEightyPercent: true,
 				},
@@ -307,8 +322,8 @@ test('warnings panel title is Limit reached at 100% daily or weekly', () => {
 		percentOfLimit: 0.2,
 		overEightyPercent: true,
 		week: {
-			current: 250,
-			limit: 250,
+			current: 400,
+			limit: 400,
 			percentOfLimit: 1,
 			overEightyPercent: true,
 		},

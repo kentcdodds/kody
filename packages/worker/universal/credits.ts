@@ -29,14 +29,14 @@ type CreditDebitRate = {
 }
 
 /**
- * About 2× Cloudflare list (`cloudflareComputeListUsd` in `plans.ts`): unique
- * worker day $0.004, Durable Object rows read $0.002 per million.
+ * About 2× Cloudflare list (`cloudflareComputeListUsd` in `plans.ts`).
+ * Customer copy uses “Worker compute” / “Rows read” — never UWD jargon.
  */
 export const creditDebitRates = {
 	unique_worker_days: {
 		priceMicroUsd: 4_000,
 		unitsPerPrice: 1,
-		label: '$0.004 per unique worker day',
+		label: '$0.004 per worker-compute day',
 	},
 	durable_object_rows_read: {
 		priceMicroUsd: 2_000,

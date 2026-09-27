@@ -136,7 +136,7 @@ test('readEntitlementUsageSnapshot warns at 80% and includes the account resourc
 	)
 	expect(execute?.week).toEqual({
 		current: 0,
-		limit: 250,
+		limit: 400,
 		percentOfLimit: 0,
 		overEightyPercent: false,
 	})
@@ -204,7 +204,7 @@ test('readEntitlementUsageSnapshot warns when the weekly window is hotter than t
 		userId: stableUserId,
 		resource: 'execute_calls_per_day',
 		day: '2026-07-20',
-		count: 200,
+		count: 330,
 	})
 	await env.meter.seed({
 		userId: stableUserId,
@@ -224,11 +224,11 @@ test('readEntitlementUsageSnapshot warns when the weekly window is hotter than t
 		(row) => row.resource === 'execute_calls_per_day',
 	)
 	expect(execute?.current).toBe(10)
-	expect(execute?.percentOfLimit).toBe(10 / 100)
+	expect(execute?.percentOfLimit).toBe(10 / 150)
 	expect(execute?.week).toEqual({
-		current: 210,
-		limit: 250,
-		percentOfLimit: 210 / 250,
+		current: 340,
+		limit: 400,
+		percentOfLimit: 340 / 400,
 		overEightyPercent: true,
 	})
 	expect(execute?.overEightyPercent).toBe(true)

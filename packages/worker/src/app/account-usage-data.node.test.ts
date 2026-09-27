@@ -284,7 +284,7 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 	expect(subscribedData?.stripePlan).toBe('pro')
 	expect(baseline?.computeOverage.creditsStatus).toBe('within_include')
 	expect(baseline?.computeOverage.creditWallet).toBe('none')
-	expect(baseline?.computeOverage.meters).toHaveLength(1)
+	expect(baseline?.computeOverage.meters).toHaveLength(2)
 })
 
 test('Free over compute includes is sent to /account/credits to switch to Pro, not charged', async () => {
@@ -293,7 +293,7 @@ test('Free over compute includes is sent to /account/credits to switch to Pro, n
 		userId: 21,
 		email: 'usage-free-over@example.com',
 		plan: 'free',
-		durableObjectRowsRead: 600_000_000,
+		uniqueWorkerDays: 60,
 	})
 	const data = await loadAccountUsageData({
 		env: withUsageEnv({ APP_DB: db }) as Env,
@@ -301,21 +301,18 @@ test('Free over compute includes is sent to /account/credits to switch to Pro, n
 		now,
 	})
 	expect(data?.computeOverage.creditsStatus).toBe('switch_to_pro')
-	expect(
-		data?.computeOverage.meters.some(
-			(meter) => meter.resource === 'unique_worker_days',
-		),
-	).toBe(false)
-	const durableObjectRows = data?.computeOverage.meters.find(
-		(meter) => meter.resource === 'durable_object_rows_read',
+	const workerCompute = data?.computeOverage.meters.find(
+		(meter) => meter.resource === 'unique_worker_days',
 	)
-	expect(durableObjectRows?.overEightyPercent).toBe(true)
-	expect(durableObjectRows?.howToReduce).toMatch(
+	expect(workerCompute?.label).toBe('Worker compute')
+	expect(workerCompute?.overEightyPercent).toBe(true)
+	expect(workerCompute?.howToReduce).toMatch(
 		/Switch to Pro at \/account\/credits/,
 	)
-	expect(durableObjectRows?.howToReduce).not.toMatch(/payment method|invoice/)
+	expect(workerCompute?.howToReduce).not.toMatch(/payment method|invoice/)
+	expect(workerCompute?.howToReduce).not.toMatch(/unique worker day/i)
 	expect(
-		data?.warnings.some((row) => row.resource === 'durable_object_rows_read'),
+		data?.warnings.some((row) => row.resource === 'unique_worker_days'),
 	).toBe(true)
 })
 
@@ -328,7 +325,7 @@ test('retired Standard over compute includes is not charged and has no wallet', 
 		stripePlan: 'standard',
 		entitlementLadder: 'legacy',
 		stripeCustomerId: 'cus_legacy',
-		durableObjectRowsRead: 6_000_000_000,
+		uniqueWorkerDays: 400,
 		creditBalanceMicroUsd: 5_000_000,
 	})
 	const data = await loadAccountUsageData({
@@ -338,11 +335,11 @@ test('retired Standard over compute includes is not charged and has no wallet', 
 	})
 	expect(data?.computeOverage.creditWallet).toBe('none')
 	expect(data?.computeOverage.creditsStatus).toBe('switch_to_pro')
-	const durableObjectRows = data?.computeOverage.meters.find(
-		(meter) => meter.resource === 'durable_object_rows_read',
+	const workerCompute = data?.computeOverage.meters.find(
+		(meter) => meter.resource === 'unique_worker_days',
 	)
-	expect(durableObjectRows?.howToReduce).toMatch(/not charged on your plan/)
-	expect(durableObjectRows?.howToReduce).not.toMatch(/payment method/)
+	expect(workerCompute?.howToReduce).toMatch(/not charged on your plan/)
+	expect(workerCompute?.howToReduce).not.toMatch(/payment method/)
 })
 
 test('purchasable Pro with credits shows unlocked limits and debits above the include', async () => {
@@ -411,15 +408,16 @@ test('gift Pro keeps retired Pro ceilings without a wallet and cannot buy credit
 	expect(data?.computeOverage.creditWallet).toBe('none')
 	expect(data?.computeOverage.creditsStatus).toBe('within_include')
 	expect(data?.canBuyCredits).toBe(false)
-	expect(
-		data?.computeOverage.meters.some(
-			(meter) => meter.resource === 'unique_worker_days',
-		),
-	).toBe(false)
-	const durableObjectRows = data?.computeOverage.meters.find(
+	const workerCompute = data?.computeOverage.meters.find(
+		(meter) => meter.resource === 'unique_worker_days',
+	)
+	expect(workerCompute?.label).toBe('Worker compute')
+	expect(workerCompute?.include).toBe(2_000)
+	const rowsRead = data?.computeOverage.meters.find(
 		(meter) => meter.resource === 'durable_object_rows_read',
 	)
-	expect(durableObjectRows?.include).toBe(20_000_000_000)
+	expect(rowsRead?.label).toBe('Rows read')
+	expect(rowsRead?.include).toBe(20_000_000_000)
 	expect(currentFor(data, 'execute_calls_per_day')?.limit).toBe(1_500)
 	for (const row of [
 		...(data?.entitlementConsumption ?? []),

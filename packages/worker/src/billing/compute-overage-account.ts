@@ -51,9 +51,8 @@ export async function readAccountComputeOverage(input: {
 		uniqueWorkerDays: usage.uniqueWorkerDays,
 		durableObjectRowsRead: usage.durableObjectRowsRead,
 	})
-	// Build both meters for creditsStatus / cost; only customer-facing meters
-	// ship to /account/usage and usageGet.
-	const internalMeters = [
+	// Both debit meters are customer-facing (Worker compute + Rows read).
+	const meters = [
 		toComputeMeter({
 			resource: 'unique_worker_days',
 			current: usage.uniqueWorkerDays,
@@ -68,17 +67,14 @@ export async function readAccountComputeOverage(input: {
 			plan: input.plan,
 			creditWallet: input.creditWallet,
 		}),
-	]
-	const meters = internalMeters.filter((meter) =>
-		isCustomerFacingComputeMeter(meter.resource),
-	)
+	].filter((meter) => isCustomerFacingComputeMeter(meter.resource))
 	return {
 		meters,
 		creditWallet: input.creditWallet,
 		creditsStatus: resolveComputeIncludeCreditsStatus({
 			plan: input.plan,
 			creditWallet: input.creditWallet,
-			pastInclude: internalMeters.some((meter) => meter.percentOfLimit > 1),
+			pastInclude: meters.some((meter) => meter.percentOfLimit > 1),
 		}),
 		creditsCostMicroUsd: overage.creditsCostMicroUsd,
 	}

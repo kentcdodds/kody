@@ -266,8 +266,8 @@ test('entitlement limit messages always identify a known plan name', () => {
 		code: 'entitlement_limit_exceeded' as const,
 		resource: 'execute_calls_per_day' as const,
 		plan: 'free' as const,
-		limit: 250,
-		current: 250,
+		limit: 400,
+		current: 400,
 		window: 'week' as const,
 		upgradeHint: buildEntitlementUpgradeHint('execute_calls_per_day', 'free'),
 	}
@@ -901,19 +901,19 @@ test('public execute and outbound enforce daily and weekly windows; legacy and m
 		userId: freeUserId,
 		resource: 'execute_calls_per_day',
 		day: utcDayKey(monday),
-		count: 100,
+		count: 150,
 	})
 	await meter.seed({
 		userId: freeUserId,
 		resource: 'execute_calls_per_day',
 		day: utcDayKey(tuesday),
-		count: 100,
+		count: 150,
 	})
 	await meter.seed({
 		userId: freeUserId,
 		resource: 'execute_calls_per_day',
 		day: utcDayKey(wednesday),
-		count: 49,
+		count: 99,
 	})
 	await consumeDailyEntitlement({
 		db,
@@ -930,7 +930,7 @@ test('public execute and outbound enforce daily and weekly windows; legacy and m
 			resource: 'execute_calls_per_day',
 			now: wednesday,
 		}),
-	).toBe(50)
+	).toBe(100)
 	const weeklyDenied = await consumeDailyEntitlement({
 		db,
 		env: meter.env,
@@ -948,8 +948,8 @@ test('public execute and outbound enforce daily and weekly windows; legacy and m
 	expect(weeklyDenied.details).toMatchObject({
 		resource: 'execute_calls_per_day',
 		plan: 'free',
-		limit: 250,
-		current: 250,
+		limit: 400,
+		current: 400,
 		window: 'week',
 	})
 	expect(weeklyDenied.message).toContain('execute calls this week')

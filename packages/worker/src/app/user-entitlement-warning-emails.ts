@@ -40,8 +40,7 @@ const observeOnlyMetricPlaceholders = observeOnlyUsageEventTypes
  * cadence. Failures here must not block the operator events.
  *
  * One email per crossing of 80% or 100% on a specific entitlement or
- * monthly Durable Object rows-read include. Unique worker days stay
- * internal metering and are not mailed to customers. Staying over the same
+ * monthly Worker compute / Rows read include. Staying over the same
  * threshold does not mail again. A later drop below that threshold, then a
  * climb back over it, is a new instance. Same-hour crossings of the same
  * kind still batch into one mail. Stock claims expire after 30 days unless
@@ -705,7 +704,7 @@ export async function listUsersForEntitlementWarningSweep(
 	now: Date,
 ) {
 	const currentMonth = utcMonthKey(now)
-	const [active, packages, secrets, computeUwd, computeDorows] =
+	const [active, packages, secrets, computeWorker, computeDorows] =
 		await Promise.all([
 			db
 				.prepare(
@@ -815,7 +814,7 @@ export async function listUsersForEntitlementWarningSweep(
 
 	const byUserId = new Map<string, WarningCandidate>()
 	for (const row of [
-		...(computeUwd.results ?? []),
+		...(computeWorker.results ?? []),
 		...(computeDorows.results ?? []),
 		...(active.results ?? []),
 		...(packages.results ?? []),

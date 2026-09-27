@@ -734,7 +734,7 @@ test('compute include crossings mail for Durable Object rows-read without chargi
 	const payload = sendCloudflareEmail.mock.calls[0]?.[1] as {
 		text: string
 	}
-	expect(payload.text).toContain('Durable Object rows read')
+	expect(payload.text).toContain('Rows read')
 	expect(payload.text).not.toMatch(/unique worker day/i)
 	expect(
 		store.get(
@@ -821,12 +821,12 @@ function sweepUser(
 	}
 }
 
-test('compute warning sweep ranks unique worker-days and rows-read separately', async () => {
-	const uwdUser = sweepUser('uwd', 'uwd@example.com')
+test('compute warning sweep ranks Worker compute and Rows read separately', async () => {
+	const workerUser = sweepUser('worker', 'worker@example.com')
 	const dorowsUser = sweepUser('dorows', 'dorows@example.com')
 	const db = createDb([], [], {
 		activeUsers: [],
-		computeUwdUsers: [uwdUser],
+		computeUwdUsers: [workerUser],
 		computeDorowsUsers: [dorowsUser],
 	})
 	const users = await listUsersForEntitlementWarningSweep(
@@ -835,7 +835,7 @@ test('compute warning sweep ranks unique worker-days and rows-read separately', 
 	)
 	expect(users.map((user) => user.email).sort()).toEqual([
 		'dorows@example.com',
-		'uwd@example.com',
+		'worker@example.com',
 	])
 })
 

@@ -131,17 +131,22 @@ test('usageGet returns self-scoped entitlement snapshot', async () => {
 
 	const result = await usageGetCapability.handler({}, { env, callerContext })
 	expect(result.plan).toBe('pro')
-	expect(
-		result.resources.some((row) => row.resource === 'unique_worker_days'),
-	).toBe(false)
-	const durableObjectRows = result.resources.find(
+	const workerCompute = result.resources.find(
+		(row) => row.resource === 'unique_worker_days',
+	)
+	expect(workerCompute?.label).toBe('Worker compute')
+	expect(workerCompute?.group).toBe('monthly')
+	expect(workerCompute?.current).toBe(0)
+	expect(workerCompute?.limit).toBe(2_000)
+	expect(workerCompute?.overEightyPercent).toBe(false)
+	const rowsRead = result.resources.find(
 		(row) => row.resource === 'durable_object_rows_read',
 	)
-	expect(durableObjectRows?.label).toBe('Durable Object rows read')
-	expect(durableObjectRows?.group).toBe('monthly')
-	expect(durableObjectRows?.current).toBe(0)
-	expect(durableObjectRows?.limit).toBe(20_000_000_000)
-	expect(durableObjectRows?.overEightyPercent).toBe(false)
+	expect(rowsRead?.label).toBe('Rows read')
+	expect(rowsRead?.group).toBe('monthly')
+	expect(rowsRead?.current).toBe(0)
+	expect(rowsRead?.limit).toBe(20_000_000_000)
+	expect(rowsRead?.overEightyPercent).toBe(false)
 	const saved = result.resources.find(
 		(row) => row.resource === 'saved_packages',
 	)
@@ -185,32 +190,31 @@ test('usageGet reports legacy Standard ceilings for grandfathered accounts', asy
 	expect(result.weekStart).toMatch(/^\d{4}-\d{2}-\d{2}$/)
 })
 
-test('usageGet warns on Durable Object rows-read with whatCounts and howToReduce', async () => {
-	const email = 'dorows-usage-get@example.com'
+test('usageGet warns on Worker compute with whatCounts and howToReduce', async () => {
+	const email = 'worker-compute-usage-get@example.com'
 	const userId = testStableUserIdFromEmail(email)
 	const { db } = createUsageTestDb({
 		email,
 		plan: 'free',
-		durableObjectRowsRead: 500_000_000,
+		uniqueWorkerDays: 50,
 	})
 	const env = withUsageEnv({ APP_DB: db }) as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://example.com',
-		user: { userId, email, displayName: 'Dorows' },
+		user: { userId, email, displayName: 'WorkerCompute' },
 	})
 
 	const result = await usageGetCapability.handler({}, { env, callerContext })
-	expect(
-		result.resources.some((row) => row.resource === 'unique_worker_days'),
-	).toBe(false)
-	const durableObjectRows = result.resources.find(
-		(row) => row.resource === 'durable_object_rows_read',
+	const workerCompute = result.resources.find(
+		(row) => row.resource === 'unique_worker_days',
 	)
-	expect(durableObjectRows?.current).toBe(500_000_000)
-	expect(durableObjectRows?.limit).toBe(500_000_000)
-	expect(durableObjectRows?.percent).toBe(1)
-	expect(durableObjectRows?.overEightyPercent).toBe(true)
+	expect(workerCompute?.label).toBe('Worker compute')
+	expect(workerCompute?.current).toBe(50)
+	expect(workerCompute?.limit).toBe(50)
+	expect(workerCompute?.percent).toBe(1)
+	expect(workerCompute?.overEightyPercent).toBe(true)
+	expect(workerCompute?.whatCounts).not.toMatch(/unique worker day/i)
 	expect(
-		result.warnings.some((row) => row.resource === 'durable_object_rows_read'),
+		result.warnings.some((row) => row.resource === 'unique_worker_days'),
 	).toBe(true)
 })

@@ -12,7 +12,7 @@ function createAnonymousTestDb() {
 		const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
 		const executeAll = async () => {
 			if (
-				normalizedQuery.includes('from feature_flags') ||
+				normalizeedQuery.includes('from feature_flags') ||
 				normalizedQuery.includes('from feature_flag_user_overrides')
 			) {
 				return {
@@ -25,7 +25,7 @@ function createAnonymousTestDb() {
 				meta: { changes: 0, last_row_id: 0 },
 			}
 		}
-		return {
+	return {
 			query,
 			bind() {
 				return createStatement(query)
@@ -83,8 +83,11 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 	expect(html).toContain('Pro')
 	expect(html).toContain('$12')
 	expect(html).toContain('Prepaid credits')
-	expect(html).toContain('$0.002 per million rows read')
+	expect(html).toContain(
+		'Usage above the monthly include debits prepaid credits (Worker compute and Rows read)',
+	)
 	expect(html).not.toContain('unique worker day')
+	expect(html).not.toContain('Unique worker days')
 	expect(html).toContain('Teams / Enterprise')
 	expect(html).toContain('mailto:kody@kody.codes')
 	expect(html).toContain('Durable Object rows read per month')

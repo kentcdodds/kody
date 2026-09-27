@@ -103,7 +103,8 @@ test('howToReduce points every non-operator account at /account/credits without 
 	)
 	expect(empty).toContain(`Credits at ${accountCreditsPath} lift hard caps`)
 	expect(empty).not.toMatch(/add credits/i)
-	expect(empty).toContain('$0.004 per unique worker day')
+	expect(empty).toContain('$0.004 per worker-compute day')
+	expect(empty).not.toMatch(/unique worker day/i)
 	expect(
 		buildComputeOverageHowToReduce('durable_object_rows_read', 'pro', 'funded'),
 	).toContain('debits your credits at $0.002 per million rows read')

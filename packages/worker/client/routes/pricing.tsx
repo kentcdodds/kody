@@ -4,7 +4,6 @@ import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
 import { reveal } from '#client/reveal.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { jevSearchRerankFlagKey } from '#universal/feature-flags/registry.ts'
-import { creditDebitRates } from '#universal/credits.ts'
 import {
 	formatDurableObjectRowsRead,
 	formatMinJobInterval,
@@ -267,7 +266,7 @@ export function PricingRoute(handle: Handle) {
 					</h3>
 					<p mix={css(limitsFootnoteCss)}>
 						Add credits on Pro to lift hard caps. Usage above the monthly
-						include debits {creditDebitRates.durable_object_rows_read.label}. No
+						include debits prepaid credits (Worker compute and Rows read). No
 						overage invoices.
 					</p>
 					<p mix={css(limitsFootnoteCss)}>
