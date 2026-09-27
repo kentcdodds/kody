@@ -240,8 +240,14 @@ function tetherFollow(agents: ReadonlyArray<LandingHeroAgent>) {
 				)
 				if (!track || lights.length === 0) continue
 				track.setAttribute('d', d)
+				const hideLights = () => {
+					for (const light of lights) light.setAttribute('opacity', '0')
+				}
 				// Runtime type: the SVGPathElement querySelector cast is compile-time only.
-				if (!(track instanceof SVGGeometryElement)) continue
+				if (!(track instanceof SVGGeometryElement)) {
+					hideLights()
+					continue
+				}
 				try {
 					const length = track.getTotalLength()
 					for (const light of lights) {
@@ -259,6 +265,7 @@ function tetherFollow(agents: ReadonlyArray<LandingHeroAgent>) {
 						light.setAttribute('opacity', String(at.opacity))
 					}
 				} catch {
+					hideLights()
 					continue
 				}
 			}
