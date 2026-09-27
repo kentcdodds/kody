@@ -109,9 +109,8 @@ export function createAccountConnectedAgents(handle: Handle) {
 			toast.success('Agent disconnected.')
 		} catch (error) {
 			pendingRevokes.delete(clientId)
-			for (const grantId of removed.grantIds) {
-				revokedGrantIds.delete(grantId)
-			}
+			// Do not clear revokedGrantIds: this attempt never added tombstones
+			// (only success does), and deleted IDs could wipe an earlier revoke.
 			if (!agents.some((agent) => agent.clientId === clientId)) {
 				agents = [...agents, removed]
 			}
