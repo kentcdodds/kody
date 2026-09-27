@@ -592,7 +592,10 @@ export function createExecuteExecutor(input: {
 		globalOutbound: loopbackExports.KodyFetchGateway({
 			props: gatewayProps,
 		}),
-		...(loopbackExports.DynamicWorkerUsageTail
+		// Tails only run where Analytics Engine is bound (deployed Workers).
+		// Open-source workerd reports zero CPU, and a local tail would outlive
+		// the run with a D1 write per invocation.
+		...('DynamicWorkerUsageTail' in loopbackExports && input.env.USAGE_EVENTS
 			? {
 					createUsageTail: (props: DynamicWorkerUsageTailProps) =>
 						loopbackExports.DynamicWorkerUsageTail({ props }),
