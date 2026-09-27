@@ -288,6 +288,18 @@ test('confirming revoke removes the row immediately and restores it with an erro
 			chatgptNew.clientId,
 			acme.clientId,
 		])
+
+		// A stale GET captured before revoke must not restore the Connected mark.
+		panel.applyPayload(listedAgents)
+		expect(panel.listAgents().map((agent) => agent.clientId)).toEqual([
+			cursorNew.clientId,
+			chatgptOld.clientId,
+			chatgptNew.clientId,
+			acme.clientId,
+		])
+		expect(
+			panel.listAgents().some((agent) => agent.clientId === cursorOld.clientId),
+		).toBe(false)
 	} finally {
 		toast.dismiss()
 		globalThis.fetch = originalFetch
