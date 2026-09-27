@@ -2,8 +2,9 @@ import { expect, test } from 'vitest'
 import {
 	callerDisconnectedSandboxLog,
 	callerDisconnectedSandboxMessage,
+	packageInvocationClientDisconnectedErrorName,
 } from '#worker/caller-disconnect.ts'
-import { createExecuteExecutor } from './executor.ts'
+import { createExecuteExecutor, createNamedExecutionError } from './executor.ts'
 
 type FakeWorkerOptions = Record<string, unknown>
 
@@ -57,4 +58,7 @@ test('createExecuteExecutor finishes with a disconnect error when the caller abo
 	const result = await pending
 	expect(result.error).toBe(callerDisconnectedSandboxMessage)
 	expect(result.logs).toEqual([callerDisconnectedSandboxLog])
+	expect(createNamedExecutionError(result.error).name).toBe(
+		packageInvocationClientDisconnectedErrorName,
+	)
 })

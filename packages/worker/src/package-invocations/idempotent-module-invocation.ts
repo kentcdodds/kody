@@ -293,15 +293,14 @@ export async function invokeSavedPackageModule(input: {
 		handle: claim.handle,
 	}
 	const startedLog = packageInvocationStartedLog(claimed.handle?.context.name)
-	let terminalFinishStarted = false
+	let disconnectFinishSucceeded = false
 	let disconnectResponse: ReturnType<typeof buildJsonErrorResponse> | null =
 		null
 	let disconnectFinish: Promise<void> | null = null
 	const finishForCallerDisconnect = () => {
 		const signal = input.signal
 		if (!signal || !isCallerDisconnectAbort(signal)) return
-		if (terminalFinishStarted) return
-		terminalFinishStarted = true
+		if (disconnectFinish || disconnectFinishSucceeded) return
 		const error = createPackageInvocationClientDisconnectedError()
 		disconnectResponse = buildJsonErrorResponse({
 			status: 408,
@@ -322,12 +321,18 @@ export async function invokeSavedPackageModule(input: {
 			error,
 			waitUntil: input.waitUntil,
 		}).then(
-			() => undefined,
+			() => {
+				disconnectFinishSucceeded = true
+			},
 			(finishError: unknown) => {
 				console.warn(
 					'package invocation disconnect finish failed',
 					getErrorMessage(finishError),
 				)
+				// Allow the settled sandbox outcome to attempt a normal fenced
+				// finish so a transient DO write failure does not leave the key
+				// in_progress after the caller already disconnected.
+				disconnectFinish = null
 			},
 		)
 		disconnectFinish = pending
@@ -344,9 +349,13 @@ export async function invokeSavedPackageModule(input: {
 			})
 		}
 	}
-	if (terminalFinishStarted) {
-		if (disconnectFinish) await disconnectFinish
+	if (disconnectFinishSucceeded) {
 		if (disconnectResponse) return disconnectResponse
+	} else if (disconnectFinish) {
+		await disconnectFinish
+		if (disconnectFinishSucceeded && disconnectResponse) {
+			return disconnectResponse
+		}
 	}
 	const outcome = await runSavedPackageModuleOnce({
 		env: input.env,
@@ -370,9 +379,11 @@ export async function invokeSavedPackageModule(input: {
 		externalRunRecordHandle: claimed.handle,
 	})
 	input.signal?.removeEventListener('abort', onCallerDisconnect)
-	if (terminalFinishStarted) {
-		if (disconnectFinish) await disconnectFinish
-		if (disconnectResponse) return disconnectResponse
+	if (disconnectFinish) {
+		await disconnectFinish
+	}
+	if (disconnectFinishSucceeded && disconnectResponse) {
+		return disconnectResponse
 	}
 	const logsWithStartedLine = (logs: Array<string>) =>
 		logs.includes(startedLog) ? logs : [startedLog, ...logs]

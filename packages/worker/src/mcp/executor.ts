@@ -92,6 +92,8 @@ import {
 import {
 	callerDisconnectedSandboxLog,
 	callerDisconnectedSandboxMessage,
+	createCallerDisconnectedExecutionError,
+	isCallerDisconnectedSandboxMessage,
 } from '#worker/caller-disconnect.ts'
 import { parseStorageEstimateReadErrorMessage } from '#worker/storage-estimate-error.ts'
 import {
@@ -422,6 +424,9 @@ async function settleWithin<T>(
 
 export function createNamedExecutionError(error: unknown) {
 	const message = getErrorMessage(error)
+	if (isCallerDisconnectedSandboxMessage(message)) {
+		return createCallerDisconnectedExecutionError()
+	}
 	const namedError = new Error(message)
 	if (isExecutorSandboxTimeoutMessage(message)) {
 		namedError.name = 'TimeoutError'

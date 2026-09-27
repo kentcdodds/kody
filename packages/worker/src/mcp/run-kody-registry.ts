@@ -13,6 +13,11 @@ import {
 	createExecuteExecutor,
 	createNamedExecutionError,
 } from '#mcp/executor.ts'
+import {
+	callerDisconnectedSandboxLog,
+	createCallerDisconnectedExecutionError,
+	isCallerDisconnectAbort,
+} from '#worker/caller-disconnect.ts'
 import { recordExecuteInterpretableEvent } from '#mcp/execute-interpretable.ts'
 import {
 	classifyExecuteThinGlue,
@@ -823,6 +828,23 @@ export async function runBundledModuleWithRegistry(
 		})
 		runRecordFinished = true
 	}
+	function resolveThrownRunError(error: unknown): {
+		error: unknown
+		logs: Array<string> | undefined
+	} {
+		if (
+			options?.signal &&
+			isCallerDisconnectAbort(options.signal) &&
+			error instanceof Error &&
+			error.name === 'AbortError'
+		) {
+			return {
+				error: createCallerDisconnectedExecutionError(),
+				logs: capturedLogs ?? [callerDisconnectedSandboxLog],
+			}
+		}
+		return { error, logs: capturedLogs }
+	}
 	function withRunId<T extends ExecuteResult>(
 		result: T,
 	): T & { runId?: string; serverTiming?: Array<ExecuteServerTimingEntry> } {
@@ -1189,10 +1211,11 @@ ${runtimeHelperRuntimePropertySource}
 				throw error
 			}
 			if (!runRecordFinished) {
+				const resolved = resolveThrownRunError(error)
 				await finishObservedRun({
 					status: 'error',
-					logs: capturedLogs,
-					error,
+					logs: resolved.logs,
+					error: resolved.error,
 				})
 			}
 			throw error
@@ -1206,10 +1229,11 @@ ${runtimeHelperRuntimePropertySource}
 			throw error
 		}
 		if (!runRecordFinished) {
+			const resolved = resolveThrownRunError(error)
 			await finishObservedRun({
 				status: 'error',
-				logs: capturedLogs,
-				error,
+				logs: resolved.logs,
+				error: resolved.error,
 			})
 		}
 		await recordPackageExportUsage('error')

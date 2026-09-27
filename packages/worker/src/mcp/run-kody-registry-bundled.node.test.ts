@@ -955,6 +955,86 @@ test('runBundledModuleWithRegistry records execute run success and failure', asy
 	}
 })
 
+test('runBundledModuleWithRegistry finishes caller disconnect aborts as client_disconnected', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const {
+		callerDisconnectedSandboxLog,
+		packageInvocationClientDisconnectedErrorName,
+	} = await import('#worker/caller-disconnect.ts')
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: {
+			userId: 'user-execute-disconnect',
+			email: 'disconnect@example.com',
+			displayName: 'Disconnect User',
+		},
+	})
+	const bundle = {
+		mainModule: 'entry.js',
+		modules: {
+			'entry.js': 'export default async () => "ok"',
+		},
+	}
+	const handle = {
+		id: 'run-execute-disconnect-1',
+		userId: 'user-execute-disconnect',
+		startedAt: '2026-09-27T00:00:00.000Z',
+		persistence: 'eager' as const,
+		context: {
+			surface: 'execute' as const,
+			name: null,
+			storageId: 'storage-disconnect',
+			metadata: { conversationId: 'conv-disconnect' },
+		},
+	}
+	const runRecords = await import('#worker/run-records/service.ts')
+	const beginSpy = vi
+		.spyOn(runRecords, 'beginRunRecord')
+		.mockReturnValue(handle)
+	const finishSpy = vi
+		.spyOn(runRecords, 'finishRunRecord')
+		.mockResolvedValue(undefined)
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute() {
+				return { result: 'should-not-run', logs: [] }
+			},
+		} as never)
+	const controller = new AbortController()
+	controller.abort(new DOMException('The operation was aborted.', 'AbortError'))
+
+	try {
+		await expect(
+			runBundledModuleWithRegistry(env, callerContext, bundle, undefined, {
+				skipCapabilityRegistry: true,
+				signal: controller.signal,
+				runRecord: {
+					surface: 'execute',
+					name: null,
+					storageId: 'storage-disconnect',
+					metadata: { conversationId: 'conv-disconnect' },
+				},
+			}),
+		).rejects.toMatchObject({ name: 'AbortError' })
+		expect(finishSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				handle,
+				status: 'error',
+				logs: [callerDisconnectedSandboxLog],
+				error: expect.objectContaining({
+					name: packageInvocationClientDisconnectedErrorName,
+				}),
+			}),
+		)
+	} finally {
+		beginSpy.mockRestore()
+		finishSpy.mockRestore()
+		createExecuteExecutorSpy.mockRestore()
+	}
+})
+
 test('runBundledModuleWithRegistry leaves claimed job transient failures running', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const env = {} as Env

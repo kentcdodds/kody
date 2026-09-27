@@ -29,6 +29,17 @@ export const callerDisconnectedSandboxMessage =
 export const callerDisconnectedSandboxLog =
 	'caller disconnected before the sandbox finished'
 
+/** Run-record error for execute (and nested sandbox) caller disconnect. */
+export function createCallerDisconnectedExecutionError() {
+	const error = new Error(callerDisconnectedSandboxMessage)
+	error.name = packageInvocationClientDisconnectedErrorName
+	return error
+}
+
+export function isCallerDisconnectedSandboxMessage(message: string) {
+	return message === callerDisconnectedSandboxMessage
+}
+
 /**
  * True when `signal` aborted because the inbound caller went away.
  * Sandbox wall-clock timeouts use `TimeoutError` and must keep the normal
