@@ -49,6 +49,7 @@ export async function recordDynamicWorkerCpu(input: {
 	props: DynamicWorkerUsageTailProps
 	event: Pick<TraceItem, 'cpuTime' | 'wallTime' | 'outcome'>
 }): Promise<void> {
+	if (!input.env.USAGE_EVENTS) return
 	const cpuMs = Number(input.event.cpuTime)
 	if (!input.props.userId || !Number.isFinite(cpuMs) || cpuMs < 0) return
 	const wallMs = Number(input.event.wallTime)
