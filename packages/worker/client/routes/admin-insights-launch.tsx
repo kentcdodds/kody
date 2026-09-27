@@ -350,8 +350,8 @@ export function renderLaunchSignals(signals: AdminInsightsLaunchSignals) {
 				<ChartCard
 					title="Plan sources"
 					sub={
-						signals.overlayStandard > 0
-							? `${formatIntegerNumber(signals.overlayStandard)} effective Standard come from gift or referral overlays.`
+						signals.overlayPro > 0
+							? `${formatIntegerNumber(signals.overlayPro)} effective Pro come from gift or referral overlays.`
 							: 'Manual grant, Stripe subscription, and effective entitlement stay separate.'
 					}
 					span={6}

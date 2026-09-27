@@ -265,7 +265,7 @@ test('step 3 groups ecosystems and folds in a portability proof', async () => {
 		}),
 	)
 	expect(picker).toContain('Connect a second agent')
-	expect(picker).toContain('Standard free for 2 weeks')
+	expect(picker).toContain('Pro free for 2 weeks')
 	expect(picker).toContain('data-picker="ecosystem"')
 	expect(picker).toContain('data-testid="onboarding-ecosystem-xai"')
 	const grokSection = picker.slice(
@@ -341,7 +341,7 @@ test('step 3 groups ecosystems and folds in a portability proof', async () => {
 		}),
 	)
 	expect(connected).toContain("You've connected a second agent.")
-	expect(connected).not.toContain('Standard is free for 2 weeks')
+	expect(connected).not.toContain('Pro is free for 2 weeks')
 
 	const gifted = await renderToString(
 		secondAgentPanel({
@@ -354,7 +354,7 @@ test('step 3 groups ecosystems and folds in a portability proof', async () => {
 		}),
 	)
 	expect(gifted).toContain(
-		"You've connected a second agent. Standard is free for 2 weeks.",
+		"You've connected a second agent. Pro is free for 2 weeks.",
 	)
 
 	const labeled = await renderToString(

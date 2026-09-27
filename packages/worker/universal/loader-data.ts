@@ -796,7 +796,7 @@ export type AdminInsightsLaunchSignals = {
 	stripePlans: Array<AdminInsightsPlanSlice>
 	effectivePlans: Array<AdminInsightsPlanSlice>
 	/** Effective Standard from an active gift or referral while manual+Stripe stay free. */
-	overlayStandard: number
+	overlayPro: number
 	entitlementLadders: { public: number; legacy: number }
 	paidEntitlementLadders: { public: number; legacy: number }
 	activeUsers: { hours24: number; hours48: number; days7: number }

@@ -1,16 +1,9 @@
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
-import { readCreditWalletStateForPlan } from '#worker/entitlements/service.ts'
+import { resolveUserEntitlementFromRow } from '#worker/entitlements/service.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 import { type OAuthGrantListHelpers } from '#worker/oauth-grants.ts'
-import {
-	parseEntitlementLadder,
-	parseStoredPlanName,
-	parseStripePlanName,
-	resolvePlanLimits,
-} from '#universal/plans.ts'
-import { laterIsoTimestamp } from '#universal/referral-program.ts'
-import { resolveEffectivePlanWithSecondAgentGift } from '#universal/second-agent-standard-gift.ts'
+import { parseStripePlanName, resolvePlanLimits } from '#universal/plans.ts'
 import { countDistinctInboundClientIds } from './campaign-inbound-clients.ts'
 import {
 	usageCampaignLimitAwareThreshold,
@@ -171,23 +164,16 @@ async function readNearStockCap(input: {
 	now: Date
 }) {
 	try {
-		const plan = resolveEffectivePlanWithSecondAgentGift(
-			parseStoredPlanName(input.user.plan),
-			input.user.stripe_plan,
-			laterIsoTimestamp(
-				input.user.second_agent_standard_gift_expires_at,
-				input.user.referral_standard_credit_expires_at,
-			),
-			input.now,
-		)
+		const entitlement = await resolveUserEntitlementFromRow({
+			db: input.db,
+			stableUserId: input.user.stable_user_id,
+			row: input.user,
+			now: input.now,
+		})
 		const limits = resolvePlanLimits(
-			plan,
-			parseEntitlementLadder(input.user.entitlement_ladder),
-			await readCreditWalletStateForPlan(input.db, {
-				stableUserId: input.user.stable_user_id,
-				plan,
-				stripeCreditsEligible: input.user.stripe_credits_eligible,
-			}),
+			entitlement.plan,
+			entitlement.ladder,
+			entitlement.creditWallet,
 		)
 		const [packages, secrets] = await Promise.all([
 			input.db

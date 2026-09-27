@@ -13,7 +13,7 @@ import {
 	type UserEntitlement,
 } from '#universal/plans.ts'
 import { laterIsoTimestamp } from '#universal/referral-program.ts'
-import { resolveEffectivePlanWithSecondAgentGift } from '#universal/second-agent-standard-gift.ts'
+import { resolvePlanOverlay } from '#universal/second-agent-standard-gift.ts'
 import { countInternalUserEmailMessages } from '#worker/email/mailbox-internal-read.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { type RepoSessionIndexEnv } from '#worker/repo/repo-session-index-client.ts'
@@ -75,8 +75,9 @@ export type UserEntitlementRow = {
 
 /**
  * Effective plan, ladder, and credit eligibility for a `users` row, without
- * the wallet balance. `creditsEligible` is only meaningful when `plan` is
- * `pro` (a manual `max` grant outranks the purchasable Pro).
+ * the wallet balance. Eligible means the purchasable Pro: its Stripe price,
+ * or the second-agent / referral Pro overlay on Free. A manual `max` grant
+ * outranks both.
  */
 export function resolveUserPlanFromRow(
 	row: UserEntitlementRow,
@@ -86,7 +87,7 @@ export function resolveUserPlanFromRow(
 	ladder: UserEntitlement['ladder']
 	creditsEligible: boolean
 } {
-	const plan = resolveEffectivePlanWithSecondAgentGift(
+	const { plan, isProOverlay } = resolvePlanOverlay(
 		parseStoredPlanName(row.plan),
 		row.stripe_plan,
 		laterIsoTimestamp(
@@ -99,7 +100,8 @@ export function resolveUserPlanFromRow(
 		plan,
 		ladder: parseEntitlementLadder(row.entitlement_ladder),
 		creditsEligible:
-			plan === 'pro' && Number(row.stripe_credits_eligible) === 1,
+			plan === 'pro' &&
+			(isProOverlay || Number(row.stripe_credits_eligible) === 1),
 	}
 }
 

@@ -2,29 +2,14 @@ import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 
 /**
- * Mirrors `0069-prepaid-credits.sql` (wallets, ledger, debit progress) on
- * top of the entitlement `users` schema and `usage_rollups` for
+ * Mirrors `0069-prepaid-credits.sql` (ledger and debit progress; wallets
+ * come with the shared `users` schema) plus `usage_rollups` for
  * `*.workers.test.ts` suites, which run against an empty local D1.
  */
 export async function ensureCreditWalletTestSchema(db: D1Database) {
 	await ensureEntitlementTestSchema(db)
 	await ensureUsageRollupsTestSchema(db)
 	const statements = [
-		`CREATE TABLE IF NOT EXISTS credit_wallets (
-	user_id TEXT PRIMARY KEY NOT NULL,
-	balance_micro_usd INTEGER NOT NULL DEFAULT 0,
-	auto_refill_enabled INTEGER NOT NULL DEFAULT 0,
-	auto_refill_threshold_cents INTEGER,
-	auto_refill_amount_cents INTEGER,
-	auto_refill_monthly_cap_cents INTEGER,
-	auto_refill_payment_method_id TEXT,
-	auto_refill_failed_at TEXT,
-	notify_auto_refilled INTEGER NOT NULL DEFAULT 1,
-	notify_monthly_cap INTEGER NOT NULL DEFAULT 1,
-	notify_low_balance INTEGER NOT NULL DEFAULT 1,
-	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL
-)`,
 		`CREATE TABLE IF NOT EXISTS credit_ledger_entries (
 	id TEXT PRIMARY KEY NOT NULL,
 	user_id TEXT NOT NULL,

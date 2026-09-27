@@ -70,7 +70,7 @@ test('referral codes, share links, stacking, overlays, and fraud email collapse'
 			'2026-10-01T00:00:00.000Z',
 			now,
 		),
-	).toBe('standard')
+	).toBe('pro')
 	expect(
 		resolveEffectivePlanWithStandardOverlays(
 			'free',

@@ -75,7 +75,7 @@ function emptyLaunchSignals(): AdminInsightsLaunchSignals {
 		manualPlans: [],
 		stripePlans: [],
 		effectivePlans: [],
-		overlayStandard: 0,
+		overlayPro: 0,
 		entitlementLadders: { public: 0, legacy: 0 },
 		paidEntitlementLadders: { public: 0, legacy: 0 },
 		activeUsers: { hours24: 0, hours48: 0, days7: 0 },

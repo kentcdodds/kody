@@ -32,8 +32,9 @@ at `packages/worker/universal/plans.ts`.
   (UserMeter DO reserve with cold bootstrap), and
   `readCurrentEntitlementResourceUsage` (UserMeter-authoritative for
   `storage_bytes` and daily resources).
-- `second-agent-standard-gift.ts` (universal + worker) — one 14-day public
-  Standard overlay when known connected agent ecosystems first reach 2.
+- `second-agent-standard-gift.ts` (universal + worker) — one 14-day overlay of
+  the purchasable Pro on Free when known connected agent ecosystems first reach
+  2 (file, column, and helper names keep "Standard" from before #2617).
   `describeSecondAgentStandardGift` is the flag for lifecycle email /
   PackagedSingleClient. Enforcement goes through `getUserEntitlement`; Stripe is
   not mutated.
@@ -112,25 +113,27 @@ linked. `plan` on those records remains the grant that Manage plan edits.
 ### Second-agent Standard gift
 
 When a user first reaches two known connected agent ecosystems, Kody records one
-14-day public Standard overlay. The gate is that second ecosystem (activation),
-not day-0 signup and not a second OAuth `clientId` for the same ecosystem. Two
-Cursor auth contexts are one ecosystem. An unlabeled client does not add an
-ecosystem. `users.second_agent_standard_gift_granted_at` is the write-once
-ledger (one gift per user). `users.second_agent_standard_gift_expires_at` is set
-only when the base effective plan is still `free`; NULL means the account was
-already Standard/Pro/max and Stripe was not touched. There is no existing helper
-that extends a remaining Stripe period, and mutating `trial_end` / period end is
+14-day overlay of the purchasable Pro. The gate is that second ecosystem
+(activation), not day-0 signup and not a second OAuth `clientId` for the same
+ecosystem. Two Cursor auth contexts are one ecosystem. An unlabeled client does
+not add an ecosystem. `users.second_agent_standard_gift_granted_at` is the
+write-once ledger (one gift per user).
+`users.second_agent_standard_gift_expires_at` is set only when the base
+effective plan is still `free`; NULL means the account was already
+Standard/Pro/max and Stripe was not touched. There is no existing helper that
+extends a remaining Stripe period, and mutating `trial_end` / period end is
 payment-adjacent.
 
-`getUserEntitlement` overlays Standard through
-`resolveEffectivePlanWithSecondAgentGift` while `expires_at` is in the future
-and the base rank is still below Standard. The gift never lowers a paid or
-manual grant. Expiry is read-time (no sweeper). Authorize completion and
-grant-list pages (onboarding payload, Account → Connections) call
-`maybeEvaluateSecondAgentStandardGift`, which skips the write when known
-ecosystems are below 2 or listing failed, but still reads the persisted ledger
-so `/onboarding.json` does not hide an already-granted gift. Missing
-`APP_DB.prepare` skips both write and read.
+`getUserEntitlement` overlays the purchasable Pro through `resolvePlanOverlay`
+while `expires_at` is in the future and the base plan is still `free`. An
+overlaid `pro` uses `proCreditsPlanLimits` and the credit wallet (not the
+retired $49 Pro table); topping up still needs a Pro subscription (Stripe
+customer). The gift never lowers a paid or manual grant. Expiry is read-time (no
+sweeper). Authorize completion and grant-list pages (onboarding payload, Account
+→ Connections) call `maybeEvaluateSecondAgentStandardGift`, which skips the
+write when known ecosystems are below 2 or listing failed, but still reads the
+persisted ledger so `/onboarding.json` does not hide an already-granted gift.
+Missing `APP_DB.prepare` skips both write and read.
 
 `describeSecondAgentStandardGift` / `SecondAgentStandardGiftState` is the flag
 lifecycle email or PackagedSingleClient should read: `received`, `active`, and
@@ -146,15 +149,15 @@ pending `referrals` row from the cookie or a same-request share link.
 First-touch UTMs stay write-once and do not carry the referral code. Reward runs
 on `invoice.paid` after the referee's first qualifying paid Stripe invoice
 (`amount_paid > 0`, not a $0 trial, not a historical compute-overage invoice).
-Both the referrer and the referee receive one stacked month (30 days) of public
-Standard via `users.referral_standard_credit_expires_at`. There is no annual or
-lifetime cap on how many months a referrer can earn. Paid subscribers stack from
-the later of an existing credit and the current paid period end so the month
-starts after paid access rather than overlapping it. Referee invoices use the
-latest line `period.end`. A failed Stripe lookup of the referrer's subscription
-fails the webhook so Stripe can retry instead of stacking from now. Email-verify
-leaves a held row pending if that lookup fails; the referrer’s later
-`invoice.paid` retries it. Stripe subscriptions are not mutated.
+Both the referrer and the referee receive one stacked month (30 days) of the
+purchasable Pro via `users.referral_standard_credit_expires_at`. There is no
+annual or lifetime cap on how many months a referrer can earn. Paid subscribers
+stack from the later of an existing credit and the current paid period end so
+the month starts after paid access rather than overlapping it. Referee invoices
+use the latest line `period.end`. A failed Stripe lookup of the referrer's
+subscription fails the webhook so Stripe can retry instead of stacking from now.
+Email-verify leaves a held row pending if that lookup fails; the referrer’s
+later `invoice.paid` retries it. Stripe subscriptions are not mutated.
 
 Fraud basics before a reward: both emails verified, new-account attribution only
 (persisted at signup from the last-wins cookie), no self-referral, no plus-tag /
@@ -163,8 +166,8 @@ referrer. An unverified party holds the qualifying invoice id on the pending
 row; email verification retries the grant. `/account/billing` shows the share
 link and simple referrer status.
 
-`getUserEntitlement` overlays Standard through the later of the second-agent
-gift and this referral credit.
+`getUserEntitlement` overlays the purchasable Pro through the later of the
+second-agent gift and this referral credit.
 
 ### `max` plan limits
 
@@ -216,16 +219,19 @@ and every Stripe refresh writes it to `users.stripe_credits_eligible`
 (`0069-prepaid-credits.sql`). That separates Pro from retired Standard at the
 same $12. `getUserEntitlement` returns `creditWallet`
 (`resolveCreditWalletState`): `none` unless the effective plan is `pro` and the
-account is eligible, then `funded` when `credit_wallets.balance_micro_usd > 0`
-and `empty` otherwise. Free, retired Standard/Pro, manual grants, and `max` are
-always `none`; an admin grant to them only holds a balance.
+account is eligible (the Pro price, or the second-agent / referral Pro overlay
+on Free), then `funded` when `credit_wallets.balance_micro_usd > 0` and `empty`
+otherwise. Free, retired Standard/Pro, manual grants, and `max` are always
+`none`; an admin grant to them only holds a balance.
 
 **Unlock.** `funded` multiplies the rate/compute limits in
 `creditsUnlockedLimitFields` (execute, outbound fetches, job runs, and
-automation invocations, daily and weekly) by `creditsUnlockMultiplier` (50).
-Email caps, stock limits, storage, concurrency, and the job interval floor do
-not change. Unlocking costs nothing; at $0 the base caps apply again (within the
-60s enforcement cache).
+automation invocations, daily and weekly) by `creditsUnlockMultiplier` (50),
+capped at the `max` daily ceilings (execute 25,000, outbound 80,000, job runs
+40,000, automation 200,000; `max` has no weekly window). Email caps, stock
+limits, storage, concurrency, and the job interval floor do not change.
+Unlocking costs nothing; at $0 the base caps apply again (within the 60s
+enforcement cache).
 
 **Debits.** The `usage_aggregation` lane runs `runCreditDebits`
 (`packages/worker/src/billing/credit-debits.ts`) right after it recomputes
@@ -239,10 +245,10 @@ list). Every other wallet advances progress without a charge, so a later top-up
 never back-charges. The balance can dip below $0 by about an hour of unlocked
 usage; it stays locked until a top-up covers it. Debit ledger ids are
 deterministic per starting position, so an overlapping run rolls back instead of
-charging twice. A new wallet starts its progress at the current month's billable
-units. CPU, Durable Object duration, RunLog rows, and email are not debited.
-Nobody is invoiced for overage; the retired `compute_overage_invoices` table is
-history only.
+charging twice. A new wallet starts its progress at the billable units of both
+months the lane settles (prior and current). CPU, Durable Object duration,
+RunLog rows, and email are not debited. Nobody is invoiced for overage; the
+retired `compute_overage_invoices` table is history only.
 
 **Top-ups.** `POST /account/credits/top-up.json` (Pro only) opens a one-off
 Checkout Session (`mode=payment`, `price_data`, card saved with

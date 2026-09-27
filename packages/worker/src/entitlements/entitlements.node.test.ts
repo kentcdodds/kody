@@ -94,6 +94,9 @@ function createEntitlementsTestDb(
 					queries.push({ sql: query, params })
 					return {
 						async first<T>() {
+							if (query.includes('FROM credit_wallets')) {
+								return null as T | null
+							}
 							if (
 								query.includes(
 									'SELECT plan, stripe_plan, entitlement_ladder, stripe_credits_eligible, second_agent_standard_gift_expires_at, referral_standard_credit_expires_at FROM users',
@@ -1617,7 +1620,7 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 			userId: giftUserId,
 			email: giftEmail,
 		}),
-	).toBe('standard')
+	).toBe('pro')
 
 	expect(parseStripePlanName('standard')).toBe('standard')
 	expect(parseStripePlanName('pro')).toBe('pro')

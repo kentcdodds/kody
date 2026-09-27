@@ -103,7 +103,7 @@ async function assertSecondAgentGiftOnScenarioClock() {
 				userId: free.stableUserId,
 				email: 'free-gift@example.com',
 			}),
-		).toEqual({ plan: 'standard', ladder: 'public', creditWallet: 'none' })
+		).toEqual({ plan: 'pro', ladder: 'public', creditWallet: 'empty' })
 	} finally {
 		vi.useRealTimers()
 	}

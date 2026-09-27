@@ -3,6 +3,7 @@ import {
 	describeSecondAgentStandardGift,
 	isSecondAgentStandardGiftActive,
 	resolveEffectivePlanWithSecondAgentGift,
+	resolvePlanOverlay,
 	resolveSecondAgentStandardGiftWrite,
 } from './second-agent-standard-gift.ts'
 
@@ -10,14 +11,27 @@ const now = new Date('2026-09-07T12:00:00.000Z')
 const inTwoWeeks = '2026-09-21T12:00:00.000Z'
 const yesterday = '2026-09-06T12:00:00.000Z'
 
-test('gift overlay raises free to Standard once, never double-applies, and no-ops paid tiers', () => {
+test('gift overlay raises free to the purchasable Pro once, never double-applies, and no-ops paid tiers', () => {
 	expect(isSecondAgentStandardGiftActive(inTwoWeeks, now)).toBe(true)
 	expect(isSecondAgentStandardGiftActive(yesterday, now)).toBe(false)
 	expect(isSecondAgentStandardGiftActive(null, now)).toBe(false)
 
 	expect(
 		resolveEffectivePlanWithSecondAgentGift('free', null, inTwoWeeks, now),
-	).toBe('standard')
+	).toBe('pro')
+	expect(resolvePlanOverlay('free', null, inTwoWeeks, now)).toEqual({
+		plan: 'pro',
+		isProOverlay: true,
+	})
+	// Retired Standard keeps its own plan (and table) under an overlay.
+	expect(resolvePlanOverlay('free', 'standard', inTwoWeeks, now)).toEqual({
+		plan: 'standard',
+		isProOverlay: false,
+	})
+	expect(resolvePlanOverlay('free', 'pro', inTwoWeeks, now)).toEqual({
+		plan: 'pro',
+		isProOverlay: false,
+	})
 	expect(
 		resolveEffectivePlanWithSecondAgentGift('free', null, yesterday, now),
 	).toBe('free')

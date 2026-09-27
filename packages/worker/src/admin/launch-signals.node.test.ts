@@ -169,7 +169,7 @@ test('launch signals aggregate paid MRR, funnels, activity, and overlays without
 		{ plan: 'standard', count: 2 },
 		{ plan: 'pro', count: 1 },
 	])
-	expect(signals.overlayStandard).toBe(1)
+	expect(signals.overlayPro).toBe(1)
 	expect(signals.entitlementLadders).toEqual({ public: 2, legacy: 1 })
 	expect(signals.paidEntitlementLadders).toEqual({ public: 1, legacy: 1 })
 	expect(signals.activeUsers).toEqual({

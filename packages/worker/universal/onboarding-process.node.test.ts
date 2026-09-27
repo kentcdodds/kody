@@ -199,7 +199,7 @@ test('step 2 is one short prompt that retrieves the onboarding guide', () => {
 		"You've connected a second agent.",
 	)
 	expect(onboardingSecondAgentConnectedStatusLabel(true)).toBe(
-		"You've connected a second agent. Standard is free for 2 weeks.",
+		"You've connected a second agent. Pro is free for 2 weeks.",
 	)
 })
 

@@ -475,7 +475,7 @@ export function AccountBillingRoute(handle: Handle) {
 						{billing.referralProgram ? (
 							<AccountManagementPanel
 								title="Refer a friend"
-								description="Share your link. When someone new creates an account, verifies their email, and pays their first invoice, you both get one month of Standard. There is no cap."
+								description="Share your link. When someone new creates an account, verifies their email, and pays their first invoice, you both get one month of Pro. There is no cap."
 							>
 								<div
 									mix={css({
@@ -529,7 +529,7 @@ export function AccountBillingRoute(handle: Handle) {
 												value: String(billing.referralProgram.pendingCount),
 											},
 											{
-												label: 'Standard credit through',
+												label: 'Pro credit through',
 												value: billing.referralProgram.creditExpiresAt
 													? formatCancelDate(
 															billing.referralProgram.creditExpiresAt,

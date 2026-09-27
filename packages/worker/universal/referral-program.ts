@@ -1,6 +1,6 @@
 /**
- * Uncapped referral program: both parties earn one month of public Standard
- * after the referee's first qualifying paid invoice. Enforcement composes
+ * Uncapped referral program: both parties earn one month of the purchasable
+ * Pro (overlay on Free) after the referee's first qualifying paid invoice. Enforcement composes
  * {@link resolveEffectivePlanWithSecondAgentGift} with the later of the
  * second-agent gift and this stackable credit.
  */
