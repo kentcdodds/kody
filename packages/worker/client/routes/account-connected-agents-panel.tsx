@@ -106,6 +106,10 @@ export function createAccountConnectedAgents(handle: Handle) {
 	return {
 		applyPayload,
 		revokeAgent,
+		/** Current list after optimistic revokes — Add connection marks use this. */
+		listAgents() {
+			return agents
+		},
 		/** `actions` renders under the list (the Connections list page puts Add connection there). */
 		render(options?: { actions?: RemixNode }) {
 			const groups = groupConnectedAgents(agents)

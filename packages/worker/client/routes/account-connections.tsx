@@ -156,7 +156,6 @@ export function AccountConnectionsRoute(handle: Handle) {
 					? renderReadyView({
 							view,
 							connectedAgents,
-							connectedAgentItems: appliedPayload?.agents ?? [],
 							mcpServerUrl,
 						})
 					: null}
@@ -180,7 +179,6 @@ function renderBackToConnections() {
 function renderReadyView(input: {
 	view: AccountConnectionsView | null
 	connectedAgents: ReturnType<typeof createAccountConnectedAgents>
-	connectedAgentItems: AccountConnectedAgentsLoaderData['agents']
 	mcpServerUrl: string
 }) {
 	if (input.view === null) {
@@ -217,7 +215,7 @@ function renderReadyView(input: {
 					{input.view.agent === null
 						? renderAgentGrid({
 								mcpServerUrl: input.mcpServerUrl,
-								connectedAgents: input.connectedAgentItems,
+								connectedAgents: input.connectedAgents.listAgents(),
 							})
 						: renderAgentInstructions({
 								agent: input.view.agent,

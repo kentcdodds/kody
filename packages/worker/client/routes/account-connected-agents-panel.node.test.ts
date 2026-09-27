@@ -127,6 +127,14 @@ test('connected agents panel groups same-name hosts, shows logos, and keeps revo
 	)
 	expect(acmeBlock).not.toContain('data-testid="connected-agent-view-steps"')
 
+	expect(panel.listAgents().map((agent) => agent.clientId)).toEqual([
+		cursorOld.clientId,
+		cursorNew.clientId,
+		chatgptOld.clientId,
+		chatgptNew.clientId,
+		acme.clientId,
+	])
+
 	const groupOrder = [...html.matchAll(/data-agent-label="([^"]+)"/g)].map(
 		(match) => match[1],
 	)
@@ -273,6 +281,12 @@ test('confirming revoke removes the row immediately and restores it with an erro
 				message: 'Agent disconnected.',
 				tone: 'success',
 			}),
+		])
+		expect(panel.listAgents().map((agent) => agent.clientId)).toEqual([
+			cursorNew.clientId,
+			chatgptOld.clientId,
+			chatgptNew.clientId,
+			acme.clientId,
 		])
 	} finally {
 		toast.dismiss()
