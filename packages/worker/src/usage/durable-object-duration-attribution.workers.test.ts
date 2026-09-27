@@ -2,6 +2,7 @@ import { runInDurableObject } from 'cloudflare:test'
 import { env } from 'cloudflare:workers'
 import { afterEach, expect, test, vi } from 'vitest'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
+import { repoSessionStorageBucketId } from '#worker/storage-buckets/service.ts'
 import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test-schema.ts'
 import { ensurePackageSubscriptionTestSchema } from '#worker/test-support/workers-seed.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -68,6 +69,18 @@ test('owner map object ids match the ids the Durable Objects themselves see', as
 	)
 		.bind(userId, storageId, new Date().toISOString(), new Date().toISOString())
 		.run()
+	const repoSessionId = crypto.randomUUID()
+	await env.APP_DB.prepare(
+		`INSERT INTO user_storage_buckets (user_id, storage_id, kind, created_at, last_seen_at)
+		 VALUES (?, ?, 'repo_session', ?, ?)`,
+	)
+		.bind(
+			userId,
+			repoSessionStorageBucketId(repoSessionId),
+			new Date().toISOString(),
+			new Date().toISOString(),
+		)
+		.run()
 
 	const owners = await buildDurableObjectOwnerMap(env)
 	const runLog = env.RUN_LOG.get(
@@ -90,6 +103,9 @@ test('owner map object ids match the ids the Durable Objects themselves see', as
 			doClass: 'StorageRunner',
 		})
 	})
+	expect(
+		owners.get(env.REPO_SESSION.idFromName(repoSessionId).toString()),
+	).toEqual({ userId, doClass: 'RepoSession' })
 })
 
 test('the lane stores attributed daily active time and fleet coverage', async () => {
@@ -161,4 +177,53 @@ test('the lane stores attributed daily active time and fleet coverage', async ()
 		object_count: 2,
 		attributed_object_count: 1,
 	})
+})
+
+test('a user whose deletion starts mid-run gets no duration rows', async () => {
+	await ensureSchema()
+	const userId = await seedUser()
+	const hubId = env.MCP_CLIENT_HUB.idFromName(userId).toString()
+	vi.stubGlobal(
+		'fetch',
+		vi.fn(async () => {
+			await env.APP_DB.prepare(
+				`UPDATE users SET deleting_at = ? WHERE stable_user_id = ?`,
+			)
+				.bind(new Date().toISOString(), userId)
+				.run()
+			return new Response(
+				JSON.stringify({
+					data: {
+						viewer: {
+							accounts: [
+								{
+									durableObjectsPeriodicGroups: [
+										{
+											dimensions: { objectId: hubId },
+											sum: { activeTime: 1_000_000 },
+										},
+									],
+								},
+							],
+						},
+					},
+				}),
+			)
+		}),
+	)
+	await runDurableObjectDurationAttribution({
+		env: {
+			...env,
+			CLOUDFLARE_ACCOUNT_ID: 'acct',
+			CLOUDFLARE_API_TOKEN: 'token',
+		},
+		now: new Date('2026-09-27T03:20:00.000Z'),
+	})
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT COUNT(*) AS count FROM durable_object_duration_daily WHERE user_id = ?`,
+		)
+			.bind(userId)
+			.first(),
+	).toEqual({ count: 0 })
 })

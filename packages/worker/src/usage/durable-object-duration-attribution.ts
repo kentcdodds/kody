@@ -16,6 +16,7 @@
  */
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
+import { repoSessionIdFromStorageBucketId } from '#worker/storage-buckets/service.ts'
 import {
 	mailboxDurableObjectName,
 	mcpClientHubDurableObjectName,
@@ -133,12 +134,15 @@ export async function buildDurableObjectOwnerMap(
 	}
 	for (const bucket of buckets.results ?? []) {
 		if (bucket.kind === 'repo_session') {
-			addOwner(
-				owners,
-				env.REPO_SESSION,
-				repoSessionDurableObjectName(bucket.storage_id),
-				{ userId: bucket.user_id, doClass: 'RepoSession' },
-			)
+			const sessionId = readRepoSessionId(bucket.storage_id)
+			if (sessionId) {
+				addOwner(
+					owners,
+					env.REPO_SESSION,
+					repoSessionDurableObjectName(sessionId),
+					{ userId: bucket.user_id, doClass: 'RepoSession' },
+				)
+			}
 			continue
 		}
 		addOwner(
@@ -162,6 +166,14 @@ export async function buildDurableObjectOwnerMap(
 	return owners
 }
 
+function readRepoSessionId(storageId: string): string | null {
+	try {
+		return repoSessionIdFromStorageBucketId(storageId)
+	} catch {
+		return null
+	}
+}
+
 type PeriodicGroup = {
 	dimensions: { objectId: string }
 	sum: { activeTime: number }
@@ -179,6 +191,9 @@ export function buildDurableObjectActiveTimeQuery() {
 				dimensions { objectId }
 				sum { activeTime }
 			}
+			fleet: durableObjectsPeriodicGroups(limit: 1, filter: { date: $day }) {
+				sum { activeTime }
+			}
 		}
 	}
 }`
@@ -189,7 +204,10 @@ async function queryDurableObjectActiveTime(input: {
 	apiToken: string
 	baseUrl: string
 	day: string
-}): Promise<Array<PeriodicGroup>> {
+}): Promise<{
+	groups: Array<PeriodicGroup>
+	fleetActiveTimeUs: number | null
+}> {
 	const response = await fetch(
 		`${input.baseUrl.replace(/\/$/, '')}/client/v4/graphql`,
 		{
@@ -220,6 +238,7 @@ async function queryDurableObjectActiveTime(input: {
 			viewer?: {
 				accounts?: Array<{
 					durableObjectsPeriodicGroups?: Array<PeriodicGroup>
+					fleet?: Array<{ sum?: { activeTime?: number } }>
 				}>
 			}
 		}
@@ -233,7 +252,21 @@ async function queryDurableObjectActiveTime(input: {
 				.slice(0, 300)}`,
 		)
 	}
-	return body.data?.viewer?.accounts?.[0]?.durableObjectsPeriodicGroups ?? []
+	const account = body.data?.viewer?.accounts?.[0]
+	// A missing account means Cloudflare did not answer for this account tag,
+	// not that nothing ran; treating it as zero would wipe the day's rows.
+	if (!account) {
+		throw new Error(
+			'Durable Object analytics query returned no account for the configured account id',
+		)
+	}
+	const fleetActiveTimeUs = Number(account.fleet?.[0]?.sum?.activeTime)
+	return {
+		groups: account.durableObjectsPeriodicGroups ?? [],
+		fleetActiveTimeUs: Number.isFinite(fleetActiveTimeUs)
+			? fleetActiveTimeUs
+			: null,
+	}
 }
 
 /** Cloudflare `activeTime` is microseconds; stored values are milliseconds. */
@@ -242,9 +275,15 @@ function activeTimeToMs(activeTimeUs: number): number {
 	return Number.isFinite(value) && value > 0 ? Math.round(value / 1000) : 0
 }
 
+/**
+ * `fleetActiveTimeUs` is the account-wide total for the day; when present it
+ * replaces the per-object sum so a truncated object list does not shrink the
+ * denominator and overstate the attributed share.
+ */
 export function attributeDurableObjectActiveTime(input: {
 	groups: ReadonlyArray<PeriodicGroup>
 	owners: ReadonlyMap<string, DurableObjectOwner>
+	fleetActiveTimeUs?: number | null
 }) {
 	const byOwner = new Map<
 		string,
@@ -268,6 +307,12 @@ export function attributeDurableObjectActiveTime(input: {
 		} else {
 			byOwner.set(key, { ...owner, activeMs, objectCount: 1 })
 		}
+	}
+	if (input.fleetActiveTimeUs != null) {
+		totalActiveMs = Math.max(
+			totalActiveMs,
+			activeTimeToMs(input.fleetActiveTimeUs),
+		)
 	}
 	return {
 		rows: [...byOwner.values()],
@@ -306,13 +351,17 @@ export async function runDurableObjectDurationAttribution(input: {
 	const updatedAt = now.toISOString()
 	const results = []
 	for (const day of days) {
-		const groups = await queryDurableObjectActiveTime({
+		const { groups, fleetActiveTimeUs } = await queryDurableObjectActiveTime({
 			accountId,
 			apiToken,
 			baseUrl,
 			day,
 		})
-		const attribution = attributeDurableObjectActiveTime({ groups, owners })
+		const attribution = attributeDurableObjectActiveTime({
+			groups,
+			owners,
+			fleetActiveTimeUs,
+		})
 		const truncated =
 			groups.length >= durableObjectDurationAttributionObjectLimit
 		const statements = [
@@ -320,10 +369,16 @@ export async function runDurableObjectDurationAttribution(input: {
 				`DELETE FROM durable_object_duration_daily WHERE day = ?`,
 			).bind(day),
 			...attribution.rows.map((row) =>
+				// The owner map is a snapshot; skip users whose deletion started
+				// since so account cleanup is not undone.
 				input.env.APP_DB.prepare(
 					`INSERT INTO durable_object_duration_daily
 						(user_id, do_class, day, active_ms, object_count, updated_at)
-					 VALUES (?, ?, ?, ?, ?, ?)`,
+					 SELECT ?1, ?2, ?3, ?4, ?5, ?6
+					 WHERE EXISTS (
+						SELECT 1 FROM users
+						WHERE stable_user_id = ?1 AND deleting_at IS NULL
+					 )`,
 				).bind(
 					row.userId,
 					row.doClass,

@@ -80,7 +80,12 @@ test('owner map covers user-named, bucket, repo-session, and realtime objects', 
 		users: ['user-a'],
 		buckets: [
 			{ user_id: 'user-a', storage_id: 'package:p1', kind: 'package' },
-			{ user_id: 'user-a', storage_id: 'rs-1', kind: 'repo_session' },
+			{
+				user_id: 'user-a',
+				storage_id: 'repo-session:rs-1',
+				kind: 'repo_session',
+			},
+			{ user_id: 'user-a', storage_id: 'malformed', kind: 'repo_session' },
 		],
 		apps: [{ user_id: 'user-a', id: 'pkg-1' }],
 	})
@@ -100,6 +105,8 @@ test('owner map covers user-named, bucket, repo-session, and realtime objects', 
 	expect(owners.get('realtime:["user-a","pkg-1"]')?.doClass).toBe(
 		'PackageRealtimeSession',
 	)
+	expect(owners.has('session:malformed')).toBe(false)
+	expect(owners.has('session:repo-session:rs-1')).toBe(false)
 })
 
 test('active time converts microseconds and keeps unmapped objects unattributed', () => {
@@ -133,6 +140,18 @@ test('active time converts microseconds and keeps unmapped objects unattributed'
 	expect(result.attributedActiveMs).toBe(3_600_005)
 	expect(result.objectCount).toBe(4)
 	expect(result.attributedObjectCount).toBe(3)
+})
+
+test('the fleet total replaces a truncated per-object sum as the denominator', () => {
+	const result = attributeDurableObjectActiveTime({
+		owners: new Map([['hub:a', { userId: 'a', doClass: 'McpClientHub' }]]),
+		groups: [
+			{ dimensions: { objectId: 'hub:a' }, sum: { activeTime: 4_000_000 } },
+		],
+		fleetActiveTimeUs: 10_000_000,
+	})
+	expect(result.totalActiveMs).toBe(10_000)
+	expect(result.attributedActiveMs).toBe(4_000)
 })
 
 test('the lane rewrites yesterday and today atomically from Cloudflare analytics', async () => {
@@ -213,6 +232,21 @@ test('the lane skips without credentials and surfaces analytics errors', async (
 	await expect(
 		runDurableObjectDurationAttribution({ env: createEnv({}).env }),
 	).rejects.toThrow('not authorized')
+})
+
+test('a response without the account fails instead of zeroing the day', async () => {
+	vi.stubGlobal(
+		'fetch',
+		vi.fn(
+			async () =>
+				new Response(JSON.stringify({ data: { viewer: { accounts: [] } } })),
+		),
+	)
+	const { env, batches } = createEnv({ users: ['user-a'] })
+	await expect(runDurableObjectDurationAttribution({ env })).rejects.toThrow(
+		'no account',
+	)
+	expect(batches).toHaveLength(0)
 })
 
 test('admin measured duration is gross GB-s at list, sorted by class', () => {

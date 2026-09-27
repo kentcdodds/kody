@@ -135,7 +135,11 @@ of it. Neither is an invoice line.
   (lives on `kody-jobs`, no origin binding), repo sessions discarded before the
   lane runs, platform singletons, and objects beyond the top 10,000 by active
   time on a day (`truncated = 1` on the coverage row). These stay in the day's
-  unattributed total; nothing is guessed.
+  unattributed total; nothing is guessed. The day's total comes from
+  Cloudflare's account-wide aggregate (a second, dimension-less group in the
+  same query), so truncation never shrinks the denominator. A response with no
+  matching account fails the lane rather than zeroing the day, and users whose
+  deletion started after the owner snapshot get no rows.
 - **Why it is still an estimate:** the include and Cloudflare's rounding apply
   to the account total, isolate sharing does not change per-object billing, and
   analytics for the current day are partial until the next day's run.
