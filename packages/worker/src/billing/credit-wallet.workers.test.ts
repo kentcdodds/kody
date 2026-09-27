@@ -8,6 +8,7 @@ import {
 import {
 	consumeDailyEntitlement,
 	getUserEntitlement,
+	resolveBaseUserEntitlement,
 } from '#worker/entitlements/service.ts'
 import { resolvePlanLimit } from '#universal/plans.ts'
 import { loadAccountCreditsUser } from '#app/account-credits-data.ts'
@@ -629,4 +630,91 @@ test('gift and referral Pro overlays hold a wallet but only paying Pro can buy c
 		now,
 	})
 	expect(payingUser?.canBuyCredits).toBe(true)
+})
+
+test('saving credit settings before any top-up creates the wallet and keeps the settings', async () => {
+	const user = await seedUser({
+		label: 'credits-settings-first',
+		stripePlan: 'pro',
+		creditsEligible: true,
+	})
+	const userId = user.stableUserId
+	const autoRefill = {
+		enabled: true,
+		thresholdCents: 500,
+		amountCents: 1_000,
+		monthlyCapCents: 5_000,
+	}
+	const saved = await updateCreditWalletSettings({
+		db: env.APP_DB,
+		userId,
+		autoRefill,
+		notify: { autoRefilled: false, monthlyCap: true, lowBalance: true },
+		now,
+	})
+	expect(saved.autoRefill).toEqual(autoRefill)
+	expect(saved.notify.autoRefilled).toBe(false)
+	await topUp({ userId, cents: 1_000 })
+	const wallet = await readCreditWallet(env.APP_DB, userId)
+	expect(wallet.balanceMicroUsd).toBe(10_000_000)
+	expect(wallet.autoRefill).toEqual(autoRefill)
+})
+
+test('base entitlement never pairs an overlay plan with Stripe-only eligibility', async () => {
+	const overlay = await seedUser({ label: 'credits-base-overlay' })
+	await env.APP_DB.prepare(
+		`UPDATE users SET referral_standard_credit_expires_at = ? WHERE stable_user_id = ?`,
+	)
+		.bind('2099-01-01T00:00:00.000Z', overlay.stableUserId)
+		.run()
+	await topUp({ userId: overlay.stableUserId, cents: 1_000 })
+	const paying = await seedUser({
+		label: 'credits-base-paying',
+		stripePlan: 'pro',
+		creditsEligible: true,
+	})
+	await topUp({ userId: paying.stableUserId, cents: 1_000 })
+	const retired = await seedUser({
+		label: 'credits-base-retired',
+		stripePlan: 'pro',
+	})
+	const rowFor = async (stableUserId: string) => {
+		const row = await env.APP_DB.prepare(
+			`SELECT plan, stripe_plan, entitlement_ladder, stripe_credits_eligible
+			 FROM users WHERE stable_user_id = ?`,
+		)
+			.bind(stableUserId)
+			.first<{
+				plan: string
+				stripe_plan: string | null
+				entitlement_ladder: string | null
+				stripe_credits_eligible: number
+			}>()
+		if (!row) throw new Error('Expected a user row.')
+		return row
+	}
+	const base = async (stableUserId: string) =>
+		resolveBaseUserEntitlement({
+			db: env.APP_DB,
+			stableUserId,
+			row: await rowFor(stableUserId),
+		})
+	// Base plans ignore overlays entirely: Free, no wallet.
+	expect(await base(overlay.stableUserId)).toEqual({
+		plan: 'free',
+		ladder: 'public',
+		creditWallet: 'none',
+	})
+	expect(await base(paying.stableUserId)).toEqual({
+		plan: 'pro',
+		ladder: 'public',
+		creditWallet: 'funded',
+	})
+	expect(await base(retired.stableUserId)).toEqual({
+		plan: 'pro',
+		ladder: 'public',
+		creditWallet: 'none',
+	})
+	// Overlay-aware resolution still gives the overlay the Pro wallet.
+	expect((await entitlementFor(overlay)).creditWallet).toBe('funded')
 })

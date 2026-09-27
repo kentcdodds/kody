@@ -16,6 +16,7 @@ const { readUsageCampaign } = await import('#worker/usage/campaign-ledger.ts')
 const {
 	sendBillingSuccessEmail,
 	sendConnectAgentEmail,
+	sendCreditMonthlyCapEmail,
 	sendPastDueEmail,
 	sendPaymentFailedEmail,
 	userAccountEmailKvKey,
@@ -275,4 +276,33 @@ test('failed verify-time connect-agent mail opens an event campaign row for the 
 		origin: 'event',
 		send_count: 0,
 	})
+})
+
+test('the credits monthly-cap notice sends at most once per UTC month', async () => {
+	sendCloudflareEmail.mockClear()
+	const { kv, store } = createKv()
+	const env = createEnv(kv)
+	const send = (month: string) =>
+		sendCreditMonthlyCapEmail({
+			env,
+			email: 'ada@example.com',
+			userId: 'user-cap',
+			month,
+		})
+	// The debit lane reports cap_reached every hour for the rest of the month.
+	expect(await send('2026-09')).toBe(true)
+	expect(await send('2026-09')).toBe(false)
+	expect(await send('2026-09')).toBe(false)
+	expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
+	expect(
+		store.has(
+			userAccountEmailKvKey({
+				userId: 'user-cap',
+				kind: 'credits_monthly_cap',
+				suffix: '2026-09',
+			}),
+		),
+	).toBe(true)
+	expect(await send('2026-10')).toBe(true)
+	expect(sendCloudflareEmail).toHaveBeenCalledTimes(2)
 })
