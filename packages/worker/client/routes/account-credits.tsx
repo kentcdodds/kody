@@ -10,7 +10,6 @@ import {
 } from '#client/route-loader.ts'
 import {
 	accountActionsCss,
-	accountDisclosureCss,
 	accountFieldCss,
 	accountFieldLabelCss,
 	accountFieldNoteCss,
@@ -20,6 +19,7 @@ import {
 	AccountManagementShell,
 	AccountPageHeader,
 } from '#client/routes/account-management-components.tsx'
+import { renderCreditsDebitRateCard } from '#client/routes/account-credits-rate-card.tsx'
 import { RecordTable } from '#client/routes/record-table.tsx'
 import { requestProCheckout } from '#client/routes/billing-checkout.ts'
 import {
@@ -28,29 +28,19 @@ import {
 	formatWholeDollars,
 	parseDollarsToCents,
 } from '#client/routes/credit-amount-input.ts'
-import { chartColor, formatIntegerNumber } from '#client/charts/chart-theme.ts'
+import { formatIntegerNumber } from '#client/charts/chart-theme.ts'
 import {
 	creditLowBalanceCents,
 	formatCents,
-	formatEstimatedCreditMicroUsd,
 	formatMicroUsd,
 	validateCreditAutoRefillSettings,
 	validateCreditTopUpCents,
 	type CreditAutoRefillSettings,
 	type CreditNotifySettings,
 } from '#universal/credits.ts'
-import {
-	type AccountCreditsDebitMeter,
-	type AccountCreditsLoaderData,
-} from '#universal/loader-data.ts'
+import { type AccountCreditsLoaderData } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
-import {
-	colors,
-	mq,
-	radius,
-	spacing,
-	typography,
-} from '#universal/styles/tokens.ts'
+import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	descriptionCss,
 	getGhostButtonCss,
@@ -574,88 +564,6 @@ export function AccountCreditsRoute(handle: Handle) {
 		)
 	}
 
-	function renderDebitRateCard(meters: Array<AccountCreditsDebitMeter>) {
-		return (
-			<details
-				data-credits-rate-card
-				mix={css({
-					...accountDisclosureCss,
-					borderTop: `1px solid ${colors.border}`,
-					paddingTop: 'clamp(2rem, 4vw, 2.75rem)',
-				})}
-			>
-				<summary>How credits are charged</summary>
-				<div mix={css({ overflowX: 'auto' })}>
-					<table
-						aria-label="Credit debit rates and usage this period"
-						mix={css(debitRateTableCss)}
-					>
-						<thead>
-							<tr>
-								<th scope="col">Meter</th>
-								<th scope="col">Unit rate</th>
-								<th scope="col" mix={css(debitRateNumericCss)}>
-									Monthly include
-								</th>
-								<th scope="col" mix={css(debitRateNumericCss)}>
-									Used this period
-								</th>
-								<th scope="col" mix={css(debitRateNumericCss)}>
-									Past include
-								</th>
-								<th scope="col" mix={css(debitRateNumericCss)}>
-									Est. credits this period
-								</th>
-							</tr>
-						</thead>
-						<tbody>
-							{meters.map((meter) => {
-								const barPercent = Math.min(
-									100,
-									Math.round(meter.percentOfInclude * 100),
-								)
-								const pastInclude = meter.pastInclude > 0
-								return (
-									<tr key={meter.meter} data-credits-debit-meter={meter.meter}>
-										<th scope="row">
-											<div mix={css(debitRateMeterCellCss)}>
-												<span>{meter.label}</span>
-												<div aria-hidden="true" mix={css(debitRateBarTrackCss)}>
-													<div
-														mix={css({
-															...debitRateBarFillCss,
-															width: `${barPercent}%`,
-															background: pastInclude
-																? chartColor.amber
-																: chartColor.blue,
-														})}
-													/>
-												</div>
-											</div>
-										</th>
-										<td>{meter.unitRateLabel}</td>
-										<td mix={css(debitRateNumericCss)}>
-											{formatIntegerNumber(meter.include)}
-										</td>
-										<td mix={css(debitRateNumericCss)}>
-											{formatIntegerNumber(meter.used)}
-										</td>
-										<td mix={css(debitRateNumericCss)}>
-											{formatIntegerNumber(meter.pastInclude)}
-										</td>
-										<td mix={css(debitRateNumericCss)}>
-											{formatEstimatedCreditMicroUsd(meter.estCreditsMicroUsd)}
-										</td>
-									</tr>
-								)
-							})}
-						</tbody>
-					</table>
-				</div>
-			</details>
-		)
-	}
-
 	function renderEligible(
 		credits: AccountCreditsLoaderData,
 		settings: SettingsDraft,
@@ -725,9 +633,7 @@ export function AccountCreditsRoute(handle: Handle) {
 					/>
 				</AccountManagementPanel>
 
-				{credits.debitMeters.length > 0
-					? renderDebitRateCard(credits.debitMeters)
-					: null}
+				{renderCreditsDebitRateCard(credits.debitMeters)}
 
 				<AccountManagementPanel title="Recent">
 					{credits.recent.length === 0 ? (
@@ -832,48 +738,3 @@ export function AccountCreditsRoute(handle: Handle) {
 
 const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
-
-const debitRateTableCss = {
-	width: '100%',
-	borderCollapse: 'collapse' as const,
-	fontSize: typography.fontSize.sm,
-	color: colors.text,
-	'& th, & td': {
-		padding: `${spacing.xs} ${spacing.sm}`,
-		borderBottom: `1px solid ${colors.border}`,
-		textAlign: 'start' as const,
-		verticalAlign: 'middle' as const,
-	},
-	'& thead th': {
-		color: colors.textMuted,
-		fontWeight: typography.fontWeight.semibold,
-		whiteSpace: 'nowrap' as const,
-	},
-}
-
-const debitRateNumericCss = {
-	textAlign: 'end' as const,
-	fontVariantNumeric: 'tabular-nums' as const,
-	whiteSpace: 'nowrap' as const,
-}
-
-const debitRateMeterCellCss = {
-	display: 'grid',
-	gap: '0.35rem',
-	minWidth: '8rem',
-	fontWeight: typography.fontWeight.semibold,
-	color: colors.text,
-}
-
-const debitRateBarTrackCss = {
-	height: '8px',
-	borderRadius: radius.md,
-	background: colors.border,
-	overflow: 'hidden',
-	minWidth: '4rem',
-	maxWidth: '10rem',
-}
-
-const debitRateBarFillCss = {
-	height: '100%',
-}
