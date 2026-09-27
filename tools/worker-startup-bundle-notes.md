@@ -214,3 +214,6 @@ runtime path if this budget is raised again.
   started log, `client_disconnected` error, inbound request AbortSignal on the
   executor) lives on the platform MCP path: local dry-run 5_194_432 against the
   previous 5_192_000 budget. Reviewed ceiling 5_195_000.
+- Named `client_disconnected` execute finish plus DO-reset backoff abort
+  normalization on the runtime execute path: local dry-run 3_870_105 against the
+  previous 3_870_000 budget. Reviewed ceiling 3_871_000.

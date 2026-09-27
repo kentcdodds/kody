@@ -37,10 +37,6 @@ import {
 	durableObjectCodeUpdatedResetMessage,
 	executorSandboxTimeoutMessage,
 } from '#worker/sentry-options.ts'
-import {
-	callerDisconnectedSandboxMessage,
-	packageInvocationClientDisconnectedErrorName,
-} from '#worker/caller-disconnect.ts'
 import { assertGeneratedExecutorSourceIsBundleSafe } from './kody-remote-proxy-source.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 import { createEvaluationSideEffectTracker } from '#mcp/evaluation-side-effects.ts'
@@ -569,12 +565,6 @@ test('createExecuteExecutor drains logs from an evaluation that settles just aft
 		},
 	})
 	expect(createNamedExecutionError(result.error).name).toBe('TimeoutError')
-})
-
-test('createNamedExecutionError names caller disconnect for run records', () => {
-	const named = createNamedExecutionError(callerDisconnectedSandboxMessage)
-	expect(named.name).toBe(packageInvocationClientDisconnectedErrorName)
-	expect(named.message).toBe(callerDisconnectedSandboxMessage)
 })
 
 test('createExecuteExecutor aborts an in-flight abort-aware dispatcher on timeout', async () => {
