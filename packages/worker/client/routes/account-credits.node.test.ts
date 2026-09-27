@@ -29,6 +29,7 @@ function credits(
 		eligible: true,
 		plan: 'pro',
 		canSwitchToPro: true,
+		canBuyCredits: true,
 		billingHref: '/account/billing',
 		balanceMicroUsd: 18_420_000,
 		unlocked: true,
@@ -155,4 +156,14 @@ test('ineligible accounts get one switch-to-Pro prompt', async () => {
 	)
 	expect(noCheckout).toMatch(/href="\/account\/billing"[^>]*>Go to billing</)
 	expect(noCheckout).not.toContain('>Switch to Pro<')
+})
+
+test('gift and referral Pro overlays keep the wallet but cannot buy credits', async () => {
+	const html = await renderCreditsPage(credits({ canBuyCredits: false }))
+	expect(html).toContain('$18.42')
+	expect(html).toContain('With credits')
+	expect(html).toContain('Subscribe to Pro to add credits.')
+	expect(html).toContain('>Subscribe to Pro<')
+	expect(html).not.toContain('>$10<')
+	expect(html).not.toContain('Auto-refill')
 })

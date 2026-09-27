@@ -34,6 +34,7 @@ import {
 } from '#universal/credits.ts'
 import { type UserEntitlement } from '#universal/plans.ts'
 import {
+	isPayingForCreditsPro,
 	resolveUserEntitlementFromRow,
 	userEntitlementColumnsSql,
 	type UserEntitlementRow,
@@ -196,13 +197,16 @@ async function debitOneWallet(input: {
 		return { debitedMicroUsd, autoRefilled: false }
 	}
 	const nextBalance = previousBalance - debitedMicroUsd
-	const autoRefill = await runCreditAutoRefill({
-		env: input.env,
-		userId,
-		email: input.row.email,
-		stripeCustomerId: input.row.stripe_customer_id,
-		now: input.now,
-	})
+	// Gift and referral Pro overlays hold a wallet but never auto-charge.
+	const autoRefill = isPayingForCreditsPro(input.row)
+		? await runCreditAutoRefill({
+				env: input.env,
+				userId,
+				email: input.row.email,
+				stripeCustomerId: input.row.stripe_customer_id,
+				now: input.now,
+			})
+		: 'skipped'
 	if (
 		Number(input.row.notify_low_balance) === 1 &&
 		crossedCreditLowBalance({

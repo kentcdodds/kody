@@ -164,17 +164,7 @@ export function createAccountCreditsTopUpApiHandler(env: Env) {
 				userId: user.userId,
 				now,
 			})
-			if (!creditsUser || creditsUser.entitlement.creditWallet === 'none') {
-				return jsonResponse(
-					{
-						ok: false,
-						error: 'Credits are available on Pro. Switch to Pro first.',
-					},
-					409,
-				)
-			}
-			if (!creditsUser.stripeCustomerId) {
-				// Gift and referral Pro overlays have no Stripe customer yet.
+			if (!creditsUser?.canBuyCredits || !creditsUser.stripeCustomerId) {
 				return jsonResponse(
 					{ ok: false, error: 'Subscribe to Pro to add credits.' },
 					409,
@@ -256,12 +246,9 @@ export function createAccountCreditsSettingsApiHandler(env: Env) {
 				userId: user.userId,
 				now,
 			})
-			if (!creditsUser || creditsUser.entitlement.creditWallet === 'none') {
+			if (!creditsUser?.canBuyCredits) {
 				return jsonResponse(
-					{
-						ok: false,
-						error: 'Credits are available on Pro. Switch to Pro first.',
-					},
+					{ ok: false, error: 'Subscribe to Pro to change credit settings.' },
 					409,
 				)
 			}

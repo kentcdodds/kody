@@ -356,35 +356,14 @@ export function AccountCreditsRoute(handle: Handle) {
 		)
 	}
 
-	function renderEligible(
+	function renderPurchase(
 		credits: AccountCreditsLoaderData,
 		settings: SettingsDraft,
+		topUpDisabled: boolean,
+		customCents: number | null,
 	) {
-		const topUpDisabled = !credits.configured || topUpPendingCents !== null
-		const customCents = parseDollarsToCents(customAmountText)
 		return (
 			<>
-				<AccountManagementPanel title="Balance">
-					<p
-						data-credits-balance
-						mix={css({
-							margin: 0,
-							fontSize: 'clamp(2rem, 4vw, 2.6rem)',
-							fontWeight: 760,
-							letterSpacing: '-0.02em',
-							fontVariantNumeric: 'tabular-nums',
-							color: credits.balanceMicroUsd < 0 ? colors.error : colors.text,
-						})}
-					>
-						{formatMicroUsd(credits.balanceMicroUsd)}
-					</p>
-					<p mix={css(descriptionCss)}>
-						{credits.unlocked
-							? 'Higher limits are on.'
-							: 'Add credits to lift your limits.'}
-					</p>
-				</AccountManagementPanel>
-
 				<AccountManagementPanel title="Add credits">
 					{!credits.configured ? (
 						<AccountManagementMessage tone="info">
@@ -558,6 +537,64 @@ export function AccountCreditsRoute(handle: Handle) {
 						</button>
 					</div>
 				</AccountManagementPanel>
+			</>
+		)
+	}
+
+	function renderPurchaseUnavailable(credits: AccountCreditsLoaderData) {
+		return (
+			<AccountManagementPanel title="Add credits">
+				<p mix={css(descriptionCss)}>Subscribe to Pro to add credits.</p>
+				{credits.canSwitchToPro ? (
+					<div mix={css(accountActionsCss)}>
+						<button
+							type="button"
+							disabled={switchPending}
+							mix={[
+								on('click', () => void switchToPro()),
+								css(primaryButtonCss),
+							]}
+						>
+							{switchPending ? 'Opening Stripe…' : 'Subscribe to Pro'}
+						</button>
+					</div>
+				) : null}
+			</AccountManagementPanel>
+		)
+	}
+
+	function renderEligible(
+		credits: AccountCreditsLoaderData,
+		settings: SettingsDraft,
+	) {
+		const topUpDisabled = !credits.configured || topUpPendingCents !== null
+		const customCents = parseDollarsToCents(customAmountText)
+		return (
+			<>
+				<AccountManagementPanel title="Balance">
+					<p
+						data-credits-balance
+						mix={css({
+							margin: 0,
+							fontSize: 'clamp(2rem, 4vw, 2.6rem)',
+							fontWeight: 760,
+							letterSpacing: '-0.02em',
+							fontVariantNumeric: 'tabular-nums',
+							color: credits.balanceMicroUsd < 0 ? colors.error : colors.text,
+						})}
+					>
+						{formatMicroUsd(credits.balanceMicroUsd)}
+					</p>
+					<p mix={css(descriptionCss)}>
+						{credits.unlocked
+							? 'Higher limits are on.'
+							: 'Add credits to lift your limits.'}
+					</p>
+				</AccountManagementPanel>
+
+				{credits.canBuyCredits
+					? renderPurchase(credits, settings, topUpDisabled, customCents)
+					: renderPurchaseUnavailable(credits)}
 
 				<AccountManagementPanel title="Limits">
 					<RecordTable

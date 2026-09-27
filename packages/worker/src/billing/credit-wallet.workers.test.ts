@@ -10,6 +10,7 @@ import {
 	getUserEntitlement,
 } from '#worker/entitlements/service.ts'
 import { resolvePlanLimit } from '#universal/plans.ts'
+import { loadAccountCreditsUser } from '#app/account-credits-data.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { runCreditAutoRefill } from './credit-auto-refill.ts'
 import { runCreditDebits, settleCreditDebitMonth } from './credit-debits.ts'
@@ -587,4 +588,45 @@ test('the bounded debit sweep resumes from its cursor and wraps at the tail', as
 	expect(
 		(await readCreditWallet(env.APP_DB, first.stableUserId)).balanceMicroUsd,
 	).toBe(10_000_000 - 4_000)
+})
+
+test('gift and referral Pro overlays hold a wallet but only paying Pro can buy credits', async () => {
+	const overlay = await seedUser({
+		label: 'credits-overlay',
+		stripeCustomerId: `cus_${crypto.randomUUID().slice(0, 8)}`,
+	})
+	await env.APP_DB.prepare(
+		`UPDATE users SET referral_standard_credit_expires_at = ? WHERE stable_user_id = ?`,
+	)
+		.bind('2099-01-01T00:00:00.000Z', overlay.stableUserId)
+		.run()
+	const paying = await seedUser({
+		label: 'credits-paying',
+		stripePlan: 'pro',
+		creditsEligible: true,
+		stripeCustomerId: `cus_${crypto.randomUUID().slice(0, 8)}`,
+	})
+	const idFor = async (stableUserId: string) =>
+		(
+			await env.APP_DB.prepare(`SELECT id FROM users WHERE stable_user_id = ?`)
+				.bind(stableUserId)
+				.first<{ id: number }>()
+		)?.id ?? 0
+	const overlayUser = await loadAccountCreditsUser({
+		env,
+		userId: await idFor(overlay.stableUserId),
+		now,
+	})
+	expect(overlayUser?.entitlement).toMatchObject({
+		plan: 'pro',
+		creditWallet: 'empty',
+	})
+	// A leftover Stripe customer from a cancelled subscription is not Pro.
+	expect(overlayUser?.canBuyCredits).toBe(false)
+	const payingUser = await loadAccountCreditsUser({
+		env,
+		userId: await idFor(paying.stableUserId),
+		now,
+	})
+	expect(payingUser?.canBuyCredits).toBe(true)
 })

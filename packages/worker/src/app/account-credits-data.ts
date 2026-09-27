@@ -31,6 +31,7 @@ import {
 	toAccountCreditsLedgerItem,
 } from '#worker/billing/credit-wallet.ts'
 import {
+	isPayingForCreditsPro,
 	resolveUserEntitlementFromRow,
 	userEntitlementColumnsSql,
 	type UserEntitlementRow,
@@ -70,6 +71,8 @@ export type AccountCreditsUser = {
 	stableUserId: string
 	stripeCustomerId: string | null
 	entitlement: UserEntitlement
+	/** Paying for the purchasable Pro: may buy credits and auto-refill. */
+	canBuyCredits: boolean
 }
 
 /** Signed-in account plus its entitlement (wallet state included). */
@@ -91,16 +94,22 @@ export async function loadAccountCreditsUser(input: {
 			}
 		>()
 	if (!row) return null
+	const entitlement = await resolveUserEntitlementFromRow({
+		db: input.env.APP_DB,
+		stableUserId: row.stable_user_id,
+		row,
+		now: input.now,
+	})
+	const stripeCustomerId = row.stripe_customer_id?.trim() || null
 	return {
 		id: row.id,
 		stableUserId: row.stable_user_id,
-		stripeCustomerId: row.stripe_customer_id?.trim() || null,
-		entitlement: await resolveUserEntitlementFromRow({
-			db: input.env.APP_DB,
-			stableUserId: row.stable_user_id,
-			row,
-			now: input.now,
-		}),
+		stripeCustomerId,
+		entitlement,
+		canBuyCredits:
+			entitlement.creditWallet !== 'none' &&
+			isPayingForCreditsPro(row) &&
+			stripeCustomerId !== null,
 	}
 }
 
@@ -141,6 +150,7 @@ export async function loadAccountCreditsData(input: {
 		plan: user.entitlement.plan,
 		canSwitchToPro:
 			configured && getPurchasablePlans(input.env).includes('pro'),
+		canBuyCredits: configured && user.canBuyCredits,
 		billingHref: '/account/billing',
 		balanceMicroUsd: wallet.balanceMicroUsd,
 		unlocked: user.entitlement.creditWallet === 'funded',

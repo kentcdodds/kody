@@ -2364,6 +2364,12 @@ export type AccountCreditsLoaderData = {
 	plan: AdminPlanName
 	/** Checkout for the purchasable Pro is configured. */
 	canSwitchToPro: boolean
+	/**
+	 * Subscribed on the purchasable Pro price with a Stripe customer. Gift
+	 * and referral Pro overlays hold a wallet (admin grants) but cannot buy
+	 * credits or use auto-refill.
+	 */
+	canBuyCredits: boolean
 	billingHref: '/account/billing'
 	balanceMicroUsd: number
 	/** Balance above $0 on an eligible wallet: unlocked limits apply. */

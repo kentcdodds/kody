@@ -4,6 +4,7 @@ import {
 	isWeeklyComputeWindowResource,
 	parseEntitlementLadder,
 	parseStoredPlanName,
+	parseStripePlanName,
 	resolveCreditWalletState,
 	resolvePlanLimit,
 	resolveWeeklyPlanLimit,
@@ -103,6 +104,17 @@ export function resolveUserPlanFromRow(
 			plan === 'pro' &&
 			(isProOverlay || Number(row.stripe_credits_eligible) === 1),
 	}
+}
+
+/**
+ * Subscribed on the purchasable Pro Stripe price (not a gift or referral
+ * overlay). Only these accounts can buy credits or use auto-refill.
+ */
+export function isPayingForCreditsPro(row: UserEntitlementRow): boolean {
+	return (
+		parseStripePlanName(row.stripe_plan) === 'pro' &&
+		Number(row.stripe_credits_eligible) === 1
+	)
 }
 
 /**
