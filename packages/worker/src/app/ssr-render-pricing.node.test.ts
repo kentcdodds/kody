@@ -12,7 +12,7 @@ function createAnonymousTestDb() {
 		const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
 		const executeAll = async () => {
 			if (
-				normalizeedQuery.includes('from feature_flags') ||
+				normalizedQuery.includes('from feature_flags') ||
 				normalizedQuery.includes('from feature_flag_user_overrides')
 			) {
 				return {
@@ -25,7 +25,7 @@ function createAnonymousTestDb() {
 				meta: { changes: 0, last_row_id: 0 },
 			}
 		}
-	return {
+		return {
 			query,
 			bind() {
 				return createStatement(query)
@@ -66,7 +66,7 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 		APP_DB: createAnonymousTestDb(),
 		BUNDLE_ARTIFACTS_KV: {},
 		JOB_MANAGER: {},
-		STORAGE_RUNNER: {},
+	STORAGE_RUNNER: {},
 		PACKAGE_REALTIME_SESSION: {},
 		MCP_CLIENT_HUB: {},
 	} as unknown as Env
