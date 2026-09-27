@@ -2358,16 +2358,16 @@ export type AccountCreditsLoaderData = {
 	configured: boolean
 	/**
 	 * Purchasable Pro with the credit wallet. False renders the
-	 * switch-to-Pro prompt (Free, retired Standard/Pro, manual grants).
+	 * switch-to-Pro prompt (Free, retired Standard/Pro, gift/referral
+	 * overlays, manual grants).
 	 */
 	eligible: boolean
 	plan: AdminPlanName
 	/** Checkout for the purchasable Pro is configured. */
 	canSwitchToPro: boolean
 	/**
-	 * Subscribed on the purchasable Pro price with a Stripe customer. Gift
-	 * and referral Pro overlays hold a wallet (admin grants) but cannot buy
-	 * credits or use auto-refill.
+	 * Subscribed on the purchasable Pro price with a Stripe customer.
+	 * Gift/referral Pro overlays are not wallet-eligible.
 	 */
 	canBuyCredits: boolean
 	billingHref: '/account/billing'
@@ -2456,7 +2456,7 @@ export type AccountUsageLoaderData = {
 	entitlementConsumption: Array<AccountUsageEntitlementConsumption>
 	warnings: Array<AccountUsageEntitlementConsumption>
 	computeOverage: AccountUsageComputeOverage
-	/** False for gift/referral Pro: an empty wallet there cannot be topped up. */
+	/** True only for the purchasable Pro with a Stripe customer. */
 	canBuyCredits: boolean
 }
 

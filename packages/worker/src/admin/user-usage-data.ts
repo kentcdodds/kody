@@ -11,9 +11,14 @@ import {
 	type AdminUsageRollup,
 	type AdminUserUsageLoaderData,
 } from '#universal/loader-data.ts'
+import { resolvePlanLimits } from '#universal/plans.ts'
 import { toAdminCostVsPay } from '#worker/admin/cost-vs-pay.ts'
 import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consumption.ts'
-import { resolveBaseUserEntitlement } from '#worker/entitlements/service.ts'
+import {
+	resolveUserEntitlementFromRow,
+	userEntitlementColumnsSql,
+	type UserEntitlementRow,
+} from '#worker/entitlements/service.ts'
 import { resolveStripePriceCatalog } from '#worker/billing/stripe-price-catalog.ts'
 import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
@@ -41,15 +46,11 @@ export const adminUsageMetrics = [
  */
 const rollupCacheTtlMs = 5 * 60 * 1000
 
-type AdminUserUsageUserRow = {
+type AdminUserUsageUserRow = UserEntitlementRow & {
 	id: number
 	username: string
 	email: string
-	plan: string
-	stripe_plan: string | null
 	stripe_price_id: string | null
-	entitlement_ladder: string | null
-	stripe_credits_eligible: number | null
 	stable_user_id: string
 }
 
@@ -76,19 +77,26 @@ export async function loadAdminUserUsageData(
 	now: Date = new Date(),
 ): Promise<AdminUserUsageLoaderData | null> {
 	const row = await env.APP_DB.prepare(
-		`SELECT id, username, email, plan, stripe_plan, stripe_price_id, entitlement_ladder, stripe_credits_eligible, stable_user_id FROM users WHERE stable_user_id = ?`,
+		`SELECT id, username, email, stripe_price_id, stable_user_id, ${userEntitlementColumnsSql()}
+		 FROM users WHERE stable_user_id = ?`,
 	)
 		.bind(stableUserId)
 		.first<AdminUserUsageUserRow>()
 	if (!row) return null
 
 	const usageUserId = resolveUserStableId(row)
-	const entitlement = await resolveBaseUserEntitlement({
+	const entitlement = await resolveUserEntitlementFromRow({
 		db: env.APP_DB,
 		stableUserId: usageUserId,
 		row,
+		now,
 	})
 	const plan = entitlement.plan
+	const includedUniqueWorkerDays = resolvePlanLimits(
+		plan,
+		entitlement.ladder,
+		entitlement.creditWallet,
+	).maxUniqueWorkerDaysPerMonth
 	const currentMonth = utcMonthKey(now)
 	const today = utcDayKey(now)
 	// Fall through to direct D1 queries when KV is unavailable (some tests
@@ -139,6 +147,7 @@ export async function loadAdminUserUsageData(
 		manualPlan: row.plan,
 		username: row.username,
 		isOperator,
+		includedPerAccountMonth: includedUniqueWorkerDays,
 	})
 
 	return {
@@ -152,7 +161,10 @@ export async function loadAdminUserUsageData(
 		monthUsage,
 		entitlementConsumption,
 		warnings: entitlementConsumption.filter((item) => item.overEightyPercent),
-		dynamicWorkerCost: toAdminDynamicWorkerCost(uniqueWorkerDays),
+		dynamicWorkerCost: toAdminDynamicWorkerCost(
+			uniqueWorkerDays,
+			includedUniqueWorkerDays,
+		),
 		durableObjectDuration: {
 			...toAdminDurableObjectDuration({
 				durationMs: durableObjectUsage?.totalDurationMs ?? 0,

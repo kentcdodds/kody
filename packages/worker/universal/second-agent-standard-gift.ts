@@ -1,7 +1,9 @@
 /**
- * Second-agent gift: one 14-day overlay of the purchasable Pro when a user
- * first reaches two unique inbound MCP OAuth clientIds. The column and
- * helper names keep "Standard" from before the Pro-only ladder (#2617).
+ * Second-agent gift: one 14-day overlay of Pro when a user first reaches
+ * two unique inbound MCP OAuth clientIds. The column and helper names keep
+ * "Standard" from before the Pro-only ladder (#2617). Overlay Pro uses the
+ * retired Pro ceilings (no credit wallet); topping up still needs the
+ * purchasable Pro subscription.
  *
  * Enforcement composes {@link resolveEffectivePlan}. The overlay only
  * raises Free; paid and manual plans are a no-op (no Stripe period
@@ -85,9 +87,10 @@ export function describeSecondAgentStandardGift(input: {
 
 /**
  * Effective plan plus the second-agent / referral overlay. The overlay only
- * raises Free to the purchasable Pro (`isProOverlay`), so retired Standard
- * and legacy-ladder subscribers keep their own tables; it never lowers paid
- * or manual grants.
+ * raises Free to Pro (`isProOverlay`), so retired Standard and
+ * legacy-ladder subscribers keep their own tables; it never lowers paid or
+ * manual grants. Overlay Pro is not credits-eligible: it uses the retired
+ * Pro ceilings, not the purchasable-Pro credits table.
  */
 export function resolveEffectivePlanWithSecondAgentGift(
 	manualPlan: PlanName,
@@ -100,8 +103,8 @@ export function resolveEffectivePlanWithSecondAgentGift(
 
 /**
  * {@link resolveEffectivePlanWithSecondAgentGift} plus whether the result
- * came from the overlay. An overlaid `pro` uses the purchasable Pro table
- * and wallet, not the retired $49 Pro table.
+ * came from the overlay. An overlaid `pro` uses the retired Pro table
+ * without a credit wallet (not the purchasable-Pro credits table).
  */
 export function resolvePlanOverlay(
 	manualPlan: PlanName,

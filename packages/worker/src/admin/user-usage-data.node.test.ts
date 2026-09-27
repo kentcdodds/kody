@@ -86,6 +86,10 @@ type UserRow = {
 	plan: string
 	stripe_plan?: string | null
 	stripe_price_id?: string | null
+	entitlement_ladder?: string | null
+	stripe_credits_eligible?: number | null
+	second_agent_standard_gift_expires_at?: string | null
+	referral_standard_credit_expires_at?: string | null
 	stable_user_id: string
 }
 
@@ -145,12 +149,17 @@ function createAdminUserUsageTestDb(input: {
 			const createStatement = (params: Array<unknown>) => ({
 				async first<T>() {
 					if (
-						normalizedQuery.includes(
-							'select id, username, email, plan, stripe_plan, stripe_price_id, entitlement_ladder, stripe_credits_eligible, stable_user_id from users where stable_user_id = ?',
-						)
+						normalizedQuery.includes('from users where stable_user_id = ?') &&
+						normalizedQuery.includes('stripe_price_id') &&
+						normalizedQuery.includes('stripe_credits_eligible')
 					) {
 						return (users.find((user) => user.stable_user_id === params[0]) ??
 							null) as T | null
+					}
+					if (
+						normalizedQuery.includes('from credit_wallets where user_id = ?')
+					) {
+						return null as T | null
 					}
 					if (
 						normalizedQuery.includes("r.name = 'admin'") &&
@@ -272,13 +281,13 @@ test('loadAdminUserUsageData returns null for unknown users and zeroed usage for
 		uniqueWorkerDays: 0,
 		estimatedGrossUsd: 0,
 		usdPerUniqueDay: 0.002,
-		includedPerAccountMonth: 1000,
+		includedPerAccountMonth: 350,
 	})
 	expect(data?.costVsPay).toEqual({
 		uniqueWorkerDays: 0,
 		estimatedGrossUsd: 0,
 		usdPerUniqueDay: 0.002,
-		includedPerAccountMonth: 1000,
+		includedPerAccountMonth: 350,
 		estimatedPaidUsdCents: 0,
 		estimatedMarginUsd: 0,
 		underwater: false,
@@ -335,7 +344,7 @@ test('loadAdminUserUsageData estimates Dynamic Worker cost from unique worker-da
 		uniqueWorkerDays: 150,
 		estimatedGrossUsd: 0.3,
 		usdPerUniqueDay: 0.002,
-		includedPerAccountMonth: 1000,
+		includedPerAccountMonth: 2_000,
 	})
 	expect(data?.costVsPay.underwater).toBe(false)
 	expect(data?.costVsPay.estimatedPaidUsdCents).toBe(0)

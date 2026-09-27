@@ -76,9 +76,10 @@ export type UserEntitlementRow = {
 
 /**
  * Effective plan, ladder, and credit eligibility for a `users` row, without
- * the wallet balance. Eligible means the purchasable Pro: its Stripe price,
- * or the second-agent / referral Pro overlay on Free. A manual `max` grant
- * outranks both.
+ * the wallet balance. Eligible means the purchasable Pro Stripe price only
+ * (`users.stripe_credits_eligible`). Second-agent / referral Pro overlays
+ * raise Free to the retired Pro table without a credit wallet, so they keep
+ * pre-credits Pro ceilings. A manual `max` grant outranks both.
  */
 export function resolveUserPlanFromRow(
 	row: UserEntitlementRow,
@@ -88,7 +89,7 @@ export function resolveUserPlanFromRow(
 	ladder: UserEntitlement['ladder']
 	creditsEligible: boolean
 } {
-	const { plan, isProOverlay } = resolvePlanOverlay(
+	const { plan } = resolvePlanOverlay(
 		parseStoredPlanName(row.plan),
 		row.stripe_plan,
 		laterIsoTimestamp(
@@ -101,8 +102,7 @@ export function resolveUserPlanFromRow(
 		plan,
 		ladder: parseEntitlementLadder(row.entitlement_ladder),
 		creditsEligible:
-			plan === 'pro' &&
-			(isProOverlay || Number(row.stripe_credits_eligible) === 1),
+			plan === 'pro' && Number(row.stripe_credits_eligible) === 1,
 	}
 }
 
@@ -212,12 +212,13 @@ export async function resolveUserEntitlementFromRow(input: {
  * invalid stable ids still fail closed to public `free` without touching D1.
  *
  * Effective plan = f(manual users.plan, users.stripe_plan, unexpired
- * Standard overlays): the higher-ranked of the manual grant and Stripe
- * subscription plan, then a public Standard overlay when the later of the
+ * Pro overlays): the higher-ranked of the manual grant and Stripe
+ * subscription plan, then a public Pro overlay when the later of the
  * second-agent gift and stacked referral credit is still active and the
- * base plan is still free. `legacy` ceilings apply only while that marker
- * stays set and paid access remains continuous. The credit wallet is
- * `funded` only for the purchasable Pro with a positive balance.
+ * base plan is still free. Overlay Pro uses the retired Pro table (no
+ * wallet). `legacy` ceilings apply only while that marker stays set and
+ * paid access remains continuous. The credit wallet is `funded` only for
+ * the purchasable Pro with a positive balance.
  */
 export async function getUserEntitlement(
 	db: D1Database,

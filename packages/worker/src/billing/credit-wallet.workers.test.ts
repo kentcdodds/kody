@@ -591,7 +591,7 @@ test('the bounded debit sweep resumes from its cursor and wraps at the tail', as
 	).toBe(10_000_000 - 4_000)
 })
 
-test('gift and referral Pro overlays hold a wallet but only paying Pro can buy credits', async () => {
+test('gift and referral Pro overlays keep retired Pro ceilings without a wallet', async () => {
 	const overlay = await seedUser({
 		label: 'credits-overlay',
 		stripeCustomerId: `cus_${crypto.randomUUID().slice(0, 8)}`,
@@ -620,9 +620,8 @@ test('gift and referral Pro overlays hold a wallet but only paying Pro can buy c
 	})
 	expect(overlayUser?.entitlement).toMatchObject({
 		plan: 'pro',
-		creditWallet: 'empty',
+		creditWallet: 'none',
 	})
-	// A leftover Stripe customer from a cancelled subscription is not Pro.
 	expect(overlayUser?.canBuyCredits).toBe(false)
 	const payingUser = await loadAccountCreditsUser({
 		env,
@@ -630,6 +629,7 @@ test('gift and referral Pro overlays hold a wallet but only paying Pro can buy c
 		now,
 	})
 	expect(payingUser?.canBuyCredits).toBe(true)
+	expect(payingUser?.entitlement.creditWallet).toBe('empty')
 })
 
 test('saving credit settings before any top-up creates the wallet and keeps the settings', async () => {
@@ -715,6 +715,10 @@ test('base entitlement never pairs an overlay plan with Stripe-only eligibility'
 		ladder: 'public',
 		creditWallet: 'none',
 	})
-	// Overlay-aware resolution still gives the overlay the Pro wallet.
-	expect((await entitlementFor(overlay)).creditWallet).toBe('funded')
+	// Overlay-aware resolution grants Pro without a wallet (retired ceilings).
+	expect(await entitlementFor(overlay)).toEqual({
+		plan: 'pro',
+		ladder: 'public',
+		creditWallet: 'none',
+	})
 })

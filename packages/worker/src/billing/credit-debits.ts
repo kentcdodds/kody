@@ -197,7 +197,8 @@ async function debitOneWallet(input: {
 		return { debitedMicroUsd, autoRefilled: false }
 	}
 	const nextBalance = previousBalance - debitedMicroUsd
-	// Gift and referral Pro overlays hold a wallet but never auto-charge.
+	// Gift and referral Pro overlays are not wallet-eligible (retired Pro
+	// ceilings). Only paying Pro auto-charges.
 	const autoRefill = isPayingForCreditsPro(input.row)
 		? await runCreditAutoRefill({
 				env: input.env,

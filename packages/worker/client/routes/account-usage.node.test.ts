@@ -145,7 +145,26 @@ test('credits action follows the wallet: add, switch, or nothing', () => {
 	expect(creditsActionForWallet('none', 'max', false)).toBeNull()
 })
 
-test('gift and referral Pro accounts are sent to subscribe, not to add credits', () => {
+test('gift and referral Pro overlays have no wallet (retired Pro ceilings)', () => {
+	expect(creditsActionForWallet('none', 'pro', false)).toEqual({
+		label: 'Switch to Pro',
+		href: '/account/credits',
+	})
+	const approaching = computeAccountUsageOverageNotice(
+		overage({
+			creditWallet: 'none',
+			creditsStatus: 'within_include',
+			percentOfLimit: 0.85,
+		}),
+		'pro',
+		false,
+	)
+	expect(approaching).toMatchObject({
+		action: { label: 'Switch to Pro', href: '/account/credits' },
+	})
+})
+
+test('empty wallet without purchase rights still points at Subscribe to Pro', () => {
 	expect(creditsActionForWallet('empty', 'pro', false)).toEqual({
 		label: 'Subscribe to Pro',
 		href: '/account/credits',
@@ -159,9 +178,6 @@ test('gift and referral Pro accounts are sent to subscribe, not to add credits',
 		body: 'Subscribe to Pro to add credits and lift hard caps.',
 		action: { label: 'Subscribe to Pro', href: '/account/credits' },
 	})
-	expect(
-		computeAccountUsageOverageNotice(overage({}), 'pro', false)?.action,
-	).toEqual({ label: 'Subscribe to Pro', href: '/account/credits' })
 })
 
 test('meter credits column offers the purchase the account can make', async () => {

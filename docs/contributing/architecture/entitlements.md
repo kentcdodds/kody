@@ -124,10 +124,10 @@ Standard/Pro/max and Stripe was not touched. There is no existing helper that
 extends a remaining Stripe period, and mutating `trial_end` / period end is
 payment-adjacent.
 
-`getUserEntitlement` overlays the purchasable Pro through `resolvePlanOverlay`
-while `expires_at` is in the future and the base plan is still `free`. An
-overlaid `pro` uses `proCreditsPlanLimits` and the credit wallet (not the
-retired $49 Pro table); topping up still needs a Pro subscription (Stripe
+`getUserEntitlement` overlays Pro through `resolvePlanOverlay` while
+`expires_at` is in the future and the base plan is still `free`. An overlaid
+`pro` uses the retired Pro table without a credit wallet (not
+`proCreditsPlanLimits`); topping up still needs a Pro subscription (Stripe
 customer). The gift never lowers a paid or manual grant. Expiry is read-time (no
 sweeper). Authorize completion and grant-list pages (onboarding payload, Account
 → Connections) call `maybeEvaluateSecondAgentStandardGift`, which skips the
@@ -149,15 +149,16 @@ pending `referrals` row from the cookie or a same-request share link.
 First-touch UTMs stay write-once and do not carry the referral code. Reward runs
 on `invoice.paid` after the referee's first qualifying paid Stripe invoice
 (`amount_paid > 0`, not a $0 trial, not a historical compute-overage invoice).
-Both the referrer and the referee receive one stacked month (30 days) of the
-purchasable Pro via `users.referral_standard_credit_expires_at`. There is no
-annual or lifetime cap on how many months a referrer can earn. Paid subscribers
-stack from the later of an existing credit and the current paid period end so
-the month starts after paid access rather than overlapping it. Referee invoices
-use the latest line `period.end`. A failed Stripe lookup of the referrer's
-subscription fails the webhook so Stripe can retry instead of stacking from now.
-Email-verify leaves a held row pending if that lookup fails; the referrer’s
-later `invoice.paid` retries it. Stripe subscriptions are not mutated.
+Both the referrer and the referee receive one stacked month (30 days) of Pro via
+`users.referral_standard_credit_expires_at` (retired Pro ceilings, no credit
+wallet — same as the second-agent gift). There is no annual or lifetime cap on
+how many months a referrer can earn. Paid subscribers stack from the later of an
+existing credit and the current paid period end so the month starts after paid
+access rather than overlapping it. Referee invoices use the latest line
+`period.end`. A failed Stripe lookup of the referrer's subscription fails the
+webhook so Stripe can retry instead of stacking from now. Email-verify leaves a
+held row pending if that lookup fails; the referrer’s later `invoice.paid`
+retries it. Stripe subscriptions are not mutated.
 
 Fraud basics before a reward: both emails verified, new-account attribution only
 (persisted at signup from the last-wins cookie), no self-referral, no plus-tag /
@@ -166,8 +167,8 @@ referrer. An unverified party holds the qualifying invoice id on the pending
 row; email verification retries the grant. `/account/billing` shows the share
 link and simple referrer status.
 
-`getUserEntitlement` overlays the purchasable Pro through the later of the
-second-agent gift and this referral credit.
+`getUserEntitlement` overlays Pro through the later of the second-agent gift and
+this referral credit (retired Pro table, no wallet).
 
 ### `max` plan limits
 
@@ -219,9 +220,10 @@ and every Stripe refresh writes it to `users.stripe_credits_eligible`
 (`0069-prepaid-credits.sql`). That separates Pro from retired Standard at the
 same $12. `getUserEntitlement` returns `creditWallet`
 (`resolveCreditWalletState`): `none` unless the effective plan is `pro` and the
-account is eligible (the Pro price, or the second-agent / referral Pro overlay
-on Free), then `funded` when `credit_wallets.balance_micro_usd > 0` and `empty`
-otherwise. Free, retired Standard/Pro, manual grants, and `max` are always
+account is credits-eligible (the purchasable Pro Stripe price only —
+`users.stripe_credits_eligible`), then `funded` when
+`credit_wallets.balance_micro_usd > 0` and `empty` otherwise. Free, retired
+Standard/Pro, gift/referral Pro overlays, manual grants, and `max` are always
 `none`; an admin grant to them only holds a balance.
 
 **Unlock.** `funded` multiplies the rate/compute limits in

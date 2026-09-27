@@ -158,18 +158,19 @@ test('ineligible accounts get one switch-to-Pro prompt', async () => {
 	expect(noCheckout).not.toContain('>Switch to Pro<')
 })
 
-test('gift and referral Pro overlays keep the wallet but cannot buy credits', async () => {
-	const html = await renderCreditsPage(credits({ canBuyCredits: false }))
-	expect(html).toContain('$18.42')
-	expect(html).toContain('With credits')
-	expect(html).toContain('Subscribe to Pro to add credits.')
-	expect(html).toContain('>Subscribe to Pro<')
-	expect(html).not.toContain('>$10<')
-	expect(html).not.toContain('Auto-refill')
-
-	const empty = await renderCreditsPage(
-		credits({ canBuyCredits: false, balanceMicroUsd: 0, unlocked: false }),
+test('gift and referral Pro overlays are ineligible for the credits wallet', async () => {
+	const html = await renderCreditsPage(
+		credits({
+			eligible: false,
+			plan: 'pro',
+			canBuyCredits: false,
+			canSwitchToPro: true,
+			balanceMicroUsd: 0,
+			unlocked: false,
+		}),
 	)
-	expect(empty).toContain('Subscribe to Pro to add credits.')
-	expect(empty).not.toContain('Add credits to lift your limits.')
+	expect(html).toContain('Credits are available on Pro.')
+	expect(html).toContain('Switch to Pro')
+	expect(html).not.toContain('With credits')
+	expect(html).not.toContain('Subscribe to Pro to add credits.')
 })
