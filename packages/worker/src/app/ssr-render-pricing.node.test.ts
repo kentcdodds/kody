@@ -80,8 +80,13 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 	const html = await response.text()
 	expect(html).not.toContain('Standard')
 	expect(html).not.toMatch(/\bMax\b/)
+	expect(html).not.toContain('High stock')
+	expect(html).not.toContain('concurrency ceilings')
 	expect(html).toContain('Pro')
 	expect(html).toContain('$12')
+	expect(html).toContain(
+		'More room for jobs, workflows, and daily volume. Add prepaid credits to lift rate caps.',
+	)
 	expect(html).toContain('Prepaid credits')
 	expect(html).toContain('$0.004 per unique worker day')
 	expect(html).toContain('Teams / Enterprise')

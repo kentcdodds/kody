@@ -190,8 +190,8 @@ export function PricingRoute(handle: Handle) {
 						</p>
 						<p mix={css(planPriceNoteCss)}>or $120/year</p>
 						<p mix={css(planCopyCss)}>
-							Same {factoryGuideLink()}. High stock and concurrency ceilings.
-							Add prepaid credits to lift rate caps.
+							Same {factoryGuideLink()}. More room for jobs, workflows, and
+							daily volume. Add prepaid credits to lift rate caps.
 							{improvedSearchNote}
 						</p>
 						{renderPaidPlanCta(isSignedIn, signedOutCta)}
