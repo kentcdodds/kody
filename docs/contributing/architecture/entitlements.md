@@ -232,10 +232,12 @@ admin-eligible. An admin grant to a `none` account only holds a balance. Buying
 credits and auto-refill still require the purchasable Pro subscription
 (`isPayingForCreditsPro`).
 
-**Unlock.** Purchasable Pro (`proCreditsPlanLimits`) always includes Max
-stock/concurrency (repos, saved packages, scheduled jobs, repo sessions,
-secrets, storage bytes, concurrent workflows) — empty or funded. `funded`
-multiplies only the rate/compute limits in `creditsUnlockedLimitFields`
+**Unlock.** Purchasable Pro (`proCreditsPlanLimits`) always includes Max stock
+for repos, saved packages, scheduled jobs, repo sessions, secrets, and storage
+bytes — empty or funded. Concurrent workflows are currently also Max on that
+base table as a **provisional** stand-in pending Kent's empty-wallet guard pick
+(always-Max vs funded-only concurrency; past-include hard-stop vs no guard).
+`funded` multiplies only the rate/compute limits in `creditsUnlockedLimitFields`
 (execute, outbound fetches, job runs, and automation invocations, daily and
 weekly) by `creditsUnlockMultiplier` (50), capped at the `max` daily ceilings
 (execute 25,000, outbound 80,000, job runs 40,000, automation 200,000; `max` has
