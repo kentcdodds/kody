@@ -30,10 +30,12 @@ meter.
   a different user is a different isolate.
 
 Account usage (`/account/usage` and `usageGet`) shows this meter as **Worker
-compute**, next to **Rows read** and the execute caps. Pro includes a monthly
-amount of both. Past the include, usage is charged from prepaid credits until
-they run out, and then usage past the include stops. Free stops at its caps —
-see [Pricing](https://kody.codes/pricing). Nobody is invoiced for overage.
+compute**, next to **Rows read** and the execute caps. The $12 Pro plan includes
+a monthly amount of both. Past the include, usage is charged from prepaid
+credits until they run out, and then usage past the include stops. Free, and Pro
+accounts without prepaid credits (retired plans or gifted months), keep their
+daily and weekly caps instead — see [Pricing](https://kody.codes/pricing).
+Nobody is invoiced for overage.
 
 ## Surfaces
 
