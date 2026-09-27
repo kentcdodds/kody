@@ -498,7 +498,7 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		plan: 'free',
 		limit: 50,
 		current: 60,
-		disposition: 'soft_block',
+		creditsStatus: 'add_credits',
 	})
 	const computeOverageEvent = {
 		exception: {

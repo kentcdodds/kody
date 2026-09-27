@@ -1642,7 +1642,7 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		plan: 'free',
 		limit: 50,
 		current: 60,
-		disposition: 'soft_block',
+		creditsStatus: 'add_credits',
 	})
 	expect(getExecutionErrorDetails(computeOverageError)).toMatchObject({
 		kind: 'compute_overage_include_reached',
@@ -1653,7 +1653,7 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 			plan: 'free',
 			limit: 50,
 			current: 60,
-			disposition: 'soft_block',
+			creditsStatus: 'add_credits',
 		},
 		suggestedAction: {
 			type: 'review_plan_limit',

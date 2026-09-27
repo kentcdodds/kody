@@ -36,7 +36,12 @@ import {
 	hoverMq,
 	primaryLinkCss,
 } from '#universal/styles/style-primitives.ts'
-import { hasHigherPublicPlan } from '#universal/plans.ts'
+import { type CreditWalletState } from '#universal/plans.ts'
+import {
+	accountCreditsPath,
+	type ComputeIncludeCreditsStatus,
+} from '#universal/compute-overage.ts'
+import { formatMicroUsd } from '#universal/credits.ts'
 
 const usageApiPath = '/account/usage.json'
 const billingPath = '/account/billing'
@@ -83,8 +88,8 @@ export function hotterUsagePercent(
 
 /**
  * True when a hard daily/weekly/stock entitlement is at or over its cap.
- * Monthly compute includes (`group: 'monthly'`) allow billed overage for
- * paid plans, so they never count as a hard "Limit reached."
+ * Monthly compute includes (`group: 'monthly'`) are not hard caps, so they
+ * never count as a hard "Limit reached."
  */
 export function hasReachedEntitlementLimit(
 	item: Pick<
@@ -141,46 +146,114 @@ function formatUsageValue(resource: string, value: number) {
 	return formatIntegerNumber(value)
 }
 
+type CreditsAction = {
+	label: 'Add credits' | 'Switch to Pro'
+	href: typeof accountCreditsPath
+}
+
+/** Where a capped account goes next; funded wallets and operator plans need nothing. */
+export function creditsActionForWallet(
+	creditWallet: CreditWalletState,
+	plan: AdminPlanName,
+): CreditsAction | null {
+	switch (creditWallet) {
+		case 'funded':
+			return null
+		case 'empty':
+			return { label: 'Add credits', href: accountCreditsPath }
+		case 'none':
+			return plan === 'max'
+				? null
+				: { label: 'Switch to Pro', href: accountCreditsPath }
+		default: {
+			const exhaustive: never = creditWallet
+			throw new Error(`Unknown credit wallet state: ${String(exhaustive)}`)
+		}
+	}
+}
+
 export function computeAccountUsageOverageNotice(
 	overage: AccountUsageComputeOverage,
-) {
-	const overInclude = overage.meters.some((meter) => meter.percentOfLimit >= 1)
+	plan: AdminPlanName,
+): {
+	title: string
+	body: string
+	tone: 'info' | 'warn'
+	action: CreditsAction | null
+} | null {
 	const approaching = overage.meters.some(
 		(meter) => meter.overEightyPercent && meter.percentOfLimit < 1,
 	)
-	if (overage.disposition === 'soft_block') {
-		return {
-			title: 'Upgrade to keep using compute overage',
-			body: "You are over this month's unique worker-day or Durable Object rows-read include. Free accounts without a payment method are asked to upgrade instead of being charged.",
+	switch (overage.creditsStatus) {
+		case 'debiting_credits':
+			return {
+				title: 'Using credits',
+				body: `Usage above this month's include is debiting your credits: ${formatMicroUsd(overage.creditsCostMicroUsd)} so far.`,
+				tone: 'info',
+				action: null,
+			}
+		case 'add_credits':
+			return {
+				title: "Over this month's include",
+				body: 'Add credits to lift hard caps. Usage above the include then debits credits.',
+				tone: 'warn',
+				action: { label: 'Add credits', href: accountCreditsPath },
+			}
+		case 'switch_to_pro':
+			return {
+				title: "Over this month's include",
+				body:
+					plan === 'free'
+						? 'Switch to Pro for a larger include and prepaid credits.'
+						: 'Usage above the include is not charged on your plan. Switch to Pro to add credits.',
+				tone: 'warn',
+				action: { label: 'Switch to Pro', href: accountCreditsPath },
+			}
+		case 'not_charged':
+			return null
+		case 'within_include':
+			if (!approaching) return null
+			return {
+				title: 'Approaching compute includes',
+				body:
+					overage.creditWallet === 'funded'
+						? "You are over 80% of this month's include. Usage above it debits your credits."
+						: "You are over 80% of this month's unique worker-day or Durable Object rows-read include.",
+				tone: 'info',
+				action: creditsActionForWallet(overage.creditWallet, plan),
+			}
+		default: {
+			const exhaustive: never = overage.creditsStatus
+			throw new Error(`Unknown credits status: ${String(exhaustive)}`)
 		}
 	}
-	if (overage.legacyUnbilled && (overInclude || approaching)) {
-		return {
-			title: 'Legacy plan compute includes',
-			body: overInclude
-				? "You are over this month's unique worker-day or Durable Object rows-read include. Legacy Standard and Pro are not billed for that overage. Changing plan moves you onto public rates."
-				: "You are approaching this month's unique worker-day or Durable Object rows-read include. Legacy Standard and Pro are not billed if you go over.",
+}
+
+function renderMeterCreditsStatus(status: ComputeIncludeCreditsStatus) {
+	switch (status) {
+		case 'within_include':
+			return '—'
+		case 'debiting_credits':
+			return 'Debiting credits'
+		case 'add_credits':
+			return (
+				<a href={accountCreditsPath} mix={css(primaryLinkCss)}>
+					Add credits
+				</a>
+			)
+		case 'switch_to_pro':
+			return (
+				<a href={accountCreditsPath} mix={css(primaryLinkCss)}>
+					Switch to Pro
+				</a>
+			)
+		case 'not_charged':
+			return 'Not charged'
+		default: {
+			const exhaustive: never = status
+			throw new Error(`Unknown credits status: ${String(exhaustive)}`)
 		}
 	}
-	if (!overage.chargingEnabled && (overInclude || approaching)) {
-		return {
-			title: 'Compute overage billing is paused',
-			body: 'Your compute overage is being recorded, but it is not billed while charging is disabled.',
-		}
-	}
-	if (overage.disposition === 'invoice' && overInclude) {
-		return {
-			title: 'Compute overage this month',
-			body: 'Usage above your unique worker-day and Durable Object rows-read includes is billed at list rates after the UTC month closes.',
-		}
-	}
-	if (approaching) {
-		return {
-			title: 'Approaching compute includes',
-			body: "You are over 80% of this month's unique worker-day or Durable Object rows-read include. Public-ladder overage is billed at list rates when a payment method is on file.",
-		}
-	}
-	return null
 }
 
 function formatCurrentValue(item: AccountUsageEntitlementConsumption) {
@@ -426,8 +499,16 @@ export function AccountUsageRoute(handle: Handle) {
 			? groupEntitlementRows(usage.entitlementConsumption)
 			: []
 		const computeNotice = usage
-			? computeAccountUsageOverageNotice(usage.computeOverage)
+			? computeAccountUsageOverageNotice(usage.computeOverage, usage.plan)
 			: null
+		const warningAction = usage
+			? creditsActionForWallet(usage.computeOverage.creditWallet, usage.plan)
+			: null
+		const showMeterCredits = usage
+			? usage.computeOverage.meters.some(
+					(meter) => meter.creditsStatus !== 'within_include',
+				)
+			: false
 
 		return (
 			<AccountManagementShell busy={pending && usage !== null}>
@@ -488,10 +569,22 @@ export function AccountUsageRoute(handle: Handle) {
 									? ` · Week starts (UTC Monday): ${usage.weekStart}`
 									: ''}
 							</p>
-							<p mix={css({ margin: 0 })}>
+							<p
+								mix={css({
+									margin: 0,
+									display: 'flex',
+									flexWrap: 'wrap',
+									gap: spacing.md,
+								})}
+							>
 								<a href={billingPath} mix={css(primaryLinkCss)}>
 									Manage billing
 								</a>
+								{usage.computeOverage.creditWallet !== 'none' ? (
+									<a href={accountCreditsPath} mix={css(primaryLinkCss)}>
+										Manage credits
+									</a>
+								) : null}
 							</p>
 						</AccountManagementPanel>
 						{computeNotice ? (
@@ -499,7 +592,7 @@ export function AccountUsageRoute(handle: Handle) {
 								mix={css(
 									getAccentCalloutCss({
 										accentColor:
-											usage.computeOverage.disposition === 'soft_block'
+											computeNotice.tone === 'warn'
 												? chartColor.amber
 												: colors.primary,
 									}),
@@ -515,13 +608,16 @@ export function AccountUsageRoute(handle: Handle) {
 									{computeNotice.title}
 								</p>
 								<p mix={css(descriptionCss)}>{computeNotice.body}</p>
-								<p mix={css({ margin: 0 })}>
-									<a href={billingPath} mix={css(primaryLinkCss)}>
-										{usage.computeOverage.disposition === 'soft_block'
-											? 'Upgrade your plan'
-											: 'Review billing'}
-									</a>
-								</p>
+								{computeNotice.action ? (
+									<p mix={css({ margin: 0 })}>
+										<a
+											href={computeNotice.action.href}
+											mix={css(primaryLinkCss)}
+										>
+											{computeNotice.action.label}
+										</a>
+									</p>
+								) : null}
 							</div>
 						) : null}
 						<AccountManagementPanel
@@ -537,6 +633,15 @@ export function AccountUsageRoute(handle: Handle) {
 									{ key: 'current', label: 'In use', align: 'end' },
 									{ key: 'include', label: 'Include', align: 'end' },
 									{ key: 'used', label: 'Used', align: 'end' },
+									...(showMeterCredits
+										? [
+												{
+													key: 'credits',
+													label: 'Credits',
+													align: 'end' as const,
+												},
+											]
+										: []),
 								]}
 								rows={usage.computeOverage.meters.map((item) => ({
 									id: item.resource,
@@ -565,6 +670,7 @@ export function AccountUsageRoute(handle: Handle) {
 												{formatUsagePercent(item.percentOfLimit)}
 											</span>
 										),
+										credits: renderMeterCreditsStatus(item.creditsStatus),
 									},
 								}))}
 							/>
@@ -594,11 +700,14 @@ export function AccountUsageRoute(handle: Handle) {
 												? `${formatCurrentValue(item)} / ${formatLimitValue(item)} today (${formatUsagePercent(item.percentOfLimit)}) · ${formatIntegerNumber(item.week.current)} / ${formatIntegerNumber(item.week.limit)} this week (${formatUsagePercent(item.week.percentOfLimit)})`
 												: `${formatCurrentValue(item)} / ${formatLimitValue(item)} (${formatUsagePercent(item.percentOfLimit)})`}
 											. {item.howToReduce}
-											{hasHigherPublicPlan(usage.plan) ? (
+											{warningAction ? (
 												<>
 													{' '}
-													<a href={billingPath} mix={css(primaryLinkCss)}>
-														Upgrade your plan
+													<a
+														href={warningAction.href}
+														mix={css(primaryLinkCss)}
+													>
+														{warningAction.label}
 													</a>
 												</>
 											) : null}

@@ -247,13 +247,16 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 	},
 	{
 		id: 'billing',
-		title: 'Billing and usage',
+		title: 'Billing, credits, and usage',
 		file: 'billing.md',
-		paths: ['/account/billing', '/account/usage'],
+		paths: ['/account/billing', '/account/credits', '/account/usage'],
 		apis: [
 			'/account/billing.json',
 			'/account/billing/checkout.json',
 			'/account/billing/cancellation-feedback.json',
+			'/account/credits.json',
+			'/account/credits/top-up.json',
+			'/account/credits/settings.json',
 			'/account/usage.json',
 		],
 	},
@@ -264,6 +267,7 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		paths: ['/admin'],
 		apis: [
 			'/admin/users.json',
+			'/admin/users/credits.json',
 			'/admin/roles.json',
 			'/admin/reserved-usernames.json',
 			'/admin/feature-flags.json',

@@ -105,10 +105,13 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 		page.getByRole('heading', { name: 'Free', exact: true }),
 	).toBeVisible()
 	await expect(
-		page.getByRole('heading', { name: 'Standard', exact: true }),
+		page.getByRole('heading', { name: 'Pro', exact: true }),
 	).toBeVisible()
 	await expect(
-		page.getByRole('heading', { name: 'Pro', exact: true }),
+		page.getByRole('heading', { name: 'Standard', exact: true }),
+	).toHaveCount(0)
+	await expect(
+		page.getByRole('heading', { name: 'Prepaid credits', exact: true }),
 	).toBeVisible()
 	await expect(
 		page.getByRole('heading', { name: 'Teams / Enterprise', exact: true }),

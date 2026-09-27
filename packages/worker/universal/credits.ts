@@ -4,10 +4,9 @@
  * Money is integer micro-USD (1 USD = 1,000,000) so sub-cent debit rates
  * stay exact. Top-ups and auto-refill settings are whole cents (Stripe
  * amounts). Wallet eligibility and unlock live on `plans.ts`
- * ({@link CreditWalletState}); this module is amounts, rates, and guards.
+ * (`CreditWalletState`); this module is amounts, rates, and guards.
  */
 export const microUsdPerCent = 10_000
-export const microUsdPerUsd = 1_000_000
 
 /**
  * Meters a wallet debits past the monthly include. Stored as open TEXT in
@@ -20,13 +19,6 @@ export const creditDebitMeters = [
 ] as const
 
 export type CreditDebitMeter = (typeof creditDebitMeters)[number]
-
-export function isCreditDebitMeter(value: unknown): value is CreditDebitMeter {
-	return (
-		typeof value === 'string' &&
-		(creditDebitMeters as ReadonlyArray<string>).includes(value)
-	)
-}
 
 type CreditDebitRate = {
 	/** Price in micro-USD for `unitsPerPrice` units. */
@@ -75,12 +67,12 @@ export const creditTopUpMaxCents = 50_000
 /** Low-balance notice (only while auto-refill is off) and refill floor. */
 export const creditLowBalanceCents = 500
 export const creditAutoRefillMinThresholdCents = 500
-export const creditAutoRefillMinAmountCents = creditTopUpMinCents
-export const creditAutoRefillMaxAmountCents = creditTopUpMaxCents
-export const creditAutoRefillMaxMonthlyCapCents = 200_000
+const creditAutoRefillMinAmountCents = creditTopUpMinCents
+const creditAutoRefillMaxAmountCents = creditTopUpMaxCents
+const creditAutoRefillMaxMonthlyCapCents = 200_000
 
 /** Admin grants: positive only, bounded so a typo cannot mint a fortune. */
-export const creditAdminGrantMinCents = 1
+const creditAdminGrantMinCents = 1
 export const creditAdminGrantMaxCents = 100_000
 export const creditAdminGrantNoteMaxLength = 500
 
@@ -232,7 +224,7 @@ export type CreditAutoRefillDecision =
 	  }
 	| { action: 'cap_reached' }
 
-export const creditAutoRefillFailureBackoffMs = 24 * 60 * 60 * 1000
+const creditAutoRefillFailureBackoffMs = 24 * 60 * 60 * 1000
 
 /**
  * Whether the debit lane should charge an auto-refill now. Both threshold

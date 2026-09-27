@@ -4,11 +4,12 @@ import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
 import { reveal } from '#client/reveal.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { jevSearchRerankFlagKey } from '#universal/feature-flags/registry.ts'
+import { creditDebitRates } from '#universal/credits.ts'
 import {
-	computeOverageRatesUsd,
 	formatDurableObjectRowsRead,
 	formatMinJobInterval,
 	planLimits,
+	proCreditsPlanLimits,
 	weeklyComputeWindowNote,
 	type PlanLimits,
 } from '#universal/plans.ts'
@@ -29,8 +30,8 @@ import {
 
 /**
  * Pricing page, ported from the redesign prototype (`landing/pricing.html`).
- * Two flat plan panels over a 44rem spec-sheet measure; Pro's green border is
- * the only loud element. Limits render as one honest table grouped under
+ * Two flat plan panels (Free and Pro) over a 44rem spec-sheet measure; Pro's
+ * green border is the only loud element. Limits render as one honest table grouped under
  * display-face section titles — every value comes from `plans.ts`, never
  * hardcoded here.
  */
@@ -177,56 +178,33 @@ export function PricingRoute(handle: Handle) {
 						)}
 					</section>
 
-					{/*
-					 * Standard carries the accent. The prototype accented the one
-					 * paid plan, and Standard is that plan — Pro is the newer
-					 * tier above it. Accenting both would make the border stop
-					 * meaning anything.
-					 */}
-					<section
-						aria-labelledby="plan-standard"
-						mix={[css(featuredPlanPanelCss), reveal(90)]}
-					>
-						<h2 id="plan-standard" mix={css(planTitleCss)}>
-							Standard
-						</h2>
-						<p mix={css(featuredPlanPriceCss)}>
-							$12<small mix={css(planPriceUnitCss)}>/month</small>
-						</p>
-						<p mix={css(planPriceNoteCss)}>$10/mo billed annually</p>
-						<p mix={css(planCopyCss)}>
-							Same {factoryGuideLink()}. More room for jobs, workflows, and
-							daily volume.{improvedSearchNote}
-						</p>
-						{renderPaidPlanCta(isSignedIn, signedOutCta)}
-					</section>
-
 					<section
 						aria-labelledby="plan-pro"
-						mix={[css(planPanelCss), reveal(180)]}
+						mix={[css(featuredPlanPanelCss), reveal(90)]}
 					>
 						<h2 id="plan-pro" mix={css(planTitleCss)}>
 							Pro
 						</h2>
-						<p mix={css(planPriceCss)}>
-							$49<small mix={css(planPriceUnitCss)}>/month</small>
+						<p mix={css(featuredPlanPriceCss)}>
+							$12<small mix={css(planPriceUnitCss)}>/month</small>
 						</p>
-						<p mix={css(planPriceNoteCss)}>$40/mo billed annually</p>
+						<p mix={css(planPriceNoteCss)}>or $120/year</p>
 						<p mix={css(planCopyCss)}>
-							Same {factoryGuideLink()}. More room for storage, jobs, workflows,
-							and daily volume.{improvedSearchNote}
+							Same {factoryGuideLink()}. More room for jobs, workflows, and
+							daily volume. Add prepaid credits to lift hard caps.
+							{improvedSearchNote}
 						</p>
 						{renderPaidPlanCta(isSignedIn, signedOutCta)}
 					</section>
 
 					{/*
-					 * Contact strip, not a fourth SKU. No price, no Max
-					 * column, no feature-matrix cells — Teams/Enterprise and
-					 * Max stay manual.
+					 * Contact strip, not a third SKU. No price, no extra
+					 * column, no feature-matrix cells — Teams/Enterprise stays
+					 * manual.
 					 */}
 					<section
 						aria-labelledby="plan-teams"
-						mix={[css(teamsInviteCss), reveal(240)]}
+						mix={[css(teamsInviteCss), reveal(180)]}
 					>
 						<div>
 							<h2 id="plan-teams" mix={css(planTitleCss)}>
@@ -259,34 +237,28 @@ export function PricingRoute(handle: Handle) {
 										<span data-limits-price>$0</span>
 									</th>
 									<th scope="col">
-										<span data-limits-plan>Standard</span>
-										<span data-limits-price>$12/mo</span>
-										<span data-limits-annual>$10/mo billed annually</span>
-									</th>
-									<th scope="col">
 										<span data-limits-plan>Pro</span>
-										<span data-limits-price>$49/mo</span>
-										<span data-limits-annual>$40/mo billed annually</span>
+										<span data-limits-price>$12/mo</span>
+										<span data-limits-annual>or $120/yr</span>
 									</th>
 								</tr>
 							</thead>
 							<tbody>
 								{limitGroups.flatMap((group) => [
 									<tr key={group.title} data-group>
-										<th colspan={4}>{group.title}</th>
+										<th colspan={3}>{group.title}</th>
 									</tr>,
 									...group.rows.map((row) => (
 										<tr key={row.key}>
 											<th scope="row">{row.label}</th>
 											{renderLimitCell(row, planLimits.free)}
-											{renderLimitCell(row, planLimits.standard)}
-											{renderLimitCell(row, planLimits.pro)}
+											{renderLimitCell(row, proCreditsPlanLimits)}
 										</tr>
 									)),
 									...(group.note
 										? [
 												<tr key={`${group.title}-note`} data-note>
-													<td colspan={4}>{group.note}</td>
+													<td colspan={3}>{group.note}</td>
 												</tr>,
 											]
 										: []),
@@ -294,21 +266,19 @@ export function PricingRoute(handle: Handle) {
 							</tbody>
 						</table>
 					</div>
+					<h3 id="credits-title" mix={css(creditsTitleCss)}>
+						Prepaid credits
+					</h3>
 					<p mix={css(limitsFootnoteCss)}>
-						Overage is billed monthly at $
-						{computeOverageRatesUsd.uniqueWorkerDay} per unique worker day and $
-						{computeOverageRatesUsd.durableObjectRowsReadPerMillion} per million
-						Durable Object rows read above the included allotment, for
-						public-ladder accounts with a payment method on file. Free accounts
-						that exceed an include and have no payment method are asked to
-						upgrade instead of being charged. Free accounts that already have a
-						Stripe customer are invoiced like other public-ladder accounts.
-						Those allotments are not hard-cut. Grandfathered legacy Standard/Pro
-						accounts are not billed for these meters until they leave the legacy
-						ladder. Execute and outbound fetches are hard daily and weekly caps
-						on public plans (whichever window hits first blocks). Grandfathered
-						legacy Standard/Pro and Max stay daily-only. Durable Object duration
-						is unmetered.
+						Add credits on Pro to lift hard caps. Usage above the monthly
+						include debits {creditDebitRates.unique_worker_days.label} and{' '}
+						{creditDebitRates.durable_object_rows_read.label}. No overage
+						invoices.
+					</p>
+					<p mix={css(limitsFootnoteCss)}>
+						Execute and outbound fetches are hard daily and weekly caps
+						(whichever window hits first blocks). Durable Object duration is
+						unmetered.
 					</p>
 				</section>
 
@@ -383,19 +353,14 @@ const pricingCss = {
 		'clamp(3rem, 7vw, 5.5rem) clamp(1.25rem, 4vw, 2.5rem) clamp(4rem, 8vw, 6.5rem)',
 }
 
-/*
- * Three tiers on the prototype's two-up measure would squeeze each card under
- * the ~17rem its price and copy need, so the measure widens with the extra
- * column and drops straight to one column rather than leaving an orphan.
- */
+/* The prototype's two-up measure; one column once the cards would squeeze. */
 const plansCss = {
-	width: 'min(100%, 62rem)',
+	width: 'min(100%, 44rem)',
 	margin: 'clamp(2.5rem, 6vw, 4rem) auto 0',
 	display: 'grid',
-	gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+	gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
 	gap: '1.2rem',
-	'@media (max-width: 860px)': {
-		width: 'min(100%, 44rem)',
+	'@media (max-width: 680px)': {
 		gridTemplateColumns: '1fr',
 	},
 }
@@ -561,6 +526,13 @@ const limitsFootnoteCss = {
 	font: `450 0.88rem/1.45 ${typography.fontFamilyBody}`,
 }
 
+const creditsTitleCss = {
+	margin: '1.8rem 0 0',
+	font: `700 1.05rem/1.2 ${typography.fontFamilyDisplay}`,
+	letterSpacing: '-0.01em',
+	color: colors.text,
+}
+
 const limitsCtaButtonCss = getPillButtonCss()
 
 const limitsTableCss = {
@@ -571,8 +543,8 @@ const limitsTableCss = {
 		padding: '0.7rem 0.9rem',
 		borderBottom: `1px solid ${colors.border}`,
 	},
-	/* Labels and values sit flush with the hairline edges; the three plan
-	   columns are triplets so the tiers compare down a steady axis. */
+	/* Labels and values sit flush with the hairline edges; the plan columns
+	   share one width so the tiers compare down a steady axis. */
 	'& th:first-child, & td:first-child': {
 		paddingLeft: '0.2rem',
 	},
@@ -596,10 +568,7 @@ const limitsTableCss = {
 		display: 'block',
 		color: colors.text,
 	},
-	/*
-	 * Third column is Standard, the featured plan — the accent has to follow
-	 * the panel above it rather than sit on the last column (Pro).
-	 */
+	/* Third column is Pro, the featured plan — the accent follows its panel. */
 	'& thead th:nth-child(3) [data-limits-plan]': {
 		color: colors.primaryText,
 	},

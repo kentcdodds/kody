@@ -4,6 +4,7 @@ import {
 	type AdminPlanName,
 } from '#universal/loader-data.ts'
 import { AccountManagementPanel } from '#client/routes/account-management-components.tsx'
+import { type BillingInterval } from '#client/routes/billing-checkout.ts'
 import {
 	colors,
 	mq,
@@ -19,28 +20,29 @@ import {
 	visuallyHiddenCss,
 } from '#universal/styles/style-primitives.ts'
 
-export type PaidTier = 'standard' | 'pro'
+export type PaidTier = 'pro'
 type PlanTier = 'free' | PaidTier
-export type BillingInterval = 'month' | 'year'
+export type { BillingInterval }
 export type CheckoutPending = {
 	plan: PaidTier
 	interval: BillingInterval
 } | null
+/** Stripe subscription tiers, including retired Standard and $49 Pro. */
+export type StripePaidPlan = 'standard' | 'pro'
 
 const proratedSwitchNote =
 	'Switching plans is prorated: Stripe shows the exact charge or credit and asks you to confirm before anything changes.'
 
 function describePlanSwitch(input: {
-	tier: PaidTier
 	interval: BillingInterval
-	currentPlan: PaidTier | null
+	onPurchasablePro: boolean
 }) {
-	if (input.currentPlan === input.tier) {
+	if (input.onPurchasablePro) {
 		return input.interval === 'year'
 			? 'Switch to annual (prorated)'
 			: 'Switch to monthly (prorated)'
 	}
-	return `Switch to ${input.tier === 'pro' ? 'Pro' : 'Standard'} (prorated)`
+	return 'Switch to Pro (prorated)'
 }
 
 const planTiers: Array<{
@@ -58,20 +60,12 @@ const planTiers: Array<{
 			'Room to build real automations. Capped on daily volume, not on how much you build.',
 	},
 	{
-		id: 'standard',
-		name: 'Standard',
-		price: '$12/month',
-		annualPrice: '$10/mo billed annually',
-		description:
-			'Higher daily volume and more room for scheduled jobs and workflows.',
-	},
-	{
 		id: 'pro',
 		name: 'Pro',
-		price: '$49/month',
-		annualPrice: '$40/mo billed annually',
+		price: '$12/month',
+		annualPrice: '$120/year',
 		description:
-			'For heavy daily automation — more room for storage, jobs, workflows, and daily volume.',
+			'More room for jobs, workflows, and daily volume. Add credits to lift hard caps.',
 	},
 ]
 
@@ -104,16 +98,28 @@ function planCoversTier(effectivePlan: AdminPlanName, tier: PlanTier): boolean {
  */
 export function resolveActiveStripePlan(
 	billing: AccountBillingLoaderData | null,
-): PaidTier | null {
+): StripePaidPlan | null {
 	return billing?.hasStripeCustomer &&
 		(billing.stripePlan === 'standard' || billing.stripePlan === 'pro')
 		? billing.stripePlan
 		: null
 }
 
+/**
+ * Subscribed to retired Standard or $49 Pro: kept as-is, no credit wallet,
+ * and offered a prorated switch to the purchasable Pro.
+ */
+export function isRetiredPaidSubscription(
+	billing: AccountBillingLoaderData | null,
+): boolean {
+	const active = resolveActiveStripePlan(billing)
+	if (!billing || active === null) return false
+	return active === 'standard' || !billing.creditsEligible
+}
+
 export function renderAccountBillingPlans(input: {
 	billing: AccountBillingLoaderData
-	activeStripePlan: PaidTier | null
+	activeStripePlan: StripePaidPlan | null
 	paymentActionNeeded: boolean
 	checkoutPending: CheckoutPending
 	selectedIntervalByPlan: Record<PaidTier, BillingInterval>
@@ -127,15 +133,13 @@ export function renderAccountBillingPlans(input: {
 		checkoutPending,
 		selectedIntervalByPlan,
 	} = input
+	const retired = isRetiredPaidSubscription(billing)
 	return (
-		<AccountManagementPanel
-			title="Plans"
-			description="Choose a plan that fits how you use Kody."
-		>
+		<AccountManagementPanel title="Plans">
 			<div
 				mix={css({
 					display: 'grid',
-					gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+					gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
 					gap: spacing.md,
 					[mq.mobile]: {
 						gridTemplateColumns: '1fr',
@@ -143,20 +147,26 @@ export function renderAccountBillingPlans(input: {
 				})}
 			>
 				{planTiers.map((tier) => {
-					const isCurrent = billing.effectivePlan === tier.id
-					const isIncluded =
-						!isCurrent && planCoversTier(billing.effectivePlan, tier.id)
 					const paidTier: PaidTier | null = tier.id === 'free' ? null : tier.id
+					// Retired Standard/Pro subscribers are not on the Pro sold
+					// here, so the Pro card offers the switch instead of
+					// reading "Current plan".
+					const isCurrent =
+						billing.effectivePlan === tier.id && !(paidTier && retired)
+					const isIncluded =
+						!isCurrent &&
+						!(paidTier && retired) &&
+						planCoversTier(billing.effectivePlan, tier.id)
 					const purchasable =
 						paidTier != null &&
 						billing.purchasablePlans.includes(paidTier) &&
 						!paymentActionNeeded
 					const showSubscribe = purchasable && !isCurrent && !isIncluded
-					// The tier the Stripe subscription is on: offer the other
-					// billing interval when the current one is known.
+					// On the purchasable Pro: offer the other billing interval
+					// when the current one is known.
 					const intervalSwitch: BillingInterval | null =
 						purchasable &&
-						paidTier === activeStripePlan &&
+						billing.creditsEligible &&
 						billing.stripeInterval != null
 							? billing.stripeInterval === 'month'
 								? 'year'
@@ -234,9 +244,8 @@ export function renderAccountBillingPlans(input: {
 										{checkoutPending?.plan === paidTier
 											? 'Opening Stripe…'
 											: describePlanSwitch({
-													tier: paidTier,
 													interval: intervalSwitch,
-													currentPlan: activeStripePlan,
+													onPurchasablePro: true,
 												})}
 									</button>
 								</div>
@@ -324,9 +333,8 @@ export function renderAccountBillingPlans(input: {
 													: 'Starting checkout…'
 												: activeStripePlan
 													? describePlanSwitch({
-															tier: paidTier,
 															interval: selectedIntervalByPlan[paidTier],
-															currentPlan: activeStripePlan,
+															onPurchasablePro: false,
 														})
 													: selectedIntervalByPlan[paidTier] === 'year'
 														? 'Subscribe annually'

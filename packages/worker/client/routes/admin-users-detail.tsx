@@ -33,6 +33,7 @@ import {
 } from '#universal/loader-data.ts'
 import { describeEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { formatUsageLimit, formatUsagePercent } from './admin-users-shared.ts'
+import { AdminUserCreditsPanel } from './admin-users-credits.tsx'
 import {
 	costVsPayFootnote,
 	formatDynamicWorkerUsd,
@@ -81,6 +82,7 @@ export type AdminUserDetailProps = {
 	) => void
 	onPlanChoiceChange: (plan: AdminPlanName) => void
 	onSubmitPlanAction: () => void
+	onCreditsGranted: () => void
 	onSubmitModerationAction: (
 		action: 'suspend_user' | 'unsuspend_user' | 'resume_email_outbound',
 	) => void
@@ -437,6 +439,11 @@ export function renderAdminUserDetail(props: AdminUserDetailProps) {
 					</button>
 				</div>
 			</AccountManagementPanel>
+			<AdminUserCreditsPanel
+				key={selectedUser.stableUserId}
+				stableUserId={selectedUser.stableUserId}
+				onGranted={props.onCreditsGranted}
+			/>
 			<AccountManagementPanel
 				title="Moderation"
 				description="Suspension blocks the account at the session, MCP, and email chokepoints. The outbound-email pause is set automatically after spam complaints or repeated bounces."

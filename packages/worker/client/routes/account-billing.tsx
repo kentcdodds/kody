@@ -29,9 +29,11 @@ import {
 	type BillingInterval,
 	type CheckoutPending,
 	type PaidTier,
+	isRetiredPaidSubscription,
 	renderAccountBillingPlans,
 	resolveActiveStripePlan,
 } from '#client/routes/account-billing-plans.tsx'
+import { requestProCheckout } from '#client/routes/billing-checkout.ts'
 import {
 	billingPortalPath,
 	navigateBillingPortalOnPrimaryClick,
@@ -53,7 +55,6 @@ import {
 } from '#universal/styles/style-primitives.ts'
 
 const billingApiPath = '/account/billing.json'
-const billingCheckoutApiPath = '/account/billing/checkout.json'
 const jsonRequestHeaders = {
 	Accept: 'application/json',
 	'Content-Type': 'application/json',
@@ -62,8 +63,6 @@ const billingCancellationFeedbackApiPath =
 	'/account/billing/cancellation-feedback.json'
 
 type SubscriptionStatusTone = 'ok' | 'warn' | 'action' | 'muted'
-/** Where `POST /account/billing/checkout.json` sends the browser next. */
-type CheckoutMode = 'checkout' | 'portal_update' | 'portal'
 
 const multipleSubscriptionsMessage =
 	'You have more than one active Stripe subscription, so plan changes are handled in the Stripe portal. Opening Stripe…'
@@ -207,7 +206,6 @@ export function AccountBillingRoute(handle: Handle) {
 	let cancellationFeedbackSent = false
 	let cancellationFeedbackError: string | null = null
 	const selectedIntervalByPlan: Record<PaidTier, BillingInterval> = {
-		standard: 'month',
 		pro: 'month',
 	}
 	/** Payload last applied to the closure state above. */
@@ -240,46 +238,22 @@ export function AccountBillingRoute(handle: Handle) {
 		checkoutPending = { plan, interval }
 		message = null
 		handle.update()
-		try {
-			const response = await fetch(billingCheckoutApiPath, {
-				method: 'POST',
-				headers: jsonRequestHeaders,
-				credentials: 'include',
-				body: JSON.stringify({ plan, interval }),
-			})
-			const payload = await readJson<{
-				ok?: boolean
-				url?: string
-				mode?: CheckoutMode
-				error?: string
-			}>(response)
-			if (response.ok && payload?.ok && typeof payload.url === 'string') {
-				if (payload.mode === 'portal') {
-					// More than one active subscription: the portal update flow
-					// cannot pick one, so the customer manages them in Stripe.
-					message = multipleSubscriptionsMessage
-					messageTone = 'info'
-					handle.update()
-				}
-				window.location.assign(payload.url)
-				return
+		const result = await requestProCheckout(interval)
+		if (result.ok) {
+			if (result.mode === 'portal') {
+				// More than one active subscription: the portal update flow
+				// cannot pick one, so the customer manages them in Stripe.
+				message = multipleSubscriptionsMessage
+				messageTone = 'info'
+				handle.update()
 			}
-			message =
-				typeof payload?.error === 'string' && payload.error.length > 0
-					? payload.error
-					: 'Unable to start checkout. Try again shortly.'
-			messageTone = 'error'
-			checkoutPending = null
-			handle.update()
-		} catch (error) {
-			message =
-				error instanceof Error
-					? error.message
-					: 'Unable to start checkout. Try again shortly.'
-			messageTone = 'error'
-			checkoutPending = null
-			handle.update()
+			window.location.assign(result.url)
+			return
 		}
+		message = result.error
+		messageTone = 'error'
+		checkoutPending = null
+		handle.update()
 	}
 
 	async function submitCancellationFeedback() {
@@ -343,6 +317,12 @@ export function AccountBillingRoute(handle: Handle) {
 		const paymentActionNeeded =
 			subscriptionStatus === 'past_due' || subscriptionStatus === 'unpaid'
 		const activeStripePlan = resolveActiveStripePlan(billing)
+		const retiredPlan = isRetiredPaidSubscription(billing)
+		const canSwitchToPro =
+			retiredPlan &&
+			billing != null &&
+			billing.purchasablePlans.includes('pro') &&
+			!paymentActionNeeded
 		const showManageCta = Boolean(
 			billing?.configured && billing.hasStripeCustomer,
 		)
@@ -369,7 +349,7 @@ export function AccountBillingRoute(handle: Handle) {
 			>
 				<AccountPageHeader
 					title="Billing"
-					description="View your plan, subscribe to Standard or Pro, manage your Stripe subscription, and share your referral link."
+					description="Your plan, Stripe subscription, and referral link."
 					currentHref={currentHref}
 				/>
 
@@ -395,7 +375,7 @@ export function AccountBillingRoute(handle: Handle) {
 						{billing.configured && !billing.hasStripeCustomer ? (
 							<AccountManagementMessage tone="info">
 								{billing.purchasablePlans.length > 0
-									? 'No Stripe customer is linked yet. Subscribe to a paid plan to create one and manage billing in Stripe.'
+									? 'No Stripe customer is linked yet. Subscribe to Pro to create one and manage billing in Stripe.'
 									: 'No paid tier is configured for checkout on this deployment.'}
 							</AccountManagementMessage>
 						) : null}
@@ -456,6 +436,39 @@ export function AccountBillingRoute(handle: Handle) {
 									Your subscription is scheduled to cancel on{' '}
 									{formatCancelDate(billing.cancelAt)}.
 								</p>
+							) : null}
+							{billing.creditsEligible ? (
+								<p mix={css({ margin: 0 })}>
+									<a href={billing.creditsHref} mix={css(primaryLinkCss)}>
+										Manage credits
+									</a>
+								</p>
+							) : null}
+							{retiredPlan ? (
+								<>
+									<p mix={css(descriptionCss)}>Credits are available on Pro.</p>
+									{canSwitchToPro ? (
+										<div>
+											<button
+												type="button"
+												disabled={checkoutPending !== null}
+												mix={[
+													on(
+														'click',
+														() =>
+															void startCheckout(
+																'pro',
+																billing.stripeInterval ?? 'month',
+															),
+													),
+													css(primaryButtonCss),
+												]}
+											>
+												{checkoutPending ? 'Opening Stripe…' : 'Switch to Pro'}
+											</button>
+										</div>
+									) : null}
+								</>
 							) : null}
 						</AccountManagementPanel>
 

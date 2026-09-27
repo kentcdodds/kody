@@ -216,13 +216,13 @@ export function AdminUsersRoute(handle: Handle) {
 		}
 	}
 
-	// Plan changes move entitlement limits, so the drill-down must refetch
-	// even though the selected user did not change. Dropping the cached data
-	// keeps stale limits from rendering while the refetch is in flight.
+	// Plan changes and credit grants move limits, so the same user refetches;
+	// dropping the cache keeps stale limits off screen while that runs.
 	function invalidateUsage() {
 		usageData = null
 		usageLoadedForStableUserId = null
 		usageFailedForStableUserId = null
+		handle.update()
 	}
 
 	// Any refresh of `users` may carry a newer stored plan, so drop the
@@ -787,6 +787,7 @@ export function AdminUsersRoute(handle: Handle) {
 										handle.update()
 									},
 									onSubmitPlanAction: () => void submitPlanAction(),
+									onCreditsGranted: invalidateUsage,
 									onSubmitModerationAction: (action) =>
 										void submitModerationAction(action),
 								})

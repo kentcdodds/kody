@@ -133,7 +133,8 @@ test('FAQ, pricing, and home SSR copy send visitors to create an account', async
 	)
 
 	const pricing = await (await renderMarketing('/pricing')).text()
-	for (const planId of ['plan-free', 'plan-standard', 'plan-pro'] as const) {
+	expect(pricing).not.toContain('id="plan-standard"')
+	for (const planId of ['plan-free', 'plan-pro'] as const) {
 		expect(anchors(namedSection(pricing, planId))).toEqual(
 			expect.arrayContaining([expect.objectContaining({ href: '/signup' })]),
 		)

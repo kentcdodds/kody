@@ -427,6 +427,7 @@ export function accountNavItemsFor(input: {
 				]
 			: []),
 		{ href: '/account/billing', label: 'Billing', icon: 'wallet' },
+		{ href: '/account/credits', label: 'Credits', icon: 'lock-unlocked' },
 		{ href: '/account/usage', label: 'Usage', icon: 'chart' },
 		{ href: '/account/activity', label: 'Activity', icon: 'trending-up' },
 		{ href: '/account/jobs', label: 'Jobs', icon: 'briefcase' },

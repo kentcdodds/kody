@@ -241,7 +241,7 @@ export function DiscordRoute(handle: Handle) {
 					</h1>
 					<p mix={css(pageDescriptionCss)}>
 						Connect Discord to join the official Kody server and get the member
-						role — plus Standard or Pro if you subscribe.
+						role — plus a plan role if you subscribe.
 					</p>
 				</header>
 

@@ -9,6 +9,7 @@ import {
 	UsageResourceName,
 	accountUsageWarningsPanelTitle,
 	computeAccountUsageOverageNotice,
+	creditsActionForWallet,
 	formatEntitlementUsedPercent,
 	hasReachedEntitlementLimit,
 	hotterUsagePercent,
@@ -37,7 +38,7 @@ function overage(
 		percentOfLimit?: number
 	},
 ): AccountUsageComputeOverage {
-	const percentOfLimit = overrides.percentOfLimit ?? 0.9
+	const { percentOfLimit = 0.9, ...rest } = overrides
 	return {
 		meters: [
 			{
@@ -49,43 +50,87 @@ function overage(
 				include: 50,
 				percentOfLimit,
 				overEightyPercent: percentOfLimit >= 0.8,
+				creditsStatus: percentOfLimit >= 1 ? 'add_credits' : 'within_include',
 			},
 		],
-		disposition: 'dry_run',
-		totalCents: 0,
-		chargingEnabled: true,
-		hasStripeCustomer: true,
-		legacyUnbilled: false,
-		...overrides,
+		creditWallet: 'empty',
+		creditsStatus: 'within_include',
+		creditsCostMicroUsd: 0,
+		...rest,
 	}
 }
 
-test('approaching notice mentions billing only while charging is enabled', () => {
-	expect(
-		computeAccountUsageOverageNotice(
-			overage({ chargingEnabled: true, disposition: 'invoice' }),
-		),
-	).toMatchObject({
+test('compute notice points capped accounts at credits, never at invoices', () => {
+	const approaching = computeAccountUsageOverageNotice(overage({}), 'pro')
+	expect(approaching).toMatchObject({
 		title: 'Approaching compute includes',
+		action: { label: 'Add credits', href: '/account/credits' },
 	})
+
+	const emptyWallet = computeAccountUsageOverageNotice(
+		overage({ percentOfLimit: 1.2, creditsStatus: 'add_credits' }),
+		'pro',
+	)
+	expect(emptyWallet).toMatchObject({
+		tone: 'warn',
+		action: { label: 'Add credits', href: '/account/credits' },
+	})
+
+	const free = computeAccountUsageOverageNotice(
+		overage({
+			percentOfLimit: 1.2,
+			creditWallet: 'none',
+			creditsStatus: 'switch_to_pro',
+		}),
+		'free',
+	)
+	expect(free).toMatchObject({
+		body: 'Switch to Pro for a larger include and prepaid credits.',
+		action: { label: 'Switch to Pro', href: '/account/credits' },
+	})
+
+	const funded = computeAccountUsageOverageNotice(
+		overage({
+			percentOfLimit: 1.5,
+			creditWallet: 'funded',
+			creditsStatus: 'debiting_credits',
+			creditsCostMicroUsd: 1_240_000,
+		}),
+		'pro',
+	)
+	expect(funded).toMatchObject({ title: 'Using credits', action: null })
+	expect(funded?.body).toContain('$1.24')
+
+	for (const notice of [approaching, emptyWallet, free, funded]) {
+		expect(notice?.body).not.toMatch(/invoice|billed|payment method|overage/i)
+	}
+
 	expect(
-		computeAccountUsageOverageNotice(
-			overage({ chargingEnabled: false, disposition: 'dry_run' }),
-		),
-	).toMatchObject({
-		title: 'Compute overage billing is paused',
-	})
+		computeAccountUsageOverageNotice(overage({ percentOfLimit: 0.2 }), 'pro'),
+	).toBeNull()
 	expect(
 		computeAccountUsageOverageNotice(
 			overage({
-				chargingEnabled: false,
-				disposition: 'dry_run',
-				percentOfLimit: 1.2,
+				percentOfLimit: 1.5,
+				creditWallet: 'none',
+				creditsStatus: 'not_charged',
 			}),
+			'max',
 		),
-	).toMatchObject({
-		title: 'Compute overage billing is paused',
+	).toBeNull()
+})
+
+test('credits action follows the wallet: add, switch, or nothing', () => {
+	expect(creditsActionForWallet('empty', 'pro')).toEqual({
+		label: 'Add credits',
+		href: '/account/credits',
 	})
+	expect(creditsActionForWallet('none', 'standard')).toEqual({
+		label: 'Switch to Pro',
+		href: '/account/credits',
+	})
+	expect(creditsActionForWallet('funded', 'pro')).toBeNull()
+	expect(creditsActionForWallet('none', 'max')).toBeNull()
 })
 
 test('hotterUsagePercent uses the closer of daily and weekly windows', () => {

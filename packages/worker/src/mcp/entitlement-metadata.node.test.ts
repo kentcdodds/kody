@@ -91,7 +91,7 @@ test('entitlement metadata is only for known plan-limit and quota denials', () =
 		plan: 'free',
 		limit: 50,
 		current: 50,
-		disposition: 'soft_block',
+		creditsStatus: 'add_credits',
 	})
 	expect(toMcpEntitlementMetadata(computeDenial)).toMatchObject({
 		code: computeOverageLimitErrorCode,
@@ -99,7 +99,7 @@ test('entitlement metadata is only for known plan-limit and quota denials', () =
 		plan: 'free',
 		limit: 50,
 		current: 50,
-		disposition: 'soft_block',
+		creditsStatus: 'add_credits',
 	})
 	expect(
 		toMcpEntitlementMetadata(new Error(computeDenial.message)),
@@ -109,7 +109,7 @@ test('entitlement metadata is only for known plan-limit and quota denials', () =
 		plan: 'free',
 		limit: 50,
 		current: 50,
-		disposition: 'soft_block',
+		creditsStatus: 'add_credits',
 	})
 
 	expect(toMcpEntitlementMetadata(new Error('Boom'))).toBeUndefined()
