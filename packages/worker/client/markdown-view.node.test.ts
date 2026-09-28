@@ -419,6 +419,44 @@ test('first-party guides render tip callouts and details; untrusted markdown sta
 	expect(untrusted).toContain('&lt;summary')
 })
 
+test('first-party watch blocks render a lite youtube player; untrusted markdown stays a quote', async () => {
+	const markdown = [
+		'> [!WATCH] https://youtu.be/_EJTrJFLa3g',
+		'> Watch: Make your agent safe and autonomous',
+		'',
+		'> [!WATCH] https://example.com/watch?v=_EJTrJFLa3g',
+		'> Watch: Not YouTube',
+	].join('\n')
+
+	const firstParty = await renderToString(
+		jsx('div', {
+			children: renderMarkdownNodes(markdown, {
+				linkPolicy: 'first-party',
+				headingOffset: 0,
+				linkRel: 'noopener noreferrer',
+			}),
+		}),
+	)
+	expect(firstParty).toContain('data-doc-youtube')
+	expect(firstParty).toContain('data-testid="doc-youtube-play"')
+	expect(firstParty).toContain('/youtube-thumb/_EJTrJFLa3g')
+	expect(firstParty).toContain('Play Make your agent safe and autonomous')
+	expect(firstParty).toContain(
+		'href="https://www.youtube.com/watch?v=_EJTrJFLa3g"',
+	)
+	expect(firstParty).toContain('Watch: Make your agent safe and autonomous')
+	expect(firstParty).not.toContain('youtube-nocookie.com')
+	expect(firstParty).not.toContain('[!WATCH] https://youtu.be/_EJTrJFLa3g')
+	expect(firstParty).toContain('<blockquote>')
+	expect(firstParty).toContain('Not YouTube')
+
+	const untrusted = await renderMarkdown(markdown)
+	expect(untrusted).not.toContain('data-doc-youtube')
+	expect(untrusted).not.toContain('youtube-nocookie.com')
+	expect(untrusted).toContain('[!WATCH]')
+	expect(untrusted).toContain('<blockquote>')
+})
+
 test('markdown tables keep last-column nowrap only when every last cell is a short label', async () => {
 	const compact = await renderMarkdown(
 		[

@@ -21,6 +21,10 @@ and a package can wake that agent when a message needs one, the way Kent's
 grok-bot does below. To give people a familiar chat surface for your agent, see
 [Text your agent](./text-your-agent.md).
 
+Watch:
+[Kody Improves itself from your feedback](https://www.youtube.com/watch?v=QYOTz0P33tY)
+for one inbox that wakes an agent from mail.
+
 Live public behavior:
 [`@kentcdodds/grok-bot`](https://kody.codes/@kentcdodds/grok-bot)
 `./handle-email-message-received`. Mail to `kentcdodds+patch@inbox.kody.codes`

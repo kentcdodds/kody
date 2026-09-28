@@ -31,7 +31,8 @@ it. Capabilities, saved packages, integrations, secrets, and official guides
 stay behind those two doors instead of appearing as a tool list.
 
 This page is the playbook for those two calls. The same tools drive the loop in
-[How Kody works](./how-kody-works.md).
+[How Kody works](./how-kody-works.md). Watch:
+[How Kody Gives Your Agents a Shared Home](https://www.youtube.com/watch?v=h5G8uaZHrVI).
 
 ## Search
 

@@ -60,6 +60,9 @@ a schedule can mail you only when something actually happened.
 This page is the playbook. The same story is an interactive transcript at
 `/docs/how-kody-works` on the origin you fetched this guide from.
 
+> [!WATCH] https://www.youtube.com/watch?v=h5G8uaZHrVI Watch: How Kody Gives
+> Your Agents a Shared Home
+
 ## The loop
 
 1. **Ask once.** "What did my favorite bot ship recently on GitHub?" Search

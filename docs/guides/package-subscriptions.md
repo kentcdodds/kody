@@ -18,6 +18,9 @@ Use package subscriptions when a saved package should react to Kody-owned event
 topics. The saved package remains the top-level entity; subscriptions are nested
 manifest metadata and package runtime handlers.
 
+Watch:
+[Kody subscriptions: email and Discord events wake your agents](https://www.youtube.com/watch?v=8I6kYYiaqis).
+
 ## Manifest shape
 
 Declare subscriptions in `package.json#kody.subscriptions` as a record keyed by

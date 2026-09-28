@@ -34,6 +34,8 @@ something Kody cannot reach:
 - **Home devices.** Lights, TVs, thermostats, shades, and similar LAN APIs stay
   on the home process. Kody calls purpose-built tools; it never joins the home
   network.
+  [Shade automation from an INTENT.md — deterministic code, no model in the loop](https://www.youtube.com/watch?v=OZKDO9Pzmo0)
+  is one example.
 - **Local CLIs.** Wrap explicit commands and validate every argument. Do not
   expose an unrestricted shell merely to make a CLI reachable.
 - **NAS-hosted automations.** Run the server in Docker on an always-on box so

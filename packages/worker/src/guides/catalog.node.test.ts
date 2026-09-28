@@ -20,6 +20,7 @@ import {
 	listDocsNavSlugs,
 	unadvertisedDocSlugs,
 } from '#universal/docs-nav.ts'
+import { listDocWatchEmbeds } from '#universal/doc-youtube.ts'
 import { landingFactoryBeats } from '#universal/landing-factory-beats.ts'
 
 test('guide catalog parses every guide with unique ids and slugs', () => {
@@ -186,6 +187,12 @@ test('docs nav covers every advertised doc exactly once and nothing else', () =>
 		expect(toGuideSummary(guide).section).not.toBeNull()
 	}
 	expect(toGuideSummary(getGuideBySlug('values')!).section).toBeNull()
+})
+
+test('each guide embeds at most one youtube watch block', () => {
+	for (const guide of guides) {
+		expect(listDocWatchEmbeds(guide.body).length).toBeLessThanOrEqual(1)
+	}
 })
 
 test('agent playbooks are marked and merged docs keep resolving through aliases', () => {

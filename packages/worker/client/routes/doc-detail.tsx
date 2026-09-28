@@ -38,6 +38,7 @@ import {
 	packageShareGrantsFlagKey,
 	secretProvidersFlagKey,
 } from '#universal/feature-flags/registry.ts'
+import { extractDocWatchMarkdown } from '#universal/doc-youtube.ts'
 import { colors, radius } from '#universal/styles/tokens.ts'
 import { userHasRole } from '#universal/permissions.ts'
 import {
@@ -69,7 +70,8 @@ const interactiveDocRenderers: Readonly<
  * code blocks → previous/next → a quiet foot with the raw markdown twin for
  * agents (`data-rmx-document` so the SPA does not intercept
  * `/docs/:slug.md`). Interactive slugs (how-kody-works, google-oauth) swap
- * the prose body for a transcript walkthrough. Body headings get kebab-case
+ * the prose body for a transcript walkthrough. A `[!WATCH]` block in that
+ * body still renders above the walkthrough. Body headings get kebab-case
  * ids so in-doc and legacy fragment links land.
  */
 
@@ -200,20 +202,39 @@ export function DocDetailRoute(handle: Handle) {
 	// the rendered body per markdown string (same policy as MarkdownView).
 	let renderedForBody: string | null = null
 	let renderedBody: Array<RemixNode> = []
+	let renderedWatchForBody: string | null = null
+	let renderedWatch: Array<RemixNode> = []
+
+	const docMarkdownOptions = {
+		headingOffset: 0,
+		linkRel: 'noopener noreferrer',
+		linkPolicy: 'first-party' as const,
+		copyCodeBlocks: true,
+		headingIds: true,
+	}
 
 	function renderDocBody(doc: DocDetailLoaderData) {
 		if (renderedForBody !== doc.body) {
 			renderedForBody = doc.body
 			renderedBody = renderMarkdownNodes(stripLeadingH1(doc.body), {
-				headingOffset: 0,
-				linkRel: 'noopener noreferrer',
-				linkPolicy: 'first-party',
-				copyCodeBlocks: true,
-				headingIds: true,
+				...docMarkdownOptions,
 				fences: doc.bodyFences,
 			})
 		}
 		return renderedBody
+	}
+
+	function renderInteractiveWatch(doc: DocDetailLoaderData) {
+		if (!interactiveDocRenderers[doc.slug]) return null
+		if (renderedWatchForBody !== doc.body) {
+			renderedWatchForBody = doc.body
+			const watchMarkdown = extractDocWatchMarkdown(stripLeadingH1(doc.body))
+			renderedWatch = watchMarkdown
+				? renderMarkdownNodes(watchMarkdown, docMarkdownOptions)
+				: []
+		}
+		if (renderedWatch.length === 0) return null
+		return <div mix={css(docProseCss)}>{renderedWatch}</div>
 	}
 
 	return () => {
@@ -325,6 +346,8 @@ export function DocDetailRoute(handle: Handle) {
 							mix={css(docImageCss)}
 						/>
 					) : null}
+
+					{renderInteractiveWatch(doc)}
 
 					{interactiveDocRenderers[doc.slug]?.(
 						doc.walkthroughHighlights,

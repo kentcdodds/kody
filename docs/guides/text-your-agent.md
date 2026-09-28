@@ -22,6 +22,10 @@ tools that already exist.
 [What is Kody?](./what-is-kody.md) describes how your agent and Kody split the
 work in general. This page is the worked example for a chat surface.
 
+Also watch:
+[Tesla Grok talks to my Grok bots which talk to Kody](https://www.youtube.com/watch?v=wqbNwBHy2sw)
+and [I built a better OpenClaw](https://www.youtube.com/watch?v=TnztlHzhYvk).
+
 ## The three layers
 
 Name them once and keep them:

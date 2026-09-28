@@ -8,7 +8,8 @@ import { colors, radius, typography } from '#universal/styles/tokens.ts'
 
 /**
  * First-party lite YouTube player: poster + play, then the privacy-enhanced
- * embed. Used by the site-wide `/?youtubeId=` overlay and the homepage hero.
+ * embed. Used by the site-wide `/?youtubeId=` overlay, the homepage hero,
+ * and docs `[!WATCH]` figures.
  * Playback starts on click so `prefers-reduced-motion` never autoplays; the
  * one exception is `autoplay`, which callers set only after the visitor has
  * already picked a video (a click is the gesture). When `videoId` changes the
@@ -57,6 +58,7 @@ export function YouTubeLightPlayer(
 		renderedVideoId = next.renderedVideoId
 		playing = next.playing
 		const title = handle.props.title ?? 'YouTube video'
+		const playLabel = handle.props.title ? `Play ${title}` : 'Play video'
 		if (playing) {
 			return (
 				<iframe
@@ -93,7 +95,7 @@ export function YouTubeLightPlayer(
 				<span mix={css(playBadgeCss)} aria-hidden="true">
 					▶
 				</span>
-				<span mix={css(visuallyHiddenCss)}>Play video</span>
+				<span mix={css(visuallyHiddenCss)}>{playLabel}</span>
 			</button>
 		)
 	}
@@ -115,6 +117,10 @@ const posterButtonCss = {
 	backgroundColor: '#000',
 	cursor: 'pointer',
 	position: 'relative' as const,
+	'&:focus-visible': {
+		outline: 'none',
+		boxShadow: `inset 0 0 0 3px ${colors.primary}`,
+	},
 }
 
 const posterImageCss = {

@@ -8,14 +8,18 @@
  *   types, so every string goes through the framework's escaping.
  * - Raw HTML tokens (block and inline) are rendered as escaped literal text,
  *   never as markup. First-party guides (`linkPolicy: 'first-party'`) may
- *   additionally emit allowlisted `<details>` / `<summary>` and GitHub-style
- *   `> [!TIP]` callouts; untrusted markdown never takes that path.
+ *   additionally emit allowlisted `<details>` / `<summary>`, GitHub-style
+ *   `> [!TIP]` callouts, and `> [!WATCH]` YouTube figures (validated video
+ *   id, privacy-enhanced embed, click to play). Untrusted markdown never
+ *   takes that path.
  * - Fenced code paints pre-tokenized highlight data as JSX text and
  *   inline styles — never `innerHTML` — so highlighting cannot introduce
  *   markup. Missing tokens fall back to escaped plaintext.
  * - Resource-loading elements are not emitted by default (`<img>`,
- *   `<iframe>`, media, etc.). Community READMEs may opt in to `<img>` only
- *   for in-repo relative paths rewritten to this package's first-party
+ *   `<iframe>`, media, etc.). The one iframe exception is a first-party
+ *   `[!WATCH]` block, which mounts the existing lite player. Community
+ *   READMEs may opt in to `<img>` only for in-repo relative paths rewritten
+ *   to this package's first-party
  *   `/assets/` route. Remote, protocol-relative, and user-scope URLs stay
  *   links (or plain text) so a README cannot hotlink arbitrary hosts or
  *   point the browser at hosted package endpoints (`/@username/packages/*`
@@ -33,6 +37,7 @@
 import { lexer, type Token, type Tokens } from 'marked'
 import { type Handle, type RemixNode, css } from 'remix/ui'
 import { CopyCodeBlock } from '#client/copy-code-block.tsx'
+import { DocYoutubeEmbed } from '#client/doc-youtube-embed.tsx'
 import { renderMarkdownHeadingAnchor } from '#client/markdown-heading-anchor.tsx'
 import {
 	coalesceFirstPartyDetails,
@@ -42,6 +47,7 @@ import {
 	stripFirstPartyAlertMarker,
 } from '#client/markdown-first-party.ts'
 import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
+import { parseDocWatchBlock } from '#universal/doc-youtube.ts'
 import {
 	plainHighlightedCode,
 	type HighlightedCode,
@@ -437,6 +443,17 @@ function renderToken(
 			return <p key={key}>{renderTokens(token.tokens, options)}</p>
 		case 'blockquote': {
 			if (options.linkPolicy === 'first-party') {
+				const watch = parseDocWatchBlock(token.raw)
+				if (watch) {
+					return (
+						<DocYoutubeEmbed
+							key={key}
+							videoId={watch.videoId}
+							title={watch.title}
+							label={watch.label}
+						/>
+					)
+				}
 				const alertKind = firstPartyAlertKind(token)
 				if (alertKind) {
 					const accentColor =

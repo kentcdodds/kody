@@ -22,6 +22,10 @@ host needs, and you can keep using them. They are also invisible to every other
 agent you connect. Put the facts you want every agent to know in Kody memory;
 Kody is the system of record for the state that should follow you.
 
+Watch:
+[How Kody Gives Your Agents a Shared Home](https://www.youtube.com/watch?v=h5G8uaZHrVI).
+The written loop is [How Kody works](./how-kody-works.md).
+
 ## What a memory is for
 
 Memories hold information worth carrying between conversations and between

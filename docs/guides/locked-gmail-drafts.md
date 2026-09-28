@@ -67,6 +67,9 @@ or a support thread and leave it in Drafts. The human opens Gmail, edits, and
 sends. OAuth cannot say that. The published export can — and the publish lock
 keeps a later agent from widening it.
 
+> [!WATCH] https://www.youtube.com/watch?v=_EJTrJFLa3g Watch: Make your agent
+> safe and autonomous
+
 ## What lock does
 
 A **package** is the declared-authority unit: named exports, jobs, and other

@@ -19,6 +19,11 @@ that uses a secret. It can never read one — including via `packageSecrets.get`
 which returns only an opaque `{{secret:…}}` placeholder for platform use sites
 (fetch, `secretHeaders`, `secretJwtSign`) to resolve.
 
+Watch:
+[Make your agent safe and autonomous](https://www.youtube.com/watch?v=_EJTrJFLa3g)
+for the locked Gmail drafts loop, written up in
+[Gmail drafts without send](./locked-gmail-drafts.md).
+
 ## The rule: there is no `secret_get`
 
 The secrets capabilities are `secretList`, `secretSet`, `secretSetMany`,

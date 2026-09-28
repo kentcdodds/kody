@@ -22,6 +22,12 @@ There is no separate Kody chat app to learn.
 Getting started is three steps, and the in-app page at `/onboarding` walks you
 through each one.
 
+> [!WATCH] https://www.youtube.com/watch?v=F_7hefxmEIw Watch: Install the Kody
+> ChatGPT plugin — web, desktop, and mobile
+
+Also watch:
+[Raycast runs Kody scripts — add a command with an agent in seconds](https://www.youtube.com/watch?v=OgQajyS0Sws).
+
 ## Before you start
 
 - **A Kody account with a verified email.** Authorize cannot finish, and MCP
@@ -96,7 +102,8 @@ login, new machine, reinstall). Connect it the same way, then paste the
 portability prompt. The new agent loads
 `search({ entity: "guide:portability" })`, searches your account, and reuses the
 memory or package you just made — in a different product, with no setup
-repeated.
+repeated. Watch:
+[Build in Cursor, then run it from Claude Code or ChatGPT](https://www.youtube.com/watch?v=iGMkgjXc8Ho).
 
 Connecting that second agent gives Pro free for two weeks, once per account.
 

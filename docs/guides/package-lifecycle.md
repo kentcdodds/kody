@@ -14,6 +14,14 @@ Use this guide to decide whether to reuse existing behavior, explore with
 `execute`, or create durable repo-backed package code. Use it before scheduling
 new package behavior.
 
+Also watch:
+
+- [Build a Software Pipeline: Help your agent help you](https://www.youtube.com/watch?v=WjogtbCssZc),
+  with the written app guide in [Package apps](./package-apps.md).
+- [Share and fork community packages — then adapt them with your agent](https://www.youtube.com/watch?v=vZecfnLjEXA)
+  for the public-package path.
+- [Kody enables awesome triage-to-production workflows](https://www.youtube.com/watch?v=aySqbxQo9lM).
+
 ## Choose the smallest durable surface
 
 ### Invoke an existing package or capability

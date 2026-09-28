@@ -29,6 +29,12 @@ Prefer the event that actually describes the moment — a webhook or a
 subscription — and reach for a schedule when no event exists. Cron is fine; it
 is just not the hero.
 
+> [!WATCH] https://www.youtube.com/watch?v=o5L5OprLhBg Watch: Kody fixes a
+> Stripe webhook after we renamed the domain
+
+Also watch:
+[Shade automation from an INTENT.md — deterministic code, no model in the loop](https://www.youtube.com/watch?v=OZKDO9Pzmo0).
+
 ## Jobs — recurring schedules that travel with the package
 
 A job is declared in the package manifest, so the schedule ships with the
