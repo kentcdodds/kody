@@ -107,6 +107,8 @@ test('control-kody parses commands, maps every required route, and drives a seed
 			name: 'badSeed',
 			value: 'unused',
 		},
+		dump: false,
+		contains: [],
 	})
 	expect(
 		parseControlArgs([
