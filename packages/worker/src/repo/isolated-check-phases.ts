@@ -2,7 +2,7 @@ import { errorCauseChainIncludes } from '@kody-internal/shared/error-message.ts'
 import { isDurableObjectIsolateResourceLimitResetMessage } from '#worker/sentry-options.ts'
 import {
 	type PackageBundleTarget,
-	type PackageCallableTypecheckTarget,
+	type PackageTypecheckTarget,
 } from './checks.ts'
 import { isolatedRunnerResourceLimitAdvice } from './isolated-runner-limit-message.ts'
 
@@ -55,7 +55,7 @@ export type IsolatedCheckPhaseRequest =
 			phase: 'typecheck'
 			stagingKey: string
 			userId: string
-			typecheckTargets: Array<PackageCallableTypecheckTarget>
+			typecheckTargets: Array<PackageTypecheckTarget>
 	  }
 
 /**

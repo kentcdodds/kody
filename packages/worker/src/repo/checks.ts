@@ -29,6 +29,10 @@ import {
 	buildKodyImportableModuleBundle,
 	buildKodyModuleBundle,
 } from '#worker/package-runtime/module-graph.ts'
+import {
+	collectReachableSourceFilePaths,
+	readRootPackage,
+} from '#worker/package-runtime/module-graph-workspace.ts'
 import { validatePackageAppAssetsDirectory } from '#worker/package-runtime/package-app-assets-directory.ts'
 import { validatePackageAppGraphSeparation } from '#worker/package-runtime/package-app-client-graph.ts'
 import { remixPackageName } from '#worker/package-runtime/package-app-remix-subpaths.ts'
@@ -283,28 +287,47 @@ async function* workspaceFilesForSnapshot(input: {
 	}
 }
 
+type TypecheckDiagnostic = {
+	messageText: unknown
+	code?: number
+	start?: number
+	length?: number
+	file?: {
+		text?: string
+		getLineAndCharacterOfPosition(pos: number): {
+			line: number
+			character: number
+		}
+	}
+}
+
+function flattenDiagnosticMessageText(messageText: unknown): string {
+	if (typeof messageText === 'string') return messageText
+	if (
+		messageText &&
+		typeof messageText === 'object' &&
+		'messageText' in messageText &&
+		typeof messageText.messageText === 'string'
+	) {
+		const next = 'next' in messageText ? messageText.next : undefined
+		const nested = Array.isArray(next)
+			? next.map((entry) => flattenDiagnosticMessageText(entry))
+			: []
+		return [messageText.messageText, ...nested].join(' ')
+	}
+	return JSON.stringify(messageText)
+}
+
 function formatTypecheckDiagnostics(
 	fileName: string,
-	diagnostics: Array<{
-		messageText: unknown
-		start?: number
-		file?: {
-			getLineAndCharacterOfPosition(pos: number): {
-				line: number
-				character: number
-			}
-		}
-	}>,
+	diagnostics: Array<TypecheckDiagnostic>,
 ) {
 	return diagnostics.map((diagnostic) => {
 		const location =
 			typeof diagnostic.start === 'number' && diagnostic.file
 				? diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start)
 				: null
-		const message =
-			typeof diagnostic.messageText === 'string'
-				? diagnostic.messageText
-				: JSON.stringify(diagnostic.messageText)
+		const message = flattenDiagnosticMessageText(diagnostic.messageText)
 		return location
 			? `${fileName}:${location.line + 1}:${location.character + 1} ${message}`
 			: `${fileName} ${message}`
@@ -478,8 +501,15 @@ export type PackageBundleTarget = {
 	bundleKind: 'app' | 'client' | 'callable' | 'importable'
 }
 
-export type PackageCallableTypecheckTarget = {
+/**
+ * `callable` entrypoints (jobs, subscription handlers, retrievers) are invoked
+ * through their default export, so they must default export a function.
+ * `module` entrypoints are `package.json#exports` modules, which may expose
+ * only named exports.
+ */
+export type PackageTypecheckTarget = {
 	path: string
+	kind: 'callable' | 'module'
 	emittedEventTopics: Array<string>
 }
 
@@ -539,22 +569,26 @@ function collectPackageBundleTargets(manifest: AuthoredPackageJson) {
 	return Array.from(targets.values()).sort(compareBundleTargets)
 }
 
-function collectPackageCallableTypecheckTargets(manifest: AuthoredPackageJson) {
-	const targets = new Map<string, PackageCallableTypecheckTarget>()
+function collectPackageTypecheckTargets(manifest: AuthoredPackageJson) {
+	const targets = new Map<string, PackageTypecheckTarget>()
 	const emittedEventTopics = Object.keys(manifest.kody.emits ?? {})
-	const remember = (path: string) => {
+	const remember = (path: string, kind: PackageTypecheckTarget['kind']) => {
 		const normalizedPath = normalizePackageWorkspacePath(path)
-		if (targets.has(normalizedPath)) return
+		const existing = targets.get(normalizedPath)
+		if (existing && (existing.kind === 'callable' || kind === 'module')) {
+			return
+		}
 		targets.set(normalizedPath, {
 			path: normalizedPath,
+			kind,
 			emittedEventTopics,
 		})
 	}
 	for (const job of Object.values(manifest.kody.jobs ?? {})) {
-		remember(job.entry)
+		remember(job.entry, 'callable')
 	}
 	for (const subscription of listPackageSubscriptions(manifest)) {
-		remember(subscription.handler)
+		remember(subscription.handler, 'callable')
 	}
 	for (const retriever of listPackageRetrievers(manifest)) {
 		remember(
@@ -562,7 +596,26 @@ function collectPackageCallableTypecheckTargets(manifest: AuthoredPackageJson) {
 				manifest,
 				exportName: retriever.exportName,
 			}),
+			'callable',
 		)
+	}
+	for (const target of collectPublishedPackageArtifactTargets(manifest)) {
+		if (target.bundleKind === 'importable-module') {
+			remember(target.entryPoint, 'module')
+		}
+	}
+	for (const exportTarget of Object.values(manifest.exports)) {
+		// Declaration files are skipped by `skipLibCheck`, so only authored
+		// TypeScript `types` targets add diagnostics.
+		if (
+			typeof exportTarget !== 'string' &&
+			exportTarget.types &&
+			!isTypeDeclarationFilePath(
+				normalizePackageWorkspacePath(exportTarget.types),
+			)
+		) {
+			remember(exportTarget.types, 'module')
+		}
 	}
 	return Array.from(targets.values())
 }
@@ -745,56 +798,130 @@ export async function validatePackageBundles(input: {
 	}
 }
 
+const typecheckableSourceFilePattern = /\.(?:[cm]?ts|tsx)$/
+
+/**
+ * The check filesystem has no `node_modules`, so bare specifiers (npm
+ * packages, `remix/*`, `kody:@scope/package`) never resolve to types. Those
+ * imports degrade to `any` instead of failing the check; bundling still
+ * verifies that they resolve.
+ */
+const unresolvedModuleDiagnosticCodes = new Set([2307, 2580, 2591, 2792, 7016])
+const missingJsxRuntimeTypesDiagnosticCodes = new Set([2875, 7026])
+
+function readDiagnosticModuleSpecifier(diagnostic: TypecheckDiagnostic) {
+	const text = diagnostic.file?.text
+	if (
+		typeof text !== 'string' ||
+		typeof diagnostic.start !== 'number' ||
+		typeof diagnostic.length !== 'number'
+	) {
+		return null
+	}
+	const quoted = /^(['"`])(.*)\1$/.exec(
+		text.slice(diagnostic.start, diagnostic.start + diagnostic.length),
+	)
+	return quoted ? quoted[2]! : null
+}
+
+function isUnavailablePackageTypesDiagnostic(diagnostic: TypecheckDiagnostic) {
+	if (diagnostic.code == null) return false
+	if (missingJsxRuntimeTypesDiagnosticCodes.has(diagnostic.code)) return true
+	if (!unresolvedModuleDiagnosticCodes.has(diagnostic.code)) return false
+	const specifier = readDiagnosticModuleSpecifier(diagnostic)
+	return (
+		specifier != null &&
+		!specifier.startsWith('.') &&
+		!specifier.startsWith('/')
+	)
+}
+
+function collectReachableTypecheckSourceFiles(input: {
+	sourceFiles: Record<string, string>
+	targets: Array<PackageTypecheckTarget>
+}) {
+	const rootPackage = readRootPackage(input.sourceFiles)
+	const paths = new Set<string>()
+	for (const target of input.targets) {
+		for (const path of collectReachableSourceFilePaths({
+			files: input.sourceFiles,
+			entryPoint: target.path,
+			rootPackage,
+			includeTypeOnly: true,
+		})) {
+			if (typecheckableSourceFilePattern.test(path)) paths.add(path)
+		}
+	}
+	return Array.from(paths).sort((left, right) => left.localeCompare(right))
+}
+
+/**
+ * Without a package tsconfig.json, publish checks only the callable
+ * default-export contract. Existing packages were published without source
+ * diagnostics and Kody's ambient types (`kody:runtime` results are `unknown`,
+ * no Node built-in types) would fail most of them, so full source typecheck
+ * is opted into by shipping the tsconfig the author's editor already uses.
+ */
+const sourceFilesNotTypecheckedMessage =
+	'Package source files, including package.json exports, are not typechecked: add a root tsconfig.json to typecheck every TypeScript file reachable from exports, jobs, subscription handlers, and retrievers.'
+
 function getPackageTypecheckDiagnostics(input: {
-	targets: Array<PackageCallableTypecheckTarget>
+	targets: Array<PackageTypecheckTarget>
+	/**
+	 * When present, diagnostics inside these files are reported too. Runtime
+	 * rebuilds of already-published source always omit it and only verify the
+	 * callable contract, so the publish-time source check never breaks
+	 * packages retroactively.
+	 */
+	reachableSourceFilePaths?: Array<string>
 	languageService: {
-		getSemanticDiagnostics(path: string): Array<{
-			messageText: unknown
-			start?: number
-			file?: {
-				getLineAndCharacterOfPosition(pos: number): {
-					line: number
-					character: number
-				}
-			}
-		}>
+		getSemanticDiagnostics(path: string): Array<TypecheckDiagnostic>
 	}
 	fileSystem: {
 		write(path: string, content: string): void
 	}
 }): Array<{
 	fileName: string
-	diagnostics: Array<{
-		messageText: unknown
-		start?: number
-		file?: {
-			getLineAndCharacterOfPosition(pos: number): {
-				line: number
-				character: number
-			}
-		}
-	}>
+	diagnostics: Array<TypecheckDiagnostic>
 }> {
-	return input.targets.map((target) => {
+	const writePrelude = (emittedEventTopics: Array<string>) =>
 		input.fileSystem.write(
 			executeTypecheckPreludePath,
-			createExecuteTypecheckPrelude({
-				emittedEventTopics: target.emittedEventTopics,
-			}),
+			createExecuteTypecheckPrelude({ emittedEventTopics }),
 		)
+	const results: Array<{
+		fileName: string
+		diagnostics: Array<TypecheckDiagnostic>
+	}> = []
+	for (const target of input.targets) {
+		if (target.kind === 'module') continue
+		writePrelude(target.emittedEventTopics)
 		input.fileSystem.write(
 			repoCapabilitiesModuleTypecheckHarnessPath,
 			createRepoCapabilitiesModuleTypecheckHarness({
 				entryPoint: target.path,
 			}),
 		)
-		return {
+		results.push({
 			fileName: target.path,
 			diagnostics: input.languageService.getSemanticDiagnostics(
 				repoCapabilitiesModuleTypecheckHarnessPath,
 			),
-		}
-	})
+		})
+	}
+	if (!input.reachableSourceFilePaths) return results
+	writePrelude(input.targets.flatMap((target) => target.emittedEventTopics))
+	for (const path of input.reachableSourceFilePaths) {
+		results.push({
+			fileName: path,
+			diagnostics: input.languageService
+				.getSemanticDiagnostics(path)
+				.filter(
+					(diagnostic) => !isUnavailablePackageTypesDiagnostic(diagnostic),
+				),
+		})
+	}
+	return results
 }
 
 function formatPackageTypecheckDiagnostics(
@@ -891,6 +1018,7 @@ export async function typecheckPackageEntrypointsFromSourceFiles(input: {
 		const diagnostics = getPackageTypecheckDiagnostics({
 			targets: input.entryPoints.map((entryPoint) => ({
 				path: entryPoint.path,
+				kind: 'callable',
 				emittedEventTopics: input.emittedEventTopics ?? [],
 			})),
 			languageService,
@@ -1042,7 +1170,7 @@ function buildLintCheck(sourceFiles: Record<string, string>): {
  */
 export async function runPackageTypecheckLanguageService(input: {
 	sourceFiles: Record<string, string>
-	targets: Array<PackageCallableTypecheckTarget>
+	targets: Array<PackageTypecheckTarget>
 }): Promise<{ ok: boolean; message: string }> {
 	const { createFileSystemSnapshot } = await loadWorkerBundlerSnapshotTools()
 	const snapshot = await createFileSystemSnapshot(
@@ -1074,17 +1202,31 @@ export async function runPackageTypecheckLanguageService(input: {
 		},
 	)
 	try {
+		const reachableSourceFilePaths =
+			baseTsconfig == null
+				? undefined
+				: collectReachableTypecheckSourceFiles({
+						sourceFiles: input.sourceFiles,
+						targets: input.targets,
+					})
 		const diagnostics = getPackageTypecheckDiagnostics({
 			targets: input.targets,
+			reachableSourceFilePaths,
 			languageService,
 			fileSystem,
 		})
 		const ok = diagnostics.every((entry) => entry.diagnostics.length === 0)
+		if (!ok) {
+			return {
+				ok,
+				message: formatPackageTypecheckDiagnostics(diagnostics).join('\n'),
+			}
+		}
 		return {
 			ok,
-			message: ok
-				? `No semantic diagnostics for ${input.targets.length} callable package runtime entrypoint(s).`
-				: formatPackageTypecheckDiagnostics(diagnostics).join('\n'),
+			message: reachableSourceFilePaths
+				? `No semantic diagnostics for ${input.targets.length} package runtime entrypoint(s) across ${reachableSourceFilePaths.length} reachable source file(s).`
+				: `Default exports of ${input.targets.length} callable package runtime entrypoint(s) type-check as invocable functions. ${sourceFilesNotTypecheckedMessage}`,
 		}
 	} finally {
 		// Release the compiler program before anything else allocates.
@@ -1443,8 +1585,11 @@ export async function runRepoChecks(input: {
 	})
 
 	const bundleTargets = collectPackageBundleTargets(manifest)
-	const callableTypecheckTargets =
-		collectPackageCallableTypecheckTargets(manifest)
+	const packageTypecheckTargets = collectPackageTypecheckTargets(manifest)
+	const typecheckTargets =
+		snapshot.read(repoChecksSyntheticTsconfigPath) == null
+			? packageTypecheckTargets.filter((target) => target.kind === 'callable')
+			: packageTypecheckTargets
 	const missingBundleTargets = [
 		...new Set(
 			bundleTargets
@@ -1452,9 +1597,9 @@ export async function runRepoChecks(input: {
 				.filter((path) => snapshot.read(path) == null),
 		),
 	]
-	const missingCallableTypecheckTargets = [
+	const missingTypecheckTargets = [
 		...new Set(
-			callableTypecheckTargets
+			typecheckTargets
 				.map((target) => target.path)
 				.filter((path) => snapshot.read(path) == null),
 		),
@@ -1480,8 +1625,7 @@ export async function runRepoChecks(input: {
 		? createIsolatedCheckPhaseRunner(bundleContext.env)
 		: null
 	const wantsLanguageServiceTypecheck =
-		missingCallableTypecheckTargets.length === 0 &&
-		callableTypecheckTargets.length > 0
+		missingTypecheckTargets.length === 0 && typecheckTargets.length > 0
 	const wantsFullBundleValidation =
 		input.deferBundleCheckToRebuild !== true &&
 		bundleContext !== null &&
@@ -1504,11 +1648,11 @@ export async function runRepoChecks(input: {
 			const { value } = await timePublishExternalPushPhase(
 				{ phase: 'checks/typecheck', timings: input.phaseTimings },
 				async () => {
-					if (missingCallableTypecheckTargets.length > 0) {
+					if (missingTypecheckTargets.length > 0) {
 						return {
 							kind: 'typecheck' as const,
 							ok: false,
-							message: `Typecheck skipped because callable package runtime entrypoint(s) are missing from the repo session snapshot: ${missingCallableTypecheckTargets
+							message: `Typecheck skipped because package runtime entrypoint(s) are missing from the repo session snapshot: ${missingTypecheckTargets
 								.map((path) => `"${path}"`)
 								.join(', ')}.`,
 						}
@@ -1516,7 +1660,9 @@ export async function runRepoChecks(input: {
 					const callableTargetsMissingDefaultExport =
 						collectEntrypointsMissingDefaultExport({
 							snapshot,
-							targets: callableTypecheckTargets,
+							targets: typecheckTargets.filter(
+								(target) => target.kind === 'callable',
+							),
 						})
 					if (callableTargetsMissingDefaultExport.length > 0) {
 						return {
@@ -1527,12 +1673,14 @@ export async function runRepoChecks(input: {
 							),
 						}
 					}
-					if (callableTypecheckTargets.length === 0) {
+					if (typecheckTargets.length === 0) {
 						return {
 							kind: 'typecheck' as const,
 							ok: true,
 							message:
-								'No callable package runtime entrypoint(s) to typecheck.',
+								packageTypecheckTargets.length === 0
+									? 'No package runtime entrypoint(s) to typecheck.'
+									: sourceFilesNotTypecheckedMessage,
 						}
 					}
 					const outcome =
@@ -1541,11 +1689,11 @@ export async function runRepoChecks(input: {
 									phase: 'typecheck',
 									stagingKey,
 									userId: bundleContext.userId,
-									typecheckTargets: callableTypecheckTargets,
+									typecheckTargets,
 								})
 							: await runPackageTypecheckLanguageService({
 									sourceFiles,
-									targets: callableTypecheckTargets,
+									targets: typecheckTargets,
 								})
 					return { kind: 'typecheck' as const, ...outcome }
 				},
