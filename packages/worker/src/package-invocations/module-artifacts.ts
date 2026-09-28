@@ -49,15 +49,22 @@ export async function resolveSavedPackage(input: {
 	return await resolveSavedPackageWithFreshnessCache({
 		userId: input.userId,
 		packageIdOrKodyId: input.packageIdOrKodyId,
-		load: async () =>
-			(await getSavedPackageById(input.db, {
-				userId: input.userId,
-				packageId: input.packageIdOrKodyId,
-			})) ??
-			(await getSavedPackageByKodyId(input.db, {
-				userId: input.userId,
-				kodyId: input.packageIdOrKodyId,
-			})),
+		load: async () => {
+			const [byId, byKodyId] = await Promise.allSettled([
+				getSavedPackageById(input.db, {
+					userId: input.userId,
+					packageId: input.packageIdOrKodyId,
+				}),
+				getSavedPackageByKodyId(input.db, {
+					userId: input.userId,
+					kodyId: input.packageIdOrKodyId,
+				}),
+			])
+			if (byId.status === 'rejected') throw byId.reason
+			if (byId.value) return byId.value
+			if (byKodyId.status === 'rejected') throw byKodyId.reason
+			return byKodyId.value
+		},
 	})
 }
 

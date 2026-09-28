@@ -8,6 +8,7 @@ import {
 import {
 	ensureModuleArtifact,
 	loadInvokeManifestBySourceId,
+	resolveSavedPackage,
 } from './module-artifacts.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -784,4 +785,41 @@ test('an artifact from a different commit is served but never retained', async (
 	expect(second.artifact.publishedCommit).toBe('commit-old')
 	// A commit mismatch means the entry must not be cached under this key.
 	expect(load).toHaveBeenCalledTimes(2)
+})
+
+test('resolveSavedPackage looks up id and kody id in one round trip and prefers the id match', async () => {
+	const byIdRecord = { id: 'pkg-by-id', kodyId: 'other' }
+	const byKodyIdRecord = { id: 'pkg-by-kody-id', kodyId: 'shared-key' }
+	let releaseById!: () => void
+	const byIdGate = new Promise<void>((resolve) => {
+		releaseById = resolve
+	})
+	mockModule.getSavedPackageById.mockReset()
+	mockModule.getSavedPackageByKodyId.mockReset()
+	mockModule.getSavedPackageById.mockImplementation(async () => {
+		await byIdGate
+		return byIdRecord
+	})
+	mockModule.getSavedPackageByKodyId.mockResolvedValue(byKodyIdRecord)
+
+	const resolving = resolveSavedPackage({
+		db: {} as D1Database,
+		userId: 'user-resolve-parallel',
+		packageIdOrKodyId: 'shared-key',
+	})
+	await vi.waitFor(() => {
+		expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledTimes(1)
+	})
+	releaseById()
+	expect(await resolving).toBe(byIdRecord)
+
+	mockModule.getSavedPackageById.mockResolvedValue(byIdRecord)
+	mockModule.getSavedPackageByKodyId.mockRejectedValue(new Error('d1 blip'))
+	await expect(
+		resolveSavedPackage({
+			db: {} as D1Database,
+			userId: 'user-resolve-kody-blip',
+			packageIdOrKodyId: 'shared-key',
+		}),
+	).resolves.toBe(byIdRecord)
 })
