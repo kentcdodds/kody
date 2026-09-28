@@ -117,7 +117,6 @@ async function executeSearchListWithinBudget(
 					includeHiddenPackages: input.includeHiddenPackages,
 				})
 			: { recognized: false as const }
-	phaseTimings.identityResolutionMs = elapsedMs(identityStart)
 	let preloadedSearchRows: Awaited<
 		ReturnType<typeof loadSearchRowsAndRegistry>
 	> | null = null
@@ -139,6 +138,8 @@ async function executeSearchListWithinBudget(
 			registry: preloadedSearchRows.registry,
 		})
 	}
+	// Includes the exact-identity registry preload so it is not unaccounted.
+	phaseTimings.identityResolutionMs = elapsedMs(identityStart)
 	const memoryContextRetrievalQuery = buildMemoryRetrievalQuery(
 		input.memoryContext,
 	)
