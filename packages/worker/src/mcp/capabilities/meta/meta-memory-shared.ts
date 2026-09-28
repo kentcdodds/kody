@@ -2,6 +2,11 @@ import { z } from 'zod'
 import { memoryStatusValues } from '#mcp/memory/types.ts'
 import { requireMcpUser as requireMetaUser } from './require-user.ts'
 
+/** Keep these in sync with `.max(...)` on the shared memory field schemas. */
+export const memorySubjectMaxLength = 200
+export const memorySummaryMaxLength = 500
+export const memoryDetailsMaxLength = 2_000
+
 export const memoryCategoryField = z
 	.string()
 	.min(1)
@@ -31,22 +36,56 @@ export const memorySourceUrisField = z
 		'Optional canonical source document URLs for the memory. Treat these as opaque references.',
 	)
 
+function stringTooLongMessage(field: string, maxLength: number) {
+	return (issue: {
+		input: { length: number } | undefined
+		maximum: number | bigint
+	}) => {
+		const maximum =
+			typeof issue.maximum === 'bigint' ? Number(issue.maximum) : issue.maximum
+		const limit = Number.isFinite(maximum) ? maximum : maxLength
+		const actualLength = issue.input?.length
+		if (actualLength === undefined) {
+			return `${field} must be at most ${String(limit)} characters`
+		}
+		return `${field} must be at most ${String(limit)} characters, got ${String(actualLength)}`
+	}
+}
+
+export const memorySubjectField = z
+	.string()
+	.min(1)
+	.max(memorySubjectMaxLength, {
+		error: stringTooLongMessage('subject', memorySubjectMaxLength),
+	})
+	.describe(
+		`Short durable subject line for the memory record (max ${String(memorySubjectMaxLength)} characters).`,
+	)
+
+export const memorySummaryField = z
+	.string()
+	.min(1)
+	.max(memorySummaryMaxLength, {
+		error: stringTooLongMessage('summary', memorySummaryMaxLength),
+	})
+	.describe(
+		`Compact durable summary of the memory (max ${String(memorySummaryMaxLength)} characters).`,
+	)
+
+export const memoryDetailsField = z
+	.string()
+	.max(memoryDetailsMaxLength, {
+		error: stringTooLongMessage('details', memoryDetailsMaxLength),
+	})
+	.optional()
+	.describe(
+		`Optional supporting details for the durable memory record (max ${String(memoryDetailsMaxLength)} characters).`,
+	)
+
 export const memoryBaseInputSchema = {
-	subject: z
-		.string()
-		.min(1)
-		.max(200)
-		.describe('Short durable subject line for the memory record.'),
-	summary: z
-		.string()
-		.min(1)
-		.max(500)
-		.describe('Compact durable summary of the memory.'),
-	details: z
-		.string()
-		.max(2_000)
-		.optional()
-		.describe('Optional supporting details for the durable memory record.'),
+	subject: memorySubjectField,
+	summary: memorySummaryField,
+	details: memoryDetailsField,
 	category: memoryCategoryField,
 	tags: memoryTagsField,
 	source_uris: memorySourceUrisField,
