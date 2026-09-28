@@ -103,6 +103,7 @@ vi.mock('@cloudflare/shell/git', () => ({
 vi.mock('isomorphic-git', () => ({
 	default: {
 		push: (...args: Array<unknown>) => mockModule.rawPush(...args),
+		commit: (...args: Array<unknown>) => mockModule.rawCommit(...args),
 		readBlob: (...args: Array<unknown>) => mockModule.readBlob(...args),
 	},
 }))

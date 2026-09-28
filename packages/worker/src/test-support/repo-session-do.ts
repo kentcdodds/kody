@@ -64,6 +64,7 @@ export const repoSessionMockModule = (() => {
 		git,
 		gitState,
 		rawPush: vi.fn(async () => ({ ok: true, refs: {} })),
+		rawCommit: vi.fn(async () => 'commit-orphan-root'),
 		readBlob: vi.fn(async () => ({
 			blob: new TextEncoder().encode('restored content\n'),
 		})),
@@ -137,6 +138,7 @@ export const repoSessionMockModule = (() => {
 			branch: 'main',
 			commit: 'commit-base',
 		})),
+		listArtifactServerRefs: vi.fn(async () => []),
 		parseRepoManifest: vi.fn(() => ({ sourceRoot: '/' })),
 		runRepoChecks: vi.fn(async () => ({
 			ok: true,
@@ -264,6 +266,7 @@ export function restoreRepoSessionMockBaseline() {
 		branch: 'main',
 		commit: 'commit-base',
 	})
+	repoSessionMockModule.listArtifactServerRefs.mockResolvedValue([])
 	repoSessionMockModule.parseRepoManifest.mockReturnValue({ sourceRoot: '/' })
 	repoSessionMockModule.runRepoChecks.mockResolvedValue({
 		ok: true,
@@ -304,6 +307,11 @@ export function restoreRepoSessionMockBaseline() {
 	})
 	repoSessionMockModule.rawPush.mockResolvedValue({ ok: true, refs: {} })
 	repoSessionMockModule.rawPush.mockClear()
+	repoSessionMockModule.rawCommit.mockImplementation(async () => {
+		gitState.headCommit = 'commit-orphan-root'
+		return gitState.headCommit
+	})
+	repoSessionMockModule.rawCommit.mockClear()
 
 	git.clone.mockResolvedValue({ cloned: 'ok', dir: '/session' })
 	git.remote.mockImplementation(

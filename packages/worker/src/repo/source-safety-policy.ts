@@ -24,7 +24,7 @@ export const destructiveOverwriteConfirmationField =
 	'confirm_destructive_overwrite'
 
 export const destructiveOverwriteConfirmationDescription =
-	'Set to true only when the user explicitly approved destructive overwrite of existing package source history. Kody still verifies a restorable backup snapshot before publishing.'
+	'Set to true only when the user explicitly approved destructive overwrite of existing package source history. Promoting publishes replace advertised history with a new root commit (and drop leftover session refs); promotePublished:false stays additive. Restorable backups retain prior content — secret scrub of backups still needs packageDelete or an explicit purge.'
 
 export const privateVisibilityChangeConfirmationField =
 	'confirm_private_visibility_change'

@@ -1,5 +1,8 @@
 import { expect, test, vi } from 'vitest'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import {
+	consoleError,
+	consoleWarn,
+} from '#worker/test-support/console-spies.ts'
 import type * as CloudflareWorkers from 'cloudflare:workers'
 import type * as Artifacts from './artifacts.ts'
 import type * as PublishedRuntimeArtifacts from '#worker/package-runtime/published-runtime-artifacts.ts'
@@ -100,6 +103,7 @@ vi.mock('@cloudflare/shell/git', () => ({
 vi.mock('isomorphic-git', () => ({
 	default: {
 		push: (...args: Array<unknown>) => mockModule.rawPush(...args),
+		commit: (...args: Array<unknown>) => mockModule.rawCommit(...args),
 		readBlob: (...args: Array<unknown>) => mockModule.readBlob(...args),
 	},
 }))
@@ -138,6 +142,8 @@ vi.mock('./artifacts.ts', async () => {
 			mockModule.resolveArtifactDefaultBranchHead(...args),
 		resolveArtifactSourceHead: (...args: Array<unknown>) =>
 			mockModule.resolveArtifactSourceHead(...args),
+		listArtifactServerRefs: (...args: Array<unknown>) =>
+			mockModule.listArtifactServerRefs(...args),
 	}
 })
 
@@ -199,6 +205,18 @@ vi.mock('#worker/package-runtime/published-bundle-artifacts.ts', async () => {
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
+}))
+
+vi.mock('#worker/package-registry/service.ts', () => ({
+	refreshSavedPackageProjection: vi.fn(async () => undefined),
+}))
+
+vi.mock('#worker/repo/identity-icon.ts', () => ({
+	refreshIdentityIconForSource: vi.fn(async () => undefined),
+}))
+
+vi.mock('#worker/community/community-icon.ts', () => ({
+	refreshCommunityIconForPackagePublish: vi.fn(async () => undefined),
 }))
 
 vi.mock('#worker/storage-buckets/service.ts', () => ({
@@ -1402,4 +1420,213 @@ test('publishSession still requires overwrite confirmation for forced publishes 
 	)
 	expect(mockModule.git.push).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+})
+
+test('confirmed destructive overwrite replaces history with an orphan root commit and deletes the session ref', async () => {
+	consoleWarn.mockImplementation(() => {})
+	consoleError.mockImplementation(() => {})
+	setCommonSessionFixtures()
+	const priorCanaryCommit = 'commit-with-canary'
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+		repo_id: 'source-repo',
+		published_commit: priorCanaryCommit,
+		manifest_path: 'package.json',
+		source_root: '/',
+	})
+	mockModule.getRepoSessionById.mockResolvedValue({
+		id: 'session-1',
+		user_id: 'user-1',
+		source_id: 'source-1',
+		source_repo_id: 'source-repo',
+		session_branch: 'sessions/sourcesync-canary',
+		source_branch: 'main',
+		base_commit: priorCanaryCommit,
+		status: 'active',
+		last_checkpoint_commit: priorCanaryCommit,
+	})
+	mockModule.gitState.headCommit = priorCanaryCommit
+	mockModule.gitState.statusEntries = [{ status: 'modified' }]
+	const packageJson =
+		'{"name":"@user/demo","exports":{".":"./src/index.ts"},"kody":{"id":"demo","description":"Demo"}}'
+	mockModule.loadPublishedSourceSnapshot.mockResolvedValue({
+		version: 1,
+		sourceId: 'source-1',
+		repoId: 'source-repo',
+		entityKind: 'package',
+		entityId: 'package-1',
+		publishedCommit: priorCanaryCommit,
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+		files: {
+			'package.json': packageJson,
+			'src/index.ts': 'export const canary = "FAKE-CANARY-7f3a"\n',
+		},
+		createdAt: '2026-09-28T00:00:00.000Z',
+	})
+	mockModule.workspaceGlob.mockResolvedValue([
+		{ type: 'file', path: '/session/package.json' },
+		{ type: 'file', path: '/session/src/index.ts' },
+		{ type: 'file', path: '/session/.git/config' },
+	] as unknown as Array<{ type: 'file'; path: string }>)
+	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
+		if (path === '/session/package.json') {
+			return packageJson
+		}
+		if (path === '/session/src/index.ts') {
+			return 'export const ready = true\n'
+		}
+		return ''
+	})
+	mockModule.git.commit.mockClear()
+	mockModule.rawCommit.mockClear()
+	mockModule.rawPush.mockClear()
+	mockModule.git.push.mockClear()
+	mockModule.listArtifactServerRefs.mockResolvedValue([
+		{ ref: 'refs/heads/sessions/sourcesync-canary', oid: priorCanaryCommit },
+		{
+			ref: 'refs/heads/sessions/sourcesync-stale-prior',
+			oid: priorCanaryCommit,
+		},
+		{ ref: 'refs/heads/main', oid: priorCanaryCommit },
+	])
+
+	const result = await new RepoSession(createDurableObjectState(), {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {} as unknown as KVNamespace,
+	} as Env).publishSession({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		force: true,
+		destructiveOverwriteConfirmed: true,
+	})
+
+	expect(result).toMatchObject({
+		status: 'ok',
+		publishedCommit: 'commit-orphan-root',
+	})
+	// Shell commit stays additive; history replace must use isomorphic-git
+	// with an empty parent list so the prior canary commit is not an ancestor.
+	expect(mockModule.git.commit).not.toHaveBeenCalled()
+	expect(mockModule.rawCommit).toHaveBeenCalledTimes(1)
+	expect(mockModule.rawCommit).toHaveBeenCalledWith(
+		expect.objectContaining({
+			parent: [],
+			message: 'Publish repo session session-1',
+		}),
+	)
+	expect(mockModule.git.push).toHaveBeenCalledWith(
+		expect.objectContaining({
+			ref: 'sessions/sourcesync-canary',
+			force: true,
+		}),
+	)
+	expect(mockModule.rawPush).toHaveBeenCalledWith(
+		expect.objectContaining({
+			ref: 'sessions/sourcesync-canary',
+			remoteRef: 'main',
+			force: true,
+		}),
+	)
+	expect(mockModule.listArtifactServerRefs).toHaveBeenCalledWith(
+		expect.objectContaining({
+			prefix: 'refs/heads/sessions/',
+		}),
+	)
+	expect(mockModule.rawPush).toHaveBeenCalledWith(
+		expect.objectContaining({
+			ref: 'sessions/sourcesync-canary',
+			delete: true,
+		}),
+	)
+	expect(mockModule.rawPush).toHaveBeenCalledWith(
+		expect.objectContaining({
+			ref: 'sessions/sourcesync-stale-prior',
+			delete: true,
+		}),
+	)
+	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
+		expect.objectContaining({
+			source: expect.objectContaining({
+				published_commit: 'commit-orphan-root',
+			}),
+			files: expect.objectContaining({
+				'src/index.ts': 'export const ready = true\n',
+			}),
+		}),
+	)
+	const publishedFiles =
+		mockModule.writePublishedSourceSnapshot.mock.calls[0][0].files
+	expect(JSON.stringify(publishedFiles)).not.toContain('FAKE-CANARY-7f3a')
+})
+
+test('confirmed overwrite with promotePublished false stays additive for locked fleet publishes', async () => {
+	consoleWarn.mockImplementation(() => {})
+	setCommonSessionFixtures()
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+		repo_id: 'source-repo',
+		published_commit: 'commit-base',
+		manifest_path: 'package.json',
+		source_root: '/',
+	})
+	const packageJson =
+		'{"name":"@user/demo","exports":{".":"./src/index.ts"},"kody":{"id":"demo","description":"Demo"}}'
+	mockModule.loadPublishedSourceSnapshot.mockResolvedValue({
+		version: 1,
+		sourceId: 'source-1',
+		repoId: 'source-repo',
+		entityKind: 'package',
+		entityId: 'package-1',
+		publishedCommit: 'commit-base',
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+		files: {
+			'package.json': packageJson,
+			'src/index.ts': 'export const prior = true\n',
+		},
+		createdAt: '2026-09-28T00:00:00.000Z',
+	})
+	mockModule.workspaceGlob.mockResolvedValue([
+		{ type: 'file', path: '/session/package.json' },
+		{ type: 'file', path: '/session/src/index.ts' },
+		{ type: 'file', path: '/session/.git/config' },
+	] as unknown as Array<{ type: 'file'; path: string }>)
+	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
+		if (path === '/session/package.json') return packageJson
+		if (path === '/session/src/index.ts') return 'export const next = true\n'
+		return ''
+	})
+	mockModule.gitState.headCommit = 'commit-additive-locked'
+	mockModule.gitState.statusEntries = [{ status: 'modified' }]
+	mockModule.git.commit.mockClear()
+	mockModule.rawCommit.mockClear()
+	mockModule.rawPush.mockClear()
+
+	const result = await new RepoSession(createDurableObjectState(), {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {} as unknown as KVNamespace,
+	} as Env).publishSession({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		force: true,
+		destructiveOverwriteConfirmed: true,
+		promotePublished: false,
+	})
+
+	expect(result).toMatchObject({
+		status: 'ok',
+		publishedCommit: 'commit-additive-locked',
+	})
+	expect(mockModule.git.commit).toHaveBeenCalled()
+	expect(mockModule.rawCommit).not.toHaveBeenCalled()
+	expect(mockModule.rawPush).not.toHaveBeenCalledWith(
+		expect.objectContaining({ delete: true }),
+	)
 })

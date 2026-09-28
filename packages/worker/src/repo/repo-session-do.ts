@@ -18,6 +18,7 @@ import {
 	type ArtifactBootstrapAccess,
 	buildArtifactsGitAuth,
 	buildAuthenticatedArtifactsRemote,
+	listArtifactServerRefs,
 	resolveArtifactSourceHead,
 	resolveExistingArtifactSourceRepo,
 	resolveArtifactSourceRepo,
@@ -221,6 +222,13 @@ function buildSessionBranchName(sessionId: string) {
 	const readable = compactArtifactsRepoSuffix(sessionId).slice(0, 32)
 	const unique = crypto.randomUUID().replaceAll('-', '')
 	return `sessions/${readable}-${unique}`
+}
+
+function isSessionBranchRef(ref: string) {
+	const branch = ref.startsWith('refs/heads/')
+		? ref.slice('refs/heads/'.length)
+		: ref
+	return branch.startsWith('sessions/')
 }
 
 function buildPublishedSessionExpiresAt(now: Date = new Date()) {
@@ -609,20 +617,34 @@ class RepoSessionBase extends DurableObject<Env> {
 		return log[0]?.oid ?? null
 	}
 
-	private async commitIfDirty(message: string) {
+	private async commitIfDirty(
+		message: string,
+		options?: { replaceHistory?: boolean },
+	) {
+		const replaceHistory = options?.replaceHistory === true
 		const statusEntries = await this.git.status({
 			dir: repoSessionWorkspacePrefix,
 		})
 		const hasChanges = statusEntries.some(
 			(entry) => entry.status !== 'unmodified',
 		)
-		if (!hasChanges) {
+		if (!hasChanges && !replaceHistory) {
 			return this.getHeadCommit()
 		}
 		await this.git.add({
 			dir: repoSessionWorkspacePrefix,
 			filepath: '.',
 		})
+		if (replaceHistory) {
+			const { git } = await loadIsomorphicGit()
+			return await git.commit({
+				fs: this.rawGitFileSystem,
+				dir: repoSessionWorkspacePrefix,
+				message,
+				author: sessionCommitAuthor,
+				parent: [],
+			})
+		}
 		const commit = await this.git.commit({
 			dir: repoSessionWorkspacePrefix,
 			message,
@@ -684,6 +706,59 @@ class RepoSessionBase extends DurableObject<Env> {
 				return auth
 			},
 		})
+	}
+
+	/**
+	 * After a confirmed history-replace promote, drop every advertised
+	 * `sessions/*` ref on this source repo so leftover source-sync (and other
+	 * session) branches cannot keep prior objects reachable. Concurrent
+	 * sessions are already stranded across the orphan root. Restorable KV
+	 * backups are untouched.
+	 */
+	private async deleteAdvertisedSessionBranches(input: {
+		sessionBranch: string
+		remote: string
+		token: string
+	}) {
+		const branches = new Set<string>([input.sessionBranch])
+		try {
+			const refs = await listArtifactServerRefs({
+				remote: input.remote,
+				token: input.token,
+				prefix: 'refs/heads/sessions/',
+			})
+			for (const entry of refs) {
+				if (!isSessionBranchRef(entry.ref)) continue
+				const branch = entry.ref.startsWith('refs/heads/')
+					? entry.ref.slice('refs/heads/'.length)
+					: entry.ref
+				branches.add(branch)
+			}
+		} catch (error) {
+			console.warn(
+				JSON.stringify({
+					message: 'history-replace session ref list failed',
+					sessionBranch: input.sessionBranch,
+					error: getErrorMessage(error),
+				}),
+			)
+		}
+		for (const branch of branches) {
+			try {
+				await this.deleteRemoteBranch({
+					branch,
+					token: input.token,
+				})
+			} catch (error) {
+				console.warn(
+					JSON.stringify({
+						message: 'history-replace session branch delete failed',
+						branch,
+						error: getErrorMessage(error),
+					}),
+				)
+			}
+		}
 	}
 
 	private async listWorkspaceFileEntries(
@@ -2803,6 +2878,11 @@ class RepoSessionBase extends DurableObject<Env> {
 					'The source repo has moved since this session opened. Rebase the session before publishing.',
 			}
 		}
+		const replaceHistory =
+			input.force === true &&
+			input.destructiveOverwriteConfirmed === true &&
+			input.promotePublished !== false &&
+			source.entity_kind === 'package'
 		if (input.force === true && source.entity_kind === 'package') {
 			await assertPackageSourceOverwriteAllowed({
 				env: this.env,
@@ -2835,6 +2915,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			(await this.commitIfDirty(
 				input.commitMessage?.trim() ||
 					`Publish repo session ${input.sessionId}`,
+				replaceHistory ? { replaceHistory: true } : undefined,
 			)) ?? (await this.getHeadCommit())
 		await this.readManifestFromWorkspace(
 			source.manifest_path,
@@ -2913,6 +2994,13 @@ class RepoSessionBase extends DurableObject<Env> {
 			rebuildPackageArtifacts: input.rebuildPackageArtifacts ?? true,
 			allowLockedPublish: input.allowLockedPublish,
 		})
+		if (replaceHistory) {
+			await this.deleteAdvertisedSessionBranches({
+				sessionBranch,
+				remote: sessionAccess.remote,
+				token: sessionAccess.token,
+			})
+		}
 		await this.attachSourcePublishGitNote({
 			source,
 			commitOid: publishedCommit,

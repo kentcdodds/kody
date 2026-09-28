@@ -281,3 +281,7 @@ runtime path if this budget is raised again.
   errors plus documented max lengths on capability search types: platform CI
   dry-run 5_225_141 against the previous 5_225_000 budget (local dry-run
   5_224_911), reviewed ceiling 5_226_000.
+- Confirmed destructive overwrite history replace (#2703): orphan-root publish
+  plus advertised `sessions/*` ref cleanup after promote on repo-session-do
+  (shared with platform publish path). CI dry-run platform 5_226_226 against the
+  previous 5_226_000 budget, reviewed ceiling 5_226_500.
