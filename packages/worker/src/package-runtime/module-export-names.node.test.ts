@@ -1,5 +1,8 @@
 import { expect, test } from 'vitest'
-import { collectModuleExportNames } from './module-export-names.ts'
+import {
+	collectModuleExportNames,
+	moduleSourceDeclaresDefaultExport,
+} from './module-export-names.ts'
 
 test('collects value exports across declarations, re-exports, and artifact JS', () => {
 	expect(
@@ -104,4 +107,34 @@ test('follows export-star chains and tolerates cycles and parse failures', () =>
 			modulePath: 'pkg/missing.ts',
 		}),
 	).toEqual([])
+})
+
+test('detects runtime default exports and leaves unparseable sources to the bundler', () => {
+	for (const source of [
+		'export default function run() {}',
+		'export default async () => ({ ok: true })',
+		'export default class Tool {}',
+		'const value = 1\nexport default value',
+		'const run = () => {}\nexport { run as default }',
+		"export { default } from './impl.ts'",
+		"export { run as default } from './impl.ts'",
+		"export * as default from './impl.ts'",
+		'export default function run() {}\nexport function double(value: number) { return value * 2 }',
+	]) {
+		expect(moduleSourceDeclaresDefaultExport(source), source).toBe(true)
+	}
+	for (const source of [
+		'export function double(value: number) { return value * 2 }',
+		'export const answer = 42\nexport class Tool {}',
+		"export * from './impl.ts'",
+		'export default interface Config { value: number }\nexport const value = 1',
+		'type Local = { value: number }\nexport type { Local as default }',
+		'export {}',
+		'',
+	]) {
+		expect(moduleSourceDeclaresDefaultExport(source), source).toBe(false)
+	}
+	expect(
+		moduleSourceDeclaresDefaultExport('export const = not parseable {{{'),
+	).toBeNull()
 })

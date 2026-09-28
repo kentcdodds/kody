@@ -214,6 +214,72 @@ test('buildKodyModuleBundle imports callable entrypoints as ESM default exports'
 	).not.toContain('?? userModule')
 })
 
+test.each([
+	{
+		name: 'named-only',
+		source: 'export function double(value: number) { return value * 2 }',
+		importsDefault: false,
+	},
+	{
+		name: 'default and named',
+		source: [
+			'export function double(value: number) { return value * 2 }',
+			'export default async () => double(2)',
+		].join('\n'),
+		importsDefault: true,
+	},
+	{
+		name: 'unparseable',
+		source: 'export const = not parseable {{{',
+		importsDefault: true,
+	},
+])(
+	'buildKodyModuleBundle only imports a callable default when the $name entry declares one',
+	async ({ source, importsDefault }) => {
+		mockModule.createWorker.mockClear()
+		mockModule.createWorker.mockResolvedValue(createBundleResult('entry-shape'))
+		const { buildKodyModuleBundle } = await import('./module-graph.ts')
+
+		await buildKodyModuleBundle({
+			env: {
+				APP_DB: {},
+				REPO_SESSION: {},
+			} as Env,
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-1',
+			sourceFiles: {
+				'package.json': JSON.stringify({
+					name: '@kentcdodds/local-package',
+					exports: {
+						'.': './src/index.ts',
+					},
+					kody: {
+						id: 'local-package',
+						description: 'Local package',
+					},
+				}),
+				'src/index.ts': source,
+			},
+			entryPoint: 'src/index.ts',
+		})
+
+		const firstCall = mockModule.createWorker.mock.calls[0]?.[0] as
+			| {
+					files?: Record<string, string>
+			  }
+			| undefined
+		const entry =
+			firstCall?.files?.['.__kody_root__/.__kody_execute_entry__.js']
+		if (importsDefault) {
+			expect(entry).toContain('import userEntrypoint from "./src/index.ts"')
+			return
+		}
+		expect(entry).not.toContain('userEntrypoint')
+		expect(entry).toContain('import "./src/index.ts";')
+		expect(entry).toContain('\\"src/index.ts\\" has no default export')
+	},
+)
+
 test('buildKodyModuleBundle prefers published importable export artifacts for saved package imports', async () => {
 	mockModule.createWorker.mockResolvedValue(
 		createBundleResult('published-artifact'),

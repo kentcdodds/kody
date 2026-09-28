@@ -125,6 +125,13 @@ function collectOwnExports(source: string): {
 			if (typeof starSource === 'string') starSpecifiers.push(starSource)
 			continue
 		}
+		if (typedStatement.type === 'ExportDefaultDeclaration') {
+			const declaration = typedStatement.declaration
+			if (!declaration || isRuntimeExportDeclaration(declaration)) {
+				names.add('default')
+			}
+			continue
+		}
 		if (typedStatement.type !== 'ExportNamedDeclaration') continue
 		if (typedStatement.exportKind === 'type') continue
 		const declaration = typedStatement.declaration
@@ -161,6 +168,18 @@ function collectOwnExports(source: string): {
 		}
 	}
 	return { names, starSpecifiers }
+}
+
+/**
+ * Whether `source` declares its own runtime `default` export (`export *`
+ * never forwards one). Returns `null` when the source does not parse so
+ * callers can leave the verdict to the bundler.
+ */
+export function moduleSourceDeclaresDefaultExport(
+	source: string,
+): boolean | null {
+	const collected = collectOwnExports(source)
+	return collected ? collected.names.has('default') : null
 }
 
 /**

@@ -24,6 +24,7 @@ import {
 	collectDynamicPackageImportProxyModules,
 	prepareKodyGraphFiles,
 } from './module-graph-import-rewriting.ts'
+import { moduleSourceDeclaresDefaultExport } from './module-export-names.ts'
 import { resolveDirectKodyDependenciesForEntryPoint } from './module-graph-workspace.ts'
 import { withPlatformRemixFiles } from './package-app-remix.ts'
 import { createPackageAppJsxBundleOptions } from './package-app-tsconfig.ts'
@@ -201,11 +202,16 @@ export async function buildKodyModuleBundle(input: {
 		}) ?? normalizePackageWorkspacePath(input.entryPoint)
 	const normalizedEntrypoint = joinPath(rootSourcePrefix, entryPoint)
 	const bootstrapPath = joinPath(rootSourcePrefix, '.__kody_execute_entry__.js')
+	const entrySource = input.sourceFiles[entryPoint]
 	files[bootstrapPath] = createExecuteEntrypointSource({
 		modulePath: createRelativeImportSpecifier(
 			bootstrapPath,
 			normalizedEntrypoint,
 		),
+		entryPoint,
+		hasDefaultExport:
+			typeof entrySource !== 'string' ||
+			moduleSourceDeclaresDefaultExport(entrySource) !== false,
 	})
 	const assembleBundle = async (): Promise<RuntimeBundle> => {
 		const bundle = await createWorkerBundle({

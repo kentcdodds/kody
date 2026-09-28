@@ -1093,7 +1093,27 @@ export function stripKodyRuntimeModules(modules: WorkerLoaderModules) {
 	return stripped ?? modules
 }
 
-export function createExecuteEntrypointSource(input: { modulePath: string }) {
+/**
+ * `hasDefaultExport: false` is for entries with only named exports (valid
+ * package exports that are imported, never invoked directly). Importing
+ * `default` from them is a hard bundler error, so the entry still evaluates
+ * the module but rejects invocation with an actionable message.
+ */
+export function createExecuteEntrypointSource(input: {
+	modulePath: string
+	entryPoint: string
+	hasDefaultExport: boolean
+}) {
+	if (!input.hasDefaultExport) {
+		const message = `Kody execute modules must default export a function; "${input.entryPoint}" has no default export. Named exports can be imported from another module (for example \`import { name } from 'kody:@scope/package/export'\`) but cannot be invoked directly.`
+		return `
+import ${JSON.stringify(input.modulePath)};
+
+export default async function __kodyExecuteEntrypoint() {
+	throw new Error(${JSON.stringify(message)});
+}
+`.trim()
+	}
 	return `
 import userEntrypoint from ${JSON.stringify(input.modulePath)};
 
