@@ -3,7 +3,7 @@ import { invokeSealedSecretProvider } from './sealed-invoke.ts'
 import { resolveProviderSecret } from './service.ts'
 
 /**
- * Fetch-boundary entry. Ordinary execute and package invoke never call this;
+ * Fetch-boundary entry. Ordinary execute never calls this;
  * they cannot observe `{ value }`.
  */
 export async function resolveProviderSecretForFetch(input: {

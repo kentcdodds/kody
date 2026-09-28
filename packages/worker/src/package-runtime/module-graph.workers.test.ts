@@ -653,6 +653,149 @@ test(
 )
 
 test(
+	'computed import(specifier) loads caller-owned default export without packages bound',
+	{ timeout: 30_000 },
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		await ensureSavedPackageArtifactSchema()
+		const unique = crypto.randomUUID()
+		const userId = `user-${unique}`
+		await ensureUsersTestSchema({ db: env.APP_DB })
+		await runSql(
+			`INSERT INTO users (username, email, password_hash, stable_user_id)
+			 VALUES (?, ?, ?, ?)`,
+			`worker-${unique}`,
+			`worker-${unique}@example.com`,
+			'test-password-hash',
+			userId,
+		)
+		const sourceId = `source-${unique}`
+		const packageId = `pkg-${unique}`
+		const publishedCommit = `commit-${unique}`
+		const source = await insertSavedPackage({
+			userId,
+			packageId,
+			kodyId: 'computed-import-target',
+			name: '@kentcdodds/computed-import-target',
+			sourceId,
+			publishedCommit,
+		})
+		const targetSourceFiles = {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/computed-import-target',
+				exports: {
+					'./probe': './src/probe.ts',
+				},
+				kody: {
+					id: 'computed-import-target',
+					description: 'Computed import Gate 2 target',
+				},
+			}),
+			'src/probe.ts': [
+				"import { packageContext, packages } from 'kody:runtime'",
+				'',
+				'export default async function probe(input: { marker?: string } = {}) {',
+				'\treturn {',
+				'\t\tmarker: input.marker ?? null,',
+				'\t\tpackageContextKodyId: packageContext?.kodyId ?? null,',
+				'\t\tpackagesBound: packages != null,',
+				'\t}',
+				'}',
+			].join('\n'),
+		}
+		await persistPublishedSourceSnapshot({
+			env,
+			userId,
+			source,
+			snapshot: {
+				files: targetSourceFiles,
+			},
+		})
+		const artifactBundle = await buildKodyImportableModuleBundle({
+			env,
+			baseUrl: 'https://kody.dev',
+			userId,
+			sourceFiles: targetSourceFiles,
+			entryPoint: 'src/probe.ts',
+			rootPackageId: packageId,
+		})
+		await persistPublishedBundleArtifact({
+			env,
+			userId,
+			source,
+			kind: 'importable-module',
+			artifactName: './probe',
+			entryPoint: 'src/probe.ts',
+			mainModule: artifactBundle.mainModule,
+			modules: artifactBundle.modules,
+			dependencies: artifactBundle.dependencies,
+			packageContext: {
+				packageId,
+				kodyId: 'computed-import-target',
+				sourceId,
+			},
+		})
+
+		const callerBundle = await buildKodyModuleBundle({
+			env,
+			baseUrl: 'https://kody.dev',
+			userId,
+			bundleContext: 'ad-hoc-execute',
+			sourceFiles: {
+				'entry.ts': [
+					"import { packages } from 'kody:runtime'",
+					'',
+					'export default async function main() {',
+					"\tconst specifier = 'kody:@kentcdodds/computed-import-target/probe'",
+					'\tconst mod = await import(specifier)',
+					"\tconst result = await mod.default({ marker: 'from-computed-import' })",
+					'\treturn {',
+					'\t\tresult,',
+					'\t\tcallerPackagesBound: packages != null,',
+					'\t}',
+					'}',
+				].join('\n'),
+			},
+			entryPoint: 'entry.ts',
+		})
+		const callerContext = createMcpCallerContext({
+			baseUrl: 'https://kody.dev',
+			user: {
+				userId,
+				email: 'worker@example.com',
+				displayName: 'Worker Test',
+			},
+		})
+		const result = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			{
+				mainModule: callerBundle.mainModule,
+				modules: callerBundle.modules,
+			},
+			undefined,
+			{
+				packageContext: null,
+				// Gate 2: computed import must work with packages.invoke unbound.
+				packageInvokeTools: undefined,
+				skipCapabilityRegistry: true,
+			},
+		)
+
+		expect(result.error).toBeUndefined()
+		expect(result.result).toEqual({
+			result: {
+				marker: 'from-computed-import',
+				// Library-load semantics: caller's packageContext (null on execute).
+				packageContextKodyId: null,
+				packagesBound: false,
+			},
+			callerPackagesBound: false,
+		})
+	},
+)
+
+test(
 	'kody.app.client bundles TypeScript for the browser into one fingerprinted ESM module',
 	{ timeout: 20_000 },
 	async () => {

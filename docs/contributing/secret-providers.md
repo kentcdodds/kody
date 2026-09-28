@@ -67,9 +67,8 @@ optional non-secret config (for example a Connect base URL).
 
 The platform invokes `./secretProvider` only from the fetch boundary, with
 `action: "resolve" | "canonicalize"`. The resolve result is
-`{ value, hosts: string[] }`. Ordinary `execute`, `packages.invoke`, and
-`kody:@` imports of `./secretProvider` are rejected so `value` is never an RPC
-or import result.
+`{ value, hosts: string[] }`. Ordinary `execute` and `kody:@` imports of
+`./secretProvider` are rejected so `value` is never an RPC or import result.
 
 Timeout budget: **8s** for resolve, **5s** for canonicalize. Empty `hosts`
 denies every use. Host match normalizes to hostname, so

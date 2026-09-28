@@ -18,9 +18,9 @@ a named export and do not use the `kody:runtime` helper.
 Authors do not get `packages.invoke`.
 
 - Name known at write time → static `import` from `kody:@scope/package/export`.
-- Name is data → `import(specifier)` (caller-owned / forks). Computed specifiers
-  load through a runtime helper that still uses the quarantined invoke path
-  until that helper is deleted
+- Name is data → `import(specifier)` (caller-owned / forks). Computed `kody:@`
+  imports load through a host library-load bridge that does not use
+  author-facing `packages.invoke`
   ([#1750](https://github.com/kentcdodds/kody/issues/1750)).
 - Exactly-once → workflows. Do not keep a keyed invoke beside them.
 - External callers → inbound webhooks. HTTP invocation tokens
@@ -29,7 +29,8 @@ Authors do not get `packages.invoke`.
   [0048](./0048-webhooks-replace-invocation-tokens.md).
 
 The `kody:runtime` helper stays quarantined for a soak so already-published
-packages do not break, then the folder is deleted.
+packages that still call it do not break, then the folder is deleted. Computed
+`import(specifier)` no longer depends on that helper.
 
 ## Consequences
 
@@ -42,5 +43,5 @@ invokes stay `needsManual` for workflows). Interactive MCP
 ([0013](./0013-synthetic-package-requests.md)), not a replacement for
 `packages.invoke`.
 
-Revisit only if the computed `import(specifier)` facade cannot stand in for
-caller-owned name-as-data loads after the quarantined helper is deleted.
+Revisit only if computed `import(specifier)` cannot stand in for caller-owned
+name-as-data loads after the quarantined helper is deleted.

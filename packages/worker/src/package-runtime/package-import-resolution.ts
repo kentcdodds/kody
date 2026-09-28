@@ -98,9 +98,11 @@ export async function resolveSavedPackageImport(input: {
 	userId: string
 	specifier: string | KodyPackageSpecifier
 	/**
-	 * The dynamic-import hydration lane persists rebuilt artifacts under the
-	 * caller's identity, which must never happen for platform-owned sources;
-	 * it opts out and reports a teaching error instead.
+	 * The dynamic-import hydration lane loads source and published artifacts
+	 * under `sourceOwnerUserId` (own package or share grant). Rebuild+persist
+	 * is owner-only; share guests fail closed when the artifact is missing.
+	 * Platform-owned sources must never rebuild here; the lane opts out and
+	 * reports a teaching error instead.
 	 */
 	allowPlatformScopes?: boolean
 	/**

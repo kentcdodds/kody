@@ -165,11 +165,12 @@ A's grants and mounts.
 
 Literal `import("kody:@...")` is a teaching error: known names are static
 imports. Computed `import(specifier)` for `kody:@` names loads caller-owned /
-forked modules. The hydrator rebuilds caller-owned `importable-module` artifacts
-(`resolveCurrentDynamicPackageArtifact` in `module-graph-hydration.ts`). A
-quarantined runtime helper still facades some computed loads
-([#1750](https://github.com/kentcdodds/kody/issues/1750)); authors and agents do
-not call that helper.
+forked modules through a host library-load bridge
+(`resolveCurrentDynamicPackageArtifact` / nested evaluate with the caller's
+`packageContext` and callee stamp grants). Authors and agents do not call
+`packages.invoke`. The quarantined helper remains only for already-published
+call sites until [#1750](https://github.com/kentcdodds/kody/issues/1750) deletes
+it.
 
 If the specifier is a **caller-owned** package and `import()` means “library
 load in this isolate,” storage, context, and secrets match static import: A's

@@ -163,8 +163,8 @@ When you create or materially change a public export:
    it.
 3. Add `@param` for each input.
 4. Add `@returns`.
-5. Add `@example` that **imports** `kody:@scope/id/export` and **calls** it. Do
-   not lead with `packages.invoke`.
+5. Add `@example` that **imports** `kody:@scope/id/export` and **calls** it.
+   There is no author-facing `packages.invoke`.
 
 If the export's `package.json` `exports` entry has a `types` condition, put the
 JSDoc on that types file — search reads the types module when it exists. JSDoc

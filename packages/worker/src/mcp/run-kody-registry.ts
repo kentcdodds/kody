@@ -69,6 +69,13 @@ import {
 	buildKodyModuleBundle,
 	hydrateKodyRuntimeModules,
 } from '#worker/package-runtime/module-graph.ts'
+import {
+	buildComputedPackageImportCallBundle,
+	maxComputedPackageImportDepth,
+	resolveComputedPackageImportArtifact,
+	throwComputedPackageImportFailure,
+	type ComputedPackageImportTools,
+} from '#worker/package-runtime/computed-package-import.ts'
 import { kodyProviderEvaluateBindingName } from '#worker/kody-evaluate-bindings.ts'
 import {
 	collectLiteralImportSpecifiers,
@@ -693,6 +700,129 @@ export function collectPackageStorageGrantIds(input: {
 	return grantedPackageIds
 }
 
+/**
+ * Host tools for computed `import(specifier)` of caller-owned `kody:@`
+ * names. Bound independently of quarantined `packages.invoke` so Gate 2
+ * loads succeed with `packages` unbound ([#1750](https://github.com/kentcdodds/kody/issues/1750)).
+ * Nested evaluate uses library-load semantics: caller's `packageContext`,
+ * callee stamp grants via the importable-module artifact.
+ */
+export function createComputedPackageImportTools(input: {
+	env: Env
+	baseUrl: string
+	callerContext: McpCallerContext
+	packageContext: PackageContextOptions
+	packageInvokeTools?: PackageInvokeTools
+	packageEventTools?: PackageEventTools
+	emailTools?: EmailToolOptions
+	workflowTools?: PackageWorkflowTools
+	additionalTools?: AdditionalKodyTools
+	skipCapabilityRegistry?: boolean
+	capabilityRegistry?: BuiltCapabilityRegistry
+	waitUntil?: (promise: Promise<unknown>) => void
+	signal?: AbortSignal
+	computedImportDepth?: number
+	/**
+	 * Agent conversation id from the outer MCP execute. Records the resolved
+	 * callee package id for popularity; nested evaluate does not re-attribute
+	 * the callee's own transitive deps.
+	 */
+	conversationId?: string | null
+	/**
+	 * Propagate closed-world retriever restrictions into nested library loads
+	 * when a restricted run supplies these tools explicitly.
+	 */
+	closedWorldRetrieverRuntime?: boolean
+}): ComputedPackageImportTools {
+	const computedImportDepth = input.computedImportDepth ?? 0
+	return {
+		async callDefault(rawInput) {
+			const specifier =
+				typeof rawInput?.specifier === 'string' ? rawInput.specifier.trim() : ''
+			if (!specifier) {
+				throw new Error(
+					'Computed kody:@ import requires a non-empty specifier string.',
+				)
+			}
+			const userId = input.callerContext.user?.userId
+			if (!userId) {
+				throw new Error(
+					'Dynamic kody:@ package import requires an authenticated runtime. Use a static import (import fn from "kody:@scope/package/export") when the package name is known at write time.',
+				)
+			}
+			if (computedImportDepth >= maxComputedPackageImportDepth) {
+				throw new Error(
+					`Computed kody:@ import exceeded the maximum nested depth (${maxComputedPackageImportDepth}).`,
+				)
+			}
+			const artifact = await resolveComputedPackageImportArtifact({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId,
+				specifier,
+			})
+			const conversationId = input.conversationId?.trim()
+			const calleePackageId = artifact.packageContext?.packageId?.trim()
+			if (conversationId && calleePackageId) {
+				await scheduleAgentPackageConversationUses(
+					input.env,
+					{
+						userId,
+						packageIds: [calleePackageId],
+						conversationId,
+					},
+					input.waitUntil,
+				)
+			}
+			const callBundle = buildComputedPackageImportCallBundle({
+				artifact,
+				specifier,
+			})
+			const nestedTools = createComputedPackageImportTools({
+				...input,
+				computedImportDepth: computedImportDepth + 1,
+			})
+			const result = await runBundledModuleWithRegistry(
+				input.env,
+				input.callerContext,
+				{
+					mainModule: callBundle.mainModule,
+					modules: callBundle.modules,
+					dependencies: callBundle.dependencies,
+				},
+				rawInput.params,
+				{
+					packageContext: input.packageContext,
+					packageInvokeTools: input.packageInvokeTools,
+					packageEventTools: input.packageEventTools,
+					emailTools: input.emailTools,
+					workflowTools: input.workflowTools,
+					additionalTools: input.additionalTools,
+					skipCapabilityRegistry: input.skipCapabilityRegistry,
+					capabilityRegistry: input.capabilityRegistry,
+					waitUntil: input.waitUntil,
+					signal: input.signal,
+					computedImportDepth: computedImportDepth + 1,
+					computedPackageImportTools: nestedTools,
+					closedWorldRetrieverRuntime: input.closedWorldRetrieverRuntime,
+					// Library load is not enter-as-package: do not attribute a
+					// package_export usage event to the caller's package id.
+					skipPackageExportUsage: true,
+					// Nested evaluate is not a second MCP execute call.
+					skipExecuteUsage: true,
+				},
+			)
+			if (result.error) {
+				throwComputedPackageImportFailure({
+					specifier,
+					error: result.error,
+				})
+			}
+			return result.result
+		},
+	}
+}
+
 export async function runBundledModuleWithRegistry(
 	env: Env,
 	callerContext: McpCallerContext,
@@ -716,6 +846,27 @@ export async function runBundledModuleWithRegistry(
 		workflowTools?: PackageWorkflowTools
 		packageInvokeTools?: PackageInvokeTools
 		packageEventTools?: PackageEventTools
+		/**
+		 * Host bridge for computed `import(specifier)` of caller-owned
+		 * `kody:@` names. When omitted on an authenticated run (outside
+		 * closed-world retriever), a default bridge is created so loads do
+		 * not require author-facing `packages.invoke`.
+		 */
+		computedPackageImportTools?: ComputedPackageImportTools
+		/** Nested depth for computed import library loads. */
+		computedImportDepth?: number
+		/**
+		 * Skip `package_export` usage attribution for this evaluate. Used by
+		 * computed-import library loads so the caller's package id is not
+		 * billed as if its own export ran.
+		 */
+		skipPackageExportUsage?: boolean
+		/**
+		 * Skip `execute` usage metering for this evaluate. Used by computed
+		 * import library loads so nested default calls do not inflate the
+		 * outer MCP execute daily quota.
+		 */
+		skipExecuteUsage?: boolean
 		skipCapabilityRegistry?: boolean
 		/**
 		 * Retriever enrichment profile: no capability map, no workflows,
@@ -798,6 +949,7 @@ export async function runBundledModuleWithRegistry(
 	async function recordPackageExportUsage(outcome: 'success' | 'error') {
 		if (usageRecorded) return
 		usageRecorded = true
+		if (options?.skipPackageExportUsage) return
 		const userId = callerContext.user?.userId
 		if (!options?.packageContext || !userId) return
 		await recordUsage(env, {
@@ -963,10 +1115,13 @@ export async function runBundledModuleWithRegistry(
 			rawFetchHostSink: options?.packageContext
 				? undefined
 				: options?.rawFetchHostSink,
-			recordExecuteUsage: shouldRecordExecuteUsageForRun({
-				surface: observedRunSurface(options),
-				hasPackageContext: Boolean(options?.packageContext),
-			}),
+			recordExecuteUsage:
+				options?.skipExecuteUsage === true
+					? false
+					: shouldRecordExecuteUsageForRun({
+							surface: observedRunSurface(options),
+							hasPackageContext: Boolean(options?.packageContext),
+						}),
 			surface: resolveDynamicWorkerDaySurface({
 				surface: options?.runRecord?.surface,
 				handleSurface: options?.runRecordHandle?.context.surface,
@@ -985,6 +1140,28 @@ export async function runBundledModuleWithRegistry(
 					callerContext,
 					packageContext: options?.packageContext ?? null,
 				}))
+		const computedPackageImportTools =
+			options?.computedPackageImportTools ??
+			(callerContext.user?.userId && !closedWorldRetrieverRuntime
+				? createComputedPackageImportTools({
+						env,
+						baseUrl: callerContext.baseUrl,
+						callerContext,
+						packageContext: options?.packageContext ?? null,
+						packageInvokeTools: options?.packageInvokeTools,
+						packageEventTools: options?.packageEventTools,
+						emailTools: options?.emailTools,
+						workflowTools,
+						additionalTools: options?.additionalTools,
+						skipCapabilityRegistry: options?.skipCapabilityRegistry,
+						capabilityRegistry: options?.capabilityRegistry,
+						waitUntil: options?.waitUntil,
+						signal: options?.signal,
+						computedImportDepth: options?.computedImportDepth ?? 0,
+						conversationId: options?.conversationId ?? null,
+						closedWorldRetrieverRuntime,
+					})
+				: undefined)
 		// Register the package_storage_* tools whenever the run has a user, even
 		// with an empty grant set: an unauthorized packageStorage() call then
 		// fails with the structured provenance message instead of a bare
@@ -1040,6 +1217,7 @@ export async function runBundledModuleWithRegistry(
 			packageEventTools: closedWorldRetrieverRuntime
 				? undefined
 				: options?.packageEventTools,
+			computedPackageImportTools,
 			staticCallMeterTools,
 		}
 		const runtimeHelperPreludes =

@@ -1237,6 +1237,10 @@ export function createComputedDynamicImportGuardSource(input: {
 }) {
 	// Coerce once, exactly as import() would, so a specifier object cannot
 	// pass the check with one toString() and load a different path.
+	//
+	// Computed `kody:@` loads go through the host `__kodyComputedPackageImport`
+	// bridge (library-load semantics for caller-owned / fork modules). They
+	// must not call author-facing `packages.invoke` ([#1750](https://github.com/kentcdodds/kody/issues/1750)).
 	return `
 const ${input.helperName} = async (specifier) => {
 	const resolvedSpecifier = \`\${specifier}\`;
@@ -1254,8 +1258,12 @@ const ${input.helperName} = async (specifier) => {
 	}
 	if (resolvedSpecifier.startsWith(${JSON.stringify(packageSpecifierPrefix)})) {
 		const runtimeStorage = globalThis[Symbol.for('kody.runtimeStorage')];
-		const packages = runtimeStorage?.getStore?.()?.packages;
-		if (packages == null || typeof packages.invoke !== 'function') {
+		const computedPackageImport =
+			runtimeStorage?.getStore?.()?.__kodyComputedPackageImport;
+		if (
+			computedPackageImport == null ||
+			typeof computedPackageImport.callDefault !== 'function'
+		) {
 			throw new Error(
 				'Dynamic kody:@ package import requires an authenticated runtime. Use a static import (import fn from "kody:@scope/package/export") when the package name is known at write time.',
 			);
@@ -1263,8 +1271,13 @@ const ${input.helperName} = async (specifier) => {
 		return {
 			default: async (params) =>
 				params === undefined
-					? await packages.invoke(resolvedSpecifier)
-					: await packages.invoke(resolvedSpecifier, { params }),
+					? await computedPackageImport.callDefault({
+							specifier: resolvedSpecifier,
+						})
+					: await computedPackageImport.callDefault({
+							specifier: resolvedSpecifier,
+							params,
+						}),
 		};
 	}
 	return await import(resolvedSpecifier);

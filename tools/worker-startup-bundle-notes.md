@@ -263,3 +263,9 @@ runtime path if this budget is raised again.
   top of #2670: runtime local dry-run 3_893_620 against the previous 3_893_500
   budget, reviewed ceiling 3_894_500; platform local dry-run 5_218_689 against
   the previous 5_218_500 budget, reviewed ceiling 5_219_500.
+- Computed `kody:@` import Gate 2 (#1750): host `__kodyComputedPackageImport`
+  bridge, `createComputedPackageImportTools`, and the library-load call bundle
+  for caller-owned importable modules land on the runtime and platform evaluate
+  paths (rebased onto #2673): local dry-run runtime 3_898_846 / platform
+  5_224_029 against the post-#2673 floors; reviewed ceilings 3_899_500 /
+  5_225_000.

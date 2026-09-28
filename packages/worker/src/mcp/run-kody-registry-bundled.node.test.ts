@@ -235,9 +235,10 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 			() =>
 				({
 					async execute(_wrapped, providers) {
-						// Main provider + packages bridge + static-call meter
-						// bridge (bound whenever the run has a user).
-						expect(providers).toHaveLength(3)
+						// Main provider + packages bridge + computed-import
+						// bridge + static-call meter bridge (bound whenever the
+						// run has a user).
+						expect(providers).toHaveLength(4)
 						providerFns = (
 							providers[0] as {
 								fns: Record<string, (args: unknown) => Promise<unknown>>
@@ -652,6 +653,74 @@ test('runBundledModuleWithRegistry records package_export usage for bundled runs
 		createExecuteExecutorSpy.mockRestore()
 		getRegistrySpy.mockRestore()
 		recordUsageSpy.mockRestore()
+	}
+})
+
+test('runBundledModuleWithRegistry skipExecuteUsage suppresses execute metering on nested library loads', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: {
+			userId: 'user-execute-skip',
+			email: 'execute-skip@example.com',
+			displayName: 'Execute Skip',
+		},
+	})
+	const bundle = {
+		mainModule: 'entry.js',
+		modules: {
+			'entry.js': 'export default async () => "ok"',
+		},
+	}
+	const emptyRegistry = {
+		capabilityDomains: [],
+		capabilityDomainDescriptionsByName: {} as Record<string, string>,
+		capabilityHandlers: {},
+		capabilityList: [],
+		capabilityMap: {},
+		capabilitySpecs: {},
+		capabilityToolDescriptors: {},
+	} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
+	const getRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockResolvedValue(emptyRegistry)
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute() {
+				return { result: 'ok', logs: [] }
+			},
+		} as never)
+
+	try {
+		await runBundledModuleWithRegistry(env, callerContext, bundle, undefined, {
+			packageContext: null,
+			skipCapabilityRegistry: true,
+			skipExecuteUsage: true,
+		})
+		expect(createExecuteExecutorSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				recordExecuteUsage: false,
+			}),
+		)
+
+		createExecuteExecutorSpy.mockClear()
+		await runBundledModuleWithRegistry(env, callerContext, bundle, undefined, {
+			packageContext: null,
+			skipCapabilityRegistry: true,
+		})
+		expect(createExecuteExecutorSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				recordExecuteUsage: true,
+			}),
+		)
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+		getRegistrySpy.mockRestore()
 	}
 })
 

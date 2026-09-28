@@ -17,5 +17,6 @@ export {
 export { buildKodyAppClientBundle } from './module-graph-client-bundle.ts'
 export {
 	hydrateKodyRuntimeModules,
+	resolveCurrentDynamicPackageArtifact,
 	type HydratedKodyRuntimeModules,
 } from './module-graph-hydration.ts'

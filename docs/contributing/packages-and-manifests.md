@@ -151,8 +151,10 @@ A saved package is a repo with the package extension activated. Four concepts:
   declarations.
 - Computed `import(specifier)` is the name-as-data path for caller-owned and
   forked modules. The bundler rewrites non-literal `import(...)` expressions
-  through a runtime helper that loads `kody:@` specifiers when the package
-  helper is bound. Prefer a static import when the name is known at write time.
+  through a host `__kodyComputedPackageImport` bridge that loads `kody:@`
+  specifiers without author-facing `packages.invoke` (and without requiring the
+  quarantined `packages` helper to be bound). Prefer a static import when the
+  name is known at write time.
 - `kody:runtime` is a reserved host-external virtual module. The bundler may add
   a placeholder so author code can keep `import { kody } from "kody:runtime"`,
   but published bundle artifacts must not persist the host runtime
@@ -224,10 +226,12 @@ import handleEvent from 'kody:@kentcdodds/event-subscriber/handle-event'
 await handleEvent({ event })
 ```
 
-`kody:runtime` quarantines a `packages` helper for leftover published modules
-that call it ([#1750](https://github.com/kentcdodds/kody/issues/1750)). Authors
-and agents do not get that helper. Fleet source migrates with package codemod
-`0008-packages-invoke-to-static-import`. See
+`kody:runtime` still binds a quarantined `packages` helper for leftover
+published modules that call it
+([#1750](https://github.com/kentcdodds/kody/issues/1750)). There is no
+author-facing `packages.invoke`. Computed `import(specifier)` loads caller-owned
+modules through a separate host bridge. Fleet source migrates with package
+codemod `0008-packages-invoke-to-static-import`. See
 [0037](./decisions/0037-no-author-packages-invoke.md). Interactive MCP
 `packageSubscriptionDispatch` is the post-publish subscription smoke test
 ([0013](./decisions/0013-synthetic-package-requests.md)), not a composition

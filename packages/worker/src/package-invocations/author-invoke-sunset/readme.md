@@ -13,9 +13,12 @@ Tracker: [#1750](https://github.com/kentcdodds/kody/issues/1750).
 Delete this leftover when:
 
 1. Fleet codemod `0008-packages-invoke-to-static-import` has applied (or
-   `needsManual` is empty enough).
-2. Computed `import(specifier)` loads caller-owned modules.
-3. Usage docs, guides, and MCP copy no longer mention `packages.invoke`.
+   `needsManual` is empty enough). Gate 1 for Kent-owned executable source is
+   largely done; community leftovers stay detected.
+2. Computed `import(specifier)` loads caller-owned modules without this helper
+   (Gate 2: shipped — host `__kodyComputedPackageImport` bridge).
+3. Usage docs, guides, and MCP copy no longer mention `packages.invoke` except
+   as "there is no author-facing packages.invoke."
 
 The helper implementation still lives in `runtime-tool-factories.ts` and
 `run-kody-registry.ts` until that cleanup. This folder exists so the leftover
