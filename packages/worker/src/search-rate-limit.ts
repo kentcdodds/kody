@@ -1,6 +1,6 @@
 import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
 import { type PlanName } from '#universal/plans.ts'
-import { getUserPlan } from '#worker/entitlements/service.ts'
+import { getCachedUserPlan } from '#worker/entitlements/service.ts'
 import { SearchRateLimitError } from '#worker/search-rate-limit-error.ts'
 
 export {
@@ -69,7 +69,9 @@ export async function consumeSearchRateLimit(input: {
 }): Promise<PlanName> {
 	if (!input.userId) return 'free'
 
-	const plan = await getUserPlan(input.db, {
+	// Abuse ceilings are plan-limit resolution: the shared 60s plan cache
+	// applies, so a search does not pay a users read before its writes.
+	const plan = await getCachedUserPlan(input.db, {
 		userId: input.userId,
 		email: input.email,
 	})

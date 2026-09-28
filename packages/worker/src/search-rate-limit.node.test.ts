@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { getUserPlan } from '#worker/entitlements/service.ts'
+import { getCachedUserPlan } from '#worker/entitlements/service.ts'
 import {
 	consumeSearchRateLimit,
 	isSearchRateLimitError,
@@ -12,7 +12,7 @@ import {
 } from './search-rate-limit.ts'
 
 vi.mock('#worker/entitlements/service.ts', () => ({
-	getUserPlan: vi.fn(async () => 'free'),
+	getCachedUserPlan: vi.fn(async () => 'free'),
 }))
 
 function createDb() {
@@ -23,8 +23,8 @@ function createDb() {
 
 test('consumeSearchRateLimit returns the resolved plan so search does not look it up again', async () => {
 	const { db } = createDb()
-	vi.mocked(getUserPlan).mockClear()
-	vi.mocked(getUserPlan).mockResolvedValueOnce('pro')
+	vi.mocked(getCachedUserPlan).mockClear()
+	vi.mocked(getCachedUserPlan).mockResolvedValueOnce('pro')
 	expect(
 		await consumeSearchRateLimit({
 			db,
@@ -32,7 +32,7 @@ test('consumeSearchRateLimit returns the resolved plan so search does not look i
 			email: 'plan@example.com',
 		}),
 	).toBe('pro')
-	expect(getUserPlan).toHaveBeenCalledTimes(1)
+	expect(getCachedUserPlan).toHaveBeenCalledTimes(1)
 })
 
 test('consumeSearchRateLimit no-ops without a userId', async () => {
