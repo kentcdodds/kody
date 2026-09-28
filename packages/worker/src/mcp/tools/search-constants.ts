@@ -28,6 +28,13 @@ export const maxRelatedCapabilityOperations = 20
 export const maxBatchEntityRefs = 10
 export const maxFusedPackageCandidates = 100
 /**
+ * Max lean package rows hydrated (source load + export AST parse) per ranked
+ * search so exports can promote into the first-pass pool. Fixed rather than
+ * tied to recall: Jev wide recall (50) would otherwise parse ~3× more package
+ * sources per search for rows that rarely reach the returned page.
+ */
+export const maxHydratedPackageCandidates = defaultSearchLimit
+/**
  * Max first-class package-export candidates promoted per package into the
  * ranked pool (widen-then-narrow). Nested `actionMatches` on package index
  * hits stay capped separately. Close runners-up within
@@ -48,6 +55,17 @@ export const packageExportCloseScoreGap = 0.15
  * flooding non-export queries.
  */
 export const packageExportCandidateMinScore = 0.45
+/**
+ * Bound wait for the ranked-search `## Waiting` block. It is a nudge, not the
+ * answer, so a slow probe fan-out skips the block instead of delaying results.
+ */
+export const SEARCH_WAITING_ITEMS_BUDGET_MS = 1_500
+/**
+ * Hard ceiling for one `search` call. MCP hosts commonly time out at ~30s
+ * (error -32001); failing first with a clear message beats a silent hang
+ * that invites retries while the abandoned search keeps running.
+ */
+export const SEARCH_DEADLINE_MS = 20_000
 export const SEARCH_MEMORY_ENRICHMENT_BUDGET_MS = 1_000
 /** Bound wait for post-retrieval D1 acknowledgement; does not cover retrieval. */
 export const SEARCH_MEMORY_ACKNOWLEDGEMENT_BUDGET_MS = 250

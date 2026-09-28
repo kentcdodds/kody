@@ -33,6 +33,7 @@ import {
 import { formatPackageFileEntityDetail } from '../package-file-search-detail.ts'
 import {
 	maxFusedPackageCandidates,
+	maxHydratedPackageCandidates,
 	maxPackageExportCandidatesPerPackage,
 	packageExportCandidateMinScore,
 	packageExportCloseScoreGap,
@@ -611,9 +612,13 @@ export const packageSearchEntityPlugin = {
 		}
 
 		// Lean search rows omit exports until hydrate. Bound hydrate to the
-		// recall window so strong exports can enter the first-pass pool without
-		// loading every package source.
-		const hydrateBudget = Math.min(packageCandidates.length, input.limit)
+		// top of the recall window so strong exports can enter the first-pass
+		// pool without loading every package source.
+		const hydrateBudget = Math.min(
+			packageCandidates.length,
+			input.limit,
+			maxHydratedPackageCandidates,
+		)
 		const hydrateTargets = [...packageCandidates]
 			.sort(
 				(left, right) => right.scoreComponents.base - left.scoreComponents.base,

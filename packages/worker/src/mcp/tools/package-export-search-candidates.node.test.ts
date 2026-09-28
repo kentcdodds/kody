@@ -1,14 +1,18 @@
 import { expect, test, vi } from 'vitest'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
+import { deterministicEmbedding } from '#worker/vectorize/embedding.ts'
 
 import { searchUnified, type PackageSearchRow } from './search.ts'
+import { maxHydratedPackageCandidates } from './search-constants.ts'
 import {
 	buildPackageActionMatches,
 	buildPackageExportParentIdentityFields,
 	hydrateTopPackageMatches,
+	packageSearchEntityPlugin,
 	selectPromotedPackageExportCandidates,
 	shouldPromotePackageExportCandidate,
 } from './search-entity-plugins/package.ts'
+import { resolveJevSearchRecallLimit } from './search-jev-rerank.ts'
 import { type PackageActionMatch } from './search-format-types.ts'
 
 function createPackageExportProjection(
@@ -700,4 +704,74 @@ test('hydrateTopPackageMatches keeps export hits aligned with exportSubpath', as
 		path: 'README.md',
 		snippet: 'Home controls intent.',
 	})
+})
+
+test('package candidates hydrate a fixed number of lean rows even when Jev widens recall', async () => {
+	const rowCount = maxHydratedPackageCandidates * 3
+	const hydratedIds: Array<string> = []
+	const rows: Array<PackageSearchRow> = Array.from(
+		{ length: rowCount },
+		(_, index) => {
+			const kodyId = `github-helper-${String(index)}`
+			const projection = {
+				name: `@kody/${kodyId}`,
+				kodyId,
+				description: 'Create a github issue from a report.',
+				tags: ['github'],
+				searchText: 'github issue create',
+				hasApp: false,
+				hidden: false,
+				isPrivate: false,
+				appEntry: null,
+				exports: [],
+				jobs: [],
+				subscriptions: [],
+				retrievers: [],
+				webhooks: [],
+			}
+			return {
+				record: {
+					id: `pkg-${String(index)}`,
+					userId: 'user-1',
+					name: projection.name,
+					kodyId,
+					description: projection.description,
+					tags: projection.tags,
+					searchText: projection.searchText,
+					sourceId: `source-${String(index)}`,
+					hasApp: false,
+					hidden: false,
+					isPrivate: false,
+					createdAt: '2026-04-20T00:00:00.000Z',
+					updatedAt: '2026-04-20T00:00:00.000Z',
+				},
+				listingAhead: null,
+				projection,
+				readmeSnippet: null,
+				hydrate: async () => {
+					hydratedIds.push(kodyId)
+					return { projection, readmeSnippet: null }
+				},
+			} as PackageSearchRow
+		},
+	)
+	const query = 'create github issue'
+	const candidates = await packageSearchEntityPlugin.buildCandidates({
+		env: {} as Env,
+		query,
+		limit: resolveJevSearchRecallLimit({ limit: 15, widerRecall: true }),
+		offline: true,
+		userId: 'user-1',
+		registry: buildCapabilityRegistry([]),
+		optionalRows: {
+			packageRows: rows,
+			userSecretRows: [],
+			userValueRows: [],
+			userIntegrationRows: [],
+		},
+		retrieverResults: [],
+		queryEmbedding: deterministicEmbedding(query),
+	})
+	expect(candidates.length).toBe(rowCount)
+	expect(new Set(hydratedIds).size).toBe(maxHydratedPackageCandidates)
 })
