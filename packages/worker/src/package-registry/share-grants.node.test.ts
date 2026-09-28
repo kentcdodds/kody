@@ -136,6 +136,50 @@ async function createHarness() {
 	return { db, ...seeded }
 }
 
+function countingDb(db: D1Database) {
+	const statements: Array<string> = []
+	const counted = new Proxy(db, {
+		get(target, property, receiver) {
+			if (property === 'prepare') {
+				return (query: string) => {
+					statements.push(query.replace(/\s+/g, ' ').trim())
+					return target.prepare(query)
+				}
+			}
+			return Reflect.get(target, property, receiver)
+		},
+	})
+	return { db: counted, statements }
+}
+
+test('execute storage grant checks skip empty sets and verify ownership in one query', async () => {
+	const { db, packageId } = await createHarness()
+	const second = await seedPublishedPackage(db, {
+		userId: ownerUserId,
+		name: '@alice/second',
+		kodyId: 'second',
+	})
+	const counting = countingDb(db)
+
+	await expect(
+		collectShareStorageOwners({
+			db: counting.db,
+			callerUserId: ownerUserId,
+			packageIds: [],
+		}),
+	).resolves.toEqual(new Map())
+	expect(counting.statements).toEqual([])
+
+	const retained = await retainAuthorizedPackageStorageGrantIds({
+		db: counting.db,
+		callerUserId: ownerUserId,
+		packageIds: [packageId, second.packageId, 'not-mine'],
+		storageOwnerByPackageId: new Map(),
+	})
+	expect(retained).toEqual(new Set([packageId, second.packageId]))
+	expect(counting.statements).toHaveLength(1)
+})
+
 test('invite fails closed when package-share-grants is off', async () => {
 	const sqlite = new DatabaseSync(':memory:')
 	applyRepositoryMigrations(sqlite, migrationsDirectory)

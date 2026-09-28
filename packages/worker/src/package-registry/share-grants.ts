@@ -14,7 +14,7 @@ import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
 import { getCommunityPackageHref } from '#worker/community/package-url.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { normalizeStableUserId } from '#worker/user-id.ts'
-import { getSavedPackageById } from './repo.ts'
+import { getSavedPackageById, listSavedPackagesByIds } from './repo.ts'
 import {
 	isPackageShareGrantsEnabled,
 	packageShareGrantsDisabledMessage,
@@ -821,6 +821,12 @@ export async function collectShareStorageOwners(input: {
 }): Promise<Map<string, string>> {
 	const owners = new Map<string, string>()
 	if (!canPrepareAppDb(input.db)) return owners
+	const packageIds = [
+		...new Set(
+			[...input.packageIds].filter((packageId) => packageId.length > 0),
+		),
+	]
+	if (packageIds.length === 0) return owners
 	if (
 		!(await isPackageShareGrantsEnabled({
 			db: input.db,
@@ -829,12 +835,6 @@ export async function collectShareStorageOwners(input: {
 	) {
 		return owners
 	}
-	const packageIds = [
-		...new Set(
-			[...input.packageIds].filter((packageId) => packageId.length > 0),
-		),
-	]
-	if (packageIds.length === 0) return owners
 	return await queryShareGrantsOrEmpty(async () => {
 		const placeholders = packageIds.map(() => '?').join(', ')
 		const rows = await input.db
@@ -863,24 +863,27 @@ export async function retainAuthorizedPackageStorageGrantIds(input: {
 	storageOwnerByPackageId: ReadonlyMap<string, string>
 }): Promise<Set<string>> {
 	const retained = new Set<string>()
+	const ownershipCandidates: Array<string> = []
 	for (const packageId of new Set(
 		[...input.packageIds].filter((id) => id.length > 0),
 	)) {
 		if (input.storageOwnerByPackageId.has(packageId)) {
 			retained.add(packageId)
-			continue
+		} else {
+			ownershipCandidates.push(packageId)
 		}
-		try {
-			const own = canPrepareAppDb(input.db)
-				? await getSavedPackageById(input.db, {
-						userId: input.callerUserId,
-						packageId,
-					})
-				: null
-			if (own) retained.add(packageId)
-		} catch (error) {
-			if (!/no such table/i.test(getErrorMessage(error))) throw error
-		}
+	}
+	if (ownershipCandidates.length === 0 || !canPrepareAppDb(input.db)) {
+		return retained
+	}
+	try {
+		const owned = await listSavedPackagesByIds(input.db, {
+			userId: input.callerUserId,
+			packageIds: ownershipCandidates,
+		})
+		for (const record of owned) retained.add(record.id)
+	} catch (error) {
+		if (!/no such table/i.test(getErrorMessage(error))) throw error
 	}
 	return retained
 }
