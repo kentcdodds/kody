@@ -795,6 +795,7 @@ export const packageSearchEntityPlugin = {
 				webhook.rateLimitPerMinute ?? webhookDefaultRateLimitPerMinute,
 			replay: webhook.replay ?? null,
 			signedPayload: webhook.verification?.signedPayload ?? null,
+			challenge: webhook.challenge ?? null,
 		}))
 		const appEntry = detail.manifest.kody.app?.entry ?? null
 		const readmeIntent = buildPackageReadmeIntent({
@@ -871,6 +872,7 @@ export const packageSearchEntityPlugin = {
 						webhook.replay?.deliveryIdHeader
 							? `delivery ${webhook.replay.deliveryIdHeader}`
 							: null,
+						webhook.challenge ? `challenge ${webhook.challenge.type}` : null,
 					].filter((value): value is string => value != null)
 					const replaySuffix =
 						replayParts.length > 0 ? ` (${replayParts.join(', ')})` : ''

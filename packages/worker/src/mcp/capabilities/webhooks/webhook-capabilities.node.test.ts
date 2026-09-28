@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { listedWebhookSchema } from './shared.ts'
 
 const mockModule = vi.hoisted(() => ({
 	listWebhooksForUser: vi.fn(),
@@ -59,7 +60,6 @@ const { webhookUrlApplyCapability, webhookUrlApplyDestinationSchema } =
 	await import('./webhook-url-apply.ts')
 const { webhookDeliveryListCapability } =
 	await import('./webhook-delivery-list.ts')
-
 function createCapabilityContext(input?: {
 	executionOrigin?: 'interactive' | 'background'
 	storageContext?: {
@@ -102,12 +102,35 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 				secretName: 'sentryWebhookSecret',
 				encoding: 'hex',
 			},
+			replay: null,
+			challenge: { type: 'meta-hub', secretName: 'metaVerify' },
 			minted: true,
 			handle: 'whh_ep-1',
 			urlHost: 'heykody.dev',
 			enabled: true,
 			createdAt: '2026-07-24T00:00:00.000Z',
 			rotatedAt: '2026-07-24T00:00:00.000Z',
+			previousUrlActiveUntil: null,
+		},
+		{
+			packageId: 'pkg-1',
+			packageKodyId: 'sentry-bridge',
+			packageName: '@user/sentry-bridge',
+			name: 'unchallenged',
+			exportName: './handle-unchallenged',
+			description: null,
+			responseMode: 'ack',
+			inputMode: 'request',
+			rateLimitPerMinute: 60,
+			verification: null,
+			replay: null,
+			challenge: null,
+			minted: false,
+			handle: null,
+			urlHost: null,
+			enabled: null,
+			createdAt: null,
+			rotatedAt: null,
 			previousUrlActiveUntil: null,
 		},
 	])
@@ -201,6 +224,14 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 	expect(listed.webhooks[0]?.minted).toBe(true)
 	expect(listed.webhooks[0]?.handle).toBe('whh_ep-1')
 	expect(listed.webhooks[0]?.previous_url_active_until).toBeNull()
+	expect(listed.webhooks[0]?.challenge).toEqual({
+		type: 'meta-hub',
+		secretName: 'metaVerify',
+	})
+	expect(listed.webhooks[1]?.challenge).toBeNull()
+	for (const row of listed.webhooks) {
+		expect(listedWebhookSchema.parse(row)).toEqual(row)
+	}
 	expect(JSON.stringify(listed)).not.toContain('secret-once')
 
 	const minted = await webhookUrlMintCapability.handler(
