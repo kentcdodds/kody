@@ -60,18 +60,21 @@ async function readVisibleEntitlementUsage(input: {
 	resource: EntitlementResource
 	now: Date
 }) {
-	const authoritativeUsage = await readCurrentEntitlementResourceUsage({
+	const authoritativeUsagePromise = readCurrentEntitlementResourceUsage({
 		db: input.db,
 		env: input.env,
 		userId: input.userId,
 		resource: input.resource,
 		now: input.now,
 	})
-	if (input.resource !== 'storage_bytes') return authoritativeUsage
-	const bucketEstimates = await listUserStorageBucketEstimates({
-		env: input.env,
-		userId: input.userId,
-	})
+	if (input.resource !== 'storage_bytes') return await authoritativeUsagePromise
+	const [authoritativeUsage, bucketEstimates] = await Promise.all([
+		authoritativeUsagePromise,
+		listUserStorageBucketEstimates({
+			env: input.env,
+			userId: input.userId,
+		}),
+	])
 	return bucketEstimates.reduce(
 		(total, bucket) => total + (bucket.estimatedBytes ?? 0),
 		authoritativeUsage,
@@ -91,16 +94,26 @@ export async function readEntitlementUsageSnapshot(input: {
 	const resources = await Promise.all(
 		accountUsageEntitlementResources.map(async (resource) => {
 			const visibility = entitlementResourceVisibility[resource]
-			const current =
+			const [current, week] = await Promise.all([
 				visibility.kind === 'per_unit_max'
 					? 0
-					: await readVisibleEntitlementUsage({
+					: readVisibleEntitlementUsage({
 							db: input.db,
 							env: input.env,
 							userId: input.usageUserId,
 							resource,
 							now,
-						})
+						}),
+				readWeeklyUsageWindow({
+					env: input.env,
+					userId: input.usageUserId,
+					plan: input.plan,
+					ladder: input.ladder,
+					creditWallet: input.creditWallet,
+					resource,
+					now,
+				}),
+			])
 			const limit = resolvePlanLimit(
 				input.plan,
 				resource,
@@ -114,15 +127,6 @@ export async function readEntitlementUsageSnapshot(input: {
 				visibility.kind === 'per_unit_max' || limit === 0
 					? null
 					: current / limit
-			const week = await readWeeklyUsageWindow({
-				env: input.env,
-				userId: input.usageUserId,
-				plan: input.plan,
-				ladder: input.ladder,
-				creditWallet: input.creditWallet,
-				resource,
-				now,
-			})
 			const overEightyPercent =
 				(percentOfLimit !== null &&
 					percentOfLimit > entitlementUsageWarningThreshold) ||

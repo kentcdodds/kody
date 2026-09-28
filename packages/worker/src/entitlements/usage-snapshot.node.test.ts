@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { legacyPlanLimits, planLimits } from '#universal/plans.ts'
 import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapshot.ts'
@@ -193,6 +193,59 @@ test('readEntitlementUsageSnapshot uses the requested entitlement ladder', async
 			(row) => row.resource === 'execute_calls_per_day',
 		)?.week,
 	).toBeUndefined()
+})
+
+test('readEntitlementUsageSnapshot reads the weekly window without waiting on the daily read', async () => {
+	const now = new Date('2026-07-25T12:00:00.000Z')
+	const { stableUserId, db } = createUsageTestDb({
+		email: 'weekly-parallel@example.com',
+	})
+	const env = withUsageEnv({ APP_DB: db })
+	type MeterStub = {
+		read: (input: { resource: string }) => Promise<unknown>
+		readRange: (input: { resource: string }) => Promise<unknown>
+	}
+	const userMeter = env.USER_METER as unknown as {
+		get: (id: unknown) => MeterStub
+	}
+	const realGet = userMeter.get
+	let releaseDailyRead!: () => void
+	const dailyReadGate = new Promise<void>((resolve) => {
+		releaseDailyRead = resolve
+	})
+	const weeklyRangeResources: Array<string> = []
+	userMeter.get = (id) => {
+		const meter = realGet(id)
+		return {
+			...meter,
+			async read(input: { resource: string }) {
+				if (input.resource === 'execute_calls_per_day') await dailyReadGate
+				return meter.read(input)
+			},
+			async readRange(input: { resource: string }) {
+				weeklyRangeResources.push(input.resource)
+				return meter.readRange(input)
+			},
+		}
+	}
+
+	const snapshotPromise = readEntitlementUsageSnapshot({
+		db,
+		env: env as unknown as Env,
+		usageUserId: stableUserId,
+		plan: 'free',
+		ladder: 'public',
+		now,
+	})
+	await vi.waitFor(() => {
+		expect(weeklyRangeResources).toContain('execute_calls_per_day')
+	})
+	releaseDailyRead()
+	const snapshot = await snapshotPromise
+	expect(
+		snapshot.resources.find((row) => row.resource === 'execute_calls_per_day')
+			?.week?.limit,
+	).toBe(400)
 })
 
 test('readEntitlementUsageSnapshot warns when the weekly window is hotter than today', async () => {
