@@ -68,33 +68,29 @@ vi.mock('#worker/discord/guild-membership.ts', () => ({
 		mockModule.readOfficialDiscordMembershipForUser(...args),
 }))
 
-function createStubDb(stamps?: {
-	first_search_at?: string | null
-	first_execute_at?: string | null
-	first_saved_package_at?: string | null
-	onboarding_checklist_dismissed_at?: string | null
-}) {
+function createStubDb(
+	stamps?: {
+		first_search_at?: string | null
+		first_execute_at?: string | null
+		first_saved_package_at?: string | null
+		onboarding_checklist_dismissed_at?: string | null
+	},
+	queries: Array<string> = [],
+) {
 	return {
 		prepare(query: string) {
 			const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
+			queries.push(normalized)
 			return {
 				bind() {
 					return {
 						async first() {
 							if (!stamps) return null
-							if (normalized.includes('first_search_at')) {
-								return { first_search_at: stamps.first_search_at ?? null }
-							}
-							if (normalized.includes('first_execute_at')) {
-								return { first_execute_at: stamps.first_execute_at ?? null }
-							}
-							if (normalized.includes('first_saved_package_at')) {
+							if (normalized.includes('from users')) {
 								return {
+									first_search_at: stamps.first_search_at ?? null,
+									first_execute_at: stamps.first_execute_at ?? null,
 									first_saved_package_at: stamps.first_saved_package_at ?? null,
-								}
-							}
-							if (normalized.includes('onboarding_checklist_dismissed_at')) {
-								return {
 									onboarding_checklist_dismissed_at:
 										stamps.onboarding_checklist_dismissed_at ?? null,
 								}
@@ -307,5 +303,41 @@ test('waiting first-use signals emit cards only when the probe knows they are mi
 	expect(buildWaitingItems(discordOpen).map((item) => item.id)).toEqual([
 		'first-use:discord',
 	])
+	resetFirstUseMocks()
+})
+
+test('waiting onboarding checklist reuses first-use probes instead of re-reading them', async () => {
+	resetFirstUseMocks()
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([
+		{ id: 'pkg-1', name: 'demo', kodyId: 'demo', lockedAt: null },
+	])
+	const queries: Array<string> = []
+	const signals = await collectWaitingSignals({
+		env: {
+			APP_DB: createStubDb(
+				{
+					first_search_at: null,
+					first_execute_at: null,
+					first_saved_package_at: '2026-09-01T00:00:00.000Z',
+				},
+				queries,
+			),
+		} as Env,
+		user,
+	})
+
+	expect(signals.onboardingRemaining).not.toContain('give-access')
+	expect(signals.onboardingRemaining).not.toContain('install-starter')
+	expect(mockModule.listMemoriesByUserId).toHaveBeenCalledTimes(1)
+	// Only the entitlement-caps snapshot counts saved packages.
+	expect(
+		queries.filter((query) => query.includes('from saved_packages')),
+	).toHaveLength(1)
+	expect(
+		queries.filter(
+			(query) =>
+				query.includes('first_search_at') || query.includes('first_execute_at'),
+		),
+	).toHaveLength(1)
 	resetFirstUseMocks()
 })

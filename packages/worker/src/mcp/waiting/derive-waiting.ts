@@ -118,9 +118,7 @@ export async function collectWaitingSignals(input: {
 		pendingEmailChange,
 		errorRate,
 		entitlementCaps,
-		firstSearch,
-		firstExecute,
-		firstPackageStamp,
+		activationStamps,
 		firstMemory,
 		firstJob,
 		discordJoined,
@@ -147,9 +145,7 @@ export async function collectWaitingSignals(input: {
 		collectPendingEmailChange(env, user.userId, now),
 		collectErrorRate(env, user.stableUserId, now),
 		collectEntitlementCaps(env, user, now),
-		probeActivationStamp(env.APP_DB, user.stableUserId, 'search'),
-		probeActivationStamp(env.APP_DB, user.stableUserId, 'execute'),
-		probeActivationStamp(env.APP_DB, user.stableUserId, 'package'),
+		probeActivationStamps(env.APP_DB, user.stableUserId),
 		probeHasMemory(env.APP_DB, user.stableUserId),
 		probeHasJob(env, user.stableUserId),
 		readOfficialDiscordMembershipForUser({
@@ -159,11 +155,18 @@ export async function collectWaitingSignals(input: {
 		}),
 	])
 
+	const savedPackageCount = packagesProbe.ok ? packagesProbe.value.length : 0
 	const checklist = await deriveOnboardingChecklist({
 		env,
 		userId: user.stableUserId,
 		emailVerified: user.emailVerified,
 		hasMcpClient,
+		hasAccessWin:
+			activationStamps.search === true ||
+			activationStamps.execute === true ||
+			firstMemory === true ||
+			savedPackageCount > 0,
+		savedPackageCount,
 		now,
 	}).catch(() => ({
 		items: [],
@@ -191,10 +194,10 @@ export async function collectWaitingSignals(input: {
 		errorRate,
 		entitlementCaps,
 		firstUseMissing: collectFirstUseMissing({
-			search: firstSearch,
+			search: activationStamps.search,
 			memory: firstMemory,
-			execute: firstExecute,
-			package: combineFirstPackage(firstPackageStamp, packagesProbe),
+			execute: activationStamps.execute,
+			package: combineFirstPackage(activationStamps.package, packagesProbe),
 			job: firstJob,
 			integration: integrationsProbe.ok
 				? integrationsProbe.value.length > 0
@@ -327,43 +330,44 @@ function lockedSavedPackages(
 		}))
 }
 
-type ActivationStamp = 'search' | 'execute' | 'package'
-
-function activationStampColumn(stamp: ActivationStamp) {
-	switch (stamp) {
-		case 'search':
-			return 'first_search_at'
-		case 'execute':
-			return 'first_execute_at'
-		case 'package':
-			return 'first_saved_package_at'
-		default: {
-			const exhaustive: never = stamp
-			throw new Error(`Unknown activation stamp: ${String(exhaustive)}`)
-		}
-	}
+type ActivationStamps = {
+	search: boolean | null
+	execute: boolean | null
+	package: boolean | null
 }
 
-async function probeActivationStamp(
+const unknownActivationStamps: ActivationStamps = {
+	search: null,
+	execute: null,
+	package: null,
+}
+
+async function probeActivationStamps(
 	db: D1Database,
 	userId: string,
-	stamp: ActivationStamp,
-): Promise<boolean | null> {
-	const column = activationStampColumn(stamp)
+): Promise<ActivationStamps> {
 	try {
 		const row = await db
 			.prepare(
-				`SELECT ${column}
+				`SELECT first_search_at, first_execute_at, first_saved_package_at
 				 FROM users
 				 WHERE stable_user_id = ?
 				 LIMIT 1`,
 			)
 			.bind(userId)
-			.first<Record<string, string | null>>()
-		if (!row) return null
-		return Boolean(row[column])
+			.first<{
+				first_search_at: string | null
+				first_execute_at: string | null
+				first_saved_package_at: string | null
+			}>()
+		if (!row) return unknownActivationStamps
+		return {
+			search: Boolean(row.first_search_at),
+			execute: Boolean(row.first_execute_at),
+			package: Boolean(row.first_saved_package_at),
+		}
 	} catch {
-		return null
+		return unknownActivationStamps
 	}
 }
 
