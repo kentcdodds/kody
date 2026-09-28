@@ -15,7 +15,8 @@ import {
 } from '#worker/vectorize/embedding.ts'
 
 import { consumeSearchRateLimit } from '#worker/search-rate-limit.ts'
-import { isPaidPlan } from '#universal/plans.ts'
+import { getUserPlan } from '#worker/entitlements/service.ts'
+import { isPaidPlan, type PlanName } from '#universal/plans.ts'
 import { recordPaidRankedSearchFlagExposure } from '#worker/feature-flags/paid-ranked-search-exposure.ts'
 
 import { resolvePackageIdentitySearch } from './package-search-identity.ts'
@@ -84,9 +85,19 @@ async function executeSearchListWithinBudget(
 	input: ExecuteSearchListInput,
 ): Promise<SearchListExecutionResult> {
 	const phaseTimings: Partial<SearchPhaseTimings> = input.phaseTimings ?? {}
+	// Jev eligibility reads the plan fresh, alongside the rate-limit writes;
+	// only the abuse ceilings use the cached plan.
+	const jevPlanPromise: Promise<PlanName> =
+		input.userId && input.env.APP_DB
+			? getUserPlan(input.env.APP_DB, {
+					userId: input.userId,
+					email: input.callerContext.user?.email ?? null,
+				})
+			: Promise.resolve('free')
+	jevPlanPromise.catch(() => {})
 	const rateLimitStart = performance.now()
 	// Abuse ceiling only (not an entitlement): reject before embeddings / Jev.
-	const plan = await consumeSearchRateLimit({
+	await consumeSearchRateLimit({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		email: input.callerContext.user?.email ?? null,
@@ -252,7 +263,7 @@ async function executeSearchListWithinBudget(
 	phaseTimings.featureFlagsMs = elapsedMs(featureFlagsStart)
 	const jevEvaluation = evaluations?.[jevSearchRerankFlagKey]
 	const jevRerankEnabled = jevEvaluation?.enabled === true
-	const jevRerankPlanEligible = isPaidPlan(plan)
+	const jevRerankPlanEligible = isPaidPlan(await jevPlanPromise)
 	const searchUnifiedStart = performance.now()
 	result = await searchUnified({
 		env: input.env,
