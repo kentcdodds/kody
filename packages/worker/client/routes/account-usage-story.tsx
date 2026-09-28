@@ -25,7 +25,7 @@ import {
  * `/account/usage` render the same pieces from the same loader fields.
  */
 
-export function formatActivityMonth(month: string): string {
+function formatActivityMonth(month: string): string {
 	const date = new Date(`${month}-01T00:00:00.000Z`)
 	if (Number.isNaN(date.getTime())) return month
 	return date.toLocaleString('en-US', {

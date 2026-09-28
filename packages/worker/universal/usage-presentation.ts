@@ -35,7 +35,7 @@ export const accountActivityMetrics = [
 
 export type AccountActivityMetric = (typeof accountActivityMetrics)[number]
 
-export const accountActivityLabels = {
+const accountActivityLabels = {
 	execute: 'Code executions',
 	job_run: 'Job runs',
 	workflow_run: 'Workflow runs',
@@ -100,7 +100,7 @@ export function formatOnCreditsMicroUsd(microUsd: number): string {
 	return `$${dollars}`
 }
 
-export type IncludedComputeTone = 'calm' | 'attention'
+type IncludedComputeTone = 'calm' | 'attention'
 
 /**
  * One monthly include meter ready to render. `informational` meters (Free)
@@ -240,7 +240,7 @@ export function includedComputeSummary(input: {
 	}
 }
 
-export type CreditsAlarmKind =
+type CreditsAlarmKind =
 	| 'include_used_no_credits'
 	| 'include_nearly_used_no_credits'
 	| 'credits_low'
@@ -269,7 +269,7 @@ export type CreditsAlarmAutoRefill = {
  * Whether auto-refill is enabled but another refill would pass the monthly
  * cap while the balance sits at or under the refill threshold.
  */
-export function isAutoRefillCapped(input: {
+function isAutoRefillCapped(input: {
 	autoRefill: CreditsAlarmAutoRefill
 	balanceMicroUsd: number
 }): boolean {
