@@ -4,11 +4,12 @@ Husky hooks, `npm run validate`, and the test commands that gate commits and
 pushes. See the [setup index](./index.md) for the other setup pages.
 
 - `git commit` runs the Husky `pre-commit` hook. It formats staged
-  JavaScript/TypeScript/JSON/Markdown/CSS files with `oxfmt` and applies
-  `oxlint --fix` to staged JavaScript/TypeScript files. When the staged diff
-  includes a path that is not docs-only, or when that diff cannot be listed, it
-  also runs `npm run typecheck` and `npm run migrations:check`. A docs-only diff
-  skips those two commands. Docs-only means every path is under `docs/`, ends in
+  JavaScript/TypeScript/JSON/Markdown/CSS/YAML files (including
+  `.github/workflows`) with `oxfmt` and applies `oxlint --fix` to staged
+  JavaScript/TypeScript files. When the staged diff includes a path that is not
+  docs-only, or when that diff cannot be listed, it also runs
+  `npm run typecheck` and `npm run migrations:check`. A docs-only diff skips
+  those two commands. Docs-only means every path is under `docs/`, ends in
   `.md`, `.mdx`, or `.mdc`, or is a `LICENSE` / `LICENCE` / `COPYING` / `NOTICE`
   text file. A source file in the same commit, including a comment-only edit or
   a source file renamed to markdown, runs both checks.
