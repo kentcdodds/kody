@@ -1,7 +1,7 @@
 /**
  * Original score for the piece, synthesized from code so the license is the
  * repo's own. Deterministic: same code, same WAV. 120 BPM with one bar per
- * two seconds, so the drop on bar 5 lands on frame 240 at 30fps, where the
+ * two seconds, so the drop on bar 6 lands on frame 300 at 30fps, where the
  * lantern lights. Tempo, bar map, and duration must match `src/timing.ts`.
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -12,7 +12,7 @@ const sampleRate = 48_000
 const bpm = 120
 const beatSeconds = 60 / bpm
 const barSeconds = beatSeconds * 4
-const durationSeconds = 28
+const durationSeconds = 29.5
 const totalSamples = Math.round(durationSeconds * sampleRate)
 
 const outputPath = path.join(
@@ -351,6 +351,7 @@ const introBars = [
 	{ chord: chords.bm7, bass: 35 },
 	{ chord: chords.gmaj7, bass: 31 },
 	{ chord: chords.em7, bass: 28 },
+	{ chord: chords.gmaj7, bass: 31 },
 	{ chord: chords.asus, bass: 33 },
 ]
 
@@ -361,7 +362,7 @@ const grooveBars = [
 	{ chord: chords.gmaj7Voiced, bass: 31 },
 ]
 
-// Bars 1–4: the integration tax. Clipped plucks and a ticking hat, pad
+// Bars 1–5: the integration tax. Clipped plucks and a ticking hat, pad
 // held back under a closed filter so the drop has somewhere to go.
 for (const [index, bar] of introBars.entries()) {
 	const barNumber = index + 1
@@ -369,9 +370,9 @@ for (const [index, bar] of introBars.entries()) {
 		notes: bar.chord,
 		start: barTime(barNumber),
 		duration: barSeconds,
-		gain: 0.55 + index * 0.08,
-		cutoffFrom: 500 + index * 180,
-		cutoffTo: 750 + index * 260,
+		gain: 0.55 + index * 0.07,
+		cutoffFrom: 500 + index * 150,
+		cutoffTo: 750 + index * 220,
 		attack: 0.5,
 		release: 0.4,
 	})
@@ -390,11 +391,11 @@ for (const [index, bar] of introBars.entries()) {
 		})
 	}
 	for (let sixteenth = 0; sixteenth < 16; sixteenth++) {
-		if (barNumber === 4 && sixteenth >= 12) break
+		if (barNumber === 5 && sixteenth >= 12) break
 		const accent = sixteenth % 4 === 2 ? 1 : 0.45
 		renderHat(
 			barTime(barNumber, sixteenth / 4),
-			accent * (0.5 + index * 0.15),
+			accent * (0.5 + index * 0.12),
 			false,
 			0.25,
 		)
@@ -407,17 +408,22 @@ for (const [index, bar] of introBars.entries()) {
 			gain: 0.55,
 		})
 	}
+	if (barNumber >= 4) {
+		for (const beat of barNumber === 5 ? [0, 1.5] : [0, 2]) {
+			renderKick(barTime(barNumber, beat), 0.5)
+		}
+	}
 }
-renderRiser(barTime(3, 2), barSeconds * 1.5 - 0.12, 1)
+renderRiser(barTime(4, 2), barSeconds * 1.5 - 0.12, 1)
 for (let sixteenth = 0; sixteenth < 8; sixteenth++) {
-	renderClap(barTime(4, 2 + sixteenth / 4), 0.25 + sixteenth * 0.08)
+	renderClap(barTime(5, 2 + sixteenth / 4), 0.25 + sixteenth * 0.08)
 }
 
-// Bars 5–12: connect once, then generate. Four-on-the-floor, warm pads,
+// Bars 6–13: connect once, then generate and multiply. Four-on-the-floor, warm pads,
 // an eighth-note bass, and an arpeggio that opens up in the second pass.
 for (let pass = 0; pass < 2; pass++) {
 	for (const [index, bar] of grooveBars.entries()) {
-		const barNumber = 5 + pass * 4 + index
+		const barNumber = 6 + pass * 4 + index
 		renderPadChord({
 			notes: bar.chord,
 			start: barTime(barNumber),
@@ -470,16 +476,16 @@ for (let pass = 0; pass < 2; pass++) {
 		}
 	}
 }
-renderShimmer(barTime(5), barSeconds * 1.2, 1)
-renderShimmer(barTime(9), barSeconds, 0.7)
-renderRiser(barTime(12, 2), beatSeconds * 2, 0.55)
+renderShimmer(barTime(6), barSeconds * 1.2, 1)
+renderShimmer(barTime(10), barSeconds, 0.7)
+renderRiser(barTime(13, 2), beatSeconds * 2, 0.55)
 
-// Bars 13–14: the tagline. One open chord that rings out.
-renderKick(barTime(13), 1)
-renderShimmer(barTime(13), barSeconds * 2, 1)
+// Bar 14 on: the tagline. One open chord that rings out.
+renderKick(barTime(14), 1)
+renderShimmer(barTime(14), barSeconds * 2, 1)
 renderPadChord({
 	notes: chords.dmaj9,
-	start: barTime(13),
+	start: barTime(14),
 	duration: barSeconds * 1.4,
 	gain: 1.05,
 	cutoffFrom: 2600,
@@ -487,11 +493,11 @@ renderPadChord({
 	attack: 0.02,
 	release: 1.4,
 })
-renderBassNote({ note: 38, start: barTime(13), duration: 2.4, gain: 0.9 })
+renderBassNote({ note: 38, start: barTime(14), duration: 2.4, gain: 0.9 })
 for (const [index, note] of [74, 78, 81, 85, 88].entries()) {
 	renderBell(
 		note,
-		barTime(13, index * 0.5),
+		barTime(14, index * 0.5),
 		1,
 		(index % 2 === 0 ? -1 : 1) * 0.35,
 	)
@@ -499,7 +505,7 @@ for (const [index, note] of [74, 78, 81, 85, 88].entries()) {
 for (const [index, note] of chords.dmaj9.entries()) {
 	renderKey({
 		note: note + 12,
-		start: barTime(13) + index * 0.03,
+		start: barTime(14) + index * 0.03,
 		decay: 0.9,
 		gain: 0.7,
 		pan: (index / 4) * 1.2 - 0.6,
@@ -564,7 +570,7 @@ function renderReverb(send: Bus): Bus {
 const reverb = renderReverb(buses.reverbSend)
 const left = new Float32Array(totalSamples)
 const right = new Float32Array(totalSamples)
-const fadeOutStart = 25.2
+const fadeOutStart = 26.8
 for (let i = 0; i < totalSamples; i++) {
 	const duck = sidechainGain(i, 0.55)
 	const lightDuck = sidechainGain(i, 0.3)

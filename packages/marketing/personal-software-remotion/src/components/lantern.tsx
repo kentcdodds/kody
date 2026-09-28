@@ -5,6 +5,7 @@ import {
 	landingLanternOrbs,
 	type LandingPrimitiveId,
 } from '../../../../worker/universal/landing-lantern.ts'
+import { hubScreen } from '../app-grid.ts'
 import { lanternArt, orbArt } from '../assets.ts'
 import { cues, orbPulses } from '../choreography.ts'
 import {
@@ -31,6 +32,7 @@ const aspect = lanternArt.width / lanternArt.height
 const stations = {
 	home: { x: 960, y: 452, height: 590 },
 	side: { x: 318, y: 640, height: 440 },
+	hub: { x: hubScreen.x, y: hubScreen.y, height: 330 },
 	close: { x: 960, y: 368, height: 470 },
 }
 
@@ -42,6 +44,7 @@ export function lanternPose(frame: number): LanternPose {
 		cues.lanternToSide.end,
 		easeInOut,
 	)
+	const toHub = progress(frame, cues.zoomOut.start, cues.zoomOut.end, easeInOut)
 	const toClose = progress(
 		frame,
 		cues.lanternToCenter.start,
@@ -50,7 +53,11 @@ export function lanternPose(frame: number): LanternPose {
 	)
 	const lerp = (key: 'x' | 'y' | 'height') =>
 		mix(
-			mix(stations.home[key], stations.side[key], toSide),
+			mix(
+				mix(stations.home[key], stations.side[key], toSide),
+				stations.hub[key],
+				toHub,
+			),
 			stations.close[key],
 			toClose,
 		)

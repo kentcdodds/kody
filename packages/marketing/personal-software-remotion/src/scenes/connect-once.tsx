@@ -19,8 +19,8 @@ import { colors, fonts, primitiveColors } from '../theme.ts'
 import { bar, scenes } from '../timing.ts'
 
 const flightFrames = 40
-const labelsOut = bar(6, 2) + 6
-const panelsIn = bar(6, 3)
+const labelsOut = bar(7, 2) + 10
+const panelsIn = bar(7, 3) + 4
 const sceneOut = scenes.connectOnce.until - 22
 
 const labelSides: Record<
@@ -353,12 +353,12 @@ export function ConnectOnce() {
 						...words('Connect once.'),
 						...words('Keep them in').map((word, index) => ({
 							...word,
-							at: bar(6, 1) + index * 3,
+							at: bar(7, 1) + index * 3,
 						})),
-						{ text: 'Kody.', color: colors.primary, at: bar(6, 2) },
+						{ text: 'Kody.', color: colors.primary, at: bar(7, 2) },
 					],
 				]}
-				enterAt={bar(5, 1)}
+				enterAt={bar(6, 1)}
 				exitAt={sceneOut}
 				stagger={4}
 				fontSize={84}

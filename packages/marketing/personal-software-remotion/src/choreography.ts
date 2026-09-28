@@ -8,19 +8,21 @@ import { bar } from './timing.ts'
  * lantern uses to pulse.
  */
 export const cues = {
-	lanternAppear: bar(5) - 4,
+	lanternAppear: bar(6) - 4,
 	orbLit: {
-		memory: bar(5) + 4,
-		secrets: bar(5) + 10,
-		packages: bar(5) + 16,
-		triggers: bar(5) + 22,
-		integrations: bar(5) + 28,
-		apps: bar(5) + 34,
+		memory: bar(6) + 4,
+		secrets: bar(6) + 10,
+		packages: bar(6) + 16,
+		triggers: bar(6) + 22,
+		integrations: bar(6) + 28,
+		apps: bar(6) + 34,
 	} satisfies Record<LandingPrimitiveId, number>,
-	lanternToSide: { start: bar(8), end: bar(8, 2) + 2 },
-	appBuild: bar(9, 1) + 12,
-	lanternToCenter: { start: bar(12, 3) - 8, end: bar(13, 1) + 8 },
-	finalChord: bar(13),
+	lanternToSide: { start: bar(9), end: bar(9, 2) + 2 },
+	appBuild: bar(10, 1) + 2,
+	/** More apps spawn while the camera pulls back and the lantern takes the middle. */
+	zoomOut: { start: bar(11, 1) + 3, end: bar(12, 2) + 4 },
+	lanternToCenter: { start: bar(13, 3) - 8, end: bar(14, 1) + 8 },
+	finalChord: bar(14),
 } as const
 
 export type Arrival = {
@@ -37,35 +39,35 @@ export const arrivals: ReadonlyArray<Arrival> = [
 		mark: 'google',
 		label: 'Gmail + Calendar',
 		orb: 'integrations',
-		at: bar(5, 3),
+		at: bar(6, 3),
 		from: { x: 1540, y: 250 },
 	},
 	{
 		mark: 'github',
 		label: 'GitHub',
 		orb: 'integrations',
-		at: bar(5, 3.5),
+		at: bar(6, 3.5),
 		from: { x: 1780, y: 640 },
 	},
 	{
 		mark: 'stripe',
 		label: 'Stripe',
 		orb: 'secrets',
-		at: bar(6),
+		at: bar(7),
 		from: { x: 110, y: 600 },
 	},
 	{
 		mark: 'slack',
 		label: 'Slack',
 		orb: 'integrations',
-		at: bar(6, 0.5),
+		at: bar(7, 0.5),
 		from: { x: 1830, y: 880 },
 	},
 	{
 		mark: 'linear',
 		label: 'Linear',
 		orb: 'secrets',
-		at: bar(6, 1),
+		at: bar(7, 1),
 		from: { x: 180, y: 240 },
 	},
 ]
@@ -75,16 +77,22 @@ export const cardFetches = [0, 1, 2, 3].map(
 	(index) => cues.appBuild + 20 + index * 8,
 )
 
-/** Beat 4: the package's own schedule fires with no agent attached. */
-export const triggerTicks = [bar(11, 1), bar(11, 3), bar(12, 1)]
+/** Beat 4: package schedules fire across the grid with no agent attached. */
+export const triggerTicks = [bar(12, 3), bar(13), bar(13, 2)]
 
 export type OrbPulse = { orb: LandingPrimitiveId; at: number }
+
+const spawnPulseOrbs = ['apps', 'integrations', 'packages'] as const
 
 export const orbPulses: ReadonlyArray<OrbPulse> = [
 	...arrivals.map((arrival) => ({ orb: arrival.orb, at: arrival.at })),
 	{ orb: 'packages', at: cues.appBuild },
 	{ orb: 'apps', at: cues.appBuild + 6 },
 	...cardFetches.map((at) => ({ orb: 'integrations' as const, at })),
+	...Array.from({ length: 12 }, (_, index) => ({
+		orb: spawnPulseOrbs[index % spawnPulseOrbs.length]!,
+		at: cues.zoomOut.start + 4 + index * 7,
+	})),
 	...triggerTicks.flatMap((at) => [
 		{ orb: 'triggers' as const, at },
 		{ orb: 'apps' as const, at: at + 8 },

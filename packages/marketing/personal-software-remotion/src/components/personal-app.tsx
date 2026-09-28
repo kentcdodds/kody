@@ -1,17 +1,7 @@
 import { type ReactNode } from 'react'
-import { useCurrentFrame } from 'remotion'
 import { cardFetches, cues, triggerTicks } from '../choreography.ts'
-import {
-	easeIn,
-	easeInOut,
-	mix,
-	presence,
-	progress,
-	pulse,
-	settle,
-} from '../motion.ts'
+import { easeInOut, mix, presence, progress, pulse, settle } from '../motion.ts'
 import { colors, fonts, primitiveColors } from '../theme.ts'
-import { scenes } from '../timing.ts'
 import { AppWindow } from './app-window.tsx'
 import { MarkWell, type MarkId } from './mark.tsx'
 
@@ -31,11 +21,6 @@ export function cardPort(index: number) {
 		x: appFrame.left,
 		y: bodyTop + gridTop + row * (cardHeight + cardGap) + 70 + column * 90,
 	}
-}
-
-export const triggerChipAnchor = {
-	x: appFrame.left + appFrame.width - 250,
-	y: bodyTop + 52,
 }
 
 type DayState = {
@@ -417,16 +402,9 @@ export function ClockGlyph({
  * The generated personal app. It builds in beat 3 and then keeps updating
  * itself in beat 4 on the package's own schedule.
  */
-export function PersonalApp() {
-	const frame = useCurrentFrame() + scenes.generateApp.from
+export function PersonalApp({ frame }: { frame: number }) {
 	if (frame < cues.appBuild - 2) return null
 	const grow = settle(frame, cues.appBuild, { damping: 20, stiffness: 90 })
-	const leave = progress(
-		frame,
-		scenes.staysLit.until - 48,
-		scenes.staysLit.until - 26,
-		easeIn,
-	)
 	const state = days[Math.min(dayIndex(frame), days.length - 1)]!
 	const tickGlow = triggerTicks.reduce(
 		(sum, tick) => sum + pulse(frame, tick, 20),
@@ -458,9 +436,6 @@ export function PersonalApp() {
 				left: appFrame.left,
 				top: appFrame.top,
 				clipPath: `inset(0 0 ${clipBottom}px 0 round 22px)`,
-				opacity: 1 - leave,
-				transform: `scale(${mix(1, 0.92, leave)})`,
-				filter: leave > 0 ? `blur(${leave * 8}px)` : undefined,
 			}}
 		>
 			<div

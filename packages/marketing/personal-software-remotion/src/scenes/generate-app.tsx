@@ -1,25 +1,88 @@
 import { AbsoluteFill, useCurrentFrame } from 'remotion'
-import { Beam } from '../components/beam.tsx'
+import { appTiles } from '../app-grid.ts'
 import { Headline, words } from '../components/headline.tsx'
-import { lanternPose, orbCenter } from '../components/lantern.tsx'
 import { MarkWell } from '../components/mark.tsx'
-import { appFrame, cardPort } from '../components/personal-app.tsx'
-import { cardFetches, cues } from '../choreography.ts'
+import { appFrame } from '../components/personal-app.tsx'
+import { cues } from '../choreography.ts'
 import { easeIn, easeInOut, mix, progress, pulse, settle } from '../motion.ts'
 import { colors, fonts, primitiveColors } from '../theme.ts'
 import { bar, scenes } from '../timing.ts'
 
 const prompt = 'Build me a morning dashboard: meetings, inbox, PRs, revenue.'
-const promptIn = bar(8, 2)
+const promptIn = bar(9, 1)
 const typeStart = promptIn + 6
 const typeEnd = cues.appBuild - 12
 const sendAt = typeEnd + 2
 const promptWidth = 1010
 
+const zeroTallies = [
+	{ label: 'New sign-ins', count: 0 },
+	{ label: 'API keys pasted', count: 0 },
+]
+
+/** Beat 1's tallies again: the app count climbs, the setup stays at zero. */
+function Tallies({ frame }: { frame: number }) {
+	const appear = cues.zoomOut.start + 8
+	const leave = progress(
+		frame,
+		scenes.staysLit.from - 6,
+		scenes.staysLit.from + 6,
+		easeIn,
+	)
+	const apps = 1 + appTiles.filter((tile) => frame >= tile.spawnAt).length
+	const chips = [{ label: 'Apps', count: apps, live: true }, ...zeroTallies]
+	return (
+		<div
+			style={{
+				position: 'absolute',
+				left: 124,
+				top: 214,
+				display: 'flex',
+				gap: 14,
+				opacity: 1 - leave,
+			}}
+		>
+			{chips.map((chip, index) => {
+				const show = settle(frame, appear + index * 5)
+				return (
+					<div
+						key={chip.label}
+						style={{
+							padding: '10px 20px',
+							borderRadius: 14,
+							background: colors.surface,
+							border: `1px solid ${colors.border}`,
+							fontFamily: fonts.body,
+							fontSize: 22,
+							color: colors.textMuted,
+							whiteSpace: 'nowrap',
+							opacity: show,
+							transform: `translateY(${mix(16, 0, show)}px)`,
+						}}
+					>
+						{chip.label}{' '}
+						<span
+							style={{
+								fontFamily: fonts.display,
+								fontWeight: 800,
+								fontSize: 26,
+								color: 'live' in chip ? primitiveColors.apps : colors.primary,
+							}}
+						>
+							×{chip.count}
+						</span>
+					</div>
+				)
+			})}
+		</div>
+	)
+}
+
 export function GenerateApp() {
 	const frame = useCurrentFrame() + scenes.generateApp.from
 	return (
 		<AbsoluteFill>
+			<Tallies frame={frame} />
 			<Headline
 				frame={frame}
 				lines={[
@@ -29,11 +92,11 @@ export function GenerateApp() {
 						{ text: 'connections.', color: primitiveColors.integrations },
 					],
 				]}
-				enterAt={bar(8) + 12}
-				exitAt={scenes.staysLit.from - 8}
-				fontSize={76}
+				enterAt={bar(9) + 12}
+				exitAt={scenes.staysLit.from - 6}
+				fontSize={68}
 				stagger={3}
-				style={{ left: 120, top: 70 }}
+				style={{ left: 120, top: 56 }}
 			/>
 		</AbsoluteFill>
 	)
@@ -118,46 +181,5 @@ export function PromptBar() {
 				↑
 			</div>
 		</div>
-	)
-}
-
-/** Lantern → app wiring. Stays up through beat 4 while agents change. */
-export function AppBeams() {
-	const frame = useCurrentFrame() + scenes.generateApp.from
-	const pose = lanternPose(frame)
-	const fade =
-		1 -
-		progress(
-			frame,
-			scenes.staysLit.until - 50,
-			scenes.staysLit.until - 32,
-			easeIn,
-		)
-	if (frame < cues.appBuild - 6) return null
-	return (
-		<svg width={1920} height={1080} style={{ position: 'absolute', inset: 0 }}>
-			<Beam
-				from={orbCenter(pose, 'apps', frame)}
-				to={{ x: appFrame.left, y: appFrame.top + 120 }}
-				bend={-0.16}
-				color={primitiveColors.apps}
-				draw={progress(frame, cues.appBuild - 4, cues.appBuild + 10)}
-				flow={frame / 7}
-				opacity={fade}
-			/>
-			{cardFetches.map((at, index) => (
-				<Beam
-					key={at}
-					from={orbCenter(pose, 'integrations', frame)}
-					to={cardPort(index)}
-					bend={0.06 + index * 0.02}
-					color={primitiveColors.integrations}
-					draw={progress(frame, at - 12, at)}
-					flow={frame / 6 + index}
-					opacity={fade * 0.9}
-					width={2.5}
-				/>
-			))}
-		</svg>
 	)
 }

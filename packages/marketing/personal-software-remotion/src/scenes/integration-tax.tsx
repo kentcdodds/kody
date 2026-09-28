@@ -105,27 +105,27 @@ const shells: ReadonlyArray<AppShell> = [
 		title: 'family-hq',
 		address: 'localhost:3000',
 		enterAt: 4,
-		cardTimes: cardsEvery(bar(1, 3), 15),
+		cardTimes: cardsEvery(bar(2), 22),
 		rest: { x: 1250, y: 560, scale: 1 },
-		stacked: { x: 1040, y: 356, scale: 0.56, at: bar(3, 2) },
+		stacked: { x: 1040, y: 356, scale: 0.56, at: bar(4) },
 	},
 	{
 		title: 'habit-tracker',
 		address: 'localhost:5173',
-		enterAt: bar(3, 2) + 8,
-		cardTimes: cardsEvery(bar(3, 3), 7.5),
+		enterAt: bar(4) + 10,
+		cardTimes: cardsEvery(bar(4, 1) + 12, 9),
 		rest: { x: 1340, y: 580, scale: 0.56 },
 	},
 	{
 		title: 'invoice-bot',
 		address: 'localhost:8787',
-		enterAt: bar(4) - 1,
-		cardTimes: cardsEvery(bar(4) + 6, 5),
+		enterAt: bar(4, 2) + 6,
+		cardTimes: cardsEvery(bar(4, 3) + 6, 7),
 		rest: { x: 1655, y: 800, scale: 0.56 },
 	},
 ]
 
-const exitStart = scenes.integrationTax.until - 39
+const exitStart = scenes.integrationTax.until - 37
 
 function SetupModal({
 	card,
@@ -345,7 +345,7 @@ const tallies: ReadonlyArray<{ kind: SetupKind; label: string }> = [
 ]
 
 function Tallies({ frame }: { frame: number }) {
-	const appear = bar(3, 3) + 6
+	const appear = bar(4, 1) + 10
 	const leave = progress(frame, exitStart, exitStart + 14, easeIn)
 	return (
 		<div
@@ -434,7 +434,7 @@ export function IntegrationTax() {
 				frame={frame}
 				lines={[words('New personal'), words('app.')]}
 				enterAt={10}
-				exitAt={bar(3, 1) - 2}
+				exitAt={bar(4) - 2}
 				fontSize={112}
 				style={{ left: 120, top: 350 }}
 			/>
@@ -450,7 +450,7 @@ export function IntegrationTax() {
 					color: colors.textMuted,
 					opacity:
 						progress(frame, bar(1, 2), bar(1, 3)) *
-						(1 - progress(frame, bar(3, 1), bar(3, 1) + 10)),
+						(1 - progress(frame, bar(4) - 6, bar(4) + 4)),
 				}}
 			>
 				It just needs your inbox, calendar, GitHub, and Stripe.
@@ -460,9 +460,9 @@ export function IntegrationTax() {
 				lines={[
 					words('Wire the'),
 					words('services…'),
-					[{ text: 'again.', color: colors.danger, at: bar(3, 3) }],
+					[{ text: 'again.', color: colors.danger, at: bar(4, 1) }],
 				]}
-				enterAt={bar(3, 2)}
+				enterAt={bar(4)}
 				exitAt={exitStart}
 				fontSize={112}
 				style={{ left: 120, top: 350 }}
