@@ -377,22 +377,32 @@ export async function loadAccountPackagesData(input: {
 				})
 			: Promise.resolve(null),
 	])
-	const provenanceRecords = await applySavedPackageForkListingAncestry({
-		env: input.env,
-		records: await listSavedPackageCommunityProvenanceByIds(input.env.APP_DB, {
+	const [provenanceRecords, selectedPackage] = await Promise.all([
+		listSavedPackageCommunityProvenanceByIds(input.env.APP_DB, {
 			userId,
 			packageIds: items.map((item) => item.id),
-		}),
-	})
+		}).then((records) =>
+			applySavedPackageForkListingAncestry({ env: input.env, records }),
+		),
+		selectedRecord
+			? applySavedPackageForkListingAncestry({
+					env: input.env,
+					records: [selectedRecord],
+				}).then(([enrichedSelected]) =>
+					enrichedSelected
+						? toDetailWithListingState({
+								env: input.env,
+								requestUrl: input.request.url,
+								userId,
+								record: enrichedSelected,
+							})
+						: null,
+				)
+			: null,
+	])
 	const provenanceById = new Map(
 		provenanceRecords.map((record) => [record.id, record]),
 	)
-	const [enrichedSelected] = selectedRecord
-		? await applySavedPackageForkListingAncestry({
-				env: input.env,
-				records: [selectedRecord],
-			})
-		: [null]
 
 	return {
 		ok: true,
@@ -410,14 +420,7 @@ export async function loadAccountPackagesData(input: {
 				provenance ? toForkAhead(provenance) : null,
 			)
 		}),
-		selectedPackage: enrichedSelected
-			? await toDetailWithListingState({
-					env: input.env,
-					requestUrl: input.request.url,
-					userId,
-					record: enrichedSelected,
-				})
-			: null,
+		selectedPackage,
 		page,
 		pageSize,
 		total,

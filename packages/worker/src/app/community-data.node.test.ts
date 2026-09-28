@@ -190,6 +190,31 @@ test('community index overlays matching kody_id installs for signed-in viewers',
 	)
 })
 
+test('community index resolves the viewer while listings are still loading', async () => {
+	resetDataCacheForTests()
+	mockModule.readAuthenticatedAppUser.mockReset()
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	let releaseOverview!: () => void
+	const overviewGate = new Promise<void>((resolve) => {
+		releaseOverview = resolve
+	})
+	mockModule.listCommunityIndexOverview.mockImplementation(async () => {
+		await overviewGate
+		return sampleOverview()
+	})
+
+	const loading = loadCommunityIndexData(
+		{} as Env,
+		new Request('https://example.com/community?viewer-overlap'),
+	)
+	await vi.waitFor(() => {
+		expect(mockModule.readAuthenticatedAppUser).toHaveBeenCalledTimes(1)
+	})
+	releaseOverview()
+	expect((await loading).listings).toHaveLength(1)
+	mockModule.listCommunityIndexOverview.mockReset()
+})
+
 test('onboarding MCP chooser listings load official packages by pinned id', async () => {
 	resetDataCacheForTests()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)

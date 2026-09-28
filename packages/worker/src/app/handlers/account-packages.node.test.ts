@@ -625,3 +625,38 @@ test('account package detail redirects the owner to the canonical package URL', 
 	} as never)
 	expect(missing.status).toBe(404)
 })
+
+test('packages API loads the selected package detail while list provenance is still loading', async () => {
+	resetTokenMocks()
+	mockModule.searchSavedPackagesByUserId.mockResolvedValue({
+		items: [savedPackage],
+		total: 1,
+	})
+	let releaseProvenance!: () => void
+	const provenanceGate = new Promise<void>((resolve) => {
+		releaseProvenance = resolve
+	})
+	mockModule.listSavedPackageCommunityProvenanceByIds.mockImplementation(
+		async () => {
+			await provenanceGate
+			return []
+		},
+	)
+	const handler = createAccountPackagesApiHandler(createEnv())
+
+	const responding = handler.handler({
+		request: new Request(
+			'https://example.com/account/packages.json?selected=pkg-1',
+		),
+		params: {},
+	} as never)
+	await vi.waitFor(() => {
+		expect(mockModule.listPackageInvocationTokensByPackageId).toHaveBeenCalled()
+	})
+	releaseProvenance()
+	const response = await responding
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		selectedPackage: expect.objectContaining({ id: 'pkg-1' }),
+	})
+})

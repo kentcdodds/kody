@@ -118,6 +118,7 @@ async function loadCommunityIndexDataUncached(
 		category,
 		overview,
 	})
+	const viewerPromise = readOptionalAuthenticatedViewer(request, env)
 	const cached = await loadWithCommunityCache(
 		env,
 		request,
@@ -165,7 +166,7 @@ async function loadCommunityIndexDataUncached(
 		},
 	)
 
-	const user = await readOptionalAuthenticatedViewer(request, env)
+	const user = await viewerPromise
 	const visibleListings = overview
 		? (cached.groups ?? []).flatMap((group) => group.listings)
 		: cached.listings
@@ -205,6 +206,7 @@ export async function loadOnboardingFeaturedListings(
 	const cacheKey = buildCommunityFeaturedCacheKey(
 		onboardingFeaturedListingLimit,
 	)
+	const viewerPromise = readOptionalAuthenticatedViewer(request, env)
 	try {
 		const listings = await loadWithCommunityCache(
 			env,
@@ -218,7 +220,7 @@ export async function loadOnboardingFeaturedListings(
 				return rows.map(toOnboardingFeaturedListing)
 			},
 		)
-		const user = await readOptionalAuthenticatedViewer(request, env)
+		const user = await viewerPromise
 		return overlayViewerInstallsOnListings({
 			env,
 			user,
@@ -241,6 +243,7 @@ export async function loadOnboardingMcpChooserListings(
 	request: Request,
 ): Promise<Array<OnboardingFeaturedListing>> {
 	const listingIds = listOnboardingFeaturedMcpListingIds()
+	const viewerPromise = readOptionalAuthenticatedViewer(request, env)
 	try {
 		const listings = await loadWithCommunityCache(
 			env,
@@ -253,7 +256,7 @@ export async function loadOnboardingMcpChooserListings(
 				return rows.map(toOnboardingFeaturedListing)
 			},
 		)
-		const user = await readOptionalAuthenticatedViewer(request, env)
+		const user = await viewerPromise
 		return overlayViewerInstallsOnListings({
 			env,
 			user,
