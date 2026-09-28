@@ -11,17 +11,12 @@ import { loadIsomorphicGit } from '#worker/repo/isomorphic-git-lazy.ts'
 
 /**
  * Commit ids hash their parents, so whether one SHA is in another's history
- * never changes. Definite answers are cached per isolate; the TTL and limit
- * only bound memory. `null` (graph unreadable) is never cached.
+ * never changes. Definite answers are cached per isolate; the TTL and the
+ * default entry limit only bound memory. `null` (graph unreadable) is never cached.
  */
 const listingPinAncestryCache = new PromiseLruCache<boolean | null>({
 	ttlMs: 24 * 60 * 60 * 1000,
-	limit: 500,
 })
-
-export function clearListingPinAncestryCacheForTests() {
-	listingPinAncestryCache.deleteWhere(() => true)
-}
 
 /**
  * Walk the listing origin repo from the fork's absorb marker (`origin_commit`).
@@ -42,80 +37,65 @@ export async function listingPinIsAncestorOfForkTip(input: {
 	if (ancestor.length === 0 || descendant.length === 0) return null
 	if (ancestor === descendant) return true
 
-	const cacheKey = JSON.stringify([input.repoId, ancestor, descendant])
-	const pending = listingPinAncestryCache.getOrCreate({
+	const cacheKey = `${input.repoId}\0${ancestor}\0${descendant}`
+	const result = await listingPinAncestryCache.getOrCreate({
 		cacheKey,
-		create: () =>
-			walkListingPinAncestry({
-				env: input.env,
-				repoId: input.repoId,
-				ancestor,
-				descendant,
-			}),
+		async create() {
+			const repo = await resolveExistingArtifactSourceRepo(
+				input.env,
+				input.repoId,
+			)
+			if (!repo) return null
+			const info = await repo.info()
+			if (!info?.remote) return null
+			if (isLoopbackArtifactsRemote(info.remote)) return null
+
+			const token = await repo.createToken('read', 300)
+			const remote = buildAuthenticatedArtifactsRemote({
+				remote: info.remote,
+				token: token.plaintext,
+			})
+			const auth = buildArtifactsGitAuth({ token: token.plaintext })
+			const { git, http } = await loadIsomorphicGit()
+			try {
+				return await runArtifactsGitWithRetry(async () => {
+					const workspace = createEphemeralGitWorkspace()
+					await git.init({
+						fs: workspace.fs,
+						dir: workspace.dir,
+					})
+					await git.addRemote({
+						fs: workspace.fs,
+						dir: workspace.dir,
+						remote: 'origin',
+						url: remote,
+					})
+					await git.fetch({
+						fs: workspace.fs,
+						http,
+						dir: workspace.dir,
+						remote: 'origin',
+						ref: descendant,
+						depth: Number.POSITIVE_INFINITY,
+						singleBranch: true,
+						tags: false,
+						onAuth() {
+							return auth
+						},
+					})
+					const commits = await git.log({
+						fs: workspace.fs,
+						dir: workspace.dir,
+						ref: descendant,
+						depth: Number.POSITIVE_INFINITY,
+					})
+					return commits.some((commit) => commit.oid === ancestor)
+				})
+			} catch {
+				return null
+			}
+		},
 	})
-	const result = await pending
 	if (result === null) listingPinAncestryCache.delete(cacheKey)
 	return result
-}
-
-async function walkListingPinAncestry(input: {
-	env: Env
-	repoId: string
-	ancestor: string
-	descendant: string
-}): Promise<boolean | null> {
-	const { ancestor, descendant } = input
-	try {
-		const repo = await resolveExistingArtifactSourceRepo(
-			input.env,
-			input.repoId,
-		)
-		if (!repo) return null
-		const info = await repo.info()
-		if (!info?.remote) return null
-		if (isLoopbackArtifactsRemote(info.remote)) return null
-
-		const token = await repo.createToken('read', 300)
-		const remote = buildAuthenticatedArtifactsRemote({
-			remote: info.remote,
-			token: token.plaintext,
-		})
-		const auth = buildArtifactsGitAuth({ token: token.plaintext })
-		const { git, http } = await loadIsomorphicGit()
-		return await runArtifactsGitWithRetry(async () => {
-			const workspace = createEphemeralGitWorkspace()
-			await git.init({
-				fs: workspace.fs,
-				dir: workspace.dir,
-			})
-			await git.addRemote({
-				fs: workspace.fs,
-				dir: workspace.dir,
-				remote: 'origin',
-				url: remote,
-			})
-			await git.fetch({
-				fs: workspace.fs,
-				http,
-				dir: workspace.dir,
-				remote: 'origin',
-				ref: descendant,
-				depth: Number.POSITIVE_INFINITY,
-				singleBranch: true,
-				tags: false,
-				onAuth() {
-					return auth
-				},
-			})
-			const commits = await git.log({
-				fs: workspace.fs,
-				dir: workspace.dir,
-				ref: descendant,
-				depth: Number.POSITIVE_INFINITY,
-			})
-			return commits.some((commit) => commit.oid === ancestor)
-		})
-	} catch {
-		return null
-	}
 }

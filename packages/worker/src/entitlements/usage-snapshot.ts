@@ -60,20 +60,20 @@ async function readVisibleEntitlementUsage(input: {
 	resource: EntitlementResource
 	now: Date
 }) {
-	const authoritativeUsagePromise = readCurrentEntitlementResourceUsage({
-		db: input.db,
-		env: input.env,
-		userId: input.userId,
-		resource: input.resource,
-		now: input.now,
-	})
-	if (input.resource !== 'storage_bytes') return await authoritativeUsagePromise
 	const [authoritativeUsage, bucketEstimates] = await Promise.all([
-		authoritativeUsagePromise,
-		listUserStorageBucketEstimates({
+		readCurrentEntitlementResourceUsage({
+			db: input.db,
 			env: input.env,
 			userId: input.userId,
+			resource: input.resource,
+			now: input.now,
 		}),
+		input.resource === 'storage_bytes'
+			? listUserStorageBucketEstimates({
+					env: input.env,
+					userId: input.userId,
+				})
+			: [],
 	])
 	return bucketEstimates.reduce(
 		(total, bucket) => total + (bucket.estimatedBytes ?? 0),

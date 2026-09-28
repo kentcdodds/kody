@@ -176,27 +176,6 @@ async function loadDeclaredWebhook(input: {
 	return declared
 }
 
-const webhookManifestLoadConcurrency = 8
-
-async function mapWithConcurrency<T, R>(
-	items: ReadonlyArray<T>,
-	concurrency: number,
-	map: (item: T) => Promise<R>,
-): Promise<Array<R>> {
-	const results = new Array<R>(items.length)
-	let next = 0
-	async function worker() {
-		while (next < items.length) {
-			const index = next++
-			results[index] = await map(items[index]!)
-		}
-	}
-	await Promise.all(
-		Array.from({ length: Math.min(concurrency, items.length) }, worker),
-	)
-	return results
-}
-
 export async function listWebhooksForUser(input: {
 	env: Env
 	baseUrl: string
@@ -225,10 +204,8 @@ export async function listWebhooksForUser(input: {
 		mintedByKey.set(`${mint.packageId}:${mint.webhookName}`, mint)
 	}
 
-	const manifests = await mapWithConcurrency(
-		filteredPackages,
-		webhookManifestLoadConcurrency,
-		(savedPackage) =>
+	const manifests = await Promise.all(
+		filteredPackages.map((savedPackage) =>
 			loadPackageManifestBySourceId({
 				env: input.env,
 				baseUrl: input.baseUrl,
@@ -242,6 +219,7 @@ export async function listWebhooksForUser(input: {
 				})
 				return null
 			}),
+		),
 	)
 
 	const listed: Array<ListedWebhook> = []

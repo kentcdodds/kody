@@ -14,7 +14,7 @@ import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
 import { getCommunityPackageHref } from '#worker/community/package-url.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { normalizeStableUserId } from '#worker/user-id.ts'
-import { getSavedPackageById, listSavedPackagesByIds } from './repo.ts'
+import { getSavedPackageById } from './repo.ts'
 import {
 	isPackageShareGrantsEnabled,
 	packageShareGrantsDisabledMessage,
@@ -863,28 +863,27 @@ export async function retainAuthorizedPackageStorageGrantIds(input: {
 	storageOwnerByPackageId: ReadonlyMap<string, string>
 }): Promise<Set<string>> {
 	const retained = new Set<string>()
-	const ownershipCandidates: Array<string> = []
-	for (const packageId of new Set(
-		[...input.packageIds].filter((id) => id.length > 0),
-	)) {
-		if (input.storageOwnerByPackageId.has(packageId)) {
-			retained.add(packageId)
-		} else {
-			ownershipCandidates.push(packageId)
-		}
-	}
-	if (ownershipCandidates.length === 0 || !canPrepareAppDb(input.db)) {
-		return retained
-	}
-	try {
-		const owned = await listSavedPackagesByIds(input.db, {
-			userId: input.callerUserId,
-			packageIds: ownershipCandidates,
-		})
-		for (const record of owned) retained.add(record.id)
-	} catch (error) {
-		if (!/no such table/i.test(getErrorMessage(error))) throw error
-	}
+	await Promise.all(
+		[...new Set([...input.packageIds].filter((id) => id.length > 0))].map(
+			async (packageId) => {
+				if (input.storageOwnerByPackageId.has(packageId)) {
+					retained.add(packageId)
+					return
+				}
+				try {
+					const own = canPrepareAppDb(input.db)
+						? await getSavedPackageById(input.db, {
+								userId: input.callerUserId,
+								packageId,
+							})
+						: null
+					if (own) retained.add(packageId)
+				} catch (error) {
+					if (!/no such table/i.test(getErrorMessage(error))) throw error
+				}
+			},
+		),
+	)
 	return retained
 }
 

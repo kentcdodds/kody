@@ -162,10 +162,11 @@ export async function collectWaitingSignals(input: {
 		emailVerified: user.emailVerified,
 		hasMcpClient,
 		hasAccessWin:
-			activationStamps.search === true ||
-			activationStamps.execute === true ||
-			firstMemory === true ||
-			savedPackageCount > 0,
+			!!(
+				activationStamps?.first_search_at ||
+				activationStamps?.first_execute_at ||
+				firstMemory
+			) || savedPackageCount > 0,
 		savedPackageCount,
 		now,
 	}).catch(() => ({
@@ -194,10 +195,13 @@ export async function collectWaitingSignals(input: {
 		errorRate,
 		entitlementCaps,
 		firstUseMissing: collectFirstUseMissing({
-			search: activationStamps.search,
+			search: activationStamp(activationStamps, 'first_search_at'),
 			memory: firstMemory,
-			execute: activationStamps.execute,
-			package: combineFirstPackage(activationStamps.package, packagesProbe),
+			execute: activationStamp(activationStamps, 'first_execute_at'),
+			package: combineFirstPackage(
+				activationStamp(activationStamps, 'first_saved_package_at'),
+				packagesProbe,
+			),
 			job: firstJob,
 			integration: integrationsProbe.ok
 				? integrationsProbe.value.length > 0
@@ -330,24 +334,16 @@ function lockedSavedPackages(
 		}))
 }
 
-type ActivationStamps = {
-	search: boolean | null
-	execute: boolean | null
-	package: boolean | null
+type ActivationStampRow = {
+	first_search_at: string | null
+	first_execute_at: string | null
+	first_saved_package_at: string | null
 }
 
-const unknownActivationStamps: ActivationStamps = {
-	search: null,
-	execute: null,
-	package: null,
-}
-
-async function probeActivationStamps(
-	db: D1Database,
-	userId: string,
-): Promise<ActivationStamps> {
+/** `null` (missing row or read failure) means every stamp is unknown. */
+async function probeActivationStamps(db: D1Database, userId: string) {
 	try {
-		const row = await db
+		return await db
 			.prepare(
 				`SELECT first_search_at, first_execute_at, first_saved_package_at
 				 FROM users
@@ -355,20 +351,17 @@ async function probeActivationStamps(
 				 LIMIT 1`,
 			)
 			.bind(userId)
-			.first<{
-				first_search_at: string | null
-				first_execute_at: string | null
-				first_saved_package_at: string | null
-			}>()
-		if (!row) return unknownActivationStamps
-		return {
-			search: Boolean(row.first_search_at),
-			execute: Boolean(row.first_execute_at),
-			package: Boolean(row.first_saved_package_at),
-		}
+			.first<ActivationStampRow>()
 	} catch {
-		return unknownActivationStamps
+		return null
 	}
+}
+
+function activationStamp(
+	row: ActivationStampRow | null,
+	column: keyof ActivationStampRow,
+) {
+	return row ? Boolean(row[column]) : null
 }
 
 async function probeHasMemory(db: D1Database, userId: string) {

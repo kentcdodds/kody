@@ -45,13 +45,12 @@ class MCPBase extends McpAgent<Env, State, Props> {
 		const caller = this.getCallerContext()
 		const userId = caller.user?.userId ?? null
 		const [, instructions] = await Promise.all([
-			userId === null
-				? undefined
-				: registerMcpAgentSession({
-						db: this.env.APP_DB,
-						userId,
-						doId: this.ctx.id.toString(),
-					}),
+			userId !== null &&
+				registerMcpAgentSession({
+					db: this.env.APP_DB,
+					userId,
+					doId: this.ctx.id.toString(),
+				}),
 			assembleMcpServerInstructionsForCaller({
 				env: this.env,
 				callerContext: caller,

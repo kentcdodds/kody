@@ -138,21 +138,39 @@ async function createHarness() {
 
 function countingDb(db: D1Database) {
 	const statements: Array<string> = []
+	const reads = { inFlight: 0, maxInFlight: 0 }
 	const counted = new Proxy(db, {
 		get(target, property, receiver) {
 			if (property === 'prepare') {
 				return (query: string) => {
 					statements.push(query.replace(/\s+/g, ' ').trim())
-					return target.prepare(query)
+					const statement = target.prepare(query)
+					return {
+						bind: (...values: Array<unknown>) => {
+							const bound = statement.bind(...values)
+							return {
+								async first<T>() {
+									reads.inFlight += 1
+									reads.maxInFlight = Math.max(
+										reads.maxInFlight,
+										reads.inFlight,
+									)
+									await new Promise((resolve) => setTimeout(resolve, 5))
+									reads.inFlight -= 1
+									return bound.first<T>()
+								},
+							}
+						},
+					}
 				}
 			}
 			return Reflect.get(target, property, receiver)
 		},
 	})
-	return { db: counted, statements }
+	return { db: counted, statements, reads }
 }
 
-test('execute storage grant checks skip empty sets and verify ownership in one query', async () => {
+test('execute storage grant checks skip empty sets and verify ownership concurrently', async () => {
 	const { db, packageId } = await createHarness()
 	const second = await seedPublishedPackage(db, {
 		userId: ownerUserId,
@@ -177,7 +195,7 @@ test('execute storage grant checks skip empty sets and verify ownership in one q
 		storageOwnerByPackageId: new Map(),
 	})
 	expect(retained).toEqual(new Set([packageId, second.packageId]))
-	expect(counting.statements).toHaveLength(1)
+	expect(counting.reads.maxInFlight).toBe(3)
 })
 
 test('invite fails closed when package-share-grants is off', async () => {

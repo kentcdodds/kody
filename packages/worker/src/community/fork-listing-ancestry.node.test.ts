@@ -1,8 +1,5 @@
 import { beforeEach, expect, test, vi } from 'vitest'
-import {
-	clearListingPinAncestryCacheForTests,
-	listingPinIsAncestorOfForkTip,
-} from './fork-listing-ancestry.ts'
+import { listingPinIsAncestorOfForkTip } from './fork-listing-ancestry.ts'
 
 const mocks = vi.hoisted(() => ({
 	addRemote: vi.fn(),
@@ -35,8 +32,8 @@ vi.mock('#worker/repo/artifacts.ts', () => ({
 		mocks.resolveExistingArtifactSourceRepo(...args),
 }))
 
+// Answers are cached per isolate, so each case uses its own repo id.
 beforeEach(() => {
-	clearListingPinAncestryCacheForTests()
 	vi.clearAllMocks()
 })
 
@@ -95,12 +92,11 @@ test('listing pin ancestry walks the origin absorb marker and treats missing his
 		}),
 	).toBe(false)
 
-	clearListingPinAncestryCacheForTests()
 	mocks.isLoopbackArtifactsRemote.mockReturnValueOnce(true)
 	expect(
 		await listingPinIsAncestorOfForkTip({
 			env: {} as Env,
-			repoId: 'repo-1',
+			repoId: 'repo-loopback',
 			listingPinnedCommit: 'commit-pin',
 			forkTip: 'commit-tip',
 		}),
@@ -122,7 +118,7 @@ test('listing pin ancestry reuses definite answers without refetching the origin
 	mocks.log.mockResolvedValue([{ oid: 'commit-tip' }, { oid: 'commit-pin' }])
 	const input = {
 		env: {} as Env,
-		repoId: 'repo-1',
+		repoId: 'repo-reuse',
 		listingPinnedCommit: 'commit-pin',
 		forkTip: 'commit-tip',
 	}

@@ -496,7 +496,7 @@ test('concurrent first mints converge on one handle', async () => {
 	expect(second).not.toHaveProperty('url')
 })
 
-test('listing webhooks loads package manifests concurrently with a bound', async () => {
+test('listing webhooks loads package manifests concurrently', async () => {
 	const userId = await createStableUserIdFromEmail('many@example.com')
 	const { env } = createEnv(userId)
 	const packages = Array.from({ length: 20 }, (_, index) => ({
@@ -547,8 +547,7 @@ test('listing webhooks loads package manifests concurrently with a bound', async
 	})
 
 	warn.mockRestore()
-	expect(maxInFlight).toBeGreaterThan(1)
-	expect(maxInFlight).toBeLessThanOrEqual(8)
+	expect(maxInFlight).toBe(packages.length)
 	expect(listed.map((webhook) => webhook.packageKodyId)).toEqual(
 		packages
 			.map((entry) => entry.kodyId)

@@ -94,15 +94,14 @@ export async function deriveOnboardingChecklist(input: {
 		input.hasAccessWin === undefined
 			? loadOnboardingAccessWin(env, userId)
 			: input.hasAccessWin,
-		input.savedPackageCount === undefined
-			? readCurrentEntitlementResourceUsage({
-					db: env.APP_DB,
-					env,
-					userId,
-					resource: 'saved_packages',
-					now,
-				}).catch(() => 0)
-			: input.savedPackageCount,
+		input.savedPackageCount ??
+			readCurrentEntitlementResourceUsage({
+				db: env.APP_DB,
+				env,
+				userId,
+				resource: 'saved_packages',
+				now,
+			}).catch(() => 0),
 	])
 
 	const items: Array<OnboardingChecklistItem> = [

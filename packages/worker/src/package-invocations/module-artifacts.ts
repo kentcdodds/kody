@@ -50,20 +50,18 @@ export async function resolveSavedPackage(input: {
 		userId: input.userId,
 		packageIdOrKodyId: input.packageIdOrKodyId,
 		load: async () => {
-			const [byId, byKodyId] = await Promise.allSettled([
-				getSavedPackageById(input.db, {
+			const byKodyId = getSavedPackageByKodyId(input.db, {
+				userId: input.userId,
+				kodyId: input.packageIdOrKodyId,
+			})
+			// Only surfaces when the id lookup misses and awaits it below.
+			byKodyId.catch(() => {})
+			return (
+				(await getSavedPackageById(input.db, {
 					userId: input.userId,
 					packageId: input.packageIdOrKodyId,
-				}),
-				getSavedPackageByKodyId(input.db, {
-					userId: input.userId,
-					kodyId: input.packageIdOrKodyId,
-				}),
-			])
-			if (byId.status === 'rejected') throw byId.reason
-			if (byId.value) return byId.value
-			if (byKodyId.status === 'rejected') throw byKodyId.reason
-			return byKodyId.value
+				})) ?? (await byKodyId)
+			)
 		},
 	})
 }
