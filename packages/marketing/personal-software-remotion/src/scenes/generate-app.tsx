@@ -20,7 +20,7 @@ const zeroTallies = [
 	{ label: 'API keys pasted', count: 0 },
 ]
 
-/** Beat 1's tallies again: the app count climbs, the setup stays at zero. */
+/** The inverse of Beat 1: the app count climbs, the setup stays at zero. */
 function Tallies({ frame }: { frame: number }) {
 	const appear = cues.zoomOut.start + 8
 	const leave = progress(

@@ -34,7 +34,7 @@ gitignored. Encoding settings (CRF 16, x264 `slow`, bt709, AAC 256k) live in
 
 | Time     | Beat                     | On-screen copy                                         |
 | -------- | ------------------------ | ------------------------------------------------------ |
-| 0–10s    | Integration tax          | New personal app. → Wire the services… again.          |
+| 0–10s    | Integration tax          | You need a new app. → …again, and again… → Ugh 😩      |
 | 10–16s   | Connect once             | Connect once. Keep them in Kody.                       |
 | 16–23s   | Generate, then many apps | Generate software that already has the connections.    |
 | 23–26s   | Stays lit                | Agents come and go. Your software stays lit.           |
@@ -58,6 +58,9 @@ ships:
   `packages/worker/public/images/kody-pattern.webp`.
 - Service and agent marks: `packages/worker/public/images/icons/*.svg`, plus the
   Google mark paths from `packages/worker/client/provider-icons.tsx`.
+- The one outside asset is `src/art/noto-emoji-weary-face.svg`, the 😩 image
+  from [Noto Emoji](https://github.com/googlefonts/noto-emoji) (Apache 2.0). It
+  is a file rather than text so the render never depends on a system emoji font.
 
 ## Music
 
