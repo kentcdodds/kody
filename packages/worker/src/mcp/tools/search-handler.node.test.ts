@@ -138,7 +138,7 @@ vi.mock('#worker/search-rate-limit.ts', async (importOriginal) => {
 		await importOriginal<typeof import('#worker/search-rate-limit.ts')>()
 	return {
 		...actual,
-		consumeSearchRateLimit: vi.fn(async () => undefined),
+		consumeSearchRateLimit: vi.fn(async () => 'free'),
 	}
 })
 

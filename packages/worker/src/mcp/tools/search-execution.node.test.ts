@@ -58,7 +58,7 @@ const mockModule = vi.hoisted(() => {
 		searchUnified: vi.fn(async () => createEmptySearchUnifiedResult()),
 		loadRelevantMemoriesForTool: vi.fn(),
 		runPackageRetrievers: vi.fn(),
-		consumeSearchRateLimit: vi.fn(async () => undefined),
+		consumeSearchRateLimit: vi.fn(async () => 'free'),
 	}
 })
 
@@ -534,6 +534,27 @@ test('executeSearchList does not prefetch an embedding for domain-overview or in
 		includeHiddenPackages: false,
 	})
 	expect(aiRunCount).toBe(0)
+})
+
+test('executeSearchList reuses the rate-limit plan for Jev eligibility', async () => {
+	mockModule.consumeSearchRateLimit.mockResolvedValueOnce('pro')
+	mockModule.runPackageRetrievers.mockResolvedValueOnce({
+		results: [],
+		warnings: [],
+	})
+	mockModule.searchUnified.mockClear()
+	await executeSearchList({
+		env: { APP_DB: {}, WRANGLER_IS_LOCAL_DEV: 'true' } as unknown as Env,
+		callerContext: signedInSearchCaller(),
+		conversationId: 'conv-search-plan',
+		query: 'skills',
+		limit: 15,
+		userId: 'user-1',
+		includeHiddenPackages: false,
+	})
+	expect(mockModule.searchUnified).toHaveBeenCalledWith(
+		expect.objectContaining({ jevRerankPlanEligible: true }),
+	)
 })
 
 test('executeSearchList fails closed before ranking when the abuse rate limit rejects', async () => {

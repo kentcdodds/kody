@@ -15,7 +15,6 @@ import {
 } from '#worker/vectorize/embedding.ts'
 
 import { consumeSearchRateLimit } from '#worker/search-rate-limit.ts'
-import { getUserPlan } from '#worker/entitlements/service.ts'
 import { isPaidPlan } from '#universal/plans.ts'
 import { recordPaidRankedSearchFlagExposure } from '#worker/feature-flags/paid-ranked-search-exposure.ts'
 
@@ -78,7 +77,7 @@ async function executeSearchListWithinBudget(
 	input: ExecuteSearchListInput,
 ): Promise<SearchListExecutionResult> {
 	// Abuse ceiling only (not an entitlement): reject before embeddings / Jev.
-	await consumeSearchRateLimit({
+	const plan = await consumeSearchRateLimit({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		email: input.callerContext.user?.email ?? null,
@@ -240,13 +239,6 @@ async function executeSearchListWithinBudget(
 	)
 	const jevEvaluation = evaluations?.[jevSearchRerankFlagKey]
 	const jevRerankEnabled = jevEvaluation?.enabled === true
-	const plan =
-		input.userId && input.env.APP_DB
-			? await getUserPlan(input.env.APP_DB, {
-					userId: input.userId,
-					email: input.callerContext.user?.email ?? null,
-				})
-			: 'free'
 	const jevRerankPlanEligible = isPaidPlan(plan)
 	const searchUnifiedStart = performance.now()
 	result = await searchUnified({

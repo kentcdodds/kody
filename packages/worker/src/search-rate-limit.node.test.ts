@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { getUserPlan } from '#worker/entitlements/service.ts'
 import {
 	consumeSearchRateLimit,
 	isSearchRateLimitError,
@@ -20,13 +21,29 @@ function createDb() {
 	return { sqlite, db }
 }
 
+test('consumeSearchRateLimit returns the resolved plan so search does not look it up again', async () => {
+	const { db } = createDb()
+	vi.mocked(getUserPlan).mockClear()
+	vi.mocked(getUserPlan).mockResolvedValueOnce('pro')
+	expect(
+		await consumeSearchRateLimit({
+			db,
+			userId: 'user-search-plan',
+			email: 'plan@example.com',
+		}),
+	).toBe('pro')
+	expect(getUserPlan).toHaveBeenCalledTimes(1)
+})
+
 test('consumeSearchRateLimit no-ops without a userId', async () => {
 	const { sqlite, db } = createDb()
-	await consumeSearchRateLimit({
-		db,
-		userId: null,
-		email: null,
-	})
+	expect(
+		await consumeSearchRateLimit({
+			db,
+			userId: null,
+			email: null,
+		}),
+	).toBe('free')
 	expect(
 		sqlite
 			.prepare(`SELECT name FROM sqlite_master WHERE name = '_rate_limits'`)
