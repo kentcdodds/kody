@@ -99,7 +99,7 @@ export function toComputeOverageUsageRows(
 }
 
 /**
- * Monthly include rows that belong in usage warnings: only when crossing the
+ * Monthly include rows for `usageGet` warnings: only when crossing the
  * include would stop runs (see {@link computeIncludeWarningPutsAccessAtRisk}).
  */
 export function computeOverageUsageWarningRows(

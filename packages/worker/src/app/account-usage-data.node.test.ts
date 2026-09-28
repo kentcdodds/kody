@@ -405,7 +405,10 @@ test('purchasable Pro with credits runs past the include on credits; at $0 it st
 		uniqueWorkerDays: 400,
 	})
 	const empty = await loadAccountUsageData({
-		env: withUsageEnv({ APP_DB: emptyDb }) as Env,
+		env: withUsageEnv({
+			APP_DB: emptyDb,
+			STRIPE_SECRET_KEY: 'sk_test_usage',
+		}) as Env,
 		userId: 25,
 		now,
 	})
@@ -423,7 +426,7 @@ test('purchasable Pro with credits runs past the include on credits; at $0 it st
 	})
 	expect(
 		empty?.warnings.some((row) => row.resource === 'unique_worker_days'),
-	).toBe(true)
+	).toBe(false)
 	expect(currentFor(empty, 'execute_calls_per_day')?.limit).toBe(500)
 	expect(currentFor(empty, 'execute_calls_per_day')?.howToReduce).toMatch(
 		/add credits at \/account\/credits to keep going past your include/,

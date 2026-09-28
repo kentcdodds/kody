@@ -1,9 +1,7 @@
 import { parseStoredPlanName, parseStripePlanName } from '#universal/plans.ts'
 import { loadAccountUsageStory } from '#app/account-usage-story.ts'
-import {
-	computeOverageUsageWarningRows,
-	readAccountComputeOverage,
-} from '#worker/billing/compute-overage-account.ts'
+import { isBillingConfigured } from '#worker/billing/billing-config.ts'
+import { readAccountComputeOverage } from '#worker/billing/compute-overage-account.ts'
 import {
 	isPayingForCreditsPro,
 	resolveUserEntitlementFromRow,
@@ -75,7 +73,7 @@ export async function loadAccountUsageData(input: {
 		stableUserId: usageUserId,
 		plan: entitlement.plan,
 		creditWallet: entitlement.creditWallet,
-		canBuyCredits,
+		canBuyCredits: canBuyCredits && isBillingConfigured(input.env),
 		computeOverage,
 		now,
 	})
@@ -88,10 +86,9 @@ export async function loadAccountUsageData(input: {
 		today: snapshot.today,
 		weekStart: snapshot.weekStart,
 		entitlementConsumption: snapshot.resources.map(toAccountUsageRow),
-		warnings: [
-			...computeOverageUsageWarningRows(computeOverage).map(toAccountUsageRow),
-			...snapshot.warnings.map(toAccountUsageRow),
-		],
+		// Monthly include pressure is the credits alarm (`creditsAlarm`), not a
+		// warning row, so the page raises it once.
+		warnings: snapshot.warnings.map(toAccountUsageRow),
 		computeOverage,
 		canBuyCredits,
 		...story,

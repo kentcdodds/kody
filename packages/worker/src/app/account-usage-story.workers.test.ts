@@ -128,7 +128,7 @@ test('credits + usage story on real D1: Free calm, funded Pro on credits, empty 
 		barPercent: 100,
 		tone: 'calm',
 		onCreditsMicroUsd: 173_672_000,
-		status: 'Include used · $173.672 on credits',
+		status: 'Include used · $173.67 on credits',
 	})
 
 	const emptyData = await loadAccountCreditsData({

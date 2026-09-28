@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	computeIncludeWarningPutsAccessAtRisk,
 	formatCappedPercent,
+	formatOnCreditsMicroUsd,
 	includeBarPercent,
 	includedComputeSummary,
 	presentIncludedCompute,
@@ -29,6 +30,14 @@ test('include bars and percents never read above 100%', () => {
 	expect(formatCappedPercent(10.34)).toBe('100%')
 	expect(formatCappedPercent(0.9)).toBe('90%')
 	expect(formatCappedPercent(null)).toBe('—')
+})
+
+test('dollars on credits use cents from $1 up and keep sub-cent charges visible', () => {
+	expect(formatOnCreditsMicroUsd(4_000)).toBe('$0.004')
+	expect(formatOnCreditsMicroUsd(200_000)).toBe('$0.20')
+	expect(formatOnCreditsMicroUsd(6_580_000)).toBe('$6.58')
+	expect(formatOnCreditsMicroUsd(173_672_000)).toBe('$173.67')
+	expect(formatOnCreditsMicroUsd(1_234_567_890)).toBe('$1,234.57')
 })
 
 test('Free Worker compute is informational: no bar, no include status, never charged', () => {
@@ -74,9 +83,9 @@ test('funded Pro past include is calm dollars on credits with a full bar', () =>
 		barPercent: 100,
 		pastInclude: true,
 		tone: 'calm',
-		// (43,768 − 350) × $0.004 = $173.672
+		// (43,768 − 350) × $0.004 = $173.67
 		onCreditsMicroUsd: 173_672_000,
-		status: 'Include used · $173.672 on credits',
+		status: 'Include used · $173.67 on credits',
 	})
 	expect(meters[1]).toMatchObject({
 		barPercent: 20,
@@ -89,7 +98,7 @@ test('funded Pro past include is calm dollars on credits with a full bar', () =>
 		meters,
 	})
 	expect(summary).toBe(
-		"Past this month's include, usage runs on credits: $173.672 so far.",
+		"Past this month's include, usage runs on credits: $173.67 so far.",
 	)
 	const copy = allCopy([meters, summary])
 	expect(copy).not.toMatch(overHundredPercent)

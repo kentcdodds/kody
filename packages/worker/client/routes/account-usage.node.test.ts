@@ -394,7 +394,7 @@ test('Pro usage page past include matches credits: capped bar, dollars on credit
 	)
 	expect(text).toContain('Included compute')
 	expect(html).toContain('data-included-compute-bar="100"')
-	expect(text).toContain('Include used · $173.672 on credits')
+	expect(text).toContain('Include used · $173.67 on credits')
 	expect(text).toContain('43,768 of 350 worker-compute days included')
 	expect(html).not.toContain('data-credits-alarm')
 	expect(text).not.toContain('12505%')

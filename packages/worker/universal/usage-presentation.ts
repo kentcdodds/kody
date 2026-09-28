@@ -85,6 +85,21 @@ export function formatCappedPercent(ratio: number | null): string {
 	return `${includeBarPercent(ratio)}%`
 }
 
+/**
+ * Dollars on credits: whole cents from $1 up, sub-cent precision below so a
+ * real charge never reads as $0.00.
+ */
+export function formatOnCreditsMicroUsd(microUsd: number): string {
+	if (!Number.isFinite(microUsd) || Math.abs(microUsd) < 1_000_000) {
+		return formatEstimatedCreditMicroUsd(microUsd)
+	}
+	const dollars = (microUsd / 1_000_000).toLocaleString('en-US', {
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2,
+	})
+	return `$${dollars}`
+}
+
 export type IncludedComputeTone = 'calm' | 'attention'
 
 /**
@@ -157,7 +172,7 @@ export function presentIncludedComputeMeter(input: {
 			return {
 				...base,
 				tone: 'calm',
-				status: `Include used · ${formatEstimatedCreditMicroUsd(onCreditsMicroUsd)} on credits`,
+				status: `Include used · ${formatOnCreditsMicroUsd(onCreditsMicroUsd)} on credits`,
 			}
 		case 'empty':
 			return {
@@ -210,7 +225,7 @@ export function includedComputeSummary(input: {
 	switch (input.creditWallet) {
 		case 'funded':
 			return onCredits > 0
-				? `Past this month's include, usage runs on credits: ${formatEstimatedCreditMicroUsd(onCredits)} so far.`
+				? `Past this month's include, usage runs on credits: ${formatOnCreditsMicroUsd(onCredits)} so far.`
 				: 'Included with Pro each month. Past the include, usage runs on credits.'
 		case 'empty':
 			return 'Included with Pro each month. With no credits, usage past the include stops.'
