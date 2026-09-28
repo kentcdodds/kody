@@ -38,7 +38,9 @@ login HTML. Public pages such as `/pricing` do not need a session. Mutating
 methods log in first when no cookie exists.
 
 `preview` forwards `--pr`, `--request`, and `--check` to `preview:manual-test`.
-A `--` separator is optional.
+A `--` separator is optional. `--request` specs take trailing `--dump` /
+`--contains <text>` like `request`:
+`preview --pr 42 --request 'GET /pricing --dump --contains Worker compute'`.
 
 `doctor` (and a failed local `login`) print `npm run migrate:local` plus
 `node tools/seed-test-data.ts --local` when local APP_DB was never migrated or

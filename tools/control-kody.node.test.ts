@@ -75,6 +75,8 @@ test('control-kody parses commands, maps every required route, and drives a seed
 		path: '/account/waiting.json',
 		expectedStatus: null,
 		body: null,
+		dump: false,
+		contains: [],
 	})
 	expect(
 		parseControlArgs(['request', 'GET', '/admin', '403', '--skip-login'])
@@ -84,6 +86,8 @@ test('control-kody parses commands, maps every required route, and drives a seed
 		path: '/admin',
 		expectedStatus: 403,
 		body: null,
+		dump: false,
+		contains: [],
 	})
 	expect(
 		parseControlArgs([

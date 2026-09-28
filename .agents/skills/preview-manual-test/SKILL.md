@@ -38,11 +38,13 @@ npm run preview:manual-test -- \
   --check /onboarding/step-2
 ```
 
-`--request` spec: `METHOD /path [status] [json-body]` (default success: 2xx).
-Use the JSON APIs the UI uses (`/account/*.json` in
-`packages/worker/universal/routes.ts`). For more authenticated HTTP after login,
-use `control-kody request` (`--dump` / `--contains` for HTML). Do not cat the
-session cookie into `curl` or Python.
+`--request` spec:
+`METHOD /path [status] [json-body] [--dump] [--contains <text>]` (default
+success: 2xx). `--dump` / `--contains` match `control-kody request`, e.g.
+`--request 'GET /pricing --dump --contains Worker compute'`. Use the JSON APIs
+the UI uses (`/account/*.json` in `packages/worker/universal/routes.ts`). For
+more authenticated HTTP after login, use `control-kody request` (`--dump` /
+`--contains` for HTML). Do not cat the session cookie into `curl` or Python.
 
 `--pr`, `--url`, `--no-wait`, `--skip-login`, `--help` as documented.
 

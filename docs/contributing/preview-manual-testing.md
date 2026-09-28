@@ -50,8 +50,14 @@ npm run preview:manual-test -- \
 ```
 
 `--request` is authenticated HTTP as the seed user. Spec:
-`METHOD /path [expected-status] [json-body]`. Default success is any 2xx.
-Example negative check: `--request 'GET /admin 403'`.
+`METHOD /path [expected-status] [json-body] [--dump] [--contains <text>]`.
+Default success is any 2xx. Example negative check:
+`--request 'GET /admin 403'`. `--dump` and `--contains` behave like
+`control-kody request`: `--dump` writes the raw body to `.tmp/control-kody-body`
+(`-<n>` suffix per request when several dump) and `--contains` fails the check
+unless the body includes the text (everything up to the next flag, so
+`--request 'GET /pricing --dump --contains Worker compute'` works). They can
+also follow the spec as separate flags and apply to the previous `--request`.
 
 `--json` includes session metadata for the scripted run. For more authenticated
 HTTP, use `control-kody request` with the same `--origin` (and `--dump` /

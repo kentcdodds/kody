@@ -84,12 +84,16 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 					path: '/account/values.json',
 					expectedStatus: null,
 					body: { action: 'save', name: 'locale', value: 'en-US' },
+					dump: false,
+					contains: [],
 				},
 				{
 					method: 'GET',
 					path: '/admin',
 					expectedStatus: 403,
 					body: null,
+					dump: false,
+					contains: [],
 				},
 			],
 		}),
@@ -99,6 +103,8 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		path: '/account/values.json',
 		expectedStatus: null,
 		body: null,
+		dump: false,
+		contains: [],
 	})
 	expect(() => parseSessionRequest('FETCH /nope')).toThrow(/Invalid --request/)
 
@@ -217,6 +223,131 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		flattenGhJsonPages([[{ body: 'a' }], [{ body: 'b' }, { body: 'c' }]]),
 	).toEqual([{ body: 'a' }, { body: 'b' }, { body: 'c' }])
 	expect(flattenGhJsonPages({ not: 'an array' })).toEqual([])
+})
+
+test('preview manual test --request specs accept control-kody request --dump/--contains flags', () => {
+	expect(
+		parseSessionRequest('GET /pricing --dump --contains Worker compute'),
+	).toEqual({
+		method: 'GET',
+		path: '/pricing',
+		expectedStatus: null,
+		body: null,
+		dump: true,
+		contains: ['Worker compute'],
+	})
+	expect(
+		parseSessionRequest(
+			String.raw`GET /pricing 200 --contains Worker\ compute --contains "is metered"`,
+		),
+	).toEqual(
+		expect.objectContaining({
+			expectedStatus: 200,
+			dump: false,
+			contains: ['Worker compute', 'is metered'],
+		}),
+	)
+	expect(
+		parseSessionRequest(
+			'POST /account/values.json 201 {"action":"save"} --contains selectedValueId',
+		),
+	).toEqual(
+		expect.objectContaining({
+			expectedStatus: 201,
+			body: { action: 'save' },
+			contains: ['selectedValueId'],
+		}),
+	)
+	expect(() => parseSessionRequest('GET /pricing --contains')).toThrow(
+		/--contains requires text/,
+	)
+	expect(() => parseSessionRequest('GET /pricing --dump nope')).toThrow(
+		/--dump takes no value/,
+	)
+	expect(() => parseSessionRequest('GET /pricing oops')).toThrow(
+		/GET --request cannot include a JSON body: oops[\s\S]*--contains <text>/,
+	)
+
+	expect(
+		parseArgs([
+			'--request',
+			'GET /pricing',
+			'--dump',
+			'--contains',
+			'Worker compute',
+			'--request',
+			'GET /account',
+		]).sessionRequests,
+	).toEqual([
+		expect.objectContaining({
+			path: '/pricing',
+			dump: true,
+			contains: ['Worker compute'],
+		}),
+		expect.objectContaining({ path: '/account', dump: false, contains: [] }),
+	])
+	expect(() => parseArgs(['--contains', 'x'])).toThrow(
+		/--contains applies to the previous --request/,
+	)
+})
+
+test('preview manual test --request --dump/--contains assert the raw response body', async () => {
+	await using server = await createPreviewFixtureServer()
+	const logs: Array<string> = []
+	const files = new Map<string, string>()
+	const { exitCode, result } = await runPreviewManualTest(
+		[
+			'--url',
+			server.origin,
+			'--no-wait',
+			'--request',
+			'GET /pricing --dump --contains Worker compute',
+			'--request',
+			'GET /account/values.json --contains preview-locale',
+			'--json',
+		],
+		createSilentDeps({ logs, files }),
+	)
+	expect(exitCode).toBe(0)
+	const checks = result?.smoke?.checks ?? []
+	expect(checks.find((check) => check.name === 'GET /pricing (2xx)')).toEqual(
+		expect.objectContaining({
+			ok: true,
+			detail: expect.stringContaining('dumped .tmp/control-kody-body'),
+		}),
+	)
+	expect(files.get('.tmp/control-kody-body')).toBe(
+		'<h1>Pricing</h1><p>Worker compute is metered.</p>',
+	)
+
+	const failing = await runPreviewManualTest(
+		[
+			'--url',
+			server.origin,
+			'--no-wait',
+			'--request',
+			'GET /pricing --dump',
+			'--request',
+			'GET /admin 403 --dump --contains Worker compute',
+			'--json',
+		],
+		createSilentDeps({ logs, files }),
+	)
+	expect(failing.exitCode).toBe(1)
+	expect(
+		failing.result?.smoke?.checks.find(
+			(check) => check.name === 'GET /admin (403)',
+		),
+	).toEqual(
+		expect.objectContaining({
+			ok: false,
+			detail: expect.stringContaining(
+				'response body does not contain "Worker compute"',
+			),
+		}),
+	)
+	expect(files.get('.tmp/control-kody-body-1')).toContain('Pricing')
+	expect(files.get('.tmp/control-kody-body-2')).toBe('forbidden')
 })
 
 test('preview manual test smokes a local preview: health, login page, auth, session, account, mcp', async () => {
@@ -598,6 +729,11 @@ async function createPreviewFixtureServer(commitSha = 'deployedsha') {
 					ok: true,
 					session: { email: previewSeedEmail, username: 'user-me' },
 				})
+				return
+			}
+			if (request.method === 'GET' && url.pathname === '/pricing') {
+				response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+				response.end('<h1>Pricing</h1><p>Worker compute is metered.</p>')
 				return
 			}
 			if (request.method === 'GET' && url.pathname === '/admin') {

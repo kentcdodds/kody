@@ -5,6 +5,11 @@ import { promisify } from 'node:util'
 import { usernameFromEmail } from '../packages/worker/src/identity/username.ts'
 import { runtimeWorkerHealthPath } from '../packages/shared/src/runtime-worker.ts'
 import { platformWorkerHealthPath } from '../packages/shared/src/platform-worker.ts'
+import {
+	defaultDumpFile,
+	formatContainsFailure,
+	missingContainsNeedles,
+} from './control-kody/request-proof.ts'
 import { isExecutedDirectly } from './node-runtime.ts'
 
 const execFileAsync = promisify(execFile)
@@ -35,8 +40,14 @@ const usageLines = [
 	'  --skip-login        Skip POST /auth and cookie-backed checks',
 	'  --request <spec>    Authenticated HTTP as the seed user (repeatable).',
 	'                      Spec: METHOD /path [status] [json-body]',
-	'                      Default success is any 2xx. Example:',
+	'                            [--dump] [--contains <text>]',
+	'                      Default success is any 2xx. Examples:',
 	'                      POST /account/values.json {"action":"save",...}',
+	'                      GET /pricing --dump --contains Worker compute',
+	'  --dump              Write the previous --request body to',
+	'                      .tmp/control-kody-body (-<n> when several dump)',
+	'  --contains <text>   Fail unless the previous --request body includes',
+	'                      this text (repeatable)',
 	'  --check <path>      Extra authenticated GET after login (repeatable)',
 	'  --cookie-file <p>   Write the session Cookie header value to a file',
 	'  --json              Machine-readable output on stdout',
@@ -67,6 +78,8 @@ export type SessionRequestSpec = {
 	path: string
 	expectedStatus: number | null
 	body: unknown | null
+	dump: boolean
+	contains: Array<string>
 }
 
 export type ParsedPreviewComment = {
@@ -258,6 +271,17 @@ export function parseArgs(argv: Array<string>): PreviewManualTestOptions {
 				index += 1
 				break
 			}
+			case '--dump': {
+				previousSessionRequest(options, '--dump').dump = true
+				break
+			}
+			case '--contains': {
+				previousSessionRequest(options, '--contains').contains.push(
+					requireValue(argv[index + 1], '--contains'),
+				)
+				index += 1
+				break
+			}
 			case '--cookie-file': {
 				options.cookieFile = requireValue(argv[index + 1], '--cookie-file')
 				index += 1
@@ -297,23 +321,47 @@ export function parseArgs(argv: Array<string>): PreviewManualTestOptions {
 	return options
 }
 
+function previousSessionRequest(
+	options: PreviewManualTestOptions,
+	flag: string,
+) {
+	const spec = options.sessionRequests.at(-1)
+	if (!spec) {
+		throw new PreviewManualTestError(
+			`${flag} applies to the previous --request; pass --request first (or put ${flag} inside the spec).`,
+		)
+	}
+	return spec
+}
+
 const httpMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
 
 function isHttpMethod(value: string): value is HttpMethod {
 	return (httpMethods as ReadonlyArray<string>).includes(value)
 }
 
+const sessionRequestSpecUsage =
+	'METHOD /path [status] [json-body] [--dump] [--contains <text>]'
+
+const specFlagPattern = /(?:^|\s+)(--dump|--contains)(?=\s|$)/
+
 export function parseSessionRequest(spec: string): SessionRequestSpec {
 	const trimmed = spec.trim()
-	const match =
-		/^(GET|POST|PUT|PATCH|DELETE)\s+(\S+)(?:\s+(\d{3}))?(?:\s+([\s\S]+))?$/i.exec(
-			trimmed,
-		)
+	const match = /^(GET|POST|PUT|PATCH|DELETE)\s+(\S+)(?:\s+([\s\S]*))?$/i.exec(
+		trimmed,
+	)
 	if (!match?.[1] || !match[2]) {
 		throw new PreviewManualTestError(
-			`Invalid --request spec: ${spec}\nExpected: METHOD /path [status] [json-body]`,
+			`Invalid --request spec: ${spec}\nExpected: ${sessionRequestSpecUsage}`,
 		)
 	}
+	const rest = match[3] ?? ''
+	const flagStart = rest.search(specFlagPattern)
+	const head = (flagStart === -1 ? rest : rest.slice(0, flagStart)).trim()
+	const { dump, contains } = parseSessionRequestFlags(
+		flagStart === -1 ? '' : rest.slice(flagStart),
+	)
+	const headMatch = /^(?:(\d{3})(?:\s+|$))?([\s\S]*)$/.exec(head)
 	const methodName = match[1].toUpperCase()
 	if (!isHttpMethod(methodName)) {
 		throw new PreviewManualTestError(`Unsupported HTTP method: ${methodName}`)
@@ -324,20 +372,22 @@ export function parseSessionRequest(spec: string): SessionRequestSpec {
 			`--request path must start with /: ${path}`,
 		)
 	}
-	const expectedStatus = match[3] ? Number.parseInt(match[3], 10) : null
-	const rawBody = match[4]?.trim() ?? ''
+	const expectedStatus = headMatch?.[1]
+		? Number.parseInt(headMatch[1], 10)
+		: null
+	const rawBody = headMatch?.[2]?.trim() ?? ''
 	let body: unknown | null = null
 	if (rawBody.length > 0) {
 		if (methodName === 'GET') {
 			throw new PreviewManualTestError(
-				'GET --request cannot include a JSON body.',
+				`GET --request cannot include a JSON body: ${rawBody}\nExpected: ${sessionRequestSpecUsage}`,
 			)
 		}
 		try {
 			body = JSON.parse(rawBody) as unknown
 		} catch {
 			throw new PreviewManualTestError(
-				`--request body is not valid JSON: ${rawBody}`,
+				`--request body is not valid JSON: ${rawBody}\nExpected: ${sessionRequestSpecUsage}`,
 			)
 		}
 	}
@@ -346,7 +396,57 @@ export function parseSessionRequest(spec: string): SessionRequestSpec {
 		path,
 		expectedStatus,
 		body,
+		dump,
+		contains,
 	}
+}
+
+function parseSessionRequestFlags(flags: string) {
+	let dump = false
+	const contains: Array<string> = []
+	const parts = flags.split(specFlagPattern)
+	for (let index = 1; index < parts.length; index += 2) {
+		const flag = parts[index]
+		const value = parts[index + 1]?.trim() ?? ''
+		if (flag === '--dump') {
+			if (value.length > 0) {
+				throw new PreviewManualTestError(
+					`--request --dump takes no value (got ${JSON.stringify(value)}). Put --contains <text> after it.`,
+				)
+			}
+			dump = true
+			continue
+		}
+		const needle = unquoteSpecValue(value)
+		if (needle.length === 0) {
+			throw new PreviewManualTestError('--request --contains requires text.')
+		}
+		contains.push(needle)
+	}
+	return { dump, contains }
+}
+
+function unquoteSpecValue(value: string) {
+	const quote = value[0]
+	if (
+		value.length >= 2 &&
+		(quote === '"' || quote === "'") &&
+		value.endsWith(quote)
+	) {
+		return value.slice(1, -1)
+	}
+	return value.replace(/\\(.)/g, '$1')
+}
+
+export function sessionRequestDumpFiles(
+	specs: ReadonlyArray<SessionRequestSpec>,
+) {
+	const dumpCount = specs.filter((spec) => spec.dump).length
+	return specs.map((spec, index) => {
+		if (!spec.dump) return null
+		if (dumpCount === 1) return defaultDumpFile()
+		return `${defaultDumpFile()}-${index + 1}`
+	})
 }
 
 export function sessionRequestName(spec: SessionRequestSpec) {
@@ -1436,12 +1536,14 @@ async function runSmokeChecks(
 				}
 			}
 
-			for (const spec of options.sessionRequests) {
+			const dumpFiles = sessionRequestDumpFiles(options.sessionRequests)
+			for (const [index, spec] of options.sessionRequests.entries()) {
 				const requestCheck = await runAuthenticatedSessionRequest(
 					deps,
 					origin,
 					cookieHeader,
 					spec,
+					dumpFiles[index] ?? null,
 				)
 				checks.push(requestCheck)
 			}
@@ -1589,6 +1691,7 @@ async function runAuthenticatedSessionRequest(
 	origin: string,
 	cookieHeader: string,
 	spec: SessionRequestSpec,
+	dumpFile: string | null,
 ): Promise<SmokeCheck> {
 	const headers: Record<string, string> = {
 		Cookie: cookieHeader,
@@ -1603,9 +1706,7 @@ async function runAuthenticatedSessionRequest(
 		headers['Content-Type'] = 'application/json'
 		init.body = JSON.stringify(spec.body)
 	}
-	const response = spec.path.includes('.json')
-		? await fetchJson(deps, `${origin}${spec.path}`, init)
-		: await fetchText(deps, `${origin}${spec.path}`, init)
+	const response = await fetchText(deps, `${origin}${spec.path}`, init)
 	if (response.error) {
 		return {
 			name: sessionRequestName(spec),
@@ -1613,15 +1714,35 @@ async function runAuthenticatedSessionRequest(
 			detail: response.error,
 		}
 	}
-	const ok = evaluateSessionRequestStatus(response.status, spec.expectedStatus)
+	const statusOk = evaluateSessionRequestStatus(
+		response.status,
+		spec.expectedStatus,
+	)
+	const missing = missingContainsNeedles(response.body, spec.contains)
 	const expected =
 		spec.expectedStatus === null ? '2xx' : String(spec.expectedStatus)
-	return {
-		name: sessionRequestName(spec),
-		ok,
-		detail: ok
+	const detail = [
+		statusOk
 			? `HTTP ${response.status} ${truncateDetail(response.body)}`
 			: `expected ${expected}, got HTTP ${response.status} ${truncateDetail(response.body)}`,
+	]
+	let dumpOk = true
+	if (dumpFile) {
+		try {
+			await deps.writeFile(dumpFile, response.body)
+			detail.push(`dumped ${dumpFile}`)
+		} catch (error) {
+			dumpOk = false
+			detail.push(
+				`failed to dump ${dumpFile}: ${error instanceof Error ? error.message : String(error)}`,
+			)
+		}
+	}
+	if (missing.length > 0) detail.push(formatContainsFailure(missing))
+	return {
+		name: sessionRequestName(spec),
+		ok: statusOk && missing.length === 0 && dumpOk,
+		detail: detail.join('\n'),
 	}
 }
 

@@ -107,6 +107,8 @@ const usageLines = [
 	'',
 	'preview forwards its flags to preview:manual-test (--pr, --request, --check).',
 	'A `--` separator is optional. Example: preview --pr 42 --check /account',
+	"--request specs take request's --dump/--contains at the end, e.g.",
+	"  preview --pr 42 --request 'GET /pricing --dump --contains Worker compute'",
 	'',
 	'request fetches GET/HEAD first and only POSTs /auth when the response is',
 	'401 or login HTML. Public pages such as /pricing do not need a session.',

@@ -56,7 +56,9 @@ substring is in the body. `request` fetches GET/HEAD first and only POSTs
 exists.
 
 `preview` forwards its flags to `preview:manual-test`. `--pr`, `--request`, and
-`--check` work without a `--` separator.
+`--check` work without a `--` separator. A `--request` spec accepts the same
+trailing `--dump` / `--contains <text>` flags as `request`, for example
+`preview --pr 42 --request 'GET /pricing --dump --contains Worker compute'`.
 
 `doctor` checks local APP_DB readiness. A failed local `login` (unmigrated or
 unseeded D1) prints:
