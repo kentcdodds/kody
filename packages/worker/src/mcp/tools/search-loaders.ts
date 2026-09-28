@@ -99,18 +99,40 @@ export async function loadSearchRowsAndRegistry(input: {
 				if (!userId) {
 					return { rows: [], warnings: [] }
 				}
-				const [savedPackages, platformPackages] = await Promise.all([
-					applySavedPackageForkListingAncestry({
-						env: input.env,
-						records: await listSavedPackagesWithCommunityProvenanceByUserId(
-							input.env.APP_DB,
-							{
-								userId,
-							},
+				const [savedPackages, platformPackages, sharedRecords] =
+					await Promise.all([
+						listSavedPackagesWithCommunityProvenanceByUserId(input.env.APP_DB, {
+							userId,
+						}).then((records) =>
+							applySavedPackageForkListingAncestry({
+								env: input.env,
+								records,
+							}),
 						),
-					}),
-					listPlatformPackagesForSearch(input.env.APP_DB),
-				])
+						listPlatformPackagesForSearch(input.env.APP_DB),
+						listAcceptedInboundSharedPackages({
+							db: input.env.APP_DB,
+							granteeUserId: userId,
+						})
+							.then((grants) =>
+								Promise.all(
+									grants.map((record) =>
+										getSavedPackageWithCommunityProvenanceById(
+											input.env.APP_DB,
+											{
+												userId: record.userId,
+												packageId: record.id,
+											},
+										),
+									),
+								),
+							)
+							.then((records) =>
+								records.filter((record): record is NonNullable<typeof record> =>
+									Boolean(record),
+								),
+							),
+					])
 				const ownRecords = savedPackages.filter((pkg) =>
 					input.includeHiddenPackages ? true : !pkg.hidden,
 				)
@@ -120,23 +142,6 @@ export async function loadSearchRowsAndRegistry(input: {
 					userId,
 					records: ownRecords,
 				})
-				const sharedRecords = (
-					await Promise.all(
-						(
-							await listAcceptedInboundSharedPackages({
-								db: input.env.APP_DB,
-								granteeUserId: userId,
-							})
-						).map((record) =>
-							getSavedPackageWithCommunityProvenanceById(input.env.APP_DB, {
-								userId: record.userId,
-								packageId: record.id,
-							}),
-						),
-					)
-				).filter((record): record is NonNullable<typeof record> =>
-					Boolean(record),
-				)
 				const ownIds = new Set(savedPackages.map((pkg) => pkg.id))
 				const sharedRows = await buildSavedPackageSearchRows({
 					env: input.env,
