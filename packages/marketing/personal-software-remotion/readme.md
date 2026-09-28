@@ -13,19 +13,19 @@ npm install
 npx remotion browser ensure   # first run only: Remotion's headless Chrome
 npm run studio                # preview and scrub in Remotion Studio
 npm run render                # out/personal-software-connected.mp4
+npm run soundtrack            # rebuild public/music/ (see Sound)
 npm run typecheck
 ```
 
-`studio` and `render` regenerate the score first (`npm run music`), so the WAV
-under `public/music/` is never committed. Output lands in `out/`, which is
-gitignored. Encoding settings (CRF 16, x264 `slow`, bt709, AAC 256k) live in
-`remotion.config.ts`.
+Output lands in `out/`, which is gitignored. Encoding settings (CRF 16, x264
+`slow`, bt709, AAC 256k) live in `remotion.config.ts`.
 
 ## Composition
 
 - Entry: `src/index.ts`, composition id `PersonalSoftwareConnected`
   (`src/personal-software-connected.tsx`).
-- Edit map: `src/timing.ts` (120 BPM, one bar = 60 frames) and
+- Edit map: `src/timing.ts` (120 BPM, one bar = 60 frames),
+  `src/opening-cues.ts` (Beat 1's cue sheet and app windows), and
   `src/choreography.ts` (shared cue sheet for lantern pulses, arrivals, the
   zoom-out, and triggers).
 - Many-apps pull-back: `src/app-grid.ts` lays 52 apps out in world space around
@@ -58,14 +58,29 @@ ships:
   `packages/worker/public/images/kody-pattern.webp`.
 - Service and agent marks: `packages/worker/public/images/icons/*.svg`, plus the
   Google mark paths from `packages/worker/client/provider-icons.tsx`.
-- The one outside asset is `src/art/noto-emoji-weary-face.svg`, the 😩 image
+- The one outside visual is `src/art/noto-emoji-weary-face.svg`, the 😩 image
   from [Noto Emoji](https://github.com/googlefonts/noto-emoji) (Apache 2.0). It
   is a file rather than text so the render never depends on a system emoji font.
 
-## Music
+## Sound
 
-`scripts/generate-music.ts` synthesizes an original track in code (FM keys,
-supersaw pads, bass, drums, reverb) with a fixed seed, so the output is
-deterministic and carries this repo's license. The drop on bar 6 lands on frame
-300 as the lantern lights. If you change the tempo or bar map, change
-`src/timing.ts` to match.
+Two layers, both keyed to the same cue frames as the visuals:
+
+- `public/music/personal-software-soundtrack.m4a` (committed) is built by
+  `npm run soundtrack` (`scripts/build-soundtrack.ts`). It needs ffmpeg with
+  librubberband on `PATH` (Homebrew's ffmpeg has it) and downloads the Suno
+  source, "Personal software" by Kent, once into `.cache/`. It cuts the track's
+  drop, pre-chorus into chorus, and final hit, stretches each from about 122 BPM
+  onto the 120 BPM grid so the drop lands on frame 300 as the lantern lights and
+  the final hit on frame 780 under the tagline, then adds the opening's sound
+  design (clock tick-tock that speeds up with the repeats, a low drone, a tape
+  stop and deflate on "Ugh", and a reverse swell into the drop). The mix is
+  normalized to -14 LUFS.
+- `src/components/sound-effects.tsx` places UI one-shots from `public/sfx/`
+  (Kenney's Interface, UI Audio, and Impact packs, CC0; see
+  `public/sfx/license.txt`) on the cue frames: card pops, window whooshes,
+  checklist ticks, "Live", the "and again…" thuds, the "Ugh" slam, and pings as
+  services land in the lantern and triggers fire.
+
+If you change the bar map in `src/timing.ts` or the opening cues, rebuild the
+soundtrack.

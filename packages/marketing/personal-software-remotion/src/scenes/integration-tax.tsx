@@ -4,27 +4,14 @@ import { AppWindow } from '../components/app-window.tsx'
 import { Headline, words } from '../components/headline.tsx'
 import { MarkWell, type MarkId } from '../components/mark.tsx'
 import { easeIn, easeInOut, mix, progress, pulse, settle } from '../motion.ts'
+import {
+	checklist,
+	openingCues as cue,
+	shells,
+	type AppShell,
+} from '../opening-cues.ts'
 import { colors, fonts } from '../theme.ts'
 import { scenes } from '../timing.ts'
-
-/**
- * Beat 1 cue sheet. One full cycle (wire, build, deploy) at a readable pace,
- * then the same wiring again, faster each time, until "Ugh" lands just
- * before the drop.
- */
-const cue = {
-	firstApp: 4,
-	needApp: 8,
-	checklist: 32,
-	wire: { start: 44, cards: 48, every: 12 },
-	build: { start: 108, end: 128 },
-	deploy: { start: 128, end: 142 },
-	needAnother: 150,
-	again: 180,
-	andAgain: [210, 226, 240],
-	ugh: 256,
-	exit: scenes.integrationTax.until - 37,
-} as const
 
 type SetupCard = {
 	mark: MarkId
@@ -98,72 +85,6 @@ const setupCards: ReadonlyArray<SetupCard> = [
 
 const windowWidth = 820
 const windowHeight = 600
-const slotScale = 0.44
-
-function slot(index: number) {
-	return { x: 1080 + index * 150, y: 250 + index * 150, scale: slotScale }
-}
-
-type AppShell = {
-	title: string
-	address: string
-	enterAt: number
-	cardTimes: ReadonlyArray<number>
-	rest: { x: number; y: number; scale: number }
-	stacked?: { x: number; y: number; scale: number; at: number }
-	shipped?: { address: string }
-	slump: number
-}
-
-const cardsEvery = (start: number, step: number, count = 5) =>
-	setupCards.slice(0, count).map((_, index) => Math.round(start + index * step))
-
-const shells: ReadonlyArray<AppShell> = [
-	{
-		title: 'family-hq',
-		address: 'localhost:3000',
-		enterAt: cue.firstApp,
-		cardTimes: cardsEvery(cue.wire.cards, cue.wire.every),
-		rest: { x: 1250, y: 560, scale: 1 },
-		stacked: { ...slot(0), at: cue.needAnother },
-		shipped: { address: 'family-hq.app' },
-		slump: -2,
-	},
-	{
-		title: 'habit-tracker',
-		address: 'localhost:5173',
-		enterAt: cue.needAnother + 6,
-		cardTimes: cardsEvery(cue.again + 2, 5),
-		rest: { x: 1310, y: 630, scale: 0.8 },
-		stacked: { ...slot(1), at: cue.andAgain[0] - 4 },
-		slump: 2.5,
-	},
-	{
-		title: 'invoice-bot',
-		address: 'localhost:8787',
-		enterAt: cue.andAgain[0] - 3,
-		cardTimes: cardsEvery(cue.andAgain[0] + 1, 3),
-		rest: slot(2),
-		slump: -1.5,
-	},
-	{
-		title: 'meal-planner',
-		address: 'localhost:4321',
-		enterAt: cue.andAgain[1] - 2,
-		cardTimes: cardsEvery(cue.andAgain[1] + 1, 2.5),
-		rest: slot(3),
-		slump: 3,
-	},
-	{
-		title: 'podcast-notes',
-		address: 'localhost:8000',
-		enterAt: cue.andAgain[2] - 2,
-		cardTimes: cardsEvery(cue.andAgain[2] + 1, 2, 6),
-		rest: slot(4),
-		slump: -2.5,
-	},
-]
-
 function SetupModal({
 	card,
 	landedAt,
@@ -410,8 +331,8 @@ function Shell({ shell, frame }: { shell: AppShell; frame: number }) {
 	const built = shell.shipped
 		? progress(frame, cue.build.start, cue.build.end, easeInOut)
 		: 0
-	const live = shell.shipped != null && frame >= cue.deploy.start + 6
-	const deployFlash = shell.shipped ? pulse(frame, cue.deploy.start + 6, 20) : 0
+	const live = shell.shipped != null && frame >= cue.deploy.live
+	const deployFlash = shell.shipped ? pulse(frame, cue.deploy.live, 20) : 0
 	const slump = settle(frame, cue.ugh, { damping: 11, stiffness: 140 })
 	const leave = progress(frame, cue.exit, cue.exit + 22, easeIn)
 	const collapse = progress(frame, cue.exit, cue.exit + 22, easeInOut)
@@ -451,16 +372,6 @@ function Shell({ shell, frame }: { shell: AppShell; frame: number }) {
 		</AppWindow>
 	)
 }
-
-const checklist = [
-	{
-		label: 'Wire up integrations',
-		start: cue.wire.start,
-		done: cue.build.start,
-	},
-	{ label: 'Build', start: cue.build.start, done: cue.build.end },
-	{ label: 'Deploy', start: cue.deploy.start, done: cue.deploy.end },
-] as const
 
 function Checklist({ frame }: { frame: number }) {
 	const leave = progress(

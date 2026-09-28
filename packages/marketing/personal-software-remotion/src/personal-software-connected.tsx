@@ -9,12 +9,13 @@ import {
 } from './components/app-world.tsx'
 import { Backdrop } from './components/backdrop.tsx'
 import { Lantern } from './components/lantern.tsx'
+import { SoundEffects } from './components/sound-effects.tsx'
 import { ArrivalsOverlay, ConnectOnce } from './scenes/connect-once.tsx'
 import { GenerateApp, PromptBar } from './scenes/generate-app.tsx'
 import { IntegrationTax } from './scenes/integration-tax.tsx'
 import { StaysLit } from './scenes/stays-lit.tsx'
 import { Tagline, TaglineRing } from './scenes/tagline.tsx'
-import { musicVolume, scenes } from './timing.ts'
+import { scenes } from './timing.ts'
 
 type SceneId = keyof typeof scenes
 
@@ -89,10 +90,8 @@ export function PersonalSoftwareConnected() {
 			<Scene id="tagline" name="Close · tagline">
 				<Tagline />
 			</Scene>
-			<Audio
-				src={staticFile('music/kody-warm-drive.wav')}
-				volume={musicVolume}
-			/>
+			<Audio src={staticFile('music/personal-software-soundtrack.m4a')} />
+			<SoundEffects />
 		</AbsoluteFill>
 	)
 }

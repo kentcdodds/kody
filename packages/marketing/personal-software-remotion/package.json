@@ -6,9 +6,9 @@
   "license": "FSL-1.1-ALv2",
   "type": "module",
   "scripts": {
-    "music": "node scripts/generate-music.ts",
-    "studio": "npm run music && remotion studio src/index.ts",
-    "render": "npm run music && remotion render src/index.ts PersonalSoftwareConnected out/personal-software-connected.mp4",
+    "soundtrack": "node scripts/build-soundtrack.ts",
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts PersonalSoftwareConnected out/personal-software-connected.mp4",
     "still": "remotion still src/index.ts PersonalSoftwareConnected",
     "typecheck": "tsc --noEmit"
   },

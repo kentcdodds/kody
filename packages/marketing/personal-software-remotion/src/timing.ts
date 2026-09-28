@@ -1,6 +1,7 @@
 /**
- * Edit map. The score (`scripts/generate-music.ts`) is 120 BPM, so one beat
- * is 15 frames and one bar is 60. Scene boundaries sit on bar lines.
+ * Edit map. The soundtrack (`scripts/build-soundtrack.ts`) is retimed to
+ * 120 BPM, so one beat is 15 frames and one bar is 60. Scene boundaries sit
+ * on bar lines.
  */
 export const fps = 30
 export const framesPerBeat = 15
@@ -22,5 +23,3 @@ export const scenes = {
 	staysLit: { from: bar(12, 2), until: bar(14, 1) },
 	tagline: { from: bar(13, 3), until: durationInFrames },
 } as const
-
-export const musicVolume = 0.68
