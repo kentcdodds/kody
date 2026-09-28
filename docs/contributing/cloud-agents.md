@@ -23,8 +23,13 @@ partway through (around `libwidevinecdm.so`), and `UV_USE_IO_URING=0` does not
 stop it. The browser zip downloads fine; only the built-in extraction hangs.
 
 If browsers are ever missing (e.g. a Playwright version bump changes the
-revision), do **not** rely on `playwright install`. Instead download and extract
-manually with native `unzip`:
+revision), do **not** rely on `playwright install`. Run
+`npm run test:e2e:ensure`: on Cloud Agent Linux it downloads the `browsers.json`
+revision and extracts with native `unzip`
+(`tools/install-playwright-browsers-unzip.ts`). Other machines still use
+`playwright install` (with `--with-deps` locally). A Cloud Agent snapshot
+install should run `test:e2e:ensure` after `npm install` so a Playwright bump
+does not leave stale `chromium-1208` markers. To do the same steps by hand:
 
 1. Get the revision + Chrome-for-Testing version from
    `node_modules/playwright-core/browsers.json` and the CDN URL printed by
@@ -32,12 +37,12 @@ manually with native `unzip`:
    `https://cdn.playwright.dev/builds/cft/<cft-version>/linux64/chrome-linux64.zip`
    and `.../chrome-headless-shell-linux64.zip`).
 2. `curl -fsSL -o /tmp/c.zip <chrome-linux64.zip>` then
-   `unzip -q /tmp/c.zip -d ~/.cache/ms-playwright/chromium-<rev>/` and
-   `touch ~/.cache/ms-playwright/chromium-<rev>/INSTALLATION_COMPLETE`.
+   `unzip -q /tmp/c.zip -d ~/.cache/ms-playwright/chromium-<rev>/`.
 3. Repeat for the headless shell into
    `~/.cache/ms-playwright/chromium_headless_shell-<rev>/` (Playwright launches
    headless via the separate headless-shell binary, so both are required).
-4. `chmod +x` the `chrome` and `chrome-headless-shell` binaries.
+4. `chmod +x` the `chrome` and `chrome-headless-shell` binaries, then
+   `touch INSTALLATION_COMPLETE` in each revision directory.
 
 `control-kody doctor` reads the `chromium` and `chromium-headless-shell`
 revisions from `node_modules/playwright-core/browsers.json`. It passes only when

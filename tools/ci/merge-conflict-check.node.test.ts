@@ -113,8 +113,8 @@ test('polling ignores a cached result for the previous base tip', async () => {
 	expect(reads).toHaveLength(0)
 })
 
-test('polling fails closed when the base SHA never matches', async () => {
-	const result = await pollMergeability({
+test('polling accepts a published non-pending state when the base SHA never matches', async () => {
+	const behind = await pollMergeability({
 		read: () =>
 			Promise.resolve(
 				mergeability({
@@ -128,9 +128,26 @@ test('polling fails closed when the base SHA never matches', async () => {
 		delayMs: 1,
 		expectedBaseSha: baseSha,
 	})
-	expect(result.kind).toBe('undetermined')
-	expect(result.detail).toContain(previousBaseSha)
-	expect(result.detail).toContain(baseSha)
+	expect(behind.kind).toBe('clear')
+	expect(behind.mergeableState).toBe('behind')
+	expect(behind.detail).toBeUndefined()
+
+	const dirty = await pollMergeability({
+		read: () =>
+			Promise.resolve(
+				mergeability({
+					mergeable: false,
+					mergeableState: 'dirty',
+					baseSha: previousBaseSha,
+				}),
+			),
+		sleep: () => Promise.resolve(),
+		maxAttempts: 2,
+		delayMs: 1,
+		expectedBaseSha: baseSha,
+	})
+	expect(dirty.kind).toBe('conflicted')
+	expect(dirty.mergeableState).toBe('dirty')
 })
 
 test('a dirty pull request fails a check on the head SHA', async () => {

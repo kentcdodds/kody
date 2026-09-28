@@ -3,6 +3,10 @@ import {
 	packageIdLookupDescription,
 	packageNameLookupDescription,
 } from '#worker/package-registry/package-name.ts'
+import {
+	packageWebhookChallengeSchema,
+	type PackageWebhookChallenge,
+} from '#worker/package-registry/types.ts'
 
 export const webhookPackageRefSchema = {
 	packageId: z.string().min(1).optional().describe(packageIdLookupDescription),
@@ -31,6 +35,12 @@ export const webhookReplayPublicSchema = z
 	})
 	.nullable()
 
+export const webhookChallengePublicSchema = packageWebhookChallengeSchema
+	.nullable()
+	.describe(
+		'Platform-answered subscription challenge from package.json#kody.webhooks[].challenge (secretName is a secret-store name, never a value). Null when not declared.',
+	)
+
 export const listedWebhookSchema = z.object({
 	package_id: z.string(),
 	package_kody_id: z.string(),
@@ -43,6 +53,7 @@ export const listedWebhookSchema = z.object({
 	rate_limit_per_minute: z.number().int(),
 	verification: webhookVerificationPublicSchema,
 	replay: webhookReplayPublicSchema,
+	challenge: webhookChallengePublicSchema,
 	minted: z
 		.boolean()
 		.describe('True when a URL secret has been minted for this webhook.'),
@@ -133,6 +144,7 @@ export function toListedWebhookCapability(webhook: {
 	rateLimitPerMinute: number
 	verification: z.infer<typeof webhookVerificationPublicSchema>
 	replay?: z.infer<typeof webhookReplayPublicSchema>
+	challenge: PackageWebhookChallenge | null
 	minted: boolean
 	handle: string | null
 	urlHost: string | null
@@ -153,6 +165,7 @@ export function toListedWebhookCapability(webhook: {
 		rate_limit_per_minute: webhook.rateLimitPerMinute,
 		verification: webhook.verification,
 		replay: webhook.replay ?? null,
+		challenge: webhook.challenge,
 		minted: webhook.minted,
 		handle: webhook.handle,
 		url_host: webhook.urlHost,

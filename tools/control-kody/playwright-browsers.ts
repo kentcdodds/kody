@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
-const installationComplete = 'INSTALLATION_COMPLETE'
+export const playwrightInstallationComplete = 'INSTALLATION_COMPLETE'
 const chromiumName = 'chromium'
 const headlessShellName = 'chromium-headless-shell'
 
@@ -17,17 +17,26 @@ export type PlaywrightBrowserCheck = {
 	detail: string
 }
 
-type BrowserRequirement = {
+export type PlaywrightBrowserRequirement = {
 	revision: string
 	browserVersion: string
 	directory: string
 	archiveName: string
+	executableRelativePath: string
 }
 
 type ChromiumRequirements = {
-	chromium: BrowserRequirement
-	headlessShell: BrowserRequirement
+	chromium: PlaywrightBrowserRequirement
+	headlessShell: PlaywrightBrowserRequirement
 }
+
+const linuxExecutableRelativePath = {
+	[chromiumName]: path.join('chrome-linux64', 'chrome'),
+	[headlessShellName]: path.join(
+		'chrome-headless-shell-linux64',
+		'chrome-headless-shell',
+	),
+} as const
 
 export function defaultPlaywrightBrowsersJsonPath(repoRoot: string) {
 	return path.join(repoRoot, 'node_modules', 'playwright-core', 'browsers.json')
@@ -40,11 +49,11 @@ export function inspectPlaywrightBrowsers(input: {
 	const requirements = readChromiumRequirements(input.browsersJsonPath)
 	if (!requirements.ok) return { ok: false, detail: requirements.detail }
 
-	const cacheRoot = path.join(input.homeDir, '.cache', 'ms-playwright')
+	const cacheRoot = playwrightCacheRoot(input.homeDir)
 	const missing = [requirements.chromium, requirements.headlessShell].filter(
 		(browser) =>
 			!existsSync(
-				path.join(cacheRoot, browser.directory, installationComplete),
+				path.join(cacheRoot, browser.directory, playwrightInstallationComplete),
 			),
 	)
 	if (missing.length > 0) {
@@ -61,32 +70,39 @@ export function inspectPlaywrightBrowsers(input: {
 
 	return {
 		ok: true,
-		detail: `Playwright ${requirements.chromium.directory} and ${requirements.headlessShell.directory} ${installationComplete}`,
+		detail: `Playwright ${requirements.chromium.directory} and ${requirements.headlessShell.directory} ${playwrightInstallationComplete}`,
 	}
+}
+
+export function playwrightCacheRoot(homeDir: string) {
+	return path.join(homeDir, '.cache', 'ms-playwright')
+}
+
+export function playwrightLinuxArchiveUrl(
+	browser: PlaywrightBrowserRequirement,
+) {
+	return `https://cdn.playwright.dev/builds/cft/${browser.browserVersion}/linux64/${browser.archiveName}`
 }
 
 function formatMissingPlaywrightBrowsers(input: {
 	cacheRoot: string
-	missing: ReadonlyArray<BrowserRequirement>
-	chromium: BrowserRequirement
-	headlessShell: BrowserRequirement
+	missing: ReadonlyArray<PlaywrightBrowserRequirement>
+	chromium: PlaywrightBrowserRequirement
+	headlessShell: PlaywrightBrowserRequirement
 }) {
 	const missingDirectories = input.missing
 		.map((browser) => browser.directory)
 		.join(', ')
 	const downloads = [input.chromium, input.headlessShell]
-		.map(
-			(browser) =>
-				`https://cdn.playwright.dev/builds/cft/${browser.browserVersion}/linux64/${browser.archiveName}`,
-		)
+		.map((browser) => playwrightLinuxArchiveUrl(browser))
 		.join(' and ')
 	const destinations = [input.chromium, input.headlessShell]
 		.map((browser) => path.join(input.cacheRoot, browser.directory))
 		.join(' and ')
-	return `Playwright revision missing (${missingDirectories}). Required ${input.chromium.directory} and ${input.headlessShell.directory}. Do not run playwright install on this VM. Unzip per docs/contributing/cloud-agents.md: curl ${downloads}, unzip into ${destinations}, touch ${installationComplete} in each directory, and chmod +x the chrome and chrome-headless-shell binaries.`
+	return `Playwright revision missing (${missingDirectories}). Required ${input.chromium.directory} and ${input.headlessShell.directory}. Do not run playwright install on this VM. Run npm run test:e2e:ensure (native unzip on Cloud Agent Linux) or unzip per docs/contributing/cloud-agents.md: curl ${downloads}, unzip into ${destinations}, chmod +x the chrome and chrome-headless-shell binaries, then touch ${playwrightInstallationComplete} in each directory.`
 }
 
-function readChromiumRequirements(
+export function readChromiumRequirements(
 	browsersJsonPath: string,
 ): ({ ok: true } & ChromiumRequirements) | { ok: false; detail: string } {
 	let raw: string
@@ -137,7 +153,9 @@ function readBrowser(
 	browsers: ReadonlyArray<unknown>,
 	name: PlaywrightBrowserName,
 	browsersJsonPath: string,
-): { ok: true; browser: BrowserRequirement } | { ok: false; detail: string } {
+):
+	| { ok: true; browser: PlaywrightBrowserRequirement }
+	| { ok: false; detail: string } {
 	for (const entry of browsers) {
 		if (!isRecord(entry) || entry.name !== name) continue
 		const revision = entry.revision
@@ -168,6 +186,7 @@ function readBrowser(
 				browserVersion,
 				directory: `${name.replaceAll('-', '_')}-${revision}`,
 				archiveName: linuxArchiveName[name],
+				executableRelativePath: linuxExecutableRelativePath[name],
 			},
 		}
 	}

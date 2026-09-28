@@ -96,12 +96,13 @@ Use the MCP `webhooks` domain:
    package's [settings page](#manage-webhook-urls-in-package-settings)
    (`/@<username>/<packageKodyId>/settings#webhooks`) when that is simpler.
 
-Other capabilities: `webhookList` (declarations joined with minted handle /
-enabled state), `webhookUrlRotate`, `webhookEnable`, `webhookDisable`,
-`webhookDeliveryList` (metadata only; bodies are never stored), and
-`webhookSyntheticDispatch` (interactive-MCP smoke test for a minted webhook —
-see [Synthetic smoke test](#synthetic-smoke-test)). The same delivery history
-also appears under [Activity](./activity.md) (`/account/activity` and the `runs`
+Other capabilities: `webhookList` (declarations — including `verification`,
+`replay`, and `challenge` — joined with minted handle / enabled state),
+`webhookUrlRotate`, `webhookEnable`, `webhookDisable`, `webhookDeliveryList`
+(metadata only; bodies are never stored), and `webhookSyntheticDispatch`
+(interactive-MCP smoke test for a minted webhook — see
+[Synthetic smoke test](#synthetic-smoke-test)). The same delivery history also
+appears under [Activity](./activity.md) (`/account/activity` and the `runs`
 capabilities). List, mint, rotate, apply, and synthetic dispatch never return
 the credential URL.
 

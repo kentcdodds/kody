@@ -606,6 +606,69 @@ export declare function fetch(request: Request): Promise<Response>
 	})
 })
 
+test('package entity detail projects declared webhook challenges', () => {
+	const detail = formatEntityDetailMarkdown({
+		type: 'package',
+		id: 'x-bridge',
+		title: '@kody/x-bridge',
+		description: 'Receives X activity events.',
+		baseUrl: 'http://localhost',
+		ownerUsername: 'test-user',
+		hostedUrl: null,
+		listingAhead: null,
+		record: {
+			id: 'package-x',
+			userId: 'user-123',
+			name: '@kody/x-bridge',
+			kodyId: 'x-bridge',
+			description: 'Receives X activity events.',
+			tags: [],
+			searchText: null,
+			sourceId: 'source-package-x',
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			createdAt: '2026-03-20T00:00:00.000Z',
+			updatedAt: '2026-03-20T00:00:00.000Z',
+		},
+		manifest: {
+			name: '@kody/x-bridge',
+			exports: {
+				'.': './src/index.ts',
+				'./activity': './src/activity.ts',
+				'./plain': './src/plain.ts',
+			},
+			kody: {
+				id: 'x-bridge',
+				description: 'Receives X activity events.',
+				webhooks: [
+					{
+						name: 'activity',
+						export: './activity',
+						challenge: {
+							type: 'x-activity-crc',
+							secretName: 'xConsumerSecret',
+						},
+					},
+					{ name: 'plain', export: './plain' },
+				],
+			},
+		},
+		files: { 'package.json': '{}' },
+	})
+	expect(detail.structured).toMatchObject({
+		webhooks: [
+			{
+				name: 'activity',
+				challenge: { type: 'x-activity-crc', secretName: 'xConsumerSecret' },
+			},
+			{ name: 'plain', challenge: null },
+		],
+	})
+	expect(detail.markdown).toContain('challenge x-activity-crc')
+	expect(detail.markdown).not.toContain('xConsumerSecret')
+})
+
 test('package search surfaces listing ahead only when the fork is behind', () => {
 	const [currentMatch] = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',

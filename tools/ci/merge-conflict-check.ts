@@ -7,10 +7,13 @@ import { isExecutedDirectly } from '../node-runtime.ts'
  * `pull_request_target` workflow, which still starts, and writes a check onto
  * the head SHA. A push to the base branch reruns that check for every open
  * pull request, because the head commit does not move when the base does.
- * Retargeting the base does the same. A published mergeable_state is ignored
- * until the pull request's base SHA is the commit this run is checking, so a
- * cached result from the previous tip cannot stay green. It does not check
- * out or execute pull request code, and it does not run Validate.
+ * Retargeting the base does the same. A published mergeable_state is not
+ * accepted while the pull request's base SHA is still the previous tip, so
+ * a cached result can be replaced by a later calculation. GitHub often
+ * keeps `base.sha` at the merge-base for a behind pull request and never
+ * stores the new tip; after the poll a published non-pending state is used
+ * instead of failing closed. It does not check out or execute pull request
+ * code, and it does not run Validate.
  */
 export const mergeConflictCheckName = '🚧 Merge conflicts'
 
@@ -111,7 +114,8 @@ export async function pollMergeability(input: {
 		latest = await input.read()
 		const kind = classifyMergeability(latest)
 		// GitHub can keep the previous mergeable_state after the base moves.
-		// base.sha is that previous tip until the new calculation is stored.
+		// Prefer a result whose base.sha is this run's tip; fall through if
+		// GitHub never stores that SHA (common for behind pull requests).
 		if (kind !== 'pending' && sameSha(latest.baseSha, input.expectedBaseSha)) {
 			return {
 				kind,
@@ -121,6 +125,17 @@ export async function pollMergeability(input: {
 			}
 		}
 		if (attempt < input.maxAttempts) await input.sleep(input.delayMs)
+	}
+	if (latest !== null) {
+		const kind = classifyMergeability(latest)
+		if (kind !== 'pending') {
+			return {
+				kind,
+				baseRef: latest.baseRef,
+				mergeableState: latest.mergeableState,
+				draft: latest.draft,
+			}
+		}
 	}
 	const staleBase =
 		latest !== null && !sameSha(latest.baseSha, input.expectedBaseSha)

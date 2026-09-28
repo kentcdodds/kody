@@ -1,3 +1,4 @@
+import { accountConnectionAgentIds } from '../packages/worker/universal/account-connections.ts'
 import {
 	collectJsonRequests,
 	expectSingleCommitTransition,
@@ -140,7 +141,9 @@ test('Add connection opens its own page with the client wall, then a host step (
 	requests.reset()
 	// Every named client is a card link. Connected marks (if any) stay on
 	// those links — never a dead-end span — and none is hidden by viewport.
-	await expect(grid.getByRole('link')).toHaveCount(17)
+	await expect(grid.getByRole('link')).toHaveCount(
+		accountConnectionAgentIds.length,
+	)
 	await expect(grid.locator('[data-greyed="true"]:not(a)')).toHaveCount(0)
 	await expect(page.getByTestId('onboarding-agent-claude-code')).toBeVisible()
 	await expect(page.getByTestId('onboarding-agent-grok')).toBeVisible()

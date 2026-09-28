@@ -10,6 +10,7 @@ npm run control-kody -- dev
 npm run control-kody -- login
 npm run control-kody -- request GET /account/waiting.json
 npm run control-kody -- request GET /account/waiting --dump --contains 'Waiting'
+npm run control-kody -- request POST /account/secrets.json 400 '{"action":"add"}'
 npm run control-kody -- map waiting
 npm run control-kody -- map --check
 npm run control-kody -- health --sha <commit>

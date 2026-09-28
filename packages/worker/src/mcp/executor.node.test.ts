@@ -271,6 +271,12 @@ test('generated kody provider and executor module sources stay bundle-safe', () 
 	expect(authorityIdx).toBeLessThan(
 		moduleSource.indexOf('.call("recordFetch", "[]")'),
 	)
+	expect(moduleSource).toContain(
+		'if (hostname && hostname !== __kodyExcludedFetchHost && !__kodySecretAuthority)',
+	)
+	expect(moduleSource.indexOf('!__kodySecretAuthority')).toBeGreaterThan(
+		authorityIdx,
+	)
 	expect(moduleSource).toContain('const __kodyMcp =')
 	expect(moduleSource).toContain('getOwnPropertyDescriptor')
 	expect(moduleSource).toContain(

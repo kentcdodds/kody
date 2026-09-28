@@ -4,11 +4,12 @@ Husky hooks, `npm run validate`, and the test commands that gate commits and
 pushes. See the [setup index](./index.md) for the other setup pages.
 
 - `git commit` runs the Husky `pre-commit` hook. It formats staged
-  JavaScript/TypeScript/JSON/Markdown/CSS files with `oxfmt` and applies
-  `oxlint --fix` to staged JavaScript/TypeScript files. When the staged diff
-  includes a path that is not docs-only, or when that diff cannot be listed, it
-  also runs `npm run typecheck` and `npm run migrations:check`. A docs-only diff
-  skips those two commands. Docs-only means every path is under `docs/`, ends in
+  JavaScript/TypeScript/JSON/Markdown/CSS/YAML files (including
+  `.github/workflows`) with `oxfmt` and applies `oxlint --fix` to staged
+  JavaScript/TypeScript files. When the staged diff includes a path that is not
+  docs-only, or when that diff cannot be listed, it also runs
+  `npm run typecheck` and `npm run migrations:check`. A docs-only diff skips
+  those two commands. Docs-only means every path is under `docs/`, ends in
   `.md`, `.mdx`, or `.mdc`, or is a `LICENSE` / `LICENCE` / `COPYING` / `NOTICE`
   text file. A source file in the same commit, including a comment-only edit or
   a source file renamed to markdown, runs both checks.
@@ -92,10 +93,13 @@ pushes. See the [setup index](./index.md) for the other setup pages.
 - `npm run test:e2e:run` ensures Playwright Chromium is installed before the
   suite starts, so `npm run validate` self-heals on a fresh machine.
 - Use `npm run test:e2e:install` when you want to prefetch Playwright browsers
-  ahead of time instead of waiting for the first E2E run. CI caches
+  ahead of time instead of waiting for the first E2E run. On Cloud Agent Linux,
+  `test:e2e:ensure` (the same script `test:e2e:install` runs) uses native
+  `unzip` because `playwright install` hangs on that kernel. Other machines
+  still run `playwright install` (`--with-deps` is local-only). CI caches
   `~/.cache/ms-playwright` and runs `test:e2e:ensure`, so a lockfile-matching
-  cache hit skips the download and never runs `apt-get` (`--with-deps` is
-  local-only; `apt-get update` can hang the E2E job past the 15-minute timeout).
+  cache hit skips the download and never runs `apt-get` (`apt-get update` can
+  hang the E2E job past the 15-minute timeout).
 - `npm run test:e2e:run` runs the Playwright suite through Nx and depends on a
   cached `worker:prepare-e2e-env` target for `.env` bootstrap plus an uncached
   `worker:prepare-playwright` target that checks the local Chromium install.

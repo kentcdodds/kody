@@ -110,6 +110,8 @@ const usageLines = [
 	"--request specs take request's --dump/--contains at the end, e.g.",
 	"  preview --pr 42 --request 'GET /pricing --dump --contains Worker compute'",
 	'',
+	'request spec is METHOD /path [status] [json-body]. Separate arguments',
+	'are joined, so POST /path 400 \'{"action":"add"}\' sends the body.',
 	'request fetches GET/HEAD first and only POSTs /auth when the response is',
 	'401 or login HTML. Public pages such as /pricing do not need a session.',
 	'Mutating methods log in first when no cookie exists.',
@@ -267,9 +269,7 @@ export function parseControlArgs(argv: Array<string>): ControlKodyOptions {
 		const positional: Array<string> = []
 		parseSharedFlags(rest, options, positional)
 		if (positional.length > 0) {
-			const spec = [positional[0], positional[1], positional[2]]
-				.filter((part): part is string => Boolean(part))
-				.join(' ')
+			const spec = positional.join(' ')
 			const parsed = parseSessionRequest(spec)
 			if (options.body) {
 				parsed.body = JSON.parse(options.body)
@@ -934,7 +934,7 @@ async function runCommand(options: ControlKodyOptions) {
 		case 'request': {
 			if (!options.request) {
 				throw new ControlKodyError(
-					'request needs METHOD /path [status]. Example: request GET /account/waiting.json',
+					'request needs METHOD /path [status] [json-body]. Example: request GET /account/waiting.json',
 				)
 			}
 			const origin = await resolveOrigin(options)
