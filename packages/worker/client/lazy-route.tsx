@@ -257,7 +257,6 @@ registerPreloadPatterns(
 		routePattern(routes.account),
 		routePattern(routes.accountBilling),
 		routePattern(routes.accountBillingSuccess),
-		routePattern(routes.accountCredits),
 		routePattern(routes.accountUsage),
 		routePattern(routes.accountWaiting),
 		routePattern(routes.accountExperiments),

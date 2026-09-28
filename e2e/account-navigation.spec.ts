@@ -91,6 +91,41 @@ test('account section switches keep the current page on screen (no loading flash
 	).toHaveAttribute('href', `/@${user.username}`)
 })
 
+test('credits live on the usage page: /account/credits redirects there and the rail has no Credits item', async ({
+	page,
+	seedE2eUser,
+	login,
+}) => {
+	test.setTimeout(process.env.CI ? 90_000 : 60_000)
+	const runId = Date.now()
+	const user = await seedE2eUser({
+		email: `account-credits-${runId}@example.com`,
+		username: `account-credits-${runId}`,
+		password: 'account-credits-password',
+	})
+	await login({ email: user.email, password: user.password, mode: 'login' })
+	await page.goto('/account/credits')
+	await expect(page).toHaveURL(/\/account\/usage#credits$/)
+	await expect(
+		page.getByRole('heading', { level: 1, name: 'Usage' }),
+	).toBeVisible()
+	const credits = page.locator('#credits')
+	await expect(
+		credits.getByRole('heading', { level: 2, name: 'Credits' }),
+	).toBeVisible()
+	await expect(credits).toContainText('Credits are available on Pro.')
+	await expect(page.locator('[data-credits-balance]')).toHaveCount(0)
+	await expect(page.getByLabel('Custom amount ($)')).toHaveCount(0)
+
+	const rail = page.getByRole('navigation', { name: 'Account sections' })
+	await expect(
+		rail.getByRole('link', { name: 'Usage', exact: true }),
+	).toHaveAttribute('aria-current', 'page')
+	await expect(
+		rail.getByRole('link', { name: 'Credits', exact: true }),
+	).toHaveCount(0)
+})
+
 test('Add connection opens its own page with the client wall, then a host step (no loading flash, no double fetch)', async ({
 	page,
 	seedE2eUser,

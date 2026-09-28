@@ -96,7 +96,7 @@ test('credits status separates debiting, add credits, switch to Pro, and operato
 	).toBe('not_charged')
 })
 
-test('howToReduce points wallet and retired accounts at /account/credits; Free stays informational', () => {
+test('howToReduce points wallet and retired accounts at /account/usage#credits; Free stays informational', () => {
 	const empty = buildComputeOverageHowToReduce(
 		'unique_worker_days',
 		'pro',

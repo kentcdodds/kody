@@ -87,19 +87,19 @@ function overage(
 test('credits action follows the wallet: add, switch, subscribe, or nothing', () => {
 	expect(creditsActionForWallet('empty', 'pro', true)).toEqual({
 		label: 'Add credits',
-		href: '/account/credits',
+		href: '/account/usage#credits',
 	})
 	expect(creditsActionForWallet('none', 'standard', false)).toEqual({
 		label: 'Switch to Pro',
-		href: '/account/credits',
+		href: '/account/usage#credits',
 	})
 	expect(creditsActionForWallet('none', 'pro', false)).toEqual({
 		label: 'Switch to Pro',
-		href: '/account/credits',
+		href: '/account/usage#credits',
 	})
 	expect(creditsActionForWallet('empty', 'pro', false)).toEqual({
 		label: 'Subscribe to Pro',
-		href: '/account/credits',
+		href: '/account/usage#credits',
 	})
 	expect(creditsActionForWallet('funded', 'pro', true)).toBeNull()
 	expect(creditsActionForWallet('none', 'max', false)).toBeNull()
@@ -305,6 +305,7 @@ function usagePage(input: {
 			canBuyCredits,
 			autoRefill: null,
 		}),
+		credits: null,
 	}
 }
 
@@ -406,6 +407,6 @@ test('Pro usage page with no credits past include raises the stop alarm', async 
 	)
 	expect(html).toContain('data-credits-alarm="include_used_no_credits"')
 	expect(text).toContain('Runs past the include are stopped')
-	expect(html).toMatch(/href="\/account\/credits"[^>]*>Add credits</)
+	expect(html).toMatch(/href="\/account\/usage#credits"[^>]*>Add credits</)
 	expect(text).not.toMatch(overHundredPercent)
 })

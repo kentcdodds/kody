@@ -266,8 +266,9 @@ on credits until they are gone, then stops.
 - Email caps and the job interval floor are not credit-extended.
 
 Internally the 50× figure is a ceiling on how far credits go. Customer copy
-never frames it as something a balance unlocks, and never names Max; the
-`/account/credits` rate card is where customers see the debit rates.
+never frames it as something a balance unlocks, and never names Max; the rate
+card in the Credits section of `/account/usage` is where customers see the debit
+rates.
 
 **Debits.** The `usage_aggregation` lane runs `runCreditDebits`
 (`packages/worker/src/billing/credit-debits.ts`) right after it recomputes
@@ -292,7 +293,7 @@ Nobody is invoiced for overage. There is no overage-invoice ledger.
 **Top-ups.** `POST /account/credits/top-up.json` (Pro only) opens a one-off
 Checkout Session (`mode=payment`, `price_data`, card saved with
 `setup_future_usage=off_session`, metadata `kody_credit_top_up`). The
-`/account/credits?topup=success` redirect and the `checkout.session.completed`
+`/account/usage?topup=success` redirect and the `checkout.session.completed`
 webhook both call `applyCreditTopUpFromCheckoutSession`, which credits Stripe's
 `amount_total` after verifying the signed `client_reference_id`. The unique
 `stripe_reference` makes replays no-ops. Packs are $10 / $25 /
@@ -307,9 +308,9 @@ and the refill fits under this UTC month's cap (`decideCreditAutoRefill`). A
 failed charge backs off 24 hours. The Stripe idempotency key is per user, month,
 and refill number.
 
-**Notices** (checkboxes on `/account/credits`, default on): auto-refilled, hit
-the monthly cap (once per month), and balance at or below $5 (only while
-auto-refill is off, once per crossing).
+**Notices** (checkboxes in the usage page's Credits section, default on):
+auto-refilled, hit the monthly cap (once per month), and balance at or below $5
+(only while auto-refill is off, once per crossing).
 
 **Admin grants.** `POST /admin/users/credits.json` (admin users page) and the
 `adminCreditGrant` capability add house-funded credits to any account, including
@@ -402,14 +403,15 @@ only when crossing the include would stop runs: an empty purchasable-Pro wallet
 (`computeIncludeWarningPutsAccessAtRisk` in `universal/usage-presentation.ts`).
 Free and other wallet-less plans never get those mails (the include never
 charges or stops them), and funded wallets get the low-balance and auto-refill
-cap mails instead. `/account/credits` and `/account/usage` share the same
-framing from that module: activity (code executions and runs) first, included
-compute as a bar capped at 100% with past-include usage shown as dollars on
-credits, and one credits alarm only when the wallet or access is at risk. Free
-sees Worker compute and Rows read as informational counts only. Usage above an
-include debits a funded purchasable-Pro wallet, stops new compute on an empty
-one (`computeMeteringPolicy.pastIncludeWithEmptyCredits`), and is neither
-charged nor stopped on plans without a wallet
+cap mails instead. `/account/usage` (one page; `/account/credits` redirects to
+its `#credits` section) uses the same framing from that module: activity (code
+executions and runs) first, included compute as a bar capped at 100% with
+past-include usage shown as dollars on credits, and one credits alarm only when
+the wallet or access is at risk. Free sees Worker compute and Rows read as
+informational counts only. Usage above an include debits a funded
+purchasable-Pro wallet, stops new compute on an empty one
+(`computeMeteringPolicy.pastIncludeWithEmptyCredits`), and is neither charged
+nor stopped on plans without a wallet
 (`computeMeteringPolicy.pastIncludeWithoutWallet`); see
 [Prepaid credits](#prepaid-credits). Execute and outbound fetches are daily and
 weekly caps (`computeMeteringPolicy.executeCallsPerDay`); on purchasable Pro
@@ -825,16 +827,16 @@ Rate limit example (purchasable Pro with $0):
 
 > Plan limit reached: your "pro" plan allows at most 500 execute calls per day
 > and you currently have 500. Remove or finish existing execute calls per day
-> you no longer need, or add credits at /account/credits to keep going past your
-> include.
+> you no longer need, or add credits at /account/usage#credits to keep going
+> past your include.
 
 Monthly include stop (purchasable Pro with $0, `ComputeOverageLimitError`):
 
 > Worker compute include used up: your "pro" plan includes 350 worker-compute
 > days this UTC month and you have used 412. With no credits left, usage past
-> the include stops. Add credits at /account/credits to keep going; usage past
-> the include is charged at $0.004 per worker-compute day. Keep package code
-> stable so the same worker stays warm. …
+> the include stops. Add credits at /account/usage#credits to keep going; usage
+> past the include is charged at $0.004 per worker-compute day. Keep package
+> code stable so the same worker stays warm. …
 
 Customer copy never says a balance "unlocks" or "lifts" limits and never names
 Max; SSR and unit tests forbid that wording on pricing, billing, credits, and

@@ -254,7 +254,6 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 			'/account/billing.json',
 			'/account/billing/checkout.json',
 			'/account/billing/cancellation-feedback.json',
-			'/account/credits.json',
 			'/account/credits/top-up.json',
 			'/account/credits/settings.json',
 			'/account/usage.json',

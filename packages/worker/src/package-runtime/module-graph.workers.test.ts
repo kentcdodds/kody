@@ -530,6 +530,129 @@ test(
 )
 
 test(
+	'named-only package exports build callable artifacts and stay importable',
+	{ timeout: 30_000 },
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		await ensureSavedPackageArtifactSchema()
+		const unique = crypto.randomUUID()
+		const userId = `user-${unique}`
+		const sourceId = `source-${unique}`
+		const packageId = `pkg-${unique}`
+		const source = await insertSavedPackage({
+			userId,
+			packageId,
+			kodyId: 'named-only',
+			name: '@kentcdodds/named-only',
+			sourceId,
+			publishedCommit: `commit-${unique}`,
+		})
+		const sourceFiles = {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/named-only',
+				exports: {
+					'.': './src/index.ts',
+				},
+				kody: {
+					id: 'named-only',
+					description: 'Named-only export package',
+				},
+			}),
+			'src/index.ts':
+				'export function double(value: number) { return value * 2 }',
+		}
+		const callerContext = createMcpCallerContext({
+			baseUrl: 'https://kody.dev',
+			user: {
+				userId,
+				email: 'worker@example.com',
+				displayName: 'Worker Test',
+			},
+		})
+
+		for (const entrySource of [
+			sourceFiles['src/index.ts'],
+			[
+				'interface Shape { value: number }',
+				'export { Shape as default }',
+				sourceFiles['src/index.ts'],
+			].join('\n'),
+		]) {
+			const callableBundle = await buildKodyModuleBundle({
+				env,
+				baseUrl: 'https://kody.dev',
+				userId,
+				sourceFiles: { ...sourceFiles, 'src/index.ts': entrySource },
+				entryPoint: 'src/index.ts',
+				rootPackageId: packageId,
+			})
+			const invoked = await runBundledModuleWithRegistry(
+				env,
+				callerContext,
+				callableBundle,
+				undefined,
+				{ skipCapabilityRegistry: true },
+			)
+			expect(invoked.result).toBeUndefined()
+			expect(String(invoked.error)).toContain(
+				'Kody execute modules must default export a function; "src/index.ts" has no default export.',
+			)
+		}
+
+		await persistPublishedSourceSnapshot({
+			env,
+			userId,
+			source,
+			snapshot: { files: sourceFiles },
+		})
+		const importableBundle = await buildKodyImportableModuleBundle({
+			env,
+			baseUrl: 'https://kody.dev',
+			userId,
+			sourceFiles,
+			entryPoint: 'src/index.ts',
+			rootPackageId: packageId,
+		})
+		await persistPublishedBundleArtifact({
+			env,
+			userId,
+			source,
+			kind: 'importable-module',
+			artifactName: '.',
+			entryPoint: 'src/index.ts',
+			mainModule: importableBundle.mainModule,
+			modules: importableBundle.modules,
+			dependencies: importableBundle.dependencies,
+			packageContext: { packageId, kodyId: 'named-only', sourceId },
+		})
+		const callerBundle = await buildKodyModuleBundle({
+			env,
+			baseUrl: 'https://kody.dev',
+			userId,
+			bundleContext: 'ad-hoc-execute',
+			sourceFiles: {
+				'entry.ts': [
+					"import { double } from 'kody:@kentcdodds/named-only'",
+					'export default async function main() {',
+					'\treturn { doubled: double(21) }',
+					'}',
+				].join('\n'),
+			},
+			entryPoint: 'entry.ts',
+		})
+		const imported = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			callerBundle,
+			undefined,
+			{ skipCapabilityRegistry: true },
+		)
+		expect(imported.error).toBeUndefined()
+		expect(imported.result).toEqual({ doubled: 42 })
+	},
+)
+
+test(
 	'kody.app.client bundles TypeScript for the browser into one fingerprinted ESM module',
 	{ timeout: 20_000 },
 	async () => {

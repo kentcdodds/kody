@@ -273,6 +273,7 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 	expect(grantData?.plan).toBe('max')
 	expect(grantData?.manualPlan).toBe('max')
 	expect(grantData?.stripePlan).toBe(null)
+	expect(grantData?.credits).toBeNull()
 
 	const { db: subscribedDb } = createUsageTestDb({
 		userId: 13,
@@ -319,6 +320,11 @@ test('Free over compute includes stays informational: activity first, no warning
 		data?.warnings.some((row) => row.resource === 'unique_worker_days'),
 	).toBe(false)
 	expect(data?.creditsAlarm).toBeNull()
+	expect(data?.credits).toEqual({
+		eligible: false,
+		canSwitchToPro: false,
+		billingHref: '/account/billing',
+	})
 	expect(data?.activity.metrics.slice(0, 2)).toEqual([
 		{ metric: 'execute', label: 'Code executions', count: 140 },
 		{ metric: 'job_run', label: 'Job runs', count: 3 },
@@ -380,6 +386,22 @@ test('purchasable Pro with credits runs past the include on credits; at $0 it st
 	expect(funded?.computeOverage.creditsStatus).toBe('debiting_credits')
 	expect(funded?.computeOverage.creditsCostMicroUsd).toBe(50 * 4_000)
 	expect(funded?.creditsAlarm).toBeNull()
+	expect(funded?.credits).toMatchObject({
+		eligible: true,
+		configured: false,
+		canBuyCredits: false,
+		balanceMicroUsd: 10_000_000,
+		hasCredits: true,
+		recent: [],
+	})
+	expect(
+		funded?.credits?.eligible ? funded.credits.debitMeters[0] : null,
+	).toMatchObject({
+		meter: 'unique_worker_days',
+		used: 400,
+		pastInclude: 50,
+		estCreditsMicroUsd: 50 * 4_000,
+	})
 	expect(funded?.includedCompute[0]).toMatchObject({
 		barPercent: 100,
 		tone: 'calm',
@@ -413,9 +435,14 @@ test('purchasable Pro with credits runs past the include on credits; at $0 it st
 	expect(empty?.computeOverage.creditWallet).toBe('empty')
 	expect(empty?.computeOverage.creditsStatus).toBe('add_credits')
 	expect(empty?.canBuyCredits).toBe(true)
+	expect(empty?.credits).toMatchObject({
+		eligible: true,
+		balanceMicroUsd: 0,
+		hasCredits: false,
+	})
 	expect(empty?.creditsAlarm).toMatchObject({
 		kind: 'include_used_no_credits',
-		action: { label: 'Add credits', href: '/account/credits' },
+		action: { label: 'Add credits', href: '/account/usage#credits' },
 	})
 	expect(empty?.includedCompute[0]).toMatchObject({
 		barPercent: 100,
@@ -426,7 +453,7 @@ test('purchasable Pro with credits runs past the include on credits; at $0 it st
 	).toBe(false)
 	expect(currentFor(empty, 'execute_calls_per_day')?.limit).toBe(500)
 	expect(currentFor(empty, 'execute_calls_per_day')?.howToReduce).toMatch(
-		/add credits at \/account\/credits to keep going past your include/,
+		/add credits at \/account\/usage#credits to keep going past your include/,
 	)
 	const emptyWorkerCompute = empty?.computeOverage.meters.find(
 		(meter) => meter.resource === 'unique_worker_days',
@@ -454,6 +481,7 @@ test('gift Pro keeps retired Pro ceilings without a wallet and cannot buy credit
 	expect(data?.computeOverage.creditWallet).toBe('none')
 	expect(data?.computeOverage.creditsStatus).toBe('within_include')
 	expect(data?.canBuyCredits).toBe(false)
+	expect(data?.credits).toMatchObject({ eligible: false })
 	const workerCompute = data?.computeOverage.meters.find(
 		(meter) => meter.resource === 'unique_worker_days',
 	)
@@ -471,4 +499,37 @@ test('gift Pro keeps retired Pro ceilings without a wallet and cannot buy credit
 	]) {
 		expect(row.howToReduce).not.toMatch(/^add credits/i)
 	}
+})
+
+test('purchasable Pro without a Stripe customer cannot buy: alarm and Credits section agree', async () => {
+	const now = new Date('2026-07-25T12:00:00.000Z')
+	const { db } = createUsageTestDb({
+		userId: 27,
+		email: 'usage-credits-no-customer@example.com',
+		plan: 'free',
+		stripePlan: 'pro',
+		creditsEligible: true,
+		creditBalanceMicroUsd: 0,
+		stripeCustomerId: null,
+		uniqueWorkerDays: 400,
+	})
+	const data = await loadAccountUsageData({
+		env: withUsageEnv({
+			APP_DB: db,
+			STRIPE_SECRET_KEY: 'sk_test_usage',
+		}) as Env,
+		userId: 27,
+		now,
+	})
+	expect(data?.computeOverage.creditWallet).toBe('empty')
+	expect(data?.canBuyCredits).toBe(false)
+	expect(data?.creditsAlarm).toMatchObject({
+		kind: 'include_used_no_credits',
+		action: { label: 'Subscribe to Pro', href: '/account/usage#credits' },
+	})
+	expect(data?.credits).toMatchObject({
+		eligible: true,
+		configured: true,
+		canBuyCredits: false,
+	})
 })

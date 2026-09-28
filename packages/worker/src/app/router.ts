@@ -144,7 +144,6 @@ import {
 } from '#app/handlers/account-billing.ts'
 import { createAdminUserCreditsApiHandler } from '#app/handlers/admin-user-credits.ts'
 import {
-	createAccountCreditsApiHandler,
 	createAccountCreditsHandler,
 	createAccountCreditsSettingsApiHandler,
 	createAccountCreditsTopUpApiHandler,
@@ -476,8 +475,7 @@ export function createAppRouter(env: Env) {
 				createAccountBillingCancellationFeedbackApiHandler(env),
 			accountBillingSuccess: createAccountBillingSuccessHandler(env),
 			accountBillingPortal: createAccountBillingPortalHandler(env),
-			accountCredits: createAccountCreditsHandler(env),
-			accountCreditsApi: createAccountCreditsApiHandler(env),
+			accountCredits: createAccountCreditsHandler(),
 			accountCreditsTopUpPost: createAccountCreditsTopUpApiHandler(env),
 			accountCreditsSettingsPost: createAccountCreditsSettingsApiHandler(env),
 			accountUsage: createAccountUsageHandler(env),

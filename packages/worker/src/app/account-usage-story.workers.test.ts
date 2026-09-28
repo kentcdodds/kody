@@ -1,7 +1,12 @@
 import { env } from 'cloudflare:test'
 import { expect, test } from 'vitest'
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
-import { loadAccountCreditsData } from '#app/account-credits-data.ts'
+import {
+	loadAccountCreditsUser,
+	loadAccountUsageCredits,
+} from '#app/account-credits-data.ts'
+import { loadAccountUsageStory } from '#app/account-usage-story.ts'
+import { readAccountComputeOverage } from '#worker/billing/compute-overage-account.ts'
 import { applyCreditPayment } from '#worker/billing/credit-wallet.ts'
 import { ensureCreditWalletTestSchema } from '#worker/billing/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -48,7 +53,43 @@ async function setRollups(userId: string, counts: Record<string, number>) {
 	}
 }
 
-test('credits + usage story on real D1: Free calm, funded Pro on credits, empty Pro stopped', async () => {
+/**
+ * The story + Credits half of `loadAccountUsageData` (the entitlement
+ * snapshot needs tables this suite does not migrate).
+ */
+async function loadStoryAndCredits(userId: number) {
+	const user = await loadAccountCreditsUser({ env, userId, now })
+	if (!user) throw new Error('seeded user missing')
+	const computeOverage = await readAccountComputeOverage({
+		db: env.APP_DB,
+		stableUserId: user.stableUserId,
+		plan: user.entitlement.plan,
+		ladder: user.entitlement.ladder,
+		creditWallet: user.entitlement.creditWallet,
+		now,
+	})
+	const { credits, wallet } = await loadAccountUsageCredits({
+		env,
+		stableUserId: user.stableUserId,
+		entitlement: user.entitlement,
+		canBuyCredits: user.canBuyCredits,
+		computeOverage,
+		now,
+	})
+	const story = await loadAccountUsageStory({
+		db: env.APP_DB,
+		stableUserId: user.stableUserId,
+		plan: user.entitlement.plan,
+		creditWallet: user.entitlement.creditWallet,
+		canBuyCredits: user.canBuyCredits,
+		computeOverage,
+		now,
+		...(wallet ? { wallet } : {}),
+	})
+	return { ...story, credits }
+}
+
+test('usage story and Credits section on real D1: Free calm, funded Pro on credits, empty Pro stopped', async () => {
 	await ensureCreditWalletTestSchema(env.APP_DB)
 	const free = await seedUser({ label: 'story-free' })
 	const funded = await seedUser({
@@ -87,12 +128,8 @@ test('credits + usage story on real D1: Free calm, funded Pro on credits, empty 
 		now,
 	})
 
-	const freeData = await loadAccountCreditsData({
-		env,
-		userId: free.id,
-		now,
-	})
-	expect(freeData?.eligible).toBe(false)
+	const freeData = await loadStoryAndCredits(free.id)
+	expect(freeData?.credits?.eligible).toBe(false)
 	expect(freeData?.creditsAlarm).toBeNull()
 	expect(freeData?.activity.metrics[0]).toEqual({
 		metric: 'execute',
@@ -107,12 +144,12 @@ test('credits + usage story on real D1: Free calm, funded Pro on credits, empty 
 		tone: 'calm',
 	})
 
-	const fundedData = await loadAccountCreditsData({
-		env,
-		userId: funded.id,
-		now,
+	const fundedData = await loadStoryAndCredits(funded.id)
+	expect(fundedData?.credits).toMatchObject({
+		eligible: true,
+		hasCredits: true,
+		balanceMicroUsd: 500_000_000,
 	})
-	expect(fundedData?.hasCredits).toBe(true)
 	expect(fundedData?.creditsAlarm).toBeNull()
 	expect(
 		fundedData?.activity.metrics.map((item) => [item.metric, item.count]),
@@ -131,12 +168,11 @@ test('credits + usage story on real D1: Free calm, funded Pro on credits, empty 
 		status: 'Include used · $173.67 on credits',
 	})
 
-	const emptyData = await loadAccountCreditsData({
-		env,
-		userId: empty.id,
-		now,
+	const emptyData = await loadStoryAndCredits(empty.id)
+	expect(emptyData?.credits).toMatchObject({
+		eligible: true,
+		hasCredits: false,
 	})
-	expect(emptyData?.hasCredits).toBe(false)
 	expect(emptyData?.creditsAlarm).toMatchObject({
 		kind: 'include_used_no_credits',
 		tone: 'warn',

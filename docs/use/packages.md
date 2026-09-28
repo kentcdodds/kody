@@ -191,7 +191,8 @@ exhaustive.
   or both.
 - Direct package invocation calls the resolved module's default export when that
   export is a function. Importing a package from `execute` or another package
-  can use any named exports that the module provides.
+  can use any named exports that the module provides. A named-only export still
+  publishes; invoking it directly fails with an error that names the entry file.
 - Packages may also export non-callable helper modules and values for reuse.
 - Publish typecheck is opt-in through a root `tsconfig.json`. With one, publish
   fails on TypeScript errors in every `.ts` / `.tsx` file reachable from exports

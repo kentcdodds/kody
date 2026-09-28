@@ -140,7 +140,6 @@ export const routes = route({
 	accountBillingSuccess: '/account/billing/success',
 	accountBillingPortal: '/account/billing/portal',
 	accountCredits: '/account/credits',
-	accountCreditsApi: '/account/credits.json',
 	accountCreditsTopUpPost: post('/account/credits/top-up.json'),
 	accountCreditsSettingsPost: post('/account/credits/settings.json'),
 	accountUsage: '/account/usage',

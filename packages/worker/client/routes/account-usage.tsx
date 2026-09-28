@@ -40,6 +40,7 @@ import {
 } from '#universal/compute-overage.ts'
 import { formatCappedPercent } from '#universal/usage-presentation.ts'
 import { creditsActionForWallet } from '#client/routes/account-usage-shared.ts'
+import { AccountUsageCreditsSection } from '#client/routes/account-usage-credits.tsx'
 import {
 	renderActivityPanel,
 	renderCreditsAlarm,
@@ -363,6 +364,13 @@ export async function accountUsageRouteLoader(
 }
 
 export function AccountUsageRoute(handle: Handle) {
+	// Saving credit settings returns a fresh payload for the loaded snapshot;
+	// a newer snapshot (navigation, revalidation) replaces it.
+	let savedUsage: {
+		from: AccountUsageLoaderData
+		next: AccountUsageLoaderData
+	} | null = null
+
 	const usageData = createRouteData({
 		key: 'accountUsage',
 		async load(_href, signal) {
@@ -383,7 +391,10 @@ export function AccountUsageRoute(handle: Handle) {
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
 		const snapshot = usageData.read(handle, currentHref)
-		const usage = snapshot.data
+		const usage =
+			snapshot.data && savedUsage?.from === snapshot.data
+				? savedUsage.next
+				: snapshot.data
 		const pending = snapshot.kind === 'pending'
 		const message = snapshot.error?.message ?? null
 		const groupedRows = usage
@@ -401,7 +412,7 @@ export function AccountUsageRoute(handle: Handle) {
 			<AccountManagementShell busy={pending && usage !== null}>
 				<AccountPageHeader
 					title="Usage"
-					description="Activity, included compute, and plan limits: what counts and how close you are."
+					description="Activity, included compute, plan limits, and credits: what counts and how close you are."
 					currentHref={currentHref}
 				/>
 				{message ? (
@@ -587,6 +598,19 @@ export function AccountUsageRoute(handle: Handle) {
 								/>
 							</AccountManagementPanel>
 						))}
+						{usage.credits ? (
+							<AccountUsageCreditsSection
+								credits={usage.credits}
+								notice={usage.notice}
+								error={usage.error}
+								onUsageChange={(next) => {
+									if (snapshot.data) {
+										savedUsage = { from: snapshot.data, next }
+									}
+									handle.update()
+								}}
+							/>
+						) : null}
 					</>
 				) : null}
 			</AccountManagementShell>

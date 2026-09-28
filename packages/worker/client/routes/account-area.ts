@@ -11,10 +11,6 @@ export {
 	AccountConnectionsRoute,
 	accountConnectionsRouteLoader,
 } from './account-connections.tsx'
-export {
-	AccountCreditsRoute,
-	accountCreditsRouteLoader,
-} from './account-credits.tsx'
 export { AccountEmailRoute, accountEmailRouteLoader } from './account-email.tsx'
 export { AccountUsageRoute, accountUsageRouteLoader } from './account-usage.tsx'
 export {

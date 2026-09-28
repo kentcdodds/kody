@@ -369,7 +369,7 @@ async function expectStopped(
 		creditsStatus: 'add_credits',
 		...expected,
 	})
-	expect(error.message).toContain('/account/credits')
+	expect(error.message).toContain('/account/usage#credits')
 }
 
 const pastIncludeStopped = [

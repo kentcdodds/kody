@@ -250,9 +250,16 @@ runtime path if this budget is raised again.
   runtime local dry-run 3_890_654 against the previous 3_889_000 budget,
   reviewed ceiling 3_891_500; platform local dry-run 5_215_619 against the
   previous 5_214_000 budget, reviewed ceiling 5_216_500.
+- Named-only package exports (#2670): `buildKodyModuleBundle` detects entries
+  without a default export (`moduleSourceDeclaresDefaultExport`, which also
+  drops local re-exports of type-only bindings) and emits a no-default callable
+  entry with an actionable invoke error instead of failing the bundle: runtime
+  local dry-run 3_892_662 against the previous 3_891_500 budget, reviewed
+  ceiling 3_893_500; platform local dry-run 5_217_626 against the previous
+  5_216_500 budget, reviewed ceiling 5_218_500.
 - Search latency budgets (#2673): Jev Score abort budget (`fallback-timeout`),
   the fixed package-hydration cap, the bounded Waiting block, and
-  `runWithSearchDeadline` / `SearchDeadlineError` on the shared search path:
-  runtime local dry-run 3_892_238 against the previous 3_891_500 budget,
-  reviewed ceiling 3_893_000; platform local dry-run 5_217_307 against the
-  previous 5_216_500 budget, reviewed ceiling 5_218_000.
+  `runWithSearchDeadline` / `SearchDeadlineError` on the shared search path, on
+  top of #2670: runtime local dry-run 3_893_620 against the previous 3_893_500
+  budget, reviewed ceiling 3_894_500; platform local dry-run 5_218_689 against
+  the previous 5_218_500 budget, reviewed ceiling 5_219_500.

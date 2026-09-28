@@ -7,6 +7,7 @@ import {
 	buildPackageAppSubdomainPath,
 	type PackageAppMount,
 } from '@kody-internal/shared/public-urls.ts'
+import { accountCreditsPath } from '#universal/compute-overage.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { isComputeOverageLimitError } from '#worker/entitlements/errors.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
@@ -262,8 +263,7 @@ function createPackageAppErrorResponse(input: {
 			title: 'Monthly include used up',
 			summary:
 				'This month’s included Pro usage is used up and there are no credits left, so the app is paused.',
-			nextStep:
-				'Add credits at /account/credits to keep going, or wait for the include to reset next UTC month.',
+			nextStep: `Add credits at ${accountCreditsPath} to keep going, or wait for the include to reset next UTC month.`,
 		},
 	} satisfies Record<
 		PackageAppFailureKind,

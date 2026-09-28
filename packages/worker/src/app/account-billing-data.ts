@@ -1,3 +1,4 @@
+import { accountCreditsPath } from '#universal/compute-overage.ts'
 import { type AccountBillingLoaderData } from '#universal/loader-data.ts'
 import { getCanonicalAppBaseUrl } from '#worker/app-base-url.ts'
 import {
@@ -47,8 +48,7 @@ export function resolveBillingErrorMessage(
  * (unlike error codes, which fall back to the raw code).
  */
 const billingNoticeMessages: Record<string, string> = {
-	updated:
-		'Your plan change is complete. Limits update within a minute. Add credits at /account/credits.',
+	updated: `Your plan change is complete. Limits update within a minute. Add credits at ${accountCreditsPath}.`,
 }
 
 export function resolveBillingNoticeMessage(
@@ -182,7 +182,7 @@ export async function loadAccountBillingData(input: {
 		subscriptionStatus,
 		purchasablePlans,
 		creditsEligible: stripePlan === 'pro' && creditsEligible,
-		creditsHref: '/account/credits',
+		creditsHref: accountCreditsPath,
 		usageHref: '/account/usage',
 		referralProgram,
 		...(error ? { error } : {}),
