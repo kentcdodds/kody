@@ -92,8 +92,8 @@ synchronized where possible, covered by deletion, and parity-checkable.
   [invocation overhead guardrails](../architecture/invocation-overhead-guardrails.md))
   and should first consider DO/AE placement.
 - Every storage move extends account deletion/export coverage
-  (`packages/worker/src/account/account-user-owned-surfaces.ts` and the
-  guardrail tests) as part of the move, not as a follow-up.
+  (`packages/worker/src/account/user-owned-surfaces.ts` and the guardrail tests)
+  as part of the move, not as a follow-up.
 - Any admin view depending on a cross-user SELECT of moved data must be
   redesigned (AE or point reads) in the same change.
 - Shared storage does not relax per-user isolation. User-owned data in every

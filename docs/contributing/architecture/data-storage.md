@@ -180,8 +180,8 @@ same user-owned storage surfaces. The D1 table list and shared kind→SQL match
 builders live in `account/data-targets.ts` (`accountUserDataTargets`,
 `buildUserScopedTargetMatch`); export redaction columns also live there.
 Out-of-band surfaces (Durable Objects, KV schemes, R2, Vectorize, Artifacts) are
-declared in `account-user-owned-surfaces.ts` and consumed by both deletion and
-export. Growth-table retention dispositions are linked in
+declared in `user-owned-surfaces.ts` and consumed by both deletion and export.
+Growth-table retention dispositions are linked in
 `account-retention-dispositions.ts`.
 `packages/worker/src/account/export.node.test.ts` applies the live migrations to
 SQLite and fails if a `user_id` / `*_user_id` column is not covered by the
@@ -1749,9 +1749,6 @@ Current retention policies:
   rewrites yesterday and today). Deleted and exported with the account.
   `durable_object_duration_coverage_daily` is the fleet-level attributed vs
   total companion (no user data).
-- `compute_overage_invoices`: historical monthly overage ledger (overage
-  invoicing is retired; nothing writes new rows). Durable forever until account
-  deletion/export; `user_id` is the stable user id.
 - `credit_wallets`: one prepaid credit wallet per `stable_user_id` (balance in
   micro-USD, auto-refill settings and saved card id, notice opt-outs).
 - `credit_ledger_entries`: append-only top-ups, auto-refills, admin grants (with

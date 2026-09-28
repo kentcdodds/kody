@@ -289,8 +289,8 @@ rollups for both months the lane settles (prior and current), so credits never
 pay for usage from while the wallet was empty. The sweep is bounded per run;
 `credit_debit_cursor` keeps its keyset position so later runs reach every
 wallet. CPU, Durable Object duration, RunLog rows, and email are not debited.
-Nobody is invoiced for overage; the retired `compute_overage_invoices` table is
-history only.
+Nobody is invoiced for overage. `0071-drop-compute-overage-invoices.sql` drops
+the empty retired `compute_overage_invoices` table.
 
 **Top-ups.** `POST /account/credits/top-up.json` (Pro only) opens a one-off
 Checkout Session (`mode=payment`, `price_data`, card saved with
@@ -356,9 +356,8 @@ close the metering → enforcement loop for the compute surfaces
   via `findUserAccountByStableUserId` so the caller's real plan binds. Genuinely
   accountless synthetic contexts resolve to `free` so missing identity plumbing
   cannot grant elevated quotas. Server-side fetches of a user-supplied URL go
-  through the same gateway rather than global `fetch` — including OpenAPI spec
-  documents (`packages/worker/src/openapi/fetch-spec.ts`), where each redirect
-  hop is its own gateway fetch.
+  through `executeGatewayFetch` (`packages/worker/src/mcp/fetch-gateway.ts`)
+  rather than global `fetch`.
 - **Job runs** are consumed at the top of `executeJobOnce`
   (`packages/worker/src/jobs/service.ts`) after caller-context resolution and
   before sandbox work, so over-limit ticks fail cheaply. This is separate from

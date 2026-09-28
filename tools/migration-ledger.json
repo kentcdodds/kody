@@ -283,6 +283,10 @@
 		{
 			"filename": "0070-admin-credits-eligible.sql",
 			"sha256": "e154002b1f91c160031b1818a66137f2864322858367361b8cedbb56cd35edda"
+		},
+		{
+			"filename": "0071-drop-compute-overage-invoices.sql",
+			"sha256": "0ded331875afe2d1adc89a9fd2b6100019707c9f2939f156b0f4d12c3a2c177b"
 		}
 	]
 }

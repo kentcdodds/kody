@@ -61,12 +61,6 @@ export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposi
 				'Per-user daily Durable Object active-time estimates are usage history (like usage_rollups) removed only by account deletion.',
 		},
 		{
-			table: 'compute_overage_invoices',
-			kind: 'durable_forever',
-			reason:
-				'Historical compute-overage ledger rows (invoicing is retired) are billing records removed only by account deletion, not by time-based retention.',
-		},
-		{
 			table: 'credit_wallets',
 			kind: 'durable_forever',
 			reason:
