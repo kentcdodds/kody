@@ -20,7 +20,7 @@ const packageTsconfig = JSON.stringify({
 })
 
 function createManifest(input: {
-	exports?: Record<string, string>
+	exports?: Record<string, string | { import?: string; types?: string }>
 	jobs?: Record<string, { entry: string; schedule: Record<string, unknown> }>
 }) {
 	return JSON.stringify({
@@ -109,6 +109,40 @@ test('export modules with only named exports pass publish typecheck', async () =
 		ok: true,
 		message:
 			'No semantic diagnostics for 2 package runtime entrypoint(s) across 2 reachable source file(s).',
+	})
+})
+
+test('export types targets are typechecked alongside the runtime entry', async () => {
+	const typecheck = await runTypecheck({
+		'package.json': createManifest({
+			exports: {
+				'.': { import: './src/index.ts', types: './src/index.types.ts' },
+				'./contract': { types: './src/contract.ts' },
+			},
+		}),
+		'tsconfig.json': packageTsconfig,
+		'src/index.ts': 'export default async () => ({ ok: true })\n',
+		'src/index.types.ts':
+			'/** Runs the package. */\nexport declare function run(): Promise<{ ok: boolean }>\nexport const broken: string = 1\n',
+		'src/contract.ts': 'export type Contract = { id: MissingType }\n',
+	})
+	expect(typecheck.ok).toBe(false)
+	expect(typecheck.message.split('\n')).toEqual([
+		"src/contract.ts:1:30 Cannot find name 'MissingType'.",
+		"src/index.types.ts:3:14 Type 'number' is not assignable to type 'string'.",
+	])
+})
+
+test('an empty tsconfig still typechecks with TypeScript strict defaults', async () => {
+	const typecheck = await runTypecheck({
+		'package.json': createManifest({}),
+		'tsconfig.json': '{}',
+		'src/index.ts': 'export function greet(name) {\n  return `hi ${name}`\n}\n',
+	})
+	expect(typecheck).toEqual({
+		kind: 'typecheck',
+		ok: false,
+		message: "src/index.ts:1:23 Parameter 'name' implicitly has an 'any' type.",
 	})
 })
 

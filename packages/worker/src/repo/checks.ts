@@ -604,6 +604,19 @@ function collectPackageTypecheckTargets(manifest: AuthoredPackageJson) {
 			remember(target.entryPoint, 'module')
 		}
 	}
+	for (const exportTarget of Object.values(manifest.exports)) {
+		// Declaration files are skipped by `skipLibCheck`, so only authored
+		// TypeScript `types` targets add diagnostics.
+		if (
+			typeof exportTarget !== 'string' &&
+			exportTarget.types &&
+			!isTypeDeclarationFilePath(
+				normalizePackageWorkspacePath(exportTarget.types),
+			)
+		) {
+			remember(exportTarget.types, 'module')
+		}
+	}
 	return Array.from(targets.values())
 }
 
