@@ -209,3 +209,9 @@ split at the switch without contaminating the later cohort). The admin UI
 (`/admin/feature-flags`) and `adminFeatureFlagList` attach this readout to every
 measured flag. The comparison is decision support for a human — "keep rolling
 out or kill it" stays an operator call, not an automated one.
+
+In production the readout is two Analytics Engine SQL queries. Analytics Engine
+rejects the whole query (HTTP 422) when `max()` gets a String column, so the
+latest exposure per user is `max(timestamp)`, never `max(blob5)`;
+`success-metric-readout.node.test.ts` guards this. A failed query degrades to
+`status: 'unavailable'` with the underlying SQL/HTTP error in `reason`.

@@ -192,31 +192,31 @@ test('Analytics Engine readout joins exposures and usage; mixed stay excluded', 
 							user_id: 'user-on',
 							state: 'on',
 							source: 'global',
-							last_ts: '2026-07-10T00:00:00.000Z',
+							last_ts: '2026-07-10 00:00:00',
 						},
 						{
 							user_id: 'user-off',
 							state: 'off',
 							source: 'global',
-							last_ts: '2026-07-10T00:00:00.000Z',
+							last_ts: '2026-07-10 00:00:00',
 						},
 						{
 							user_id: 'user-override',
 							state: 'on',
 							source: 'override',
-							last_ts: '2026-07-12T00:00:00.000Z',
+							last_ts: '2026-07-12 00:00:00',
 						},
 						{
 							user_id: 'user-switched',
 							state: 'off',
 							source: 'global',
-							last_ts: '2026-07-02T00:00:00.000Z',
+							last_ts: '2026-07-02 00:00:00',
 						},
 						{
 							user_id: 'user-switched',
 							state: 'on',
 							source: 'global',
-							last_ts: '2026-07-14T00:00:00.000Z',
+							last_ts: '2026-07-14 00:00:00',
 						},
 					],
 				}),
@@ -267,6 +267,12 @@ test('Analytics Engine readout joins exposures and usage; mixed stay excluded', 
 		)
 
 		expect(fetchMock).toHaveBeenCalledTimes(2)
+		const exposuresQuery = fetchMock.mock.calls
+			.map(([, init]) => String((init as { body: string }).body))
+			.find((query) => query.includes('kody_flag_exposures'))
+		// Analytics Engine rejects max() over String columns with HTTP 422.
+		expect(exposuresQuery).toContain('max(timestamp) AS last_ts')
+		expect(exposuresQuery).not.toMatch(/max\(blob\d+\)/)
 		expect(readout).toMatchObject({
 			status: 'ok',
 			on: { users: 1, eventCount: 4, errorCount: 1 },
@@ -331,6 +337,32 @@ test('selects D1 locally, stays unavailable without credentials, and degrades on
 		status: 'unavailable',
 		reason: expect.stringContaining('failed'),
 	})
+
+	const aeError =
+		'Input was invalid: cannot use the String type as argument 1 in max("blob5")'
+	vi.stubGlobal(
+		'fetch',
+		vi.fn(async () => new Response(aeError, { status: 422 })),
+	)
+	try {
+		await expect(
+			loadFeatureFlagSuccessMetricReadout(
+				{
+					APP_DB: {} as D1Database,
+					FLAG_EXPOSURES: {} as AnalyticsEngineDataset,
+					CLOUDFLARE_ACCOUNT_ID: 'account',
+					CLOUDFLARE_API_TOKEN: 'token',
+				},
+				{ flagKey: 'metric-test-flag', successMetric },
+				now,
+			),
+		).resolves.toEqual({
+			status: 'unavailable',
+			reason: expect.stringContaining(`(422): ${aeError}`),
+		})
+	} finally {
+		vi.unstubAllGlobals()
+	}
 })
 
 test('resolveFlagExposuresDataset picks preview vs production table names', () => {

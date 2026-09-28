@@ -238,12 +238,15 @@ async function loadReadoutFromAnalyticsEngine(input: {
 	// month-to-date plus today is exactly what the readout wants.
 	const nextDay = new Date(input.now.getTime() + 24 * 60 * 60 * 1000)
 	const timeFilter = `timestamp >= toDateTime('${toDateTimeArgument(window.windowStart)}') AND timestamp < toDateTime('${toDateTimeArgument(nextDay.toISOString())}')`
+	// Analytics Engine rejects max() over String columns (HTTP 422), so the
+	// latest exposure comes from the DateTime `timestamp`, not the ISO `blob5`.
+	// It serializes as `YYYY-MM-DD HH:MM:SS`, which still compares as a string.
 	const exposuresQuery = `
 SELECT
 	blob1 AS user_id,
 	blob3 AS state,
 	blob4 AS source,
-	max(blob5) AS last_ts
+	max(timestamp) AS last_ts
 FROM ${resolveFlagExposuresDataset(input.env)}
 WHERE ${timeFilter}
 	AND blob2 = '${assertSqlSafeIdentifier(input.flagKey)}'
@@ -426,10 +429,10 @@ export async function loadFeatureFlagSuccessMetricReadout(
 		})
 	} catch (error) {
 		console.warn('flag-metric-readout-failed', input.flagKey, error)
+		const detail = error instanceof Error ? error.message : String(error)
 		return {
 			status: 'unavailable',
-			reason:
-				'Metric readout query failed; exposure or usage data could not be loaded.',
+			reason: `Metric readout query failed; exposure or usage data could not be loaded: ${detail.slice(0, 600)}`,
 		}
 	}
 }
