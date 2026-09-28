@@ -29,9 +29,17 @@ test('compact MCP server instructions stay under the stub budget and name the us
 	expect(named).toContain('Kent C. Dodds')
 	expect(named.length).toBeGreaterThan(unnamed.length)
 	expect(named).toContain('main(params)')
-	expect(named).toContain('kody.emailSend(params)')
-	expect(named).toMatch(/not literals in `code`/)
+	expect(named).toMatch(/args in `params`/)
+	expect(named).toMatch(/not `code` literals/)
 	expect(named).not.toMatch(/`invoke`|execute-invoke/)
+
+	const maxName = buildCompactMcpServerInstructions({
+		displayName: 'x'.repeat(90),
+	})
+	expect(maxName.length).toBeLessThanOrEqual(
+		maxCompactMcpServerInstructionsBaseChars,
+	)
+	expect(maxName).toContain(`${'x'.repeat(77)}...`)
 
 	expect(sanitizeMcpInstructionDisplayName('  Jane\nDoe  ')).toBe('Jane Doe')
 	expect(sanitizeMcpInstructionDisplayName('x'.repeat(90))).toBe(
@@ -50,10 +58,10 @@ test('compact assembly leaves overlay room under the 2048-character client cut',
 	expect(assembled).toContain(overlayHeader)
 	expect(assembled.endsWith('Prefer concise replies.')).toBe(true)
 	expect(assembled.indexOf(overlayHeader)).toBeGreaterThan(
-		assembled.indexOf('Lasting reusable behavior is a package.'),
+		assembled.indexOf('Packages last.'),
 	)
 	expect(assembled).toContain('main(params)')
-	expect(assembled).toMatch(/not literals in `code`/)
+	expect(assembled).toMatch(/not `code` literals/)
 	const compactBase = buildCompactMcpServerInstructions({
 		displayName: 'Kent C. Dodds',
 	})
@@ -62,6 +70,18 @@ test('compact assembly leaves overlay room under the 2048-character client cut',
 		mcpServerInstructionsClientHeadLimitChars,
 	)
 	expect(assembled.length).toBeLessThan(
+		mcpServerInstructionsClientHeadLimitChars,
+	)
+
+	const maxNameBase = buildCompactMcpServerInstructions({
+		displayName: 'x'.repeat(80),
+	})
+	const nearCutOverlay = 'O'.repeat(1100)
+	const nearCutAssembled = appendUserMcpServerInstructionOverlay(
+		maxNameBase,
+		nearCutOverlay,
+	)
+	expect(nearCutAssembled.length).toBeLessThanOrEqual(
 		mcpServerInstructionsClientHeadLimitChars,
 	)
 })
