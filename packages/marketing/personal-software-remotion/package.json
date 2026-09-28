@@ -8,7 +8,7 @@
   "scripts": {
     "soundtrack": "node scripts/build-soundtrack.ts",
     "studio": "remotion studio src/index.ts",
-    "render": "remotion render src/index.ts PersonalSoftwareConnected out/personal-software-connected.mp4",
+    "render": "remotion render src/index.ts PersonalSoftwareConnected out/master.mkv && ffmpeg -v error -y -i out/master.mkv -c:v copy -c:a aac -b:a 256k -movflags +faststart out/personal-software-connected.mp4",
     "still": "remotion still src/index.ts PersonalSoftwareConnected",
     "typecheck": "tsc --noEmit"
   },

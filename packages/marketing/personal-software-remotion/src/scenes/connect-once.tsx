@@ -16,11 +16,11 @@ import {
 	settle,
 } from '../motion.ts'
 import { colors, fonts, primitiveColors } from '../theme.ts'
-import { bar, scenes } from '../timing.ts'
+import { scenes } from '../timing.ts'
 
-const flightFrames = 40
-const labelsOut = bar(7, 2) + 10
-const panelsIn = bar(7, 3) + 4
+const flightFrames = cues.arrivalFlight
+const labelsOut = cues.primitivesOut
+const panelsIn = cues.panelsIn
 const sceneOut = scenes.connectOnce.until - 22
 
 const labelSides: Record<
@@ -353,12 +353,12 @@ export function ConnectOnce() {
 						...words('Connect once.'),
 						...words('Keep them in').map((word, index) => ({
 							...word,
-							at: bar(7, 1) + index * 3,
+							at: cues.connectCopy.keep + index * 3,
 						})),
-						{ text: 'Kody.', color: colors.primary, at: bar(7, 2) },
+						{ text: 'Kody.', color: colors.primary, at: cues.connectCopy.kody },
 					],
 				]}
-				enterAt={bar(6, 1)}
+				enterAt={cues.connectCopy.enter}
 				exitAt={sceneOut}
 				stagger={4}
 				fontSize={84}
@@ -449,10 +449,10 @@ export function ArrivalsOverlay() {
 								fontSize: 18,
 								whiteSpace: 'nowrap',
 								opacity: presence(frame, {
-									in: start + 2,
-									out: arrival.at - 16,
-									enter: 8,
-									exit: 8,
+									in: start + 1,
+									out: arrival.at - 6,
+									enter: 4,
+									exit: 5,
 								}),
 							}}
 						>

@@ -6,10 +6,10 @@ import { appFrame } from '../components/personal-app.tsx'
 import { cues } from '../choreography.ts'
 import { easeIn, easeInOut, mix, progress, pulse, settle } from '../motion.ts'
 import { colors, fonts, primitiveColors } from '../theme.ts'
-import { bar, scenes } from '../timing.ts'
+import { framesPerBeat, scenes } from '../timing.ts'
 
 const prompt = 'Build me a morning dashboard: meetings, inbox, PRs, revenue.'
-const promptIn = bar(9, 1)
+const promptIn = cues.lanternToSide.start + framesPerBeat
 const typeStart = promptIn + 6
 const typeEnd = cues.appBuild - 12
 const sendAt = typeEnd + 2
@@ -92,7 +92,7 @@ export function GenerateApp() {
 						{ text: 'connections.', color: primitiveColors.integrations },
 					],
 				]}
-				enterAt={bar(9) + 12}
+				enterAt={scenes.generateApp.from + 12}
 				exitAt={scenes.staysLit.from - 6}
 				fontSize={68}
 				stagger={3}

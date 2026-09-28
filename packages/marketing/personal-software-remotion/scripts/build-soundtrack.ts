@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openingCues } from '../src/opening-cues.ts'
-import { bar, durationInFrames, fps } from '../src/timing.ts'
+import { durationInFrames, fps, musicMap } from '../src/timing.ts'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const sourceUrl =
@@ -102,25 +102,25 @@ const segments = [
 		sourceBeat: 0.4931,
 		lead: 1.1,
 		fadeFrom: seconds(openingCues.ugh) + 0.6,
-		videoAt: seconds(bar(6)),
-		videoUntil: seconds(bar(9)),
+		videoAt: seconds(musicMap.drop),
+		videoUntil: seconds(musicMap.preChorus),
 	},
 	{
 		name: 'pre-chorus into chorus',
 		sourceAt: 112.2646,
 		sourceBeat: 0.4886,
 		lead: 0.02,
-		fadeFrom: seconds(bar(9)) - 0.02,
-		videoAt: seconds(bar(9)),
-		videoUntil: seconds(bar(14)),
+		fadeFrom: seconds(musicMap.preChorus) - 0.02,
+		videoAt: seconds(musicMap.preChorus),
+		videoUntil: seconds(musicMap.finalHit),
 	},
 	{
 		name: 'final hit',
 		sourceAt: 165.182,
 		sourceBeat: targetBeat,
 		lead: 0.02,
-		fadeFrom: seconds(bar(14)) - 0.02,
-		videoAt: seconds(bar(14)),
+		fadeFrom: seconds(musicMap.finalHit) - 0.02,
+		videoAt: seconds(musicMap.finalHit),
 		videoUntil: totalSeconds,
 	},
 ] as const
@@ -359,9 +359,9 @@ function renderOpening() {
 	renderDrone(bed)
 	tapeStop(bed, ugh, 0.6)
 	renderDeflate(bed, ugh + 0.04)
-	renderSwell(bed, 9.2, seconds(bar(6)))
-	renderBoom(bed, seconds(bar(6)), 0.32)
-	renderBoom(bed, seconds(bar(14)), 0.26)
+	renderSwell(bed, 9.2, seconds(musicMap.drop))
+	renderBoom(bed, seconds(musicMap.drop), 0.32)
+	renderBoom(bed, seconds(musicMap.finalHit), 0.26)
 	return bed
 }
 

@@ -1,6 +1,6 @@
 # Personal software, connected to everything
 
-A 29.5-second Remotion motion piece for Kody (1920×1080, 30fps, H.264 with
+A 43.5-second Remotion motion piece for Kody (1920×1080, 30fps, H.264 with
 music). It is a standalone marketing project: not an npm workspace, not imported
 by any worker, and not part of `npm run validate`.
 
@@ -17,8 +17,10 @@ npm run soundtrack            # rebuild public/music/ (see Sound)
 npm run typecheck
 ```
 
-Output lands in `out/`, which is gitignored. Encoding settings (CRF 16, x264
-`slow`, bt709, AAC 256k) live in `remotion.config.ts`.
+Output lands in `out/`, which is gitignored. Video settings (CRF 16, x264
+`slow`, bt709) live in `remotion.config.ts`. Remotion renders an MKV with PCM
+audio and ffmpeg encodes the AAC for the MP4, because Remotion's own AAC output
+leaves the encoder delay in and plays about 43 ms late.
 
 ## Composition
 
@@ -41,10 +43,10 @@ Output lands in `out/`, which is gitignored. Encoding settings (CRF 16, x264
 | Time     | Beat                     | On-screen copy                                         |
 | -------- | ------------------------ | ------------------------------------------------------ |
 | 0–10s    | Integration tax          | You need a new app. → …again, and again… → Ugh 😩      |
-| 10–16s   | Connect once             | Connect once. Keep them in Kody.                       |
-| 16–23s   | Generate, then many apps | Generate software that already has the connections.    |
-| 23–26s   | Stays lit                | Agents come and go. Your software stays lit.           |
-| 26–29.5s | Close                    | Personal software, connected to everything. kody.codes |
+| 10–24s   | Connect once             | Connect once. Keep them in Kody.                       |
+| 24–32s   | Generate, then many apps | Generate software that already has the connections.    |
+| 32–40s   | Stays lit                | Agents come and go. Your software stays lit.           |
+| 40–43.5s | Close                    | Personal software, connected to everything. kody.codes |
 
 ## Assets
 
@@ -77,10 +79,10 @@ Two layers, both keyed to the same cue frames as the visuals:
   librubberband on `PATH` (Homebrew's ffmpeg has it) and downloads the Suno
   source, "Personal software" by Kent, once into `.cache/`. It cuts the track's
   drop, pre-chorus into chorus, and final hit, stretches each from about 122 BPM
-  onto the 120 BPM grid so the drop lands on frame 300 as the lantern lights and
-  the final hit on frame 780 under the tagline, then adds the opening's sound
-  design (clock tick-tock that speeds up with the repeats, a low drone, a tape
-  stop and deflate on "Ugh", and a reverse swell into the drop). The mix is
+  onto the 120 BPM grid so the drop lands as the lantern lights and the final
+  hit under the tagline (`musicMap` in `src/timing.ts`), then adds the opening's
+  sound design (clock tick-tock that speeds up with the repeats, a low drone, a
+  tape stop and deflate on "Ugh", and a reverse swell into the drop). The mix is
   normalized to -14 LUFS.
 - `src/components/sound-effects.tsx` places UI one-shots from `public/sfx/`
   (Kenney's Interface, UI Audio, and Impact packs, CC0; see

@@ -1,6 +1,6 @@
 import { Audio } from '@remotion/media'
 import { Sequence, staticFile } from 'remotion'
-import { arrivals, cues, triggerTicks } from '../choreography.ts'
+import { agentVisits, arrivals, cues, triggerTicks } from '../choreography.ts'
 import { checklist, openingCues, shells } from '../opening-cues.ts'
 
 /**
@@ -77,18 +77,30 @@ function openingHits(): Array<Hit> {
 	return hits.map((hit) => ({ ...hit, volume: hit.volume * openingLevel }))
 }
 
-const arrivalNotes = [-5, -2, 0, 3, 5]
+const orbNotes = [-5, -2, 0, 3, 5, 7]
+const arrivalPhrase = [0, 3, 5, 8, 10]
 const triggerNotes = [-2, 0, 3]
 
 function laterHits(): Array<Hit> {
 	return [
+		...Object.values(cues.orbLit).map((at, index) => ({
+			at,
+			name: 'ping' as const,
+			volume: 0.2,
+			semitones: orbNotes[index],
+		})),
 		...arrivals.map((arrival, index) => ({
 			at: arrival.at,
-			name: 'ping' as const,
-			volume: 0.22,
-			semitones: arrivalNotes[index],
+			name: 'card-pop' as const,
+			volume: 0.28,
+			semitones: arrivalPhrase[index],
 		})),
 		{ at: cues.appBuild - 2, name: 'window-in', volume: 0.3 },
+		...agentVisits.map((visit) => ({
+			at: visit.in,
+			name: 'window-in' as const,
+			volume: 0.16,
+		})),
 		...triggerTicks.map((at, index) => ({
 			at,
 			name: 'ping' as const,
