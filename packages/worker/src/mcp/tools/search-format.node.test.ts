@@ -1465,7 +1465,7 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 		includePreamble: false,
 	})
 	expect(listMarkdown).toContain('mcp:widgets:createwidget')
-	expect(listMarkdown).toContain('kody.mcp["widgets"].createwidget(args)')
+	expect(listMarkdown).toContain('kody.mcp["widgets"].createwidget(params)')
 	expect(listMarkdown).toContain('type CreateWidgetInput = { name: string }')
 	expect(listMarkdown).toContain(compact.definition)
 	expect(listMarkdown).not.toMatch(

@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { mcpServerInstructionsClientHeadLimitChars } from '#mcp/mcp-user-server-instruction-limits.ts'
 import {
 	buildBaseMcpServerInstructions,
 	buildMcpServerInstructions,
@@ -79,4 +80,16 @@ test('domain instructions list builtins and summarize connected bindings', () =>
 	expect(instructions).not.toContain('Canva Connect API')
 	expect(instructions).not.toContain('`mcp:home`')
 	expect(instructions).not.toContain('Home MCP server')
+})
+
+test('full MCP server instructions teach params reuse within the 2048-character client cut', () => {
+	const instructions = buildBaseMcpServerInstructions({ domains: [] })
+	const clientHead = instructions.slice(
+		0,
+		mcpServerInstructionsClientHeadLimitChars,
+	)
+	expect(clientHead).toContain('main(params)')
+	expect(clientHead).toContain('kody.emailSend(params)')
+	expect(clientHead).toMatch(/not literals in `code`/)
+	expect(clientHead).not.toMatch(/`invoke`|execute-invoke/)
 })

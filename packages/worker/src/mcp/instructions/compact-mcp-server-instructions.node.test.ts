@@ -28,6 +28,10 @@ test('compact MCP server instructions stay under the stub budget and name the us
 	)
 	expect(named).toContain('Kent C. Dodds')
 	expect(named.length).toBeGreaterThan(unnamed.length)
+	expect(named).toContain('main(params)')
+	expect(named).toContain('kody.emailSend(params)')
+	expect(named).toMatch(/not literals in `code`/)
+	expect(named).not.toMatch(/`invoke`|execute-invoke/)
 
 	expect(sanitizeMcpInstructionDisplayName('  Jane\nDoe  ')).toBe('Jane Doe')
 	expect(sanitizeMcpInstructionDisplayName('x'.repeat(90))).toBe(
@@ -48,6 +52,8 @@ test('compact assembly leaves overlay room under the 2048-character client cut',
 	expect(assembled.indexOf(overlayHeader)).toBeGreaterThan(
 		assembled.indexOf('Lasting reusable behavior is a package.'),
 	)
+	expect(assembled).toContain('main(params)')
+	expect(assembled).toMatch(/not literals in `code`/)
 	const compactBase = buildCompactMcpServerInstructions({
 		displayName: 'Kent C. Dodds',
 	})

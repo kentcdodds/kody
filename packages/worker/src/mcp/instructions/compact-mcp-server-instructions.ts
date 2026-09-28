@@ -39,5 +39,5 @@ export function buildCompactMcpServerInstructions(
 
 For those jobs, start with \`search({ query })\` (for example "send an email", "remember this", "run this every weekday"). Empty or broad search lists what Kody can do. Open entity detail for the execute snippet, then \`execute\`.
 
-\`execute\` is one-off. Lasting reusable behavior is a package.`
+\`execute\` is one-off. Example: \`main(params) { return await kody.emailSend(params) }\` — args in execute \`params\`, not literals in \`code\`. Lasting reusable behavior is a package.`
 }
