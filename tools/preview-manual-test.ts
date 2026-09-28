@@ -343,7 +343,43 @@ function isHttpMethod(value: string): value is HttpMethod {
 const sessionRequestSpecUsage =
 	'METHOD /path [status] [json-body] [--dump] [--contains <text>]'
 
-const specFlagPattern = /(?:^|\s+)(--dump|--contains)(?=\s|$)/
+const specFlags = ['--dump', '--contains'] as const
+
+type SpecFlagMatch = {
+	flag: (typeof specFlags)[number]
+	start: number
+	end: number
+}
+
+function findSpecFlags(text: string) {
+	const found: Array<SpecFlagMatch> = []
+	let quote: '"' | "'" | null = null
+	for (let index = 0; index < text.length; index += 1) {
+		const char = text[index]
+		if (quote) {
+			if (char === '\\') index += 1
+			else if (char === quote) quote = null
+			continue
+		}
+		const atTokenStart = index === 0 || /\s/.test(text[index - 1] ?? '')
+		// JSON strings open mid-token (`{"a":"b"}`); a lone apostrophe in
+		// unquoted --contains text (`Kent's`) must not.
+		if (char === '"' || (char === "'" && atTokenStart)) {
+			quote = char
+			continue
+		}
+		if (!atTokenStart) continue
+		const flag = specFlags.find((candidate) => {
+			if (!text.startsWith(candidate, index)) return false
+			const next = text[index + candidate.length]
+			return next === undefined || /\s/.test(next)
+		})
+		if (!flag) continue
+		found.push({ flag, start: index, end: index + flag.length })
+		index += flag.length - 1
+	}
+	return found
+}
 
 export function parseSessionRequest(spec: string): SessionRequestSpec {
 	const trimmed = spec.trim()
@@ -356,11 +392,9 @@ export function parseSessionRequest(spec: string): SessionRequestSpec {
 		)
 	}
 	const rest = match[3] ?? ''
-	const flagStart = rest.search(specFlagPattern)
-	const head = (flagStart === -1 ? rest : rest.slice(0, flagStart)).trim()
-	const { dump, contains } = parseSessionRequestFlags(
-		flagStart === -1 ? '' : rest.slice(flagStart),
-	)
+	const flags = findSpecFlags(rest)
+	const head = rest.slice(0, flags[0]?.start ?? rest.length).trim()
+	const { dump, contains } = parseSessionRequestFlags(rest, flags)
 	const headMatch = /^(?:(\d{3})(?:\s+|$))?([\s\S]*)$/.exec(head)
 	const methodName = match[1].toUpperCase()
 	if (!isHttpMethod(methodName)) {
@@ -401,13 +435,14 @@ export function parseSessionRequest(spec: string): SessionRequestSpec {
 	}
 }
 
-function parseSessionRequestFlags(flags: string) {
+function parseSessionRequestFlags(
+	text: string,
+	flags: ReadonlyArray<SpecFlagMatch>,
+) {
 	let dump = false
 	const contains: Array<string> = []
-	const parts = flags.split(specFlagPattern)
-	for (let index = 1; index < parts.length; index += 2) {
-		const flag = parts[index]
-		const value = parts[index + 1]?.trim() ?? ''
+	for (const [index, { flag, end }] of flags.entries()) {
+		const value = text.slice(end, flags[index + 1]?.start).trim()
 		if (flag === '--dump') {
 			if (value.length > 0) {
 				throw new PreviewManualTestError(
@@ -435,7 +470,7 @@ function unquoteSpecValue(value: string) {
 	) {
 		return value.slice(1, -1)
 	}
-	return value.replace(/\\(.)/g, '$1')
+	return value.replace(/\\(\s)/g, '$1')
 }
 
 export function sessionRequestDumpFiles(

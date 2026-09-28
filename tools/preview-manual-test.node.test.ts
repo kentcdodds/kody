@@ -258,6 +258,22 @@ test('preview manual test --request specs accept control-kody request --dump/--c
 			contains: ['selectedValueId'],
 		}),
 	)
+	expect(
+		parseSessionRequest(
+			'POST /account/values.json {"value":"use --dump --contains"} --contains "a --dump b" --contains Kent\'s --dump',
+		),
+	).toEqual(
+		expect.objectContaining({
+			body: { value: 'use --dump --contains' },
+			dump: true,
+			contains: ['a --dump b', "Kent's"],
+		}),
+	)
+	expect(
+		parseSessionRequest(
+			String.raw`GET /docs --contains C:\tools\kody --contains '\n stays'`,
+		).contains,
+	).toEqual([String.raw`C:\tools\kody`, String.raw`\n stays`])
 	expect(() => parseSessionRequest('GET /pricing --contains')).toThrow(
 		/--contains requires text/,
 	)
