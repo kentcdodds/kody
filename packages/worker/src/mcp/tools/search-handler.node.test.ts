@@ -1,6 +1,11 @@
 import { expect, test, vi } from 'vitest'
 import type * as IntegrationsService from '#worker/integrations/service.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import {
+	SEARCH_DEADLINE_MS,
+	SEARCH_WAITING_ITEMS_BUDGET_MS,
+} from './search-constants.ts'
+import { SearchDeadlineError } from './search-timing.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getCapabilityRegistryForContext: vi.fn(async () => ({
@@ -481,6 +486,78 @@ test('ranked search prepends ## Waiting for block items and skips domain browse'
 	expect(domainText).not.toContain('## Waiting')
 	expect(mockModule.deriveWaitingItemsForStableUser).not.toHaveBeenCalled()
 	mockModule.deriveWaitingItemsForStableUser.mockResolvedValue([])
+})
+
+test('ranked search returns results without ## Waiting when waiting probes outlive their budget', async () => {
+	vi.clearAllMocks()
+	consoleWarn.mockImplementation(() => {})
+	mockModule.deriveWaitingItemsForStableUser.mockImplementationOnce(
+		() => new Promise(() => {}),
+	)
+	const { handler } = await getSearchRegistration({
+		user: {
+			userId: 'user-1',
+			email: 'user@example.com',
+			displayName: 'User',
+			username: 'user',
+		},
+	})
+	vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+	try {
+		const pending = handler({
+			query: 'search docs',
+			conversationId: 'conv-waiting-budget',
+		})
+		await vi.advanceTimersByTimeAsync(SEARCH_WAITING_ITEMS_BUDGET_MS)
+		const response = await pending
+		expect(response.isError).toBeUndefined()
+		const text = response.content.map((item) => item.text).join('\n')
+		expect(text).not.toContain('## Waiting')
+		const result = response.structuredContent.result as {
+			waiting?: unknown
+			matches: Array<unknown>
+			phaseTimings?: { waitingItemsTimedOut?: boolean }
+		}
+		expect(result.waiting).toBeUndefined()
+		expect(result.matches.length).toBeGreaterThan(0)
+		expect(result.phaseTimings?.waitingItemsTimedOut).toBe(true)
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('search fails fast with a clear deadline error instead of hanging until the MCP client times out', async () => {
+	vi.clearAllMocks()
+	consoleWarn.mockImplementation(() => {})
+	mockModule.getCapabilityRegistryForContext.mockImplementationOnce(
+		() => new Promise(() => {}),
+	)
+	const { handler } = await getSearchRegistration({
+		user: {
+			userId: 'user-1',
+			email: 'user@example.com',
+			displayName: 'User',
+			username: 'user',
+		},
+	})
+	vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+	try {
+		const pending = handler({
+			query: 'search docs',
+			conversationId: 'conv-search-deadline',
+		})
+		await vi.advanceTimersByTimeAsync(SEARCH_DEADLINE_MS)
+		const response = await pending
+		expect(response.isError).toBe(true)
+		expect(response.structuredContent.error).toBe(
+			new SearchDeadlineError(SEARCH_DEADLINE_MS).message,
+		)
+		expect(response.content.map((item) => item.text).join('\n')).toContain(
+			`Search did not finish within ${String(SEARCH_DEADLINE_MS / 1000)}s`,
+		)
+	} finally {
+		vi.useRealTimers()
+	}
 })
 
 test('search tool excludes hidden packages by default and includes them with includeHiddenPackages', async () => {

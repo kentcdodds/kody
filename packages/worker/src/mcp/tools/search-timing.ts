@@ -1,5 +1,6 @@
 import { type ServerTimingEntry } from '#worker/server-timing.ts'
 
+import { SEARCH_DEADLINE_MS } from './search-constants.ts'
 import {
 	type SearchPhaseTimings,
 	type SearchTelemetry,
@@ -90,6 +91,39 @@ export function reconcileSearchPhaseTimings<
 		...input.phaseTimings,
 		exclusiveMs,
 		unaccountedMs: Math.max(0, input.durationMs - exclusiveMs),
+	}
+}
+
+export class SearchDeadlineError extends Error {
+	constructor(deadlineMs: number) {
+		super(
+			`Search did not finish within ${String(Math.round(deadlineMs / 1000))}s, so Kody stopped waiting before the MCP request timed out. Retry once; if it repeats, use a shorter query or pass "domain" to narrow the search.`,
+		)
+		this.name = 'SearchDeadlineError'
+	}
+}
+
+/**
+ * Reject with {@link SearchDeadlineError} when `run` outlives `deadlineMs`.
+ * The abandoned work is not cancelled; phases with their own budgets (Jev,
+ * retrievers, memory, waiting) are what keep ordinary searches under it.
+ */
+export async function runWithSearchDeadline<T>(
+	run: () => Promise<T>,
+	deadlineMs: number = SEARCH_DEADLINE_MS,
+): Promise<T> {
+	let timeoutId: ReturnType<typeof setTimeout> | undefined
+	try {
+		return await Promise.race([
+			run(),
+			new Promise<never>((_, reject) => {
+				timeoutId = setTimeout(() => {
+					reject(new SearchDeadlineError(deadlineMs))
+				}, deadlineMs)
+			}),
+		])
+	} finally {
+		if (timeoutId !== undefined) clearTimeout(timeoutId)
 	}
 }
 

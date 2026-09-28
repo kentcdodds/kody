@@ -60,6 +60,11 @@ type ExecuteSearchListInput = {
 	memoryContext?: SearchToolArgs['memoryContext']
 	/** Optional capability domain id; scopes ranked results to that domain's capabilities. */
 	domain?: string
+	/**
+	 * Filled as each phase finishes, so a caller that abandons the search at
+	 * its deadline can still report which phases completed.
+	 */
+	phaseTimings?: Partial<SearchPhaseTimings>
 }
 
 export async function executeSearchList(
@@ -84,7 +89,7 @@ async function executeSearchListWithinBudget(
 		email: input.callerContext.user?.email ?? null,
 	})
 	const domainFilter = input.domain?.trim() || undefined
-	const phaseTimings: Partial<SearchPhaseTimings> = {}
+	const phaseTimings: Partial<SearchPhaseTimings> = input.phaseTimings ?? {}
 	const usernameStart = performance.now()
 	const username = await resolvePublicUsername({
 		db: input.env.APP_DB,

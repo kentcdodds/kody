@@ -19,6 +19,7 @@ export const searchEntityRefTypes = [
 export const jevSearchRerankOutcomes = [
 	'applied',
 	'fallback-error',
+	'fallback-timeout',
 	'fallback-low-confidence',
 	'fallback-empty-after-drop',
 	'skipped-offline',
@@ -141,6 +142,7 @@ export type SearchResultStructuredContent = {
 		memoryAcknowledgementTimedOut?: boolean
 		memoryEnrichmentFailed?: boolean
 		memoryAcknowledgementFailed?: boolean
+		waitingItemsTimedOut?: boolean
 		usernameLookupMs?: number
 		identityResolutionMs?: number
 		loadAndRankMs?: number

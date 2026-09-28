@@ -22,6 +22,7 @@ import {
 	defaultSearchLimit,
 	domainBrowseDefaultLimit,
 	maxChars,
+	SEARCH_WAITING_ITEMS_BUDGET_MS,
 } from './search-constants.ts'
 import { resolveEntityDetail } from './search-detail.ts'
 import { buildRecommendedNextStep } from './search-descriptors.ts'
@@ -49,6 +50,8 @@ import {
 import {
 	elapsedMs,
 	reconcileSearchPhaseTimings,
+	runWithSearchDeadline,
+	settleWithBudget,
 	toSearchServerTiming,
 } from './search-timing.ts'
 import { type SearchPhaseTimings } from './search-types.ts'
@@ -200,6 +203,7 @@ export async function runSearchTool(input: {
 				includeHiddenPackages,
 				memoryContext: args.memoryContext,
 				...(domainFilter ? { domain: domainFilter } : {}),
+				phaseTimings: endToEndPhaseTimings,
 			})
 			username = execution.username
 			warnings = execution.warnings
@@ -259,20 +263,26 @@ export async function runSearchTool(input: {
 			let waitingStructured: ReturnType<typeof toSearchWaitingStructured> = null
 			if (shouldInjectWaiting) {
 				try {
-					const waitingItems = await deriveWaitingItemsForStableUser({
-						env: agent.getEnv(),
-						stableUserId: userId,
-						email: callerContext.user?.email ?? '',
-					})
-					const origin = baseUrl.replace(/\/+$/, '')
-					waitingMarkdown = formatSearchWaitingMarkdown({
-						items: waitingItems,
-						origin,
-					})
-					waitingStructured = toSearchWaitingStructured({
-						items: waitingItems,
-						origin,
-					})
+					const waiting = await settleWithBudget(
+						deriveWaitingItemsForStableUser({
+							env: agent.getEnv(),
+							stableUserId: userId,
+							email: callerContext.user?.email ?? '',
+						}),
+						SEARCH_WAITING_ITEMS_BUDGET_MS,
+					)
+					if (waiting.timedOut) endToEndPhaseTimings.waitingItemsTimedOut = true
+					if (waiting.ok) {
+						const origin = baseUrl.replace(/\/+$/, '')
+						waitingMarkdown = formatSearchWaitingMarkdown({
+							items: waiting.value,
+							origin,
+						})
+						waitingStructured = toSearchWaitingStructured({
+							items: waiting.value,
+							origin,
+						})
+					}
 				} catch {
 					waitingMarkdown = null
 					waitingStructured = null
@@ -397,7 +407,7 @@ export async function runSearchTool(input: {
 					'mcp.tool': 'search',
 				},
 			},
-			searchSpan,
+			() => runWithSearchDeadline(searchSpan),
 		)
 
 		if (outcome.mode === 'entity') {
