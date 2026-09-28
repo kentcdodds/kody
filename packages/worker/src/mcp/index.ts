@@ -44,12 +44,20 @@ class MCPBase extends McpAgent<Env, State, Props> {
 	async init() {
 		const caller = this.getCallerContext()
 		const userId = caller.user?.userId ?? null
+		const [, instructions] = await Promise.all([
+			userId === null
+				? undefined
+				: registerMcpAgentSession({
+						db: this.env.APP_DB,
+						userId,
+						doId: this.ctx.id.toString(),
+					}),
+			assembleMcpServerInstructionsForCaller({
+				env: this.env,
+				callerContext: caller,
+			}),
+		])
 		if (userId !== null) {
-			await registerMcpAgentSession({
-				db: this.env.APP_DB,
-				userId,
-				doId: this.ctx.id.toString(),
-			})
 			this.ctx.waitUntil(
 				(async () => {
 					const before = await this.env.APP_DB.prepare(
@@ -73,10 +81,7 @@ class MCPBase extends McpAgent<Env, State, Props> {
 			)
 		}
 		this.server = createKodyMcpServer({
-			instructions: await assembleMcpServerInstructionsForCaller({
-				env: this.env,
-				callerContext: caller,
-			}),
+			instructions,
 			jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
 		})
 		await registerTools(this.getRegistrationAgent())
