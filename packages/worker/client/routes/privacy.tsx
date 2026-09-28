@@ -11,6 +11,7 @@ import {
 	sectionTitleCss,
 	stackedPageCss,
 } from '#universal/styles/style-primitives.ts'
+import { privacyRetentionPeriods } from '#universal/privacy-retention.ts'
 import { privacyLastUpdated } from './legal-last-updated.ts'
 
 export function PrivacyRoute(_handle: Handle) {
@@ -333,31 +334,9 @@ export function PrivacyRoute(_handle: Handle) {
 					operational records have fixed cleanup periods:
 				</p>
 				<ul mix={css(listCss)}>
-					<li>Email delivery events: 90 days</li>
-					<li>Email messages and their attachments: 365 days</li>
-					<li>
-						Completed workflow runs and conversation-suppression records: 90
-						days
-					</li>
-					<li>
-						Resolved or dismissed platform feedback: 365 days after its last
-						update; open or triaged feedback remains until it is resolved,
-						dismissed, or the account is deleted
-					</li>
-					<li>Audit events: 180 days</li>
-					<li>Feature-flag exposure records: 90 days</li>
-					<li>Daily entitlement counters: 400 days</li>
-					<li>Monthly usage rollups: 24 months</li>
-					<li>Stripe webhook event records: 30 days</li>
-					<li>
-						Non-current published bundle artifacts: at least 30 days, then
-						eligible for removal when no active source or repo session needs
-						them
-					</li>
-					<li>
-						Unverified person accounts: seven days after signup when the email
-						is still unverified and no sign-in provider is linked
-					</li>
+					{privacyRetentionPeriods.map((period) => (
+						<li key={period}>{period}</li>
+					))}
 				</ul>
 				<p mix={css(descriptionCss)}>
 					Deletion from a subprocessor&apos;s backups or logs follows that
