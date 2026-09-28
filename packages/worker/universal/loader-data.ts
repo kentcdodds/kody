@@ -2304,7 +2304,6 @@ export type AppLoaderData = {
 	oauthAuthorize?: OAuthAuthorizeLoaderData
 	accountBilling?: AccountBillingLoaderData
 	accountBillingSuccess?: AccountBillingSuccessLoaderData
-	accountCredits?: AccountCreditsLoaderData
 	accountUsage?: AccountUsageLoaderData
 	accountWaiting?: AccountWaitingLoaderData
 	accountExperiments?: AccountExperimentsLoaderData
@@ -2333,8 +2332,8 @@ export type AccountBillingLoaderData = {
 	purchasablePlans: Array<'pro'>
 	/** Stripe subscription uses the purchasable Pro price (credit wallet). */
 	creditsEligible: boolean
-	/** Deep link to prepaid credits. */
-	creditsHref: '/account/credits'
+	/** Deep link to the Credits section of the usage page. */
+	creditsHref: '/account/usage#credits'
 	/** Deep link to the account usage page (limits / consumption). */
 	usageHref: '/account/usage'
 	referralProgram: ReferralProgramSummary | null
@@ -2361,9 +2360,9 @@ export type AccountCreditsLedgerItem = {
 }
 
 /**
- * One credit-debit meter on `/account/credits` (rate card + this-period
- * usage). Same meter path as `/account/usage`. Customer labels only
- * (Worker compute / Rows read) — never UWD / Max jargon.
+ * One credit-debit meter in the usage page's Credits section (rate card +
+ * this-period usage). Same meter path as included compute. Customer labels
+ * only (Worker compute / Rows read) — never UWD / Max jargon.
  */
 export type AccountCreditsDebitMeter = {
 	meter: string
@@ -2383,8 +2382,8 @@ export type AccountCreditsDebitMeter = {
 }
 
 /**
- * Activity, included compute, and the credits alarm. `/account/credits` and
- * `/account/usage` both render these so they tell one story.
+ * Activity, included compute, and the credits alarm on `/account/usage`.
+ * The entitlement-warning emails share the same presentation helpers.
  */
 export type AccountUsageStoryData = {
 	/** This UTC month's code executions and runs (the primary busy signal). */
@@ -2396,24 +2395,31 @@ export type AccountUsageStoryData = {
 	creditsAlarm: CreditsAlarm | null
 }
 
-export type AccountCreditsLoaderData = AccountUsageStoryData & {
-	ok: true
+/**
+ * Credits section of `/account/usage`. Without a wallet (Free, retired
+ * Standard/Pro, gift/referral overlays, manual grants) it is only the
+ * switch-to-Pro prompt: no balance, no purchase UI.
+ */
+export type AccountUsageCredits =
+	| {
+			eligible: false
+			/** Checkout for the purchasable Pro is configured. */
+			canSwitchToPro: boolean
+			billingHref: '/account/billing'
+	  }
+	| AccountUsageCreditsWallet
+
+export type AccountUsageCreditsWallet = {
+	/** Purchasable Pro (or admin-eligible Pro) with the credit wallet. */
+	eligible: true
 	configured: boolean
-	/**
-	 * Purchasable Pro with the credit wallet. False renders the
-	 * switch-to-Pro prompt (Free, retired Standard/Pro, gift/referral
-	 * overlays, manual grants).
-	 */
-	eligible: boolean
-	plan: AdminPlanName
 	/** Checkout for the purchasable Pro is configured. */
 	canSwitchToPro: boolean
 	/**
-	 * Subscribed on the purchasable Pro price with a Stripe customer.
-	 * Gift/referral Pro overlays are not wallet-eligible.
+	 * Subscribed on the purchasable Pro price with a Stripe customer, on a
+	 * deployment with billing configured.
 	 */
 	canBuyCredits: boolean
-	billingHref: '/account/billing'
 	balanceMicroUsd: number
 	/**
 	 * Eligible wallet with credits left: usage past the include runs on
@@ -2439,13 +2445,9 @@ export type AccountCreditsLoaderData = AccountUsageStoryData & {
 		lowBalance: boolean
 	}
 	limits: Array<AccountCreditsLimit>
-	/** Published debit rate labels (same as each debitMeters unitRateLabel). */
-	rates: Array<{ meter: string; label: string }>
 	/** Worker compute + Rows read rate card and this-period usage. */
 	debitMeters: Array<AccountCreditsDebitMeter>
 	recent: Array<AccountCreditsLedgerItem>
-	error?: string
-	notice?: string
 }
 
 export type AccountBillingSuccessLoaderData = {
@@ -2507,6 +2509,11 @@ export type AccountUsageLoaderData = AccountUsageStoryData & {
 	computeOverage: AccountUsageComputeOverage
 	/** True only for the purchasable Pro with a Stripe customer. */
 	canBuyCredits: boolean
+	/** Null for operator plans, which have no credits story. */
+	credits: AccountUsageCredits | null
+	/** Credits outcome (top-up added, settings saved) shown in that section. */
+	notice?: string
+	error?: string
 }
 
 export type AccountWaitingLoaderData = {

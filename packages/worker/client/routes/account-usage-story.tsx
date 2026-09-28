@@ -21,8 +21,8 @@ import {
 } from '#universal/styles/style-primitives.ts'
 
 /**
- * Activity, included compute, and the credits alarm. `/account/credits` and
- * `/account/usage` render the same pieces from the same loader fields.
+ * Activity, included compute, and the credits alarm on `/account/usage`,
+ * rendered once above plan limits and the Credits section.
  */
 
 function formatActivityMonth(month: string): string {

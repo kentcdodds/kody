@@ -1252,8 +1252,8 @@ test('credit top-up checkout and off-session refill send the expected Stripe con
 			amountCents: 2500,
 			clientReferenceId: 'ref',
 			successUrl:
-				'https://app.example.com/account/credits?topup=success&session_id={CHECKOUT_SESSION_ID}',
-			cancelUrl: 'https://app.example.com/account/credits',
+				'https://app.example.com/account/usage?topup=success&session_id={CHECKOUT_SESSION_ID}',
+			cancelUrl: 'https://app.example.com/account/usage#credits',
 			metadata: { kody_credit_top_up: '1', kody_stable_user_id: 'user-1' },
 		})
 		expect(session).toEqual({

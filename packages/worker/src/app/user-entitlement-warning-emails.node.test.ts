@@ -223,7 +223,7 @@ test('user entitlement warnings mail once per entitlement crossing through lifec
 	expect(approachingPayload.to).toBe('jelias@example.com')
 	expect(approachingPayload.from).toBe('kody@kody.codes')
 	expect(approachingPayload.html).toContain(
-		'https://kody.codes/account/credits',
+		'https://kody.codes/account/usage#credits',
 	)
 	expect(approachingPayload.text).toContain('https://kody.codes/account/usage')
 	expect(

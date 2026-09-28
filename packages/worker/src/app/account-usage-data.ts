@@ -1,4 +1,8 @@
 import { parseStoredPlanName, parseStripePlanName } from '#universal/plans.ts'
+import {
+	canBuyCreditsForUser,
+	loadAccountUsageCredits,
+} from '#app/account-credits-data.ts'
 import { loadAccountUsageStory } from '#app/account-usage-story.ts'
 import { isBillingConfigured } from '#worker/billing/billing-config.ts'
 import { readAccountComputeOverage } from '#worker/billing/compute-overage-account.ts'
@@ -19,20 +23,23 @@ import {
 type UsageUserRow = UserEntitlementRow & {
 	id: number
 	stable_user_id: string
+	stripe_customer_id: string | null
 }
 
 /**
- * Signed-in user's plan and current entitlement consumption. One account only;
- * cost does not grow with the user base.
+ * Signed-in user's plan, current entitlement consumption, and the Credits
+ * section. One account only; cost does not grow with the user base.
  */
 export async function loadAccountUsageData(input: {
 	env: Env
 	userId: number
 	now?: Date
+	notice?: string
+	error?: string
 }): Promise<AccountUsageLoaderData | null> {
 	const now = input.now ?? new Date()
 	const row = await input.env.APP_DB.prepare(
-		`SELECT id, stable_user_id, ${userEntitlementColumnsSql()}
+		`SELECT id, stable_user_id, stripe_customer_id, ${userEntitlementColumnsSql()}
 		 FROM users WHERE id = ?`,
 	)
 		.bind(input.userId)
@@ -68,6 +75,18 @@ export async function loadAccountUsageData(input: {
 	])
 	const canBuyCredits =
 		entitlement.creditWallet !== 'none' && isPayingForCreditsPro(row)
+	const { credits, wallet } = await loadAccountUsageCredits({
+		env: input.env,
+		stableUserId: usageUserId,
+		entitlement,
+		canBuyCredits: canBuyCreditsForUser({
+			row,
+			entitlement,
+			stripeCustomerId: row.stripe_customer_id?.trim() || null,
+		}),
+		computeOverage,
+		now,
+	})
 	const story = await loadAccountUsageStory({
 		db: input.env.APP_DB,
 		stableUserId: usageUserId,
@@ -76,6 +95,7 @@ export async function loadAccountUsageData(input: {
 		canBuyCredits: canBuyCredits && isBillingConfigured(input.env),
 		computeOverage,
 		now,
+		...(wallet ? { wallet } : {}),
 	})
 
 	return {
@@ -92,6 +112,9 @@ export async function loadAccountUsageData(input: {
 		computeOverage,
 		canBuyCredits,
 		...story,
+		credits,
+		...(input.notice ? { notice: input.notice } : {}),
+		...(input.error ? { error: input.error } : {}),
 	}
 }
 

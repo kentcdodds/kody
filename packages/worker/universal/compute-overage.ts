@@ -26,8 +26,11 @@ import {
 	resolvePlanLimits,
 } from './plans.ts'
 
-/** Where to add credits (or switch to Pro first). */
-export const accountCreditsPath = '/account/credits'
+/**
+ * Where to add credits (or switch to Pro first): the Credits section of the
+ * usage page. `/account/credits` redirects here for old links.
+ */
+export const accountCreditsPath = '/account/usage#credits'
 
 /**
  * Credits state for one monthly meter:

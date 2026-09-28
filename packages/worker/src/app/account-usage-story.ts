@@ -48,8 +48,8 @@ export async function readAccountActivity(input: {
 }
 
 /**
- * Activity, included compute, and the credits alarm shared by
- * `/account/credits` and `/account/usage` so both pages tell one story.
+ * Activity, included compute, and the credits alarm on `/account/usage`,
+ * told once above plan limits and the Credits section.
  */
 export async function loadAccountUsageStory(input: {
 	db: D1Database

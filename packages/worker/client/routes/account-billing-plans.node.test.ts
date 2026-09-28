@@ -22,7 +22,7 @@ function billing(
 		subscriptionStatus: null,
 		purchasablePlans: ['pro'],
 		creditsEligible: false,
-		creditsHref: '/account/credits',
+		creditsHref: '/account/usage#credits',
 		usageHref: '/account/usage',
 		referralProgram: null,
 		...overrides,

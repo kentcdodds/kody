@@ -1,6 +1,6 @@
 /**
- * Customer framing shared by `/account/credits`, `/account/usage`, and the
- * entitlement-warning emails so they tell one story:
+ * Customer framing shared by `/account/usage` (including its Credits
+ * section) and the entitlement-warning emails so they tell one story:
  *
  * 1. Activity (code executions and runs) is the "how busy am I" signal.
  * 2. Worker compute and Rows read are a calm include: bars stop at 100% and
@@ -292,7 +292,7 @@ function isAutoRefillCapped(input: {
 }
 
 /**
- * The one alarm the credits and usage pages may raise. `null` when nothing
+ * The one alarm the usage page may raise. `null` when nothing
  * is at risk, including a funded wallet past its include (that is just
  * credits doing their job) and every account without a wallet.
  */

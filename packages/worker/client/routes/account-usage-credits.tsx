@@ -1,13 +1,7 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
-import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { formatTimestampDate } from '#client/format-timestamp.ts'
-import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import {
-	routeLoaderRedirect,
-	type RouteLoaderResult,
-} from '#client/route-loader.ts'
 import {
 	accountActionsCss,
 	accountFieldCss,
@@ -16,15 +10,8 @@ import {
 	accountInputCss,
 	AccountManagementMessage,
 	AccountManagementPanel,
-	AccountManagementShell,
-	AccountPageHeader,
 } from '#client/routes/account-management-components.tsx'
 import { renderCreditsDebitRateCard } from '#client/routes/account-credits-rate-card.tsx'
-import {
-	renderActivityPanel,
-	renderCreditsAlarm,
-	renderIncludedComputePanel,
-} from '#client/routes/account-usage-story.tsx'
 import { RecordTable } from '#client/routes/record-table.tsx'
 import { requestProCheckout } from '#client/routes/billing-checkout.ts'
 import {
@@ -43,18 +30,22 @@ import {
 	type CreditAutoRefillSettings,
 	type CreditNotifySettings,
 } from '#universal/credits.ts'
-import { type AccountCreditsLoaderData } from '#universal/loader-data.ts'
+import {
+	type AccountUsageCredits,
+	type AccountUsageCreditsWallet,
+	type AccountUsageLoaderData,
+} from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	descriptionCss,
 	getGhostButtonCss,
 	getPillButtonCss,
-	layoutMaxWidths,
 	primaryLinkCss,
 } from '#universal/styles/style-primitives.ts'
 
-const creditsApiPath = routes.accountCreditsApi.href()
+/** Anchor for `/account/usage#credits` (`accountCreditsPath`). */
+const creditsSectionId = 'credits'
 const topUpApiPath = routes.accountCreditsTopUpPost.href()
 const settingsApiPath = routes.accountCreditsSettingsPost.href()
 const jsonRequestHeaders = {
@@ -70,13 +61,13 @@ type SettingsDraft = {
 	notify: CreditNotifySettings
 }
 
-function draftFromPayload(payload: AccountCreditsLoaderData): SettingsDraft {
+function draftFromWallet(wallet: AccountUsageCreditsWallet): SettingsDraft {
 	return {
-		autoRefillEnabled: payload.autoRefill.enabled,
-		thresholdText: formatCentsForInput(payload.autoRefill.thresholdCents),
-		amountText: formatCentsForInput(payload.autoRefill.amountCents),
-		monthlyCapText: formatCentsForInput(payload.autoRefill.monthlyCapCents),
-		notify: { ...payload.notify },
+		autoRefillEnabled: wallet.autoRefill.enabled,
+		thresholdText: formatCentsForInput(wallet.autoRefill.thresholdCents),
+		amountText: formatCentsForInput(wallet.autoRefill.amountCents),
+		monthlyCapText: formatCentsForInput(wallet.autoRefill.monthlyCapCents),
+		notify: { ...wallet.notify },
 	}
 }
 
@@ -89,33 +80,26 @@ function readAutoRefillDraft(draft: SettingsDraft): CreditAutoRefillSettings {
 	}
 }
 
-async function fetchCredits(signal: AbortSignal) {
-	return fetch(creditsApiPath, {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		signal,
-	})
+type AccountUsageCreditsSectionProps = {
+	credits: AccountUsageCredits
+	/** Page-load outcome for credits (top-up added, top-up failed). */
+	notice?: string
+	error?: string
+	/** Saving credit settings returns the whole refreshed usage payload. */
+	onUsageChange: (next: AccountUsageLoaderData) => void
 }
 
-export async function accountCreditsRouteLoader(
-	_url: URL,
-	signal: AbortSignal,
-): Promise<RouteLoaderResult> {
-	const response = await fetchCredits(signal)
-	if (response.status === 401) {
-		return routeLoaderRedirect('/login')
-	}
-	const payload = await readJson<AccountCreditsLoaderData>(response)
-	if (!response.ok || !payload?.ok) {
-		throw new Error('Unable to load credits.')
-	}
-	return { accountCredits: payload }
-}
-
-export function AccountCreditsRoute(handle: Handle) {
-	let payload: AccountCreditsLoaderData | null = null
-	let appliedSnapshot: AccountCreditsLoaderData | null = null
-	let appliedError: Error | null = null
+/**
+ * The Credits section at the end of `/account/usage`. Activity, included
+ * compute, and the credits alarm render once above it, so this section is
+ * only the wallet: balance, add credits, auto-refill, how far credits go,
+ * the debit rate card, and credit history. Without a wallet it is one
+ * switch-to-Pro prompt with no purchase UI.
+ */
+export function AccountUsageCreditsSection(
+	handle: Handle<AccountUsageCreditsSectionProps>,
+) {
+	let appliedCredits: AccountUsageCredits | null = null
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
 	let draft: SettingsDraft | null = null
@@ -124,24 +108,11 @@ export function AccountCreditsRoute(handle: Handle) {
 	let saving = false
 	let switchPending = false
 
-	const creditsData = createRouteData({
-		key: 'accountCredits',
-		async load(_href, signal) {
-			const response = await fetchCredits(signal)
-			if (response.status === 401) return routeDataRedirect('/login')
-			const next = await readJson<AccountCreditsLoaderData>(response)
-			if (!response.ok || !next?.ok) {
-				throw new Error('Unable to load credits.')
-			}
-			return next
-		},
-	})
-
-	function applyPayload(next: AccountCreditsLoaderData) {
-		payload = next
-		draft = draftFromPayload(next)
-		message = next.error ?? next.notice ?? null
-		messageTone = next.error ? 'error' : 'info'
+	function applyCredits(credits: AccountUsageCredits) {
+		appliedCredits = credits
+		draft = credits.eligible ? draftFromWallet(credits) : null
+		message = handle.props.error ?? handle.props.notice ?? null
+		messageTone = handle.props.error ? 'error' : 'info'
 	}
 
 	function setMessage(text: string, tone: 'info' | 'error') {
@@ -224,7 +195,7 @@ export function AccountCreditsRoute(handle: Handle) {
 				return
 			}
 			const next = await readJson<
-				AccountCreditsLoaderData | { ok: false; error?: string }
+				AccountUsageLoaderData | { ok: false; error?: string }
 			>(response)
 			if (!response.ok || !next?.ok) {
 				throw new Error(
@@ -232,7 +203,9 @@ export function AccountCreditsRoute(handle: Handle) {
 						'Unable to save credit settings.',
 				)
 			}
-			applyPayload(next)
+			saving = false
+			handle.props.onUsageChange(next)
+			return
 		} catch (error) {
 			setMessage(
 				error instanceof Error
@@ -240,10 +213,9 @@ export function AccountCreditsRoute(handle: Handle) {
 					: 'Unable to save credit settings.',
 				'error',
 			)
-		} finally {
-			saving = false
-			handle.update()
 		}
+		saving = false
+		handle.update()
 	}
 
 	async function switchToPro() {
@@ -270,6 +242,26 @@ export function AccountCreditsRoute(handle: Handle) {
 	function updateNotify(key: keyof CreditNotifySettings, value: boolean) {
 		if (!draft) return
 		updateDraft({ notify: { ...draft.notify, [key]: value } })
+	}
+
+	function renderMessage() {
+		return message ? (
+			<AccountManagementMessage tone={messageTone}>
+				{message}
+			</AccountManagementMessage>
+		) : null
+	}
+
+	function renderSwitchToProButton(label: string) {
+		return (
+			<button
+				type="button"
+				disabled={switchPending}
+				mix={[on('click', () => void switchToPro()), css(primaryButtonCss)]}
+			>
+				{switchPending ? 'Opening Stripe…' : label}
+			</button>
+		)
 	}
 
 	function renderAmountField(input: {
@@ -336,22 +328,19 @@ export function AccountCreditsRoute(handle: Handle) {
 		)
 	}
 
-	function renderIneligible(credits: AccountCreditsLoaderData) {
+	function renderIneligible(
+		credits: Extract<AccountUsageCredits, { eligible: false }>,
+	) {
 		return (
-			<AccountManagementPanel>
-				<p mix={css(descriptionCss)}>Credits are available on Pro.</p>
+			<AccountManagementPanel
+				id={creditsSectionId}
+				title="Credits"
+				description="Credits are available on Pro. Pro usage past its monthly include runs on prepaid credits and stops when they run out."
+			>
+				{renderMessage()}
 				<div mix={css(accountActionsCss)}>
 					{credits.canSwitchToPro ? (
-						<button
-							type="button"
-							disabled={switchPending}
-							mix={[
-								on('click', () => void switchToPro()),
-								css(primaryButtonCss),
-							]}
-						>
-							{switchPending ? 'Opening Stripe…' : 'Switch to Pro'}
-						</button>
+						renderSwitchToProButton('Switch to Pro')
 					) : (
 						<a href={credits.billingHref} mix={css(primaryLinkCss)}>
 							Go to billing
@@ -363,11 +352,11 @@ export function AccountCreditsRoute(handle: Handle) {
 	}
 
 	function renderPurchase(
-		credits: AccountCreditsLoaderData,
+		credits: AccountUsageCreditsWallet,
 		settings: SettingsDraft,
-		topUpDisabled: boolean,
-		customCents: number | null,
 	) {
+		const topUpDisabled = !credits.configured || topUpPendingCents !== null
+		const customCents = parseDollarsToCents(customAmountText)
 		return (
 			<>
 				<AccountManagementPanel title="Add credits">
@@ -547,38 +536,31 @@ export function AccountCreditsRoute(handle: Handle) {
 		)
 	}
 
-	function renderPurchaseUnavailable(credits: AccountCreditsLoaderData) {
+	function renderPurchaseUnavailable(credits: AccountUsageCreditsWallet) {
 		return (
 			<AccountManagementPanel title="Add credits">
 				<p mix={css(descriptionCss)}>Subscribe to Pro to add credits.</p>
 				{credits.canSwitchToPro ? (
 					<div mix={css(accountActionsCss)}>
-						<button
-							type="button"
-							disabled={switchPending}
-							mix={[
-								on('click', () => void switchToPro()),
-								css(primaryButtonCss),
-							]}
-						>
-							{switchPending ? 'Opening Stripe…' : 'Subscribe to Pro'}
-						</button>
+						{renderSwitchToProButton('Subscribe to Pro')}
 					</div>
 				) : null}
 			</AccountManagementPanel>
 		)
 	}
 
-	function renderEligible(
-		credits: AccountCreditsLoaderData,
+	function renderWallet(
+		credits: AccountUsageCreditsWallet,
 		settings: SettingsDraft,
 	) {
-		const topUpDisabled = !credits.configured || topUpPendingCents !== null
-		const customCents = parseDollarsToCents(customAmountText)
 		return (
 			<>
-				{renderCreditsAlarm(credits.creditsAlarm, { showAction: false })}
-				<AccountManagementPanel title="Balance">
+				<AccountManagementPanel
+					id={creditsSectionId}
+					title="Credits"
+					description="Prepaid balance for Pro. Usage past your monthly include is charged here until it runs out."
+				>
+					{renderMessage()}
 					<p
 						data-credits-balance
 						mix={css({
@@ -600,15 +582,8 @@ export function AccountCreditsRoute(handle: Handle) {
 				</AccountManagementPanel>
 
 				{credits.canBuyCredits
-					? renderPurchase(credits, settings, topUpDisabled, customCents)
+					? renderPurchase(credits, settings)
 					: renderPurchaseUnavailable(credits)}
-
-				{renderActivityPanel(credits.activity)}
-
-				{renderIncludedComputePanel({
-					meters: credits.includedCompute,
-					summary: credits.includedComputeSummary,
-				})}
 
 				<AccountManagementPanel title="How far credits go">
 					<p mix={css(descriptionCss)}>
@@ -656,9 +631,9 @@ export function AccountCreditsRoute(handle: Handle) {
 					pastIncludeNeedsAttention: !credits.hasCredits,
 				})}
 
-				<AccountManagementPanel title="Recent">
+				<AccountManagementPanel title="Credit history">
 					{credits.recent.length === 0 ? (
-						<p mix={css(descriptionCss)}>No activity yet.</p>
+						<p mix={css(descriptionCss)}>No credit activity yet.</p>
 					) : (
 						<ul
 							mix={css({
@@ -714,46 +689,10 @@ export function AccountCreditsRoute(handle: Handle) {
 	}
 
 	return () => {
-		const currentHref = readCurrentRouterHref(handle)
-		const snapshot = creditsData.read(handle, currentHref)
-		if (snapshot.data && snapshot.data !== appliedSnapshot) {
-			appliedSnapshot = snapshot.data
-			applyPayload(snapshot.data)
-		}
-		if (snapshot.error && snapshot.error !== appliedError) {
-			appliedError = snapshot.error
-			setMessage(snapshot.error.message, 'error')
-		}
-		const pending = snapshot.kind === 'pending'
-		const credits = payload
-
-		return (
-			<AccountManagementShell
-				maxWidth={layoutMaxWidths.content}
-				busy={(pending && credits !== null) || saving}
-			>
-				<AccountPageHeader
-					title="Credits"
-					description="Prepaid balance for Pro. Usage past your monthly include is charged here until it runs out."
-					currentHref={currentHref}
-				/>
-				{pending && credits === null ? (
-					<p mix={css({ color: colors.textMuted, margin: 0 })}>
-						Loading credits…
-					</p>
-				) : null}
-				{message ? (
-					<AccountManagementMessage tone={messageTone}>
-						{message}
-					</AccountManagementMessage>
-				) : null}
-				{credits && draft
-					? credits.eligible
-						? renderEligible(credits, draft)
-						: renderIneligible(credits)
-					: null}
-			</AccountManagementShell>
-		)
+		const { credits } = handle.props
+		if (credits !== appliedCredits) applyCredits(credits)
+		if (!credits.eligible) return renderIneligible(credits)
+		return draft ? renderWallet(credits, draft) : null
 	}
 }
 

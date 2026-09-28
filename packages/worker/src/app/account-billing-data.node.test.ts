@@ -117,7 +117,7 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 	expect(data.cancelAt).toBe('2026-08-01T00:00:00.000Z')
 	expect(data.usageHref).toBe('/account/usage')
 	expect(data.purchasablePlans).toEqual(['pro'])
-	expect(data.creditsHref).toBe('/account/credits')
+	expect(data.creditsHref).toBe('/account/usage#credits')
 	expect(data.referralProgram).toEqual(
 		expect.objectContaining({
 			sharePath: '/signup?ref=billing-user',

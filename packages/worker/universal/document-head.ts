@@ -207,7 +207,6 @@ const routeDocumentHeads = {
 	[routePattern(routes.account)]: titleOnly('Account'),
 	[routePattern(routes.accountBilling)]: titleOnly('Billing'),
 	[routePattern(routes.accountBillingSuccess)]: titleOnly("You're in"),
-	[routePattern(routes.accountCredits)]: titleOnly('Credits'),
 	[routePattern(routes.accountUsage)]: titleOnly('Usage'),
 	[routePattern(routes.accountWaiting)]: titleOnly('Waiting'),
 	[routePattern(routes.accountExperiments)]: titleOnly('Experiments'),

@@ -26,6 +26,19 @@ export class CreditTopUpError extends Error {
 	}
 }
 
+/**
+ * Stripe success URL for a top-up started from `creditsUrl`. Stripe
+ * substitutes the literal `{CHECKOUT_SESSION_ID}` placeholder, so it is
+ * appended as raw text after the query; any fragment is dropped (the
+ * confirm redirect adds it back).
+ */
+export function creditTopUpSuccessUrl(creditsUrl: string): string {
+	const url = new URL(creditsUrl)
+	url.hash = ''
+	url.searchParams.set('topup', 'success')
+	return `${url.toString()}&session_id={CHECKOUT_SESSION_ID}`
+}
+
 export async function startCreditTopUpCheckout(input: {
 	env: Env
 	stableUserId: string
@@ -37,14 +50,11 @@ export async function startCreditTopUpCheckout(input: {
 		input.env,
 		input.stableUserId,
 	)
-	const successUrl = new URL(input.creditsUrl)
-	successUrl.searchParams.set('topup', 'success')
 	const session = await createCreditTopUpCheckoutSession(input.env, {
 		customerId: input.stripeCustomerId,
 		amountCents: input.amountCents,
 		clientReferenceId,
-		// Stripe substitutes the literal placeholder on redirect.
-		successUrl: `${successUrl.toString()}&session_id={CHECKOUT_SESSION_ID}`,
+		successUrl: creditTopUpSuccessUrl(input.creditsUrl),
 		cancelUrl: input.creditsUrl,
 		metadata: {
 			[creditTopUpMetadataKey]: '1',

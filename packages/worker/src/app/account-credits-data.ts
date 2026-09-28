@@ -2,18 +2,19 @@ import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import {
 	type AccountCreditsDebitMeter,
 	type AccountCreditsLimit,
-	type AccountCreditsLoaderData,
+	type AccountUsageComputeOverage,
+	type AccountUsageCredits,
 } from '#universal/loader-data.ts'
 import {
 	creditAutoRefillMinThresholdCents,
 	creditDebitCostMicroUsd,
-	creditDebitMeters,
 	creditDebitRates,
 	creditTopUpMaxCents,
 	creditTopUpMinCents,
 	creditTopUpPackCents,
 } from '#universal/credits.ts'
 import { isCustomerFacingComputeMeter } from '#universal/compute-overage.ts'
+import { type CreditsAlarmAutoRefill } from '#universal/usage-presentation.ts'
 import {
 	creditsUnlockedResources,
 	entitlementResourceLabels,
@@ -27,8 +28,6 @@ import {
 	getPurchasablePlans,
 	isBillingConfigured,
 } from '#worker/billing/billing-config.ts'
-import { loadAccountUsageStory } from '#app/account-usage-story.ts'
-import { readAccountComputeOverage } from '#worker/billing/compute-overage-account.ts'
 import {
 	listCreditLedgerEntries,
 	readCreditWallet,
@@ -86,6 +85,19 @@ export type AccountCreditsUser = {
 	canBuyCredits: boolean
 }
 
+/** Paying for the purchasable Pro with a Stripe customer and a wallet. */
+export function canBuyCreditsForUser(input: {
+	row: UserEntitlementRow
+	entitlement: UserEntitlement
+	stripeCustomerId: string | null
+}): boolean {
+	return (
+		input.entitlement.creditWallet !== 'none' &&
+		isPayingForCreditsPro(input.row) &&
+		input.stripeCustomerId !== null
+	)
+}
+
 /** Signed-in account plus its entitlement (wallet state included). */
 export async function loadAccountCreditsUser(input: {
 	env: Env
@@ -117,108 +129,89 @@ export async function loadAccountCreditsUser(input: {
 		stableUserId: row.stable_user_id,
 		stripeCustomerId,
 		entitlement,
-		canBuyCredits:
-			entitlement.creditWallet !== 'none' &&
-			isPayingForCreditsPro(row) &&
-			stripeCustomerId !== null,
-	}
-}
-
-export async function loadAccountCreditsData(input: {
-	env: Env
-	userId: number
-	notice?: string
-	error?: string
-	now?: Date
-}): Promise<AccountCreditsLoaderData | null> {
-	const now = input.now ?? new Date()
-	const user = await loadAccountCreditsUser({
-		env: input.env,
-		userId: input.userId,
-		now,
-	})
-	if (!user) return null
-	const db = input.env.APP_DB
-	const [wallet, refilledThisMonthCents, recent, computeOverage] =
-		await Promise.all([
-			readCreditWallet(db, user.stableUserId),
-			sumCreditAutoRefillCents({
-				db,
-				userId: user.stableUserId,
-				month: utcMonthKey(now),
-			}),
-			listCreditLedgerEntries({
-				db,
-				userId: user.stableUserId,
-				limit: recentLedgerLimit,
-			}),
-			readAccountComputeOverage({
-				db,
-				stableUserId: user.stableUserId,
-				plan: user.entitlement.plan,
-				ladder: user.entitlement.ladder,
-				creditWallet: user.entitlement.creditWallet,
-				now,
-			}).catch(() => null),
-		])
-	const configured = isBillingConfigured(input.env)
-	const eligible = user.entitlement.creditWallet !== 'none'
-	const canBuyCredits = configured && user.canBuyCredits
-	const story = await loadAccountUsageStory({
-		db,
-		stableUserId: user.stableUserId,
-		plan: user.entitlement.plan,
-		creditWallet: user.entitlement.creditWallet,
-		canBuyCredits,
-		computeOverage,
-		now,
-		wallet: {
-			balanceMicroUsd: wallet.balanceMicroUsd,
-			autoRefill: { ...wallet.autoRefill, refilledThisMonthCents },
-		},
-	})
-	const rates = creditDebitMeters
-		.filter((meter) => isCustomerFacingComputeMeter(meter))
-		.map((meter) => ({
-			meter,
-			label: creditDebitRates[meter].label,
-		}))
-	return {
-		ok: true,
-		configured,
-		eligible,
-		plan: user.entitlement.plan,
-		canSwitchToPro:
-			configured && getPurchasablePlans(input.env).includes('pro'),
-		canBuyCredits,
-		billingHref: '/account/billing',
-		balanceMicroUsd: wallet.balanceMicroUsd,
-		hasCredits: user.entitlement.creditWallet === 'funded',
-		packsCents: [...creditTopUpPackCents],
-		customMinCents: creditTopUpMinCents,
-		customMaxCents: creditTopUpMaxCents,
-		autoRefill: {
-			...wallet.autoRefill,
-			minThresholdCents: creditAutoRefillMinThresholdCents,
-			refilledThisMonthCents,
-			hasPaymentMethod: Boolean(wallet.autoRefillPaymentMethodId),
-		},
-		notify: wallet.notify,
-		limits: listCreditsCeilingLimits(),
-		rates,
-		debitMeters: computeOverage
-			? toCreditsDebitMeters(computeOverage.meters)
-			: [],
-		recent: recent.map(toAccountCreditsLedgerItem),
-		...story,
-		...(input.notice ? { notice: input.notice } : {}),
-		...(input.error ? { error: input.error } : {}),
+		canBuyCredits: canBuyCreditsForUser({ row, entitlement, stripeCustomerId }),
 	}
 }
 
 /**
- * Rate-card rows for the credits page. Reuses the same meters as
- * `/account/usage` — never invent a second path or a CPU debit.
+ * The Credits section of `/account/usage`, plus the wallet read the usage
+ * story's alarm needs so the page reads the wallet once. Operator plans get
+ * no section; accounts without a wallet get only the switch-to-Pro prompt.
+ */
+export async function loadAccountUsageCredits(input: {
+	env: Env
+	stableUserId: string
+	entitlement: UserEntitlement
+	/** {@link canBuyCreditsForUser}; billing configuration is checked here. */
+	canBuyCredits: boolean
+	computeOverage: AccountUsageComputeOverage | null
+	now: Date
+}): Promise<{
+	credits: AccountUsageCredits | null
+	wallet: { balanceMicroUsd: number; autoRefill: CreditsAlarmAutoRefill } | null
+}> {
+	if (input.entitlement.plan === 'max') return { credits: null, wallet: null }
+	const configured = isBillingConfigured(input.env)
+	const canSwitchToPro =
+		configured && getPurchasablePlans(input.env).includes('pro')
+	if (input.entitlement.creditWallet === 'none') {
+		return {
+			credits: {
+				eligible: false,
+				canSwitchToPro,
+				billingHref: '/account/billing',
+			},
+			wallet: null,
+		}
+	}
+	const db = input.env.APP_DB
+	const [wallet, refilledThisMonthCents, recent] = await Promise.all([
+		readCreditWallet(db, input.stableUserId),
+		sumCreditAutoRefillCents({
+			db,
+			userId: input.stableUserId,
+			month: utcMonthKey(input.now),
+		}),
+		listCreditLedgerEntries({
+			db,
+			userId: input.stableUserId,
+			limit: recentLedgerLimit,
+		}),
+	])
+	return {
+		credits: {
+			eligible: true,
+			configured,
+			canSwitchToPro,
+			canBuyCredits: configured && input.canBuyCredits,
+			balanceMicroUsd: wallet.balanceMicroUsd,
+			hasCredits: input.entitlement.creditWallet === 'funded',
+			packsCents: [...creditTopUpPackCents],
+			customMinCents: creditTopUpMinCents,
+			customMaxCents: creditTopUpMaxCents,
+			autoRefill: {
+				...wallet.autoRefill,
+				minThresholdCents: creditAutoRefillMinThresholdCents,
+				refilledThisMonthCents,
+				hasPaymentMethod: Boolean(wallet.autoRefillPaymentMethodId),
+			},
+			notify: wallet.notify,
+			limits: listCreditsCeilingLimits(),
+			debitMeters: input.computeOverage
+				? toCreditsDebitMeters(input.computeOverage.meters)
+				: [],
+			recent: recent.map(toAccountCreditsLedgerItem),
+		},
+		wallet: {
+			balanceMicroUsd: wallet.balanceMicroUsd,
+			autoRefill: { ...wallet.autoRefill, refilledThisMonthCents },
+		},
+	}
+}
+
+/**
+ * Rate-card rows for the Credits section. Reuses the same meters as included
+ * compute — never invent a second path or a CPU debit.
  */
 export function toCreditsDebitMeters(
 	meters: Array<{

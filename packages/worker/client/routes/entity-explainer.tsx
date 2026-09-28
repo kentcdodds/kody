@@ -206,6 +206,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		match: accountSection(routes.accountUsage.href()),
 		paragraphs: [
 			'Usage is how much of your plan you have consumed — stored email, job slots, workflow concurrency, and other finite entitlements. Limits are per signed-in user.',
+			'On Pro, the Credits section holds your prepaid balance: usage past the monthly include runs on credits and stops when they run out.',
 		],
 		learnMore: [
 			{

@@ -12,7 +12,7 @@ import {
 } from '#universal/styles/tokens.ts'
 import { includeBarPercent } from '#universal/usage-presentation.ts'
 
-/** Collapsed rate card for Worker compute + Rows read on `/account/credits`. */
+/** Collapsed rate card for Worker compute + Rows read in the usage page's Credits section. */
 export function renderCreditsDebitRateCard(
 	meters: Array<AccountCreditsDebitMeter>,
 	options: { pastIncludeNeedsAttention: boolean },

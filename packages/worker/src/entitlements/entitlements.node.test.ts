@@ -298,10 +298,10 @@ test('rate/compute include hints: $0 Pro adds credits to keep going, Free upgrad
 		'empty',
 	)
 	expect(emptyPro).toBe(
-		'Remove or finish existing execute calls per day you no longer need, or add credits at /account/credits to keep going past your include.',
+		'Remove or finish existing execute calls per day you no longer need, or add credits at /account/usage#credits to keep going past your include.',
 	)
 	expect(buildEntitlementHowToReduce('job_runs_per_day', 'pro', 'empty')).toBe(
-		'Run fewer jobs today, space them out, or add credits at /account/credits to keep going past your include.',
+		'Run fewer jobs today, space them out, or add credits at /account/usage#credits to keep going past your include.',
 	)
 	// Free stays hard-capped: the next step is Pro, not credits.
 	expect(buildEntitlementUpgradeHint('execute_calls_per_day', 'free')).toBe(
@@ -314,7 +314,7 @@ test('rate/compute include hints: $0 Pro adds credits to keep going, Free upgrad
 	// its include.
 	for (const plan of ['standard', 'pro'] as const) {
 		expect(buildEntitlementUpgradeHint('execute_calls_per_day', plan)).toMatch(
-			/Pro with prepaid credits at \/account\/credits runs past its include\.$/,
+			/Pro with prepaid credits at \/account\/usage#credits runs past its include\.$/,
 		)
 		expect(
 			buildEntitlementUpgradeHint('execute_calls_per_day', plan),
@@ -1838,7 +1838,7 @@ test('past-include stop message leads with credits, reads in customer units, and
 		creditsStatus: 'add_credits',
 	})
 	expect(workerCompute.message).toMatch(
-		/^Worker compute include used up: your "pro" plan includes 350 worker-compute days this UTC month and you have used 412\. With no credits left, usage past the include stops\. Add credits at \/account\/credits to keep going; usage past the include is charged at \$0\.004 per worker-compute day\. Keep package code stable/,
+		/^Worker compute include used up: your "pro" plan includes 350 worker-compute days this UTC month and you have used 412\. With no credits left, usage past the include stops\. Add credits at \/account\/usage#credits to keep going; usage past the include is charged at \$0\.004 per worker-compute day\. Keep package code stable/,
 	)
 	expect(parseComputeOverageLimitMessage(workerCompute.message)).toEqual(
 		workerCompute.details,
