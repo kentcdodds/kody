@@ -7,7 +7,6 @@ import { loadAccountUsageStory } from '#app/account-usage-story.ts'
 import { isBillingConfigured } from '#worker/billing/billing-config.ts'
 import { readAccountComputeOverage } from '#worker/billing/compute-overage-account.ts'
 import {
-	isPayingForCreditsPro,
 	resolveUserEntitlementFromRow,
 	userEntitlementColumnsSql,
 	type UserEntitlementRow,
@@ -73,17 +72,16 @@ export async function loadAccountUsageData(input: {
 			now,
 		}),
 	])
-	const canBuyCredits =
-		entitlement.creditWallet !== 'none' && isPayingForCreditsPro(row)
+	const canBuyCredits = canBuyCreditsForUser({
+		row,
+		entitlement,
+		stripeCustomerId: row.stripe_customer_id?.trim() || null,
+	})
 	const { credits, wallet } = await loadAccountUsageCredits({
 		env: input.env,
 		stableUserId: usageUserId,
 		entitlement,
-		canBuyCredits: canBuyCreditsForUser({
-			row,
-			entitlement,
-			stripeCustomerId: row.stripe_customer_id?.trim() || null,
-		}),
+		canBuyCredits,
 		computeOverage,
 		now,
 	})

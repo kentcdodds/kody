@@ -500,3 +500,36 @@ test('gift Pro keeps retired Pro ceilings without a wallet and cannot buy credit
 		expect(row.howToReduce).not.toMatch(/^add credits/i)
 	}
 })
+
+test('purchasable Pro without a Stripe customer cannot buy: alarm and Credits section agree', async () => {
+	const now = new Date('2026-07-25T12:00:00.000Z')
+	const { db } = createUsageTestDb({
+		userId: 27,
+		email: 'usage-credits-no-customer@example.com',
+		plan: 'free',
+		stripePlan: 'pro',
+		creditsEligible: true,
+		creditBalanceMicroUsd: 0,
+		stripeCustomerId: null,
+		uniqueWorkerDays: 400,
+	})
+	const data = await loadAccountUsageData({
+		env: withUsageEnv({
+			APP_DB: db,
+			STRIPE_SECRET_KEY: 'sk_test_usage',
+		}) as Env,
+		userId: 27,
+		now,
+	})
+	expect(data?.computeOverage.creditWallet).toBe('empty')
+	expect(data?.canBuyCredits).toBe(false)
+	expect(data?.creditsAlarm).toMatchObject({
+		kind: 'include_used_no_credits',
+		action: { label: 'Subscribe to Pro', href: '/account/usage#credits' },
+	})
+	expect(data?.credits).toMatchObject({
+		eligible: true,
+		configured: true,
+		canBuyCredits: false,
+	})
+})

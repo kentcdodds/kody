@@ -22,6 +22,13 @@ const creditsErrorMessages: Record<string, string> = {
 	client_reference_mismatch: 'That top-up does not belong to your account.',
 }
 
+function readMessage(
+	messages: Record<string, string>,
+	code: string | null,
+): string | undefined {
+	return code && Object.hasOwn(messages, code) ? messages[code] : undefined
+}
+
 function creditsRedirect(request: Request, params: Record<string, string>) {
 	const url = new URL(accountCreditsPath, request.url)
 	for (const [key, value] of Object.entries(params)) {
@@ -55,7 +62,9 @@ export function createAccountUsageHandler(env: Env) {
 						error instanceof CreditTopUpError ? error.code : 'topup_failed'
 					console.error('credit_top_up_confirm_failed', { code })
 					return creditsRedirect(request, {
-						error: code in creditsErrorMessages ? code : 'topup_failed',
+						error: readMessage(creditsErrorMessages, code)
+							? code
+							: 'topup_failed',
 					})
 				}
 			}
@@ -63,8 +72,8 @@ export function createAccountUsageHandler(env: Env) {
 			const accountUsage = await loadAccountUsageData({
 				env,
 				userId: user.userId,
-				notice: creditsNoticeMessages[searchParams.get('credits') ?? ''],
-				error: creditsErrorMessages[searchParams.get('error') ?? ''],
+				notice: readMessage(creditsNoticeMessages, searchParams.get('credits')),
+				error: readMessage(creditsErrorMessages, searchParams.get('error')),
 			})
 			if (!accountUsage) {
 				return new Response('Not found', { status: 404 })
