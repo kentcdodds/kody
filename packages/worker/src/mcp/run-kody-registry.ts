@@ -721,6 +721,8 @@ export function createComputedPackageImportTools(input: {
 	capabilityRegistry?: BuiltCapabilityRegistry
 	waitUntil?: (promise: Promise<unknown>) => void
 	signal?: AbortSignal
+	/** Preserve outer execute timeout policy on nested library loads. */
+	executorTimeoutMs?: number | null
 	computedImportDepth?: number
 	/**
 	 * Agent conversation id from the outer MCP execute. Records the resolved
@@ -801,6 +803,7 @@ export function createComputedPackageImportTools(input: {
 					skipCapabilityRegistry: input.skipCapabilityRegistry,
 					capabilityRegistry: input.capabilityRegistry,
 					waitUntil: input.waitUntil,
+					executorTimeoutMs: input.executorTimeoutMs,
 					signal: input.signal,
 					computedImportDepth: computedImportDepth + 1,
 					computedPackageImportTools: nestedTools,
@@ -1157,6 +1160,7 @@ export async function runBundledModuleWithRegistry(
 						capabilityRegistry: options?.capabilityRegistry,
 						waitUntil: options?.waitUntil,
 						signal: options?.signal,
+						executorTimeoutMs: options?.executorTimeoutMs,
 						computedImportDepth: options?.computedImportDepth ?? 0,
 						conversationId: options?.conversationId ?? null,
 						closedWorldRetrieverRuntime,
