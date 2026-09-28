@@ -67,9 +67,10 @@ export function PrivacyRoute(_handle: Handle) {
 					package invocation tokens, short-lived execution history, stored
 					community activity events, and any platform feedback you approve for
 					submission. All of this remains scoped to your account except for
-					content you deliberately make public (community listings and a public
-					profile), the narrow admin review of approved platform feedback, and
-					the community activity metadata described below.
+					content you deliberately make public (public packages published to
+					Community and a public profile), the narrow admin review of approved
+					platform feedback, and the community activity metadata described
+					below.
 				</p>
 				<p mix={css(descriptionCss)}>
 					When profile visibility is <strong>public</strong>, display name, bio,
@@ -103,13 +104,13 @@ export function PrivacyRoute(_handle: Handle) {
 					the search query, plus indexed text for builtin capabilities, saved
 					packages (manifest search fields, not full source), memories (subject,
 					summary, details, and tags), jobs (name, description, and schedule),
-					and public community listings (name, description, tags, and a short
-					readme snippet). Ranked search can send that query plus candidate
-					cards (type, id, title, and summary) to Workers AI for scoring. Secret
-					values and OAuth tokens are never sent to those models.
-					Connected-account provider content is embedded or scored only if it
-					was first saved as one of those indexed records or appears on a search
-					candidate card.
+					and public packages published to Community (name, description, tags,
+					and a short readme snippet). Ranked search can send that query plus
+					candidate cards (type, id, title, and summary) to Workers AI for
+					scoring. Secret values and OAuth tokens are never sent to those
+					models. Connected-account provider content is embedded or scored only
+					if it was first saved as one of those indexed records or appears on a
+					search candidate card.
 				</p>
 				<p mix={css(descriptionCss)}>
 					<strong>Share, transfer, and disclose.</strong> Provider data leaves
@@ -159,15 +160,15 @@ export function PrivacyRoute(_handle: Handle) {
 					exception.
 				</p>
 				<p mix={css(descriptionCss)}>
-					Admins also moderate public community listings and community reports.
-					Reporting a listing requires a signed-in user; reports are not
-					anonymous — the reporter identity is attached. Admins can see who
-					forked or rated a public listing, when, and the rating scores.
-					One-click installs appear as forks because both use the same activity
-					record. This activity view never includes private package source,
-					rating notes, email, stable user ids, private profiles, secrets, or
-					unrelated account content. Admin-configured notification packages may
-					receive the same community metadata, and a metadata-only{' '}
+					Admins also moderate public packages in the Community catalog and
+					community reports. Reporting a listing requires a signed-in user;
+					reports are not anonymous — the reporter identity is attached. Admins
+					can see who forked or rated a public listing, when, and the rating
+					scores. One-click installs appear as forks because both use the same
+					activity record. This activity view never includes private package
+					source, rating notes, email, stable user ids, private profiles,
+					secrets, or unrelated account content. Admin-configured notification
+					packages may receive the same community metadata, and a metadata-only{' '}
 					<code>user.created</code> or <code>user.deleted</code> event when a
 					person account is created or self-deleted (stable user id, username,
 					email, the create source and <code>created_at</code> or delete

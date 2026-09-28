@@ -159,7 +159,7 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 	expect(ownInventoryHtml).toContain('title="Private"')
 	expect(ownInventoryHtml).toContain('data-icon="lock"')
 	expect(ownInventoryHtml).toContain('data-icon="eye"')
-	expect(ownInventoryHtml).not.toContain('title="No community listing"')
+	expect(ownInventoryHtml).not.toContain('title="Not published to Community"')
 
 	// A private repository that already has a community listing is published;
 	// the lock is the privacy signal. Do not also mark it unpublished.
@@ -179,7 +179,9 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 	expect(publishedPrivateHtml).toContain('data-icon="lock"')
 	expect(publishedPrivateHtml).toContain('title="Published to community"')
 	expect(publishedPrivateHtml).toContain('data-icon="share"')
-	expect(publishedPrivateHtml).not.toContain('title="No community listing"')
+	expect(publishedPrivateHtml).not.toContain(
+		'title="Not published to Community"',
+	)
 
 	const ownEmptyHtml = await renderProfileContentHtml({
 		profile,
@@ -362,7 +364,7 @@ test('profile repository rows show package, webhook, job, and app signifiers wit
 	expect(html).toContain('data-icon="globe"')
 	expect(html).toContain('title="Published to community"')
 	expect(html).toContain('data-icon="share"')
-	expect(html).toContain('title="No community listing"')
+	expect(html).toContain('title="Not published to Community"')
 	expect(html).toContain('data-icon="inbox"')
 	expect(html).not.toContain('title="0 webhooks"')
 	expect(html).not.toContain('title="0 jobs"')

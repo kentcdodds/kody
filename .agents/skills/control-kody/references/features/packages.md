@@ -21,10 +21,10 @@ pin is behind `published_commit`, not HEAD-ahead-of-published), `hidden=yes|no`,
 `listing=published|unpublished`, `package=yes|no`, `app=yes|no`, `sort`, and
 `dir`. Owner-only params are ignored for them. Search is `q=` and filters the
 already-loaded list as you type (URL `replaceState`, no loader). Each row shows
-Iconic signifiers (native tooltip only) for package, private, hidden,
-published-to-community or no community listing, webhook count, job count, and
-whether it has an app. Private repositories do not also get a “no community
-listing” signifier — the private icon is enough. List marks come from
+Iconic signifiers (native tooltip only) for package, private, hidden, published
+to Community or not published to Community, webhook count, job count, and
+whether it has an app. Private repositories do not also get a “not published to
+Community” signifier — the private icon is enough. List marks come from
 `/@username/:kodyId/icon/:iconCommit` (packages) and
 `/account/repos/:repoId/icon/:iconCommit` (owner-only plain repos). Each package
 lives at `/@username/:kodyId` (the URL slug is the package name leaf; **Repo**

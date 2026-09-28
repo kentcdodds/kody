@@ -168,8 +168,7 @@ export function TermsRoute(_handle: Handle) {
 				<h2 mix={css(cardTitleCss)}>Copyright and DMCA notices</h2>
 				<p mix={css(descriptionCss)}>
 					Kody responds to notices of claimed copyright infringement under 17
-					U.S.C. §512 concerning public community packages and profiles. Send
-					notices to{' '}
+					U.S.C. §512 concerning public packages and profiles. Send notices to{' '}
 					<a href="mailto:dmca@kody.codes" mix={css(mutedLinkCss)}>
 						dmca@kody.codes
 					</a>

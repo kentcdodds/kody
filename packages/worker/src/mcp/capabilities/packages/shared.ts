@@ -55,13 +55,13 @@ export const packageSummaryWithCommunityProvenanceSchema =
 			.boolean()
 			.nullable()
 			.describe(
-				'Whether the source community listing id currently resolves to an active listing, or null for a self-authored package.',
+				'Whether the source catalog entry currently resolves to an active public package, or null for a self-authored package.',
 			),
 		listing_kody_id: z
 			.string()
 			.nullable()
 			.describe(
-				'Original community listing package name leaf recorded when this package was forked, or null for a self-authored package.',
+				'Original public package name leaf recorded when this package was forked, or null for a self-authored package.',
 			),
 		listing_name: z
 			.string()

@@ -112,9 +112,9 @@ For predictable package resolution, saved packages must use a scoped
 username. Changing your username on `/account` rewrites every saved package to
 the new `@{username}/…` name (including same-account `kody:@` imports and
 `kody.dependencies`), publishes an automatic update commit per package, and
-republishes any community listing that was already pinned to that package's
-latest commit. Third-party integrations and dynamic invocations that hard-code a
-previous `@{username}` scope need updates from their owners.
+republishes to Community any public package that was already pinned to that
+package's latest commit. Third-party integrations and dynamic invocations that
+hard-code a previous `@{username}` scope need updates from their owners.
 
 ### npm dependencies
 

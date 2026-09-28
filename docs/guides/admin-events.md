@@ -193,7 +193,7 @@ provides a distinct package-invocation idempotency key for every recorded write.
 
 ## `community.listing.published` (admins)
 
-The first successful community listing publish enqueues a durable
+The first successful publish of a public package to Community enqueues a durable
 `community.listing.published` attempt. Republishes record `listing_updated` in
 the activity timeline but do **not** enqueue this subscription topic. The Queue
 consumer dispatches only to packages saved by users who hold the admin role when

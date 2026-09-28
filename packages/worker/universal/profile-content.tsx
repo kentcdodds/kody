@@ -198,7 +198,8 @@ function renderProfilePackageFilters(input: {
 					: null}
 				{renderProfileFilterNav<ProfilePackageListingFilter>({
 					label: 'Listing',
-					ariaLabel: 'Filter repositories by community listing',
+					ariaLabel:
+						'Filter repositories by whether they are published to Community',
 					testId: 'profile-package-filter-listing',
 					selected: filters.listing,
 					choices: listingChoices,
@@ -308,7 +309,7 @@ function renderProfilePackageSignifiers(pkg: PublicProfilePackageItem) {
 		},
 		{
 			name: 'inbox',
-			title: 'No community listing',
+			title: 'Not published to Community',
 			show: !hasCommunityListing && pkg.isPrivate !== true,
 		},
 		{
