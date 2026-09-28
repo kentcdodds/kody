@@ -41,7 +41,7 @@ export const usageMetricSeries: Array<UsageMetricSeries> = [
 	{
 		metric: 'dynamic_worker_cpu',
 		label: 'Dynamic Worker CPU (Cloudflare-measured)',
-		color: chartColor.cyan,
+		color: chartColor.orange,
 	},
 	{
 		metric: 'durable_object_rows_read',
