@@ -95,6 +95,7 @@ export function collectReachableSourceFilePaths(input: {
 		manifest: AuthoredPackageJson
 		prefix: string
 	} | null
+	includeTypeOnly?: boolean
 }) {
 	const reachable = new Set<string>()
 	const stack = [
@@ -115,7 +116,9 @@ export function collectReachableSourceFilePaths(input: {
 		const source = input.files[filePath]
 		if (source == null) continue
 		reachable.add(filePath)
-		for (const node of collectLiteralImportNodes(source)) {
+		for (const node of collectLiteralImportNodes(source, {
+			includeTypeOnly: input.includeTypeOnly,
+		})) {
 			if (
 				node.kind === 'static' &&
 				node.specifier.startsWith(packageSpecifierPrefix)

@@ -193,6 +193,15 @@ exhaustive.
   export is a function. Importing a package from `execute` or another package
   can use any named exports that the module provides.
 - Packages may also export non-callable helper modules and values for reuse.
+- Publish typecheck is opt-in through a root `tsconfig.json`. With one, publish
+  fails on TypeScript errors in every `.ts` / `.tsx` file reachable from
+  exports, jobs, subscription handlers, and retrievers, using that config's
+  compiler options (TypeScript defaults to `strict`). The check has no
+  `node_modules`, so bare imports (npm packages, `remix/*`, `kody:@…`, `node:*`)
+  are typed as `any`; bundling still verifies that they resolve. Without a
+  `tsconfig.json`, publish only checks that job, subscription, and retriever
+  entrypoints default export a function, and the typecheck message says that
+  source files and exports are not typechecked.
 - Add JSDoc to every public export. Search Purpose comes from that JSDoc;
   missing comments fall back to `Package export.` See
   [Export JSDoc](../guides/package-authoring.md#export-jsdoc) in the package
