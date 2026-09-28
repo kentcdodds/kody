@@ -4,8 +4,12 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { upsertMemory } from '#mcp/memory/service.ts'
 import {
-	memoryBaseInputSchema,
+	memoryDetailsField,
 	memoryRecordSchema,
+	memorySourceUrisField,
+	memorySubjectField,
+	memorySummaryField,
+	memoryTagsField,
 } from '#mcp/capabilities/meta/meta-memory-shared.ts'
 import { requireMcpUser } from './require-user.ts'
 
@@ -17,7 +21,23 @@ const inputSchema = z.object({
 		.describe(
 			'Optional existing memory id to update. Omit this field to create a new memory record.',
 		),
-	...memoryBaseInputSchema,
+	category: z
+		.string()
+		.max(80)
+		.optional()
+		.describe(
+			'Optional freeform category string. Suggested examples include preference, profile, workflow, relationship, or identifier.',
+		),
+	subject: memorySubjectField,
+	summary: memorySummaryField,
+	details: memoryDetailsField,
+	tags: memoryTagsField,
+	source_uris: memorySourceUrisField,
+	dedupe_key: z
+		.string()
+		.max(160)
+		.optional()
+		.describe('Optional stable dedupe key supplied by the agent.'),
 	status: z
 		.enum(['active', 'archived'])
 		.optional()

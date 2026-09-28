@@ -1,13 +1,27 @@
-import { expect, test } from 'vitest'
+import type * as MemoryService from '#mcp/memory/service.ts'
+import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import {
+
+const mockModule = vi.hoisted(() => ({
+	upsertMemory: vi.fn(),
+}))
+
+vi.mock('#mcp/memory/service.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof MemoryService>()
+	return {
+		...actual,
+		upsertMemory: (...args: Array<unknown>) => mockModule.upsertMemory(...args),
+	}
+})
+
+const {
 	memoryDetailsMaxLength,
 	memorySubjectMaxLength,
 	memorySummaryMaxLength,
-} from './meta-memory-shared.ts'
-import { metaMemoryUpsertCapability } from './meta-memory-upsert.ts'
-import { metaMemoryVerifyCapability } from './meta-memory-verify.ts'
+} = await import('./meta-memory-shared.ts')
+const { metaMemoryUpsertCapability } = await import('./meta-memory-upsert.ts')
+const { metaMemoryVerifyCapability } = await import('./meta-memory-verify.ts')
 
 function createSignedInCapabilityContext() {
 	return {
@@ -127,6 +141,50 @@ test('metaMemoryUpsert rejects oversize subject, summary, and details with limit
 		field: 'details',
 		maxLength: memoryDetailsMaxLength,
 		actualLength: detailsLength,
+	})
+})
+
+test('metaMemoryUpsert still accepts empty optional category and dedupe_key', async () => {
+	mockModule.upsertMemory.mockReset()
+	mockModule.upsertMemory.mockResolvedValueOnce({
+		mode: 'created',
+		memory: {
+			id: 'memory-1',
+			category: null,
+			status: 'active',
+			subject: validMemoryFields.subject,
+			summary: validMemoryFields.summary,
+			details: '',
+			tags: [],
+			sourceUris: [],
+			dedupeKey: null,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+			lastAccessedAt: null,
+			deletedAt: null,
+		},
+		warnings: [],
+	})
+
+	const result = await metaMemoryUpsertCapability.handler(
+		{
+			...validMemoryFields,
+			category: '',
+			dedupe_key: '',
+			verified_by_agent: true,
+		},
+		createSignedInCapabilityContext(),
+	)
+
+	expect(mockModule.upsertMemory).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: '',
+			dedupeKey: '',
+		}),
+	)
+	expect(result).toMatchObject({
+		mode: 'created',
+		memory: { id: 'memory-1', category: null, dedupe_key: null },
 	})
 })
 
