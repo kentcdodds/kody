@@ -3,13 +3,14 @@ import { chartColor, formatIntegerNumber } from '#client/charts/chart-theme.ts'
 import { accountDisclosureCss } from '#client/routes/account-management-components.tsx'
 import { formatEstimatedCreditMicroUsd } from '#universal/credits.ts'
 import { type AccountCreditsDebitMeter } from '#universal/loader-data.ts'
-import { includeBarPercent } from '#universal/usage-presentation.ts'
 import {
 	colors,
+	mq,
 	radius,
 	spacing,
 	typography,
 } from '#universal/styles/tokens.ts'
+import { includeBarPercent } from '#universal/usage-presentation.ts'
 
 /** Collapsed rate card for Worker compute + Rows read on `/account/credits`. */
 export function renderCreditsDebitRateCard(
@@ -24,6 +25,8 @@ export function renderCreditsDebitRateCard(
 				...accountDisclosureCss,
 				borderTop: `1px solid ${colors.border}`,
 				paddingTop: 'clamp(2rem, 4vw, 2.75rem)',
+				minWidth: 0,
+				maxWidth: '100%',
 			})}
 		>
 			<summary>How credits are charged</summary>
@@ -33,12 +36,49 @@ export function renderCreditsDebitRateCard(
 					margin: `0 0 ${spacing.sm}`,
 					fontSize: typography.fontSize.sm,
 					color: colors.textMuted,
+					textWrap: 'pretty' as const,
+					overflowWrap: 'anywhere' as const,
+					maxWidth: '100%',
 				})}
 			>
 				Usage within the monthly include is free. Past it, credits pay these
 				rates until they run out; then usage past the include stops.
 			</p>
-			<div mix={css({ overflowX: 'auto' })}>
+			{/* Narrow viewports: one stacked card per meter (no page blow-out). */}
+			<ul
+				data-credits-rate-card-stack
+				aria-label="Credit debit rates and usage this period"
+				mix={css(debitRateStackCss)}
+			>
+				{meters.map((meter) => {
+					const barPercent = includeBarPercent(meter.percentOfInclude)
+					const attention =
+						options.pastIncludeNeedsAttention && meter.pastInclude > 0
+					return (
+						<li
+							key={meter.meter}
+							data-credits-debit-meter={meter.meter}
+							mix={css(debitRateStackItemCss)}
+						>
+							<div mix={css(debitRateMeterCellCss)}>
+								<span>{meter.label}</span>
+								{renderIncludeBar({ barPercent, attention })}
+							</div>
+							<p mix={css(debitRateStackRateCss)}>{meter.unitRateLabel}</p>
+							<dl mix={css(debitRateStackFactsCss)}>
+								{stackFacts(meter).map((fact) => (
+									<div key={fact.label} mix={css(debitRateStackFactCss)}>
+										<dt mix={css(debitRateStackFactLabelCss)}>{fact.label}</dt>
+										<dd mix={css(debitRateStackFactValueCss)}>{fact.value}</dd>
+									</div>
+								))}
+							</dl>
+						</li>
+					)
+				})}
+			</ul>
+			{/* Wider viewports: readable multi-column table. */}
+			<div mix={css(debitRateTableScrollCss)}>
 				<table
 					aria-label="Credit debit rates and usage this period"
 					mix={css(debitRateTableCss)}
@@ -71,17 +111,7 @@ export function renderCreditsDebitRateCard(
 									<th scope="row">
 										<div mix={css(debitRateMeterCellCss)}>
 											<span>{meter.label}</span>
-											<div aria-hidden="true" mix={css(debitRateBarTrackCss)}>
-												<div
-													mix={css({
-														...debitRateBarFillCss,
-														width: `${barPercent}%`,
-														background: attention
-															? chartColor.amber
-															: chartColor.blue,
-													})}
-												/>
-											</div>
+											{renderIncludeBar({ barPercent, attention })}
 										</div>
 									</th>
 									<td>{meter.unitRateLabel}</td>
@@ -105,6 +135,105 @@ export function renderCreditsDebitRateCard(
 			</div>
 		</details>
 	)
+}
+
+function stackFacts(meter: AccountCreditsDebitMeter) {
+	return [
+		{ label: 'Monthly include', value: formatIntegerNumber(meter.include) },
+		{ label: 'Used this period', value: formatIntegerNumber(meter.used) },
+		{ label: 'Past include', value: formatIntegerNumber(meter.pastInclude) },
+		{
+			label: 'Est. credits this period',
+			value: formatEstimatedCreditMicroUsd(meter.estCreditsMicroUsd),
+		},
+	]
+}
+
+function renderIncludeBar(input: { barPercent: number; attention: boolean }) {
+	return (
+		<div aria-hidden="true" mix={css(debitRateBarTrackCss)}>
+			<div
+				mix={css({
+					...debitRateBarFillCss,
+					width: `${input.barPercent}%`,
+					background: input.attention ? chartColor.amber : chartColor.blue,
+				})}
+			/>
+		</div>
+	)
+}
+
+const debitRateStackCss = {
+	display: 'none',
+	margin: 0,
+	padding: 0,
+	listStyle: 'none' as const,
+	gap: spacing.md,
+	minWidth: 0,
+	maxWidth: '100%',
+	[mq.mobile]: {
+		display: 'grid',
+	},
+}
+
+const debitRateStackItemCss = {
+	display: 'grid',
+	gap: spacing.sm,
+	minWidth: 0,
+	paddingBottom: spacing.md,
+	borderBottom: `1px solid ${colors.border}`,
+	'&:last-child': {
+		paddingBottom: 0,
+		borderBottom: 'none',
+	},
+}
+
+const debitRateStackRateCss = {
+	margin: 0,
+	fontSize: typography.fontSize.sm,
+	color: colors.text,
+	overflowWrap: 'anywhere' as const,
+}
+
+const debitRateStackFactsCss = {
+	margin: 0,
+	display: 'grid',
+	gap: spacing.xs,
+	minWidth: 0,
+}
+
+const debitRateStackFactCss = {
+	display: 'grid',
+	gridTemplateColumns: 'minmax(0, 1fr) auto',
+	gap: spacing.sm,
+	alignItems: 'baseline' as const,
+	minWidth: 0,
+}
+
+const debitRateStackFactLabelCss = {
+	margin: 0,
+	fontSize: typography.fontSize.sm,
+	color: colors.textMuted,
+	minWidth: 0,
+}
+
+const debitRateStackFactValueCss = {
+	margin: 0,
+	fontSize: typography.fontSize.sm,
+	fontVariantNumeric: 'tabular-nums' as const,
+	color: colors.text,
+	textAlign: 'end' as const,
+	whiteSpace: 'nowrap' as const,
+}
+
+const debitRateTableScrollCss = {
+	display: 'block',
+	minWidth: 0,
+	maxWidth: '100%',
+	overflowX: 'auto' as const,
+	[mq.mobile]: {
+		display: 'none',
+	},
 }
 
 const debitRateTableCss = {
@@ -134,7 +263,7 @@ const debitRateNumericCss = {
 const debitRateMeterCellCss = {
 	display: 'grid',
 	gap: '0.35rem',
-	minWidth: '8rem',
+	minWidth: 0,
 	fontWeight: typography.fontWeight.semibold,
 	color: colors.text,
 }
@@ -144,7 +273,7 @@ const debitRateBarTrackCss = {
 	borderRadius: radius.md,
 	background: colors.border,
 	overflow: 'hidden',
-	minWidth: '4rem',
+	width: '100%',
 	maxWidth: '10rem',
 }
 
