@@ -73,12 +73,42 @@ export function listDocWatchEmbeds(markdown: string): Array<DocWatchEmbed> {
 /**
  * Watch blocks lifted out of a guide body, still authored as blockquotes.
  * Interactive docs replace the prose with a walkthrough, so the page
- * renders this slice above that walkthrough.
+ * renders this slice above that walkthrough. A following "Also watch"
+ * paragraph stays with the player so that link is not dropped with the
+ * rest of the body.
  */
 export function extractDocWatchMarkdown(markdown: string): string {
-	return watchBlockSources(markdown)
-		.filter((raw) => parseDocWatchBlock(raw))
-		.join('\n\n')
+	const lines = markdown.replace(/\r\n/g, '\n').split('\n')
+	const chunks: Array<string> = []
+	let index = 0
+	while (index < lines.length) {
+		if (!lines[index]?.startsWith('>')) {
+			index += 1
+			continue
+		}
+		const start = index
+		while (index < lines.length && lines[index]?.startsWith('>')) index += 1
+		const raw = lines.slice(start, index).join('\n')
+		if (!parseDocWatchBlock(raw)) continue
+		while (index < lines.length && (lines[index]?.trim() ?? '') === '') {
+			index += 1
+		}
+		let follow = ''
+		if (lines[index]?.startsWith('Also watch')) {
+			const followStart = index
+			index += 1
+			while (index < lines.length) {
+				const line = lines[index]
+				if (line === undefined || line.trim() === '' || line.startsWith('#')) {
+					break
+				}
+				index += 1
+			}
+			follow = lines.slice(followStart, index).join('\n')
+		}
+		chunks.push(follow ? `${raw}\n\n${follow}` : raw)
+	}
+	return chunks.join('\n\n')
 }
 
 function watchBlockSources(markdown: string): Array<string> {

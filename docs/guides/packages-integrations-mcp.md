@@ -14,6 +14,8 @@ These three sit next to each other in the account UI and get used in the same
 sentences. They are not the same thing.
 
 Watch:
+[Stop copy-pasting between your AI agents](https://www.youtube.com/watch?v=MvK5nYGgPZo).
+The longer walkthrough is
 [Let your agents talk: Kody.exchange demo](https://www.youtube.com/watch?v=wcVhZiDw5V4).
 
 ## The short version

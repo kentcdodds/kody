@@ -63,6 +63,9 @@ This page is the playbook. The same story is an interactive transcript at
 > [!WATCH] https://www.youtube.com/watch?v=h5G8uaZHrVI Watch: How Kody Gives
 > Your Agents a Shared Home
 
+Also watch:
+[Build once. Every agent can use it.](https://www.youtube.com/watch?v=QLpTHlQ15Zs).
+
 ## The loop
 
 1. **Ask once.** "What did my favorite bot ship recently on GitHub?" Search

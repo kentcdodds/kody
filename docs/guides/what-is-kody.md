@@ -51,6 +51,9 @@ docs index is at `/llms.txt`.
 > [!WATCH] https://www.youtube.com/watch?v=QA0xYMAMjEg Watch: Introducing Kody:
 > Your Personal Software Factory
 
+Also watch:
+[The home your agents share](https://www.youtube.com/watch?v=6PGKZDcPsvE).
+
 ## What Kody is
 
 You do not chat with Kody. Your agent supplies the intelligence; Kody supplies

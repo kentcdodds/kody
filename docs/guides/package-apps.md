@@ -35,6 +35,9 @@ another slug below) when you need one recipe.
 > [!WATCH] https://www.youtube.com/watch?v=WjogtbCssZc Watch: Build a Software
 > Pipeline: Help your agent help you
 
+Also watch:
+[Kody Video: hold to record, tap Go to share](https://www.youtube.com/watch?v=RbApj1C067w).
+
 ## After an integration smoke test
 
 Once `integration_bootstrap` proves the integration works — or integration and

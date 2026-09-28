@@ -69,3 +69,23 @@ test('listDocWatchEmbeds and extract keep one block and skip other quotes', () =
 	expect(listDocWatchEmbeds('No video here.')).toEqual([])
 	expect(extractDocWatchMarkdown('No video here.')).toBe('')
 })
+
+test('extract keeps a following Also watch paragraph for interactive pages', () => {
+	const markdown = [
+		block,
+		'',
+		'Also watch:',
+		'[Build once. Every agent can use it.](https://www.youtube.com/watch?v=QLpTHlQ15Zs).',
+		'',
+		'## The loop',
+	].join('\n')
+	expect(extractDocWatchMarkdown(markdown)).toBe(
+		[
+			block,
+			'',
+			'Also watch:',
+			'[Build once. Every agent can use it.](https://www.youtube.com/watch?v=QLpTHlQ15Zs).',
+		].join('\n'),
+	)
+	expect(listDocWatchEmbeds(markdown)).toHaveLength(1)
+})
