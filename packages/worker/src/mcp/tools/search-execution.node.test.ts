@@ -581,6 +581,28 @@ test('executeSearchList reads the Jev plan fresh while the rate limit runs', asy
 	)
 })
 
+test('executeSearchList keeps hybrid order when the fresh Jev plan read fails', async () => {
+	mockModule.getUserPlan.mockRejectedValueOnce(new Error('d1 blip'))
+	mockModule.runPackageRetrievers.mockResolvedValueOnce({
+		results: [],
+		warnings: [],
+	})
+	mockModule.searchUnified.mockClear()
+	await executeSearchList({
+		env: { APP_DB: {}, WRANGLER_IS_LOCAL_DEV: 'true' } as unknown as Env,
+		callerContext: signedInSearchCaller(),
+		conversationId: 'conv-search-plan-blip',
+		query: 'skills',
+		limit: 15,
+		userId: 'user-1',
+		includeHiddenPackages: false,
+	})
+	expect(mockModule.searchUnified).toHaveBeenCalledTimes(1)
+	expect(mockModule.searchUnified).not.toHaveBeenCalledWith(
+		expect.objectContaining({ jevRerankPlanEligible: true }),
+	)
+})
+
 test('executeSearchList fails closed before ranking when the abuse rate limit rejects', async () => {
 	const { SearchRateLimitError } = await import('#worker/search-rate-limit.ts')
 	mockModule.consumeSearchRateLimit.mockReset()
