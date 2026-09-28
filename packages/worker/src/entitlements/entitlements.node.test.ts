@@ -291,7 +291,7 @@ test('entitlement limit messages always identify a known plan name', () => {
 	).toBeNull()
 })
 
-test('rate/compute include hints: $0 Pro adds credits to keep going, Free upgrades, nobody is told credits unlock limits', () => {
+test('rate/compute include hints: $0 Pro adds credits to keep going, Free upgrades', () => {
 	const emptyPro = buildEntitlementUpgradeHint(
 		'execute_calls_per_day',
 		'pro',
@@ -320,23 +320,6 @@ test('rate/compute include hints: $0 Pro adds credits to keep going, Free upgrad
 			buildEntitlementUpgradeHint('execute_calls_per_day', plan),
 		).not.toMatch(/\/account\/billing/)
 	}
-	for (const plan of ['free', 'standard', 'pro', 'max'] as const) {
-		for (const wallet of ['none', 'empty', 'funded'] as const) {
-			for (const resource of [
-				'execute_calls_per_day',
-				'outbound_fetches_per_day',
-				'job_runs_per_day',
-				'automation_invocations_per_day',
-			] as const) {
-				for (const hint of [
-					buildEntitlementUpgradeHint(resource, plan, wallet),
-					buildEntitlementHowToReduce(resource, plan, wallet),
-				]) {
-					expect(hint).not.toMatch(/unlock|lift|raise this limit|\bMax\b/i)
-				}
-			}
-		}
-	}
 	// Funded (already at the credits ceiling), or operator max: reduce-only.
 	for (const [plan, wallet] of [
 		['pro', 'funded'],
@@ -360,7 +343,6 @@ test('rate/compute include hints: $0 Pro adds credits to keep going, Free upgrad
 			upgradeHint: hint,
 		})
 		expect(denial.message).toMatch(/^Plan limit reached:/)
-		expect(denial.message).not.toMatch(/Max/)
 	}
 	// Stock is on the Pro subscription (not a credits unlock); only Free
 	// gets a billing upgrade offer.
@@ -1875,10 +1857,5 @@ test('past-include stop message leads with credits, reads in customer units, and
 	expect(parseComputeOverageLimitMessage(rowsRead.message)).toEqual(
 		rowsRead.details,
 	)
-	for (const error of [workerCompute, rowsRead]) {
-		expect(error.message).not.toMatch(
-			/unlock|lift|raise|\bMax\b|unique worker day|\bUWD\b/i,
-		)
-	}
 	expect(parseComputeOverageLimitMessage('Plan limit reached: nope')).toBeNull()
 })

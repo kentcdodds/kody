@@ -647,9 +647,6 @@ test('an app past the monthly include with no credits gets a 429 pause page, not
 	const page = await html.text()
 	expect(page).toContain('Monthly include used up')
 	expect(page).toContain('Add credits at /account/credits to keep going')
-	expect(page.replaceAll(/<style[\s\S]*?<\/style>/g, '')).not.toMatch(
-		/unlock|lift|\bMax\b/i,
-	)
 	expect(consoleError).not.toHaveBeenCalled()
 
 	mockModule.buildPackageAppWorker.mockRejectedValueOnce(

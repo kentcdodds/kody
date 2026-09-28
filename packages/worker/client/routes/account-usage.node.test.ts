@@ -84,7 +84,7 @@ function overage(
 	}
 }
 
-test('credits action follows the wallet: add, switch, or nothing', () => {
+test('credits action follows the wallet: add, switch, subscribe, or nothing', () => {
 	expect(creditsActionForWallet('empty', 'pro', true)).toEqual({
 		label: 'Add credits',
 		href: '/account/credits',
@@ -93,22 +93,16 @@ test('credits action follows the wallet: add, switch, or nothing', () => {
 		label: 'Switch to Pro',
 		href: '/account/credits',
 	})
-	expect(creditsActionForWallet('funded', 'pro', true)).toBeNull()
-	expect(creditsActionForWallet('none', 'max', false)).toBeNull()
-})
-
-test('gift and referral Pro overlays have no wallet (retired Pro ceilings)', () => {
 	expect(creditsActionForWallet('none', 'pro', false)).toEqual({
 		label: 'Switch to Pro',
 		href: '/account/credits',
 	})
-})
-
-test('empty wallet without purchase rights still points at Subscribe to Pro', () => {
 	expect(creditsActionForWallet('empty', 'pro', false)).toEqual({
 		label: 'Subscribe to Pro',
 		href: '/account/credits',
 	})
+	expect(creditsActionForWallet('funded', 'pro', true)).toBeNull()
+	expect(creditsActionForWallet('none', 'max', false)).toBeNull()
 })
 
 test('warning credits links only on limits credits can raise', () => {
@@ -361,10 +355,7 @@ test('Free usage page: activity and execute caps lead; Worker compute is informa
 	expect(text).toContain('Informational · never charged on Free')
 	expect(html).not.toContain('data-included-compute-bar')
 	expect(html).not.toContain('data-credits-alarm')
-	expect(text).not.toContain('1034%')
 	expect(text).not.toMatch(overHundredPercent)
-	expect(text).not.toMatch(/Over this month's include|overage/i)
-	expect(text).not.toMatch(/unique worker day|\bUWD\b|\bMax\b/i)
 	expect(html.indexOf('Activity this month')).toBeLessThan(
 		html.indexOf('Behind the scenes'),
 	)
@@ -397,9 +388,7 @@ test('Pro usage page past include matches credits: capped bar, dollars on credit
 	expect(text).toContain('Include used · $173.67 on credits')
 	expect(text).toContain('43,768 of 350 worker-compute days included')
 	expect(html).not.toContain('data-credits-alarm')
-	expect(text).not.toContain('12505%')
 	expect(text).not.toMatch(overHundredPercent)
-	expect(text).not.toMatch(/unique worker day|\bUWD\b|\bMax\b/i)
 })
 
 test('Pro usage page with no credits past include raises the stop alarm', async () => {

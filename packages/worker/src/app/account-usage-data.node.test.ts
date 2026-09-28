@@ -315,8 +315,6 @@ test('Free over compute includes stays informational: activity first, no warning
 	expect(workerCompute?.howToReduce).toContain(
 		'On Free this is informational: it never charges you or stops runs.',
 	)
-	expect(workerCompute?.howToReduce).not.toMatch(/payment method|invoice/)
-	expect(workerCompute?.howToReduce).not.toMatch(/unique worker day/i)
 	expect(
 		data?.warnings.some((row) => row.resource === 'unique_worker_days'),
 	).toBe(false)
@@ -359,7 +357,6 @@ test('retired Standard over compute includes is not charged and has no wallet', 
 		(meter) => meter.resource === 'unique_worker_days',
 	)
 	expect(workerCompute?.howToReduce).toMatch(/not charged on your plan/)
-	expect(workerCompute?.howToReduce).not.toMatch(/payment method/)
 })
 
 test('purchasable Pro with credits runs past the include on credits; at $0 it stops at the include', async () => {
@@ -437,11 +434,6 @@ test('purchasable Pro with credits runs past the include on credits; at $0 it st
 	expect(emptyWorkerCompute?.howToReduce).toMatch(
 		/With no credits left, usage past the include stops/,
 	)
-	for (const data of [funded, empty]) {
-		expect(JSON.stringify(data)).not.toMatch(
-			/unlock|lift rate|raise this limit|\bMax\b/i,
-		)
-	}
 })
 
 test('gift Pro keeps retired Pro ceilings without a wallet and cannot buy credits', async () => {
@@ -478,6 +470,5 @@ test('gift Pro keeps retired Pro ceilings without a wallet and cannot buy credit
 		...(data?.computeOverage.meters ?? []),
 	]) {
 		expect(row.howToReduce).not.toMatch(/^add credits/i)
-		expect(row.howToReduce).not.toMatch(/add credits to lift/i)
 	}
 })

@@ -733,15 +733,6 @@ function unlockCreditsLimits(limits: PlanLimits): PlanLimits {
 const proCreditsUnlockedPlanLimits = unlockCreditsLimits(proCreditsPlanLimits)
 
 /**
- * Cloudflare list prices behind the credit debit rates (credits debit
- * about 2× list). Duration and CPU stay unmetered for customers.
- */
-export const cloudflareComputeListUsd = {
-	uniqueWorkerDay: 0.002,
-	durableObjectRowsReadPerMillion: 0.001,
-} as const
-
-/**
  * Monthly compute meters: included usage is free on every plan. Purchasable
  * Pro goes include → credits → stop: a funded wallet is debited past the
  * include, and an empty one stops {@link pastIncludeStopResources}. Plans

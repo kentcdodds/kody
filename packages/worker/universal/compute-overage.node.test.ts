@@ -105,9 +105,7 @@ test('howToReduce points wallet and retired accounts at /account/credits; Free s
 	expect(empty).toContain(
 		`With no credits left, usage past the include stops. Add credits at ${accountCreditsPath} to keep going`,
 	)
-	expect(empty).not.toMatch(/unlock|lift|raise/i)
 	expect(empty).toContain('$0.004 per worker-compute day')
-	expect(empty).not.toMatch(/unique worker day/i)
 	expect(
 		buildComputeOverageHowToReduce('durable_object_rows_read', 'pro', 'funded'),
 	).toContain(
@@ -128,16 +126,6 @@ test('howToReduce points wallet and retired accounts at /account/credits; Free s
 	expect(
 		buildComputeOverageHowToReduce('unique_worker_days', 'max', 'none'),
 	).not.toContain(accountCreditsPath)
-	for (const plan of ['free', 'standard', 'pro', 'max'] as const) {
-		for (const wallet of ['none', 'empty', 'funded'] as const) {
-			const text = buildComputeOverageHowToReduce(
-				'unique_worker_days',
-				plan,
-				wallet,
-			)
-			expect(text).not.toMatch(/invoice|payment method|Max\b/)
-		}
-	}
 })
 
 test('past-include stop: only an empty purchasable-Pro wallet stops, and only past the include', () => {

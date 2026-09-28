@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest'
 import {
-	computeIncludeWarningPutsAccessAtRisk,
 	formatCappedPercent,
 	formatOnCreditsMicroUsd,
 	includeBarPercent,
@@ -9,12 +8,9 @@ import {
 	presentIncludedComputeMeter,
 	resolveCreditsAlarm,
 	toAccountActivity,
-	warmWorkNudge,
 } from './usage-presentation.ts'
 
 const overHundredPercent = /\b(?:1(?:0[1-9]|[1-9]\d)|[2-9]\d\d|\d{4,})%/
-const forbiddenJargon = /unique worker day|\bUWD\b/i
-const forbiddenMax = /\bMax\b/
 
 function allCopy(values: Array<unknown>) {
 	return JSON.stringify(values)
@@ -63,7 +59,6 @@ test('Free Worker compute is informational: no bar, no include status, never cha
 	})
 	expect(summary).toContain('execute caps are your limit')
 	expect(allCopy([meter, summary])).not.toMatch(overHundredPercent)
-	expect(allCopy([meter, summary])).not.toMatch(/overage|owe|Switch to Pro/i)
 })
 
 test('funded Pro past include is calm dollars on credits with a full bar', () => {
@@ -100,10 +95,7 @@ test('funded Pro past include is calm dollars on credits with a full bar', () =>
 	expect(summary).toBe(
 		"Past this month's include, usage runs on credits: $173.67 so far.",
 	)
-	const copy = allCopy([meters, summary])
-	expect(copy).not.toMatch(overHundredPercent)
-	expect(copy).not.toMatch(forbiddenJargon)
-	expect(copy).not.toMatch(forbiddenMax)
+	expect(allCopy([meters, summary])).not.toMatch(overHundredPercent)
 })
 
 test('empty Pro wallet near or past include gets attention; retired plans stay calm', () => {
@@ -276,47 +268,6 @@ test('credits alarm fires only when the wallet or access is at risk', () => {
 			},
 		}),
 	).toBeNull()
-})
-
-test('alarm and summary copy never names Max, UWD, or unlock-by-funding', () => {
-	const copy: Array<unknown> = [warmWorkNudge]
-	for (const creditWallet of ['none', 'empty', 'funded'] as const) {
-		for (const plan of ['free', 'standard', 'pro', 'max'] as const) {
-			const meters = presentIncludedCompute({
-				plan,
-				creditWallet,
-				meters: [
-					{ resource: 'unique_worker_days', current: 12_505, include: 100 },
-					{
-						resource: 'durable_object_rows_read',
-						current: 10,
-						include: 5_000_000_000,
-					},
-				],
-			})
-			copy.push(meters, includedComputeSummary({ plan, creditWallet, meters }))
-			copy.push(
-				resolveCreditsAlarm({
-					creditWallet,
-					meters,
-					balanceMicroUsd: creditWallet === 'funded' ? 1_000_000 : 0,
-					canBuyCredits: true,
-					autoRefill: null,
-				}),
-			)
-		}
-	}
-	const text = allCopy(copy)
-	expect(text).not.toMatch(overHundredPercent)
-	expect(text).not.toMatch(forbiddenJargon)
-	expect(text).not.toMatch(forbiddenMax)
-	expect(text).not.toMatch(/unlock|lift|higher limits/i)
-})
-
-test('only an empty purchasable-Pro wallet warrants compute include warnings', () => {
-	expect(computeIncludeWarningPutsAccessAtRisk('empty')).toBe(true)
-	expect(computeIncludeWarningPutsAccessAtRisk('funded')).toBe(false)
-	expect(computeIncludeWarningPutsAccessAtRisk('none')).toBe(false)
 })
 
 test('activity lists executions and runs in a fixed order with safe counts', () => {

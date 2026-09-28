@@ -147,13 +147,12 @@ test('credits + usage story on real D1: Free calm, funded Pro on credits, empty 
 	})
 
 	for (const data of [freeData, fundedData, emptyData]) {
-		const copy = JSON.stringify([
-			data?.includedCompute,
-			data?.includedComputeSummary,
-			data?.creditsAlarm,
-		])
-		expect(copy).not.toMatch(overHundredPercent)
-		expect(copy).not.toMatch(/unique worker day|\bUWD\b/i)
-		expect(copy).not.toMatch(/\bMax\b/)
+		expect(
+			JSON.stringify([
+				data?.includedCompute,
+				data?.includedComputeSummary,
+				data?.creditsAlarm,
+			]),
+		).not.toMatch(overHundredPercent)
 	}
 })

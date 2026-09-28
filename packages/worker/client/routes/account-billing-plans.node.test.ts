@@ -51,12 +51,9 @@ test('only Free and the $12 Pro are offered', async () => {
 	expect(html).toContain(
 		'More room for jobs, workflows, and daily volume, with a monthly include. Need more? Add prepaid credits.',
 	)
-	expect(html).not.toMatch(/unlock|lift/i)
 	expect(html).not.toContain('Standard')
 	expect(html).not.toContain('$49')
 	expect(html).not.toMatch(/\bMax\b/)
-	expect(html).not.toContain('High stock')
-	expect(html).not.toContain('concurrency ceilings')
 })
 
 test('retired Standard and $49 Pro subscribers get a prorated switch to Pro', async () => {

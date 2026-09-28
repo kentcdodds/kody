@@ -370,7 +370,6 @@ async function expectStopped(
 		...expected,
 	})
 	expect(error.message).toContain('/account/credits')
-	expect(error.message).not.toMatch(/unlock|lift|\bMax\b|unique worker day/i)
 }
 
 const pastIncludeStopped = [

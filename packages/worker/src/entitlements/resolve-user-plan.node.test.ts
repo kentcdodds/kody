@@ -64,14 +64,10 @@ test('purchasable Stripe Pro stays credits-eligible with Max stock and Standard 
 	})
 	const emptyLimits = resolvePlanLimits(paying.plan, paying.ladder, 'empty')
 	expect(emptyLimits).toEqual(proCreditsPlanLimits)
-	expect(emptyLimits.maxSavedPackages).toBe(planLimits.max.maxSavedPackages)
-	expect(emptyLimits.maxConcurrentWorkflows).toBe(
-		planLimits.max.maxConcurrentWorkflows,
-	)
+	expect(emptyLimits.maxSavedPackages).toBe(10_000)
+	expect(emptyLimits.maxConcurrentWorkflows).toBe(200)
 	expect(emptyLimits.maxUniqueWorkerDaysPerMonth).toBe(350)
-	expect(emptyLimits.maxExecuteCallsPerDay).toBe(
-		planLimits.standard.maxExecuteCallsPerDay,
-	)
+	expect(emptyLimits.maxExecuteCallsPerDay).toBe(500)
 })
 
 test('retired Stripe Pro and manual Pro stay on planLimits.pro without a wallet', () => {

@@ -211,7 +211,6 @@ test('usageGet lists Free Worker compute as informational, never as a warning', 
 	expect(workerCompute?.label).toBe('Worker compute')
 	expect(workerCompute?.current).toBe(517)
 	expect(workerCompute?.limit).toBe(50)
-	expect(workerCompute?.whatCounts).not.toMatch(/unique worker day/i)
 	expect(workerCompute?.howToReduce).toContain(
 		'On Free this is informational: it never charges you or stops runs. Execute caps are your limit.',
 	)

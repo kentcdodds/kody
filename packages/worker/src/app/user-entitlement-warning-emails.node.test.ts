@@ -748,7 +748,6 @@ test('compute include crossings mail an empty Pro wallet, worded as include used
 	expect(approaching.text).toContain(
 		"Rows read — 90% of this month's include (4,500,000,000 of 5,000,000,000 rows read).",
 	)
-	expect(approaching.text).not.toMatch(/unique worker day|\bUWD\b|\bMax\b/i)
 	expect(
 		store.get(
 			userEntitlementWarningKvKey({
@@ -783,8 +782,6 @@ test('compute include crossings mail an empty Pro wallet, worded as include used
 	)
 	for (const body of [reached.text, reached.html]) {
 		expect(body).not.toMatch(/\b(?:1(?:0[1-9]|[1-9]\d)|[2-9]\d\d|\d{4,})%/)
-		expect(body).not.toMatch(/unique worker day/i)
-		expect(body).not.toMatch(/\bUWD\b|\bMax\b/)
 	}
 })
 

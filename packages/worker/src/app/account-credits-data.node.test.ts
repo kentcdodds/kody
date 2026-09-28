@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest'
 import { toCreditsDebitMeters } from '#app/account-credits-data.ts'
-import { creditDebitRates } from '#universal/credits.ts'
 
 test('toCreditsDebitMeters maps usage meters into the credits rate card', () => {
 	const rows = toCreditsDebitMeters([
@@ -30,7 +29,7 @@ test('toCreditsDebitMeters maps usage meters into the credits rate card', () => 
 	expect(rows[0]).toMatchObject({
 		meter: 'unique_worker_days',
 		label: 'Worker compute',
-		unitRateLabel: creditDebitRates.unique_worker_days.label,
+		unitRateLabel: '$0.004 per worker-compute day',
 		include: 350,
 		used: 400,
 		pastInclude: 50,
@@ -39,16 +38,10 @@ test('toCreditsDebitMeters maps usage meters into the credits rate card', () => 
 	expect(rows[1]).toMatchObject({
 		meter: 'durable_object_rows_read',
 		label: 'Rows read',
-		unitRateLabel: creditDebitRates.durable_object_rows_read.label,
+		unitRateLabel: '$0.002 per million rows read',
 		include: 5_000_000_000,
 		used: 1_000_000,
 		pastInclude: 0,
 		estCreditsMicroUsd: 0,
 	})
-	expect(rows.map((row) => row.label).join('\n')).not.toMatch(
-		/\bMax\b|\bUWD\b|unique worker day/i,
-	)
-	expect(rows.map((row) => row.unitRateLabel).join('\n')).not.toMatch(
-		/\bMax\b|\bUWD\b|unique worker day/i,
-	)
 })

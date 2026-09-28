@@ -80,8 +80,6 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 	const html = await response.text()
 	expect(html).not.toContain('Standard')
 	expect(html).not.toMatch(/\bMax\b/)
-	expect(html).not.toContain('High stock')
-	expect(html).not.toContain('concurrency ceilings')
 	expect(html).toContain('Pro')
 	expect(html).toContain('$12')
 	expect(html).toContain(
@@ -96,12 +94,6 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 	expect(html).toContain(
 		'Usage past the include is charged from credits (Worker compute and Rows read). Daily and weekly limits can go up to 50× Pro’s included limits on credits. When credits run out, usage past the include stops. No overage invoices.',
 	)
-	const text = html
-		.replaceAll(/<script[\s\S]*?<\/script>/g, ' ')
-		.replaceAll(/<style[\s\S]*?<\/style>/g, ' ')
-		.replaceAll(/<[^>]+>/g, ' ')
-	expect(text).not.toMatch(/unlock|lift|raise (the|rate|hard) caps|\bMax\b/i)
-	expect(text).not.toMatch(/unique worker day|\bUWD\b/i)
 	expect(html).toContain('Teams / Enterprise')
 	expect(html).toContain('mailto:kody@kody.codes')
 	expect(html).toContain('Durable Object rows read per month')

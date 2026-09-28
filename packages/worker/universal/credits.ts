@@ -29,8 +29,8 @@ type CreditDebitRate = {
 }
 
 /**
- * About 2× Cloudflare list (`cloudflareComputeListUsd` in `plans.ts`).
- * Customer copy uses “Worker compute” / “Rows read” — never UWD jargon.
+ * About 2× Cloudflare list. Customer copy uses “Worker compute” /
+ * “Rows read” — never UWD jargon.
  */
 export const creditDebitRates = {
 	unique_worker_days: {

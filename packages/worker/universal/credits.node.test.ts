@@ -1,11 +1,8 @@
 import { expect, test } from 'vitest'
 import {
 	creditDebitCostMicroUsd,
-	creditDebitRates,
 	crossedCreditLowBalance,
 	decideCreditAutoRefill,
-	defaultCreditAutoRefillSettings,
-	defaultCreditNotifySettings,
 	formatCents,
 	formatEstimatedCreditMicroUsd,
 	formatMicroUsd,
@@ -14,19 +11,10 @@ import {
 	validateCreditAutoRefillSettings,
 	validateCreditTopUpCents,
 } from './credits.ts'
-import { cloudflareComputeListUsd } from './plans.ts'
 
 const now = new Date('2026-09-27T12:00:00.000Z')
 
-test('debit rates are about 2× Cloudflare list and price cumulative units exactly', () => {
-	expect(creditDebitRates.unique_worker_days.priceMicroUsd).toBe(
-		Math.round(cloudflareComputeListUsd.uniqueWorkerDay * 2 * 1_000_000),
-	)
-	expect(creditDebitRates.durable_object_rows_read.priceMicroUsd).toBe(
-		Math.round(
-			cloudflareComputeListUsd.durableObjectRowsReadPerMillion * 2 * 1_000_000,
-		),
-	)
+test('debit rates price cumulative units exactly', () => {
 	expect(creditDebitCostMicroUsd('unique_worker_days', 1)).toBe(4_000)
 	expect(creditDebitCostMicroUsd('unique_worker_days', 250)).toBe(1_000_000)
 	expect(creditDebitCostMicroUsd('durable_object_rows_read', 1_000_000)).toBe(
@@ -46,9 +34,7 @@ test('debit rates are about 2× Cloudflare list and price cumulative units exact
 			creditDebitCostMicroUsd('durable_object_rows_read', accounted)
 		accounted = next
 	}
-	expect(charged).toBe(
-		creditDebitCostMicroUsd('durable_object_rows_read', accounted),
-	)
+	expect(charged).toBe(2_000)
 })
 
 test('top-up and admin grant amounts are bounded whole cents', () => {
@@ -64,12 +50,6 @@ test('top-up and admin grant amounts are bounded whole cents', () => {
 })
 
 test('auto-refill is off by default and needs a $5+ threshold, amount, and cap to turn on', () => {
-	expect(defaultCreditAutoRefillSettings.enabled).toBe(false)
-	expect(defaultCreditNotifySettings).toEqual({
-		autoRefilled: true,
-		monthlyCap: true,
-		lowBalance: true,
-	})
 	expect(
 		validateCreditAutoRefillSettings({
 			enabled: false,

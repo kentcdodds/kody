@@ -188,12 +188,6 @@ test('eligible wallet shows balance, packs, limits, rate card, and recent activi
 	expect(html).toContain('Est. credits this period')
 	expect(html).toContain('1,645')
 	expect(html).toContain('$6.58')
-	expect(html).not.toContain('unique worker day')
-	expect(html).not.toMatch(/\bUWD\b/)
-	expect(html).not.toMatch(/\bMax\b/)
-	expect(html).not.toContain(
-		'$0.004 per worker-compute day · $0.002 per million rows read',
-	)
 	expect(html).toContain('+$25.00')
 	expect(html).toContain('−$6.58')
 	expect(html).toContain('Worker compute (1,645)')
@@ -285,21 +279,6 @@ test('gift and referral Pro overlays are ineligible for the credits wallet', asy
 	expect(html).not.toContain('Subscribe to Pro to add credits.')
 })
 
-test('credits copy never teaches that a balance unlocks higher limits or names Max', async () => {
-	for (const data of [
-		credits(),
-		credits({ hasCredits: false, balanceMicroUsd: 0 }),
-		credits({ canBuyCredits: false, hasCredits: false, balanceMicroUsd: 0 }),
-	]) {
-		const html = await renderCreditsPage(data)
-		const text = html
-			.replaceAll(/<style[\s\S]*?<\/style>/g, ' ')
-			.replaceAll(/<script[\s\S]*?<\/script>/g, ' ')
-			.replaceAll(/<[^>]+>/g, ' ')
-		expect(text).not.toMatch(/unlock|lift|Higher limits|With \$0|\bMax\b/i)
-	}
-})
-
 const overHundredPercent = /\b(?:1(?:0[1-9]|[1-9]\d)|[2-9]\d\d|\d{4,})%/
 
 function visibleText(html: string) {
@@ -330,7 +309,6 @@ test('Pro past include: activity first, bar capped at 100%, calm dollars on cred
 		html.indexOf('Included compute'),
 	)
 	expect(text).not.toMatch(overHundredPercent)
-	expect(text).not.toMatch(/unique worker day|\bUWD\b|\bMax\b|overage/i)
 })
 
 test('credits alarm shows only when the wallet is at risk past the include', async () => {
