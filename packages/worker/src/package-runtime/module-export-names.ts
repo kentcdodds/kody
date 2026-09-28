@@ -85,6 +85,61 @@ function isRuntimeExportDeclaration(declaration: ModuleAstNode) {
 	)
 }
 
+/**
+ * Top-level names bound only as types (interfaces, type aliases, ambient
+ * declarations, type imports). TypeScript erases local re-exports of them, so
+ * `export { Shape as default }` of an interface is not a runtime export.
+ */
+function collectTypeOnlyLocalNames(body: Array<unknown>) {
+	const typeNames = new Set<string>()
+	const valueNames = new Set<string>()
+	for (const statement of body) {
+		if (!statement || typeof statement !== 'object') continue
+		const node = statement as ModuleAstNode & {
+			declaration?: ModuleAstNode | null
+			specifiers?: Array<ModuleAstNode>
+			importKind?: unknown
+		}
+		if (node.type === 'ImportDeclaration') {
+			for (const specifier of node.specifiers ?? []) {
+				const name = getModuleExportName(
+					(specifier as { local?: unknown }).local,
+				)
+				if (!name) continue
+				const isTypeImport =
+					node.importKind === 'type' ||
+					(specifier as { importKind?: unknown }).importKind === 'type'
+				;(isTypeImport ? typeNames : valueNames).add(name)
+			}
+			continue
+		}
+		const declaration =
+			node.type === 'ExportNamedDeclaration' ||
+			node.type === 'ExportDefaultDeclaration'
+				? node.declaration
+				: node
+		if (!declaration || typeof declaration !== 'object') continue
+		const bindings = isRuntimeExportDeclaration(declaration)
+			? valueNames
+			: typeNames
+		if (declaration.type === 'VariableDeclaration') {
+			const declarators = (declaration as { declarations?: unknown })
+				.declarations
+			if (!Array.isArray(declarators)) continue
+			for (const declarator of declarators) {
+				collectPatternBoundNames((declarator as { id?: unknown })?.id, bindings)
+			}
+			continue
+		}
+		const declaredName = getModuleExportName(
+			(declaration as { id?: unknown }).id,
+		)
+		if (declaredName) bindings.add(declaredName)
+	}
+	for (const name of valueNames) typeNames.delete(name)
+	return typeNames
+}
+
 function collectOwnExports(source: string): {
 	names: Set<string>
 	starSpecifiers: Array<string>
@@ -100,6 +155,7 @@ function collectOwnExports(source: string): {
 	const programNode = (program as { program?: { body?: unknown } }).program
 	const body = programNode?.body
 	if (!Array.isArray(body)) return { names, starSpecifiers }
+	const typeOnlyLocalNames = collectTypeOnlyLocalNames(body)
 	for (const statement of body) {
 		if (!statement || typeof statement !== 'object') continue
 		const typedStatement = statement as ModuleAstNode & {
@@ -158,6 +214,16 @@ function collectOwnExports(source: string): {
 			for (const specifier of typedStatement.specifiers) {
 				if (!specifier || typeof specifier !== 'object') continue
 				if ((specifier as { exportKind?: unknown }).exportKind === 'type') {
+					continue
+				}
+				const localName = getModuleExportName(
+					(specifier as { local?: unknown }).local,
+				)
+				if (
+					!typedStatement.source &&
+					localName &&
+					typeOnlyLocalNames.has(localName)
+				) {
 					continue
 				}
 				const exportedName = getModuleExportName(

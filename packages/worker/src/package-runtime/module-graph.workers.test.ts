@@ -570,25 +570,34 @@ test(
 			},
 		})
 
-		const callableBundle = await buildKodyModuleBundle({
-			env,
-			baseUrl: 'https://kody.dev',
-			userId,
-			sourceFiles,
-			entryPoint: 'src/index.ts',
-			rootPackageId: packageId,
-		})
-		const invoked = await runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			callableBundle,
-			undefined,
-			{ skipCapabilityRegistry: true },
-		)
-		expect(invoked.result).toBeUndefined()
-		expect(String(invoked.error)).toContain(
-			'Kody execute modules must default export a function; "src/index.ts" has no default export.',
-		)
+		for (const entrySource of [
+			sourceFiles['src/index.ts'],
+			[
+				'interface Shape { value: number }',
+				'export { Shape as default }',
+				sourceFiles['src/index.ts'],
+			].join('\n'),
+		]) {
+			const callableBundle = await buildKodyModuleBundle({
+				env,
+				baseUrl: 'https://kody.dev',
+				userId,
+				sourceFiles: { ...sourceFiles, 'src/index.ts': entrySource },
+				entryPoint: 'src/index.ts',
+				rootPackageId: packageId,
+			})
+			const invoked = await runBundledModuleWithRegistry(
+				env,
+				callerContext,
+				callableBundle,
+				undefined,
+				{ skipCapabilityRegistry: true },
+			)
+			expect(invoked.result).toBeUndefined()
+			expect(String(invoked.error)).toContain(
+				'Kody execute modules must default export a function; "src/index.ts" has no default export.',
+			)
+		}
 
 		await persistPublishedSourceSnapshot({
 			env,

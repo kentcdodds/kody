@@ -119,9 +119,14 @@ test('detects runtime default exports and leaves unparseable sources to the bund
 		"export { default } from './impl.ts'",
 		"export { run as default } from './impl.ts'",
 		"export * as default from './impl.ts'",
+		"import run from './impl.ts'\nexport { run as default }",
+		'interface Tool { name: string }\nconst Tool = { name: "tool" }\nexport { Tool as default }',
 		'export default function run() {}\nexport function double(value: number) { return value * 2 }',
 	]) {
-		expect(moduleSourceDeclaresDefaultExport(source), source).toBe(true)
+		expect({
+			source,
+			declaresDefault: moduleSourceDeclaresDefaultExport(source),
+		}).toEqual({ source, declaresDefault: true })
 	}
 	for (const source of [
 		'export function double(value: number) { return value * 2 }',
@@ -129,10 +134,17 @@ test('detects runtime default exports and leaves unparseable sources to the bund
 		"export * from './impl.ts'",
 		'export default interface Config { value: number }\nexport const value = 1',
 		'type Local = { value: number }\nexport type { Local as default }',
+		'interface Shape { value: number }\nexport { Shape as default }\nexport function double(value: number) { return value * 2 }',
+		"import type { Shape } from './shape.ts'\nexport { Shape as default }",
+		"import { type Shape } from './shape.ts'\nexport { Shape as default }",
+		'declare const ambient: number\nexport { ambient as default }',
 		'export {}',
 		'',
 	]) {
-		expect(moduleSourceDeclaresDefaultExport(source), source).toBe(false)
+		expect({
+			source,
+			declaresDefault: moduleSourceDeclaresDefaultExport(source),
+		}).toEqual({ source, declaresDefault: false })
 	}
 	expect(
 		moduleSourceDeclaresDefaultExport('export const = not parseable {{{'),
