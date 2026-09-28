@@ -275,6 +275,9 @@ const debitRateBarTrackCss = {
 	overflow: 'hidden',
 	width: '100%',
 	maxWidth: '10rem',
+	[mq.mobile]: {
+		maxWidth: 'none',
+	},
 }
 
 const debitRateBarFillCss = {
