@@ -33,7 +33,6 @@ import {
 import { formatPackageFileEntityDetail } from '../package-file-search-detail.ts'
 import {
 	maxFusedPackageCandidates,
-	maxHydratedPackageCandidates,
 	maxPackageExportCandidatesPerPackage,
 	packageExportCandidateMinScore,
 	packageExportCloseScoreGap,
@@ -612,12 +611,13 @@ export const packageSearchEntityPlugin = {
 		}
 
 		// Lean search rows omit exports until hydrate. Bound hydrate to the
-		// top of the recall window so strong exports can enter the first-pass
-		// pool without loading every package source.
+		// requested page so strong exports can enter the first-pass pool
+		// without loading every package source. Jev wide recall (50) must not
+		// multiply source loads and export AST parses for rows that rarely
+		// reach the returned page.
 		const hydrateBudget = Math.min(
 			packageCandidates.length,
-			input.limit,
-			maxHydratedPackageCandidates,
+			input.pageLimit ?? input.limit,
 		)
 		const hydrateTargets = [...packageCandidates]
 			.sort(

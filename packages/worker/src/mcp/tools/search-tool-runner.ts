@@ -189,7 +189,7 @@ export async function runSearchTool(input: {
 		})
 	}
 
-	const searchSpan = async () => {
+	const searchSpan = async (signal: AbortSignal) => {
 		const query = trimmedQuery
 		if (!args.entity) {
 			const execution = await executeSearchList({
@@ -204,10 +204,12 @@ export async function runSearchTool(input: {
 				memoryContext: args.memoryContext,
 				...(domainFilter ? { domain: domainFilter } : {}),
 				phaseTimings: endToEndPhaseTimings,
+				signal,
 			})
 			username = execution.username
 			warnings = execution.warnings
 			Object.assign(endToEndPhaseTimings, execution.phaseTimings)
+			signal.throwIfAborted()
 			const stampStart = performance.now()
 			await stampFirstSearchIfAuthenticated(agent, userId)
 			endToEndPhaseTimings.firstSearchStampMs = elapsedMs(stampStart)
@@ -235,6 +237,7 @@ export async function runSearchTool(input: {
 					userId,
 					baseUrl,
 				})
+				signal.throwIfAborted()
 				if (notice) {
 					structuredWarnings.push(notice)
 					if (typeof statefulAgent.setState === 'function') {
@@ -318,6 +321,7 @@ export async function runSearchTool(input: {
 		})
 		const searchRows = await rowsPromise
 		warnings = searchRows.warnings
+		signal.throwIfAborted()
 
 		if (Array.isArray(args.entity)) {
 			const entityResolveStart = performance.now()
@@ -350,6 +354,12 @@ export async function runSearchTool(input: {
 				}),
 			)
 			endToEndPhaseTimings.entityResolveMs = elapsedMs(entityResolveStart)
+			signal.throwIfAborted()
+			if (batchResults.some((entry) => entry.ok)) {
+				const stampStart = performance.now()
+				await stampFirstSearchIfAuthenticated(agent, userId)
+				endToEndPhaseTimings.firstSearchStampMs = elapsedMs(stampStart)
+			}
 			return {
 				mode: 'entity-batch' as const,
 				results: batchResults,
@@ -365,6 +375,10 @@ export async function runSearchTool(input: {
 			searchRows,
 		})
 		endToEndPhaseTimings.entityResolveMs = elapsedMs(entityResolveStart)
+		signal.throwIfAborted()
+		const stampStart = performance.now()
+		await stampFirstSearchIfAuthenticated(agent, userId)
+		endToEndPhaseTimings.firstSearchStampMs = elapsedMs(stampStart)
 		return {
 			mode: 'entity' as const,
 			detail,
@@ -415,9 +429,6 @@ export async function runSearchTool(input: {
 				includeBoilerplate: includePreamble,
 			})
 			rememberConversationPreamble()
-			const stampStart = performance.now()
-			await stampFirstSearchIfAuthenticated(agent, userId)
-			endToEndPhaseTimings.firstSearchStampMs = elapsedMs(stampStart)
 			const timing = finishToolTiming(timingStart)
 			const phaseTimings = reconcileSearchPhaseTimings({
 				durationMs: timing.durationMs,
@@ -509,11 +520,6 @@ export async function runSearchTool(input: {
 				error: entry.error,
 				callerError: entry.callerError,
 			}))
-			if (!allFailed) {
-				const stampStart = performance.now()
-				await stampFirstSearchIfAuthenticated(agent, userId)
-				endToEndPhaseTimings.firstSearchStampMs = elapsedMs(stampStart)
-			}
 			const timing = finishToolTiming(timingStart)
 			const phaseTimings = reconcileSearchPhaseTimings({
 				durationMs: timing.durationMs,

@@ -65,6 +65,8 @@ type ExecuteSearchListInput = {
 	 * its deadline can still report which phases completed.
 	 */
 	phaseTimings?: Partial<SearchPhaseTimings>
+	/** Aborted when the caller's search deadline passes; later phases stop. */
+	signal?: AbortSignal
 }
 
 export async function executeSearchList(
@@ -233,6 +235,7 @@ async function executeSearchListWithinBudget(
 					return retrieverRun
 				})
 	const [searchRows] = await Promise.all([rowsPromise, retrieverRunPromise])
+	input.signal?.throwIfAborted()
 	warnings = searchRows.warnings
 	const retrieverRun = await retrieverRunPromise
 	warnings.push(...retrieverRun.warnings)
@@ -269,7 +272,9 @@ async function executeSearchListWithinBudget(
 			: {}),
 		...(jevRerankEnabled ? { jevRerankEnabled: true } : {}),
 		...(jevRerankPlanEligible ? { jevRerankPlanEligible: true } : {}),
+		...(input.signal ? { signal: input.signal } : {}),
 	})
+	input.signal?.throwIfAborted()
 	phaseTimings.searchUnifiedMs = elapsedMs(searchUnifiedStart)
 	// Only ranked-path results include jevRerank telemetry. Domain index /
 	// overview / empty-query short-circuits stay outside the experiment frame.

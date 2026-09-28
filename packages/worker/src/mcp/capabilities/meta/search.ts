@@ -195,8 +195,9 @@ export const searchCapability = defineDomainCapability(
 			// which includes this meta capability.
 			const { executeSearchList } =
 				await import('#mcp/tools/search-execution.ts')
-			const execution = await runWithSearchDeadline(() =>
+			const execution = await runWithSearchDeadline((signal) =>
 				executeSearchList({
+					signal,
 					env: ctx.env,
 					callerContext: ctx.callerContext,
 					conversationId,

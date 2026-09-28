@@ -3,7 +3,6 @@ import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-regi
 import { deterministicEmbedding } from '#worker/vectorize/embedding.ts'
 
 import { searchUnified, type PackageSearchRow } from './search.ts'
-import { maxHydratedPackageCandidates } from './search-constants.ts'
 import {
 	buildPackageActionMatches,
 	buildPackageExportParentIdentityFields,
@@ -706,12 +705,10 @@ test('hydrateTopPackageMatches keeps export hits aligned with exportSubpath', as
 	})
 })
 
-test('package candidates hydrate a fixed number of lean rows even when Jev widens recall', async () => {
-	const rowCount = maxHydratedPackageCandidates * 3
-	const hydratedIds: Array<string> = []
-	const rows: Array<PackageSearchRow> = Array.from(
-		{ length: rowCount },
-		(_, index) => {
+test('package candidates hydrate the requested page, not Jev wide recall', async () => {
+	const rowCount = 45
+	function buildRows(hydratedIds: Array<string>): Array<PackageSearchRow> {
+		return Array.from({ length: rowCount }, (_, index) => {
 			const kodyId = `github-helper-${String(index)}`
 			const projection = {
 				name: `@kody/${kodyId}`,
@@ -753,25 +750,35 @@ test('package candidates hydrate a fixed number of lean rows even when Jev widen
 					return { projection, readmeSnippet: null }
 				},
 			} as PackageSearchRow
-		},
-	)
+		})
+	}
 	const query = 'create github issue'
-	const candidates = await packageSearchEntityPlugin.buildCandidates({
-		env: {} as Env,
-		query,
-		limit: resolveJevSearchRecallLimit({ limit: 15, widerRecall: true }),
-		offline: true,
-		userId: 'user-1',
-		registry: buildCapabilityRegistry([]),
-		optionalRows: {
-			packageRows: rows,
-			userSecretRows: [],
-			userValueRows: [],
-			userIntegrationRows: [],
-		},
-		retrieverResults: [],
-		queryEmbedding: deterministicEmbedding(query),
-	})
-	expect(candidates.length).toBe(rowCount)
-	expect(new Set(hydratedIds).size).toBe(maxHydratedPackageCandidates)
+	async function hydratedCountFor(pageLimit: number) {
+		const hydratedIds: Array<string> = []
+		const rows = buildRows(hydratedIds)
+		const candidates = await packageSearchEntityPlugin.buildCandidates({
+			env: {} as Env,
+			query,
+			limit: resolveJevSearchRecallLimit({
+				limit: pageLimit,
+				widerRecall: true,
+			}),
+			pageLimit,
+			offline: true,
+			userId: 'user-1',
+			registry: buildCapabilityRegistry([]),
+			optionalRows: {
+				packageRows: rows,
+				userSecretRows: [],
+				userValueRows: [],
+				userIntegrationRows: [],
+			},
+			retrieverResults: [],
+			queryEmbedding: deterministicEmbedding(query),
+		})
+		expect(candidates.length).toBe(rowCount)
+		return new Set(hydratedIds).size
+	}
+	expect(await hydratedCountFor(15)).toBe(15)
+	expect(await hydratedCountFor(30)).toBe(30)
 })

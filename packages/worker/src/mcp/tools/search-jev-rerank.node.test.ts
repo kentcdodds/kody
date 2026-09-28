@@ -688,6 +688,38 @@ test('rerankSearchCandidatesWithJev aborts Score batches past the budget and kee
 	}
 })
 
+test('rerankSearchCandidatesWithJev aborts in-flight Score batches when the caller search deadline aborts', async () => {
+	const signals: Array<AbortSignal> = []
+	const hangingRun = vi.fn(
+		(_model: string, _body: unknown, options: { signal: AbortSignal }) => {
+			signals.push(options.signal)
+			return new Promise(() => {})
+		},
+	)
+	const caller = new AbortController()
+	const pool = makeNecessityRunPool()
+	const pending = rerankSearchCandidatesWithJev({
+		env: {
+			AI: { run: hangingRun },
+			AI_GATEWAY_ID: 'kody',
+		} as unknown as Env,
+		query: 'send email',
+		intent: makeIntent('send email', 0.9),
+		candidates: pool,
+		limit: 1,
+		offline: false,
+		enabled: true,
+		planEligible: true,
+		signal: caller.signal,
+	})
+	await Promise.resolve()
+	caller.abort(new Error('search-deadline'))
+	const result = await pending
+	expect(result.outcome).toBe('fallback-timeout')
+	expect(signals.length).toBeGreaterThan(0)
+	expect(signals.every((signal) => signal.aborted)).toBe(true)
+})
+
 test('rerankSearchCandidatesWithJev times out even when the AI binding ignores abort', async () => {
 	vi.useFakeTimers()
 	try {

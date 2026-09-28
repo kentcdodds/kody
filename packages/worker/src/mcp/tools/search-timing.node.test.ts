@@ -13,13 +13,17 @@ test('runWithSearchDeadline returns results that finish in time and rejects hung
 
 	vi.useFakeTimers()
 	try {
-		const settled = runWithSearchDeadline(
-			() => new Promise(() => {}),
-			1_000,
-		).catch((error: unknown) => error)
+		let runSignal: AbortSignal | undefined
+		const settled = runWithSearchDeadline((signal) => {
+			runSignal = signal
+			return new Promise(() => {})
+		}, 1_000).catch((error: unknown) => error)
+		expect(runSignal?.aborted).toBe(false)
 		await vi.advanceTimersByTimeAsync(1_000)
 		const error = await settled
 		expect(error).toBeInstanceOf(SearchDeadlineError)
+		expect(runSignal?.aborted).toBe(true)
+		expect(runSignal?.reason).toBe(error)
 		expect((error as Error).message).toContain(
 			'Search did not finish within 1s, so Kody stopped waiting before the MCP request timed out.',
 		)

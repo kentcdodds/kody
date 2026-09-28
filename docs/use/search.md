@@ -165,9 +165,10 @@ Search responses also return top-level **`timing`** metadata with
 how long the ranked lookup or entity lookup took. A search that has not finished
 after 20 seconds returns an `isError` result starting with
 `Search did not finish within 20s` instead of running into the MCP host's
-request timeout (often ~30s, error `-32001`). Retry once, then shorten the query
-or pass `domain`. The `search` capability inside **execute** has the same
-deadline.
+request timeout (often ~30s, error `-32001`), and the abandoned search stops at
+its next phase (in-flight Jev calls are aborted) so a retry does not compete
+with it. Retry once, then shorten the query or pass `domain`. The `search`
+capability inside **execute** has the same deadline.
 
 Optional **`limit`** caps how many ranked hits return. Optional
 **`maxResponseSize`** trims low-ranked matches against the compact list when the

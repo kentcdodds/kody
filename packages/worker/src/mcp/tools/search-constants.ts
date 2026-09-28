@@ -26,15 +26,7 @@ export const exportCallContractMinTopScore = 0.45
 export const exportCallContractMinJevMeanConfidence = 0.7
 export const maxRelatedCapabilityOperations = 20
 export const maxBatchEntityRefs = 10
-export const maxFusedPackageCandidates = 100
-/**
- * Max lean package rows hydrated (source load + export AST parse) per ranked
- * search so exports can promote into the first-pass pool. Fixed rather than
- * tied to recall: Jev wide recall (50) would otherwise parse ~3× more package
- * sources per search for rows that rarely reach the returned page.
- */
-export const maxHydratedPackageCandidates = defaultSearchLimit
-/**
+export const maxFusedPackageCandidates = 100 /**
  * Max first-class package-export candidates promoted per package into the
  * ranked pool (widen-then-narrow). Nested `actionMatches` on package index
  * hits stay capped separately. Close runners-up within

@@ -729,6 +729,8 @@ export async function rerankSearchCandidatesWithJev(input: {
 	planEligible: boolean
 	/** Defaults to {@link jevSearchScoreBudgetMs}. */
 	scoreBudgetMs?: number
+	/** Caller search deadline; aborting it also aborts in-flight Score calls. */
+	signal?: AbortSignal
 }): Promise<JevSearchRerankResult> {
 	const startedAt = performance.now()
 	const hybridCandidates = input.candidates
@@ -795,6 +797,7 @@ export async function rerankSearchCandidatesWithJev(input: {
 			usage: { inputTokens: null, outputTokens: null },
 		})
 	let budgetTimer: ReturnType<typeof setTimeout> | undefined
+	let onCallerAbort: (() => void) | undefined
 	try {
 		const state = {
 			query: input.query,
@@ -810,10 +813,16 @@ export async function rerankSearchCandidatesWithJev(input: {
 			jevSearchScoreQuestionBatchSize,
 		)
 		const budgetExceeded = new Promise<'timeout'>((resolve) => {
-			budgetTimer = setTimeout(() => {
+			const expire = (reason: unknown) => {
 				resolve('timeout')
-				budget.abort(new Error('jev-score-budget-exceeded'))
+				budget.abort(reason)
+			}
+			budgetTimer = setTimeout(() => {
+				expire(new Error('jev-score-budget-exceeded'))
 			}, input.scoreBudgetMs ?? jevSearchScoreBudgetMs)
+			onCallerAbort = () => expire(input.signal?.reason)
+			if (input.signal?.aborted) onCallerAbort()
+			input.signal?.addEventListener('abort', onCallerAbort, { once: true })
 		})
 		const settled = await Promise.race([
 			Promise.all(
@@ -930,5 +939,6 @@ export async function rerankSearchCandidatesWithJev(input: {
 		})
 	} finally {
 		clearTimeout(budgetTimer)
+		if (onCallerAbort) input.signal?.removeEventListener('abort', onCallerAbort)
 	}
 }

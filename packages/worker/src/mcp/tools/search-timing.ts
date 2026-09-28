@@ -104,21 +104,25 @@ export class SearchDeadlineError extends Error {
 }
 
 /**
- * Reject with {@link SearchDeadlineError} when `run` outlives `deadlineMs`.
- * The abandoned work is not cancelled; phases with their own budgets (Jev,
- * retrievers, memory, waiting) are what keep ordinary searches under it.
+ * Reject with {@link SearchDeadlineError} when `run` outlives `deadlineMs`,
+ * and abort the signal handed to `run` so the abandoned search stops at its
+ * next checkpoint (and aborts in-flight Jev calls) instead of finishing
+ * unobserved work and side effects while the caller retries.
  */
 export async function runWithSearchDeadline<T>(
-	run: () => Promise<T>,
+	run: (signal: AbortSignal) => Promise<T>,
 	deadlineMs: number = SEARCH_DEADLINE_MS,
 ): Promise<T> {
+	const deadline = new AbortController()
 	let timeoutId: ReturnType<typeof setTimeout> | undefined
 	try {
 		return await Promise.race([
-			run(),
+			run(deadline.signal),
 			new Promise<never>((_, reject) => {
 				timeoutId = setTimeout(() => {
-					reject(new SearchDeadlineError(deadlineMs))
+					const error = new SearchDeadlineError(deadlineMs)
+					reject(error)
+					deadline.abort(error)
 				}, deadlineMs)
 			}),
 		])
