@@ -1,5 +1,7 @@
 import { loadLandingHeroVideos } from '#app/landing-hero-videos.ts'
+import { listDocWatchEmbeds } from '#universal/doc-youtube.ts'
 import { landingHeroSourcePlaylistId } from '#universal/landing-hero-copy.ts'
+import { type SiteBannerRecord } from '#universal/site-banners.ts'
 import {
 	mergeYoutubeWatchAllowlist,
 	parseYoutubePlaylistFeedXml,
@@ -9,7 +11,7 @@ import {
 	youtubePlaylistFeedUrl,
 	youtubeWatchSampleVideoId,
 } from '#universal/youtube-watch.ts'
-import { type SiteBannerRecord } from '#universal/site-banners.ts'
+import { guides } from '#worker/guides/catalog.ts'
 import { listEnabledSiteBanners } from '#worker/site-banners/service.ts'
 
 type YoutubeWatchFetch = (
@@ -65,10 +67,26 @@ export async function resolveYoutubeWatchAllowedVideoIds(input: {
 		extraVideoIds: [
 			...extraVideoIds,
 			youtubeWatchSampleVideoId,
+			...bundledDocWatchVideoIds(),
 			...heroVideos.map((video) => video.videoId),
 		],
 		hrefs,
 	})
+}
+
+/**
+ * Video ids from first-party `> [!WATCH]` blocks. Unlisted docs films are
+ * often missing from the public playlist Atom feed, and the thumb proxy
+ * 404s without an allowlist hit.
+ */
+export function bundledDocWatchVideoIds(): Array<string> {
+	const ids: Array<string> = []
+	for (const guide of guides) {
+		for (const embed of listDocWatchEmbeds(guide.body)) {
+			ids.push(embed.videoId)
+		}
+	}
+	return ids
 }
 
 export async function loadPlaylistVideoIds(input: {

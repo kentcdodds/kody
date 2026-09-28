@@ -46,6 +46,8 @@ A video id is allowed when it appears in any of:
    parsed — admin and banners store the relative `/?youtubeId=` form.
    Third-party hosts are never treated as a YouTube id, even when they carry
    `?v=` or `?youtubeId=`.
+6. Video ids authored in first-party docs `> [!WATCH]` blocks. Those posters
+   stay allowed when the film is unlisted and absent from the public Atom feed.
 
 The overlay follows the live `youtubeId` search param only. Closing strips that
 param; it does not fall back to SSR loader data, so the dialog stays closed
