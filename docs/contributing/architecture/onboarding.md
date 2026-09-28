@@ -44,20 +44,20 @@ hidden if nothing sensible). `hasSecondMcpClient` is two known ecosystems, not
 raw grant count, not unique `clientId`s, and not attribution to the selected
 host — Cursor hosts and Grok hosts are one ecosystem, and an unlabeled client
 does not count as its own. The connected label stays "You've connected a second
-agent." When the second-agent Standard gift is active, that status adds "Pro is
-free for 2 weeks." Step 3 copy advertises "Connect a second agent and get Pro
-free for 2 weeks." `/onboarding` resumes at that step instead of always opening
-the Step 1 picker. The Step 1 and Step 3 pickers, and Step 2, list
-already-connected hosts so a return visit cannot hide Cursor or Claude Desktop.
-A selected-agent card names only that host: another client's connection does not
-mark this one connected and does not put its logo on the card. A remembered
-picker choice is not a grant. When a different host actually authorized, Step 2
-and Step 3 follow that grant instead of the pick. Account → Connections
-(`/account/connections`) lists those inbound hosts grouped by display name, with
-public logos for known kinds, newest-first sort, best-effort labels,
-per-`clientId` revoke, and **View connect steps** for known kinds (same install
-path as Add connection). That list is not `users.mcp_client_name` (first-touch)
-and not `/account/mcp-oauth-clients` (user-minted confidential clients).
+agent." When the second-agent Pro gift is active, that status adds "Pro is free
+for 2 weeks." Step 3 copy advertises "Connect a second agent and get Pro free
+for 2 weeks." `/onboarding` resumes at that step instead of always opening the
+Step 1 picker. The Step 1 and Step 3 pickers, and Step 2, list already-connected
+hosts so a return visit cannot hide Cursor or Claude Desktop. A selected-agent
+card names only that host: another client's connection does not mark this one
+connected and does not put its logo on the card. A remembered picker choice is
+not a grant. When a different host actually authorized, Step 2 and Step 3 follow
+that grant instead of the pick. Account → Connections (`/account/connections`)
+lists those inbound hosts grouped by display name, with public logos for known
+kinds, newest-first sort, best-effort labels, per-`clientId` revoke, and **View
+connect steps** for known kinds (same install path as Add connection). That list
+is not `users.mcp_client_name` (first-touch) and not
+`/account/mcp-oauth-clients` (user-minted confidential clients).
 
 `first-win` is not a wizard step and is not a checklist item. Signed-in
 `/onboarding` does not probe Mailbox for that loop. MCP registers

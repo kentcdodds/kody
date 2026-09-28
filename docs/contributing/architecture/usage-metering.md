@@ -774,15 +774,15 @@ evaluator branches on activation stamps and live reads (paged distinct inbound
 `clientId`s, enabled jobs / last job run, execute-rollup depth, Stripe paid,
 stock entitlement pressure). It is not a fixed week-1/3 calendar drip.
 
-| State                  | Mail                                                                                                                                                                |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `VerifiedNoMcp`        | Connect-an-agent template, 2 sends max                                                                                                                              |
-| `ConnectedNoPackage`   | Save-a-package template (personalized with `mcp_client_name` when set), 2 sends                                                                                     |
-| `PackagedSingleClient` | Second-agent / portability template, 1–2 sends. Trial CTA only while the 14-day Standard gift is still unreceived (`describeSecondAgentStandardGift` status `none`) |
-| `Activated`            | Campaign silence. After ≥7 days, one `advocate_referral_testimonial` mail if not already sent                                                                       |
-| `Cooling`              | One “home’s still here” poke, then terminal quiet                                                                                                                   |
-| `LimitAware`           | Campaign silence; entitlement-warning mail owns the nudge                                                                                                           |
-| `Paid`                 | Campaign silence except the same one-shot advocate mail (1 forever). Billing transactional still owns paid-plan mail                                                |
+| State                  | Mail                                                                                                                                                     |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VerifiedNoMcp`        | Connect-an-agent template, 2 sends max                                                                                                                   |
+| `ConnectedNoPackage`   | Save-a-package template (personalized with `mcp_client_name` when set), 2 sends                                                                          |
+| `PackagedSingleClient` | Second-agent / portability template, 1–2 sends. Trial CTA only while the 14-day Pro gift is unreceived (`describeSecondAgentStandardGift` status `none`) |
+| `Activated`            | Campaign silence. After ≥7 days, one `advocate_referral_testimonial` mail if not already sent                                                            |
+| `Cooling`              | One “home’s still here” poke, then terminal quiet                                                                                                        |
+| `LimitAware`           | Campaign silence; entitlement-warning mail owns the nudge                                                                                                |
+| `Paid`                 | Campaign silence except the same one-shot advocate mail (1 forever). Billing transactional still owns paid-plan mail                                     |
 
 `last_active_at` does not bump on `job_run`. Enabled jobs and `last_run_at` are
 read separately so a quiet interactive user with a live schedule stays

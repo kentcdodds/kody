@@ -24,22 +24,24 @@ automatically.
 
 `/account/credits` is the prepaid wallet for the purchasable Pro: balance, packs
 ($10 / $25 / $50) or a custom amount, auto-refill (threshold at least $5,
-amount, and monthly cap), notification checkboxes, the limits a balance above $0
-raises, the two debit rates, and recent ledger entries. Other plans see a single
-switch-to-Pro prompt. Usage above the monthly include debits a funded wallet;
-nobody is invoiced for overage. Grant credits to a test account from
-`/admin/users/:stableUserId` (admin only) instead of paying.
+amount, and monthly cap), notification checkboxes, the How credits are charged
+rate card (Worker compute and Rows read debit rates), and recent ledger entries.
+Other plans see a single switch-to-Pro prompt. Usage above the monthly include
+debits a funded wallet; nobody is invoiced for overage. Grant credits to a test
+account from `/admin/users/:stableUserId` (admin only) instead of paying.
 
-`/account/usage` and `usageGet` include unique Dynamic Worker days and Durable
-Object rows-read with what-counts copy and a credits status per meter (add
-credits, switch to Pro, or debiting credits — all link to `/account/credits`).
-Public-ladder execute and outbound fetches show today and this UTC week
-(Monday–Sunday); whichever window hits first blocks. The usage warnings panel
-titles **Limit reached** when a hard daily/weekly/stock cap is at 100%, and its
-link points at `/account/credits`. Referral share links set a one-week last-wins
-`kody_ref` cookie; signup persists the referrer then. Referral rewards fire on
-the referee's first qualifying paid Stripe invoice (not a trial) after both
-emails are verified; do not invent a paid invoice from this environment.
+`/account/usage` and `usageGet` lead with activity (code executions, job runs,
+workflow runs, package calls). Worker compute and Rows read are an include bar
+capped at 100%, with past-include usage as dollars on credits. Free sees those
+meters as informational counts; execute caps are the Free limit. Alarms fire
+only when the wallet or access is at risk. Public-ladder execute and outbound
+fetches show today and this UTC week (Monday–Sunday); whichever window hits
+first blocks. The usage warnings panel titles **Limit reached** when a hard
+daily/weekly/stock cap is at 100%, and its link points at `/account/credits`.
+Referral share links set a one-week last-wins `kody_ref` cookie; signup persists
+the referrer then. Referral rewards fire on the referee's first qualifying paid
+Stripe invoice (not a trial) after both emails are verified; do not invent a
+paid invoice from this environment.
 
 ## APIs
 

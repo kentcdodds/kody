@@ -352,15 +352,14 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `first_integration_at`, `first_job_at`, `mcp_client_name`, `last_active_at`)
   support product metrics; email verification delivery columns track the latest
   transactional verify-mail outcome. `second_agent_standard_gift_granted_at` is
-  the write-once ledger for the 14-day Standard overlay granted when unique
-  inbound MCP OAuth `clientId`s first reach 2;
-  `second_agent_standard_gift_expires_at` is set only when that overlay actually
-  raises a free account (NULL means already paid / no-op). See
-  [Entitlements](./entitlements.md#second-agent-standard-gift).
+  the write-once ledger for the 14-day Pro overlay granted when known connected
+  agent ecosystems first reach 2; `second_agent_standard_gift_expires_at` is set
+  only when that overlay actually raises a free account (NULL means already paid
+  / no-op). See [Entitlements](./entitlements.md#second-agent-standard-gift).
   `user_tips_email_opt_outs` is the durable Kody tips opt-out (usage-state
   campaign mail only). `referral_standard_credit_expires_at` is the stackable
-  Standard overlay from the uncapped referral program. Pre-signup attribution
-  lives in the last-wins one-week `kody_ref` cookie. `referrals` stores the
+  Pro overlay from the uncapped referral program. Pre-signup attribution lives
+  in the last-wins one-week `kody_ref` cookie. `referrals` stores the
   signup-time row (`referrer_stable_user_id`, `referee_stable_user_id`) and the
   invoice-gated reward ledger (`status`, `reward_invoice_id`, held invoice
   fields while email is unverified). See

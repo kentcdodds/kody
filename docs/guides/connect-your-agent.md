@@ -98,8 +98,7 @@ portability prompt. The new agent loads
 memory or package you just made — in a different product, with no setup
 repeated.
 
-Connecting that second agent unlocks the Standard plan free for two weeks, once
-per account.
+Connecting that second agent gives Pro free for two weeks, once per account.
 
 ## Where to go next
 

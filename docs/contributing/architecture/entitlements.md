@@ -34,11 +34,11 @@ at `packages/worker/universal/plans.ts`.
   `readCurrentEntitlementResourceUsage` (UserMeter-authoritative for
   `storage_bytes` and daily resources).
 - `second-agent-standard-gift.ts` (universal + worker) — one 14-day overlay of
-  the purchasable Pro on Free when known connected agent ecosystems first reach
-  2 (file, column, and helper names keep "Standard" from before #2617).
-  `describeSecondAgentStandardGift` is the flag for lifecycle email /
-  PackagedSingleClient. Enforcement goes through `getUserEntitlement`; Stripe is
-  not mutated.
+  Pro on Free when known connected agent ecosystems first reach 2. File, column,
+  and helper names say Standard; the overlay uses the retired Pro table without
+  a credit wallet. `describeSecondAgentStandardGift` is the flag for lifecycle
+  email / PackagedSingleClient. Enforcement goes through `getUserEntitlement`;
+  Stripe is not mutated.
 - `referral-program.ts` (universal + worker) — uncapped referral Standard
   credit. Share links write a last-wins one-week `kody_ref` cookie; signup
   persists a pending `referrals` row from that cookie. `invoice.paid` grants
@@ -94,11 +94,11 @@ a paid Stripe tier still keeps `legacy` until that grant is removed. The
 one-shot backfill in `0043-users-entitlement-ladder.sql` sets `legacy` for those
 accounts. Resubscribing does not restore `legacy`.
 `0044-users-stripe-price-id.sql` adds `users.stripe_price_id` so Stripe refresh
-can detect those subscription changes; the first observation after deploy writes
-the current price without dropping the grandfather cohort. Free and `max` always
-use `planLimits`; the ladder is ignored for those plans. Unique-worker-day and
-Durable Object rows-read numbers live on `PlanLimits` for the public table. They
-are not hard-cut and not billed for legacy accounts.
+can detect those subscription changes. The first observation of a continuing
+subscription writes the current price and leaves `legacy` in place. Free and
+`max` always use `planLimits`; the ladder is ignored for those plans.
+Unique-worker-day and Durable Object rows-read numbers live on `PlanLimits` for
+the public table. They are not hard-cut and not billed for legacy accounts.
 
 `getUserEntitlement` / `getCachedUserEntitlement` return `{ plan, ladder }`.
 Enforcement (`assertWithinEntitlement`, `consumeDailyEntitlement`, storage
@@ -114,13 +114,12 @@ linked. `plan` on those records remains the grant that Manage plan edits.
 ### Second-agent Standard gift
 
 When a user first reaches two known connected agent ecosystems, Kody records one
-14-day overlay of the purchasable Pro. The gate is that second ecosystem
-(activation), not day-0 signup and not a second OAuth `clientId` for the same
-ecosystem. Two Cursor auth contexts are one ecosystem. An unlabeled client does
-not add an ecosystem. `users.second_agent_standard_gift_granted_at` is the
-write-once ledger (one gift per user).
-`users.second_agent_standard_gift_expires_at` is set only when the base
-effective plan is still `free`; NULL means the account was already
+14-day overlay of Pro. The gate is that second ecosystem (activation), not day-0
+signup and not a second OAuth `clientId` for the same ecosystem. Two Cursor auth
+contexts are one ecosystem. An unlabeled client does not add an ecosystem.
+`users.second_agent_standard_gift_granted_at` is the write-once ledger (one gift
+per user). `users.second_agent_standard_gift_expires_at` is set only when the
+base effective plan is still `free`; NULL means the account was already
 Standard/Pro/max and Stripe was not touched. There is no existing helper that
 extends a remaining Stripe period, and mutating `trial_end` / period end is
 payment-adjacent.
@@ -186,8 +185,8 @@ platform bound, not a scalable quota). Compute rate limits on `max`
 with at least 2× busy-day headroom, and they still dominate every paid plan.
 `automation_invocations_per_day` on `max` is the public burst-friendly ceiling
 above job runs (200,000 vs 40,000). Legacy Standard/Pro automation stays at the
-earlier job-matched values. All other resources use the ordinary
-`planLimits.max` numbers.
+job-matched values. All other resources use the ordinary `planLimits.max`
+numbers.
 
 | Resource                         | Limit   |
 | -------------------------------- | ------- |
@@ -208,14 +207,13 @@ earlier job-matched values. All other resources use the ordinary
 
 ## Prepaid credits
 
-Implements v1 of [#2617](https://github.com/kentcdodds/kody/issues/2617). The
-public ladder is Free plus one purchasable **Pro** (`STRIPE_PRO_PRICE_ID` /
+The public ladder is Free plus one purchasable **Pro** (`STRIPE_PRO_PRICE_ID` /
 `STRIPE_PRO_YEARLY_PRICE_ID`, $12 / $120). Pro uses `proCreditsPlanLimits`: Max
-stock/concurrency with Standard rates, email, UWD/DO includes, and job interval.
-Free stays hard-capped (execute 150/day and 400/week) with no wallet. Retired
-Standard ($12/$120) and Pro ($49/$480) subscribers keep their plan and table
-until they change plan (`retiredStandardPriceIds` / `retiredProPriceIds`);
-checkout only sells Pro.
+stock/concurrency with Standard rates, email, unique-worker-day and rows-read
+includes, and job interval. Free stays hard-capped (execute 150/day and
+400/week) with no wallet. Retired Standard ($12/$120) and Pro ($49/$480)
+subscribers keep their plan and table until they change plan
+(`retiredStandardPriceIds` / `retiredProPriceIds`); checkout only sells Pro.
 
 **Eligibility keys off the Stripe price or an admin decision.**
 `resolveSubscriptionPlan` sets `creditsEligible` when the granting subscription
@@ -289,8 +287,7 @@ rollups for both months the lane settles (prior and current), so credits never
 pay for usage from while the wallet was empty. The sweep is bounded per run;
 `credit_debit_cursor` keeps its keyset position so later runs reach every
 wallet. CPU, Durable Object duration, RunLog rows, and email are not debited.
-Nobody is invoiced for overage. `0071-drop-compute-overage-invoices.sql` drops
-the empty retired `compute_overage_invoices` table.
+Nobody is invoiced for overage. There is no overage-invoice ledger.
 
 **Top-ups.** `POST /account/credits/top-up.json` (Pro only) opens a one-off
 Checkout Session (`mode=payment`, `price_data`, card saved with
@@ -371,7 +368,7 @@ close the metering → enforcement loop for the compute surfaces
   webhook floods do not burn `execute_calls_per_day`, and MCP execute does not
   burn `automation_invocations_per_day`. Public Free sits modestly above
   `job_runs_per_day`. Public Standard, Pro, and `max` are burst-friendly above
-  job runs. Legacy Standard/Pro stay at the earlier job-matched ceilings.
+  job runs. Legacy Standard/Pro stay at the job-matched ceilings.
 - **Job interval floor** (`planLimits.*.minJobIntervalMs`) applies to free and
   public Standard (15 minutes) and public Pro (5 minutes). `0` still means no
   extra floor (`max`, and legacy Standard/Pro). The floor is asserted on create
@@ -754,7 +751,8 @@ wrapper and always returns a `PlanName`:
 2. Returns `free` without touching D1 when `userId` is not a 64-char hex string
    (test fixtures and non-account ids).
 3. When email is present: reads `plan`, `stripe_plan`, `entitlement_ladder`, and
-   the two Standard overlay expiry columns where
+   the two Pro-overlay expiry columns (`second_agent_standard_gift_expires_at`
+   and `referral_standard_credit_expires_at`) where
    `email = ? AND stable_user_id = ?`, then returns
    `resolveEffectivePlanWithSecondAgentGift` with `laterIsoTimestamp` of those
    expiries. A mismatched email/stable-id pair or missing row returns `free` (no

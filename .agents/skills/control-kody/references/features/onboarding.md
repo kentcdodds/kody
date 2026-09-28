@@ -2,8 +2,8 @@
 
 Three-step wizard after signup: connect an agent, make something useful (one
 prompt plus first search; the onboarding guide offers six first-win choices),
-then connect a second agent from a different ecosystem. Step 3 advertises
-Standard free for 2 weeks once a second known ecosystem is connected, pastes a
+then connect a second agent from a different ecosystem. Step 3 advertises Pro
+free for 2 weeks once a second known ecosystem is connected, pastes a
 portability-guide prompt, and, when the payload has a known memory subject or
 package name, shows a short "You made …" chip.
 
@@ -44,9 +44,9 @@ node tools/control-kody.ts preview -- \
   Grok Bot, Grok.com, and Grok CLI sit in the Grok ecosystem. Disable a tab when
   a grant names that host. An unlabeled client adds no ecosystem, and the other
   tabs stay available. A Cursor Cloud grant also marks Grok Bot connected.
-  Account → Connected agents is the grouped inbound list (logos for known kinds,
+  Account → Connections is the grouped inbound list (logos for known kinds,
   newest-first). That first second ecosystem also records the one-time 14-day
-  Standard gift (`secondAgentStandardGift` on `/onboarding.json`).
+  Pro gift (`secondAgentStandardGift` on `/onboarding.json`).
 - The Discord invite sits below the step wizard. First-use setup (search,
   memory, execute, package, job, integration, secret, Discord membership) is on
   Waiting.
