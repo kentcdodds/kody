@@ -242,3 +242,9 @@ runtime path if this budget is raised again.
   against the previous 3_886_000 budget, reviewed ceiling 3_889_000; platform
   local dry-run 5_213_315 against the previous 5_211_000 budget, reviewed
   ceiling 5_214_000.
+- Named-only package exports (#2670): `buildKodyModuleBundle` detects entries
+  without a default export (`moduleSourceDeclaresDefaultExport`) and emits a
+  no-default callable entry with an actionable invoke error instead of failing
+  the bundle: runtime local dry-run 3_889_663 against the previous 3_889_000
+  budget, reviewed ceiling 3_890_000; platform local dry-run 5_214_681 against
+  the previous 5_214_000 budget, reviewed ceiling 5_215_000.
