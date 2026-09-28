@@ -276,3 +276,8 @@ runtime path if this budget is raised again.
   3_900_006 against the previous 3_899_500 budget (main measured 3_899_073),
   reviewed ceiling 3_900_500; platform local dry-run 5_224_698 stays under
   5_225_000.
+- metaMemory subject/summary/details max-length error messages and JSDoc
+  (#2704): shared field schemas with `must be at most N characters, got M`
+  errors plus documented max lengths on capability search types: platform CI
+  dry-run 5_225_141 against the previous 5_225_000 budget (local dry-run
+  5_224_911), reviewed ceiling 5_226_000.
