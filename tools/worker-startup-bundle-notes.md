@@ -242,3 +242,11 @@ runtime path if this budget is raised again.
   against the previous 3_886_000 budget, reviewed ceiling 3_889_000; platform
   local dry-run 5_213_315 against the previous 5_211_000 budget, reviewed
   ceiling 5_214_000.
+- Publish typecheck of `package.json#exports` (#2609): export entrypoints join
+  the typecheck targets, and packages with a root `tsconfig.json` get semantic
+  diagnostics for every reachable source file (`collectReachableSourceFilePaths`
+  walk, bare-specifier diagnostic filter, flattened message chains) in
+  `repo/checks.ts`, which the runtime entry reaches through repo publish:
+  runtime local dry-run 3_890_654 against the previous 3_889_000 budget,
+  reviewed ceiling 3_891_500; platform local dry-run 5_215_619 against the
+  previous 5_214_000 budget, reviewed ceiling 5_216_500.
