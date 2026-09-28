@@ -16,7 +16,8 @@
  * are unwrapped from known Gateway envelopes, then merged before parse.
  * That third-party model requires Gateway authentication and Unified
  * Billing (or BYOK); the Worker does not fall back to direct Workers AI.
- * Failures and low mean confidence fall back to the pre-Jev hybrid order.
+ * Failures, low mean confidence, and Score batches that miss
+ * {@link jevSearchScoreBudgetMs} fall back to the pre-Jev hybrid order.
  * After Score, keep uses an adaptive cutoff: high bar first, one secondary
  * floor if that keep-set is empty, then a true empty ranked list (never
  * restore hybrid noise when every Jev score is weak).
@@ -105,6 +106,14 @@ export const jevSearchModel = 'typesafe/jev'
  * one call asks for the full candidate cap at once.
  */
 export const jevSearchScoreQuestionBatchSize = 8
+
+/**
+ * Wall-clock budget for every Score batch together. Gateway latency for the
+ * parallel batches swings from ~2s to past the ~30s MCP client timeout, so
+ * past this budget the in-flight `AI.run` calls are aborted and search keeps
+ * hybrid order (`fallback-timeout`).
+ */
+export const jevSearchScoreBudgetMs = 4_000
 
 /** Safe length for `errorReason` on fallback-error telemetry. */
 const jevSearchErrorReasonMaxChars = 240
@@ -509,7 +518,7 @@ async function runJevScoreRequest(
 		state: Record<string, unknown>
 		questions: ReturnType<typeof buildJevQuestions>
 	},
-	options?: { gateway: { id: string } },
+	options?: { gateway: { id: string }; signal?: AbortSignal },
 	tally?: { aiCallCount: number },
 ): Promise<JevNormalizedRunResponse> {
 	if (tally) tally.aiCallCount += 1
@@ -535,6 +544,7 @@ async function runJevViaGateway(
 		state: Record<string, unknown>
 		questions: ReturnType<typeof buildJevQuestions>
 	},
+	signal: AbortSignal,
 	tally?: { aiCallCount: number },
 ): Promise<JevNormalizedRunResponse> {
 	const gatewayId = runtime.AI_GATEWAY_ID?.trim()
@@ -547,10 +557,12 @@ async function runJevViaGateway(
 			body,
 			{
 				gateway: { id: gatewayId },
+				signal,
 			},
 			tally,
 		)
 	} catch (error) {
+		if (signal.aborted) throw error
 		console.warn(
 			JSON.stringify({
 				message: 'Workers AI Gateway Jev request failed',
@@ -715,6 +727,10 @@ export async function rerankSearchCandidatesWithJev(input: {
 	 * record `skipped-plan` when the flag is on.
 	 */
 	planEligible: boolean
+	/** Defaults to {@link jevSearchScoreBudgetMs}. */
+	scoreBudgetMs?: number
+	/** Caller search deadline; aborting it also aborts in-flight Score calls. */
+	signal?: AbortSignal
 }): Promise<JevSearchRerankResult> {
 	const startedAt = performance.now()
 	const hybridCandidates = input.candidates
@@ -773,6 +789,15 @@ export async function rerankSearchCandidatesWithJev(input: {
 	)
 
 	const tally = { aiCallCount: 0 }
+	const budget = new AbortController()
+	const timedOutResult = () =>
+		emptyResult('fallback-timeout', {
+			model: jevSearchModel,
+			aiCallCount: tally.aiCallCount,
+			usage: { inputTokens: null, outputTokens: null },
+		})
+	let budgetTimer: ReturnType<typeof setTimeout> | undefined
+	let onCallerAbort: (() => void) | undefined
 	try {
 		const state = {
 			query: input.query,
@@ -787,18 +812,36 @@ export async function rerankSearchCandidatesWithJev(input: {
 			cards.length,
 			jevSearchScoreQuestionBatchSize,
 		)
-		const responses = await Promise.all(
-			batches.map((indexes) =>
-				runJevViaGateway(
-					runtime as JevRuntimeEnv & { AI: Ai },
-					{
-						state,
-						questions: buildJevQuestions(indexes),
-					},
-					tally,
+		const budgetExceeded = new Promise<'timeout'>((resolve) => {
+			const expire = (reason: unknown) => {
+				resolve('timeout')
+				budget.abort(reason)
+			}
+			budgetTimer = setTimeout(() => {
+				expire(new Error('jev-score-budget-exceeded'))
+			}, input.scoreBudgetMs ?? jevSearchScoreBudgetMs)
+			onCallerAbort = () => expire(input.signal?.reason)
+			if (input.signal?.aborted) onCallerAbort()
+			input.signal?.addEventListener('abort', onCallerAbort, { once: true })
+		})
+		const settled = await Promise.race([
+			Promise.all(
+				batches.map((indexes) =>
+					runJevViaGateway(
+						runtime as JevRuntimeEnv & { AI: Ai },
+						{
+							state,
+							questions: buildJevQuestions(indexes),
+						},
+						budget.signal,
+						tally,
+					),
 				),
 			),
-		)
+			budgetExceeded,
+		])
+		if (settled === 'timeout') return timedOutResult()
+		const responses = settled
 		const usage = sumTokenUsage(
 			responses.map((response) => readResponseUsage(response.payload)),
 		)
@@ -881,6 +924,7 @@ export async function rerankSearchCandidatesWithJev(input: {
 			usage,
 		}
 	} catch (error) {
+		if (budget.signal.aborted) return timedOutResult()
 		console.warn(
 			JSON.stringify({
 				message: 'Jev search rerank failed; using hybrid order',
@@ -893,5 +937,8 @@ export async function rerankSearchCandidatesWithJev(input: {
 			aiCallCount: tally.aiCallCount,
 			usage: { inputTokens: null, outputTokens: null },
 		})
+	} finally {
+		clearTimeout(budgetTimer)
+		if (onCallerAbort) input.signal?.removeEventListener('abort', onCallerAbort)
 	}
 }

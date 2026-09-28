@@ -257,3 +257,9 @@ runtime path if this budget is raised again.
   local dry-run 3_892_662 against the previous 3_891_500 budget, reviewed
   ceiling 3_893_500; platform local dry-run 5_217_626 against the previous
   5_216_500 budget, reviewed ceiling 5_218_500.
+- Search latency budgets (#2673): Jev Score abort budget (`fallback-timeout`),
+  the fixed package-hydration cap, the bounded Waiting block, and
+  `runWithSearchDeadline` / `SearchDeadlineError` on the shared search path, on
+  top of #2670: runtime local dry-run 3_893_620 against the previous 3_893_500
+  budget, reviewed ceiling 3_894_500; platform local dry-run 5_218_689 against
+  the previous 5_218_500 budget, reviewed ceiling 5_219_500.

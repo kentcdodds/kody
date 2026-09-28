@@ -188,6 +188,8 @@ export async function searchUnified(input: {
 	 * false. Free / anonymous must pass false.
 	 */
 	jevRerankPlanEligible?: boolean
+	/** Search deadline; stops before Jev and aborts in-flight Score calls. */
+	signal?: AbortSignal
 }): Promise<SearchUnifiedResult> {
 	const offline = isCapabilitySearchOffline(input.env)
 	const query = input.query.trim()
@@ -325,6 +327,7 @@ export async function searchUnified(input: {
 							env: input.env,
 							query: intent.normalizedQuery,
 							limit: recallLimit,
+							pageLimit: limit,
 							offline,
 							...(input.userId ? { userId: input.userId } : {}),
 							registry,
@@ -365,6 +368,7 @@ export async function searchUnified(input: {
 		}
 	}
 	const candidateGenerationMs = elapsedMs(candidateGenerationStart)
+	input.signal?.throwIfAborted()
 	const rerankingStart = performance.now()
 	const hybridReranked = rerankCandidates({
 		candidates,
@@ -380,6 +384,7 @@ export async function searchUnified(input: {
 		offline,
 		enabled: jevRerankEnabled,
 		planEligible: jevRerankPlanEligible,
+		...(input.signal ? { signal: input.signal } : {}),
 	})
 	const reranked = jevRerank.candidates
 	const matches = domainFilter

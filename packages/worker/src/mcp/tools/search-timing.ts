@@ -1,5 +1,6 @@
 import { type ServerTimingEntry } from '#worker/server-timing.ts'
 
+import { SEARCH_DEADLINE_MS } from './search-constants.ts'
 import {
 	type SearchPhaseTimings,
 	type SearchTelemetry,
@@ -90,6 +91,43 @@ export function reconcileSearchPhaseTimings<
 		...input.phaseTimings,
 		exclusiveMs,
 		unaccountedMs: Math.max(0, input.durationMs - exclusiveMs),
+	}
+}
+
+export class SearchDeadlineError extends Error {
+	constructor(deadlineMs: number) {
+		super(
+			`Search did not finish within ${String(Math.round(deadlineMs / 1000))}s, so Kody stopped waiting before the MCP request timed out. Retry once; if it repeats, use a shorter query or pass "domain" to narrow the search.`,
+		)
+		this.name = 'SearchDeadlineError'
+	}
+}
+
+/**
+ * Reject with {@link SearchDeadlineError} when `run` outlives `deadlineMs`,
+ * and abort the signal handed to `run` so the abandoned search stops at its
+ * next checkpoint (and aborts in-flight Jev calls) instead of finishing
+ * unobserved work and side effects while the caller retries.
+ */
+export async function runWithSearchDeadline<T>(
+	run: (signal: AbortSignal) => Promise<T>,
+	deadlineMs: number = SEARCH_DEADLINE_MS,
+): Promise<T> {
+	const deadline = new AbortController()
+	let timeoutId: ReturnType<typeof setTimeout> | undefined
+	try {
+		return await Promise.race([
+			run(deadline.signal),
+			new Promise<never>((_, reject) => {
+				timeoutId = setTimeout(() => {
+					const error = new SearchDeadlineError(deadlineMs)
+					reject(error)
+					deadline.abort(error)
+				}, deadlineMs)
+			}),
+		])
+	} finally {
+		if (timeoutId !== undefined) clearTimeout(timeoutId)
 	}
 }
 

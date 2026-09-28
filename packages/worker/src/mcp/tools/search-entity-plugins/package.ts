@@ -611,9 +611,14 @@ export const packageSearchEntityPlugin = {
 		}
 
 		// Lean search rows omit exports until hydrate. Bound hydrate to the
-		// recall window so strong exports can enter the first-pass pool without
-		// loading every package source.
-		const hydrateBudget = Math.min(packageCandidates.length, input.limit)
+		// requested page so strong exports can enter the first-pass pool
+		// without loading every package source. Jev wide recall (50) must not
+		// multiply source loads and export AST parses for rows that rarely
+		// reach the returned page.
+		const hydrateBudget = Math.min(
+			packageCandidates.length,
+			input.pageLimit ?? input.limit,
+		)
 		const hydrateTargets = [...packageCandidates]
 			.sort(
 				(left, right) => right.scoreComponents.base - left.scoreComponents.base,

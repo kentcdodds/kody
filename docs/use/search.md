@@ -127,16 +127,18 @@ Skip reasons include `skipped-flag-off`, `skipped-plan` (Free / anonymous),
 with a decisive top hit). A `fallback-error` outcome includes a short
 **`errorReason`** (missing AI Gateway, Gateway 403/402, or incomplete Score
 answers, including sampled top-level response keys when answers are missing).
-When the Jev stage runs or attempts, that object also carries **`model`**,
-**`aiCallCount`** (Score `AI.run` batches), and **`usage`** (`inputTokens` /
-`outputTokens`, or nulls when the binding omits them) so eval can weigh ranking
-quality against latency and token use. Public `search` also returns
-request-scoped **`timing.serverTiming`** phases (`{ name, durationMs }`, same
-shape as execute, not stored), including **`jevRerank`** when that stage ran.
-The `search` meta capability (usable inside **execute**) returns the same
-`telemetry`, `phaseTimings`, and top-level `serverTiming` on ranked `query`
-results. Entity lookups, domain listings, empty/broad discovery,
-`search({ domain })`, and exact package identity omit those Jev fields.
+Score batches share a 4-second budget; past it Kody aborts them and keeps hybrid
+order with outcome `fallback-timeout`. When the Jev stage runs or attempts, that
+object also carries **`model`**, **`aiCallCount`** (Score `AI.run` batches), and
+**`usage`** (`inputTokens` / `outputTokens`, or nulls when the binding omits
+them) so eval can weigh ranking quality against latency and token use. Public
+`search` also returns request-scoped **`timing.serverTiming`** phases
+(`{ name, durationMs }`, same shape as execute, not stored), including
+**`jevRerank`** when that stage ran. The `search` meta capability (usable inside
+**execute**) returns the same `telemetry`, `phaseTimings`, and top-level
+`serverTiming` on ranked `query` results. Entity lookups, domain listings,
+empty/broad discovery, `search({ domain })`, and exact package identity omit
+those Jev fields.
 
 Ranked `search({ query })` may also prepend a **`## Waiting`** block when
 something the signed-in human must clear is `block` or `degraded` (reconnectable
@@ -144,7 +146,10 @@ OAuth, expired secrets, MCP reconnects). Setup/onboarding cards stay off this
 block. At most three items, then “N more” pointing at `waitingSummary` and
 `/account/waiting`. Entity lookups, `search({ domain })`, and empty/broad
 discovery do not inject it. Matching integration hits also carry the reconnect
-`nextStep` when the last refresh was reconnectable.
+`nextStep` when the last refresh was reconnectable. When those checks take
+longer than 1.5 seconds, results return without the block
+(`phaseTimings.waitingItemsTimedOut: true`); `waitingSummary` still has the full
+list.
 
 Plan-limit or quota denials keep the existing error text and `isError` flag and
 add a focused `entitlement` object on structured content. Ordinary successful
@@ -157,7 +162,13 @@ so agents can back off — not an `entitlement` upgrade hint.
 
 Search responses also return top-level **`timing`** metadata with
 **`startedAt`**, **`endedAt`**, and **`durationMs`** so hosts can reason about
-how long the ranked lookup or entity lookup took.
+how long the ranked lookup or entity lookup took. A search that has not finished
+after 20 seconds returns an `isError` result starting with
+`Search did not finish within 20s` instead of running into the MCP host's
+request timeout (often ~30s, error `-32001`), and the abandoned search stops at
+its next phase (in-flight Jev calls are aborted) so a retry does not compete
+with it. Retry once, then shorten the query or pass `domain`. The `search`
+capability inside **execute** has the same deadline.
 
 Optional **`limit`** caps how many ranked hits return. Optional
 **`maxResponseSize`** trims low-ranked matches against the compact list when the

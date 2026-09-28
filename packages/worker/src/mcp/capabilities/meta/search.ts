@@ -8,7 +8,10 @@ import {
 	type SlimSearchMatch,
 } from '#mcp/tools/search-format.ts'
 import { jevSearchKeepPaths } from '#mcp/tools/search-jev-rerank.ts'
-import { toSearchServerTiming } from '#mcp/tools/search-timing.ts'
+import {
+	runWithSearchDeadline,
+	toSearchServerTiming,
+} from '#mcp/tools/search-timing.ts'
 import {
 	conversationIdInputField,
 	memoryContextInputField,
@@ -192,21 +195,24 @@ export const searchCapability = defineDomainCapability(
 			// which includes this meta capability.
 			const { executeSearchList } =
 				await import('#mcp/tools/search-execution.ts')
-			const execution = await executeSearchList({
-				env: ctx.env,
-				callerContext: ctx.callerContext,
-				conversationId,
-				query,
-				...(args.query !== undefined ? { memoryQuery: args.query } : {}),
-				limit: normalizeLimit(
-					args.limit,
-					domainFilter && !query ? domainBrowseDefaultLimit : undefined,
-				),
-				userId,
-				includeHiddenPackages,
-				memoryContext: args.memoryContext,
-				...(domainFilter ? { domain: domainFilter } : {}),
-			})
+			const execution = await runWithSearchDeadline((signal) =>
+				executeSearchList({
+					signal,
+					env: ctx.env,
+					callerContext: ctx.callerContext,
+					conversationId,
+					query,
+					...(args.query !== undefined ? { memoryQuery: args.query } : {}),
+					limit: normalizeLimit(
+						args.limit,
+						domainFilter && !query ? domainBrowseDefaultLimit : undefined,
+					),
+					userId,
+					includeHiddenPackages,
+					memoryContext: args.memoryContext,
+					...(domainFilter ? { domain: domainFilter } : {}),
+				}),
+			)
 			const jevRerank = execution.result.telemetry.jevRerank
 			const jevRerankMs = execution.result.phaseTimings.jevRerankMs
 			const serverTiming = toSearchServerTiming({

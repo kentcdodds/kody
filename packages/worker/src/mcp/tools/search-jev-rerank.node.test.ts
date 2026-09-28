@@ -8,6 +8,7 @@ import {
 	jevSearchNecessityMediumPoolMax,
 	jevSearchNecessitySmallPoolMax,
 	jevSearchNecessityTightScoreGap,
+	jevSearchScoreBudgetMs,
 	jevSearchScoreQuestionBatchSize,
 	normalizeJevRunResponse,
 	rerankSearchCandidatesWithJev,
@@ -267,7 +268,10 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 	expect(applied.top1Type).toBe('capability')
 	expect(applyRun).toHaveBeenCalled()
 	expect(applyRun.mock.calls[0]?.[0]).toBe('typesafe/jev')
-	expect(applyRun.mock.calls[0]?.[2]).toEqual({ gateway: { id: 'kody' } })
+	expect(applyRun.mock.calls[0]?.[2]).toEqual({
+		gateway: { id: 'kody' },
+		signal: expect.any(AbortSignal),
+	})
 	expect(applyRun.mock.calls[0]?.[1]).toEqual(
 		expect.objectContaining({
 			state: expect.objectContaining({
@@ -445,7 +449,10 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 		'b',
 	])
 	expect(failingRun).toHaveBeenCalled()
-	expect(failingRun.mock.calls[0]?.[2]).toEqual({ gateway: { id: 'kody' } })
+	expect(failingRun.mock.calls[0]?.[2]).toEqual({
+		gateway: { id: 'kody' },
+		signal: expect.any(AbortSignal),
+	})
 	expect(consoleWarn).toHaveBeenCalled()
 
 	const longMessage = `Gateway authentication is required to use unified billing. ${'x'.repeat(300)}`
@@ -556,8 +563,14 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 		bestWideId,
 	])
 	expect(multiBatchRun).toHaveBeenCalledTimes(2)
-	expect(multiBatchRun.mock.calls[0]?.[2]).toEqual({ gateway: { id: 'kody' } })
-	expect(multiBatchRun.mock.calls[1]?.[2]).toEqual({ gateway: { id: 'kody' } })
+	expect(multiBatchRun.mock.calls[0]?.[2]).toEqual({
+		gateway: { id: 'kody' },
+		signal: expect.any(AbortSignal),
+	})
+	expect(multiBatchRun.mock.calls[1]?.[2]).toEqual({
+		gateway: { id: 'kody' },
+		signal: expect.any(AbortSignal),
+	})
 	expect(Object.keys(jevRunBody(multiBatchRun, 0).questions)).toEqual(
 		Array.from(
 			{ length: jevSearchScoreQuestionBatchSize },
@@ -617,10 +630,124 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 	expect(partialBatchRun).toHaveBeenCalledTimes(2)
 	expect(partialBatchRun.mock.calls[0]?.[2]).toEqual({
 		gateway: { id: 'kody' },
+		signal: expect.any(AbortSignal),
 	})
 	expect(partialBatchRun.mock.calls[1]?.[2]).toEqual({
 		gateway: { id: 'kody' },
+		signal: expect.any(AbortSignal),
 	})
+})
+
+test('rerankSearchCandidatesWithJev aborts Score batches past the budget and keeps hybrid order', async () => {
+	vi.useFakeTimers()
+	try {
+		const signals: Array<AbortSignal> = []
+		const hangingRun = vi.fn(
+			(_model: string, _body: unknown, options: { signal: AbortSignal }) => {
+				signals.push(options.signal)
+				return new Promise((_, reject) => {
+					options.signal.addEventListener('abort', () => {
+						reject(options.signal.reason)
+					})
+				})
+			},
+		)
+		const pool = makeNecessityRunPool()
+		const pending = rerankSearchCandidatesWithJev({
+			env: {
+				AI: { run: hangingRun },
+				AI_GATEWAY_ID: 'kody',
+			} as unknown as Env,
+			query: 'send email',
+			intent: makeIntent('send email', 0.9),
+			candidates: pool,
+			limit: 2,
+			offline: false,
+			enabled: true,
+			planEligible: true,
+		})
+		await vi.advanceTimersByTimeAsync(jevSearchScoreBudgetMs - 1)
+		expect(signals.every((signal) => !signal.aborted)).toBe(true)
+		await vi.advanceTimersByTimeAsync(1)
+		const result = await pending
+
+		expect(result.outcome).toBe('fallback-timeout')
+		expect(result.errorReason).toBeUndefined()
+		expect(result.model).toBe(jevSearchModel)
+		expect(result.aiCallCount).toBe(
+			Math.ceil(pool.length / jevSearchScoreQuestionBatchSize),
+		)
+		expect(result.candidates.map((candidate) => candidate.id)).toEqual([
+			pool[0]!.id,
+			pool[1]!.id,
+		])
+		expect(signals.length).toBeGreaterThan(0)
+		expect(signals.every((signal) => signal.aborted)).toBe(true)
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('rerankSearchCandidatesWithJev aborts in-flight Score batches when the caller search deadline aborts', async () => {
+	const signals: Array<AbortSignal> = []
+	const hangingRun = vi.fn(
+		(_model: string, _body: unknown, options: { signal: AbortSignal }) => {
+			signals.push(options.signal)
+			return new Promise(() => {})
+		},
+	)
+	const caller = new AbortController()
+	const pool = makeNecessityRunPool()
+	const pending = rerankSearchCandidatesWithJev({
+		env: {
+			AI: { run: hangingRun },
+			AI_GATEWAY_ID: 'kody',
+		} as unknown as Env,
+		query: 'send email',
+		intent: makeIntent('send email', 0.9),
+		candidates: pool,
+		limit: 1,
+		offline: false,
+		enabled: true,
+		planEligible: true,
+		signal: caller.signal,
+	})
+	await Promise.resolve()
+	caller.abort(new Error('search-deadline'))
+	const result = await pending
+	expect(result.outcome).toBe('fallback-timeout')
+	expect(signals.length).toBeGreaterThan(0)
+	expect(signals.every((signal) => signal.aborted)).toBe(true)
+})
+
+test('rerankSearchCandidatesWithJev times out even when the AI binding ignores abort', async () => {
+	vi.useFakeTimers()
+	try {
+		const neverSettles = vi.fn(() => new Promise(() => {}))
+		const pool = makeNecessityRunPool()
+		const pending = rerankSearchCandidatesWithJev({
+			env: {
+				AI: { run: neverSettles },
+				AI_GATEWAY_ID: 'kody',
+			} as unknown as Env,
+			query: 'send email',
+			intent: makeIntent('send email', 0.9),
+			candidates: pool,
+			limit: 1,
+			offline: false,
+			enabled: true,
+			planEligible: true,
+			scoreBudgetMs: 50,
+		})
+		await vi.advanceTimersByTimeAsync(50)
+		const result = await pending
+		expect(result.outcome).toBe('fallback-timeout')
+		expect(result.candidates.map((candidate) => candidate.id)).toEqual([
+			pool[0]!.id,
+		])
+	} finally {
+		vi.useRealTimers()
+	}
 })
 
 test('normalizeJevRunResponse unwraps gateway envelopes and docs Score payloads', () => {
