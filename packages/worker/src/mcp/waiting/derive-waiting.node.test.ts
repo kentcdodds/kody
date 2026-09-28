@@ -74,6 +74,7 @@ function createStubDb(
 		first_execute_at?: string | null
 		first_saved_package_at?: string | null
 		onboarding_checklist_dismissed_at?: string | null
+		saved_package_count?: number
 	},
 	queries: Array<string> = [],
 ) {
@@ -86,6 +87,9 @@ function createStubDb(
 					return {
 						async first() {
 							if (!stamps) return null
+							if (normalized.includes('from saved_packages')) {
+								return { count: stamps.saved_package_count ?? 0 }
+							}
 							if (normalized.includes('from users')) {
 								return {
 									first_search_at: stamps.first_search_at ?? null,
@@ -339,5 +343,26 @@ test('waiting onboarding checklist reuses first-use probes instead of re-reading
 				query.includes('first_search_at') || query.includes('first_execute_at'),
 		),
 	).toHaveLength(1)
+	resetFirstUseMocks()
+})
+
+test('waiting onboarding checklist falls back to its own package count when the package probe fails', async () => {
+	resetFirstUseMocks()
+	mockModule.listSavedPackagesByUserId.mockRejectedValue(
+		new Error('packages down'),
+	)
+	const signals = await collectWaitingSignals({
+		env: {
+			APP_DB: createStubDb({
+				first_search_at: null,
+				first_execute_at: null,
+				saved_package_count: 2,
+			}),
+		} as Env,
+		user,
+	})
+
+	expect(signals.onboardingRemaining).not.toContain('give-access')
+	expect(signals.onboardingRemaining).not.toContain('install-starter')
 	resetFirstUseMocks()
 })

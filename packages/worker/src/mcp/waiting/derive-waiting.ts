@@ -155,19 +155,22 @@ export async function collectWaitingSignals(input: {
 		}),
 	])
 
-	const savedPackageCount = packagesProbe.ok ? packagesProbe.value.length : 0
+	// A failed package probe leaves both inputs unknown so the checklist
+	// re-derives them itself.
 	const checklist = await deriveOnboardingChecklist({
 		env,
 		userId: user.stableUserId,
 		emailVerified: user.emailVerified,
 		hasMcpClient,
-		hasAccessWin:
-			!!(
+		...(packagesProbe.ok && {
+			hasAccessWin: !!(
 				activationStamps?.first_search_at ||
 				activationStamps?.first_execute_at ||
-				firstMemory
-			) || savedPackageCount > 0,
-		savedPackageCount,
+				firstMemory ||
+				packagesProbe.value.length
+			),
+			savedPackageCount: packagesProbe.value.length,
+		}),
 		now,
 	}).catch(() => ({
 		items: [],

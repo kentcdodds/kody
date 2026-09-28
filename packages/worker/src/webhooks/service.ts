@@ -183,15 +183,9 @@ export async function listWebhooksForUser(input: {
 	packageId?: string
 	kodyId?: string
 }): Promise<Array<ListedWebhook>> {
-	const [packages, mints] = await Promise.all([
-		listSavedPackagesByUserId(input.env.APP_DB, {
-			userId: input.userId,
-		}),
-		listWebhookEndpointsForUser({
-			db: input.env.APP_DB,
-			userId: input.userId,
-		}),
-	])
+	const packages = await listSavedPackagesByUserId(input.env.APP_DB, {
+		userId: input.userId,
+	})
 	const packageFilter = (input.packageId ?? input.kodyId ?? '').trim()
 	const filteredPackages = packageFilter
 		? packages.filter(
@@ -200,7 +194,10 @@ export async function listWebhooksForUser(input: {
 		: packages
 
 	const mintedByKey = new Map<string, WebhookEndpointRecord>()
-	for (const mint of mints) {
+	for (const mint of await listWebhookEndpointsForUser({
+		db: input.env.APP_DB,
+		userId: input.userId,
+	})) {
 		mintedByKey.set(`${mint.packageId}:${mint.webhookName}`, mint)
 	}
 
