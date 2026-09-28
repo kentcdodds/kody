@@ -176,6 +176,27 @@ async function loadDeclaredWebhook(input: {
 	return declared
 }
 
+const webhookManifestLoadConcurrency = 8
+
+async function mapWithConcurrency<T, R>(
+	items: ReadonlyArray<T>,
+	concurrency: number,
+	map: (item: T) => Promise<R>,
+): Promise<Array<R>> {
+	const results = new Array<R>(items.length)
+	let next = 0
+	async function worker() {
+		while (next < items.length) {
+			const index = next++
+			results[index] = await map(items[index]!)
+		}
+	}
+	await Promise.all(
+		Array.from({ length: Math.min(concurrency, items.length) }, worker),
+	)
+	return results
+}
+
 export async function listWebhooksForUser(input: {
 	env: Env
 	baseUrl: string
@@ -183,9 +204,15 @@ export async function listWebhooksForUser(input: {
 	packageId?: string
 	kodyId?: string
 }): Promise<Array<ListedWebhook>> {
-	const packages = await listSavedPackagesByUserId(input.env.APP_DB, {
-		userId: input.userId,
-	})
+	const [packages, mints] = await Promise.all([
+		listSavedPackagesByUserId(input.env.APP_DB, {
+			userId: input.userId,
+		}),
+		listWebhookEndpointsForUser({
+			db: input.env.APP_DB,
+			userId: input.userId,
+		}),
+	])
 	const packageFilter = (input.packageId ?? input.kodyId ?? '').trim()
 	const filteredPackages = packageFilter
 		? packages.filter(
@@ -194,29 +221,33 @@ export async function listWebhooksForUser(input: {
 		: packages
 
 	const mintedByKey = new Map<string, WebhookEndpointRecord>()
-	for (const mint of await listWebhookEndpointsForUser({
-		db: input.env.APP_DB,
-		userId: input.userId,
-	})) {
+	for (const mint of mints) {
 		mintedByKey.set(`${mint.packageId}:${mint.webhookName}`, mint)
 	}
 
+	const manifests = await mapWithConcurrency(
+		filteredPackages,
+		webhookManifestLoadConcurrency,
+		(savedPackage) =>
+			loadPackageManifestBySourceId({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				sourceId: savedPackage.sourceId,
+			}).catch((error) => {
+				console.warn('Failed to load package manifest for webhooks', {
+					packageId: savedPackage.id,
+					sourceId: savedPackage.sourceId,
+					error,
+				})
+				return null
+			}),
+	)
+
 	const listed: Array<ListedWebhook> = []
 	const urlHost = webhookUrlHostFromOrigin(input.baseUrl)
-	for (const savedPackage of filteredPackages) {
-		const loaded = await loadPackageManifestBySourceId({
-			env: input.env,
-			baseUrl: input.baseUrl,
-			userId: input.userId,
-			sourceId: savedPackage.sourceId,
-		}).catch((error) => {
-			console.warn('Failed to load package manifest for webhooks', {
-				packageId: savedPackage.id,
-				sourceId: savedPackage.sourceId,
-				error,
-			})
-			return null
-		})
+	for (const [index, savedPackage] of filteredPackages.entries()) {
+		const loaded = manifests[index]
 		if (!loaded) continue
 		for (const webhook of listPackageWebhooks(loaded.manifest)) {
 			const mint = mintedByKey.get(`${savedPackage.id}:${webhook.name}`)
