@@ -63,6 +63,7 @@ async function expectOversizeFieldError(options: {
 }
 
 test('metaMemoryVerify rejects oversize subject, summary, and details with limit and actual length', async () => {
+	expect.hasAssertions()
 	const subjectLength = memorySubjectMaxLength + 1
 	const summaryLength = memorySummaryMaxLength + 1
 	const detailsLength = memoryDetailsMaxLength + 1
@@ -102,6 +103,7 @@ test('metaMemoryVerify rejects oversize subject, summary, and details with limit
 })
 
 test('metaMemoryUpsert rejects oversize subject, summary, and details with limit and actual length', async () => {
+	expect.hasAssertions()
 	const subjectLength = memorySubjectMaxLength + 1
 	const summaryLength = memorySummaryMaxLength + 1
 	const detailsLength = memoryDetailsMaxLength + 1
