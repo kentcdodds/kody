@@ -9,6 +9,8 @@ import {
 } from '#mcp/tools/search-format.ts'
 import { jevSearchKeepPaths } from '#mcp/tools/search-jev-rerank.ts'
 import {
+	elapsedMs,
+	reconcileSearchPhaseTimings,
 	runWithSearchDeadline,
 	toSearchServerTiming,
 } from '#mcp/tools/search-timing.ts'
@@ -191,6 +193,7 @@ export const searchCapability = defineDomainCapability(
 			const conversationId = resolveConversationId(args.conversationId)
 			const userId = ctx.callerContext.user?.userId ?? null
 			const includeHiddenPackages = !!args.includeHiddenPackages
+			const startedAt = performance.now()
 			// Deliberately dynamic: search-execution loads the capability registry,
 			// which includes this meta capability.
 			const { executeSearchList } =
@@ -216,7 +219,13 @@ export const searchCapability = defineDomainCapability(
 			const jevRerank = execution.result.telemetry.jevRerank
 			const jevRerankMs = execution.result.phaseTimings.jevRerankMs
 			const serverTiming = toSearchServerTiming({
-				phaseTimings: execution.result.phaseTimings,
+				phaseTimings: reconcileSearchPhaseTimings({
+					durationMs: elapsedMs(startedAt),
+					phaseTimings: {
+						...execution.result.phaseTimings,
+						...execution.phaseTimings,
+					},
+				}),
 				jevRerank,
 			})
 			return {

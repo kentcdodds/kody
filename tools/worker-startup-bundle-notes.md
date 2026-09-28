@@ -269,3 +269,10 @@ runtime path if this budget is raised again.
   paths (rebased onto #2673): local dry-run runtime 3_898_846 / platform
   5_224_029 against the post-#2673 floors; reviewed ceilings 3_899_500 /
   5_225_000.
+- Execute `search` capability execution-level `serverTiming` (#2684): the
+  capability now reconciles its phases like the MCP tool, which pulls
+  `reconcileSearchPhaseTimings` (previously tool-runner only, platform) into the
+  runtime entry, plus `rateLimit` / `featureFlags` tiles: runtime local dry-run
+  3_900_006 against the previous 3_899_500 budget (main measured 3_899_073),
+  reviewed ceiling 3_900_500; platform local dry-run 5_224_698 stays under
+  5_225_000.

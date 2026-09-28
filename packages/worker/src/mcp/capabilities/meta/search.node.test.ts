@@ -356,6 +356,19 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 			'fallback-error',
 		]).toContain(jevEnabled.telemetry?.jevRerank?.outcome)
 		expect(jevEntry?.durationMs).toBe(jevEnabled.phaseTimings?.jevRerankMs)
+		const timingNames = jevEnabled.serverTiming?.map((entry) => entry.name)
+		expect(timingNames).toEqual(
+			expect.arrayContaining([
+				'rateLimit',
+				'usernameLookup',
+				'identityResolution',
+				'rowAndRegistryLoad',
+				'featureFlags',
+				'loadAndRank',
+				'retrievers',
+				'unaccounted',
+			]),
+		)
 	} finally {
 		mockFeatureFlags.override = null
 		mockUserPlan.plan = 'free'

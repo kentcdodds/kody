@@ -134,11 +134,14 @@ object also carries **`model`**, **`aiCallCount`** (Score `AI.run` batches), and
 them) so eval can weigh ranking quality against latency and token use. Public
 `search` also returns request-scoped **`timing.serverTiming`** phases
 (`{ name, durationMs }`, same shape as execute, not stored), including
-**`jevRerank`** when that stage ran. The `search` meta capability (usable inside
-**execute**) returns the same `telemetry`, `phaseTimings`, and top-level
-`serverTiming` on ranked `query` results. Entity lookups, domain listings,
-empty/broad discovery, `search({ domain })`, and exact package identity omit
-those Jev fields.
+**`jevRerank`** when that stage ran. Execution-level tiles (`rateLimit`,
+`usernameLookup`, `identityResolution`, `rowAndRegistryLoad`, `featureFlags`,
+`loadAndRank`, `retrievers`, `memoryEnrichment`) and `unaccounted` (wall clock
+minus the exclusive tiles) appear when that step ran. The `search` meta
+capability (usable inside **execute**) returns the same `telemetry`,
+`phaseTimings`, and top-level `serverTiming` on ranked `query` results. Entity
+lookups, domain listings, empty/broad discovery, `search({ domain })`, and exact
+package identity omit those Jev fields.
 
 Ranked `search({ query })` may also prepend a **`## Waiting`** block when
 something the signed-in human must clear is `block` or `degraded` (reconnectable

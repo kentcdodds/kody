@@ -128,6 +128,8 @@ export type SearchPhaseTimings = {
 	candidateGenerationMs: number
 	rerankingMs: number
 	jevRerankMs?: number
+	/** Flag evaluation before ranking; inside `loadAndRankMs`. */
+	featureFlagsMs?: number
 	formattingMs?: number
 	rowAndRegistryLoadMs?: number
 	retrieversMs?: number
@@ -149,6 +151,7 @@ export type SearchPhaseTimings = {
 	 * (retrievers, memory, candidate plugins) stay beside them and must not
 	 * be added into `exclusiveMs`.
 	 */
+	rateLimitMs?: number
 	usernameLookupMs?: number
 	identityResolutionMs?: number
 	loadAndRankMs?: number

@@ -83,14 +83,16 @@ export async function executeSearchList(
 async function executeSearchListWithinBudget(
 	input: ExecuteSearchListInput,
 ): Promise<SearchListExecutionResult> {
+	const phaseTimings: Partial<SearchPhaseTimings> = input.phaseTimings ?? {}
+	const rateLimitStart = performance.now()
 	// Abuse ceiling only (not an entitlement): reject before embeddings / Jev.
 	const plan = await consumeSearchRateLimit({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		email: input.callerContext.user?.email ?? null,
 	})
+	phaseTimings.rateLimitMs = elapsedMs(rateLimitStart)
 	const domainFilter = input.domain?.trim() || undefined
-	const phaseTimings: Partial<SearchPhaseTimings> = input.phaseTimings ?? {}
 	const usernameStart = performance.now()
 	const username = await resolvePublicUsername({
 		db: input.env.APP_DB,
@@ -238,6 +240,7 @@ async function executeSearchListWithinBudget(
 	warnings = searchRows.warnings
 	const retrieverRun = await retrieverRunPromise
 	warnings.push(...retrieverRun.warnings)
+	const featureFlagsStart = performance.now()
 	// Warm the per-request evaluation cache and record evaluation-site
 	// exposures for other measured flags.
 	await resolveCallerFeatureFlags(input.env, input.callerContext)
@@ -245,6 +248,7 @@ async function executeSearchListWithinBudget(
 		input.env,
 		input.callerContext,
 	)
+	phaseTimings.featureFlagsMs = elapsedMs(featureFlagsStart)
 	const jevEvaluation = evaluations?.[jevSearchRerankFlagKey]
 	const jevRerankEnabled = jevEvaluation?.enabled === true
 	const jevRerankPlanEligible = isPaidPlan(plan)

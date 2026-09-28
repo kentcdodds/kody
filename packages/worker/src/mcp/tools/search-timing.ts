@@ -17,6 +17,11 @@ export function elapsedMs(startedAt: number): number {
  * already-collected millisecond tiles map when present.
  */
 const searchServerTimingPhases = [
+	['rateLimit', 'rateLimitMs'],
+	['usernameLookup', 'usernameLookupMs'],
+	['identityResolution', 'identityResolutionMs'],
+	['rowAndRegistryLoad', 'rowAndRegistryLoadMs'],
+	['featureFlags', 'featureFlagsMs'],
 	['queryUnderstanding', 'queryUnderstandingMs'],
 	['candidateGeneration', 'candidateGenerationMs'],
 	['queryEmbedding', 'queryEmbeddingMs'],
@@ -26,6 +31,7 @@ const searchServerTimingPhases = [
 	['memoryEnrichment', 'memoryEnrichmentMs'],
 	['formatting', 'formattingMs'],
 	['waitingItems', 'waitingItemsMs'],
+	['unaccounted', 'unaccountedMs'],
 ] as const satisfies ReadonlyArray<readonly [string, keyof SearchPhaseTimings]>
 
 export function toSearchServerTiming(input: {
@@ -58,6 +64,7 @@ export function toSearchServerTiming(input: {
  * these and must not be summed into `exclusiveMs`.
  */
 export const searchExclusivePhaseKeys = [
+	'rateLimitMs',
 	'usernameLookupMs',
 	'identityResolutionMs',
 	'loadAndRankMs',
