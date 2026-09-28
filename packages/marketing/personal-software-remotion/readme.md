@@ -31,6 +31,12 @@ Output lands in `out/`, which is gitignored. Encoding settings (CRF 16, x264
 - Many-apps pull-back: `src/app-grid.ts` lays 52 apps out in world space around
   the lantern's hub cell and drives the camera. Each app spawns on the frame it
   first enters the shot, so apps arrive faster as the zoom accelerates.
+- App screens: `src/components/screens/` draws 24 different kinds of app (chat,
+  kanban, music player, route map, interval timer, booking, word game, home
+  controls, photo album, invoice form, code review, chores, flashcards, video
+  call, sketchpad, budget sliders, seat picker, poll, terminal, grocery
+  steppers, editor, habit tracker, approvals, journal). `app-grid.ts` assigns
+  them so repeats never sit next to each other.
 
 | Time     | Beat                     | On-screen copy                                         |
 | -------- | ------------------------ | ------------------------------------------------------ |

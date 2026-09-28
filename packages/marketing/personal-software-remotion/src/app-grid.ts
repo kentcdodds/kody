@@ -71,183 +71,73 @@ export function fromRestScreen(view: Camera, point: Point): Point {
 	})
 }
 
-type TileKind = 'bars' | 'spark' | 'list'
+export type ScreenKind =
+	| 'approvals'
+	| 'booking'
+	| 'budget'
+	| 'call'
+	| 'chat'
+	| 'chores'
+	| 'diff'
+	| 'editor'
+	| 'flashcards'
+	| 'grocery'
+	| 'habit'
+	| 'home'
+	| 'invoice'
+	| 'journal'
+	| 'kanban'
+	| 'photos'
+	| 'player'
+	| 'poll'
+	| 'route'
+	| 'seat'
+	| 'sketch'
+	| 'terminal'
+	| 'timer'
+	| 'word'
 
 export type AppTile = {
 	index: number
 	name: string
 	slug: string
-	stat: string
-	caption: string
+	screen: ScreenKind
 	marks: ReadonlyArray<MarkId>
-	kind: TileKind
 	center: Point
 	spawnAt: number
 	first: boolean
 }
 
-const catalog: ReadonlyArray<
-	Omit<AppTile, 'index' | 'slug' | 'center' | 'spawnAt' | 'first' | 'kind'>
-> = [
-	{
-		name: 'Habit Tracker',
-		stat: '23 days',
-		caption: 'current streak',
-		marks: ['google'],
-	},
-	{
-		name: 'Invoice Bot',
-		stat: '$4,200',
-		caption: 'due this week',
-		marks: ['stripe', 'google'],
-	},
-	{
-		name: 'Family Calendar',
-		stat: '6 events',
-		caption: 'this weekend',
-		marks: ['google'],
-	},
-	{
-		name: 'PR Radar',
-		stat: '4 PRs',
-		caption: 'need your review',
-		marks: ['github', 'slack'],
-	},
-	{
-		name: 'Podcast Planner',
-		stat: 'Ep. 142',
-		caption: 'records Thursday',
-		marks: ['google', 'spotify'],
-	},
-	{
-		name: 'Workout Log',
-		stat: '5 / 5',
-		caption: 'workouts this week',
-		marks: ['spotify'],
-	},
-	{
-		name: 'Budget',
-		stat: '$1,380',
-		caption: 'left in October',
-		marks: ['stripe'],
-	},
-	{
-		name: 'Issue Triage',
-		stat: '12 new',
-		caption: 'sorted by label',
-		marks: ['linear', 'github'],
-	},
-	{
-		name: 'Travel Planner',
-		stat: '3 trips',
-		caption: 'flights on hold',
-		marks: ['google'],
-	},
-	{
-		name: 'Standup Notes',
-		stat: '8 updates',
-		caption: 'posted to #team',
-		marks: ['slack', 'linear'],
-	},
-	{
-		name: 'Chore Chart',
-		stat: '14 / 18',
-		caption: 'chores done',
-		marks: ['google'],
-	},
-	{
-		name: 'Release Notes',
-		stat: 'v2.4.0',
-		caption: 'drafted from PRs',
-		marks: ['github'],
-	},
-	{
-		name: 'Meal Planner',
-		stat: '7 dinners',
-		caption: 'list sent to inbox',
-		marks: ['google'],
-	},
-	{
-		name: 'Focus Playlist',
-		stat: '2h 10m',
-		caption: 'deep work today',
-		marks: ['spotify', 'google'],
-	},
-	{
-		name: 'Support Inbox',
-		stat: '3 open',
-		caption: 'replies drafted',
-		marks: ['google', 'slack'],
-	},
-	{
-		name: 'Sales Pulse',
-		stat: '+18%',
-		caption: 'week over week',
-		marks: ['stripe', 'slack'],
-	},
-	{
-		name: 'Sprint Board',
-		stat: '21 pts',
-		caption: 'left this sprint',
-		marks: ['linear'],
-	},
-	{
-		name: 'Weekly Review',
-		stat: '9 wins',
-		caption: 'from the whole week',
-		marks: ['google', 'github', 'stripe'],
-	},
-	{
-		name: 'Reading List',
-		stat: '11 saved',
-		caption: 'queued for Sunday',
-		marks: ['google'],
-	},
-	{
-		name: 'Refund Watch',
-		stat: '0 disputes',
-		caption: 'in 30 days',
-		marks: ['stripe'],
-	},
-	{
-		name: 'Repo Janitor',
-		stat: '37 branches',
-		caption: 'cleaned up',
-		marks: ['github'],
-	},
-	{
-		name: 'Bug Bash',
-		stat: '15 fixed',
-		caption: 'this afternoon',
-		marks: ['linear', 'slack'],
-	},
-	{
-		name: 'Gift Ideas',
-		stat: '5 people',
-		caption: 'birthdays soon',
-		marks: ['google'],
-	},
-	{
-		name: 'Office Hours',
-		stat: '4 booked',
-		caption: 'Friday slots',
-		marks: ['google', 'slack'],
-	},
-	{
-		name: 'Course Sales',
-		stat: '$9,870',
-		caption: 'launch week',
-		marks: ['stripe', 'google'],
-	},
-	{
-		name: 'On-call Brief',
-		stat: 'All clear',
-		caption: 'no pages overnight',
-		marks: ['slack', 'github'],
-	},
+/**
+ * One of each kind of app, in reveal order: the first ring around the hub
+ * gets the most different-looking screens so variety reads immediately.
+ */
+const catalog: ReadonlyArray<Pick<AppTile, 'name' | 'screen' | 'marks'>> = [
+	{ name: 'Support Inbox', screen: 'chat', marks: ['google', 'slack'] },
+	{ name: 'Sprint Board', screen: 'kanban', marks: ['linear', 'github'] },
+	{ name: 'Focus Playlist', screen: 'player', marks: ['spotify'] },
+	{ name: 'Road Trip', screen: 'route', marks: ['google'] },
+	{ name: 'Workout Timer', screen: 'timer', marks: ['spotify'] },
+	{ name: 'Office Hours', screen: 'booking', marks: ['google'] },
+	{ name: 'Daily Word', screen: 'word', marks: [] },
+	{ name: 'Home', screen: 'home', marks: ['google'] },
+	{ name: 'Family Photos', screen: 'photos', marks: ['google'] },
+	{ name: 'Invoice Maker', screen: 'invoice', marks: ['stripe', 'google'] },
+	{ name: 'PR Review', screen: 'diff', marks: ['github', 'slack'] },
+	{ name: 'Chore Chart', screen: 'chores', marks: ['google'] },
+	{ name: 'Spanish Practice', screen: 'flashcards', marks: [] },
+	{ name: 'Standup', screen: 'call', marks: ['slack', 'linear'] },
+	{ name: 'Sketchpad', screen: 'sketch', marks: [] },
+	{ name: 'Budget', screen: 'budget', marks: ['stripe'] },
+	{ name: 'Seat Picker', screen: 'seat', marks: ['google'] },
+	{ name: 'Lunch Poll', screen: 'poll', marks: ['slack'] },
+	{ name: 'Repo Janitor', screen: 'terminal', marks: ['github', 'slack'] },
+	{ name: 'Grocery List', screen: 'grocery', marks: ['google'] },
+	{ name: 'Newsletter', screen: 'editor', marks: ['google'] },
+	{ name: 'Habit Tracker', screen: 'habit', marks: ['google'] },
+	{ name: 'Refund Desk', screen: 'approvals', marks: ['stripe', 'slack'] },
+	{ name: 'Mood Journal', screen: 'journal', marks: ['google'] },
 ]
-
-const kinds: ReadonlyArray<TileKind> = ['bars', 'spark', 'list']
 
 function cellCenters() {
 	const cells: Array<{ column: number; row: number }> = []
@@ -281,7 +171,36 @@ function slugify(name: string) {
 	return name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
 }
 
-export const appTiles: ReadonlyArray<AppTile> = cellCenters()
+/**
+ * Walks cells in reveal order and gives each the least-used app, choosing
+ * among ties the one whose nearest twin is farthest away, so repeats of the
+ * same screen never sit side by side.
+ */
+function assignApps(centers: ReadonlyArray<Point>) {
+	const placed = catalog.map((): Array<Point> => [])
+	return centers.map((center) => {
+		const fewest = Math.min(...placed.map((cells) => cells.length))
+		let best = 0
+		let bestGap = -1
+		placed.forEach((cells, entry) => {
+			if (cells.length !== fewest) return
+			const gap = Math.min(
+				Infinity,
+				...cells.map((cell) =>
+					Math.hypot(cell.x - center.x, cell.y - center.y),
+				),
+			)
+			if (gap > bestGap) {
+				best = entry
+				bestGap = gap
+			}
+		})
+		placed[best]!.push(center)
+		return catalog[best]!
+	})
+}
+
+const revealOrder = cellCenters()
 	.map((cell) => ({
 		...cell,
 		center: { x: cell.column * pitch.x, y: cell.row * pitch.y },
@@ -290,18 +209,22 @@ export const appTiles: ReadonlyArray<AppTile> = cellCenters()
 	.filter((cell) => !cell.first)
 	.map((cell) => ({ ...cell, visible: visibleFrom(cell.center) }))
 	.sort((a, b) => a.visible - b.visible)
-	.map((cell, index) => {
-		const entry = catalog[index % catalog.length]!
+
+const assignedApps = assignApps(revealOrder.map((cell) => cell.center))
+
+export const appTiles: ReadonlyArray<AppTile> = revealOrder.map(
+	(cell, index) => {
+		const entry = assignedApps[index]!
 		return {
 			...entry,
 			index,
 			slug: slugify(entry.name),
-			kind: kinds[index % kinds.length]!,
 			center: cell.center,
 			spawnAt: Math.max(cues.zoomOut.start + 3, cell.visible + (index % 3)),
 			first: false,
 		}
-	})
+	},
+)
 
 export const firstAppTile = {
 	center: firstAppWorld,

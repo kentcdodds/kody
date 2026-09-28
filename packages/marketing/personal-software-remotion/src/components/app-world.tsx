@@ -14,13 +14,13 @@ import {
 } from '../app-grid.ts'
 import { cardFetches, cues, triggerTicks } from '../choreography.ts'
 import { easeInOut, mix, progress, pulse, settle } from '../motion.ts'
-import { colors, fonts, primitiveColors } from '../theme.ts'
+import { colors, primitiveColors } from '../theme.ts'
 import { scenes } from '../timing.ts'
 import { AppWindow } from './app-window.tsx'
 import { Beam } from './beam.tsx'
 import { lanternPose, orbCenter } from './lantern.tsx'
-import { MarkWell } from './mark.tsx'
 import { cardPort, ClockGlyph, PersonalApp } from './personal-app.tsx'
+import { AppScreen } from './screens/app-screen.tsx'
 
 function useWorldFrame() {
 	return useCurrentFrame() + scenes.appWorld.from
@@ -36,87 +36,7 @@ function closeDim(frame: number) {
 	)
 }
 
-const barHeights = [0.42, 0.7, 0.55, 0.86, 0.64, 0.93, 0.78]
-const sparkValues = [0.3, 0.46, 0.4, 0.62, 0.55, 0.78, 0.7, 0.9]
-
-function MiniChart({ tile }: { tile: AppTile }) {
-	const accent = Object.values(primitiveColors)[tile.index % 6]!
-	if (tile.kind === 'bars') {
-		return (
-			<div
-				style={{
-					display: 'flex',
-					alignItems: 'flex-end',
-					gap: 26,
-					height: 230,
-				}}
-			>
-				{barHeights.map((value, index) => (
-					<div
-						key={index}
-						style={{
-							flex: 1,
-							height: `${value * 100}%`,
-							borderRadius: 16,
-							background: accent,
-							opacity: 0.35 + value * 0.6,
-						}}
-					/>
-				))}
-			</div>
-		)
-	}
-	if (tile.kind === 'spark') {
-		const w = 1070
-		const h = 230
-		const d = sparkValues
-			.map(
-				(value, index) =>
-					`${index === 0 ? 'M' : 'L'} ${(index / (sparkValues.length - 1)) * w} ${h - value * h}`,
-			)
-			.join(' ')
-		return (
-			<svg width={w} height={h} style={{ display: 'block' }}>
-				<path d={`${d} L ${w} ${h} L 0 ${h} Z`} fill={accent} opacity={0.18} />
-				<path
-					d={d}
-					fill="none"
-					stroke={accent}
-					strokeWidth={12}
-					strokeLinejoin="round"
-				/>
-			</svg>
-		)
-	}
-	return (
-		<div style={{ display: 'grid', gap: 22 }}>
-			{[0.86, 0.64, 0.74].map((share, index) => (
-				<div
-					key={index}
-					style={{ display: 'flex', alignItems: 'center', gap: 22 }}
-				>
-					<div
-						style={{
-							width: 44,
-							height: 44,
-							borderRadius: 12,
-							background: accent,
-							opacity: 0.8,
-						}}
-					/>
-					<div
-						style={{
-							width: `${share * 100}%`,
-							height: 40,
-							borderRadius: 20,
-							background: colors.surfaceRaised,
-						}}
-					/>
-				</div>
-			))}
-		</div>
-	)
-}
+const accents = Object.values(primitiveColors)
 
 function MiniApp({ tile, frame }: { tile: AppTile; frame: number }) {
 	if (frame < tile.spawnAt - 1) return null
@@ -137,61 +57,12 @@ function MiniApp({ tile, frame }: { tile: AppTile; frame: number }) {
 				boxShadow: `0 40px 90px oklch(0 0 0 / 0.55), 0 0 ${flash * 160}px ${primitiveColors.apps}`,
 			}}
 		>
-			<div style={{ position: 'absolute', inset: 0, padding: '44px 60px' }}>
-				<div style={{ display: 'flex', alignItems: 'baseline', gap: 28 }}>
-					<div
-						style={{
-							fontFamily: fonts.display,
-							fontWeight: 800,
-							fontSize: 120,
-						}}
-					>
-						{tile.stat}
-					</div>
-					<div style={{ fontSize: 44, color: colors.textMuted }}>
-						{tile.caption}
-					</div>
-				</div>
-				<div style={{ marginTop: 34 }}>
-					<MiniChart tile={tile} />
-				</div>
-				<div
-					style={{
-						position: 'absolute',
-						left: 60,
-						right: 60,
-						bottom: 44,
-						display: 'flex',
-						alignItems: 'center',
-						gap: 20,
-					}}
-				>
-					{tile.marks.map((mark) => (
-						<MarkWell key={mark} id={mark} size={84} />
-					))}
-					<div
-						style={{
-							marginLeft: 16,
-							display: 'flex',
-							alignItems: 'center',
-							gap: 16,
-							fontSize: 40,
-							fontWeight: 700,
-							color: primitiveColors.integrations,
-						}}
-					>
-						<div
-							style={{
-								width: 22,
-								height: 22,
-								borderRadius: '50%',
-								background: primitiveColors.integrations,
-							}}
-						/>
-						via Kody
-					</div>
-				</div>
-			</div>
+			<AppScreen
+				screen={tile.screen}
+				marks={tile.marks}
+				age={frame - tile.spawnAt}
+				accent={accents[tile.index % accents.length]!}
+			/>
 		</AppWindow>
 	)
 }
