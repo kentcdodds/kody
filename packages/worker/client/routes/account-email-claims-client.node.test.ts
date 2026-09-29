@@ -27,23 +27,29 @@ function createStubHandle() {
 	} as unknown as Handle
 }
 
+function createCurrentTargetEvent<TEvent extends Event>(
+	currentTarget: TestDetailsElement | TestInputElement,
+) {
+	return { currentTarget } as unknown as TEvent
+}
+
 test('change-email disclosure stays open when the first new-email keystroke rerenders', () => {
 	const claims = createAccountEmailClaims(createStubHandle())
 
-	claims.handleEmailChangeToggle({
-		currentTarget: new TestDetailsElement(true),
-	} as Event)
+	claims.handleEmailChangeToggle(
+		createCurrentTargetEvent(new TestDetailsElement(true)),
+	)
 	expect(claims.snapshot.emailChangeOpen).toBe(true)
 
-	claims.updateDraftEmail({
-		currentTarget: new TestInputElement('n'),
-	} as InputEvent)
+	claims.updateDraftEmail(
+		createCurrentTargetEvent<InputEvent>(new TestInputElement('n')),
+	)
 
 	expect(claims.snapshot.draftEmail).toBe('n')
 	expect(claims.snapshot.emailChangeOpen).toBe(true)
 
-	claims.handleEmailChangeToggle({
-		currentTarget: new TestDetailsElement(false),
-	} as Event)
+	claims.handleEmailChangeToggle(
+		createCurrentTargetEvent(new TestDetailsElement(false)),
+	)
 	expect(claims.snapshot.emailChangeOpen).toBe(false)
 })

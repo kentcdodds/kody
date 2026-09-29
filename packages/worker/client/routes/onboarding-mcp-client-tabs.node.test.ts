@@ -81,6 +81,7 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	].map((match) => match[0])
 	expect(pluginBlocks.length).toBeGreaterThanOrEqual(1)
 	const [cursorPrimary] = pluginBlocks
+	if (!cursorPrimary) throw new Error('expected a Cursor plugin block')
 	expect(
 		cursorPrimary.indexOf(`href="${kodyCursorMarketplaceUrl}"`),
 	).toBeLessThan(cursorPrimary.indexOf('onboarding-mcp-plugin-alternative'))
@@ -179,10 +180,7 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(claudeDesktop).not.toContain('ChatGPT')
 	expect(claudeDesktop).toContain('claude_desktop_config.json')
 
-	const codexMobile = await renderTabs({
-		selectedAgent: 'codex',
-		surface: 'mobile',
-	})
+	const codexMobile = await renderTabs({ selectedAgent: 'codex' })
 	expect(codexMobile).toContain('data-testid="onboarding-mcp-app-icon"')
 	expect(codexMobile).toContain(
 		'src="https://kody.codes/images/kody-app-icon.png"',

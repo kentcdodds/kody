@@ -150,7 +150,10 @@ test('create reseeds from the refreshed page and prepends a user that paging omi
 	])
 	expect(mutationWindow.totalCount).toBe(2)
 
-	const rolePatched = { ...existing, roles: ['user', 'admin'] }
+	const rolePatched: AdminUserListItem = {
+		...existing,
+		roles: ['user', 'admin'],
+	}
 	const patchedWindow = nextAdminUsersWindowAfterMutation({
 		currentItems: [existing],
 		payload: payload([rolePatched], 1, { updatedUser: rolePatched }),

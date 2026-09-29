@@ -109,8 +109,6 @@ test('install strip shows next steps after a successful install', async () => {
 				packageId: 'pkg-1',
 				failedChecks: [],
 			},
-			onConfirmInstall: () => {},
-			onCancelInstall: () => {},
 		}),
 	)
 	expect(html).toContain('data-testid="community-install-next-steps"')

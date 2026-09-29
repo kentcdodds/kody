@@ -26,6 +26,7 @@ const packageDetail: AccountPackageDetail = {
 	exports: null,
 	tokens: [],
 	publishedCommit: null,
+	communityFork: null,
 }
 
 test('package delete dialog puts a tooltip-only copy icon next to the confirm name', async () => {

@@ -1,25 +1,30 @@
 import { expect, test } from 'vitest'
-import { ensureConstructableStylesheets } from './ensure-constructable-stylesheets.ts'
+import {
+	ensureConstructableStylesheets,
+	type ConstructableStylesheetsHost,
+} from './ensure-constructable-stylesheets.ts'
 
 type FakeRuleList = { length: number; rules: Array<string> }
+type FakeDocument = NonNullable<ConstructableStylesheetsHost['document']>
+type AdoptedStyleSheet = NonNullable<FakeDocument['adoptedStyleSheets']>[number]
+type FakeHeadChild = { remove: () => void; isConnected: boolean }
 
 function createFakeDocument() {
-	const headChildren: Array<{ remove: () => void; isConnected: boolean }> = []
+	const headChildren: Array<FakeHeadChild> = []
 	const head = {
-		appendChild(node: { isConnected: boolean }) {
+		appendChild(node: unknown) {
+			const child = node as FakeHeadChild
 			// Mirror DOM move semantics: re-appending a connected node relocates
 			// it without disconnecting (CSSOM rules must survive).
-			const existing = headChildren.indexOf(
-				node as { remove: () => void; isConnected: boolean },
-			)
+			const existing = headChildren.indexOf(child)
 			if (existing >= 0) headChildren.splice(existing, 1)
-			node.isConnected = true
-			headChildren.push(node as { remove: () => void; isConnected: boolean })
+			child.isConnected = true
+			headChildren.push(child)
 			return node
 		},
 	}
 
-	const doc = {
+	const doc: FakeDocument = {
 		head,
 		documentElement: head,
 		createTextNode(data: string) {
@@ -82,7 +87,7 @@ function installOnFakeHost() {
 	function NonConstructableCSSStyleSheet() {
 		throw new TypeError('Illegal constructor')
 	}
-	const host = {
+	const host: ConstructableStylesheetsHost = {
 		CSSStyleSheet: NonConstructableCSSStyleSheet,
 		document: doc,
 	}
@@ -99,7 +104,7 @@ test('ensureConstructableStylesheets polyfills Illegal constructor hosts so Remi
 
 	const sheet = new Ctor()
 
-	doc.adoptedStyleSheets!.push(sheet as never)
+	doc.adoptedStyleSheets!.push(sheet)
 	expect(headChildren).toHaveLength(1)
 	expect(sheet.insertRule('.rmxc-x { color: red }', 0)).toBe(0)
 	expect(sheet.cssRules.length).toBe(1)
@@ -108,7 +113,7 @@ test('ensureConstructableStylesheets polyfills Illegal constructor hosts so Remi
 	expect(sheet.cssRules.length).toBe(0)
 
 	doc.adoptedStyleSheets = Array.from(doc.adoptedStyleSheets!).filter(
-		(entry) => entry !== (sheet as never),
+		(entry) => entry !== sheet,
 	)
 	expect(headChildren).toHaveLength(0)
 })
@@ -118,14 +123,14 @@ test('ensureConstructableStylesheets reorders connected style elements without d
 
 	const first = new Ctor()
 	const second = new Ctor()
-	doc.adoptedStyleSheets!.push(first as never, second as never)
+	doc.adoptedStyleSheets!.push(first, second)
 	expect(headChildren).toHaveLength(2)
 	const firstStyle = headChildren[0]
 	const secondStyle = headChildren[1]
 	first.insertRule('.rmxc-a { color: red }', 0)
 	second.insertRule('.rmxc-b { color: blue }', 0)
 
-	doc.adoptedStyleSheets = [second as never, first as never]
+	doc.adoptedStyleSheets = [second, first]
 	expect(headChildren).toEqual([secondStyle, firstStyle])
 	expect(first.cssRules.length).toBe(1)
 	expect(second.cssRules.length).toBe(1)
@@ -136,8 +141,8 @@ test('ensureConstructableStylesheets leaves a real Constructable Stylesheets imp
 	function NativeCSSStyleSheet() {
 		return existingSheet
 	}
-	const existingAdopted: Array<object> = []
-	const doc = {
+	const existingAdopted: Array<AdoptedStyleSheet> = []
+	const doc: FakeDocument = {
 		createElement() {
 			throw new Error('should not polyfill')
 		},
@@ -146,7 +151,7 @@ test('ensureConstructableStylesheets leaves a real Constructable Stylesheets imp
 		},
 		adoptedStyleSheets: existingAdopted,
 	}
-	const host = {
+	const host: ConstructableStylesheetsHost = {
 		CSSStyleSheet: NativeCSSStyleSheet,
 		document: doc,
 	}

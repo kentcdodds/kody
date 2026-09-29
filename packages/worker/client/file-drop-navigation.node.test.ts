@@ -139,8 +139,8 @@ test('file-drop helpers keep the page from navigating and route images to avatar
 	const avatarListeners = new Map<string, (event: Event) => void>()
 	listenForAvatarFileDrop({
 		target: {
-			addEventListener: (type, listener) => {
-				avatarListeners.set(type, listener as (event: Event) => void)
+			addEventListener: (type: string, listener: (event: Event) => void) => {
+				avatarListeners.set(type, listener)
 			},
 			removeEventListener: vi.fn(),
 		},

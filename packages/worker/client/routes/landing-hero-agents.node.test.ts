@@ -62,7 +62,8 @@ test('hero ring always includes the pinned hosts and fills leftover slots from t
 })
 
 test('hero tether lights travel inbound to the lantern and outbound to the agent', () => {
-	const agent = { cycle: 4, phase: 0, travel: 1 }
+	const timing = { cycle: 4, phase: 0, travel: 1 }
+	const agent = timing as Parameters<typeof landingHeroLightAt>[0]
 	const inboundStart = landingHeroLightAt(agent, 0, 'in')
 	expect(inboundStart).toMatchObject({ progress: 0, scale: 1 })
 	const inboundMid = landingHeroLightAt(agent, 0.5, 'in')

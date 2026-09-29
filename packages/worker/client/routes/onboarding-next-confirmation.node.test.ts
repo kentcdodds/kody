@@ -19,12 +19,16 @@ type RecordedMixin = {
 	handler: (event: Event) => void
 }
 
+function recorded(mixin: unknown) {
+	return mixin as RecordedMixin
+}
+
 test('unconnected onboarding Next warns once before advancing', () => {
 	const handle = { update: vi.fn() }
 	const onNext = vi.fn()
 	const confirmation = createOnboardingNextConfirmation(handle as never)
 	const mix = confirmation.getButtonMix({ confirm: true, onNext })
-	const click = mix[1] as RecordedMixin
+	const click = recorded(mix[1])
 
 	const firstClick = { preventDefault: vi.fn() } as unknown as Event
 	click.handler(firstClick)
@@ -45,7 +49,7 @@ test('unconnected onboarding Next warns once before advancing', () => {
 		onNext: connectedNext,
 	})
 	expect(connectedMix).toHaveLength(1)
-	;(connectedMix[0] as RecordedMixin).handler(new Event('click'))
+	recorded(connectedMix[0]).handler(new Event('click'))
 	expect(connectedNext).toHaveBeenCalledOnce()
 	expect(confirmation.getLabel(false)).toBe('Next')
 	expect(confirmation.getLabels(false).terse).toBe('Next')

@@ -32,6 +32,7 @@ test('failed username rename shows the server reason without success chrome', ()
 			'Username must be 3 to 32 characters, use only letters, numbers, and hyphens, and start and end with a letter or number.',
 	})
 	expect(invalid.status).toBe('error')
+	if (invalid.status !== 'error') throw new Error('expected an error result')
 	expect(invalid.message).toContain('3 to 32 characters')
 	expect(invalid.message).not.toContain('Profile saved.')
 
