@@ -12,73 +12,20 @@ import { testOidcSigningEnv } from '#worker/test-support/oidc-signing-env.ts'
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
 function createAnonymousTestDb() {
-	function createStatement(query: string) {
-		const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-		const executeAll = async () => {
-			if (
-				normalizedQuery.includes('from feature_flags') ||
-				normalizedQuery.includes('from feature_flag_user_overrides')
-			) {
-				return {
-					results: [],
-					meta: { changes: 0, last_row_id: 0 },
-				}
-			}
-			return {
-				results: [],
-				meta: { changes: 0, last_row_id: 0 },
-			}
-		}
-		return {
-			query,
-			bind() {
-				return createStatement(query)
-			},
-			async all() {
-				return executeAll()
-			},
-			async first() {
-				const result = await executeAll()
-				return result.results[0] ?? null
-			},
-			async run() {
-				return { meta: { changes: 0, last_row_id: 0 } }
-			},
-		}
-	}
-
+	const empty = { results: [], meta: { changes: 0, last_row_id: 0 } }
+	const createStatement = (query: string) => ({
+		query,
+		bind: () => createStatement(query),
+		all: async () => empty,
+		first: async () => null,
+		run: async () => ({ meta: empty.meta }),
+	})
 	return {
-		prepare(query: string) {
-			return createStatement(query)
-		},
-		async batch(statements: Array<{ query?: string }>) {
-			return await executePreparedD1Batch(statements)
-		},
-		async exec() {
-			return
-		},
+		prepare: createStatement,
+		batch: (statements: Array<{ query?: string }>) =>
+			executePreparedD1Batch(statements),
+		exec: async () => undefined,
 	} as unknown as D1Database
-}
-
-function createTestEnv() {
-	return {
-		COOKIE_SECRET: testCookieSecret,
-		SECRET_STORE_KEY: 'LOCAL_TEST_SECRET_STORE_KEY_32_CHARS_MINIMUM',
-		...testOidcSigningEnv,
-		APP_DB: createAnonymousTestDb(),
-		BUNDLE_ARTIFACTS_KV: createMemoryKv(),
-		JOB_MANAGER: {},
-		STORAGE_RUNNER: {},
-		PACKAGE_REALTIME_SESSION: {},
-		MCP_CLIENT_HUB: {},
-	} as unknown as Env
-}
-
-function landingHeroMarkup(html: string) {
-	const match = html.match(
-		/<section[^>]*class="landing-hero"[\s\S]*?<\/section>/,
-	)
-	return match?.[0] ?? ''
 }
 
 const homepageHeroVideos = [
@@ -100,141 +47,132 @@ const homepageHeroVideos = [
 	},
 ] as const
 
-function homepageOnboardingFixture(
-	env: Env,
-	requestUrl: string,
-	loggedIn: boolean,
-) {
-	return loadHomePageOnboardingData({
+async function renderHome(requestUrl: string, loggedIn = false) {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = {
+		COOKIE_SECRET: testCookieSecret,
+		SECRET_STORE_KEY: 'LOCAL_TEST_SECRET_STORE_KEY_32_CHARS_MINIMUM',
+		...testOidcSigningEnv,
+		APP_DB: createAnonymousTestDb(),
+		BUNDLE_ARTIFACTS_KV: createMemoryKv(),
+		JOB_MANAGER: {},
+		STORAGE_RUNNER: {},
+		PACKAGE_REALTIME_SESSION: {},
+		MCP_CLIENT_HUB: {},
+	} as unknown as Env
+	const response = await renderAppPage({
+		request: new Request(requestUrl),
 		env,
-		requestUrl,
-		user: loggedIn ? { username: 'home-user', emailVerified: true } : null,
+		loaderData: {
+			onboarding: loadHomePageOnboardingData({
+				env,
+				requestUrl,
+				user: loggedIn ? { username: 'home-user', emailVerified: true } : null,
+			}),
+			landingHeroVideos: [...homepageHeroVideos],
+		},
 	})
+	const html = await response.text()
+	const hero =
+		html.match(/<section[^>]*class="landing-hero"[\s\S]*?<\/section>/)?.[0] ??
+		''
+	return { status: response.status, html, hero }
+}
+
+function missing(html: string, markers: Array<string>) {
+	return markers.filter((marker) => !html.includes(marker))
 }
 
 test('homepage hero uses locked copy, compare, and session-aware connect CTA', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv()
-	const requestUrl = 'https://example.com/'
-
-	const anonymous = await renderAppPage({
-		request: new Request(requestUrl),
-		env,
-		loaderData: {
-			onboarding: homepageOnboardingFixture(env, requestUrl, false),
-			landingHeroVideos: [...homepageHeroVideos],
-		},
-	})
+	const anonymous = await renderHome('https://example.com/')
 	expect(anonymous.status).toBe(200)
-	const anonymousHtml = await anonymous.text()
-	const anonymousHero = landingHeroMarkup(anonymousHtml)
-	expect(anonymousHero).toContain(landingHeroPrimaryCta)
-	expect(anonymousHero).toContain('href="#primitives"')
-	expect(anonymousHero).toContain('/signup?utm_source=kody.codes')
-	expect(anonymousHero).not.toContain('landing-hero-video')
-	expect(anonymousHero).not.toContain('landing-hero-agents')
-	expect(anonymousHtml).toContain('id="primitives"')
-	expect(anonymousHtml).toContain('href="/docs"')
-	expect(anonymousHtml).toContain('landing-proof')
-	expect(anonymousHtml).toContain('landing-hero-agents')
-	expect(anonymousHtml).toContain('landing-videos')
-	expect(anonymousHtml).toContain('role="listbox"')
-	expect(anonymousHtml).toContain(
-		`/youtube-thumb/${homepageHeroVideos[0].videoId}`,
+	expect(
+		missing(anonymous.hero, [
+			landingHeroPrimaryCta,
+			'href="#primitives"',
+			'/signup?utm_source=kody.codes',
+		]),
+	).toEqual([])
+	expect(anonymous.hero).not.toContain('landing-hero-video')
+	expect(anonymous.hero).not.toContain('landing-hero-agents')
+	const [firstThumb, secondThumb] = homepageHeroVideos.map(
+		(video) => `/youtube-thumb/${video.videoId}`,
 	)
 	expect(
-		anonymousHtml.indexOf(`/youtube-thumb/${homepageHeroVideos[0].videoId}`),
-	).toBeLessThan(
-		anonymousHtml.indexOf(`/youtube-thumb/${homepageHeroVideos[1].videoId}`),
+		missing(anonymous.html, [
+			'id="primitives"',
+			'href="/docs"',
+			'landing-proof',
+			'landing-hero-agents',
+			'landing-videos',
+			'role="listbox"',
+			firstThumb!,
+			'landing-hero-agent-light',
+			'landing-hero-agent-track',
+			'href="/docs/github"',
+			'href="/docs/slack"',
+			'aria-label="Example triggers"',
+			...landingFactoryBeats.flatMap((beat) => [
+				`href="/docs/${beat.slug}"`,
+				beat.trigger,
+				beat.title,
+			]),
+		]),
+	).toEqual([])
+	expect(anonymous.html.indexOf(firstThumb!)).toBeLessThan(
+		anonymous.html.indexOf(secondThumb!),
 	)
-	expect(anonymousHtml).not.toContain('data-embed-playlist')
-	expect(anonymousHtml).toContain('landing-hero-agent-light')
-	expect(anonymousHtml).toContain('landing-hero-agent-track')
-	expect(anonymousHtml).toContain('href="/docs/github"')
-	expect(anonymousHtml).toContain('href="/docs/slack"')
+	expect(anonymous.html).not.toContain('data-embed-playlist')
 	const inviteTools =
-		anonymousHtml.match(
+		anonymous.html.match(
 			/<ul[^>]*class="[^"]*landing-invite-tools[^"]*"[\s\S]*?<\/ul>/,
 		)?.[0] ?? ''
-	for (const label of [
-		'GitHub',
-		'Linear',
-		'Sentry',
-		'Cloudflare',
-		'Slack',
-		'Public packages',
-	]) {
-		expect(inviteTools).toContain(label)
-	}
-	for (const icon of ['github', 'linear', 'sentry', 'cloudflare', 'slack']) {
-		expect(inviteTools).toContain(`/images/icons/${icon}.svg`)
-	}
-	expect(anonymousHtml).toContain('aria-label="Example triggers"')
-	for (const beat of landingFactoryBeats) {
-		expect(anonymousHtml).toContain(`href="/docs/${beat.slug}"`)
-		expect(anonymousHtml).toContain(beat.trigger)
-		expect(anonymousHtml).toContain(beat.title)
-	}
+	const toolIcons = ['github', 'linear', 'sentry', 'cloudflare', 'slack']
+	expect(
+		missing(inviteTools, [
+			'GitHub',
+			'Linear',
+			'Sentry',
+			'Cloudflare',
+			'Slack',
+			'Public packages',
+			...toolIcons.map((icon) => `/images/icons/${icon}.svg`),
+		]),
+	).toEqual([])
 
-	const signedIn = await renderAppPage({
-		request: new Request(requestUrl),
-		env,
-		loaderData: {
-			onboarding: homepageOnboardingFixture(env, requestUrl, true),
-			landingHeroVideos: [...homepageHeroVideos],
-		},
-	})
+	const signedIn = await renderHome('https://example.com/', true)
 	expect(signedIn.status).toBe(200)
-	const signedInHtml = await signedIn.text()
-	const signedInHero = landingHeroMarkup(signedInHtml)
-	expect(signedInHero).toContain(landingHeroPrimaryCta)
-	expect(signedInHero).toContain('href="/onboarding"')
-	expect(signedInHero).not.toContain('/signup?utm_source=kody.codes')
-	expect(signedInHtml).toContain('landing-videos')
-	expect(signedInHtml).toContain('landing-hero-agents')
+	expect(
+		missing(signedIn.hero, [landingHeroPrimaryCta, 'href="/onboarding"']),
+	).toEqual([])
+	expect(signedIn.hero).not.toContain('/signup?utm_source=kody.codes')
+	expect(
+		missing(signedIn.html, ['landing-videos', 'landing-hero-agents']),
+	).toEqual([])
 })
 
 test('homepage ?og= points crawlers at that card and keeps the canonical url clean', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv()
-	const variantRequestUrl =
-		'https://example.com/?og=triggers&utm_source=youtube#primitives'
-	const variant = await renderAppPage({
-		request: new Request(variantRequestUrl),
-		env,
-		loaderData: {
-			onboarding: homepageOnboardingFixture(env, variantRequestUrl, false),
-			landingHeroVideos: [...homepageHeroVideos],
-		},
-	})
-	expect(variant.status).toBe(200)
-	const variantHtml = await variant.text()
-	const imageUrl = 'https://example.com/og/home.png?og=triggers'
-	expect(variantHtml).toContain(`property="og:image" content="${imageUrl}"`)
-	expect(variantHtml).toContain(`name="twitter:image" content="${imageUrl}"`)
-	expect(variantHtml).toContain(
-		'property="og:title" content="Invoke deterministic code from anything"',
+	const variant = await renderHome(
+		'https://example.com/?og=triggers&utm_source=youtube#primitives',
 	)
-	expect(variantHtml).toContain('rel="canonical" href="https://example.com/"')
-	expect(variantHtml).not.toContain('og:url" content="https://example.com/?og=')
+	expect(variant.status).toBe(200)
+	const imageUrl = 'https://example.com/og/home.png?og=triggers'
+	expect(
+		missing(variant.html, [
+			`property="og:image" content="${imageUrl}"`,
+			`name="twitter:image" content="${imageUrl}"`,
+			'property="og:title" content="Invoke deterministic code from anything"',
+			'rel="canonical" href="https://example.com/"',
+		]),
+	).toEqual([])
+	expect(variant.html).not.toContain(
+		'og:url" content="https://example.com/?og=',
+	)
 
-	const unknown = await renderAppPage({
-		request: new Request('https://example.com/?og=nope'),
-		env,
-		loaderData: {
-			onboarding: homepageOnboardingFixture(
-				env,
-				'https://example.com/?og=nope',
-				false,
-			),
-			landingHeroVideos: [...homepageHeroVideos],
-		},
-	})
-	const unknownHtml = await unknown.text()
-	expect(unknownHtml).toContain(
+	const unknown = await renderHome('https://example.com/?og=nope')
+	expect(unknown.html).toContain(
 		'property="og:image" content="https://example.com/og/home.png"',
 	)
-	expect(unknownHtml).not.toContain('/og/home.png?og=')
+	expect(unknown.html).not.toContain('/og/home.png?og=')
 })

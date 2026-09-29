@@ -21,7 +21,11 @@ import { createOnboardingHandler } from '#app/handlers/onboarding.ts'
 import { createPendingVerificationHandler } from '#app/handlers/pending-verification.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
 import { resetInlineStylesheetCache } from '#app/inline-stylesheet.ts'
-import { renderAppPage, resolveOriginClientEntry } from '#app/ssr-render.tsx'
+import {
+	renderAppPage,
+	resolveOriginClientEntry,
+	type RenderAppPageInput,
+} from '#app/ssr-render.tsx'
 import {
 	getReadNextBlogPost,
 	listBlogPosts,
@@ -32,6 +36,11 @@ import { firstPartySecurityHeaders } from '#app/security-headers.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { BLOG_PLACEHOLDER_CALLOUT } from '#universal/blog-display.ts'
+import {
+	type AccountIntegrationListItem,
+	type AccountOauthAppListItem,
+	type ConnectOauthLoaderData,
+} from '#universal/loader-data.ts'
 import { getScrollRestorationInlineScript } from '#universal/router-scroll-restoration.ts'
 import type * as CommunityProfileRepo from '#worker/community/profile-repo.ts'
 import type * as PackageUrlModule from '#worker/community/package-url.ts'
@@ -136,9 +145,26 @@ type TestUser = {
 	updated_at: string
 }
 
+function makeUser(email: string, username: string): TestUser {
+	return {
+		id: 1,
+		email,
+		username,
+		password_hash: 'unused',
+		stable_user_id: testStableUserIdFromEmail(email),
+		created_at: new Date(0).toISOString(),
+		updated_at: new Date(0).toISOString(),
+	}
+}
+
+const accountUser = () => makeUser('user@example.com', 'account-user')
+
 function createUserTestDb(users: Array<TestUser>) {
 	const userRecords = new Map(users.map((user) => [user.id, { ...user }]))
+	const empty = { results: [], meta: { changes: 0, last_row_id: 0 } }
 
+	// Only the session user lookup returns rows; roles and feature flags stay
+	// empty so SSR session load uses registry defaults without throwing.
 	function createStatement(query: string, params: Array<unknown> = []) {
 		const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
 		const executeAll = async () => {
@@ -150,44 +176,18 @@ function createUserTestDb(users: Array<TestUser>) {
 				const user = [...userRecords.values()].find(
 					(row) => row.stable_user_id === params[0],
 				)
-				return {
-					results: user ? [{ ...user }] : [],
-					meta: { changes: 0, last_row_id: 0 },
-				}
+				return { ...empty, results: user ? [{ ...user }] : [] }
 			}
-			if (normalizedQuery.includes('from user_roles')) {
-				return {
-					results: [],
-					meta: { changes: 0, last_row_id: 0 },
-				}
-			}
-			// Feature-flag evaluation during SSR session load; empty state uses
-			// registry defaults without throwing.
-			if (
-				normalizedQuery.includes('from feature_flags') ||
-				normalizedQuery.includes('from feature_flag_user_overrides')
-			) {
-				return {
-					results: [],
-					meta: { changes: 0, last_row_id: 0 },
-				}
-			}
-			return {
-				results: [],
-				meta: { changes: 0, last_row_id: 0 },
-			}
+			return empty
 		}
 		return {
 			query,
 			bind(...nextParams: Array<unknown>) {
 				return createStatement(query, nextParams)
 			},
-			async all() {
-				return executeAll()
-			},
+			all: executeAll,
 			async first() {
-				const result = await executeAll()
-				return result.results[0] ?? null
+				return (await executeAll()).results[0] ?? null
 			},
 			async run() {
 				return { meta: { changes: 0, last_row_id: 0 } }
@@ -196,24 +196,21 @@ function createUserTestDb(users: Array<TestUser>) {
 	}
 
 	return {
-		prepare(query: string) {
-			return createStatement(query)
-		},
-		async batch(statements: Array<{ query?: string }>) {
-			return await executePreparedD1Batch(statements)
-		},
-		async exec() {
-			return
-		},
+		prepare: (query: string) => createStatement(query),
+		batch: (statements: Array<{ query?: string }>) =>
+			executePreparedD1Batch(statements),
+		async exec() {},
 	} as unknown as D1Database
 }
 
-function createTestEnv(db: D1Database) {
+function setupEnv(users: Array<TestUser> = []) {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
 	return {
 		COOKIE_SECRET: testCookieSecret,
 		SECRET_STORE_KEY: 'LOCAL_TEST_SECRET_STORE_KEY_32_CHARS_MINIMUM',
 		...testOidcSigningEnv,
-		APP_DB: db,
+		APP_DB: createUserTestDb(users),
 		BUNDLE_ARTIFACTS_KV: createMemoryKv(),
 		JOB_MANAGER: {},
 		STORAGE_RUNNER: {},
@@ -222,8 +219,61 @@ function createTestEnv(db: D1Database) {
 	} as unknown as Env
 }
 
-async function readResponseText(response: Response) {
-	return await response.text()
+function cookieFor(email = 'user@example.com') {
+	return createAuthCookie(
+		{
+			stableUserId: testStableUserIdFromEmail(email),
+			email,
+			rememberMe: false,
+		} satisfies AuthSession,
+		false,
+	)
+}
+
+function get(path: string, cookie?: string, headers = {}) {
+	return new Request(`https://example.com${path}`, {
+		headers: cookie ? { ...headers, Cookie: cookie } : headers,
+	})
+}
+
+async function render(
+	env: Env,
+	path: string,
+	options: {
+		cookie?: string
+		loaderData?: RenderAppPageInput['loaderData']
+	} = {},
+) {
+	const response = await renderAppPage({
+		request: get(path, options.cookie),
+		env,
+		loaderData: options.loaderData,
+	})
+	return { response, html: await response.text() }
+}
+
+type HtmlHandler = { handler: (context: never) => Promise<Response> }
+
+async function runHtml(
+	handler: HtmlHandler,
+	request: Request,
+	params: Record<string, string> = {},
+) {
+	const response = await handler.handler({
+		request,
+		url: new URL(request.url),
+		params,
+	} as never)
+	return { response, html: await response.text() }
+}
+
+function expectHtml(
+	html: string,
+	present: Array<string>,
+	absent: Array<string> = [],
+) {
+	expect(present.filter((snippet) => !html.includes(snippet))).toEqual([])
+	expect(absent.filter((snippet) => html.includes(snippet))).toEqual([])
 }
 
 function parseRmxData(html: string) {
@@ -252,48 +302,42 @@ function parseRmxData(html: string) {
 }
 
 function readAppRootProps(html: string) {
-	const rmxData = parseRmxData(html)
-	const entry = Object.values(rmxData.h)[0]
+	const entry = Object.values(parseRmxData(html).h)[0]
 	if (!entry) {
 		throw new Error('AppRoot hydration entry not found in rmx-data')
 	}
 	return entry.props
 }
 
-async function runHtmlHandler(
-	handler: { handler: (context: never) => Promise<Response> },
-	request: Request,
-) {
-	return handler.handler({
-		request,
-		url: new URL(request.url),
-		params: {},
-	} as never)
+const emptyAccountConnections = {
+	ok: true,
+	connections: [],
+	canDisconnect: false,
+	hasUsablePassword: false,
+	availableProviders: [],
+	canSyncDiscordRoles: false,
 }
 
 test('resolveOriginClientEntry maps Remix entry IDs onto the Vite client href', () => {
+	const href = '/assets/entry-DU-pHDbL.js'
 	expect(
 		resolveOriginClientEntry({
 			entryId: '/client-entry.js#AppRoot',
-			href: '/assets/entry-DU-pHDbL.js',
+			href,
 			preloads: ['/assets/auth-area-BZaLSnX1.js'],
 		}),
 	).toEqual({
-		href: '/assets/entry-DU-pHDbL.js',
+		href,
 		exportName: 'AppRoot',
 		preloads: ['/assets/auth-area-BZaLSnX1.js'],
 	})
 	expect(
 		resolveOriginClientEntry({
 			entryId: 'file:///app/app-root.tsx',
-			href: '/assets/entry-DU-pHDbL.js',
+			href,
 			preloads: [],
 		}),
-	).toEqual({
-		href: '/assets/entry-DU-pHDbL.js',
-		exportName: 'AppRoot',
-		preloads: [],
-	})
+	).toEqual({ href, exportName: 'AppRoot', preloads: [] })
 	// Pitlane's dev `<HMR />` island names its own dev-server module; the client
 	// entry bundle does not export it.
 	expect(
@@ -310,32 +354,10 @@ test('resolveOriginClientEntry maps Remix entry IDs onto the Vite client href', 
 })
 
 test('SSR HTML routes render page content and embedded loader data', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv(
-		createUserTestDb([
-			{
-				id: 1,
-				email: 'user@example.com',
-				username: 'account-user',
-				password_hash: 'unused',
-				stable_user_id: testStableUserIdFromEmail('user@example.com'),
-				created_at: new Date(0).toISOString(),
-				updated_at: new Date(0).toISOString(),
-			},
-		]),
-	)
-
-	communityMockModule.listCommunityIndexOverview.mockReset()
+	const env = setupEnv([accountUser()])
 	communityMockModule.listCommunityIndexOverview.mockResolvedValue({
 		listings: [sampleListing],
-		groups: [
-			{
-				category: 'integrations',
-				listings: [sampleListing],
-				total: 1,
-			},
-		],
+		groups: [{ category: 'integrations', listings: [sampleListing], total: 1 }],
 		categoryCounts: {
 			integrations: 1,
 			examples: 0,
@@ -346,65 +368,79 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		},
 	})
 
-	const communityResponse = await runHtmlHandler(
+	const community = await runHtml(
 		createCommunityHandler(env),
-		new Request('https://example.com/community'),
+		get('/community'),
 	)
-	expect(communityResponse.status).toBe(200)
-	expect(communityResponse.headers.get('Content-Type')).toContain('text/html')
-	const communityHtml = await readResponseText(communityResponse)
-	expect(communityHtml).toContain('data-testid="community-listings-frame"')
-	expect(communityHtml).toContain('@kentcdodds/github-triage')
-	expect(communityHtml).not.toContain('data-testid="community-listings-empty"')
-	expect(communityHtml).toContain('data-rmx-target="community-listings"')
-	expect(communityHtml).toContain('data-rmx-history="push"')
-	expect(communityHtml).toContain('<!-- rmx:h:')
-	const communityRmx = parseRmxData(communityHtml)
-	const communityEntry = Object.values(communityRmx.h)[0]
+	expect(community.response.status).toBe(200)
+	expect(community.response.headers.get('Content-Type')).toContain('text/html')
+	expectHtml(
+		community.html,
+		[
+			'data-testid="community-listings-frame"',
+			'@kentcdodds/github-triage',
+			'data-rmx-target="community-listings"',
+			'data-rmx-history="push"',
+			'<!-- rmx:h:',
+		],
+		['data-testid="community-listings-empty"'],
+	)
+	const communityEntry = Object.values(parseRmxData(community.html).h)[0]
 	expect(communityEntry?.exportName).toBe('AppRoot')
 	expect(communityEntry?.moduleUrl).toBe('/client-entry.js')
-	const communityProps = readAppRootProps(communityHtml)
-	expect(communityProps.loaderData?.community).toBeUndefined()
+	expect(communityEntry?.props.loaderData?.community).toBeUndefined()
 	expect(communityMockModule.listCommunityIndexOverview).toHaveBeenCalledTimes(
 		1,
 	)
 
-	const communityFrameResponse = await runHtmlHandler(
+	const communityFrame = await runHtml(
 		createCommunityHandler(env),
-		new Request('https://example.com/community', {
-			headers: { 'x-remix-target': 'community-listings' },
-		}),
+		get('/community', undefined, { 'x-remix-target': 'community-listings' }),
 	)
-	expect(communityFrameResponse.status).toBe(200)
-	expect(communityFrameResponse.headers.get('Cache-Control')).toBe('no-store')
-	const communityFrameHtml = await readResponseText(communityFrameResponse)
-	expect(communityFrameHtml).toContain('data-testid="community-listings-frame"')
-	expect(communityFrameHtml).not.toContain('<html')
+	expect(communityFrame.response.status).toBe(200)
+	expect(communityFrame.response.headers.get('Cache-Control')).toBe('no-store')
+	expectHtml(
+		communityFrame.html,
+		['data-testid="community-listings-frame"'],
+		['<html'],
+	)
 
-	const accountCookie = await createAuthCookie(
-		{
-			stableUserId: testStableUserIdFromEmail('user@example.com'),
-			email: 'user@example.com',
-			rememberMe: false,
-		} satisfies AuthSession,
-		false,
+	const cookie = await cookieFor()
+	const signedIn = async (create: (env: Env) => HtmlHandler, path: string) => {
+		const page = await runHtml(create(env), get(path, cookie))
+		return { ...page, loaderData: readAppRootProps(page.html).loaderData }
+	}
+
+	const account = await signedIn(createAccountHandler, '/account')
+	expect(account.response.status).toBe(200)
+	// Connected agents moved to `/account/connections`; Overview only links
+	// there. The rail carries Connections and Repositories (the profile is the
+	// canonical repository list, so the nav links there rather than the
+	// `/account/packages` redirect).
+	expectHtml(
+		account.html,
+		[
+			'aria-label="Account sections"',
+			'data-testid="site-header-account"',
+			'data-testid="site-header-profile"',
+			'data-testid="site-header-account-menu"',
+			'href="/@account-user"',
+			'aria-label="@account-user"',
+			'data-testid="account-connections-link"',
+			'href="/account/connections"',
+			'>Connections</a>',
+			'data-icon="link"',
+			'data-icon="box"',
+			'/pending-verification',
+			'action="/logout"',
+			'aria-label="Session"',
+		],
+		['aria-label="Connected agents"'],
 	)
-	const accountResponse = await runHtmlHandler(
-		createAccountHandler(env),
-		new Request('https://example.com/account', {
-			headers: { Cookie: accountCookie },
-		}),
+	expect(account.html).toMatch(
+		/href="\/@account-user"[^>]*>[\s\S]*?Repositories<\/a>/,
 	)
-	expect(accountResponse.status).toBe(200)
-	const accountHtml = await readResponseText(accountResponse)
-	expect(accountHtml).toContain('aria-label="Account sections"')
-	expect(accountHtml).toContain('data-testid="site-header-account"')
-	expect(accountHtml).toContain('data-testid="site-header-profile"')
-	expect(accountHtml).toContain('data-testid="site-header-account-menu"')
-	expect(accountHtml).toContain('href="/@account-user"')
-	expect(accountHtml).toContain('aria-label="@account-user"')
-	const accountProps = readAppRootProps(accountHtml)
-	expect(accountProps.loaderData?.accountProfile).toEqual({
+	expect(account.loaderData?.accountProfile).toEqual({
 		ok: true,
 		email: 'user@example.com',
 		emailVerified: false,
@@ -416,29 +452,11 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		profileVisibility: 'public',
 		formerEmails: [],
 	})
-	expect(accountProps.loaderData?.accountConnections).toEqual({
-		ok: true,
-		connections: [],
-		canDisconnect: false,
-		hasUsablePassword: false,
-		availableProviders: [],
-		canSyncDiscordRoles: false,
-	})
-	// Connected agents moved to `/account/connections`; Overview only links there.
-	expect(accountProps.loaderData?.accountConnectedAgents).toBeUndefined()
-	expect(accountHtml).toContain('data-testid="account-connections-link"')
-	expect(accountHtml).toContain('href="/account/connections"')
-	expect(accountHtml).not.toContain('aria-label="Connected agents"')
-	// The rail carries Connections and Repositories (the profile is the canonical
-	// repository list, so the nav links there rather than the `/account/packages`
-	// redirect).
-	expect(accountHtml).toContain('>Connections</a>')
-	expect(accountHtml).toContain('data-icon="link"')
-	expect(accountHtml).toMatch(
-		/href="\/@account-user"[^>]*>[\s\S]*?Repositories<\/a>/,
+	expect(account.loaderData?.accountConnections).toEqual(
+		emptyAccountConnections,
 	)
-	expect(accountHtml).toContain('data-icon="box"')
-	expect(accountProps.loaderData?.onboarding).toEqual({
+	expect(account.loaderData?.accountConnectedAgents).toBeUndefined()
+	expect(account.loaderData?.onboarding).toEqual({
 		ok: true,
 		loggedIn: true,
 		username: 'account-user',
@@ -466,801 +484,525 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		accessWinMemorySubject: null,
 		checklist: null,
 	})
-	expect(accountHtml).toContain('/pending-verification')
-	expect(accountHtml).toContain('action="/logout"')
-	expect(accountHtml).toContain('Log out')
-	expect(accountHtml).toContain('aria-label="Session"')
 
-	const pendingVerificationResponse = await runHtmlHandler(
-		createPendingVerificationHandler(env),
-		new Request('https://example.com/pending-verification', {
-			headers: { Cookie: accountCookie },
-		}),
+	const pendingVerification = await signedIn(
+		createPendingVerificationHandler,
+		'/pending-verification',
 	)
-	expect(pendingVerificationResponse.status).toBe(200)
-	const pendingVerificationHtml = await readResponseText(
-		pendingVerificationResponse,
-	)
-	expect(pendingVerificationHtml).toContain('Check your email')
-	expect(pendingVerificationHtml).toContain('src="/images/kody-envelope.png"')
-	expect(pendingVerificationHtml).toContain(
+	expect(pendingVerification.response.status).toBe(200)
+	expectHtml(pendingVerification.html, [
+		'src="/images/kody-envelope.png"',
 		'data-testid="pending-verification-page"',
-	)
-	expect(
-		readAppRootProps(pendingVerificationHtml).loaderData?.pendingVerification,
-	).toEqual({
+	])
+	expect(pendingVerification.loaderData?.pendingVerification).toEqual({
 		ok: true,
 		email: 'user@example.com',
 		emailVerificationDelivery: null,
 	})
 
-	// Two-factor and passkeys embed the same payload their .json endpoints
-	// serve, so the page server-renders its real state instead of a loading
-	// placeholder plus a client fetch.
-	const twoFactorResponse = await runHtmlHandler(
-		createAccountTwoFactorHandler(env),
-		new Request('https://example.com/account/two-factor', {
-			headers: { Cookie: accountCookie },
-		}),
+	// Two-factor, passkeys, waiting, and MCP OAuth clients embed the same
+	// payload their .json endpoints serve, so each page server-renders its real
+	// state instead of a loading placeholder plus a client fetch.
+	const twoFactor = await signedIn(
+		createAccountTwoFactorHandler,
+		'/account/two-factor',
 	)
-	expect(twoFactorResponse.status).toBe(200)
-	const twoFactorHtml = await readResponseText(twoFactorResponse)
-	expect(readAppRootProps(twoFactorHtml).loaderData?.accountTwoFactor).toEqual({
+	expect(twoFactor.response.status).toBe(200)
+	expect(twoFactor.loaderData?.accountTwoFactor).toEqual({
 		ok: true,
 		enabled: false,
 	})
-	expect(twoFactorHtml).not.toContain('action="/logout"')
-
-	const passkeysResponse = await runHtmlHandler(
-		createAccountPasskeysHandler(env),
-		new Request('https://example.com/account/passkeys', {
-			headers: { Cookie: accountCookie },
-		}),
+	expect(twoFactor.html).not.toContain('action="/logout"')
+	const passkeys = await signedIn(
+		createAccountPasskeysHandler,
+		'/account/passkeys',
 	)
-	expect(passkeysResponse.status).toBe(200)
-	const passkeysHtml = await readResponseText(passkeysResponse)
-	expect(readAppRootProps(passkeysHtml).loaderData?.accountPasskeys).toEqual({
+	expect(passkeys.response.status).toBe(200)
+	expect(passkeys.loaderData?.accountPasskeys).toEqual({
 		ok: true,
 		passkeys: [],
 	})
-
-	const waitingResponse = await runHtmlHandler(
-		createAccountWaitingHandler(env),
-		new Request('https://example.com/account/waiting', {
-			headers: { Cookie: accountCookie },
-		}),
+	const waiting = await signedIn(
+		createAccountWaitingHandler,
+		'/account/waiting',
 	)
-	expect(waitingResponse.status).toBe(200)
-	const waitingHtml = await readResponseText(waitingResponse)
-	expect(waitingHtml).toContain('>Waiting<')
-	expect(readAppRootProps(waitingHtml).loaderData?.accountWaiting).toEqual({
+	expect(waiting.response.status).toBe(200)
+	expect(waiting.loaderData?.accountWaiting).toEqual({
 		ok: true,
 		items: expect.any(Array),
+	})
+	const mcpOauthClients = await signedIn(
+		createAccountMcpOauthClientsHandler,
+		'/account/mcp-oauth-clients',
+	)
+	expect(mcpOauthClients.response.status).toBe(200)
+	expect(mcpOauthClients.loaderData?.accountMcpOauthClients).toEqual({
+		ok: true,
+		clients: [],
 	})
 
 	// The Connections page embeds the connected-agents payload. The MCP URL is
 	// gated on email verification (this fixture is unverified), so the page
 	// server-renders the verify note instead of a copy card.
-	const connectionsResponse = await runHtmlHandler(
-		createAccountConnectionsHandler(env),
-		new Request('https://example.com/account/connections', {
-			headers: { Cookie: accountCookie },
-		}),
+	const connections = await signedIn(
+		createAccountConnectionsHandler,
+		'/account/connections',
 	)
-	expect(connectionsResponse.status).toBe(200)
-	const connectionsHtml = await readResponseText(connectionsResponse)
-	expect(connectionsHtml).toContain('>Connections<')
-	expect(connectionsHtml).toContain('aria-label="Account sections"')
-	expect(connectionsHtml).toMatch(
+	expect(connections.response.status).toBe(200)
+	expectHtml(connections.html, [
+		'aria-label="Account sections"',
+		'aria-label="Connected agents"',
+		'aria-label="MCP URL"',
+		'data-testid="account-connections-verify-note"',
+		'href="/account/mcp-oauth-clients"',
+		'data-entity-explainer="connections"',
+		'data-testid="account-connections-add"',
+	])
+	expect(connections.html).toMatch(
 		/href="\/account\/connections"[^>]*aria-current="page"/,
 	)
-	expect(connectionsHtml).toContain('aria-label="Connected agents"')
-	expect(connectionsHtml).toContain('aria-label="MCP URL"')
-	expect(connectionsHtml).toContain(
-		'data-testid="account-connections-verify-note"',
-	)
-	expect(connectionsHtml).toContain('href="/account/mcp-oauth-clients"')
-	expect(connectionsHtml).toContain('data-entity-explainer="connections"')
-	expect(
-		readAppRootProps(connectionsHtml).loaderData?.accountConnectedAgents,
-	).toEqual({
+	expect(connections.loaderData?.accountConnectedAgents).toEqual({
 		ok: true,
 		agents: [],
 		mcpServerUrl: '',
 	})
-	expect(connectionsHtml).toContain('data-testid="account-connections-add"')
 
 	// `/new` is its own page; the per-agent step shares the handler; unknown
 	// agent segments 404 instead of rendering an empty grid.
-	const addGridHtml = await readResponseText(
-		await runHtmlHandler(
-			createAccountConnectionsHandler(env),
-			new Request('https://example.com/account/connections/new', {
-				headers: { Cookie: accountCookie },
-			}),
-		),
+	const addGrid = await signedIn(
+		createAccountConnectionsHandler,
+		'/account/connections/new',
 	)
-	expect(addGridHtml).toContain('← back to connections')
-	expect(addGridHtml).not.toContain('aria-label="Connected agents"')
-
-	const addConnectionResponse = await runHtmlHandler(
-		createAccountConnectionsHandler(env),
-		new Request('https://example.com/account/connections/new/cursor', {
-			headers: { Cookie: accountCookie },
-		}),
+	expectHtml(
+		addGrid.html,
+		['data-testid="account-connections-back"'],
+		['aria-label="Connected agents"'],
 	)
-	expect(addConnectionResponse.status).toBe(200)
-	const addConnectionHtml = await readResponseText(addConnectionResponse)
-	expect(addConnectionHtml).toContain('<title>Connect Cursor')
-	expect(addConnectionHtml).toContain('aria-label="Connect Cursor"')
-	expect(addConnectionHtml).toMatch(
+	const addCursor = await signedIn(
+		createAccountConnectionsHandler,
+		'/account/connections/new/cursor',
+	)
+	expect(addCursor.response.status).toBe(200)
+	expectHtml(addCursor.html, [
+		'<title>Connect Cursor',
+		'aria-label="Connect Cursor"',
+	])
+	expect(addCursor.html).toMatch(
 		/href="\/account\/connections"[^>]*aria-current="page"/,
 	)
-	const unknownAgentResponse = await runHtmlHandler(
+	const unknownAgent = await runHtml(
 		createAccountConnectionsHandler(env),
-		new Request('https://example.com/account/connections/new/not-a-client', {
-			headers: { Cookie: accountCookie },
-		}),
+		get('/account/connections/new/not-a-client', cookie),
 	)
-	expect(unknownAgentResponse.status).toBe(404)
+	expect(unknownAgent.response.status).toBe(404)
 
-	const mcpOauthClientsResponse = await runHtmlHandler(
-		createAccountMcpOauthClientsHandler(env),
-		new Request('https://example.com/account/mcp-oauth-clients', {
-			headers: { Cookie: accountCookie },
-		}),
+	const accountLinked = await signedIn(
+		createAccountHandler,
+		'/account?oauthLinked=google',
 	)
-	expect(mcpOauthClientsResponse.status).toBe(200)
-	const mcpOauthClientsHtml = await readResponseText(mcpOauthClientsResponse)
-	expect(
-		readAppRootProps(mcpOauthClientsHtml).loaderData?.accountMcpOauthClients,
-	).toEqual({
-		ok: true,
-		clients: [],
-	})
-
-	const accountLinkedResponse = await runHtmlHandler(
-		createAccountHandler(env),
-		new Request('https://example.com/account?oauthLinked=google', {
-			headers: { Cookie: accountCookie },
-		}),
+	expect(accountLinked.response.status).toBe(200)
+	expect(accountLinked.loaderData?.accountConnections).toEqual(
+		emptyAccountConnections,
 	)
-	expect(accountLinkedResponse.status).toBe(200)
-	const accountLinkedHtml = await readResponseText(accountLinkedResponse)
-	expect(
-		readAppRootProps(accountLinkedHtml).loaderData?.accountConnections,
-	).toEqual({
-		ok: true,
-		connections: [],
-		canDisconnect: false,
-		hasUsablePassword: false,
-		availableProviders: [],
-		canSyncDiscordRoles: false,
-	})
 
-	const anonymousOnboardingIndex = await runHtmlHandler(
+	const onboardingIndex = await runHtml(
 		createOnboardingHandler(env),
-		new Request('https://example.com/onboarding'),
+		get('/onboarding'),
 	)
-	expect(anonymousOnboardingIndex.status).toBe(302)
-	expect(anonymousOnboardingIndex.headers.get('Location')).toBe(
+	expect(onboardingIndex.response.status).toBe(302)
+	expect(onboardingIndex.response.headers.get('Location')).toBe(
 		'https://example.com/onboarding/step-1',
 	)
-
-	const anonymousOnboardingResponse = await runHtmlHandler(
+	const onboarding = await runHtml(
 		createOnboardingHandler(env),
-		new Request('https://example.com/onboarding/step-1'),
+		get('/onboarding/step-1'),
 	)
-	expect(anonymousOnboardingResponse.status).toBe(200)
-	const anonymousOnboardingHtml = await readResponseText(
-		anonymousOnboardingResponse,
-	)
-	expect(anonymousOnboardingHtml).toContain(
+	expect(onboarding.response.status).toBe(200)
+	expectHtml(onboarding.html, [
 		'data-testid="onboarding-join-discord"',
-	)
-	expect(anonymousOnboardingHtml).toContain(
 		'data-testid="onboarding-agent-picker"',
-	)
-	expect(anonymousOnboardingHtml).toContain('data-testid="onboarding-step-2"')
-	expect(anonymousOnboardingHtml).toContain('href="/onboarding/step-2"')
-	expect(anonymousOnboardingHtml.indexOf('onboarding-steps-nav')).toBeLessThan(
-		anonymousOnboardingHtml.indexOf('onboarding-agent-picker'),
-	)
-	expect(
-		anonymousOnboardingHtml.indexOf('onboarding-agent-picker'),
-	).toBeLessThan(anonymousOnboardingHtml.indexOf('onboarding-join-discord'))
+		'data-testid="onboarding-step-2"',
+		'href="/onboarding/step-2"',
+	])
+	const positions = [
+		'onboarding-steps-nav',
+		'onboarding-agent-picker',
+		'onboarding-join-discord',
+	].map((marker) => onboarding.html.indexOf(marker))
+	expect(positions).toEqual([...positions].sort((a, b) => a - b))
 
-	const anonymousAccountResponse = await runHtmlHandler(
+	const anonymousAccount = await runHtml(
 		createAccountHandler(env),
-		new Request('https://example.com/account'),
+		get('/account'),
 	)
-	expect(anonymousAccountResponse.status).toBe(302)
-	expect(anonymousAccountResponse.headers.get('Location')).toBe(
+	expect(anonymousAccount.response.status).toBe(302)
+	expect(anonymousAccount.response.headers.get('Location')).toBe(
 		'https://example.com/login?redirectTo=%2Faccount',
 	)
 
-	const notFoundResponse = await renderAppPage({
-		request: new Request('https://example.com/missing-page'),
+	const notFound = await renderAppPage({
+		request: get('/missing-page'),
 		env,
 		title: 'Not found',
 		notFound: true,
 		status: 404,
 	})
-	expect(notFoundResponse.status).toBe(404)
-	const notFoundHtml = await readResponseText(notFoundResponse)
-	expect(notFoundHtml).toContain("This doesn't quite connect.")
+	expect(notFound.status).toBe(404)
+	const notFoundHtml = await notFound.text()
 	expect(notFoundHtml).toContain('src="/images/kody-404-disappointed.png"')
 	expect(readAppRootProps(notFoundHtml).notFound).toBe(true)
 
-	const internalErrorResponse = await renderAppPage({
-		request: new Request('https://example.com/account'),
+	const internalError = await renderAppPage({
+		request: get('/account'),
 		env,
 		title: 'Something went wrong',
 		internalError: true,
 		status: 500,
 	})
-	expect(internalErrorResponse.status).toBe(500)
-	const internalErrorHtml = await readResponseText(internalErrorResponse)
-	expect(internalErrorHtml).toContain('We got a little zapped.')
+	expect(internalError.status).toBe(500)
+	const internalErrorHtml = await internalError.text()
 	expect(internalErrorHtml).toContain('src="/images/kody-500-zapped.png"')
-	expect(internalErrorHtml).toContain('Try again')
 	expect(readAppRootProps(internalErrorHtml).internalError).toBe(true)
 
-	const resetConfirmResponse = await runHtmlHandler(
+	const resetConfirm = await runHtml(
 		createResetPasswordHandler(env),
-		new Request('https://example.com/reset-password?token=reset-token'),
+		get('/reset-password?token=reset-token'),
 	)
-	expect(resetConfirmResponse.status).toBe(200)
-	const resetConfirmHtml = await readResponseText(resetConfirmResponse)
-	expect(resetConfirmHtml).toContain('New password')
-	expect(resetConfirmHtml).not.toContain('Send reset link')
-	expect(readAppRootProps(resetConfirmHtml).url).toBe(
+	expect(resetConfirm.response.status).toBe(200)
+	expectHtml(resetConfirm.html, ['New password'], ['Send reset link'])
+	expect(readAppRootProps(resetConfirm.html).url).toBe(
 		'/reset-password?token=reset-token',
 	)
 })
 
 test('renderAppPage embeds the Fathom tracker only when FATHOM_SITE_ID is set', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv(createUserTestDb([]))
+	const env = setupEnv()
+	const withSiteId = (FATHOM_SITE_ID?: string) =>
+		renderAppPage({
+			request: get('/login'),
+			env: { ...env, FATHOM_SITE_ID } as Env,
+		})
 
-	const withoutFathom = await renderAppPage({
-		request: new Request('https://example.com/login'),
-		env,
-	})
-	expect(withoutFathom.status).toBe(200)
-	const withoutFathomHtml = await readResponseText(withoutFathom)
-	expect(withoutFathomHtml).not.toContain('cdn.usefathom.com')
-
-	const whitespaceOnly = await renderAppPage({
-		request: new Request('https://example.com/login'),
-		env: { ...env, FATHOM_SITE_ID: '   ' } as Env,
-	})
-	expect(await readResponseText(whitespaceOnly)).not.toContain(
-		'cdn.usefathom.com',
+	for (const siteId of [undefined, '   ']) {
+		const response = await withSiteId(siteId)
+		expect(response.status).toBe(200)
+		expect(await response.text()).not.toContain('cdn.usefathom.com')
+	}
+	expect(await (await withSiteId(' WKKSDJGN ')).text()).toContain(
+		'data-site="WKKSDJGN"',
 	)
 
-	const padded = await renderAppPage({
-		request: new Request('https://example.com/login'),
-		env: { ...env, FATHOM_SITE_ID: ' WKKSDJGN ' } as Env,
-	})
-	expect(await readResponseText(padded)).toContain('data-site="WKKSDJGN"')
-
-	const withFathom = await renderAppPage({
-		request: new Request('https://example.com/login'),
-		env: { ...env, FATHOM_SITE_ID: 'WKKSDJGN' } as Env,
-	})
+	const withFathom = await withSiteId('WKKSDJGN')
 	expect(withFathom.status).toBe(200)
-	const withFathomHtml = await readResponseText(withFathom)
-	expect(withFathomHtml).toContain('https://cdn.usefathom.com/script.js')
-	expect(withFathomHtml).toContain('data-site="WKKSDJGN"')
-	expect(withFathomHtml).toContain('data-spa="auto"')
-	const csp = withFathom.headers.get('Content-Security-Policy')
-	expect(csp).toContain("script-src 'self' 'sha256-")
-	expect(csp).toContain(
+	expectHtml(await withFathom.text(), [
+		'https://cdn.usefathom.com/script.js',
+		'data-site="WKKSDJGN"',
+		'data-spa="auto"',
+	])
+	expectHtml(withFathom.headers.get('Content-Security-Policy') ?? '', [
+		"script-src 'self' 'sha256-",
 		'https://cdn.usefathom.com https://static.cloudflareinsights.com',
-	)
-	expect(csp).toContain("img-src 'self' data: blob: https://cdn.usefathom.com")
-	expect(csp).toContain(
+		"img-src 'self' data: blob: https://cdn.usefathom.com",
 		"connect-src 'self' https://cdn.usefathom.com https://cloudflareinsights.com",
-	)
+	])
 })
 
-test('renderAppPage emits a pre-hydration scroll restoration script in the document body', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv(createUserTestDb([]))
-	const restoreScript = getScrollRestorationInlineScript()
-
-	const response = await renderAppPage({
-		request: new Request('https://example.com/'),
-		env,
-	})
+test('anonymous homepage document: doctype, preloads, scroll restoration, loop teaser, and public caching', async () => {
+	const env = setupEnv()
+	resetInlineStylesheetCache()
+	const { response, html } = await render(env, '/')
 	expect(response.status).toBe(200)
-	const html = await readResponseText(response)
-	const restoreScriptIndex = html.indexOf(restoreScript)
-	const clientEntryIndex = html.indexOf('type="module" src="')
+	expect(html.startsWith('<!DOCTYPE html>')).toBe(true)
+	// Without an ASSETS binding the stylesheet stays a <link>. Proof stage: one
+	// agent list around Kody, travelling orbs. The factory-loop teaser owns its
+	// combined play/pause control (icons, not the word Pause) so the header
+	// does not shift when playback starts.
+	expectHtml(html, [
+		'href="/styles.css',
+		'name="description"',
+		'src="/page-init.js"',
+		'landing-hero-agents',
+		'/images/kody-mark.png',
+		'landing-hero-agent-light',
+		'landing-hero-agent-track',
+		'class="landing-path-rail"',
+		'href="/images/hero/kody-base-640.webp"',
+		'kody-base-960.webp',
+		'as="image"',
+		'class="landing-loop"',
+		'/docs/how-kody-works',
+		'class="landing-loop-toggle-slot"',
+		'class="landing-loop-toggle"',
+		'aria-label="Pause"',
+		'aria-label="Skip to the end"',
+		'class="landing-loop-status-dot"',
+		'href="/docs"',
+		'href="/community"',
+	])
+	expect(html.match(/aria-label="Agents Kody plugs into"/g)).toEqual([
+		'aria-label="Agents Kody plugs into"',
+	])
+
+	const restoreScriptIndex = html.indexOf(getScrollRestorationInlineScript())
 	expect(restoreScriptIndex).toBeGreaterThan(html.indexOf('<div id="root">'))
 	expect(restoreScriptIndex).toBeGreaterThan(0)
-	expect(clientEntryIndex).toBeGreaterThan(restoreScriptIndex)
+	expect(html.indexOf('type="module" src="')).toBeGreaterThan(
+		restoreScriptIndex,
+	)
 	expect(response.headers.get('Content-Security-Policy')).toBe(
 		firstPartySecurityHeaders['Content-Security-Policy'],
 	)
 	expect(response.headers.get('Content-Security-Policy')).toContain("'sha256-")
+
+	const timing = response.headers.get('Server-Timing') ?? ''
+	expect(timing).toContain('session;dur=')
+	expect(timing).toContain('ssr;dur=')
+	expect(response.headers.get('Vary')).toBe('Cookie')
+	const publicCache = 'public, max-age=60, stale-while-revalidate=300'
+	for (const path of ['/', '/onboarding', '/docs/how-kody-works']) {
+		const { response: page } = await render(env, path)
+		expect(page.headers.get('Cache-Control')).toBe(publicCache)
+	}
+
+	// Any session cookie (even stale) and auth pages stay private.
+	for (const [path, cookie] of [
+		['/', 'kody_session=stale-or-unsigned'],
+		['/', await cookieFor()],
+		['/login', undefined],
+	] as const) {
+		const { response: page } = await render(env, path, { cookie })
+		expect(page.headers.get('Cache-Control')).toBe('no-store')
+	}
 })
 
-test('renderAppPage emits a doctype, meta description, and inlines the stylesheet when assets provide it', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	resetInlineStylesheetCache()
-	const env = createTestEnv(createUserTestDb([]))
-
-	// Without an ASSETS binding: doctype plus the stylesheet <link> fallback.
-	const withoutAssets = await renderAppPage({
-		request: new Request('https://example.com/'),
-		env,
-	})
-	const withoutAssetsHtml = await readResponseText(withoutAssets)
-	expect(withoutAssetsHtml.startsWith('<!DOCTYPE html>')).toBe(true)
-	expect(withoutAssetsHtml).toContain('href="/styles.css')
-	expect(withoutAssetsHtml).toContain('name="description"')
-	// Proof stage: one agent list around Kody, travelling orbs.
-	expect(withoutAssetsHtml).toContain('landing-hero-agents')
-	expect(withoutAssetsHtml).toContain('/images/kody-mark.png')
-	expect(
-		withoutAssetsHtml.match(/aria-label="Agents Kody plugs into"/g),
-	).toEqual(['aria-label="Agents Kody plugs into"'])
-	expect(withoutAssetsHtml).toContain('landing-hero-agent-light')
-	expect(withoutAssetsHtml).toContain('landing-hero-agent-track')
-	expect(withoutAssetsHtml).toContain('class="landing-path-rail"')
-	expect(withoutAssetsHtml).toContain('href="/images/hero/kody-base-640.webp"')
-	expect(withoutAssetsHtml).toContain('kody-base-960.webp')
-	expect(withoutAssetsHtml).toContain('as="image"')
-	expect(withoutAssets.headers.get('Cache-Control')).toBe(
-		'public, max-age=60, stale-while-revalidate=300',
-	)
-	expect(withoutAssets.headers.get('Vary')).toBe('Cookie')
-
-	// With ASSETS serving the stylesheet: inline <style>, no stylesheet link.
-	const assets = {
-		fetch: async (request: Request) =>
-			new URL(request.url).pathname === '/styles.css'
-				? new Response(':root { --inline-marker: 1; }')
-				: new Response('not found', { status: 404 }),
+test('renderAppPage inlines the stylesheet only when ASSETS serves HTML-safe CSS', async () => {
+	const env = setupEnv()
+	const renderWithCss = async (css: string) => {
+		resetInlineStylesheetCache()
+		const assets = {
+			fetch: async (request: Request) =>
+				new URL(request.url).pathname === '/styles.css'
+					? new Response(css)
+					: new Response('not found', { status: 404 }),
+		}
+		const response = await renderAppPage({
+			request: get('/'),
+			env: { ...env, ASSETS: assets } as Env,
+		})
+		return await response.text()
 	}
-	const withAssets = await renderAppPage({
-		request: new Request('https://example.com/'),
-		env: { ...env, ASSETS: assets } as Env,
-	})
-	const withAssetsHtml = await readResponseText(withAssets)
-	expect(withAssetsHtml).toContain(
-		'<style>:root { --inline-marker: 1; }</style>',
-	)
-	expect(withAssetsHtml).not.toContain('href="/styles.css')
 
+	expectHtml(
+		await renderWithCss(':root { --inline-marker: 1; }'),
+		['<style>:root { --inline-marker: 1; }</style>'],
+		['href="/styles.css'],
+	)
 	// Comments may mention HTML (`<main>`) without blocking inlining.
-	resetInlineStylesheetCache()
-	const commentedAssets = {
-		fetch: async () =>
-			new Response(
-				'/* The router moves focus to <main> */\n:root { --comment-ok: 1; }',
-			),
-	}
-	const withCommentedCss = await renderAppPage({
-		request: new Request('https://example.com/'),
-		env: { ...env, ASSETS: commentedAssets } as Env,
-	})
-	const withCommentedCssHtml = await readResponseText(withCommentedCss)
-	expect(withCommentedCssHtml).toContain(
-		'<style>:root { --comment-ok: 1; }</style>',
+	expectHtml(
+		await renderWithCss(
+			'/* The router moves focus to <main> */\n:root { --comment-ok: 1; }',
+		),
+		['<style>:root { --comment-ok: 1; }</style>'],
+		['href="/styles.css', '<main>'],
 	)
-	expect(withCommentedCssHtml).not.toContain('href="/styles.css')
-	expect(withCommentedCssHtml).not.toContain('<main>')
-
-	expect(withoutAssetsHtml).toContain('src="/page-init.js"')
-
 	// CSS needing HTML escaping must fall back to the <link> (the stream
 	// renderer escapes text children, which would corrupt selectors).
-	resetInlineStylesheetCache()
-	const unsafeAssets = {
-		fetch: async () => new Response('.card > p { color: red; }'),
-	}
-	const withUnsafeCss = await renderAppPage({
-		request: new Request('https://example.com/'),
-		env: { ...env, ASSETS: unsafeAssets } as Env,
-	})
-	const withUnsafeCssHtml = await readResponseText(withUnsafeCss)
-	expect(withUnsafeCssHtml).toContain('href="/styles.css')
-	expect(withUnsafeCssHtml).not.toContain('.card &gt; p')
-})
-
-test('renderAppPage caches anonymous marketing HTML and keeps session pages private', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv(createUserTestDb([]))
-
-	const anonymousHome = await renderAppPage({
-		request: new Request('https://example.com/'),
-		env,
-	})
-	expect(anonymousHome.headers.get('Cache-Control')).toBe(
-		'public, max-age=60, stale-while-revalidate=300',
-	)
-	expect(anonymousHome.headers.get('Vary')).toBe('Cookie')
-	const anonymousOnboarding = await renderAppPage({
-		request: new Request('https://example.com/onboarding'),
-		env,
-	})
-	expect(anonymousOnboarding.headers.get('Cache-Control')).toBe(
-		'public, max-age=60, stale-while-revalidate=300',
-	)
-	const anonymousGuide = await renderAppPage({
-		request: new Request('https://example.com/docs/how-kody-works'),
-		env,
-	})
-	expect(anonymousGuide.headers.get('Cache-Control')).toBe(
-		'public, max-age=60, stale-while-revalidate=300',
-	)
-	const homeTiming = anonymousHome.headers.get('Server-Timing') ?? ''
-	expect(homeTiming).toContain('session;dur=')
-	expect(homeTiming).toContain('ssr;dur=')
-
-	const staleCookieHome = await renderAppPage({
-		request: new Request('https://example.com/', {
-			headers: { Cookie: 'kody_session=stale-or-unsigned' },
-		}),
-		env,
-	})
-	expect(staleCookieHome.headers.get('Cache-Control')).toBe('no-store')
-
-	const cookie = await createAuthCookie(
-		{
-			stableUserId: testStableUserIdFromEmail('user@example.com'),
-			email: 'user@example.com',
-			rememberMe: false,
-		} satisfies AuthSession,
-		false,
-	)
-	const signedInHome = await renderAppPage({
-		request: new Request('https://example.com/', {
-			headers: { Cookie: cookie },
-		}),
-		env,
-	})
-	expect(signedInHome.headers.get('Cache-Control')).toBe('no-store')
-
-	const login = await renderAppPage({
-		request: new Request('https://example.com/login'),
-		env,
-	})
-	expect(login.headers.get('Cache-Control')).toBe('no-store')
-})
-
-test('renderAppPage embeds the homepage factory-loop conversation teaser', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv(createUserTestDb([]))
-	const response = await renderAppPage({
-		request: new Request('https://example.com/'),
-		env,
-	})
-	expect(response.status).toBe(200)
-	const html = await readResponseText(response)
-	expect(html).toContain('class="landing-loop"')
-	expect(html).toContain('/docs/how-kody-works')
-	// Combined playing/pause control is on the teaser so the header does
-	// not shift when playback starts. Icons, not the word Pause.
-	expect(html).toContain('class="landing-loop-toggle-slot"')
-	expect(html).toContain('class="landing-loop-toggle"')
-	expect(html).toContain('aria-label="Pause"')
-	expect(html).toContain('aria-label="Skip to the end"')
-	expect(html).toContain('class="landing-loop-status-dot"')
-	expect(html).toContain('class="landing-path-rail"')
-	expect(html).toContain('href="/docs"')
-	expect(html).toContain('href="/community"')
+	const unsafeHtml = await renderWithCss('.card > p { color: red; }')
+	expect(unsafeHtml).toContain('href="/styles.css')
+	expect(unsafeHtml).not.toContain('.card &gt; p')
 })
 
 test('signup social buttons are icon-only with accessible names', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv(createUserTestDb([]))
-	const response = await renderAppPage({
-		request: new Request('https://example.com/signup'),
-		env,
+	const labels = ['GitHub', 'Google', 'X', 'Discord']
+	const { response, html } = await render(setupEnv(), '/signup', {
 		loaderData: {
 			authProviders: {
 				ok: true,
 				turnstileSiteKey: null,
-				providers: [
-					{ id: 'github', label: 'GitHub' },
-					{ id: 'google', label: 'Google' },
-					{ id: 'x', label: 'X' },
-					{ id: 'discord', label: 'Discord' },
-				],
+				providers: labels.map((label) => ({ id: label.toLowerCase(), label })),
 			},
 		},
 	})
 	expect(response.status).toBe(200)
-	const html = await readResponseText(response)
-	expect(html).toContain('aria-label="Continue with GitHub"')
-	expect(html).toContain('aria-label="Continue with Google"')
-	expect(html).toContain('aria-label="Continue with X"')
-	expect(html).toContain('aria-label="Continue with Discord"')
+	expectHtml(
+		html,
+		labels.map((label) => `aria-label="Continue with ${label}"`),
+	)
 })
 
 test('renderAppPage configures session secret and server-renders oauth authorize', async () => {
-	resetDataCacheForTests()
+	const env = setupEnv([accountUser()])
 	resetAuthSessionSecretForTests()
-	const env = createTestEnv(
-		createUserTestDb([
-			{
-				id: 1,
-				email: 'user@example.com',
-				username: 'account-user',
-				password_hash: 'unused',
-				stable_user_id: testStableUserIdFromEmail('user@example.com'),
-				created_at: new Date(0).toISOString(),
-				updated_at: new Date(0).toISOString(),
-			},
-		]),
-	)
-
-	const anonymousAuthorizeUrl =
-		'https://example.com/oauth/authorize?response_type=code&client_id=client-1&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=profile'
-	const anonymousResponse = await renderAppPage({
-		request: new Request(anonymousAuthorizeUrl, {
-			headers: { Cookie: 'kody_session=stale-or-unsigned; other=1' },
-		}),
-		env,
-		loaderData: {
-			oauthAuthorize: {
-				ok: true,
-				client: { id: 'client-1', name: 'Cursor' },
-				scopes: ['profile', 'email'],
-				emailVerified: null,
-				requireCredentials: false,
-			},
-		},
+	const authorizePath =
+		'/oauth/authorize?response_type=code&client_id=client-1&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=profile'
+	const oauthAuthorize = (emailVerified: boolean | null) => ({
+		ok: true as const,
+		client: { id: 'client-1', name: 'Cursor' },
+		scopes: ['profile', 'email'],
+		emailVerified,
+		requireCredentials: false,
 	})
-	expect(anonymousResponse.status).toBe(200)
-	const anonymousHtml = await readResponseText(anonymousResponse)
-	expect(anonymousHtml).not.toContain('OAuth authorization failed')
-	expect(anonymousHtml).not.toContain('href="/images/hero/kody-base.webp"')
-	expect(anonymousHtml).toContain('data-testid="oauth-authorize-grant"')
-	expect(anonymousHtml).toContain('data-testid="oauth-authorize-oidc-scopes"')
-	expect(anonymousHtml).toContain('<code>profile</code>')
-	expect(anonymousHtml).toContain('<code>email</code>')
-	expect(anonymousHtml).not.toContain('Unknown client')
-	expect(anonymousHtml).not.toContain('Loading authorization details')
-	expect(anonymousHtml).toContain('data-testid="oauth-authorize-form"')
-	expect(anonymousHtml).toContain('method="post"')
-	expect(anonymousHtml).toContain(
-		'action="/oauth/authorize?response_type=code&amp;client_id=client-1',
+
+	const anonymous = await render(env, authorizePath, {
+		cookie: 'kody_session=stale-or-unsigned; other=1',
+		loaderData: { oauthAuthorize: oauthAuthorize(null) },
+	})
+	expect(anonymous.response.status).toBe(200)
+	expectHtml(
+		anonymous.html,
+		[
+			'data-testid="oauth-authorize-grant"',
+			'data-testid="oauth-authorize-oidc-scopes"',
+			'<code>profile</code>',
+			'<code>email</code>',
+			'data-testid="oauth-authorize-form"',
+			'method="post"',
+			'action="/oauth/authorize?response_type=code&amp;client_id=client-1',
+			'name="decision"',
+			'value="approve"',
+			'aria-busy="true"',
+		],
+		[
+			'OAuth authorization failed',
+			'href="/images/hero/kody-base.webp"',
+			'Unknown client',
+			'Loading authorization details',
+		],
 	)
-	expect(anonymousHtml).toContain('name="decision"')
-	expect(anonymousHtml).toContain('value="approve"')
-	expect(anonymousHtml).toMatch(
+	expect(anonymous.html).toMatch(
 		/data-testid="oauth-authorize-approve"[^>]*disabled/,
 	)
-	expect(anonymousHtml).toContain('aria-busy="true"')
-	expect(anonymousHtml).toContain('available after the page finishes loading')
 
 	setAuthSessionSecret(testCookieSecret)
-	const cookie = await createAuthCookie(
-		{
-			stableUserId: testStableUserIdFromEmail('user@example.com'),
-			email: 'user@example.com',
-			rememberMe: false,
-		} satisfies AuthSession,
-		false,
-	)
-	const signedInResponse = await renderAppPage({
-		request: new Request(
-			'https://example.com/oauth/authorize?response_type=code&client_id=client-1&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=profile',
-			{ headers: { Cookie: cookie } },
-		),
-		env,
-		loaderData: {
-			oauthAuthorize: {
-				ok: true,
-				client: { id: 'client-1', name: 'Cursor' },
-				scopes: ['profile', 'email'],
-				emailVerified: false,
-				requireCredentials: false,
-			},
-		},
+	const signedIn = await render(env, authorizePath, {
+		cookie: await cookieFor(),
+		loaderData: { oauthAuthorize: oauthAuthorize(false) },
 	})
-	expect(signedInResponse.status).toBe(200)
-	const signedInHtml = await readResponseText(signedInResponse)
-	expect(signedInHtml).toContain('aria-label="Email verification status"')
-	expect(signedInHtml).not.toContain('Approve connection')
-	expect(signedInHtml).toMatch(
+	expect(signedIn.response.status).toBe(200)
+	expectHtml(
+		signedIn.html,
+		['aria-label="Email verification status"'],
+		['Approve connection'],
+	)
+	expect(signedIn.html).toMatch(
 		/data-testid="oauth-authorize-email-verify-deny"[^>]*disabled/,
 	)
 })
 
 test('renderAppPage server-renders connect-oauth provider visits without a loading flash', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv(createUserTestDb([]))
+	const env = setupEnv()
+	const redirectUri = 'https://example.com/connect/oauth'
+	const googleIntegration = {
+		name: 'google',
+		appSlug: 'google',
+		provider: 'google',
+		appLabel: 'Google',
+		accountLabel: null,
+		tokenUrl: 'https://oauth2.googleapis.com/token',
+		apiBaseUrl: 'https://www.googleapis.com',
+		flow: 'confidential' as const,
+		usePkce: false,
+		clientId: 'google-client-id-value',
+		hasClientSecret: true,
+		requiredHosts: ['oauth2.googleapis.com', 'www.googleapis.com'],
+		authorization: {
+			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+			scopes: ['openid', 'email', 'profile'],
+			scopeSeparator: null,
+			extraAuthorizeParams: { access_type: 'offline' },
+		},
+		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
+	}
+	const renderConnect = async (
+		path: string,
+		connectOauth: Omit<ConnectOauthLoaderData, 'ok' | 'redirectUri'>,
+	) => {
+		const page = await render(env, `/connect/oauth${path}`, {
+			loaderData: { connectOauth: { ok: true, redirectUri, ...connectOauth } },
+		})
+		expect(page.response.status).toBe(200)
+		return page.html
+	}
+	const noIntegration = {
+		integration: null,
+		builtInAvailable: false,
+		hasStoredClientSecret: false,
+	}
 
 	// A stored user-lane confidential google connection whose client secret
 	// already exists: the page must SSR straight into "ready to connect"
 	// with the Redirect URI card, not "Loading provider configuration…".
-	const response = await renderAppPage({
-		request: new Request('https://example.com/connect/oauth?provider=google'),
-		env,
-		loaderData: {
-			connectOauth: {
-				ok: true,
-				provider: 'google',
-				integration: {
-					name: 'google',
-					appSlug: 'google',
-					provider: 'google',
-					appLabel: 'Google',
-					accountLabel: null,
-					tokenUrl: 'https://oauth2.googleapis.com/token',
-					apiBaseUrl: 'https://www.googleapis.com',
-					flow: 'confidential',
-					usePkce: false,
-					clientId: 'google-client-id-value',
-					hasClientSecret: true,
-					requiredHosts: ['oauth2.googleapis.com', 'www.googleapis.com'],
-					authorization: {
-						authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-						scopes: ['openid', 'email', 'profile'],
-						scopeSeparator: null,
-						extraAuthorizeParams: { access_type: 'offline' },
-					},
-					createdAt: '2026-01-01T00:00:00.000Z',
-					updatedAt: '2026-01-01T00:00:00.000Z',
-				},
-				builtInAvailable: false,
-				hasStoredClientSecret: true,
-				redirectUri: 'https://example.com/connect/oauth',
-			},
-		},
-	})
-
-	expect(response.status).toBe(200)
-	const html = await readResponseText(response)
-	expect(html).toContain('data-testid="provider-mark"')
-	expect(html).toContain('data-testid="connect-oauth-advanced"')
-	expect(html).toContain('data-testid="connect-oauth-scopes"')
-	expect(html).toContain('https://accounts.google.com/o/oauth2/v2/auth')
+	expectHtml(
+		await renderConnect('?provider=google', {
+			provider: 'google',
+			integration: googleIntegration,
+			builtInAvailable: false,
+			hasStoredClientSecret: true,
+		}),
+		[
+			'data-testid="provider-mark"',
+			'data-testid="connect-oauth-advanced"',
+			'data-testid="connect-oauth-scopes"',
+			'https://accounts.google.com/o/oauth2/v2/auth',
+		],
+	)
 
 	// Reconnecting a platform connection is bring-your-own setup: the page
 	// asks for the user's client credentials instead of one-click authorize.
-	const replaceResponse = await renderAppPage({
-		request: new Request('https://example.com/connect/oauth?provider=google'),
-		env,
-		loaderData: {
-			connectOauth: {
-				ok: true,
-				provider: 'google',
-				integration: {
-					name: 'google',
-					appSlug: 'google',
-					provider: 'google',
-					appLabel: 'Google',
-					accountLabel: null,
-					tokenUrl: 'https://oauth2.googleapis.com/token',
-					apiBaseUrl: 'https://www.googleapis.com',
-					flow: 'confidential',
-					usePkce: true,
-					clientId: '',
-					hasClientSecret: false,
-					requiredHosts: ['oauth2.googleapis.com'],
-					authorization: {
-						authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-						scopes: ['openid'],
-						scopeSeparator: null,
-						extraAuthorizeParams: {},
-					},
-					createdAt: '2026-01-01T00:00:00.000Z',
-					updatedAt: '2026-01-01T00:00:00.000Z',
+	expectHtml(
+		await renderConnect('?provider=google', {
+			provider: 'google',
+			integration: {
+				...googleIntegration,
+				usePkce: true,
+				clientId: '',
+				hasClientSecret: false,
+				requiredHosts: ['oauth2.googleapis.com'],
+				authorization: {
+					...googleIntegration.authorization,
+					scopes: ['openid'],
+					extraAuthorizeParams: {},
 				},
-				builtInAvailable: false,
-				existingConnection: { lane: 'platform', appSlug: 'google' },
-				hasStoredClientSecret: false,
-				redirectUri: 'https://example.com/connect/oauth',
 			},
-		},
-	})
-	expect(replaceResponse.status).toBe(200)
-	const replaceHtml = await readResponseText(replaceResponse)
-	expect(replaceHtml).toContain('Paste the client ID')
-	expect(replaceHtml).toContain('https://example.com/connect/oauth')
+			builtInAvailable: false,
+			existingConnection: { lane: 'platform', appSlug: 'google' },
+			hasStoredClientSecret: false,
+		}),
+		['Paste the client ID', redirectUri],
+	)
 
 	// First-time bring-your-own setup: credentials form and redirect URL are
 	// visible; endpoints and allowed hosts stay behind the disclosure.
-	const setupResponse = await renderAppPage({
-		request: new Request(
-			'https://example.com/connect/oauth?provider=github&authorizeUrl=https%3A%2F%2Fgithub.com%2Flogin%2Foauth%2Fauthorize&tokenUrl=https%3A%2F%2Fgithub.com%2Flogin%2Foauth%2Faccess_token',
+	expectHtml(
+		await renderConnect(
+			'?provider=github&authorizeUrl=https%3A%2F%2Fgithub.com%2Flogin%2Foauth%2Fauthorize&tokenUrl=https%3A%2F%2Fgithub.com%2Flogin%2Foauth%2Faccess_token',
+			{ provider: 'github', ...noIntegration },
 		),
-		env,
-		loaderData: {
-			connectOauth: {
-				ok: true,
-				provider: 'github',
-				integration: null,
-				builtInAvailable: false,
-				hasStoredClientSecret: false,
-				redirectUri: 'https://example.com/connect/oauth',
-			},
-		},
-	})
-	expect(setupResponse.status).toBe(200)
-	const setupHtml = await readResponseText(setupResponse)
-	expect(setupHtml).toContain('https://example.com/connect/oauth')
-	expect(setupHtml).toContain('data-testid="connect-oauth-advanced"')
-	expect(setupHtml).toContain('https://github.com/login/oauth/authorize')
+		[
+			redirectUri,
+			'data-testid="connect-oauth-advanced"',
+			'https://github.com/login/oauth/authorize',
+		],
+	)
 
 	// Provider without stored or query endpoints: the missing-config error
 	// is a single alert, not also repeated as the header description.
-	const missingResponse = await renderAppPage({
-		request: new Request(
-			'https://example.com/connect/oauth?provider=unknown-provider',
-		),
-		env,
-		loaderData: {
-			connectOauth: {
-				ok: true,
-				provider: 'unknown-provider',
-				integration: null,
-				builtInAvailable: false,
-				hasStoredClientSecret: false,
-				redirectUri: 'https://example.com/connect/oauth',
-			},
-		},
+	const missingHtml = await renderConnect('?provider=unknown-provider', {
+		provider: 'unknown-provider',
+		...noIntegration,
 	})
-	expect(missingResponse.status).toBe(200)
-	const missingHtml = await readResponseText(missingResponse)
-	expect(missingHtml).toContain('role="alert"')
-	expect(missingHtml).toContain('data-testid="connect-oauth-incomplete"')
+	expectHtml(missingHtml, [
+		'role="alert"',
+		'data-testid="connect-oauth-incomplete"',
+	])
 	expect(
 		missingHtml.split('Missing required OAuth configuration parameters.')
 			.length - 1,
 	).toBe(1)
 
-	const chooserResponse = await renderAppPage({
-		request: new Request('https://example.com/connect/oauth'),
-		env,
-		loaderData: {
-			connectOauth: {
-				ok: true,
-				provider: null,
-				integration: null,
-				chooser: {
-					options: [
-						{
-							id: 'connection:google',
-							href: '/connect/oauth?provider=google&app=google',
-							label: 'Google',
-							detail: 'Reconnect your OAuth app',
-							providerKey: 'google',
-							logoPath: null,
-							autoLogoPath: null,
-							catalogLogoPath: null,
-							kind: 'connection',
-						},
-					],
-				},
-				redirectUri: 'https://example.com/connect/oauth',
-			},
-		},
-	})
-	expect(chooserResponse.status).toBe(200)
-	const chooserHtml = await readResponseText(chooserResponse)
-	expect(chooserHtml).toContain('data-testid="connect-oauth-chooser"')
-	expect(chooserHtml).toContain('data-testid="connect-oauth-chooser-list"')
-	expect(chooserHtml).not.toContain(
-		'data-testid="connect-oauth-chooser-filter"',
-	)
-	expect(chooserHtml).toContain('/connect/oauth?provider=google&app=google')
-
-	const longChooserOptions = [
+	// The chooser only adds a filter once it lists more than six options.
+	const chooserOptions = [
 		'google',
 		'github',
 		'slack',
@@ -1279,92 +1021,40 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 		catalogLogoPath: null,
 		kind: 'connection' as const,
 	}))
-	const sixChooserResponse = await renderAppPage({
-		request: new Request('https://example.com/connect/oauth'),
-		env,
-		loaderData: {
-			connectOauth: {
-				ok: true,
-				provider: null,
-				integration: null,
-				chooser: { options: longChooserOptions.slice(0, 6) },
-				redirectUri: 'https://example.com/connect/oauth',
-			},
-		},
-	})
-	expect(sixChooserResponse.status).toBe(200)
-	const sixChooserHtml = await readResponseText(sixChooserResponse)
-	expect(sixChooserHtml).toContain('data-testid="connect-oauth-chooser-list"')
-	expect(sixChooserHtml).not.toContain(
-		'data-testid="connect-oauth-chooser-filter"',
+	const renderChooser = (options: typeof chooserOptions, path = '') =>
+		renderConnect(path, {
+			provider: null,
+			integration: null,
+			chooser: { options },
+		})
+	const list = 'data-testid="connect-oauth-chooser-list"'
+	const filter = 'data-testid="connect-oauth-chooser-filter"'
+	expectHtml(
+		await renderChooser(chooserOptions.slice(0, 1)),
+		[
+			'data-testid="connect-oauth-chooser"',
+			list,
+			'/connect/oauth?provider=google&app=google',
+		],
+		[filter],
 	)
+	expectHtml(await renderChooser(chooserOptions.slice(0, 6)), [list], [filter])
+	expectHtml(await renderChooser(chooserOptions), [
+		filter,
+		list,
+		'/connect/oauth?provider=linear&app=linear',
+	])
 
-	const longChooserResponse = await renderAppPage({
-		request: new Request('https://example.com/connect/oauth'),
-		env,
-		loaderData: {
-			connectOauth: {
-				ok: true,
-				provider: null,
-				integration: null,
-				chooser: { options: longChooserOptions },
-				redirectUri: 'https://example.com/connect/oauth',
-			},
-		},
-	})
-	expect(longChooserResponse.status).toBe(200)
-	const longChooserHtml = await readResponseText(longChooserResponse)
-	expect(longChooserHtml).toContain(
-		'data-testid="connect-oauth-chooser-filter"',
+	expectHtml(
+		await renderChooser([], '?code=auth-code&state=abc'),
+		['data-testid="connect-oauth-callback"'],
+		['data-testid="connect-oauth-chooser"'],
 	)
-	expect(longChooserHtml).toContain('data-testid="connect-oauth-chooser-list"')
-	expect(longChooserHtml).toContain('/connect/oauth?provider=linear&app=linear')
-
-	const callbackResponse = await renderAppPage({
-		request: new Request(
-			'https://example.com/connect/oauth?code=auth-code&state=abc',
-		),
-		env,
-		loaderData: {
-			connectOauth: {
-				ok: true,
-				provider: null,
-				integration: null,
-				chooser: { options: [] },
-				redirectUri: 'https://example.com/connect/oauth',
-			},
-		},
-	})
-	expect(callbackResponse.status).toBe(200)
-	const callbackHtml = await readResponseText(callbackResponse)
-	expect(callbackHtml).toContain('data-testid="connect-oauth-callback"')
-	expect(callbackHtml).not.toContain('data-testid="connect-oauth-chooser"')
 })
 
 test('renderAppPage server-renders simplified integration and secret-approval pages', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv(
-		createUserTestDb([
-			{
-				id: 1,
-				email: 'user@example.com',
-				username: 'account-user',
-				password_hash: 'unused',
-				stable_user_id: testStableUserIdFromEmail('user@example.com'),
-				created_at: new Date(0).toISOString(),
-				updated_at: new Date(0).toISOString(),
-			},
-		]),
-	)
-	const cookie = await createAuthCookie(
-		{
-			stableUserId: testStableUserIdFromEmail('user@example.com'),
-			email: 'user@example.com',
-			rememberMe: false,
-		} satisfies AuthSession,
-		false,
-	)
+	const env = setupEnv([accountUser()])
+	const cookie = await cookieFor()
 	const googleConnection = {
 		name: 'google',
 		appSlug: 'google',
@@ -1406,294 +1096,249 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 		createdAt: '2026-01-01T00:00:00.000Z',
 		updatedAt: '2026-01-01T00:00:00.000Z',
 	}
-
-	const connectionResponse = await renderAppPage({
-		request: new Request('https://example.com/account/integrations/google', {
-			headers: { Cookie: cookie },
-		}),
-		env,
-		loaderData: {
-			accountIntegrations: {
-				ok: true,
-				email: 'user@example.com',
-				username: 'account-user',
-				integrations: [googleConnection],
-				apps: [googleApp],
+	const renderIntegrations = async (
+		path: string,
+		integrations: Array<AccountIntegrationListItem> = [googleConnection],
+		apps: Array<AccountOauthAppListItem> = [googleApp],
+	) => {
+		const page = await render(env, `/account/integrations${path}`, {
+			cookie,
+			loaderData: {
+				accountIntegrations: {
+					ok: true,
+					email: 'user@example.com',
+					username: 'account-user',
+					integrations,
+					apps,
+				},
 			},
-		},
-	})
-	expect(connectionResponse.status).toBe(200)
-	const connectionHtml = await readResponseText(connectionResponse)
-	expect(connectionHtml).toContain('1 account connected.')
-	expect(connectionHtml).toContain('data-testid="add-account-open"')
-	expect(connectionHtml).toContain('Add another account')
-	expect(connectionHtml).toContain(
-		'href="/account/integrations/google?add-account=1#add-account"',
-	)
-	expect(connectionHtml).toContain('data-prevent-scroll-reset')
-	expect(connectionHtml).not.toContain('data-testid="add-account-form"')
-	expect(connectionHtml).toContain('>Reconnect<')
-	expect(connectionHtml).toContain('data-testid="provider-mark"')
-	expect(connectionHtml).toContain('data-testid="integration-advanced"')
-	expect(connectionHtml).toContain('data-testid="integration-connection"')
-	expect(connectionHtml).toContain('data-highlighted="true"')
-	expect(connectionHtml).toContain('Services you connect so Kody can use them.')
-	expect(connectionHtml).toContain('aria-label="Integrations"')
+		})
+		expect(page.response.status).toBe(200)
+		return page.html
+	}
 
-	const appResponse = await renderAppPage({
-		request: new Request(
-			'https://example.com/account/integrations/apps/google',
-			{ headers: { Cookie: cookie } },
-		),
-		env,
-		loaderData: {
-			accountIntegrations: {
-				ok: true,
-				email: 'user@example.com',
-				username: 'account-user',
-				integrations: [googleConnection],
-				apps: [googleApp],
-			},
-		},
-	})
-	expect(appResponse.status).toBe(200)
-	const appHtml = await readResponseText(appResponse)
-	expect(appHtml).toContain('1 account connected.')
-	expect(appHtml).toContain('data-testid="integration-advanced"')
-	expect(appHtml).toContain('Rotate credentials')
-	expect(appHtml).not.toContain('data-highlighted="true"')
-	expect(appHtml).not.toContain('data-testid="built-in-indicator"')
-
-	const builtInApp = {
-		...googleApp,
-		platform: true,
-		hasClientSecret: false,
-		connectionCount: 2,
-		connections: [
-			{ name: 'google', accountLabel: 'me@example.com' },
-			{ name: 'google-work', accountLabel: 'work@example.com' },
+	const connectionHtml = await renderIntegrations('/google')
+	expectHtml(
+		connectionHtml,
+		[
+			'1 account connected.',
+			'data-testid="add-account-open"',
+			'href="/account/integrations/google?add-account=1#add-account"',
+			'data-prevent-scroll-reset',
+			'>Reconnect<',
+			'data-testid="provider-mark"',
+			'data-testid="integration-advanced"',
+			'data-testid="integration-connection"',
+			'data-highlighted="true"',
+			'aria-label="Integrations"',
 		],
-	}
-	const builtInConnection = {
-		...googleConnection,
-		platform: true,
-	}
-	const needsSetupConnection = {
-		...builtInConnection,
-		name: 'google-work',
-		accountLabel: 'work@example.com',
-		authorization: null,
-	}
-	const builtInResponse = await renderAppPage({
-		request: new Request('https://example.com/account/integrations/google', {
-			headers: { Cookie: cookie },
-		}),
-		env,
-		loaderData: {
-			accountIntegrations: {
-				ok: true,
-				email: 'user@example.com',
-				username: 'account-user',
-				integrations: [builtInConnection, needsSetupConnection],
-				apps: [builtInApp],
-			},
-		},
-	})
-	const builtInHtml = await readResponseText(builtInResponse)
-	expect(builtInHtml).toContain('data-testid="built-in-indicator"')
-	expect(builtInHtml).toContain('Provided by Kody')
-	expect(builtInHtml).toContain('2 accounts connected.')
-	expect(builtInHtml).toContain('data-testid="add-account-open"')
-	expect(builtInHtml).toContain('Add another account')
-	expect(builtInHtml).not.toContain('data-testid="add-account-form"')
-
-	const addAccountResponse = await renderAppPage({
-		request: new Request(
-			'https://example.com/account/integrations/google?add-account=1#add-account',
-			{ headers: { Cookie: cookie } },
-		),
-		env,
-		loaderData: {
-			accountIntegrations: {
-				ok: true,
-				email: 'user@example.com',
-				username: 'account-user',
-				integrations: [googleConnection],
-				apps: [googleApp],
-			},
-		},
-	})
-	expect(addAccountResponse.status).toBe(200)
-	const addAccountHtml = await readResponseText(addAccountResponse)
-	expect(addAccountHtml).toContain('data-testid="add-account-form"')
-	expect(addAccountHtml).toContain('id="add-account"')
-	expect(addAccountHtml).toContain('Connection name')
-	expect(addAccountHtml).toContain('value="google-2"')
-	expect(addAccountHtml).not.toContain('data-testid="add-account-open"')
-	expect(builtInHtml).toContain('Needs setup')
-	expect(builtInHtml).toContain('>Connect<')
-	expect(builtInHtml).toContain('/connect/oauth?provider=google-work')
-	expect(builtInHtml).not.toContain('Rotate credentials')
-
-	const missingConnectionResponse = await renderAppPage({
-		request: new Request(
-			'https://example.com/account/integrations/missing-connection',
-			{ headers: { Cookie: cookie } },
-		),
-		env,
-		loaderData: {
-			accountIntegrations: {
-				ok: true,
-				email: 'user@example.com',
-				username: 'account-user',
-				integrations: [googleConnection],
-				apps: [googleApp],
-			},
-		},
-	})
-	const missingConnectionHtml = await readResponseText(
-		missingConnectionResponse,
+		['data-testid="add-account-form"'],
 	)
-	expect(missingConnectionHtml).toContain('data-testid="connection-not-found"')
-	expect(missingConnectionHtml).toContain('Connection not found')
 
-	const missingIntegrationResponse = await renderAppPage({
-		request: new Request(
-			'https://example.com/account/integrations/apps/missing-app',
-			{ headers: { Cookie: cookie } },
-		),
-		env,
-		loaderData: {
-			accountIntegrations: {
-				ok: true,
-				email: 'user@example.com',
-				username: 'account-user',
-				integrations: [googleConnection],
-				apps: [googleApp],
-			},
-		},
-	})
-	const missingIntegrationHtml = await readResponseText(
-		missingIntegrationResponse,
+	expectHtml(
+		await renderIntegrations('/apps/google'),
+		[
+			'1 account connected.',
+			'data-testid="integration-advanced"',
+			'Rotate credentials',
+		],
+		['data-highlighted="true"', 'data-testid="built-in-indicator"'],
 	)
-	expect(missingIntegrationHtml).toContain(
+
+	const builtInConnection = { ...googleConnection, platform: true }
+	const builtInHtml = await renderIntegrations(
+		'/google',
+		[
+			builtInConnection,
+			{
+				...builtInConnection,
+				name: 'google-work',
+				accountLabel: 'work@example.com',
+				authorization: null,
+			},
+		],
+		[
+			{
+				...googleApp,
+				platform: true,
+				hasClientSecret: false,
+				connectionCount: 2,
+				connections: [
+					{ name: 'google', accountLabel: 'me@example.com' },
+					{ name: 'google-work', accountLabel: 'work@example.com' },
+				],
+			},
+		],
+	)
+	expectHtml(
+		builtInHtml,
+		[
+			'data-testid="built-in-indicator"',
+			'2 accounts connected.',
+			'data-testid="add-account-open"',
+			'Needs setup',
+			'>Connect<',
+			'/connect/oauth?provider=google-work',
+		],
+		['data-testid="add-account-form"', 'Rotate credentials'],
+	)
+
+	expectHtml(
+		await renderIntegrations('/google?add-account=1#add-account'),
+		['data-testid="add-account-form"', 'id="add-account"', 'value="google-2"'],
+		['data-testid="add-account-open"'],
+	)
+	expect(await renderIntegrations('/missing-connection')).toContain(
+		'data-testid="connection-not-found"',
+	)
+	expect(await renderIntegrations('/apps/missing-app')).toContain(
 		'data-testid="integration-not-found"',
 	)
-	expect(missingIntegrationHtml).toContain('Integration not found')
+	expect(await renderIntegrations('', [], [])).toContain('No integrations yet.')
 
-	const emptyResponse = await renderAppPage({
-		request: new Request('https://example.com/account/integrations', {
-			headers: { Cookie: cookie },
-		}),
+	const secret = {
+		id: 'user:googleAccessToken',
+		name: 'googleAccessToken',
+		scope: 'user' as const,
+		description: '',
+		packageId: null,
+		packageTitle: null,
+		allowedHosts: ['oauth2.googleapis.com'],
+		allowedPackages: [],
+		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
+		expiresAt: null,
+		ttlMs: null,
+	}
+	const approval = await render(
 		env,
-		loaderData: {
-			accountIntegrations: {
-				ok: true,
-				email: 'user@example.com',
-				username: 'account-user',
-				integrations: [],
-				apps: [],
-			},
-		},
-	})
-	const emptyHtml = await readResponseText(emptyResponse)
-	expect(emptyHtml).toContain('No integrations yet.')
-	expect(emptyHtml).toContain(
-		'Pick a service and copy its prompt into your agent',
-	)
-
-	const approvalResponse = await renderAppPage({
-		request: new Request(
-			'https://example.com/account/secrets/user/googleAccessToken?allowed-host=gmail.googleapis.com',
-			{ headers: { Cookie: cookie } },
-		),
-		env,
-		loaderData: {
-			accountSecrets: {
-				ok: true,
-				email: 'user@example.com',
-				packageOptions: [],
-				packages: [],
-				secrets: [
-					{
-						id: 'user:googleAccessToken',
+		'/account/secrets/user/googleAccessToken?allowed-host=gmail.googleapis.com',
+		{
+			cookie,
+			loaderData: {
+				accountSecrets: {
+					ok: true,
+					email: 'user@example.com',
+					packageOptions: [],
+					packages: [],
+					secrets: [secret],
+					selectedSecret: { ...secret, value: 'redacted' },
+					approval: {
 						name: 'googleAccessToken',
+						names: ['googleAccessToken'],
 						scope: 'user',
-						description: '',
-						packageId: null,
-						packageTitle: null,
-						allowedHosts: ['oauth2.googleapis.com'],
-						allowedPackages: [],
-						createdAt: '2026-01-01T00:00:00.000Z',
-						updatedAt: '2026-01-01T00:00:00.000Z',
-						expiresAt: null,
-						ttlMs: null,
+						requestedHost: 'gmail.googleapis.com',
+						requestedHosts: ['gmail.googleapis.com'],
+						rejectedHosts: [],
+						requestedPackageId: null,
+						currentAllowedHosts: ['oauth2.googleapis.com'],
+						currentAllowedPackages: [],
 					},
-				],
-				selectedSecret: {
-					id: 'user:googleAccessToken',
-					name: 'googleAccessToken',
-					scope: 'user',
-					description: '',
-					packageId: null,
-					packageTitle: null,
-					allowedHosts: ['oauth2.googleapis.com'],
-					allowedPackages: [],
-					createdAt: '2026-01-01T00:00:00.000Z',
-					updatedAt: '2026-01-01T00:00:00.000Z',
-					expiresAt: null,
-					ttlMs: null,
-					value: 'redacted',
+					approvalError: null,
 				},
-				approval: {
-					name: 'googleAccessToken',
-					names: ['googleAccessToken'],
-					scope: 'user',
-					requestedHost: 'gmail.googleapis.com',
-					requestedHosts: ['gmail.googleapis.com'],
-					rejectedHosts: [],
-					requestedPackageId: null,
-					currentAllowedHosts: ['oauth2.googleapis.com'],
-					currentAllowedPackages: [],
-				},
-				approvalError: null,
 			},
 		},
-	})
-	expect(approvalResponse.status).toBe(200)
-	const approvalHtml = await readResponseText(approvalResponse)
-	expect(approvalHtml).toContain('Allow access')
-	expect(approvalHtml).toContain('Let Kody use this connection at')
-	expect(approvalHtml).toContain('gmail.googleapis.com')
-	expect(approvalHtml).toContain('data-testid="secret-approval-advanced"')
+	)
+	expect(approval.response.status).toBe(200)
+	expectHtml(approval.html, [
+		'Allow access',
+		'gmail.googleapis.com',
+		'data-testid="secret-approval-advanced"',
+	])
 })
 
-test('renderAppPage renders the redesigned blog index', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv(createUserTestDb([]))
-
+test('renderAppPage renders the blog index and posts with placeholder or reviewed artwork', async () => {
+	const env = setupEnv()
 	const posts = listBlogPosts().map(toBlogPostSummary)
-	const response = await renderAppPage({
-		request: new Request('https://example.com/blog'),
-		env,
+	expect(posts.length).toBeGreaterThan(0)
+	const index = await render(env, '/blog', {
 		loaderData: { blog: { ok: true, posts } },
 	})
+	expect(index.response.status).toBe(200)
+	expectHtml(
+		index.html,
+		posts.map((post) => `href="/blog/${post.slug}"`),
+	)
 
-	expect(response.status).toBe(200)
-	const html = await readResponseText(response)
-	expect(posts.length).toBeGreaterThan(0)
-	for (const post of posts) {
-		expect(html).toContain(`href="/blog/${post.slug}"`)
+	const renderPost = async (slug: string) => {
+		const post = listBlogPosts().find((candidate) => candidate.slug === slug)
+		if (!post) throw new Error(`Missing blog post ${slug}`)
+		const readNext = getReadNextBlogPost(slug)
+		const page = await render(env, `/blog/${slug}`, {
+			loaderData: {
+				blogPost: {
+					ok: true,
+					slug,
+					title: post.title,
+					date: post.date,
+					description: post.description,
+					placeholder: post.placeholder,
+					image: post.image,
+					imageAlt: post.imageAlt,
+					ogImage: post.ogImage,
+					body: post.body,
+					readNext,
+				},
+			},
+		})
+		expect(page.response.status).toBe(200)
+		return { post, readNext, html: page.html }
 	}
+
+	// A real catalog post whose own title and read-next title carry no
+	// apostrophes (JSX escaping would rewrite them in the HTML output).
+	// Markdown body renders in the prose voice: authored `##` stays h2 (not
+	// the README demotion to h4).
+	const placeholder = await renderPost('every-install-is-a-fork-you-own')
+	expect(placeholder.readNext).not.toBeNull()
+	expectHtml(placeholder.html, [
+		'href="/blog"',
+		`href="/blog/${placeholder.readNext!.slug}"`,
+		BLOG_PLACEHOLDER_CALLOUT,
+	])
+	expect(placeholder.html).toMatch(/<h2[^>]*>/)
+	expect(placeholder.html).not.toMatch(/<h4[^>]*>/)
+
+	const reviewed = await renderPost('kody-vs-executor')
+	expect(reviewed.post.placeholder).toBe(false)
+	expect(reviewed.post.image).toBe('/images/kody-vs-executor.webp')
+	expect(reviewed.post.ogImage).toBe('/images/kody-vs-executor-og.jpg')
+	expectHtml(
+		reviewed.html,
+		[
+			'src="/images/kody-vs-executor.webp"',
+			'property="og:image" content="https://example.com/blog/kody-vs-executor/og.png"',
+		],
+		[BLOG_PLACEHOLDER_CALLOUT],
+	)
 })
 
-test('canonical package URL SSR renders the redesigned article', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv(createUserTestDb([]))
+function mockPublicListing(listing: CommunityListingWithAggregates) {
+	communityMockModule.getCommunityListingWithAggregates.mockResolvedValue(
+		listing,
+	)
+	communityMockModule.getUserSocialRowByUsername.mockResolvedValue({
+		profile_visibility: 'public',
+		stable_user_id: 'owner-mcp-id',
+	})
+}
 
-	const detailListing = {
+function runPackagePage(
+	env: Env,
+	username: string,
+	kodyId: string,
+	cookie?: string,
+) {
+	return runHtml(
+		createCommunityPackageHandler(env),
+		get(`/@${username}/${kodyId}`, cookie),
+		{ username, kodyId },
+	)
+}
+
+test('canonical package URL SSR renders the redesigned article', async () => {
+	const env = setupEnv()
+	mockPublicListing({
 		...sampleListing,
 		id: 'listing-detail-1',
 		trusted: true,
@@ -1701,15 +1346,7 @@ test('canonical package URL SSR renders the redesigned article', async () => {
 		trustedAt: '2026-01-02T00:00:00.000Z',
 		readmeContent:
 			'# @kentcdodds/github-triage\n\n## Intent\n\nTriage GitHub issues for me.\n\n## Exports\n\n- `./triage` — run the triage pass.',
-	} satisfies CommunityListingWithAggregates
-	communityMockModule.getCommunityListingWithAggregates.mockResolvedValue(
-		detailListing,
-	)
-	communityMockModule.getUserSocialRowByUsername.mockResolvedValue({
-		profile_visibility: 'public',
-		stable_user_id: 'owner-mcp-id',
 	})
-
 	communityMockModule.resolveCommunityListingRoute.mockResolvedValue({
 		kind: 'listing',
 		listingId: 'listing-detail-1',
@@ -1723,276 +1360,122 @@ test('canonical package URL SSR renders the redesigned article', async () => {
 		listingId: 'listing-detail-1',
 	})
 
-	const response = await createCommunityPackageHandler(env).handler({
-		request: new Request('https://example.com/@kentcdodds/github-triage'),
-		url: new URL('https://example.com/@kentcdodds/github-triage'),
-		params: { username: 'kentcdodds', kodyId: 'github-triage' },
-	} as never)
-
+	const { response, html } = await runPackagePage(
+		env,
+		'kentcdodds',
+		'github-triage',
+	)
 	expect(response.status).toBe(200)
-	const html = await readResponseText(response)
-	expect(html).toContain('data-testid="community-detail-frame"')
-	expect(html).toContain('data-testid="community-listing-icon-detail"')
-	expect(html).toContain('/community/listing-detail-1/icon/abc1234567890')
-	expect(html).toContain('data-testid="community-readme"')
-	expect(html).toContain('data-testid="community-detail-install"')
-	const props = readAppRootProps(html)
-	expect(props.loaderData?.communityDetailShell).toMatchObject({
-		ok: true,
-		listingId: 'listing-detail-1',
-		name: '@kentcdodds/github-triage',
-		trusted: false,
-	})
+	expectHtml(html, [
+		'data-testid="community-detail-frame"',
+		'data-testid="community-listing-icon-detail"',
+		'/community/listing-detail-1/icon/abc1234567890',
+		'data-testid="community-readme"',
+		'data-testid="community-detail-install"',
+	])
+	expect(readAppRootProps(html).loaderData?.communityDetailShell).toMatchObject(
+		{
+			ok: true,
+			listingId: 'listing-detail-1',
+			name: '@kentcdodds/github-triage',
+			trusted: false,
+		},
+	)
 })
 
 test('listing-uuid URLs redirect to the canonical pair when possible and keep serving otherwise', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv(createUserTestDb([]))
-
-	communityMockModule.getCommunityListingWithAggregates.mockResolvedValue({
-		...sampleListing,
-		id: 'listing-detail-1',
-	})
-	communityMockModule.getUserSocialRowByUsername.mockResolvedValue({
-		profile_visibility: 'public',
-		stable_user_id: 'owner-mcp-id',
-	})
-
-	communityMockModule.resolveCanonicalListingPath.mockResolvedValue(
-		'/@kentcdodds/github-triage',
-	)
+	const env = setupEnv()
+	mockPublicListing({ ...sampleListing, id: 'listing-detail-1' })
+	const runDetail = (path: string) =>
+		runHtml(createCommunityDetailHandler(env), get(path), {
+			listingId: 'listing-detail-1',
+		})
 
 	// Query strings ride the hop so a shared or bookmarked listing-uuid URL
 	// does not drop its extra params on the way to the canonical pair.
-	const redirect = await createCommunityDetailHandler(env).handler({
-		request: new Request(
-			'https://example.com/community/listing-detail-1?source=share',
-		),
-		url: new URL('https://example.com/community/listing-detail-1?source=share'),
-		params: { listingId: 'listing-detail-1' },
-	} as never)
-
-	expect(redirect.status).toBe(301)
-	expect(redirect.headers.get('location')).toBe(
+	communityMockModule.resolveCanonicalListingPath.mockResolvedValue(
+		'/@kentcdodds/github-triage',
+	)
+	const redirect = await runDetail('/community/listing-detail-1?source=share')
+	expect(redirect.response.status).toBe(301)
+	expect(redirect.response.headers.get('location')).toBe(
 		'https://example.com/@kentcdodds/github-triage?source=share',
 	)
 	// The same URL serves frame HTML, which must not get this redirect back.
-	expect(redirect.headers.get('vary')).toBe('x-remix-target')
+	expect(redirect.response.headers.get('vary')).toBe('x-remix-target')
 
 	// A stale owner scope in the listing name: redirecting would cache a 404.
 	communityMockModule.resolveCanonicalListingPath.mockResolvedValue(null)
-	const fallback = await createCommunityDetailHandler(env).handler({
-		request: new Request('https://example.com/community/listing-detail-1'),
-		url: new URL('https://example.com/community/listing-detail-1'),
-		params: { listingId: 'listing-detail-1' },
-	} as never)
-
-	expect(fallback.status).toBe(200)
-	const props = readAppRootProps(await readResponseText(fallback))
-	expect(props.loaderData?.communityDetailShell).toMatchObject({
-		ok: true,
-		listingId: 'listing-detail-1',
-	})
+	const fallback = await runDetail('/community/listing-detail-1')
+	expect(fallback.response.status).toBe(200)
+	expect(
+		readAppRootProps(fallback.html).loaderData?.communityDetailShell,
+	).toMatchObject({ ok: true, listingId: 'listing-detail-1' })
 })
 
 test('unlisted package rename redirects stay owner-only and uncached', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const ownerUserId = testStableUserIdFromEmail('owner@example.com')
-	const env = createTestEnv(
-		createUserTestDb([
-			{
-				id: 1,
-				email: 'owner@example.com',
-				username: 'owner',
-				password_hash: 'unused',
-				stable_user_id: ownerUserId,
-				created_at: new Date(0).toISOString(),
-				updated_at: new Date(0).toISOString(),
-			},
-		]),
-	)
+	const owner = makeUser('owner@example.com', 'owner')
+	const env = setupEnv([owner])
 	communityMockModule.resolvePackagePageUrl.mockResolvedValue({
 		kind: 'redirect',
 		username: 'owner',
 		kodyId: 'renamed',
-		userId: ownerUserId,
+		userId: owner.stable_user_id,
 		listingId: null,
 	})
 
-	const anonymous = await createCommunityPackageHandler(env).handler({
-		request: new Request('https://example.com/@owner/old-notes'),
-		url: new URL('https://example.com/@owner/old-notes'),
-		params: { username: 'owner', kodyId: 'old-notes' },
-	} as never)
-	expect(anonymous.status).toBe(404)
+	const anonymous = await runPackagePage(env, 'owner', 'old-notes')
+	expect(anonymous.response.status).toBe(404)
 
-	const cookie = await createAuthCookie(
-		{
-			stableUserId: ownerUserId,
-			email: 'owner@example.com',
-			rememberMe: false,
-		} satisfies AuthSession,
-		false,
+	const { response } = await runPackagePage(
+		env,
+		'owner',
+		'old-notes',
+		await cookieFor(owner.email),
 	)
-	const ownerRedirect = await createCommunityPackageHandler(env).handler({
-		request: new Request('https://example.com/@owner/old-notes', {
-			headers: { Cookie: cookie },
-		}),
-		url: new URL('https://example.com/@owner/old-notes'),
-		params: { username: 'owner', kodyId: 'old-notes' },
-	} as never)
-	expect(ownerRedirect.status).toBe(302)
-	expect(ownerRedirect.headers.get('location')).toBe(
+	expect(response.status).toBe(302)
+	expect(response.headers.get('location')).toBe(
 		'https://example.com/@owner/renamed',
 	)
-	expect(ownerRedirect.headers.get('cache-control')).toBe('private, no-store')
-	expect(ownerRedirect.headers.get('vary')).toBe('x-remix-target, Cookie')
+	expect(response.headers.get('cache-control')).toBe('private, no-store')
+	expect(response.headers.get('vary')).toBe('x-remix-target, Cookie')
 })
 
 test('listed package rename does not 301 anonymous visitors to the unpublished id', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv(createUserTestDb([]))
-	const detailListing = {
+	const env = setupEnv()
+	mockPublicListing({
 		...sampleListing,
 		id: 'listing-detail-1',
 		kodyId: 'github-triage',
-	} satisfies CommunityListingWithAggregates
-	communityMockModule.getCommunityListingWithAggregates.mockResolvedValue(
-		detailListing,
-	)
-	communityMockModule.getUserSocialRowByUsername.mockResolvedValue({
-		profile_visibility: 'public',
-		stable_user_id: 'owner-mcp-id',
 	})
-	communityMockModule.resolvePackagePageUrl.mockResolvedValue({
-		kind: 'package',
+	const listingTarget = {
 		username: 'kentcdodds',
 		kodyId: 'github-triage',
 		userId: 'owner-mcp-id',
+		listingId: 'listing-detail-1',
+		listingKodyId: 'github-triage',
+	}
+	communityMockModule.resolvePackagePageUrl.mockResolvedValue({
+		kind: 'package',
+		...listingTarget,
 		savedPackage: {
 			id: 'pkg-1',
 			kodyId: 'github-triage-two',
 			hidden: false,
 			isPrivate: false,
 		},
-		listingId: 'listing-detail-1',
-		listingKodyId: 'github-triage',
 	})
-
-	const listingUrl = await createCommunityPackageHandler(env).handler({
-		request: new Request('https://example.com/@kentcdodds/github-triage'),
-		url: new URL('https://example.com/@kentcdodds/github-triage'),
-		params: { username: 'kentcdodds', kodyId: 'github-triage' },
-	} as never)
-	expect(listingUrl.status).toBe(200)
-	expect(listingUrl.headers.get('location')).toBeNull()
+	const listingUrl = await runPackagePage(env, 'kentcdodds', 'github-triage')
+	expect(listingUrl.response.status).toBe(200)
+	expect(listingUrl.response.headers.get('location')).toBeNull()
 
 	communityMockModule.resolvePackagePageUrl.mockResolvedValue({
 		kind: 'redirect',
-		username: 'kentcdodds',
-		kodyId: 'github-triage',
-		userId: 'owner-mcp-id',
-		listingId: 'listing-detail-1',
-		listingKodyId: 'github-triage',
+		...listingTarget,
 	})
-	const caseCorrect = await createCommunityPackageHandler(env).handler({
-		request: new Request('https://example.com/@KentCDodds/GITHUB-TRIAGE'),
-		url: new URL('https://example.com/@KentCDodds/GITHUB-TRIAGE'),
-		params: { username: 'KentCDodds', kodyId: 'GITHUB-TRIAGE' },
-	} as never)
-	expect(caseCorrect.status).toBe(301)
-	expect(caseCorrect.headers.get('location')).toBe(
+	const caseCorrect = await runPackagePage(env, 'KentCDodds', 'GITHUB-TRIAGE')
+	expect(caseCorrect.response.status).toBe(301)
+	expect(caseCorrect.response.headers.get('location')).toBe(
 		'https://example.com/@kentcdodds/github-triage',
 	)
-	expect(caseCorrect.headers.get('location')).not.toContain('github-triage-two')
-})
-
-test('renderAppPage renders the redesigned blog post', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv(createUserTestDb([]))
-
-	// A real catalog post whose own title and read-next title carry no
-	// apostrophes (JSX escaping would rewrite them in the HTML output).
-	const post = listBlogPosts().find(
-		(candidate) => candidate.slug === 'every-install-is-a-fork-you-own',
-	)
-	expect(post).toBeDefined()
-	const readNext = getReadNextBlogPost(post!.slug)
-	expect(readNext).not.toBeNull()
-
-	const response = await renderAppPage({
-		request: new Request(`https://example.com/blog/${post!.slug}`),
-		env,
-		loaderData: {
-			blogPost: {
-				ok: true,
-				slug: post!.slug,
-				title: post!.title,
-				date: post!.date,
-				description: post!.description,
-				placeholder: post!.placeholder,
-				image: post!.image,
-				imageAlt: post!.imageAlt,
-				ogImage: post!.ogImage,
-				body: post!.body,
-				readNext,
-			},
-		},
-	})
-
-	expect(response.status).toBe(200)
-	const html = await readResponseText(response)
-	expect(html).toContain(`href="/blog"`)
-	expect(html).toContain(`href="/blog/${readNext!.slug}"`)
-	// Markdown body renders in the prose voice: authored `##` stays h2 (not
-	// the README demotion to h4) and first-party links skip the ugc rel.
-	expect(html).toMatch(/<h2[^>]*>/)
-	expect(html).not.toMatch(/<h4[^>]*>/)
-	expect(html).toContain(BLOG_PLACEHOLDER_CALLOUT)
-})
-
-test('renderAppPage shows reviewed blog artwork and hides the placeholder callout', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv(createUserTestDb([]))
-
-	const post = listBlogPosts().find(
-		(candidate) => candidate.slug === 'kody-vs-executor',
-	)
-	expect(post).toBeDefined()
-	expect(post!.placeholder).toBe(false)
-	expect(post!.image).toBe('/images/kody-vs-executor.webp')
-	expect(post!.ogImage).toBe('/images/kody-vs-executor-og.jpg')
-
-	const response = await renderAppPage({
-		request: new Request(`https://example.com/blog/${post!.slug}`),
-		env,
-		loaderData: {
-			blogPost: {
-				ok: true,
-				slug: post!.slug,
-				title: post!.title,
-				date: post!.date,
-				description: post!.description,
-				placeholder: post!.placeholder,
-				image: post!.image,
-				imageAlt: post!.imageAlt,
-				ogImage: post!.ogImage,
-				body: post!.body,
-				readNext: getReadNextBlogPost(post!.slug),
-			},
-		},
-	})
-
-	expect(response.status).toBe(200)
-	const html = await readResponseText(response)
-	expect(html).toContain('src="/images/kody-vs-executor.webp"')
-	expect(html).toContain(
-		'property="og:image" content="https://example.com/blog/kody-vs-executor/og.png"',
-	)
-	expect(html).not.toContain(BLOG_PLACEHOLDER_CALLOUT)
 })

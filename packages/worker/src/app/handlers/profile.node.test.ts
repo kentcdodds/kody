@@ -106,199 +106,136 @@ const activityFixture = [
 ]
 
 const env = {} as Env
+const apiKeys = [
+	'activity',
+	'isSelf',
+	'loggedIn',
+	'ok',
+	'packages',
+	'profile',
+	'query',
+]
 
 function setupPublicProfileMocks() {
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	mockModule.getCommunityProfileByUsername.mockResolvedValue(publicProfile)
 	mockModule.listPublicProfilePackages.mockResolvedValue(packageFixture)
 	mockModule.getProfileActivity.mockResolvedValue(activityFixture)
 }
 
-test('profile API and page respect visibility and expose packages/activity', async () => {
-	const apiHandler = createProfileApiHandler(env)
-	const pageHandler = createProfileHandler(env)
+async function call(
+	create: typeof createProfileApiHandler | typeof createProfileHandler,
+	path: string,
+	username = 'alice',
+) {
+	mockModule.listPublicProfilePackages.mockClear()
+	const url = new URL(`https://example.com${path}`)
+	const response = await create(env).handler({
+		request: new Request(url),
+		params: { username },
+		url,
+	} as never)
+	return { status: response.status, body: await response.json() }
+}
 
-	// Public profile for anonymous viewer.
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+function lastPackagesQuery() {
+	return mockModule.listPublicProfilePackages.mock.calls.at(-1)?.[0]
+}
+
+test('profile API respects visibility, ignores owner-only filters for guests, and forwards search limits', async () => {
 	setupPublicProfileMocks()
+	const guest = await call(createProfileApiHandler, '/profiles/alice.json')
+	expect(guest.status).toBe(200)
+	expect(Object.keys(guest.body).sort()).toEqual(apiKeys)
+	expect(guest.body).toMatchObject({
+		ok: true,
+		profile: { displayName: 'Alice' },
+		packages: [{ iconUrl: '/community/listing-1/icon/abc1234567890' }],
+		isSelf: false,
+		loggedIn: false,
+	})
+	expect(guest.body.packages).toHaveLength(1)
+	expect(guest.body.activity).toHaveLength(1)
+	expect(lastPackagesQuery()).toMatchObject({
+		ownerStableUserId: 'stable-alice',
+		includePrivate: false,
+	})
+	expect(lastPackagesQuery()).not.toHaveProperty('limit')
 
-	const publicResponse = await apiHandler.handler({
-		request: new Request('https://example.com/profiles/alice.json'),
-		params: { username: 'alice' },
-		url: new URL('https://example.com/profiles/alice.json'),
-	} as never)
-	const publicBody = await publicResponse.json()
-	expect(publicResponse.status).toBe(200)
-	expect(publicBody.ok).toBe(true)
-	expect(publicBody.profile.displayName).toBe('Alice')
-	expect(publicBody.packages).toHaveLength(1)
-	expect(publicBody.packages[0].iconUrl).toBe(
-		'/community/listing-1/icon/abc1234567890',
+	const guestFilter = await call(
+		createProfileApiHandler,
+		'/profiles/alice.json?visibility=private&listing=published&hidden=yes',
 	)
-	expect(publicBody.activity).toHaveLength(1)
-	expect(publicBody.isSelf).toBe(false)
-	expect(publicBody.loggedIn).toBe(false)
-	expect(Object.keys(publicBody).sort()).toEqual(
-		[
-			'activity',
-			'isSelf',
-			'loggedIn',
-			'ok',
-			'packages',
-			'profile',
-			'query',
-		].sort(),
-	)
-	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
-		expect.objectContaining({
-			ownerStableUserId: 'stable-alice',
-			includePrivate: false,
-		}),
-	)
-	expect(
-		mockModule.listPublicProfilePackages.mock.calls.at(-1)?.[0],
-	).not.toHaveProperty('limit')
+	expect(guestFilter.status).toBe(200)
+	expect(Object.keys(guestFilter.body).sort()).toEqual(apiKeys)
+	expect(lastPackagesQuery()).toMatchObject({ includePrivate: false })
 
-	mockModule.listPublicProfilePackages.mockClear()
-	const guestFilterResponse = await apiHandler.handler({
-		request: new Request(
-			'https://example.com/profiles/alice.json?visibility=private&listing=published&hidden=yes',
-		),
-		params: { username: 'alice' },
-		url: new URL(
-			'https://example.com/profiles/alice.json?visibility=private&listing=published&hidden=yes',
-		),
-	} as never)
-	const guestFilterBody = await guestFilterResponse.json()
-	expect(guestFilterResponse.status).toBe(200)
-	expect(Object.keys(guestFilterBody).sort()).toEqual(
-		[
-			'activity',
-			'isSelf',
-			'loggedIn',
-			'ok',
-			'packages',
-			'profile',
-			'query',
-		].sort(),
+	const search = await call(
+		createProfileApiHandler,
+		'/profiles/alice.json?q=helper',
 	)
-	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
-		expect.objectContaining({
-			includePrivate: false,
-		}),
-	)
+	expect(search.status).toBe(200)
+	expect(search.body.query).toBe('helper')
+	expect(search.body.packages).toHaveLength(1)
+	expect(lastPackagesQuery()).toMatchObject({ includePrivate: false })
+	expect(lastPackagesQuery()).not.toHaveProperty('query')
 
-	mockModule.listPublicProfilePackages.mockClear()
-	const searchResponse = await apiHandler.handler({
-		request: new Request('https://example.com/profiles/alice.json?q=helper'),
-		params: { username: 'alice' },
-		url: new URL('https://example.com/profiles/alice.json?q=helper'),
-	} as never)
-	const searchBody = await searchResponse.json()
-	expect(searchResponse.status).toBe(200)
-	expect(searchBody.query).toBe('helper')
-	expect(searchBody.packages).toHaveLength(1)
-	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
-		expect.objectContaining({
-			includePrivate: false,
-		}),
+	const capped = await call(
+		createProfileApiHandler,
+		'/profiles/alice.json?q=helper&limit=10',
 	)
-	expect(
-		mockModule.listPublicProfilePackages.mock.calls.at(-1)?.[0],
-	).not.toHaveProperty('query')
+	expect(capped.status).toBe(200)
+	expect(lastPackagesQuery()).toMatchObject({
+		includePrivate: false,
+		query: 'helper',
+		limit: 10,
+	})
 
-	mockModule.listPublicProfilePackages.mockClear()
-	const cappedSearchResponse = await apiHandler.handler({
-		request: new Request(
-			'https://example.com/profiles/alice.json?q=helper&limit=10',
-		),
-		params: { username: 'alice' },
-		url: new URL('https://example.com/profiles/alice.json?q=helper&limit=10'),
-	} as never)
-	expect(cappedSearchResponse.status).toBe(200)
-	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
-		expect.objectContaining({
-			includePrivate: false,
-			query: 'helper',
-			limit: 10,
-		}),
-	)
-
-	// Private profile hidden from others.
 	mockModule.getCommunityProfileByUsername.mockResolvedValue({
 		...publicProfile,
 		visibility: 'private',
 	})
-	const privateResponse = await apiHandler.handler({
-		request: new Request('https://example.com/profiles/alice.json'),
-		params: { username: 'alice' },
-		url: new URL('https://example.com/profiles/alice.json'),
-	} as never)
-	expect(privateResponse.status).toBe(404)
-	expect((await privateResponse.json()).ok).toBe(false)
+	const hidden = await call(createProfileApiHandler, '/profiles/alice.json')
+	expect(hidden.status).toBe(404)
+	expect(hidden.body.ok).toBe(false)
 
-	// Unknown profile.
-	mockModule.getCommunityProfileByUsername.mockResolvedValue(null)
-	const unknownResponse = await apiHandler.handler({
-		request: new Request('https://example.com/profiles/missing.json'),
-		params: { username: 'missing' },
-		url: new URL('https://example.com/profiles/missing.json'),
-	} as never)
-	expect(unknownResponse.status).toBe(404)
+	mockModule.getCommunityProfileByUsername.mockResolvedValueOnce(null)
+	const unknown = await call(
+		createProfileApiHandler,
+		'/profiles/missing.json',
+		'missing',
+	)
+	expect(unknown.status).toBe(404)
 
-	// Own private profile visible to self.
+	// Own private profile is visible to self, including private packages.
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
 		userId: 1,
 		mcpUser: { userId: 'stable-alice' },
 	})
-	mockModule.getCommunityProfileByUsername.mockResolvedValue({
-		...publicProfile,
-		visibility: 'private',
-	})
 	mockModule.listPublicProfilePackages.mockResolvedValue([])
 	mockModule.getProfileActivity.mockResolvedValue([])
-	const ownResponse = await apiHandler.handler({
-		request: new Request(
-			'https://example.com/profiles/alice.json?visibility=private&listing=ahead&hidden=yes',
-		),
-		params: { username: 'alice' },
-		url: new URL(
-			'https://example.com/profiles/alice.json?visibility=private&listing=ahead&hidden=yes',
-		),
-	} as never)
-	const ownBody = await ownResponse.json()
-	expect(ownResponse.status).toBe(200)
-	expect(ownBody.ok).toBe(true)
-	expect(ownBody.isSelf).toBe(true)
-	expect(ownBody.profile.visibility).toBe('private')
-	expect(Object.keys(ownBody).sort()).toEqual(
-		[
-			'activity',
-			'isSelf',
-			'loggedIn',
-			'ok',
-			'packages',
-			'profile',
-			'query',
-		].sort(),
+	const own = await call(
+		createProfileApiHandler,
+		'/profiles/alice.json?visibility=private&listing=ahead&hidden=yes',
 	)
-	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
-		expect.objectContaining({
-			ownerStableUserId: 'stable-alice',
-			includePrivate: true,
-		}),
-	)
+	expect(own.status).toBe(200)
+	expect(Object.keys(own.body).sort()).toEqual(apiKeys)
+	expect(own.body).toMatchObject({
+		ok: true,
+		isSelf: true,
+		profile: { visibility: 'private' },
+	})
+	expect(lastPackagesQuery()).toMatchObject({
+		ownerStableUserId: 'stable-alice',
+		includePrivate: true,
+	})
+})
 
-	// Page shell embeds the person and the unfiltered package list.
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+test('profile page shell embeds the person and the unfiltered package list, or 404s when unavailable', async () => {
 	setupPublicProfileMocks()
-	const publicPageResponse = await pageHandler.handler({
-		request: new Request('https://example.com/@alice'),
-		params: { username: 'alice' },
-		url: new URL('https://example.com/@alice'),
-	} as never)
-	const publicPageBody = await publicPageResponse.json()
-	expect(publicPageResponse.status).toBe(200)
-	expect(publicPageBody.loaderData.profileShell).toEqual({
+	const page = await call(createProfileHandler, '/@alice')
+	expect(page.status).toBe(200)
+	expect(page.body.loaderData.profileShell).toEqual({
 		ok: true,
 		username: 'alice',
 		displayName: 'Alice',
@@ -309,7 +246,7 @@ test('profile API and page respect visibility and expose packages/activity', asy
 		loggedIn: false,
 		visibility: 'public',
 	})
-	expect(publicPageBody.loaderData.profileList).toEqual({
+	expect(page.body.loaderData.profileList).toEqual({
 		profile: {
 			username: 'alice',
 			displayName: 'Alice',
@@ -353,17 +290,10 @@ test('profile API and page respect visibility and expose packages/activity', asy
 		],
 	})
 
-	// Page shell 404 for unavailable profiles.
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	mockModule.getCommunityProfileByUsername.mockResolvedValue(null)
-	const shellResponse = await pageHandler.handler({
-		request: new Request('https://example.com/@missing'),
-		params: { username: 'missing' },
-		url: new URL('https://example.com/@missing'),
-	} as never)
-	const shellBody = await shellResponse.json()
-	expect(shellResponse.status).toBe(404)
-	expect(shellBody.loaderData.profileShell).toEqual({
+	const missing = await call(createProfileHandler, '/@missing', 'missing')
+	expect(missing.status).toBe(404)
+	expect(missing.body.loaderData.profileShell).toEqual({
 		ok: false,
 		unavailable: true,
 	})

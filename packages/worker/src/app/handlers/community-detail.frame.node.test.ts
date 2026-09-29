@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { createCommunityDetailHandler } from './community-detail.tsx'
 import { resetDataCacheForTests } from '#app/data-cache.ts'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
@@ -97,256 +97,154 @@ const sampleListing = {
 } satisfies CommunityListingWithAggregates
 
 const env = {} as Env
+const owner = {
+	mcpUser: { userId: 'owner-mcp-id', username: 'kentcdodds' },
+	roles: [],
+}
+const aheadCommit = 'ffffffffffffffffffffffffffffffffffffffff'
 
-// Every test addresses `listing-1` with its own source fixture; the
-// in-isolate listing cache must not carry one test's answer into the next.
-beforeEach(() => {
+async function renderDetail({
+	viewer = null as null | { mcpUser: { userId: string; username: string } },
+	source = null as null | Record<string, string>,
+	headCommit = sampleListing.pinnedCommit,
+	branch = 'main',
+	profileVisibility = 'public',
+	savedPackagesByKodyId = [] as Array<Record<string, string>>,
+} = {}) {
+	// Every render addresses `listing-1` with its own source fixture; the
+	// in-isolate listing cache must not carry one answer into the next.
 	resetDataCacheForTests()
-	mockModule.getSavedPackageByKodyId.mockReset()
-})
-
-test('community detail handler returns bare detail frame HTML for target header', async () => {
 	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
 	mockModule.getCommunityListingById.mockResolvedValue(sampleListing)
-	mockModule.getEntitySourceById.mockResolvedValue(null)
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	mockModule.getEntitySourceById.mockResolvedValue(source)
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch,
+		commit: headCommit,
+	})
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		viewer && { roles: [], ...viewer },
+	)
 	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([])
-	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([])
+	mockModule.listSavedPackagesByKodyIds.mockResolvedValue(savedPackagesByKodyId)
 	mockModule.listSavedPackagesByIds.mockResolvedValue([])
-	mockModule.getMcpUserPackageScope.mockResolvedValue('viewer')
+	mockModule.getMcpUserPackageScope.mockResolvedValue(
+		viewer?.mcpUser.username ?? 'viewer',
+	)
 	mockModule.getUserSocialRowByUsername.mockResolvedValue({
-		profile_visibility: 'public',
+		profile_visibility: profileVisibility,
 		stable_user_id: 'owner-mcp-id',
 	})
-
-	const handler = createCommunityDetailHandler(env)
-	const publicResponse = await handler.handler({
+	const response = await createCommunityDetailHandler(env).handler({
 		request: new Request('https://example.com/community/listing-1', {
 			headers: { 'x-remix-target': 'community-detail' },
 		}),
 		params: { listingId: 'listing-1' },
 		url: new URL('https://example.com/community/listing-1'),
 	} as never)
-	const publicHtml = await publicResponse.text()
+	return { response, html: await response.text() }
+}
 
-	expect(publicResponse.status).toBe(200)
-	expect(publicResponse.headers.get('Cache-Control')).toBe('no-store')
-	expect(publicHtml).toContain('data-testid="community-detail-frame"')
-	expect(publicHtml).toContain('data-testid="community-listing-icon-detail"')
-	expect(publicHtml).toContain('/community/listing-1/icon/abc1234567890')
-	expect(publicHtml).toContain('data-testid="package-repo-chrome"')
-	expect(publicHtml).toContain('href="/@kentcdodds"')
-	expect(publicHtml).toContain('>@kentcdodds</a>')
-	expect(publicHtml).not.toContain(
+function missing(html: string, markers: Array<string>) {
+	return markers.filter((marker) => !html.includes(marker))
+}
+
+test('community detail handler returns bare detail frame HTML for target header', async () => {
+	const { response, html } = await renderDetail()
+	expect(response.status).toBe(200)
+	expect(response.headers.get('Cache-Control')).toBe('no-store')
+	expect(
+		missing(html, [
+			'data-testid="community-detail-frame"',
+			'data-testid="community-listing-icon-detail"',
+			'/community/listing-1/icon/abc1234567890',
+			'data-testid="package-repo-chrome"',
+			'href="/@kentcdodds"',
+			'>@kentcdodds</a>',
+			'data-testid="community-detail-forks"',
+			'data-testid="package-repo-nav-files"',
+			'href="/@kentcdodds/github-triage/tree/main"',
+		]),
+	).toEqual([])
+	expect(html).not.toContain('data-testid="community-detail-owner-private"')
+	expect(html).not.toContain('<html')
+
+	const privateOwner = await renderDetail({ profileVisibility: 'private' })
+	expect(privateOwner.html).toContain('@kentcdodds')
+	expect(privateOwner.html).toContain(
 		'data-testid="community-detail-owner-private"',
 	)
-	expect(publicHtml).toContain('data-testid="community-detail-forks"')
-	expect(publicHtml).toContain('data-testid="package-repo-nav-files"')
-	expect(publicHtml).toContain('href="/@kentcdodds/github-triage/tree/main"')
-	expect(publicHtml).not.toContain('<html')
+	expect(privateOwner.html).not.toContain('href="/@kentcdodds"')
 
-	mockModule.getUserSocialRowByUsername.mockResolvedValue({
-		profile_visibility: 'private',
-		stable_user_id: 'owner-mcp-id',
+	const signedIn = await renderDetail({
+		viewer: { mcpUser: { userId: 'viewer-mcp-id', username: 'burhan' } },
+		savedPackagesByKodyId: [
+			{
+				id: 'pkg-github',
+				kodyId: 'github-triage',
+				name: '@burhan/github-triage',
+				sourceId: 'src-github',
+			},
+		],
 	})
-	const privateResponse = await handler.handler({
-		request: new Request('https://example.com/community/listing-1', {
-			headers: { 'x-remix-target': 'community-detail' },
-		}),
-		params: { listingId: 'listing-1' },
-		url: new URL('https://example.com/community/listing-1'),
-	} as never)
-	const privateHtml = await privateResponse.text()
-	expect(privateHtml).toContain('@kentcdodds')
-	expect(privateHtml).toContain('data-testid="community-detail-owner-private"')
-	expect(privateHtml).not.toContain('href="/@kentcdodds"')
-
-	mockModule.getUserSocialRowByUsername.mockResolvedValue({
-		profile_visibility: 'public',
-		stable_user_id: 'owner-mcp-id',
-	})
-	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		mcpUser: { userId: 'viewer-mcp-id', username: 'burhan' },
-		roles: [],
-	})
-	mockModule.getMcpUserPackageScope.mockResolvedValue('burhan')
-	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([
-		{
-			id: 'pkg-github',
-			kodyId: 'github-triage',
-			name: '@burhan/github-triage',
-			sourceId: 'src-github',
-		},
-	])
-	const signedInResponse = await handler.handler({
-		request: new Request('https://example.com/community/listing-1', {
-			headers: { 'x-remix-target': 'community-detail' },
-		}),
-		params: { listingId: 'listing-1' },
-		url: new URL('https://example.com/community/listing-1'),
-	} as never)
-	const signedInHtml = await signedInResponse.text()
-	expect(signedInHtml).toContain('data-testid="package-repo-chrome"')
-	expect(signedInHtml).toContain('data-package-title-status="open"')
-	expect(signedInHtml).toContain('data-icon="arrow-up-right"')
-	expect(signedInHtml).toContain('href="/@burhan/github-triage"')
 	expect(
-		signedInHtml.indexOf('data-testid="package-title-actions"'),
-	).toBeLessThan(signedInHtml.indexOf('data-testid="package-repo-nav"'))
+		missing(signedIn.html, [
+			'data-testid="package-repo-chrome"',
+			'data-package-title-status="open"',
+			'data-icon="arrow-up-right"',
+			'href="/@burhan/github-triage"',
+		]),
+	).toEqual([])
+	expect(
+		signedIn.html.indexOf('data-testid="package-title-actions"'),
+	).toBeLessThan(signedIn.html.indexOf('data-testid="package-repo-nav"'))
 })
 
 test('community detail Files tab uses the looked-up default branch', async () => {
-	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
-	mockModule.getCommunityListingById.mockResolvedValue(sampleListing)
-	mockModule.getEntitySourceById.mockResolvedValue({ repo_id: 'repo-1' })
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+	const { html } = await renderDetail({
+		source: { repo_id: 'repo-1' },
 		branch: 'release',
-		commit: 'abc1234567890',
 	})
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([])
-	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([])
-	mockModule.listSavedPackagesByIds.mockResolvedValue([])
-	mockModule.getMcpUserPackageScope.mockResolvedValue('viewer')
-	mockModule.getUserSocialRowByUsername.mockResolvedValue({
-		profile_visibility: 'public',
-		stable_user_id: 'owner-mcp-id',
-	})
-
-	const handler = createCommunityDetailHandler(env)
-	const response = await handler.handler({
-		request: new Request('https://example.com/community/listing-1', {
-			headers: { 'x-remix-target': 'community-detail' },
-		}),
-		params: { listingId: 'listing-1' },
-		url: new URL('https://example.com/community/listing-1'),
-	} as never)
-	const html = await response.text()
 	expect(html).toContain('href="/@kentcdodds/github-triage/tree/release"')
 	expect(html).not.toContain('href="/@kentcdodds/github-triage/tree/HEAD"')
 	expect(html).not.toContain('href="/@kentcdodds/github-triage/tree/main"')
 })
 
-test('owner source-ahead badge links to the published-vs-HEAD approve-publish page', async () => {
-	const headCommit = 'ffffffffffffffffffffffffffffffffffffffff'
-	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
-	mockModule.getCommunityListingById.mockResolvedValue(sampleListing)
-	mockModule.getEntitySourceById.mockResolvedValue({
+test('source-ahead badge links the owner to approve-publish, is inert for visitors, and stays off at the runtime pin', async () => {
+	const pinnedSource = {
 		repo_id: 'repo-1',
 		published_commit: sampleListing.pinnedCommit,
+	}
+	const ownerAhead = await renderDetail({
+		viewer: owner,
+		source: pinnedSource,
+		headCommit: aheadCommit,
 	})
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: headCommit,
-	})
-	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		mcpUser: { userId: 'owner-mcp-id', username: 'kentcdodds' },
-		roles: [],
-	})
-	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([])
-	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([])
-	mockModule.listSavedPackagesByIds.mockResolvedValue([])
-	mockModule.getSavedPackageByKodyId.mockResolvedValue({ id: 'pkg-1' })
-	mockModule.getMcpUserPackageScope.mockResolvedValue('kentcdodds')
-	mockModule.getUserSocialRowByUsername.mockResolvedValue({
-		profile_visibility: 'public',
-		stable_user_id: 'owner-mcp-id',
-	})
-
-	const handler = createCommunityDetailHandler(env)
-	const response = await handler.handler({
-		request: new Request('https://example.com/community/listing-1', {
-			headers: { 'x-remix-target': 'community-detail' },
-		}),
-		params: { listingId: 'listing-1' },
-		url: new URL('https://example.com/community/listing-1'),
-	} as never)
-	const html = await response.text()
-	expect(html).toContain(
-		`href="/@kentcdodds/github-triage/approve-publish?commit=${headCommit}"`,
+	expect(ownerAhead.html).toContain(
+		`href="/@kentcdodds/github-triage/approve-publish?commit=${aheadCommit}"`,
 	)
-	expect(html).toMatch(
+	expect(ownerAhead.html).toMatch(
 		/<a[^>]*data-testid="community-detail-source-ahead-badge"/,
 	)
-})
 
-test('visitor source-ahead badge is not a publish link', async () => {
-	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
-	mockModule.getCommunityListingById.mockResolvedValue(sampleListing)
-	mockModule.getEntitySourceById.mockResolvedValue({
-		repo_id: 'repo-1',
-		published_commit: sampleListing.pinnedCommit,
+	const visitorAhead = await renderDetail({
+		source: pinnedSource,
+		headCommit: aheadCommit,
 	})
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'ffffffffffffffffffffffffffffffffffffffff',
-	})
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([])
-	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([])
-	mockModule.listSavedPackagesByIds.mockResolvedValue([])
-	mockModule.getMcpUserPackageScope.mockResolvedValue('viewer')
-	mockModule.getUserSocialRowByUsername.mockResolvedValue({
-		profile_visibility: 'public',
-		stable_user_id: 'owner-mcp-id',
-	})
-
-	const handler = createCommunityDetailHandler(env)
-	const response = await handler.handler({
-		request: new Request('https://example.com/community/listing-1', {
-			headers: { 'x-remix-target': 'community-detail' },
-		}),
-		params: { listingId: 'listing-1' },
-		url: new URL('https://example.com/community/listing-1'),
-	} as never)
-	const html = await response.text()
-	expect(html).toContain('data-testid="community-detail-source-ahead-badge"')
-	expect(html).toMatch(
+	expect(visitorAhead.html).toMatch(
 		/<span[^>]*data-testid="community-detail-source-ahead-badge"/,
 	)
-	expect(html).not.toContain('approve-publish')
-	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
-})
+	expect(visitorAhead.html).not.toContain('approve-publish')
 
-test('source-ahead badge stays off when HEAD matches the runtime pin but not the catalog snapshot', async () => {
+	// HEAD matches the runtime pin but not the catalog snapshot.
 	const runtimePin = 'cccccccccccccccccccccccccccccccccccccccc'
-	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
-	mockModule.getCommunityListingById.mockResolvedValue(sampleListing)
-	mockModule.getEntitySourceById.mockResolvedValue({
-		repo_id: 'repo-1',
-		published_commit: runtimePin,
-	})
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: runtimePin,
-	})
-	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		mcpUser: { userId: 'owner-mcp-id', username: 'kentcdodds' },
-		roles: [],
-	})
-	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([])
-	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([])
-	mockModule.listSavedPackagesByIds.mockResolvedValue([])
-	mockModule.getSavedPackageByKodyId.mockResolvedValue({ id: 'pkg-1' })
-	mockModule.getMcpUserPackageScope.mockResolvedValue('kentcdodds')
-	mockModule.getUserSocialRowByUsername.mockResolvedValue({
-		profile_visibility: 'public',
-		stable_user_id: 'owner-mcp-id',
-	})
-
-	const handler = createCommunityDetailHandler(env)
-	const response = await handler.handler({
-		request: new Request('https://example.com/community/listing-1', {
-			headers: { 'x-remix-target': 'community-detail' },
-		}),
-		params: { listingId: 'listing-1' },
-		url: new URL('https://example.com/community/listing-1'),
-	} as never)
-	const html = await response.text()
 	expect(sampleListing.pinnedCommit).not.toBe(runtimePin)
-	expect(html).not.toContain(
+	const atRuntimePin = await renderDetail({
+		viewer: owner,
+		source: { repo_id: 'repo-1', published_commit: runtimePin },
+		headCommit: runtimePin,
+	})
+	expect(atRuntimePin.html).not.toContain(
 		'data-testid="community-detail-source-ahead-badge"',
 	)
-	expect(html).not.toContain('approve-publish')
-	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
+	expect(atRuntimePin.html).not.toContain('approve-publish')
 })

@@ -103,8 +103,8 @@ async function seedOwnerSessionCookie() {
 	return setCookie.split(';')[0] ?? ''
 }
 
-function cookieValue(setCookieHeader: string) {
-	return setCookieHeader.split(';')[0] ?? ''
+async function outcome(response: Response) {
+	return { status: response.status, body: await response.text() }
 }
 
 test('hosted package apps move to the owner subdomain behind a single-use handoff', async () => {
@@ -114,14 +114,14 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 		runtime: 'production',
 	})
 	const sessionCookie = await seedOwnerSessionCookie()
+	const entryUrl = `${appOrigin}/@${ownerUsername}/packages/demo/report`
 
 	// 1. The app origin never executes package code: it mints a handoff token and
 	// redirects to the owner's package-app subdomain, where the username lives in
 	// the hostname and the path carries only the package mount. Query preserved.
-	const appOriginResponse = await workerFetch(
-		`${appOrigin}/@${ownerUsername}/packages/demo/report?tab=1`,
-		{ headers: { Cookie: sessionCookie } },
-	)
+	const appOriginResponse = await workerFetch(`${entryUrl}?tab=1`, {
+		headers: { Cookie: sessionCookie },
+	})
 	expect(appOriginResponse.status).toBe(302)
 	const handoffLocation = new URL(
 		appOriginResponse.headers.get('Location') ?? '',
@@ -140,17 +140,19 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 	// `Domain` attribute (cookie tossing from sibling subdomains).
 	const handoffResponse = await workerFetch(handoffLocation)
 	expect(handoffResponse.status).toBe(302)
-	const packageSessionCookieHeader =
-		handoffResponse.headers.get('Set-Cookie') ?? ''
-	expect(packageSessionCookieHeader).toContain('__Host-kody_pkg_session=')
-	expect(packageSessionCookieHeader).toContain('HttpOnly')
-	expect(packageSessionCookieHeader).toContain('SameSite=Lax')
-	expect(packageSessionCookieHeader).toContain('Secure')
-	expect(packageSessionCookieHeader).toContain('Path=/')
-	expect(packageSessionCookieHeader).not.toContain('Domain=')
-	const packageSessionMaxAge = Number(
-		/Max-Age=(\d+)/.exec(packageSessionCookieHeader)?.[1],
+	const setCookie = handoffResponse.headers.get('Set-Cookie') ?? ''
+	const cookieAttributes = [
+		'__Host-kody_pkg_session=',
+		'HttpOnly',
+		'SameSite=Lax',
+		'Secure',
+		'Path=/',
+	]
+	expect(cookieAttributes.filter((part) => !setCookie.includes(part))).toEqual(
+		[],
 	)
+	expect(setCookie).not.toContain('Domain=')
+	const packageSessionMaxAge = Number(/Max-Age=(\d+)/.exec(setCookie)?.[1])
 	// Fresh non-remember-me `kody_session` is 7 days; the exchanged cookie
 	// inherits that remaining time rather than a fixed 12-hour cap.
 	expect(packageSessionMaxAge).toBeGreaterThan(7 * 24 * 60 * 60 - 30)
@@ -161,33 +163,58 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 		false,
 	)
 	expect(cleanLocation.searchParams.get('tab')).toBe('1')
-	const packageSessionCookie = cookieValue(packageSessionCookieHeader)
-
-	// 3. With the package-app session, the request reaches package-app serving:
-	// the owner is resolved and the saved package lookup 404s (none is seeded),
-	// which is distinct from the origin-level 404 below.
-	const servedResponse = await workerFetch(cleanLocation, {
-		headers: { Cookie: packageSessionCookie },
+	const packageSessionCookie = setCookie.split(';')[0] ?? ''
+	const withPackageSession = (headers: Record<string, string> = {}) => ({
+		headers: { Cookie: packageSessionCookie, ...headers },
 	})
-	expect(servedResponse.status).toBe(404)
-	await expect(servedResponse.text()).resolves.toBe(
-		buildPackageAppNotFoundMessage(),
-	)
 
-	// 4. A stale or forged token alongside a valid session is ignored rather than
-	// rejected, and never reaches package code (the request is rewritten without
-	// it before serving).
+	// 3. With the package-app session, requests reach package-app serving: the
+	// owner is resolved and the saved package lookup 404s (none is seeded), which
+	// is distinct from the origin-level 404 below. A stale or forged token next
+	// to a valid session is ignored and stripped before serving. The session is
+	// bound to one account and the subdomain names the account, so the owner's
+	// cookie on another user's subdomain never serves package code. Sibling
+	// subdomains are same-site, so a Lax cookie would attach to their
+	// cross-origin requests: a mutating request whose Origin is not this
+	// subdomain is rejected before package code runs; same-origin passes.
 	const staleTokenUrl = new URL(cleanLocation)
 	staleTokenUrl.searchParams.set(packageAppHandoffQueryParam, `${handoffToken}`)
-	const staleTokenResponse = await workerFetch(staleTokenUrl, {
-		headers: { Cookie: packageSessionCookie },
+	const servingCases = [
+		{ name: 'clean URL', url: cleanLocation },
+		{ name: 'stale token', url: staleTokenUrl },
+		{
+			name: 'other user subdomain',
+			url: 'https://other-user.packages.isolated.test/packages/demo',
+		},
+		{
+			name: 'same-origin POST',
+			url: cleanLocation,
+			postFrom: ownerPackageAppOrigin,
+		},
+	]
+	for (const { name, url, postFrom } of servingCases) {
+		const response = await workerFetch(url, {
+			...(postFrom ? { method: 'POST' } : {}),
+			...withPackageSession(postFrom ? { Origin: postFrom } : {}),
+		})
+		expect({ name, ...(await outcome(response)) }).toEqual({
+			name,
+			status: 404,
+			body: buildPackageAppNotFoundMessage(),
+		})
+	}
+	const crossOriginPost = await workerFetch(cleanLocation, {
+		method: 'POST',
+		...withPackageSession({
+			Origin: 'https://other-user.packages.isolated.test',
+		}),
 	})
-	expect(staleTokenResponse.status).toBe(404)
-	await expect(staleTokenResponse.text()).resolves.toBe(
-		buildPackageAppNotFoundMessage(),
+	expect(crossOriginPost.status).toBe(403)
+	await expect(crossOriginPost.text()).resolves.toContain(
+		'Cross-origin mutating requests',
 	)
 
-	// 5. The package-app session is re-checked against the account on every
+	// 4. The package-app session is re-checked against the account on every
 	// request, so suspension and password changes revoke package-app access too.
 	for (const [column, value] of [
 		['suspended_at', new Date().toISOString()],
@@ -196,10 +223,8 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 		await env.APP_DB.prepare(`UPDATE users SET ${column} = ? WHERE email = ?`)
 			.bind(value, ownerEmail)
 			.run()
-		const revoked = await workerFetch(cleanLocation, {
-			headers: { Cookie: packageSessionCookie },
-		})
-		expect(revoked.status, `expected ${column} to revoke access`).toBe(403)
+		const revoked = await workerFetch(cleanLocation, withPackageSession())
+		expect({ column, status: revoked.status }).toEqual({ column, status: 403 })
 		await env.APP_DB.prepare(
 			`UPDATE users SET ${column} = NULL WHERE email = ?`,
 		)
@@ -207,7 +232,7 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 			.run()
 	}
 
-	// 6. Replaying the consumed token is refused, and so is any request without a
+	// 5. Replaying the consumed token is refused, and so is any request without a
 	// package-app session. Both terminate here (never a redirect back to the app
 	// origin) so a browser that drops the cookie cannot ping-pong between hosts.
 	// The terminal page links to the app-origin entry path that restarts the
@@ -217,9 +242,7 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 	expect(replayed.headers.get('Location')).toBeNull()
 	expect(replayed.headers.get('X-Kody-Handoff')).toBe('rejected')
 	const replayedBody = await replayed.text()
-	expect(replayedBody).toContain(
-		`${appOrigin}/@${ownerUsername}/packages/demo/report`,
-	)
+	expect(replayedBody).toContain(entryUrl)
 	expect(replayedBody).toContain(
 		'the package-app domain did not accept the token',
 	)
@@ -227,9 +250,7 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 	expect(missingSession.status).toBe(403)
 	expect(missingSession.headers.get('X-Kody-Handoff')).toBe('required')
 	const missingSessionBody = await missingSession.text()
-	expect(missingSessionBody).toContain(
-		`${appOrigin}/@${ownerUsername}/packages/demo/report`,
-	)
+	expect(missingSessionBody).toContain(entryUrl)
 	expect(missingSessionBody).toContain('your browser is refusing this site')
 	const rejectedJson = await workerFetch(cleanLocation, {
 		headers: { Accept: 'application/json' },
@@ -239,81 +260,37 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 		error: 'Package app session required',
 	})
 
-	// 7. The session is bound to one account and the subdomain names the account:
-	// the owner's cookie on another user's subdomain never serves package code.
-	const crossUserResponse = await workerFetch(
-		'https://other-user.packages.isolated.test/packages/demo',
-		{ headers: { Cookie: packageSessionCookie } },
-	)
-	expect(crossUserResponse.status).toBe(404)
-	await expect(crossUserResponse.text()).resolves.toBe(
-		buildPackageAppNotFoundMessage(),
-	)
-
-	// 7b. Sibling subdomains are same-site, so a Lax cookie would attach to
-	// their cross-origin requests. A mutating request whose Origin is not this
-	// subdomain is rejected before any package code runs, even with a valid
-	// session; a same-origin mutation passes through to serving.
-	const crossOriginPost = await workerFetch(cleanLocation, {
-		method: 'POST',
-		headers: {
-			Cookie: packageSessionCookie,
-			Origin: 'https://other-user.packages.isolated.test',
-		},
-	})
-	expect(crossOriginPost.status).toBe(403)
-	await expect(crossOriginPost.text()).resolves.toContain(
-		'Cross-origin mutating requests',
-	)
-	const sameOriginPost = await workerFetch(cleanLocation, {
-		method: 'POST',
-		headers: {
-			Cookie: packageSessionCookie,
-			Origin: ownerPackageAppOrigin,
-		},
-	})
-	expect(sameOriginPost.status).toBe(404)
-	await expect(sameOriginPost.text()).resolves.toBe(
-		buildPackageAppNotFoundMessage(),
-	)
-
-	// 8. Nothing first-party is reachable on the package-app domain — neither on
-	// the bare origin nor on a user subdomain.
-	for (const origin of [packageAppOrigin, ownerPackageAppOrigin]) {
-		for (const path of [
-			'/account/secrets.json',
-			'/login',
-			'/mcp',
-			'/session',
-			`/@${ownerUsername}/api/package-invocations/demo`,
-			`/@${ownerUsername}/connectors/home/instance`,
-		]) {
-			const response = await workerFetch(`${origin}${path}`, {
-				headers: { Cookie: `${packageSessionCookie}; ${sessionCookie}` },
-			})
-			expect(response.status, `expected 404 for ${origin}${path}`).toBe(404)
-			const body = await response.text()
-			expect(body).toBe(buildUnmatchedPackageAppOriginPathMessage())
-		}
-	}
-
-	// 9. Hostnames under the package-app domain that are not a valid username
-	// label fail closed: wildcard DNS routes them here, but nothing serves.
-	for (const badHost of [
-		'https://nested.label.packages.isolated.test',
-		'https://Bad_Label.packages.isolated.test',
-		'https://xy.packages.isolated.test',
-	]) {
-		const response = await workerFetch(`${badHost}/packages/demo`, {
-			headers: { Cookie: packageSessionCookie },
+	// 6. Nothing first-party is reachable on the package-app domain (bare origin
+	// or user subdomain), and hostnames that are not a valid username label fail
+	// closed: wildcard DNS routes them here, but nothing serves.
+	const unmatchedUrls = [
+		...[packageAppOrigin, ownerPackageAppOrigin].flatMap((origin) =>
+			[
+				'/account/secrets.json',
+				'/login',
+				'/mcp',
+				'/session',
+				`/@${ownerUsername}/api/package-invocations/demo`,
+				`/@${ownerUsername}/connectors/home/instance`,
+			].map((path) => `${origin}${path}`),
+		),
+		'https://nested.label.packages.isolated.test/packages/demo',
+		'https://Bad_Label.packages.isolated.test/packages/demo',
+		'https://xy.packages.isolated.test/packages/demo',
+	]
+	const unmatched = buildUnmatchedPackageAppOriginPathMessage()
+	for (const url of unmatchedUrls) {
+		const response = await workerFetch(url, {
+			headers: { Cookie: `${packageSessionCookie}; ${sessionCookie}` },
 		})
-		expect(response.status, `expected 404 for ${badHost}`).toBe(404)
-		await expect(response.text()).resolves.toBe(
-			buildUnmatchedPackageAppOriginPathMessage(),
-		)
+		expect({ url, ...(await outcome(response)) }).toEqual({
+			url,
+			status: 404,
+			body: unmatched,
+		})
 	}
 
-	// 10. Legacy path-based URLs on the bare package-app origin redirect to the
+	// 7. Legacy path-based URLs on the bare package-app origin redirect to the
 	// owning user's subdomain (dropping any handoff token, keeping the query).
 	const legacyUrl = new URL(
 		`${packageAppOrigin}/@${ownerUsername}/packages/demo/report?tab=1`,
@@ -321,15 +298,11 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 	legacyUrl.searchParams.set(packageAppHandoffQueryParam, 'stale-token')
 	const legacyResponse = await workerFetch(legacyUrl)
 	expect(legacyResponse.status).toBe(302)
-	const legacyLocation = new URL(legacyResponse.headers.get('Location') ?? '')
-	expect(legacyLocation.origin).toBe(ownerPackageAppOrigin)
-	expect(legacyLocation.pathname).toBe('/packages/demo/report')
-	expect(legacyLocation.searchParams.get('tab')).toBe('1')
-	expect(legacyLocation.searchParams.has(packageAppHandoffQueryParam)).toBe(
-		false,
+	expect(legacyResponse.headers.get('Location')).toBe(
+		`${ownerPackageAppOrigin}/packages/demo/report?tab=1`,
 	)
 
-	// 11. The bare package-app origin and a bare user subdomain are plausible
+	// 8. The bare package-app origin and a bare user subdomain are plausible
 	// bookmarks; send them home.
 	for (const origin of [packageAppOrigin, ownerPackageAppOrigin]) {
 		const rootResponse = await workerFetch(`${origin}/`)
@@ -337,18 +310,18 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 		expect(rootResponse.headers.get('Location')).toBe(`${appOrigin}/`)
 	}
 
-	// 12. The package-app session is not an app session: the app origin refuses
+	// 9. The package-app session is not an app session: the app origin refuses
 	// it and sends the visitor to log in.
 	const appOriginWithPackageCookie = await workerFetch(
 		`${appOrigin}/@${ownerUsername}/packages/demo`,
-		{ headers: { Cookie: packageSessionCookie } },
+		withPackageSession(),
 	)
 	expect(appOriginWithPackageCookie.status).toBe(302)
 	expect(
 		new URL(appOriginWithPackageCookie.headers.get('Location') ?? '').pathname,
 	).toBe('/login')
 
-	// 13. A signed-in visitor on the owner-only handoff mount is sent to the
+	// 10. A signed-in visitor on the owner-only handoff mount is sent to the
 	// saved-package page (`/@{username}/{kodyId}`), not a "not found" 404.
 	const visitorOnHandoffMount = await workerFetch(
 		`${appOrigin}/@other-user/packages/demo/report`,
@@ -425,12 +398,14 @@ test('createPackageCodeRequest drops credential headers in the workers runtime',
 	)
 
 	expect(packageCodeRequest.url).toBe(`${ownerPackageAppOrigin}/save`)
-	expect(packageCodeRequest.headers.get('Cookie')).toBeNull()
-	expect(packageCodeRequest.headers.get('Authorization')).toBeNull()
-	expect(packageCodeRequest.headers.get('Proxy-Authorization')).toBeNull()
 	expect(
-		packageCodeRequest.headers.get('X-Kody-Connector-Session-Key'),
-	).toBeNull()
+		[
+			'Cookie',
+			'Authorization',
+			'Proxy-Authorization',
+			'X-Kody-Connector-Session-Key',
+		].filter((name) => packageCodeRequest.headers.has(name)),
+	).toEqual([])
 	expect(packageCodeRequest.headers.get('Content-Type')).toBe(
 		'application/json',
 	)

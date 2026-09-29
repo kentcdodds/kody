@@ -1,9 +1,6 @@
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
-import {
-	createAuthCookie,
-	setAuthSessionSecret,
-	type AuthSession,
-} from '#app/auth-session.ts'
+import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
 import {
 	assignUserRole,
 	getUserRolesAndPermissions,
@@ -18,265 +15,62 @@ import {
 	userHasPermission,
 	userHasRole,
 } from '#universal/permissions.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
-import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
-type RbacRow = {
-	user_id: number
-	role_id: number
-	role_name: RoleName
-	action: string
-	entity: string
-	access: string
-}
-
-function createRbacTestDb(initialRows: Array<RbacRow> = []) {
-	const rows = initialRows.map((row) => ({ ...row }))
-	let nextRoleId = Math.max(0, ...rows.map((row) => row.role_id)) + 1
-
-	const roles = new Map<RoleName, number>([
-		['user', 1],
-		['admin', 2],
-	])
-
-	const db = {
-		prepare(query: string) {
-			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-			return {
-				bind(...params: Array<unknown>) {
-					return {
-						async all<T>() {
-							if (
-								normalizedQuery.includes('from user_roles ur') &&
-								normalizedQuery.includes('join roles r')
-							) {
-								const userId = Number(params[0])
-								const results = rows
-									.filter((row) => row.user_id === userId)
-									.map((row) => ({
-										role_name: row.role_name,
-										action: row.action,
-										entity: row.entity,
-										access: row.access,
-									}))
-								return { results: results as Array<T>, meta: { changes: 0 } }
-							}
-							return { results: [] as Array<T>, meta: { changes: 0 } }
-						},
-						async run() {
-							if (
-								normalizedQuery.includes('insert or ignore into user_roles')
-							) {
-								const userId = Number(params[0])
-								const roleName = String(params[1]) as RoleName
-								const roleId = roles.get(roleName) ?? nextRoleId++
-								if (!roles.has(roleName)) {
-									roles.set(roleName, roleId)
-								}
-								const exists = rows.some(
-									(row) => row.user_id === userId && row.role_name === roleName,
-								)
-								if (!exists) {
-									for (const permission of rolePermissions(roleName)) {
-										rows.push({
-											user_id: userId,
-											role_id: roleId,
-											role_name: roleName,
-											...permission,
-										})
-									}
-								}
-								return { meta: { changes: exists ? 0 : 1 } }
-							}
-							return { meta: { changes: 0 } }
-						},
-					}
-				},
-			}
-		},
-	} as unknown as D1Database
-
-	return { db, rows }
-}
-
-function rolePermissions(roleName: RoleName) {
-	const ownActions = ['create', 'read', 'update', 'delete'] as const
-	const entities = ['user', 'role'] as const
-	const permissions: Array<{
-		action: string
-		entity: string
-		access: string
-	}> = []
-	for (const action of ownActions) {
-		for (const entity of entities) {
-			permissions.push({ action, entity, access: 'own' })
+async function setupRbac(users: Array<{ id: number; roles: Array<RoleName> }>) {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const db = createD1FromSqlite(sqlite)
+	for (const { id, roles } of users) {
+		const email = `user-${id}@example.com`
+		sqlite
+			.prepare(
+				`INSERT INTO users (id, username, email, stable_user_id, password_hash)
+				VALUES (?, ?, ?, ?, 'unused')`,
+			)
+			.run(id, `user-${id}`, email, testStableUserIdFromEmail(email))
+		for (const roleName of roles) {
+			await assignUserRole({ db, userId: id, roleName })
 		}
 	}
-	if (roleName === 'admin') {
-		for (const action of ownActions) {
-			for (const entity of entities) {
-				permissions.push({ action, entity, access: 'any' })
-			}
-		}
-	}
-	return permissions
+	return { sqlite, db }
 }
 
-function createAuthenticatedUserEnv(input: {
-	userId: number
-	email?: string
-	username?: string
-	roles: Array<RoleName>
-}) {
-	const email = input.email ?? 'user@example.com'
-	const username = input.username ?? 'session-user'
-	const users = new Map([
-		[
-			input.userId,
-			{
-				id: input.userId,
-				email,
-				username,
-				password_hash: 'unused',
-				stable_user_id: testStableUserIdFromEmail(email),
-				created_at: new Date(0).toISOString(),
-				updated_at: new Date(0).toISOString(),
-			},
-		],
-	])
-	const rbacRows = input.roles.flatMap((roleName) =>
-		rolePermissions(roleName).map((permission) => ({
-			user_id: input.userId,
-			role_id: roleName === 'admin' ? 2 : 1,
-			role_name: roleName,
-			...permission,
-		})),
-	)
+const ownPermissions = ['create', 'read', 'update', 'delete'].flatMap(
+	(action) => ['role', 'user'].map((entity) => `${action}:${entity}:own`),
+)
+const anyPermissions = ownPermissions.map((p) => p.replace(':own', ':any'))
 
-	return {
-		COOKIE_SECRET: testCookieSecret,
-		APP_DB: {
-			prepare(query: string) {
-				const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-				const statement = {
-					query,
-					bind(...params: Array<unknown>) {
-						function resolveUserId() {
-							const bound = params[0]
-							if (typeof bound === 'number') return bound
-							const asNumber = Number(bound)
-							if (Number.isInteger(asNumber) && asNumber > 0) {
-								return asNumber
-							}
-							return (
-								[...users.values()].find((row) => row.stable_user_id === bound)
-									?.id ?? -1
-							)
-						}
-						function execute(loadUserId: number) {
-							return rbacRows
-								.filter((row) => row.user_id === loadUserId)
-								.map((row) => ({
-									role_name: row.role_name,
-									action: row.action,
-									entity: row.entity,
-									access: row.access,
-								}))
-						}
-						return {
-							query,
-							async all<T>() {
-								if (
-									normalizedQuery.includes('from user_roles ur') &&
-									normalizedQuery.includes('join roles r')
-								) {
-									return {
-										results: execute(resolveUserId()) as Array<T>,
-										meta: { changes: 0 },
-									}
-								}
-								if (
-									normalizedQuery.startsWith('select') &&
-									normalizedQuery.includes('from "users"') &&
-									/"stable_user_id"\s*=/.test(normalizedQuery)
-								) {
-									const user = [...users.values()].find(
-										(row) => row.stable_user_id === params[0],
-									)
-									return {
-										results: user ? [{ ...user }] : [],
-										meta: { changes: 0 },
-									}
-								}
-								return { results: [] as Array<T>, meta: { changes: 0 } }
-							},
-							async first<T>() {
-								const result = await this.all<T>()
-								return (result.results[0] ?? null) as T | null
-							},
-							async run() {
-								return { meta: { changes: 0 } }
-							},
-						}
-					},
-				}
-				return statement
-			},
-			async batch(statements: Array<{ query?: string }>) {
-				return await executePreparedD1Batch(statements)
-			},
-		} as unknown as D1Database,
-	}
-}
-
-test('getUserRolesAndPermissions unions permissions across multiple roles', async () => {
-	const { db } = createRbacTestDb([
-		{
-			user_id: 1,
-			role_id: 1,
-			role_name: 'user',
-			action: 'read',
-			entity: 'user',
-			access: 'own',
-		},
-		{
-			user_id: 1,
-			role_id: 2,
-			role_name: 'admin',
-			action: 'read',
-			entity: 'user',
-			access: 'any',
-		},
+test('assignUserRole grants role permissions and getUserRolesAndPermissions unions them across roles', async () => {
+	const { sqlite, db } = await setupRbac([
+		{ id: 1, roles: ['user'] },
+		{ id: 2, roles: ['user', 'admin'] },
+		{ id: 3, roles: [] },
 	])
 
-	const result = await getUserRolesAndPermissions(db, 1)
-	expect(result.roles).toEqual(['admin', 'user'])
-	expect(result.permissions).toEqual(['read:user:any', 'read:user:own'])
-})
+	expect(await getUserRolesAndPermissions(db, 1)).toEqual({
+		roles: ['user'],
+		permissions: [...ownPermissions].sort(),
+	})
+	expect(await getUserRolesAndPermissions(db, 2)).toEqual({
+		roles: ['admin', 'user'],
+		permissions: [...anyPermissions, ...ownPermissions].sort(),
+	})
+	expect(await getUserRolesAndPermissions(db, 3)).toEqual({
+		roles: [],
+		permissions: [],
+	})
 
-test('getUserRolesAndPermissions returns empty arrays for users with no roles', async () => {
-	const { db } = createRbacTestDb()
-	const result = await getUserRolesAndPermissions(db, 99)
-	expect(result).toEqual({ roles: [], permissions: [] })
-})
-
-test('getUserRolesAndPermissions still returns roles when permission columns are null', async () => {
-	const { db } = createRbacTestDb([
-		{
-			user_id: 1,
-			role_id: 2,
-			role_name: 'admin',
-			action: null as unknown as string,
-			entity: null as unknown as string,
-			access: null as unknown as string,
-		},
-	])
-
-	const result = await getUserRolesAndPermissions(db, 1)
-	expect(result.roles).toEqual(['admin'])
-	expect(result.permissions).toEqual([])
+	// Role membership still resolves when a role has no permission rows.
+	sqlite.exec(`DELETE FROM role_permissions`)
+	expect(await getUserRolesAndPermissions(db, 2)).toEqual({
+		roles: ['admin', 'user'],
+		permissions: [],
+	})
 })
 
 test('userHasPermission and userHasRole perform pure membership checks', () => {
@@ -292,81 +86,63 @@ test('userHasPermission and userHasRole perform pure membership checks', () => {
 
 test('requireUserWithPermission and requireUserWithRole enforce auth and authorization', async () => {
 	setAuthSessionSecret(testCookieSecret)
-	const session: AuthSession = {
-		stableUserId: testStableUserIdFromEmail('user@example.com'),
-		email: 'user@example.com',
-		rememberMe: false,
-	}
-	const cookie = await createAuthCookie(session, false)
-	const authorizedEnv = createAuthenticatedUserEnv({
-		userId: 1,
-		roles: ['admin'],
-	})
-	const userOnlyEnv = createAuthenticatedUserEnv({
-		userId: 1,
-		roles: ['user'],
-	})
+	const makeEnv = async (roles: Array<RoleName>) =>
+		({
+			COOKIE_SECRET: testCookieSecret,
+			APP_DB: (await setupRbac([{ id: 1, roles }])).db,
+		}) as Env
+	const adminEnv = await makeEnv(['admin'])
+	const userOnlyEnv = await makeEnv(['user'])
+	const email = 'user-1@example.com'
+	const cookie = await createAuthCookie(
+		{
+			stableUserId: testStableUserIdFromEmail(email),
+			email,
+			rememberMe: false,
+		},
+		false,
+	)
+	const request = (path: string, headers: Record<string, string> = {}) =>
+		new Request(`https://example.com${path}`, { headers })
+	const signedInJson = { Accept: 'application/json', Cookie: cookie }
 
 	await expect(
 		requireUserWithPermission(
-			new Request('https://example.com/admin/users.json', {
-				headers: {
-					Accept: 'application/json',
-					Cookie: cookie,
-				},
-			}),
-			authorizedEnv as Env,
+			request('/admin/users.json', signedInJson),
+			adminEnv,
 			'read:user:any',
 		),
 	).resolves.toMatchObject({ userId: 1, roles: ['admin'] })
-
 	await expect(
 		requireUserWithPermission(
-			new Request('https://example.com/admin/users.json', {
-				headers: {
-					Accept: 'application/json',
-					Cookie: cookie,
-				},
-			}),
-			userOnlyEnv as Env,
+			request('/admin/users.json', signedInJson),
+			userOnlyEnv,
 			'read:user:any',
 		),
 	).rejects.toMatchObject({ status: 403 })
 
-	const forbiddenHtmlResponse = await requireUserWithRole(
-		new Request('https://example.com/admin/users', {
-			headers: { Cookie: cookie },
-		}),
-		userOnlyEnv as Env,
+	const forbiddenHtml = await requireUserWithRole(
+		request('/admin/users', { Cookie: cookie }),
+		userOnlyEnv,
 		'admin',
 	).catch((response) => response)
-	expect(forbiddenHtmlResponse).toBeInstanceOf(Response)
-	expect(forbiddenHtmlResponse.status).toBe(403)
+	expect(forbiddenHtml).toBeInstanceOf(Response)
+	expect(forbiddenHtml.status).toBe(403)
 
 	await expect(
 		requireUserWithRole(
-			new Request('https://example.com/admin/users.json', {
-				headers: { Accept: 'application/json' },
-			}),
-			authorizedEnv as Env,
+			request('/admin/users.json', { Accept: 'application/json' }),
+			adminEnv,
 			'admin',
 		),
 	).rejects.toMatchObject({ status: 401 })
 
-	const redirectResponse = await requireUserWithRole(
-		new Request('https://example.com/admin/users'),
-		authorizedEnv as Env,
+	const redirect = await requireUserWithRole(
+		request('/admin/users'),
+		adminEnv,
 		'admin',
 	).catch((response) => response)
-	expect(redirectResponse).toBeInstanceOf(Response)
-	expect(redirectResponse.status).toBe(302)
-	expect(redirectResponse.headers.get('Location')).toContain('/login')
-})
-
-test('assignUserRole inserts the requested role for a user', async () => {
-	const { db, rows } = createRbacTestDb()
-	await assignUserRole({ db, userId: 7, roleName: 'user' })
-	expect(
-		rows.some((row) => row.user_id === 7 && row.role_name === 'user'),
-	).toBe(true)
+	expect(redirect).toBeInstanceOf(Response)
+	expect(redirect.status).toBe(302)
+	expect(redirect.headers.get('Location')).toContain('/login')
 })

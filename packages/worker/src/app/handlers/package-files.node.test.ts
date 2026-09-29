@@ -93,8 +93,26 @@ const filesPayload = {
 	language: 'ts',
 }
 
+type Handler = { handler(context: never): Promise<Response> }
+
+function call(
+	handler: Handler,
+	path: string,
+	params: Record<string, string>,
+	headers: Record<string, string> = {},
+) {
+	const url = new URL(`https://example.com${path}`)
+	return handler.handler({
+		request: new Request(url, { headers }),
+		params,
+		url,
+	} as never)
+}
+
 test('community files API resolves the package page and rejects traversal', async () => {
 	const handler = createCommunityPackageFilesApiHandler({} as Env)
+	const params = { username: 'owner', kodyId: 'demo' }
+	const filesJson = '/profiles/owner/packages/demo/files.json'
 	mockModule.loadPackagePage.mockResolvedValue({
 		kind: 'page',
 		username: 'owner',
@@ -104,30 +122,20 @@ test('community files API resolves the package page and rejects traversal', asyn
 	})
 	mockModule.loadAccessiblePackageFilesData.mockResolvedValue(filesPayload)
 
-	const success = await handler.handler({
-		request: new Request(
-			'https://example.com/profiles/owner/packages/demo/files.json?path=src/index.ts',
-		),
-		params: { username: 'owner', kodyId: 'demo' },
-		url: new URL(
-			'https://example.com/profiles/owner/packages/demo/files.json?path=src/index.ts',
-		),
-	} as never)
+	const success = await call(handler, `${filesJson}?path=src/index.ts`, params)
 	expect(success.status).toBe(200)
 	expect(await success.json()).toEqual(filesPayload)
 	// Anonymous trees are shared; a session cookie makes the same URL private.
 	expect(success.headers.get('Cache-Control')).toBe('public, max-age=60')
 	expect(success.headers.get('Vary')).toBe('Cookie')
-	const signedIn = await handler.handler({
-		request: new Request(
-			'https://example.com/profiles/owner/packages/demo/files.json?path=src/index.ts',
-			{ headers: { Cookie: 'kody_session=abc' } },
-		),
-		params: { username: 'owner', kodyId: 'demo' },
-		url: new URL(
-			'https://example.com/profiles/owner/packages/demo/files.json?path=src/index.ts',
-		),
-	} as never)
+	const signedIn = await call(
+		handler,
+		`${filesJson}?path=src/index.ts`,
+		params,
+		{
+			Cookie: 'kody_session=abc',
+		},
+	)
 	expect(signedIn.status).toBe(200)
 	expect(signedIn.headers.get('Cache-Control')).toBe('no-store')
 	expect(mockModule.loadAccessiblePackageFilesData).toHaveBeenCalledWith({
@@ -140,64 +148,37 @@ test('community files API resolves the package page and rejects traversal', asyn
 		serverTiming: expect.any(Array),
 	})
 
-	const invalid = await handler.handler({
-		request: new Request(
-			'https://example.com/profiles/owner/packages/demo/files.json?path=../secret',
-		),
-		params: { username: 'owner', kodyId: 'demo' },
-		url: new URL(
-			'https://example.com/profiles/owner/packages/demo/files.json?path=../secret',
-		),
-	} as never)
-	expect(invalid.status).toBe(400)
+	const traversal = await call(handler, `${filesJson}?path=../secret`, params)
+	expect(traversal.status).toBe(400)
 
 	mockModule.loadAccessiblePackageFilesData.mockResolvedValue(null)
-	const missing = await handler.handler({
-		request: new Request(
-			'https://example.com/profiles/owner/packages/demo/files.json',
-		),
-		params: { username: 'owner', kodyId: 'demo' },
-		url: new URL('https://example.com/profiles/owner/packages/demo/files.json'),
-	} as never)
-	expect(missing.status).toBe(404)
+	expect((await call(handler, filesJson, params)).status).toBe(404)
 })
 
 test('account files HTML and JSON redirect to the package tree', async () => {
 	const htmlHandler = createAccountPackageFilesHandler({} as Env)
 	const apiHandler = createAccountPackageFilesApiHandler({} as Env)
+	const params = { packageId: 'pkg-1' }
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	const unauthorized = await apiHandler.handler({
-		request: new Request(
-			'https://example.com/account/packages/pkg-1/files.json',
-		),
-		params: { packageId: 'pkg-1' },
-		url: new URL('https://example.com/account/packages/pkg-1/files.json'),
-	} as never)
+	const unauthorized = await call(
+		apiHandler,
+		'/account/packages/pkg-1/files.json',
+		params,
+	)
 	expect(unauthorized.status).toBe(401)
 	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
 
-	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		mcpUser: { userId: 'stable-user-1' },
-		username: 'owner',
-	})
-	mockModule.requireAuthenticatedPageUser.mockResolvedValue({
-		mcpUser: { userId: 'stable-user-1' },
-		username: 'owner',
-	})
-	mockModule.getSavedPackageById.mockResolvedValue({
-		kodyId: 'demo',
-	})
+	const owner = { mcpUser: { userId: 'stable-user-1' }, username: 'owner' }
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(owner)
+	mockModule.requireAuthenticatedPageUser.mockResolvedValue(owner)
+	mockModule.getSavedPackageById.mockResolvedValue({ kodyId: 'demo' })
 
-	const json = await apiHandler.handler({
-		request: new Request(
-			'https://example.com/account/packages/pkg-1/files.json?path=src/index.ts',
-		),
-		params: { packageId: 'pkg-1' },
-		url: new URL(
-			'https://example.com/account/packages/pkg-1/files.json?path=src/index.ts',
-		),
-	} as never)
+	const json = await call(
+		apiHandler,
+		'/account/packages/pkg-1/files.json?path=src/index.ts',
+		params,
+	)
 	expect(json.status).toBe(404)
 	expect(await json.json()).toEqual({
 		ok: false,
@@ -206,11 +187,7 @@ test('account files HTML and JSON redirect to the package tree', async () => {
 	})
 	expect(mockModule.loadAccountPackageFilesData).not.toHaveBeenCalled()
 
-	const html = await htmlHandler.handler({
-		request: new Request('https://example.com/account/packages/pkg-1/files'),
-		params: { packageId: 'pkg-1' },
-		url: new URL('https://example.com/account/packages/pkg-1/files'),
-	} as never)
+	const html = await call(htmlHandler, '/account/packages/pkg-1/files', params)
 	expect(html.status).toBe(302)
 	expect(html.headers.get('location')).toBe(
 		'https://example.com/@owner/demo/tree/main',
@@ -219,32 +196,37 @@ test('account files HTML and JSON redirect to the package tree', async () => {
 
 test('unlisted leftover tree redirects stay private; listed leftovers stay public', async () => {
 	const handler = createCommunityPackageFilesHandler({} as Env)
-
-	mockModule.resolveCommunityFilesRoute.mockResolvedValue({
-		kind: 'redirect',
-		to: '/@owner/friction-log/tree/main',
-		shared: false,
-	})
-	const privateHop = await handler.handler({
-		request: new Request('https://example.com/@owner/friction-log/files'),
-	} as never)
-	expect(privateHop.status).toBe(302)
-	expect(privateHop.headers.get('location')).toBe(
-		'https://example.com/@owner/friction-log/tree/main',
-	)
-	expect(privateHop.headers.get('cache-control')).toBe('private, no-store')
-
-	mockModule.resolveCommunityFilesRoute.mockResolvedValue({
-		kind: 'redirect',
-		to: '/@owner/sentry/tree/main',
-		shared: true,
-	})
-	const publicHop = await handler.handler({
-		request: new Request('https://example.com/@owner/sentry/files'),
-	} as never)
-	expect(publicHop.status).toBe(301)
-	expect(publicHop.headers.get('location')).toBe(
-		'https://example.com/@owner/sentry/tree/main',
-	)
-	expect(publicHop.headers.get('cache-control')).toBe('public, max-age=3600')
+	const cases = [
+		{
+			kodyId: 'friction-log',
+			shared: false,
+			status: 302,
+			cacheControl: 'private, no-store',
+		},
+		{
+			kodyId: 'sentry',
+			shared: true,
+			status: 301,
+			cacheControl: 'public, max-age=3600',
+		},
+	]
+	for (const { kodyId, shared, status, cacheControl } of cases) {
+		mockModule.resolveCommunityFilesRoute.mockResolvedValue({
+			kind: 'redirect',
+			to: `/@owner/${kodyId}/tree/main`,
+			shared,
+		})
+		const hop = await handler.handler({
+			request: new Request(`https://example.com/@owner/${kodyId}/files`),
+		} as never)
+		expect({
+			status: hop.status,
+			location: hop.headers.get('location'),
+			cacheControl: hop.headers.get('cache-control'),
+		}).toEqual({
+			status,
+			location: `https://example.com/@owner/${kodyId}/tree/main`,
+			cacheControl,
+		})
+	}
 })

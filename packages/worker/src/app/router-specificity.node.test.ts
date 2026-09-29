@@ -12,197 +12,69 @@ function createStubHandler(name: string) {
 	}
 }
 
-test('router prefers static nested paths and package files over dynamic siblings', async () => {
+/** Registers each route with a stub that answers its own route name. */
+function makeRouter(names: Array<keyof typeof routes>) {
 	const router = createRouter()
-	router.get(
-		routePattern(routes.accountMcpServersOauthCallback),
-		createStubHandler('oauth-callback'),
-	)
-	router.get(
-		routePattern(routes.accountMcpServerLogo),
-		createStubHandler('server-logo'),
-	)
-	router.get(
-		routePattern(routes.accountMcpServerDetail),
-		createStubHandler('server-detail'),
-	)
-	router.get(
-		routePattern(routes.adminUserUsageApi),
-		createStubHandler('usage-api'),
-	)
-	router.get(
-		routePattern(routes.adminUserDetail),
-		createStubHandler('user-detail'),
-	)
-	router.get(
-		routePattern(routes.communityPackage),
-		createStubHandler('listing'),
-	)
-	router.get(
-		routePattern(routes.communityPackageFiles),
-		createStubHandler('community-files'),
-	)
-	router.get(
-		routePattern(routes.communityPackageRaw),
-		createStubHandler('community-raw'),
-	)
-	router.get(
-		routePattern(routes.communityDetailRaw),
-		createStubHandler('listing-uuid-raw'),
-	)
-	router.get(
-		routePattern(routes.communityPackageAsset),
-		createStubHandler('community-assets'),
-	)
-	router.get(
-		routePattern(routes.communityDetailAsset),
-		createStubHandler('listing-uuid-assets'),
-	)
-	router.get(
-		routePattern(routes.communityPackageApprovePublish),
-		createStubHandler('community-approve-publish'),
-	)
-	router.get(
-		routePattern(routes.communityPackageApproveChanges),
-		createStubHandler('community-approve-changes'),
-	)
-	router.get(
-		routePattern(routes.accountPackageDetail),
-		createStubHandler('package-detail'),
-	)
-	router.get(
-		routePattern(routes.accountPackageApprovePublish),
-		createStubHandler('approve-publish'),
-	)
-	router.get(
-		routePattern(routes.accountPackageFiles),
-		createStubHandler('account-files'),
-	)
-	router.get(
-		routePattern(routes.communityDetail),
-		createStubHandler('listing-uuid'),
-	)
-	router.get(
-		routePattern(routes.communityDetailFiles),
-		createStubHandler('listing-uuid-files'),
-	)
+	for (const name of names) {
+		router.get(routePattern(routes[name]), createStubHandler(name))
+	}
+	return async (path: string) => {
+		const response = await router.fetch(new Request(`http://localhost${path}`))
+		return response.ok ? await response.text() : response.status
+	}
+}
 
-	expect(
-		await (
-			await router.fetch(
-				new Request('http://localhost/account/mcp-servers/oauth/callback'),
-			)
-		).text(),
-	).toBe('oauth-callback')
-	expect(
-		await (
-			await router.fetch(
-				new Request(
-					'http://localhost/account/mcp-servers/logos/550e8400-e29b-41d4-a716-446655440000',
-				),
-			)
-		).text(),
-	).toBe('server-logo')
-	expect(
-		await (
-			await router.fetch(
-				new Request('http://localhost/account/mcp-servers/my-server'),
-			)
-		).text(),
-	).toBe('server-detail')
-	expect(
-		await (
-			await router.fetch(new Request('http://localhost/admin/users/usage.json'))
-		).text(),
-	).toBe('usage-api')
-	expect(
-		await (
-			await router.fetch(new Request('http://localhost/admin/users/42'))
-		).text(),
-	).toBe('user-detail')
-	expect(
-		await (
-			await router.fetch(new Request('http://localhost/@kentcdodds/devin'))
-		).text(),
-	).toBe('listing')
-	expect(
-		await (
-			await router.fetch(
-				new Request('http://localhost/@kentcdodds/devin/files/src/index.ts'),
-			)
-		).text(),
-	).toBe('community-files')
-	expect(
-		await (
-			await router.fetch(
-				new Request(
-					'http://localhost/@kentcdodds/devin/raw/main/docs/logo.png',
-				),
-			)
-		).text(),
-	).toBe('community-raw')
-	expect(
-		await (
-			await router.fetch(
-				new Request(
-					'http://localhost/@kentcdodds/devin/assets/docs/poster.png',
-				),
-			)
-		).text(),
-	).toBe('community-assets')
-	expect(
-		await (
-			await router.fetch(
-				new Request(
-					'http://localhost/community/550e8400-e29b-41d4-a716-446655440000/raw/docs/logo.png',
-				),
-			)
-		).text(),
-	).toBe('listing-uuid-raw')
-	expect(
-		await (
-			await router.fetch(
-				new Request(
-					'http://localhost/community/550e8400-e29b-41d4-a716-446655440000/assets/docs/poster.png',
-				),
-			)
-		).text(),
-	).toBe('listing-uuid-assets')
-	expect(
-		await (
-			await router.fetch(
-				new Request('http://localhost/@kentcdodds/devin/approve-publish'),
-			)
-		).text(),
-	).toBe('community-approve-publish')
-	expect(
-		await (
-			await router.fetch(new Request('http://localhost/account/packages/pkg-1'))
-		).text(),
-	).toBe('package-detail')
-	expect(
-		await (
-			await router.fetch(
-				new Request('http://localhost/account/packages/pkg-1/approve-publish'),
-			)
-		).text(),
-	).toBe('approve-publish')
-	expect(
-		await (
-			await router.fetch(
-				new Request('http://localhost/account/packages/pkg-1/files/README.md'),
-			)
-		).text(),
-	).toBe('account-files')
-	expect(
-		await (
-			await router.fetch(
-				new Request(
-					'http://localhost/community/550e8400-e29b-41d4-a716-446655440000/files/src/lib.ts',
-				),
-			)
-		).text(),
-	).toBe('listing-uuid-files')
+async function resolveAll(
+	resolve: (path: string) => Promise<string | number>,
+	cases: Array<[path: string, ...unknown[]]>,
+) {
+	const resolved = new Array<[string, string | number]>()
+	for (const [path] of cases) resolved.push([path, await resolve(path)])
+	return resolved
+}
+
+const uuid = '550e8400-e29b-41d4-a716-446655440000'
+
+test('router prefers static nested paths and package files over dynamic siblings', async () => {
+	const resolve = makeRouter([
+		'accountMcpServersOauthCallback',
+		'accountMcpServerLogo',
+		'accountMcpServerDetail',
+		'adminUserUsageApi',
+		'adminUserDetail',
+		'communityPackage',
+		'communityPackageFiles',
+		'communityPackageRaw',
+		'communityDetailRaw',
+		'communityPackageAsset',
+		'communityDetailAsset',
+		'communityPackageApprovePublish',
+		'communityPackageApproveChanges',
+		'accountPackageDetail',
+		'accountPackageApprovePublish',
+		'accountPackageFiles',
+		'communityDetail',
+		'communityDetailFiles',
+	])
+	const cases: Array<[string, keyof typeof routes]> = [
+		['/account/mcp-servers/oauth/callback', 'accountMcpServersOauthCallback'],
+		[`/account/mcp-servers/logos/${uuid}`, 'accountMcpServerLogo'],
+		['/account/mcp-servers/my-server', 'accountMcpServerDetail'],
+		['/admin/users/usage.json', 'adminUserUsageApi'],
+		['/admin/users/42', 'adminUserDetail'],
+		['/@kentcdodds/devin', 'communityPackage'],
+		['/@kentcdodds/devin/files/src/index.ts', 'communityPackageFiles'],
+		['/@kentcdodds/devin/raw/main/docs/logo.png', 'communityPackageRaw'],
+		['/@kentcdodds/devin/assets/docs/poster.png', 'communityPackageAsset'],
+		[`/community/${uuid}/raw/docs/logo.png`, 'communityDetailRaw'],
+		[`/community/${uuid}/assets/docs/poster.png`, 'communityDetailAsset'],
+		['/@kentcdodds/devin/approve-publish', 'communityPackageApprovePublish'],
+		['/account/packages/pkg-1', 'accountPackageDetail'],
+		['/account/packages/pkg-1/approve-publish', 'accountPackageApprovePublish'],
+		['/account/packages/pkg-1/files/README.md', 'accountPackageFiles'],
+		[`/community/${uuid}/files/src/lib.ts`, 'communityDetailFiles'],
+	]
+	expect(await resolveAll(resolve, cases)).toEqual(cases)
 })
 
 test('method mismatches return 405 with Allow and GET routes serve HEAD', async () => {
@@ -241,161 +113,44 @@ test('method mismatches return 405 with Allow and GET routes serve HEAD', async 
 	expect(await unmatched.text()).toBe('not-found')
 })
 
-test('delimiter-bounded params keep companion suffixes and encode dotted ids', async () => {
-	const router = createRouter()
-	router.get(routePattern(routes.blogPostApi), createStubHandler('blog-api'))
-	router.get(
-		routePattern(routes.communityDetailApi),
-		createStubHandler('listing-api'),
-	)
-	router.get(routePattern(routes.profile), createStubHandler('profile'))
-	router.get(
-		routePattern(routes.profileAvatar),
-		createStubHandler('profile-avatar'),
-	)
-	router.get(
-		routePattern(routes.profileOgImage),
-		createStubHandler('profile-og'),
-	)
-	router.get(
-		routePattern(routes.accountSecretUserDetail),
-		createStubHandler('secret'),
-	)
-	router.get(
-		routePattern(routes.accountIntegrationDetail),
-		createStubHandler('integration'),
-	)
-	router.get(routePattern(routes.integrationLogo), createStubHandler('logo'))
-	router.get(
-		routePattern(routes.adminPlatformIntegrationDetail),
-		createStubHandler('platform-integration'),
-	)
-	router.get(routePattern(routes.accountJobDetail), createStubHandler('job'))
-	router.get(
-		routePattern(routes.accountWorkflowDetail),
-		createStubHandler('workflow'),
-	)
-	router.get(
-		routePattern(routes.accountActivityDetail),
-		createStubHandler('activity'),
-	)
-
-	expect(
-		await (
-			await router.fetch(new Request('http://localhost/blog/hello-world.json'))
-		).text(),
-	).toBe('blog-api')
-	expect(
-		await (
-			await router.fetch(
-				new Request(
-					'http://localhost/community/550e8400-e29b-41d4-a716-446655440000.json',
-				),
-			)
-		).text(),
-	).toBe('listing-api')
-	expect(
-		await (
-			await router.fetch(new Request('http://localhost/@some-user'))
-		).text(),
-	).toBe('profile')
-	expect(
-		(await router.fetch(new Request('http://localhost/@john.doe'))).status,
-	).toBe(404)
-	expect(
-		await (
-			await router.fetch(
-				new Request(
-					'http://localhost/profiles/kentcdodds/avatar/00e495130208345dcc438bce0102f73a6e5cef01085a930c9c9ed2651a67b8d9.jpg',
-				),
-			)
-		).text(),
-	).toBe('profile-avatar')
-	expect(
-		await (
-			await router.fetch(new Request('http://localhost/profiles/alice/og.png'))
-		).text(),
-	).toBe('profile-og')
-	expect(
-		await (
-			await router.fetch(
-				new Request('http://localhost/account/secrets/user/google%2Eapi%2Ekey'),
-			)
-		).text(),
-	).toBe('secret')
-
-	expect(
-		(
-			await router.fetch(
-				new Request('http://localhost/account/integrations/google.personal'),
-			)
-		).status,
-	).toBe(404)
-	expect(
-		await (
-			await router.fetch(
-				new Request('http://localhost/account/integrations/google%2Epersonal'),
-			)
-		).text(),
-	).toBe('integration')
-	expect(
-		(
-			await router.fetch(
-				new Request('http://localhost/integrations/logos/openai.com'),
-			)
-		).status,
-	).toBe(404)
-	expect(
-		await (
-			await router.fetch(
-				new Request('http://localhost/integrations/logos/openai%2Ecom'),
-			)
-		).text(),
-	).toBe('logo')
-	expect(
-		(
-			await router.fetch(
-				new Request('http://localhost/admin/platform-integrations/openai.com'),
-			)
-		).status,
-	).toBe(404)
-	expect(
-		await (
-			await router.fetch(
-				new Request(
-					'http://localhost/admin/platform-integrations/openai%2Ecom',
-				),
-			)
-		).text(),
-	).toBe('platform-integration')
-	expect(
-		(
-			await router.fetch(
-				new Request(
-					'http://localhost/account/jobs/package-job:pkg:daily.backup',
-				),
-			)
-		).status,
-	).toBe(404)
-	expect(
-		await (
-			await router.fetch(
-				new Request(
-					'http://localhost/account/jobs/package-job%3Apkg%3Adaily%2Ebackup',
-				),
-			)
-		).text(),
-	).toBe('job')
-	expect(
-		await (
-			await router.fetch(new Request('http://localhost/account/activity/run-1'))
-		).text(),
-	).toBe('activity')
-	expect(
-		await (
-			await router.fetch(
-				new Request('http://localhost/account/workflows/dynwf-example'),
-			)
-		).text(),
-	).toBe('workflow')
+test('delimiter-bounded params keep companion suffixes and only match dotted ids when encoded', async () => {
+	const resolve = makeRouter([
+		'blogPostApi',
+		'communityDetailApi',
+		'profile',
+		'profileAvatar',
+		'profileOgImage',
+		'accountSecretUserDetail',
+		'accountIntegrationDetail',
+		'integrationLogo',
+		'adminPlatformIntegrationDetail',
+		'accountJobDetail',
+		'accountWorkflowDetail',
+		'accountActivityDetail',
+	])
+	const avatarHash =
+		'00e495130208345dcc438bce0102f73a6e5cef01085a930c9c9ed2651a67b8d9'
+	const cases: Array<[string, keyof typeof routes | 404]> = [
+		['/blog/hello-world.json', 'blogPostApi'],
+		[`/community/${uuid}.json`, 'communityDetailApi'],
+		['/@some-user', 'profile'],
+		['/@john.doe', 404],
+		[`/profiles/kentcdodds/avatar/${avatarHash}.jpg`, 'profileAvatar'],
+		['/profiles/alice/og.png', 'profileOgImage'],
+		['/account/secrets/user/google%2Eapi%2Ekey', 'accountSecretUserDetail'],
+		['/account/integrations/google.personal', 404],
+		['/account/integrations/google%2Epersonal', 'accountIntegrationDetail'],
+		['/integrations/logos/openai.com', 404],
+		['/integrations/logos/openai%2Ecom', 'integrationLogo'],
+		['/admin/platform-integrations/openai.com', 404],
+		[
+			'/admin/platform-integrations/openai%2Ecom',
+			'adminPlatformIntegrationDetail',
+		],
+		['/account/jobs/package-job:pkg:daily.backup', 404],
+		['/account/jobs/package-job%3Apkg%3Adaily%2Ebackup', 'accountJobDetail'],
+		['/account/activity/run-1', 'accountActivityDetail'],
+		['/account/workflows/dynwf-example', 'accountWorkflowDetail'],
+	]
+	expect(await resolveAll(resolve, cases)).toEqual(cases)
 })

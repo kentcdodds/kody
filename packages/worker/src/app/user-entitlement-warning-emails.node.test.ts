@@ -30,17 +30,24 @@ const {
 
 const stableUserId = 'a'.repeat(64)
 
-function consumptionRow(input: {
-	resource: EntitlementResource
-	label: string
-	current: number
-	limit: number
-}) {
+function row(
+	resource: EntitlementResource,
+	current: number,
+	limit: number,
+	label = resource.replaceAll('_', ' '),
+) {
 	return {
-		...input,
-		percentOfLimit: input.current / input.limit,
-		overEightyPercent: input.current / input.limit > 0.8,
+		resource,
+		label,
+		current,
+		limit,
+		percentOfLimit: current / limit,
+		overEightyPercent: current / limit > 0.8,
 	}
+}
+
+function setConsumption(...rows: Array<ReturnType<typeof row>>) {
+	readAdminEntitlementConsumption.mockResolvedValue(rows)
 }
 
 function createKv() {
@@ -79,6 +86,10 @@ type TestUser = {
 	stripe_plan: string | null
 	entitlement_ladder?: string | null
 	stripe_credits_eligible?: number
+}
+
+function freeUser(email: string, id = stableUserId): TestUser {
+	return { stable_user_id: id, email, plan: 'free', stripe_plan: null }
 }
 
 function createDb(
@@ -139,16 +150,10 @@ function createEnv(input: {
 	users: Array<TestUser>
 	kv?: KVNamespace
 	rollups?: Array<{ metric: string; event_count: number }>
-	computeUwdUsers?: Array<TestUser>
-	computeDorowsUsers?: Array<TestUser>
-	activeUsers?: Array<TestUser>
 	creditBalanceMicroUsd?: number
 }) {
 	return {
 		APP_DB: createDb(input.users, input.rollups, {
-			computeUwdUsers: input.computeUwdUsers,
-			computeDorowsUsers: input.computeDorowsUsers,
-			activeUsers: input.activeUsers,
 			creditBalanceMicroUsd: input.creditBalanceMicroUsd,
 		}),
 		APP_BASE_URL: 'https://kody.codes/',
@@ -171,48 +176,44 @@ function instanceKey(
 	})
 }
 
+function computeKey(month: string) {
+	return userEntitlementWarningKvKey({
+		userId: stableUserId,
+		kind: 'approaching',
+		resource: 'durable_object_rows_read',
+		month,
+	})
+}
+
+function notified(emailsSent: number, warnedResources: number, users = 1) {
+	return {
+		status: 'notified',
+		emailedUsers: users,
+		emailsSent,
+		warnedResources,
+	}
+}
+
+async function sendAt(env: Env, iso: string) {
+	sendCloudflareEmail.mockClear()
+	return await sendUserEntitlementWarningEmails({ env, now: new Date(iso) })
+}
+
+const at = (iso: string) => String(new Date(iso).getTime())
+
 test('user entitlement warnings mail once per entitlement crossing through lifecycle transitions', async () => {
 	const now = new Date('2026-07-25T12:00:00.000Z')
 	const { kv, store, puts } = createKv()
-	readAdminEntitlementConsumption.mockResolvedValue([
-		consumptionRow({
-			resource: 'execute_calls_per_day',
-			label: 'execute calls per day',
-			current: 200,
-			limit: 250,
-		}),
-		consumptionRow({
-			resource: 'saved_packages',
-			label: 'saved packages',
-			current: 9,
-			limit: 10,
-		}),
-		consumptionRow({
-			resource: 'secrets',
-			label: 'secrets',
-			current: 4,
-			limit: 25,
-		}),
-	])
-	const env = createEnv({
-		users: [
-			{
-				stable_user_id: stableUserId,
-				email: 'jelias@example.com',
-				plan: 'free',
-				stripe_plan: null,
-			},
-		],
-		kv,
-	})
+	const env = createEnv({ users: [freeUser('jelias@example.com')], kv })
 
-	const first = await sendUserEntitlementWarningEmails({ env, now })
-	expect(first).toEqual({
-		status: 'notified',
-		emailedUsers: 1,
-		emailsSent: 1,
-		warnedResources: 2,
-	})
+	// Daily resources claim per UTC day; stock resources (saved packages) claim
+	// without a day and expire on the stock TTL.
+	setConsumption(
+		row('execute_calls_per_day', 200, 250),
+		row('saved_packages', 9, 10),
+		row('secrets', 4, 25),
+	)
+	expect(await sendAt(env, now.toISOString())).toEqual(notified(1, 2))
 	expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
 	const approachingPayload = sendCloudflareEmail.mock.calls[0]?.[1] as {
 		to: string
@@ -236,118 +237,50 @@ test('user entitlement warnings mail once per entitlement crossing through lifec
 		store.get(instanceKey('reached', 'execute_calls_per_day', now)),
 	).toBeUndefined()
 
-	sendCloudflareEmail.mockClear()
-	const stillApproaching = await sendUserEntitlementWarningEmails({
-		env,
-		now: new Date(now.getTime() + 60 * 60 * 1000),
+	expect(await sendAt(env, '2026-07-25T13:00:00.000Z')).toEqual({
+		status: 'no_warnings',
 	})
-	expect(stillApproaching).toEqual({ status: 'no_warnings' })
 	expect(sendCloudflareEmail).not.toHaveBeenCalled()
 
-	sendCloudflareEmail.mockClear()
-	readAdminEntitlementConsumption.mockResolvedValue([
-		consumptionRow({
-			resource: 'execute_calls_per_day',
-			label: 'execute calls per day',
-			current: 10,
-			limit: 250,
-		}),
-		consumptionRow({
-			resource: 'saved_packages',
-			label: 'saved packages',
-			current: 9,
-			limit: 10,
-		}),
-	])
-	const nextDayStillApproaching = await sendUserEntitlementWarningEmails({
-		env,
-		now: new Date('2026-07-26T01:00:00.000Z'),
+	setConsumption(
+		row('execute_calls_per_day', 10, 250),
+		row('saved_packages', 9, 10),
+	)
+	expect(await sendAt(env, '2026-07-26T01:00:00.000Z')).toEqual({
+		status: 'no_warnings',
 	})
-	expect(nextDayStillApproaching).toEqual({ status: 'no_warnings' })
 	expect(sendCloudflareEmail).not.toHaveBeenCalled()
 
-	readAdminEntitlementConsumption.mockResolvedValue([
-		consumptionRow({
-			resource: 'execute_calls_per_day',
-			label: 'execute calls per day',
-			current: 250,
-			limit: 250,
-		}),
-		consumptionRow({
-			resource: 'outbound_fetches_per_day',
-			label: 'outbound fetches per day',
-			current: 500,
-			limit: 500,
-		}),
-		consumptionRow({
-			resource: 'saved_packages',
-			label: 'saved packages',
-			current: 9,
-			limit: 10,
-		}),
-	])
 	const reachedAt = new Date('2026-07-26T03:00:00.000Z')
-	const reached = await sendUserEntitlementWarningEmails({
-		env,
-		now: reachedAt,
-	})
-	expect(reached).toEqual({
-		status: 'notified',
-		emailedUsers: 1,
-		emailsSent: 1,
-		warnedResources: 2,
-	})
+	setConsumption(
+		row('execute_calls_per_day', 250, 250),
+		row('outbound_fetches_per_day', 500, 500),
+		row('saved_packages', 9, 10),
+	)
+	expect(await sendAt(env, reachedAt.toISOString())).toEqual(notified(1, 2))
 	expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
-	expect(
-		store.get(instanceKey('reached', 'execute_calls_per_day', reachedAt)),
-	).toBe(String(reachedAt.getTime()))
-	expect(
-		store.get(instanceKey('approaching', 'execute_calls_per_day', reachedAt)),
-	).toBe(String(reachedAt.getTime()))
-	expect(
-		store.get(instanceKey('reached', 'outbound_fetches_per_day', reachedAt)),
-	).toBe(String(reachedAt.getTime()))
+	for (const [kind, resource] of [
+		['reached', 'execute_calls_per_day'],
+		['approaching', 'execute_calls_per_day'],
+		['reached', 'outbound_fetches_per_day'],
+	] as const) {
+		expect(store.get(instanceKey(kind, resource, reachedAt))).toBe(
+			String(reachedAt.getTime()),
+		)
+	}
 
-	sendCloudflareEmail.mockClear()
-	const stillReachedSameDay = await sendUserEntitlementWarningEmails({
-		env,
-		now: new Date('2026-07-26T04:00:00.000Z'),
+	expect(await sendAt(env, '2026-07-26T04:00:00.000Z')).toEqual({
+		status: 'no_warnings',
 	})
-	expect(stillReachedSameDay).toEqual({ status: 'no_warnings' })
 	expect(sendCloudflareEmail).not.toHaveBeenCalled()
 
-	readAdminEntitlementConsumption.mockResolvedValue([
-		consumptionRow({
-			resource: 'execute_calls_per_day',
-			label: 'execute calls per day',
-			current: 200,
-			limit: 250,
-		}),
-		consumptionRow({
-			resource: 'outbound_fetches_per_day',
-			label: 'outbound fetches per day',
-			current: 500,
-			limit: 500,
-		}),
-		consumptionRow({
-			resource: 'saved_packages',
-			label: 'saved packages',
-			current: 9,
-			limit: 10,
-		}),
-	])
-	sendCloudflareEmail.mockClear()
 	const nextUtcDay = new Date('2026-07-27T02:00:00.000Z')
-	const droppedToApproaching = await sendUserEntitlementWarningEmails({
-		env,
-		now: nextUtcDay,
-	})
-	expect(droppedToApproaching).toEqual({
-		status: 'notified',
-		emailedUsers: 1,
-		emailsSent: 2,
-		warnedResources: 2,
-	})
+	setConsumption(
+		row('execute_calls_per_day', 200, 250),
+		row('outbound_fetches_per_day', 500, 500),
+		row('saved_packages', 9, 10),
+	)
+	expect(await sendAt(env, nextUtcDay.toISOString())).toEqual(notified(2, 2))
 	expect(sendCloudflareEmail).toHaveBeenCalledTimes(2)
 	expect(
 		store.get(instanceKey('reached', 'outbound_fetches_per_day', nextUtcDay)),
@@ -359,64 +292,32 @@ test('user entitlement warnings mail once per entitlement crossing through lifec
 		store.get(instanceKey('reached', 'execute_calls_per_day', nextUtcDay)),
 	).toBeUndefined()
 
-	readAdminEntitlementConsumption.mockResolvedValue([
-		consumptionRow({
-			resource: 'execute_calls_per_day',
-			label: 'execute calls per day',
-			current: 10,
-			limit: 250,
-		}),
-		consumptionRow({
-			resource: 'outbound_fetches_per_day',
-			label: 'outbound fetches per day',
-			current: 0,
-			limit: 500,
-		}),
-		consumptionRow({
-			resource: 'saved_packages',
-			label: 'saved packages',
-			current: 2,
-			limit: 10,
-		}),
-	])
+	// Dropping below the threshold clears the claims.
 	const clearedAt = new Date('2026-07-27T04:00:00.000Z')
-	await sendUserEntitlementWarningEmails({ env, now: clearedAt })
+	setConsumption(
+		row('execute_calls_per_day', 10, 250),
+		row('outbound_fetches_per_day', 0, 500),
+		row('saved_packages', 2, 10),
+	)
+	await sendAt(env, clearedAt.toISOString())
 	expect(
-		store.get(instanceKey('approaching', 'execute_calls_per_day', clearedAt)),
-	).toBeUndefined()
-	expect(
-		store.get(instanceKey('approaching', 'saved_packages')),
-	).toBeUndefined()
-	expect(
-		store.get(instanceKey('reached', 'outbound_fetches_per_day', clearedAt)),
-	).toBeUndefined()
+		[
+			instanceKey('approaching', 'execute_calls_per_day', clearedAt),
+			instanceKey('approaching', 'saved_packages'),
+			instanceKey('reached', 'outbound_fetches_per_day', clearedAt),
+		].filter((key) => store.has(key)),
+	).toEqual([])
 
-	readAdminEntitlementConsumption.mockResolvedValue([
-		consumptionRow({
-			resource: 'saved_packages',
-			label: 'saved packages',
-			current: 10,
-			limit: 10,
-		}),
-	])
-	sendCloudflareEmail.mockClear()
-	const jumpedToLimit = new Date('2026-07-27T05:00:00.000Z')
-	const jumped = await sendUserEntitlementWarningEmails({
-		env,
-		now: jumpedToLimit,
-	})
-	expect(jumped).toEqual({
-		status: 'notified',
-		emailedUsers: 1,
-		emailsSent: 1,
-		warnedResources: 1,
-	})
+	// Jumping straight to the limit claims both kinds with one email.
+	const jumpedToLimit = '2026-07-27T05:00:00.000Z'
+	setConsumption(row('saved_packages', 10, 10))
+	expect(await sendAt(env, jumpedToLimit)).toEqual(notified(1, 1))
 	expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
 	expect(store.get(instanceKey('reached', 'saved_packages'))).toBe(
-		String(jumpedToLimit.getTime()),
+		at(jumpedToLimit),
 	)
 	expect(store.get(instanceKey('approaching', 'saved_packages'))).toBe(
-		String(jumpedToLimit.getTime()),
+		at(jumpedToLimit),
 	)
 	expect(
 		puts.find((put) => put.key === instanceKey('reached', 'saved_packages'))
@@ -429,61 +330,35 @@ test('user entitlement warnings mail once per entitlement crossing through lifec
 		)?.options?.expirationTtl,
 	).toBe(userEntitlementWarningDailyClaimTtlSeconds)
 
-	readAdminEntitlementConsumption.mockResolvedValue([
-		consumptionRow({
-			resource: 'saved_packages',
-			label: 'saved packages',
-			current: 9,
-			limit: 10,
-		}),
-	])
-	sendCloudflareEmail.mockClear()
-	const afterDropFromLimit = await sendUserEntitlementWarningEmails({
-		env,
-		now: new Date('2026-07-27T06:00:00.000Z'),
+	setConsumption(row('saved_packages', 9, 10))
+	expect(await sendAt(env, '2026-07-27T06:00:00.000Z')).toEqual({
+		status: 'no_warnings',
 	})
-	expect(afterDropFromLimit).toEqual({ status: 'no_warnings' })
 	expect(sendCloudflareEmail).not.toHaveBeenCalled()
 })
 
 test('user entitlement warning infra edges: missing bindings, leftover claims, TTL refresh, KV fail-open', async () => {
-	readAdminEntitlementConsumption.mockResolvedValue([
-		consumptionRow({
-			resource: 'execute_calls_per_day',
-			label: 'execute calls per day',
-			current: 200,
-			limit: 250,
-		}),
-	])
-	sendCloudflareEmail.mockClear()
-	const noKv = await sendUserEntitlementWarningEmails({
-		env: createEnv({
-			users: [
-				{
-					stable_user_id: stableUserId,
-					email: 'user@example.com',
-					plan: 'free',
-					stripe_plan: null,
-				},
-			],
-		}),
-	})
+	setConsumption(row('execute_calls_per_day', 200, 250))
+	const noKv = await sendAt(
+		createEnv({ users: [freeUser('user@example.com')] }),
+		'2026-08-24T00:00:00.000Z',
+	)
 	expect(noKv).toEqual({ status: 'skipped', reason: 'no_kv' })
 	expect(sendCloudflareEmail).not.toHaveBeenCalled()
-
-	const { kv: kvForConfigCheck } = createKv()
 	const noConfig = await sendUserEntitlementWarningEmails({
 		env: {
 			APP_DB: createDb([]),
-			BUNDLE_ARTIFACTS_KV: kvForConfigCheck,
+			BUNDLE_ARTIFACTS_KV: createKv().kv,
 		} as unknown as Env,
 	})
 	expect(noConfig).toEqual({ status: 'skipped', reason: 'no_email_config' })
 
+	// A leftover daily "reached" claim from two days ago does not suppress
+	// today's crossings.
 	const absorbNow = new Date('2026-08-24T03:00:00.000Z')
 	const twoDaysAgo = new Date(absorbNow.getTime() - 2 * 24 * 60 * 60 * 1000)
-	const { kv: absorbKv, store: absorbStore } = createKv()
-	absorbStore.set(
+	const absorb = createKv()
+	absorb.store.set(
 		userEntitlementWarningDailyKvKey({
 			userId: stableUserId,
 			kind: 'reached',
@@ -491,156 +366,81 @@ test('user entitlement warning infra edges: missing bindings, leftover claims, T
 		}),
 		String(twoDaysAgo.getTime()),
 	)
-	readAdminEntitlementConsumption.mockResolvedValue([
-		consumptionRow({
-			resource: 'saved_packages',
-			label: 'saved packages',
-			current: 10,
-			limit: 10,
-		}),
-		consumptionRow({
-			resource: 'execute_calls_per_day',
-			label: 'execute calls per day',
-			current: 250,
-			limit: 250,
-		}),
-	])
-	sendCloudflareEmail.mockClear()
 	const absorbEnv = createEnv({
-		users: [
-			{
-				stable_user_id: stableUserId,
-				email: 'maciek@example.com',
-				plan: 'free',
-				stripe_plan: null,
-			},
-		],
-		kv: absorbKv,
+		users: [freeUser('maciek@example.com')],
+		kv: absorb.kv,
 	})
-
-	const absorbed = await sendUserEntitlementWarningEmails({
-		env: absorbEnv,
-		now: absorbNow,
-	})
-	expect(absorbed).toEqual({
-		status: 'notified',
-		emailedUsers: 1,
-		emailsSent: 1,
-		warnedResources: 1,
-	})
+	setConsumption(
+		row('saved_packages', 10, 10),
+		row('execute_calls_per_day', 250, 250),
+	)
+	expect(await sendAt(absorbEnv, absorbNow.toISOString())).toEqual(
+		notified(1, 1),
+	)
 	expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
-	expect(absorbStore.get(instanceKey('reached', 'saved_packages'))).toBe(
-		String(absorbNow.getTime()),
+	for (const key of [
+		instanceKey('reached', 'saved_packages'),
+		instanceKey('approaching', 'saved_packages'),
+		instanceKey('reached', 'execute_calls_per_day', absorbNow),
+	]) {
+		expect(absorb.store.get(key)).toBe(String(absorbNow.getTime()))
+	}
+	setConsumption(
+		row('saved_packages', 10, 10),
+		row('execute_calls_per_day', 0, 250),
 	)
-	expect(absorbStore.get(instanceKey('approaching', 'saved_packages'))).toBe(
-		String(absorbNow.getTime()),
-	)
-	expect(
-		absorbStore.get(instanceKey('reached', 'execute_calls_per_day', absorbNow)),
-	).toBe(String(absorbNow.getTime()))
-
-	readAdminEntitlementConsumption.mockResolvedValue([
-		consumptionRow({
-			resource: 'saved_packages',
-			label: 'saved packages',
-			current: 10,
-			limit: 10,
-		}),
-		consumptionRow({
-			resource: 'execute_calls_per_day',
-			label: 'execute calls per day',
-			current: 0,
-			limit: 250,
-		}),
-	])
-	sendCloudflareEmail.mockClear()
-	const nextDay = await sendUserEntitlementWarningEmails({
-		env: absorbEnv,
-		now: new Date('2026-08-25T01:00:00.000Z'),
+	expect(await sendAt(absorbEnv, '2026-08-25T01:00:00.000Z')).toEqual({
+		status: 'no_warnings',
 	})
-	expect(nextDay).toEqual({ status: 'no_warnings' })
 	expect(sendCloudflareEmail).not.toHaveBeenCalled()
 
-	const ttlNow = new Date('2026-08-24T02:00:00.000Z')
-	const { kv: ttlKv, store: ttlStore, puts: ttlPuts } = createKv()
-	readAdminEntitlementConsumption.mockResolvedValue([
-		consumptionRow({
-			resource: 'saved_packages',
-			label: 'saved packages',
-			current: 10,
-			limit: 10,
-		}),
-		consumptionRow({
-			resource: 'execute_calls_per_day',
-			label: 'execute calls per day',
-			current: 250,
-			limit: 250,
-		}),
-	])
-	sendCloudflareEmail.mockClear()
+	// Staying over a stock limit refreshes only the stock claims' TTL.
+	const ttl = createKv()
 	const ttlEnv = createEnv({
-		users: [
-			{
-				stable_user_id: stableUserId,
-				email: 'maciek@example.com',
-				plan: 'free',
-				stripe_plan: null,
-			},
-		],
-		kv: ttlKv,
+		users: [freeUser('maciek@example.com')],
+		kv: ttl.kv,
 	})
-
-	const first = await sendUserEntitlementWarningEmails({
-		env: ttlEnv,
-		now: ttlNow,
-	})
-	expect(first).toEqual({
-		status: 'notified',
-		emailedUsers: 1,
-		emailsSent: 1,
-		warnedResources: 2,
-	})
-	expect(ttlStore.get(instanceKey('reached', 'saved_packages'))).toBe(
-		String(ttlNow.getTime()),
+	setConsumption(
+		row('saved_packages', 10, 10),
+		row('execute_calls_per_day', 250, 250),
 	)
-
-	sendCloudflareEmail.mockClear()
-	ttlPuts.length = 0
-	const later = new Date('2026-08-24T03:00:00.000Z')
-	const stillOver = await sendUserEntitlementWarningEmails({
-		env: ttlEnv,
-		now: later,
-	})
-	expect(stillOver).toEqual({ status: 'no_warnings' })
+	const ttlNow = '2026-08-24T02:00:00.000Z'
+	expect(await sendAt(ttlEnv, ttlNow)).toEqual(notified(1, 2))
+	expect(ttl.store.get(instanceKey('reached', 'saved_packages'))).toBe(
+		at(ttlNow),
+	)
+	ttl.puts.length = 0
+	const later = '2026-08-24T03:00:00.000Z'
+	expect(await sendAt(ttlEnv, later)).toEqual({ status: 'no_warnings' })
 	expect(sendCloudflareEmail).not.toHaveBeenCalled()
-	expect(ttlStore.get(instanceKey('reached', 'saved_packages'))).toBe(
-		String(later.getTime()),
+	expect(ttl.store.get(instanceKey('reached', 'saved_packages'))).toBe(
+		at(later),
 	)
-	expect(ttlStore.get(instanceKey('approaching', 'saved_packages'))).toBe(
-		String(later.getTime()),
+	expect(ttl.store.get(instanceKey('approaching', 'saved_packages'))).toBe(
+		at(later),
 	)
 	expect(
-		ttlPuts.filter(
+		ttl.puts.filter(
 			(put) => put.key === instanceKey('reached', 'saved_packages'),
 		),
 	).toEqual([
 		{
 			key: instanceKey('reached', 'saved_packages'),
-			value: String(later.getTime()),
-			options: {
-				expirationTtl: userEntitlementWarningStockClaimTtlSeconds,
-			},
+			value: at(later),
+			options: { expirationTtl: userEntitlementWarningStockClaimTtlSeconds },
 		},
 	])
-	expect(ttlPuts.some((put) => put.key.includes('execute_calls_per_day'))).toBe(
-		false,
-	)
+	expect(
+		ttl.puts.some((put) => put.key.includes('execute_calls_per_day')),
+	).toBe(false)
 
+	// A failed claim write still mails that user (fail open) and does not
+	// block other users' claims.
 	consoleWarn.mockImplementation(() => {})
 	const otherUserId = 'b'.repeat(64)
-	const { kv: failKv, store: failStore } = createKv()
-	const originalPut = failKv.put.bind(failKv)
-	failKv.put = async (
+	const fail = createKv()
+	const originalPut = fail.kv.put.bind(fail.kv)
+	fail.kv.put = async (
 		key: string,
 		value: string,
 		options?: { expirationTtl?: number },
@@ -650,63 +450,32 @@ test('user entitlement warning infra edges: missing bindings, leftover claims, T
 		}
 		return originalPut(key, value, options)
 	}
-	readAdminEntitlementConsumption.mockResolvedValue([
-		consumptionRow({
-			resource: 'saved_packages',
-			label: 'saved packages',
-			current: 10,
-			limit: 10,
-		}),
-	])
-	sendCloudflareEmail.mockClear()
+	setConsumption(row('saved_packages', 10, 10))
 	const failEnv = createEnv({
 		users: [
-			{
-				stable_user_id: stableUserId,
-				email: 'first@example.com',
-				plan: 'free',
-				stripe_plan: null,
-			},
-			{
-				stable_user_id: otherUserId,
-				email: 'second@example.com',
-				plan: 'free',
-				stripe_plan: null,
-			},
+			freeUser('first@example.com'),
+			freeUser('second@example.com', otherUserId),
 		],
-		kv: failKv,
+		kv: fail.kv,
 	})
-
-	const failOpenAt = new Date('2026-08-24T04:00:00.000Z')
-	const result = await sendUserEntitlementWarningEmails({
-		env: failEnv,
-		now: failOpenAt,
-	})
-	expect(result).toEqual({
-		status: 'notified',
-		emailedUsers: 2,
-		emailsSent: 2,
-		warnedResources: 2,
-	})
+	const failOpenAt = '2026-08-24T04:00:00.000Z'
+	expect(await sendAt(failEnv, failOpenAt)).toEqual(notified(2, 2, 2))
 	expect(sendCloudflareEmail).toHaveBeenCalledTimes(2)
 	expect(
-		failStore.get(instanceKey('reached', 'saved_packages')),
+		fail.store.get(instanceKey('reached', 'saved_packages')),
 	).toBeUndefined()
 	expect(
-		failStore.get(
+		fail.store.get(
 			userEntitlementWarningKvKey({
 				userId: otherUserId,
 				kind: 'reached',
 				resource: 'saved_packages',
 			}),
 		),
-	).toBe(String(failOpenAt.getTime()))
+	).toBe(at(failOpenAt))
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'user-entitlement-warning-claim-failed',
-		expect.objectContaining({
-			kind: 'reached',
-			resource: 'saved_packages',
-		}),
+		expect.objectContaining({ kind: 'reached', resource: 'saved_packages' }),
 	)
 })
 
@@ -719,12 +488,10 @@ const emptyWalletProUser = {
 	stripe_credits_eligible: 1,
 } satisfies TestUser
 
-test('compute include crossings mail an empty Pro wallet, worded as include used (never >100%)', async () => {
-	sendCloudflareEmail.mockClear()
-	const now = new Date('2026-07-25T12:00:00.000Z')
-	readAdminEntitlementConsumption.mockResolvedValue([])
+test('compute include crossings mail an empty Pro wallet per UTC month, worded as include used (never >100%)', async () => {
+	setConsumption()
 	const { kv, store } = createKv()
-	const approachingEnv = createEnv({
+	const rowsReadEnv = createEnv({
 		users: [emptyWalletProUser],
 		kv,
 		rollups: [
@@ -732,43 +499,24 @@ test('compute include crossings mail an empty Pro wallet, worded as include used
 		],
 	})
 
-	const result = await sendUserEntitlementWarningEmails({
-		env: approachingEnv,
-		now,
-	})
-	expect(result).toEqual({
-		status: 'notified',
-		emailedUsers: 1,
-		emailsSent: 1,
-		warnedResources: 1,
-	})
+	const july = '2026-07-25T12:00:00.000Z'
+	expect(await sendAt(rowsReadEnv, july)).toEqual(notified(1, 1))
 	const approaching = sendCloudflareEmail.mock.calls[0]?.[1] as {
 		text: string
 	}
 	expect(approaching.text).toContain(
 		"Rows read — 90% of this month's include (4,500,000,000 of 5,000,000,000 rows read).",
 	)
-	expect(
-		store.get(
-			userEntitlementWarningKvKey({
-				userId: stableUserId,
-				kind: 'approaching',
-				resource: 'durable_object_rows_read',
-				month: '2026-07',
-			}),
-		),
-	).toBe(String(now.getTime()))
+	expect(store.get(computeKey('2026-07'))).toBe(at(july))
 
-	sendCloudflareEmail.mockClear()
-	const reachedEnv = createEnv({
-		users: [emptyWalletProUser],
-		kv,
-		rollups: [{ metric: 'dynamic_worker_day', event_count: 3_600 }],
-	})
-	await sendUserEntitlementWarningEmails({
-		env: reachedEnv,
-		now: new Date('2026-07-25T13:00:00.000Z'),
-	})
+	await sendAt(
+		createEnv({
+			users: [emptyWalletProUser],
+			kv,
+			rollups: [{ metric: 'dynamic_worker_day', event_count: 3_600 }],
+		}),
+		'2026-07-25T13:00:00.000Z',
+	)
 	expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
 	const reached = sendCloudflareEmail.mock.calls[0]?.[1] as {
 		text: string
@@ -783,25 +531,23 @@ test('compute include crossings mail an empty Pro wallet, worded as include used
 	for (const body of [reached.text, reached.html]) {
 		expect(body).not.toMatch(/\b(?:1(?:0[1-9]|[1-9]\d)|[2-9]\d\d|\d{4,})%/)
 	}
+
+	// Compute claims are scoped to the UTC month: August warns again.
+	expect(await sendAt(rowsReadEnv, '2026-08-02T12:00:00.000Z')).toEqual(
+		notified(1, 1),
+	)
+	expect(store.has(computeKey('2026-08'))).toBe(true)
 })
 
-test('Free, funded, and wallet-less plans never get Worker compute or Rows read include emails', async () => {
-	readAdminEntitlementConsumption.mockResolvedValue([])
-	const now = new Date('2026-07-25T12:00:00.000Z')
+test('Free, funded, and wallet-less plans never get Worker compute or Rows read include emails; Free still gets execute-limit emails', async () => {
+	setConsumption()
+	const now = '2026-07-25T12:00:00.000Z'
 	const rollups = [
 		{ metric: 'dynamic_worker_day', event_count: 517 },
 		{ metric: 'durable_object_rows_read', event_count: 900_000_000_000 },
 	]
 	for (const [user, creditBalanceMicroUsd] of [
-		[
-			{
-				stable_user_id: stableUserId,
-				email: 'danj@example.com',
-				plan: 'free',
-				stripe_plan: null,
-			},
-			0,
-		],
+		[freeUser('danj@example.com'), 0],
 		[{ ...emptyWalletProUser, email: 'funded@example.com' }, 20_000_000],
 		[
 			{
@@ -814,150 +560,71 @@ test('Free, funded, and wallet-less plans never get Worker compute or Rows read 
 			0,
 		],
 	] as const) {
-		sendCloudflareEmail.mockClear()
 		const { kv, store } = createKv()
-		const result = await sendUserEntitlementWarningEmails({
-			env: createEnv({ users: [user], kv, rollups, creditBalanceMicroUsd }),
+		const result = await sendAt(
+			createEnv({ users: [user], kv, rollups, creditBalanceMicroUsd }),
 			now,
+		)
+		expect({ email: user.email, result }).toEqual({
+			email: user.email,
+			result: { status: 'no_warnings' },
 		})
-		expect(result, user.email).toEqual({ status: 'no_warnings' })
 		expect(sendCloudflareEmail).not.toHaveBeenCalled()
 		expect([...store.keys()]).toEqual([])
 	}
-})
 
-test('Free still gets accurate execute-limit emails', async () => {
-	sendCloudflareEmail.mockClear()
-	readAdminEntitlementConsumption.mockResolvedValue([
-		consumptionRow({
-			resource: 'execute_calls_per_day',
-			label: 'Execute calls',
-			current: 150,
-			limit: 150,
-		}),
-	])
-	const { kv } = createKv()
-	const result = await sendUserEntitlementWarningEmails({
-		env: createEnv({
-			users: [
-				{
-					stable_user_id: stableUserId,
-					email: 'free-execute@example.com',
-					plan: 'free',
-					stripe_plan: null,
-				},
-			],
-			kv,
+	setConsumption(row('execute_calls_per_day', 150, 150, 'Execute calls'))
+	const result = await sendAt(
+		createEnv({
+			users: [freeUser('free-execute@example.com')],
+			kv: createKv().kv,
 			rollups: [{ metric: 'dynamic_worker_day', event_count: 517 }],
 		}),
-		now: new Date('2026-07-25T12:00:00.000Z'),
-	})
+		now,
+	)
 	expect(result).toMatchObject({ status: 'notified', warnedResources: 1 })
 	const payload = sendCloudflareEmail.mock.calls[0]?.[1] as { text: string }
 	expect(payload.text).toContain('Execute calls — 150 of 150 (100%).')
 	expect(payload.text).not.toContain('Worker compute')
 })
 
-test('compute warning claims are scoped to the UTC month', async () => {
-	sendCloudflareEmail.mockClear()
-	const july = new Date('2026-07-25T12:00:00.000Z')
-	const august = new Date('2026-08-02T12:00:00.000Z')
-	readAdminEntitlementConsumption.mockResolvedValue([])
-	const { kv, store } = createKv()
-	const env = createEnv({
-		users: [emptyWalletProUser],
-		kv,
-		rollups: [
-			{ metric: 'durable_object_rows_read', event_count: 4_500_000_000 },
-		],
-	})
-
-	await sendUserEntitlementWarningEmails({ env, now: july })
-	expect(
-		store.has(
-			userEntitlementWarningKvKey({
-				userId: stableUserId,
-				kind: 'approaching',
-				resource: 'durable_object_rows_read',
-				month: '2026-07',
-			}),
-		),
-	).toBe(true)
-
-	sendCloudflareEmail.mockClear()
-	const second = await sendUserEntitlementWarningEmails({ env, now: august })
-	expect(second).toEqual({
-		status: 'notified',
-		emailedUsers: 1,
-		emailsSent: 1,
-		warnedResources: 1,
-	})
-	expect(
-		store.has(
-			userEntitlementWarningKvKey({
-				userId: stableUserId,
-				kind: 'approaching',
-				resource: 'durable_object_rows_read',
-				month: '2026-08',
-			}),
-		),
-	).toBe(true)
-})
-
-function sweepUser(
-	id: string,
-	email: string,
-): {
-	stable_user_id: string
-	email: string
-	plan: string
-	stripe_plan: string | null
-	entitlement_ladder: string
-} {
-	return {
+test('compute warning sweep ranks Worker compute and Rows read separately and reserves compute candidates before the global cap', async () => {
+	const sweepUser = (id: string, email: string) => ({
 		stable_user_id: `${id}:${'x'.repeat(64)}`.slice(0, 64),
 		email,
 		plan: 'free',
 		stripe_plan: null,
 		entitlement_ladder: 'public',
-	}
-}
-
-test('compute warning sweep ranks Worker compute and Rows read separately', async () => {
-	const workerUser = sweepUser('worker', 'worker@example.com')
-	const dorowsUser = sweepUser('dorows', 'dorows@example.com')
-	const db = createDb([], [], {
-		activeUsers: [],
-		computeUwdUsers: [workerUser],
-		computeDorowsUsers: [dorowsUser],
 	})
-	const users = await listUsersForEntitlementWarningSweep(
-		db,
-		new Date('2026-08-02T12:00:00.000Z'),
+	const now = new Date('2026-08-02T12:00:00.000Z')
+
+	const separate = await listUsersForEntitlementWarningSweep(
+		createDb([], [], {
+			activeUsers: [],
+			computeUwdUsers: [sweepUser('worker', 'worker@example.com')],
+			computeDorowsUsers: [sweepUser('dorows', 'dorows@example.com')],
+		}),
+		now,
 	)
-	expect(users.map((user) => user.email).sort()).toEqual([
+	expect(separate.map((user) => user.email).sort()).toEqual([
 		'dorows@example.com',
 		'worker@example.com',
 	])
-})
 
-test('compute warning sweep reserves compute candidates before the global cap', async () => {
-	const computeUser = sweepUser('compute', 'compute-reserved@example.com')
-	const activeUsers = Array.from(
-		{ length: userEntitlementWarningSweepLimit },
-		(_, index) => sweepUser(`active-${index}`, `active-${index}@example.com`),
+	const capped = await listUsersForEntitlementWarningSweep(
+		createDb([], [], {
+			activeUsers: Array.from(
+				{ length: userEntitlementWarningSweepLimit },
+				(_, index) =>
+					sweepUser(`active-${index}`, `active-${index}@example.com`),
+			),
+			computeUwdUsers: [sweepUser('compute', 'compute-reserved@example.com')],
+			computeDorowsUsers: [],
+		}),
+		now,
 	)
-	const db = createDb([], [], {
-		activeUsers,
-		computeUwdUsers: [computeUser],
-		computeDorowsUsers: [],
-	})
-	const users = await listUsersForEntitlementWarningSweep(
-		db,
-		new Date('2026-08-02T12:00:00.000Z'),
-	)
-	expect(users).toHaveLength(userEntitlementWarningSweepLimit)
+	expect(capped).toHaveLength(userEntitlementWarningSweepLimit)
 	expect(
-		users.some((user) => user.email === 'compute-reserved@example.com'),
+		capped.some((user) => user.email === 'compute-reserved@example.com'),
 	).toBe(true)
 })

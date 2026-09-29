@@ -51,17 +51,45 @@ vi.mock('#app/ssr-render.tsx', () => ({
 	renderAppPage: (input: unknown) => mockModule.renderAppPage(input),
 }))
 
+const env = {} as Env
+
+function visit(search = '') {
+	return createConnectOauthHandler(env).handler(
+		new RequestContext(
+			new Request(`https://example.com/connect/oauth${search}`),
+		),
+	)
+}
+
+function signIn() {
+	mockModule.requirePageSession.mockResolvedValue(null)
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		mcpUser: { userId: 'user-1' },
+	})
+	mockModule.renderAppPage.mockResolvedValue(new Response('ok'))
+}
+
+function renderedConnectOauth() {
+	const input = mockModule.renderAppPage.mock.calls.at(-1)?.[0] as {
+		loaderData: { connectOauth: unknown }
+	}
+	return input.loaderData.connectOauth
+}
+
 test('bare and provider visits require a session; signed-in bare visits render the chooser', async () => {
-	const env = {} as Env
-	const bare = (search: string) =>
-		isBareConnectOauthVisit(
+	const bareVisits = {
+		'': true,
+		'?state=abc': true,
+		'?provider=github': false,
+		'?code=auth-code&state=abc': false,
+		'?error=access_denied&state=abc': false,
+	}
+	for (const [search, expected] of Object.entries(bareVisits)) {
+		const isBare = isBareConnectOauthVisit(
 			new URL(`https://example.com/connect/oauth${search}`),
 		)
-	expect(bare('')).toBe(true)
-	expect(bare('?state=abc')).toBe(true)
-	expect(bare('?provider=github')).toBe(false)
-	expect(bare('?code=auth-code&state=abc')).toBe(false)
-	expect(bare('?error=access_denied&state=abc')).toBe(false)
+		expect({ search, isBare }).toEqual({ search, isBare: expected })
+	}
 
 	mockModule.requirePageSession.mockResolvedValue(
 		Response.redirect(
@@ -69,151 +97,77 @@ test('bare and provider visits require a session; signed-in bare visits render t
 			302,
 		),
 	)
-	const bareUnauthenticated = await createConnectOauthHandler(env).handler(
-		new RequestContext(new Request('https://example.com/connect/oauth')),
-	)
-	expect(bareUnauthenticated.status).toBe(302)
-	expect(bareUnauthenticated.headers.get('location')).toContain('/login')
+	for (const search of ['', '?provider=github']) {
+		const gated = await visit(search)
+		expect(gated.status).toBe(302)
+		expect(gated.headers.get('location')).toContain('/login')
+	}
 
-	const gatedResponse = await createConnectOauthHandler(env).handler(
-		new RequestContext(
-			new Request('https://example.com/connect/oauth?provider=github'),
-		),
-	)
-	expect(gatedResponse.status).toBe(302)
-	expect(gatedResponse.headers.get('location')).toContain('/login')
-
-	mockModule.requirePageSession.mockResolvedValue(null)
-	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		mcpUser: { userId: 'user-1' },
+	signIn()
+	await visit()
+	expect(renderedConnectOauth()).toMatchObject({
+		ok: true,
+		provider: null,
+		integration: null,
+		chooser: { options: [] },
 	})
-	mockModule.renderAppPage.mockResolvedValue(new Response('ok'))
-
-	await createConnectOauthHandler(env).handler(
-		new RequestContext(new Request('https://example.com/connect/oauth')),
-	)
-	expect(mockModule.renderAppPage).toHaveBeenCalledWith(
-		expect.objectContaining({
-			loaderData: {
-				connectOauth: expect.objectContaining({
-					ok: true,
-					provider: null,
-					integration: null,
-					chooser: { options: [] },
-				}),
-			},
-		}),
-	)
 })
 
 test('provider visits embed SSR loader data and ignore platform lookup flags', async () => {
-	const env = {} as Env
+	signIn()
 	const record = { name: 'github', platform: true }
-	mockModule.requirePageSession.mockResolvedValue(null)
-	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		mcpUser: { userId: 'user-1' },
-	})
 	mockModule.loadAccountIntegrationByName.mockResolvedValue(record)
-	mockModule.renderAppPage.mockResolvedValue(new Response('ok'))
 	mockModule.loadExistingConnectionSummary.mockResolvedValue(null)
 	mockModule.hasStoredConnectClientSecret.mockResolvedValue(true)
 
-	await createConnectOauthHandler(env).handler(
-		new RequestContext(
-			new Request('https://example.com/connect/oauth?provider=GitHub'),
-		),
-	)
+	await visit('?provider=GitHub')
 	expect(mockModule.loadAccountIntegrationByName).toHaveBeenCalledWith(
 		env,
 		expect.anything(),
 		'github',
 		{ appSlug: undefined },
 	)
-	expect(mockModule.renderAppPage).toHaveBeenCalledWith(
-		expect.objectContaining({
-			loaderData: {
-				connectOauth: {
-					ok: true,
-					provider: 'github',
-					integration: record,
-					builtInAvailable: false,
-					existingConnection: null,
-					hasStoredClientSecret: true,
-					redirectUri: 'https://example.com/connect/oauth',
-				},
-			},
-		}),
-	)
+	expect(renderedConnectOauth()).toEqual({
+		ok: true,
+		provider: 'github',
+		integration: record,
+		builtInAvailable: false,
+		existingConnection: null,
+		hasStoredClientSecret: true,
+		redirectUri: 'https://example.com/connect/oauth',
+	})
 
 	mockModule.loadAccountIntegrationByName.mockResolvedValue({
 		name: 'google',
 		platform: true,
 	})
 	mockModule.hasStoredConnectClientSecret.mockResolvedValue(false)
-
-	await createConnectOauthHandler(env).handler(
-		new RequestContext(
-			new Request(
-				'https://example.com/connect/oauth?provider=google&platform=1',
-			),
-		),
-	)
-	expect(mockModule.loadAccountIntegrationByName).toHaveBeenLastCalledWith(
-		env,
-		expect.anything(),
-		'google',
-		{ appSlug: undefined },
-	)
-
-	await createConnectOauthHandler(env).handler(
-		new RequestContext(
-			new Request(
-				'https://example.com/connect/oauth?provider=google-2&platform=google',
-			),
-		),
-	)
-	expect(mockModule.loadAccountIntegrationByName).toHaveBeenLastCalledWith(
-		env,
-		expect.anything(),
-		'google-2',
-		{ appSlug: undefined },
-	)
-
-	await createConnectOauthHandler(env).handler(
-		new RequestContext(
-			new Request('https://example.com/connect/oauth?provider=work&app=google'),
-		),
-	)
-	expect(mockModule.loadAccountIntegrationByName).toHaveBeenLastCalledWith(
-		env,
-		expect.anything(),
-		'work',
-		{ appSlug: 'google' },
-	)
+	const lookups = [
+		['?provider=google&platform=1', 'google', undefined],
+		['?provider=google-2&platform=google', 'google-2', undefined],
+		['?provider=work&app=google', 'work', 'google'],
+	] as const
+	for (const [search, name, appSlug] of lookups) {
+		await visit(search)
+		expect(mockModule.loadAccountIntegrationByName).toHaveBeenLastCalledWith(
+			env,
+			expect.anything(),
+			name,
+			{ appSlug },
+		)
+	}
 })
 
 test('callback embeds only the redirect URI without an integration lookup', async () => {
-	const env = {} as Env
 	mockModule.requirePageSession.mockResolvedValue(null)
-	mockModule.loadAccountIntegrationByName.mockClear()
 	mockModule.renderAppPage.mockResolvedValue(new Response('ok'))
 
-	await createConnectOauthHandler(env).handler(
-		new RequestContext(
-			new Request('https://example.com/connect/oauth?code=auth-code&state=abc'),
-		),
-	)
+	await visit('?code=auth-code&state=abc')
 	expect(mockModule.loadAccountIntegrationByName).not.toHaveBeenCalled()
-	expect(mockModule.renderAppPage).toHaveBeenCalledWith(
-		expect.objectContaining({
-			loaderData: {
-				connectOauth: {
-					ok: true,
-					provider: null,
-					integration: null,
-					redirectUri: 'https://example.com/connect/oauth',
-				},
-			},
-		}),
-	)
+	expect(renderedConnectOauth()).toEqual({
+		ok: true,
+		provider: null,
+		integration: null,
+		redirectUri: 'https://example.com/connect/oauth',
+	})
 })

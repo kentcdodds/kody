@@ -47,122 +47,85 @@ const { loadPackagePage, packagePageIsPrivate } =
 
 const request = new Request('https://example.com/@owner/notes')
 const env = {} as Env
+const ownerUser = { username: 'owner', mcpUser: { userId: 'owner-1' } }
 
-function ownerUser() {
-	return {
+function resolvesTo(
+	kind: 'package' | 'redirect',
+	overrides: {
+		kodyId?: string
+		listingId?: string | null
+		listingKodyId?: string
+		savedPackage?: Record<string, unknown>
+	} = {},
+) {
+	mockModule.resolvePackagePageUrl.mockResolvedValue({
+		kind,
 		username: 'owner',
-		mcpUser: { userId: 'owner-1' },
-	}
+		kodyId: 'notes',
+		userId: 'owner-1',
+		listingId: null,
+		...(kind === 'package'
+			? { savedPackage: { id: 'pkg-1', hidden: false, isPrivate: false } }
+			: {}),
+		...overrides,
+	})
 }
 
-function publicSavedPackage(overrides?: {
-	hidden?: boolean
-	isPrivate?: boolean
-}) {
-	return {
-		id: 'pkg-1',
-		hidden: overrides?.hidden ?? false,
-		isPrivate: overrides?.isPrivate ?? false,
-	}
+function load(kodyId = 'notes', username = 'owner') {
+	return loadPackagePage({ env, request, username, kodyId })
 }
 
-function listingDetail() {
-	return {
-		ok: true,
-		listing: { id: 'listing-1', name: '@owner/notes' },
-	}
+function setProfileVisibility(profile_visibility: 'public' | 'private') {
+	mockModule.getUserSocialRowByUsername.mockResolvedValue({
+		profile_visibility,
+	})
 }
+
+const listingDetail = {
+	ok: true,
+	listing: { id: 'listing-1', name: '@owner/notes' },
+}
+const ownerPackageDetail = {
+	id: 'pkg-1',
+	name: '@owner/notes',
+	kodyId: 'notes',
+}
+const pkg = (overrides: Record<string, unknown>) => ({
+	savedPackage: { id: 'pkg-1', hidden: false, isPrivate: false, ...overrides },
+})
 
 test('loadPackagePage applies the owner / community / public visibility matrix', async () => {
-	mockModule.getUserSocialRowByUsername.mockResolvedValue({
-		profile_visibility: 'public',
-	})
-	mockModule.loadViewerPackageShare.mockResolvedValue(null)
+	setProfileVisibility('public')
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	mockModule.resolvePackagePageUrl.mockResolvedValue(null)
-	await expect(
-		loadPackagePage({ env, request, username: 'owner', kodyId: 'missing' }),
-	).resolves.toEqual({ kind: 'not_found' })
+	await expect(load('missing')).resolves.toEqual({ kind: 'not_found' })
 
-	mockModule.resolvePackagePageUrl.mockResolvedValue({
-		kind: 'package',
-		username: 'owner',
-		kodyId: 'notes',
-		userId: 'owner-1',
-		savedPackage: publicSavedPackage({ hidden: true }),
-		listingId: null,
-	})
-	await expect(
-		loadPackagePage({ env, request, username: 'owner', kodyId: 'notes' }),
-	).resolves.toEqual({ kind: 'not_found' })
+	const anonymousCases = [
+		{ name: 'hidden', ...pkg({ hidden: true }), expected: 'not_found' },
+		{ name: 'private', ...pkg({ isPrivate: true }), expected: 'not_found' },
+		{ name: 'public, unlisted', ...pkg({}), expected: 'unauthorized' },
+	]
+	for (const { name, savedPackage, expected } of anonymousCases) {
+		resolvesTo('package', { savedPackage })
+		expect({ name, result: await load() }).toEqual({
+			name,
+			result: { kind: expected },
+		})
+	}
 
-	mockModule.resolvePackagePageUrl.mockResolvedValue({
-		kind: 'package',
-		username: 'owner',
-		kodyId: 'notes',
-		userId: 'owner-1',
-		savedPackage: publicSavedPackage({ isPrivate: true }),
-		listingId: null,
-	})
-	await expect(
-		loadPackagePage({ env, request, username: 'owner', kodyId: 'notes' }),
-	).resolves.toEqual({ kind: 'not_found' })
-
-	mockModule.resolvePackagePageUrl.mockResolvedValue({
-		kind: 'package',
-		username: 'owner',
-		kodyId: 'notes',
-		userId: 'owner-1',
-		savedPackage: publicSavedPackage(),
-		listingId: null,
-	})
-	await expect(
-		loadPackagePage({ env, request, username: 'owner', kodyId: 'notes' }),
-	).resolves.toEqual({ kind: 'unauthorized' })
-
-	mockModule.loadCommunityDetailData.mockResolvedValue(listingDetail())
-	mockModule.resolvePackagePageUrl.mockResolvedValue({
-		kind: 'package',
-		username: 'owner',
-		kodyId: 'notes',
-		userId: 'owner-1',
-		savedPackage: publicSavedPackage(),
-		listingId: 'listing-1',
-	})
-	const listed = await loadPackagePage({
-		env,
-		request,
-		username: 'owner',
-		kodyId: 'notes',
-	})
-	expect(listed).toMatchObject({
+	mockModule.loadCommunityDetailData.mockResolvedValue(listingDetail)
+	resolvesTo('package', { listingId: 'listing-1' })
+	expect(await load()).toMatchObject({
 		kind: 'page',
 		viewerIsOwner: false,
 		listing: { listing: { id: 'listing-1' } },
 		ownerPackage: null,
 	})
 
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(ownerUser())
-	mockModule.loadAccountPackageDetail.mockResolvedValue({
-		id: 'pkg-1',
-		name: '@owner/notes',
-		kodyId: 'notes',
-	})
-	mockModule.resolvePackagePageUrl.mockResolvedValue({
-		kind: 'package',
-		username: 'owner',
-		kodyId: 'notes',
-		userId: 'owner-1',
-		savedPackage: publicSavedPackage({ hidden: true }),
-		listingId: null,
-	})
-	const ownerHidden = await loadPackagePage({
-		env,
-		request,
-		username: 'owner',
-		kodyId: 'notes',
-	})
-	expect(ownerHidden).toMatchObject({
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(ownerUser)
+	mockModule.loadAccountPackageDetail.mockResolvedValue(ownerPackageDetail)
+	resolvesTo('package', pkg({ hidden: true }))
+	expect(await load()).toMatchObject({
 		kind: 'page',
 		viewerIsOwner: true,
 		ownerPackage: { id: 'pkg-1' },
@@ -170,38 +133,20 @@ test('loadPackagePage applies the owner / community / public visibility matrix',
 		ownerProfilePublic: true,
 	})
 
-	mockModule.resolvePackagePageUrl.mockResolvedValue({
-		kind: 'redirect',
-		username: 'owner',
-		kodyId: 'renamed',
-		userId: 'owner-1',
-		listingId: null,
-	})
+	// Unlisted renames only redirect the owner; listed renames redirect anyone.
+	resolvesTo('redirect', { kodyId: 'renamed' })
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	await expect(
-		loadPackagePage({ env, request, username: 'owner', kodyId: 'old' }),
-	).resolves.toEqual({ kind: 'not_found' })
-
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(ownerUser())
-	await expect(
-		loadPackagePage({ env, request, username: 'owner', kodyId: 'old' }),
-	).resolves.toEqual({
+	await expect(load('old')).resolves.toEqual({ kind: 'not_found' })
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(ownerUser)
+	await expect(load('old')).resolves.toEqual({
 		kind: 'redirect',
 		to: '/@owner/renamed',
 		shared: false,
 	})
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	mockModule.resolvePackagePageUrl.mockResolvedValue({
-		kind: 'redirect',
-		username: 'owner',
-		kodyId: 'notes',
-		userId: 'owner-1',
-		listingId: 'listing-1',
-	})
-	await expect(
-		loadPackagePage({ env, request, username: 'old', kodyId: 'notes' }),
-	).resolves.toEqual({
+	resolvesTo('redirect', { listingId: 'listing-1' })
+	await expect(load('notes', 'old')).resolves.toEqual({
 		kind: 'redirect',
 		to: '/@owner/notes',
 		shared: true,
@@ -209,79 +154,36 @@ test('loadPackagePage applies the owner / community / public visibility matrix',
 })
 
 test('loadPackagePage does not send anonymous visitors to an unpublished listing rename', async () => {
-	const listingLagPackage = {
-		id: 'pkg-1',
-		kodyId: 'notes-two',
-		hidden: false,
-		isPrivate: false,
-	}
-	mockModule.loadCommunityDetailData.mockResolvedValue(listingDetail())
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	mockModule.resolvePackagePageUrl.mockResolvedValue({
-		kind: 'package',
-		username: 'owner',
-		kodyId: 'notes',
-		userId: 'owner-1',
-		savedPackage: listingLagPackage,
+	const listingLag = {
 		listingId: 'listing-1',
 		listingKodyId: 'notes',
-	})
-	const anonymousListing = await loadPackagePage({
-		env,
-		request,
-		username: 'owner',
-		kodyId: 'notes',
-	})
-	expect(anonymousListing).toMatchObject({
+		savedPackage: {
+			id: 'pkg-1',
+			kodyId: 'notes-two',
+			hidden: false,
+			isPrivate: false,
+		},
+	}
+	mockModule.loadCommunityDetailData.mockResolvedValue(listingDetail)
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+
+	resolvesTo('package', listingLag)
+	expect(await load()).toMatchObject({
 		kind: 'page',
 		viewerIsOwner: false,
 		listing: { listing: { id: 'listing-1' } },
 	})
-	expect(anonymousListing).not.toMatchObject({
-		kind: 'redirect',
-		to: '/@owner/notes-two',
-	})
 
-	mockModule.resolvePackagePageUrl.mockResolvedValue({
-		kind: 'package',
-		username: 'owner',
-		kodyId: 'notes-two',
-		userId: 'owner-1',
-		savedPackage: listingLagPackage,
-		listingId: 'listing-1',
-		listingKodyId: 'notes',
-	})
-	await expect(
-		loadPackagePage({
-			env,
-			request,
-			username: 'owner',
-			kodyId: 'notes-two',
-		}),
-	).resolves.toEqual({
+	resolvesTo('package', { ...listingLag, kodyId: 'notes-two' })
+	await expect(load('notes-two')).resolves.toEqual({
 		kind: 'redirect',
 		to: '/@owner/notes',
 		shared: true,
 	})
 
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(ownerUser())
-	mockModule.resolvePackagePageUrl.mockResolvedValue({
-		kind: 'package',
-		username: 'owner',
-		kodyId: 'notes',
-		userId: 'owner-1',
-		savedPackage: listingLagPackage,
-		listingId: 'listing-1',
-		listingKodyId: 'notes',
-	})
-	await expect(
-		loadPackagePage({
-			env,
-			request,
-			username: 'owner',
-			kodyId: 'notes',
-		}),
-	).resolves.toEqual({
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(ownerUser)
+	resolvesTo('package', listingLag)
+	await expect(load()).resolves.toEqual({
 		kind: 'redirect',
 		to: '/@owner/notes-two',
 		shared: false,
@@ -289,39 +191,25 @@ test('loadPackagePage does not send anonymous visitors to an unpublished listing
 })
 
 test('loadPackagePage lets pending and accepted share guests see a private package', async () => {
-	mockModule.getUserSocialRowByUsername.mockResolvedValue({
-		profile_visibility: 'private',
-	})
+	setProfileVisibility('private')
 	mockModule.loadCommunityDetailData.mockResolvedValue(null)
 	mockModule.loadAccountPackageDetail.mockResolvedValue({
-		id: 'pkg-1',
-		name: '@owner/notes',
-		kodyId: 'notes',
+		...ownerPackageDetail,
 		isPrivate: true,
 	})
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
 		email: 'guest@example.com',
 		mcpUser: { userId: 'guest-1' },
 	})
-	mockModule.resolvePackagePageUrl.mockResolvedValue({
-		kind: 'package',
-		username: 'owner',
-		kodyId: 'notes',
-		userId: 'owner-1',
-		savedPackage: publicSavedPackage({ isPrivate: true }),
-		listingId: null,
-	})
-	mockModule.loadViewerPackageShare.mockResolvedValue({
+	resolvesTo('package', pkg({ isPrivate: true }))
+	const shareGrant = (status: string) => ({
 		id: 'grant-1',
-		status: 'pending',
+		status,
 		packageName: '@owner/notes',
 	})
-	const pending = await loadPackagePage({
-		env,
-		request,
-		username: 'owner',
-		kodyId: 'notes',
-	})
+
+	mockModule.loadViewerPackageShare.mockResolvedValue(shareGrant('pending'))
+	const pending = await load()
 	expect(pending).toMatchObject({
 		kind: 'page',
 		viewerIsOwner: false,
@@ -333,18 +221,8 @@ test('loadPackagePage lets pending and accepted share guests see a private packa
 	})
 	expect(pending.kind === 'page' && packagePageIsPrivate(pending)).toBe(true)
 
-	mockModule.loadViewerPackageShare.mockResolvedValue({
-		id: 'grant-1',
-		status: 'accepted',
-		packageName: '@owner/notes',
-	})
-	const accepted = await loadPackagePage({
-		env,
-		request,
-		username: 'owner',
-		kodyId: 'notes',
-	})
-	expect(accepted).toMatchObject({
+	mockModule.loadViewerPackageShare.mockResolvedValue(shareGrant('accepted'))
+	expect(await load()).toMatchObject({
 		kind: 'page',
 		viewerIsOwner: false,
 		ownerPackage: { id: 'pkg-1' },

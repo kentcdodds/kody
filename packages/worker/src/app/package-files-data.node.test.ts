@@ -82,11 +82,20 @@ const listing = {
 	pinnedCommit: 'abc123',
 	iconCommit: 'abc123',
 }
+const pngBytes = Uint8Array.from([
+	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 1,
+])
+const png = String.fromCharCode(...pngBytes)
 
-test('listed package tree marks the owner so Settings stays on the chrome', async () => {
+function publishListing({
+	files = { 'README.md': '# Sentry\n' } as Record<string, string> | null,
+	headCommit = 'abc123',
+	viewerUserId = null as string | null,
+	profileVisibility = 'public',
+} = {}) {
 	mockModule.getCommunityListingById.mockResolvedValue(listing)
 	mockModule.getUserSocialRowByUsername.mockResolvedValue({
-		profile_visibility: 'public',
+		profile_visibility: profileVisibility,
 	})
 	mockModule.getEntitySourceById.mockResolvedValue({
 		repo_id: 'repo-1',
@@ -94,26 +103,41 @@ test('listed package tree marks the owner so Settings stays on the chrome', asyn
 	})
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
-		commit: 'abc123',
+		commit: headCommit,
 	})
-	mockModule.readPublishedSourceSnapshot.mockResolvedValue({
-		files: { 'README.md': '# Sentry\n' },
-	})
-	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		mcpUser: { userId: 'owner-1' },
-	})
-
-	const ownerRequest = new Request(
-		'https://example.com/@kentcdodds/sentry/tree/main',
+	mockModule.readPublishedSourceSnapshot.mockResolvedValue(files && { files })
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		viewerUserId && { mcpUser: { userId: viewerUserId } },
 	)
-	const owner = await loadCommunityPackageFilesData({
+}
+
+function loadTree(selectedPath = '', ref = 'main') {
+	return loadCommunityPackageFilesData({
 		env,
-		request: ownerRequest,
+		request: new Request(
+			`https://example.com/@kentcdodds/sentry/tree/${ref}/${selectedPath}`,
+		),
 		listingId: 'listing-1',
-		selectedPath: '',
-		ref: 'main',
+		selectedPath,
+		ref,
 	})
-	expect(owner).toMatchObject({
+}
+
+function loadRaw(selectedPath: string, ref = 'main') {
+	return loadCommunityPackageFileRaw({
+		env,
+		request: new Request(
+			`https://example.com/@kentcdodds/sentry/raw/${ref}/${selectedPath}`,
+		),
+		listingId: 'listing-1',
+		selectedPath,
+		ref,
+	})
+}
+
+test('listed package tree chrome marks the owner, links only a public owner profile, and serves README images only at the pin', async () => {
+	publishListing({ viewerUserId: 'owner-1' })
+	expect(await loadTree()).toMatchObject({
 		ok: true,
 		username: 'kentcdodds',
 		kodyId: 'sentry',
@@ -127,226 +151,101 @@ test('listed package tree marks the owner so Settings stays on the chrome', asyn
 		ownerProfilePublic: true,
 	})
 
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	const stranger = await loadCommunityPackageFilesData({
-		env,
-		request: new Request('https://example.com/@kentcdodds/sentry/tree/main'),
-		listingId: 'listing-1',
-		selectedPath: '',
-		ref: 'main',
-	})
-	expect(stranger).toMatchObject({
+	publishListing({ profileVisibility: 'private' })
+	expect(await loadTree()).toMatchObject({
+		ok: true,
 		viewerIsOwner: false,
 		username: 'kentcdodds',
 		kodyId: 'sentry',
-	})
-})
-
-test('listed package tree keeps a private owner username unlinked', async () => {
-	mockModule.getCommunityListingById.mockResolvedValue(listing)
-	mockModule.getUserSocialRowByUsername.mockResolvedValue({
-		profile_visibility: 'private',
-	})
-	mockModule.getEntitySourceById.mockResolvedValue({
-		repo_id: 'repo-1',
-		published_commit: 'abc123',
-	})
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'abc123',
-	})
-	mockModule.readPublishedSourceSnapshot.mockResolvedValue({
-		files: { 'README.md': '# Sentry\n' },
-	})
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-
-	const data = await loadCommunityPackageFilesData({
-		env,
-		request: new Request('https://example.com/@kentcdodds/sentry/tree/main'),
-		listingId: 'listing-1',
-		selectedPath: '',
-		ref: 'main',
-	})
-	expect(data).toMatchObject({
-		ok: true,
 		description: 'Sentry package',
 		ownerProfilePublic: false,
 	})
-})
 
-test('listed package tree omits imageBaseHref when HEAD is not the pin', async () => {
-	mockModule.getCommunityListingById.mockResolvedValue(listing)
-	mockModule.getEntitySourceById.mockResolvedValue({
-		repo_id: 'repo-1',
-		published_commit: 'abc123',
-	})
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'deadbeef',
-	})
-	mockModule.readPublishedSourceSnapshot.mockResolvedValue({
+	publishListing({
+		headCommit: 'deadbeef',
 		files: { 'README.md': '![poster](./docs/poster.png)\n' },
 	})
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-
-	const ahead = await loadCommunityPackageFilesData({
-		env,
-		request: new Request('https://example.com/@kentcdodds/sentry/tree/main'),
-		listingId: 'listing-1',
-		selectedPath: '',
-		ref: 'main',
-	})
-	expect(ahead).toMatchObject({
-		ok: true,
-		imageBaseHref: null,
-	})
+	expect(await loadTree()).toMatchObject({ ok: true, imageBaseHref: null })
 })
 
 test('package page reports AGENTS.md only when a non-empty root file exists', async () => {
-	mockModule.readCommunitySnapshot.mockResolvedValue({
-		files: { 'README.md': '# Sentry\n' },
-	})
-	expect(
-		await loadPackagePageHasAgentsDocs({
-			env,
-			request: new Request('https://example.com/@kentcdodds/sentry'),
-			listingId: 'listing-1',
-			viewerIsOwner: false,
-		}),
-	).toBe(false)
-
-	mockModule.readCommunitySnapshot.mockResolvedValue({
-		files: {
-			'README.md': '# Sentry\n',
-			'AGENTS.md': '# Agents\n\nImport the root export.\n',
+	const cases = [
+		{ files: { 'README.md': '# Sentry\n' }, expected: false },
+		{
+			files: {
+				'README.md': '# Sentry\n',
+				'AGENTS.md': '# Agents\n\nImport the root export.\n',
+			},
+			expected: true,
 		},
-	})
-	expect(
-		await loadPackagePageHasAgentsDocs({
+		{ files: { 'docs/AGENTS.md': 'Nested only.\n' }, expected: false },
+	]
+	for (const { files, expected } of cases) {
+		mockModule.readCommunitySnapshot.mockResolvedValue({ files })
+		const hasAgentsDocs = await loadPackagePageHasAgentsDocs({
 			env,
 			request: new Request('https://example.com/@kentcdodds/sentry'),
 			listingId: 'listing-1',
 			viewerIsOwner: false,
-		}),
-	).toBe(true)
-
-	mockModule.readCommunitySnapshot.mockResolvedValue({
-		files: { 'docs/AGENTS.md': 'Nested only.\n' },
-	})
-	expect(
-		await loadPackagePageHasAgentsDocs({
-			env,
-			request: new Request('https://example.com/@kentcdodds/sentry'),
-			listingId: 'listing-1',
-			viewerIsOwner: false,
-		}),
-	).toBe(false)
+		})
+		expect({ files, hasAgentsDocs }).toEqual({ files, hasAgentsDocs: expected })
+	}
 })
 
 test('package page README images opt in for listing README and only matching owner commits', () => {
-	expect(
-		resolvePackagePageReadmeImageBaseHref({
-			listingId: 'listing-1',
-			ownerUsername: 'kentcdodds',
-			kodyId: 'sentry',
+	const cases = [
+		{
 			usedListingReadme: true,
 			publishedCommit: 'published-ahead',
-			pinnedCommit: 'abc123',
-		}),
-	).toBe('/@kentcdodds/sentry/assets')
-
-	expect(
-		resolvePackagePageReadmeImageBaseHref({
-			listingId: 'listing-1',
-			ownerUsername: 'kentcdodds',
-			kodyId: 'sentry',
+			expected: '/@kentcdodds/sentry/assets',
+		},
+		{
 			usedListingReadme: false,
 			publishedCommit: 'published-ahead',
-			pinnedCommit: 'abc123',
-		}),
-	).toBe(null)
-
-	expect(
-		resolvePackagePageReadmeImageBaseHref({
+			expected: null,
+		},
+		{
+			usedListingReadme: false,
+			publishedCommit: 'abc123',
+			expected: '/@kentcdodds/sentry/assets',
+		},
+	]
+	for (const { expected, ...input } of cases) {
+		const href = resolvePackagePageReadmeImageBaseHref({
 			listingId: 'listing-1',
 			ownerUsername: 'kentcdodds',
 			kodyId: 'sentry',
-			usedListingReadme: false,
-			publishedCommit: 'abc123',
 			pinnedCommit: 'abc123',
-		}),
-	).toBe('/@kentcdodds/sentry/assets')
+			...input,
+		})
+		expect({ ...input, href }).toEqual({ ...input, href: expected })
+	}
 })
 
 test('opens a png as a media preview and an unknown binary without a code dump', async () => {
-	const pngBytes = Uint8Array.from([
-		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 1,
-	])
-	const png = String.fromCharCode(...pngBytes)
-	mockModule.getCommunityListingById.mockResolvedValue(listing)
-	mockModule.getEntitySourceById.mockResolvedValue({
-		repo_id: 'repo-1',
-		published_commit: 'abc123',
-	})
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'abc123',
-	})
-	mockModule.readPublishedSourceSnapshot.mockResolvedValue({
+	publishListing({
 		files: {
 			'README.md': '# Sentry\n',
 			'logo.png': png,
 			'app.wasm': 'wasm\0module',
 		},
 	})
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	mockModule.readArtifactFileAtCommit.mockResolvedValue(pngBytes)
 
-	const image = await loadCommunityPackageFilesData({
-		env,
-		request: new Request(
-			'https://example.com/@kentcdodds/sentry/tree/main/logo.png',
-		),
-		listingId: 'listing-1',
-		selectedPath: 'logo.png',
-		ref: 'main',
-	})
-	expect(image).toMatchObject({
+	expect(await loadTree('logo.png')).toMatchObject({
 		ok: true,
 		content: null,
 		contentKind: 'image',
 		mediaHref: '/@kentcdodds/sentry/raw/main/logo.png',
 		contentByteLength: pngBytes.byteLength,
 	})
-	expect(image?.content).toBeNull()
 	expect(mockModule.highlightSnippets).not.toHaveBeenCalled()
-
-	const binary = await loadCommunityPackageFilesData({
-		env,
-		request: new Request(
-			'https://example.com/@kentcdodds/sentry/tree/main/app.wasm',
-		),
-		listingId: 'listing-1',
-		selectedPath: 'app.wasm',
-		ref: 'main',
-	})
-	expect(binary).toMatchObject({
+	expect(await loadTree('app.wasm')).toMatchObject({
 		content: null,
 		contentKind: 'binary',
 		mediaHref: null,
 	})
-	expect(binary?.content).toBeNull()
-
-	const raw = await loadCommunityPackageFileRaw({
-		env,
-		request: new Request(
-			'https://example.com/@kentcdodds/sentry/raw/main/logo.png',
-		),
-		listingId: 'listing-1',
-		selectedPath: 'logo.png',
-		ref: 'main',
-	})
-	expect(raw).toEqual({
+	expect(await loadRaw('logo.png')).toEqual({
 		kind: 'ok',
 		bytes: pngBytes,
 		contentType: 'image/png',
@@ -357,75 +256,20 @@ test('opens a png as a media preview and an unknown binary without a code dump',
 	mockModule.readArtifactFileAtCommit.mockResolvedValue(
 		new TextEncoder().encode('<!DOCTYPE html><script>alert(1)</script>'),
 	)
-	expect(
-		await loadCommunityPackageFileRaw({
-			env,
-			request: new Request(
-				'https://example.com/@kentcdodds/sentry/raw/main/logo.png',
-			),
-			listingId: 'listing-1',
-			selectedPath: 'logo.png',
-			ref: 'main',
-		}),
-	).toEqual({ kind: 'not-media' })
+	expect(await loadRaw('logo.png')).toEqual({ kind: 'not-media' })
 })
 
 test('community raw 404s a hex that only has the listing pin snapshot', async () => {
-	const pngBytes = Uint8Array.from([
-		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 1,
-	])
-	const png = String.fromCharCode(...pngBytes)
 	const missingHex = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
-
-	mockModule.getCommunityListingById.mockResolvedValue(listing)
-	mockModule.getEntitySourceById.mockResolvedValue({
-		repo_id: 'repo-1',
-		published_commit: 'abc123',
-	})
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'abc123',
-	})
-	mockModule.readPublishedSourceSnapshot.mockResolvedValue(null)
+	publishListing({ files: null })
 	mockModule.readCommunitySnapshot.mockResolvedValue({
 		files: { 'logo.png': png },
 	})
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	mockModule.readArtifactFileAtCommit.mockResolvedValue(null)
 
-	expect(
-		await loadCommunityPackageFilesData({
-			env,
-			request: new Request(
-				`https://example.com/@kentcdodds/sentry/tree/${missingHex}/logo.png`,
-			),
-			listingId: 'listing-1',
-			selectedPath: 'logo.png',
-			ref: missingHex,
-		}),
-	).toBeNull()
-
-	expect(
-		await loadCommunityPackageFileRaw({
-			env,
-			request: new Request(
-				`https://example.com/@kentcdodds/sentry/raw/${missingHex}/logo.png`,
-			),
-			listingId: 'listing-1',
-			selectedPath: 'logo.png',
-			ref: missingHex,
-		}),
-	).toEqual({ kind: 'not-found' })
-
-	const pinRaw = await loadCommunityPackageFileRaw({
-		env,
-		request: new Request(
-			'https://example.com/@kentcdodds/sentry/raw/abc123/logo.png',
-		),
-		listingId: 'listing-1',
-		selectedPath: 'logo.png',
-		ref: 'abc123',
-	})
+	expect(await loadTree('logo.png', missingHex)).toBeNull()
+	expect(await loadRaw('logo.png', missingHex)).toEqual({ kind: 'not-found' })
+	const pinRaw = await loadRaw('logo.png', 'abc123')
 	expect(pinRaw).toMatchObject({
 		kind: 'ok',
 		contentType: 'image/png',

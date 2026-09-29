@@ -15,61 +15,25 @@ import { homepageSignupPath } from '#universal/first-touch-attribution.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
-function createAnonymousTestDb() {
-	function createStatement(query: string) {
-		const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-		const executeAll = async () => {
-			if (
-				normalizedQuery.includes('from feature_flags') ||
-				normalizedQuery.includes('from feature_flag_user_overrides')
-			) {
-				return {
-					results: [],
-					meta: { changes: 0, last_row_id: 0 },
-				}
-			}
-			return {
-				results: [],
-				meta: { changes: 0, last_row_id: 0 },
-			}
-		}
-		return {
-			query,
-			bind() {
-				return createStatement(query)
-			},
-			async all() {
-				return executeAll()
-			},
-			async first() {
-				const result = await executeAll()
-				return result.results[0] ?? null
-			},
-			async run() {
-				return { meta: { changes: 0, last_row_id: 0 } }
-			},
-		}
-	}
-
-	return {
-		prepare(query: string) {
-			return createStatement(query)
-		},
-		async batch(statements: Array<{ query?: string }>) {
-			return await executePreparedD1Batch(statements)
-		},
-		async exec() {
-			return
-		},
-	} as unknown as D1Database
-}
-
 function createTestEnv() {
+	const empty = { results: [], meta: { changes: 0, last_row_id: 0 } }
+	const createStatement = (query: string) => ({
+		query,
+		bind: () => createStatement(query),
+		all: async () => empty,
+		first: async () => null,
+		run: async () => ({ meta: empty.meta }),
+	})
 	return {
 		COOKIE_SECRET: testCookieSecret,
 		SECRET_STORE_KEY: 'LOCAL_TEST_SECRET_STORE_KEY_32_CHARS_MINIMUM',
 		...testOidcSigningEnv,
-		APP_DB: createAnonymousTestDb(),
+		APP_DB: {
+			prepare: createStatement,
+			batch: (statements: Array<{ query?: string }>) =>
+				executePreparedD1Batch(statements),
+			exec: async () => undefined,
+		},
 		BUNDLE_ARTIFACTS_KV: createMemoryKv(),
 		JOB_MANAGER: {},
 		STORAGE_RUNNER: {},
@@ -125,60 +89,43 @@ async function renderMarketing(path: string) {
 	}
 }
 
-test('FAQ, pricing, and home SSR copy send visitors to create an account', async () => {
-	const faq = await (await renderMarketing('/faq')).text()
-	const started = faqGetStarted(faq)
-	expect(anchors(started)).toEqual(
-		expect.arrayContaining([expect.objectContaining({ href: '/signup' })]),
-	)
+const signupLink = expect.arrayContaining([
+	expect.objectContaining({ href: '/signup' }),
+])
 
-	const pricing = await (await renderMarketing('/pricing')).text()
+test('FAQ, pricing, and home SSR copy send visitors to create an account under anonymous cache rules', async () => {
+	const faqResponse = await renderMarketing('/faq')
+	expect(faqResponse.headers.get('Cache-Control')).toBe(
+		anonymousHtmlCacheControl,
+	)
+	expect(faqResponse.headers.get('Vary')).toBe('Cookie')
+	expect(anchors(faqGetStarted(await faqResponse.text()))).toEqual(signupLink)
+
+	const pricingResponse = await renderMarketing('/pricing')
+	expect(pricingResponse.headers.get('Cache-Control')).toBe(
+		anonymousHtmlCacheControl,
+	)
+	const pricing = await pricingResponse.text()
 	expect(pricing).not.toContain('id="plan-standard"')
-	for (const planId of ['plan-free', 'plan-pro'] as const) {
-		expect(anchors(namedSection(pricing, planId))).toEqual(
-			expect.arrayContaining([expect.objectContaining({ href: '/signup' })]),
-		)
+	for (const planId of ['plan-free', 'plan-pro']) {
+		expect(anchors(namedSection(pricing, planId))).toEqual(signupLink)
 	}
 
 	const home = await (await renderMarketing('/')).text()
 	expect(home).toContain(homepageSignupPath.replaceAll('&', '&amp;'))
 })
 
-test('FAQ and pricing handlers keep anonymous cache rules', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv()
-
-	const faq = await createFaqHandler(env).handler({
-		request: new Request('https://example.com/faq'),
-	} as never)
-	const pricing = await createPricingHandler(env).handler({
-		request: new Request('https://example.com/pricing'),
-	} as never)
-
-	expect(faq.headers.get('Cache-Control')).toBe(anonymousHtmlCacheControl)
-	expect(faq.headers.get('Vary')).toBe('Cookie')
-	expect(pricing.headers.get('Cache-Control')).toBe(anonymousHtmlCacheControl)
-})
-
 test('blog post closer invites visitors to create an account', async () => {
 	resetDataCacheForTests()
 	setAuthSessionSecret(testCookieSecret)
 	const slug = listBlogPosts()[0]?.slug
-	expect(slug).toBeTruthy()
 	if (!slug) throw new Error('expected a catalog blog post')
-
 	const response = await createBlogPostHandler(createTestEnv()).handler({
 		request: new Request(`https://example.com/blog/${slug}`),
 		params: { slug },
 	} as never)
-
-	const html = await response.text()
-	const cta = html.match(
+	const cta = (await response.text()).match(
 		/<div[^>]*>[\s\S]*Give your assistant a home[\s\S]*?<\/div>/,
 	)?.[0]
-
-	expect(anchors(cta ?? '')).toEqual(
-		expect.arrayContaining([expect.objectContaining({ href: '/signup' })]),
-	)
+	expect(anchors(cta ?? '')).toEqual(signupLink)
 })
