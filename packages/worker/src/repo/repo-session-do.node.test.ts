@@ -219,7 +219,8 @@ vi.mock('#worker/storage-buckets/service.ts', () => ({
 const { RepoSession } = await import('./repo-session-do.ts')
 const { deleteRepoSession, insertRepoSession } =
 	await import('./repo-sessions.ts')
-const { maxRepoSourceFileBytes } = await import('./large-file-policy.ts')
+const { maxRepoSourceFileBytes, maxRepoSourceFileDiffLines } =
+	await import('./large-file-policy.ts')
 
 test('repo sessions inventory workspace bytes through open, mutation, and cleanup', async () => {
 	setCommonSessionFixtures()
@@ -830,6 +831,93 @@ test('applyEdits rejects a write over the per-file repo size limit with hosting 
 		}),
 	).rejects.toThrow(/"assets\/dataset\.csv".*per-file limit.*Cloudflare R2/s)
 	expect(mockModule.workspaceWriteFile).not.toHaveBeenCalled()
+})
+
+test('applyEdits rejects a write over the unified-diff line limit before applyEditPlan', async () => {
+	setCommonSessionFixtures()
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+	const oversizedLines = `${'line\n'.repeat(maxRepoSourceFileDiffLines)}last`
+
+	await expect(
+		repoSession.applyEdits({
+			sessionId: 'session-1',
+			userId: 'user-1',
+			edits: [
+				{
+					kind: 'write',
+					path: 'assets/extracted.txt',
+					content: oversizedLines,
+				},
+			],
+		}),
+	).rejects.toThrow(
+		/"assets\/extracted\.txt".*line limit for repo session unified diffs/s,
+	)
+	const backend = vi.mocked(createWorkspaceStateBackend).mock.results.at(-1)
+		?.value as {
+		applyEditPlan: ReturnType<typeof vi.fn>
+	}
+	expect(backend.applyEditPlan).not.toHaveBeenCalled()
+})
+
+test('applyEdits rejects replace on an existing file over the unified-diff line limit', async () => {
+	setCommonSessionFixtures()
+	const existingHuge = `${'old\n'.repeat(maxRepoSourceFileDiffLines)}tail`
+	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
+		if (path === '/session/assets/huge.txt') return existingHuge
+		return ''
+	})
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	await expect(
+		repoSession.applyEdits({
+			sessionId: 'session-1',
+			userId: 'user-1',
+			edits: [
+				{
+					kind: 'replace',
+					path: 'assets/huge.txt',
+					search: 'tail',
+					replacement: 'next',
+				},
+			],
+		}),
+	).rejects.toThrow(
+		/"assets\/huge\.txt".*line limit for repo session unified diffs/s,
+	)
+	const backend = vi.mocked(createWorkspaceStateBackend).mock.results.at(-1)
+		?.value as {
+		applyEditPlan: ReturnType<typeof vi.fn>
+	}
+	expect(backend.applyEditPlan).not.toHaveBeenCalled()
+})
+
+test('applyEdits remaps raw Cloudflare shell EFBIG from applyEditPlan', async () => {
+	setCommonSessionFixtures()
+	vi.mocked(createWorkspaceStateBackend).mockImplementationOnce(() => ({
+		planEdits: vi.fn(),
+		applyEditPlan: vi.fn(async () => {
+			throw new Error('EFBIG: content too large for diff (max 10000 lines)')
+		}),
+		walkTree: vi.fn(),
+	}))
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	await expect(
+		repoSession.applyEdits({
+			sessionId: 'session-1',
+			userId: 'user-1',
+			edits: [
+				{
+					kind: 'write',
+					path: 'src/small.ts',
+					content: 'export const ok = true\n',
+				},
+			],
+		}),
+	).rejects.toThrow(
+		/"src\/small\.ts".*line limit for repo session unified diffs/s,
+	)
 })
 
 test('applyEdits composes multiple replace edits to the same file instead of keeping only the last', async () => {
