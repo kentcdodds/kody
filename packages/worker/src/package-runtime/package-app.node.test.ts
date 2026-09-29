@@ -268,7 +268,12 @@ test('package app workflows proxy validates input and forwards to the runtime br
 
 const packageAppRuntimeMock = vi.hoisted(() => ({
 	buildKodyAppBundle: vi.fn(),
-	hydrateKodyRuntimeModules: vi.fn(),
+	hydrateKodyRuntimeModules: vi.fn(
+		async ({ modules }: { modules: Record<string, string> }) => ({
+			modules,
+			dynamicDependencyPackageIds: [] as Array<string>,
+		}),
+	),
 	loadPublishedBundleArtifactByIdentity: vi.fn(),
 	persistPublishedBundleArtifact: vi.fn(),
 	assertPublishedSourceCanRebuildWithoutInstallingDeps: vi.fn(),
@@ -459,38 +464,6 @@ function sourceFilesFor(manifest = createPackageAppTestManifest()) {
 	})
 }
 
-function resetPackageAppRuntimeMocks() {
-	packageAppRuntimeMock.buildKodyAppBundle.mockReset()
-	packageAppRuntimeMock.hydrateKodyRuntimeModules.mockReset()
-	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockReset()
-	packageAppRuntimeMock.persistPublishedBundleArtifact.mockReset()
-	packageAppRuntimeMock.assertPublishedSourceCanRebuildWithoutInstallingDeps.mockReset()
-	packageAppRuntimeMock.getEntitySourceById.mockReset()
-	packageAppRuntimeMock.resolvePackageMountedSecret.mockReset()
-	packageAppRuntimeMock.beginRunRecord.mockReset()
-	packageAppRuntimeMock.finishRunRecord.mockReset()
-	packageAppRuntimeMock.getCapabilityRegistryForContext.mockReset()
-	packageAppRuntimeMock.createPackageRuntimeInvokeTools.mockReset()
-	packageAppRuntimeMock.createPackageEventTools.mockReset()
-	packageAppRuntimeMock.packageAppRuntimeBridge.mockClear()
-	packageAppRuntimeMock.finishRunRecord.mockResolvedValue(undefined)
-	packageAppRuntimeMock.getCapabilityRegistryForContext.mockResolvedValue({
-		capabilityMap: {},
-	})
-	packageAppRuntimeMock.createPackageRuntimeInvokeTools.mockResolvedValue({
-		invoke: vi.fn(async () => ({})),
-	})
-	packageAppRuntimeMock.createPackageEventTools.mockResolvedValue({
-		dispatch: vi.fn(async () => ({})),
-	})
-	packageAppRuntimeMock.hydrateKodyRuntimeModules.mockImplementation(
-		async ({ modules }: { modules: Record<string, string> }) => ({
-			modules,
-			dynamicDependencyPackageIds: [],
-		}),
-	)
-}
-
 const {
 	buildPackageAppWorker,
 	createPackageAppWorkerId,
@@ -564,7 +537,6 @@ function createPackageAppRuntimeBridgeForTest(input?: {
 }
 
 test('buildPackageAppWorker serves an artifactName-null artifact hit and reuses built options with a fresh stub per request', async () => {
-	resetPackageAppRuntimeMocks()
 	const { env, loader } = createPackageAppTestEnv()
 	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
 		makeArtifact(
@@ -614,8 +586,7 @@ test('buildPackageAppWorker serves an artifactName-null artifact hit and reuses 
 	expect(packageAppHostSource).toContain("if (typeof specifier !== 'string')")
 })
 
-test('buildPackageAppWorker records the unique Dynamic Worker day with its surface off the stub path', async () => {
-	resetPackageAppRuntimeMocks()
+test('buildPackageAppWorker claims the unique Dynamic Worker day with its surface off the stub path, only after acquiring the stub', async () => {
 	const usageModule = await import('#worker/usage/dynamic-worker-day.ts')
 	let resolveClaim: (() => void) | undefined
 	const claimGate = new Promise<void>((resolve) => {
@@ -626,11 +597,22 @@ test('buildPackageAppWorker records the unique Dynamic Worker day with its surfa
 		.mockImplementation(async () => await claimGate)
 	const waitUntilTasks: Array<Promise<unknown>> = []
 	const { env } = createPackageAppTestEnv()
+	const failing = createPackageAppTestEnv()
+	failing.loader.get.mockImplementation(() => {
+		throw new Error('loader-get-failed')
+	})
 	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
 		makeArtifact(),
 	)
 
 	try {
+		await expect(
+			buildPackageAppWorker(
+				makeBuildInput(failing.env, 'uwd-fail', { surface: 'app_fetch' }),
+			),
+		).rejects.toThrow('loader-get-failed')
+		expect(recordSpy).not.toHaveBeenCalled()
+
 		const built = await buildPackageAppWorker(
 			makeBuildInput(env, 'uwd-surface', {
 				surface: 'app_realtime',
@@ -655,34 +637,7 @@ test('buildPackageAppWorker records the unique Dynamic Worker day with its surfa
 	}
 })
 
-test('buildPackageAppWorker acquires the loader stub before claiming the day', async () => {
-	resetPackageAppRuntimeMocks()
-	const usageModule = await import('#worker/usage/dynamic-worker-day.ts')
-	const recordSpy = vi
-		.spyOn(usageModule, 'recordUniqueDynamicWorkerDay')
-		.mockResolvedValue(undefined)
-	const { env, loader } = createPackageAppTestEnv()
-	loader.get.mockImplementation(() => {
-		throw new Error('loader-get-failed')
-	})
-	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
-		makeArtifact(),
-	)
-
-	try {
-		await expect(
-			buildPackageAppWorker(
-				makeBuildInput(env, 'uwd-fail', { surface: 'app_fetch' }),
-			),
-		).rejects.toThrow('loader-get-failed')
-		expect(recordSpy).not.toHaveBeenCalled()
-	} finally {
-		recordSpy.mockRestore()
-	}
-})
-
 test('package app worker exposes its public mount and records fetch query and response status', async () => {
-	resetPackageAppRuntimeMocks()
 	const { env, loader } = createPackageAppTestEnv()
 	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
 		makeArtifact(
@@ -728,7 +683,6 @@ test('package app worker exposes its public mount and records fetch query and re
 })
 
 test('package app worker exposes the fingerprinted client module URL when kody.app.client is declared', async () => {
-	resetPackageAppRuntimeMocks()
 	const { env, loader } = createPackageAppTestEnv()
 	const appArtifact = makeArtifact()
 	const clientArtifact = {
@@ -829,7 +783,6 @@ test('createPackageAppWorkerId changes when compatibility settings change', asyn
 })
 
 test('an app artifact rebuild persists artifactName null using the fresh source row and its entry point', async () => {
-	resetPackageAppRuntimeMocks()
 	const { env } = createPackageAppTestEnv()
 	const freshSource = {
 		...createPackageAppTestSource(),
@@ -872,7 +825,6 @@ test('an app artifact rebuild persists artifactName null using the fresh source 
 })
 
 test('buildPackageAppWorker rejects persisting artifacts for a source owned by another user', async () => {
-	resetPackageAppRuntimeMocks()
 	const { env } = createPackageAppTestEnv()
 	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
 		null,
@@ -895,7 +847,6 @@ test('buildPackageAppWorker rejects persisting artifacts for a source owned by a
 })
 
 test('buildPackageAppWorker skips published artifact lookup when publishedCommit is null', async () => {
-	resetPackageAppRuntimeMocks()
 	const { env } = createPackageAppTestEnv()
 	packageAppRuntimeMock.buildKodyAppBundle.mockResolvedValue({
 		mainModule: 'dist/app.js',
@@ -924,7 +875,6 @@ test('buildPackageAppWorker skips published artifact lookup when publishedCommit
 })
 
 test('package app runtime bridge returns opaque secret refs and merges metadata via waitUntil', async () => {
-	resetPackageAppRuntimeMocks()
 	const opaqueRef = '{{secret:apiToken|scope=user}}'
 	packageAppRuntimeMock.resolvePackageMountedSecret.mockResolvedValue({
 		alias: 'api-token',
@@ -1002,7 +952,6 @@ test('package app runtime bridge returns opaque secret refs and merges metadata 
 })
 
 test('package app secret mounts ignore author-selected packageId and honor the stamp field', async () => {
-	resetPackageAppRuntimeMocks()
 	const ref = '{{secret:apiToken|scope=user}}'
 	packageAppRuntimeMock.resolvePackageMountedSecret.mockResolvedValue({
 		alias: 'api-token',
@@ -1137,7 +1086,6 @@ test('package app runtime bridge enforces packageStorage grants and raw storage 
 })
 
 test('buildPackageAppWorker passes packageStorage grant ids from root, static, and dynamic deps', async () => {
-	resetPackageAppRuntimeMocks()
 	const { env } = createPackageAppTestEnv()
 	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
 		makeArtifact(undefined, {

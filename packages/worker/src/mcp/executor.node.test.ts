@@ -1,5 +1,4 @@
 import { expect, test } from 'vitest'
-import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import {
 	createHostSecretAccessDeniedBatchMessage,
 	createMissingSecretMessage,
@@ -26,9 +25,7 @@ import {
 	createExecutorSandboxTimeoutMessage,
 	createNamedExecutionError,
 	createToolDispatchers,
-	extractRawContent,
 	formatExecutionOutput,
-	formatLimitedExecutionOutput,
 	getExecutionErrorDetails,
 	limitExecutionResultValue,
 	runWithDynamicWorkerEvaluationBudget,
@@ -908,16 +905,19 @@ test('createExecuteExecutor records one usage event per sandbox run with duratio
 	expect(rollupWrites).toHaveLength(0)
 })
 
-test('createExecuteExecutor records one unique Dynamic Worker day per worker id', async () => {
-	const { bindings, dataPoints } = createUsageBindings({ meter: true })
+test('createExecuteExecutor records one unique Dynamic Worker day per worker id and defers it with the first-execute stamp via waitUntil', async () => {
+	const perWorker = createUsageBindings({ meter: true })
 	for (let run = 0; run < 2; run += 1) {
 		await runExecutor({
-			env: createExecutorTestEnv(createFakeWorkerLoader().loader, bindings),
+			env: createExecutorTestEnv(
+				createFakeWorkerLoader().loader,
+				perWorker.bindings,
+			),
 			gatewayProps: createGatewayProps('usage-user-dw'),
 			recordExecuteUsage: false,
 		})
 	}
-
+	const { dataPoints } = perWorker
 	expect(dataPoints.map((point) => point.blobs?.[1])).toEqual([
 		'dynamic_worker_day',
 		'dynamic_worker_invoke',
@@ -927,26 +927,24 @@ test('createExecuteExecutor records one unique Dynamic Worker day per worker id'
 	expect(dataPoints[0]?.blobs?.[5]).toBe('execute')
 	expect(dataPoints[1]?.blobs?.[7]).toBe('miss')
 	expect(dataPoints[2]?.blobs?.[7]).toBe('hit')
-})
 
-test('createExecuteExecutor defers unique-worker-day and first-execute stamp via waitUntil', async () => {
-	const { bindings, dataPoints, activationStampWrites } = createUsageBindings({
-		meter: true,
-	})
+	const deferred = createUsageBindings({ meter: true })
 	const waitUntilTasks: Array<Promise<unknown>> = []
 	const result = await runExecutor({
-		env: createExecutorTestEnv(createFakeWorkerLoader().loader, bindings),
+		env: createExecutorTestEnv(
+			createFakeWorkerLoader().loader,
+			deferred.bindings,
+		),
 		gatewayProps: createGatewayProps('usage-user-waituntil'),
 		waitUntil: (promise: Promise<unknown>) => {
 			waitUntilTasks.push(promise)
 		},
 	})
-
 	expect(result.error).toBeUndefined()
 	expect(waitUntilTasks.length).toBeGreaterThanOrEqual(2)
 	await Promise.all(waitUntilTasks)
-	expect(activationStampWrites).toHaveLength(1)
-	expect(dataPoints.map((point) => point.blobs?.[1]).sort()).toEqual([
+	expect(deferred.activationStampWrites).toHaveLength(1)
+	expect(deferred.dataPoints.map((point) => point.blobs?.[1]).sort()).toEqual([
 		'dynamic_worker_day',
 		'dynamic_worker_invoke',
 		'execute',
@@ -1100,7 +1098,7 @@ test('createToolDispatchers counts host-mediated attempts, rejects sanitized-nam
 	expect(moduleSource).toContain('JSON.stringify(args)')
 })
 
-test('executor maps secret errors, formats guidance, extracts raw content, and truncates on UTF-8 boundaries', () => {
+test('executor maps secret errors, formats guidance, and truncates on UTF-8 boundaries', () => {
 	const hostBatchError = new Error(
 		createHostSecretAccessDeniedBatchMessage([
 			{
@@ -1454,22 +1452,6 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		expect(output.length).toBeGreaterThan(plainOutput.length)
 	}
 
-	const content: Array<ContentBlock> = [
-		{
-			type: 'image',
-			data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB',
-			mimeType: 'image/png',
-		},
-		{ type: 'text', text: 'Screenshot of https://example.com' },
-	]
-	expect(extractRawContent({ __mcpContent: content })).toEqual(content)
-	expect(extractRawContent({ result: 'not raw content' })).toBeNull()
-	expect(
-		extractRawContent({
-			content: [{ type: 'image', data: 'AAAA', mimeType: 'image/png' }],
-		}),
-	).toBeNull()
-
 	expect(limitExecutionResultValue('éabc', 1)).toMatchObject({
 		value: '',
 		returnedBytes: 5,
@@ -1484,43 +1466,4 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 	expect(
 		new TextEncoder().encode(String(threeByteLimit.value)).byteLength,
 	).toBe(3)
-})
-
-test('limitExecutionResultValue preserves output for representative small and oversized values', () => {
-	const smallObject = { ok: true, count: 3 }
-	const smallObjectLimited = limitExecutionResultValue(smallObject, 102_400)
-	expect(smallObjectLimited).toMatchObject({
-		value: smallObject,
-		returnedBytes: 21,
-		truncated: false,
-		displayText: JSON.stringify(smallObject, null, 2),
-	})
-	expect(formatLimitedExecutionOutput(smallObjectLimited)).toBe(
-		smallObjectLimited.displayText,
-	)
-
-	const oversizedObjectLimited = limitExecutionResultValue(
-		{ rows: [{ id: 'message-1', payload: 'abcdef' }] },
-		10,
-	)
-	expect(oversizedObjectLimited).toMatchObject({
-		value: { truncated: true, type: 'object' },
-		returnedBytes: 48,
-		truncated: true,
-		note: 'Returned value was 48 bytes, exceeding responseLimit 10 bytes; output was truncated. Project fields before returning.',
-	})
-	expect(formatLimitedExecutionOutput(oversizedObjectLimited)).toBe(
-		`${oversizedObjectLimited.displayText}\n\n--- TRUNCATED ---\n${oversizedObjectLimited.note}`,
-	)
-
-	const oversizedStringLimited = limitExecutionResultValue('hello world', 5)
-	expect(oversizedStringLimited).toMatchObject({
-		value: 'hello',
-		returnedBytes: 11,
-		truncated: true,
-	})
-	expect(oversizedStringLimited.displayText).toBeUndefined()
-	expect(formatLimitedExecutionOutput(oversizedStringLimited)).toBe(
-		`hello\n\n--- TRUNCATED ---\n${oversizedStringLimited.note}`,
-	)
 })

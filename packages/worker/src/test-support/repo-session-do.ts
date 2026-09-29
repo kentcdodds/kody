@@ -1,5 +1,39 @@
 import { vi } from 'vitest'
 
+const sourceRepoRemote =
+	'https://acct.artifacts.cloudflare.net/git/default/source-repo.git'
+
+export function createExternalClone(headCommit: string) {
+	const fileStat = async () => ({
+		type: 'file' as const,
+		size: 0,
+		mtime: new Date(),
+	})
+	return {
+		workspace: {
+			readFile: vi.fn(async () => null),
+			glob: vi.fn(async () => []),
+		},
+		headCommit,
+		dir: '/repo',
+		filesystem: {
+			readFile: vi.fn(async () => ''),
+			readFileBytes: vi.fn(async () => new Uint8Array()),
+			writeFile: vi.fn(async () => undefined),
+			writeFileBytes: vi.fn(async () => undefined),
+			rm: vi.fn(async () => undefined),
+			mkdir: vi.fn(async () => undefined),
+			readdir: vi.fn(async () => []),
+			stat: vi.fn(fileStat),
+			lstat: vi.fn(fileStat),
+			readlink: vi.fn(async () => ''),
+			symlink: vi.fn(async () => undefined),
+		},
+		isAncestorCommit: vi.fn(async () => true),
+		collectFiles: vi.fn(async () => ({})),
+	}
+}
+
 export const repoSessionMockModule = (() => {
 	const gitState = {
 		currentBranch: 'main',
@@ -74,7 +108,7 @@ export const repoSessionMockModule = (() => {
 		workspaceFiles: new Map<string, string>(),
 		workspaceReadFile: vi.fn(
 			async (path: string) =>
-				mockModule.workspaceFiles.get(path) ??
+				repoSessionMockModule.workspaceFiles.get(path) ??
 				'{"version":1,"kind":"job","entrypoint":"src/job.ts"}',
 		),
 		workspaceWriteFile: vi.fn(async () => undefined),
@@ -82,37 +116,9 @@ export const repoSessionMockModule = (() => {
 		workspaceMkdir: vi.fn(async () => undefined),
 		workspaceRm: vi.fn(async () => undefined),
 		workspaceGlob: vi.fn(async () => []),
-		cloneExternalPublishWorkspace: vi.fn(async () => ({
-			workspace: {
-				readFile: vi.fn(async () => null),
-				glob: vi.fn(async () => []),
-			},
-			headCommit: 'commit-head',
-			dir: '/repo',
-			filesystem: {
-				readFile: vi.fn(async () => ''),
-				readFileBytes: vi.fn(async () => new Uint8Array()),
-				writeFile: vi.fn(async () => undefined),
-				writeFileBytes: vi.fn(async () => undefined),
-				rm: vi.fn(async () => undefined),
-				mkdir: vi.fn(async () => undefined),
-				readdir: vi.fn(async () => []),
-				stat: vi.fn(async () => ({
-					type: 'file' as const,
-					size: 0,
-					mtime: new Date(),
-				})),
-				lstat: vi.fn(async () => ({
-					type: 'file' as const,
-					size: 0,
-					mtime: new Date(),
-				})),
-				readlink: vi.fn(async () => ''),
-				symlink: vi.fn(async () => undefined),
-			},
-			isAncestorCommit: vi.fn(async () => true),
-			collectFiles: vi.fn(async () => ({})),
-		})),
+		cloneExternalPublishWorkspace: vi.fn(async () =>
+			createExternalClone('commit-head'),
+		),
 		storageGet: vi.fn(async () => ({
 			runId: 'run-1',
 			treeHash: '',
@@ -131,8 +137,7 @@ export const repoSessionMockModule = (() => {
 		resolveArtifactDefaultBranchHead: vi.fn(async () => ({
 			defaultBranch: 'main',
 			commit: 'commit-base',
-			remote:
-				'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
+			remote: sourceRepoRemote,
 		})),
 		resolveArtifactSourceHead: vi.fn(async () => ({
 			branch: 'main',
@@ -179,64 +184,60 @@ export const repoSessionMockModule = (() => {
 	}
 })()
 
+/**
+ * Resets the shared mocks back to their `vi.fn` defaults (including call
+ * history), then applies the few baseline behaviors that differ from the
+ * module-load defaults. Session/source/artifact-repo lookups and `gitState`
+ * are left to the caller.
+ */
 export function restoreRepoSessionMockBaseline() {
-	const { git, gitState } = repoSessionMockModule
+	const mocks = repoSessionMockModule
+	const { gitState } = mocks
+	for (const mock of [
+		...Object.values(mocks.git),
+		mocks.workspaceReadFile,
+		mocks.workspaceWriteFile,
+		mocks.workspaceWriteFileBytes,
+		mocks.workspaceMkdir,
+		mocks.workspaceRm,
+		mocks.workspaceGlob,
+		mocks.storageGet,
+		mocks.storagePut,
+		mocks.updateRepoSession,
+		mocks.updateEntitySource,
+		mocks.resolveArtifactDefaultBranchHead,
+		mocks.resolveArtifactSourceHead,
+		mocks.listArtifactServerRefs,
+		mocks.parseRepoManifest,
+		mocks.runRepoChecks,
+		mocks.writePublishedSourceSnapshot,
+		mocks.loadPublishedSourceSnapshot,
+		mocks.loadPublishedSourceManifestSnapshot,
+		mocks.isPublishedPackageArtifactBuiltForCommit,
+		mocks.persistPublishedPackageArtifactTarget,
+		mocks.deletePublishedArtifactsForSource,
+		mocks.getSavedPackageById,
+		mocks.rawPush,
+		mocks.rawCommit,
+		mocks.workspaceExists,
+		mocks.cloneExternalPublishWorkspace,
+		mocks.resolveExistingArtifactSourceRepo,
+	]) {
+		mock.mockReset()
+	}
+	mocks.registerStorageBucketAndWait.mockClear()
+	mocks.maybeRefreshStorageBucketEstimate.mockClear()
+	mocks.deleteStorageBucketInventory.mockClear()
 
-	repoSessionMockModule.workspaceExists.mockResolvedValue(false)
-	repoSessionMockModule.workspaceReadFile.mockImplementation(
-		async (path: string) =>
-			repoSessionMockModule.workspaceFiles.get(path) ??
-			'{"version":1,"kind":"job","entrypoint":"src/job.ts"}',
+	mocks.workspaceExists.mockResolvedValue(false)
+	mocks.cloneExternalPublishWorkspace.mockImplementation(async () =>
+		createExternalClone(gitState.headCommit),
 	)
-	repoSessionMockModule.workspaceWriteFile.mockResolvedValue(undefined)
-	repoSessionMockModule.workspaceWriteFileBytes.mockResolvedValue(undefined)
-	repoSessionMockModule.workspaceMkdir.mockResolvedValue(undefined)
-	repoSessionMockModule.workspaceRm.mockResolvedValue(undefined)
-	repoSessionMockModule.workspaceGlob.mockResolvedValue([])
-	repoSessionMockModule.cloneExternalPublishWorkspace.mockImplementation(
-		async () => ({
-			workspace: {
-				readFile: vi.fn(async () => null),
-				glob: vi.fn(async () => []),
-			},
-			headCommit: gitState.headCommit,
-			dir: '/repo',
-			filesystem: {
-				readFile: vi.fn(async () => ''),
-				readFileBytes: vi.fn(async () => new Uint8Array()),
-				writeFile: vi.fn(async () => undefined),
-				writeFileBytes: vi.fn(async () => undefined),
-				rm: vi.fn(async () => undefined),
-				mkdir: vi.fn(async () => undefined),
-				readdir: vi.fn(async () => []),
-				stat: vi.fn(async () => ({
-					type: 'file' as const,
-					size: 0,
-					mtime: new Date(),
-				})),
-				lstat: vi.fn(async () => ({
-					type: 'file' as const,
-					size: 0,
-					mtime: new Date(),
-				})),
-				readlink: vi.fn(async () => ''),
-				symlink: vi.fn(async () => undefined),
-			},
-			isAncestorCommit: vi.fn(async () => true),
-			collectFiles: vi.fn(async () => ({})),
-		}),
-	)
-	repoSessionMockModule.storageGet.mockResolvedValue({
-		runId: 'run-1',
-		treeHash: '',
-		checkedAt: '2026-04-18T00:00:00.000Z',
-		ok: true,
-		results: [],
+	mocks.rawCommit.mockImplementation(async () => {
+		gitState.headCommit = 'commit-orphan-root'
+		return gitState.headCommit
 	})
-	repoSessionMockModule.storagePut.mockResolvedValue(undefined)
-	repoSessionMockModule.updateRepoSession.mockResolvedValue(undefined)
-	repoSessionMockModule.updateEntitySource.mockResolvedValue(undefined)
-	repoSessionMockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({
+	mocks.resolveExistingArtifactSourceRepo.mockResolvedValue({
 		info: vi.fn(async () => ({
 			id: 'source-repo-id',
 			name: 'source-repo',
@@ -247,8 +248,7 @@ export function restoreRepoSessionMockBaseline() {
 			lastPushAt: null,
 			source: null,
 			readOnly: false,
-			remote:
-				'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
+			remote: sourceRepoRemote,
 		})),
 		createToken: vi.fn(async () => ({
 			id: 'token-source',
@@ -257,113 +257,6 @@ export function restoreRepoSessionMockBaseline() {
 			expiresAt: '2026-10-09T08:16:40.000Z',
 		})),
 	})
-	repoSessionMockModule.resolveArtifactDefaultBranchHead.mockResolvedValue({
-		defaultBranch: 'main',
-		commit: 'commit-base',
-		remote: 'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
-	})
-	repoSessionMockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-base',
-	})
-	repoSessionMockModule.listArtifactServerRefs.mockResolvedValue([])
-	repoSessionMockModule.parseRepoManifest.mockReturnValue({ sourceRoot: '/' })
-	repoSessionMockModule.runRepoChecks.mockResolvedValue({
-		ok: true,
-		results: [{ kind: 'manifest', ok: true, message: 'Manifest ok' }],
-		manifest: {
-			name: '@kody/demo',
-			exports: { '.': './index.ts' },
-			kody: { id: 'demo', description: 'Demo package' },
-		},
-		sourceFiles: {
-			'package.json': '{"name":"@kody/demo"}',
-			'index.ts': 'export const ready = true\n',
-		},
-	})
-	repoSessionMockModule.writePublishedSourceSnapshot.mockResolvedValue(
-		'snapshot-key',
-	)
-	repoSessionMockModule.loadPublishedSourceSnapshot.mockResolvedValue(null)
-	repoSessionMockModule.loadPublishedSourceManifestSnapshot.mockResolvedValue(
-		null,
-	)
-	repoSessionMockModule.isPublishedPackageArtifactBuiltForCommit.mockResolvedValue(
-		false,
-	)
-	repoSessionMockModule.persistPublishedPackageArtifactTarget.mockResolvedValue(
-		'kv:artifact',
-	)
-	repoSessionMockModule.deletePublishedArtifactsForSource.mockResolvedValue(
-		undefined,
-	)
-	repoSessionMockModule.registerStorageBucketAndWait.mockClear()
-	repoSessionMockModule.maybeRefreshStorageBucketEstimate.mockClear()
-	repoSessionMockModule.deleteStorageBucketInventory.mockClear()
-	repoSessionMockModule.getSavedPackageById.mockResolvedValue({
-		id: 'package-1',
-		kodyId: 'demo',
-		sourceId: 'source-1',
-	})
-	repoSessionMockModule.rawPush.mockResolvedValue({ ok: true, refs: {} })
-	repoSessionMockModule.rawPush.mockClear()
-	repoSessionMockModule.rawCommit.mockImplementation(async () => {
-		gitState.headCommit = 'commit-orphan-root'
-		return gitState.headCommit
-	})
-	repoSessionMockModule.rawCommit.mockClear()
-
-	git.clone.mockResolvedValue({ cloned: 'ok', dir: '/session' })
-	git.remote.mockImplementation(
-		async (opts?: {
-			list?: boolean
-			add?: { name: string; url: string }
-			remove?: string
-		}) => {
-			if (opts?.list) {
-				return gitState.remotes
-			}
-			if (opts?.remove) {
-				gitState.remotes = gitState.remotes.filter(
-					(remote) => remote.remote !== opts.remove,
-				)
-				return { removed: opts.remove }
-			}
-			if (opts?.add) {
-				gitState.remotes = [
-					...gitState.remotes.filter(
-						(remote) => remote.remote !== opts.add?.name,
-					),
-					{ remote: opts.add.name, url: opts.add.url },
-				]
-				return { added: opts.add.name, url: opts.add.url }
-			}
-			return []
-		},
-	)
-	git.init.mockResolvedValue({ initialized: '/session' })
-	git.status.mockImplementation(async () => gitState.statusEntries)
-	git.add.mockResolvedValue({ added: '.' })
-	git.rm.mockResolvedValue({ removed: 'src/old.ts' })
-	git.commit.mockImplementation(async () => ({
-		oid: gitState.headCommit,
-		message: 'commit',
-	}))
-	git.log.mockImplementation(async () => [{ oid: gitState.headCommit }])
-	git.branch.mockImplementation(async () => ({
-		branches: [gitState.currentBranch],
-		current: gitState.currentBranch,
-	}))
-	git.checkout.mockImplementation(async () => ({
-		ref: gitState.currentBranch,
-	}))
-	git.fetch.mockImplementation(async () => ({
-		fetchHead: gitState.headCommit,
-		fetchHeadDescription: 'main',
-	}))
-	git.pull.mockResolvedValue({ pulled: true })
-	git.push.mockResolvedValue({ ok: true, refs: {} })
-	git.diff.mockResolvedValue([])
 }
 
 export function createDurableObjectState() {
@@ -439,6 +332,7 @@ export function stubPackageSourceForOpenSession({
 	createToken?: boolean
 } = {}) {
 	const remote = `https://acct.artifacts.cloudflare.net/git/${remoteNamespace}/${repoId}.git`
+	restoreRepoSessionMockBaseline()
 	repoSessionMockModule.getRepoSessionById.mockResolvedValue(null)
 	repoSessionMockModule.getEntitySourceById.mockResolvedValue({
 		id: 'source-1',
@@ -493,9 +387,8 @@ export function stubPackageSourceForOpenSession({
 	return { remote }
 }
 
-export function setCommonSessionFixtures() {
-	restoreRepoSessionMockBaseline()
-	repoSessionMockModule.getRepoSessionById.mockResolvedValue({
+export function sessionRow(overrides: Record<string, unknown> = {}) {
+	return {
 		id: 'session-1',
 		user_id: 'user-1',
 		source_id: 'source-1',
@@ -505,7 +398,13 @@ export function setCommonSessionFixtures() {
 		base_commit: 'commit-base',
 		status: 'active',
 		last_checkpoint_commit: 'commit-base',
-	})
+		...overrides,
+	}
+}
+
+export function setCommonSessionFixtures() {
+	restoreRepoSessionMockBaseline()
+	repoSessionMockModule.getRepoSessionById.mockResolvedValue(sessionRow())
 	repoSessionMockModule.getEntitySourceById.mockResolvedValue({
 		id: 'source-1',
 		user_id: 'user-1',
@@ -519,8 +418,7 @@ export function setCommonSessionFixtures() {
 			id: 'source-repo-id',
 			name: 'source-repo',
 			defaultBranch: 'main',
-			remote:
-				'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
+			remote: sourceRepoRemote,
 		})),
 		createToken: vi.fn(async () => ({
 			plaintext: 'art_source_secret?expires=1760000100',
@@ -530,13 +428,6 @@ export function setCommonSessionFixtures() {
 	repoSessionMockModule.gitState.headCommit = 'commit-head'
 	repoSessionMockModule.gitState.statusEntries = []
 	repoSessionMockModule.gitState.remotes = [
-		{
-			remote: 'origin',
-			url: 'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
-		},
+		{ remote: 'origin', url: sourceRepoRemote },
 	]
-	repoSessionMockModule.git.pull.mockClear()
-	repoSessionMockModule.git.push.mockClear()
-	repoSessionMockModule.updateRepoSession.mockClear()
-	repoSessionMockModule.updateEntitySource.mockClear()
 }

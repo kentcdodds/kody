@@ -12,8 +12,10 @@ import {
 	repoSessionMockModule as mockModule,
 	restoreRepoSessionMockBaseline,
 	createDurableObjectState,
+	createExternalClone,
 	createFakeRepoSessionBlobs,
 	createEnv,
+	sessionRow,
 	stubPackageSourceForOpenSession,
 	setCommonSessionFixtures,
 } from '#worker/test-support/repo-session-do.ts'
@@ -363,34 +365,9 @@ function publishExternal(
 	})
 }
 
-const fileStat = async () => ({
-	type: 'file' as const,
-	size: 0,
-	mtime: new Date(),
-})
-
 function mockExternalClone(overrides: Record<string, unknown> = {}) {
 	mockModule.cloneExternalPublishWorkspace.mockResolvedValueOnce({
-		workspace: {
-			readFile: vi.fn(async () => null),
-			glob: vi.fn(async () => []),
-		},
-		headCommit: 'commit-new',
-		dir: '/repo',
-		filesystem: {
-			readFile: vi.fn(async () => ''),
-			readFileBytes: vi.fn(async () => new Uint8Array()),
-			writeFile: vi.fn(async () => undefined),
-			writeFileBytes: vi.fn(async () => undefined),
-			rm: vi.fn(async () => undefined),
-			mkdir: vi.fn(async () => undefined),
-			readdir: vi.fn(async () => []),
-			stat: vi.fn(fileStat),
-			lstat: vi.fn(fileStat),
-			readlink: vi.fn(async () => ''),
-			symlink: vi.fn(async () => undefined),
-		},
-		isAncestorCommit: vi.fn(async () => true),
+		...createExternalClone('commit-new'),
 		...overrides,
 	} as never)
 }
@@ -921,7 +898,6 @@ test('applyEdits composes multiple replace edits to the same file instead of kee
 })
 
 test('openSession sanitizes repo names, persists namespace metadata, and rejects stale package source heads', async () => {
-	restoreRepoSessionMockBaseline()
 	const { remote: defaultRemote } = stubPackageSourceForOpenSession()
 	const opened = await openSession(
 		'job-runtime-package-job:1a0476b4-c1d6-47ad-802e-dd5f4631c919:event-runner-123e4567-e89b-12d3-a456-426614174000',
@@ -942,7 +918,6 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 		tokenExpiresAt: expect.any(String),
 	})
 
-	restoreRepoSessionMockBaseline()
 	stubPackageSourceForOpenSession({
 		publishedCommit: 'commit-release',
 		defaultBranch: 'release',
@@ -961,7 +936,6 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 		openSession('session-conflicting-branch', { defaultBranch: 'main' }),
 	).rejects.toThrow(/published from "release"/)
 
-	restoreRepoSessionMockBaseline()
 	stubPackageSourceForOpenSession({ remoteNamespace: 'preview' })
 	vi.mocked(insertRepoSession).mockClear()
 	await openSession('session-preview-namespace', {}, {
@@ -977,18 +951,15 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 	)
 
 	restoreRepoSessionMockBaseline()
-	mockModule.getRepoSessionById.mockResolvedValue({
-		id: 'discarded-session',
-		user_id: 'user-1',
-		source_id: 'source-1',
-		source_repo_id: 'source-repo',
-		session_branch: 'sessions/discarded',
-		source_branch: 'main',
-		status: 'discarded',
-	})
+	mockModule.getRepoSessionById.mockResolvedValue(
+		sessionRow({
+			id: 'discarded-session',
+			session_branch: 'sessions/discarded',
+			status: 'discarded',
+		}),
+	)
 	await expect(openSession('discarded-session')).rejects.toThrow(/is discarded/)
 
-	restoreRepoSessionMockBaseline()
 	stubPackageSourceForOpenSession({
 		repoId: 'package-package-1',
 		headCommit: null,
@@ -999,7 +970,6 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 	)
 	expect(mockModule.resolveArtifactSourceRepo).not.toHaveBeenCalled()
 
-	restoreRepoSessionMockBaseline()
 	stubPackageSourceForOpenSession({
 		repoId: 'package-package-1',
 		publishedCommit: 'commit-published',
@@ -1012,7 +982,6 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 })
 
 test('openSession wraps packfile corruption but leaves opaque Cloudflare internals bare', async () => {
-	restoreRepoSessionMockBaseline()
 	const { remote } = stubPackageSourceForOpenSession()
 	mockModule.git.clone.mockRejectedValue(
 		new Error(
@@ -1028,9 +997,7 @@ test('openSession wraps packfile corruption but leaves opaque Cloudflare interna
 	)
 	expect(mockModule.git.clone.mock.calls.length).toBeGreaterThanOrEqual(2)
 
-	restoreRepoSessionMockBaseline()
 	stubPackageSourceForOpenSession()
-	mockModule.git.clone.mockClear()
 	mockModule.git.clone.mockRejectedValue(
 		new Error('An internal error occurred.'),
 	)
@@ -1043,7 +1010,7 @@ test('openSession wraps packfile corruption but leaves opaque Cloudflare interna
 })
 
 test('readFile retries D1 reads and falls back to cached sessions when replicas lag', async () => {
-	restoreRepoSessionMockBaseline()
+	setCommonSessionFixtures()
 	const jobSource = sourceRow({
 		entity_kind: 'job',
 		entity_id: 'job-1',
@@ -1054,48 +1021,16 @@ test('readFile retries D1 reads and falls back to cached sessions when replicas 
 	mockModule.getRepoSessionById
 		.mockResolvedValueOnce(null)
 		.mockResolvedValueOnce(null)
-		.mockResolvedValueOnce({
-			id: 'job-runtime-session-replica-lag',
-			user_id: 'user-1',
-			source_id: 'source-1',
-			source_repo_id: 'source-repo',
-			session_branch: 'sessions/jobruntimesessionreplicalag',
-			source_branch: 'main',
-			base_commit: 'commit-base',
-			source_root: '/',
-			conversation_id: null,
-			status: 'active' as const,
-			expires_at: null,
-			last_checkpoint_at: null,
-			last_checkpoint_commit: null,
-			last_check_run_id: null,
-			last_check_tree_hash: null,
-			created_at: '2026-04-16T00:00:00.000Z',
-			updated_at: '2026-04-16T00:00:00.000Z',
-		})
+		.mockResolvedValueOnce(
+			sessionRow({
+				id: 'job-runtime-session-replica-lag',
+				session_branch: 'sessions/jobruntimesessionreplicalag',
+				last_checkpoint_commit: null,
+			}),
+		)
 	mockModule.getEntitySourceById
 		.mockResolvedValueOnce(null)
 		.mockResolvedValueOnce(jobSource)
-	mockModule.resolveArtifactSourceRepo.mockResolvedValue({
-		info: vi.fn(async () => ({
-			id: 'job-repo-1',
-			name: 'job-job-1',
-			description: null,
-			defaultBranch: 'main',
-			createdAt: '2026-04-16T00:00:00.000Z',
-			updatedAt: '2026-04-16T00:00:00.000Z',
-			lastPushAt: null,
-			source: null,
-			readOnly: false,
-			remote: artifactsRemote('job-job-1'),
-		})),
-		createToken: vi.fn(async () => ({
-			id: 'token-1',
-			plaintext: 'art_source_secret?expires=1760000200',
-			scope: 'write',
-			expiresAt: '2026-10-09T08:16:40.000Z',
-		})),
-	})
 	mockModule.workspaceReadFile.mockResolvedValue('{"version":1,"kind":"job"}')
 
 	await expect(
@@ -1122,24 +1057,11 @@ test('readFile retries D1 reads and falls back to cached sessions when replicas 
 		manifest_path: 'kody.json',
 		source_root: '/',
 	}
-	const initialSession = {
-		id: 'session-1',
-		user_id: 'user-1',
-		source_id: 'source-1',
-		source_repo_id: 'source-repo',
-		session_branch: 'sessions/session1',
-		source_branch: 'main',
-		base_commit: 'commit-initial',
-		status: 'active',
-		last_checkpoint_commit: 'commit-initial',
-	}
+	const sessionAt = (commit: string) =>
+		sessionRow({ base_commit: commit, last_checkpoint_commit: commit })
 	mockModule.getRepoSessionById
-		.mockResolvedValueOnce(initialSession)
-		.mockResolvedValueOnce({
-			...initialSession,
-			base_commit: 'commit-rebased',
-			last_checkpoint_commit: 'commit-rebased',
-		})
+		.mockResolvedValueOnce(sessionAt('commit-initial'))
+		.mockResolvedValueOnce(sessionAt('commit-rebased'))
 	mockModule.getEntitySourceById
 		.mockResolvedValueOnce(initialSource)
 		.mockResolvedValueOnce({
@@ -1236,7 +1158,6 @@ test('bootstrapSource first-publishes from dest HEAD without replacing the forke
 
 	restoreRepoSessionMockBaseline()
 	mockModule.gitState.headCommit = 'commit-other'
-	mockModule.updateEntitySource.mockClear()
 	await expect(
 		bootstrap('session-bootstrap-mismatch', 'commit-dest-head'),
 	).rejects.toThrow(/does not match expected "commit-dest-head"/)
@@ -1246,46 +1167,12 @@ test('bootstrapSource first-publishes from dest HEAD without replacing the forke
 	mockModule.workspaceReadFile.mockResolvedValue(jobManifest)
 	mockModule.gitState.headCommit = 'commit-empty-bootstrap'
 	mockModule.gitState.statusEntries = [{ status: 'modified' }]
-	mockModule.git.clone.mockClear()
-	mockModule.git.init.mockClear()
 	await bootstrap('session-bootstrap-empty')
 	expect(mockModule.git.init).toHaveBeenCalled()
 	expect(mockModule.git.clone).not.toHaveBeenCalled()
 })
 
-test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV so downstream readers find the freshly published commit', async () => {
-	// Best-effort publish git-note attachment logs an incidental warning.
-	consoleWarn.mockImplementation(() => {})
-	// The manifest entry must be present in files per the real
-	// writePublishedSourceSnapshot contract; git internals are excluded.
-	const files = {
-		'kody.json': jobManifest,
-		'package.json': '{"name":"demo","kody":{"id":"demo"}}',
-		'src/index.ts': 'export default {}',
-	}
-	preparePublish('commit-published-new', { ...files, '.git/config': '' })
-
-	await publish()
-
-	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledTimes(1)
-	const snapshotCall = mockModule.writePublishedSourceSnapshot.mock.calls[0][0]
-	expect(snapshotCall.source.id).toBe('source-1')
-	expect(snapshotCall.source.published_commit).toBe('commit-published-new')
-	expect(snapshotCall.files).toEqual(files)
-	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
-		expect.anything(),
-		expect.objectContaining({
-			id: 'source-1',
-			publishedCommit: 'commit-published-new',
-		}),
-	)
-	expect(consoleWarn).toHaveBeenCalledWith(
-		expect.stringContaining('publish_git_note'),
-		expect.anything(),
-	)
-})
-
-test('publishSession handles snapshot collection and persistence failures without leaving inconsistent published commits', async () => {
+test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV for downstream readers and never leaves inconsistent published commits when snapshot collection or persistence fails', async () => {
 	preparePublish(
 		'commit-published-fail',
 		{ 'kody.json': jobManifest },
@@ -1329,13 +1216,42 @@ test('publishSession handles snapshot collection and persistence failures withou
 		{ 'kody.json': jobManifest, 'src/index.ts': null },
 		null,
 	)
-	mockModule.writePublishedSourceSnapshot.mockClear()
 	await expect(publish()).rejects.toThrow(/Failed to read repo session file/)
 	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+
+	// Best-effort publish git-note attachment logs an incidental warning.
+	consoleWarn.mockImplementation(() => {})
+	// The manifest entry must be present in files per the real
+	// writePublishedSourceSnapshot contract; git internals are excluded.
+	const files = {
+		'kody.json': jobManifest,
+		'package.json': '{"name":"demo","kody":{"id":"demo"}}',
+		'src/index.ts': 'export default {}',
+	}
+	preparePublish('commit-published-new', { ...files, '.git/config': '' })
+
+	await publish()
+
+	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledTimes(1)
+	const snapshotCall = mockModule.writePublishedSourceSnapshot.mock.calls[0][0]
+	expect(snapshotCall.source.id).toBe('source-1')
+	expect(snapshotCall.source.published_commit).toBe('commit-published-new')
+	expect(snapshotCall.files).toEqual(files)
+	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			id: 'source-1',
+			publishedCommit: 'commit-published-new',
+		}),
+	)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		expect.stringContaining('publish_git_note'),
+		expect.anything(),
+	)
 })
 
-test('publishFromExternalRef rejects stale expected HEAD values', async () => {
+test('publishFromExternalRef rejects stale expected HEAD values and checks fast-forward ancestry through the ephemeral clone', async () => {
 	setCommonSessionFixtures()
 	// Clone tip is the remote default-branch HEAD at clone time; a mismatch
 	// with expectedHead means the Artifacts tip moved.
@@ -1349,9 +1265,7 @@ test('publishFromExternalRef rejects stale expected HEAD values', async () => {
 		'Artifacts HEAD changed from "commit-stale" to "commit-new" before publish.',
 	)
 	expect(mockModule.resolveArtifactDefaultBranchHead).not.toHaveBeenCalled()
-})
 
-test('publishFromExternalRef checks fast-forward ancestry through ephemeral clone', async () => {
 	// Best-effort publish git-note setup logs an incidental warning.
 	consoleWarn.mockImplementation(() => {})
 	setCommonSessionFixtures()
@@ -1405,19 +1319,20 @@ test('publishFromExternalRef checks fast-forward ancestry through ephemeral clon
 	)
 })
 
-test('runIsolatedCheckPhase loads staged files from KV and dispatches the phase', async () => {
+test('isolated check phases and artifact rebuilds load staged files from KV, skip built targets, and reject expired or cross-user staging keys', async () => {
+	restoreRepoSessionMockBaseline()
 	const staged = { sourceFiles: { 'package.json': '{"name":"@kody/demo"}' } }
-	const kv = { get: vi.fn(async () => staged) }
-	const repo = repoSession(kvEnv(kv))
+	const checkKv = { get: vi.fn(async () => staged) }
+	const checkRepo = repoSession(kvEnv(checkKv))
 	const typecheck = (stagingKey: string) =>
-		repo.runIsolatedCheckPhase({
+		checkRepo.runIsolatedCheckPhase({
 			phase: 'typecheck',
 			stagingKey,
 			userId: 'user-1',
 			typecheckTargets: [{ path: 'src/index.ts', emittedEventTopics: [] }],
 		})
 
-	const bundleOutcome = await repo.runIsolatedCheckPhase({
+	const bundleOutcome = await checkRepo.runIsolatedCheckPhase({
 		phase: 'bundle-chunk',
 		stagingKey: 'repo-checks-staging:v1:user-1:abc',
 		baseUrl: '/',
@@ -1440,23 +1355,7 @@ test('runIsolatedCheckPhase loads staged files from KV and dispatches the phase'
 		targets: [{ path: 'src/index.ts', emittedEventTopics: [] }],
 	})
 
-	// Expired staging fails closed with an actionable message.
-	kv.get.mockResolvedValueOnce(null as never)
-	const expired = await typecheck('repo-checks-staging:v1:user-1:gone')
-	expect(expired.ok).toBe(false)
-	expect(expired.message).toContain('staging data expired')
-
-	// A staging key namespaced to another user is rejected before any read.
-	kv.get.mockClear()
-	const crossUser = await typecheck('repo-checks-staging:v1:user-2:abc')
-	expect(crossUser.ok).toBe(false)
-	expect(crossUser.message).toContain('does not belong to the requesting user')
-	expect(kv.get).not.toHaveBeenCalled()
-})
-
-test('runIsolatedArtifactRebuild loads staged files, skips built targets, and rejects cross-user keys', async () => {
-	restoreRepoSessionMockBaseline()
-	const kv = {
+	const rebuildKv = {
 		get: vi.fn(async () => ({
 			sourceFiles: {
 				'package.json': demoPackageJson,
@@ -1466,7 +1365,7 @@ test('runIsolatedArtifactRebuild loads staged files, skips built targets, and re
 		put: vi.fn(async () => undefined),
 	}
 	mockModule.getEntitySourceById.mockResolvedValue(sourceRow())
-	const repo = repoSession(kvEnv(kv))
+	const rebuildRepo = repoSession(kvEnv(rebuildKv))
 	const target = {
 		kind: 'module' as const,
 		artifactName: '.',
@@ -1476,7 +1375,7 @@ test('runIsolatedArtifactRebuild loads staged files, skips built targets, and re
 	const rebuild = (
 		options: { stagingKey?: string; baseUrl?: string; force?: boolean } = {},
 	) =>
-		repo.runIsolatedArtifactRebuild({
+		rebuildRepo.runIsolatedArtifactRebuild({
 			stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:abc',
 			sourceId: 'source-1',
 			userId: 'user-1',
@@ -1496,7 +1395,7 @@ test('runIsolatedArtifactRebuild loads staged files, skips built targets, and re
 		ok: true,
 		results: [expect.objectContaining({ skipped: true, target })],
 	})
-	expect(kv.get).not.toHaveBeenCalled()
+	expect(rebuildKv.get).not.toHaveBeenCalled()
 	expect(
 		mockModule.persistPublishedPackageArtifactTarget,
 	).not.toHaveBeenCalled()
@@ -1519,20 +1418,30 @@ test('runIsolatedArtifactRebuild loads staged files, skips built targets, and re
 		}),
 	)
 
-	kv.get.mockResolvedValueOnce(null as never)
-	const expired = await rebuild({
-		stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:gone',
-	})
-	expect(expired.ok).toBe(false)
-	expect(expired.message).toContain('staging data expired')
+	const stagedRunners = [
+		[checkKv.get, 'repo-checks-staging:v1', typecheck],
+		[
+			rebuildKv.get,
+			'repo-artifact-rebuild-staging:v1',
+			(stagingKey: string) => rebuild({ stagingKey }),
+		],
+	] as const
+	for (const [kvGet, prefix, run] of stagedRunners) {
+		// Expired staging fails closed with an actionable message.
+		kvGet.mockResolvedValueOnce(null as never)
+		const expired = await run(`${prefix}:user-1:gone`)
+		expect(expired.ok).toBe(false)
+		expect(expired.message).toContain('staging data expired')
 
-	kv.get.mockClear()
-	const crossUser = await rebuild({
-		stagingKey: 'repo-artifact-rebuild-staging:v1:user-2:abc',
-	})
-	expect(crossUser.ok).toBe(false)
-	expect(crossUser.message).toContain('does not belong to the requesting user')
-	expect(kv.get).not.toHaveBeenCalled()
+		// A staging key namespaced to another user is rejected before any read.
+		kvGet.mockClear()
+		const crossUser = await run(`${prefix}:user-2:abc`)
+		expect(crossUser.ok).toBe(false)
+		expect(crossUser.message).toContain(
+			'does not belong to the requesting user',
+		)
+		expect(kvGet).not.toHaveBeenCalled()
+	}
 })
 
 test('published artifact rebuild stages the published snapshot first and falls back to the session workspace once', async () => {
@@ -1587,7 +1496,6 @@ test('published artifact rebuild stages the published snapshot first and falls b
 	// Empty session workspace: targets and staged files come from the
 	// published snapshot.
 	restoreRepoSessionMockBaseline()
-	vi.clearAllMocks()
 	mockModule.getEntitySourceById.mockResolvedValue(sourceRow())
 	mockModule.workspaceReadFile.mockResolvedValue(null)
 	mockModule.loadPublishedSourceManifestSnapshot.mockResolvedValue(
@@ -1618,7 +1526,6 @@ test('published artifact rebuild stages the published snapshot first and falls b
 
 	// A leftover session workspace never wins over the published snapshot.
 	restoreRepoSessionMockBaseline()
-	vi.clearAllMocks()
 	mockModule.getEntitySourceById.mockResolvedValue(sourceRow())
 	const snapshotFiles = {
 		'package.json': demoPackageJson,
@@ -1673,7 +1580,6 @@ test('already_published external publish refreshes the snapshot from the in-memo
 	] as const
 	for (const [stored, forceRebuild, invalidate] of cases) {
 		setCommonSessionFixtures()
-		vi.clearAllMocks()
 		mockModule.getEntitySourceById.mockResolvedValue(
 			sourceRow({ repo_id: 'source-repo', published_commit: 'commit-new' }),
 		)
@@ -1709,7 +1615,6 @@ test('already_published external publish refreshes the snapshot from the in-memo
 	}
 
 	setCommonSessionFixtures()
-	vi.clearAllMocks()
 	consoleWarn.mockImplementation(() => {})
 	mockModule.getEntitySourceById.mockResolvedValue(
 		sourceRow({ repo_id: 'source-repo', published_commit: 'commit-new' }),
@@ -1752,7 +1657,6 @@ test('publishSession maps non-fast-forward PushRejectedError to base_moved witho
 		results: [],
 	})
 	// Post-rejection tip refresh (precheck uses D1 published_commit only).
-	mockModule.resolveArtifactSourceHead.mockClear()
 	mockModule.resolveArtifactSourceHead.mockResolvedValueOnce({
 		branch: 'main',
 		commit: 'commit-published-new',
@@ -1804,7 +1708,7 @@ test('runChecks forwards expectedPackageScope for a still-plain repo so promote 
 	)
 })
 
-test('publishSession still requires overwrite confirmation for forced publishes of already-published packages', async () => {
+test('publishSession requires overwrite confirmation for forced publishes of already-published packages, and a confirmed overwrite with promotePublished false stays additive for locked fleet publishes', async () => {
 	setCommonSessionFixtures()
 	mockModule.getEntitySourceById.mockResolvedValue(
 		sourceRow({ repo_id: 'source-repo', published_commit: 'commit-base' }),
@@ -1815,6 +1719,44 @@ test('publishSession still requires overwrite confirmation for forced publishes 
 	)
 	expect(mockModule.git.push).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+
+	consoleWarn.mockImplementation(() => {})
+	preparePublish('commit-additive-locked', {
+		'package.json': userPackageJson,
+		'src/index.ts': 'export const next = true\n',
+		'.git/config': '',
+	})
+	mockModule.getEntitySourceById.mockResolvedValue(
+		sourceRow({ repo_id: 'source-repo', published_commit: 'commit-base' }),
+	)
+	mockModule.loadPublishedSourceSnapshot.mockResolvedValue(
+		publishedSnapshot(
+			{
+				'package.json': userPackageJson,
+				'src/index.ts': 'export const prior = true\n',
+			},
+			{
+				repoId: 'source-repo',
+				publishedCommit: 'commit-base',
+				createdAt: '2026-09-28T00:00:00.000Z',
+			},
+		),
+	)
+
+	const result = await publish({
+		destructiveOverwriteConfirmed: true,
+		promotePublished: false,
+	})
+
+	expect(result).toMatchObject({
+		status: 'ok',
+		publishedCommit: 'commit-additive-locked',
+	})
+	expect(mockModule.git.commit).toHaveBeenCalled()
+	expect(mockModule.rawCommit).not.toHaveBeenCalled()
+	expect(mockModule.rawPush).not.toHaveBeenCalledWith(
+		expect.objectContaining({ delete: true }),
+	)
 })
 
 test('confirmed destructive overwrite replaces history with an orphan root commit and deletes the session ref', async () => {
@@ -1829,17 +1771,13 @@ test('confirmed destructive overwrite replaces history with an orphan root commi
 	mockModule.getEntitySourceById.mockResolvedValue(
 		sourceRow({ repo_id: 'source-repo', published_commit: priorCanaryCommit }),
 	)
-	mockModule.getRepoSessionById.mockResolvedValue({
-		id: 'session-1',
-		user_id: 'user-1',
-		source_id: 'source-1',
-		source_repo_id: 'source-repo',
-		session_branch: 'sessions/sourcesync-canary',
-		source_branch: 'main',
-		base_commit: priorCanaryCommit,
-		status: 'active',
-		last_checkpoint_commit: priorCanaryCommit,
-	})
+	mockModule.getRepoSessionById.mockResolvedValue(
+		sessionRow({
+			session_branch: 'sessions/sourcesync-canary',
+			base_commit: priorCanaryCommit,
+			last_checkpoint_commit: priorCanaryCommit,
+		}),
+	)
 	mockModule.loadPublishedSourceSnapshot.mockResolvedValue(
 		publishedSnapshot(
 			{
@@ -1912,44 +1850,4 @@ test('confirmed destructive overwrite replaces history with an orphan root commi
 	const publishedFiles =
 		mockModule.writePublishedSourceSnapshot.mock.calls[0][0].files
 	expect(JSON.stringify(publishedFiles)).not.toContain('FAKE-CANARY-7f3a')
-})
-
-test('confirmed overwrite with promotePublished false stays additive for locked fleet publishes', async () => {
-	consoleWarn.mockImplementation(() => {})
-	preparePublish('commit-additive-locked', {
-		'package.json': userPackageJson,
-		'src/index.ts': 'export const next = true\n',
-		'.git/config': '',
-	})
-	mockModule.getEntitySourceById.mockResolvedValue(
-		sourceRow({ repo_id: 'source-repo', published_commit: 'commit-base' }),
-	)
-	mockModule.loadPublishedSourceSnapshot.mockResolvedValue(
-		publishedSnapshot(
-			{
-				'package.json': userPackageJson,
-				'src/index.ts': 'export const prior = true\n',
-			},
-			{
-				repoId: 'source-repo',
-				publishedCommit: 'commit-base',
-				createdAt: '2026-09-28T00:00:00.000Z',
-			},
-		),
-	)
-
-	const result = await publish({
-		destructiveOverwriteConfirmed: true,
-		promotePublished: false,
-	})
-
-	expect(result).toMatchObject({
-		status: 'ok',
-		publishedCommit: 'commit-additive-locked',
-	})
-	expect(mockModule.git.commit).toHaveBeenCalled()
-	expect(mockModule.rawCommit).not.toHaveBeenCalled()
-	expect(mockModule.rawPush).not.toHaveBeenCalledWith(
-		expect.objectContaining({ delete: true }),
-	)
 })

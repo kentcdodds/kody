@@ -398,6 +398,10 @@ test('execute tool serializes successes and errors, passes package invoke tools,
 		conversationId: 'conv-truncated-object',
 	})
 	expect(truncatedObjectResponse.isError).toBe(false)
+	expect(truncatedObjectResponse.content[1]).toEqual({
+		type: 'text',
+		text: `{\n  "truncated": true,\n  "type": "object"\n}\n\n--- TRUNCATED ---\n${truncationNote(48, 10)}`,
+	})
 	expect(truncatedObjectResponse.structuredContent).toEqual({
 		conversationId: 'conv-truncated-object',
 		timing: timing(10),
