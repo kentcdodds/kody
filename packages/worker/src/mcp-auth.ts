@@ -22,6 +22,10 @@ import {
 	classifyMcpProtocolRequest,
 	recordMcpProtocolEvent,
 } from './mcp/protocol-metrics.ts'
+import {
+	extractJsonRpcRequestIds,
+	guardLegacyLaneSseResponse,
+} from './mcp/sse-response-guard.ts'
 import { oauthScopes } from './oauth-handlers.ts'
 import { stampFirstMcpConnected } from '#worker/identity/activation-stamps.ts'
 import { recordInboundMcpConnectionLastUsed } from '#worker/inbound-mcp-connection-last-used.ts'
@@ -421,24 +425,32 @@ export async function handleMcpRequest({
 	}
 
 	try {
-		const serveMcp = async () =>
+		const legacyRequestIds =
 			classification.lane === 'legacy'
-				? await fetchMcp(
-						request,
-						env,
-						context as ExecutionContext<OAuthContextProps>,
-					)
-				: await (
-						await loadStatelessLane()
-					).handleStatelessMcpRequest({
-						request,
-						env,
-						ctx,
-						callerContext: props,
-						...(classification.parsedBody === undefined
-							? {}
-							: { parsedBody: classification.parsedBody }),
-					})
+				? extractJsonRpcRequestIds(classification.parsedBody)
+				: []
+
+		const serveMcp = async () => {
+			const response =
+				classification.lane === 'legacy'
+					? await fetchMcp(
+							request,
+							env,
+							context as ExecutionContext<OAuthContextProps>,
+						)
+					: await (
+							await loadStatelessLane()
+						).handleStatelessMcpRequest({
+							request,
+							env,
+							ctx,
+							callerContext: props,
+							...(classification.parsedBody === undefined
+								? {}
+								: { parsedBody: classification.parsedBody }),
+						})
+			return guardLegacyLaneSseResponse(legacyRequestIds, response)
+		}
 		if (mcpParsedBodyNeedsAccountWriteLease(classification.parsedBody)) {
 			return await withAccountWriteLease({
 				db: env.APP_DB,
