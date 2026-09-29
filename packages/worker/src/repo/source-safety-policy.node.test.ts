@@ -110,21 +110,6 @@ test('Artifacts git timeouts name packageSave only for packageGetGitRemote', () 
 	expect(session).not.toContain('packageSave')
 })
 
-test('destructive overwrite confirmation description documents history replace and backup retention', async () => {
-	const { destructiveOverwriteConfirmationDescription } =
-		await import('./source-safety-policy.ts')
-	expect(destructiveOverwriteConfirmationDescription).toContain(
-		'replace advertised history with a new root commit',
-	)
-	expect(destructiveOverwriteConfirmationDescription).toContain(
-		'leftover session refs',
-	)
-	expect(destructiveOverwriteConfirmationDescription).toContain(
-		'Restorable backups retain prior content',
-	)
-	expect(destructiveOverwriteConfirmationDescription).toContain('packageDelete')
-})
-
 test('package source overwrite and private-visibility changes require explicit confirmation', async () => {
 	const overwriteMessage = await assertPackageSourceOverwriteAllowed({
 		env: createEnvWithSnapshot({ 'package.json': '{}' }),

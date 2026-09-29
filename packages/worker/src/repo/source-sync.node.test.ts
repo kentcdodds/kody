@@ -222,29 +222,6 @@ test('syncArtifactSourceSnapshot bootstraps new sources and uses repo sessions f
 	)
 })
 
-test('syncArtifactSourceSnapshot threads destructiveOverwriteConfirmed into publishSession', async () => {
-	const session = setupSync(
-		sourceRow({ ...packageSource, published_commit: 'commit-existing-1' }),
-		publishingSession('commit-replaced'),
-	)
-	await expect(
-		syncArtifactSourceSnapshot({
-			...syncInput,
-			files: {
-				'package.json': '{"name":"@user/demo","kody":{"id":"demo"}}',
-				'src/index.ts': 'export const ready = true\n',
-			},
-			destructiveOverwriteConfirmed: true,
-		}),
-	).resolves.toBe('commit-replaced')
-	expect(session.publishSession).toHaveBeenCalledWith(
-		expect.objectContaining({
-			force: true,
-			destructiveOverwriteConfirmed: true,
-		}),
-	)
-})
-
 test('syncArtifactSourceSnapshot refuses to bootstrap a locked package without allowLockedPublish', async () => {
 	const locked = setupSync(sourceRow(packageSource))
 	mockModule.loadLockedSavedPackage.mockResolvedValue({

@@ -152,9 +152,8 @@ A saved package is a repo with the package extension activated. Four concepts:
 - Computed `import(specifier)` is the name-as-data path for caller-owned and
   forked modules. The bundler rewrites non-literal `import(...)` expressions
   through a host `__kodyComputedPackageImport` bridge that loads `kody:@`
-  specifiers without author-facing `packages.invoke` (and without requiring the
-  quarantined `packages` helper to be bound). Prefer a static import when the
-  name is known at write time.
+  specifiers. There is no author-facing `packages.invoke`. Prefer a static
+  import when the name is known at write time.
 - `kody:runtime` is a reserved host-external virtual module. The bundler may add
   a placeholder so author code can keep `import { kody } from "kody:runtime"`,
   but published bundle artifacts must not persist the host runtime

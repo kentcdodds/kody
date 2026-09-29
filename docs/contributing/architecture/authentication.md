@@ -39,7 +39,7 @@ Session cookie behavior is implemented in
 Referral share links set a separate last-wins `kody_ref` cookie (one week, not
 `httpOnly`) so a later `/signup?ref=` overwrites the previous referrer. Signup
 persists a `referrals` row from that cookie. See
-[Referral Standard credit](./entitlements.md#referral-standard-credit).
+[Referral Pro credit](./entitlements.md#referral-pro-credit).
 
 The cookie payload stores:
 

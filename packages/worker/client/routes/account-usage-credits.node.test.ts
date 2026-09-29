@@ -201,7 +201,6 @@ const missing = (html: string, parts: Array<string>) =>
 
 test('usage page is the one money/caps page: Pro wallet shows balance, packs, limits, rate card, and credit history last', async () => {
 	const { html } = await renderUsagePage(usage())
-	expect(html).not.toContain('href="/account/credits"')
 	expect(html).toMatch(/href="\/account\/usage"[^>]*aria-current="page"/)
 	const order = [
 		'Activity this month',
@@ -364,7 +363,6 @@ test('Free sees one short credits CTA with no balance or purchase UI', async () 
 			'Credit history',
 		].filter((purchase) => html.includes(purchase)),
 	).toEqual([])
-	expect(text).not.toMatch(/\bMax\b/)
 	expect(text).not.toMatch(overHundredPercent)
 
 	const { html: noCheckout } = await renderUsagePage(

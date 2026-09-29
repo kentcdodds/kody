@@ -39,12 +39,12 @@ at `packages/worker/universal/plans.ts`.
   a credit wallet. `describeSecondAgentStandardGift` is the flag for lifecycle
   email / PackagedSingleClient. Enforcement goes through `getUserEntitlement`;
   Stripe is not mutated.
-- `referral-program.ts` (universal + worker) — uncapped referral Standard
-  credit. Share links write a last-wins one-week `kody_ref` cookie; signup
-  persists a pending `referrals` row from that cookie. `invoice.paid` grants
-  both parties one stacked month after the first qualifying paid invoice.
-  Enforcement composes the later overlay with the second-agent gift in
-  `getUserEntitlement`; Stripe is not mutated.
+- `referral-program.ts` (universal + worker) — uncapped referral Pro credit.
+  Share links write a last-wins one-week `kody_ref` cookie; signup persists a
+  pending `referrals` row from that cookie. `invoice.paid` grants both parties
+  one stacked month after the first qualifying paid invoice. Enforcement
+  composes the later overlay with the second-agent gift in `getUserEntitlement`;
+  Stripe is not mutated.
 
 ## Plan model
 
@@ -111,7 +111,7 @@ Stripe; otherwise the higher-ranked of the two is returned. Unknown or null
 expose the grant, Stripe tier, effective plan, and whether a Stripe customer is
 linked. `plan` on those records remains the grant that Manage plan edits.
 
-### Second-agent Standard gift
+### Second-agent Pro gift
 
 When a user first reaches two known connected agent ecosystems, Kody records one
 14-day overlay of Pro. The gate is that second ecosystem (activation), not day-0
@@ -140,7 +140,7 @@ lifecycle email or PackagedSingleClient should read: `received`, `active`, and
 `status` (`none` | `active` | `expired` | `already_paid`). Onboarding loader and
 `/onboarding.json` expose that object as `secondAgentStandardGift`.
 
-### Referral Standard credit
+### Referral Pro credit
 
 Shareable signup links (`/signup?ref=<username>`) set a last-wins `kody_ref`
 cookie that expires after one week. A later share link overwrites the previous
@@ -1240,4 +1240,4 @@ existing subscribers only. Env vars and deploy wiring are documented in
 - `users.referral_standard_credit_expires_at` and `referrals` — uncapped
   referral program ledger. Attribution is persisted at signup from the last-wins
   `kody_ref` cookie; reward is invoice-gated. See
-  [Referral Standard credit](#referral-standard-credit).
+  [Referral Pro credit](#referral-pro-credit).

@@ -19,7 +19,8 @@ panel for catalog-paid accounts over list MRR, unpaid users at
 rows whose `stripe_price_id` is missing or not in the catalog.
 `/admin/users/:stableUserId` shows the same cost-vs-pay estimate for one
 account, plus Durable Object duration (Cloudflare-measured GB-s beside the
-StorageRunner RPC wall-clock proxy), and a Credits panel: balance, credit
+StorageRunner RPC wall-clock proxy), the shared usage metric series (including
+observe-only Dynamic Worker CPU), and a Credits panel: balance, credit
 eligibility (purchasable Pro or admin eligibility), a grant form (dollars plus
 an optional note; works on the signed-in admin too), and the recent ledger with
 the granting admin for grants (`/admin/users/credits.json`).
