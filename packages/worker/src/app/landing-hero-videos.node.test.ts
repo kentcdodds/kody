@@ -104,7 +104,9 @@ test('loadLandingHeroVideos falls back to Innertube when the Data API fails', as
 	expect(loaded).toEqual([second, first])
 })
 
-test('loadLandingHeroVideos fails open when YouTube is unreachable', async () => {
+test('loadLandingHeroVideos fails open offline or on YouTube errors and does not cache the failure', async () => {
+	await expect(loadLandingHeroVideos({ env: {} as Env })).resolves.toEqual([])
+
 	consoleWarn.mockImplementation(() => {})
 	await expect(
 		loadLandingHeroVideos({
@@ -118,14 +120,7 @@ test('loadLandingHeroVideos fails open when YouTube is unreachable', async () =>
 		'landing-hero-videos',
 		expect.any(Error),
 	)
-})
 
-test('loadLandingHeroVideos stays offline in unit tests without a fetch impl', async () => {
-	await expect(loadLandingHeroVideos({ env: {} as Env })).resolves.toEqual([])
-})
-
-test('loadLandingHeroVideos does not cache a failed YouTube fetch', async () => {
-	consoleWarn.mockImplementation(() => {})
 	let fetches = 0
 	const fetchImpl = async () => {
 		fetches += 1

@@ -3,12 +3,9 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
 	AccountDeletionCleanupError,
-	AccountDeletionInventoryError,
 	deleteUserAccount,
 	getAccountDeletionD1UserColumnCoverage,
 } from './account-deletion.ts'
-import { AccountDeletionWritersActiveError } from '#worker/account/deletion-state.ts'
-import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { accountUserDataExcludedOwnerIds } from '#worker/account/data-targets.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
@@ -27,36 +24,33 @@ import {
 } from '#worker/test-support/account-deletion.ts'
 
 const appMigrationsDir = new URL('../../migrations/', import.meta.url)
+const idFromName = (name: string) => name as unknown as DurableObjectId
 
-function listSqliteTables(db: DatabaseSync) {
-	return (
+function migratedAppDb() {
+	const db = new DatabaseSync(':memory:')
+	applyAllMigrations(db, appMigrationsDir)
+	return db
+}
+
+test('account deletion coverage matches the migrated APP_DB schema', () => {
+	const db = migratedAppDb()
+	const tables = (
 		db
 			.prepare(
-				`SELECT name
-				FROM sqlite_schema
-				WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
-				ORDER BY name`,
+				`SELECT name FROM sqlite_schema
+				WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
 			)
 			.all() as Array<{ name: string }>
 	).map((row) => row.name)
-}
-
-test('vectorize surface sources match the migrated APP_DB schema', () => {
-	const db = new DatabaseSync(':memory:')
-	applyAllMigrations(db, appMigrationsDir)
-	const tables = new Set(listSqliteTables(db))
 
 	// Jobs moved to the jobs worker's D1 (migration 0010 dropped the APP_DB
 	// copies), so the job surface must be sourced over the JOBS binding rather
 	// than an APP_DB table scan.
-	expect(tables.has('jobs')).toBe(false)
+	expect(tables).not.toContain('jobs')
 	for (const surface of accountUserOwnedVectorizeSurfaces) {
 		switch (surface.source.kind) {
 			case 'app_db': {
-				expect(
-					tables.has(surface.source.table),
-					`vectorize surface ${surface.id} reads APP_DB table ${surface.source.table}, which the migrated schema does not define`,
-				).toBe(true)
+				expect(tables).toContain(surface.source.table)
 				break
 			}
 			case 'jobs_rpc': {
@@ -71,11 +65,26 @@ test('vectorize surface sources match the migrated APP_DB schema', () => {
 			}
 		}
 	}
+
+	// Every live user-owned D1 column is deleted, and nothing stale is listed.
+	const liveUserColumns = new Set<string>()
+	for (const table of tables) {
+		const columns = db
+			.prepare(`PRAGMA table_info(${quoteSqlIdentifier(table)})`)
+			.all() as Array<{ name: string }>
+		for (const column of columns) {
+			if (column.name === 'user_id' || column.name.endsWith('_user_id')) {
+				liveUserColumns.add(`${table}.${column.name}`)
+			}
+		}
+	}
+	const coveredColumns = getAccountDeletionD1UserColumnCoverage()
+	expect([...liveUserColumns].filter((c) => !coveredColumns.has(c))).toEqual([])
+	expect([...coveredColumns].filter((c) => !liveUserColumns.has(c))).toEqual([])
 })
 
 test('deleteUserAccount enumerates job vectors through JOBS against the real post-0010 APP_DB schema', async () => {
-	const sqlite = new DatabaseSync(':memory:')
-	applyAllMigrations(sqlite, appMigrationsDir)
+	const sqlite = migratedAppDb()
 	const db = createD1FromSqlite(sqlite)
 	const userId = 'user-post-0010'
 	const inserted = await db
@@ -126,81 +135,16 @@ test('deleteUserAccount enumerates job vectors through JOBS against the real pos
 	expect(result.deletedVectors).toBe(3)
 	expect(purgeJobsUser).toHaveBeenCalledWith({ userId })
 	expect(result.warnings).toEqual([])
-	expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get()).toEqual({
-		count: 0,
-	})
-	expect(
-		sqlite.prepare(`SELECT COUNT(*) AS count FROM mcp_memories`).get(),
-	).toEqual({ count: 0 })
-})
-
-test('deleteUserAccount fails inventory loudly when JOBS is unbound instead of scanning APP_DB for jobs', async () => {
-	const { db, rows } = createTestDb({
-		users: [{ id: 1, email: 'a@example.com' }],
-	})
-	const env = createSuccessfulDeletionEnv(db, {
-		JOBS: undefined,
-	} as unknown as Partial<Env>)
-
-	await expect(
-		deleteUserAccount({ env, dbUserId: 1, mcpUserId: 'user-aaa' }),
-	).rejects.toSatisfy(
-		(error: unknown) =>
-			error instanceof AccountDeletionInventoryError &&
-			error.inventoryErrors.some((message) =>
-				message.includes(
-					'JOBS service binding is required to enumerate job vector ids',
-				),
-			),
-	)
-	expect(rows.users).toEqual([
-		expect.objectContaining({ id: 1, deleting_at: null }),
-	])
-})
-
-test('account deletion D1 coverage includes every live user-owned schema column', () => {
-	const migrationsDir = new URL('../../migrations/', import.meta.url)
-	const db = new DatabaseSync(':memory:')
-	applyAllMigrations(db, migrationsDir)
-	const tables = db
-		.prepare(
-			`SELECT name
-			FROM sqlite_schema
-			WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
-			ORDER BY name`,
-		)
-		.all() as Array<{ name: string }>
-	const liveUserColumns = new Set<string>()
-	for (const table of tables) {
-		const columns = db
-			.prepare(`PRAGMA table_info(${quoteSqlIdentifier(table.name)})`)
-			.all() as Array<{ name: string }>
-		for (const column of columns) {
-			if (column.name === 'user_id' || column.name.endsWith('_user_id')) {
-				liveUserColumns.add(`${table.name}.${column.name}`)
-			}
-		}
-	}
-	const coveredColumns = getAccountDeletionD1UserColumnCoverage()
-	const missing = [...liveUserColumns].filter(
-		(column) => !coveredColumns.has(column),
-	)
-	const stale = [...coveredColumns].filter(
-		(column) => !liveUserColumns.has(column),
-	)
-	expect(
-		missing,
-		'user-owned D1 columns missing from account deletion',
-	).toEqual([])
-	expect(stale, 'account deletion references stale D1 columns').toEqual([])
+	const count = (table: string) =>
+		sqlite.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get()
+	expect(count('users')).toEqual({ count: 0 })
+	expect(count('mcp_memories')).toEqual({ count: 0 })
 })
 
 test('account deletion preserves operator-owned system email configuration', async () => {
-	expect(
-		accountUserDataExcludedOwnerIds.some(
-			(exclusion) => exclusion.ownerId === 'system:email',
-		),
-	).toBe(true)
+	expect(accountUserDataExcludedOwnerIds.map((e) => e.ownerId)).toContain(
+		'system:email',
+	)
 
 	const { db, rows } = createTestDb({
 		users: [{ id: 1, email: 'user@example.com' }],
@@ -233,6 +177,52 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	const userBbb = 'user-bbb'
 	const packageJobId =
 		'package-job:b2fda105-005a-4e2b-9f22-1513b6752da2:event-runner'
+	const submitters = {
+		[userAaa]: {
+			submitter_username: 'user-a',
+			submitter_email: 'a@example.com',
+		},
+		[userBbb]: {
+			submitter_username: 'user-b',
+			submitter_email: 'b@example.com',
+		},
+	}
+	const feedback = (
+		id: string,
+		submitter: keyof typeof submitters,
+		reviewer: string,
+		adminNote: string,
+	) => ({
+		id,
+		submitter_user_id: submitter,
+		...submitters[submitter],
+		reviewed_by_user_id: reviewer,
+		reviewed_at: '2026-07-05',
+		admin_note: adminNote,
+	})
+	const codemodRun = (
+		id: string,
+		mode: string,
+		scope: string | null,
+		initiatedBy: string,
+		filterUserIds: Array<string>,
+	) => ({
+		id,
+		codemod_id: '0001-ambient-storage-to-package-storage',
+		mode,
+		scope_user_id: scope,
+		initiated_by_user_id: initiatedBy,
+		filters_json: JSON.stringify({ userIds: filterUserIds }),
+		status: 'completed',
+	})
+	const codemodItem = (id: string, run: string, user: string, pkg: string) => ({
+		id,
+		run_id: run,
+		user_id: user,
+		package_id: pkg,
+		kody_id: user === userAaa ? 'demo' : 'demo-b',
+		status: 'applied',
+	})
 	const { db, rows } = createTestDb({
 		users: [
 			{
@@ -249,21 +239,13 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			{ id: 'job-3', user_id: userBbb, storage_id: 'job:job-3' },
 		],
 		user_storage_buckets: [
-			{
-				user_id: userAaa,
-				storage_id: 'exec:run-2',
-				kind: 'execute',
-			},
+			{ user_id: userAaa, storage_id: 'exec:run-2', kind: 'execute' },
 			{
 				user_id: userAaa,
 				storage_id: 'repo-session:rs-1',
 				kind: 'repo_session',
 			},
-			{
-				user_id: userBbb,
-				storage_id: 'package:pkg-2',
-				kind: 'package',
-			},
+			{ user_id: userBbb, storage_id: 'package:pkg-2', kind: 'package' },
 		],
 		mcp_memories: [
 			{ id: 'mem-1', user_id: userAaa },
@@ -334,11 +316,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		mcp_user_server_instructions: [{ user_id: userAaa }],
 		package_invocation_tokens: [{ id: 'pit-1', user_id: userAaa }],
 		agent_package_conversation_uses: [
-			{
-				user_id: userAaa,
-				package_id: 'pkg-1',
-				conversation_id: 'conv-1',
-			},
+			{ user_id: userAaa, package_id: 'pkg-1', conversation_id: 'conv-1' },
 		],
 		mcp_memory_conversation_suppressions: [
 			{ user_id: userAaa, conversation_id: 'c1', memory_id: 'mem-1' },
@@ -347,33 +325,14 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		email_inbox_addresses: [{ id: 'ia-1', user_id: userAaa }],
 		email_sender_identities: [{ id: 'ei-1', user_id: userAaa }],
 		platform_feedback: [
-			{
-				id: 'feedback-submitted-by-a',
-				submitter_user_id: userAaa,
-				submitter_username: 'user-a',
-				submitter_email: 'a@example.com',
-				reviewed_by_user_id: userBbb,
-				reviewed_at: '2026-07-05',
-				admin_note: 'Reviewed by B.',
-			},
-			{
-				id: 'feedback-reviewed-by-a',
-				submitter_user_id: userBbb,
-				submitter_username: 'user-b',
-				submitter_email: 'b@example.com',
-				reviewed_by_user_id: userAaa,
-				reviewed_at: '2026-07-05',
-				admin_note: 'Private admin note from A.',
-			},
-			{
-				id: 'feedback-unrelated',
-				submitter_user_id: userBbb,
-				submitter_username: 'user-b',
-				submitter_email: 'b@example.com',
-				reviewed_by_user_id: userBbb,
-				reviewed_at: '2026-07-05',
-				admin_note: 'Reviewed by B.',
-			},
+			feedback('feedback-submitted-by-a', userAaa, userBbb, 'Reviewed by B.'),
+			feedback(
+				'feedback-reviewed-by-a',
+				userBbb,
+				userAaa,
+				'Private admin note from A.',
+			),
+			feedback('feedback-unrelated', userBbb, userBbb, 'Reviewed by B.'),
 		],
 		community_listings: [
 			{
@@ -395,98 +354,41 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			{ id: 'rating-3', listing_id: 'listing-2', user_id: userBbb },
 		],
 		community_activity_events: [
-			{
-				id: 'evt-1',
-				actor_user_id: userAaa,
-				event_type: 'listing_published',
-				listing_id: 'listing-2',
-			},
-			{
-				id: 'evt-2',
-				actor_user_id: userBbb,
-				event_type: 'listing_updated',
-				listing_id: 'listing-1',
-			},
-			{
-				id: 'evt-3',
-				actor_user_id: userBbb,
-				event_type: 'listing_published',
-				listing_id: 'listing-2',
-			},
-		],
+			['evt-1', userAaa, 'listing_published', 'listing-2'],
+			['evt-2', userBbb, 'listing_updated', 'listing-1'],
+			['evt-3', userBbb, 'listing_published', 'listing-2'],
+		].map(([id, actor_user_id, event_type, listing_id]) => ({
+			id,
+			actor_user_id,
+			event_type,
+			listing_id,
+		})),
 		community_reports: [
-			{
-				id: 'report-1',
-				listing_id: 'listing-1',
-				listing_owner_user_id: userAaa,
-				reporter_user_id: userBbb,
-				resolved_by_user_id: null,
-			},
-			{
-				id: 'report-2',
-				listing_id: 'listing-2',
-				listing_owner_user_id: userBbb,
-				reporter_user_id: userAaa,
-				resolved_by_user_id: null,
-			},
-			{
-				id: 'report-3',
-				listing_id: 'listing-2',
-				listing_owner_user_id: userBbb,
-				reporter_user_id: userBbb,
-				resolved_by_user_id: userAaa,
-			},
-		],
+			['report-1', 'listing-1', userAaa, userBbb, null],
+			['report-2', 'listing-2', userBbb, userAaa, null],
+			['report-3', 'listing-2', userBbb, userBbb, userAaa],
+		].map(([id, listing_id, owner, reporter, resolver]) => ({
+			id,
+			listing_id,
+			listing_owner_user_id: owner,
+			reporter_user_id: reporter,
+			resolved_by_user_id: resolver,
+		})),
 		community_bans: [
 			{ user_id: userAaa, banned_by_user_id: userBbb },
 			{ user_id: userBbb, banned_by_user_id: userAaa },
 		],
 		package_codemod_run_items: [
-			{
-				id: 'codemod-item-1',
-				run_id: 'codemod-run-1',
-				user_id: userAaa,
-				package_id: 'pkg-1',
-				kody_id: 'demo',
-				status: 'applied',
-			},
-			{
-				id: 'codemod-item-2',
-				run_id: 'codemod-run-2',
-				user_id: userBbb,
-				package_id: 'pkg-2',
-				kody_id: 'demo-b',
-				status: 'applied',
-			},
+			codemodItem('codemod-item-1', 'codemod-run-1', userAaa, 'pkg-1'),
+			codemodItem('codemod-item-2', 'codemod-run-2', userBbb, 'pkg-2'),
 		],
 		package_codemod_runs: [
-			{
-				id: 'codemod-run-1',
-				codemod_id: '0001-ambient-storage-to-package-storage',
-				mode: 'apply',
-				scope_user_id: userAaa,
-				initiated_by_user_id: userAaa,
-				filters_json: JSON.stringify({ userIds: [userAaa, userBbb] }),
-				status: 'completed',
-			},
-			{
-				id: 'codemod-run-fleet',
-				codemod_id: '0001-ambient-storage-to-package-storage',
-				mode: 'scan',
-				scope_user_id: null,
-				initiated_by_user_id: userBbb,
-				filters_json: JSON.stringify({ userIds: [userAaa] }),
-				status: 'completed',
-			},
-			{
-				id: 'codemod-run-2',
-				codemod_id: '0001-ambient-storage-to-package-storage',
-				mode: 'apply',
-				scope_user_id: userBbb,
-				initiated_by_user_id: userBbb,
-				filters_json: JSON.stringify({ userIds: [userBbb] }),
-				status: 'completed',
-			},
+			codemodRun('codemod-run-1', 'apply', userAaa, userAaa, [
+				userAaa,
+				userBbb,
+			]),
+			codemodRun('codemod-run-fleet', 'scan', null, userBbb, [userAaa]),
+			codemodRun('codemod-run-2', 'apply', userBbb, userBbb, [userBbb]),
 		],
 	})
 
@@ -530,17 +432,17 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			const matchingKeys = kvStoreKeys
 				.filter((key) => key.startsWith(prefix))
 				.sort()
+			// Page one key at a time for this prefix to exercise cursors.
 			if (prefix === 'derived-cache:v1:community-icon:v1:listing-1:') {
 				const start = options?.cursor
 					? Number(options.cursor.replace('icon-page-', '')) - 1
 					: 0
 				const page = matchingKeys.slice(start, start + 1)
+				const more = start + page.length < matchingKeys.length
 				return {
 					keys: page.map((name) => ({ name })),
-					list_complete: start + page.length >= matchingKeys.length,
-					...(start + page.length < matchingKeys.length
-						? { cursor: `icon-page-${start + 2}` }
-						: {}),
+					list_complete: !more,
+					...(more ? { cursor: `icon-page-${start + 2}` } : {}),
 				}
 			}
 			return {
@@ -621,43 +523,24 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	const clearRunLogMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeUserMeterMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeStripePlanRefreshMock = vi.fn(async () => ({ ok: true as const }))
-	const stripePlanRefreshIdFromNameMock = vi.fn(
-		(name: string) => name as unknown as DurableObjectId,
-	)
+	const stripePlanRefreshIdFromNameMock = vi.fn(idFromName)
 	const purgeMailboxMock = vi.fn(async () => {
 		mailboxCleanupOrder.push('purge-mailbox')
 		return { ok: true as const }
 	})
-	const listBlobReferencesMock = vi.fn(
-		async ({ startAfter }: { startAfter?: string | null }) => {
-			mailboxCleanupOrder.push('list-blob-references')
-			if (startAfter == null) {
-				return {
-					references: [
-						{
-							kind: 'raw_mime' as const,
-							key: 'email-raw:v1:user-aaa/em-1',
-							messageId: 'em-1',
-							attachmentId: null,
-						},
-						{
-							kind: 'raw_mime' as const,
-							key: 'email-raw:v1:user-aaa/em-2',
-							messageId: 'em-2',
-							attachmentId: null,
-						},
-					],
-					nextStartAfter: null,
-					truncated: false as const,
-				}
-			}
-			return {
-				references: [],
-				nextStartAfter: null,
-				truncated: false as const,
-			}
-		},
-	)
+	const listBlobReferencesMock = vi.fn(async () => {
+		mailboxCleanupOrder.push('list-blob-references')
+		return {
+			references: ['em-1', 'em-2'].map((messageId) => ({
+				kind: 'raw_mime' as const,
+				key: `email-raw:v1:user-aaa/${messageId}`,
+				messageId,
+				attachmentId: null,
+			})),
+			nextStartAfter: null,
+			truncated: false as const,
+		}
+	})
 	const jobsBindingStub = createJobsBindingStub(db)
 	const purgeJobManagerMock = vi.fn((input: { userId: string }) =>
 		jobsBindingStub.purgeUser(input),
@@ -672,15 +555,13 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		BUNDLE_ARTIFACTS_KV: kv,
 		COMMUNITY_ASSETS: communityAssets,
 		EMAIL_BLOBS: emailBlobs,
-		CAPABILITY_VECTOR_INDEX: {
-			deleteByIds: deleteVectorsMock,
-		},
+		CAPABILITY_VECTOR_INDEX: { deleteByIds: deleteVectorsMock },
 		STORAGE_RUNNER: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
+			idFromName,
 			get: () => ({ clearStorage: clearStorageMock }),
 		},
 		RUN_LOG: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
+			idFromName,
 			get: () => ({
 				clearAll: clearRunLogMock,
 				listStorageIds: async () => [] as Array<string>,
@@ -698,7 +579,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			get: () => ({ purgeUser: purgeStripePlanRefreshMock }),
 		},
 		MAILBOX: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
+			idFromName,
 			get: () => ({
 				listBlobReferences: listBlobReferencesMock,
 				purge: purgeMailboxMock,
@@ -708,21 +589,19 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			purgeUser: purgeJobManagerMock as unknown,
 		}),
 		REPO_SESSION: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
+			idFromName,
 			get: () => ({ purgeSession: purgeRepoSessionMock }),
 		},
 		MCP_CLIENT_HUB: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
+			idFromName,
 			get: () => ({ purgeForAccountDeletion: purgeMcpClientHubMock }),
 		},
 		MCP_OBJECT: {
-			idFromString: (id: string) => id as unknown as DurableObjectId,
-			get: () => ({
-				purgeForAccountDeletion: purgeMcpAgentSessionMock,
-			}),
+			idFromString: idFromName,
+			get: () => ({ purgeForAccountDeletion: purgeMcpAgentSessionMock }),
 		},
 		PACKAGE_REALTIME_SESSION: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
+			idFromName,
 			get: () => ({ fetch: doFetchMock }),
 		},
 	})
@@ -799,32 +678,18 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'email-raw:v1:user-aaa/em-1',
 		'email-raw:v1:user-aaa/em-2',
 	])
+	// Feedback A reviewed loses its review attribution; A's own submission goes.
 	expect(rows.platform_feedback).toEqual([
 		{
-			id: 'feedback-reviewed-by-a',
-			submitter_user_id: userBbb,
-			submitter_username: 'user-b',
-			submitter_email: 'b@example.com',
+			...feedback('feedback-reviewed-by-a', userBbb, userAaa, ''),
 			reviewed_by_user_id: null,
 			reviewed_at: null,
 			admin_note: null,
 		},
-		{
-			id: 'feedback-unrelated',
-			submitter_user_id: userBbb,
-			submitter_username: 'user-b',
-			submitter_email: 'b@example.com',
-			reviewed_by_user_id: userBbb,
-			reviewed_at: '2026-07-05',
-			admin_note: 'Reviewed by B.',
-		},
+		feedback('feedback-unrelated', userBbb, userBbb, 'Reviewed by B.'),
 	])
 	expect(rows.user_storage_buckets).toEqual([
-		{
-			user_id: userBbb,
-			storage_id: 'package:pkg-2',
-			kind: 'package',
-		},
+		{ user_id: userBbb, storage_id: 'package:pkg-2', kind: 'package' },
 	])
 	expect(rows.community_listings).toEqual([
 		{ id: 'listing-2', owner_user_id: userBbb, pinned_commit: 'commit-2' },
@@ -858,52 +723,20 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		{ user_id: userBbb, banned_by_user_id: 'deleted-user' },
 	])
 	expect(rows.package_codemod_run_items).toEqual([
-		{
-			id: 'codemod-item-2',
-			run_id: 'codemod-run-2',
-			user_id: userBbb,
-			package_id: 'pkg-2',
-			kody_id: 'demo-b',
-			status: 'applied',
-		},
+		codemodItem('codemod-item-2', 'codemod-run-2', userBbb, 'pkg-2'),
 	])
+	// Codemod runs keep their history but no longer name the deleted user.
 	expect(rows.package_codemod_runs).toEqual([
-		{
-			id: 'codemod-run-1',
-			codemod_id: '0001-ambient-storage-to-package-storage',
-			mode: 'apply',
-			scope_user_id: 'deleted-user',
-			initiated_by_user_id: 'deleted-user',
-			filters_json: JSON.stringify({ userIds: ['deleted-user', userBbb] }),
-			status: 'completed',
-		},
-		{
-			id: 'codemod-run-fleet',
-			codemod_id: '0001-ambient-storage-to-package-storage',
-			mode: 'scan',
-			scope_user_id: null,
-			initiated_by_user_id: userBbb,
-			filters_json: JSON.stringify({ userIds: ['deleted-user'] }),
-			status: 'completed',
-		},
-		{
-			id: 'codemod-run-2',
-			codemod_id: '0001-ambient-storage-to-package-storage',
-			mode: 'apply',
-			scope_user_id: userBbb,
-			initiated_by_user_id: userBbb,
-			filters_json: JSON.stringify({ userIds: [userBbb] }),
-			status: 'completed',
-		},
+		codemodRun('codemod-run-1', 'apply', 'deleted-user', 'deleted-user', [
+			'deleted-user',
+			userBbb,
+		]),
+		codemodRun('codemod-run-fleet', 'scan', null, userBbb, ['deleted-user']),
+		codemodRun('codemod-run-2', 'apply', userBbb, userBbb, [userBbb]),
 	])
-	for (const run of rows.package_codemod_runs ?? []) {
-		expect(String(run['filters_json'])).not.toContain(userAaa)
-	}
 	expect(rows.users).toEqual([
 		{ id: 2, email: 'b@example.com', stable_user_id: 'user-bbb' },
 	])
-	expect(result.deletedRowCounts.password_resets).toBe(2)
-	expect(result.deletedRowCounts.user_roles).toBe(1)
 
 	// Out-of-band stores for the deleted user were cleared.
 	expect(deleteVectorsMock).toHaveBeenCalledWith([
@@ -922,7 +755,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(doFetchMock).toHaveBeenCalledTimes(1)
 
 	// Bundle KV keys for the deleted user were removed; the other user's keys
-	// remain in storage.
+	// and platform settings remain in storage.
 	expect(deletedKvKeys.sort()).toEqual([
 		'bundle-artifact:v1:src-1',
 		'community-snapshot:v1:listing-1',
@@ -945,33 +778,35 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'source-snapshot:v1:src-1:abc123',
 		'source-snapshot:v1:src-1:old456',
 	])
-	expect(deletedKvKeys).not.toContain(
-		'package-retriever-index-entry:v1:user-bbb:search:pkg-2:notes',
-	)
-	expect(deletedKvKeys).not.toContain(
-		`package-codemod-revert:${userBbb}:item-other`,
-	)
-	expect(deletedKvKeys).not.toContain('platform-settings:v1:reserved-usernames')
-	expect(deletedKvKeys).not.toContain('platform-settings:v1:signup-mode')
 
 	// Result accounting captures the per-table counts. Job rows are purged
 	// through the JOBS service (ADR 0016), so they are not counted here.
 	expect(result.deletedRowCounts.jobs).toBeUndefined()
-	expect(result.deletedRowCounts.users).toBe(1)
-	expect(result.deletedRowCounts.user_storage_buckets).toBe(2)
-	expect(result.deletedRowCounts.community_listings).toBe(1)
-	expect(result.deletedRowCounts.community_forks).toBe(2)
-	expect(result.deletedRowCounts.community_ratings).toBe(2)
-	expect(result.deletedRowCounts.community_activity_events).toBe(2)
-	expect(result.deletedRowCounts.community_reports).toBe(2)
-	expect(result.updatedRowCounts.community_reports).toBe(1)
-	expect(result.deletedRowCounts.community_bans).toBe(1)
-	expect(result.updatedRowCounts.community_bans).toBe(1)
-	expect(result.deletedRowCounts.platform_feedback).toBe(1)
-	expect(result.updatedRowCounts.platform_feedback).toBe(1)
-	expect(result.deletedKvKeys).toBe(20)
-	expect(result.deletedCommunityAssets).toBe(9)
-	expect(result.deletedEmailBlobs).toBe(2)
+	expect(result.deletedRowCounts).toMatchObject({
+		users: 1,
+		password_resets: 2,
+		user_roles: 1,
+		user_storage_buckets: 2,
+		community_listings: 1,
+		community_forks: 2,
+		community_ratings: 2,
+		community_activity_events: 2,
+		community_reports: 2,
+		community_bans: 1,
+		platform_feedback: 1,
+	})
+	expect(result.updatedRowCounts).toMatchObject({
+		community_reports: 1,
+		community_bans: 1,
+		platform_feedback: 1,
+	})
+	expect(result).toMatchObject({
+		deletedKvKeys: 20,
+		deletedCommunityAssets: 9,
+		deletedEmailBlobs: 2,
+		deletedVectors: 5,
+		warnings: [],
+	})
 	// Prefix sweeps remove current and historical assets without crossing users.
 	expect(deletedCommunityAssetKeys.sort()).toEqual([
 		'community-icon:v1/listing-1/abc123/asset',
@@ -991,7 +826,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			'user-avatars/user-bbb/other.png',
 		]),
 	)
-	expect(result.deletedVectors).toBe(5)
 	expect(result.clearedDurableObjects).toMatchObject({
 		storageRunners: 3,
 		runLogs: 1,
@@ -1013,18 +847,15 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(purgeStripePlanRefreshMock).toHaveBeenCalledWith({ userId: userAaa })
 	expect(listBlobReferencesMock).toHaveBeenCalledTimes(1)
 	expect(purgeMailboxMock).toHaveBeenCalledTimes(1)
-	expect(mailboxCleanupOrder[0]).toBe('list-blob-references')
-	expect(mailboxCleanupOrder.indexOf('delete-email-blob')).toBeGreaterThan(
-		mailboxCleanupOrder.indexOf('list-blob-references'),
-	)
-	expect(mailboxCleanupOrder.indexOf('purge-mailbox')).toBeGreaterThan(
-		mailboxCleanupOrder.lastIndexOf('delete-email-blob'),
-	)
+	// Blob references are listed, blobs deleted, and only then the mailbox.
+	expect(mailboxCleanupOrder).toEqual([
+		'list-blob-references',
+		...mailboxCleanupOrder.filter((step) => step === 'delete-email-blob'),
+		'purge-mailbox',
+	])
+	expect(mailboxCleanupOrder).toContain('delete-email-blob')
 	expect(purgeMcpClientHubMock).toHaveBeenCalledTimes(1)
-	expect(purgeMcpAgentSessionMock).toHaveBeenCalledWith({
-		userId: userAaa,
-	})
-	expect(result.warnings).toEqual([])
+	expect(purgeMcpAgentSessionMock).toHaveBeenCalledWith({ userId: userAaa })
 })
 
 test('account deletion preserves Mailbox references and retry marker when R2 deletion fails', async () => {
@@ -1035,11 +866,12 @@ test('account deletion preserves Mailbox references and retry marker when R2 del
 	const deleteEmailBlob = vi.fn(async () => {
 		throw new Error('email R2 delete unavailable')
 	})
+	const key = 'email-raw:v1:user-aaa/message-1'
 	const listBlobReferences = vi.fn(async () => ({
 		references: [
 			{
 				kind: 'raw_mime' as const,
-				key: 'email-raw:v1:user-aaa/message-1',
+				key,
 				messageId: 'message-1',
 				attachmentId: null,
 			},
@@ -1050,29 +882,18 @@ test('account deletion preserves Mailbox references and retry marker when R2 del
 	const env = createSuccessfulDeletionEnv(db, {
 		EMAIL_BLOBS: {
 			async list() {
-				return {
-					objects: [{ key: 'email-raw:v1:user-aaa/message-1' }],
-					delimitedPrefixes: [],
-					truncated: false,
-				}
+				return { objects: [{ key }], delimitedPrefixes: [], truncated: false }
 			},
 			delete: deleteEmailBlob,
 		} as unknown as R2Bucket,
 		MAILBOX: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: () => ({
-				listBlobReferences,
-				purge: purgeMailbox,
-			}),
+			idFromName,
+			get: () => ({ listBlobReferences, purge: purgeMailbox }),
 		} as unknown as DurableObjectNamespace,
 	})
 
 	await expect(
-		deleteUserAccount({
-			env,
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
+		deleteUserAccount({ env, dbUserId: 1, mcpUserId: 'user-aaa' }),
 	).rejects.toSatisfy(
 		(error: unknown) =>
 			error instanceof AccountDeletionCleanupError &&
@@ -1091,6 +912,7 @@ test('account deletion preserves Mailbox references and retry marker when R2 del
 		}),
 	])
 
+	// Any other critical cleanup failure also keeps the Mailbox for the retry.
 	const { db: unrelatedDb } = createTestDb({
 		users: [{ id: 1, email: 'b@example.com', stable_user_id: 'user-bbb' }],
 	})
@@ -1098,7 +920,7 @@ test('account deletion preserves Mailbox references and retry marker when R2 del
 	const unrelatedFailureEnv = createSuccessfulDeletionEnv(unrelatedDb, {
 		OAUTH_PROVIDER: undefined,
 		MAILBOX: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
+			idFromName,
 			get: () => ({
 				listBlobReferences: async () => ({
 					references: [],
@@ -1119,246 +941,101 @@ test('account deletion preserves Mailbox references and retry marker when R2 del
 	expect(purgeAfterUnrelatedFailure).not.toHaveBeenCalled()
 })
 
-test('deleteUserAccount drops the UserMeter tombstone after the user row is gone', async () => {
-	const { db, rows } = createTestDb({
-		users: [{ id: 1, email: 'a@example.com' }],
-	})
-	const env = createSuccessfulDeletionEnv(db)
-	const meter = userMeterRpc({ env, userId: 'user-aaa' })
-	await meter.markDeleting({ deletingAt: '2026-08-31 15:22:12' })
-
-	await deleteUserAccount({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-	})
-
-	expect(rows.users).toEqual([])
-	expect(await meter.readDeletionState()).toEqual({ deletingAt: null })
-})
-
-test('deleteUserAccount clears the deletion fence when writers are still active', async () => {
-	const { db, rows } = createTestDb({
-		users: [{ id: 1, email: 'a@example.com' }],
-	})
-	const env = createSuccessfulDeletionEnv(db)
-	const meter = userMeterRpc({ env, userId: 'user-aaa' })
-	await meter.acquireWriteLease({
-		token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-		holder: 'test:signup',
-		acquiredAt: '2026-08-31 15:00:00',
-	})
-
-	await expect(
-		deleteUserAccount({
-			env,
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
-	).rejects.toBeInstanceOf(AccountDeletionWritersActiveError)
-	expect(rows.users).toEqual([
-		expect.objectContaining({
-			id: 1,
-			stable_user_id: 'user-aaa',
-			deleting_at: null,
-		}),
-	])
-	expect(await meter.readDeletionState()).toEqual({ deletingAt: null })
-})
-
-test('deleteUserAccount clears the deletion fence when inventory cannot be collected', async () => {
-	const { db, rows } = createTestDb(
-		{
-			users: [{ id: 1, email: 'a@example.com' }],
-		},
-		{ failSelectContaining: 'from mcp_memories' },
-	)
-	const env = createSuccessfulDeletionEnv(db)
-	const meter = userMeterRpc({ env, userId: 'user-aaa' })
-
-	await expect(
-		deleteUserAccount({
-			env,
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
-	).rejects.toBeInstanceOf(AccountDeletionInventoryError)
-	expect(rows.users).toEqual([
-		expect.objectContaining({
-			id: 1,
-			stable_user_id: 'user-aaa',
-			deleting_at: null,
-		}),
-	])
-	expect(await meter.readDeletionState()).toEqual({ deletingAt: null })
-})
-
-test('deleteUserAccount keeps an existing fence when writers are still active', async () => {
-	const { db, rows } = createTestDb({
-		users: [
-			{
-				id: 1,
-				email: 'a@example.com',
-				deleting_at: '2026-08-31 15:22:12',
-			},
-		],
-	})
-	const env = createSuccessfulDeletionEnv(db)
-	const meter = userMeterRpc({ env, userId: 'user-aaa' })
-	await meter.acquireWriteLease({
-		token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-		holder: 'test:cleanup-retry',
-		acquiredAt: '2026-08-31 15:23:00',
-	})
-	await meter.markDeleting({ deletingAt: '2026-08-31 15:22:12' })
-
-	await expect(
-		deleteUserAccount({
-			env,
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
-	).rejects.toBeInstanceOf(AccountDeletionWritersActiveError)
-	expect(rows.users).toEqual([
-		expect.objectContaining({
-			id: 1,
-			stable_user_id: 'user-aaa',
-			deleting_at: '2026-08-31 15:22:12',
-		}),
-	])
-	expect(await meter.readDeletionState()).toEqual({
-		deletingAt: '2026-08-31 15:22:12',
-	})
-})
-
-test('deleteUserAccount revokes OAuth grants through OAUTH_KV when the provider helpers are absent', async () => {
-	const { db, rows } = createTestDb({
-		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
-		user_mcp_oauth_clients: [
-			{
-				id: 'row-1',
-				user_id: 1,
-				client_id: 'owned-client',
-				revoked_at: null,
-			},
-		],
-	})
-	const providerGrant = (userId: string, grantId: string, clientId: string) =>
-		JSON.stringify({ id: grantId, userId, clientId, scope: ['mcp'] })
-	const providerToken = (userId: string, grantId: string, tokenId: string) =>
+test('deleteUserAccount revokes OAuth grants via provider helpers, falls back to OAUTH_KV, and fails closed without either', async () => {
+	const grant = (userId: string, grantId: string) =>
+		JSON.stringify({ id: grantId, userId, clientId: 'host-client' })
+	const token = (userId: string, grantId: string, tokenId: string) =>
 		JSON.stringify({ id: tokenId, userId, grantId })
+	const deleteUserA = (
+		overrides: Parameters<typeof createSuccessfulDeletionEnv>[1],
+		initial: Parameters<typeof createTestDb>[0] = {},
+	) => {
+		const { db, rows } = createTestDb({
+			users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
+			...initial,
+		})
+		return {
+			rows,
+			result: deleteUserAccount({
+				env: createSuccessfulDeletionEnv(db, overrides),
+				dbUserId: 1,
+				mcpUserId: 'user-aaa',
+			}),
+		}
+	}
+
+	// The fetch-context provider helpers win over OAUTH_KV when both exist.
+	const providerKv = createMemoryKvNamespace({
+		'grant:user-aaa:grant-1': grant('user-aaa', 'grant-1'),
+	})
+	const revokeGrant = vi.fn(async () => undefined)
+	const provider = await deleteUserA({
+		OAUTH_KV: providerKv.kv,
+		OAUTH_PROVIDER: {
+			async listUserGrants() {
+				return {
+					items: [
+						{ id: 'provider-grant-1', clientId: 'client-1' },
+						{ id: 'provider-grant-2', clientId: 'client-2' },
+					],
+					cursor: undefined,
+				}
+			},
+			revokeGrant,
+		},
+	}).result
+	expect(provider.warnings).toEqual([])
+	expect(provider.revokedOAuthGrants).toBe(2)
+	expect(revokeGrant.mock.calls).toEqual([
+		['provider-grant-1', 'user-aaa'],
+		['provider-grant-2', 'user-aaa'],
+	])
+	expect([...providerKv.store.keys()]).toEqual(['grant:user-aaa:grant-1'])
+
+	// Without the provider helpers, OAUTH_KV grants and tokens for the user
+	// (and owned clients) are removed; other users and host clients remain.
 	const { kv, store } = createMemoryKvNamespace({
 		'client:owned-client': JSON.stringify({ clientId: 'owned-client' }),
 		'client:host-client': JSON.stringify({ clientId: 'host-client' }),
-		'grant:user-aaa:grant-1': providerGrant(
-			'user-aaa',
-			'grant-1',
-			'host-client',
-		),
-		'grant:user-aaa:grant-2': providerGrant(
-			'user-aaa',
-			'grant-2',
-			'host-client',
-		),
-		'token:user-aaa:grant-1:tok-1': providerToken(
-			'user-aaa',
-			'grant-1',
-			'tok-1',
-		),
-		'token:user-aaa:grant-1:tok-2': providerToken(
-			'user-aaa',
-			'grant-1',
-			'tok-2',
-		),
-		'token:user-aaa:grant-2:tok-3': providerToken(
-			'user-aaa',
-			'grant-2',
-			'tok-3',
-		),
-		'grant:user-bbb:grant-9': providerGrant(
-			'user-bbb',
-			'grant-9',
-			'host-client',
-		),
-		'token:user-bbb:grant-9:tok-9': providerToken(
-			'user-bbb',
-			'grant-9',
-			'tok-9',
-		),
+		'grant:user-aaa:grant-1': grant('user-aaa', 'grant-1'),
+		'grant:user-aaa:grant-2': grant('user-aaa', 'grant-2'),
+		'token:user-aaa:grant-1:tok-1': token('user-aaa', 'grant-1', 'tok-1'),
+		'token:user-aaa:grant-1:tok-2': token('user-aaa', 'grant-1', 'tok-2'),
+		'token:user-aaa:grant-2:tok-3': token('user-aaa', 'grant-2', 'tok-3'),
+		'grant:user-bbb:grant-9': grant('user-bbb', 'grant-9'),
+		'token:user-bbb:grant-9:tok-9': token('user-bbb', 'grant-9', 'tok-9'),
 	})
-	const env = createSuccessfulDeletionEnv(db, {
-		OAUTH_PROVIDER: undefined,
-		OAUTH_KV: kv,
-	})
-
-	const result = await deleteUserAccount({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-	})
-
-	expect(result.warnings).toEqual([])
-	expect(result.revokedOAuthGrants).toBe(2)
-	expect(rows.users).toEqual([])
+	const kvFallback = deleteUserA(
+		{ OAUTH_PROVIDER: undefined, OAUTH_KV: kv },
+		{
+			user_mcp_oauth_clients: [
+				{
+					id: 'row-1',
+					user_id: 1,
+					client_id: 'owned-client',
+					revoked_at: null,
+				},
+			],
+		},
+	)
+	const kvResult = await kvFallback.result
+	expect(kvResult.warnings).toEqual([])
+	expect(kvResult.revokedOAuthGrants).toBe(2)
+	expect(kvFallback.rows.users).toEqual([])
 	expect([...store.keys()].sort()).toEqual([
 		'client:host-client',
 		'grant:user-bbb:grant-9',
 		'token:user-bbb:grant-9:tok-9',
 	])
-})
 
-test('deleteUserAccount prefers the fetch-context provider helpers over OAUTH_KV', async () => {
-	const { db } = createTestDb({
-		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
-	})
-	const { kv, store } = createMemoryKvNamespace({
-		'grant:user-aaa:grant-1': JSON.stringify({
-			id: 'grant-1',
-			userId: 'user-aaa',
-			clientId: 'host-client',
-		}),
-	})
-	const revokeGrant = vi.fn(async () => undefined)
-	const result = await deleteUserAccount({
-		env: createSuccessfulDeletionEnv(db, {
-			OAUTH_KV: kv,
-			OAUTH_PROVIDER: {
-				async listUserGrants() {
-					return {
-						items: [{ id: 'provider-grant', clientId: 'host-client' }],
-						cursor: undefined,
-					}
-				},
-				revokeGrant,
-			},
-		}),
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-	})
-
-	expect(result.warnings).toEqual([])
-	expect(result.revokedOAuthGrants).toBe(1)
-	expect(revokeGrant).toHaveBeenCalledWith('provider-grant', 'user-aaa')
-	expect([...store.keys()]).toEqual(['grant:user-aaa:grant-1'])
-})
-
-test('deleteUserAccount reports the missing OAuth surfaces when neither provider helpers nor OAUTH_KV exist', async () => {
-	const { db, rows } = createTestDb({
-		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
-	})
-	await expect(
-		deleteUserAccount({
-			env: createSuccessfulDeletionEnv(db, { OAUTH_PROVIDER: undefined }),
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
-	).rejects.toMatchObject({
+	const neither = deleteUserA({ OAUTH_PROVIDER: undefined })
+	await expect(neither.result).rejects.toMatchObject({
 		name: 'AccountDeletionCleanupError',
 		cleanupErrors: [
 			'OAuth provider binding and OAUTH_KV were unavailable; OAuth grants were not revoked.',
 		],
 	})
-	expect(rows.users).toEqual([
+	expect(neither.rows.users).toEqual([
 		expect.objectContaining({ id: 1, deleting_at: expect.any(String) }),
 	])
 })

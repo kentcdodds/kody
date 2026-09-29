@@ -14,45 +14,45 @@ import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import {
 	createTestDb,
 	createSuccessfulDeletionEnv,
+	type RowMap,
 } from '#worker/test-support/account-deletion.ts'
 
-test('deleteUserAccount revokes OAuth grants and fails closed on critical cleanup errors', async () => {
-	const revokeGrant = vi.fn(async () => undefined)
-	const { db: revokeDb } = createTestDb({
-		users: [{ id: 1, email: 'a@example.com' }],
-	})
-	const revokeResult = await deleteUserAccount({
-		env: createSuccessfulDeletionEnv(revokeDb, {
-			OAUTH_PROVIDER: {
-				async listUserGrants() {
-					return {
-						items: [
-							{ id: 'grant-1', clientId: 'client-1' },
-							{ id: 'grant-2', clientId: 'client-2' },
-						],
-						cursor: undefined,
-					}
-				},
-				revokeGrant,
-			},
-		}),
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-	})
-	expect(revokeGrant).toHaveBeenCalledTimes(2)
-	expect(revokeResult.revokedOAuthGrants).toBe(2)
-	expect(revokeResult.warnings).toEqual([])
+type DeletionEnv = Parameters<typeof deleteUserAccount>[0]['env']
 
+const userA = { id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }
+
+function deleteUserA(env: DeletionEnv) {
+	return deleteUserAccount({ env, dbUserId: 1, mcpUserId: 'user-aaa' })
+}
+
+function oauthProvider(overrides: Record<string, unknown> = {}) {
+	return {
+		async listUserGrants() {
+			return { items: [], cursor: undefined }
+		},
+		revokeGrant: vi.fn(async () => undefined),
+		...overrides,
+	}
+}
+
+const fencedUser = expect.objectContaining({
+	id: 1,
+	email: 'a@example.com',
+	deleting_at: expect.any(String),
+})
+const unfencedUser = expect.objectContaining({
+	id: 1,
+	email: 'a@example.com',
+	deleting_at: null,
+})
+
+test('deleteUserAccount deletes owned OAuth clients and fails closed on critical cleanup errors', async () => {
+	const ownedClient = { id: 'row-1', user_id: 1, client_id: 'owned-client' }
 	const deleteClient = vi.fn(async () => undefined)
 	const { db: ownedClientDb } = createTestDb({
-		users: [{ id: 1, email: 'a@example.com' }],
+		users: [userA],
 		user_mcp_oauth_clients: [
-			{
-				id: 'row-1',
-				user_id: 1,
-				client_id: 'owned-client',
-				revoked_at: null,
-			},
+			{ ...ownedClient, revoked_at: null },
 			{
 				id: 'row-2',
 				user_id: 1,
@@ -61,48 +61,27 @@ test('deleteUserAccount revokes OAuth grants and fails closed on critical cleanu
 			},
 		],
 	})
-	await deleteUserAccount({
-		env: createSuccessfulDeletionEnv(ownedClientDb, {
-			OAUTH_PROVIDER: {
-				async listUserGrants() {
-					return { items: [], cursor: undefined }
-				},
-				revokeGrant: vi.fn(async () => undefined),
-				deleteClient,
-			},
+	await deleteUserA(
+		createSuccessfulDeletionEnv(ownedClientDb, {
+			OAUTH_PROVIDER: oauthProvider({ deleteClient }),
 		}),
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-	})
+	)
 	expect(deleteClient).toHaveBeenCalledTimes(2)
 	expect(deleteClient).toHaveBeenCalledWith('owned-client')
 	expect(deleteClient).toHaveBeenCalledWith('already-revoked')
 
+	const job = { id: 'job-1', user_id: 'user-aaa', storage_id: null }
 	const { db: missingDeleteDb, rows: missingDeleteRows } = createTestDb({
-		users: [{ id: 1, email: 'a@example.com' }],
-		jobs: [{ id: 'job-1', user_id: 'user-aaa', storage_id: null }],
-		user_mcp_oauth_clients: [
-			{
-				id: 'row-1',
-				user_id: 1,
-				client_id: 'owned-client',
-				revoked_at: null,
-			},
-		],
+		users: [userA],
+		jobs: [job],
+		user_mcp_oauth_clients: [{ ...ownedClient, revoked_at: null }],
 	})
 	await expect(
-		deleteUserAccount({
-			env: createSuccessfulDeletionEnv(missingDeleteDb, {
-				OAUTH_PROVIDER: {
-					async listUserGrants() {
-						return { items: [], cursor: undefined }
-					},
-					revokeGrant: vi.fn(async () => undefined),
-				},
+		deleteUserA(
+			createSuccessfulDeletionEnv(missingDeleteDb, {
+				OAUTH_PROVIDER: oauthProvider(),
 			}),
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
+		),
 	).rejects.toMatchObject({
 		name: 'AccountDeletionCleanupError',
 		cleanupErrors: [
@@ -112,36 +91,25 @@ test('deleteUserAccount revokes OAuth grants and fails closed on critical cleanu
 	expect(missingDeleteRows.users).toEqual([expect.objectContaining({ id: 1 })])
 
 	const { db: oauthFailureDb, rows: oauthFailureRows } = createTestDb({
-		users: [{ id: 1, email: 'a@example.com' }],
-		jobs: [{ id: 'job-1', user_id: 'user-aaa', storage_id: null }],
+		users: [userA],
+		jobs: [job],
 	})
 	await expect(
-		deleteUserAccount({
-			env: createSuccessfulDeletionEnv(oauthFailureDb, {
-				OAUTH_PROVIDER: {
+		deleteUserA(
+			createSuccessfulDeletionEnv(oauthFailureDb, {
+				OAUTH_PROVIDER: oauthProvider({
 					async listUserGrants() {
 						throw new Error('OAuth provider is temporarily unavailable')
 					},
-					revokeGrant: vi.fn(async () => undefined),
-				},
+				}),
 			}),
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
+		),
 	).rejects.toBeInstanceOf(AccountDeletionCleanupError)
-	expect(oauthFailureRows.jobs).toEqual([
-		{ id: 'job-1', user_id: 'user-aaa', storage_id: null },
-	])
-	expect(oauthFailureRows.users).toEqual([
-		expect.objectContaining({
-			id: 1,
-			email: 'a@example.com',
-			deleting_at: expect.any(String),
-		}),
-	])
+	expect(oauthFailureRows.jobs).toEqual([job])
+	expect(oauthFailureRows.users).toEqual([fencedUser])
 
 	const { db: kvFailureDb, rows: kvFailureRows } = createTestDb({
-		users: [{ id: 1, email: 'a@example.com' }],
+		users: [userA],
 		published_bundle_artifacts: [
 			{ id: 'pba-1', user_id: 'user-aaa', kv_key: 'bundle-artifact:v1:src-1' },
 		],
@@ -150,8 +118,8 @@ test('deleteUserAccount revokes OAuth grants and fails closed on critical cleanu
 		],
 	})
 	await expect(
-		deleteUserAccount({
-			env: createSuccessfulDeletionEnv(kvFailureDb, {
+		deleteUserA(
+			createSuccessfulDeletionEnv(kvFailureDb, {
 				BUNDLE_ARTIFACTS_KV: {
 					delete: vi.fn(async () => undefined),
 					list: vi.fn(async () => ({
@@ -171,9 +139,7 @@ test('deleteUserAccount revokes OAuth grants and fails closed on critical cleanu
 					}),
 				},
 			}),
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
+		),
 	).rejects.toMatchObject({
 		cleanupErrors: expect.arrayContaining([
 			expect.stringContaining('Email raw MIME prefix delete failed'),
@@ -181,131 +147,83 @@ test('deleteUserAccount revokes OAuth grants and fails closed on critical cleanu
 	})
 	expect(kvFailureRows.published_bundle_artifacts).toHaveLength(1)
 	expect(kvFailureRows.archived_job_artifacts).toHaveLength(1)
-	expect(kvFailureRows.users).toEqual([
-		expect.objectContaining({
-			id: 1,
-			email: 'a@example.com',
-			deleting_at: expect.any(String),
-		}),
-	])
+	expect(kvFailureRows.users).toEqual([fencedUser])
 })
 
-test('account deletion reports missing Durable Object / blob bindings and remains retryable', async () => {
-	const missingBindings = [
-		{
-			envOverrides: { EMAIL_BLOBS: undefined },
-			cleanupError:
-				'EMAIL_BLOBS binding was unavailable; email objects were not removed.',
-			seed: {
-				users: [
-					{
-						id: 1,
-						email: 'a@example.com',
-						stable_user_id: 'user-aaa',
-					},
+test('account deletion reports missing bindings and remains retryable', async () => {
+	// Inventory-time gaps release the fence; cleanup-time gaps keep it for the
+	// retry. Either way no user data is removed.
+	const cases: Array<
+		[Partial<Env>, new (...args: never) => Error, object, 'fenced' | null]
+	> = [
+		[
+			{ EMAIL_BLOBS: undefined },
+			AccountDeletionCleanupError,
+			{
+				cleanupErrors: expect.arrayContaining([
+					'EMAIL_BLOBS binding was unavailable; email objects were not removed.',
+				]),
+			},
+			'fenced',
+		],
+		[
+			{ MAILBOX: undefined },
+			AccountDeletionInventoryError,
+			{
+				inventoryErrors: [
+					expect.stringContaining(
+						'MAILBOX Durable Object binding is not configured',
+					),
 				],
 			},
-		},
-	] as const
-
-	for (const scenario of missingBindings) {
-		const { db, rows } = createTestDb(scenario.seed)
-		await expect(
-			deleteUserAccount({
-				env: createSuccessfulDeletionEnv(db, scenario.envOverrides),
-				dbUserId: 1,
-				mcpUserId: 'user-aaa',
-			}),
-		).rejects.toMatchObject({
-			cleanupErrors: expect.arrayContaining([scenario.cleanupError]),
-			...('partialResult' in scenario
-				? { partialResult: scenario.partialResult }
-				: {}),
-		})
-		scenario.assertRows?.(rows)
-		expect(rows.users).toEqual([
-			expect.objectContaining({
-				id: 1,
-				deleting_at: expect.any(String),
-			}),
-		])
-	}
-
-	const { db: missingMailboxDb, rows: missingMailboxRows } = createTestDb({
-		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
-	})
-	await expect(
-		deleteUserAccount({
-			env: createSuccessfulDeletionEnv(missingMailboxDb, {
-				MAILBOX: undefined,
-			}),
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
-	).rejects.toMatchObject({
-		name: 'AccountDeletionInventoryError',
-		inventoryErrors: [
-			expect.stringContaining(
-				'MAILBOX Durable Object binding is not configured',
-			),
+			null,
 		],
-	})
-	expect(missingMailboxRows.users).toEqual([
-		expect.objectContaining({
-			id: 1,
-			deleting_at: null,
-		}),
-	])
-
-	const { db: missingMeterDb, rows: missingMeterRows } = createTestDb({
-		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
-	})
-	await expect(
-		deleteUserAccount({
-			env: createSuccessfulDeletionEnv(missingMeterDb, {
-				USER_METER: undefined,
-			}),
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
-	).rejects.toThrow('USER_METER Durable Object binding is not configured.')
-	expect(missingMeterRows.users).toEqual([
-		expect.objectContaining({
-			id: 1,
-			deleting_at: null,
-		}),
-	])
-})
-
-test('deleteUserAccount fails closed when REPO_SESSION_INDEX is missing', async () => {
-	const { db, rows } = createTestDb({
-		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
-		mcp_memories: [{ id: 'memory-a', user_id: 'user-aaa' }],
-	})
-	const env = createSuccessfulDeletionEnv(db)
-	const envWithoutIndex = { ...env }
-	delete envWithoutIndex.REPO_SESSION_INDEX
-	await expect(
-		deleteUserAccount({
-			env: envWithoutIndex,
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
-	).rejects.toBeInstanceOf(AccountDeletionInventoryError)
-	expect(rows.users).toEqual([
-		expect.objectContaining({
-			id: 1,
-			email: 'a@example.com',
-			deleting_at: null,
-		}),
-	])
-	expect(rows.mcp_memories).toEqual([{ id: 'memory-a', user_id: 'user-aaa' }])
+		[
+			// Jobs live in the jobs worker's D1, so an unbound JOBS must not
+			// fall back to scanning APP_DB.
+			{ JOBS: undefined } as unknown as Partial<Env>,
+			AccountDeletionInventoryError,
+			{
+				inventoryErrors: expect.arrayContaining([
+					expect.stringContaining(
+						'JOBS service binding is required to enumerate job vector ids',
+					),
+				]),
+			},
+			null,
+		],
+		[
+			{ REPO_SESSION_INDEX: undefined },
+			AccountDeletionInventoryError,
+			{},
+			null,
+		],
+		[
+			{ USER_METER: undefined },
+			Error,
+			{ message: 'USER_METER Durable Object binding is not configured.' },
+			null,
+		],
+	]
+	for (const [overrides, ErrorClass, fields, fence] of cases) {
+		const { db, rows } = createTestDb({
+			users: [userA],
+			mcp_memories: [{ id: 'memory-a', user_id: 'user-aaa' }],
+		})
+		const error = await deleteUserA(
+			createSuccessfulDeletionEnv(db, overrides),
+		).catch((caught: unknown) => caught)
+		expect(error).toBeInstanceOf(ErrorClass)
+		expect(error).toMatchObject(fields)
+		expect(rows.users).toEqual([fence ? fencedUser : unfencedUser])
+		expect(rows.mcp_memories).toEqual([{ id: 'memory-a', user_id: 'user-aaa' }])
+	}
 })
 
 test('deleteUserAccount fails closed when preflight inventory cannot be read', async () => {
 	const { db, rows } = createTestDb(
 		{
-			users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
+			users: [userA],
 			mcp_memories: [{ id: 'memory-a', user_id: 'user-aaa' }],
 			jobs: [{ id: 'job-a', user_id: 'user-aaa', storage_id: 'job:job-a' }],
 		},
@@ -315,27 +233,23 @@ test('deleteUserAccount fails closed when preflight inventory cannot be read', a
 	const clearStorage = vi.fn(async () => undefined)
 	const userMeter = createInMemoryUserMeterEnv()
 	await expect(
-		deleteUserAccount({
-			env: {
-				APP_DB: db,
-				USER_METER: userMeter.env.USER_METER,
-				CAPABILITY_VECTOR_INDEX: { deleteByIds: deleteVectors },
-				STORAGE_RUNNER: {
-					idFromName: (name: string) => name as unknown as DurableObjectId,
-					get: () => ({ clearStorage }),
-				},
-			} as unknown as Parameters<typeof deleteUserAccount>[0]['env'],
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
+		deleteUserA({
+			APP_DB: db,
+			USER_METER: userMeter.env.USER_METER,
+			CAPABILITY_VECTOR_INDEX: { deleteByIds: deleteVectors },
+			STORAGE_RUNNER: {
+				idFromName: (name: string) => name as unknown as DurableObjectId,
+				get: () => ({ clearStorage }),
+			},
+		} as unknown as DeletionEnv),
 	).rejects.toBeInstanceOf(AccountDeletionInventoryError)
-	expect(rows.users).toEqual([
-		expect.objectContaining({
-			id: 1,
-			email: 'a@example.com',
-			deleting_at: null,
-		}),
-	])
+	expect(rows.users).toEqual([unfencedUser])
+	expect(
+		await userMeterRpc({
+			env: userMeter.env,
+			userId: 'user-aaa',
+		}).readDeletionState(),
+	).toEqual({ deletingAt: null })
 	expect(rows.mcp_memories).toEqual([{ id: 'memory-a', user_id: 'user-aaa' }])
 	expect(rows.jobs).toEqual([
 		{ id: 'job-a', user_id: 'user-aaa', storage_id: 'job:job-a' },
@@ -354,43 +268,24 @@ test('atomic D1 deletion rolls back every row when one statement fails', async (
 		{ failRunContaining: 'delete from mcp_memories where user_id = ?' },
 	)
 	await expect(
-		deleteUserAccount({
-			env: createSuccessfulDeletionEnv(db),
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
+		deleteUserA(createSuccessfulDeletionEnv(db)),
 	).rejects.toMatchObject({
 		cleanupErrors: [
 			expect.stringContaining('Atomic D1 account deletion failed'),
 		],
 	})
-	expect(rows.users).toEqual([
-		expect.objectContaining({
-			id: 1,
-			email: 'a@example.com',
-			deleting_at: expect.any(String),
-		}),
-	])
+	expect(rows.users).toEqual([fencedUser])
 	expect(rows.secret_buckets).toEqual([{ id: 'sb-a', user_id: 'user-aaa' }])
 	expect(rows.mcp_memories).toEqual([{ id: 'memory-a', user_id: 'user-aaa' }])
 })
 
 test('account deletion quiesces a concurrent user write before inventory', async () => {
-	let env: Parameters<typeof deleteUserAccount>[0]['env']
+	let env: DeletionEnv
 	let raceAttempted = false
 	let writeCommitted = false
 	let writeError: unknown
 	const { db } = createTestDb(
-		{
-			users: [
-				{
-					id: 1,
-					email: 'a@example.com',
-					stable_user_id: 'user-aaa',
-					updated_at: '2026-07-22',
-				},
-			],
-		},
+		{ users: [{ ...userA, updated_at: '2026-07-22' }] },
 		{
 			async onSelect(query) {
 				if (
@@ -410,81 +305,72 @@ test('account deletion quiesces a concurrent user write before inventory', async
 		},
 	)
 	env = createSuccessfulDeletionEnv(db)
-	await deleteUserAccount({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-	})
+	await deleteUserA(env)
 	expect(raceAttempted).toBe(true)
 	expect(writeCommitted).toBe(false)
 	expect(writeError).toBeInstanceOf(AccountDeletionInProgressError)
 })
 
-test('account deletion waits for an active writer and resumes on retry', async () => {
-	const { db, rows } = createTestDb({
-		users: [
-			{
-				id: 1,
-				email: 'a@example.com',
-				stable_user_id: 'user-aaa',
-				updated_at: '2026-07-22',
-			},
-		],
-	})
-	// Set up a UserMeter with an active write lease to simulate a crashed writer.
-	const userMeter = createInMemoryUserMeterEnv()
-	const meterStub = userMeterRpc({ env: userMeter.env, userId: 'user-aaa' })
-	await meterStub.acquireWriteLease({
+test('account deletion waits for active writers, releases only the fence it created, and resumes on retry', async () => {
+	function seed(users: RowMap['users']) {
+		const { db, rows } = createTestDb({ users })
+		const env = createSuccessfulDeletionEnv(db)
+		return { env, rows, meter: userMeterRpc({ env, userId: 'user-aaa' }) }
+	}
+	// A crashed writer still holds a lease: the fence this attempt created is
+	// released in both D1 and the UserMeter.
+	const crashed = seed([{ ...userA, updated_at: '2026-07-22' }])
+	await crashed.meter.acquireWriteLease({
 		token: 'crashed-token-aaa',
 		holder: 'test:crashed-writer',
 		acquiredAt: '2000-01-01 00:00:00',
 	})
-	const env = createSuccessfulDeletionEnv(db, {
-		USER_METER: userMeter.env.USER_METER,
-	})
-	await expect(
-		deleteUserAccount({
-			env,
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
-	).rejects.toBeInstanceOf(AccountDeletionWritersActiveError)
-	expect(rows.users?.[0]).toEqual(
-		expect.objectContaining({
-			deleting_at: null,
-		}),
+	await expect(deleteUserA(crashed.env)).rejects.toBeInstanceOf(
+		AccountDeletionWritersActiveError,
 	)
-	// Release the meter lease to simulate the crashed writer being repaired.
-	await meterStub.releaseWriteLease({ token: 'crashed-token-aaa' })
-	await expect(
-		deleteUserAccount({
-			env,
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
-	).resolves.toEqual(expect.objectContaining({ warnings: [] }))
-	expect(rows.users).toEqual([])
+	expect(crashed.rows.users).toEqual([unfencedUser])
+	expect(await crashed.meter.readDeletionState()).toEqual({ deletingAt: null })
+
+	// Once the lease is repaired the retry completes, and the UserMeter
+	// tombstone `purge()` preserved is dropped after the user row is gone.
+	await crashed.meter.releaseWriteLease({ token: 'crashed-token-aaa' })
+	await expect(deleteUserA(crashed.env)).resolves.toEqual(
+		expect.objectContaining({ warnings: [] }),
+	)
+	expect(crashed.rows.users).toEqual([])
+	expect(await crashed.meter.readDeletionState()).toEqual({ deletingAt: null })
+
+	// A fence from an earlier attempt stays in place while writers are active.
+	const earlierFence = '2026-08-31 15:22:12'
+	const retry = seed([{ ...userA, deleting_at: earlierFence }])
+	await retry.meter.acquireWriteLease({
+		token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+		holder: 'test:cleanup-retry',
+		acquiredAt: '2026-08-31 15:23:00',
+	})
+	await retry.meter.markDeleting({ deletingAt: earlierFence })
+	await expect(deleteUserA(retry.env)).rejects.toBeInstanceOf(
+		AccountDeletionWritersActiveError,
+	)
+	expect(retry.rows.users).toEqual([
+		expect.objectContaining({ id: 1, deleting_at: earlierFence }),
+	])
+	expect(await retry.meter.readDeletionState()).toEqual({
+		deletingAt: earlierFence,
+	})
 })
 
 test('account deletion empties the user RunLog DO and leaves other users untouched', async () => {
-	const userAaa = 'user-aaa'
-	const userBbb = 'user-bbb'
-	const runLogByUser = new Map<
-		string,
-		{
-			runs: Array<{ id: string; storageId: string | null }>
-			logs: Array<{ runId: string; message: string }>
-		}
-	>([
+	const runLogByUser = new Map([
 		[
-			userAaa,
+			'user-aaa',
 			{
 				runs: [{ id: 'run-a', storageId: 'run-only-bucket' }],
 				logs: [{ runId: 'run-a', message: 'aaa console output' }],
 			},
 		],
 		[
-			userBbb,
+			'user-bbb',
 			{
 				runs: [{ id: 'run-b', storageId: 'bbb-bucket' }],
 				logs: [{ runId: 'run-b', message: 'bbb console output' }],
@@ -494,65 +380,44 @@ test('account deletion empties the user RunLog DO and leaves other users untouch
 	const clearedStorageIds: Array<string> = []
 	const { db } = createTestDb({
 		users: [
-			{ id: 1, email: 'a@example.com', stable_user_id: userAaa },
-			{ id: 2, email: 'b@example.com', stable_user_id: userBbb },
+			userA,
+			{ id: 2, email: 'b@example.com', stable_user_id: 'user-bbb' },
 		],
 	})
-	const env = createSuccessfulDeletionEnv(db, {
-		STORAGE_RUNNER: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: (id: DurableObjectId) => ({
-				clearStorage: async () => {
-					clearedStorageIds.push(String(id))
-					return { ok: true as const }
-				},
-			}),
-		},
-		RUN_LOG: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: (id: DurableObjectId) => {
-				const userId = String(id)
-				return {
-					listStorageIds: async () => {
-						const state = runLogByUser.get(userId)
-						return (state?.runs ?? [])
-							.map((run) => run.storageId)
-							.filter((value): value is string => value != null)
-					},
-					clearAll: async () => {
-						const state = runLogByUser.get(userId)
-						if (state) {
-							state.runs = []
-							state.logs = []
-						}
+	const result = await deleteUserA(
+		createSuccessfulDeletionEnv(db, {
+			STORAGE_RUNNER: {
+				idFromName: (name: string) => name as unknown as DurableObjectId,
+				get: (id: DurableObjectId) => ({
+					clearStorage: async () => {
+						clearedStorageIds.push(String(id))
 						return { ok: true as const }
 					},
-					exportRuns: async () => {
-						const state = runLogByUser.get(userId) ?? {
-							runs: [],
-							logs: [],
-						}
-						return {
-							runs: state.runs,
-							logs: state.logs,
-							nextStartAfter: null,
-							truncated: false,
-						}
-					},
-				}
+				}),
 			},
-		},
-	})
-
-	const result = await deleteUserAccount({
-		env,
-		dbUserId: 1,
-		mcpUserId: userAaa,
-	})
+			RUN_LOG: {
+				idFromName: (name: string) => name as unknown as DurableObjectId,
+				get: (id: DurableObjectId) => {
+					const state = runLogByUser.get(String(id))
+					return {
+						listStorageIds: async () =>
+							(state?.runs ?? []).map((run) => run.storageId),
+						clearAll: async () => {
+							if (state) {
+								state.runs = []
+								state.logs = []
+							}
+							return { ok: true as const }
+						},
+					}
+				},
+			},
+		}),
+	)
 
 	expect(result.clearedDurableObjects.runLogs).toBe(1)
-	expect(runLogByUser.get(userAaa)).toEqual({ runs: [], logs: [] })
-	expect(runLogByUser.get(userBbb)).toEqual({
+	expect(runLogByUser.get('user-aaa')).toEqual({ runs: [], logs: [] })
+	expect(runLogByUser.get('user-bbb')).toEqual({
 		runs: [{ id: 'run-b', storageId: 'bbb-bucket' }],
 		logs: [{ runId: 'run-b', message: 'bbb console output' }],
 	})
@@ -569,20 +434,13 @@ test('account deletion purges a StorageRunner known only via user_storage_bucket
 	const { db } = createTestDb({
 		users: [{ id: 1, email: 'bucket@example.com', stable_user_id: userId }],
 		user_storage_buckets: [
-			{
-				user_id: userId,
-				storage_id: 'exec:adhoc-only',
-				kind: 'execute',
-			},
+			{ user_id: userId, storage_id: 'exec:adhoc-only', kind: 'execute' },
 		],
 	})
 
 	const result = await deleteUserAccount({
 		env: createSuccessfulDeletionEnv(db, {
-			STORAGE_RUNNER: {
-				idFromName,
-				get: () => ({ clearStorage }),
-			},
+			STORAGE_RUNNER: { idFromName, get: () => ({ clearStorage }) },
 		}),
 		dbUserId: 1,
 		mcpUserId: userId,

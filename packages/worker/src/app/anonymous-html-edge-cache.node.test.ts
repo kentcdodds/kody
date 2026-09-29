@@ -38,124 +38,59 @@ const canonicalEnv = {
 }
 
 test('anonymous HTML Cache API stores only cookie-less 200 HTML with the shared TTL', () => {
-	expect(
-		isAnonymousHtmlCacheRequest(
-			new Request('https://kody.codes/'),
-			canonicalEnv,
-		),
-	).toBe(true)
-	expect(
-		isAnonymousHtmlCacheRequest(
-			new Request('https://kody.codes/', { method: 'HEAD' }),
-			canonicalEnv,
-		),
-	).toBe(true)
-	expect(
-		isAnonymousHtmlCacheRequest(
-			new Request('https://kody.codes/', { method: 'POST' }),
-			canonicalEnv,
-		),
-	).toBe(false)
-	expect(
-		isAnonymousHtmlCacheRequest(
-			new Request('https://kody.codes/', {
-				headers: { Cookie: 'kody_session=stale' },
-			}),
-			canonicalEnv,
-		),
-	).toBe(false)
-	expect(
-		isAnonymousHtmlCacheRequest(
-			new Request('https://kody.codes/', {
+	const home = 'https://kody.codes/'
+	const requestCases: Array<
+		[
+			string,
+			RequestInit,
+			boolean,
+			Parameters<typeof isAnonymousHtmlCacheRequest>[1]?,
+		]
+	> = [
+		[home, {}, true],
+		[home, { method: 'HEAD' }, true],
+		[home, { method: 'POST' }, false],
+		[home, { headers: { Cookie: 'kody_session=stale' } }, false],
+		[
+			home,
+			{
 				headers: {
 					Cookie:
 						'kody_site_banner_dismiss=11111111-1111-4111-8111-111111111111',
 				},
-			}),
-			canonicalEnv,
-		),
-	).toBe(false)
-	expect(
-		isAnonymousHtmlCacheRequest(
-			new Request('https://kody.codes/', {
-				headers: { Authorization: 'Bearer x' },
-			}),
-			canonicalEnv,
-		),
-	).toBe(false)
-	expect(
-		isAnonymousHtmlCacheRequest(
-			new Request('https://kody.codes/', {
-				headers: { 'Cache-Control': 'no-cache' },
-			}),
-			canonicalEnv,
-		),
-	).toBe(false)
-	expect(
-		isAnonymousHtmlCacheRequest(
-			new Request('https://kody.codes/login'),
-			canonicalEnv,
-		),
-	).toBe(false)
-	expect(
-		isAnonymousHtmlCacheRequest(
-			new Request('https://kody.codes/', {
-				headers: { Accept: 'text/markdown' },
-			}),
-			canonicalEnv,
-		),
-	).toBe(false)
-	expect(
-		isAnonymousHtmlCacheRequest(
-			new Request('https://kody.codes/', {
-				headers: { Accept: 'text/html' },
-			}),
-			canonicalEnv,
-		),
-	).toBe(true)
-	expect(
-		isAnonymousHtmlCacheRequest(
-			new Request('https://kody.codes/community', {
-				headers: { 'x-remix-target': 'community-listings' },
-			}),
-			canonicalEnv,
-		),
-	).toBe(false)
-	expect(
-		isAnonymousHtmlCacheRequest(
-			new Request('https://kody.codes/community?__frame=community-listings'),
-			canonicalEnv,
-		),
-	).toBe(false)
-
-	expect(
-		isAnonymousHtmlCacheRequest(
-			new Request('https://kody.codes.legacy.example/'),
-			canonicalEnv,
-		),
-	).toBe(false)
-	expect(
-		isAnonymousHtmlCacheRequest(
-			new Request('https://kody-apps.example/'),
-			canonicalEnv,
-		),
-	).toBe(false)
-	expect(
-		isAnonymousHtmlCacheRequest(
-			new Request('https://preview.example.workers.dev/pricing'),
+			},
+			false,
+		],
+		[home, { headers: { Authorization: 'Bearer x' } }, false],
+		[home, { headers: { 'Cache-Control': 'no-cache' } }, false],
+		['https://kody.codes/login', {}, false],
+		[home, { headers: { Accept: 'text/markdown' } }, false],
+		[home, { headers: { Accept: 'text/html' } }, true],
+		[
+			'https://kody.codes/community',
+			{ headers: { 'x-remix-target': 'community-listings' } },
+			false,
+		],
+		['https://kody.codes/community?__frame=community-listings', {}, false],
+		['https://kody.codes.legacy.example/', {}, false],
+		['https://kody-apps.example/', {}, false],
+		[
+			'https://preview.example.workers.dev/pricing',
+			{},
+			true,
 			{ APP_BASE_URL: 'https://preview.example.workers.dev' },
+		],
+		['http://localhost:3742/', {}, true, {}],
+		// `npm run dev` and the Playwright web server: a stored page would hide
+		// the next edit from an anonymous tab for the stale-while-revalidate window.
+		['http://localhost:3742/', {}, false, { WRANGLER_IS_LOCAL_DEV: 'true' }],
+	]
+	expect(
+		requestCases.filter(
+			([url, init, expected, env = canonicalEnv]) =>
+				isAnonymousHtmlCacheRequest(new Request(url, init), env) !== expected,
 		),
-	).toBe(true)
-	expect(
-		isAnonymousHtmlCacheRequest(new Request('http://localhost:3742/'), {}),
-	).toBe(true)
-	// `npm run dev` and the Playwright web server: a stored page would hide
-	// the next edit from an anonymous tab for the stale-while-revalidate window.
-	expect(
-		isAnonymousHtmlCacheRequest(new Request('http://localhost:3742/'), {
-			WRANGLER_IS_LOCAL_DEV: 'true',
-		}),
-	).toBe(false)
+	).toEqual([])
 
 	const htmlKey = buildAnonymousHtmlCacheKey(
 		new Request('https://preview.example.workers.dev/pricing?utm=1', {
@@ -174,42 +109,36 @@ test('anonymous HTML Cache API stores only cookie-less 200 HTML with the shared 
 	)
 	expect(defaultAcceptKey.url).toBe(htmlKey.url)
 
-	expect(isAnonymousHtmlCacheStoreable(htmlResponse({}))).toBe(true)
+	const storeableCases: Array<[Parameters<typeof htmlResponse>[0], boolean]> = [
+		[{}, true],
+		[{ cacheControl: anonymousVisibilityGatedCacheControl }, true],
+		[{ status: 404 }, false],
+		[{ setCookie: 'kody_session=x; Path=/' }, false],
+		[{ contentType: 'application/json' }, false],
+		[{ cacheControl: 'no-store' }, false],
+	]
 	expect(
-		isAnonymousHtmlCacheStoreable(
-			htmlResponse({ cacheControl: anonymousVisibilityGatedCacheControl }),
+		storeableCases.filter(
+			([input, expected]) =>
+				isAnonymousHtmlCacheStoreable(htmlResponse(input)) !== expected,
 		),
-	).toBe(true)
-	expect(isAnonymousHtmlCacheStoreable(htmlResponse({ status: 404 }))).toBe(
-		false,
-	)
-	expect(
-		isAnonymousHtmlCacheStoreable(
-			htmlResponse({ setCookie: 'kody_session=x; Path=/' }),
-		),
-	).toBe(false)
-	expect(
-		isAnonymousHtmlCacheStoreable(
-			htmlResponse({ contentType: 'application/json' }),
-		),
-	).toBe(false)
-	expect(
-		isAnonymousHtmlCacheStoreable(htmlResponse({ cacheControl: 'no-store' })),
-	).toBe(false)
+	).toEqual([])
 })
 
 test('only a document that reached </html> counts as complete', () => {
 	// An SSR stream that failed after committing the doctype ends cleanly at
 	// 15 bytes; it must never be stored as the shared anonymous document.
-	expect(isCompleteHtmlDocument('<!DOCTYPE html>')).toBe(false)
-	expect(isCompleteHtmlDocument('')).toBe(false)
-	expect(isCompleteHtmlDocument('<!DOCTYPE html><html><body>')).toBe(false)
 	expect(
-		isCompleteHtmlDocument(
-			'<!DOCTYPE html><html><body></body></html><!-- rmx:flush document -->',
+		['<!DOCTYPE html>', '', '<!DOCTYPE html><html><body>'].filter(
+			isCompleteHtmlDocument,
 		),
-	).toBe(true)
-	expect(isCompleteHtmlDocument('<html></HTML >')).toBe(true)
+	).toEqual([])
+	expect(
+		[
+			'<!DOCTYPE html><html><body></body></html><!-- rmx:flush document -->',
+			'<html></HTML >',
+		].filter((html) => !isCompleteHtmlDocument(html)),
+	).toEqual([])
 })
 
 test('the stored entry keeps the buffered body and moves Vary aside', async () => {

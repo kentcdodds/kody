@@ -46,44 +46,19 @@ test('createAuthCookie stamps issuedAt for password-change invalidation', async 
 
 test('absolute session lifetime rejects expired and legacy cookies', () => {
 	const now = 1_700_000_000_000
-	const eightDaysMs = 8 * 24 * 60 * 60 * 1000
-	const thirtyOneDaysMs = 31 * 24 * 60 * 60 * 1000
-
+	const dayMs = 24 * 60 * 60 * 1000
+	const cases = [
+		[false, now, false],
+		[false, now - 8 * dayMs, true],
+		[true, now - 8 * dayMs, false],
+		[true, now - 31 * dayMs, true],
+		[false, undefined, true],
+	] as const
 	expect(
-		isAuthSessionExpired({
-			rememberMe: false,
-			issuedAt: now,
-			now,
-		}),
-	).toBe(false)
-	expect(
-		isAuthSessionExpired({
-			rememberMe: false,
-			issuedAt: now - eightDaysMs,
-			now,
-		}),
-	).toBe(true)
-	expect(
-		isAuthSessionExpired({
-			rememberMe: true,
-			issuedAt: now - eightDaysMs,
-			now,
-		}),
-	).toBe(false)
-	expect(
-		isAuthSessionExpired({
-			rememberMe: true,
-			issuedAt: now - thirtyOneDaysMs,
-			now,
-		}),
-	).toBe(true)
-	expect(
-		isAuthSessionExpired({
-			rememberMe: false,
-			issuedAt: undefined,
-			now,
-		}),
-	).toBe(true)
+		cases.map(([rememberMe, issuedAt]) =>
+			isAuthSessionExpired({ rememberMe, issuedAt, now }),
+		),
+	).toEqual(cases.map(([, , expired]) => expired))
 })
 
 test('legacy numeric-id session cookies fail closed', async () => {
@@ -110,41 +85,9 @@ test('legacy numeric-id session cookies fail closed', async () => {
 })
 
 test('password-change invalidation covers legacy cookies, second-precision SQLite, and re-login', () => {
-	expect(parsePasswordChangedAtMs(null)).toBeNull()
-	expect(parsePasswordChangedAtMs('')).toBeNull()
-	expect(parsePasswordChangedAtMs('   ')).toBeNull()
-	expect(parsePasswordChangedAtMs('not-a-timestamp')).toBeNull()
-
 	expect(
-		isAuthSessionInvalidatedByPasswordChange({
-			issuedAt: undefined,
-			passwordChangedAtMs: null,
-		}),
-	).toBe(false)
-	expect(
-		isAuthSessionInvalidatedByPasswordChange({
-			issuedAt: undefined,
-			passwordChangedAtMs: 100,
-		}),
-	).toBe(true)
-	expect(
-		isAuthSessionInvalidatedByPasswordChange({
-			issuedAt: 50,
-			passwordChangedAtMs: 100,
-		}),
-	).toBe(true)
-	expect(
-		isAuthSessionInvalidatedByPasswordChange({
-			issuedAt: 100,
-			passwordChangedAtMs: 100,
-		}),
-	).toBe(true)
-	expect(
-		isAuthSessionInvalidatedByPasswordChange({
-			issuedAt: 101,
-			passwordChangedAtMs: 100,
-		}),
-	).toBe(false)
+		[null, '', '   ', 'not-a-timestamp'].map(parsePasswordChangedAtMs),
+	).toEqual([null, null, null, null])
 
 	const secondPrecisionChangedAt = parsePasswordChangedAtMs(
 		'2026-07-25 12:00:00',
@@ -152,43 +95,37 @@ test('password-change invalidation covers legacy cookies, second-precision SQLit
 	expect(secondPrecisionChangedAt).toBe(
 		Date.parse('2026-07-25T12:00:00.000Z') + 999,
 	)
-	expect(
-		isAuthSessionInvalidatedByPasswordChange({
-			issuedAt: Date.parse('2026-07-25T12:00:00.500Z'),
-			passwordChangedAtMs: secondPrecisionChangedAt,
-		}),
-	).toBe(true)
-	expect(
-		isAuthSessionInvalidatedByPasswordChange({
-			issuedAt: Date.parse('2026-07-25T12:00:01.000Z'),
-			passwordChangedAtMs: secondPrecisionChangedAt,
-		}),
-	).toBe(false)
-
-	expect(parsePasswordChangedAtMs('2026-07-25T12:00:00+00:00')).toBe(
-		Date.parse('2026-07-25T12:00:00+00:00') + 999,
-	)
-	expect(parsePasswordChangedAtMs('2026-07-25 12:00:00+00:00')).toBe(
-		Date.parse('2026-07-25T12:00:00+00:00') + 999,
-	)
-	expect(parsePasswordChangedAtMs('2026-07-25T12:00:00Z')).toBe(
-		Date.parse('2026-07-25T12:00:00Z') + 999,
-	)
-
+	for (const changedAt of [
+		'2026-07-25T12:00:00+00:00',
+		'2026-07-25 12:00:00+00:00',
+		'2026-07-25T12:00:00Z',
+	]) {
+		expect(parsePasswordChangedAtMs(changedAt)).toBe(
+			Date.parse('2026-07-25T12:00:00Z') + 999,
+		)
+	}
 	const msPrecisionChangedAt = parsePasswordChangedAtMs(
 		'2026-07-25T12:00:00.400Z',
 	)
 	expect(msPrecisionChangedAt).toBe(Date.parse('2026-07-25T12:00:00.400Z'))
+
+	const invalidationCases = [
+		[undefined, null, false],
+		[undefined, 100, true],
+		[50, 100, true],
+		[100, 100, true],
+		[101, 100, false],
+		[Date.parse('2026-07-25T12:00:00.500Z'), secondPrecisionChangedAt, true],
+		[Date.parse('2026-07-25T12:00:01.000Z'), secondPrecisionChangedAt, false],
+		[Date.parse('2026-07-25T12:00:00.300Z'), msPrecisionChangedAt, true],
+		[Date.parse('2026-07-25T12:00:00.500Z'), msPrecisionChangedAt, false],
+	] as const
 	expect(
-		isAuthSessionInvalidatedByPasswordChange({
-			issuedAt: Date.parse('2026-07-25T12:00:00.300Z'),
-			passwordChangedAtMs: msPrecisionChangedAt,
-		}),
-	).toBe(true)
-	expect(
-		isAuthSessionInvalidatedByPasswordChange({
-			issuedAt: Date.parse('2026-07-25T12:00:00.500Z'),
-			passwordChangedAtMs: msPrecisionChangedAt,
-		}),
-	).toBe(false)
+		invalidationCases.map(([issuedAt, passwordChangedAtMs]) =>
+			isAuthSessionInvalidatedByPasswordChange({
+				issuedAt,
+				passwordChangedAtMs,
+			}),
+		),
+	).toEqual(invalidationCases.map(([, , invalidated]) => invalidated))
 })

@@ -8,6 +8,84 @@ import {
 	loadOnboardingData,
 	loadPublicOnboardingData,
 } from '#app/onboarding-data.ts'
+import {
+	type OAuthGrantListHelpers,
+	type OAuthGrantListItem,
+} from '#worker/oauth-grants.ts'
+
+type OnboardingInput = Parameters<typeof loadOnboardingData>[0]
+
+function loadWith(
+	grants: Array<OAuthGrantListItem> | OAuthGrantListHelpers['listUserGrants'],
+	overrides: Partial<OnboardingInput> & {
+		lookupClient?: OAuthGrantListHelpers['lookupClient']
+	} = {},
+) {
+	const { lookupClient, ...input } = overrides
+	return loadOnboardingData({
+		env: {
+			OAUTH_PROVIDER: {
+				listUserGrants: Array.isArray(grants)
+					? vi.fn(async () => ({ items: grants }))
+					: grants,
+				...(lookupClient ? { lookupClient } : {}),
+			},
+		},
+		requestUrl: 'http://localhost:3742/onboarding',
+		stableUserId: 'user-1',
+		username: 'u-b',
+		emailVerified: true,
+		...input,
+	})
+}
+
+const noGift = {
+	received: false,
+	active: false,
+	status: 'none',
+	expiresAt: null,
+	grantedAt: null,
+}
+
+const emptyOnboarding = {
+	ok: true,
+	hasAccessWin: false,
+	hasSecondMcpClient: false,
+	hasMcpClient: false,
+	connectedAgents: [],
+	secondAgentStandardGift: noGift,
+	needsOnboarding: true,
+	featuredListings: [],
+	customMcpServers: [],
+	persistedPackageName: null,
+	accessWinMemorySubject: null,
+	checklist: null,
+}
+
+function expectDisconnectedFeaturedServers(data: {
+	featuredMcpServers: Array<{
+		id: string
+		connected: boolean
+		serverId: string | null
+	}>
+}) {
+	expect(data.featuredMcpServers.map((server) => server.id)).toContain('notion')
+	expect(
+		data.featuredMcpServers.filter(
+			(server) => server.connected || server.serverId !== null,
+		),
+	).toEqual([])
+}
+
+const grant = (
+	clientId: string,
+	overrides: Partial<OAuthGrantListItem> = {},
+): OAuthGrantListItem => ({
+	id: `grant-${clientId}`,
+	clientId,
+	scope: [],
+	...overrides,
+})
 
 test('onboarding data builds the MCP URL and derives incomplete setup from verification plus grants', async () => {
 	expect(
@@ -19,72 +97,56 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 
 	// Discovery and first-win prompts must identify the deployment origin so
 	// agents know which Kody instance the user is evaluating.
-	expect(
-		buildDiscoveryPrompt({
-			env: {},
-			requestUrl: 'https://preview.example/onboarding',
-		}),
-	).toContain('https://preview.example')
-	expect(
-		buildFirstWinPrompt({
-			env: {},
-			requestUrl: 'https://preview.example/onboarding',
-		}),
-	).toContain('https://preview.example/docs/first-win')
-	expect(
-		buildPersistFirstPackagePrompt({
-			env: {},
-			requestUrl: 'https://preview.example/onboarding',
-		}),
-	).toContain('https://preview.example/docs/quick-example')
+	const previewInput = {
+		env: {},
+		requestUrl: 'https://preview.example/onboarding',
+	}
+	expect(buildDiscoveryPrompt(previewInput)).toContain(
+		'https://preview.example',
+	)
+	expect(buildFirstWinPrompt(previewInput)).toContain(
+		'https://preview.example/docs/first-win',
+	)
+	expect(buildPersistFirstPackagePrompt(previewInput)).toContain(
+		'https://preview.example/docs/quick-example',
+	)
 
+	const heykodyEnv = { APP_BASE_URL: 'https://heykody.dev' }
 	const publicData = loadPublicOnboardingData({
-		env: { APP_BASE_URL: 'https://heykody.dev' },
+		env: heykodyEnv,
 		requestUrl: 'https://heykody.dev/onboarding',
 	})
 	expect(publicData).toMatchObject({
-		ok: true,
+		...emptyOnboarding,
 		loggedIn: false,
 		username: null,
 		mcpServerUrl: 'https://heykody.dev/mcp',
-		hasAccessWin: false,
-		hasSecondMcpClient: false,
-		hasMcpClient: false,
-		connectedAgents: [],
-		secondAgentStandardGift: {
-			received: false,
-			active: false,
-			status: 'none',
-			expiresAt: null,
-			grantedAt: null,
-		},
 		emailVerified: false,
-		needsOnboarding: true,
-		featuredListings: [],
-		customMcpServers: [],
-		persistedPackageName: null,
-		accessWinMemorySubject: null,
-		checklist: null,
 	})
-	expect(publicData.setupPrompt.length).toBeGreaterThan(0)
+	expect(publicData.setupPrompt).toMatch(/\S/)
 	expect(publicData.discoveryPrompt).toContain('https://heykody.dev')
 	expect(publicData.persistPrompt).toContain('https://heykody.dev')
+	expectDisconnectedFeaturedServers(publicData)
+
 	const homeAnonymous = loadHomePageOnboardingData({
-		env: { APP_BASE_URL: 'https://heykody.dev' },
+		env: heykodyEnv,
 		requestUrl: 'https://heykody.dev/',
 	})
-	expect(homeAnonymous.loggedIn).toBe(false)
-	expect(homeAnonymous.featuredMcpServers).toEqual([])
-	expect(homeAnonymous.setupPrompt).toBe('')
-	expect(homeAnonymous.persistPrompt).toBe('')
+	expect(homeAnonymous).toMatchObject({
+		loggedIn: false,
+		featuredMcpServers: [],
+		setupPrompt: '',
+		persistPrompt: '',
+	})
 	expect(homeAnonymous.discoveryPrompt).toContain('https://heykody.dev')
 
-	const homeSignedIn = loadHomePageOnboardingData({
-		env: { APP_BASE_URL: 'https://heykody.dev' },
-		requestUrl: 'https://heykody.dev/',
-		user: { username: 'kent', emailVerified: true },
-	})
-	expect(homeSignedIn).toMatchObject({
+	expect(
+		loadHomePageOnboardingData({
+			env: heykodyEnv,
+			requestUrl: 'https://heykody.dev/',
+			user: { username: 'kent', emailVerified: true },
+		}),
+	).toMatchObject({
 		loggedIn: true,
 		username: 'kent',
 		emailVerified: true,
@@ -94,77 +156,26 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		persistPrompt: '',
 	})
 
-	expect(publicData.featuredMcpServers.map((server) => server.id)).toContain(
-		'notion',
-	)
-	expect(
-		publicData.featuredMcpServers.every(
-			(server) => !server.connected && server.serverId === null,
-		),
-	).toBe(true)
-
-	const withoutClient = await loadOnboardingData({
-		env: {
-			OAUTH_PROVIDER: {
-				listUserGrants: vi.fn(async () => ({ items: [] })),
-			},
-		},
+	const withoutClient = await loadWith([], {
 		requestUrl: 'https://heykody.dev/onboarding',
-		stableUserId: 'user-1',
-		username: 'u-b',
-		emailVerified: true,
 	})
 	expect(withoutClient).toMatchObject({
-		ok: true,
+		...emptyOnboarding,
 		loggedIn: true,
 		username: 'u-b',
 		mcpServerUrl: 'https://heykody.dev/mcp',
-		hasAccessWin: false,
-		hasSecondMcpClient: false,
-		hasMcpClient: false,
-		connectedAgents: [],
-		secondAgentStandardGift: {
-			received: false,
-			active: false,
-			status: 'none',
-			expiresAt: null,
-			grantedAt: null,
-		},
 		emailVerified: true,
-		needsOnboarding: true,
-		featuredListings: [],
-		customMcpServers: [],
-		persistedPackageName: null,
-		accessWinMemorySubject: null,
-		checklist: null,
 	})
-	expect(withoutClient.setupPrompt.length).toBeGreaterThan(0)
+	expect(withoutClient.setupPrompt).toMatch(/\S/)
 	expect(withoutClient.discoveryPrompt).toContain('https://heykody.dev')
-	expect(withoutClient.featuredMcpServers.map((server) => server.id)).toContain(
-		'notion',
-	)
-	expect(
-		withoutClient.featuredMcpServers.every(
-			(server) => !server.connected && server.serverId === null,
-		),
-	).toBe(true)
+	expectDisconnectedFeaturedServers(withoutClient)
 
-	const withClient = await loadOnboardingData({
-		env: {
-			OAUTH_PROVIDER: {
-				listUserGrants: vi.fn(async () => ({
-					items: [{ id: 'grant-1', clientId: 'client-a' }],
-				})),
-			},
-		},
-		requestUrl: 'http://localhost:3742/onboarding',
-		stableUserId: 'user-1',
-		username: 'u-b',
-		emailVerified: true,
-		persistedPackageName: '@u-b/morning-digest',
-		accessWinMemorySubject: 'Preferred commute',
-	})
-	expect(withClient).toMatchObject({
+	expect(
+		await loadWith([grant('client-a', { id: 'grant-1' })], {
+			persistedPackageName: '@u-b/morning-digest',
+			accessWinMemorySubject: 'Preferred commute',
+		}),
+	).toMatchObject({
 		username: 'u-b',
 		hasMcpClient: true,
 		hasSecondMcpClient: false,
@@ -185,46 +196,19 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		accessWinMemorySubject: 'Preferred commute',
 	})
 
-	const withTwoGrantsSameClient = await loadOnboardingData({
-		env: {
-			OAUTH_PROVIDER: {
-				listUserGrants: vi.fn(async () => ({
-					items: [
-						{ id: 'grant-1', clientId: 'client-a' },
-						{ id: 'grant-2', clientId: 'client-a' },
-					],
-				})),
-			},
-		},
-		requestUrl: 'http://localhost:3742/onboarding',
-		stableUserId: 'user-1',
-		username: 'u-b',
-		emailVerified: true,
-	})
-	expect(withTwoGrantsSameClient).toMatchObject({
+	expect(
+		await loadWith([
+			grant('client-a', { id: 'grant-1' }),
+			grant('client-a', { id: 'grant-2' }),
+		]),
+	).toMatchObject({
 		hasMcpClient: true,
 		hasSecondMcpClient: false,
 		needsOnboarding: false,
 		connectedAgents: [{ clientId: 'client-a', kind: null }],
 	})
 
-	const withTwoClients = await loadOnboardingData({
-		env: {
-			OAUTH_PROVIDER: {
-				listUserGrants: vi.fn(async () => ({
-					items: [
-						{ id: 'grant-1', clientId: 'client-a' },
-						{ id: 'grant-2', clientId: 'client-b' },
-					],
-				})),
-			},
-		},
-		requestUrl: 'http://localhost:3742/onboarding',
-		stableUserId: 'user-1',
-		username: 'u-b',
-		emailVerified: true,
-	})
-	expect(withTwoClients).toMatchObject({
+	expect(await loadWith([grant('client-a'), grant('client-b')])).toMatchObject({
 		hasMcpClient: true,
 		hasSecondMcpClient: false,
 		needsOnboarding: false,
@@ -232,117 +216,63 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			{ clientId: 'client-a', kind: null },
 			{ clientId: 'client-b', kind: null },
 		],
-		secondAgentStandardGift: {
-			received: false,
-			active: false,
-			status: 'none',
-			expiresAt: null,
-			grantedAt: null,
-		},
+		secondAgentStandardGift: noGift,
 	})
 
-	const withPagedSecondClient = await loadOnboardingData({
-		env: {
-			OAUTH_PROVIDER: {
-				listUserGrants: vi.fn(
-					async (_userId: string, options?: { cursor?: string }) => {
-						if (options?.cursor === 'page-2') {
-							return {
-								items: [{ id: 'grant-2', clientId: 'client-b' }],
-							}
-						}
-						return {
-							items: [{ id: 'grant-1', clientId: 'client-a' }],
-							cursor: 'page-2',
-						}
-					},
-				),
-			},
-		},
-		requestUrl: 'http://localhost:3742/onboarding',
-		stableUserId: 'user-1',
-		username: 'u-b',
-		emailVerified: true,
-	})
-	expect(withPagedSecondClient).toMatchObject({
-		hasMcpClient: true,
-		hasSecondMcpClient: false,
-	})
+	expect(
+		await loadWith(
+			vi.fn<OAuthGrantListHelpers['listUserGrants']>(
+				async (_userId, options) =>
+					options?.cursor === 'page-2'
+						? { items: [grant('client-b')] }
+						: { items: [grant('client-a')], cursor: 'page-2' },
+			),
+		),
+	).toMatchObject({ hasMcpClient: true, hasSecondMcpClient: false })
 
-	const dualCursor = await loadOnboardingData({
-		env: {
-			OAUTH_PROVIDER: {
-				listUserGrants: vi.fn(async () => ({
-					items: [
-						{
-							id: 'grant-local',
-							clientId: 'cursor-local-client',
-							redirectUri: 'cursor://anysphere.cursor-mcp/oauth/callback',
-						},
-						{
-							id: 'grant-cloud',
-							clientId: 'cursor-cloud-client',
-							redirectUri: 'https://www.cursor.com/agents/mcp/oauth/callback',
-						},
-					],
-				})),
-				lookupClient: vi.fn(async (clientId: string) => ({
-					clientId,
-					clientName: 'Cursor',
-				})),
-			},
+	const dualCursor = await loadWith(
+		[
+			grant('cursor-local-client', {
+				id: 'grant-local',
+				redirectUri: 'cursor://anysphere.cursor-mcp/oauth/callback',
+			}),
+			grant('cursor-cloud-client', {
+				id: 'grant-cloud',
+				redirectUri: 'https://www.cursor.com/agents/mcp/oauth/callback',
+			}),
+		],
+		{
+			lookupClient: vi.fn(async (clientId: string) => ({
+				clientId,
+				clientName: 'Cursor',
+			})),
 		},
-		requestUrl: 'http://localhost:3742/onboarding',
-		stableUserId: 'user-1',
-		username: 'u-b',
-		emailVerified: true,
-	})
+	)
 	expect(dualCursor.connectedAgents.map((agent) => agent.kind)).toEqual([
 		'cursor-cloud',
 		'cursor-local',
 	])
 	expect(dualCursor.hasSecondMcpClient).toBe(false)
 
-	const cursorAndClaude = await loadOnboardingData({
-		env: {
-			OAUTH_PROVIDER: {
-				listUserGrants: vi.fn(async () => ({
-					items: [
-						{
-							id: 'grant-cursor',
-							clientId: 'cursor-client',
-							redirectUri: 'http://localhost:8787/callback',
-						},
-						{
-							id: 'grant-claude',
-							clientId: 'claude-client',
-						},
-					],
-				})),
-				lookupClient: vi.fn(async (clientId: string) => ({
-					clientId,
-					clientName: clientId === 'claude-client' ? 'Claude Code' : 'Cursor',
-				})),
-			},
+	const cursorAndClaude = await loadWith(
+		[
+			grant('cursor-client', {
+				id: 'grant-cursor',
+				redirectUri: 'http://localhost:8787/callback',
+			}),
+			grant('claude-client'),
+		],
+		{
+			lookupClient: vi.fn(async (clientId: string) => ({
+				clientId,
+				clientName: clientId === 'claude-client' ? 'Claude Code' : 'Cursor',
+			})),
 		},
-		requestUrl: 'http://localhost:3742/onboarding',
-		stableUserId: 'user-1',
-		username: 'u-b',
-		emailVerified: true,
-	})
+	)
 	expect(cursorAndClaude.hasSecondMcpClient).toBe(true)
 
-	const unverifiedWithGrant = await loadOnboardingData({
-		env: {
-			OAUTH_PROVIDER: {
-				listUserGrants: vi.fn(async () => ({
-					items: [{ id: 'grant-1', clientId: 'client-a' }],
-				})),
-			},
-		},
+	const unverifiedWithGrant = await loadWith([grant('client-a')], {
 		requestUrl: 'https://heykody.dev/onboarding',
-		stableUserId: 'user-1',
-		username: 'u-b',
 		emailVerified: false,
 		persistedPackageName: '@u-b/morning-digest',
 		accessWinMemorySubject: 'Preferred commute',
@@ -360,47 +290,24 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 	})
 	expect(unverifiedWithGrant.discoveryPrompt).toContain('https://heykody.dev')
 
-	const whenProviderListingFails = await loadOnboardingData({
-		env: {
-			OAUTH_PROVIDER: {
-				listUserGrants: vi.fn(async () => {
-					throw new Error('provider unavailable')
-				}),
-			},
-		},
-		requestUrl: 'https://heykody.dev/onboarding',
-		stableUserId: 'user-1',
-		username: 'u-b',
-		emailVerified: true,
-	})
-	expect(whenProviderListingFails.hasMcpClient).toBe(false)
-	expect(whenProviderListingFails.needsOnboarding).toBe(true)
+	expect(
+		await loadWith(
+			vi.fn(async () => {
+				throw new Error('provider unavailable')
+			}),
+			{ requestUrl: 'https://heykody.dev/onboarding' },
+		),
+	).toMatchObject({ hasMcpClient: false, needsOnboarding: true })
 
-	const withCustomPersist = await loadOnboardingData({
-		env: {
-			OAUTH_PROVIDER: {
-				listUserGrants: vi.fn(async () => ({ items: [] })),
-			},
-		},
+	const withCustomPersist = await loadWith([], {
 		requestUrl: 'https://heykody.dev/onboarding',
-		stableUserId: 'user-1',
-		username: 'u-b',
-		emailVerified: true,
 		persistContext: { connectedWorkspaceLabel: 'acme' },
 	})
 	expect(withCustomPersist.persistPrompt).toContain('acme')
 	expect(withCustomPersist.customMcpServers).toEqual([])
 
-	const withExamplePersist = await loadOnboardingData({
-		env: {
-			OAUTH_PROVIDER: {
-				listUserGrants: vi.fn(async () => ({ items: [] })),
-			},
-		},
+	const withExamplePersist = await loadWith([], {
 		requestUrl: 'https://heykody.dev/onboarding',
-		stableUserId: 'user-1',
-		username: 'u-b',
-		emailVerified: true,
 		persistContext: { installedExampleName: '@kody/hn-pulse' },
 	})
 	expect(withExamplePersist.persistPrompt).toContain('@kody/hn-pulse')

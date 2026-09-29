@@ -14,13 +14,9 @@ const mockModule = vi.hoisted(() => ({
 	summarizeRunRecords: vi.fn(),
 }))
 
-vi.mock('#worker/run-records/service.ts', () => ({
-	listRunRecords: (...args: Array<unknown>) =>
-		mockModule.listRunRecords(...args),
-	getRunRecord: (...args: Array<unknown>) => mockModule.getRunRecord(...args),
-	summarizeRunRecords: (...args: Array<unknown>) =>
-		mockModule.summarizeRunRecords(...args),
-}))
+vi.mock('#worker/run-records/service.ts', () => mockModule)
+
+type ActivityUser = Parameters<typeof loadAccountActivityData>[0]['user']
 
 const user = {
 	sessionUserId: '42',
@@ -35,7 +31,9 @@ const user = {
 		username: 'test-user',
 		displayName: 'user',
 	},
-}
+} as ActivityUser
+
+const weekAgo = '2026-07-19T12:00:00.000Z'
 
 function makeRun(overrides: Partial<RunRecord> = {}): RunRecord {
 	return {
@@ -69,38 +67,55 @@ function makeRun(overrides: Partial<RunRecord> = {}): RunRecord {
 	}
 }
 
+function loadActivity(path: string, env = {} as Env) {
+	return loadAccountActivityData({
+		env,
+		request: new Request(`https://example.com${path}`),
+		user,
+		now: new Date('2026-07-26T12:00:00.000Z'),
+	})
+}
+
 test('activity helpers parse filters and prefer path selected run ids', () => {
-	expect(
-		readAccountActivityFilters('https://example.com/account/activity'),
-	).toEqual({
-		viewFilter: 'errors',
-		statusFilter: 'error',
-		surfaceFilter: 'all',
-		triageFilter: 'open',
-		cursor: null,
-	})
-	expect(
-		readAccountActivityFilters(
-			'https://example.com/account/activity?status=all&surface=job&cursor=abc&error_triage=ignored',
-		),
-	).toEqual({
-		viewFilter: 'errors',
-		statusFilter: 'all',
-		surfaceFilter: 'job',
-		triageFilter: 'ignored',
-		cursor: 'abc',
-	})
-	expect(
-		readAccountActivityFilters(
-			'https://example.com/account/activity?view=recent',
-		),
-	).toEqual({
-		viewFilter: 'recent',
-		statusFilter: 'all',
-		surfaceFilter: 'all',
-		triageFilter: 'all',
-		cursor: null,
-	})
+	const filterCases = [
+		[
+			'',
+			{
+				viewFilter: 'errors',
+				statusFilter: 'error',
+				surfaceFilter: 'all',
+				triageFilter: 'open',
+				cursor: null,
+			},
+		],
+		[
+			'?status=all&surface=job&cursor=abc&error_triage=ignored',
+			{
+				viewFilter: 'errors',
+				statusFilter: 'all',
+				surfaceFilter: 'job',
+				triageFilter: 'ignored',
+				cursor: 'abc',
+			},
+		],
+		[
+			'?view=recent',
+			{
+				viewFilter: 'recent',
+				statusFilter: 'all',
+				surfaceFilter: 'all',
+				triageFilter: 'all',
+				cursor: null,
+			},
+		],
+	] as const
+	for (const [query, expected] of filterCases) {
+		expect(
+			readAccountActivityFilters(
+				`https://example.com/account/activity${query}`,
+			),
+		).toEqual(expected)
+	}
 	expect(statusFilterToRunStatus('error')).toBe('error')
 	expect(statusFilterToRunStatus('success')).toBe('success')
 	expect(statusFilterToRunStatus('all')).toBeNull()
@@ -128,7 +143,7 @@ test('activity helpers parse filters and prefer path selected run ids', () => {
 test('loadAccountActivityData maps filters, summary, pagination, detail, and cursors', async () => {
 	const run = makeRun({ idempotencyKey: 'sync-account-123' })
 	mockModule.summarizeRunRecords.mockResolvedValue({
-		since: '2026-07-19T12:00:00.000Z',
+		since: weekAgo,
 		total: 4,
 		errors: 1,
 		ignored: 0,
@@ -140,56 +155,41 @@ test('loadAccountActivityData maps filters, summary, pagination, detail, and cur
 		runs: [run],
 		nextCursor: 'cursor-2',
 	})
+	const log = (sequence: number, level: string, message: string) => ({
+		runId: run.id,
+		sequence,
+		level,
+		message,
+		fields: null,
+	})
 	mockModule.getRunRecord.mockResolvedValue({
 		run,
-		logs: [
-			{
-				runId: run.id,
-				sequence: 1,
-				level: 'error',
-				message: 'second',
-				fields: null,
-			},
-			{
-				runId: run.id,
-				sequence: 0,
-				level: 'log',
-				message: 'first',
-				fields: null,
-			},
-		],
+		logs: [log(1, 'error', 'second'), log(0, 'log', 'first')],
 	})
 
 	const env = {} as Env
-	const data = await loadAccountActivityData({
+	const data = await loadActivity(
+		'/account/activity/run-1?status=error&surface=job',
 		env,
-		request: new Request(
-			'https://example.com/account/activity/run-1?status=error&surface=job',
-		),
-		user,
-		now: new Date('2026-07-26T12:00:00.000Z'),
-	})
-
+	)
+	const owner = { env, userId: 'stable-user-1' }
 	expect(mockModule.summarizeRunRecords).toHaveBeenCalledWith({
-		env,
-		userId: 'stable-user-1',
-		since: '2026-07-19T12:00:00.000Z',
+		...owner,
+		since: weekAgo,
 	})
 	expect(mockModule.listRunRecords).toHaveBeenCalledWith({
-		env,
-		userId: 'stable-user-1',
+		...owner,
 		filter: {
 			status: 'error',
 			surface: 'job',
-			since: '2026-07-19T12:00:00.000Z',
+			since: weekAgo,
 			errorTriage: 'open',
 		},
 		limit: 25,
 		cursor: null,
 	})
 	expect(mockModule.getRunRecord).toHaveBeenCalledWith({
-		env,
-		userId: 'stable-user-1',
+		...owner,
 		runId: 'run-1',
 	})
 	expect(data).toMatchObject({
@@ -198,13 +198,7 @@ test('loadAccountActivityData maps filters, summary, pagination, detail, and cur
 		statusFilter: 'error',
 		surfaceFilter: 'job',
 		triageFilter: 'open',
-		summary: {
-			total: 4,
-			errors: 1,
-			ignored: 0,
-			resolved: 0,
-			running: 0,
-		},
+		summary: { total: 4, errors: 1, ignored: 0, resolved: 0, running: 0 },
 		nextCursor: 'cursor-2',
 		selectedRunId: 'run-1',
 		retentionDays: 30,
@@ -226,68 +220,21 @@ test('loadAccountActivityData maps filters, summary, pagination, detail, and cur
 		}),
 	})
 
-	mockModule.listRunRecords.mockResolvedValue({
-		runs: [],
-		nextCursor: null,
-	})
+	mockModule.listRunRecords.mockResolvedValue({ runs: [], nextCursor: null })
 	mockModule.getRunRecord.mockResolvedValue(null)
-
-	await loadAccountActivityData({
-		env: {} as Env,
-		request: new Request(
-			'https://example.com/account/activity.json?status=all&cursor=page-2',
-		),
-		user,
-		now: new Date('2026-07-26T12:00:00.000Z'),
-	})
-
-	expect(mockModule.listRunRecords).toHaveBeenCalledWith(
-		expect.objectContaining({
-			filter: {
-				status: null,
-				surface: null,
-				since: '2026-07-19T12:00:00.000Z',
-				errorTriage: 'open',
-			},
-			cursor: 'page-2',
-		}),
-	)
-
-	mockModule.listRunRecords.mockClear()
-	await loadAccountActivityData({
-		env: {} as Env,
-		request: new Request('https://example.com/account/activity?view=recent'),
-		user,
-		now: new Date('2026-07-26T12:00:00.000Z'),
-	})
-	expect(mockModule.listRunRecords).toHaveBeenCalledWith(
-		expect.objectContaining({
-			filter: {
-				status: null,
-				surface: null,
-				since: '2026-07-19T12:00:00.000Z',
-				errorTriage: 'all',
-			},
-		}),
-	)
-
-	mockModule.listRunRecords.mockClear()
-	await loadAccountActivityData({
-		env: {} as Env,
-		request: new Request(
-			'https://example.com/account/activity?view=recent&status=success',
-		),
-		user,
-		now: new Date('2026-07-26T12:00:00.000Z'),
-	})
-	expect(mockModule.listRunRecords).toHaveBeenCalledWith(
-		expect.objectContaining({
-			filter: {
-				status: 'success',
-				surface: null,
-				since: '2026-07-19T12:00:00.000Z',
-				errorTriage: 'all',
-			},
-		}),
-	)
+	const listCases = [
+		['/account/activity.json?status=all&cursor=page-2', null, 'open', 'page-2'],
+		['/account/activity?view=recent', null, 'all', null],
+		['/account/activity?view=recent&status=success', 'success', 'all', null],
+	] as const
+	for (const [path, status, errorTriage, cursor] of listCases) {
+		mockModule.listRunRecords.mockClear()
+		await loadActivity(path)
+		expect(mockModule.listRunRecords).toHaveBeenCalledWith(
+			expect.objectContaining({
+				filter: { status, surface: null, since: weekAgo, errorTriage },
+				cursor,
+			}),
+		)
+	}
 })

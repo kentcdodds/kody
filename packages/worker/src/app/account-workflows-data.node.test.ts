@@ -13,13 +13,10 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('#worker/package-runtime/package-workflows.ts', () => ({
-	listWorkflowRunsForUser: (...args: Array<unknown>) =>
-		mockModule.listWorkflowRunsForUser(...args),
+	listWorkflowRunsForUser: mockModule.listWorkflowRunsForUser,
 }))
-
 vi.mock('#worker/run-records/service.ts', () => ({
-	getWorkflowProjection: (...args: Array<unknown>) =>
-		mockModule.getWorkflowProjection(...args),
+	getWorkflowProjection: mockModule.getWorkflowProjection,
 }))
 
 const user = {
@@ -130,15 +127,9 @@ test('loadAccountWorkflowsData lists runs, resolves selection, and falls back to
 	})
 
 	mockModule.listWorkflowRunsForUser.mockResolvedValueOnce([])
-	mockModule.getWorkflowProjection.mockResolvedValueOnce({
+	const { userId: _userId, ...projection } = makeWorkflow({
 		id: 'dynwf-old',
-		bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
-		sourceType: 'inline',
-		packageId: null,
-		kodyId: null,
-		sourceId: null,
 		workflowName: 'Stale run',
-		exportName: null,
 		idempotencyKey: 'idem-old',
 		runAt: '2026-07-20T12:00:00.000Z',
 		planDate: null,
@@ -148,6 +139,7 @@ test('loadAccountWorkflowsData lists runs, resolves selection, and falls back to
 		completedAt: '2026-07-20T12:01:00.000Z',
 		lastError: 'boom',
 	})
+	mockModule.getWorkflowProjection.mockResolvedValueOnce(projection)
 
 	const projectionPayload = await loadAccountWorkflowsData({
 		env: {} as Env,

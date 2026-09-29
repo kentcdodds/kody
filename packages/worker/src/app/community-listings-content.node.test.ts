@@ -24,125 +24,35 @@ const sampleListing = {
 	forkCount: 1,
 } satisfies PublicCommunityListing
 
-test('community listings render sort controls, categories, empty states, and fork-outdated', async () => {
-	const searchMissHtml = await renderCommunityListingsContentHtml({
-		listings: [],
-		query: 'obsidian',
-		sort: 'newest',
-	})
+type RenderInput = Parameters<typeof renderCommunityListingsContentHtml>[0]
+type ViewerInstall = NonNullable<PublicCommunityListing['viewerInstall']>
 
-	expect(searchMissHtml).toContain('data-testid="community-create-prompt"')
-	expect(searchMissHtml).toContain(
-		'search({ entity: ["guide:package_authoring", "guide:package_lifecycle"] })',
-	)
-	expect(searchMissHtml).toContain('obsidian')
-	expect(searchMissHtml).toContain('href="/docs/package-authoring"')
-	expect(searchMissHtml).toContain('href="/community?sort=newest"')
-	expect(searchMissHtml).toContain('data-testid="community-listings-sort"')
-	expect(searchMissHtml).toContain('aria-current="page"')
-
-	const emptyCatalogHtml = await renderCommunityListingsContentHtml({
+/** Renders and reports which `present` markers are missing and which `absent` ones leaked. */
+async function markerGaps(
+	input: Partial<RenderInput>,
+	present: Array<string>,
+	absent: Array<string> = [],
+) {
+	const html = await renderCommunityListingsContentHtml({
 		listings: [],
 		query: null,
+		...input,
 	})
+	return {
+		missing: present.filter((marker) => !html.includes(marker)),
+		unexpected: absent.filter((marker) => html.includes(marker)),
+	}
+}
 
-	expect(emptyCatalogHtml).not.toContain(
-		'data-testid="community-create-prompt"',
-	)
-	expect(emptyCatalogHtml).toContain('href="/onboarding"')
-	expect(emptyCatalogHtml).not.toContain(
-		'data-testid="community-listings-categories"',
-	)
-	expect(emptyCatalogHtml).not.toContain(
-		'data-testid="community-listings-sort"',
-	)
+const noGaps = { missing: [], unexpected: [] }
 
-	const listingsHtml = await renderCommunityListingsContentHtml({
-		listings: [sampleListing],
-		query: null,
-		sort: 'newest',
-	})
-	expect(listingsHtml).toContain(
-		'data-testid="community-listing-published-listing-1"',
-	)
-	expect(listingsHtml).toContain(
-		'data-testid="community-listing-version-listing-1"',
-	)
-	expect(listingsHtml).toContain('href="/community?sort=newest"')
-	expect(listingsHtml).toContain('href="/community"')
-	expect(listingsHtml).toContain('min-height: 44px')
-	expect(listingsHtml).toContain('data-testid="community-listings-categories"')
-	expect(listingsHtml).toContain(
-		'href="/community?sort=newest&amp;category=integrations"',
-	)
-	expect(listingsHtml).not.toContain('category=utilities')
-	expect(listingsHtml).not.toContain('category=other')
+const testId = (id: string) => `data-testid="${id}"`
 
-	const overviewHtml = await renderCommunityListingsContentHtml({
-		listings: [sampleListing],
-		groups: [
-			{
-				category: 'integrations',
-				listings: [sampleListing],
-				total: 4,
-			},
-		],
-		query: null,
-		sort: 'best',
-	})
-	expect(overviewHtml).toContain('data-testid="community-listings-overview"')
-	expect(overviewHtml).toContain('href="/community?category=integrations"')
-	expect(overviewHtml).not.toContain('category=apps')
-
-	const categoryEmptyHtml = await renderCommunityListingsContentHtml({
-		listings: [],
-		query: null,
-		category: 'apps',
-	})
-	expect(categoryEmptyHtml).toContain('href="/community"')
-	expect(categoryEmptyHtml).toContain(
-		'data-testid="community-listings-categories"',
-	)
-	expect(categoryEmptyHtml).toContain('href="/community?category=apps"')
-	expect(categoryEmptyHtml).not.toContain('category=utilities')
-
-	const fullGroupHtml = await renderCommunityListingsContentHtml({
-		listings: [sampleListing],
-		groups: [
-			{
-				category: 'integrations',
-				listings: [sampleListing],
-				total: 1,
-			},
-		],
-		query: null,
-		sort: 'best',
-	})
-	expect(fullGroupHtml).toContain('data-testid="community-listings-overview"')
-	expect(fullGroupHtml).not.toContain('>See all ')
-
-	const catalogWideChipsHtml = await renderCommunityListingsContentHtml({
-		listings: [sampleListing],
-		query: null,
-		category: 'integrations',
-		categoryCounts: {
-			integrations: 1200,
-			examples: 40,
-			productivity: 0,
-			apps: 0,
-			utilities: 0,
-			other: 0,
-		},
-	})
-	expect(catalogWideChipsHtml).toContain('category=integrations')
-	expect(catalogWideChipsHtml).toContain('category=examples')
-	expect(catalogWideChipsHtml).not.toContain('category=utilities')
-	expect(catalogWideChipsHtml).not.toContain('category=other')
-
-	const installedListing = {
+function withInstall(install: Partial<ViewerInstall> = {}) {
+	return {
 		...sampleListing,
 		viewerInstall: {
-			status: 'installed' as const,
+			status: 'installed',
 			targetName: '@me/github-triage',
 			agentPrompt: 'Finish setup for @me/github-triage.',
 			packageId: 'pkg-1',
@@ -150,70 +60,159 @@ test('community listings render sort controls, categories, empty states, and for
 			listingAheadPrompt: null,
 			forkAhead: false,
 			listingDiffHref: null,
-		},
+			...install,
+		} satisfies ViewerInstall,
 	}
-	const installedHtml = await renderCommunityListingsContentHtml({
-		listings: [installedListing],
-		query: null,
+}
+
+test('community listings render sort controls, categories, empty states, and fork-outdated', async () => {
+	expect(
+		await markerGaps({ query: 'obsidian', sort: 'newest' }, [
+			testId('community-create-prompt'),
+			'search({ entity: ["guide:package_authoring", "guide:package_lifecycle"] })',
+			'obsidian',
+			'href="/docs/package-authoring"',
+			'href="/community?sort=newest"',
+			testId('community-listings-sort'),
+			'aria-current="page"',
+		]),
+	).toEqual(noGaps)
+
+	expect(
+		await markerGaps(
+			{},
+			['href="/onboarding"'],
+			[
+				testId('community-create-prompt'),
+				testId('community-listings-categories'),
+				testId('community-listings-sort'),
+			],
+		),
+	).toEqual(noGaps)
+
+	expect(
+		await markerGaps(
+			{ listings: [sampleListing], sort: 'newest' },
+			[
+				testId('community-listing-published-listing-1'),
+				testId('community-listing-version-listing-1'),
+				'href="/community?sort=newest"',
+				'href="/community"',
+				'min-height: 44px',
+				testId('community-listings-categories'),
+				'href="/community?sort=newest&amp;category=integrations"',
+			],
+			['category=utilities', 'category=other'],
+		),
+	).toEqual(noGaps)
+
+	const integrationsGroup = (total: number) => ({
+		listings: [sampleListing],
+		groups: [
+			{ category: 'integrations' as const, listings: [sampleListing], total },
+		],
+		sort: 'best' as const,
 	})
-	expect(installedHtml).toContain(
-		'data-testid="community-listing-viewer-install-listing-1"',
-	)
-	expect(installedHtml).not.toContain('data-copy-prompt')
-	expect(installedHtml).not.toContain(
-		'data-testid="community-listing-ahead-listing-1"',
-	)
-	expect(installedHtml).not.toContain('data-testid="community-detail-install"')
+	expect(
+		await markerGaps(
+			integrationsGroup(4),
+			[
+				testId('community-listings-overview'),
+				'href="/community?category=integrations"',
+			],
+			['category=apps'],
+		),
+	).toEqual(noGaps)
+	expect(
+		await markerGaps(
+			integrationsGroup(1),
+			[testId('community-listings-overview')],
+			['>See all '],
+		),
+	).toEqual(noGaps)
+
+	expect(
+		await markerGaps(
+			{ category: 'apps' },
+			[
+				'href="/community"',
+				testId('community-listings-categories'),
+				'href="/community?category=apps"',
+			],
+			['category=utilities'],
+		),
+	).toEqual(noGaps)
+
+	expect(
+		await markerGaps(
+			{
+				listings: [sampleListing],
+				category: 'integrations',
+				categoryCounts: {
+					integrations: 1200,
+					examples: 40,
+					productivity: 0,
+					apps: 0,
+					utilities: 0,
+					other: 0,
+				},
+			},
+			['category=integrations', 'category=examples'],
+			['category=utilities', 'category=other'],
+		),
+	).toEqual(noGaps)
+
+	expect(
+		await markerGaps(
+			{ listings: [withInstall()] },
+			[testId('community-listing-viewer-install-listing-1')],
+			[
+				'data-copy-prompt',
+				testId('community-listing-ahead-listing-1'),
+				testId('community-detail-install'),
+			],
+		),
+	).toEqual(noGaps)
 
 	const aheadPrompt =
 		'Compare the current listing snapshot, keep local customizations, then publish with repoPublishSession and absorbed_upstream_commit.'
-	const aheadHtml = await renderCommunityListingsContentHtml({
-		listings: [
+	expect(
+		await markerGaps(
 			{
-				...installedListing,
-				viewerInstall: {
-					...installedListing.viewerInstall,
-					listingAhead: true,
-					listingAheadPrompt: aheadPrompt,
-					forkAhead: false,
-					listingDiffHref: '/@kentcdodds/github-triage/tree/commit-new',
-				},
+				listings: [
+					withInstall({
+						listingAhead: true,
+						listingAheadPrompt: aheadPrompt,
+						listingDiffHref: '/@kentcdodds/github-triage/tree/commit-new',
+					}),
+				],
 			},
-		],
-		query: null,
-	})
-	expect(aheadHtml).toContain('data-testid="community-listing-ahead-listing-1"')
-	expect(aheadHtml).toContain('data-fork-outdated-copy')
-	expect(aheadHtml).toContain(aheadPrompt)
-	expect(aheadHtml).not.toContain(
-		'data-testid="community-listing-viewer-install-listing-1"',
-	)
-	expect(aheadHtml).toContain(
-		'href="/@kentcdodds/github-triage/tree/commit-new"',
-	)
+			[
+				testId('community-listing-ahead-listing-1'),
+				'data-fork-outdated-copy',
+				aheadPrompt,
+				'href="/@kentcdodds/github-triage/tree/commit-new"',
+			],
+			[testId('community-listing-viewer-install-listing-1')],
+		),
+	).toEqual(noGaps)
 
-	const forkAheadHtml = await renderCommunityListingsContentHtml({
-		listings: [
+	expect(
+		await markerGaps(
 			{
-				...installedListing,
-				viewerInstall: {
-					...installedListing.viewerInstall,
-					listingAhead: false,
-					listingAheadPrompt: null,
-					forkAhead: true,
-					listingDiffHref: '/@kentcdodds/github-triage/tree/commit-pin',
-				},
+				listings: [
+					withInstall({
+						forkAhead: true,
+						listingDiffHref: '/@kentcdodds/github-triage/tree/commit-pin',
+					}),
+				],
 			},
-		],
-		query: null,
-	})
-	expect(forkAheadHtml).toContain(
-		'data-testid="community-listing-fork-ahead-listing-1"',
-	)
-	expect(forkAheadHtml).toContain('Fork ahead')
-	expect(forkAheadHtml).toContain(
-		'href="/@kentcdodds/github-triage/tree/commit-pin"',
-	)
-	expect(forkAheadHtml).not.toContain('data-copy-prompt')
-	expect(forkAheadHtml).not.toContain('data-fork-outdated-copy')
+			[
+				testId('community-listing-fork-ahead-listing-1'),
+				'Fork ahead',
+				'href="/@kentcdodds/github-triage/tree/commit-pin"',
+			],
+			['data-copy-prompt', 'data-fork-outdated-copy'],
+		),
+	).toEqual(noGaps)
 })
