@@ -54,17 +54,19 @@ export function readSignupFirstTouchAttribution(): FirstTouchAttribution {
 }
 
 function writeStoredFirstTouchAttribution(value: FirstTouchAttribution) {
-	if (typeof sessionStorage === 'undefined') return
 	try {
+		// Accessing sessionStorage itself throws SecurityError in sandboxed
+		// iframes and some privacy modes, so the guard stays inside the try.
+		if (typeof sessionStorage === 'undefined') return
 		sessionStorage.setItem(storageKey, JSON.stringify(value))
 	} catch {
-		// Private mode / quota — signup can still send URL params directly.
+		// Private mode / quota / blocked storage — signup can still send URL params.
 	}
 }
 
 function readStoredFirstTouchAttribution(): FirstTouchAttribution | null {
-	if (typeof sessionStorage === 'undefined') return null
 	try {
+		if (typeof sessionStorage === 'undefined') return null
 		const raw = sessionStorage.getItem(storageKey)
 		if (!raw) return null
 		const parsed = JSON.parse(raw) as unknown
@@ -76,8 +78,8 @@ function readStoredFirstTouchAttribution(): FirstTouchAttribution | null {
 }
 
 export function clearStoredFirstTouchAttribution() {
-	if (typeof sessionStorage === 'undefined') return
 	try {
+		if (typeof sessionStorage === 'undefined') return
 		sessionStorage.removeItem(storageKey)
 	} catch {
 		// ignore
