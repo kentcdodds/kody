@@ -15,59 +15,40 @@ function createTestDb() {
 	return { sqlite, db: createD1FromSqlite(sqlite) }
 }
 
-function seedPackage(
+function seedPackages(
 	sqlite: DatabaseSync,
-	input: {
-		id: string
-		userId: string
-		kodyId: string
-		description: string
-		name?: string
-	},
+	packages: Array<[id: string, kodyId: string, description: string]>,
 ) {
-	sqlite
-		.prepare(
-			`INSERT INTO saved_packages (
-				id, user_id, name, kody_id, description, source_id
-			) VALUES (?, ?, ?, ?, ?, ?)`,
+	for (const [id, kodyId, description] of packages) {
+		sqlite
+			.prepare(
+				`INSERT INTO saved_packages (
+					id, user_id, name, kody_id, description, source_id
+				) VALUES (?, ?, ?, ?, ?, ?)`,
+			)
+			.run(id, 'user-a', kodyId, kodyId, description, `source-${id}`)
+	}
+}
+
+async function recordUses(
+	db: D1Database,
+	uses: Array<[packageId: string, conversationId: string, usedAt: string]>,
+) {
+	for (const [packageId, conversationId, usedAt] of uses) {
+		await recordAgentPackageConversationUse(
+			{ APP_DB: db },
+			{ userId: 'user-a', packageId, conversationId, usedAt },
 		)
-		.run(
-			input.id,
-			input.userId,
-			input.name ?? input.kodyId,
-			input.kodyId,
-			input.description,
-			`source-${input.id}`,
-		)
+	}
 }
 
 test('recordAgentPackageConversationUse upserts idempotently per conversation', async () => {
 	const { sqlite, db } = createTestDb()
-	seedPackage(sqlite, {
-		id: 'pkg-1',
-		userId: 'user-a',
-		kodyId: 'mail',
-		description: 'Mail helper',
-	})
-
-	await recordAgentPackageConversationUse(
-		{ APP_DB: db },
-		{
-			userId: 'user-a',
-			packageId: 'pkg-1',
-			conversationId: 'conv-1',
-			usedAt: '2026-07-01T10:00:00.000Z',
-		},
-	)
-	await recordAgentPackageConversationUse(
-		{ APP_DB: db },
-		{
-			userId: 'user-a',
-			packageId: 'pkg-1',
-			conversationId: 'conv-1',
-			usedAt: '2026-07-01T12:00:00.000Z',
-		},
-	)
+	seedPackages(sqlite, [['pkg-1', 'mail', 'Mail helper']])
+	await recordUses(db, [
+		['pkg-1', 'conv-1', '2026-07-01T10:00:00.000Z'],
+		['pkg-1', 'conv-1', '2026-07-01T12:00:00.000Z'],
+	])
 
 	const rows = sqlite
 		.prepare(
@@ -115,52 +96,20 @@ test('agent package popularity ranking fails open and ranks within last N conver
 	).resolves.toBeUndefined()
 
 	const { sqlite, db } = createTestDb()
-	seedPackage(sqlite, {
-		id: 'pkg-a',
-		userId: 'user-a',
-		kodyId: 'alpha',
-		description: 'Alpha pack',
-	})
-	seedPackage(sqlite, {
-		id: 'pkg-b',
-		userId: 'user-a',
-		kodyId: 'bravo',
-		description: 'Bravo pack',
-	})
-	seedPackage(sqlite, {
-		id: 'pkg-c',
-		userId: 'user-a',
-		kodyId: 'charlie',
-		description: 'Charlie pack',
-	})
+	seedPackages(sqlite, [
+		['pkg-a', 'alpha', 'Alpha pack'],
+		['pkg-b', 'bravo', 'Bravo pack'],
+		['pkg-c', 'charlie', 'Charlie pack'],
+	])
 
-	const now = new Date('2026-07-21T12:00:00.000Z')
 	// Five conversations; ranking uses only the newest 4.
 	// c1–c3: alpha; c1+c4: bravo; c0 (oldest): charlie only
-	await recordAgentPackageConversationUse(
-		{ APP_DB: db },
-		{
-			userId: 'user-a',
-			packageId: 'pkg-c',
-			conversationId: 'c0',
-			usedAt: '2026-07-01T00:00:00.000Z',
-		},
-	)
-	for (const [conversationId, usedAt] of [
-		['c1', '2026-07-10T00:00:00.000Z'],
-		['c2', '2026-07-11T00:00:00.000Z'],
-		['c3', '2026-07-12T00:00:00.000Z'],
-	] as const) {
-		await recordAgentPackageConversationUse(
-			{ APP_DB: db },
-			{
-				userId: 'user-a',
-				packageId: 'pkg-a',
-				conversationId,
-				usedAt,
-			},
-		)
-	}
+	await recordUses(db, [
+		['pkg-c', 'c0', '2026-07-01T00:00:00.000Z'],
+		['pkg-a', 'c1', '2026-07-10T00:00:00.000Z'],
+		['pkg-a', 'c2', '2026-07-11T00:00:00.000Z'],
+		['pkg-a', 'c3', '2026-07-12T00:00:00.000Z'],
+	])
 	await recordAgentPackageConversationUses(
 		{ APP_DB: db },
 		{
@@ -170,29 +119,15 @@ test('agent package popularity ranking fails open and ranks within last N conver
 			usedAt: '2026-07-10T00:00:00.000Z',
 		},
 	)
-	await recordAgentPackageConversationUse(
-		{ APP_DB: db },
-		{
-			userId: 'user-a',
-			packageId: 'pkg-b',
-			conversationId: 'c4',
-			usedAt: '2026-07-13T00:00:00.000Z',
-		},
-	)
-	// deleted package row still in uses — skip via join
-	await recordAgentPackageConversationUse(
-		{ APP_DB: db },
-		{
-			userId: 'user-a',
-			packageId: 'pkg-gone',
-			conversationId: 'c5',
-			usedAt: '2026-07-14T00:00:00.000Z',
-		},
-	)
+	await recordUses(db, [
+		['pkg-b', 'c4', '2026-07-13T00:00:00.000Z'],
+		// deleted package row still in uses — skip via join
+		['pkg-gone', 'c5', '2026-07-14T00:00:00.000Z'],
+	])
 
 	const ranked = await listPopularAgentPackagesForUser(db, {
 		userId: 'user-a',
-		now,
+		now: new Date('2026-07-21T12:00:00.000Z'),
 		conversationLimit: 4,
 		limit: 8,
 	})
@@ -205,62 +140,22 @@ test('agent package popularity ranking fails open and ranks within last N conver
 
 test('listPopularAgentPackagesForUser ignores max-age conversations and stale package rows inside recent ones', async () => {
 	const { sqlite, db } = createTestDb()
-	seedPackage(sqlite, {
-		id: 'pkg-a',
-		userId: 'user-a',
-		kodyId: 'alpha',
-		description: 'Alpha pack',
-	})
-	seedPackage(sqlite, {
-		id: 'pkg-old',
-		userId: 'user-a',
-		kodyId: 'stale',
-		description: 'Stale pack',
-	})
-
-	const now = new Date('2026-07-21T12:00:00.000Z')
-	await recordAgentPackageConversationUse(
-		{ APP_DB: db },
-		{
-			userId: 'user-a',
-			packageId: 'pkg-old',
-			conversationId: 'ancient',
-			usedAt: '2025-01-01T00:00:00.000Z',
-		},
-	)
-	await recordAgentPackageConversationUse(
-		{ APP_DB: db },
-		{
-			userId: 'user-a',
-			packageId: 'pkg-a',
-			conversationId: 'recent',
-			usedAt: '2026-07-10T00:00:00.000Z',
-		},
-	)
-	// Same conversation: recent alpha use pulls the conversation into last-N,
-	// but a much older stale-package row must not count.
-	await recordAgentPackageConversationUse(
-		{ APP_DB: db },
-		{
-			userId: 'user-a',
-			packageId: 'pkg-old',
-			conversationId: 'shared',
-			usedAt: '2025-01-01T00:00:00.000Z',
-		},
-	)
-	await recordAgentPackageConversationUse(
-		{ APP_DB: db },
-		{
-			userId: 'user-a',
-			packageId: 'pkg-a',
-			conversationId: 'shared',
-			usedAt: '2026-07-10T00:00:00.000Z',
-		},
-	)
+	seedPackages(sqlite, [
+		['pkg-a', 'alpha', 'Alpha pack'],
+		['pkg-old', 'stale', 'Stale pack'],
+	])
+	await recordUses(db, [
+		['pkg-old', 'ancient', '2025-01-01T00:00:00.000Z'],
+		['pkg-a', 'recent', '2026-07-10T00:00:00.000Z'],
+		// Same conversation: recent alpha use pulls the conversation into last-N,
+		// but a much older stale-package row must not count.
+		['pkg-old', 'shared', '2025-01-01T00:00:00.000Z'],
+		['pkg-a', 'shared', '2026-07-10T00:00:00.000Z'],
+	])
 
 	const ranked = await listPopularAgentPackagesForUser(db, {
 		userId: 'user-a',
-		now,
+		now: new Date('2026-07-21T12:00:00.000Z'),
 		conversationLimit: 40,
 		maxAgeDays: 180,
 	})

@@ -37,6 +37,22 @@ type UserRow = {
 	experiments_opt_in?: number
 }
 
+type TestDb = D1Database & {
+	globals: Map<string, GlobalRow>
+	overrides: Map<string, OverrideRow>
+}
+
+type FlagKey = Parameters<typeof isFeatureEnabled>[1]
+
+const orNull = (value: unknown) =>
+	value === null || value === undefined ? null : value
+
+const allResults = <T>(results: Array<unknown>) =>
+	({ results, meta: { changes: 0 } }) as {
+		results: Array<T>
+		meta: { changes: number }
+	}
+
 function createFeatureFlagsTestDb(
 	input: {
 		globals?: Array<GlobalRow>
@@ -64,18 +80,17 @@ function createFeatureFlagsTestDb(
 		]),
 	)
 	let clock = 0
-
-	function nextTimestamp() {
-		clock += 1
-		return `2026-07-19T00:00:${String(clock).padStart(2, '0')}.000Z`
-	}
-
-	function normalize(query: string) {
-		return query.replace(/\s+/g, ' ').trim().toLowerCase()
-	}
+	const nextTimestamp = () =>
+		`2026-07-19T00:00:${String(++clock).padStart(2, '0')}.000Z`
 
 	function createStatement(query: string, params: Array<unknown> = []) {
-		const normalized = normalize(query)
+		const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
+		const has = (...parts: Array<string>) =>
+			parts.every((part) => normalized.includes(part))
+		const optInUser = () => {
+			const row = users.get(Number(params[0]))
+			return row ? { experiments_opt_in: row.experiments_opt_in } : null
+		}
 		return {
 			query,
 			bind(...nextParams: Array<unknown>) {
@@ -83,16 +98,15 @@ function createFeatureFlagsTestDb(
 			},
 			async first<T>() {
 				if (
-					normalized.includes('from feature_flag_user_overrides') &&
-					normalized.includes('where flag_key = ? and user_id = ?')
+					has(
+						'from feature_flag_user_overrides',
+						'where flag_key = ? and user_id = ?',
+					)
 				) {
 					const row = overrides.get(`${params[0]}:${params[1]}`)
 					return (row ? { enabled: row.enabled } : null) as T | null
 				}
-				if (
-					normalized.includes('from feature_flags') &&
-					normalized.includes('where key = ?')
-				) {
+				if (has('from feature_flags', 'where key = ?')) {
 					const row = globals.get(String(params[0]))
 					return (
 						row
@@ -104,176 +118,117 @@ function createFeatureFlagsTestDb(
 							: null
 					) as T | null
 				}
-				if (
-					normalized.includes('from users') &&
-					normalized.includes('experiments_opt_in') &&
-					normalized.includes('where id = ?')
-				) {
-					const row = users.get(Number(params[0]))
-					return (
-						row ? { experiments_opt_in: row.experiments_opt_in } : null
-					) as T | null
+				if (has('from users', 'experiments_opt_in', 'where id = ?')) {
+					return optInUser() as T | null
 				}
 				throw new Error(`Unsupported first query: ${query}`)
 			},
 			async all<T>() {
-				if (
-					normalized.includes('from feature_flags') &&
-					!normalized.includes('where')
-				) {
-					return {
-						results: [...globals.values()].map((row) => ({
+				if (has('from feature_flags') && !has('where')) {
+					return allResults<T>(
+						[...globals.values()].map((row) => ({
 							...row,
 							updated_by_stable_user_id:
 								users.get(row.updated_by ?? -1)?.stable_user_id ?? null,
 						})),
-						meta: { changes: 0 },
-					} as { results: Array<T>; meta: { changes: number } }
+					)
 				}
-				if (
-					normalized.includes('from feature_flag_user_overrides') &&
-					normalized.includes('where user_id = ?')
-				) {
-					const userId = Number(params[0])
-					return {
-						results: [...overrides.values()]
-							.filter((row) => row.user_id === userId)
-							.map((row) => ({
-								flag_key: row.flag_key,
-								enabled: row.enabled,
-							})),
-						meta: { changes: 0 },
-					} as { results: Array<T>; meta: { changes: number } }
+				if (has('from feature_flag_user_overrides', 'where user_id = ?')) {
+					return allResults<T>(
+						[...overrides.values()]
+							.filter((row) => row.user_id === Number(params[0]))
+							.map(({ flag_key, enabled }) => ({ flag_key, enabled })),
+					)
 				}
-				if (
-					normalized.includes('from users') &&
-					normalized.includes('experiments_opt_in') &&
-					normalized.includes('where id = ?')
-				) {
-					const row = users.get(Number(params[0]))
-					return {
-						results: row
-							? [{ experiments_opt_in: row.experiments_opt_in }]
-							: [],
-						meta: { changes: 0 },
-					} as { results: Array<T>; meta: { changes: number } }
+				if (has('from users', 'experiments_opt_in', 'where id = ?')) {
+					const row = optInUser()
+					return allResults<T>(row ? [row] : [])
 				}
-				if (
-					normalized.includes('from feature_flag_user_overrides o') &&
-					normalized.includes('join users u')
-				) {
-					const rows = [...overrides.values()]
-						.map((row) => {
-							const user = users.get(row.user_id)
-							if (!user) return null
-							return {
-								flag_key: row.flag_key,
-								user_id: row.user_id,
-								enabled: row.enabled,
-								updated_at: row.updated_at,
-								username: user.username,
-								stable_user_id: user.stable_user_id,
-							}
-						})
-						.filter((row) => row !== null)
-						.sort((left, right) => {
-							const byKey = left.flag_key.localeCompare(right.flag_key)
-							if (byKey !== 0) return byKey
-							return left.username.localeCompare(right.username)
-						})
-					return {
-						results: rows,
-						meta: { changes: 0 },
-					} as { results: Array<T>; meta: { changes: number } }
+				if (has('from feature_flag_user_overrides o', 'join users u')) {
+					return allResults<T>(
+						[...overrides.values()]
+							.flatMap((row) => {
+								const user = users.get(row.user_id)
+								if (!user) return []
+								const { flag_key, user_id, enabled, updated_at } = row
+								const { username, stable_user_id } = user
+								return [
+									{
+										flag_key,
+										user_id,
+										enabled,
+										updated_at,
+										username,
+										stable_user_id,
+									},
+								]
+							})
+							.sort(
+								(left, right) =>
+									left.flag_key.localeCompare(right.flag_key) ||
+									left.username.localeCompare(right.username),
+							),
+					)
 				}
 				throw new Error(`Unsupported all query: ${query}`)
 			},
 			async run() {
 				if (
 					normalized.startsWith('insert into feature_flags') &&
-					normalized.includes('on conflict(key) do update')
+					has('on conflict(key) do update')
 				) {
 					const key = String(params[0])
-					const enabled = Number(params[1])
-					const rolloutPercent =
-						params[2] === null || params[2] === undefined
-							? null
-							: Number(params[2])
+					const existing = globals.get(key)
+					const rolloutPercent = orNull(params[2])
 					// Emulates COALESCE(?, '') on insert / COALESCE(?, note) on update.
-					const noteParam =
-						params[3] === null || params[3] === undefined
-							? null
-							: String(params[3])
-					const note = noteParam ?? globals.get(key)?.note ?? ''
-					const exists = globals.has(key)
-					const insertAudience =
-						params[4] === null || params[4] === undefined
-							? 'everyone'
-							: String(params[4])
-					const updateAudienceParam = params[7]
-					const audience = exists
-						? updateAudienceParam === null || updateAudienceParam === undefined
-							? (globals.get(key)?.audience ?? 'everyone')
-							: String(updateAudienceParam)
-						: insertAudience
-					const updatedBy = Number(params[5])
-					const updatedAt = nextTimestamp()
+					const note = orNull(params[3])
+					const audience = existing
+						? orNull(params[7])
+						: (orNull(params[4]) ?? 'everyone')
 					globals.set(key, {
 						key,
-						enabled,
-						rollout_percent: rolloutPercent,
-						audience,
-						note,
-						updated_by: updatedBy,
-						updated_at: updatedAt,
+						enabled: Number(params[1]),
+						rollout_percent:
+							rolloutPercent === null ? null : Number(rolloutPercent),
+						audience:
+							audience === null
+								? (existing?.audience ?? 'everyone')
+								: String(audience),
+						note: note === null ? (existing?.note ?? '') : String(note),
+						updated_by: Number(params[5]),
+						updated_at: nextTimestamp(),
 					})
 					return { meta: { changes: 1 } }
 				}
 				if (
 					normalized.startsWith('insert into feature_flag_user_overrides') &&
-					normalized.includes('on conflict(flag_key, user_id) do update')
+					has('on conflict(flag_key, user_id) do update')
 				) {
-					const flagKey = String(params[0])
-					const userId = Number(params[1])
-					const enabled = Number(params[2])
-					const updatedBy = Number(params[3])
-					const updatedAt = nextTimestamp()
-					overrides.set(`${flagKey}:${userId}`, {
-						flag_key: flagKey,
-						user_id: userId,
-						enabled,
-						updated_by: updatedBy,
-						updated_at: updatedAt,
+					overrides.set(`${params[0]}:${params[1]}`, {
+						flag_key: String(params[0]),
+						user_id: Number(params[1]),
+						enabled: Number(params[2]),
+						updated_by: Number(params[3]),
+						updated_at: nextTimestamp(),
 					})
 					return { meta: { changes: 1 } }
 				}
-				if (
-					normalized.startsWith('delete from feature_flag_user_overrides') &&
-					normalized.includes('where flag_key = ? and user_id = ?')
-				) {
-					const mapKey = `${params[0]}:${params[1]}`
-					const existed = overrides.delete(mapKey)
-					return { meta: { changes: existed ? 1 : 0 } }
-				}
-				if (
-					normalized.startsWith('delete from feature_flag_user_overrides') &&
-					normalized.includes('where flag_key = ?')
-				) {
-					const flagKey = String(params[0])
-					let changes = 0
-					// Snapshot keys so deletes during this loop do not skip entries.
-					// oxlint-disable-next-line unicorn/no-useless-spread
-					for (const mapKey of [...overrides.keys()]) {
-						if (mapKey.startsWith(`${flagKey}:`)) {
-							overrides.delete(mapKey)
-							changes += 1
-						}
+				if (normalized.startsWith('delete from feature_flag_user_overrides')) {
+					if (has('where flag_key = ? and user_id = ?')) {
+						const existed = overrides.delete(`${params[0]}:${params[1]}`)
+						return { meta: { changes: existed ? 1 : 0 } }
 					}
-					return { meta: { changes } }
+					if (has('where flag_key = ?')) {
+						const keys = [...overrides.keys()].filter((mapKey) =>
+							mapKey.startsWith(`${params[0]}:`),
+						)
+						for (const mapKey of keys) overrides.delete(mapKey)
+						return { meta: { changes: keys.length } }
+					}
 				}
 				if (
 					normalized.startsWith('delete from feature_flags') &&
-					normalized.includes('where key = ?')
+					has('where key = ?')
 				) {
 					const existed = globals.delete(String(params[0]))
 					return { meta: { changes: existed ? 1 : 0 } }
@@ -283,10 +238,8 @@ function createFeatureFlagsTestDb(
 		}
 	}
 
-	const db = {
-		prepare(query: string) {
-			return createStatement(query)
-		},
+	return {
+		prepare: (query: string) => createStatement(query),
 		async batch(
 			statements: Array<{
 				query?: string
@@ -309,168 +262,107 @@ function createFeatureFlagsTestDb(
 		},
 		globals,
 		overrides,
-		users,
-	} as unknown as D1Database & {
-		globals: Map<string, GlobalRow>
-		overrides: Map<string, OverrideRow>
-		users: Map<
-			number,
-			{
-				id: number
-				username: string
-				stable_user_id: string
-				experiments_opt_in: number
-			}
-		>
-	}
+	} as unknown as TestDb
+}
 
-	return db
+const registryKeys = [
+	'demo-indicator',
+	'compact-mcp-server-instructions',
+	'package-share-grants',
+	'secret-providers',
+	'jev-search-rerank',
+	'execute-invoke',
+] as const
+
+function everyFlag<T>(value: T, overrides: Partial<Record<FlagKey, T>> = {}) {
+	return {
+		...Object.fromEntries(registryKeys.map((key) => [key, value])),
+		...overrides,
+	}
+}
+
+function setGlobal(
+	db: TestDb,
+	enabled: boolean,
+	extra: Partial<Parameters<typeof setFeatureFlagGlobalState>[1]> = {},
+) {
+	return setFeatureFlagGlobalState(db, {
+		key: 'demo-indicator',
+		enabled,
+		rolloutPercent: null,
+		updatedBy: 1,
+		...extra,
+	})
+}
+
+function setOverride(db: TestDb, userId: number, enabled: boolean) {
+	return setFeatureFlagUserOverride(db, {
+		key: 'demo-indicator',
+		userId,
+		enabled,
+		updatedBy: 1,
+	})
+}
+
+function enabledFor(
+	db: TestDb,
+	userIds: Array<number | null>,
+	key: FlagKey = 'demo-indicator',
+) {
+	return Promise.all(userIds.map((userId) => isFeatureEnabled(db, key, userId)))
+}
+
+function userInBucket(inRollout: boolean) {
+	for (let userId = 1; userId < 10_000; userId += 1) {
+		if (computeRolloutBucket('demo-indicator', userId) < 50 === inRollout) {
+			return userId
+		}
+	}
+	throw new Error('No user found for rollout bucket')
 }
 
 test('isFeatureEnabled falls back to registry default when no DB state exists', async () => {
 	const db = createFeatureFlagsTestDb()
-	await expect(isFeatureEnabled(db, 'demo-indicator', 1)).resolves.toBe(false)
-	await expect(isFeatureEnabled(db, 'demo-indicator', null)).resolves.toBe(
-		false,
-	)
-	await expect(getFeatureFlagsForUser(db, 1)).resolves.toEqual({
-		'demo-indicator': false,
-		'compact-mcp-server-instructions': false,
-		'package-share-grants': false,
-		'secret-providers': false,
-		'jev-search-rerank': false,
-		'execute-invoke': false,
-	})
+	expect(await enabledFor(db, [1, null])).toEqual([false, false])
+	await expect(getFeatureFlagsForUser(db, 1)).resolves.toEqual(everyFlag(false))
 })
 
 test('global on/off and percentage rollout evaluation', async () => {
 	const db = createFeatureFlagsTestDb()
 
-	await setFeatureFlagGlobalState(db, {
-		key: 'demo-indicator',
-		enabled: false,
-		rolloutPercent: null,
-		updatedBy: 9,
-	})
-	await expect(isFeatureEnabled(db, 'demo-indicator', 1)).resolves.toBe(false)
+	await setGlobal(db, false)
+	expect(await enabledFor(db, [1])).toEqual([false])
 
-	await setFeatureFlagGlobalState(db, {
-		key: 'demo-indicator',
-		enabled: true,
-		rolloutPercent: null,
-		note: 'fully on',
-		updatedBy: 9,
-	})
-	await expect(isFeatureEnabled(db, 'demo-indicator', 1)).resolves.toBe(true)
-	await expect(isFeatureEnabled(db, 'demo-indicator', null)).resolves.toBe(true)
+	await setGlobal(db, true, { note: 'fully on' })
+	expect(await enabledFor(db, [1, null])).toEqual([true, true])
 	await expect(isFeatureGloballyEnabled(db, 'demo-indicator')).resolves.toBe(
 		true,
 	)
 
-	await setFeatureFlagGlobalState(db, {
-		key: 'demo-indicator',
-		enabled: true,
-		rolloutPercent: 50,
-		updatedBy: 9,
-	})
-	const userIn = 1
-	const userOut = 2
-	const bucketIn = computeRolloutBucket('demo-indicator', userIn)
-	const bucketOut = computeRolloutBucket('demo-indicator', userOut)
-	// Pick users whose buckets land on opposite sides of 50 for this key.
-	let enabledUser = userIn
-	let disabledUser = userOut
-	if (bucketIn >= 50 && bucketOut < 50) {
-		enabledUser = userOut
-		disabledUser = userIn
-	} else if (bucketIn >= 50 && bucketOut >= 50) {
-		for (let candidate = 3; candidate < 10_000; candidate += 1) {
-			if (computeRolloutBucket('demo-indicator', candidate) < 50) {
-				enabledUser = candidate
-				disabledUser = userIn
-				break
-			}
-		}
-	} else if (bucketIn < 50 && bucketOut < 50) {
-		for (let candidate = 3; candidate < 10_000; candidate += 1) {
-			if (computeRolloutBucket('demo-indicator', candidate) >= 50) {
-				disabledUser = candidate
-				enabledUser = userIn
-				break
-			}
-		}
+	await setGlobal(db, true, { rolloutPercent: 50 })
+	expect(
+		await enabledFor(db, [userInBucket(true), userInBucket(false), null]),
+	).toEqual([true, false, false])
+	await expect(isFeatureGloballyEnabled(db, 'demo-indicator')).resolves.toBe(
+		true,
+	)
+
+	const invalidInputs: Array<
+		[Partial<Parameters<typeof setFeatureFlagGlobalState>[1]>, RegExp]
+	> = [
+		[{ rolloutPercent: 101 }, /rolloutPercent/],
+		[{ rolloutPercent: 12.5 }, /rolloutPercent/],
+		[{ note: 42 }, /note must be a string/],
+		[{ note: 'x'.repeat(501) }, /note must be at most 500 characters/],
+	]
+	for (const [extra, message] of invalidInputs) {
+		await expect(setGlobal(db, true, extra)).rejects.toThrow(message)
 	}
-	await expect(
-		isFeatureEnabled(db, 'demo-indicator', enabledUser),
-	).resolves.toBe(true)
-	await expect(
-		isFeatureEnabled(db, 'demo-indicator', disabledUser),
-	).resolves.toBe(false)
-	await expect(isFeatureEnabled(db, 'demo-indicator', null)).resolves.toBe(
-		false,
-	)
-	await expect(isFeatureGloballyEnabled(db, 'demo-indicator')).resolves.toBe(
-		true,
-	)
 
-	await expect(
-		setFeatureFlagGlobalState(db, {
-			key: 'demo-indicator',
-			enabled: true,
-			rolloutPercent: 101,
-			updatedBy: 9,
-		}),
-	).rejects.toThrow(/rolloutPercent/)
-	await expect(
-		setFeatureFlagGlobalState(db, {
-			key: 'demo-indicator',
-			enabled: true,
-			rolloutPercent: 12.5,
-			updatedBy: 9,
-		}),
-	).rejects.toThrow(/rolloutPercent/)
-
-	await expect(
-		setFeatureFlagGlobalState(db, {
-			key: 'demo-indicator',
-			enabled: true,
-			rolloutPercent: null,
-			note: 42,
-			updatedBy: 9,
-		}),
-	).rejects.toThrow(/note must be a string/)
-	await expect(
-		setFeatureFlagGlobalState(db, {
-			key: 'demo-indicator',
-			enabled: true,
-			rolloutPercent: null,
-			note: 'x'.repeat(501),
-			updatedBy: 9,
-		}),
-	).rejects.toThrow(/note must be at most 500 characters/)
-
-	await setFeatureFlagGlobalState(db, {
-		key: 'demo-indicator',
-		enabled: true,
-		rolloutPercent: null,
-		note: 'keep me',
-		updatedBy: 9,
-	})
-	await setFeatureFlagGlobalState(db, {
-		key: 'demo-indicator',
-		enabled: false,
-		rolloutPercent: null,
-		updatedBy: 9,
-	})
+	await setGlobal(db, true, { note: 'keep me' })
+	await setGlobal(db, false)
 	expect(db.globals.get('demo-indicator')?.note).toBe('keep me')
-
-	await setFeatureFlagGlobalState(db, {
-		key: 'demo-indicator',
-		enabled: false,
-		rolloutPercent: null,
-		note: '',
-		updatedBy: 9,
-	})
+	await setGlobal(db, false, { note: '' })
 	expect(db.globals.get('demo-indicator')?.note).toBe('')
 })
 
@@ -482,117 +374,58 @@ test('computeRolloutBucket is deterministic and spreads across 0-99', () => {
 		computeRolloutBucket('other-flag', 1),
 	)
 
-	const buckets = new Set<number>()
-	for (let userId = 1; userId <= 2_000; userId += 1) {
-		const bucket = computeRolloutBucket('demo-indicator', userId)
-		expect(bucket).toBeGreaterThanOrEqual(0)
-		expect(bucket).toBeLessThan(100)
-		buckets.add(bucket)
-	}
+	const buckets = Array.from({ length: 2_000 }, (_, index) =>
+		computeRolloutBucket('demo-indicator', index + 1),
+	)
+	expect(buckets.filter((bucket) => bucket < 0 || bucket >= 100)).toEqual([])
 	// Sanity: a decent spread across the 0–99 range for 2000 samples.
-	expect(buckets.size).toBeGreaterThan(80)
+	expect(new Set(buckets).size).toBeGreaterThan(80)
 })
 
 test('user override wins over global off and global on; clear restores evaluation', async () => {
 	const db = createFeatureFlagsTestDb()
 
-	await setFeatureFlagGlobalState(db, {
-		key: 'demo-indicator',
-		enabled: false,
-		rolloutPercent: null,
-		updatedBy: 1,
-	})
-	await setFeatureFlagUserOverride(db, {
-		key: 'demo-indicator',
-		userId: 7,
-		enabled: true,
-		updatedBy: 1,
-	})
-	await expect(isFeatureEnabled(db, 'demo-indicator', 7)).resolves.toBe(true)
-	await expect(isFeatureEnabled(db, 'demo-indicator', 8)).resolves.toBe(false)
-	await expect(getFeatureFlagsForUser(db, 7)).resolves.toEqual({
-		'demo-indicator': true,
-		'compact-mcp-server-instructions': false,
-		'package-share-grants': false,
-		'secret-providers': false,
-		'jev-search-rerank': false,
-		'execute-invoke': false,
-	})
+	await setGlobal(db, false)
+	await setOverride(db, 7, true)
+	expect(await enabledFor(db, [7, 8])).toEqual([true, false])
+	await expect(getFeatureFlagsForUser(db, 7)).resolves.toEqual(
+		everyFlag(false, { 'demo-indicator': true }),
+	)
 
-	await setFeatureFlagGlobalState(db, {
-		key: 'demo-indicator',
-		enabled: true,
-		rolloutPercent: null,
-		updatedBy: 1,
-	})
-	await setFeatureFlagUserOverride(db, {
-		key: 'demo-indicator',
-		userId: 7,
-		enabled: false,
-		updatedBy: 1,
-	})
-	await expect(isFeatureEnabled(db, 'demo-indicator', 7)).resolves.toBe(false)
-	await expect(isFeatureEnabled(db, 'demo-indicator', 8)).resolves.toBe(true)
+	await setGlobal(db, true)
+	await setOverride(db, 7, false)
+	expect(await enabledFor(db, [7, 8])).toEqual([false, true])
 
-	await expect(
-		clearFeatureFlagUserOverride(db, { key: 'demo-indicator', userId: 7 }),
-	).resolves.toBe(true)
-	await expect(isFeatureEnabled(db, 'demo-indicator', 7)).resolves.toBe(true)
-	await expect(
-		clearFeatureFlagUserOverride(db, { key: 'demo-indicator', userId: 7 }),
-	).resolves.toBe(false)
+	const clear = () =>
+		clearFeatureFlagUserOverride(db, { key: 'demo-indicator', userId: 7 })
+	await expect(clear()).resolves.toBe(true)
+	expect(await enabledFor(db, [7])).toEqual([true])
+	await expect(clear()).resolves.toBe(false)
 })
 
 test('getFeatureFlagEvaluationsForUser reports assignment sources', async () => {
 	const db = createFeatureFlagsTestDb()
+	const demoFor = async (userId: number | null) =>
+		(await getFeatureFlagEvaluationsForUser(db, userId))['demo-indicator']
 
-	await expect(getFeatureFlagEvaluationsForUser(db, 7)).resolves.toEqual({
-		'demo-indicator': { enabled: false, source: 'default' },
-		'compact-mcp-server-instructions': { enabled: false, source: 'default' },
-		'package-share-grants': { enabled: false, source: 'default' },
-		'secret-providers': { enabled: false, source: 'default' },
-		'jev-search-rerank': { enabled: false, source: 'default' },
-		'execute-invoke': { enabled: false, source: 'default' },
-	})
-
-	await setFeatureFlagGlobalState(db, {
-		key: 'demo-indicator',
-		enabled: true,
-		rolloutPercent: null,
-		updatedBy: 1,
-	})
-	await expect(getFeatureFlagEvaluationsForUser(db, 7)).resolves.toMatchObject({
-		'demo-indicator': { enabled: true, source: 'global' },
-	})
-
-	await setFeatureFlagGlobalState(db, {
-		key: 'demo-indicator',
-		enabled: true,
-		rolloutPercent: 50,
-		updatedBy: 1,
-	})
-	const evaluations = await getFeatureFlagEvaluationsForUser(db, 7)
-	expect(evaluations['demo-indicator'].source).toBe('rollout')
-	expect(evaluations['demo-indicator'].enabled).toBe(
-		computeRolloutBucket('demo-indicator', 7) < 50,
+	await expect(getFeatureFlagEvaluationsForUser(db, 7)).resolves.toEqual(
+		everyFlag({ enabled: false, source: 'default' }),
 	)
+
+	await setGlobal(db, true)
+	expect(await demoFor(7)).toEqual({ enabled: true, source: 'global' })
+
+	await setGlobal(db, true, { rolloutPercent: 50 })
+	expect(await demoFor(7)).toEqual({
+		enabled: computeRolloutBucket('demo-indicator', 7) < 50,
+		source: 'rollout',
+	})
 	// Anonymous users are excluded from percentage rollouts but the
 	// assignment is still rollout-sourced.
-	await expect(
-		getFeatureFlagEvaluationsForUser(db, null),
-	).resolves.toMatchObject({
-		'demo-indicator': { enabled: false, source: 'rollout' },
-	})
+	expect(await demoFor(null)).toEqual({ enabled: false, source: 'rollout' })
 
-	await setFeatureFlagUserOverride(db, {
-		key: 'demo-indicator',
-		userId: 7,
-		enabled: false,
-		updatedBy: 1,
-	})
-	await expect(getFeatureFlagEvaluationsForUser(db, 7)).resolves.toMatchObject({
-		'demo-indicator': { enabled: false, source: 'override' },
-	})
+	await setOverride(db, 7, false)
+	expect(await demoFor(7)).toEqual({ enabled: false, source: 'override' })
 })
 
 test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', async () => {
@@ -641,82 +474,57 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 
 	const listed = await listFeatureFlagsForAdmin(db)
 	expect(listed).toHaveLength(8)
-
-	const sharing = listed.find((flag) => flag.key === 'package-share-grants')
-	expect(sharing).toMatchObject({
-		key: 'package-share-grants',
-		stale: false,
-		defaultEnabled: false,
-		successMetric: null,
-	})
-
-	const secretProviders = listed.find((flag) => flag.key === 'secret-providers')
-	expect(secretProviders).toMatchObject({
-		key: 'secret-providers',
-		stale: false,
-		defaultEnabled: false,
-		successMetric: null,
-	})
-
-	const jevSearch = listed.find((flag) => flag.key === 'jev-search-rerank')
-	expect(jevSearch).toMatchObject({
-		key: 'jev-search-rerank',
-		stale: false,
-		defaultEnabled: false,
-		defaultAudience: 'experiments_opt_in',
-		successMetric: {
-			eventType: 'execute',
-			measure: 'event_count',
-			goal: 'increase',
-		},
-	})
-
-	expect(
-		listed.find((flag) => flag.key === 'execute-invoke')?.defaultAudience,
-	).toBe('experiments_opt_in')
-
-	const compact = listed.find(
-		(flag) => flag.key === 'compact-mcp-server-instructions',
-	)
-	expect(compact).toMatchObject({
-		key: 'compact-mcp-server-instructions',
-		stale: false,
-		defaultEnabled: false,
-		successMetric: {
-			eventType: 'execute',
-			measure: 'event_count',
-			goal: 'increase',
-		},
-	})
-	const demo = listed.find((flag) => flag.key === 'demo-indicator')
-	expect(demo).toMatchObject({
-		key: 'demo-indicator',
-		stale: false,
-		defaultEnabled: false,
-		successMetric: null,
-		global: {
-			enabled: true,
-			rolloutPercent: 25,
-			audience: 'everyone',
-			note: 'rolling out',
-			updatedByStableUserId: null,
-		},
-		overrides: [
+	const byKey = (key: string) => listed.find((flag) => flag.key === key)
+	const executeMetric = {
+		eventType: 'execute',
+		measure: 'event_count',
+		goal: 'increase',
+	}
+	const registryExpectations: Array<[string, Record<string, unknown>]> = [
+		['package-share-grants', { successMetric: null }],
+		['secret-providers', { successMetric: null }],
+		[
+			'jev-search-rerank',
+			{ defaultAudience: 'experiments_opt_in', successMetric: executeMetric },
+		],
+		['execute-invoke', { defaultAudience: 'experiments_opt_in' }],
+		['compact-mcp-server-instructions', { successMetric: executeMetric }],
+		[
+			'demo-indicator',
 			{
-				stableUserId: 'stable-4',
-				username: 'bob',
-				enabled: true,
+				successMetric: null,
+				global: {
+					enabled: true,
+					rolloutPercent: 25,
+					audience: 'everyone',
+					note: 'rolling out',
+					updatedByStableUserId: null,
+				},
+				overrides: [
+					{ stableUserId: 'stable-4', username: 'bob', enabled: true },
+				],
 			},
 		],
-	})
-	const retired = listed.find((flag) => flag.key === 'retired-flag')
-	expect(retired).toEqual({
-		key: 'retired-flag',
+	]
+	expect(registryExpectations.map(([key]) => byKey(key))).toMatchObject(
+		registryExpectations.map(([key, fields]) => ({
+			key,
+			stale: false,
+			defaultEnabled: false,
+			...fields,
+		})),
+	)
+
+	const staleShape = {
 		description: null,
 		defaultEnabled: null,
 		defaultAudience: null,
 		stale: true,
 		successMetric: null,
+	}
+	expect(byKey('retired-flag')).toEqual({
+		key: 'retired-flag',
+		...staleShape,
 		global: {
 			enabled: false,
 			rolloutPercent: null,
@@ -727,15 +535,9 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 		},
 		overrides: [],
 	})
-
-	const orphan = listed.find((flag) => flag.key === 'orphan-override')
-	expect(orphan).toEqual({
+	expect(byKey('orphan-override')).toEqual({
 		key: 'orphan-override',
-		description: null,
-		defaultEnabled: null,
-		defaultAudience: null,
-		stale: true,
-		successMetric: null,
+		...staleShape,
 		global: null,
 		overrides: [
 			{
@@ -749,28 +551,18 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 })
 
 test('deleteStaleFeatureFlag refuses registry keys and removes stale rows', async () => {
+	const globalRow = (key: string) => ({
+		key,
+		enabled: 1,
+		rollout_percent: null,
+		audience: 'everyone',
+		note: '',
+		updated_by: 1,
+		updated_at: '2026-07-01T00:00:00.000Z',
+	})
 	const db = createFeatureFlagsTestDb({
 		users: [{ id: 3, username: 'alice' }],
-		globals: [
-			{
-				key: 'demo-indicator',
-				enabled: 1,
-				rollout_percent: null,
-				audience: 'everyone',
-				note: '',
-				updated_by: 1,
-				updated_at: '2026-07-01T00:00:00.000Z',
-			},
-			{
-				key: 'retired-flag',
-				enabled: 1,
-				rollout_percent: null,
-				audience: 'everyone',
-				note: '',
-				updated_by: 1,
-				updated_at: '2026-07-01T00:00:00.000Z',
-			},
-		],
+		globals: [globalRow('demo-indicator'), globalRow('retired-flag')],
 		overrides: [
 			{
 				flag_key: 'retired-flag',
@@ -802,55 +594,25 @@ test('experiments_opt_in audience requires users.experiments_opt_in; overrides s
 		],
 	})
 
-	await setFeatureFlagGlobalState(db, {
-		key: 'demo-indicator',
-		enabled: true,
-		rolloutPercent: null,
-		audience: 'experiments_opt_in',
-		updatedBy: 1,
-	})
-
-	await expect(isFeatureEnabled(db, 'demo-indicator', 7)).resolves.toBe(true)
-	await expect(isFeatureEnabled(db, 'demo-indicator', 8)).resolves.toBe(false)
-	await expect(isFeatureEnabled(db, 'demo-indicator', 9)).resolves.toBe(false)
-	await expect(isFeatureEnabled(db, 'demo-indicator', null)).resolves.toBe(
+	await setGlobal(db, true, { audience: 'experiments_opt_in' })
+	expect(await enabledFor(db, [7, 8, 9, null])).toEqual([
+		true,
 		false,
-	)
+		false,
+		false,
+	])
 
-	await setFeatureFlagUserOverride(db, {
-		key: 'demo-indicator',
-		userId: 8,
-		enabled: true,
-		updatedBy: 1,
-	})
-	await expect(isFeatureEnabled(db, 'demo-indicator', 8)).resolves.toBe(true)
+	await setOverride(db, 8, true)
+	expect(await enabledFor(db, [8])).toEqual([true])
 
-	await setFeatureFlagGlobalState(db, {
-		key: 'demo-indicator',
-		enabled: true,
-		rolloutPercent: null,
-		updatedBy: 1,
-	})
-	await expect(isFeatureEnabled(db, 'demo-indicator', 9)).resolves.toBe(false)
+	await setGlobal(db, true)
+	expect(await enabledFor(db, [9])).toEqual([false])
 
-	await setFeatureFlagGlobalState(db, {
-		key: 'demo-indicator',
-		enabled: true,
-		rolloutPercent: null,
-		audience: 'everyone',
-		updatedBy: 1,
-	})
-	await expect(isFeatureEnabled(db, 'demo-indicator', 8)).resolves.toBe(true)
-	await expect(isFeatureEnabled(db, 'demo-indicator', 9)).resolves.toBe(true)
+	await setGlobal(db, true, { audience: 'everyone' })
+	expect(await enabledFor(db, [8, 9])).toEqual([true, true])
 
 	await expect(
-		setFeatureFlagGlobalState(db, {
-			key: 'demo-indicator',
-			enabled: true,
-			rolloutPercent: null,
-			audience: 'not-a-real-audience',
-			updatedBy: 1,
-		}),
+		setGlobal(db, true, { audience: 'not-a-real-audience' }),
 	).rejects.toThrow(/audience must be one of/)
 })
 
@@ -862,13 +624,7 @@ test('execute-invoke first insert without audience uses registry defaultAudience
 		],
 	})
 
-	await setFeatureFlagGlobalState(db, {
-		key: 'execute-invoke',
-		enabled: true,
-		rolloutPercent: null,
-		updatedBy: 1,
-	})
+	await setGlobal(db, true, { key: 'execute-invoke' })
 	expect(db.globals.get('execute-invoke')?.audience).toBe('experiments_opt_in')
-	await expect(isFeatureEnabled(db, 'execute-invoke', 7)).resolves.toBe(true)
-	await expect(isFeatureEnabled(db, 'execute-invoke', 8)).resolves.toBe(false)
+	expect(await enabledFor(db, [7, 8], 'execute-invoke')).toEqual([true, false])
 })

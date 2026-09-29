@@ -9,28 +9,35 @@ import {
 	isFleetEntitlementCrossingEventTopic,
 } from './fleet-entitlement-crossing-subscription-event.ts'
 
+const user = { id: 'user-1', username: 'maciek' }
+const links = {
+	insightsUrl: 'https://kody.codes/admin/insights',
+	usersUrl: 'https://kody.codes/admin/users',
+	observedAt: '2026-08-24T16:00:18.000Z',
+}
+
 test('fleet entitlement crossing builders keep a metadata-only operator snapshot', () => {
 	const entitlement = buildFleetEntitlementResourceCrossedEvent({
-		user: { id: 'user-1', username: 'maciek' },
+		user,
 		resource: 'saved_packages',
 		label: 'saved packages',
 		threshold: 'reached',
 		current: 10,
 		limit: 10,
 		percentOfLimit: 1,
-		insightsUrl: 'https://kody.codes/admin/insights',
-		usersUrl: 'https://kody.codes/admin/users',
-		observedAt: '2026-08-24T16:00:18.000Z',
+		...links,
 	})
 	const runtime = buildFleetRuntimeDurationCrossedEvent({
-		user: entitlement.user,
+		user,
 		totalDurationMs: 90_000_000,
 		thresholdMs: 86_400_000,
-		insightsUrl: entitlement.insights_url,
-		usersUrl: entitlement.users_url,
-		observedAt: entitlement.observed_at,
+		...links,
 	})
-
+	const snakeLinks = {
+		insights_url: links.insightsUrl,
+		users_url: links.usersUrl,
+		observed_at: links.observedAt,
+	}
 	expect(entitlement).toEqual({
 		event: fleetEntitlementCrossedTopic,
 		kind: 'entitlement',
@@ -41,94 +48,65 @@ test('fleet entitlement crossing builders keep a metadata-only operator snapshot
 		current: 10,
 		limit: 10,
 		percent_of_limit: 1,
-		insights_url: 'https://kody.codes/admin/insights',
-		users_url: 'https://kody.codes/admin/users',
-		observed_at: '2026-08-24T16:00:18.000Z',
+		...snakeLinks,
 	})
 	expect(runtime).toEqual({
 		event: fleetEntitlementCrossedTopic,
 		kind: 'runtime_duration',
-		user: entitlement.user,
+		user,
 		total_duration_ms: 90_000_000,
 		threshold_ms: 86_400_000,
-		insights_url: entitlement.insights_url,
-		users_url: entitlement.users_url,
-		observed_at: entitlement.observed_at,
+		...snakeLinks,
 	})
 	expect(isFleetEntitlementCrossingEventTopic('user.created')).toBe(false)
-	expect(
-		buildFleetEntitlementCrossingIdempotencyKey({
-			event: entitlement,
-			packageId: 'package-1',
-		}),
-	).toBe(
-		'fleet-entitlement-crossing:fleet.entitlement.crossed:user-1:entitlement:reached:saved_packages:package-1',
-	)
-	expect(
-		buildFleetEntitlementCrossingIdempotencyKey({
-			event: runtime,
-			packageId: 'package-1',
-		}),
-	).toBe(
-		'fleet-entitlement-crossing:fleet.entitlement.crossed:user-1:runtime_duration:2026-08:package-1',
-	)
 
 	const daily = buildFleetEntitlementResourceCrossedEvent({
-		user: entitlement.user,
+		user,
 		resource: 'execute_calls_per_day',
 		label: 'execute calls per day',
 		threshold: 'reached',
 		current: 250,
 		limit: 250,
 		percentOfLimit: 1,
-		insightsUrl: entitlement.insights_url,
-		usersUrl: entitlement.users_url,
-		observedAt: entitlement.observed_at,
+		...links,
 	})
-	expect(
-		buildFleetEntitlementCrossingIdempotencyKey({
-			event: daily,
-			packageId: 'package-1',
-		}),
-	).toBe(
-		'fleet-entitlement-crossing:fleet.entitlement.crossed:user-1:entitlement:reached:execute_calls_per_day:2026-08-24:package-1',
-	)
-
 	const repeated = buildFleetRepeatedEntitlementCrossedEvent({
-		user: entitlement.user,
+		user,
 		resource: 'execute_calls_per_day',
 		daysAtLimit: 3,
 		windowDays: 7,
 		thresholdDays: 3,
-		insightsUrl: entitlement.insights_url,
-		usersUrl: entitlement.users_url,
-		observedAt: entitlement.observed_at,
+		...links,
 	})
 	const cost = buildFleetDynamicWorkerCostCrossedEvent({
-		user: entitlement.user,
+		user,
 		uniqueWorkerDays: 1000,
 		estimatedGrossUsd: 2,
 		thresholdUsd: 2,
-		insightsUrl: entitlement.insights_url,
-		usersUrl: entitlement.users_url,
-		observedAt: entitlement.observed_at,
+		...links,
 	})
-	expect(repeated.kind).toBe('repeated_entitlement')
-	expect(cost.kind).toBe('dynamic_worker_cost')
+	expect([repeated.kind, cost.kind]).toEqual([
+		'repeated_entitlement',
+		'dynamic_worker_cost',
+	])
+	const keyCases = [
+		[entitlement, 'entitlement:reached:saved_packages'],
+		[runtime, 'runtime_duration:2026-08'],
+		[daily, 'entitlement:reached:execute_calls_per_day:2026-08-24'],
+		[repeated, 'repeated_entitlement:execute_calls_per_day:2026-08-24'],
+		[cost, 'dynamic_worker_cost:2026-08'],
+	] as const
 	expect(
-		buildFleetEntitlementCrossingIdempotencyKey({
-			event: repeated,
-			packageId: 'package-1',
-		}),
-	).toBe(
-		'fleet-entitlement-crossing:fleet.entitlement.crossed:user-1:repeated_entitlement:execute_calls_per_day:2026-08-24:package-1',
-	)
-	expect(
-		buildFleetEntitlementCrossingIdempotencyKey({
-			event: cost,
-			packageId: 'package-1',
-		}),
-	).toBe(
-		'fleet-entitlement-crossing:fleet.entitlement.crossed:user-1:dynamic_worker_cost:2026-08:package-1',
+		keyCases.map(([event]) =>
+			buildFleetEntitlementCrossingIdempotencyKey({
+				event,
+				packageId: 'package-1',
+			}),
+		),
+	).toEqual(
+		keyCases.map(
+			([, key]) =>
+				`fleet-entitlement-crossing:fleet.entitlement.crossed:user-1:${key}:package-1`,
+		),
 	)
 })

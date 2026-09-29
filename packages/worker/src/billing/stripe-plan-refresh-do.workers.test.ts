@@ -1,4 +1,4 @@
-import { expect, test, vi } from 'vitest'
+import { expect, test, vi, type Mock } from 'vitest'
 import { env, runInDurableObject } from 'cloudflare:test'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
@@ -8,40 +8,61 @@ import {
 	stripePlanRefreshBackstopDelayMs,
 } from './stripe-plan-refresh-client.ts'
 
-test('plan-relevant activity arms a per-user alarm that refreshes Stripe once', async () => {
+function stubFetch<T extends Mock>(fetchMock: T) {
+	vi.stubGlobal('fetch', fetchMock)
+	return Object.assign(fetchMock, {
+		[Symbol.dispose]: () => vi.unstubAllGlobals(),
+	})
+}
+
+async function seedStripeRefreshUser(prefix: string, stripeCustomerId: string) {
 	await ensureEntitlementTestSchema(env.APP_DB)
-	const email = `stripe-alarm-${crypto.randomUUID()}@example.com`
+	const email = `${prefix}-${crypto.randomUUID()}@example.com`
 	const userId = await createStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
 			username, email, password_hash, email_verified_at, stable_user_id,
 			plan, stripe_customer_id, stripe_plan, stripe_plan_refreshed_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, 'test-password-hash', ?, ?, 'free', ?, NULL, NULL)`,
 	)
 		.bind(
-			`stripe-alarm-${crypto.randomUUID().slice(0, 8)}`,
+			`${prefix}-${crypto.randomUUID().slice(0, 8)}`,
 			email,
-			'test-password-hash',
 			new Date().toISOString(),
 			userId,
-			'free',
-			'cus_alarm',
-			null,
-			null,
+			stripeCustomerId,
 		)
 		.run()
-	const now = new Date('2026-08-01T06:00:00.000Z')
 	const stub = env.STRIPE_PLAN_REFRESH.get(
 		env.STRIPE_PLAN_REFRESH.idFromName(userId),
 	)
+	return {
+		userId,
+		stub,
+		readAlarm: () =>
+			runInDurableObject(stub, async (_instance, state) =>
+				state.storage.getAlarm(),
+			),
+		fireAlarmNow: () =>
+			runInDurableObject(stub, async (instance, state) => {
+				await state.storage.deleteAlarm()
+				await instance.alarm()
+			}),
+	}
+}
+
+test('plan-relevant activity arms a per-user alarm that refreshes Stripe once', async () => {
+	const { userId, readAlarm, fireAlarmNow } = await seedStripeRefreshUser(
+		'stripe-alarm',
+		'cus_alarm',
+	)
+	const now = new Date('2026-08-01T06:00:00.000Z')
 
 	const scheduledBetween = Date.now()
 	await expect(
 		scheduleStripePlanRefreshBackstop({ env, userId, now }),
 	).resolves.toBe(true)
-	const alarmAt = await runInDurableObject(stub, async (_instance, state) =>
-		state.storage.getAlarm(),
-	)
+	const alarmAt = await readAlarm()
 	expect(alarmAt).toBeTypeOf('number')
 	expect(alarmAt).toBeGreaterThanOrEqual(
 		scheduledBetween + stripePlanRefreshBackstopDelayMs,
@@ -50,24 +71,21 @@ test('plan-relevant activity arms a per-user alarm that refreshes Stripe once', 
 		Date.now() + stripePlanRefreshBackstopDelayMs,
 	)
 
-	const fetchStub = vi.fn(async () =>
-		Response.json({
-			data: [
-				{
-					id: 'sub_alarm',
-					status: 'active',
-					cancel_at: null,
-					items: { data: [{ price: { id: 'price_pro' } }] },
-				},
-			],
-		}),
+	using fetchStub = stubFetch(
+		vi.fn(async () =>
+			Response.json({
+				data: [
+					{
+						id: 'sub_alarm',
+						status: 'active',
+						cancel_at: null,
+						items: { data: [{ price: { id: 'price_pro' } }] },
+					},
+				],
+			}),
+		),
 	)
-	vi.stubGlobal('fetch', fetchStub)
-
-	await runInDurableObject(stub, async (instance, state) => {
-		await state.storage.deleteAlarm()
-		await instance.alarm()
-	})
+	await fireAlarmNow()
 
 	const row = await env.APP_DB.prepare(
 		`SELECT stripe_plan, stripe_plan_refreshed_at
@@ -82,56 +100,23 @@ test('plan-relevant activity arms a per-user alarm that refreshes Stripe once', 
 	expect(row?.stripe_plan).toBe('pro')
 	expect(row?.stripe_plan_refreshed_at).toBeTruthy()
 	expect(fetchStub).toHaveBeenCalledTimes(1)
-	expect(
-		await runInDurableObject(stub, async (_instance, state) =>
-			state.storage.getAlarm(),
-		),
-	).toBeNull()
-
-	vi.unstubAllGlobals()
+	expect(await readAlarm()).toBeNull()
 })
 
 test('refresh failures re-arm, while account deletion prevents re-arming after purge', async () => {
-	await ensureEntitlementTestSchema(env.APP_DB)
-	const email = `stripe-alarm-retry-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
-	await env.APP_DB.prepare(
-		`INSERT INTO users (
-			username, email, password_hash, email_verified_at, stable_user_id,
-			plan, stripe_customer_id, stripe_plan, stripe_plan_refreshed_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-	)
-		.bind(
-			`stripe-alarm-retry-${crypto.randomUUID().slice(0, 8)}`,
-			email,
-			'test-password-hash',
-			new Date().toISOString(),
-			userId,
-			'free',
-			'cus_alarm_retry',
-			null,
-			null,
-		)
-		.run()
-	const stub = env.STRIPE_PLAN_REFRESH.get(
-		env.STRIPE_PLAN_REFRESH.idFromName(userId),
+	const { userId, stub, readAlarm, fireAlarmNow } = await seedStripeRefreshUser(
+		'stripe-alarm-retry',
+		'cus_alarm_retry',
 	)
 	await scheduleStripePlanRefreshBackstop({ env, userId })
 	consoleError.mockImplementation(() => {})
-	vi.stubGlobal(
-		'fetch',
+	using _fetch = stubFetch(
 		vi.fn(async () => Response.json({ error: 'stripe down' }, { status: 500 })),
 	)
 
 	const retryScheduledAfter = Date.now()
-	await runInDurableObject(stub, async (instance, state) => {
-		await state.storage.deleteAlarm()
-		await instance.alarm()
-	})
-	const retryAlarm = await runInDurableObject(stub, async (_instance, state) =>
-		state.storage.getAlarm(),
-	)
-	expect(retryAlarm).toBeGreaterThanOrEqual(
+	await fireAlarmNow()
+	expect(await readAlarm()).toBeGreaterThanOrEqual(
 		retryScheduledAfter + stripePlanRefreshBackstopDelayMs,
 	)
 	expect(consoleError).toHaveBeenCalledWith(
@@ -148,11 +133,5 @@ test('refresh failures re-arm, while account deletion prevents re-arming after p
 	await expect(
 		scheduleStripePlanRefreshBackstop({ env, userId }),
 	).resolves.toBe(false)
-	expect(
-		await runInDurableObject(stub, async (_instance, state) =>
-			state.storage.getAlarm(),
-		),
-	).toBeNull()
-
-	vi.unstubAllGlobals()
+	expect(await readAlarm()).toBeNull()
 })

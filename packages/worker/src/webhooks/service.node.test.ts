@@ -87,7 +87,7 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 	})),
 }))
 
-function createEnv(userId: string) {
+function createEnv() {
 	const sqlite = new DatabaseSync(':memory:')
 	// Mirrors the webhook_endpoints schema in
 	// packages/worker/migrations/0001-squashed-init.sql.
@@ -109,8 +109,6 @@ function createEnv(userId: string) {
 		ON webhook_endpoints(user_id, package_id, webhook_name);
 		CREATE INDEX idx_webhook_endpoints_user_created_at
 		ON webhook_endpoints(user_id, created_at);
-	`)
-	sqlite.exec(`
 		CREATE TABLE users (
 			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
 			username TEXT NOT NULL UNIQUE,
@@ -120,108 +118,109 @@ function createEnv(userId: string) {
 		);
 	`)
 	const db = createD1FromSqlite(sqlite)
-	return {
-		env: {
-			APP_DB: db,
-			APP_BASE_URL: 'https://heykody.dev',
-			SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-		} as Env,
-		db,
-		userId,
-	}
+	const env = {
+		APP_DB: db,
+		APP_BASE_URL: 'https://heykody.dev',
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+	} as Env
+	return { env, db }
 }
 
-test('mint/list/rotate/enable/disable webhooks are package-centered and user-scoped', async () => {
-	const userId = await createStableUserIdFromEmail('owner@example.com')
-	const otherUserId = await createStableUserIdFromEmail('other@example.com')
-	const { env, db } = createEnv(userId)
+const sentryHook = { kodyId: 'sentry-bridge', webhookName: 'sentry' }
+
+async function setupOwner(email: string, username: string) {
+	const userId = await createStableUserIdFromEmail(email)
+	const { env, db } = createEnv()
 	await db
 		.prepare(
 			`INSERT INTO users (username, email, password_hash, stable_user_id)
-			VALUES ('owner', 'owner@example.com', 'hash', ?)`,
+			VALUES (?, ?, 'hash', ?)`,
 		)
-		.bind(userId)
+		.bind(username, email, userId)
 		.run()
-
-	const listedBefore = await listWebhooksForUser({
+	const input = { env, userId, username, ...sentryHook }
+	return {
 		env,
-		baseUrl: 'https://heykody.dev',
+		db,
 		userId,
-	})
+		mint: () => mintWebhookUrlForUser(input),
+		rotate: () => rotateWebhookUrlForUser(input),
+		list: (forUserId = userId) =>
+			listWebhooksForUser({
+				env,
+				baseUrl: 'https://heykody.dev',
+				userId: forUserId,
+			}),
+		readEndpoint: <T>(endpointId: string, columns: string) =>
+			db
+				.prepare(`SELECT ${columns} FROM webhook_endpoints WHERE id = ?`)
+				.bind(endpointId)
+				.first<T>(),
+	}
+}
+
+const urlSecretOf = (url: string) => url.slice(url.lastIndexOf('/') + 1)
+
+test('mint/list/rotate/enable/disable webhooks are package-centered and user-scoped', async () => {
+	const owner = await setupOwner('owner@example.com', 'owner')
+	const { env, userId } = owner
+	const otherUserId = await createStableUserIdFromEmail('other@example.com')
+
+	const listedBefore = await owner.list()
 	expect(listedBefore).toHaveLength(1)
-	expect(listedBefore[0]?.minted).toBe(false)
-	expect(listedBefore[0]?.urlRecoverable).toBe(false)
-	expect(listedBefore[0]?.verification?.secretName).toBe('sentryWebhookSecret')
-	expect(listedBefore[0]?.inputMode).toBe('request')
-	expect(listedBefore[0]?.rateLimitPerMinute).toBe(60)
+	expect(listedBefore[0]).toMatchObject({
+		minted: false,
+		urlRecoverable: false,
+		verification: { secretName: 'sentryWebhookSecret' },
+		inputMode: 'request',
+		rateLimitPerMinute: 60,
+	})
 
 	const minted = await mintWebhookUrlForUser({
 		env,
 		userId,
 		email: 'owner@example.com',
 		username: 'owner',
-		kodyId: 'sentry-bridge',
-		webhookName: 'sentry',
+		...sentryHook,
 	})
 	expect(minted.handle.startsWith('whh_')).toBe(true)
 	expect(minted.urlHost).toBe('heykody.dev')
-	expect(minted).not.toHaveProperty('url')
-	expect(minted).not.toHaveProperty('urlSecret')
-	expect(minted).not.toHaveProperty('url_secret')
+	for (const secretKey of ['url', 'urlSecret', 'url_secret']) {
+		expect(minted).not.toHaveProperty(secretKey)
+	}
 
-	const revealed = await revealWebhookUrlForWebsite({
-		env,
-		userId,
-		username: 'owner',
-		target: { handle: minted.handle },
-	})
+	const reveal = (
+		target: Parameters<typeof revealWebhookUrlForWebsite>[0]['target'],
+	) => revealWebhookUrlForWebsite({ env, userId, username: 'owner', target })
+	const revealed = await reveal({ handle: minted.handle })
 	expect(revealed.url).toContain('/@owner/webhooks/sentry-bridge/sentry/')
 	expect(revealed.urlHost).toBe('heykody.dev')
 	// The account UI addresses a webhook by package + name rather than by
 	// handle; both paths resolve the same minted URL.
-	const revealedByName = await revealWebhookUrlForWebsite({
-		env,
-		userId,
-		username: 'owner',
-		target: { kodyId: 'sentry-bridge', webhookName: 'sentry' },
+	expect(await reveal(sentryHook)).toMatchObject({
+		url: revealed.url,
+		handle: minted.handle,
 	})
-	expect(revealedByName.url).toBe(revealed.url)
-	expect(revealedByName.handle).toBe(minted.handle)
 
-	const listed = await listWebhooksForUser({
-		env,
-		baseUrl: 'https://heykody.dev',
-		userId,
+	const listed = await owner.list()
+	expect(listed[0]).toMatchObject({
+		minted: true,
+		enabled: true,
+		handle: minted.handle,
+		urlHost: 'heykody.dev',
+		urlRecoverable: true,
 	})
-	expect(listed[0]?.minted).toBe(true)
-	expect(listed[0]?.enabled).toBe(true)
-	expect(listed[0]?.handle).toBe(minted.handle)
-	expect(listed[0]?.urlHost).toBe('heykody.dev')
-	expect(listed[0]?.urlRecoverable).toBe(true)
 	expect(listed[0]).not.toHaveProperty('url')
 	expect(JSON.stringify(listed)).not.toContain(revealed.url)
-	expect(JSON.stringify(listed)).not.toContain(
-		revealed.url.slice(revealed.url.lastIndexOf('/') + 1),
-	)
+	expect(JSON.stringify(listed)).not.toContain(urlSecretOf(revealed.url))
 
-	const otherList = await listWebhooksForUser({
-		env,
-		baseUrl: 'https://heykody.dev',
-		userId: otherUserId,
-	})
 	// Mock returns the same packages for any userId — still no mint rows for other.
-	expect(otherList[0]?.minted).toBe(false)
+	expect((await owner.list(otherUserId))[0]?.minted).toBe(false)
 
-	const rotated = await rotateWebhookUrlForUser({
-		env,
-		userId,
-		username: 'owner',
-		kodyId: 'sentry-bridge',
-		webhookName: 'sentry',
-	})
+	const rotated = await owner.rotate()
 	expect(rotated.handle).toBe(minted.handle)
 	expect(rotated).not.toHaveProperty('url')
-	const stored = await db
+	const stored = await owner.db
 		.prepare(
 			`SELECT id, url_secret_hash, url_secret_encrypted,
 				previous_url_secret_hash, previous_url_secret_expires_at
@@ -236,30 +235,22 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 			previous_url_secret_hash: string
 			previous_url_secret_expires_at: string
 		}>()
-	expect(stored?.id).toBe(parseWebhookUrlHandle(rotated.handle))
+	const endpointId = parseWebhookUrlHandle(rotated.handle)!
+	expect(stored?.id).toBe(endpointId)
 	expect(stored?.url_secret_encrypted).toBeTruthy()
 	const rotatedSecret = await decryptWebhookUrlSecret(
 		env,
 		stored!.url_secret_encrypted,
-		userWebhookUrlSecretContext(userId, stored!.id),
+		userWebhookUrlSecretContext(userId, endpointId),
 	)
-	expect(stored?.url_secret_hash).toBe(
-		await hashWebhookUrlSecret(rotatedSecret),
-	)
-	expect(rotatedSecret).not.toBe(
-		revealed.url.slice(revealed.url.lastIndexOf('/') + 1),
-	)
-	const previousSecret = revealed.url.slice(revealed.url.lastIndexOf('/') + 1)
-	expect(stored?.previous_url_secret_hash).toBe(
-		await hashWebhookUrlSecret(previousSecret),
-	)
-	expect(stored?.previous_url_secret_expires_at).toEqual(expect.any(String))
-	const listedAfterRotate = await listWebhooksForUser({
-		env,
-		baseUrl: 'https://heykody.dev',
-		userId,
+	const previousSecret = urlSecretOf(revealed.url)
+	expect(rotatedSecret).not.toBe(previousSecret)
+	expect(stored).toMatchObject({
+		url_secret_hash: await hashWebhookUrlSecret(rotatedSecret),
+		previous_url_secret_hash: await hashWebhookUrlSecret(previousSecret),
+		previous_url_secret_expires_at: expect.any(String),
 	})
-	expect(listedAfterRotate[0]?.previousUrlActiveUntil).toBe(
+	expect((await owner.list())[0]?.previousUrlActiveUntil).toBe(
 		stored?.previous_url_secret_expires_at,
 	)
 	const overlapUntil = Date.parse(stored!.previous_url_secret_expires_at)
@@ -270,135 +261,67 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 	const disabled = await setWebhookEnabledForUser({
 		env,
 		userId,
-		kodyId: 'sentry-bridge',
-		webhookName: 'sentry',
+		...sentryHook,
 		enabled: false,
 	})
 	expect(disabled.enabled).toBe(false)
-
-	const rotatedWhileDisabled = await rotateWebhookUrlForUser({
-		env,
-		userId,
-		username: 'owner',
-		kodyId: 'sentry-bridge',
-		webhookName: 'sentry',
-	})
+	const rotatedWhileDisabled = await owner.rotate()
 	expect(rotatedWhileDisabled.enabled).toBe(false)
 
-	const reminted = await mintWebhookUrlForUser({
-		env,
-		userId,
-		username: 'owner',
-		kodyId: 'sentry-bridge',
-		webhookName: 'sentry',
-	})
+	const reminted = await owner.mint()
 	expect(reminted.enabled).toBe(true)
 	expect(reminted.handle).toBe(rotatedWhileDisabled.handle)
 	expect(reminted).not.toHaveProperty('urlSecret')
 })
 
 test('clearing rotate overlap ignores a stale current-hash snapshot', async () => {
-	const userId = await createStableUserIdFromEmail('overlap-race@example.com')
-	const { env, db } = createEnv(userId)
-	await db
-		.prepare(
-			`INSERT INTO users (username, email, password_hash, stable_user_id)
-			VALUES ('racer', 'overlap-race@example.com', 'hash', ?)`,
+	const owner = await setupOwner('overlap-race@example.com', 'racer')
+	const { db, userId } = owner
+	type Hashes = {
+		url_secret_hash: string
+		previous_url_secret_hash: string | null
+		previous_url_secret_expires_at: string | null
+	}
+	const endpointId = parseWebhookUrlHandle((await owner.mint()).handle)!
+	const readHashes = () =>
+		owner.readEndpoint<Hashes>(
+			endpointId,
+			'url_secret_hash, previous_url_secret_hash, previous_url_secret_expires_at',
 		)
-		.bind(userId)
-		.run()
+	const clearFor = (urlSecretHash: string) =>
+		webhookRepo.clearWebhookEndpointPreviousUrlSecret({
+			db,
+			userId,
+			endpointId,
+			urlSecretHash,
+		})
 
-	await mintWebhookUrlForUser({
-		env,
-		userId,
-		username: 'racer',
-		kodyId: 'sentry-bridge',
-		webhookName: 'sentry',
-	})
-	await rotateWebhookUrlForUser({
-		env,
-		userId,
-		username: 'racer',
-		kodyId: 'sentry-bridge',
-		webhookName: 'sentry',
-	})
-	const afterFirstRotate = await db
-		.prepare(
-			`SELECT id, url_secret_hash, previous_url_secret_hash
-			FROM webhook_endpoints
-			WHERE user_id = ? AND webhook_name = 'sentry'`,
-		)
-		.bind(userId)
-		.first<{
-			id: string
-			url_secret_hash: string
-			previous_url_secret_hash: string
-		}>()
-	expect(afterFirstRotate?.previous_url_secret_hash).toBeTruthy()
+	await owner.rotate()
+	const afterFirstRotate = (await readHashes())!
+	expect(afterFirstRotate.previous_url_secret_hash).toBeTruthy()
 
-	await rotateWebhookUrlForUser({
-		env,
-		userId,
-		username: 'racer',
-		kodyId: 'sentry-bridge',
-		webhookName: 'sentry',
-	})
-	const afterSecondRotate = await db
-		.prepare(
-			`SELECT url_secret_hash, previous_url_secret_hash
-			FROM webhook_endpoints WHERE id = ?`,
-		)
-		.bind(afterFirstRotate!.id)
-		.first<{
-			url_secret_hash: string
-			previous_url_secret_hash: string
-		}>()
-	expect(afterSecondRotate?.url_secret_hash).not.toBe(
-		afterFirstRotate?.url_secret_hash,
+	await owner.rotate()
+	const afterSecondRotate = (await readHashes())!
+	expect(afterSecondRotate.url_secret_hash).not.toBe(
+		afterFirstRotate.url_secret_hash,
 	)
-	expect(afterSecondRotate?.previous_url_secret_hash).toBe(
-		afterFirstRotate?.url_secret_hash,
+	expect(afterSecondRotate.previous_url_secret_hash).toBe(
+		afterFirstRotate.url_secret_hash,
 	)
 
-	await webhookRepo.clearWebhookEndpointPreviousUrlSecret({
-		db,
-		userId,
-		endpointId: afterFirstRotate!.id,
-		urlSecretHash: afterFirstRotate!.url_secret_hash,
-	})
-	const ignoredStaleClear = await db
-		.prepare(
-			`SELECT previous_url_secret_hash FROM webhook_endpoints WHERE id = ?`,
-		)
-		.bind(afterFirstRotate!.id)
-		.first<{ previous_url_secret_hash: string | null }>()
-	expect(ignoredStaleClear?.previous_url_secret_hash).toBe(
-		afterSecondRotate?.previous_url_secret_hash,
-	)
+	await clearFor(afterFirstRotate.url_secret_hash)
+	expect(await readHashes()).toEqual(afterSecondRotate)
 
-	await webhookRepo.clearWebhookEndpointPreviousUrlSecret({
-		db,
-		userId,
-		endpointId: afterFirstRotate!.id,
-		urlSecretHash: afterSecondRotate!.url_secret_hash,
+	await clearFor(afterSecondRotate.url_secret_hash)
+	expect(await readHashes()).toMatchObject({
+		previous_url_secret_hash: null,
+		previous_url_secret_expires_at: null,
 	})
-	const retired = await db
-		.prepare(
-			`SELECT previous_url_secret_hash, previous_url_secret_expires_at
-			FROM webhook_endpoints WHERE id = ?`,
-		)
-		.bind(afterFirstRotate!.id)
-		.first<{
-			previous_url_secret_hash: string | null
-			previous_url_secret_expires_at: string | null
-		}>()
-	expect(retired?.previous_url_secret_hash).toBeNull()
-	expect(retired?.previous_url_secret_expires_at).toBeNull()
 })
 
 test('first mint that loses the id race retries with the persisted endpoint id', async () => {
 	const userId = await createStableUserIdFromEmail('race@example.com')
-	const { env, db } = createEnv(userId)
+	const { env, db } = createEnv()
 	const winnerId = '11111111-1111-1111-1111-111111111111'
 	await db
 		.prepare(
@@ -415,8 +338,8 @@ test('first mint that loses the id race retries with the persisted endpoint id',
 		)
 		.run()
 
-	try {
-		await webhookRepo.upsertWebhookEndpointSecret({
+	const raceError = await webhookRepo
+		.upsertWebhookEndpointSecret({
 			db,
 			id: '22222222-2222-2222-2222-222222222222',
 			userId,
@@ -425,12 +348,12 @@ test('first mint that loses the id race retries with the persisted endpoint id',
 			urlSecretHash: 'unused-hash',
 			urlSecretEncrypted: 'unused-ciphertext',
 		})
-		throw new Error('expected WebhookEndpointIdRaceError')
-	} catch (error) {
-		expect(error).toBeInstanceOf(WebhookEndpointIdRaceError)
-		if (!(error instanceof WebhookEndpointIdRaceError)) throw error
-		expect(error.existingId).toBe(winnerId)
-	}
+		.then(
+			() => null,
+			(error: unknown) => error,
+		)
+	expect(raceError).toBeInstanceOf(WebhookEndpointIdRaceError)
+	expect((raceError as WebhookEndpointIdRaceError).existingId).toBe(winnerId)
 
 	const getByKey = vi.spyOn(webhookRepo, 'getWebhookEndpointByKey')
 	const upsert = vi.spyOn(webhookRepo, 'upsertWebhookEndpointSecret')
@@ -441,8 +364,7 @@ test('first mint that loses the id race retries with the persisted endpoint id',
 		userId,
 		email: 'race@example.com',
 		username: 'racer',
-		kodyId: 'sentry-bridge',
-		webhookName: 'sentry',
+		...sentryHook,
 	})
 
 	expect(upsert).toHaveBeenCalledTimes(2)
@@ -455,10 +377,7 @@ test('first mint that loses the id race retries with the persisted endpoint id',
 			WHERE user_id = ? AND id = ?`,
 		)
 		.bind(userId, winnerId)
-		.first<{
-			url_secret_hash: string
-			url_secret_encrypted: string
-		}>()
+		.first<{ url_secret_hash: string; url_secret_encrypted: string }>()
 	expect(stored?.url_secret_encrypted).toBeTruthy()
 	expect(stored?.url_secret_encrypted).not.toBe('stale-ciphertext')
 	const mintedSecret = await decryptWebhookUrlSecret(
@@ -474,23 +393,10 @@ test('first mint that loses the id race retries with the persisted endpoint id',
 
 test('concurrent first mints converge on one handle', async () => {
 	const userId = await createStableUserIdFromEmail('parallel@example.com')
-	const { env } = createEnv(userId)
-	const [first, second] = await Promise.all([
-		mintWebhookUrlForUser({
-			env,
-			userId,
-			username: 'parallel',
-			kodyId: 'sentry-bridge',
-			webhookName: 'sentry',
-		}),
-		mintWebhookUrlForUser({
-			env,
-			userId,
-			username: 'parallel',
-			kodyId: 'sentry-bridge',
-			webhookName: 'sentry',
-		}),
-	])
+	const { env } = createEnv()
+	const mint = () =>
+		mintWebhookUrlForUser({ env, userId, username: 'parallel', ...sentryHook })
+	const [first, second] = await Promise.all([mint(), mint()])
 	expect(first.handle).toBe(second.handle)
 	expect(first.urlHost).toBe('heykody.dev')
 	expect(second).not.toHaveProperty('url')
@@ -498,12 +404,13 @@ test('concurrent first mints converge on one handle', async () => {
 
 test('listing webhooks loads package manifests concurrently', async () => {
 	const userId = await createStableUserIdFromEmail('many@example.com')
-	const { env } = createEnv(userId)
+	const { env } = createEnv()
+	const kodyIdFor = (index: number) => `many-${String(index).padStart(2, '0')}`
 	const packages = Array.from({ length: 20 }, (_, index) => ({
 		id: `pkg-many-${index}`,
 		userId,
 		name: `@owner/many-${index}`,
-		kodyId: `many-${String(index).padStart(2, '0')}`,
+		kodyId: kodyIdFor(index),
 		description: 'Many',
 		tags: [],
 		searchText: null,
@@ -531,7 +438,7 @@ test('listing webhooks loads package manifests concurrently', async () => {
 				name: `@owner/many-${index}`,
 				exports: { './hook': './src/hook.ts' },
 				kody: {
-					id: `many-${String(index).padStart(2, '0')}`,
+					id: kodyIdFor(index),
 					description: 'Many',
 					webhooks: [{ name: 'hook', export: './hook', responseMode: 'ack' }],
 				},

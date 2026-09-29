@@ -42,159 +42,110 @@ async function createGiftTestDb(input: {
 			input.stripePlan ?? null,
 		)
 		.run()
-	return { db, stableUserId }
+	return { db, stableUserId, email: input.email }
+}
+
+type GiftUser = Awaited<ReturnType<typeof createGiftTestDb>>
+
+function evaluate(user: GiftUser, ecosystemCount: number, at = now) {
+	return evaluateSecondAgentStandardGift({
+		db: user.db,
+		stableUserId: user.stableUserId,
+		ecosystemCount,
+		now: at,
+	})
+}
+
+function entitlementOf(user: GiftUser) {
+	return getUserEntitlement(user.db, {
+		userId: user.stableUserId,
+		email: user.email,
+	})
+}
+
+const activeGift = {
+	received: true,
+	active: true,
+	status: 'active',
+	grantedAt: now.toISOString(),
+	expiresAt: giftExpiresAt,
+}
+
+const alreadyPaidGift = {
+	received: true,
+	active: false,
+	status: 'already_paid',
+	grantedAt: now.toISOString(),
+	expiresAt: null,
 }
 
 test('first second-ecosystem grant gives 14-day Standard; later events and paid tiers do not', async () => {
-	// The gift's stored expiry is 2026-09-21. Entitlement reads the wall
-	// clock, so pin it to the scenario date or the gift looks expired.
+	// Entitlement reads the wall clock, so pin it to the grant time or the
+	// gift looks expired.
 	vi.useFakeTimers({ now })
 	try {
-		await assertSecondAgentGiftOnScenarioClock()
+		const free = await createGiftTestDb({ email: 'free-gift@example.com' })
+		expect(await evaluate(free, 1)).toEqual({ outcome: 'below_threshold' })
+		expect(await entitlementOf(free)).toEqual({
+			plan: 'free',
+			ladder: 'public',
+			creditWallet: 'none',
+		})
+		expect(await evaluate(free, 2)).toEqual({
+			outcome: 'granted',
+			gift: activeGift,
+		})
+		expect(await entitlementOf(free)).toEqual({
+			plan: 'pro',
+			ladder: 'public',
+			creditWallet: 'none',
+		})
+
+		const second = await evaluate(
+			free,
+			3,
+			new Date(now.getTime() + 24 * 60 * 60 * 1000),
+		)
+		expect(second.outcome).toBe('already_granted')
+		if (second.outcome !== 'already_granted') {
+			throw new Error('expected already_granted')
+		}
+		expect(second.gift.expiresAt).toBe(giftExpiresAt)
+		expect(second.gift.grantedAt).toBe(now.toISOString())
+		expect(
+			await free.db
+				.prepare(
+					`SELECT second_agent_standard_gift_granted_at,
+					        second_agent_standard_gift_expires_at
+					 FROM users WHERE stable_user_id = ?`,
+				)
+				.bind(free.stableUserId)
+				.first(),
+		).toEqual({
+			second_agent_standard_gift_granted_at: now.toISOString(),
+			second_agent_standard_gift_expires_at: giftExpiresAt,
+		})
+
+		for (const stripePlan of ['standard', 'pro'] as const) {
+			const paid = await createGiftTestDb({
+				email: `paid-${stripePlan}@example.com`,
+				stripePlan,
+			})
+			expect(await evaluate(paid, 2)).toEqual({
+				outcome: 'granted',
+				gift: alreadyPaidGift,
+			})
+			expect(await entitlementOf(paid)).toEqual({
+				plan: stripePlan,
+				ladder: 'public',
+				creditWallet: 'none',
+			})
+			expect((await evaluate(paid, 4)).outcome).toBe('already_granted')
+		}
 	} finally {
 		vi.useRealTimers()
 	}
 })
-
-async function assertSecondAgentGiftOnScenarioClock() {
-	const free = await createGiftTestDb({
-		email: 'free-gift@example.com',
-	})
-
-	expect(
-		await evaluateSecondAgentStandardGift({
-			db: free.db,
-			stableUserId: free.stableUserId,
-			ecosystemCount: 1,
-			now,
-		}),
-	).toEqual({ outcome: 'below_threshold' })
-	expect(
-		await getUserEntitlement(free.db, {
-			userId: free.stableUserId,
-			email: 'free-gift@example.com',
-		}),
-	).toEqual({ plan: 'free', ladder: 'public', creditWallet: 'none' })
-
-	const first = await evaluateSecondAgentStandardGift({
-		db: free.db,
-		stableUserId: free.stableUserId,
-		ecosystemCount: 2,
-		now,
-	})
-	expect(first).toEqual({
-		outcome: 'granted',
-		gift: {
-			received: true,
-			active: true,
-			status: 'active',
-			grantedAt: now.toISOString(),
-			expiresAt: giftExpiresAt,
-		},
-	})
-	// The gift fixture expires at noon UTC on 2026-09-21. Entitlement reads
-	// the wall clock, so pin it to the grant time or this assertion flips
-	// to free once that noon has passed.
-	vi.useFakeTimers()
-	vi.setSystemTime(now)
-	try {
-		expect(
-			await getUserEntitlement(free.db, {
-				userId: free.stableUserId,
-				email: 'free-gift@example.com',
-			}),
-		).toEqual({ plan: 'pro', ladder: 'public', creditWallet: 'none' })
-	} finally {
-		vi.useRealTimers()
-	}
-
-	const second = await evaluateSecondAgentStandardGift({
-		db: free.db,
-		stableUserId: free.stableUserId,
-		ecosystemCount: 3,
-		now: new Date(now.getTime() + 24 * 60 * 60 * 1000),
-	})
-	expect(second.outcome).toBe('already_granted')
-	if (second.outcome !== 'already_granted') {
-		throw new Error('expected already_granted')
-	}
-	expect(second.gift.expiresAt).toBe(giftExpiresAt)
-	expect(second.gift.grantedAt).toBe(now.toISOString())
-
-	const stored = await free.db
-		.prepare(
-			`SELECT second_agent_standard_gift_granted_at,
-			        second_agent_standard_gift_expires_at
-			 FROM users WHERE stable_user_id = ?`,
-		)
-		.bind(free.stableUserId)
-		.first<{
-			second_agent_standard_gift_granted_at: string
-			second_agent_standard_gift_expires_at: string
-		}>()
-	expect(stored).toEqual({
-		second_agent_standard_gift_granted_at: now.toISOString(),
-		second_agent_standard_gift_expires_at: giftExpiresAt,
-	})
-
-	const paidStandard = await createGiftTestDb({
-		email: 'paid-standard@example.com',
-		stripePlan: 'standard',
-	})
-	const paidStandardGift = await evaluateSecondAgentStandardGift({
-		db: paidStandard.db,
-		stableUserId: paidStandard.stableUserId,
-		ecosystemCount: 2,
-		now,
-	})
-	expect(paidStandardGift).toEqual({
-		outcome: 'granted',
-		gift: {
-			received: true,
-			active: false,
-			status: 'already_paid',
-			grantedAt: now.toISOString(),
-			expiresAt: null,
-		},
-	})
-	expect(
-		await getUserEntitlement(paidStandard.db, {
-			userId: paidStandard.stableUserId,
-			email: 'paid-standard@example.com',
-		}),
-	).toEqual({ plan: 'standard', ladder: 'public', creditWallet: 'none' })
-
-	const paidPro = await createGiftTestDb({
-		email: 'paid-pro@example.com',
-		stripePlan: 'pro',
-	})
-	const paidProGift = await evaluateSecondAgentStandardGift({
-		db: paidPro.db,
-		stableUserId: paidPro.stableUserId,
-		ecosystemCount: 2,
-		now,
-	})
-	expect(paidProGift.outcome).toBe('granted')
-	if (paidProGift.outcome !== 'granted') {
-		throw new Error('expected granted')
-	}
-	expect(paidProGift.gift.status).toBe('already_paid')
-	expect(paidProGift.gift.expiresAt).toBeNull()
-	expect(
-		await getUserEntitlement(paidPro.db, {
-			userId: paidPro.stableUserId,
-			email: 'paid-pro@example.com',
-		}),
-	).toEqual({ plan: 'pro', ladder: 'public', creditWallet: 'none' })
-
-	const replayPaid = await evaluateSecondAgentStandardGift({
-		db: paidPro.db,
-		stableUserId: paidPro.stableUserId,
-		ecosystemCount: 4,
-		now,
-	})
-	expect(replayPaid.outcome).toBe('already_granted')
-}
 
 test('maybeEvaluate skips writes without prepare and keeps an existing gift below two clients', async () => {
 	const warn = vi.spyOn(console, 'warn')
@@ -217,25 +168,15 @@ test('maybeEvaluate skips writes without prepare and keeps an existing gift belo
 	const gifted = await createGiftTestDb({
 		email: 'already-gifted@example.com',
 	})
-	await evaluateSecondAgentStandardGift({
-		db: gifted.db,
-		stableUserId: gifted.stableUserId,
-		ecosystemCount: 2,
-		now,
-	})
-	const afterRevoke = await maybeEvaluateSecondAgentStandardGift({
-		db: gifted.db,
-		stableUserId: gifted.stableUserId,
-		ecosystemCount: 1,
-		now,
-	})
-	expect(afterRevoke).toEqual({
-		received: true,
-		active: true,
-		status: 'active',
-		grantedAt: now.toISOString(),
-		expiresAt: giftExpiresAt,
-	})
+	await evaluate(gifted, 2)
+	expect(
+		await maybeEvaluateSecondAgentStandardGift({
+			db: gifted.db,
+			stableUserId: gifted.stableUserId,
+			ecosystemCount: 1,
+			now,
+		}),
+	).toEqual(activeGift)
 	const afterFailedListing = await maybeEvaluateSecondAgentStandardGift({
 		db: gifted.db,
 		stableUserId: gifted.stableUserId,

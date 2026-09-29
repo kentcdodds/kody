@@ -1,6 +1,6 @@
 import { runInDurableObject } from 'cloudflare:test'
 import { env } from 'cloudflare:workers'
-import { afterEach, expect, test, vi } from 'vitest'
+import { expect, test, vi, type Mock } from 'vitest'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
 import { repoSessionStorageBucketId } from '#worker/storage-buckets/service.ts'
 import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test-schema.ts'
@@ -15,9 +15,41 @@ import {
 	runDurableObjectDurationAttribution,
 } from './durable-object-duration-attribution.ts'
 
-afterEach(() => {
-	vi.unstubAllGlobals()
-})
+const credentialedEnv = {
+	...env,
+	CLOUDFLARE_ACCOUNT_ID: 'acct',
+	CLOUDFLARE_API_TOKEN: 'token',
+}
+
+function stubFetch<T extends Mock>(fetchMock: T) {
+	vi.stubGlobal('fetch', fetchMock)
+	return Object.assign(fetchMock, {
+		[Symbol.dispose]: () => vi.unstubAllGlobals(),
+	})
+}
+
+function analyticsResponse(
+	groups: Array<[objectId: string, activeTime: number]>,
+) {
+	return new Response(
+		JSON.stringify({
+			data: {
+				viewer: {
+					accounts: [
+						{
+							durableObjectsPeriodicGroups: groups.map(
+								([objectId, activeTime]) => ({
+									dimensions: { objectId },
+									sum: { activeTime },
+								}),
+							),
+						},
+					],
+				},
+			},
+		}),
+	)
+}
 
 async function ensureSchema() {
 	await ensureEntitlementTestSchema(env.APP_DB)
@@ -63,24 +95,19 @@ test('owner map object ids match the ids the Durable Objects themselves see', as
 	await ensureSchema()
 	const userId = await seedUser()
 	const storageId = `package:${crypto.randomUUID()}`
-	await env.APP_DB.prepare(
-		`INSERT INTO user_storage_buckets (user_id, storage_id, kind, created_at, last_seen_at)
-		 VALUES (?, ?, 'package', ?, ?)`,
-	)
-		.bind(userId, storageId, new Date().toISOString(), new Date().toISOString())
-		.run()
 	const repoSessionId = crypto.randomUUID()
-	await env.APP_DB.prepare(
-		`INSERT INTO user_storage_buckets (user_id, storage_id, kind, created_at, last_seen_at)
-		 VALUES (?, ?, 'repo_session', ?, ?)`,
-	)
-		.bind(
-			userId,
-			repoSessionStorageBucketId(repoSessionId),
-			new Date().toISOString(),
-			new Date().toISOString(),
+	const now = new Date().toISOString()
+	for (const [bucketId, kind] of [
+		[storageId, 'package'],
+		[repoSessionStorageBucketId(repoSessionId), 'repo_session'],
+	]) {
+		await env.APP_DB.prepare(
+			`INSERT INTO user_storage_buckets (user_id, storage_id, kind, created_at, last_seen_at)
+			 VALUES (?, ?, ?, ?, ?)`,
 		)
-		.run()
+			.bind(userId, bucketId, kind, now, now)
+			.run()
+	}
 
 	const owners = await buildDurableObjectOwnerMap(env)
 	const runLog = env.RUN_LOG.get(
@@ -112,46 +139,28 @@ test('the lane stores attributed daily active time and fleet coverage', async ()
 	await ensureSchema()
 	const userId = await seedUser()
 	const hubId = env.MCP_CLIENT_HUB.idFromName(userId).toString()
-	vi.stubGlobal(
-		'fetch',
+	using _fetch = stubFetch(
 		vi.fn(async (_url: string, init: RequestInit) => {
 			const { variables } = JSON.parse(String(init.body)) as {
 				variables: { day: string }
 			}
-			const groups =
+			return analyticsResponse(
 				variables.day === '2026-09-26'
 					? [
-							{
-								dimensions: { objectId: hubId },
-								sum: { activeTime: 7_200_000_000 },
-							},
-							{
-								dimensions: { objectId: 'f'.repeat(64) },
-								sum: { activeTime: 800_000_000 },
-							},
+							[hubId, 7_200_000_000],
+							['f'.repeat(64), 800_000_000],
 						]
-					: []
-			return new Response(
-				JSON.stringify({
-					data: {
-						viewer: { accounts: [{ durableObjectsPeriodicGroups: groups }] },
-					},
-				}),
+					: [],
 			)
 		}),
 	)
-	const workerEnv = {
-		...env,
-		CLOUDFLARE_ACCOUNT_ID: 'acct',
-		CLOUDFLARE_API_TOKEN: 'token',
-	}
 	await runDurableObjectDurationAttribution({
-		env: workerEnv,
+		env: credentialedEnv,
 		now: new Date('2026-09-27T03:20:00.000Z'),
 	})
 	// Rerunning the same hour overwrites instead of adding.
 	await runDurableObjectDurationAttribution({
-		env: workerEnv,
+		env: credentialedEnv,
 		now: new Date('2026-09-27T04:20:00.000Z'),
 	})
 	expect(
@@ -183,40 +192,18 @@ test('a user whose deletion starts mid-run gets no duration rows', async () => {
 	await ensureSchema()
 	const userId = await seedUser()
 	const hubId = env.MCP_CLIENT_HUB.idFromName(userId).toString()
-	vi.stubGlobal(
-		'fetch',
+	using _fetch = stubFetch(
 		vi.fn(async () => {
 			await env.APP_DB.prepare(
 				`UPDATE users SET deleting_at = ? WHERE stable_user_id = ?`,
 			)
 				.bind(new Date().toISOString(), userId)
 				.run()
-			return new Response(
-				JSON.stringify({
-					data: {
-						viewer: {
-							accounts: [
-								{
-									durableObjectsPeriodicGroups: [
-										{
-											dimensions: { objectId: hubId },
-											sum: { activeTime: 1_000_000 },
-										},
-									],
-								},
-							],
-						},
-					},
-				}),
-			)
+			return analyticsResponse([[hubId, 1_000_000]])
 		}),
 	)
 	await runDurableObjectDurationAttribution({
-		env: {
-			...env,
-			CLOUDFLARE_ACCOUNT_ID: 'acct',
-			CLOUDFLARE_API_TOKEN: 'token',
-		},
+		env: credentialedEnv,
 		now: new Date('2026-09-27T03:20:00.000Z'),
 	})
 	expect(

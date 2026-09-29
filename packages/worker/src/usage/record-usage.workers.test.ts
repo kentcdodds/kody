@@ -21,97 +21,135 @@ async function listRollups(db: D1Database, userId: string) {
 	return results
 }
 
+type UsageEvent = Parameters<typeof recordUsage>[1]
+
+function capturingUsageEnv() {
+	const dataPoints: Array<AnalyticsEngineDataPoint> = []
+	return {
+		dataPoints,
+		usageEnv: {
+			APP_DB: env.APP_DB,
+			USAGE_EVENTS: {
+				writeDataPoint(point?: AnalyticsEngineDataPoint) {
+					if (point) dataPoints.push(point)
+				},
+			},
+		},
+	}
+}
+
+async function recordAll(
+	usageEnv: Parameters<typeof recordUsage>[0],
+	events: Array<UsageEvent>,
+) {
+	for (const event of events) await recordUsage(usageEnv, event)
+}
+
+const blobRow = (userId: string, blobs: Array<string>) => [
+	userId,
+	...blobs,
+	...Array(7 - blobs.length).fill(''),
+]
+
+function dataPoint(
+	userId: string,
+	blobs: Array<string>,
+	doubles: Array<number>,
+) {
+	return { indexes: [userId], blobs: blobRow(userId, blobs), doubles }
+}
+
+function rollup(
+	user_id: string,
+	metric: string,
+	month: string,
+	counts: {
+		event_count: number
+		error_count?: number
+		total_duration_ms?: number
+		total_bytes?: number
+	},
+) {
+	return {
+		user_id,
+		metric,
+		month,
+		error_count: 0,
+		total_duration_ms: 0,
+		total_cpu_ms: 0,
+		total_bytes: 0,
+		...counts,
+	}
+}
+
+function julyExecuteEvents(userA: string, userB: string): Array<UsageEvent> {
+	return [
+		{
+			userId: userA,
+			eventType: 'execute',
+			durationMs: 120,
+			outcome: 'success',
+			timestamp: '2026-07-05T10:00:00.000Z',
+		},
+		{
+			userId: userA,
+			eventType: 'execute',
+			entityId: 'pkg-1',
+			durationMs: 80,
+			bytes: 512,
+			outcome: 'error',
+			timestamp: '2026-07-05T11:00:00.000Z',
+		},
+		{
+			userId: userB,
+			eventType: 'execute',
+			durationMs: 40,
+			outcome: 'success',
+			timestamp: '2026-07-05T12:00:00.000Z',
+		},
+		{
+			userId: userA,
+			eventType: 'durable_object_gb_seconds',
+			entityId: 'StorageRunner',
+			durationMs: 10_000,
+			eventCount: 8,
+			outcome: 'success',
+			timestamp: '2026-07-05T12:30:00.000Z',
+		},
+	]
+}
+
 test('recordUsage writes only Analytics Engine data points when USAGE_EVENTS is bound', async () => {
 	await ensureUsageRollupsTestSchema(env.APP_DB)
 	const userA = `usage-user-a-${crypto.randomUUID()}`
 	const userB = `usage-user-b-${crypto.randomUUID()}`
-	const dataPoints: Array<AnalyticsEngineDataPoint> = []
-	const usageEnv = {
-		APP_DB: env.APP_DB,
-		USAGE_EVENTS: {
-			writeDataPoint(point?: AnalyticsEngineDataPoint) {
-				if (point) dataPoints.push(point)
-			},
-		},
-	}
+	const { dataPoints, usageEnv } = capturingUsageEnv()
 
-	await recordUsage(usageEnv, {
-		userId: userA,
-		eventType: 'execute',
-		durationMs: 120,
-		outcome: 'success',
-		timestamp: '2026-07-05T10:00:00.000Z',
-	})
-	await recordUsage(usageEnv, {
-		userId: userA,
-		eventType: 'execute',
-		entityId: 'pkg-1',
-		durationMs: 80,
-		bytes: 512,
-		outcome: 'error',
-		timestamp: '2026-07-05T11:00:00.000Z',
-	})
-	await recordUsage(usageEnv, {
-		userId: userB,
-		eventType: 'execute',
-		durationMs: 40,
-		outcome: 'success',
-		timestamp: '2026-07-05T12:00:00.000Z',
-	})
-	await recordUsage(usageEnv, {
-		userId: userA,
-		eventType: 'durable_object_gb_seconds',
-		entityId: 'StorageRunner',
-		durationMs: 10_000,
-		eventCount: 8,
-		outcome: 'success',
-		timestamp: '2026-07-05T12:30:00.000Z',
-	})
+	await recordAll(usageEnv, julyExecuteEvents(userA, userB))
 
-	expect(dataPoints).toHaveLength(4)
-	expect(dataPoints[0]).toEqual({
-		indexes: [userA],
-		blobs: [
+	expect(dataPoints).toEqual([
+		dataPoint(
 			userA,
-			'execute',
-			'',
-			'success',
-			'2026-07-05T10:00:00.000Z',
-			'',
-			'',
-			'',
-		],
-		doubles: [120, 0, 0, 0, 0],
-	})
-	expect(dataPoints[1]).toEqual({
-		indexes: [userA],
-		blobs: [
+			['execute', '', 'success', '2026-07-05T10:00:00.000Z'],
+			[120, 0, 0, 0, 0],
+		),
+		dataPoint(
 			userA,
-			'execute',
-			'pkg-1',
-			'error',
-			'2026-07-05T11:00:00.000Z',
-			'',
-			'',
-			'',
-		],
-		doubles: [80, 0, 512, 0, 0],
-	})
-	expect(dataPoints[2]?.indexes).toEqual([userB])
-	expect(dataPoints[3]).toEqual({
-		indexes: [userA],
-		blobs: [
+			['execute', 'pkg-1', 'error', '2026-07-05T11:00:00.000Z'],
+			[80, 0, 512, 0, 0],
+		),
+		expect.objectContaining({ indexes: [userB] }),
+		dataPoint(
 			userA,
-			'durable_object_gb_seconds',
-			'StorageRunner',
-			'success',
-			'2026-07-05T12:30:00.000Z',
-			'',
-			'',
-			'',
-		],
-		doubles: [10_000, 0, 8, 0, 0],
-	})
+			[
+				'durable_object_gb_seconds',
+				'StorageRunner',
+				'success',
+				'2026-07-05T12:30:00.000Z',
+			],
+			[10_000, 0, 8, 0, 0],
+		),
+	])
 
 	// Production path: usage_rollups is a derived aggregate recomputed by the
 	// hourly aggregation cron, never written per event.
@@ -123,93 +161,41 @@ test('recordUsage accumulates per-user monthly rollups without USAGE_EVENTS (loc
 	await ensureUsageRollupsTestSchema(env.APP_DB)
 	const userA = `usage-user-a-${crypto.randomUUID()}`
 	const userB = `usage-user-b-${crypto.randomUUID()}`
-	const usageEnv = { APP_DB: env.APP_DB }
 
-	await recordUsage(usageEnv, {
-		userId: userA,
-		eventType: 'execute',
-		durationMs: 120,
-		outcome: 'success',
-		timestamp: '2026-07-05T10:00:00.000Z',
-	})
-	await recordUsage(usageEnv, {
-		userId: userA,
-		eventType: 'execute',
-		entityId: 'pkg-1',
-		durationMs: 80,
-		bytes: 512,
-		outcome: 'error',
-		timestamp: '2026-07-05T11:00:00.000Z',
-	})
-	await recordUsage(usageEnv, {
-		userId: userA,
-		eventType: 'email_send',
-		entityId: 'message-1',
-		bytes: 2048,
-		outcome: 'success',
-		timestamp: '2026-08-01T00:00:00.000Z',
-	})
-	await recordUsage(usageEnv, {
-		userId: userB,
-		eventType: 'execute',
-		durationMs: 40,
-		outcome: 'success',
-		timestamp: '2026-07-05T12:00:00.000Z',
-	})
-	await recordUsage(usageEnv, {
-		userId: userA,
-		eventType: 'durable_object_gb_seconds',
-		entityId: 'StorageRunner',
-		durationMs: 10_000,
-		eventCount: 8,
-		outcome: 'success',
-		timestamp: '2026-07-05T10:30:00.000Z',
-	})
+	await recordAll({ APP_DB: env.APP_DB }, [
+		...julyExecuteEvents(userA, userB),
+		{
+			userId: userA,
+			eventType: 'email_send',
+			entityId: 'message-1',
+			bytes: 2048,
+			outcome: 'success',
+			timestamp: '2026-08-01T00:00:00.000Z',
+		},
+	])
 
 	expect(await listRollups(env.APP_DB, userA)).toEqual([
-		{
-			user_id: userA,
-			metric: 'durable_object_gb_seconds',
-			month: '2026-07',
+		rollup(userA, 'durable_object_gb_seconds', '2026-07', {
 			event_count: 8,
-			error_count: 0,
 			total_duration_ms: 10_000,
-			total_cpu_ms: 0,
-			total_bytes: 0,
-		},
-		{
-			user_id: userA,
-			metric: 'email_send',
-			month: '2026-08',
+		}),
+		rollup(userA, 'email_send', '2026-08', {
 			event_count: 1,
-			error_count: 0,
-			total_duration_ms: 0,
-			total_cpu_ms: 0,
 			total_bytes: 2048,
-		},
-		{
-			user_id: userA,
-			metric: 'execute',
-			month: '2026-07',
+		}),
+		rollup(userA, 'execute', '2026-07', {
 			event_count: 2,
 			error_count: 1,
 			total_duration_ms: 200,
-			total_cpu_ms: 0,
 			total_bytes: 512,
-		},
+		}),
 	])
 	// Cross-user isolation: user B only ever sees their own single event.
 	expect(await listRollups(env.APP_DB, userB)).toEqual([
-		{
-			user_id: userB,
-			metric: 'execute',
-			month: '2026-07',
+		rollup(userB, 'execute', '2026-07', {
 			event_count: 1,
-			error_count: 0,
 			total_duration_ms: 40,
-			total_cpu_ms: 0,
-			total_bytes: 0,
-		},
+		}),
 	])
 })
 
@@ -276,64 +262,49 @@ test('recordUsage never throws when bindings are missing, sinks fail, or userId 
 
 test('recordUsage writes surface and executeShape as trailing Analytics Engine blobs', async () => {
 	const userId = `usage-surface-${crypto.randomUUID()}`
-	const dataPoints: Array<AnalyticsEngineDataPoint> = []
-	const usageEnv = {
-		USAGE_EVENTS: {
-			writeDataPoint(point?: AnalyticsEngineDataPoint) {
-				if (point) dataPoints.push(point)
-			},
+	const { dataPoints, usageEnv } = capturingUsageEnv()
+
+	await recordAll(usageEnv, [
+		{
+			userId,
+			eventType: 'dynamic_worker_day',
+			entityId: 'kody-worker-a',
+			outcome: 'success',
+			timestamp: '2026-09-01T12:00:00.000Z',
+			surface: 'job',
 		},
-	}
-
-	await recordUsage(usageEnv, {
-		userId,
-		eventType: 'dynamic_worker_day',
-		entityId: 'kody-worker-a',
-		outcome: 'success',
-		timestamp: '2026-09-01T12:00:00.000Z',
-		surface: 'job',
-	})
-	await recordUsage(usageEnv, {
-		userId,
-		eventType: 'execute',
-		outcome: 'success',
-		timestamp: '2026-09-01T12:01:00.000Z',
-		surface: 'execute',
-		executeShape: 'thin_single_export',
-	})
-
-	expect(dataPoints[0]?.blobs).toEqual([
-		userId,
-		'dynamic_worker_day',
-		'kody-worker-a',
-		'success',
-		'2026-09-01T12:00:00.000Z',
-		'job',
-		'',
-		'',
+		{
+			userId,
+			eventType: 'execute',
+			outcome: 'success',
+			timestamp: '2026-09-01T12:01:00.000Z',
+			surface: 'execute',
+			executeShape: 'thin_single_export',
+		},
 	])
-	expect(dataPoints[1]?.blobs).toEqual([
-		userId,
-		'execute',
-		'',
-		'success',
-		'2026-09-01T12:01:00.000Z',
-		'execute',
-		'thin_single_export',
-		'',
+
+	expect(dataPoints.map((point) => point.blobs)).toEqual([
+		blobRow(userId, [
+			'dynamic_worker_day',
+			'kody-worker-a',
+			'success',
+			'2026-09-01T12:00:00.000Z',
+			'job',
+		]),
+		blobRow(userId, [
+			'execute',
+			'',
+			'success',
+			'2026-09-01T12:01:00.000Z',
+			'execute',
+			'thin_single_export',
+		]),
 	])
 })
 
 test('recordUsage writes cacheReuse, codeChars, and paramsChars on invoke events', async () => {
 	const userId = `usage-invoke-${crypto.randomUUID()}`
-	const dataPoints: Array<AnalyticsEngineDataPoint> = []
-	const usageEnv = {
-		USAGE_EVENTS: {
-			writeDataPoint(point?: AnalyticsEngineDataPoint) {
-				if (point) dataPoints.push(point)
-			},
-		},
-	}
+	const { dataPoints, usageEnv } = capturingUsageEnv()
 
 	await recordUsage(usageEnv, {
 		userId,
@@ -348,21 +319,23 @@ test('recordUsage writes cacheReuse, codeChars, and paramsChars on invoke events
 		paramsChars: 17,
 	})
 
-	expect(dataPoints[0]).toEqual({
-		indexes: [userId],
-		blobs: [
+	expect(dataPoints).toEqual([
+		dataPoint(
 			userId,
-			'dynamic_worker_invoke',
-			'',
-			'success',
-			'2026-09-12T12:00:00.000Z',
-			'execute',
-			'glue',
-			'hit',
-		],
-		doubles: [42, 0, 0, 1280, 17],
-	})
-	expect(dataPoints[0]?.blobs?.[usageEventBlobIndexes.cacheReuse]).toBe('hit')
-	expect(dataPoints[0]?.doubles?.[usageEventDoubleIndexes.codeChars]).toBe(1280)
-	expect(dataPoints[0]?.doubles?.[usageEventDoubleIndexes.paramsChars]).toBe(17)
+			[
+				'dynamic_worker_invoke',
+				'',
+				'success',
+				'2026-09-12T12:00:00.000Z',
+				'execute',
+				'glue',
+				'hit',
+			],
+			[42, 0, 0, 1280, 17],
+		),
+	])
+	const [point] = dataPoints
+	expect(point?.blobs?.[usageEventBlobIndexes.cacheReuse]).toBe('hit')
+	expect(point?.doubles?.[usageEventDoubleIndexes.codeChars]).toBe(1280)
+	expect(point?.doubles?.[usageEventDoubleIndexes.paramsChars]).toBe(17)
 })

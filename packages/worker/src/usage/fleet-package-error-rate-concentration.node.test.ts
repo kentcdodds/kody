@@ -71,25 +71,43 @@ function createConcentrationDb(
 	} as unknown as D1Database
 }
 
+const recentWindow = {
+	dataset: 'kody_usage_events',
+	recentStart: new Date('2026-09-01T00:00:00.000Z'),
+	recentEnd: new Date('2026-09-01T01:00:00.000Z'),
+}
+
+function resolveConcentration(db: D1Database, recentErrors: number) {
+	return resolveFleetPackageErrorRateConcentration({
+		env: {
+			APP_DB: db,
+			CLOUDFLARE_ACCOUNT_ID: 'account',
+			CLOUDFLARE_API_TOKEN: 'token',
+		},
+		...recentWindow,
+		recentErrors,
+	})
+}
+
+const adaAndBea = [
+	{ stable_user_id: 'user-a', username: 'ada' },
+	{ stable_user_id: 'user-b', username: 'bea' },
+]
+
 test('fleet package error-rate concentration classifies, names, and stays identifier-safe', async () => {
+	const kinds: Array<[number, number, string]> = [
+		[0.8, 0.8, 'one_account'],
+		[0.5, 0.85, 'few_accounts'],
+		[0.3, 0.6, 'fleet'],
+	]
 	expect(
-		classifyFleetPackageErrorRateConcentrationKind({
-			topOwnerShare: 0.8,
-			topFewShare: 0.8,
-		}),
-	).toBe('one_account')
-	expect(
-		classifyFleetPackageErrorRateConcentrationKind({
-			topOwnerShare: 0.5,
-			topFewShare: 0.85,
-		}),
-	).toBe('few_accounts')
-	expect(
-		classifyFleetPackageErrorRateConcentrationKind({
-			topOwnerShare: 0.3,
-			topFewShare: 0.6,
-		}),
-	).toBe('fleet')
+		kinds.map(([topOwnerShare, topFewShare]) =>
+			classifyFleetPackageErrorRateConcentrationKind({
+				topOwnerShare,
+				topFewShare,
+			}),
+		),
+	).toEqual(kinds.map(([, , kind]) => kind))
 
 	const folded = foldFleetPackageErrorRateConcentrationRows(
 		[
@@ -101,6 +119,11 @@ test('fleet package error-rate concentration classifies, names, and stays identi
 	expect(folded.recentErrors).toBe(92)
 	expect(folded.ownerCount).toBe(2)
 	expect(folded.topOwnerShare).toBeCloseTo(90 / 92)
+	expect(folded.ranked[0]).toMatchObject({
+		ownerId: 'jett-user',
+		errors: 90,
+		entityIds: [],
+	})
 	const truncatedFleet = foldFleetPackageErrorRateConcentrationRows(
 		Array.from({ length: 50 }, (_, index) => ({
 			user_id: `user-${index}`,
@@ -116,25 +139,14 @@ test('fleet package error-rate concentration classifies, names, and stays identi
 			topFewShare: truncatedFleet.topFewShare,
 		}),
 	).toBe('fleet')
-	expect(folded.ranked[0]).toMatchObject({
-		ownerId: 'jett-user',
-		errors: 90,
-		entityIds: [],
-	})
 
-	const query = buildFleetPackageErrorRateConcentrationQuery({
-		dataset: 'kody_usage_events',
-		recentStart: new Date('2026-09-01T00:00:00.000Z'),
-		recentEnd: new Date('2026-09-01T01:00:00.000Z'),
-	})
+	const query = buildFleetPackageErrorRateConcentrationQuery(recentWindow)
 	expect(query).toContain('blob1 AS user_id')
 	expect(query).toContain('GROUP BY user_id')
 	expect(query).not.toContain('GROUP BY user_id, entity_id')
 	expect(query).toContain("blob4 = 'error'")
 	const packageQuery = buildFleetPackageErrorRateConcentrationPackageQuery({
-		dataset: 'kody_usage_events',
-		recentStart: new Date('2026-09-01T00:00:00.000Z'),
-		recentEnd: new Date('2026-09-01T01:00:00.000Z'),
+		...recentWindow,
 		ownerIds: ['jett-user'],
 	})
 	expect(packageQuery).toContain("blob1 IN ('jett-user')")
@@ -142,40 +154,20 @@ test('fleet package error-rate concentration classifies, names, and stays identi
 	expect(packageQuery).toContain('LIMIT 5')
 
 	queryAnalyticsEngineSql.mockImplementation(
-		async (input: { query: string }) => {
-			if (input.query.includes('GROUP BY user_id, entity_id')) {
-				return [
-					{
+		async (input: { query: string }) =>
+			input.query.includes('GROUP BY user_id, entity_id')
+				? [
+						[jettPackageIds.dji, 40],
+						[jettPackageIds.earth, 30],
+						[jettPackageIds.analysis, 20],
+					].map(([entity_id, error_count]) => ({
 						user_id: 'jett-user',
-						entity_id: jettPackageIds.dji,
-						error_count: 40,
-					},
-					{
-						user_id: 'jett-user',
-						entity_id: jettPackageIds.earth,
-						error_count: 30,
-					},
-					{
-						user_id: 'jett-user',
-						entity_id: jettPackageIds.analysis,
-						error_count: 20,
-					},
-				]
-			}
-			return [{ user_id: 'jett-user', error_count: 90 }]
-		},
+						entity_id,
+						error_count,
+					}))
+				: [{ user_id: 'jett-user', error_count: 90 }],
 	)
-	const concentration = await resolveFleetPackageErrorRateConcentration({
-		env: {
-			APP_DB: createConcentrationDb(),
-			CLOUDFLARE_ACCOUNT_ID: 'account',
-			CLOUDFLARE_API_TOKEN: 'token',
-		},
-		dataset: 'kody_usage_events',
-		recentStart: new Date('2026-09-01T00:00:00.000Z'),
-		recentEnd: new Date('2026-09-01T01:00:00.000Z'),
-		recentErrors: 90,
-	})
+	const concentration = await resolveConcentration(createConcentrationDb(), 90)
 	expect(concentration).toEqual({
 		kind: 'one_account',
 		recent_errors: 90,
@@ -198,34 +190,19 @@ test('fleet package error-rate concentration classifies, names, and stays identi
 	expect(JSON.stringify(concentration)).not.toContain('jett-user')
 	expect(JSON.stringify(concentration)).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/)
 
-	queryAnalyticsEngineSql.mockImplementation(async () => [
-		{ user_id: 'user-a', error_count: 20 },
-		{ user_id: 'user-b', error_count: 20 },
-		{ user_id: 'user-c', error_count: 20 },
-		{ user_id: 'user-d', error_count: 20 },
-		{ user_id: 'user-e', error_count: 20 },
-	])
-	const fleet = await resolveFleetPackageErrorRateConcentration({
-		env: {
-			APP_DB: createConcentrationDb({
-				users: [
-					{ stable_user_id: 'user-a', username: 'ada' },
-					{ stable_user_id: 'user-b', username: 'bea' },
-				],
-			}),
-			CLOUDFLARE_ACCOUNT_ID: 'account',
-			CLOUDFLARE_API_TOKEN: 'token',
-		},
-		dataset: 'kody_usage_events',
-		recentStart: new Date('2026-09-01T00:00:00.000Z'),
-		recentEnd: new Date('2026-09-01T01:00:00.000Z'),
-		recentErrors: 100,
-	})
-	expect(fleet).toMatchObject({
-		kind: 'fleet',
-		owner_count: 5,
-		owners: [],
-	})
+	queryAnalyticsEngineSql.mockImplementation(async () =>
+		['a', 'b', 'c', 'd', 'e'].map((suffix) => ({
+			user_id: `user-${suffix}`,
+			error_count: 20,
+		})),
+	)
+	expect(
+		await resolveConcentration(
+			createConcentrationDb({ users: adaAndBea }),
+			100,
+		),
+	).toMatchObject({ kind: 'fleet', owner_count: 5, owners: [] })
+
 	queryAnalyticsEngineSql.mockImplementation(
 		async (input: { query: string }) => {
 			if (input.query.includes("blob1 IN ('user-a')")) {
@@ -244,26 +221,16 @@ test('fleet package error-rate concentration classifies, names, and stays identi
 			]
 		},
 	)
-	const few = await resolveFleetPackageErrorRateConcentration({
-		env: {
-			APP_DB: createConcentrationDb({
-				users: [
-					{ stable_user_id: 'user-a', username: 'ada' },
-					{ stable_user_id: 'user-b', username: 'bea' },
-				],
-				packages: [
-					{ id: 'pkg-a-0', kody_id: 'ada-relay' },
-					{ id: 'pkg-b', kody_id: 'bea-relay' },
-				],
-			}),
-			CLOUDFLARE_ACCOUNT_ID: 'account',
-			CLOUDFLARE_API_TOKEN: 'token',
-		},
-		dataset: 'kody_usage_events',
-		recentStart: new Date('2026-09-01T00:00:00.000Z'),
-		recentEnd: new Date('2026-09-01T01:00:00.000Z'),
-		recentErrors: 100,
-	})
+	const few = await resolveConcentration(
+		createConcentrationDb({
+			users: adaAndBea,
+			packages: [
+				{ id: 'pkg-a-0', kody_id: 'ada-relay' },
+				{ id: 'pkg-b', kody_id: 'bea-relay' },
+			],
+		}),
+		100,
+	)
 	expect(few).toMatchObject({
 		kind: 'few_accounts',
 		owners: [
@@ -288,8 +255,5 @@ test('fleet package error-rate concentration classifies, names, and stays identi
 				},
 			],
 		}),
-	).toMatchObject({
-		kind: 'one_account',
-		owners: [{ username: 'jett' }],
-	})
+	).toMatchObject({ kind: 'one_account', owners: [{ username: 'jett' }] })
 })

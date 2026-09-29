@@ -1,4 +1,4 @@
-import { afterEach, expect, test, vi } from 'vitest'
+import { expect, test, vi, type Mock } from 'vitest'
 import { toAdminMeasuredDurableObjectDuration } from '#universal/durable-object-duration.ts'
 import {
 	attributeDurableObjectActiveTime,
@@ -7,9 +7,20 @@ import {
 	type DurableObjectDurationAttributionEnv,
 } from './durable-object-duration-attribution.ts'
 
-afterEach(() => {
-	vi.unstubAllGlobals()
-})
+function stubFetch<T extends Mock>(fetchMock: T) {
+	vi.stubGlobal('fetch', fetchMock)
+	return Object.assign(fetchMock, {
+		[Symbol.dispose]: () => vi.unstubAllGlobals(),
+	})
+}
+
+function group(objectId: string, activeTime: number) {
+	return { dimensions: { objectId }, sum: { activeTime } }
+}
+
+function analyticsResponse(accounts: Array<unknown>) {
+	return new Response(JSON.stringify({ data: { viewer: { accounts } } }))
+}
 
 function fakeNamespace(label: string) {
 	return {
@@ -118,13 +129,10 @@ test('active time converts microseconds and keeps unmapped objects unattributed'
 	const result = attributeDurableObjectActiveTime({
 		owners,
 		groups: [
-			{ dimensions: { objectId: 'hub:a' }, sum: { activeTime: 3_600_000_000 } },
-			{ dimensions: { objectId: 'session:1' }, sum: { activeTime: 1_500 } },
-			{ dimensions: { objectId: 'session:2' }, sum: { activeTime: 2_500 } },
-			{
-				dimensions: { objectId: 'mcp-session' },
-				sum: { activeTime: 9_000_000 },
-			},
+			group('hub:a', 3_600_000_000),
+			group('session:1', 1_500),
+			group('session:2', 2_500),
+			group('mcp-session', 9_000_000),
 		],
 	})
 	expect(result.rows).toEqual([
@@ -145,9 +153,7 @@ test('active time converts microseconds and keeps unmapped objects unattributed'
 test('the fleet total replaces a truncated per-object sum as the denominator', () => {
 	const result = attributeDurableObjectActiveTime({
 		owners: new Map([['hub:a', { userId: 'a', doClass: 'McpClientHub' }]]),
-		groups: [
-			{ dimensions: { objectId: 'hub:a' }, sum: { activeTime: 4_000_000 } },
-		],
+		groups: [group('hub:a', 4_000_000)],
 		fleetActiveTimeUs: 10_000_000,
 	})
 	expect(result.totalActiveMs).toBe(10_000)
@@ -156,34 +162,22 @@ test('the fleet total replaces a truncated per-object sum as the denominator', (
 
 test('the lane rewrites days with analytics atomically and skips lagging empty days', async () => {
 	const { env, batches } = createEnv({ users: ['user-a'] })
-	const fetchStub = vi.fn(async (_url: string, init: RequestInit) => {
-		const { variables } = JSON.parse(String(init.body)) as {
-			variables: { day: string; accountTag: string }
-		}
-		expect(variables.accountTag).toBe('acct')
-		return new Response(
-			JSON.stringify({
-				data: {
-					viewer: {
-						accounts: [
-							{
-								durableObjectsPeriodicGroups:
-									variables.day === '2026-09-26'
-										? [
-												{
-													dimensions: { objectId: 'hub:user-a' },
-													sum: { activeTime: 2_000_000 },
-												},
-											]
-										: [],
-							},
-						],
-					},
+	using fetchStub = stubFetch(
+		vi.fn(async (_url: string, init: RequestInit) => {
+			const { variables } = JSON.parse(String(init.body)) as {
+				variables: { day: string; accountTag: string }
+			}
+			expect(variables.accountTag).toBe('acct')
+			return analyticsResponse([
+				{
+					durableObjectsPeriodicGroups:
+						variables.day === '2026-09-26'
+							? [group('hub:user-a', 2_000_000)]
+							: [],
 				},
-			}),
-		)
-	})
-	vi.stubGlobal('fetch', fetchStub)
+			])
+		}),
+	)
 	const result = await runDurableObjectDurationAttribution({
 		env,
 		now: new Date('2026-09-27T03:20:00.000Z'),
@@ -224,8 +218,7 @@ test('the lane skips without credentials and surfaces analytics errors', async (
 		}),
 	).resolves.toEqual({ status: 'skipped', reason: 'missing_credentials' })
 
-	vi.stubGlobal(
-		'fetch',
+	using _fetch = stubFetch(
 		vi.fn(
 			async () =>
 				new Response(
@@ -239,13 +232,7 @@ test('the lane skips without credentials and surfaces analytics errors', async (
 })
 
 test('a response without the account fails instead of zeroing the day', async () => {
-	vi.stubGlobal(
-		'fetch',
-		vi.fn(
-			async () =>
-				new Response(JSON.stringify({ data: { viewer: { accounts: [] } } })),
-		),
-	)
+	using _fetch = stubFetch(vi.fn(async () => analyticsResponse([])))
 	const { env, batches } = createEnv({ users: ['user-a'] })
 	await expect(runDurableObjectDurationAttribution({ env })).rejects.toThrow(
 		'no account',
