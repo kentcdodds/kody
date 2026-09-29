@@ -25,6 +25,8 @@ import { persistPublishedSourceSnapshot } from './published-runtime-artifacts.ts
  * merged bundle through `runBundledModuleWithRegistry`.
  */
 
+const baseUrl = 'https://kody.dev'
+
 async function runSql(sql: string, ...values: Array<unknown>) {
 	await env.APP_DB.prepare(sql)
 		.bind(...values)
@@ -62,17 +64,15 @@ async function ensureSavedPackageArtifactSchema() {
 		created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 		updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 	)`)
-	try {
-		await runSql(
-			`ALTER TABLE saved_packages ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1`,
-		)
-	} catch {
-		// Column already present on newer schemas.
-	}
-	try {
-		await runSql(`ALTER TABLE saved_packages ADD COLUMN locked_at TEXT`)
-	} catch {
-		// Column already present on newer schemas.
+	for (const column of [
+		'is_private INTEGER NOT NULL DEFAULT 1',
+		'locked_at TEXT',
+	]) {
+		try {
+			await runSql(`ALTER TABLE saved_packages ADD COLUMN ${column}`)
+		} catch {
+			// Column already present on newer schemas.
+		}
 	}
 	await runSql(`CREATE TABLE IF NOT EXISTS published_bundle_artifacts (
 		id TEXT PRIMARY KEY,
@@ -89,125 +89,117 @@ async function ensureSavedPackageArtifactSchema() {
 	)`)
 }
 
-async function insertSavedPackage(input: {
-	userId: string
-	packageId: string
-	kodyId: string
-	name: string
-	sourceId: string
-	publishedCommit: string
-}) {
+function makePackageFiles(
+	kodyId: string,
+	description: string,
+	exportName: string,
+	entrySource: string,
+	kodyExtra: Record<string, unknown> = {},
+) {
+	const entryPoint = `src/${exportName.slice(2)}.ts`
+	return {
+		entryPoint,
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: `@kentcdodds/${kodyId}`,
+				exports: { [exportName]: `./${entryPoint}` },
+				kody: { id: kodyId, description, ...kodyExtra },
+			}),
+			[entryPoint]: entrySource,
+		},
+	}
+}
+
+/**
+ * Publishes one saved package end-to-end the way the registry does: source
+ * snapshot plus one importable-module artifact, bundled with `rootPackageId`
+ * so its modules carry the package-runtime stamp.
+ */
+async function publishPackage(
+	userId: string,
+	kodyId: string,
+	description: string,
+	exportName: string,
+	entrySource: string,
+) {
+	const unique = crypto.randomUUID()
+	const packageId = `pkg-${unique}`
+	const sourceId = `source-${unique}`
+	const name = `@kentcdodds/${kodyId}`
 	const now = new Date().toISOString()
 	await runSql(
 		`INSERT INTO saved_packages (
 			id, user_id, name, kody_id, description, tags_json, search_text,
 			source_id, has_app, created_at, updated_at
 		) VALUES (?, ?, ?, ?, ?, '[]', NULL, ?, 0, ?, ?)`,
-		input.packageId,
-		input.userId,
-		input.name,
-		input.kodyId,
-		`${input.name} package`,
-		input.sourceId,
+		packageId,
+		userId,
+		name,
+		kodyId,
+		`${name} package`,
+		sourceId,
 		now,
 		now,
 	)
-	await runSql(
-		`INSERT INTO entity_sources (
-			id, user_id, entity_kind, entity_id, repo_id, published_commit,
-			indexed_commit, manifest_path, source_root, created_at, updated_at
-		) VALUES (?, ?, 'package', ?, ?, ?, NULL, 'package.json', '/', ?, ?)`,
-		input.sourceId,
-		input.userId,
-		input.packageId,
-		`repo-${input.sourceId}`,
-		input.publishedCommit,
-		now,
-		now,
-	)
-	return {
-		id: input.sourceId,
-		user_id: input.userId,
+	const source = {
+		id: sourceId,
+		user_id: userId,
 		entity_kind: 'package' as const,
-		entity_id: input.packageId,
-		repo_id: `repo-${input.sourceId}`,
-		published_commit: input.publishedCommit,
+		entity_id: packageId,
+		repo_id: `repo-${sourceId}`,
+		published_commit: `commit-${unique}`,
 		indexed_commit: null,
 		manifest_path: 'package.json',
 		source_root: '/',
 		created_at: now,
 		updated_at: now,
 	}
-}
-
-/**
- * Publishes one saved package end-to-end the way the registry does: source
- * snapshot plus one importable-module artifact per export, each artifact
- * bundled with `rootPackageId` so its modules carry the package-runtime
- * stamp.
- */
-async function publishPackage(input: {
-	userId: string
-	name: string
-	kodyId: string
-	sourceFiles: Record<string, string>
-	exports: Array<{ artifactName: string; entryPoint: string }>
-}) {
-	const unique = crypto.randomUUID()
-	const packageId = `pkg-${unique}`
-	const sourceId = `source-${unique}`
-	const source = await insertSavedPackage({
-		userId: input.userId,
-		packageId,
-		kodyId: input.kodyId,
-		name: input.name,
+	await runSql(
+		`INSERT INTO entity_sources (
+			id, user_id, entity_kind, entity_id, repo_id, published_commit,
+			indexed_commit, manifest_path, source_root, created_at, updated_at
+		) VALUES (?, ?, 'package', ?, ?, ?, NULL, 'package.json', '/', ?, ?)`,
 		sourceId,
-		publishedCommit: `commit-${unique}`,
-	})
+		userId,
+		packageId,
+		source.repo_id,
+		source.published_commit,
+		now,
+		now,
+	)
+	const { entryPoint, sourceFiles } = makePackageFiles(
+		kodyId,
+		description,
+		exportName,
+		entrySource,
+	)
 	await persistPublishedSourceSnapshot({
 		env,
-		userId: input.userId,
+		userId,
 		source,
-		snapshot: { files: input.sourceFiles },
+		snapshot: { files: sourceFiles },
 	})
-	for (const target of input.exports) {
-		const artifactBundle = await buildKodyImportableModuleBundle({
-			env,
-			baseUrl: 'https://kody.dev',
-			userId: input.userId,
-			sourceFiles: input.sourceFiles,
-			entryPoint: target.entryPoint,
-			rootPackageId: packageId,
-		})
-		await persistPublishedBundleArtifact({
-			env,
-			userId: input.userId,
-			source,
-			kind: 'importable-module',
-			artifactName: target.artifactName,
-			entryPoint: target.entryPoint,
-			mainModule: artifactBundle.mainModule,
-			modules: artifactBundle.modules,
-			dependencies: artifactBundle.dependencies,
-			packageContext: {
-				packageId,
-				kodyId: input.kodyId,
-				sourceId,
-			},
-		})
-	}
+	const artifactBundle = await buildKodyImportableModuleBundle({
+		env,
+		baseUrl,
+		userId,
+		sourceFiles,
+		entryPoint,
+		rootPackageId: packageId,
+	})
+	await persistPublishedBundleArtifact({
+		env,
+		userId,
+		source,
+		kind: 'importable-module',
+		artifactName: exportName,
+		entryPoint,
+		mainModule: artifactBundle.mainModule,
+		modules: artifactBundle.modules,
+		dependencies: artifactBundle.dependencies,
+		packageContext: { packageId, kodyId, sourceId },
+	})
 	return { packageId, sourceId }
-}
-
-function createCallerContext(userId: string) {
-	return createMcpCallerContext({
-		baseUrl: 'https://kody.dev',
-		user: {
-			userId,
-			email: 'worker@example.com',
-			displayName: 'Worker Test',
-		},
-	})
 }
 
 function packageBucketRunner(userId: string, packageId: string) {
@@ -218,14 +210,51 @@ function packageBucketRunner(userId: string, packageId: string) {
 	})
 }
 
+function buildEntry(
+	userId: string,
+	entrySource: string,
+	rootPackageId?: string,
+) {
+	return buildKodyModuleBundle({
+		env,
+		baseUrl,
+		userId,
+		sourceFiles: { 'entry.ts': entrySource },
+		entryPoint: 'entry.ts',
+		...(rootPackageId ? { rootPackageId } : {}),
+	})
+}
+
+function runBundle(
+	userId: string,
+	bundle: Awaited<ReturnType<typeof buildKodyModuleBundle>>,
+	packageContext?: { packageId: string; kodyId: string; sourceId: string },
+) {
+	return runBundledModuleWithRegistry(
+		env,
+		createMcpCallerContext({
+			baseUrl,
+			user: { userId, email: 'worker@example.com', displayName: 'Worker Test' },
+		}),
+		bundle,
+		undefined,
+		{
+			skipCapabilityRegistry: true,
+			...(packageContext ? { packageContext } : {}),
+		},
+	)
+}
+
 async function withUsageEventsBinding<T>(run: () => Promise<T>) {
 	const previousUsageEvents = env.USAGE_EVENTS
-	Object.defineProperty(env, 'USAGE_EVENTS', {
-		configurable: true,
-		enumerable: true,
-		writable: true,
-		value: { writeDataPoint() {} },
-	})
+	const defineUsageEvents = (value: unknown) =>
+		Object.defineProperty(env, 'USAGE_EVENTS', {
+			configurable: true,
+			enumerable: true,
+			writable: true,
+			value,
+		})
+	defineUsageEvents({ writeDataPoint() {} })
 	if (!env.USAGE_EVENTS) {
 		throw new Error(
 			'Failed to bind a stub USAGE_EVENTS dataset on the workers env.',
@@ -237,85 +266,58 @@ async function withUsageEventsBinding<T>(run: () => Promise<T>) {
 		if (previousUsageEvents === undefined) {
 			Reflect.deleteProperty(env, 'USAGE_EVENTS')
 		} else {
-			Object.defineProperty(env, 'USAGE_EVENTS', {
-				configurable: true,
-				enumerable: true,
-				writable: true,
-				value: previousUsageEvents,
-			})
+			defineUsageEvents(previousUsageEvents)
 		}
 	}
+}
+
+async function setupUser() {
+	silenceIncidentalRuntimeWarnings()
+	await ensureSavedPackageArtifactSchema()
+	return `user-${crypto.randomUUID()}`
 }
 
 test(
 	'statically imported package code reads its own bucket from an ad hoc execute call',
 	{ timeout: 90_000 },
 	async () => {
-		silenceIncidentalRuntimeWarnings()
-		await ensureSavedPackageArtifactSchema()
-		const userId = `user-${crypto.randomUUID()}`
-		const { packageId } = await publishPackage({
+		const userId = await setupUser()
+		const { packageId } = await publishPackage(
 			userId,
-			name: '@kentcdodds/notes',
-			kodyId: 'notes',
-			sourceFiles: {
-				'package.json': JSON.stringify({
-					name: '@kentcdodds/notes',
-					exports: { './note-list': './src/note-list.ts' },
-					kody: { id: 'notes', description: 'Note storage' },
-				}),
-				'src/note-list.ts': [
-					"import { packageStorage } from 'kody:runtime'",
-					'export default async function noteList() {',
-					'\tconst bucket = packageStorage()',
-					"\tconst result = await bucket.sql('select name from notes order by name asc')",
-					'\treturn {',
-					'\t\tbucketId: bucket.id,',
-					'\t\tnames: result.rows.map((row) => row.name),',
-					'\t}',
-					'}',
-				].join('\n'),
-			},
-			exports: [
-				{ artifactName: './note-list', entryPoint: 'src/note-list.ts' },
-			],
-		})
+			'notes',
+			'Note storage',
+			'./note-list',
+			`import { packageStorage } from 'kody:runtime'
+export default async function noteList() {
+	const bucket = packageStorage()
+	const result = await bucket.sql('select name from notes order by name asc')
+	return {
+		bucketId: bucket.id,
+		names: result.rows.map((row) => row.name),
+	}
+}`,
+		)
 		// Seed the package's own bucket for `packageStorage()`.
 		const runner = packageBucketRunner(userId, packageId)
-		await runner.sqlQuery({
-			query: 'create table if not exists notes (name text primary key)',
-			writable: true,
-		})
-		await runner.sqlQuery({
-			query: "insert into notes (name) values ('debugging'), ('writing')",
-			writable: true,
-		})
+		for (const query of [
+			'create table if not exists notes (name text primary key)',
+			"insert into notes (name) values ('debugging'), ('writing')",
+		]) {
+			await runner.sqlQuery({ query, writable: true })
+		}
 
-		const bundle = await buildKodyModuleBundle({
-			env,
-			baseUrl: 'https://kody.dev',
+		const bundle = await buildEntry(
 			userId,
-			sourceFiles: {
-				'entry.ts': [
-					"import noteList from 'kody:@kentcdodds/notes/note-list'",
-					'export default async function main() {',
-					'\treturn await noteList()',
-					'}',
-				].join('\n'),
-			},
-			entryPoint: 'entry.ts',
-		})
+			`import noteList from 'kody:@kentcdodds/notes/note-list'
+export default async function main() {
+	return await noteList()
+}`,
+		)
 		// The bundle records the dependency's immutable package id — that is
 		// the provenance the host grants `packageStorage()` access from.
 		expect(bundle.dependencies).toMatchObject([{ packageId }])
 
-		const result = await runBundledModuleWithRegistry(
-			env,
-			createCallerContext(userId),
-			bundle,
-			undefined,
-			{ skipCapabilityRegistry: true },
-		)
+		const result = await runBundle(userId, bundle)
 		expect(result.error).toBeUndefined()
 		expect(result.result).toEqual({
 			bucketId: buildPackageStorageId(packageId),
@@ -328,86 +330,54 @@ test(
 	'two statically imported packages each write and read their own bucket',
 	{ timeout: 90_000 },
 	async () => {
-		silenceIncidentalRuntimeWarnings()
-		await ensureSavedPackageArtifactSchema()
-		const userId = `user-${crypto.randomUUID()}`
-		const publishOwnerPackage = async (leaf: 'alpha' | 'beta') =>
-			await publishPackage({
+		const userId = await setupUser()
+		const owners = {} as Record<'alpha' | 'beta', string>
+		for (const leaf of ['alpha', 'beta'] as const) {
+			const { packageId } = await publishPackage(
 				userId,
-				name: `@kentcdodds/${leaf}`,
-				kodyId: leaf,
-				sourceFiles: {
-					'package.json': JSON.stringify({
-						name: `@kentcdodds/${leaf}`,
-						exports: { './whoami': './src/whoami.ts' },
-						kody: { id: leaf, description: `${leaf} storage owner` },
-					}),
-					'src/whoami.ts': [
-						"import { packageStorage } from 'kody:runtime'",
-						'export default async function whoami() {',
-						'\tconst bucket = packageStorage()',
-						`\tawait bucket.set('written-by', ${JSON.stringify(leaf)})`,
-						"\treturn { bucketId: bucket.id, owner: await bucket.get('owner') }",
-						'}',
-					].join('\n'),
-				},
-				exports: [{ artifactName: './whoami', entryPoint: 'src/whoami.ts' }],
+				leaf,
+				`${leaf} storage owner`,
+				'./whoami',
+				`import { packageStorage } from 'kody:runtime'
+export default async function whoami() {
+	const bucket = packageStorage()
+	await bucket.set('written-by', ${JSON.stringify(leaf)})
+	return { bucketId: bucket.id, owner: await bucket.get('owner') }
+}`,
+			)
+			owners[leaf] = packageId
+			await packageBucketRunner(userId, packageId).setValue({
+				key: 'owner',
+				value: `${leaf}-bucket`,
 			})
-		const alpha = await publishOwnerPackage('alpha')
-		const beta = await publishOwnerPackage('beta')
-		await packageBucketRunner(userId, alpha.packageId).setValue({
-			key: 'owner',
-			value: 'alpha-bucket',
-		})
-		await packageBucketRunner(userId, beta.packageId).setValue({
-			key: 'owner',
-			value: 'beta-bucket',
-		})
+		}
 
-		const bundle = await buildKodyModuleBundle({
-			env,
-			baseUrl: 'https://kody.dev',
+		const bundle = await buildEntry(
 			userId,
-			sourceFiles: {
-				'entry.ts': [
-					"import alphaWhoami from 'kody:@kentcdodds/alpha/whoami'",
-					"import betaWhoami from 'kody:@kentcdodds/beta/whoami'",
-					'export default async function main() {',
-					'\treturn { alpha: await alphaWhoami(), beta: await betaWhoami() }',
-					'}',
-				].join('\n'),
-			},
-			entryPoint: 'entry.ts',
-		})
-		const result = await runBundledModuleWithRegistry(
-			env,
-			createCallerContext(userId),
-			bundle,
-			undefined,
-			{ skipCapabilityRegistry: true },
+			`import alphaWhoami from 'kody:@kentcdodds/alpha/whoami'
+import betaWhoami from 'kody:@kentcdodds/beta/whoami'
+export default async function main() {
+	return { alpha: await alphaWhoami(), beta: await betaWhoami() }
+}`,
 		)
+		const result = await runBundle(userId, bundle)
 		expect(result.error).toBeUndefined()
 		expect(result.result).toEqual({
 			alpha: {
-				bucketId: buildPackageStorageId(alpha.packageId),
+				bucketId: buildPackageStorageId(owners.alpha),
 				owner: 'alpha-bucket',
 			},
 			beta: {
-				bucketId: buildPackageStorageId(beta.packageId),
+				bucketId: buildPackageStorageId(owners.beta),
 				owner: 'beta-bucket',
 			},
 		})
 		// The sandbox writes landed in each declaring package's own bucket.
-		await expect(
-			packageBucketRunner(userId, alpha.packageId).getValue({
-				key: 'written-by',
-			}),
-		).resolves.toEqual({ key: 'written-by', value: 'alpha' })
-		await expect(
-			packageBucketRunner(userId, beta.packageId).getValue({
-				key: 'written-by',
-			}),
-		).resolves.toEqual({ key: 'written-by', value: 'beta' })
+		for (const [leaf, packageId] of Object.entries(owners)) {
+			await expect(
+				packageBucketRunner(userId, packageId).getValue({ key: 'written-by' }),
+			).resolves.toEqual({ key: 'written-by', value: leaf })
+		}
 	},
 )
 
@@ -415,28 +385,17 @@ test(
 	'a package statically imported into another package keeps its own bucket in the host package runtime',
 	{ timeout: 90_000 },
 	async () => {
-		silenceIncidentalRuntimeWarnings()
-		await ensureSavedPackageArtifactSchema()
-		const userId = `user-${crypto.randomUUID()}`
-		const inner = await publishPackage({
+		const userId = await setupUser()
+		const inner = await publishPackage(
 			userId,
-			name: '@kentcdodds/inner',
-			kodyId: 'inner',
-			sourceFiles: {
-				'package.json': JSON.stringify({
-					name: '@kentcdodds/inner',
-					exports: { './whoami': './src/whoami.ts' },
-					kody: { id: 'inner', description: 'Inner storage owner' },
-				}),
-				'src/whoami.ts': [
-					"import { packageStorage } from 'kody:runtime'",
-					'export default async function whoami() {',
-					"\treturn { bucketId: packageStorage().id, owner: await packageStorage().get('owner') }",
-					'}',
-				].join('\n'),
-			},
-			exports: [{ artifactName: './whoami', entryPoint: 'src/whoami.ts' }],
-		})
+			'inner',
+			'Inner storage owner',
+			'./whoami',
+			`import { packageStorage } from 'kody:runtime'
+export default async function whoami() {
+	return { bucketId: packageStorage().id, owner: await packageStorage().get('owner') }
+}`,
+		)
 		await packageBucketRunner(userId, inner.packageId).setValue({
 			key: 'owner',
 			value: 'inner-bucket',
@@ -444,53 +403,37 @@ test(
 
 		const outerUnique = crypto.randomUUID()
 		const outerPackageId = `pkg-${outerUnique}`
-		const outerSourceFiles = {
-			'package.json': JSON.stringify({
-				name: '@kentcdodds/outer',
-				exports: { './run': './src/run.ts' },
-				kody: {
-					id: 'outer',
-					description: 'Outer package importing inner',
-					dependencies: ['@kentcdodds/inner'],
-				},
-			}),
-			'src/run.ts': [
-				"import { packageStorage } from 'kody:runtime'",
-				"import innerWhoami from 'kody:@kentcdodds/inner/whoami'",
-				'export default async function run() {',
-				'\treturn {',
-				'\t\tinner: await innerWhoami(),',
-				'\t\touterBucketId: packageStorage().id,',
-				'\t}',
-				'}',
-			].join('\n'),
-		}
+		const { entryPoint, sourceFiles } = makePackageFiles(
+			'outer',
+			'Outer package importing inner',
+			'./run',
+			`import { packageStorage } from 'kody:runtime'
+import innerWhoami from 'kody:@kentcdodds/inner/whoami'
+export default async function run() {
+	return {
+		inner: await innerWhoami(),
+		outerBucketId: packageStorage().id,
+	}
+}`,
+			{ dependencies: ['@kentcdodds/inner'] },
+		)
 		// Build the outer package's own module bundle the way package
 		// invocations do (rootPackageId stamps the outer sources).
 		const bundle = await buildKodyModuleBundle({
 			env,
-			baseUrl: 'https://kody.dev',
+			baseUrl,
 			userId,
-			sourceFiles: outerSourceFiles,
-			entryPoint: 'src/run.ts',
+			sourceFiles,
+			entryPoint,
 			rootPackageId: outerPackageId,
 		})
 		// Package invocation runs reach the package bucket only through
 		// packageStorage().
-		const result = await runBundledModuleWithRegistry(
-			env,
-			createCallerContext(userId),
-			bundle,
-			undefined,
-			{
-				skipCapabilityRegistry: true,
-				packageContext: {
-					packageId: outerPackageId,
-					kodyId: 'outer',
-					sourceId: `source-${outerUnique}`,
-				},
-			},
-		)
+		const result = await runBundle(userId, bundle, {
+			packageId: outerPackageId,
+			kodyId: 'outer',
+			sourceId: `source-${outerUnique}`,
+		})
 		expect(result.error).toBeUndefined()
 		expect(result.result).toEqual({
 			inner: {
@@ -506,9 +449,7 @@ test(
 	'packageStorage get/set stay callable when StorageRunner metering is enabled',
 	{ timeout: 90_000 },
 	async () => {
-		silenceIncidentalRuntimeWarnings()
-		await ensureSavedPackageArtifactSchema()
-		const userId = `user-${crypto.randomUUID()}`
+		const userId = await setupUser()
 		const packageId = `pkg-${crypto.randomUUID()}`
 		// Local workers env omits USAGE_EVENTS, so storageRunnerRpc returns
 		// the raw RpcStub. Bind a stub dataset on the real env — do not
@@ -519,44 +460,28 @@ test(
 		// of a missing key on export and subscription — throws the RPC
 		// receiver serialization error.
 		await withUsageEventsBinding(async () => {
-			const bundle = await buildKodyModuleBundle({
-				env,
-				baseUrl: 'https://kody.dev',
+			const bundle = await buildEntry(
 				userId,
-				sourceFiles: {
-					'entry.ts': [
-						"import { packageStorage } from 'kody:runtime'",
-						'export default async function main() {',
-						'\tconst bucket = packageStorage()',
-						"\tconst missing = await bucket.get('missing-key')",
-						"\tawait bucket.set('note', 'plain')",
-						"\tconst note = await bucket.get('note')",
-						'\tconst listed = await bucket.list()',
-						'\treturn {',
-						'\t\tmissing,',
-						'\t\tnote,',
-						'\t\tkeys: listed.entries.map((entry) => entry.key),',
-						'\t}',
-						'}',
-					].join('\n'),
-				},
-				entryPoint: 'entry.ts',
-				rootPackageId: packageId,
-			})
-			const result = await runBundledModuleWithRegistry(
-				env,
-				createCallerContext(userId),
-				bundle,
-				undefined,
-				{
-					skipCapabilityRegistry: true,
-					packageContext: {
-						packageId,
-						kodyId: 'metered-storage',
-						sourceId: `source-${packageId}`,
-					},
-				},
+				`import { packageStorage } from 'kody:runtime'
+export default async function main() {
+	const bucket = packageStorage()
+	const missing = await bucket.get('missing-key')
+	await bucket.set('note', 'plain')
+	const note = await bucket.get('note')
+	const listed = await bucket.list()
+	return {
+		missing,
+		note,
+		keys: listed.entries.map((entry) => entry.key),
+	}
+}`,
+				packageId,
 			)
+			const result = await runBundle(userId, bundle, {
+				packageId,
+				kodyId: 'metered-storage',
+				sourceId: `source-${packageId}`,
+			})
 			expect(result.error).toBeUndefined()
 			expect(result.result).toEqual({
 				missing: null,
@@ -571,31 +496,24 @@ test(
 	'importing ambient storage from kody:runtime fails because the export is gone',
 	{ timeout: 90_000 },
 	async () => {
-		silenceIncidentalRuntimeWarnings()
-		await ensureSavedPackageArtifactSchema()
-		const userId = `user-${crypto.randomUUID()}`
-		const unique = crypto.randomUUID()
-		const packageId = `pkg-${unique}`
+		const userId = await setupUser()
+		const { entryPoint, sourceFiles } = makePackageFiles(
+			'legacy',
+			'Legacy ambient storage',
+			'./main',
+			`import { storage } from 'kody:runtime'
+export default async function main() {
+	return await storage.get('key')
+}`,
+		)
 		await expect(
 			buildKodyModuleBundle({
 				env,
-				baseUrl: 'https://kody.dev',
+				baseUrl,
 				userId,
-				sourceFiles: {
-					'package.json': JSON.stringify({
-						name: '@kentcdodds/legacy',
-						exports: { './main': './src/main.ts' },
-						kody: { id: 'legacy', description: 'Legacy ambient storage' },
-					}),
-					'src/main.ts': [
-						"import { storage } from 'kody:runtime'",
-						'export default async function main() {',
-						"\treturn await storage.get('key')",
-						'}',
-					].join('\n'),
-				},
-				entryPoint: 'src/main.ts',
-				rootPackageId: packageId,
+				sourceFiles,
+				entryPoint,
+				rootPackageId: `pkg-${crypto.randomUUID()}`,
 			}),
 		).rejects.toThrow(/storage/)
 	},
@@ -607,27 +525,14 @@ test(
 	async () => {
 		silenceIncidentalRuntimeWarnings()
 		const userId = `user-${crypto.randomUUID()}`
-		const bundle = await buildKodyModuleBundle({
-			env,
-			baseUrl: 'https://kody.dev',
+		const bundle = await buildEntry(
 			userId,
-			sourceFiles: {
-				'entry.ts': [
-					"import { packageStorage } from 'kody:runtime'",
-					'export default async function main() {',
-					"\treturn await packageStorage().get('anything')",
-					'}',
-				].join('\n'),
-			},
-			entryPoint: 'entry.ts',
-		})
-		const result = await runBundledModuleWithRegistry(
-			env,
-			createCallerContext(userId),
-			bundle,
-			undefined,
-			{ skipCapabilityRegistry: true },
+			`import { packageStorage } from 'kody:runtime'
+export default async function main() {
+	return await packageStorage().get('anything')
+}`,
 		)
+		const result = await runBundle(userId, bundle)
 		expect(result.error).toContain(
 			'packageStorage() requires package provenance',
 		)
@@ -641,55 +546,31 @@ test(
 	'hand-written package ids are rejected: only bundler-recorded provenance grants bucket access',
 	{ timeout: 90_000 },
 	async () => {
-		silenceIncidentalRuntimeWarnings()
-		await ensureSavedPackageArtifactSchema()
-		const userId = `user-${crypto.randomUUID()}`
+		const userId = await setupUser()
 		// The victim package exists and has data, but the execute code below
 		// never statically imports it — so its id is not in the grant set.
-		const victim = await publishPackage({
+		const victim = await publishPackage(
 			userId,
-			name: '@kentcdodds/victim',
-			kodyId: 'victim',
-			sourceFiles: {
-				'package.json': JSON.stringify({
-					name: '@kentcdodds/victim',
-					exports: { './noop': './src/noop.ts' },
-					kody: { id: 'victim', description: 'Holds private data' },
-				}),
-				'src/noop.ts': 'export default async function noop() { return null }',
-			},
-			exports: [{ artifactName: './noop', entryPoint: 'src/noop.ts' }],
-		})
+			'victim',
+			'Holds private data',
+			'./noop',
+			'export default async function noop() { return null }',
+		)
 		await packageBucketRunner(userId, victim.packageId).setValue({
 			key: 'secret',
 			value: 'do-not-leak',
 		})
 
-		const bundle = await buildKodyModuleBundle({
-			env,
-			baseUrl: 'https://kody.dev',
+		// A forged host-tool call with a hand-written package id — exactly
+		// what a malicious module would try.
+		const bundle = await buildEntry(
 			userId,
-			sourceFiles: {
-				'entry.ts': [
-					"import { kody } from 'kody:runtime'",
-					'export default async function main() {',
-					// A forged host-tool call with a hand-written package id —
-					// exactly what a malicious module would try.
-					`\treturn await kody.packageStorageGet({ packageId: ${JSON.stringify(
-						victim.packageId,
-					)}, key: 'secret' })`,
-					'}',
-				].join('\n'),
-			},
-			entryPoint: 'entry.ts',
-		})
-		const result = await runBundledModuleWithRegistry(
-			env,
-			createCallerContext(userId),
-			bundle,
-			undefined,
-			{ skipCapabilityRegistry: true },
+			`import { kody } from 'kody:runtime'
+export default async function main() {
+	return await kody.packageStorageGet({ packageId: ${JSON.stringify(victim.packageId)}, key: 'secret' })
+}`,
 		)
+		const result = await runBundle(userId, bundle)
 		expect(result.error).toContain(
 			createPackageStorageAccessDeniedMessage(victim.packageId),
 		)

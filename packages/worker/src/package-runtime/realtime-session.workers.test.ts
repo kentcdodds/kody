@@ -28,6 +28,28 @@ function createBinding(
 	}
 }
 
+function bindingState({
+	env: _env,
+	...state
+}: ReturnType<typeof createBinding>) {
+	return state
+}
+
+function postSession(
+	instance: { fetch: (request: Request) => Promise<Response> },
+	path: string,
+	body: Record<string, unknown>,
+	headers: Record<string, string> = {},
+) {
+	return instance.fetch(
+		new Request(`https://package-realtime.invalid/session/${path}`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', ...headers },
+			body: JSON.stringify(body),
+		}),
+	)
+}
+
 function getStub(binding: ReturnType<typeof createBinding>) {
 	return env.PACKAGE_REALTIME_SESSION.get(
 		env.PACKAGE_REALTIME_SESSION.idFromName(
@@ -42,22 +64,14 @@ test('package realtime session DO lists empty sessions and is addressable as a d
 
 	await expect(rpc.listSessions()).resolves.toEqual({ sessions: [] })
 	await expect(rpc.emit('missing-session', { type: 'hello' })).resolves.toEqual(
-		{
-			delivered: false,
-			reason: 'session_not_connected',
-		},
+		{ delivered: false, reason: 'session_not_connected' },
 	)
 	await expect(rpc.broadcast({ data: { type: 'broadcast' } })).resolves.toEqual(
-		{
-			deliveredCount: 0,
-			sessionIds: [],
-		},
+		{ deliveredCount: 0, sessionIds: [] },
 	)
 
-	const stub = getStub(binding)
-
 	await runInDurableObject(
-		stub,
+		getStub(binding),
 		async (instance: PackageRealtimeSession, state) => {
 			expect(instance).toBeInstanceOf(PackageRealtimeSession)
 			expect(state.storage.sql.databaseSize).toBeGreaterThanOrEqual(0)
@@ -100,6 +114,10 @@ test('package realtime session broadcast and disconnect paths tolerate partial d
 			fetch: (request: Request) => Promise<Response>
 		}
 
+		const expectPartialBroadcast = () =>
+			expect(
+				anyInstance.broadcast({ data: { type: 'broadcast' } }),
+			).resolves.toEqual({ deliveredCount: 1, sessionIds: ['session-1'] })
 		anyInstance.listSessions = () => [
 			{ session_id: 'session-1' },
 			{ session_id: 'session-2' },
@@ -108,14 +126,7 @@ test('package realtime session broadcast and disconnect paths tolerate partial d
 			delivered: sessionId === 'session-1',
 		})
 
-		await expect(
-			anyInstance.broadcast({
-				data: { type: 'broadcast' },
-			}),
-		).resolves.toEqual({
-			deliveredCount: 1,
-			sessionIds: ['session-1'],
-		})
+		await expectPartialBroadcast()
 
 		anyInstance.stateSnapshot = {
 			sessions: {
@@ -135,14 +146,7 @@ test('package realtime session broadcast and disconnect paths tolerate partial d
 			},
 		})
 
-		await expect(
-			anyInstance.broadcast({
-				data: { type: 'broadcast' },
-			}),
-		).resolves.toEqual({
-			deliveredCount: 1,
-			sessionIds: ['session-1'],
-		})
+		await expectPartialBroadcast()
 
 		anyInstance.stateSnapshot = {
 			sessions: {
@@ -151,33 +155,15 @@ test('package realtime session broadcast and disconnect paths tolerate partial d
 		}
 
 		await expect(
-			anyInstance.applyHookActions('session-1', [
-				{
-					type: 'close',
-				},
-			]),
+			anyInstance.applyHookActions('session-1', [{ type: 'close' }]),
 		).resolves.toBeUndefined()
 
 		anyInstance.initializeBinding = async () => undefined
 
-		const response = await anyInstance.fetch(
-			new Request('https://package-realtime.invalid/session/disconnect', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({
-					binding: {
-						userId: 'user-1',
-						packageId: 'package-1',
-						kodyId: 'example',
-						sourceId: 'source-1',
-						baseUrl: 'https://example.com',
-					},
-					sessionId: 'session-1',
-				}),
-			}),
-		)
+		const response = await postSession(anyInstance, 'disconnect', {
+			binding: bindingState(binding),
+			sessionId: 'session-1',
+		})
 
 		expect(response.status).toBe(200)
 		await expect(response.json()).resolves.toEqual({ ok: true })
@@ -223,13 +209,7 @@ test('package realtime session closes open sockets without running hooks once th
 				fetch: (request: Request) => Promise<Response>
 			}
 			anyInstance.stateSnapshot = {
-				binding: {
-					userId: binding.userId,
-					packageId: binding.packageId,
-					kodyId: binding.kodyId,
-					sourceId: binding.sourceId,
-					baseUrl: binding.baseUrl,
-				},
+				binding: bindingState(binding),
 				sessions: {
 					'session-1': {
 						id: 'session-1',
@@ -258,16 +238,16 @@ test('package realtime session closes open sockets without running hooks once th
 			expect(hookWorkerRequested).toBe(false)
 			expect(closes).toEqual([[1008, 'account-suspended']])
 
-			const post = (path: string, body: Record<string, unknown>) =>
-				anyInstance.fetch(
-					new Request(`https://package-realtime.invalid/session/${path}`, {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({
-							binding: anyInstance.stateSnapshot.binding,
-							...body,
-						}),
-					}),
+			const post = (
+				path: string,
+				body: Record<string, unknown>,
+				headers?: Record<string, string>,
+			) =>
+				postSession(
+					anyInstance,
+					path,
+					{ binding: anyInstance.stateSnapshot.binding, ...body },
+					headers,
 				)
 			const emitted = await post('emit', {
 				sessionId: 'session-1',
@@ -282,23 +262,17 @@ test('package realtime session closes open sockets without running hooks once th
 				deliveredCount: 0,
 				sessionIds: [],
 			})
-			const connect = await anyInstance.fetch(
-				new Request('https://package-realtime.invalid/session/connect', {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-						Upgrade: 'websocket',
+			const connect = await post(
+				'connect',
+				{
+					facet: 'main',
+					request: {
+						url: 'https://example.com/packages/example/realtime',
+						method: 'GET',
+						headers: {},
 					},
-					body: JSON.stringify({
-						binding: anyInstance.stateSnapshot.binding,
-						facet: 'main',
-						request: {
-							url: 'https://example.com/packages/example/realtime',
-							method: 'GET',
-							headers: {},
-						},
-					}),
-				}),
+				},
+				{ Upgrade: 'websocket' },
 			)
 			expect(connect.status).toBe(403)
 			await expect(connect.json()).resolves.toMatchObject({
@@ -308,12 +282,9 @@ test('package realtime session closes open sockets without running hooks once th
 			expect(Object.keys(anyInstance.stateSnapshot.sessions)).toEqual([
 				'session-1',
 			])
-			expect(closes).toEqual([
-				[1008, 'account-suspended'],
-				[1008, 'account-suspended'],
-				[1008, 'account-suspended'],
-				[1008, 'account-suspended'],
-			])
+			expect(closes).toEqual(
+				Array.from({ length: 4 }, () => [1008, 'account-suspended']),
+			)
 		},
 	)
 })

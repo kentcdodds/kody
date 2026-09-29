@@ -10,57 +10,37 @@ import type * as PublishedBundleArtifacts from './published-bundle-artifacts.ts'
 import type * as McpAuthUserContext from '#worker/mcp-auth-user-context.ts'
 import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 
-async function extractCreatePackageAppWorkerSource() {
-	const sourceText = await readFile(
-		new URL('./package-app.ts', import.meta.url),
-		'utf8',
-	)
-	const start = sourceText.indexOf(
-		'function createWorkflowsProxy(runtimeBridge) {',
-	)
-	const end = sourceText.indexOf(
-		'\nfunction createAuthenticatedFetchHelper',
-		start,
-	)
+const packageAppSourceText = await readFile(
+	new URL('./package-app.ts', import.meta.url),
+	'utf8',
+)
+
+function extractGeneratedSource(startMarker: string, endMarker: string) {
+	const start = packageAppSourceText.indexOf(startMarker)
+	const end = packageAppSourceText.indexOf(endMarker, start)
 	if (start < 0 || end < 0) {
-		throw new Error('createWorkflowsProxy source was not found.')
+		throw new Error(`${startMarker} source was not found.`)
 	}
-	const proxySource = sourceText
+	return packageAppSourceText
 		.slice(start, end)
 		.replaceAll('\\\\', '\\')
 		.replaceAll('\\`', '`')
 		.replaceAll('\\${', '${')
-	return `${proxySource}; return createWorkflowsProxy(runtimeBridge);`
 }
 
-async function extractCreateKodyProxySource() {
-	const sourceText = await readFile(
-		new URL('./package-app.ts', import.meta.url),
-		'utf8',
-	)
-	const start = sourceText.indexOf(
-		'function createKodyProxy(runtimeBridge, mcpServerNames) {',
-	)
-	const end = sourceText.indexOf('\nfunction createRealtimeProxy', start)
-	if (start < 0 || end < 0) {
-		throw new Error('createKodyProxy source was not found.')
-	}
-	const proxySource = sourceText
-		.slice(start, end)
-		.replaceAll('\\\\', '\\')
-		.replaceAll('\\`', '`')
-		.replaceAll('\\${', '${')
-	return `${proxySource}; return createKodyProxy(runtimeBridge, mcpServerNames);`
-}
+const kodyProxySource = extractGeneratedSource(
+	'function createKodyProxy(runtimeBridge, mcpServerNames) {',
+	'\nfunction createRealtimeProxy',
+)
 
-async function createKodyProxyForTest(
+function createKodyProxyForTest(
 	runtimeBridge: unknown,
 	mcpServerNames: Array<string> = [],
 ) {
 	return new Function(
 		'runtimeBridge',
 		'mcpServerNames',
-		await extractCreateKodyProxySource(),
+		`${kodyProxySource}; return createKodyProxy(runtimeBridge, mcpServerNames);`,
 	)(runtimeBridge, mcpServerNames) as Record<string, unknown>
 }
 
@@ -70,61 +50,32 @@ function getViaOwnKeysThenGopd(target: object, name: string): unknown {
 	return Reflect.getOwnPropertyDescriptor(target, name)?.value
 }
 
-async function createWorkflowsProxyForTest(runtimeBridge: unknown) {
+function createWorkflowsProxyForTest(runtimeBridge: unknown) {
 	return new Function(
 		'runtimeBridge',
-		await extractCreatePackageAppWorkerSource(),
-	)(runtimeBridge) as {
-		create(input: unknown): Promise<unknown>
-	}
+		`${extractGeneratedSource(
+			'function createWorkflowsProxy(runtimeBridge) {',
+			'\nfunction createAuthenticatedFetchHelper',
+		)}; return createWorkflowsProxy(runtimeBridge);`,
+	)(runtimeBridge) as { create(input: unknown): Promise<unknown> }
 }
 
-async function collectQueryParamNamesForTest(url: URL) {
-	const sourceText = await readFile(
-		new URL('./package-app.ts', import.meta.url),
-		'utf8',
-	)
-	const start = sourceText.indexOf('function collectQueryParamNames(url) {')
-	const end = sourceText.indexOf(
-		'\n\nfunction isSyntheticPackageAppRequest',
-		start,
-	)
-	if (start < 0 || end < 0) {
-		throw new Error('collectQueryParamNames source was not found.')
-	}
-	const functionSource = sourceText
-		.slice(start, end)
-		.replaceAll('\\\\', '\\')
-		.replaceAll('\\`', '`')
-		.replaceAll('\\${', '${')
+function collectQueryParamNamesForTest(url: URL) {
 	return new Function(
 		'url',
-		`${functionSource}; return collectQueryParamNames(url);`,
+		`${extractGeneratedSource(
+			'function collectQueryParamNames(url) {',
+			'\n\nfunction isSyntheticPackageAppRequest',
+		)}; return collectQueryParamNames(url);`,
 	)(url) as Array<string>
 }
 
-async function extractGeneratedRuntimeRunHelpers() {
-	const sourceText = await readFile(
-		new URL('./package-app.ts', import.meta.url),
-		'utf8',
-	)
-	const start = sourceText.indexOf(
-		'async function startRuntimeRun(runtimeBridge, input) {',
-	)
-	const end = sourceText.indexOf('\nfunction resolveRealtimeHandler', start)
-	if (start < 0 || end < 0) {
-		throw new Error('runtime run helpers were not found.')
-	}
-	return sourceText
-		.slice(start, end)
-		.replaceAll('\\\\', '\\')
-		.replaceAll('\\`', '`')
-		.replaceAll('\\${', '${')
-}
-
-async function createRuntimeRunHelpersForTest() {
+function createRuntimeRunHelpersForTest() {
 	return new Function(
-		`${await extractGeneratedRuntimeRunHelpers()}; return { startRuntimeRun, finishRuntimeRun };`,
+		`${extractGeneratedSource(
+			'async function startRuntimeRun(runtimeBridge, input) {',
+			'\nfunction resolveRealtimeHandler',
+		)}; return { startRuntimeRun, finishRuntimeRun };`,
 	)() as {
 		startRuntimeRun: (
 			runtimeBridge: {
@@ -143,8 +94,7 @@ async function createRuntimeRunHelpersForTest() {
 }
 
 test('package app run-record finish waits for begin inside waitUntil, not on the response path', async () => {
-	const { startRuntimeRun, finishRuntimeRun } =
-		await createRuntimeRunHelpersForTest()
+	const { startRuntimeRun, finishRuntimeRun } = createRuntimeRunHelpersForTest()
 	let resolveStart: ((value: { id: string }) => void) | undefined
 	const startGate = new Promise<{ id: string }>((resolve) => {
 		resolveStart = resolve
@@ -169,16 +119,8 @@ test('package app run-record finish waits for begin inside waitUntil, not on the
 	})
 	finishRuntimeRun(
 		runtimeBridge,
-		{
-			waitUntil: (promise) => {
-				waitUntilTasks.push(promise)
-			},
-		},
-		{
-			run: runtimeRun,
-			status: 'success',
-			metadata: { httpStatus: 200 },
-		},
+		{ waitUntil: (promise) => void waitUntilTasks.push(promise) },
+		{ run: runtimeRun, status: 'success', metadata: { httpStatus: 200 } },
 	)
 
 	expect(startCalls).toEqual([{ surface: 'app_fetch', name: '/' }])
@@ -188,11 +130,7 @@ test('package app run-record finish waits for begin inside waitUntil, not on the
 	resolveStart?.({ id: 'run-1' })
 	await Promise.all(waitUntilTasks)
 	expect(finishCalls).toEqual([
-		{
-			run: { id: 'run-1' },
-			status: 'success',
-			metadata: { httpStatus: 200 },
-		},
+		{ run: { id: 'run-1' }, status: 'success', metadata: { httpStatus: 200 } },
 	])
 })
 
@@ -204,19 +142,16 @@ test('package app kody.mcp supports calls, advertises connected servers, and ded
 			return { ok: true }
 		},
 	}
+	type McpNamespace = Record<
+		string,
+		Record<string, (args: unknown) => Promise<unknown>>
+	>
 
-	expect(await extractCreateKodyProxySource()).toContain(
-		`'${secretAuthorityArgName}'`,
-	)
+	expect(kodyProxySource).toContain(`'${secretAuthorityArgName}'`)
 
-	const withoutNames = await createKodyProxyForTest(runtimeBridge)
+	const withoutNames = createKodyProxyForTest(runtimeBridge)
 	await expect(
-		(
-			withoutNames.mcp as Record<
-				string,
-				Record<string, (args: unknown) => Promise<unknown>>
-			>
-		)['home']?.set_pin({ pin: '1234' }),
+		(withoutNames.mcp as McpNamespace)['home']?.set_pin({ pin: '1234' }),
 	).resolves.toEqual({ ok: true })
 	expect(calls).toEqual([{ name: 'mcp:home:set_pin', args: { pin: '1234' } }])
 	expect(() => withoutNames['mcp:home:set_pin']).toThrow(
@@ -228,44 +163,29 @@ test('package app kody.mcp supports calls, advertises connected servers, and ded
 		undefined,
 	)
 	// Get stays open even when ownKeys is empty (Node destructure uses Get).
-	const { home: openGetHome } = withoutNames.mcp as Record<
-		string,
-		Record<string, (args: unknown) => Promise<unknown>>
-	>
+	const { home: openGetHome } = withoutNames.mcp as McpNamespace
 	await expect(openGetHome.set_pin({ pin: '9' })).resolves.toEqual({ ok: true })
 
-	const withNames = await createKodyProxyForTest(runtimeBridge, [
-		'home',
-		'mediarss',
-	])
-	expect(Reflect.ownKeys(withNames.mcp as object)).toEqual(['home', 'mediarss'])
-	const advertisedHome = getViaOwnKeysThenGopd(
-		withNames.mcp as object,
-		'home',
-	) as Record<string, (args: unknown) => Promise<unknown>>
-	expect(advertisedHome).toBeTypeOf('object')
-	await expect(advertisedHome.set_pin({ pin: '2' })).resolves.toEqual({
-		ok: true,
-	})
+	for (const [names, pin] of [
+		[['home', 'mediarss'], '2'],
+		[['home', 'home', 'mediarss'], '3'],
+	] as const) {
+		const proxy = createKodyProxyForTest(runtimeBridge, [...names])
+		expect(Reflect.ownKeys(proxy.mcp as object)).toEqual(['home', 'mediarss'])
+		const advertisedHome = getViaOwnKeysThenGopd(
+			proxy.mcp as object,
+			'home',
+		) as McpNamespace[string]
+		expect(advertisedHome).toBeTypeOf('object')
+		await expect(advertisedHome.set_pin({ pin })).resolves.toEqual({ ok: true })
+	}
 
-	const deduped = await createKodyProxyForTest(runtimeBridge, [
-		'home',
-		'home',
-		'mediarss',
-	])
-	expect(Reflect.ownKeys(deduped.mcp as object)).toEqual(['home', 'mediarss'])
-	const dedupedHome = getViaOwnKeysThenGopd(
-		deduped.mcp as object,
-		'home',
-	) as Record<string, (args: unknown) => Promise<unknown>>
-	await expect(dedupedHome.set_pin({ pin: '3' })).resolves.toEqual({ ok: true })
-
-	expect(calls).toEqual([
-		{ name: 'mcp:home:set_pin', args: { pin: '1234' } },
-		{ name: 'mcp:home:set_pin', args: { pin: '9' } },
-		{ name: 'mcp:home:set_pin', args: { pin: '2' } },
-		{ name: 'mcp:home:set_pin', args: { pin: '3' } },
-	])
+	expect(calls).toEqual(
+		['1234', '9', '2', '3'].map((pin) => ({
+			name: 'mcp:home:set_pin',
+			args: { pin },
+		})),
+	)
 
 	const authoritySymbol = Symbol.for('kody.getSecretAuthority')
 	Object.defineProperty(globalThis, authoritySymbol, {
@@ -288,106 +208,62 @@ test('package app kody.mcp supports calls, advertises connected servers, and ded
 })
 
 test('package app workflows proxy validates input and forwards to the runtime bridge', async () => {
-	const workflows = await createWorkflowsProxyForTest({
+	const workflows = createWorkflowsProxyForTest({
 		workflowCreate: async (input: unknown) => input,
 	})
-
-	await expect(workflows.create(undefined)).rejects.toThrow(
-		'workflows.create requires a workflow input object.',
-	)
-	await expect(workflows.create({})).rejects.toThrow(
-		'workflows.create requires exactly one of exportName or code.',
-	)
-	await expect(
-		workflows.create({
-			exportName: './run-event',
-			code: 'export default async function main() {}',
-			runAt: '2026-05-03T12:00:00.000Z',
-			idempotencyKey: 'event-key',
-		}),
-	).rejects.toThrow(
-		'workflows.create requires exactly one of exportName or code.',
-	)
-	await expect(
-		workflows.create({
-			exportName: './run-event',
-			code: '',
-			runAt: '2026-05-03T12:00:00.000Z',
-			idempotencyKey: 'event-key',
-		}),
-	).resolves.toEqual({
-		exportName: './run-event',
-		runAt: new Date('2026-05-03T12:00:00.000Z'),
-		idempotencyKey: 'event-key',
-	})
-	await expect(
-		workflows.create({
-			exportName: './run-event',
-			code: '',
-		}),
-	).resolves.toEqual({
-		exportName: './run-event',
-	})
-	await expect(
-		workflows.create({
-			workflowName: 'shade-event',
-			exportName: './run-event',
-			runAt: 'not-a-date',
-			idempotencyKey: 'event-key',
-		}),
-	).rejects.toThrow(
-		'workflows.create requires a valid runAt ISO-8601 date-time string or Date.',
-	)
-	await expect(
-		workflows.create({
-			workflowName: 'shade-event',
-			exportName: './run-event',
-			runAt: 'May 3, 2026 12:00:00',
-			idempotencyKey: 'event-key',
-		}),
-	).rejects.toThrow(
-		'workflows.create requires a valid runAt ISO-8601 date-time string or Date.',
-	)
-
+	const runAt = '2026-05-03T12:00:00.000Z'
 	const code = 'export default async function main() { return { ok: true } }'
-	expect(
-		await workflows.create({
-			code,
-			runAt: '2026-05-03T12:00:00.000Z',
-			idempotencyKey: 'event-key',
-			params: { eventId: 'event-1' },
-		}),
-	).toEqual({
-		code,
-		runAt: new Date('2026-05-03T12:00:00.000Z'),
-		idempotencyKey: 'event-key',
-		params: { eventId: 'event-1' },
-	})
-	await expect(
-		workflows.create({
-			code,
-			params: { eventId: 'event-2' },
-		}),
-	).resolves.toEqual({
-		code,
-		params: { eventId: 'event-2' },
-	})
+	const oneOf = 'workflows.create requires exactly one of exportName or code.'
+	const badRunAt =
+		'workflows.create requires a valid runAt ISO-8601 date-time string or Date.'
+	const event = { workflowName: 'shade-event', exportName: './run-event' }
 
-	expect(
-		await workflows.create({
-			workflowName: ' shade-event ',
-			exportName: './run-event',
-			runAt: '2026-05-03T12:00:00.000Z',
-			idempotencyKey: 'event-key',
-			params: { eventId: 'event-1' },
-		}),
-	).toEqual({
-		workflowName: ' shade-event ',
-		exportName: './run-event',
-		runAt: new Date('2026-05-03T12:00:00.000Z'),
-		idempotencyKey: 'event-key',
-		params: { eventId: 'event-1' },
-	})
+	const rejected: Array<[unknown, string]> = [
+		[undefined, 'workflows.create requires a workflow input object.'],
+		[{}, oneOf],
+		[{ exportName: './run-event', code, runAt, idempotencyKey: 'k' }, oneOf],
+		[{ ...event, runAt: 'not-a-date', idempotencyKey: 'k' }, badRunAt],
+		[
+			{ ...event, runAt: 'May 3, 2026 12:00:00', idempotencyKey: 'k' },
+			badRunAt,
+		],
+	]
+	for (const [input, message] of rejected) {
+		await expect(workflows.create(input)).rejects.toThrow(message)
+	}
+
+	const params = { eventId: 'event-1' }
+	const accepted: Array<[Record<string, unknown>, Record<string, unknown>]> = [
+		[
+			{ exportName: './run-event', code: '', runAt, idempotencyKey: 'k' },
+			{
+				exportName: './run-event',
+				runAt: new Date(runAt),
+				idempotencyKey: 'k',
+			},
+		],
+		[{ exportName: './run-event', code: '' }, { exportName: './run-event' }],
+		[
+			{ code, runAt, idempotencyKey: 'k', params },
+			{ code, runAt: new Date(runAt), idempotencyKey: 'k', params },
+		],
+		[
+			{ code, params },
+			{ code, params },
+		],
+		[
+			{ ...event, workflowName: ' shade-event ', runAt, params },
+			{
+				...event,
+				workflowName: ' shade-event ',
+				runAt: new Date(runAt),
+				params,
+			},
+		],
+	]
+	for (const [input, expected] of accepted) {
+		await expect(workflows.create(input)).resolves.toEqual(expected)
+	}
 })
 
 const packageAppRuntimeMock = vi.hoisted(() => ({
@@ -505,7 +381,7 @@ function createPackageAppTestSource() {
 		entity_kind: 'package' as const,
 		entity_id: 'package-1',
 		repo_id: 'repo-1',
-		published_commit: 'commit-1',
+		published_commit: 'commit-1' as string | null,
 		indexed_commit: null,
 		manifest_path: 'package.json',
 		source_root: '/',
@@ -532,20 +408,55 @@ function createPackageAppTestEnv() {
 	const getEntrypoint = vi.fn(() => ({
 		fetch: vi.fn(async () => new Response('ok')),
 	}))
-	return {
-		env: {
-			APP_DB: {},
-			APP_LOADER: {
-				load: vi.fn(() => ({
-					getEntrypoint,
-				})),
-				get: vi.fn(() => ({
-					getEntrypoint,
-				})),
-			},
-		} as unknown as Env,
-		getEntrypoint,
+	const loader = {
+		load: vi.fn(() => ({ getEntrypoint })),
+		get: vi.fn(() => ({ getEntrypoint })),
 	}
+	return {
+		env: { APP_DB: {}, APP_LOADER: loader } as unknown as Env,
+		loader,
+	}
+}
+
+function loaderWorkerOptions(loader: { get: ReturnType<typeof vi.fn> }) {
+	const factory = loader.get.mock.calls[0]?.[1] as
+		| (() => { env: Record<string, unknown>; modules: Record<string, string> })
+		| undefined
+	return factory?.()
+}
+
+function makeArtifact(
+	mainSource = 'export default { fetch() { return new Response("ok") } }',
+	extra: Record<string, unknown> = {},
+) {
+	return {
+		row: { id: 'artifact-row-1', artifactName: null, entryPoint: 'app.js' },
+		artifact: {
+			mainModule: 'dist/app.js',
+			modules: { 'dist/app.js': mainSource },
+			dependencies: [],
+			dynamicDependencies: [],
+			...extra,
+		},
+	}
+}
+
+const freshBundle = {
+	mainModule: 'dist/app.js',
+	modules: {
+		'dist/app.js':
+			'export default { fetch() { return new Response("fresh") } }',
+	},
+	dependencies: [],
+	dynamicDependencies: [],
+}
+
+function sourceFilesFor(manifest = createPackageAppTestManifest()) {
+	const entry = manifest.kody.app.entry
+	return async () => ({
+		'package.json': JSON.stringify(manifest),
+		[entry]: 'export default { async fetch() { return new Response("ok") } }',
+	})
 }
 
 function resetPackageAppRuntimeMocks() {
@@ -586,6 +497,46 @@ const {
 	PackageAppRuntimeBridge,
 } = await import('./package-app.ts')
 
+type BuildInput = Parameters<typeof buildPackageAppWorker>[0]
+
+/** `key` keeps user/package ids unique so the in-memory build cache never leaks between tests. */
+function makeBuildInput(
+	env: Env,
+	key: string,
+	overrides: Omit<Partial<BuildInput>, 'savedPackage'> & {
+		savedPackage?: Partial<BuildInput['savedPackage']>
+	} = {},
+): BuildInput {
+	const { savedPackage, ...rest } = overrides
+	return {
+		env,
+		baseUrl: 'https://example.com',
+		userId: `user-${key}`,
+		source: createPackageAppTestSource(),
+		manifest: createPackageAppTestManifest(),
+		runtime: {
+			callerContext: {
+				user: {
+					userId: `user-${key}`,
+					email: `${key}@example.com`,
+					displayName: `${key} User`,
+				},
+			},
+		} as never,
+		...rest,
+		savedPackage: {
+			id: `package-${key}`,
+			kodyId: `example-${key}`,
+			name: `@kody/example-${key}`,
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+			manifestPath: 'package.json',
+			sourceRoot: '/',
+			...savedPackage,
+		},
+	}
+}
+
 function createPackageAppRuntimeBridgeForTest(input?: {
 	packageStorageGrantIds?: Array<string>
 }) {
@@ -612,57 +563,28 @@ function createPackageAppRuntimeBridgeForTest(input?: {
 	return { bridge, waitUntilTasks }
 }
 
-test('buildPackageAppWorker loads published app artifacts with artifactName null', async () => {
+test('buildPackageAppWorker serves an artifactName-null artifact hit and reuses built options with a fresh stub per request', async () => {
 	resetPackageAppRuntimeMocks()
-	const { env } = createPackageAppTestEnv()
+	const { env, loader } = createPackageAppTestEnv()
 	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
-		{
-			row: {
-				id: 'artifact-row-1',
-				artifactName: null,
-				entryPoint: 'app.js',
-			},
-			artifact: {
-				mainModule: 'dist/app.js',
-				modules: {
-					'dist/app.js':
-						'export default { fetch() { return new Response("cached") } }',
-				},
-				dependencies: [],
-				dynamicDependencies: [],
-			},
-		},
+		makeArtifact(
+			'export default { fetch() { return new Response("cached") } }',
+		),
 	)
-
-	await buildPackageAppWorker({
-		env,
-		baseUrl: 'https://example.com',
-		userId: 'user-artifact-hit',
-		savedPackage: {
-			id: 'package-artifact-hit',
-			kodyId: 'example-hit',
-			name: '@kody/example-hit',
-			sourceId: 'source-1',
-			publishedCommit: 'commit-1',
-			manifestPath: 'package.json',
-			sourceRoot: '/',
-		},
-		source: createPackageAppTestSource(),
-		manifest: createPackageAppTestManifest(),
+	const buildInput = makeBuildInput(env, 'artifact-hit', {
 		loadSourceFiles: async () => {
 			throw new Error('full source load should be skipped on artifact hit')
 		},
-		runtime: {
-			callerContext: {
-				user: {
-					userId: 'user-artifact-hit',
-					email: 'artifact-hit@example.com',
-					displayName: 'Artifact Hit User',
-				},
-			},
-		} as never,
 	})
 
+	await buildPackageAppWorker(buildInput)
+	await buildPackageAppWorker(buildInput)
+
+	// The expensive build (artifact lookup + hydration) runs once; each request
+	// still re-acquires a request-bound stub with the same stable worker id.
+	expect(
+		packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity,
+	).toHaveBeenCalledTimes(1)
 	expect(
 		packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity,
 	).toHaveBeenCalledWith({
@@ -677,226 +599,22 @@ test('buildPackageAppWorker loads published app artifacts with artifactName null
 	expect(
 		packageAppRuntimeMock.persistPublishedBundleArtifact,
 	).not.toHaveBeenCalled()
-	const loader = env.APP_LOADER as unknown as {
-		get: ReturnType<typeof vi.fn>
-	}
-	const factory = loader.get.mock.calls[0]?.[1] as
-		| (() => { modules: Record<string, string> })
-		| undefined
-	const packageAppHostSource = factory?.().modules['package-app-entry.js']
+	expect(loader.get).toHaveBeenCalledTimes(2)
+	expect(loader.load).not.toHaveBeenCalled()
+	const [firstWorkerId] = loader.get.mock.calls[0] as unknown as [string]
+	const [secondWorkerId] = loader.get.mock.calls[1] as unknown as [string]
+	expect(firstWorkerId).toBe(secondWorkerId)
+	expect(firstWorkerId).toMatch(/^package-app-/)
+	const workerOptions = loaderWorkerOptions(loader)
+	expect(workerOptions).toMatchObject(createDynamicWorkerCompatibilityOptions())
+	const packageAppHostSource = workerOptions?.modules['package-app-entry.js']
 	expect(packageAppHostSource).toContain(
 		'Object-only packages.invoke was removed.',
 	)
 	expect(packageAppHostSource).toContain("if (typeof specifier !== 'string')")
 })
 
-test('buildPackageAppWorker acquires a fresh stub per request while reusing the built worker options', async () => {
-	resetPackageAppRuntimeMocks()
-	const { env } = createPackageAppTestEnv()
-	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
-		{
-			row: {
-				id: 'artifact-row-1',
-				artifactName: null,
-				entryPoint: 'app.js',
-			},
-			artifact: {
-				mainModule: 'dist/app.js',
-				modules: {
-					'dist/app.js':
-						'export default { fetch() { return new Response("cached") } }',
-				},
-				dependencies: [],
-				dynamicDependencies: [],
-			},
-		},
-	)
-
-	const buildInput = {
-		env,
-		baseUrl: 'https://example.com',
-		userId: 'user-stub-reuse',
-		savedPackage: {
-			id: 'package-stub-reuse',
-			kodyId: 'example-stub-reuse',
-			name: '@kody/example-stub-reuse',
-			sourceId: 'source-1',
-			publishedCommit: 'commit-1',
-			manifestPath: 'package.json',
-			sourceRoot: '/',
-		},
-		source: createPackageAppTestSource(),
-		manifest: createPackageAppTestManifest(),
-		runtime: {
-			callerContext: {
-				user: {
-					userId: 'user-stub-reuse',
-					email: 'stub-reuse@example.com',
-					displayName: 'Stub Reuse User',
-				},
-			},
-		} as never,
-	}
-
-	await buildPackageAppWorker(buildInput)
-	await buildPackageAppWorker(buildInput)
-
-	const loader = env.APP_LOADER as unknown as {
-		get: ReturnType<typeof vi.fn>
-		load: ReturnType<typeof vi.fn>
-	}
-	// The expensive build (artifact lookup + hydration) runs once; each request
-	// still re-acquires a request-bound stub with the same stable worker id.
-	expect(
-		packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity,
-	).toHaveBeenCalledTimes(1)
-	expect(loader.get).toHaveBeenCalledTimes(2)
-	expect(loader.load).not.toHaveBeenCalled()
-	const [firstWorkerId] = loader.get.mock.calls[0] as [string]
-	const [secondWorkerId] = loader.get.mock.calls[1] as [string]
-	expect(firstWorkerId).toBe(secondWorkerId)
-	expect(firstWorkerId).toMatch(/^package-app-/)
-	const factory = loader.get.mock.calls[0]?.[1] as
-		| (() => Record<string, unknown>)
-		| undefined
-	expect(factory).toBeTypeOf('function')
-	expect(factory?.()).toMatchObject(createDynamicWorkerCompatibilityOptions())
-})
-
-test('buildPackageAppWorker records a unique Dynamic Worker day with the app surface', async () => {
-	resetPackageAppRuntimeMocks()
-	const usageModule = await import('#worker/usage/dynamic-worker-day.ts')
-	const recordSpy = vi
-		.spyOn(usageModule, 'recordUniqueDynamicWorkerDay')
-		.mockResolvedValue(undefined)
-	const { env } = createPackageAppTestEnv()
-	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
-		{
-			row: {
-				id: 'artifact-row-uwd',
-				artifactName: null,
-				entryPoint: 'app.js',
-			},
-			artifact: {
-				mainModule: 'dist/app.js',
-				modules: {
-					'dist/app.js':
-						'export default { fetch() { return new Response("ok") } }',
-				},
-				dependencies: [],
-				dynamicDependencies: [],
-			},
-		},
-	)
-
-	try {
-		await buildPackageAppWorker({
-			env,
-			baseUrl: 'https://example.com',
-			userId: 'user-uwd-surface',
-			surface: 'app_realtime',
-			savedPackage: {
-				id: 'package-uwd-surface',
-				kodyId: 'example-uwd',
-				name: '@kody/example-uwd',
-				sourceId: 'source-1',
-				publishedCommit: 'commit-1',
-				manifestPath: 'package.json',
-				sourceRoot: '/',
-			},
-			source: createPackageAppTestSource(),
-			manifest: createPackageAppTestManifest(),
-			runtime: {
-				callerContext: {
-					user: {
-						userId: 'user-uwd-surface',
-						email: 'uwd@example.com',
-						displayName: 'Uwd User',
-					},
-				},
-			} as never,
-		})
-
-		expect(recordSpy).toHaveBeenCalledWith(
-			expect.objectContaining({
-				userId: 'user-uwd-surface',
-				surface: 'app_realtime',
-				workerId: expect.stringMatching(/^package-app-/),
-			}),
-		)
-	} finally {
-		recordSpy.mockRestore()
-	}
-})
-
-test('buildPackageAppWorker acquires the loader stub before claiming the day', async () => {
-	resetPackageAppRuntimeMocks()
-	const usageModule = await import('#worker/usage/dynamic-worker-day.ts')
-	const recordSpy = vi
-		.spyOn(usageModule, 'recordUniqueDynamicWorkerDay')
-		.mockResolvedValue(undefined)
-	const { env } = createPackageAppTestEnv()
-	const loader = env.APP_LOADER as unknown as {
-		get: ReturnType<typeof vi.fn>
-	}
-	loader.get.mockImplementation(() => {
-		throw new Error('loader-get-failed')
-	})
-	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
-		{
-			row: {
-				id: 'artifact-row-uwd-fail',
-				artifactName: null,
-				entryPoint: 'app.js',
-			},
-			artifact: {
-				mainModule: 'dist/app.js',
-				modules: {
-					'dist/app.js':
-						'export default { fetch() { return new Response("ok") } }',
-				},
-				dependencies: [],
-				dynamicDependencies: [],
-			},
-		},
-	)
-
-	try {
-		await expect(
-			buildPackageAppWorker({
-				env,
-				baseUrl: 'https://example.com',
-				userId: 'user-uwd-fail',
-				surface: 'app_fetch',
-				savedPackage: {
-					id: 'package-uwd-fail',
-					kodyId: 'example-uwd-fail',
-					name: '@kody/example-uwd-fail',
-					sourceId: 'source-1',
-					publishedCommit: 'commit-1',
-					manifestPath: 'package.json',
-					sourceRoot: '/',
-				},
-				source: createPackageAppTestSource(),
-				manifest: createPackageAppTestManifest(),
-				runtime: {
-					callerContext: {
-						user: {
-							userId: 'user-uwd-fail',
-							email: 'uwd-fail@example.com',
-							displayName: 'Uwd Fail',
-						},
-					},
-				} as never,
-			}),
-		).rejects.toThrow('loader-get-failed')
-		expect(recordSpy).not.toHaveBeenCalled()
-	} finally {
-		recordSpy.mockRestore()
-	}
-})
-
-test('buildPackageAppWorker schedules unique-worker-day off the stub path', async () => {
+test('buildPackageAppWorker records the unique Dynamic Worker day with its surface off the stub path', async () => {
 	resetPackageAppRuntimeMocks()
 	const usageModule = await import('#worker/usage/dynamic-worker-day.ts')
 	let resolveClaim: (() => void) | undefined
@@ -909,57 +627,26 @@ test('buildPackageAppWorker schedules unique-worker-day off the stub path', asyn
 	const waitUntilTasks: Array<Promise<unknown>> = []
 	const { env } = createPackageAppTestEnv()
 	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
-		{
-			row: {
-				id: 'artifact-row-uwd-wait',
-				artifactName: null,
-				entryPoint: 'app.js',
-			},
-			artifact: {
-				mainModule: 'dist/app.js',
-				modules: {
-					'dist/app.js':
-						'export default { fetch() { return new Response("ok") } }',
-				},
-				dependencies: [],
-				dynamicDependencies: [],
-			},
-		},
+		makeArtifact(),
 	)
 
 	try {
-		const built = await buildPackageAppWorker({
-			env,
-			baseUrl: 'https://example.com',
-			userId: 'user-uwd-wait',
-			surface: 'app_fetch',
-			waitUntil: (promise) => {
-				waitUntilTasks.push(promise)
-			},
-			savedPackage: {
-				id: 'package-uwd-wait',
-				kodyId: 'example-uwd-wait',
-				name: '@kody/example-uwd-wait',
-				sourceId: 'source-1',
-				publishedCommit: 'commit-1',
-				manifestPath: 'package.json',
-				sourceRoot: '/',
-			},
-			source: createPackageAppTestSource(),
-			manifest: createPackageAppTestManifest(),
-			runtime: {
-				callerContext: {
-					user: {
-						userId: 'user-uwd-wait',
-						email: 'uwd-wait@example.com',
-						displayName: 'Uwd Wait',
-					},
-				},
-			} as never,
-		})
+		const built = await buildPackageAppWorker(
+			makeBuildInput(env, 'uwd-surface', {
+				surface: 'app_realtime',
+				waitUntil: (promise) => void waitUntilTasks.push(promise),
+			}),
+		)
 
 		expect(built.stub).toBeTruthy()
 		expect(recordSpy).toHaveBeenCalledTimes(1)
+		expect(recordSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: 'user-uwd-surface',
+				surface: 'app_realtime',
+				workerId: expect.stringMatching(/^package-app-/),
+			}),
+		)
 		expect(waitUntilTasks).toHaveLength(1)
 		resolveClaim?.()
 		await Promise.all(waitUntilTasks)
@@ -968,66 +655,59 @@ test('buildPackageAppWorker schedules unique-worker-day off the stub path', asyn
 	}
 })
 
-test('package app worker exposes its public mount and records fetch query and response status', async () => {
+test('buildPackageAppWorker acquires the loader stub before claiming the day', async () => {
 	resetPackageAppRuntimeMocks()
-	const { env } = createPackageAppTestEnv()
+	const usageModule = await import('#worker/usage/dynamic-worker-day.ts')
+	const recordSpy = vi
+		.spyOn(usageModule, 'recordUniqueDynamicWorkerDay')
+		.mockResolvedValue(undefined)
+	const { env, loader } = createPackageAppTestEnv()
+	loader.get.mockImplementation(() => {
+		throw new Error('loader-get-failed')
+	})
 	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
-		{
-			row: {
-				id: 'artifact-row-public-context',
-				artifactName: null,
-				entryPoint: 'app.js',
-			},
-			artifact: {
-				mainModule: 'dist/app.js',
-				modules: {
-					'dist/app.js':
-						'export default { fetch() { return new Response("ok", { status: 201 }) } }',
-				},
-				dependencies: [],
-				dynamicDependencies: [],
-			},
-		},
+		makeArtifact(),
 	)
 
-	await buildPackageAppWorker({
-		env,
-		baseUrl: 'https://app.kody.test',
-		userId: 'user-public-context',
-		savedPackage: {
-			id: 'package-public-context',
-			kodyId: 'renamed-app',
-			name: '@current-owner/renamed-app',
-			sourceId: 'source-1',
-			publishedCommit: 'commit-1',
-			manifestPath: 'package.json',
-			sourceRoot: '/',
-		},
-		source: createPackageAppTestSource(),
-		manifest: createPackageAppTestManifest(),
-		runtime: {
-			callerContext: {
-				user: {
-					email: 'owner@example.com',
-					displayName: 'Owner',
-				},
-			} as never,
-			servingUsername: 'serving-owner',
-			hostedOrigin: 'https://packages.kody.test',
-		},
-	})
-
-	const loader = env.APP_LOADER as unknown as {
-		get: ReturnType<typeof vi.fn>
+	try {
+		await expect(
+			buildPackageAppWorker(
+				makeBuildInput(env, 'uwd-fail', { surface: 'app_fetch' }),
+			),
+		).rejects.toThrow('loader-get-failed')
+		expect(recordSpy).not.toHaveBeenCalled()
+	} finally {
+		recordSpy.mockRestore()
 	}
-	const factory = loader.get.mock.calls[0]?.[1] as
-		| (() => {
-				env: Record<string, unknown>
-				modules: Record<string, string>
-		  })
-		| undefined
-	const workerOptions = factory?.()
-	expect(workerOptions?.env['__kodyPackageContext']).toEqual({
+})
+
+test('package app worker exposes its public mount and records fetch query and response status', async () => {
+	resetPackageAppRuntimeMocks()
+	const { env, loader } = createPackageAppTestEnv()
+	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
+		makeArtifact(
+			'export default { fetch() { return new Response("ok", { status: 201 }) } }',
+		),
+	)
+
+	await buildPackageAppWorker(
+		makeBuildInput(env, 'public-context', {
+			baseUrl: 'https://app.kody.test',
+			savedPackage: {
+				kodyId: 'renamed-app',
+				name: '@current-owner/renamed-app',
+			},
+			runtime: {
+				callerContext: {
+					user: { email: 'owner@example.com', displayName: 'Owner' },
+				} as never,
+				servingUsername: 'serving-owner',
+				hostedOrigin: 'https://packages.kody.test',
+			},
+		}),
+	)
+
+	expect(loaderWorkerOptions(loader)?.env['__kodyPackageContext']).toEqual({
 		packageId: 'package-public-context',
 		kodyId: 'renamed-app',
 		sourceId: 'source-1',
@@ -1038,29 +718,19 @@ test('package app worker exposes its public mount and records fetch query and re
 		clientModuleUrl: null,
 	})
 
-	const queryParamNames = await collectQueryParamNamesForTest(
-		new URL(
-			'https://packages.kody.test/callback?audio=1&code=oauth-code-secret&state=oauth-state-secret&audio=2',
+	expect(
+		collectQueryParamNamesForTest(
+			new URL(
+				'https://packages.kody.test/callback?audio=1&code=oauth-code-secret&state=oauth-state-secret&audio=2',
+			),
 		),
-	)
-	expect(queryParamNames).toEqual(['audio', 'code', 'state'])
+	).toEqual(['audio', 'code', 'state'])
 })
 
 test('package app worker exposes the fingerprinted client module URL when kody.app.client is declared', async () => {
 	resetPackageAppRuntimeMocks()
-	const { env } = createPackageAppTestEnv()
-	const appArtifact = {
-		row: { id: 'artifact-row-app', artifactName: null, entryPoint: 'app.js' },
-		artifact: {
-			mainModule: 'dist/app.js',
-			modules: {
-				'dist/app.js':
-					'export default { fetch() { return new Response("ok") } }',
-			},
-			dependencies: [],
-			dynamicDependencies: [],
-		},
-	}
+	const { env, loader } = createPackageAppTestEnv()
+	const appArtifact = makeArtifact()
 	const clientArtifact = {
 		row: {
 			id: 'artifact-row-client',
@@ -1069,9 +739,7 @@ test('package app worker exposes the fingerprinted client module URL when kody.a
 		},
 		artifact: {
 			mainModule: 'client.abcdefgh12345678.js',
-			modules: {
-				'client.abcdefgh12345678.js': 'console.log("hi")',
-			},
+			modules: { 'client.abcdefgh12345678.js': 'console.log("hi")' },
 			dependencies: [],
 			dynamicDependencies: [],
 		},
@@ -1081,38 +749,28 @@ test('package app worker exposes the fingerprinted client module URL when kody.a
 			input.kind === 'app-client' ? clientArtifact : appArtifact,
 	)
 	const baseManifest = createPackageAppTestManifest()
-	const manifest = {
-		...baseManifest,
-		kody: {
-			...baseManifest.kody,
-			app: { entry: 'app.js', client: './client.ts' },
-		},
-	}
 
-	await buildPackageAppWorker({
-		env,
-		baseUrl: 'https://app.kody.test',
-		userId: 'user-client-context',
-		savedPackage: {
-			id: 'package-client-context',
-			kodyId: 'client-app',
-			name: '@current-owner/client-app',
-			sourceId: 'source-1',
-			publishedCommit: 'commit-1',
-			manifestPath: 'package.json',
-			sourceRoot: '/',
-		},
-		source: createPackageAppTestSource(),
-		manifest,
-		runtime: {
-			callerContext: {
-				user: { email: 'owner@example.com', displayName: 'Owner' },
-			} as never,
-			servingUsername: 'serving-owner',
-			hostedOrigin: 'https://serving-owner.kody.run',
-			mount: 'user-subdomain',
-		},
-	})
+	await buildPackageAppWorker(
+		makeBuildInput(env, 'client-context', {
+			baseUrl: 'https://app.kody.test',
+			savedPackage: { kodyId: 'client-app', name: '@current-owner/client-app' },
+			manifest: {
+				...baseManifest,
+				kody: {
+					...baseManifest.kody,
+					app: { entry: 'app.js', client: './client.ts' },
+				},
+			},
+			runtime: {
+				callerContext: {
+					user: { email: 'owner@example.com', displayName: 'Owner' },
+				} as never,
+				servingUsername: 'serving-owner',
+				hostedOrigin: 'https://serving-owner.kody.run',
+				mount: 'user-subdomain',
+			},
+		}),
+	)
 
 	expect(
 		packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity,
@@ -1123,11 +781,9 @@ test('package app worker exposes the fingerprinted client module URL when kody.a
 			entryPoint: 'client.ts',
 		}),
 	)
-	const loader = env.APP_LOADER as unknown as { get: ReturnType<typeof vi.fn> }
-	const factory = loader.get.mock.calls[0]?.[1] as
-		| (() => { env: Record<string, unknown> })
-		| undefined
-	expect(factory?.().env['__kodyPackageContext']).toMatchObject({
+	expect(
+		loaderWorkerOptions(loader)?.env['__kodyPackageContext'],
+	).toMatchObject({
 		appBasePath: '/packages/client-app',
 		hostedUrl: 'https://serving-owner.kody.run/packages/client-app',
 		assetBasePath: '/packages/client-app/_assets',
@@ -1147,105 +803,61 @@ test('createPackageAppWorkerId changes when compatibility settings change', asyn
 		'compat@example.com',
 		'Compat User',
 	])
-	const modules = {
-		'package-app-entry.js':
-			'export default { fetch() { return new Response("ok") } }',
-	}
 	const baseWorkerOptions = {
 		...createDynamicWorkerCompatibilityOptions(),
 		mainModule: 'package-app-entry.js',
-		modules,
+		modules: {
+			'package-app-entry.js':
+				'export default { fetch() { return new Response("ok") } }',
+		},
 	}
+	const idFor = (overrides: Record<string, unknown> = {}) =>
+		createPackageAppWorkerId({
+			cacheKey,
+			workerOptions: { ...baseWorkerOptions, ...overrides },
+		})
 
-	const baselineId = await createPackageAppWorkerId({
-		cacheKey,
-		workerOptions: baseWorkerOptions,
-	})
-	const dateChangedId = await createPackageAppWorkerId({
-		cacheKey,
-		workerOptions: {
-			...baseWorkerOptions,
-			compatibilityDate: '2025-06-01',
-		},
-	})
-	const flagsChangedId = await createPackageAppWorkerId({
-		cacheKey,
-		workerOptions: {
-			...baseWorkerOptions,
-			compatibilityFlags: ['nodejs_compat'],
-		},
-	})
-	const unchangedId = await createPackageAppWorkerId({
-		cacheKey,
-		workerOptions: baseWorkerOptions,
-	})
+	const baselineId = await idFor()
+	const dateChangedId = await idFor({ compatibilityDate: '2025-06-01' })
+	const flagsChangedId = await idFor({ compatibilityFlags: ['nodejs_compat'] })
 
 	expect(baselineId).toMatch(/^package-app-/)
-	expect(unchangedId).toBe(baselineId)
+	expect(await idFor()).toBe(baselineId)
 	expect(dateChangedId).not.toBe(baselineId)
 	expect(flagsChangedId).not.toBe(baselineId)
 	expect(dateChangedId).not.toBe(flagsChangedId)
 })
 
-test('buildPackageAppWorker persists rebuilt app artifacts with artifactName null', async () => {
+test('an app artifact rebuild persists artifactName null using the fresh source row and its entry point', async () => {
 	resetPackageAppRuntimeMocks()
 	const { env } = createPackageAppTestEnv()
-	const source = createPackageAppTestSource()
-	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
-		null,
-	)
-	packageAppRuntimeMock.buildKodyAppBundle.mockResolvedValue({
-		mainModule: 'dist/app.js',
-		modules: {
-			'dist/app.js':
-				'export default { fetch() { return new Response("fresh") } }',
-		},
-		dependencies: [],
-		dynamicDependencies: [],
-	})
-	packageAppRuntimeMock.persistPublishedBundleArtifact.mockResolvedValue(
-		'bundle-artifact:v1:source-1:commit-1:app:_:app.js',
-	)
-
 	const freshSource = {
 		...createPackageAppTestSource(),
 		published_commit: 'commit-2',
 	}
+	const freshManifest = createPackageAppTestManifest('fresh.js')
+	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
+		null,
+	)
+	packageAppRuntimeMock.buildKodyAppBundle.mockResolvedValue(freshBundle)
+	packageAppRuntimeMock.persistPublishedBundleArtifact.mockResolvedValue(
+		'bundle-artifact:v1:source-1:commit-2:app:_:fresh.js',
+	)
 	packageAppRuntimeMock.getEntitySourceById.mockResolvedValue(freshSource)
 
-	await buildPackageAppWorker({
-		env,
-		baseUrl: 'https://example.com',
-		userId: 'user-1',
-		savedPackage: {
-			id: 'package-persist-miss',
-			kodyId: 'example-miss',
-			name: '@kody/example-miss',
-			sourceId: 'source-1',
-			publishedCommit: 'commit-1',
-			manifestPath: 'package.json',
-			sourceRoot: '/',
-		},
-		source,
-		manifest: createPackageAppTestManifest(),
-		loadSourceFiles: async () => ({
-			'package.json': JSON.stringify(createPackageAppTestManifest()),
-			'app.js':
-				'export default { async fetch() { return new Response("ok") } }',
+	await buildPackageAppWorker(
+		makeBuildInput(env, 'rebuild-entry', {
+			userId: 'user-1',
+			manifest: createPackageAppTestManifest('stale.js'),
+			loadSourceFiles: sourceFilesFor(freshManifest),
 		}),
-		runtime: {
-			callerContext: {
-				user: {
-					userId: 'user-1',
-					email: 'persist-miss@example.com',
-					displayName: 'Persist Miss User',
-				},
-			},
-		} as never,
-	})
+	)
 
 	expect(packageAppRuntimeMock.getEntitySourceById).toHaveBeenCalledTimes(1)
 	expect(packageAppRuntimeMock.buildKodyAppBundle).toHaveBeenCalledTimes(1)
+	expect(packageAppRuntimeMock.buildKodyAppBundle).toHaveBeenCalledWith(
+		expect.objectContaining({ entryPoint: 'fresh.js' }),
+	)
 	expect(
 		packageAppRuntimeMock.persistPublishedBundleArtifact,
 	).toHaveBeenCalledWith(
@@ -1254,77 +866,6 @@ test('buildPackageAppWorker persists rebuilt app artifacts with artifactName nul
 			source: freshSource,
 			kind: 'app',
 			artifactName: null,
-			entryPoint: 'app.js',
-		}),
-	)
-})
-
-test('an app artifact rebuild resolves its entry point from the fresh source, not the cached manifest', async () => {
-	resetPackageAppRuntimeMocks()
-	const { env } = createPackageAppTestEnv()
-	const cachedSource = createPackageAppTestSource()
-	const freshSource = {
-		...createPackageAppTestSource(),
-		published_commit: 'commit-2',
-	}
-	const staleManifest = createPackageAppTestManifest('stale.js')
-	const freshManifest = createPackageAppTestManifest('fresh.js')
-	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
-		null,
-	)
-	packageAppRuntimeMock.buildKodyAppBundle.mockResolvedValue({
-		mainModule: 'dist/app.js',
-		modules: {
-			'dist/app.js':
-				'export default { fetch() { return new Response("fresh") } }',
-		},
-		dependencies: [],
-		dynamicDependencies: [],
-	})
-	packageAppRuntimeMock.persistPublishedBundleArtifact.mockResolvedValue(
-		'bundle-artifact:v1:source-1:commit-2:app:_:fresh.js',
-	)
-	packageAppRuntimeMock.getEntitySourceById.mockResolvedValue(freshSource)
-
-	await buildPackageAppWorker({
-		env,
-		baseUrl: 'https://example.com',
-		userId: 'user-1',
-		savedPackage: {
-			id: 'package-rebuild-entry',
-			kodyId: 'example-rebuild',
-			name: '@kody/example-rebuild',
-			sourceId: 'source-1',
-			publishedCommit: 'commit-1',
-			manifestPath: 'package.json',
-			sourceRoot: '/',
-		},
-		source: cachedSource,
-		manifest: staleManifest,
-		loadSourceFiles: async () => ({
-			'package.json': JSON.stringify(freshManifest),
-			'fresh.js':
-				'export default { async fetch() { return new Response("v2") } }',
-		}),
-		runtime: {
-			callerContext: {
-				user: {
-					userId: 'user-1',
-					email: 'rebuild@example.com',
-					displayName: 'Rebuild User',
-				},
-			},
-		} as never,
-	})
-
-	expect(packageAppRuntimeMock.buildKodyAppBundle).toHaveBeenCalledWith(
-		expect.objectContaining({ entryPoint: 'fresh.js' }),
-	)
-	expect(
-		packageAppRuntimeMock.persistPublishedBundleArtifact,
-	).toHaveBeenCalledWith(
-		expect.objectContaining({
-			source: freshSource,
 			entryPoint: 'fresh.js',
 		}),
 	)
@@ -1333,54 +874,18 @@ test('an app artifact rebuild resolves its entry point from the fresh source, no
 test('buildPackageAppWorker rejects persisting artifacts for a source owned by another user', async () => {
 	resetPackageAppRuntimeMocks()
 	const { env } = createPackageAppTestEnv()
-	const source = createPackageAppTestSource()
 	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
 		null,
 	)
-	packageAppRuntimeMock.buildKodyAppBundle.mockResolvedValue({
-		mainModule: 'dist/app.js',
-		modules: {
-			'dist/app.js':
-				'export default { fetch() { return new Response("fresh") } }',
-		},
-		dependencies: [],
-		dynamicDependencies: [],
-	})
+	packageAppRuntimeMock.buildKodyAppBundle.mockResolvedValue(freshBundle)
 	// Rebuild always loads the current source row. The lookup finds nothing
 	// for this user, so persist must not run.
 	packageAppRuntimeMock.getEntitySourceById.mockResolvedValue(null)
 
 	await expect(
-		buildPackageAppWorker({
-			env,
-			baseUrl: 'https://example.com',
-			userId: 'user-other',
-			savedPackage: {
-				id: 'package-other',
-				kodyId: 'example-other',
-				name: '@kody/example-other',
-				sourceId: 'source-1',
-				publishedCommit: 'commit-1',
-				manifestPath: 'package.json',
-				sourceRoot: '/',
-			},
-			source,
-			manifest: createPackageAppTestManifest(),
-			loadSourceFiles: async () => ({
-				'package.json': JSON.stringify(createPackageAppTestManifest()),
-				'app.js':
-					'export default { async fetch() { return new Response("ok") } }',
-			}),
-			runtime: {
-				callerContext: {
-					user: {
-						userId: 'user-other',
-						email: 'other@example.com',
-						displayName: 'Other User',
-					},
-				},
-			} as never,
-		}),
+		buildPackageAppWorker(
+			makeBuildInput(env, 'other', { loadSourceFiles: sourceFilesFor() }),
+		),
 	).rejects.toThrow('Saved package source "source-1" was not found.')
 
 	expect(packageAppRuntimeMock.getEntitySourceById).toHaveBeenCalledTimes(1)
@@ -1392,10 +897,6 @@ test('buildPackageAppWorker rejects persisting artifacts for a source owned by a
 test('buildPackageAppWorker skips published artifact lookup when publishedCommit is null', async () => {
 	resetPackageAppRuntimeMocks()
 	const { env } = createPackageAppTestEnv()
-	const source = {
-		...createPackageAppTestSource(),
-		published_commit: null,
-	}
 	packageAppRuntimeMock.buildKodyAppBundle.mockResolvedValue({
 		mainModule: 'dist/app.js',
 		modules: {
@@ -1405,36 +906,13 @@ test('buildPackageAppWorker skips published artifact lookup when publishedCommit
 		dependencies: [],
 	})
 
-	await buildPackageAppWorker({
-		env,
-		baseUrl: 'https://example.com',
-		userId: 'user-unpublished',
-		savedPackage: {
-			id: 'package-unpublished',
-			kodyId: 'example-draft',
-			name: '@kody/example-draft',
-			sourceId: 'source-1',
-			publishedCommit: null,
-			manifestPath: 'package.json',
-			sourceRoot: '/',
-		},
-		source,
-		manifest: createPackageAppTestManifest(),
-		loadSourceFiles: async () => ({
-			'package.json': JSON.stringify(createPackageAppTestManifest()),
-			'app.js':
-				'export default { async fetch() { return new Response("ok") } }',
+	await buildPackageAppWorker(
+		makeBuildInput(env, 'unpublished', {
+			savedPackage: { publishedCommit: null },
+			source: { ...createPackageAppTestSource(), published_commit: null },
+			loadSourceFiles: sourceFilesFor(),
 		}),
-		runtime: {
-			callerContext: {
-				user: {
-					userId: 'user-unpublished',
-					email: 'unpublished@example.com',
-					displayName: 'Unpublished User',
-				},
-			},
-		} as never,
-	})
+	)
 
 	expect(
 		packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity,
@@ -1478,6 +956,11 @@ test('package app runtime bridge returns opaque secret refs and merges metadata 
 			},
 		},
 	}
+	const logs = [
+		{ level: 'log' as const, message: `token=${opaqueRef}` },
+		`also ${opaqueRef}`,
+	]
+	const error = { name: 'Error', message: `boom ${opaqueRef}` }
 
 	await expect(
 		bridge.packageSecretGet({ alias: 'api-token' }),
@@ -1488,17 +971,8 @@ test('package app runtime bridge returns opaque secret refs and merges metadata 
 			run: runHandle,
 			status: 'error',
 			metadata: { httpStatus: 201 },
-			logs: [
-				{
-					level: 'log',
-					message: `token=${opaqueRef}`,
-				},
-				`also ${opaqueRef}`,
-			],
-			error: {
-				name: 'Error',
-				message: `boom ${opaqueRef}`,
-			},
+			logs,
+			error,
 		}),
 	).resolves.toEqual({ ok: true })
 
@@ -1522,26 +996,18 @@ test('package app runtime bridge returns opaque secret refs and merges metadata 
 			},
 		},
 		status: 'error',
-		logs: [
-			{
-				level: 'log',
-				message: `token=${opaqueRef}`,
-			},
-			`also ${opaqueRef}`,
-		],
-		error: {
-			name: 'Error',
-			message: `boom ${opaqueRef}`,
-		},
+		logs,
+		error,
 	})
 })
 
 test('package app secret mounts ignore author-selected packageId and honor the stamp field', async () => {
 	resetPackageAppRuntimeMocks()
+	const ref = '{{secret:apiToken|scope=user}}'
 	packageAppRuntimeMock.resolvePackageMountedSecret.mockResolvedValue({
 		alias: 'api-token',
 		name: 'apiToken',
-		ref: '{{secret:apiToken|scope=user}}',
+		ref,
 		scope: 'user',
 		packageId: 'package-1',
 		kodyId: 'demo',
@@ -1549,33 +1015,30 @@ test('package app secret mounts ignore author-selected packageId and honor the s
 	const { bridge } = createPackageAppRuntimeBridgeForTest({
 		packageStorageGrantIds: ['package-1', 'pkg-a'],
 	})
-	await expect(
-		bridge.packageSecretGet({ alias: 'api-token', packageId: 'pkg-a' }),
-	).resolves.toEqual({ value: '{{secret:apiToken|scope=user}}' })
-	expect(
-		packageAppRuntimeMock.resolvePackageMountedSecret,
-	).toHaveBeenCalledWith(
-		expect.objectContaining({
-			packageId: 'package-1',
-			alias: 'api-token',
-		}),
-	)
-	packageAppRuntimeMock.resolvePackageMountedSecret.mockClear()
-	await expect(
-		bridge.packageSecretGet({
-			alias: 'api-token',
-			packageId: 'package-1',
-			[secretAuthorityArgName]: 'pkg-a',
-		}),
-	).resolves.toEqual({ value: '{{secret:apiToken|scope=user}}' })
-	expect(
-		packageAppRuntimeMock.resolvePackageMountedSecret,
-	).toHaveBeenCalledWith(
-		expect.objectContaining({
-			packageId: 'pkg-a',
-			alias: 'api-token',
-		}),
-	)
+	for (const [input, resolvedPackageId] of [
+		[{ alias: 'api-token', packageId: 'pkg-a' }, 'package-1'],
+		[
+			{
+				alias: 'api-token',
+				packageId: 'package-1',
+				[secretAuthorityArgName]: 'pkg-a',
+			},
+			'pkg-a',
+		],
+	] as const) {
+		packageAppRuntimeMock.resolvePackageMountedSecret.mockClear()
+		await expect(bridge.packageSecretGet(input)).resolves.toEqual({
+			value: ref,
+		})
+		expect(
+			packageAppRuntimeMock.resolvePackageMountedSecret,
+		).toHaveBeenCalledWith(
+			expect.objectContaining({
+				packageId: resolvedPackageId,
+				alias: 'api-token',
+			}),
+		)
+	}
 })
 
 test('package app runtime bridge enforces packageStorage grants and raw storage namespace ACLs', async () => {
@@ -1641,10 +1104,7 @@ test('package app runtime bridge enforces packageStorage grants and raw storage 
 	getStorageRunner.mockClear()
 
 	await expect(
-		bridge.storageGet({
-			storageId: 'package-1:facet:main',
-			key: 'facet',
-		}),
+		bridge.storageGet({ storageId: 'package-1:facet:main', key: 'facet' }),
 	).resolves.toEqual({ value: 'granted-value' })
 	await expect(
 		bridge.storageSet({
@@ -1658,24 +1118,17 @@ test('package app runtime bridge enforces packageStorage grants and raw storage 
 
 	const outsideNamespaceError =
 		/outside this app's namespace[\s\S]*packageStorage\(\)/
+	for (const storageId of [
+		'package-1',
+		buildPackageStorageId('victim-package'),
+		'other-package',
+	]) {
+		await expect(bridge.storageGet({ storageId, key: 'x' })).rejects.toThrow(
+			outsideNamespaceError,
+		)
+	}
 	await expect(
-		bridge.storageGet({ storageId: 'package-1', key: 'legacy-root' }),
-	).rejects.toThrow(outsideNamespaceError)
-	await expect(
-		bridge.storageGet({
-			storageId: buildPackageStorageId('victim-package'),
-			key: 'secret',
-		}),
-	).rejects.toThrow(outsideNamespaceError)
-	await expect(
-		bridge.storageSet({
-			storageId: 'job:nightly',
-			key: 'state',
-			value: true,
-		}),
-	).rejects.toThrow(outsideNamespaceError)
-	await expect(
-		bridge.storageGet({ storageId: 'other-package', key: 'x' }),
+		bridge.storageSet({ storageId: 'job:nightly', key: 'state', value: true }),
 	).rejects.toThrow(outsideNamespaceError)
 	await expect(
 		bridge.storageGet({ storageId: '   ', key: 'x' }),
@@ -1687,35 +1140,23 @@ test('buildPackageAppWorker passes packageStorage grant ids from root, static, a
 	resetPackageAppRuntimeMocks()
 	const { env } = createPackageAppTestEnv()
 	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
-		{
-			row: {
-				id: 'artifact-row-1',
-				artifactName: null,
-				entryPoint: 'app.js',
-			},
-			artifact: {
-				mainModule: 'dist/app.js',
-				modules: {
-					'dist/app.js':
-						'export default { fetch() { return new Response("cached") } }',
+		makeArtifact(undefined, {
+			dependencies: [
+				{
+					sourceId: 'dep-source',
+					publishedCommit: 'dep-commit',
+					kodyId: 'dep',
+					packageId: 'static-dep-package',
 				},
-				dependencies: [
-					{
-						sourceId: 'dep-source',
-						publishedCommit: 'dep-commit',
-						kodyId: 'dep',
-						packageId: 'static-dep-package',
-					},
-				],
-				dynamicDependencies: [
-					{
-						specifier: 'kody:@scope/dynamic/default',
-						packageName: '@scope/dynamic',
-						exportName: 'default',
-					},
-				],
-			},
-		},
+			],
+			dynamicDependencies: [
+				{
+					specifier: 'kody:@scope/dynamic/default',
+					packageName: '@scope/dynamic',
+					exportName: 'default',
+				},
+			],
+		}),
 	)
 	packageAppRuntimeMock.hydrateKodyRuntimeModules.mockImplementation(
 		async ({ modules }: { modules: Record<string, string> }) => ({
@@ -1724,31 +1165,9 @@ test('buildPackageAppWorker passes packageStorage grant ids from root, static, a
 		}),
 	)
 
-	await buildPackageAppWorker({
-		env,
-		baseUrl: 'https://example.com',
-		userId: 'user-grants',
-		savedPackage: {
-			id: 'root-package',
-			kodyId: 'example-grants',
-			name: '@kody/example-grants',
-			sourceId: 'source-1',
-			publishedCommit: 'commit-1',
-			manifestPath: 'package.json',
-			sourceRoot: '/',
-		},
-		source: createPackageAppTestSource(),
-		manifest: createPackageAppTestManifest(),
-		runtime: {
-			callerContext: {
-				user: {
-					userId: 'user-grants',
-					email: 'grants@example.com',
-					displayName: 'Grants User',
-				},
-			},
-		} as never,
-	})
+	await buildPackageAppWorker(
+		makeBuildInput(env, 'grants', { savedPackage: { id: 'root-package' } }),
+	)
 
 	expect(packageAppRuntimeMock.packageAppRuntimeBridge).toHaveBeenCalledWith({
 		props: expect.objectContaining({

@@ -1,31 +1,48 @@
 import { expect, test } from 'vitest'
 import { buildStaticPackageDependentsSummary } from './static-package-dependents.ts'
 
-test('buildStaticPackageDependentsSummary reports stale state, limits, and aggregation', () => {
-	const staleSummary = buildStaticPackageDependentsSummary({
+type Input = Parameters<typeof buildStaticPackageDependentsSummary>[0]
+type Row = Input['rows'][number]
+
+function makeRow(overrides: Partial<Row> = {}): Row {
+	const leaf = overrides.packageId ?? 'package-b'
+	const suffix = leaf.replace('package-', '')
+	return {
+		packageId: leaf,
+		packageKodyId: leaf,
+		packageName: `@kentcdodds/${leaf}`,
+		sourceId: `source-${suffix}`,
+		publishedCommit: `commit-${suffix}`,
+		artifactKind: 'module',
+		artifactName: '.',
+		entryPoint: 'src/index.ts',
+		packageStale: true,
+		matchingArtifactCount: 1,
+		matchingEntrypointCount: 1,
+		packageBundledDependencyCommit: 'commit-a-old',
+		bundledDependencyCommit: 'commit-a-old',
+		...overrides,
+	}
+}
+
+const nightlyJob = {
+	artifactKind: 'job',
+	artifactName: 'nightly',
+	entryPoint: 'src/nightly.ts',
+} as const
+
+function summarize(rows: Array<Row>, extra: Partial<Input> = {}) {
+	return buildStaticPackageDependentsSummary({
 		total: 1,
 		stale: 1,
 		currentDependencyCommit: 'commit-a-new',
-		rows: [
-			{
-				packageId: 'package-b',
-				packageKodyId: 'package-b',
-				packageName: '@kentcdodds/package-b',
-				sourceId: 'source-b',
-				publishedCommit: 'commit-b',
-				artifactKind: 'module',
-				artifactName: '.',
-				entryPoint: 'src/index.ts',
-				packageStale: true,
-				matchingArtifactCount: 1,
-				matchingEntrypointCount: 1,
-				packageBundledDependencyCommit: 'commit-a-old',
-				bundledDependencyCommit: 'commit-a-old',
-			},
-		],
+		rows,
+		...extra,
 	})
+}
 
-	expect(staleSummary).toMatchObject({
+test('buildStaticPackageDependentsSummary reports stale state, limits, and aggregation', () => {
+	expect(summarize([makeRow()])).toMatchObject({
 		total: 1,
 		stale: 1,
 		truncated: false,
@@ -46,73 +63,19 @@ test('buildStaticPackageDependentsSummary reports stale state, limits, and aggre
 		],
 	})
 
-	const emptySummary = buildStaticPackageDependentsSummary({
-		total: 0,
-		stale: 0,
-		currentDependencyCommit: 'commit-a',
-		rows: [],
-	})
-	expect(emptySummary).toMatchObject({
-		total: 0,
-		stale: 0,
-		truncated: false,
-		items: [],
-	})
+	expect(
+		summarize([], { total: 0, stale: 0, currentDependencyCommit: 'commit-a' }),
+	).toMatchObject({ total: 0, stale: 0, truncated: false, items: [] })
 
-	const boundedSummary = buildStaticPackageDependentsSummary({
-		total: 2,
-		stale: 2,
-		currentDependencyCommit: 'commit-a-new',
-		packageLimit: 1,
-		artifactsPerPackageLimit: 1,
-		rows: [
-			{
-				packageId: 'package-b',
-				packageKodyId: 'package-b',
-				packageName: '@kentcdodds/package-b',
-				sourceId: 'source-b',
-				publishedCommit: 'commit-b',
-				artifactKind: 'module',
-				artifactName: '.',
-				entryPoint: 'src/index.ts',
-				packageStale: true,
-				matchingArtifactCount: 2,
-				matchingEntrypointCount: 2,
-				packageBundledDependencyCommit: 'commit-a-old',
-				bundledDependencyCommit: 'commit-a-old',
-			},
-			{
-				packageId: 'package-b',
-				packageKodyId: 'package-b',
-				packageName: '@kentcdodds/package-b',
-				sourceId: 'source-b',
-				publishedCommit: 'commit-b',
-				artifactKind: 'job',
-				artifactName: 'nightly',
-				entryPoint: 'src/nightly.ts',
-				packageStale: true,
-				matchingArtifactCount: 2,
-				matchingEntrypointCount: 2,
-				packageBundledDependencyCommit: 'commit-a-old',
-				bundledDependencyCommit: 'commit-a-old',
-			},
-			{
-				packageId: 'package-c',
-				packageKodyId: 'package-c',
-				packageName: '@kentcdodds/package-c',
-				sourceId: 'source-c',
-				publishedCommit: 'commit-c',
-				artifactKind: 'module',
-				artifactName: '.',
-				entryPoint: 'src/index.ts',
-				packageStale: true,
-				matchingArtifactCount: 1,
-				matchingEntrypointCount: 1,
-				packageBundledDependencyCommit: 'commit-a-old',
-				bundledDependencyCommit: 'commit-a-old',
-			},
+	const twoArtifacts = { matchingArtifactCount: 2, matchingEntrypointCount: 2 }
+	const boundedSummary = summarize(
+		[
+			makeRow(twoArtifacts),
+			makeRow({ ...twoArtifacts, ...nightlyJob }),
+			makeRow({ packageId: 'package-c' }),
 		],
-	})
+		{ total: 2, stale: 2, packageLimit: 1, artifactsPerPackageLimit: 1 },
+	)
 	expect(boundedSummary.truncated).toBe(true)
 	expect(boundedSummary.items).toHaveLength(1)
 	expect(boundedSummary.items[0]).toEqual(
@@ -124,29 +87,20 @@ test('buildStaticPackageDependentsSummary reports stale state, limits, and aggre
 		}),
 	)
 
-	const hiddenStaleSummary = buildStaticPackageDependentsSummary({
-		total: 1,
-		stale: 1,
-		currentDependencyCommit: 'commit-a-new',
-		artifactsPerPackageLimit: 1,
-		rows: [
-			{
-				packageId: 'package-b',
-				packageKodyId: 'package-b',
-				packageName: '@kentcdodds/package-b',
-				sourceId: 'source-b',
-				publishedCommit: 'commit-b',
-				artifactKind: 'module',
-				artifactName: '.',
-				entryPoint: 'src/index.ts',
-				packageStale: true,
+	const currentBundle = {
+		packageBundledDependencyCommit: null,
+		bundledDependencyCommit: 'commit-a-new',
+	}
+	const hiddenStaleSummary = summarize(
+		[
+			makeRow({
+				...currentBundle,
 				matchingArtifactCount: 6,
 				matchingEntrypointCount: 6,
-				packageBundledDependencyCommit: null,
-				bundledDependencyCommit: 'commit-a-new',
-			},
+			}),
 		],
-	})
+		{ artifactsPerPackageLimit: 1 },
+	)
 	expect(hiddenStaleSummary.items[0]).toEqual(
 		expect.objectContaining({
 			stale: true,
@@ -156,83 +110,31 @@ test('buildStaticPackageDependentsSummary reports stale state, limits, and aggre
 		}),
 	)
 
-	const mixedCommitSummary = buildStaticPackageDependentsSummary({
-		total: 1,
-		stale: 1,
-		currentDependencyCommit: 'commit-a-new',
-		rows: [
-			{
-				packageId: 'package-b',
-				packageKodyId: 'package-b',
-				packageName: '@kentcdodds/package-b',
-				sourceId: 'source-b',
-				publishedCommit: 'commit-b',
-				artifactKind: 'module',
-				artifactName: '.',
-				entryPoint: 'src/index.ts',
-				packageStale: true,
-				matchingArtifactCount: 2,
-				matchingEntrypointCount: 2,
-				packageBundledDependencyCommit: null,
-				bundledDependencyCommit: 'commit-a-new',
-			},
-			{
-				packageId: 'package-b',
-				packageKodyId: 'package-b',
-				packageName: '@kentcdodds/package-b',
-				sourceId: 'source-b',
-				publishedCommit: 'commit-b',
-				artifactKind: 'job',
-				artifactName: 'nightly',
-				entryPoint: 'src/nightly.ts',
-				packageStale: true,
-				matchingArtifactCount: 2,
-				matchingEntrypointCount: 2,
-				packageBundledDependencyCommit: null,
-				bundledDependencyCommit: null,
-			},
-		],
-	})
+	const mixedCommitSummary = summarize([
+		makeRow({ ...currentBundle, ...twoArtifacts }),
+		makeRow({
+			...twoArtifacts,
+			...nightlyJob,
+			packageBundledDependencyCommit: null,
+			bundledDependencyCommit: null,
+		}),
+	])
 	expect(mixedCommitSummary.items[0]?.bundled_dependency_commit).toBeNull()
 
-	const entrypointSummary = buildStaticPackageDependentsSummary({
-		total: 1,
-		stale: 0,
-		currentDependencyCommit: 'commit-a-new',
-		artifactsPerPackageLimit: 1,
-		rows: [
-			{
-				packageId: 'package-b',
-				packageKodyId: 'package-b',
-				packageName: '@kentcdodds/package-b',
-				sourceId: 'source-b',
-				publishedCommit: 'commit-b',
-				artifactKind: 'module',
-				artifactName: '.',
-				entryPoint: 'src/index.ts',
-				packageStale: false,
-				matchingArtifactCount: 2,
-				matchingEntrypointCount: 1,
-				packageBundledDependencyCommit: 'commit-a-new',
-				bundledDependencyCommit: 'commit-a-new',
-			},
-			{
-				packageId: 'package-b',
-				packageKodyId: 'package-b',
-				packageName: '@kentcdodds/package-b',
-				sourceId: 'source-b',
-				publishedCommit: 'commit-b',
-				artifactKind: 'importable-module',
-				artifactName: '.',
-				entryPoint: 'src/index.ts',
-				packageStale: false,
-				matchingArtifactCount: 2,
-				matchingEntrypointCount: 1,
-				packageBundledDependencyCommit: 'commit-a-new',
-				bundledDependencyCommit: 'commit-a-new',
-			},
+	const freshRow = {
+		packageStale: false,
+		matchingArtifactCount: 2,
+		matchingEntrypointCount: 1,
+		packageBundledDependencyCommit: 'commit-a-new',
+		bundledDependencyCommit: 'commit-a-new',
+	}
+	const entrypointSummary = summarize(
+		[
+			makeRow(freshRow),
+			makeRow({ ...freshRow, artifactKind: 'importable-module' }),
 		],
-	})
+		{ stale: 0, artifactsPerPackageLimit: 1 },
+	)
 	expect(entrypointSummary.items[0]).toEqual(
 		expect.objectContaining({
 			artifact_count: 2,

@@ -226,6 +226,27 @@ const clientModuleName = 'client.0123456789abcdef.js'
 
 const clientAppKodyId = 'client-app'
 
+function withApp(manifestContent: string, app: Record<string, string>) {
+	const manifest = JSON.parse(manifestContent)
+	return JSON.stringify({ ...manifest, kody: { ...manifest.kody, app } })
+}
+
+function stubFreshSource(
+	source: unknown,
+	manifestContent: string,
+	files: Record<string, string>,
+) {
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		source,
+		manifest: JSON.parse(manifestContent),
+		files: {
+			'package.json': manifestContent,
+			'src/app.ts': 'export default { fetch() { return new Response("ok") } }',
+			...files,
+		},
+	})
+}
+
 function seedClientAndAssets() {
 	const fixture = seedFixture({
 		kodyId: clientAppKodyId,
@@ -235,7 +256,6 @@ function seedClientAndAssets() {
 			assets: './public',
 		},
 	})
-	mockModule.loadPublishedBundleArtifactByIdentity.mockReset()
 	mockModule.loadPublishedBundleArtifactByIdentity.mockImplementation(
 		async (input: { kind: string; entryPoint: string }) =>
 			input.kind === 'app-client' && input.entryPoint === 'src/client.ts'
@@ -248,20 +268,17 @@ function seedClientAndAssets() {
 					}
 				: null,
 	)
-	mockModule.loadPackageSourceBySourceId.mockReset()
-	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
-		source: fixture.source,
-		manifest: JSON.parse(fixture.manifestContent),
-		files: {
-			'package.json': fixture.manifestContent,
-			'src/app.ts': 'export default { fetch() { return new Response("ok") } }',
-			'src/client.ts': 'export const hello = "hi"',
-			'public/styles.css': 'body { color: red }',
-			'public/img/dot.png': '\u0089PNG\r\n\u001a\n',
-			'public/client.production.js': 'console.log("static, not the bundle")',
-		},
+	stubFreshSource(fixture.source, fixture.manifestContent, {
+		'src/client.ts': 'export const hello = "hi"',
+		'public/styles.css': 'body { color: red }',
+		'public/img/dot.png': '\u0089PNG\r\n\u001a\n',
+		'public/client.production.js': 'console.log("static, not the bundle")',
 	})
 	return fixture
+}
+
+function asset(path: string, init?: RequestInit, kodyId = clientAppKodyId) {
+	return serveHelloWorld({ kodyId, restPath: `/_assets/${path}`, init })
 }
 
 test('a warm package-app serve performs zero D1/KV loads before dispatch', async () => {
@@ -292,44 +309,30 @@ test('a warm package-app serve performs zero D1/KV loads before dispatch', async
 
 test('/_assets/ serves the fingerprinted client module with immutable caching and never builds the worker', async () => {
 	seedClientAndAssets()
-	mockModule.buildPackageAppWorker.mockClear()
 
-	const response = await serveHelloWorld({
-		kodyId: clientAppKodyId,
-		restPath: `/_assets/${clientModuleName}`,
-	})
+	const response = await asset(clientModuleName)
 	expect(response.status).toBe(200)
-	expect(response.headers.get('Content-Type')).toBe(
-		'text/javascript; charset=utf-8',
-	)
-	expect(response.headers.get('Cache-Control')).toBe(
-		'private, max-age=31536000, immutable',
-	)
-	expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff')
-	expect(response.headers.get('ETag')).toBe(`"${clientModuleName}"`)
+	expect(Object.fromEntries(response.headers)).toMatchObject({
+		'content-type': 'text/javascript; charset=utf-8',
+		'cache-control': 'private, max-age=31536000, immutable',
+		'x-content-type-options': 'nosniff',
+		etag: `"${clientModuleName}"`,
+	})
 	expect(await response.text()).toBe('export const hello = "hi"')
 	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
 
-	const revalidated = await serveHelloWorld({
-		kodyId: clientAppKodyId,
-		restPath: `/_assets/${clientModuleName}`,
-		init: { headers: { 'If-None-Match': `"${clientModuleName}"` } },
+	const revalidated = await asset(clientModuleName, {
+		headers: { 'If-None-Match': `"${clientModuleName}"` },
 	})
 	expect(revalidated.status).toBe(304)
 
-	const stale = await serveHelloWorld({
-		kodyId: clientAppKodyId,
-		restPath: '/_assets/client.ffffffffffffffff.js',
-	})
+	const stale = await asset('client.ffffffffffffffff.js')
 	expect(stale.status).toBe(404)
 	expect(stale.headers.get('Cache-Control')).toBe('no-store')
 
 	// A static file whose name merely resembles a client module is not
 	// shadowed by the fingerprinted-module fast path.
-	const lookalike = await serveHelloWorld({
-		kodyId: clientAppKodyId,
-		restPath: '/_assets/client.production.js',
-	})
+	const lookalike = await asset('client.production.js')
 	expect(lookalike.status).toBe(200)
 	expect(lookalike.headers.get('Content-Type')).toBe(
 		'text/javascript; charset=utf-8',
@@ -342,21 +345,14 @@ test('/_assets/ serves the fingerprinted client module with immutable caching an
 		'/@kentcdodds/packages/client-app/',
 	)
 	expect(response.headers.get('Service-Worker-Allowed')).toBeNull()
-	const css = await serveHelloWorld({
-		kodyId: clientAppKodyId,
-		restPath: '/_assets/styles.css',
-	})
+	const css = await asset('styles.css')
 	expect(css.headers.get('Service-Worker-Allowed')).toBeNull()
 })
 
 test('/_assets/__version.json exposes the current client module URL for service workers without caching', async () => {
 	const fixture = seedClientAndAssets()
-	mockModule.buildPackageAppWorker.mockClear()
 
-	const version = await serveHelloWorld({
-		kodyId: clientAppKodyId,
-		restPath: '/_assets/__version.json',
-	})
+	const version = await asset('__version.json')
 	expect(version.status).toBe(200)
 	expect(version.headers.get('Content-Type')).toBe(
 		'application/json; charset=utf-8',
@@ -375,9 +371,7 @@ test('/_assets/__version.json exposes the current client module URL for service 
 	// Worker-only apps still answer, with a null module URL, so kit code can
 	// probe one path regardless of manifest shape.
 	seedFixture()
-	const workerOnly = await serveHelloWorld({
-		restPath: '/_assets/__version.json',
-	})
+	const workerOnly = await asset('__version.json', undefined, 'perf-app')
 	expect(workerOnly.status).toBe(200)
 	expect(await workerOnly.json()).toMatchObject({
 		clientModuleUrl: null,
@@ -387,12 +381,8 @@ test('/_assets/__version.json exposes the current client module URL for service 
 
 test('/_assets/ serves files from the declared assets directory with inferred content types', async () => {
 	const fixture = seedClientAndAssets()
-	mockModule.buildPackageAppWorker.mockClear()
 
-	const css = await serveHelloWorld({
-		kodyId: clientAppKodyId,
-		restPath: '/_assets/styles.css',
-	})
+	const css = await asset('styles.css')
 	expect(css.status).toBe(200)
 	expect(css.headers.get('Content-Type')).toBe('text/css; charset=utf-8')
 	expect(css.headers.get('Cache-Control')).toBe('private, max-age=300')
@@ -401,58 +391,26 @@ test('/_assets/ serves files from the declared assets directory with inferred co
 	)
 	expect(await css.text()).toBe('body { color: red }')
 
-	const png = await serveHelloWorld({
-		kodyId: clientAppKodyId,
-		restPath: '/_assets/img/dot.png',
-	})
+	const png = await asset('img/dot.png')
 	expect(png.status).toBe(200)
 	expect(png.headers.get('Content-Type')).toBe('image/png')
 	expect([...new Uint8Array(await png.arrayBuffer())]).toEqual([
 		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
 	])
 
-	const head = await serveHelloWorld({
-		kodyId: clientAppKodyId,
-		restPath: '/_assets/styles.css',
-		init: { method: 'HEAD' },
-	})
+	const head = await asset('styles.css', { method: 'HEAD' })
 	expect(head.status).toBe(200)
 	expect(head.headers.get('Content-Length')).toBe('19')
 	expect(await head.text()).toBe('')
 
-	expect(
-		(
-			await serveHelloWorld({
-				kodyId: clientAppKodyId,
-				restPath: '/_assets/missing.txt',
-			})
-		).status,
-	).toBe(404)
-	expect(
-		(
-			await serveHelloWorld({
-				kodyId: clientAppKodyId,
-				restPath: '/_assets/../package.json',
-			})
-		).status,
-	).toBe(404)
-	expect(
-		(
-			await serveHelloWorld({
-				kodyId: clientAppKodyId,
-				restPath: '/_assets/%2e%2e/package.json',
-			})
-		).status,
-	).toBe(404)
-	expect(
-		(
-			await serveHelloWorld({
-				kodyId: clientAppKodyId,
-				restPath: '/_assets/styles.css',
-				init: { method: 'POST' },
-			})
-		).status,
-	).toBe(405)
+	for (const [path, init, status] of [
+		['missing.txt', undefined, 404],
+		['../package.json', undefined, 404],
+		['%2e%2e/package.json', undefined, 404],
+		['styles.css', { method: 'POST' }, 405],
+	] as const) {
+		expect((await asset(path, init)).status).toBe(status)
+	}
 	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
 })
 
@@ -465,41 +423,30 @@ test('/_assets/ repairs a missing published client artifact from fresh source an
 	// The cached manifest still says ./src/client.ts; the source files (and
 	// the D1 row) have moved on to a republish that renamed the entry.
 	const freshSource = { ...fixture.source, published_commit: 'commit-2' }
-	const freshManifestContent = JSON.stringify({
-		...JSON.parse(fixture.manifestContent),
-		kody: {
-			...JSON.parse(fixture.manifestContent).kody,
-			app: { entry: './src/app.ts', client: './src/browser.ts' },
-		},
-	})
 	mockModule.getEntitySourceById.mockImplementation(
 		async (_db: unknown, sourceId: string) =>
 			sourceId === fixture.source.id ? freshSource : null,
 	)
-	mockModule.loadPublishedBundleArtifactByIdentity.mockReset()
 	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(null)
-	mockModule.persistPublishedBundleArtifact.mockReset()
 	mockModule.persistPublishedBundleArtifact.mockResolvedValue('kv-key')
-	mockModule.createWorker.mockReset()
 	mockModule.createWorker.mockResolvedValue({
 		mainModule: 'bundle.js',
 		modules: { 'bundle.js': 'console.log("rebuilt");\n' },
 	})
-	mockModule.loadPackageSourceBySourceId.mockReset()
-	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
-		source: freshSource,
-		manifest: JSON.parse(freshManifestContent),
-		files: {
-			'package.json': freshManifestContent,
-			'src/app.ts': 'export default { fetch() { return new Response("ok") } }',
-			'src/browser.ts': 'console.log("rebuilt")',
-		},
-	})
+	stubFreshSource(
+		freshSource,
+		withApp(fixture.manifestContent, {
+			entry: './src/app.ts',
+			client: './src/browser.ts',
+		}),
+		{ 'src/browser.ts': 'console.log("rebuilt")' },
+	)
 
-	const probe = await serveHelloWorld({
-		kodyId: repairKodyId,
-		restPath: '/_assets/client.0000000000000000.js',
-	})
+	const probe = await asset(
+		'client.0000000000000000.js',
+		undefined,
+		repairKodyId,
+	)
 	// The requested hash is stale, but the repair still happens so the next
 	// page render can hand out the fresh URL.
 	expect(probe.status).toBe(404)
@@ -519,10 +466,7 @@ test('/_assets/ repairs a missing published client artifact from fresh source an
 	const persisted = mockModule.persistPublishedBundleArtifact.mock
 		.calls[0]?.[0] as { mainModule: string }
 
-	const served = await serveHelloWorld({
-		kodyId: repairKodyId,
-		restPath: `/_assets/${persisted.mainModule}`,
-	})
+	const served = await asset(persisted.mainModule, undefined, repairKodyId)
 	expect(served.status).toBe(200)
 	expect(await served.text()).toBe('console.log("rebuilt");\n')
 	// Warm: the artifact cache answers without another bundle or KV lookup.
@@ -538,31 +482,18 @@ test('/_assets/ treats a client entry removed by a republish as no client', asyn
 		kodyId: removedKodyId,
 		app: { entry: './src/app.ts', client: './src/client.ts' },
 	})
-	const freshManifestContent = JSON.stringify({
-		...JSON.parse(fixture.manifestContent),
-		kody: {
-			...JSON.parse(fixture.manifestContent).kody,
-			app: { entry: './src/app.ts' },
-		},
-	})
-	mockModule.loadPublishedBundleArtifactByIdentity.mockReset()
 	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(null)
-	mockModule.persistPublishedBundleArtifact.mockReset()
-	mockModule.createWorker.mockReset()
-	mockModule.loadPackageSourceBySourceId.mockReset()
-	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
-		source: fixture.source,
-		manifest: JSON.parse(freshManifestContent),
-		files: {
-			'package.json': freshManifestContent,
-			'src/app.ts': 'export default { fetch() { return new Response("ok") } }',
-		},
-	})
+	stubFreshSource(
+		fixture.source,
+		withApp(fixture.manifestContent, { entry: './src/app.ts' }),
+		{},
+	)
 
-	const response = await serveHelloWorld({
-		kodyId: removedKodyId,
-		restPath: '/_assets/client.0000000000000000.js',
-	})
+	const response = await asset(
+		'client.0000000000000000.js',
+		undefined,
+		removedKodyId,
+	)
 	expect(response.status).toBe(404)
 	expect(mockModule.createWorker).not.toHaveBeenCalled()
 	expect(mockModule.persistPublishedBundleArtifact).not.toHaveBeenCalled()
@@ -570,12 +501,8 @@ test('/_assets/ treats a client entry removed by a republish as no client', asyn
 
 test('/_assets/ is a 404 for apps without client or assets and author fetch still handles other paths', async () => {
 	seedFixture()
-	mockModule.loadPublishedBundleArtifactByIdentity.mockReset()
-	mockModule.loadPackageSourceBySourceId.mockReset()
-	mockModule.buildPackageAppWorker.mockClear()
 
-	const asset = await serveHelloWorld({ restPath: '/_assets/anything.js' })
-	expect(asset.status).toBe(404)
+	expect((await asset('anything.js', undefined, 'perf-app')).status).toBe(404)
 	expect(
 		mockModule.loadPublishedBundleArtifactByIdentity,
 	).not.toHaveBeenCalled()
@@ -630,16 +557,17 @@ test('synthetic host-setup failures return JSON with the underlying cause', asyn
 })
 
 test('an app past the monthly include with no credits gets a 429 pause page, not a reported failure', async () => {
-	consoleError.mockClear()
 	seedFixture({ kodyId: 'include-used-up-app' })
-	mockModule.buildPackageAppWorker.mockRejectedValueOnce(
+	const overage = (resource: string, limit: number) =>
 		new ComputeOverageLimitError({
-			resource: 'unique_worker_days',
+			resource,
 			plan: 'pro',
-			limit: 350,
-			current: 351,
+			limit,
+			current: limit + 1,
 			creditsStatus: 'add_credits',
-		}),
+		} as ConstructorParameters<typeof ComputeOverageLimitError>[0])
+	mockModule.buildPackageAppWorker.mockRejectedValueOnce(
+		overage('unique_worker_days', 350),
 	)
 
 	const html = await serveHelloWorld({ kodyId: 'include-used-up-app' })
@@ -650,13 +578,7 @@ test('an app past the monthly include with no credits gets a 429 pause page, not
 	expect(consoleError).not.toHaveBeenCalled()
 
 	mockModule.buildPackageAppWorker.mockRejectedValueOnce(
-		new ComputeOverageLimitError({
-			resource: 'durable_object_rows_read',
-			plan: 'pro',
-			limit: 5_000_000_000,
-			current: 5_000_000_001,
-			creditsStatus: 'add_credits',
-		}),
+		overage('durable_object_rows_read', 5_000_000_000),
 	)
 	const json = await serveHelloWorld({
 		kodyId: 'include-used-up-app',

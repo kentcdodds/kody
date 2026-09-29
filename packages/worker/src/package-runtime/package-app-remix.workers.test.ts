@@ -62,22 +62,45 @@ export default {
 `.trim()
 }
 
+const remixSourceFiles = () =>
+	createRemixPackageAppFiles({ username: 'kent', kodyId: 'remix-notes' })
+
+function buildApp(sourceFiles: Record<string, string>, entryPoint: string) {
+	silenceIncidentalRuntimeWarnings()
+	return buildKodyAppBundle({
+		env,
+		baseUrl: 'https://kody.dev',
+		userId: 'user-remix-workers-test',
+		sourceFiles,
+		entryPoint,
+	})
+}
+
+function loadWrappedApp(bundle: Awaited<ReturnType<typeof buildApp>>) {
+	const wrapperModule = 'test-entry.js'
+	// buildKodyAppBundle strips host runtime (and now leaves it external);
+	// refresh reinstalls the shared runtime the way package-app serve does.
+	const entrypoint = env.APP_LOADER.load({
+		...createDynamicWorkerCompatibilityOptions(),
+		mainModule: wrapperModule,
+		modules: {
+			...refreshKodyRuntimeModules(bundle.modules),
+			[wrapperModule]: createTestWrapperSource(bundle.mainModule),
+		},
+	}).getEntrypoint()
+	// Loader stubs follow redirects like fetch does; the host forwards the
+	// browser's request, whose redirect mode is manual.
+	return (path: string, init: RequestInit = {}) =>
+		entrypoint.fetch(
+			new Request(`${hostedOrigin}${path}`, { redirect: 'manual', ...init }),
+		)
+}
+
 test(
 	'a Remix package app bundles through esbuild-wasm and serves SSR routes, actions, and middleware in a dynamic worker',
 	{ timeout: 60_000 },
 	async () => {
-		silenceIncidentalRuntimeWarnings()
-		const sourceFiles = createRemixPackageAppFiles({
-			username: 'kent',
-			kodyId: 'remix-notes',
-		})
-		const bundle = await buildKodyAppBundle({
-			env,
-			baseUrl: 'https://kody.dev',
-			userId: 'user-remix-workers-test',
-			sourceFiles,
-			entryPoint: 'app/router.ts',
-		})
+		const bundle = await buildApp(remixSourceFiles(), 'app/router.ts')
 		const mainSource = bundle.modules[bundle.mainModule]
 		expect(typeof mainSource).toBe('string')
 		const code = mainSource as string
@@ -89,92 +112,61 @@ test(
 		// JSX compiled against remix/ui from the recipe's tsconfig.
 		expect(code).not.toContain('React.createElement')
 
-		const wrapperModule = 'test-entry.js'
-		// buildKodyAppBundle strips host runtime (and now leaves it external);
-		// refresh reinstalls the shared runtime the way package-app serve does.
-		const modules = refreshKodyRuntimeModules(bundle.modules)
-		const worker = env.APP_LOADER.load({
-			...createDynamicWorkerCompatibilityOptions(),
-			mainModule: wrapperModule,
-			modules: {
-				...modules,
-				[wrapperModule]: createTestWrapperSource(bundle.mainModule),
-			},
-		})
-		const entrypoint = worker.getEntrypoint()
+		const request = loadWrappedApp(bundle)
+		const postNote = (text: string) =>
+			request('/notes', {
+				method: 'POST',
+				body: new URLSearchParams({ text }),
+				headers: { 'content-type': 'application/x-www-form-urlencoded' },
+			})
 
 		// GET / : SSR page from the controller, Kody read from the request
 		// context, middleware header applied, hydration island serialized.
-		const home = await entrypoint.fetch(
-			new Request(`${hostedOrigin}/`, { method: 'GET', redirect: 'manual' }),
-		)
+		const home = await request('/')
 		const homeHtml = await home.text()
 		expect({ status: home.status, homeHtml }).toMatchObject({ status: 200 })
 		expect(home.headers.get('content-type')).toMatch(/^text\/html/)
 		expect(home.headers.get('x-request-id')).toMatch(/^[0-9a-f-]{36}$/)
-		expect(homeHtml).toContain('<!DOCTYPE html>')
-		expect(homeHtml).toContain(
+		for (const fragment of [
+			'<!DOCTYPE html>',
 			`<html lang="en" data-app-base="${appBasePath}">`,
-		)
-		expect(homeHtml).toContain('<h1 id="title">Remix notes</h1>')
-		expect(homeHtml).toContain(`<p id="mount">Mounted at ${appBasePath}</p>`)
-		expect(homeHtml).toContain(`href="${appBasePath}/_assets/styles.css"`)
-		// Prefixed route contract: links stay inside the mount, including the
-		// server-only layout that imports routes (and so kody:runtime).
-		expect(homeHtml).toContain(`<a href="${appBasePath}/notes">Add a note</a>`)
-		expect(homeHtml).toContain(
+			'<h1 id="title">Remix notes</h1>',
+			`<p id="mount">Mounted at ${appBasePath}</p>`,
+			`href="${appBasePath}/_assets/styles.css"`,
+			// Prefixed route contract: links stay inside the mount, including the
+			// server-only layout that imports routes (and so kody:runtime).
+			`<a href="${appBasePath}/notes">Add a note</a>`,
 			`<nav id="nav"><a href="${appBasePath}">Home</a><a href="${appBasePath}/notes">Notes</a></nav>`,
-		)
-		// SSR of the clientEntry island plus its hydration record pointing at
-		// the platform-served browser module rendered by the document.
-		expect(homeHtml).toContain('<!-- rmx:h:')
-		expect(homeHtml).toContain('id="counter"')
-		expect(homeHtml).toContain('Notes: 0')
-		expect(homeHtml).toContain(
+			// SSR of the clientEntry island plus its hydration record pointing at
+			// the platform-served browser module rendered by the document.
+			'<!-- rmx:h:',
+			'id="counter"',
+			'Notes: 0',
 			`<script type="module" src="${clientModuleUrl}">`,
-		)
+			'"moduleUrl":"kody:app"',
+			'"exportName":"Counter"',
+		]) {
+			expect(homeHtml).toContain(fragment)
+		}
 		expect(homeHtml).toMatch(/<script type="application\/json" id="rmx-data">/)
-		expect(homeHtml).toContain('"moduleUrl":"kody:app"')
-		expect(homeHtml).toContain('"exportName":"Counter"')
 
 		// POST action: form data parsed by the formData middleware, validated
 		// with data-schema, persisted through packageStorage(), then a
 		// mount-aware 303 redirect.
-		const created = await entrypoint.fetch(
-			new Request(`${hostedOrigin}/notes`, {
-				method: 'POST',
-				body: new URLSearchParams({ text: '  Ship Remix mini-apps  ' }),
-				headers: { 'content-type': 'application/x-www-form-urlencoded' },
-				// Loader stubs follow redirects like fetch does; the host forwards
-				// the browser's request, whose redirect mode is manual.
-				redirect: 'manual',
-			}),
-		)
+		const created = await postNote('  Ship Remix mini-apps  ')
 		expect({
 			status: created.status,
 			body: created.status === 303 ? null : await created.text(),
 		}).toEqual({ status: 303, body: null })
 		expect(created.headers.get('location')).toBe(`${appBasePath}/notes`)
 
-		const invalid = await entrypoint.fetch(
-			new Request(`${hostedOrigin}/notes`, {
-				method: 'POST',
-				body: new URLSearchParams({ text: '   ' }),
-				headers: { 'content-type': 'application/x-www-form-urlencoded' },
-				redirect: 'manual',
-			}),
-		)
+		const invalid = await postNote('   ')
 		expect(invalid.status).toBe(400)
 		expect(await invalid.text()).toContain(
 			'<p id="error">A note needs some text.</p>',
 		)
 
-		const notes = await entrypoint.fetch(
-			new Request(`${hostedOrigin}/notes`, {
-				method: 'GET',
-				redirect: 'manual',
-			}),
-		)
+		const notes = await request('/notes')
 		const notesHtml = await notes.text()
 		expect(notes.status).toBe(200)
 		expect(notesHtml).toContain('<li>Ship Remix mini-apps</li>')
@@ -183,30 +175,12 @@ test(
 		)
 
 		// The island's props reflect the stored notes on the next home render.
-		const homeAgain = await entrypoint.fetch(
-			new Request(`${hostedOrigin}/`, { method: 'GET', redirect: 'manual' }),
-		)
-		expect(await homeAgain.text()).toContain('Notes: 1')
+		expect(await (await request('/')).text()).toContain('Notes: 1')
 
 		// Verb routes, 404s, and 405s are the router's own behaviour.
-		const health = await entrypoint.fetch(
-			new Request(`${hostedOrigin}/healthz`, {
-				method: 'GET',
-				redirect: 'manual',
-			}),
-		)
-		expect(await health.json()).toEqual({ ok: true })
-		const missing = await entrypoint.fetch(
-			new Request(`${hostedOrigin}/nope`, {
-				method: 'GET',
-				redirect: 'manual',
-			}),
-		)
-		expect(missing.status).toBe(404)
-		const wrongMethod = await entrypoint.fetch(
-			new Request(`${hostedOrigin}/healthz`, { method: 'POST' }),
-		)
-		expect(wrongMethod.status).toBe(405)
+		expect(await (await request('/healthz')).json()).toEqual({ ok: true })
+		expect((await request('/nope')).status).toBe(404)
+		expect((await request('/healthz', { method: 'POST' })).status).toBe(405)
 	},
 )
 
@@ -214,23 +188,16 @@ test(
 	'the formData middleware key is the global FormData; importing FormData from remix/middleware/form-data fails publish',
 	{ timeout: 60_000 },
 	async () => {
-		silenceIncidentalRuntimeWarnings()
-		const sourceFiles = createRemixPackageAppFiles({
-			username: 'kent',
-			kodyId: 'remix-notes',
-		})
+		const sourceFiles = remixSourceFiles()
 		const notesController = sourceFiles['app/controllers/notes.tsx'] as string
 		await expect(
-			buildKodyAppBundle({
-				env,
-				baseUrl: 'https://kody.dev',
-				userId: 'user-remix-workers-test',
-				sourceFiles: {
+			buildApp(
+				{
 					...sourceFiles,
 					'app/controllers/notes.tsx': `import { FormData } from 'remix/middleware/form-data'\n${notesController}`,
 				},
-				entryPoint: 'app/router.ts',
-			}),
+				'app/router.ts',
+			),
 		).rejects.toThrow(/No matching export[\s\S]*"FormData"/)
 	},
 )
@@ -240,10 +207,7 @@ test(
 	{ timeout: 60_000 },
 	async () => {
 		silenceIncidentalRuntimeWarnings()
-		const sourceFiles = createRemixPackageAppFiles({
-			username: 'kent',
-			kodyId: 'remix-notes',
-		})
+		const sourceFiles = remixSourceFiles()
 		const bundle = await buildKodyAppClientBundle({
 			sourceFiles,
 			entryPoint: 'app/assets/entry.ts',
@@ -269,13 +233,11 @@ test(
 			buildKodyAppClientBundle({
 				sourceFiles: {
 					...sourceFiles,
-					'app/ui/counter.tsx': [
-						"import { clientEntry, type Handle } from 'remix/ui'",
-						"import { Layout } from './layout.tsx'",
-						'export const Counter = clientEntry(import.meta.url, function Counter(handle: Handle<{ label: string }>) {',
-						'\treturn () => <Layout>{handle.props.label}</Layout>',
-						'})',
-					].join('\n'),
+					'app/ui/counter.tsx': `import { clientEntry, type Handle } from 'remix/ui'
+import { Layout } from './layout.tsx'
+export const Counter = clientEntry(import.meta.url, function Counter(handle: Handle<{ label: string }>) {
+	return () => <Layout>{handle.props.label}</Layout>
+})`,
 				},
 				entryPoint: 'app/assets/entry.ts',
 			}),
@@ -289,12 +251,8 @@ test(
 	'a fetch handler that imports remix/html-template keeps the stripped path',
 	{ timeout: 60_000 },
 	async () => {
-		silenceIncidentalRuntimeWarnings()
-		const bundle = await buildKodyAppBundle({
-			env,
-			baseUrl: 'https://kody.dev',
-			userId: 'user-remix-workers-test',
-			sourceFiles: {
+		const bundle = await buildApp(
+			{
 				'package.json': JSON.stringify({
 					name: '@kent/fetch-with-remix',
 					exports: { '.': './src/index.ts' },
@@ -305,40 +263,21 @@ test(
 					},
 				}),
 				'src/index.ts': 'export default async () => ({ ok: true })',
-				'src/app.ts': [
-					"import { html } from 'remix/html-template'",
-					"import { createHtmlResponse } from 'remix/response/html'",
-					'export default {',
-					'\tasync fetch(request: Request) {',
-					'\t\tconst path = new URL(request.url).pathname',
-					'\t\treturn createHtmlResponse(html`<h1>${path}</h1>`)',
-					'\t},',
-					'}',
-				].join('\n'),
+				'src/app.ts': `import { html } from 'remix/html-template'
+import { createHtmlResponse } from 'remix/response/html'
+export default {
+	async fetch(request: Request) {
+		const path = new URL(request.url).pathname
+		return createHtmlResponse(html\`<h1>\${path}</h1>\`)
+	},
+}`,
 			},
-			entryPoint: 'src/app.ts',
-		})
+			'src/app.ts',
+		)
 		const mainSource = bundle.modules[bundle.mainModule]
 		expect(typeof mainSource).toBe('string')
 		expect(mainSource as string).not.toContain('kody:app')
-		const wrapperModule = 'test-entry.js'
-		// buildKodyAppBundle strips host runtime (and now leaves it external);
-		// refresh reinstalls the shared runtime the way package-app serve does.
-		const modules = refreshKodyRuntimeModules(bundle.modules)
-		const worker = env.APP_LOADER.load({
-			...createDynamicWorkerCompatibilityOptions(),
-			mainModule: wrapperModule,
-			modules: {
-				...modules,
-				[wrapperModule]: createTestWrapperSource(bundle.mainModule),
-			},
-		})
-		const response = await worker.getEntrypoint().fetch(
-			new Request(`${hostedOrigin}/hello`, {
-				method: 'GET',
-				redirect: 'manual',
-			}),
-		)
+		const response = await loadWrappedApp(bundle)('/hello')
 		expect(await response.text()).toContain('<h1>/hello</h1>')
 	},
 )
