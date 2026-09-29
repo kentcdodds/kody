@@ -152,25 +152,6 @@ function createAppEnv(db: D1Database, overrides: Record<string, unknown> = {}) {
 	} as unknown as Parameters<typeof createAccountResendVerificationHandler>[0]
 }
 
-async function createResendRequest(session: AuthSession) {
-	const cookie = await createAuthCookie(session, false)
-	return new Request('http://example.com/account/resend-verification.json', {
-		method: 'POST',
-		headers: { Cookie: cookie },
-	})
-}
-
-async function runHandler(
-	handler: ReturnType<typeof createAccountResendVerificationHandler>,
-	request: Request,
-) {
-	return handler.handler({
-		request,
-		url: new URL(request.url),
-		params: {},
-	} as never)
-}
-
 const session: AuthSession = {
 	stableUserId: testStableUserIdFromEmail('resend-user@example.com'),
 	email: 'resend-user@example.com',
@@ -181,41 +162,101 @@ beforeAll(() => {
 	setAuthSessionSecret(testCookieSecret)
 })
 
-test('resend verification requires an authenticated session', async () => {
-	const testDb = createResendTestDb()
-	const handler = createAccountResendVerificationHandler(
-		createAppEnv(testDb.db),
+function createResendClient(
+	dbOptions: Parameters<typeof createResendTestDb>[0] = {},
+	envOverrides: Record<string, unknown> = {},
+) {
+	const testDb = createResendTestDb(dbOptions)
+	const { handler } = createAccountResendVerificationHandler(
+		createAppEnv(testDb.db, envOverrides),
 	)
+	const send = async (signedIn = true) => {
+		const request = new Request(
+			'http://example.com/account/resend-verification.json',
+			{
+				method: 'POST',
+				headers: signedIn
+					? { Cookie: await createAuthCookie(session, false) }
+					: {},
+			},
+		)
+		return handler({ request, url: new URL(request.url), params: {} } as never)
+	}
+	return { state: testDb.state, send }
+}
 
-	const response = await runHandler(
-		handler,
-		new Request('http://example.com/account/resend-verification.json', {
-			method: 'POST',
-		}),
-	)
-	expect(response.status).toBe(401)
-	expect(testDb.state.verificationInserts).toBe(0)
+const resendAudit = (result: string, reason?: string) =>
+	expect.objectContaining({
+		category: 'auth',
+		action: 'email_verification_resend',
+		result,
+		...(reason ? { reason } : {}),
+	})
+
+test('resend verification refuses without minting a token', async () => {
+	const accountDeleting = expect.objectContaining({
+		ok: false,
+		code: 'account_deleting',
+	})
+	const cases = [
+		{ label: 'unauthenticated', signedIn: false, status: 401 },
+		{
+			label: 'known sender-domain block',
+			db: { deliveryStatus: 'bounced', deliveryClass: 'sender_block' },
+			status: 409,
+			body: expect.objectContaining({ ok: false, code: 'sender_block' }),
+			auditReason: 'sender_block',
+		},
+		{
+			label: 'already verified',
+			db: { emailVerifiedAt: new Date(0).toISOString() },
+			status: 400,
+			body: { ok: false, error: 'Your email is already verified.' },
+		},
+		{
+			label: 'fenced account',
+			db: { deletingAt: '2026-09-02 12:00:00' },
+			status: 409,
+			body: accountDeleting,
+		},
+		{
+			label: 'purge claim after the writable check',
+			db: { fenceAfterWritableCheck: true },
+			status: 409,
+			body: accountDeleting,
+		},
+	]
+	for (const { label, db, signedIn, status, body, auditReason } of cases) {
+		logAuditEventSpy.mockClear()
+		const { state, send } = createResendClient(db)
+		const response = await send(signedIn)
+		expect([
+			label,
+			response.status,
+			body === undefined ? undefined : await response.json(),
+			state.verificationInserts,
+		]).toEqual([label, status, body, 0])
+		if (auditReason) {
+			expect(logAuditEventSpy).toHaveBeenCalledWith(
+				resendAudit('failure', auditReason),
+			)
+		}
+	}
 })
 
 test('resend verification issues a fresh token for unverified accounts and rate-limits repeats', async () => {
-	const testDb = createResendTestDb({ emailVerifiedAt: null })
-	const handler = createAccountResendVerificationHandler(
-		createAppEnv(testDb.db),
-	)
+	const { state, send } = createResendClient({ emailVerifiedAt: null })
 
 	for (let attempt = 1; attempt <= 3; attempt++) {
-		const response = await runHandler(
-			handler,
-			await createResendRequest(session),
-		)
-		expect(response.status).toBe(200)
-		expect(await response.json()).toEqual({
-			ok: true,
-			message: 'Verification email sent. Check your inbox.',
-		})
+		const response = await send()
+		expect([attempt, response.status, await response.json()]).toEqual([
+			attempt,
+			200,
+			{ ok: true, message: 'Verification email sent. Check your inbox.' },
+		])
 	}
-	expect(testDb.state.verificationInserts).toBe(3)
-	expect(testDb.state.verificationDeletes).toBe(3)
+	expect(state.verificationInserts).toBe(3)
+	expect(state.verificationDeletes).toBe(3)
 	// No email sender is configured in this test env, so each resend logs
 	// the send as skipped at info level.
 	expect(consoleInfo).toHaveBeenCalledWith(
@@ -223,10 +264,7 @@ test('resend verification issues a fresh token for unverified accounts and rate-
 		expect.any(Number),
 	)
 
-	const rateLimitedResponse = await runHandler(
-		handler,
-		await createResendRequest(session),
-	)
+	const rateLimitedResponse = await send()
 	expect(rateLimitedResponse.status).toBe(429)
 	expect(rateLimitedResponse.headers.get('Retry-After')).toBeTruthy()
 	expect(await rateLimitedResponse.json()).toEqual({
@@ -234,81 +272,26 @@ test('resend verification issues a fresh token for unverified accounts and rate-
 		error: 'Too many verification emails requested. Please try again later.',
 	})
 	// No new token is created for rate-limited requests.
-	expect(testDb.state.verificationInserts).toBe(3)
+	expect(state.verificationInserts).toBe(3)
 	// Three successful resends plus the rate-limited attempt are audited.
 	expect(logAuditEventSpy).toHaveBeenCalledTimes(4)
-	expect(logAuditEventSpy).toHaveBeenNthCalledWith(
-		3,
-		expect.objectContaining({
-			category: 'auth',
-			action: 'email_verification_resend',
-			result: 'success',
-		}),
-	)
+	expect(logAuditEventSpy).toHaveBeenNthCalledWith(3, resendAudit('success'))
 	expect(logAuditEventSpy).toHaveBeenNthCalledWith(
 		4,
-		expect.objectContaining({
-			category: 'auth',
-			action: 'email_verification_resend',
-			result: 'rate_limited',
-		}),
+		resendAudit('rate_limited'),
 	)
-})
-
-test('resend verification refuses a known sender-domain block without sending again', async () => {
-	const testDb = createResendTestDb({
-		emailVerifiedAt: null,
-		deliveryStatus: 'bounced',
-		deliveryClass: 'sender_block',
-	})
-	const handler = createAccountResendVerificationHandler(
-		createAppEnv(testDb.db),
-	)
-
-	const response = await runHandler(handler, await createResendRequest(session))
-	expect(response.status).toBe(409)
-	expect(await response.json()).toMatchObject({
-		ok: false,
-		code: 'sender_block',
-	})
-	expect(testDb.state.verificationInserts).toBe(0)
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'auth',
-			action: 'email_verification_resend',
-			result: 'failure',
-			reason: 'sender_block',
-		}),
-	)
-})
-
-test('resend verification rejects already-verified accounts', async () => {
-	const testDb = createResendTestDb({
-		emailVerifiedAt: new Date(0).toISOString(),
-	})
-	const handler = createAccountResendVerificationHandler(
-		createAppEnv(testDb.db),
-	)
-
-	const response = await runHandler(handler, await createResendRequest(session))
-	expect(response.status).toBe(400)
-	expect(await response.json()).toEqual({
-		ok: false,
-		error: 'Your email is already verified.',
-	})
-	expect(testDb.state.verificationInserts).toBe(0)
 })
 
 test('resend verification surfaces send failures without pretending success', async () => {
 	consoleError.mockImplementation(() => {})
 	consoleWarn.mockImplementation(() => {})
-	const testDb = createResendTestDb({ emailVerifiedAt: null })
-	const handler = createAccountResendVerificationHandler(
-		createAppEnv(testDb.db, {
+	const { state, send } = createResendClient(
+		{ emailVerifiedAt: null },
+		{
 			CLOUDFLARE_ACCOUNT_ID: 'cf-account-test',
 			CLOUDFLARE_API_TOKEN: 'cf-token-test',
 			CLOUDFLARE_API_BASE_URL: 'https://cloudflare-api.example.com',
-		}),
+		},
 	)
 	vi.stubGlobal(
 		'fetch',
@@ -320,18 +303,18 @@ test('resend verification surfaces send failures without pretending success', as
 		),
 	)
 
-	const response = await runHandler(handler, await createResendRequest(session))
+	const response = await send()
 	expect(response.status).toBe(502)
 	expect(await response.json()).toEqual({
 		ok: false,
 		error: 'Unable to send the verification email. Please try again later.',
 	})
 	// The failed send refunds the consumed rate-limit slot.
-	expect(testDb.state.rateLimitAttempts).toBe(0)
+	expect(state.rateLimitAttempts).toBe(0)
 	// The freshly inserted token is discarded again on send failure, so no
 	// net-new token remains and prior tokens stay untouched.
-	expect(testDb.state.verificationInserts).toBe(1)
-	expect(testDb.state.verificationDeletes).toBe(1)
+	expect(state.verificationInserts).toBe(1)
+	expect(state.verificationDeletes).toBe(1)
 	expect(consoleError).toHaveBeenCalledWith(
 		expect.any(String),
 		expect.any(Error),
@@ -343,48 +326,7 @@ test('resend verification surfaces send failures without pretending success', as
 	)
 	expect(logAuditEventSpy).toHaveBeenCalledTimes(1)
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'auth',
-			action: 'email_verification_resend',
-			result: 'failure',
-			reason: 'send_failed',
-		}),
+		resendAudit('failure', 'send_failed'),
 	)
 	vi.unstubAllGlobals()
-})
-
-test('resend verification refuses a fenced account without minting a token', async () => {
-	const testDb = createResendTestDb({
-		emailVerifiedAt: null,
-		deletingAt: '2026-09-02 12:00:00',
-	})
-	const handler = createAccountResendVerificationHandler(
-		createAppEnv(testDb.db),
-	)
-
-	const response = await runHandler(handler, await createResendRequest(session))
-	expect(response.status).toBe(409)
-	expect(await response.json()).toMatchObject({
-		ok: false,
-		code: 'account_deleting',
-	})
-	expect(testDb.state.verificationInserts).toBe(0)
-})
-
-test('resend verification refuses a purge claim that lands after the writable check', async () => {
-	const testDb = createResendTestDb({
-		emailVerifiedAt: null,
-		fenceAfterWritableCheck: true,
-	})
-	const handler = createAccountResendVerificationHandler(
-		createAppEnv(testDb.db),
-	)
-
-	const response = await runHandler(handler, await createResendRequest(session))
-	expect(response.status).toBe(409)
-	expect(await response.json()).toMatchObject({
-		ok: false,
-		code: 'account_deleting',
-	})
-	expect(testDb.state.verificationInserts).toBe(0)
 })

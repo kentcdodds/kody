@@ -121,18 +121,32 @@ function createEnv(overrides: Record<string, unknown> = {}) {
 	} as unknown as Env
 }
 
-async function postCheckout(env: Env, body: unknown, method: string = 'POST') {
-	const handler = createAccountBillingCheckoutApiHandler(env)
-	return handler.handler({
-		request: new Request('https://example.com/account/billing/checkout.json', {
-			method,
-			headers: { 'Content-Type': 'application/json' },
-			body: method === 'POST' ? JSON.stringify(body) : undefined,
-		}),
-		params: {},
-		url: new URL('https://example.com/account/billing/checkout.json'),
-	} as never)
+function postJson(
+	createHandler: (env: Env) => { handler: (input: never) => Promise<Response> },
+	path: string,
+) {
+	return (env: Env, body: unknown) => {
+		const url = new URL(`https://example.com${path}`)
+		return createHandler(env).handler({
+			request: new Request(url, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body),
+			}),
+			params: {},
+			url,
+		} as never)
+	}
 }
+
+const postCheckout = postJson(
+	createAccountBillingCheckoutApiHandler,
+	'/account/billing/checkout.json',
+)
+const postCancellationFeedback = postJson(
+	createAccountBillingCancellationFeedbackApiHandler,
+	'/account/billing/cancellation-feedback.json',
+)
 
 test('billing checkout sells only Pro and selects monthly vs yearly Stripe price ids', async () => {
 	mockModule.createCheckoutSession.mockResolvedValue({
@@ -146,20 +160,19 @@ test('billing checkout sells only Pro and selects monthly vs yearly Stripe price
 	expect(mockModule.createCheckoutSession).not.toHaveBeenCalled()
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(authenticatedUser)
-	const missingPlan = await postCheckout(createEnv(), {})
-	expect(missingPlan.status).toBe(400)
-	expect(await missingPlan.json()).toMatchObject({ ok: false })
-
 	// Retired Standard is no longer sold.
-	const standard = await postCheckout(createEnv(), { plan: 'standard' })
-	expect(standard.status).toBe(400)
-
-	const invalidInterval = await postCheckout(createEnv(), {
-		plan: 'pro',
-		interval: 'week',
-	})
-	expect(invalidInterval.status).toBe(400)
-	expect(await invalidInterval.json()).toMatchObject({ ok: false })
+	for (const body of [
+		{},
+		{ plan: 'standard' },
+		{ plan: 'pro', interval: 'week' },
+	]) {
+		const response = await postCheckout(createEnv(), body)
+		expect([body, response.status, await response.json()]).toEqual([
+			body,
+			400,
+			expect.objectContaining({ ok: false }),
+		])
+	}
 
 	const env = createEnv()
 	const monthlyPro = await postCheckout(env, { plan: 'pro' })
@@ -205,16 +218,13 @@ function subscription(input: { id: string; status: string; priceId: string }) {
 
 test('billing checkout routes existing subscribers through the portal update flow', async () => {
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(authenticatedUser)
-	mockModule.createCheckoutSession.mockReset()
 	mockModule.createCheckoutSession.mockResolvedValue({
 		id: 'cs_test',
 		url: 'https://checkout.stripe.com/c/pay/cs_test',
 	})
-	mockModule.createBillingPortalSession.mockReset()
 	mockModule.createBillingPortalSession.mockResolvedValue({
 		url: 'https://billing.stripe.com/p/session/test',
 	})
-	mockModule.listSubscriptions.mockReset()
 
 	// Linked customer whose subscriptions are all canceled: plain Checkout.
 	mockModule.listSubscriptions.mockResolvedValueOnce([
@@ -291,11 +301,7 @@ test('billing checkout routes existing subscribers through the portal update flo
 
 	// Same price as the current subscription: nothing to change.
 	mockModule.listSubscriptions.mockResolvedValueOnce([
-		subscription({
-			id: 'sub_pro',
-			status: 'active',
-			priceId: 'price_pro',
-		}),
+		subscription({ id: 'sub_pro', status: 'active', priceId: 'price_pro' }),
 	])
 	const samePlan = await postCheckout(env, {
 		plan: 'pro',
@@ -371,24 +377,6 @@ test('billing checkout routes existing subscribers through the portal update flo
 	}
 })
 
-async function postCancellationFeedback(env: Env, body: unknown) {
-	const handler = createAccountBillingCancellationFeedbackApiHandler(env)
-	return handler.handler({
-		request: new Request(
-			'https://example.com/account/billing/cancellation-feedback.json',
-			{
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(body),
-			},
-		),
-		params: {},
-		url: new URL(
-			'https://example.com/account/billing/cancellation-feedback.json',
-		),
-	} as never)
-}
-
 test('billing cancellation feedback records platform feedback', async () => {
 	mockModule.submitPlatformFeedback.mockResolvedValue({ id: 'fb_1' })
 	mockModule.enqueuePlatformFeedbackDispatch.mockResolvedValue(undefined)
@@ -438,25 +426,21 @@ test('billing success renders a thank-you page instead of redirecting', async ()
 	)
 
 	const handler = createAccountBillingSuccessHandler(createEnv())
-	const missingSession = await handler.handler({
-		request: new Request('https://example.com/account/billing/success'),
-		params: {},
-		url: new URL('https://example.com/account/billing/success'),
-	} as never)
+	const getSuccess = (search: string) => {
+		const url = new URL(`https://example.com/account/billing/success${search}`)
+		return handler.handler({
+			request: new Request(url),
+			params: {},
+			url,
+		} as never)
+	}
+	const missingSession = await getSuccess('')
 	expect(missingSession.status).toBe(302)
 	expect(missingSession.headers.get('location')).toContain(
 		'/account/billing?error=missing_session',
 	)
 
-	const success = await handler.handler({
-		request: new Request(
-			'https://example.com/account/billing/success?session_id=cs_test',
-		),
-		params: {},
-		url: new URL(
-			'https://example.com/account/billing/success?session_id=cs_test',
-		),
-	} as never)
+	const success = await getSuccess('?session_id=cs_test')
 	expect(success.status).toBe(200)
 	expect(await success.json()).toEqual({
 		ok: true,

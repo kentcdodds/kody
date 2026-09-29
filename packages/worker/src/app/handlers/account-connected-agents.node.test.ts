@@ -47,18 +47,6 @@ function createAppEnv(
 	} as unknown as Env
 }
 
-type Handler = {
-	handler(context: never): Promise<Response>
-}
-
-async function runHandler(handler: Handler, request: Request) {
-	return handler.handler({
-		request,
-		url: new URL(request.url),
-		params: {},
-	} as never)
-}
-
 test('connected agents API lists unique inbound clients and revokes every grant for one clientId', async () => {
 	setAuthSessionSecret(testCookieSecret)
 	const grants = [
@@ -97,23 +85,34 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 			return { clientId, clientName: 'ChatGPT' }
 		}),
 	}
-	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		email: userOneSession.email,
-		emailVerified: true,
-		mcpUser: { userId: userOneSession.stableUserId },
-	})
+	const signIn = (emailVerified: boolean) =>
+		mockModule.readAuthenticatedAppUser.mockResolvedValue({
+			email: userOneSession.email,
+			emailVerified,
+			mcpUser: { userId: userOneSession.stableUserId },
+		})
+	signIn(true)
 	const cookie = await createAuthCookie(userOneSession, false)
 	const meter = createInMemoryUserMeterEnv()
-	const handler = createAccountConnectedAgentsApiHandler(
+	const { handler } = createAccountConnectedAgentsApiHandler(
 		createAppEnv(helpers, meter),
 	)
+	const url = 'https://example.com/account/connected-agents.json'
+	const request = (init: RequestInit = {}) => {
+		const req = new Request(url, {
+			...init,
+			headers: { Cookie: cookie, Accept: 'application/json', ...init.headers },
+		})
+		return handler({ request: req, url: new URL(url), params: {} } as never)
+	}
+	const revoke = (clientId: string) =>
+		request({
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ intent: 'revoke', clientId }),
+		})
 
-	const listed = await runHandler(
-		handler,
-		new Request('https://example.com/account/connected-agents.json', {
-			headers: { Cookie: cookie, Accept: 'application/json' },
-		}),
-	)
+	const listed = await request()
 	expect(listed.status).toBe(200)
 	const listBody = (await listed.json()) as {
 		ok: true
@@ -135,28 +134,15 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 	// request origin so preview and local deployments show their own URL.
 	expect(listBody.mcpServerUrl).toBe('https://example.com/mcp')
 
-	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		email: userOneSession.email,
-		emailVerified: false,
-		mcpUser: { userId: userOneSession.stableUserId },
-	})
-	const unverified = await runHandler(
-		handler,
-		new Request('https://example.com/account/connected-agents.json', {
-			headers: { Cookie: cookie, Accept: 'application/json' },
-		}),
-	)
+	signIn(false)
+	const unverified = await request()
 	expect(unverified.status).toBe(200)
 	// Same gate as the onboarding payload: no MCP URL until the email is
 	// verified, so the page cannot push a user into the authorize → 403 loop.
 	expect(
 		((await unverified.json()) as { mcpServerUrl: string }).mcpServerUrl,
 	).toBe('')
-	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		email: userOneSession.email,
-		emailVerified: true,
-		mcpUser: { userId: userOneSession.stableUserId },
-	})
+	signIn(true)
 
 	await recordInboundMcpConnectionLastUsed({
 		env: meter.env,
@@ -172,12 +158,7 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 		lastUsedAt: '2026-03-10T12:00:00.000Z',
 		nowMs: Date.parse('2026-03-10T12:00:00.000Z'),
 	})
-	const listedWithLastUsed = await runHandler(
-		handler,
-		new Request('https://example.com/account/connected-agents.json', {
-			headers: { Cookie: cookie, Accept: 'application/json' },
-		}),
-	)
+	const listedWithLastUsed = await request()
 	expect(listedWithLastUsed.status).toBe(200)
 	expect(
 		(
@@ -204,18 +185,7 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 		},
 	])
 
-	const revoked = await runHandler(
-		handler,
-		new Request('https://example.com/account/connected-agents.json', {
-			method: 'POST',
-			headers: {
-				Cookie: cookie,
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({ intent: 'revoke', clientId: 'client-a' }),
-		}),
-	)
+	const revoked = await revoke('client-a')
 	expect(revoked.status).toBe(200)
 	expect(helpers.revokeGrant).toHaveBeenCalledTimes(2)
 	const revokeBody = (await revoked.json()) as {
@@ -244,24 +214,14 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 		}),
 	)
 
-	const missing = await runHandler(
-		handler,
-		new Request('https://example.com/account/connected-agents.json', {
-			method: 'POST',
-			headers: {
-				Cookie: cookie,
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({ intent: 'revoke', clientId: 'missing' }),
-		}),
-	)
+	const missing = await revoke('missing')
 	expect(missing.status).toBe(404)
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	const unauthorized = await runHandler(
-		handler,
-		new Request('https://example.com/account/connected-agents.json'),
-	)
+	const unauthorized = await handler({
+		request: new Request(url),
+		url: new URL(url),
+		params: {},
+	} as never)
 	expect(unauthorized.status).toBe(401)
 })

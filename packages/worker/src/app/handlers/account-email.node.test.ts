@@ -4,7 +4,6 @@ import type * as EmailPlatformAddress from '#worker/email/platform-address.ts'
 import type * as EntitlementPlans from '#universal/plans.ts'
 import type * as EntitlementService from '#worker/entitlements/service.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
-import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 
 const messageRecord = {
 	id: 'msg-1',
@@ -265,35 +264,48 @@ function useFrozenUtcTime(iso: string) {
 	}
 }
 
-test('email API lists messages with pagination, usage, and selected detail', async () => {
-	mockModule.listOwnerEmailMessagesPage.mockClear()
-	mockModule.getOwnerEmailMessageById.mockClear()
-	mockModule.listOwnerEmailDeliveryEvents.mockClear()
+function createEmailClient(env: Env) {
+	const { handler } = createAccountEmailApiHandler(env)
+	return {
+		get: (search = '') =>
+			handler({
+				request: new Request(`https://example.com/account/email.json${search}`),
+			}),
+		post: (body: Record<string, unknown>, search = '') =>
+			handler({
+				request: new Request(
+					`https://example.com/account/email.json${search}`,
+					{
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify(body),
+					},
+				),
+			}),
+		put: () =>
+			handler({
+				request: new Request('https://example.com/account/email.json', {
+					method: 'PUT',
+				}),
+			}),
+	}
+}
+
+test('email API lists messages with pagination, UserMeter usage, and owner-scoped selected detail', async () => {
 	using _frozenTime = useFrozenUtcTime('2026-07-31T15:00:00.000Z')
 	const day = utcDayKey()
 	const userId = 'stable-user-1'
-	const bootstrapMeter = createInMemoryUserMeterEnv()
-	const env = createEnv({
-		meter: bootstrapMeter,
-	})
-	const meterStub = userMeterRpc({ env: bootstrapMeter.env, userId })
-	await meterStub.initialize({
-		resource: 'email_sends_per_day',
-		day,
-		count: 2,
-		updatedAt: new Date().toISOString(),
-	})
-	await meterStub.initialize({
+	const meter = createInMemoryUserMeterEnv()
+	await meter.seed({ userId, resource: 'email_sends_per_day', day, count: 13 })
+	await meter.seed({
+		userId,
 		resource: 'email_receives_per_day',
 		day,
-		count: 2,
-		updatedAt: new Date().toISOString(),
+		count: 15,
 	})
-	const handler = createAccountEmailApiHandler(env)
+	const { get, put } = createEmailClient(createEnv({ meter }))
 
-	const listResponse = await handler.handler({
-		request: new Request('https://example.com/account/email.json'),
-	})
+	const listResponse = await get()
 	expect(listResponse.status).toBe(200)
 	expect(listResponse.headers.get('Cache-Control')).toBe('no-store')
 	expect(mockModule.getOwnerEmailMessageById).not.toHaveBeenCalled()
@@ -329,8 +341,8 @@ test('email API lists messages with pagination, usage, and selected detail', asy
 			plan: 'free',
 			day,
 			stored_messages: { count: 2, limit: 100 },
-			sends_today: { count: 2, limit: 20 },
-			receives_today: { count: 2, limit: 50 },
+			sends_today: { count: 13, limit: 20 },
+			receives_today: { count: 15, limit: 50 },
 			max_message_bytes: 1_000_000,
 		}),
 		page: 1,
@@ -340,47 +352,18 @@ test('email API lists messages with pagination, usage, and selected detail', asy
 		classification: null,
 	})
 
-	mockModule.getOwnerEmailMessageById.mockClear()
-	const selectionMeter = createInMemoryUserMeterEnv()
-	const envWithSelection = createEnv({
-		meter: selectionMeter,
-	})
-	const selectionStub = userMeterRpc({
-		env: selectionMeter.env,
-		userId,
-	})
-	await selectionStub.initialize({
-		resource: 'email_sends_per_day',
-		day,
-		count: 2,
-		updatedAt: new Date().toISOString(),
-	})
-	await selectionStub.initialize({
-		resource: 'email_receives_per_day',
-		day,
-		count: 2,
-		updatedAt: new Date().toISOString(),
-	})
-	const selectedResponse = await createAccountEmailApiHandler(
-		envWithSelection,
-	).handler({
-		request: new Request(
-			'https://example.com/account/email.json?q=Hello&page=2&pageSize=10&selected=msg-1',
-		),
-	})
+	const selectedResponse = await get(
+		'?q=Hello&page=2&pageSize=10&selected=msg-1',
+	)
 	expect(selectedResponse.status).toBe(200)
-	expect(mockModule.getOwnerEmailMessageById).toHaveBeenCalledWith(
-		expect.objectContaining({
-			ownerId: 'stable-user-1',
-			messageId: 'msg-1',
-		}),
-	)
-	expect(mockModule.listOwnerEmailDeliveryEvents).toHaveBeenCalledWith(
-		expect.objectContaining({
-			ownerId: 'stable-user-1',
-			messageId: 'msg-1',
-		}),
-	)
+	for (const fn of [
+		mockModule.getOwnerEmailMessageById,
+		mockModule.listOwnerEmailDeliveryEvents,
+	]) {
+		expect(fn).toHaveBeenCalledWith(
+			expect.objectContaining({ ownerId: userId, messageId: 'msg-1' }),
+		)
+	}
 	await expect(selectedResponse.json()).resolves.toMatchObject({
 		ok: true,
 		page: 2,
@@ -394,70 +377,29 @@ test('email API lists messages with pagination, usage, and selected detail', asy
 			classification: 'accepted',
 			classification_reason: null,
 			attachments: [
-				expect.objectContaining({
-					id: 'att-1',
-					filename: 'note.txt',
-				}),
+				expect.objectContaining({ id: 'att-1', filename: 'note.txt' }),
 			],
 			delivery_events: [
-				expect.objectContaining({
-					id: 'evt-1',
-					event_type: 'received',
-				}),
+				expect.objectContaining({ id: 'evt-1', event_type: 'received' }),
 			],
 		}),
 	})
 
-	const putResponse = await handler.handler({
-		request: new Request('https://example.com/account/email.json', {
-			method: 'PUT',
-		}),
+	mockModule.getOwnerEmailMessageById.mockResolvedValueOnce(null as never)
+	const missingSelection = await get('?selected=missing-msg')
+	expect(missingSelection.status).toBe(200)
+	expect(mockModule.getOwnerEmailMessageById).toHaveBeenLastCalledWith(
+		expect.objectContaining({ ownerId: userId, messageId: 'missing-msg' }),
+	)
+	await expect(missingSelection.json()).resolves.toMatchObject({
+		ok: true,
+		selectedMessage: null,
 	})
-	expect(putResponse.status).toBe(405)
+
+	expect((await put()).status).toBe(405)
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValueOnce(null as never)
-	const unauthorizedResponse = await handler.handler({
-		request: new Request('https://example.com/account/email.json'),
-	})
-	expect(unauthorizedResponse.status).toBe(401)
-})
-
-test('email API usage reads initialized UserMeter daily counts', async () => {
-	using _frozenTime = useFrozenUtcTime('2026-07-31T15:00:00.000Z')
-	const day = utcDayKey()
-	const userId = 'stable-user-1'
-	const meter = createInMemoryUserMeterEnv()
-	await meter.seed({
-		userId,
-		resource: 'email_sends_per_day',
-		day,
-		count: 13,
-	})
-	await meter.seed({
-		userId,
-		resource: 'email_receives_per_day',
-		day,
-		count: 15,
-	})
-	const env = createEnv({
-		meter,
-	})
-	const response = await createAccountEmailApiHandler(env).handler({
-		request: new Request('https://example.com/account/email.json'),
-	})
-	expect(response.status).toBe(200)
-	const body = await response.json()
-	expect(body).toMatchObject({
-		ok: true,
-		usage: expect.objectContaining({
-			day,
-			stored_messages: { count: 2, limit: 100 },
-			sends_today: { count: 13, limit: 20 },
-			receives_today: { count: 15, limit: 50 },
-		}),
-	})
-	expect(body.usage.sends_today.count).toBe(13)
-	expect(body.usage.receives_today.count).not.toBe(5)
+	expect((await get()).status).toBe(401)
 })
 
 test('email API lists classification filters and classifies inbound messages', async () => {
@@ -468,136 +410,82 @@ test('email API lists classification filters and classifies inbound messages', a
 		classificationReason: 'DMARC failed.',
 	}
 	const meter = createInMemoryUserMeterEnv()
-	const env = createEnv({
-		meter,
-		messages: [quarantinedMessage],
-	})
+	const env = createEnv({ meter, messages: [quarantinedMessage] })
 	mockModule.getOwnerEmailMessageById.mockResolvedValueOnce(quarantinedMessage)
 
-	const handler = createAccountEmailApiHandler(env)
-	const listResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/email.json?classification=quarantined&selected=msg-quarantined',
-		),
-	})
+	const { get, post } = createEmailClient(env)
+	const listResponse = await get(
+		'?classification=quarantined&selected=msg-quarantined',
+	)
 	expect(listResponse.status).toBe(200)
+	const quarantinedFields = {
+		id: 'msg-quarantined',
+		classification: 'quarantined',
+		classification_reason: 'DMARC failed.',
+	}
 	await expect(listResponse.json()).resolves.toMatchObject({
 		ok: true,
 		classification: 'quarantined',
-		messages: [
-			expect.objectContaining({
-				id: 'msg-quarantined',
-				classification: 'quarantined',
-				classification_reason: 'DMARC failed.',
-			}),
-		],
-		selectedMessage: expect.objectContaining({
-			id: 'msg-quarantined',
-			classification: 'quarantined',
-			classification_reason: 'DMARC failed.',
-		}),
+		messages: [expect.objectContaining(quarantinedFields)],
+		selectedMessage: expect.objectContaining(quarantinedFields),
 	})
 
-	mockModule.setEmailMessageClassification.mockClear()
 	// Reload after classify uses the default message list again.
 	createEnv({ meter, messages: [messageRecord] })
 	mockModule.getOwnerEmailMessageById.mockResolvedValue(messageRecord)
-	const quarantineResponse = await handler.handler({
-		request: new Request('https://example.com/account/email.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'classify',
-				message_id: 'msg-1',
-				classification: 'quarantined',
-			}),
-		}),
-	})
-	expect(quarantineResponse.status).toBe(200)
-	expect(mockModule.setEmailMessageClassification).toHaveBeenCalledWith({
+	const classify = (classification: string, messageId = 'msg-1') =>
+		post({ action: 'classify', message_id: messageId, classification })
+	const classifyCall = (
+		classification: string,
+		classificationReason: string | null,
+	) => ({
 		env,
 		db: env.APP_DB,
 		userId: 'stable-user-1',
 		messageId: 'msg-1',
-		classification: 'quarantined',
-		classificationReason: 'Reclassified by user.',
+		classification,
+		classificationReason,
 	})
+
+	const quarantineResponse = await classify('quarantined')
+	expect(quarantineResponse.status).toBe(200)
+	expect(mockModule.setEmailMessageClassification).toHaveBeenLastCalledWith(
+		classifyCall('quarantined', 'Reclassified by user.'),
+	)
 	await expect(quarantineResponse.json()).resolves.toMatchObject({
 		ok: true,
 		selectedMessage: expect.objectContaining({ id: 'msg-1' }),
 	})
 
-	mockModule.setEmailMessageClassification.mockClear()
-	const acceptResponse = await handler.handler({
-		request: new Request('https://example.com/account/email.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'classify',
-				message_id: 'msg-1',
-				classification: 'accepted',
-			}),
-		}),
-	})
+	const acceptResponse = await classify('accepted')
 	expect(acceptResponse.status).toBe(200)
-	expect(mockModule.setEmailMessageClassification).toHaveBeenCalledWith({
-		env,
-		db: env.APP_DB,
-		userId: 'stable-user-1',
-		messageId: 'msg-1',
-		classification: 'accepted',
-		classificationReason: null,
-	})
+	expect(mockModule.setEmailMessageClassification).toHaveBeenLastCalledWith(
+		classifyCall('accepted', null),
+	)
 
 	mockModule.setEmailMessageClassification.mockResolvedValueOnce(false)
-	const missingResponse = await handler.handler({
-		request: new Request('https://example.com/account/email.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'classify',
-				message_id: 'missing',
-				classification: 'quarantined',
-			}),
-		}),
-	})
-	expect(missingResponse.status).toBe(404)
-
-	const invalidActionResponse = await handler.handler({
-		request: new Request('https://example.com/account/email.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ action: 'unknown' }),
-		}),
-	})
-	expect(invalidActionResponse.status).toBe(400)
+	expect((await classify('quarantined', 'missing')).status).toBe(404)
+	expect((await post({ action: 'unknown' })).status).toBe(400)
 })
 
 test('email API deletes an owned message and refreshes usage without a selection', async () => {
-	mockModule.deleteEmailMessage.mockClear()
-	mockModule.deleteEmailMessage.mockResolvedValueOnce(true)
 	const env = createEnv({ messages: [] })
-	const handler = createAccountEmailApiHandler(env)
-	const response = await handler.handler({
-		request: new Request(
-			'https://example.com/account/email.json?selected=msg-1',
-			{
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					action: 'delete',
-					message_id: 'msg-1',
-				}),
-			},
-		),
-	})
-	expect(response.status).toBe(200)
-	expect(mockModule.deleteEmailMessage).toHaveBeenCalledWith({
+	const { post } = createEmailClient(env)
+	const deleteCall = (messageId: string) => ({
 		env,
 		db: env.APP_DB,
 		userId: 'stable-user-1',
-		messageId: 'msg-1',
+		messageId,
 	})
+
+	const response = await post(
+		{ action: 'delete', message_id: 'msg-1' },
+		'?selected=msg-1',
+	)
+	expect(response.status).toBe(200)
+	expect(mockModule.deleteEmailMessage).toHaveBeenCalledWith(
+		deleteCall('msg-1'),
+	)
 	await expect(response.json()).resolves.toMatchObject({
 		ok: true,
 		messages: [],
@@ -611,52 +499,25 @@ test('email API deletes an owned message and refreshes usage without a selection
 	})
 
 	mockModule.deleteEmailMessage.mockResolvedValueOnce(false)
-	const missingResponse = await handler.handler({
-		request: new Request('https://example.com/account/email.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'delete',
-				message_id: 'foreign-or-missing',
-			}),
-		}),
+	const missingResponse = await post({
+		action: 'delete',
+		message_id: 'foreign-or-missing',
 	})
 	expect(missingResponse.status).toBe(404)
-	expect(mockModule.deleteEmailMessage).toHaveBeenLastCalledWith({
-		env,
-		db: env.APP_DB,
-		userId: 'stable-user-1',
-		messageId: 'foreign-or-missing',
-	})
+	expect(mockModule.deleteEmailMessage).toHaveBeenLastCalledWith(
+		deleteCall('foreign-or-missing'),
+	)
 })
 
 test('email API gates unverified accounts and skips mailbox queries', async () => {
+	const verifiedUser = await mockModule.readAuthenticatedAppUser()
 	mockModule.readAuthenticatedAppUser.mockResolvedValueOnce({
-		sessionUserId: '42',
-		userId: 42,
-		username: 'test-user',
-		email: 'user@example.com',
+		...verifiedUser,
 		emailVerified: false,
-		displayName: 'user',
-		roles: ['user'],
-		permissions: [],
-		artifactOwnerIds: [],
-		mcpUser: {
-			userId: 'stable-user-1',
-			email: 'user@example.com',
-			username: 'test-user',
-			displayName: 'user',
-		},
 	} as never)
 	mockModule.isAccountEmailVerified.mockResolvedValueOnce(false)
-	mockModule.listOwnerEmailMessagesPage.mockClear()
-	mockModule.listEmailInboxesForUser.mockClear()
-	mockModule.getUserPlan.mockClear()
 
-	const handler = createAccountEmailApiHandler(createEnv())
-	const response = await handler.handler({
-		request: new Request('https://example.com/account/email.json'),
-	})
+	const response = await createEmailClient(createEnv()).get()
 	expect(response.status).toBe(200)
 	expect(mockModule.listEmailInboxesForUser).not.toHaveBeenCalled()
 	expect(mockModule.getUserPlan).not.toHaveBeenCalled()
@@ -671,27 +532,5 @@ test('email API gates unverified accounts and skips mailbox queries', async () =
 		usage: null,
 		total: 0,
 		classification: null,
-	})
-})
-
-test('email API scopes message detail lookups to the signed-in userId', async () => {
-	mockModule.getOwnerEmailMessageById.mockResolvedValueOnce(null)
-	const env = createEnv()
-	const handler = createAccountEmailApiHandler(env)
-	const response = await handler.handler({
-		request: new Request(
-			'https://example.com/account/email.json?selected=missing-msg',
-		),
-	})
-	expect(response.status).toBe(200)
-	expect(mockModule.getOwnerEmailMessageById).toHaveBeenCalledWith(
-		expect.objectContaining({
-			ownerId: 'stable-user-1',
-			messageId: 'missing-msg',
-		}),
-	)
-	await expect(response.json()).resolves.toMatchObject({
-		ok: true,
-		selectedMessage: null,
 	})
 })

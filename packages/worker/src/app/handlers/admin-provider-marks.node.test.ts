@@ -57,7 +57,7 @@ function createActor(roles: Array<RoleName>) {
 	}
 }
 
-function createHarness() {
+function createMarksClient() {
 	const sqlite = new DatabaseSync(':memory:')
 	applyRepositoryMigrations(sqlite, migrationsDirectory)
 	const env = {
@@ -72,33 +72,50 @@ function createHarness() {
 		} as unknown as R2Bucket,
 		IMAGES: createFakeImagesBinding(),
 	} as Env
-	return { env }
-}
-
-function postRequest(body: Record<string, unknown>) {
-	return new Request('https://example.com/admin/provider-marks.json', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body),
-	})
-}
-
-test('admin provider marks API saves and lists operator marks', async () => {
-	const { env } = createHarness()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(createActor(['admin']))
-	const handler = createAdminProviderMarksApiHandler(env)
+	const url = new URL('https://example.com/admin/provider-marks.json')
+	const call = (
+		body?: Record<string, unknown>,
+		{ storage = true }: { storage?: boolean } = {},
+	) =>
+		createAdminProviderMarksApiHandler(
+			storage ? env : ({ ...env, COMMUNITY_ASSETS: undefined } as Env),
+		).handler({
+			request: body
+				? new Request(url, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify(body),
+					})
+				: new Request(url),
+			params: {},
+			url,
+		})
+	const listSlugs = async () => {
+		const response = await call()
+		expect(response.status).toBe(200)
+		const body = (await response.json()) as { marks: Array<{ slug: string }> }
+		return body.marks.map((mark) => mark.slug)
+	}
+	return { call, listSlugs }
+}
 
-	const saved = await handler.handler({
-		request: postRequest({
-			action: 'save',
-			slug: 'google',
-			label: 'Google',
-			aliases: ['accounts.google.com'],
-			logoBase64: bytesToBase64(tinyPngBytes),
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/provider-marks.json'),
-	})
+const saveGoogle = {
+	action: 'save',
+	slug: 'google',
+	label: 'Google',
+	aliases: ['accounts.google.com'],
+	logoBase64: bytesToBase64(tinyPngBytes),
+}
+
+test('admin provider marks API saves, lists, and deletes marks, refusing logo writes without storage', async () => {
+	const { call, listSlugs } = createMarksClient()
+
+	const noStorageSave = await call(saveGoogle, { storage: false })
+	expect(noStorageSave.status).toBe(503)
+	expect(await listSlugs()).toEqual([])
+
+	const saved = await call(saveGoogle)
 	expect(saved.status).toBe(200)
 	const savedBody = (await saved.json()) as {
 		ok: true
@@ -109,98 +126,12 @@ test('admin provider marks API saves and lists operator marks', async () => {
 		/^\/integrations\/provider-marks\/google/,
 	)
 
-	const listed = await handler.handler({
-		request: new Request('https://example.com/admin/provider-marks.json'),
-		params: {},
-		url: new URL('https://example.com/admin/provider-marks.json'),
-	})
-	expect(listed.status).toBe(200)
+	const deleteGoogle = { action: 'delete', slug: 'google' }
+	const noStorageDelete = await call(deleteGoogle, { storage: false })
+	expect(noStorageDelete.status).toBe(503)
+	expect(await listSlugs()).toEqual(['google'])
 
-	const deleted = await handler.handler({
-		request: postRequest({
-			action: 'delete',
-			slug: 'google',
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/provider-marks.json'),
-	})
+	const deleted = await call(deleteGoogle)
 	expect(deleted.status).toBe(200)
-	const deletedBody = (await deleted.json()) as {
-		ok: true
-		marks: Array<{ slug: string }>
-	}
-	expect(deletedBody.marks).toEqual([])
-})
-
-test('admin provider marks API rejects a logo write when storage is missing without creating the mark', async () => {
-	const { env } = createHarness()
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(createActor(['admin']))
-	const handler = createAdminProviderMarksApiHandler({
-		...env,
-		COMMUNITY_ASSETS: undefined,
-	} as Env)
-
-	const saved = await handler.handler({
-		request: postRequest({
-			action: 'save',
-			slug: 'google',
-			label: 'Google',
-			logoBase64: bytesToBase64(tinyPngBytes),
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/provider-marks.json'),
-	})
-	expect(saved.status).toBe(503)
-
-	const listed = await createAdminProviderMarksApiHandler(env).handler({
-		request: new Request('https://example.com/admin/provider-marks.json'),
-		params: {},
-		url: new URL('https://example.com/admin/provider-marks.json'),
-	})
-	const listedBody = (await listed.json()) as {
-		ok: true
-		marks: Array<{ slug: string }>
-	}
-	expect(listedBody.marks).toEqual([])
-})
-
-test('admin provider marks API rejects delete when logo storage is missing', async () => {
-	const { env } = createHarness()
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(createActor(['admin']))
-	const handler = createAdminProviderMarksApiHandler(env)
-	const saved = await handler.handler({
-		request: postRequest({
-			action: 'save',
-			slug: 'google',
-			label: 'Google',
-			logoBase64: bytesToBase64(tinyPngBytes),
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/provider-marks.json'),
-	})
-	expect(saved.status).toBe(200)
-
-	const deleted = await createAdminProviderMarksApiHandler({
-		...env,
-		COMMUNITY_ASSETS: undefined,
-	} as Env).handler({
-		request: postRequest({
-			action: 'delete',
-			slug: 'google',
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/provider-marks.json'),
-	})
-	expect(deleted.status).toBe(503)
-
-	const listed = await handler.handler({
-		request: new Request('https://example.com/admin/provider-marks.json'),
-		params: {},
-		url: new URL('https://example.com/admin/provider-marks.json'),
-	})
-	const listedBody = (await listed.json()) as {
-		ok: true
-		marks: Array<{ slug: string }>
-	}
-	expect(listedBody.marks.map((mark) => mark.slug)).toEqual(['google'])
+	await expect(deleted.json()).resolves.toMatchObject({ ok: true, marks: [] })
 })

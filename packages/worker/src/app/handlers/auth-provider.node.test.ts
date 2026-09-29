@@ -21,7 +21,6 @@ const {
 } = await import('#app/handlers/auth-provider.ts')
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
-import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import {
 	createPasswordHash,
 	verifyPassword,
@@ -58,6 +57,143 @@ afterEach(() => {
 afterAll(() => {
 	msw.close()
 })
+
+type Provider = 'github' | 'google' | 'x' | 'discord'
+
+async function completeProviderFlow(
+	env: Env,
+	provider: Provider,
+	options: {
+		startUrl?: string
+		cookie?: string
+		query?: string
+		mockMode?: boolean
+	} = {},
+) {
+	const start = await startProviderFlow(
+		env,
+		provider,
+		options.startUrl ?? `http://example.com/auth/${provider}`,
+	)
+	const url = options.mockMode
+		? start.location
+		: `http://example.com/auth/${provider}/callback?${options.query ?? `code=${provider}-auth-code`}&state=${start.state}`
+	const cookie = options.cookie
+		? `${start.stateCookie}; ${options.cookie}`
+		: start.stateCookie
+	const response = await runHandler(
+		createAuthProviderCallbackHandler(env),
+		new Request(url, { headers: { Cookie: cookie } }),
+		{ provider },
+	)
+	return { start, response }
+}
+
+async function sessionCookieFor(email: string) {
+	return getCookiePair(
+		await createAuthCookie(
+			{
+				stableUserId: await createStableUserIdFromEmail(email),
+				email,
+				rememberMe: false,
+			},
+			false,
+		),
+	)
+}
+
+function sessionCookieFrom(response: Response) {
+	const pair = response.headers
+		.getSetCookie()
+		.map(getCookiePair)
+		.find((cookie) => cookie.startsWith('kody_session='))
+	expect(pair).toBeTruthy()
+	return pair ?? ''
+}
+
+function setsCookie(response: Response, prefix: string, cleared = false) {
+	return response.headers
+		.getSetCookie()
+		.some(
+			(cookie) =>
+				cookie.startsWith(prefix) && (!cleared || cookie.includes('Max-Age=0')),
+		)
+}
+
+function countRows(sqlite: DatabaseSync, table: string, where = '') {
+	const row = sqlite
+		.prepare(`SELECT COUNT(*) AS count FROM ${table} ${where}`)
+		.get() as { count: number }
+	return row.count
+}
+
+function connectionsRequest(cookie: string, body?: Record<string, unknown>) {
+	return new Request('http://example.com/account/connections.json', {
+		method: body ? 'POST' : 'GET',
+		headers: {
+			Cookie: cookie,
+			Accept: 'application/json',
+			...(body ? { 'Content-Type': 'application/json' } : {}),
+		},
+		body: body ? JSON.stringify(body) : undefined,
+	})
+}
+
+function mockGithubProfileExchange(email = 'octo@example.com', id = 99001) {
+	msw.use(
+		http.post('https://github.com/login/oauth/access_token', async () =>
+			HttpResponse.json({ access_token: 'github-access-token' }),
+		),
+		http.get('https://api.github.com/user', () =>
+			HttpResponse.json({
+				id,
+				login: 'octo-cat',
+				name: 'Octo Cat',
+				email: null,
+			}),
+		),
+		http.get('https://api.github.com/user/emails', () =>
+			HttpResponse.json([{ email, primary: true, verified: true }]),
+		),
+	)
+}
+
+function mockGoogleUserinfo(profile: Record<string, unknown>) {
+	msw.use(
+		http.post('https://oauth2.googleapis.com/token', async ({ request }) => {
+			const body = new URLSearchParams(await request.text())
+			expect(body.get('code')).toBe('google-auth-code')
+			// Google uses PKCE; the callback replays the verifier from the
+			// signed state cookie.
+			expect(body.get('code_verifier')?.length).toBeGreaterThan(0)
+			return HttpResponse.json({ access_token: 'google-access-token' })
+		}),
+		http.get('https://openidconnect.googleapis.com/v1/userinfo', () =>
+			HttpResponse.json({ email_verified: true, ...profile }),
+		),
+	)
+}
+
+function seedSecondFactors(
+	sqlite: DatabaseSync,
+	userId: number,
+	label: string,
+) {
+	sqlite.exec(`
+		INSERT INTO verifications (
+			type, target, secret, algorithm, digits, period, char_set
+		) VALUES ('2fa', '${userId}', '${label.toUpperCase()}SECRET', 'SHA-1', 6, 30, '0123456789');
+		INSERT INTO passkeys (
+			id, aaguid, public_key, user_id, webauthn_user_handle, counter,
+			device_type, backed_up, transports, name
+		) VALUES (
+			'${label}-passkey', '00000000-0000-0000-0000-000000000000', 'cHVibGlj',
+			${userId}, 'd2ViYXV0aG4tdXNlcg', 0, 'multiDevice', 1, 'internal', '${label}'
+		);
+		INSERT INTO oauth_connections (provider_name, provider_id, user_id, provider_display_name)
+		VALUES ('github', '${label}-github', ${userId}, '${label}');
+	`)
+}
 
 test('providers api lists only configured providers', async () => {
 	const { db } = createMigratedDb()
@@ -130,48 +266,25 @@ test('github sign-in creates a verified account, then signs it back in', async (
 		),
 	)
 
-	const start = await startProviderFlow(
+	const { start, response: callbackResponse } = await completeProviderFlow(
 		env,
 		'github',
-		'http://example.com/auth/github?redirectTo=%2Fcommunity',
+		{ startUrl: 'http://example.com/auth/github?redirectTo=%2Fcommunity' },
 	)
 	expect(start.location).toContain('https://github.com/login/oauth/authorize')
 	expect(start.location).toContain('client_id=github-client-id-test')
 	expect(start.stateCookie).toContain('kody_oauth_login=')
 	expect(start.state.length).toBeGreaterThan(0)
-
-	const callbackHandler = createAuthProviderCallbackHandler(env)
-	const callbackResponse = await runHandler(
-		callbackHandler,
-		new Request(
-			`http://example.com/auth/github/callback?code=github-auth-code&state=${start.state}`,
-			{ headers: { Cookie: start.stateCookie } },
-		),
-		{ provider: 'github' },
-	)
 	expect(callbackResponse.status).toBe(302)
 	// An explicit redirectTo still wins over the new-account onboarding default,
 	// and accountCreated=1 is appended so Fathom can record account_created.
 	expect(callbackResponse.headers.get('Location')).toBe(
 		'/community?accountCreated=1',
 	)
-	const setCookies = callbackResponse.headers.getSetCookie()
-	expect(setCookies.some((cookie) => cookie.startsWith('kody_session='))).toBe(
-		true,
-	)
-	// The one-shot state cookie is cleared on the callback response.
-	expect(
-		setCookies.some(
-			(cookie) =>
-				cookie.startsWith('kody_oauth_login=') && cookie.includes('Max-Age=0'),
-		),
-	).toBe(true)
-	expect(
-		setCookies.some(
-			(cookie) =>
-				cookie.startsWith('kody_ref=') && cookie.includes('Max-Age=0'),
-		),
-	).toBe(true)
+	expect(setsCookie(callbackResponse, 'kody_session=')).toBe(true)
+	// The one-shot state and referral cookies are cleared on the callback.
+	expect(setsCookie(callbackResponse, 'kody_oauth_login=', true)).toBe(true)
+	expect(setsCookie(callbackResponse, 'kody_ref=', true)).toBe(true)
 
 	const user = sqlite
 		.prepare(`SELECT * FROM users WHERE email = ?`)
@@ -180,14 +293,13 @@ test('github sign-in creates a verified account, then signs it back in', async (
 	expect(user.username).toBe('octo-cat')
 	// Provider-verified email skips the verification-email flow.
 	expect(user.email_verified_at).toBeTruthy()
-	const roleCount = sqlite
-		.prepare(
-			`SELECT COUNT(*) AS count FROM user_roles
-			 JOIN roles ON roles.id = user_roles.role_id
-			 WHERE user_roles.user_id = ? AND roles.name = 'user'`,
-		)
-		.get(user.id as number) as { count: number }
-	expect(roleCount.count).toBe(1)
+	expect(
+		countRows(
+			sqlite,
+			'user_roles',
+			`JOIN roles ON roles.id = user_roles.role_id WHERE user_roles.user_id = ${user.id} AND roles.name = 'user'`,
+		),
+	).toBe(1)
 	const connection = sqlite
 		.prepare(
 			`SELECT * FROM oauth_connections WHERE provider_name = 'github' AND provider_id = '99001'`,
@@ -214,30 +326,11 @@ test('github sign-in creates a verified account, then signs it back in', async (
 	})
 
 	// A second sign-in with the same provider identity reuses the account.
-	const secondStart = await startProviderFlow(
-		env,
-		'github',
-		'http://example.com/auth/github',
-	)
-	const secondCallback = await runHandler(
-		callbackHandler,
-		new Request(
-			`http://example.com/auth/github/callback?code=github-auth-code&state=${secondStart.state}`,
-			{ headers: { Cookie: secondStart.stateCookie } },
-		),
-		{ provider: 'github' },
-	)
+	const { response: secondCallback } = await completeProviderFlow(env, 'github')
 	expect(secondCallback.status).toBe(302)
 	expect(secondCallback.headers.get('Location')).toBe('/account')
-	expect(
-		secondCallback.headers
-			.getSetCookie()
-			.some((cookie) => cookie.startsWith('kody_session=')),
-	).toBe(true)
-	const userCount = sqlite
-		.prepare(`SELECT COUNT(*) AS count FROM users`)
-		.get() as { count: number }
-	expect(userCount.count).toBe(1)
+	expect(setsCookie(secondCallback, 'kody_session=')).toBe(true)
+	expect(countRows(sqlite, 'users')).toBe(1)
 	// The first callback signs the user up and logs them in; the second
 	// callback is a pure login. Nothing else is audited.
 	expect(auditEventSummaries()).toEqual([
@@ -264,65 +357,24 @@ test('google sign-in links a matching verified email to the existing account', a
 		username: 'existing-user',
 		emailVerified: true,
 	})
-	sqlite.exec(`
-		INSERT INTO verifications (
-			type, target, secret, algorithm, digits, period, char_set
-		) VALUES ('2fa', '7', 'KEEPSECRET', 'SHA-1', 6, 30, '0123456789');
-		INSERT INTO passkeys (
-			id, aaguid, public_key, user_id, webauthn_user_handle, counter,
-			device_type, backed_up, transports, name
-		) VALUES (
-			'keep-passkey', '00000000-0000-0000-0000-000000000000', 'cHVibGlj',
-			7, 'd2ViYXV0aG4tdXNlcg', 0, 'multiDevice', 1, 'internal', 'laptop'
-		);
-		INSERT INTO oauth_connections (provider_name, provider_id, user_id, provider_display_name)
-		VALUES ('github', 'keep-github', 7, 'existing-user');
-	`)
+	seedSecondFactors(sqlite, 7, 'keep')
+	mockGoogleUserinfo({
+		sub: 'google-sub-123',
+		email: 'existing@example.com',
+		name: 'Existing User',
+	})
 
-	msw.use(
-		http.post('https://oauth2.googleapis.com/token', async ({ request }) => {
-			const body = new URLSearchParams(await request.text())
-			expect(body.get('code')).toBe('google-auth-code')
-			// Google uses PKCE; the callback replays the verifier from the
-			// signed state cookie.
-			expect(body.get('code_verifier')?.length).toBeGreaterThan(0)
-			return HttpResponse.json({ access_token: 'google-access-token' })
-		}),
-		http.get('https://openidconnect.googleapis.com/v1/userinfo', () =>
-			HttpResponse.json({
-				sub: 'google-sub-123',
-				email: 'existing@example.com',
-				email_verified: true,
-				name: 'Existing User',
-			}),
-		),
-	)
-
-	const start = await startProviderFlow(
+	const { start, response: callbackResponse } = await completeProviderFlow(
 		env,
 		'google',
-		'http://example.com/auth/google',
 	)
 	expect(start.location).toContain(
 		'https://accounts.google.com/o/oauth2/v2/auth',
 	)
 	expect(start.location).toContain('code_challenge_method=S256')
-
-	const callbackResponse = await runHandler(
-		createAuthProviderCallbackHandler(env),
-		new Request(
-			`http://example.com/auth/google/callback?code=google-auth-code&state=${start.state}`,
-			{ headers: { Cookie: start.stateCookie } },
-		),
-		{ provider: 'google' },
-	)
 	expect(callbackResponse.status).toBe(302)
 	expect(callbackResponse.headers.get('Location')).toBe('/verify')
-	expect(
-		callbackResponse.headers
-			.getSetCookie()
-			.some((cookie) => cookie.startsWith('kody_verify=')),
-	).toBe(true)
+	expect(setsCookie(callbackResponse, 'kody_verify=')).toBe(true)
 
 	const connection = sqlite
 		.prepare(
@@ -331,36 +383,21 @@ test('google sign-in links a matching verified email to the existing account', a
 		.get() as Record<string, unknown>
 	expect(connection.user_id).toBe(7)
 	// The provider verified the exact account email, so the account is
-	// treated as email-verified.
+	// treated as email-verified and keeps its password and second factors.
 	const user = sqlite
 		.prepare(`SELECT password_hash, email_verified_at FROM users WHERE id = 7`)
 		.get() as { password_hash: string; email_verified_at: string | null }
 	expect(user.email_verified_at).toBeTruthy()
 	expect(await verifyPassword('test-password', user.password_hash)).toBe(true)
-	expect(
-		sqlite
-			.prepare(`SELECT COUNT(*) AS count FROM verifications WHERE target = '7'`)
-			.get(),
-	).toEqual({ count: 1 })
-	expect(
-		sqlite
-			.prepare(`SELECT COUNT(*) AS count FROM passkeys WHERE user_id = 7`)
-			.get(),
-	).toEqual({ count: 1 })
-	expect(
-		sqlite
-			.prepare(
-				`SELECT COUNT(*) AS count FROM oauth_connections WHERE user_id = 7`,
-			)
-			.get(),
-	).toEqual({ count: 2 })
+	expect([
+		countRows(sqlite, 'verifications', `WHERE target = '7'`),
+		countRows(sqlite, 'passkeys', 'WHERE user_id = 7'),
+		countRows(sqlite, 'oauth_connections', 'WHERE user_id = 7'),
+		countRows(sqlite, 'users'),
+	]).toEqual([1, 1, 2, 1])
 	expect(auditEventSummaries()).not.toContain(
 		'social_link_reclaimed_unverified_account:success',
 	)
-	const userCount = sqlite
-		.prepare(`SELECT COUNT(*) AS count FROM users`)
-		.get() as { count: number }
-	expect(userCount.count).toBe(1)
 })
 
 test('google sign-in reclaims an unverified password account matching the provider email', async () => {
@@ -384,57 +421,24 @@ test('google sign-in reclaims an unverified password account matching the provid
 		username: 'squatter',
 		emailVerified: false,
 	})
+	seedSecondFactors(sqlite, 8, 'attacker')
 	sqlite.exec(`
-		INSERT INTO verifications (
-			type, target, secret, algorithm, digits, period, char_set
-		) VALUES ('2fa', '8', 'ATTACKERSECRET', 'SHA-1', 6, 30, '0123456789');
-		INSERT INTO passkeys (
-			id, aaguid, public_key, user_id, webauthn_user_handle, counter,
-			device_type, backed_up, transports, name
-		) VALUES (
-			'attacker-passkey', '00000000-0000-0000-0000-000000000000', 'cHVibGlj',
-			8, 'd2ViYXV0aG4tdXNlcg', 0, 'multiDevice', 1, 'internal', 'attacker'
-		);
-		INSERT INTO oauth_connections (provider_name, provider_id, user_id, provider_display_name)
-		VALUES ('github', 'attacker-github', 8, 'squatter');
 		INSERT INTO password_resets (user_id, token_hash, expires_at)
 		VALUES (8, 'pending-reset', ${Date.now() + 60_000});
 	`)
+	mockGoogleUserinfo({
+		sub: 'google-victim-sub',
+		email: 'squat@example.com',
+		name: 'Real Owner',
+	})
 
-	msw.use(
-		http.post('https://oauth2.googleapis.com/token', () =>
-			HttpResponse.json({ access_token: 'google-access-token' }),
-		),
-		http.get('https://openidconnect.googleapis.com/v1/userinfo', () =>
-			HttpResponse.json({
-				sub: 'google-victim-sub',
-				email: 'squat@example.com',
-				email_verified: true,
-				name: 'Real Owner',
-			}),
-		),
-	)
-
-	const start = await startProviderFlow(
+	const { response: callbackResponse } = await completeProviderFlow(
 		env,
 		'google',
-		'http://example.com/auth/google',
-	)
-	const callbackResponse = await runHandler(
-		createAuthProviderCallbackHandler(env),
-		new Request(
-			`http://example.com/auth/google/callback?code=google-auth-code&state=${start.state}`,
-			{ headers: { Cookie: start.stateCookie } },
-		),
-		{ provider: 'google' },
 	)
 	expect(callbackResponse.status).toBe(302)
 	expect(callbackResponse.headers.get('Location')).toBe('/account')
-	expect(
-		callbackResponse.headers
-			.getSetCookie()
-			.some((cookie) => cookie.startsWith('kody_session=')),
-	).toBe(true)
+	expect(setsCookie(callbackResponse, 'kody_session=')).toBe(true)
 
 	const user = sqlite
 		.prepare(`SELECT password_hash, email_verified_at FROM users WHERE id = 8`)
@@ -442,19 +446,11 @@ test('google sign-in reclaims an unverified password account matching the provid
 	expect(user.email_verified_at).toBeTruthy()
 	expect(user.password_hash).toBe(unusablePasswordHash.reclaimedUnverified)
 	expect(await verifyPassword('test-password', user.password_hash)).toBe(false)
-	expect(
-		sqlite
-			.prepare(`SELECT COUNT(*) AS count FROM verifications WHERE target = '8'`)
-			.get(),
-	).toEqual({ count: 0 })
-	expect(
-		sqlite
-			.prepare(`SELECT COUNT(*) AS count FROM passkeys WHERE user_id = 8`)
-			.get(),
-	).toEqual({ count: 0 })
-	expect(
-		sqlite.prepare(`SELECT COUNT(*) AS count FROM password_resets`).get(),
-	).toEqual({ count: 0 })
+	expect([
+		countRows(sqlite, 'verifications', `WHERE target = '8'`),
+		countRows(sqlite, 'passkeys', 'WHERE user_id = 8'),
+		countRows(sqlite, 'password_resets'),
+	]).toEqual([0, 0, 0])
 	const connections = sqlite
 		.prepare(
 			`SELECT provider_name, provider_id FROM oauth_connections WHERE user_id = 8`,
@@ -494,8 +490,6 @@ test('discord sign-in creates a verified account and assigns the guild role', as
 	const guildJoins: Array<{ authorization: string; accessToken: string }> = []
 	const guildMemberUrl =
 		'https://discord.com/api/v10/guilds/111111111111111111/members/333333333333333333'
-	const guildRoleUrl =
-		'https://discord.com/api/v10/guilds/111111111111111111/members/333333333333333333/roles/:roleId'
 
 	msw.use(
 		http.post('https://discord.com/api/oauth2/token', async ({ request }) => {
@@ -526,35 +520,22 @@ test('discord sign-in creates a verified account and assigns the guild role', as
 			})
 			return new HttpResponse(null, { status: 201 })
 		}),
-		http.put(guildRoleUrl, ({ request, params }) => {
-			expect(request.headers.get('Authorization')).toBe('Bot bot-token-test')
-			rolePuts.push(String(params.roleId))
-			return new HttpResponse(null, { status: 204 })
-		}),
-		http.delete(guildRoleUrl, ({ request, params }) => {
-			expect(request.headers.get('Authorization')).toBe('Bot bot-token-test')
-			roleDeletes.push(String(params.roleId))
-			return new HttpResponse(null, { status: 204 })
-		}),
+		...(['put', 'delete'] as const).map((method) =>
+			http[method](`${guildMemberUrl}/roles/:roleId`, ({ request, params }) => {
+				expect(request.headers.get('Authorization')).toBe('Bot bot-token-test')
+				;(method === 'put' ? rolePuts : roleDeletes).push(String(params.roleId))
+				return new HttpResponse(null, { status: 204 })
+			}),
+		),
 	)
 
-	const start = await startProviderFlow(
+	const { start, response: callbackResponse } = await completeProviderFlow(
 		env,
 		'discord',
-		'http://example.com/auth/discord',
 	)
 	expect(start.location).toContain('https://discord.com/oauth2/authorize')
 	expect(start.location).toContain('code_challenge_method=S256')
 	expect(start.location).toContain('scope=identify+email+guilds.join')
-
-	const callbackResponse = await runHandler(
-		createAuthProviderCallbackHandler(env),
-		new Request(
-			`http://example.com/auth/discord/callback?code=discord-auth-code&state=${start.state}`,
-			{ headers: { Cookie: start.stateCookie } },
-		),
-		{ provider: 'discord' },
-	)
 	expect(callbackResponse.status).toBe(302)
 	expect(callbackResponse.headers.get('Location')).toBe(
 		'/onboarding?accountCreated=1',
@@ -583,23 +564,11 @@ test('discord sign-in creates a verified account and assigns the guild role', as
 		'555555555555555555',
 	])
 
-	const sessionCookiePair = (callbackResponse.headers.getSetCookie() ?? [])
-		.map(getCookiePair)
-		.find((pair) => pair.startsWith('kody_session='))
-	expect(sessionCookiePair).toBeTruthy()
-
+	const sessionCookiePair = sessionCookieFrom(callbackResponse)
 	const connectionsHandler = createAccountConnectionsApiHandler(env)
 	const syncResponse = await runHandler(
 		connectionsHandler,
-		new Request('http://example.com/account/connections.json', {
-			method: 'POST',
-			headers: {
-				Cookie: sessionCookiePair ?? '',
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({ intent: 'sync-discord-role' }),
-		}),
+		connectionsRequest(sessionCookiePair, { intent: 'sync-discord-role' }),
 	)
 	const syncPayload = (await syncResponse.json()) as {
 		ok: boolean
@@ -618,14 +587,9 @@ test('discord sign-in creates a verified account and assigns the guild role', as
 		.run(passwordHash, user.id)
 	const disconnectResponse = await runHandler(
 		connectionsHandler,
-		new Request('http://example.com/account/connections.json', {
-			method: 'POST',
-			headers: {
-				Cookie: sessionCookiePair ?? '',
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({ intent: 'disconnect', provider: 'discord' }),
+		connectionsRequest(sessionCookiePair, {
+			intent: 'disconnect',
+			provider: 'discord',
 		}),
 	)
 	const disconnectPayload = (await disconnectResponse.json()) as {
@@ -642,44 +606,55 @@ test('discord sign-in creates a verified account and assigns the guild role', as
 	).toEqual(['222222222222222222'])
 })
 
-test('discord sign-in without a verified email fails with a helpful error', async () => {
-	const { sqlite, db } = createMigratedDb()
-	const env = createAppEnv(db)
-
-	msw.use(
-		http.post('https://discord.com/api/oauth2/token', () =>
-			HttpResponse.json({ access_token: 'discord-access-token' }),
-		),
-		http.get('https://discord.com/api/v10/users/@me', () =>
-			HttpResponse.json({
-				id: '444444444444444444',
-				username: 'unverified-discord',
-				email: 'unverified-discord@example.com',
-				verified: false,
-			}),
-		),
-	)
-
-	const start = await startProviderFlow(
-		env,
-		'discord',
-		'http://example.com/auth/discord',
-	)
-	const callbackResponse = await runHandler(
-		createAuthProviderCallbackHandler(env),
-		new Request(
-			`http://example.com/auth/discord/callback?code=discord-auth-code&state=${start.state}`,
-			{ headers: { Cookie: start.stateCookie } },
-		),
-		{ provider: 'discord' },
-	)
-	expect(callbackResponse.status).toBe(302)
-	expect(callbackResponse.headers.get('Location')).toBe(
-		'/login?oauthError=no-verified-email',
-	)
-	expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get()).toEqual({
-		count: 0,
-	})
+test('discord and x sign-ins without a verified email fail with a helpful error', async () => {
+	const cases: Array<[Provider, () => void]> = [
+		[
+			'discord',
+			() =>
+				msw.use(
+					http.post('https://discord.com/api/oauth2/token', () =>
+						HttpResponse.json({ access_token: 'discord-access-token' }),
+					),
+					http.get('https://discord.com/api/v10/users/@me', () =>
+						HttpResponse.json({
+							id: '444444444444444444',
+							username: 'unverified-discord',
+							email: 'unverified-discord@example.com',
+							verified: false,
+						}),
+					),
+				),
+		],
+		[
+			'x',
+			() =>
+				msw.use(
+					http.post('https://api.x.com/2/oauth2/token', ({ request }) => {
+						// X wants confidential-client credentials via HTTP Basic.
+						expect(request.headers.get('Authorization')).toBe(
+							`Basic ${btoa('x-client-id-test:x-client-secret-test')}`,
+						)
+						return HttpResponse.json({ access_token: 'x-access-token' })
+					}),
+					http.get('https://api.x.com/2/users/me', () =>
+						HttpResponse.json({
+							data: { id: 'x-user-9', name: 'X User', username: 'xuser' },
+						}),
+					),
+				),
+		],
+	]
+	for (const [provider, mockProvider] of cases) {
+		const { sqlite, db } = createMigratedDb()
+		mockProvider()
+		const { response } = await completeProviderFlow(createAppEnv(db), provider)
+		expect(response.status).toBe(302)
+		expect([provider, response.headers.get('Location')]).toEqual([
+			provider,
+			'/login?oauthError=no-verified-email',
+		])
+		expect(countRows(sqlite, 'users')).toBe(0)
+	}
 })
 
 test('signed-in discord connect returns to redirectTo instead of /account', async () => {
@@ -691,18 +666,7 @@ test('signed-in discord connect returns to redirectTo instead of /account', asyn
 		username: 'discord-page',
 		emailVerified: true,
 	})
-	const sessionCookiePair = getCookiePair(
-		await createAuthCookie(
-			{
-				stableUserId: await createStableUserIdFromEmail(
-					'discord-page@example.com',
-				),
-				email: 'discord-page@example.com',
-				rememberMe: false,
-			},
-			false,
-		),
-	)
+	const cookie = await sessionCookieFor('discord-page@example.com')
 
 	msw.use(
 		http.post('https://discord.com/api/oauth2/token', () =>
@@ -718,38 +682,21 @@ test('signed-in discord connect returns to redirectTo instead of /account', asyn
 			}),
 		),
 	)
+	const startUrl = 'http://example.com/auth/discord?redirectTo=%2Fdiscord'
 
-	const deniedStart = await startProviderFlow(
+	const { response: deniedResponse } = await completeProviderFlow(
 		env,
 		'discord',
-		'http://example.com/auth/discord?redirectTo=%2Fdiscord',
-	)
-	const deniedResponse = await runHandler(
-		createAuthProviderCallbackHandler(env),
-		new Request(
-			`http://example.com/auth/discord/callback?error=access_denied&state=${deniedStart.state}`,
-			{
-				headers: { Cookie: `${deniedStart.stateCookie}; ${sessionCookiePair}` },
-			},
-		),
-		{ provider: 'discord' },
+		{ startUrl, cookie, query: 'error=access_denied' },
 	)
 	expect(deniedResponse.headers.get('Location')).toBe(
 		'/discord?oauthError=denied',
 	)
 
-	const start = await startProviderFlow(
+	const { response: linkResponse } = await completeProviderFlow(
 		env,
 		'discord',
-		'http://example.com/auth/discord?redirectTo=%2Fdiscord',
-	)
-	const linkResponse = await runHandler(
-		createAuthProviderCallbackHandler(env),
-		new Request(
-			`http://example.com/auth/discord/callback?code=discord-auth-code&state=${start.state}`,
-			{ headers: { Cookie: `${start.stateCookie}; ${sessionCookiePair}` } },
-		),
-		{ provider: 'discord' },
+		{ startUrl, cookie },
 	)
 	expect(linkResponse.status).toBe(302)
 	expect(linkResponse.headers.get('Location')).toBe(
@@ -762,64 +709,14 @@ test('signed-in discord connect returns to redirectTo instead of /account', asyn
 		.get() as { user_id: number }
 	expect(connection.user_id).toBe(21)
 
-	const relinkStart = await startProviderFlow(
+	const { response: relinkResponse } = await completeProviderFlow(
 		env,
 		'discord',
-		'http://example.com/auth/discord?redirectTo=%2Fdiscord',
-	)
-	const relinkResponse = await runHandler(
-		createAuthProviderCallbackHandler(env),
-		new Request(
-			`http://example.com/auth/discord/callback?code=discord-auth-code&state=${relinkStart.state}`,
-			{
-				headers: {
-					Cookie: `${relinkStart.stateCookie}; ${sessionCookiePair}`,
-				},
-			},
-		),
-		{ provider: 'discord' },
+		{ startUrl, cookie },
 	)
 	expect(relinkResponse.headers.get('Location')).toBe(
 		'/discord?oauthLinked=discord',
 	)
-})
-
-test('x sign-in without a shared email fails with a helpful error', async () => {
-	const { sqlite, db } = createMigratedDb()
-	const env = createAppEnv(db)
-
-	msw.use(
-		http.post('https://api.x.com/2/oauth2/token', ({ request }) => {
-			// X wants confidential-client credentials via HTTP Basic.
-			expect(request.headers.get('Authorization')).toBe(
-				`Basic ${btoa('x-client-id-test:x-client-secret-test')}`,
-			)
-			return HttpResponse.json({ access_token: 'x-access-token' })
-		}),
-		http.get('https://api.x.com/2/users/me', () =>
-			HttpResponse.json({
-				data: { id: 'x-user-9', name: 'X User', username: 'xuser' },
-			}),
-		),
-	)
-
-	const start = await startProviderFlow(env, 'x', 'http://example.com/auth/x')
-	const callbackResponse = await runHandler(
-		createAuthProviderCallbackHandler(env),
-		new Request(
-			`http://example.com/auth/x/callback?code=x-auth-code&state=${start.state}`,
-			{ headers: { Cookie: start.stateCookie } },
-		),
-		{ provider: 'x' },
-	)
-	expect(callbackResponse.status).toBe(302)
-	expect(callbackResponse.headers.get('Location')).toBe(
-		'/login?oauthError=no-verified-email',
-	)
-	const userCount = sqlite
-		.prepare(`SELECT COUNT(*) AS count FROM users`)
-		.get() as { count: number }
-	expect(userCount.count).toBe(0)
 })
 
 test('callback rejects a state mismatch', async () => {
@@ -847,21 +744,30 @@ test('callback rejects a state mismatch', async () => {
 	)
 })
 
-test('JSON start mode returns the authorize URL for client-side navigation', async () => {
-	const { db } = createMigratedDb()
+test('JSON start mode returns the authorize URL and consumes the body for signed-out and signed-in requests', async () => {
+	const { sqlite, db } = createMigratedDb()
 	const env = createAppEnv(db)
+	const jsonStart = (provider: string, init: RequestInit = {}) => {
+		const request = new Request(
+			`http://example.com/auth/${provider}${provider === 'github' ? '?redirectTo=%2Fcommunity' : ''}`,
+			{
+				method: 'POST',
+				...init,
+				headers: { Accept: 'application/json', ...init.headers },
+			},
+		)
+		return {
+			request,
+			response: runHandler(createAuthProviderStartHandler(env), request, {
+				provider,
+			}),
+		}
+	}
 
 	// The first-party UI fetches the start endpoint (Accept: json) and
 	// navigates itself because the CSP blocks form-POST and fetch-followed
 	// redirects to the provider origin.
-	const response = await runHandler(
-		createAuthProviderStartHandler(env),
-		new Request('http://example.com/auth/github?redirectTo=%2Fcommunity', {
-			method: 'POST',
-			headers: { Accept: 'application/json' },
-		}),
-		{ provider: 'github' },
-	)
+	const response = await jsonStart('github').response
 	expect(response.status).toBe(200)
 	const payload = (await response.json()) as {
 		ok: boolean
@@ -873,42 +779,13 @@ test('JSON start mode returns the authorize URL for client-side navigation', asy
 	)
 	expect(response.headers.get('Set-Cookie')).toContain('kody_oauth_login=')
 
-	const unknownProviderResponse = await runHandler(
-		createAuthProviderStartHandler(env),
-		new Request('http://example.com/auth/nope', {
-			method: 'POST',
-			headers: { Accept: 'application/json' },
-		}),
-		{ provider: 'nope' },
-	)
+	const unknownProviderResponse = await jsonStart('nope').response
 	expect(unknownProviderResponse.status).toBe(400)
 	expect(await unknownProviderResponse.json()).toEqual({
 		ok: false,
 		code: 'unknown-provider',
 		error: 'That sign-in provider is not supported.',
 	})
-})
-
-test('JSON start consumes the request body for signed-out and signed-in requests', async () => {
-	const { sqlite, db } = createMigratedDb()
-	const env = createAppEnv(db)
-	const signedOutRequest = new Request('http://example.com/auth/github', {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-		},
-		body: JSON.stringify(emptyPublicFormProtection()),
-	})
-
-	expect(signedOutRequest.bodyUsed).toBe(false)
-	const signedOutResponse = await runHandler(
-		createAuthProviderStartHandler(env),
-		signedOutRequest,
-		{ provider: 'github' },
-	)
-	expect(signedOutResponse.status).toBe(200)
-	expect(signedOutRequest.bodyUsed).toBe(true)
 
 	// Connect Google / Discord from /account posts the same JSON body while
 	// already signed in. Skipping the read left workerd with an unread body
@@ -918,35 +795,22 @@ test('JSON start consumes the request body for signed-out and signed-in requests
 		email: 'connector@example.com',
 		username: 'connector',
 	})
-	const sessionCookiePair = getCookiePair(
-		await createAuthCookie(
-			{
-				stableUserId: await createStableUserIdFromEmail(
-					'connector@example.com',
-				),
-				email: 'connector@example.com',
-				rememberMe: false,
+	const signedInCookie = await sessionCookieFor('connector@example.com')
+	for (const [provider, cookie] of [
+		['github', null],
+		['google', signedInCookie],
+	] as const) {
+		const started = jsonStart(provider, {
+			headers: {
+				'Content-Type': 'application/json',
+				...(cookie ? { Cookie: cookie } : {}),
 			},
-			false,
-		),
-	)
-	const signedInRequest = new Request('http://example.com/auth/google', {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			Cookie: sessionCookiePair,
-		},
-		body: JSON.stringify(emptyPublicFormProtection()),
-	})
-	expect(signedInRequest.bodyUsed).toBe(false)
-	const signedInResponse = await runHandler(
-		createAuthProviderStartHandler(env),
-		signedInRequest,
-		{ provider: 'google' },
-	)
-	expect(signedInResponse.status).toBe(200)
-	expect(signedInRequest.bodyUsed).toBe(true)
+			body: JSON.stringify(emptyPublicFormProtection()),
+		})
+		expect(started.request.bodyUsed).toBe(false)
+		expect((await started.response).status).toBe(200)
+		expect(started.request.bodyUsed).toBe(true)
+	}
 })
 
 test('signed-in users link and disconnect providers from their account', async () => {
@@ -961,32 +825,14 @@ test('signed-in users link and disconnect providers from their account', async (
 		username: 'linker',
 		emailVerified: true,
 	})
-	const sessionCookiePair = getCookiePair(
-		await createAuthCookie(
-			{
-				stableUserId: await createStableUserIdFromEmail('linker@example.com'),
-				email: 'linker@example.com',
-				rememberMe: false,
-			},
-			false,
-		),
-	)
+	const cookie = await sessionCookieFor('linker@example.com')
 
 	// Linking: signed-in start + callback attaches the identity to the
 	// current account instead of creating or switching accounts.
-	const start = await startProviderFlow(
-		env,
-		'github',
-		'http://example.com/auth/github',
-	)
-	const callbackHandler = createAuthProviderCallbackHandler(env)
-	const linkResponse = await runHandler(
-		callbackHandler,
-		new Request(start.location, {
-			headers: { Cookie: `${start.stateCookie}; ${sessionCookiePair}` },
-		}),
-		{ provider: 'github' },
-	)
+	const { response: linkResponse } = await completeProviderFlow(env, 'github', {
+		cookie,
+		mockMode: true,
+	})
 	expect(linkResponse.status).toBe(302)
 	expect(linkResponse.headers.get('Location')).toBe(
 		'/account?oauthLinked=github',
@@ -999,17 +845,10 @@ test('signed-in users link and disconnect providers from their account', async (
 	expect(connection.user_id).toBe(11)
 
 	// Re-linking the same identity is a no-op success.
-	const secondStart = await startProviderFlow(
+	const { response: relinkResponse } = await completeProviderFlow(
 		env,
 		'github',
-		'http://example.com/auth/github',
-	)
-	const relinkResponse = await runHandler(
-		callbackHandler,
-		new Request(secondStart.location, {
-			headers: { Cookie: `${secondStart.stateCookie}; ${sessionCookiePair}` },
-		}),
-		{ provider: 'github' },
+		{ cookie, mockMode: true },
 	)
 	expect(relinkResponse.headers.get('Location')).toBe(
 		'/account?oauthLinked=github',
@@ -1023,29 +862,10 @@ test('signed-in users link and disconnect providers from their account', async (
 		username: 'other-user',
 		emailVerified: true,
 	})
-	const otherSessionCookiePair = getCookiePair(
-		await createAuthCookie(
-			{
-				stableUserId: await createStableUserIdFromEmail('other@example.com'),
-				email: 'other@example.com',
-				rememberMe: false,
-			},
-			false,
-		),
-	)
-	const conflictStart = await startProviderFlow(
+	const { response: conflictResponse } = await completeProviderFlow(
 		env,
 		'github',
-		'http://example.com/auth/github',
-	)
-	const conflictResponse = await runHandler(
-		callbackHandler,
-		new Request(conflictStart.location, {
-			headers: {
-				Cookie: `${conflictStart.stateCookie}; ${otherSessionCookiePair}`,
-			},
-		}),
-		{ provider: 'github' },
+		{ cookie: await sessionCookieFor('other@example.com'), mockMode: true },
 	)
 	expect(conflictResponse.headers.get('Location')).toBe(
 		'/account?oauthError=connection-conflict',
@@ -1056,9 +876,7 @@ test('signed-in users link and disconnect providers from their account', async (
 	const connectionsHandler = createAccountConnectionsApiHandler(env)
 	const listResponse = await runHandler(
 		connectionsHandler,
-		new Request('http://example.com/account/connections.json', {
-			headers: { Cookie: sessionCookiePair, Accept: 'application/json' },
-		}),
+		connectionsRequest(cookie),
 	)
 	const listPayload = (await listResponse.json()) as {
 		ok: boolean
@@ -1078,15 +896,7 @@ test('signed-in users link and disconnect providers from their account', async (
 
 	const disconnectResponse = await runHandler(
 		connectionsHandler,
-		new Request('http://example.com/account/connections.json', {
-			method: 'POST',
-			headers: {
-				Cookie: sessionCookiePair,
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({ intent: 'disconnect', provider: 'github' }),
-		}),
+		connectionsRequest(cookie, { intent: 'disconnect', provider: 'github' }),
 	)
 	const disconnectPayload = (await disconnectResponse.json()) as {
 		ok: boolean
@@ -1094,64 +904,10 @@ test('signed-in users link and disconnect providers from their account', async (
 	}
 	expect(disconnectPayload.ok).toBe(true)
 	expect(disconnectPayload.connections).toHaveLength(0)
-	expect(
-		sqlite.prepare(`SELECT COUNT(*) AS count FROM oauth_connections`).get(),
-	).toEqual({ count: 0 })
+	expect(countRows(sqlite, 'oauth_connections')).toBe(0)
 })
 
-test('disconnect is refused when the connection is the only sign-in method', async () => {
-	const { sqlite, db } = createMigratedDb()
-	const env = createAppEnv(db, {
-		GITHUB_CLIENT_ID: 'MOCK_GITHUB_CLIENT_ID',
-		GITHUB_CLIENT_SECRET: 'MOCK_GITHUB_CLIENT_SECRET',
-	})
-
-	// Create an account through mock social signup: it has no usable
-	// password, so its single connection must not be removable.
-	const start = await startProviderFlow(
-		env,
-		'github',
-		'http://example.com/auth/github',
-	)
-	const signupResponse = await runHandler(
-		createAuthProviderCallbackHandler(env),
-		new Request(start.location, { headers: { Cookie: start.stateCookie } }),
-		{ provider: 'github' },
-	)
-	const sessionCookiePair = (signupResponse.headers.getSetCookie() ?? [])
-		.map(getCookiePair)
-		.find((pair) => pair.startsWith('kody_session='))
-	expect(sessionCookiePair).toBeTruthy()
-
-	const connectionsHandler = createAccountConnectionsApiHandler(env)
-	const listResponse = await runHandler(
-		connectionsHandler,
-		new Request('http://example.com/account/connections.json', {
-			headers: { Cookie: sessionCookiePair ?? '', Accept: 'application/json' },
-		}),
-	)
-	const listPayload = (await listResponse.json()) as { canDisconnect: boolean }
-	expect(listPayload.canDisconnect).toBe(false)
-
-	const disconnectResponse = await runHandler(
-		connectionsHandler,
-		new Request('http://example.com/account/connections.json', {
-			method: 'POST',
-			headers: {
-				Cookie: sessionCookiePair ?? '',
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({ intent: 'disconnect', provider: 'github' }),
-		}),
-	)
-	expect(disconnectResponse.status).toBe(400)
-	expect(
-		sqlite.prepare(`SELECT COUNT(*) AS count FROM oauth_connections`).get(),
-	).toEqual({ count: 1 })
-})
-
-test('MOCK_ client ids run the whole flow in-worker without network access', async () => {
+test('MOCK_ client ids run the whole flow in-worker and refuse disconnecting the only sign-in method', async () => {
 	const { sqlite, db } = createMigratedDb()
 	// onUnhandledRequest: 'error' in the shared MSW server means any real
 	// provider call would fail this test.
@@ -1160,21 +916,15 @@ test('MOCK_ client ids run the whole flow in-worker without network access', asy
 		GITHUB_CLIENT_SECRET: 'MOCK_GITHUB_CLIENT_SECRET',
 	})
 
-	const start = await startProviderFlow(
+	const { start, response: callbackResponse } = await completeProviderFlow(
 		env,
 		'github',
-		'http://example.com/auth/github',
+		{ mockMode: true },
 	)
 	// Mock mode redirects straight back to the callback with a mock code.
 	const callbackUrl = new URL(start.location)
 	expect(callbackUrl.pathname).toBe('/auth/github/callback')
 	expect(callbackUrl.searchParams.get('state')).toBe(start.state)
-
-	const callbackResponse = await runHandler(
-		createAuthProviderCallbackHandler(env),
-		new Request(start.location, { headers: { Cookie: start.stateCookie } }),
-		{ provider: 'github' },
-	)
 	expect(callbackResponse.status).toBe(302)
 	// A brand-new social account lands on onboarding, the same place password
 	// signups reach after verification.
@@ -1186,107 +936,38 @@ test('MOCK_ client ids run the whole flow in-worker without network access', asy
 		.get('mock-github-user@example.com') as Record<string, unknown>
 	expect(user).toBeTruthy()
 	expect(user.username).toBe('mock-octo')
-})
 
-function mockGithubProfileExchange(email = 'octo@example.com') {
-	msw.use(
-		http.post('https://github.com/login/oauth/access_token', async () =>
-			HttpResponse.json({ access_token: 'github-access-token' }),
-		),
-		http.get('https://api.github.com/user', () =>
-			HttpResponse.json({
-				id: 99001,
-				login: 'octo-cat',
-				name: 'Octo Cat',
-				email: null,
-			}),
-		),
-		http.get('https://api.github.com/user/emails', () =>
-			HttpResponse.json([{ email, primary: true, verified: true }]),
-		),
+	// The social signup has no usable password, so its single connection
+	// must not be removable.
+	const cookie = sessionCookieFrom(callbackResponse)
+	const connectionsHandler = createAccountConnectionsApiHandler(env)
+	const listResponse = await runHandler(
+		connectionsHandler,
+		connectionsRequest(cookie),
 	)
-}
+	const listPayload = (await listResponse.json()) as { canDisconnect: boolean }
+	expect(listPayload.canDisconnect).toBe(false)
 
-test('OAuth signup is open and existing connections sign in', async () => {
-	const openSignup = createMigratedDb()
-	const openSignupEnv = createAppEnv(openSignup.db)
-	mockGithubProfileExchange()
-	const openStart = await startProviderFlow(
-		openSignupEnv,
-		'github',
-		'http://example.com/auth/github',
+	const disconnectResponse = await runHandler(
+		connectionsHandler,
+		connectionsRequest(cookie, { intent: 'disconnect', provider: 'github' }),
 	)
-	const openCallback = await runHandler(
-		createAuthProviderCallbackHandler(openSignupEnv),
-		new Request(
-			`http://example.com/auth/github/callback?code=github-auth-code&state=${openStart.state}`,
-			{ headers: { Cookie: openStart.stateCookie } },
-		),
-		{ provider: 'github' },
-	)
-	expect(openCallback.status).toBe(302)
-	expect(openCallback.headers.get('Location')).toBe(
-		'/onboarding?accountCreated=1',
-	)
-	expect(
-		openSignup.sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get(),
-	).toEqual({ count: 1 })
-
-	const existingLogin = createMigratedDb()
-	const existingEnv = createAppEnv(existingLogin.db)
-	await seedUser(existingLogin.sqlite, {
-		id: 11,
-		email: 'existing-oauth@example.com',
-		username: 'existing-oauth',
-	})
-	existingLogin.sqlite.exec(`
-		INSERT INTO oauth_connections (provider_name, provider_id, user_id, provider_display_name)
-		VALUES ('github', '99001', 11, 'existing-oauth');
-	`)
-	mockGithubProfileExchange('existing-oauth@example.com')
-	const existingStart = await startProviderFlow(
-		existingEnv,
-		'github',
-		'http://example.com/auth/github',
-	)
-	const existingCallback = await runHandler(
-		createAuthProviderCallbackHandler(existingEnv),
-		new Request(
-			`http://example.com/auth/github/callback?code=github-auth-code&state=${existingStart.state}`,
-			{ headers: { Cookie: existingStart.stateCookie } },
-		),
-		{ provider: 'github' },
-	)
-	expect(existingCallback.status).toBe(302)
-	expect(existingCallback.headers.get('Location')).toBe('/account')
-	expect(
-		existingCallback.headers
-			.getSetCookie()
-			.some((cookie) => cookie.startsWith('kody_session=')),
-	).toBe(true)
-	expect(
-		existingLogin.sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get(),
-	).toEqual({ count: 1 })
+	expect(disconnectResponse.status).toBe(400)
+	expect(countRows(sqlite, 'oauth_connections')).toBe(1)
 })
 
 test('OAuth signup persists first-touch UTMs from the start URL through login state', async () => {
-	lifecycleMocks.scheduleUserCreatedEvent.mockClear()
 	const { sqlite, db } = createMigratedDb()
 	const env = createAppEnv(db)
 	mockGithubProfileExchange('utm-oauth@example.com')
 
-	const start = await startProviderFlow(
+	const { response: callbackResponse } = await completeProviderFlow(
 		env,
 		'github',
-		'http://example.com/auth/github?utm_source=youtube&utm_medium=video&utm_campaign=bwk-2026-08-27&landing_path=%2Fsignup',
-	)
-	const callbackResponse = await runHandler(
-		createAuthProviderCallbackHandler(env),
-		new Request(
-			`http://example.com/auth/github/callback?code=github-auth-code&state=${start.state}`,
-			{ headers: { Cookie: start.stateCookie } },
-		),
-		{ provider: 'github' },
+		{
+			startUrl:
+				'http://example.com/auth/github?utm_source=youtube&utm_medium=video&utm_campaign=bwk-2026-08-27&landing_path=%2Fsignup',
+		},
 	)
 	expect(callbackResponse.status).toBe(302)
 	expect(callbackResponse.headers.get('Location')).toBe(
@@ -1325,29 +1006,17 @@ test('OAuth signup returns a controlled error when stable_user_id already exists
 		username: 'attacker-oauth',
 		stableUserId: await createStableUserIdFromEmail(victimEmail),
 	})
-	const env = createAppEnv(db)
 	mockGithubProfileExchange(victimEmail)
 
-	const start = await startProviderFlow(
-		env,
+	const { response: callback } = await completeProviderFlow(
+		createAppEnv(db),
 		'github',
-		'http://example.com/auth/github',
-	)
-	const callback = await runHandler(
-		createAuthProviderCallbackHandler(env),
-		new Request(
-			`http://example.com/auth/github/callback?code=github-auth-code&state=${start.state}`,
-			{ headers: { Cookie: start.stateCookie } },
-		),
-		{ provider: 'github' },
 	)
 	expect(callback.status).toBe(302)
 	expect(callback.headers.get('Location')).toBe(
 		'/login?oauthError=email-claimed',
 	)
-	expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get()).toEqual({
-		count: 1,
-	})
+	expect(countRows(sqlite, 'users')).toBe(1)
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'auth',
@@ -1370,38 +1039,11 @@ test('github signup skips a KV-reserved provider handle', async () => {
 			}),
 		}),
 	})
+	mockGithubProfileExchange('octo-reserved@example.com', 99002)
 
-	msw.use(
-		http.post('https://github.com/login/oauth/access_token', () =>
-			HttpResponse.json({ access_token: 'github-access-token' }),
-		),
-		http.get('https://api.github.com/user', () =>
-			HttpResponse.json({
-				id: 99002,
-				login: 'octo-cat',
-				name: 'Octo Cat',
-				email: null,
-			}),
-		),
-		http.get('https://api.github.com/user/emails', () =>
-			HttpResponse.json([
-				{ email: 'octo-reserved@example.com', primary: true, verified: true },
-			]),
-		),
-	)
-
-	const start = await startProviderFlow(
+	const { response: callbackResponse } = await completeProviderFlow(
 		env,
 		'github',
-		'http://example.com/auth/github',
-	)
-	const callbackResponse = await runHandler(
-		createAuthProviderCallbackHandler(env),
-		new Request(
-			`http://example.com/auth/github/callback?code=github-auth-code&state=${start.state}`,
-			{ headers: { Cookie: start.stateCookie } },
-		),
-		{ provider: 'github' },
 	)
 	expect(callbackResponse.status).toBe(302)
 	const user = sqlite

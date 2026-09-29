@@ -73,168 +73,38 @@ vi.mock('#app/ssr-render.tsx', () => ({
 	renderAppPage: vi.fn(),
 }))
 
-function createStaleSessionTestEnv() {
-	return {
-		COOKIE_SECRET: testCookieSecret,
-		APP_DB: {
-			prepare(query: string) {
-				const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-				return {
-					query,
-					bind() {
-						return {
-							query,
-							async all() {
-								if (
-									normalizedQuery.startsWith('select') &&
-									normalizedQuery.includes('from "users"')
-								) {
-									return { results: [], meta: { changes: 0 } }
-								}
-								if (normalizedQuery.includes('from user_roles ur')) {
-									return { results: [], meta: { changes: 0 } }
-								}
-								return { results: [], meta: { changes: 0 } }
-							},
-							async first() {
-								return null
-							},
-							async run() {
-								return { meta: { changes: 0 } }
-							},
-						}
-					},
-				}
-			},
-			async batch(statements: Array<{ query?: string }>) {
-				return await executePreparedD1Batch(statements)
-			},
-			async exec() {
-				return
-			},
-		} as unknown as D1Database,
-	} as Env
-}
+type Rows = Array<Record<string, unknown>>
 
-test('account handler redirects to login with a session-destroy cookie for stale sessions', async () => {
-	setAuthSessionSecret(testCookieSecret)
-	const session: AuthSession = {
-		stableUserId: 'f'.repeat(64),
-		email: 'missing@example.com',
-		rememberMe: false,
-	}
-	const cookie = await createAuthCookie(session, false)
-	const handler = createAccountHandler(createStaleSessionTestEnv())
-	const response = await handler.handler(
-		new RequestContext(
-			new Request('https://example.com/account', {
-				headers: { Cookie: cookie },
-			}),
-		),
-	)
-
-	expect(response.status).toBe(302)
-	expect(response.headers.get('Location')).toBe(
-		'https://example.com/login?redirectTo=%2Faccount',
-	)
-	const setCookie = response.headers.get('Set-Cookie') ?? ''
-	expect(setCookie).toContain('kody_session=')
-	expect(setCookie).toContain('Max-Age=0')
-})
-
-test('account handler redirects to login and clears the cookie for a deleting account', async () => {
-	setAuthSessionSecret(testCookieSecret)
-	const session: AuthSession = {
-		stableUserId: 'a'.repeat(64),
-		email: 'deleting@example.com',
-		rememberMe: false,
-	}
-	const cookie = await createAuthCookie(session, false)
-	const env = {
-		COOKIE_SECRET: testCookieSecret,
-		APP_DB: {
-			prepare(query: string) {
-				const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-				return {
-					query,
-					bind() {
-						return {
-							query,
-							async all() {
-								if (
-									normalizedQuery.startsWith('select') &&
-									normalizedQuery.includes('from "users"')
-								) {
-									return {
-										results: [
-											{
-												id: 7,
-												email: 'deleting@example.com',
-												username: 'deleting-user',
-												stable_user_id: 'a'.repeat(64),
-												deleting_at: '2026-08-31 15:00:00',
-											},
-										],
-										meta: { changes: 0 },
-									}
-								}
-								if (normalizedQuery.includes('from user_roles ur')) {
-									return { results: [], meta: { changes: 0 } }
-								}
-								return { results: [], meta: { changes: 0 } }
-							},
-							async first() {
-								return null
-							},
-							async run() {
-								return { meta: { changes: 0 } }
-							},
-						}
-					},
-				}
-			},
-			async batch(statements: Array<{ query?: string }>) {
-				return await executePreparedD1Batch(statements)
-			},
-			async exec() {
-				return
-			},
-		} as unknown as D1Database,
-	} as Env
-	const handler = createAccountHandler(env)
-	const response = await handler.handler(
-		new RequestContext(
-			new Request('https://example.com/account', {
-				headers: { Cookie: cookie },
-			}),
-		),
-	)
-
-	expect(response.status).toBe(302)
-	expect(response.headers.get('Location')).toBe(
-		'https://example.com/login?redirectTo=%2Faccount',
-	)
-	const setCookie = response.headers.get('Set-Cookie') ?? ''
-	expect(setCookie).toContain('kody_session=')
-	expect(setCookie).toContain('Max-Age=0')
-})
-
-test('authenticated account SSR batches user/role and flag reads into two round trips', async () => {
-	setAuthSessionSecret(testCookieSecret)
-	const email = 'account@example.com'
-	const stableUserId = testStableUserIdFromEmail(email)
-	const session: AuthSession = {
-		stableUserId,
-		email,
-		rememberMe: false,
-	}
-	const cookie = await createAuthCookie(session, false)
+function createAccountEnv(
+	rows: {
+		users?: Rows
+		roles?: Rows
+		flags?: Rows
+		overrides?: Rows
+	} = {},
+) {
 	const counts = { prepare: 0, batch: 0, batchSizes: [] as Array<number> }
-	const userRow = {
-		id: 7,
-		email,
-		username: 'account-user',
-		stable_user_id: stableUserId,
+	const resultsFor = (normalizedQuery: string) => {
+		if (
+			normalizedQuery.startsWith('select') &&
+			normalizedQuery.includes('from "users"')
+		) {
+			return rows.users
+		}
+		if (normalizedQuery.includes('from user_roles ur')) return rows.roles
+		if (
+			normalizedQuery.includes('from feature_flags') &&
+			!normalizedQuery.includes('where')
+		) {
+			return rows.flags
+		}
+		if (
+			normalizedQuery.includes('from feature_flag_user_overrides') &&
+			normalizedQuery.includes('where user_id = ?')
+		) {
+			return rows.overrides
+		}
+		return undefined
 	}
 	const env = {
 		COOKIE_SECRET: testCookieSecret,
@@ -245,66 +115,13 @@ test('authenticated account SSR batches user/role and flag reads into two round 
 				const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
 				const statement = {
 					query,
-					bind() {
-						return statement
-					},
-					async all() {
-						if (
-							normalizedQuery.startsWith('select') &&
-							normalizedQuery.includes('from "users"')
-						) {
-							return { results: [userRow], meta: { changes: 0 } }
-						}
-						if (normalizedQuery.includes('from user_roles ur')) {
-							return {
-								results: [
-									{
-										role_name: 'user',
-										action: 'read',
-										entity: 'user',
-										access: 'own',
-									},
-								],
-								meta: { changes: 0 },
-							}
-						}
-						if (
-							normalizedQuery.includes('from feature_flags') &&
-							!normalizedQuery.includes('where')
-						) {
-							return {
-								results: [
-									{
-										key: 'demo-indicator',
-										enabled: 1,
-										rollout_percent: null,
-									},
-								],
-								meta: { changes: 0 },
-							}
-						}
-						if (
-							normalizedQuery.includes('from feature_flag_user_overrides') &&
-							normalizedQuery.includes('where user_id = ?')
-						) {
-							return {
-								results: [
-									{
-										flag_key: 'compact-mcp-server-instructions',
-										enabled: 1,
-									},
-								],
-								meta: { changes: 0 },
-							}
-						}
-						return { results: [], meta: { changes: 0 } }
-					},
-					async first() {
-						return null
-					},
-					async run() {
-						return { meta: { changes: 0 } }
-					},
+					bind: () => statement,
+					all: async () => ({
+						results: resultsFor(normalizedQuery) ?? [],
+						meta: { changes: 0 },
+					}),
+					first: async () => null,
+					run: async () => ({ meta: { changes: 0 } }),
 				}
 				return statement
 			},
@@ -318,6 +135,81 @@ test('authenticated account SSR batches user/role and flag reads into two round 
 			},
 		} as unknown as D1Database,
 	} as Env
+	return { env, counts }
+}
+
+async function getAccount(env: Env, session: AuthSession) {
+	setAuthSessionSecret(testCookieSecret)
+	const cookie = await createAuthCookie(session, false)
+	return createAccountHandler(env).handler(
+		new RequestContext(
+			new Request('https://example.com/account', {
+				headers: { Cookie: cookie },
+			}),
+		),
+	)
+}
+
+test('account handler redirects to login with a session-destroy cookie for stale or deleting accounts', async () => {
+	const deletingUserId = 'a'.repeat(64)
+	const cases = [
+		{
+			label: 'stale session',
+			stableUserId: 'f'.repeat(64),
+			email: 'missing@example.com',
+			users: [],
+		},
+		{
+			label: 'deleting account',
+			stableUserId: deletingUserId,
+			email: 'deleting@example.com',
+			users: [
+				{
+					id: 7,
+					email: 'deleting@example.com',
+					username: 'deleting-user',
+					stable_user_id: deletingUserId,
+					deleting_at: '2026-08-31 15:00:00',
+				},
+			],
+		},
+	]
+	for (const { label, stableUserId, email, users } of cases) {
+		const { env } = createAccountEnv({ users })
+		const response = await getAccount(env, {
+			stableUserId,
+			email,
+			rememberMe: false,
+		})
+		const setCookie = response.headers.get('Set-Cookie') ?? ''
+		expect({
+			label,
+			status: response.status,
+			location: response.headers.get('Location'),
+			clearsSession:
+				setCookie.includes('kody_session=') && setCookie.includes('Max-Age=0'),
+		}).toEqual({
+			label,
+			status: 302,
+			location: 'https://example.com/login?redirectTo=%2Faccount',
+			clearsSession: true,
+		})
+	}
+})
+
+test('authenticated account SSR batches user/role and flag reads into two round trips', async () => {
+	const email = 'account@example.com'
+	const stableUserId = testStableUserIdFromEmail(email)
+	const { env, counts } = createAccountEnv({
+		users: [
+			{ id: 7, email, username: 'account-user', stable_user_id: stableUserId },
+		],
+		roles: [
+			{ role_name: 'user', action: 'read', entity: 'user', access: 'own' },
+		],
+		flags: [{ key: 'demo-indicator', enabled: 1, rollout_percent: null }],
+		overrides: [{ flag_key: 'compact-mcp-server-instructions', enabled: 1 }],
+	})
 
 	vi.mocked(renderAppPage).mockImplementation(async (input) => {
 		const loaded = await loadSessionInfo(input.request, input.env)
@@ -327,13 +219,11 @@ test('authenticated account SSR batches user/role and flag reads into two round 
 		})
 	})
 
-	const response = await createAccountHandler(env).handler(
-		new RequestContext(
-			new Request('https://example.com/account', {
-				headers: { Cookie: cookie },
-			}),
-		),
-	)
+	const response = await getAccount(env, {
+		stableUserId,
+		email,
+		rememberMe: false,
+	})
 	expect(response.status).toBe(200)
 	const body = (await response.json()) as {
 		session: {

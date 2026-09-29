@@ -77,35 +77,31 @@ function createAppEnv(db: D1Database) {
 	} as unknown as Parameters<typeof createAccountEmailChangeHandler>[0]
 }
 
-async function createRequest(input: {
-	session: AuthSession
-	email: string
-	password: string
-}) {
-	const cookie = await createAuthCookie(input.session, false)
-	return new Request('http://example.com/account/email-change.json', {
-		method: 'POST',
-		headers: {
-			Cookie: cookie,
-			'Content-Type': 'application/json',
-		},
-		body: JSON.stringify({
-			email: input.email,
-			password: input.password,
-		}),
-	})
+function createEmailChangeClient(db: D1Database, currentEmail: string) {
+	const { handler } = createAccountEmailChangeHandler(createAppEnv(db))
+	const session: AuthSession = {
+		stableUserId: testStableUserIdFromEmail(currentEmail),
+		email: currentEmail,
+		rememberMe: false,
+	}
+	return async (email: string, password = 'correct-password') => {
+		const request = new Request(
+			'http://example.com/account/email-change.json',
+			{
+				method: 'POST',
+				headers: {
+					Cookie: await createAuthCookie(session, false),
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ email, password }),
+			},
+		)
+		return handler({ request, url: new URL(request.url), params: {} } as never)
+	}
 }
 
-async function runHandler(
-	handler: ReturnType<typeof createAccountEmailChangeHandler>,
-	request: Request,
-) {
-	return handler.handler({
-		request,
-		url: new URL(request.url),
-		params: {},
-	} as never)
-}
+const pendingCount = (sqlite: DatabaseSync) =>
+	sqlite.prepare(`SELECT COUNT(*) AS count FROM pending_email_changes`).get()
 
 beforeAll(() => {
 	setAuthSessionSecret(testCookieSecret)
@@ -122,20 +118,11 @@ test('email change requests require the current password and create a pending ve
 		username: 'old-user',
 		password: 'correct-password',
 	})
-	const handler = createAccountEmailChangeHandler(createAppEnv(db))
-	const session = {
-		stableUserId: testStableUserIdFromEmail('old@example.com'),
-		email: 'old@example.com',
-		rememberMe: false,
-	}
+	const requestChange = createEmailChangeClient(db, 'old@example.com')
 
-	const wrongPasswordResponse = await runHandler(
-		handler,
-		await createRequest({
-			session,
-			email: 'new@example.com',
-			password: 'wrong-password',
-		}),
+	const wrongPasswordResponse = await requestChange(
+		'new@example.com',
+		'wrong-password',
 	)
 	expect(wrongPasswordResponse.status).toBe(401)
 	expect(await wrongPasswordResponse.json()).toEqual({
@@ -143,20 +130,9 @@ test('email change requests require the current password and create a pending ve
 		code: 'invalid_password',
 		error: 'Password is incorrect.',
 	})
-	expect(
-		sqlite
-			.prepare(`SELECT COUNT(*) AS count FROM pending_email_changes`)
-			.get() as { count: number },
-	).toEqual({ count: 0 })
+	expect(pendingCount(sqlite)).toEqual({ count: 0 })
 
-	const response = await runHandler(
-		handler,
-		await createRequest({
-			session,
-			email: 'New@Example.com',
-			password: 'correct-password',
-		}),
-	)
+	const response = await requestChange('New@Example.com')
 	expect(response.status).toBe(200)
 	expect(await response.json()).toEqual({
 		ok: true,
@@ -164,31 +140,16 @@ test('email change requests require the current password and create a pending ve
 		message:
 			'Verification email sent to your new address. After you confirm, your current address stays tied to this account until you release it from Former addresses.',
 	})
-	expect(
-		sqlite
-			.prepare(
-				`SELECT user_id, new_email, token_hash FROM pending_email_changes`,
-			)
-			.get(),
-	).toMatchObject({
+	const firstPending = sqlite
+		.prepare(`SELECT user_id, new_email, token_hash FROM pending_email_changes`)
+		.get() as { token_hash: string }
+	expect(firstPending).toMatchObject({
 		user_id: 1,
 		new_email: 'new@example.com',
 		token_hash: expect.any(String),
 	})
-	const firstPendingToken = (
-		sqlite
-			.prepare(`SELECT token_hash FROM pending_email_changes WHERE user_id = 1`)
-			.get() as { token_hash: string }
-	).token_hash
 
-	const resendResponse = await runHandler(
-		handler,
-		await createRequest({
-			session,
-			email: 'new@example.com',
-			password: 'correct-password',
-		}),
-	)
+	const resendResponse = await requestChange('new@example.com')
 	expect(resendResponse.status).toBe(200)
 	const pendingRows = sqlite
 		.prepare(`SELECT new_email, token_hash FROM pending_email_changes`)
@@ -198,7 +159,7 @@ test('email change requests require the current password and create a pending ve
 		new_email: 'new@example.com',
 		token_hash: expect.any(String),
 	})
-	expect(pendingRows[0]?.token_hash).not.toBe(firstPendingToken)
+	expect(pendingRows[0]?.token_hash).not.toBe(firstPending.token_hash)
 	expect(consoleWarn).toHaveBeenCalledWith('email-change-send-skipped', 1)
 })
 
@@ -211,30 +172,17 @@ test('unverified accounts cannot start an email change', async () => {
 		password: 'correct-password',
 		verified: false,
 	})
-	const handler = createAccountEmailChangeHandler(createAppEnv(db))
 
-	const response = await runHandler(
-		handler,
-		await createRequest({
-			session: {
-				stableUserId: testStableUserIdFromEmail('unverified@example.com'),
-				email: 'unverified@example.com',
-				rememberMe: false,
-			},
-			email: 'new@example.com',
-			password: 'correct-password',
-		}),
-	)
+	const response = await createEmailChangeClient(
+		db,
+		'unverified@example.com',
+	)('new@example.com')
 	expect(response.status).toBe(403)
 	expect(await response.json()).toEqual({
 		ok: false,
 		error: 'Verify your current email address before changing it.',
 	})
-	expect(
-		sqlite
-			.prepare(`SELECT COUNT(*) AS count FROM pending_email_changes`)
-			.get() as { count: number },
-	).toEqual({ count: 0 })
+	expect(pendingCount(sqlite)).toEqual({ count: 0 })
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'account',
@@ -260,25 +208,17 @@ test('email change requests reject emails already owned by another account', asy
 		username: 'taken-user',
 		password: 'taken-password',
 	})
-	const handler = createAccountEmailChangeHandler(createAppEnv(db))
 
-	const response = await runHandler(
-		handler,
-		await createRequest({
-			session: {
-				stableUserId: testStableUserIdFromEmail('old@example.com'),
-				email: 'old@example.com',
-				rememberMe: false,
-			},
-			email: 'taken@example.com',
-			password: 'correct-password',
-		}),
-	)
+	const response = await createEmailChangeClient(
+		db,
+		'old@example.com',
+	)('taken@example.com')
 	expect(response.status).toBe(409)
 	expect(await response.json()).toEqual({
 		ok: false,
 		error: 'Email already registered.',
 	})
+	expect(pendingCount(sqlite)).toEqual({ count: 0 })
 })
 
 test('email change verification updates email and preserves stable user id', async () => {
@@ -301,11 +241,7 @@ test('email change verification updates email and preserves stable user id', asy
 		VALUES (1, 'new@example.com', ${quoteSqlString(tokenHash)}, ${expiresAt});
 	`)
 
-	const result = await verifyEmailChangeToken({
-		db,
-		token,
-		now,
-	})
+	const result = await verifyEmailChangeToken({ db, token, now })
 	expect(result).toEqual({
 		ok: true,
 		userId: 1,
@@ -324,9 +260,7 @@ test('email change verification updates email and preserves stable user id', asy
 		stable_user_id: oldStableUserId,
 		email_verified_at: '2026-07-06T00:00:00.000Z',
 	})
-	expect(
-		sqlite.prepare(`SELECT COUNT(*) AS count FROM pending_email_changes`).get(),
-	).toEqual({ count: 0 })
+	expect(pendingCount(sqlite)).toEqual({ count: 0 })
 	expect(
 		sqlite.prepare(`SELECT COUNT(*) AS count FROM email_verifications`).get(),
 	).toEqual({ count: 0 })

@@ -1,123 +1,99 @@
 import { expect, test, vi } from 'vitest'
 import type * as CloudflareWorkers from 'cloudflare:workers'
+import type * as ProviderMarks from '#worker/integrations/provider-marks.ts'
 
-const mockModule = vi.hoisted(() => ({
-	waitUntil: vi.fn(),
-	readAuthenticatedAppUser: vi.fn(async () => ({
-		sessionUserId: '42',
-		userId: 42,
-		username: 'test-user',
-		email: 'user@example.com',
-		displayName: 'user',
-		artifactOwnerIds: [],
-		mcpUser: {
-			userId: 'stable-user-1',
-			email: 'user@example.com',
-			username: 'test-user',
-			displayName: 'user',
-		},
-	})),
-	readAuthSessionResult: vi.fn(async () => ({
-		session: { userId: '42' },
-		setCookie: null,
-	})),
-	listMcpServerSettings: vi.fn(async () => [
-		{
-			id: 'server-1',
-			name: 'linear',
-			url: 'https://mcp.example.com/mcp',
-			enabled: true,
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-			usageMode: 'any' as const,
-			allowedPackageIds: [],
-		},
-	]),
-	getMcpServerSettingById: vi.fn(async () => ({
+const mockModule = vi.hoisted(() => {
+	const epoch = new Date(0).toISOString()
+	const setting = (overrides: Record<string, unknown> = {}) => ({
 		id: 'server-1',
 		name: 'linear',
 		url: 'https://mcp.example.com/mcp',
 		enabled: true,
-		createdAt: new Date(0).toISOString(),
-		updatedAt: new Date(0).toISOString(),
+		createdAt: epoch,
+		updatedAt: epoch,
 		usageMode: 'any' as const,
-		allowedPackageIds: [],
-	})),
-	addMcpServer: vi.fn(async () => ({
-		setting: {
-			id: 'server-2',
-			name: 'notion',
-			url: 'https://mcp.notion.example/mcp',
-			enabled: true,
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-			usageMode: 'any' as const,
-			allowedPackageIds: [],
-		},
-		connection: {
-			serverId: 'server-2',
+		allowedPackageIds: [] as Array<string>,
+		...overrides,
+	})
+	const mcpUser = {
+		userId: 'stable-user-1',
+		email: 'user@example.com',
+		username: 'test-user',
+		displayName: 'user',
+	}
+	return {
+		epoch,
+		waitUntil: vi.fn(),
+		readAuthenticatedAppUser: vi.fn(async () => ({
+			sessionUserId: '42',
+			userId: 42,
+			username: 'test-user',
+			email: 'user@example.com',
+			displayName: 'user',
+			artifactOwnerIds: [],
+			mcpUser,
+		})),
+		readAuthSessionResult: vi.fn(async () => ({
+			session: { userId: '42' },
+			setCookie: null,
+		})),
+		listMcpServerSettings: vi.fn(async () => [setting()]),
+		getMcpServerSettingById: vi.fn(async () => setting()),
+		addMcpServer: vi.fn(async () => ({
+			setting: setting({
+				id: 'server-2',
+				name: 'notion',
+				url: 'https://mcp.notion.example/mcp',
+			}),
+			connection: {
+				serverId: 'server-2',
+				state: 'authenticating',
+				authUrl: 'https://auth.example.com/authorize?state=abc',
+				error: null,
+				toolCount: 0,
+			},
+		})),
+		setMcpServerEnabled: vi.fn(async () => setting({ enabled: false })),
+		setMcpServerUsage: vi.fn(async () =>
+			setting({ usageMode: 'packages', allowedPackageIds: ['pkg-drafts'] }),
+		),
+		deleteMcpServer: vi.fn(async () => true),
+		setMcpServerLastError: vi.fn(async () => true),
+		persistMcpServerLastErrorIfChanged: vi.fn(async () => undefined),
+		getCachedMcpClientHubSnapshot: vi.fn(async () => ({
+			servers: [
+				{
+					serverId: 'server-1',
+					name: 'linear',
+					url: 'https://mcp.example.com/mcp',
+					state: 'ready',
+					authUrl: null,
+					error: null,
+					instructions: null,
+					tools: [
+						{ name: 'create_issue', inputSchema: { type: 'object' } },
+						{ name: 'list_issues', inputSchema: { type: 'object' } },
+					],
+				},
+			],
+		})),
+		handleOAuthCallback: vi.fn(async () => ({
+			serverId: 'server-1',
+			authSuccess: true,
+			authError: null,
+			serverName: 'linear',
+			authorizationNeeded: false,
+			lastError: null,
+		})),
+		reconnectServer: vi.fn(async () => ({
+			serverId: 'server-1',
 			state: 'authenticating',
-			authUrl: 'https://auth.example.com/authorize?state=abc',
+			authUrl: 'https://auth.example.com/authorize?state=fresh.server-1',
 			error: null,
 			toolCount: 0,
-		},
-	})),
-	setMcpServerEnabled: vi.fn(async () => ({
-		id: 'server-1',
-		name: 'linear',
-		url: 'https://mcp.example.com/mcp',
-		enabled: false,
-		createdAt: new Date(0).toISOString(),
-		updatedAt: new Date(0).toISOString(),
-		usageMode: 'any' as const,
-		allowedPackageIds: [],
-	})),
-	setMcpServerUsage: vi.fn(async () => ({
-		id: 'server-1',
-		name: 'linear',
-		url: 'https://mcp.example.com/mcp',
-		enabled: true,
-		createdAt: new Date(0).toISOString(),
-		updatedAt: new Date(0).toISOString(),
-		usageMode: 'packages' as const,
-		allowedPackageIds: ['pkg-drafts'],
-	})),
-	deleteMcpServer: vi.fn(async () => true),
-	setMcpServerLastError: vi.fn(async () => true),
-	persistMcpServerLastErrorIfChanged: vi.fn(async () => undefined),
-	getCachedMcpClientHubSnapshot: vi.fn(async () => ({
-		servers: [
-			{
-				serverId: 'server-1',
-				name: 'linear',
-				url: 'https://mcp.example.com/mcp',
-				state: 'ready',
-				authUrl: null,
-				error: null,
-				instructions: null,
-				tools: [
-					{ name: 'create_issue', inputSchema: { type: 'object' } },
-					{ name: 'list_issues', inputSchema: { type: 'object' } },
-				],
-			},
-		],
-	})),
-	handleOAuthCallback: vi.fn(async () => ({
-		serverId: 'server-1',
-		authSuccess: true,
-		authError: null,
-		serverName: 'linear',
-		authorizationNeeded: false,
-		lastError: null,
-	})),
-	reconnectServer: vi.fn(async () => ({
-		serverId: 'server-1',
-		state: 'authenticating',
-		authUrl: 'https://auth.example.com/authorize?state=fresh.server-1',
-		error: null,
-		toolCount: 0,
-	})),
-}))
+		})),
+	}
+})
 
 vi.mock('cloudflare:workers', async (importOriginal) => {
 	const actual = await importOriginal<typeof CloudflareWorkers>()
@@ -187,10 +163,7 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 }))
 
 vi.mock('#worker/integrations/provider-marks.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<
-			typeof import('#worker/integrations/provider-marks.ts')
-		>()
+	const actual = await importOriginal<typeof ProviderMarks>()
 	return {
 		...actual,
 		listPlatformProviderMarks: async () => [],
@@ -220,20 +193,63 @@ const {
 	createAccountMcpServersOauthCallbackHandler,
 } = await import('./account-mcp-servers.ts')
 
-function createEnv() {
+const env = { APP_DB: {} as D1Database } as Env
+const apiUrl = 'https://example.com/account/mcp-servers.json'
+const callbackUrl = 'https://example.com/account/mcp-servers/oauth/callback'
+const userScope = { userId: 'stable-user-1', id: 'server-1' }
+
+function discoveryFailure(attemptId: string, suffix = '') {
+	const message = `Authorization completed at the identity provider, but tool discovery didn't finish (phase server/discover, mcp https://mcp.example.com/mcp, id ${attemptId}).${suffix}`
 	return {
-		APP_DB: {} as D1Database,
-	} as Env
+		message,
+		lastError: {
+			message,
+			phase: 'server/discover',
+			httpStatus: null,
+			httpBodySnippet: null,
+			mcpEndpoint: 'https://mcp.example.com/mcp',
+			resource: null,
+			authServer: null,
+			attemptId,
+			at: '2026-09-08T00:00:00.000Z',
+		},
+	}
+}
+
+function createApiClient() {
+	const { handler } = createAccountMcpServersApiHandler(env)
+	return {
+		get: () => handler({ request: new Request(apiUrl), params: {} } as never),
+		post: (body: Record<string, unknown>) =>
+			handler({
+				request: new Request(apiUrl, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(body),
+				}),
+				params: {},
+			} as never),
+	}
+}
+
+function createCallbackClient() {
+	const { handler } = createAccountMcpServersOauthCallbackHandler(env)
+	return async (search: string, init?: RequestInit) => {
+		const response = await handler({
+			request: new Request(`${callbackUrl}?${search}`, init),
+			params: {},
+		} as never)
+		return {
+			response,
+			location: new URL(response.headers.get('Location') ?? '', callbackUrl),
+		}
+	}
 }
 
 test('MCP servers API lists, adds, reconnects, disables, and deletes with user scope', async () => {
-	const handler = createAccountMcpServersApiHandler(createEnv())
+	const { get, post } = createApiClient()
 
-	const listResponse = await handler.handler({
-		request: new Request('https://example.com/account/mcp-servers.json'),
-		params: {},
-	} as never)
-
+	const listResponse = await get()
 	expect(listResponse.status).toBe(200)
 	expect(listResponse.headers.get('Cache-Control')).toBe('no-store')
 	await expect(listResponse.json()).resolves.toEqual({
@@ -241,7 +257,7 @@ test('MCP servers API lists, adds, reconnects, disables, and deletes with user s
 		email: 'user@example.com',
 		username: 'test-user',
 		oauthClientOrigin: 'https://example.com',
-		oauthCallbackUrl: 'https://example.com/account/mcp-servers/oauth/callback',
+		oauthCallbackUrl: callbackUrl,
 		oauthClientMetadataUrl: 'https://example.com/oauth/client-metadata.json',
 		servers: [
 			{
@@ -256,8 +272,8 @@ test('MCP servers API lists, adds, reconnects, disables, and deletes with user s
 				error: null,
 				hasRefreshToken: false,
 				tools: ['create_issue', 'list_issues'],
-				createdAt: new Date(0).toISOString(),
-				updatedAt: new Date(0).toISOString(),
+				createdAt: mockModule.epoch,
+				updatedAt: mockModule.epoch,
 				autoLogoPath: null,
 				catalogLogoPath: null,
 				usageMode: 'any',
@@ -267,20 +283,12 @@ test('MCP servers API lists, adds, reconnects, disables, and deletes with user s
 		savedPackages: [{ id: 'pkg-drafts', kodyId: 'gmail-drafts' }],
 	})
 
-	const addResponse = await handler.handler({
-		request: new Request('https://example.com/account/mcp-servers.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'add',
-				name: 'notion',
-				url: 'https://mcp.notion.example/mcp',
-				bearerToken: 'secret-token',
-			}),
-		}),
-		params: {},
-	} as never)
-
+	const addResponse = await post({
+		action: 'add',
+		name: 'notion',
+		url: 'https://mcp.notion.example/mcp',
+		bearerToken: 'secret-token',
+	})
 	expect(addResponse.status).toBe(200)
 	expect(mockModule.addMcpServer).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -292,61 +300,32 @@ test('MCP servers API lists, adds, reconnects, disables, and deletes with user s
 			waitUntil: expect.any(Function),
 		}),
 	)
-	const payload = (await addResponse.json()) as {
-		ok: boolean
-		selectedServerId?: string
-	}
-	expect(payload.ok).toBe(true)
-	expect(payload.selectedServerId).toBe('server-2')
+	await expect(addResponse.json()).resolves.toMatchObject({
+		ok: true,
+		selectedServerId: 'server-2',
+	})
 
-	const reconnectResponse = await handler.handler({
-		request: new Request('https://example.com/account/mcp-servers.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ action: 'reconnect', id: 'server-1' }),
-		}),
-		params: {},
-	} as never)
-
+	const reconnectResponse = await post({ action: 'reconnect', id: 'server-1' })
 	expect(reconnectResponse.status).toBe(200)
 	expect(mockModule.reconnectServer).toHaveBeenCalledWith({
 		serverId: 'server-1',
-		callbackUrl: 'https://example.com/account/mcp-servers/oauth/callback',
+		callbackUrl,
 	})
 
+	const hung = discoveryFailure('attempt-reconnect')
 	mockModule.reconnectServer.mockResolvedValueOnce({
 		serverId: 'server-1',
 		state: 'connected',
 		authUrl: null,
-		error:
-			"Authorization completed at the identity provider, but tool discovery didn't finish (phase server/discover, mcp https://mcp.example.com/mcp, id attempt-reconnect).",
+		error: hung.message,
 		toolCount: 0,
-		lastError: {
-			message:
-				"Authorization completed at the identity provider, but tool discovery didn't finish (phase server/discover, mcp https://mcp.example.com/mcp, id attempt-reconnect).",
-			phase: 'server/discover',
-			httpStatus: null,
-			httpBodySnippet: null,
-			mcpEndpoint: 'https://mcp.example.com/mcp',
-			resource: null,
-			authServer: null,
-			attemptId: 'attempt-reconnect',
-			at: '2026-09-08T00:00:00.000Z',
-		},
+		lastError: hung.lastError,
 	})
-	const hungReconnect = await handler.handler({
-		request: new Request('https://example.com/account/mcp-servers.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ action: 'reconnect', id: 'server-1' }),
-		}),
-		params: {},
-	} as never)
+	const hungReconnect = await post({ action: 'reconnect', id: 'server-1' })
 	expect(hungReconnect.status).toBe(200)
 	expect(mockModule.setMcpServerLastError).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'stable-user-1',
-			id: 'server-1',
+			...userScope,
 			lastError: expect.objectContaining({
 				phase: 'server/discover',
 				attemptId: 'attempt-reconnect',
@@ -354,129 +333,68 @@ test('MCP servers API lists, adds, reconnects, disables, and deletes with user s
 		}),
 	)
 
-	const disableResponse = await handler.handler({
-		request: new Request('https://example.com/account/mcp-servers.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'set-enabled',
-				id: 'server-1',
-				enabled: false,
-			}),
-		}),
-		params: {},
-	} as never)
+	const disableResponse = await post({
+		action: 'set-enabled',
+		id: 'server-1',
+		enabled: false,
+	})
 	expect(disableResponse.status).toBe(200)
 	expect(mockModule.setMcpServerEnabled).toHaveBeenCalledWith(
-		expect.objectContaining({
-			userId: 'stable-user-1',
-			id: 'server-1',
-			enabled: false,
-		}),
+		expect.objectContaining({ ...userScope, enabled: false }),
 	)
 
-	const usageResponse = await handler.handler({
-		request: new Request('https://example.com/account/mcp-servers.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'set-usage',
-				id: 'server-1',
-				usageMode: 'packages',
-				allowedPackageIds: ['pkg-drafts'],
-			}),
-		}),
-		params: {},
-	} as never)
+	const usageResponse = await post({
+		action: 'set-usage',
+		id: 'server-1',
+		usageMode: 'packages',
+		allowedPackageIds: ['pkg-drafts'],
+	})
 	expect(usageResponse.status).toBe(200)
 	expect(mockModule.setMcpServerUsage).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'stable-user-1',
-			id: 'server-1',
+			...userScope,
 			usageMode: 'packages',
 			allowedPackageIds: ['pkg-drafts'],
 		}),
 	)
 
-	const deleteResponse = await handler.handler({
-		request: new Request('https://example.com/account/mcp-servers.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ action: 'delete', id: 'server-1' }),
-		}),
-		params: {},
-	} as never)
+	const deleteResponse = await post({ action: 'delete', id: 'server-1' })
 	expect(deleteResponse.status).toBe(200)
 	expect(mockModule.deleteMcpServer).toHaveBeenCalledWith(
-		expect.objectContaining({
-			userId: 'stable-user-1',
-			id: 'server-1',
-		}),
+		expect.objectContaining(userScope),
 	)
 })
 
-test('MCP servers OAuth callback HEAD does not exchange the authorization code', async () => {
-	mockModule.handleOAuthCallback.mockClear()
-	const handler = createAccountMcpServersOauthCallbackHandler(createEnv())
-	const headResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/mcp-servers/oauth/callback?code=abc&state=xyz',
-			{ method: 'HEAD' },
-		),
-		params: {},
-	} as never)
-	expect(headResponse.status).toBe(200)
+test('MCP servers OAuth callback ignores HEAD and redirects with the auth outcome', async () => {
+	const callback = createCallbackClient()
+
+	const head = await callback('code=abc&state=xyz', { method: 'HEAD' })
+	expect(head.response.status).toBe(200)
 	expect(mockModule.handleOAuthCallback).not.toHaveBeenCalled()
-})
 
-test('MCP servers OAuth callback redirects with the auth outcome', async () => {
-	const handler = createAccountMcpServersOauthCallbackHandler(createEnv())
-
-	const successResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/mcp-servers/oauth/callback?code=abc&state=xyz',
-		),
-		params: {},
-	} as never)
-	expect(successResponse.status).toBe(303)
-	const successLocation = new URL(successResponse.headers.get('Location') ?? '')
-	expect(successLocation.pathname).toBe('/account/mcp-servers/server-1')
-	expect(successLocation.searchParams.get('auth')).toBe('success')
-	expect(successLocation.searchParams.get('server')).toBe('linear')
+	const success = await callback('code=abc&state=xyz')
+	expect(success.response.status).toBe(303)
+	expect(success.location.pathname).toBe('/account/mcp-servers/server-1')
+	expect(success.location.searchParams.get('auth')).toBe('success')
+	expect(success.location.searchParams.get('server')).toBe('linear')
 	expect(mockModule.setMcpServerLastError).toHaveBeenCalledWith(
-		expect.objectContaining({
-			userId: 'stable-user-1',
-			id: 'server-1',
-			lastError: null,
-		}),
+		expect.objectContaining({ ...userScope, lastError: null }),
 	)
 
-	const onboardingReturnResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/mcp-servers/oauth/callback?code=abc&state=xyz',
-			{
-				headers: {
-					Cookie: 'kody_mcp_oauth_return=onboarding',
-				},
-			},
-		),
-		params: {},
-	} as never)
-	expect(onboardingReturnResponse.status).toBe(303)
-	const onboardingLocation = new URL(
-		onboardingReturnResponse.headers.get('Location') ?? '',
-	)
-	expect(onboardingLocation.pathname).toBe('/onboarding/step-2')
-	expect(onboardingLocation.hash).toBe('')
-	expect(onboardingLocation.searchParams.get('auth')).toBe('success')
+	const onboarding = await callback('code=abc&state=xyz', {
+		headers: { Cookie: 'kody_mcp_oauth_return=onboarding' },
+	})
+	expect(onboarding.response.status).toBe(303)
+	expect(onboarding.location.pathname).toBe('/onboarding/step-2')
+	expect(onboarding.location.hash).toBe('')
+	expect(onboarding.location.searchParams.get('auth')).toBe('success')
 	const onboardingSetCookie =
-		onboardingReturnResponse.headers.get('Set-Cookie') ?? ''
+		onboarding.response.headers.get('Set-Cookie') ?? ''
 	expect(onboardingSetCookie).toContain('kody_mcp_oauth_return=;')
 	expect(onboardingSetCookie).toContain('Max-Age=0')
-
 	expect(mockModule.handleOAuthCallback).toHaveBeenCalledWith({
-		url: 'https://example.com/account/mcp-servers/oauth/callback?code=abc&state=xyz',
-		callbackUrl: 'https://example.com/account/mcp-servers/oauth/callback',
+		url: `${callbackUrl}?code=abc&state=xyz`,
+		callbackUrl,
 	})
 
 	mockModule.handleOAuthCallback.mockResolvedValueOnce({
@@ -486,17 +404,11 @@ test('MCP servers OAuth callback redirects with the auth outcome', async () => {
 		serverName: null,
 		authorizationNeeded: false,
 	})
-	const failureResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/mcp-servers/oauth/callback?error=access_denied',
-		),
-		params: {},
-	} as never)
-	expect(failureResponse.status).toBe(303)
-	const failureLocation = new URL(failureResponse.headers.get('Location') ?? '')
-	expect(failureLocation.pathname).toBe('/account/mcp-servers')
-	expect(failureLocation.searchParams.get('auth')).toBe('error')
-	expect(failureLocation.searchParams.get('reason')).toBe('Invalid state.')
+	const failure = await callback('error=access_denied')
+	expect(failure.response.status).toBe(303)
+	expect(failure.location.pathname).toBe('/account/mcp-servers')
+	expect(failure.location.searchParams.get('auth')).toBe('error')
+	expect(failure.location.searchParams.get('reason')).toBe('Invalid state.')
 
 	mockModule.handleOAuthCallback.mockResolvedValueOnce({
 		serverId: 'server-1',
@@ -505,101 +417,60 @@ test('MCP servers OAuth callback redirects with the auth outcome', async () => {
 		serverName: 'linear',
 		authorizationNeeded: false,
 	})
-	const originFailureResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/mcp-servers/oauth/callback?error=invalid_origin',
-		),
-		params: {},
-	} as never)
-	expect(originFailureResponse.status).toBe(303)
-	const originFailureLocation = new URL(
-		originFailureResponse.headers.get('Location') ?? '',
-	)
-	expect(originFailureLocation.searchParams.get('auth')).toBe('error')
-	expect(originFailureLocation.searchParams.get('reason')).toContain(
+	const originFailure = await callback('error=invalid_origin')
+	expect(originFailure.response.status).toBe(303)
+	expect(originFailure.location.searchParams.get('auth')).toBe('error')
+	expect(originFailure.location.searchParams.get('reason')).toContain(
 		'https://example.com/oauth/client-metadata.json',
 	)
 
+	const authorizationNeeded =
+		'Authorization needed. Reconnect the MCP server and approve access once more.'
 	mockModule.handleOAuthCallback.mockResolvedValueOnce({
 		serverId: 'server-1',
 		authSuccess: false,
-		authError:
-			'Authorization needed. Reconnect the MCP server and approve access once more.',
+		authError: authorizationNeeded,
 		serverName: 'linear',
 		authorizationNeeded: true,
 	})
-	const recoveryResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/mcp-servers/oauth/callback?code=abc&state=used.server-1',
-		),
-		params: {},
-	} as never)
-	expect(recoveryResponse.status).toBe(303)
-	const recoveryLocation = new URL(
-		recoveryResponse.headers.get('Location') ?? '',
-	)
-	expect(recoveryLocation.pathname).toBe('/account/mcp-servers/server-1')
-	expect(recoveryLocation.searchParams.get('auth')).toBe('required')
-	expect(recoveryLocation.searchParams.has('reason')).toBe(false)
+	const recovery = await callback('code=abc&state=used.server-1')
+	expect(recovery.response.status).toBe(303)
+	expect(recovery.location.pathname).toBe('/account/mcp-servers/server-1')
+	expect(recovery.location.searchParams.get('auth')).toBe('required')
+	expect(recovery.location.searchParams.has('reason')).toBe(false)
 
 	mockModule.handleOAuthCallback.mockResolvedValueOnce({
 		serverId: null,
 		authSuccess: false,
-		authError:
-			'Authorization needed. Reconnect the MCP server and approve access once more.',
+		authError: authorizationNeeded,
 		serverName: null,
 		authorizationNeeded: true,
 	})
-	const unknownRecoveryResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/mcp-servers/oauth/callback?error=access_denied',
-		),
-		params: {},
-	} as never)
-	const unknownRecoveryLocation = new URL(
-		unknownRecoveryResponse.headers.get('Location') ?? '',
-	)
-	expect(unknownRecoveryLocation.pathname).toBe('/account/mcp-servers')
-	expect(unknownRecoveryLocation.searchParams.get('auth')).toBe('retry')
-	expect(unknownRecoveryLocation.searchParams.has('reason')).toBe(false)
+	const unknownRecovery = await callback('error=access_denied')
+	expect(unknownRecovery.location.pathname).toBe('/account/mcp-servers')
+	expect(unknownRecovery.location.searchParams.get('auth')).toBe('retry')
+	expect(unknownRecovery.location.searchParams.has('reason')).toBe(false)
 
+	const settle = discoveryFailure(
+		'attempt-1',
+		' Reconnect it from /account/mcp-servers.',
+	)
 	mockModule.handleOAuthCallback.mockResolvedValueOnce({
 		serverId: 'server-1',
 		authSuccess: false,
-		authError:
-			"Authorization completed at the identity provider, but tool discovery didn't finish (phase server/discover, mcp https://mcp.example.com/mcp, id attempt-1). Reconnect it from /account/mcp-servers.",
+		authError: settle.message,
 		serverName: 'linear',
 		authorizationNeeded: false,
-		lastError: {
-			message:
-				"Authorization completed at the identity provider, but tool discovery didn't finish (phase server/discover, mcp https://mcp.example.com/mcp, id attempt-1). Reconnect it from /account/mcp-servers.",
-			phase: 'server/discover',
-			httpStatus: null,
-			httpBodySnippet: null,
-			mcpEndpoint: 'https://mcp.example.com/mcp',
-			resource: null,
-			authServer: null,
-			attemptId: 'attempt-1',
-			at: '2026-09-08T00:00:00.000Z',
-		},
+		lastError: settle.lastError,
 	})
-	const settleFailureResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/mcp-servers/oauth/callback?code=abc&state=ok.server-1',
-		),
-		params: {},
-	} as never)
-	const settleFailureLocation = new URL(
-		settleFailureResponse.headers.get('Location') ?? '',
-	)
-	expect(settleFailureLocation.searchParams.get('auth')).toBe('error')
-	expect(settleFailureLocation.searchParams.get('reason')).toContain(
+	const settleFailure = await callback('code=abc&state=ok.server-1')
+	expect(settleFailure.location.searchParams.get('auth')).toBe('error')
+	expect(settleFailure.location.searchParams.get('reason')).toContain(
 		"tool discovery didn't finish",
 	)
 	expect(mockModule.setMcpServerLastError).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'stable-user-1',
-			id: 'server-1',
+			...userScope,
 			lastError: expect.objectContaining({
 				phase: 'server/discover',
 				attemptId: 'attempt-1',

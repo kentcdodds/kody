@@ -97,20 +97,33 @@ vi.mock('#mcp/memory/service.ts', () => ({
 const { createAccountMemoriesApiHandler, createAccountMemoriesExportHandler } =
 	await import('./account-memories.ts')
 
-function createEnv() {
-	return {
-		APP_DB: {} as D1Database,
-	} as Env
+const env = { APP_DB: {} as D1Database } as Env
+
+function createClient(
+	createHandler: (env: Env) => { handler: (input: never) => Promise<Response> },
+	path: string,
+) {
+	const { handler } = createHandler(env)
+	return (search = '', init?: RequestInit) =>
+		handler({
+			request: new Request(`https://example.com${path}${search}`, init),
+			params: {},
+		} as never)
 }
 
+const postJson = (body: Record<string, unknown>): RequestInit => ({
+	method: 'POST',
+	headers: { 'Content-Type': 'application/json' },
+	body: JSON.stringify(body),
+})
+
 test('memories API lists, filters, and selects user-scoped memories', async () => {
-	const handler = createAccountMemoriesApiHandler(createEnv())
+	const request = createClient(
+		createAccountMemoriesApiHandler,
+		'/account/memories.json',
+	)
 
-	const listResponse = await handler.handler({
-		request: new Request('https://example.com/account/memories.json'),
-		params: {},
-	} as never)
-
+	const listResponse = await request()
 	expect(listResponse.status).toBe(200)
 	expect(listResponse.headers.get('Cache-Control')).toBe('no-store')
 	expect(mockModule.listMemoriesByUserId).toHaveBeenCalledWith(
@@ -141,13 +154,9 @@ test('memories API lists, filters, and selects user-scoped memories', async () =
 		includeDeleted: false,
 	})
 
-	const filtered = await handler.handler({
-		request: new Request(
-			'https://example.com/account/memories.json?q=editor&includeDeleted=true&selected=11111111-1111-4111-8111-111111111111',
-		),
-		params: {},
-	} as never)
-
+	const filtered = await request(
+		`?q=editor&includeDeleted=true&selected=${memoryRow.id}`,
+	)
 	expect(filtered.status).toBe(200)
 	expect(mockModule.listMemoriesByUserId).toHaveBeenCalledWith(
 		expect.anything(),
@@ -162,103 +171,55 @@ test('memories API lists, filters, and selects user-scoped memories', async () =
 			memoryId: memoryRow.id,
 		}),
 	)
-	const payload = (await filtered.json()) as {
-		ok: boolean
-		query: string
-		includeDeleted: boolean
-		selectedMemory: { id: string; details: string } | null
-	}
-	expect(payload.ok).toBe(true)
-	expect(payload.query).toBe('editor')
-	expect(payload.includeDeleted).toBe(true)
-	expect(payload.selectedMemory).toEqual(
-		expect.objectContaining({
+	await expect(filtered.json()).resolves.toMatchObject({
+		ok: true,
+		query: 'editor',
+		includeDeleted: true,
+		selectedMemory: expect.objectContaining({
 			id: memoryRow.id,
 			details: memoryRow.details,
 			sourceUris: memoryRow.sourceUris,
 			dedupeKey: memoryRow.dedupeKey,
 		}),
-	)
+	})
 })
 
 test('memories API soft/force deletes and rejects invalid delete requests', async () => {
-	const handler = createAccountMemoriesApiHandler(createEnv())
-
-	const softResponse = await handler.handler({
-		request: new Request('https://example.com/account/memories.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'delete',
-				memoryId: memoryRow.id,
-			}),
-		}),
-		params: {},
-	} as never)
-	expect(softResponse.status).toBe(200)
-	expect(mockModule.deleteMemory).toHaveBeenCalledWith(
-		expect.objectContaining({
-			userId: 'stable-user-1',
-			memoryId: memoryRow.id,
-			force: false,
-		}),
+	const request = createClient(
+		createAccountMemoriesApiHandler,
+		'/account/memories.json',
 	)
 
-	mockModule.deleteMemory.mockClear()
-	const hardResponse = await handler.handler({
-		request: new Request('https://example.com/account/memories.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
+	for (const force of [false, true]) {
+		const response = await request(
+			'',
+			postJson({
 				action: 'delete',
 				memoryId: memoryRow.id,
-				force: true,
+				...(force ? { force } : {}),
 			}),
-		}),
-		params: {},
-	} as never)
-	expect(hardResponse.status).toBe(200)
-	expect(mockModule.deleteMemory).toHaveBeenCalledWith(
-		expect.objectContaining({
-			userId: 'stable-user-1',
-			memoryId: memoryRow.id,
-			force: true,
-		}),
-	)
-
-	const missingId = await handler.handler({
-		request: new Request('https://example.com/account/memories.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ action: 'delete' }),
-		}),
-		params: {},
-	} as never)
-	expect(missingId.status).toBe(400)
-
-	const invalidAction = await handler.handler({
-		request: new Request('https://example.com/account/memories.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ action: 'upsert' }),
-		}),
-		params: {},
-	} as never)
-	expect(invalidAction.status).toBe(400)
-
-	mockModule.deleteMemory.mockResolvedValueOnce(null)
-	const notFound = await handler.handler({
-		request: new Request('https://example.com/account/memories.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'delete',
-				memoryId: 'missing',
+		)
+		expect([force, response.status]).toEqual([force, 200])
+		expect(mockModule.deleteMemory).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				userId: 'stable-user-1',
+				memoryId: memoryRow.id,
+				force,
 			}),
-		}),
-		params: {},
-	} as never)
-	expect(notFound.status).toBe(404)
+		)
+	}
+
+	const rejections = [
+		[{ action: 'delete' }, 400],
+		[{ action: 'upsert' }, 400],
+		[{ action: 'delete', memoryId: 'missing' }, 404],
+	] as const
+	for (const [body, status] of rejections) {
+		if (status === 404)
+			mockModule.deleteMemory.mockResolvedValueOnce(null as never)
+		const response = await request('', postJson(body))
+		expect([body, response.status]).toEqual([body, status])
+	}
 })
 
 test('memories export filename uses the UTC calendar date', () => {
@@ -268,19 +229,15 @@ test('memories export filename uses the UTC calendar date', () => {
 })
 
 test('memories export downloads the signed-in user memories as JSON', async () => {
-	const handler = createAccountMemoriesExportHandler(createEnv())
+	const request = createClient(
+		createAccountMemoriesExportHandler,
+		'/account/memories-export.json',
+	)
 
-	mockModule.readAuthenticatedAppUser.mockResolvedValueOnce(null)
-	const unauthorized = await handler.handler({
-		request: new Request('https://example.com/account/memories-export.json'),
-		params: {},
-	} as never)
-	expect(unauthorized.status).toBe(401)
+	mockModule.readAuthenticatedAppUser.mockResolvedValueOnce(null as never)
+	expect((await request()).status).toBe(401)
 
-	const defaultExport = await handler.handler({
-		request: new Request('https://example.com/account/memories-export.json'),
-		params: {},
-	} as never)
+	const defaultExport = await request()
 	expect(defaultExport.status).toBe(200)
 	expect(defaultExport.headers.get('Cache-Control')).toBe('no-store')
 	expect(defaultExport.headers.get('Content-Type')).toBe(
@@ -330,23 +287,16 @@ test('memories export downloads the signed-in user memories as JSON', async () =
 	expect(payload.memories[0]).not.toHaveProperty('user_id')
 	expect(payload.memories[0]).not.toHaveProperty('userId')
 
-	mockModule.listMemoriesByUserIdPage.mockClear()
-	const withDeleted = await handler.handler({
-		request: new Request(
-			'https://example.com/account/memories-export.json?includeDeleted=true',
-		),
-		params: {},
-	} as never)
+	const withDeleted = await request('?includeDeleted=true')
 	expect(withDeleted.status).toBe(200)
-	expect(mockModule.listMemoriesByUserIdPage).toHaveBeenCalledWith(
+	expect(mockModule.listMemoriesByUserIdPage).toHaveBeenLastCalledWith(
 		expect.objectContaining({
 			statuses: ['active', 'archived', 'deleted'],
 		}),
 	)
-	const deletedPayload = (await withDeleted.json()) as {
-		includeDeleted: boolean
-	}
-	expect(deletedPayload.includeDeleted).toBe(true)
+	await expect(withDeleted.json()).resolves.toMatchObject({
+		includeDeleted: true,
+	})
 
 	mockModule.listMemoriesByUserIdPage.mockClear()
 	const firstPage = Array.from({ length: 200 }, (_, index) => ({
@@ -356,11 +306,7 @@ test('memories export downloads the signed-in user memories as JSON', async () =
 	mockModule.listMemoriesByUserIdPage
 		.mockResolvedValueOnce(firstPage)
 		.mockResolvedValueOnce([{ ...mockModule.memoryDbRow, id: 'page-2-000' }])
-	const paged = await handler.handler({
-		request: new Request('https://example.com/account/memories-export.json'),
-		params: {},
-	} as never)
-	const pagedPayload = (await paged.json()) as {
+	const pagedPayload = (await (await request()).json()) as {
 		memories: Array<{ id: string }>
 	}
 	expect(pagedPayload.memories).toHaveLength(201)
@@ -372,11 +318,5 @@ test('memories export downloads the signed-in user memories as JSON', async () =
 		}),
 	)
 
-	const disallowed = await handler.handler({
-		request: new Request('https://example.com/account/memories-export.json', {
-			method: 'POST',
-		}),
-		params: {},
-	} as never)
-	expect(disallowed.status).toBe(405)
+	expect((await request('', { method: 'POST' })).status).toBe(405)
 })

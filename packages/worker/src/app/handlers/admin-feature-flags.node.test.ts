@@ -206,17 +206,11 @@ function createFeatureFlagsTestEnv(
 					} as { results: Array<T>; meta: { changes: number } }
 				}
 				// Metric readout queries (D1 fallback path); no data in this test.
-				if (normalized.includes('from feature_flag_exposure_rollups')) {
-					return {
-						results: [],
-						meta: { changes: 0 },
-					} as { results: Array<T>; meta: { changes: number } }
-				}
-				if (normalized.includes('from usage_rollups')) {
-					return {
-						results: [],
-						meta: { changes: 0 },
-					} as { results: Array<T>; meta: { changes: number } }
+				if (
+					normalized.includes('from feature_flag_exposure_rollups') ||
+					normalized.includes('from usage_rollups')
+				) {
+					return { results: [] as Array<T>, meta: { changes: 0 } }
 				}
 				throw new Error(`Unsupported all query: ${query}`)
 			},
@@ -338,276 +332,164 @@ function createFeatureFlagsTestEnv(
 const { createAdminFeatureFlagsApiHandler } =
 	await import('./admin-feature-flags.ts')
 
-function createHandlerRequest(
-	input: {
-		method?: string
-		body?: unknown
-	} = {},
+function createFeatureFlagsClient(
+	input: Parameters<typeof createFeatureFlagsTestEnv>[0] = {},
 ) {
+	const { handler } = createAdminFeatureFlagsApiHandler(
+		createFeatureFlagsTestEnv(input) as unknown as Env,
+	)
+	const send = (body?: unknown) =>
+		handler({
+			request: new Request('https://example.com/admin/feature-flags.json', {
+				method: body === undefined ? 'GET' : 'POST',
+				headers: {
+					Accept: 'application/json',
+					...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+				},
+				...(body === undefined ? {} : { body: JSON.stringify(body) }),
+			}),
+			params: {},
+			url: new URL('https://example.com/admin/feature-flags.json'),
+		} as never)
 	return {
-		request: new Request('https://example.com/admin/feature-flags.json', {
-			method: input.method ?? 'GET',
-			headers: {
-				Accept: 'application/json',
-				...(input.body === undefined
-					? {}
-					: { 'Content-Type': 'application/json' }),
-			},
-			...(input.body === undefined ? {} : { body: JSON.stringify(input.body) }),
+		get: () => send(),
+		post: (body: Record<string, unknown>) => send(body),
+		async expectFlag(response: Response, flag: Record<string, unknown>) {
+			expect(response.status).toBe(200)
+			const body = (await response.json()) as {
+				ok: boolean
+				featureFlags: Array<{ key: string }>
+			}
+			expect(body).toMatchObject({ ok: true })
+			expect(body.featureFlags).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({ key: 'demo-indicator', ...flag }),
+				]),
+			)
+		},
+		async expectError(response: Response, status: number) {
+			expect(response.status).toBe(status)
+			await expect(response.json()).resolves.toMatchObject({
+				ok: false,
+				error: expect.any(String),
+			})
+		},
+	}
+}
+
+function expectSetGlobalAudit(reason: string) {
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'admin',
+			action: 'feature_flag_set_global',
+			result: 'success',
+			reason,
 		}),
-		params: {},
-		url: new URL('https://example.com/admin/feature-flags.json'),
-	} as never
+	)
 }
 
 test('admin feature flags HTTP lifecycle: auth, list, set_global, and validation errors', async () => {
-	const env = createFeatureFlagsTestEnv() as unknown as Env
-	const handler = createAdminFeatureFlagsApiHandler(env)
+	const { get, post, expectFlag, expectError } = createFeatureFlagsClient()
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(
 		createAdminActor(['user']),
 	)
-	const forbidden = await handler.handler(createHandlerRequest())
-	expect(forbidden.status).toBe(403)
+	expect((await get()).status).toBe(403)
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(
 		createAdminActor(['admin']),
 	)
-	logAuditEventSpy.mockClear()
+	await expectFlag(await get(), {
+		stale: false,
+		defaultEnabled: false,
+		global: null,
+		overrides: [],
+	})
 
-	const listResponse = await handler.handler(createHandlerRequest())
-	expect(listResponse.status).toBe(200)
-	const listBody = (await listResponse.json()) as {
-		ok: boolean
-		featureFlags: Array<{ key: string }>
-	}
-	expect(listBody).toMatchObject({ ok: true })
-	expect(listBody.featureFlags).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				key: 'demo-indicator',
-				stale: false,
-				defaultEnabled: false,
-				global: null,
-				overrides: [],
-			}),
-		]),
-	)
-
-	const setGlobalResponse = await handler.handler(
-		createHandlerRequest({
-			method: 'POST',
-			body: {
-				action: 'set_global',
-				key: 'demo-indicator',
+	const setGlobal = (body: Record<string, unknown>) =>
+		post({ action: 'set_global', key: 'demo-indicator', ...body })
+	await expectFlag(
+		await setGlobal({ enabled: true, rolloutPercent: 25, note: 'canary' }),
+		{
+			global: expect.objectContaining({
 				enabled: true,
 				rolloutPercent: 25,
+				audience: 'everyone',
 				note: 'canary',
-			},
-		}),
-	)
-	expect(setGlobalResponse.status).toBe(200)
-	const setGlobalBody = (await setGlobalResponse.json()) as {
-		ok: boolean
-		featureFlags: Array<{ key: string }>
-	}
-	expect(setGlobalBody).toMatchObject({ ok: true })
-	expect(setGlobalBody.featureFlags).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				key: 'demo-indicator',
-				global: expect.objectContaining({
-					enabled: true,
-					rolloutPercent: 25,
-					audience: 'everyone',
-					note: 'canary',
-					updatedByStableUserId: null,
-				}),
+				updatedByStableUserId: null,
 			}),
-		]),
+		},
 	)
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'admin',
-			action: 'feature_flag_set_global',
-			result: 'success',
-			reason: 'key=demo-indicator;enabled=true;rollout_percent=25',
-		}),
-	)
+	expectSetGlobalAudit('key=demo-indicator;enabled=true;rollout_percent=25')
 
 	logAuditEventSpy.mockClear()
-	const setAudienceResponse = await handler.handler(
-		createHandlerRequest({
-			method: 'POST',
-			body: {
-				action: 'set_global',
-				key: 'demo-indicator',
+	await expectFlag(
+		await setGlobal({
+			enabled: false,
+			rolloutPercent: null,
+			audience: 'experiments_opt_in',
+			note: 'opt-in canary',
+		}),
+		{
+			global: expect.objectContaining({
 				enabled: false,
 				rolloutPercent: null,
 				audience: 'experiments_opt_in',
 				note: 'opt-in canary',
-			},
-		}),
-	)
-	expect(setAudienceResponse.status).toBe(200)
-	const setAudienceBody = (await setAudienceResponse.json()) as {
-		ok: boolean
-		featureFlags: Array<{ key: string }>
-	}
-	expect(setAudienceBody).toMatchObject({ ok: true })
-	expect(setAudienceBody.featureFlags).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				key: 'demo-indicator',
-				global: expect.objectContaining({
-					enabled: false,
-					rolloutPercent: null,
-					audience: 'experiments_opt_in',
-					note: 'opt-in canary',
-				}),
 			}),
-		]),
+		},
 	)
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'admin',
-			action: 'feature_flag_set_global',
-			result: 'success',
-			reason:
-				'key=demo-indicator;enabled=false;rollout_percent=null;audience=experiments_opt_in',
-		}),
+	expectSetGlobalAudit(
+		'key=demo-indicator;enabled=false;rollout_percent=null;audience=experiments_opt_in',
 	)
 
-	const unknownKeyResponse = await handler.handler(
-		createHandlerRequest({
-			method: 'POST',
-			body: {
-				action: 'set_global',
-				key: 'not-a-real-flag',
-				enabled: true,
-				rolloutPercent: null,
-			},
+	await expectError(
+		await post({
+			action: 'set_global',
+			key: 'not-a-real-flag',
+			enabled: true,
+			rolloutPercent: null,
 		}),
+		400,
 	)
-	expect(unknownKeyResponse.status).toBe(400)
-	await expect(unknownKeyResponse.json()).resolves.toMatchObject({
-		ok: false,
-		error: expect.any(String),
-	})
-
-	const deleteRegistryResponse = await handler.handler(
-		createHandlerRequest({
-			method: 'POST',
-			body: {
-				action: 'delete_stale',
-				key: 'demo-indicator',
-			},
-		}),
+	await expectError(
+		await post({ action: 'delete_stale', key: 'demo-indicator' }),
+		400,
 	)
-	expect(deleteRegistryResponse.status).toBe(400)
-	await expect(deleteRegistryResponse.json()).resolves.toMatchObject({
-		ok: false,
-		error: expect.any(String),
-	})
 })
 
 test('admin feature flags set_user_override validates user identity and existence', async () => {
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(
 		createAdminActor(['admin']),
 	)
-	const handler = createAdminFeatureFlagsApiHandler(
-		createFeatureFlagsTestEnv({
-			users: [
-				{
-					id: 1,
-					username: 'admin-user',
-					stable_user_id: stableUserId(1),
-				},
-				{ id: 2, username: 'jane', stable_user_id: stableUserId(2) },
-			],
-		}) as unknown as Env,
-	)
-
-	const neither = await handler.handler(
-		createHandlerRequest({
-			method: 'POST',
-			body: {
-				action: 'set_user_override',
-				key: 'demo-indicator',
-				enabled: true,
-			},
-		}),
-	)
-	expect(neither.status).toBe(400)
-	await expect(neither.json()).resolves.toMatchObject({
-		ok: false,
-		error: expect.any(String),
+	const { post, expectFlag, expectError } = createFeatureFlagsClient({
+		users: [
+			{ id: 1, username: 'admin-user' },
+			{ id: 2, username: 'jane' },
+		],
 	})
+	const setOverride = (identity: Record<string, unknown>) =>
+		post({
+			action: 'set_user_override',
+			key: 'demo-indicator',
+			enabled: true,
+			...identity,
+		})
 
-	const both = await handler.handler(
-		createHandlerRequest({
-			method: 'POST',
-			body: {
-				action: 'set_user_override',
-				key: 'demo-indicator',
-				enabled: true,
+	await expectError(await setOverride({}), 400)
+	await expectError(
+		await setOverride({ stableUserId: stableUserId(2), username: 'jane' }),
+		400,
+	)
+	await expectError(await setOverride({ stableUserId: stableUserId(404) }), 404)
+
+	await expectFlag(await setOverride({ username: 'jane' }), {
+		overrides: [
+			expect.objectContaining({
 				stableUserId: stableUserId(2),
 				username: 'jane',
-			},
-		}),
-	)
-	expect(both.status).toBe(400)
-	await expect(both.json()).resolves.toMatchObject({
-		ok: false,
-		error: expect.any(String),
-	})
-
-	const missingId = await handler.handler(
-		createHandlerRequest({
-			method: 'POST',
-			body: {
-				action: 'set_user_override',
-				key: 'demo-indicator',
 				enabled: true,
-				stableUserId: stableUserId(404),
-			},
-		}),
-	)
-	expect(missingId.status).toBe(404)
-	await expect(missingId.json()).resolves.toMatchObject({
-		ok: false,
-		error: expect.any(String),
-	})
-
-	const byUsername = await handler.handler(
-		createHandlerRequest({
-			method: 'POST',
-			body: {
-				action: 'set_user_override',
-				key: 'demo-indicator',
-				enabled: true,
-				username: 'jane',
-			},
-		}),
-	)
-	expect(byUsername.status).toBe(200)
-	const byUsernameBody = (await byUsername.json()) as {
-		ok: boolean
-		featureFlags: Array<{ key: string }>
-	}
-	expect(byUsernameBody).toMatchObject({ ok: true })
-	expect(byUsernameBody.featureFlags).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				key: 'demo-indicator',
-				overrides: [
-					expect.objectContaining({
-						stableUserId: stableUserId(2),
-						username: 'jane',
-						enabled: true,
-					}),
-				],
 			}),
-		]),
-	)
+		],
+	})
 })

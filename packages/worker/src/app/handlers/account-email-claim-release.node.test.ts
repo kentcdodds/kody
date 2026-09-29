@@ -67,23 +67,28 @@ function createAppEnv(db: D1Database) {
 	} as unknown as Env
 }
 
-async function createReleaseRequest(input: {
-	session: AuthSession
-	email: string
-	password: string
-}) {
-	const cookie = await createAuthCookie(input.session, false)
-	return new Request('http://example.com/account/email-claim-release.json', {
-		method: 'POST',
-		headers: {
-			Cookie: cookie,
-			'Content-Type': 'application/json',
-		},
-		body: JSON.stringify({
-			email: input.email,
-			password: input.password,
-		}),
-	})
+function createReleaseClient(env: Env, session: AuthSession) {
+	const { handler } = createAccountEmailClaimReleaseHandler(env)
+	return async (email: string) => {
+		const request = new Request(
+			'http://example.com/account/email-claim-release.json',
+			{
+				method: 'POST',
+				headers: {
+					Cookie: await createAuthCookie(session, false),
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ email, password: 'correct-password' }),
+			},
+		)
+		return handler({ request, url: new URL(request.url), params: {} } as never)
+	}
+}
+
+const ownerSession: AuthSession = {
+	stableUserId: testStableUserIdFromEmail('owner@example.com'),
+	email: 'owner@example.com',
+	rememberMe: false,
 }
 
 beforeAll(() => {
@@ -110,62 +115,46 @@ test('release re-verifies a former address then allows a new account without rem
 	`)
 
 	const env = createAppEnv(db)
-	const handler = createAccountEmailClaimReleaseHandler(env)
-	const session = {
+	const release = createReleaseClient(env, {
 		stableUserId: testStableUserIdFromEmail(formerEmail),
 		email: currentEmail,
 		rememberMe: false,
-	}
-
-	const currentEmailResponse = await handler.handler({
-		request: await createReleaseRequest({
-			session,
-			email: currentEmail,
-			password: 'correct-password',
-		}),
-		url: new URL('http://example.com/account/email-claim-release.json'),
-		params: {},
-	} as never)
-	expect(currentEmailResponse.status).toBe(400)
-
+	})
 	const signupHandler = createAuthHandler(env)
-	const blockedSignup = await signupHandler.handler(
-		new RequestContext(
-			new Request('http://example.com/auth', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					email: formerEmail,
-					username: 'new-jamie',
-					password: 'password123',
-					mode: 'signup',
+	const signupFormerEmail = () =>
+		signupHandler.handler(
+			new RequestContext(
+				new Request('http://example.com/auth', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						email: formerEmail,
+						username: 'new-jamie',
+						password: 'password123',
+						mode: 'signup',
+					}),
 				}),
-			}),
-		),
-	)
+			),
+		)
+
+	expect((await release(currentEmail)).status).toBe(400)
+
+	const blockedSignup = await signupFormerEmail()
 	expect(blockedSignup.status).toBe(409)
 	expect(await blockedSignup.json()).toMatchObject({
 		code: formerEmailClaimedSignupCode,
 	})
 
-	const requestResponse = await handler.handler({
-		request: await createReleaseRequest({
-			session,
-			email: formerEmail,
-			password: 'correct-password',
-		}),
-		url: new URL('http://example.com/account/email-claim-release.json'),
-		params: {},
-	} as never)
+	const requestResponse = await release(formerEmail)
 	expect(requestResponse.status).toBe(200)
 	expect(await requestResponse.json()).toMatchObject({ ok: true })
-
-	const pending = sqlite
-		.prepare(
-			`SELECT token_hash FROM pending_email_claim_releases WHERE user_id = 1`,
-		)
-		.get() as { token_hash: string }
-	expect(pending.token_hash).toEqual(expect.any(String))
+	expect(
+		sqlite
+			.prepare(
+				`SELECT token_hash FROM pending_email_claim_releases WHERE user_id = 1`,
+			)
+			.get(),
+	).toEqual({ token_hash: expect.any(String) })
 
 	const token = 'release-former-email-token'
 	const tokenHash = await hashVerificationToken(token)
@@ -175,11 +164,7 @@ test('release re-verifies a former address then allows a new account without rem
 		WHERE user_id = 1
 	`)
 
-	const verified = await verifyEmailClaimReleaseToken({
-		db,
-		token,
-	})
-	expect(verified).toEqual({
+	expect(await verifyEmailClaimReleaseToken({ db, token })).toEqual({
 		ok: true,
 		userId: 1,
 		email: formerEmail,
@@ -189,29 +174,13 @@ test('release re-verifies a former address then allows a new account without rem
 			.prepare(
 				`SELECT status FROM user_email_claims WHERE user_id = 1 AND email = ?`,
 			)
-			.get(formerEmail) as { status: string },
+			.get(formerEmail),
 	).toEqual({ status: 'released' })
 	expect(
-		sqlite.prepare(`SELECT stable_user_id FROM users WHERE id = 1`).get() as {
-			stable_user_id: string
-		},
+		sqlite.prepare(`SELECT stable_user_id FROM users WHERE id = 1`).get(),
 	).toEqual({ stable_user_id: stableUserId })
 
-	const allowedSignup = await signupHandler.handler(
-		new RequestContext(
-			new Request('http://example.com/auth', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					email: formerEmail,
-					username: 'new-jamie',
-					password: 'password123',
-					mode: 'signup',
-				}),
-			}),
-		),
-	)
-	expect(allowedSignup.status).toBe(200)
+	expect((await signupFormerEmail()).status).toBe(200)
 	const created = sqlite
 		.prepare(`SELECT email, stable_user_id FROM users WHERE email = ?`)
 		.get(formerEmail) as { email: string; stable_user_id: string }
@@ -235,56 +204,23 @@ test('release requests are rate limited and refuse another account email', async
 		username: 'other',
 		password: 'other-password',
 	})
-	const handler = createAccountEmailClaimReleaseHandler(createAppEnv(db))
-	const session = {
-		stableUserId: testStableUserIdFromEmail('owner@example.com'),
-		email: 'owner@example.com',
-		rememberMe: false,
+	const release = createReleaseClient(createAppEnv(db), ownerSession)
+
+	const statuses = []
+	for (const email of [
+		'other@example.com',
+		'old@example.com',
+		'old@example.com',
+		'old@example.com',
+	]) {
+		statuses.push([email, (await release(email)).status])
 	}
-
-	const stranger = await handler.handler({
-		request: await createReleaseRequest({
-			session,
-			email: 'other@example.com',
-			password: 'correct-password',
-		}),
-		url: new URL('http://example.com/account/email-claim-release.json'),
-		params: {},
-	} as never)
-	expect(stranger.status).toBe(404)
-
-	const first = await handler.handler({
-		request: await createReleaseRequest({
-			session,
-			email: 'old@example.com',
-			password: 'correct-password',
-		}),
-		url: new URL('http://example.com/account/email-claim-release.json'),
-		params: {},
-	} as never)
-	expect(first.status).toBe(404)
-
-	const second = await handler.handler({
-		request: await createReleaseRequest({
-			session,
-			email: 'old@example.com',
-			password: 'correct-password',
-		}),
-		url: new URL('http://example.com/account/email-claim-release.json'),
-		params: {},
-	} as never)
-	expect(second.status).toBe(404)
-
-	const limited = await handler.handler({
-		request: await createReleaseRequest({
-			session,
-			email: 'old@example.com',
-			password: 'correct-password',
-		}),
-		url: new URL('http://example.com/account/email-claim-release.json'),
-		params: {},
-	} as never)
-	expect(limited.status).toBe(429)
+	expect(statuses).toEqual([
+		['other@example.com', 404],
+		['old@example.com', 404],
+		['old@example.com', 404],
+		['old@example.com', 429],
+	])
 })
 
 test('refunds the request limiter when the release email cannot be sent', async () => {
@@ -302,28 +238,16 @@ test('refunds the request limiter when the release email cannot be sent', async 
 		INSERT INTO user_email_claims (user_id, email, status)
 		VALUES (1, 'old@example.com', 'claimed');
 	`)
-	const env = {
-		...createAppEnv(db),
-		SENTRY_ENVIRONMENT: 'production',
-	} as Env
-	const handler = createAccountEmailClaimReleaseHandler(env)
-	const session = {
-		stableUserId: testStableUserIdFromEmail('owner@example.com'),
-		email: 'owner@example.com',
-		rememberMe: false,
-	}
+	const release = createReleaseClient(
+		{ ...createAppEnv(db), SENTRY_ENVIRONMENT: 'production' } as Env,
+		ownerSession,
+	)
 
 	for (let attempt = 0; attempt < 4; attempt += 1) {
-		const response = await handler.handler({
-			request: await createReleaseRequest({
-				session,
-				email: 'old@example.com',
-				password: 'correct-password',
-			}),
-			url: new URL('http://example.com/account/email-claim-release.json'),
-			params: {},
-		} as never)
-		expect(response.status).toBe(502)
+		expect([attempt, (await release('old@example.com')).status]).toEqual([
+			attempt,
+			502,
+		])
 	}
 	expect(consoleError).toHaveBeenCalled()
 })
