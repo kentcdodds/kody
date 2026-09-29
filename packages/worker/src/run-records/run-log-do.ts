@@ -3951,6 +3951,7 @@ export const RunLog = Sentry.instrumentDurableObjectWithSentry(
 	(env: Env) => buildSentryOptions(env),
 	RunLogBase,
 )
+export type RunLog = InstanceType<typeof RunLog>
 
 export type RunLogRpc = DurableObjectPitrRpc & {
 	startRun: (input: { run: RunLogRowInput }) => Promise<{ ok: true }>

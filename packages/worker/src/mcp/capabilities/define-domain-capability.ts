@@ -3,6 +3,7 @@ import { type CapabilityDomain } from './domain-metadata.ts'
 import {
 	type Capability,
 	type CapabilityDefinition,
+	type CapabilityOutput,
 	type CapabilitySchemaDefinition,
 } from './types.ts'
 
@@ -12,7 +13,7 @@ export function defineDomainCapability<
 >(
 	domain: CapabilityDomain,
 	definition: Omit<CapabilityDefinition<TInputSchema, TOutputSchema>, 'domain'>,
-): Capability {
+): Capability<CapabilityOutput<TOutputSchema>> {
 	return defineCapability({
 		...definition,
 		domain,

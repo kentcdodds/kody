@@ -936,6 +936,7 @@ export const Mailbox = Sentry.instrumentDurableObjectWithSentry(
 	(env: Env) => buildSentryOptions(env),
 	MailboxBase,
 )
+export type Mailbox = InstanceType<typeof Mailbox>
 
 export type { MailboxRpc } from './mailbox-types.ts'
 export {

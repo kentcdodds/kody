@@ -686,6 +686,7 @@ export const StorageRunner = Sentry.instrumentDurableObjectWithSentry(
 	(env: Env) => buildSentryOptions(env),
 	StorageRunnerBase,
 )
+export type StorageRunner = InstanceType<typeof StorageRunner>
 
 export function storageRunnerRpc(input: {
 	env: Env

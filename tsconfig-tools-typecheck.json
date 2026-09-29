@@ -1,0 +1,36 @@
+{
+	"extends": "./tsconfig-tools.json",
+	"compilerOptions": {
+		"composite": false,
+		"noEmit": true,
+		"incremental": true,
+		"lib": ["ES2023", "ESNext.Disposable", "DOM", "DOM.Iterable"],
+		"jsx": "react-jsx",
+		"jsxImportSource": "remix/ui",
+		"paths": {
+			"#client/app-root.tsx": [
+				"./packages/worker/src/app/ssr-stubs/app-root.ts"
+			],
+			"#client/lazy-route.tsx": [
+				"./packages/worker/src/app/ssr-stubs/lazy-route.ts"
+			],
+			"@modelcontextprotocol/sdk": ["./node_modules/@modelcontextprotocol/sdk"],
+			"@modelcontextprotocol/sdk/*": [
+				"./node_modules/@modelcontextprotocol/sdk/*"
+			]
+		},
+		"tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tools-typecheck.tsbuildinfo"
+	},
+	"include": [
+		"./playwright.config.ts",
+		"./wrangler-env.ts",
+		"./cli.ts",
+		"./vitest*.ts",
+		"./e2e/**/*.ts",
+		"./tools/**/*.ts",
+		"./packages/worker/src/mcp/mcp-server.mcp-e2e.test.ts",
+		"./packages/worker/worker-configuration.d.ts",
+		"./packages/worker/env.d.ts",
+		"./packages/worker/src/**/*.d.ts"
+	]
+}

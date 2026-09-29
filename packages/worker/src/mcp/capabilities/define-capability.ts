@@ -9,6 +9,7 @@ import {
 	type Capability,
 	type CapabilityDefinition,
 	type CapabilityJsonSchema,
+	type CapabilityOutput,
 	type CapabilitySchemaDefinition,
 	type InferCapabilitySchema,
 } from './types.ts'
@@ -24,7 +25,9 @@ import { assertKodyRuntimeIdentifier } from './runtime-identifier.ts'
 export function defineCapability<
 	TInputSchema extends CapabilitySchemaDefinition,
 	TOutputSchema extends CapabilitySchemaDefinition | undefined = undefined,
->(definition: CapabilityDefinition<TInputSchema, TOutputSchema>): Capability {
+>(
+	definition: CapabilityDefinition<TInputSchema, TOutputSchema>,
+): Capability<CapabilityOutput<TOutputSchema>> {
 	const source = definition.source ?? 'builtin'
 	if (source === 'builtin') {
 		assertKodyRuntimeIdentifier('capability', definition.name)
@@ -165,7 +168,9 @@ export function defineCapability<
 			}
 
 			try {
-				const finalized = outputParser ? outputParser(result) : result
+				const finalized = (
+					outputParser ? outputParser(result) : result
+				) as CapabilityOutput<TOutputSchema>
 				logMcpEvent({
 					category: 'mcp',
 					tool: 'capability',
