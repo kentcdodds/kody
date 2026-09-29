@@ -31,37 +31,7 @@ import {
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 const storageContext = { sessionId: null, appId: null, packageId: null }
-
-function createHarness() {
-	const sqlite = new DatabaseSync(':memory:')
-	applyRepositoryMigrations(sqlite, migrationsDirectory)
-	const env = {
-		APP_DB: createD1FromSqlite(sqlite),
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-		...createInMemoryUserMeterEnv().env,
-	} as Env
-	return { sqlite, env }
-}
-
-function seedPackage(
-	sqlite: DatabaseSync,
-	input: { id: string; userId: string; kodyId: string },
-) {
-	sqlite
-		.prepare(
-			`INSERT INTO saved_packages (
-				id, user_id, name, kody_id, description, source_id
-			) VALUES (?, ?, ?, ?, ?, ?)`,
-		)
-		.run(
-			input.id,
-			input.userId,
-			input.kodyId,
-			input.kodyId,
-			'',
-			`source-${input.id}`,
-		)
-}
+const baseUrl = 'https://kody.codes'
 
 const googleConfig = {
 	name: 'google',
@@ -78,72 +48,93 @@ const googleConfig = {
 	},
 }
 
-test('integration-owned credentials persist as ciphertext, stay off secret lists, and survive sibling disconnect', async () => {
-	const { sqlite, env } = createHarness()
-	const userId = 'user-owned-creds'
-	seedPackage(sqlite, { id: 'pkg-mail', userId, kodyId: 'mail' })
-	seedPackage(sqlite, { id: 'pkg-docs', userId, kodyId: 'docs' })
-
-	await upsertIntegration({ env, userId, config: googleConfig })
-	await persistIntegrationTokens({
-		env,
-		userId,
-		name: 'google',
-		accessToken: 'access-live',
-		refreshToken: 'refresh-live',
-	})
-	await persistUserOauthAppClientSecret({
-		env,
-		userId,
-		slug: 'google',
-		value: 'client-secret-live',
-	})
-
-	const ciphertexts = sqlite
-		.prepare(
-			`SELECT access_token_encrypted, refresh_token_encrypted
-			FROM user_integrations
-			WHERE user_id = ? AND name = ?`,
-		)
-		.get(userId, 'google') as {
-		access_token_encrypted: string
-		refresh_token_encrypted: string
+function createHarness(userId: string) {
+	const sqlite = new DatabaseSync(':memory:')
+	applyRepositoryMigrations(sqlite, migrationsDirectory)
+	const env = {
+		APP_DB: createD1FromSqlite(sqlite),
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		...createInMemoryUserMeterEnv().env,
+	} as Env
+	const seedPackage = (id: string, kodyId: string) =>
+		sqlite
+			.prepare(
+				`INSERT INTO saved_packages (
+					id, user_id, name, kody_id, description, source_id
+				) VALUES (?, ?, ?, ?, '', ?)`,
+			)
+			.run(id, userId, kodyId, kodyId, `source-${id}`)
+	const connect = async (
+		name = 'google',
+		tokens = { accessToken: 'access-live', refreshToken: 'refresh-live' },
+	) => {
+		await upsertIntegration({ env, userId, config: { ...googleConfig, name } })
+		await persistIntegrationTokens({ env, userId, name, ...tokens })
 	}
-	expect(ciphertexts.access_token_encrypted.startsWith('v2.')).toBe(true)
-	expect(ciphertexts.refresh_token_encrypted.startsWith('v2.')).toBe(true)
-	expect(
-		(
-			sqlite
-				.prepare(
-					`SELECT client_secret_encrypted
-					FROM user_oauth_apps
-					WHERE user_id = ? AND slug = ?`,
-				)
-				.get(userId, 'google') as { client_secret_encrypted: string }
-		).client_secret_encrypted.startsWith('v2.'),
-	).toBe(true)
-
-	expect(
-		await resolveIntegrationAccessToken({
-			env,
-			userId,
-			name: 'google',
-		}),
-	).toBe('access-live')
-	expect(
-		await resolveIntegrationRefreshToken({
-			env,
-			userId,
-			name: 'google',
-		}),
-	).toBe('refresh-live')
-	expect(
-		await resolveUserOauthAppClientSecret({
+	const persistClientSecret = () =>
+		persistUserOauthAppClientSecret({
 			env,
 			userId,
 			slug: 'google',
-		}),
-	).toBe('client-secret-live')
+			value: 'client-secret-live',
+		})
+	const clientSecret = () =>
+		resolveUserOauthAppClientSecret({ env, userId, slug: 'google' })
+	const accessToken = () =>
+		resolveIntegrationAccessToken({ env, userId, name: 'google' })
+	const canUse = (pkg?: { packageId: string; packageKodyId?: string }) =>
+		assertCanUseIntegration({ env, baseUrl, userId, name: 'google', ...pkg })
+	const grant = (packageId: string) =>
+		grantIntegrationPackage({ env, userId, name: 'google', packageId })
+	return {
+		sqlite,
+		env,
+		seedPackage,
+		connect,
+		persistClientSecret,
+		clientSecret,
+		accessToken,
+		canUse,
+		grant,
+	}
+}
+
+test('integration-owned credentials persist as ciphertext, stay off secret lists, and survive sibling disconnect', async () => {
+	const userId = 'user-owned-creds'
+	const harness = createHarness(userId)
+	const { sqlite, env, canUse, grant, clientSecret, accessToken } = harness
+	harness.seedPackage('pkg-mail', 'mail')
+	harness.seedPackage('pkg-docs', 'docs')
+	await harness.connect()
+	await harness.persistClientSecret()
+
+	const ciphertexts = [
+		...Object.values(
+			sqlite
+				.prepare(
+					`SELECT access_token_encrypted, refresh_token_encrypted
+					FROM user_integrations WHERE user_id = ? AND name = ?`,
+				)
+				.get(userId, 'google') as Record<string, string>,
+		),
+		...Object.values(
+			sqlite
+				.prepare(
+					`SELECT client_secret_encrypted FROM user_oauth_apps WHERE user_id = ? AND slug = ?`,
+				)
+				.get(userId, 'google') as Record<string, string>,
+		),
+	]
+	expect(ciphertexts.map((value) => value.startsWith('v2.'))).toEqual([
+		true,
+		true,
+		true,
+	])
+	expect(await accessToken()).toBe('access-live')
+	expect(
+		await resolveIntegrationRefreshToken({ env, userId, name: 'google' }),
+	).toBe('refresh-live')
+	expect(await clientSecret()).toBe('client-secret-live')
 
 	sqlite
 		.prepare(
@@ -152,14 +143,7 @@ test('integration-owned credentials persist as ciphertext, stay off secret lists
 			WHERE user_id = ? AND name = ?`,
 		)
 		.run(userId, 'google')
-	expect(
-		await resolveIntegrationAccessToken({
-			env,
-			userId,
-			name: 'google',
-		}),
-	).toBeNull()
-
+	expect(await accessToken()).toBeNull()
 	expect(await listSecrets({ env, userId, scope: 'user' })).toEqual([])
 	expect(await listUserSecretsForSearch({ env, userId })).toEqual([])
 	expect(
@@ -172,40 +156,14 @@ test('integration-owned credentials persist as ciphertext, stay off secret lists
 		}),
 	).toMatchObject({ found: false })
 
-	await persistIntegrationTokens({
-		env,
-		userId,
-		name: 'google',
-		accessToken: 'access-live',
-		refreshToken: 'refresh-live',
-	})
-
-	await assertCanUseIntegration({
-		env,
-		baseUrl: 'https://kody.codes',
-		userId,
-		name: 'google',
-	})
-	await assertCanUseIntegration({
-		env,
-		baseUrl: 'https://kody.codes',
-		userId,
-		name: 'google',
-		packageId: 'pkg-mail',
-		packageKodyId: 'mail',
-	})
-
-	const grantedAny = await grantIntegrationPackage({
-		env,
-		userId,
-		name: 'google',
-		packageId: 'pkg-mail',
-	})
-	expect(grantedAny).toMatchObject({
+	await harness.connect()
+	const mail = { packageId: 'pkg-mail', packageKodyId: 'mail' }
+	await canUse()
+	await canUse(mail)
+	expect(await grant('pkg-mail')).toMatchObject({
 		usageMode: 'any',
 		allowedPackageIds: [],
 	})
-
 	await setIntegrationUsage({
 		env,
 		userId,
@@ -213,190 +171,72 @@ test('integration-owned credentials persist as ciphertext, stay off secret lists
 		usageMode: 'packages',
 		allowedPackageIds: ['pkg-mail'],
 	})
+	await expect(canUse()).rejects.toBeInstanceOf(
+		IntegrationPackageAccessDeniedError,
+	)
+	await canUse(mail)
 	await expect(
-		assertCanUseIntegration({
-			env,
-			baseUrl: 'https://kody.codes',
-			userId,
-			name: 'google',
-		}),
-	).rejects.toBeInstanceOf(IntegrationPackageAccessDeniedError)
-	await assertCanUseIntegration({
-		env,
-		baseUrl: 'https://kody.codes',
-		userId,
-		name: 'google',
-		packageId: 'pkg-mail',
-		packageKodyId: 'mail',
-	})
-	await expect(
-		assertCanUseIntegration({
-			env,
-			baseUrl: 'https://kody.codes',
-			userId,
-			name: 'google',
-			packageId: 'pkg-docs',
-			packageKodyId: 'docs',
-		}),
+		canUse({ packageId: 'pkg-docs', packageKodyId: 'docs' }),
 	).rejects.toThrow(
 		buildIntegrationPackageApprovalUrl({
-			baseUrl: 'https://kody.codes',
+			baseUrl,
 			name: 'google',
 			packageId: 'pkg-docs',
 			kodyId: 'docs',
 		}),
 	)
-
-	const grantedDocs = await grantIntegrationPackage({
-		env,
-		userId,
-		name: 'google',
-		packageId: 'pkg-docs',
-	})
-	expect(grantedDocs).toMatchObject({
+	expect(await grant('pkg-docs')).toMatchObject({
 		usageMode: 'packages',
 		allowedPackageIds: ['pkg-docs', 'pkg-mail'],
 	})
-	await assertCanUseIntegration({
-		env,
-		baseUrl: 'https://kody.codes',
-		userId,
-		name: 'google',
-		packageId: 'pkg-docs',
-	})
+	await canUse({ packageId: 'pkg-docs' })
 
-	await upsertIntegration({
-		env,
-		userId,
-		config: {
-			...googleConfig,
-			name: 'google-work',
-		},
-	})
-	await persistIntegrationTokens({
-		env,
-		userId,
-		name: 'google-work',
+	await harness.connect('google-work', {
 		accessToken: 'work-access',
 		refreshToken: 'work-refresh',
 	})
-
 	expect(await deleteIntegration({ env, userId, name: 'google-work' })).toBe(
 		true,
 	)
+	expect(await clientSecret()).toBe('client-secret-live')
 	expect(
-		await resolveUserOauthAppClientSecret({
-			env,
-			userId,
-			slug: 'google',
-		}),
-	).toBe('client-secret-live')
-
-	const deletedApp = await deleteOauthAppWithConnections({
-		env,
-		userId,
-		slug: 'google',
-	})
-	expect(deletedApp).toEqual({
-		deleted: true,
-		connectionNames: ['google'],
-	})
-	expect(
-		await resolveUserOauthAppClientSecret({
-			env,
-			userId,
-			slug: 'google',
-		}),
-	).toBeNull()
+		await deleteOauthAppWithConnections({ env, userId, slug: 'google' }),
+	).toEqual({ deleted: true, connectionNames: ['google'] })
+	expect(await clientSecret()).toBeNull()
 })
 
 test('disconnecting the last user-lane connection deletes the leftover client secret', async () => {
-	const { env } = createHarness()
 	const userId = 'user-last-disconnect'
-
-	await upsertIntegration({ env, userId, config: googleConfig })
-	await persistIntegrationTokens({
-		env,
-		userId,
-		name: 'google',
-		accessToken: 'access-live',
-		refreshToken: 'refresh-live',
-	})
-	await persistUserOauthAppClientSecret({
-		env,
-		userId,
-		slug: 'google',
-		value: 'client-secret-live',
-	})
-
+	const { env, connect, persistClientSecret, clientSecret, accessToken } =
+		createHarness(userId)
+	await connect()
+	await persistClientSecret()
 	expect(await deleteIntegration({ env, userId, name: 'google' })).toBe(true)
-	expect(
-		await resolveIntegrationAccessToken({
-			env,
-			userId,
-			name: 'google',
-		}),
-	).toBeNull()
-	expect(
-		await resolveUserOauthAppClientSecret({
-			env,
-			userId,
-			slug: 'google',
-		}),
-	).toBeNull()
+	expect(await accessToken()).toBeNull()
+	expect(await clientSecret()).toBeNull()
 	expect(await listSecrets({ env, userId, scope: 'user' })).toEqual([])
 })
 
 test('lockIntegrationToPackage switches any-context usage to packages and rejects unknown packages', async () => {
-	const { sqlite, env } = createHarness()
 	const userId = 'user-lock-usage'
-	seedPackage(sqlite, { id: 'pkg-drafts', userId, kodyId: 'gmail-drafts' })
+	const { env, seedPackage, canUse, grant } = createHarness(userId)
+	seedPackage('pkg-drafts', 'gmail-drafts')
 	await upsertIntegration({ env, userId, config: googleConfig })
-
-	const grantedWhileAny = await grantIntegrationPackage({
-		env,
-		userId,
-		name: 'google',
-		packageId: 'pkg-drafts',
-	})
-	expect(grantedWhileAny).toMatchObject({
+	expect(await grant('pkg-drafts')).toMatchObject({
 		usageMode: 'any',
 		allowedPackageIds: [],
 	})
-
-	const locked = await lockIntegrationToPackage({
-		env,
-		userId,
-		name: 'google',
-		packageId: 'pkg-drafts',
-	})
-	expect(locked).toMatchObject({
+	const lock = (packageId: string) =>
+		lockIntegrationToPackage({ env, userId, name: 'google', packageId })
+	expect(await lock('pkg-drafts')).toMatchObject({
 		usageMode: 'packages',
 		allowedPackageIds: ['pkg-drafts'],
 	})
-	await expect(
-		assertCanUseIntegration({
-			env,
-			baseUrl: 'https://kody.codes',
-			userId,
-			name: 'google',
-		}),
-	).rejects.toBeInstanceOf(IntegrationPackageAccessDeniedError)
-	await assertCanUseIntegration({
-		env,
-		baseUrl: 'https://kody.codes',
-		userId,
-		name: 'google',
-		packageId: 'pkg-drafts',
-		packageKodyId: 'gmail-drafts',
-	})
-
-	await expect(
-		lockIntegrationToPackage({
-			env,
-			userId,
-			name: 'google',
-			packageId: 'missing-package',
-		}),
-	).rejects.toThrow('Saved package not found for this user.')
+	await expect(canUse()).rejects.toBeInstanceOf(
+		IntegrationPackageAccessDeniedError,
+	)
+	await canUse({ packageId: 'pkg-drafts', packageKodyId: 'gmail-drafts' })
+	await expect(lock('missing-package')).rejects.toThrow(
+		'Saved package not found for this user.',
+	)
 })

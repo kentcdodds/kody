@@ -38,6 +38,8 @@ const {
 } = await import('./token-refresh.ts')
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
+const failedEvents = mocks.dispatchIntegrationAuthFailedSubscriptionEvents
+const succeededEvents = mocks.dispatchIntegrationAuthSucceededSubscriptionEvents
 
 function createHarness() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -48,6 +50,50 @@ function createHarness() {
 		...createInMemoryUserMeterEnv().env,
 	} as Env
 	return { sqlite, env }
+}
+
+const platformApps = {
+	github: {
+		slug: 'github',
+		clientId: 'platform-github-client-id',
+		clientSecret: 'platform-github-client-secret-value',
+		tokenUrl: 'https://github.com/login/oauth/access_token',
+		authorizeUrl: 'https://github.com/login/oauth/authorize',
+		apiBaseUrl: 'https://api.github.com',
+		flow: 'confidential' as const,
+	},
+	google: {
+		slug: 'google',
+		clientId: 'platform-google-client-id',
+		clientSecret: 'platform-google-client-secret-value',
+		tokenUrl: 'https://oauth2.googleapis.com/token',
+		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+		apiBaseUrl: 'https://www.googleapis.com',
+		flow: 'confidential' as const,
+	},
+}
+
+async function seedPlatformConnection(
+	env: Env,
+	userId: string,
+	slug: keyof typeof platformApps,
+	extra: {
+		app?: Partial<Parameters<typeof upsertPlatformOauthApp>[0]['app']>
+		scopes?: Array<string>
+	} = {},
+) {
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env,
+		app: { ...platformApps[slug], ...extra.app },
+	})
+	await upsertPlatformIntegration({
+		env,
+		userId,
+		platformAppSlug: slug,
+		scopes: extra.scopes ?? [],
+	})
+	await seedUserTokens(env, userId, slug)
 }
 
 async function readAuthFailure(env: Env, userId: string, name: string) {
@@ -75,55 +121,40 @@ async function seedUserTokens(env: Env, userId: string, name: string) {
 	})
 }
 
+function jsonResponse(payload: Record<string, unknown>, status = 200) {
+	return new Response(JSON.stringify(payload), {
+		status,
+		headers: { 'Content-Type': 'application/json' },
+	})
+}
+
 function stubTokenEndpoint(payload: Record<string, unknown>) {
-	const fetchMock = vi.fn(
-		async () =>
-			new Response(JSON.stringify(payload), {
-				status: 200,
-				headers: { 'Content-Type': 'application/json' },
-			}),
-	)
+	const fetchMock = vi.fn(async () => jsonResponse(payload))
 	vi.stubGlobal('fetch', fetchMock)
 	return fetchMock
+}
+
+function isCallerError(reason: string, ...messageParts: Array<string>) {
+	return (error: unknown) =>
+		error instanceof IntegrationTokenRefreshCallerError &&
+		error.reason === reason &&
+		messageParts.every((part) => error.message.includes(part))
 }
 
 test('platform-lane refresh uses the decrypted shared client secret and persists tokens', async () => {
 	const { env } = createHarness()
 	const userId = 'user-platform-refresh'
-	await upsertPlatformOauthApp({
-		db: env.APP_DB,
-		env,
-		app: {
-			slug: 'github',
-			clientId: 'platform-github-client-id',
-			clientSecret: 'platform-github-client-secret-value',
-			tokenUrl: 'https://github.com/login/oauth/access_token',
-			authorizeUrl: 'https://github.com/login/oauth/authorize',
-			apiBaseUrl: 'https://api.github.com',
-			flow: 'confidential',
-		},
-	})
-	await upsertPlatformIntegration({
-		env,
-		userId,
-		platformAppSlug: 'github',
-		scopes: [],
-	})
-	await seedUserTokens(env, userId, 'github')
+	const tokens = { env, userId, name: 'github' }
+	await seedPlatformConnection(env, userId, 'github')
 
 	const fetchMock = stubTokenEndpoint({
 		access_token: 'fresh-access-token',
 		refresh_token: 'rotated-refresh-token',
 	})
 	try {
-		const result = await refreshIntegrationTokens({
-			env,
-			userId,
-			name: 'github',
-		})
+		const result = await refreshIntegrationTokens(tokens)
 		expect(result.refreshTokenRotated).toBe(true)
 		expect(JSON.stringify(result)).not.toContain('fresh-access-token')
-
 		expect(fetchMock).toHaveBeenCalledTimes(1)
 		const [tokenUrl, init] = fetchMock.mock.calls[0] as unknown as [
 			string,
@@ -131,31 +162,22 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 		]
 		expect(tokenUrl).toBe('https://github.com/login/oauth/access_token')
 		const body = String(init.body)
-		expect(body).toContain('grant_type=refresh_token')
-		expect(body).toContain('refresh_token=current-refresh-token')
-		expect(body).toContain('client_id=platform-github-client-id')
-		expect(body).toContain('client_secret=platform-github-client-secret-value')
-
-		expect(
-			await resolveIntegrationAccessToken({
-				env,
-				userId,
-				name: 'github',
-			}),
-		).toBe('fresh-access-token')
-		expect(
-			await resolveIntegrationRefreshToken({
-				env,
-				userId,
-				name: 'github',
-			}),
-		).toBe('rotated-refresh-token')
-		expect(
-			mocks.dispatchIntegrationAuthFailedSubscriptionEvents,
-		).not.toHaveBeenCalled()
-		expect(
-			mocks.dispatchIntegrationAuthSucceededSubscriptionEvents,
-		).toHaveBeenCalledWith(
+		for (const part of [
+			'grant_type=refresh_token',
+			'refresh_token=current-refresh-token',
+			'client_id=platform-github-client-id',
+			'client_secret=platform-github-client-secret-value',
+		]) {
+			expect(body).toContain(part)
+		}
+		expect(await resolveIntegrationAccessToken(tokens)).toBe(
+			'fresh-access-token',
+		)
+		expect(await resolveIntegrationRefreshToken(tokens)).toBe(
+			'rotated-refresh-token',
+		)
+		expect(failedEvents).not.toHaveBeenCalled()
+		expect(succeededEvents).toHaveBeenCalledWith(
 			expect.objectContaining({
 				userId,
 				source: 'refresh',
@@ -165,40 +187,28 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 				}),
 			}),
 		)
-		expect(await readAuthFailure(env, userId, 'github')).toMatchObject({
+		const cleared = {
 			auth_failed_reason: null,
 			auth_failed_reconnectable: null,
-		})
+		}
+		expect(await readAuthFailure(env, userId, 'github')).toMatchObject(cleared)
 
-		const afterRefresh = await getJoinedIntegration({
-			env,
-			userId,
-			name: 'github',
-		})
+		const afterRefresh = await getJoinedIntegration(tokens)
 		expect(afterRefresh?.connection.tokenRefreshedAt).toEqual(
 			expect.stringMatching(/^\d{4}-/),
 		)
-		await writeIntegrationAuthFailure({
-			db: env.APP_DB,
-			userId,
-			name: 'github',
-			reason: 'provider_rejected',
-			reconnectable: true,
-			expectedTokenRefreshedAt: '2020-01-01T00:00:00.000Z',
-		})
-		expect(await readAuthFailure(env, userId, 'github')).toMatchObject({
-			auth_failed_reason: null,
-			auth_failed_reconnectable: null,
-		})
-		await writeIntegrationAuthFailure({
-			db: env.APP_DB,
-			userId,
-			name: 'github',
-			reason: 'provider_rejected',
-			reconnectable: true,
-			expectedTokenRefreshedAt:
-				afterRefresh?.connection.tokenRefreshedAt ?? null,
-		})
+		const writeFailure = (expectedTokenRefreshedAt: string | null) =>
+			writeIntegrationAuthFailure({
+				db: env.APP_DB,
+				userId,
+				name: 'github',
+				reason: 'provider_rejected',
+				reconnectable: true,
+				expectedTokenRefreshedAt,
+			})
+		await writeFailure('2020-01-01T00:00:00.000Z')
+		expect(await readAuthFailure(env, userId, 'github')).toMatchObject(cleared)
+		await writeFailure(afterRefresh?.connection.tokenRefreshedAt ?? null)
 		expect(await readAuthFailure(env, userId, 'github')).toMatchObject({
 			auth_failed_reason: 'provider_rejected',
 			auth_failed_reconnectable: 1,
@@ -207,25 +217,13 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 		vi.unstubAllGlobals()
 	}
 
-	mocks.dispatchIntegrationAuthFailedSubscriptionEvents.mockClear()
-	mocks.dispatchIntegrationAuthSucceededSubscriptionEvents.mockClear()
+	failedEvents.mockClear()
+	succeededEvents.mockClear()
 	await expect(
-		refreshIntegrationTokens({
-			env,
-			userId,
-			name: 'missing-connection',
-		}),
-	).rejects.toSatisfy(
-		(error: unknown) =>
-			error instanceof IntegrationTokenRefreshCallerError &&
-			error.reason === 'not_found',
-	)
-	expect(
-		mocks.dispatchIntegrationAuthFailedSubscriptionEvents,
-	).not.toHaveBeenCalled()
-	expect(
-		mocks.dispatchIntegrationAuthSucceededSubscriptionEvents,
-	).not.toHaveBeenCalled()
+		refreshIntegrationTokens({ ...tokens, name: 'missing-connection' }),
+	).rejects.toSatisfy(isCallerError('not_found'))
+	expect(failedEvents).not.toHaveBeenCalled()
+	expect(succeededEvents).not.toHaveBeenCalled()
 
 	await upsertPlatformIntegration({
 		env,
@@ -233,24 +231,17 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 		platformAppSlug: 'github',
 		scopes: [],
 	})
-	mocks.dispatchIntegrationAuthFailedSubscriptionEvents.mockClear()
 	await expect(
-		refreshIntegrationTokens({
-			env,
-			userId: 'user-no-refresh',
-			name: 'github',
-		}),
+		refreshIntegrationTokens({ ...tokens, userId: 'user-no-refresh' }),
 	).rejects.toSatisfy(
-		(error: unknown) =>
-			error instanceof IntegrationTokenRefreshCallerError &&
-			error.reason === 'missing_refresh_token' &&
-			error.message.includes('does not have a stored refresh token') &&
-			error.message.includes('/connect/oauth?provider=github') &&
-			error.message.includes(integrationTokenRefreshCallerMarker),
+		isCallerError(
+			'missing_refresh_token',
+			'does not have a stored refresh token',
+			'/connect/oauth?provider=github',
+			integrationTokenRefreshCallerMarker,
+		),
 	)
-	expect(
-		mocks.dispatchIntegrationAuthFailedSubscriptionEvents,
-	).toHaveBeenCalledWith(
+	expect(failedEvents).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'user-no-refresh',
 			reason: 'missing_refresh_token',
@@ -271,80 +262,41 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 test('provider HTTP status classifies refresh failures as caller errors or Sentry-visible Errors', async () => {
 	const { env } = createHarness()
 	const userId = 'user-google-provider-status'
-	await upsertPlatformOauthApp({
-		db: env.APP_DB,
-		env,
-		app: {
-			slug: 'google',
-			clientId: 'platform-google-client-id',
-			clientSecret: 'platform-google-client-secret-value',
-			tokenUrl: 'https://oauth2.googleapis.com/token',
-			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-			apiBaseUrl: 'https://www.googleapis.com',
-			flow: 'confidential',
-		},
-	})
-	await upsertPlatformIntegration({
-		env,
-		userId,
-		platformAppSlug: 'google',
-		scopes: [],
-	})
-	await seedUserTokens(env, userId, 'google')
-
+	await seedPlatformConnection(env, userId, 'google')
 	const fetchMock = vi
 		.fn()
 		.mockResolvedValueOnce(
-			new Response(
-				JSON.stringify({
+			jsonResponse(
+				{
 					error: 'invalid_grant',
 					error_description: 'Token has been expired or revoked.',
-				}),
-				{
-					status: 400,
-					headers: { 'Content-Type': 'application/json' },
 				},
+				400,
 			),
 		)
-		.mockResolvedValueOnce(
-			new Response(JSON.stringify({ error: 'server_error' }), {
-				status: 503,
-				headers: { 'Content-Type': 'application/json' },
-			}),
-		)
-		.mockResolvedValueOnce(
-			new Response(JSON.stringify({ access_token: '' }), {
-				status: 200,
-				headers: { 'Content-Type': 'application/json' },
-			}),
-		)
+		.mockResolvedValueOnce(jsonResponse({ error: 'server_error' }, 503))
+		.mockResolvedValueOnce(jsonResponse({ access_token: '' }))
 	vi.stubGlobal('fetch', fetchMock)
 	try {
-		mocks.dispatchIntegrationAuthFailedSubscriptionEvents.mockClear()
 		const waitUntil = vi.fn()
 		await expect(
-			refreshIntegrationTokens({
-				env,
-				userId,
-				name: 'google',
-				waitUntil,
-			}),
+			refreshIntegrationTokens({ env, userId, name: 'google', waitUntil }),
 		).rejects.toSatisfy(
 			(error: unknown) =>
+				isCallerError(
+					'provider_rejected',
+					'HTTP 400',
+					'invalid_grant',
+					'/connect/oauth?provider=google',
+					integrationTokenRefreshCallerMarker,
+				)(error) &&
 				error instanceof IntegrationTokenRefreshCallerError &&
-				error.reason === 'provider_rejected' &&
 				error.providerError === 'invalid_grant' &&
-				error.httpStatus === 400 &&
-				error.message.includes('HTTP 400') &&
-				error.message.includes('invalid_grant') &&
-				error.message.includes('/connect/oauth?provider=google') &&
-				error.message.includes(integrationTokenRefreshCallerMarker),
+				error.httpStatus === 400,
 		)
 		expect(waitUntil).toHaveBeenCalledTimes(1)
 		await waitUntil.mock.calls[0]?.[0]
-		expect(
-			mocks.dispatchIntegrationAuthFailedSubscriptionEvents,
-		).toHaveBeenCalledWith(
+		expect(failedEvents).toHaveBeenCalledWith(
 			expect.objectContaining({
 				userId,
 				reason: 'provider_rejected',
@@ -361,47 +313,29 @@ test('provider HTTP status classifies refresh failures as caller errors or Sentr
 			auth_failed_http_status: 400,
 		})
 
-		mocks.dispatchIntegrationAuthFailedSubscriptionEvents.mockClear()
+		failedEvents.mockClear()
 		await expect(
-			refreshIntegrationTokens({
-				env,
-				userId,
-				name: 'google',
-			}),
+			refreshIntegrationTokens({ env, userId, name: 'google' }),
 		).rejects.toSatisfy(
 			(error: unknown) =>
 				error instanceof Error &&
 				!(error instanceof IntegrationTokenRefreshCallerError) &&
 				error.message.includes('HTTP 503'),
 		)
-		expect(
-			mocks.dispatchIntegrationAuthFailedSubscriptionEvents,
-		).not.toHaveBeenCalled()
+		expect(failedEvents).not.toHaveBeenCalled()
 		expect(await readAuthFailure(env, userId, 'google')).toMatchObject({
 			auth_failed_reason: 'provider_unavailable',
 			auth_failed_reconnectable: 0,
 			auth_failed_http_status: 503,
 		})
 
-		mocks.dispatchIntegrationAuthFailedSubscriptionEvents.mockClear()
 		await expect(
-			refreshIntegrationTokens({
-				env,
-				userId,
-				name: 'google',
-			}),
+			refreshIntegrationTokens({ env, userId, name: 'google' }),
 		).rejects.toSatisfy(
-			(error: unknown) =>
-				error instanceof IntegrationTokenRefreshCallerError &&
-				error.reason === 'provider_rejected' &&
-				error.message.includes('did not return an access_token'),
+			isCallerError('provider_rejected', 'did not return an access_token'),
 		)
-		expect(
-			mocks.dispatchIntegrationAuthFailedSubscriptionEvents,
-		).toHaveBeenCalledWith(
-			expect.objectContaining({
-				reason: 'provider_rejected',
-			}),
+		expect(failedEvents).toHaveBeenCalledWith(
+			expect.objectContaining({ reason: 'provider_rejected' }),
 		)
 	} finally {
 		vi.unstubAllGlobals()
@@ -424,11 +358,7 @@ test('user-lane refresh resolves the ciphertext client secret and enforces requi
 			extraAuthorizeParams: {},
 		},
 	}
-	await upsertIntegration({
-		env,
-		userId,
-		config: googleConfig,
-	})
+	await upsertIntegration({ env, userId, config: googleConfig })
 	await persistUserOauthAppClientSecret({
 		env,
 		userId,
@@ -439,28 +369,20 @@ test('user-lane refresh resolves the ciphertext client secret and enforces requi
 
 	const fetchMock = stubTokenEndpoint({ access_token: 'fresh-google-token' })
 	try {
-		mocks.dispatchIntegrationAuthFailedSubscriptionEvents.mockClear()
 		await expect(
 			refreshIntegrationTokens({ env, userId, name: 'google' }),
 		).rejects.toSatisfy(
-			(error: unknown) =>
-				error instanceof IntegrationTokenRefreshCallerError &&
-				error.reason === 'host_not_approved' &&
-				error.message.includes(
-					'Integration "google" is not approved for host "oauth2.googleapis.com"',
-				) &&
-				error.message.includes(integrationTokenRefreshCallerMarker),
+			isCallerError(
+				'host_not_approved',
+				'Integration "google" is not approved for host "oauth2.googleapis.com"',
+				integrationTokenRefreshCallerMarker,
+			),
 		)
 		expect(fetchMock).not.toHaveBeenCalled()
-		expect(
-			mocks.dispatchIntegrationAuthFailedSubscriptionEvents,
-		).toHaveBeenCalledWith(
+		expect(failedEvents).toHaveBeenCalledWith(
 			expect.objectContaining({
 				reason: 'host_not_approved',
-				integration: expect.objectContaining({
-					name: 'google',
-					lane: 'user',
-				}),
+				integration: expect.objectContaining({ name: 'google', lane: 'user' }),
 			}),
 		)
 
@@ -478,29 +400,18 @@ test('user-lane refresh resolves the ciphertext client secret and enforces requi
 			name: 'google',
 		})
 		expect(result.refreshTokenRotated).toBe(false)
-
 		const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
 		expect(String(init.body)).toContain(
 			'client_secret=user-google-client-secret',
 		)
-
 		expect(
-			await resolveIntegrationAccessToken({
-				env,
-				userId,
-				name: 'google',
-			}),
+			await resolveIntegrationAccessToken({ env, userId, name: 'google' }),
 		).toBe('fresh-google-token')
-		expect(
-			mocks.dispatchIntegrationAuthSucceededSubscriptionEvents,
-		).toHaveBeenCalledWith(
+		expect(succeededEvents).toHaveBeenCalledWith(
 			expect.objectContaining({
 				userId,
 				source: 'refresh',
-				integration: expect.objectContaining({
-					name: 'google',
-					lane: 'user',
-				}),
+				integration: expect.objectContaining({ name: 'google', lane: 'user' }),
 			}),
 		)
 	} finally {
@@ -511,58 +422,23 @@ test('user-lane refresh resolves the ciphertext client secret and enforces requi
 test('successful Google refresh persists userinfo email as account_label when missing', async () => {
 	const { env } = createHarness()
 	const userId = 'user-google-label'
-	await upsertPlatformOauthApp({
-		db: env.APP_DB,
-		env,
+	await seedPlatformConnection(env, userId, 'google', {
 		app: {
-			slug: 'google',
-			clientId: 'platform-google-client-id',
-			clientSecret: 'platform-google-client-secret-value',
-			tokenUrl: 'https://oauth2.googleapis.com/token',
-			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-			apiBaseUrl: 'https://www.googleapis.com',
-			flow: 'confidential',
 			requiredHosts: ['oauth2.googleapis.com', 'openidconnect.googleapis.com'],
 			allowedScopes: ['openid', 'email'],
 			defaultScopes: ['openid', 'email'],
 		},
-	})
-	await upsertPlatformIntegration({
-		env,
-		userId,
-		platformAppSlug: 'google',
 		scopes: ['openid', 'email'],
 	})
-	await seedUserTokens(env, userId, 'google')
-
-	const fetchMock = vi.fn(async (url: string | URL | Request) => {
-		const href = String(url)
-		if (href.includes('openidconnect.googleapis.com')) {
-			return new Response(JSON.stringify({ email: 'kent.c.dodds@gmail.com' }), {
-				status: 200,
-				headers: { 'Content-Type': 'application/json' },
-			})
-		}
-		return new Response(
-			JSON.stringify({ access_token: 'fresh-google-token' }),
-			{
-				status: 200,
-				headers: { 'Content-Type': 'application/json' },
-			},
-		)
-	})
+	const fetchMock = vi.fn(async (url: string | URL | Request) =>
+		String(url).includes('openidconnect.googleapis.com')
+			? jsonResponse({ email: 'kent.c.dodds@gmail.com' })
+			: jsonResponse({ access_token: 'fresh-google-token' }),
+	)
 	vi.stubGlobal('fetch', fetchMock)
 	try {
-		await refreshIntegrationTokens({
-			env,
-			userId,
-			name: 'google',
-		})
-		const joined = await getJoinedIntegration({
-			env,
-			userId,
-			name: 'google',
-		})
+		await refreshIntegrationTokens({ env, userId, name: 'google' })
+		const joined = await getJoinedIntegration({ env, userId, name: 'google' })
 		expect(joined?.connection.accountLabel).toBe('kent.c.dodds@gmail.com')
 		expect(fetchMock).toHaveBeenCalledTimes(2)
 
@@ -573,16 +449,8 @@ test('successful Google refresh persists userinfo email as account_label when mi
 			scopes: ['openid', 'email'],
 			accountLabel: 'Work',
 		})
-		await refreshIntegrationTokens({
-			env,
-			userId,
-			name: 'google',
-		})
-		const labeled = await getJoinedIntegration({
-			env,
-			userId,
-			name: 'google',
-		})
+		await refreshIntegrationTokens({ env, userId, name: 'google' })
+		const labeled = await getJoinedIntegration({ env, userId, name: 'google' })
 		expect(labeled?.connection.accountLabel).toBe('Work')
 		expect(fetchMock).toHaveBeenCalledTimes(3)
 		expect(
@@ -596,50 +464,22 @@ test('successful Google refresh persists userinfo email as account_label when mi
 })
 
 test('in-flight refreshes of the same connection share one provider POST and one succeeded emit', async () => {
-	mocks.dispatchIntegrationAuthSucceededSubscriptionEvents.mockClear()
-	mocks.dispatchIntegrationAuthFailedSubscriptionEvents.mockClear()
 	const { env } = createHarness()
 	const userId = 'user-coalesce-refresh'
-	await upsertPlatformOauthApp({
-		db: env.APP_DB,
-		env,
-		app: {
-			slug: 'github',
-			clientId: 'platform-github-client-id',
-			clientSecret: 'platform-github-client-secret-value',
-			tokenUrl: 'https://github.com/login/oauth/access_token',
-			authorizeUrl: 'https://github.com/login/oauth/authorize',
-			apiBaseUrl: 'https://api.github.com',
-			flow: 'confidential',
-		},
-	})
-	await upsertPlatformIntegration({
-		env,
-		userId,
-		platformAppSlug: 'github',
-		scopes: [],
-	})
-	await seedUserTokens(env, userId, 'github')
-
+	await seedPlatformConnection(env, userId, 'github')
 	let releaseTokenEndpoint: () => void = () => {}
 	const tokenEndpointOpened = new Promise<void>((resolve) => {
 		releaseTokenEndpoint = resolve
 	})
 	const fetchMock = vi.fn(async (url: string | URL | Request) => {
-		if (String(url).includes('login/oauth/access_token')) {
-			await tokenEndpointOpened
-			return new Response(
-				JSON.stringify({
-					access_token: 'fresh-access-token',
-					refresh_token: 'rotated-refresh-token',
-				}),
-				{
-					status: 200,
-					headers: { 'Content-Type': 'application/json' },
-				},
-			)
+		if (!String(url).includes('login/oauth/access_token')) {
+			throw new Error(`unexpected fetch ${String(url)}`)
 		}
-		throw new Error(`unexpected fetch ${String(url)}`)
+		await tokenEndpointOpened
+		return jsonResponse({
+			access_token: 'fresh-access-token',
+			refresh_token: 'rotated-refresh-token',
+		})
 	})
 	vi.stubGlobal('fetch', fetchMock)
 	try {
@@ -651,15 +491,11 @@ test('in-flight refreshes of the same connection share one provider POST and one
 		expect(firstResult).toEqual(secondResult)
 		expect(firstResult.refreshTokenRotated).toBe(true)
 		expect(fetchMock).toHaveBeenCalledTimes(1)
-		expect(
-			mocks.dispatchIntegrationAuthSucceededSubscriptionEvents,
-		).toHaveBeenCalledTimes(1)
+		expect(succeededEvents).toHaveBeenCalledTimes(1)
 
 		await refreshIntegrationTokens({ env, userId, name: 'github' })
 		expect(fetchMock).toHaveBeenCalledTimes(2)
-		expect(
-			mocks.dispatchIntegrationAuthSucceededSubscriptionEvents,
-		).toHaveBeenCalledTimes(2)
+		expect(succeededEvents).toHaveBeenCalledTimes(2)
 	} finally {
 		vi.unstubAllGlobals()
 	}

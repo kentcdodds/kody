@@ -1,8 +1,8 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
-import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { hashVerificationToken } from './email-verification-tokens.ts'
 import { AccountDeletionInProgressError } from '#worker/account/deletion-state.ts'
 import {
@@ -11,63 +11,46 @@ import {
 	mintAdminEmailVerificationUrl,
 } from './email-verification-admin.ts'
 
-async function createAdminVerifyTestDb() {
+const appBaseUrl = 'https://kody.codes'
+const deletingAt = '2026-09-02 12:00:00'
+
+function createAdminVerifyTestDb() {
 	const sqlite = new DatabaseSync(':memory:')
-	const db = createD1FromSqlite(sqlite)
-	await ensureUsersTestSchema({
-		db,
-		columns: ['email_verified_at', 'stripe_plan', 'stripe_customer_id'],
-	})
-	await db
-		.prepare(
-			`CREATE TABLE roles (
-				id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-				name TEXT NOT NULL UNIQUE
-			)`,
-		)
-		.run()
-	await db.prepare(`INSERT INTO roles (name) VALUES ('user')`).run()
-	await db
-		.prepare(
-			`CREATE TABLE user_roles (
-				user_id INTEGER NOT NULL,
-				role_id INTEGER NOT NULL
-			)`,
-		)
-		.run()
-	await db
-		.prepare(
-			`CREATE TABLE email_verifications (
-				id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-				user_id INTEGER NOT NULL,
-				token_hash TEXT NOT NULL UNIQUE,
-				expires_at INTEGER NOT NULL,
-				created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
-			)`,
-		)
-		.run()
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
 	const email = 'member@example.com'
 	const stableUserId = testStableUserIdFromEmail(email)
-	await db
+	sqlite
 		.prepare(
-			`INSERT INTO users (username, email, password_hash, stable_user_id)
-			 VALUES ('member', ?, 'hash', ?)`,
+			`INSERT INTO users (id, username, email, password_hash, stable_user_id)
+			VALUES (1, 'member', ?, 'hash', ?)`,
 		)
-		.bind(email, stableUserId)
-		.run()
-	await db
-		.prepare(`INSERT INTO user_roles (user_id, role_id) VALUES (1, 1)`)
-		.run()
-	return { db, email, stableUserId }
+		.run(email, stableUserId)
+	sqlite.exec(`INSERT INTO user_roles (user_id, role_id) VALUES (1, 1)`)
+	const readUser = () =>
+		sqlite
+			.prepare(`SELECT email_verified_at, deleting_at FROM users WHERE id = 1`)
+			.get()
+	const verificationCount = () =>
+		sqlite.prepare(`SELECT COUNT(*) AS count FROM email_verifications`).get()
+			?.count
+	return {
+		sqlite,
+		db: createD1FromSqlite(sqlite),
+		email,
+		stableUserId,
+		readUser,
+		verificationCount,
+	}
 }
 
 test('admin mark verified and mint verify url cover the operator unblock path', async () => {
-	const { db, email, stableUserId } = await createAdminVerifyTestDb()
+	const { sqlite, db, email, stableUserId, verificationCount } =
+		createAdminVerifyTestDb()
 	const now = new Date('2026-08-28T00:00:00.000Z')
 
 	const minted = await mintAdminEmailVerificationUrl({
 		db,
-		appBaseUrl: 'https://kody.codes',
+		appBaseUrl,
 		target: { email },
 		now,
 	})
@@ -78,28 +61,22 @@ test('admin mark verified and mint verify url cover the operator unblock path', 
 	expect(minted.expiresAt).toBeGreaterThan(now.getTime())
 	const token = new URL(minted.verifyUrl).searchParams.get('token')
 	expect(token).toBeTruthy()
-	const stored = await db
-		.prepare(`SELECT token_hash FROM email_verifications WHERE user_id = 1`)
-		.first<{ token_hash: string }>()
-	expect(stored?.token_hash).toBe(await hashVerificationToken(token!))
+	expect(
+		sqlite
+			.prepare(`SELECT token_hash FROM email_verifications WHERE user_id = 1`)
+			.all(),
+	).toEqual([{ token_hash: await hashVerificationToken(token!) }])
 
-	const verified = await markAdminUserEmailVerified(db, {
-		stableUserId,
-		now,
-	})
+	const verified = await markAdminUserEmailVerified(db, { stableUserId, now })
 	expect(verified.email_verified).toBe(true)
 	expect(verified.email_verified_at).toBe(now.toISOString())
 	expect(verified.email_verification_delivery).toBeNull()
-	expect(
-		await db
-			.prepare(`SELECT COUNT(*) AS count FROM email_verifications`)
-			.first<{ count: number }>(),
-	).toEqual({ count: 0 })
+	expect(verificationCount()).toBe(0)
 
 	await expect(
 		mintAdminEmailVerificationUrl({
 			db,
-			appBaseUrl: 'https://kody.codes',
+			appBaseUrl,
 			target: { username: 'member' },
 		}),
 	).rejects.toBeInstanceOf(AdminEmailVerificationError)
@@ -113,38 +90,26 @@ test('admin mark verified and mint verify url cover the operator unblock path', 
 })
 
 test('admin mark verified and mint verify url refuse a fenced account', async () => {
-	const { db, email } = await createAdminVerifyTestDb()
-	await db
+	const { sqlite, db, email, readUser, verificationCount } =
+		createAdminVerifyTestDb()
+	sqlite
 		.prepare(`UPDATE users SET deleting_at = ? WHERE id = 1`)
-		.bind('2026-09-02 12:00:00')
-		.run()
+		.run(deletingAt)
 
 	await expect(
 		markAdminUserEmailVerified(db, { email }),
 	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
 	await expect(
-		mintAdminEmailVerificationUrl({
-			db,
-			appBaseUrl: 'https://kody.codes',
-			target: { email },
-		}),
+		mintAdminEmailVerificationUrl({ db, appBaseUrl, target: { email } }),
 	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
-	expect(
-		await db
-			.prepare(`SELECT email_verified_at FROM users WHERE id = 1`)
-			.first<{ email_verified_at: string | null }>(),
-	).toEqual({ email_verified_at: null })
-	expect(
-		await db
-			.prepare(`SELECT COUNT(*) AS count FROM email_verifications`)
-			.first<{ count: number }>(),
-	).toEqual({ count: 0 })
+	expect(readUser()).toEqual({
+		email_verified_at: null,
+		deleting_at: deletingAt,
+	})
+	expect(verificationCount()).toBe(0)
 })
 
-function withDeletingAtAfterWritableCheck(
-	db: D1Database,
-	deletingAt: string,
-): D1Database {
+function withDeletingAtAfterWritableCheck(db: D1Database): D1Database {
 	const originalPrepare = db.prepare.bind(db)
 	return {
 		...db,
@@ -180,39 +145,24 @@ function withDeletingAtAfterWritableCheck(
 }
 
 test('admin mark verified and mint verify url refuse a purge claim that lands after the writable check', async () => {
-	const { db: rawDb, email } = await createAdminVerifyTestDb()
-	const db = withDeletingAtAfterWritableCheck(rawDb, '2026-09-02 12:00:00')
-
+	const marking = createAdminVerifyTestDb()
 	await expect(
-		markAdminUserEmailVerified(db, { email }),
-	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
-	expect(
-		await rawDb
-			.prepare(`SELECT email_verified_at, deleting_at FROM users WHERE id = 1`)
-			.first<{
-				email_verified_at: string | null
-				deleting_at: string | null
-			}>(),
-	).toEqual({
-		email_verified_at: null,
-		deleting_at: '2026-09-02 12:00:00',
-	})
-
-	const { db: rawMintDb, email: mintEmail } = await createAdminVerifyTestDb()
-	const mintDb = withDeletingAtAfterWritableCheck(
-		rawMintDb,
-		'2026-09-02 12:00:00',
-	)
-	await expect(
-		mintAdminEmailVerificationUrl({
-			db: mintDb,
-			appBaseUrl: 'https://kody.codes',
-			target: { email: mintEmail },
+		markAdminUserEmailVerified(withDeletingAtAfterWritableCheck(marking.db), {
+			email: marking.email,
 		}),
 	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
-	expect(
-		await rawMintDb
-			.prepare(`SELECT COUNT(*) AS count FROM email_verifications`)
-			.first<{ count: number }>(),
-	).toEqual({ count: 0 })
+	expect(marking.readUser()).toEqual({
+		email_verified_at: null,
+		deleting_at: deletingAt,
+	})
+
+	const minting = createAdminVerifyTestDb()
+	await expect(
+		mintAdminEmailVerificationUrl({
+			db: withDeletingAtAfterWritableCheck(minting.db),
+			appBaseUrl,
+			target: { email: minting.email },
+		}),
+	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
+	expect(minting.verificationCount()).toBe(0)
 })

@@ -8,6 +8,36 @@ import {
 	modernMcpProtocolVersion,
 } from './transport-session.ts'
 
+function sanitizeStoredRow(
+	row: { id: string; serverOptions: object },
+	options?: Parameters<typeof sanitizeStoredMcpSessions>[1],
+) {
+	const updates: Array<{ id: string; options: unknown }> = []
+	sanitizeStoredMcpSessions(
+		{
+			sql: {
+				exec(query: string, ...bindings: Array<unknown>) {
+					if (query.startsWith('SELECT')) {
+						return [
+							{ id: row.id, server_options: JSON.stringify(row.serverOptions) },
+						]
+					}
+					updates.push({
+						id: String(bindings[1]),
+						options: JSON.parse(String(bindings[0])),
+					})
+					return []
+				},
+			},
+		},
+		options,
+	)
+	return updates
+}
+
+const legacyClient = { versionNegotiation: { mode: 'legacy' as const } }
+const autoClient = { versionNegotiation: { mode: 'auto' } }
+
 test('restore and live session sanitization clears stale 2025 state and keeps fresh modern discoverResult', () => {
 	const stale = sanitizePersistedMcpServerOptions({
 		transport: {
@@ -20,9 +50,7 @@ test('restore and live session sanitization clears stale 2025 state and keeps fr
 	expect(stale.transport?.sessionId).toBeUndefined()
 	expect(stale.transport?.protocolVersion).toBeUndefined()
 	expect(stale.discoverResult).toBeUndefined()
-	expect(stale.client).toEqual({
-		versionNegotiation: { mode: 'auto' },
-	})
+	expect(stale.client).toEqual(autoClient)
 
 	const modernDiscoverResult = {
 		supportedVersions: [modernMcpProtocolVersion],
@@ -67,96 +95,52 @@ test('restore and live session sanitization clears stale 2025 state and keeps fr
 	expect(live.options.transport.protocolVersion).toBeUndefined()
 	expect(live.options.discoverResult).toBeUndefined()
 
-	const updates: Array<{ id: string; options: string }> = []
-	sanitizeStoredMcpSessions({
-		sql: {
-			exec(query: string, ...bindings: Array<unknown>) {
-				if (query.startsWith('SELECT')) {
-					return [
-						{
-							id: 'media-rss',
-							server_options: JSON.stringify({
-								transport: {
-									sessionId: 'stale-2025-session',
-									protocolVersion: '2025-11-25',
-								},
-							}),
-						},
-					]
-				}
-				updates.push({
-					id: String(bindings[1]),
-					options: String(bindings[0]),
-				})
-				return []
+	expect(
+		sanitizeStoredRow({
+			id: 'media-rss',
+			serverOptions: {
+				transport: {
+					sessionId: 'stale-2025-session',
+					protocolVersion: '2025-11-25',
+				},
 			},
-		},
-	})
-	expect(updates).toHaveLength(1)
-	expect(updates[0]?.id).toBe('media-rss')
-	expect(JSON.parse(updates[0]?.options ?? '{}')).toEqual({
-		client: { versionNegotiation: { mode: 'auto' } },
-		transport: {},
-	})
+		}),
+	).toEqual([
+		{ id: 'media-rss', options: { client: autoClient, transport: {} } },
+	])
 })
 
 test('restore keeps catalog-timeout legacy only for remembered servers', () => {
-	const unmarked = sanitizePersistedMcpServerOptions(
-		{
-			client: { versionNegotiation: { mode: 'legacy' } },
-			transport: { type: 'auto' },
-		},
-		{
+	const keepLegacyHandshakeIds = new Set(['analytics'])
+	const legacyOptions = {
+		client: legacyClient,
+		transport: { type: 'auto' as const },
+	}
+	expect(
+		sanitizePersistedMcpServerOptions(legacyOptions, {
 			serverId: 'feeds',
-			keepLegacyHandshakeIds: new Set(['analytics']),
-		},
-	)
-	expect(unmarked.client).toEqual({
-		versionNegotiation: { mode: 'auto' },
-	})
-
-	const marked = sanitizePersistedMcpServerOptions(
-		{
-			client: { versionNegotiation: { mode: 'legacy' } },
-			transport: { type: 'auto' },
-		},
-		{
+			keepLegacyHandshakeIds,
+		}).client,
+	).toEqual(autoClient)
+	expect(
+		sanitizePersistedMcpServerOptions(legacyOptions, {
 			serverId: 'analytics',
-			keepLegacyHandshakeIds: new Set(['analytics']),
-		},
-	)
-	expect(marked.client).toEqual({
-		versionNegotiation: { mode: 'legacy' },
-	})
+			keepLegacyHandshakeIds,
+		}).client,
+	).toEqual(legacyClient)
 
-	const updates: Array<{ id: string; options: string }> = []
-	sanitizeStoredMcpSessions(
-		{
-			sql: {
-				exec(query: string, ...bindings: Array<unknown>) {
-					if (query.startsWith('SELECT')) {
-						return [
-							{
-								id: 'analytics',
-								server_options: JSON.stringify({
-									client: { versionNegotiation: { mode: 'legacy' } },
-									transport: { sessionId: 'stale-2025-session' },
-								}),
-							},
-						]
-					}
-					updates.push({
-						id: String(bindings[1]),
-						options: String(bindings[0]),
-					})
-					return []
+	expect(
+		sanitizeStoredRow(
+			{
+				id: 'analytics',
+				serverOptions: {
+					client: legacyClient,
+					transport: { sessionId: 'stale-2025-session' },
 				},
 			},
-		},
-		{ keepLegacyHandshakeIds: new Set(['analytics']) },
-	)
-	expect(JSON.parse(updates[0]?.options ?? '{}')).toEqual({
-		client: { versionNegotiation: { mode: 'legacy' } },
-		transport: {},
-	})
+			{ keepLegacyHandshakeIds },
+		),
+	).toEqual([
+		{ id: 'analytics', options: { client: legacyClient, transport: {} } },
+	])
 })

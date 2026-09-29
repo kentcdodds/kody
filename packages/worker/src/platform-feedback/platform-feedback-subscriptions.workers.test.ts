@@ -56,24 +56,21 @@ async function ensurePlatformFeedbackTestSchema(db: D1Database) {
 			)`,
 		)
 		.run()
-	const columns = await db
-		.prepare(`PRAGMA table_info(platform_feedback)`)
-		.all<{ name: string }>()
-	const columnNames = new Set(
-		(columns.results ?? []).map((column) => column.name),
-	)
-	if (!columnNames.has('submitter_username')) {
-		await db
-			.prepare(
-				`ALTER TABLE platform_feedback ADD COLUMN submitter_username TEXT`,
-			)
-			.run()
-	}
-	if (!columnNames.has('submitter_email')) {
-		await db
-			.prepare(`ALTER TABLE platform_feedback ADD COLUMN submitter_email TEXT`)
-			.run()
-	}
+}
+
+async function seedUser(prefix: string) {
+	const email = `${prefix}-${crypto.randomUUID()}@example.com`
+	const username = `${prefix.replace(/-/g, '')}-${crypto.randomUUID().slice(0, 8)}`
+	const stableId = await createStableUserIdFromEmail(email)
+	const accountId = await seedAccount({ db: env.APP_DB, email, username })
+	return { email, username, stableId, accountId }
+}
+
+function dispatch(feedbackId: string) {
+	return dispatchPlatformFeedbackSubmittedSubscriptionEvent({
+		env: { ...env, APP_BASE_URL: platformBaseUrl },
+		feedbackId,
+	})
 }
 
 async function seedSubscribedPackage(input: {
@@ -227,19 +224,12 @@ test(
 		await ensurePlatformFeedbackTestSchema(env.APP_DB)
 		await ensureRbacTestSchema(env.APP_DB)
 
-		const submitterEmail = `feedback-submitter-${crypto.randomUUID()}@example.com`
-		const submitterUsername = `feedbacksubmitter-${crypto.randomUUID().slice(0, 8)}`
-		const submitterStableId = await createStableUserIdFromEmail(submitterEmail)
-		const submitterAccountId = await seedAccount({
-			db: env.APP_DB,
-			email: submitterEmail,
-			username: submitterUsername,
-		})
+		const submitter = await seedUser('feedback-submitter')
 		const dispatchFeedback = {
 			...openFeedback,
-			submitterUserId: submitterStableId,
-			submitterUsername,
-			submitterEmail,
+			submitterUserId: submitter.stableId,
+			submitterUsername: submitter.username,
+			submitterEmail: submitter.email,
 		}
 		await env.APP_DB.prepare(
 			`INSERT OR REPLACE INTO platform_feedback (
@@ -262,49 +252,39 @@ test(
 			)
 			.run()
 
-		const adminEmail = `feedback-sub-admin-${crypto.randomUUID()}@example.com`
-		const adminStableId = await createStableUserIdFromEmail(adminEmail)
-		const adminAccountId = await seedAccount({
-			db: env.APP_DB,
-			email: adminEmail,
-			username: `feedbackadmin-${crypto.randomUUID().slice(0, 8)}`,
-		})
-		await assignAdminRole({ db: env.APP_DB, userId: adminAccountId })
-
-		const regularEmail = `feedback-sub-user-${crypto.randomUUID()}@example.com`
-		const regularStableId = await createStableUserIdFromEmail(regularEmail)
-		await seedAccount({
-			db: env.APP_DB,
-			email: regularEmail,
-			username: `feedbackuser-${crypto.randomUUID().slice(0, 8)}`,
-		})
+		const admin = await seedUser('feedback-admin')
+		await assignAdminRole({ db: env.APP_DB, userId: admin.accountId })
+		const adminStableId = admin.stableId
+		const regularStableId = (await seedUser('feedback-user')).stableId
 
 		const bundleKv = new Map<string, string>()
 		const expectedPayload = buildPlatformFeedbackSubmittedEvent({
 			baseUrl: platformBaseUrl,
 			feedback: dispatchFeedback,
 		})
-		const firstAdminPackage = await seedSubscribedPackage({
-			bundleKv,
-			userId: adminStableId,
-			scope: 'feedbackadmin',
-			suffix: 'first',
-			expectedPayload,
-		})
-		const secondAdminPackage = await seedSubscribedPackage({
-			bundleKv,
-			userId: adminStableId,
-			scope: 'feedbackadmin',
-			suffix: 'second',
-			expectedPayload,
-		})
-		const regularPackage = await seedSubscribedPackage({
-			bundleKv,
-			userId: regularStableId,
-			scope: 'feedbackuser',
-			suffix: 'regular',
-			expectedPayload,
-		})
+		const seedPackage = (userId: string, scope: string, suffix: string) =>
+			seedSubscribedPackage({
+				bundleKv,
+				userId,
+				scope,
+				suffix,
+				expectedPayload,
+			})
+		const firstAdminPackage = await seedPackage(
+			adminStableId,
+			'feedbackadmin',
+			'first',
+		)
+		const secondAdminPackage = await seedPackage(
+			adminStableId,
+			'feedbackadmin',
+			'second',
+		)
+		const regularPackage = await seedPackage(
+			regularStableId,
+			'feedbackuser',
+			'regular',
+		)
 
 		const originalKv = env.BUNDLE_ARTIFACTS_KV
 		Object.assign(env, {
@@ -315,33 +295,23 @@ test(
 					if (type === 'json') return JSON.parse(value) as unknown
 					return value
 				},
-				async put() {
-					return undefined
-				},
-				async delete() {
-					return undefined
-				},
+				async put() {},
+				async delete() {},
 			},
 		})
 
 		try {
-			await dispatchPlatformFeedbackSubmittedSubscriptionEvent({
-				env: { ...env, APP_BASE_URL: platformBaseUrl },
-				feedbackId: dispatchFeedback.id,
-			})
+			await dispatch(dispatchFeedback.id)
 			await env.APP_DB.prepare(
 				`UPDATE users SET username = ?, email = ? WHERE id = ?`,
 			)
 				.bind(
 					`changed-${crypto.randomUUID().slice(0, 8)}`,
 					`changed-${crypto.randomUUID()}@example.com`,
-					submitterAccountId,
+					submitter.accountId,
 				)
 				.run()
-			await dispatchPlatformFeedbackSubmittedSubscriptionEvent({
-				env: { ...env, APP_BASE_URL: platformBaseUrl },
-				feedbackId: dispatchFeedback.id,
-			})
+			await dispatch(dispatchFeedback.id)
 
 			// The keyed idempotency ledger lives in each owner's RunLog DO now.
 			const adminInvocations = (
@@ -381,9 +351,9 @@ test(
 						summaryUntrusted: dispatchFeedback.summary,
 						detailsUntrusted: dispatchFeedback.details,
 						submitter: {
-							user_id: submitterStableId,
-							username: submitterUsername,
-							email: submitterEmail,
+							user_id: submitter.stableId,
+							username: submitter.username,
+							email: submitter.email,
 						},
 						adminUrl: `${platformBaseUrl}/admin/platform-feedback?feedbackId=${dispatchFeedback.id}`,
 						contentWarning: platformFeedbackContentWarning,
@@ -412,22 +382,12 @@ test(
 			}
 			await env.APP_DB.prepare(`DELETE FROM user_roles`).run()
 			const before = await countInvocations()
-			const withoutAdmins =
-				await dispatchPlatformFeedbackSubmittedSubscriptionEvent({
-					env: { ...env, APP_BASE_URL: platformBaseUrl },
-					feedbackId: 'feedback-without-admins',
-				})
-			expect(withoutAdmins).toEqual([])
+			expect(await dispatch('feedback-without-admins')).toEqual([])
 			expect(await countInvocations()).toBe(before)
 
 			await env.APP_DB.prepare(`DROP TABLE user_roles`).run()
 			await env.APP_DB.prepare(`DROP TABLE roles`).run()
-			const beforeRbac =
-				await dispatchPlatformFeedbackSubmittedSubscriptionEvent({
-					env: { ...env, APP_BASE_URL: platformBaseUrl },
-					feedbackId: 'feedback-before-rbac',
-				})
-			expect(beforeRbac).toEqual([])
+			expect(await dispatch('feedback-before-rbac')).toEqual([])
 			expect(await countInvocations()).toBe(before)
 		} finally {
 			Object.assign(env, { BUNDLE_ARTIFACTS_KV: originalKv })

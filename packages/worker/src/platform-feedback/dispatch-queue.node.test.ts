@@ -38,12 +38,8 @@ function createBatch(messages: Array<ReturnType<typeof createQueueMessage>>) {
 
 test('platform feedback queue acks valid, invalid, and cancelled messages and retries transient failures', async () => {
 	consoleError.mockImplementation(() => {})
-	const first = createQueueMessage('queue-valid', {
-		feedbackId,
-	})
-	const duplicate = createQueueMessage('queue-duplicate', {
-		feedbackId,
-	})
+	const first = createQueueMessage('queue-valid', { feedbackId })
+	const duplicate = createQueueMessage('queue-duplicate', { feedbackId })
 	const missing = createQueueMessage('queue-missing', {})
 	const invalid = createQueueMessage('queue-invalid', { feedbackId: '   ' })
 	const extraFields = createQueueMessage('queue-extra-fields', {
@@ -84,26 +80,16 @@ test('platform feedback queue acks valid, invalid, and cancelled messages and re
 	)
 
 	expect(
-		mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
-	).toHaveBeenCalledTimes(5)
-	expect(
-		mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
-	).toHaveBeenNthCalledWith(1, {
-		env: expect.anything(),
-		feedbackId,
-	})
-	expect(
-		mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
-	).toHaveBeenNthCalledWith(2, {
-		env: expect.anything(),
-		feedbackId,
-	})
-	expect(
-		mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
-	).toHaveBeenNthCalledWith(3, {
-		env: expect.anything(),
-		feedbackId: 'feedback-deleted',
-	})
+		mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent.mock.calls,
+	).toEqual(
+		[
+			feedbackId,
+			feedbackId,
+			'feedback-deleted',
+			'feedback-load-failure',
+			feedbackId,
+		].map((id) => [{ env: expect.anything(), feedbackId: id }]),
+	)
 	for (const message of [
 		first,
 		duplicate,

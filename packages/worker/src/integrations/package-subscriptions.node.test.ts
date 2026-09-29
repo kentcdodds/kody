@@ -27,99 +27,114 @@ const {
 	integrationAuthSucceededTopic,
 } = await import('./package-subscriptions.ts')
 
-test('reconnect URLs add loginHint only when the account label is an email', () => {
-	expect(
-		buildIntegrationAuthFailedReconnectUrl({
-			baseUrl: 'https://example.com',
-			integrationName: 'google',
-		}),
-	).toBe('https://example.com/connect/oauth?provider=google')
-	expect(
-		buildIntegrationAuthFailedReconnectUrl({
-			baseUrl: 'https://example.com',
-			integrationName: 'google-business',
-			accountLabel: 'Work',
-		}),
-	).toBe('https://example.com/connect/oauth?provider=google-business')
-	expect(
-		buildIntegrationAuthFailedReconnectUrl({
-			baseUrl: 'https://example.com',
-			integrationName: 'google',
-			accountLabel: 'kent.c.dodds@gmail.com',
-		}),
-	).toBe(
-		'https://example.com/connect/oauth?provider=google&loginHint=kent.c.dodds%40gmail.com',
-	)
-})
+const env = {
+	APP_DB: {},
+	BUNDLE_ARTIFACTS_KV: {},
+	APP_BASE_URL: 'https://example.com',
+} as Env
 
-function createEnv() {
+function pkg(index: number, kodyId: string) {
 	return {
-		APP_DB: {},
-		BUNDLE_ARTIFACTS_KV: {},
-		APP_BASE_URL: 'https://example.com',
-	} as Env
+		id: `package-${index}`,
+		userId: 'user-1',
+		sourceId: `source-${index}`,
+		kodyId,
+		name: `@user/${kodyId}`,
+	}
 }
 
-function subscribedManifest(input: {
-	name: string
-	kodyId: string
-	handler?: string
-}) {
+function subscribedManifest(
+	kodyId: string,
+	topic: string = integrationAuthFailedTopic,
+	handler = './src/on-integration-auth-failed.ts',
+) {
 	return {
 		manifest: {
-			name: input.name,
+			name: `@user/${kodyId}`,
 			kody: {
-				id: input.kodyId,
+				id: kodyId,
 				description: 'Auth notifier',
-				subscriptions: {
-					[integrationAuthFailedTopic]: {
-						handler: input.handler ?? './src/on-integration-auth-failed.ts',
-					},
-				},
+				subscriptions: { [topic]: { handler } },
 			},
 		},
 	}
 }
 
-test('integration.auth.failed fans out only to owning-user packages with a lean payload', async () => {
-	const savedPackage = {
-		id: 'package-1',
-		userId: 'user-1',
-		sourceId: 'source-1',
-		kodyId: 'auth-notifier',
-		name: '@user/auth-notifier',
+const workIntegration = {
+	name: 'google',
+	lane: 'platform' as const,
+	account_label: 'Work',
+	description: 'Personal Gmail',
+	provider: 'google',
+	platform_app_slug: 'google',
+	connected_at: '2026-01-01T00:00:00.000Z',
+	token_refreshed_at: '2026-08-01T00:00:00.000Z',
+}
+
+const bareIntegration = {
+	name: 'google',
+	account_label: null,
+	description: null,
+	provider: 'google',
+	scopes: [],
+	connected_at: null,
+	token_refreshed_at: null,
+}
+
+function expectNoSecretParams(extra: Array<string> = []) {
+	const params = mocks.invokePackageSubscription.mock.calls[0]?.[0]
+		?.params as Record<string, unknown>
+	expect(
+		['access_token', 'refresh_token', 'client_secret', ...extra].filter(
+			(key) => key in params,
+		),
+	).toEqual([])
+}
+
+test('reconnect URLs add loginHint only when the account label is an email', () => {
+	const cases: Array<[string, string | undefined, string]> = [
+		['google', undefined, 'provider=google'],
+		['google-business', 'Work', 'provider=google-business'],
+		[
+			'google',
+			'kent.c.dodds@gmail.com',
+			'provider=google&loginHint=kent.c.dodds%40gmail.com',
+		],
+	]
+	for (const [integrationName, accountLabel, query] of cases) {
+		expect(
+			buildIntegrationAuthFailedReconnectUrl({
+				baseUrl: 'https://example.com',
+				integrationName,
+				...(accountLabel ? { accountLabel } : {}),
+			}),
+		).toBe(`https://example.com/connect/oauth?${query}`)
 	}
+})
+
+test('integration.auth.failed fans out only to owning-user packages with a lean payload', async () => {
+	const savedPackage = pkg(1, 'auth-notifier')
 	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([savedPackage])
 	mocks.loadPackageManifestBySourceId.mockResolvedValueOnce(
-		subscribedManifest({
-			name: '@user/auth-notifier',
-			kodyId: 'auth-notifier',
-		}),
+		subscribedManifest('auth-notifier'),
 	)
-	const env = createEnv()
-
+	const integration = {
+		...workIntegration,
+		scopes: ['openid', 'email', 'https://www.googleapis.com/auth/calendar'],
+	}
+	const provider = {
+		error: 'invalid_grant',
+		error_description: 'Token has been expired or revoked.',
+		http_status: 400,
+	}
 	const results = await dispatchIntegrationAuthFailedSubscriptionEvents({
 		env,
 		userId: 'user-1',
 		eventId: 'event-1',
 		occurredAt: '2026-08-18T17:00:00.000Z',
-		integration: {
-			name: 'google',
-			lane: 'platform',
-			account_label: 'Work',
-			description: 'Personal Gmail',
-			provider: 'google',
-			platform_app_slug: 'google',
-			scopes: ['openid', 'email', 'https://www.googleapis.com/auth/calendar'],
-			connected_at: '2026-01-01T00:00:00.000Z',
-			token_refreshed_at: '2026-08-01T00:00:00.000Z',
-		},
+		integration,
 		reason: 'provider_rejected',
-		provider: {
-			error: 'invalid_grant',
-			error_description: 'Token has been expired or revoked.',
-			http_status: 400,
-		},
+		provider,
 	})
 
 	expect(results).toHaveLength(1)
@@ -135,48 +150,22 @@ test('integration.auth.failed fans out only to owning-user packages with a lean 
 			params: {
 				event: integrationAuthFailedTopic,
 				event_id: 'event-1',
-				integration: {
-					name: 'google',
-					lane: 'platform',
-					account_label: 'Work',
-					description: 'Personal Gmail',
-					provider: 'google',
-					platform_app_slug: 'google',
-					scopes: [
-						'openid',
-						'email',
-						'https://www.googleapis.com/auth/calendar',
-					],
-					connected_at: '2026-01-01T00:00:00.000Z',
-					token_refreshed_at: '2026-08-01T00:00:00.000Z',
-				},
+				integration,
 				reason: 'provider_rejected',
-				provider: {
-					error: 'invalid_grant',
-					error_description: 'Token has been expired or revoked.',
-					http_status: 400,
-				},
+				provider,
 				reconnect_url: 'https://example.com/connect/oauth?provider=google',
 				account_url: 'https://example.com/account/integrations/google',
 				occurred_at: '2026-08-18T17:00:00.000Z',
 			},
 		}),
 	)
-	const params = mocks.invokePackageSubscription.mock.calls[0]?.[0]?.params as
-		| Record<string, unknown>
-		| undefined
-	expect(params).not.toHaveProperty('access_token')
-	expect(params).not.toHaveProperty('refresh_token')
-	expect(params).not.toHaveProperty('client_secret')
+	expectNoSecretParams()
 })
 
 test('integration.auth.failed never throws on discovery or handler failures', async () => {
 	consoleWarn.mockImplementation(() => {})
-	mocks.invokePackageSubscription.mockReset()
-	mocks.listSavedPackagesByUserId.mockReset()
-	mocks.loadPackageManifestBySourceId.mockReset()
-	const env = createEnv()
-
+	const discoveryIncomplete =
+		'integration.auth.failed package subscription discovery incomplete'
 	mocks.listSavedPackagesByUserId.mockRejectedValueOnce(
 		new Error('D1 unavailable'),
 	)
@@ -187,84 +176,39 @@ test('integration.auth.failed never throws on discovery or handler failures', as
 			eventId: 'event-2',
 			occurredAt: '2026-08-18T17:00:00.000Z',
 			integration: {
-				name: 'google',
+				...bareIntegration,
 				lane: 'user',
-				account_label: null,
-				description: null,
-				provider: 'google',
 				platform_app_slug: null,
-				scopes: [],
-				connected_at: null,
-				token_refreshed_at: null,
 			},
 			reason: 'missing_refresh_token',
-			provider: {
-				error: null,
-				error_description: null,
-				http_status: null,
-			},
+			provider: { error: null, error_description: null, http_status: null },
 		}),
 	).resolves.toEqual([])
 	expect(mocks.invokePackageSubscription).not.toHaveBeenCalled()
 	expect(consoleWarn).toHaveBeenCalledWith(
-		'integration.auth.failed package subscription discovery incomplete',
+		discoveryIncomplete,
 		expect.objectContaining({
 			eventId: 'event-2',
 			integrationName: 'google',
 			errorCount: 1,
 		}),
 	)
-	const discoveryWarn = consoleWarn.mock.calls.find(
-		(call) =>
-			call[0] ===
-			'integration.auth.failed package subscription discovery incomplete',
-	)?.[1] as Record<string, unknown> | undefined
-	expect(discoveryWarn).not.toHaveProperty('userId')
+	expect(
+		consoleWarn.mock.calls.find((call) => call[0] === discoveryIncomplete)?.[1],
+	).not.toHaveProperty('userId')
 
-	const matchingPackage = {
-		id: 'package-1',
-		userId: 'user-1',
-		sourceId: 'source-1',
-		kodyId: 'auth-notifier',
-		name: '@user/auth-notifier',
-	}
-	const brokenPackage = {
-		id: 'package-2',
-		userId: 'user-1',
-		sourceId: 'source-2',
-		kodyId: 'broken',
-		name: '@user/broken',
-	}
-	const sibling = {
-		id: 'package-3',
-		userId: 'user-1',
-		sourceId: 'source-3',
-		kodyId: 'notifier-b',
-		name: '@user/notifier-b',
-	}
 	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([
-		matchingPackage,
-		brokenPackage,
-		sibling,
+		pkg(1, 'auth-notifier'),
+		pkg(2, 'broken'),
+		pkg(3, 'notifier-b'),
 	])
 	mocks.loadPackageManifestBySourceId
-		.mockResolvedValueOnce(
-			subscribedManifest({
-				name: '@user/auth-notifier',
-				kodyId: 'auth-notifier',
-			}),
-		)
+		.mockResolvedValueOnce(subscribedManifest('auth-notifier'))
 		.mockRejectedValueOnce(new Error('manifest unavailable'))
-		.mockResolvedValueOnce(
-			subscribedManifest({
-				name: '@user/notifier-b',
-				kodyId: 'notifier-b',
-			}),
-		)
+		.mockResolvedValueOnce(subscribedManifest('notifier-b'))
 	mocks.invokePackageSubscription
 		.mockRejectedValueOnce(new Error('handler boom'))
 		.mockResolvedValueOnce({ status: 200, body: { ok: true } })
-
 	await expect(
 		dispatchIntegrationAuthFailedSubscriptionEvents({
 			env,
@@ -272,15 +216,9 @@ test('integration.auth.failed never throws on discovery or handler failures', as
 			eventId: 'event-3',
 			occurredAt: '2026-08-18T17:00:00.000Z',
 			integration: {
-				name: 'google',
+				...bareIntegration,
 				lane: 'platform',
-				account_label: null,
-				description: null,
-				provider: 'google',
 				platform_app_slug: 'google',
-				scopes: [],
-				connected_at: null,
-				token_refreshed_at: null,
 			},
 			reason: 'provider_rejected',
 			provider: {
@@ -293,10 +231,7 @@ test('integration.auth.failed never throws on discovery or handler failures', as
 	expect(mocks.invokePackageSubscription).toHaveBeenCalledTimes(2)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'integration.auth.failed package subscription invoke failed',
-		expect.objectContaining({
-			eventId: 'event-3',
-			error: expect.any(Error),
-		}),
+		expect.objectContaining({ eventId: 'event-3', error: expect.any(Error) }),
 	)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'Failed to load package manifest for integration.auth.failed subscription',
@@ -305,69 +240,30 @@ test('integration.auth.failed never throws on discovery or handler failures', as
 })
 
 test('integration.auth.succeeded fans out a lean payload only to packages on that topic', async () => {
-	mocks.invokePackageSubscription.mockReset()
-	mocks.listSavedPackagesByUserId.mockReset()
-	mocks.loadPackageManifestBySourceId.mockReset()
-	const savedPackage = {
-		id: 'package-1',
-		userId: 'user-1',
-		sourceId: 'source-1',
-		kodyId: 'auth-notifier',
-		name: '@user/auth-notifier',
-	}
-	const failedOnly = {
-		id: 'package-2',
-		userId: 'user-1',
-		sourceId: 'source-2',
-		kodyId: 'failed-only',
-		name: '@user/failed-only',
-	}
+	const savedPackage = pkg(1, 'auth-notifier')
 	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([
 		savedPackage,
-		failedOnly,
+		pkg(2, 'failed-only'),
 	])
 	mocks.loadPackageManifestBySourceId
-		.mockResolvedValueOnce({
-			manifest: {
-				name: '@user/auth-notifier',
-				kody: {
-					id: 'auth-notifier',
-					description: 'Auth notifier',
-					subscriptions: {
-						[integrationAuthSucceededTopic]: {
-							handler: './src/on-event.ts',
-						},
-					},
-				},
-			},
-		})
 		.mockResolvedValueOnce(
-			subscribedManifest({
-				name: '@user/failed-only',
-				kodyId: 'failed-only',
-			}),
+			subscribedManifest(
+				'auth-notifier',
+				integrationAuthSucceededTopic,
+				'./src/on-event.ts',
+			),
 		)
-	const env = createEnv()
+		.mockResolvedValueOnce(subscribedManifest('failed-only'))
+	const integration = { ...workIntegration, scopes: ['openid', 'email'] }
 
 	const results = await dispatchIntegrationAuthSucceededSubscriptionEvents({
 		env,
 		userId: 'user-1',
 		eventId: 'event-4',
 		occurredAt: '2026-08-18T18:00:00.000Z',
-		integration: {
-			name: 'google',
-			lane: 'platform',
-			account_label: 'Work',
-			description: 'Personal Gmail',
-			provider: 'google',
-			platform_app_slug: 'google',
-			scopes: ['openid', 'email'],
-			connected_at: '2026-01-01T00:00:00.000Z',
-			token_refreshed_at: '2026-08-01T00:00:00.000Z',
-		},
+		integration,
 		source: 'refresh',
 	})
-
 	expect(results).toHaveLength(1)
 	expect(mocks.invokePackageSubscription).toHaveBeenCalledTimes(1)
 	expect(mocks.invokePackageSubscription).toHaveBeenCalledWith(
@@ -379,28 +275,12 @@ test('integration.auth.succeeded fans out a lean payload only to packages on tha
 			params: {
 				event: integrationAuthSucceededTopic,
 				event_id: 'event-4',
-				integration: {
-					name: 'google',
-					lane: 'platform',
-					account_label: 'Work',
-					description: 'Personal Gmail',
-					provider: 'google',
-					platform_app_slug: 'google',
-					scopes: ['openid', 'email'],
-					connected_at: '2026-01-01T00:00:00.000Z',
-					token_refreshed_at: '2026-08-01T00:00:00.000Z',
-				},
+				integration,
 				source: 'refresh',
 				account_url: 'https://example.com/account/integrations/google',
 				occurred_at: '2026-08-18T18:00:00.000Z',
 			},
 		}),
 	)
-	const params = mocks.invokePackageSubscription.mock.calls[0]?.[0]?.params as
-		| Record<string, unknown>
-		| undefined
-	expect(params).not.toHaveProperty('access_token')
-	expect(params).not.toHaveProperty('refresh_token')
-	expect(params).not.toHaveProperty('client_secret')
-	expect(params).not.toHaveProperty('reconnect_url')
+	expectNoSecretParams(['reconnect_url'])
 })

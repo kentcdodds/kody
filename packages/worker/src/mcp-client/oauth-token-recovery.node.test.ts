@@ -17,68 +17,34 @@ import {
 } from './oauth-token-recovery.ts'
 
 test('token recovery inspects stored OAuth blobs without treating empty strings as tokens', () => {
-	expect(readMcpOAuthTokenPresence(null)).toEqual({
-		hasAccessToken: false,
-		hasRefreshToken: false,
-	})
+	const none = { hasAccessToken: false, hasRefreshToken: false }
+	const accessOnly = { hasAccessToken: true, hasRefreshToken: false }
+	const both = { hasAccessToken: true, hasRefreshToken: true }
+	expect(readMcpOAuthTokenPresence(null)).toEqual(none)
 	expect(
-		readMcpOAuthTokenPresence({
-			access_token: '  ',
-			refresh_token: '',
-		}),
-	).toEqual({
-		hasAccessToken: false,
-		hasRefreshToken: false,
-	})
+		readMcpOAuthTokenPresence({ access_token: '  ', refresh_token: '' }),
+	).toEqual(none)
 	expect(
-		readMcpOAuthTokenPresence({
-			access_token: 'at',
-			refresh_token: 'rt',
-		}),
-	).toEqual({
-		hasAccessToken: true,
-		hasRefreshToken: true,
-	})
+		readMcpOAuthTokenPresence({ access_token: 'at', refresh_token: 'rt' }),
+	).toEqual(both)
+	expect(shouldAttemptMcpOAuthRefresh(accessOnly)).toBe(true)
+	expect(shouldAttemptMcpOAuthRefresh(none)).toBe(false)
+
+	const queueCases = [
+		{ presence: accessOnly, hasTokenRecoveryLastError: false, expected: true },
+		{ presence: both, hasTokenRecoveryLastError: false, expected: false },
+		{ presence: none, hasTokenRecoveryLastError: true, expected: true },
+		{ presence: none, hasTokenRecoveryLastError: false, expected: false },
+	]
 	expect(
-		shouldAttemptMcpOAuthRefresh({
-			hasAccessToken: true,
-			hasRefreshToken: false,
-		}),
-	).toBe(true)
-	expect(
-		shouldAttemptMcpOAuthRefresh({
-			hasAccessToken: false,
-			hasRefreshToken: false,
-		}),
-	).toBe(false)
-	expect(
-		shouldQueueMcpTokenRecoveryDisconnected({
-			wasReady: false,
-			presence: { hasAccessToken: true, hasRefreshToken: false },
-			hasTokenRecoveryLastError: false,
-		}),
-	).toBe(true)
-	expect(
-		shouldQueueMcpTokenRecoveryDisconnected({
-			wasReady: false,
-			presence: { hasAccessToken: true, hasRefreshToken: true },
-			hasTokenRecoveryLastError: false,
-		}),
-	).toBe(false)
-	expect(
-		shouldQueueMcpTokenRecoveryDisconnected({
-			wasReady: false,
-			presence: { hasAccessToken: false, hasRefreshToken: false },
-			hasTokenRecoveryLastError: true,
-		}),
-	).toBe(true)
-	expect(
-		shouldQueueMcpTokenRecoveryDisconnected({
-			wasReady: false,
-			presence: { hasAccessToken: false, hasRefreshToken: false },
-			hasTokenRecoveryLastError: false,
-		}),
-	).toBe(false)
+		queueCases.filter(
+			({ expected, ...input }) =>
+				shouldQueueMcpTokenRecoveryDisconnected({
+					wasReady: false,
+					...input,
+				}) !== expected,
+		),
+	).toEqual([])
 	expect(mcpOAuthTokenRecoveryStorageKey('server-1')).toBe(
 		'mcp-oauth-token-recovery/server-1',
 	)
@@ -89,39 +55,47 @@ test('token recovery inspects stored OAuth blobs without treating empty strings 
 			key: '/Kody/home/https://kody.codes/oauth/client-metadata.json/token',
 		}),
 	).toBe('https://kody.codes/oauth/client-metadata.json')
-	expect(
-		mcpOAuthDiscoveryAdvertisesRefresh({
-			grant_types_supported: ['authorization_code', 'refresh_token'],
-			scopes_supported: ['mcp'],
-		}),
-	).toBe(true)
-	expect(
-		mcpOAuthDiscoveryAdvertisesRefresh({
-			scopes_supported: ['offline_access'],
-		}),
-	).toBe(true)
-	expect(
-		mcpOAuthDiscoveryAdvertisesRefresh({
-			grant_types_supported: ['authorization_code'],
-			scopes_supported: ['mcp'],
-		}),
-	).toBe(false)
-	expect(
-		mcpOAuthDiscoveryAdvertisesRefresh({
-			authorizationServerUrl: 'https://auth.example',
-			authorizationServerMetadata: {
+
+	const authorizationServerUrl = 'https://auth.example'
+	const refreshAdvertisedCases = [
+		{
+			discovery: {
 				grant_types_supported: ['authorization_code', 'refresh_token'],
+				scopes_supported: ['mcp'],
 			},
-		}),
-	).toBe(true)
+			expected: true,
+		},
+		{ discovery: { scopes_supported: ['offline_access'] }, expected: true },
+		{
+			discovery: {
+				grant_types_supported: ['authorization_code'],
+				scopes_supported: ['mcp'],
+			},
+			expected: false,
+		},
+		{
+			discovery: {
+				authorizationServerUrl,
+				authorizationServerMetadata: {
+					grant_types_supported: ['authorization_code', 'refresh_token'],
+				},
+			},
+			expected: true,
+		},
+		{
+			discovery: {
+				authorizationServerUrl,
+				resourceMetadata: { scopes_supported: ['offline_access'] },
+			},
+			expected: true,
+		},
+	]
 	expect(
-		mcpOAuthDiscoveryAdvertisesRefresh({
-			authorizationServerUrl: 'https://auth.example',
-			resourceMetadata: {
-				scopes_supported: ['offline_access'],
-			},
-		}),
-	).toBe(true)
+		refreshAdvertisedCases.filter(
+			({ discovery, expected }) =>
+				mcpOAuthDiscoveryAdvertisesRefresh(discovery) !== expected,
+		),
+	).toEqual([])
 	expect(
 		withPreservedMcpOAuthRefreshToken({
 			incoming: { access_token: 'new-at' },
@@ -168,24 +142,22 @@ test('token recovery lastError names refresh failure without claiming IdP just s
 			stillHasRefreshToken: true,
 		}),
 	).toContain('Refresh did not restore the connection')
-	expect(
+	const incoming = { access_token: 'new-at' }
+	expect([
 		mergeMcpOAuthTokens({
-			incoming: { access_token: 'new-at' },
+			incoming,
 			existing: { access_token: 'old-at', refresh_token: 'keep-rt' },
 		}),
-	).toEqual({ access_token: 'new-at', refresh_token: 'keep-rt' })
-	expect(
 		mergeMcpOAuthTokens({
-			incoming: { access_token: 'new-at', refresh_token: 'rotated-rt' },
+			incoming: { ...incoming, refresh_token: 'rotated-rt' },
 			existing: { refresh_token: 'old-rt' },
 		}),
-	).toEqual({ access_token: 'new-at', refresh_token: 'rotated-rt' })
-	expect(
-		mergeMcpOAuthTokens({
-			incoming: { access_token: 'new-at' },
-			existing: { access_token: 'old-at' },
-		}),
-	).toEqual({ access_token: 'new-at' })
+		mergeMcpOAuthTokens({ incoming, existing: { access_token: 'old-at' } }),
+	]).toEqual([
+		{ access_token: 'new-at', refresh_token: 'keep-rt' },
+		{ access_token: 'new-at', refresh_token: 'rotated-rt' },
+		{ access_token: 'new-at' },
+	])
 	expect(
 		isMcpOAuthTokenRecoveryLastError({
 			message: 'Authorization completed at the identity provider, but hung',

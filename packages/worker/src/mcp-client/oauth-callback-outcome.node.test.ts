@@ -5,21 +5,35 @@ import {
 	resolveMcpOAuthCallbackOutcome,
 } from './oauth-callback-outcome.ts'
 
+type OutcomeInput = Parameters<typeof resolveMcpOAuthCallbackOutcome>[0]
+
+function resolve(
+	connection: Partial<OutcomeInput['connection']>,
+	overrides: Partial<Omit<OutcomeInput, 'connection'>> = {},
+) {
+	return resolveMcpOAuthCallbackOutcome({
+		sdkAuthSuccess: true,
+		sdkAuthError: null,
+		serverId: 'server-1',
+		serverName: 'recipe-keeper',
+		...overrides,
+		connection: {
+			state: 'connected',
+			authUrl: null,
+			error: null,
+			...connection,
+		},
+	} as OutcomeInput)
+}
+
+const posthog = { serverId: 'server-posthog', serverName: 'posthog' }
+
+function countMatches(text: string | null | undefined, pattern: RegExp) {
+	return text?.match(pattern)?.length
+}
+
 test('OAuth callback outcome requires a ready connection after SDK success', () => {
-	expect(
-		resolveMcpOAuthCallbackOutcome({
-			sdkAuthSuccess: true,
-			sdkAuthError: null,
-			serverId: 'server-1',
-			serverName: 'recipe-keeper',
-			attemptId: 'attempt-ready',
-			connection: {
-				state: 'ready',
-				authUrl: null,
-				error: null,
-			},
-		}),
-	).toEqual({
+	expect(resolve({ state: 'ready' }, { attemptId: 'attempt-ready' })).toEqual({
 		serverId: 'server-1',
 		authSuccess: true,
 		authError: null,
@@ -28,18 +42,10 @@ test('OAuth callback outcome requires a ready connection after SDK success', () 
 		lastError: null,
 	})
 
-	const stuckAuthenticating = resolveMcpOAuthCallbackOutcome({
-		sdkAuthSuccess: true,
-		sdkAuthError: null,
-		serverId: 'server-1',
-		serverName: 'recipe-keeper',
-		attemptId: 'attempt-auth',
-		connection: {
-			state: 'authenticating',
-			authUrl: null,
-			error: null,
-		},
-	})
+	const stuckAuthenticating = resolve(
+		{ state: 'authenticating' },
+		{ attemptId: 'attempt-auth' },
+	)
 	expect(stuckAuthenticating.authSuccess).toBe(false)
 	expect(stuckAuthenticating.authError).toBeTruthy()
 	expect(stuckAuthenticating.lastError?.phase).toBe('token exchange')
@@ -57,18 +63,10 @@ test('OAuth callback outcome requires a ready connection after SDK success', () 
 	).toBe(false)
 
 	expect(
-		resolveMcpOAuthCallbackOutcome({
-			sdkAuthSuccess: true,
-			sdkAuthError: null,
-			serverId: 'server-1',
-			serverName: 'recipe-keeper',
-			attemptId: 'attempt-token',
-			connection: {
-				state: 'failed',
-				authUrl: null,
-				error: 'Token exchange failed.',
-			},
-		}),
+		resolve(
+			{ state: 'failed', error: 'Token exchange failed.' },
+			{ attemptId: 'attempt-token' },
+		),
 	).toMatchObject({
 		serverId: 'server-1',
 		authSuccess: false,
@@ -82,17 +80,10 @@ test('OAuth callback outcome requires a ready connection after SDK success', () 
 	})
 
 	expect(
-		resolveMcpOAuthCallbackOutcome({
-			sdkAuthSuccess: false,
-			sdkAuthError: 'Invalid state',
-			serverId: 'server-1',
-			serverName: 'recipe-keeper',
-			connection: {
-				state: 'authenticating',
-				authUrl: 'https://auth.example/authorize',
-				error: null,
-			},
-		}),
+		resolve(
+			{ state: 'authenticating', authUrl: 'https://auth.example/authorize' },
+			{ sdkAuthSuccess: false, sdkAuthError: 'Invalid state' },
+		),
 	).toEqual({
 		serverId: 'server-1',
 		authSuccess: false,
@@ -104,21 +95,14 @@ test('OAuth callback outcome requires a ready connection after SDK success', () 
 })
 
 test('IdP success with connected state and null connection.error is a tool-discovery lastError', () => {
-	const outcome = resolveMcpOAuthCallbackOutcome({
-		sdkAuthSuccess: true,
-		sdkAuthError: null,
-		serverId: 'server-posthog',
-		serverName: 'posthog',
-		attemptId: 'attempt-adam',
-		connection: {
-			state: 'connected',
-			authUrl: null,
-			error: null,
+	const outcome = resolve(
+		{
 			mcpEndpoint: 'https://mcp.posthog.com/mcp?code=secret-token',
 			resource: 'https://mcp.posthog.com/',
 			authServer: 'https://auth.posthog.com/?client_secret=hidden',
 		},
-	})
+		{ ...posthog, attemptId: 'attempt-adam' },
+	)
 
 	expect(outcome.authSuccess).toBe(false)
 	expect(outcome.lastError).toMatchObject({
@@ -134,28 +118,22 @@ test('IdP success with connected state and null connection.error is a tool-disco
 	expect(outcome.authError).toContain('id attempt-adam')
 	expect(outcome.authError).not.toContain('secret-token')
 	expect(outcome.authError).not.toContain('client_secret')
-	expect(outcome.authError?.match(/authorization completed/gi)?.length).toBe(1)
-	expect(outcome.authError?.match(/\bphase\s/g)?.length).toBe(1)
+	expect(countMatches(outcome.authError, /authorization completed/gi)).toBe(1)
+	expect(countMatches(outcome.authError, /\bphase\s/g)).toBe(1)
 
-	const alreadyFormatted = resolveMcpOAuthCallbackOutcome({
-		sdkAuthSuccess: true,
-		sdkAuthError: null,
-		serverId: 'server-posthog',
-		serverName: 'posthog',
-		attemptId: 'attempt-adam',
-		connection: {
-			state: 'connected',
-			authUrl: null,
+	const alreadyFormatted = resolve(
+		{
 			error: outcome.authError,
 			mcpEndpoint: 'https://mcp.posthog.com/mcp',
 			resource: 'https://mcp.posthog.com/',
 			authServer: 'https://auth.posthog.com/',
 		},
-	})
+		{ ...posthog, attemptId: 'attempt-adam' },
+	)
 	expect(
-		alreadyFormatted.authError?.match(/authorization completed/gi)?.length,
+		countMatches(alreadyFormatted.authError, /authorization completed/gi),
 	).toBe(1)
-	expect(alreadyFormatted.authError?.match(/\bphase\s/g)?.length).toBe(1)
+	expect(countMatches(alreadyFormatted.authError, /\bphase\s/g)).toBe(1)
 	expect(alreadyFormatted.lastError?.attemptId).toBe('attempt-adam')
 
 	const discovering = describeIncompleteMcpOAuthConnection({
@@ -167,20 +145,14 @@ test('IdP success with connected state and null connection.error is a tool-disco
 	expect(discovering).toContain("tool discovery didn't finish")
 	expect(discovering).toContain('phase tools/list')
 
-	const catalogTimeout = resolveMcpOAuthCallbackOutcome({
-		sdkAuthSuccess: true,
-		sdkAuthError: null,
-		serverId: 'server-catalog',
-		serverName: 'analytics',
-		attemptId: 'attempt-catalog',
-		connection: {
-			state: 'connected',
-			authUrl: null,
-			error: null,
-			phase: 'tools/list',
-			mcpEndpoint: 'https://analytics.example/mcp',
+	const catalogTimeout = resolve(
+		{ phase: 'tools/list', mcpEndpoint: 'https://analytics.example/mcp' },
+		{
+			serverId: 'server-catalog',
+			serverName: 'analytics',
+			attemptId: 'attempt-catalog',
 		},
-	})
+	)
 	expect(catalogTimeout.lastError?.phase).toBe('tools/list')
 	expect(catalogTimeout.authError).toContain('phase tools/list')
 })

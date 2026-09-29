@@ -16,79 +16,59 @@ const bearerToken = 'test-token'
 
 test('Kody-as-client lists tools on modern-only and 2025 initialize servers', async () => {
 	await using modern = await startRecordedServer(createModernOnlyHandler())
-	await using legacy = await startRecordedServer(createInitializeOnlyHandler())
+	await using legacy = await startRecordedServer(
+		createInitializeHandler({ name: 'home', toolName: 'home_ping' }),
+	)
 
-	const modernClient = await connectKodyAsClient(modern.origin, {
-		headers: { Authorization: `Bearer ${bearerToken}` },
-		staleSession: {
-			sessionId: 'stale-2025-session',
-			protocolVersion: '2025-11-25',
-		},
-	})
-	try {
-		const modernTools = await modernClient.client.listTools()
-		expect(modernTools.tools.map((tool) => tool.name)).toEqual(['list_feeds'])
-	} finally {
-		await modernClient.client.close().catch(() => undefined)
-		await modernClient.transport.close().catch(() => undefined)
-	}
-
+	expect(
+		await listToolNamesAsKody(modern.origin, {
+			headers: { Authorization: `Bearer ${bearerToken}` },
+			staleSession: {
+				sessionId: 'stale-2025-session',
+				protocolVersion: '2025-11-25',
+			},
+		}),
+	).toEqual(['list_feeds'])
 	expect(rpcMethods(modern.recorded)).toContain('server/discover')
 	expect(rpcMethods(modern.recorded)).not.toContain('initialize')
 	expect(modern.recorded.some((entry) => entry.httpMethod === 'DELETE')).toBe(
 		false,
 	)
 
-	const legacyClient = await connectKodyAsClient(legacy.origin)
-	try {
-		const legacyTools = await legacyClient.client.listTools()
-		expect(legacyTools.tools.map((tool) => tool.name)).toEqual(['home_ping'])
-	} finally {
-		await legacyClient.client.close().catch(() => undefined)
-		await legacyClient.transport.close().catch(() => undefined)
-	}
-
+	expect(await listToolNamesAsKody(legacy.origin)).toEqual(['home_ping'])
 	expect(rpcMethods(legacy.recorded)).toContain('initialize')
 	expect(rpcMethods(legacy.recorded)).toContain('tools/list')
 })
 
 test('modern connect then catalog hang is recoverable on the same server via legacy initialize', async () => {
 	await using stalling = await startRecordedServer(
-		createModernCatalogHangHandler(),
+		createInitializeHandler({
+			name: 'stalling',
+			toolName: 'catalog_ping',
+			hangModernCatalog: true,
+		}),
 	)
 
-	const autoClient = await connectKodyAsClient(stalling.origin)
-	try {
-		await expect(
-			autoClient.client.listTools(undefined, { timeout: 250 }),
-		).rejects.toThrow()
-	} finally {
-		await autoClient.client.close().catch(() => undefined)
-		await autoClient.transport.close().catch(() => undefined)
-	}
+	await expect(
+		listToolNamesAsKody(stalling.origin, { timeout: 250 }),
+	).rejects.toThrow()
 	expect(rpcMethods(stalling.recorded)).toContain('server/discover')
 	expect(rpcMethods(stalling.recorded)).toContain('tools/list')
 	expect(rpcMethods(stalling.recorded)).not.toContain('initialize')
 
-	const legacyClient = await connectKodyAsClient(stalling.origin, {
-		mode: 'legacy',
-	})
-	try {
-		const tools = await legacyClient.client.listTools()
-		expect(tools.tools.map((tool) => tool.name)).toEqual(['catalog_ping'])
-	} finally {
-		await legacyClient.client.close().catch(() => undefined)
-		await legacyClient.transport.close().catch(() => undefined)
-	}
+	expect(
+		await listToolNamesAsKody(stalling.origin, { mode: 'legacy' }),
+	).toEqual(['catalog_ping'])
 	expect(rpcMethods(stalling.recorded)).toContain('initialize')
 })
 
-async function connectKodyAsClient(
+async function listToolNamesAsKody(
 	origin: string,
 	input?: {
 		headers?: Record<string, string>
 		staleSession?: { sessionId: string; protocolVersion: string }
 		mode?: 'auto' | 'legacy'
+		timeout?: number
 	},
 ) {
 	const reconnected = reconnectMcpServerOptions(
@@ -116,7 +96,16 @@ async function connectKodyAsClient(
 		requestInit: headers.requestInit,
 	})
 	await client.connect(transport)
-	return { client, transport }
+	try {
+		const listed = await client.listTools(
+			undefined,
+			input?.timeout ? { timeout: input.timeout } : undefined,
+		)
+		return listed.tools.map((tool) => tool.name)
+	} finally {
+		await client.close().catch(() => undefined)
+		await transport.close().catch(() => undefined)
+	}
 }
 
 function createModernOnlyHandler() {
@@ -145,8 +134,18 @@ function createModernOnlyHandler() {
 	}
 }
 
-function createModernCatalogHangHandler() {
+/**
+ * Hand-rolled 2025 `initialize` server. With `hangModernCatalog`, it also
+ * answers modern `server/discover` but stalls `tools/list` until a legacy
+ * `initialize` has happened.
+ */
+function createInitializeHandler(input: {
+	name: string
+	toolName: string
+	hangModernCatalog?: boolean
+}) {
 	let sawInitialize = false
+	const serverInfo = { name: input.name, version: '1.0.0' }
 	return async (request: Request) => {
 		if (request.method === 'DELETE') {
 			return new Response(null, { status: 200 })
@@ -154,114 +153,55 @@ function createModernCatalogHangHandler() {
 		if (request.method !== 'POST') {
 			return new Response(null, { status: 405 })
 		}
-		const body = (await request.json()) as {
+		const { id = null, method } = (await request.json()) as {
 			id?: string | number
 			method?: string
 		}
-		if (body.method === 'server/discover') {
-			return Response.json({
-				jsonrpc: '2.0',
-				id: body.id ?? null,
+		const reply = (payload: object, init?: ResponseInit) =>
+			Response.json({ jsonrpc: '2.0', id, ...payload }, init)
+		if (method === 'server/discover' && input.hangModernCatalog) {
+			return reply({
 				result: {
 					protocolVersion: '2026-07-28',
 					supportedVersions: ['2026-07-28'],
 					capabilities: { tools: {} },
-					serverInfo: { name: 'stalling', version: '1.0.0' },
+					serverInfo,
 				},
 			})
 		}
-		if (body.method === 'initialize') {
+		if (method === 'initialize') {
 			sawInitialize = true
-			return Response.json(
+			return reply(
 				{
-					jsonrpc: '2.0',
-					id: body.id ?? null,
 					result: {
 						protocolVersion: '2025-11-25',
 						capabilities: { tools: {} },
-						serverInfo: { name: 'stalling', version: '1.0.0' },
+						serverInfo,
 					},
 				},
-				{ headers: { 'mcp-session-id': 'stalling-session-1' } },
+				{ headers: { 'mcp-session-id': `${input.name}-session-1` } },
 			)
 		}
-		if (body.method === 'notifications/initialized') {
+		if (method === 'notifications/initialized') {
 			return new Response(null, { status: 202 })
 		}
-		if (body.method === 'tools/list') {
-			if (!sawInitialize) {
+		if (method === 'tools/list') {
+			if (input.hangModernCatalog && !sawInitialize) {
 				await new Promise((resolve) => setTimeout(resolve, 400))
 				return new Response(null, { status: 504 })
 			}
-			return Response.json({
-				jsonrpc: '2.0',
-				id: body.id ?? null,
+			return reply({
 				result: {
 					tools: [
 						{
-							name: 'catalog_ping',
+							name: input.toolName,
 							inputSchema: { type: 'object', properties: {} },
 						},
 					],
 				},
 			})
 		}
-		return Response.json({
-			jsonrpc: '2.0',
-			id: body.id ?? null,
-			error: { code: -32601, message: 'Method not found' },
-		})
-	}
-}
-
-function createInitializeOnlyHandler() {
-	return async (request: Request) => {
-		if (request.method === 'DELETE') {
-			return new Response(null, { status: 200 })
-		}
-		if (request.method !== 'POST') {
-			return new Response(null, { status: 405 })
-		}
-		const body = (await request.json()) as {
-			id?: string | number
-			method?: string
-		}
-		if (body.method === 'initialize') {
-			return Response.json(
-				{
-					jsonrpc: '2.0',
-					id: body.id ?? null,
-					result: {
-						protocolVersion: '2025-11-25',
-						capabilities: { tools: {} },
-						serverInfo: { name: 'home', version: '1.0.0' },
-					},
-				},
-				{ headers: { 'mcp-session-id': 'home-session-1' } },
-			)
-		}
-		if (body.method === 'notifications/initialized') {
-			return new Response(null, { status: 202 })
-		}
-		if (body.method === 'tools/list') {
-			return Response.json({
-				jsonrpc: '2.0',
-				id: body.id ?? null,
-				result: {
-					tools: [
-						{
-							name: 'home_ping',
-							inputSchema: { type: 'object', properties: {} },
-						},
-					],
-				},
-			})
-		}
-		return Response.json({
-			jsonrpc: '2.0',
-			id: body.id ?? null,
-			error: { code: -32601, message: 'Method not found' },
-		})
+		return reply({ error: { code: -32601, message: 'Method not found' } })
 	}
 }
 

@@ -23,17 +23,29 @@ import {
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
-function applyAllMigrations(db: DatabaseSync) {
-	applyRepositoryMigrations(db, migrationsDirectory)
-}
+type PlatformEnv = Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
 
 function createEnv() {
 	const sqlite = new DatabaseSync(':memory:')
-	applyAllMigrations(sqlite)
-	return {
-		sqlite,
-		env: { APP_DB: createD1FromSqlite(sqlite) } as Pick<Env, 'APP_DB'>,
+	applyRepositoryMigrations(sqlite, migrationsDirectory)
+	const env: PlatformEnv = {
+		APP_DB: createD1FromSqlite(sqlite),
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
 	}
+	const query = (sql: string, ...params: Array<string>) =>
+		sqlite.prepare(sql).all(...params)
+	const googleAppIdentity = (userId: string) =>
+		sqlite
+			.prepare(
+				`SELECT slug, provider, label, client_id, token_url, created_at, updated_at
+				FROM user_oauth_apps WHERE user_id = ? AND slug = 'google'`,
+			)
+			.get(userId)
+	const save = (
+		userId: string,
+		config: Parameters<typeof upsertIntegration>[0]['config'],
+	) => upsertIntegration({ env, userId, config })
+	return { sqlite, env, query, googleAppIdentity, save }
 }
 
 const baseGoogleConfig = {
@@ -51,173 +63,181 @@ const baseGoogleConfig = {
 	},
 }
 
-test('upsertIntegration reuses matching app tuples, splits on endpoint mismatch, and normalizes required hosts', async () => {
-	const { env } = createEnv()
-	const reuseUserId = 'user-upsert'
+function google(
+	overrides: Partial<Omit<typeof baseGoogleConfig, 'authorization'>> & {
+		scopes?: Array<string>
+	} = {},
+) {
+	const { scopes, ...rest } = overrides
+	return {
+		...baseGoogleConfig,
+		...rest,
+		authorization: {
+			...baseGoogleConfig.authorization,
+			...(scopes ? { scopes } : {}),
+		},
+	}
+}
 
-	const normalized = await upsertIntegration({
+const googleSetupConfig = (name: string) => ({
+	name,
+	tokenUrl: 'https://oauth2.googleapis.com/token',
+	apiBaseUrl: 'https://www.googleapis.com',
+	flow: 'pkce' as const,
+	clientId: 'shared-google-client',
+	authorization: {
+		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+		scopes: [],
+		extraAuthorizeParams: { access_type: 'offline' },
+	},
+})
+
+const notionSetupConfig = (clientId: string) => ({
+	name: 'notion',
+	tokenUrl: 'https://api.notion.com/v1/oauth/token',
+	flow: 'confidential' as const,
+	clientId,
+	authorization: { authorizeUrl: 'https://api.notion.com/v1/oauth/authorize' },
+})
+
+const githubPlatformApp = {
+	slug: 'github',
+	clientId: 'platform-github-client-id',
+	tokenUrl: 'https://github.com/login/oauth/access_token',
+	authorizeUrl: 'https://github.com/login/oauth/authorize',
+	apiBaseUrl: 'https://api.github.com',
+	flow: 'confidential' as const,
+}
+
+function provisionGithubPlatformApp(env: PlatformEnv) {
+	return upsertPlatformOauthApp({
+		db: env.APP_DB,
 		env,
-		userId: reuseUserId,
-		config: {
-			...baseGoogleConfig,
+		app: {
+			...githubPlatformApp,
+			clientSecret: 'platform-github-client-secret-value',
+			allowedScopes: ['repo', 'read:user', 'gist'],
+			defaultScopes: ['read:user'],
+			requiredHosts: ['api.github.com'],
+		},
+	})
+}
+
+function connectPlatform(
+	env: PlatformEnv,
+	userId: string,
+	scopes: Array<string>,
+	platformAppSlug = 'github',
+) {
+	return upsertPlatformIntegration({ env, userId, platformAppSlug, scopes })
+}
+
+test('upsertIntegration reuses matching app tuples, splits on endpoint mismatch, and normalizes required hosts', async () => {
+	const { env, save } = createEnv()
+	const normalized = await save(
+		'user-upsert',
+		google({
 			requiredHosts: [
 				'https://www.googleapis.com',
 				'HTTPS://ACCOUNTS.GOOGLE.COM/o/oauth2',
 				'oauth2.googleapis.com',
 			],
-		},
-	})
+		}),
+	)
 	expect(normalized.requiredHosts).toEqual([
 		'accounts.google.com',
 		'oauth2.googleapis.com',
 		'www.googleapis.com',
 	])
-
-	await upsertIntegration({
-		env,
-		userId: reuseUserId,
-		config: {
-			...baseGoogleConfig,
+	await save(
+		'user-upsert',
+		google({
 			name: 'google-calendar',
-			authorization: {
-				...baseGoogleConfig.authorization,
-				scopes: ['calendar.readonly'],
-			},
+			scopes: ['calendar.readonly'],
 			requiredHosts: ['www.googleapis.com'],
-		},
-	})
-
-	const apps = await listOauthApps({ env, userId: reuseUserId })
+		}),
+	)
+	const apps = await listOauthApps({ env, userId: 'user-upsert' })
 	expect(apps).toHaveLength(1)
 	expect(apps[0]).toMatchObject({
 		slug: 'google',
 		connectionCount: 2,
 		clientId: 'google-client-id-value',
 	})
-
-	const listed = await listIntegrations({ env, userId: reuseUserId })
-	expect(listed.map((entry) => entry.name).sort()).toEqual([
-		'google',
-		'google-calendar',
+	const listed = await listIntegrations({ env, userId: 'user-upsert' })
+	expect(listed.map((entry) => [entry.name, entry.clientId]).sort()).toEqual([
+		['google', 'google-client-id-value'],
+		['google-calendar', 'google-client-id-value'],
 	])
-	expect(
-		listed.every((entry) => entry.clientId === 'google-client-id-value'),
-	).toBe(true)
 
 	const splitUserId = 'user-upsert-split'
-	await upsertIntegration({
-		env,
-		userId: splitUserId,
-		config: baseGoogleConfig,
-	})
-	await upsertIntegration({
-		env,
-		userId: splitUserId,
-		config: {
-			...baseGoogleConfig,
+	await save(splitUserId, baseGoogleConfig)
+	await save(
+		splitUserId,
+		google({
 			name: 'google-legacy',
 			tokenUrl: 'https://oauth2.googleapis.com/token/legacy',
-		},
-	})
-
+		}),
+	)
 	const splitApps = await listOauthApps({ env, userId: splitUserId })
-	expect(splitApps).toHaveLength(2)
-	expect(splitApps.map((app) => app.slug).sort()).toEqual([
-		'google',
-		'google-legacy',
+	expect(splitApps.map((app) => [app.slug, app.tokenUrl]).sort()).toEqual([
+		['google', 'https://oauth2.googleapis.com/token'],
+		['google-legacy', 'https://oauth2.googleapis.com/token/legacy'],
 	])
-	expect(splitApps.find((app) => app.slug === 'google')?.tokenUrl).toBe(
-		'https://oauth2.googleapis.com/token',
-	)
-	expect(splitApps.find((app) => app.slug === 'google-legacy')?.tokenUrl).toBe(
-		'https://oauth2.googleapis.com/token/legacy',
-	)
-
-	const google = await getIntegration({
-		env,
-		userId: splitUserId,
-		name: 'google',
-	})
-	const legacy = await getIntegration({
-		env,
-		userId: splitUserId,
-		name: 'google-legacy',
-	})
-	expect(google?.tokenUrl).toBe('https://oauth2.googleapis.com/token')
-	expect(legacy?.tokenUrl).toBe('https://oauth2.googleapis.com/token/legacy')
+	for (const [name, tokenUrl] of [
+		['google', 'https://oauth2.googleapis.com/token'],
+		['google-legacy', 'https://oauth2.googleapis.com/token/legacy'],
+	] as const) {
+		const integration = await getIntegration({ env, userId: splitUserId, name })
+		expect(integration?.tokenUrl).toBe(tokenUrl)
+	}
 })
 
 test('rotateOauthAppClientCredentials updates sibling joins, blocks delete while connected, and canonicalizes slugs', async () => {
-	const { env } = createEnv()
+	const { env, save } = createEnv()
 	const userId = 'user-rotate'
+	await save(userId, baseGoogleConfig)
+	await save(userId, google({ name: 'google-mail' }))
 
-	await upsertIntegration({
-		env,
-		userId,
-		config: baseGoogleConfig,
-	})
-	await upsertIntegration({
-		env,
-		userId,
-		config: {
-			...baseGoogleConfig,
-			name: 'google-mail',
-		},
-	})
-
-	const found = await getOauthApp({ env, userId, slug: 'Google' })
-	expect(found).toMatchObject({
+	expect(await getOauthApp({ env, userId, slug: 'Google' })).toMatchObject({
 		slug: 'google',
 		clientId: 'google-client-id-value',
 	})
-
-	const rotated = await rotateOauthAppClientCredentials({
-		env,
-		userId,
-		slug: ' Google ',
-		clientId: 'google-client-id-rotated',
-	})
-	expect(rotated).toMatchObject({
+	expect(
+		await rotateOauthAppClientCredentials({
+			env,
+			userId,
+			slug: ' Google ',
+			clientId: 'google-client-id-rotated',
+		}),
+	).toMatchObject({
 		slug: 'google',
 		clientId: 'google-client-id-rotated',
 		hasClientSecret: false,
 	})
-
-	const google = await getIntegration({ env, userId, name: 'google' })
-	const googleMail = await getIntegration({ env, userId, name: 'google-mail' })
-	expect(google?.clientId).toBe('google-client-id-rotated')
-	expect(googleMail?.clientId).toBe('google-client-id-rotated')
+	for (const name of ['google', 'google-mail']) {
+		const integration = await getIntegration({ env, userId, name })
+		expect(integration?.clientId).toBe('google-client-id-rotated')
+	}
 
 	await expect(
 		deleteOauthAppIfUnused({ env, userId, slug: 'GOOGLE' }),
 	).rejects.toThrow(/still has 2 connections/)
-
-	const stillThere = await getIntegration({ env, userId, name: 'google' })
-	expect(stillThere?.name).toBe('google')
-
+	expect((await getIntegration({ env, userId, name: 'google' }))?.name).toBe(
+		'google',
+	)
 	expect(
-		await deleteOauthAppWithConnections({
-			env,
-			userId,
-			slug: 'GOOGLE',
-		}),
-	).toEqual({
-		deleted: true,
-		connectionNames: ['google', 'google-mail'],
-	})
+		await deleteOauthAppWithConnections({ env, userId, slug: 'GOOGLE' }),
+	).toEqual({ deleted: true, connectionNames: ['google', 'google-mail'] })
 	expect(await listIntegrations({ env, userId })).toEqual([])
 	expect(await getOauthApp({ env, userId, slug: 'google' })).toBeNull()
 	expect(
-		await deleteOauthAppWithConnections({
-			env,
-			userId,
-			slug: 'google',
-		}),
+		await deleteOauthAppWithConnections({ env, userId, slug: 'google' }),
 	).toEqual({ deleted: false, connectionNames: [] })
 })
 
 test('upsertIntegration reuses a confidential app that stored usePkce false as NULL', async () => {
-	const { env, sqlite } = createEnv()
+	const { env, sqlite, query, save } = createEnv()
 	const now = '2026-02-01T00:00:00.000Z'
 	sqlite
 		.prepare(
@@ -247,45 +267,24 @@ test('upsertIntegration reuses a confidential app that stored usePkce false as N
 				connected_at, token_refreshed_at, created_at, updated_at
 			) VALUES (?, ?, ?, NULL, '', '[]', ?, NULL, NULL, ?, ?)`,
 		)
-		.run(
-			'user-reuse',
-			'canva',
-			'canva',
-			JSON.stringify(['api.canva.com']),
-			now,
-			now,
-		)
-
-	const stored = sqlite
-		.prepare(
+		.run('user-reuse', 'canva', 'canva', '["api.canva.com"]', now, now)
+	expect(
+		query(
 			`SELECT slug, flow, use_pkce FROM user_oauth_apps WHERE user_id = ?`,
-		)
-		.get('user-reuse') as {
-		slug: string
-		flow: string
-		use_pkce: number | null
-	}
-	expect(stored).toEqual({
-		slug: 'canva',
+			'user-reuse',
+		),
+	).toEqual([{ slug: 'canva', flow: 'confidential', use_pkce: null }])
+
+	await save('user-reuse', {
+		name: 'canva-team',
+		tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
+		apiBaseUrl: 'https://api.canva.com',
 		flow: 'confidential',
-		use_pkce: null,
+		usePkce: false,
+		clientId: 'canva-client-id-value',
+		requiredHosts: ['api.canva.com'],
+		tokenExchangeStyle: 'basic-form',
 	})
-
-	await upsertIntegration({
-		env,
-		userId: 'user-reuse',
-		config: {
-			name: 'canva-team',
-			tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
-			apiBaseUrl: 'https://api.canva.com',
-			flow: 'confidential',
-			usePkce: false,
-			clientId: 'canva-client-id-value',
-			requiredHosts: ['api.canva.com'],
-			tokenExchangeStyle: 'basic-form',
-		},
-	})
-
 	const apps = await listOauthApps({ env, userId: 'user-reuse' })
 	expect(apps).toHaveLength(1)
 	expect(apps[0]).toMatchObject({
@@ -295,132 +294,58 @@ test('upsertIntegration reuses a confidential app that stored usePkce false as N
 		flow: 'confidential',
 	})
 	const joined = await listJoinedIntegrations({ env, userId: 'user-reuse' })
-	expect(joined.map(({ connection }) => connection.name).sort()).toEqual([
-		'canva',
-		'canva-team',
+	expect(
+		joined.map(({ connection, app }) => [connection.name, app?.slug]).sort(),
+	).toEqual([
+		['canva', 'canva'],
+		['canva-team', 'canva'],
 	])
-	expect(joined.every(({ app }) => app.slug === 'canva')).toBe(true)
 })
 
 test('shared app identity survives reuse and scope-only resaves across sibling connections', async () => {
-	const { env, sqlite } = createEnv()
-
+	const { query, googleAppIdentity, save } = createEnv()
 	const preserveUserId = 'user-provider-preserve'
-	await upsertIntegration({
-		env,
-		userId: preserveUserId,
-		config: baseGoogleConfig,
-	})
-	await upsertIntegration({
-		env,
-		userId: preserveUserId,
-		config: {
-			...baseGoogleConfig,
-			name: 'google-calendar',
-		},
-	})
-	const before = sqlite
-		.prepare(
-			`SELECT slug, provider, label, client_id, token_url, created_at, updated_at
-			FROM user_oauth_apps
-			WHERE user_id = ? AND slug = 'google'`,
-		)
-		.get(preserveUserId) as {
-		slug: string
-		provider: string
-		label: string | null
-		client_id: string
-		token_url: string
-		created_at: string
-		updated_at: string
-	}
-	expect(before.provider).toBe('google')
-
-	await upsertIntegration({
-		env,
-		userId: preserveUserId,
-		config: {
-			...baseGoogleConfig,
+	await save(preserveUserId, baseGoogleConfig)
+	await save(preserveUserId, google({ name: 'google-calendar' }))
+	const before = googleAppIdentity(preserveUserId)
+	expect(before).toMatchObject({ provider: 'google' })
+	await save(
+		preserveUserId,
+		google({
 			name: 'acme-thing',
-			authorization: {
-				...baseGoogleConfig.authorization,
-				scopes: ['acme.scope'],
-			},
+			scopes: ['acme.scope'],
 			requiredHosts: ['www.googleapis.com'],
-		},
-	})
-	const afterReuse = sqlite
-		.prepare(
-			`SELECT slug, provider, label, client_id, token_url, created_at, updated_at
-			FROM user_oauth_apps
-			WHERE user_id = ? AND slug = 'google'`,
-		)
-		.get(preserveUserId) as typeof before
-	expect(afterReuse).toEqual(before)
+		}),
+	)
+	expect(googleAppIdentity(preserveUserId)).toEqual(before)
 
 	const resaveUserId = 'user-four-shared'
-	const names = [
+	for (const name of [
 		'google',
 		'google-calendar',
 		'google-mail',
 		'google-drive',
-	] as const
-	for (const name of names) {
-		await upsertIntegration({
-			env,
-			userId: resaveUserId,
-			config: {
-				...baseGoogleConfig,
-				name,
-				authorization: {
-					...baseGoogleConfig.authorization,
-					scopes: [`${name}.initial`],
-				},
-				requiredHosts: ['www.googleapis.com', 'accounts.google.com'],
-			},
-		})
+	]) {
+		await save(resaveUserId, google({ name, scopes: [`${name}.initial`] }))
 	}
-	const beforeResave = sqlite
-		.prepare(
-			`SELECT slug, provider, label, client_id, token_url, created_at, updated_at
-			FROM user_oauth_apps WHERE user_id = ?`,
-		)
-		.get(resaveUserId)
-
-	await upsertIntegration({
-		env,
-		userId: resaveUserId,
-		config: {
-			...baseGoogleConfig,
+	const beforeResave = googleAppIdentity(resaveUserId)
+	await save(
+		resaveUserId,
+		google({
 			name: 'google-mail',
-			authorization: {
-				...baseGoogleConfig.authorization,
-				scopes: ['gmail.modify', 'gmail.readonly'],
-			},
+			scopes: ['gmail.modify', 'gmail.readonly'],
 			requiredHosts: ['gmail.googleapis.com'],
-		},
-	})
-	const afterResave = sqlite
-		.prepare(
-			`SELECT slug, provider, label, client_id, token_url, created_at, updated_at
-			FROM user_oauth_apps WHERE user_id = ?`,
-		)
-		.get(resaveUserId)
-	expect(afterResave).toEqual(beforeResave)
-
-	const connections = sqlite
-		.prepare(
-			`SELECT name, app_slug, scopes_json, required_hosts_json
-			FROM user_integrations WHERE user_id = ? ORDER BY name`,
-		)
-		.all(resaveUserId) as Array<{
-		name: string
-		app_slug: string
-		scopes_json: string
-		required_hosts_json: string
-	}>
-	expect(connections).toHaveLength(4)
-	expect(connections.every((row) => row.app_slug === 'google')).toBe(true)
+		}),
+	)
+	expect(googleAppIdentity(resaveUserId)).toEqual(beforeResave)
+	const connections = query(
+		`SELECT name, app_slug, scopes_json, required_hosts_json
+		FROM user_integrations WHERE user_id = ? ORDER BY name`,
+		resaveUserId,
+	)
+	expect(connections.map((row) => row.app_slug)).toEqual(
+		Array(4).fill('google'),
+	)
 	expect(connections.find((row) => row.name === 'google-mail')).toMatchObject({
 		scopes_json: JSON.stringify(['gmail.modify', 'gmail.readonly']),
 		required_hosts_json: JSON.stringify(['gmail.googleapis.com']),
@@ -428,55 +353,30 @@ test('shared app identity survives reuse and scope-only resaves across sibling c
 })
 
 test('rematch deletes orphan apps, keeps sibling apps intact, and converts sole user apps to platform', async () => {
-	const { env, sqlite } = createEnv()
+	const { env, query, save } = createEnv()
 	const orphanUserId = 'user-orphan'
-
-	await upsertIntegration({
-		env,
-		userId: orphanUserId,
-		config: baseGoogleConfig,
-	})
-	await upsertIntegration({
-		env,
-		userId: orphanUserId,
-		config: {
-			...baseGoogleConfig,
-			name: 'solo-app',
-			clientId: 'solo-client-id',
-		},
-	})
-	expect(
-		sqlite
-			.prepare(
-				`SELECT slug FROM user_oauth_apps WHERE user_id = ? ORDER BY slug`,
-			)
-			.all(orphanUserId),
-	).toEqual([{ slug: 'google' }, { slug: 'solo-app' }])
-
-	await upsertIntegration({
-		env,
-		userId: orphanUserId,
-		config: {
-			...baseGoogleConfig,
-			name: 'solo-app',
-		},
-	})
-
-	expect(
-		sqlite
-			.prepare(
-				`SELECT slug FROM user_oauth_apps WHERE user_id = ? ORDER BY slug`,
-			)
-			.all(orphanUserId),
-	).toEqual([{ slug: 'google' }])
-	expect(
-		sqlite
-			.prepare(
-				`SELECT name, app_slug FROM user_integrations
-				WHERE user_id = ? ORDER BY name`,
-			)
-			.all(orphanUserId),
-	).toEqual([
+	const appSlugs = (userId: string) =>
+		query(
+			`SELECT slug FROM user_oauth_apps WHERE user_id = ? ORDER BY slug`,
+			userId,
+		)
+	const connectionApps = (userId: string) =>
+		query(
+			`SELECT name, app_slug FROM user_integrations WHERE user_id = ? ORDER BY name`,
+			userId,
+		)
+	await save(orphanUserId, baseGoogleConfig)
+	await save(
+		orphanUserId,
+		google({ name: 'solo-app', clientId: 'solo-client-id' }),
+	)
+	expect(appSlugs(orphanUserId)).toEqual([
+		{ slug: 'google' },
+		{ slug: 'solo-app' },
+	])
+	await save(orphanUserId, google({ name: 'solo-app' }))
+	expect(appSlugs(orphanUserId)).toEqual([{ slug: 'google' }])
+	expect(connectionApps(orphanUserId)).toEqual([
 		{ name: 'google', app_slug: 'google' },
 		{ name: 'solo-app', app_slug: 'google' },
 	])
@@ -487,114 +387,75 @@ test('rematch deletes orphan apps, keeps sibling apps intact, and converts sole 
 		'google-calendar',
 		'google-mail',
 		'google-drive',
-	] as const) {
-		await upsertIntegration({
-			env,
-			userId: siblingUserId,
-			config: {
-				...baseGoogleConfig,
+	]) {
+		await save(
+			siblingUserId,
+			google({
 				name,
-				authorization: {
-					...baseGoogleConfig.authorization,
-					scopes: name === 'google' ? ['openid', 'email'] : [`${name}.scope`],
-				},
-			},
-		})
+				scopes: name === 'google' ? ['openid', 'email'] : [`${name}.scope`],
+			}),
+		)
 	}
-
-	expect(
-		(
-			sqlite
-				.prepare(
-					`SELECT count(*) AS count FROM user_integrations
-					WHERE user_id = ? AND app_slug = 'google'`,
-				)
-				.get(siblingUserId) as { count: number }
-		).count,
-	).toBe(4)
-
-	await upsertIntegration({
-		env,
-		userId: siblingUserId,
-		config: {
-			...baseGoogleConfig,
+	expect(connectionApps(siblingUserId)).toEqual([
+		{ name: 'google', app_slug: 'google' },
+		{ name: 'google-calendar', app_slug: 'google' },
+		{ name: 'google-drive', app_slug: 'google' },
+		{ name: 'google-mail', app_slug: 'google' },
+	])
+	await save(
+		siblingUserId,
+		google({
 			name: 'google-drive',
 			tokenUrl: 'https://oauth2.googleapis.com/token/other',
-		},
-	})
-
-	const googleApp = sqlite
-		.prepare(
-			`SELECT slug, provider FROM user_oauth_apps
-			WHERE user_id = ? AND slug = 'google'`,
-		)
-		.get(siblingUserId) as { slug: string; provider: string }
-	expect(googleApp).toEqual({ slug: 'google', provider: 'google' })
+		}),
+	)
 	expect(
-		(
-			sqlite
-				.prepare(
-					`SELECT count(*) AS count FROM user_integrations
-					WHERE user_id = ? AND app_slug = 'google'`,
-				)
-				.get(siblingUserId) as { count: number }
-		).count,
-	).toBe(3)
-	expect(
-		sqlite
-			.prepare(
-				`SELECT name, app_slug FROM user_integrations
-				WHERE user_id = ? AND name = 'google-drive'`,
-			)
-			.get(siblingUserId),
-	).toEqual({ name: 'google-drive', app_slug: 'google-drive' })
+		query(
+			`SELECT slug, provider FROM user_oauth_apps WHERE user_id = ? AND slug = 'google'`,
+			siblingUserId,
+		),
+	).toEqual([{ slug: 'google', provider: 'google' }])
+	expect(connectionApps(siblingUserId)).toEqual([
+		{ name: 'google', app_slug: 'google' },
+		{ name: 'google-calendar', app_slug: 'google' },
+		{ name: 'google-drive', app_slug: 'google-drive' },
+		{ name: 'google-mail', app_slug: 'google' },
+	])
 
-	const platformEnv = createPlatformEnv()
-	await provisionGithubPlatformApp(platformEnv.env)
+	await provisionGithubPlatformApp(env)
 	const convertUserId = 'user-converts'
-
-	await upsertIntegration({
-		env: platformEnv.env,
-		userId: convertUserId,
-		config: {
-			name: 'github',
-			tokenUrl: 'https://github.com/login/oauth/access_token',
-			flow: 'confidential',
-			clientId: 'personal-github-client-id',
-			requiredHosts: ['api.github.com'],
-			authorization: {
-				authorizeUrl: 'https://github.com/login/oauth/authorize',
-				scopes: ['repo'],
-				scopeSeparator: null,
-				extraAuthorizeParams: {},
-			},
+	await save(convertUserId, {
+		name: 'github',
+		tokenUrl: 'https://github.com/login/oauth/access_token',
+		flow: 'confidential',
+		clientId: 'personal-github-client-id',
+		requiredHosts: ['api.github.com'],
+		authorization: {
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			scopes: ['repo'],
+			scopeSeparator: null,
+			extraAuthorizeParams: {},
 		},
 	})
-	expect(
-		await listOauthApps({ env: platformEnv.env, userId: convertUserId }),
-	).toHaveLength(1)
-
-	await upsertPlatformIntegration({
-		env: platformEnv.env,
-		userId: convertUserId,
-		platformAppSlug: 'github',
-		scopes: ['read:user'],
-	})
-	expect(
-		await listOauthApps({ env: platformEnv.env, userId: convertUserId }),
-	).toHaveLength(0)
-	const joined = await listJoinedIntegrations({
-		env: platformEnv.env,
-		userId: convertUserId,
-	})
-	expect(joined).toHaveLength(1)
-	expect(joined[0]?.lane).toBe('platform')
+	expect(await listOauthApps({ env, userId: convertUserId })).toHaveLength(1)
+	await connectPlatform(env, convertUserId, ['read:user'])
+	expect(await listOauthApps({ env, userId: convertUserId })).toHaveLength(0)
+	const joined = await listJoinedIntegrations({ env, userId: convertUserId })
+	expect(joined.map((entry) => entry.lane)).toEqual(['platform'])
 })
 
 test('upsertOauthAppWithoutConnection covers setup, client-id reuse, and connected-app preservation', async () => {
-	const { env, sqlite } = createEnv()
+	const { env, googleAppIdentity, save } = createEnv()
 	const setupUserId = 'user-setup-then-connect'
-
+	const spotifyAuthorization = {
+		authorizeUrl: 'https://accounts.spotify.com/authorize',
+		scopeSeparator: ' ',
+		extraAuthorizeParams: {},
+	}
+	const spotifyApp = {
+		slug: 'spotify',
+		clientId: 'spotify-client-from-setup',
+	}
 	const app = await upsertOauthAppWithoutConnection({
 		env,
 		userId: setupUserId,
@@ -605,173 +466,69 @@ test('upsertOauthAppWithoutConnection covers setup, client-id reuse, and connect
 			flow: 'pkce',
 			usePkce: true,
 			clientId: 'spotify-client-from-setup',
-			authorization: {
-				authorizeUrl: 'https://accounts.spotify.com/authorize',
-				scopes: [],
-				scopeSeparator: ' ',
-				extraAuthorizeParams: {},
-			},
+			authorization: { ...spotifyAuthorization, scopes: [] },
 		},
 	})
-	expect(app).toMatchObject({
-		slug: 'spotify',
-		clientId: 'spotify-client-from-setup',
-		flow: 'pkce',
-	})
+	expect(app).toMatchObject({ ...spotifyApp, flow: 'pkce' })
 	expect(await listOauthApps({ env, userId: setupUserId })).toEqual([
-		expect.objectContaining({
-			slug: 'spotify',
-			connectionCount: 0,
-			clientId: 'spotify-client-from-setup',
-		}),
+		expect.objectContaining({ ...spotifyApp, connectionCount: 0 }),
 	])
 	expect(await listIntegrations({ env, userId: setupUserId })).toEqual([])
-
-	await upsertIntegration({
-		env,
-		userId: setupUserId,
-		config: {
-			name: 'spotify',
-			tokenUrl: 'https://accounts.spotify.com/api/token',
-			apiBaseUrl: null,
-			flow: 'pkce',
-			clientId: 'spotify-client-from-setup',
-			requiredHosts: ['api.spotify.com'],
-			authorization: {
-				authorizeUrl: 'https://accounts.spotify.com/authorize',
-				scopes: ['user-read-email'],
-				scopeSeparator: ' ',
-				extraAuthorizeParams: {},
-			},
-		},
+	await save(setupUserId, {
+		name: 'spotify',
+		tokenUrl: 'https://accounts.spotify.com/api/token',
+		apiBaseUrl: null,
+		flow: 'pkce',
+		clientId: 'spotify-client-from-setup',
+		requiredHosts: ['api.spotify.com'],
+		authorization: { ...spotifyAuthorization, scopes: ['user-read-email'] },
 	})
 	expect(await listOauthApps({ env, userId: setupUserId })).toEqual([
-		expect.objectContaining({
-			slug: 'spotify',
-			connectionCount: 1,
-			clientId: 'spotify-client-from-setup',
-		}),
+		expect.objectContaining({ ...spotifyApp, connectionCount: 1 }),
 	])
 
 	const notionUserId = 'user-setup-orphan-reuse'
 	await upsertOauthAppWithoutConnection({
 		env,
 		userId: notionUserId,
-		config: {
-			name: 'notion',
-			tokenUrl: 'https://api.notion.com/v1/oauth/token',
-			flow: 'confidential',
-			clientId: 'notion-client-old',
-			authorization: {
-				authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
-			},
-		},
+		config: notionSetupConfig('notion-client-old'),
 	})
-	const updated = await upsertOauthAppWithoutConnection({
-		env,
-		userId: notionUserId,
-		config: {
-			name: 'notion',
-			tokenUrl: 'https://api.notion.com/v1/oauth/token',
-			flow: 'confidential',
-			clientId: 'notion-client-new',
-			authorization: {
-				authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
-			},
-		},
-	})
-	expect(updated).toMatchObject({
-		slug: 'notion',
-		clientId: 'notion-client-new',
-	})
+	expect(
+		await upsertOauthAppWithoutConnection({
+			env,
+			userId: notionUserId,
+			config: notionSetupConfig('notion-client-new'),
+		}),
+	).toMatchObject({ slug: 'notion', clientId: 'notion-client-new' })
 	expect(await listOauthApps({ env, userId: notionUserId })).toHaveLength(1)
 
 	const preserveUserId = 'user-setup-preserve'
 	await upsertOauthAppWithoutConnection({
 		env,
 		userId: preserveUserId,
-		config: {
-			name: 'google',
-			tokenUrl: 'https://oauth2.googleapis.com/token',
-			apiBaseUrl: 'https://www.googleapis.com',
-			flow: 'pkce',
-			clientId: 'shared-google-client',
-			authorization: {
-				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-				scopes: [],
-				extraAuthorizeParams: { access_type: 'offline' },
-			},
-		},
+		config: googleSetupConfig('google'),
 	})
-	await upsertIntegration({
-		env,
-		userId: preserveUserId,
-		config: {
-			name: 'google',
-			tokenUrl: 'https://oauth2.googleapis.com/token',
-			apiBaseUrl: 'https://www.googleapis.com',
-			flow: 'pkce',
+	await save(
+		preserveUserId,
+		google({
 			clientId: 'shared-google-client',
 			requiredHosts: ['www.googleapis.com'],
-			authorization: {
-				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-				scopes: ['openid', 'email'],
-				scopeSeparator: null,
-				extraAuthorizeParams: { access_type: 'offline' },
-			},
-		},
-	})
-	const before = sqlite
-		.prepare(
-			`SELECT slug, provider, label, client_id, token_url, created_at, updated_at
-			FROM user_oauth_apps
-			WHERE user_id = ? AND slug = 'google'`,
-		)
-		.get(preserveUserId) as {
-		slug: string
-		provider: string
-		label: string | null
-		client_id: string
-		token_url: string
-		created_at: string
-		updated_at: string
-	}
+		}),
+	)
+	const before = googleAppIdentity(preserveUserId)
 	const secondSetup = await upsertOauthAppWithoutConnection({
 		env,
 		userId: preserveUserId,
-		config: {
-			name: 'google-calendar',
-			tokenUrl: 'https://oauth2.googleapis.com/token',
-			apiBaseUrl: 'https://www.googleapis.com',
-			flow: 'pkce',
-			clientId: 'shared-google-client',
-			authorization: {
-				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-				scopes: [],
-				extraAuthorizeParams: { access_type: 'offline' },
-			},
-		},
+		config: googleSetupConfig('google-calendar'),
 	})
 	expect(secondSetup.slug).toBe('google')
-	const after = sqlite
-		.prepare(
-			`SELECT slug, provider, label, client_id, token_url, created_at, updated_at
-			FROM user_oauth_apps
-			WHERE user_id = ? AND slug = 'google'`,
-		)
-		.get(preserveUserId) as typeof before
-	expect(after).toEqual(before)
+	expect(googleAppIdentity(preserveUserId)).toEqual(before)
 })
 
 test('findOauthAppForProviderSetup prefers an exact-slug setup app over family prefill', async () => {
-	const { env } = createEnv()
+	const { env, save } = createEnv()
 	const userId = 'user-family-prefill'
-
-	await upsertIntegration({
-		env,
-		userId,
-		config: baseGoogleConfig,
-	})
+	await save(userId, baseGoogleConfig)
 	await upsertOauthAppWithoutConnection({
 		env,
 		userId,
@@ -799,48 +556,14 @@ test('findOauthAppForProviderSetup prefers an exact-slug setup app over family p
 	})
 })
 
-function createPlatformEnv() {
-	const base = createEnv()
-	return {
-		...base,
-		env: {
-			...base.env,
-			SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-		} as Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>,
-	}
-}
-
-async function provisionGithubPlatformApp(
-	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>,
-) {
-	return upsertPlatformOauthApp({
-		db: env.APP_DB,
-		env,
-		app: {
-			slug: 'github',
-			clientId: 'platform-github-client-id',
-			clientSecret: 'platform-github-client-secret-value',
-			tokenUrl: 'https://github.com/login/oauth/access_token',
-			authorizeUrl: 'https://github.com/login/oauth/authorize',
-			apiBaseUrl: 'https://api.github.com',
-			flow: 'confidential',
-			allowedScopes: ['repo', 'read:user', 'gist'],
-			defaultScopes: ['read:user'],
-			requiredHosts: ['api.github.com'],
-		},
-	})
-}
-
 test('upsertPlatformIntegration enforces connect policy, hides secrets, and deletes without orphaning the shared app', async () => {
-	const { env } = createPlatformEnv()
+	const { env } = createEnv()
 	await provisionGithubPlatformApp(env)
 
-	const saved = await upsertPlatformIntegration({
-		env,
-		userId: 'user-platform',
-		platformAppSlug: 'github',
-		scopes: ['read:user', 'repo'],
-	})
+	const saved = await connectPlatform(env, 'user-platform', [
+		'read:user',
+		'repo',
+	])
 	expect(saved).toMatchObject({
 		name: 'github',
 		platform: true,
@@ -848,37 +571,21 @@ test('upsertPlatformIntegration enforces connect policy, hides secrets, and dele
 	})
 	expect(saved.requiredHosts).toEqual(['api.github.com', 'github.com'])
 	expect(saved.authorization?.scopes).toEqual(['read:user', 'repo'])
-
 	const listed = await listIntegrations({ env, userId: 'user-platform' })
 	expect(listed).toHaveLength(1)
 	expect(listed[0]?.platform).toBe(true)
 	expect(JSON.stringify(listed)).not.toContain(
 		'platform-github-client-secret-value',
 	)
-
-	const joined = await listJoinedIntegrations({
-		env,
-		userId: 'user-platform',
-	})
+	const joined = await listJoinedIntegrations({ env, userId: 'user-platform' })
 	expect(joined[0]?.lane).toBe('platform')
 	expect(joined[0]?.connection.platformAppSlug).toBe('github')
 	expect(joined[0]?.connection.appSlug).toBeNull()
 
 	await expect(
-		upsertPlatformIntegration({
-			env,
-			userId: 'user-platform-scopes',
-			platformAppSlug: 'github',
-			scopes: ['admin:org'],
-		}),
+		connectPlatform(env, 'user-platform-scopes', ['admin:org']),
 	).rejects.toThrow('Scopes not allowed for platform integration "github"')
-
-	const defaultScopes = await upsertPlatformIntegration({
-		env,
-		userId: 'user-platform-defaults',
-		platformAppSlug: 'github',
-		scopes: [],
-	})
+	const defaultScopes = await connectPlatform(env, 'user-platform-defaults', [])
 	expect(defaultScopes.authorization?.scopes).toEqual(['read:user'])
 
 	await upsertPlatformOauthApp({
@@ -888,48 +595,38 @@ test('upsertPlatformIntegration enforces connect policy, hides secrets, and dele
 			slug: 'github-strict',
 			clientId: 'platform-github-strict-id',
 			clientSecret: 'platform-github-strict-secret',
-			tokenUrl: 'https://github.com/login/oauth/access_token',
-			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			tokenUrl: githubPlatformApp.tokenUrl,
+			authorizeUrl: githubPlatformApp.authorizeUrl,
 			flow: 'confidential',
 			allowedScopes: [],
 			defaultScopes: [],
 		},
 	})
 	await expect(
-		upsertPlatformIntegration({
-			env,
-			userId: 'user-strict',
-			platformAppSlug: 'github-strict',
-			scopes: ['repo'],
-		}),
+		connectPlatform(env, 'user-strict', ['repo'], 'github-strict'),
 	).rejects.toThrow(
 		'Scopes not allowed for platform integration "github-strict"',
 	)
-	const scopeless = await upsertPlatformIntegration({
+	const scopeless = await connectPlatform(
 		env,
-		userId: 'user-strict',
-		platformAppSlug: 'github-strict',
-		scopes: [],
-	})
+		'user-strict',
+		[],
+		'github-strict',
+	)
 	expect(scopeless.authorization?.scopes).toEqual([])
 
-	await upsertPlatformIntegration({
-		env,
-		userId: 'user-deletes',
-		platformAppSlug: 'github',
-		scopes: [],
-	})
+	await connectPlatform(env, 'user-deletes', [])
 	expect(
 		await deleteIntegration({ env, userId: 'user-deletes', name: 'github' }),
 	).toBe(true)
 	expect(await listIntegrations({ env, userId: 'user-deletes' })).toEqual([])
 	expect(await getAvailablePlatformApp({ env, slug: 'github' })).not.toBeNull()
 
-	const disabledEnv = createPlatformEnv()
-	const disabledApp = await provisionGithubPlatformApp(disabledEnv.env)
+	const disabled = createEnv()
+	const disabledApp = await provisionGithubPlatformApp(disabled.env)
 	await upsertPlatformOauthApp({
-		db: disabledEnv.env.APP_DB,
-		env: disabledEnv.env,
+		db: disabled.env.APP_DB,
+		env: disabled.env,
 		app: {
 			slug: disabledApp.slug,
 			clientId: disabledApp.clientId,
@@ -939,76 +636,43 @@ test('upsertPlatformIntegration enforces connect policy, hides secrets, and dele
 			enabled: false,
 		},
 	})
-
-	expect(await listAvailablePlatformApps({ env: disabledEnv.env })).toEqual([])
+	expect(await listAvailablePlatformApps({ env: disabled.env })).toEqual([])
 	await expect(
-		upsertPlatformIntegration({
-			env: disabledEnv.env,
-			userId: 'user-blocked',
-			platformAppSlug: 'github',
-			scopes: [],
-		}),
+		connectPlatform(disabled.env, 'user-blocked', []),
 	).rejects.toThrow('Platform integration "github" is not available.')
 })
 
 test('loading a platform integration adds current app hosts without removing connection hosts', async () => {
-	const { env, sqlite } = createPlatformEnv()
-	const app = await provisionGithubPlatformApp(env)
-	await upsertPlatformIntegration({
-		env,
-		userId: 'user-stale-platform-hosts',
-		platformAppSlug: app.slug,
-		scopes: [],
-	})
+	const { env, sqlite, query } = createEnv()
+	const userId = 'user-stale-platform-hosts'
+	await provisionGithubPlatformApp(env)
+	await connectPlatform(env, userId, [])
 	sqlite
 		.prepare(
-			`UPDATE user_integrations
-			SET required_hosts_json = ?
-			WHERE user_id = ? AND name = ?`,
+			`UPDATE user_integrations SET required_hosts_json = ? WHERE user_id = ? AND name = ?`,
 		)
-		.run(
-			JSON.stringify(['api.github.com', 'user-added.example.com']),
-			'user-stale-platform-hosts',
-			'github',
-		)
+		.run('["api.github.com","user-added.example.com"]', userId, 'github')
 	await upsertPlatformOauthApp({
 		db: env.APP_DB,
 		env,
 		app: {
-			slug: app.slug,
-			clientId: app.clientId,
-			tokenUrl: app.tokenUrl,
-			authorizeUrl: app.authorizeUrl,
-			apiBaseUrl: app.apiBaseUrl,
-			flow: app.flow,
+			...githubPlatformApp,
 			requiredHosts: ['api.github.com', 'uploads.github.com'],
 		},
 	})
 
-	const loaded = await getIntegration({
-		env,
-		userId: 'user-stale-platform-hosts',
-		name: 'github',
-	})
-
-	expect(loaded?.requiredHosts).toEqual([
+	const loaded = await getIntegration({ env, userId, name: 'github' })
+	const expectedHosts = [
 		'api.github.com',
 		'uploads.github.com',
 		'user-added.example.com',
-	])
+	]
+	expect(loaded?.requiredHosts).toEqual(expectedHosts)
 	expect(
-		JSON.parse(
-			(
-				sqlite
-					.prepare(
-						`SELECT required_hosts_json
-						FROM user_integrations
-						WHERE user_id = ? AND name = ?`,
-					)
-					.get('user-stale-platform-hosts', 'github') as {
-					required_hosts_json: string
-				}
-			).required_hosts_json,
+		query(
+			`SELECT required_hosts_json FROM user_integrations WHERE user_id = ? AND name = ?`,
+			userId,
+			'github',
 		),
-	).toEqual(['api.github.com', 'uploads.github.com', 'user-added.example.com'])
+	).toEqual([{ required_hosts_json: JSON.stringify(expectedHosts) }])
 })

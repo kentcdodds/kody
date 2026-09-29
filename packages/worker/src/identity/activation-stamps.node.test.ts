@@ -1,4 +1,7 @@
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
 	stampFirstExecute,
 	stampFirstMcpConnected,
@@ -6,132 +9,48 @@ import {
 	stampFirstSearch,
 } from './activation-stamps.ts'
 
-function createUsersDb() {
-	const columns = new Map<string, Record<string, unknown>>()
-
-	const db = {
-		prepare(sql: string) {
-			return {
-				bind(...values: Array<unknown>) {
-					return {
-						async run() {
-							const stableUserId = String(values[values.length - 1])
-							const row = columns.get(stableUserId) ?? {
-								first_mcp_connected_at: null,
-								first_execute_at: null,
-								first_search_at: null,
-								first_saved_package_at: null,
-								first_secret_at: null,
-								first_integration_at: null,
-								first_job_at: null,
-								mcp_client_name: null,
-								last_active_at: null,
-							}
-							let changes = 0
-							const touchLastActive = (at: unknown) => {
-								const next = String(at)
-								if (
-									row.last_active_at == null ||
-									String(row.last_active_at) < next
-								) {
-									row.last_active_at = at
-								}
-							}
-							if (sql.includes('first_mcp_connected_at')) {
-								const at = values[0]
-								const clientName = values[1]
-								if (row.first_mcp_connected_at == null) {
-									row.first_mcp_connected_at = at
-									changes = 1
-								}
-								if (row.mcp_client_name == null && clientName != null) {
-									row.mcp_client_name = clientName
-									changes = 1
-								}
-								touchLastActive(at)
-							}
-							const claimColumns = [
-								'first_execute_at',
-								'first_search_at',
-								'first_saved_package_at',
-								'first_secret_at',
-								'first_integration_at',
-								'first_job_at',
-							] as const
-							for (const column of claimColumns) {
-								if (!sql.includes(`SET ${column} =`)) continue
-								const at = values[0]
-								if (row[column] == null) {
-									row[column] = at
-									touchLastActive(at)
-									changes = 1
-								}
-							}
-							if (
-								changes === 0 &&
-								sql.includes('SET last_active_at =') &&
-								!claimColumns.some((column) => sql.includes(`SET ${column} =`))
-							) {
-								touchLastActive(values[0])
-								changes = 1
-							}
-							columns.set(stableUserId, row)
-							return { success: true, meta: { changes } }
-						},
-					}
-				},
-			}
-		},
-	} as unknown as D1Database
-
-	return {
-		db,
-		row(stableUserId: string) {
-			return columns.get(stableUserId) ?? null
-		},
-	}
-}
-
 test('activation stamps are write-once and keep the first client name', async () => {
-	const store = createUsersDb()
-	const userId = 'a'.repeat(64)
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const db = createD1FromSqlite(sqlite)
+	const stableUserId = 'a'.repeat(64)
+	sqlite
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, stable_user_id)
+			VALUES ('ada', 'ada@example.com', 'hash', ?)`,
+		)
+		.run(stableUserId)
 
-	await stampFirstMcpConnected(store.db, {
-		stableUserId: userId,
-		clientName: 'claude-ai',
-		at: '2026-08-27T10:00:00.000Z',
-	})
-	await stampFirstMcpConnected(store.db, {
-		stableUserId: userId,
-		clientName: 'cursor',
-		at: '2026-08-28T10:00:00.000Z',
-	})
-	await stampFirstExecute(store.db, {
-		stableUserId: userId,
-		at: '2026-08-27T11:00:00.000Z',
-	})
-	await stampFirstExecute(store.db, {
-		stableUserId: userId,
-		at: '2026-08-28T11:00:00.000Z',
-	})
-	await stampFirstSearch(store.db, {
-		stableUserId: userId,
-		at: '2026-08-27T11:30:00.000Z',
-	})
-	await stampFirstSearch(store.db, {
-		stableUserId: userId,
-		at: '2026-08-28T11:30:00.000Z',
-	})
-	await stampFirstSavedPackage(store.db, {
-		stableUserId: userId,
-		at: '2026-08-27T12:00:00.000Z',
-	})
-	await stampFirstSavedPackage(store.db, {
-		stableUserId: userId,
-		at: '2026-08-28T12:00:00.000Z',
-	})
+	for (const day of ['27', '28']) {
+		await stampFirstMcpConnected(db, {
+			stableUserId,
+			clientName: day === '27' ? 'claude-ai' : 'cursor',
+			at: `2026-08-${day}T10:00:00.000Z`,
+		})
+		await stampFirstExecute(db, {
+			stableUserId,
+			at: `2026-08-${day}T11:00:00.000Z`,
+		})
+		await stampFirstSearch(db, {
+			stableUserId,
+			at: `2026-08-${day}T11:30:00.000Z`,
+		})
+		await stampFirstSavedPackage(db, {
+			stableUserId,
+			at: `2026-08-${day}T12:00:00.000Z`,
+		})
+	}
 
-	expect(store.row(userId)).toEqual({
+	expect(
+		sqlite
+			.prepare(
+				`SELECT first_mcp_connected_at, mcp_client_name, first_execute_at,
+					first_search_at, first_saved_package_at, first_secret_at,
+					first_integration_at, first_job_at, last_active_at
+				FROM users WHERE stable_user_id = ?`,
+			)
+			.get(stableUserId),
+	).toEqual({
 		first_mcp_connected_at: '2026-08-27T10:00:00.000Z',
 		mcp_client_name: 'claude-ai',
 		first_execute_at: '2026-08-27T11:00:00.000Z',
@@ -140,6 +59,7 @@ test('activation stamps are write-once and keep the first client name', async ()
 		first_secret_at: null,
 		first_integration_at: null,
 		first_job_at: null,
-		last_active_at: '2026-08-28T12:00:00.000Z',
+		// last_active_at advances once per calendar day, not per stamp.
+		last_active_at: '2026-08-28T10:00:00.000Z',
 	})
 })

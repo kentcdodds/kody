@@ -15,34 +15,25 @@ import {
 } from './settings-repo.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
+const userId = 'user-1'
+const serverId = 'server-1'
+const previousKey = `user-mcp-server-logos/${userId}/${serverId}/aaaaaaaaaaaaaaaa.png`
 
-type StoredObject = {
-	bytes: Uint8Array
+type PutOptions = {
 	httpMetadata?: { contentType?: string; cacheControl?: string }
 	customMetadata?: Record<string, string>
-	httpEtag: string
-	size: number
 }
 
 function createInMemoryR2() {
-	const objects = new Map<string, StoredObject>()
+	const objects = new Map<
+		string,
+		PutOptions & { bytes: Uint8Array; httpEtag: string; size: number }
+	>()
 	const bucket = {
-		async put(
-			key: string,
-			bytes: Uint8Array,
-			options?: {
-				httpMetadata?: { contentType?: string; cacheControl?: string }
-				customMetadata?: Record<string, string>
-			},
-		) {
+		async put(key: string, bytes: Uint8Array, options: PutOptions = {}) {
 			objects.set(key, {
 				bytes,
-				...(options?.httpMetadata
-					? { httpMetadata: options.httpMetadata }
-					: {}),
-				...(options?.customMetadata
-					? { customMetadata: options.customMetadata }
-					: {}),
+				...options,
 				httpEtag: `"etag-${objects.size}"`,
 				size: bytes.byteLength,
 			})
@@ -53,11 +44,7 @@ function createInMemoryR2() {
 			return {
 				...stored,
 				body: new Blob([stored.bytes]).stream(),
-				async arrayBuffer() {
-					const copy = new Uint8Array(stored.bytes.byteLength)
-					copy.set(stored.bytes)
-					return copy.buffer
-				},
+				arrayBuffer: async () => stored.bytes.slice().buffer,
 			}
 		},
 		async delete(key: string) {
@@ -67,7 +54,7 @@ function createInMemoryR2() {
 	return { bucket, objects }
 }
 
-function createHarness() {
+async function createHarness() {
 	const sqlite = new DatabaseSync(':memory:')
 	applyRepositoryMigrations(sqlite, migrationsDirectory)
 	const db = createD1FromSqlite(sqlite)
@@ -76,219 +63,97 @@ function createHarness() {
 		COMMUNITY_ASSETS: r2.bucket,
 		IMAGES: createFakeImagesBinding(),
 	} as Pick<Env, 'COMMUNITY_ASSETS' | 'IMAGES'>
-	return { sqlite, db, env, r2 }
-}
-
-async function provisionServer(harness: ReturnType<typeof createHarness>) {
-	const row = {
-		id: 'server-1',
-		user_id: 'user-1',
-		name: 'linear',
-		url: 'https://mcp.linear.app/mcp',
-		enabled: true,
-		logo_key: null,
-		logo_content_type: null,
-		logo_source: null,
-		favicon_source_host: null,
-		usage_mode: 'any' as const,
-		allowedPackageIds: [],
-		last_error: null,
-	}
-	await insertMcpServerSettingRow({ db: harness.db, row })
-	return row
-}
-
-test('lazy refit of an MCP favicon keeps faviconSourceHost', async () => {
-	const harness = createHarness()
-	const server = await provisionServer(harness)
-	const previousKey = `user-mcp-server-logos/${server.user_id}/${server.id}/aaaaaaaaaaaaaaaa.png`
-	await harness.env.COMMUNITY_ASSETS.put(previousKey, tinyPngBytes, {
+	await insertMcpServerSettingRow({
+		db,
+		row: {
+			id: serverId,
+			user_id: userId,
+			name: 'linear',
+			url: 'https://mcp.linear.app/mcp',
+			enabled: true,
+			logo_key: null,
+			logo_content_type: null,
+			logo_source: null,
+			favicon_source_host: null,
+			usage_mode: 'any' as const,
+			allowedPackageIds: [],
+			last_error: null,
+		},
+	})
+	const readRow = () => getMcpServerSettingRowById({ db, userId, id: serverId })
+	const storeFaviconLogo = (logoKey: string, contentType: string) =>
+		db
+			.prepare(
+				`UPDATE mcp_server_settings
+				SET logo_key = ?, logo_content_type = ?, logo_source = 'favicon',
+					favicon_source_host = 'linear.app', updated_at = ?
+				WHERE user_id = ? AND id = ?`,
+			)
+			.bind(logoKey, contentType, new Date().toISOString(), userId, serverId)
+			.run()
+	const loadFitted = (row: Awaited<ReturnType<typeof readRow>>) =>
+		loadFittedMcpServerLogo({
+			db,
+			env,
+			userId,
+			serverId,
+			logoKey: row!.logo_key!,
+			logoContentType: row!.logo_content_type,
+			logoSource: row!.logo_source,
+			faviconSourceHost: row!.favicon_source_host,
+		})
+	await env.COMMUNITY_ASSETS.put(previousKey, tinyPngBytes, {
 		httpMetadata: { contentType: 'image/png' },
 	})
-	await harness.db
-		.prepare(
-			`UPDATE mcp_server_settings
-			SET logo_key = ?, logo_content_type = ?, logo_source = ?,
-				favicon_source_host = ?, updated_at = ?
-			WHERE user_id = ? AND id = ?`,
-		)
-		.bind(
-			previousKey,
-			'image/png',
-			'favicon',
-			'linear.app',
-			new Date().toISOString(),
-			server.user_id,
-			server.id,
-		)
-		.run()
-	const stale = await getMcpServerSettingRowById({
-		db: harness.db,
-		userId: server.user_id,
-		id: server.id,
-	})
+	await storeFaviconLogo(previousKey, 'image/png')
+	return { db, env, r2, readRow, storeFaviconLogo, loadFitted }
+}
 
-	const served = await loadFittedMcpServerLogo({
-		db: harness.db,
-		env: harness.env,
-		userId: server.user_id,
-		serverId: server.id,
-		logoKey: stale!.logo_key!,
-		logoContentType: stale!.logo_content_type,
-		logoSource: stale!.logo_source,
-		faviconSourceHost: stale!.favicon_source_host,
-	})
+test('lazy refit of an MCP favicon keeps faviconSourceHost, and a lost same-hash refit race keeps the stored logo', async () => {
+	const { db, env, r2, readRow, loadFitted } = await createHarness()
+	const served = await loadFitted(await readRow())
 	expect(served?.contentType).toBe('image/webp')
-	const current = await getMcpServerSettingRowById({
-		db: harness.db,
-		userId: server.user_id,
-		id: server.id,
-	})
-	expect(current?.favicon_source_host).toBe('linear.app')
-	expect(current?.logo_source).toBe('favicon')
+	const winner = await readRow()
+	expect(winner?.logo_key).toMatch(/\.webp$/)
+	expect(winner?.favicon_source_host).toBe('linear.app')
+	expect(winner?.logo_source).toBe('favicon')
 	expect(
 		shouldFetchMcpServerFavicon({
-			url: current!.url,
-			logoKey: current!.logo_key,
-			logoSource: current!.logo_source,
-			faviconSourceHost: current!.favicon_source_host,
+			url: winner!.url,
+			logoKey: winner!.logo_key,
+			logoSource: winner!.logo_source,
+			faviconSourceHost: winner!.favicon_source_host,
 		}),
 	).toBe(false)
-})
-
-test('lazy refit does not overwrite a newer MCP logo key', async () => {
-	const harness = createHarness()
-	const server = await provisionServer(harness)
-	const previousKey = `user-mcp-server-logos/${server.user_id}/${server.id}/aaaaaaaaaaaaaaaa.png`
-	const newerKey = `user-mcp-server-logos/${server.user_id}/${server.id}/bbbbbbbbbbbbbbbb.webp`
-	await harness.env.COMMUNITY_ASSETS.put(previousKey, tinyPngBytes, {
-		httpMetadata: { contentType: 'image/png' },
-	})
-	await harness.env.COMMUNITY_ASSETS.put(newerKey, tinyWebpBytes, {
-		httpMetadata: { contentType: 'image/webp' },
-		customMetadata: { iconFitVersion: '2' },
-	})
-	await harness.db
-		.prepare(
-			`UPDATE mcp_server_settings
-			SET logo_key = ?, logo_content_type = ?, logo_source = ?,
-				favicon_source_host = ?, updated_at = ?
-			WHERE user_id = ? AND id = ?`,
-		)
-		.bind(
-			previousKey,
-			'image/png',
-			'favicon',
-			'linear.app',
-			new Date().toISOString(),
-			server.user_id,
-			server.id,
-		)
-		.run()
-	const stale = await getMcpServerSettingRowById({
-		db: harness.db,
-		userId: server.user_id,
-		id: server.id,
-	})
-	await harness.db
-		.prepare(
-			`UPDATE mcp_server_settings
-			SET logo_key = ?, logo_content_type = ?, logo_source = ?,
-				favicon_source_host = ?, updated_at = ?
-			WHERE user_id = ? AND id = ?`,
-		)
-		.bind(
-			newerKey,
-			'image/webp',
-			'favicon',
-			'linear.app',
-			new Date().toISOString(),
-			server.user_id,
-			server.id,
-		)
-		.run()
-
-	const served = await loadFittedMcpServerLogo({
-		db: harness.db,
-		env: harness.env,
-		userId: server.user_id,
-		serverId: server.id,
-		logoKey: stale!.logo_key!,
-		logoContentType: stale!.logo_content_type,
-		logoSource: stale!.logo_source,
-		faviconSourceHost: stale!.favicon_source_host,
-	})
-	expect(served?.contentType).toBe('image/webp')
-	const current = await getMcpServerSettingRowById({
-		db: harness.db,
-		userId: server.user_id,
-		id: server.id,
-	})
-	expect(current?.logo_key).toBe(newerKey)
-	expect(harness.r2.objects.has(newerKey)).toBe(true)
-})
-
-test('lost same-hash refit race keeps the stored MCP logo', async () => {
-	const harness = createHarness()
-	const server = await provisionServer(harness)
-	const previousKey = `user-mcp-server-logos/${server.user_id}/${server.id}/aaaaaaaaaaaaaaaa.png`
-	await harness.env.COMMUNITY_ASSETS.put(previousKey, tinyPngBytes, {
-		httpMetadata: { contentType: 'image/png' },
-	})
-	await harness.db
-		.prepare(
-			`UPDATE mcp_server_settings
-			SET logo_key = ?, logo_content_type = ?, logo_source = ?,
-				favicon_source_host = ?, updated_at = ?
-			WHERE user_id = ? AND id = ?`,
-		)
-		.bind(
-			previousKey,
-			'image/png',
-			'favicon',
-			'linear.app',
-			new Date().toISOString(),
-			server.user_id,
-			server.id,
-		)
-		.run()
-	const stale = await getMcpServerSettingRowById({
-		db: harness.db,
-		userId: server.user_id,
-		id: server.id,
-	})
-	await loadFittedMcpServerLogo({
-		db: harness.db,
-		env: harness.env,
-		userId: server.user_id,
-		serverId: server.id,
-		logoKey: stale!.logo_key!,
-		logoContentType: stale!.logo_content_type,
-		logoSource: stale!.logo_source,
-		faviconSourceHost: stale!.favicon_source_host,
-	})
-	const winner = await getMcpServerSettingRowById({
-		db: harness.db,
-		userId: server.user_id,
-		id: server.id,
-	})
-	expect(winner?.logo_key).toMatch(/\.webp$/)
 
 	await setMcpServerLogo({
-		db: harness.db,
-		env: harness.env,
-		userId: server.user_id,
-		serverId: server.id,
+		db,
+		env,
+		userId,
+		serverId,
 		sourceBytes: tinyPngBytes,
 		source: 'favicon',
 		faviconSourceHost: 'linear.app',
 		replaceLogoKey: previousKey,
 	})
-	const current = await getMcpServerSettingRowById({
-		db: harness.db,
-		userId: server.user_id,
-		id: server.id,
-	})
+	const current = await readRow()
 	expect(current?.logo_key).toBe(winner?.logo_key)
-	expect(harness.r2.objects.has(winner!.logo_key!)).toBe(true)
+	expect(r2.objects.has(winner!.logo_key!)).toBe(true)
+})
+
+test('lazy refit does not overwrite a newer MCP logo key', async () => {
+	const { env, r2, readRow, storeFaviconLogo, loadFitted } =
+		await createHarness()
+	const newerKey = `user-mcp-server-logos/${userId}/${serverId}/bbbbbbbbbbbbbbbb.webp`
+	await env.COMMUNITY_ASSETS.put(newerKey, tinyWebpBytes, {
+		httpMetadata: { contentType: 'image/webp' },
+		customMetadata: { iconFitVersion: '2' },
+	})
+	const stale = await readRow()
+	await storeFaviconLogo(newerKey, 'image/webp')
+
+	const served = await loadFitted(stale)
+	expect(served?.contentType).toBe('image/webp')
+	expect((await readRow())?.logo_key).toBe(newerKey)
+	expect(r2.objects.has(newerKey)).toBe(true)
 })

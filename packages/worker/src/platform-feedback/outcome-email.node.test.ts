@@ -33,33 +33,31 @@ const feedback: PlatformFeedbackRecord = {
 	updatedAt: '2026-07-19T01:00:00.000Z',
 }
 
-function createKv() {
+type SentEmail = {
+	to: string
+	from: string
+	subject: string
+	html: string
+	text: string
+}
+
+function createKv(order?: Array<string>) {
 	const store = new Map<string, string>()
-	const puts: Array<{
-		key: string
-		value: string
-		options?: { expirationTtl?: number }
-	}> = []
-	return {
-		store,
-		puts,
-		kv: {
-			async get(key: string) {
-				return store.get(key) ?? null
-			},
-			async put(
-				key: string,
-				value: string,
-				options?: { expirationTtl?: number },
-			) {
-				puts.push({ key, value, options })
-				store.set(key, value)
-			},
-			async delete(key: string) {
-				store.delete(key)
-			},
-		} as unknown as KVNamespace,
-	}
+	const puts: Array<{ key: string; options?: { expirationTtl?: number } }> = []
+	const kv = {
+		get: async (key: string) => store.get(key) ?? null,
+		async put(
+			key: string,
+			value: string,
+			options?: { expirationTtl?: number },
+		) {
+			order?.push('put')
+			puts.push({ key, options })
+			store.set(key, value)
+		},
+		delete: async (key: string) => void store.delete(key),
+	} as unknown as KVNamespace
+	return { kv, store, puts }
 }
 
 function createUserDb(
@@ -69,23 +67,14 @@ function createUserDb(
 		email_outbound_paused_at?: string | null
 	} | null,
 ) {
+	const first = async () =>
+		row && {
+			email: row.email ?? 'ada@example.com',
+			suspended_at: row.suspended_at ?? null,
+			email_outbound_paused_at: row.email_outbound_paused_at ?? null,
+		}
 	return {
-		prepare() {
-			return {
-				bind() {
-					return {
-						async first() {
-							if (!row) return null
-							return {
-								email: row.email ?? 'ada@example.com',
-								suspended_at: row.suspended_at ?? null,
-								email_outbound_paused_at: row.email_outbound_paused_at ?? null,
-							}
-						},
-					}
-				},
-			}
-		},
+		prepare: () => ({ bind: () => ({ first }) }),
 	} as unknown as D1Database
 }
 
@@ -99,176 +88,113 @@ function createEnv(input?: { kv?: KVNamespace; db?: D1Database }) {
 	} as unknown as Env
 }
 
-test('platform feedback outcome emails send once per terminal status, escape summaries, and skip unsafe recipients', async () => {
-	expect(
-		shouldSendPlatformFeedbackOutcomeEmail({
-			didChangeStatus: true,
-			status: 'triaged',
-		}),
-	).toBe(false)
-	expect(
-		shouldSendPlatformFeedbackOutcomeEmail({
-			didChangeStatus: false,
-			status: 'resolved',
-		}),
-	).toBe(false)
-	expect(
-		shouldSendPlatformFeedbackOutcomeEmail({
-			didChangeStatus: true,
-			status: 'resolved',
-		}),
-	).toBe(true)
+function send(
+	env: Env,
+	input: {
+		id?: string
+		status?: 'resolved' | 'dismissed'
+		userMessage?: string
+	} = {},
+) {
+	const { id = feedback.id, status = 'resolved', userMessage } = input
+	return sendPlatformFeedbackOutcomeEmail({
+		env,
+		feedback: { ...feedback, id, status },
+		status,
+		...(userMessage ? { userMessage } : {}),
+	})
+}
 
+function lastSentEmail() {
+	return sendCloudflareEmail.mock.lastCall?.[1] as unknown as SentEmail
+}
+
+function claimKey(feedbackId: string) {
+	return platformFeedbackOutcomeEmailKvKey({ feedbackId, status: 'resolved' })
+}
+
+test('platform feedback outcome emails send once per terminal status, escape summaries, and skip unsafe recipients', async () => {
+	const shouldSendCases = [
+		{ didChangeStatus: true, status: 'triaged' as const, expected: false },
+		{ didChangeStatus: false, status: 'resolved' as const, expected: false },
+		{ didChangeStatus: true, status: 'resolved' as const, expected: true },
+	]
 	expect(
-		await sendPlatformFeedbackOutcomeEmail({
-			env: createEnv(),
-			feedback,
-			status: 'resolved',
-		}),
-	).toBe(false)
+		shouldSendCases.filter(
+			({ expected, ...input }) =>
+				shouldSendPlatformFeedbackOutcomeEmail(input) !== expected,
+		),
+	).toEqual([])
+
+	expect(await send(createEnv())).toBe(false)
 	expect(sendCloudflareEmail).not.toHaveBeenCalled()
 
 	const { kv, store, puts } = createKv()
 	const env = createEnv({ kv })
-	expect(
-		await sendPlatformFeedbackOutcomeEmail({
-			env,
-			feedback,
-			status: 'resolved',
-		}),
-	).toBe(true)
+	expect(await send(env)).toBe(true)
 	expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
-	const resolvedPayload = sendCloudflareEmail.mock.calls[0]?.[1] as {
-		to: string
-		from: string
-		subject: string
-		html: string
-		text: string
-	}
-	expect(resolvedPayload.to).toBe('ada@example.com')
-	expect(resolvedPayload.from).toBe('kody@kody.codes')
-	expect(resolvedPayload.subject).toContain('resolved')
-	expect(resolvedPayload.html).not.toContain('<script>')
-	expect(resolvedPayload.html).toContain(
+	const resolvedEmail = lastSentEmail()
+	expect(resolvedEmail.to).toBe('ada@example.com')
+	expect(resolvedEmail.from).toBe('kody@kody.codes')
+	expect(resolvedEmail.subject).toContain('resolved')
+	expect(resolvedEmail.html).not.toContain('<script>')
+	expect(resolvedEmail.html).toContain(
 		'&lt;/p&gt;&lt;script&gt;alert(1)&lt;/script&gt;Setup is confusing',
 	)
-	expect(resolvedPayload.html).not.toContain(
-		'The setup flow does not explain the next action.',
-	)
-	expect(resolvedPayload.html).not.toContain('platform-feedback-triage shipped')
-	expect(resolvedPayload.text).toContain(
+	expect(resolvedEmail.html).not.toContain(feedback.details)
+	expect(resolvedEmail.html).not.toContain('platform-feedback-triage shipped')
+	expect(resolvedEmail.text).toContain(
 		'tell your agent you want to send more Kody feedback',
 	)
-	expect(
-		store.get(
-			platformFeedbackOutcomeEmailKvKey({
-				feedbackId: 'feedback-1',
-				status: 'resolved',
-			}),
-		),
-	).toBeTruthy()
+	expect(store.get(claimKey('feedback-1'))).toBeTruthy()
 	expect(puts[0]?.options?.expirationTtl).toBe(outcomeEmailClaimTtlSeconds)
 
+	const userMessage = 'We shipped a clearer setup path.'
 	sendCloudflareEmail.mockClear()
-	expect(
-		await sendPlatformFeedbackOutcomeEmail({
-			env,
-			feedback,
-			status: 'resolved',
-			userMessage: 'We shipped a clearer setup path.',
-		}),
-	).toBe(false)
+	expect(await send(env, { userMessage })).toBe(false)
 	expect(sendCloudflareEmail).not.toHaveBeenCalled()
 
-	const dismissed = {
-		...feedback,
-		id: 'feedback-2',
-		status: 'dismissed' as const,
-	}
 	expect(
-		await sendPlatformFeedbackOutcomeEmail({
-			env,
-			feedback: dismissed,
-			status: 'dismissed',
-			userMessage: 'We shipped a clearer setup path.',
-		}),
+		await send(env, { id: 'feedback-2', status: 'dismissed', userMessage }),
 	).toBe(true)
-	const dismissedPayload = sendCloudflareEmail.mock.calls[0]?.[1] as {
-		subject: string
-		html: string
-		text: string
-	}
-	expect(dismissedPayload.subject).toContain('update')
-	expect(dismissedPayload.html).toContain('We shipped a clearer setup path.')
-	expect(dismissedPayload.text).toContain('We shipped a clearer setup path.')
-	expect(dismissedPayload.html).toContain(
+	const dismissedEmail = lastSentEmail()
+	expect(dismissedEmail.subject).toContain('update')
+	expect(dismissedEmail.html).toContain(userMessage)
+	expect(dismissedEmail.text).toContain(userMessage)
+	expect(dismissedEmail.html).toContain(
 		'closed it without a product change this time',
 	)
 
-	expect(
-		await sendPlatformFeedbackOutcomeEmail({
-			env: createEnv({ kv, db: createUserDb(null) }),
-			feedback: { ...feedback, id: 'feedback-no-user' },
-			status: 'resolved',
-		}),
-	).toBe(false)
-	expect(
-		await sendPlatformFeedbackOutcomeEmail({
-			env: createEnv({
-				kv,
-				db: createUserDb({ email: '' }),
-			}),
-			feedback: { ...feedback, id: 'feedback-no-email' },
-			status: 'resolved',
-		}),
-	).toBe(false)
-	expect(
-		await sendPlatformFeedbackOutcomeEmail({
-			env: createEnv({
-				kv,
-				db: createUserDb({
-					email_outbound_paused_at: '2026-07-20T00:00:00.000Z',
-				}),
-			}),
-			feedback: { ...feedback, id: 'feedback-paused' },
-			status: 'resolved',
-		}),
-	).toBe(false)
-	expect(
-		await sendPlatformFeedbackOutcomeEmail({
-			env: createEnv({
-				kv,
-				db: createUserDb({ suspended_at: '2026-07-20T00:00:00.000Z' }),
-			}),
-			feedback: { ...feedback, id: 'feedback-suspended' },
-			status: 'resolved',
-		}),
-	).toBe(false)
+	const skippedRecipients = [
+		{ id: 'feedback-no-user', row: null },
+		{ id: 'feedback-no-email', row: { email: '' } },
+		{
+			id: 'feedback-paused',
+			row: { email_outbound_paused_at: '2026-07-20T00:00:00.000Z' },
+		},
+		{
+			id: 'feedback-suspended',
+			row: { suspended_at: '2026-07-20T00:00:00.000Z' },
+		},
+	]
+	for (const { id, row } of skippedRecipients) {
+		expect(await send(createEnv({ kv, db: createUserDb(row) }), { id })).toBe(
+			false,
+		)
+	}
 	expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
 })
 
 test('platform feedback outcome emails reserve the KV claim before sending and release it on send failure', async () => {
-	const { kv, store } = createKv()
-	const env = createEnv({ kv })
 	const order: Array<string> = []
-	const originalPut = kv.put.bind(kv)
-	kv.put = async (...args: Parameters<KVNamespace['put']>) => {
-		order.push('put')
-		return originalPut(...args)
-	}
+	const { kv, store } = createKv(order)
 	sendCloudflareEmail.mockImplementation(async () => {
 		order.push('send')
 		throw new Error('smtp down')
 	})
 	consoleWarn.mockImplementation(() => {})
 
-	expect(
-		await sendPlatformFeedbackOutcomeEmail({
-			env,
-			feedback: { ...feedback, id: 'feedback-claim' },
-			status: 'resolved',
-		}),
-	).toBe(false)
+	expect(await send(createEnv({ kv }), { id: 'feedback-claim' })).toBe(false)
 	expect(order).toEqual(['put', 'send'])
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'platform-feedback-outcome-email-send-failed',
@@ -278,12 +204,5 @@ test('platform feedback outcome emails reserve the KV claim before sending and r
 			error: expect.any(Error),
 		},
 	)
-	expect(
-		store.get(
-			platformFeedbackOutcomeEmailKvKey({
-				feedbackId: 'feedback-claim',
-				status: 'resolved',
-			}),
-		),
-	).toBeUndefined()
+	expect(store.get(claimKey('feedback-claim'))).toBeUndefined()
 })
