@@ -295,6 +295,6 @@ runtime path if this budget is raised again.
 - Repo session unified-diff line limit (KODY-8E / #2717):
   `maxRepoSourceFileDiffLines` preflight + EFBIG remap on `applyWorkspaceEdits`
   and MCP caller-failure classification for the stable / raw phrases. Local / CI
-  dry-run platform 5_227_709 against the previous 5_226_500 budget, reviewed
+  dry-run platform 5_227_771 against the previous 5_226_500 budget, reviewed
   ceiling 5_228_000.
 >>>>>>> a7998d01 (Raise platform startup bundle budget for repo diff line gate)

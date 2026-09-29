@@ -58,7 +58,7 @@ test('diff-line policy mirrors the Cloudflare shell ceiling and classifies stabl
 	expect(message).toContain('"assets/extracted.txt"')
 	expect(message).toContain('10,001 lines')
 	expect(message).toContain('10,000-line')
-	expect(message).toContain('Split the file')
+	expect(message).toContain('Split the file into separate source files')
 	expect(isRepoDiffTooLargeMessage(message)).toBe(true)
 	expect(
 		isRepoDiffTooLargeMessage(

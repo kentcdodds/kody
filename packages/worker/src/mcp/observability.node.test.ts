@@ -396,9 +396,9 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 			failurePhase: 'handler',
 			errorName: 'Error',
 			errorMessage:
-				'"assets/extracted.txt" has 10,001 lines, which is over the 10,000-line line limit for repo session unified diffs. Repo session edits cannot emit unified diffs for files over that limit. Split the file into smaller sources, store large blobs outside the repo (for example Cloudflare R2, Amazon S3, Dropbox, or Google Drive), or write smaller chunks.',
+				'"assets/extracted.txt" has 10,001 lines, which is over the 10,000-line line limit for repo session unified diffs. Repo session edits cannot emit unified diffs for files over that limit. Split the file into separate source files that each stay within the limit, or store large blobs outside the repo (for example Cloudflare R2, Amazon S3, Dropbox, or Google Drive).',
 			cause: new Error(
-				'"assets/extracted.txt" has 10,001 lines, which is over the 10,000-line line limit for repo session unified diffs. Repo session edits cannot emit unified diffs for files over that limit. Split the file into smaller sources, store large blobs outside the repo (for example Cloudflare R2, Amazon S3, Dropbox, or Google Drive), or write smaller chunks.',
+				'"assets/extracted.txt" has 10,001 lines, which is over the 10,000-line line limit for repo session unified diffs. Repo session edits cannot emit unified diffs for files over that limit. Split the file into separate source files that each stay within the limit, or store large blobs outside the repo (for example Cloudflare R2, Amazon S3, Dropbox, or Google Drive).',
 			),
 		})
 		logMcpEvent({

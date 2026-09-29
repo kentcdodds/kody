@@ -34,10 +34,15 @@ export function measureRepoSourceFileBytes(content: string) {
 }
 
 /**
- * Line count matching `@cloudflare/shell` diff sizing (`split('\n').length`).
+ * Line count matching `@cloudflare/shell` diff sizing (`split('\n').length`)
+ * without allocating a per-line array.
  */
 export function measureRepoSourceFileLines(content: string) {
-	return content.split('\n').length
+	let lineCount = 1
+	for (let index = 0; index < content.length; index++) {
+		if (content.charCodeAt(index) === 10 /* \n */) lineCount += 1
+	}
+	return lineCount
 }
 
 function formatMiB(bytes: number) {
@@ -100,9 +105,9 @@ export function buildRepoDiffTooLargeMessage(input: {
 		`which is over the ${maxRepoSourceFileDiffLines.toLocaleString('en-US')}-line ` +
 		`${repoDiffTooLargeMessagePhrase}. ` +
 		'Repo session edits cannot emit unified diffs for files over that limit. ' +
-		'Split the file into smaller sources, store large blobs outside the repo ' +
-		'(for example Cloudflare R2, Amazon S3, Dropbox, or Google Drive), ' +
-		'or write smaller chunks.'
+		'Split the file into separate source files that each stay within the limit, ' +
+		'or store large blobs outside the repo (for example Cloudflare R2, Amazon S3, ' +
+		'Dropbox, or Google Drive).'
 	)
 }
 
