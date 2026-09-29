@@ -9,6 +9,7 @@ import {
 } from '#app/client-build-id.ts'
 import {
 	CANONICAL_ORIGIN_META_NAME,
+	DEFAULT_DOCUMENT_TITLE,
 	DOCUMENT_HEAD_ATTR,
 	type ResolvedDocumentHead,
 } from '#universal/document-head.ts'
@@ -236,7 +237,9 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 					/>
 				) : null}
 				<title>
-					{handle.props.documentHead?.title ?? handle.props.title ?? 'kody'}
+					{handle.props.documentHead?.title ??
+						handle.props.title ??
+						DEFAULT_DOCUMENT_TITLE}
 				</title>
 				{handle.props.documentHead ? (
 					<ManagedDocumentHead head={handle.props.documentHead} />

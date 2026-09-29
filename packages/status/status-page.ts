@@ -354,7 +354,7 @@ export function renderStatusUnavailablePage(message: string): string {
 <head>
 <meta charset="utf-8" />
 <meta http-equiv="refresh" content="30" />
-<title>kody status</title>
+<title>Kody status</title>
 ${renderFaviconLinks('unknown')}
 </head>
 <body>
@@ -386,7 +386,7 @@ export function renderStatusPage(snapshot: StatusSnapshot): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta http-equiv="refresh" content="60" />
-<title>kody status</title>
+<title>Kody status</title>
 ${renderFaviconLinks(snapshot.overallStatus)}
 <style>${pageStyles}</style>
 </head>

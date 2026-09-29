@@ -1,4 +1,5 @@
 import { html, type SafeHtml } from 'remix/html-template'
+import { DEFAULT_DOCUMENT_TITLE } from '#universal/document-head.ts'
 
 const defaultEntryScripts: Array<string> = []
 const defaultShell = html`<div class="app-shell">
@@ -12,7 +13,7 @@ const defaultShell = html`<div class="app-shell">
 
 export function Layout({
 	children,
-	title = 'kody',
+	title = DEFAULT_DOCUMENT_TITLE,
 	entryScripts = defaultEntryScripts,
 	head,
 }: {

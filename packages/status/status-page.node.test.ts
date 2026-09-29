@@ -100,6 +100,7 @@ test('status page renders components, incidents, unknown state, and escapes deta
 			'>def4567<',
 			'>7890abc<',
 			'http-equiv="refresh"',
+			'<title>Kody status</title>',
 			`href="${statusFaviconPath('operational')}"`,
 			'MCP execute',
 			'Recently verified',
@@ -186,6 +187,7 @@ test('status page renders components, incidents, unknown state, and escapes deta
 	expect(
 		missing(unavailable, [
 			'Status data is temporarily unavailable.',
+			'<title>Kody status</title>',
 			`href="${statusFaviconPath('unknown')}"`,
 			'http-equiv="refresh"',
 		]),

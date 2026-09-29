@@ -1,5 +1,6 @@
 import { html } from 'remix/html-template'
 import { render } from '#app/render.ts'
+import { DEFAULT_DOCUMENT_TITLE } from '#universal/document-head.ts'
 import { routes } from '#universal/routes.ts'
 import {
 	internalErrorPageCopy,
@@ -26,7 +27,7 @@ export function renderInternalServerErrorPage(retryHref = '/') {
 					<meta charset="utf-8" />
 					<meta name="viewport" content="width=device-width, initial-scale=1" />
 					<link rel="icon" href="/favicon.ico" sizes="any" />
-					<title>Something went wrong — kody</title>
+					<title>Something went wrong — ${DEFAULT_DOCUMENT_TITLE}</title>
 					<link rel="stylesheet" href="/styles.css" />
 					<style>
 						.illustrated-error-page {

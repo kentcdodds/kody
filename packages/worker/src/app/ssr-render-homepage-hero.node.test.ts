@@ -87,6 +87,7 @@ function missing(html: string, markers: Array<string>) {
 test('homepage hero uses locked copy, compare, and session-aware connect CTA', async () => {
 	const anonymous = await renderHome('https://example.com/')
 	expect(anonymous.status).toBe(200)
+	expect(anonymous.html).toContain('<title>Kody</title>')
 	expect(
 		missing(anonymous.hero, [
 			landingHeroPrimaryCta,
