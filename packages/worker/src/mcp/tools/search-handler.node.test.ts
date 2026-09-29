@@ -478,14 +478,7 @@ test('ranked search returns results without waiting the full onboarding notice w
 	mockModule.buildOnboardingSearchNotice.mockImplementationOnce(
 		() => new Promise(() => {}),
 	)
-	const { handler } = await getSearchRegistration({
-		user: {
-			userId: 'user-1',
-			email: 'user@example.com',
-			displayName: 'User',
-			username: 'user',
-		},
-	})
+	const handler = await getSearchHandler()
 	vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 	try {
 		const pending = handler({
@@ -495,14 +488,7 @@ test('ranked search returns results without waiting the full onboarding notice w
 		await vi.advanceTimersByTimeAsync(SEARCH_ONBOARDING_NOTICE_BUDGET_MS)
 		const response = await pending
 		expect(response.isError).toBeUndefined()
-		const result = response.structuredContent.result as {
-			warnings?: Array<string>
-			matches: Array<unknown>
-			phaseTimings?: {
-				onboardingNoticeTimedOut?: boolean
-				onboardingNoticeMs?: number
-			}
-		}
+		const result = resultOf(response)
 		expect(result.matches.length).toBeGreaterThan(0)
 		expect(result.warnings ?? []).not.toContainEqual(
 			expect.stringMatching(/onboarding/i),
