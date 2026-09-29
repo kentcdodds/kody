@@ -112,11 +112,35 @@ function createMessage(lane: string, scheduledTime: number) {
 	} as Parameters<typeof runScheduledLaneWithFailureIsolation>[0]['message']
 }
 
-function getOAuthPurgeCoordinator() {
-	return env.OAUTH_PURGE_COORDINATOR.get(
+async function resetOAuthPurgeCoordinator(seed?: PurgeContinuation) {
+	const coordinator = env.OAUTH_PURGE_COORDINATOR.get(
 		env.OAUTH_PURGE_COORDINATOR.idFromName('global'),
 	)
+	await runInDurableObject(
+		coordinator,
+		async (_instance: OAuthPurgeCoordinator, state) => {
+			await state.storage.deleteAll()
+			if (seed) await state.storage.put(oauthPurgeContinuationStorageKey, seed)
+		},
+	)
+	return coordinator
 }
+
+function readPurgeContinuation(
+	coordinator: Awaited<ReturnType<typeof resetOAuthPurgeCoordinator>>,
+) {
+	return runInDurableObject(
+		coordinator,
+		(_instance: OAuthPurgeCoordinator, state) =>
+			state.storage.get<PurgeContinuation>(oauthPurgeContinuationStorageKey),
+	)
+}
+
+async function kvHas(key: string | undefined) {
+	return (await env.OAUTH_KV.get(key ?? '')) !== null
+}
+
+const padded = (index: number) => index.toString().padStart(3, '0')
 
 test('platform lanes execute with their expected inputs and jobs-owned lanes are rejected', async () => {
 	const scheduledTime = Date.parse('2026-07-05T10:05:30.000Z')
@@ -137,13 +161,20 @@ test('platform lanes execute with their expected inputs and jobs-owned lanes are
 		await runScheduledLane({ env, lane, scheduledAt })
 	}
 
-	expect(mocks.reconcileArtifactsPushes).toHaveBeenCalledWith(
-		expect.objectContaining({ now: scheduledAt }),
-	)
+	for (const laneMock of [
+		mocks.reconcileArtifactsPushes,
+		mocks.sweepStaleInboundDeliveries,
+		mocks.refreshAdminInsightsRunLogSnapshot,
+		mocks.checkAuthDenialBurstAndNotify,
+		mocks.backfillStorageBucketEstimates,
+		mocks.pruneRetention,
+		mocks.pruneJobRetention,
+	]) {
+		expect(laneMock).toHaveBeenCalledWith(
+			expect.objectContaining({ now: scheduledAt }),
+		)
+	}
 	expect(mocks.cleanupRepoSessionBranches).toHaveBeenCalledTimes(1)
-	expect(mocks.sweepStaleInboundDeliveries).toHaveBeenCalledWith(
-		expect.objectContaining({ now: scheduledAt }),
-	)
 	expect(mocks.pruneSystemEmailRetention).toHaveBeenCalledWith(
 		expect.objectContaining({ blobs: env.EMAIL_BLOBS }),
 	)
@@ -152,24 +183,9 @@ test('platform lanes execute with their expected inputs and jobs-owned lanes are
 		env,
 		now: scheduledAt,
 	})
-	expect(mocks.refreshAdminInsightsRunLogSnapshot).toHaveBeenCalledWith(
-		expect.objectContaining({ now: scheduledAt }),
-	)
-	expect(mocks.checkAuthDenialBurstAndNotify).toHaveBeenCalledWith(
-		expect.objectContaining({ now: scheduledAt }),
-	)
-	expect(mocks.backfillStorageBucketEstimates).toHaveBeenCalledWith(
-		expect.objectContaining({ now: scheduledAt }),
-	)
-	expect(mocks.pruneRetention).toHaveBeenCalledWith(
-		expect.objectContaining({ now: scheduledAt }),
-	)
-	expect(mocks.pruneJobRetention).toHaveBeenCalledWith(
-		expect.objectContaining({ now: scheduledAt }),
-	)
 	expect(mocks.reconcileD1StorageBytes).toHaveBeenCalledTimes(1)
 	const reconciliationInput = mocks.reconcileD1StorageBytes.mock.calls[0]?.[0]
-	expect(reconciliationInput?.db === env.APP_DB).toBe(true)
+	expect(reconciliationInput?.db).toBe(env.APP_DB)
 	expect(reconciliationInput?.env).toEqual(
 		expect.objectContaining({ APP_DB: env.APP_DB }),
 	)
@@ -190,24 +206,20 @@ test('scheduled OAuth purge advances and revokes every grant token before the gr
 	const clientId = 'oauth-purge-client'
 	const healthyGrantIds = Array.from(
 		{ length: 51 },
-		(_, index) => `${index.toString().padStart(3, '0')}-healthy`,
+		(_, index) => `${padded(index)}-healthy`,
 	)
 	const orphanGrantId = 'zzz-orphan'
 	const orphanGrantKey = `grant:${userId}:${orphanGrantId}`
 	const orphanTokenKeys = Array.from(
 		{ length: 51 },
-		(_, index) =>
-			`token:${userId}:${orphanGrantId}:${index.toString().padStart(3, '0')}`,
+		(_, index) => `token:${userId}:${orphanGrantId}:${padded(index)}`,
 	)
+	const lastHealthyGrantId = healthyGrantIds.at(-1)
 
-	await runInDurableObject(
-		getOAuthPurgeCoordinator(),
-		async (_instance: OAuthPurgeCoordinator, state) =>
-			state.storage.deleteAll(),
-	)
+	await resetOAuthPurgeCoordinator()
 	await env.OAUTH_KV.put(`client:${clientId}`, JSON.stringify({ clientId }))
-	await Promise.all(
-		healthyGrantIds.flatMap((grantId) => [
+	await Promise.all([
+		...healthyGrantIds.flatMap((grantId) => [
 			env.OAUTH_KV.put(
 				`grant:${userId}:${grantId}`,
 				JSON.stringify({ id: grantId, userId, clientId }),
@@ -217,75 +229,55 @@ test('scheduled OAuth purge advances and revokes every grant token before the gr
 				JSON.stringify({ userId, grantId }),
 			),
 		]),
-	)
-	await env.OAUTH_KV.put(
-		orphanGrantKey,
-		JSON.stringify({
-			id: orphanGrantId,
-			userId,
-			clientId: 'missing-client',
-		}),
-	)
-	await Promise.all(
-		orphanTokenKeys.map((key) =>
+		env.OAUTH_KV.put(
+			orphanGrantKey,
+			JSON.stringify({ id: orphanGrantId, userId, clientId: 'missing-client' }),
+		),
+		...orphanTokenKeys.map((key) =>
 			env.OAUTH_KV.put(key, JSON.stringify({ userId, grantId: orphanGrantId })),
 		),
-	)
+	])
 
-	const runPurgeTick = (tickTime: number) =>
+	const runPurgeTick = (minutes: number) =>
 		runScheduledLane({
 			env,
 			lane: 'oauth_purge_expired',
-			scheduledAt: new Date(tickTime),
+			scheduledAt: new Date(scheduledTime + minutes * 60_000),
 		})
 
-	await runPurgeTick(scheduledTime)
-	expect(await env.OAUTH_KV.get(orphanGrantKey)).not.toBeNull()
-	expect(await env.OAUTH_KV.get(orphanTokenKeys[0] ?? '')).not.toBeNull()
+	await runPurgeTick(0)
+	expect(await kvHas(orphanGrantKey)).toBe(true)
+	expect(await kvHas(orphanTokenKeys[0])).toBe(true)
 
-	await runPurgeTick(scheduledTime + 5 * 60_000)
-	expect(await env.OAUTH_KV.get(orphanGrantKey)).not.toBeNull()
+	await runPurgeTick(5)
+	expect(await kvHas(orphanGrantKey)).toBe(true)
 
-	await runPurgeTick(scheduledTime + 10 * 60_000)
-	expect(await env.OAUTH_KV.get(orphanGrantKey)).not.toBeNull()
-	expect(await env.OAUTH_KV.get(orphanTokenKeys[0] ?? '')).toBeNull()
-	expect(await env.OAUTH_KV.get(orphanTokenKeys.at(-1) ?? '')).not.toBeNull()
+	await runPurgeTick(10)
+	expect(await kvHas(orphanGrantKey)).toBe(true)
+	expect(await kvHas(orphanTokenKeys[0])).toBe(false)
+	expect(await kvHas(orphanTokenKeys.at(-1))).toBe(true)
 
-	await runPurgeTick(scheduledTime + 15 * 60_000)
-	expect(await env.OAUTH_KV.get(orphanGrantKey)).not.toBeNull()
+	await runPurgeTick(15)
+	expect(await kvHas(orphanGrantKey)).toBe(true)
 
-	await runPurgeTick(scheduledTime + 20 * 60_000)
-	expect(await env.OAUTH_KV.get(orphanGrantKey)).toBeNull()
+	await runPurgeTick(20)
+	expect(await kvHas(orphanGrantKey)).toBe(false)
 	await expect(
 		Promise.all(orphanTokenKeys.map((key) => env.OAUTH_KV.get(key))),
 	).resolves.toEqual(orphanTokenKeys.map(() => null))
+	expect(await kvHas(`grant:${userId}:${lastHealthyGrantId}`)).toBe(true)
 	expect(
-		await env.OAUTH_KV.get(`grant:${userId}:${healthyGrantIds.at(-1)}`),
-	).not.toBeNull()
-	expect(
-		await env.OAUTH_KV.get(
-			`token:${userId}:${healthyGrantIds.at(-1)}:healthy-token`,
-		),
-	).not.toBeNull()
+		await kvHas(`token:${userId}:${lastHealthyGrantId}:healthy-token`),
+	).toBe(true)
 })
 
-test('OAuth purge resets only invalid persisted cursors', async () => {
-	const coordinator = getOAuthPurgeCoordinator()
+test('OAuth purge resets only invalid persisted cursors and serializes overlapping invocations', async () => {
 	const invalidCursor = '%%%'
-	await runInDurableObject(
-		coordinator,
-		async (_instance: OAuthPurgeCoordinator, state) => {
-			await state.storage.deleteAll()
-			await state.storage.put<PurgeContinuation>(
-				oauthPurgeContinuationStorageKey,
-				{
-					version: 1,
-					nextPhase: 'grants',
-					grantCursor: invalidCursor,
-				},
-			)
-		},
-	)
+	const recovering = await resetOAuthPurgeCoordinator({
+		version: 1,
+		nextPhase: 'grants',
+		grantCursor: invalidCursor,
+	})
 	await env.OAUTH_KV.put(
 		'client:cursor-recovery-client',
 		JSON.stringify({ clientId: 'cursor-recovery-client' }),
@@ -295,30 +287,16 @@ test('OAuth purge resets only invalid persisted cursors', async () => {
 		JSON.stringify({ clientId: 'cursor-recovery-client' }),
 	)
 
-	const result = await coordinator.run({
+	const result = await recovering.run({
 		scheduledAt: Date.parse('2026-07-05T11:00:00.000Z'),
 	})
 	expect(result.phase).toBe('grants')
 	expect(result.checked).toBeGreaterThan(0)
-	await runInDurableObject(
-		coordinator,
-		async (_instance: OAuthPurgeCoordinator, state) => {
-			const continuation = await state.storage.get<PurgeContinuation>(
-				oauthPurgeContinuationStorageKey,
-			)
-			expect(continuation?.grantCursor).not.toBe(invalidCursor)
-			expect(continuation?.nextPhase).toBe('tokens')
-		},
-	)
-})
+	const recovered = await readPurgeContinuation(recovering)
+	expect(recovered?.grantCursor).not.toBe(invalidCursor)
+	expect(recovered?.nextPhase).toBe('tokens')
 
-test('OAuth purge coordinator serializes overlapping invocations', async () => {
-	const coordinator = getOAuthPurgeCoordinator()
-	await runInDurableObject(
-		coordinator,
-		async (_instance: OAuthPurgeCoordinator, state) =>
-			state.storage.deleteAll(),
-	)
+	const overlapping = await resetOAuthPurgeCoordinator()
 	await env.OAUTH_KV.put(
 		'client:overlap-client',
 		JSON.stringify({ clientId: 'overlap-client' }),
@@ -326,28 +304,20 @@ test('OAuth purge coordinator serializes overlapping invocations', async () => {
 	await Promise.all(
 		Array.from({ length: 51 }, (_, index) =>
 			env.OAUTH_KV.put(
-				`grant:overlap-user:${index.toString().padStart(3, '0')}`,
+				`grant:overlap-user:${padded(index)}`,
 				JSON.stringify({ clientId: 'overlap-client' }),
 			),
 		),
 	)
-
+	const scheduledAt = Date.parse('2026-07-05T11:05:00.000Z')
 	const [first, second] = await Promise.all([
-		coordinator.run({ scheduledAt: Date.parse('2026-07-05T11:05:00.000Z') }),
-		coordinator.run({ scheduledAt: Date.parse('2026-07-05T11:05:00.000Z') }),
+		overlapping.run({ scheduledAt }),
+		overlapping.run({ scheduledAt }),
 	])
-
 	expect([first.phase, second.phase]).toEqual(['grants', 'tokens'])
-	await runInDurableObject(
-		coordinator,
-		async (_instance: OAuthPurgeCoordinator, state) => {
-			const continuation = await state.storage.get<PurgeContinuation>(
-				oauthPurgeContinuationStorageKey,
-			)
-			expect(continuation?.nextPhase).toBe('grants')
-			expect(continuation?.grantCursor).toBeTruthy()
-		},
-	)
+	const continuation = await readPurgeContinuation(overlapping)
+	expect(continuation?.nextPhase).toBe('grants')
+	expect(continuation?.grantCursor).toBeTruthy()
 })
 
 test('lane failure isolation reports ordinary errors to Sentry and treats D1 lock contention as retryable', async () => {

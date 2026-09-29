@@ -73,44 +73,36 @@ test('anonymous marketing HTML is stored in caches.default and replayed as HIT',
 	expect(htmlGuidesHit.headers.get('Vary')).toBe(htmlGuides.headers.get('Vary'))
 	await expect(htmlGuidesHit.text()).resolves.toBe(htmlGuidesBody)
 
-	const session = await workerFetch(
-		new Request(pricingUrl, {
-			headers: { Cookie: 'kody_session=stale' },
-		}),
-	)
-	expect(session.headers.get(anonymousHtmlEdgeCacheHeader)).not.toBe('HIT')
-	expect(session.headers.get('Cache-Control')).toBe('no-store')
-
-	const dismissed = await workerFetch(
-		new Request(pricingUrl, {
-			headers: {
+	const noStore = { cacheControl: 'no-store' }
+	const uncached: Array<
+		[string, HeadersInit, { status?: number; cacheControl?: string }]
+	> = [
+		[pricingUrl, { Cookie: 'kody_session=stale' }, noStore],
+		[
+			pricingUrl,
+			{
 				Cookie: 'kody_site_banner_dismiss=11111111-1111-4111-8111-111111111111',
 			},
-		}),
+			noStore,
+		],
+		[pricingUrl, { Authorization: 'Bearer not-a-token' }, {}],
+		[pricingUrl, { 'Cache-Control': 'no-cache' }, {}],
+		[missingGuideUrl, {}, { status: 404 }],
+		[missingGuideUrl, {}, { status: 404 }],
+	]
+	const outcomes = []
+	for (const [url, headers] of uncached) {
+		const response = await workerFetch(new Request(url, { headers }))
+		outcomes.push({
+			hit: response.headers.get(anonymousHtmlEdgeCacheHeader) === 'HIT',
+			status: response.status,
+			cacheControl: response.headers.get('Cache-Control'),
+		})
+		await response.body?.cancel()
+	}
+	expect(outcomes).toMatchObject(
+		uncached.map(([, , expected]) => ({ hit: false, ...expected })),
 	)
-	expect(dismissed.headers.get(anonymousHtmlEdgeCacheHeader)).not.toBe('HIT')
-	expect(dismissed.headers.get('Cache-Control')).toBe('no-store')
-
-	const authorized = await workerFetch(
-		new Request(pricingUrl, {
-			headers: { Authorization: 'Bearer not-a-token' },
-		}),
-	)
-	expect(authorized.headers.get(anonymousHtmlEdgeCacheHeader)).not.toBe('HIT')
-
-	const bypass = await workerFetch(
-		new Request(pricingUrl, {
-			headers: { 'Cache-Control': 'no-cache' },
-		}),
-	)
-	expect(bypass.headers.get(anonymousHtmlEdgeCacheHeader)).not.toBe('HIT')
-
-	const missing = await workerFetch(new Request(missingGuideUrl))
-	expect(missing.status).toBe(404)
-	expect(missing.headers.get(anonymousHtmlEdgeCacheHeader)).not.toBe('HIT')
-	const missingAgain = await workerFetch(new Request(missingGuideUrl))
-	expect(missingAgain.status).toBe(404)
-	expect(missingAgain.headers.get(anonymousHtmlEdgeCacheHeader)).not.toBe('HIT')
 
 	const setCookieResponse = new Response('<html>set-cookie</html>', {
 		status: 200,

@@ -11,135 +11,85 @@ const underscoredD1InternalErrorReference =
 	'e_Gz3hrU_5c47162d21d24e238a5c25e98b89ee39'
 
 test('runD1WithRetry matches lock errors, retries them, and rethrows other failures immediately', async () => {
-	expect(
-		isRetryableD1LockError(
-			new Error('D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY'),
-		),
-	).toBe(true)
-	expect(
-		isRetryableD1LockError(
-			new Error('Currently processing a long-running export.'),
-		),
-	).toBe(true)
-	expect(isRetryableD1LockError(new Error('Network connection lost.'))).toBe(
-		true,
-	)
-	expect(
-		isRetryableD1LockError(
-			new Error('D1_ERROR: D1 DB is overloaded. Requests queued for too long.'),
-		),
-	).toBe(true)
-	expect(
-		isRetryableD1LockError(
-			new Error('D1 DB is overloaded. Requests queued for too long'),
-		),
-	).toBe(true)
-	expect(
-		isRetryableD1LockError(
-			new Error('D1_ERROR: D1 DB is overloaded. Too many requests queued.'),
-		),
-	).toBe(true)
-	expect(
-		isRetryableD1LockError(
-			new Error('D1 DB is overloaded. Too many requests queued'),
-		),
-	).toBe(true)
-	expect(
-		isRetryableD1LockError(
-			new Error(
-				'D1_ERROR: internal error; reference = 0u3odos5iotccpol68ppc0eg',
-			),
-		),
-	).toBe(true)
-	expect(
-		isRetryableD1LockMessage(
-			`D1_ERROR: internal error; reference = ${underscoredD1InternalErrorReference}`,
-		),
-	).toBe(true)
-	expect(
-		isRetryableD1LockMessage(
-			`Error: D1_ERROR: internal error; reference = ${underscoredD1InternalErrorReference}`,
-		),
-	).toBe(true)
-	expect(
-		isRetryableD1LockError(
-			new Error(
-				`D1_ERROR: internal error; reference = ${underscoredD1InternalErrorReference}`,
-			),
-		),
-	).toBe(true)
-	expect(
-		isRetryableD1LockMessage(
+	const internalErrorRef = `D1_ERROR: internal error; reference = ${underscoredD1InternalErrorReference}`
+	const doReset =
+		'D1_ERROR: Internal error in Durable Object storage caused object to be reset'
+	// [message, retryable, check via Error (true) or raw message (false)]
+	const cases: Array<[string, boolean, boolean]> = [
+		['D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY', true, true],
+		['Currently processing a long-running export.', true, true],
+		['Network connection lost.', true, true],
+		[
+			'D1_ERROR: D1 DB is overloaded. Requests queued for too long.',
+			true,
+			true,
+		],
+		['D1 DB is overloaded. Requests queued for too long', true, true],
+		['D1_ERROR: D1 DB is overloaded. Too many requests queued.', true, true],
+		['D1 DB is overloaded. Too many requests queued', true, true],
+		[
+			'D1_ERROR: internal error; reference = 0u3odos5iotccpol68ppc0eg',
+			true,
+			true,
+		],
+		[internalErrorRef, true, false],
+		[`Error: ${internalErrorRef}`, true, false],
+		[internalErrorRef, true, true],
+		[
 			'D1_ERROR: internal error; reference = e-Gz3hrU-5c47162d21d24e238a5c25e98b89ee39',
-		),
-	).toBe(true)
-	expect(
-		isRetryableD1LockError(
-			new Error(
-				'Internal error in D1 DB storage caused object to be reset; reference = 8t4dqqpoq1ctvjr8kca8fl4c',
-			),
-		),
-	).toBe(true)
-	expect(
-		isRetryableD1LockMessage(
+			true,
+			false,
+		],
+		[
+			'Internal error in D1 DB storage caused object to be reset; reference = 8t4dqqpoq1ctvjr8kca8fl4c',
+			true,
+			true,
+		],
+		[
 			'Internal error in D1 DB storage caused object to be reset; reference = 8t4d_qqpo-q1ctvjr8kca8fl4c',
-		),
-	).toBe(true)
-	// KODY-82: D1 can surface DO-storage object-reset under D1_ERROR:.
-	expect(
-		isRetryableD1LockMessage(
-			'D1_ERROR: Internal error in Durable Object storage caused object to be reset; reference = b44vvje0qcq0ubd9ea522366',
-		),
-	).toBe(true)
-	expect(
-		isRetryableD1LockError(
-			new Error(
-				'Error: D1_ERROR: Internal error in Durable Object storage caused object to be reset; reference = b44vvje0qcq0ubd9ea522366',
-			),
-		),
-	).toBe(true)
-	expect(
-		isRetryableD1LockError(
-			new Error('Network connection lost while uploading...'),
-		),
-	).toBe(false)
-	expect(
-		isRetryableD1LockError(new Error('queue is overloaded while uploading...')),
-	).toBe(false)
-	expect(isRetryableD1LockMessage('internal error')).toBe(false)
-	expect(isRetryableD1LockError(new Error('internal error'))).toBe(false)
-	expect(
-		isRetryableD1LockMessage(
+			true,
+			false,
+		],
+		// KODY-82: D1 can surface DO-storage object-reset under D1_ERROR:.
+		[`${doReset}; reference = b44vvje0qcq0ubd9ea522366`, true, false],
+		[`Error: ${doReset}; reference = b44vvje0qcq0ubd9ea522366`, true, true],
+		['Network connection lost while uploading...', false, true],
+		['queue is overloaded while uploading...', false, true],
+		['internal error', false, false],
+		['internal error', false, true],
+		[
 			'Error: D1_ERROR: internal error while writing mcp_agent_sessions',
-		),
-	).toBe(false)
+			false,
+			false,
+		],
+		[
+			'D1_ERROR: Internal error in D1 DB storage caused object to be reset',
+			false,
+			true,
+		],
+		[doReset, false, false],
+		['syntax error near SELECT', false, true],
+	]
 	expect(
-		isRetryableD1LockError(
-			new Error(
-				'D1_ERROR: Internal error in D1 DB storage caused object to be reset',
-			),
+		cases.filter(
+			([message, want, asError]) =>
+				(asError
+					? isRetryableD1LockError(new Error(message))
+					: isRetryableD1LockMessage(message)) !== want,
 		),
-	).toBe(false)
-	expect(
-		isRetryableD1LockMessage(
-			'D1_ERROR: Internal error in Durable Object storage caused object to be reset',
-		),
-	).toBe(false)
-	expect(isRetryableD1LockError(new Error('syntax error near SELECT'))).toBe(
-		false,
-	)
+	).toEqual([])
 
 	const successOperation = vi.fn(async () => 'ok')
 	await expect(runD1WithRetry(successOperation)).resolves.toBe('ok')
 	expect(successOperation).toHaveBeenCalledTimes(1)
 
-	vi.useFakeTimers()
 	const retryOperation = vi
 		.fn()
 		.mockRejectedValueOnce(
 			new Error('D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY'),
 		)
 		.mockResolvedValueOnce('ok')
+	vi.useFakeTimers()
 	try {
 		const resultPromise = runD1WithRetry(retryOperation)
 		await vi.advanceTimersByTimeAsync(d1LockRetryBaseDelayMs)

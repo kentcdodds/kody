@@ -54,338 +54,195 @@ test('refresh family keys and token parsing stay grant-scoped', async () => {
 test('refresh family returns current tokens on previous reuse and rejects stale replay', () => {
 	const current = snapshot()
 	const family = grant()
-
+	const rows: Array<
+		[
+			presentedHash: string,
+			grantIds: RefreshFamilyGrantIds | null,
+			replay: RefreshFamilySnapshot | null,
+			kind: string,
+		]
+	> = [
+		['hash-rt1', family, null, 'return-snapshot'],
+		['hash-rt1', family, current, 'return-replay'],
+		['hash-rt2', family, null, 'pass-through'],
+		['hash-rt0', family, snapshot({ accessExpiresAt: 1_010 }), 'return-replay'],
+		[
+			'hash-rt1',
+			grant({ currentRefreshTokenHash: 'hash-rt3' }),
+			current,
+			'pass-through',
+		],
+		['hash-rt1', null, current, 'pass-through'],
+		['hash-unknown', family, null, 'pass-through'],
+	]
 	expect(
-		decideRefreshFamilyAction({
-			presentedHash: 'hash-rt1',
-			grant: family,
-			snapshot: current,
-			replay: null,
-		}),
-	).toEqual({ kind: 'return-snapshot' })
-
-	expect(
-		decideRefreshFamilyAction({
-			presentedHash: 'hash-rt1',
-			grant: family,
-			snapshot: current,
-			replay: current,
-		}),
-	).toEqual({ kind: 'return-replay' })
-
-	expect(
-		decideRefreshFamilyAction({
-			presentedHash: 'hash-rt2',
-			grant: family,
-			snapshot: current,
-			replay: null,
-		}),
-	).toEqual({ kind: 'pass-through' })
-
-	expect(
-		decideRefreshFamilyAction({
-			presentedHash: 'hash-rt0',
-			grant: family,
-			snapshot: current,
-			replay: snapshot({
-				currentRefreshTokenHash: 'hash-rt2',
-				accessExpiresAt: 1_010,
+		rows.map(([presentedHash, grantIds, replay]) =>
+			decideRefreshFamilyAction({
+				presentedHash,
+				grant: grantIds,
+				snapshot: current,
+				replay,
 			}),
-		}),
-	).toEqual({ kind: 'return-replay' })
-
-	expect(
-		decideRefreshFamilyAction({
-			presentedHash: 'hash-rt1',
-			grant: grant({ currentRefreshTokenHash: 'hash-rt3' }),
-			snapshot: snapshot({ currentRefreshTokenHash: 'hash-rt2' }),
-			replay: snapshot({ currentRefreshTokenHash: 'hash-rt2' }),
-		}),
-	).toEqual({ kind: 'pass-through' })
-
-	expect(
-		decideRefreshFamilyAction({
-			presentedHash: 'hash-rt1',
-			grant: null,
-			snapshot: current,
-			replay: current,
-		}),
-	).toEqual({ kind: 'pass-through' })
-
-	expect(
-		decideRefreshFamilyAction({
-			presentedHash: 'hash-unknown',
-			grant: family,
-			snapshot: current,
-			replay: null,
-		}),
-	).toEqual({ kind: 'pass-through' })
+		),
+	).toEqual(rows.map(([, , , kind]) => ({ kind })))
 })
 
-function refreshTokenRequest(refreshToken: string) {
-	return new Request('https://heykody.dev/oauth/token', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-		body: new URLSearchParams({
-			grant_type: 'refresh_token',
-			refresh_token: refreshToken,
-		}),
+function jsonResponse(body: unknown, status = 200) {
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: { 'Content-Type': 'application/json' },
 	})
 }
 
-function mintedTokens(refreshToken: string, accessToken: string) {
+const invalidGrant = () => jsonResponse({ error: 'invalid_grant' }, 400)
+
+function mintedTokens(prefix: string, rotation: number) {
 	return {
-		access_token: accessToken,
-		refresh_token: refreshToken,
+		access_token: `${prefix}:at${rotation}`,
+		refresh_token: `${prefix}:rt${rotation}`,
 		token_type: 'bearer',
 		expires_in: 3600,
 		scope: 'profile email',
 	}
 }
 
-function missingKvEnv() {
+function kvEnv(put: () => Promise<undefined> = async () => undefined): Env {
 	return {
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-		BUNDLE_ARTIFACTS_KV: {
-			async get() {
-				return null
-			},
-			async put() {
-				return undefined
-			},
-		},
-		OAUTH_KV: {
-			async get() {
-				return null
-			},
-		},
+		BUNDLE_ARTIFACTS_KV: { get: async () => null, put },
+		OAUTH_KV: { get: async () => null },
 	} as unknown as Env
+}
+
+function refresher(
+	env: Env,
+	fetchProvider: (request: Request) => Promise<Response>,
+) {
+	return (refreshToken: string) =>
+		handleMcpOAuthTokenRequest({
+			request: new Request('https://heykody.dev/oauth/token', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+				body: new URLSearchParams({
+					grant_type: 'refresh_token',
+					refresh_token: refreshToken,
+				}),
+			}),
+			env,
+			fetchProvider,
+		})
+}
+
+async function presentedRefreshToken(request: Request) {
+	return (await request.clone().formData()).get('refresh_token')
+}
+
+function gate() {
+	let open = () => {}
+	const opened = new Promise<void>((resolve) => {
+		open = resolve
+	})
+	return { open, opened }
 }
 
 test('refresh family persist failures still return provider-minted tokens', async () => {
 	const captureException = vi.spyOn(Sentry, 'captureException')
-	const transientKvError = new Error('KV PUT failed: 500 Internal Server Error')
 	const unexpectedPersistError = new Error('kv unavailable')
-	const transientMinted = mintedTokens(
-		'user-persist:grant-kv:rt2',
-		'user-persist:grant-kv:at2',
-	)
-	const unexpectedMinted = mintedTokens(
-		'user-persist:grant-other:rt2',
-		'user-persist:grant-other:at2',
-	)
+	const cases = [
+		['grant-kv', new Error('KV PUT failed: 500 Internal Server Error')],
+		['grant-other', unexpectedPersistError],
+	] as const
 
-	async function persistWithPutError(
-		refreshToken: string,
-		minted: ReturnType<typeof mintedTokens>,
-		putError: Error,
-	) {
-		return handleMcpOAuthTokenRequest({
-			request: refreshTokenRequest(refreshToken),
-			env: {
-				SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-				BUNDLE_ARTIFACTS_KV: {
-					async get() {
-						return null
-					},
-					async put() {
-						throw putError
-					},
-				},
-				OAUTH_KV: {
-					async get() {
-						return null
-					},
-				},
-			} as unknown as Env,
-			fetchProvider: async () =>
-				new Response(JSON.stringify(minted), {
-					status: 200,
-					headers: { 'Content-Type': 'application/json' },
-				}),
-		})
+	for (const [grantId, putError] of cases) {
+		const minted = mintedTokens(`user-persist:${grantId}`, 2)
+		const { response } = await refresher(
+			kvEnv(async () => {
+				throw putError
+			}),
+			async () => jsonResponse(minted),
+		)(`user-persist:${grantId}:rt1`)
+		expect(response.status).toBe(200)
+		await expect(response.json()).resolves.toEqual(minted)
+		if (putError === unexpectedPersistError) {
+			expect(captureException).toHaveBeenCalledWith(unexpectedPersistError)
+		} else {
+			expect(captureException).not.toHaveBeenCalled()
+		}
 	}
-
-	const transient = await persistWithPutError(
-		'user-persist:grant-kv:rt1',
-		transientMinted,
-		transientKvError,
-	)
-	expect(transient.response.status).toBe(200)
-	await expect(transient.response.json()).resolves.toEqual(transientMinted)
-	expect(captureException).not.toHaveBeenCalled()
-
-	const unexpected = await persistWithPutError(
-		'user-persist:grant-other:rt1',
-		unexpectedMinted,
-		unexpectedPersistError,
-	)
-	expect(unexpected.response.status).toBe(200)
-	await expect(unexpected.response.json()).resolves.toEqual(unexpectedMinted)
-	expect(captureException).toHaveBeenCalledWith(unexpectedPersistError)
 	captureException.mockRestore()
 })
 
 test('refresh family reuses isolate memory when KV still misses after the first rotation', async () => {
-	const env = missingKvEnv()
-	const first = mintedTokens('user-mem:grant-mem:rt2', 'user-mem:grant-mem:at2')
+	const first = mintedTokens('user-mem:grant-mem', 2)
 	let providerCalls = 0
-	const fetchProvider = async () => {
+	const refresh = refresher(kvEnv(), async () => {
 		providerCalls += 1
-		if (providerCalls === 1) {
-			return new Response(JSON.stringify(first), {
-				status: 200,
-				headers: { 'Content-Type': 'application/json' },
-			})
-		}
-		return new Response(JSON.stringify({ error: 'invalid_grant' }), {
-			status: 400,
-			headers: { 'Content-Type': 'application/json' },
-		})
+		return providerCalls === 1 ? jsonResponse(first) : invalidGrant()
+	})
+	const firstTokens = {
+		access_token: first.access_token,
+		refresh_token: first.refresh_token,
 	}
 
-	const [left, right] = await Promise.all([
-		handleMcpOAuthTokenRequest({
-			request: refreshTokenRequest('user-mem:grant-mem:rt1'),
-			env,
-			fetchProvider,
-		}),
-		handleMcpOAuthTokenRequest({
-			request: refreshTokenRequest('user-mem:grant-mem:rt1'),
-			env,
-			fetchProvider,
-		}),
+	const concurrent = await Promise.all([
+		refresh('user-mem:grant-mem:rt1'),
+		refresh('user-mem:grant-mem:rt1'),
 	])
-	expect(left.response.status).toBe(200)
-	expect(right.response.status).toBe(200)
-	await expect(left.response.json()).resolves.toMatchObject({
-		access_token: first.access_token,
-		refresh_token: first.refresh_token,
-	})
-	await expect(right.response.json()).resolves.toMatchObject({
-		access_token: first.access_token,
-		refresh_token: first.refresh_token,
-	})
-	expect(providerCalls).toBe(1)
-
-	const reused = await handleMcpOAuthTokenRequest({
-		request: refreshTokenRequest('user-mem:grant-mem:rt1'),
-		env,
-		fetchProvider,
-	})
-	expect(reused.response.status).toBe(200)
-	await expect(reused.response.json()).resolves.toMatchObject({
-		access_token: first.access_token,
-		refresh_token: first.refresh_token,
-	})
+	const reused = await refresh('user-mem:grant-mem:rt1')
+	for (const { response } of [...concurrent, reused]) {
+		expect(response.status).toBe(200)
+		await expect(response.json()).resolves.toMatchObject(firstTokens)
+	}
 	expect(providerCalls).toBe(1)
 })
 
 test('refresh family previous reuse does not wait for a current-token rotation', async () => {
-	const env = missingKvEnv()
-	const family = mintedTokens(
-		'user-lock:grant-lock:rt2',
-		'user-lock:grant-lock:at2',
-	)
-	const rotated = mintedTokens(
-		'user-lock:grant-lock:rt3',
-		'user-lock:grant-lock:at3',
-	)
-	let releaseCurrentRefresh = () => {}
-	const currentRefreshHeld = new Promise<void>((resolve) => {
-		releaseCurrentRefresh = resolve
-	})
-	let currentRefreshStarted = () => {}
-	const currentRefreshEntered = new Promise<void>((resolve) => {
-		currentRefreshStarted = resolve
-	})
-	const fetchProvider = async (request: Request) => {
-		const formData = await request.clone().formData()
-		const presented = formData.get('refresh_token')
-		if (presented === 'user-lock:grant-lock:rt1') {
-			return new Response(JSON.stringify(family), {
-				status: 200,
-				headers: { 'Content-Type': 'application/json' },
-			})
-		}
+	const family = mintedTokens('user-lock:grant-lock', 2)
+	const rotated = mintedTokens('user-lock:grant-lock', 3)
+	const currentRefreshHeld = gate()
+	const currentRefreshEntered = gate()
+	const refresh = refresher(kvEnv(), async (request) => {
+		const presented = await presentedRefreshToken(request)
+		if (presented === 'user-lock:grant-lock:rt1') return jsonResponse(family)
 		if (presented === 'user-lock:grant-lock:rt2') {
-			currentRefreshStarted()
-			await currentRefreshHeld
-			return new Response(JSON.stringify(rotated), {
-				status: 200,
-				headers: { 'Content-Type': 'application/json' },
-			})
+			currentRefreshEntered.open()
+			await currentRefreshHeld.opened
+			return jsonResponse(rotated)
 		}
-		return new Response(JSON.stringify({ error: 'invalid_grant' }), {
-			status: 400,
-			headers: { 'Content-Type': 'application/json' },
-		})
-	}
-
-	const seeded = await handleMcpOAuthTokenRequest({
-		request: refreshTokenRequest('user-lock:grant-lock:rt1'),
-		env,
-		fetchProvider,
+		return invalidGrant()
 	})
+
+	const seeded = await refresh('user-lock:grant-lock:rt1')
 	expect(seeded.response.status).toBe(200)
 	await expect(seeded.response.json()).resolves.toEqual(family)
 
-	const currentRefresh = handleMcpOAuthTokenRequest({
-		request: refreshTokenRequest('user-lock:grant-lock:rt2'),
-		env,
-		fetchProvider,
-	})
-	await currentRefreshEntered
-	const previousReuse = await handleMcpOAuthTokenRequest({
-		request: refreshTokenRequest('user-lock:grant-lock:rt1'),
-		env,
-		fetchProvider,
-	})
+	const currentRefresh = refresh('user-lock:grant-lock:rt2')
+	await currentRefreshEntered.opened
+	const previousReuse = await refresh('user-lock:grant-lock:rt1')
 	expect(previousReuse.response.status).toBe(200)
 	await expect(previousReuse.response.json()).resolves.toMatchObject({
 		access_token: family.access_token,
 		refresh_token: family.refresh_token,
 	})
-	releaseCurrentRefresh()
+	currentRefreshHeld.open()
 	const currentRefreshResult = await currentRefresh
 	expect(currentRefreshResult.response.status).toBe(200)
 	await expect(currentRefreshResult.response.json()).resolves.toEqual(rotated)
 })
 
 test('refresh family isolate memory does not survive grant revoke', async () => {
-	const env = missingKvEnv()
-	const family = mintedTokens(
-		'user-rev:grant-rev:rt2',
-		'user-rev:grant-rev:at2',
-	)
 	let providerCalls = 0
-	const fetchProvider = async () => {
+	const refresh = refresher(kvEnv(), async () => {
 		providerCalls += 1
-		if (providerCalls === 1) {
-			return new Response(JSON.stringify(family), {
-				status: 200,
-				headers: { 'Content-Type': 'application/json' },
-			})
-		}
-		return new Response(JSON.stringify({ error: 'invalid_grant' }), {
-			status: 400,
-			headers: { 'Content-Type': 'application/json' },
-		})
-	}
-
-	const seeded = await handleMcpOAuthTokenRequest({
-		request: refreshTokenRequest('user-rev:grant-rev:rt1'),
-		env,
-		fetchProvider,
+		return providerCalls === 1
+			? jsonResponse(mintedTokens('user-rev:grant-rev', 2))
+			: invalidGrant()
 	})
-	expect(seeded.response.status).toBe(200)
+
+	expect((await refresh('user-rev:grant-rev:rt1')).response.status).toBe(200)
 	await forgetRefreshFamilyGrant('user-rev', 'grant-rev')
 
-	const afterRevoke = await handleMcpOAuthTokenRequest({
-		request: refreshTokenRequest('user-rev:grant-rev:rt1'),
-		env,
-		fetchProvider,
-	})
+	const afterRevoke = await refresh('user-rev:grant-rev:rt1')
 	expect(afterRevoke.response.status).toBe(400)
 	await expect(afterRevoke.response.json()).resolves.toEqual({
 		error: 'invalid_grant',
@@ -394,69 +251,31 @@ test('refresh family isolate memory does not survive grant revoke', async () => 
 })
 
 test('refresh family forget wins over an in-flight persist', async () => {
-	const env = missingKvEnv()
-	const family = mintedTokens(
-		'user-race:grant-race:rt2',
-		'user-race:grant-race:at2',
-	)
-	const rotated = mintedTokens(
-		'user-race:grant-race:rt3',
-		'user-race:grant-race:at3',
-	)
-	let releaseCurrentRefresh = () => {}
-	const currentRefreshHeld = new Promise<void>((resolve) => {
-		releaseCurrentRefresh = resolve
-	})
-	let currentRefreshStarted = () => {}
-	const currentRefreshEntered = new Promise<void>((resolve) => {
-		currentRefreshStarted = resolve
-	})
+	const currentRefreshHeld = gate()
+	const currentRefreshEntered = gate()
 	let seededFirstRefresh = false
 	let rotatedCurrentOnce = false
-	const fetchProvider = async (request: Request) => {
-		const formData = await request.clone().formData()
-		const presented = formData.get('refresh_token')
+	const refresh = refresher(kvEnv(), async (request) => {
+		const presented = await presentedRefreshToken(request)
 		if (presented === 'user-race:grant-race:rt1' && !seededFirstRefresh) {
 			seededFirstRefresh = true
-			return new Response(JSON.stringify(family), {
-				status: 200,
-				headers: { 'Content-Type': 'application/json' },
-			})
+			return jsonResponse(mintedTokens('user-race:grant-race', 2))
 		}
 		if (presented === 'user-race:grant-race:rt2' && !rotatedCurrentOnce) {
 			rotatedCurrentOnce = true
-			currentRefreshStarted()
-			await currentRefreshHeld
-			return new Response(JSON.stringify(rotated), {
-				status: 200,
-				headers: { 'Content-Type': 'application/json' },
-			})
+			currentRefreshEntered.open()
+			await currentRefreshHeld.opened
+			return jsonResponse(mintedTokens('user-race:grant-race', 3))
 		}
-		return new Response(JSON.stringify({ error: 'invalid_grant' }), {
-			status: 400,
-			headers: { 'Content-Type': 'application/json' },
-		})
-	}
-
-	const seeded = await handleMcpOAuthTokenRequest({
-		request: refreshTokenRequest('user-race:grant-race:rt1'),
-		env,
-		fetchProvider,
+		return invalidGrant()
 	})
-	expect(seeded.response.status).toBe(200)
 
-	const currentRefresh = handleMcpOAuthTokenRequest({
-		request: refreshTokenRequest('user-race:grant-race:rt2'),
-		env,
-		fetchProvider,
-	})
-	await currentRefreshEntered
+	expect((await refresh('user-race:grant-race:rt1')).response.status).toBe(200)
+
+	const currentRefresh = refresh('user-race:grant-race:rt2')
+	await currentRefreshEntered.opened
 	const forget = forgetRefreshFamilyGrant('user-race', 'grant-race')
-	const reuseDuringLockWait = handleMcpOAuthTokenRequest({
-		request: refreshTokenRequest('user-race:grant-race:rt1'),
-		env,
-		fetchProvider,
-	})
+	const reuseDuringLockWait = refresh('user-race:grant-race:rt1')
 	const reuseWhileLocked = await Promise.race([
 		reuseDuringLockWait.then((result) => ({ kind: 'returned', result })),
 		new Promise<{ kind: 'waiting' }>((resolve) => {
@@ -464,23 +283,16 @@ test('refresh family forget wins over an in-flight persist', async () => {
 		}),
 	])
 	expect(reuseWhileLocked.kind).toBe('waiting')
-	releaseCurrentRefresh()
-	const currentRefreshResult = await currentRefresh
-	expect(currentRefreshResult.response.status).toBe(200)
+	currentRefreshHeld.open()
+	expect((await currentRefresh).response.status).toBe(200)
 	await forget
-	const reuseAfterForget = await reuseDuringLockWait
-	expect(reuseAfterForget.response.status).toBe(400)
-	await expect(reuseAfterForget.response.json()).resolves.toEqual({
-		error: 'invalid_grant',
-	})
 
-	const afterRevoke = await handleMcpOAuthTokenRequest({
-		request: refreshTokenRequest('user-race:grant-race:rt2'),
-		env,
-		fetchProvider,
-	})
-	expect(afterRevoke.response.status).toBe(400)
-	await expect(afterRevoke.response.json()).resolves.toEqual({
-		error: 'invalid_grant',
-	})
+	for (const attempt of [
+		() => reuseDuringLockWait,
+		() => refresh('user-race:grant-race:rt2'),
+	]) {
+		const { response } = await attempt()
+		expect(response.status).toBe(400)
+		await expect(response.json()).resolves.toEqual({ error: 'invalid_grant' })
+	}
 })

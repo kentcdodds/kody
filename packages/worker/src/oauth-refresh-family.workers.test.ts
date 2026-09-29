@@ -7,11 +7,10 @@ import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 type TokenPayload = {
 	access_token: string
 	refresh_token: string
-	token_type: string
-	expires_in: number
-	scope?: string
-	resource?: string
 }
+
+const redirectUri = 'https://host.example/callback'
+const resource = 'https://heykody.dev/mcp'
 
 async function workerFetch(
 	request: Request,
@@ -21,6 +20,21 @@ async function workerFetch(
 	const response = await exports.default.fetch(request, workerEnv, ctx)
 	await waitOnExecutionContext(ctx)
 	return response
+}
+
+function postForm(
+	url: string | URL,
+	data: Record<string, string>,
+	{ json = false } = {},
+) {
+	return new Request(url, {
+		method: 'POST',
+		headers: {
+			...(json ? { Accept: 'application/json' } : {}),
+			'Content-Type': 'application/x-www-form-urlencoded',
+		},
+		body: new URLSearchParams(data),
+	})
 }
 
 async function createS256CodeChallenge(verifier: string) {
@@ -89,36 +103,6 @@ async function seedWorkerUser(email: string, password: string) {
 		.run()
 }
 
-function tokenEnv() {
-	return new Proxy(env, {
-		get(target, prop, receiver) {
-			if (prop === 'OAUTH_PROVIDER') return undefined
-			return Reflect.get(target, prop, receiver)
-		},
-	}) as Env
-}
-
-async function exchangeRefreshToken(
-	clientId: string,
-	refreshToken: string,
-	workerEnv: Env,
-) {
-	const response = await workerFetch(
-		new Request('https://heykody.dev/oauth/token', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-			body: new URLSearchParams({
-				grant_type: 'refresh_token',
-				client_id: clientId,
-				refresh_token: refreshToken,
-				resource: 'https://heykody.dev/mcp',
-			}),
-		}),
-		workerEnv,
-	)
-	return response
-}
-
 async function mintSharedClientTokens() {
 	const email = `refresh-family-${crypto.randomUUID()}@example.com`
 	const password = 'password123'
@@ -130,7 +114,7 @@ async function mintSharedClientTokens() {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				client_name: 'Concurrent MCP host',
-				redirect_uris: ['https://host.example/callback'],
+				redirect_uris: [redirectUri],
 				token_endpoint_auth_method: 'none',
 				grant_types: ['authorization_code', 'refresh_token'],
 				response_types: ['code'],
@@ -138,121 +122,111 @@ async function mintSharedClientTokens() {
 		}),
 	)
 	expect(registerResponse.status).toBe(201)
-	const registered = (await registerResponse.json()) as { client_id: string }
+	const { client_id: clientId } = (await registerResponse.json()) as {
+		client_id: string
+	}
 	const verifier = 'refresh-family-verifier-0123456789'
 	const authorizeUrl = new URL('https://heykody.dev/oauth/authorize')
-	authorizeUrl.searchParams.set('response_type', 'code')
-	authorizeUrl.searchParams.set('client_id', registered.client_id)
-	authorizeUrl.searchParams.set('redirect_uri', 'https://host.example/callback')
-	authorizeUrl.searchParams.set('scope', 'profile email')
-	authorizeUrl.searchParams.set(
-		'code_challenge',
-		await createS256CodeChallenge(verifier),
-	)
-	authorizeUrl.searchParams.set('code_challenge_method', 'S256')
-	authorizeUrl.searchParams.set('resource', 'https://heykody.dev/mcp')
-	authorizeUrl.searchParams.set('state', 'refresh-family-state')
+	authorizeUrl.search = new URLSearchParams({
+		response_type: 'code',
+		client_id: clientId,
+		redirect_uri: redirectUri,
+		scope: 'profile email',
+		code_challenge: await createS256CodeChallenge(verifier),
+		code_challenge_method: 'S256',
+		resource,
+		state: 'refresh-family-state',
+	}).toString()
 
 	const approvalResponse = await workerFetch(
-		new Request(authorizeUrl, {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/x-www-form-urlencoded',
-			},
-			body: new URLSearchParams({
-				decision: 'approve',
-				email,
-				password,
-			}),
-		}),
+		postForm(
+			authorizeUrl,
+			{ decision: 'approve', email, password },
+			{ json: true },
+		),
 	)
 	expect(approvalResponse.status).toBe(200)
-	const approvalPayload = (await approvalResponse.json()) as {
+	const { redirectTo } = (await approvalResponse.json()) as {
 		redirectTo: string
 	}
-	const code = new URL(approvalPayload.redirectTo).searchParams.get('code')
+	const code = new URL(redirectTo).searchParams.get('code')
 	expect(code).toBeTruthy()
 
-	const isolatedEnv = tokenEnv()
+	// Token requests run in a fresh isolate in production, so hide the
+	// OAUTH_PROVIDER helpers the authorize handler injects onto the shared env.
+	const isolatedEnv = new Proxy(env, {
+		get(target, prop, receiver) {
+			if (prop === 'OAUTH_PROVIDER') return undefined
+			return Reflect.get(target, prop, receiver)
+		},
+	}) as Env
 	const tokenResponse = await workerFetch(
-		new Request('https://heykody.dev/oauth/token', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-			body: new URLSearchParams({
-				grant_type: 'authorization_code',
-				client_id: registered.client_id,
-				code: code ?? '',
-				redirect_uri: 'https://host.example/callback',
-				code_verifier: verifier,
-				resource: 'https://heykody.dev/mcp',
-			}),
+		postForm('https://heykody.dev/oauth/token', {
+			grant_type: 'authorization_code',
+			client_id: clientId,
+			code: code ?? '',
+			redirect_uri: redirectUri,
+			code_verifier: verifier,
+			resource,
 		}),
 		isolatedEnv,
 	)
 	expect(tokenResponse.status).toBe(200)
 	const tokens = (await tokenResponse.json()) as TokenPayload
 	expect(tokens.refresh_token).toBeTruthy()
-	return {
-		clientId: registered.client_id,
-		tokens,
-		env: isolatedEnv,
+
+	const refresh = async (refreshToken: string) => {
+		const response = await workerFetch(
+			postForm('https://heykody.dev/oauth/token', {
+				grant_type: 'refresh_token',
+				client_id: clientId,
+				refresh_token: refreshToken,
+				resource,
+			}),
+			isolatedEnv,
+		)
+		return {
+			status: response.status,
+			body: (await response.json()) as TokenPayload,
+		}
 	}
+	return { rt1: tokens.refresh_token, refresh }
 }
 
 test('shared MCP OAuth client refresh reuse returns the current family token', async () => {
-	const {
-		clientId,
-		tokens: first,
-		env: isolatedEnv,
-	} = await mintSharedClientTokens()
-	const rt1 = first.refresh_token
+	const { rt1, refresh } = await mintSharedClientTokens()
 
 	const [firstLeft, firstRight] = await Promise.all([
-		exchangeRefreshToken(clientId, rt1, isolatedEnv),
-		exchangeRefreshToken(clientId, rt1, isolatedEnv),
+		refresh(rt1),
+		refresh(rt1),
 	])
 	expect(firstLeft.status).toBe(200)
 	expect(firstRight.status).toBe(200)
-	const firstLeftTokens = (await firstLeft.json()) as TokenPayload
-	const firstRightTokens = (await firstRight.json()) as TokenPayload
-	expect(firstLeftTokens.refresh_token).toBe(firstRightTokens.refresh_token)
-	expect(firstLeftTokens.refresh_token).not.toBe(rt1)
-	expect(firstLeftTokens.access_token).toBe(firstRightTokens.access_token)
-	const afterRt1 = firstLeftTokens
-	const rt2 = afterRt1.refresh_token
+	expect(firstLeft.body.refresh_token).toBe(firstRight.body.refresh_token)
+	expect(firstLeft.body.refresh_token).not.toBe(rt1)
+	expect(firstLeft.body.access_token).toBe(firstRight.body.access_token)
+	const rt2 = firstLeft.body.refresh_token
 
-	const reusedRt1 = await exchangeRefreshToken(clientId, rt1, isolatedEnv)
-	expect(reusedRt1.status).toBe(200)
-	const reused = (await reusedRt1.json()) as TokenPayload
-	expect(reused.refresh_token).toBe(rt2)
-	expect(reused.access_token).toBe(afterRt1.access_token)
+	const reused = await refresh(rt1)
+	expect(reused.status).toBe(200)
+	expect(reused.body.refresh_token).toBe(rt2)
+	expect(reused.body.access_token).toBe(firstLeft.body.access_token)
 
-	const [left, right] = await Promise.all([
-		exchangeRefreshToken(clientId, rt1, isolatedEnv),
-		exchangeRefreshToken(clientId, rt1, isolatedEnv),
-	])
-	expect(left.status).toBe(200)
-	expect(right.status).toBe(200)
-	const leftTokens = (await left.json()) as TokenPayload
-	const rightTokens = (await right.json()) as TokenPayload
-	expect(leftTokens.refresh_token).toBe(rt2)
-	expect(rightTokens.refresh_token).toBe(rt2)
+	for (const concurrentReuse of await Promise.all([
+		refresh(rt1),
+		refresh(rt1),
+	])) {
+		expect(concurrentReuse.status).toBe(200)
+		expect(concurrentReuse.body.refresh_token).toBe(rt2)
+	}
 
-	const currentStillWorks = await exchangeRefreshToken(
-		clientId,
-		rt2,
-		isolatedEnv,
-	)
+	const currentStillWorks = await refresh(rt2)
 	expect(currentStillWorks.status).toBe(200)
-	const afterRt2 = (await currentStillWorks.json()) as TokenPayload
-	expect(afterRt2.refresh_token).toBeTruthy()
-	expect(afterRt2.refresh_token).not.toBe(rt1)
-	expect(afterRt2.refresh_token).not.toBe(rt2)
+	expect(currentStillWorks.body.refresh_token).toBeTruthy()
+	expect(currentStillWorks.body.refresh_token).not.toBe(rt1)
+	expect(currentStillWorks.body.refresh_token).not.toBe(rt2)
 
-	const staleSibling = await exchangeRefreshToken(clientId, rt1, isolatedEnv)
+	const staleSibling = await refresh(rt1)
 	expect(staleSibling.status).toBe(400)
-	await expect(staleSibling.json()).resolves.toMatchObject({
-		error: 'invalid_grant',
-	})
+	expect(staleSibling.body).toMatchObject({ error: 'invalid_grant' })
 })

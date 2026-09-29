@@ -22,48 +22,46 @@ test('handleSecretMaintenanceRequest enforces auth and reports maintenance resul
 		runCount += 1
 		return { upserted: runCount }
 	}
-
-	const methodResponse = await handleSecretMaintenanceRequest({
-		request: createRequest({ method: 'GET', authorization: 'Bearer secret' }),
-		secret: 'secret',
-		notConfiguredMessage: 'Not configured',
-		run,
-	})
-
-	expect(methodResponse.status).toBe(405)
-	expect(await methodResponse.text()).toBe('Method Not Allowed')
-
-	const configurationResponse = await handleSecretMaintenanceRequest({
-		request: createRequest({ authorization: 'Bearer secret' }),
-		secret: ' ',
-		notConfiguredMessage: 'Not configured',
-		run,
-	})
-
-	expect(configurationResponse.status).toBe(503)
-	expect(await configurationResponse.text()).toBe('Not configured')
-
-	for (const authorization of [undefined, 'Bearer wrong']) {
-		const response = await handleSecretMaintenanceRequest({
-			request: createRequest({ authorization }),
-			secret: 'secret',
+	const handle = (
+		request: Request,
+		secret = 'secret',
+		runner: () => Promise<Record<string, unknown>> = run,
+	) =>
+		handleSecretMaintenanceRequest({
+			request,
+			secret,
 			notConfiguredMessage: 'Not configured',
-			run,
+			run: runner,
 		})
+	const authorized = () => createRequest({ authorization: 'Bearer secret' })
 
-		expect(response.status).toBe(401)
-		expect(await response.text()).toBe('Unauthorized')
+	const rejections: Array<[Request, string, number, string]> = [
+		[
+			createRequest({ method: 'GET', authorization: 'Bearer secret' }),
+			'secret',
+			405,
+			'Method Not Allowed',
+		],
+		[authorized(), ' ', 503, 'Not configured'],
+		[createRequest(), 'secret', 401, 'Unauthorized'],
+		[
+			createRequest({ authorization: 'Bearer wrong' }),
+			'secret',
+			401,
+			'Unauthorized',
+		],
+	]
+	const rejected = []
+	for (const [request, secret] of rejections) {
+		const response = await handle(request, secret)
+		rejected.push([response.status, await response.text()])
 	}
-
+	expect(rejected).toEqual(
+		rejections.map(([, , status, text]) => [status, text]),
+	)
 	expect(runCount).toBe(0)
 
-	const successResponse = await handleSecretMaintenanceRequest({
-		request: createRequest({ authorization: 'Bearer secret' }),
-		secret: ' secret ',
-		notConfiguredMessage: 'Not configured',
-		run,
-	})
-
+	const successResponse = await handle(authorized(), ' secret ')
 	expect(successResponse.status).toBe(200)
 	await expect(successResponse.json()).resolves.toEqual({
 		ok: true,
@@ -71,33 +69,18 @@ test('handleSecretMaintenanceRequest enforces auth and reports maintenance resul
 	})
 	expect(runCount).toBe(1)
 
-	const errorResponse = await handleSecretMaintenanceRequest({
-		request: createRequest({ authorization: 'Bearer secret' }),
-		secret: 'secret',
-		notConfiguredMessage: 'Not configured',
-		run: async () => {
-			throw new Error('boom')
-		},
-	})
-
-	expect(errorResponse.status).toBe(500)
-	await expect(errorResponse.json()).resolves.toEqual({
-		ok: false,
-		error: 'boom',
-	})
-
-	const clientErrorResponse = await handleSecretMaintenanceRequest({
-		request: createRequest({ authorization: 'Bearer secret' }),
-		secret: 'secret',
-		notConfiguredMessage: 'Not configured',
-		run: async () => {
-			throw new MaintenanceClientError('bad cursor')
-		},
-	})
-
-	expect(clientErrorResponse.status).toBe(400)
-	await expect(clientErrorResponse.json()).resolves.toEqual({
-		ok: false,
-		error: 'bad cursor',
-	})
+	const failures: Array<[Error, number, string]> = [
+		[new Error('boom'), 500, 'boom'],
+		[new MaintenanceClientError('bad cursor'), 400, 'bad cursor'],
+	]
+	for (const [error, status, message] of failures) {
+		const response = await handle(authorized(), 'secret', async () => {
+			throw error
+		})
+		expect(response.status).toBe(status)
+		await expect(response.json()).resolves.toEqual({
+			ok: false,
+			error: message,
+		})
+	}
 })

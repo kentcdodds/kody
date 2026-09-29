@@ -19,15 +19,16 @@ import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { createWaitUntilDrain } from '#worker/test-support/user-meter.ts'
 
+const origin = 'https://example.com'
+const epoch = new Date(0).toISOString()
+const verified = { emailVerifiedAt: epoch }
+
 function expectAuthenticateHeader(
-	header: string,
-	origin: string,
-	options: {
-		expectScope?: boolean
-		kind?: 'missing_credential' | 'invalid_token'
-	} = {},
+	response: Response,
+	challengeOrigin: string,
+	kind: 'missing_credential' | 'invalid_token' = 'invalid_token',
 ) {
-	const kind = options.kind ?? 'invalid_token'
+	const header = response.headers.get('WWW-Authenticate') ?? ''
 	switch (kind) {
 		case 'missing_credential':
 			expect(header).not.toContain('error=')
@@ -45,13 +46,10 @@ function expectAuthenticateHeader(
 		}
 	}
 	expect(header).toContain(
-		`resource_metadata="${origin}${protectedResourceMetadataPath}"`,
+		`resource_metadata="${challengeOrigin}${protectedResourceMetadataPath}"`,
 	)
-
-	if (options.expectScope ?? true) {
-		if (oauthScopes.length > 0) {
-			expect(header).toContain(`scope="${oauthScopes.join(' ')}"`)
-		}
+	if (oauthScopes.length > 0) {
+		expect(header).toContain(`scope="${oauthScopes.join(' ')}"`)
 	}
 }
 
@@ -341,51 +339,132 @@ function createEnv(
 	} as unknown as Env
 }
 
-function createContext() {
+function tokenEnv(
+	token: TokenSummary | null,
+	dbOptions: MockDbOptions = {},
+	overrides: Partial<Env> = {},
+) {
+	return createEnv(
+		createHelpers({ unwrapToken: async () => token }),
+		overrides,
+		dbOptions,
+	)
+}
+
+type FetchMcp = Parameters<typeof handleMcpRequest>[0]['fetchMcp']
+
+async function callMcp(
+	request: Request,
+	mcpEnv: Env,
+	fetchMcp: FetchMcp = () => new Response('ok'),
+) {
 	const drain = createWaitUntilDrain()
-	return {
+	const ctx = {
 		props: {},
 		waitUntil: drain.waitUntil,
 		passThroughOnException: () => undefined,
-		drain: drain.drain,
 	}
-}
-
-type TestContext = ReturnType<typeof createContext>
-
-async function handleMcpRequestAndDrain(
-	input: Omit<Parameters<typeof handleMcpRequest>[0], 'ctx'> & {
-		ctx: TestContext
-	},
-) {
 	const response = await handleMcpRequest({
-		...input,
-		ctx: input.ctx as unknown as ExecutionContext,
+		request,
+		env: mcpEnv,
+		ctx: ctx as unknown as ExecutionContext,
+		fetchMcp,
 	})
-	await input.ctx.drain()
+	await drain.drain()
 	return response
 }
 
+function mcpToken({
+	userId = 'user',
+	email = 'user@example.com',
+	props = { userId, email },
+	clientId = 'client',
+	createdAt = 0,
+	expiresAt = 999_999,
+}: {
+	userId?: string
+	email?: string
+	props?: Record<string, unknown>
+	clientId?: string
+	createdAt?: number
+	expiresAt?: number
+} = {}): TokenSummary {
+	return {
+		id: 'token',
+		grantId: 'grant',
+		userId,
+		createdAt,
+		expiresAt,
+		audience: `${origin}${mcpResourcePath}`,
+		grant: { clientId, scope: oauthScopes, props },
+	}
+}
+
+function accountRow(
+	id: number,
+	email: string,
+	stableUserId: string,
+): MockAccountRow {
+	return {
+		id,
+		email,
+		username: email.split('@')[0] ?? null,
+		display_name: null,
+		stable_user_id: stableUserId,
+		email_verified_at: epoch,
+		deleting_at: null,
+	}
+}
+
+function bearerRequest(requestOrigin = origin) {
+	return new Request(`${requestOrigin}${mcpResourcePath}`, {
+		headers: { Authorization: 'Bearer token' },
+	})
+}
+
+function jsonRpcRequest(body: unknown, headers: Record<string, string> = {}) {
+	return new Request(`${origin}${mcpResourcePath}`, {
+		method: 'POST',
+		headers: {
+			Authorization: 'Bearer token',
+			'Content-Type': 'application/json',
+			Accept: 'application/json, text/event-stream',
+			...headers,
+		},
+		body: JSON.stringify(body),
+	})
+}
+
+function countingFetchMcp(body = 'ok') {
+	const counter = {
+		calls: 0,
+		fetchMcp: () => {
+			counter.calls += 1
+			return new Response(body)
+		},
+	}
+	return counter
+}
+
 test('mcp endpoint serves browser guidance without changing protocol auth challenges', async () => {
-	const origin = 'https://example.com'
-	const env = createEnv(createHelpers())
+	const unauthenticatedEnv = createEnv(createHelpers())
+	const mcpUrl = `${origin}${mcpResourcePath}`
 	const fetchMcp = () => {
 		throw new Error(
 			'Unauthenticated requests must not reach the MCP transport.',
 		)
 	}
 
-	const browserResponse = await handleMcpRequestAndDrain({
-		request: new Request(`${origin}${mcpResourcePath}`, {
+	const browserResponse = await callMcp(
+		new Request(mcpUrl, {
 			headers: {
 				Accept:
 					'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
 			},
 		}),
-		env,
-		ctx: createContext(),
+		unauthenticatedEnv,
 		fetchMcp,
-	})
+	)
 	expect(browserResponse.status).toBe(200)
 	expect(browserResponse.headers.get('Content-Type')).toBe(
 		'text/html; charset=utf-8',
@@ -395,232 +474,115 @@ test('mcp endpoint serves browser guidance without changing protocol auth challe
 	)
 	expect(browserResponse.headers.get('WWW-Authenticate')).toBeNull()
 
-	const missingCredentialRequests = [
-		new Request(`${origin}${mcpResourcePath}`, {
-			headers: { Accept: 'text/event-stream' },
-		}),
-		new Request(`${origin}${mcpResourcePath}`, {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
-				jsonrpc: '2.0',
-				id: 1,
-				method: 'initialize',
+	const challenges = [
+		[
+			new Request(mcpUrl, { headers: { Accept: 'text/event-stream' } }),
+			'missing_credential',
+		],
+		[
+			new Request(mcpUrl, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }),
 			}),
-		}),
-		new Request(`${origin}${mcpResourcePath}`, {
-			headers: { Authorization: 'Bearer ' },
-		}),
-	]
-
-	for (const request of missingCredentialRequests) {
-		const response = await handleMcpRequestAndDrain({
-			request,
-			env,
-			ctx: createContext(),
-			fetchMcp,
-		})
+			'missing_credential',
+		],
+		[
+			new Request(mcpUrl, { headers: { Authorization: 'Bearer ' } }),
+			'missing_credential',
+		],
+		[
+			new Request(mcpUrl, {
+				headers: { Accept: 'text/html', Authorization: 'Bearer invalid-token' },
+			}),
+			'invalid_token',
+		],
+		[
+			new Request(mcpUrl, {
+				headers: { Authorization: 'bearer invalid-token' },
+			}),
+			'invalid_token',
+		],
+	] as const
+	for (const [request, kind] of challenges) {
+		const response = await callMcp(request, unauthenticatedEnv, fetchMcp)
 		expect(response.status).toBe(401)
 		expect(response.headers.get('Content-Type')).toMatch(/application\/json/)
-		expect(await response.json()).toEqual({
-			error_description: mcpInvalidTokenDescription,
-		})
-		expectAuthenticateHeader(
-			response.headers.get('WWW-Authenticate') ?? '',
-			origin,
-			{ kind: 'missing_credential' },
+		expect(await response.json()).toEqual(
+			kind === 'invalid_token'
+				? {
+						error: 'invalid_token',
+						error_description: mcpInvalidTokenDescription,
+					}
+				: { error_description: mcpInvalidTokenDescription },
 		)
+		expectAuthenticateHeader(response, origin, kind)
 	}
-
-	const invalidTokenResponse = await handleMcpRequestAndDrain({
-		request: new Request(`${origin}${mcpResourcePath}`, {
-			headers: {
-				Accept: 'text/html',
-				Authorization: 'Bearer invalid-token',
-			},
-		}),
-		env,
-		ctx: createContext(),
-		fetchMcp,
-	})
-	expect(invalidTokenResponse.status).toBe(401)
-	expect(invalidTokenResponse.headers.get('Content-Type')).toMatch(
-		/application\/json/,
-	)
-	expect(await invalidTokenResponse.json()).toEqual({
-		error: 'invalid_token',
-		error_description: mcpInvalidTokenDescription,
-	})
-	expectAuthenticateHeader(
-		invalidTokenResponse.headers.get('WWW-Authenticate') ?? '',
-		origin,
-	)
-
-	const lowercaseBearerResponse = await handleMcpRequestAndDrain({
-		request: new Request(`${origin}${mcpResourcePath}`, {
-			headers: { Authorization: 'bearer invalid-token' },
-		}),
-		env,
-		ctx: createContext(),
-		fetchMcp,
-	})
-	expect(lowercaseBearerResponse.status).toBe(401)
-	expect(await lowercaseBearerResponse.json()).toEqual({
-		error: 'invalid_token',
-		error_description: mcpInvalidTokenDescription,
-	})
-	expectAuthenticateHeader(
-		lowercaseBearerResponse.headers.get('WWW-Authenticate') ?? '',
-		origin,
-	)
 })
 
 test('protected resource metadata and auth challenge resolve origin consistently', async () => {
-	const requestOrigin = 'https://example.com'
 	const workersDevOrigin = 'https://kody-production.kentcdodds.workers.dev'
-	const appBaseUrl = 'https://heykody.dev'
-
-	const requestOriginMetadataResponse = handleProtectedResourceMetadata(
-		new Request(`${requestOrigin}${protectedResourceMetadataPath}`),
-	)
-	expect(requestOriginMetadataResponse.status).toBe(200)
-	expect(await requestOriginMetadataResponse.json()).toEqual(
-		buildProtectedResourceMetadata(requestOrigin),
-	)
+	expect(buildProtectedResourceMetadata(origin)).toMatchObject({
+		resource: 'https://example.com/mcp',
+		bearer_methods_supported: ['header'],
+	})
 
 	// Request origin wins even when APP_BASE_URL is configured differently —
 	// MCP clients require resource metadata to match the URL they connected to.
-	const appBaseUrlMetadataResponse = handleProtectedResourceMetadata(
-		new Request(`${workersDevOrigin}${protectedResourceMetadataPath}`),
-		{
-			APP_BASE_URL: appBaseUrl,
-		} as Env,
-	)
-	expect(appBaseUrlMetadataResponse.status).toBe(200)
-	expect(await appBaseUrlMetadataResponse.json()).toEqual(
-		buildProtectedResourceMetadata(workersDevOrigin),
-	)
+	const cases = [
+		[origin, {}],
+		[workersDevOrigin, { APP_BASE_URL: 'https://heykody.dev' }],
+	] as const
+	for (const [requestOrigin, envOverrides] of cases) {
+		const metadataResponse = handleProtectedResourceMetadata(
+			new Request(`${requestOrigin}${protectedResourceMetadataPath}`),
+			envOverrides as Env,
+		)
+		expect(metadataResponse.status).toBe(200)
+		expect(await metadataResponse.json()).toEqual(
+			buildProtectedResourceMetadata(requestOrigin),
+		)
 
-	const requestOriginUnauthorizedResponse = await handleMcpRequestAndDrain({
-		request: new Request(`${requestOrigin}${mcpResourcePath}`),
-		env: createEnv(createHelpers()),
-		ctx: createContext(),
-		fetchMcp: () => new Response('ok'),
-	})
-	expect(requestOriginUnauthorizedResponse.status).toBe(401)
-	expect(requestOriginUnauthorizedResponse.headers.get('Content-Type')).toMatch(
-		/application\/json/,
-	)
-	expect(await requestOriginUnauthorizedResponse.json()).toEqual({
-		error_description: mcpInvalidTokenDescription,
-	})
-	expectAuthenticateHeader(
-		requestOriginUnauthorizedResponse.headers.get('WWW-Authenticate') ?? '',
-		requestOrigin,
-		{ kind: 'missing_credential' },
-	)
-
-	const appBaseUrlUnauthorizedResponse = await handleMcpRequestAndDrain({
-		request: new Request(`${workersDevOrigin}${mcpResourcePath}`),
-		env: createEnv(createHelpers(), {
-			APP_BASE_URL: appBaseUrl,
-		}),
-		ctx: createContext(),
-		fetchMcp: () => new Response('ok'),
-	})
-	expect(appBaseUrlUnauthorizedResponse.status).toBe(401)
-	expectAuthenticateHeader(
-		appBaseUrlUnauthorizedResponse.headers.get('WWW-Authenticate') ?? '',
-		workersDevOrigin,
-		{ kind: 'missing_credential' },
-	)
-})
-
-test('protected resource metadata advertises header bearer methods', () => {
-	const metadata = buildProtectedResourceMetadata('https://example.com')
-	expect(metadata.bearer_methods_supported).toEqual(['header'])
-	expect(metadata.resource).toBe('https://example.com/mcp')
+		const unauthorized = await callMcp(
+			new Request(`${requestOrigin}${mcpResourcePath}`),
+			createEnv(createHelpers(), envOverrides),
+		)
+		expect(unauthorized.status).toBe(401)
+		expect(unauthorized.headers.get('Content-Type')).toMatch(
+			/application\/json/,
+		)
+		expect(await unauthorized.json()).toEqual({
+			error_description: mcpInvalidTokenDescription,
+		})
+		expectAuthenticateHeader(unauthorized, requestOrigin, 'missing_credential')
+	}
 })
 
 test('mcp request enforces token audience and forwards caller props', async () => {
-	const request = new Request(`https://example.com${mcpResourcePath}`, {
-		headers: { Authorization: 'Bearer token' },
-	})
-	const tokenWithoutAudience: TokenSummary = {
-		id: 'token',
-		grantId: 'grant',
-		userId: 'user',
-		createdAt: 0,
-		expiresAt: 999999,
-		grant: {
-			clientId: 'client',
-			scope: oauthScopes,
-			props: { userId: 'user', email: 'user@example.com' },
-		},
+	const request = bearerRequest()
+	const tokenWithoutAudience = mcpToken()
+	delete tokenWithoutAudience.audience
+	for (const token of [null, tokenWithoutAudience]) {
+		const response = await callMcp(request, tokenEnv(token))
+		expect(response.status).toBe(401)
+		expectAuthenticateHeader(response, origin)
 	}
-	const validToken: TokenSummary = {
-		...tokenWithoutAudience,
-		audience: `https://example.com${mcpResourcePath}`,
-	}
+
 	const verificationLookups: Array<VerificationLookupKind> = []
 	const userSelects: Array<string> = []
-	const verifiedDb: MockDbOptions = {
-		emailVerifiedAt: new Date(0).toISOString(),
-		verificationLookups,
-		userSelects,
-	}
-
-	const invalidResponse = await handleMcpRequestAndDrain({
-		request,
-		env: createEnv(
-			createHelpers({
-				unwrapToken: async () => null,
-			}),
-		),
-		ctx: createContext(),
-		fetchMcp: () => new Response('ok'),
-	})
-	expect(invalidResponse.status).toBe(401)
-	expectAuthenticateHeader(
-		invalidResponse.headers.get('WWW-Authenticate') ?? '',
-		'https://example.com',
-	)
-
-	const missingAudienceResponse = await handleMcpRequestAndDrain({
-		request,
-		env: createEnv(
-			createHelpers({
-				unwrapToken: async () => tokenWithoutAudience,
-			}),
-		),
-		ctx: createContext(),
-		fetchMcp: () => new Response('ok'),
-	})
-	expect(missingAudienceResponse.status).toBe(401)
-	expectAuthenticateHeader(
-		missingAudienceResponse.headers.get('WWW-Authenticate') ?? '',
-		'https://example.com',
-	)
-
 	let receivedProps: unknown = null
-	const validResponse = await handleMcpRequestAndDrain({
+	const captureProps: FetchMcp = (_request, _env, ctx) => {
+		receivedProps = ctx.props
+		return new Response('ok')
+	}
+	const validResponse = await callMcp(
 		request,
-		env: createEnv(
-			createHelpers({
-				unwrapToken: async () => validToken,
-			}),
-			{},
-			verifiedDb,
-		),
-		ctx: createContext(),
-		fetchMcp: (_request, _env, ctx) => {
-			receivedProps = ctx.props
-			return new Response('ok')
-		},
-	})
+		tokenEnv(mcpToken(), { ...verified, verificationLookups, userSelects }),
+		captureProps,
+	)
 	expect(validResponse.status).toBe(200)
 	expect(receivedProps).toMatchObject({
 		baseUrl: 'https://example.com',
@@ -634,37 +596,26 @@ test('mcp request enforces token audience and forwards caller props', async () =
 	expect(userSelects[0]).toContain('password_changed_at')
 	expect(verificationLookups).toHaveLength(0)
 
-	const withConnectorResponse = await handleMcpRequestAndDrain({
+	const withConnectorResponse = await callMcp(
 		request,
-		env: createEnv(
-			createHelpers({
-				unwrapToken: async () => validToken,
-			}),
-			{},
-			{
-				...verifiedDb,
-				connectorRows: [
-					{
-						id: 'connector-1',
-						user_id: 'user',
-						instance_id: 'home',
-						enabled: 1,
-						attached: 1,
-						encrypted_shared_secret: 'encrypted',
-						created_at: new Date(0).toISOString(),
-						updated_at: new Date(0).toISOString(),
-					},
-				],
-			},
-		),
-		ctx: createContext(),
-		fetchMcp: (_request, _env, ctx) => {
-			receivedProps = ctx.props
-			return new Response('ok')
-		},
-	})
+		tokenEnv(mcpToken(), {
+			...verified,
+			connectorRows: [
+				{
+					id: 'connector-1',
+					user_id: 'user',
+					instance_id: 'home',
+					enabled: 1,
+					attached: 1,
+					encrypted_shared_secret: 'encrypted',
+					created_at: epoch,
+					updated_at: epoch,
+				},
+			],
+		}),
+		captureProps,
+	)
 	expect(withConnectorResponse.status).toBe(200)
-	expect(receivedProps).toMatchObject({})
 
 	// The failing D1 lookup logs the roles-load failure before the request
 	// rethrows the underlying error.
@@ -675,20 +626,11 @@ test('mcp request enforces token audience and forwards caller props', async () =
 		},
 	} as unknown as D1Database
 	await expect(
-		handleMcpRequestAndDrain({
+		callMcp(
 			request,
-			env: createEnv(
-				createHelpers({
-					unwrapToken: async () => validToken,
-				}),
-				{ APP_DB: appDbUnavailable },
-			),
-			ctx: createContext(),
-			fetchMcp: (_request, _env, ctx) => {
-				receivedProps = ctx.props
-				return new Response('ok')
-			},
-		}),
+			tokenEnv(mcpToken(), {}, { APP_DB: appDbUnavailable }),
+			captureProps,
+		),
 	).rejects.toThrow('D1 unavailable')
 	expect(consoleError).toHaveBeenCalledWith(
 		'Failed to load MCP auth user context:',
@@ -697,93 +639,40 @@ test('mcp request enforces token audience and forwards caller props', async () =
 }, 15_000)
 
 test('mcp requests route by protocol era and record lane metrics', async () => {
-	const origin = 'https://example.com'
-	const validToken: TokenSummary = {
-		id: 'token',
-		grantId: 'grant',
-		userId: 'user',
-		createdAt: 0,
-		expiresAt: 999999,
-		audience: `${origin}${mcpResourcePath}`,
-		grant: {
-			clientId: 'client',
-			scope: oauthScopes,
-			props: { userId: 'user', email: 'user@example.com' },
-		},
-	}
 	const dataPoints: Array<AnalyticsEngineDataPoint> = []
-	const env = createEnv(
-		createHelpers({ unwrapToken: async () => validToken }),
-		{
-			MCP_PROTOCOL_EVENTS: {
-				writeDataPoint: (point: AnalyticsEngineDataPoint) => {
-					dataPoints.push(point)
-				},
-			} as AnalyticsEngineDataset,
-		},
-		{ emailVerifiedAt: new Date(0).toISOString() },
-	)
-	let legacyLaneCalls = 0
-	const fetchMcp = () => {
-		legacyLaneCalls += 1
-		return new Response('legacy-lane')
-	}
+	const mcpEnv = tokenEnv(mcpToken(), verified, {
+		MCP_PROTOCOL_EVENTS: {
+			writeDataPoint: (point: AnalyticsEngineDataPoint) => {
+				dataPoints.push(point)
+			},
+		} as AnalyticsEngineDataset,
+	})
+	const legacyLane = countingFetchMcp('legacy-lane')
 
 	// 2025-era handshake stays on the sessionful Durable Object lane.
-	const legacyResponse = await handleMcpRequestAndDrain({
-		request: new Request(`${origin}${mcpResourcePath}`, {
-			method: 'POST',
-			headers: {
-				Authorization: 'Bearer token',
-				'Content-Type': 'application/json',
-				Accept: 'application/json, text/event-stream',
+	const legacyResponse = await callMcp(
+		jsonRpcRequest({
+			jsonrpc: '2.0',
+			id: 1,
+			method: 'initialize',
+			params: {
+				protocolVersion: '2025-06-18',
+				capabilities: {},
+				clientInfo: { name: 'legacy-client', version: '1.0.0' },
 			},
-			body: JSON.stringify({
-				jsonrpc: '2.0',
-				id: 1,
-				method: 'initialize',
-				params: {
-					protocolVersion: '2025-06-18',
-					capabilities: {},
-					clientInfo: { name: 'legacy-client', version: '1.0.0' },
-				},
-			}),
 		}),
-		env,
-		ctx: createContext(),
-		fetchMcp,
-	})
+		mcpEnv,
+		legacyLane.fetchMcp,
+	)
 	expect(await legacyResponse.text()).toBe('legacy-lane')
-	expect(legacyLaneCalls).toBe(1)
-	expect(dataPoints).toHaveLength(1)
-	expect(dataPoints[0]).toEqual({
-		indexes: ['legacy'],
-		blobs: [
-			'legacy',
-			'initialize',
-			'2025-06-18',
-			'legacy-client',
-			'1.0.0',
-			'user',
-			'example.com',
-		],
-		doubles: [1],
-	})
+	expect(legacyLane.calls).toBe(1)
 
 	// 2026-07-28 envelope requests are served by the stateless lane and
 	// never reach the Durable Object; the advertised tools carry the shared
 	// definitions including output schemas and icons.
-	const modernResponse = await handleMcpRequestAndDrain({
-		request: new Request(`${origin}${mcpResourcePath}`, {
-			method: 'POST',
-			headers: {
-				Authorization: 'Bearer token',
-				'Content-Type': 'application/json',
-				Accept: 'application/json, text/event-stream',
-				'MCP-Protocol-Version': '2026-07-28',
-				'Mcp-Method': 'tools/list',
-			},
-			body: JSON.stringify({
+	const modernResponse = await callMcp(
+		jsonRpcRequest(
+			{
 				jsonrpc: '2.0',
 				id: 2,
 				method: 'tools/list',
@@ -797,171 +686,109 @@ test('mcp requests route by protocol era and record lane metrics', async () => {
 						},
 					},
 				},
-			}),
-		}),
-		env,
-		ctx: createContext(),
-		fetchMcp,
-	})
-	expect(legacyLaneCalls).toBe(1)
+			},
+			{ 'MCP-Protocol-Version': '2026-07-28', 'Mcp-Method': 'tools/list' },
+		),
+		mcpEnv,
+		legacyLane.fetchMcp,
+	)
+	expect(legacyLane.calls).toBe(1)
 	expect(modernResponse.status).toBe(200)
 	const modernBody = (await modernResponse.json()) as {
 		result: {
-			resultType?: string
 			tools: Array<{
 				name: string
 				outputSchema?: Record<string, unknown>
 				icons?: Array<{ src: string }>
-				annotations?: {
-					readOnlyHint?: boolean
-					destructiveHint?: boolean
-					idempotentHint?: boolean
-					openWorldHint?: boolean
-				}
+				annotations?: Record<string, boolean>
 			}>
 		}
 	}
-	const toolNames = modernBody.result.tools.map((tool) => tool.name).sort()
-	expect(toolNames).toEqual(['execute', 'search'])
-	expect(modernBody.result.tools).toHaveLength(2)
-	const searchListed = modernBody.result.tools.find(
-		(tool) => tool.name === 'search',
-	)
-	const executeListed = modernBody.result.tools.find(
-		(tool) => tool.name === 'execute',
-	)
-	expect(searchListed?.annotations).toEqual({
+	const tools = modernBody.result.tools
+	expect(tools.map((tool) => tool.name).sort()).toEqual(['execute', 'search'])
+	expect(tools.find((tool) => tool.name === 'search')?.annotations).toEqual({
 		readOnlyHint: true,
 		destructiveHint: false,
 		idempotentHint: true,
 		openWorldHint: false,
 	})
-	expect(executeListed?.annotations).toEqual({
+	expect(tools.find((tool) => tool.name === 'execute')?.annotations).toEqual({
 		readOnlyHint: false,
 		destructiveHint: true,
 		idempotentHint: false,
 		openWorldHint: true,
 	})
-	for (const tool of modernBody.result.tools) {
+	for (const tool of tools) {
 		expect(tool.outputSchema).toMatchObject({ type: 'object' })
 		expect(tool.icons?.[0]?.src).toBe(`${origin}/android-chrome-192x192.png`)
 	}
-	expect(dataPoints).toHaveLength(2)
-	expect(dataPoints[1]).toEqual({
-		indexes: ['modern'],
-		blobs: [
-			'modern',
-			'tools/list',
-			'2026-07-28',
-			'modern-client',
-			'2.0.0',
-			'user',
-			'example.com',
-		],
-		doubles: [1],
-	})
+	expect(dataPoints).toEqual([
+		{
+			indexes: ['legacy'],
+			blobs: [
+				'legacy',
+				'initialize',
+				'2025-06-18',
+				'legacy-client',
+				'1.0.0',
+				'user',
+				'example.com',
+			],
+			doubles: [1],
+		},
+		{
+			indexes: ['modern'],
+			blobs: [
+				'modern',
+				'tools/list',
+				'2026-07-28',
+				'modern-client',
+				'2.0.0',
+				'user',
+				'example.com',
+			],
+			doubles: [1],
+		},
+	])
 })
 
 test('mcp request rejects unverified and unidentifiable accounts fail-closed', async () => {
-	const request = new Request(`https://example.com${mcpResourcePath}`, {
-		headers: { Authorization: 'Bearer token' },
-	})
-	function createToken(props: Record<string, unknown>): TokenSummary {
-		return {
-			id: 'token',
-			grantId: 'grant',
-			userId: 'user',
-			createdAt: 0,
-			expiresAt: 999999,
-			audience: `https://example.com${mcpResourcePath}`,
-			grant: {
-				clientId: 'client',
-				scope: oauthScopes,
-				props,
-			},
-		}
-	}
-
-	let fetchMcpCalled = false
-	const fetchMcp = () => {
-		fetchMcpCalled = true
-		return new Response('ok')
-	}
+	const request = bearerRequest()
+	const transport = countingFetchMcp()
 
 	// Account exists but email_verified_at is null.
-	const unverifiedResponse = await handleMcpRequestAndDrain({
+	const unverifiedResponse = await callMcp(
 		request,
-		env: createEnv(
-			createHelpers({
-				unwrapToken: async () =>
-					createToken({ userId: 'user', email: 'user@example.com' }),
-			}),
-			{},
-			{ emailVerifiedAt: null },
-		),
-		ctx: createContext(),
-		fetchMcp,
-	})
+		tokenEnv(mcpToken(), { emailVerifiedAt: null }),
+		transport.fetchMcp,
+	)
 	expect(unverifiedResponse.status).toBe(403)
 	expect(await unverifiedResponse.json()).toMatchObject({
 		error: 'email_verification_required',
 		error_description: expect.stringContaining('/account'),
 	})
 
-	// No matching account row at all.
-	const unknownAccountResponse = await handleMcpRequestAndDrain({
-		request,
-		env: createEnv(
-			createHelpers({
-				unwrapToken: async () =>
-					createToken({ userId: 'user', email: 'user@example.com' }),
-			}),
-		),
-		ctx: createContext(),
-		fetchMcp,
-	})
-	expect(unknownAccountResponse.status).toBe(403)
-
-	// Grant props without an identifiable user.
-	const noUserResponse = await handleMcpRequestAndDrain({
-		request,
-		env: createEnv(
-			createHelpers({
-				unwrapToken: async () => createToken({}),
-			}),
-		),
-		ctx: createContext(),
-		fetchMcp,
-	})
-	expect(noUserResponse.status).toBe(403)
-	expect(fetchMcpCalled).toBe(false)
+	// No matching account row at all, then grant props without an identifiable user.
+	for (const token of [mcpToken(), mcpToken({ props: {} })]) {
+		const response = await callMcp(request, tokenEnv(token), transport.fetchMcp)
+		expect(response.status).toBe(403)
+	}
+	expect(transport.calls).toBe(0)
 
 	// Verified but suspended accounts are rejected with a dedicated error, and
 	// the rejection is recorded so a suspended principal that keeps calling
 	// stays visible instead of failing silently.
 	const auditInserts: Array<Array<unknown>> = []
-	const suspendedResponse = await handleMcpRequestAndDrain({
+	const suspendedResponse = await callMcp(
 		request,
-		env: createEnv(
-			createHelpers({
-				unwrapToken: async () =>
-					createToken({ userId: 'user', email: 'user@example.com' }),
-			}),
-			{},
-			{
-				auditInserts,
-				emailVerifiedAt: new Date(0).toISOString(),
-				suspendedAt: new Date(0).toISOString(),
-			},
-		),
-		ctx: createContext(),
-		fetchMcp,
-	})
+		tokenEnv(mcpToken(), { ...verified, auditInserts, suspendedAt: epoch }),
+		transport.fetchMcp,
+	)
 	expect(suspendedResponse.status).toBe(403)
 	expect(await suspendedResponse.json()).toMatchObject({
 		error: 'account_suspended',
 	})
-	expect(fetchMcpCalled).toBe(false)
+	expect(transport.calls).toBe(0)
 	expect(auditInserts).toHaveLength(1)
 	// category, action, result, then the hashed email — never the raw address.
 	expect(auditInserts[0]?.slice(0, 3)).toEqual([
@@ -974,33 +801,18 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 	// Indexed stable-user-id lookup verifies accounts when grant props lack email.
 	const fallbackEmail = 'fallback@example.com'
 	const stableUserId = await createStableUserIdFromEmail(fallbackEmail)
-	const verifiedAt = new Date(0).toISOString()
 	const fallbackUserSelects: Array<string> = []
-	const fallbackResponse = await handleMcpRequestAndDrain({
+	const fallbackResponse = await callMcp(
 		request,
-		env: createEnv(
-			createHelpers({
-				unwrapToken: async () => createToken({ userId: stableUserId }),
-			}),
-			{},
-			{
-				stableUserVerifiedAt: verifiedAt,
-				accountByStableId: {
-					id: 11,
-					email: fallbackEmail,
-					username: 'fallback',
-					display_name: null,
-					stable_user_id: stableUserId,
-					email_verified_at: verifiedAt,
-				},
-				userSelects: fallbackUserSelects,
-			},
-		),
-		ctx: createContext(),
-		fetchMcp,
-	})
+		tokenEnv(mcpToken({ props: { userId: stableUserId } }), {
+			stableUserVerifiedAt: epoch,
+			accountByStableId: accountRow(11, fallbackEmail, stableUserId),
+			userSelects: fallbackUserSelects,
+		}),
+		transport.fetchMcp,
+	)
 	expect(fallbackResponse.status).toBe(200)
-	expect(fetchMcpCalled).toBe(true)
+	expect(transport.calls).toBe(1)
 	expect(fallbackUserSelects).toHaveLength(1)
 	expect(fallbackUserSelects[0]).toContain('email_verified_at')
 	expect(fallbackUserSelects[0]).toContain('suspended_at')
@@ -1008,140 +820,63 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 })
 
 test('mcp request rejects access tokens issued before a password reset', async () => {
-	const origin = 'https://example.com'
 	const passwordChangedAt = '2026-08-29T15:00:00.000Z'
-	const passwordChangedAtSeconds = Math.floor(
-		Date.parse(passwordChangedAt) / 1000,
-	)
+	const changedAtSeconds = Math.floor(Date.parse(passwordChangedAt) / 1000)
 	const auditInserts: Array<Array<unknown>> = []
-	function createToken(createdAt: number): TokenSummary {
-		return {
-			id: 'token',
-			grantId: 'grant',
-			userId: 'user',
-			createdAt,
-			expiresAt: passwordChangedAtSeconds + 3600,
-			audience: `${origin}${mcpResourcePath}`,
-			grant: {
-				clientId: 'client',
-				scope: oauthScopes,
-				props: { userId: 'user', email: 'user@example.com' },
-			},
-		}
-	}
+	const tokenCreatedAt = (createdAt: number) =>
+		mcpToken({ createdAt, expiresAt: changedAtSeconds + 3600 })
+	const transport = countingFetchMcp()
 
-	let fetchMcpCalled = false
-	const fetchMcp = () => {
-		fetchMcpCalled = true
-		return new Response('ok')
-	}
-
-	const staleResponse = await handleMcpRequestAndDrain({
-		request: new Request(`${origin}${mcpResourcePath}`, {
-			headers: { Authorization: 'Bearer token' },
+	const staleResponse = await callMcp(
+		bearerRequest(),
+		tokenEnv(tokenCreatedAt(changedAtSeconds - 60), {
+			...verified,
+			passwordChangedAt,
+			auditInserts,
 		}),
-		env: createEnv(
-			createHelpers({
-				unwrapToken: async () => createToken(passwordChangedAtSeconds - 60),
-			}),
-			{},
-			{
-				emailVerifiedAt: new Date(0).toISOString(),
-				passwordChangedAt,
-				auditInserts,
-			},
-		),
-		ctx: createContext(),
-		fetchMcp,
-	})
+		transport.fetchMcp,
+	)
 	expect(staleResponse.status).toBe(401)
 	expect(await staleResponse.json()).toEqual({
 		error: 'invalid_token',
 		error_description: mcpInvalidTokenDescription,
 	})
-	expect(fetchMcpCalled).toBe(false)
+	expect(transport.calls).toBe(0)
 	expect(auditInserts[0]).toEqual(
 		expect.arrayContaining(['auth', 'mcp_token_rejected', 'failure']),
 	)
 
-	const freshResponse = await handleMcpRequestAndDrain({
-		request: new Request(`${origin}${mcpResourcePath}`, {
-			headers: { Authorization: 'Bearer token' },
+	const freshResponse = await callMcp(
+		bearerRequest(),
+		tokenEnv(tokenCreatedAt(changedAtSeconds + 1), {
+			...verified,
+			passwordChangedAt,
 		}),
-		env: createEnv(
-			createHelpers({
-				unwrapToken: async () => createToken(passwordChangedAtSeconds + 1),
-			}),
-			{},
-			{
-				emailVerifiedAt: new Date(0).toISOString(),
-				passwordChangedAt,
-			},
-		),
-		ctx: createContext(),
-		fetchMcp,
-	})
+		transport.fetchMcp,
+	)
 	expect(freshResponse.status).toBe(200)
-	expect(fetchMcpCalled).toBe(true)
+	expect(transport.calls).toBe(1)
 })
 
 test('mcp request heals a leftover UserMeter tombstone for a live account', async () => {
-	const leftoverUserId = 'leftover-meter-user'
-	const leftoverEmail = 'leftover@example.com'
-	const verifiedAt = new Date(0).toISOString()
-	const request = new Request(`https://example.com${mcpResourcePath}`, {
-		headers: { Authorization: 'Bearer token' },
+	const userId = 'leftover-meter-user'
+	const email = 'leftover@example.com'
+	const mcpEnv = tokenEnv(mcpToken({ userId, email }), {
+		...verified,
+		expectedEmail: email,
+		expectedStableUserId: userId,
+		accountByStableId: accountRow(21, email, userId),
 	})
-	const env = createEnv(
-		createHelpers({
-			unwrapToken: async () => ({
-				id: 'token',
-				grantId: 'grant',
-				userId: leftoverUserId,
-				createdAt: 0,
-				expiresAt: 999999,
-				audience: `https://example.com${mcpResourcePath}`,
-				grant: {
-					clientId: 'client',
-					scope: oauthScopes,
-					props: { userId: leftoverUserId, email: leftoverEmail },
-				},
-			}),
-		}),
-		{},
-		{
-			emailVerifiedAt: verifiedAt,
-			expectedEmail: leftoverEmail,
-			expectedStableUserId: leftoverUserId,
-			accountByStableId: {
-				id: 21,
-				email: leftoverEmail,
-				username: 'leftover',
-				display_name: null,
-				stable_user_id: leftoverUserId,
-				email_verified_at: verifiedAt,
-				deleting_at: null,
-			},
-		},
-	)
-	const meter = userMeterRpc({ env, userId: leftoverUserId })
+	const meter = userMeterRpc({ env: mcpEnv, userId })
 	await meter.markDeleting({ deletingAt: '2026-08-31 15:22:12' })
 	expect(await meter.readDeletionState()).toEqual({
 		deletingAt: '2026-08-31 15:22:12',
 	})
 
-	let fetchMcpCalled = false
-	const response = await handleMcpRequestAndDrain({
-		request,
-		env,
-		ctx: createContext(),
-		fetchMcp: () => {
-			fetchMcpCalled = true
-			return new Response('ok')
-		},
-	})
+	const transport = countingFetchMcp()
+	const response = await callMcp(bearerRequest(), mcpEnv, transport.fetchMcp)
 	expect(response.status).toBe(200)
-	expect(fetchMcpCalled).toBe(true)
+	expect(transport.calls).toBe(1)
 	expect(await meter.readDeletionState()).toEqual({ deletingAt: null })
 })
 
@@ -1190,262 +925,114 @@ function instrumentWriteLeaseRpcs(namespace: DurableObjectNamespace) {
 	}
 }
 
-function createVerifiedMcpToken(input: {
-	userId: string
-	email: string
-	origin: string
-}): TokenSummary {
-	return {
-		id: 'token',
-		grantId: 'grant',
-		userId: input.userId,
-		createdAt: 0,
-		expiresAt: 999999,
-		audience: `${input.origin}${mcpResourcePath}`,
-		grant: {
-			clientId: 'client',
-			scope: oauthScopes,
-			props: { userId: input.userId, email: input.email },
-		},
-	}
-}
-
-function createJsonRpcMcpRequest(input: { origin: string; body: unknown }) {
-	return new Request(`${input.origin}${mcpResourcePath}`, {
-		method: 'POST',
-		headers: {
-			Authorization: 'Bearer token',
-			'Content-Type': 'application/json',
-			Accept: 'application/json, text/event-stream',
-		},
-		body: JSON.stringify(input.body),
-	})
-}
-
 test('mcp write lease is scoped to mutating tools/call and still rejects deleting accounts', async () => {
-	const origin = 'https://example.com'
 	const userId = `lease-scope-${crypto.randomUUID()}`
 	const email = 'lease-scope@example.com'
-	const verifiedAt = new Date(0).toISOString()
 	const instrumented = instrumentWriteLeaseRpcs(env.USER_METER)
-	const token = createVerifiedMcpToken({ userId, email, origin })
 	const envForUser = (writableCheckDeletingAt?: string | null) =>
-		createEnv(
-			createHelpers({ unwrapToken: async () => token }),
-			{ USER_METER: instrumented.namespace },
+		tokenEnv(
+			mcpToken({ userId, email }),
 			{
-				emailVerifiedAt: verifiedAt,
+				...verified,
 				expectedEmail: email,
 				expectedStableUserId: userId,
 				writableCheckDeletingAt,
-				accountByStableId: {
-					id: 31,
-					email,
-					username: 'lease-scope',
-					display_name: null,
-					stable_user_id: userId,
-					email_verified_at: verifiedAt,
-					deleting_at: null,
-				},
+				accountByStableId: accountRow(31, email, userId),
 			},
+			{ USER_METER: instrumented.namespace },
 		)
-	let fetchMcpCalls = 0
-	const fetchMcp = () => {
-		fetchMcpCalls += 1
-		return new Response('legacy-ok')
+	const rpc = (id: number, call: Record<string, unknown>) => ({
+		jsonrpc: '2.0',
+		id,
+		...call,
+	})
+	const listCall = { method: 'tools/list' }
+	const searchCall = {
+		method: 'tools/call',
+		params: { name: 'search', arguments: { query: 'email' } },
+	}
+	const executeCall = {
+		method: 'tools/call',
+		params: { name: 'execute', arguments: { code: 'async () => 1' } },
 	}
 
-	expect(mcpParsedBodyNeedsAccountWriteLease(undefined)).toBe(true)
+	const leaseCases: Array<[body: unknown, needsLease: boolean]> = [
+		[undefined, true],
+		[rpc(1, listCall), false],
+		[rpc(2, searchCall), false],
+		[rpc(3, executeCall), true],
+		[
+			[
+				rpc(4, listCall),
+				rpc(5, { method: 'tools/call', params: { name: 'execute' } }),
+			],
+			true,
+		],
+	]
 	expect(
-		mcpParsedBodyNeedsAccountWriteLease({
-			jsonrpc: '2.0',
-			method: 'tools/list',
-			id: 1,
-		}),
-	).toBe(false)
-	expect(
-		mcpParsedBodyNeedsAccountWriteLease({
-			jsonrpc: '2.0',
-			method: 'tools/call',
-			params: { name: 'search', arguments: { query: 'email' } },
-			id: 2,
-		}),
-	).toBe(false)
-	expect(
-		mcpParsedBodyNeedsAccountWriteLease({
-			jsonrpc: '2.0',
-			method: 'tools/call',
-			params: { name: 'execute', arguments: { code: 'async () => 1' } },
-			id: 3,
-		}),
-	).toBe(true)
-	expect(
-		mcpParsedBodyNeedsAccountWriteLease([
-			{ jsonrpc: '2.0', method: 'tools/list', id: 4 },
-			{
-				jsonrpc: '2.0',
-				method: 'tools/call',
-				params: { name: 'execute' },
-				id: 5,
-			},
-		]),
-	).toBe(true)
+		leaseCases.filter(
+			([body, needsLease]) =>
+				mcpParsedBodyNeedsAccountWriteLease(body) !== needsLease,
+		),
+	).toEqual([])
 
-	const listResponse = await handleMcpRequestAndDrain({
-		request: createJsonRpcMcpRequest({
-			origin,
-			body: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
-		}),
-		env: envForUser(),
-		ctx: createContext(),
-		fetchMcp,
-	})
-	expect(listResponse.status).toBe(200)
-	expect(await listResponse.text()).toBe('legacy-ok')
-	expect(instrumented.calls).toEqual([])
-
-	const searchResponse = await handleMcpRequestAndDrain({
-		request: createJsonRpcMcpRequest({
-			origin,
-			body: {
-				jsonrpc: '2.0',
-				id: 2,
-				method: 'tools/call',
-				params: { name: 'search', arguments: { query: 'email' } },
-			},
-		}),
-		env: envForUser(),
-		ctx: createContext(),
-		fetchMcp,
-	})
-	expect(searchResponse.status).toBe(200)
-	expect(instrumented.calls).toEqual([])
-
-	const executeResponse = await handleMcpRequestAndDrain({
-		request: createJsonRpcMcpRequest({
-			origin,
-			body: {
-				jsonrpc: '2.0',
-				id: 3,
-				method: 'tools/call',
-				params: { name: 'execute', arguments: { code: 'async () => 1' } },
-			},
-		}),
-		env: envForUser(),
-		ctx: createContext(),
-		fetchMcp,
-	})
-	expect(executeResponse.status).toBe(200)
-	expect(instrumented.calls).toEqual([
+	const transport = countingFetchMcp('legacy-ok')
+	const leaseRpcs = [
 		'acquireWriteLease',
 		'assertWriteLeaseHeld',
 		'releaseWriteLease',
-	])
-	expect(fetchMcpCalls).toBe(3)
+	]
+	for (const [call, expectedLeaseRpcs] of [
+		[listCall, []],
+		[searchCall, []],
+		[executeCall, leaseRpcs],
+	] as const) {
+		instrumented.calls.length = 0
+		const response = await callMcp(
+			jsonRpcRequest(rpc(1, call)),
+			envForUser(),
+			transport.fetchMcp,
+		)
+		expect(response.status).toBe(200)
+		expect(await response.text()).toBe('legacy-ok')
+		expect(instrumented.calls).toEqual(expectedLeaseRpcs)
+	}
+	expect(transport.calls).toBe(3)
 
 	instrumented.calls.length = 0
-	const deletingSearch = await handleMcpRequestAndDrain({
-		request: createJsonRpcMcpRequest({
-			origin,
-			body: {
-				jsonrpc: '2.0',
-				id: 4,
-				method: 'tools/call',
-				params: { name: 'search', arguments: { query: 'email' } },
-			},
-		}),
-		env: envForUser('2026-09-02 00:00:00'),
-		ctx: createContext(),
-		fetchMcp,
-	})
-	expect(deletingSearch.status).toBe(409)
-	expect(await deletingSearch.json()).toMatchObject({
-		error: 'account_deleting',
-	})
+	for (const call of [searchCall, executeCall]) {
+		const response = await callMcp(
+			jsonRpcRequest(rpc(4, call)),
+			envForUser('2026-09-02 00:00:00'),
+			transport.fetchMcp,
+		)
+		expect(response.status).toBe(409)
+		expect(await response.json()).toMatchObject({ error: 'account_deleting' })
+	}
 	expect(instrumented.calls).toEqual([])
-
-	const deletingExecute = await handleMcpRequestAndDrain({
-		request: createJsonRpcMcpRequest({
-			origin,
-			body: {
-				jsonrpc: '2.0',
-				id: 5,
-				method: 'tools/call',
-				params: { name: 'execute', arguments: { code: 'async () => 1' } },
-			},
-		}),
-		env: envForUser('2026-09-02 00:00:00'),
-		ctx: createContext(),
-		fetchMcp,
-	})
-	expect(deletingExecute.status).toBe(409)
-	expect(await deletingExecute.json()).toMatchObject({
-		error: 'account_deleting',
-	})
-	expect(instrumented.calls).toEqual([])
-	expect(fetchMcpCalls).toBe(3)
+	expect(transport.calls).toBe(3)
 })
 
 test('successful mcp bearer validation records inbound connection last-used', async () => {
 	const userId = `last-used-${crypto.randomUUID()}`
 	const clientId = `https://cursor.com/oauth/${crypto.randomUUID()}/client.json`
 	const email = `${userId}@example.com`
-	const validToken: TokenSummary = {
-		id: 'token',
-		grantId: 'grant',
-		userId,
-		createdAt: 0,
-		expiresAt: 999999,
-		audience: `https://example.com${mcpResourcePath}`,
-		grant: {
-			clientId,
-			scope: oauthScopes,
-			props: { userId, email },
-		},
-	}
-	const testEnv = createEnv(
-		createHelpers({
-			unwrapToken: async () => validToken,
-		}),
-		{},
-		{
-			emailVerifiedAt: new Date(0).toISOString(),
-			expectedEmail: email,
-			expectedStableUserId: userId,
-		},
-	)
-	const response = await handleMcpRequestAndDrain({
-		request: new Request(`https://example.com${mcpResourcePath}`, {
-			headers: { Authorization: 'Bearer token' },
-		}),
-		env: testEnv,
-		ctx: createContext(),
-		fetchMcp: () => new Response('ok'),
+	const mcpEnv = tokenEnv(mcpToken({ userId, email, clientId }), {
+		...verified,
+		expectedEmail: email,
+		expectedStableUserId: userId,
 	})
-	expect(response.status).toBe(200)
-	const rows = await userMeterRpc({
-		env: testEnv,
-		userId,
-	}).listInboundConnectionLastUsed()
+	const listLastUsed = () =>
+		userMeterRpc({ env: mcpEnv, userId }).listInboundConnectionLastUsed()
+
+	expect((await callMcp(bearerRequest(), mcpEnv)).status).toBe(200)
+	const rows = await listLastUsed()
 	expect(rows).toHaveLength(1)
 	expect(rows[0]?.clientId).toBe(clientId)
 	const usedAt = Date.parse(rows[0]?.lastUsedAt ?? '')
 	expect(Number.isFinite(usedAt)).toBe(true)
 	expect(Math.abs(Date.now() - usedAt)).toBeLessThan(15_000)
 
-	const second = await handleMcpRequestAndDrain({
-		request: new Request(`https://example.com${mcpResourcePath}`, {
-			headers: { Authorization: 'Bearer token' },
-		}),
-		env: testEnv,
-		ctx: createContext(),
-		fetchMcp: () => new Response('ok'),
-	})
-	expect(second.status).toBe(200)
-	expect(
-		await userMeterRpc({
-			env: testEnv,
-			userId,
-		}).listInboundConnectionLastUsed(),
-	).toEqual(rows)
+	expect((await callMcp(bearerRequest(), mcpEnv)).status).toBe(200)
+	expect(await listLastUsed()).toEqual(rows)
 }, 30_000)

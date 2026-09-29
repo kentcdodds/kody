@@ -9,24 +9,21 @@ import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
 test('inbound MCP last-used debounce, record, list, and forget stay per user and no-op without USER_METER', async () => {
+	const nextLastUsedAt = '2026-03-20T12:00:00.000Z'
+	const debounceCases: Array<[string | null, boolean]> = [
+		[null, false],
+		['2026-03-20T11:55:00.000Z', true],
+		['2026-03-20T11:54:59.000Z', false],
+	]
 	expect(
-		shouldSkipInboundMcpConnectionLastUsedTouch({
-			previousLastUsedAt: null,
-			nextLastUsedAt: '2026-03-20T12:00:00.000Z',
-		}),
-	).toBe(false)
-	expect(
-		shouldSkipInboundMcpConnectionLastUsedTouch({
-			previousLastUsedAt: '2026-03-20T11:55:00.000Z',
-			nextLastUsedAt: '2026-03-20T12:00:00.000Z',
-		}),
-	).toBe(true)
-	expect(
-		shouldSkipInboundMcpConnectionLastUsedTouch({
-			previousLastUsedAt: '2026-03-20T11:54:59.000Z',
-			nextLastUsedAt: '2026-03-20T12:00:00.000Z',
-		}),
-	).toBe(false)
+		debounceCases.filter(
+			([previousLastUsedAt, want]) =>
+				shouldSkipInboundMcpConnectionLastUsedTouch({
+					previousLastUsedAt,
+					nextLastUsedAt,
+				}) !== want,
+		),
+	).toEqual([])
 	expect(() =>
 		shouldSkipInboundMcpConnectionLastUsedTouch({
 			previousLastUsedAt: '2026-03-20T11:00:00.000Z',
@@ -34,109 +31,52 @@ test('inbound MCP last-used debounce, record, list, and forget stay per user and
 		}),
 	).toThrow(/ISO datetime/)
 
+	const noMeter = { env: {}, userId: 'user-no-meter' }
 	await expect(
-		recordInboundMcpConnectionLastUsed({
-			env: {},
-			userId: 'user-no-meter',
-			clientId: 'client-a',
-		}),
+		recordInboundMcpConnectionLastUsed({ ...noMeter, clientId: 'client-a' }),
 	).resolves.toBeUndefined()
-	await expect(
-		listInboundMcpConnectionLastUsed({
-			env: {},
-			userId: 'user-no-meter',
-		}),
-	).resolves.toEqual(new Map())
+	await expect(listInboundMcpConnectionLastUsed(noMeter)).resolves.toEqual(
+		new Map(),
+	)
 
 	const meter = createInMemoryUserMeterEnv()
 	const userId = `user-${crypto.randomUUID()}`
 	const otherUserId = `user-${crypto.randomUUID()}`
 	const clientId = `https://cursor.com/oauth/${crypto.randomUUID()}/client.json`
 	const firstUsedAt = '2026-03-20T12:00:00.000Z'
-	const firstUsedMs = Date.parse(firstUsedAt)
 	const laterUsedAt = '2026-03-20T12:05:01.000Z'
+	const record = (forUserId: string, lastUsedAt: string, nowMs?: number) =>
+		recordInboundMcpConnectionLastUsed({
+			env: meter.env,
+			userId: forUserId,
+			clientId,
+			lastUsedAt,
+			nowMs: nowMs ?? Date.parse(lastUsedAt),
+		})
+	const list = (forUserId: string) =>
+		listInboundMcpConnectionLastUsed({ env: meter.env, userId: forUserId })
 
-	await recordInboundMcpConnectionLastUsed({
-		env: meter.env,
+	await record(userId, firstUsedAt)
+	await record(
 		userId,
-		clientId,
-		lastUsedAt: firstUsedAt,
-		nowMs: firstUsedMs,
-	})
-	await recordInboundMcpConnectionLastUsed({
-		env: meter.env,
-		userId,
-		clientId,
-		lastUsedAt: '2026-03-20T12:01:00.000Z',
-		nowMs: firstUsedMs + 60_000,
-	})
-	expect(
-		await listInboundMcpConnectionLastUsed({
-			env: meter.env,
-			userId,
-		}),
-	).toEqual(new Map([[clientId, firstUsedAt]]))
+		'2026-03-20T12:01:00.000Z',
+		Date.parse(firstUsedAt) + 60_000,
+	)
+	expect(await list(userId)).toEqual(new Map([[clientId, firstUsedAt]]))
 
-	await recordInboundMcpConnectionLastUsed({
-		env: meter.env,
-		userId,
-		clientId,
-		lastUsedAt: laterUsedAt,
-		nowMs: Date.parse(laterUsedAt),
-	})
-	expect(
-		await listInboundMcpConnectionLastUsed({
-			env: meter.env,
-			userId,
-		}),
-	).toEqual(new Map([[clientId, laterUsedAt]]))
+	await record(userId, laterUsedAt)
+	expect(await list(userId)).toEqual(new Map([[clientId, laterUsedAt]]))
 
-	await recordInboundMcpConnectionLastUsed({
-		env: meter.env,
-		userId: otherUserId,
-		clientId,
-		lastUsedAt: firstUsedAt,
-		nowMs: firstUsedMs,
-	})
-	expect(
-		await listInboundMcpConnectionLastUsed({
-			env: meter.env,
-			userId: otherUserId,
-		}),
-	).toEqual(new Map([[clientId, firstUsedAt]]))
+	await record(otherUserId, firstUsedAt)
+	expect(await list(otherUserId)).toEqual(new Map([[clientId, firstUsedAt]]))
 
-	await forgetInboundMcpConnectionLastUsed({
-		env: meter.env,
-		userId,
-		clientId,
-	})
-	expect(
-		await listInboundMcpConnectionLastUsed({
-			env: meter.env,
-			userId,
-		}),
-	).toEqual(new Map())
-	expect(
-		await listInboundMcpConnectionLastUsed({
-			env: meter.env,
-			userId: otherUserId,
-		}),
-	).toEqual(new Map([[clientId, firstUsedAt]]))
+	await forgetInboundMcpConnectionLastUsed({ env: meter.env, userId, clientId })
+	expect(await list(userId)).toEqual(new Map())
+	expect(await list(otherUserId)).toEqual(new Map([[clientId, firstUsedAt]]))
 
 	const reusedAt = '2026-03-20T12:02:00.000Z'
-	await recordInboundMcpConnectionLastUsed({
-		env: meter.env,
-		userId,
-		clientId,
-		lastUsedAt: reusedAt,
-		nowMs: Date.parse(reusedAt),
-	})
-	expect(
-		await listInboundMcpConnectionLastUsed({
-			env: meter.env,
-			userId,
-		}),
-	).toEqual(new Map([[clientId, reusedAt]]))
+	await record(userId, reusedAt)
+	expect(await list(userId)).toEqual(new Map([[clientId, reusedAt]]))
 })
 
 test('inbound MCP last-used records again after a failed UserMeter touch', async () => {
@@ -177,26 +117,17 @@ test('inbound MCP last-used records again after a failed UserMeter touch', async
 		} as DurableObjectNamespace,
 	}
 
-	await expect(
+	const recordFailing = () =>
 		recordInboundMcpConnectionLastUsed({
 			env: failingEnv,
 			userId,
 			clientId,
 			lastUsedAt: usedAt,
 			nowMs: Date.parse(usedAt),
-		}),
-	).rejects.toThrow(/meter down/)
-	await recordInboundMcpConnectionLastUsed({
-		env: failingEnv,
-		userId,
-		clientId,
-		lastUsedAt: usedAt,
-		nowMs: Date.parse(usedAt),
-	})
+		})
+	await expect(recordFailing()).rejects.toThrow(/meter down/)
+	await recordFailing()
 	expect(
-		await listInboundMcpConnectionLastUsed({
-			env: meter.env,
-			userId,
-		}),
+		await listInboundMcpConnectionLastUsed({ env: meter.env, userId }),
 	).toEqual(new Map([[clientId, usedAt]]))
 })

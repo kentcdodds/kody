@@ -15,14 +15,19 @@ function jsonRpcResult(result: unknown, headers?: HeadersInit) {
 	})
 }
 
-test('authenticated probe uses the legacy MCP execute path and rejects caller errors', async () => {
+function fakeMcp(options: {
+	initializedStatus?: number
+	onToolCall: (body: {
+		method?: string
+		params?: { name?: string; arguments?: { code?: string } }
+	}) => Response
+}) {
 	const requests: Array<Request> = []
 	const callMcp = async (request: Request) => {
 		requests.push(request)
-		const body = (await request.clone().json()) as {
-			method?: string
-			params?: { name?: string; arguments?: { code?: string } }
-		}
+		const body = (await request.clone().json()) as Parameters<
+			typeof options.onToolCall
+		>[0]
 		if (body.method === 'initialize') {
 			return new Response(
 				JSON.stringify({ jsonrpc: '2.0', id: 1, result: {} }),
@@ -36,28 +41,37 @@ test('authenticated probe uses the legacy MCP execute path and rejects caller er
 			)
 		}
 		if (body.method === 'notifications/initialized') {
-			return new Response(null, { status: 202 })
+			const status = options.initializedStatus ?? 202
+			return new Response(status === 202 ? null : 'Unauthorized', { status })
 		}
-		expect(body.method).toBe('tools/call')
-		expect(body.params?.name).toBe('execute')
-		expect(body.params?.arguments?.code).toBe('export default async () => 1')
-		return jsonRpcResult({
-			structuredContent: { result: 1 },
-			isError: false,
-		})
+		return options.onToolCall(body)
 	}
+	return { requests, callMcp }
+}
 
-	await expect(
-		runAuthenticatedMcpExecuteHealthProbe({
-			token: 'canary-token',
-			mcpOrigin: 'https://kody.codes',
-			callMcp,
-		}),
-	).resolves.toEqual({
+function probe(callMcp: (request: Request) => Promise<Response>) {
+	return runAuthenticatedMcpExecuteHealthProbe({
+		token: 'canary-token',
+		mcpOrigin: 'https://kody.codes',
+		callMcp,
+	})
+}
+
+test('authenticated probe uses the legacy MCP execute path and rejects caller errors', async () => {
+	const ok = fakeMcp({
+		onToolCall: (body) => {
+			expect(body.method).toBe('tools/call')
+			expect(body.params?.name).toBe('execute')
+			expect(body.params?.arguments?.code).toBe('export default async () => 1')
+			return jsonRpcResult({ structuredContent: { result: 1 }, isError: false })
+		},
+	})
+	await expect(probe(ok.callMcp)).resolves.toEqual({
 		result: 1,
 		scope: 'authenticated-mcp-execute',
 		proves: 'platform-mcp-execute',
 	})
+	const { requests } = ok
 	expect(requests).toHaveLength(3)
 	expect(new URL(requests[0]?.url ?? '').pathname).toBe('/mcp')
 	expect(requests[0]?.headers.get('Authorization')).toBe('Bearer canary-token')
@@ -68,55 +82,24 @@ test('authenticated probe uses the legacy MCP execute path and rejects caller er
 	expect(initializeBody.params.clientInfo.name).toBe('kody-execute-health')
 	expect(requests[2]?.headers.get('mcp-session-id')).toBe('session-1')
 
-	await expect(
-		runAuthenticatedMcpExecuteHealthProbe({
-			token: 'canary-token',
-			mcpOrigin: 'https://kody.codes',
-			callMcp: async (request) => {
-				const body = (await request.clone().json()) as { method?: string }
-				if (body.method === 'initialize') {
-					return new Response(
-						JSON.stringify({ jsonrpc: '2.0', id: 1, result: {} }),
-						{
-							headers: { 'mcp-session-id': 'session-1' },
-						},
-					)
-				}
-				if (body.method === 'notifications/initialized') {
-					return new Response(null, { status: 202 })
-				}
-				return jsonRpcResult({
-					structuredContent: { result: 1, error: 'boom' },
-					isError: true,
-				})
-			},
-		}),
-	).rejects.toBeInstanceOf(MaintenanceFailureError)
-
-	await expect(
-		runAuthenticatedMcpExecuteHealthProbe({
-			token: 'canary-token',
-			mcpOrigin: 'https://kody.codes',
-			callMcp: async (request) => {
-				const body = (await request.clone().json()) as { method?: string }
-				if (body.method === 'initialize') {
-					return new Response(
-						JSON.stringify({ jsonrpc: '2.0', id: 1, result: {} }),
-						{
-							headers: { 'mcp-session-id': 'session-1' },
-						},
-					)
-				}
-				if (body.method === 'notifications/initialized') {
-					return new Response('Unauthorized', { status: 401 })
-				}
-				return jsonRpcResult({
-					structuredContent: { result: 1 },
-					isError: false,
-				})
-			},
-		}),
-	).rejects.toBeInstanceOf(MaintenanceFailureError)
+	const toolError = fakeMcp({
+		onToolCall: () =>
+			jsonRpcResult({
+				structuredContent: { result: 1, error: 'boom' },
+				isError: true,
+			}),
+	})
+	await expect(probe(toolError.callMcp)).rejects.toBeInstanceOf(
+		MaintenanceFailureError,
+	)
+	const initializedRejected = fakeMcp({
+		initializedStatus: 401,
+		onToolCall: () =>
+			jsonRpcResult({ structuredContent: { result: 1 }, isError: false }),
+	})
+	await expect(probe(initializedRejected.callMcp)).rejects.toBeInstanceOf(
+		MaintenanceFailureError,
+	)
 })
 
 test('maintenance route never runs execute on GET and public callers cannot trigger it', async () => {
@@ -126,37 +109,26 @@ test('maintenance route never runs execute on GET and public callers cannot trig
 		MCP_EXECUTE_HEALTH_CANARY_ACCESS_TOKEN: 'canary-token',
 		APP_BASE_URL: 'https://kody.codes',
 	}
-	const ctx = {} as ExecutionContext
-
-	const getResponse = await handleExecuteHealthProbeRequest(
-		new Request('https://kody.codes/__maintenance/mcp-execute-health'),
-		env,
-		ctx,
-		fetchMcp,
-	)
-	expect(getResponse.status).toBe(405)
-	expect(fetchMcp).not.toHaveBeenCalled()
-
-	const unauthorized = await handleExecuteHealthProbeRequest(
-		new Request('https://kody.codes/__maintenance/mcp-execute-health', {
-			method: 'POST',
-		}),
-		env,
-		ctx,
-		fetchMcp,
-	)
-	expect(unauthorized.status).toBe(401)
-	expect(fetchMcp).not.toHaveBeenCalled()
-
-	const unconfigured = await handleExecuteHealthProbeRequest(
-		new Request('https://kody.codes/__maintenance/mcp-execute-health', {
-			method: 'POST',
-			headers: { Authorization: 'Bearer status-secret' },
-		}),
-		{ APP_BASE_URL: 'https://kody.codes' },
-		ctx,
-		fetchMcp,
-	)
-	expect(unconfigured.status).toBe(503)
+	const url = 'https://kody.codes/__maintenance/mcp-execute-health'
+	const cases: Array<[RequestInit, Partial<typeof env>, number]> = [
+		[{}, env, 405],
+		[{ method: 'POST' }, env, 401],
+		[
+			{ method: 'POST', headers: { Authorization: 'Bearer status-secret' } },
+			{ APP_BASE_URL: 'https://kody.codes' },
+			503,
+		],
+	]
+	const statuses = []
+	for (const [init, caseEnv] of cases) {
+		const response = await handleExecuteHealthProbeRequest(
+			new Request(url, init),
+			caseEnv,
+			{} as ExecutionContext,
+			fetchMcp,
+		)
+		statuses.push(response.status)
+	}
+	expect(statuses).toEqual(cases.map(([, , status]) => status))
 	expect(fetchMcp).not.toHaveBeenCalled()
 })

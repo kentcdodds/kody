@@ -30,20 +30,30 @@ import {
 	TEST_OIDC_SIGNING_PRIVATE_KEY_PEM,
 } from '#worker/oidc/test-signing-key.ts'
 
+const callbackUri = 'https://example.com/callback'
+const mcpResource = 'https://heykody.dev/mcp'
 const baseAuthRequest: AuthRequest = {
 	responseType: 'code',
 	clientId: 'client-123',
-	redirectUri: 'https://example.com/callback',
+	redirectUri: callbackUri,
 	scope: ['profile'],
 	state: 'demo',
 }
-
 const baseClient: ClientInfo = {
 	clientId: 'client-123',
-	redirectUris: ['https://example.com/callback'],
+	redirectUris: [callbackUri],
 	clientName: 'kody Demo',
 	tokenEndpointAuthMethod: 'client_secret_basic',
 }
+const baseAuthorizeParams = {
+	response_type: 'code',
+	client_id: 'client-123',
+	redirect_uri: callbackUri,
+	scope: 'profile',
+	state: 'demo',
+}
+const redirectUriMismatchMessage =
+	'Invalid redirect URI. The redirect URI provided does not match any registered URI for this client.'
 const cookieSecret = 'test-secret-0123456789abcdef0123456789'
 const claudeAuthorizeUrl =
 	'https://heykody.dev/oauth/authorize?response_type=code&client_id=ZlV_ZKY8Xe1Hnw2a&redirect_uri=https%3A%2F%2Fclaude.ai%2Fapi%2Fmcp%2Fauth_callback&code_challenge=sp23xso5O3jXO-73NoQqSxwu742uqSbPXw1VA8jRfNE&code_challenge_method=S256&state=x5z9jORTCRNTmZ5_fiH7tdVWDVbiPujOHtUkyHzBvmc&scope=profile+email&resource=https%3A%2F%2Fheykody.dev%2Fmcp'
@@ -55,7 +65,7 @@ const claudeAuthRequest: AuthRequest = {
 	state: 'x5z9jORTCRNTmZ5_fiH7tdVWDVbiPujOHtUkyHzBvmc',
 	codeChallenge: 'sp23xso5O3jXO-73NoQqSxwu742uqSbPXw1VA8jRfNE',
 	codeChallengeMethod: 'S256',
-	resource: 'https://heykody.dev/mcp',
+	resource: mcpResource,
 }
 const claudeClient: ClientInfo = {
 	clientId: claudeAuthRequest.clientId,
@@ -81,6 +91,12 @@ const geminiClient: ClientInfo = {
 	redirectUris: [geminiAuthRequestWithoutResource.redirectUri],
 	clientName: 'Gemini',
 	tokenEndpointAuthMethod: 'none',
+}
+const jsonAccept = { Accept: 'application/json' }
+const approveWithPassword = {
+	decision: 'approve',
+	email: 'user@example.com',
+	password: 'password123',
 }
 
 function createHelpers(overrides: Partial<OAuthHelpers> = {}): OAuthHelpers {
@@ -111,6 +127,12 @@ function createHelpers(overrides: Partial<OAuthHelpers> = {}): OAuthHelpers {
 		}),
 		...overrides,
 	}
+}
+
+function completingWith(redirectTo: string) {
+	return vi.fn(async (_options: CompleteAuthorizationOptions) => ({
+		redirectTo,
+	}))
 }
 
 async function createDatabase(
@@ -195,21 +217,16 @@ function mockJobDoNamespace(id: string): DurableObjectNamespace {
 	} as unknown as DurableObjectNamespace
 }
 
-function createEnv(
-	helpers: OAuthHelpers,
-	appDb?: D1Database,
-	cookieSecretValue: string = cookieSecret,
-) {
-	const resolvedDb = appDb ?? ({} as D1Database)
+function createEnv(helpers: OAuthHelpers, appDb?: D1Database) {
 	return {
 		OAUTH_PROVIDER: helpers,
-		APP_DB: resolvedDb,
+		APP_DB: appDb ?? ({} as D1Database),
 		BUNDLE_ARTIFACTS_KV: {
 			get: async () => null,
 			put: async () => undefined,
 			delete: async () => undefined,
 		},
-		COOKIE_SECRET: cookieSecretValue,
+		COOKIE_SECRET: cookieSecret,
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
 		// Audit writes are console-only under the test environment; without this
 		// the handler warns about the missing AUDIT_DB binding on every call.
@@ -256,11 +273,7 @@ async function createSha256Hex(value: string) {
 		.join('')
 }
 
-async function seedWorkerUser(
-	email: string,
-	password: string,
-	options: { emailVerifiedAt?: string | null } = {},
-) {
+async function seedWorkerUser(email: string, password: string) {
 	const passwordHash = await createPasswordHash(password)
 	const stableUserId = await createStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
@@ -299,11 +312,7 @@ async function seedWorkerUser(
 			UNIQUE (target, type)
 		)`,
 	).run()
-	const emailVerifiedAt =
-		options.emailVerifiedAt === undefined
-			? new Date(0).toISOString()
-			: options.emailVerifiedAt
-	const result = await env.APP_DB.prepare(
+	await env.APP_DB.prepare(
 		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
 			VALUES (?, ?, ?, ?, ?)
 			ON CONFLICT(email) DO UPDATE SET
@@ -315,18 +324,26 @@ async function seedWorkerUser(
 			`user-${crypto.randomUUID().slice(0, 8)}`,
 			email,
 			passwordHash,
-			emailVerifiedAt,
+			new Date(0).toISOString(),
 			stableUserId,
 		)
 		.run()
-	return Number(result.meta.last_row_id)
 }
 
-function createFormRequest(
+function exampleOAuthUrl(
+	path: 'authorize' | 'authorize-info',
+	params: Record<string, string>,
+	origin = 'https://example.com',
+) {
+	return `${origin}/oauth/${path}?${new URLSearchParams(params)}`
+}
+
+function formRequest(
 	data: Record<string, string>,
 	headers: Record<string, string> = {},
+	url: string | URL = 'https://example.com/oauth/authorize',
 ) {
-	return new Request('https://example.com/oauth/authorize', {
+	return new Request(url, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/x-www-form-urlencoded',
@@ -336,34 +353,148 @@ function createFormRequest(
 	})
 }
 
+async function sessionCookie(
+	email = 'user@example.com',
+	stableUserEmail = email,
+) {
+	setAuthSessionSecret(cookieSecret)
+	return createAuthCookie(
+		{
+			stableUserId: await createStableUserIdFromEmail(stableUserEmail),
+			email,
+			rememberMe: false,
+		},
+		false,
+	)
+}
+
 function getCookiePair(setCookie: string) {
 	return setCookie.split(';', 1)[0] ?? setCookie
 }
 
-function expectClientAuthorizationRedirect(
+function expectRedirect(
 	redirectTo: string,
-	expected: {
-		originPath: string
-		params: Record<string, string>
-		iss: string
-	},
+	originPath: string,
+	params: Record<string, string>,
+	iss = 'https://example.com',
 ) {
 	const redirectUrl = new URL(redirectTo)
-	expect(redirectUrl.origin + redirectUrl.pathname).toBe(expected.originPath)
-	for (const [key, value] of Object.entries(expected.params)) {
+	expect(redirectUrl.origin + redirectUrl.pathname).toBe(originPath)
+	for (const [key, value] of Object.entries(params)) {
 		expect(redirectUrl.searchParams.get(key)).toBe(value)
 	}
-	expect(redirectUrl.searchParams.get('iss')).toBe(expected.iss)
+	expect(redirectUrl.searchParams.get('iss')).toBe(iss)
+}
+
+async function expectApprovedRedirect(
+	response: Response,
+	originPath: string,
+	params: Record<string, string>,
+	iss?: string,
+) {
+	expect(response.status).toBe(200)
+	const payload = (await response.json()) as { ok: boolean; redirectTo: string }
+	expect(payload.ok).toBe(true)
+	expectRedirect(payload.redirectTo, originPath, params, iss)
+}
+
+async function readAuthorizePage(response: Response) {
+	expect(response.status).toBe(200)
+	expect(response.headers.get('Content-Type')).toContain('text/html')
+	const html = await response.text()
+	expect(html).toContain('"oauthAuthorize"')
+	return html
+}
+
+async function registerClient(metadata: Record<string, unknown>) {
+	const response = await workerFetch(
+		new Request('https://heykody.dev/oauth/register', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(metadata),
+		}),
+	)
+	expect(response.status).toBe(201)
+	return ((await response.json()) as { client_id: string }).client_id
+}
+
+async function heykodyAuthorizeUrl(
+	params: Record<string, string>,
+	verifier: string,
+) {
+	const url = new URL('https://heykody.dev/oauth/authorize')
+	url.search = new URLSearchParams({
+		response_type: 'code',
+		...params,
+		code_challenge: await createS256CodeChallenge(verifier),
+		code_challenge_method: 'S256',
+		resource: mcpResource,
+	}).toString()
+	return url
+}
+
+async function workerApprove(authorizeUrl: URL, email: string) {
+	const response = await workerFetch(
+		formRequest(
+			{ decision: 'approve', email, password: 'password123' },
+			jsonAccept,
+			authorizeUrl,
+		),
+	)
+	expect(response.status).toBe(200)
+	const { redirectTo } = (await response.json()) as { redirectTo: string }
+	const callbackUrl = new URL(redirectTo)
+	const code = callbackUrl.searchParams.get('code')
+	expect(code).toBeTruthy()
+	return { callbackUrl, code: code ?? '' }
+}
+
+function exchangeCode(
+	params: {
+		client_id: string
+		code: string
+		redirect_uri: string
+		code_verifier: string
+	},
+	workerEnv?: Env,
+) {
+	return workerFetch(
+		formRequest(
+			{ grant_type: 'authorization_code', ...params, resource: mcpResource },
+			{},
+			'https://heykody.dev/oauth/token',
+		),
+		workerEnv,
+	)
+}
+
+function stubClientMetadataFetch(metadataUrl: string, respond: () => Response) {
+	const originalFetch = globalThis.fetch
+	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+		const url = input instanceof Request ? input.url : String(input)
+		return url.split('?')[0] === metadataUrl
+			? respond()
+			: originalFetch(input, init)
+	}) as typeof fetch
+	return {
+		[Symbol.dispose]: () => {
+			globalThis.fetch = originalFetch
+		},
+	}
+}
+
+function jsonResponse(body: unknown) {
+	return new Response(JSON.stringify(body), {
+		status: 200,
+		headers: { 'Content-Type': 'application/json; charset=utf-8' },
+	})
 }
 
 test('authorize info, denial, approval, and default scopes follow the OAuth workflow', async () => {
 	const successResponse = await handleAuthorizeInfo(
-		new Request(
-			'https://example.com/oauth/authorize-info?response_type=code&client_id=client-123&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=profile&state=demo',
-		),
+		new Request(exampleOAuthUrl('authorize-info', baseAuthorizeParams)),
 		createEnv(createHelpers()),
 	)
-
 	expect(successResponse.status).toBe(200)
 	await expect(successResponse.json()).resolves.toEqual({
 		ok: true,
@@ -373,24 +504,23 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 		requireCredentials: true,
 	})
 
-	const authorizeHtmlResponse = await handleAuthorizeRequest(
-		new Request(
-			'https://example.com/oauth/authorize?response_type=code&client_id=client-123&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=profile&state=demo',
+	const authorizeHtml = await readAuthorizePage(
+		await handleAuthorizeRequest(
+			new Request(exampleOAuthUrl('authorize', baseAuthorizeParams)),
+			createEnv(createHelpers()),
 		),
-		createEnv(createHelpers()),
 	)
-	expect(authorizeHtmlResponse.status).toBe(200)
-	expect(authorizeHtmlResponse.headers.get('Content-Type')).toContain(
-		'text/html',
-	)
-	const authorizeHtml = await authorizeHtmlResponse.text()
 	expect(authorizeHtml).toContain(baseClient.clientName ?? '')
 	expect(authorizeHtml).not.toContain('Loading authorization details')
-	expect(authorizeHtml).toContain('"oauthAuthorize"')
 
 	const mismatchResponse = await handleAuthorizeInfo(
 		new Request(
-			`https://example.com/oauth/authorize-info?response_type=code&client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/callback')}&error_description=${encodeURIComponent(invalidClientIdMismatchMessage)}`,
+			exampleOAuthUrl('authorize-info', {
+				response_type: 'code',
+				client_id: 'client-123',
+				redirect_uri: callbackUri,
+				error_description: invalidClientIdMismatchMessage,
+			}),
 		),
 		createEnv(
 			createHelpers({
@@ -400,7 +530,6 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 			}),
 		),
 	)
-
 	expect(mismatchResponse.status).toBe(400)
 	await expect(mismatchResponse.json()).resolves.toEqual({
 		ok: false,
@@ -412,27 +541,21 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 	expect(setCookie).toContain('Path=/oauth')
 
 	const denyResponse = await handleAuthorizeRequest(
-		createFormRequest({ decision: 'deny' }),
+		formRequest({ decision: 'deny' }),
 		createEnv(createHelpers()),
 	)
-
 	expect(denyResponse.status).toBe(302)
 	const location = denyResponse.headers.get('Location')
 	expect(location).toBeTruthy()
-	expectClientAuthorizationRedirect(location as string, {
-		originPath: 'https://example.com/callback',
-		params: { error: 'access_denied', state: 'demo' },
-		iss: 'https://example.com',
+	expectRedirect(location ?? '', callbackUri, {
+		error: 'access_denied',
+		state: 'demo',
 	})
 
 	const missingPasswordResponse = await handleAuthorizeRequest(
-		createFormRequest(
-			{ decision: 'approve', email: 'user@example.com' },
-			{ Accept: 'application/json' },
-		),
+		formRequest({ decision: 'approve', email: 'user@example.com' }, jsonAccept),
 		createEnv(createHelpers()),
 	)
-
 	expect(missingPasswordResponse.status).toBe(400)
 	await expect(missingPasswordResponse.json()).resolves.toEqual({
 		ok: false,
@@ -440,293 +563,170 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 		code: 'invalid_request',
 	})
 
-	let capturedOptions: CompleteAuthorizationOptions | null = null
-	const sessionHelpers = createHelpers({
-		async completeAuthorization(options) {
-			capturedOptions = options
-			return { redirectTo: 'https://example.com/callback?code=session' }
-		},
-	})
-	setAuthSessionSecret(cookieSecret)
-	const cookie = await createAuthCookie(
-		{
-			stableUserId: await createStableUserIdFromEmail('user@example.com'),
-			email: 'user@example.com',
-			rememberMe: false,
-		},
-		false,
+	const sessionCompletion = completingWith(
+		'https://example.com/callback?code=session',
 	)
-
 	const sessionResponse = await handleAuthorizeRequest(
-		createFormRequest(
+		formRequest(
 			{ decision: 'approve' },
-			{ Accept: 'application/json', Cookie: cookie },
+			{ ...jsonAccept, Cookie: await sessionCookie() },
 		),
-		createEnv(sessionHelpers, await createDatabase('password123')),
+		createEnv(
+			createHelpers({ completeAuthorization: sessionCompletion }),
+			await createDatabase('password123'),
+		),
+	)
+	await expectApprovedRedirect(sessionResponse, callbackUri, {
+		code: 'session',
+	})
+	expect(sessionCompletion.mock.lastCall?.[0].request.issuer).toBe(
+		'https://example.com',
 	)
 
-	expect(sessionResponse.status).toBe(200)
-	const sessionPayload = (await sessionResponse.json()) as {
-		ok: boolean
-		redirectTo: string
-	}
-	expect(sessionPayload.ok).toBe(true)
-	expectClientAuthorizationRedirect(sessionPayload.redirectTo, {
-		originPath: 'https://example.com/callback',
-		params: { code: 'session' },
-		iss: 'https://example.com',
-	})
-	expect(capturedOptions).not.toBeNull()
-	expect(capturedOptions?.request.issuer).toBe('https://example.com')
-
-	let resolveCapturedOptions:
-		| ((value: CompleteAuthorizationOptions) => void)
-		| undefined
-	const capturedOptionsPromise = new Promise<CompleteAuthorizationOptions>(
-		(resolve) => {
-			resolveCapturedOptions = resolve
-		},
+	const defaultScopeCompletion = completingWith(
+		'https://example.com/callback?code=ok',
 	)
-
-	const helpers = createHelpers({
-		parseAuthRequest: async () => ({
-			...baseAuthRequest,
-			scope: [],
-		}),
-		async completeAuthorization(options) {
-			resolveCapturedOptions?.(options)
-			return { redirectTo: 'https://example.com/callback?code=ok' }
-		},
-	})
 	const defaultScopeResponse = await handleAuthorizeRequest(
-		createFormRequest({
-			decision: 'approve',
-			email: 'user@example.com',
-			password: 'password123',
-		}),
-		createEnv(helpers, await createDatabase('password123')),
+		formRequest(approveWithPassword),
+		createEnv(
+			createHelpers({
+				parseAuthRequest: async () => ({ ...baseAuthRequest, scope: [] }),
+				completeAuthorization: defaultScopeCompletion,
+			}),
+			await createDatabase('password123'),
+		),
 	)
-
 	expect(defaultScopeResponse.status).toBe(302)
-	expectClientAuthorizationRedirect(
+	expectRedirect(
 		defaultScopeResponse.headers.get('Location') ?? '',
+		callbackUri,
 		{
-			originPath: 'https://example.com/callback',
-			params: { code: 'ok' },
-			iss: 'https://example.com',
+			code: 'ok',
 		},
 	)
-	const defaultScopeOptions = await capturedOptionsPromise
-	expect(defaultScopeOptions.scope).toEqual(oauthScopes)
-	expect(defaultScopeOptions.request.issuer).toBe('https://example.com')
+	const defaultScopeOptions = defaultScopeCompletion.mock.lastCall?.[0]
+	expect(defaultScopeOptions?.scope).toEqual(oauthScopes)
+	expect(defaultScopeOptions?.request.issuer).toBe('https://example.com')
 })
 
 test('authorize success and deny redirects include RFC 9207 iss for the kody.codes issuer', async () => {
-	const authorizeUrl =
-		'https://kody.codes/oauth/authorize?response_type=code&client_id=client-123&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=profile&state=demo'
-	const helpers = createHelpers({
-		async completeAuthorization() {
-			return { redirectTo: 'https://example.com/callback?code=codex' }
-		},
-	})
-	const approveResponse = await handleAuthorizeRequest(
-		new Request(authorizeUrl, {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/x-www-form-urlencoded',
-			},
-			body: new URLSearchParams({
-				decision: 'approve',
-				email: 'user@example.com',
-				password: 'password123',
-			}),
-		}),
-		createEnv(helpers, await createDatabase('password123')),
+	const authorizeUrl = exampleOAuthUrl(
+		'authorize',
+		baseAuthorizeParams,
+		'https://kody.codes',
 	)
-	expect(approveResponse.status).toBe(200)
-	const approvePayload = (await approveResponse.json()) as {
-		ok: boolean
-		redirectTo: string
-	}
-	expect(approvePayload.ok).toBe(true)
-	expectClientAuthorizationRedirect(approvePayload.redirectTo, {
-		originPath: 'https://example.com/callback',
-		params: { code: 'codex' },
-		iss: 'https://kody.codes',
-	})
+	const approveResponse = await handleAuthorizeRequest(
+		formRequest(approveWithPassword, jsonAccept, authorizeUrl),
+		createEnv(
+			createHelpers({
+				completeAuthorization: completingWith(
+					'https://example.com/callback?code=codex',
+				),
+			}),
+			await createDatabase('password123'),
+		),
+	)
+	await expectApprovedRedirect(
+		approveResponse,
+		callbackUri,
+		{ code: 'codex' },
+		'https://kody.codes',
+	)
 
 	const denyResponse = await handleAuthorizeRequest(
-		new Request(authorizeUrl, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-			body: new URLSearchParams({ decision: 'deny' }),
-		}),
+		formRequest({ decision: 'deny' }, {}, authorizeUrl),
 		createEnv(createHelpers()),
 	)
 	expect(denyResponse.status).toBe(302)
-	expectClientAuthorizationRedirect(
+	expectRedirect(
 		denyResponse.headers.get('Location') ?? '',
-		{
-			originPath: 'https://example.com/callback',
-			params: { error: 'access_denied', state: 'demo' },
-			iss: 'https://kody.codes',
-		},
+		callbackUri,
+		{ error: 'access_denied', state: 'demo' },
+		'https://kody.codes',
 	)
 })
 
 test('Claude-shaped authorize requests render and approve without throwing', async () => {
-	const htmlResponse = await handleAuthorizeRequest(
-		new Request(claudeAuthorizeUrl),
-		createEnv(
-			createHelpers({
-				parseAuthRequest: async () => claudeAuthRequest,
-				lookupClient: async () => claudeClient,
-			}),
-		),
+	const completion = completingWith(
+		'https://claude.ai/api/mcp/auth_callback?code=demo&state=x5z9jORTCRNTmZ5_fiH7tdVWDVbiPujOHtUkyHzBvmc',
 	)
-
-	expect(htmlResponse.status).toBe(200)
-	expect(htmlResponse.headers.get('Content-Type')).toContain('text/html')
-	const html = await htmlResponse.text()
-	expect(html).toContain('Claude')
-	expect(html).toContain('"oauthAuthorize"')
-
-	let capturedOptions: CompleteAuthorizationOptions | null = null
 	const helpers = createHelpers({
 		parseAuthRequest: async () => claudeAuthRequest,
 		lookupClient: async () => claudeClient,
-		async completeAuthorization(options) {
-			capturedOptions = options
-			return {
-				redirectTo:
-					'https://claude.ai/api/mcp/auth_callback?code=demo&state=x5z9jORTCRNTmZ5_fiH7tdVWDVbiPujOHtUkyHzBvmc',
-			}
-		},
+		completeAuthorization: completion,
 	})
+	expect(
+		await readAuthorizePage(
+			await handleAuthorizeRequest(
+				new Request(claudeAuthorizeUrl),
+				createEnv(helpers),
+			),
+		),
+	).toContain('Claude')
+
 	const postResponse = await handleAuthorizeRequest(
-		new Request(claudeAuthorizeUrl, {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/x-www-form-urlencoded',
-			},
-			body: new URLSearchParams({
-				decision: 'approve',
-				email: 'user@example.com',
-				password: 'password123',
-			}),
-		}),
+		formRequest(approveWithPassword, jsonAccept, claudeAuthorizeUrl),
 		createEnv(helpers, await createDatabase('password123')),
 	)
-
-	expect(postResponse.status).toBe(200)
-	const claudePayload = (await postResponse.json()) as {
-		ok: boolean
-		redirectTo: string
-	}
-	expect(claudePayload.ok).toBe(true)
-	expectClientAuthorizationRedirect(claudePayload.redirectTo, {
-		originPath: 'https://claude.ai/api/mcp/auth_callback',
-		params: {
-			code: 'demo',
-			state: 'x5z9jORTCRNTmZ5_fiH7tdVWDVbiPujOHtUkyHzBvmc',
-		},
-		iss: 'https://heykody.dev',
-	})
-	expect(capturedOptions?.request.resource).toBe('https://heykody.dev/mcp')
-	expect(capturedOptions?.request.scope).toEqual(['profile', 'email'])
-	expect(capturedOptions?.request.issuer).toBe('https://heykody.dev')
+	await expectApprovedRedirect(
+		postResponse,
+		'https://claude.ai/api/mcp/auth_callback',
+		{ code: 'demo', state: 'x5z9jORTCRNTmZ5_fiH7tdVWDVbiPujOHtUkyHzBvmc' },
+		'https://heykody.dev',
+	)
+	const { request } = completion.mock.lastCall?.[0] ?? {}
+	expect(request?.resource).toBe(mcpResource)
+	expect(request?.scope).toEqual(['profile', 'email'])
+	expect(request?.issuer).toBe('https://heykody.dev')
 })
 
 test('Gemini-shaped authorize requests default resource to /mcp when omitted', async () => {
-	let capturedOptions: CompleteAuthorizationOptions | null = null
+	const completion = completingWith(
+		`${geminiAuthRequestWithoutResource.redirectUri}?code=demo&state=gemini-demo-state`,
+	)
 	const helpers = createHelpers({
 		// Return a fresh object each time so the defaulting mutation stays local.
 		parseAuthRequest: async () => ({ ...geminiAuthRequestWithoutResource }),
 		lookupClient: async () => geminiClient,
-		async completeAuthorization(options) {
-			capturedOptions = options
-			return {
-				redirectTo:
-					'https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-106664623666703652842-heykody_dev?code=demo&state=gemini-demo-state',
-			}
-		},
+		completeAuthorization: completion,
 	})
 	const postResponse = await handleAuthorizeRequest(
-		new Request(geminiAuthorizeUrl, {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/x-www-form-urlencoded',
-			},
-			body: new URLSearchParams({
-				decision: 'approve',
-				email: 'user@example.com',
-				password: 'password123',
-			}),
-		}),
+		formRequest(approveWithPassword, jsonAccept, geminiAuthorizeUrl),
 		createEnv(helpers, await createDatabase('password123')),
 	)
-
-	expect(postResponse.status).toBe(200)
-	const geminiPayload = (await postResponse.json()) as {
-		ok: boolean
-		redirectTo: string
-	}
-	expect(geminiPayload.ok).toBe(true)
-	expectClientAuthorizationRedirect(geminiPayload.redirectTo, {
-		originPath:
-			'https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-106664623666703652842-heykody_dev',
-		params: { code: 'demo', state: 'gemini-demo-state' },
-		iss: 'https://heykody.dev',
-	})
-	expect(capturedOptions?.request.resource).toBe('https://heykody.dev/mcp')
+	await expectApprovedRedirect(
+		postResponse,
+		geminiAuthRequestWithoutResource.redirectUri,
+		{ code: 'demo', state: 'gemini-demo-state' },
+		'https://heykody.dev',
+	)
+	expect(completion.mock.lastCall?.[0].request.resource).toBe(mcpResource)
 	expect(geminiAuthRequestWithoutResource.resource).toBeUndefined()
 })
 
 test('session approval uses stable user id when cookie email is stale', async () => {
 	const currentEmail = `changed-oauth-${crypto.randomUUID()}@example.com`
 	await seedWorkerUser(currentEmail, 'password123')
-	let capturedOptions: CompleteAuthorizationOptions | null = null
-	const helpers = createHelpers({
-		async completeAuthorization(options) {
-			capturedOptions = options
-			return { redirectTo: 'https://example.com/callback?code=stale-session' }
-		},
-	})
-	setAuthSessionSecret(cookieSecret)
-	const cookie = await createAuthCookie(
-		{
-			stableUserId: await createStableUserIdFromEmail(currentEmail),
-			email: `old-${currentEmail}`,
-			rememberMe: false,
-		},
-		false,
+	const completion = completingWith(
+		'https://example.com/callback?code=stale-session',
 	)
+	const cookie = await sessionCookie(`old-${currentEmail}`, currentEmail)
 
 	const response = await handleAuthorizeRequest(
-		createFormRequest(
-			{ decision: 'approve' },
-			{ Accept: 'application/json', Cookie: cookie },
-		),
-		createEnv(helpers, env.APP_DB),
+		formRequest({ decision: 'approve' }, { ...jsonAccept, Cookie: cookie }),
+		createEnv(createHelpers({ completeAuthorization: completion }), env.APP_DB),
 	)
 
-	expect(response.status).toBe(200)
-	const stalePayload = (await response.json()) as {
-		ok: boolean
-		redirectTo: string
-	}
-	expect(stalePayload.ok).toBe(true)
-	expectClientAuthorizationRedirect(stalePayload.redirectTo, {
-		originPath: 'https://example.com/callback',
-		params: { code: 'stale-session' },
-		iss: 'https://example.com',
-	})
-	expect(capturedOptions?.metadata).toMatchObject({ email: currentEmail })
-	expect(capturedOptions?.props).toMatchObject({ email: currentEmail })
 	const refreshedCookie = response.headers.get('Set-Cookie')
+	await expectApprovedRedirect(response, callbackUri, {
+		code: 'stale-session',
+	})
+	expect(completion.mock.lastCall?.[0].metadata).toMatchObject({
+		email: currentEmail,
+	})
+	expect(completion.mock.lastCall?.[0].props).toMatchObject({
+		email: currentEmail,
+	})
 	expect(refreshedCookie).toContain('kody_session=')
 	await expect(
 		readAuthSessionResult(
@@ -743,25 +743,20 @@ test('session approval uses stable user id when cookie email is stale', async ()
 })
 
 test('authorize rejects unverified accounts before creating a grant', async () => {
-	const completeAuthorization = vi.fn(async () => ({
-		redirectTo: 'https://example.com/callback?code=should-not-happen',
-	}))
+	const completeAuthorization = completingWith(
+		'https://example.com/callback?code=should-not-happen',
+	)
 	const helpers = createHelpers({ completeAuthorization })
-	const unverifiedResponse = await handleAuthorizeRequest(
-		createFormRequest(
-			{
-				decision: 'approve',
-				email: 'user@example.com',
-				password: 'password123',
-			},
-			{ Accept: 'application/json' },
-		),
+	const unverifiedEnv = async () =>
 		createEnv(
 			helpers,
 			await createDatabase('password123', { emailVerifiedAt: null }),
-		),
-	)
+		)
 
+	const unverifiedResponse = await handleAuthorizeRequest(
+		formRequest(approveWithPassword, jsonAccept),
+		await unverifiedEnv(),
+	)
 	expect(unverifiedResponse.status).toBe(403)
 	await expect(unverifiedResponse.json()).resolves.toEqual({
 		ok: false,
@@ -770,24 +765,10 @@ test('authorize rejects unverified accounts before creating a grant', async () =
 	})
 	expect(completeAuthorization).not.toHaveBeenCalled()
 
-	setAuthSessionSecret(cookieSecret)
-	const cookie = await createAuthCookie(
-		{
-			stableUserId: await createStableUserIdFromEmail('user@example.com'),
-			email: 'user@example.com',
-			rememberMe: false,
-		},
-		false,
-	)
+	const cookie = await sessionCookie()
 	const sessionUnverifiedResponse = await handleAuthorizeRequest(
-		createFormRequest(
-			{ decision: 'approve' },
-			{ Accept: 'application/json', Cookie: cookie },
-		),
-		createEnv(
-			helpers,
-			await createDatabase('password123', { emailVerifiedAt: null }),
-		),
+		formRequest({ decision: 'approve' }, { ...jsonAccept, Cookie: cookie }),
+		await unverifiedEnv(),
 	)
 	expect(sessionUnverifiedResponse.status).toBe(403)
 	await expect(sessionUnverifiedResponse.json()).resolves.toMatchObject({
@@ -797,16 +778,10 @@ test('authorize rejects unverified accounts before creating a grant', async () =
 	expect(completeAuthorization).not.toHaveBeenCalled()
 
 	const authorizeInfo = await handleAuthorizeInfo(
-		new Request(
-			'https://example.com/oauth/authorize-info?response_type=code&client_id=client-123&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=profile&state=demo',
-			{
-				headers: { Accept: 'application/json', Cookie: cookie },
-			},
-		),
-		createEnv(
-			helpers,
-			await createDatabase('password123', { emailVerifiedAt: null }),
-		),
+		new Request(exampleOAuthUrl('authorize-info', baseAuthorizeParams), {
+			headers: { ...jsonAccept, Cookie: cookie },
+		}),
+		await unverifiedEnv(),
 	)
 	expect(authorizeInfo.status).toBe(200)
 	await expect(authorizeInfo.json()).resolves.toMatchObject({
@@ -814,107 +789,58 @@ test('authorize rejects unverified accounts before creating a grant', async () =
 		emailVerified: false,
 	})
 
-	completeAuthorization.mockClear()
 	completeAuthorization.mockImplementation(async () => ({
 		redirectTo: 'https://example.com/callback?code=verified-ok',
 	}))
 	const verifiedResponse = await handleAuthorizeRequest(
-		createFormRequest(
-			{
-				decision: 'approve',
-				email: 'user@example.com',
-				password: 'password123',
-			},
-			{ Accept: 'application/json' },
-		),
+		formRequest(approveWithPassword, jsonAccept),
 		createEnv(helpers, await createDatabase('password123')),
 	)
-	expect(verifiedResponse.status).toBe(200)
-	const verifiedPayload = (await verifiedResponse.json()) as {
-		ok: boolean
-		redirectTo: string
-	}
-	expect(verifiedPayload.ok).toBe(true)
-	expectClientAuthorizationRedirect(verifiedPayload.redirectTo, {
-		originPath: 'https://example.com/callback',
-		params: { code: 'verified-ok' },
-		iss: 'https://example.com',
+	await expectApprovedRedirect(verifiedResponse, callbackUri, {
+		code: 'verified-ok',
 	})
 	expect(completeAuthorization).toHaveBeenCalledTimes(1)
 })
 
-test('worker entrypoint handles Claude-shaped authorize GET requests', async () => {
-	await env.OAUTH_KV.put(
-		`client:${claudeClient.clientId}`,
-		JSON.stringify(claudeClient),
-	)
-
-	const response = await workerFetch(new Request(claudeAuthorizeUrl))
-
-	expect(response.status).toBe(200)
-	expect(response.headers.get('Content-Type')).toContain('text/html')
-	const html = await response.text()
-	expect(html).toContain('Claude')
-	expect(html).toContain('"oauthAuthorize"')
-})
-
-test('worker entrypoint renders a recoverable error for missing Claude clients', async () => {
-	await env.OAUTH_KV.delete(`client:${claudeClient.clientId}`)
-
-	const response = await workerFetch(new Request(claudeAuthorizeUrl))
-
-	expect(response.status).toBe(200)
-	expect(response.headers.get('Content-Type')).toContain('text/html')
-	const html = await response.text()
-	expect(html).toContain('Invalid client')
-	expect(html).toContain('"oauthAuthorize"')
-})
-
-test('worker entrypoint renders a recoverable error for malformed Claude clients', async () => {
-	await env.OAUTH_KV.put(
-		`client:${claudeClient.clientId}`,
-		JSON.stringify({
-			client_id: claudeClient.clientId,
-			redirect_uris: [claudeAuthRequest.redirectUri],
-			client_name: claudeClient.clientName,
-			token_endpoint_auth_method: 'none',
-		}),
-	)
-
-	const response = await workerFetch(new Request(claudeAuthorizeUrl))
-
-	expect(response.status).toBe(200)
-	expect(response.headers.get('Content-Type')).toContain('text/html')
-	const html = await response.text()
-	expect(html).toContain('Invalid OAuth client registration.')
-	expect(html).toContain('"oauthAuthorize"')
+test('worker entrypoint renders Claude-shaped authorize GET and recoverable errors for missing or malformed clients', async () => {
+	const clientKey = `client:${claudeClient.clientId}`
+	const snakeCaseClient = {
+		client_id: claudeClient.clientId,
+		redirect_uris: [claudeAuthRequest.redirectUri],
+		client_name: claudeClient.clientName,
+		token_endpoint_auth_method: 'none',
+	}
+	for (const [storedClient, text] of [
+		[claudeClient, 'Claude'],
+		[snakeCaseClient, 'Invalid OAuth client registration.'],
+		[null, 'Invalid client'],
+	] as const) {
+		if (storedClient) {
+			await env.OAUTH_KV.put(clientKey, JSON.stringify(storedClient))
+		} else {
+			await env.OAUTH_KV.delete(clientKey)
+		}
+		expect(
+			await readAuthorizePage(
+				await workerFetch(new Request(claudeAuthorizeUrl)),
+			),
+		).toContain(text)
+	}
 })
 
 test('worker entrypoint completes Claude-shaped dynamic registration and token exchange', async () => {
 	const email = `claude-oauth-${crypto.randomUUID()}@example.com`
-	const password = 'password123'
-	await seedWorkerUser(email, password)
-
-	const registerResponse = await workerFetch(
-		new Request('https://heykody.dev/oauth/register', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				redirect_uris: [claudeAuthRequest.redirectUri],
-				client_name: 'Claude',
-				token_endpoint_auth_method: 'none',
-				grant_types: ['authorization_code', 'refresh_token'],
-				response_types: ['code'],
-			}),
-		}),
-	)
-	expect(registerResponse.status).toBe(201)
-	const registeredClient = (await registerResponse.json()) as {
-		client_id: string
-	}
+	await seedWorkerUser(email, 'password123')
+	const clientId = await registerClient({
+		redirect_uris: [claudeAuthRequest.redirectUri],
+		client_name: 'Claude',
+		token_endpoint_auth_method: 'none',
+		grant_types: ['authorization_code', 'refresh_token'],
+		response_types: ['code'],
+	})
 	const verifier = 'claude-verifier-0123456789'
 	const authorizeUrl = new URL(claudeAuthorizeUrl)
-	authorizeUrl.searchParams.set('client_id', registeredClient.client_id)
+	authorizeUrl.searchParams.set('client_id', clientId)
 	authorizeUrl.searchParams.set(
 		'code_challenge',
 		await createS256CodeChallenge(verifier),
@@ -924,57 +850,22 @@ test('worker entrypoint completes Claude-shaped dynamic registration and token e
 	expect(authorizeResponse.status).toBe(200)
 	expect(await authorizeResponse.text()).toContain('Claude')
 
-	const approvalResponse = await workerFetch(
-		new Request(authorizeUrl, {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/x-www-form-urlencoded',
-			},
-			body: new URLSearchParams({
-				decision: 'approve',
-				email,
-				password,
-			}),
-		}),
-	)
-	expect(approvalResponse.status).toBe(200)
-	const approvalPayload = (await approvalResponse.json()) as {
-		redirectTo: string
-	}
-	const callbackUrl = new URL(approvalPayload.redirectTo)
-	const code = callbackUrl.searchParams.get('code')
-	expect(code).toBeTruthy()
-
-	const tokenResponse = await workerFetch(
-		new Request('https://heykody.dev/oauth/token', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-			body: new URLSearchParams({
-				grant_type: 'authorization_code',
-				client_id: registeredClient.client_id,
-				code: code ?? '',
-				redirect_uri: claudeAuthRequest.redirectUri,
-				code_verifier: verifier,
-				resource: 'https://heykody.dev/mcp',
-			}),
-		}),
-	)
+	const { code } = await workerApprove(authorizeUrl, email)
+	const tokenResponse = await exchangeCode({
+		client_id: clientId,
+		code,
+		redirect_uri: claudeAuthRequest.redirectUri,
+		code_verifier: verifier,
+	})
 	expect(tokenResponse.status).toBe(200)
 	await expect(tokenResponse.json()).resolves.toMatchObject({
 		token_type: 'bearer',
-		resource: 'https://heykody.dev/mcp',
+		resource: mcpResource,
 		scope: 'profile email',
 	})
 })
 
-test('worker entrypoint advertises MCP resource metadata on both RFC 9728 paths', async () => {
-	const expected = {
-		resource: 'https://heykody.dev/mcp',
-		authorization_servers: ['https://heykody.dev'],
-		scopes_supported: oauthScopes,
-		bearer_methods_supported: ['header'],
-	}
+test('worker entrypoint advertises OAuth, OIDC, and RFC 9728 resource metadata plus jwks', async () => {
 	for (const path of [
 		'/.well-known/oauth-protected-resource',
 		'/.well-known/oauth-protected-resource/mcp',
@@ -983,7 +874,12 @@ test('worker entrypoint advertises MCP resource metadata on both RFC 9728 paths'
 			new Request(`https://heykody.dev${path}`),
 		)
 		expect(response.status).toBe(200)
-		await expect(response.json()).resolves.toEqual(expected)
+		await expect(response.json()).resolves.toEqual({
+			resource: mcpResource,
+			authorization_servers: ['https://heykody.dev'],
+			scopes_supported: oauthScopes,
+			bearer_methods_supported: ['header'],
+		})
 	}
 
 	const discovery = await workerFetch(
@@ -1009,152 +905,118 @@ test('worker entrypoint advertises MCP resource metadata on both RFC 9728 paths'
 	expect(metadata.token_endpoint_auth_methods_supported).not.toContain(
 		'private_key_jwt',
 	)
+
+	const oidcDiscovery = await workerFetch(
+		new Request('https://heykody.dev/.well-known/openid-configuration'),
+	)
+	expect(oidcDiscovery.status).toBe(200)
+	const oidcMetadata = (await oidcDiscovery.json()) as {
+		issuer: string
+		token_endpoint: string
+		revocation_endpoint: string
+		revocation_endpoint_auth_methods_supported: Array<string>
+		token_endpoint_auth_methods_supported: Array<string>
+		response_types_supported: Array<string>
+		scopes_supported: Array<string>
+	}
+	expect(oidcMetadata.issuer).toBe('https://heykody.dev')
+	expect(oidcMetadata.response_types_supported).toEqual(['code'])
+	expect(oidcMetadata.scopes_supported).toContain('openid')
+	expect(oidcMetadata.token_endpoint).toBe(metadata.token_endpoint)
+	expect(oidcMetadata.revocation_endpoint).toBe(metadata.revocation_endpoint)
+	expect(oidcMetadata.revocation_endpoint_auth_methods_supported).toEqual(
+		oidcMetadata.token_endpoint_auth_methods_supported,
+	)
+
+	const jwks = await workerFetch(
+		new Request('https://heykody.dev/.well-known/jwks.json'),
+	)
+	expect(jwks.status).toBe(200)
+	const jwksBody = (await jwks.json()) as { keys: Array<{ kid: string }> }
+	expect(jwksBody.keys[0]?.kid).toBeTruthy()
 })
 
 test('worker entrypoint completes ChatGPT-shaped CIMD authorize and token exchange', async () => {
 	const email = `chatgpt-oauth-${crypto.randomUUID()}@example.com`
-	const password = 'password123'
-	await seedWorkerUser(email, password)
-
-	const chatgptClientMetadataUrl =
-		'https://chatgpt.com/oauth/vG3-MLZWUV83/client.json'
-	const chatgptRedirectUri = 'https://chatgpt.com/connector/oauth/vG3-MLZWUV83'
-	const chatgptClientDocument = {
-		client_id: chatgptClientMetadataUrl,
-		client_uri: 'https://chatgpt.com/',
-		redirect_uris: [chatgptRedirectUri],
-		token_endpoint_auth_method: 'private_key_jwt',
-		token_endpoint_auth_methods_supported: ['none', 'private_key_jwt'],
-		grant_types: ['authorization_code', 'refresh_token'],
-		response_types: ['code'],
-		client_name: 'ChatGPT',
-		logo_uri: 'https://persistent.oaistatic.com/sonic/misc/openai-logo.png',
-		token_endpoint_auth_signing_alg: 'RS256',
-		jwks_uri: 'https://chatgpt.com/oauth/jwks.json',
-	}
-	const originalFetch = globalThis.fetch
-	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-		const url = input instanceof Request ? input.url : String(input)
-		if (url.split('?')[0] === chatgptClientMetadataUrl) {
-			return new Response(JSON.stringify(chatgptClientDocument), {
-				status: 200,
-				headers: { 'Content-Type': 'application/json; charset=utf-8' },
-			})
-		}
-		return originalFetch(input, init)
-	}) as typeof fetch
-
-	try {
-		const verifier = 'chatgpt-verifier-0123456789'
-		const authorizeUrl = new URL('https://heykody.dev/oauth/authorize')
-		authorizeUrl.searchParams.set('response_type', 'code')
-		authorizeUrl.searchParams.set('client_id', chatgptClientMetadataUrl)
-		authorizeUrl.searchParams.set('redirect_uri', chatgptRedirectUri)
-		authorizeUrl.searchParams.set('scope', 'profile email')
-		authorizeUrl.searchParams.set(
-			'code_challenge',
-			await createS256CodeChallenge(verifier),
-		)
-		authorizeUrl.searchParams.set('code_challenge_method', 'S256')
-		authorizeUrl.searchParams.set('resource', 'https://heykody.dev/mcp')
-		authorizeUrl.searchParams.set('state', 'chatgpt-demo-state')
-
-		const authorizeResponse = await workerFetch(new Request(authorizeUrl))
-		expect(authorizeResponse.status).toBe(200)
-		expect(await authorizeResponse.text()).toContain('ChatGPT')
-
-		const approvalResponse = await workerFetch(
-			new Request(authorizeUrl, {
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/x-www-form-urlencoded',
-				},
-				body: new URLSearchParams({
-					decision: 'approve',
-					email,
-					password,
-				}),
-			}),
-		)
-		expect(approvalResponse.status).toBe(200)
-		const approvalPayload = (await approvalResponse.json()) as {
-			redirectTo: string
-		}
-		const callbackUrl = new URL(approvalPayload.redirectTo)
-		const code = callbackUrl.searchParams.get('code')
-		expect(code).toBeTruthy()
-		expect(callbackUrl.searchParams.get('iss')).toBe('https://heykody.dev')
-
-		const tokenResponse = await workerFetch(
-			new Request('https://heykody.dev/oauth/token', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-				body: new URLSearchParams({
-					grant_type: 'authorization_code',
-					client_id: chatgptClientMetadataUrl,
-					code: code ?? '',
-					redirect_uri: chatgptRedirectUri,
-					code_verifier: verifier,
-					resource: 'https://heykody.dev/mcp',
-				}),
-			}),
-		)
-		expect(tokenResponse.status).toBe(200)
-		await expect(tokenResponse.json()).resolves.toMatchObject({
-			token_type: 'bearer',
-			resource: 'https://heykody.dev/mcp',
+	await seedWorkerUser(email, 'password123')
+	const clientId = 'https://chatgpt.com/oauth/vG3-MLZWUV83/client.json'
+	const redirectUri = 'https://chatgpt.com/connector/oauth/vG3-MLZWUV83'
+	using _fetch = stubClientMetadataFetch(clientId, () =>
+		jsonResponse({
+			client_id: clientId,
+			client_uri: 'https://chatgpt.com/',
+			redirect_uris: [redirectUri],
+			token_endpoint_auth_method: 'private_key_jwt',
+			token_endpoint_auth_methods_supported: ['none', 'private_key_jwt'],
+			grant_types: ['authorization_code', 'refresh_token'],
+			response_types: ['code'],
+			client_name: 'ChatGPT',
+			logo_uri: 'https://persistent.oaistatic.com/sonic/misc/openai-logo.png',
+			token_endpoint_auth_signing_alg: 'RS256',
+			jwks_uri: 'https://chatgpt.com/oauth/jwks.json',
+		}),
+	)
+	const verifier = 'chatgpt-verifier-0123456789'
+	const authorizeUrl = await heykodyAuthorizeUrl(
+		{
+			client_id: clientId,
+			redirect_uri: redirectUri,
 			scope: 'profile email',
-		})
-	} finally {
-		globalThis.fetch = originalFetch
-	}
+			state: 'chatgpt-demo-state',
+		},
+		verifier,
+	)
+
+	const authorizeResponse = await workerFetch(new Request(authorizeUrl))
+	expect(authorizeResponse.status).toBe(200)
+	expect(await authorizeResponse.text()).toContain('ChatGPT')
+
+	const { callbackUrl, code } = await workerApprove(authorizeUrl, email)
+	expect(callbackUrl.searchParams.get('iss')).toBe('https://heykody.dev')
+
+	const tokenResponse = await exchangeCode({
+		client_id: clientId,
+		code,
+		redirect_uri: redirectUri,
+		code_verifier: verifier,
+	})
+	expect(tokenResponse.status).toBe(200)
+	await expect(tokenResponse.json()).resolves.toMatchObject({
+		token_type: 'bearer',
+		resource: mcpResource,
+		scope: 'profile email',
+	})
 })
 
 test('worker entrypoint treats a failed ChatGPT CIMD fetch as an unknown client', async () => {
-	const chatgptClientMetadataUrl =
-		'https://chatgpt.com/oauth/vG3-MLZWUV83/client.json'
-	const originalFetch = globalThis.fetch
+	const clientId = 'https://chatgpt.com/oauth/vG3-MLZWUV83/client.json'
 	consoleWarn.mockImplementation(() => {})
-	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-		const url = input instanceof Request ? input.url : String(input)
-		if (url.split('?')[0] === chatgptClientMetadataUrl) {
-			return new Response('upstream unavailable', { status: 503 })
-		}
-		return originalFetch(input, init)
-	}) as typeof fetch
+	using _fetch = stubClientMetadataFetch(
+		clientId,
+		() => new Response('upstream unavailable', { status: 503 }),
+	)
+	const authorizeUrl = await heykodyAuthorizeUrl(
+		{
+			client_id: clientId,
+			redirect_uri: 'https://chatgpt.com/connector/oauth/vG3-MLZWUV83',
+		},
+		'chatgpt-verifier-0123456789',
+	)
+	const authorizeInfoUrl = new URL('https://heykody.dev/oauth/authorize-info')
+	authorizeInfoUrl.search = authorizeUrl.search
+	const captureException = vi
+		.spyOn(Sentry, 'captureException')
+		.mockImplementation(() => '')
 
-	try {
-		const authorizeUrl = new URL('https://heykody.dev/oauth/authorize')
-		authorizeUrl.searchParams.set('response_type', 'code')
-		authorizeUrl.searchParams.set('client_id', chatgptClientMetadataUrl)
-		authorizeUrl.searchParams.set(
-			'redirect_uri',
-			'https://chatgpt.com/connector/oauth/vG3-MLZWUV83',
-		)
-		authorizeUrl.searchParams.set('code_challenge', 'x'.repeat(43))
-		authorizeUrl.searchParams.set('code_challenge_method', 'S256')
-		authorizeUrl.searchParams.set('resource', 'https://heykody.dev/mcp')
-
-		const authorizeInfoUrl = new URL('https://heykody.dev/oauth/authorize-info')
-		authorizeInfoUrl.search = authorizeUrl.search
-		const captureException = vi
-			.spyOn(Sentry, 'captureException')
-			.mockImplementation(() => undefined)
-		const response = await workerFetch(new Request(authorizeInfoUrl))
-		expect(response.status).toBe(400)
-		await expect(response.json()).resolves.toMatchObject({
-			ok: false,
-			error: 'Unknown OAuth client.',
-		})
-		expect(consoleWarn.mock.calls.flat().join(' ')).toContain(
-			'CIMD fetch failed',
-		)
-		expect(captureException).not.toHaveBeenCalled()
-		captureException.mockRestore()
-	} finally {
-		globalThis.fetch = originalFetch
-	}
+	const response = await workerFetch(new Request(authorizeInfoUrl))
+	expect(response.status).toBe(400)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'Unknown OAuth client.',
+	})
+	expect(consoleWarn.mock.calls.flat().join(' ')).toContain('CIMD fetch failed')
+	expect(captureException).not.toHaveBeenCalled()
+	captureException.mockRestore()
 })
 
 test('worker entrypoint returns OAuth errors for provider-owned route exceptions', async () => {
@@ -1200,7 +1062,7 @@ test('worker entrypoint returns OAuth errors for provider-owned route exceptions
 			// wrapped key so the malformed-client redirectUris TypeError still
 			// reaches the worker exception mapper under test.
 			authCodeWrappedKey: 'malformed-client-auth-code-wrapped-key',
-			resource: 'https://heykody.dev/mcp',
+			resource: mcpResource,
 			codeChallenge: await createS256CodeChallenge(verifier),
 			codeChallengeMethod: 'S256',
 		}),
@@ -1208,21 +1070,13 @@ test('worker entrypoint returns OAuth errors for provider-owned route exceptions
 
 	const captureException = vi
 		.spyOn(Sentry, 'captureException')
-		.mockImplementation(() => undefined)
-	const tokenResponse = await workerFetch(
-		new Request('https://heykody.dev/oauth/token', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-			body: new URLSearchParams({
-				grant_type: 'authorization_code',
-				client_id: clientId,
-				code,
-				redirect_uri: claudeAuthRequest.redirectUri,
-				code_verifier: verifier,
-				resource: 'https://heykody.dev/mcp',
-			}),
-		}),
-	)
+		.mockImplementation(() => '')
+	const tokenResponse = await exchangeCode({
+		client_id: clientId,
+		code,
+		redirect_uri: claudeAuthRequest.redirectUri,
+		code_verifier: verifier,
+	})
 	expect(tokenResponse.status).toBe(401)
 	await expect(tokenResponse.json()).resolves.toEqual({
 		error: 'invalid_client',
@@ -1236,10 +1090,7 @@ test('worker entrypoint renders OAuth errors for delegated authorize route excep
 	const response = await workerFetch(
 		new Request(claudeAuthorizeUrl, {
 			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'multipart/form-data',
-			},
+			headers: { ...jsonAccept, 'Content-Type': 'multipart/form-data' },
 			body: 'not a valid multipart body',
 		}),
 	)
@@ -1253,384 +1104,226 @@ test('worker entrypoint renders OAuth errors for delegated authorize route excep
 	})
 })
 
-test('reset client revokes matching grants without deleting a shared DCR client', async () => {
-	const userId = await createStableUserIdFromEmail('user@example.com')
-	const appDb = await createDatabase('password123')
-	setAuthSessionSecret(cookieSecret)
-	const cookie = await createAuthCookie(
-		{
-			stableUserId: userId,
-			email: 'user@example.com',
-			rememberMe: false,
-		},
-		false,
-	)
-
-	const redirectUriRevokedGrantIds = new Array<string>()
-	const redirectUriDeletedClientIds = new Array<string>()
-	const redirectUriHelpers = createHelpers({
-		parseAuthRequest: async () => {
-			throw new Error(
-				'Invalid redirect URI. The redirect URI provided does not match any registered URI for this client.',
-			)
-		},
+function resetClientHelpers(
+	userId: string,
+	grants: Array<[id: string, clientId: string, scope: string]>,
+	parseError?: string,
+) {
+	const revoked = new Array<string>()
+	const deleted = new Array<string>()
+	const helpers = createHelpers({
+		...(parseError
+			? {
+					parseAuthRequest: async () => {
+						throw new Error(parseError)
+					},
+				}
+			: {}),
 		listUserGrants: async (requestedUserId) => {
 			expect(requestedUserId).toBe(userId)
 			return {
-				items: [
-					{
-						id: 'grant-1',
-						clientId: 'client-123',
-						userId,
-						scope: ['profile'],
-						metadata: {},
-						createdAt: 0,
-					},
-					{
-						id: 'grant-2',
-						clientId: 'other-client',
-						userId,
-						scope: ['profile'],
-						metadata: {},
-						createdAt: 0,
-					},
-					{
-						id: 'grant-3',
-						clientId: 'client-123',
-						userId,
-						scope: ['email'],
-						metadata: {},
-						createdAt: 0,
-					},
-				],
+				items: grants.map(([id, clientId, scope]) => ({
+					id,
+					clientId,
+					userId,
+					scope: [scope],
+					metadata: {},
+					createdAt: 0,
+				})),
 			}
 		},
 		revokeGrant: async (grantId, requestedUserId) => {
 			expect(requestedUserId).toBe(userId)
-			redirectUriRevokedGrantIds.push(grantId)
+			revoked.push(grantId)
 		},
 		deleteClient: async (clientId) => {
-			redirectUriDeletedClientIds.push(clientId)
+			deleted.push(clientId)
 		},
 	})
+	return { helpers, revoked, deleted }
+}
 
-	const redirectUriResponse = await handleAuthorizeRequest(
-		new Request(
-			`https://example.com/oauth/authorize?client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/invalid')}&error_description=${encodeURIComponent('Invalid redirect URI. The redirect URI provided does not match any registered URI for this client.')}`,
-			{
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					Cookie: cookie,
-					'Content-Type': 'application/x-www-form-urlencoded',
-				},
-				body: new URLSearchParams({ decision: 'reset-client' }),
-			},
+function postResetClient(url: string, workerEnv: Env, cookie?: string) {
+	return handleAuthorizeRequest(
+		formRequest(
+			{ decision: 'reset-client' },
+			cookie ? { ...jsonAccept, Cookie: cookie } : jsonAccept,
+			url,
 		),
-		createEnv(redirectUriHelpers, appDb),
+		workerEnv,
 	)
+}
 
-	expect(redirectUriResponse.status).toBe(200)
-	await expect(redirectUriResponse.json()).resolves.toMatchObject({
-		ok: true,
-		message: expect.stringMatching(/revoked this account/i),
-	})
-	expect(redirectUriRevokedGrantIds).toEqual(['grant-1', 'grant-3'])
-	expect(redirectUriDeletedClientIds).toEqual([])
+async function resetClient(
+	url: string,
+	scenario: ReturnType<typeof resetClientHelpers>,
+	appDb: D1Database,
+	cookie: string,
+) {
+	const response = await postResetClient(
+		url,
+		createEnv(scenario.helpers, appDb),
+		cookie,
+	)
+	return {
+		status: response.status,
+		body: await response.json(),
+		revoked: scenario.revoked,
+		deleted: scenario.deleted,
+	}
+}
 
-	const clientMismatchRevokedGrantIds = new Array<string>()
-	const clientMismatchDeletedClientIds = new Array<string>()
-	const clientMismatchHelpers = createHelpers({
-		parseAuthRequest: async () => {
-			throw new Error(invalidClientIdMismatchMessage)
-		},
-		listUserGrants: async (requestedUserId) => {
-			expect(requestedUserId).toBe(userId)
-			return {
-				items: [
-					{
-						id: 'grant-1',
-						clientId: 'client-123',
-						userId,
-						scope: ['profile'],
-						metadata: {},
-						createdAt: 0,
-					},
-					{
-						id: 'grant-2',
-						clientId: 'client-123',
-						userId,
-						scope: ['email'],
-						metadata: {},
-						createdAt: 0,
-					},
-				],
-			}
-		},
-		revokeGrant: async (grantId, requestedUserId) => {
-			expect(requestedUserId).toBe(userId)
-			clientMismatchRevokedGrantIds.push(grantId)
-		},
-		deleteClient: async (clientId) => {
-			clientMismatchDeletedClientIds.push(clientId)
-		},
+function resetSucceeded(
+	message: RegExp,
+	revoked: Array<string>,
+	deleted: Array<string> = [],
+) {
+	return {
+		status: 200,
+		body: expect.objectContaining({
+			ok: true,
+			message: expect.stringMatching(message),
+		}),
+		revoked,
+		deleted,
+	}
+}
+
+test("reset client revokes only this user's matching grants and deletes only owned client registrations", async () => {
+	const userId = await createStableUserIdFromEmail('user@example.com')
+	const sharedClientDb = await createDatabase('password123')
+	const cookie = await sessionCookie()
+	const invalidRedirectUrl = exampleOAuthUrl('authorize', {
+		client_id: 'client-123',
+		redirect_uri: 'https://example.com/invalid',
+		error_description: redirectUriMismatchMessage,
 	})
+	const revokedAccount = /revoked this account/i
+
+	const redirectUri = resetClientHelpers(
+		userId,
+		[
+			['grant-1', 'client-123', 'profile'],
+			['grant-2', 'other-client', 'profile'],
+			['grant-3', 'client-123', 'email'],
+		],
+		redirectUriMismatchMessage,
+	)
+	expect(
+		await resetClient(invalidRedirectUrl, redirectUri, sharedClientDb, cookie),
+	).toEqual(resetSucceeded(revokedAccount, ['grant-1', 'grant-3']))
+
+	const clientMismatch = resetClientHelpers(
+		userId,
+		[
+			['grant-1', 'client-123', 'profile'],
+			['grant-2', 'client-123', 'email'],
+		],
+		invalidClientIdMismatchMessage,
+	)
+	const mismatchParams = {
+		client_id: 'client-123',
+		redirect_uri: callbackUri,
+		error_description: invalidClientIdMismatchMessage,
+	}
 	const authorizeInfoResponse = await handleAuthorizeInfo(
 		new Request(
-			`https://example.com/oauth/authorize-info?response_type=code&client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/callback')}&error_description=${encodeURIComponent(invalidClientIdMismatchMessage)}`,
+			exampleOAuthUrl('authorize-info', {
+				response_type: 'code',
+				...mismatchParams,
+			}),
 		),
-		createEnv(clientMismatchHelpers, appDb),
+		createEnv(clientMismatch.helpers, sharedClientDb),
 	)
 	const resetVerificationCookie =
 		authorizeInfoResponse.headers.get('Set-Cookie') ?? ''
-
-	const clientMismatchResponse = await handleAuthorizeRequest(
-		new Request(
-			`https://example.com/oauth/authorize?client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/callback')}&error_description=${encodeURIComponent(invalidClientIdMismatchMessage)}`,
-			{
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					Cookie: `${getCookiePair(cookie)}; ${getCookiePair(resetVerificationCookie)}`,
-					'Content-Type': 'application/x-www-form-urlencoded',
-				},
-				body: new URLSearchParams({ decision: 'reset-client' }),
-			},
+	expect(
+		await resetClient(
+			exampleOAuthUrl('authorize', mismatchParams),
+			clientMismatch,
+			sharedClientDb,
+			`${getCookiePair(cookie)}; ${getCookiePair(resetVerificationCookie)}`,
 		),
-		createEnv(clientMismatchHelpers, appDb),
-	)
+	).toEqual(resetSucceeded(revokedAccount, ['grant-1', 'grant-2']))
 
-	expect(clientMismatchResponse.status).toBe(200)
-	await expect(clientMismatchResponse.json()).resolves.toMatchObject({
-		ok: true,
-		message: expect.stringMatching(/revoked this account/i),
-	})
-	expect(clientMismatchRevokedGrantIds).toEqual(['grant-1', 'grant-2'])
-	expect(clientMismatchDeletedClientIds).toEqual([])
-
-	const authorizeInfoRevokedGrantIds = new Array<string>()
-	const authorizeInfoDeletedClientIds = new Array<string>()
-	const authorizeInfoHelpers = createHelpers({
-		listUserGrants: async (requestedUserId) => {
-			expect(requestedUserId).toBe(userId)
-			return {
-				items: [
-					{
-						id: 'grant-1',
-						clientId: 'client-123',
-						userId,
-						scope: ['profile'],
-						metadata: {},
-						createdAt: 0,
-					},
-				],
-			}
-		},
-		revokeGrant: async (grantId) => {
-			authorizeInfoRevokedGrantIds.push(grantId)
-		},
-		deleteClient: async (clientId) => {
-			authorizeInfoDeletedClientIds.push(clientId)
-		},
-	})
-
-	const authorizeInfoResetResponse = await handleAuthorizeRequest(
-		new Request(
-			'https://example.com/oauth/authorize?client_id=client-123&redirect_uri=https%3A%2F%2Flocalhost%3A8888%2Fcallback',
-			{
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					Cookie: cookie,
-					'Content-Type': 'application/x-www-form-urlencoded',
-				},
-				body: new URLSearchParams({
-					decision: 'reset-client',
-				}),
-			},
+	const localhostRedirect = resetClientHelpers(userId, [
+		['grant-1', 'client-123', 'profile'],
+	])
+	expect(
+		await resetClient(
+			exampleOAuthUrl('authorize', {
+				client_id: 'client-123',
+				redirect_uri: 'https://localhost:8888/callback',
+			}),
+			localhostRedirect,
+			sharedClientDb,
+			cookie,
 		),
-		createEnv(authorizeInfoHelpers, appDb),
+	).toEqual(resetSucceeded(revokedAccount, ['grant-1']))
+
+	const ownedClient = resetClientHelpers(
+		userId,
+		[['grant-owned', 'client-123', 'profile']],
+		redirectUriMismatchMessage,
 	)
-
-	expect(authorizeInfoResetResponse.status).toBe(200)
-	await expect(authorizeInfoResetResponse.json()).resolves.toMatchObject({
-		ok: true,
-		message: expect.stringMatching(/revoked this account/i),
-	})
-	expect(authorizeInfoRevokedGrantIds).toEqual(['grant-1'])
-	expect(authorizeInfoDeletedClientIds).toEqual([])
-})
-
-test("reset client deletes an owned MCP OAuth client after revoking this user's grants", async () => {
-	const userId = await createStableUserIdFromEmail('user@example.com')
-	const appDb = await createDatabase('password123', {
+	const ownedClientDb = await createDatabase('password123', {
 		ownedClientIds: ['client-123'],
 	})
-	setAuthSessionSecret(cookieSecret)
-	const cookie = await createAuthCookie(
-		{
-			stableUserId: userId,
-			email: 'user@example.com',
-			rememberMe: false,
-		},
-		false,
-	)
-	const revokedGrantIds = new Array<string>()
-	const deletedClientIds = new Array<string>()
-	const helpers = createHelpers({
-		parseAuthRequest: async () => {
-			throw new Error(
-				'Invalid redirect URI. The redirect URI provided does not match any registered URI for this client.',
-			)
-		},
-		listUserGrants: async (requestedUserId) => {
-			expect(requestedUserId).toBe(userId)
-			return {
-				items: [
-					{
-						id: 'grant-owned',
-						clientId: 'client-123',
-						userId,
-						scope: ['profile'],
-						metadata: {},
-						createdAt: 0,
-					},
-				],
-			}
-		},
-		revokeGrant: async (grantId, requestedUserId) => {
-			expect(requestedUserId).toBe(userId)
-			revokedGrantIds.push(grantId)
-		},
-		deleteClient: async (clientId) => {
-			deletedClientIds.push(clientId)
-		},
-	})
-
-	const response = await handleAuthorizeRequest(
-		new Request(
-			`https://example.com/oauth/authorize?client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/invalid')}&error_description=${encodeURIComponent('Invalid redirect URI. The redirect URI provided does not match any registered URI for this client.')}`,
-			{
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					Cookie: cookie,
-					'Content-Type': 'application/x-www-form-urlencoded',
-				},
-				body: new URLSearchParams({ decision: 'reset-client' }),
-			},
+	expect(
+		await resetClient(invalidRedirectUrl, ownedClient, ownedClientDb, cookie),
+	).toEqual(
+		resetSucceeded(
+			/deleted your stored client registration/i,
+			['grant-owned'],
+			['client-123'],
 		),
-		createEnv(helpers, appDb),
 	)
-
-	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toMatchObject({
-		ok: true,
-		message: expect.stringMatching(/deleted your stored client registration/i),
-	})
-	expect(revokedGrantIds).toEqual(['grant-owned'])
-	expect(deletedClientIds).toEqual(['client-123'])
 })
 
 test('reset client rejects requests without a stale or mismatched client registration', async () => {
-	const env = createEnv(createHelpers())
-	const postReset = (errorDescription: string) =>
-		handleAuthorizeRequest(
-			new Request(
-				`https://example.com/oauth/authorize?client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/callback')}&error_description=${encodeURIComponent(errorDescription)}`,
-				{
-					method: 'POST',
-					headers: {
-						Accept: 'application/json',
-						'Content-Type': 'application/x-www-form-urlencoded',
-					},
-					body: new URLSearchParams({ decision: 'reset-client' }),
-				},
-			),
-			env,
-		)
-
-	const withoutVerificationCookie = await postReset(
+	const workerEnv = createEnv(createHelpers())
+	for (const errorDescription of [
 		invalidClientIdMismatchMessage,
-	)
-	expect(withoutVerificationCookie.status).toBe(400)
-	await expect(withoutVerificationCookie.json()).resolves.toEqual({
-		ok: false,
-		error:
-			'Stored client cleanup is only available for stale or mismatched client registrations.',
-		code: 'invalid_request',
-	})
-
-	const unrelatedAuthorizationError = await postReset('Authorization error')
-	expect(unrelatedAuthorizationError.status).toBe(400)
-	await expect(unrelatedAuthorizationError.json()).resolves.toEqual({
-		ok: false,
-		error:
-			'Stored client cleanup is only available for stale or mismatched client registrations.',
-		code: 'invalid_request',
-	})
-})
-
-test('worker entrypoint serves openid-configuration and jwks', async () => {
-	const discovery = await workerFetch(
-		new Request('https://heykody.dev/.well-known/openid-configuration'),
-	)
-	expect(discovery.status).toBe(200)
-	const metadata = (await discovery.json()) as {
-		issuer: string
-		token_endpoint: string
-		revocation_endpoint: string
-		revocation_endpoint_auth_methods_supported: Array<string>
-		token_endpoint_auth_methods_supported: Array<string>
-		response_types_supported: Array<string>
-		scopes_supported: Array<string>
+		'Authorization error',
+	]) {
+		const response = await postResetClient(
+			exampleOAuthUrl('authorize', {
+				client_id: 'client-123',
+				redirect_uri: callbackUri,
+				error_description: errorDescription,
+			}),
+			workerEnv,
+		)
+		expect(response.status).toBe(400)
+		await expect(response.json()).resolves.toEqual({
+			ok: false,
+			error:
+				'Stored client cleanup is only available for stale or mismatched client registrations.',
+			code: 'invalid_request',
+		})
 	}
-	expect(metadata.issuer).toBe('https://heykody.dev')
-	expect(metadata.response_types_supported).toEqual(['code'])
-	expect(metadata.scopes_supported).toContain('openid')
-	expect(metadata.revocation_endpoint).toBe(metadata.token_endpoint)
-	expect(metadata.revocation_endpoint_auth_methods_supported).toEqual(
-		metadata.token_endpoint_auth_methods_supported,
-	)
-
-	const authorizationServer = await workerFetch(
-		new Request('https://heykody.dev/.well-known/oauth-authorization-server'),
-	)
-	expect(authorizationServer.status).toBe(200)
-	const asMetadata = (await authorizationServer.json()) as {
-		revocation_endpoint?: string
-		token_endpoint?: string
-	}
-	expect(asMetadata.revocation_endpoint).toBe(metadata.revocation_endpoint)
-	expect(asMetadata.token_endpoint).toBe(metadata.token_endpoint)
-
-	const jwks = await workerFetch(
-		new Request('https://heykody.dev/.well-known/jwks.json'),
-	)
-	expect(jwks.status).toBe(200)
-	const jwksBody = (await jwks.json()) as { keys: Array<{ kid: string }> }
-	expect(jwksBody.keys[0]?.kid).toBeTruthy()
 })
 
 test('worker entrypoint rejects unsupported implicit response_type on authorize-info', async () => {
-	const registerResponse = await workerFetch(
-		new Request('https://heykody.dev/oauth/register', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				client_name: 'OIDC response type test',
-				redirect_uris: ['https://example.com/callback'],
-				token_endpoint_auth_method: 'none',
-				grant_types: ['authorization_code'],
-				response_types: ['code'],
-			}),
-		}),
-	)
-	expect(registerResponse.status).toBe(201)
-	const registered = (await registerResponse.json()) as { client_id: string }
+	const clientId = await registerClient({
+		client_name: 'OIDC response type test',
+		redirect_uris: [callbackUri],
+		token_endpoint_auth_method: 'none',
+		grant_types: ['authorization_code'],
+		response_types: ['code'],
+	})
 	const response = await workerFetch(
 		new Request(
-			`https://heykody.dev/oauth/authorize-info?response_type=id_token&client_id=${encodeURIComponent(registered.client_id)}&redirect_uri=${encodeURIComponent('https://example.com/callback')}&scope=openid`,
+			exampleOAuthUrl(
+				'authorize-info',
+				{
+					response_type: 'id_token',
+					client_id: clientId,
+					redirect_uri: callbackUri,
+					scope: 'openid',
+				},
+				'https://heykody.dev',
+			),
 		),
 	)
 	expect(response.status).toBe(400)
@@ -1642,146 +1335,98 @@ test('worker entrypoint rejects unsupported implicit response_type on authorize-
 	})
 })
 
-test('worker entrypoint userinfo returns 401 without bearer token', async () => {
-	const response = await workerFetch(
+test('worker entrypoint returns id_token when openid scope is granted and gates userinfo on the bearer token', async () => {
+	const unauthenticatedUserinfo = await workerFetch(
 		new Request('https://heykody.dev/oauth/userinfo'),
 	)
-	expect(response.status).toBe(401)
-})
+	expect(unauthenticatedUserinfo.status).toBe(401)
 
-test('worker entrypoint returns id_token when openid scope is granted', async () => {
 	const email = `oidc-oauth-${crypto.randomUUID()}@example.com`
-	const password = 'password123'
-	await seedWorkerUser(email, password)
-
+	await seedWorkerUser(email, 'password123')
 	const clientId = `https://oidc-client.example/${crypto.randomUUID()}.json`
 	const redirectUri = 'https://oidc-client.example/callback'
-	const clientDocument = {
-		client_id: clientId,
-		redirect_uris: [redirectUri],
-		token_endpoint_auth_method: 'none',
-		grant_types: ['authorization_code', 'refresh_token'],
-		response_types: ['code'],
-		client_name: 'OIDC test client',
+	using _fetch = stubClientMetadataFetch(clientId, () =>
+		jsonResponse({
+			client_id: clientId,
+			redirect_uris: [redirectUri],
+			token_endpoint_auth_method: 'none',
+			grant_types: ['authorization_code', 'refresh_token'],
+			response_types: ['code'],
+			client_name: 'OIDC test client',
+		}),
+	)
+	const verifier = 'oidc-verifier-012345678901234567890'
+	const authorizeUrl = await heykodyAuthorizeUrl(
+		{
+			client_id: clientId,
+			redirect_uri: redirectUri,
+			scope: 'openid profile email',
+			nonce: 'oidc-test-nonce',
+			state: 'oidc-demo-state',
+		},
+		verifier,
+	)
+	const { code } = await workerApprove(authorizeUrl, email)
+
+	// Authorize (default handler) injects `env.OAUTH_PROVIDER` onto the
+	// shared isolate env. Production token requests are a fresh isolate
+	// and the token path never injects helpers — hide the leftover so
+	// enrichment must use `resolveOAuthHelpers` over OAUTH_KV.
+	const tokenEnv = new Proxy(env, {
+		get(target, prop, receiver) {
+			if (prop === 'OAUTH_PROVIDER') return undefined
+			return Reflect.get(target, prop, receiver)
+		},
+	}) as Env
+
+	const tokenResponse = await exchangeCode(
+		{
+			client_id: clientId,
+			code,
+			redirect_uri: redirectUri,
+			code_verifier: verifier,
+		},
+		tokenEnv,
+	)
+	expect(tokenResponse.status).toBe(200)
+	const tokenPayload = (await tokenResponse.json()) as {
+		access_token?: string
+		id_token?: string
+		scope?: string
 	}
-	const originalFetch = globalThis.fetch
-	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-		const url = input instanceof Request ? input.url : String(input)
-		if (url.split('?')[0] === clientId) {
-			return new Response(JSON.stringify(clientDocument), {
-				status: 200,
-				headers: { 'Content-Type': 'application/json; charset=utf-8' },
-			})
-		}
-		return originalFetch(input, init)
-	}) as typeof fetch
+	expect(tokenPayload.scope).toContain('openid')
+	expect(typeof tokenPayload.id_token).toBe('string')
+	expect(tokenPayload.id_token?.split('.')).toHaveLength(3)
+	expect(typeof tokenPayload.access_token).toBe('string')
 
-	try {
-		const verifier = 'oidc-verifier-012345678901234567890'
-		const authorizeUrl = new URL('https://heykody.dev/oauth/authorize')
-		authorizeUrl.searchParams.set('response_type', 'code')
-		authorizeUrl.searchParams.set('client_id', clientId)
-		authorizeUrl.searchParams.set('redirect_uri', redirectUri)
-		authorizeUrl.searchParams.set('scope', 'openid profile email')
-		authorizeUrl.searchParams.set('nonce', 'oidc-test-nonce')
-		authorizeUrl.searchParams.set(
-			'code_challenge',
-			await createS256CodeChallenge(verifier),
-		)
-		authorizeUrl.searchParams.set('code_challenge_method', 'S256')
-		authorizeUrl.searchParams.set('resource', 'https://heykody.dev/mcp')
-		authorizeUrl.searchParams.set('state', 'oidc-demo-state')
-
-		const approvalResponse = await workerFetch(
-			new Request(authorizeUrl, {
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/x-www-form-urlencoded',
-				},
-				body: new URLSearchParams({
-					decision: 'approve',
-					email,
-					password,
-				}),
-			}),
-		)
-		expect(approvalResponse.status).toBe(200)
-		const approvalPayload = (await approvalResponse.json()) as {
-			redirectTo: string
-		}
-		const code = new URL(approvalPayload.redirectTo).searchParams.get('code')
-		expect(code).toBeTruthy()
-
-		// Authorize (default handler) injects `env.OAUTH_PROVIDER` onto the
-		// shared isolate env. Production token requests are a fresh isolate
-		// and the token path never injects helpers — hide the leftover so
-		// enrichment must use `resolveOAuthHelpers` over OAUTH_KV.
-		const tokenEnv = new Proxy(env, {
-			get(target, prop, receiver) {
-				if (prop === 'OAUTH_PROVIDER') return undefined
-				return Reflect.get(target, prop, receiver)
-			},
-		}) as Env
-
-		const tokenResponse = await workerFetch(
-			new Request('https://heykody.dev/oauth/token', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-				body: new URLSearchParams({
-					grant_type: 'authorization_code',
-					client_id: clientId,
-					code: code ?? '',
-					redirect_uri: redirectUri,
-					code_verifier: verifier,
-					resource: 'https://heykody.dev/mcp',
-				}),
-			}),
-			tokenEnv,
-		)
-		expect(tokenResponse.status).toBe(200)
-		const tokenPayload = (await tokenResponse.json()) as {
-			access_token?: string
-			id_token?: string
-			scope?: string
-		}
-		expect(tokenPayload.scope).toContain('openid')
-		expect(typeof tokenPayload.id_token).toBe('string')
-		expect(tokenPayload.id_token?.split('.')).toHaveLength(3)
-		expect(typeof tokenPayload.access_token).toBe('string')
-
-		const userinfoResponse = await workerFetch(
-			new Request('https://heykody.dev/oauth/userinfo', {
-				headers: {
-					Authorization: `Bearer ${tokenPayload.access_token ?? ''}`,
-				},
-			}),
-			tokenEnv,
-		)
-		expect(userinfoResponse.status).toBe(200)
-		await expect(userinfoResponse.json()).resolves.toMatchObject({
-			email,
-			email_verified: true,
-		})
-	} finally {
-		globalThis.fetch = originalFetch
-	}
+	const userinfoResponse = await workerFetch(
+		new Request('https://heykody.dev/oauth/userinfo', {
+			headers: { Authorization: `Bearer ${tokenPayload.access_token ?? ''}` },
+		}),
+		tokenEnv,
+	)
+	expect(userinfoResponse.status).toBe(200)
+	await expect(userinfoResponse.json()).resolves.toMatchObject({
+		email,
+		email_verified: true,
+	})
 })
 
 test('malformed max_age does not redirect authorize GET to itself', async () => {
-	const authorizeUrl =
-		'https://example.com/oauth/authorize?response_type=code&client_id=client-123&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=openid&state=demo&max_age=not-a-number'
+	const authorizeUrl = exampleOAuthUrl('authorize', {
+		...baseAuthorizeParams,
+		scope: 'openid',
+		max_age: 'not-a-number',
+	})
 
 	const interactive = await handleAuthorizeRequest(
 		new Request(authorizeUrl),
 		createEnv(createHelpers()),
 	)
-	expect(interactive.status).toBe(200)
 	expect(interactive.headers.get('Location')).toBeNull()
-	expect(interactive.headers.get('Content-Type')).toContain('text/html')
-	const interactiveHtml = await interactive.text()
-	expect(interactiveHtml).toContain('"oauthAuthorize"')
-	expect(interactiveHtml).toMatch(/max_age must be a non-negative integer/i)
+	expect(await readAuthorizePage(interactive)).toMatch(
+		/max_age must be a non-negative integer/i,
+	)
 
 	const silent = await handleAuthorizeRequest(
 		new Request(`${authorizeUrl}&prompt=none`),
@@ -1790,29 +1435,26 @@ test('malformed max_age does not redirect authorize GET to itself', async () => 
 	expect(silent.status).toBe(302)
 	const silentLocation = silent.headers.get('Location')
 	expect(silentLocation).toBeTruthy()
-	const silentRedirect = new URL(silentLocation ?? '')
-	expect(silentRedirect.origin + silentRedirect.pathname).toBe(
-		'https://example.com/callback',
-	)
-	expect(silentRedirect.searchParams.get('error')).toBe('invalid_request')
-	expect(silentRedirect.searchParams.get('error_description')).toMatch(
-		/max_age must be a non-negative integer/i,
-	)
-	expect(silentRedirect.searchParams.get('state')).toBe('demo')
-	expect(silentRedirect.searchParams.get('iss')).toBe('https://example.com')
+	expectRedirect(silentLocation ?? '', callbackUri, {
+		error: 'invalid_request',
+		state: 'demo',
+	})
+	expect(
+		new URL(silentLocation ?? '').searchParams.get('error_description'),
+	).toMatch(/max_age must be a non-negative integer/i)
 })
 
 test('authorize recovers when a pre-hydration submit clobbers the OAuth query', async () => {
-	const helpers = createHelpers({
-		parseAuthRequest: async () => {
-			throw new Error('client_id is required')
-		},
-	})
-	const envWithHelpers = createEnv(helpers)
-	const clobberedUrl = `https://example.com/oauth/authorize?${honeypotFieldName}=`
+	const envWithHelpers = createEnv(
+		createHelpers({
+			parseAuthRequest: async () => {
+				throw new Error('client_id is required')
+			},
+		}),
+	)
 
 	const htmlResponse = await handleAuthorizeRequest(
-		new Request(clobberedUrl),
+		new Request(`https://example.com/oauth/authorize?${honeypotFieldName}=`),
 		envWithHelpers,
 	)
 	expect(htmlResponse.status).toBe(200)
@@ -1835,17 +1477,7 @@ test('authorize recovers when a pre-hydration submit clobbers the OAuth query', 
 	})
 
 	const postResponse = await handleAuthorizeRequest(
-		new Request('https://example.com/oauth/authorize', {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/x-www-form-urlencoded',
-			},
-			body: new URLSearchParams({
-				decision: 'approve',
-				[honeypotFieldName]: '',
-			}),
-		}),
+		formRequest({ decision: 'approve', [honeypotFieldName]: '' }, jsonAccept),
 		envWithHelpers,
 	)
 	expect(postResponse.status).toBe(400)

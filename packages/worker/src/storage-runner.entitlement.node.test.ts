@@ -77,29 +77,53 @@ function createEstimateEnv(
 	} as unknown as Env
 }
 
+function assertWrite(
+	getEstimatedBytes: (storageId: string) => Promise<{ estimatedBytes: number }>,
+	storageId: string,
+) {
+	return assertStorageRunnerWriteWithinEntitlement({
+		env: createEstimateEnv(getEstimatedBytes),
+		userId: 'user-1',
+		email: null,
+		storageId,
+		requested: 1,
+	})
+}
+
+function unestimatedBuckets(...storageIds: Array<string>) {
+	return storageIds.map((storageId) => ({
+		storageId,
+		kind: 'unknown',
+		estimatedBytes: null,
+	}))
+}
+
+function fakeTimers() {
+	vi.useFakeTimers()
+	return {
+		[Symbol.dispose]: () => {
+			vi.useRealTimers()
+		},
+	}
+}
+
+const unreadableMessage = (storageId: string) =>
+	`Unable to verify the storage byte entitlement because the bucket estimate for storageId "${storageId}" could not be read after ${maxEstimateReadAttempts} attempts.`
+
 test('assertStorageRunnerWriteWithinEntitlement retries estimate reads with backoff, fails closed, and waits for peers', async () => {
-	mockModule.listUserStorageBucketEstimates.mockResolvedValue([
-		{ storageId: 'bucket-a', kind: 'unknown', estimatedBytes: null },
-	])
+	mockModule.listUserStorageBucketEstimates.mockResolvedValue(
+		unestimatedBuckets('bucket-a'),
+	)
 	const retryOnce = vi
 		.fn()
 		.mockRejectedValueOnce(new Error('transient DO read failure'))
 		.mockResolvedValueOnce({ estimatedBytes: 32 })
-
-	vi.useFakeTimers()
-	try {
-		const assertion = assertStorageRunnerWriteWithinEntitlement({
-			env: createEstimateEnv(() => retryOnce()),
-			userId: 'user-1',
-			email: null,
-			storageId: 'bucket-a',
-			requested: 1,
-		})
+	{
+		using _timers = fakeTimers()
+		const assertion = assertWrite(() => retryOnce(), 'bucket-a')
 		await vi.advanceTimersByTimeAsync(storageEstimateReadRetryDelaysMs[0])
 		await expect(assertion).resolves.toBeUndefined()
 		expect(retryOnce).toHaveBeenCalledTimes(2)
-	} finally {
-		vi.useRealTimers()
 	}
 
 	// The fail-closed error surfaces only after the whole retry policy is
@@ -108,34 +132,22 @@ test('assertStorageRunnerWriteWithinEntitlement retries estimate reads with back
 	const persistentFailure = vi
 		.fn()
 		.mockRejectedValue(new Error('persistent DO read failure'))
-	vi.useFakeTimers()
-	try {
-		const assertion = assertStorageRunnerWriteWithinEntitlement({
-			env: createEstimateEnv(() => persistentFailure()),
-			userId: 'user-1',
-			email: null,
-			storageId: 'bucket-a',
-			requested: 1,
-		})
+	{
+		using _timers = fakeTimers()
+		const assertion = assertWrite(() => persistentFailure(), 'bucket-a')
 		// Attach before advancing timers so the rejection is not unhandled.
 		// oxlint-disable-next-line vitest/valid-expect
 		const expectation = expect(assertion).rejects.toThrow(
-			`Unable to verify the storage byte entitlement because the bucket estimate for storageId "bucket-a" could not be read after ${maxEstimateReadAttempts} attempts.`,
+			unreadableMessage('bucket-a'),
 		)
 		await vi.advanceTimersByTimeAsync(totalRetryDelayMs)
 		await expectation
 		expect(persistentFailure).toHaveBeenCalledTimes(maxEstimateReadAttempts)
-	} finally {
-		vi.useRealTimers()
 	}
 
 	const chunkStorageIds = ['fast-fail', 'slow-ok'] as const
 	mockModule.listUserStorageBucketEstimates.mockResolvedValue(
-		chunkStorageIds.map((storageId) => ({
-			storageId,
-			kind: 'unknown',
-			estimatedBytes: null,
-		})),
+		unestimatedBuckets(...chunkStorageIds),
 	)
 
 	let inFlight = 0
@@ -173,13 +185,7 @@ test('assertStorageRunnerWriteWithinEntitlement retries estimate reads with back
 		}
 	}
 
-	const peerAssertion = assertStorageRunnerWriteWithinEntitlement({
-		env: createEstimateEnv(getEstimatedBytes),
-		userId: 'user-1',
-		email: null,
-		storageId: 'fast-fail',
-		requested: 1,
-	})
+	const peerAssertion = assertWrite(getEstimatedBytes, 'fast-fail')
 
 	await vi.waitFor(() => {
 		expect(callCounts.get('fast-fail')).toBe(1)
@@ -208,9 +214,9 @@ test('assertStorageRunnerWriteWithinEntitlement retries estimate reads with back
 	// Fulfill during the first backoff (timeout + 50ms < 150ms) is the
 	// CodeRabbit case: dropping a fulfilled promise from the map would start
 	// a second RPC.
-	mockModule.listUserStorageBucketEstimates.mockResolvedValue([
-		{ storageId: 'slow-wake', kind: 'unknown', estimatedBytes: null },
-	])
+	mockModule.listUserStorageBucketEstimates.mockResolvedValue(
+		unestimatedBuckets('slow-wake'),
+	)
 	let slowWakeCalls = 0
 	const slowWake = () => {
 		slowWakeCalls += 1
@@ -220,42 +226,27 @@ test('assertStorageRunnerWriteWithinEntitlement retries estimate reads with back
 			}, storageEstimateReadTimeoutMs + 50)
 		})
 	}
-	vi.useFakeTimers()
-	try {
-		const assertion = assertStorageRunnerWriteWithinEntitlement({
-			env: createEstimateEnv(() => slowWake()),
-			userId: 'user-1',
-			email: null,
-			storageId: 'slow-wake',
-			requested: 1,
-		})
+	{
+		using _timers = fakeTimers()
+		const assertion = assertWrite(() => slowWake(), 'slow-wake')
 		await vi.advanceTimersByTimeAsync(
 			storageEstimateReadTimeoutMs + storageEstimateReadRetryDelaysMs[0],
 		)
 		await expect(assertion).resolves.toBeUndefined()
 		expect(slowWakeCalls).toBe(1)
-	} finally {
-		vi.useRealTimers()
 	}
 
-	const hungRead = () => new Promise<{ estimatedBytes: number }>(() => {})
 	let hungCalls = 0
-	vi.useFakeTimers()
-	try {
-		const assertion = assertStorageRunnerWriteWithinEntitlement({
-			env: createEstimateEnv(() => {
-				hungCalls += 1
-				return hungRead()
-			}),
-			userId: 'user-1',
-			email: null,
-			storageId: 'slow-wake',
-			requested: 1,
-		})
+	{
+		using _timers = fakeTimers()
+		const assertion = assertWrite(() => {
+			hungCalls += 1
+			return new Promise<{ estimatedBytes: number }>(() => {})
+		}, 'slow-wake')
 		// Attach before advancing timers so the rejection is not unhandled.
 		// oxlint-disable-next-line vitest/valid-expect
 		const expectation = expect(assertion).rejects.toThrow(
-			`Unable to verify the storage byte entitlement because the bucket estimate for storageId "slow-wake" could not be read after ${maxEstimateReadAttempts} attempts.`,
+			unreadableMessage('slow-wake'),
 		)
 		await vi.advanceTimersByTimeAsync(
 			totalRetryDelayMs +
@@ -263,8 +254,6 @@ test('assertStorageRunnerWriteWithinEntitlement retries estimate reads with back
 		)
 		await expectation
 		expect(hungCalls).toBe(1)
-	} finally {
-		vi.useRealTimers()
 	}
 })
 
@@ -298,13 +287,7 @@ test('peer estimates stay out of the live probe path while D1 + target compose t
 	}
 
 	await expect(
-		assertStorageRunnerWriteWithinEntitlement({
-			env: createEstimateEnv(getEstimatedBytes),
-			userId: 'user-1',
-			email: null,
-			storageId: 'package:target',
-			requested: 1,
-		}),
+		assertWrite(getEstimatedBytes, 'package:target'),
 	).resolves.toBeUndefined()
 
 	// Only the write target was measured live; no peer fan-out happened.
@@ -328,13 +311,7 @@ test('peer estimates stay out of the live probe path while D1 + target compose t
 		return { estimatedBytes: storageId === 'package:target' ? 60 : 50 }
 	}
 
-	const denied = await assertStorageRunnerWriteWithinEntitlement({
-		env: createEstimateEnv(composeEstimate),
-		userId,
-		email: null,
-		storageId: 'package:target',
-		requested: 1,
-	}).then(
+	const denied = await assertWrite(composeEstimate, 'package:target').then(
 		() => null,
 		(thrown: unknown) => thrown,
 	)

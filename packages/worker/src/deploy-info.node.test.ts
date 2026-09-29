@@ -31,10 +31,33 @@ const sampleDeployInfo = {
 	},
 } satisfies DeployInfo
 
+const sha = 'f2d82dba4ba50cf2ad3f56f5c88f7b8ef5f97d8e'
+
+function healthReport(
+	commitSha: string | null,
+	commit: { message: string; committedAt: string } | null = null,
+	deployInfo: Pick<DeployInfo, 'pullRequest' | 'deploy'> | null = null,
+) {
+	return {
+		ok: true,
+		commitSha,
+		commit: commitSha
+			? {
+					sha: commitSha,
+					url: `https://github.com/kentcdodds/kody/commit/${commitSha}`,
+					message: commit?.message ?? null,
+					committedAt: commit?.committedAt ?? null,
+				}
+			: null,
+		pullRequest: deployInfo?.pullRequest ?? null,
+		deploy: deployInfo?.deploy ?? null,
+	}
+}
+
 test('deploy info encodes for wrangler vars and rebuilds the /health report', () => {
-	expect(parseDeployInfo(undefined)).toBeNull()
-	expect(parseDeployInfo('not-valid')).toBeNull()
-	expect(parseDeployInfo('{')).toBeNull()
+	expect(
+		[undefined, 'not-valid', '{'].map((value) => parseDeployInfo(value)),
+	).toEqual([null, null, null])
 	expect(parseDeployInfo(JSON.stringify(sampleDeployInfo))).toEqual(
 		sampleDeployInfo,
 	)
@@ -42,81 +65,36 @@ test('deploy info encodes for wrangler vars and rebuilds the /health report', ()
 		sampleDeployInfo,
 	)
 
-	expect(buildHealthReport({})).toEqual({
-		ok: true,
-		commitSha: null,
-		commit: null,
-		pullRequest: null,
-		deploy: null,
-	})
-
+	const otherSha = 'a'.repeat(40)
+	const encoded = encodeDeployInfo(sampleDeployInfo)
+	expect([
+		buildHealthReport({}),
+		buildHealthReport({ APP_COMMIT_SHA: sha }),
+		buildHealthReport({ APP_COMMIT_SHA: sha, APP_DEPLOY_INFO: encoded }),
+		buildHealthReport({ APP_COMMIT_SHA: otherSha, APP_DEPLOY_INFO: encoded }),
+	]).toEqual([
+		healthReport(null),
+		healthReport(sha),
+		healthReport(sha, sampleDeployInfo.commit, sampleDeployInfo),
+		healthReport(otherSha),
+	])
 	expect(
-		buildHealthReport({
-			APP_COMMIT_SHA: 'f2d82dba4ba50cf2ad3f56f5c88f7b8ef5f97d8e',
-		}),
-	).toEqual({
-		ok: true,
-		commitSha: 'f2d82dba4ba50cf2ad3f56f5c88f7b8ef5f97d8e',
-		commit: {
-			sha: 'f2d82dba4ba50cf2ad3f56f5c88f7b8ef5f97d8e',
-			url: 'https://github.com/kentcdodds/kody/commit/f2d82dba4ba50cf2ad3f56f5c88f7b8ef5f97d8e',
-			message: null,
-			committedAt: null,
-		},
-		pullRequest: null,
-		deploy: null,
-	})
-
-	expect(
-		buildHealthReport({
-			APP_COMMIT_SHA: 'f2d82dba4ba50cf2ad3f56f5c88f7b8ef5f97d8e',
-			APP_DEPLOY_INFO: encodeDeployInfo(sampleDeployInfo),
-		}),
-	).toEqual({
-		ok: true,
-		commitSha: 'f2d82dba4ba50cf2ad3f56f5c88f7b8ef5f97d8e',
-		commit: {
-			sha: 'f2d82dba4ba50cf2ad3f56f5c88f7b8ef5f97d8e',
-			url: 'https://github.com/kentcdodds/kody/commit/f2d82dba4ba50cf2ad3f56f5c88f7b8ef5f97d8e',
-			message: 'feat: richer /health metadata (#1799)',
-			committedAt: '2026-08-27T18:00:00Z',
-		},
-		pullRequest: sampleDeployInfo.pullRequest,
-		deploy: sampleDeployInfo.deploy,
-	})
-
-	expect(
-		buildHealthReport({
-			APP_COMMIT_SHA: 'f2d82dba4ba50cf2ad3f56f5c88f7b8ef5f97d8e',
-			APP_DEPLOY_INFO: '%%%',
-		}).commitSha,
-	).toBe('f2d82dba4ba50cf2ad3f56f5c88f7b8ef5f97d8e')
-
-	expect(
-		buildHealthReport({
-			APP_COMMIT_SHA: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-			APP_DEPLOY_INFO: encodeDeployInfo(sampleDeployInfo),
-		}),
-	).toEqual({
-		ok: true,
-		commitSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-		commit: {
-			sha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-			url: 'https://github.com/kentcdodds/kody/commit/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-			message: null,
-			committedAt: null,
-		},
-		pullRequest: null,
-		deploy: null,
-	})
+		buildHealthReport({ APP_COMMIT_SHA: sha, APP_DEPLOY_INFO: '%%%' })
+			.commitSha,
+	).toBe(sha)
 
 	expect(pullRequestNumberFromCommitMessage('feat: foo (#12)\n\n(#99)')).toBe(
 		99,
 	)
 	expect(pullRequestNumberFromCommitMessage('no pr here')).toBeNull()
 	expect(truncateCommitMessage(`${'a'.repeat(500)}extra`).length).toBe(500)
-	expect(prefersHtml(null)).toBe(false)
-	expect(prefersHtml('application/json')).toBe(false)
-	expect(prefersHtml('text/html,application/xhtml+xml')).toBe(true)
-	expect(prefersHtml('application/json, text/html')).toBe(false)
+	const prefersHtmlCases: Array<[string | null, boolean]> = [
+		[null, false],
+		['application/json', false],
+		['text/html,application/xhtml+xml', true],
+		['application/json, text/html', false],
+	]
+	expect(
+		prefersHtmlCases.filter(([accept, want]) => prefersHtml(accept) !== want),
+	).toEqual([])
 })

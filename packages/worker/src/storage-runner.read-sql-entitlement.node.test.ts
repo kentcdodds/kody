@@ -118,41 +118,89 @@ function createEstimateEnv() {
 	} as unknown as Env
 }
 
-test('writable storageSql skips read-only fan-out and enforces mutating entitlement', async () => {
-	expect(isReadOnlyStorageSqlQuery('SELECT 1')).toBe(true)
-	expect(isReadOnlyStorageSqlQuery('  explain query plan select 1')).toBe(true)
-	expect(isReadOnlyStorageSqlQuery('PRAGMA table_info(skills)')).toBe(true)
-	expect(isReadOnlyStorageSqlQuery('CREATE TABLE skills (id TEXT)')).toBe(false)
-	expect(
-		isReadOnlyStorageSqlQuery('SELECT 1; CREATE TABLE skills (id TEXT)'),
-	).toBe(false)
-	expect(isReadOnlyStorageSqlQuery('')).toBe(false)
+function clearCalls() {
+	for (const mock of [
+		mockModule.getEstimatedBytes,
+		mockModule.listUserStorageBucketEstimates,
+		mockModule.recordStorageBucketEstimate,
+		mockModule.maybeRefreshStorageBucketEstimate,
+		mockModule.sqlQuery,
+	]) {
+		mock.mockClear()
+	}
+}
 
-	expect(isStorageSqlReturningMutation('INSERT INTO t VALUES (1)')).toBe(true)
-	expect(
-		isStorageSqlReturningMutation(
-			'WITH s AS (SELECT 1 AS i) INSERT INTO t SELECT i FROM s RETURNING i',
-		),
-	).toBe(true)
-	expect(
-		isStorageSqlReturningMutation(
-			'WITH recursive seq(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM seq WHERE i < 10) SELECT i FROM seq',
-		),
-	).toBe(false)
-	expect(isStorageSqlReturningMutation('SELECT 1')).toBe(false)
-
-	mockModule.getEstimatedBytes.mockClear()
-	mockModule.listUserStorageBucketEstimates.mockClear()
-	mockModule.recordStorageBucketEstimate.mockClear()
-	mockModule.maybeRefreshStorageBucketEstimate.mockClear()
-	const tools = createStorageKodyTools({
+function storageTools(writable: boolean) {
+	return createStorageKodyTools({
 		env: createEstimateEnv(),
 		userId: 'user-1',
 		email: null,
 		storageId: 'package:skills',
-		writable: true,
+		writable,
 	})
+}
 
+function assertWrite(
+	storageId: string,
+	options: {
+		env?: Env
+		requested?: number
+		cache?: ReturnType<typeof createStorageBytesEntitlementRunCache>
+	} = {},
+) {
+	return assertStorageRunnerWriteWithinEntitlement({
+		env: options.env ?? createEstimateEnv(),
+		userId: 'user-1',
+		email: null,
+		storageId,
+		requested: options.requested ?? 1,
+		cache: options.cache,
+	})
+}
+
+function fakeTimers() {
+	vi.useFakeTimers()
+	return {
+		[Symbol.dispose]: () => {
+			vi.useRealTimers()
+		},
+	}
+}
+
+test('writable storageSql skips read-only fan-out and enforces mutating entitlement', async () => {
+	const readOnlyCases: Array<[string, boolean]> = [
+		['SELECT 1', true],
+		['  explain query plan select 1', true],
+		['PRAGMA table_info(skills)', true],
+		['CREATE TABLE skills (id TEXT)', false],
+		['SELECT 1; CREATE TABLE skills (id TEXT)', false],
+		['', false],
+	]
+	expect(
+		readOnlyCases.filter(
+			([query, want]) => isReadOnlyStorageSqlQuery(query) !== want,
+		),
+	).toEqual([])
+	const returningMutationCases: Array<[string, boolean]> = [
+		['INSERT INTO t VALUES (1)', true],
+		[
+			'WITH s AS (SELECT 1 AS i) INSERT INTO t SELECT i FROM s RETURNING i',
+			true,
+		],
+		[
+			'WITH recursive seq(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM seq WHERE i < 10) SELECT i FROM seq',
+			false,
+		],
+		['SELECT 1', false],
+	]
+	expect(
+		returningMutationCases.filter(
+			([query, want]) => isStorageSqlReturningMutation(query) !== want,
+		),
+	).toEqual([])
+
+	clearCalls()
+	const tools = storageTools(true)
 	await expect(
 		tools.storageSql({
 			query: 'SELECT id FROM skills',
@@ -178,38 +226,21 @@ test('writable storageSql skips read-only fan-out and enforces mutating entitlem
 	expect(mockModule.recordStorageBucketEstimate).toHaveBeenCalledTimes(3)
 	expect(mockModule.maybeRefreshStorageBucketEstimate).toHaveBeenCalledTimes(1)
 
-	mockModule.sqlQuery.mockClear()
-	const readOnlyTools = createStorageKodyTools({
-		env: createEstimateEnv(),
-		userId: 'user-1',
-		email: null,
-		storageId: 'package:skills',
-		writable: false,
-	})
+	clearCalls()
 	await expect(
-		readOnlyTools.storageSql({
+		storageTools(false).storageSql({
 			query: 'create table if not exists notes (name text)',
 		}),
 	).rejects.toThrow(readOnlyStorageSqlDeniedMessage)
 	expect(mockModule.sqlQuery).not.toHaveBeenCalled()
 
-	mockModule.getEstimatedBytes.mockClear()
-	mockModule.listUserStorageBucketEstimates.mockClear()
-	mockModule.recordStorageBucketEstimate.mockClear()
+	clearCalls()
 	mockModule.listUserStorageBucketEstimates.mockResolvedValueOnce([
 		{ storageId: 'bucket-a', kind: 'unknown', estimatedBytes: 100 },
 		{ storageId: 'bucket-b', kind: 'unknown', estimatedBytes: 200 },
 		{ storageId: 'package:skills', kind: 'unknown', estimatedBytes: 999 },
 	])
-	await expect(
-		assertStorageRunnerWriteWithinEntitlement({
-			env: createEstimateEnv(),
-			userId: 'user-1',
-			email: null,
-			storageId: 'package:skills',
-			requested: 1,
-		}),
-	).resolves.toBeUndefined()
+	await expect(assertWrite('package:skills')).resolves.toBeUndefined()
 	// Only the bucket being written is probed live; peers use stored estimates.
 	expect(mockModule.getEstimatedBytes).toHaveBeenCalledTimes(1)
 	expect(mockModule.recordStorageBucketEstimate).toHaveBeenCalledWith({
@@ -219,8 +250,7 @@ test('writable storageSql skips read-only fan-out and enforces mutating entitlem
 		estimatedBytes: 64,
 	})
 
-	mockModule.getEstimatedBytes.mockClear()
-	mockModule.listUserStorageBucketEstimates.mockClear()
+	clearCalls()
 	const freeStorageBytes = planLimits.free.maxStorageBytes
 	mockModule.listUserStorageBucketEstimates.mockResolvedValueOnce([
 		{
@@ -229,13 +259,7 @@ test('writable storageSql skips read-only fan-out and enforces mutating entitlem
 			estimatedBytes: freeStorageBytes,
 		},
 	])
-	const denied = await assertStorageRunnerWriteWithinEntitlement({
-		env: createEstimateEnv(),
-		userId: 'user-1',
-		email: null,
-		storageId: 'package:skills',
-		requested: 1,
-	}).then(
+	const denied = await assertWrite('package:skills').then(
 		() => null,
 		(thrown: unknown) => thrown,
 	)
@@ -251,35 +275,11 @@ test('writable storageSql skips read-only fan-out and enforces mutating entitlem
 })
 
 test('entitlement run cache pays the fan-out once across mutating writes', async () => {
-	mockModule.getEstimatedBytes.mockClear()
-	mockModule.listUserStorageBucketEstimates.mockClear()
 	const cache = createStorageBytesEntitlementRunCache()
 	const env = createEstimateEnv()
-
-	await assertStorageRunnerWriteWithinEntitlement({
-		env,
-		userId: 'user-1',
-		email: null,
-		storageId: 'package:skills',
-		requested: 10,
-		cache,
-	})
-	await assertStorageRunnerWriteWithinEntitlement({
-		env,
-		userId: 'user-1',
-		email: null,
-		storageId: 'package:skills',
-		requested: 10,
-		cache,
-	})
-	await assertStorageRunnerWriteWithinEntitlement({
-		env,
-		userId: 'user-1',
-		email: null,
-		storageId: 'package:skills',
-		requested: 10,
-		cache,
-	})
+	for (let write = 0; write < 3; write += 1) {
+		await assertWrite('package:skills', { env, requested: 10, cache })
+	}
 
 	expect(mockModule.listUserStorageBucketEstimates).toHaveBeenCalledTimes(1)
 	expect(mockModule.getEstimatedBytes).toHaveBeenCalledTimes(3)
@@ -290,7 +290,6 @@ test('entitlement run cache drops a rejected baseline so later writes retry', as
 	mockModule.listUserStorageBucketEstimates.mockResolvedValue([
 		{ storageId: 'bucket-a', kind: 'unknown', estimatedBytes: null },
 	])
-	mockModule.getEstimatedBytes.mockClear()
 	// Exhaust the whole retry policy so the baseline read fails closed.
 	for (
 		let attempt = 0;
@@ -305,20 +304,12 @@ test('entitlement run cache drops a rejected baseline so later writes retry', as
 	const cache = createStorageBytesEntitlementRunCache()
 	const env = createEstimateEnv()
 
-	vi.useFakeTimers()
-	try {
-		const firstAssertion = assertStorageRunnerWriteWithinEntitlement({
-			env,
-			userId: 'user-1',
-			email: null,
-			storageId: 'bucket-a',
-			requested: 1,
-			cache,
-		})
+	{
+		using _timers = fakeTimers()
+		const first = assertWrite('bucket-a', { env, cache })
 		// Attach before advancing timers so the rejection is not unhandled.
 		// oxlint-disable-next-line vitest/valid-expect
-		const expectation =
-			expect(firstAssertion).rejects.toThrow(/could not be read/)
+		const expectation = expect(first).rejects.toThrow(/could not be read/)
 		await vi.advanceTimersByTimeAsync(
 			storageEstimateReadRetryDelaysMs.reduce(
 				(total, delay) => total + delay,
@@ -326,20 +317,9 @@ test('entitlement run cache drops a rejected baseline so later writes retry', as
 			),
 		)
 		await expectation
-	} finally {
-		vi.useRealTimers()
 	}
 	expect(cache.baseline).toBeNull()
 
-	await expect(
-		assertStorageRunnerWriteWithinEntitlement({
-			env,
-			userId: 'user-1',
-			email: null,
-			storageId: 'bucket-a',
-			requested: 1,
-			cache,
-		}),
-	).resolves.toBeUndefined()
+	await expect(assertWrite('bucket-a', { env, cache })).resolves.toBeUndefined()
 	expect(cache.reservedBytes).toBe(1)
 })
