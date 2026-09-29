@@ -22,6 +22,7 @@ import {
 	defaultSearchLimit,
 	domainBrowseDefaultLimit,
 	maxChars,
+	SEARCH_ONBOARDING_NOTICE_BUDGET_MS,
 	SEARCH_WAITING_ITEMS_BUDGET_MS,
 } from './search-constants.ts'
 import { resolveEntityDetail } from './search-detail.ts'
@@ -232,14 +233,20 @@ export async function runSearchTool(input: {
 				!withinNoticeCooldown &&
 				!onboardingNoticeConversationIds.includes(conversationId)
 			if (considerOnboardingNotice) {
-				const notice = await buildOnboardingSearchNotice({
-					env: agent.getEnv(),
-					userId,
-					baseUrl,
-				})
+				const settlement = await settleWithBudget(
+					buildOnboardingSearchNotice({
+						env: agent.getEnv(),
+						userId,
+						baseUrl,
+					}),
+					SEARCH_ONBOARDING_NOTICE_BUDGET_MS,
+				)
+				if (settlement.timedOut) {
+					endToEndPhaseTimings.onboardingNoticeTimedOut = true
+				}
 				signal.throwIfAborted()
-				if (notice) {
-					structuredWarnings.push(notice)
+				if (settlement.ok && settlement.value) {
+					structuredWarnings.push(settlement.value)
 					if (typeof statefulAgent.setState === 'function') {
 						statefulAgent.setState({
 							...statefulAgent.state,

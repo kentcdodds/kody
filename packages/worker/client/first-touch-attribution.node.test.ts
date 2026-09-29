@@ -69,3 +69,47 @@ test('first-touch UTMs stay write-once and ignore later share links', () => {
 		restoreSessionStorage()
 	}
 })
+
+test('first-touch storage access swallows SecurityError from sessionStorage', () => {
+	try {
+		Object.defineProperty(globalThis, 'sessionStorage', {
+			configurable: true,
+			enumerable: true,
+			get() {
+				throw new DOMException('The operation is insecure.', 'SecurityError')
+			},
+		})
+
+		expect(() => clearStoredFirstTouchAttribution()).not.toThrow()
+		expect(
+			captureFirstTouchAttributionFromLocation(
+				'https://kody.codes/?utm_source=youtube',
+				'https://youtube.com/watch',
+			),
+		).toEqual({
+			utmSource: 'youtube',
+			utmMedium: null,
+			utmCampaign: null,
+			utmContent: null,
+			utmTerm: null,
+			landingPath: '/',
+			referrer: 'https://youtube.com/watch',
+		})
+		expect(
+			captureFirstTouchAttributionFromLocation(
+				'https://kody.codes/community',
+				null,
+			),
+		).toEqual({
+			utmSource: null,
+			utmMedium: null,
+			utmCampaign: null,
+			utmContent: null,
+			utmTerm: null,
+			landingPath: '/community',
+			referrer: null,
+		})
+	} finally {
+		restoreSessionStorage()
+	}
+})

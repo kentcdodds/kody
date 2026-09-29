@@ -12,7 +12,10 @@ import { PackageNameInputError } from '#worker/package-registry/package-name.ts'
 import { PackageScopeAccessError } from '#worker/package-registry/package-owner.ts'
 import { SavedPackageNotFoundError } from '#worker/package-runtime/package-import-resolution.ts'
 import { isKodyDescriptionLengthMessage } from '#worker/package-registry/types.ts'
-import { isRepoLargeFileMessage } from '#worker/repo/large-file-policy.ts'
+import {
+	isRepoDiffTooLargeMessage,
+	isRepoLargeFileMessage,
+} from '#worker/repo/large-file-policy.ts'
 import {
 	isGitPushNotFastForwardMessage,
 	isRepoDisallowedPathMessage,
@@ -155,14 +158,17 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 	) {
 		return true
 	}
-	// Repo large-file rejections raised inside the RepoSession Durable Object
-	// arrive as plain Errors (subclass identity does not survive RPC); match
-	// on the stable message phrase so caller-fixable size denials stay out of
-	// Sentry.
+	// Repo large-file and diff-line-limit rejections raised inside the
+	// RepoSession Durable Object arrive as plain Errors (subclass identity
+	// does not survive RPC); match on the stable message phrases (and the
+	// raw `@cloudflare/shell` EFBIG wording) so caller-fixable size denials
+	// stay out of Sentry. KODY-8E.
 	if (
 		getErrorCauseChain(cause).some(
 			(entry) =>
-				entry instanceof Error && isRepoLargeFileMessage(entry.message),
+				entry instanceof Error &&
+				(isRepoLargeFileMessage(entry.message) ||
+					isRepoDiffTooLargeMessage(entry.message)),
 		)
 	) {
 		return true

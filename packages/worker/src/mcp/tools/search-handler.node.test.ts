@@ -12,8 +12,10 @@ import type * as PackageRetrievers from '#worker/package-retrievers/service.ts'
 import type * as SearchRateLimit from '#worker/search-rate-limit.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import type * as MemoryToolContext from './memory-tool-context.ts'
+import type * as OnboardingNotice from './search-onboarding-notice.ts'
 import {
 	SEARCH_DEADLINE_MS,
+	SEARCH_ONBOARDING_NOTICE_BUDGET_MS,
 	SEARCH_WAITING_ITEMS_BUDGET_MS,
 } from './search-constants.ts'
 
@@ -91,6 +93,9 @@ const mockModule = vi.hoisted(() => ({
 	deriveWaitingItemsForStableUser: vi.fn<
 		typeof DeriveWaiting.deriveWaitingItemsForStableUser
 	>(async () => []),
+	buildOnboardingSearchNotice: vi.fn<
+		typeof OnboardingNotice.buildOnboardingSearchNotice
+	>(async () => null),
 }))
 
 vi.mock('#mcp/capabilities/registry.ts', () => ({
@@ -191,6 +196,12 @@ vi.mock('#mcp/waiting/derive-waiting.ts', () => ({
 	deriveWaitingItemsForStableUser: (
 		...args: Parameters<typeof DeriveWaiting.deriveWaitingItemsForStableUser>
 	) => mockModule.deriveWaitingItemsForStableUser(...args),
+}))
+
+vi.mock('./search-onboarding-notice.ts', () => ({
+	buildOnboardingSearchNotice: (
+		...args: Parameters<typeof OnboardingNotice.buildOnboardingSearchNotice>
+	) => mockModule.buildOnboardingSearchNotice(...args),
 }))
 
 vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
@@ -508,6 +519,36 @@ test('ranked search prepends ## Waiting for block items, skips domain browse, an
 		expect(result.waiting).toBeUndefined()
 		expect(result.matches.length).toBeGreaterThan(0)
 		expect(result.phaseTimings?.waitingItemsTimedOut).toBe(true)
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('ranked search returns results without waiting the full onboarding notice when it outlives its budget', async () => {
+	vi.clearAllMocks()
+	consoleWarn.mockImplementation(() => {})
+	mockModule.buildOnboardingSearchNotice.mockImplementationOnce(
+		() => new Promise(() => {}),
+	)
+	const handler = await getSearchHandler()
+	vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+	try {
+		const pending = handler({
+			query: 'search docs',
+			conversationId: 'conv-onboarding-budget',
+		})
+		await vi.advanceTimersByTimeAsync(SEARCH_ONBOARDING_NOTICE_BUDGET_MS)
+		const response = await pending
+		expect(response.isError).toBeUndefined()
+		const result = resultOf(response)
+		expect(result.matches.length).toBeGreaterThan(0)
+		expect(result.warnings ?? []).not.toContainEqual(
+			expect.stringMatching(/onboarding/i),
+		)
+		expect(result.phaseTimings?.onboardingNoticeTimedOut).toBe(true)
+		expect(result.phaseTimings?.onboardingNoticeMs).toBeLessThanOrEqual(
+			SEARCH_ONBOARDING_NOTICE_BUDGET_MS + 50,
+		)
 	} finally {
 		vi.useRealTimers()
 	}
