@@ -43,12 +43,12 @@ vi.mock('#worker/package-runtime/package-app-serve.ts', () => ({
 
 const { packageAppFetchCapability } = await import('./package-app-fetch.ts')
 
-function createContext(input?: {
+type ContextInput = {
 	packageId?: string
-	appId?: string
-	storageId?: string
 	executionOrigin?: 'interactive' | 'background'
-}) {
+}
+
+function fetchApp(args: Record<string, unknown>, input: ContextInput = {}) {
 	mockModule.resolvePackageOwnerContext.mockResolvedValue({
 		ownerUserId: 'user-1',
 		ownerScope: 'kody',
@@ -56,28 +56,27 @@ function createContext(input?: {
 		actorUserId: 'user-1',
 		delegated: false,
 	})
-	return {
+	return packageAppFetchCapability.handler(args, {
 		env: { APP_DB: {} } as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
-			executionOrigin: input?.executionOrigin ?? 'interactive',
+			executionOrigin: input.executionOrigin ?? 'interactive',
 			user: {
 				userId: 'user-1',
 				email: 'kody@example.com',
 				displayName: 'Kody',
 				username: 'kody',
 			},
-			storageContext:
-				input?.packageId || input?.appId || input?.storageId
-					? {
-							sessionId: null,
-							appId: input.appId ?? null,
-							packageId: input.packageId ?? null,
-							storageId: input.storageId ?? null,
-						}
-					: null,
+			storageContext: input.packageId
+				? {
+						sessionId: null,
+						appId: null,
+						packageId: input.packageId,
+						storageId: null,
+					}
+				: null,
 		}),
-	}
+	})
 }
 
 function savedPackage(overrides?: { hasApp?: boolean }) {
@@ -98,6 +97,9 @@ function savedPackage(overrides?: { hasApp?: boolean }) {
 	}
 }
 
+const lastServedRequest = () =>
+	mockModule.servePackageAppRequest.mock.calls.at(-1)?.[0]?.request as Request
+
 test('packageAppFetch dispatches synthetic in-process app requests against hosted URLs', async () => {
 	mockModule.getSavedPackageByKodyId.mockResolvedValue(savedPackage())
 	mockModule.servePackageAppRequest.mockResolvedValue(
@@ -110,21 +112,18 @@ test('packageAppFetch dispatches synthetic in-process app requests against hoste
 		}),
 	)
 
-	const result = await packageAppFetchCapability.handler(
-		{
-			kody_id: 'demo-app',
-			path: '/api/health',
-			method: 'GET',
-			headers: {
-				Host: 'forged.example.com',
-				'CF-Ray': 'forged',
-				'X-Forwarded-For': '127.0.0.1',
-				Origin: 'https://caller.example.com',
-				'X-Test': 'kept',
-			},
+	const result = await fetchApp({
+		kody_id: 'demo-app',
+		path: '/api/health',
+		method: 'GET',
+		headers: {
+			Host: 'forged.example.com',
+			'CF-Ray': 'forged',
+			'X-Forwarded-For': '127.0.0.1',
+			Origin: 'https://caller.example.com',
+			'X-Test': 'kept',
 		},
-		createContext(),
-	)
+	})
 
 	expect(result).toEqual({
 		status: 200,
@@ -147,32 +146,31 @@ test('packageAppFetch dispatches synthetic in-process app requests against hoste
 			},
 		}),
 	)
-	const request = mockModule.servePackageAppRequest.mock.calls[0]?.[0]?.request
+	const request = lastServedRequest()
 	expect(request).toBeInstanceOf(Request)
 	expect(request.url).toBe(
 		'https://kody.apps.example.com/packages/demo-app/api/health',
 	)
-	expect(request.headers.get('Host')).toBeNull()
-	expect(request.headers.get('CF-Ray')).toBeNull()
-	expect(request.headers.get('X-Forwarded-For')).toBeNull()
-	expect(request.headers.get('Origin')).toBe('https://caller.example.com')
-	expect(request.headers.get('X-Test')).toBe('kept')
-	expect(request.headers.get('Accept')).toBe('application/json')
+	expect(
+		Object.fromEntries(
+			['Host', 'CF-Ray', 'X-Forwarded-For', 'Origin', 'X-Test', 'Accept'].map(
+				(name) => [name, request.headers.get(name)],
+			),
+		),
+	).toEqual({
+		Host: null,
+		'CF-Ray': null,
+		'X-Forwarded-For': null,
+		Origin: 'https://caller.example.com',
+		'X-Test': 'kept',
+		Accept: 'application/json',
+	})
 
-	mockModule.servePackageAppRequest.mockClear()
 	mockModule.servePackageAppRequest.mockResolvedValue(
 		new Response('ok', { status: 200 }),
 	)
-	await packageAppFetchCapability.handler(
-		{
-			kody_id: 'demo-app',
-			headers: { Accept: 'text/html' },
-		},
-		createContext(),
-	)
-	const htmlRequest =
-		mockModule.servePackageAppRequest.mock.calls[0]?.[0]?.request
-	expect(htmlRequest.headers.get('Accept')).toBe('text/html')
+	await fetchApp({ kody_id: 'demo-app', headers: { Accept: 'text/html' } })
+	expect(lastServedRequest().headers.get('Accept')).toBe('text/html')
 })
 
 test('packageAppFetch resolves owned packages by package_id', async () => {
@@ -181,12 +179,7 @@ test('packageAppFetch resolves owned packages by package_id', async () => {
 		new Response('ok', { status: 200 }),
 	)
 
-	const result = await packageAppFetchCapability.handler(
-		{ package_id: 'package-1' },
-		createContext(),
-	)
-
-	expect(result).toEqual({
+	expect(await fetchApp({ package_id: 'package-1' })).toEqual({
 		status: 200,
 		headers: { 'content-type': 'text/plain;charset=UTF-8' },
 		body: 'ok',
@@ -200,110 +193,75 @@ test('packageAppFetch resolves owned packages by package_id', async () => {
 })
 
 test('packageAppFetch rejects invalid callers, paths, and missing packages', async () => {
-	await expect(
-		packageAppFetchCapability.handler({}, createContext()),
-	).rejects.toThrow(
-		'Provide exactly one of `package_id` or the package name leaf.',
-	)
-	await expect(
-		packageAppFetchCapability.handler(
-			{ package_id: 'package-1', kody_id: 'demo-app' },
-			createContext(),
-		),
-	).rejects.toThrow(
-		'Provide exactly one of `package_id` or the package name leaf.',
-	)
-
-	await expect(
-		packageAppFetchCapability.handler(
-			{ kody_id: 'demo-app' },
-			createContext({ packageId: 'package-1' }),
-		),
-	).rejects.toThrow(
-		'packageAppFetch is unavailable from package runtime contexts.',
-	)
-	await expect(
-		packageAppFetchCapability.handler(
-			{ kody_id: 'demo-app' },
-			createContext({ executionOrigin: 'background' }),
-		),
-	).rejects.toThrow(
-		'packageAppFetch is unavailable from package runtime contexts.',
-	)
-
-	mockModule.getSavedPackageByKodyId.mockResolvedValue(savedPackage())
-	await expect(
-		packageAppFetchCapability.handler(
-			{
-				kody_id: 'demo-app',
-				headers: { Upgrade: 'websocket' },
-			},
-			createContext(),
-		),
-	).rejects.toThrow(
-		'packageAppFetch does not support websocket Upgrade requests.',
-	)
-	await expect(
-		packageAppFetchCapability.handler(
-			{ kody_id: 'demo-app', path: '/../other-package/probe' },
-			createContext(),
-		),
-	).rejects.toThrow(
-		'packageAppFetch path must not contain parent traversal segments.',
-	)
-	await expect(
-		packageAppFetchCapability.handler(
-			{
-				kody_id: 'demo-app',
-				method: 'POST',
-				body: 'x'.repeat(102_401),
-			},
-			createContext(),
-		),
-	).rejects.toThrow('request body exceeds 102400 bytes')
+	const exactlyOne =
+		'Provide exactly one of `package_id` or the package name leaf.'
+	const runtimeOnly =
+		'packageAppFetch is unavailable from package runtime contexts.'
+	const demo = { kody_id: 'demo-app' }
+	for (const [args, input, message] of [
+		[{}, {}, exactlyOne],
+		[{ package_id: 'package-1', ...demo }, {}, exactlyOne],
+		[demo, { packageId: 'package-1' }, runtimeOnly],
+		[demo, { executionOrigin: 'background' }, runtimeOnly],
+		[
+			{ ...demo, headers: { Upgrade: 'websocket' } },
+			{},
+			'packageAppFetch does not support websocket Upgrade requests.',
+		],
+		[
+			{ ...demo, path: '/../other-package/probe' },
+			{},
+			'packageAppFetch path must not contain parent traversal segments.',
+		],
+		[
+			{ ...demo, method: 'POST', body: 'x'.repeat(102_401) },
+			{},
+			'request body exceeds 102400 bytes',
+		],
+	] as Array<[Record<string, unknown>, ContextInput, string]>) {
+		mockModule.getSavedPackageByKodyId.mockResolvedValue(savedPackage())
+		await expect(fetchApp(args, input)).rejects.toThrow(message)
+	}
 	expect(mockModule.servePackageAppRequest).not.toHaveBeenCalled()
 
 	mockModule.getSavedPackageByKodyId.mockClear()
-	await expect(
-		packageAppFetchCapability.handler(
-			{ kody_id: '@other/demo-app' },
-			createContext(),
-		),
-	).rejects.toThrow('does not match the acting owner "@kody"')
+	await expect(fetchApp({ kody_id: '@other/demo-app' })).rejects.toThrow(
+		'does not match the acting owner "@kody"',
+	)
 	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
 
 	mockModule.getSavedPackageByKodyId.mockResolvedValue(null)
 	mockModule.findPlainRepoPromotionHint.mockResolvedValue(null)
-	await expect(
-		packageAppFetchCapability.handler({ kody_id: 'missing' }, createContext()),
-	).rejects.toThrow('Saved package not found for this user.')
+	await expect(fetchApp({ kody_id: 'missing' })).rejects.toThrow(
+		'Saved package not found for this user.',
+	)
 
 	mockModule.findPlainRepoPromotionHint.mockResolvedValue({ id: 'repo-1' })
-	await expect(
-		packageAppFetchCapability.handler({ kody_id: 'missing' }, createContext()),
-	).rejects.toThrow('Promote plain repo before package lookup')
+	await expect(fetchApp({ kody_id: 'missing' })).rejects.toThrow(
+		'Promote plain repo before package lookup',
+	)
 
 	mockModule.getSavedPackageByKodyId.mockResolvedValue(
 		savedPackage({ hasApp: false }),
 	)
-	await expect(
-		packageAppFetchCapability.handler({ kody_id: 'demo-app' }, createContext()),
-	).rejects.toThrow('has no declared app')
+	await expect(fetchApp(demo)).rejects.toThrow('has no declared app')
 })
 
 test('packageAppFetch truncates oversized bodies and encodes binary as base64', async () => {
 	mockModule.getSavedPackageByKodyId.mockResolvedValue(savedPackage())
-	const oversized = 'x'.repeat(102_401)
-	mockModule.servePackageAppRequest.mockResolvedValue(
-		new Response(oversized, {
-			status: 200,
-			headers: { 'content-type': 'text/plain' },
-		}),
-	)
+	const respondWith = (
+		body: string | Uint8Array<ArrayBuffer>,
+		contentType: string,
+	) =>
+		mockModule.servePackageAppRequest.mockResolvedValue(
+			new Response(body, {
+				status: 200,
+				headers: { 'content-type': contentType },
+			}),
+		)
 
-	await expect(
-		packageAppFetchCapability.handler({ kody_id: 'demo-app' }, createContext()),
-	).resolves.toEqual({
+	respondWith('x'.repeat(102_401), 'text/plain')
+	expect(await fetchApp({ kody_id: 'demo-app' })).toEqual({
 		status: 200,
 		headers: { 'content-type': 'text/plain' },
 		body: 'x'.repeat(102_400),
@@ -311,15 +269,8 @@ test('packageAppFetch truncates oversized bodies and encodes binary as base64', 
 	})
 
 	const binary = new TextEncoder().encode('valid utf-8 binary bytes')
-	mockModule.servePackageAppRequest.mockResolvedValue(
-		new Response(binary, {
-			status: 200,
-			headers: { 'content-type': 'application/octet-stream' },
-		}),
-	)
-	await expect(
-		packageAppFetchCapability.handler({ kody_id: 'demo-app' }, createContext()),
-	).resolves.toEqual({
+	respondWith(binary, 'application/octet-stream')
+	expect(await fetchApp({ kody_id: 'demo-app' })).toEqual({
 		status: 200,
 		headers: { 'content-type': 'application/octet-stream' },
 		body: bytesToBase64(binary),
@@ -327,16 +278,8 @@ test('packageAppFetch truncates oversized bodies and encodes binary as base64', 
 	})
 
 	const largeBinary = new TextEncoder().encode('b'.repeat(102_400))
-	mockModule.servePackageAppRequest.mockResolvedValue(
-		new Response(largeBinary, {
-			status: 200,
-			headers: { 'content-type': 'application/octet-stream' },
-		}),
-	)
-	const capped = await packageAppFetchCapability.handler(
-		{ kody_id: 'demo-app' },
-		createContext(),
-	)
+	respondWith(largeBinary, 'application/octet-stream')
+	const capped = await fetchApp({ kody_id: 'demo-app' })
 	const decoded = base64ToBytes(capped.body)
 	expect(decoded).toEqual(largeBinary.slice(0, decoded.byteLength))
 	expect(capped.body.length).toBeLessThanOrEqual(102_400)

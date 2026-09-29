@@ -41,45 +41,31 @@ vi.mock('#worker/repo/repo-session-rpc.ts', () => ({
 
 const { repoOpenSessionCapability } = await import('./repo-open-session.ts')
 
-function createEntitlementsDatabase(input: {
-	users: Array<{ email: string; plan: string | null; stable_user_id: string }>
+function createEntitlementsDatabase(user: {
+	email: string
+	plan: string
+	stable_user_id: string
 }) {
 	return {
 		prepare(query: string) {
 			return {
 				bind(...params: Array<unknown>) {
 					return {
-						async first<T>() {
-							if (query.includes('SELECT plan, stripe_plan')) {
-								const email = params[0]
-								const stableUserId = params[1]
-								if (
-									typeof email !== 'string' ||
-									typeof stableUserId !== 'string'
-								) {
-									return null as T | null
-								}
-								const user = input.users.find(
-									(row) =>
-										row.email === email && row.stable_user_id === stableUserId,
-								)
-								return (user ? { plan: user.plan } : null) as T | null
+						async first() {
+							if (!query.includes('SELECT plan, stripe_plan')) {
+								throw new Error(`Unsupported first query: ${query}`)
 							}
-							throw new Error(`Unsupported first query: ${query}`)
+							const [email, stableUserId] = params
+							return email === user.email &&
+								stableUserId === user.stable_user_id
+								? { plan: user.plan }
+								: null
 						},
 					}
 				},
 			}
 		},
 	} as unknown as D1Database
-}
-
-function createRepoRpc(overrides?: Partial<Record<string, unknown>>) {
-	return {
-		openSession: vi.fn(),
-		getSessionInfo: vi.fn(),
-		...overrides,
-	}
 }
 
 function createPackageSourceRow(userId: string) {
@@ -116,9 +102,9 @@ function createSavedPackageRow(userId: string) {
 	}
 }
 
-function createOpenSessionResult() {
+function createOpenSessionResult(id = 'session-new') {
 	return {
-		id: 'session-new',
+		id,
 		source_id: 'source-package-1',
 		source_root: '/',
 		base_commit: 'commit-package-1',
@@ -137,64 +123,86 @@ function createOpenSessionResult() {
 	}
 }
 
-function resetMocks() {
-	mockModule.getActiveRepoSessionByConversation.mockReset()
-	mockModule.countActiveRepoSessions.mockReset()
-	mockModule.countActiveRepoSessions.mockResolvedValue(0)
-	mockModule.getEntitySourceByIdForUser.mockReset()
-	mockModule.getSavedPackageByKodyId.mockReset()
-	mockModule.repoSessionRpc.mockReset()
+async function setup({
+	email,
+	plan = 'pro',
+	activeSessions = 0,
+}: {
+	email: string
+	plan?: string
+	activeSessions?: number | null
+}) {
+	for (const mock of Object.values(mockModule)) mock.mockReset()
+	const userId = await createStableUserIdFromEmail(email)
+	mockModule.countActiveRepoSessions.mockResolvedValue(activeSessions ?? 0)
+	mockModule.getActiveRepoSessionByConversation.mockResolvedValue(null)
+	mockModule.getSavedPackageByKodyId.mockResolvedValue(
+		createSavedPackageRow(userId),
+	)
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue(
+		createPackageSourceRow(userId),
+	)
+	const rpc = { openSession: vi.fn(), getSessionInfo: vi.fn() }
+	mockModule.repoSessionRpc.mockReturnValue(rpc)
+	const ctx = {
+		env: {
+			APP_DB: createEntitlementsDatabase({
+				email,
+				plan,
+				stable_user_id: userId,
+			}),
+		} as Env,
+		callerContext: createMcpCallerContext({
+			baseUrl: 'https://heykody.dev',
+			user: { userId, username: 'kody', email, displayName: 'Repo User' },
+		}),
+	}
+	const open = (input: { kody_id?: string; conversation_id?: string } = {}) =>
+		repoOpenSessionCapability.handler(
+			{
+				target: {
+					kind: 'package',
+					kody_id: input.kody_id ?? 'triage-github-pr',
+				},
+				...(input.conversation_id
+					? { conversation_id: input.conversation_id }
+					: {}),
+			},
+			ctx,
+		)
+	return { userId, rpc, open }
 }
+
+const rejection = (promise: Promise<unknown>) =>
+	promise.then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
 
 test('repo target accepts camelCase aliases for its snake_case fields', () => {
 	// Agents guess `kodyId` / `packageId` often enough that the schema
 	// normalizes both spellings instead of failing the round trip.
+	const cases = [
+		[{ kodyId: 'triage-github-pr' }, { kody_id: 'triage-github-pr' }],
+		[{ packageId: 'package-1' }, { package_id: 'package-1' }],
+		[{ kody_id: 'triage-github-pr' }, { kody_id: 'triage-github-pr' }],
+	]
 	expect(
-		repoOpenSessionInputSchema.parse({
-			target: { kind: 'package', kodyId: 'triage-github-pr' },
-		}).target,
-	).toEqual({ kind: 'package', kody_id: 'triage-github-pr' })
-	expect(
-		repoOpenSessionInputSchema.parse({
-			target: { kind: 'package', packageId: 'package-1' },
-		}).target,
-	).toEqual({ kind: 'package', package_id: 'package-1' })
-	expect(
-		repoOpenSessionInputSchema.parse({
-			target: { kind: 'package', kody_id: 'triage-github-pr' },
-		}).target,
-	).toEqual({ kind: 'package', kody_id: 'triage-github-pr' })
+		cases.map(
+			([target]) =>
+				repoOpenSessionInputSchema.parse({
+					target: { kind: 'package', ...target },
+				}).target,
+		),
+	).toEqual(cases.map(([, want]) => ({ kind: 'package', ...want })))
 })
 
 test('repoOpenSession maps published HEAD mismatch to McpCallerError', async () => {
-	resetMocks()
-	const email = 'head-mismatch@example.com'
-	const userId = await createStableUserIdFromEmail(email)
-	const env = {
-		APP_DB: createEntitlementsDatabase({
-			users: [{ email, plan: 'pro', stable_user_id: userId }],
-		}),
-	} as Env
-	const ctx = {
-		env,
-		callerContext: createMcpCallerContext({
-			baseUrl: 'https://heykody.dev',
-			user: {
-				userId,
-				username: 'kody',
-				email,
-				displayName: 'Head Mismatch User',
-			},
-		}),
-	}
+	const { userId, rpc, open } = await setup({
+		email: 'head-mismatch@example.com',
+	})
 	const source = createPackageSourceRow(userId)
-	mockModule.getActiveRepoSessionByConversation.mockResolvedValueOnce(null)
-	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
-		createSavedPackageRow(userId),
-	)
-	mockModule.getEntitySourceByIdForUser.mockResolvedValueOnce(source)
-	const openRpc = createRepoRpc()
-	openRpc.openSession.mockRejectedValueOnce(
+	rpc.openSession.mockRejectedValueOnce(
 		new Error(
 			buildSourceRecoveryProblemMessage({
 				source,
@@ -203,192 +211,83 @@ test('repoOpenSession maps published HEAD mismatch to McpCallerError', async () 
 			}),
 		),
 	)
-	mockModule.repoSessionRpc.mockReturnValue(openRpc)
 
-	const error = await repoOpenSessionCapability
-		.handler(
-			{
-				target: { kind: 'package', kody_id: 'triage-github-pr' },
-			},
-			ctx,
-		)
-		.then(
-			() => null,
-			(thrown: unknown) => thrown,
-		)
+	const error = await rejection(open())
 
 	expect(error).toBeInstanceOf(McpCallerError)
 	expect(error).toMatchObject({
 		message: expect.stringContaining('packagePublishExternalPush'),
 	})
-	expect(openRpc.openSession).toHaveBeenCalled()
+	expect(rpc.openSession).toHaveBeenCalled()
 })
 
-test('repoOpenSession enforces the repo sessions entitlement for plan users opening a new session', async () => {
-	resetMocks()
-	const email = 'planned@example.com'
-	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.pro.maxRepoSessions
-	if (limit === null) {
-		throw new Error('Expected a numeric pro repo session limit.')
-	}
-	const env = {
-		APP_DB: createEntitlementsDatabase({
-			users: [{ email, plan: 'pro', stable_user_id: userId }],
-		}),
-	} as Env
-	const ctx = {
-		env,
-		callerContext: createMcpCallerContext({
-			baseUrl: 'https://heykody.dev',
-			user: {
-				userId,
-				username: 'kody',
-				email,
-				displayName: 'Planned User',
-			},
-		}),
-	}
-	mockModule.getActiveRepoSessionByConversation.mockResolvedValueOnce(null)
-	mockModule.countActiveRepoSessions.mockResolvedValue(limit)
-	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
-		createSavedPackageRow(userId),
-	)
-	mockModule.getEntitySourceByIdForUser.mockResolvedValueOnce(
-		createPackageSourceRow(userId),
-	)
-	const openRpc = createRepoRpc()
-	mockModule.repoSessionRpc.mockReturnValue(openRpc)
+test('repoOpenSession allows below-limit usage and denies new sessions at the pro and max plan ceilings', async () => {
+	const below = await setup({ email: 'max@example.com', plan: 'max' })
+	below.rpc.openSession.mockResolvedValueOnce(createOpenSessionResult())
+	expect((await below.open()).id).toBe('session-new')
+	expect(below.rpc.openSession).toHaveBeenCalled()
 
-	const error = await repoOpenSessionCapability
-		.handler(
-			{
-				target: { kind: 'package', kody_id: 'triage-github-pr' },
-				conversation_id: 'conversation-1',
-			},
-			ctx,
-		)
-		.then(
-			() => null,
-			(thrown: unknown) => thrown,
-		)
+	for (const plan of ['pro', 'max'] as const) {
+		const limit = planLimits[plan].maxRepoSessions
+		if (limit === null) throw new Error(`Expected a numeric ${plan} limit.`)
+		const { rpc, open } = await setup({
+			email: `${plan}@example.com`,
+			plan,
+			activeSessions: limit,
+		})
 
-	if (!isEntitlementLimitError(error)) {
-		throw new Error('Expected an EntitlementLimitError from repoOpenSession.')
+		const error = await rejection(open({ conversation_id: 'conversation-1' }))
+
+		if (!isEntitlementLimitError(error)) {
+			throw new Error(`Expected an EntitlementLimitError for ${plan}.`)
+		}
+		expect(error.details).toMatchObject({
+			code: 'entitlement_limit_exceeded',
+			resource: 'repo_sessions',
+			plan,
+			limit,
+			current: limit,
+		})
+		expect(rpc.openSession).not.toHaveBeenCalled()
 	}
-	expect(error.details).toMatchObject({
-		code: 'entitlement_limit_exceeded',
-		resource: 'repo_sessions',
-		plan: 'pro',
-		limit,
-		current: limit,
-	})
-	expect(openRpc.openSession).not.toHaveBeenCalled()
 })
 
 test('repoOpenSession resumes an existing active session without enforcing the repo sessions entitlement', async () => {
-	resetMocks()
-	const email = 'planned@example.com'
-	const userId = await createStableUserIdFromEmail(email)
 	const limit = planLimits.pro.maxRepoSessions
-	if (limit === null) {
-		throw new Error('Expected a numeric pro repo session limit.')
-	}
-	const env = {
-		APP_DB: createEntitlementsDatabase({
-			users: [{ email, plan: 'pro', stable_user_id: userId }],
-		}),
-	} as Env
-	const ctx = {
-		env,
-		callerContext: createMcpCallerContext({
-			baseUrl: 'https://heykody.dev',
-			user: {
-				userId,
-				username: 'kody',
-				email,
-				displayName: 'Planned User',
-			},
-		}),
-	}
+	const { userId, rpc, open } = await setup({
+		email: 'planned@example.com',
+		activeSessions: limit,
+	})
 	mockModule.getActiveRepoSessionByConversation.mockResolvedValueOnce({
 		id: 'session-existing',
 		source_id: 'source-package-1',
 	})
-	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
-		createSavedPackageRow(userId),
+	rpc.getSessionInfo.mockResolvedValueOnce(
+		createOpenSessionResult('session-existing'),
 	)
-	mockModule.getEntitySourceByIdForUser.mockResolvedValueOnce(
-		createPackageSourceRow(userId),
-	)
-	const resumeRpc = createRepoRpc()
-	resumeRpc.getSessionInfo.mockResolvedValueOnce({
-		...createOpenSessionResult(),
-		id: 'session-existing',
-	})
-	mockModule.repoSessionRpc.mockReturnValue(resumeRpc)
 
-	const resumed = await repoOpenSessionCapability.handler(
-		{
-			target: { kind: 'package', kody_id: 'triage-github-pr' },
-			conversation_id: 'conversation-1',
-		},
-		ctx,
-	)
+	const resumed = await open({ conversation_id: 'conversation-1' })
 
 	expect(resumed.id).toBe('session-existing')
-	expect(resumeRpc.getSessionInfo).toHaveBeenCalledWith({
+	expect(rpc.getSessionInfo).toHaveBeenCalledWith({
 		sessionId: 'session-existing',
 		userId,
 	})
-	expect(resumeRpc.openSession).not.toHaveBeenCalled()
+	expect(rpc.openSession).not.toHaveBeenCalled()
 })
 
 test('repoOpenSession mints a new session when conversation_id is omitted', async () => {
-	resetMocks()
-	const email = 'mint-new@example.com'
-	const userId = await createStableUserIdFromEmail(email)
-	const env = {
-		APP_DB: createEntitlementsDatabase({
-			users: [{ email, plan: 'pro', stable_user_id: userId }],
-		}),
-	} as Env
-	const ctx = {
-		env,
-		callerContext: createMcpCallerContext({
-			baseUrl: 'https://heykody.dev',
-			user: {
-				userId,
-				username: 'kody',
-				email,
-				displayName: 'Mint New',
-			},
-		}),
-	}
-	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
-		createSavedPackageRow(userId),
+	const { userId, rpc, open } = await setup({ email: 'mint-new@example.com' })
+	rpc.openSession.mockResolvedValueOnce(
+		createOpenSessionResult('session-minted'),
 	)
-	mockModule.getEntitySourceByIdForUser.mockResolvedValueOnce(
-		createPackageSourceRow(userId),
-	)
-	const openRpc = createRepoRpc()
-	openRpc.openSession.mockResolvedValueOnce({
-		...createOpenSessionResult(),
-		id: 'session-minted',
-	})
-	mockModule.repoSessionRpc.mockReturnValue(openRpc)
 
-	const opened = await repoOpenSessionCapability.handler(
-		{
-			target: { kind: 'package', kody_id: 'triage-github-pr' },
-		},
-		ctx,
-	)
+	const opened = await open()
 
 	expect(opened.id).toBe('session-minted')
 	expect(mockModule.getActiveRepoSessionByConversation).not.toHaveBeenCalled()
-	expect(openRpc.getSessionInfo).not.toHaveBeenCalled()
-	expect(openRpc.openSession).toHaveBeenCalledWith(
+	expect(rpc.getSessionInfo).not.toHaveBeenCalled()
+	expect(rpc.openSession).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId,
 			sourceId: 'source-package-1',
@@ -399,56 +298,15 @@ test('repoOpenSession mints a new session when conversation_id is omitted', asyn
 })
 
 test('repoOpenSession opens a package by scoped @owner/leaf the same as the name leaf', async () => {
-	resetMocks()
-	const email = 'scoped-name@example.com'
-	const userId = await createStableUserIdFromEmail(email)
-	const env = {
-		APP_DB: createEntitlementsDatabase({
-			users: [{ email, plan: 'pro', stable_user_id: userId }],
-		}),
-	} as Env
-	const ctx = {
-		env,
-		callerContext: createMcpCallerContext({
-			baseUrl: 'https://heykody.dev',
-			user: {
-				userId,
-				username: 'kody',
-				email,
-				displayName: 'Scoped Name',
-			},
-		}),
-	}
-	mockModule.getSavedPackageByKodyId.mockResolvedValue(
-		createSavedPackageRow(userId),
-	)
-	mockModule.getEntitySourceByIdForUser.mockResolvedValue(
-		createPackageSourceRow(userId),
-	)
-	const openRpc = createRepoRpc()
-	openRpc.openSession
-		.mockResolvedValueOnce({
-			...createOpenSessionResult(),
-			id: 'session-scoped',
-		})
-		.mockResolvedValueOnce({
-			...createOpenSessionResult(),
-			id: 'session-leaf',
-		})
-	mockModule.repoSessionRpc.mockReturnValue(openRpc)
+	const { userId, rpc, open } = await setup({
+		email: 'scoped-name@example.com',
+	})
+	rpc.openSession
+		.mockResolvedValueOnce(createOpenSessionResult('session-scoped'))
+		.mockResolvedValueOnce(createOpenSessionResult('session-leaf'))
 
-	const scoped = await repoOpenSessionCapability.handler(
-		{
-			target: { kind: 'package', kody_id: '@kody/triage-github-pr' },
-		},
-		ctx,
-	)
-	const leaf = await repoOpenSessionCapability.handler(
-		{
-			target: { kind: 'package', kody_id: 'triage-github-pr' },
-		},
-		ctx,
-	)
+	const scoped = await open({ kody_id: '@kody/triage-github-pr' })
+	const leaf = await open({ kody_id: 'triage-github-pr' })
 
 	expect(scoped.resolved_target).toEqual({
 		kind: 'package',
@@ -458,165 +316,25 @@ test('repoOpenSession opens a package by scoped @owner/leaf the same as the name
 		name: '@kody/triage-github-pr',
 	})
 	expect(leaf.resolved_target).toEqual(scoped.resolved_target)
-	expect(mockModule.getSavedPackageByKodyId).toHaveBeenNthCalledWith(
-		1,
-		expect.anything(),
-		{ userId, kodyId: 'triage-github-pr' },
-	)
-	expect(mockModule.getSavedPackageByKodyId).toHaveBeenNthCalledWith(
-		2,
-		expect.anything(),
-		{ userId, kodyId: 'triage-github-pr' },
-	)
-})
-
-test('repoOpenSession allows below-max usage and denies at the max plan ceiling', async () => {
-	resetMocks()
-	const email = 'max@example.com'
-	const userId = await createStableUserIdFromEmail(email)
-	const maxLimit = planLimits.max.maxRepoSessions
-	const belowMaxEnv = {
-		APP_DB: createEntitlementsDatabase({
-			users: [{ email, plan: 'max', stable_user_id: userId }],
-		}),
-	} as Env
-	const belowMaxCtx = {
-		env: belowMaxEnv,
-		callerContext: createMcpCallerContext({
-			baseUrl: 'https://heykody.dev',
-			user: {
-				userId,
-				username: 'kody',
-				email,
-				displayName: 'Max User',
-			},
-		}),
-	}
-	mockModule.getActiveRepoSessionByConversation.mockResolvedValueOnce(null)
-	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
-		createSavedPackageRow(userId),
-	)
-	mockModule.getEntitySourceByIdForUser.mockResolvedValueOnce(
-		createPackageSourceRow(userId),
-	)
-	const belowMaxRpc = createRepoRpc()
-	belowMaxRpc.openSession.mockResolvedValueOnce(createOpenSessionResult())
-	mockModule.repoSessionRpc.mockReturnValue(belowMaxRpc)
-
-	const opened = await repoOpenSessionCapability.handler(
-		{
-			target: { kind: 'package', kody_id: 'triage-github-pr' },
-		},
-		belowMaxCtx,
-	)
-	expect(opened.id).toBe('session-new')
-	expect(belowMaxRpc.openSession).toHaveBeenCalled()
-
-	resetMocks()
-	mockModule.countActiveRepoSessions.mockResolvedValue(maxLimit)
-	const atCeilingEnv = {
-		APP_DB: createEntitlementsDatabase({
-			users: [{ email, plan: 'max', stable_user_id: userId }],
-		}),
-	} as Env
-	const atCeilingCtx = {
-		env: atCeilingEnv,
-		callerContext: createMcpCallerContext({
-			baseUrl: 'https://heykody.dev',
-			user: {
-				userId,
-				username: 'kody',
-				email,
-				displayName: 'Max User',
-			},
-		}),
-	}
-	mockModule.getActiveRepoSessionByConversation.mockResolvedValueOnce(null)
-	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
-		createSavedPackageRow(userId),
-	)
-	mockModule.getEntitySourceByIdForUser.mockResolvedValueOnce(
-		createPackageSourceRow(userId),
-	)
-	const deniedRpc = createRepoRpc()
-	mockModule.repoSessionRpc.mockReturnValue(deniedRpc)
-
-	const error = await repoOpenSessionCapability
-		.handler(
-			{
-				target: { kind: 'package', kody_id: 'triage-github-pr' },
-				conversation_id: 'conversation-max',
-			},
-			atCeilingCtx,
-		)
-		.then(
-			() => null,
-			(thrown: unknown) => thrown,
-		)
-	if (!isEntitlementLimitError(error)) {
-		throw new Error(
-			'Expected an EntitlementLimitError at the max repo session ceiling.',
-		)
-	}
-	expect(error.details).toMatchObject({
-		code: 'entitlement_limit_exceeded',
-		resource: 'repo_sessions',
-		plan: 'max',
-		limit: maxLimit,
-		current: maxLimit,
-	})
-	expect(deniedRpc.openSession).not.toHaveBeenCalled()
+	expect(mockModule.getSavedPackageByKodyId.mock.calls).toEqual([
+		[expect.anything(), { userId, kodyId: 'triage-github-pr' }],
+		[expect.anything(), { userId, kodyId: 'triage-github-pr' }],
+	])
 })
 
 test('repoOpenSession retries opaque Cloudflare internal errors then rethrows when exhausted', async () => {
 	consoleWarn.mockImplementation(() => {})
-	resetMocks()
-	const email = 'opaque-internal@example.com'
-	const userId = await createStableUserIdFromEmail(email)
-	const env = {
-		APP_DB: createEntitlementsDatabase({
-			users: [{ email, plan: 'pro', stable_user_id: userId }],
-		}),
-	} as Env
-	const ctx = {
-		env,
-		callerContext: createMcpCallerContext({
-			baseUrl: 'https://heykody.dev',
-			user: {
-				userId,
-				username: 'kody',
-				email,
-				displayName: 'Opaque Internal User',
-			},
-		}),
-	}
-	mockModule.getActiveRepoSessionByConversation.mockResolvedValue(null)
-	mockModule.getSavedPackageByKodyId.mockResolvedValue(
-		createSavedPackageRow(userId),
-	)
-	mockModule.getEntitySourceByIdForUser.mockResolvedValue(
-		createPackageSourceRow(userId),
-	)
-	const openRpc = createRepoRpc()
-	openRpc.openSession
+	const recovered = await setup({ email: 'opaque-internal@example.com' })
+	recovered.rpc.openSession
 		.mockRejectedValueOnce(new Error(cloudflareOpaqueInternalErrorMessage))
 		.mockResolvedValueOnce(createOpenSessionResult())
-	mockModule.repoSessionRpc.mockReturnValue(openRpc)
 
-	const opened = await repoOpenSessionCapability.handler(
-		{
-			target: { kind: 'package', kody_id: 'triage-github-pr' },
-		},
-		ctx,
+	expect((await recovered.open()).id).toBe('session-new')
+	const sessionIds = recovered.rpc.openSession.mock.calls.map(
+		(call) => (call[0] as { sessionId: unknown }).sessionId,
 	)
-
-	expect(opened.id).toBe('session-new')
-	expect(openRpc.openSession).toHaveBeenCalledTimes(2)
-	const firstSessionId = openRpc.openSession.mock.calls[0]?.[0]?.sessionId
-	const secondSessionId = openRpc.openSession.mock.calls[1]?.[0]?.sessionId
-	expect(typeof firstSessionId).toBe('string')
-	expect(typeof secondSessionId).toBe('string')
-	expect(firstSessionId).not.toBe(secondSessionId)
+	expect(sessionIds).toEqual([expect.any(String), expect.any(String)])
+	expect(sessionIds[0]).not.toBe(sessionIds[1])
 	expect(mockModule.repoSessionRpc).toHaveBeenCalledTimes(2)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		expect.stringContaining(
@@ -624,58 +342,14 @@ test('repoOpenSession retries opaque Cloudflare internal errors then rethrows wh
 		),
 	)
 
-	// Exhaustion path needs a fresh always-rejecting mock so the success spy
-	// above does not leak into call-count assertions.
-	resetMocks()
-	const exhaustedEmail = 'opaque-exhausted@example.com'
-	const exhaustedUserId = await createStableUserIdFromEmail(exhaustedEmail)
-	const exhaustedEnv = {
-		APP_DB: createEntitlementsDatabase({
-			users: [
-				{ email: exhaustedEmail, plan: 'pro', stable_user_id: exhaustedUserId },
-			],
-		}),
-	} as Env
-	const exhaustedCtx = {
-		env: exhaustedEnv,
-		callerContext: createMcpCallerContext({
-			baseUrl: 'https://heykody.dev',
-			user: {
-				userId: exhaustedUserId,
-				username: 'kody',
-				email: exhaustedEmail,
-				displayName: 'Opaque Exhausted User',
-			},
-		}),
-	}
-	mockModule.getActiveRepoSessionByConversation.mockResolvedValue(null)
-	mockModule.getSavedPackageByKodyId.mockResolvedValue(
-		createSavedPackageRow(exhaustedUserId),
-	)
-	mockModule.getEntitySourceByIdForUser.mockResolvedValue(
-		createPackageSourceRow(exhaustedUserId),
-	)
-	const exhaustedRpc = createRepoRpc()
-	exhaustedRpc.openSession.mockRejectedValue(
+	const exhausted = await setup({ email: 'opaque-exhausted@example.com' })
+	exhausted.rpc.openSession.mockRejectedValue(
 		new Error(cloudflareOpaqueInternalErrorMessage),
 	)
-	mockModule.repoSessionRpc.mockReturnValue(exhaustedRpc)
 
-	const error = await repoOpenSessionCapability
-		.handler(
-			{
-				target: { kind: 'package', kody_id: 'triage-github-pr' },
-			},
-			exhaustedCtx,
-		)
-		.then(
-			() => null,
-			(thrown: unknown) => thrown,
-		)
-
-	expect(error).toMatchObject({
+	expect(await rejection(exhausted.open())).toMatchObject({
 		message: cloudflareOpaqueInternalErrorMessage,
 	})
 	// Initial attempt + two delayed retries.
-	expect(exhaustedRpc.openSession).toHaveBeenCalledTimes(3)
+	expect(exhausted.rpc.openSession).toHaveBeenCalledTimes(3)
 })

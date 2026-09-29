@@ -16,79 +16,46 @@ import {
 } from './package-share.ts'
 
 const migrationsDirectory = new URL('../../../../migrations/', import.meta.url)
-const ownerUserId = 'aa'.repeat(32)
-const guestUserId = 'bb'.repeat(32)
+const users = {
+	alice: { userId: 'aa'.repeat(32), email: 'alice@example.com' },
+	jesse: { userId: 'bb'.repeat(32), email: 'jesse@example.com' },
+}
+type Username = keyof typeof users
 
-async function insertUser(
-	db: D1Database,
-	input: { username: string; email: string; userId: string },
-) {
+async function insertUser(db: D1Database, username: Username) {
 	await db
 		.prepare(
 			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
 			VALUES (?, ?, 'x', CURRENT_TIMESTAMP, ?, 'standard')`,
 		)
-		.bind(input.username, input.email, input.userId)
+		.bind(username, users[username].email, users[username].userId)
 		.run()
 }
 
-function callerContext(input: {
-	db: D1Database
-	userId: string
-	email: string
-	username: string
-}) {
+function as(db: D1Database, username: Username) {
 	return {
-		env: { APP_DB: input.db } as Env,
+		env: { APP_DB: db } as Env,
 		callerContext: {
 			baseUrl: 'https://kody.codes',
-			user: {
-				userId: input.userId,
-				email: input.email,
-				displayName: input.username,
-				username: input.username,
-			},
+			user: { ...users[username], displayName: username, username },
 			storageContext: null,
 			repoContext: null,
 		},
 	}
 }
 
-test('package share capabilities declare the package-share-grants flag', () => {
-	for (const capability of [
-		packageShareInviteCapability,
-		packageShareAcceptCapability,
-		packageShareRevokeCapability,
-		packageShareLeaveCapability,
-		packageShareListCapability,
-		packageShareInspectCapability,
-		packageShareAcknowledgeUpdateCapability,
-	]) {
-		expect(capability.featureFlag).toBe('package-share-grants')
-	}
-})
-
-test('packageShareInvite and packageShareAccept use pin by default', async () => {
+async function createDbWithAliceSharedNotes() {
 	const sqlite = new DatabaseSync(':memory:')
 	applyRepositoryMigrations(sqlite, migrationsDirectory)
 	const db = createD1FromSqlite(sqlite)
 	await enablePackageShareGrantsForTests(db)
-	await insertUser(db, {
-		username: 'alice',
-		email: 'alice@example.com',
-		userId: ownerUserId,
-	})
-	await insertUser(db, {
-		username: 'jesse',
-		email: 'jesse@example.com',
-		userId: guestUserId,
-	})
+	await insertUser(db, 'alice')
 	const packageId = crypto.randomUUID()
 	const sourceId = `source-${packageId}`
 	const now = new Date().toISOString()
 	await insertSavedPackage(db, {
 		id: packageId,
-		user_id: ownerUserId,
+		user_id: users.alice.userId,
 		name: '@alice/shared-notes',
 		kody_id: 'shared-notes',
 		description: 'notes',
@@ -101,7 +68,7 @@ test('packageShareInvite and packageShareAccept use pin by default', async () =>
 	})
 	await insertEntitySource(db, {
 		id: sourceId,
-		user_id: ownerUserId,
+		user_id: users.alice.userId,
 		entity_kind: 'package',
 		entity_id: packageId,
 		repo_id: `repo-${sourceId}`,
@@ -114,15 +81,32 @@ test('packageShareInvite and packageShareAccept use pin by default', async () =>
 		created_at: now,
 		updated_at: now,
 	})
+	return db
+}
+
+const sharedNotes = { name: '@alice/shared-notes' }
+
+test('package share capabilities declare the package-share-grants flag', () => {
+	expect(
+		[
+			packageShareInviteCapability,
+			packageShareAcceptCapability,
+			packageShareRevokeCapability,
+			packageShareLeaveCapability,
+			packageShareListCapability,
+			packageShareInspectCapability,
+			packageShareAcknowledgeUpdateCapability,
+		].filter((capability) => capability.featureFlag !== 'package-share-grants'),
+	).toEqual([])
+})
+
+test('packageShareInvite and packageShareAccept use pin by default', async () => {
+	const db = await createDbWithAliceSharedNotes()
+	await insertUser(db, 'jesse')
 
 	const invited = await packageShareInviteCapability.handler(
-		{ name: '@alice/shared-notes', username: 'jesse' },
-		callerContext({
-			db,
-			userId: ownerUserId,
-			email: 'alice@example.com',
-			username: 'alice',
-		}),
+		{ ...sharedNotes, username: 'jesse' },
+		as(db, 'alice'),
 	)
 	expect(invited.grant).toMatchObject({
 		status: 'pending',
@@ -130,13 +114,8 @@ test('packageShareInvite and packageShareAccept use pin by default', async () =>
 	})
 
 	const accepted = await packageShareAcceptCapability.handler(
-		{ name: '@alice/shared-notes' },
-		callerContext({
-			db,
-			userId: guestUserId,
-			email: 'jesse@example.com',
-			username: 'jesse',
-		}),
+		sharedNotes,
+		as(db, 'jesse'),
 	)
 	expect(accepted.grant).toMatchObject({
 		status: 'accepted',
@@ -146,83 +125,23 @@ test('packageShareInvite and packageShareAccept use pin by default', async () =>
 
 	const listed = await packageShareListCapability.handler(
 		{ scope: 'inbound' },
-		callerContext({
-			db,
-			userId: guestUserId,
-			email: 'jesse@example.com',
-			username: 'jesse',
-		}),
+		as(db, 'jesse'),
 	)
 	expect(listed.grants).toHaveLength(1)
 	expect(listed.grants[0]).toMatchObject({ status: 'accepted' })
 })
 
 test('MCP inbound list and accept-by-name see unbound verified email invites', async () => {
-	const sqlite = new DatabaseSync(':memory:')
-	applyRepositoryMigrations(sqlite, migrationsDirectory)
-	const db = createD1FromSqlite(sqlite)
-	await enablePackageShareGrantsForTests(db)
-	await insertUser(db, {
-		username: 'alice',
-		email: 'alice@example.com',
-		userId: ownerUserId,
-	})
-	const packageId = crypto.randomUUID()
-	const sourceId = `source-${packageId}`
-	const now = new Date().toISOString()
-	await insertSavedPackage(db, {
-		id: packageId,
-		user_id: ownerUserId,
-		name: '@alice/shared-notes',
-		kody_id: 'shared-notes',
-		description: 'notes',
-		tags_json: '[]',
-		search_text: null,
-		source_id: sourceId,
-		has_app: 0,
-		hidden: 0,
-		is_private: 1,
-	})
-	await insertEntitySource(db, {
-		id: sourceId,
-		user_id: ownerUserId,
-		entity_kind: 'package',
-		entity_id: packageId,
-		repo_id: `repo-${sourceId}`,
-		published_commit: 'commit-1',
-		indexed_commit: null,
-		manifest_path: 'package.json',
-		source_root: '/',
-		last_external_check_at: null,
-		external_check_until: null,
-		created_at: now,
-		updated_at: now,
-	})
-
+	const db = await createDbWithAliceSharedNotes()
 	await packageShareInviteCapability.handler(
-		{ name: '@alice/shared-notes', email: 'jesse@example.com' },
-		callerContext({
-			db,
-			userId: ownerUserId,
-			email: 'alice@example.com',
-			username: 'alice',
-		}),
+		{ ...sharedNotes, email: 'jesse@example.com' },
+		as(db, 'alice'),
 	)
-
-	await insertUser(db, {
-		username: 'jesse',
-		email: 'jesse@example.com',
-		userId: guestUserId,
-	})
+	await insertUser(db, 'jesse')
 
 	const listed = await packageShareListCapability.handler(
 		{ scope: 'inbound' },
-		callerContext({
-			db,
-			userId: guestUserId,
-			email: 'jesse@example.com',
-			username: 'jesse',
-		}),
+		as(db, 'jesse'),
 	)
 	expect(listed.grants).toHaveLength(1)
 	expect(listed.grants[0]).toMatchObject({
@@ -231,13 +150,8 @@ test('MCP inbound list and accept-by-name see unbound verified email invites', a
 	})
 
 	const accepted = await packageShareAcceptCapability.handler(
-		{ name: '@alice/shared-notes' },
-		callerContext({
-			db,
-			userId: guestUserId,
-			email: 'jesse@example.com',
-			username: 'jesse',
-		}),
+		sharedNotes,
+		as(db, 'jesse'),
 	)
 	expect(accepted.grant).toMatchObject({
 		status: 'accepted',

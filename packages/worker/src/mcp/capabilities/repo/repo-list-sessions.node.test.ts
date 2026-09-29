@@ -27,36 +27,29 @@ vi.mock('#worker/repo/repo-sessions.ts', () => ({
 
 const { repoListSessionsCapability } = await import('./repo-list-sessions.ts')
 
-function resetMocks() {
-	for (const fn of Object.values(mockModule)) {
-		fn.mockReset()
-	}
-}
-
-function createContext(userId = 'user-1') {
-	return {
+function listSessions(args: Record<string, unknown> = {}) {
+	return repoListSessionsCapability.handler(args, {
 		env: { APP_DB: {} } as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: {
-				userId,
-				email: `${userId}@example.com`,
-				displayName: userId,
+				userId: 'user-1',
+				email: 'user-1@example.com',
+				displayName: 'user-1',
 			},
 		}),
-	}
+	})
 }
 
 function createSession(
+	id: string,
 	overrides: Partial<{
-		id: string
 		user_id: string
 		source_id: string
 		status: 'active' | 'published' | 'discarded'
 		updated_at: string
 	}> = {},
 ) {
-	const id = overrides.id ?? 'session-active'
 	const sourceId = overrides.source_id ?? 'source-1'
 	const status = overrides.status ?? 'active'
 	return {
@@ -80,28 +73,27 @@ function createSession(
 	}
 }
 
-function createSource(sourceId = 'source-1') {
-	return {
-		id: sourceId,
-		user_id: 'user-1',
-		entity_kind: 'package' as const,
-		entity_id: 'package-1',
-		repo_id: `repo-${sourceId}`,
-		published_commit: 'commit-published',
-		indexed_commit: 'commit-indexed',
-		manifest_path: 'package.json',
-		source_root: '/',
-		last_external_check_at: null,
-		external_check_until: null,
-		created_at: '2026-04-28T00:00:00.000Z',
-		updated_at: '2026-04-28T00:00:00.000Z',
-	}
-}
-
-function mockSourceAndPackage() {
+function stubSources({ missingSourceId }: { missingSourceId?: string } = {}) {
+	for (const fn of Object.values(mockModule)) fn.mockReset()
 	mockModule.getEntitySourceByIdForUser.mockImplementation(
 		async (_db: D1Database, input: { id: string; userId: string }) =>
-			input.userId === 'user-1' ? createSource(input.id) : null,
+			input.id === missingSourceId || input.userId !== 'user-1'
+				? null
+				: {
+						id: input.id,
+						user_id: 'user-1',
+						entity_kind: 'package' as const,
+						entity_id: 'package-1',
+						repo_id: `repo-${input.id}`,
+						published_commit: 'commit-published',
+						indexed_commit: 'commit-indexed',
+						manifest_path: 'package.json',
+						source_root: '/',
+						last_external_check_at: null,
+						external_check_until: null,
+						created_at: '2026-04-28T00:00:00.000Z',
+						updated_at: '2026-04-28T00:00:00.000Z',
+					},
 	)
 	mockModule.getSavedPackageById.mockResolvedValue({
 		id: 'package-1',
@@ -120,29 +112,24 @@ function mockSourceAndPackage() {
 	})
 }
 
+const ids = (result: { sessions: Array<{ id: string }> }) =>
+	result.sessions.map((session) => session.id)
+
 test('repoListSessions defaults to active sessions for the signed-in user', async () => {
-	resetMocks()
+	stubSources()
 	mockModule.listRepoSessionsByUser.mockResolvedValue([
-		createSession({
-			id: 'session-active',
-			status: 'active',
-			updated_at: '2026-04-28T00:03:00.000Z',
-		}),
-		createSession({
-			id: 'session-published',
+		createSession('session-active', { updated_at: '2026-04-28T00:03:00.000Z' }),
+		createSession('session-published', {
 			status: 'published',
 			updated_at: '2026-04-28T00:02:00.000Z',
 		}),
-		createSession({
-			id: 'session-other-user',
+		createSession('session-other-user', {
 			user_id: 'other-user',
-			status: 'active',
 			updated_at: '2026-04-28T00:01:00.000Z',
 		}),
 	])
-	mockSourceAndPackage()
 
-	const result = await repoListSessionsCapability.handler({}, createContext())
+	const result = await listSessions()
 
 	expect(mockModule.listRepoSessionsByUser).toHaveBeenCalledWith(
 		expect.anything(),
@@ -168,18 +155,14 @@ test('repoListSessions defaults to active sessions for the signed-in user', asyn
 })
 
 test('repoListSessions status all includes inactive sessions', async () => {
-	resetMocks()
+	stubSources()
 	mockModule.listRepoSessionsByUser.mockResolvedValue([
-		createSession({ id: 'session-active', status: 'active' }),
-		createSession({ id: 'session-published', status: 'published' }),
-		createSession({ id: 'session-discarded', status: 'discarded' }),
+		createSession('session-active'),
+		createSession('session-published', { status: 'published' }),
+		createSession('session-discarded', { status: 'discarded' }),
 	])
-	mockSourceAndPackage()
 
-	const result = await repoListSessionsCapability.handler(
-		{ status: 'all' },
-		createContext(),
-	)
+	const result = await listSessions({ status: 'all' })
 
 	expect(result.sessions.map((session) => session.status)).toEqual([
 		'active',
@@ -190,92 +173,49 @@ test('repoListSessions status all includes inactive sessions', async () => {
 })
 
 test('repoListSessions does not return rows for another user even if storage is malformed', async () => {
-	resetMocks()
+	stubSources()
 	mockModule.listRepoSessionsByUser.mockResolvedValue([
-		createSession({ id: 'session-other-user', user_id: 'other-user' }),
+		createSession('session-other-user', { user_id: 'other-user' }),
 	])
-	mockSourceAndPackage()
 
-	const result = await repoListSessionsCapability.handler({}, createContext())
-
-	expect(result.sessions).toEqual([])
+	expect((await listSessions()).sessions).toEqual([])
 	expect(mockModule.getEntitySourceByIdForUser).not.toHaveBeenCalled()
 })
 
-test('repoListSessions supports source_id narrowing and limit', async () => {
-	resetMocks()
+test('repoListSessions supports source_id narrowing and applies limit after dropping missing sources', async () => {
+	stubSources()
 	mockModule.listRepoSessionsBySource.mockResolvedValue([
-		createSession({
-			id: 'session-source-new',
+		createSession('session-source-new', {
 			source_id: 'source-2',
 			updated_at: '2026-04-28T00:02:00.000Z',
 		}),
-		createSession({
-			id: 'session-source-old',
+		createSession('session-source-old', {
 			source_id: 'source-2',
 			updated_at: '2026-04-28T00:01:00.000Z',
 		}),
 	])
-	mockSourceAndPackage()
 
-	const result = await repoListSessionsCapability.handler(
-		{ source_id: 'source-2', limit: 1 },
-		createContext(),
-	)
-
+	expect(ids(await listSessions({ source_id: 'source-2', limit: 1 }))).toEqual([
+		'session-source-new',
+	])
 	expect(mockModule.listRepoSessionsBySource).toHaveBeenCalledWith(
 		expect.anything(),
 		{ userId: 'user-1', sourceId: 'source-2' },
 	)
 	expect(mockModule.listRepoSessionsByUser).not.toHaveBeenCalled()
-	expect(result.sessions.map((session) => session.id)).toEqual([
-		'session-source-new',
-	])
-})
 
-test('repoListSessions applies limit after dropping sessions with missing sources', async () => {
-	resetMocks()
+	stubSources({ missingSourceId: 'source-missing' })
 	mockModule.listRepoSessionsByUser.mockResolvedValue([
-		createSession({
-			id: 'session-missing-source',
+		createSession('session-missing-source', {
 			source_id: 'source-missing',
 			updated_at: '2026-04-28T00:03:00.000Z',
 		}),
-		createSession({
-			id: 'session-valid',
+		createSession('session-valid', {
 			source_id: 'source-1',
 			updated_at: '2026-04-28T00:02:00.000Z',
 		}),
 	])
-	mockModule.getEntitySourceByIdForUser.mockImplementation(
-		async (_db: D1Database, input: { id: string; userId: string }) =>
-			input.id === 'source-missing' || input.userId !== 'user-1'
-				? null
-				: createSource(input.id),
-	)
-	mockModule.getSavedPackageById.mockResolvedValue({
-		id: 'package-1',
-		userId: 'user-1',
-		name: '@user/demo',
-		kodyId: 'demo',
-		description: 'Demo package',
-		tags: [],
-		searchText: null,
-		sourceId: 'source-1',
-		hasApp: false,
-		hidden: false,
-		isPrivate: false,
-		createdAt: '2026-04-28T00:00:00.000Z',
-		updatedAt: '2026-04-28T00:00:00.000Z',
-	})
 
-	const result = await repoListSessionsCapability.handler(
-		{ limit: 1 },
-		createContext(),
-	)
-
-	expect(result.sessions.map((session) => session.id)).toEqual([
-		'session-valid',
-	])
+	expect(ids(await listSessions({ limit: 1 }))).toEqual(['session-valid'])
 	expect(mockModule.getEntitySourceByIdForUser).toHaveBeenCalledTimes(2)
 })
