@@ -5,7 +5,6 @@ import {
 	SEARCH_DEADLINE_MS,
 	SEARCH_WAITING_ITEMS_BUDGET_MS,
 } from './search-constants.ts'
-import { SearchDeadlineError } from './search-timing.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getCapabilityRegistryForContext: vi.fn(async () => ({
@@ -549,8 +548,8 @@ test('search fails fast with a clear deadline error instead of hanging until the
 		await vi.advanceTimersByTimeAsync(SEARCH_DEADLINE_MS)
 		const response = await pending
 		expect(response.isError).toBe(true)
-		expect(response.structuredContent.error).toBe(
-			new SearchDeadlineError(SEARCH_DEADLINE_MS).message,
+		expect(response.structuredContent.error).toContain(
+			`Search did not finish within ${String(SEARCH_DEADLINE_MS / 1000)}s`,
 		)
 		expect(response.content.map((item) => item.text).join('\n')).toContain(
 			`Search did not finish within ${String(SEARCH_DEADLINE_MS / 1000)}s`,

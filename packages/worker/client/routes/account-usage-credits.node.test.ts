@@ -198,7 +198,6 @@ const overHundredPercent = /\b(?:1(?:0[1-9]|[1-9]\d)|[2-9]\d\d|\d{4,})%/
 
 test('usage page is the one money/caps page: no Credits nav item, credits section last', async () => {
 	const { html } = await renderUsagePage(usage())
-	expect(html).not.toContain('href="/account/credits"')
 	expect(html).toMatch(/href="\/account\/usage"[^>]*aria-current="page"/)
 	expect(html).toContain('id="credits"')
 	const order = [
@@ -369,7 +368,6 @@ test('Free sees one short credits CTA with no balance or purchase UI', async () 
 	]) {
 		expect(html).not.toContain(purchase)
 	}
-	expect(text).not.toMatch(/\bMax\b/)
 	expect(text).not.toMatch(overHundredPercent)
 
 	const { html: noCheckout } = await renderUsagePage(

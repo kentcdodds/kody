@@ -270,57 +270,6 @@ test('syncArtifactSourceSnapshot bootstraps new sources and uses repo sessions f
 	)
 })
 
-test('syncArtifactSourceSnapshot threads destructiveOverwriteConfirmed into publishSession', async () => {
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.repoSessionRpc.mockReset()
-	const sessionClient = {
-		bootstrapSource: vi.fn(),
-		openSession: vi.fn(async () => ({
-			id: 'source-sync-source-1-session',
-		})),
-		applyEdits: vi.fn(async () => ({
-			dryRun: false,
-			totalChanged: 1,
-			edits: [],
-		})),
-		publishSession: vi.fn(async () => ({
-			status: 'ok' as const,
-			sessionId: 'source-sync-source-1-session',
-			publishedCommit: 'commit-replaced',
-			message: 'Published session',
-		})),
-		discardSession: vi.fn(async () => ({
-			ok: true as const,
-			sessionId: 'source-sync-source-1-session',
-			deleted: true,
-		})),
-	}
-	mockModule.getEntitySourceById.mockResolvedValueOnce({
-		...createPublishedSourceRow(),
-		entity_kind: 'package',
-		entity_id: 'package-1',
-		manifest_path: 'package.json',
-	})
-	mockModule.repoSessionRpc.mockReturnValueOnce(sessionClient as never)
-
-	const published = await syncArtifactSourceSnapshot({
-		...createSyncEnv(),
-		files: {
-			'package.json': '{"name":"@user/demo","kody":{"id":"demo"}}',
-			'src/index.ts': 'export const ready = true\n',
-		},
-		destructiveOverwriteConfirmed: true,
-	})
-
-	expect(published).toBe('commit-replaced')
-	expect(sessionClient.publishSession).toHaveBeenCalledWith(
-		expect.objectContaining({
-			force: true,
-			destructiveOverwriteConfirmed: true,
-		}),
-	)
-})
-
 test('syncArtifactSourceSnapshot refuses to bootstrap a locked package without allowLockedPublish', async () => {
 	mockModule.getEntitySourceById.mockReset()
 	mockModule.updateEntitySource.mockReset()

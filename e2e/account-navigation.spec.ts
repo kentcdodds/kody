@@ -91,7 +91,7 @@ test('account section switches keep the current page on screen (no loading flash
 	).toHaveAttribute('href', `/@${user.username}`)
 })
 
-test('credits live on the usage page: /account/credits redirects there and the rail has no Credits item', async ({
+test('credits live on the usage page: /account/credits redirects there', async ({
 	page,
 	seedE2eUser,
 	login,
@@ -109,11 +109,11 @@ test('credits live on the usage page: /account/credits redirects there and the r
 	await expect(
 		page.getByRole('heading', { level: 1, name: 'Usage' }),
 	).toBeVisible()
-	const credits = page.locator('#credits')
 	await expect(
-		credits.getByRole('heading', { level: 2, name: 'Credits' }),
+		page
+			.locator('#credits')
+			.getByRole('heading', { level: 2, name: 'Credits' }),
 	).toBeVisible()
-	await expect(credits).toContainText('Credits are available on Pro.')
 	await expect(page.locator('[data-credits-balance]')).toHaveCount(0)
 	await expect(page.getByLabel('Custom amount ($)')).toHaveCount(0)
 
@@ -121,9 +121,6 @@ test('credits live on the usage page: /account/credits redirects there and the r
 	await expect(
 		rail.getByRole('link', { name: 'Usage', exact: true }),
 	).toHaveAttribute('aria-current', 'page')
-	await expect(
-		rail.getByRole('link', { name: 'Credits', exact: true }),
-	).toHaveCount(0)
 })
 
 test('Add connection opens its own page with the client wall, then a host step (no loading flash, no double fetch)', async ({

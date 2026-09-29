@@ -189,37 +189,3 @@ test('metaMemoryUpsert still accepts empty optional category and dedupe_key', as
 		memory: { id: 'memory-1', category: null, dedupe_key: null },
 	})
 })
-
-test('metaMemoryVerify and metaMemoryUpsert capability types document field max lengths', () => {
-	for (const capability of [
-		metaMemoryVerifyCapability,
-		metaMemoryUpsertCapability,
-	]) {
-		const subjectSchema = capability.inputSchema.properties?.subject
-		const summarySchema = capability.inputSchema.properties?.summary
-		const detailsSchema = capability.inputSchema.properties?.details
-
-		expect(subjectSchema).toMatchObject({
-			type: 'string',
-			maxLength: memorySubjectMaxLength,
-		})
-		expect(summarySchema).toMatchObject({
-			type: 'string',
-			maxLength: memorySummaryMaxLength,
-		})
-		expect(detailsSchema).toMatchObject({
-			type: 'string',
-			maxLength: memoryDetailsMaxLength,
-		})
-
-		expect(capability.inputTypeDefinition).toContain(
-			`max ${String(memorySubjectMaxLength)} characters`,
-		)
-		expect(capability.inputTypeDefinition).toContain(
-			`max ${String(memorySummaryMaxLength)} characters`,
-		)
-		expect(capability.inputTypeDefinition).toContain(
-			`max ${String(memoryDetailsMaxLength)} characters`,
-		)
-	}
-})

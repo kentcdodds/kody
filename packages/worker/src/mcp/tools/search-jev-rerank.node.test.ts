@@ -674,9 +674,7 @@ test('rerankSearchCandidatesWithJev aborts Score batches past the budget and kee
 		expect(result.outcome).toBe('fallback-timeout')
 		expect(result.errorReason).toBeUndefined()
 		expect(result.model).toBe(jevSearchModel)
-		expect(result.aiCallCount).toBe(
-			Math.ceil(pool.length / jevSearchScoreQuestionBatchSize),
-		)
+		expect(result.aiCallCount).toBe(3)
 		expect(result.candidates.map((candidate) => candidate.id)).toEqual([
 			pool[0]!.id,
 			pool[1]!.id,

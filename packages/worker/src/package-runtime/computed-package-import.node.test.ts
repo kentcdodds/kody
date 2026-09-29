@@ -4,7 +4,6 @@ import {
 	computedPackageImportCallEntryPath,
 	resolveComputedPackageImportArtifact,
 } from './computed-package-import.ts'
-import { createSealedSecretProviderExportDeniedMessage } from '#mcp/secrets/secret-providers/errors.ts'
 
 test('buildComputedPackageImportCallBundle wraps the importable main with a callable entry and grants the callee', () => {
 	const bundle = buildComputedPackageImportCallBundle({
@@ -57,5 +56,7 @@ test('resolveComputedPackageImportArtifact denies sealed ./secretProvider export
 			userId: 'user-1',
 			specifier: 'kody:@kentcdodds/example/secretProvider',
 		}),
-	).rejects.toThrow(createSealedSecretProviderExportDeniedMessage())
+	).rejects.toThrow(
+		'Sealed secret-provider exports can only run at the fetch boundary.',
+	)
 })

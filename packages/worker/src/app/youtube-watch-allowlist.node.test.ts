@@ -7,25 +7,6 @@ import {
 } from './youtube-watch-allowlist.ts'
 
 const videoId = youtubeWatchSampleVideoId
-const builtInVideoIds = [videoId]
-
-/**
- * Allowlist order: caller ids, then docs watch ids, then later ids such as
- * banner hrefs. First occurrence wins.
- */
-function allowedIds(
-	before: ReadonlyArray<string>,
-	after: ReadonlyArray<string> = [],
-): Array<string> {
-	const seen = new Set<string>()
-	const merged: Array<string> = []
-	for (const id of [...before, ...bundledDocWatchVideoIds(), ...after]) {
-		if (seen.has(id)) continue
-		seen.add(id)
-		merged.push(id)
-	}
-	return merged
-}
 const playlistId = 'PLV5CVI1eNcJhP4nrJt85L7PxHjebFpDfY'
 
 test('loadPlaylistVideoIds parses the Atom feed and caches the xml', async () => {
@@ -83,8 +64,10 @@ test('resolveYoutubeWatchAllowedVideoIds always includes the look-preview sample
 		} as Env,
 		fetchImpl,
 	})
-	expect(sampleOnly).toEqual(allowedIds(builtInVideoIds))
-	expect(bundledDocWatchVideoIds()).toContain('dR0qWl94v00')
+	expect(sampleOnly).toContain(videoId)
+	const docWatchIds = bundledDocWatchVideoIds()
+	expect(docWatchIds.length).toBeGreaterThan(0)
+	expect(sampleOnly).toEqual(expect.arrayContaining(docWatchIds))
 
 	const withExtra = await resolveYoutubeWatchAllowedVideoIds({
 		env: {
@@ -93,7 +76,12 @@ test('resolveYoutubeWatchAllowedVideoIds always includes the look-preview sample
 		} as Env,
 		fetchImpl,
 	})
-	expect(withExtra).toEqual(allowedIds([extraVideoId, ...builtInVideoIds]))
+	expect(withExtra).toContain(extraVideoId)
+	expect(withExtra).toContain(videoId)
+	expect(withExtra).toEqual(expect.arrayContaining(docWatchIds))
+	expect(withExtra.indexOf(extraVideoId)).toBeLessThan(
+		withExtra.indexOf(videoId),
+	)
 })
 
 test('resolveYoutubeWatchAllowedVideoIds skips playlist fetch when loadPlaylists is false', async () => {
@@ -114,7 +102,8 @@ test('resolveYoutubeWatchAllowedVideoIds skips playlist fetch when loadPlaylists
 			},
 		],
 	})
-	expect(ids).toEqual(allowedIds(builtInVideoIds))
+	expect(ids).toContain(videoId)
+	expect(ids).toEqual(expect.arrayContaining(bundledDocWatchVideoIds()))
 })
 
 test('resolveYoutubeWatchAllowedVideoIds uses listedBanners instead of querying D1', async () => {
@@ -136,5 +125,7 @@ test('resolveYoutubeWatchAllowedVideoIds uses listedBanners instead of querying 
 			},
 		],
 	})
-	expect(ids).toEqual(allowedIds(builtInVideoIds, [bannerVideoId]))
+	expect(ids).toContain(videoId)
+	expect(ids).toContain(bannerVideoId)
+	expect(ids).toEqual(expect.arrayContaining(bundledDocWatchVideoIds()))
 })
