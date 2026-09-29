@@ -285,3 +285,8 @@ runtime path if this budget is raised again.
   plus advertised `sessions/*` ref cleanup after promote on repo-session-do
   (shared with platform publish path). CI dry-run platform 5_226_226 against the
   previous 5_226_000 budget, reviewed ceiling 5_226_500.
+- Bound MCP search onboarding notice courtesy budget (#2716 / KODY-8B):
+  `SEARCH_ONBOARDING_NOTICE_BUDGET_MS` plus `settleWithBudget` around
+  `buildOnboardingSearchNotice` (same pattern as waiting items). Local/CI
+  dry-run platform 5_226_510 against the previous 5_226_500 budget, reviewed
+  ceiling 5_227_000.
