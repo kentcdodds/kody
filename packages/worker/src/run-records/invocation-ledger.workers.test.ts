@@ -64,61 +64,111 @@ function freshStaleBefore() {
 	return new Date(Date.now() - 15 * 60 * 1000).toISOString()
 }
 
-async function seedStaleClaim(input: {
-	userId: string
-	idempotencyKey: string
-	requestHash?: string
-}) {
-	const claimed = await claimPackageInvocationRecord({
+type ClaimOverrides = Parameters<typeof claimInput>[0]
+
+function claimRaw(
+	userId: string,
+	idempotencyKey: string,
+	invocation?: ClaimOverrides,
+	context: RunRecordContext | null = exportContext({ idempotencyKey }),
+) {
+	return claimPackageInvocationRecord({
 		env,
-		userId: input.userId,
-		context: exportContext({ idempotencyKey: input.idempotencyKey }),
-		invocation: claimInput({
-			idempotencyKey: input.idempotencyKey,
-			requestHash: input.requestHash,
-		}),
+		userId,
+		context,
+		invocation: claimInput({ idempotencyKey, ...invocation }),
 		staleBefore: freshStaleBefore(),
 	})
-	if (claimed.outcome !== 'claimed') {
-		throw new Error('Expected a fresh claim while seeding.')
-	}
-	// Backdate the claim so it is past the 15-minute stale window.
-	const staleUpdatedAt = new Date(Date.now() - 16 * 60 * 1000).toISOString()
-	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(input.userId))
+}
+
+async function claim(...args: Parameters<typeof claimRaw>) {
+	const claimed = await claimRaw(...args)
+	if (claimed.outcome !== 'claimed') throw new Error('Expected fresh claim.')
+	return claimed
+}
+
+type Claimed = Awaited<ReturnType<typeof claim>>
+
+function finish(
+	userId: string,
+	claimed: Pick<Claimed, 'handle' | 'invocationId' | 'claimUpdatedAt'>,
+	outcome: Partial<Parameters<typeof finishPackageInvocationRecord>[0]> = {},
+) {
+	return finishPackageInvocationRecord({
+		env,
+		userId,
+		handle: claimed.handle,
+		invocationId: claimed.invocationId,
+		claimUpdatedAt: claimed.claimUpdatedAt,
+		ledgerStatus: 'completed',
+		responseJson: JSON.stringify({ status: 200, body: { ok: true } }),
+		status: 'success',
+		...outcome,
+	})
+}
+
+const failedOutcome = (message: string) =>
+	({
+		ledgerStatus: 'failed',
+		responseJson: JSON.stringify({ status: 500, body: { ok: false } }),
+		status: 'error',
+		error: new Error(message),
+	}) as const
+
+function getLedger(userId: string, idempotencyKey: string) {
+	return getPackageInvocationRecord({
+		env,
+		userId,
+		key: ledgerKey({ idempotencyKey }),
+	})
+}
+
+function getRun(userId: string, runId: string) {
+	return getRunRecord({ env, userId, runId })
+}
+
+async function sqlExec(
+	userId: string,
+	query: string,
+	...bindings: Array<SqlStorageValue>
+) {
+	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
 	await runInDurableObject(stub, async (instance: RunLog, state) => {
 		expect(instance).toBeInstanceOf(RunLog)
-		state.storage.sql.exec(
-			`UPDATE package_invocation_ledger SET updated_at = ? WHERE id = ?`,
-			staleUpdatedAt,
-			claimed.invocationId,
-		)
+		state.storage.sql.exec(query, ...bindings)
 	})
-	return { invocationId: claimed.invocationId, staleUpdatedAt }
+}
+
+/** Backdates a running row past the short-lived stale TTL. */
+async function backdateRunningRow(
+	userId: string,
+	runId: string,
+	extraMs: number,
+) {
+	const staleStartedAt = new Date(
+		Date.now() - runRecordStaleRunningTtlMsShortLived - extraMs,
+	).toISOString()
+	await sqlExec(
+		userId,
+		`UPDATE runs SET started_at = ?, created_at = ?, updated_at = ? WHERE id = ?`,
+		staleStartedAt,
+		staleStartedAt,
+		staleStartedAt,
+		runId,
+	)
+	return staleStartedAt
 }
 
 test('claim + finish journey: one call each, replay record, run row lifecycle', async () => {
 	silenceExpectedConsoleWarns(['activation-run-record-failed'])
 	const userId = uniqueUserId('journey')
 
-	const claimed = await claimPackageInvocationRecord({
-		env,
-		userId,
-		context: exportContext(),
-		invocation: claimInput(),
-		staleBefore: freshStaleBefore(),
-	})
-	expect(claimed.outcome).toBe('claimed')
-	if (claimed.outcome !== 'claimed') throw new Error('unreachable')
+	const claimed = await claim(userId, 'evt-1')
 	expect(claimed.reclaimed).toBe(false)
-	expect(claimed.handle).not.toBeNull()
+	if (!claimed.handle) throw new Error('Expected an eager run handle.')
 
 	// The eager running row landed in the same DO call as the ledger claim.
-	const running = await getRunRecord({
-		env,
-		userId,
-		runId: claimed.handle!.id,
-	})
-	expect(running?.run).toMatchObject({
+	expect((await getRun(userId, claimed.handle.id))?.run).toMatchObject({
 		status: 'running',
 		surface: 'export',
 		idempotencyKey: 'evt-1',
@@ -126,13 +176,7 @@ test('claim + finish journey: one call each, replay record, run row lifecycle', 
 	})
 
 	// A duplicate claim sees the in-progress owner instead of double-claiming.
-	const duplicate = await claimPackageInvocationRecord({
-		env,
-		userId,
-		context: exportContext(),
-		invocation: claimInput(),
-		staleBefore: freshStaleBefore(),
-	})
+	const duplicate = await claimRaw(userId, 'evt-1')
 	expect(duplicate.outcome).toBe('existing')
 	if (duplicate.outcome !== 'existing') throw new Error('unreachable')
 	expect(duplicate.record).toMatchObject({
@@ -145,38 +189,22 @@ test('claim + finish journey: one call each, replay record, run row lifecycle', 
 		status: 200,
 		body: { ok: true, result: { sent: true } },
 	})
-	const finished = await finishPackageInvocationRecord({
-		env,
-		userId,
-		handle: claimed.handle,
-		invocationId: claimed.invocationId,
-		claimUpdatedAt: claimed.claimUpdatedAt,
-		ledgerStatus: 'completed',
-		responseJson,
-		status: 'success',
-		logs: ['sent'],
-		result: { sent: true },
-	})
-	expect(finished).toMatchObject({ ledgerUpdated: true, record: null })
+	expect(
+		await finish(userId, claimed, {
+			responseJson,
+			logs: ['sent'],
+			result: { sent: true },
+		}),
+	).toMatchObject({ ledgerUpdated: true, record: null })
 
-	const record = await getPackageInvocationRecord({
-		env,
-		userId,
-		key: ledgerKey(),
-	})
-	expect(record).toMatchObject({
+	expect(await getLedger(userId, 'evt-1')).toMatchObject({
 		id: claimed.invocationId,
 		status: 'completed',
 		responseJson,
 	})
-
 	// The terminal run row (with logs and result snapshot) landed in the same
 	// DO call as the ledger response.
-	const terminalRun = await getRunRecord({
-		env,
-		userId,
-		runId: claimed.handle!.id,
-	})
+	const terminalRun = await getRun(userId, claimed.handle.id)
 	expect(terminalRun?.run).toMatchObject({
 		status: 'success',
 		invocationId: claimed.invocationId,
@@ -188,64 +216,42 @@ test('claim + finish journey: one call each, replay record, run row lifecycle', 
 test('late failed subscription finish reopens a system-ignored platform interrupt', async () => {
 	const userId = uniqueUserId('late-subscription-failure')
 	const idempotencyKey = 'delivery-late-failure'
-	const claimed = await claimPackageInvocationRecord({
-		env,
+	const claimed = await claim(
 		userId,
-		context: exportContext({
+		idempotencyKey,
+		{},
+		exportContext({
 			surface: 'subscription',
 			name: 'email.message.received',
 			idempotencyKey,
 		}),
-		invocation: claimInput({ idempotencyKey }),
-		staleBefore: freshStaleBefore(),
-	})
-	if (claimed.outcome !== 'claimed' || !claimed.handle) {
-		throw new Error('Expected a fresh subscription claim.')
-	}
+	)
+	if (!claimed.handle) throw new Error('Expected a fresh subscription claim.')
+	const runId = claimed.handle.id
+	const staleStartedAt = await backdateRunningRow(userId, runId, 1_000)
 
-	const staleStartedAt = new Date(
-		Date.now() - runRecordStaleRunningTtlMsShortLived - 1_000,
-	).toISOString()
-	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
-	await runInDurableObject(stub, async (instance: RunLog, state) => {
-		expect(instance).toBeInstanceOf(RunLog)
-		state.storage.sql.exec(
-			`UPDATE runs SET started_at = ?, created_at = ?, updated_at = ?
-			WHERE id = ?`,
-			staleStartedAt,
-			staleStartedAt,
-			staleStartedAt,
-			claimed.handle.id,
-		)
-	})
-
-	expect(
-		(await getRunRecord({ env, userId, runId: claimed.handle.id }))?.run,
-	).toMatchObject({
+	expect((await getRun(userId, runId))?.run).toMatchObject({
 		status: 'error',
 		errorName: runRecordPlatformInterruptedErrorName,
 		errorTriage: 'ignored',
 		triagedBy: 'system:platform-interrupt',
 	})
 
-	const finished = await finishPackageInvocationRecord({
-		env,
+	const finished = await finish(
 		userId,
-		handle: { ...claimed.handle, startedAt: staleStartedAt },
-		invocationId: claimed.invocationId,
-		claimUpdatedAt: claimed.claimUpdatedAt,
-		ledgerStatus: 'failed',
-		responseJson: JSON.stringify({
-			status: 500,
-			body: { error: 'known package failure' },
-		}),
-		status: 'error',
-		error: new Error('known package failure'),
-	})
+		{ ...claimed, handle: { ...claimed.handle, startedAt: staleStartedAt } },
+		{
+			ledgerStatus: 'failed',
+			responseJson: JSON.stringify({
+				status: 500,
+				body: { error: 'known package failure' },
+			}),
+			status: 'error',
+			error: new Error('known package failure'),
+		},
+	)
 	expect(finished.ledgerUpdated).toBe(true)
-	expect(
-		(await getRunRecord({ env, userId, runId: claimed.handle.id }))?.run,
-	).toMatchObject({
+	expect((await getRun(userId, runId))?.run).toMatchObject({
 		status: 'error',
 		errorName: 'Error',
 		errorMessage: 'known package failure',
@@ -258,35 +264,28 @@ test('late failed subscription finish reopens a system-ignored platform interrup
 
 test('stale in-progress claims are reclaimed atomically; mismatched hashes are not', async () => {
 	const userId = uniqueUserId('stale-reclaim')
-	const seeded = await seedStaleClaim({ userId, idempotencyKey: 'evt-stale' })
+	const seeded = await claim(userId, 'evt-stale')
+	// Backdate the claim so it is past the 15-minute stale window.
+	const staleUpdatedAt = new Date(Date.now() - 16 * 60 * 1000).toISOString()
+	await sqlExec(
+		userId,
+		`UPDATE package_invocation_ledger SET updated_at = ? WHERE id = ?`,
+		staleUpdatedAt,
+		seeded.invocationId,
+	)
 
 	// A different request hash never reclaims (mismatch resolution owns it).
-	const mismatch = await claimPackageInvocationRecord({
-		env,
-		userId,
-		context: exportContext({ idempotencyKey: 'evt-stale' }),
-		invocation: claimInput({
-			idempotencyKey: 'evt-stale',
-			requestHash: 'other-hash',
-		}),
-		staleBefore: freshStaleBefore(),
+	const mismatch = await claimRaw(userId, 'evt-stale', {
+		requestHash: 'other-hash',
 	})
 	expect(mismatch.outcome).toBe('existing')
 
-	const reclaimed = await claimPackageInvocationRecord({
-		env,
-		userId,
-		context: exportContext({ idempotencyKey: 'evt-stale' }),
-		invocation: claimInput({ idempotencyKey: 'evt-stale' }),
-		staleBefore: freshStaleBefore(),
-	})
-	expect(reclaimed.outcome).toBe('claimed')
-	if (reclaimed.outcome !== 'claimed') throw new Error('unreachable')
+	const reclaimed = await claim(userId, 'evt-stale')
 	expect(reclaimed).toMatchObject({
 		invocationId: seeded.invocationId,
 		reclaimed: true,
 	})
-	expect(reclaimed.claimUpdatedAt > seeded.staleUpdatedAt).toBe(true)
+	expect(reclaimed.claimUpdatedAt > staleUpdatedAt).toBe(true)
 
 	// The superseded attempt's finish is fenced out of the ledger but its own
 	// run row still lands terminal.
@@ -297,61 +296,38 @@ test('stale in-progress claims are reclaimed atomically; mismatched hashes are n
 		persistence: 'eager' as const,
 		context: exportContext({ idempotencyKey: 'evt-stale' }),
 	}
-	const fenced = await finishPackageInvocationRecord({
-		env,
+	const fenced = await finish(
 		userId,
-		handle: staleAttemptHandle,
-		invocationId: seeded.invocationId,
-		claimUpdatedAt: seeded.staleUpdatedAt,
-		ledgerStatus: 'failed',
-		responseJson: JSON.stringify({ status: 500, body: { ok: false } }),
-		status: 'error',
-		error: new Error('superseded attempt'),
-	})
+		{
+			handle: staleAttemptHandle,
+			invocationId: seeded.invocationId,
+			claimUpdatedAt: staleUpdatedAt,
+		},
+		failedOutcome('superseded attempt'),
+	)
 	expect(fenced.ledgerUpdated).toBe(false)
 	expect(fenced.record).toMatchObject({
 		id: seeded.invocationId,
 		status: 'in_progress',
 		updatedAt: reclaimed.claimUpdatedAt,
 	})
-	const fencedRun = await getRunRecord({
-		env,
-		userId,
-		runId: staleAttemptHandle.id,
-	})
-	expect(fencedRun?.run.status).toBe('error')
+	expect((await getRun(userId, staleAttemptHandle.id))?.run.status).toBe(
+		'error',
+	)
 
 	// The reclaiming attempt finishes normally.
-	const finished = await finishPackageInvocationRecord({
-		env,
+	const finished = await finish(
 		userId,
-		handle: reclaimed.handle,
-		invocationId: reclaimed.invocationId,
-		claimUpdatedAt: reclaimed.claimUpdatedAt,
-		ledgerStatus: 'failed',
-		responseJson: JSON.stringify({ status: 500, body: { ok: false } }),
-		status: 'error',
-		error: new Error('handler failed'),
-	})
+		reclaimed,
+		failedOutcome('handler failed'),
+	)
 	expect(finished.ledgerUpdated).toBe(true)
-	const record = await getPackageInvocationRecord({
-		env,
-		userId,
-		key: ledgerKey({ idempotencyKey: 'evt-stale' }),
-	})
-	expect(record?.status).toBe('failed')
+	expect((await getLedger(userId, 'evt-stale'))?.status).toBe('failed')
 })
 
 test('release deletes the in-progress claim and its running row so retries are clean', async () => {
 	const userId = uniqueUserId('release')
-	const claimed = await claimPackageInvocationRecord({
-		env,
-		userId,
-		context: exportContext({ idempotencyKey: 'evt-release' }),
-		invocation: claimInput({ idempotencyKey: 'evt-release' }),
-		staleBefore: freshStaleBefore(),
-	})
-	if (claimed.outcome !== 'claimed') throw new Error('Expected fresh claim.')
+	const claimed = await claim(userId, 'evt-release')
 
 	const released = await releasePackageInvocationRecord({
 		env,
@@ -361,27 +337,12 @@ test('release deletes the in-progress claim and its running row so retries are c
 		handle: claimed.handle,
 	})
 	expect(released).toMatchObject({ released: true, record: null })
-	expect(
-		await getPackageInvocationRecord({
-			env,
-			userId,
-			key: ledgerKey({ idempotencyKey: 'evt-release' }),
-		}),
-	).toBeNull()
-	expect(
-		await getRunRecord({ env, userId, runId: claimed.handle!.id }),
-	).toBeNull()
+	expect(await getLedger(userId, 'evt-release')).toBeNull()
+	expect(await getRun(userId, claimed.handle!.id)).toBeNull()
 
 	// A stale release token cannot delete a newer claim; the caller gets the
 	// current owner back instead.
-	const second = await claimPackageInvocationRecord({
-		env,
-		userId,
-		context: exportContext({ idempotencyKey: 'evt-release' }),
-		invocation: claimInput({ idempotencyKey: 'evt-release' }),
-		staleBefore: freshStaleBefore(),
-	})
-	if (second.outcome !== 'claimed') throw new Error('Expected fresh claim.')
+	const second = await claim(userId, 'evt-release')
 	const fencedRelease = await releasePackageInvocationRecord({
 		env,
 		userId,
@@ -398,123 +359,62 @@ test('release deletes the in-progress claim and its running row so retries are c
 
 test('DO-local retention prunes terminal ledger rows after 90 days and keeps in-progress rows', async () => {
 	const userId = uniqueUserId('retention')
-	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
 	const expiredCreatedAt = new Date(
 		Date.now() -
 			(packageInvocationLedgerRetentionDays + 1) * 24 * 60 * 60 * 1000,
 	).toISOString()
-	const insertLedgerRow = (input: {
-		id: string
-		idempotencyKey: string
-		status: string
-		createdAt: string
-	}) =>
-		runInDurableObject(stub, async (instance: RunLog, state) => {
-			expect(instance).toBeInstanceOf(RunLog)
-			state.storage.sql.exec(
-				`INSERT INTO package_invocation_ledger (
-					id, token_id, package_id, package_kody_id, export_name,
-					idempotency_key, request_hash, source, topic, status,
-					response_json, created_at, updated_at
-				) VALUES (?, 'token-1', 'pkg-1', 'pkg-one', './send-message', ?, 'hash-1',
-					NULL, NULL, ?, NULL, ?, ?)`,
-				input.id,
-				input.idempotencyKey,
-				input.status,
-				input.createdAt,
-				input.createdAt,
-			)
-		})
-	await insertLedgerRow({
-		id: 'expired-terminal',
-		idempotencyKey: 'evt-expired',
-		status: 'completed',
-		createdAt: expiredCreatedAt,
-	})
-	await insertLedgerRow({
-		id: 'expired-in-progress',
-		idempotencyKey: 'evt-expired-open',
-		status: 'in_progress',
-		createdAt: expiredCreatedAt,
-	})
-	await insertLedgerRow({
-		id: 'recent-terminal',
-		idempotencyKey: 'evt-recent',
-		status: 'completed',
-		createdAt: new Date().toISOString(),
-	})
+	for (const [id, idempotencyKey, status, createdAt] of [
+		['expired-terminal', 'evt-expired', 'completed', expiredCreatedAt],
+		[
+			'expired-in-progress',
+			'evt-expired-open',
+			'in_progress',
+			expiredCreatedAt,
+		],
+		['recent-terminal', 'evt-recent', 'completed', new Date().toISOString()],
+	] as const) {
+		await sqlExec(
+			userId,
+			`INSERT INTO package_invocation_ledger (
+				id, token_id, package_id, package_kody_id, export_name,
+				idempotency_key, request_hash, source, topic, status,
+				response_json, created_at, updated_at
+			) VALUES (?, 'token-1', 'pkg-1', 'pkg-one', './send-message', ?, 'hash-1',
+				NULL, NULL, ?, NULL, ?, ?)`,
+			id,
+			idempotencyKey,
+			status,
+			createdAt,
+			createdAt,
+		)
+	}
 
 	// Arm retention so the next finish runs a full pass.
+	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
 	await runInDurableObject(stub, async (instance: RunLog) => {
 		seedRunLogMeta(instance, {
 			finishesSinceRetention: runRecordRetentionEveryNFinishes - 1,
 		})
 	})
-	const claimed = await claimPackageInvocationRecord({
-		env,
-		userId,
-		context: null,
-		invocation: claimInput({ idempotencyKey: 'evt-trigger' }),
-		staleBefore: freshStaleBefore(),
-	})
-	if (claimed.outcome !== 'claimed') throw new Error('Expected fresh claim.')
-	await finishPackageInvocationRecord({
-		env,
-		userId,
-		handle: null,
-		invocationId: claimed.invocationId,
-		claimUpdatedAt: claimed.claimUpdatedAt,
-		ledgerStatus: 'completed',
-		responseJson: null,
-		status: 'success',
-	})
+	const claimed = await claim(userId, 'evt-trigger', {}, null)
+	await finish(userId, claimed, { handle: null, responseJson: null })
 
-	expect(
-		await getPackageInvocationRecord({
-			env,
-			userId,
-			key: ledgerKey({ idempotencyKey: 'evt-expired' }),
-		}),
-	).toBeNull()
-	expect(
-		await getPackageInvocationRecord({
-			env,
-			userId,
-			key: ledgerKey({ idempotencyKey: 'evt-expired-open' }),
-		}),
-	).toMatchObject({ id: 'expired-in-progress', status: 'in_progress' })
-	expect(
-		await getPackageInvocationRecord({
-			env,
-			userId,
-			key: ledgerKey({ idempotencyKey: 'evt-recent' }),
-		}),
-	).toMatchObject({ id: 'recent-terminal', status: 'completed' })
+	expect(await getLedger(userId, 'evt-expired')).toBeNull()
+	expect(await getLedger(userId, 'evt-expired-open')).toMatchObject({
+		id: 'expired-in-progress',
+		status: 'in_progress',
+	})
+	expect(await getLedger(userId, 'evt-recent')).toMatchObject({
+		id: 'recent-terminal',
+		status: 'completed',
+	})
 })
 
 test('account export pages runs first, then ledger rows, through one cursor; clearAll purges both', async () => {
 	silenceExpectedConsoleWarns(['activation-run-record-failed'])
 	const userId = uniqueUserId('export')
-	const keys = ['evt-a', 'evt-b', 'evt-c']
-	for (const key of keys) {
-		const claimed = await claimPackageInvocationRecord({
-			env,
-			userId,
-			context: exportContext({ idempotencyKey: key }),
-			invocation: claimInput({ idempotencyKey: key }),
-			staleBefore: freshStaleBefore(),
-		})
-		if (claimed.outcome !== 'claimed') throw new Error('Expected fresh claim.')
-		await finishPackageInvocationRecord({
-			env,
-			userId,
-			handle: claimed.handle,
-			invocationId: claimed.invocationId,
-			claimUpdatedAt: claimed.claimUpdatedAt,
-			ledgerStatus: 'completed',
-			responseJson: JSON.stringify({ status: 200, body: { ok: true } }),
-			status: 'success',
-		})
+	for (const key of ['evt-a', 'evt-b', 'evt-c']) {
+		await finish(userId, await claim(userId, key))
 	}
 
 	const seenRunIds = new Set<string>()
@@ -536,72 +436,35 @@ test('account export pages runs first, then ledger rows, through one cursor; cle
 	expect(seenLedgerIds.size).toBe(3)
 
 	await clearRunRecords({ env, userId })
-	const afterClear = await exportRunRecords({ env, userId, pageSize: 10 })
-	expect(afterClear).toMatchObject({
+	expect(await exportRunRecords({ env, userId, pageSize: 10 })).toMatchObject({
 		runs: [],
 		packageInvocations: [],
 		truncated: false,
 	})
-	expect(
-		await getPackageInvocationRecord({
-			env,
-			userId,
-			key: ledgerKey({ idempotencyKey: 'evt-a' }),
-		}),
-	).toBeNull()
+	expect(await getLedger(userId, 'evt-a')).toBeNull()
 })
 
 test('a keyed package invocation keeps its started log when the running row is later interrupted', async () => {
 	const userId = uniqueUserId('started-log')
-	const claimed = await claimPackageInvocationRecord({
-		env,
+	const idempotencyKey = 'audit-listupcoming'
+	const claimed = await claim(
 		userId,
-		context: exportContext({
-			name: 'listUpcoming',
-			idempotencyKey: 'audit-listupcoming',
-		}),
-		invocation: claimInput({
-			exportName: './list-upcoming',
-			idempotencyKey: 'audit-listupcoming',
-		}),
-		staleBefore: freshStaleBefore(),
-	})
-	expect(claimed.outcome).toBe('claimed')
-	if (claimed.outcome !== 'claimed' || !claimed.handle) {
-		throw new Error('expected a claimed package invocation')
-	}
-	const running = await getRunRecord({
-		env,
-		userId,
-		runId: claimed.handle.id,
-	})
+		idempotencyKey,
+		{ exportName: './list-upcoming' },
+		exportContext({ name: 'listUpcoming', idempotencyKey }),
+	)
+	if (!claimed.handle) throw new Error('expected a claimed package invocation')
+	const runId = claimed.handle.id
+	const startedLog = ['package invocation started: listUpcoming']
+	const running = await getRun(userId, runId)
 	expect(running?.run.status).toBe('running')
-	expect(running?.logs.map((entry) => entry.message)).toEqual([
-		'package invocation started: listUpcoming',
-	])
+	expect(running?.logs.map((entry) => entry.message)).toEqual(startedLog)
 
-	const staleStartedAt = new Date(
-		Date.now() - runRecordStaleRunningTtlMsShortLived - 5_000,
-	).toISOString()
-	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
-	await runInDurableObject(stub, async (instance: RunLog, state) => {
-		expect(instance).toBeInstanceOf(RunLog)
-		state.storage.sql.exec(
-			`UPDATE runs SET started_at = ? WHERE id = ?`,
-			staleStartedAt,
-			claimed.handle?.id,
-		)
-	})
-	const interrupted = await getRunRecord({
-		env,
-		userId,
-		runId: claimed.handle.id,
-	})
+	await backdateRunningRow(userId, runId, 5_000)
+	const interrupted = await getRun(userId, runId)
 	expect(interrupted?.run).toMatchObject({
 		status: 'error',
 		errorName: runRecordPlatformInterruptedErrorName,
 	})
-	expect(interrupted?.logs.map((entry) => entry.message)).toEqual([
-		'package invocation started: listUpcoming',
-	])
+	expect(interrupted?.logs.map((entry) => entry.message)).toEqual(startedLog)
 })

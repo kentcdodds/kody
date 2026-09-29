@@ -240,49 +240,7 @@ async function runContractCheck(input: {
 }
 
 test(
-	'a warm keyless invoke contract check performs zero D1/KV loads against real bindings',
-	{ timeout: 30_000 },
-	async () => {
-		silenceIncidentalRuntimeWarnings()
-		await ensureSavedPackageArtifactSchema()
-		const unique = crypto.randomUUID()
-		const userId = `user-${unique}`
-		const kodyId = `cache-probe-${unique}`
-		await seedPublishedProbePackage({
-			userId,
-			packageId: `pkg-${unique}`,
-			kodyId,
-			sourceId: `source-${unique}`,
-			publishedCommit: `commit-1-${unique}`,
-			version: 'v1',
-			insertRows: true,
-		})
-		const { countedEnv, counters, resetCounters } = createCountingEnv()
-
-		const cold = await runContractCheck({ countedEnv, userId, kodyId })
-		expect(cold.result.ok).toBe(true)
-		expect(cold.result.ok && cold.result.contract.publishedCommit).toBe(
-			`commit-1-${unique}`,
-		)
-		expect(counters.d1Prepare).toBeGreaterThan(0)
-		expect(counters.kvGet).toBeGreaterThan(0)
-
-		resetCounters()
-		const warm = await runContractCheck({ countedEnv, userId, kodyId })
-
-		expect(warm.result.ok).toBe(true)
-		expect(warm.result.ok && warm.result.contract.publishedCommit).toBe(
-			`commit-1-${unique}`,
-		)
-		expect(warm.preloads?.moduleArtifact.artifact.publishedCommit).toBe(
-			`commit-1-${unique}`,
-		)
-		expect(counters).toEqual({ d1Prepare: 0, kvGet: 0 })
-	},
-)
-
-test(
-	'the cached contract check serves the new commit and artifact after a republish',
+	'a warm keyless invoke contract check performs zero D1/KV loads against real bindings and serves the new commit and artifact after a republish',
 	{ timeout: 30_000 },
 	async () => {
 		silenceIncidentalRuntimeWarnings()
@@ -290,38 +248,40 @@ test(
 		const unique = crypto.randomUUID()
 		const userId = `user-${unique}`
 		const packageId = `pkg-${unique}`
-		const kodyId = `republish-probe-${unique}`
+		const kodyId = `cache-probe-${unique}`
 		const sourceId = `source-${unique}`
-		await seedPublishedProbePackage({
-			userId,
-			packageId,
-			kodyId,
-			sourceId,
-			publishedCommit: `commit-1-${unique}`,
-			version: 'v1',
-			insertRows: true,
-		})
-		const { countedEnv } = createCountingEnv()
+		const publish = (version: string, insertRows: boolean) =>
+			seedPublishedProbePackage({
+				userId,
+				packageId,
+				kodyId,
+				sourceId,
+				publishedCommit: `commit-${version}-${unique}`,
+				version,
+				insertRows,
+			})
+		await publish('v1', true)
+		const { countedEnv, counters, resetCounters } = createCountingEnv()
+		const check = () => runContractCheck({ countedEnv, userId, kodyId })
 
-		const beforeRepublish = await runContractCheck({
-			countedEnv,
-			userId,
-			kodyId,
-		})
-		expect(
-			beforeRepublish.result.ok &&
-				beforeRepublish.result.contract.publishedCommit,
-		).toBe(`commit-1-${unique}`)
+		const cold = await check()
+		expect(cold.result.ok && cold.result.contract.publishedCommit).toBe(
+			`commit-v1-${unique}`,
+		)
+		expect(counters.d1Prepare).toBeGreaterThan(0)
+		expect(counters.kvGet).toBeGreaterThan(0)
 
-		await seedPublishedProbePackage({
-			userId,
-			packageId,
-			kodyId,
-			sourceId,
-			publishedCommit: `commit-2-${unique}`,
-			version: 'v2',
-			insertRows: false,
-		})
+		resetCounters()
+		const warm = await check()
+		expect(warm.result.ok && warm.result.contract.publishedCommit).toBe(
+			`commit-v1-${unique}`,
+		)
+		expect(warm.preloads?.moduleArtifact.artifact.publishedCommit).toBe(
+			`commit-v1-${unique}`,
+		)
+		expect(counters).toEqual({ d1Prepare: 0, kvGet: 0 })
+
+		await publish('v2', false)
 		// The projection refresh runs this invalidation in its isolate; other
 		// isolates converge within invokeContractFreshnessTtlMs (covered by the
 		// node suite with fake timers).
@@ -331,17 +291,13 @@ test(
 			sourceId,
 		})
 
-		const afterRepublish = await runContractCheck({
-			countedEnv,
-			userId,
-			kodyId,
-		})
+		const afterRepublish = await check()
 		expect(
 			afterRepublish.result.ok &&
 				afterRepublish.result.contract.publishedCommit,
-		).toBe(`commit-2-${unique}`)
+		).toBe(`commit-v2-${unique}`)
 		const artifact = afterRepublish.preloads?.moduleArtifact.artifact
-		expect(artifact?.publishedCommit).toBe(`commit-2-${unique}`)
+		expect(artifact?.publishedCommit).toBe(`commit-v2-${unique}`)
 		// The preloaded artifact is the exact bundle the lean invoke executes;
 		// it must carry the republished code, not the cached v1 bundle.
 		const moduleSources = Object.values(artifact?.modules ?? {}).join('\n')

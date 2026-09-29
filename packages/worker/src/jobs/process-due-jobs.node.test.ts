@@ -103,96 +103,55 @@ test('processDueJobs handles cron batching and once-job retain, preserve, and re
 	expect(batchResult.saveJobs[0]).not.toHaveProperty('runHistory')
 	expect(batchResult.saveJobs[1]).not.toHaveProperty('runHistory')
 
-	const failedOnceJob = createCronJob({
-		id: 'job-once',
-		schedule: {
-			type: 'once',
-			runAt: '2026-04-12T07:00:00.000Z',
-		},
-		nextRunAt: '2026-04-12T07:00:00.000Z',
-	})
-	const failedOnceResult = await processDueJobs({
-		jobs: [failedOnceJob],
-		now,
-		async executeJob() {
-			return {
-				execution: {
-					ok: false,
-					error: 'expected failure',
-					logs: [],
-				},
-				startedAt: '2026-04-12T07:00:00.000Z',
-				finishedAt: '2026-04-12T07:00:00.000Z',
-				durationMs: 0,
-			}
-		},
-	})
-	expect(failedOnceResult.deleteJobIds).toEqual([])
-	expect(failedOnceResult.saveJobs).toEqual([
-		expect.objectContaining({
-			id: 'job-once',
-			enabled: false,
-			lastRunStatus: 'error',
-			runCount: 0,
-			successCount: 0,
-			errorCount: 0,
-		}),
-	])
-	expect(failedOnceResult.jobOutcomes).toEqual([
-		{
-			jobId: 'job-once',
-			scheduleType: 'once',
-			outcome: 'failure',
-			nextRunAt: '2026-04-12T07:00:00.000Z',
-			deleted: false,
-			error: 'expected failure',
-		},
-	])
-
-	const successOnceJob = createCronJob({
-		id: 'job-once-success',
-		schedule: {
-			type: 'once',
-			runAt: '2026-04-12T07:00:00.000Z',
-		},
-		nextRunAt: '2026-04-12T07:00:00.000Z',
-	})
-	const successOnceResult = await processDueJobs({
-		jobs: [successOnceJob],
-		now,
-		async executeJob() {
-			return {
-				execution: {
-					ok: true,
-					logs: ['ok'],
-					result: { ok: true },
-				},
-				startedAt: '2026-04-12T07:00:00.000Z',
-				finishedAt: '2026-04-12T07:00:00.000Z',
-				durationMs: 0,
-			}
-		},
-	})
-	expect(successOnceResult.deleteJobIds).toEqual([])
-	expect(successOnceResult.saveJobs).toEqual([
-		expect.objectContaining({
-			id: 'job-once-success',
-			enabled: false,
-			lastRunStatus: 'success',
-			runCount: 0,
-			successCount: 0,
-			errorCount: 0,
-		}),
-	])
-	expect(successOnceResult.jobOutcomes).toEqual([
-		{
-			jobId: 'job-once-success',
-			scheduleType: 'once',
-			outcome: 'success',
-			nextRunAt: '2026-04-12T07:00:00.000Z',
-			deleted: false,
-		},
-	])
+	// Once jobs are disabled after either outcome and keep RunLog-owned counters.
+	const runAt = '2026-04-12T07:00:00.000Z'
+	for (const [id, execution, outcome] of [
+		[
+			'job-once',
+			{ ok: false, error: 'expected failure', logs: [] as Array<string> },
+			{ outcome: 'failure', error: 'expected failure' },
+		],
+		[
+			'job-once-success',
+			{ ok: true, logs: ['ok'] as Array<string>, result: { ok: true } },
+			{ outcome: 'success' },
+		],
+	] as const) {
+		const result = await processDueJobs({
+			jobs: [
+				createCronJob({
+					id,
+					schedule: { type: 'once', runAt },
+					nextRunAt: runAt,
+				}),
+			],
+			now,
+			async executeJob() {
+				return { execution, startedAt: runAt, finishedAt: runAt, durationMs: 0 }
+			},
+		})
+		expect(result.deleteJobIds).toEqual([])
+		expect(result.saveJobs).toEqual([
+			expect.objectContaining({
+				id,
+				enabled: false,
+				lastRunStatus: execution.ok ? 'success' : 'error',
+				lastRunAt: expect.any(String),
+				runCount: 0,
+				successCount: 0,
+				errorCount: 0,
+			}),
+		])
+		expect(result.jobOutcomes).toEqual([
+			{
+				jobId: id,
+				scheduleType: 'once',
+				nextRunAt: runAt,
+				deleted: false,
+				...outcome,
+			},
+		])
+	}
 
 	const cronJob = createCronJob({
 		id: 'job-reschedule-failure',

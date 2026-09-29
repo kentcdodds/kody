@@ -39,6 +39,24 @@ function createJob(overrides: Partial<JobRecord> = {}): JobRecord {
 const preferences = resolveJobRetentionPreferences({})
 const now = new Date('2026-04-01T00:00:00.000Z')
 
+function evaluate(
+	overrides: Partial<JobRecord>,
+	at: string | Date = now,
+	retention = preferences,
+) {
+	return evaluateJobRetentionEligibility({
+		job: createJob(overrides),
+		preferences: retention,
+		now: new Date(at),
+	})
+}
+
+const ranSuccessfully = {
+	lastRunStatus: 'success',
+	runCount: 1,
+	successCount: 1,
+} as const
+
 test('resolveJobRetentionPreferences uses platform defaults and clamps overrides', () => {
 	expect(preferences).toEqual({
 		successOnceDays: defaultJobRetentionDays.successOnce,
@@ -61,60 +79,44 @@ test('resolveJobRetentionPreferences uses platform defaults and clamps overrides
 	expect(validateJobRetentionDaysInput(14)).toBe(14)
 })
 
-test('package and preserved jobs are never eligible', () => {
-	expect(
-		evaluateJobRetentionEligibility({
-			job: createJob({
-				id: 'package-job:pkg:nightly',
-				lastRunAt: '2026-01-01T00:00:00.000Z',
-				lastRunStatus: 'success',
-				runCount: 1,
-				successCount: 1,
-			}),
-			preferences,
-			now,
-		}),
-	).toEqual({ eligible: false, reason: 'package' })
-
-	expect(
-		evaluateJobRetentionEligibility({
-			job: createJob({
-				preserved: true,
-				expiresAt: null,
-				lastRunAt: '2026-01-01T00:00:00.000Z',
-				lastRunStatus: 'success',
-				runCount: 1,
-				successCount: 1,
-			}),
-			preferences,
-			now,
-		}),
-	).toEqual({ eligible: false, reason: 'preserved' })
+test('package, preserved, upcoming once, and active recurring jobs are never eligible', () => {
+	const ranAt = { lastRunAt: '2026-01-01T00:00:00.000Z' }
+	const cases: Array<[string, Partial<JobRecord>]> = [
+		[
+			'package',
+			{ id: 'package-job:pkg:nightly', ...ranAt, ...ranSuccessfully },
+		],
+		['preserved', { preserved: true, ...ranAt, ...ranSuccessfully }],
+		['upcoming_once', { enabled: true, lastRunAt: undefined }],
+		[
+			'active_recurring',
+			{
+				enabled: true,
+				schedule: { type: 'cron', expression: '0 9 * * *' },
+				...ranAt,
+			},
+		],
+		// Kill switch pauses execution; it must not age out a held recurring job.
+		[
+			'active_recurring',
+			{
+				enabled: true,
+				killSwitchEnabled: true,
+				schedule: { type: 'interval', every: '1h' },
+				...ranAt,
+			},
+		],
+	]
+	for (const [reason, overrides] of cases) {
+		expect(evaluate(overrides)).toEqual({ eligible: false, reason })
+	}
 })
 
 test('successful past once jobs age out after success retention days', () => {
-	const job = createJob({
-		enabled: false,
-		lastRunAt: '2026-03-01T00:00:00.000Z',
-		lastRunStatus: 'success',
-		runCount: 1,
-		successCount: 1,
-	})
-	expect(isPastOnceJob(job, now)).toBe(true)
-	expect(
-		evaluateJobRetentionEligibility({
-			job,
-			preferences,
-			now: new Date('2026-03-10T00:00:00.000Z'),
-		}).eligible,
-	).toBe(false)
-
-	const decision = evaluateJobRetentionEligibility({
-		job,
-		preferences,
-		now: new Date('2026-03-16T00:00:00.000Z'),
-	})
-	expect(decision).toEqual({
+	const job = { lastRunAt: '2026-03-01T00:00:00.000Z', ...ranSuccessfully }
+	expect(isPastOnceJob(createJob(job), now)).toBe(true)
+	expect(evaluate(job, '2026-03-10T00:00:00.000Z').eligible).toBe(false)
+	expect(evaluate(job, '2026-03-16T00:00:00.000Z')).toEqual({
 		eligible: true,
 		category: 'success_once',
 		ageAnchor: '2026-03-01T00:00:00.000Z',
@@ -124,33 +126,18 @@ test('successful past once jobs age out after success retention days', () => {
 })
 
 test('failed and never-ran past once jobs use the longer once retention', () => {
-	const failed = createJob({
-		lastRunAt: '2026-01-01T00:00:00.000Z',
-		lastRunStatus: 'error',
-	})
 	expect(
-		evaluateJobRetentionEligibility({
-			job: failed,
-			preferences,
-			now: new Date('2026-03-03T00:00:00.000Z'),
-		}),
+		evaluate(
+			{ lastRunAt: '2026-01-01T00:00:00.000Z', lastRunStatus: 'error' },
+			'2026-03-03T00:00:00.000Z',
+		),
 	).toMatchObject({
 		eligible: true,
 		category: 'failed_once',
 		retentionDays: 60,
 	})
-
-	const neverRan = createJob({
-		enabled: false,
-		lastRunAt: undefined,
-		schedule: { type: 'once', runAt: '2026-01-01T00:00:00.000Z' },
-	})
 	expect(
-		evaluateJobRetentionEligibility({
-			job: neverRan,
-			preferences,
-			now: new Date('2026-03-05T00:00:00.000Z'),
-		}),
+		evaluate({ lastRunAt: undefined }, '2026-03-05T00:00:00.000Z'),
 	).toMatchObject({
 		eligible: true,
 		category: 'never_ran_once',
@@ -159,78 +146,32 @@ test('failed and never-ran past once jobs use the longer once retention', () => 
 	})
 })
 
-test('upcoming never-ran once jobs and enabled recurring jobs are skipped', () => {
-	expect(
-		evaluateJobRetentionEligibility({
-			job: createJob({
-				enabled: true,
-				lastRunAt: undefined,
-				schedule: { type: 'once', runAt: '2026-01-01T00:00:00.000Z' },
-			}),
-			preferences,
-			now,
-		}),
-	).toEqual({ eligible: false, reason: 'upcoming_once' })
-
-	expect(
-		evaluateJobRetentionEligibility({
-			job: createJob({
-				enabled: true,
-				schedule: { type: 'cron', expression: '0 9 * * *' },
-				lastRunAt: '2026-01-01T00:00:00.000Z',
-			}),
-			preferences,
-			now,
-		}),
-	).toEqual({ eligible: false, reason: 'active_recurring' })
-
-	// Kill switch pauses execution; it must not age out a held recurring job.
-	expect(
-		evaluateJobRetentionEligibility({
-			job: createJob({
-				enabled: true,
-				killSwitchEnabled: true,
-				schedule: { type: 'interval', every: '1h' },
-				lastRunAt: '2026-01-01T00:00:00.000Z',
-			}),
-			preferences,
-			now,
-		}),
-	).toEqual({ eligible: false, reason: 'active_recurring' })
-})
-
 test('disabled recurring ad-hoc jobs age out after disabled retention days', () => {
-	const job = createJob({
-		enabled: false,
-		schedule: { type: 'interval', every: '1d' },
-		lastRunAt: '2026-01-01T00:00:00.000Z',
-		updatedAt: '2026-01-02T00:00:00.000Z',
-	})
+	const at = '2026-04-02T00:00:00.000Z'
 	expect(
-		evaluateJobRetentionEligibility({
-			job,
-			preferences,
-			now: new Date('2026-04-02T00:00:00.000Z'),
-		}),
+		evaluate(
+			{
+				schedule: { type: 'interval', every: '1d' },
+				lastRunAt: '2026-01-01T00:00:00.000Z',
+				updatedAt: '2026-01-02T00:00:00.000Z',
+			},
+			at,
+		),
 	).toMatchObject({
 		eligible: true,
 		category: 'disabled_recurring',
 		retentionDays: 90,
 		ageAnchor: '2026-01-01T00:00:00.000Z',
 	})
-
-	const neverRanDisabled = createJob({
-		enabled: false,
-		schedule: { type: 'cron', expression: '0 9 * * *' },
-		lastRunAt: undefined,
-		updatedAt: '2026-01-01T00:00:00.000Z',
-	})
 	expect(
-		evaluateJobRetentionEligibility({
-			job: neverRanDisabled,
-			preferences,
-			now: new Date('2026-04-02T00:00:00.000Z'),
-		}),
+		evaluate(
+			{
+				schedule: { type: 'cron', expression: '0 9 * * *' },
+				lastRunAt: undefined,
+				updatedAt: '2026-01-01T00:00:00.000Z',
+			},
+			at,
+		),
 	).toMatchObject({
 		eligible: true,
 		category: 'disabled_recurring',
@@ -239,18 +180,12 @@ test('disabled recurring ad-hoc jobs age out after disabled retention days', () 
 })
 
 test('account retention overrides change eligibility cutoffs', () => {
-	const job = createJob({
-		lastRunAt: '2026-03-20T00:00:00.000Z',
-		lastRunStatus: 'success',
-		runCount: 1,
-		successCount: 1,
-	})
 	expect(
-		evaluateJobRetentionEligibility({
-			job,
-			preferences: resolveJobRetentionPreferences({ successOnceDays: 7 }),
-			now: new Date('2026-03-28T00:00:00.000Z'),
-		}),
+		evaluate(
+			{ lastRunAt: '2026-03-20T00:00:00.000Z', ...ranSuccessfully },
+			'2026-03-28T00:00:00.000Z',
+			resolveJobRetentionPreferences({ successOnceDays: 7 }),
+		),
 	).toMatchObject({
 		eligible: true,
 		category: 'success_once',

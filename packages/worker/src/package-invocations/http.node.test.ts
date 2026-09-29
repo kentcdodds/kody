@@ -179,58 +179,54 @@ function createContext() {
 	} as unknown as ExecutionContext
 }
 
-test('package invocation API rejects missing, invalid, and malformed tokens before invoking exports', async () => {
-	expect(
-		isPackageInvocationApiRequest(
-			'/@my-user/api/package-invocations/discord-gateway/dispatch-message-created',
-		),
-	).toBe(true)
-	expect(
-		isPackageInvocationApiRequest(
-			'/api/package-invocations/discord-gateway/dispatch-message-created',
-		),
-	).toBe(true)
-	expect(isPackageInvocationApiRequest('/api/me')).toBe(false)
+const dispatchRoute =
+	'https://example.com/@my-user/api/package-invocations/discord-gateway/dispatch-message-created'
 
-	const route =
-		'https://example.com/@my-user/api/package-invocations/discord-gateway/dispatch-message-created'
-	const body = JSON.stringify({ idempotencyKey: 'evt-1' })
-
-	const missingTokenResponse = await handlePackageInvocationApiRequest(
-		new Request(route, {
+async function post(input: {
+	url?: string
+	token?: string
+	body: Record<string, unknown>
+	envOptions?: Parameters<typeof createEnv>[0]
+	ctx?: ExecutionContext
+}) {
+	return handlePackageInvocationApiRequest(
+		new Request(input.url ?? dispatchRoute, {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body,
+			headers: {
+				...(input.token ? { Authorization: `Bearer ${input.token}` } : {}),
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify(input.body),
 		}),
-		await createEnv(),
-		createContext(),
+		await createEnv(input.envOptions),
+		input.ctx ?? createContext(),
 	)
+}
 
+test('package invocation API rejects missing, invalid, and malformed tokens before invoking exports', async () => {
+	for (const [path, expected] of [
+		[
+			'/@my-user/api/package-invocations/discord-gateway/dispatch-message-created',
+			true,
+		],
+		['/api/package-invocations/discord-gateway/dispatch-message-created', true],
+		['/api/me', false],
+	] as const) {
+		expect(isPackageInvocationApiRequest(path)).toBe(expected)
+	}
+	const body = { idempotencyKey: 'evt-1' }
+
+	const missingTokenResponse = await post({ body })
 	expect(missingTokenResponse.status).toBe(401)
 	expect(missingTokenResponse.headers.get('WWW-Authenticate')).toBe(
 		'Bearer realm="package-invocations"',
 	)
 	await expect(missingTokenResponse.json()).resolves.toEqual({
 		ok: false,
-		error: {
-			code: 'unauthorized',
-			message: 'Unauthorized',
-		},
+		error: { code: 'unauthorized', message: 'Unauthorized' },
 	})
 
-	const invalidTokenResponse = await handlePackageInvocationApiRequest(
-		new Request(route, {
-			method: 'POST',
-			headers: {
-				Authorization: 'Bearer wrong-token',
-				'Content-Type': 'application/json',
-			},
-			body,
-		}),
-		await createEnv(),
-		createContext(),
-	)
-
+	const invalidTokenResponse = await post({ token: 'wrong-token', body })
 	expect(invalidTokenResponse.status).toBe(401)
 	await expect(invalidTokenResponse.json()).resolves.toEqual({
 		ok: false,
@@ -239,46 +235,26 @@ test('package invocation API rejects missing, invalid, and malformed tokens befo
 			message: 'Invalid package invocation token.',
 		},
 	})
+	expect(invocationMockModule.invokePackageExport).not.toHaveBeenCalled()
 
-	invocationMockModule.invokePackageExport.mockClear()
 	invocationMockModule.invokePackageExport.mockResolvedValue({
 		status: 200,
 		body: { ok: true },
 	})
-
-	const lastUsedWriteMiss = await handlePackageInvocationApiRequest(
-		new Request(route, {
-			method: 'POST',
-			headers: {
-				Authorization: 'Bearer private-token-123',
-				'Content-Type': 'application/json',
-			},
-			body,
-		}),
-		await createEnv({ touchChanges: 0 }),
-		createContext(),
-	)
-
+	const lastUsedWriteMiss = await post({
+		token: 'private-token-123',
+		body,
+		envOptions: { touchChanges: 0 },
+	})
 	expect(lastUsedWriteMiss.status).toBe(200)
-	expect(invocationMockModule.invokePackageExport).toHaveBeenCalled()
+	expect(invocationMockModule.invokePackageExport).toHaveBeenCalledTimes(1)
 
 	await expect(
-		handlePackageInvocationApiRequest(
-			new Request(route, {
-				method: 'POST',
-				headers: {
-					Authorization: 'Bearer private-token-123',
-					'Content-Type': 'application/json',
-				},
-				body,
-			}),
-			await createEnv({
-				tokenRow: {
-					export_names_json: '{bad json',
-				},
-			}),
-			createContext(),
-		),
+		post({
+			token: 'private-token-123',
+			body,
+			envOptions: { tokenRow: { export_names_json: '{bad json' } },
+		}),
 	).rejects.toThrow(
 		'Invalid package invocation token record: export_names_json must be valid JSON.',
 	)
@@ -286,23 +262,11 @@ test('package invocation API rejects missing, invalid, and malformed tokens befo
 })
 
 test('unscoped package invocation route reports missing owner slug instead of token failure', async () => {
-	invocationMockModule.invokePackageExport.mockClear()
-
-	const response = await handlePackageInvocationApiRequest(
-		new Request(
-			'https://example.com/api/package-invocations/discord-gateway/dispatch-message-created',
-			{
-				method: 'POST',
-				headers: {
-					Authorization: 'Bearer wrong-token',
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({ idempotencyKey: 'evt-unscoped' }),
-			},
-		),
-		await createEnv(),
-		createContext(),
-	)
+	const response = await post({
+		url: 'https://example.com/api/package-invocations/discord-gateway/dispatch-message-created',
+		token: 'wrong-token',
+		body: { idempotencyKey: 'evt-unscoped' },
+	})
 
 	expect(response.status).toBe(404)
 	expect(response.headers.get('WWW-Authenticate')).toBeNull()
@@ -318,22 +282,10 @@ test('unscoped package invocation route reports missing owner slug instead of to
 })
 
 test('package invocation API validates requests and invokes exports with scoped token context', async () => {
-	const invalidBodyResponse = await handlePackageInvocationApiRequest(
-		new Request(
-			'https://example.com/@my-user/api/package-invocations/discord-gateway/dispatch-message-created',
-			{
-				method: 'POST',
-				headers: {
-					Authorization: 'Bearer private-token-123',
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({ params: [] }),
-			},
-		),
-		await createEnv(),
-		createContext(),
-	)
-
+	const invalidBodyResponse = await post({
+		token: 'private-token-123',
+		body: { params: [] },
+	})
 	expect(invalidBodyResponse.status).toBe(400)
 	await expect(invalidBodyResponse.json()).resolves.toEqual({
 		ok: false,
@@ -343,49 +295,35 @@ test('package invocation API validates requests and invokes exports with scoped 
 		},
 	})
 
+	const responseBody = {
+		ok: true,
+		exportName: './dispatch-message-created',
+		idempotency: { key: 'evt-1', replayed: false },
+		result: { reply: 'hello discord' },
+		logs: ['ran'],
+	}
 	invocationMockModule.invokePackageExport.mockResolvedValue({
 		status: 200,
-		body: {
-			ok: true,
-			exportName: './dispatch-message-created',
-			idempotency: {
-				key: 'evt-1',
-				replayed: false,
-			},
-			result: { reply: 'hello discord' },
-			logs: ['ran'],
-		},
+		body: responseBody,
 	})
-
 	const ctx = createContext()
-	const expectedUserId = await createStableUserIdFromEmail('me@example.com')
-	const invokeResponse = await handlePackageInvocationApiRequest(
-		new Request(
-			'https://example.com/@my-user/api/package-invocations/discord-gateway/dispatch-message-created',
-			{
-				method: 'POST',
-				headers: {
-					Authorization: 'Bearer private-token-123',
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({
-					params: { content: 'hi' },
-					idempotencyKey: 'evt-1',
-					source: 'discord-gateway',
-					topic: 'discord.message.created',
-				}),
-			},
-		),
-		await createEnv(),
+	const invokeResponse = await post({
+		token: 'private-token-123',
+		body: {
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-1',
+			source: 'discord-gateway',
+			topic: 'discord.message.created',
+		},
 		ctx,
-	)
+	})
 
 	expect(invocationMockModule.invokePackageExport).toHaveBeenCalledWith({
 		env: expect.any(Object),
 		baseUrl: 'https://example.com',
 		token: {
 			tokenId: 'token-1',
-			userId: expectedUserId,
+			userId: await createStableUserIdFromEmail('me@example.com'),
 			email: 'me@example.com',
 			packageId: 'pkg-discord-gateway',
 			exportNames: ['./dispatch-message-created'],
@@ -403,16 +341,7 @@ test('package invocation API validates requests and invokes exports with scoped 
 	})
 	expect(invokeResponse.status).toBe(200)
 	expect(ctx.waitUntil).toHaveBeenCalled()
-	await expect(invokeResponse.json()).resolves.toEqual({
-		ok: true,
-		exportName: './dispatch-message-created',
-		idempotency: {
-			key: 'evt-1',
-			replayed: false,
-		},
-		result: { reply: 'hello discord' },
-		logs: ['ran'],
-	})
+	await expect(invokeResponse.json()).resolves.toEqual(responseBody)
 
 	invocationMockModule.invokePackageExport.mockClear()
 	invocationMockModule.invokePackageExport.mockResolvedValue({
@@ -420,44 +349,25 @@ test('package invocation API validates requests and invokes exports with scoped 
 		body: {
 			ok: true,
 			exportName: '.',
-			idempotency: {
-				key: 'evt-root',
-				replayed: false,
-			},
+			idempotency: { key: 'evt-root', replayed: false },
 			result: { ok: true },
 			logs: [],
 		},
 	})
-
-	const rootResponse = await handlePackageInvocationApiRequest(
-		new Request(
-			'https://example.com/@my-user/api/package-invocations/discord-gateway/__root__',
-			{
-				method: 'POST',
-				headers: {
-					Authorization: 'Bearer private-token-123',
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({
-					params: { content: 'hi' },
-					idempotencyKey: 'evt-root',
-					source: 'discord-gateway',
-				}),
-			},
-		),
-		await createEnv({
-			tokenRow: {
-				export_names_json: JSON.stringify(['.']),
-			},
-		}),
-		createContext(),
-	)
+	const rootResponse = await post({
+		url: 'https://example.com/@my-user/api/package-invocations/discord-gateway/__root__',
+		token: 'private-token-123',
+		body: {
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-root',
+			source: 'discord-gateway',
+		},
+		envOptions: { tokenRow: { export_names_json: JSON.stringify(['.']) } },
+	})
 
 	expect(invocationMockModule.invokePackageExport).toHaveBeenCalledWith(
 		expect.objectContaining({
-			request: expect.objectContaining({
-				exportName: '.',
-			}),
+			request: expect.objectContaining({ exportName: '.' }),
 		}),
 	)
 	expect(rootResponse.status).toBe(200)
@@ -467,23 +377,10 @@ test('package invocation maps a lease acquisition race to account_deleting', asy
 	invocationMockModule.invokePackageExport.mockRejectedValue(
 		new AccountDeletionInProgressError(),
 	)
-	const response = await handlePackageInvocationApiRequest(
-		new Request(
-			'https://example.com/@my-user/api/package-invocations/discord-gateway/dispatch-message-created',
-			{
-				method: 'POST',
-				headers: {
-					Authorization: 'Bearer private-token-123',
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({
-					idempotencyKey: 'lease-race',
-				}),
-			},
-		),
-		await createEnv(),
-		createContext(),
-	)
+	const response = await post({
+		token: 'private-token-123',
+		body: { idempotencyKey: 'lease-race' },
+	})
 	expect(response.status).toBe(409)
 	await expect(response.json()).resolves.toEqual({
 		ok: false,

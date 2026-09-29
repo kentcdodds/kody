@@ -1,4 +1,4 @@
-import { expect, test, vi } from 'vitest'
+import { expect, test, vi, type Mock } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { type RunRecordHandle } from './types.ts'
 
@@ -79,10 +79,6 @@ function createEnv(overrides: Partial<Env> = {}) {
 
 test('finishRunRecord dispatches run.error.recorded only for persisted non-subscription errors', async () => {
 	consoleWarn.mockImplementation(() => {})
-	mocks.dispatchRunErrorSubscriptionEvents.mockReset()
-	mocks.finishRun.mockReset()
-	mocks.finishRun.mockResolvedValue({ ok: true })
-	mocks.dispatchRunErrorSubscriptionEvents.mockResolvedValue([])
 	const env = createEnv()
 
 	const errorHandle = beginRunRecord({
@@ -295,109 +291,78 @@ test('activation reads never throw when RunLog is missing or RPC fails', async (
 	)
 })
 
-test('getAdminInsightsSnapshot requires RUN_LOG and forwards the RPC', async () => {
-	await expect(
-		getAdminInsightsSnapshot({ env: {} as Env, userId: 'user-1' }),
-	).rejects.toThrow('RUN_LOG Durable Object binding is not configured.')
-
-	mocks.getAdminInsightsSnapshot.mockResolvedValueOnce({
-		workflowStatusCounts: [{ status: 'running', count: 2 }],
-		jobRunCounts: { success: 8, error: 3 },
-		activationMilestones: [
-			{
-				milestone: 'package_activated',
-				reachedAt: '2026-08-01T00:00:00.000Z',
-				packageId: 'pkg-1',
-			},
-		],
-	})
-	const env = createEnv()
-	await expect(
-		getAdminInsightsSnapshot({ env, userId: 'user-1' }),
-	).resolves.toEqual({
-		workflowStatusCounts: [{ status: 'running', count: 2 }],
-		jobRunCounts: { success: 8, error: 3 },
-		activationMilestones: [
-			{
-				milestone: 'package_activated',
-				reachedAt: '2026-08-01T00:00:00.000Z',
-				packageId: 'pkg-1',
-			},
-		],
-	})
-})
-
-test('getSqlBillingStats requires RUN_LOG and forwards the RPC', async () => {
-	await expect(
-		getSqlBillingStats({ env: {} as Env, userId: 'user-1' }),
-	).rejects.toThrow('RUN_LOG Durable Object binding is not configured.')
-
-	mocks.getSqlBillingStats.mockResolvedValueOnce({
+test('RUN_LOG admin reads require the binding and forward the RPC result', async () => {
+	const billing = {
 		databaseSize: 4096,
 		rowsReadTotal: 12,
 		rowsWrittenTotal: 3,
-		ops: [{ op: 'listRuns', rowsRead: 12, rowsWritten: 0, calls: 1 }],
-	})
-	const env = createEnv()
-	await expect(getSqlBillingStats({ env, userId: 'user-1' })).resolves.toEqual({
-		databaseSize: 4096,
-		rowsReadTotal: 12,
-		rowsWrittenTotal: 3,
-		ops: [{ op: 'listRuns', rowsRead: 12, rowsWritten: 0, calls: 1 }],
-	})
-})
-
-test('inspectRunLogSqlBilling requires RUN_LOG and forwards the RPC', async () => {
-	await expect(
-		inspectRunLogSqlBilling({ env: {} as Env, userId: 'user-1' }),
-	).rejects.toThrow('RUN_LOG Durable Object binding is not configured.')
-
-	const inspection = {
-		schemaVersion: 11,
-		billing: {
-			databaseSize: 4096,
-			rowsReadTotal: 12,
-			rowsWrittenTotal: 3,
-			ops: [
-				{ op: 'listRuns' as const, rowsRead: 12, rowsWritten: 0, calls: 1 },
-			],
-		},
-		runLogsIndexes: [
-			{
-				seq: 0,
-				name: 'sqlite_autoindex_run_logs_1',
-				unique: true,
-				origin: 'pk',
-				partial: false,
-			},
-		],
-		runLogsColumns: [
-			{
-				cid: 0,
-				name: 'run_id',
-				type: 'TEXT',
-				notnull: true,
-				dfltValue: null,
-				pk: 1,
-			},
-		],
-		tableCounts: {
-			runs: 2,
-			runLogs: 4,
-			packageInvocationLedger: 0,
-			workflowProjections: 0,
-		},
-		runCount: { meta: 2, actual: 2, matches: true },
-		explainRunLogsDeleteByRunId: [
-			{ id: 2, parent: 0, detail: 'SEARCH run_logs USING INTEGER PRIMARY KEY' },
-		],
-		explainRunLogsSelectByRunId: [
-			{ id: 3, parent: 0, detail: 'SEARCH run_logs USING INTEGER PRIMARY KEY' },
-		],
+		ops: [{ op: 'listRuns' as const, rowsRead: 12, rowsWritten: 0, calls: 1 }],
 	}
-	mocks.inspectSqlBilling.mockResolvedValueOnce(inspection)
-	const env = createEnv()
-	await expect(
-		inspectRunLogSqlBilling({ env, userId: 'user-1' }),
-	).resolves.toEqual(inspection)
+	const explainSearch = (id: number) => [
+		{ id, parent: 0, detail: 'SEARCH run_logs USING INTEGER PRIMARY KEY' },
+	]
+	const cases = [
+		[
+			getAdminInsightsSnapshot,
+			mocks.getAdminInsightsSnapshot,
+			{
+				workflowStatusCounts: [{ status: 'running', count: 2 }],
+				jobRunCounts: { success: 8, error: 3 },
+				activationMilestones: [
+					{
+						milestone: 'package_activated',
+						reachedAt: '2026-08-01T00:00:00.000Z',
+						packageId: 'pkg-1',
+					},
+				],
+			},
+		],
+		[getSqlBillingStats, mocks.getSqlBillingStats, billing],
+		[
+			inspectRunLogSqlBilling,
+			mocks.inspectSqlBilling,
+			{
+				schemaVersion: 11,
+				billing,
+				runLogsIndexes: [
+					{
+						seq: 0,
+						name: 'sqlite_autoindex_run_logs_1',
+						unique: true,
+						origin: 'pk',
+						partial: false,
+					},
+				],
+				runLogsColumns: [
+					{
+						cid: 0,
+						name: 'run_id',
+						type: 'TEXT',
+						notnull: true,
+						dfltValue: null,
+						pk: 1,
+					},
+				],
+				tableCounts: {
+					runs: 2,
+					runLogs: 4,
+					packageInvocationLedger: 0,
+					workflowProjections: 0,
+				},
+				runCount: { meta: 2, actual: 2, matches: true },
+				explainRunLogsDeleteByRunId: explainSearch(2),
+				explainRunLogsSelectByRunId: explainSearch(3),
+			},
+		],
+	] as const
+	for (const [read, rpc, value] of cases) {
+		const call = read as (input: { env: Env; userId: string }) => unknown
+		await expect(call({ env: {} as Env, userId: 'user-1' })).rejects.toThrow(
+			'RUN_LOG Durable Object binding is not configured.',
+		)
+		vi.mocked(rpc as Mock).mockResolvedValueOnce(value)
+		await expect(call({ env: createEnv(), userId: 'user-1' })).resolves.toEqual(
+			value,
+		)
+	}
 })

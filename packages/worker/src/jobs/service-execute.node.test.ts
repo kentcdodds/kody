@@ -1,21 +1,33 @@
 import { expect, test, vi, afterEach } from 'vitest'
-import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
-import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import { getJobRowById } from '@kody-internal/shared/jobs/repo.ts'
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
+import * as registry from '#mcp/run-kody-registry.ts'
 import { planLimits } from '#universal/plans.ts'
-import { saveSecret } from '#mcp/secrets/service.ts'
-import { saveValue } from '#mcp/values/service.ts'
-import { executeJobOnce } from './service.ts'
-import { type JobRecord } from './types.ts'
 import {
 	AccountSuspendedError,
 	accountSuspendedMessage,
 } from '#worker/account/account-suspension.ts'
+import { d1NetworkConnectionLostMessage } from '#worker/d1-retry.ts'
+import { parseEntitlementLimitMessage } from '#worker/entitlements/errors.ts'
+import * as packageInvocations from '#worker/package-invocations/service.ts'
+import * as moduleGraph from '#worker/package-runtime/module-graph.ts'
+import { persistPublishedBundleArtifact } from '#worker/package-runtime/published-bundle-artifacts.ts'
+import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import * as repoKodyExecution from '#worker/repo/repo-kody-execution.ts'
+import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
+import { durableObjectInstanceInactiveCloseMessage } from '#worker/sentry-options.ts'
+import { createStorageEstimateReadError } from '#worker/storage-estimate-error.ts'
+import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import * as usageModule from '#worker/usage/record-usage.ts'
 import { TransientJobExecutionError } from './execution-safety.ts'
+import * as schedule from './schedule.ts'
+import { executeJobOnce, runJobNow } from './service.ts'
+import { type JobRecord, type PersistedJobCallerContext } from './types.ts'
 import {
 	identityMockModule,
 	resetJobServiceMocks,
 	mockRepoPersistence,
-	createPackageJobManifest,
 	createPackageJobManifestText,
 	createDatabase,
 	createJobServiceTestEnv,
@@ -75,819 +87,893 @@ afterEach(() => {
 	resetJobServiceMocks()
 })
 
-test('executeJobOnce background execution workflow', async () => {
-	// Phase: job_runs_per_day entitlement before sandbox work
-	{
-		// Usage rollup writes are best-effort and fail against this fake env.
-		silenceIncidentalRuntimeWarnings()
-		const { utcDayKey } = await import('@kody-internal/shared/date-keys.ts')
-		const { parseEntitlementLimitMessage } =
-			await import('#worker/entitlements/errors.ts')
-		const usageModule = await import('#worker/usage/record-usage.ts')
-		const recordUsageSpy = vi
-			.spyOn(usageModule, 'recordUsage')
-			.mockResolvedValue(undefined)
-		const callerContext = createBaseCallerContext()
-		const userId = callerContext.user.userId
-		// Matches the module-level resolveBackgroundMcpUser mock email.
-		const email = `${userId}@example.com`
-		const meter = createInMemoryUserMeterEnv()
-		const env = createJobServiceTestEnv(
-			{
-				APP_DB: createDatabase({
-					users: [{ email, plan: 'free', stable_user_id: userId }],
-				}),
-			},
-			meter,
-		)
-		const limit = planLimits.free.maxJobRunsPerDay
-		await meter.seed({
-			userId,
-			resource: 'job_runs_per_day',
-			day: utcDayKey(),
-			count: limit,
-		})
+const onceSchedule = { type: 'once', runAt: '2026-04-17T15:00:00Z' } as const
 
-		const executeSpy = vi.spyOn(
-			await import('#mcp/run-kody-registry.ts'),
-			'runBundledModuleWithRegistry',
-		)
-		const job: JobRecord = {
-			version: 1,
-			id: 'job-run-quota',
-			userId,
-			name: 'Quota job',
-			sourceId: 'source-job-run-quota',
-			publishedCommit: null,
-			storageId: 'job:job-run-quota',
-			schedule: { type: 'interval', every: '1h' },
-			timezone: 'UTC',
-			enabled: true,
-			killSwitchEnabled: false,
-			preserved: false,
-			expiresAt: null,
-			createdAt: '2026-08-08T00:00:00.000Z',
-			updatedAt: '2026-08-08T00:00:00.000Z',
-			nextRunAt: '2026-08-08T13:00:00.000Z',
-			runCount: 0,
-			successCount: 0,
-			errorCount: 0,
-		}
+function createExecuteEnv() {
+	const db = createDatabase()
+	const bundleKv = createBundleArtifactsKv()
+	const env = createJobServiceTestEnv({
+		APP_DB: db,
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: bundleKv,
+		LOADER: {} as WorkerLoader,
+		REPO_SESSION: {} as DurableObjectNamespace,
+		STORAGE_RUNNER: createStorageRunnerBinding(),
+	})
+	return { db, bundleKv, env }
+}
 
-		try {
-			const outcome = await executeJobOnce({
-				env,
-				job,
-				callerContext,
-			})
-			expect(outcome.execution.ok).toBe(false)
-			if (outcome.execution.ok) {
-				throw new Error('Expected job_runs_per_day denial.')
-			}
-			const details = parseEntitlementLimitMessage(outcome.execution.error)
-			expect(details).toMatchObject({
-				code: 'entitlement_limit_exceeded',
-				resource: 'job_runs_per_day',
-				plan: 'free',
-				limit,
-				current: limit,
-			})
-			expect(executeSpy).not.toHaveBeenCalled()
-			expect(recordUsageSpy).not.toHaveBeenCalled()
-		} finally {
-			executeSpy.mockRestore()
-			recordUsageSpy.mockRestore()
-		}
+function createJob(
+	input: Pick<JobRecord, 'id' | 'name' | 'sourceId'> & Partial<JobRecord>,
+): JobRecord {
+	return {
+		version: 1,
+		userId: 'user-123',
+		publishedCommit: null,
+		storageId: `job:${input.id}`,
+		schedule: onceSchedule,
+		timezone: 'UTC',
+		enabled: true,
+		killSwitchEnabled: false,
+		preserved: false,
+		expiresAt: null,
+		createdAt: '2026-04-16T00:00:00.000Z',
+		updatedAt: '2026-04-16T00:00:00.000Z',
+		nextRunAt: '2026-04-17T15:00:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+		...input,
 	}
+}
 
-	// Phase: transient background identity lookup retry
-	{
-		const callerContext = createBaseCallerContext()
-		const env = createJobServiceTestEnv({ APP_DB: createDatabase() })
-		identityMockModule.resolveBackgroundMcpUser.mockRejectedValueOnce(
-			new Error('D1_ERROR: Network connection lost.'),
-		)
-		const job: JobRecord = {
-			version: 1,
-			id: 'job-identity-retry',
-			userId: callerContext.user.userId,
-			name: 'Identity retry',
-			sourceId: 'source-identity-retry',
-			publishedCommit: null,
-			storageId: 'job:job-identity-retry',
-			schedule: { type: 'interval', every: '1h' },
-			timezone: 'UTC',
-			enabled: true,
-			killSwitchEnabled: false,
-			preserved: false,
-			expiresAt: null,
-			createdAt: '2026-08-08T00:00:00.000Z',
-			updatedAt: '2026-08-08T00:00:00.000Z',
-			nextRunAt: '2026-08-08T01:00:00.000Z',
-			runCount: 0,
-			successCount: 0,
-			errorCount: 0,
-		}
+function kodyJobManifest(title: string, description: string) {
+	return JSON.stringify({
+		version: 1,
+		kind: 'job',
+		title,
+		description,
+		sourceRoot: '/',
+		entrypoint: 'src/job.ts',
+	})
+}
 
-		await expect(
-			executeJobOnce({
-				env,
-				job,
-				callerContext,
+/** Leftover (non-package) job with a published kody.json snapshot. */
+async function publishLeftoverJob(input: {
+	env: Env
+	callerContext: PersistedJobCallerContext
+	name: string
+	code: string
+	params?: Record<string, unknown>
+	schedule?: JobRecord['schedule']
+	publishedCommit?: string
+	description?: string
+}) {
+	mockRepoPersistence()
+	const jobView = await insertLeftoverJob({
+		env: input.env,
+		callerContext: input.callerContext,
+		body: {
+			name: input.name,
+			code: input.code,
+			params: input.params,
+			schedule: input.schedule ?? onceSchedule,
+		},
+	})
+	await insertPublishedEntitySource({
+		db: input.env.APP_DB as ReturnType<typeof createDatabase>,
+		env: input.env,
+		userId: input.callerContext.user.userId,
+		sourceId: jobView.sourceId,
+		entityKind: 'job',
+		entityId: jobView.id,
+		publishedCommit: input.publishedCommit ?? 'published-commit-1',
+		manifestPath: 'kody.json',
+		files: {
+			'kody.json': kodyJobManifest(
+				input.name,
+				input.description ?? 'Runs once at 2026-04-17T15:00:00.000Z',
+			),
+			'src/job.ts': input.code,
+		},
+	})
+	const row = await getJobRowById(
+		input.env.APP_DB,
+		input.callerContext.user.userId,
+		jobView.id,
+	)
+	if (!row) throw new Error('Expected created job row.')
+	return { jobView, row }
+}
+
+/** Package-backed job whose published package.json declares `jobName`. */
+async function publishPackageJob(input: {
+	id: string
+	sourceId: string
+	commit: string
+	kodyId: string
+	jobName: string
+	files: Record<string, string>
+	manifest?: { entry?: string; exportPath?: string }
+	job?: Partial<JobRecord>
+}) {
+	const { db, bundleKv, env } = createExecuteEnv()
+	await insertPublishedEntitySource({
+		db,
+		userId: 'user-123',
+		sourceId: input.sourceId,
+		entityKind: 'package',
+		entityId: input.id,
+		publishedCommit: input.commit,
+		manifestPath: 'package.json',
+		kv: bundleKv,
+		files: {
+			'package.json': createPackageJobManifestText({
+				packageName: `@kody/${input.kodyId}`,
+				kodyId: input.kodyId,
+				description: 'Runs from repo',
+				jobName: input.jobName,
+				...input.manifest,
 			}),
-		).rejects.toBeInstanceOf(TransientJobExecutionError)
-	}
+			...input.files,
+		},
+	})
+	const job = createJob({
+		id: input.id,
+		name: input.jobName,
+		sourceId: input.sourceId,
+		publishedCommit: input.commit,
+		...input.job,
+	})
+	return { db, env, job }
+}
 
-	// Phase: suspended account halts the job before sandbox work
-	{
-		const usageModule = await import('#worker/usage/record-usage.ts')
-		const recordUsageSpy = vi
-			.spyOn(usageModule, 'recordUsage')
-			.mockResolvedValue(undefined)
-		const executeSpy = vi.spyOn(
-			await import('#mcp/run-kody-registry.ts'),
-			'runBundledModuleWithRegistry',
-		)
-		const callerContext = createBaseCallerContext()
-		const env = createJobServiceTestEnv({ APP_DB: createDatabase() })
-		identityMockModule.resolveBackgroundMcpUser.mockRejectedValueOnce(
-			new AccountSuspendedError(),
-		)
-		const job: JobRecord = {
-			version: 1,
-			id: 'job-suspended',
-			userId: callerContext.user.userId,
-			name: 'Suspended owner',
-			sourceId: 'source-suspended',
-			publishedCommit: null,
-			storageId: 'job:job-suspended',
+test('executeJobOnce gates entitlement, identity blips, and suspension before sandbox work', async () => {
+	// Usage rollup writes are best-effort and fail against this fake env.
+	silenceIncidentalRuntimeWarnings()
+	const recordUsageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	const executeSpy = vi.spyOn(registry, 'runBundledModuleWithRegistry')
+	const callerContext = createBaseCallerContext()
+	const userId = callerContext.user.userId
+	const intervalJob = (id: string) =>
+		createJob({
+			id,
+			name: id,
+			sourceId: `source-${id}`,
 			schedule: { type: 'interval', every: '1h' },
-			timezone: 'UTC',
-			enabled: true,
-			killSwitchEnabled: false,
-			preserved: false,
-			expiresAt: null,
-			createdAt: '2026-08-08T00:00:00.000Z',
-			updatedAt: '2026-08-08T00:00:00.000Z',
-			nextRunAt: '2026-08-08T01:00:00.000Z',
-			runCount: 0,
-			successCount: 0,
-			errorCount: 0,
-		}
-
-		try {
-			const outcome = await executeJobOnce({
-				env,
-				job,
-				callerContext,
-			})
-			expect(outcome.execution).toMatchObject({
-				ok: false,
-				error: accountSuspendedMessage,
-			})
-			expect(executeSpy).not.toHaveBeenCalled()
-			expect(recordUsageSpy).not.toHaveBeenCalled()
-		} finally {
-			executeSpy.mockRestore()
-			recordUsageSpy.mockRestore()
-		}
-	}
-
-	// Phase: writable storage binding and interactive origin override
-	{
-		// Usage rollup writes are best-effort and fail against this fake env.
-		silenceIncidentalRuntimeWarnings()
-		const db = createDatabase()
-		const env = createJobServiceTestEnv({
-			APP_DB: db,
-			CLOUDFLARE_ACCOUNT_ID: 'acct-test',
-			CLOUDFLARE_API_TOKEN: 'token-test',
-			BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
-			LOADER: {} as WorkerLoader,
-			REPO_SESSION: {} as DurableObjectNamespace,
-			STORAGE_RUNNER: createStorageRunnerBinding(),
 		})
-		mockRepoPersistence()
-		const callerContext = {
-			...createBaseCallerContext(),
-			executionOrigin: 'interactive' as const,
-		}
 
-		const jobView = await insertLeftoverJob({
+	// job_runs_per_day entitlement. Email matches the module-level
+	// resolveBackgroundMcpUser mock.
+	const meter = createInMemoryUserMeterEnv()
+	const quotaEnv = createJobServiceTestEnv(
+		{
+			APP_DB: createDatabase({
+				users: [
+					{
+						email: `${userId}@example.com`,
+						plan: 'free',
+						stable_user_id: userId,
+					},
+				],
+			}),
+		},
+		meter,
+	)
+	const limit = planLimits.free.maxJobRunsPerDay
+	await meter.seed({
+		userId,
+		resource: 'job_runs_per_day',
+		day: utcDayKey(),
+		count: limit,
+	})
+	const quota = await executeJobOnce({
+		env: quotaEnv,
+		job: intervalJob('job-run-quota'),
+		callerContext,
+	})
+	if (quota.execution.ok) throw new Error('Expected job_runs_per_day denial.')
+	expect(parseEntitlementLimitMessage(quota.execution.error)).toMatchObject({
+		code: 'entitlement_limit_exceeded',
+		resource: 'job_runs_per_day',
+		plan: 'free',
+		limit,
+		current: limit,
+	})
+
+	// Transient background identity lookup failures are retried by the caller.
+	const env = createJobServiceTestEnv({ APP_DB: createDatabase() })
+	identityMockModule.resolveBackgroundMcpUser.mockRejectedValueOnce(
+		new Error('D1_ERROR: Network connection lost.'),
+	)
+	await expect(
+		executeJobOnce({
 			env,
+			job: intervalJob('job-identity-retry'),
 			callerContext,
-			body: {
-				name: 'Storage bridge',
-				code: 'export default async (params) => { await storage.set("count", params.stepCount); return await storage.sql("select 2 as value") }',
-				params: {
-					stepCount: 2,
-				},
-				schedule: {
-					type: 'once',
-					runAt: '2026-04-17T15:00:00Z',
-				},
-			},
+		}),
+	).rejects.toBeInstanceOf(TransientJobExecutionError)
+
+	// A suspended owner halts the job.
+	identityMockModule.resolveBackgroundMcpUser.mockRejectedValueOnce(
+		new AccountSuspendedError(),
+	)
+	const suspended = await executeJobOnce({
+		env,
+		job: intervalJob('job-suspended'),
+		callerContext,
+	})
+	expect(suspended.execution).toMatchObject({
+		ok: false,
+		error: accountSuspendedMessage,
+	})
+
+	expect(executeSpy).not.toHaveBeenCalled()
+	expect(recordUsageSpy).not.toHaveBeenCalled()
+})
+
+test('interactive-origin leftover jobs run in the background with writable storage and execute-style invoke tools', async () => {
+	// Usage rollup writes are best-effort and fail against this fake env.
+	silenceIncidentalRuntimeWarnings()
+	const { env } = createExecuteEnv()
+	const callerContext = {
+		...createBaseCallerContext(),
+		executionOrigin: 'interactive' as const,
+	}
+	const code =
+		'export default async (params) => { await storage.set("count", params.stepCount); return await storage.sql("select 2 as value") }'
+	const { jobView, row } = await publishLeftoverJob({
+		env,
+		callerContext,
+		name: 'Storage bridge',
+		code,
+		params: { stepCount: 2 },
+	})
+	const executeSpy = vi
+		.spyOn(registry, 'runBundledModuleWithRegistry')
+		.mockResolvedValue({
+			result: { value: 2 },
+			logs: ['storage helper executed'],
 		})
-		await insertPublishedEntitySource({
-			db,
-			env,
-			userId: callerContext.user.userId,
-			sourceId: jobView.sourceId,
+	const executeInvokeSpy = vi.spyOn(
+		packageInvocations,
+		'createExecutePackageInvokeTools',
+	)
+	const runtimeInvokeSpy = vi.spyOn(
+		packageInvocations,
+		'createPackageRuntimeInvokeTools',
+	)
+
+	expect(row.record.storageId).toBe(`job:${jobView.id}`)
+	expect(row.callerContext?.executionOrigin).toBe('interactive')
+	const outcome = await executeJobOnce({
+		env,
+		job: row.record,
+		callerContext: row.callerContext,
+	})
+
+	expect(outcome.execution).toEqual({
+		ok: true,
+		result: { value: 2 },
+		logs: ['storage helper executed'],
+	})
+	expect(executeSpy).toHaveBeenCalledWith(
+		env,
+		expect.objectContaining({
+			executionOrigin: 'background',
+			user: expect.objectContaining({
+				userId: callerContext.user.userId,
+				email: 'user-123@example.com',
+			}),
+		}),
+		expect.any(Object),
+		expect.any(Object),
+		expect.objectContaining({
+			packageInvokeTools: expect.objectContaining({
+				invoke: expect.any(Function),
+			}),
+		}),
+	)
+	expect(executeInvokeSpy).toHaveBeenCalledTimes(1)
+	expect(runtimeInvokeSpy).not.toHaveBeenCalled()
+})
+
+test('leftover kody.json jobs execute the bundled published entry with job run-record context', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const { env } = createExecuteEnv()
+	const callerContext = createBaseCallerContext()
+	const name = 'Capability-created one-off job'
+	const { jobView, row } = await publishLeftoverJob({
+		env,
+		callerContext,
+		name,
+		code: 'export default async () => ({ ok: true, adHoc: true })',
+		params: { step: 'lights-off' },
+	})
+	const executeSpy = vi
+		.spyOn(registry, 'runBundledModuleWithRegistry')
+		.mockResolvedValue({
+			result: { ok: true, adHoc: true },
+			logs: ['ad hoc job executed'],
+		})
+
+	const outcome = await executeJobOnce({ env, job: row.record, callerContext })
+
+	expect(outcome.execution).toEqual({
+		ok: true,
+		result: { ok: true, adHoc: true },
+		logs: ['ad hoc job executed'],
+	})
+	expect(executeSpy).toHaveBeenCalledTimes(1)
+	const [, runCaller, bundle, , runOptions] = executeSpy.mock.calls[0]!
+	expect(runCaller).toMatchObject({
+		repoContext: expect.objectContaining({
 			entityKind: 'job',
 			entityId: jobView.id,
-			publishedCommit: 'published-commit-1',
 			manifestPath: 'kody.json',
-			files: {
-				'kody.json': JSON.stringify({
-					version: 1,
-					kind: 'job',
-					title: 'Storage bridge',
-					description: 'Runs once at 2026-04-17T15:00:00.000Z',
-					sourceRoot: '/',
-					entrypoint: 'src/job.ts',
-				}),
-				'src/job.ts':
-					'export default async (params) => { await storage.set("count", params.stepCount); return await storage.sql("select 2 as value") }',
-			},
+		}),
+	})
+	expect(bundle).toMatchObject({ mainModule: 'dist/bundled-entry.js' })
+	expect(runOptions).toMatchObject({
+		runRecord: {
+			surface: 'job',
+			name,
+			jobId: jobView.id,
+			storageId: `job:${jobView.id}`,
+			sourceId: jobView.sourceId,
+			publishedCommit: 'published-commit-1',
+		},
+	})
+	expect(runOptions).not.toHaveProperty('runRecord.packageId')
+	expect(runOptions).not.toHaveProperty('runRecord.kodyId')
+})
+
+test('executeJobOnce records job_run usage for success and failure', async () => {
+	const recordUsageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	const { env } = createExecuteEnv()
+	const callerContext = createBaseCallerContext()
+	const { jobView, row } = await publishLeftoverJob({
+		env,
+		callerContext,
+		name: 'Usage-metered job',
+		code: 'export default async () => ({ ok: true, metered: true })',
+	})
+	vi.spyOn(registry, 'runBundledModuleWithRegistry')
+		.mockResolvedValueOnce({
+			result: { ok: true, metered: true },
+			logs: ['metered job executed'],
+		})
+		.mockResolvedValueOnce({
+			error: 'metered job failed',
+			result: null,
+			logs: ['metered job error'],
 		})
 
-		const executeSpy = vi
-			.spyOn(
-				await import('#mcp/run-kody-registry.ts'),
-				'runBundledModuleWithRegistry',
-			)
-			.mockResolvedValue({
-				result: {
-					value: 2,
-				},
-				logs: ['storage helper executed'],
-			})
-		const packageInvocations =
-			await import('#worker/package-invocations/service.ts')
-		const executeInvokeSpy = vi.spyOn(
-			packageInvocations,
-			'createExecutePackageInvokeTools',
-		)
-		const runtimeInvokeSpy = vi.spyOn(
-			packageInvocations,
-			'createPackageRuntimeInvokeTools',
-		)
-
-		try {
-			const sessionClient = {
-				openSession: vi.fn(async () => ({
-					id: `job-runtime-${jobView.id}`,
-					source_id: jobView.sourceId,
-					source_root: '/',
-					base_commit: 'published-commit-1',
-					conversation_id: null,
-					last_checkpoint_commit: null,
-					last_check_run_id: null,
-					last_check_tree_hash: null,
-					expires_at: null,
-					created_at: '2026-04-16T00:00:00.000Z',
-					updated_at: '2026-04-16T00:00:00.000Z',
-					published_commit: 'published-commit-1',
-					manifest_path: 'package.json',
-					entity_type: 'job' as const,
-				})),
-				runChecks: vi.fn(async () => ({
-					ok: true,
-					results: [],
-					manifest: createPackageJobManifest({
-						packageName: '@kody/storage-bridge',
-						kodyId: 'storage-bridge',
-						description: 'Runs from repo',
-						jobName: 'Storage bridge',
-					}),
-				})),
-				readFile: vi.fn(async ({ path }: { path: string }) => ({
-					path,
-					content:
-						path === 'package.json'
-							? createPackageJobManifestText({
-									packageName: '@kody/storage-bridge',
-									kodyId: 'storage-bridge',
-									description: 'Runs from repo',
-									jobName: 'Storage bridge',
-								})
-							: 'export default async (params) => { await storage.set("count", params.stepCount); return await storage.sql("select 2 as value") }',
-				})),
-				tree: vi.fn(async () => ({
-					path: '',
-					name: '',
-					type: 'directory' as const,
-					size: 0,
-					children: [
-						{
-							path: 'src/job.ts',
-							name: 'job.ts',
-							type: 'file' as const,
-							size: 1,
-						},
-					],
-				})),
-				discardSession: vi.fn(),
-			}
-			const repoSessionRpcSpy = vi
-				.spyOn(
-					await import('#worker/repo/repo-session-do.ts'),
-					'repoSessionRpc',
-				)
-				.mockReturnValue(sessionClient as never)
-			const row = await (
-				await import('@kody-internal/shared/jobs/repo.ts')
-			).getJobRowById(db, callerContext.user.userId, jobView.id)
-			if (!row) {
-				throw new Error('Expected created job row.')
-			}
-			expect(row.record.storageId).toBe(`job:${jobView.id}`)
-			expect(row.callerContext?.executionOrigin).toBe('interactive')
-			const outcome = await executeJobOnce({
-				env,
-				job: row.record,
-				callerContext: row.callerContext,
-			})
-
-			expect(outcome.execution).toEqual({
+	const cases = [
+		[
+			'success',
+			{
 				ok: true,
-				result: {
-					value: 2,
-				},
-				logs: ['storage helper executed'],
-			})
-			expect(executeSpy).toHaveBeenCalledWith(
-				env,
-				expect.objectContaining({
-					executionOrigin: 'background',
-					user: expect.objectContaining({
-						userId: callerContext.user.userId,
-						email: 'user-123@example.com',
-					}),
-				}),
-				expect.any(Object),
-				expect.any(Object),
-				expect.objectContaining({
-					packageInvokeTools: expect.objectContaining({
-						invoke: expect.any(Function),
-					}),
-				}),
-			)
-			expect(executeInvokeSpy).toHaveBeenCalledTimes(1)
-			expect(runtimeInvokeSpy).not.toHaveBeenCalled()
-			repoSessionRpcSpy.mockRestore()
-		} finally {
-			executeSpy.mockRestore()
-			executeInvokeSpy.mockRestore()
-			runtimeInvokeSpy.mockRestore()
-		}
-	}
-
-	// Phase: attached remote connectors for background execution
-	{
-		silenceIncidentalRuntimeWarnings()
-		const db = createDatabase()
-		const env = createJobServiceTestEnv({
-			APP_DB: db,
-			CLOUDFLARE_ACCOUNT_ID: 'acct-test',
-			CLOUDFLARE_API_TOKEN: 'token-test',
-			BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
-			LOADER: {} as WorkerLoader,
-			REPO_SESSION: {} as DurableObjectNamespace,
-			STORAGE_RUNNER: createStorageRunnerBinding(),
-		})
-		mockRepoPersistence()
-		const callerContext = createBaseCallerContext()
-		const jobView = await insertLeftoverJob({
+				result: { ok: true, metered: true },
+				logs: ['metered job executed'],
+			},
+		],
+		[
+			'error',
+			{ ok: false, error: 'metered job failed', logs: ['metered job error'] },
+		],
+	] as const
+	for (const [usageOutcome, execution] of cases) {
+		recordUsageSpy.mockClear()
+		const outcome = await executeJobOnce({
 			env,
+			job: row.record,
 			callerContext,
-			body: {
-				name: 'Remote connector bridge',
-				code: 'export default async () => ({ ok: true })',
-				schedule: {
-					type: 'once',
-					runAt: '2026-04-17T15:00:00Z',
-				},
-			},
 		})
-		await insertPublishedEntitySource({
-			db,
-			env,
-			userId: callerContext.user.userId,
-			sourceId: jobView.sourceId,
-			entityKind: 'job',
+		expect(outcome.execution).toEqual(execution)
+		expect(outcome.durationMs).toBeGreaterThanOrEqual(0)
+		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
+		expect(recordUsageSpy).toHaveBeenCalledWith(env, {
+			userId: row.record.userId,
+			eventType: 'job_run',
 			entityId: jobView.id,
-			publishedCommit: 'published-commit-1',
-			manifestPath: 'kody.json',
-			files: {
-				'kody.json': JSON.stringify({
-					version: 1,
-					kind: 'job',
-					title: 'Remote connector bridge',
-					description: 'Runs once at 2026-04-17T15:00:00.000Z',
-					sourceRoot: '/',
-					entrypoint: 'src/job.ts',
-				}),
-				'src/job.ts': 'export default async () => ({ ok: true })',
-			},
+			durationMs: outcome.durationMs,
+			outcome: usageOutcome,
 		})
-
-		const executeSpy = vi
-			.spyOn(
-				await import('#mcp/run-kody-registry.ts'),
-				'runBundledModuleWithRegistry',
-			)
-			.mockResolvedValue({
-				result: { ok: true },
-				logs: [],
-			})
-
-		try {
-			const row = await (
-				await import('@kody-internal/shared/jobs/repo.ts')
-			).getJobRowById(db, callerContext.user.userId, jobView.id)
-			if (!row) {
-				throw new Error('Expected created job row.')
-			}
-			await executeJobOnce({
-				env,
-				job: row.record,
-				callerContext: row.callerContext,
-			})
-
-			expect(executeSpy).toHaveBeenCalledTimes(1)
-			expect(executeSpy.mock.calls[0]?.[1]).toMatchObject({})
-		} finally {
-			executeSpy.mockRestore()
-		}
 	}
 })
 
-test('executeJobOnce background kody semantics and usage workflow', async () => {
-	// Phase: kody secret and value semantics
-	{
-		silenceIncidentalRuntimeWarnings()
-		const db = createDatabase()
-		const bundleKv = createBundleArtifactsKv()
-		const env = createJobServiceTestEnv({
-			APP_DB: db,
-			CLOUDFLARE_ACCOUNT_ID: 'acct-test',
-			CLOUDFLARE_API_TOKEN: 'token-test',
-			BUNDLE_ARTIFACTS_KV: bundleKv,
-			COOKIE_SECRET: 'test-secret-0123456789abcdef0123456789',
-			LOADER: {} as WorkerLoader,
-			REPO_SESSION: {} as DurableObjectNamespace,
-		})
-		mockRepoPersistence()
-		const callerContext = createBaseCallerContext()
-
-		await saveSecret({
-			env,
-			userId: callerContext.user.userId,
-			scope: 'user',
-			name: 'apiToken',
-			value: 'very-secret-token',
-			storageContext: callerContext.storageContext,
-		})
-		await saveValue({
-			env,
-			userId: callerContext.user.userId,
-			scope: 'app',
-			name: 'projectId',
-			value: 'alpha-project',
-			storageContext: callerContext.storageContext,
-		})
-
-		const jobView = await insertLeftoverJob({
-			env,
-			callerContext,
-			body: {
-				name: 'Use kody semantics',
-				code: 'export default async () => ({ ok: true })',
-				params: {
-					step: 'deploy',
-				},
-				schedule: {
-					type: 'once',
-					runAt: '2026-04-17T15:00:00Z',
-				},
-			},
-		})
-		await insertPublishedEntitySource({
-			db,
-			env,
-			userId: callerContext.user.userId,
-			sourceId: jobView.sourceId,
-			entityKind: 'job',
-			entityId: jobView.id,
-			publishedCommit: 'published-commit-1',
-			manifestPath: 'kody.json',
+test('package-backed jobs execute from published package.json manifests', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const executeSpy = vi.spyOn(registry, 'runBundledModuleWithRegistry')
+	const policyError =
+		'Secret "apiToken" is not allowed for host "api.example.com".'
+	const cases: Array<{
+		id: string
+		kodyId: string
+		jobName: string
+		manifest: { entry?: string; exportPath?: string }
+		files: Record<string, string>
+		run: Awaited<ReturnType<typeof registry.runBundledModuleWithRegistry>>
+		expected: unknown
+	}> = [
+		{
+			id: 'job-repo-1',
+			kodyId: 'repo-backed-job',
+			jobName: 'Repo-backed job',
+			manifest: { entry: './src/job.ts' },
 			files: {
-				'kody.json': JSON.stringify({
-					version: 1,
-					kind: 'job',
-					title: 'Use kody semantics',
-					description: 'Runs once at 2026-04-17T15:00:00.000Z',
-					sourceRoot: '/',
-					entrypoint: 'src/job.ts',
-				}),
-				'src/job.ts': 'export default async () => ({ ok: true })',
-			},
-		})
-
-		const executeSpy = vi
-			.spyOn(
-				await import('#mcp/run-kody-registry.ts'),
-				'runBundledModuleWithRegistry',
-			)
-			.mockResolvedValue({
-				result: {
-					secretValue: 'very-secret-token',
-					value: 'alpha-project',
-					userId: 'user-123',
-					storageId: `job:${jobView.id}`,
-				},
-				logs: ['kody executed'],
-			})
-
-		try {
-			const sessionClient = {
-				openSession: vi.fn(async () => ({
-					id: `job-runtime-${jobView.id}`,
-					source_id: jobView.sourceId,
-					source_root: '/',
-					base_commit: 'published-commit-1',
-					conversation_id: null,
-					last_checkpoint_commit: null,
-					last_check_run_id: null,
-					last_check_tree_hash: null,
-					expires_at: null,
-					created_at: '2026-04-16T00:00:00.000Z',
-					updated_at: '2026-04-16T00:00:00.000Z',
-					published_commit: 'published-commit-1',
-					manifest_path: 'package.json',
-					entity_type: 'job' as const,
-				})),
-				runChecks: vi.fn(async () => ({
-					ok: true,
-					results: [],
-					manifest: createPackageJobManifest({
-						packageName: '@kody/kody-semantics',
-						kodyId: 'kody-semantics',
-						description: 'Runs from repo',
-						jobName: 'Use kody semantics',
-					}),
-				})),
-				readFile: vi.fn(async ({ path }: { path: string }) => ({
-					path,
-					content:
-						path === 'package.json'
-							? createPackageJobManifestText({
-									packageName: '@kody/kody-semantics',
-									kodyId: 'kody-semantics',
-									description: 'Runs from repo',
-									jobName: 'Use kody semantics',
-								})
-							: 'export default async () => ({ ok: true })',
-				})),
-				tree: vi.fn(async () => ({
-					path: '',
-					name: '',
-					type: 'directory' as const,
-					size: 0,
-					children: [
-						{
-							path: 'src/job.ts',
-							name: 'job.ts',
-							type: 'file' as const,
-							size: 1,
-						},
-					],
-				})),
-				discardSession: vi.fn(),
-			}
-			const repoSessionRpcSpy = vi
-				.spyOn(
-					await import('#worker/repo/repo-session-do.ts'),
-					'repoSessionRpc',
-				)
-				.mockReturnValue(sessionClient as never)
-			const row = await (
-				await import('@kody-internal/shared/jobs/repo.ts')
-			).getJobRowById(db, callerContext.user.userId, jobView.id)
-			if (!row) {
-				throw new Error('Expected created job row.')
-			}
-			const outcome = await executeJobOnce({
-				env,
-				job: row.record,
-				callerContext,
-			})
-
-			expect(executeSpy).toHaveBeenCalledTimes(1)
-
-			expect(outcome.execution).toEqual({
-				ok: true,
-				result: {
-					secretValue: 'very-secret-token',
-					value: 'alpha-project',
-					userId: 'user-123',
-					storageId: `job:${jobView.id}`,
-				},
-				logs: ['kody executed'],
-			})
-			expect(executeSpy.mock.calls[0]?.[2]).toMatchObject({
-				mainModule: 'dist/bundled-entry.js',
-			})
-			repoSessionRpcSpy.mockRestore()
-		} finally {
-			executeSpy.mockRestore()
-		}
-	}
-
-	// Phase: job_run usage recording for success and failure
-	{
-		const usageModule = await import('#worker/usage/record-usage.ts')
-		const recordUsageSpy = vi
-			.spyOn(usageModule, 'recordUsage')
-			.mockResolvedValue(undefined)
-		const db = createDatabase()
-		const env = createJobServiceTestEnv({
-			APP_DB: db,
-			CLOUDFLARE_ACCOUNT_ID: 'acct-test',
-			CLOUDFLARE_API_TOKEN: 'token-test',
-			BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
-			LOADER: {} as WorkerLoader,
-			REPO_SESSION: {} as DurableObjectNamespace,
-			STORAGE_RUNNER: createStorageRunnerBinding(),
-		})
-		mockRepoPersistence()
-		const callerContext = createBaseCallerContext()
-		const jobView = await insertLeftoverJob({
-			env,
-			callerContext,
-			body: {
-				name: 'Usage-metered job',
-				code: 'export default async () => ({ ok: true, metered: true })',
-				schedule: {
-					type: 'once',
-					runAt: '2026-04-17T15:00:00Z',
-				},
-			},
-		})
-		await insertPublishedEntitySource({
-			db,
-			env,
-			userId: callerContext.user.userId,
-			sourceId: jobView.sourceId,
-			entityKind: 'job',
-			entityId: jobView.id,
-			publishedCommit: 'published-commit-1',
-			manifestPath: 'kody.json',
-			files: {
-				'kody.json': JSON.stringify({
-					version: 1,
-					kind: 'job',
-					title: 'Usage-metered job',
-					description: 'Runs once at 2026-04-17T15:00:00.000Z',
-					sourceRoot: '/',
-					entrypoint: 'src/job.ts',
-				}),
 				'src/job.ts':
-					'export default async () => ({ ok: true, metered: true })',
+					'export default async () => ({ ok: true, repoBacked: true })',
+			},
+			run: { result: { ok: true, repoBacked: true }, logs: ['ran'] },
+			expected: {
+				ok: true,
+				result: { ok: true, repoBacked: true },
+				logs: ['ran'],
+			},
+		},
+		{
+			// Custom job entry file outside the default src/job.ts.
+			id: 'job-repo-typecheck-strict',
+			kodyId: 'repo-typecheck-strict',
+			jobName: 'Repo-backed strict typecheck job',
+			manifest: { entry: './src/custom-job.ts' },
+			files: {
+				'src/custom-job.ts': 'export default async () => ({ ok: true })',
+			},
+			run: { result: { ok: true }, logs: ['ran'] },
+			expected: { ok: true, result: { ok: true }, logs: ['ran'] },
+		},
+		{
+			// Package export path distinct from the job entry.
+			id: 'job-repo-absolute-paths',
+			kodyId: 'repo-absolute-path-job',
+			jobName: 'Repo-backed absolute path job',
+			manifest: { exportPath: './src/job.ts' },
+			files: {
+				'src/job.ts':
+					'export default async () => ({ ok: true, normalized: true })',
+			},
+			run: { result: { ok: true, normalized: true }, logs: ['ran'] },
+			expected: {
+				ok: true,
+				result: { ok: true, normalized: true },
+				logs: ['ran'],
+			},
+		},
+		{
+			// Sandbox policy errors surface as job failures without logs.
+			id: 'job-1',
+			kodyId: 'forbidden-secret-access',
+			jobName: 'Forbidden secret access',
+			manifest: {},
+			files: { 'src/job.ts': 'export default async () => ({ ok: true })' },
+			run: { result: undefined, error: policyError, logs: [] },
+			expected: { ok: false, error: policyError, logs: [] },
+		},
+	]
+
+	const outcomes = []
+	for (const row of cases) {
+		const { env, job } = await publishPackageJob({
+			id: row.id,
+			sourceId: `source-${row.id}`,
+			commit: `commit-${row.id}`,
+			kodyId: row.kodyId,
+			jobName: row.jobName,
+			manifest: row.manifest,
+			files: row.files,
+		})
+		executeSpy.mockResolvedValueOnce(row.run)
+		const outcome = await executeJobOnce({
+			env,
+			job,
+			callerContext: createBaseCallerContext(),
+		})
+		outcomes.push([row.id, outcome.execution])
+	}
+	expect(outcomes).toEqual(cases.map((row) => [row.id, row.expected]))
+	expect(executeSpy).toHaveBeenCalledTimes(cases.length)
+})
+
+test('package-backed jobs with a stored typecheck bypass policy still surface executor failures', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const { env, job } = await publishPackageJob({
+		id: 'job-repo-typecheck-bypass',
+		sourceId: 'source-bypass',
+		commit: 'commit-bypass',
+		kodyId: 'repo-typecheck-bypass',
+		jobName: 'Repo-backed bypass typecheck job',
+		files: {
+			'src/job.ts': 'export default async () => ({ ok: true, bypassed: true })',
+		},
+		job: { repoCheckPolicy: { allowTypecheckFailures: true } },
+	})
+	const callerContext = createBaseCallerContext()
+	const executeSpy = vi
+		.spyOn(registry, 'runBundledModuleWithRegistry')
+		.mockResolvedValue({
+			result: { ok: true, bypassed: true },
+			logs: ['repo-backed kody executed'],
+		})
+	const formatJobErrorSpy = vi.spyOn(schedule, 'formatJobError')
+
+	expect((await executeJobOnce({ env, job, callerContext })).execution).toEqual(
+		{
+			ok: true,
+			result: { ok: true, bypassed: true },
+			logs: ['repo-backed kody executed'],
+		},
+	)
+	expect(executeSpy).toHaveBeenCalledTimes(1)
+
+	executeSpy.mockRejectedValueOnce(new Error('Executor import failed'))
+	expect((await executeJobOnce({ env, job, callerContext })).execution).toEqual(
+		{
+			ok: false,
+			error: 'Executor import failed',
+			logs: [],
+		},
+	)
+	expect(formatJobErrorSpy).toHaveBeenCalled()
+})
+
+test('package-backed ESM jobs bundle the package entry and use runtime invoke tools', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const moduleSource =
+		'export default async () => ({ ok: true, repoBacked: "module" })'
+	const { env, job } = await publishPackageJob({
+		id: 'job-repo-module',
+		sourceId: 'source-job-repo-module',
+		commit: 'commit-abc',
+		kodyId: 'repo-module-job',
+		jobName: 'Repo-backed module job',
+		files: {
+			'src/job.ts': moduleSource,
+			'src/lib.ts': 'export const value = 1',
+		},
+	})
+	const executeSpy = vi
+		.spyOn(registry, 'runBundledModuleWithRegistry')
+		.mockResolvedValue({
+			result: { ok: true, repoBacked: 'module' },
+			logs: ['repo-backed kody executed'],
+		})
+	const executeInvokeSpy = vi.spyOn(
+		packageInvocations,
+		'createExecutePackageInvokeTools',
+	)
+	const runtimeInvokeSpy = vi.spyOn(
+		packageInvocations,
+		'createPackageRuntimeInvokeTools',
+	)
+	vi.spyOn(
+		repoKodyExecution,
+		'loadRepoSourceFilesFromSession',
+	).mockResolvedValue({
+		'package.json': JSON.stringify({ name: 'repo-module-job', private: true }),
+		'src/job.ts': moduleSource,
+		'src/lib.ts': 'export const value = 1',
+	})
+	vi.spyOn(moduleGraph, 'buildKodyModuleBundle').mockResolvedValue({
+		mainModule: 'dist/job.js',
+		modules: { 'dist/job.js': moduleSource },
+		dependencies: [],
+	})
+
+	const outcome = await executeJobOnce({
+		env,
+		job,
+		callerContext: createBaseCallerContext(),
+	})
+
+	expect(outcome.execution).toEqual({
+		ok: true,
+		result: { ok: true, repoBacked: 'module' },
+		logs: ['repo-backed kody executed'],
+	})
+	expect(executeSpy).toHaveBeenCalledTimes(1)
+	expect(executeSpy.mock.calls[0]?.[4]).toMatchObject({
+		packageContext: { packageId: 'job-repo-module', kodyId: 'repo-module-job' },
+		packageInvokeTools: expect.objectContaining({
+			invoke: expect.any(Function),
+		}),
+	})
+	expect(runtimeInvokeSpy).toHaveBeenCalledTimes(1)
+	expect(executeInvokeSpy).not.toHaveBeenCalled()
+})
+
+test('stale published job bundles rebuild after the source commit changes', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const { db, bundleKv, env } = createExecuteEnv()
+	const publish = (commit: string, jobSource: string) =>
+		insertPublishedEntitySource({
+			db,
+			userId: 'user-123',
+			sourceId: 'source-stale-bundle',
+			entityKind: 'job',
+			entityId: 'job-stale-bundle',
+			publishedCommit: commit,
+			manifestPath: 'kody.json',
+			kv: bundleKv,
+			files: {
+				'kody.json': JSON.stringify({
+					version: 1,
+					kind: 'job',
+					title: 'Stale bundle job',
+					description: 'Runs stale bundle test',
+					keywords: ['job'],
+					searchText: 'Runs stale bundle test',
+					entrypoint: 'src/job.ts',
+				}),
+				'src/job.ts': jobSource,
 			},
 		})
-		const executeSpy = vi
-			.spyOn(
-				await import('#mcp/run-kody-registry.ts'),
-				'runBundledModuleWithRegistry',
-			)
-			.mockResolvedValueOnce({
-				result: {
-					ok: true,
-					metered: true,
-				},
-				logs: ['metered job executed'],
-			})
-			.mockResolvedValueOnce({
-				error: 'metered job failed',
-				result: null,
-				logs: ['metered job error'],
-			})
-		const sessionClient = {
-			openSession: vi.fn(async () => ({
-				id: `job-runtime-${jobView.id}`,
-				source_id: jobView.sourceId,
-				source_root: '/',
-				base_commit: 'published-commit-1',
-				conversation_id: null,
-				last_checkpoint_commit: null,
-				last_check_run_id: null,
-				last_check_tree_hash: null,
-				expires_at: null,
-				created_at: '2026-04-16T00:00:00.000Z',
-				updated_at: '2026-04-16T00:00:00.000Z',
-				published_commit: 'published-commit-1',
-				manifest_path: 'kody.json',
-				entity_type: 'job' as const,
-			})),
-			runChecks: vi.fn(),
-			readFile: vi.fn(async ({ path }: { path: string }) => ({
-				path,
-				content:
-					path === 'kody.json'
-						? JSON.stringify({
-								version: 1,
-								kind: 'job',
-								title: 'Usage-metered job',
-								description: 'Runs once at 2026-04-17T15:00:00.000Z',
-								sourceRoot: '/',
-								entrypoint: 'src/job.ts',
-							})
-						: 'export default async () => ({ ok: true, metered: true })',
-			})),
-			tree: vi.fn(async () => ({
-				path: '',
-				name: '',
-				type: 'directory' as const,
-				size: 0,
-				children: [
-					{
-						path: 'kody.json',
-						name: 'kody.json',
-						type: 'file' as const,
-						size: 1,
-					},
-					{
-						path: 'src/job.ts',
-						name: 'job.ts',
-						type: 'file' as const,
-						size: 1,
-					},
-				],
-			})),
-			discardSession: vi.fn(),
-		}
-		const repoSessionRpcSpy = vi
-			.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
-			.mockReturnValue(sessionClient as never)
-		const row = await (
-			await import('@kody-internal/shared/jobs/repo.ts')
-		).getJobRowById(db, callerContext.user.userId, jobView.id)
-		if (!row) {
-			throw new Error('Expected created job row.')
-		}
+	await publish('commit-1', 'export default async () => ({ version: "old" })')
+	const source = await getEntitySourceById(db, 'source-stale-bundle')
+	if (!source) throw new Error('Expected source row.')
+	await persistPublishedBundleArtifact({
+		env: { APP_DB: db, BUNDLE_ARTIFACTS_KV: bundleKv } as Env,
+		userId: 'user-123',
+		source,
+		kind: 'job',
+		artifactName: 'job-stale-bundle',
+		entryPoint: 'src/job.ts',
+		mainModule: 'dist/bundled-entry.js',
+		modules: {
+			'dist/bundled-entry.js':
+				'export default async () => ({ version: "old-bundle" })',
+		},
+		dependencies: [],
+		packageContext: null,
+	})
+	await publish(
+		'commit-2',
+		'export default async () => { console.log("canary"); return { version: "new" } }',
+	)
+	const executeSpy = vi
+		.spyOn(registry, 'runBundledModuleWithRegistry')
+		.mockResolvedValue({
+			result: { ok: true, version: 'new' },
+			logs: ['canary'],
+		})
 
-		try {
-			const successOutcome = await executeJobOnce({
-				env,
-				job: row.record,
-				callerContext,
-			})
-			expect(successOutcome.execution).toEqual({
-				ok: true,
-				result: {
-					ok: true,
-					metered: true,
-				},
-				logs: ['metered job executed'],
-			})
-			expect(successOutcome.durationMs).toEqual(expect.any(Number))
-			expect(recordUsageSpy).toHaveBeenCalledTimes(1)
-			expect(recordUsageSpy).toHaveBeenCalledWith(env, {
-				userId: row.record.userId,
-				eventType: 'job_run',
-				entityId: jobView.id,
-				durationMs: successOutcome.durationMs,
-				outcome: 'success',
-			})
-			expect(successOutcome.durationMs).toBeGreaterThanOrEqual(0)
+	const outcome = await executeJobOnce({
+		env,
+		job: createJob({
+			id: 'job-stale-bundle',
+			name: 'Stale bundle job',
+			sourceId: 'source-stale-bundle',
+			publishedCommit: 'commit-2',
+		}),
+		callerContext: createBaseCallerContext(),
+	})
 
-			recordUsageSpy.mockClear()
-			const failureOutcome = await executeJobOnce({
-				env,
-				job: row.record,
-				callerContext,
-			})
-			expect(failureOutcome.execution).toEqual({
-				ok: false,
-				error: 'metered job failed',
-				logs: ['metered job error'],
-			})
-			expect(failureOutcome.durationMs).toEqual(expect.any(Number))
-			expect(recordUsageSpy).toHaveBeenCalledTimes(1)
-			expect(recordUsageSpy).toHaveBeenCalledWith(env, {
-				userId: row.record.userId,
-				eventType: 'job_run',
-				entityId: jobView.id,
-				durationMs: failureOutcome.durationMs,
-				outcome: 'error',
-			})
-			expect(failureOutcome.durationMs).toBeGreaterThanOrEqual(0)
-		} finally {
-			recordUsageSpy.mockRestore()
-			repoSessionRpcSpy.mockRestore()
-			executeSpy.mockRestore()
-		}
+	expect(outcome.execution).toEqual({
+		ok: true,
+		result: { ok: true, version: 'new' },
+		logs: ['canary'],
+	})
+	expect(executeSpy).toHaveBeenCalledTimes(1)
+	const executedModules = Object.values(
+		executeSpy.mock.calls[0]?.[2]?.modules ?? {},
+	).join('\n')
+	expect(executedModules).toContain('userEntrypoint')
+	expect(executedModules).not.toContain('old-bundle')
+})
+
+test('executeJobOnce reports a missing published snapshot without running the sandbox', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const { db, env } = createExecuteEnv()
+	await insertPublishedEntitySource({
+		db,
+		userId: 'user-123',
+		sourceId: 'source-1',
+		entityKind: 'package',
+		entityId: 'job-repo-discard-failure',
+		publishedCommit: 'commit-1',
+		manifestPath: 'package.json',
+	})
+	const formatJobErrorSpy = vi.spyOn(schedule, 'formatJobError')
+	const executeSpy = vi.spyOn(registry, 'runBundledModuleWithRegistry')
+
+	const outcome = await executeJobOnce({
+		env,
+		job: createJob({
+			id: 'job-repo-discard-failure',
+			name: 'Repo-backed job discard failure',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+		}),
+		callerContext: createBaseCallerContext(),
+	})
+
+	expect(outcome.execution).toEqual({
+		ok: false,
+		error:
+			'Published snapshot for source "source-1" at commit "commit-1" was not found.',
+		logs: [],
+	})
+	expect(executeSpy).not.toHaveBeenCalled()
+	expect(formatJobErrorSpy).toHaveBeenCalled()
+})
+
+test('executeJobOnce retries claimed platform blips and surfaces them on run-now', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const { env } = createExecuteEnv()
+	const callerContext = createBaseCallerContext()
+	const { row } = await publishLeftoverJob({
+		env,
+		callerContext,
+		name: 'Platform blip retry job',
+		code: 'export default async () => ({ ok: true })',
+		schedule: { type: 'interval', every: '15m' },
+		publishedCommit: 'published-commit-platform-blip',
+		description: 'Retries claimed platform blips',
+	})
+	const estimateError = createStorageEstimateReadError({
+		storageId: 'package:estimate-target',
+		attempts: 4,
+		cause: new Error('Storage estimate read timed out after 2000ms.'),
+	})
+	const executeSpy = vi.spyOn(registry, 'runBundledModuleWithRegistry')
+	const claimedHandle = {
+		id: 'run-platform-blip-claimed',
+		userId: callerContext.user.userId,
+		startedAt: '2026-08-21T14:40:00.000Z',
+		persistence: 'eager' as const,
+		context: {
+			surface: 'job' as const,
+			name: row.record.name,
+			jobId: row.record.id,
+			storageId: row.record.storageId,
+		},
 	}
+	const run = (runRecordHandle?: typeof claimedHandle) =>
+		executeJobOnce({ env, job: row.record, callerContext, runRecordHandle })
+
+	for (const error of [
+		estimateError.message,
+		durableObjectInstanceInactiveCloseMessage,
+		`D1_ERROR: ${d1NetworkConnectionLostMessage}.`,
+	]) {
+		executeSpy.mockResolvedValue({ result: undefined, error, logs: [] })
+		expect((await run()).execution).toEqual({ ok: false, error, logs: [] })
+		await expect(run(claimedHandle)).rejects.toBeInstanceOf(
+			TransientJobExecutionError,
+		)
+	}
+
+	executeSpy.mockResolvedValue({
+		result: undefined,
+		error: 'user code failed',
+		logs: [],
+	})
+	expect((await run(claimedHandle)).execution).toEqual({
+		ok: false,
+		error: 'user code failed',
+		logs: [],
+	})
+})
+
+test('runJobNow retains once jobs for retention cleanup instead of deleting them', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const { db, env: baseEnv } = createExecuteEnv()
+	const deleteByIds = vi.fn(async () => {})
+	const env = {
+		...baseEnv,
+		CAPABILITY_VECTOR_INDEX: { deleteByIds } as unknown as VectorizeIndex,
+	}
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+	const jobView = await insertLeftoverJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Run once and retain',
+			code: 'export default async () => ({ ok: true })',
+			schedule: onceSchedule,
+		},
+	})
+	vi.spyOn(registry, 'runBundledModuleWithRegistry').mockResolvedValue({
+		result: { ok: true },
+		logs: [],
+	})
+
+	const result = await runJobNow({
+		env,
+		userId: callerContext.user.userId,
+		jobId: jobView.id,
+		callerContext,
+	})
+
+	expect(result.execution).toEqual({ ok: true, result: { ok: true }, logs: [] })
+	expect(result.deletedAfterRun).toBe(false)
+	expect(deleteByIds).not.toHaveBeenCalled()
+	const row = await getJobRowById(db, callerContext.user.userId, jobView.id)
+	expect(row?.record).toEqual(
+		expect.objectContaining({
+			id: jobView.id,
+			enabled: false,
+			lastRunStatus: 'success',
+			lastRunAt: expect.any(String),
+			// RunLog-owned counters/error/duration stay at insert defaults.
+			runCount: 0,
+			successCount: 0,
+			errorCount: 0,
+			lastRunError: undefined,
+			lastDurationMs: undefined,
+		}),
+	)
+})
+
+test('runJobNow can use a one-off repo check policy override without changing the stored job', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const { db, env } = createExecuteEnv()
+	await insertPublishedEntitySource({
+		db,
+		userId: 'user-123',
+		sourceId: 'source-run-now-override',
+		entityKind: 'package',
+		entityId: 'job-repo-run-now-override',
+		publishedCommit: 'commit-run-now-override',
+		manifestPath: 'package.json',
+	})
+	const callerContext = createBaseCallerContext()
+	mockRepoPersistence()
+	const jobView = await insertLeftoverJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Repo-backed run-now override',
+			code: 'export default async () => ({ ok: true })',
+			sourceId: 'source-run-now-override',
+			publishedCommit: 'commit-run-now-override',
+			schedule: { type: 'interval', every: '15m' },
+		},
+	})
+	await insertPublishedEntitySource({
+		db,
+		env,
+		userId: callerContext.user.userId,
+		sourceId: jobView.sourceId,
+		entityKind: 'job',
+		entityId: jobView.id,
+		publishedCommit: 'published-commit-1',
+		manifestPath: 'kody.json',
+		files: buildJobSourceFiles({
+			job: jobView,
+			moduleSource:
+				'export default async function run() { return { ok: true, override: true } }',
+		}),
+	})
+	const executeSpy = vi
+		.spyOn(registry, 'runBundledModuleWithRegistry')
+		.mockResolvedValue({
+			result: { ok: true, override: true },
+			logs: ['repo-backed kody executed'],
+		})
+
+	const result = await runJobNow({
+		env,
+		userId: callerContext.user.userId,
+		jobId: jobView.id,
+		callerContext,
+		repoCheckPolicyOverride: { allowTypecheckFailures: true },
+	})
+
+	expect(result.execution).toEqual({
+		ok: true,
+		result: { ok: true, override: true },
+		logs: ['repo-backed kody executed'],
+	})
+	const row = await getJobRowById(db, callerContext.user.userId, jobView.id)
+	expect(row?.record.repoCheckPolicy).toBeUndefined()
+	expect(executeSpy).toHaveBeenCalledTimes(1)
 })

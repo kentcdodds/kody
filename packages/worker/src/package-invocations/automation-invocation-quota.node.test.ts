@@ -111,21 +111,20 @@ vi.mock('#worker/identity/background-mcp-user.ts', () => ({
 function prepareSuccessfulExport() {
 	clearInvokeContractCachesForTests()
 	seedPackageResolution()
-	repoMockModule.runBundledModuleWithRegistry.mockReset()
 	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
 		result: { ok: true },
 		logs: [],
 	})
+	const db = createDatabase()
+	return { db, ...createEnvWithUserMeter(db), token: createToken() }
 }
 
-test('automation_invocations_per_day under quota succeeds without touching execute', async () => {
-	prepareSuccessfulExport()
-	const db = createDatabase()
-	const { env } = createEnvWithUserMeter(db)
-	const token = createToken()
-	const day = utcDayKey()
-
-	const response = await invokePackageExport({
+function invokeWebhook(
+	env: Env,
+	token: ReturnType<typeof createToken>,
+	idempotencyKey: string,
+) {
+	return invokePackageExport({
 		env,
 		baseUrl: 'https://example.test',
 		token,
@@ -133,34 +132,48 @@ test('automation_invocations_per_day under quota succeeds without touching execu
 			packageIdOrKodyId: '@owner/pkg',
 			exportName: './dispatch-message-created',
 			params: { n: 1 },
-			idempotencyKey: 'automation-under-quota',
+			idempotencyKey,
 			source: 'webhook',
 		},
 	})
+}
+
+function readMeter(env: Env, userId: string, resource: string) {
+	return userMeterRpc({ env, userId }).read({ resource, day: utcDayKey() })
+}
+
+async function readCount(env: Env, userId: string, resource: string) {
+	const read = await readMeter(env, userId, resource)
+	return read.outcome === 'ready' ? read.count : 0
+}
+
+function consumeExecuteCall(env: Env, userId: string) {
+	return consumeDailyEntitlement({
+		db: env.APP_DB,
+		env,
+		userId,
+		email: 'owner@example.com',
+		resource: 'execute_calls_per_day',
+	})
+}
+
+test('automation_invocations_per_day under quota succeeds without touching execute', async () => {
+	const { env, token } = prepareSuccessfulExport()
+
+	const response = await invokeWebhook(env, token, 'automation-under-quota')
 	expect(response.status).toBe(200)
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
-
-	const automation = await userMeterRpc({
-		env,
-		userId: token.userId,
-	}).read({ resource: automationInvocationsPerDayResource, day })
-	expect(automation).toMatchObject({ outcome: 'ready', count: 1 })
-
-	const execute = await userMeterRpc({
-		env,
-		userId: token.userId,
-	}).read({ resource: 'execute_calls_per_day', day })
-	expect(execute.outcome === 'ready' ? execute.count : 0).toBe(0)
+	expect(
+		await readMeter(env, token.userId, automationInvocationsPerDayResource),
+	).toMatchObject({ outcome: 'ready', count: 1 })
+	expect(await readCount(env, token.userId, 'execute_calls_per_day')).toBe(0)
 })
 
-test('automation_invocations_per_day at quota fails before sandbox and leaves execute free', async () => {
-	prepareSuccessfulExport()
-	const db = createDatabase()
-	const { env, meter } = createEnvWithUserMeter(db)
-	const token = createToken()
+test('automation_invocations_per_day at quota fails before sandbox, leaves execute free, and releases the keyed claim so a later retry can succeed', async () => {
+	const { db, env, meter, token } = prepareSuccessfulExport()
 	const day = utcDayKey()
 	const limit = planLimits.free.maxAutomationInvocationsPerDay
-
+	const idempotencyKey = 'automation-quota-retry'
 	await meter.seed({
 		userId: token.userId,
 		resource: automationInvocationsPerDayResource,
@@ -168,18 +181,7 @@ test('automation_invocations_per_day at quota fails before sandbox and leaves ex
 		count: limit,
 	})
 
-	const denied = await invokePackageExport({
-		env,
-		baseUrl: 'https://example.test',
-		token,
-		request: {
-			packageIdOrKodyId: '@owner/pkg',
-			exportName: './dispatch-message-created',
-			params: { n: 2 },
-			idempotencyKey: 'automation-over-quota',
-			source: 'webhook',
-		},
-	})
+	const denied = await invokeWebhook(env, token, idempotencyKey)
 	expect(denied.status).toBe(429)
 	expect(denied.body).toMatchObject({
 		ok: false,
@@ -195,60 +197,17 @@ test('automation_invocations_per_day at quota fails before sandbox and leaves ex
 		},
 	})
 	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
-
-	await consumeDailyEntitlement({
-		db: env.APP_DB,
-		env,
-		userId: token.userId,
-		email: 'owner@example.com',
-		resource: 'execute_calls_per_day',
-	})
-	const execute = await userMeterRpc({
-		env,
-		userId: token.userId,
-	}).read({ resource: 'execute_calls_per_day', day })
-	expect(execute).toMatchObject({ outcome: 'ready', count: 1 })
-
-	const automation = await userMeterRpc({
-		env,
-		userId: token.userId,
-	}).read({ resource: automationInvocationsPerDayResource, day })
-	expect(automation).toMatchObject({ outcome: 'ready', count: limit })
-})
-
-test('keyed automation quota denial releases the claim so a later retry can succeed', async () => {
-	prepareSuccessfulExport()
-	const db = createDatabase()
-	const { env, meter } = createEnvWithUserMeter(db)
-	const token = createToken()
-	const day = utcDayKey()
-	const limit = planLimits.free.maxAutomationInvocationsPerDay
-	const idempotencyKey = 'automation-quota-retry'
-
-	await meter.seed({
-		userId: token.userId,
-		resource: automationInvocationsPerDayResource,
-		day,
-		count: limit,
-	})
-
-	const denied = await invokePackageExport({
-		env,
-		baseUrl: 'https://example.test',
-		token,
-		request: {
-			packageIdOrKodyId: '@owner/pkg',
-			exportName: './dispatch-message-created',
-			params: { n: 1 },
-			idempotencyKey,
-			source: 'webhook',
-		},
-	})
-	expect(denied.status).toBe(429)
-	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
 	expect(
 		db.runLog.ledgerRows.find((row) => row.idempotencyKey === idempotencyKey),
 	).toBeUndefined()
+
+	await consumeExecuteCall(env, token.userId)
+	expect(
+		await readMeter(env, token.userId, 'execute_calls_per_day'),
+	).toMatchObject({ outcome: 'ready', count: 1 })
+	expect(
+		await readMeter(env, token.userId, automationInvocationsPerDayResource),
+	).toMatchObject({ outcome: 'ready', count: limit })
 
 	// initialize() is insert-once; drop the counter so a retry can consume.
 	const userRows = meter.metersByUser.get(token.userId)
@@ -261,73 +220,32 @@ test('keyed automation quota denial releases the claim so a later retry can succ
 		count: 0,
 	})
 
-	const retried = await invokePackageExport({
-		env,
-		baseUrl: 'https://example.test',
-		token,
-		request: {
-			packageIdOrKodyId: '@owner/pkg',
-			exportName: './dispatch-message-created',
-			params: { n: 1 },
-			idempotencyKey,
-			source: 'webhook',
-		},
-	})
+	const retried = await invokeWebhook(env, token, idempotencyKey)
 	expect(retried.status).toBe(200)
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
 })
 
 test('execute_calls_per_day flood does not burn automation_invocations_per_day', async () => {
 	clearInvokeContractCachesForTests()
-	const db = createDatabase()
-	const { env } = createEnvWithUserMeter(db)
+	const { env } = createEnvWithUserMeter(createDatabase())
 	const userId = 'user-123'
-	const day = utcDayKey()
 
-	for (let i = 0; i < 3; i++) {
-		await consumeDailyEntitlement({
-			db: env.APP_DB,
-			env,
-			userId,
-			email: 'owner@example.com',
-			resource: 'execute_calls_per_day',
-		})
-	}
+	for (let i = 0; i < 3; i++) await consumeExecuteCall(env, userId)
 
-	const executeCount = await userMeterRpc({ env, userId }).read({
-		resource: 'execute_calls_per_day',
-		day,
+	expect(await readMeter(env, userId, 'execute_calls_per_day')).toMatchObject({
+		outcome: 'ready',
+		count: 3,
 	})
-	expect(executeCount).toMatchObject({ outcome: 'ready', count: 3 })
-
-	const automationCount = await userMeterRpc({ env, userId }).read({
-		resource: automationInvocationsPerDayResource,
-		day,
-	})
-	expect(automationCount.outcome === 'ready' ? automationCount.count : 0).toBe(
-		0,
-	)
+	expect(
+		await readCount(env, userId, automationInvocationsPerDayResource),
+	).toBe(0)
 })
 
 test('an empty Pro wallet past the monthly include gets a 429 stop before sandbox work', async () => {
-	prepareSuccessfulExport()
-	const db = createDatabase()
-	const { env } = createEnvWithUserMeter(db)
-	const token = createToken()
+	const { env, token } = prepareSuccessfulExport()
 	entitlementServiceMock.stopPastInclude = true
 	try {
-		const denied = await invokePackageExport({
-			env,
-			baseUrl: 'https://example.test',
-			token,
-			request: {
-				packageIdOrKodyId: '@owner/pkg',
-				exportName: './dispatch-message-created',
-				params: { n: 1 },
-				idempotencyKey: 'automation-past-include',
-				source: 'webhook',
-			},
-		})
+		const denied = await invokeWebhook(env, token, 'automation-past-include')
 		expect(denied.status).toBe(429)
 		expect(denied.body).toMatchObject({
 			ok: false,
