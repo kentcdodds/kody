@@ -1,4 +1,9 @@
 import { expect, test, vi } from 'vitest'
+import type * as AuthRedirect from '#app/auth-redirect.ts'
+import type * as AuthenticatedUser from '#app/authenticated-user.ts'
+import type * as AppBaseUrl from '#worker/app-base-url.ts'
+import type * as ModuleArtifacts from '#worker/package-invocations/module-artifacts.ts'
+import type * as PackageSource from '#worker/package-registry/source.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 
 // Handler tests exercise the local construction path. Slim-origin forward
@@ -26,51 +31,70 @@ const mockModule = vi.hoisted(() => ({
 		setTag: vi.fn(),
 		setContext: vi.fn(),
 	},
-	readAuthenticatedAppUser: vi.fn(async () => ({
-		username: 'test-user',
-		email: 'user@example.com',
-		displayName: 'User',
-		mcpUser: {
-			userId: 'user-1',
-			email: 'user@example.com',
+	readAuthenticatedAppUser: vi.fn(
+		async (
+			..._args: Parameters<typeof AuthenticatedUser.readAuthenticatedAppUser>
+		) => ({
 			username: 'test-user',
+			email: 'user@example.com',
 			displayName: 'User',
-		},
-	})),
-	redirectToLogin: vi.fn(() => new Response(null, { status: 302 })),
-	getAppBaseUrl: vi.fn(() => 'https://example.com'),
-	resolveSavedPackage: vi.fn(async () => ({
-		id: 'package-1',
-		userId: 'user-1',
-		name: '@kody/example',
-		kodyId: 'example',
-		description: 'Example package',
-		tags: [],
-		searchText: null,
-		sourceId: 'source-1',
-		hasApp: true,
-		hidden: false,
-		isPrivate: false,
-		createdAt: new Date(0).toISOString(),
-		updatedAt: new Date(0).toISOString(),
-	})),
-	loadPackageSourceBySourceId: vi.fn(async () => {
+			mcpUser: {
+				userId: 'user-1',
+				email: 'user@example.com',
+				username: 'test-user',
+				displayName: 'User',
+			},
+		}),
+	),
+	redirectToLogin: vi.fn(
+		(..._args: Parameters<typeof AuthRedirect.redirectToLogin>) =>
+			new Response(null, { status: 302 }),
+	),
+	getAppBaseUrl: vi.fn(
+		(..._args: Parameters<typeof AppBaseUrl.getAppBaseUrl>) =>
+			'https://example.com',
+	),
+	resolveSavedPackage: vi.fn<typeof ModuleArtifacts.resolveSavedPackage>(
+		async () => ({
+			id: 'package-1',
+			userId: 'user-1',
+			name: '@kody/example',
+			kodyId: 'example',
+			description: 'Example package',
+			tags: [],
+			searchText: null,
+			sourceId: 'source-1',
+			hasApp: true,
+			hidden: false,
+			isPrivate: false,
+			lockedAt: null,
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+		}),
+	),
+	loadPackageSourceBySourceId: vi.fn<
+		typeof PackageSource.loadPackageSourceBySourceId
+	>(async () => {
 		throw new Error('bundle failed')
 	}),
-	loadInvokeManifestBySourceId: vi.fn(async () => {
+	loadInvokeManifestBySourceId: vi.fn<
+		(
+			...args: Parameters<typeof ModuleArtifacts.loadInvokeManifestBySourceId>
+		) => Promise<unknown>
+	>(async () => {
 		throw new Error('manifest load failed')
 	}),
 	createPackageAppCallerContext: vi.fn(),
 	buildPackageAppWorker: vi.fn(),
 	packageRealtimeConnect: vi.fn(
-		async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+		async (_request: Request, _facet?: string | null) =>
+			new Response(JSON.stringify({ ok: true }), { status: 200 }),
 	),
 }))
 
 vi.mock('@sentry/cloudflare', () => ({
-	isInitialized: (...args: Array<unknown>) =>
-		mockModule.isSentryInitialized(...args),
-	getClient: (...args: Array<unknown>) => mockModule.getSentryClient(...args),
+	isInitialized: () => mockModule.isSentryInitialized(),
+	getClient: () => mockModule.getSentryClient(),
 	withScope: (callback: (scope: typeof mockModule.sentryScope) => void) =>
 		callback(mockModule.sentryScope),
 	captureException: (...args: Array<unknown>) =>
@@ -82,29 +106,34 @@ vi.mock('@sentry/cloudflare', () => ({
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
-	readAuthenticatedAppUser: (...args: Array<unknown>) =>
-		mockModule.readAuthenticatedAppUser(...args),
+	readAuthenticatedAppUser: (
+		...args: Parameters<typeof AuthenticatedUser.readAuthenticatedAppUser>
+	) => mockModule.readAuthenticatedAppUser(...args),
 }))
 
 vi.mock('#app/auth-redirect.ts', () => ({
-	redirectToLogin: (...args: Array<unknown>) =>
+	redirectToLogin: (...args: Parameters<typeof AuthRedirect.redirectToLogin>) =>
 		mockModule.redirectToLogin(...args),
 }))
 
 vi.mock('#worker/app-base-url.ts', () => ({
-	getAppBaseUrl: (...args: Array<unknown>) => mockModule.getAppBaseUrl(...args),
+	getAppBaseUrl: (...args: Parameters<typeof AppBaseUrl.getAppBaseUrl>) =>
+		mockModule.getAppBaseUrl(...args),
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
-	loadPackageSourceBySourceId: (...args: Array<unknown>) =>
-		mockModule.loadPackageSourceBySourceId(...args),
+	loadPackageSourceBySourceId: (
+		...args: Parameters<typeof PackageSource.loadPackageSourceBySourceId>
+	) => mockModule.loadPackageSourceBySourceId(...args),
 }))
 
 vi.mock('#worker/package-invocations/module-artifacts.ts', () => ({
-	resolveSavedPackage: (...args: Array<unknown>) =>
-		mockModule.resolveSavedPackage(...args),
-	loadInvokeManifestBySourceId: (...args: Array<unknown>) =>
-		mockModule.loadInvokeManifestBySourceId(...args),
+	resolveSavedPackage: (
+		...args: Parameters<typeof ModuleArtifacts.resolveSavedPackage>
+	) => mockModule.resolveSavedPackage(...args),
+	loadInvokeManifestBySourceId: (
+		...args: Parameters<typeof ModuleArtifacts.loadInvokeManifestBySourceId>
+	) => mockModule.loadInvokeManifestBySourceId(...args),
 }))
 
 vi.mock('#worker/package-runtime/package-app.ts', () => ({
@@ -116,13 +145,13 @@ vi.mock('#worker/package-runtime/package-app.ts', () => ({
 
 vi.mock('#worker/package-runtime/realtime-session.ts', () => ({
 	packageRealtimeSessionRpc: (..._args: Array<unknown>) => ({
-		connect: (...args: Array<unknown>) =>
+		connect: (...args: [request: Request, facet?: string | null]) =>
 			mockModule.packageRealtimeConnect(...args),
 	}),
 }))
 
 const { handlePackageAppRequest } = await import('./package-app.ts')
-const nonProductionEnv = { SENTRY_ENVIRONMENT: 'test' } as Env
+const nonProductionEnv = { SENTRY_ENVIRONMENT: 'test' } as unknown as Env
 
 function servePackageEntrypoint(
 	fetch: (request: Request) => Promise<Response>,

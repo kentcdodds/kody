@@ -1,5 +1,4 @@
 import { env, exports } from 'cloudflare:workers'
-import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { expect, test } from 'vitest'
 import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
 import {
@@ -47,16 +46,11 @@ async function workerFetch(
 	url: string | URL,
 	init: RequestInit = {},
 ): Promise<Response> {
-	const ctx = createExecutionContext()
 	// `redirect: 'manual'` keeps the entrypoint stub from following the
 	// cross-origin hops this suite is asserting on.
-	const response = await exports.default.fetch(
+	return await exports.default.fetch(
 		new Request(url, { redirect: 'manual', ...init }),
-		env,
-		ctx,
 	)
-	await waitOnExecutionContext(ctx)
-	return response
 }
 
 async function seedOwnerSessionCookie() {

@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import type * as packageSourceModule from '#worker/package-registry/source.ts'
 import {
 	AccountSuspendedError,
 	accountSuspendedMessage,
@@ -37,10 +38,12 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 		repoMockModule.loadPackageManifestBySourceId(...args),
 	loadPackageSourceBySourceId: (...args: Array<unknown>) =>
 		repoMockModule.loadPackageSourceBySourceId(...args),
-	loadPackageSourceRowForUser: (...args: Array<unknown>) =>
-		repoMockModule.loadPackageSourceRowForUser(...args),
-	loadPackageManifestForSource: (...args: Array<unknown>) =>
-		repoMockModule.loadPackageManifestForSource(...args),
+	loadPackageSourceRowForUser: (
+		...args: Parameters<typeof packageSourceModule.loadPackageSourceRowForUser>
+	) => repoMockModule.loadPackageSourceRowForUser(...args),
+	loadPackageManifestForSource: (
+		...args: Parameters<typeof packageSourceModule.loadPackageManifestForSource>
+	) => repoMockModule.loadPackageManifestForSource(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -803,6 +806,7 @@ test('invokePackageSubscription uses the normal capability registry with package
 		isPrivate: false,
 		createdAt: '2026-04-27T00:00:00.000Z',
 		updatedAt: '2026-04-27T00:00:00.000Z',
+		lockedAt: null,
 	}
 	const params = {
 		event: 'email.message.received',

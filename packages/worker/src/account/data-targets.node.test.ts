@@ -220,7 +220,12 @@ test('every accountUserDataTargets kind has a shared match builder and export gu
 	expect(accountExportRedactedForeignUserId.length).toBeGreaterThan(0)
 
 	const excludedListingChildren = accountUserDataTargets.filter(
-		(target) =>
+		(
+			target,
+		): target is Extract<
+			UserScopedDataTarget,
+			{ kind: 'community_listing_child' }
+		> =>
 			target.kind === 'community_listing_child' &&
 			target.includeInExport === false,
 	)

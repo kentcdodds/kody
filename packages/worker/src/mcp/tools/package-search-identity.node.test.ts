@@ -244,5 +244,6 @@ test('package identity match includes listingAhead only when the fork is behind'
 	})
 	const current = await resolve()
 	expect(current).toMatchObject({ recognized: true })
+	if (!current.recognized) throw new Error('Expected recognized identity')
 	expect(current.match).not.toHaveProperty('listingAhead')
 })

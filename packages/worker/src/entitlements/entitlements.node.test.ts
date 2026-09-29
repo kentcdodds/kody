@@ -31,10 +31,11 @@ import {
 	readCurrentEntitlementResourceUsage,
 	refundDailyEntitlement,
 	resolveUserPlanFromRow,
+	type EntitlementUsageEnv,
 } from './service.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
-import { userMeterRpc } from './user-meter-client.ts'
+import { type UserMeterEnv, userMeterRpc } from './user-meter-client.ts'
 import { type DailyEntitlementResource } from './user-meter-do.ts'
 
 type TestUser = {
@@ -171,10 +172,15 @@ async function readMeterDailyCount(
 	return result.outcome === 'ready' ? result.count : 0
 }
 
+function userMeterStub(env: MeterEnv, userId: string) {
+	return env.USER_METER.get(env.USER_METER.idFromName(userId))
+}
+
 function initializeStorageBytes(env: MeterEnv, userId: string, bytes: number) {
-	return env.USER_METER.get(
-		env.USER_METER.idFromName(userId),
-	).initializeStorageBytes({ bytes, updatedAt: new Date().toISOString() })
+	return userMeterStub(env, userId).initializeStorageBytes({
+		bytes,
+		updatedAt: new Date().toISOString(),
+	})
 }
 
 test('admin credit eligibility counts only on an effective Pro and never enables buying credits', () => {
@@ -912,18 +918,20 @@ test('storage byte reserve handles missing user (synthetic context) with free-pl
 test('readCurrentEntitlementResourceUsage for storage_bytes reads UserMeter with cold bootstrap, and never materializes missing users', async () => {
 	const { db, userId } = await createPlannedUserDb('pro')
 	const { env } = createInMemoryUserMeterEnv()
+	const meterEnv: UserMeterEnv = env
+	const usageEnv = meterEnv as EntitlementUsageEnv
 	const now = new Date()
 	const read = (readDb: D1Database, readUserId: string) =>
 		readCurrentEntitlementResourceUsage({
 			db: readDb,
-			env,
+			env: usageEnv,
 			userId: readUserId,
 			resource: 'storage_bytes',
 			now,
 		})
 
 	expect(await read(db, userId)).toBe(0)
-	await env.USER_METER.get(env.USER_METER.idFromName(userId)).setStorageBytes({
+	await userMeterStub(env, userId).setStorageBytes({
 		bytes: 750,
 		updatedAt: now.toISOString(),
 	})

@@ -1,17 +1,21 @@
 import { expect, test, vi } from 'vitest'
+import type * as RepoSessionDueOwners from './repo-session-due-owners.ts'
 
 const mockModule = vi.hoisted(() => ({
 	listDueRepoSessionOwners: vi.fn(),
 	runDueCleanup: vi.fn(),
-	deferRepoSessionDueOwner: vi.fn(async () => undefined),
+	deferRepoSessionDueOwner: vi.fn<
+		typeof RepoSessionDueOwners.deferRepoSessionDueOwner
+	>(async () => undefined),
 }))
 
 vi.mock('./repo-session-due-owners.ts', () => ({
 	repoSessionDueOwnerBatchSize: 25,
 	listDueRepoSessionOwners: (...args: Array<unknown>) =>
 		mockModule.listDueRepoSessionOwners(...args),
-	deferRepoSessionDueOwner: (...args: Array<unknown>) =>
-		mockModule.deferRepoSessionDueOwner(...args),
+	deferRepoSessionDueOwner: (
+		...args: Parameters<typeof RepoSessionDueOwners.deferRepoSessionDueOwner>
+	) => mockModule.deferRepoSessionDueOwner(...args),
 }))
 
 vi.mock('./repo-session-index-client.ts', () => ({

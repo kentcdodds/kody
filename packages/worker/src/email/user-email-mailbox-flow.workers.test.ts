@@ -192,7 +192,7 @@ function bundleArtifactsKv(bundleKv: Map<string, string>) {
 		},
 		async put() {},
 		async delete() {},
-	}
+	} as unknown as KVNamespace
 }
 
 test('USER inbound attachment, package event, reply, and provider index stay Mailbox-authoritative', async () => {

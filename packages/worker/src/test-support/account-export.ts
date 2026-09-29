@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite'
+import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import {
 	mailboxBlobRefAttachmentCursorPrefix,
 	mailboxBlobRefRawMimeCursorPrefix,
@@ -28,7 +28,7 @@ export function createD1FromSqlite(
 		prepare(query: string) {
 			options?.onQuery?.(query.replace(/\s+/g, ' ').trim())
 			return {
-				bind(...params: Array<unknown>) {
+				bind(...params: Array<SQLInputValue>) {
 					return {
 						async all<T>() {
 							const statement = db.prepare(query)
@@ -203,7 +203,7 @@ export function createMailboxBinding(input?: {
 			}),
 			listBlobReferences,
 		}),
-	} as unknown as DurableObjectNamespace
+	} as unknown as Env['MAILBOX']
 }
 
 export function encodeTestBase64Url(bytes: Uint8Array) {

@@ -6,7 +6,6 @@ import {
 	type UserMeterStorageBytesState,
 	type UserMeterWriteLeaseEntry,
 } from '#worker/entitlements/user-meter-do.ts'
-import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 
 type MeterRow = { count: number; revision: number }
 type StorageRow = { bytes: number; revision: number; updatedAt: string }
@@ -567,7 +566,7 @@ export function createInMemoryUserMeterEnv() {
 			idFromName: (name: string) => ({ name, toString: () => name }),
 			get: (id: { name: string }) => meterFor(id.name),
 		},
-	} as unknown as UserMeterEnv
+	} as unknown as { USER_METER: Env['USER_METER'] }
 
 	return {
 		env,

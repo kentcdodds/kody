@@ -3,6 +3,7 @@ import {
 	emptyCommunityCategoryCounts,
 	type CommunityCategoryCounts,
 } from '#universal/community-categories.ts'
+import type * as forkListingRelation from '#worker/community/fork-listing-relation.ts'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 import { onboardingFeaturedMcpServers } from '#universal/onboarding-mcp-chooser.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
@@ -31,7 +32,9 @@ const mockModule = vi.hoisted(() => ({
 	listSavedPackagesByIds: vi.fn(),
 	getMcpUserPackageScope: vi.fn(),
 	getUserSocialRowByUsername: vi.fn(),
-	resolveListingPinAncestry: vi.fn(async () => null),
+	resolveListingPinAncestry: vi.fn<
+		typeof forkListingRelation.resolveListingPinAncestry
+	>(async () => null),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -296,7 +299,9 @@ test('community detail overlays viewerInstall for forked listings and omits it w
 			packageId: 'pkg-github',
 		}),
 	)
-	expect(forked?.listing.viewerInstall?.status).toBe('installed')
+	const forkedListing = forked?.listing
+	if (!forkedListing) throw new Error('Expected forked listing detail')
+	expect(forkedListing.viewerInstall?.status).toBe('installed')
 	expect(forked?.viewerInstall?.listingAhead).toBe(false)
 
 	resetDataCacheForTests()
@@ -375,10 +380,12 @@ test('sourceAhead compares HEAD to the runtime pin, not the community catalog sn
 		request('/community/listing-github-published'),
 		'listing-github',
 	)
-	expect(published?.listing.sourceAhead).toBeUndefined()
-	expect(published?.listing.headCommit).toBeUndefined()
-	expect(published?.listing.pinnedCommit).toBe(sampleListing.pinnedCommit)
-	expect(published?.listing.pinnedCommit).not.toBe(runtimePin)
+	const publishedListing = published?.listing
+	if (!publishedListing) throw new Error('Expected published listing detail')
+	expect(publishedListing.sourceAhead).toBeUndefined()
+	expect(publishedListing.headCommit).toBeUndefined()
+	expect(publishedListing.pinnedCommit).toBe(sampleListing.pinnedCommit)
+	expect(publishedListing.pinnedCommit).not.toBe(runtimePin)
 
 	resetDataCacheForTests()
 	mockModule.resolveCachedArtifactSourceHead.mockResolvedValue({
@@ -390,8 +397,10 @@ test('sourceAhead compares HEAD to the runtime pin, not the community catalog sn
 		request('/community/listing-github-runtime-ahead'),
 		'listing-github',
 	)
-	expect(aheadOfRuntime?.listing.sourceAhead).toBe(true)
-	expect(aheadOfRuntime?.listing.headCommit).toBe(unpublishedHead)
+	const aheadListing = aheadOfRuntime?.listing
+	if (!aheadListing) throw new Error('Expected runtime-ahead listing detail')
+	expect(aheadListing.sourceAhead).toBe(true)
+	expect(aheadListing.headCommit).toBe(unpublishedHead)
 })
 
 test('community index is memoized per request and forwards newest sort to loaders', async () => {

@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
+import { type Capability } from '#mcp/capabilities/types.ts'
 import {
 	buildDomainIndexMatches,
 	buildDomainOverviewMatches,
@@ -7,7 +8,11 @@ import {
 } from './search-domain-overview.ts'
 import { understandSearchQuery } from './understand-search-query.ts'
 
-function capability(name: string, domain: string, description: string) {
+function capability(
+	name: string,
+	domain: string,
+	description: string,
+): Capability {
 	return {
 		name,
 		domain,
@@ -16,7 +21,9 @@ function capability(name: string, domain: string, description: string) {
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
-		inputSchema: { type: 'object' as const, properties: {} },
+		source: 'builtin',
+		inputSchema: { type: 'object', properties: {} },
+		inputTypeDefinition: '',
 		handler: async () => null,
 	}
 }

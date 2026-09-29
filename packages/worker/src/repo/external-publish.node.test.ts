@@ -1,25 +1,44 @@
 import { expect, test, vi } from 'vitest'
 import type * as PublishLock from '#worker/package-registry/package-publish-lock.ts'
+import type * as CommunityIcon from '#worker/community/community-icon.ts'
+import type * as PublishedRuntimeArtifacts from '#worker/package-runtime/published-runtime-artifacts.ts'
+import type * as EntitySources from './entity-sources.ts'
+import type * as IdentityIcon from './identity-icon.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
-	updateEntitySource: vi.fn(async () => true),
+	updateEntitySource: vi.fn<typeof EntitySources.updateEntitySource>(
+		async () => true,
+	),
 	runRepoChecks: vi.fn(),
-	writePublishedSourceSnapshot: vi.fn(async () => 'snapshot-key'),
-	deletePublishedSourceSnapshot: vi.fn(async () => undefined),
+	writePublishedSourceSnapshot: vi.fn<
+		typeof PublishedRuntimeArtifacts.writePublishedSourceSnapshot
+	>(async () => 'snapshot-key'),
+	deletePublishedSourceSnapshot: vi.fn<
+		typeof PublishedRuntimeArtifacts.deletePublishedSourceSnapshot
+	>(async () => undefined),
 	loadPublishedSourceSnapshot: vi.fn(),
 	refreshSavedPackageProjection: vi.fn(),
-	refreshCommunityIconForPackagePublish: vi.fn(async () => undefined),
-	refreshIdentityIconForSource: vi.fn(async () => undefined),
-	hasPublishedRuntimeArtifacts: vi.fn(() => false),
-	loadLockedSavedPackage: vi.fn(async () => null),
+	refreshCommunityIconForPackagePublish: vi.fn<
+		typeof CommunityIcon.refreshCommunityIconForPackagePublish
+	>(async () => undefined),
+	refreshIdentityIconForSource: vi.fn<
+		typeof IdentityIcon.refreshIdentityIconForSource
+	>(async () => undefined),
+	hasPublishedRuntimeArtifacts: vi.fn<
+		typeof PublishedRuntimeArtifacts.hasPublishedRuntimeArtifacts
+	>(() => false),
+	loadLockedSavedPackage: vi.fn<typeof PublishLock.loadLockedSavedPackage>(
+		async () => null,
+	),
 }))
 
 vi.mock('./entity-sources.ts', () => ({
 	getEntitySourceById: (...args: Array<unknown>) =>
 		mockModule.getEntitySourceById(...args),
-	updateEntitySource: (...args: Array<unknown>) =>
-		mockModule.updateEntitySource(...args),
+	updateEntitySource: (
+		...args: Parameters<typeof EntitySources.updateEntitySource>
+	) => mockModule.updateEntitySource(...args),
 }))
 
 vi.mock('./checks.ts', () => ({
@@ -27,14 +46,23 @@ vi.mock('./checks.ts', () => ({
 }))
 
 vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({
-	hasPublishedRuntimeArtifacts: (...args: Array<unknown>) =>
-		mockModule.hasPublishedRuntimeArtifacts(...args),
+	hasPublishedRuntimeArtifacts: (
+		...args: Parameters<
+			typeof PublishedRuntimeArtifacts.hasPublishedRuntimeArtifacts
+		>
+	) => mockModule.hasPublishedRuntimeArtifacts(...args),
 	loadPublishedSourceSnapshot: (...args: Array<unknown>) =>
 		mockModule.loadPublishedSourceSnapshot(...args),
-	writePublishedSourceSnapshot: (...args: Array<unknown>) =>
-		mockModule.writePublishedSourceSnapshot(...args),
-	deletePublishedSourceSnapshot: (...args: Array<unknown>) =>
-		mockModule.deletePublishedSourceSnapshot(...args),
+	writePublishedSourceSnapshot: (
+		...args: Parameters<
+			typeof PublishedRuntimeArtifacts.writePublishedSourceSnapshot
+		>
+	) => mockModule.writePublishedSourceSnapshot(...args),
+	deletePublishedSourceSnapshot: (
+		...args: Parameters<
+			typeof PublishedRuntimeArtifacts.deletePublishedSourceSnapshot
+		>
+	) => mockModule.deletePublishedSourceSnapshot(...args),
 }))
 
 vi.mock('#worker/package-registry/service.ts', () => ({
@@ -43,13 +71,17 @@ vi.mock('#worker/package-registry/service.ts', () => ({
 }))
 
 vi.mock('#worker/community/community-icon.ts', () => ({
-	refreshCommunityIconForPackagePublish: (...args: Array<unknown>) =>
-		mockModule.refreshCommunityIconForPackagePublish(...args),
+	refreshCommunityIconForPackagePublish: (
+		...args: Parameters<
+			typeof CommunityIcon.refreshCommunityIconForPackagePublish
+		>
+	) => mockModule.refreshCommunityIconForPackagePublish(...args),
 }))
 
 vi.mock('#worker/repo/identity-icon.ts', () => ({
-	refreshIdentityIconForSource: (...args: Array<unknown>) =>
-		mockModule.refreshIdentityIconForSource(...args),
+	refreshIdentityIconForSource: (
+		...args: Parameters<typeof IdentityIcon.refreshIdentityIconForSource>
+	) => mockModule.refreshIdentityIconForSource(...args),
 }))
 
 vi.mock(
@@ -58,8 +90,9 @@ vi.mock(
 		const actual = await importOriginal<typeof PublishLock>()
 		return {
 			...actual,
-			loadLockedSavedPackage: (...args: Array<unknown>) =>
-				mockModule.loadLockedSavedPackage(...args),
+			loadLockedSavedPackage: (
+				...args: Parameters<typeof PublishLock.loadLockedSavedPackage>
+			) => mockModule.loadLockedSavedPackage(...args),
 		}
 	},
 )
@@ -259,7 +292,8 @@ test('rechecks fast-forward against the latest source row before publishing', as
 	await expect(
 		publish({
 			files: {},
-			isFastForward: async (previousCommit) => previousCommit === 'commit-old',
+			isFastForward: async ({ previousCommit }) =>
+				previousCommit === 'commit-old',
 		}),
 	).resolves.toMatchObject({
 		status: 'not_fast_forward',
@@ -330,8 +364,19 @@ test('locked package finishes checks then withholds published_commit unless allo
 	mockModule.runRepoChecks.mockResolvedValue(passingChecks)
 	mockModule.loadLockedSavedPackage.mockResolvedValue({
 		id: 'package-1',
+		userId: 'user-1',
 		name: '@scope/demo',
+		kodyId: 'demo',
+		description: 'Demo',
+		tags: [],
+		searchText: null,
+		sourceId: 'source-1',
+		hasApp: false,
+		hidden: false,
+		isPrivate: false,
 		lockedAt: '2026-08-28T12:00:00.000Z',
+		createdAt: '2026-05-04T00:00:00.000Z',
+		updatedAt: '2026-05-04T00:00:00.000Z',
 	})
 
 	await expect(

@@ -396,7 +396,7 @@ test('refreshSavedPackageProjection syncs the job manager only when package jobs
 	expect(
 		mockModule.syncJobManagerAlarm.mock.invocationCallOrder[0],
 	).toBeGreaterThan(
-		mockModule.syncPackageJobsForPackage.mock.invocationCallOrder[0],
+		mockModule.syncPackageJobsForPackage.mock.invocationCallOrder[0]!,
 	)
 
 	mockModule.syncPackageJobsForPackage.mockResolvedValue(false)
@@ -561,7 +561,7 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 	expect(
 		mockModule.deleteEntitySource.mock.invocationCallOrder[0],
 	).toBeGreaterThan(
-		mockModule.cleanupArtifactReposForPackage.mock.invocationCallOrder[0],
+		mockModule.cleanupArtifactReposForPackage.mock.invocationCallOrder[0]!,
 	)
 	expect(mockModule.deleteJobRow).toHaveBeenCalledTimes(1)
 	expect(mockModule.deleteJobRow).toHaveBeenCalledWith({
@@ -594,7 +594,7 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 	})
 	expect(
 		mockModule.syncJobManagerAlarm.mock.invocationCallOrder[0],
-	).toBeGreaterThan(mockModule.deleteSavedPackage.mock.invocationCallOrder[0])
+	).toBeGreaterThan(mockModule.deleteSavedPackage.mock.invocationCallOrder[0]!)
 	expect(mockModule.unpublishCommunityListing).not.toHaveBeenCalled()
 })
 
@@ -621,7 +621,7 @@ test('deleteSavedPackageProjection unpublishes an active listing before removing
 	})
 	expect(
 		mockModule.unpublishCommunityListing.mock.invocationCallOrder[0],
-	).toBeLessThan(mockModule.deleteSavedPackage.mock.invocationCallOrder[0])
+	).toBeLessThan(mockModule.deleteSavedPackage.mock.invocationCallOrder[0]!)
 
 	mockModule.unpublishCommunityListing.mockClear()
 	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue({

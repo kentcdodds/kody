@@ -1,8 +1,9 @@
 import { expect, test } from 'vitest'
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
-import { env, exports } from 'cloudflare:workers'
+import { env } from 'cloudflare:workers'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { originWorkerHandler } from './origin-handler.ts'
 
 type TokenPayload = {
 	access_token: string
@@ -16,8 +17,10 @@ async function workerFetch(
 	request: Request,
 	workerEnv: Env = env,
 ): Promise<Response> {
+	const handleFetch = originWorkerHandler.fetch
+	if (!handleFetch) throw new Error('Expected the origin fetch handler.')
 	const ctx = createExecutionContext()
-	const response = await exports.default.fetch(request, workerEnv, ctx)
+	const response = await handleFetch(request, workerEnv, ctx)
 	await waitOnExecutionContext(ctx)
 	return response
 }

@@ -23,6 +23,11 @@ function uniqueUserId(label: string) {
 	return `runlog-continuity-${label}-${crypto.randomUUID()}`
 }
 
+function runLogStub(userId: string) {
+	const namespace = env.RUN_LOG as DurableObjectNamespace<RunLog>
+	return namespace.get(namespace.idFromName(userId))
+}
+
 function silenceExpectedConsoleWarns(substrings: Array<string>) {
 	silenceIncidentalRuntimeWarnings()
 	consoleWarn.mockImplementation((...args: Array<unknown>) => {
@@ -32,7 +37,7 @@ function silenceExpectedConsoleWarns(substrings: Array<string>) {
 }
 
 async function armRetentionOnNextFinish(userId: string) {
-	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	const stub = runLogStub(userId)
 	await runInDurableObject(stub, async (instance: RunLog) => {
 		expect(instance).toBeInstanceOf(RunLog)
 		seedRunLogMeta(instance, {
@@ -133,7 +138,7 @@ test('job observability counters start from zero on first terminal finish', asyn
 
 test('finishRun rolls back run upsert when a later terminal side effect throws', async () => {
 	const userId = uniqueUserId('finish-tx')
-	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	const stub = runLogStub(userId)
 	const runId = crypto.randomUUID()
 	await runInDurableObject(stub, async (instance: RunLog, state) => {
 		expect(instance).toBeInstanceOf(RunLog)

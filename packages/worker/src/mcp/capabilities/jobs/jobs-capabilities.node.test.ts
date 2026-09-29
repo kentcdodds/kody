@@ -362,7 +362,12 @@ test('jobRunNow executes jobs immediately and preserves failed one-off jobs for 
 	const appContext = createMcpCallerContext({
 		baseUrl: 'https://example.com',
 		user,
-		storageContext: { sessionId: null, appId: 'app-123' },
+		storageContext: {
+			sessionId: null,
+			appId: 'app-123',
+			packageId: null,
+			storageId: null,
+		},
 	})
 	mockModule.runJobNowViaManager.mockResolvedValueOnce({
 		job: job({

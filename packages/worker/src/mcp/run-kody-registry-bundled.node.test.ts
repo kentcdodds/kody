@@ -34,6 +34,12 @@ vi.mock('#worker/package-runtime/module-graph.ts', async () => {
 })
 
 type ProviderFns = Record<string, (args: unknown) => Promise<unknown>>
+
+function requireFn<Fn>(fns: Record<string, Fn>, name: string): Fn {
+	const fn = fns[name]
+	if (!fn) throw new Error(`Expected kody function "${name}"`)
+	return fn
+}
 type Providers = Array<{ fns: ProviderFns }>
 type RunOptions = NonNullable<
 	Parameters<typeof runBundledModuleWithRegistry>[4]
@@ -54,7 +60,10 @@ const okBundle = {
 	modules: { 'entry.js': 'export default async () => "ok"' },
 }
 const callerFor = (userId = 'user-123') =>
-	createMcpCallerContext({ baseUrl: 'https://heykody.dev', user: { userId } })
+	createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId, email: `${userId}@example.com`, displayName: userId },
+	})
 
 const runOk = (options: RunOptions = {}, callerContext = callerFor()) =>
 	runBundledModuleWithRegistry(env, callerContext, okBundle, undefined, {
@@ -129,6 +138,9 @@ function createWorkflowEnv() {
 					status: async () => ({ status: 'queued' }),
 				} as WorkflowInstance
 			},
+			createBatch: async () => {
+				throw new Error('createBatch is not supported in this test')
+			},
 		} as Workflow<unknown>,
 	} as Env
 	return { workflowEnv, created }
@@ -172,10 +184,13 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 	})
 	expect(emailResult.result).toBe('ok')
 	await expect(
-		executor.fns().emailMessageGet({ message_id: 'message-1' }),
+		requireFn(executor.fns(), 'emailMessageGet')({ message_id: 'message-1' }),
 	).resolves.toEqual({ id: 'message-1', subject: 'Hello' })
 	await expect(
-		executor.fns().emailAttachmentGet({ attachment_id: 'attachment-1' }),
+		requireFn(
+			executor.fns(),
+			'emailAttachmentGet',
+		)({ attachment_id: 'attachment-1' }),
 	).resolves.toEqual({ id: 'attachment-1', text: 'hello' })
 
 	const workflowResult = await runOk({
@@ -184,7 +199,10 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 	})
 	expect(workflowResult.result).toBe('ok')
 	await expect(
-		executor.fns().packageWorkflowCreate({ workflowName: 'custom' }),
+		requireFn(
+			executor.fns(),
+			'packageWorkflowCreate',
+		)({ workflowName: 'custom' }),
 	).resolves.toEqual({ ok: true, input: { workflowName: 'custom' } })
 
 	const packageResult = await runOk({
@@ -199,7 +217,7 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 	const specifier =
 		'kody:@kentcdodds/discord-general-chat/handle-discord-message-created'
 	await expect(
-		packageProviders[1]!.fns.invoke({ specifier, options: {} }),
+		requireFn(packageProviders[1]!.fns, 'invoke')({ specifier, options: {} }),
 	).resolves.toEqual({ ok: true, input: { specifier, options: {} } })
 
 	const { workflowEnv, created } = createWorkflowEnv()
@@ -211,7 +229,10 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 		{ packageContext: null },
 	)
 	await expect(
-		executor.fns().packageWorkflowCreate({
+		requireFn(
+			executor.fns(),
+			'packageWorkflowCreate',
+		)({
 			runAt: '2026-05-03T12:00:00.000Z',
 			idempotencyKey: 'execute-smoke',
 			code: 'export default async function main(p){ return { ok: true, p }; }',
@@ -468,8 +489,9 @@ test('runBundledModuleWithRegistry records execute run success, failure, and cal
 	const finishSpy = vi
 		.spyOn(runRecords, 'finishRunRecord')
 		.mockImplementation(async (input) => {
-			if (!input.handle) return
+			if (!input.handle) return false
 			persistedStatuses.push(input.status)
+			return true
 		})
 	const executor = mockExecutor(() => ({
 		result: 'ok',
@@ -642,7 +664,7 @@ test('runBundledModuleWithRegistry retries transient Durable Object isolate rese
 	vi.spyOn(runRecords, 'beginRunRecord').mockReturnValue(handle)
 	const finishSpy = vi
 		.spyOn(runRecords, 'finishRunRecord')
-		.mockResolvedValue(undefined)
+		.mockResolvedValue(true)
 	const resetMessage = 'Durable Object reset because its code was updated.'
 	const resetResult = (dispatcherAttempts: number) => ({
 		result: undefined,
@@ -737,9 +759,10 @@ test('runBundledModuleWithRegistry schedules finish via waitUntil when provided'
 		.mockImplementation(async (input) => {
 			if (input.waitUntil) {
 				input.waitUntil(finishGate)
-				return
+				return true
 			}
 			await finishGate
+			return true
 		})
 	mockExecutor()
 	const waitUntilTasks: Array<Promise<unknown>> = []

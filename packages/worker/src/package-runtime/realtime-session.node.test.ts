@@ -1,9 +1,12 @@
 import { expect, test, vi } from 'vitest'
+import type * as FacetNames from '#mcp/app-runner-facet-names.ts'
 
 const mockModule = vi.hoisted(() => ({
 	buildPackageAppWorker: vi.fn(),
 	createMcpCallerContext: vi.fn(),
-	buildFacetName: vi.fn((value?: string | null) => value?.trim() || 'main'),
+	buildFacetName: vi.fn<typeof FacetNames.buildFacetName>(
+		(value) => value?.trim() || 'main',
+	),
 	getSavedPackageById: vi.fn(),
 	getEntitySourceById: vi.fn(),
 	loadPackageSourceBySourceId: vi.fn(),
@@ -15,7 +18,7 @@ vi.mock('#mcp/context.ts', () => ({
 }))
 
 vi.mock('#mcp/app-runner-facet-names.ts', () => ({
-	buildFacetName: (...args: Array<unknown>) =>
+	buildFacetName: (...args: Parameters<typeof FacetNames.buildFacetName>) =>
 		mockModule.buildFacetName(...args),
 }))
 

@@ -18,12 +18,16 @@ vi.mock('#worker/run-records/service.ts', () => mockModule)
 
 type ActivityUser = Parameters<typeof loadAccountActivityData>[0]['user']
 
-const user = {
+const user: ActivityUser = {
 	sessionUserId: '42',
 	userId: 42,
 	username: 'test-user',
 	email: 'user@example.com',
+	emailVerified: true,
+	emailVerificationDelivery: null,
 	displayName: 'user',
+	roles: [],
+	permissions: [],
 	artifactOwnerIds: [],
 	mcpUser: {
 		userId: 'stable-user-1',
@@ -31,7 +35,7 @@ const user = {
 		username: 'test-user',
 		displayName: 'user',
 	},
-} as ActivityUser
+}
 
 const weekAgo = '2026-07-19T12:00:00.000Z'
 

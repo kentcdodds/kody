@@ -1,4 +1,6 @@
 import { expect, test, vi } from 'vitest'
+import type * as authenticatedUserModule from '#app/authenticated-user.ts'
+import type * as secretsService from '#mcp/secrets/service.ts'
 import type * as IntegrationsService from '#worker/integrations/service.ts'
 import type * as IntegrationsRepo from '#worker/integrations/repo.ts'
 import type * as IntegrationsCredentials from '#worker/integrations/credentials.ts'
@@ -54,8 +56,8 @@ const mockModule = vi.hoisted(() => {
 			description: '',
 			scopes,
 			requiredHosts: [new URL(app.apiBaseUrl ?? '').host],
-			usageMode: 'any',
-			allowedPackageIds: [],
+			usageMode: 'any' as const,
+			allowedPackageIds: [] as Array<string>,
 			connectedAt: null,
 			tokenRefreshedAt: null,
 			...stamps,
@@ -64,12 +66,18 @@ const mockModule = vi.hoisted(() => {
 	const githubJoined = joined(githubApp, 'github', null, ['repo', 'read:user'])
 	return {
 		googleApp,
-		readAuthenticatedAppUser: vi.fn(async () => ({
+		readAuthenticatedAppUser: vi.fn<
+			typeof authenticatedUserModule.readAuthenticatedAppUser
+		>(async () => ({
 			sessionUserId: '42',
 			userId: 42,
 			username: 'test-user',
 			email: 'user@example.com',
+			emailVerified: true,
+			emailVerificationDelivery: null,
 			displayName: 'user',
+			roles: ['user'],
+			permissions: [],
 			artifactOwnerIds: [],
 			mcpUser: {
 				userId: 'stable-user-1',
@@ -79,66 +87,110 @@ const mockModule = vi.hoisted(() => {
 			},
 		})),
 		readAuthSessionResult: async () => ({ session: null, setCookie: null }),
-		listJoinedIntegrations: vi.fn(async () => [
+		listJoinedIntegrations: vi.fn<
+			typeof IntegrationsService.listJoinedIntegrations
+		>(async () => [
 			joined(googleApp, 'google', 'Personal', ['openid', 'email']),
 			joined(googleApp, 'google-calendar', 'Work calendar', [
 				'calendar.readonly',
 			]),
 			githubJoined,
 		]),
-		getJoinedIntegration: vi.fn(async () => githubJoined),
-		findOauthAppForProviderSetup: vi.fn(async () => null),
-		listOauthApps: vi.fn(async () => [
+		getJoinedIntegration: vi.fn<
+			typeof IntegrationsService.getJoinedIntegration
+		>(async () => githubJoined),
+		findOauthAppForProviderSetup: vi.fn<
+			typeof IntegrationsService.findOauthAppForProviderSetup
+		>(async () => null),
+		listOauthApps: vi.fn<typeof IntegrationsService.listOauthApps>(async () => [
 			{ ...githubApp, connectionCount: 1 },
 			{ ...googleApp, connectionCount: 2 },
 		]),
-		getOauthApp: vi.fn(async () => googleApp),
-		rotateOauthAppClientCredentials: vi.fn(async () => ({
+		getOauthApp: vi.fn<typeof IntegrationsService.getOauthApp>(
+			async () => googleApp,
+		),
+		rotateOauthAppClientCredentials: vi.fn<
+			typeof IntegrationsService.rotateOauthAppClientCredentials
+		>(async () => ({
 			...googleApp,
 			clientId: 'shared-google-client-rotated',
 			updatedAt: '1970-01-01T00:00:00.002Z',
 		})),
-		getAvailablePlatformApp: vi.fn(async () => null),
-		listAvailablePlatformApps: vi.fn(async () => []),
-		listSecrets: vi.fn(async () => []),
-		saveSecret: vi.fn(async () => ({
+		getAvailablePlatformApp: vi.fn<
+			typeof IntegrationsService.getAvailablePlatformApp
+		>(async () => null),
+		listAvailablePlatformApps: vi.fn<
+			typeof IntegrationsService.listAvailablePlatformApps
+		>(async () => []),
+		listSecrets: vi.fn<typeof secretsService.listSecrets>(async () => []),
+		saveSecret: vi.fn<typeof secretsService.saveSecret>(async () => ({
 			name: 'googleClientSecret',
 			scope: 'user' as const,
 			description: 'google OAuth client secret',
+			packageId: null,
 			allowedHosts: ['oauth2.googleapis.com'],
 			allowedPackages: [],
+			createdAt: '1970-01-01T00:00:00.002Z',
 			updatedAt: '1970-01-01T00:00:00.002Z',
+			expiresAt: null,
+			ttlMs: null,
 		})),
-		setSecretAllowedHosts: vi.fn(async () => undefined),
-		deleteIntegration: vi.fn(async () => true),
-		deleteOauthAppWithConnections: vi.fn(async () => ({
+		setSecretAllowedHosts: vi.fn<typeof secretsService.setSecretAllowedHosts>(
+			async (input) => ({
+				name: input.name,
+				scope: input.scope,
+				description: '',
+				packageId: null,
+				allowedHosts: input.allowedHosts,
+				allowedPackages: [],
+				...stamps,
+				expiresAt: null,
+				ttlMs: null,
+			}),
+		),
+		deleteIntegration: vi.fn<typeof IntegrationsService.deleteIntegration>(
+			async () => true,
+		),
+		deleteOauthAppWithConnections: vi.fn<
+			typeof IntegrationsService.deleteOauthAppWithConnections
+		>(async () => ({
 			deleted: true,
 			connectionNames: ['google', 'google-calendar'],
 		})),
-		listSavedPackagesByUserId: vi.fn(async () => []),
-		getOauthAppClientSecretCiphertext: vi.fn(async () => null),
-		persistUserOauthAppClientSecret: vi.fn(async () => undefined),
-		setIntegrationUsage: vi.fn(async () => ({
-			name: 'google',
-			usageMode: 'packages' as const,
-			allowedPackageIds: ['pkg-mail'],
-		})),
-		grantIntegrationPackage: vi.fn(async () => ({
-			name: 'google',
-			usageMode: 'packages' as const,
+		listSavedPackagesByUserId: vi.fn<
+			typeof PackageRegistryRepo.listSavedPackagesByUserId
+		>(async () => []),
+		getOauthAppClientSecretCiphertext: vi.fn<
+			typeof IntegrationsRepo.getOauthAppClientSecretCiphertext
+		>(async () => null),
+		persistUserOauthAppClientSecret: vi.fn<
+			typeof IntegrationsCredentials.persistUserOauthAppClientSecret
+		>(async () => undefined),
+		setIntegrationUsage: vi.fn<typeof IntegrationsService.setIntegrationUsage>(
+			async () => ({
+				...joined(googleApp, 'google', 'Personal', []).connection,
+				usageMode: 'packages',
+				allowedPackageIds: ['pkg-mail'],
+			}),
+		),
+		grantIntegrationPackage: vi.fn<
+			typeof IntegrationsService.grantIntegrationPackage
+		>(async () => ({
+			...joined(googleApp, 'google', 'Personal', []).connection,
+			usageMode: 'packages',
 			allowedPackageIds: ['pkg-mail'],
 		})),
 	}
 })
 
 vi.mock('#app/authenticated-user.ts', () => ({
-	readAuthenticatedAppUser: (...args: Array<unknown>) =>
-		mockModule.readAuthenticatedAppUser(...args),
+	readAuthenticatedAppUser: (
+		...args: Parameters<typeof authenticatedUserModule.readAuthenticatedAppUser>
+	) => mockModule.readAuthenticatedAppUser(...args),
 }))
 
 vi.mock('#app/auth-session.ts', () => ({
-	readAuthSessionResult: (...args: Array<unknown>) =>
-		mockModule.readAuthSessionResult(...args),
+	readAuthSessionResult: () => mockModule.readAuthSessionResult(),
 }))
 
 vi.mock('#app/auth-redirect.ts', () => ({
@@ -150,39 +202,61 @@ vi.mock('#app/ssr-render.tsx', () => ({
 }))
 
 vi.mock('#mcp/secrets/service.ts', () => ({
-	listSecrets: (...args: Array<unknown>) => mockModule.listSecrets(...args),
-	saveSecret: (...args: Array<unknown>) => mockModule.saveSecret(...args),
-	setSecretAllowedHosts: (...args: Array<unknown>) =>
-		mockModule.setSecretAllowedHosts(...args),
+	listSecrets: (...args: Parameters<typeof secretsService.listSecrets>) =>
+		mockModule.listSecrets(...args),
+	saveSecret: (...args: Parameters<typeof secretsService.saveSecret>) =>
+		mockModule.saveSecret(...args),
+	setSecretAllowedHosts: (
+		...args: Parameters<typeof secretsService.setSecretAllowedHosts>
+	) => mockModule.setSecretAllowedHosts(...args),
 }))
 
 vi.mock('#worker/integrations/service.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof IntegrationsService>()
 	return {
 		...actual,
-		listJoinedIntegrations: (...args: Array<unknown>) =>
-			mockModule.listJoinedIntegrations(...args),
-		getJoinedIntegration: (...args: Array<unknown>) =>
-			mockModule.getJoinedIntegration(...args),
-		findOauthAppForProviderSetup: (...args: Array<unknown>) =>
-			mockModule.findOauthAppForProviderSetup(...args),
-		listOauthApps: (...args: Array<unknown>) =>
-			mockModule.listOauthApps(...args),
-		getOauthApp: (...args: Array<unknown>) => mockModule.getOauthApp(...args),
-		rotateOauthAppClientCredentials: (...args: Array<unknown>) =>
-			mockModule.rotateOauthAppClientCredentials(...args),
-		deleteIntegration: (...args: Array<unknown>) =>
-			mockModule.deleteIntegration(...args),
-		deleteOauthAppWithConnections: (...args: Array<unknown>) =>
-			mockModule.deleteOauthAppWithConnections(...args),
-		getAvailablePlatformApp: (...args: Array<unknown>) =>
-			mockModule.getAvailablePlatformApp(...args),
-		listAvailablePlatformApps: (...args: Array<unknown>) =>
-			mockModule.listAvailablePlatformApps(...args),
-		setIntegrationUsage: (...args: Array<unknown>) =>
-			mockModule.setIntegrationUsage(...args),
-		grantIntegrationPackage: (...args: Array<unknown>) =>
-			mockModule.grantIntegrationPackage(...args),
+		listJoinedIntegrations: (
+			...args: Parameters<typeof IntegrationsService.listJoinedIntegrations>
+		) => mockModule.listJoinedIntegrations(...args),
+		getJoinedIntegration: (
+			...args: Parameters<typeof IntegrationsService.getJoinedIntegration>
+		) => mockModule.getJoinedIntegration(...args),
+		findOauthAppForProviderSetup: (
+			...args: Parameters<
+				typeof IntegrationsService.findOauthAppForProviderSetup
+			>
+		) => mockModule.findOauthAppForProviderSetup(...args),
+		listOauthApps: (
+			...args: Parameters<typeof IntegrationsService.listOauthApps>
+		) => mockModule.listOauthApps(...args),
+		getOauthApp: (
+			...args: Parameters<typeof IntegrationsService.getOauthApp>
+		) => mockModule.getOauthApp(...args),
+		rotateOauthAppClientCredentials: (
+			...args: Parameters<
+				typeof IntegrationsService.rotateOauthAppClientCredentials
+			>
+		) => mockModule.rotateOauthAppClientCredentials(...args),
+		deleteIntegration: (
+			...args: Parameters<typeof IntegrationsService.deleteIntegration>
+		) => mockModule.deleteIntegration(...args),
+		deleteOauthAppWithConnections: (
+			...args: Parameters<
+				typeof IntegrationsService.deleteOauthAppWithConnections
+			>
+		) => mockModule.deleteOauthAppWithConnections(...args),
+		getAvailablePlatformApp: (
+			...args: Parameters<typeof IntegrationsService.getAvailablePlatformApp>
+		) => mockModule.getAvailablePlatformApp(...args),
+		listAvailablePlatformApps: (
+			...args: Parameters<typeof IntegrationsService.listAvailablePlatformApps>
+		) => mockModule.listAvailablePlatformApps(...args),
+		setIntegrationUsage: (
+			...args: Parameters<typeof IntegrationsService.setIntegrationUsage>
+		) => mockModule.setIntegrationUsage(...args),
+		grantIntegrationPackage: (
+			...args: Parameters<typeof IntegrationsService.grantIntegrationPackage>
+		) => mockModule.grantIntegrationPackage(...args),
 	}
 })
 
@@ -190,8 +264,9 @@ vi.mock('#worker/package-registry/repo.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof PackageRegistryRepo>()
 	return {
 		...actual,
-		listSavedPackagesByUserId: (...args: Array<unknown>) =>
-			mockModule.listSavedPackagesByUserId(...args),
+		listSavedPackagesByUserId: (
+			...args: Parameters<typeof PackageRegistryRepo.listSavedPackagesByUserId>
+		) => mockModule.listSavedPackagesByUserId(...args),
 	}
 })
 
@@ -199,8 +274,11 @@ vi.mock('#worker/integrations/repo.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof IntegrationsRepo>()
 	return {
 		...actual,
-		getOauthAppClientSecretCiphertext: (...args: Array<unknown>) =>
-			mockModule.getOauthAppClientSecretCiphertext(...args),
+		getOauthAppClientSecretCiphertext: (
+			...args: Parameters<
+				typeof IntegrationsRepo.getOauthAppClientSecretCiphertext
+			>
+		) => mockModule.getOauthAppClientSecretCiphertext(...args),
 	}
 })
 
@@ -208,8 +286,11 @@ vi.mock('#worker/integrations/credentials.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof IntegrationsCredentials>()
 	return {
 		...actual,
-		persistUserOauthAppClientSecret: (...args: Array<unknown>) =>
-			mockModule.persistUserOauthAppClientSecret(...args),
+		persistUserOauthAppClientSecret: (
+			...args: Parameters<
+				typeof IntegrationsCredentials.persistUserOauthAppClientSecret
+			>
+		) => mockModule.persistUserOauthAppClientSecret(...args),
 	}
 })
 
@@ -274,7 +355,10 @@ test('integrations API lists connections with app grouping metadata and serves t
 	expect(mockModule.listOauthApps).toHaveBeenCalledWith(
 		withEnv({ userId: 'stable-user-1' }),
 	)
-	const listPayload = await listResponse.json()
+	const listPayload = (await listResponse.json()) as {
+		apps: Array<unknown>
+		integrations: Array<unknown>
+	}
 	expect(listPayload).toMatchObject({
 		ok: true,
 		email: 'user@example.com',
@@ -328,7 +412,10 @@ test('integrations API lists connections with app grouping metadata and serves t
 
 	const chooserResponse = await get('?connectChooser=1')
 	expect(chooserResponse.status).toBe(200)
-	const chooserPayload = await chooserResponse.json()
+	const chooserPayload = (await chooserResponse.json()) as {
+		ok: boolean
+		chooser: { options: Array<unknown> }
+	}
 	expect(chooserPayload.ok).toBe(true)
 	expect(chooserPayload.chooser.options).toEqual(
 		expect.arrayContaining([
@@ -551,7 +638,11 @@ test('integrations API rotates OAuth app credentials with auth scoping and valid
 		userId: 99,
 		username: 'other-user',
 		email: 'other@example.com',
+		emailVerified: true,
+		emailVerificationDelivery: null,
 		displayName: 'other',
+		roles: ['user'],
+		permissions: [],
 		artifactOwnerIds: [],
 		mcpUser: {
 			userId: 'stable-user-other',
@@ -666,7 +757,9 @@ test('integrations API sets usage, returns approval payload, and grants a packag
 
 	const approvalGet = await get('?name=google&package_id=pkg-mail')
 	expect(approvalGet.status).toBe(200)
-	const approvalPayload = await approvalGet.json()
+	const approvalPayload = (await approvalGet.json()) as {
+		integration?: unknown
+	}
 	expect(approvalPayload).toMatchObject({
 		ok: true,
 		approval: {

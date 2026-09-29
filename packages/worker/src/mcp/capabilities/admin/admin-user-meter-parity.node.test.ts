@@ -8,14 +8,17 @@ import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 
 const mockModule = vi.hoisted(() => ({
-	logAuditEvent: vi.fn(async () => undefined),
+	logAuditEvent: vi.fn<typeof AuditLog.logAuditEvent>(async () => ({
+		persisted: false,
+		failedSinks: [],
+	})),
 }))
 
 vi.mock('#worker/audit-log.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof AuditLog>()
 	return {
 		...actual,
-		logAuditEvent: (...args: Array<unknown>) =>
+		logAuditEvent: (...args: Parameters<typeof AuditLog.logAuditEvent>) =>
 			mockModule.logAuditEvent(...args),
 	}
 })

@@ -18,8 +18,7 @@ vi.mock('#worker/worker-bundler-modules.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/scope-grants.ts', () => ({
-	getPlatformAccountByUsername: (...args: Array<unknown>) =>
-		mockModule.getPlatformAccountByUsername(...args),
+	getPlatformAccountByUsername: mockModule.getPlatformAccountByUsername,
 	isPlatformAccountStableUserId: async () => false,
 	listPlatformAccountUsernames: async () => [],
 }))

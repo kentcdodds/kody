@@ -42,7 +42,7 @@ function createEnv() {
 function caller(userId: string) {
 	return createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
-		user: { userId },
+		user: { userId, email: `${userId}@example.com`, displayName: userId },
 	})
 }
 

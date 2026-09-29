@@ -1,9 +1,15 @@
 import { expect, test } from 'vitest'
 import { withStaticTransportHeaders } from './transport-headers.ts'
 
+type AutoTransport = {
+	type: 'auto'
+	headers?: HeadersInit
+	requestInit?: RequestInit
+}
+
 test('static Authorization headers reach requestInit so transports send them', () => {
-	const transport = withStaticTransportHeaders({
-		type: 'auto' as const,
+	const transport = withStaticTransportHeaders<AutoTransport>({
+		type: 'auto',
 		headers: { Authorization: 'Bearer secret-token' },
 	})
 
@@ -16,7 +22,9 @@ test('static Authorization headers reach requestInit so transports send them', (
 	expect(transport.headers).toEqual({ Authorization: 'Bearer secret-token' })
 	expect(transport.type).toBe('auto')
 
-	const withoutHeaders = withStaticTransportHeaders({ type: 'auto' as const })
+	const withoutHeaders = withStaticTransportHeaders<AutoTransport>({
+		type: 'auto',
+	})
 	expect(withoutHeaders).toEqual({ type: 'auto' })
 	expect(withoutHeaders.requestInit).toBeUndefined()
 

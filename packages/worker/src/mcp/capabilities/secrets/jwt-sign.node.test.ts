@@ -21,7 +21,11 @@ const ctx = {
 	env: {} as Env,
 	callerContext: createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
+		user: {
+			userId: 'user-123',
+			email: 'user@example.com',
+			displayName: 'User',
+		},
 	}),
 }
 type SignInput = Parameters<typeof jwtSignCapability.handler>[0]
@@ -457,7 +461,11 @@ test('secretJwtSign accepts opaque {{secret:…}} refs and remaps share-grant gu
 		env: { APP_DB: {} } as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
-			user: { userId: 'guest-user' },
+			user: {
+				userId: 'guest-user',
+				email: 'guest@example.com',
+				displayName: 'Guest',
+			},
 			storageContext: {
 				sessionId: null,
 				appId: null,

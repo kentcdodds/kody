@@ -37,7 +37,7 @@ function kv(
 			if (hooks?.putError) throw hooks.putError
 			store.set(key, value)
 		},
-	}
+	} as FleetExecuteHeartbeatKv & { store: Map<string, string> }
 }
 
 test('heartbeat coalesces writes and stays fail-open so customer execute is not broken', async () => {

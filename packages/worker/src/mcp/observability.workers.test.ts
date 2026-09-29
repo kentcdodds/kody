@@ -110,21 +110,25 @@ test('observability helpers normalize errors and emit resilient mcp-event logs',
 
 test('callerContextFields exposes the caller user id and logMcpEvent serializes it', () => {
 	expect(
-		callerContextFields({
-			baseUrl: 'https://example.com',
-			user: {
-				userId: 'user-1',
-				email: 'user@example.com',
-				displayName: 'User One',
-			},
-		}),
+		callerContextFields(
+			createMcpCallerContext({
+				baseUrl: 'https://example.com',
+				user: {
+					userId: 'user-1',
+					email: 'user@example.com',
+					displayName: 'User One',
+				},
+			}),
+		),
 	).toMatchObject({
 		baseUrl: 'https://example.com',
 		hasUser: true,
 		userId: 'user-1',
 	})
 	expect(
-		callerContextFields({ baseUrl: 'https://example.com', user: null }),
+		callerContextFields(
+			createMcpCallerContext({ baseUrl: 'https://example.com', user: null }),
+		),
 	).toMatchObject({ hasUser: false, userId: undefined })
 
 	logMcpEvent({
@@ -144,8 +148,9 @@ test('packageSave logs parse failures, rejects invalid manifests, and logs succe
 	// The worker bundler emits an incidental experimental warning during the
 	// successful save's artifact rebuild.
 	silenceIncidentalRuntimeWarnings()
-	const handler = (await getStaticRegistry()).capabilityMap['packageSave']
-		.handler
+	const packageSave = (await getStaticRegistry()).capabilityMap['packageSave']
+	if (!packageSave) throw new Error('Expected packageSave capability')
+	const handler = packageSave.handler
 	await expect(
 		handler(
 			{},

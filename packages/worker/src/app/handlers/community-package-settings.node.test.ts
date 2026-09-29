@@ -1,22 +1,30 @@
 import { expect, test, vi } from 'vitest'
+import type * as PackagePage from '#app/package-page.ts'
+import type * as SsrRender from '#app/ssr-render.tsx'
 
 const mockModule = vi.hoisted(() => ({
-	loadPackagePage: vi.fn<() => Promise<unknown>>(),
-	renderAppPage: vi.fn<(input: unknown) => Promise<Response>>(
+	loadPackagePage:
+		vi.fn<
+			(
+				...args: Parameters<typeof PackagePage.loadPackagePage>
+			) => Promise<unknown>
+		>(),
+	renderAppPage: vi.fn<typeof SsrRender.renderAppPage>(
 		async (input) =>
 			new Response('ok', {
-				status: (input as { status?: number }).status ?? 200,
+				status: input.status ?? 200,
 			}),
 	),
 }))
 
 vi.mock('#app/package-page.ts', () => ({
-	loadPackagePage: (...args: Array<unknown>) =>
+	loadPackagePage: (...args: Parameters<typeof PackagePage.loadPackagePage>) =>
 		mockModule.loadPackagePage(...args),
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
-	renderAppPage: (...args: Array<unknown>) => mockModule.renderAppPage(...args),
+	renderAppPage: (...args: Parameters<typeof SsrRender.renderAppPage>) =>
+		mockModule.renderAppPage(...args),
 }))
 
 vi.mock('#app/frame-registrations.ts', () => ({}))

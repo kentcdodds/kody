@@ -1,21 +1,35 @@
 import { expect, test, vi } from 'vitest'
 import { RequestContext } from 'remix/router'
+import type * as AccountSecretsData from '#app/account-secrets-data.ts'
+import type * as PageAuth from '#app/page-auth.ts'
 import { createConnectSecretsHandler } from '#app/handlers/connect-secrets.ts'
 
 const mockModule = vi.hoisted(() => ({
-	requireAuthenticatedPageUser: vi.fn<() => Promise<unknown>>(),
-	loadAccountSecretsData: vi.fn<() => Promise<unknown>>(),
+	requireAuthenticatedPageUser:
+		vi.fn<
+			(
+				...args: Parameters<typeof PageAuth.requireAuthenticatedPageUser>
+			) => Promise<unknown>
+		>(),
+	loadAccountSecretsData:
+		vi.fn<
+			(
+				...args: Parameters<typeof AccountSecretsData.loadAccountSecretsData>
+			) => Promise<unknown>
+		>(),
 	renderAppPage: vi.fn<(input: unknown) => Promise<Response>>(),
 }))
 
 vi.mock('#app/page-auth.ts', () => ({
-	requireAuthenticatedPageUser: (...args: Array<unknown>) =>
-		mockModule.requireAuthenticatedPageUser(...args),
+	requireAuthenticatedPageUser: (
+		...args: Parameters<typeof PageAuth.requireAuthenticatedPageUser>
+	) => mockModule.requireAuthenticatedPageUser(...args),
 }))
 
 vi.mock('#app/account-secrets-data.ts', () => ({
-	loadAccountSecretsData: (...args: Array<unknown>) =>
-		mockModule.loadAccountSecretsData(...args),
+	loadAccountSecretsData: (
+		...args: Parameters<typeof AccountSecretsData.loadAccountSecretsData>
+	) => mockModule.loadAccountSecretsData(...args),
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({

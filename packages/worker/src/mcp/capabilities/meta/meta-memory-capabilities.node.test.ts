@@ -30,7 +30,11 @@ function createSignedInCapabilityContext() {
 		env: {} as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
-			user: { userId: 'user-123' },
+			user: {
+				userId: 'user-123',
+				email: 'user@example.com',
+				displayName: 'User',
+			},
 		}),
 	}
 }

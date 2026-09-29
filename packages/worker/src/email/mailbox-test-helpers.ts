@@ -2,16 +2,17 @@ import { env } from 'cloudflare:workers'
 import { expect } from 'vitest'
 import { mailboxDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { emailAttachmentBlobKey, emailRawMimeKey } from './blob-keys.ts'
-import { mailboxRpc, type MailboxEnv } from './mailbox-client.ts'
+import { mailboxRpc } from './mailbox-client.ts'
 import {
+	type Mailbox,
 	type MailboxAttachmentInput,
 	type MailboxDeliveryEventInput,
 	type MailboxMessageInput,
 	type MailboxThreadInput,
 } from './mailbox-do.ts'
 
-export function mailboxEnv(): MailboxEnv & { MAILBOX: DurableObjectNamespace } {
-	const mailbox = (env as MailboxEnv).MAILBOX
+export function mailboxEnv(): { MAILBOX: DurableObjectNamespace<Mailbox> } {
+	const mailbox = env.MAILBOX
 	if (!mailbox) {
 		throw new Error(
 			'MAILBOX Durable Object binding is required for mailbox-do workers tests.',
@@ -20,7 +21,7 @@ export function mailboxEnv(): MailboxEnv & { MAILBOX: DurableObjectNamespace } {
 	return { MAILBOX: mailbox }
 }
 
-export function stubFor(userId: string) {
+export function stubFor(userId: string): DurableObjectStub<Mailbox> {
 	const { MAILBOX } = mailboxEnv()
 	return MAILBOX.get(MAILBOX.idFromName(mailboxDurableObjectName(userId)))
 }

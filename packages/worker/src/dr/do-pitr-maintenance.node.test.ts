@@ -38,6 +38,10 @@ const bookmarkRequest = {
 	kind: 'mailbox',
 	userId: 'stable-user-id',
 }
+type MaintenanceEnvVars = Partial<
+	Record<'SENTRY_ENVIRONMENT' | 'DR_RESTORE_SECRET', string>
+>
+
 const productionEnv = {
 	SENTRY_ENVIRONMENT: 'production',
 	DR_RESTORE_SECRET: 'correct',
@@ -45,7 +49,7 @@ const productionEnv = {
 
 test('DO PITR maintenance route fails closed without its shared recovery secret', async () => {
 	const timestampMs = Date.now() - 60_000
-	const cases: Array<[Request, Partial<Env>, number]> = [
+	const cases: Array<[Request, MaintenanceEnvVars, number]> = [
 		[
 			createRequest({ ...bookmarkRequest, timestampMs }, 'Bearer correct'),
 			{ ...productionEnv, SENTRY_ENVIRONMENT: 'preview' },

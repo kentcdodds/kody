@@ -1,11 +1,14 @@
 import { expect, test, vi } from 'vitest'
 import type * as CloudflareWorkers from 'cloudflare:workers'
+import type * as PushSubscriptions from './artifacts-push-subscriptions.ts'
 
 const mocks = vi.hoisted(() => ({
-	waitUntil: vi.fn((promise: Promise<unknown>) => {
+	waitUntil: vi.fn<typeof CloudflareWorkers.waitUntil>((promise) => {
 		void promise
 	}),
-	ensureArtifactsRepoPushSubscription: vi.fn(async () => ({
+	ensureArtifactsRepoPushSubscription: vi.fn<
+		typeof PushSubscriptions.ensureArtifactsRepoPushSubscription
+	>(async () => ({
 		subscriptionId: null,
 		skipped: true,
 	})),
@@ -15,13 +18,17 @@ vi.mock('cloudflare:workers', async (importOriginal) => {
 	const actual = await importOriginal<typeof CloudflareWorkers>()
 	return {
 		...actual,
-		waitUntil: (...args: Array<unknown>) => mocks.waitUntil(...args),
+		waitUntil: (...args: Parameters<typeof CloudflareWorkers.waitUntil>) =>
+			mocks.waitUntil(...args),
 	}
 })
 
 vi.mock('./artifacts-push-subscriptions.ts', () => ({
-	ensureArtifactsRepoPushSubscription: (...args: Array<unknown>) =>
-		mocks.ensureArtifactsRepoPushSubscription(...args),
+	ensureArtifactsRepoPushSubscription: (
+		...args: Parameters<
+			typeof PushSubscriptions.ensureArtifactsRepoPushSubscription
+		>
+	) => mocks.ensureArtifactsRepoPushSubscription(...args),
 }))
 
 const { ensureEntitySource } = await import('./source-service.ts')

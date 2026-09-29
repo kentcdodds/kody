@@ -123,7 +123,7 @@ test('dedicated system inbound transitions stay behaviorally exhaustive', async 
 	await charge(stale, staleNow)
 	const reconciliation = await reconcileSystemStaleInboundDeliveries({
 		db,
-		blobs: { delete: async () => undefined } as R2Bucket,
+		blobs: { delete: async () => undefined } as unknown as R2Bucket,
 		now,
 	})
 	const receivedProjection = await db

@@ -57,7 +57,7 @@ function createMemoryTestDb() {
 								normalizedQuery.includes('from mcp_memories') &&
 								normalizedQuery.includes('where user_id = ? and id = ?')
 							) {
-								const [userId, memoryId] = params as Array<string>
+								const [userId, memoryId] = params as [string, string]
 								const row = memories.get(memoryId)
 								if (!row || row.user_id !== userId) return null
 								return { ...row } as T
@@ -112,7 +112,11 @@ function createMemoryTestDb() {
 									'from mcp_memory_conversation_suppressions',
 								)
 							) {
-								const [userId, conversationId, now] = params as Array<string>
+								const [userId, conversationId, now] = params as [
+									string,
+									string,
+									string,
+								]
 								const rows = [...suppressions.values()]
 									.filter((row) => row.user_id === userId)
 									.filter((row) => row.conversation_id === conversationId)
@@ -202,8 +206,11 @@ function createMemoryTestDb() {
 										'set last_accessed_at = ?, updated_at = updated_at',
 									)
 								) {
-									const [lastAccessedAt, userId, ...memoryIds] =
-										params as Array<string>
+									const [lastAccessedAt, userId, ...memoryIds] = params as [
+										string,
+										string,
+										...Array<string>,
+									]
 									let changes = 0
 									for (const memoryId of memoryIds) {
 										const existing = memories.get(memoryId)
@@ -218,7 +225,7 @@ function createMemoryTestDb() {
 								}
 							}
 							if (normalizedQuery.startsWith('delete from mcp_memories')) {
-								const [userId, memoryId] = params as Array<string>
+								const [userId, memoryId] = params as [string, string]
 								const existing = memories.get(memoryId)
 								if (!existing || existing.user_id !== userId) {
 									return { meta: { changes: 0 } }
@@ -238,7 +245,7 @@ function createMemoryTestDb() {
 									createdAt,
 									lastSeenAt,
 									expiresAt,
-								] = params as Array<string>
+								] = params as [string, string, string, string, string, string]
 								suppressions.set(
 									suppressionKey(userId, conversationId, memoryId),
 									{
@@ -258,7 +265,7 @@ function createMemoryTestDb() {
 								)
 							) {
 								if (normalizedQuery.includes('where expires_at <= ?')) {
-									const [cutoff] = params as Array<string>
+									const [cutoff] = params as [string]
 									let changes = 0
 									for (const [key, row] of suppressions.entries()) {
 										if (row.expires_at <= cutoff) {
@@ -593,29 +600,20 @@ test('memory search online queries Vectorize first and hydrates vector hits by i
 		10_000,
 	)
 
-	const vectorQueryCalls: Array<{
-		topK: number
-		namespace?: string
-		filter?: Record<string, unknown>
-	}> = []
+	const vectorQueryCalls: Array<VectorizeQueryOptions | undefined> = []
+	const vectorIndex: Pick<VectorizeIndex, 'query'> = {
+		async query(_values, options) {
+			vectorQueryCalls.push(options)
+			return {
+				count: 1,
+				matches: [{ id: 'memory_memory-old-vector-hit', score: 0.92 }],
+			}
+		},
+	}
 	const runtimeEnv = env(testDb.db, {
 		SENTRY_ENVIRONMENT: 'production',
 		AI: createDeterministicAiBinding(),
-		CAPABILITY_VECTOR_INDEX: {
-			async query(
-				_values: Array<number>,
-				options: {
-					topK: number
-					namespace?: string
-					filter?: Record<string, unknown>
-				},
-			) {
-				vectorQueryCalls.push(options)
-				return {
-					matches: [{ id: 'memory_memory-old-vector-hit', score: 0.92 }],
-				}
-			},
-		},
+		CAPABILITY_VECTOR_INDEX: vectorIndex as VectorizeIndex,
 	})
 
 	const result = await searchMemoryRecords({

@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
+import type * as AuthenticatedUser from '#app/authenticated-user.ts'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import type * as AuditLog from '#worker/audit-log.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
@@ -8,12 +9,14 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { createFakeImagesBinding } from '#worker/test-support/images-binding.ts'
 
 const mockModule = vi.hoisted(() => ({
-	readAuthenticatedAppUser: vi.fn<() => Promise<unknown>>(),
+	readAuthenticatedAppUser:
+		vi.fn<typeof AuthenticatedUser.readAuthenticatedAppUser>(),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
-	readAuthenticatedAppUser: (...args: Array<unknown>) =>
-		mockModule.readAuthenticatedAppUser(...args),
+	readAuthenticatedAppUser: (
+		...args: Parameters<typeof AuthenticatedUser.readAuthenticatedAppUser>
+	) => mockModule.readAuthenticatedAppUser(...args),
 }))
 
 vi.mock('#worker/audit-log.ts', async (importOriginal) => {
@@ -31,7 +34,11 @@ const { createAdminPlatformIntegrationsApiHandler } =
 
 const migrationsDirectory = new URL('../../../migrations/', import.meta.url)
 
-function createActor(roles: Array<RoleName>) {
+type AppsPayload = { apps: Array<{ slug: string; label?: string }> }
+
+function createActor(
+	roles: Array<RoleName>,
+): AuthenticatedUser.AuthenticatedAppUser {
 	const permissions: Array<PermissionString> = roles.includes('admin')
 		? ['read:user:any', 'update:user:any']
 		: ['read:user:own']
@@ -39,6 +46,8 @@ function createActor(roles: Array<RoleName>) {
 		sessionUserId: '1',
 		userId: 1,
 		email: 'admin@example.com',
+		emailVerified: true,
+		emailVerificationDelivery: null,
 		username: 'admin-user',
 		displayName: 'admin-user',
 		roles,
@@ -72,7 +81,7 @@ function createHarness() {
 			},
 		} as unknown as R2Bucket,
 		IMAGES: createFakeImagesBinding(),
-	} as Env
+	} as unknown as Env
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(createActor(['admin']))
 	const { handler } = createAdminPlatformIntegrationsApiHandler(env)
 	const url = new URL('https://example.com/admin/platform-integrations.json')
@@ -128,7 +137,7 @@ test('admin save and delete require admin and return HTTP shapes without echoing
 
 	const created = await invoke(saveGithubBody)
 	expect(created.status).toBe(200)
-	const createdPayload = await created.json()
+	const createdPayload = (await created.json()) as AppsPayload
 	expect(createdPayload.apps[0]).toMatchObject({
 		slug: 'github',
 		hasClientSecret: true,
@@ -165,7 +174,7 @@ test('save with newSlug renames in place, keeping the secret and connections', a
 		label: 'GitHub',
 	})
 	expect(renamed.status).toBe(200)
-	const payload = await renamed.json()
+	const payload = (await renamed.json()) as AppsPayload
 	expect(payload.apps.map((app: { slug: string }) => app.slug)).toEqual([
 		'github-platform',
 	])
@@ -203,7 +212,7 @@ test('save with newSlug renames in place, keeping the secret and connections', a
 		label: 'GitHub (case-only edit)',
 	})
 	expect(caseOnly.status).toBe(200)
-	const caseOnlyPayload = await caseOnly.json()
+	const caseOnlyPayload = (await caseOnly.json()) as AppsPayload
 	expect(
 		caseOnlyPayload.apps.find(
 			(app: { slug: string }) => app.slug === 'github-platform',
@@ -222,7 +231,7 @@ test('save with newSlug renames in place, keeping the secret and connections', a
 	})
 	expect(failedEdit.status).toBe(400)
 	const after = await invoke({ ...editGithubBody, slug: 'github-platform' })
-	const slugs = (await after.json()).apps.map(
+	const slugs = ((await after.json()) as AppsPayload).apps.map(
 		(app: { slug: string }) => app.slug,
 	)
 	expect(slugs).toContain('github-platform')

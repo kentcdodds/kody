@@ -17,10 +17,12 @@ vi.mock('#worker/run-records/service.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof RunRecordsServiceModule>()
 	return {
 		...actual,
-		beginRunRecord: (...args: Array<unknown>) =>
-			runRecordMocks.beginRunRecord(...args),
-		finishRunRecord: (...args: Array<unknown>) =>
-			runRecordMocks.finishRunRecord(...args),
+		beginRunRecord: (
+			...args: Parameters<typeof RunRecordsServiceModule.beginRunRecord>
+		) => runRecordMocks.beginRunRecord(...args),
+		finishRunRecord: (
+			...args: Parameters<typeof RunRecordsServiceModule.finishRunRecord>
+		) => runRecordMocks.finishRunRecord(...args),
 		upsertWorkflowProjection: (...args: Array<unknown>) =>
 			runRecordMocks.upsertWorkflowProjection(
 				...(args as [
@@ -111,6 +113,7 @@ function createCancelTestEnv() {
 		}
 	}
 	const create = vi.fn(async (input: WorkflowInstanceCreateOptions) => {
+		if (!input.id) throw new Error('Expected a workflow instance id.')
 		if (instances.has(input.id)) {
 			throw new Error('Workflow instance already exists')
 		}

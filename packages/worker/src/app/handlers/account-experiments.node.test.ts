@@ -1,4 +1,6 @@
 import { expect, test, vi } from 'vitest'
+import type * as accountExperimentsData from '#app/account-experiments-data.ts'
+import type * as ssrRender from '#app/ssr-render.tsx'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import {
 	createAccountExperimentsApiHandler,
@@ -9,8 +11,12 @@ const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
 	requireAuthenticatedPageUser: vi.fn(),
 	loadAccountExperimentsData: vi.fn(),
-	setExperimentsOptIn: vi.fn(async () => undefined),
-	renderAppPage: vi.fn(async () => new Response('ok')),
+	setExperimentsOptIn: vi.fn<typeof accountExperimentsData.setExperimentsOptIn>(
+		async () => undefined,
+	),
+	renderAppPage: vi.fn<typeof ssrRender.renderAppPage>(
+		async () => new Response('ok'),
+	),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -26,12 +32,14 @@ vi.mock('#app/page-auth.ts', () => ({
 vi.mock('#app/account-experiments-data.ts', () => ({
 	loadAccountExperimentsData: (...args: Array<unknown>) =>
 		mockModule.loadAccountExperimentsData(...args),
-	setExperimentsOptIn: (...args: Array<unknown>) =>
-		mockModule.setExperimentsOptIn(...args),
+	setExperimentsOptIn: (
+		...args: Parameters<typeof accountExperimentsData.setExperimentsOptIn>
+	) => mockModule.setExperimentsOptIn(...args),
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
-	renderAppPage: (...args: Array<unknown>) => mockModule.renderAppPage(...args),
+	renderAppPage: (...args: Parameters<typeof ssrRender.renderAppPage>) =>
+		mockModule.renderAppPage(...args),
 }))
 
 function createEnv() {

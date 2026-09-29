@@ -91,7 +91,9 @@ async function listToolNamesAsKody(
 		{ name: 'Kody', version: '1.0.0' },
 		{ versionNegotiation: { mode: input?.mode ?? 'auto' } },
 	)
-	const headers = withStaticTransportHeaders(reconnected.transport)
+	const headers = withStaticTransportHeaders<
+		typeof reconnected.transport & { requestInit?: RequestInit }
+	>(reconnected.transport)
 	const transport = new StreamableHTTPClientTransport(new URL('/mcp', origin), {
 		requestInit: headers.requestInit,
 	})

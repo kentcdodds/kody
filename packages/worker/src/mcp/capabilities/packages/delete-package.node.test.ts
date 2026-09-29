@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { createMcpCallerContext } from '#mcp/context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -35,16 +36,14 @@ function createCtx(userId = 'user-1') {
 	})
 	return {
 		env: { APP_DB: {} } as Env,
-		callerContext: {
+		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId,
 				email: 'user@example.com',
 				displayName: 'User',
 			},
-			storageContext: null,
-			repoContext: null,
-		},
+		}),
 	}
 }
 
@@ -117,12 +116,10 @@ test('packageDelete requires the owner-typed package name before deleting', asyn
 			{ package_id: 'pkg-1', confirm_name: '@user/notes' },
 			{
 				env: { APP_DB: {} } as Env,
-				callerContext: {
+				callerContext: createMcpCallerContext({
 					baseUrl: 'https://heykody.dev',
 					user: null,
-					storageContext: null,
-					repoContext: null,
-				},
+				}),
 			},
 		),
 	).rejects.toThrow(/authenticated/i)

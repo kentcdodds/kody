@@ -4,13 +4,13 @@ import { createKodyRuntimeExternalsPlugin } from './module-graph-bundle-builders
 
 test('kody runtime externals plugin marks shared runtime paths external', () => {
 	const plugin = createKodyRuntimeExternalsPlugin()
-	let resolve:
+	let resolve = null as
 		| ((args: {
 				path: string
 				resolveDir: string
 				kind: string
 		  }) => { path: string; external: true } | undefined)
-		| null = null
+		| null
 	plugin.setup({
 		onResolve(_options, callback) {
 			resolve = callback

@@ -1,17 +1,21 @@
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import type * as RepoSessions from '#worker/repo/repo-sessions.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { buildSourceRecoveryProblemMessage } from '#worker/repo/source-safety-policy.ts'
+import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { cloudflareOpaqueInternalErrorMessage } from '#worker/sentry-options.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { repoOpenSessionInputSchema } from './repo-shared.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getActiveRepoSessionByConversation: vi.fn(),
-	countActiveRepoSessions: vi.fn(async () => 0),
+	countActiveRepoSessions: vi.fn<typeof RepoSessions.countActiveRepoSessions>(
+		async () => 0,
+	),
 	getEntitySourceByIdForUser: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
 	repoSessionRpc: vi.fn(),
@@ -20,8 +24,9 @@ const mockModule = vi.hoisted(() => ({
 vi.mock('#worker/repo/repo-sessions.ts', () => ({
 	getActiveRepoSessionByConversation: (...args: Array<unknown>) =>
 		mockModule.getActiveRepoSessionByConversation(...args),
-	countActiveRepoSessions: (...args: Array<unknown>) =>
-		mockModule.countActiveRepoSessions(...args),
+	countActiveRepoSessions: (
+		...args: Parameters<typeof RepoSessions.countActiveRepoSessions>
+	) => mockModule.countActiveRepoSessions(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -68,7 +73,7 @@ function createEntitlementsDatabase(user: {
 	} as unknown as D1Database
 }
 
-function createPackageSourceRow(userId: string) {
+function createPackageSourceRow(userId: string): EntitySourceRow {
 	return {
 		id: 'source-package-1',
 		user_id: userId,
@@ -79,6 +84,8 @@ function createPackageSourceRow(userId: string) {
 		indexed_commit: 'commit-package-1',
 		manifest_path: 'package.json',
 		source_root: '/',
+		last_external_check_at: null,
+		external_check_until: null,
 		created_at: '2026-04-18T00:00:00.000Z',
 		updated_at: '2026-04-18T00:00:00.000Z',
 	}

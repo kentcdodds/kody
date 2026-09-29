@@ -149,8 +149,9 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 						const columnMatch = normalizedQuery.match(
 							/insert into "users" \(([^)]+)\)/,
 						)
-						const columns = columnMatch
-							? columnMatch[1]
+						const columnList = columnMatch?.[1]
+						const columns = columnList
+							? columnList
 									.split(',')
 									.map((column) => column.trim().replaceAll('"', ''))
 							: []

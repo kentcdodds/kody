@@ -4,6 +4,7 @@ import {
 	createPackageRuntimeInvokeTools,
 	createPackageEventTools,
 } from '#worker/package-invocations/service.ts'
+import type * as packageSourceModule from '#worker/package-registry/source.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
 export const packageInvocationsRepoMockModule = (() => {
@@ -17,12 +18,13 @@ export const packageInvocationsRepoMockModule = (() => {
 		// The invoke path loads the source row and manifest separately (see
 		// loadInvokeManifestBySourceId); default to the same per-test data the
 		// combined mock is configured with.
-		loadPackageSourceRowForUser: vi.fn(
-			async (input: { sourceId: string; userId: string }) =>
-				(await loadPackageManifestBySourceId(input)).source,
-		),
-		loadPackageManifestForSource: vi.fn(
-			async (input: { source: { id: string }; userId: string }) =>
+		loadPackageSourceRowForUser: vi.fn<
+			typeof packageSourceModule.loadPackageSourceRowForUser
+		>(async (input) => (await loadPackageManifestBySourceId(input)).source),
+		loadPackageManifestForSource: vi.fn<
+			typeof packageSourceModule.loadPackageManifestForSource
+		>(
+			async (input) =>
 				await loadPackageManifestBySourceId({
 					...input,
 					sourceId: input.source.id,
@@ -908,7 +910,9 @@ export default async function handleDiscordMessageCreated(input: { event: { id: 
 	return { gateway, manifests, sourceFiles, sources, subscriber }
 }
 
-export function createRuntimeDispatchTools(db: D1Database) {
+export function createRuntimeDispatchTools(
+	db: ReturnType<typeof createDatabase>,
+) {
 	return createPackageRuntimeInvokeTools({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
@@ -938,7 +942,7 @@ export function createRuntimeDispatchTools(db: D1Database) {
 }
 
 export function createRuntimeEventTools(
-	db: D1Database,
+	db: ReturnType<typeof createDatabase>,
 	options: {
 		envOverrides?: Record<string, unknown>
 		packageInvokeDepth?: number

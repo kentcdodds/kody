@@ -34,6 +34,7 @@ function executeAs(env: Env, userId: string, code: string) {
 		gatewayProps: {
 			baseUrl: 'https://heykody.dev',
 			userId,
+			email: null,
 			storageContext: null,
 		},
 	}).execute(code, providers)
@@ -199,7 +200,9 @@ test('createToolDispatchers restores the captured budget after an ALS gap', asyn
 		)
 	})
 
-	const fanOutCall = dispatchers?.kody.call('fanOut', '[]')
+	const kodyDispatcher = dispatchers?.kody
+	if (!kodyDispatcher) throw new Error('Expected kody dispatcher')
+	const fanOutCall = kodyDispatcher.call('fanOut', '[]')
 	await expect.poll(() => counter.state.started).toBe(4)
 	expect(counter.state.maxActive).toBe(4)
 	releases.shift()?.()

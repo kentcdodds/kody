@@ -1,20 +1,29 @@
 import { expect, test, vi } from 'vitest'
 import type * as PublishLock from '#worker/package-registry/package-publish-lock.ts'
+import type * as PublishedRuntimeArtifacts from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { type ArtifactBootstrapAccess } from './artifacts.ts'
+import type * as EntitySources from './entity-sources.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
-	updateEntitySource: vi.fn(async () => true),
+	updateEntitySource: vi.fn<typeof EntitySources.updateEntitySource>(
+		async () => true,
+	),
 	repoSessionRpc: vi.fn(),
-	writePublishedSourceSnapshot: vi.fn(async () => 'snapshot-key'),
-	loadLockedSavedPackage: vi.fn(async () => null),
+	writePublishedSourceSnapshot: vi.fn<
+		typeof PublishedRuntimeArtifacts.writePublishedSourceSnapshot
+	>(async () => 'snapshot-key'),
+	loadLockedSavedPackage: vi.fn<typeof PublishLock.loadLockedSavedPackage>(
+		async () => null,
+	),
 }))
 
 vi.mock('./entity-sources.ts', () => ({
 	getEntitySourceById: (...args: Array<unknown>) =>
 		mockModule.getEntitySourceById(...args),
-	updateEntitySource: (...args: Array<unknown>) =>
-		mockModule.updateEntitySource(...args),
+	updateEntitySource: (
+		...args: Parameters<typeof EntitySources.updateEntitySource>
+	) => mockModule.updateEntitySource(...args),
 }))
 
 vi.mock('./repo-session-rpc.ts', () => ({
@@ -23,8 +32,11 @@ vi.mock('./repo-session-rpc.ts', () => ({
 }))
 
 vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({
-	writePublishedSourceSnapshot: (...args: Array<unknown>) =>
-		mockModule.writePublishedSourceSnapshot(...args),
+	writePublishedSourceSnapshot: (
+		...args: Parameters<
+			typeof PublishedRuntimeArtifacts.writePublishedSourceSnapshot
+		>
+	) => mockModule.writePublishedSourceSnapshot(...args),
 }))
 
 vi.mock(
@@ -33,8 +45,9 @@ vi.mock(
 		const actual = await importOriginal<typeof PublishLock>()
 		return {
 			...actual,
-			loadLockedSavedPackage: (...args: Array<unknown>) =>
-				mockModule.loadLockedSavedPackage(...args),
+			loadLockedSavedPackage: (
+				...args: Parameters<typeof PublishLock.loadLockedSavedPackage>
+			) => mockModule.loadLockedSavedPackage(...args),
 		}
 	},
 )

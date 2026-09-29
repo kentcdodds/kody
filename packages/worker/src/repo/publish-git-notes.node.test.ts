@@ -1,7 +1,10 @@
+import type git from 'isomorphic-git'
 import { expect, test, vi } from 'vitest'
 
 const mockGit = vi.hoisted(() => ({
-	addNote: vi.fn(async () => 'note-commit-1'),
+	addNote: vi.fn(
+		async (..._args: Parameters<typeof git.addNote>) => 'note-commit-1',
+	),
 	push: vi.fn(async () => ({ ok: true, refs: {} })),
 	init: vi.fn(async () => undefined),
 	addRemote: vi.fn(async () => undefined),

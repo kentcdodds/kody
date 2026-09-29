@@ -120,7 +120,10 @@ test('embedding wrapper chunks large batches and truncates long inputs', async (
 })
 
 test('embedding wrapper falls back deterministically outside production when AI is unavailable', async () => {
-	const env = { SENTRY_ENVIRONMENT: 'preview' } as Env
+	const vars: { SENTRY_ENVIRONMENT: string } = {
+		SENTRY_ENVIRONMENT: 'preview',
+	}
+	const env = vars as Env
 
 	await expect(embedTextsForVectorize(env, ['alpha', 'beta'])).resolves.toEqual(
 		[deterministicEmbedding('alpha'), deterministicEmbedding('beta')],

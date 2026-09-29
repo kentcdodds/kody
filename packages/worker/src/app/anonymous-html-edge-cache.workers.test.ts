@@ -10,6 +10,10 @@ import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.
 
 const env = { APP_BASE_URL: 'https://test.kody.dev' }
 const encoder = new TextEncoder()
+
+function defaultCache() {
+	return (caches as CacheStorage & { default: Cache }).default
+}
 const completeDocument =
 	'<!DOCTYPE html><html><body>ok</body></html><!-- rmx:flush document -->'
 
@@ -34,7 +38,7 @@ async function serve(request: Request, upstream: () => Response) {
 	return {
 		response,
 		text,
-		cached: await caches.default.match(
+		cached: await defaultCache().match(
 			buildAnonymousHtmlCacheKey(request, env),
 		),
 	}
@@ -102,7 +106,7 @@ test('a body that errors mid-stream is never stored', async () => {
 	await expect(response.text()).rejects.toThrow('render failed')
 	await waitOnExecutionContext(ctx)
 	expect(
-		await caches.default.match(
+		await defaultCache().match(
 			buildAnonymousHtmlCacheKey(new Request(url), env),
 		),
 	).toBeUndefined()

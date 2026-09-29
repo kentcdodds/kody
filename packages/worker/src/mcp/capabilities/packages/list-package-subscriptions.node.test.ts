@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { createMcpCallerContext } from '#mcp/context.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -75,16 +76,14 @@ function stubPackages(
 function listSubscriptions(args: { topic?: string } = {}) {
 	return listPackageSubscriptionsCapability.handler(args, {
 		env: { APP_DB: {} } as Env,
-		callerContext: {
+		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId: 'user-1',
 				email: 'kody@example.com',
 				displayName: 'Kody',
 			},
-			storageContext: null,
-			repoContext: null,
-		},
+		}),
 	})
 }
 

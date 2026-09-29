@@ -1,3 +1,4 @@
+import { type OAuthHelpers } from '@cloudflare/workers-oauth-provider'
 import { expect, test } from 'vitest'
 import { resolveOAuthHelpers } from './oauth-helpers.ts'
 import { createMemoryKvNamespace } from '#worker/test-support/memory-kv.ts'
@@ -58,7 +59,9 @@ function seedProviderKv() {
 }
 
 async function libraryHelpersFor(kv: KVNamespace) {
-	const helpers = await resolveOAuthHelpers({ OAUTH_KV: kv } as Env)
+	const helpers = await resolveOAuthHelpers<OAuthHelpers>({
+		OAUTH_KV: kv,
+	} as Env)
 	if (!helpers) throw new Error('expected library-backed OAuth helpers')
 	return helpers
 }

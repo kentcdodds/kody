@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { createMcpCallerContext } from '#mcp/context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -45,14 +46,12 @@ function update(
 		{ package_id: packageId, changes },
 		{
 			env: { APP_DB: {} } as Env,
-			callerContext: {
+			callerContext: createMcpCallerContext({
 				baseUrl: 'https://heykody.dev',
 				user: userId
 					? { userId, email: 'user@example.com', displayName: 'User' }
 					: null,
-				storageContext: null,
-				repoContext: null,
-			},
+			}),
 		},
 	)
 }

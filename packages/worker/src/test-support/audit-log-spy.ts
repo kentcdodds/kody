@@ -16,7 +16,7 @@ import type * as AuditLog from '#worker/audit-log.ts'
 // - Files that need to override other exports (e.g. `getRequestIp`) declare
 //   their own `vi.mock('#worker/audit-log.ts', ...)`, which takes precedence.
 export const logAuditEventSpy = vi.fn<typeof AuditLog.logAuditEvent>(
-	async () => undefined,
+	async () => ({ persisted: false, failedSinks: [] }),
 )
 
 vi.mock('#worker/audit-log.ts', async (importOriginal) => {

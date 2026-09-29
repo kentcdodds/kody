@@ -105,6 +105,14 @@ const activityFixture = [
 	},
 ]
 
+type ProfileResponseBody = {
+	ok: boolean
+	query?: string | null
+	packages?: Array<unknown>
+	activity?: Array<unknown>
+	loaderData?: { profileShell?: unknown; profileList?: unknown }
+}
+
 const env = {} as Env
 const apiKeys = [
 	'activity',
@@ -135,7 +143,10 @@ async function call(
 		params: { username },
 		url,
 	} as never)
-	return { status: response.status, body: await response.json() }
+	return {
+		status: response.status,
+		body: (await response.json()) as ProfileResponseBody,
+	}
 }
 
 function lastPackagesQuery() {
@@ -235,7 +246,7 @@ test('profile page shell embeds the person and the unfiltered package list, or 4
 	setupPublicProfileMocks()
 	const page = await call(createProfileHandler, '/@alice')
 	expect(page.status).toBe(200)
-	expect(page.body.loaderData.profileShell).toEqual({
+	expect(page.body.loaderData?.profileShell).toEqual({
 		ok: true,
 		username: 'alice',
 		displayName: 'Alice',
@@ -246,7 +257,7 @@ test('profile page shell embeds the person and the unfiltered package list, or 4
 		loggedIn: false,
 		visibility: 'public',
 	})
-	expect(page.body.loaderData.profileList).toEqual({
+	expect(page.body.loaderData?.profileList).toEqual({
 		profile: {
 			username: 'alice',
 			displayName: 'Alice',
@@ -293,7 +304,7 @@ test('profile page shell embeds the person and the unfiltered package list, or 4
 	mockModule.getCommunityProfileByUsername.mockResolvedValue(null)
 	const missing = await call(createProfileHandler, '/@missing', 'missing')
 	expect(missing.status).toBe(404)
-	expect(missing.body.loaderData.profileShell).toEqual({
+	expect(missing.body.loaderData?.profileShell).toEqual({
 		ok: false,
 		unavailable: true,
 	})

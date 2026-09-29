@@ -1,15 +1,29 @@
 import { expect, test, vi } from 'vitest'
+import { createRepoSessionRow } from '#worker/test-support/run-kody-registry.ts'
+import type * as PushSubscriptions from './artifacts-push-subscriptions.ts'
+import type * as PushSubscriptionStore from './artifacts-push-subscription-store.ts'
+import type * as RepoSessions from './repo-sessions.ts'
 
 const mockModule = vi.hoisted(() => ({
 	deleteArtifactRepo: vi.fn(),
 	getEntitySourceById: vi.fn(),
 	getEntitySourceByIdForUser: vi.fn(),
 	listEntitySourcesByUser: vi.fn(),
-	deleteArtifactsRepoPushSubscription: vi.fn(async () => true),
-	getArtifactsPushSubscriptionBySourceId: vi.fn(async () => null),
-	deleteArtifactsPushSubscriptionBySourceId: vi.fn(async () => true),
-	listRepoSessionsBySource: vi.fn(async () => []),
-	listRepoSessionsByUser: vi.fn(async () => []),
+	deleteArtifactsRepoPushSubscription: vi.fn<
+		typeof PushSubscriptions.deleteArtifactsRepoPushSubscription
+	>(async () => true),
+	getArtifactsPushSubscriptionBySourceId: vi.fn<
+		typeof PushSubscriptionStore.getArtifactsPushSubscriptionBySourceId
+	>(async () => null),
+	deleteArtifactsPushSubscriptionBySourceId: vi.fn<
+		typeof PushSubscriptionStore.deleteArtifactsPushSubscriptionBySourceId
+	>(async () => true),
+	listRepoSessionsBySource: vi.fn<typeof RepoSessions.listRepoSessionsBySource>(
+		async () => [],
+	),
+	listRepoSessionsByUser: vi.fn<typeof RepoSessions.listRepoSessionsByUser>(
+		async () => [],
+	),
 	hasArtifactsAccess: vi.fn(),
 }))
 
@@ -22,15 +36,24 @@ vi.mock('./artifacts.ts', () => ({
 }))
 
 vi.mock('./artifacts-push-subscriptions.ts', () => ({
-	deleteArtifactsRepoPushSubscription: (...args: Array<unknown>) =>
-		mockModule.deleteArtifactsRepoPushSubscription(...args),
+	deleteArtifactsRepoPushSubscription: (
+		...args: Parameters<
+			typeof PushSubscriptions.deleteArtifactsRepoPushSubscription
+		>
+	) => mockModule.deleteArtifactsRepoPushSubscription(...args),
 }))
 
 vi.mock('./artifacts-push-subscription-store.ts', () => ({
-	getArtifactsPushSubscriptionBySourceId: (...args: Array<unknown>) =>
-		mockModule.getArtifactsPushSubscriptionBySourceId(...args),
-	deleteArtifactsPushSubscriptionBySourceId: (...args: Array<unknown>) =>
-		mockModule.deleteArtifactsPushSubscriptionBySourceId(...args),
+	getArtifactsPushSubscriptionBySourceId: (
+		...args: Parameters<
+			typeof PushSubscriptionStore.getArtifactsPushSubscriptionBySourceId
+		>
+	) => mockModule.getArtifactsPushSubscriptionBySourceId(...args),
+	deleteArtifactsPushSubscriptionBySourceId: (
+		...args: Parameters<
+			typeof PushSubscriptionStore.deleteArtifactsPushSubscriptionBySourceId
+		>
+	) => mockModule.deleteArtifactsPushSubscriptionBySourceId(...args),
 }))
 
 vi.mock('./entity-sources.ts', () => ({
@@ -43,10 +66,12 @@ vi.mock('./entity-sources.ts', () => ({
 }))
 
 vi.mock('./repo-sessions.ts', () => ({
-	listRepoSessionsBySource: (...args: Array<unknown>) =>
-		mockModule.listRepoSessionsBySource(...args),
-	listRepoSessionsByUser: (...args: Array<unknown>) =>
-		mockModule.listRepoSessionsByUser(...args),
+	listRepoSessionsBySource: (
+		...args: Parameters<typeof RepoSessions.listRepoSessionsBySource>
+	) => mockModule.listRepoSessionsBySource(...args),
+	listRepoSessionsByUser: (
+		...args: Parameters<typeof RepoSessions.listRepoSessionsByUser>
+	) => mockModule.listRepoSessionsByUser(...args),
 }))
 
 const {
@@ -83,12 +108,12 @@ test('artifact repo cleanup deletes scoped repos and records warning-only failur
 		userSource('user-1', 'package-pkg-1'),
 	)
 	mockModule.listRepoSessionsBySource.mockResolvedValueOnce([
-		{
+		createRepoSessionRow({
 			id: 'session-1',
-			user_id: 'user-1',
-			source_id: 'source-1',
-			source_repo_id: 'package-pkg-1',
-		},
+			userId: 'user-1',
+			sourceId: 'source-1',
+			sourceRepoId: 'package-pkg-1',
+		}),
 	])
 	await expect(
 		cleanupArtifactReposForPackage(sourceCleanupInput),
@@ -100,7 +125,12 @@ test('artifact repo cleanup deletes scoped repos and records warning-only failur
 		userSource('user-1', 'job-job-1', 'source-2'),
 	])
 	mockModule.listRepoSessionsByUser.mockResolvedValueOnce([
-		{ id: 'session-1', user_id: 'user-1', source_repo_id: 'package-pkg-1' },
+		createRepoSessionRow({
+			id: 'session-1',
+			userId: 'user-1',
+			sourceId: 'source-1',
+			sourceRepoId: 'package-pkg-1',
+		}),
 	])
 	await expect(
 		cleanupAllUserArtifactRepos({ env, userId: 'user-1', warnings: [] }),

@@ -4,6 +4,7 @@ import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
 import { persistPublishedBundleArtifact } from '#worker/package-runtime/published-bundle-artifacts.ts'
 import { persistPublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
+import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { checkPackageInvokeForRuntimeWithPreloads } from './invoke-check.ts'
 import { invalidateInvokeContractFreshness } from './invoke-contract-cache.ts'
 
@@ -68,7 +69,7 @@ function createSourceRow(input: {
 	packageId: string
 	sourceId: string
 	publishedCommit: string
-}) {
+}): EntitySourceRow {
 	return {
 		id: input.sourceId,
 		user_id: input.userId,
@@ -79,6 +80,8 @@ function createSourceRow(input: {
 		indexed_commit: null,
 		manifest_path: 'package.json',
 		source_root: '/',
+		last_external_check_at: null,
+		external_check_until: null,
 		created_at: '2026-07-30T00:00:00.000Z',
 		updated_at: '2026-07-30T00:00:00.000Z',
 	}

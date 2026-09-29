@@ -107,7 +107,7 @@ function createFlowHarness() {
 	const queuedActivity: Array<CommunityActivityDispatchQueueMessage> = []
 	const queuedListingPublished: Array<{ eventId: string; listingId: string }> =
 		[]
-	const testEnv = {
+	const testEnv: Env = {
 		...env,
 		CLOUDFLARE_ACCOUNT_ID: mockAccountId,
 		CLOUDFLARE_API_TOKEN: 'artifacts-test-token',
@@ -116,13 +116,13 @@ function createFlowHarness() {
 			async send(message: CommunityActivityDispatchQueueMessage) {
 				queuedActivity.push(message)
 			},
-		},
+		} as unknown as Env['COMMUNITY_ACTIVITY_DISPATCH_QUEUE'],
 		COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE: {
 			async send(message: { eventId: string; listingId: string }) {
 				queuedListingPublished.push(message)
 			},
-		},
-	} as Env
+		} as unknown as Env['COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE'],
+	}
 	return {
 		testEnv,
 		queuedActivity,

@@ -1,5 +1,4 @@
-import { env, exports } from 'cloudflare:workers'
-import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
+import { exports } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { anonymousHtmlCacheControl } from '#app/anonymous-html-cache.ts'
 import {
@@ -8,10 +7,7 @@ import {
 } from '#app/anonymous-html-edge-cache.ts'
 
 async function workerFetch(request: Request): Promise<Response> {
-	const ctx = createExecutionContext()
-	const response = await exports.default.fetch(request, env, ctx)
-	await waitOnExecutionContext(ctx)
-	return response
+	return await exports.default.fetch(request)
 }
 
 function expectCspPresent(response: Response) {
@@ -117,10 +113,9 @@ test('anonymous marketing HTML is stored in caches.default and replayed as HIT',
 		`https://test.kody.dev/pricing?set-cookie=${probe}`,
 		{ method: 'GET' },
 	)
-	await caches.default
-		.put(setCookieKey, setCookieResponse.clone())
-		.catch(() => {
-			// Cache API rejects Set-Cookie bodies; either path must not store.
-		})
-	expect(await caches.default.match(setCookieKey)).toBeUndefined()
+	const edgeCache = (caches as CacheStorage & { default: Cache }).default
+	await edgeCache.put(setCookieKey, setCookieResponse.clone()).catch(() => {
+		// Cache API rejects Set-Cookie bodies; either path must not store.
+	})
+	expect(await edgeCache.match(setCookieKey)).toBeUndefined()
 })

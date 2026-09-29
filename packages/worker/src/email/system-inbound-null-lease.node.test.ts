@@ -27,7 +27,7 @@ function delivery(
 		threadId: `thread-${id}`,
 		rawMimeKey: `email-raw:v1:system:email/message-${id}`,
 		userId: 'system:email',
-		inboxId: null,
+		inboxId: `inbox-${id}`,
 		recipient: 'support@example.com',
 		envelopeFrom: 'sender@example.net',
 		provider: 'cloudflare-email-routing',

@@ -5,6 +5,7 @@
 		"noEmit": true,
 		"incremental": true,
 		"tsBuildInfoFile": "../../node_modules/.tmp/tsconfig.worker-test.tsbuildinfo",
+		"lib": ["ES2023", "ES2024.Promise", "WebWorker", "WebWorker.Iterable"],
 		"types": [
 			"@pitlane/dev/assets",
 			"node",

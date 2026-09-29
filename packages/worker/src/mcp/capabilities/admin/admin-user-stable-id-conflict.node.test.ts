@@ -58,6 +58,7 @@ function createContext(db: D1Database, roles: Array<string>) {
 				userId: 'actor-1',
 				username: 'actor',
 				email: 'actor@example.com',
+				displayName: 'Actor',
 				roles,
 			},
 		}),

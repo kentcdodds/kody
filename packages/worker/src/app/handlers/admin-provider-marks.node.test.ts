@@ -1,5 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
+import { RequestContext } from 'remix/router'
 import { expect, test, vi } from 'vitest'
+import type * as AuthenticatedUser from '#app/authenticated-user.ts'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import type * as AuditLog from '#worker/audit-log.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
@@ -12,12 +14,14 @@ import {
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 
 const mockModule = vi.hoisted(() => ({
-	readAuthenticatedAppUser: vi.fn<() => Promise<unknown>>(),
+	readAuthenticatedAppUser:
+		vi.fn<typeof AuthenticatedUser.readAuthenticatedAppUser>(),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
-	readAuthenticatedAppUser: (...args: Array<unknown>) =>
-		mockModule.readAuthenticatedAppUser(...args),
+	readAuthenticatedAppUser: (
+		...args: Parameters<typeof AuthenticatedUser.readAuthenticatedAppUser>
+	) => mockModule.readAuthenticatedAppUser(...args),
 }))
 
 vi.mock('#worker/audit-log.ts', async (importOriginal) => {
@@ -35,7 +39,9 @@ const { createAdminProviderMarksApiHandler } =
 
 const migrationsDirectory = new URL('../../../migrations/', import.meta.url)
 
-function createActor(roles: Array<RoleName>) {
+function createActor(
+	roles: Array<RoleName>,
+): AuthenticatedUser.AuthenticatedAppUser {
 	const permissions: Array<PermissionString> = roles.includes('admin')
 		? ['read:user:any', 'update:user:any']
 		: ['read:user:own']
@@ -43,6 +49,8 @@ function createActor(roles: Array<RoleName>) {
 		sessionUserId: '1',
 		userId: 1,
 		email: 'admin@example.com',
+		emailVerified: true,
+		emailVerificationDelivery: null,
 		username: 'admin-user',
 		displayName: 'admin-user',
 		roles,
@@ -60,37 +68,39 @@ function createActor(roles: Array<RoleName>) {
 function createMarksClient() {
 	const sqlite = new DatabaseSync(':memory:')
 	applyRepositoryMigrations(sqlite, migrationsDirectory)
-	const env = {
-		APP_DB: createD1FromSqlite(sqlite),
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-		COMMUNITY_ASSETS: {
-			async put() {},
-			async get() {
-				return null
-			},
-			async delete() {},
-		} as unknown as R2Bucket,
-		IMAGES: createFakeImagesBinding(),
-	} as Env
+	const db = createD1FromSqlite(sqlite)
+	const images = createFakeImagesBinding()
+	const communityAssets = {
+		async put() {},
+		async get() {
+			return null
+		},
+		async delete() {},
+	}
+	const createEnv = (storage: boolean) =>
+		({
+			APP_DB: db,
+			SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+			COMMUNITY_ASSETS: storage ? communityAssets : undefined,
+			IMAGES: images,
+		}) as unknown as Env
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(createActor(['admin']))
 	const url = new URL('https://example.com/admin/provider-marks.json')
 	const call = (
 		body?: Record<string, unknown>,
 		{ storage = true }: { storage?: boolean } = {},
 	) =>
-		createAdminProviderMarksApiHandler(
-			storage ? env : ({ ...env, COMMUNITY_ASSETS: undefined } as Env),
-		).handler({
-			request: body
-				? new Request(url, {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify(body),
-					})
-				: new Request(url),
-			params: {},
-			url,
-		})
+		createAdminProviderMarksApiHandler(createEnv(storage)).handler(
+			new RequestContext(
+				body
+					? new Request(url, {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify(body),
+						})
+					: new Request(url),
+			),
+		)
 	const listSlugs = async () => {
 		const response = await call()
 		expect(response.status).toBe(200)

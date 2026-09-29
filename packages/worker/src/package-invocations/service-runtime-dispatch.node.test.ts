@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import type * as packageSourceModule from '#worker/package-registry/source.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import {
@@ -31,10 +32,12 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 		repoMockModule.loadPackageManifestBySourceId(...args),
 	loadPackageSourceBySourceId: (...args: Array<unknown>) =>
 		repoMockModule.loadPackageSourceBySourceId(...args),
-	loadPackageSourceRowForUser: (...args: Array<unknown>) =>
-		repoMockModule.loadPackageSourceRowForUser(...args),
-	loadPackageManifestForSource: (...args: Array<unknown>) =>
-		repoMockModule.loadPackageManifestForSource(...args),
+	loadPackageSourceRowForUser: (
+		...args: Parameters<typeof packageSourceModule.loadPackageSourceRowForUser>
+	) => repoMockModule.loadPackageSourceRowForUser(...args),
+	loadPackageManifestForSource: (
+		...args: Parameters<typeof packageSourceModule.loadPackageManifestForSource>
+	) => repoMockModule.loadPackageManifestForSource(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({

@@ -292,7 +292,7 @@ test('package writes to user secrets require every package approval and apply at
 		['shared-token', 'old-value'],
 		['xRefreshToken', 'old-refresh'],
 		['xAccessToken', 'old-access'],
-	]) {
+	] as const) {
 		await saveSecret({ env, userId, scope: 'user', name, value })
 	}
 	for (const name of ['shared-token', 'xRefreshToken']) {

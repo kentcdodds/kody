@@ -97,11 +97,13 @@ test('validates specifier options and requires an export for package-only specif
 	expect(() =>
 		parsePackageInvokeInput({
 			specifier: 'kody:@kody/google/profile',
+			// @ts-expect-error unknown option keys exercise runtime input validation
 			options: { unexpected: true },
 		}),
 	).toThrow('packages.invoke received unknown input key "unexpected"')
 	expect(() =>
 		parsePackageInvokeInput({
+			// @ts-expect-error an unscoped specifier exercises runtime specifier validation
 			specifier: 'google',
 			options: { exportName: 'profile' },
 		}),

@@ -500,30 +500,30 @@ test('published bundle artifact retention deletes stale rows, KV blobs, and sour
 	const { sqlite, db } = createRetentionDb()
 	const kvDelete = vi.fn(async () => undefined)
 	const indexEnv = createInMemoryRepoSessionIndexEnv(db)
-	await indexEnv
-		.REPO_SESSION_INDEX!.get(indexEnv.REPO_SESSION_INDEX!.idFromName('user-1'))
-		.insertSession({
-			ownerId: 'user-1',
-			row: {
-				id: 'session-1',
-				user_id: 'user-1',
-				source_id: 'source-session',
-				source_repo_id: 'repo-1',
-				session_branch: 'sessions/session-1',
-				source_branch: 'main',
-				base_commit: 'commit',
-				source_root: '/',
-				conversation_id: null,
-				status: 'active',
-				expires_at: null,
-				last_checkpoint_at: null,
-				last_checkpoint_commit: null,
-				last_check_run_id: null,
-				last_check_tree_hash: null,
-				created_at: daysAgo(1),
-				updated_at: daysAgo(1),
-			} satisfies RepoSessionRow,
-		})
+	await indexEnv.REPO_SESSION_INDEX.get(
+		indexEnv.REPO_SESSION_INDEX.idFromName('user-1'),
+	).insertSession({
+		ownerId: 'user-1',
+		row: {
+			id: 'session-1',
+			user_id: 'user-1',
+			source_id: 'source-session',
+			source_repo_id: 'repo-1',
+			session_branch: 'sessions/session-1',
+			source_branch: 'main',
+			base_commit: 'commit',
+			source_root: '/',
+			conversation_id: null,
+			status: 'active',
+			expires_at: null,
+			last_checkpoint_at: null,
+			last_checkpoint_commit: null,
+			last_check_run_id: null,
+			last_check_tree_hash: null,
+			created_at: daysAgo(1),
+			updated_at: daysAgo(1),
+		} satisfies RepoSessionRow,
+	})
 	const env = {
 		APP_DB: db,
 		BUNDLE_ARTIFACTS_KV: { delete: kvDelete },

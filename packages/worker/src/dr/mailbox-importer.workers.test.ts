@@ -24,6 +24,7 @@ import { mailboxRpc } from '#worker/email/mailbox-client.ts'
 import {
 	type MailboxDeliveryEventRecord,
 	type MailboxExportRow,
+	type MailboxMessageInput,
 	type MailboxMessageRecord,
 	type MailboxThreadRecord,
 } from '#worker/email/mailbox-types.ts'
@@ -75,7 +76,7 @@ function createMemoryS3(seed: Record<string, string | Uint8Array>) {
 	return { client, objects }
 }
 
-function message(ownerId: string): MailboxMessageRecord {
+function message(ownerId: string): MailboxMessageRecord & MailboxMessageInput {
 	return {
 		id: 'restore-message',
 		direction: 'inbound',

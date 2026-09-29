@@ -132,11 +132,11 @@ type StorageDeleteResult = {
 	deleted: boolean
 }
 
-type StorageClearResult = {
+export type StorageClearResult = {
 	ok: true
 }
 
-type StorageEstimateResult = {
+export type StorageEstimateResult = {
 	estimatedBytes: number
 }
 

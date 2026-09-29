@@ -12,7 +12,10 @@ import {
 	shouldPromotePackageExportCandidate,
 } from './search-entity-plugins/package.ts'
 import { resolveJevSearchRecallLimit } from './search-jev-rerank.ts'
-import { type PackageActionMatch } from './search-format-types.ts'
+import {
+	type PackageActionMatch,
+	type SearchMatch,
+} from './search-format-types.ts'
 
 function createPackageExportProjection(
 	subpath: string,
@@ -427,8 +430,8 @@ test('hydrateTopPackageMatches keeps export hits aligned with exportSubpath', as
 			truncated: false,
 		},
 	}))
-	const match = {
-		type: 'package' as const,
+	const match: Extract<SearchMatch, { type: 'package' }> = {
+		type: 'package',
 		packageId: 'home-controls-pkg',
 		kodyId: 'home-controls',
 		name: '@kody/home-controls',

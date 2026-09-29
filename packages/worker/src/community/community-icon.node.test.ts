@@ -86,9 +86,9 @@ function createFakeKv() {
 }
 
 function createFakeR2() {
-	const values = new Map<string, Uint8Array>()
+	const values = new Map<string, Uint8Array<ArrayBuffer>>()
 	const bucket = {
-		async put(key: string, value: Uint8Array) {
+		async put(key: string, value: Uint8Array<ArrayBuffer>) {
 			values.set(key, value)
 			return { key }
 		},
@@ -124,7 +124,7 @@ function createIconEnv(db = {} as D1Database) {
 		COMMUNITY_ASSETS: bucket,
 		IMAGES: createFakeImagesBinding(),
 		USER_METER: createInMemoryUserMeterEnv().env.USER_METER,
-	} as Env
+	} as unknown as Env
 	return { env, kv, bucket, kvValues, r2Values }
 }
 
@@ -258,7 +258,10 @@ function seedIconAssets(
 }
 
 test('community raster icon formats are validated then fitted to WebP', async () => {
-	const process = (path: string, sourceBytes: Uint8Array) =>
+	const process = (
+		path: Parameters<typeof processCommunityIcon>[0]['path'],
+		sourceBytes: Uint8Array,
+	) =>
 		processCommunityIcon({
 			path,
 			sourceBytes,

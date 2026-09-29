@@ -1,33 +1,68 @@
 import { expect, test, vi } from 'vitest'
-import { mcpServerDisconnectedTopic } from './connection-episodes.ts'
+import {
+	type McpServerConnectionEvent,
+	mcpServerDisconnectedTopic,
+} from './connection-episodes.ts'
 import {
 	clearMcpClientHubSnapshotCacheForTests,
 	getCachedMcpClientHubServers,
 	getCachedMcpClientHubSnapshot,
 } from './hub-client.ts'
+import type * as packageSubscriptionsModule from './package-subscriptions.ts'
+import { type McpClientHubSnapshot, type McpServerSnapshot } from './types.ts'
 
 const mocks = vi.hoisted(() => ({
-	emitMcpServerConnectionEventsIfNeeded: vi.fn(async () => true),
-	peekServers: vi.fn(async () => ({ servers: [] })),
-	peekConnectionEvents: vi.fn(async () => []),
-	ackConnectionEvents: vi.fn(async () => undefined),
-	getSnapshot: vi.fn(async () => ({ servers: [], connectionEvents: [] })),
+	emitMcpServerConnectionEventsIfNeeded: vi.fn<
+		typeof packageSubscriptionsModule.emitMcpServerConnectionEventsIfNeeded
+	>(async () => true),
+	peekServers: vi.fn<() => Promise<Pick<McpClientHubSnapshot, 'servers'>>>(
+		async () => ({ servers: [] }),
+	),
+	peekConnectionEvents: vi.fn<() => Promise<Array<McpServerConnectionEvent>>>(
+		async () => [],
+	),
+	ackConnectionEvents: vi.fn<(eventIds: Array<string>) => Promise<void>>(
+		async () => undefined,
+	),
+	getSnapshot: vi.fn<() => Promise<McpClientHubSnapshot>>(async () => ({
+		servers: [],
+		connectionEvents: [],
+	})),
 }))
 
 vi.mock('./package-subscriptions.ts', () => ({
-	emitMcpServerConnectionEventsIfNeeded: (...args: Array<unknown>) =>
-		mocks.emitMcpServerConnectionEventsIfNeeded(...args),
+	emitMcpServerConnectionEventsIfNeeded: (
+		...args: Parameters<
+			typeof packageSubscriptionsModule.emitMcpServerConnectionEventsIfNeeded
+		>
+	) => mocks.emitMcpServerConnectionEventsIfNeeded(...args),
 }))
 
-const event = {
+const event: McpServerConnectionEvent = {
 	topic: mcpServerDisconnectedTopic,
 	eventId: 'event-1',
 	episodeId: 'episode-1',
 	serverId: 'server-home',
 	serverName: 'home',
-	state: 'authenticating' as const,
-	previousState: 'ready' as const,
+	state: 'authenticating',
+	previousState: 'ready',
 	observedAt: '2026-09-15T01:46:00.000Z',
+}
+
+function createServerSnapshot(
+	overrides: Partial<McpServerSnapshot> = {},
+): McpServerSnapshot {
+	return {
+		serverId: 'server-home',
+		name: 'home',
+		url: 'https://home.example/mcp',
+		state: 'ready',
+		authUrl: null,
+		error: null,
+		instructions: null,
+		tools: [],
+		...overrides,
+	}
 }
 
 function createEnv() {
@@ -50,9 +85,7 @@ function resetHub() {
 
 function queueAuthenticatingPeek() {
 	mocks.peekServers.mockResolvedValueOnce({
-		servers: [
-			{ serverId: 'server-home', name: 'home', state: 'authenticating' },
-		],
+		servers: [createServerSnapshot({ state: 'authenticating' })],
 	})
 	mocks.peekConnectionEvents.mockResolvedValueOnce([event])
 }
@@ -98,7 +131,7 @@ test('waiting peek dispatches a queued mcp.server.disconnected before ack', asyn
 
 	resetHub()
 	mocks.getSnapshot.mockResolvedValueOnce({
-		servers: [{ serverId: 'server-home', name: 'home', state: 'ready' }],
+		servers: [createServerSnapshot({ state: 'ready' })],
 		connectionEvents: [],
 	})
 	const snapshot = await getCachedMcpClientHubSnapshot({

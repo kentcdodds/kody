@@ -12,6 +12,7 @@ import {
 import {
 	type SearchEntityDetail,
 	type SearchMatch,
+	type SlimSearchMatch,
 } from './search-format-types.ts'
 
 type PackageDetail = Extract<SearchEntityDetail, { type: 'package' }>
@@ -34,6 +35,22 @@ function executeUsageSnippet(usage: string) {
 	}
 	new Script(usage).runInContext(createContext({ kody }))
 	return calls
+}
+
+function executeExampleOf(
+	structured: ReturnType<typeof formatEntityDetailMarkdown>['structured'],
+) {
+	if (structured.type !== 'capability') {
+		throw new Error(`Expected capability detail, got ${structured.type}`)
+	}
+	return structured.executeExample
+}
+
+function usageOf(match: SlimSearchMatch | undefined) {
+	if (!match || !('usage' in match)) {
+		throw new Error('Expected slim match with usage')
+	}
+	return match.usage
 }
 
 async function executeCapabilityExample(executeExample: string) {
@@ -134,6 +151,7 @@ function packageDetail(input: {
 			hasApp: input.hasApp ?? false,
 			hidden: false,
 			isPrivate: false,
+			lockedAt: null,
 			createdAt: '2026-03-20T00:00:00.000Z',
 			updatedAt: '2026-03-20T00:00:00.000Z',
 		},
@@ -271,7 +289,6 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 				scopeSeparator: null,
 				extraAuthorizeParams: { prompt: 'consent' },
 			},
-			fusedScore: 0.9,
 		}),
 		integrationMatch('conn"name'),
 		{
@@ -291,7 +308,7 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 			scopes: ['repo', 'read:user'],
 		},
 	})
-	expect(executeUsageSnippet(structuredMatches[1]?.usage ?? '')).toEqual([
+	expect(executeUsageSnippet(usageOf(structuredMatches[1]))).toEqual([
 		{ toolName: 'integrationGet', args: { name: 'conn"name' } },
 	])
 	expect(structuredMatches[2]).toMatchObject({
@@ -299,7 +316,7 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 		id: 'secret "name"',
 		entityRef: 'secret:secret "name"',
 	})
-	expect(structuredMatches[2]?.usage).not.toContain('{{secret:')
+	expect(usageOf(structuredMatches[2])).not.toContain('{{secret:')
 
 	const githubConfig = {
 		name: 'github',
@@ -414,7 +431,7 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 	expect(identifierDetail.structured).not.toHaveProperty('inputSchema')
 	expect(identifierDetail.structured).not.toHaveProperty('outputSchema')
 	const identifierExecution = await executeCapabilityExample(
-		identifierDetail.structured.executeExample,
+		executeExampleOf(identifierDetail.structured),
 	)
 	expect(identifierExecution.calls).toEqual([
 		{
@@ -449,7 +466,7 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 		idempotent: true,
 	})
 	expect(
-		(await executeCapabilityExample(bracketDetail.structured.executeExample))
+		(await executeCapabilityExample(executeExampleOf(bracketDetail.structured)))
 			.calls,
 	).toEqual([{ name: 'foo-bar', args: { owner: 'o', repo: 'r', title: 't' } }])
 
@@ -483,7 +500,7 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 		executeExample: expect.stringContaining('kody.mcp["home"].set_pin(params)'),
 	})
 	expect(
-		(await executeCapabilityExample(remoteDetail.structured.executeExample))
+		(await executeCapabilityExample(executeExampleOf(remoteDetail.structured)))
 			.calls,
 	).toEqual([
 		{ name: 'mcp:home:set_pin', args: { owner: 'o', repo: 'r', title: 't' } },
@@ -935,7 +952,7 @@ test('domain overview and capability list items format compact scoping hints', (
 		capabilityCount: 9,
 		sampleCapabilities: ['emailSend', 'emailMessageList', 'emailMessageGet'],
 	})
-	expect(domainSlim?.usage).toContain('domain: "email"')
+	expect(usageOf(domainSlim)).toContain('domain: "email"')
 
 	const emailSend = {
 		type: 'capability' as const,

@@ -72,7 +72,7 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 		text: 'Reset link',
 	})
 
-	const defaultBaseUrlRequests: Array<Request> = []
+	const defaultBaseUrlRequests: Array<{ url: string }> = []
 	using _defaultBaseUrlServer = createMswNodeServer(
 		[
 			http.post(

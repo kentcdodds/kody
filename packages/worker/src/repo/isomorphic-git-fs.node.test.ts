@@ -26,7 +26,8 @@ test('bare workspace filesystem trips isomorphic-git bindFs without unlink/rmdir
 test('workspace filesystem adapter supports raw isomorphic-git operations', async () => {
 	const workspaceFileSystem = new InMemoryFs()
 	await workspaceFileSystem.mkdir('/session', { recursive: true })
-	const fs = createIsomorphicGitFs(workspaceFileSystem) as RawGitInitFs
+	const gitFs = createIsomorphicGitFs(workspaceFileSystem)
+	const fs = gitFs as RawGitInitFs
 
 	await rawGit.init({ fs, dir: '/session', defaultBranch: 'main' })
 	await workspaceFileSystem.writeFile('/session/README.md', 'hello\n')
@@ -70,8 +71,8 @@ test('workspace filesystem adapter supports raw isomorphic-git operations', asyn
 
 	await workspaceFileSystem.writeFile('/remove-me.txt', 'temporary')
 	await workspaceFileSystem.mkdir('/remove-me')
-	await fs.promises.unlink('/remove-me.txt')
-	await fs.promises.rmdir('/remove-me')
+	await gitFs.promises.unlink('/remove-me.txt')
+	await gitFs.promises.rmdir('/remove-me')
 	await expect(workspaceFileSystem.stat('/remove-me.txt')).rejects.toThrow(
 		Error,
 	)

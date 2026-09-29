@@ -82,7 +82,6 @@ test('inbound MCP last-used debounce, record, list, and forget stay per user and
 test('inbound MCP last-used records again after a failed UserMeter touch', async () => {
 	const meter = createInMemoryUserMeterEnv()
 	const namespace = meter.env.USER_METER
-	if (!namespace) throw new Error('expected in-memory USER_METER')
 	const userId = `user-${crypto.randomUUID()}`
 	const clientId = `https://cursor.com/oauth/${crypto.randomUUID()}/client.json`
 	const usedAt = '2026-03-20T12:00:00.000Z'
@@ -91,15 +90,7 @@ test('inbound MCP last-used records again after a failed UserMeter touch', async
 		USER_METER: {
 			idFromName: (name: string) => namespace.idFromName(name),
 			get(id: DurableObjectId) {
-				const stub = namespace.get(id) as {
-					touchInboundConnectionLastUsed: (input: {
-						clientId: string
-						lastUsedAt: string
-					}) => Promise<{ updated: boolean }>
-					listInboundConnectionLastUsed: () => Promise<
-						Array<{ clientId: string; lastUsedAt: string }>
-					>
-				}
+				const stub = namespace.get(id)
 				return {
 					...stub,
 					async touchInboundConnectionLastUsed(input: {
@@ -114,7 +105,7 @@ test('inbound MCP last-used records again after a failed UserMeter touch', async
 					},
 				}
 			},
-		} as DurableObjectNamespace,
+		} as unknown as DurableObjectNamespace,
 	}
 
 	const recordFailing = () =>

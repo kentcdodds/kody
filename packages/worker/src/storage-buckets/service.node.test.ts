@@ -175,6 +175,13 @@ function catalogSessionRow(
 	}
 }
 
+function repoSessionIndexStub(
+	env: ReturnType<typeof createInMemoryRepoSessionIndexEnv>,
+	userId: string,
+) {
+	return env.REPO_SESSION_INDEX.get(env.REPO_SESSION_INDEX.idFromName(userId))
+}
+
 test('index-backed storage-bucket reconcile pages owners with a persisted cursor', async () => {
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
@@ -189,9 +196,7 @@ test('index-backed storage-bucket reconcile pages owners with a persisted cursor
 			dueAt: '2099-01-01T00:00:00.000Z',
 			now,
 		})
-		await indexEnv.REPO_SESSION_INDEX.get(
-			indexEnv.REPO_SESSION_INDEX.idFromName(userId),
-		).insertSession({
+		await repoSessionIndexStub(indexEnv, userId).insertSession({
 			ownerId: userId,
 			row: catalogSessionRow({
 				id: `${userId}-active`,
@@ -199,9 +204,7 @@ test('index-backed storage-bucket reconcile pages owners with a persisted cursor
 			}),
 		})
 	}
-	await indexEnv.REPO_SESSION_INDEX.get(
-		indexEnv.REPO_SESSION_INDEX.idFromName('user-a'),
-	).insertSession({
+	await repoSessionIndexStub(indexEnv, 'user-a').insertSession({
 		ownerId: 'user-a',
 		row: catalogSessionRow({
 			id: 'user-a-discarded',

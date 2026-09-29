@@ -1,4 +1,8 @@
+import { type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
+import type * as PackageInvocationsService from '#worker/package-invocations/service.ts'
+import type * as RunKodyRegistry from '#mcp/run-kody-registry.ts'
+import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
 import { activeWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
@@ -11,6 +15,7 @@ import {
 	createDynamicCallableWorkflow,
 	dynamicCallableWorkflowsBindingName,
 	listWorkflowRunsForUser,
+	type DynamicCallableWorkflowPayload,
 } from './package-workflows.ts'
 import {
 	packageWorkflowsInvocationMocks as invocationMocks,
@@ -22,17 +27,25 @@ import {
 } from '#worker/test-support/package-workflows.ts'
 
 vi.mock('#worker/package-invocations/service.ts', () => ({
-	invokePackageExport: (...args: Array<unknown>) =>
-		invocationMocks.invokePackageExport(...args),
-	createExecutePackageInvokeTools: (...args: Array<unknown>) =>
-		invocationMocks.createExecutePackageInvokeTools(...args),
-	createPackageRuntimeInvokeTools: (...args: Array<unknown>) =>
-		invocationMocks.createPackageRuntimeInvokeTools(...args),
+	invokePackageExport: (
+		...args: Parameters<typeof PackageInvocationsService.invokePackageExport>
+	) => invocationMocks.invokePackageExport(...args),
+	createExecutePackageInvokeTools: (
+		...args: Parameters<
+			typeof PackageInvocationsService.createExecutePackageInvokeTools
+		>
+	) => invocationMocks.createExecutePackageInvokeTools(...args),
+	createPackageRuntimeInvokeTools: (
+		...args: Parameters<
+			typeof PackageInvocationsService.createPackageRuntimeInvokeTools
+		>
+	) => invocationMocks.createPackageRuntimeInvokeTools(...args),
 }))
 
 vi.mock('#mcp/run-kody-registry.ts', () => ({
-	runModuleWithRegistry: (...args: Array<unknown>) =>
-		invocationMocks.runModuleWithRegistry(...args),
+	runModuleWithRegistry: (
+		...args: Parameters<typeof RunKodyRegistry.runModuleWithRegistry>
+	) => invocationMocks.runModuleWithRegistry(...args),
 }))
 
 vi.mock('#worker/identity/background-mcp-user.ts', () => ({
@@ -45,10 +58,12 @@ vi.mock('#worker/identity/background-mcp-user.ts', () => ({
 }))
 
 vi.mock('#worker/run-records/service.ts', () => ({
-	beginRunRecord: (...args: Array<unknown>) =>
-		runRecordMocks.beginRunRecord(...args),
-	finishRunRecord: (...args: Array<unknown>) =>
-		runRecordMocks.finishRunRecord(...args),
+	beginRunRecord: (
+		...args: Parameters<typeof RunRecordsServiceModule.beginRunRecord>
+	) => runRecordMocks.beginRunRecord(...args),
+	finishRunRecord: (
+		...args: Parameters<typeof RunRecordsServiceModule.finishRunRecord>
+	) => runRecordMocks.finishRunRecord(...args),
 	upsertWorkflowProjection: (...args: Array<unknown>) =>
 		runRecordMocks.upsertWorkflowProjection(
 			...(args as [
@@ -154,13 +169,14 @@ function createInlineStep() {
 function queuedPayload(
 	binding: ReturnType<typeof createStatefulWorkflowBinding>,
 	id: string,
-) {
+): WorkflowEvent<DynamicCallableWorkflowPayload> {
 	const queued = binding.instances.get(id)
 	if (!queued?.params) throw new Error('Expected queued workflow payload.')
 	return {
-		payload: queued.params as never,
+		payload: queued.params as DynamicCallableWorkflowPayload,
 		timestamp: new Date(),
 		instanceId: id,
+		workflowName: 'dynamic-callable-workflow',
 	}
 }
 

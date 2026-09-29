@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { createMcpCallerContext } from '#mcp/context.ts'
 
 const mockModule = vi.hoisted(() => ({
 	searchMemoryRecords: vi.fn(),
@@ -29,12 +30,10 @@ const {
 	loadRelevantMemoriesForTool,
 } = await import('./memory-tool-context.ts')
 
-const callerContext = {
+const callerContext = createMcpCallerContext({
 	baseUrl: 'https://heykody.dev',
 	user: { userId: 'user-1', email: 'user@example.com', displayName: 'User' },
-	storageContext: null,
-	repoContext: null,
-}
+})
 
 function memory(
 	id: string,

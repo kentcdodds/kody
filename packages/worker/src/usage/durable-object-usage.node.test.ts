@@ -1,6 +1,9 @@
 import { expect, test, vi } from 'vitest'
+import type * as RecordUsage from './record-usage.ts'
 
-const recordUsage = vi.hoisted(() => vi.fn(async () => undefined))
+const recordUsage = vi.hoisted(() =>
+	vi.fn<typeof RecordUsage.recordUsage>(async () => undefined),
+)
 const waitUntilImpl = vi.hoisted(() => vi.fn())
 
 vi.mock('./record-usage.ts', () => ({

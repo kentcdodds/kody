@@ -24,14 +24,15 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 function createWebhookEnv(overrides: Partial<Env> = {}): Env {
+	const testProPriceId: string = 'price_pro'
 	return {
 		...env,
 		STRIPE_SECRET_KEY: 'sk_test_secret',
 		STRIPE_WEBHOOK_SECRET: webhookSecret,
-		STRIPE_PRO_PRICE_ID: 'price_pro',
+		STRIPE_PRO_PRICE_ID: testProPriceId,
 		STRIPE_API_BASE_URL: 'https://stripe.mock',
 		...overrides,
-	}
+	} as Env
 }
 
 async function seedUser(input: {

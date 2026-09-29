@@ -31,7 +31,7 @@ const repairReason = 'Inspected worker crash and confirmed process termination.'
 function createWrappedMeterEnv(
 	wrap: (stub: UserMeterRpc, stubId: number) => Partial<UserMeterRpc>,
 ) {
-	const namespace = createInMemoryUserMeterEnv().env.USER_METER!
+	const namespace = createInMemoryUserMeterEnv().env.USER_METER
 	let stubCount = 0
 	return {
 		USER_METER: {
@@ -68,33 +68,39 @@ function createTrackedLeaseDoEnv(
 	}
 	const env = createWrappedMeterEnv((stub, stubId) => {
 		const createdAt = Date.now()
-		const track =
-			(
-				method:
-					| 'acquireWriteLease'
-					| 'assertWriteLeaseHeld'
-					| 'releaseWriteLease',
-			) =>
-			async (args: never) => {
-				calls.push({ stubId, method })
-				if (
-					input.rpcTimeoutMs != null &&
-					Date.now() - createdAt > input.rpcTimeoutMs
-				) {
-					throw new Error('Durable Object RPC stub exceeded its timeout.')
-				}
-				if (method !== 'assertWriteLeaseHeld') {
-					attempts[method] += 1
-					if (attempts[method] <= resets[method]) {
-						throw new Error(durableObjectInstanceInactiveCloseMessage)
-					}
-				}
-				return (stub[method] as (args: never) => Promise<never>)(args)
+		const track = (
+			method:
+				| 'acquireWriteLease'
+				| 'assertWriteLeaseHeld'
+				| 'releaseWriteLease',
+		) => {
+			calls.push({ stubId, method })
+			if (
+				input.rpcTimeoutMs != null &&
+				Date.now() - createdAt > input.rpcTimeoutMs
+			) {
+				throw new Error('Durable Object RPC stub exceeded its timeout.')
 			}
+			if (method !== 'assertWriteLeaseHeld') {
+				attempts[method] += 1
+				if (attempts[method] <= resets[method]) {
+					throw new Error(durableObjectInstanceInactiveCloseMessage)
+				}
+			}
+		}
 		return {
-			acquireWriteLease: track('acquireWriteLease'),
-			assertWriteLeaseHeld: track('assertWriteLeaseHeld'),
-			releaseWriteLease: track('releaseWriteLease'),
+			acquireWriteLease: async (args) => {
+				track('acquireWriteLease')
+				return stub.acquireWriteLease(args)
+			},
+			assertWriteLeaseHeld: async (args) => {
+				track('assertWriteLeaseHeld')
+				return stub.assertWriteLeaseHeld(args)
+			},
+			releaseWriteLease: async (args) => {
+				track('releaseWriteLease')
+				return stub.releaseWriteLease(args)
+			},
 		}
 	})
 	return { env, calls, attempts }

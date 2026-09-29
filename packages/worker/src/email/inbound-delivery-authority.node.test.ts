@@ -88,7 +88,7 @@ test('dedupe claim precedes UserMeter and a Mailbox retry does not prepare USER 
 		order.push('d1-hint')
 		return { success: true }
 	})
-	const prepare = vi.fn(() => ({
+	const prepare = vi.fn((_sql: string) => ({
 		bind: vi.fn(() => ({ run })),
 	}))
 	const authority = authorityFor(userId, { mailbox, meter, db: { prepare } })

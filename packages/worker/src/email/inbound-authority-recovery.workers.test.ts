@@ -217,7 +217,7 @@ test('stored-count and raw MIME read failures happen before quota; redelivery ch
 	await ensureUsageRollupsTestSchema(env.APP_DB)
 	const account = await seedAccount('pre-quota-failure')
 	const baseEnv = { ...env, APP_BASE_URL: appBaseUrl }
-	const failingCountEnv = {
+	const failingCountEnv: Parameters<typeof handleInboundEmail>[1] = {
 		...baseEnv,
 		MAILBOX: {
 			idFromName: (name: string) => baseEnv.MAILBOX.idFromName(name),
@@ -232,8 +232,8 @@ test('stored-count and raw MIME read failures happen before quota; redelivery ch
 						return Reflect.get(target, property, receiver)
 					},
 				}),
-		},
-	} as Parameters<typeof handleInboundEmail>[1]
+		} as unknown as Env['MAILBOX'],
+	}
 	await expect(
 		handleInboundEmail(
 			inboundMessage({ address: account.address }),

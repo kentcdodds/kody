@@ -1,17 +1,26 @@
 import { vi } from 'vitest'
+import type * as runKodyRegistryModule from '#mcp/run-kody-registry.ts'
+import type * as packageInvocationsServiceModule from '#worker/package-invocations/service.ts'
 import { terminalWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
 import { creatingWorkflowProjectionStatus } from '#worker/run-records/workflow-projection.ts'
+import type * as runRecordsServiceModule from '#worker/run-records/service.ts'
 import {
 	type WorkflowProjectionRecord,
 	type WorkflowProjectionUpsertInput,
 } from '#worker/run-records/service.ts'
-import { dynamicCallableWorkflowsBindingName } from './package-workflows.ts'
+import { dynamicCallableWorkflowsBindingName } from '#worker/package-runtime/package-workflows.ts'
 
 export const packageWorkflowsInvocationMocks = (() => ({
-	invokePackageExport: vi.fn(),
-	runModuleWithRegistry: vi.fn(),
-	createExecutePackageInvokeTools: vi.fn(() => ({ invoke: vi.fn() })),
-	createPackageRuntimeInvokeTools: vi.fn(() => ({ invoke: vi.fn() })),
+	invokePackageExport:
+		vi.fn<typeof packageInvocationsServiceModule.invokePackageExport>(),
+	runModuleWithRegistry:
+		vi.fn<typeof runKodyRegistryModule.runModuleWithRegistry>(),
+	createExecutePackageInvokeTools: vi.fn<
+		typeof packageInvocationsServiceModule.createExecutePackageInvokeTools
+	>(() => ({ invoke: vi.fn() })),
+	createPackageRuntimeInvokeTools: vi.fn<
+		typeof packageInvocationsServiceModule.createPackageRuntimeInvokeTools
+	>(() => ({ invoke: vi.fn() })),
 }))()
 
 export const packageWorkflowsRunRecordMocks = (() => {
@@ -126,14 +135,20 @@ export const packageWorkflowsRunRecordMocks = (() => {
 		listForUser(userId: string) {
 			return [...(projectionsByUser.get(userId)?.values() ?? [])]
 		},
-		beginRunRecord: vi.fn(() => ({
-			id: 'run-1',
-			userId: 'user-1',
-			startedAt: '2026-05-03T12:34:56.000Z',
-			persistence: 'eager' as const,
-			context: { surface: 'workflow' as const },
-		})),
-		finishRunRecord: vi.fn(async () => {}),
+		beginRunRecord: vi.fn<typeof runRecordsServiceModule.beginRunRecord>(
+			() => ({
+				id: 'run-1',
+				userId: 'user-1',
+				startedAt: '2026-05-03T12:34:56.000Z',
+				persistence: 'eager' as const,
+				context: { surface: 'workflow' as const },
+			}),
+		),
+		finishRunRecord: vi.fn(
+			async (
+				_input: Parameters<typeof runRecordsServiceModule.finishRunRecord>[0],
+			) => {},
+		),
 		upsertWorkflowProjection,
 		getWorkflowProjection: vi.fn(
 			async (input: { env: Env; userId: string; id: string }) =>
@@ -320,7 +335,7 @@ export function createWorkflowBinding(options?: {
 }
 
 export function createStatefulWorkflowBinding() {
-	const instances = new Map<string, WorkflowInstanceCreateOptions>()
+	const instances = new Map<string | undefined, WorkflowInstanceCreateOptions>()
 	const create = vi.fn(async (input: WorkflowInstanceCreateOptions) => {
 		if (instances.has(input.id)) {
 			throw new Error('Workflow instance already exists')

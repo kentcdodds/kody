@@ -114,6 +114,7 @@ test('subscription execution exposes the owner account identity to metaGetCurren
 			isPrivate: true,
 			createdAt: '2026-08-08T00:00:00.000Z',
 			updatedAt: '2026-08-08T00:00:00.000Z',
+			lockedAt: null,
 		},
 		invocationName: 'subscription:email.message.received',
 		moduleSelector: {

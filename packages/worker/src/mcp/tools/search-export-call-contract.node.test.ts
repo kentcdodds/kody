@@ -56,7 +56,7 @@ function makeCandidateFromMatch(
 				: match.type === 'package'
 					? match.kodyId
 					: 'id',
-		title: 'title' in match ? match.title : 'title',
+		title: ('title' in match ? match.title : undefined) ?? 'title',
 		searchFields: ['title'],
 		scoreComponents: {
 			base: final,
@@ -114,16 +114,13 @@ test('shouldInlineExportCallContract requires high confidence on post-collapse m
 	]
 	// Collapse dropped a leading synthesized MCP tool; matches[0] is a weak
 	// export that must not inherit the dropped hit's score/gap.
-	const droppedCapabilityMatch = {
+	const droppedCapabilityMatch: SearchMatch = {
 		type: 'capability',
-		id: 'cap-dropped',
+		name: 'cap-dropped',
 		title: 'Dropped tool',
-		description: null,
+		description: '',
 		domain: 'integrations',
-		tags: [],
-		score: 2.0,
-		matchedTerms: ['tool'],
-	} as SearchMatch
+	}
 	const rankedPreCollapse = [
 		makeCandidateFromMatch(droppedCapabilityMatch, 2.0),
 		makeCandidateFromMatch(top, 0.5),
