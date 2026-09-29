@@ -3,6 +3,7 @@
 	"compilerOptions": {
 		"composite": false,
 		"noEmit": true,
+		"allowJs": true,
 		"incremental": true,
 		"lib": ["ES2023", "ESNext.Disposable", "DOM", "DOM.Iterable"],
 		"jsx": "react-jsx",
@@ -28,6 +29,7 @@
 		"./vitest*.ts",
 		"./e2e/**/*.ts",
 		"./tools/**/*.ts",
+		"./.agents/**/*.ts",
 		"./packages/worker/src/mcp/mcp-server.mcp-e2e.test.ts",
 		"./packages/worker/worker-configuration.d.ts",
 		"./packages/worker/env.d.ts",
