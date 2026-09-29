@@ -76,6 +76,7 @@ const clientNameKindRules = [
 	{ kind: 'openmuse', needles: ['openmuse', 'open muse'] },
 	{ kind: 'wajo', needles: ['wajo'] },
 	{ kind: 'cue', needles: ['cue'] },
+	{ kind: 'dots', needles: ['dots'] },
 	// Token-boundary match for bare `muse` so OpenMuse / openmuse stay distinct.
 	{ kind: 'muse', needles: ['muse code', 'muse-code', 'musecode', 'muse'] },
 ] as const satisfies ReadonlyArray<{

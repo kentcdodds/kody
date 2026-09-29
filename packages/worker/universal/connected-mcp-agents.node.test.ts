@@ -202,6 +202,7 @@ test('inbound labels prefer a known kind, then clientName, then hostname, then a
 		['openmuse', 'openmuse', 'OpenMuse'],
 		['Wajo', 'wajo', 'Wajo'],
 		['Cue', 'cue', 'Cue'],
+		['Dots', 'dots', 'Dots'],
 	]
 	expect(names.map(([name]) => [name, classifyMcpClientName(name)])).toEqual(
 		names.map(([name, kind, label]) => [name, { kind, label }]),

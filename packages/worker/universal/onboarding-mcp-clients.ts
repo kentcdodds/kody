@@ -27,6 +27,7 @@ export type McpClientKind =
 	| 'wajo'
 	| 'cue'
 	| 'openmuse'
+	| 'dots'
 	| 'other'
 
 export type OnboardingAgentSurface = 'desktop' | 'mobile'
@@ -59,6 +60,7 @@ export const mcpClientTabs = [
 	{ id: 'wajo', label: 'Wajo', isNonCodingAgent: false },
 	{ id: 'cue', label: 'Cue', isNonCodingAgent: false },
 	{ id: 'openmuse', label: 'OpenMuse', isNonCodingAgent: false },
+	{ id: 'dots', label: 'Dots', isNonCodingAgent: false },
 	{ id: 'other', label: 'Other', isNonCodingAgent: false },
 ] as const satisfies ReadonlyArray<McpClientTab>
 
@@ -70,8 +72,8 @@ export const mcpClientTabs = [
  * ChatGPT.com, Claude Desktop, and Grok Bot fill the leftover seats so
  * the auto-fill desktop grid lands on complete rows with Not listed
  * (12 cards). Gemini stays under More on desktop (still featured on
- * mobile). Wajo, Cue, and OpenMuse are lower-priority MCP peers: they stay
- * off the featured 12 and appear under Not listed (and Account →
+ * mobile). Wajo, Cue, OpenMuse, and Dots are lower-priority MCP peers: they
+ * stay off the featured 12 and appear under Not listed (and Account →
  * Connections). Grok.com, Grok CLI, and the Copilot app stay under Not
  * listed (Copilot desktop/CLI is already featured; Aider is not a Kody
  * connect path yet).
@@ -93,12 +95,13 @@ export const onboardingDesktopFeaturedAgentIds = [
 /**
  * Lower-priority action agents / MCP peers. Shown under Not listed on
  * Get started (and on Account → Connections via the full catalog), not in
- * the featured Step 1 grid. Order: Wajo, Cue, OpenMuse.
+ * the featured Step 1 grid. Order: Wajo, Cue, OpenMuse, Dots.
  */
 export const onboardingSecondaryAgentIds = [
 	'wajo',
 	'cue',
 	'openmuse',
+	'dots',
 ] as const satisfies ReadonlyArray<McpClientKind>
 
 /**
@@ -352,6 +355,8 @@ export function onboardingAgentIconName(
 			return 'cue'
 		case 'openmuse':
 			return 'openmuse'
+		case 'dots':
+			return 'dots'
 		case 'other':
 			return null
 		default: {
@@ -439,6 +444,9 @@ export const cueSiteUrl = 'https://cue.im'
  */
 export const openMuseGuideUrl = 'https://kody.codes/docs/openmuse'
 
+/** OpenAI Dots product intro (personal agent / MCP peer). */
+export const dotsIntroUrl = 'https://openai.com/index/introducing-dots/'
+
 /** Cursor Marketplace listing for the official Kody plugin (production). */
 export const kodyCursorMarketplaceUrl = 'https://cursor.com/marketplace/kody'
 
@@ -495,6 +503,8 @@ function onboardingAgentHelpHref(id: McpClientKind) {
 			return cueSiteUrl
 		case 'openmuse':
 			return openMuseGuideUrl
+		case 'dots':
+			return dotsIntroUrl
 		default: {
 			const exhaustive: never = id
 			return exhaustive

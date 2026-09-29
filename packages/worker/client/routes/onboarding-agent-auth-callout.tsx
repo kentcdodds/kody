@@ -183,6 +183,7 @@ function renderAgentAuthHint(
 		case 'wajo':
 		case 'cue':
 		case 'openmuse':
+		case 'dots':
 			return <>Complete OAuth when the host opens it.</>
 		case 'copilot':
 			return surface === 'mobile' ? (

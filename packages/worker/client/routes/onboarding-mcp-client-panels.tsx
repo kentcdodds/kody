@@ -463,6 +463,29 @@ export function renderPanelContent(
 					/>
 				</>
 			)
+		case 'dots':
+			return (
+				<>
+					<p>
+						Dots is OpenAI&apos;s personal agent (
+						<a
+							href="https://openai.com/index/introducing-dots/"
+							target="_blank"
+							rel="noreferrer"
+						>
+							introducing Dots
+						</a>
+						). When Dots exposes a custom MCP connector, paste this URL and
+						complete OAuth.
+					</p>
+					<ConnectCopyCard
+						highlights={highlights}
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+					/>
+				</>
+			)
 		case 'copilot': {
 			const vsCodeJson = buildVsCodeMcpJson(mcpServerUrl)
 			const installUrl = buildVsCodeInstallUrl(mcpServerUrl)
@@ -661,6 +684,13 @@ export function renderPanelWarning(
 						: 'OpenMuse is distinct from Muse Code. Wire Kody into your OpenMuse fork or AG-UI harness — there is no one-click connector yet.'}
 				</ClientWarning>
 			)
+		case 'dots':
+			return surface === 'mobile' ? (
+				<ClientWarning>
+					Dots setup may need a computer. Change selection and pick a host with
+					a mobile app, or run these steps later on a computer.
+				</ClientWarning>
+			) : null
 		case 'cursor-cloud':
 		case 'copilot':
 		case 'copilot-app':

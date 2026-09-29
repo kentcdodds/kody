@@ -197,6 +197,13 @@ export const walkthroughHostCatalog = [
 		company: 'copilotkit',
 		kind: 'coding',
 	},
+	{
+		id: 'dots',
+		label: 'Dots',
+		icon: 'dots',
+		company: 'openai',
+		kind: 'coding',
+	},
 ] as const satisfies ReadonlyArray<WalkthroughHost>
 
 export type WalkthroughRandomInt = (maxExclusive: number) => number

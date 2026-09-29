@@ -33,11 +33,18 @@ test('every valid pick is a coding host, a chat host, and a third host of either
 	expect(picks.length).toBeGreaterThan(0)
 	const ids = (hosts: Array<{ id: string }>) => hosts.map((host) => host.id)
 	expect(ids(codingRow)).toEqual(
-		expect.arrayContaining(['grok-bot', 'muse', 'wajo', 'cue', 'openmuse']),
+		expect.arrayContaining([
+			'grok-bot',
+			'muse',
+			'wajo',
+			'cue',
+			'openmuse',
+			'dots',
+		]),
 	)
 	expect(ids(chatRow)).toContain('grok-bot')
 	expect(ids(allRow)).toEqual(
-		expect.arrayContaining(['muse', 'wajo', 'cue', 'openmuse']),
+		expect.arrayContaining(['muse', 'wajo', 'cue', 'openmuse', 'dots']),
 	)
 	expect(
 		walkthroughHostCatalog.find((host) => host.id === 'muse'),
@@ -71,8 +78,23 @@ test('every valid pick is a coding host, a chat host, and a third host of either
 		company: 'cue',
 		kind: 'coding',
 	})
+	expect(
+		walkthroughHostCatalog.find((host) => host.id === 'dots'),
+	).toMatchObject({
+		label: 'Dots',
+		icon: 'dots',
+		company: 'openai',
+		kind: 'coding',
+	})
 	expect(ids(picks.map((pick) => pick.coding))).toEqual(
-		expect.arrayContaining(['muse', 'grok-bot', 'wajo', 'cue', 'openmuse']),
+		expect.arrayContaining([
+			'muse',
+			'grok-bot',
+			'wajo',
+			'cue',
+			'openmuse',
+			'dots',
+		]),
 	)
 	expect(ids(picks.map((pick) => pick.invoke))).toContain('grok-bot')
 	expect(

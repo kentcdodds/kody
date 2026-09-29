@@ -68,9 +68,12 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(notListed).toContain('href="/onboarding/step-1/cue"')
 	expect(notListed).toContain('data-testid="onboarding-agent-openmuse"')
 	expect(notListed).toContain('href="/onboarding/step-1/openmuse"')
+	expect(notListed).toContain('data-testid="onboarding-agent-dots"')
+	expect(notListed).toContain('href="/onboarding/step-1/dots"')
 	expect(notListed).toContain('/images/icons/wajo.svg')
 	expect(notListed).toContain('/images/icons/cue.svg')
 	expect(notListed).toContain('/images/icons/openmuse.svg')
+	expect(notListed).toContain('/images/icons/dots.svg')
 
 	const cursor = await renderTabs({ selectedAgent: 'cursor' })
 	expect(cursor).toContain('data-testid="onboarding-agent-instructions"')
@@ -188,6 +191,10 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	const cue = await renderTabs({ selectedAgent: 'cue' })
 	expect(cue).toContain('data-agent="cue"')
 	expect(cue).toContain('cue.im')
+
+	const dots = await renderTabs({ selectedAgent: 'dots' })
+	expect(dots).toContain('data-agent="dots"')
+	expect(dots).toContain('openai.com/index/introducing-dots')
 
 	const chatgpt = await renderTabs({ selectedAgent: 'chatgpt' })
 	expect(chatgpt).toContain(kodyChatGptPluginUrl)

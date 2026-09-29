@@ -14,7 +14,7 @@
 import { type McpClientKind } from '#universal/onboarding-mcp-clients.ts'
 
 const onboardingAgentEcosystems = {
-	openai: ['chatgpt', 'codex'],
+	openai: ['chatgpt', 'codex', 'dots'],
 	anthropic: ['claude-desktop', 'claude-code'],
 	xai: [
 		'cursor',
@@ -85,7 +85,7 @@ export const onboardingStep3EcosystemGroups = [
 	{
 		id: 'openai',
 		label: 'ChatGPT',
-		agents: ['chatgpt', 'codex'],
+		agents: ['chatgpt', 'codex', 'dots'],
 	},
 	{
 		id: 'github',
