@@ -74,92 +74,44 @@ function makeCandidateFromMatch(
 	}
 }
 
-test('shouldInlineExportCallContract requires high confidence', () => {
-	const top = makeExportMatch()
-	const weakSecond = makeExportMatch({
-		exportSubpath: './other',
-		kodyId: 'other-pkg',
+function makeRivalExport(
+	subpath: string,
+	functionName: string,
+	score: number,
+	overrides: Partial<Extract<SearchMatch, { type: 'package' }>> = {},
+) {
+	return makeExportMatch({
+		exportSubpath: subpath,
 		actionMatches: [
 			{
-				subpath: './other',
+				subpath,
 				description: null,
 				typeDefinition: null,
-				functions: [{ name: 'other', description: null, typeDefinition: null }],
-				score: 0.2,
-				matchedTerms: ['other'],
+				functions: [
+					{ name: functionName, description: null, typeDefinition: null },
+				],
+				score,
+				matchedTerms: [subpath.replace('./', '')],
 			},
 		],
+		...overrides,
 	})
+}
+
+test('shouldInlineExportCallContract requires high confidence on post-collapse matches', () => {
+	const top = makeExportMatch()
+	const weakSecond = makeRivalExport('./other', 'other', 0.2, {
+		kodyId: 'other-pkg',
+	})
+	const rivalExport = makeRivalExport('./curtains', 'setCurtains', 0.8)
 	const rankedClear = [
 		makeCandidateFromMatch(top, 1.2),
 		makeCandidateFromMatch(weakSecond, 0.3),
 	]
-	expect(
-		shouldInlineExportCallContract({
-			matches: [top, weakSecond],
-			rankedCandidates: rankedClear,
-			jevOutcome: 'skipped-clear-winner',
-			jevMeanConfidence: null,
-		}),
-	).toBe(true)
-
 	const rankedTight = [
 		makeCandidateFromMatch(top, 1.0),
 		makeCandidateFromMatch(weakSecond, 0.95),
 	]
-	expect(
-		shouldInlineExportCallContract({
-			matches: [top, weakSecond],
-			rankedCandidates: rankedTight,
-			jevOutcome: 'skipped-flag-off',
-			jevMeanConfidence: null,
-		}),
-	).toBe(false)
-
-	expect(
-		shouldInlineExportCallContract({
-			matches: [top],
-			rankedCandidates: rankedClear,
-			jevOutcome: 'applied',
-			jevMeanConfidence: 0.5,
-		}),
-	).toBe(false)
-
-	expect(
-		shouldInlineExportCallContract({
-			matches: [top],
-			rankedCandidates: rankedClear,
-			jevOutcome: 'applied',
-			jevMeanConfidence: 0.85,
-		}),
-	).toBe(true)
-
-	const rivalExport = makeExportMatch({
-		exportSubpath: './curtains',
-		actionMatches: [
-			{
-				subpath: './curtains',
-				description: null,
-				typeDefinition: null,
-				functions: [
-					{ name: 'setCurtains', description: null, typeDefinition: null },
-				],
-				score: 0.8,
-				matchedTerms: ['curtains'],
-			},
-		],
-	})
-	expect(
-		shouldInlineExportCallContract({
-			matches: [top, rivalExport],
-			rankedCandidates: rankedClear,
-			jevOutcome: 'applied',
-			jevMeanConfidence: 0.9,
-		}),
-	).toBe(false)
-})
-
-test('shouldInlineExportCallContract scores post-collapse matches, not pre-collapse index 0', () => {
 	// Collapse dropped a leading synthesized MCP tool; matches[0] is a weak
 	// export that must not inherit the dropped hit's score/gap.
 	const droppedCapabilityMatch = {
@@ -172,34 +124,78 @@ test('shouldInlineExportCallContract scores post-collapse matches, not pre-colla
 		score: 2.0,
 		matchedTerms: ['tool'],
 	} as SearchMatch
-	const weakExport = makeExportMatch()
-	const rival = makeExportMatch({
-		kodyId: 'other-pkg',
-		exportSubpath: './other',
-		actionMatches: [
-			{
-				subpath: './other',
-				description: null,
-				typeDefinition: null,
-				functions: [{ name: 'other', description: null, typeDefinition: null }],
-				score: 0.2,
-				matchedTerms: ['other'],
-			},
-		],
-	})
 	const rankedPreCollapse = [
 		makeCandidateFromMatch(droppedCapabilityMatch, 2.0),
-		makeCandidateFromMatch(weakExport, 0.5),
-		makeCandidateFromMatch(rival, 0.45),
+		makeCandidateFromMatch(top, 0.5),
+		makeCandidateFromMatch(weakSecond, 0.45),
+	]
+	const cases: Array<
+		[string, Parameters<typeof shouldInlineExportCallContract>[0], boolean]
+	> = [
+		[
+			'clear gap',
+			{
+				matches: [top, weakSecond],
+				rankedCandidates: rankedClear,
+				jevOutcome: 'skipped-clear-winner',
+				jevMeanConfidence: null,
+			},
+			true,
+		],
+		[
+			'tight gap',
+			{
+				matches: [top, weakSecond],
+				rankedCandidates: rankedTight,
+				jevOutcome: 'skipped-flag-off',
+				jevMeanConfidence: null,
+			},
+			false,
+		],
+		[
+			'low Jev confidence',
+			{
+				matches: [top],
+				rankedCandidates: rankedClear,
+				jevOutcome: 'applied',
+				jevMeanConfidence: 0.5,
+			},
+			false,
+		],
+		[
+			'high Jev confidence',
+			{
+				matches: [top],
+				rankedCandidates: rankedClear,
+				jevOutcome: 'applied',
+				jevMeanConfidence: 0.85,
+			},
+			true,
+		],
+		[
+			'rival export in the same package',
+			{
+				matches: [top, rivalExport],
+				rankedCandidates: rankedClear,
+				jevOutcome: 'applied',
+				jevMeanConfidence: 0.9,
+			},
+			false,
+		],
+		[
+			'pre-collapse leader dropped',
+			{
+				matches: [top, weakSecond],
+				rankedCandidates: rankedPreCollapse,
+				jevOutcome: 'skipped-clear-winner',
+				jevMeanConfidence: null,
+			},
+			false,
+		],
 	]
 	expect(
-		shouldInlineExportCallContract({
-			matches: [weakExport, rival],
-			rankedCandidates: rankedPreCollapse,
-			jevOutcome: 'skipped-clear-winner',
-			jevMeanConfidence: null,
-		}),
-	).toBe(false)
+		cases.map(([name, input]) => [name, shouldInlineExportCallContract(input)]),
+	).toEqual(cases.map(([name, , expected]) => [name, expected]))
 })
 
 test('attachHighConfidenceExportCallContract inlines import and types', () => {

@@ -1,11 +1,32 @@
 import { expect, test, vi } from 'vitest'
+import type * as EntitlementsService from '#worker/entitlements/service.ts'
 import type * as IntegrationsService from '#worker/integrations/service.ts'
+import type * as SearchRateLimit from '#worker/search-rate-limit.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	SEARCH_DEADLINE_MS,
 	SEARCH_WAITING_ITEMS_BUDGET_MS,
 } from './search-constants.ts'
 import { SearchDeadlineError } from './search-timing.ts'
+
+function capabilitySpec(name: string, overrides: Record<string, unknown> = {}) {
+	return {
+		name,
+		description: `${name} capability`,
+		domain: 'meta',
+		keywords: [],
+		inputFields: [],
+		requiredInputFields: [],
+		outputFields: [],
+		readOnly: true,
+		idempotent: true,
+		destructive: false,
+		source: 'builtin',
+		inputSchema: { type: 'object', properties: {} },
+		inputTypeDefinition: 'type Input = {}',
+		...overrides,
+	}
+}
 
 const mockModule = vi.hoisted(() => ({
 	getCapabilityRegistryForContext: vi.fn(async () => ({
@@ -35,10 +56,7 @@ const mockModule = vi.hoisted(() => ({
 	loadPackageSourceBySourceId: vi.fn(),
 	loadRelevantMemoriesForTool: vi.fn(async () => null),
 	acknowledgeToolMemories: vi.fn(async () => undefined),
-	runPackageRetrievers: vi.fn(async () => ({
-		results: [],
-		warnings: [],
-	})),
+	runPackageRetrievers: vi.fn(async () => ({ results: [], warnings: [] })),
 	searchCommunityListings: vi.fn(async () => []),
 	deriveWaitingItemsForStableUser: vi.fn(async () => []),
 }))
@@ -130,21 +148,13 @@ vi.mock('#mcp/waiting/derive-waiting.ts', () => ({
 }))
 
 vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#worker/entitlements/service.ts')>()
-	return {
-		...actual,
-		getUserPlan: async () => 'free',
-	}
+	const actual = await importOriginal<typeof EntitlementsService>()
+	return { ...actual, getUserPlan: async () => 'free' }
 })
 
 vi.mock('#worker/search-rate-limit.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#worker/search-rate-limit.ts')>()
-	return {
-		...actual,
-		consumeSearchRateLimit: vi.fn(async () => 'free'),
-	}
+	const actual = await importOriginal<typeof SearchRateLimit>()
+	return { ...actual, consumeSearchRateLimit: vi.fn(async () => 'free') }
 })
 
 const {
@@ -153,7 +163,21 @@ const {
 	memoryEnrichmentSkippedWarning,
 } = await import('./search.ts')
 
-const mockPerformanceNow = vi.spyOn(performance, 'now')
+type SearchResponse = {
+	content: Array<{ type: 'text'; text: string }>
+	structuredContent: {
+		conversationId: string
+		timing: {
+			startedAt: string
+			endedAt: string
+			durationMs: number
+			serverTiming?: Array<{ name: string; durationMs: number }>
+		}
+		error?: string
+		result?: unknown
+	}
+	isError?: boolean
+}
 
 type SearchHandler = (input: {
 	query?: string
@@ -169,154 +193,132 @@ type SearchHandler = (input: {
 		constraints?: Array<string>
 	}
 	includeHiddenPackages?: boolean
-}) => Promise<{
-	content: Array<{
-		type: 'text'
-		text: string
+}) => Promise<SearchResponse>
+
+type SearchResult = {
+	warnings: Array<string>
+	guidance?: string
+	matches: Array<{
+		type: string
+		entityRef?: string
+		kodyId?: string
+		domain?: string
+		relatedPackageSuggestions?: unknown
+		wrappingPackage?: { kodyId: string } | null
 	}>
-	structuredContent: {
-		conversationId: string
-		timing: {
-			startedAt: string
-			endedAt: string
-			durationMs: number
-			serverTiming?: Array<{ name: string; durationMs: number }>
-		}
-		error?: string
-		result?: unknown
+	memories?: { surfaced: Array<{ id: string; summary?: string }> }
+	waiting?: { count: number; items: Array<{ id: string }> }
+	telemetry?: {
+		jevRerank?: { enabled: boolean; outcome: string }
+		responseTrimmed?: boolean
+		trimmedMatchCount?: number
 	}
-	isError?: boolean
-}>
+	phaseTimings?: Record<string, unknown>
+}
 
-async function getSearchRegistration(input?: {
-	user?: {
-		userId: string
-		email: string
-		displayName: string
-		username?: string
-	} | null
-}) {
+const signedInUser = {
+	userId: 'user-1',
+	email: 'user@example.com',
+	displayName: 'User',
+	username: 'user',
+}
+
+async function getSearchHandler(
+	user: typeof signedInUser | null = signedInUser,
+) {
 	const registerTool = vi.fn()
-	const state: {
-		searchConversationIdsWithPreamble?: Array<string>
-		onboardingNoticeConversationIds?: Array<string>
-		onboardingNoticeLastShownAtMs?: number
-	} = {}
-
+	const state: Record<string, unknown> = {}
 	await registerSearchTool({
-		server: {
-			registerTool,
-		} as never,
+		server: { registerTool } as never,
 		getEnv: vi.fn(() => ({ APP_DB: {} })),
-		getCallerContext: vi.fn(() => ({
-			baseUrl: 'https://example.com',
-			user: input?.user === undefined ? null : input.user,
-		})),
+		getCallerContext: vi.fn(() => ({ baseUrl: 'https://example.com', user })),
 		state,
 		setState: vi.fn((nextState: typeof state) => {
 			Object.assign(state, nextState)
 		}),
 	} as never)
-
 	expect(registerTool).toHaveBeenCalledTimes(1)
 	const [name, , handler] = registerTool.mock.calls[0] ?? []
 	expect(name).toBe('search')
-	return { handler: handler as SearchHandler }
+	return handler as SearchHandler
 }
 
-async function getSearchHandler() {
-	const { handler } = await getSearchRegistration()
-	return handler
-}
+const textOf = (response: SearchResponse) =>
+	response.content.map((item) => item.text).join('\n')
+const resultOf = (response: SearchResponse) =>
+	response.structuredContent.result as SearchResult
+const packageIdsOf = (response: SearchResponse) =>
+	resultOf(response)
+		.matches.filter((match) => match.type === 'package')
+		.map((match) => match.kodyId)
 
-function createSavedPackages() {
-	return [
-		{
-			id: 'pkg-hidden',
-			userId: 'user-1',
-			name: 'hidden-notes-pkg',
-			kodyId: 'hidden-notes-pkg',
-			description: 'hidden notes package',
-			tags: [],
-			searchText: 'hidden notes package',
-			sourceId: 'source-hidden',
-			hasApp: false,
-			hidden: true,
-			isPrivate: false,
-			createdAt: '2026-01-01T00:00:00.000Z',
-			updatedAt: '2026-01-01T00:00:00.000Z',
-		},
-		{
-			id: 'pkg-visible',
-			userId: 'user-1',
-			name: 'visible-notes-pkg',
-			kodyId: 'visible-notes-pkg',
-			description: 'visible notes package',
-			tags: [],
-			searchText: 'visible notes package',
-			sourceId: 'source-visible',
-			hasApp: false,
-			hidden: false,
-			isPrivate: false,
-			createdAt: '2026-01-01T00:00:00.000Z',
-			updatedAt: '2026-01-01T00:00:00.000Z',
-		},
-	]
-}
-
-const exactPackageId = '550e8400-e29b-41d4-a716-446655440000'
-
-function createExactPackage(hidden: boolean) {
+function savedPackage(
+	id: string,
+	overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
 	return {
-		id: exactPackageId,
+		id,
 		userId: 'user-1',
-		name: '@user/exact-notes',
-		kodyId: 'exact-notes',
-		description: 'Exact notes package',
-		tags: ['notes'],
-		searchText: 'exact notes package',
-		sourceId: 'source-exact',
+		name: id,
+		kodyId: id,
+		description: `${id} package`,
+		tags: [],
+		searchText: `${id} package`,
+		sourceId: `source-${id}`,
 		hasApp: false,
-		hidden,
+		hidden: false,
+		isPrivate: false,
 		createdAt: '2026-01-01T00:00:00.000Z',
 		updatedAt: '2026-01-01T00:00:00.000Z',
+		...overrides,
 	}
 }
 
-test('search tool returns compact query markdown while preserving structured auxiliary detail', async () => {
-	vi.clearAllMocks()
-	mockModule.loadRelevantMemoriesForTool.mockResolvedValueOnce({
+const createSavedPackages = () => [
+	savedPackage('hidden-notes-pkg', { hidden: true }),
+	savedPackage('visible-notes-pkg'),
+]
+
+function memorySummary(
+	id: string,
+	summary: string,
+	overrides: Record<string, unknown> = {},
+) {
+	return {
 		memories: [
 			{
-				id: 'memory-1',
+				id,
 				category: 'preference',
 				status: 'active',
-				subject: 'Verbose memory subject',
-				summary: 'Prefers compact search results.',
-				details: 'Long memory details should stay out of the text response.',
+				subject: 'Search preference',
+				summary,
+				details: '',
 				tags: ['search'],
 				sourceUris: [],
 				updatedAt: '2026-04-20T00:00:00.000Z',
+				...overrides,
 			},
 		],
 		suppressedCount: 0,
 		retrievalQuery: 'search docs',
 		retrieverResults: [],
+		retrieverWarnings: [],
+	}
+}
+
+test('search tool returns compact query markdown while preserving structured auxiliary detail', async () => {
+	mockModule.loadRelevantMemoriesForTool.mockResolvedValueOnce({
+		...memorySummary('memory-1', 'Prefers compact search results.', {
+			subject: 'Verbose memory subject',
+			details: 'Long memory details should stay out of the text response.',
+		}),
 		retrieverWarnings: [
 			'First memory retriever warning should remain structured.',
 			'Second memory retriever warning should remain structured.',
 		],
 	})
-	const { handler } = await getSearchRegistration({
-		user: {
-			userId: 'user-1',
-			email: 'user@example.com',
-			displayName: 'User',
-			username: 'user',
-		},
-	})
+	const handler = await getSearchHandler()
 
-	mockPerformanceNow.mockReturnValueOnce(100).mockReturnValueOnce(112)
 	const successResponse = await handler({
 		query: 'search docs',
 		conversationId: 'conv-compact-search',
@@ -333,29 +335,11 @@ test('search tool returns compact query markdown while preserving structured aux
 	expect(
 		successResponse.structuredContent.timing.durationMs,
 	).toBeGreaterThanOrEqual(0)
-
-	const text = successResponse.content.map((item) => item.text).join('\n')
-	expect(text.length).toBeGreaterThan(0)
+	const text = textOf(successResponse)
 	expect(text).toContain('## Relevant memories')
 	expect(text).toContain('Verbose memory subject')
 	expect(text).toContain('Prefers compact search results.')
-	const result = successResponse.structuredContent.result as {
-		warnings: Array<string>
-		guidance?: string
-		memories?: { surfaced: Array<{ id: string }> }
-		telemetry?: {
-			jevRerank?: {
-				enabled: boolean
-				outcome: string
-			}
-		}
-		phaseTimings?: {
-			memoryEnrichmentMs?: number
-			memoryEnrichmentTimedOut?: boolean
-			jevRerankMs?: number
-		}
-		matches: Array<{ type: string; entityRef?: string }>
-	}
+	const result = resultOf(successResponse)
 	expect(result.warnings).toHaveLength(2)
 	expect(result.matches).toEqual([
 		expect.objectContaining({
@@ -371,10 +355,7 @@ test('search tool returns compact query markdown while preserving structured aux
 		expect.objectContaining({ id: 'memory-1' }),
 	])
 	expect(result.telemetry?.jevRerank).toEqual(
-		expect.objectContaining({
-			enabled: false,
-			outcome: 'skipped-flag-off',
-		}),
+		expect.objectContaining({ enabled: false, outcome: 'skipped-flag-off' }),
 	)
 	expect(result.phaseTimings).toEqual(
 		expect.objectContaining({
@@ -394,27 +375,19 @@ test('search tool returns compact query markdown while preserving structured aux
 	)
 	expect(mockModule.acknowledgeToolMemories).not.toHaveBeenCalled()
 
-	mockPerformanceNow.mockReturnValueOnce(5).mockReturnValueOnce(9)
 	const emptyDiscoveryResponse = await handler({
 		conversationId: 'conv-search-error',
 	})
 	expect(emptyDiscoveryResponse.isError).toBeUndefined()
 	expect(emptyDiscoveryResponse.structuredContent).toMatchObject({
 		conversationId: 'conv-search-error',
-		timing: {
-			startedAt: expect.any(String),
-			endedAt: expect.any(String),
-			durationMs: expect.any(Number),
-		},
-		result: {
-			matches: [],
-		},
+		timing: { durationMs: expect.any(Number) },
+		result: { matches: [] },
 	})
 
 	mockModule.getCapabilityRegistryForContext.mockRejectedValueOnce(
 		new Error('Registry unavailable'),
 	)
-	mockPerformanceNow.mockReturnValueOnce(20).mockReturnValueOnce(35)
 	const handledErrorResponse = await handler({
 		query: 'search docs',
 		conversationId: 'conv-search-handled-error',
@@ -425,8 +398,7 @@ test('search tool returns compact query markdown while preserving structured aux
 	)
 })
 
-test('ranked search prepends ## Waiting for block items and skips domain browse', async () => {
-	vi.clearAllMocks()
+test('ranked search prepends ## Waiting for block items, skips domain browse, and drops waiting past its budget', async () => {
 	consoleWarn.mockImplementation(() => {})
 	mockModule.deriveWaitingItemsForStableUser.mockResolvedValue([
 		{
@@ -450,58 +422,31 @@ test('ranked search prepends ## Waiting for block items and skips domain browse'
 			severity: 'setup',
 		},
 	])
-	const { handler } = await getSearchRegistration({
-		user: {
-			userId: 'user-1',
-			email: 'user@example.com',
-			displayName: 'User',
-			username: 'user',
-		},
-	})
+	const handler = await getSearchHandler()
 
-	mockPerformanceNow.mockReturnValueOnce(100).mockReturnValueOnce(112)
 	const ranked = await handler({
 		query: 'google mail',
 		conversationId: 'conv-waiting-ranked',
 	})
-	const rankedText = ranked.content.map((item) => item.text).join('\n')
-	expect(rankedText).toContain('## Waiting')
-	expect(rankedText).not.toContain('Connect an agent')
-	const rankedResult = ranked.structuredContent.result as {
-		waiting?: { count: number; items: Array<{ id: string }> }
-	}
-	expect(rankedResult.waiting).toMatchObject({
+	expect(textOf(ranked)).toContain('## Waiting')
+	expect(textOf(ranked)).not.toContain('Connect an agent')
+	expect(resultOf(ranked).waiting).toMatchObject({
 		count: 1,
 		items: [{ id: 'integration-auth:google' }],
 	})
 	expect(mockModule.deriveWaitingItemsForStableUser).toHaveBeenCalled()
 
 	mockModule.deriveWaitingItemsForStableUser.mockClear()
-	mockPerformanceNow.mockReturnValueOnce(200).mockReturnValueOnce(210)
 	const domainBrowse = await handler({
 		domain: 'account',
 		conversationId: 'conv-waiting-domain',
 	})
-	const domainText = domainBrowse.content.map((item) => item.text).join('\n')
-	expect(domainText).not.toContain('## Waiting')
+	expect(textOf(domainBrowse)).not.toContain('## Waiting')
 	expect(mockModule.deriveWaitingItemsForStableUser).not.toHaveBeenCalled()
-	mockModule.deriveWaitingItemsForStableUser.mockResolvedValue([])
-})
 
-test('ranked search returns results without ## Waiting when waiting probes outlive their budget', async () => {
-	vi.clearAllMocks()
-	consoleWarn.mockImplementation(() => {})
 	mockModule.deriveWaitingItemsForStableUser.mockImplementationOnce(
 		() => new Promise(() => {}),
 	)
-	const { handler } = await getSearchRegistration({
-		user: {
-			userId: 'user-1',
-			email: 'user@example.com',
-			displayName: 'User',
-			username: 'user',
-		},
-	})
 	vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 	try {
 		const pending = handler({
@@ -511,13 +456,8 @@ test('ranked search returns results without ## Waiting when waiting probes outli
 		await vi.advanceTimersByTimeAsync(SEARCH_WAITING_ITEMS_BUDGET_MS)
 		const response = await pending
 		expect(response.isError).toBeUndefined()
-		const text = response.content.map((item) => item.text).join('\n')
-		expect(text).not.toContain('## Waiting')
-		const result = response.structuredContent.result as {
-			waiting?: unknown
-			matches: Array<unknown>
-			phaseTimings?: { waitingItemsTimedOut?: boolean }
-		}
+		expect(textOf(response)).not.toContain('## Waiting')
+		const result = resultOf(response)
 		expect(result.waiting).toBeUndefined()
 		expect(result.matches.length).toBeGreaterThan(0)
 		expect(result.phaseTimings?.waitingItemsTimedOut).toBe(true)
@@ -527,19 +467,11 @@ test('ranked search returns results without ## Waiting when waiting probes outli
 })
 
 test('search fails fast with a clear deadline error instead of hanging until the MCP client times out', async () => {
-	vi.clearAllMocks()
 	consoleWarn.mockImplementation(() => {})
 	mockModule.getCapabilityRegistryForContext.mockImplementationOnce(
 		() => new Promise(() => {}),
 	)
-	const { handler } = await getSearchRegistration({
-		user: {
-			userId: 'user-1',
-			email: 'user@example.com',
-			displayName: 'User',
-			username: 'user',
-		},
-	})
+	const handler = await getSearchHandler()
 	vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 	try {
 		const pending = handler({
@@ -552,7 +484,7 @@ test('search fails fast with a clear deadline error instead of hanging until the
 		expect(response.structuredContent.error).toBe(
 			new SearchDeadlineError(SEARCH_DEADLINE_MS).message,
 		)
-		expect(response.content.map((item) => item.text).join('\n')).toContain(
+		expect(textOf(response)).toContain(
 			`Search did not finish within ${String(SEARCH_DEADLINE_MS / 1000)}s`,
 		)
 	} finally {
@@ -561,128 +493,76 @@ test('search fails fast with a clear deadline error instead of hanging until the
 })
 
 test('search tool excludes hidden packages by default and includes them with includeHiddenPackages', async () => {
-	vi.clearAllMocks()
 	consoleWarn.mockImplementation(() => {})
-	mockModule.runPackageRetrievers.mockResolvedValue({
-		results: [],
-		warnings: [],
-	})
-	mockModule.listSavedPackagesByUserId.mockResolvedValue(createSavedPackages())
+	mockModule.listSavedPackagesByUserId.mockImplementation(async () =>
+		createSavedPackages(),
+	)
+	const handler = await getSearchHandler()
 
-	const { handler } = await getSearchRegistration({
-		user: {
-			userId: 'user-1',
-			email: 'user@example.com',
-			displayName: 'User',
-			username: 'user',
-		},
-	})
-
-	mockPerformanceNow.mockReturnValueOnce(100).mockReturnValueOnce(110)
 	const defaultResponse = await handler({
 		query: 'notes package',
 		conversationId: 'conv-hidden-default',
 	})
 	expect(defaultResponse.isError).toBeUndefined()
-	const defaultResult = defaultResponse.structuredContent.result as {
-		matches: Array<{ type: string; kodyId?: string }>
-	}
-	const defaultPackageIds = defaultResult.matches
-		.filter((match) => match.type === 'package')
-		.map((match) => match.kodyId)
-	expect(defaultPackageIds).toContain('visible-notes-pkg')
-	expect(defaultPackageIds).not.toContain('hidden-notes-pkg')
+	expect(packageIdsOf(defaultResponse)).toContain('visible-notes-pkg')
+	expect(packageIdsOf(defaultResponse)).not.toContain('hidden-notes-pkg')
 	expect(mockModule.runPackageRetrievers).toHaveBeenCalledWith(
-		expect.objectContaining({
-			scope: 'search',
-			includeHiddenPackages: false,
-		}),
+		expect.objectContaining({ scope: 'search', includeHiddenPackages: false }),
 	)
 
-	mockModule.listSavedPackagesByUserId.mockResolvedValue(createSavedPackages())
-	mockPerformanceNow.mockReturnValueOnce(200).mockReturnValueOnce(210)
 	const includeResponse = await handler({
 		query: 'notes package',
 		conversationId: 'conv-hidden-include',
 		includeHiddenPackages: true,
 	})
 	expect(includeResponse.isError).toBeUndefined()
-	const includeResult = includeResponse.structuredContent.result as {
-		matches: Array<{ type: string; kodyId?: string }>
-	}
-	const includePackageIds = includeResult.matches
-		.filter((match) => match.type === 'package')
-		.map((match) => match.kodyId)
-		.sort()
-	expect(includePackageIds).toEqual(['hidden-notes-pkg', 'visible-notes-pkg'])
+	expect(packageIdsOf(includeResponse).sort()).toEqual([
+		'hidden-notes-pkg',
+		'visible-notes-pkg',
+	])
 	expect(mockModule.runPackageRetrievers).toHaveBeenCalledWith(
-		expect.objectContaining({
-			scope: 'search',
-			includeHiddenPackages: true,
-		}),
+		expect.objectContaining({ scope: 'search', includeHiddenPackages: true }),
 	)
 })
 
 test('search tool treats exact package identity as authoritative and still resolves hidden entity lookups', async () => {
-	vi.clearAllMocks()
-	mockModule.getSavedPackageById
-		.mockResolvedValueOnce(createExactPackage(true))
-		.mockResolvedValueOnce(createExactPackage(true))
-		.mockResolvedValueOnce(createExactPackage(true))
-	mockModule.loadPackageSourceBySourceId.mockResolvedValueOnce({
-		manifest: {
+	const exactPackageId = '550e8400-e29b-41d4-a716-446655440000'
+	mockModule.getSavedPackageById.mockResolvedValue(
+		savedPackage(exactPackageId, {
 			name: '@user/exact-notes',
-			exports: { '.': './index.ts' },
-			kody: {
-				id: 'exact-notes',
-				description: 'Exact notes package',
-			},
-		},
+			kodyId: 'exact-notes',
+			tags: ['notes'],
+			hidden: true,
+		}),
+	)
+	const manifest = {
+		name: '@user/exact-notes',
+		exports: { '.': './index.ts' },
+		kody: { id: 'exact-notes', description: 'Exact notes package' },
+	}
+	mockModule.loadPackageSourceBySourceId.mockResolvedValueOnce({
+		manifest,
 		files: {
-			'package.json': JSON.stringify({
-				name: '@user/exact-notes',
-				exports: { '.': './index.ts' },
-				kody: {
-					id: 'exact-notes',
-					description: 'Exact notes package',
-				},
-			}),
+			'package.json': JSON.stringify(manifest),
 			'index.ts': 'export default function main() {}',
 		},
 	})
-	const { handler } = await getSearchRegistration({
-		user: {
-			userId: 'user-1',
-			email: 'user@example.com',
-			displayName: 'User',
-			username: 'user',
-		},
-	})
+	const handler = await getSearchHandler()
 
-	mockPerformanceNow.mockReturnValueOnce(100).mockReturnValueOnce(110)
 	const hiddenResponse = await handler({
 		query: exactPackageId,
 		conversationId: 'conv-exact-hidden',
 	})
 	expect(hiddenResponse.isError).toBeUndefined()
-	expect(
-		hiddenResponse.structuredContent.result as { matches: Array<unknown> },
-	).toMatchObject({ matches: [] })
+	expect(resultOf(hiddenResponse)).toMatchObject({ matches: [] })
 
-	mockPerformanceNow.mockReturnValueOnce(200).mockReturnValueOnce(210)
 	const includedResponse = await handler({
 		query: `https://example.com/account/packages/${exactPackageId}`,
 		conversationId: 'conv-exact-included',
 		includeHiddenPackages: true,
 	})
 	expect(includedResponse.isError).toBeUndefined()
-	expect(
-		(
-			includedResponse.structuredContent.result as {
-				matches: Array<Record<string, unknown>>
-			}
-		).matches,
-	).toEqual([
+	expect(resultOf(includedResponse).matches).toEqual([
 		expect.objectContaining({
 			type: 'package',
 			packageId: exactPackageId,
@@ -693,7 +573,6 @@ test('search tool treats exact package identity as authoritative and still resol
 	expect(mockModule.runPackageRetrievers).not.toHaveBeenCalled()
 	expect(mockModule.getCapabilityRegistryForContext).not.toHaveBeenCalled()
 
-	mockPerformanceNow.mockReturnValueOnce(300).mockReturnValueOnce(310)
 	const entityResponse = await handler({
 		entity: `package:${exactPackageId}`,
 		conversationId: 'conv-uuid-entity',
@@ -708,91 +587,35 @@ test('search tool treats exact package identity as authoritative and still resol
 	})
 	expect(mockModule.getSavedPackageById).toHaveBeenCalledWith(
 		{},
-		{
-			userId: 'user-1',
-			packageId: exactPackageId,
-		},
+		{ userId: 'user-1', packageId: exactPackageId },
 	)
 	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
 })
 
 test('search tool batches entity detail with per-ref isolation and preserves single-entity shape', async () => {
-	vi.clearAllMocks()
+	const widgetSpec = (tool: string, field: string) =>
+		capabilitySpec(`mcp:widgets:${tool}widget`, {
+			domain: 'mcp:widgets',
+			inputFields: [field],
+			requiredInputFields: [field],
+			source: 'mcp-server',
+			mcpServer: {
+				serverId: 'widgets',
+				serverName: 'widgets',
+				kodyName: 'widgets',
+				mcpToolName: `${tool}_widget`,
+				toolName: `${tool}widget`,
+			},
+		})
 	mockModule.getCapabilityRegistryForContext.mockResolvedValue({
 		capabilitySpecs: {
-			search_docs: {
-				name: 'search_docs',
-				description: 'Search docs capability',
-				domain: 'meta',
-				keywords: [],
-				inputFields: [],
-				requiredInputFields: [],
-				outputFields: [],
-				readOnly: true,
-				idempotent: true,
-				destructive: false,
-				source: 'builtin',
-				inputSchema: { type: 'object', properties: {} },
-				inputTypeDefinition: 'type SearchDocsInput = Record<string, never>',
-			},
-			'mcp:widgets:createwidget': {
-				name: 'mcp:widgets:createwidget',
-				description: 'Create a widget.',
-				domain: 'mcp:widgets',
-				keywords: [],
-				inputFields: ['name'],
-				requiredInputFields: ['name'],
-				outputFields: [],
-				readOnly: false,
-				idempotent: false,
-				destructive: false,
-				source: 'mcp-server',
-				mcpServer: {
-					serverId: 'widgets',
-					serverName: 'widgets',
-					kodyName: 'widgets',
-					mcpToolName: 'create_widget',
-					toolName: 'createwidget',
-				},
-				inputSchema: {
-					type: 'object',
-					properties: { name: { type: 'string' } },
-					required: ['name'],
-				},
-				inputTypeDefinition: 'type CreateWidgetInput = { name: string }',
-			},
-			'mcp:widgets:getwidget': {
-				name: 'mcp:widgets:getwidget',
-				description: 'Get a widget.',
-				domain: 'mcp:widgets',
-				keywords: [],
-				inputFields: ['id'],
-				requiredInputFields: ['id'],
-				outputFields: [],
-				readOnly: true,
-				idempotent: true,
-				destructive: false,
-				source: 'mcp-server',
-				mcpServer: {
-					serverId: 'widgets',
-					serverName: 'widgets',
-					kodyName: 'widgets',
-					mcpToolName: 'get_widget',
-					toolName: 'getwidget',
-				},
-				inputSchema: {
-					type: 'object',
-					properties: { id: { type: 'string' } },
-					required: ['id'],
-				},
-				inputTypeDefinition: 'type GetWidgetInput = { id: string }',
-			},
+			search_docs: capabilitySpec('search_docs'),
+			'mcp:widgets:createwidget': widgetSpec('create', 'name'),
+			'mcp:widgets:getwidget': widgetSpec('get', 'id'),
 		},
-	})
+	} as never)
+	const handler = await getSearchHandler(null)
 
-	const handler = await getSearchHandler()
-
-	mockPerformanceNow.mockReturnValueOnce(100).mockReturnValueOnce(110)
 	const singleResponse = await handler({
 		entity: 'capability:search_docs',
 		conversationId: 'conv-single-entity',
@@ -809,7 +632,6 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 	)
 	expect(Array.isArray(singleResponse.structuredContent.result)).toBe(false)
 
-	mockPerformanceNow.mockReturnValueOnce(200).mockReturnValueOnce(210)
 	const batchSuccess = await handler({
 		entity: [
 			'capability:mcp:widgets:createwidget',
@@ -818,21 +640,17 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 		conversationId: 'conv-batch-success',
 	})
 	expect(batchSuccess.isError).toBeUndefined()
-	expect(batchSuccess.structuredContent.result).toEqual([
-		expect.objectContaining({
-			kind: 'entity',
-			type: 'capability',
-			id: 'mcp:widgets:createwidget',
-			relatedOperationCount: 1,
-		}),
-		expect.objectContaining({
-			kind: 'entity',
-			type: 'capability',
-			id: 'mcp:widgets:getwidget',
-			relatedOperationCount: 1,
-		}),
-	])
-	mockPerformanceNow.mockReturnValueOnce(300).mockReturnValueOnce(310)
+	expect(batchSuccess.structuredContent.result).toEqual(
+		['mcp:widgets:createwidget', 'mcp:widgets:getwidget'].map((id) =>
+			expect.objectContaining({
+				kind: 'entity',
+				type: 'capability',
+				id,
+				relatedOperationCount: 1,
+			}),
+		),
+	)
+
 	const partialFailure = await handler({
 		entity: ['capability:mcp:widgets:createwidget', 'capability:missing_thing'],
 		conversationId: 'conv-batch-partial',
@@ -850,133 +668,88 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 		}),
 	])
 
-	mockPerformanceNow.mockReturnValueOnce(400).mockReturnValueOnce(410)
 	const observability = await import('#mcp/observability.ts')
 	const logMcpEventSpy = vi.spyOn(observability, 'logMcpEvent')
-	try {
-		const allFailed = await handler({
-			entity: ['capability:missing_a', 'capability:missing_b'],
-			conversationId: 'conv-batch-all-failed',
-		})
-		expect(allFailed.isError).toBe(true)
-		expect(allFailed.structuredContent.error).toMatch(
-			/all entity lookups failed/i,
-		)
-		expect(allFailed.structuredContent.result).toEqual([
-			expect.objectContaining({
-				entityRef: 'capability:missing_a',
-				error: expect.any(String),
-			}),
-			expect.objectContaining({
-				entityRef: 'capability:missing_b',
-				error: expect.any(String),
-			}),
-		])
-		expect(logMcpEventSpy).toHaveBeenCalledWith(
-			expect.objectContaining({
-				outcome: 'failure',
-				callerError: true,
-				errorName: 'EntityBatchError',
-			}),
-		)
-
-		logMcpEventSpy.mockClear()
-		mockPerformanceNow.mockReturnValueOnce(420).mockReturnValueOnce(430)
-		const malformedBatch = await handler({
-			entity: ['not-a-ref', 'thing:widget'],
-			conversationId: 'conv-batch-malformed',
-		})
-		expect(malformedBatch.isError).toBe(true)
-		expect(logMcpEventSpy).toHaveBeenCalledWith(
-			expect.objectContaining({
-				outcome: 'failure',
-				callerError: true,
-				errorName: 'EntityBatchError',
-				context: expect.objectContaining({
-					entityFailures: [
-						expect.objectContaining({
-							entityRef: 'not-a-ref',
-							callerError: true,
-						}),
-						expect.objectContaining({
-							entityRef: 'thing:widget',
-							callerError: true,
-						}),
-					],
-				}),
-			}),
-		)
-
-		logMcpEventSpy.mockClear()
-		mockModule.getSavedPackageById.mockImplementation(
-			async (_db: unknown, input: { packageId: string }) => ({
-				id: input.packageId,
-				userId: 'user-1',
-				name: input.packageId,
-				kodyId: input.packageId,
-				description: 'pkg',
-				tags: [],
-				searchText: 'pkg',
-				sourceId: `source-${input.packageId}`,
-				hasApp: false,
-				hidden: false,
-				isPrivate: true,
-				createdAt: '2026-01-01T00:00:00.000Z',
-				updatedAt: '2026-01-01T00:00:00.000Z',
-			}),
-		)
-		mockModule.loadPackageSourceBySourceId.mockRejectedValue(
-			new Error('D1 read failed'),
-		)
-		const { handler: authenticatedHandler } = await getSearchRegistration({
-			user: {
-				userId: 'user-1',
-				email: 'user@example.com',
-				displayName: 'User',
-				username: 'user',
-			},
-		})
-		mockPerformanceNow.mockReturnValueOnce(500).mockReturnValueOnce(510)
-		const platformFail = await authenticatedHandler({
-			entity: ['package:pkg-a', 'package:pkg-b'],
-			conversationId: 'conv-batch-platform-fail',
-		})
-		expect(platformFail.isError).toBe(true)
-		const platformFailureCall = logMcpEventSpy.mock.calls.find(
-			(call) =>
-				(call[0] as { errorName?: string }).errorName === 'EntityBatchError',
-		)
-		expect(platformFailureCall?.[0]).toMatchObject({
+	const allFailed = await handler({
+		entity: ['capability:missing_a', 'capability:missing_b'],
+		conversationId: 'conv-batch-all-failed',
+	})
+	expect(allFailed.isError).toBe(true)
+	expect(allFailed.structuredContent.error).toMatch(
+		/all entity lookups failed/i,
+	)
+	expect(allFailed.structuredContent.result).toEqual(
+		['capability:missing_a', 'capability:missing_b'].map((entityRef) =>
+			expect.objectContaining({ entityRef, error: expect.any(String) }),
+		),
+	)
+	expect(logMcpEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
 			outcome: 'failure',
+			callerError: true,
 			errorName: 'EntityBatchError',
-			cause: expect.objectContaining({
-				message: 'All entity lookups failed.',
-				cause: expect.any(AggregateError),
-			}),
+		}),
+	)
+
+	logMcpEventSpy.mockClear()
+	const malformedBatch = await handler({
+		entity: ['not-a-ref', 'thing:widget'],
+		conversationId: 'conv-batch-malformed',
+	})
+	expect(malformedBatch.isError).toBe(true)
+	expect(logMcpEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			outcome: 'failure',
+			callerError: true,
+			errorName: 'EntityBatchError',
 			context: expect.objectContaining({
-				entityFailures: expect.arrayContaining([
-					expect.objectContaining({
-						callerError: false,
-						error: expect.stringMatching(/D1 read failed/i),
-					}),
-				]),
+				entityFailures: ['not-a-ref', 'thing:widget'].map((entityRef) =>
+					expect.objectContaining({ entityRef, callerError: true }),
+				),
 			}),
-		})
-		expect(platformFailureCall?.[0]).not.toHaveProperty('callerError', true)
-	} finally {
-		logMcpEventSpy.mockRestore()
-		mockModule.getSavedPackageById.mockReset()
-		mockModule.loadPackageSourceBySourceId.mockReset()
-	}
+		}),
+	)
+
+	logMcpEventSpy.mockClear()
+	mockModule.getSavedPackageById.mockImplementation(
+		async (_db: unknown, input: { packageId: string }) =>
+			savedPackage(input.packageId, { isPrivate: true }),
+	)
+	mockModule.loadPackageSourceBySourceId.mockRejectedValue(
+		new Error('D1 read failed'),
+	)
+	const platformFail = await (
+		await getSearchHandler()
+	)({
+		entity: ['package:pkg-a', 'package:pkg-b'],
+		conversationId: 'conv-batch-platform-fail',
+	})
+	expect(platformFail.isError).toBe(true)
+	const platformFailureCall = logMcpEventSpy.mock.calls.find(
+		(call) =>
+			(call[0] as { errorName?: string }).errorName === 'EntityBatchError',
+	)
+	expect(platformFailureCall?.[0]).toMatchObject({
+		outcome: 'failure',
+		errorName: 'EntityBatchError',
+		cause: expect.objectContaining({
+			message: 'All entity lookups failed.',
+			cause: expect.any(AggregateError),
+		}),
+		context: expect.objectContaining({
+			entityFailures: expect.arrayContaining([
+				expect.objectContaining({
+					callerError: false,
+					error: expect.stringMatching(/D1 read failed/i),
+				}),
+			]),
+		}),
+	})
+	expect(platformFailureCall?.[0]).not.toHaveProperty('callerError', true)
+	logMcpEventSpy.mockRestore()
 })
 
 test('integration entity detail enriches related packages without bloating ranked search', async () => {
-	const user = {
-		userId: 'user-1',
-		email: 'user@example.com',
-		displayName: 'User',
-		username: 'user',
-	}
 	const now = '2026-01-01T00:00:00.000Z'
 	const githubJoinedIntegration = {
 		lane: 'user' as const,
@@ -1015,12 +788,12 @@ test('integration entity detail enriches related packages without bloating ranke
 			updatedAt: now,
 		},
 	}
-
-	vi.clearAllMocks()
-	mockModule.listValues.mockResolvedValue([])
-	mockModule.listJoinedIntegrations.mockResolvedValue([githubJoinedIntegration])
-	mockModule.getJoinedIntegration.mockResolvedValue(githubJoinedIntegration)
-	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
+	mockModule.listJoinedIntegrations.mockResolvedValue([
+		githubJoinedIntegration,
+	] as never)
+	mockModule.getJoinedIntegration.mockResolvedValue(
+		githubJoinedIntegration as never,
+	)
 	mockModule.searchCommunityListings.mockResolvedValue([
 		{
 			id: 'listing-github',
@@ -1039,50 +812,20 @@ test('integration entity detail enriches related packages without bloating ranke
 			iconCommit: 'abc123',
 			status: 'active',
 			trustedCommit: 'abc123',
-			trustedAt: '2026-01-01T00:00:00.000Z',
+			trustedAt: now,
 			trusted: true,
 			featuredAt: null,
 			featured: false,
-			createdAt: '2026-01-01T00:00:00.000Z',
-			updatedAt: '2026-01-01T00:00:00.000Z',
-			publishedAt: '2026-01-01T00:00:00.000Z',
+			createdAt: now,
+			updatedAt: now,
+			publishedAt: now,
 			averageStars: null,
 			ratingCount: 0,
 			averageAdaptationEffort: null,
 			forkCount: 0,
 		},
-		{
-			id: 'listing-cursor',
-			ownerUserId: 'owner-1',
-			packageId: 'pkg-cursor',
-			sourceId: 'source-cursor',
-			kodyId: 'cursor',
-			name: '@kody/cursor',
-			description: 'Cursor helpers that mention github.com in prose',
-			tags: ['cursor'],
-			category: 'utilities',
-			searchText: null,
-			readmeContent: null,
-			license: 'MIT',
-			pinnedCommit: 'abc123',
-			iconCommit: 'abc123',
-			status: 'active',
-			trustedCommit: 'abc123',
-			trustedAt: '2026-01-01T00:00:00.000Z',
-			trusted: true,
-			featuredAt: null,
-			featured: false,
-			createdAt: '2026-01-01T00:00:00.000Z',
-			updatedAt: '2026-01-01T00:00:00.000Z',
-			publishedAt: '2026-01-01T00:00:00.000Z',
-			averageStars: null,
-			ratingCount: 0,
-			averageAdaptationEffort: null,
-			forkCount: 0,
-		},
-	])
-
-	const { handler } = await getSearchRegistration({ user })
+	] as never)
+	const handler = await getSearchHandler()
 
 	const ranked = await handler({
 		query: 'github integration',
@@ -1090,14 +833,7 @@ test('integration entity detail enriches related packages without bloating ranke
 	})
 	expect(ranked.isError).toBeUndefined()
 	expect(mockModule.searchCommunityListings).not.toHaveBeenCalled()
-	const rankedResult = ranked.structuredContent.result as {
-		matches: Array<{
-			type: string
-			relatedPackageSuggestions?: unknown
-			entityRef?: string
-		}>
-	}
-	const rankedIntegration = rankedResult.matches.find(
+	const rankedIntegration = resultOf(ranked).matches.find(
 		(match) => match.type === 'integration',
 	)
 	expect(rankedIntegration).toMatchObject({
@@ -1131,70 +867,17 @@ test('integration entity detail enriches related packages without bloating ranke
 			}),
 		],
 	})
-	const suggestions = (
-		detail.structuredContent.result as {
-			relatedPackageSuggestions: Array<{ kodyId: string }>
-		}
-	).relatedPackageSuggestions
-	expect(suggestions.map((item) => item.kodyId)).toEqual(['github'])
 
-	vi.clearAllMocks()
-	mockModule.listValues.mockResolvedValue([])
-	mockModule.listJoinedIntegrations.mockResolvedValue([githubJoinedIntegration])
-	mockModule.getJoinedIntegration.mockResolvedValue(githubJoinedIntegration)
+	// A same-provider user package wins over community listings.
+	mockModule.searchCommunityListings.mockClear()
 	mockModule.listSavedPackagesByUserId.mockResolvedValue([
-		{
-			id: 'pkg-user-github',
-			userId: 'user-1',
+		savedPackage('pkg-user-github', {
 			name: '@user/github',
 			kodyId: 'github',
-			description: 'User github package',
 			tags: ['github'],
-			searchText: 'github helpers',
-			sourceId: 'source-user-github',
-			hasApp: false,
-			hidden: false,
-			isPrivate: false,
-			createdAt: '2026-01-01T00:00:00.000Z',
-			updatedAt: '2026-01-01T00:00:00.000Z',
-		},
-	])
-	mockModule.searchCommunityListings.mockResolvedValue([
-		{
-			id: 'listing-github',
-			ownerUserId: 'owner-1',
-			packageId: 'pkg-github',
-			sourceId: 'source-github',
-			kodyId: 'github',
-			name: '@kody/github',
-			description: 'GitHub helpers',
-			tags: ['github'],
-			category: 'integrations',
-			searchText: null,
-			readmeContent: null,
-			license: 'MIT',
-			pinnedCommit: 'abc123',
-			iconCommit: 'abc123',
-			status: 'active',
-			trustedCommit: 'abc123',
-			trustedAt: '2026-01-01T00:00:00.000Z',
-			trusted: true,
-			featuredAt: null,
-			featured: false,
-			createdAt: '2026-01-01T00:00:00.000Z',
-			updatedAt: '2026-01-01T00:00:00.000Z',
-			publishedAt: '2026-01-01T00:00:00.000Z',
-			averageStars: null,
-			ratingCount: 0,
-			averageAdaptationEffort: null,
-			forkCount: 0,
-		},
-	])
-
-	const { handler: userPackageHandler } = await getSearchRegistration({
-		user,
-	})
-	const userPackageDetail = await userPackageHandler({
+		}),
+	] as never)
+	const userPackageDetail = await handler({
 		entity: 'integration:github',
 		conversationId: 'conv-integration-user-pkg',
 	})
@@ -1211,44 +894,13 @@ test('integration entity detail enriches related packages without bloating ranke
 	})
 })
 
-test('search tool memory enrichment: timeout, rejection, and ack failure stay off the critical path', async () => {
+test('search tool memory enrichment: structured context, timeout, and rejection stay off the critical path', async () => {
 	consoleWarn.mockImplementation(() => {})
-	const user = {
-		userId: 'user-1',
-		email: 'user@example.com',
-		displayName: 'User',
-		username: 'user',
-	}
-	const memorySummary = {
-		memories: [
-			{
-				id: 'memory-1',
-				category: 'preference',
-				status: 'active',
-				subject: 'Search preference',
-				summary: 'Prefers compact search results',
-				details: '',
-				tags: ['search'],
-				sourceUris: [],
-				updatedAt: '2026-04-20T00:00:00.000Z',
-			},
-		],
-		suppressedCount: 0,
-		retrievalQuery: 'search docs',
-		retrieverResults: [],
-		retrieverWarnings: [],
-	}
+	const summary = memorySummary('memory-1', 'Prefers compact search results')
 
-	vi.clearAllMocks()
-	mockModule.runPackageRetrievers.mockResolvedValue({
-		results: [],
-		warnings: [],
-	})
-	mockModule.loadRelevantMemoriesForTool.mockResolvedValueOnce(memorySummary)
-	const { handler: structuredContextHandler } = await getSearchRegistration({
-		user,
-	})
-	const structuredContextResult = await structuredContextHandler({
+	mockModule.loadRelevantMemoriesForTool.mockResolvedValueOnce(summary)
+	const handler = await getSearchHandler()
+	const structuredContextResult = await handler({
 		query: 'search docs',
 		conversationId: 'conv-structured-memory',
 		memoryContext: { task: 'search docs' },
@@ -1259,39 +911,26 @@ test('search tool memory enrichment: timeout, rejection, and ack failure stay of
 			acknowledgeSurfaced: false,
 		}),
 	)
-	expect(
-		(
-			structuredContextResult.structuredContent.result as {
-				memories?: { surfaced: Array<{ id: string }> }
-			}
-		).memories?.surfaced,
-	).toEqual([expect.objectContaining({ id: 'memory-1' })])
+	expect(resultOf(structuredContextResult).memories?.surfaced).toEqual([
+		expect.objectContaining({ id: 'memory-1' }),
+	])
 
-	vi.clearAllMocks()
-	mockModule.runPackageRetrievers.mockResolvedValue({
-		results: [],
-		warnings: [],
-	})
-	mockModule.loadRelevantMemoriesForTool.mockImplementation(
+	mockModule.loadRelevantMemoriesForTool.mockClear()
+	mockModule.loadRelevantMemoriesForTool.mockImplementationOnce(
 		() =>
 			new Promise((resolve) => {
 				setTimeout(
-					() => resolve(memorySummary),
+					() => resolve(summary),
 					SEARCH_MEMORY_ENRICHMENT_BUDGET_MS + 250,
 				)
 			}),
 	)
-	const { handler: timeoutHandler } = await getSearchRegistration({ user })
-	const timedOut = await timeoutHandler({
-		query: 'search docs',
-		conversationId: 'conv-memory-budget',
-	})
-	const timedOutResult = timedOut.structuredContent.result as {
-		matches: Array<{ type: string }>
-		memories?: unknown
-		warnings: Array<string>
-		phaseTimings?: Record<string, unknown>
-	}
+	const timedOutResult = resultOf(
+		await handler({
+			query: 'search docs',
+			conversationId: 'conv-memory-budget',
+		}),
+	)
 	expect(timedOutResult.matches.length).toBeGreaterThan(0)
 	expect(timedOutResult.memories).toBeUndefined()
 	expect(timedOutResult.warnings).toContain(memoryEnrichmentSkippedWarning)
@@ -1307,31 +946,21 @@ test('search tool memory enrichment: timeout, rejection, and ack failure stay of
 		expect.objectContaining({ acknowledgeSurfaced: false }),
 	)
 
-	vi.clearAllMocks()
-	consoleWarn.mockImplementation(() => {})
 	const unhandled: Array<unknown> = []
 	const onUnhandled = (reason: unknown) => {
 		unhandled.push(reason)
 	}
 	process.on('unhandledRejection', onUnhandled)
 	try {
-		mockModule.runPackageRetrievers.mockResolvedValue({
-			results: [],
-			warnings: [],
-		})
 		mockModule.loadRelevantMemoriesForTool.mockRejectedValueOnce(
 			new Error('memory store unavailable'),
 		)
-		const { handler } = await getSearchRegistration({ user })
-		const rejected = await handler({
-			query: 'search docs',
-			conversationId: 'conv-memory-reject',
-		})
-		const rejectedResult = rejected.structuredContent.result as {
-			memories?: unknown
-			warnings: Array<string>
-			phaseTimings?: Record<string, unknown>
-		}
+		const rejectedResult = resultOf(
+			await handler({
+				query: 'search docs',
+				conversationId: 'conv-memory-reject',
+			}),
+		)
 		expect(rejectedResult.memories).toBeUndefined()
 		expect(rejectedResult.warnings).toContain(memoryEnrichmentSkippedWarning)
 		expect(rejectedResult.phaseTimings).toEqual(
@@ -1349,100 +978,48 @@ test('search tool memory enrichment: timeout, rejection, and ack failure stay of
 }, 10_000)
 
 test('search reserves maxResponseSize for memories and still enriches from memoryContext', async () => {
-	vi.clearAllMocks()
 	consoleWarn.mockImplementation(() => {})
 	const longSummary =
 		'Never send email unless that exact message is requested. '
 			.repeat(40)
 			.trim()
-	const memorySummary = {
-		memories: [
-			{
-				id: 'memory-draft-only',
-				category: 'preference',
-				status: 'active',
-				subject: 'Draft only',
-				summary: longSummary,
-				details: 'Long details must stay out of the reserved memory block.',
-				tags: ['email'],
-				sourceUris: [],
-				updatedAt: '2026-04-20T00:00:00.000Z',
-			},
-		],
-		suppressedCount: 0,
-		retrievalQuery: 'draft an email',
-		retrieverResults: [],
-		retrieverWarnings: [],
-	}
-	mockModule.loadRelevantMemoriesForTool.mockResolvedValue(memorySummary)
-	const user = {
-		userId: 'user-1',
-		email: 'user@example.com',
-		displayName: 'User',
-		username: 'user',
-	}
-	const { handler } = await getSearchRegistration({ user })
+	mockModule.loadRelevantMemoriesForTool.mockResolvedValue(
+		memorySummary('memory-draft-only', longSummary, {
+			details: 'Long details must stay out of the reserved memory block.',
+		}) as never,
+	)
+	const handler = await getSearchHandler()
 
-	const maxResponseSize = 2_000
 	const tightResponse = await handler({
 		query: 'search docs',
 		conversationId: 'conv-memory-budget-reserve',
-		maxResponseSize,
+		maxResponseSize: 2_000,
 	})
 	expect(tightResponse.isError).toBeUndefined()
-	const tightMemoryBlock = tightResponse.content.find((item) =>
-		item.text.includes('## Relevant memories'),
-	)
-	expect(tightMemoryBlock?.text).toContain(longSummary)
-	const tightResult = tightResponse.structuredContent.result as {
-		matches: Array<{ type: string }>
-		guidance?: string
-		memories?: { surfaced: Array<{ id: string; summary: string }> }
-		telemetry?: { responseTrimmed?: boolean; trimmedMatchCount?: number }
-	}
+	expect(
+		tightResponse.content.find((item) =>
+			item.text.includes('## Relevant memories'),
+		)?.text,
+	).toContain(longSummary)
+	const tightResult = resultOf(tightResponse)
 	expect(tightResult.memories?.surfaced).toEqual([
-		expect.objectContaining({
-			id: 'memory-draft-only',
-			summary: longSummary,
-		}),
+		expect.objectContaining({ id: 'memory-draft-only', summary: longSummary }),
 	])
 	expect(tightResult.telemetry?.responseTrimmed).toBe(true)
 	expect(tightResult.telemetry?.trimmedMatchCount).toBeGreaterThan(0)
 	expect(tightResult.matches).toEqual([])
 	expect(tightResult.guidance).toBeUndefined()
-	const tightText = tightResponse.content.map((item) => item.text).join('\n')
-	expect(tightText).not.toContain('## Recommended next step')
-	expect(tightText).not.toMatch(/inlined export call contract/i)
+	expect(textOf(tightResponse)).not.toContain('## Recommended next step')
+	expect(textOf(tightResponse)).not.toMatch(/inlined export call contract/i)
 
-	vi.clearAllMocks()
+	mockModule.loadRelevantMemoriesForTool.mockClear()
 	mockModule.getCapabilityRegistryForContext.mockResolvedValueOnce({
 		capabilityDomains: [
-			{
-				name: 'meta',
-				description: 'Search and registry metadata.',
-			},
+			{ name: 'meta', description: 'Search and registry metadata.' },
 		],
-		capabilitySpecs: {
-			search_docs: {
-				name: 'search_docs',
-				description: 'Search docs capability',
-				domain: 'meta',
-				keywords: [],
-				inputFields: [],
-				requiredInputFields: [],
-				outputFields: [],
-				readOnly: true,
-				idempotent: true,
-				destructive: false,
-				source: 'builtin',
-				inputSchema: { type: 'object', properties: {} },
-				inputTypeDefinition: 'type Input = {}',
-			},
-		},
-	})
-	mockModule.loadRelevantMemoriesForTool.mockResolvedValueOnce(memorySummary)
-	const { handler: whitespaceHandler } = await getSearchRegistration({ user })
-	const whitespaceResponse = await whitespaceHandler({
+		capabilitySpecs: { search_docs: capabilitySpec('search_docs') },
+	} as never)
+	const whitespaceResponse = await handler({
 		query: '   ',
 		conversationId: 'conv-whitespace-memory-context',
 		memoryContext: { task: 'draft an email' },
@@ -1454,36 +1031,25 @@ test('search reserves maxResponseSize for memories and still enriches from memor
 			acknowledgeSurfaced: false,
 		}),
 	)
-	const whitespaceText = whitespaceResponse.content
-		.map((item) => item.text)
-		.join('\n')
-	expect(whitespaceText).toContain('## Relevant memories')
-	expect(whitespaceText).toContain(longSummary)
-	expect(
-		(
-			whitespaceResponse.structuredContent.result as {
-				memories?: { surfaced: Array<{ id: string }> }
-			}
-		).memories?.surfaced,
-	).toEqual([expect.objectContaining({ id: 'memory-draft-only' })])
+	expect(textOf(whitespaceResponse)).toContain('## Relevant memories')
+	expect(textOf(whitespaceResponse)).toContain(longSummary)
+	expect(resultOf(whitespaceResponse).memories?.surfaced).toEqual([
+		expect.objectContaining({ id: 'memory-draft-only' }),
+	])
 })
 
-test('search tool domain param: browse, reject unknown, and scope ranked results', async () => {
-	vi.clearAllMocks()
+test('search tool domain param: browse, reject unknown, scope ranked results, and index empty discovery', async () => {
 	consoleWarn.mockImplementation(() => {})
-	const handler = await getSearchHandler()
+	const anonymous = await getSearchHandler(null)
 
 	// Whitespace-only queries fall back to domain browsing (with its limit).
-	const browseResponse = await handler({
+	const browseResponse = await anonymous({
 		query: '   ',
 		domain: 'meta',
 		conversationId: 'conv-domain-browse',
 	})
 	expect(browseResponse.isError).toBeUndefined()
-	const browseResult = browseResponse.structuredContent.result as {
-		matches: Array<{ type: string; id?: string; domain?: string }>
-	}
-	expect(browseResult.matches).toEqual([
+	expect(resultOf(browseResponse).matches).toEqual([
 		expect.objectContaining({
 			type: 'capability',
 			id: 'search_docs',
@@ -1492,7 +1058,7 @@ test('search tool domain param: browse, reject unknown, and scope ranked results
 	])
 	expect(mockModule.runPackageRetrievers).not.toHaveBeenCalled()
 
-	const unknownResponse = await handler({
+	const unknownResponse = await anonymous({
 		domain: 'nope',
 		conversationId: 'conv-domain-unknown',
 	})
@@ -1503,65 +1069,15 @@ test('search tool domain param: browse, reject unknown, and scope ranked results
 	expect(unknownResponse.structuredContent.error).toContain('meta')
 	expect(mockModule.loadRelevantMemoriesForTool).not.toHaveBeenCalled()
 
-	mockModule.listSavedPackagesByUserId.mockResolvedValue(createSavedPackages())
-	const { handler: scopedHandler } = await getSearchRegistration({
-		user: {
-			userId: 'user-1',
-			email: 'user@example.com',
-			displayName: 'User',
-			username: 'user',
-		},
-	})
-	const scopedResponse = await scopedHandler({
-		query: 'search docs',
-		domain: 'meta',
-		conversationId: 'conv-domain-scoped',
-	})
-	expect(scopedResponse.isError).toBeUndefined()
-	const scopedResult = scopedResponse.structuredContent.result as {
-		matches: Array<{ type: string; domain?: string }>
-	}
-	expect(scopedResult.matches.length).toBeGreaterThan(0)
-	for (const match of scopedResult.matches) {
-		expect(match).toMatchObject({ type: 'capability', domain: 'meta' })
-	}
-	expect(mockModule.loadRelevantMemoriesForTool).toHaveBeenCalled()
-	expect(mockModule.runPackageRetrievers).not.toHaveBeenCalled()
-})
-
-test('empty discovery returns a counted domain index without memory enrichment', async () => {
-	vi.clearAllMocks()
 	mockModule.getCapabilityRegistryForContext.mockResolvedValueOnce({
 		capabilityDomains: [
-			{
-				name: 'meta',
-				description: 'Search and registry metadata.',
-			},
+			{ name: 'meta', description: 'Search and registry metadata.' },
 		],
-		capabilitySpecs: {
-			search_docs: {
-				name: 'search_docs',
-				description: 'Search docs capability',
-				domain: 'meta',
-				keywords: [],
-				inputFields: [],
-				requiredInputFields: [],
-				outputFields: [],
-				readOnly: true,
-				idempotent: true,
-				destructive: false,
-				source: 'builtin',
-				inputSchema: { type: 'object', properties: {} },
-				inputTypeDefinition: 'type Input = {}',
-			},
-		},
-	})
-	const { handler } = await getSearchRegistration({ user: null })
-
-	const response = await handler({ conversationId: 'conv-empty-index' })
-	// structuredContent is asserted next; this only checks the success flag.
-	expect(response.isError).toBeUndefined()
-	expect(response.structuredContent.result).toMatchObject({
+		capabilitySpecs: { search_docs: capabilitySpec('search_docs') },
+	} as never)
+	const emptyIndex = await anonymous({ conversationId: 'conv-empty-index' })
+	expect(emptyIndex.isError).toBeUndefined()
+	expect(emptyIndex.structuredContent.result).toMatchObject({
 		matches: [
 			{
 				type: 'domain',
@@ -1573,77 +1089,71 @@ test('empty discovery returns a counted domain index without memory enrichment',
 	})
 	expect(mockModule.loadRelevantMemoriesForTool).not.toHaveBeenCalled()
 	expect(mockModule.runPackageRetrievers).not.toHaveBeenCalled()
+
+	mockModule.listSavedPackagesByUserId.mockResolvedValue(
+		createSavedPackages() as never,
+	)
+	const scopedResponse = await (
+		await getSearchHandler()
+	)({
+		query: 'search docs',
+		domain: 'meta',
+		conversationId: 'conv-domain-scoped',
+	})
+	expect(scopedResponse.isError).toBeUndefined()
+	const scopedMatches = resultOf(scopedResponse).matches
+	expect(scopedMatches.length).toBeGreaterThan(0)
+	for (const match of scopedMatches) {
+		expect(match).toMatchObject({ type: 'capability', domain: 'meta' })
+	}
+	expect(mockModule.loadRelevantMemoriesForTool).toHaveBeenCalled()
+	expect(mockModule.runPackageRetrievers).not.toHaveBeenCalled()
 })
 
 test('provider-name search ranks a wrapping package and MCP server without an operation flood', async () => {
-	vi.clearAllMocks()
-	const mcpSpec = (name: string, toolName: string, description: string) => ({
-		name,
-		description,
-		domain: 'mcp:github',
-		keywords: ['github'],
-		inputFields: [],
-		requiredInputFields: [],
-		outputFields: [],
-		readOnly: true,
-		idempotent: true,
-		destructive: false,
-		source: 'mcp-server' as const,
-		mcpServer: {
-			serverId: 'github',
-			serverName: 'github',
-			kodyName: 'github',
-			mcpToolName: toolName,
-			toolName,
-		},
-		inputSchema: { type: 'object' as const, properties: {} },
-		inputTypeDefinition: 'type Input = {}',
-	})
+	const githubSpec = (toolName: string, description: string) =>
+		capabilitySpec(`mcp:github:${toolName}`, {
+			description,
+			domain: 'mcp:github',
+			keywords: ['github'],
+			source: 'mcp-server',
+			mcpServer: {
+				serverId: 'github',
+				serverName: 'github',
+				kodyName: 'github',
+				mcpToolName: toolName,
+				toolName,
+			},
+		})
 	mockModule.getCapabilityRegistryForContext.mockResolvedValue({
 		capabilityDomains: [
-			{
-				name: 'mcp:github',
-				description: 'GitHub MCP operations.',
-			},
+			{ name: 'mcp:github', description: 'GitHub MCP operations.' },
 		],
 		capabilitySpecs: {
-			'mcp:github:listrepositories': mcpSpec(
-				'mcp:github:listrepositories',
+			'mcp:github:listrepositories': githubSpec(
 				'listrepositories',
 				'GET /user/repos',
 			),
-			'mcp:github:createrepository': mcpSpec(
-				'mcp:github:createrepository',
+			'mcp:github:createrepository': githubSpec(
 				'createrepository',
 				'POST /user/repos',
 			),
 		},
-	})
+	} as never)
 	mockModule.listSavedPackagesByUserId.mockResolvedValue([
-		{
-			id: 'pkg-github-wrapper',
-			userId: 'user-1',
+		savedPackage('pkg-github-wrapper', {
 			name: '@user/github',
 			kodyId: 'github',
 			description: 'Safer GitHub workflows',
 			tags: ['github'],
 			searchText: 'github provider wrapper',
-			sourceId: 'source-github-wrapper',
-			hasApp: false,
-			hidden: false,
-			isPrivate: false,
-			createdAt: '2026-01-01T00:00:00.000Z',
-			updatedAt: '2026-01-01T00:00:00.000Z',
-		},
-	])
+		}),
+	] as never)
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
 		manifest: {
 			name: '@user/github',
 			exports: { '.': './index.ts' },
-			kody: {
-				id: 'github',
-				description: 'Safer GitHub workflows',
-			},
+			kody: { id: 'github', description: 'Safer GitHub workflows' },
 		},
 		files: {
 			'package.json': '{}',
@@ -1652,25 +1162,11 @@ test('provider-name search ranks a wrapping package and MCP server without an op
 			'index.ts': 'export default function run() {}',
 		},
 	})
-	const { handler } = await getSearchRegistration({
-		user: {
-			userId: 'user-1',
-			email: 'user@example.com',
-			displayName: 'User',
-			username: 'user',
-		},
-	})
+	const handler = await getSearchHandler()
 
-	const response = await handler({
-		query: 'github',
-		conversationId: 'conv-provider',
-	})
-	const result = response.structuredContent.result as {
-		matches: Array<{
-			type: string
-			wrappingPackage?: { kodyId: string } | null
-		}>
-	}
+	const result = resultOf(
+		await handler({ query: 'github', conversationId: 'conv-provider' }),
+	)
 	expect(result.matches.some((match) => match.type === 'guide')).toBe(true)
 	expect(
 		result.matches
@@ -1684,9 +1180,6 @@ test('provider-name search ranks a wrapping package and MCP server without an op
 		entityRef: 'mcp-server:github',
 		wrappingPackage: { kodyId: 'github' },
 	})
-	expect(
-		result.matches.filter((match) => match.type === 'capability'),
-	).toHaveLength(0)
 
 	const entityResponse = await handler({
 		entity: 'mcp-server:github',

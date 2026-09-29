@@ -43,6 +43,87 @@ function createPackageExportProjection(
 	}
 }
 
+const exportFn = (subpath: string, functionName: string, description: string) =>
+	createPackageExportProjection(subpath, {
+		description,
+		functionName,
+		functionDescription: description,
+	})
+
+type ExportProjection = ReturnType<typeof createPackageExportProjection>
+
+function packageRow({
+	id,
+	kodyId,
+	description,
+	tags,
+	searchText = null,
+	exports = [],
+	...rest
+}: {
+	id: string
+	kodyId: string
+	description: string
+	tags: Array<string>
+	searchText?: string | null
+	exports?: Array<ExportProjection>
+} & Pick<Partial<PackageSearchRow>, 'hydrate' | 'readmeSnippet'>) {
+	const name = `@kody/${kodyId}`
+	const flags = { hasApp: false, hidden: false, isPrivate: false }
+	return {
+		record: {
+			id,
+			userId: 'user-1',
+			name,
+			kodyId,
+			description,
+			tags,
+			searchText,
+			sourceId: `source-${id}`,
+			...flags,
+			lockedAt: null,
+			createdAt: '2026-04-20T00:00:00.000Z',
+			updatedAt: '2026-04-20T00:00:00.000Z',
+		},
+		listingAhead: null,
+		projection: {
+			name,
+			kodyId,
+			description,
+			tags,
+			searchText,
+			...flags,
+			appEntry: null,
+			exports,
+			jobs: [],
+			subscriptions: [],
+			retrievers: [],
+			webhooks: [],
+		},
+		...rest,
+	} satisfies PackageSearchRow
+}
+
+function searchPackages(
+	query: string,
+	packageRows: Array<PackageSearchRow>,
+	limit = 5,
+) {
+	return searchUnified({
+		env: {} as Env,
+		query,
+		userId: 'user-1',
+		limit,
+		registry: buildCapabilityRegistry([]),
+		optionalRows: {
+			packageRows,
+			userSecretRows: [],
+			userValueRows: [],
+			userIntegrationRows: [],
+		},
+	})
+}
+
 function createActionMatch(
 	subpath: string,
 	score: number,
@@ -76,16 +157,12 @@ test('buildPackageActionMatches folds parent tags into export matched terms', ()
 			tags: ['twitter', 'microblog'],
 		}),
 		exports: [
-			createPackageExportProjection('./create-status', {
-				description: 'Create a new status update.',
-				functionName: 'createStatus',
-				functionDescription: 'Create a new status update.',
-			}),
-			createPackageExportProjection('./like-status', {
-				description: 'Like an existing status.',
-				functionName: 'likeStatus',
-				functionDescription: 'Like an existing status.',
-			}),
+			exportFn(
+				'./create-status',
+				'createStatus',
+				'Create a new status update.',
+			),
+			exportFn('./like-status', 'likeStatus', 'Like an existing status.'),
 		],
 	})
 	expect(matches.length).toBeGreaterThan(0)
@@ -97,132 +174,90 @@ test('buildPackageActionMatches folds parent tags into export matched terms', ()
 	)
 })
 
-test('shouldPromotePackageExportCandidate rejects parent-identity-only matches', () => {
-	expect(
-		shouldPromotePackageExportCandidate({
-			subpath: './identity-only',
-			description: 'identity only',
-			typeDefinition: null,
-			functions: [
-				{ name: 'identityOnly', description: null, typeDefinition: null },
-			],
-			score: 0.8,
-			matchedTerms: ['twitter', 'alpha'],
-			exportLocalMatchedTermCount: 0,
-		}),
-	).toBe(false)
-})
-
-test('shouldPromotePackageExportCandidate requires multi-term or strong score', () => {
-	expect(
-		shouldPromotePackageExportCandidate({
-			subpath: './weak',
-			description: 'weak',
-			typeDefinition: null,
-			functions: [{ name: 'weak', description: null, typeDefinition: null }],
-			score: 0.2,
-			matchedTerms: ['weak'],
-		}),
-	).toBe(false)
-	expect(
-		shouldPromotePackageExportCandidate({
-			subpath: './multi',
-			description: 'multi',
-			typeDefinition: null,
-			functions: [{ name: 'multi', description: null, typeDefinition: null }],
-			score: 0.2,
-			matchedTerms: ['bond', 'shades'],
-		}),
-	).toBe(true)
-})
-
-test('selectPromotedPackageExportCandidates promotes close runners-up', () => {
-	const top = createActionMatch('./create-status', 0.82, [
-		'twitter',
-		'create',
-		'status',
-	])
-	const closeSecond = createActionMatch('./send-status', 0.78, [
-		'twitter',
-		'send',
-		'status',
-	])
-	const closeThird = createActionMatch('./like-status', 0.74, [
-		'twitter',
-		'like',
-		'status',
-	])
-	expect(
-		selectPromotedPackageExportCandidates([top, closeSecond, closeThird]).map(
-			(match) => match.subpath,
-		),
-	).toEqual(['./create-status', './send-status', './like-status'])
-})
-
-test('selectPromotedPackageExportCandidates keeps a single winner on a clear gap', () => {
-	const top = createActionMatch('./bond-area-shades', 0.9, [
-		'bond',
-		'area',
-		'shades',
-	])
-	const distant = createActionMatch('./other-export', 0.55, ['bond', 'other'])
-	expect(
-		selectPromotedPackageExportCandidates([top, distant]).map(
-			(match) => match.subpath,
-		),
-	).toEqual(['./bond-area-shades'])
-})
-
-test('selectPromotedPackageExportCandidates can promote beyond nested display top-3', () => {
-	const weakDisplay = [
-		createActionMatch('./weak-a', 0.4, ['alpha'], 1),
-		createActionMatch('./weak-b', 0.39, ['alpha'], 1),
-		createActionMatch('./weak-c', 0.38, ['alpha'], 1),
+test('shouldPromotePackageExportCandidate rejects parent-identity-only and requires multi-term or strong score', () => {
+	const cases: Array<[PackageActionMatch, boolean]> = [
+		[createActionMatch('./identity-only', 0.8, ['twitter', 'alpha'], 0), false],
+		[createActionMatch('./weak', 0.2, ['weak']), false],
+		[createActionMatch('./multi', 0.2, ['bond', 'shades']), true],
 	]
-	const strongFourth = createActionMatch(
-		'./create-status',
-		0.5,
-		['twitter', 'create', 'status'],
-		2,
-	)
-	// Nested display would only keep the three weaks; promotion must still
-	// see the stronger multi-term export when the full list is uncapped.
 	expect(
-		selectPromotedPackageExportCandidates([...weakDisplay, strongFourth]).map(
-			(match) => match.subpath,
-		),
-	).toEqual(['./create-status'])
+		cases.map(([match]) => [
+			match.subpath,
+			shouldPromotePackageExportCandidate(match),
+		]),
+	).toEqual(cases.map(([match, promoted]) => [match.subpath, promoted]))
+})
+
+test('selectPromotedPackageExportCandidates promotes close runners-up, keeps a clear winner, and looks past the display top-3', () => {
+	const cases: Array<[string, Array<PackageActionMatch>, Array<string>]> = [
+		[
+			'close runners-up',
+			[
+				createActionMatch('./create-status', 0.82, [
+					'twitter',
+					'create',
+					'status',
+				]),
+				createActionMatch('./send-status', 0.78, ['twitter', 'send', 'status']),
+				createActionMatch('./like-status', 0.74, ['twitter', 'like', 'status']),
+			],
+			['./create-status', './send-status', './like-status'],
+		],
+		[
+			'clear gap',
+			[
+				createActionMatch('./bond-area-shades', 0.9, [
+					'bond',
+					'area',
+					'shades',
+				]),
+				createActionMatch('./other-export', 0.55, ['bond', 'other']),
+			],
+			['./bond-area-shades'],
+		],
+		// Nested display would only keep the three weaks; promotion must still
+		// see the stronger multi-term export when the full list is uncapped.
+		[
+			'beyond display top-3',
+			[
+				createActionMatch('./weak-a', 0.4, ['alpha'], 1),
+				createActionMatch('./weak-b', 0.39, ['alpha'], 1),
+				createActionMatch('./weak-c', 0.38, ['alpha'], 1),
+				createActionMatch(
+					'./create-status',
+					0.5,
+					['twitter', 'create', 'status'],
+					2,
+				),
+			],
+			['./create-status'],
+		],
+	]
+	expect(
+		cases.map(([name, matches]) => [
+			name,
+			selectPromotedPackageExportCandidates(matches).map(
+				(match) => match.subpath,
+			),
+		]),
+	).toEqual(cases.map(([name, , expected]) => [name, expected]))
 })
 
 test('searchUnified promotes strong package exports into first-pass ranked hits', async () => {
-	const registry = buildCapabilityRegistry([])
-	const packageRow = {
-		record: {
-			id: 'pkg-alpha',
-			userId: 'user-1',
-			name: '@kody/pkg-alpha',
-			kodyId: 'pkg-alpha',
-			description: 'Alpha helpers.',
-			tags: ['alpha', 'module-a'],
-			searchText: 'module-a module-b helpers',
-			sourceId: 'source-alpha',
-			hasApp: false,
-			hidden: false,
-			isPrivate: false,
-			createdAt: '2026-04-20T00:00:00.000Z',
-			updatedAt: '2026-04-20T00:00:00.000Z',
-		},
-		listingAhead: null,
-		projection: {
-			name: '@kody/pkg-alpha',
-			kodyId: 'pkg-alpha',
-			description: 'Alpha helpers.',
-			tags: ['alpha', 'module-a'],
-			searchText: 'module-a module-b helpers',
-			hasApp: false,
-			hidden: false,
-			isPrivate: false,
-			appEntry: null,
+	const alpha = {
+		id: 'pkg-alpha',
+		kodyId: 'pkg-alpha',
+		description: 'Alpha helpers.',
+		tags: ['alpha', 'module-a'],
+		searchText: 'module-a module-b helpers',
+	}
+	const runTaskAction = expect.objectContaining({
+		subpath: './module-a',
+		functions: [expect.objectContaining({ name: 'runTask' })],
+	})
+	const result = await searchPackages('module-a run task', [
+		packageRow({
+			...alpha,
 			exports: [
 				createPackageExportProjection('./module-a', {
 					description: 'Run module-a task.',
@@ -231,351 +266,128 @@ test('searchUnified promotes strong package exports into first-pass ranked hits'
 					typeDefinition:
 						'export declare function runTask(params: TaskParams): Promise<JsonObject>',
 				}),
-				createPackageExportProjection('./module-b', {
-					description: 'Search module-b records.',
-					functionName: 'searchRecords',
-					functionDescription: 'Search module-b records.',
-				}),
+				exportFn('./module-b', 'searchRecords', 'Search module-b records.'),
 			],
-			jobs: [],
-			subscriptions: [],
-			retrievers: [],
-			webhooks: [],
-		},
-	}
-	const result = await searchUnified({
-		env: {} as Env,
-		query: 'module-a run task',
-		userId: 'user-1',
-		limit: 5,
-		registry,
-		optionalRows: {
-			packageRows: [packageRow],
-			userSecretRows: [],
-			userValueRows: [],
-			userIntegrationRows: [],
-		},
-	})
-
-	const exportMatch = result.matches.find(
-		(match) => match.type === 'package' && match.exportSubpath === './module-a',
+		}),
+	])
+	const alphaMatches = result.matches.flatMap((match) =>
+		match.type === 'package' && match.kodyId === 'pkg-alpha' ? [match] : [],
 	)
-	expect(exportMatch).toMatchObject({
+	expect(
+		alphaMatches.find((match) => match.exportSubpath === './module-a'),
+	).toMatchObject({
 		type: 'package',
 		kodyId: 'pkg-alpha',
 		exportSubpath: './module-a',
-		actionMatches: [
-			expect.objectContaining({
-				subpath: './module-a',
-				functions: [
-					expect.objectContaining({
-						name: 'runTask',
-					}),
-				],
-			}),
-		],
+		actionMatches: [runTaskAction],
 	})
-	const packageIndexMatch = result.matches.find(
-		(match) =>
-			match.type === 'package' &&
-			match.kodyId === 'pkg-alpha' &&
-			match.exportSubpath == null,
+	const packageIndexMatch = alphaMatches.find(
+		(match) => match.exportSubpath == null,
 	)
-	expect(packageIndexMatch).toMatchObject({
-		type: 'package',
-		kodyId: 'pkg-alpha',
-	})
+	expect(packageIndexMatch).toMatchObject({ type: 'package' })
 	expect(packageIndexMatch?.actionMatches).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				subpath: './module-a',
-				functions: [
-					expect.objectContaining({
-						name: 'runTask',
-					}),
-				],
-			}),
-		]),
+		expect.arrayContaining([runTaskAction]),
 	)
-	const broadQuery = await searchUnified({
-		env: {} as Env,
-		query: 'alpha helpers overview',
-		userId: 'user-1',
-		limit: 5,
-		registry,
-		optionalRows: {
-			packageRows: [
-				{
-					...packageRow,
-					projection: {
-						...packageRow.projection,
-						exports: [
-							createPackageExportProjection('./module-a', {
-								description: 'Run module-a task.',
-								functionName: 'runTask',
-							}),
-							createPackageExportProjection('./unrelated-widget', {
-								description: 'Spin the unrelated widget thrice.',
-								functionName: 'spinWidget',
-								functionDescription: 'Spin the unrelated widget thrice.',
-							}),
-						],
-					},
-				},
+
+	const broadQuery = await searchPackages('alpha helpers overview', [
+		packageRow({
+			...alpha,
+			exports: [
+				createPackageExportProjection('./module-a', {
+					description: 'Run module-a task.',
+					functionName: 'runTask',
+				}),
+				exportFn(
+					'./unrelated-widget',
+					'spinWidget',
+					'Spin the unrelated widget thrice.',
+				),
 			],
-			userSecretRows: [],
-			userValueRows: [],
-			userIntegrationRows: [],
-		},
-	})
+		}),
+	])
 	const broadPackageMatches = broadQuery.matches.filter(
 		(match) => match.type === 'package',
 	)
 	expect(
 		broadPackageMatches.every((match) => match.exportSubpath == null),
 	).toBe(true)
-	const broadPackageMatch = broadPackageMatches.find(
-		(match) => match.kodyId === 'pkg-alpha',
-	)
-	expect(broadPackageMatch).toMatchObject({
-		type: 'package',
-		kodyId: 'pkg-alpha',
-		actionMatches: [],
-	})
+	expect(
+		broadPackageMatches.find((match) => match.kodyId === 'pkg-alpha'),
+	).toMatchObject({ type: 'package', kodyId: 'pkg-alpha', actionMatches: [] })
 })
 
-test('searchUnified promotes close sibling exports when package alias terms match', async () => {
-	const registry = buildCapabilityRegistry([])
-	const packageRow = {
-		record: {
-			id: 'pkg-social',
-			userId: 'user-1',
-			name: '@kody/social-post',
-			kodyId: 'social-post',
-			description: 'Social status helpers.',
-			tags: ['twitter', 'microblog'],
-			searchText: 'status create like send',
-			sourceId: 'source-social',
-			hasApp: false,
-			hidden: false,
-			isPrivate: false,
-			createdAt: '2026-04-20T00:00:00.000Z',
-			updatedAt: '2026-04-20T00:00:00.000Z',
-		},
-		listingAhead: null,
-		projection: {
-			name: '@kody/social-post',
-			kodyId: 'social-post',
-			description: 'Social status helpers.',
-			tags: ['twitter', 'microblog'],
-			searchText: 'status create like send',
-			hasApp: false,
-			hidden: false,
-			isPrivate: false,
-			appEntry: null,
-			exports: [
-				createPackageExportProjection('./create-status', {
-					description: 'Create a new status update on the timeline.',
-					functionName: 'createStatus',
-					functionDescription: 'Create a new status update on the timeline.',
-				}),
-				createPackageExportProjection('./like-status', {
-					description: 'Like an existing status on the timeline.',
-					functionName: 'likeStatus',
-					functionDescription: 'Like an existing status on the timeline.',
-				}),
-				createPackageExportProjection('./send-direct', {
-					description: 'Send a direct message to a recipient.',
-					functionName: 'sendDirect',
-					functionDescription: 'Send a direct message to a recipient.',
-				}),
-			],
-			jobs: [],
-			subscriptions: [],
-			retrievers: [],
-			webhooks: [],
-		},
-	}
+test('searchUnified promotes close sibling exports on alias terms and surfaces the operate export from parent tags', async () => {
+	const socialRow = packageRow({
+		id: 'pkg-social',
+		kodyId: 'social-post',
+		description: 'Social status helpers.',
+		tags: ['twitter', 'microblog'],
+		searchText: 'status create like send',
+		exports: [
+			exportFn(
+				'./create-status',
+				'createStatus',
+				'Create a new status update on the timeline.',
+			),
+			exportFn(
+				'./like-status',
+				'likeStatus',
+				'Like an existing status on the timeline.',
+			),
+			exportFn(
+				'./send-direct',
+				'sendDirect',
+				'Send a direct message to a recipient.',
+			),
+		],
+	})
+	const exportSubpathsFor = async (query: string) =>
+		(await searchPackages(query, [socialRow], 8)).matches.flatMap((match) =>
+			match.type === 'package' &&
+			match.kodyId === 'social-post' &&
+			match.exportSubpath != null
+				? [match.exportSubpath]
+				: [],
+		)
+
 	// Alias + shared export terms (no operate verb) so create/like stay near-tied.
-	const result = await searchUnified({
-		env: {} as Env,
-		query: 'twitter status',
-		userId: 'user-1',
-		limit: 8,
-		registry,
-		optionalRows: {
-			packageRows: [packageRow],
-			userSecretRows: [],
-			userValueRows: [],
-			userIntegrationRows: [],
-		},
-	})
-	const exportSubpaths = result.matches
-		.filter(
-			(match) =>
-				match.type === 'package' &&
-				match.kodyId === 'social-post' &&
-				match.exportSubpath != null,
-		)
-		.map((match) => (match.type === 'package' ? match.exportSubpath : null))
-	expect(exportSubpaths).toContain('./create-status')
-	expect(exportSubpaths).toContain('./like-status')
-	expect(exportSubpaths.length).toBeGreaterThanOrEqual(2)
-})
-
-test('searchUnified surfaces operate export when package alias is only on parent tags', async () => {
-	const registry = buildCapabilityRegistry([])
-	const packageRow = {
-		record: {
-			id: 'pkg-social',
-			userId: 'user-1',
-			name: '@kody/social-post',
-			kodyId: 'social-post',
-			description: 'Social status helpers.',
-			tags: ['twitter', 'microblog'],
-			searchText: 'status create like send',
-			sourceId: 'source-social',
-			hasApp: false,
-			hidden: false,
-			isPrivate: false,
-			createdAt: '2026-04-20T00:00:00.000Z',
-			updatedAt: '2026-04-20T00:00:00.000Z',
-		},
-		listingAhead: null,
-		projection: {
-			name: '@kody/social-post',
-			kodyId: 'social-post',
-			description: 'Social status helpers.',
-			tags: ['twitter', 'microblog'],
-			searchText: 'status create like send',
-			hasApp: false,
-			hidden: false,
-			isPrivate: false,
-			appEntry: null,
-			exports: [
-				createPackageExportProjection('./create-status', {
-					description: 'Create a new status update on the timeline.',
-					functionName: 'createStatus',
-					functionDescription: 'Create a new status update on the timeline.',
-				}),
-				createPackageExportProjection('./like-status', {
-					description: 'Like an existing status on the timeline.',
-					functionName: 'likeStatus',
-					functionDescription: 'Like an existing status on the timeline.',
-				}),
-				createPackageExportProjection('./send-direct', {
-					description: 'Send a direct message to a recipient.',
-					functionName: 'sendDirect',
-					functionDescription: 'Send a direct message to a recipient.',
-				}),
-			],
-			jobs: [],
-			subscriptions: [],
-			retrievers: [],
-			webhooks: [],
-		},
-	}
-	const result = await searchUnified({
-		env: {} as Env,
-		query: 'twitter create status',
-		userId: 'user-1',
-		limit: 8,
-		registry,
-		optionalRows: {
-			packageRows: [packageRow],
-			userSecretRows: [],
-			userValueRows: [],
-			userIntegrationRows: [],
-		},
-	})
-	const exportSubpaths = result.matches
-		.filter(
-			(match) =>
-				match.type === 'package' &&
-				match.kodyId === 'social-post' &&
-				match.exportSubpath != null,
-		)
-		.map((match) => (match.type === 'package' ? match.exportSubpath : null))
-	expect(exportSubpaths).toContain('./create-status')
+	expect(await exportSubpathsFor('twitter status')).toEqual(
+		expect.arrayContaining(['./create-status', './like-status']),
+	)
+	expect(await exportSubpathsFor('twitter create status')).toContain(
+		'./create-status',
+	)
 })
 
 test('searchUnified hydrates lean package rows before promoting export candidates', async () => {
-	const registry = buildCapabilityRegistry([])
-	const exportDescription = 'Dim bond area shades for evening.'
+	const homeControls = {
+		id: 'home-controls-pkg',
+		kodyId: 'home-controls',
+		description: 'Home controls package.',
+	}
 	const hydrate = vi.fn(async () => ({
-		projection: {
-			name: '@kody/home-controls',
-			kodyId: 'home-controls',
-			description: 'Home controls package.',
+		projection: packageRow({
+			...homeControls,
 			tags: ['home', 'shades'],
-			searchText: null,
-			hasApp: false,
-			hidden: false,
-			isPrivate: false,
-			appEntry: null,
 			exports: [
-				createPackageExportProjection('./bond-area-shades', {
-					description: exportDescription,
-					functionName: 'setBondAreaShades',
-					functionDescription: exportDescription,
-				}),
+				exportFn(
+					'./bond-area-shades',
+					'setBondAreaShades',
+					'Dim bond area shades for evening.',
+				),
 			],
-			jobs: [],
-			subscriptions: [],
-			retrievers: [],
-			webhooks: [],
-		},
+		}).projection,
 		readmeSnippet: null,
 	}))
-	const leanRow: PackageSearchRow = {
-		record: {
-			id: 'home-controls-pkg',
-			userId: 'user-1',
-			name: '@kody/home-controls',
-			kodyId: 'home-controls',
-			description: 'Home controls package.',
+	const result = await searchPackages('bond area shades set', [
+		packageRow({
+			...homeControls,
 			tags: ['home', 'shades', 'bond-area-shades'],
 			searchText: 'bond area shades',
-			sourceId: 'source-home-controls',
-			hasApp: false,
-			hidden: false,
-			isPrivate: false,
-			createdAt: '2026-04-20T00:00:00.000Z',
-			updatedAt: '2026-04-20T00:00:00.000Z',
-		},
-		listingAhead: null,
-		projection: {
-			name: '@kody/home-controls',
-			kodyId: 'home-controls',
-			description: 'Home controls package.',
-			tags: ['home', 'shades', 'bond-area-shades'],
-			searchText: 'bond area shades',
-			hasApp: false,
-			hidden: false,
-			isPrivate: false,
-			appEntry: null,
-			exports: [],
-			jobs: [],
-			subscriptions: [],
-			retrievers: [],
-			webhooks: [],
-		},
-		readmeSnippet: null,
-		hydrate,
-	}
-	const result = await searchUnified({
-		env: {} as Env,
-		query: 'bond area shades set',
-		userId: 'user-1',
-		limit: 5,
-		registry,
-		optionalRows: {
-			packageRows: [leanRow],
-			userSecretRows: [],
-			userValueRows: [],
-			userIntegrationRows: [],
-		},
-	})
+			readmeSnippet: null,
+			hydrate,
+		}),
+	])
 	expect(hydrate).toHaveBeenCalled()
 	expect(
 		result.matches.some(
@@ -587,34 +399,28 @@ test('searchUnified hydrates lean package rows before promoting export candidate
 })
 
 test('hydrateTopPackageMatches keeps export hits aligned with exportSubpath', async () => {
+	const homeControls = {
+		id: 'home-controls-pkg',
+		kodyId: 'home-controls',
+		description: 'Home controls package.',
+		tags: ['home'],
+	}
 	const hydrate = vi.fn(async () => ({
-		projection: {
-			name: '@kody/home-controls',
-			kodyId: 'home-controls',
-			description: 'Home controls package.',
-			tags: ['home'],
-			searchText: null,
-			hasApp: false,
-			hidden: false,
-			isPrivate: false,
-			appEntry: null,
+		projection: packageRow({
+			...homeControls,
 			exports: [
-				createPackageExportProjection('./bond-area-shades', {
-					description: 'Dim bond area shades.',
-					functionName: 'setBondAreaShades',
-					functionDescription: 'Dim bond area shades.',
-				}),
-				createPackageExportProjection('./other-export', {
-					description: 'Unrelated other export helpers.',
-					functionName: 'otherHelper',
-					functionDescription: 'Unrelated other export helpers.',
-				}),
+				exportFn(
+					'./bond-area-shades',
+					'setBondAreaShades',
+					'Dim bond area shades.',
+				),
+				exportFn(
+					'./other-export',
+					'otherHelper',
+					'Unrelated other export helpers.',
+				),
 			],
-			jobs: [],
-			subscriptions: [],
-			retrievers: [],
-			webhooks: [],
-		},
+		}).projection,
 		readmeSnippet: {
 			path: 'README.md',
 			snippet: 'Home controls intent.',
@@ -652,44 +458,7 @@ test('hydrateTopPackageMatches keeps export hits aligned with exportSubpath', as
 	await hydrateTopPackageMatches({
 		query: 'bond area shades set',
 		matches: [match],
-		rows: [
-			{
-				record: {
-					id: 'home-controls-pkg',
-					userId: 'user-1',
-					name: '@kody/home-controls',
-					kodyId: 'home-controls',
-					description: 'Home controls package.',
-					tags: ['home'],
-					searchText: null,
-					sourceId: 'source-home',
-					hasApp: false,
-					hidden: false,
-					isPrivate: false,
-					createdAt: '2026-04-20T00:00:00.000Z',
-					updatedAt: '2026-04-20T00:00:00.000Z',
-				},
-				listingAhead: null,
-				projection: {
-					name: '@kody/home-controls',
-					kodyId: 'home-controls',
-					description: 'Home controls package.',
-					tags: ['home'],
-					searchText: null,
-					hasApp: false,
-					hidden: false,
-					isPrivate: false,
-					appEntry: null,
-					exports: [],
-					jobs: [],
-					subscriptions: [],
-					retrievers: [],
-					webhooks: [],
-				},
-				readmeSnippet: null,
-				hydrate,
-			},
-		],
+		rows: [packageRow({ ...homeControls, readmeSnippet: null, hydrate })],
 	})
 	expect(hydrate).toHaveBeenCalled()
 	expect(match.actionMatches).toEqual([
@@ -698,7 +467,6 @@ test('hydrateTopPackageMatches keeps export hits aligned with exportSubpath', as
 			functions: [expect.objectContaining({ name: 'setBondAreaShades' })],
 		}),
 	])
-	expect(match.actionMatches).toHaveLength(1)
 	expect(match.readmeSnippet).toMatchObject({
 		path: 'README.md',
 		snippet: 'Home controls intent.',
@@ -707,55 +475,27 @@ test('hydrateTopPackageMatches keeps export hits aligned with exportSubpath', as
 
 test('package candidates hydrate the requested page, not Jev wide recall', async () => {
 	const rowCount = 45
-	function buildRows(hydratedIds: Array<string>): Array<PackageSearchRow> {
-		return Array.from({ length: rowCount }, (_, index) => {
+	const query = 'create github issue'
+	async function hydratedCountFor(pageLimit: number) {
+		const hydratedIds: Array<string> = []
+		const rows = Array.from({ length: rowCount }, (_, index) => {
 			const kodyId = `github-helper-${String(index)}`
-			const projection = {
-				name: `@kody/${kodyId}`,
+			const row = packageRow({
+				id: `pkg-${String(index)}`,
 				kodyId,
 				description: 'Create a github issue from a report.',
 				tags: ['github'],
 				searchText: 'github issue create',
-				hasApp: false,
-				hidden: false,
-				isPrivate: false,
-				appEntry: null,
-				exports: [],
-				jobs: [],
-				subscriptions: [],
-				retrievers: [],
-				webhooks: [],
-			}
-			return {
-				record: {
-					id: `pkg-${String(index)}`,
-					userId: 'user-1',
-					name: projection.name,
-					kodyId,
-					description: projection.description,
-					tags: projection.tags,
-					searchText: projection.searchText,
-					sourceId: `source-${String(index)}`,
-					hasApp: false,
-					hidden: false,
-					isPrivate: false,
-					createdAt: '2026-04-20T00:00:00.000Z',
-					updatedAt: '2026-04-20T00:00:00.000Z',
-				},
-				listingAhead: null,
-				projection,
 				readmeSnippet: null,
+			})
+			return {
+				...row,
 				hydrate: async () => {
 					hydratedIds.push(kodyId)
-					return { projection, readmeSnippet: null }
+					return { projection: row.projection, readmeSnippet: null }
 				},
-			} as PackageSearchRow
+			}
 		})
-	}
-	const query = 'create github issue'
-	async function hydratedCountFor(pageLimit: number) {
-		const hydratedIds: Array<string> = []
-		const rows = buildRows(hydratedIds)
 		const candidates = await packageSearchEntityPlugin.buildCandidates({
 			env: {} as Env,
 			query,

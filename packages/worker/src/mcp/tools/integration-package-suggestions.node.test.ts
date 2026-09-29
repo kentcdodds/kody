@@ -87,77 +87,80 @@ function createCommunityListing(input: {
 
 type CommunityListingFixture = ReturnType<typeof createCommunityListing>
 
-test('integration package suggestions stay same-provider, user-first, and capped', async () => {
-	expect(
-		packageIdentityMentionsProvider(
-			{ kodyId: 'github', name: '@kody/github', tags: ['github', 'api'] },
-			'github',
-		),
-	).toBe(true)
-	expect(
-		packageIdentityMentionsProvider(
-			{
-				kodyId: 'cursor',
-				name: '@kody/cursor',
-				tags: ['cursor', 'api'],
-			},
-			'github',
-		),
-	).toBe(false)
-	expect(
-		packageIdentityMentionsProvider(
-			{
-				kodyId: 'google-calendar',
-				name: '@user/google-calendar',
-				tags: ['google', 'calendar'],
-			},
-			'google-calendar',
-		),
-	).toBe(true)
+function githubIntegration(name = 'github') {
+	return {
+		...createIntegration(name),
+		tokenUrl: 'https://github.com/login/oauth/access_token',
+		apiBaseUrl: 'https://api.github.com',
+		requiredHosts: ['api.github.com'],
+		authorization: {
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			scopes: ['repo'],
+		},
+	}
+}
 
-	const userRows = [
-		createPackageRow({
-			kodyId: 'notes',
-			name: '@user/notes',
-			tags: ['notes'],
-		}),
-		createPackageRow({
-			kodyId: 'github',
-			name: '@user/github',
-			tags: ['github'],
-		}),
-		createPackageRow({
-			kodyId: 'github-pr',
-			name: '@user/github-pr',
-			tags: ['github', 'pr'],
-		}),
-		createPackageRow({
-			kodyId: 'github-actions',
-			name: '@user/github-actions',
-			tags: ['github'],
-		}),
-		createPackageRow({
-			kodyId: 'github-issues',
-			name: '@user/github-issues',
-			tags: ['github'],
-		}),
-	]
-
-	const withUserPackages = await collectIntegrationPackageSuggestions({
+function suggest(
+	integration: Parameters<
+		typeof collectIntegrationPackageSuggestions
+	>[0]['integration'],
+	packageRows: Array<ReturnType<typeof createPackageRow>> = [],
+) {
+	return collectIntegrationPackageSuggestions({
 		env: {} as Env,
 		baseUrl: 'https://example.com',
-		integration: {
-			...createIntegration('github'),
-			tokenUrl: 'https://github.com/login/oauth/access_token',
-			apiBaseUrl: 'https://api.github.com',
-			requiredHosts: ['api.github.com'],
-			authorization: {
-				authorizeUrl: 'https://github.com/login/oauth/authorize',
-				scopes: ['repo'],
-			},
-		},
-		packageRows: userRows,
+		integration,
+		packageRows,
 	})
+}
+
+const packageIdentity = (
+	kodyId: string,
+	tags: Array<string>,
+	scope = 'kody',
+) => ({
+	kodyId,
+	name: `@${scope}/${kodyId}`,
+	tags,
+})
+const googleCalendar = packageIdentity('google-calendar', [
+	'google',
+	'calendar',
+])
+const githubPackage = packageIdentity('github', ['github'])
+
+test('integration package suggestions stay same-provider, user-first, and capped', async () => {
+	const identityCases: Array<
+		[ReturnType<typeof packageIdentity>, string, boolean]
+	> = [
+		[packageIdentity('github', ['github', 'api']), 'github', true],
+		[packageIdentity('cursor', ['cursor', 'api']), 'github', false],
+		[
+			packageIdentity('google-calendar', ['google', 'calendar'], 'user'),
+			'google-calendar',
+			true,
+		],
+	]
+	expect(
+		identityCases.filter(
+			([identity, provider, expected]) =>
+				packageIdentityMentionsProvider(identity, provider) !== expected,
+		),
+	).toEqual([])
+
+	const withUserPackages = await suggest(githubIntegration(), [
+		createPackageRow({ kodyId: 'notes', name: '@user/notes', tags: ['notes'] }),
+		...(
+			[
+				['github', ['github']],
+				['github-pr', ['github', 'pr']],
+				['github-actions', ['github']],
+				['github-issues', ['github']],
+			] as const
+		).map(([kodyId, tags]) =>
+			createPackageRow({ kodyId, name: `@user/${kodyId}`, tags: [...tags] }),
+		),
+	])
 	expect(mockModule.searchCommunityListings).not.toHaveBeenCalled()
 	expect(withUserPackages).toHaveLength(maxIntegrationPackageSuggestions)
 	expect(withUserPackages.every((item) => item.source === 'user')).toBe(true)
@@ -182,50 +185,25 @@ test('integration package suggestions stay same-provider, user-first, and capped
 			trusted: false,
 			tags: ['github'],
 		}),
-		createCommunityListing({
-			id: 'listing-github-trusted',
-			kodyId: 'github',
-			name: '@kody/github',
-			trusted: true,
-			tags: ['github'],
-		}),
-		createCommunityListing({
-			id: 'listing-github-pr',
-			kodyId: 'github-pr',
-			name: '@kody/github-pr',
-			trusted: true,
-			tags: ['github', 'pr'],
-		}),
-		createCommunityListing({
-			id: 'listing-github-extra',
-			kodyId: 'github-extra',
-			name: '@kody/github-extra',
-			trusted: true,
-			tags: ['github'],
-		}),
-	])
-
-	const communityOnly = await collectIntegrationPackageSuggestions({
-		env: {} as Env,
-		baseUrl: 'https://example.com',
-		integration: {
-			...createIntegration('GitHub'),
-			tokenUrl: 'https://github.com/login/oauth/access_token',
-			apiBaseUrl: 'https://api.github.com',
-			requiredHosts: ['api.github.com'],
-			authorization: {
-				authorizeUrl: 'https://github.com/login/oauth/authorize',
-				scopes: ['repo'],
-			},
-		},
-		packageRows: [
-			createPackageRow({
-				kodyId: 'notes',
-				name: '@user/notes',
-				tags: ['notes'],
+		...(
+			[
+				['listing-github-trusted', 'github', ['github']],
+				['listing-github-pr', 'github-pr', ['github', 'pr']],
+				['listing-github-extra', 'github-extra', ['github']],
+			] as const
+		).map(([id, kodyId, tags]) =>
+			createCommunityListing({
+				id,
+				kodyId,
+				name: `@kody/${kodyId}`,
+				trusted: true,
+				tags: [...tags],
 			}),
-		],
-	})
+		),
+	])
+	const communityOnly = await suggest(githubIntegration('GitHub'), [
+		createPackageRow({ kodyId: 'notes', name: '@user/notes', tags: ['notes'] }),
+	])
 	expect(mockModule.searchCommunityListings).toHaveBeenCalledTimes(1)
 	expect(mockModule.searchCommunityListings).toHaveBeenCalledWith({
 		env: {},
@@ -254,27 +232,11 @@ test('integration package suggestions stay same-provider, user-first, and capped
 		}),
 	])
 	expect(communityOnly).toHaveLength(maxIntegrationPackageSuggestions)
-	expect(communityOnly.every((item) => item.source === 'community')).toBe(true)
 
 	mockModule.searchCommunityListings.mockRejectedValueOnce(
 		new Error('community unavailable'),
 	)
-	const failedCommunity = await collectIntegrationPackageSuggestions({
-		env: {} as Env,
-		baseUrl: 'https://example.com',
-		integration: {
-			...createIntegration('github'),
-			tokenUrl: 'https://github.com/login/oauth/access_token',
-			apiBaseUrl: 'https://api.github.com',
-			requiredHosts: ['api.github.com'],
-			authorization: {
-				authorizeUrl: 'https://github.com/login/oauth/authorize',
-				scopes: ['repo'],
-			},
-		},
-		packageRows: [],
-	})
-	expect(failedCommunity).toEqual([])
+	expect(await suggest(githubIntegration())).toEqual([])
 })
 
 test('community suggestions provider-filter before limiting', async () => {
@@ -308,23 +270,7 @@ test('community suggestions provider-filter before limiting', async () => {
 		},
 	)
 
-	const suggestions = await collectIntegrationPackageSuggestions({
-		env: {} as Env,
-		baseUrl: 'https://example.com',
-		integration: {
-			...createIntegration('github'),
-			tokenUrl: 'https://github.com/login/oauth/access_token',
-			apiBaseUrl: 'https://api.github.com',
-			requiredHosts: ['api.github.com'],
-			authorization: {
-				authorizeUrl: 'https://github.com/login/oauth/authorize',
-				scopes: ['repo'],
-			},
-		},
-		packageRows: [],
-	})
-
-	expect(suggestions).toEqual([
+	expect(await suggest(githubIntegration())).toEqual([
 		expect.objectContaining({
 			listingId: 'github-rank-13',
 			kodyId: 'github-helpers',
@@ -342,16 +288,9 @@ test('account-specific integration names still match the stable provider', async
 			createIntegration(integrationName),
 		)
 		expect(providerName).toBe('google')
-		expect(
-			packageIdentityMentionsProvider(
-				{
-					kodyId: 'google-calendar',
-					name: '@kody/google-calendar',
-					tags: ['google', 'calendar'],
-				},
-				providerName,
-			),
-		).toBe(true)
+		expect(packageIdentityMentionsProvider(googleCalendar, providerName)).toBe(
+			true,
+		)
 	}
 
 	const legacyGoogleIntegration = {
@@ -359,43 +298,15 @@ test('account-specific integration names still match the stable provider', async
 		authorization: null,
 	}
 	expect(resolveIntegrationProviderName(legacyGoogleIntegration)).toBe('google')
-	const accountSpecificSuggestions = await collectIntegrationPackageSuggestions(
-		{
-			env: {} as Env,
-			baseUrl: 'https://example.com',
-			integration: legacyGoogleIntegration,
-			packageRows: [
-				createPackageRow({
-					kodyId: 'google-calendar',
-					name: '@kody/google-calendar',
-					tags: ['google', 'calendar'],
-				}),
-				createPackageRow({
-					kodyId: 'github',
-					name: '@kody/github',
-					tags: ['github'],
-				}),
-			],
-		},
-	)
+	const accountSpecificSuggestions = await suggest(legacyGoogleIntegration, [
+		createPackageRow(googleCalendar),
+		createPackageRow(githubPackage),
+	])
 	expect(
 		accountSpecificSuggestions.map((suggestion) => suggestion.kodyId),
 	).toEqual(['google-calendar'])
 	expect(mockModule.searchCommunityListings).not.toHaveBeenCalled()
-
-	const googleProvider = resolveIntegrationProviderName(
-		createIntegration('google-business'),
-	)
-	expect(
-		packageIdentityMentionsProvider(
-			{
-				kodyId: 'github',
-				name: '@kody/github',
-				tags: ['github'],
-			},
-			googleProvider,
-		),
-	).toBe(false)
+	expect(packageIdentityMentionsProvider(githubPackage, 'google')).toBe(false)
 
 	const acmeProvider = resolveIntegrationProviderName({
 		...createIntegration('acme-business'),
@@ -408,16 +319,9 @@ test('account-specific integration names still match the stable provider', async
 		},
 	})
 	expect(acmeProvider).toBe('acme')
-	expect(
-		packageIdentityMentionsProvider(
-			{
-				kodyId: 'google-calendar',
-				name: '@kody/google-calendar',
-				tags: ['google', 'calendar'],
-			},
-			acmeProvider,
-		),
-	).toBe(false)
+	expect(packageIdentityMentionsProvider(googleCalendar, acmeProvider)).toBe(
+		false,
+	)
 
 	const rapidApiIntegration = {
 		...createIntegration('rapidapi-team'),
@@ -448,11 +352,7 @@ test('account-specific integration names still match the stable provider', async
 		expect(hyphenatedProvider).toBe('my-provider')
 		expect(
 			packageIdentityMentionsProvider(
-				{
-					kodyId: 'my-provider-tools',
-					name: '@owner/my-provider-tools',
-					tags: ['my-provider'],
-				},
+				packageIdentity('my-provider-tools', ['my-provider'], 'owner'),
 				hyphenatedProvider,
 			),
 		).toBe(true)
