@@ -143,6 +143,7 @@ export type SearchResultStructuredContent = {
 		memoryEnrichmentFailed?: boolean
 		memoryAcknowledgementFailed?: boolean
 		waitingItemsTimedOut?: boolean
+		onboardingNoticeTimedOut?: boolean
 		usernameLookupMs?: number
 		identityResolutionMs?: number
 		loadAndRankMs?: number
