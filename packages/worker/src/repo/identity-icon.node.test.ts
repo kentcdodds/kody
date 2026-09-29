@@ -221,6 +221,15 @@ test('deleteIdentityIconAssets keeps the current commit and refresh stamps live 
 	])
 
 	await refreshIdentityIconForSource({
+		env: { ...env, BUNDLE_ARTIFACTS_KV: undefined } as unknown as Env,
+		source: source({ entity_kind: 'package', repo_id: 'repo-1' }),
+		iconCommit: 'head-0',
+		indexLiveHead: true,
+	})
+	expect(mocks.updateEntitySource).not.toHaveBeenCalled()
+	expect(r2Values.size).toBe(1)
+
+	await refreshIdentityIconForSource({
 		env,
 		source: source({ entity_kind: 'repo', repo_id: 'repo-1' }),
 		iconCommit: 'head-1',

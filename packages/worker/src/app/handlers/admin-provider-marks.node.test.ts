@@ -126,6 +126,21 @@ test('admin provider marks API saves, lists, and deletes marks, refusing logo wr
 		/^\/integrations\/provider-marks\/google/,
 	)
 
+	const relabeled = await call(
+		{ action: 'save', slug: 'google', label: 'Google Accounts' },
+		{ storage: false },
+	)
+	expect(relabeled.status).toBe(200)
+	await expect(relabeled.json()).resolves.toMatchObject({
+		marks: [
+			{
+				slug: 'google',
+				label: 'Google Accounts',
+				logoPath: savedBody.marks[0]?.logoPath,
+			},
+		],
+	})
+
 	const deleteGoogle = { action: 'delete', slug: 'google' }
 	const noStorageDelete = await call(deleteGoogle, { storage: false })
 	expect(noStorageDelete.status).toBe(503)

@@ -348,9 +348,11 @@ test('cleanup and each guarded delete refuse production names before any wrangle
 	expect(cloudflare.fetchMock).not.toHaveBeenCalled()
 })
 
-test('dry-run cleanup of a PR preview walks every resource without touching Cloudflare', async () => {
+test('dry-run cleanup of a PR preview walks every resource without Cloudflare credentials or calls', async () => {
 	consoleError.mockImplementation(() => {})
 	using cloudflare = stubCloudflare()
+	vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', undefined)
+	vi.stubEnv('CLOUDFLARE_API_TOKEN', undefined)
 	await cleanupPreviewResources({ workerName: 'kody-pr-42', dryRun: true })
 	const logged = loggedMessages()
 	expect(logged).toEqual(
@@ -569,7 +571,10 @@ test('non-empty preview R2 buckets are emptied then deleted', async () => {
 		deletedObjectUrls.some((url) => url.includes('/objects/seeded/blob.bin')),
 	).toBe(true)
 	expect(deletedObjectUrls.some((url) => url.includes('%2F'))).toBe(false)
-	expect(loggedMessages()).toContain(
-		'Deleted R2 object: kody-pr-42-email-blobs/seeded/blob.bin',
+	expect(loggedMessages()).toEqual(
+		expect.arrayContaining([
+			'Deleted R2 object: kody-pr-42-email-blobs/seeded/blob.bin',
+			'Deleted R2 bucket: kody-pr-42-email-blobs',
+		]),
 	)
 })
