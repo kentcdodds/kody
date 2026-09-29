@@ -18,7 +18,7 @@ import {
 	claimAccountEmail,
 } from '#worker/identity/email-claims.ts'
 import { unusablePasswordHash } from '#worker/identity/usable-password.ts'
-import { maybeGrantSignupWelcomeCredits } from '#worker/billing/credit-wallet.ts'
+import { maybeGrantSignupWelcomeCredits } from '#worker/billing/signup-welcome-credits.ts'
 
 export type AdminCreateUserErrorCode =
 	| 'invalid_email'

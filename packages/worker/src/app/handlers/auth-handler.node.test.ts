@@ -21,7 +21,7 @@ vi.mock('#worker/identity/schedule-user-lifecycle-event.ts', () => ({
 	scheduleUserDeletedEvent: vi.fn(),
 }))
 
-vi.mock('#worker/billing/credit-wallet.ts', () => ({
+vi.mock('#worker/billing/signup-welcome-credits.ts', () => ({
 	maybeGrantSignupWelcomeCredits: (...args: Array<unknown>) =>
 		welcomeCreditMocks.maybeGrantSignupWelcomeCredits(...args),
 }))

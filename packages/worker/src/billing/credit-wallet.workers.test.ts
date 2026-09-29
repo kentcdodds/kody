@@ -30,11 +30,11 @@ import { runCreditDebits, settleCreditDebitMonth } from './credit-debits.ts'
 import {
 	applyCreditPayment,
 	ensureCreditWallet,
-	grantSignupWelcomeCredits,
 	readCreditWallet,
 	toAccountCreditsLedgerItem,
 	updateCreditWalletSettings,
 } from './credit-wallet.ts'
+import { grantSignupWelcomeCredits } from './signup-welcome-credits.ts'
 import { ensureCreditWalletTestSchema } from './test-schema.ts'
 
 const now = new Date('2026-09-27T12:00:00.000Z')

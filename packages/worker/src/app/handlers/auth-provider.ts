@@ -73,7 +73,7 @@ import {
 	serializeReferralCookie,
 } from '#universal/referral-cookie.ts'
 import { scheduleUserCreatedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
-import { maybeGrantSignupWelcomeCredits } from '#worker/billing/credit-wallet.ts'
+import { maybeGrantSignupWelcomeCredits } from '#worker/billing/signup-welcome-credits.ts'
 import { attributeReferralAtSignup } from '#worker/entitlements/referral-program.ts'
 import { touchLastActiveAt } from '#worker/identity/activation-stamps.ts'
 import { parseLegacyHosts } from '#worker/app-legacy-redirect.ts'
