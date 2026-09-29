@@ -40,15 +40,12 @@ function createInboundEnv() {
 	return { ...env, APP_BASE_URL: platformBaseUrl }
 }
 
-async function seedVerifiedAccount(input: {
-	db: D1Database
-	email: string
-	username: string
-}) {
-	const stableUserId = await createStableUserIdFromEmail(input.email)
-	await input.db
-		.prepare(
-			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
+async function seedVerifiedAccount(prefix: string) {
+	const username = `${prefix}-${crypto.randomUUID().slice(0, 8)}`
+	const email = `${prefix}-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(email)
+	await env.APP_DB.prepare(
+		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
 			 VALUES (?, ?, ?, ?, ?, ?)
 			 ON CONFLICT(email) DO UPDATE SET
 			   username = excluded.username,
@@ -56,17 +53,17 @@ async function seedVerifiedAccount(input: {
 			   stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
 			   plan = excluded.plan,
 			   updated_at = CURRENT_TIMESTAMP`,
-		)
+	)
 		.bind(
-			input.username,
-			input.email,
+			username,
+			email,
 			'test-password-hash',
 			new Date().toISOString(),
-			stableUserId,
+			userId,
 			'max',
 		)
 		.run()
-	return stableUserId
+	return { userId, address: `${username}@${platformDomain}` }
 }
 
 async function readUserDailyReceiveCount(userId: string) {
@@ -92,53 +89,59 @@ function createWaitUntilContext() {
 	return { ctx, waitUntilPromises }
 }
 
+function mail(
+	from: string,
+	to: string,
+	subject: string,
+	extraHeaders: Array<string> = [],
+) {
+	return createForwardableEmailMessage({
+		from,
+		to,
+		raw: [
+			`From: <${from}>`,
+			`To: ${to}`,
+			`Subject: ${subject}`,
+			`Message-ID: <${crypto.randomUUID()}@example.net>`,
+			...extraHeaders,
+			'',
+			'Body.',
+		].join('\r\n'),
+	})
+}
+
+async function waitAll(promises: Array<Promise<unknown>>) {
+	for (const promise of promises) await promise
+}
+
+async function addSenderRules(
+	userId: string,
+	rules: Array<
+		[
+			kind: 'address' | 'domain',
+			value: string,
+			effect: 'block' | 'quarantine' | 'allow',
+		]
+	>,
+) {
+	for (const [kind, value, effect] of rules) {
+		await upsertEmailSenderRule({ db: env.APP_DB, userId, kind, value, effect })
+	}
+}
+
 test('user sender rules block before quota, quarantine/allow, and fall back to auth verdicts', async () => {
 	silenceIncidentalRuntimeWarnings()
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
-	const username = `spam-${crypto.randomUUID().slice(0, 8)}`
-	const accountEmail = `spam-${crypto.randomUUID()}@example.com`
-	const userId = await seedVerifiedAccount({
-		db: env.APP_DB,
-		email: accountEmail,
-		username,
-	})
-	const address = `${username}@${platformDomain}`
+	const { userId, address } = await seedVerifiedAccount('spam')
 
-	await upsertEmailSenderRule({
-		db: env.APP_DB,
-		userId,
-		kind: 'address',
-		value: 'blocked@spam.example',
-		effect: 'block',
-	})
-	await upsertEmailSenderRule({
-		db: env.APP_DB,
-		userId,
-		kind: 'domain',
-		value: 'suspect.example',
-		effect: 'quarantine',
-	})
-	await upsertEmailSenderRule({
-		db: env.APP_DB,
-		userId,
-		kind: 'address',
-		value: 'friend@example.net',
-		effect: 'allow',
-	})
+	await addSenderRules(userId, [
+		['address', 'blocked@spam.example', 'block'],
+		['domain', 'suspect.example', 'quarantine'],
+		['address', 'friend@example.net', 'allow'],
+	])
 
-	const blocked = createForwardableEmailMessage({
-		from: 'blocked@spam.example',
-		to: address,
-		raw: [
-			'From: Blocked <blocked@spam.example>',
-			`To: ${address}`,
-			'Subject: Blocked mail',
-			'Message-ID: <blocked@spam.example>',
-			'',
-			'Should not land.',
-		].join('\r\n'),
-	})
+	const blocked = mail('blocked@spam.example', address, 'Blocked mail')
 	await handleInboundEmail(blocked, createInboundEnv())
 	expect(blocked.rejectedReason).toBe('Message rejected by recipient policy.')
 	expect(
@@ -160,64 +163,25 @@ test('user sender rules block before quota, quarantine/allow, and fall back to a
 		phase: 'sender-policy',
 	})
 
-	const quarantined = createForwardableEmailMessage({
-		from: 'news@suspect.example',
-		to: address,
-		raw: [
-			'From: News <news@suspect.example>',
-			`To: ${address}`,
-			'Subject: Quarantine me',
-			'Message-ID: <quarantine@suspect.example>',
-			'',
-			'Hold this.',
-		].join('\r\n'),
-	})
+	const quarantined = mail('news@suspect.example', address, 'Quarantine me')
 	await handleInboundEmail(quarantined, createInboundEnv())
 	expect(quarantined.rejectedReason).toBeNull()
 
-	const allowed = createForwardableEmailMessage({
-		from: 'friend@example.net',
-		to: address,
-		raw: [
-			'From: Friend <friend@example.net>',
-			`To: ${address}`,
-			'Subject: Allowed despite DMARC fail',
-			'Message-ID: <allow-dmarc@example.net>',
-			`Authentication-Results: ${dmarcFailAuthResults()}`,
-			'',
-			'Trusted sender.',
-		].join('\r\n'),
-	})
+	const allowed = mail(
+		'friend@example.net',
+		address,
+		'Allowed despite DMARC fail',
+		[`Authentication-Results: ${dmarcFailAuthResults()}`],
+	)
 	await handleInboundEmail(allowed, createInboundEnv())
 	expect(allowed.rejectedReason).toBeNull()
 
-	const suspect = createForwardableEmailMessage({
-		from: 'stranger@example.net',
-		to: address,
-		raw: [
-			'From: Stranger <stranger@example.net>',
-			`To: ${address}`,
-			'Subject: Suspect auth',
-			'Message-ID: <suspect-auth@example.net>',
-			`Authentication-Results: ${dmarcFailAuthResults()}`,
-			'',
-			'Suspect body.',
-		].join('\r\n'),
-	})
+	const suspect = mail('stranger@example.net', address, 'Suspect auth', [
+		`Authentication-Results: ${dmarcFailAuthResults()}`,
+	])
 	await handleInboundEmail(suspect, createInboundEnv())
 
-	const clean = createForwardableEmailMessage({
-		from: 'stranger@example.net',
-		to: address,
-		raw: [
-			'From: Stranger <stranger@example.net>',
-			`To: ${address}`,
-			'Subject: No auth header',
-			'Message-ID: <no-auth@example.net>',
-			'',
-			'Clean body.',
-		].join('\r\n'),
-	})
+	const clean = mail('stranger@example.net', address, 'No auth header')
 	await handleInboundEmail(clean, createInboundEnv())
 
 	const { messages } = await mailboxRpc({ env, userId }).listMessages({
@@ -249,56 +213,19 @@ test('user quarantined and accepted messages dispatch matching subscription topi
 	packageSubscriptionMocks.dispatchInboundEmailSubscriptionEvents.mockClear()
 	packageSubscriptionMocks.dispatchSystemInboundEmailSubscriptionEvents.mockClear()
 	await ensureEmailTestSchema(env.APP_DB)
-	const username = `dispatch-${crypto.randomUUID().slice(0, 8)}`
-	const accountEmail = `dispatch-${crypto.randomUUID()}@example.com`
-	const userId = await seedVerifiedAccount({
-		db: env.APP_DB,
-		email: accountEmail,
-		username,
-	})
-	const address = `${username}@${platformDomain}`
-	await upsertEmailSenderRule({
-		db: env.APP_DB,
-		userId,
-		kind: 'address',
-		value: 'hold@example.net',
-		effect: 'quarantine',
-	})
+	const { userId, address } = await seedVerifiedAccount('dispatch')
+	await addSenderRules(userId, [['address', 'hold@example.net', 'quarantine']])
 
 	const { ctx, waitUntilPromises } = createWaitUntilContext()
-	const quarantined = createForwardableEmailMessage({
-		from: 'hold@example.net',
-		to: address,
-		raw: [
-			'From: Hold <hold@example.net>',
-			`To: ${address}`,
-			'Subject: Quarantined dispatch',
-			'Message-ID: <quarantined-dispatch@example.net>',
-			'',
-			'Hold body.',
-		].join('\r\n'),
-	})
+	const quarantined = mail('hold@example.net', address, 'Quarantined dispatch')
 	await handleInboundEmail(quarantined, createInboundEnv(), ctx)
 	expect(quarantined.rejectedReason).toBeNull()
 
-	const accepted = createForwardableEmailMessage({
-		from: 'ok@example.net',
-		to: address,
-		raw: [
-			'From: Ok <ok@example.net>',
-			`To: ${address}`,
-			'Subject: Accepted dispatch',
-			'Message-ID: <accepted-dispatch@example.net>',
-			'',
-			'Accepted body.',
-		].join('\r\n'),
-	})
+	const accepted = mail('ok@example.net', address, 'Accepted dispatch')
 	await handleInboundEmail(accepted, createInboundEnv(), ctx)
 	expect(accepted.rejectedReason).toBeNull()
 
-	for (const promise of waitUntilPromises) {
-		await promise
-	}
+	await waitAll(waitUntilPromises)
 
 	expect(
 		packageSubscriptionMocks.dispatchInboundEmailSubscriptionEvents,
@@ -331,33 +258,16 @@ test('system sender rules reject/block and suppress quarantined subscription dis
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
 
-	await upsertEmailSenderRule({
-		db: env.APP_DB,
-		userId: systemEmailOwnerId,
-		kind: 'address',
-		value: 'blocked@spam.example',
-		effect: 'block',
-	})
-	await upsertEmailSenderRule({
-		db: env.APP_DB,
-		userId: systemEmailOwnerId,
-		kind: 'domain',
-		value: 'suspect.example',
-		effect: 'quarantine',
-	})
+	await addSenderRules(systemEmailOwnerId, [
+		['address', 'blocked@spam.example', 'block'],
+		['domain', 'suspect.example', 'quarantine'],
+	])
 
-	const blocked = createForwardableEmailMessage({
-		from: 'blocked@spam.example',
-		to: `kody@${systemDomain}`,
-		raw: [
-			'From: Blocked <blocked@spam.example>',
-			`To: kody@${systemDomain}`,
-			'Subject: System blocked',
-			'Message-ID: <system-blocked@spam.example>',
-			'',
-			'No.',
-		].join('\r\n'),
-	})
+	const blocked = mail(
+		'blocked@spam.example',
+		`kody@${systemDomain}`,
+		'System blocked',
+	)
 	await handleInboundEmail(blocked, createInboundEnv())
 	expect(blocked.rejectedReason).toBe('Message rejected by recipient policy.')
 	expect(
@@ -368,23 +278,14 @@ test('system sender rules reject/block and suppress quarantined subscription dis
 	).toEqual([])
 
 	const { ctx, waitUntilPromises } = createWaitUntilContext()
-	const quarantined = createForwardableEmailMessage({
-		from: 'bot@suspect.example',
-		to: `postmaster@${systemDomain}`,
-		raw: [
-			'From: Bot <bot@suspect.example>',
-			`To: postmaster@${systemDomain}`,
-			'Subject: System quarantine',
-			'Message-ID: <system-quarantine@suspect.example>',
-			'',
-			'Hold for operators.',
-		].join('\r\n'),
-	})
+	const quarantined = mail(
+		'bot@suspect.example',
+		`postmaster@${systemDomain}`,
+		'System quarantine',
+	)
 	await handleInboundEmail(quarantined, createInboundEnv(), ctx)
 	expect(quarantined.rejectedReason).toBeNull()
-	for (const promise of waitUntilPromises) {
-		await promise
-	}
+	await waitAll(waitUntilPromises)
 
 	const [stored] = await listSystemEmailMessages({
 		db: env.APP_DB,

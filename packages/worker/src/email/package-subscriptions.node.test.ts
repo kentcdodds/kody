@@ -38,29 +38,39 @@ const {
 	dispatchInboundEmailSubscriptionEvents,
 } = await import('./package-subscriptions.ts')
 
-test('delivery updates fan out only through the stored message owner', async () => {
+const env = {
+	APP_DB: {},
+	BUNDLE_ARTIFACTS_KV: {},
+	APP_BASE_URL: 'https://example.com',
+} as Env
+
+function subscribePackage(kodyId: string, topic: string) {
 	const savedPackage = {
-		id: 'package-1',
+		id: `package-${kodyId}`,
 		userId: 'user-1',
-		sourceId: 'source-1',
-		kodyId: 'delivery-notifier',
-		name: '@user/delivery-notifier',
+		sourceId: `source-${kodyId}`,
+		kodyId,
+		name: `@user/${kodyId}`,
 	}
 	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([savedPackage])
 	mocks.loadPackageManifestBySourceId.mockResolvedValueOnce({
 		manifest: {
-			name: '@user/delivery-notifier',
+			name: savedPackage.name,
 			kody: {
-				id: 'delivery-notifier',
-				description: 'Delivery notifier',
-				subscriptions: {
-					[emailDeliveryUpdatedTopic]: {
-						handler: './src/on-delivery.ts',
-					},
-				},
+				id: kodyId,
+				description: kodyId,
+				subscriptions: { [topic]: { handler: './src/handler.ts' } },
 			},
 		},
 	})
+	return savedPackage
+}
+
+test('delivery updates fan out only through the stored message owner', async () => {
+	const savedPackage = subscribePackage(
+		'delivery-notifier',
+		emailDeliveryUpdatedTopic,
+	)
 	const message = {
 		id: 'message-1',
 		userId: 'user-1',
@@ -99,18 +109,14 @@ test('delivery updates fan out only through the stored message owner', async () 
 			eventTimestamp: '2026-07-17T20:00:00.000Z',
 		},
 	}
-	const env = {
-		APP_DB: {},
-		BUNDLE_ARTIFACTS_KV: {},
-		APP_BASE_URL: 'https://example.com',
-	} as Env
+	const dispatch = () =>
+		dispatchEmailDeliverySubscriptionEvents({
+			env,
+			message: message as never,
+			providerEvent: providerEvent as never,
+		})
 
-	await dispatchEmailDeliverySubscriptionEvents({
-		env,
-		message: message as never,
-		providerEvent: providerEvent as never,
-	})
-
+	await dispatch()
 	expect(mocks.listSavedPackagesByUserId).toHaveBeenCalledWith(env.APP_DB, {
 		userId: 'user-1',
 	})
@@ -118,7 +124,7 @@ test('delivery updates fan out only through the stored message owner', async () 
 		expect.objectContaining({
 			savedPackage,
 			topic: emailDeliveryUpdatedTopic,
-			idempotencyKey: 'email-delivery:event-1:package-1',
+			idempotencyKey: `email-delivery:event-1:${savedPackage.id}`,
 			source: 'email',
 			params: expect.objectContaining({
 				event: emailDeliveryUpdatedTopic,
@@ -135,32 +141,12 @@ test('delivery updates fan out only through the stored message owner', async () 
 		}),
 	)
 
-	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([savedPackage])
-	mocks.loadPackageManifestBySourceId.mockResolvedValueOnce({
-		manifest: {
-			name: '@user/delivery-notifier',
-			kody: {
-				id: 'delivery-notifier',
-				description: 'Delivery notifier',
-				subscriptions: {
-					[emailDeliveryUpdatedTopic]: {
-						handler: './src/on-delivery.ts',
-					},
-				},
-			},
-		},
-	})
+	subscribePackage('delivery-notifier', emailDeliveryUpdatedTopic)
 	mocks.invokePackageSubscription.mockResolvedValueOnce({
 		status: 503,
 		body: { error: { code: 'artifact_preparation_failed' } },
 	})
-	await expect(
-		dispatchEmailDeliverySubscriptionEvents({
-			env,
-			message: message as never,
-			providerEvent: providerEvent as never,
-		}),
-	).rejects.toThrow('dispatch was incomplete')
+	await expect(dispatch()).rejects.toThrow('dispatch was incomplete')
 })
 
 function inboundMessageFixture(input: {
@@ -189,32 +175,6 @@ function inboundMessageFixture(input: {
 	}
 }
 
-async function seedInboundSubscription(topic: string) {
-	const savedPackage = {
-		id: 'package-inbound-1',
-		userId: 'user-1',
-		sourceId: 'source-inbound-1',
-		kodyId: 'inbound-notifier',
-		name: '@user/inbound-notifier',
-	}
-	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([savedPackage])
-	mocks.loadPackageManifestBySourceId.mockResolvedValueOnce({
-		manifest: {
-			name: '@user/inbound-notifier',
-			kody: {
-				id: 'inbound-notifier',
-				description: 'Inbound notifier',
-				subscriptions: {
-					[topic]: {
-						handler: './src/on-inbound.ts',
-					},
-				},
-			},
-		},
-	})
-	return savedPackage
-}
-
 test('accepted inbound messages dispatch email.message.received with classification fields', async () => {
 	mocks.invokePackageSubscription.mockClear()
 	mocks.listInternalEmailAttachmentsForMessage.mockResolvedValueOnce([
@@ -231,22 +191,18 @@ test('accepted inbound messages dispatch email.message.received with classificat
 			createdAt: '2026-07-17T19:59:00.000Z',
 		},
 	])
-	const savedPackage = await seedInboundSubscription(inboundEmailReceiptTopic)
-	const message = inboundMessageFixture({
-		id: 'accepted-1',
-		classification: 'accepted',
-		classificationReason: null,
-	})
-	const env = {
-		APP_DB: {},
-		BUNDLE_ARTIFACTS_KV: {},
-		APP_BASE_URL: 'https://example.com',
-	} as Env
-
+	const savedPackage = subscribePackage(
+		'inbound-notifier',
+		inboundEmailReceiptTopic,
+	)
 	await dispatchInboundEmailSubscriptionEvents({
 		env,
 		userId: 'user-1',
-		message: message as never,
+		message: inboundMessageFixture({
+			id: 'accepted-1',
+			classification: 'accepted',
+			classificationReason: null,
+		}) as never,
 	})
 
 	expect(mocks.invokePackageSubscription).toHaveBeenCalledTimes(1)
@@ -254,7 +210,7 @@ test('accepted inbound messages dispatch email.message.received with classificat
 		expect.objectContaining({
 			savedPackage,
 			topic: inboundEmailReceiptTopic,
-			idempotencyKey: `email:accepted-1:package-inbound-1:${inboundEmailReceiptTopic}`,
+			idempotencyKey: `email:accepted-1:${savedPackage.id}:${inboundEmailReceiptTopic}`,
 			params: expect.objectContaining({
 				event: inboundEmailReceiptTopic,
 				message: expect.objectContaining({
@@ -278,32 +234,23 @@ test('accepted inbound messages dispatch email.message.received with classificat
 		messageId: 'accepted-1',
 	})
 	expect(mocks.listEmailAttachmentsForMessage).not.toHaveBeenCalled()
-	expect(mocks.invokePackageSubscription.mock.calls[0]?.[0]?.topic).not.toBe(
-		inboundEmailQuarantinedTopic,
-	)
 })
 
 test('quarantined inbound messages dispatch email.message.quarantined and not received', async () => {
 	mocks.invokePackageSubscription.mockClear()
 	mocks.listInternalEmailAttachmentsForMessage.mockResolvedValueOnce([])
-	const savedPackage = await seedInboundSubscription(
+	const savedPackage = subscribePackage(
+		'inbound-notifier',
 		inboundEmailQuarantinedTopic,
 	)
-	const message = inboundMessageFixture({
-		id: 'quarantined-1',
-		classification: 'quarantined',
-		classificationReason: 'Sender matched quarantine rule spam.example.',
-	})
-	const env = {
-		APP_DB: {},
-		BUNDLE_ARTIFACTS_KV: {},
-		APP_BASE_URL: 'https://example.com',
-	} as Env
-
 	await dispatchInboundEmailSubscriptionEvents({
 		env,
 		userId: 'user-1',
-		message: message as never,
+		message: inboundMessageFixture({
+			id: 'quarantined-1',
+			classification: 'quarantined',
+			classificationReason: 'Sender matched quarantine rule spam.example.',
+		}) as never,
 	})
 
 	expect(mocks.invokePackageSubscription).toHaveBeenCalledTimes(1)
@@ -311,7 +258,7 @@ test('quarantined inbound messages dispatch email.message.quarantined and not re
 		expect.objectContaining({
 			savedPackage,
 			topic: inboundEmailQuarantinedTopic,
-			idempotencyKey: `email:quarantined-1:package-inbound-1:${inboundEmailQuarantinedTopic}`,
+			idempotencyKey: `email:quarantined-1:${savedPackage.id}:${inboundEmailQuarantinedTopic}`,
 			params: expect.objectContaining({
 				event: inboundEmailQuarantinedTopic,
 				message: expect.objectContaining({
@@ -321,8 +268,5 @@ test('quarantined inbound messages dispatch email.message.quarantined and not re
 				}),
 			}),
 		}),
-	)
-	expect(mocks.invokePackageSubscription.mock.calls[0]?.[0]?.topic).not.toBe(
-		inboundEmailReceiptTopic,
 	)
 })

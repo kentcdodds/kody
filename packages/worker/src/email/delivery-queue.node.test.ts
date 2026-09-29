@@ -32,37 +32,9 @@ vi.mock('./verification-delivery-notify.ts', () => ({
 
 const { handleEmailDeliveryQueue } = await import('./delivery-queue.ts')
 
-function createQueueMessage(id: string, body: unknown) {
-	return {
-		id,
-		timestamp: new Date('2026-07-17T20:00:00.000Z'),
-		body,
-		attempts: 1,
-		ack: vi.fn(),
-		retry: vi.fn(),
-	}
-}
-
 test('delivery queue handles terminal outcomes without a D1-to-Mailbox graph mirror', async () => {
 	consoleWarn.mockImplementation(() => {})
 	consoleError.mockImplementation(() => {})
-	const recorded = createQueueMessage('queue-recorded', { kind: 'recorded' })
-	const duplicate = createQueueMessage('queue-duplicate', { kind: 'duplicate' })
-	const invalid = createQueueMessage('queue-invalid', { kind: 'invalid' })
-	const stale = createQueueMessage('queue-stale', { kind: 'stale' })
-	const unmatched = createQueueMessage('queue-unmatched', { kind: 'unmatched' })
-	const transactional = createQueueMessage('queue-transactional', {
-		kind: 'recorded_transactional',
-	})
-	const destinationTransactional = createQueueMessage(
-		'queue-destination-transactional',
-		{
-			kind: 'recorded_transactional_destination',
-		},
-	)
-	const dispatchFailure = createQueueMessage('queue-dispatch-failure', {
-		kind: 'dispatch-failure',
-	})
 	const providerEvent = {
 		payload: {
 			eventId: 'event-1',
@@ -70,64 +42,75 @@ test('delivery queue handles terminal outcomes without a D1-to-Mailbox graph mir
 			delivery: { status: 'delivered' },
 		},
 	}
-	const storedMessage = { id: 'message-1', userId: 'user-1' }
-	mocks.processCloudflareEmailDeliveryEvent
-		.mockResolvedValueOnce({
-			outcome: 'recorded',
-			providerEvent,
-			message: storedMessage,
-		})
-		.mockResolvedValueOnce({
-			outcome: 'duplicate',
-			providerEvent,
-			message: storedMessage,
-		})
-		.mockResolvedValueOnce({
-			outcome: 'invalid',
-			providerEvent: null,
-			message: null,
-		})
-		.mockResolvedValueOnce({
-			outcome: 'stale',
-			providerEvent,
-			message: storedMessage,
-		})
-		.mockResolvedValueOnce({
-			outcome: 'unmatched',
-			providerEvent,
-			message: null,
-		})
-		.mockResolvedValueOnce({
-			outcome: 'recorded_transactional',
-			providerEvent,
-			event: {
-				userId: 9,
-				kind: 'email_verification',
-				recipient: 'blocked@example.com',
-				status: 'bounced',
-				class: 'sender_block',
-				alreadyTerminal: false,
+	const message = { id: 'message-1', userId: 'user-1' }
+	const transactionalEvent = {
+		userId: 9,
+		status: 'bounced',
+		alreadyTerminal: false,
+	}
+	// Each queue message gets the next processor result; the third
+	// subscription fan-out (dispatch-failure) throws.
+	const cases = [
+		['recorded', { outcome: 'recorded', providerEvent, message }, 'ack'],
+		['duplicate', { outcome: 'duplicate', providerEvent, message }, 'ack'],
+		[
+			'invalid',
+			{ outcome: 'invalid', providerEvent: null, message: null },
+			'ack',
+		],
+		['stale', { outcome: 'stale', providerEvent, message }, 'ack'],
+		[
+			'unmatched',
+			{ outcome: 'unmatched', providerEvent, message: null },
+			'retry',
+		],
+		[
+			'transactional',
+			{
+				outcome: 'recorded_transactional',
+				providerEvent,
+				message: null,
+				event: {
+					...transactionalEvent,
+					kind: 'email_verification',
+					recipient: 'blocked@example.com',
+					class: 'sender_block',
+				},
 			},
-			message: null,
-		})
-		.mockResolvedValueOnce({
-			outcome: 'recorded_transactional',
-			providerEvent,
-			event: {
-				userId: 9,
-				kind: 'email_destination_verification',
-				recipient: 'pager@example.com',
-				status: 'bounced',
-				class: 'other',
-				alreadyTerminal: false,
+			'ack',
+		],
+		[
+			'destination-transactional',
+			{
+				outcome: 'recorded_transactional',
+				providerEvent,
+				message: null,
+				event: {
+					...transactionalEvent,
+					kind: 'email_destination_verification',
+					recipient: 'pager@example.com',
+					class: 'other',
+				},
 			},
-			message: null,
-		})
-		.mockResolvedValueOnce({
-			outcome: 'recorded',
-			providerEvent,
-			message: storedMessage,
-		})
+			'ack',
+		],
+		[
+			'dispatch-failure',
+			{ outcome: 'recorded', providerEvent, message },
+			'retry',
+		],
+	] as const
+	const queueMessages = cases.map(([id, result]) => {
+		mocks.processCloudflareEmailDeliveryEvent.mockResolvedValueOnce(result)
+		return {
+			id: `queue-${id}`,
+			timestamp: new Date('2026-07-17T20:00:00.000Z'),
+			body: { kind: id },
+			attempts: 1,
+			ack: vi.fn(),
+			retry: vi.fn(),
+		}
+	})
 	mocks.applyOutboundEmailAbusePause.mockResolvedValue(undefined)
 	mocks.dispatchEmailDeliverySubscriptionEvents
 		.mockResolvedValueOnce([])
@@ -145,16 +128,7 @@ test('delivery queue handles terminal outcomes without a D1-to-Mailbox graph mir
 	await handleEmailDeliveryQueue(
 		{
 			queue: 'kody-email-delivery',
-			messages: [
-				recorded,
-				duplicate,
-				invalid,
-				stale,
-				unmatched,
-				transactional,
-				destinationTransactional,
-				dispatchFailure,
-			],
+			messages: queueMessages,
 			ackAll() {},
 			retryAll() {},
 		} as unknown as MessageBatch<unknown>,
@@ -162,13 +136,18 @@ test('delivery queue handles terminal outcomes without a D1-to-Mailbox graph mir
 		ctx,
 	)
 
-	expect(recorded.ack).toHaveBeenCalledOnce()
-	expect(duplicate.ack).toHaveBeenCalledOnce()
-	expect(invalid.ack).toHaveBeenCalledOnce()
-	expect(stale.ack).toHaveBeenCalledOnce()
-	expect(unmatched.retry).toHaveBeenCalledWith({ delaySeconds: 30 })
-	expect(transactional.ack).toHaveBeenCalledOnce()
-	expect(destinationTransactional.ack).toHaveBeenCalledOnce()
+	expect(
+		queueMessages.map((queued) => ({
+			ack: queued.ack.mock.calls,
+			retry: queued.retry.mock.calls,
+		})),
+	).toEqual(
+		cases.map(([, , settle]) =>
+			settle === 'ack'
+				? { ack: [[]], retry: [] }
+				: { ack: [], retry: [[{ delaySeconds: 30 }]] },
+		),
+	)
 	expect(mocks.notifyAdminsOfVerificationDeliveryFailure).toHaveBeenCalledOnce()
 	expect(mocks.notifyAdminsOfVerificationDeliveryFailure).toHaveBeenCalledWith({
 		env: expect.anything(),
@@ -187,7 +166,6 @@ test('delivery queue handles terminal outcomes without a D1-to-Mailbox graph mir
 			kind: 'email_destination_verification',
 		},
 	)
-	expect(dispatchFailure.retry).toHaveBeenCalledWith({ delaySeconds: 30 })
 	expect(mocks.dispatchEmailDeliverySubscriptionEvents).toHaveBeenCalledTimes(3)
 	expect(waitUntilPromises).toHaveLength(0)
 	expect(prepare).not.toHaveBeenCalled()

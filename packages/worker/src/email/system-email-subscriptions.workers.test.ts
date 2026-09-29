@@ -20,10 +20,6 @@ const platformBaseUrl = 'https://kody.example.com'
 const systemDomain = 'kody.example.com'
 const systemTopic = 'email.system-message.received'
 
-function createInboundEnv() {
-	return { ...env, APP_BASE_URL: platformBaseUrl }
-}
-
 async function seedSubscribedPackage(input: {
 	bundleKv: Map<string, string>
 	userId: string
@@ -32,45 +28,50 @@ async function seedSubscribedPackage(input: {
 	const db = env.APP_DB
 	const sourceId = `source-${crypto.randomUUID()}`
 	const packageId = `package-${crypto.randomUUID()}`
+	const name = `@${input.scope}/system-email-notifier`
+	const artifactName = `subscription:${systemTopic}`
+	const artifactKey = `bundle-artifact:v1:${sourceId}:commit-1:module:${artifactName}:src/on-system-email.ts`
 	const now = new Date().toISOString()
-	await db
-		.prepare(
-			`INSERT INTO saved_packages (
+	await db.batch([
+		db
+			.prepare(
+				`INSERT INTO saved_packages (
 				id, user_id, name, kody_id, description, tags_json, search_text, source_id, has_app, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, '[]', NULL, ?, 0, ?, ?)`,
-		)
-		.bind(
-			packageId,
-			input.userId,
-			`@${input.scope}/system-email-notifier`,
-			'system-email-notifier',
-			'System email notifier',
-			sourceId,
-			now,
-			now,
-		)
-		.run()
-	await db
-		.prepare(
-			`INSERT INTO entity_sources (
+			) VALUES (?, ?, ?, 'system-email-notifier', 'System email notifier', '[]', NULL, ?, 0, ?, ?)`,
+			)
+			.bind(packageId, input.userId, name, sourceId, now, now),
+		db
+			.prepare(
+				`INSERT INTO entity_sources (
 				id, user_id, entity_kind, entity_id, repo_id, published_commit, indexed_commit, manifest_path, source_root, created_at, updated_at
 			) VALUES (?, ?, 'package', ?, 'repo-1', 'commit-1', NULL, 'package.json', '/', ?, ?)`,
-		)
-		.bind(sourceId, input.userId, packageId, now, now)
-		.run()
+			)
+			.bind(sourceId, input.userId, packageId, now, now),
+		db
+			.prepare(
+				`INSERT INTO published_bundle_artifacts (
+				id, user_id, source_id, published_commit, artifact_kind, artifact_name, entry_point, kv_key, dependencies_json, created_at, updated_at
+			) VALUES (?, ?, ?, 'commit-1', 'module', ?, 'src/on-system-email.ts', ?, '[]', ?, ?)`,
+			)
+			.bind(
+				`artifact-${crypto.randomUUID()}`,
+				input.userId,
+				sourceId,
+				artifactName,
+				artifactKey,
+				now,
+				now,
+			),
+	])
 
 	const manifest = {
-		name: `@${input.scope}/system-email-notifier`,
-		exports: {
-			'.': './src/index.ts',
-		},
+		name,
+		exports: { '.': './src/index.ts' },
 		kody: {
 			id: 'system-email-notifier',
 			description: 'System email notifier',
 			subscriptions: {
-				[systemTopic]: {
-					handler: './src/on-system-email.ts',
-				},
+				[systemTopic]: { handler: './src/on-system-email.ts' },
 			},
 		},
 	}
@@ -88,17 +89,18 @@ async function seedSubscribedPackage(input: {
 			createdAt: now,
 		}),
 	)
-
-	const subscriptionArtifact = {
-		version: 1,
-		kind: 'module',
-		artifactName: `subscription:${systemTopic}`,
-		sourceId,
-		publishedCommit: 'commit-1',
-		entryPoint: 'src/on-system-email.ts',
-		mainModule: 'dist/subscription.js',
-		modules: {
-			'dist/subscription.js': `
+	input.bundleKv.set(
+		artifactKey,
+		JSON.stringify({
+			version: 1,
+			kind: 'module',
+			artifactName,
+			sourceId,
+			publishedCommit: 'commit-1',
+			entryPoint: 'src/on-system-email.ts',
+			mainModule: 'dist/subscription.js',
+			modules: {
+				'dist/subscription.js': `
 export default async function main(input = {}) {
 	return {
 		event: input.event,
@@ -108,34 +110,74 @@ export default async function main(input = {}) {
 	}
 }
 `,
-		},
-		dependencies: [],
-		packageContext: {
-			packageId,
-			kodyId: 'system-email-notifier',
-			sourceId,
-		},
-		createdAt: now,
-	}
-	const artifactKey = `bundle-artifact:v1:${sourceId}:commit-1:module:subscription:${systemTopic}:src/on-system-email.ts`
-	input.bundleKv.set(artifactKey, JSON.stringify(subscriptionArtifact))
-	await db
-		.prepare(
-			`INSERT INTO published_bundle_artifacts (
-				id, user_id, source_id, published_commit, artifact_kind, artifact_name, entry_point, kv_key, dependencies_json, created_at, updated_at
-			) VALUES (?, ?, ?, 'commit-1', 'module', ?, 'src/on-system-email.ts', ?, '[]', ?, ?)`,
-		)
-		.bind(
-			`artifact-${crypto.randomUUID()}`,
-			input.userId,
-			sourceId,
-			`subscription:${systemTopic}`,
-			artifactKey,
-			now,
-			now,
-		)
-		.run()
+			},
+			dependencies: [],
+			packageContext: { packageId, kodyId: 'system-email-notifier', sourceId },
+			createdAt: now,
+		}),
+	)
 	return { packageId, sourceId }
+}
+
+async function seedMaxAccount(prefix: string) {
+	const email = `${prefix}-${crypto.randomUUID()}@example.com`
+	const accountId = await seedAccount({
+		db: env.APP_DB,
+		email,
+		username: `${prefix}-${crypto.randomUUID().slice(0, 8)}`,
+		plan: 'max',
+	})
+	return { accountId, stableUserId: await createStableUserIdFromEmail(email) }
+}
+
+function useBundleKv(bundleKv: Map<string, string>) {
+	const originalKv = env.BUNDLE_ARTIFACTS_KV
+	Object.assign(env, {
+		BUNDLE_ARTIFACTS_KV: {
+			async get(key: string, type?: string) {
+				const value = bundleKv.get(key) ?? null
+				if (value == null) return null
+				if (type === 'json') return JSON.parse(value) as unknown
+				return value
+			},
+			async put() {},
+			async delete() {},
+		},
+	})
+	return {
+		[Symbol.dispose]: () => {
+			Object.assign(env, { BUNDLE_ARTIFACTS_KV: originalKv })
+		},
+	}
+}
+
+async function deliverSystemMailAndDrain(local: string, subject: string) {
+	const message = createForwardableEmailMessage({
+		from: 'provider@example.net',
+		to: `${local}@${systemDomain}`,
+		raw: [
+			'From: Provider <provider@example.net>',
+			`To: ${local}@${systemDomain}`,
+			`Subject: ${subject}`,
+			`Message-ID: <system-${crypto.randomUUID()}@example.net>`,
+			'',
+			'System body.',
+		].join('\r\n'),
+	})
+	const waitUntilPromises: Array<Promise<unknown>> = []
+	const ctx = {
+		waitUntil(promise: Promise<unknown>) {
+			waitUntilPromises.push(promise)
+		},
+		passThroughOnException() {},
+	} as ExecutionContext
+	await handleInboundEmail(
+		message,
+		{ ...env, APP_BASE_URL: platformBaseUrl },
+		ctx,
+	)
+	expect(message.rejectedReason).toBeNull()
+	for (const promise of waitUntilPromises) await promise
 }
 
 // Package subscription dispatch boots the real Worker Loader sandbox, which
@@ -155,24 +197,10 @@ test(
 		await ensurePackageSubscriptionTestSchema(env.APP_DB)
 		await ensureRbacTestSchema(env.APP_DB)
 
-		const adminEmail = `system-sub-admin-${crypto.randomUUID()}@example.com`
-		const adminStableId = await createStableUserIdFromEmail(adminEmail)
-		const adminAccountId = await seedAccount({
-			db: env.APP_DB,
-			email: adminEmail,
-			username: `sysadmin-${crypto.randomUUID().slice(0, 8)}`,
-			plan: 'max',
-		})
-		await assignAdminRole({ db: env.APP_DB, userId: adminAccountId })
-
-		const regularEmail = `system-sub-user-${crypto.randomUUID()}@example.com`
-		const regularStableId = await createStableUserIdFromEmail(regularEmail)
-		await seedAccount({
-			db: env.APP_DB,
-			email: regularEmail,
-			username: `sysuser-${crypto.randomUUID().slice(0, 8)}`,
-			plan: 'max',
-		})
+		const admin = await seedMaxAccount('sysadmin')
+		await assignAdminRole({ db: env.APP_DB, userId: admin.accountId })
+		const adminStableId = admin.stableUserId
+		const regularStableId = (await seedMaxAccount('sysuser')).stableUserId
 
 		const bundleKv = new Map<string, string>()
 		const adminPackage = await seedSubscribedPackage({
@@ -187,95 +215,42 @@ test(
 			userId: regularStableId,
 			scope: 'sysuser',
 		})
+		using _kv = useBundleKv(bundleKv)
 
-		const waitUntilPromises: Array<Promise<unknown>> = []
-		const ctx = {
-			waitUntil(promise: Promise<unknown>) {
-				waitUntilPromises.push(promise)
-			},
-			passThroughOnException() {},
-		} as ExecutionContext
+		await deliverSystemMailAndDrain('postmaster', 'Delivery report')
+		const [stored] = await listSystemEmailMessages({ db: env.APP_DB, limit: 1 })
+		if (!stored) throw new Error('Expected stored system message')
 
-		const originalKv = env.BUNDLE_ARTIFACTS_KV
-		Object.assign(env, {
-			BUNDLE_ARTIFACTS_KV: {
-				async get(key: string, type?: string) {
-					const value = bundleKv.get(key) ?? null
-					if (value == null) return null
-					if (type === 'json') return JSON.parse(value) as unknown
-					return value
-				},
-				async put() {
-					return undefined
-				},
-				async delete() {
-					return undefined
-				},
+		// The keyed idempotency ledger lives in each owner's RunLog DO now.
+		const invocationsFor = async (userId: string) =>
+			(await exportRunRecords({ env, userId, pageSize: 100 }))
+				.packageInvocations
+		expect(await invocationsFor(regularStableId)).toHaveLength(0)
+		const adminInvocations = await invocationsFor(adminStableId)
+		expect(adminInvocations).toHaveLength(1)
+		const invocation = adminInvocations[0]
+		expect(invocation).toMatchObject({
+			packageId: adminPackage.packageId,
+			exportName: `subscription:${systemTopic}`,
+			topic: systemTopic,
+			source: 'email',
+			idempotencyKey: `email:${stored.id}:${adminPackage.packageId}:${systemTopic}`,
+		})
+		const responseJson = invocation?.responseJson
+		if (!responseJson) {
+			throw new Error('Expected a stored replay response for the admin row.')
+		}
+		expect(
+			(JSON.parse(responseJson) as { body: Record<string, unknown> }).body,
+		).toMatchObject({
+			ok: true,
+			result: {
+				event: systemTopic,
+				messageId: stored.id,
+				subject: 'Delivery report',
+				adminUrl: `${platformBaseUrl}/admin/system-email?messageId=${encodeURIComponent(stored.id)}`,
 			},
 		})
-
-		try {
-			const message = createForwardableEmailMessage({
-				from: 'provider@example.net',
-				to: `postmaster@${systemDomain}`,
-				raw: [
-					'From: Provider <provider@example.net>',
-					`To: postmaster@${systemDomain}`,
-					'Subject: Delivery report',
-					'Message-ID: <system-subscription@example.net>',
-					'',
-					'System body.',
-				].join('\r\n'),
-			})
-			await handleInboundEmail(message, createInboundEnv(), ctx)
-			expect(message.rejectedReason).toBeNull()
-			for (let index = 0; index < waitUntilPromises.length; index += 1) {
-				await waitUntilPromises[index]
-			}
-
-			const [stored] = await listSystemEmailMessages({
-				db: env.APP_DB,
-				limit: 1,
-			})
-			expect(stored).toBeDefined()
-			if (!stored) throw new Error('Expected stored system message')
-
-			// The keyed idempotency ledger lives in each owner's RunLog DO now.
-			const adminInvocations = (
-				await exportRunRecords({ env, userId: adminStableId, pageSize: 100 })
-			).packageInvocations
-			const regularInvocations = (
-				await exportRunRecords({ env, userId: regularStableId, pageSize: 100 })
-			).packageInvocations
-			expect(regularInvocations).toHaveLength(0)
-			expect(adminInvocations).toHaveLength(1)
-			const invocation = adminInvocations[0]
-			expect(invocation).toMatchObject({
-				packageId: adminPackage.packageId,
-				exportName: `subscription:${systemTopic}`,
-				topic: systemTopic,
-				source: 'email',
-				idempotencyKey: `email:${stored.id}:${adminPackage.packageId}:${systemTopic}`,
-			})
-			const responseJson = invocation?.responseJson
-			if (!responseJson) {
-				throw new Error('Expected a stored replay response for the admin row.')
-			}
-			const response = JSON.parse(responseJson) as {
-				body: Record<string, unknown>
-			}
-			expect(response.body).toMatchObject({
-				ok: true,
-				result: {
-					event: systemTopic,
-					messageId: stored.id,
-					subject: 'Delivery report',
-					adminUrl: `${platformBaseUrl}/admin/system-email?messageId=${encodeURIComponent(stored.id)}`,
-				},
-			})
-		} finally {
-			Object.assign(env, { BUNDLE_ARTIFACTS_KV: originalKv })
-		}
 	},
 	subscriptionDispatchTimeoutMs,
 )
@@ -289,35 +264,7 @@ test('system inbound email dispatch is a no-op without admins or RBAC tables', a
 	await env.APP_DB.prepare(`DROP TABLE IF EXISTS user_roles`).run()
 	await env.APP_DB.prepare(`DROP TABLE IF EXISTS roles`).run()
 
-	const waitUntilPromises: Array<Promise<unknown>> = []
-	const ctx = {
-		waitUntil(promise: Promise<unknown>) {
-			waitUntilPromises.push(promise)
-		},
-		passThroughOnException() {},
-	} as ExecutionContext
-
-	const message = createForwardableEmailMessage({
-		from: 'provider@example.net',
-		to: `security@${systemDomain}`,
-		raw: [
-			'From: Provider <provider@example.net>',
-			`To: security@${systemDomain}`,
-			'Subject: No admins yet',
-			'Message-ID: <system-no-admins@example.net>',
-			'',
-			'System body.',
-		].join('\r\n'),
-	})
-	await handleInboundEmail(message, createInboundEnv(), ctx)
-	expect(message.rejectedReason).toBeNull()
-	for (let index = 0; index < waitUntilPromises.length; index += 1) {
-		await waitUntilPromises[index]
-	}
-
-	const messages = await listSystemEmailMessages({
-		db: env.APP_DB,
-		limit: 5,
-	})
+	await deliverSystemMailAndDrain('security', 'No admins yet')
+	const messages = await listSystemEmailMessages({ db: env.APP_DB, limit: 5 })
 	expect(messages.some((row) => row.subject === 'No admins yet')).toBe(true)
 })

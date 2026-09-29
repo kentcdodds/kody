@@ -30,16 +30,10 @@ function captureD1Sql(db: D1Database) {
 		statements,
 		db: new Proxy(db, {
 			get(target, property, receiver) {
-				if (property === 'prepare') {
+				if (property === 'prepare' || property === 'exec') {
 					return (sql: string) => {
 						statements.push(sql)
-						return target.prepare(sql)
-					}
-				}
-				if (property === 'exec') {
-					return (sql: string) => {
-						statements.push(sql)
-						return target.exec(sql)
+						return target[property](sql)
 					}
 				}
 				const value = Reflect.get(target, property, receiver)
@@ -196,12 +190,8 @@ function bundleArtifactsKv(bundleKv: Map<string, string>) {
 			if (type === 'json') return JSON.parse(value) as unknown
 			return value
 		},
-		async put() {
-			return undefined
-		},
-		async delete() {
-			return undefined
-		},
+		async put() {},
+		async delete() {},
 	}
 }
 
@@ -270,9 +260,7 @@ test('USER inbound attachment, package event, reply, and provider index stay Mai
 	})
 
 	await handleInboundEmail(inbound, flowEnv, ctx)
-	for (let index = 0; index < waitUntilPromises.length; index += 1) {
-		await waitUntilPromises[index]
-	}
+	for (const promise of waitUntilPromises) await promise
 	expect(inbound.rejectedReason).toBeNull()
 
 	const mailbox = mailboxRpc({ env, userId })

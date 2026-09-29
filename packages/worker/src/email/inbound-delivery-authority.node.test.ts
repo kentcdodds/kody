@@ -11,6 +11,22 @@ function namespace(stub: object) {
 	} as unknown as DurableObjectNamespace
 }
 
+function authorityFor(
+	userId: string,
+	stubs: { mailbox?: object; meter?: object; db?: object } = {},
+) {
+	return createUserInboundDeliveryAuthority({
+		env: {
+			APP_DB: (stubs.db ?? {}) as D1Database,
+			USER_METER: namespace(stubs.meter ?? {}),
+			MAILBOX: namespace(stubs.mailbox ?? {}),
+		},
+		userId,
+	})
+}
+
+const now = new Date('2026-08-02T12:00:00.000Z')
+
 async function createDelivery(userId: string, now: Date) {
 	return await buildInboundDelivery({
 		userId,
@@ -25,7 +41,6 @@ async function createDelivery(userId: string, now: Date) {
 
 test('dedupe claim precedes UserMeter and a Mailbox retry does not prepare USER graph SQL', async () => {
 	const userId = 'user-1'
-	const now = new Date('2026-08-02T12:00:00.000Z')
 	const delivery = await createDelivery(userId, now)
 	const snapshot: MailboxInboundDeliverySnapshot = {
 		...delivery,
@@ -76,14 +91,7 @@ test('dedupe claim precedes UserMeter and a Mailbox retry does not prepare USER 
 	const prepare = vi.fn(() => ({
 		bind: vi.fn(() => ({ run })),
 	}))
-	const authority = createUserInboundDeliveryAuthority({
-		env: {
-			APP_DB: { prepare } as unknown as D1Database,
-			USER_METER: namespace(meter),
-			MAILBOX: namespace(mailbox),
-		},
-		userId,
-	})
+	const authority = authorityFor(userId, { mailbox, meter, db: { prepare } })
 
 	await expect(
 		authority.charge({ delivery, plan: 'pro', limit: 100, now }),
@@ -112,7 +120,6 @@ test('dedupe claim precedes UserMeter and a Mailbox retry does not prepare USER 
 
 test('commitInboundMessageGraph forwards the active storage lease to one owner Mailbox RPC', async () => {
 	const userId = 'user-2'
-	const now = new Date('2026-08-02T12:00:00.000Z')
 	const delivery = {
 		...(await createDelivery(userId, now)),
 		state: 'storing' as const,
@@ -123,13 +130,9 @@ test('commitInboundMessageGraph forwards the active storage lease to one owner M
 		message: { id: delivery.messageId },
 	}))
 	const prepare = vi.fn()
-	const authority = createUserInboundDeliveryAuthority({
-		env: {
-			APP_DB: { prepare } as unknown as D1Database,
-			USER_METER: namespace({}),
-			MAILBOX: namespace({ commitInboundMessageGraph }),
-		},
-		userId,
+	const authority = authorityFor(userId, {
+		mailbox: { commitInboundMessageGraph },
+		db: { prepare },
 	})
 	const thread = { id: delivery.threadId } as never
 	const message = { id: delivery.messageId, direction: 'inbound' } as never
@@ -155,18 +158,8 @@ test('commitInboundMessageGraph forwards the active storage lease to one owner M
 
 test('commitInboundMessageGraph rejects a delivery without an active lease', async () => {
 	const userId = 'user-3'
-	const now = new Date('2026-08-02T12:00:00.000Z')
-	const authority = createUserInboundDeliveryAuthority({
-		env: {
-			APP_DB: {} as D1Database,
-			USER_METER: namespace({}),
-			MAILBOX: namespace({}),
-		},
-		userId,
-	})
-
 	await expect(
-		authority.commitInboundMessageGraph({
+		authorityFor(userId).commitInboundMessageGraph({
 			delivery: await createDelivery(userId, now),
 			thread: {} as never,
 			message: {} as never,
@@ -176,14 +169,5 @@ test('commitInboundMessageGraph rejects a delivery without an active lease', asy
 })
 
 test('USER authority refuses the dedicated system email owner', () => {
-	expect(() =>
-		createUserInboundDeliveryAuthority({
-			env: {
-				APP_DB: {} as D1Database,
-				USER_METER: namespace({}),
-				MAILBOX: namespace({}),
-			},
-			userId: systemEmailOwnerId,
-		}),
-	).toThrow('must remain in D1')
+	expect(() => authorityFor(systemEmailOwnerId)).toThrow('must remain in D1')
 })

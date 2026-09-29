@@ -123,73 +123,31 @@ test('evaluateEmailSenderRules applies precedence and never matches across users
 	await ensureEmailTestSchema(env.APP_DB)
 	const userId = `rules-eval-${crypto.randomUUID()}`
 	const otherUserId = `rules-other-${crypto.randomUUID()}`
+	for (const [kind, value, effect] of [
+		['domain', 'example.com', 'block'],
+		['domain', 'mail.example.com', 'quarantine'],
+		['address', 'vip@mail.example.com', 'allow'],
+	] as const) {
+		await upsertEmailSenderRule({ db: env.APP_DB, userId, kind, value, effect })
+	}
 
-	await upsertEmailSenderRule({
-		db: env.APP_DB,
-		userId,
-		kind: 'domain',
-		value: 'example.com',
-		effect: 'block',
-	})
-	await upsertEmailSenderRule({
-		db: env.APP_DB,
-		userId,
-		kind: 'domain',
-		value: 'mail.example.com',
-		effect: 'quarantine',
-	})
-	await upsertEmailSenderRule({
-		db: env.APP_DB,
-		userId,
-		kind: 'address',
-		value: 'vip@mail.example.com',
-		effect: 'allow',
-	})
-
-	const addressWin = await evaluateEmailSenderRules({
-		db: env.APP_DB,
-		userId,
-		senderAddress: 'VIP@Mail.Example.COM',
-	})
-	expect(addressWin?.effect).toBe('allow')
-	expect(addressWin?.rule.value).toBe('vip@mail.example.com')
-
-	const longestDomain = await evaluateEmailSenderRules({
-		db: env.APP_DB,
-		userId,
-		senderAddress: 'news@mail.example.com',
-	})
-	expect(longestDomain?.effect).toBe('quarantine')
-	expect(longestDomain?.rule.value).toBe('mail.example.com')
-
-	const parentDomain = await evaluateEmailSenderRules({
-		db: env.APP_DB,
-		userId,
-		senderAddress: 'news@shop.example.com',
-	})
-	expect(parentDomain?.effect).toBe('block')
-	expect(parentDomain?.rule.value).toBe('example.com')
-
-	expect(
-		await evaluateEmailSenderRules({
+	// [evaluated user, sender, expected [effect, matched rule value] or null]
+	const cases = [
+		[userId, 'VIP@Mail.Example.COM', ['allow', 'vip@mail.example.com']],
+		[userId, 'news@mail.example.com', ['quarantine', 'mail.example.com']],
+		[userId, 'news@shop.example.com', ['block', 'example.com']],
+		[userId, 'friend@other.example', null],
+		[otherUserId, 'vip@mail.example.com', null],
+		[otherUserId, 'news@mail.example.com', null],
+	] as const
+	const results = []
+	for (const [evaluatedUserId, senderAddress] of cases) {
+		const match = await evaluateEmailSenderRules({
 			db: env.APP_DB,
-			userId,
-			senderAddress: 'friend@other.example',
-		}),
-	).toBeNull()
-
-	expect(
-		await evaluateEmailSenderRules({
-			db: env.APP_DB,
-			userId: otherUserId,
-			senderAddress: 'vip@mail.example.com',
-		}),
-	).toBeNull()
-	expect(
-		await evaluateEmailSenderRules({
-			db: env.APP_DB,
-			userId: otherUserId,
-			senderAddress: 'news@mail.example.com',
-		}),
-	).toBeNull()
+			userId: evaluatedUserId,
+			senderAddress,
+		})
+		results.push(match ? [match.effect, match.rule.value] : null)
+	}
+	expect(results).toEqual(cases.map(([, , expected]) => expected))
 })

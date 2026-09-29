@@ -213,7 +213,7 @@ test('Mailbox upserts, reads, searches, isolates owners, and stays idempotent', 
 	})
 })
 
-test('Mailbox stale snapshots, attachment omit/clear, delivery-event updatedAt', async () => {
+test('Mailbox stale snapshots, attachment omit/clear, and corrupt persisted rows', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const userId = uniqueUserId('stale')
 	const mailbox = rpcFor(userId)
@@ -290,106 +290,6 @@ test('Mailbox stale snapshots, attachment omit/clear, delivery-event updatedAt',
 		await mailbox.listAttachmentsForMessage({ messageId: message.id }),
 	).toHaveLength(0)
 
-	const outbound = baseMessage(userId, {
-		id: 'stale-out',
-		direction: 'outbound',
-		providerMessageId: 'prov-stale',
-		processingStatus: 'sent',
-		deliveryStatus: 'delivered',
-		deliveryStatusAt: '2026-07-02T10:00:00.000Z',
-		updatedAt: '2026-07-02T10:00:00.000Z',
-	})
-	await mailbox.upsertMessageGraph({ ownerId: userId, message: outbound })
-	await mailbox.upsertMessageGraph({
-		ownerId: userId,
-		message: {
-			...outbound,
-			deliveryStatus: 'deferred',
-			deliveryStatusAt: '2026-07-02T09:00:00.000Z',
-			updatedAt: '2026-07-02T10:00:01.000Z',
-		},
-	})
-	expect(await mailbox.getMessage({ messageId: outbound.id })).toMatchObject({
-		deliveryStatus: 'delivered',
-		deliveryStatusAt: '2026-07-02T10:00:00.000Z',
-	})
-
-	const first = await mailbox.upsertDeliveryEvent({
-		ownerId: userId,
-		event: baseDeliveryEvent({
-			id: 'evt-1',
-			messageId: outbound.id,
-			eventType: 'delivered',
-			provider: 'cloudflare-email',
-			providerMessageId: 'prov-stale',
-			providerEventId: 'provider-event-1',
-			createdAt: '2026-07-02T10:00:00.000Z',
-			updatedAt: '2026-07-02T10:00:00.000Z',
-			needsEffectReconcile: false,
-			state: 'received',
-			fingerprint: 'fp-1',
-		}),
-		latestDeliveryStatus: {
-			messageId: outbound.id,
-			deliveryStatus: 'delivered',
-			deliveryStatusAt: '2026-07-02T10:30:00.000Z',
-		},
-	})
-	expect(first).toEqual({
-		inserted: true,
-		accepted: true,
-		updatedLatestStatus: true,
-	})
-
-	const staleEvent = await mailbox.upsertDeliveryEvent({
-		ownerId: userId,
-		event: baseDeliveryEvent({
-			id: 'evt-1',
-			messageId: outbound.id,
-			eventType: 'deferred',
-			provider: 'cloudflare-email',
-			providerEventId: 'provider-event-1',
-			createdAt: '2026-07-02T10:00:00.000Z',
-			updatedAt: '2026-07-02T09:00:00.000Z',
-			needsEffectReconcile: true,
-			state: null,
-			fingerprint: null,
-		}),
-	})
-	expect(staleEvent).toEqual({
-		inserted: false,
-		accepted: false,
-		updatedLatestStatus: false,
-	})
-	const eventRow = (
-		await mailbox.listDeliveryEvents({ messageId: outbound.id, limit: 5 })
-	).find((row) => row.id === 'evt-1')
-	expect(eventRow).toMatchObject({
-		eventType: 'delivered',
-		state: 'received',
-		fingerprint: 'fp-1',
-		needsEffectReconcile: false,
-		updatedAt: '2026-07-02T10:00:00.000Z',
-	})
-
-	const duplicate = await mailbox.upsertDeliveryEvent({
-		ownerId: userId,
-		event: baseDeliveryEvent({
-			id: 'evt-1-dup',
-			messageId: outbound.id,
-			eventType: 'delivered',
-			provider: 'cloudflare-email',
-			providerEventId: 'provider-event-1',
-			createdAt: '2026-07-02T11:00:00.000Z',
-			updatedAt: '2026-07-02T11:00:00.000Z',
-		}),
-	})
-	expect(duplicate).toEqual({
-		inserted: false,
-		accepted: false,
-		updatedLatestStatus: false,
-	})
-
 	expect(() =>
 		mapMailboxMessageRow({
 			id: 'corrupt',
@@ -408,7 +308,7 @@ test('Mailbox stale snapshots, attachment omit/clear, delivery-event updatedAt',
 	).toThrow(/persisted direction is invalid/)
 })
 
-test('Mailbox delivery status, promoted inbound fields, export paging, and cursor rejection', async () => {
+test('Mailbox delivery status, delivery-event dedupe and stale replays, export paging, and cursor rejection', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const userId = uniqueUserId('export')
 	const mailbox = rpcFor(userId)
@@ -485,9 +385,9 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 			provider: 'cloudflare-email',
 			providerMessageId: 'prov-export',
 			providerEventId: 'provider-event-1',
-			createdAt: '2026-07-02T10:00:00.000Z',
-			updatedAt: '2026-07-02T10:00:00.000Z',
 			needsEffectReconcile: false,
+			state: 'received',
+			fingerprint: 'fp-1',
 		}),
 		latestDeliveryStatus: {
 			messageId: message.id,
@@ -501,6 +401,36 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 		updatedLatestStatus: true,
 	})
 
+	// A same-id replay with an older updatedAt must not overwrite the event.
+	const staleEvent = await mailbox.upsertDeliveryEvent({
+		ownerId: userId,
+		event: baseDeliveryEvent({
+			id: 'evt-1',
+			messageId: message.id,
+			eventType: 'deferred',
+			provider: 'cloudflare-email',
+			providerEventId: 'provider-event-1',
+			updatedAt: '2026-07-02T09:00:00.000Z',
+			needsEffectReconcile: true,
+		}),
+	})
+	expect(staleEvent).toEqual({
+		inserted: false,
+		accepted: false,
+		updatedLatestStatus: false,
+	})
+	expect(
+		(
+			await mailbox.listDeliveryEvents({ messageId: message.id, limit: 5 })
+		).find((row) => row.id === 'evt-1'),
+	).toMatchObject({
+		eventType: 'delivered',
+		state: 'received',
+		fingerprint: 'fp-1',
+		needsEffectReconcile: false,
+		updatedAt: '2026-07-02T10:00:00.000Z',
+	})
+
 	// Explicit needsEffectReconcile: false is stored as false.
 	await mailbox.upsertDeliveryEvent({
 		ownerId: userId,
@@ -508,9 +438,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 			id: 'evt-default-reconcile',
 			messageId: message.id,
 			eventType: 'sent',
-			provider: 'kody',
 			createdAt: '2026-07-02T11:30:00.000Z',
-			updatedAt: '2026-07-02T11:30:00.000Z',
 			needsEffectReconcile: false,
 		}),
 	})
@@ -529,7 +457,6 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 			providerMessageId: 'prov-export',
 			providerEventId: 'provider-event-1',
 			createdAt: '2026-07-02T11:00:00.000Z',
-			updatedAt: '2026-07-02T11:00:00.000Z',
 		}),
 		latestDeliveryStatus: {
 			messageId: message.id,
@@ -550,7 +477,6 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 			providerMessageId: 'prov-export',
 			providerEventId: 'provider-event-2',
 			createdAt: '2026-07-02T09:00:00.000Z',
-			updatedAt: '2026-07-02T09:00:00.000Z',
 		}),
 		latestDeliveryStatus: {
 			messageId: message.id,
@@ -585,7 +511,6 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 				message: baseMessage(userId, {
 					id: 'bad-iso',
 					createdAt: '2026-07-01T12:00:00Z',
-					updatedAt: '2026-07-01T12:00:00Z',
 				}),
 			}),
 		)
@@ -704,9 +629,6 @@ test('Mailbox upsertDeliveryEvents validates bounds, owns batch, and arms retent
 				id: `overflow-${index}`,
 				messageId: message.id,
 				eventType: 'sent',
-				provider: 'kody',
-				createdAt: '2026-07-02T10:00:00.000Z',
-				updatedAt: '2026-07-02T10:00:00.000Z',
 			}),
 	)
 	await runInDurableObject(stub, async (instance: Mailbox) => {
@@ -724,18 +646,14 @@ test('Mailbox upsertDeliveryEvents validates bounds, owns batch, and arms retent
 			id: 'batch-evt-1',
 			messageId: message.id,
 			eventType: 'send_requested',
-			provider: 'kody',
 			createdAt: '2026-07-02T10:00:01.000Z',
-			updatedAt: '2026-07-02T10:00:01.000Z',
 		}),
 		baseDeliveryEvent({
 			id: 'batch-evt-2',
 			messageId: message.id,
 			eventType: 'sent',
-			provider: 'kody',
 			providerEventId: 'provider-batch-2',
 			createdAt: '2026-07-02T10:00:02.000Z',
-			updatedAt: '2026-07-02T10:00:02.000Z',
 		}),
 	]
 	const first = await mailbox.upsertDeliveryEvents({
@@ -775,10 +693,8 @@ test('Mailbox upsertDeliveryEvents validates bounds, owns batch, and arms retent
 				id: 'batch-evt-2-dup',
 				messageId: message.id,
 				eventType: 'sent',
-				provider: 'kody',
 				providerEventId: 'provider-batch-2',
 				createdAt: '2026-07-02T11:00:00.000Z',
-				updatedAt: '2026-07-02T11:00:00.000Z',
 			}),
 		],
 	})
@@ -798,7 +714,6 @@ test('Mailbox upsertDeliveryEvents validates bounds, owns batch, and arms retent
 						id: 'batch-evt-other',
 						messageId: message.id,
 						eventType: 'sent',
-						provider: 'kody',
 					}),
 				],
 			}),
@@ -816,17 +731,13 @@ test('Mailbox upsertDeliveryEvents validates bounds, owns batch, and arms retent
 						id: 'batch-txn-ok',
 						messageId: message.id,
 						eventType: 'delivered',
-						provider: 'kody',
 						createdAt: '2026-07-02T12:00:00.000Z',
-						updatedAt: '2026-07-02T12:00:00.000Z',
 					}),
 					baseDeliveryEvent({
 						id: 'batch-txn-bad',
 						messageId: message.id,
 						eventType: 'delivered',
-						provider: 'kody',
 						createdAt: '2026-07-02T12:00:00Z',
-						updatedAt: '2026-07-02T12:00:00Z',
 					}),
 				],
 			}),

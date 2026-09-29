@@ -55,60 +55,51 @@ test('dedicated system inbound transitions stay behaviorally exhaustive', async 
 	using sqlite = createDedicatedDatabase()
 	const db = createD1FromSqlite(sqlite)
 	const now = new Date('2026-08-03T00:00:00.000Z')
+	const charge = async (target: InboundDelivery, at = now) =>
+		(
+			await chargeSystemInboundDeliveryOnce({
+				db,
+				delivery: target,
+				localPart: 'support',
+				limit: 100,
+				now: at,
+			})
+		).delivery!
+	const claim = async (target: InboundDelivery) =>
+		(
+			await claimSystemInboundDeliveryStorage({
+				db,
+				delivery: target,
+				expectedAttachmentCount: 0,
+				now,
+			})
+		).delivery!
+	const stateOf = async (target: InboundDelivery) =>
+		(await getSystemInboundDelivery({ db, deliveryId: target.deliveryId }))
+			?.state
+
 	const rejected = delivery('rejected', now)
 	await claimSystemInboundDeliveryWindow({ db, delivery: rejected, now })
-	const rejectedCharge = await chargeSystemInboundDeliveryOnce({
-		db,
-		delivery: rejected,
-		localPart: 'support',
-		limit: 100,
-		now,
-	})
-	const firstClaim = await claimSystemInboundDeliveryStorage({
-		db,
-		delivery: rejectedCharge.delivery!,
-		expectedAttachmentCount: 0,
-		now,
-	})
-	await releaseSystemInboundDeliveryStorage({
-		db,
-		delivery: firstClaim.delivery!,
-	})
+	const firstClaim = await claim(await charge(rejected))
+	await releaseSystemInboundDeliveryStorage({ db, delivery: firstClaim })
 	const released = await getSystemInboundDelivery({
 		db,
 		deliveryId: rejected.deliveryId,
 	})
-	const secondClaim = await claimSystemInboundDeliveryStorage({
-		db,
-		delivery: released!,
-		expectedAttachmentCount: 0,
-		now,
-	})
+	const retryClaim = await claim(released!)
 	await markSystemInboundDeliveryRejected({
 		db,
-		delivery: secondClaim.delivery!,
+		delivery: retryClaim,
 		reason: 'dedicated rejection',
 	})
 
 	const received = delivery('received', now)
-	const receivedCharge = await chargeSystemInboundDeliveryOnce({
-		db,
-		delivery: received,
-		localPart: 'support',
-		limit: 100,
-		now,
-	})
-	const receivedClaim = await claimSystemInboundDeliveryStorage({
-		db,
-		delivery: receivedCharge.delivery!,
-		expectedAttachmentCount: 0,
-		now,
-	})
+	const receivedClaim = await claim(await charge(received))
 	await insertSystemEmailMessage({
 		db,
 		inboundDeliveryFence: {
-			deliveryId: receivedClaim.delivery!.deliveryId,
-			storageLease: receivedClaim.delivery!.storageLease!,
+			deliveryId: receivedClaim.deliveryId,
+			storageLease: receivedClaim.storageLease!,
 		},
 		message: {
 			id: received.messageId,
@@ -121,7 +112,7 @@ test('dedicated system inbound transitions stay behaviorally exhaustive', async 
 	})
 	await markSystemInboundDeliveryReceived({
 		db,
-		delivery: receivedClaim.delivery!,
+		delivery: receivedClaim,
 		usageDurationMs: 12,
 		usageMonth: '2026-08',
 		usageBytes: 34,
@@ -129,13 +120,7 @@ test('dedicated system inbound transitions stay behaviorally exhaustive', async 
 
 	const staleNow = new Date('2026-07-01T00:00:00.000Z')
 	const stale = delivery('stale', staleNow)
-	await chargeSystemInboundDeliveryOnce({
-		db,
-		delivery: stale,
-		localPart: 'support',
-		limit: 100,
-		now: staleNow,
-	})
+	await charge(stale, staleNow)
 	const reconciliation = await reconcileSystemStaleInboundDeliveries({
 		db,
 		blobs: { delete: async () => undefined } as R2Bucket,
@@ -151,26 +136,11 @@ test('dedicated system inbound transitions stay behaviorally exhaustive', async 
 		.first<{ needs_effect_reconcile: number }>()
 
 	expect({
-		firstClaim: firstClaim.delivery?.state,
-		retryClaim: secondClaim.delivery?.state,
-		rejected: (
-			await getSystemInboundDelivery({
-				db,
-				deliveryId: rejected.deliveryId,
-			})
-		)?.state,
-		received: (
-			await getSystemInboundDelivery({
-				db,
-				deliveryId: received.deliveryId,
-			})
-		)?.state,
-		stale: (
-			await getSystemInboundDelivery({
-				db,
-				deliveryId: stale.deliveryId,
-			})
-		)?.state,
+		firstClaim: firstClaim.state,
+		retryClaim: retryClaim.state,
+		rejected: await stateOf(rejected),
+		received: await stateOf(received),
+		stale: await stateOf(stale),
 		receivedNeedsEffectReconcile:
 			receivedProjection?.needs_effect_reconcile ?? null,
 		reconciliation,

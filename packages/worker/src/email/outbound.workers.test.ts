@@ -5,14 +5,14 @@ import { http, HttpResponse } from 'msw'
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
-import { emailRawMimeKey } from './blob-keys.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { mailboxRpc } from './mailbox-client.ts'
 import { type Mailbox } from './mailbox-do.ts'
-import { stubFor } from './mailbox-test-helpers.ts'
+import { baseMessage, stubFor } from './mailbox-test-helpers.ts'
 import { getOutboundProviderIndexRow } from './outbound-provider-index.ts'
 import { getEmailAttachmentById } from './service.ts'
 import {
+	type EmailSendInput,
 	maxOutboundEmailAttachmentTotalBytes,
 	sendOutboundEmail,
 } from './outbound.ts'
@@ -33,118 +33,155 @@ const cloudflareEmailApi =
 const platformBaseUrl = 'https://kody.example.com'
 // User mail lives on the inbox. subdomain derived from APP_BASE_URL.
 const platformDomain = 'inbox.kody.example.com'
+const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31])
+const pdfAttachment = {
+	filename: 'invoice.pdf',
+	contentType: 'application/pdf',
+	contentBase64: bytesToBase64(pdfBytes),
+}
 
-function captureD1Sql(db: D1Database) {
-	const sql: Array<string> = []
-	return {
-		sql,
-		db: new Proxy(db, {
-			get(target, property, receiver) {
-				if (property === 'prepare') {
-					return (statement: string) => {
-						sql.push(statement)
-						return target.prepare(statement)
-					}
-				}
-				if (property === 'exec') {
-					return (statement: string) => {
-						sql.push(statement)
-						return target.exec(statement)
-					}
-				}
-				const value = Reflect.get(target, property, receiver)
-				return typeof value === 'function' ? value.bind(target) : value
-			},
-		}),
+type Account = Awaited<ReturnType<typeof seedAccount>>
+type SentMessage = Record<string, unknown>
+
+async function seedAccount(
+	input: {
+		username?: string
+		plan?: 'pro' | 'max'
+		verified?: boolean
+	} = {},
+) {
+	await ensureEmailTestSchema(env.APP_DB)
+	const accountEmail = `account-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	const username = input.username ?? `sender-${crypto.randomUUID().slice(0, 8)}`
+	await env.APP_DB.prepare(
+		`INSERT INTO users (username, email, password_hash, email_verified_at, plan, stable_user_id)
+			VALUES (?, ?, ?, ?, ?, ?)
+			ON CONFLICT(username) DO UPDATE SET
+				email = excluded.email,
+				email_verified_at = excluded.email_verified_at,
+				stable_user_id = excluded.stable_user_id,
+				plan = excluded.plan`,
+	)
+		.bind(
+			username,
+			accountEmail,
+			'test-password-hash',
+			input.verified === false ? null : new Date().toISOString(),
+			input.plan ?? 'max',
+			userId,
+		)
+		.run()
+	return { accountEmail, userId, from: `${username}@${platformDomain}` }
+}
+
+async function addDestinations(
+	account: Account,
+	destinations: Array<{ email: string; verified: boolean; isDefault: boolean }>,
+) {
+	const user = await env.APP_DB.prepare(
+		`SELECT id FROM users WHERE stable_user_id = ?`,
+	)
+		.bind(account.userId)
+		.first<{ id: number }>()
+	if (!user) throw new Error('expected seeded user')
+	for (const destination of destinations) {
+		await env.APP_DB.prepare(
+			`INSERT INTO email_notification_destinations (id, user_id, email, verified_at, is_default)
+			 VALUES (?, ?, ?, ?, ?)`,
+		)
+			.bind(
+				crypto.randomUUID(),
+				user.id,
+				destination.email,
+				destination.verified ? new Date().toISOString() : null,
+				destination.isDefault ? 1 : 0,
+			)
+			.run()
 	}
 }
 
-async function writeInboundMailboxMessage(input: {
-	userId: string
-	fromAddress: string
-	envelopeFrom: string
-	toAddresses: Array<string>
-	subject: string
-	messageIdHeader: string
-	receivedAt: string
-}) {
-	const id = crypto.randomUUID()
-	const message = {
-		id,
-		direction: 'inbound' as const,
-		inboxId: null,
-		threadId: null,
-		senderIdentityId: null,
-		fromAddress: input.fromAddress,
-		envelopeFrom: input.envelopeFrom,
-		toAddresses: input.toAddresses,
-		ccAddresses: [],
-		bccAddresses: [],
-		replyToAddresses: [],
-		subject: input.subject,
-		messageIdHeader: input.messageIdHeader,
-		inReplyToHeader: null,
-		references: [],
-		headers: {},
-		authResults: null,
-		textBody: null,
-		htmlBody: null,
-		rawMimeKey: emailRawMimeKey(input.userId, id),
-		rawSize: 0,
-		processingStatus: 'stored' as const,
-		classification: 'accepted' as const,
-		classificationReason: null,
-		providerMessageId: null,
-		deliveryStatus: null,
-		deliveryStatusAt: null,
-		error: null,
-		receivedAt: input.receivedAt,
-		sentAt: null,
-		createdAt: input.receivedAt,
-		updatedAt: input.receivedAt,
+function bindingEnv(
+	send: (
+		message: SentMessage,
+	) => Promise<{ messageId: string | null }> = async () => ({
+		messageId: 'provider-message-entitlement',
+	}),
+) {
+	return {
+		...env,
+		APP_BASE_URL: platformBaseUrl,
+		EMAIL: { send } as unknown as SendEmail,
 	}
-	await mailboxRpc({ env, userId: input.userId }).upsertMessageGraph({
-		ownerId: input.userId,
+}
+
+function restEnv() {
+	return {
+		...env,
+		APP_BASE_URL: platformBaseUrl,
+		EMAIL: undefined as unknown as SendEmail,
+		CLOUDFLARE_ACCOUNT_ID: 'account-123',
+		CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
+		CLOUDFLARE_API_TOKEN: 'token-123',
+	}
+}
+
+function sendAs(account: Account, overrides: Partial<EmailSendInput> = {}) {
+	return sendOutboundEmail({
+		env: bindingEnv(),
+		userId: account.userId,
+		accountEmail: account.accountEmail,
+		recipientPolicy: 'self',
+		subject: 'Hello from Kody',
+		text: 'Body',
+		...overrides,
+	} as EmailSendInput)
+}
+
+function rejection(promise: Promise<unknown>) {
+	return promise.then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+}
+
+async function expectEntitlementLimit(
+	promise: Promise<unknown>,
+	details: Record<string, unknown>,
+) {
+	const error = await rejection(promise)
+	if (!isEntitlementLimitError(error)) {
+		throw new Error('Expected an EntitlementLimitError from sendOutboundEmail.')
+	}
+	expect(error.details).toMatchObject(details)
+	return error
+}
+
+async function writeInboundMailboxMessage(
+	userId: string,
+	input: {
+		toAddresses: Array<string>
+		subject: string
+		messageIdHeader: string
+	},
+) {
+	const now = new Date().toISOString()
+	const message = baseMessage(userId, {
+		...input,
+		inboxId: null,
+		fromAddress: 'recipient@example.com',
+		envelopeFrom: 'recipient@example.com',
+		rawSize: 0,
+		receivedAt: now,
+		createdAt: now,
+		updatedAt: now,
+	})
+	await mailboxRpc({ env, userId }).upsertMessageGraph({
+		ownerId: userId,
 		message,
 		attachments: [],
 	})
 	return message
-}
-
-function createBindingSendEnv() {
-	return {
-		...env,
-		APP_BASE_URL: platformBaseUrl,
-		EMAIL: {
-			async send() {
-				return { messageId: 'provider-message-entitlement' }
-			},
-		},
-	}
-}
-
-async function seedVerifiedAccount(input: {
-	email: string
-	username?: string
-	plan?: 'pro' | 'max'
-	verified?: boolean
-}) {
-	const username = input.username ?? `sender-${crypto.randomUUID().slice(0, 8)}`
-	const stableUserId = await createStableUserIdFromEmail(input.email)
-	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, plan, stable_user_id)
-			VALUES (?, ?, ?, ?, ?, ?)`,
-	)
-		.bind(
-			username,
-			input.email,
-			'test-password-hash',
-			input.verified === false ? null : new Date().toISOString(),
-			input.plan ?? 'max',
-			stableUserId,
-		)
-		.run()
-	return { username, from: `${username}@${platformDomain}` }
 }
 
 async function readDailyEmailSendCounter(userId: string) {
@@ -157,7 +194,6 @@ async function readDailyEmailSendCounter(userId: string) {
 
 async function seedDailyEmailSendCounter(userId: string, count: number) {
 	const day = utcDayKey()
-	const updatedAt = new Date().toISOString()
 	const stub = env.USER_METER.get(
 		env.USER_METER.idFromName(userMeterDurableObjectName(userId)),
 	)
@@ -174,91 +210,105 @@ async function seedDailyEmailSendCounter(userId: string, count: number) {
 			'email_sends_per_day',
 			day,
 			count,
-			updatedAt,
+			new Date().toISOString(),
 		)
 	})
 }
 
-async function sendSelfNotification(input: {
-	userId: string
-	accountEmail: string
-}) {
-	return await sendOutboundEmail({
-		env: createBindingSendEnv(),
-		userId: input.userId,
-		accountEmail: input.accountEmail,
-		recipientPolicy: 'self',
-		subject: 'Entitlement test',
-		text: 'Body',
+async function listOutboundMessages(userId: string) {
+	return await mailboxRpc({ env, userId }).listMessages({
+		direction: 'outbound',
+		limit: 5,
 	})
 }
 
-async function listEmailSendRollups(db: D1Database, userId: string) {
-	const { results } = await db
-		.prepare(
-			`SELECT user_id, metric, month, event_count, error_count,
+async function listEmailSendRollups(userId: string) {
+	const { results } = await env.APP_DB.prepare(
+		`SELECT user_id, metric, month, event_count, error_count,
 				total_duration_ms, total_cpu_ms, total_bytes
 			FROM usage_rollups
 			WHERE user_id = ?1 AND metric = 'email_send'
 			ORDER BY month`,
-		)
+	)
 		.bind(userId)
 		.all()
 	return results
 }
 
-function restFallbackMustNotRunHandler() {
-	return http.post(cloudflareEmailApi, () => {
-		throw new Error('REST fallback should not be called')
+function proxyDb(
+	db: D1Database,
+	prepare: (statement: string) => unknown,
+	exec?: (statement: string) => unknown,
+) {
+	return new Proxy(db, {
+		get(target, property, receiver) {
+			if (property === 'prepare') return prepare
+			if (property === 'exec' && exec) return exec
+			const value = Reflect.get(target, property, receiver)
+			return typeof value === 'function' ? value.bind(target) : value
+		},
 	})
+}
+
+function expectSentPdf(message: SentMessage | undefined) {
+	const attachments = message?.attachments as Array<Record<string, unknown>>
+	expect(attachments).toHaveLength(1)
+	expect(attachments[0]).toMatchObject({
+		disposition: 'attachment',
+		filename: 'invoice.pdf',
+		type: 'application/pdf',
+	})
+	expect(new Uint8Array(attachments[0]?.content as Uint8Array)).toEqual(
+		pdfBytes,
+	)
 }
 
 test('sendOutboundEmail sends from the platform-assigned username address to the account email', async () => {
 	// Usage recording degrades with a warn when the usage_rollups table is
 	// not part of this test's schema; that is incidental to sending.
 	silenceIncidentalRuntimeWarnings()
-	await ensureEmailTestSchema(env.APP_DB)
-	const accountEmail = `account-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(accountEmail)
-	const { from } = await seedVerifiedAccount({ email: accountEmail })
-	const sent: Array<EmailMessage> = []
-	const capturedD1 = captureD1Sql(env.APP_DB)
-	const sendEnv = {
-		...env,
-		APP_DB: capturedD1.db,
-		APP_BASE_URL: platformBaseUrl,
-		EMAIL: {
-			async send(message: EmailMessage) {
+	const account = await seedAccount()
+	const sent: Array<SentMessage> = []
+	const sql: Array<string> = []
+	const capturedDb = proxyDb(
+		env.APP_DB,
+		(statement) => {
+			sql.push(statement)
+			return env.APP_DB.prepare(statement)
+		},
+		(statement) => {
+			sql.push(statement)
+			return env.APP_DB.exec(statement)
+		},
+	)
+
+	const result = await sendAs(account, {
+		env: {
+			...bindingEnv(async (message) => {
 				sent.push(message)
 				return { messageId: 'provider-message-123' }
-			},
+			}),
+			APP_DB: capturedDb,
 		},
-	}
-
-	const result = await sendOutboundEmail({
-		env: sendEnv,
-		userId,
-		accountEmail,
-		recipientPolicy: 'self',
-		subject: 'Hello from Kody',
-		text: 'Body',
 	})
 
 	expect(sent).toHaveLength(1)
-	expect(sent[0]?.to).toBe(accountEmail)
-	expect(sent[0]?.from).toBe(from)
+	expect(sent[0]).toMatchObject({
+		to: account.accountEmail,
+		from: account.from,
+	})
 	expect(sent[0]?.headers).toEqual({})
 	expect(result.status).toBe('sent')
 	expect(result.providerMessageId).toBe('provider-message-123')
-	const stored = await mailboxRpc({ env, userId }).getMessage({
+	const stored = await mailboxRpc({ env, userId: account.userId }).getMessage({
 		messageId: result.message.id,
 	})
 	expect(stored).toMatchObject({
 		direction: 'outbound',
 		processingStatus: 'sent',
 		providerMessageId: 'provider-message-123',
-		fromAddress: from,
-		toAddresses: [accountEmail],
+		fromAddress: account.from,
+		toAddresses: [account.accountEmail],
 		headers: {
 			'Message-ID': result.message.messageIdHeader,
 			'X-Kody-Email-Message-Id': result.message.messageIdHeader,
@@ -275,19 +325,16 @@ test('sendOutboundEmail sends from the platform-assigned username address to the
 		.bind(stored?.senderIdentityId)
 		.first<Record<string, unknown>>()
 	expect(identity).toEqual({
-		user_id: userId,
-		email: from,
+		user_id: account.userId,
+		email: account.from,
 		domain: platformDomain,
 		status: 'verified',
 	})
-	const listed = await mailboxRpc({ env, userId }).listMessages({
-		direction: 'outbound',
-		limit: 5,
-	})
+	const listed = await listOutboundMessages(account.userId)
 	expect(listed.messages.map((message) => message.id)).toContain(
 		result.message.id,
 	)
-	expect(capturedD1.sql.join('\n')).not.toMatch(
+	expect(sql.join('\n')).not.toMatch(
 		/\bemail_(?:threads|messages|attachments|delivery_events)\b/,
 	)
 }, 30_000)
@@ -295,69 +342,29 @@ test('sendOutboundEmail sends from the platform-assigned username address to the
 test('provider acceptance survives D1 index outage and the Mailbox alarm repairs without resend', async () => {
 	silenceIncidentalRuntimeWarnings()
 	consoleWarn.mockImplementation(() => {})
-	await ensureEmailTestSchema(env.APP_DB)
-	const accountEmail = `repair-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(accountEmail)
-	await seedVerifiedAccount({ email: accountEmail })
+	const account = await seedAccount()
+	const { userId } = account
 	const providerMessageId = `provider-repair-${crypto.randomUUID()}`
 	let sendCount = 0
-	const unavailableIndexDb = new Proxy(env.APP_DB, {
-		get(target, property, receiver) {
-			if (property !== 'prepare') {
-				const value = Reflect.get(target, property, receiver)
-				return typeof value === 'function' ? value.bind(target) : value
-			}
-			return (sql: string) => {
-				const statement = target.prepare(sql)
-				if (!sql.includes('INSERT INTO email_outbound_provider_index')) {
-					return statement
+	const unavailableIndexDb = proxyDb(env.APP_DB, (statement) =>
+		statement.includes('INSERT INTO email_outbound_provider_index')
+			? {
+					bind: () => ({
+						run: async () => {
+							throw new Error('injected provider-index D1 outage')
+						},
+					}),
 				}
-				return new Proxy(statement, {
-					get(statementTarget, statementProperty) {
-						if (statementProperty !== 'bind') {
-							const value = Reflect.get(statementTarget, statementProperty)
-							return typeof value === 'function'
-								? value.bind(statementTarget)
-								: value
-						}
-						return (...values: Array<unknown>) => {
-							const bound = statementTarget.bind(...values)
-							return new Proxy(bound, {
-								get(boundTarget, boundProperty) {
-									if (boundProperty === 'run') {
-										return async () => {
-											throw new Error('injected provider-index D1 outage')
-										}
-									}
-									const value = Reflect.get(boundTarget, boundProperty)
-									return typeof value === 'function'
-										? value.bind(boundTarget)
-										: value
-								},
-							})
-						}
-					},
-				})
-			}
-		},
-	})
-	const result = await sendOutboundEmail({
+			: env.APP_DB.prepare(statement),
+	)
+	const result = await sendAs(account, {
 		env: {
-			...env,
+			...bindingEnv(async () => {
+				sendCount += 1
+				return { messageId: providerMessageId }
+			}),
 			APP_DB: unavailableIndexDb,
-			APP_BASE_URL: platformBaseUrl,
-			EMAIL: {
-				async send() {
-					sendCount += 1
-					return { messageId: providerMessageId }
-				},
-			},
 		},
-		userId,
-		accountEmail,
-		recipientPolicy: 'self',
-		subject: 'Repair after acceptance',
-		text: 'Body',
 	})
 
 	expect(result.status).toBe('sent')
@@ -373,8 +380,7 @@ test('provider acceptance survives D1 index outage and the Mailbox alarm repairs
 		stubFor(userId),
 		async (instance: Mailbox, state) => {
 			state.storage.sql.exec(
-				`UPDATE email_outbound_provider_index_repairs
-			SET retry_at = ?`,
+				`UPDATE email_outbound_provider_index_repairs SET retry_at = ?`,
 				'2026-08-03T00:00:00.000Z',
 			)
 			await instance.alarm()
@@ -398,48 +404,62 @@ test('provider acceptance survives D1 index outage and the Mailbox alarm repairs
 	)
 }, 30_000)
 
-test('sendOutboundEmail rejects suspended accounts', async () => {
+test('sendOutboundEmail sender gates: suspended, unverified, reserved usernames, and unconfigured platform domains', async () => {
 	silenceIncidentalRuntimeWarnings()
-	await ensureEmailTestSchema(env.APP_DB)
-	const accountEmail = `suspended-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(accountEmail)
-	await seedVerifiedAccount({ email: accountEmail })
+	const suspended = await seedAccount()
 	await env.APP_DB.prepare(
 		`UPDATE users SET suspended_at = ? WHERE stable_user_id = ?`,
 	)
-		.bind(new Date().toISOString(), userId)
+		.bind(new Date().toISOString(), suspended.userId)
 		.run()
+	await expect(sendAs(suspended)).rejects.toThrow('This account is suspended')
+
+	const unverified = await seedAccount({ verified: false })
+	let bindingSendCount = 0
+	await expect(
+		sendAs(unverified, {
+			env: bindingEnv(async () => {
+				bindingSendCount += 1
+				return { messageId: 'provider-message-123' }
+			}),
+		}),
+	).rejects.toThrow('Account email must be verified before sending email.')
+	expect(bindingSendCount).toBe(0)
+
+	// A live account holding an unreserved built-in username can send.
+	const blog = await seedAccount({ username: 'blog' })
+	const blogSent = await sendAs(blog)
+	expect(blogSent.status).toBe('sent')
+	expect(blogSent.message.fromAddress).toBe(`blog@${platformDomain}`)
+
+	// A legacy account holding a permanently reserved username cannot send.
+	const reserved = await seedAccount({ username: 'kody' })
+	await expect(sendAs(reserved)).rejects.toThrow(
+		'Reserved usernames cannot send email',
+	)
 
 	await expect(
-		sendOutboundEmail({
-			env: createBindingSendEnv(),
-			userId,
-			accountEmail,
-			recipientPolicy: 'self',
-			subject: 'Blocked while suspended',
-			text: 'Body',
-		}),
-	).rejects.toThrow('This account is suspended')
+		sendAs(blog, { env: { ...bindingEnv(), APP_BASE_URL: undefined } }),
+	).rejects.toThrow('no platform email domain is configured')
 })
 
-test('sendOutboundEmail rejects non-self recipients under the self policy', async () => {
+test('sendOutboundEmail self policy: only verified destinations, one attached MIME message to every allowed to', async () => {
 	// Usage recording degrades with a warn when the usage_rollups table is
 	// not part of this test's schema; that is incidental to the policy.
 	silenceIncidentalRuntimeWarnings()
-	await ensureEmailTestSchema(env.APP_DB)
-	const accountEmail = `account-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(accountEmail)
-	await seedVerifiedAccount({ email: accountEmail })
+	const account = await seedAccount()
+	const { accountEmail, userId } = account
+	const extraEmail = `phone-${crypto.randomUUID()}@example.com`
+	const pendingEmail = `pending-${crypto.randomUUID()}@example.com`
+	const sent: Array<SentMessage> = []
+	const sendEnv = bindingEnv(async (message) => {
+		sent.push(message)
+		return { messageId: `provider-destinations-${sent.length}` }
+	})
 
-	const nonSelfError = await sendOutboundEmail({
-		env: createBindingSendEnv(),
-		userId,
-		accountEmail,
-		recipientPolicy: 'self',
-		to: 'someone-else@example.net',
-		subject: 'Blocked',
-		text: 'Body',
-	}).catch((caught: unknown) => caught)
+	const nonSelfError = await rejection(
+		sendAs(account, { env: sendEnv, to: 'someone-else@example.net' }),
+	)
 	// Agent mistakes (third-party `to`) must stay off Sentry as McpCallerError.
 	expect(nonSelfError).toBeInstanceOf(McpCallerError)
 	expect(nonSelfError).toMatchObject({
@@ -449,368 +469,116 @@ test('sendOutboundEmail rejects non-self recipients under the self policy', asyn
 	})
 	// Malformed explicit recipients are rejected instead of silently dropped
 	// (a dropped value would fall back to the account email).
-	const invalidError = await sendOutboundEmail({
-		env: createBindingSendEnv(),
-		userId,
-		accountEmail,
-		recipientPolicy: 'self',
-		to: 'not-an-email',
-		subject: 'Blocked',
-		text: 'Body',
-	}).catch((caught: unknown) => caught)
+	const invalidError = await rejection(
+		sendAs(account, { env: sendEnv, to: 'not-an-email' }),
+	)
 	expect(invalidError).toBeInstanceOf(McpCallerError)
 	expect(invalidError).toMatchObject({
 		message: 'Invalid recipient email address: not-an-email',
 	})
 	// Providing the own account email explicitly is allowed.
-	const allowed = await sendOutboundEmail({
-		env: createBindingSendEnv(),
-		userId,
-		accountEmail,
-		recipientPolicy: 'self',
+	const allowed = await sendAs(account, {
+		env: sendEnv,
 		to: accountEmail.toUpperCase(),
-		subject: 'Allowed',
-		text: 'Body',
 	})
 	expect(allowed.status).toBe('sent')
 	expect(allowed.message.toAddresses).toEqual([accountEmail])
-})
 
-test('sendOutboundEmail accepts any verified destinations together and rejects unverified or unknown `to` without sending', async () => {
-	silenceIncidentalRuntimeWarnings()
-	await ensureEmailTestSchema(env.APP_DB)
-	const accountEmail = `account-${crypto.randomUUID()}@example.com`
-	const extraEmail = `phone-${crypto.randomUUID()}@example.com`
-	const pendingEmail = `pending-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(accountEmail)
-	await seedVerifiedAccount({ email: accountEmail })
-	const user = await env.APP_DB.prepare(
-		`SELECT id FROM users WHERE stable_user_id = ?`,
-	)
-		.bind(userId)
-		.first<{ id: number }>()
-	if (!user) throw new Error('expected seeded user')
-	await env.APP_DB.prepare(
-		`INSERT INTO email_notification_destinations (id, user_id, email, verified_at, is_default)
-		 VALUES (?, ?, ?, ?, 1), (?, ?, ?, NULL, 0)`,
-	)
-		.bind(
-			crypto.randomUUID(),
-			user.id,
-			extraEmail,
-			new Date().toISOString(),
-			crypto.randomUUID(),
-			user.id,
-			pendingEmail,
-		)
-		.run()
-
-	let providerSend = 0
-	const sendEnv = {
-		...createBindingSendEnv(),
-		EMAIL: {
-			async send() {
-				providerSend += 1
-				return { messageId: `provider-destinations-${providerSend}` }
-			},
-		},
-	}
-
-	const omitted = await sendOutboundEmail({
-		env: sendEnv,
-		userId,
-		accountEmail,
-		recipientPolicy: 'self',
-		subject: 'Default extra',
-		text: 'Body',
-	})
+	await addDestinations(account, [
+		{ email: extraEmail, verified: true, isDefault: true },
+		{ email: pendingEmail, verified: false, isDefault: false },
+	])
+	const omitted = await sendAs(account, { env: sendEnv })
 	expect(omitted.status).toBe('sent')
 	expect(omitted.message.toAddresses).toEqual([extraEmail])
 
-	const both = await sendOutboundEmail({
+	const both = await sendAs(account, {
 		env: sendEnv,
-		userId,
-		accountEmail,
-		recipientPolicy: 'self',
 		to: [accountEmail, extraEmail],
-		subject: 'Both',
-		text: 'Body',
+		attachments: [pdfAttachment],
 	})
 	expect(both.status).toBe('sent')
 	expect(both.message.toAddresses).toEqual([accountEmail, extraEmail])
+	expect(sent[2]?.to).toEqual([accountEmail, extraEmail])
+	expectSentPdf(sent[2])
 
-	const unverifiedError = await sendOutboundEmail({
-		env: sendEnv,
-		userId,
-		accountEmail,
-		recipientPolicy: 'self',
-		to: [accountEmail, pendingEmail],
-		subject: 'Blocked',
-		text: 'Body',
-	}).catch((caught: unknown) => caught)
+	const unverifiedError = await rejection(
+		sendAs(account, { env: sendEnv, to: [accountEmail, pendingEmail] }),
+	)
 	expect(unverifiedError).toBeInstanceOf(McpCallerError)
 	expect(unverifiedError).toMatchObject({
 		message: expect.stringContaining(pendingEmail),
 	})
-	expect(providerSend).toBe(2)
-})
-
-test('sendOutboundEmail blocks permanently reserved usernames, sends from an unreserved built-in, and rejects unconfigured platform domains', async () => {
-	silenceIncidentalRuntimeWarnings()
-	await ensureEmailTestSchema(env.APP_DB)
-	const accountEmail = `system-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(accountEmail)
-	await seedVerifiedAccount({ email: accountEmail })
-	// A live account holding an unreserved built-in username can send.
-	const blogEmail = `blog-${crypto.randomUUID()}@example.com`
-	const blogUserId = await createStableUserIdFromEmail(blogEmail)
-	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
-			VALUES (?, ?, ?, ?, ?, ?)
-			ON CONFLICT(username) DO UPDATE SET
-				email = excluded.email,
-				email_verified_at = excluded.email_verified_at,
-				stable_user_id = excluded.stable_user_id,
-				plan = excluded.plan`,
-	)
-		.bind(
-			'blog',
-			blogEmail,
-			'test-password-hash',
-			new Date().toISOString(),
-			blogUserId,
-			'max',
-		)
-		.run()
-	const blogSent = await sendOutboundEmail({
-		env: createBindingSendEnv(),
-		userId: blogUserId,
-		accountEmail: blogEmail,
-		recipientPolicy: 'self',
-		subject: 'From blog',
-		text: 'Body',
-	})
-	expect(blogSent.status).toBe('sent')
-	expect(blogSent.message.fromAddress).toBe(`blog@${platformDomain}`)
-
-	// A legacy account holding a permanently reserved username cannot send.
-	const reservedEmail = `reserved-${crypto.randomUUID()}@example.com`
-	const reservedUserId = await createStableUserIdFromEmail(reservedEmail)
-	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
-			VALUES (?, ?, ?, ?, ?, ?)
-			ON CONFLICT(username) DO UPDATE SET
-				email = excluded.email,
-				email_verified_at = excluded.email_verified_at,
-				stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
-				plan = excluded.plan`,
-	)
-		.bind(
-			'kody',
-			reservedEmail,
-			'test-password-hash',
-			new Date().toISOString(),
-			reservedUserId,
-			'max',
-		)
-		.run()
-	await expect(
-		sendOutboundEmail({
-			env: createBindingSendEnv(),
-			userId: reservedUserId,
-			accountEmail: reservedEmail,
-			recipientPolicy: 'self',
-			subject: 'Blocked',
-			text: 'Body',
-		}),
-	).rejects.toThrow('Reserved usernames cannot send email')
-
-	await expect(
-		sendOutboundEmail({
-			env: { ...createBindingSendEnv(), APP_BASE_URL: undefined },
-			userId,
-			accountEmail,
-			recipientPolicy: 'self',
-			subject: 'Blocked',
-			text: 'Body',
-		}),
-	).rejects.toThrow('no platform email domain is configured')
+	expect(sent).toHaveLength(3)
+	expect(await readDailyEmailSendCounter(userId)).toBe(3)
 })
 
 test('sendOutboundEmail skips REST fallback when the binding succeeds or validation fails first', async () => {
 	// Usage recording degrades with a warn when the usage_rollups table is
 	// not part of this test's schema; that is incidental to the fallback.
 	silenceIncidentalRuntimeWarnings()
-	await ensureEmailTestSchema(env.APP_DB)
-	const mswOptions = { onUnhandledRequest: 'bypass' as const }
-
-	{
-		const accountEmail = `account-${crypto.randomUUID()}@example.com`
-		const userId = await createStableUserIdFromEmail(accountEmail)
-		let bindingSendCount = 0
-
-		using _server = createMswNodeServer(
-			[restFallbackMustNotRunHandler()],
-			mswOptions,
-		)
-		await seedVerifiedAccount({ email: accountEmail })
-		const result = await sendOutboundEmail({
-			env: {
-				...env,
-				APP_BASE_URL: platformBaseUrl,
-				EMAIL: {
-					async send() {
-						bindingSendCount += 1
-						return { messageId: null as unknown as string }
-					},
-				},
-			},
-			userId,
-			accountEmail,
-			recipientPolicy: 'self',
-			subject: 'No provider id',
-			text: 'Body',
-		})
-		expect(bindingSendCount).toBe(1)
-		expect(result).toMatchObject({
-			status: 'sent',
-			providerMessageId: null,
-			error: null,
-		})
-	}
-
-	{
-		const accountEmail = `account-${crypto.randomUUID()}@example.com`
-		const userId = await createStableUserIdFromEmail(accountEmail)
-
-		using _server = createMswNodeServer(
-			[restFallbackMustNotRunHandler()],
-			mswOptions,
-		)
-		await seedVerifiedAccount({ email: accountEmail })
-
-		await expect(
-			sendOutboundEmail({
-				env: {
-					...env,
-					APP_BASE_URL: platformBaseUrl,
-					EMAIL: undefined as unknown as SendEmail,
-					CLOUDFLARE_ACCOUNT_ID: 'account-123',
-					CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
-					CLOUDFLARE_API_TOKEN: 'token-123',
-				},
-				userId,
-				accountEmail,
-				recipientPolicy: 'self',
-				subject: 'Missing body',
-				text: '   ',
+	using _server = createMswNodeServer(
+		[
+			http.post(cloudflareEmailApi, () => {
+				throw new Error('REST fallback should not be called')
 			}),
-		).rejects.toThrow('Email text or HTML body is required.')
-	}
-})
-
-test('sendOutboundEmail blocks unverified accounts', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	const accountEmail = `unverified-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(accountEmail)
+		],
+		{ onUnhandledRequest: 'bypass' },
+	)
+	const account = await seedAccount()
 	let bindingSendCount = 0
-
-	await seedVerifiedAccount({ email: accountEmail, verified: false })
+	const result = await sendAs(account, {
+		env: bindingEnv(async () => {
+			bindingSendCount += 1
+			return { messageId: null }
+		}),
+	})
+	expect(bindingSendCount).toBe(1)
+	expect(result).toMatchObject({
+		status: 'sent',
+		providerMessageId: null,
+		error: null,
+	})
 
 	await expect(
-		sendOutboundEmail({
-			env: {
-				...env,
-				APP_BASE_URL: platformBaseUrl,
-				EMAIL: {
-					async send() {
-						bindingSendCount += 1
-						return { messageId: 'provider-message-123' }
-					},
-				},
-			},
-			userId,
-			accountEmail,
-			recipientPolicy: 'self',
-			subject: 'Blocked',
-			text: 'Body',
-		}),
-	).rejects.toThrow('Account email must be verified before sending email.')
-	expect(bindingSendCount).toBe(0)
+		sendAs(await seedAccount(), { env: restEnv(), text: '   ' }),
+	).rejects.toThrow('Email text or HTML body is required.')
 })
 
 test('sendOutboundEmail preserves reply headers and records failed fallback sends', async () => {
 	silenceIncidentalRuntimeWarnings(['cloudflare-email-api-failed'])
-	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
 	const isolatedUserId = `email-outbound-isolated-user-${crypto.randomUUID()}`
-	const accountEmail = `account-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(accountEmail)
-	const fetchCalls: Array<{ url: string; body: Record<string, unknown> }> = []
+	const fetchCalls: Array<Record<string, unknown>> = []
 	const month = new Date().toISOString().slice(0, 7)
-	const originalBodyBytes = new TextEncoder().encode('Original body').byteLength
-	const replyBodyBytes = new TextEncoder().encode('Body').byteLength
+	const encoder = new TextEncoder()
 
 	using _server = createMswNodeServer(
 		[
 			http.post(cloudflareEmailApi, async ({ request }) => {
-				fetchCalls.push({
-					url: request.url,
-					body: (await request.json()) as Record<string, unknown>,
-				})
+				fetchCalls.push((await request.json()) as Record<string, unknown>)
 				return HttpResponse.json(
-					{
-						success: false,
-						errors: [{ message: 'provider down' }],
-					},
+					{ success: false, errors: [{ message: 'provider down' }] },
 					{ status: 500 },
 				)
 			}),
 		],
 		{ onUnhandledRequest: 'bypass' },
 	)
-	await seedVerifiedAccount({ email: accountEmail })
-	const original = await sendOutboundEmail({
-		env: {
-			...env,
-			APP_BASE_URL: platformBaseUrl,
-			EMAIL: {
-				async send() {
-					return { messageId: 'original-provider-message' }
-				},
-			},
-		},
-		userId,
-		accountEmail,
-		recipientPolicy: 'self',
-		subject: 'Hello from Kody',
-		text: 'Original body',
-	})
-	const inbound = await writeInboundMailboxMessage({
-		userId,
-		fromAddress: 'recipient@example.com',
-		envelopeFrom: 'recipient@example.com',
+	const account = await seedAccount()
+	const { accountEmail, userId } = account
+	const original = await sendAs(account, { text: 'Original body' })
+	const inbound = await writeInboundMailboxMessage(userId, {
 		toAddresses: [accountEmail],
 		subject: 'Hello from Kody',
 		messageIdHeader: '<inbound-root@example.com>',
-		receivedAt: new Date().toISOString(),
 	})
 
-	const result = await sendOutboundEmail({
-		env: {
-			...env,
-			APP_BASE_URL: platformBaseUrl,
-			EMAIL: undefined as unknown as SendEmail,
-			CLOUDFLARE_ACCOUNT_ID: 'account-123',
-			CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
-			CLOUDFLARE_API_TOKEN: 'token-123',
-		},
-		userId,
-		accountEmail,
+	const result = await sendAs(account, {
+		env: restEnv(),
 		recipientPolicy: 'reply',
 		replyToMessageId: inbound.id,
 		subject: 'Re: Hello from Kody',
-		text: 'Body',
 		replyTo: 'reply@example.com',
 		inReplyToHeader: inbound.messageIdHeader,
 		references: ['<root@example.com>'],
@@ -826,7 +594,7 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 	// The recipient is always derived from the stored inbound message.
 	expect(result.message.toAddresses).toEqual(['recipient@example.com'])
 	expect(fetchCalls).toHaveLength(1)
-	expect(fetchCalls[0]?.body).toMatchObject({
+	expect(fetchCalls[0]).toMatchObject({
 		html: 'Body',
 		to: 'recipient@example.com',
 		reply_to: 'reply@example.com',
@@ -835,11 +603,9 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 			References: '<root@example.com>',
 		},
 	})
-	expect(fetchCalls[0]?.body).not.toHaveProperty('replyTo')
-	expect(fetchCalls[0]?.body.headers).not.toHaveProperty('Message-ID')
-	expect(fetchCalls[0]?.body.headers).not.toHaveProperty(
-		'X-Kody-Email-Message-Id',
-	)
+	expect(fetchCalls[0]).not.toHaveProperty('replyTo')
+	expect(fetchCalls[0]?.headers).not.toHaveProperty('Message-ID')
+	expect(fetchCalls[0]?.headers).not.toHaveProperty('X-Kody-Email-Message-Id')
 	const stored = await mailboxRpc({ env, userId }).getMessage({
 		messageId: result.message.id,
 	})
@@ -857,18 +623,13 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 	// Replying to an outbound (self) message is rejected: the reply policy
 	// only binds to stored inbound mail.
 	await expect(
-		sendOutboundEmail({
-			env: createBindingSendEnv(),
-			userId,
-			accountEmail,
+		sendAs(account, {
 			recipientPolicy: 'reply',
 			replyToMessageId: original.message.id,
-			subject: 'Re: Hello from Kody',
-			text: 'Body',
 		}),
 	).rejects.toThrow('Replying requires a stored inbound message.')
 
-	expect(await listEmailSendRollups(env.APP_DB, userId)).toEqual([
+	expect(await listEmailSendRollups(userId)).toEqual([
 		{
 			user_id: userId,
 			metric: 'email_send',
@@ -877,77 +638,47 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 			error_count: 1,
 			total_duration_ms: expect.any(Number),
 			total_cpu_ms: 0,
-			total_bytes: originalBodyBytes + replyBodyBytes,
+			total_bytes:
+				encoder.encode('Original body').byteLength +
+				encoder.encode('Body').byteLength,
 		},
 	])
-	expect(
-		(await listEmailSendRollups(env.APP_DB, isolatedUserId))[0],
-	).toBeUndefined()
+	expect(await listEmailSendRollups(isolatedUserId)).toEqual([])
 })
 
 test('sendOutboundEmail sends, stores, and re-serves reply attachments', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
-	const accountEmail = `account-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(accountEmail)
-	await seedVerifiedAccount({ email: accountEmail })
-	const inbound = await writeInboundMailboxMessage({
-		userId,
-		fromAddress: 'recipient@example.com',
-		envelopeFrom: 'recipient@example.com',
-		toAddresses: [accountEmail],
+	const account = await seedAccount()
+	const { userId } = account
+	const inbound = await writeInboundMailboxMessage(userId, {
+		toAddresses: [account.accountEmail],
 		subject: 'Needs a file',
 		messageIdHeader: '<inbound-attach@example.com>',
-		receivedAt: new Date().toISOString(),
 	})
-	const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31])
-	const sent: Array<Record<string, unknown>> = []
-	const sendEnv = {
-		...env,
-		APP_BASE_URL: platformBaseUrl,
-		EMAIL: {
-			async send(message: Record<string, unknown>) {
-				sent.push(message)
-				return { messageId: 'provider-attach-1' }
-			},
-		} as unknown as SendEmail,
-	}
+	const sent: Array<SentMessage> = []
 
-	const result = await sendOutboundEmail({
-		env: sendEnv,
-		userId,
-		accountEmail,
+	const result = await sendAs(account, {
+		env: bindingEnv(async (message) => {
+			sent.push(message)
+			return { messageId: 'provider-attach-1' }
+		}),
 		recipientPolicy: 'reply',
 		replyToMessageId: inbound.id,
 		subject: 'Re: Needs a file',
 		text: 'File attached.',
-		attachments: [
-			{
-				filename: 'invoice.pdf',
-				contentType: 'application/pdf',
-				contentBase64: bytesToBase64(pdfBytes),
-			},
-		],
+		attachments: [pdfAttachment],
 	})
 
 	expect(result.status).toBe('sent')
 	// The binding receives raw bytes (string content would be treated as
 	// raw text, not base64).
 	expect(sent).toHaveLength(1)
-	const sentAttachments = sent[0]?.attachments as Array<Record<string, unknown>>
-	expect(sentAttachments).toHaveLength(1)
-	expect(sentAttachments[0]).toMatchObject({
-		disposition: 'attachment',
-		filename: 'invoice.pdf',
-		type: 'application/pdf',
-	})
-	expect(new Uint8Array(sentAttachments[0]?.content as Uint8Array)).toEqual(
-		pdfBytes,
-	)
+	expectSentPdf(sent[0])
 
 	// The attachment is stored as its own R2 object and stays readable via
 	// the normal attachment read path.
-	const stored = await mailboxRpc({ env, userId }).listAttachmentsForMessage({
+	const mailbox = mailboxRpc({ env, userId })
+	const stored = await mailbox.listAttachmentsForMessage({
 		messageId: result.message.id,
 	})
 	expect(stored).toHaveLength(1)
@@ -970,7 +701,7 @@ test('sendOutboundEmail sends, stores, and re-serves reply attachments', async (
 	expect(loaded?.contentBase64).toBe(bytesToBase64(pdfBytes))
 
 	// Usage bytes include the attachment payload.
-	const rollups = await listEmailSendRollups(env.APP_DB, userId)
+	const rollups = await listEmailSendRollups(userId)
 	expect(rollups[0]).toMatchObject({
 		total_bytes:
 			new TextEncoder().encode('File attached.').byteLength +
@@ -978,26 +709,20 @@ test('sendOutboundEmail sends, stores, and re-serves reply attachments', async (
 	})
 
 	// Deleting the message removes the external attachment blob too.
-	await mailboxRpc({ env, userId }).deleteMessageWithBlobs({
+	await mailbox.deleteMessageWithBlobs({
 		ownerId: userId,
 		messageId: result.message.id,
 	})
 	expect(await env.EMAIL_BLOBS.get(storageKey!)).toBeNull()
 	expect(
-		await mailboxRpc({ env, userId }).listAttachmentsForMessage({
-			messageId: result.message.id,
-		}),
+		await mailbox.listAttachmentsForMessage({ messageId: result.message.id }),
 	).toEqual([])
 })
 
 test('sendOutboundEmail passes base64 attachments to the REST fallback', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	const accountEmail = `account-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(accountEmail)
-	await seedVerifiedAccount({ email: accountEmail })
+	const account = await seedAccount()
 	const contentBase64 = bytesToBase64(new TextEncoder().encode('name,total'))
 	const fetchCalls: Array<Record<string, unknown>> = []
-
 	using _server = createMswNodeServer(
 		[
 			http.post(cloudflareEmailApi, async ({ request }) => {
@@ -1011,26 +736,10 @@ test('sendOutboundEmail passes base64 attachments to the REST fallback', async (
 		{ onUnhandledRequest: 'bypass' },
 	)
 
-	const result = await sendOutboundEmail({
-		env: {
-			...env,
-			APP_BASE_URL: platformBaseUrl,
-			EMAIL: undefined as unknown as SendEmail,
-			CLOUDFLARE_ACCOUNT_ID: 'account-123',
-			CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
-			CLOUDFLARE_API_TOKEN: 'token-123',
-		},
-		userId,
-		accountEmail,
-		recipientPolicy: 'self',
-		subject: 'Report',
-		text: 'Report attached.',
+	const result = await sendAs(account, {
+		env: restEnv(),
 		attachments: [
-			{
-				filename: 'report.csv',
-				contentType: 'text/csv',
-				contentBase64,
-			},
+			{ filename: 'report.csv', contentType: 'text/csv', contentBase64 },
 		],
 	})
 
@@ -1047,194 +756,77 @@ test('sendOutboundEmail passes base64 attachments to the REST fallback', async (
 	])
 })
 
-test('sendOutboundEmail sends one attached MIME message to every allowed to', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	const accountEmail = `account-${crypto.randomUUID()}@example.com`
-	const extraEmail = `phone-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(accountEmail)
-	await seedVerifiedAccount({ email: accountEmail })
-	const user = await env.APP_DB.prepare(
-		`SELECT id FROM users WHERE stable_user_id = ?`,
-	)
-		.bind(userId)
-		.first<{ id: number }>()
-	if (!user) throw new Error('expected seeded user')
-	await env.APP_DB.prepare(
-		`INSERT INTO email_notification_destinations (id, user_id, email, verified_at, is_default)
-		 VALUES (?, ?, ?, ?, 0)`,
-	)
-		.bind(crypto.randomUUID(), user.id, extraEmail, new Date().toISOString())
-		.run()
-
-	const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31])
-	const sent: Array<Record<string, unknown>> = []
-	const sendEnv = {
-		...env,
-		APP_BASE_URL: platformBaseUrl,
-		EMAIL: {
-			async send(message: Record<string, unknown>) {
-				sent.push(message)
-				return { messageId: 'provider-multi-attach-1' }
-			},
-		} as unknown as SendEmail,
-	}
-
-	const result = await sendOutboundEmail({
-		env: sendEnv,
-		userId,
-		accountEmail,
-		recipientPolicy: 'self',
-		to: [accountEmail, extraEmail],
-		subject: 'Shared file',
-		text: 'Same attachment for both.',
-		attachments: [
-			{
-				filename: 'invoice.pdf',
-				contentType: 'application/pdf',
-				contentBase64: bytesToBase64(pdfBytes),
-			},
-		],
-	})
-
-	expect(result.status).toBe('sent')
-	expect(result.message.toAddresses).toEqual([accountEmail, extraEmail])
-	expect(sent).toHaveLength(1)
-	expect(sent[0]?.to).toEqual([accountEmail, extraEmail])
-	const sentAttachments = sent[0]?.attachments as Array<Record<string, unknown>>
-	expect(sentAttachments).toHaveLength(1)
-	expect(sentAttachments[0]).toMatchObject({
-		disposition: 'attachment',
-		filename: 'invoice.pdf',
-		type: 'application/pdf',
-	})
-	expect(new Uint8Array(sentAttachments[0]?.content as Uint8Array)).toEqual(
-		pdfBytes,
-	)
-	expect(await readDailyEmailSendCounter(userId)).toBe(1)
-})
-
 test('sendOutboundEmail rejects invalid and oversized attachments', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	const accountEmail = `account-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(accountEmail)
-	await seedVerifiedAccount({ email: accountEmail })
-
-	await expect(
-		sendOutboundEmail({
-			env: createBindingSendEnv(),
-			userId,
-			accountEmail,
-			recipientPolicy: 'self',
-			subject: 'Bad base64',
-			text: 'Body',
+	const account = await seedAccount()
+	const attach = (filename: string, contentBase64: string) =>
+		sendAs(account, {
 			attachments: [
-				{
-					filename: 'broken.bin',
-					contentType: 'application/octet-stream',
-					contentBase64: '!!not-base64!!',
-				},
+				{ filename, contentType: 'application/octet-stream', contentBase64 },
 			],
-		}),
-	).rejects.toThrow('Attachment content must be valid base64: broken.bin')
-
-	await expect(
-		sendOutboundEmail({
-			env: createBindingSendEnv(),
-			userId,
-			accountEmail,
-			recipientPolicy: 'self',
-			subject: 'Traversal',
-			text: 'Body',
-			attachments: [
-				{
-					filename: '../secret.txt',
-					contentType: 'text/plain',
-					contentBase64: bytesToBase64(new TextEncoder().encode('nope')),
-				},
-			],
-		}),
-	).rejects.toThrow('Attachment filename is not allowed: ../secret.txt')
-
-	// Attachments put the message under the per-message email_message_bytes
-	// cap that body-only sends are not subject to.
-	const oversize = new Uint8Array(maxPlanEmailLimits.email_message_bytes + 1)
-	const error = await sendOutboundEmail({
-		env: createBindingSendEnv(),
-		userId,
-		accountEmail,
-		recipientPolicy: 'self',
-		subject: 'Too big',
-		text: 'Body',
-		attachments: [
-			{
-				filename: 'huge.bin',
-				contentType: 'application/octet-stream',
-				contentBase64: bytesToBase64(oversize),
-			},
-		],
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
-	if (!isEntitlementLimitError(error)) {
-		throw new Error('Expected an EntitlementLimitError from sendOutboundEmail.')
-	}
-	expect(error.details).toMatchObject({
-		resource: 'email_message_bytes',
-	})
+		})
 	// Attachments whose base64 length alone exceeds the 5 MiB hard cap are
 	// rejected before any decoding (no entitlement lookup, no allocation).
 	const hardCapBase64Length = Math.ceil(
 		((maxOutboundEmailAttachmentTotalBytes + 3) * 4) / 3,
 	)
-	await expect(
-		sendOutboundEmail({
-			env: createBindingSendEnv(),
-			userId,
-			accountEmail,
-			recipientPolicy: 'self',
-			subject: 'Way too big',
-			text: 'Body',
-			attachments: [
-				{
-					filename: 'giant.bin',
-					contentType: 'application/octet-stream',
-					contentBase64: 'A'.repeat(hardCapBase64Length),
-				},
-			],
-		}),
-	).rejects.toThrow('exceed the 5 MiB combined limit')
+	const rejected: Array<[string, string, string]> = [
+		[
+			'broken.bin',
+			'!!not-base64!!',
+			'Attachment content must be valid base64: broken.bin',
+		],
+		[
+			'../secret.txt',
+			bytesToBase64(new TextEncoder().encode('nope')),
+			'Attachment filename is not allowed: ../secret.txt',
+		],
+		[
+			'giant.bin',
+			'A'.repeat(hardCapBase64Length),
+			'exceed the 5 MiB combined limit',
+		],
+	]
+	for (const [filename, contentBase64, message] of rejected) {
+		await expect(attach(filename, contentBase64)).rejects.toThrow(message)
+	}
+
+	// Attachments put the message under the per-message email_message_bytes
+	// cap that body-only sends are not subject to.
+	await expectEntitlementLimit(
+		attach(
+			'huge.bin',
+			bytesToBase64(new Uint8Array(maxPlanEmailLimits.email_message_bytes + 1)),
+		),
+		{ resource: 'email_message_bytes' },
+	)
 
 	// None of the failures consumed the daily send quota or stored a message.
-	expect(await readDailyEmailSendCounter(userId)).toBe(0)
-	expect(
-		await mailboxRpc({ env, userId }).listMessages({
-			direction: 'outbound',
-			limit: 5,
-		}),
-	).toMatchObject({ messages: [] })
+	expect(await readDailyEmailSendCounter(account.userId)).toBe(0)
+	expect(await listOutboundMessages(account.userId)).toMatchObject({
+		messages: [],
+	})
 }, 30_000)
 
-test('sendOutboundEmail enforces email_sends_per_day for plan users at the limit', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	const email = `planned-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
+test('sendOutboundEmail meters email_sends_per_day for pro users: refund on storage failure, increment, then deny with or without account email', async () => {
+	const account = await seedAccount({ plan: 'pro' })
+	const { userId } = account
 	const limit = planLimits.pro.maxEmailSendsPerDay
 	if (limit === null) throw new Error('Expected a numeric pro email limit.')
-	await seedVerifiedAccount({ email, plan: 'pro' })
-	await seedDailyEmailSendCounter(userId, limit)
+	expect(await readDailyEmailSendCounter(userId)).toBe(0)
+	await seedDailyEmailSendCounter(userId, limit - 1)
 
-	const error = await sendSelfNotification({
-		userId,
-		accountEmail: email,
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
+	await expect(sendAs(account, { threadId: 'missing-thread' })).rejects.toThrow(
+		'Email thread was not found: missing-thread',
 	)
-	if (!isEntitlementLimitError(error)) {
-		throw new Error('Expected an EntitlementLimitError from sendOutboundEmail.')
-	}
-	expect(error.details).toMatchObject({
+	expect(await readDailyEmailSendCounter(userId)).toBe(limit - 1)
+	expect(await listOutboundMessages(userId)).toMatchObject({ messages: [] })
+
+	// Without the refund, this send would hit the plan limit.
+	const result = await sendAs(account)
+	expect(result.status).toBe('sent')
+	expect(await readDailyEmailSendCounter(userId)).toBe(limit)
+
+	const error = await expectEntitlementLimit(sendAs(account), {
 		code: 'entitlement_limit_exceeded',
 		resource: 'email_sends_per_day',
 		plan: 'pro',
@@ -1242,130 +834,30 @@ test('sendOutboundEmail enforces email_sends_per_day for plan users at the limit
 		current: limit,
 	})
 	expect(error.message).toContain(`at most ${limit} email sends per day`)
-}, 30_000)
-
-test('sendOutboundEmail binds plan limits even when the caller context has no account email', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	const email = `contextless-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.pro.maxEmailSendsPerDay
-	if (limit === null) throw new Error('Expected a numeric pro email limit.')
-	await seedVerifiedAccount({ email, plan: 'pro' })
-	await seedDailyEmailSendCounter(userId, limit)
-
 	// Package subscription contexts pass an empty account email; the plan
 	// limit must still apply (no fallback-limit bypass).
-	const error = await sendOutboundEmail({
-		env: createBindingSendEnv(),
-		userId,
-		accountEmail: '',
-		recipientPolicy: 'self',
-		subject: 'Entitlement test',
-		text: 'Body',
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
-	if (!isEntitlementLimitError(error)) {
-		throw new Error('Expected an EntitlementLimitError from sendOutboundEmail.')
-	}
-	expect(error.details).toMatchObject({
+	await expectEntitlementLimit(sendAs(account, { accountEmail: '' }), {
 		resource: 'email_sends_per_day',
 		plan: 'pro',
 		limit,
 	})
 }, 30_000)
 
-test('sendOutboundEmail increments the daily counter when under the plan limit', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	const email = `under-limit-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
-	await seedVerifiedAccount({ email, plan: 'pro' })
-	expect(await readDailyEmailSendCounter(userId)).toBe(0)
-
-	const result = await sendSelfNotification({
-		userId,
-		accountEmail: email,
-	})
-
-	expect(result.status).toBe('sent')
-	expect(await readDailyEmailSendCounter(userId)).toBe(1)
-}, 30_000)
-
-test('sendOutboundEmail refunds the daily counter when mailbox storage fails before a copy is stored', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	const email = `refund-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.pro.maxEmailSendsPerDay
-	if (limit === null) throw new Error('Expected a numeric pro email limit.')
-	await seedVerifiedAccount({ email, plan: 'pro' })
-	await seedDailyEmailSendCounter(userId, limit - 1)
-
-	await expect(
-		sendOutboundEmail({
-			env: createBindingSendEnv(),
-			userId,
-			accountEmail: email,
-			recipientPolicy: 'self',
-			subject: 'Hello from Kody',
-			text: 'Body',
-			threadId: 'missing-thread',
-		}),
-	).rejects.toThrow('Email thread was not found: missing-thread')
-
-	expect(await readDailyEmailSendCounter(userId)).toBe(limit - 1)
-	expect(
-		await mailboxRpc({ env, userId }).listMessages({
-			direction: 'outbound',
-			limit: 5,
-		}),
-	).toMatchObject({ messages: [] })
-
-	// Without the refund, this send would hit the plan limit.
-	const result = await sendSelfNotification({
-		userId,
-		accountEmail: email,
-	})
-	expect(result.status).toBe('sent')
-	expect(await readDailyEmailSendCounter(userId)).toBe(limit)
-}, 30_000)
-
 test('sendOutboundEmail caps max-plan users at the email daily backstop', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-
-	const email = `max-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
-	await seedVerifiedAccount({ email, plan: 'max' })
-	await seedDailyEmailSendCounter(
-		userId,
-		maxPlanEmailLimits.email_sends_per_day - 1,
-	)
+	const account = await seedAccount({ plan: 'max' })
+	const backstop = maxPlanEmailLimits.email_sends_per_day
+	await seedDailyEmailSendCounter(account.userId, backstop - 1)
 	// One send left under the backstop succeeds...
-	const result = await sendSelfNotification({ userId, accountEmail: email })
-	expect(result.status).toBe('sent')
-	expect(await readDailyEmailSendCounter(userId)).toBe(
-		maxPlanEmailLimits.email_sends_per_day,
-	)
+	expect((await sendAs(account)).status).toBe('sent')
+	expect(await readDailyEmailSendCounter(account.userId)).toBe(backstop)
 
 	// ...and the next one is denied: max is not uncapped for email.
-	const error = await sendSelfNotification({
-		userId,
-		accountEmail: email,
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
-	if (!isEntitlementLimitError(error)) {
-		throw new Error('Expected an EntitlementLimitError from sendOutboundEmail.')
-	}
-	expect(error.details).toMatchObject({
+	await expectEntitlementLimit(sendAs(account), {
 		code: 'entitlement_limit_exceeded',
 		resource: 'email_sends_per_day',
 		plan: 'max',
-		limit: maxPlanEmailLimits.email_sends_per_day,
-		current: maxPlanEmailLimits.email_sends_per_day,
+		limit: backstop,
+		current: backstop,
 	})
-	expect(await readDailyEmailSendCounter(userId)).toBe(
-		maxPlanEmailLimits.email_sends_per_day,
-	)
+	expect(await readDailyEmailSendCounter(account.userId)).toBe(backstop)
 }, 30_000)
