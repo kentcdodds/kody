@@ -13,156 +13,139 @@ import {
 const headSha = 'a'.repeat(40)
 const baseSha = 'c'.repeat(40)
 const previousBaseSha = 'd'.repeat(40)
+const repo = {
+	token: 'test-token',
+	repository: 'kentcdodds/kody',
+	expectedBaseSha: baseSha,
+	sleep: () => Promise.resolve(),
+}
 
 test('only a dirty pull request is treated as a merge conflict', () => {
-	expect(
-		classifyMergeability({ mergeable: false, mergeableState: 'dirty' }),
-	).toBe('conflicted')
-	expect(
-		classifyMergeability({ mergeable: null, mergeableState: 'dirty' }),
-	).toBe('conflicted')
-
-	for (const mergeableState of [
-		'clean',
-		'behind',
-		'blocked',
-		'unstable',
-		'draft',
-		'has_hooks',
-	]) {
-		expect(classifyMergeability({ mergeable: true, mergeableState })).toBe(
-			'clear',
-		)
-	}
-
-	expect(
-		classifyMergeability({ mergeable: null, mergeableState: 'unknown' }),
-	).toBe('pending')
-	expect(classifyMergeability({ mergeable: null, mergeableState: '' })).toBe(
-		'pending',
-	)
-	expect(
-		classifyMergeability({ mergeable: false, mergeableState: 'blocked' }),
-	).toBe('clear')
-})
-
-test('polling waits until GitHub finishes computing mergeability', async () => {
-	const reads = [
-		mergeability({ mergeable: null, mergeableState: 'unknown' }),
-		mergeability({ mergeable: true, mergeableState: 'behind' }),
+	type Case = [
+		Parameters<typeof classifyMergeability>[0],
+		ReturnType<typeof classifyMergeability>,
 	]
-	const sleeps: Array<number> = []
-	const result = await pollMergeability({
-		read: () => {
-			const next = reads.shift()
-			if (!next) throw new Error('missing mergeability fixture')
-			return Promise.resolve(next)
-		},
-		sleep: (ms) => {
-			sleeps.push(ms)
-			return Promise.resolve()
-		},
-		maxAttempts: 3,
-		delayMs: 25,
-		expectedBaseSha: baseSha,
-	})
-	expect(result.kind).toBe('clear')
-	expect(result.mergeableState).toBe('behind')
-	expect(sleeps).toEqual([25])
-})
-
-test('polling fails closed when mergeability stays unknown', async () => {
-	let reads = 0
-	const result = await pollMergeability({
-		read: () => {
-			reads += 1
-			return Promise.resolve(
-				mergeability({ mergeable: null, mergeableState: 'unknown' }),
-			)
-		},
-		sleep: () => Promise.resolve(),
-		maxAttempts: 3,
-		delayMs: 1,
-		expectedBaseSha: baseSha,
-	})
-	expect(result.kind).toBe('undetermined')
-	expect(reads).toBe(3)
-})
-
-test('polling ignores a cached result for the previous base tip', async () => {
-	const reads = [
-		mergeability({
-			mergeable: true,
-			mergeableState: 'clean',
-			baseSha: previousBaseSha,
-		}),
-		mergeability({ mergeable: false, mergeableState: 'dirty' }),
+	const cases: Array<Case> = [
+		[{ mergeable: false, mergeableState: 'dirty' }, 'conflicted'],
+		[{ mergeable: null, mergeableState: 'dirty' }, 'conflicted'],
+		...['clean', 'behind', 'blocked', 'unstable', 'draft', 'has_hooks'].map(
+			(mergeableState): Case => [{ mergeable: true, mergeableState }, 'clear'],
+		),
+		[{ mergeable: null, mergeableState: 'unknown' }, 'pending'],
+		[{ mergeable: null, mergeableState: '' }, 'pending'],
+		[{ mergeable: false, mergeableState: 'blocked' }, 'clear'],
 	]
-	const result = await pollMergeability({
-		read: () => {
-			const next = reads.shift()
-			if (!next) throw new Error('missing mergeability fixture')
-			return Promise.resolve(next)
-		},
-		sleep: () => Promise.resolve(),
-		maxAttempts: 3,
-		delayMs: 1,
-		expectedBaseSha: baseSha,
-	})
-	expect(result.kind).toBe('conflicted')
-	expect(reads).toHaveLength(0)
+	expect(
+		cases.filter(([input, want]) => classifyMergeability(input) !== want),
+	).toEqual([])
 })
 
-test('polling accepts a published non-pending state when the base SHA never matches', async () => {
-	const behind = await pollMergeability({
-		read: () =>
-			Promise.resolve(
+test('polling prefers a computed state on the expected base tip, then falls back or fails closed', async () => {
+	const unknown = mergeability({ mergeable: null, mergeableState: 'unknown' })
+	const cases = [
+		{
+			scenario: 'waits until GitHub finishes computing',
+			sequence: [
+				unknown,
+				mergeability({ mergeable: true, mergeableState: 'behind' }),
+			],
+			maxAttempts: 3,
+			expected: { kind: 'clear', mergeableState: 'behind', reads: 2 },
+		},
+		{
+			scenario: 'fails closed when mergeability stays unknown',
+			sequence: [unknown],
+			maxAttempts: 3,
+			expected: { kind: 'undetermined', mergeableState: 'unknown', reads: 3 },
+		},
+		{
+			scenario: 'ignores a cached result for the previous base tip',
+			sequence: [
+				mergeability({
+					mergeable: true,
+					mergeableState: 'clean',
+					baseSha: previousBaseSha,
+				}),
+				mergeability({ mergeable: false, mergeableState: 'dirty' }),
+			],
+			maxAttempts: 3,
+			expected: { kind: 'conflicted', mergeableState: 'dirty', reads: 2 },
+		},
+		{
+			scenario: 'accepts behind when the base SHA never matches',
+			sequence: [
 				mergeability({
 					mergeable: true,
 					mergeableState: 'behind',
 					baseSha: previousBaseSha,
 				}),
-			),
-		sleep: () => Promise.resolve(),
-		maxAttempts: 2,
-		delayMs: 1,
-		expectedBaseSha: baseSha,
-	})
-	expect(behind.kind).toBe('clear')
-	expect(behind.mergeableState).toBe('behind')
-	expect(behind.detail).toBeUndefined()
-
-	const dirty = await pollMergeability({
-		read: () =>
-			Promise.resolve(
+			],
+			maxAttempts: 2,
+			expected: { kind: 'clear', mergeableState: 'behind', reads: 2 },
+		},
+		{
+			scenario: 'accepts dirty when the base SHA never matches',
+			sequence: [
 				mergeability({
 					mergeable: false,
 					mergeableState: 'dirty',
 					baseSha: previousBaseSha,
 				}),
-			),
-		sleep: () => Promise.resolve(),
-		maxAttempts: 2,
-		delayMs: 1,
-		expectedBaseSha: baseSha,
-	})
-	expect(dirty.kind).toBe('conflicted')
-	expect(dirty.mergeableState).toBe('dirty')
+			],
+			maxAttempts: 2,
+			expected: { kind: 'conflicted', mergeableState: 'dirty', reads: 2 },
+		},
+	]
+	const results = []
+	for (const { scenario, sequence, maxAttempts } of cases) {
+		let reads = 0
+		const sleeps: Array<number> = []
+		const result = await pollMergeability({
+			read: () => {
+				const next = sequence[Math.min(reads, sequence.length - 1)]
+				reads += 1
+				if (!next) throw new Error('missing mergeability fixture')
+				return Promise.resolve(next)
+			},
+			sleep: (ms) => {
+				sleeps.push(ms)
+				return Promise.resolve()
+			},
+			maxAttempts,
+			delayMs: 25,
+			expectedBaseSha: baseSha,
+		})
+		results.push({
+			scenario,
+			kind: result.kind,
+			mergeableState: result.mergeableState,
+			reads,
+			sleeps,
+			detail: result.detail,
+		})
+	}
+	expect(results).toEqual(
+		cases.map(({ scenario, expected }) => ({
+			scenario,
+			...expected,
+			sleeps: Array.from({ length: expected.reads - 1 }, () => 25),
+			detail: undefined,
+		})),
+	)
 })
 
 test('a dirty pull request fails a check on the head SHA', async () => {
-	const github = fakeGithub([
-		pull({ mergeable: false, mergeable_state: 'dirty', draft: true }),
-	])
+	const github = fakeGithub({
+		pulls: {
+			2483: [pull({ mergeable: false, mergeable_state: 'dirty', draft: true })],
+		},
+	})
 	const code = await reportMergeConflictCheck({
-		token: 'test-token',
-		repository: 'kentcdodds/kody',
+		...repo,
 		pullNumber: 2483,
 		headSha,
-		expectedBaseSha: baseSha,
 		detailsUrl: 'https://github.com/kentcdodds/kody/actions/runs/7',
 		fetchImpl: github.fetchImpl,
-		sleep: () => Promise.resolve(),
 		maxAttempts: 2,
 		delayMs: 1,
 	})
@@ -184,26 +167,25 @@ test('a dirty pull request fails a check on the head SHA', async () => {
 	expect(github.calls[2]?.body).toMatchObject({
 		status: 'completed',
 		conclusion: 'failure',
-		output: {
-			title: 'Conflicts with main',
-		},
+		output: { title: 'Conflicts with main' },
 	})
 	expect(github.calls[0]?.authorization).toBe('Bearer test-token')
 })
 
 test('a mergeable pull request completes the check successfully', async () => {
-	const github = fakeGithub([
-		pull({ mergeable: null, mergeable_state: 'unknown' }),
-		pull({ mergeable: true, mergeable_state: 'clean' }),
-	])
+	const github = fakeGithub({
+		pulls: {
+			12: [
+				pull({ mergeable: null, mergeable_state: 'unknown' }),
+				pull({ mergeable: true, mergeable_state: 'clean' }),
+			],
+		},
+	})
 	const code = await reportMergeConflictCheck({
-		token: 'test-token',
-		repository: 'kentcdodds/kody',
+		...repo,
 		pullNumber: 12,
 		headSha,
-		expectedBaseSha: baseSha,
 		fetchImpl: github.fetchImpl,
-		sleep: () => Promise.resolve(),
 		maxAttempts: 4,
 		delayMs: 1,
 	})
@@ -215,19 +197,13 @@ test('a mergeable pull request completes the check successfully', async () => {
 })
 
 test('an API error completes the open check as a failure', async () => {
-	const github = fakeGithub([
-		pull({ mergeable: null, mergeable_state: 'unknown' }),
-	])
-	github.failPulls = true
+	const github = fakeGithub({ pulls: {}, failPulls: true })
 	consoleError.mockImplementation(() => {})
 	const code = await reportMergeConflictCheck({
-		token: 'test-token',
-		repository: 'kentcdodds/kody',
+		...repo,
 		pullNumber: 12,
 		headSha,
-		expectedBaseSha: baseSha,
 		fetchImpl: github.fetchImpl,
-		sleep: () => Promise.resolve(),
 		maxAttempts: 1,
 	})
 	expect(code).toBe(0)
@@ -235,217 +211,133 @@ test('an API error completes the open check as a failure', async () => {
 		conclusion: 'failure',
 		output: { title: 'Mergeability unavailable' },
 	})
-	const errors = consoleError.mock.calls
-		.map((call) => String(call[0]))
-		.join('\n')
-	expect(errors).toContain('failed (503)')
-	expect(errors).not.toContain('test-token')
+	expect(loggedErrors()).toContain('failed (503)')
+	expect(loggedErrors()).not.toContain('test-token')
 })
 
 test('a failed check creation still fails the process', async () => {
-	const calls: Array<string> = []
-	const fetchImpl: typeof fetch = (_input, init) => {
-		calls.push(init?.method ?? 'GET')
-		return Promise.resolve(new Response('nope', { status: 500 }))
-	}
+	const methods: Array<string> = []
 	consoleError.mockImplementation(() => {})
 	const code = await reportMergeConflictCheck({
-		token: 'test-token',
-		repository: 'kentcdodds/kody',
+		...repo,
 		pullNumber: 12,
 		headSha,
-		expectedBaseSha: baseSha,
-		fetchImpl,
+		fetchImpl: (_input, init) => {
+			methods.push(init?.method ?? 'GET')
+			return Promise.resolve(new Response('nope', { status: 500 }))
+		},
 	})
 	expect(code).toBe(1)
-	expect(calls).toEqual(['POST'])
-	const errors = consoleError.mock.calls
-		.map((call) => String(call[0]))
-		.join('\n')
-	expect(errors).toContain('failed (500)')
-	expect(errors).not.toContain('test-token')
+	expect(methods).toEqual(['POST'])
+	expect(loggedErrors()).toContain('failed (500)')
+	expect(loggedErrors()).not.toContain('test-token')
 })
 
-test('main fails closed when the head SHA is missing', async () => {
+test('main fails closed for a bad head SHA, an unknown mode, or a scan without a base ref or SHA', async () => {
 	const previousExitCode = process.exitCode
 	consoleError.mockImplementation(() => {})
-	try {
-		await main({
-			GITHUB_TOKEN: 'test-token',
-			GITHUB_REPOSITORY: 'kentcdodds/kody',
+	const auth = {
+		GITHUB_TOKEN: 'test-token',
+		GITHUB_REPOSITORY: 'kentcdodds/kody',
+	}
+	const envs = [
+		{ ...auth, PR_NUMBER: '12', HEAD_SHA: 'short' },
+		{ ...auth, MERGE_CONFLICT_MODE: 'open-pulls' },
+		{ ...auth, MERGE_CONFLICT_MODE: 'open-pulls', BASE_REF: 'main' },
+		{
+			...auth,
+			MERGE_CONFLICT_MODE: 'validate',
 			PR_NUMBER: '12',
-			HEAD_SHA: 'short',
-		})
-		expect(process.exitCode).toBe(1)
+			HEAD_SHA: headSha,
+		},
+	]
+	try {
+		const exitCodes = []
+		for (const env of envs) {
+			process.exitCode = 0
+			await main(env)
+			exitCodes.push(process.exitCode)
+		}
+		expect(exitCodes).toEqual(envs.map(() => 1))
 	} finally {
 		process.exitCode = previousExitCode
 	}
 })
 
 test('a base-branch push refreshes every open pull request head check', async () => {
-	const dirtySha = 'a'.repeat(40)
 	const cleanSha = 'b'.repeat(40)
-	const calls: Array<{ method: string; url: string; body: unknown }> = []
-	const fetchImpl: typeof fetch = (input, init) => {
-		const url = String(input)
-		const method = init?.method ?? 'GET'
-		const body =
-			typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
-		calls.push({ method, url, body })
-		if (url.includes('/pulls?')) {
-			return Promise.resolve(
-				Response.json([
-					{ number: 7, head: { sha: dirtySha } },
-					{ number: 8, head: { sha: cleanSha } },
-				]),
-			)
-		}
-		if (url.endsWith('/pulls/7')) {
-			return Promise.resolve(
-				Response.json(pull({ mergeable: false, mergeable_state: 'dirty' })),
-			)
-		}
-		if (url.endsWith('/pulls/8')) {
-			return Promise.resolve(
-				Response.json(pull({ mergeable: true, mergeable_state: 'clean' })),
-			)
-		}
-		if (method === 'POST' && url.endsWith('/check-runs')) {
-			return Promise.resolve(Response.json({ id: calls.length }))
-		}
-		if (method === 'PATCH') {
-			return Promise.resolve(Response.json({ id: 1 }))
-		}
-		return Promise.resolve(new Response('unexpected', { status: 500 }))
-	}
+	const github = fakeGithub({
+		openPulls: [
+			{ number: 7, head: { sha: headSha } },
+			{ number: 8, head: { sha: cleanSha } },
+		],
+		pulls: {
+			7: [pull({ mergeable: false, mergeable_state: 'dirty' })],
+			8: [pull({ mergeable: true, mergeable_state: 'clean' })],
+		},
+	})
 	const code = await reportOpenPullRequestMergeConflicts({
-		token: 'test-token',
-		repository: 'kentcdodds/kody',
+		...repo,
 		baseRef: 'main',
-		expectedBaseSha: baseSha,
-		fetchImpl,
-		sleep: () => Promise.resolve(),
+		fetchImpl: github.fetchImpl,
 		maxAttempts: 2,
 		concurrency: 2,
 	})
 	expect(code).toBe(0)
-	const list = calls.find((call) => call.url.includes('/pulls?'))
+	const list = github.calls.find((call) => call.url.includes('/pulls?'))
 	expect(list?.url).toContain('state=open')
 	expect(list?.url).toContain('base=main')
-	const headShas = calls
-		.filter((call) => call.method === 'POST')
-		.map((call) => headShaFrom(call.body))
-		.sort()
-	expect(headShas).toEqual([cleanSha, dirtySha].sort())
-	const conclusions = calls
-		.filter((call) => call.method === 'PATCH')
-		.map((call) => conclusionFrom(call.body))
-		.sort()
-	expect(conclusions).toEqual(['failure', 'success'])
+	expect(github.bodies('POST', 'head_sha').sort()).toEqual(
+		[cleanSha, headSha].sort(),
+	)
+	expect(github.bodies('PATCH', 'conclusion').sort()).toEqual([
+		'failure',
+		'success',
+	])
 })
 
 test('a base-branch push does not publish a cached result for the previous tip', async () => {
-	const calls: Array<{ method: string; url: string; body: unknown }> = []
-	let reads = 0
-	const fetchImpl: typeof fetch = (input, init) => {
-		const url = String(input)
-		const method = init?.method ?? 'GET'
-		const body =
-			typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
-		calls.push({ method, url, body })
-		if (url.includes('/pulls?')) {
-			return Promise.resolve(
-				Response.json([{ number: 7, head: { sha: headSha } }]),
-			)
-		}
-		if (url.endsWith('/pulls/7')) {
-			reads += 1
-			return Promise.resolve(
-				Response.json(
-					pull({
-						mergeable: reads === 1,
-						mergeable_state: reads === 1 ? 'clean' : 'dirty',
-						baseSha: reads === 1 ? previousBaseSha : baseSha,
-					}),
-				),
-			)
-		}
-		if (method === 'POST' && url.endsWith('/check-runs')) {
-			return Promise.resolve(Response.json({ id: 4 }))
-		}
-		if (method === 'PATCH') {
-			return Promise.resolve(Response.json({ id: 4 }))
-		}
-		return Promise.resolve(new Response('unexpected', { status: 500 }))
-	}
+	const github = fakeGithub({
+		openPulls: [{ number: 7, head: { sha: headSha } }],
+		pulls: {
+			7: [
+				pull({
+					mergeable: true,
+					mergeable_state: 'clean',
+					baseSha: previousBaseSha,
+				}),
+				pull({ mergeable: false, mergeable_state: 'dirty' }),
+			],
+		},
+	})
 	const code = await reportOpenPullRequestMergeConflicts({
-		token: 'test-token',
-		repository: 'kentcdodds/kody',
+		...repo,
 		baseRef: 'main',
-		expectedBaseSha: baseSha,
-		fetchImpl,
-		sleep: () => Promise.resolve(),
+		fetchImpl: github.fetchImpl,
 		maxAttempts: 3,
 		concurrency: 1,
 	})
 	expect(code).toBe(0)
-	expect(reads).toBe(2)
-	const completed = calls.filter((call) => call.method === 'PATCH')
-	expect(completed).toHaveLength(1)
-	expect(conclusionFrom(completed[0]?.body)).toBe('failure')
+	expect(
+		github.calls.filter((call) => call.url.endsWith('/pulls/7')),
+	).toHaveLength(2)
+	expect(github.bodies('PATCH', 'conclusion')).toEqual(['failure'])
 })
 
 test('an open pull request scan fails closed when the list is unreadable', async () => {
-	const fetchImpl: typeof fetch = () =>
-		Promise.resolve(Response.json({ unexpected: true }))
 	await expect(
 		reportOpenPullRequestMergeConflicts({
-			token: 'test-token',
-			repository: 'kentcdodds/kody',
+			...repo,
 			baseRef: 'main',
-			expectedBaseSha: baseSha,
-			fetchImpl,
+			fetchImpl: () => Promise.resolve(Response.json({ unexpected: true })),
 			maxAttempts: 1,
 		}),
 	).rejects.toThrow('Open pull request list was not an array')
 })
 
-test('main fails closed for an unknown mode or a scan without a base ref', async () => {
-	const previousExitCode = process.exitCode
-	consoleError.mockImplementation(() => {})
-	try {
-		await main({
-			GITHUB_TOKEN: 'test-token',
-			GITHUB_REPOSITORY: 'kentcdodds/kody',
-			MERGE_CONFLICT_MODE: 'open-pulls',
-		})
-		expect(process.exitCode).toBe(1)
-		process.exitCode = 0
-		await main({
-			GITHUB_TOKEN: 'test-token',
-			GITHUB_REPOSITORY: 'kentcdodds/kody',
-			MERGE_CONFLICT_MODE: 'open-pulls',
-			BASE_REF: 'main',
-		})
-		expect(process.exitCode).toBe(1)
-		process.exitCode = 0
-		await main({
-			GITHUB_TOKEN: 'test-token',
-			GITHUB_REPOSITORY: 'kentcdodds/kody',
-			MERGE_CONFLICT_MODE: 'validate',
-			PR_NUMBER: '12',
-			HEAD_SHA: headSha,
-		})
-		expect(process.exitCode).toBe(1)
-	} finally {
-		process.exitCode = previousExitCode
-	}
-})
-
 function mergeability(input: {
 	mergeable: boolean | null
 	mergeableState: string
-	draft?: boolean
 	baseSha?: string
 }): PullRequestMergeability {
 	return {
@@ -453,7 +345,7 @@ function mergeability(input: {
 		mergeableState: input.mergeableState,
 		baseRef: 'main',
 		baseSha: input.baseSha ?? baseSha,
-		draft: input.draft ?? false,
+		draft: false,
 	}
 }
 
@@ -471,6 +363,10 @@ function pull(input: {
 	}
 }
 
+function loggedErrors() {
+	return consoleError.mock.calls.map((call) => String(call[0])).join('\n')
+}
+
 type RecordedCall = {
 	method: string
 	url: string
@@ -478,64 +374,56 @@ type RecordedCall = {
 	body: unknown
 }
 
-function fakeGithub(pulls: Array<ReturnType<typeof pull>>): {
-	fetchImpl: typeof fetch
-	calls: Array<RecordedCall>
-	failPulls: boolean
-} {
+/** Each pull's reads walk its fixture list and then repeat the last entry. */
+function fakeGithub(input: {
+	pulls: Record<number, Array<ReturnType<typeof pull>>>
+	openPulls?: Array<{ number: number; head: { sha: string } }>
+	failPulls?: boolean
+}) {
 	const calls: Array<RecordedCall> = []
-	let pullIndex = 0
-	const state: { failPulls: boolean } = { failPulls: false }
-	const fetchImpl: typeof fetch = (input, init) => {
-		const url = String(input)
+	const fetchImpl: typeof fetch = (request, init) => {
+		const url = String(request)
 		const method = init?.method ?? 'GET'
-		const headers = new Headers(init?.headers)
-		const body =
-			typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
 		calls.push({
 			method,
 			url,
-			authorization: headers.get('authorization'),
-			body,
+			authorization: new Headers(init?.headers).get('authorization'),
+			body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
 		})
-		if (url.includes('/pulls/')) {
-			if (state.failPulls) {
+		if (url.includes('/pulls?')) {
+			return Promise.resolve(Response.json(input.openPulls ?? []))
+		}
+		const pullNumber = /\/pulls\/(\d+)$/.exec(url)?.[1]
+		if (pullNumber) {
+			if (input.failPulls) {
 				return Promise.resolve(new Response('unavailable', { status: 503 }))
 			}
-			const payload = pulls[Math.min(pullIndex, pulls.length - 1)]
-			pullIndex += 1
-			return Promise.resolve(Response.json(payload))
+			const fixtures = input.pulls[Number(pullNumber)] ?? []
+			const reads = calls.filter((call) => call.url === url).length
+			return Promise.resolve(
+				Response.json(fixtures[Math.min(reads, fixtures.length) - 1]),
+			)
 		}
 		if (method === 'POST' && url.endsWith('/check-runs')) {
-			return Promise.resolve(Response.json({ id: 99 }))
+			return Promise.resolve(Response.json({ id: calls.length }))
 		}
 		if (method === 'PATCH') {
-			return Promise.resolve(Response.json({ id: 99 }))
+			return Promise.resolve(Response.json({ id: 1 }))
 		}
 		return Promise.resolve(new Response('unexpected', { status: 500 }))
 	}
 	return {
 		fetchImpl,
 		calls,
-		get failPulls() {
-			return state.failPulls
+		bodies(method: string, field: 'head_sha' | 'conclusion') {
+			return calls
+				.filter((call) => call.method === method)
+				.map((call) => {
+					const body = call.body
+					if (typeof body !== 'object' || body === null) return ''
+					const value: unknown = Reflect.get(body, field)
+					return typeof value === 'string' ? value : ''
+				})
 		},
-		set failPulls(value: boolean) {
-			state.failPulls = value
-		},
 	}
-}
-
-function headShaFrom(body: unknown) {
-	if (typeof body !== 'object' || body === null || !('head_sha' in body)) {
-		return ''
-	}
-	return typeof body.head_sha === 'string' ? body.head_sha : ''
-}
-
-function conclusionFrom(body: unknown) {
-	if (typeof body !== 'object' || body === null || !('conclusion' in body)) {
-		return ''
-	}
-	return typeof body.conclusion === 'string' ? body.conclusion : ''
 }

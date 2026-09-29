@@ -16,6 +16,46 @@ import {
 	parseSealedEscrowBlob,
 } from '@kody-internal/shared/backup-staging.ts'
 
+function unseal(passphrase: string, input: string, output: string) {
+	return unsealMain({ SECRET_ESCROW_PASSPHRASE: passphrase }, [
+		'--input',
+		input,
+		'--output',
+		output,
+	])
+}
+
+async function runSealMain(extraEnv: Record<string, string> = {}) {
+	const fetchImpl = vi.fn(
+		async (_url: string | URL | Request, _init?: RequestInit) =>
+			new Response(null, { status: 200 }),
+	)
+	const originalFetch = globalThis.fetch
+	globalThis.fetch = fetchImpl as unknown as typeof fetch
+	const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+	try {
+		await main({
+			ESCROW_SECRET_VALUE: 'secret-value-for-escrow-test-32chars',
+			ESCROW_PASSPHRASE: 'passphrase',
+			ESCROW_LABEL: 'secret-store-key',
+			DR_BACKUP_ACCOUNT_ID: 'a'.repeat(32),
+			DR_BACKUP_BUCKET_NAME: 'kody-dr-backups',
+			DR_BACKUP_ACCESS_KEY_ID: 'AKIA_TEST',
+			DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
+			...extraEnv,
+		})
+		const [url, init] = fetchImpl.mock.calls[0] ?? []
+		return {
+			url: String(url),
+			headers: new Headers(init?.headers),
+			logged: logSpy.mock.calls.map((call) => call.join(' ')).join('\n'),
+		}
+	} finally {
+		globalThis.fetch = originalFetch
+		logSpy.mockRestore()
+	}
+}
+
 test('the operator unseal tool round-trips sealed key bytes and fails closed', async () => {
 	const secretValue = 'known-test-secret-store-key-\u0000-\u{1f512}'
 	const passphrase = 'test-only-operator-passphrase'
@@ -43,30 +83,15 @@ test('the operator unseal tool round-trips sealed key bytes and fails closed', a
 		await writeFile(inputPath, JSON.stringify(sealed), 'utf8')
 
 		await expect(
-			unsealMain({ SECRET_ESCROW_PASSPHRASE: 'wrong-passphrase' }, [
-				'--input',
-				inputPath,
-				'--output',
-				outputPath,
-			]),
+			unseal('wrong-passphrase', inputPath, outputPath),
 		).rejects.toThrow(/authentication failed/)
 		await expect(stat(outputPath)).rejects.toMatchObject({ code: 'ENOENT' })
 
-		await unsealMain({ SECRET_ESCROW_PASSPHRASE: passphrase }, [
-			'--input',
-			inputPath,
-			'--output',
-			outputPath,
-		])
+		await unseal(passphrase, inputPath, outputPath)
 		expect(await readFile(outputPath, 'utf8')).toBe(secretValue)
 		expect((await stat(outputPath)).mode & 0o777).toBe(0o600)
 		await expect(
-			unsealMain({ SECRET_ESCROW_PASSPHRASE: passphrase }, [
-				'--input',
-				inputPath,
-				'--output',
-				outputPath,
-			]),
+			unseal(passphrase, inputPath, outputPath),
 		).rejects.toMatchObject({ code: 'EEXIST' })
 		expect(await readFile(outputPath, 'utf8')).toBe(secretValue)
 
@@ -78,12 +103,7 @@ test('the operator unseal tool round-trips sealed key bytes and fails closed', a
 			'utf8',
 		)
 		await expect(
-			unsealMain({ SECRET_ESCROW_PASSPHRASE: passphrase }, [
-				'--input',
-				mismatchedPath,
-				'--output',
-				mismatchedOutputPath,
-			]),
+			unseal(passphrase, mismatchedPath, mismatchedOutputPath),
 		).rejects.toThrow(/invalid versioned shape/)
 		await expect(stat(mismatchedOutputPath)).rejects.toMatchObject({
 			code: 'ENOENT',
@@ -92,12 +112,11 @@ test('the operator unseal tool round-trips sealed key bytes and fails closed', a
 		const repositoryLink = path.join(directory, 'repository-link')
 		await symlink(process.cwd(), repositoryLink, 'dir')
 		await expect(
-			unsealMain({ SECRET_ESCROW_PASSPHRASE: passphrase }, [
-				'--input',
+			unseal(
+				passphrase,
 				inputPath,
-				'--output',
 				path.join(repositoryLink, 'recovered-secret'),
-			]),
+			),
 		).rejects.toThrow(/inside the repository/)
 	} finally {
 		await rm(directory, { recursive: true, force: true })
@@ -105,60 +124,18 @@ test('the operator unseal tool round-trips sealed key bytes and fails closed', a
 })
 
 test('main seals and uploads the default escrow key without printing secret material', async () => {
-	const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }))
-	const originalFetch = globalThis.fetch
-	globalThis.fetch = fetchImpl as unknown as typeof fetch
-	const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-	try {
-		await main({
-			ESCROW_SECRET_VALUE: 'secret-value-for-escrow-test-32chars',
-			ESCROW_PASSPHRASE: 'passphrase',
-			ESCROW_LABEL: 'secret-store-key',
-			DR_BACKUP_ACCOUNT_ID: 'a'.repeat(32),
-			DR_BACKUP_BUCKET_NAME: 'kody-dr-backups',
-			DR_BACKUP_ACCESS_KEY_ID: 'AKIA_TEST',
-			DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
-		})
-		expect(fetchImpl).toHaveBeenCalled()
-		const [url, init] = fetchImpl.mock.calls[0]!
-		expect(String(url)).toContain(backupEscrowSecretStoreKeyKey)
-		const headers = new Headers((init as RequestInit).headers)
-		expect(headers.get('Authorization')).toContain('AWS4-HMAC-SHA256')
-		const logged = logSpy.mock.calls.map((call) => call.join(' ')).join('\n')
-		expect(logged).not.toContain('secret-value-for-escrow-test-32chars')
-		expect(logged).not.toContain('passphrase')
-		expect(logged).toContain(backupEscrowSecretStoreKeyKey)
-	} finally {
-		globalThis.fetch = originalFetch
-		logSpy.mockRestore()
-	}
+	const upload = await runSealMain()
+	expect(upload.url).toContain(backupEscrowSecretStoreKeyKey)
+	expect(upload.headers.get('Authorization')).toContain('AWS4-HMAC-SHA256')
+	expect(upload.logged).not.toContain('secret-value-for-escrow-test-32chars')
+	expect(upload.logged).not.toContain('passphrase')
+	expect(upload.logged).toContain(backupEscrowSecretStoreKeyKey)
 })
 
 test('escrow rotation uses versioned keys and write-once rejections throw', async () => {
-	const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }))
-	const originalFetch = globalThis.fetch
-	globalThis.fetch = fetchImpl as unknown as typeof fetch
-	const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-	try {
-		await main({
-			ESCROW_SECRET_VALUE: 'secret-value-for-escrow-test-32chars',
-			ESCROW_PASSPHRASE: 'passphrase',
-			ESCROW_LABEL: 'secret-store-key',
-			ESCROW_KEY_VERSION: 'v2',
-			DR_BACKUP_ACCOUNT_ID: 'a'.repeat(32),
-			DR_BACKUP_BUCKET_NAME: 'kody-dr-backups',
-			DR_BACKUP_ACCESS_KEY_ID: 'AKIA_TEST',
-			DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
-		})
-		const [url] = fetchImpl.mock.calls[0]!
-		expect(String(url)).toContain('secret-store-key.v2.json')
-		expect(logSpy.mock.calls.join(' ')).toContain(
-			'escrow/secret-store-key.v2.json',
-		)
-	} finally {
-		globalThis.fetch = originalFetch
-		logSpy.mockRestore()
-	}
+	const rotated = await runSealMain({ ESCROW_KEY_VERSION: 'v2' })
+	expect(rotated.url).toContain('secret-store-key.v2.json')
+	expect(rotated.logged).toContain('escrow/secret-store-key.v2.json')
 
 	const lockedFetchImpl = vi.fn(
 		async () =>

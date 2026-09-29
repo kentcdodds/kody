@@ -23,22 +23,53 @@ function gitResult(status: number, stdout = ''): ReturnType<GitRunner> {
 	return { status, stdout, stderr: '' }
 }
 
-test('docs-only hook paths skip expensive checks and any code path keeps them', async () => {
-	expect(isDocsOnlyHookPath('docs/contributing/security.md')).toBe(true)
-	expect(
-		isDocsOnlyHookPath('docs/contributing/architecture/primitives.yaml'),
-	).toBe(true)
-	expect(isDocsOnlyHookPath('./README.md')).toBe(true)
-	expect(isDocsOnlyHookPath('notes.mdx')).toBe(true)
-	expect(isDocsOnlyHookPath('LICENSE')).toBe(true)
+function plannedScripts(
+	hook: 'pre-commit' | 'pre-push',
+	paths: ReadonlyArray<string> | null,
+) {
+	return hookScripts(planGitHookChecks({ hook, paths }))
+}
 
-	expect(isDocsOnlyHookPath('docs-site/guide.ts')).toBe(false)
-	expect(isDocsOnlyHookPath('src/readme.md.ts')).toBe(false)
-	expect(isDocsOnlyHookPath('packages/worker/src/app.ts')).toBe(false)
-	expect(isDocsOnlyHookPath('../packages/worker/src/app.ts')).toBe(false)
-	expect(isDocsOnlyHookPath('docs\\feature.ts')).toBe(false)
+async function runHook(
+	input: Omit<Parameters<typeof runGitHookChecks>[0], 'runScript' | 'log'>,
+	exitCodeFor: (script: string) => number = () => 0,
+) {
+	const scripts: Array<string> = []
+	const code = await runGitHookChecks({
+		...input,
+		runScript: (script) => {
+			scripts.push(script)
+			return exitCodeFor(script)
+		},
+		log: () => {},
+	})
+	return { code, scripts }
+}
+
+test('docs-only hook paths skip expensive checks and any code path keeps them', async () => {
+	const pathCases: Array<[string, boolean]> = [
+		['docs/contributing/security.md', true],
+		['docs/contributing/architecture/primitives.yaml', true],
+		['./README.md', true],
+		['notes.mdx', true],
+		['LICENSE', true],
+		['docs-site/guide.ts', false],
+		['src/readme.md.ts', false],
+		['packages/worker/src/app.ts', false],
+		['../packages/worker/src/app.ts', false],
+		['docs\\feature.ts', false],
+	]
+	expect(
+		pathCases.filter(
+			([filePath, want]) => isDocsOnlyHookPath(filePath) !== want,
+		),
+	).toEqual([])
 
 	const docsPaths = ['docs/contributing/security.md', 'README.md', 'LICENSE']
+	const codePaths = [
+		'docs/contributing/security.md',
+		'packages/worker/src/app.ts',
+	]
 	expect(
 		planGitHookChecks({ hook: 'pre-commit', paths: docsPaths }),
 	).toMatchObject({
@@ -49,37 +80,29 @@ test('docs-only hook paths skip expensive checks and any code path keeps them', 
 			'pre-commit: skipping typecheck and migrations:check (3 docs-only paths)',
 	})
 	expect(
-		hookScripts(planGitHookChecks({ hook: 'pre-push', paths: docsPaths })),
-	).toEqual([])
-
-	const codePaths = [
-		'docs/contributing/security.md',
-		'packages/worker/src/app.ts',
-	]
-	expect(
-		hookScripts(planGitHookChecks({ hook: 'pre-commit', paths: codePaths })),
-	).toEqual(['typecheck', 'migrations:check'])
-	expect(
 		planGitHookChecks({ hook: 'pre-push', paths: codePaths }).summary,
 	).toBe('pre-push: running test:push (packages/worker/src/app.ts)')
+	const planCases: Array<
+		['pre-commit' | 'pre-push', Array<string> | null, Array<string>]
+	> = [
+		['pre-push', docsPaths, []],
+		['pre-commit', codePaths, ['typecheck', 'migrations:check']],
+		[
+			'pre-push',
+			['packages/worker/migrations/0067-example.sql'],
+			['test:push'],
+		],
+		['pre-commit', [], []],
+		['pre-commit', null, ['typecheck', 'migrations:check']],
+		['pre-push', null, ['test:push']],
+	]
 	expect(
-		hookScripts(
-			planGitHookChecks({
-				hook: 'pre-push',
-				paths: ['packages/worker/migrations/0067-example.sql'],
-			}),
-		),
-	).toEqual(['test:push'])
-
-	expect(
-		hookScripts(planGitHookChecks({ hook: 'pre-commit', paths: [] })),
-	).toEqual([])
-	expect(
-		hookScripts(planGitHookChecks({ hook: 'pre-commit', paths: null })),
-	).toEqual(['typecheck', 'migrations:check'])
-	expect(
-		hookScripts(planGitHookChecks({ hook: 'pre-push', paths: null })),
-	).toEqual(['test:push'])
+		planCases.map(([hook, paths]) => [
+			hook,
+			paths,
+			plannedScripts(hook, paths),
+		]),
+	).toEqual(planCases)
 
 	expect(parsePrePushUpdates(null)).toBeNull()
 	expect(parsePrePushUpdates('\n')).toBeNull()
@@ -89,47 +112,30 @@ test('docs-only hook paths skip expensive checks and any code path keeps them', 
 		),
 	).toBeNull()
 
-	const skipped: Array<string> = []
-	const skippedCode = await runGitHookChecks({
-		hook: 'pre-commit',
-		git: () => gitResult(0, 'docs/contributing/security.md\0README.md\0'),
-		runScript: (script) => {
-			skipped.push(script)
-			return 0
-		},
-		log: () => {},
-	})
-	expect(skippedCode).toBe(0)
-	expect(skipped).toEqual([])
-
-	const ran: Array<string> = []
-	const failedCode = await runGitHookChecks({
-		hook: 'pre-commit',
-		git: () => gitResult(0, 'packages/worker/src/app.ts\0'),
-		runScript: (script) => {
-			ran.push(script)
-			return script === 'typecheck' ? 2 : 0
-		},
-		log: () => {},
-	})
-	expect(failedCode).toBe(2)
-	expect(ran).toEqual(['typecheck'])
-
-	const pushed: Array<string> = []
-	const pushCode = await runGitHookChecks({
-		hook: 'pre-push',
-		stdin: ' \n',
-		git: () => {
-			throw new Error('blank pre-push stdin must fail closed before git')
-		},
-		runScript: (script) => {
-			pushed.push(script)
-			return 0
-		},
-		log: () => {},
-	})
-	expect(pushCode).toBe(0)
-	expect(pushed).toEqual(['test:push'])
+	expect(
+		await runHook({
+			hook: 'pre-commit',
+			git: () => gitResult(0, 'docs/contributing/security.md\0README.md\0'),
+		}),
+	).toEqual({ code: 0, scripts: [] })
+	expect(
+		await runHook(
+			{
+				hook: 'pre-commit',
+				git: () => gitResult(0, 'packages/worker/src/app.ts\0'),
+			},
+			(script) => (script === 'typecheck' ? 2 : 0),
+		),
+	).toEqual({ code: 2, scripts: ['typecheck'] })
+	expect(
+		await runHook({
+			hook: 'pre-push',
+			stdin: ' \n',
+			git: () => {
+				throw new Error('blank pre-push stdin must fail closed before git')
+			},
+		}),
+	).toEqual({ code: 0, scripts: ['test:push'] })
 })
 
 test('push path listing diffs the remote tip and fails closed without a new-branch base', () => {
@@ -253,11 +259,9 @@ test('a real docs follow-up skips unit tests and a source rename still typecheck
 		)
 		git(['add', 'docs/contributing/security.md'])
 		expect(
-			hookScripts(
-				planGitHookChecks({
-					hook: 'pre-commit',
-					paths: listHookPaths({ hook: 'pre-commit', git: runner }),
-				}),
+			plannedScripts(
+				'pre-commit',
+				listHookPaths({ hook: 'pre-commit', git: runner }),
 			),
 		).toEqual([])
 		await writeFile(
@@ -283,15 +287,9 @@ test('a real docs follow-up skips unit tests and a source rename still typecheck
 
 		const pushStdin = `refs/heads/main ${docsCommit} refs/heads/main ${base}\n`
 		expect(
-			hookScripts(
-				planGitHookChecks({
-					hook: 'pre-push',
-					paths: listHookPaths({
-						hook: 'pre-push',
-						git: runner,
-						stdin: pushStdin,
-					}),
-				}),
+			plannedScripts(
+				'pre-push',
+				listHookPaths({ hook: 'pre-push', git: runner, stdin: pushStdin }),
 			),
 		).toEqual([])
 		const prePush = spawnSync(process.execPath, [script, 'pre-push'], {
@@ -319,14 +317,7 @@ test('a real docs follow-up skips unit tests and a source rename still typecheck
 				stdin: `refs/heads/feature ${feature} refs/heads/feature ${zeroSha}\n`,
 			}),
 		).toEqual(['src/app.ts'])
-		expect(
-			hookScripts(
-				planGitHookChecks({
-					hook: 'pre-push',
-					paths: ['src/app.ts'],
-				}),
-			),
-		).toEqual(['test:push'])
+		expect(plannedScripts('pre-push', ['src/app.ts'])).toEqual(['test:push'])
 
 		git(['checkout', 'main'])
 		git(['mv', 'src/app.ts', 'src/app.md'])
@@ -334,14 +325,10 @@ test('a real docs follow-up skips unit tests and a source rename still typecheck
 			'src/app.md',
 			'src/app.ts',
 		])
-		expect(
-			hookScripts(
-				planGitHookChecks({
-					hook: 'pre-commit',
-					paths: ['src/app.md', 'src/app.ts'],
-				}),
-			),
-		).toEqual(['typecheck', 'migrations:check'])
+		expect(plannedScripts('pre-commit', ['src/app.md', 'src/app.ts'])).toEqual([
+			'typecheck',
+			'migrations:check',
+		])
 		const renamedCommit = spawnSync(process.execPath, [script, 'pre-commit'], {
 			cwd: root,
 			encoding: 'utf8',

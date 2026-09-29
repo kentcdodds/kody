@@ -101,122 +101,70 @@ test('extractFencedMermaidBlocks finds mermaid inside wrapping example fences', 
 	)
 })
 
-test('the GitHub jobs+highlight sequence note fails to parse', async () => {
+test('parseMermaidDiagram rejects the GitHub jobs+highlight note and accepts the rephrased and visual-recap diagrams', async () => {
 	const parsed = await parseMermaidDiagram(githubPlusNoteDiagram)
 	expect(parsed.ok).toBe(false)
-	if (parsed.ok) {
-		return
-	}
+	if (parsed.ok) return
 	expect(parsed.mermaidLine).toBe(8)
 	expect(parsed.message).toContain("got '+'")
+
+	const valid: Array<[string, string]> = [
+		[githubPlusNoteFixed, 'sequence'],
+		[visualRecapSequence, 'sequence'],
+		[visualRecapFlowchart, 'flowchart-v2'],
+	]
+	for (const [diagram, diagramType] of valid) {
+		await expect(parseMermaidDiagram(diagram)).resolves.toEqual({
+			ok: true,
+			diagramType,
+		})
+	}
 })
 
-test('rephrasing the semicolon note makes the GitHub diagram parse', async () => {
-	await expect(parseMermaidDiagram(githubPlusNoteFixed)).resolves.toEqual({
-		ok: true,
-		diagramType: 'sequence',
-	})
-})
+function fenced(...diagrams: Array<string>) {
+	return diagrams
+		.map((diagram) => `\`\`\`mermaid\n${diagram}\n\`\`\`\n`)
+		.join('\n')
+}
 
-test('visual-recap skill example diagrams parse', async () => {
-	await expect(parseMermaidDiagram(visualRecapSequence)).resolves.toEqual({
-		ok: true,
-		diagramType: 'sequence',
-	})
-	await expect(parseMermaidDiagram(visualRecapFlowchart)).resolves.toEqual({
-		ok: true,
-		diagramType: 'flowchart-v2',
-	})
-})
+function issue(file: string, line: number, message: unknown) {
+	return expect.objectContaining({ file, line, message })
+}
 
-test('checkMermaidMarkdown reports fence-relative GitHub failures', async () => {
-	const recap = [
-		'<!-- system-recap:start -->',
-		'',
-		'### Change flow',
-		'',
-		'```mermaid',
-		githubPlusNoteDiagram,
-		'```',
-		'',
-		'<!-- system-recap:end -->',
-	].join('\n')
-
-	const issues = await checkMermaidMarkdown({
-		source: 'recap.md',
-		content: recap,
-	})
-	expect(issues).toEqual([
-		expect.objectContaining({
-			file: 'recap.md',
-			line: 13,
-			message: expect.stringContaining("got '+'"),
-		}),
-	])
-})
-
-test('checkMermaidMarkdown accepts recap markdown with valid mermaid', async () => {
-	const recap = [
-		'```mermaid',
-		githubPlusNoteFixed,
-		'```',
-		'',
-		'```mermaid',
-		visualRecapFlowchart,
-		'```',
-	].join('\n')
-
-	await expect(
-		checkMermaidMarkdown({ source: 'recap.md', content: recap }),
-	).resolves.toEqual([])
-})
-
-test('raw mermaid on stdin is checked without fences', async () => {
-	await expect(
-		checkMermaidMarkdown({
-			source: '<stdin>',
-			content: githubPlusNoteDiagram,
-		}),
-	).resolves.toEqual([
-		expect.objectContaining({
-			file: '<stdin>',
-			line: 8,
-			message: expect.stringContaining("got '+'"),
-		}),
-	])
-	await expect(
-		checkMermaidMarkdown({
-			source: '<stdin>',
-			content: 'Just a PR description with no diagram.',
-		}),
-	).resolves.toEqual([])
-})
-
-test('unclosed and empty mermaid fences fail', async () => {
-	await expect(
-		checkMermaidMarkdown({
-			source: 'docs/example.md',
-			content: '```mermaid\nsequenceDiagram\n',
-		}),
-	).resolves.toEqual([
-		expect.objectContaining({
-			file: 'docs/example.md',
-			line: 1,
-			message: 'Unclosed mermaid fence',
-		}),
-	])
-	await expect(
-		checkMermaidMarkdown({
-			source: 'docs/example.md',
-			content: '```mermaid\n```\n',
-		}),
-	).resolves.toEqual([
-		expect.objectContaining({
-			file: 'docs/example.md',
-			line: 1,
-			message: 'Empty mermaid diagram',
-		}),
-	])
+test('checkMermaidMarkdown reports fence-relative failures, raw stdin diagrams, and broken fences', async () => {
+	const plusNoteError = expect.stringContaining("got '+'")
+	const cases: Array<[string, string, Array<unknown>]> = [
+		[
+			'recap.md',
+			[
+				'<!-- system-recap:start -->',
+				'',
+				'### Change flow',
+				'',
+				fenced(githubPlusNoteDiagram),
+				'<!-- system-recap:end -->',
+			].join('\n'),
+			[issue('recap.md', 13, plusNoteError)],
+		],
+		['recap.md', fenced(githubPlusNoteFixed, visualRecapFlowchart), []],
+		['<stdin>', githubPlusNoteDiagram, [issue('<stdin>', 8, plusNoteError)]],
+		['<stdin>', 'Just a PR description with no diagram.', []],
+		[
+			'docs/example.md',
+			'```mermaid\nsequenceDiagram\n',
+			[issue('docs/example.md', 1, 'Unclosed mermaid fence')],
+		],
+		[
+			'docs/example.md',
+			'```mermaid\n```\n',
+			[issue('docs/example.md', 1, 'Empty mermaid diagram')],
+		],
+	]
+	for (const [source, content, issues] of cases) {
+		await expect(checkMermaidMarkdown({ source, content })).resolves.toEqual(
+			issues,
+		)
+	}
 })
 
 test('parseMermaidCheckArgs rejects mixed stdin and files', () => {
@@ -230,45 +178,47 @@ test('parseMermaidCheckArgs rejects mixed stdin and files', () => {
 	})
 })
 
-test('checkMermaidSyntax scans docs and skills in a temp tree', async () => {
-	const cwd = await mkdtemp(path.join(os.tmpdir(), 'mermaid-check-'))
-	try {
-		await Promise.all([
-			mkdir(path.join(cwd, 'docs', 'contributing'), { recursive: true }),
-			mkdir(path.join(cwd, '.agents', 'skills', 'visual-recap'), {
-				recursive: true,
-			}),
-		])
-		await Promise.all([
-			writeFile(path.join(cwd, 'README.md'), 'No diagram.\n'),
-			writeFile(path.join(cwd, 'AGENTS.md'), 'No diagram.\n'),
-			writeFile(
-				path.join(cwd, 'docs', 'contributing', 'ok.md'),
-				['```mermaid', visualRecapSequence, '```', ''].join('\n'),
-			),
-			writeFile(
-				path.join(cwd, '.agents', 'skills', 'visual-recap', 'SKILL.md'),
-				['```mermaid', githubPlusNoteDiagram, '```', ''].join('\n'),
-			),
-		])
-
-		expect(await listMermaidSourcePaths(cwd)).toEqual([
-			'.agents/skills/visual-recap/SKILL.md',
-			'AGENTS.md',
-			'README.md',
-			'docs/contributing/ok.md',
-		])
-		const expected = [
-			expect.objectContaining({
-				file: '.agents/skills/visual-recap/SKILL.md',
-				message: expect.stringContaining("got '+'"),
-			}),
-		]
-		expect(await checkMermaidSyntax(cwd)).toEqual(expected)
-		expect(await checkMermaidSyntax(cwd, [])).toEqual(expected)
-	} finally {
-		await rm(cwd, { recursive: true, force: true })
+async function tempTree(prefix: string, files: Record<string, string>) {
+	const cwd = await mkdtemp(path.join(os.tmpdir(), prefix))
+	for (const [file, content] of Object.entries(files)) {
+		await mkdir(path.dirname(path.join(cwd, file)), { recursive: true })
+		await writeFile(path.join(cwd, file), content)
 	}
+	return {
+		cwd,
+		[Symbol.asyncDispose]: () => rm(cwd, { recursive: true, force: true }),
+	}
+}
+
+function runCli(args: Array<string>, options: { cwd: string; input?: string }) {
+	return spawnSync(
+		process.execPath,
+		[path.join(repoRoot, 'tools/check-mermaid-syntax.ts'), ...args],
+		{ encoding: 'utf8', ...options },
+	)
+}
+
+test('checkMermaidSyntax scans docs and skills in a temp tree', async () => {
+	await using tree = await tempTree('mermaid-check-', {
+		'README.md': 'No diagram.\n',
+		'AGENTS.md': 'No diagram.\n',
+		'docs/contributing/ok.md': fenced(visualRecapSequence),
+		'.agents/skills/visual-recap/SKILL.md': fenced(githubPlusNoteDiagram),
+	})
+	expect(await listMermaidSourcePaths(tree.cwd)).toEqual([
+		'.agents/skills/visual-recap/SKILL.md',
+		'AGENTS.md',
+		'README.md',
+		'docs/contributing/ok.md',
+	])
+	const expected = [
+		expect.objectContaining({
+			file: '.agents/skills/visual-recap/SKILL.md',
+			message: expect.stringContaining("got '+'"),
+		}),
+	]
+	expect(await checkMermaidSyntax(tree.cwd)).toEqual(expected)
+	expect(await checkMermaidSyntax(tree.cwd, [])).toEqual(expected)
 })
 
 test('repo mermaid fences currently parse', async () => {
@@ -276,49 +226,23 @@ test('repo mermaid fences currently parse', async () => {
 })
 
 test('CLI with no paths scans docs and skills', async () => {
-	const cwd = await mkdtemp(path.join(os.tmpdir(), 'mermaid-check-cli-'))
-	try {
-		await Promise.all([
-			mkdir(path.join(cwd, 'docs'), { recursive: true }),
-			mkdir(path.join(cwd, '.agents'), { recursive: true }),
-		])
-		await Promise.all([
-			writeFile(path.join(cwd, 'README.md'), 'No diagram.\n'),
-			writeFile(path.join(cwd, 'AGENTS.md'), 'No diagram.\n'),
-			writeFile(
-				path.join(cwd, 'docs', 'broken.md'),
-				['```mermaid', githubPlusNoteDiagram, '```', ''].join('\n'),
-			),
-		])
-		const result = spawnSync(
-			process.execPath,
-			[path.join(repoRoot, 'tools/check-mermaid-syntax.ts')],
-			{ encoding: 'utf8', cwd },
-		)
-		expect(result.status).toBe(1)
-		expect(result.stderr).toContain('docs/broken.md:')
-		expect(result.stderr).toContain("got '+'")
-	} finally {
-		await rm(cwd, { recursive: true, force: true })
-	}
+	await using tree = await tempTree('mermaid-check-cli-', {
+		'README.md': 'No diagram.\n',
+		'AGENTS.md': 'No diagram.\n',
+		'.agents/skills/plain/SKILL.md': 'No diagram.\n',
+		'docs/broken.md': fenced(githubPlusNoteDiagram),
+	})
+	const result = runCli([], { cwd: tree.cwd })
+	expect(result.status).toBe(1)
+	expect(result.stderr).toContain('docs/broken.md:')
+	expect(result.stderr).toContain("got '+'")
 })
 
 test('CLI --stdin rejects the GitHub semicolon note diagram', () => {
-	const recap = ['```mermaid', githubPlusNoteDiagram, '```', ''].join('\n')
-	const result = spawnSync(
-		process.execPath,
-		[
-			path.join(repoRoot, 'tools/check-mermaid-syntax.ts'),
-			'--stdin',
-			'--label',
-			'recap.md',
-		],
-		{
-			input: recap,
-			encoding: 'utf8',
-			cwd: repoRoot,
-		},
-	)
+	const result = runCli(['--stdin', '--label', 'recap.md'], {
+		cwd: repoRoot,
+		input: fenced(githubPlusNoteDiagram),
+	})
 	expect(result.status).toBe(1)
 	expect(result.stderr).toContain("got '+'")
 	expect(result.stderr).toContain('recap.md:9:')

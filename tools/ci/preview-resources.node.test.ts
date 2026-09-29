@@ -29,30 +29,27 @@ vi.mock('node:child_process', async (importOriginal) => {
 
 const spawnSync = vi.mocked(childProcess.spawnSync)
 
-function wranglerArgs(call: unknown) {
-	const args = (call as [string, Array<string>])[1] ?? []
-	return args
-}
-
-function wranglerArgList(call: unknown) {
-	return wranglerArgs(call).join(' ')
-}
+const wranglerCalls = () =>
+	spawnSync.mock.calls.map((call) =>
+		((call as [string, Array<string>])[1] ?? []).join(' '),
+	)
+const loggedMessages = () =>
+	consoleError.mock.calls.map(([message]) => String(message))
+const wranglerResult = (status: number, stderr = '', stdout = '') =>
+	({ status, stdout, stderr }) as ReturnType<typeof childProcess.spawnSync>
 
 function alreadyMissingWrangler(args: ReadonlyArray<string>) {
 	const joined = args.join(' ')
-	if (joined.includes('d1 list')) {
-		return { status: 0, stdout: '[]\n', stderr: '' }
-	}
-	if (joined.includes('kv namespace list')) {
-		return { status: 0, stdout: '[]\n', stderr: '' }
+	if (joined.includes('d1 list') || joined.includes('kv namespace list')) {
+		return wranglerResult(0, '', '[]\n')
 	}
 	if (joined.startsWith('delete ') || joined.startsWith('r2 bucket delete ')) {
-		return { status: 1, stdout: '', stderr: 'Worker not found\n' }
+		return wranglerResult(1, 'Worker not found\n')
 	}
 	if (joined.includes('d1 delete') || joined.includes('kv namespace delete')) {
-		return { status: 1, stdout: '', stderr: 'does not exist\n' }
+		return wranglerResult(1, 'does not exist\n')
 	}
-	return { status: 1, stdout: '', stderr: `unexpected wrangler: ${joined}` }
+	return wranglerResult(1, `unexpected wrangler: ${joined}`)
 }
 
 function emptyQueueListResponse() {
@@ -63,12 +60,20 @@ function emptyQueueListResponse() {
 	})
 }
 
-function queueListResponse(name: string, queueId: string) {
-	return Response.json({
-		success: true,
-		result: [{ queue_id: queueId, queue_name: name }],
-		result_info: { total_pages: 1 },
-	})
+function stubCloudflare(
+	fetchImpl: typeof fetch = async () => emptyQueueListResponse(),
+) {
+	vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'test-account')
+	vi.stubEnv('CLOUDFLARE_API_TOKEN', 'test-token')
+	const fetchMock = vi.fn<typeof fetch>().mockImplementation(fetchImpl)
+	vi.stubGlobal('fetch', fetchMock)
+	return {
+		fetchMock,
+		[Symbol.dispose]: () => {
+			vi.unstubAllGlobals()
+			vi.unstubAllEnvs()
+		},
+	}
 }
 
 function authForbiddenResponse() {
@@ -81,10 +86,27 @@ function authForbiddenResponse() {
 	)
 }
 
-function installCleanupEnv() {
-	vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'test-account')
-	vi.stubEnv('CLOUDFLARE_API_TOKEN', 'test-token')
+/** Fails the first wrangler call matching `when` with `stderr`, then succeeds. */
+function failWranglerOnce(
+	when: (argv: Array<string>) => boolean,
+	stderr: string,
+) {
+	let attempts = 0
+	spawnSync.mockImplementation((_command, args) => {
+		const argv = args as Array<string>
+		if (!when(argv)) return alreadyMissingWrangler(argv)
+		attempts += 1
+		return attempts === 1 ? wranglerResult(1, stderr) : wranglerResult(0)
+	})
+	return () => attempts
 }
+
+const cleanup = (workerName: string) =>
+	cleanupPreviewResources({
+		workerName,
+		dryRun: false,
+		sleep: async () => {},
+	})
 
 const wranglerConfigPaths = [
 	'packages/worker/wrangler.jsonc',
@@ -196,15 +218,19 @@ function namesRejectedByGuard(
 		.map(([name]) => name)
 }
 
-test('assertPreviewResourceName rejects every committed production and shared resource name', async () => {
+test('assertPreviewResourceName rejects committed production names and names outside the kody-pr / kody-branch scheme', async () => {
 	const committed = await readCommittedResourceNames()
 	expect(committed.length).toBeGreaterThan(20)
-	expect(committed).toContain('kody')
-	expect(committed).toContain('kody-audit')
-	expect(committed).toContain('kody-community-assets')
-	expect(committed).toContain('kody-webhook-dispatch')
-	expect(committed).toContain('kody-scheduled-dispatch')
-	expect(committed).toContain('kody-preview-jobs')
+	expect(committed).toEqual(
+		expect.arrayContaining([
+			'kody',
+			'kody-audit',
+			'kody-community-assets',
+			'kody-webhook-dispatch',
+			'kody-scheduled-dispatch',
+			'kody-preview-jobs',
+		]),
+	)
 	expect(
 		namesAcceptedByGuard([...committed, ...derivedProductionNames]),
 	).toEqual([])
@@ -214,9 +240,7 @@ test('assertPreviewResourceName rejects every committed production and shared re
 	expect(() => assertPreviewResourceName('kody-preview-jobs', 'd1')).toThrow(
 		'Refusing to delete d1 "kody-preview-jobs"',
 	)
-})
 
-test('assertPreviewResourceName rejects names outside the kody-pr / kody-branch scheme', () => {
 	expect(
 		nonPreviewNames.filter((name) => previewResourceNamePattern.test(name)),
 	).toEqual([])
@@ -226,7 +250,7 @@ test('assertPreviewResourceName rejects names outside the kody-pr / kody-branch 
 	)
 })
 
-test('assertPreviewResourceName accepts every derived preview name kind', () => {
+test('assertPreviewResourceName accepts every derived preview name kind, including 63-character truncation', () => {
 	for (const workerName of acceptedWorkerNames) {
 		const derived = buildPreviewResourceNames(workerName)
 		const accepted: Array<[string, PreviewResourceKind]> = [
@@ -248,14 +272,12 @@ test('assertPreviewResourceName accepts every derived preview name kind', () => 
 		]
 		expect(namesRejectedByGuard(accepted)).toEqual([])
 	}
-})
 
-test('assertPreviewResourceName accepts names truncated to the 63-character limit', () => {
-	const workerName = `kody-branch-${'a1'.repeat(15)}-z`
-	expect(workerName).toHaveLength(44)
-	const derived = buildPreviewResourceNames(workerName)
+	const longWorkerName = `kody-branch-${'a1'.repeat(15)}-z`
+	expect(longWorkerName).toHaveLength(44)
+	const derived = buildPreviewResourceNames(longWorkerName)
 	expect(derived.bundleArtifactsKvTitle.length).toBeLessThanOrEqual(63)
-	expect(derived.bundleArtifactsKvTitle).not.toContain(workerName)
+	expect(derived.bundleArtifactsKvTitle).not.toContain(longWorkerName)
 	expect(derived.bundleArtifactsKvTitle).toMatch(
 		/^kody-branch-[a-z0-9]+-bundle-artifacts-kv$/,
 	)
@@ -266,10 +288,8 @@ test('assertPreviewResourceName accepts names truncated to the 63-character limi
 	).toEqual([])
 })
 
-test('cleanupPreviewResources refuses a production worker name before any wrangler or REST call', async () => {
-	const fetchMock = vi.fn<typeof fetch>()
-	vi.stubGlobal('fetch', fetchMock)
-	installCleanupEnv()
+test('cleanup and each guarded delete refuse production names before any wrangler or REST call', async () => {
+	using cloudflare = stubCloudflare()
 	for (const workerName of ['kody', 'kody-platform', 'kody-runtime', '']) {
 		await expect(
 			cleanupPreviewResources({ workerName, dryRun: false }),
@@ -279,57 +299,60 @@ test('cleanupPreviewResources refuses a production worker name before any wrangl
 		cleanupPreviewResources({ workerName: 'kody', dryRun: true }),
 	).rejects.toThrow('Refusing to delete worker "kody-runtime"')
 	expect(consoleError).not.toHaveBeenCalled()
-	expect(spawnSync).not.toHaveBeenCalled()
-	expect(fetchMock).not.toHaveBeenCalled()
-	vi.unstubAllGlobals()
-	vi.unstubAllEnvs()
-})
 
-test('each guarded delete throws with the offending name and kind before reaching Cloudflare', async () => {
-	const fetchMock = vi.fn<typeof fetch>()
-	vi.stubGlobal('fetch', fetchMock)
-	installCleanupEnv()
 	const queueClient = {
 		accountId: 'test-account',
 		apiToken: 'test-token',
 		dryRun: false,
 	}
-	await expect(
-		deletePreviewWorkerScript({ name: 'kody-platform', dryRun: false }),
-	).rejects.toThrow('Refusing to delete worker "kody-platform"')
-	await expect(
-		deletePreviewD1Database({ name: 'kody', dryRun: false }),
-	).rejects.toThrow('Refusing to delete d1 "kody"')
-	await expect(
-		deletePreviewD1Database({ name: 'kody-audit', dryRun: false }),
-	).rejects.toThrow('Refusing to delete d1 "kody-audit"')
-	await expect(
-		deletePreviewKvNamespace({ title: 'kody-oauth', dryRun: false }),
-	).rejects.toThrow('Refusing to delete kv "kody-oauth"')
-	await expect(
-		deletePreviewR2Bucket({ name: 'kody-community-assets', dryRun: false }),
-	).rejects.toThrow('Refusing to delete r2 "kody-community-assets"')
-	await expect(
-		deletePreviewQueue({ ...queueClient, name: 'kody-webhook-dispatch' }),
-	).rejects.toThrow('Refusing to delete queue "kody-webhook-dispatch"')
-	await expect(
-		removePreviewQueueConsumers({
-			...queueClient,
-			name: 'kody-email-delivery',
-		}),
-	).rejects.toThrow('Refusing to delete queue "kody-email-delivery"')
+	const refusals: Array<[() => Promise<unknown>, string]> = [
+		[
+			() => deletePreviewWorkerScript({ name: 'kody-platform', dryRun: false }),
+			'worker "kody-platform"',
+		],
+		[
+			() => deletePreviewD1Database({ name: 'kody', dryRun: false }),
+			'd1 "kody"',
+		],
+		[
+			() => deletePreviewD1Database({ name: 'kody-audit', dryRun: false }),
+			'd1 "kody-audit"',
+		],
+		[
+			() => deletePreviewKvNamespace({ title: 'kody-oauth', dryRun: false }),
+			'kv "kody-oauth"',
+		],
+		[
+			() =>
+				deletePreviewR2Bucket({ name: 'kody-community-assets', dryRun: false }),
+			'r2 "kody-community-assets"',
+		],
+		[
+			() =>
+				deletePreviewQueue({ ...queueClient, name: 'kody-webhook-dispatch' }),
+			'queue "kody-webhook-dispatch"',
+		],
+		[
+			() =>
+				removePreviewQueueConsumers({
+					...queueClient,
+					name: 'kody-email-delivery',
+				}),
+			'queue "kody-email-delivery"',
+		],
+	]
+	for (const [attempt, target] of refusals) {
+		await expect(attempt()).rejects.toThrow(`Refusing to delete ${target}`)
+	}
 	expect(spawnSync).not.toHaveBeenCalled()
-	expect(fetchMock).not.toHaveBeenCalled()
-	vi.unstubAllGlobals()
-	vi.unstubAllEnvs()
+	expect(cloudflare.fetchMock).not.toHaveBeenCalled()
 })
 
 test('dry-run cleanup of a PR preview walks every resource without touching Cloudflare', async () => {
 	consoleError.mockImplementation(() => {})
-	const fetchMock = vi.fn<typeof fetch>()
-	vi.stubGlobal('fetch', fetchMock)
+	using cloudflare = stubCloudflare()
 	await cleanupPreviewResources({ workerName: 'kody-pr-42', dryRun: true })
-	const logged = consoleError.mock.calls.map(([message]) => String(message))
+	const logged = loggedMessages()
 	expect(logged).toEqual(
 		expect.arrayContaining([
 			'[dry-run] remove Queue consumers: kody-pr-42-webhook-dispatch',
@@ -353,245 +376,133 @@ test('dry-run cleanup of a PR preview walks every resource without touching Clou
 	)
 	expect(logged.some((line) => line.includes('kody-preview-jobs'))).toBe(false)
 	expect(spawnSync).not.toHaveBeenCalled()
-	expect(fetchMock).not.toHaveBeenCalled()
-	vi.unstubAllGlobals()
+	expect(cloudflare.fetchMock).not.toHaveBeenCalled()
 })
 
-test('cleanup retries a wrangler 504 then continues later independent resources', async () => {
+test('cleanup retries a wrangler 504 or 429 then continues later independent resources', async () => {
 	consoleError.mockImplementation(() => {})
-	installCleanupEnv()
-	const fetchMock = vi
-		.fn<typeof fetch>()
-		.mockImplementation(async () => emptyQueueListResponse())
-	vi.stubGlobal('fetch', fetchMock)
-	let highlightAttempts = 0
-	spawnSync.mockImplementation((_command, args) => {
-		const argv = args as Array<string>
-		if (argv[0] === 'delete' && argv[1] === 'kody-pr-2017-highlight') {
-			highlightAttempts += 1
-			if (highlightAttempts === 1) {
-				return {
-					status: 1,
-					stdout: '',
-					stderr: 'Gateway Timeout [code: 504]\n',
-				}
-			}
-			return { status: 0, stdout: '', stderr: '' }
-		}
-		return alreadyMissingWrangler(argv)
-	})
-
-	await cleanupPreviewResources({
-		workerName: 'kody-pr-2017',
-		dryRun: false,
-		sleep: async () => {},
-	})
-
-	expect(highlightAttempts).toBe(2)
-	const wranglerCalls = spawnSync.mock.calls.map((call) =>
-		wranglerArgList(call),
+	using _cloudflare = stubCloudflare()
+	const highlightAttempts = failWranglerOnce(
+		(argv) => argv[0] === 'delete' && argv[1] === 'kody-pr-2017-highlight',
+		'Gateway Timeout [code: 504]\n',
 	)
-	expect(wranglerCalls).toContain('delete kody-pr-2017-highlight --force')
-	expect(wranglerCalls).toContain('delete kody-pr-2017-mock-cloudflare --force')
-	expect(
-		wranglerCalls.some((call) => call.startsWith('r2 bucket delete ')),
-	).toBe(true)
-	expect(wranglerCalls.some((call) => call.includes('d1 list'))).toBe(true)
-	vi.unstubAllGlobals()
-	vi.unstubAllEnvs()
-})
+	await cleanup('kody-pr-2017')
+	expect(highlightAttempts()).toBe(2)
+	const calls = wranglerCalls()
+	expect(calls).toContain('delete kody-pr-2017-highlight --force')
+	expect(calls).toContain('delete kody-pr-2017-mock-cloudflare --force')
+	expect(calls.some((call) => call.startsWith('r2 bucket delete '))).toBe(true)
+	expect(calls.some((call) => call.includes('d1 list'))).toBe(true)
 
-test('cleanup retries a wrangler 429 then succeeds', async () => {
-	consoleError.mockImplementation(() => {})
-	installCleanupEnv()
-	const fetchMock = vi
-		.fn<typeof fetch>()
-		.mockImplementation(async () => emptyQueueListResponse())
-	vi.stubGlobal('fetch', fetchMock)
-	let runtimeAttempts = 0
-	spawnSync.mockImplementation((_command, args) => {
-		const argv = args as Array<string>
-		if (argv[0] === 'delete' && argv[1] === 'kody-pr-8-runtime') {
-			runtimeAttempts += 1
-			if (runtimeAttempts === 1) {
-				return {
-					status: 1,
-					stdout: '',
-					stderr: 'Cloudflare API request failed (429): Rate limited\n',
-				}
-			}
-			return { status: 0, stdout: '', stderr: '' }
-		}
-		return alreadyMissingWrangler(argv)
-	})
-
-	await cleanupPreviewResources({
-		workerName: 'kody-pr-8',
-		dryRun: false,
-		sleep: async () => {},
-	})
-	expect(runtimeAttempts).toBe(2)
-	vi.unstubAllGlobals()
-	vi.unstubAllEnvs()
+	const runtimeAttempts = failWranglerOnce(
+		(argv) => argv[0] === 'delete' && argv[1] === 'kody-pr-8-runtime',
+		'Cloudflare API request failed (429): Rate limited\n',
+	)
+	await cleanup('kody-pr-8')
+	expect(runtimeAttempts()).toBe(2)
 })
 
 test('D1 and KV deletes treat a post-retry not-found as success', async () => {
 	consoleError.mockImplementation(() => {})
-	installCleanupEnv()
-	const fetchMock = vi
-		.fn<typeof fetch>()
-		.mockImplementation(async () => emptyQueueListResponse())
-	vi.stubGlobal('fetch', fetchMock)
-	let d1DeleteAttempts = 0
-	let kvDeleteAttempts = 0
+	using _cloudflare = stubCloudflare()
+	const attempts = { d1: 0, kv: 0 }
 	spawnSync.mockImplementation((_command, args) => {
 		const argv = args as Array<string>
 		const joined = argv.join(' ')
 		if (joined.includes('d1 list')) {
-			return {
-				status: 0,
-				stdout: `${JSON.stringify([{ uuid: 'db-1', name: 'kody-pr-11-db' }])}\n`,
-				stderr: '',
-			}
+			return wranglerResult(
+				0,
+				'',
+				`${JSON.stringify([{ uuid: 'db-1', name: 'kody-pr-11-db' }])}\n`,
+			)
 		}
 		if (joined.includes('kv namespace list')) {
-			return {
-				status: 0,
-				stdout: `${JSON.stringify([{ id: 'kv-1', title: 'kody-pr-11-oauth-kv' }])}\n`,
-				stderr: '',
-			}
+			return wranglerResult(
+				0,
+				'',
+				`${JSON.stringify([{ id: 'kv-1', title: 'kody-pr-11-oauth-kv' }])}\n`,
+			)
 		}
-		if (joined.includes('d1 delete')) {
-			d1DeleteAttempts += 1
-			if (d1DeleteAttempts === 1) {
-				return {
-					status: 1,
-					stdout: '',
-					stderr: 'Gateway Timeout [code: 504]\n',
-				}
-			}
-			return {
-				status: 1,
-				stdout: '',
-				stderr: 'The database you tried to delete does not exist\n',
-			}
+		const kind = joined.includes('d1 delete')
+			? 'd1'
+			: joined.includes('kv namespace delete')
+				? 'kv'
+				: null
+		if (!kind) return alreadyMissingWrangler(argv)
+		attempts[kind] += 1
+		if (attempts[kind] === 1) {
+			return wranglerResult(1, 'Gateway Timeout [code: 504]\n')
 		}
-		if (joined.includes('kv namespace delete')) {
-			kvDeleteAttempts += 1
-			if (kvDeleteAttempts === 1) {
-				return {
-					status: 1,
-					stdout: '',
-					stderr: 'Gateway Timeout [code: 504]\n',
-				}
-			}
-			return {
-				status: 1,
-				stdout: '',
-				stderr: 'The requested resource does not exist\n',
-			}
-		}
-		return alreadyMissingWrangler(argv)
+		return wranglerResult(
+			1,
+			kind === 'd1'
+				? 'The database you tried to delete does not exist\n'
+				: 'The requested resource does not exist\n',
+		)
 	})
 
-	await cleanupPreviewResources({
-		workerName: 'kody-pr-11',
-		dryRun: false,
-		sleep: async () => {},
-	})
-
-	expect(d1DeleteAttempts).toBe(2)
-	expect(kvDeleteAttempts).toBe(2)
-	const logged = consoleError.mock.calls.map(([message]) => String(message))
-	expect(logged).toEqual(
+	await cleanup('kody-pr-11')
+	expect(attempts).toEqual({ d1: 2, kv: 2 })
+	expect(loggedMessages()).toEqual(
 		expect.arrayContaining([
 			'D1 database already deleted: kody-pr-11-db',
 			'KV namespace already deleted: kody-pr-11-oauth-kv',
 		]),
 	)
-	vi.unstubAllGlobals()
-	vi.unstubAllEnvs()
 })
 
 test('permanent queue auth failure still attempts later independent resources and aggregates leftovers', async () => {
 	consoleError.mockImplementation(() => {})
-	installCleanupEnv()
-	const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input) => {
-		const url = String(input)
-		if (url.includes('/r2/buckets/')) {
-			return emptyQueueListResponse()
-		}
-		return authForbiddenResponse()
-	})
-	vi.stubGlobal('fetch', fetchMock)
+	using cloudflare = stubCloudflare(async (input) =>
+		String(input).includes('/r2/buckets/')
+			? emptyQueueListResponse()
+			: authForbiddenResponse(),
+	)
 	const attemptedWorkers: Array<string> = []
 	spawnSync.mockImplementation((_command, args) => {
 		const argv = args as Array<string>
 		if (argv[0] === 'delete') {
 			attemptedWorkers.push(argv[1] ?? '')
 			if (argv[1] === 'kody-pr-1999-highlight') {
-				return {
-					status: 1,
-					stdout: '',
-					stderr: 'Authentication error [code: 10000]\n',
-				}
+				return wranglerResult(1, 'Authentication error [code: 10000]\n')
 			}
 		}
 		return alreadyMissingWrangler(argv)
 	})
 
-	await expect(
-		cleanupPreviewResources({
-			workerName: 'kody-pr-1999',
-			dryRun: false,
-			sleep: async () => {},
-		}),
-	).rejects.toThrow(/Preview cleanup failed for 5 resource\(s\)/)
+	await expect(cleanup('kody-pr-1999')).rejects.toThrow(
+		/Preview cleanup failed for 5 resource\(s\)/,
+	)
 	expect(
 		attemptedWorkers.filter((name) => name === 'kody-pr-1999-highlight'),
 	).toEqual(['kody-pr-1999-highlight'])
-
 	expect(attemptedWorkers).toEqual(
-		expect.arrayContaining([
-			'kody-pr-1999-runtime',
-			'kody-pr-1999-platform',
-			'kody-pr-1999',
-			'kody-pr-1999-jobs',
-			'kody-pr-1999-highlight',
-			'kody-pr-1999-mock-cloudflare',
-		]),
+		expect.arrayContaining(
+			[
+				'-runtime',
+				'-platform',
+				'',
+				'-jobs',
+				'-highlight',
+				'-mock-cloudflare',
+			].map((suffix) => `kody-pr-1999${suffix}`),
+		),
 	)
-	const wranglerCalls = spawnSync.mock.calls.map((call) =>
-		wranglerArgList(call),
-	)
-	expect(
-		wranglerCalls.some((call) => call.startsWith('r2 bucket delete ')),
-	).toBe(true)
-	expect(wranglerCalls).toContain('d1 list --json')
-	expect(wranglerCalls).toContain('kv namespace list')
-	expect(fetchMock).toHaveBeenCalled()
-	vi.unstubAllGlobals()
-	vi.unstubAllEnvs()
+	const calls = wranglerCalls()
+	expect(calls.some((call) => call.startsWith('r2 bucket delete '))).toBe(true)
+	expect(calls).toContain('d1 list --json')
+	expect(calls).toContain('kv namespace list')
+	expect(cloudflare.fetchMock).toHaveBeenCalled()
 })
 
 test('already-missing preview resources are successful and idempotent', async () => {
 	consoleError.mockImplementation(() => {})
-	installCleanupEnv()
-	const fetchMock = vi
-		.fn<typeof fetch>()
-		.mockImplementation(async () => emptyQueueListResponse())
-	vi.stubGlobal('fetch', fetchMock)
+	using _cloudflare = stubCloudflare()
 	spawnSync.mockImplementation((_command, args) =>
 		alreadyMissingWrangler(args as Array<string>),
 	)
-
-	await cleanupPreviewResources({
-		workerName: 'kody-pr-42',
-		dryRun: false,
-		sleep: async () => {},
-	})
-	const logged = consoleError.mock.calls.map(([message]) => String(message))
-	expect(logged).toEqual(
+	await cleanup('kody-pr-42')
+	expect(loggedMessages()).toEqual(
 		expect.arrayContaining([
 			'Queue already deleted (no consumers to remove): kody-pr-42-webhook-dispatch',
 			'Worker script already deleted: kody-pr-42',
@@ -601,43 +512,24 @@ test('already-missing preview resources are successful and idempotent', async ()
 			'KV namespace already deleted: kody-pr-42-oauth-kv',
 		]),
 	)
-	vi.unstubAllGlobals()
-	vi.unstubAllEnvs()
 })
 
 test('cleanup preserves queue-consumer then worker then queue order', async () => {
 	consoleError.mockImplementation(() => {})
-	installCleanupEnv()
 	const events: Array<string> = []
-	const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input) => {
-		const url = String(input)
-		if (url.includes('/queues?')) {
-			events.push(`list-queues`)
-			return emptyQueueListResponse()
-		}
+	using _cloudflare = stubCloudflare(async (input) => {
+		if (String(input).includes('/queues?')) events.push('list-queues')
 		return emptyQueueListResponse()
 	})
-	vi.stubGlobal('fetch', fetchMock)
 	spawnSync.mockImplementation((_command, args) => {
 		const argv = args as Array<string>
-		if (argv[0] === 'delete') {
-			events.push(`delete-worker ${argv[1]}`)
-		}
-		if (argv[0] === 'r2') {
-			events.push(`delete-r2 ${argv[3]}`)
-		}
-		if (argv[0] === 'd1' && argv[1] === 'list') {
-			events.push('list-d1')
-		}
+		if (argv[0] === 'delete') events.push(`delete-worker ${argv[1]}`)
+		if (argv[0] === 'r2') events.push(`delete-r2 ${argv[3]}`)
+		if (argv[0] === 'd1' && argv[1] === 'list') events.push('list-d1')
 		return alreadyMissingWrangler(argv)
 	})
 
-	await cleanupPreviewResources({
-		workerName: 'kody-pr-9',
-		dryRun: false,
-		sleep: async () => {},
-	})
-
+	await cleanup('kody-pr-9')
 	const firstWorker = events.indexOf('delete-worker kody-pr-9-runtime')
 	const firstQueueList = events.indexOf('list-queues')
 	const firstR2 = events.findIndex((event) => event.startsWith('delete-r2 '))
@@ -645,76 +537,39 @@ test('cleanup preserves queue-consumer then worker then queue order', async () =
 	expect(firstWorker).toBeGreaterThan(firstQueueList)
 	expect(firstR2).toBeGreaterThan(firstWorker)
 	expect(events.filter((event) => event === 'list-queues').length).toBe(4)
-	vi.unstubAllGlobals()
-	vi.unstubAllEnvs()
 })
 
 test('non-empty preview R2 buckets are emptied then deleted', async () => {
 	consoleError.mockImplementation(() => {})
-	installCleanupEnv()
 	const deletedObjectUrls: Array<string> = []
-	const fetchMock = vi
-		.fn<typeof fetch>()
-		.mockImplementation(async (input, init) => {
-			const url = String(input)
-			if (url.includes('/r2/buckets/') && url.includes('/objects')) {
-				if ((init?.method ?? 'GET') === 'DELETE') {
-					deletedObjectUrls.push(url)
-					return Response.json({ success: true, result: null })
-				}
-				return Response.json({
-					success: true,
-					result: [{ key: 'seeded/blob.bin' }],
-					result_info: { total_pages: 1 },
-				})
-			}
-			if (url.includes('/queues')) {
-				return emptyQueueListResponse()
-			}
+	using _cloudflare = stubCloudflare(async (input, init) => {
+		const url = String(input)
+		if (!url.includes('/r2/buckets/') || !url.includes('/objects')) {
 			return emptyQueueListResponse()
-		})
-	vi.stubGlobal('fetch', fetchMock)
-	const bucketDeletes: Array<string> = []
-	spawnSync.mockImplementation((_command, args) => {
-		const argv = args as Array<string>
-		if (argv[0] === 'r2' && argv[1] === 'bucket' && argv[2] === 'delete') {
-			const bucket = argv[3] ?? ''
-			bucketDeletes.push(bucket)
-			if (
-				bucket === 'kody-pr-42-email-blobs' &&
-				bucketDeletes.filter((name) => name === bucket).length === 1
-			) {
-				return {
-					status: 1,
-					stdout: '',
-					stderr: 'The bucket you tried to delete is not empty\n',
-				}
-			}
-			return { status: 0, stdout: '', stderr: '' }
 		}
-		return alreadyMissingWrangler(argv)
+		if ((init?.method ?? 'GET') === 'DELETE') {
+			deletedObjectUrls.push(url)
+			return Response.json({ success: true, result: null })
+		}
+		return Response.json({
+			success: true,
+			result: [{ key: 'seeded/blob.bin' }],
+			result_info: { total_pages: 1 },
+		})
 	})
+	const emailBlobDeletes = failWranglerOnce(
+		(argv) =>
+			argv.slice(0, 4).join(' ') === 'r2 bucket delete kody-pr-42-email-blobs',
+		'The bucket you tried to delete is not empty\n',
+	)
 
-	await cleanupPreviewResources({
-		workerName: 'kody-pr-42',
-		dryRun: false,
-		sleep: async () => {},
-	})
-
-	expect(
-		bucketDeletes.filter((name) => name === 'kody-pr-42-email-blobs'),
-	).toEqual(['kody-pr-42-email-blobs', 'kody-pr-42-email-blobs'])
+	await cleanup('kody-pr-42')
+	expect(emailBlobDeletes()).toBe(2)
 	expect(
 		deletedObjectUrls.some((url) => url.includes('/objects/seeded/blob.bin')),
 	).toBe(true)
 	expect(deletedObjectUrls.some((url) => url.includes('%2F'))).toBe(false)
-	expect(
-		consoleError.mock.calls.some(([message]) =>
-			String(message).includes(
-				'Deleted R2 object: kody-pr-42-email-blobs/seeded/blob.bin',
-			),
-		),
-	).toBe(true)
-	vi.unstubAllGlobals()
-	vi.unstubAllEnvs()
+	expect(loggedMessages()).toContain(
+		'Deleted R2 object: kody-pr-42-email-blobs/seeded/blob.bin',
+	)
 })

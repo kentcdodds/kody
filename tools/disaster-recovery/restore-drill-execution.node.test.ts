@@ -20,6 +20,24 @@ import {
 	targetUuid,
 } from './disaster-recovery-test-support.ts'
 
+function d1Execute(configPath: string, ...args: Array<string>) {
+	return [
+		'd1',
+		'execute',
+		'D1_RESTORE_TARGET',
+		'--remote',
+		'--config',
+		configPath,
+		...args,
+	]
+}
+
+function adaptersCreating(target: { uuid: string; createdAt: string }) {
+	const adapters = createAdapters()
+	adapters.createTarget = vi.fn(async () => ({ ...target, name: 'kody-drill' }))
+	return adapters
+}
+
 test('dry-run is non-mutating and live execution creates in a distinct approved account immediately before import', async () => {
 	const dryAdapters = createAdapters()
 	const dryRun = await runD1RestoreDrill(drillInput(), dryAdapters)
@@ -28,16 +46,13 @@ test('dry-run is non-mutating and live execution creates in a distinct approved 
 		kind: 'provision',
 		program: 'cloudflare-api',
 	})
-	expect(dryRun.commands[1]?.args).toEqual([
-		'd1',
-		'execute',
-		'D1_RESTORE_TARGET',
-		'--remote',
-		'--config',
-		'<temporary-wrangler-config>',
-		'--file',
-		'/operator/downloads/backup.sql',
-	])
+	expect(dryRun.commands[1]?.args).toEqual(
+		d1Execute(
+			'<temporary-wrangler-config>',
+			'--file',
+			'/operator/downloads/backup.sql',
+		),
+	)
 	expect(dryAdapters.createTarget).not.toHaveBeenCalled()
 	expect(dryAdapters.writeTemporaryConfig).not.toHaveBeenCalled()
 	expect(dryAdapters.run).not.toHaveBeenCalled()
@@ -107,26 +122,23 @@ test('target account, returned creation evidence, and forward baseline fail clos
 			createAdapters(),
 		),
 	).rejects.toThrow('target account/name is not approved')
-	const staleAdapters = createAdapters()
-	staleAdapters.createTarget = vi.fn(async () => ({
-		uuid: targetUuid,
-		name: 'kody-drill',
-		createdAt: '2026-07-20T00:00:00.000Z',
-	}))
-	await expect(
-		runD1RestoreDrill(drillInput({ dryRun: false }), staleAdapters),
-	).rejects.toThrow('outside creation window')
-	expect(staleAdapters.run).not.toHaveBeenCalled()
-	const productionIdAdapters = createAdapters()
-	productionIdAdapters.createTarget = vi.fn(async () => ({
-		uuid: productionUuid,
-		name: 'kody-drill',
-		createdAt: now.toISOString(),
-	}))
-	await expect(
-		runD1RestoreDrill(drillInput({ dryRun: false }), productionIdAdapters),
-	).rejects.toThrow('production database UUID')
-	expect(productionIdAdapters.run).not.toHaveBeenCalled()
+	const badCreations: Array<[{ uuid: string; createdAt: string }, string]> = [
+		[
+			{ uuid: targetUuid, createdAt: '2026-07-20T00:00:00.000Z' },
+			'outside creation window',
+		],
+		[
+			{ uuid: productionUuid, createdAt: now.toISOString() },
+			'production database UUID',
+		],
+	]
+	for (const [target, message] of badCreations) {
+		const adapters = adaptersCreating(target)
+		await expect(
+			runD1RestoreDrill(drillInput({ dryRun: false }), adapters),
+		).rejects.toThrow(message)
+		expect(adapters.run).not.toHaveBeenCalled()
+	}
 
 	await expect(
 		runD1RestoreDrill(
@@ -186,16 +198,7 @@ test('temporary D1 config and live forward migration commands target the configu
 		args: Array<string>
 	}> = []
 	const adapters: DrillAdapters = {
-		async createTarget(input) {
-			return {
-				uuid: targetUuid,
-				name: input.name,
-				createdAt: now.toISOString(),
-			}
-		},
-		now() {
-			return now
-		},
+		...createAdapters(),
 		async writeTemporaryConfig(input) {
 			expect(input).toEqual({ targetName: 'kody-drill', targetUuid })
 			return { path: configPath, cleanup: vi.fn(async () => undefined) }
@@ -227,27 +230,12 @@ test('temporary D1 config and live forward migration commands target the configu
 		postForwardBaseline: baseline,
 	})
 	expect(executedCommands).toEqual(expectedPlan.slice(1))
-	expect(executedCommands[0]?.args).toEqual([
-		'd1',
-		'execute',
-		'D1_RESTORE_TARGET',
-		'--remote',
-		'--config',
-		configPath,
-		'--file',
-		'/operator/downloads/backup.sql',
-	])
-	expect(executedCommands[1]?.args).toEqual([
-		'd1',
-		'execute',
-		'D1_RESTORE_TARGET',
-		'--remote',
-		'--config',
-		configPath,
-		'--json',
-		'--command',
-		'PRAGMA quick_check',
-	])
+	expect(executedCommands[0]?.args).toEqual(
+		d1Execute(configPath, '--file', '/operator/downloads/backup.sql'),
+	)
+	expect(executedCommands[1]?.args).toEqual(
+		d1Execute(configPath, '--json', '--command', 'PRAGMA quick_check'),
+	)
 	expect(executedCommands[2]?.args.at(-1)).toBe('PRAGMA foreign_key_check')
 	expect(executedCommands[7]?.args).toEqual([
 		'd1',

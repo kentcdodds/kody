@@ -26,60 +26,88 @@ const fixtureBrowsersJson = JSON.stringify({
 	],
 })
 
+function expectedInstallSteps(input: {
+	cacheRoot: string
+	tmpDir: string
+	dirName: string
+	zipName: string
+	executable: string
+}) {
+	const installDir = path.join(input.cacheRoot, input.dirName)
+	const zipPath = path.join(input.tmpDir, `playwright-${input.dirName}.zip`)
+	return [
+		{
+			file: 'mkdir',
+			args: ['-p', installDir],
+			label: `mkdir ${installDir}`,
+		},
+		{
+			file: 'curl',
+			args: [
+				'-fsSL',
+				'-o',
+				zipPath,
+				`https://cdn.playwright.dev/builds/cft/151.0.7922.34/linux64/${input.zipName}`,
+			],
+			label: `curl ${input.zipName}`,
+		},
+		{
+			file: 'unzip',
+			args: ['-q', '-o', zipPath, '-d', installDir],
+			label: `unzip ${input.zipName}`,
+		},
+		{
+			file: 'chmod',
+			args: ['+x', path.join(installDir, input.executable)],
+			label: `chmod +x ${input.executable}`,
+		},
+		{
+			file: 'touch',
+			args: [path.join(installDir, 'INSTALLATION_COMPLETE')],
+			label: 'touch INSTALLATION_COMPLETE',
+		},
+		{
+			file: 'rm',
+			args: ['-f', zipPath],
+			label: `rm ${input.zipName}`,
+		},
+	]
+}
+
 test('Cloud Agent Linux uses native unzip and plans curl plus unzip for the browsers.json revision', async () => {
+	const gateCases: Array<
+		[Parameters<typeof shouldInstallPlaywrightBrowsersWithUnzip>[0], boolean]
+	> = [
+		[{ platform: 'linux', githubActions: false, cloudAgent: true }, true],
+		[{ platform: 'linux', githubActions: false, cloudAgent: false }, false],
+		[{ platform: 'linux', githubActions: true, cloudAgent: true }, false],
+		[{ platform: 'darwin', githubActions: false, cloudAgent: true }, false],
+	]
 	expect(
-		shouldInstallPlaywrightBrowsersWithUnzip({
-			platform: 'linux',
-			githubActions: false,
-			cloudAgent: true,
-		}),
-	).toBe(true)
-	expect(
-		shouldInstallPlaywrightBrowsersWithUnzip({
-			platform: 'linux',
-			githubActions: false,
-			cloudAgent: false,
-		}),
-	).toBe(false)
-	expect(
-		shouldInstallPlaywrightBrowsersWithUnzip({
-			platform: 'linux',
-			githubActions: true,
-			cloudAgent: true,
-		}),
-	).toBe(false)
-	expect(
-		shouldInstallPlaywrightBrowsersWithUnzip({
-			platform: 'darwin',
-			githubActions: false,
-			cloudAgent: true,
-		}),
-	).toBe(false)
+		gateCases.filter(
+			([input, want]) =>
+				shouldInstallPlaywrightBrowsersWithUnzip(input) !== want,
+		),
+	).toEqual([])
 
 	const homeDir = await mkdtemp(path.join(tmpdir(), 'playwright-unzip-'))
 	const tmpDir = path.join(homeDir, 'tmp')
 	const browsersJsonPath = path.join(homeDir, 'browsers.json')
-	expect(
-		isCloudAgentEnvironment({
-			homeDir,
-			agentSocketPath: path.join(homeDir, 'missing.sock'),
-		}),
-	).toBe(false)
+	const agentEnv = {
+		homeDir,
+		agentSocketPath: path.join(homeDir, 'missing.sock'),
+	}
+	expect(isCloudAgentEnvironment(agentEnv)).toBe(false)
 	await mkdir(path.join(homeDir, '.cursor', 'agent-hooks'), { recursive: true })
-	expect(
-		isCloudAgentEnvironment({
-			homeDir,
-			agentSocketPath: path.join(homeDir, 'missing.sock'),
-		}),
-	).toBe(true)
+	expect(isCloudAgentEnvironment(agentEnv)).toBe(true)
 	const cacheRoot = path.join(homeDir, '.cache', 'ms-playwright')
+	const markInstalled = async (dirName: string) => {
+		await mkdir(path.join(cacheRoot, dirName), { recursive: true })
+		await writeFile(path.join(cacheRoot, dirName, 'INSTALLATION_COMPLETE'), '')
+	}
 	try {
 		await writeFile(browsersJsonPath, fixtureBrowsersJson)
-		await mkdir(path.join(cacheRoot, 'chromium-1208'), { recursive: true })
-		await writeFile(
-			path.join(cacheRoot, 'chromium-1208', 'INSTALLATION_COMPLETE'),
-			'',
-		)
+		await markInstalled('chromium-1208')
 
 		const plan = planPlaywrightBrowsersUnzipInstall({
 			homeDir,
@@ -91,108 +119,20 @@ test('Cloud Agent Linux uses native unzip and plans curl plus unzip for the brow
 		expect(plan.detail).toContain('chromium-1234')
 		expect(plan.detail).toContain('chromium_headless_shell-1234')
 		expect(plan.commands).toEqual([
-			{
-				file: 'mkdir',
-				args: ['-p', path.join(cacheRoot, 'chromium-1234')],
-				label: `mkdir ${path.join(cacheRoot, 'chromium-1234')}`,
-			},
-			{
-				file: 'curl',
-				args: [
-					'-fsSL',
-					'-o',
-					path.join(tmpDir, 'playwright-chromium-1234.zip'),
-					'https://cdn.playwright.dev/builds/cft/151.0.7922.34/linux64/chrome-linux64.zip',
-				],
-				label: 'curl chrome-linux64.zip',
-			},
-			{
-				file: 'unzip',
-				args: [
-					'-q',
-					'-o',
-					path.join(tmpDir, 'playwright-chromium-1234.zip'),
-					'-d',
-					path.join(cacheRoot, 'chromium-1234'),
-				],
-				label: 'unzip chrome-linux64.zip',
-			},
-			{
-				file: 'chmod',
-				args: [
-					'+x',
-					path.join(cacheRoot, 'chromium-1234', 'chrome-linux64', 'chrome'),
-				],
-				label: 'chmod +x chrome-linux64/chrome',
-			},
-			{
-				file: 'touch',
-				args: [path.join(cacheRoot, 'chromium-1234', 'INSTALLATION_COMPLETE')],
-				label: 'touch INSTALLATION_COMPLETE',
-			},
-			{
-				file: 'rm',
-				args: ['-f', path.join(tmpDir, 'playwright-chromium-1234.zip')],
-				label: 'rm chrome-linux64.zip',
-			},
-			{
-				file: 'mkdir',
-				args: ['-p', path.join(cacheRoot, 'chromium_headless_shell-1234')],
-				label: `mkdir ${path.join(cacheRoot, 'chromium_headless_shell-1234')}`,
-			},
-			{
-				file: 'curl',
-				args: [
-					'-fsSL',
-					'-o',
-					path.join(tmpDir, 'playwright-chromium_headless_shell-1234.zip'),
-					'https://cdn.playwright.dev/builds/cft/151.0.7922.34/linux64/chrome-headless-shell-linux64.zip',
-				],
-				label: 'curl chrome-headless-shell-linux64.zip',
-			},
-			{
-				file: 'unzip',
-				args: [
-					'-q',
-					'-o',
-					path.join(tmpDir, 'playwright-chromium_headless_shell-1234.zip'),
-					'-d',
-					path.join(cacheRoot, 'chromium_headless_shell-1234'),
-				],
-				label: 'unzip chrome-headless-shell-linux64.zip',
-			},
-			{
-				file: 'chmod',
-				args: [
-					'+x',
-					path.join(
-						cacheRoot,
-						'chromium_headless_shell-1234',
-						'chrome-headless-shell-linux64',
-						'chrome-headless-shell',
-					),
-				],
-				label: 'chmod +x chrome-headless-shell-linux64/chrome-headless-shell',
-			},
-			{
-				file: 'touch',
-				args: [
-					path.join(
-						cacheRoot,
-						'chromium_headless_shell-1234',
-						'INSTALLATION_COMPLETE',
-					),
-				],
-				label: 'touch INSTALLATION_COMPLETE',
-			},
-			{
-				file: 'rm',
-				args: [
-					'-f',
-					path.join(tmpDir, 'playwright-chromium_headless_shell-1234.zip'),
-				],
-				label: 'rm chrome-headless-shell-linux64.zip',
-			},
+			...expectedInstallSteps({
+				cacheRoot,
+				tmpDir,
+				dirName: 'chromium-1234',
+				zipName: 'chrome-linux64.zip',
+				executable: 'chrome-linux64/chrome',
+			}),
+			...expectedInstallSteps({
+				cacheRoot,
+				tmpDir,
+				dirName: 'chromium_headless_shell-1234',
+				zipName: 'chrome-headless-shell-linux64.zip',
+				executable: 'chrome-headless-shell-linux64/chrome-headless-shell',
+			}),
 		])
 
 		const ran: Array<string> = []
@@ -209,22 +149,8 @@ test('Cloud Agent Linux uses native unzip and plans curl plus unzip for the brow
 			`rm -f ${path.join(tmpDir, 'playwright-chromium_headless_shell-1234.zip')}`,
 		)
 
-		await mkdir(path.join(cacheRoot, 'chromium-1234'), { recursive: true })
-		await writeFile(
-			path.join(cacheRoot, 'chromium-1234', 'INSTALLATION_COMPLETE'),
-			'',
-		)
-		await mkdir(path.join(cacheRoot, 'chromium_headless_shell-1234'), {
-			recursive: true,
-		})
-		await writeFile(
-			path.join(
-				cacheRoot,
-				'chromium_headless_shell-1234',
-				'INSTALLATION_COMPLETE',
-			),
-			'',
-		)
+		await markInstalled('chromium-1234')
+		await markInstalled('chromium_headless_shell-1234')
 		expect(
 			planPlaywrightBrowsersUnzipInstall({
 				homeDir,

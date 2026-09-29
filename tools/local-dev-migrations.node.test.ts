@@ -39,10 +39,8 @@ test('localizeMigrations turns transfers into sqlite creates and elides a later 
 			new_sqlite_classes: ['StorageRunner'],
 		},
 	])
-	expect(
-		sqliteMapAccepts(localized),
-		'localized chain must pass wrangler’s local deleted_classes check',
-	).toBe(true)
+	// The localized chain must pass wrangler’s local deleted_classes check.
+	expect(sqliteMapAccepts(localized)).toBe(true)
 })
 
 test('the committed runtime production chain passes wrangler’s local sqlite map', async () => {
@@ -53,97 +51,87 @@ test('the committed runtime production chain passes wrangler’s local sqlite ma
 	expect(sqliteMapAccepts(localizeMigrations(source.migrations))).toBe(true)
 })
 
-test('writeRuntimeDryRunConfig localizes migrations without local-dev vars', async () => {
-	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-runtime-dry-run-'))
+async function runtimeConfigCopy(prefix: string) {
+	const tempDir = await mkdtemp(path.join(os.tmpdir(), prefix))
 	const sourcePath = path.join(tempDir, 'wrangler.jsonc')
-	try {
-		await writeFile(
-			sourcePath,
-			await readFile('packages/runtime-worker/wrangler.jsonc', 'utf8'),
-		)
-		const outputPath = await writeRuntimeDryRunConfig({
-			runtimeConfigPath: sourcePath,
-			envName: 'production',
-		})
-		const generated = parseJsonc<{
-			migrations?: unknown
-			env?: {
-				production?: { migrations?: unknown; vars?: Record<string, unknown> }
-				preview?: { migrations?: unknown }
-			}
-		}>(await readFile(outputPath, 'utf8'))
-		expect(sqliteMapAccepts(generated.migrations)).toBe(true)
-		expect(generated.migrations).toEqual(generated.env?.production?.migrations)
-		expect(sqliteMapAccepts(generated.env?.preview?.migrations)).toBe(true)
-		expect(JSON.stringify(generated)).not.toContain('PackageServiceInstance')
-		expect(generated.env?.production?.vars?.WRANGLER_IS_LOCAL_DEV).toBe(
-			undefined,
-		)
-	} finally {
-		await rm(tempDir, { recursive: true, force: true })
+	await writeFile(
+		sourcePath,
+		await readFile('packages/runtime-worker/wrangler.jsonc', 'utf8'),
+	)
+	return {
+		tempDir,
+		sourcePath,
+		[Symbol.asyncDispose]: () => rm(tempDir, { recursive: true, force: true }),
 	}
+}
+
+async function readGenerated<T>(outputPath: string) {
+	return parseJsonc<T>(await readFile(outputPath, 'utf8'))
+}
+
+test('writeRuntimeDryRunConfig localizes migrations without local-dev vars', async () => {
+	await using copy = await runtimeConfigCopy('kody-runtime-dry-run-')
+	const generated = await readGenerated<{
+		migrations?: unknown
+		env?: {
+			production?: { migrations?: unknown; vars?: Record<string, unknown> }
+			preview?: { migrations?: unknown }
+		}
+	}>(
+		await writeRuntimeDryRunConfig({
+			runtimeConfigPath: copy.sourcePath,
+			envName: 'production',
+		}),
+	)
+	expect(sqliteMapAccepts(generated.migrations)).toBe(true)
+	expect(generated.migrations).toEqual(generated.env?.production?.migrations)
+	expect(sqliteMapAccepts(generated.env?.preview?.migrations)).toBe(true)
+	expect(JSON.stringify(generated)).not.toContain('PackageServiceInstance')
+	expect(generated.env?.production?.vars?.WRANGLER_IS_LOCAL_DEV).toBe(undefined)
 })
 
 test('writeRuntimeStartupCheckConfig writes wrangler.jsonc with an absolute main', async () => {
-	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-runtime-startup-'))
-	const sourcePath = path.join(tempDir, 'wrangler.jsonc')
-	const snapshotDir = path.join(tempDir, 'snapshot')
-	try {
-		await writeFile(
-			sourcePath,
-			await readFile('packages/runtime-worker/wrangler.jsonc', 'utf8'),
-		)
-		await mkdir(snapshotDir, { recursive: true })
-		const outputPath = await writeRuntimeStartupCheckConfig({
-			runtimeConfigPath: sourcePath,
-			envName: 'production',
-			outputDir: snapshotDir,
-		})
-		expect(path.basename(outputPath)).toBe('wrangler.jsonc')
-		const generated = parseJsonc<{
-			main?: string
-			migrations?: unknown
-		}>(await readFile(outputPath, 'utf8'))
-		expect(path.isAbsolute(generated.main ?? '')).toBe(true)
-		expect(sqliteMapAccepts(generated.migrations)).toBe(true)
-		expect(JSON.stringify(generated.migrations)).not.toContain(
-			'PackageServiceInstance',
-		)
-	} finally {
-		await rm(tempDir, { recursive: true, force: true })
-	}
+	await using copy = await runtimeConfigCopy('kody-runtime-startup-')
+	const snapshotDir = path.join(copy.tempDir, 'snapshot')
+	await mkdir(snapshotDir, { recursive: true })
+	const outputPath = await writeRuntimeStartupCheckConfig({
+		runtimeConfigPath: copy.sourcePath,
+		envName: 'production',
+		outputDir: snapshotDir,
+	})
+	expect(path.basename(outputPath)).toBe('wrangler.jsonc')
+	const generated = await readGenerated<{
+		main?: string
+		migrations?: unknown
+	}>(outputPath)
+	expect(path.isAbsolute(generated.main ?? '')).toBe(true)
+	expect(sqliteMapAccepts(generated.migrations)).toBe(true)
+	expect(JSON.stringify(generated.migrations)).not.toContain(
+		'PackageServiceInstance',
+	)
 })
 
 test('writeLocalRuntimeDevConfig writes a top-level chain wrangler can apply', async () => {
-	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-local-runtime-'))
-	const sourcePath = path.join(tempDir, 'wrangler.jsonc')
-	try {
-		const source = await readFile(
-			'packages/runtime-worker/wrangler.jsonc',
-			'utf8',
-		)
-		await writeFile(sourcePath, source)
-		const outputPath = await writeLocalRuntimeDevConfig({
-			runtimeConfigPath: sourcePath,
+	await using copy = await runtimeConfigCopy('kody-local-runtime-')
+	const generated = await readGenerated<{
+		migrations?: unknown
+		env?: { production?: { migrations?: unknown } }
+	}>(
+		await writeLocalRuntimeDevConfig({
+			runtimeConfigPath: copy.sourcePath,
 			envName: 'production',
 			mainWorkerDevName: 'kody-production',
 			port: '3742',
-		})
-		const generated = parseJsonc<{
-			migrations?: unknown
-			env?: { production?: { migrations?: unknown } }
-		}>(await readFile(outputPath, 'utf8'))
-		expect(sqliteMapAccepts(generated.migrations)).toBe(true)
-		expect(generated.migrations).toEqual(generated.env?.production?.migrations)
-		expect(JSON.stringify(generated.migrations)).not.toContain(
-			'PackageServiceInstance',
-		)
-		expect(JSON.stringify(generated.migrations)).not.toContain(
-			'transferred_classes',
-		)
-	} finally {
-		await rm(tempDir, { recursive: true, force: true })
-	}
+		}),
+	)
+	expect(sqliteMapAccepts(generated.migrations)).toBe(true)
+	expect(generated.migrations).toEqual(generated.env?.production?.migrations)
+	expect(JSON.stringify(generated.migrations)).not.toContain(
+		'PackageServiceInstance',
+	)
+	expect(JSON.stringify(generated.migrations)).not.toContain(
+		'transferred_classes',
+	)
 })
 
 /**

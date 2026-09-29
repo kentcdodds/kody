@@ -110,46 +110,35 @@ test('ensureCloudAgentHooks composes the dispatcher with Husky _ handlers', asyn
 			'utf8',
 		),
 	).toBe(`${huskyHandlerDir(layout.repoRoot)}\n`)
-	expect(readlinkSync(join(layout.agentHooksDir, 'pre-push'))).toBe(
-		'.dispatcher',
-	)
-	expect(readlinkSync(join(layout.agentHooksDir, 'pre-commit'))).toBe(
-		'.dispatcher',
-	)
-	expect(readlinkSync(join(layout.agentHooksDir, 'commit-msg'))).toBe(
-		'.dispatcher',
-	)
+	expect(
+		['pre-push', 'pre-commit', 'commit-msg'].map((hookName) =>
+			readlinkSync(join(layout.agentHooksDir, hookName)),
+		),
+	).toEqual(['.dispatcher', '.dispatcher', '.dispatcher'])
 	expect(huskyHandlerDir(layout.repoRoot).endsWith('/.husky/_')).toBe(true)
 })
 
 test('ensureCloudAgentHooks is idempotent and skips hooks without a user script', async () => {
 	await using layout = await createLayout({ includeCommitMsg: false })
-	const first = ensureCloudAgentHooks({
-		repoRoot: layout.repoRoot,
-		homeDir: layout.homeDir,
-		gitHooksPath: {
-			get: () => layout.agentHooksDir,
-			set: () => {
-				throw new Error('should not reset hooksPath when already composed')
+	const composeWithoutReset = () =>
+		ensureCloudAgentHooks({
+			repoRoot: layout.repoRoot,
+			homeDir: layout.homeDir,
+			gitHooksPath: {
+				get: () => layout.agentHooksDir,
+				set: () => {
+					throw new Error('should not reset hooksPath when already composed')
+				},
 			},
-		},
-	})
+		})
+	const first = composeWithoutReset()
 	expect(first.status).toBe('composed')
 	if (first.status !== 'composed') return
 	expect(first.restoredHooksPath).toBe(false)
 	expect(first.linkedHookNames).toEqual(['pre-push', 'pre-commit'])
 	expect(existsSync(join(layout.agentHooksDir, 'commit-msg'))).toBe(false)
 
-	const second = ensureCloudAgentHooks({
-		repoRoot: layout.repoRoot,
-		homeDir: layout.homeDir,
-		gitHooksPath: {
-			get: () => layout.agentHooksDir,
-			set: () => {
-				throw new Error('should not reset hooksPath on a second compose')
-			},
-		},
-	})
+	const second = composeWithoutReset()
 	expect(second).toEqual(first)
 })
 

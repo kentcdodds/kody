@@ -27,65 +27,36 @@ function signersFile(overrides: Partial<ClaSignersFile> = {}): ClaSignersFile {
 test('CLA check allowlists the Licensor, bots, signed humans, and rejects everyone else', () => {
 	const file = signersFile({
 		signers: [
-			{
-				github: 'ExampleSigner',
-				signedAt: '2026-08-16',
-				cla: 'individual',
-			},
+			{ github: 'ExampleSigner', signedAt: '2026-08-16', cla: 'individual' },
 		],
 	})
 
-	const passing = checkClaIdentities(
-		[
-			{ githubLogin: 'kentcdodds', name: 'Kent', email: null },
-			{ githubLogin: 'kody-bot', name: 'Kody', email: null },
-			{
-				githubLogin: 'cursoragent',
-				name: 'Cursor Agent',
-				email: 'cursoragent@cursor.com',
-			},
-			{
-				githubLogin: 'cursor[bot]',
-				name: 'cursor[bot]',
-				email: null,
-			},
-			{
-				githubLogin: 'app/imgbot',
-				name: 'ImgBot',
-				email: null,
-			},
-			{
-				githubLogin: null,
-				name: 'Kent C. Dodds',
-				email: 'me+github@kentcdodds.com',
-			},
-			{
-				githubLogin: 'examplesigner',
-				name: 'Example Signer',
-				email: 'signer@example.com',
-			},
-		],
-		file,
-	)
-	expect(passing).toEqual({ ok: true })
+	const identity = (
+		githubLogin: string | null,
+		name: string,
+		email: string | null = null,
+	) => ({ githubLogin, name, email })
+
+	expect(
+		checkClaIdentities(
+			[
+				identity('kentcdodds', 'Kent'),
+				identity('kody-bot', 'Kody'),
+				identity('cursoragent', 'Cursor Agent', 'cursoragent@cursor.com'),
+				identity('cursor[bot]', 'cursor[bot]'),
+				identity('app/imgbot', 'ImgBot'),
+				identity(null, 'Kent C. Dodds', 'me+github@kentcdodds.com'),
+				identity('examplesigner', 'Example Signer', 'signer@example.com'),
+			],
+			file,
+		),
+	).toEqual({ ok: true })
 
 	const failing = checkClaIdentities(
 		[
-			{
-				githubLogin: 'kentcdodds',
-				name: 'Kent',
-				email: null,
-			},
-			{
-				githubLogin: 'mirkosalvato1-ctrl',
-				name: 'Mirko',
-				email: 'mirkosalvato1@gmail.com',
-			},
-			{
-				githubLogin: null,
-				name: 'Someone',
-				email: 'someone@example.com',
-			},
+			identity('kentcdodds', 'Kent'),
+			identity('mirkosalvato1-ctrl', 'Mirko', 'mirkosalvato1@gmail.com'),
+			identity(null, 'Someone', 'someone@example.com'),
 		],
 		file,
 	)
