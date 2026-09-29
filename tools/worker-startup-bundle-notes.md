@@ -285,8 +285,16 @@ runtime path if this budget is raised again.
   plus advertised `sessions/*` ref cleanup after promote on repo-session-do
   (shared with platform publish path). CI dry-run platform 5_226_226 against the
   previous 5_226_000 budget, reviewed ceiling 5_226_500.
+<<<<<<< HEAD
 - Bound MCP search onboarding notice courtesy budget (#2716 / KODY-8B):
   `SEARCH_ONBOARDING_NOTICE_BUDGET_MS` plus `settleWithBudget` around
   `buildOnboardingSearchNotice` (same pattern as waiting items). Local/CI
   dry-run platform 5_226_510 against the previous 5_226_500 budget, reviewed
   ceiling 5_227_000.
+=======
+- Repo session unified-diff line limit (KODY-8E / #2717):
+  `maxRepoSourceFileDiffLines` preflight + EFBIG remap on `applyWorkspaceEdits`
+  and MCP caller-failure classification for the stable / raw phrases. Local / CI
+  dry-run platform 5_227_709 against the previous 5_226_500 budget, reviewed
+  ceiling 5_228_000.
+>>>>>>> a7998d01 (Raise platform startup bundle budget for repo diff line gate)
