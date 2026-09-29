@@ -6,7 +6,6 @@ import { type RepoSessionRow } from '#worker/repo/types.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	clearStorageBucketRegistrationDedupeForTests,
-	flushStorageBucketRegistrationsForTests,
 	listPlatformStorageBuckets,
 	listUserStorageBucketEstimates,
 	listUserStorageBucketIds,
@@ -44,6 +43,26 @@ function catalogSessionRow(
 	}
 }
 
+async function setup() {
+	await ensureUserStorageBucketsTestSchema(env.APP_DB)
+	clearStorageBucketRegistrationDedupeForTests()
+	const pending: Array<Promise<unknown>> = []
+	const waitUntil = (promise: Promise<unknown>) => {
+		pending.push(promise)
+	}
+	return {
+		waitUntil,
+		flush: () => Promise.all(pending),
+		register: (
+			userId: string,
+			storageId: string,
+			kind: Parameters<typeof registerStorageBucket>[0]['kind'],
+		) => registerStorageBucket({ env, userId, storageId, kind, waitUntil }),
+		estimates: (userId: string) =>
+			listUserStorageBucketEstimates({ env, userId }),
+	}
+}
+
 test('user_storage_buckets CHECK rejects the retired service kind', async () => {
 	await ensureUserStorageBucketsTestSchema(env.APP_DB)
 	const now = new Date().toISOString()
@@ -59,54 +78,24 @@ test('user_storage_buckets CHECK rejects the retired service kind', async () => 
 })
 
 test('registerStorageBucket upserts and list helpers scope correctly on real D1', async () => {
-	await ensureUserStorageBucketsTestSchema(env.APP_DB)
-	clearStorageBucketRegistrationDedupeForTests()
+	const { register, flush, estimates } = await setup()
 	const userA = `usb-a-${crypto.randomUUID()}`
 	const userB = `usb-b-${crypto.randomUUID()}`
 	const bucketA = `exec:${crypto.randomUUID()}`
 	const bucketB = `job:${crypto.randomUUID()}`
 	const sessionBucket = `repo-session:${crypto.randomUUID()}`
-	const pending: Array<Promise<unknown>> = []
-	const waitUntil = (promise: Promise<unknown>) => {
-		pending.push(promise)
-	}
-
-	registerStorageBucket({
-		env,
-		userId: userA,
-		storageId: bucketA,
-		kind: 'execute',
-		waitUntil,
-	})
-	registerStorageBucket({
-		env,
-		userId: userB,
-		storageId: bucketB,
-		kind: 'job',
-		waitUntil,
-	})
-	registerStorageBucket({
-		env,
-		userId: userA,
-		storageId: sessionBucket,
-		kind: 'repo_session',
-		waitUntil,
-	})
-	await Promise.all(pending)
+	register(userA, bucketA, 'execute')
+	register(userB, bucketB, 'job')
+	register(userA, sessionBucket, 'repo_session')
+	await flush()
 
 	await expect(
 		listUserStorageBucketIds({ env, userId: userA }),
 	).resolves.toEqual([bucketA])
-	await expect(
-		listUserStorageBucketEstimates({ env, userId: userA }),
-	).resolves.toEqual(
+	await expect(estimates(userA)).resolves.toEqual(
 		[
 			{ storageId: bucketA, kind: 'execute', estimatedBytes: null },
-			{
-				storageId: sessionBucket,
-				kind: 'repo_session',
-				estimatedBytes: null,
-			},
+			{ storageId: sessionBucket, kind: 'repo_session', estimatedBytes: null },
 		].sort((left, right) => left.storageId.localeCompare(right.storageId)),
 	)
 	await expect(
@@ -133,22 +122,17 @@ test('missing repo-session inventory reconciliation registers only active sessio
 	const discardedSession = `rs-discarded-${crypto.randomUUID()}`
 	const registeredSession = `rs-registered-${crypto.randomUUID()}`
 	const index = repoSessionIndexRpc({ env, userId })
-	await index.insertSession({
-		ownerId: userId,
-		row: catalogSessionRow({ id: activeSession, user_id: userId }),
-	})
-	await index.insertSession({
-		ownerId: userId,
-		row: catalogSessionRow({
+	for (const row of [
+		catalogSessionRow({ id: activeSession, user_id: userId }),
+		catalogSessionRow({
 			id: discardedSession,
 			user_id: userId,
 			status: 'discarded',
 		}),
-	})
-	await index.insertSession({
-		ownerId: userId,
-		row: catalogSessionRow({ id: registeredSession, user_id: userId }),
-	})
+		catalogSessionRow({ id: registeredSession, user_id: userId }),
+	]) {
+		await index.insertSession({ ownerId: userId, row })
+	}
 	await replaceRepoSessionDueOwner({
 		db: env.APP_DB,
 		userId,
@@ -170,191 +154,108 @@ test('missing repo-session inventory reconciliation registers only active sessio
 	expect(inserted).toBeGreaterThanOrEqual(1)
 
 	const estimates = await listUserStorageBucketEstimates({ env, userId })
-	const ids = estimates.map((row) => row.storageId)
-	expect(ids).toContain(`repo-session:${activeSession}`)
-	expect(ids).not.toContain(`repo-session:${discardedSession}`)
-	expect(
-		estimates.find((row) => row.storageId === `repo-session:${activeSession}`)
-			?.estimatedBytes,
-	).toBeNull()
-	expect(
-		estimates.find(
-			(row) => row.storageId === `repo-session:${registeredSession}`,
-		)?.estimatedBytes,
-	).toBe(42)
+	const bytesById = new Map(
+		estimates.map((row) => [row.storageId, row.estimatedBytes]),
+	)
+	expect(bytesById.get(`repo-session:${activeSession}`)).toBeNull()
+	expect(bytesById.has(`repo-session:${discardedSession}`)).toBe(false)
+	expect(bytesById.get(`repo-session:${registeredSession}`)).toBe(42)
 
 	await registerMissingRepoSessionStorageBuckets({ db: env.APP_DB, env })
 	const after = await listUserStorageBucketEstimates({ env, userId })
 	expect(after.length).toBe(estimates.length)
 
-	await index.deleteSession({ ownerId: userId, sessionId: activeSession })
-	await index.deleteSession({ ownerId: userId, sessionId: discardedSession })
-	await index.deleteSession({
-		ownerId: userId,
-		sessionId: registeredSession,
-	})
+	for (const sessionId of [
+		activeSession,
+		discardedSession,
+		registeredSession,
+	]) {
+		await index.deleteSession({ ownerId: userId, sessionId })
+	}
 })
 
-test('estimate persistence is UPDATE-only, listable, and throttled per isolate', async () => {
-	await ensureUserStorageBucketsTestSchema(env.APP_DB)
-	clearStorageBucketRegistrationDedupeForTests()
+test('estimate persistence is UPDATE-only, listable, throttled per isolate, and a failed refresh warns without consuming the throttle', async () => {
+	const { register, flush, estimates, waitUntil } = await setup()
 	const userId = `usb-estimate-${crypto.randomUUID()}`
 	const registered = `exec:${crypto.randomUUID()}`
 	const unregistered = `exec:${crypto.randomUUID()}`
-	const pending: Array<Promise<unknown>> = []
-	const waitUntil = (promise: Promise<unknown>) => {
-		pending.push(promise)
-	}
-
-	registerStorageBucket({
-		env,
-		userId,
-		storageId: registered,
-		kind: 'execute',
-		waitUntil,
-	})
-	await Promise.all(pending)
-	await expect(
-		listUserStorageBucketEstimates({ env, userId }),
-	).resolves.toEqual([
+	register(userId, registered, 'execute')
+	await flush()
+	await expect(estimates(userId)).resolves.toEqual([
 		{ storageId: registered, kind: 'execute', estimatedBytes: null },
 	])
 
-	recordStorageBucketEstimate({
-		env,
-		userId,
-		storageId: registered,
-		estimatedBytes: 4096,
-		waitUntil,
-	})
+	const record = (storageId: string, estimatedBytes: number) =>
+		recordStorageBucketEstimate({
+			env,
+			userId,
+			storageId,
+			estimatedBytes,
+			waitUntil,
+		})
+	record(registered, 4096)
 	// UPDATE-only: recording an estimate for a bucket without an ownership
 	// row must not create one (this is what keeps the persist safe on
 	// clearStorage paths racing account or bucket deletion).
-	recordStorageBucketEstimate({
-		env,
-		userId,
-		storageId: unregistered,
-		estimatedBytes: 123,
-		waitUntil,
-	})
-	await Promise.all(pending)
-	await expect(
-		listUserStorageBucketEstimates({ env, userId }),
-	).resolves.toEqual([
+	record(unregistered, 123)
+	await flush()
+	await expect(estimates(userId)).resolves.toEqual([
 		{ storageId: registered, kind: 'execute', estimatedBytes: 4096 },
 	])
 
 	let reads = 0
+	const refresh = (
+		storageId: string,
+		readEstimatedBytes: () => Promise<number>,
+	) =>
+		maybeRefreshStorageBucketEstimate({
+			env,
+			userId,
+			storageId,
+			readEstimatedBytes,
+			waitUntil,
+		})
 	const readEstimatedBytes = async () => {
 		reads += 1
 		return 8192
 	}
-	maybeRefreshStorageBucketEstimate({
-		env,
-		userId,
-		storageId: registered,
-		readEstimatedBytes,
-		waitUntil,
-	})
-	maybeRefreshStorageBucketEstimate({
-		env,
-		userId,
-		storageId: registered,
-		readEstimatedBytes,
-		waitUntil,
-	})
-	await Promise.all(pending)
+	refresh(registered, readEstimatedBytes)
+	refresh(registered, readEstimatedBytes)
+	await flush()
 	expect(reads).toBe(1)
-	await expect(
-		listUserStorageBucketEstimates({ env, userId }),
-	).resolves.toEqual([
+	await expect(estimates(userId)).resolves.toEqual([
 		{ storageId: registered, kind: 'execute', estimatedBytes: 8192 },
 	])
-})
 
-test('a failed estimate refresh warns and clears the throttle for a retry', async () => {
-	await ensureUserStorageBucketsTestSchema(env.APP_DB)
 	consoleWarn.mockImplementation(() => {})
-	clearStorageBucketRegistrationDedupeForTests()
-	const userId = `usb-estimate-retry-${crypto.randomUUID()}`
-	const storageId = `exec:${crypto.randomUUID()}`
-	const pending: Array<Promise<unknown>> = []
-	const waitUntil = (promise: Promise<unknown>) => {
-		pending.push(promise)
-	}
-
-	registerStorageBucket({
-		env,
-		userId,
-		storageId,
-		kind: 'execute',
-		waitUntil,
-	})
-	await Promise.all(pending)
-
+	const retryUserId = `usb-estimate-retry-${crypto.randomUUID()}`
+	const retryBucket = `exec:${crypto.randomUUID()}`
+	register(retryUserId, retryBucket, 'execute')
+	await flush()
 	let attempts = 0
-	const readEstimatedBytes = async () => {
+	const flakyRead = async () => {
 		attempts += 1
-		if (attempts === 1) {
-			throw new Error('simulated estimate read failure')
-		}
+		if (attempts === 1) throw new Error('simulated estimate read failure')
 		return 2048
 	}
-	maybeRefreshStorageBucketEstimate({
-		env,
-		userId,
-		storageId,
-		readEstimatedBytes,
-		waitUntil,
-	})
-	await Promise.all(pending)
+	const refreshRetry = () =>
+		maybeRefreshStorageBucketEstimate({
+			env,
+			userId: retryUserId,
+			storageId: retryBucket,
+			readEstimatedBytes: flakyRead,
+			waitUntil,
+		})
+	refreshRetry()
+	await flush()
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'storage-bucket-estimate-refresh-failed',
 		expect.any(Error),
 	)
-
-	// The failed attempt must not consume the throttle window.
-	maybeRefreshStorageBucketEstimate({
-		env,
-		userId,
-		storageId,
-		readEstimatedBytes,
-		waitUntil,
-	})
-	await Promise.all(pending)
+	refreshRetry()
+	await flush()
 	expect(attempts).toBe(2)
-	await expect(
-		listUserStorageBucketEstimates({ env, userId }),
-	).resolves.toEqual([{ storageId, kind: 'execute', estimatedBytes: 2048 }])
-})
-
-test('registerStorageBucket never throws when the table is missing', async () => {
-	consoleWarn.mockImplementation(() => {})
-	clearStorageBucketRegistrationDedupeForTests()
-	const missingTableDb = {
-		prepare() {
-			return {
-				bind() {
-					return {
-						async run() {
-							throw new Error('no such table: user_storage_buckets')
-						},
-					}
-				},
-			}
-		},
-	} as unknown as D1Database
-
-	expect(() =>
-		registerStorageBucket({
-			env: { APP_DB: missingTableDb } as Env,
-			userId: 'user-missing-table',
-			storageId: 'bucket-missing-table',
-		}),
-	).not.toThrow()
-	await flushStorageBucketRegistrationsForTests()
-	expect(consoleWarn).toHaveBeenCalledWith(
-		'storage-bucket-register-failed',
-		expect.any(Error),
-	)
+	await expect(estimates(retryUserId)).resolves.toEqual([
+		{ storageId: retryBucket, kind: 'execute', estimatedBytes: 2048 },
+	])
 })

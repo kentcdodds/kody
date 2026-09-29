@@ -13,39 +13,29 @@ import {
 	type BackupFullManifestPayload,
 } from './backup-full-manifest.ts'
 
+const { privateKey, publicKey } = generateKeyPairSync('ed25519')
+
+function indexRef(name: string, bytes: number, hashChar: string) {
+	return {
+		objectKey: `daily/full/2026-07-22/${name}`,
+		bytes,
+		sha256: hashChar.repeat(64),
+	}
+}
+
 function samplePayload(): BackupFullManifestPayload {
 	return {
 		schemaVersion: backupFullManifestSchemaVersion,
 		day: '2026-07-22',
 		d1ManifestKey: 'daily/d1/db/2026-07-22/manifest.json',
 		d1ManifestSha256: 'a'.repeat(64),
-		storageIndex: {
-			objectKey: 'daily/full/2026-07-22/storage-index.json',
-			bytes: 12,
-			sha256: 'b'.repeat(64),
-		},
-		mailboxIndex: {
-			objectKey: 'daily/full/2026-07-22/mailbox-index.json',
-			bytes: 10,
-			sha256: 'e'.repeat(64),
-		},
-		runLogIndex: {
-			objectKey: 'daily/full/2026-07-22/run-log-index.json',
-			bytes: 11,
-			sha256: 'f'.repeat(64),
-		},
+		storageIndex: indexRef('storage-index.json', 12, 'b'),
+		mailboxIndex: indexRef('mailbox-index.json', 10, 'e'),
+		runLogIndex: indexRef('run-log-index.json', 11, 'f'),
 		r2Indexes: {
-			'email-blobs': {
-				objectKey: 'daily/full/2026-07-22/r2-index/email-blobs.ndjson',
-				bytes: 8,
-				sha256: 'c'.repeat(64),
-			},
+			'email-blobs': indexRef('r2-index/email-blobs.ndjson', 8, 'c'),
 		},
-		artifactsIndex: {
-			objectKey: 'daily/full/2026-07-22/artifacts-index.json',
-			bytes: 4,
-			sha256: 'd'.repeat(64),
-		},
+		artifactsIndex: indexRef('artifacts-index.json', 4, 'd'),
 		sealedAt: '2026-07-22T12:00:00.000Z',
 		buildCommit: 'abc123',
 		signing: {
@@ -58,7 +48,6 @@ function samplePayload(): BackupFullManifestPayload {
 function signedManifest(
 	payload: BackupFullManifestPayload,
 ): BackupFullManifest {
-	const { privateKey } = generateKeyPairSync('ed25519')
 	return {
 		schemaVersion: backupFullManifestSchemaVersion,
 		payload,
@@ -75,39 +64,36 @@ function signedManifest(
 }
 
 test('parseBackupFullManifest accepts a signed envelope and rejects shape drift', () => {
-	const manifest = signedManifest(samplePayload())
+	const payload = samplePayload()
+	const manifest = signedManifest(payload)
 	expect(parseBackupFullManifest(manifest)).toEqual(manifest)
 	expect(serializeBackupFullManifest(manifest).endsWith('\n')).toBe(true)
 
-	expect(() =>
-		parseBackupFullManifest({
-			...manifest,
-			extra: true,
-		}),
-	).toThrow(/invalid versioned shape/)
-	expect(() =>
-		parseBackupFullManifest({
-			...manifest,
-			payload: { ...manifest.payload, day: '22-07-2026' },
-		}),
-	).toThrow(/invalid signed values/)
-	expect(() =>
-		parseBackupFullManifest({
-			...manifest,
-			payload: {
-				...manifest.payload,
-				r2Indexes: {
-					'not-a-bucket': manifest.payload.storageIndex,
+	for (const [input, error] of [
+		[{ ...manifest, extra: true }, /invalid versioned shape/],
+		[
+			{ ...manifest, payload: { ...manifest.payload, day: '22-07-2026' } },
+			/invalid signed values/,
+		],
+		[
+			{
+				...manifest,
+				payload: {
+					...manifest.payload,
+					r2Indexes: { 'not-a-bucket': manifest.payload.storageIndex },
 				},
 			},
-		}),
-	).toThrow(/invalid signed values/)
+			/invalid signed values/,
+		],
+	] as const) {
+		expect(() => parseBackupFullManifest(input)).toThrow(error)
+	}
 
 	const {
 		mailboxIndex: _mailboxIndex,
 		runLogIndex: _runLogIndex,
 		...legacy
-	} = manifest.payload
+	} = payload
 	expect(
 		parseBackupFullManifest({
 			...manifest,
@@ -145,76 +131,46 @@ test('parseBackupFullManifest accepts declared d1Sources and keeps historical pa
 		d1Sources,
 	)
 
-	expect(() =>
-		parseBackupFullManifest(signedManifest({ ...payload, d1Sources: [] })),
-	).toThrow(/invalid versioned shape/)
-	expect(() =>
-		parseBackupFullManifest(
-			signedManifest({
-				...payload,
-				d1Sources: [
-					{
-						...d1Sources[0]!,
-						manifestKey: 'daily/d1/other/2026-07-22/manifest.json',
-					},
-				],
-			}),
-		),
-	).toThrow(/invalid signed values/)
-	expect(() =>
-		parseBackupFullManifest({
-			...withSources,
-			payload: { ...withSources.payload, extra: true },
-		}),
-	).toThrow(/invalid versioned shape/)
+	const wrongPrimaryKey = {
+		...d1Sources[0]!,
+		manifestKey: 'daily/d1/other/2026-07-22/manifest.json',
+	}
+	for (const [input, error] of [
+		[signedManifest({ ...payload, d1Sources: [] }), /invalid versioned shape/],
+		[
+			signedManifest({ ...payload, d1Sources: [wrongPrimaryKey] }),
+			/invalid signed values/,
+		],
+		[
+			{ ...withSources, payload: { ...withSources.payload, extra: true } },
+			/invalid versioned shape/,
+		],
+	] as const) {
+		expect(() => parseBackupFullManifest(input)).toThrow(error)
+	}
 })
 
 test('full-manifest parse/sign/verify round-trip with Ed25519', async () => {
-	const { privateKey, publicKey } = generateKeyPairSync('ed25519')
-	const payload = samplePayload()
-	const signature = signBytes(
-		null,
-		Buffer.from(canonicalBackupFullManifestPayload(payload)),
-		privateKey,
-	)
-	const manifest = parseBackupFullManifest({
-		schemaVersion: backupFullManifestSchemaVersion,
-		payload,
-		signature: {
-			algorithm: backupFullManifestSignatureAlgorithm,
-			keyId: payload.signing.keyId,
-			value: signature.toString('base64'),
-		},
-	})
-	const spki = publicKey.export({ format: 'der', type: 'spki' })
+	const manifest = parseBackupFullManifest(signedManifest(samplePayload()))
+	const signature = Buffer.from(manifest.signature.value, 'base64')
 	const verifyingKey = await crypto.subtle.importKey(
 		'spki',
-		spki,
+		publicKey.export({ format: 'der', type: 'spki' }),
 		backupFullManifestSignatureAlgorithm,
 		false,
 		['verify'],
 	)
-	expect(
-		await crypto.subtle.verify(
+	const verify = (
+		payload: Parameters<typeof canonicalBackupFullManifestPayload>[0],
+	) =>
+		crypto.subtle.verify(
 			backupFullManifestSignatureAlgorithm,
 			verifyingKey,
 			signature,
-			new TextEncoder().encode(
-				canonicalBackupFullManifestPayload(manifest.payload),
-			),
-		),
-	).toBe(true)
-	expect(
-		await crypto.subtle.verify(
-			backupFullManifestSignatureAlgorithm,
-			verifyingKey,
-			signature,
-			new TextEncoder().encode(
-				canonicalBackupFullManifestPayload({
-					...manifest.payload,
-					buildCommit: 'tampered',
-				}),
-			),
-		),
-	).toBe(false)
+			new TextEncoder().encode(canonicalBackupFullManifestPayload(payload)),
+		)
+	await expect(verify(manifest.payload)).resolves.toBe(true)
+	await expect(
+		verify({ ...manifest.payload, buildCommit: 'tampered' }),
+	).resolves.toBe(false)
 })

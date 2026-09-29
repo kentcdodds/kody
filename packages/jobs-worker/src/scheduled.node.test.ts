@@ -52,6 +52,13 @@ function message(
 	return { lane, scheduledTime, cron: '*/5 * * * *' }
 }
 
+function dispatch(env: JobsWorkerEnv, scheduledTime: number) {
+	return dispatchScheduledLanes({
+		controller: { scheduledTime, cron: '*/5 * * * *' } as ScheduledController,
+		env,
+	})
+}
+
 function queueMessage(input: {
 	id?: string
 	body: unknown
@@ -116,95 +123,48 @@ test('lane routing forwards platform work to HOST, runs watchdog locally, and ac
 	)
 })
 
-test('cron dispatch enqueues cadence lanes and falls back when the queue is missing or send fails', async () => {
+test('cron dispatch enqueues cadence lanes, or runs them directly when the queue is missing', async () => {
 	const send = vi.fn().mockResolvedValue(undefined)
 	const queuedEnv = createEnv({ SCHEDULED_DISPATCH_QUEUE: { send } })
 	const scheduledTime = Date.UTC(2026, 0, 1, 12, 0)
-	await dispatchScheduledLanes({
-		controller: { scheduledTime, cron: '*/5 * * * *' } as ScheduledController,
-		env: queuedEnv,
-	})
-	const lanes = getScheduledLaneCadence(new Date(scheduledTime))
-	expect(send).toHaveBeenCalledTimes(lanes.length)
-	expect(send).toHaveBeenCalledWith({
-		lane: 'retention',
-		scheduledTime,
-		cron: '*/5 * * * *',
-	})
-	expect(send).toHaveBeenCalledWith({
-		lane: 'unverified_account_purge',
-		scheduledTime,
-		cron: '*/5 * * * *',
-	})
+	await dispatch(queuedEnv, scheduledTime)
+	expect(send).toHaveBeenCalledTimes(
+		getScheduledLaneCadence(new Date(scheduledTime)).length,
+	)
+	for (const lane of ['retention', 'unverified_account_purge']) {
+		expect(send).toHaveBeenCalledWith({
+			lane,
+			scheduledTime,
+			cron: '*/5 * * * *',
+		})
+	}
 	expect(queuedEnv.HOST.runScheduledLane).not.toHaveBeenCalled()
 
 	const directEnv = createEnv()
 	const directTime = Date.UTC(2026, 0, 1, 12, 10)
-	await dispatchScheduledLanes({
-		controller: {
-			scheduledTime: directTime,
-			cron: '*/5 * * * *',
-		} as ScheduledController,
-		env: directEnv,
-	})
-	const directLanes = getScheduledLaneCadence(new Date(directTime))
+	await dispatch(directEnv, directTime)
 	expect(directEnv.HOST.runScheduledLane).toHaveBeenCalledTimes(
-		directLanes.length,
+		getScheduledLaneCadence(new Date(directTime)).length,
 	)
-
-	consoleError.mockImplementation(() => {})
-	const failingSend = vi.fn(async (body: ScheduledLaneMessage) => {
-		if (body.lane === 'oauth_purge_expired') {
-			throw new Error('queue unavailable')
-		}
-	})
-	const fallbackEnv = createEnv({
-		SCHEDULED_DISPATCH_QUEUE: { send: failingSend },
-	})
-	const fallbackTime = Date.UTC(2026, 0, 1, 12, 10)
-	await dispatchScheduledLanes({
-		controller: {
-			scheduledTime: fallbackTime,
-			cron: '*/5 * * * *',
-		} as ScheduledController,
-		env: fallbackEnv,
-	})
-	expect(fallbackEnv.HOST.runScheduledLane).toHaveBeenCalledTimes(1)
-	expect(fallbackEnv.HOST.runScheduledLane).toHaveBeenCalledWith({
-		lane: 'oauth_purge_expired',
-		scheduledTime: fallbackTime,
-		cron: '*/5 * * * *',
-	})
 })
 
 test('retryable D1 lock contention is distinguished from ordinary failures', async () => {
 	consoleWarn.mockImplementation(() => {})
 	consoleError.mockImplementation(() => {})
-	const env = createEnv({
-		HOST: {
-			runScheduledLane: vi
-				.fn()
-				.mockRejectedValue(new Error('D1_ERROR: database is locked')),
-		},
-	})
-	await expect(
-		runScheduledLaneWithFailureIsolation({
-			env,
-			message: message('retention'),
-		}),
-	).resolves.toBe('d1_lock_contention')
-
-	const failingEnv = createEnv({
-		HOST: {
-			runScheduledLane: vi.fn().mockRejectedValue(new Error('boom')),
-		},
-	})
-	await expect(
-		runScheduledLaneWithFailureIsolation({
-			env: failingEnv,
-			message: message('retention'),
-		}),
-	).resolves.toBe('failed')
+	for (const [error, outcome] of [
+		['D1_ERROR: database is locked', 'd1_lock_contention'],
+		['boom', 'failed'],
+	] as const) {
+		const env = createEnv({
+			HOST: { runScheduledLane: vi.fn().mockRejectedValue(new Error(error)) },
+		})
+		await expect(
+			runScheduledLaneWithFailureIsolation({
+				env,
+				message: message('retention'),
+			}),
+		).resolves.toBe(outcome)
+	}
 })
 
 test('queue consumer acks completed and terminal work, retries lock contention with backoff, and preserves scheduledTime', async () => {
@@ -250,13 +210,14 @@ test('queue consumer acks completed and terminal work, retries lock contention w
 
 	expect(completed.ack).toHaveBeenCalledOnce()
 	expect(completed.retry).not.toHaveBeenCalled()
-
-	expect(lock.retry).toHaveBeenCalledOnce()
-	expect(lock.retry).toHaveBeenCalledWith({ delaySeconds: 10 })
+	expect(lock.retry).toHaveBeenCalledExactlyOnceWith({ delaySeconds: 10 })
 	expect(lock.ack).not.toHaveBeenCalled()
-
 	expect(failed.ack).toHaveBeenCalledOnce()
 	expect(failed.retry).not.toHaveBeenCalled()
+	expect(invalid.ack).toHaveBeenCalledOnce()
+	expect(invalid.retry).not.toHaveBeenCalled()
+	expect(exhausted.retry).toHaveBeenCalledExactlyOnceWith({ delaySeconds: 90 })
+	expect(exhausted.ack).not.toHaveBeenCalled()
 	expect(consoleError).toHaveBeenCalledWith(
 		'scheduled_lane_terminal_not_retried',
 		expect.objectContaining({
@@ -267,16 +228,11 @@ test('queue consumer acks completed and terminal work, retries lock contention w
 		}),
 	)
 
-	expect(invalid.ack).toHaveBeenCalledOnce()
-	expect(invalid.retry).not.toHaveBeenCalled()
 	expect(consoleError).toHaveBeenCalledWith(
 		'scheduled_lane_message_invalid',
 		expect.objectContaining({ queueMessageId: 'invalid' }),
 	)
 
-	expect(exhausted.retry).toHaveBeenCalledOnce()
-	expect(exhausted.retry).toHaveBeenCalledWith({ delaySeconds: 90 })
-	expect(exhausted.ack).not.toHaveBeenCalled()
 	expect(consoleError).toHaveBeenCalledWith(
 		'scheduled_lane_retry_exhausted',
 		expect.objectContaining({
@@ -309,7 +265,7 @@ test('queue consumer acks completed and terminal work, retries lock contention w
 	expect(laterLock.ack).not.toHaveBeenCalled()
 })
 
-test('inline fallback keeps scheduledTime and does not invent extra lane retries', async () => {
+test('failed queue sends fall back inline for that lane only, keep scheduledTime, and do not invent extra lane retries', async () => {
 	silenceExpectedConsoleErrors([
 		'scheduled_lane_dispatch_failed lane=oauth_purge_expired',
 		'scheduled_lane_inline_d1_lock_contention',
@@ -325,13 +281,7 @@ test('inline fallback keeps scheduledTime and does not invent extra lane retries
 		SCHEDULED_DISPATCH_QUEUE: { send: failingSend },
 	})
 	const fallbackTime = Date.UTC(2026, 0, 1, 12, 10)
-	await dispatchScheduledLanes({
-		controller: {
-			scheduledTime: fallbackTime,
-			cron: '*/5 * * * *',
-		} as ScheduledController,
-		env,
-	})
+	await dispatch(env, fallbackTime)
 	expect(host).toHaveBeenCalledTimes(1)
 	expect(host).toHaveBeenCalledWith({
 		lane: 'oauth_purge_expired',

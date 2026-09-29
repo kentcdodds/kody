@@ -28,13 +28,11 @@ function kitFetchImpl(input: {
 		const body = init?.body ? JSON.parse(String(init.body)) : null
 		calls.push({ url, method, body })
 		if (url.includes('/subscribers?email_address=')) {
-			if (input.subscriberId == null) {
-				return Response.json({ subscribers: [] })
-			}
 			return Response.json({
-				subscribers: [
-					{ id: input.subscriberId, email_address: 'ada@example.com' },
-				],
+				subscribers:
+					input.subscriberId == null
+						? []
+						: [{ id: input.subscriberId, email_address: 'ada@example.com' }],
 			})
 		}
 		if (url.endsWith('/tags') || url.includes('/tags?')) {
@@ -103,15 +101,13 @@ test('syncExistingKitSubscriber adds lifecycle tags and removes paid tags on can
 			fetchImpl,
 		}),
 	).toEqual({ synced: true, subscriberId: 9 })
-	const added = calls.filter(
-		(call) => call.method === 'POST' && call.url.includes('/tags/'),
-	)
-	expect(added.map((call) => call.url)).toEqual([
+	const urls = (method: string) =>
+		calls.filter((call) => call.method === method).map((call) => call.url)
+	expect(urls('POST')).toEqual([
 		'https://api.kit.com/v4/tags/11/subscribers',
 		'https://api.kit.com/v4/tags/12/subscribers',
 	])
-	const removed = calls.filter((call) => call.method === 'DELETE')
-	expect(removed.map((call) => call.url)).toEqual([
+	expect(urls('DELETE')).toEqual([
 		'https://api.kit.com/v4/subscribers/9/tags/15',
 		'https://api.kit.com/v4/subscribers/9/tags/16',
 	])
@@ -137,21 +133,19 @@ test('syncExistingKitSubscriber skips missing subscribers and never creates them
 
 test('maybeSyncKitSubscriber no-ops without Kit config and swallows failures', async () => {
 	consoleWarn.mockImplementation(() => {})
+	const sync = (
+		env: Parameters<typeof maybeSyncKitSubscriber>[0]['env'],
+		fetchImpl: typeof fetch,
+	) =>
+		maybeSyncKitSubscriber({
+			env,
+			email: 'ada@example.com',
+			facts: kitFactsFromUserRow({}),
+			fetchImpl,
+		})
 	const idleFetch = vi.fn()
-	await maybeSyncKitSubscriber({
-		env: {},
-		email: 'ada@example.com',
-		facts: kitFactsFromUserRow({}),
-		fetchImpl: idleFetch,
-	})
-	expect(idleFetch).not.toHaveBeenCalled()
-
-	await maybeSyncKitSubscriber({
-		env: { KIT_API_KEY: 'key', KIT_SIGNED_UP_TAG_ID: 'nope' },
-		email: 'ada@example.com',
-		facts: kitFactsFromUserRow({}),
-		fetchImpl: idleFetch,
-	})
+	await sync({}, idleFetch)
+	await sync({ KIT_API_KEY: 'key', KIT_SIGNED_UP_TAG_ID: 'nope' }, idleFetch)
 	expect(idleFetch).not.toHaveBeenCalled()
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'Skipping Kit subscriber sync: KIT_SIGNED_UP_TAG_ID is invalid.',
@@ -161,12 +155,7 @@ test('maybeSyncKitSubscriber no-ops without Kit config and swallows failures', a
 	const failingFetch = vi.fn(async () =>
 		Response.json({ errors: ['boom'] }, { status: 500 }),
 	)
-	await maybeSyncKitSubscriber({
-		env: { KIT_API_KEY: 'key' },
-		email: 'ada@example.com',
-		facts: kitFactsFromUserRow({}),
-		fetchImpl: failingFetch as typeof fetch,
-	})
+	await sync({ KIT_API_KEY: 'key' }, failingFetch)
 	expect(failingFetch).toHaveBeenCalled()
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'Failed to sync Kit subscriber:',

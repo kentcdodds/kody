@@ -17,29 +17,29 @@ afterEach(() => {
 })
 
 test('isE2eWebServerConnectionError matches Playwright and Node refused forms', () => {
-	expect(
-		isE2eWebServerConnectionError(
+	const cases: Array<[Error, boolean]> = [
+		[
 			new Error('apiRequestContext.post: connect ECONNREFUSED 127.0.0.1:3847'),
-		),
-	).toBe(true)
-	expect(
-		isE2eWebServerConnectionError(
+			true,
+		],
+		[
 			new Error(
 				'page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:3847/',
 			),
-		),
-	).toBe(true)
-	expect(
-		isE2eWebServerConnectionError(
+			true,
+		],
+		[
 			Object.assign(new Error('fetch failed'), {
 				cause: Object.assign(new Error('connect ECONNREFUSED'), {
 					code: 'ECONNREFUSED',
 				}),
 			}),
-		),
-	).toBe(true)
-	expect(isE2eWebServerConnectionError(new Error('timeout of 15000ms'))).toBe(
-		false,
+			true,
+		],
+		[new Error('timeout of 15000ms'), false],
+	]
+	expect(cases.map(([error]) => isE2eWebServerConnectionError(error))).toEqual(
+		cases.map(([, expected]) => expected),
 	)
 })
 
@@ -73,39 +73,27 @@ test('E2eWebServerDeadError names the unread clone tee fix', () => {
 })
 
 test('attachUnreadCloneTeeHintIfNeeded annotates connection-refused failures', () => {
-	const refused = {
-		status: 'failed',
-		errors: [
-			{
-				message:
-					'page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:3847/',
-			},
+	const results = [
+		[
+			'failed',
+			'page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:3847/',
 		],
-		annotations: [],
-	}
-	attachUnreadCloneTeeHintIfNeeded(refused)
-	expect(refused.annotations).toEqual([
-		{
-			type: 'warning',
-			description: e2eUnreadRequestCloneTeeRemediation,
-		},
+		['passed', null],
+		['failed', 'expect(locator).toHaveText failed'],
+	].map(([status, message]) => {
+		const result = {
+			status: status!,
+			errors: message ? [{ message }] : [],
+			annotations: [],
+		}
+		attachUnreadCloneTeeHintIfNeeded(result)
+		return result.annotations
+	})
+	expect(results).toEqual([
+		[{ type: 'warning', description: e2eUnreadRequestCloneTeeRemediation }],
+		[],
+		[],
 	])
-
-	const passed = {
-		status: 'passed',
-		errors: [],
-		annotations: [],
-	}
-	attachUnreadCloneTeeHintIfNeeded(passed)
-	expect(passed.annotations).toEqual([])
-
-	const unrelated = {
-		status: 'failed',
-		errors: [{ message: 'expect(locator).toHaveText failed' }],
-		annotations: [],
-	}
-	attachUnreadCloneTeeHintIfNeeded(unrelated)
-	expect(unrelated.annotations).toEqual([])
 })
 
 test('assertE2eWebServerAlive fails fast once marked dead without fetching', async () => {

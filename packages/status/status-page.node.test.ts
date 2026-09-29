@@ -11,6 +11,9 @@ import {
 	type StatusSnapshot,
 } from './status-types.ts'
 
+type Incident = StatusSnapshot['recentIncidents'][number]
+type ProviderIncident = NonNullable<StatusSnapshot['providerIncidents']>[number]
+
 function componentSnapshot(
 	overrides: Partial<ComponentSnapshot> = {},
 ): ComponentSnapshot {
@@ -54,70 +57,86 @@ function snapshot(overrides: Partial<StatusSnapshot> = {}): StatusSnapshot {
 	}
 }
 
+const incident = (overrides: Partial<Incident> = {}): Incident => ({
+	id: 10,
+	component: 'jobs',
+	componentName: 'Jobs',
+	startedAt: '2026-09-02T21:57:54.765Z',
+	resolvedAt: '2026-09-02T22:00:51.866Z',
+	detail: 'error',
+	retrospective: null,
+	...overrides,
+})
+
+const providerIncident = (shortlink: string): ProviderIncident => ({
+	id: 'inc-r2',
+	name: 'R2 Availability Issues',
+	status: 'investigating',
+	impact: 'minor',
+	shortlink,
+	updatedAt: '2026-08-07T19:00:00.000Z',
+	affectedComponents: ['R2'],
+})
+
+const missing = (html: string, fragments: Array<string>) =>
+	fragments.filter((fragment) => !html.includes(fragment))
+const commitUrl = 'https://github.com/kentcdodds/kody/commit/'
+
 test('status page renders components, incidents, unknown state, and escapes detail html', () => {
 	const healthy = renderStatusPage(snapshot())
-	for (const component of statusComponents) {
-		expect(healthy).toContain(component.name.replaceAll('&', '&amp;'))
-	}
-	expect(healthy).toContain('99.98% uptime (4 days)')
-	expect(healthy).toContain('class="bar"')
-	expect(healthy).toContain('class="bar partial"')
-	expect(healthy).toContain('class="bar bad"')
-	expect(healthy).toContain(
-		'https://github.com/kentcdodds/kody/commit/abc123def4567890abcdef1234567890abcdef12',
-	)
-	expect(healthy).toContain(
-		'https://github.com/kentcdodds/kody/commit/def4567890abcdef1234567890abcdef12345678',
-	)
-	expect(healthy).toContain(
-		'https://github.com/kentcdodds/kody/commit/7890abcdef1234567890abcdef1234567890abcd',
-	)
-	expect(healthy).toContain('>abc123d<')
-	expect(healthy).toContain('>def4567<')
-	expect(healthy).toContain('>7890abc<')
-	expect(healthy).toContain('http-equiv="refresh"')
-	expect(healthy).toContain(`href="${statusFaviconPath('operational')}"`)
+	expect(
+		missing(healthy, [
+			...statusComponents.map((component) =>
+				component.name.replaceAll('&', '&amp;'),
+			),
+			'99.98% uptime (4 days)',
+			'class="bar"',
+			'class="bar partial"',
+			'class="bar bad"',
+			`${commitUrl}abc123def4567890abcdef1234567890abcdef12`,
+			`${commitUrl}def4567890abcdef1234567890abcdef12345678`,
+			`${commitUrl}7890abcdef1234567890abcdef1234567890abcd`,
+			'>abc123d<',
+			'>def4567<',
+			'>7890abc<',
+			'http-equiv="refresh"',
+			`href="${statusFaviconPath('operational')}"`,
+			'MCP execute',
+			'Recently verified',
+			'organic traffic',
+			'2026-08-04T11:59:50.000Z',
+			'Verified by organic MCP execute traffic 10s ago.',
+		]),
+	).toEqual([])
 	expect(healthy).toMatch(/operational|All systems/i)
-	expect(healthy).toContain('MCP execute')
-	expect(healthy).toContain('Recently verified')
-	expect(healthy).toContain('organic traffic')
-	expect(healthy).toContain('2026-08-04T11:59:50.000Z')
-	expect(healthy).toContain('Verified by organic MCP execute traffic 10s ago.')
 
 	const down = renderStatusPage(
 		snapshot({
 			overallStatus: 'down',
 			openIncidents: [
-				{
+				incident({
 					id: 1,
 					component: 'app_db',
 					componentName: 'Primary database',
 					startedAt: '2026-08-04T11:00:00.000Z',
 					resolvedAt: null,
 					detail: 'timeout',
-					retrospective: null,
-				},
+				}),
 			],
 		}),
 	)
-	expect(down).toContain('Primary database')
-	expect(down).toContain('2026-08-04T11:00:00.000Z')
-	expect(down).toContain(`href="${statusFaviconPath('down')}"`)
+	expect(
+		missing(down, [
+			'Primary database',
+			'2026-08-04T11:00:00.000Z',
+			`href="${statusFaviconPath('down')}"`,
+		]),
+	).toEqual([])
 	expect(down).not.toContain(`href="${statusFaviconPath('operational')}"`)
 
 	const escaped = renderStatusPage(
 		snapshot({
-			recentIncidents: [
-				{
-					id: 2,
-					component: 'kv',
-					componentName: 'Key-value storage',
-					startedAt: '2026-08-01T00:00:00.000Z',
-					resolvedAt: '2026-08-01T01:00:00.000Z',
-					detail: '<img src=x onerror=alert(1)>',
-					retrospective: null,
-				},
-			],
+			recentIncidents: [incident({ detail: '<img src=x onerror=alert(1)>' })],
 		}),
 	)
 	expect(escaped).not.toContain('<img src=x')
@@ -153,96 +172,76 @@ test('status page renders components, incidents, unknown state, and escapes deta
 			},
 		}),
 	)
-	expect(executeUnknown).toContain('Not recently exercised')
-	expect(executeUnknown).toContain('Last verified time is unknown')
-	expect(executeUnknown).toContain(
-		'Missing or stale telemetry is not an outage',
-	)
+	expect(
+		missing(executeUnknown, [
+			'Not recently exercised',
+			'Last verified time is unknown',
+			'Missing or stale telemetry is not an outage',
+		]),
+	).toEqual([])
 
 	const unavailable = renderStatusUnavailablePage(
 		'Status data is temporarily unavailable.',
 	)
-	expect(unavailable).toContain('Status data is temporarily unavailable.')
-	expect(unavailable).toContain(`href="${statusFaviconPath('unknown')}"`)
-	expect(unavailable).toContain('http-equiv="refresh"')
+	expect(
+		missing(unavailable, [
+			'Status data is temporarily unavailable.',
+			`href="${statusFaviconPath('unknown')}"`,
+			'http-equiv="refresh"',
+		]),
+	).toEqual([])
 
 	expect(
 		faviconIcoRedirectLocation('https://status.kody.codes/favicon.ico', 'down'),
 	).toBe(`https://status.kody.codes${statusFaviconPath('down')}`)
+
+	const maintenance = renderMaintenancePage()
+	expect(
+		missing(maintenance, [
+			'href="https://status.kody.codes/"',
+			`href="${statusFaviconPath('unknown')}"`,
+		]),
+	).toEqual([])
 })
 
-test('status page renders provider incidents separately and omits them when absent', () => {
-	const without = renderStatusPage(snapshot({ providerIncidents: null }))
-	expect(without).not.toContain('Provider incidents (Cloudflare)')
-
-	const empty = renderStatusPage(snapshot({ providerIncidents: [] }))
-	expect(empty).not.toContain('Provider incidents (Cloudflare)')
+test('status page renders provider incidents separately, omits them when absent, and hides missing commits', () => {
+	for (const providerIncidents of [null, []]) {
+		expect(renderStatusPage(snapshot({ providerIncidents }))).not.toContain(
+			'Provider incidents (Cloudflare)',
+		)
+	}
 
 	const withProvider = renderStatusPage(
-		snapshot({
-			overallStatus: 'operational',
-			providerIncidents: [
-				{
-					id: 'inc-r2',
-					name: 'R2 Availability Issues',
-					status: 'investigating',
-					impact: 'minor',
-					shortlink: 'https://stspg.io/r2',
-					updatedAt: '2026-08-07T19:00:00.000Z',
-					affectedComponents: ['R2'],
-				},
-			],
-		}),
+		snapshot({ providerIncidents: [providerIncident('https://stspg.io/r2')] }),
 	)
-	expect(withProvider).toContain('Provider incidents (Cloudflare)')
-	expect(withProvider).toContain('R2 Availability Issues')
-	expect(withProvider).toContain('https://stspg.io/r2')
-
-	const withoutCommit = renderStatusPage(
-		snapshot({
-			productionCommit: null,
-			runtimeCommit: null,
-			jobsCommit: null,
-		}),
-	)
-	expect(withoutCommit).not.toContain(
-		'https://github.com/kentcdodds/kody/commit/',
-	)
+	expect(
+		missing(withProvider, [
+			'Provider incidents (Cloudflare)',
+			'R2 Availability Issues',
+			'https://stspg.io/r2',
+		]),
+	).toEqual([])
 
 	const unsafeLink = renderStatusPage(
-		snapshot({
-			providerIncidents: [
-				{
-					id: 'inc-r2',
-					name: 'R2 Availability Issues',
-					status: 'investigating',
-					impact: 'minor',
-					shortlink: 'javascript:alert(1)',
-					updatedAt: '2026-08-07T19:00:00.000Z',
-					affectedComponents: ['R2'],
-				},
-			],
-		}),
+		snapshot({ providerIncidents: [providerIncident('javascript:alert(1)')] }),
 	)
 	expect(unsafeLink).not.toContain('javascript:alert')
 	expect(unsafeLink).toContain('https://www.cloudflarestatus.com')
+
+	expect(
+		renderStatusPage(
+			snapshot({
+				productionCommit: null,
+				runtimeCommit: null,
+				jobsCommit: null,
+			}),
+		),
+	).not.toContain(commitUrl)
 })
 
 test('status page keeps resolved incidents glanceable and expands a retrospective', () => {
 	const withoutWriteup = renderStatusPage(
-		snapshot({
-			recentIncidents: [
-				{
-					id: 10,
-					component: 'jobs',
-					componentName: 'Jobs',
-					startedAt: '2026-09-02T21:57:54.765Z',
-					resolvedAt: '2026-09-02T22:00:51.866Z',
-					detail: 'error',
-					retrospective: null,
-				},
-			],
-		}),
+		snapshot({ recentIncidents: [incident()] }),
 	)
 	expect(withoutWriteup).toContain('Jobs outage (resolved) — error')
 	expect(withoutWriteup).not.toContain('<details class="retrospective">')
@@ -250,13 +249,7 @@ test('status page keeps resolved incidents glanceable and expands a retrospectiv
 	const withWriteup = renderStatusPage(
 		snapshot({
 			recentIncidents: [
-				{
-					id: 10,
-					component: 'jobs',
-					componentName: 'Jobs',
-					startedAt: '2026-09-02T21:57:54.765Z',
-					resolvedAt: '2026-09-02T22:00:51.866Z',
-					detail: 'error',
+				incident({
 					retrospective: {
 						whatHappened: 'Two failed Jobs probes.',
 						impact: 'Status page looked alarming.',
@@ -271,20 +264,17 @@ test('status page keeps resolved incidents glanceable and expands a retrospectiv
 						whatWeWillChange: 'Publish retrospectives.',
 						publishedAt: '2026-09-02T22:20:00.000Z',
 					},
-				},
+				}),
 			],
 		}),
 	)
-	expect(withWriteup).toContain('Jobs outage (resolved) — error')
-	expect(withWriteup).toContain('<details class="retrospective">')
-	expect(withWriteup).toContain('Two failed Jobs probes.')
+	expect(
+		missing(withWriteup, [
+			'Jobs outage (resolved) — error',
+			'<details class="retrospective">',
+			'Two failed Jobs probes.',
+			'&lt;script&gt;alert(1)&lt;/script&gt;',
+		]),
+	).toEqual([])
 	expect(withWriteup).not.toContain('<script>alert(1)</script>')
-	expect(withWriteup).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
-})
-
-test('maintenance page is static HTML with a link back to the status home', () => {
-	const html = renderMaintenancePage()
-	expect(html).toContain('href="https://status.kody.codes/"')
-	expect(html).toContain('status.kody.codes')
-	expect(html).toContain(`href="${statusFaviconPath('unknown')}"`)
 })

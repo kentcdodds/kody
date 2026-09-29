@@ -6,76 +6,28 @@ import {
 } from './scheduled-lanes.ts'
 
 test('queue action policy retries only lock contention, acks completed and failed, and preserves the original outcome contract', () => {
-	expect(
-		resolveScheduledLaneQueueAction({
-			outcome: 'completed',
-			attempts: 1,
-		}),
-	).toEqual({ action: 'ack', reason: 'completed' })
-	expect(
-		resolveScheduledLaneQueueAction({
-			outcome: 'failed',
-			attempts: 1,
-		}),
-	).toEqual({ action: 'ack', reason: 'terminal_failure' })
-	expect(
-		resolveScheduledLaneQueueAction({
-			outcome: 'failed',
-			attempts: scheduledDispatchMaxRetries + 1,
-		}),
-	).toEqual({ action: 'ack', reason: 'terminal_failure' })
-
-	expect(
-		resolveScheduledLaneQueueAction({
-			outcome: 'd1_lock_contention',
-			attempts: 1,
-		}),
-	).toEqual({
+	const exhausted = scheduledDispatchMaxRetries + 1
+	const retry = (reason: string, delaySeconds: number) => ({
 		action: 'retry',
-		reason: 'transient_failure',
-		delaySeconds: 10,
+		reason,
+		delaySeconds,
 	})
+	const cases = [
+		['completed', 1, { action: 'ack', reason: 'completed' }],
+		['failed', 1, { action: 'ack', reason: 'terminal_failure' }],
+		['failed', exhausted, { action: 'ack', reason: 'terminal_failure' }],
+		['d1_lock_contention', 1, retry('transient_failure', 10)],
+		['d1_lock_contention', 2, retry('transient_failure', 30)],
+		['d1_lock_contention', 3, retry('transient_failure', 90)],
+		['d1_lock_contention', exhausted, retry('retry_exhausted', 90)],
+	] as const
 	expect(
-		resolveScheduledLaneQueueAction({
-			outcome: 'd1_lock_contention',
-			attempts: 2,
-		}),
-	).toEqual({
-		action: 'retry',
-		reason: 'transient_failure',
-		delaySeconds: 30,
-	})
-	expect(
-		resolveScheduledLaneQueueAction({
-			outcome: 'd1_lock_contention',
-			attempts: 3,
-		}),
-	).toEqual({
-		action: 'retry',
-		reason: 'transient_failure',
-		delaySeconds: 90,
-	})
-	expect(
-		resolveScheduledLaneQueueAction({
-			outcome: 'd1_lock_contention',
-			attempts: scheduledDispatchMaxRetries + 1,
-		}),
-	).toEqual({
-		action: 'retry',
-		reason: 'retry_exhausted',
-		delaySeconds: 90,
-	})
+		cases.map(([outcome, attempts]) =>
+			resolveScheduledLaneQueueAction({ outcome, attempts }),
+		),
+	).toEqual(cases.map(([, , expected]) => expected))
 
 	const scheduledTime = Date.UTC(2026, 0, 1, 12, 0)
-	expect(
-		parseScheduledLaneMessage({
-			lane: 'retention',
-			scheduledTime,
-			cron: '*/5 * * * *',
-		}),
-	).toEqual({
-		lane: 'retention',
-		scheduledTime,
-		cron: '*/5 * * * *',
-	})
+	const message = { lane: 'retention', scheduledTime, cron: '*/5 * * * *' }
+	expect(parseScheduledLaneMessage(message)).toEqual(message)
 })

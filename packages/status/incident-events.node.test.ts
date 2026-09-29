@@ -6,73 +6,55 @@ import {
 } from './incident-events.ts'
 
 test('status incident notify skips unset config, rejects insecure origins, and POSTs opened/resolved payloads', async () => {
-	const opened = buildStatusIncidentOpenedPayload({
+	const incident = {
 		component: 'app_db',
 		detail: 'timeout',
 		startedAt: 1_755_400_000_000,
 		statusUrl: 'https://status.kody.codes',
-	})
+	} as const
+	const opened = buildStatusIncidentOpenedPayload(incident)
 	const resolved = buildStatusIncidentResolvedPayload({
-		component: 'app_db',
-		detail: 'timeout',
-		startedAt: 1_755_400_000_000,
+		...incident,
 		resolvedAt: 1_755_400_120_000,
-		statusUrl: 'https://status.kody.codes',
 	})
-
-	expect(
-		await notifyStatusIncidentEvent({
-			primaryOrigin: 'https://kody.codes',
-			secret: '  ',
-			payload: opened,
-			fetchImpl: async () => {
-				throw new Error('fetch should not run')
-			},
-		}),
-	).toEqual({ ok: true, skipped: 'unset' })
-	expect(
-		await notifyStatusIncidentEvent({
-			primaryOrigin: '',
-			secret: 'shared-secret',
-			payload: opened,
-			fetchImpl: async () => {
-				throw new Error('fetch should not run')
-			},
-		}),
-	).toEqual({ ok: true, skipped: 'unset' })
-	expect(
-		await notifyStatusIncidentEvent({
-			primaryOrigin: 'http://kody.codes',
-			secret: 'shared-secret',
-			payload: opened,
-			fetchImpl: async () => {
-				throw new Error('fetch should not run')
-			},
-		}),
-	).toEqual({ ok: false, error: 'insecure-origin' })
 
 	const calls: Array<{ url: string; init: RequestInit }> = []
-	expect(
-		await notifyStatusIncidentEvent({
-			primaryOrigin: 'https://kody.codes',
-			secret: 'shared-secret',
-			payload: opened,
+	const notify = (
+		primaryOrigin: string,
+		secret: string,
+		payload: typeof opened | typeof resolved = opened,
+		response = () => new Response(null, { status: 200 }),
+	) =>
+		notifyStatusIncidentEvent({
+			primaryOrigin,
+			secret,
+			payload,
 			fetchImpl: async (input, init) => {
 				calls.push({ url: String(input), init: init ?? {} })
-				return new Response(null, { status: 200 })
+				return response()
 			},
-		}),
-	).toEqual({ ok: true, status: 200 })
+		})
+
+	expect(await notify('https://kody.codes', '  ')).toEqual({
+		ok: true,
+		skipped: 'unset',
+	})
+	expect(await notify('', 'shared-secret')).toEqual({
+		ok: true,
+		skipped: 'unset',
+	})
+	expect(await notify('http://kody.codes', 'shared-secret')).toEqual({
+		ok: false,
+		error: 'insecure-origin',
+	})
+	expect(calls).toEqual([])
+
+	expect(await notify('https://kody.codes', 'shared-secret')).toEqual({
+		ok: true,
+		status: 200,
+	})
 	expect(
-		await notifyStatusIncidentEvent({
-			primaryOrigin: 'https://kody.codes/',
-			secret: 'shared-secret',
-			payload: resolved,
-			fetchImpl: async (input, init) => {
-				calls.push({ url: String(input), init: init ?? {} })
-				return new Response(null, { status: 200 })
-			},
-		}),
+		await notify('https://kody.codes/', 'shared-secret', resolved),
 	).toEqual({ ok: true, status: 200 })
 	expect(calls).toHaveLength(2)
 	expect(calls[0]?.url).toBe(
@@ -93,11 +75,11 @@ test('status incident notify skips unset config, rejects insecure origins, and P
 	)
 
 	expect(
-		await notifyStatusIncidentEvent({
-			primaryOrigin: 'https://kody.codes',
-			secret: 'shared-secret',
-			payload: opened,
-			fetchImpl: async () => new Response('nope', { status: 503 }),
-		}),
+		await notify(
+			'https://kody.codes',
+			'shared-secret',
+			opened,
+			() => new Response('nope', { status: 503 }),
+		),
 	).toEqual({ ok: false, error: 'http-503' })
 })

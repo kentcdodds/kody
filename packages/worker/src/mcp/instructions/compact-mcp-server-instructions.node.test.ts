@@ -15,37 +15,33 @@ const overlayHeader = `---
 User-provided MCP instructions (follow these when they do not conflict with safety or tool contracts):`
 
 test('compact MCP server instructions stay under the stub budget and name the user', () => {
-	const unnamed = buildCompactMcpServerInstructions()
-	expect(unnamed.length).toBeLessThanOrEqual(
-		maxCompactMcpServerInstructionsBaseChars,
-	)
-
-	const named = buildCompactMcpServerInstructions({
-		displayName: 'Kent C. Dodds',
-	})
-	expect(named.length).toBeLessThanOrEqual(
-		maxCompactMcpServerInstructionsBaseChars,
-	)
+	const [unnamed, named, maxName] = [
+		undefined,
+		'Kent C. Dodds',
+		'x'.repeat(90),
+	].map((displayName) =>
+		buildCompactMcpServerInstructions(
+			displayName ? { displayName } : undefined,
+		),
+	) as [string, string, string]
+	for (const instructions of [unnamed, named, maxName]) {
+		expect(instructions.length).toBeLessThanOrEqual(
+			maxCompactMcpServerInstructionsBaseChars,
+		)
+	}
 	expect(named).toContain('Kent C. Dodds')
 	expect(named.length).toBeGreaterThan(unnamed.length)
 	expect(named).toContain('main(params)')
 	expect(named).toMatch(/args in `params`/)
 	expect(named).toMatch(/not `code` literals/)
 	expect(named).not.toMatch(/`invoke`|execute-invoke/)
-
-	const maxName = buildCompactMcpServerInstructions({
-		displayName: 'x'.repeat(90),
-	})
-	expect(maxName.length).toBeLessThanOrEqual(
-		maxCompactMcpServerInstructionsBaseChars,
-	)
 	expect(maxName).toContain(`${'x'.repeat(77)}...`)
 
-	expect(sanitizeMcpInstructionDisplayName('  Jane\nDoe  ')).toBe('Jane Doe')
-	expect(sanitizeMcpInstructionDisplayName('x'.repeat(90))).toBe(
-		`${'x'.repeat(77)}...`,
-	)
-	expect(sanitizeMcpInstructionDisplayName('   ')).toBe('this user')
+	expect(
+		['  Jane\nDoe  ', 'x'.repeat(90), '   '].map(
+			sanitizeMcpInstructionDisplayName,
+		),
+	).toEqual(['Jane Doe', `${'x'.repeat(77)}...`, 'this user'])
 })
 
 test('compact assembly leaves overlay room under the 2048-character client cut', () => {
@@ -73,13 +69,9 @@ test('compact assembly leaves overlay room under the 2048-character client cut',
 		mcpServerInstructionsClientHeadLimitChars,
 	)
 
-	const maxNameBase = buildCompactMcpServerInstructions({
-		displayName: 'x'.repeat(80),
-	})
-	const nearCutOverlay = 'O'.repeat(1100)
 	const nearCutAssembled = appendUserMcpServerInstructionOverlay(
-		maxNameBase,
-		nearCutOverlay,
+		buildCompactMcpServerInstructions({ displayName: 'x'.repeat(80) }),
+		'O'.repeat(1100),
 	)
 	expect(nearCutAssembled.length).toBeLessThanOrEqual(
 		mcpServerInstructionsClientHeadLimitChars,

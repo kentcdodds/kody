@@ -47,27 +47,23 @@ invariants:
 })
 
 test('classifyPaths longest-prefix match respects directory and prefix roots', () => {
-	expect(
-		pathMatchesRoot(
+	const roots = [
+		[
 			'packages/worker/src/app/handlers/auth.ts',
 			'packages/worker/src/app/',
-		),
-	).toBe(true)
-	expect(
-		pathMatchesRoot('packages/worker/src/apple.ts', 'packages/worker/src/app/'),
-	).toBe(false)
-	expect(
-		pathMatchesRoot(
+			true,
+		],
+		['packages/worker/src/apple.ts', 'packages/worker/src/app/', false],
+		[
 			'packages/worker/src/app/oauth-providers.ts',
 			'packages/worker/src/app/oauth-',
-		),
-	).toBe(true)
-	expect(
-		pathMatchesRoot(
-			'packages/worker/src/mcp-auth.ts',
-			'packages/worker/src/mcp/',
-		),
-	).toBe(false)
+			true,
+		],
+		['packages/worker/src/mcp-auth.ts', 'packages/worker/src/mcp/', false],
+	] as const
+	expect(roots.map(([path, root]) => pathMatchesRoot(path, root))).toEqual(
+		roots.map(([, , matches]) => matches),
+	)
 
 	const map = parsePrimitivesMap(`
 version: 1
@@ -103,12 +99,9 @@ primitives:
 		'mcp-server',
 		'saved-packages',
 	])
-	const packages = matched.find(
-		(entry) => entry.primitive.id === 'saved-packages',
-	)
-	expect(packages?.files).toEqual([
-		'packages/worker/src/mcp/capabilities/packages/save.ts',
-	])
+	expect(
+		matched.find((entry) => entry.primitive.id === 'saved-packages')?.files,
+	).toEqual(['packages/worker/src/mcp/capabilities/packages/save.ts'])
 })
 
 test('committed primitives map passes path checks', () => {

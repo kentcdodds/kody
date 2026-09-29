@@ -8,52 +8,27 @@ test('sendAlertEmail defaults Reply-To to support@ when From is kody@ unless ove
 		return Response.json({ success: true })
 	}
 
-	await sendAlertEmail(
-		{
-			accountId: 'account-123',
-			apiToken: 'token-123',
-			apiBaseUrl: 'https://api.cloudflare.test',
-			fetcher,
-		},
+	const messages = [
+		{ from: 'kody@kody.codes', subject: 'Incident', text: 'App is down' },
 		{
 			from: 'kody@kody.codes',
-			to: 'ops@example.com',
-			subject: 'Incident',
-			text: 'App is down',
-			html: '<p>App is down</p>',
-		},
-	)
-	await sendAlertEmail(
-		{
-			accountId: 'account-123',
-			apiToken: 'token-123',
-			apiBaseUrl: 'https://api.cloudflare.test',
-			fetcher,
-		},
-		{
-			from: 'kody@kody.codes',
-			to: 'ops@example.com',
 			subject: 'Override',
 			text: 'Still down',
-			html: '<p>Still down</p>',
 			replyTo: 'security@kody.codes',
 		},
-	)
-	await sendAlertEmail(
-		{
-			accountId: 'account-123',
-			apiToken: 'token-123',
-			apiBaseUrl: 'https://api.cloudflare.test',
-			fetcher,
-		},
-		{
-			from: 'status@example.com',
-			to: 'ops@example.com',
-			subject: 'Other sender',
-			text: 'Ok',
-			html: '<p>Ok</p>',
-		},
-	)
+		{ from: 'status@example.com', subject: 'Other sender', text: 'Ok' },
+	]
+	for (const message of messages) {
+		await sendAlertEmail(
+			{
+				accountId: 'account-123',
+				apiToken: 'token-123',
+				apiBaseUrl: 'https://api.cloudflare.test',
+				fetcher,
+			},
+			{ ...message, to: 'ops@example.com', html: `<p>${message.text}</p>` },
+		)
+	}
 
 	expect(payloads).toEqual([
 		{
@@ -80,8 +55,6 @@ test('sendAlertEmail defaults Reply-To to support@ when From is kody@ unless ove
 			html: '<p>Ok</p>',
 		},
 	])
-	expect(payloads[0]).not.toHaveProperty('replyTo')
-	expect(payloads[1]).not.toHaveProperty('replyTo')
-	expect(payloads[2]).not.toHaveProperty('replyTo')
+	for (const payload of payloads) expect(payload).not.toHaveProperty('replyTo')
 	expect(payloads[2]).not.toHaveProperty('reply_to')
 })

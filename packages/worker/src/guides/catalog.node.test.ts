@@ -50,26 +50,27 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 		expect(guide.id.startsWith('provider_')).toBe(true)
 	}
 
-	expect(getGuideById('locked_gmail_drafts')).toMatchObject({
-		image: '/images/kody-gmail-drafts-lock.webp',
-		ogImage: '/images/kody-gmail-drafts-lock-og.jpg',
-	})
-
-	expect(getGuideById('package_apps')).toMatchObject({
-		slug: 'package-apps',
-		title: 'Package apps',
-	})
-
-	expect(getGuideById('text_your_agent')).toMatchObject({
-		slug: 'text-your-agent',
-		title: 'Text your agent',
-		category: 'platform',
-	})
-
-	expect(getGuideById('openmuse')).toMatchObject({
-		slug: 'openmuse',
-		category: 'platform',
-	})
+	for (const [id, expected] of [
+		[
+			'locked_gmail_drafts',
+			{
+				image: '/images/kody-gmail-drafts-lock.webp',
+				ogImage: '/images/kody-gmail-drafts-lock-og.jpg',
+			},
+		],
+		['package_apps', { slug: 'package-apps', title: 'Package apps' }],
+		[
+			'text_your_agent',
+			{
+				slug: 'text-your-agent',
+				title: 'Text your agent',
+				category: 'platform',
+			},
+		],
+		['openmuse', { slug: 'openmuse', category: 'platform' }],
+	] as const) {
+		expect(getGuideById(id)).toMatchObject(expected)
+	}
 
 	const exampleSlugs = docsNav
 		.find((section) => section.id === 'examples')
@@ -82,22 +83,17 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 		})
 	}
 
-	expect(getGuideById('values')?.unadvertised).toBe(true)
-	expect(listGuides().some((guide) => guide.id === 'values')).toBe(false)
-	expect(getGuideById('package_invocation_token_setup')?.unadvertised).toBe(
-		true,
-	)
-	expect(
-		listGuides().some((guide) => guide.id === 'package_invocation_token_setup'),
-	).toBe(false)
+	const listedIds = (options?: { includeAdmin: boolean }) =>
+		listGuides(options).map((guide) => guide.id)
+	for (const id of ['values', 'package_invocation_token_setup']) {
+		expect(getGuideById(id)?.unadvertised).toBe(true)
+		expect(listedIds()).not.toContain(id)
+	}
 	expect(getGuideById('admin_events')?.adminOnly).toBe(true)
-	expect(listGuides().some((guide) => guide.id === 'admin_events')).toBe(false)
-	expect(
-		listGuides({ includeAdmin: true }).some(
-			(guide) => guide.id === 'admin_events',
-		),
-	).toBe(true)
+	expect(listedIds()).not.toContain('admin_events')
+	expect(listedIds({ includeAdmin: true })).toContain('admin_events')
 	expect(getGuideBySlug('connect')).toBeNull()
+	expect(getGuideBySlug('llms.txt')).toBeNull()
 
 	// Web ordering follows the docs nav: provider docs sit together in one
 	// section, sorted by provider name.
@@ -119,8 +115,6 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 		listPlatformGuides().every((guide) => guide.category === 'platform'),
 	).toBe(true)
 	expect(listProviderGuides().map((guide) => guide.provider)).toEqual(providers)
-
-	expect(getGuideBySlug('llms.txt')).toBeNull()
 })
 
 test('docs nav covers every advertised doc exactly once and nothing else', () => {

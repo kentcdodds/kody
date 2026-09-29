@@ -38,31 +38,31 @@ test('public route hardening rejects retired connector paths, unknown paths, and
 			)`,
 	).run()
 
+	const jsonPost = (body: unknown) => ({
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body),
+	})
 	const retiredConnectorRequests = [
 		createRequest('/@connector-user/connectors/home/snapshot'),
 		createRequest('/@connector-user/connectors/home/rpc/tools-list', {
 			method: 'POST',
 		}),
-		createRequest('/@connector-user/connectors/home/rpc/tools-call', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ name: 'test', arguments: {} }),
-		}),
-		createRequest('/@connector-user/connectors/home/rpc/jsonrpc', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				message: { jsonrpc: '2.0', method: 'ping', id: 1 },
-			}),
-		}),
+		createRequest(
+			'/@connector-user/connectors/home/rpc/tools-call',
+			jsonPost({ name: 'test', arguments: {} }),
+		),
+		createRequest(
+			'/@connector-user/connectors/home/rpc/jsonrpc',
+			jsonPost({ message: { jsonrpc: '2.0', method: 'ping', id: 1 } }),
+		),
 		createRequest('/@connector-user/connectors/home', {
 			headers: { Upgrade: 'websocket' },
 		}),
 		createRequest('/connectors/home'),
 	]
 	for (const request of retiredConnectorRequests) {
-		const response = await workerFetch(request)
-		expect(response.status).toBe(404)
+		expect((await workerFetch(request)).status).toBe(404)
 	}
 
 	// Two segments is the public package URL `/@owner/kody-id`, even when the id
@@ -80,80 +80,69 @@ test('public route hardening rejects retired connector paths, unknown paths, and
 	// Real maintenance routes from index.ts share handleSecretMaintenanceRequest:
 	// non-POST → 405 (proves registration vs unknown JSON 404); unauthenticated
 	// POST → 401 when the secret is set, otherwise 503 not-configured.
-	const registeredMaintenanceRoutes = [
-		{
-			path: '/__maintenance/reindex-capabilities',
-			secret: env.CAPABILITY_REINDEX_SECRET,
-			notConfiguredMessage: 'Capability reindex is not configured',
-		},
-		{
-			path: '/__maintenance/execute-smoke',
-			secret: env.CAPABILITY_REINDEX_SECRET,
-			notConfiguredMessage: 'Origin-only execute smoke check is not configured',
-		},
-		{
-			path: '/__maintenance/reindex-memories',
-			secret: env.CAPABILITY_REINDEX_SECRET,
-			notConfiguredMessage: 'Memory reindex is not configured',
-		},
-		{
-			path: '/__maintenance/reindex-jobs',
-			secret: env.JOB_REINDEX_SECRET,
-			notConfiguredMessage: 'Job reindex is not configured',
-		},
-		{
-			path: '/__maintenance/dr-restore',
-			secret: env.DR_RESTORE_SECRET,
-			notConfiguredMessage: 'DR restore is not configured',
-		},
-		{
-			path: '/__maintenance/dr-export',
-			secret: env.DR_RESTORE_SECRET,
-			notConfiguredMessage: 'DR export maintenance is not configured',
-		},
-		{
-			path: '/__maintenance/do-pitr',
-			secret: env.DR_RESTORE_SECRET,
-			notConfiguredMessage: 'Durable Object PITR is not configured',
-			nonProductionForbidden: true,
-		},
-		{
-			path: '/__maintenance/dr-mailbox-import',
-			secret: env.DR_RESTORE_SECRET,
-			notConfiguredMessage: 'Mailbox import is not configured',
-		},
-		{
-			path: '/__maintenance/status-incidents',
-			secret: env.STATUS_INCIDENT_EVENT_SECRET,
-			notConfiguredMessage: 'Status incident events are not configured',
-		},
-		{
-			path: '/__maintenance/mcp-execute-health',
-			secret: env.STATUS_INCIDENT_EVENT_SECRET,
-			notConfiguredMessage: 'MCP execute health probe is not configured',
-		},
-	] as const
+	const registeredMaintenanceRoutes: Array<
+		[path: string, secret: string | undefined, notConfigured: string | null]
+	> = [
+		[
+			'reindex-capabilities',
+			env.CAPABILITY_REINDEX_SECRET,
+			'Capability reindex is not configured',
+		],
+		[
+			'execute-smoke',
+			env.CAPABILITY_REINDEX_SECRET,
+			'Origin-only execute smoke check is not configured',
+		],
+		[
+			'reindex-memories',
+			env.CAPABILITY_REINDEX_SECRET,
+			'Memory reindex is not configured',
+		],
+		['reindex-jobs', env.JOB_REINDEX_SECRET, 'Job reindex is not configured'],
+		['dr-restore', env.DR_RESTORE_SECRET, 'DR restore is not configured'],
+		[
+			'dr-export',
+			env.DR_RESTORE_SECRET,
+			'DR export maintenance is not configured',
+		],
+		// null: non-production is forbidden before the secret is consulted.
+		['do-pitr', env.DR_RESTORE_SECRET, null],
+		[
+			'dr-mailbox-import',
+			env.DR_RESTORE_SECRET,
+			'Mailbox import is not configured',
+		],
+		[
+			'status-incidents',
+			env.STATUS_INCIDENT_EVENT_SECRET,
+			'Status incident events are not configured',
+		],
+		[
+			'mcp-execute-health',
+			env.STATUS_INCIDENT_EVENT_SECRET,
+			'MCP execute health probe is not configured',
+		],
+	]
 
-	for (const route of registeredMaintenanceRoutes) {
-		const methodResponse = await workerFetch(createRequest(route.path))
+	for (const [name, secret, notConfigured] of registeredMaintenanceRoutes) {
+		const path = `/__maintenance/${name}`
+		const methodResponse = await workerFetch(createRequest(path))
 		expect(methodResponse.status).toBe(405)
 		await expect(methodResponse.text()).resolves.toBe('Method Not Allowed')
 
-		const unauthorizedResponse = await workerFetch(
-			createRequest(route.path, { method: 'POST' }),
+		const unauthorized = await workerFetch(
+			createRequest(path, { method: 'POST' }),
 		)
-		if ('nonProductionForbidden' in route && route.nonProductionForbidden) {
-			expect(unauthorizedResponse.status).toBe(403)
-			await expect(unauthorizedResponse.text()).resolves.toBe('Forbidden')
-		} else if (route.secret?.trim()) {
-			expect(unauthorizedResponse.status).toBe(401)
-			await expect(unauthorizedResponse.text()).resolves.toBe('Unauthorized')
-		} else {
-			expect(unauthorizedResponse.status).toBe(503)
-			await expect(unauthorizedResponse.text()).resolves.toBe(
-				route.notConfiguredMessage,
-			)
-		}
+		const [status, body] =
+			notConfigured === null
+				? [403, 'Forbidden']
+				: secret?.trim()
+					? [401, 'Unauthorized']
+					: [503, notConfigured]
+		expect([unauthorized.status, await unauthorized.text()]).toEqual([
+			status,
+			body,
+		])
 	}
 
 	const unknownMaintenanceResponse = await workerFetch(
@@ -166,19 +155,19 @@ test('public route hardening rejects retired connector paths, unknown paths, and
 
 	let rateLimited = false
 	for (let i = 0; i < 25; i++) {
-		const request = createRequest('/auth', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				'CF-Connecting-IP': '198.51.100.42',
-			},
-			body: JSON.stringify({
-				email: 'attacker@example.com',
-				password: 'password123',
-				mode: 'login',
+		const response = await workerFetch(
+			createRequest('/auth', {
+				...jsonPost({
+					email: 'attacker@example.com',
+					password: 'password123',
+					mode: 'login',
+				}),
+				headers: {
+					'Content-Type': 'application/json',
+					'CF-Connecting-IP': '198.51.100.42',
+				},
 			}),
-		})
-		const response = await workerFetch(request)
+		)
 		if (response.status === 429) {
 			rateLimited = true
 			expect(response.headers.get('Retry-After')).toBeTruthy()

@@ -47,37 +47,34 @@ test('status incident maintenance route authenticates, validates, and fans out i
 		APP_BASE_URL: 'https://heykody.dev',
 	} as Env
 
-	const methodResponse = await handleStatusIncidentEventRequest(
-		createRequest({ method: 'GET' }),
-		env,
-		ctx,
+	const rejected: Array<[Request, Env, number]> = [
+		[createRequest({ method: 'GET' }), env, 405],
+		[
+			createRequest({ secret: 'shared-secret', body: opened }),
+			{ ...env, STATUS_INCIDENT_EVENT_SECRET: undefined },
+			503,
+		],
+		[createRequest({ secret: 'wrong', body: opened }), env, 401],
+		[
+			createRequest({ secret: 'shared-secret', body: { event: 'nope' } }),
+			env,
+			400,
+		],
+	]
+	const responses = await Promise.all(
+		rejected.map(([request, requestEnv]) =>
+			handleStatusIncidentEventRequest(request, requestEnv, ctx),
+		),
 	)
-	expect(methodResponse.status).toBe(405)
-
-	const unconfiguredResponse = await handleStatusIncidentEventRequest(
-		createRequest({ secret: 'shared-secret', body: opened }),
-		{ ...env, STATUS_INCIDENT_EVENT_SECRET: undefined },
-		ctx,
+	expect(responses.map((response) => response.status)).toEqual(
+		rejected.map(([, , status]) => status),
 	)
-	expect(unconfiguredResponse.status).toBe(503)
-
-	const unauthorizedResponse = await handleStatusIncidentEventRequest(
-		createRequest({ secret: 'wrong', body: opened }),
-		env,
-		ctx,
-	)
-	expect(unauthorizedResponse.status).toBe(401)
-
-	const invalidResponse = await handleStatusIncidentEventRequest(
-		createRequest({ secret: 'shared-secret', body: { event: 'nope' } }),
-		env,
-		ctx,
-	)
-	expect(invalidResponse.status).toBe(400)
-	await expect(invalidResponse.json()).resolves.toEqual({
+	await expect(responses.at(-1)!.json()).resolves.toEqual({
 		ok: false,
 		error: 'invalid-event',
 	})
+	expect(pending).toEqual([])
+	expect(mocks.dispatchStatusIncidentSubscriptionEvent).not.toHaveBeenCalled()
 
 	mocks.dispatchStatusIncidentSubscriptionEvent.mockResolvedValue([])
 	const accepted = await handleStatusIncidentEventRequest(

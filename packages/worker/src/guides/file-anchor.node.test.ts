@@ -22,6 +22,13 @@ Document the export.
 Elsewhere.
 `
 
+const read = (fragment: string, path = 'src/file.ts') =>
+	readAnchoredText({
+		path,
+		content: path === 'README.md' ? readme : source,
+		fragment,
+	})
+
 test('file anchors focus line ranges and markdown headings', () => {
 	expect(splitFileAnchor('src/file.ts')).toEqual({
 		path: 'src/file.ts',
@@ -34,11 +41,7 @@ test('file anchors focus line ranges and markdown headings', () => {
 	expect(() => splitFileAnchor('README.md#')).toThrow(FileAnchorError)
 	expect(() => splitFileAnchor('#L165')).toThrow(/File path before/)
 
-	const line = readAnchoredText({
-		path: 'src/file.ts',
-		content: source,
-		fragment: 'L165',
-	})
+	const line = read('L165')
 	expect(line.anchor).toMatchObject({
 		kind: 'lines',
 		requested: 'L165',
@@ -49,18 +52,13 @@ test('file anchors focus line ranges and markdown headings', () => {
 		totalLines: 200,
 		heading: null,
 	})
-	expect(line.content).toContain('165|line 165')
-	expect(line.content).toContain('145|line 145')
-	expect(line.content).toContain('185|line 185')
-	expect(line.content).not.toContain('144|line 144')
-	expect(line.content).not.toContain('186|line 186')
+	for (const n of [145, 165, 185])
+		expect(line.content).toContain(`${n}|line ${n}`)
+	for (const n of [144, 186])
+		expect(line.content).not.toContain(`${n}|line ${n}`)
 	expect(line.content).not.toBe(source)
 
-	const range = readAnchoredText({
-		path: 'src/file.ts',
-		content: source,
-		fragment: 'L165-L180',
-	})
+	const range = read('L165-L180')
 	expect(range.anchor).toMatchObject({
 		kind: 'lines',
 		requestedStartLine: 165,
@@ -68,16 +66,11 @@ test('file anchors focus line ranges and markdown headings', () => {
 		startLine: 165,
 		endLine: 180,
 	})
-	expect(range.content).toContain('165|line 165')
-	expect(range.content).toContain('180|line 180')
-	expect(range.content).not.toContain('164|line 164')
-	expect(range.content).not.toContain('181|line 181')
+	for (const n of [165, 180]) expect(range.content).toContain(`${n}|line ${n}`)
+	for (const n of [164, 181])
+		expect(range.content).not.toContain(`${n}|line ${n}`)
 
-	const heading = readAnchoredText({
-		path: 'README.md',
-		content: readme,
-		fragment: 'export-jsdoc',
-	})
+	const heading = read('export-jsdoc', 'README.md')
 	expect(heading.anchor).toMatchObject({
 		kind: 'heading',
 		heading: { slug: 'export-jsdoc', title: 'Export JSDoc' },
@@ -87,39 +80,18 @@ test('file anchors focus line ranges and markdown headings', () => {
 	expect(heading.content).not.toContain('Elsewhere.')
 	expect(heading.content).not.toContain('Intro.')
 
-	expect(() =>
-		readAnchoredText({
-			path: 'README.md',
-			content: readme,
-			fragment: 'missing-heading',
-		}),
-	).toThrow(/Unknown heading "missing-heading" for README.md/)
-	expect(() =>
-		readAnchoredText({
-			path: 'src/file.ts',
-			content: source,
-			fragment: 'L999',
-		}),
-	).toThrow(/Line 999 is past the end of src\/file\.ts#L999 \(200 lines\)/)
-	expect(() =>
-		readAnchoredText({
-			path: 'src/file.ts',
-			content: source,
-			fragment: 'L180-L165',
-		}),
-	).toThrow(/must start at or before the end line/)
-	expect(() =>
-		readAnchoredText({
-			path: 'src/file.ts',
-			content: source,
-			fragment: 'L0',
-		}),
-	).toThrow(/Line numbers start at 1/)
-	expect(() =>
-		readAnchoredText({
-			path: 'src/file.ts',
-			content: source,
-			fragment: 'export-jsdoc',
-		}),
-	).toThrow(/Heading anchor "export-jsdoc" is not supported on src\/file\.ts/)
+	for (const [fragment, error] of [
+		['L999', /Line 999 is past the end of src\/file\.ts#L999 \(200 lines\)/],
+		['L180-L165', /must start at or before the end line/],
+		['L0', /Line numbers start at 1/],
+		[
+			'export-jsdoc',
+			/Heading anchor "export-jsdoc" is not supported on src\/file\.ts/,
+		],
+	] as const) {
+		expect(() => read(fragment)).toThrow(error)
+	}
+	expect(() => read('missing-heading', 'README.md')).toThrow(
+		/Unknown heading "missing-heading" for README.md/,
+	)
 })

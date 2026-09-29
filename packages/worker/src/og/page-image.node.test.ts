@@ -21,86 +21,61 @@ function expectPngBytes(png: Uint8Array) {
 	}
 }
 
+const render = (
+	options: Partial<Parameters<typeof renderPageOgImage>[0]> = {},
+) => renderPageOgImage({ page: publicOgPages.home, ...options })
+const samePng = (a: Uint8Array, b: Uint8Array) =>
+	Buffer.from(a).equals(Buffer.from(b))
+
 test('renderPageOgImage returns valid PNG bytes for home and community', async () => {
 	expect.hasAssertions()
-	const home = await renderPageOgImage({ page: publicOgPages.home })
-	expectPngBytes(home)
-
-	const community = await renderPageOgImage({ page: publicOgPages.community })
-	expectPngBytes(community)
-
-	const blog = await renderPageOgImage({ page: publicOgPages.blog })
-	expectPngBytes(blog)
-
-	const discord = await renderPageOgImage({ page: publicOgPages.discord })
-	expectPngBytes(discord)
-
-	// Same copy as home, Discord path only — so a miss on hero/halo selection
-	// cannot hide behind the different title and subtitle.
-	const homeWithDiscordHero = await renderPageOgImage({
-		page: { ...publicOgPages.home, path: '/discord' },
-	})
-	expectPngBytes(homeWithDiscordHero)
-	expect(Buffer.from(home).equals(Buffer.from(homeWithDiscordHero))).toBe(false)
+	const pngs = await Promise.all([
+		render(),
+		render({ page: publicOgPages.community }),
+		render({ page: publicOgPages.blog }),
+		render({ page: publicOgPages.discord }),
+		// Same copy as home, Discord path only — so a miss on hero/halo selection
+		// cannot hide behind the different title and subtitle.
+		render({ page: { ...publicOgPages.home, path: '/discord' } }),
+	])
+	for (const png of pngs) expectPngBytes(png)
+	expect(samePng(pngs[0]!, pngs.at(-1)!)).toBe(false)
 })
 
 test('renderPageOgImage renders each theme differently', async () => {
-	const light = await renderPageOgImage({
-		page: publicOgPages.home,
-		theme: 'light',
-	})
-	const dark = await renderPageOgImage({
-		page: publicOgPages.home,
-		theme: 'dark',
-	})
+	const light = await render({ theme: 'light' })
+	const dark = await render({ theme: 'dark' })
 	expectPngBytes(light)
 	expectPngBytes(dark)
 
 	// Valid PNG bytes alone would pass even if `theme` were ignored entirely,
 	// which is the regression worth catching: the palette, the pattern tint, and
 	// the halo all switch on it, so the two encodings cannot coincide.
-	expect(Buffer.from(light).equals(Buffer.from(dark))).toBe(false)
+	expect(samePng(light, dark)).toBe(false)
 })
 
 test('homepage og query values render different cards and unknown stays default', async () => {
-	const fallback = await renderPageOgImage({ page: publicOgPages.home })
-	const unknown = await renderPageOgImage({
-		page: publicOgPages.home,
-		homeOg: 'nope',
-	})
-	const triggers = await renderPageOgImage({
-		page: publicOgPages.home,
-		homeOg: 'triggers',
-	})
-	const memory = await renderPageOgImage({
-		page: publicOgPages.home,
-		homeOg: 'memory',
-	})
-	const pricingWithQuery = await renderPageOgImage({
+	const [fallback, unknown, triggers, memory, switchCard, cursorClaude] =
+		await Promise.all(
+			[undefined, 'nope', 'triggers', 'memory', 'switch', 'cursor-claude'].map(
+				(homeOg) => render({ homeOg }),
+			),
+		)
+	const pricingWithQuery = await render({
 		page: publicOgPages.pricing,
 		homeOg: 'triggers',
 	})
-	const pricing = await renderPageOgImage({ page: publicOgPages.pricing })
+	const pricing = await render({ page: publicOgPages.pricing })
 
-	expectPngBytes(triggers)
-	expectPngBytes(memory)
-	expect(Buffer.from(unknown).equals(Buffer.from(fallback))).toBe(true)
-	expect(Buffer.from(triggers).equals(Buffer.from(fallback))).toBe(false)
-	expect(Buffer.from(triggers).equals(Buffer.from(memory))).toBe(false)
-
-	const switchCard = await renderPageOgImage({
-		page: publicOgPages.home,
-		homeOg: 'switch',
-	})
-	const cursorClaude = await renderPageOgImage({
-		page: publicOgPages.home,
-		homeOg: 'cursor-claude',
-	})
-	expectPngBytes(switchCard)
-	expectPngBytes(cursorClaude)
-	expect(Buffer.from(switchCard).equals(Buffer.from(cursorClaude))).toBe(false)
-	expect(Buffer.from(switchCard).equals(Buffer.from(fallback))).toBe(false)
-	expect(Buffer.from(pricingWithQuery).equals(Buffer.from(pricing))).toBe(true)
+	for (const png of [triggers!, memory!, switchCard!, cursorClaude!]) {
+		expectPngBytes(png)
+	}
+	expect(samePng(unknown!, fallback!)).toBe(true)
+	expect(samePng(triggers!, fallback!)).toBe(false)
+	expect(samePng(triggers!, memory!)).toBe(false)
+	expect(samePng(switchCard!, cursorClaude!)).toBe(false)
+	expect(samePng(switchCard!, fallback!)).toBe(false)
+	expect(samePng(pricingWithQuery, pricing)).toBe(true)
 })
 
 test('homepage H1 emphasis is an accent run and plain titles stay a string', () => {
@@ -111,43 +86,31 @@ test('homepage H1 emphasis is an accent run and plain titles stay a string', () 
 		accent,
 	})
 	expect(title.lineCount).toBe(2)
+	const row = (children: unknown[]) => ({
+		type: 'div',
+		props: {
+			style: { display: 'flex', flexDirection: 'row', flexWrap: 'nowrap' },
+			children,
+		},
+	})
 	expect(title.children).toEqual([
-		{
-			type: 'div',
-			props: {
-				style: {
-					display: 'flex',
-					flexDirection: 'row',
-					flexWrap: 'nowrap',
-				},
-				children: [
-					{ type: 'span', props: { children: 'Don\u2019t\u00A0' } },
-					{
-						type: 'span',
-						props: { style: { color: accent }, children: 'start over' },
-					},
-				],
+		row([
+			{ type: 'span', props: { children: 'Don\u2019t\u00A0' } },
+			{
+				type: 'span',
+				props: { style: { color: accent }, children: 'start over' },
 			},
-		},
-		{
-			type: 'div',
-			props: {
-				style: {
-					display: 'flex',
-					flexDirection: 'row',
-					flexWrap: 'nowrap',
-				},
-				children: [{ type: 'span', props: { children: 'with every agent' } }],
-			},
-		},
+		]),
+		row([{ type: 'span', props: { children: 'with every agent' } }]),
 	])
 
-	const plain = ogTitleChildren({
-		text: 'Public packages',
-		maxLength: TITLE_MAX_LENGTH,
-		accent,
-	})
-	expect(plain).toEqual({ lineCount: 1, children: 'Public packages' })
+	expect(
+		ogTitleChildren({
+			text: 'Public packages',
+			maxLength: TITLE_MAX_LENGTH,
+			accent,
+		}),
+	).toEqual({ lineCount: 1, children: 'Public packages' })
 })
 
 function collectTitleText(node: unknown): string {
@@ -178,39 +141,21 @@ function emphasisStyles(node: unknown): Array<unknown> {
 
 test('emphasized H1 runs keep a space at the colour boundary and fit the title budget', () => {
 	const accent = getOgPalette('dark').primaryText
-	expect(
-		collectTitleText(
-			ogTitleChildren({
-				text: 'Don\u2019t **start over**',
-				maxLength: TITLE_MAX_LENGTH,
-				accent,
-			}).children,
-		),
-	).toBe('Don\u2019t\u00A0start over')
-	expect(
-		collectTitleText(
-			ogTitleChildren({
-				text: '**Switch** agents. **Keep** the work.',
-				maxLength: TITLE_MAX_LENGTH,
-				accent,
-			}).children,
-		),
-	).toBe('Switch\u00A0agents.\u00A0Keep\u00A0the work.')
-	expect(
-		collectTitleText(
-			ogTitleChildren({
-				text: '**Switch **agents',
-				maxLength: TITLE_MAX_LENGTH,
-				accent,
-			}).children,
-		),
-	).toBe('Switch\u00A0agents')
+	const titleChildren = (text: string) =>
+		ogTitleChildren({ text, maxLength: TITLE_MAX_LENGTH, accent }).children
+	const cases = [
+		['Don\u2019t **start over**', 'Don\u2019t\u00A0start over'],
+		[
+			'**Switch** agents. **Keep** the work.',
+			'Switch\u00A0agents.\u00A0Keep\u00A0the work.',
+		],
+		['**Switch **agents', 'Switch\u00A0agents'],
+	]
+	expect(cases.map(([text]) => collectTitleText(titleChildren(text!)))).toEqual(
+		cases.map(([, expected]) => expected),
+	)
 	for (const style of emphasisStyles(
-		ogTitleChildren({
-			text: 'Don\u2019t **start over**',
-			maxLength: TITLE_MAX_LENGTH,
-			accent,
-		}).children,
+		titleChildren('Don\u2019t **start over**'),
 	)) {
 		expect(style).toEqual({ color: accent })
 	}

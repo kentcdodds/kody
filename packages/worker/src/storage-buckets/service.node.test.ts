@@ -91,10 +91,11 @@ function createCountingDb(input?: { failRun?: boolean }) {
 }
 
 test('storage bucket registration soft-fails, dedupes, and lists by user', async () => {
-	expect(storageBucketKindFromStorageId('job:abc')).toBe('job')
-	expect(storageBucketKindFromStorageId('exec:abc')).toBe('execute')
-	expect(storageBucketKindFromStorageId('package:abc')).toBe('package')
-	expect(storageBucketKindFromStorageId('adhoc-bucket')).toBe('unknown')
+	expect(
+		['job:abc', 'exec:abc', 'package:abc', 'adhoc-bucket'].map(
+			storageBucketKindFromStorageId,
+		),
+	).toEqual(['job', 'execute', 'package', 'unknown'])
 
 	consoleWarn.mockImplementation(() => {})
 	clearStorageBucketRegistrationDedupeForTests()
@@ -126,27 +127,13 @@ test('storage bucket registration soft-fails, dedupes, and lists by user', async
 	const waitUntil = (promise: Promise<unknown>) => {
 		pending.push(promise)
 	}
-	for (let index = 0; index < 5; index += 1) {
-		registerStorageBucket({
-			env: counting.env,
-			userId: 'user-a',
-			storageId: 'exec:same',
-			kind: 'execute',
-			waitUntil,
-		})
+	for (const [userId, storageId] of [
+		...Array.from({ length: 5 }, () => ['user-a', 'exec:same']),
+		['user-a', 'bucket-a'],
+		['user-b', 'bucket-b'],
+	]) {
+		registerStorageBucket({ env: counting.env, userId, storageId, waitUntil })
 	}
-	registerStorageBucket({
-		env: counting.env,
-		userId: 'user-a',
-		storageId: 'bucket-a',
-		waitUntil,
-	})
-	registerStorageBucket({
-		env: counting.env,
-		userId: 'user-b',
-		storageId: 'bucket-b',
-		waitUntil,
-	})
 	await Promise.all(pending)
 
 	expect(counting.insertCount).toBe(3)
@@ -223,84 +210,40 @@ test('index-backed storage-bucket reconcile pages owners with a persisted cursor
 		}),
 	})
 
-	const first = await registerMissingRepoSessionStorageBuckets({
-		db,
-		env: indexEnv,
-		limit: 2,
-		now,
+	const reconcile = async () => ({
+		inserted: await registerMissingRepoSessionStorageBuckets({
+			db,
+			env: indexEnv,
+			limit: 2,
+			now,
+		}),
+		cursor: await readRepoSessionStorageBucketCursor(db),
 	})
-	expect(first).toBe(2)
+	const registered = async () =>
+		Promise.all(
+			users.map(async (userId) =>
+				(
+					await listUserStorageBucketEstimates({
+						env: { APP_DB: db } as Env,
+						userId,
+					})
+				).map((row) => ({ userId, ...row })),
+			),
+		).then((rows) => rows.flat())
+	const activeRow = (userId: string) => ({
+		userId,
+		storageId: repoSessionStorageBucketId(`${userId}-active`),
+		kind: 'repo_session',
+		estimatedBytes: null,
+	})
+
 	// Insert limit filled on user-b, so the cursor stays on the last fully
 	// processed owner and the next tick retries user-b instead of skipping
-	// any remaining sessions.
-	expect(await readRepoSessionStorageBucketCursor(db)).toBe('user-a')
-	await expect(
-		listUserStorageBucketEstimates({
-			env: { APP_DB: db } as Env,
-			userId: 'user-a',
-		}),
-	).resolves.toEqual([
-		{
-			storageId: repoSessionStorageBucketId('user-a-active'),
-			kind: 'repo_session',
-			estimatedBytes: null,
-		},
-	])
-	await expect(
-		listUserStorageBucketEstimates({
-			env: { APP_DB: db } as Env,
-			userId: 'user-b',
-		}),
-	).resolves.toEqual([
-		{
-			storageId: repoSessionStorageBucketId('user-b-active'),
-			kind: 'repo_session',
-			estimatedBytes: null,
-		},
-	])
-	await expect(
-		listUserStorageBucketEstimates({
-			env: { APP_DB: db } as Env,
-			userId: 'user-c',
-		}),
-	).resolves.toEqual([])
-
-	const second = await registerMissingRepoSessionStorageBuckets({
-		db,
-		env: indexEnv,
-		limit: 2,
-		now,
-	})
-	expect(second).toBe(1)
-	expect(await readRepoSessionStorageBucketCursor(db)).toBe('user-c')
-	await expect(
-		listUserStorageBucketEstimates({
-			env: { APP_DB: db } as Env,
-			userId: 'user-c',
-		}),
-	).resolves.toEqual([
-		{
-			storageId: repoSessionStorageBucketId('user-c-active'),
-			kind: 'repo_session',
-			estimatedBytes: null,
-		},
-	])
-
-	const wrapped = await registerMissingRepoSessionStorageBuckets({
-		db,
-		env: indexEnv,
-		limit: 2,
-		now,
-	})
-	expect(wrapped).toBe(0)
-	expect(await readRepoSessionStorageBucketCursor(db)).toBe('')
-
-	const steady = await registerMissingRepoSessionStorageBuckets({
-		db,
-		env: indexEnv,
-		limit: 2,
-		now,
-	})
-	expect(steady).toBe(0)
-	expect(await readRepoSessionStorageBucketCursor(db)).toBe('user-b')
+	// any remaining sessions. Discarded sessions are never registered.
+	expect(await reconcile()).toEqual({ inserted: 2, cursor: 'user-a' })
+	expect(await registered()).toEqual([activeRow('user-a'), activeRow('user-b')])
+	expect(await reconcile()).toEqual({ inserted: 1, cursor: 'user-c' })
+	expect(await registered()).toEqual(users.map(activeRow))
+	expect(await reconcile()).toEqual({ inserted: 0, cursor: '' })
+	expect(await reconcile()).toEqual({ inserted: 0, cursor: 'user-b' })
 })
