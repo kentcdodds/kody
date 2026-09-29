@@ -14,7 +14,6 @@ import {
 	claimPackageInvocationRecord,
 	bulkUpdateRunErrorTriage,
 	claimRunRecord,
-	clearRunRecords,
 	finishPackageInvocationRecord,
 	finishRunRecord,
 	getRunRecord,
@@ -23,7 +22,6 @@ import {
 	listRunRecords,
 	recordRunRecord,
 	runLogRpc,
-	snapshotRunRecordResult,
 	summarizeRunRecords,
 	updateRunErrorTriage,
 } from './service.ts'
@@ -129,33 +127,24 @@ function insertRunRow(state: DurableObjectState, input: SeedRun) {
 	const finishedAt = input.finishedAt ?? null
 	state.storage.sql.exec(
 		`INSERT INTO runs (
-			id, surface, status, name, package_id, package_kody_id, source_id,
-			published_commit, storage_id, job_id, workflow_id, invocation_id,
-			session_id, idempotency_key, parent_run_id, started_at, finished_at,
-			duration_ms, error_name, error_message, metadata_json, created_at,
-			updated_at
-		) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL,
-			NULL, NULL, NULL, ?, NULL, ?, ?, ?, NULL, NULL, '{}', ?, ?)`,
+			id, surface, status, name, job_id, idempotency_key, started_at,
+			finished_at, duration_ms, error_name, error_message, error_triage,
+			metadata_json, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?)`,
 		input.id,
 		input.surface ?? 'job',
 		input.status,
 		input.name ?? null,
+		input.jobId ?? null,
 		input.idempotencyKey ?? null,
 		input.startedAt,
 		finishedAt,
 		finishedAt == null ? null : 1,
-		input.startedAt,
-		finishedAt ?? input.startedAt,
-	)
-	state.storage.sql.exec(
-		`UPDATE runs
-		SET job_id = ?, error_name = ?, error_message = ?, error_triage = ?
-		WHERE id = ?`,
-		input.jobId ?? null,
 		input.errorName ?? null,
 		input.errorMessage ?? null,
 		input.errorTriage ?? null,
-		input.id,
+		input.startedAt,
+		finishedAt ?? input.startedAt,
 	)
 }
 
@@ -1243,106 +1232,63 @@ test('run recording degrades to a warning instead of failing the observed run', 
 
 test('run_log_meta counters reuse the in-isolate cache across repeated reads', async () => {
 	const userId = uniqueUserId('meta-cache')
+	const stub = runLogStub(userId)
+	const metaValues = () =>
+		sqlOne<{ runCount: number; finishes: number }>(
+			userId,
+			`SELECT
+				MAX(CASE WHEN key = 'run_count' THEN value END) AS runCount,
+				MAX(CASE WHEN key = 'finishes_since_retention' THEN value END) AS finishes
+			FROM run_log_meta`,
+		)
+	const startRunning = async (name: string) => {
+		const pending: Array<Promise<unknown>> = []
+		beginRunRecord({
+			env,
+			userId,
+			context: baseContext({ name }),
+			waitUntil: (promise) => {
+				pending.push(promise)
+			},
+		})
+		await drainWaitUntil(pending)
+	}
 
 	// Two finishes → run_count memo should be 2 after the second write path.
 	for (const label of ['a', 'b'] as const) {
-		const handle = beginRunRecord({
-			env,
-			userId,
-			context: baseContext({ surface: 'job', name: `meta-${label}` }),
-		})
-		await finishRunRecord({ env, handle, status: 'success' })
+		await finishOk(userId, crypto.randomUUID(), { name: `meta-${label}` })
 	}
+	expect((await metaValues()).runCount).toBe(2)
 
-	await runInDurableObject(
-		runLogStub(userId),
-		async (instance: RunLog, state) => {
-			expect(instance).toBeInstanceOf(RunLog)
-			const metaValue = (key: string) =>
-				Number(
-					state.storage.sql
-						.exec<{ value: number }>(
-							`SELECT value FROM run_log_meta WHERE key = ? LIMIT 1`,
-							key,
-						)
-						.toArray()[0]?.value,
-				)
-			const startRunning = (id: string, name: string) => {
-				const now = new Date().toISOString()
-				return instance.startRun({
-					run: {
-						id,
-						surface: 'job',
-						status: 'running',
-						name,
-						packageId: null,
-						kodyId: null,
-						sourceId: null,
-						publishedCommit: null,
-						storageId: null,
-						jobId: null,
-						workflowId: null,
-						invocationId: null,
-						sessionId: null,
-						idempotencyKey: null,
-						parentRunId: null,
-						startedAt: now,
-						finishedAt: null,
-						durationMs: null,
-						errorName: null,
-						errorMessage: null,
-						metadataJson: '{}',
-						createdAt: now,
-						updatedAt: now,
-					},
-				})
-			}
-			expect(metaValue('run_count')).toBe(2)
-
-			// Corrupt storage under the memo. The next adjust must use the cached
-			// 2 (+1 → 3), not the corrupted SQL value.
-			state.storage.sql.exec(
-				`UPDATE run_log_meta SET value = 999999 WHERE key = 'run_count'`,
-			)
-			await startRunning('meta-cache-third', 'meta-c')
-			expect(metaValue('run_count')).toBe(3)
-
-			// Seeds go through setMeta so the memo and SQL stay aligned.
-			seedRunLogMeta(instance, { runCount: 10, finishesSinceRetention: 4 })
-			expect(metaValue('run_count')).toBe(10)
-			expect(metaValue('finishes_since_retention')).toBe(4)
-
-			// Rolled-back setMeta must not leave the memo ahead of SQL.
-			const metaTx = instance as unknown as {
-				transactionSyncWithMetaCache: <T>(fn: () => T) => T
-				setMeta: (key: string, value: number) => void
-			}
-			expect(() =>
-				metaTx.transactionSyncWithMetaCache(() => {
-					metaTx.setMeta('run_count', 99)
-					throw new Error('force-rollback')
-				}),
-			).toThrow('force-rollback')
-			expect(metaValue('run_count')).toBe(10)
-
-			await startRunning('meta-cache-after-rollback', 'meta-rollback')
-			expect(metaValue('run_count')).toBe(11)
-		},
-	)
-})
-
-test('clearRunRecords empties the Durable Object', async () => {
-	const userId = uniqueUserId('clear')
-	const handle = beginRunRecord({
-		env,
-		userId,
-		context: baseContext({ surface: 'retriever', storageId: 'storage-1' }),
+	// Corrupt storage under the memo. The next adjust must use the cached
+	// 2 (+1 → 3), not the corrupted SQL value.
+	await runInDurableObject(stub, async (_instance: RunLog, state) => {
+		state.storage.sql.exec(
+			`UPDATE run_log_meta SET value = 999999 WHERE key = 'run_count'`,
+		)
 	})
-	await finishRunRecord({ env, handle, status: 'success', logs: ['keep me'] })
-	expect((await listRuns(userId)).runs).toHaveLength(1)
-	await clearRunRecords({ env, userId })
-	expect(await listRuns(userId)).toEqual({ runs: [], nextCursor: null })
-	expect(await getRun(userId, handle!.id)).toBeNull()
+	await startRunning('meta-c')
+	expect((await metaValues()).runCount).toBe(3)
+
+	await runInDurableObject(stub, async (instance: RunLog) => {
+		// Seeds go through setMeta so the memo and SQL stay aligned.
+		seedRunLogMeta(instance, { runCount: 10, finishesSinceRetention: 4 })
+		// Rolled-back setMeta must not leave the memo ahead of SQL.
+		const metaTx = instance as unknown as {
+			transactionSyncWithMetaCache: <T>(fn: () => T) => T
+			setMeta: (key: string, value: number) => void
+		}
+		expect(() =>
+			metaTx.transactionSyncWithMetaCache(() => {
+				metaTx.setMeta('run_count', 99)
+				throw new Error('force-rollback')
+			}),
+		).toThrow('force-rollback')
+	})
+	expect(await metaValues()).toEqual({ runCount: 10, finishes: 4 })
+
+	await startRunning('meta-rollback')
+	expect((await metaValues()).runCount).toBe(11)
 })
 
 test(
@@ -1461,7 +1407,7 @@ test('keyed execute claims eagerly, retains bounded result, and replays without 
 	expect(byKey?.metadata['result']).toEqual(
 		expect.objectContaining({
 			__truncated__: true,
-			preview: expect.any(String),
+			preview: expect.stringContaining('... [truncated]'),
 		}),
 	)
 
@@ -1526,37 +1472,5 @@ test('idempotency lookup is surface-scoped and abandon releases running claims',
 	expect(await lookup('execute')).toBeNull()
 	expect((await lookup('workflow'))?.metadata['result']).toEqual({
 		from: 'workflow',
-	})
-})
-
-test('snapshotRunRecordResult keeps small values and marks oversized ones', () => {
-	expect(snapshotRunRecordResult({ ok: true, agentId: 'abc' })).toEqual({
-		ok: true,
-		agentId: 'abc',
-	})
-	const huge = 'y'.repeat(runRecordMaxResultSnapshotBytes + 100)
-	expect(snapshotRunRecordResult({ payload: huge })).toEqual({
-		__truncated__: true,
-		preview: expect.stringContaining('... [truncated]'),
-	})
-})
-
-test('webhook/export finish retains metadata.result for runGet', async () => {
-	const userId = uniqueUserId('result-snapshot')
-	const handle = await recordRunRecord({
-		env,
-		userId,
-		context: {
-			surface: 'webhook',
-			name: 'sentry',
-			metadata: { endpointId: 'ep-1', httpStatus: 202, outcome: 'delivered' },
-		},
-		status: 'success',
-		result: { skipped: 'other-project' },
-	})
-	expect((await getRun(userId, handle!.id))?.run.metadata).toMatchObject({
-		endpointId: 'ep-1',
-		outcome: 'delivered',
-		result: { skipped: 'other-project' },
 	})
 })

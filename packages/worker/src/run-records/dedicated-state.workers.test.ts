@@ -1,8 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
-import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { RunLog } from './run-log-do.ts'
 import { seedRunLogMeta } from './run-log-meta-test-seed.ts'
 import {
@@ -74,14 +72,6 @@ function uniqueUserId(label: string) {
 
 function runLogStub(userId: string) {
 	return env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
-}
-
-function silenceExpectedConsoleWarns(substrings: Array<string>) {
-	silenceIncidentalRuntimeWarnings()
-	consoleWarn.mockImplementation((...args: Array<unknown>) => {
-		const message = String(args[0] ?? '')
-		if (substrings.some((part) => message.includes(part))) return
-	})
 }
 
 function workflow(
@@ -539,7 +529,6 @@ test('job run observability upserts terminal outcomes and supports batch reads',
 })
 
 test('finishRun updates job observability for success/error and ignores replay', async () => {
-	silenceExpectedConsoleWarns(['activation-run-record-failed'])
 	const userId = uniqueUserId('jobs-finish')
 	const context: RunRecordContext = {
 		surface: 'job',
@@ -627,7 +616,6 @@ test('finishRun updates job observability for success/error and ignores replay',
 })
 
 test('activation counts same-package successes, excludes HTTP surfaces, and is idempotent on replay', async () => {
-	silenceExpectedConsoleWarns(['activation-run-record-failed'])
 	const userId = uniqueUserId('activation')
 
 	async function finishSuccess(
@@ -717,9 +705,7 @@ test('activation counts same-package successes, excludes HTTP surfaces, and is i
 })
 
 test('retention prunes runs but never dedicated workflow/job/activation state', async () => {
-	silenceExpectedConsoleWarns(['activation-run-record-failed'])
 	const userId = uniqueUserId('retention')
-	const stub = runLogStub(userId)
 
 	// Recent terminal projection (within the 90-day workflow lane) plus job /
 	// activation counters: run age/excess prune must not remove them.
@@ -743,25 +729,43 @@ test('retention prunes runs but never dedicated workflow/job/activation state', 
 		},
 	})
 
+	// One retention pass runs both lanes: after the 5 aged rows are age-pruned,
+	// the fresh rows still exceed the cap, so excess prune runs too.
 	const agedStartedAt = new Date(Date.now() - 40 * dayMs).toISOString()
-	await runInDurableObject(stub, async (instance: RunLog, state) => {
-		expect(instance).toBeInstanceOf(RunLog)
-		for (let i = 0; i < 5; i += 1) {
-			insertAgedRun(state, { id: `aged-${i}`, startedAt: agedStartedAt })
-		}
-		seedRunLogMeta(instance, { runCount: 5 })
-	})
-	await armRetentionOnNextFinish(userId, 5)
+	const freshStartedAt = new Date().toISOString()
+	const excessCount = runRecordMaxRunsPerUser + 10
+	await runInDurableObject(
+		runLogStub(userId),
+		async (instance: RunLog, state) => {
+			expect(instance).toBeInstanceOf(RunLog)
+			for (let i = 0; i < 5; i += 1) {
+				insertAgedRun(state, { id: `aged-${i}`, startedAt: agedStartedAt })
+			}
+			for (let i = 0; i < excessCount; i += 1) {
+				insertAgedRun(state, {
+					id: `excess-${String(i).padStart(4, '0')}`,
+					startedAt: freshStartedAt,
+				})
+			}
+		},
+	)
+	await armRetentionOnNextFinish(userId, 5 + excessCount)
 	await finishBegunRun(userId, {
 		surface: 'job',
 		name: 'trigger-retention',
 		packageId: 'pkg-keep',
 	})
 
-	const remainingRuns = await listRunRecords({ env, userId, limit: 100 })
-	expect(remainingRuns.runs.every((run) => !run.id.startsWith('aged-'))).toBe(
-		true,
-	)
+	const countRuns = (where: string) =>
+		runInDurableObject(
+			runLogStub(userId),
+			async (_instance: RunLog, state) =>
+				state.storage.sql
+					.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM runs WHERE ${where}`)
+					.one().n,
+		)
+	expect(await countRuns(`id LIKE 'aged-%'`)).toBe(0)
+	expect(await countRuns('1 = 1')).toBe(runRecordMaxRunsPerUser)
 	expect(
 		await getWorkflowProjection({ env, userId, id: 'wf-keep' }),
 	).toMatchObject({ id: 'wf-keep', bindingName: dynamicBinding })
@@ -773,36 +777,6 @@ test('retention prunes runs but never dedicated workflow/job/activation state', 
 	])
 	expect(await listActivationMilestones({ env, userId })).toEqual([
 		expect.objectContaining({ milestone: 'package_run_succeeded' }),
-	])
-
-	// Excess-count prune also leaves dedicated state alone.
-	await runInDurableObject(stub, async (instance: RunLog, state) => {
-		const now = new Date().toISOString()
-		for (let i = 0; i < runRecordMaxRunsPerUser + 10; i += 1) {
-			insertAgedRun(state, {
-				id: `excess-${String(i).padStart(4, '0')}`,
-				startedAt: now,
-			})
-		}
-		seedRunLogMeta(instance, {
-			runCount: runRecordMaxRunsPerUser + 10,
-			finishesSinceRetention: runRecordRetentionEveryNFinishes - 1,
-		})
-	})
-	await finishBegunRun(
-		userId,
-		{ surface: 'job', name: 'excess-trigger', packageId: 'pkg-keep' },
-		'error',
-	)
-
-	expect(
-		await getWorkflowProjection({ env, userId, id: 'wf-keep' }),
-	).not.toBeNull()
-	expect(
-		await getJobRunObservability({ env, userId, jobId: 'job-keep' }),
-	).not.toBeNull()
-	expect(await listPackageRunSuccesses({ env, userId })).toEqual([
-		expect.objectContaining({ packageId: 'pkg-keep' }),
 	])
 })
 
@@ -818,7 +792,6 @@ const emptyExport = {
 }
 
 test('export pages dedicated state after runs and ledger; clearAll purges and reinitializes it', async () => {
-	silenceExpectedConsoleWarns(['activation-run-record-failed'])
 	const userId = uniqueUserId('export')
 
 	for (const name of ['export-run', 'export-run-2']) {
@@ -921,7 +894,6 @@ test('export pages dedicated state after runs and ledger; clearAll purges and re
 })
 
 test('export cursors always make progress across phase handoffs and empty tails', async () => {
-	silenceExpectedConsoleWarns(['activation-run-record-failed'])
 	const userId = uniqueUserId('export-progress')
 
 	// Exactly pageSize runs so the first page hands off with remaining=0.
@@ -1210,7 +1182,6 @@ test('warm schema v10 objects backfill denormalized log_count on upgrade to v11'
 })
 
 test('getAdminInsightsSnapshot returns content-free workflow, job, and activation aggregates', async () => {
-	silenceExpectedConsoleWarns(['activation-run-record-failed'])
 	const userId = uniqueUserId('admin-insights')
 	const reachedAt = '2026-08-01T12:00:00.000Z'
 	const at = { runAt: reachedAt, createdAt: reachedAt, updatedAt: reachedAt }

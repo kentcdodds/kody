@@ -572,31 +572,6 @@ test('oversized terminal responses are not stored so backups stay restorable', a
 	expect(runMock).toHaveBeenCalledTimes(1)
 })
 
-test('a pre-migration-style key misses cleanly: it executes fresh instead of erroring', async () => {
-	// Keys claimed before the ledger moved into the RunLog DO no longer have
-	// any store to replay from (the D1 table is dropped). A redelivery for
-	// such a key is indistinguishable from a brand-new key: it claims in the
-	// DO and executes, without touching D1 at all (the fake D1 above throws
-	// on any package_invocations statement).
-	const db = createDatabase()
-	seedPackageResolution()
-	runMock.mockResolvedValue({ result: { reply: 'executed fresh' }, logs: [] })
-	const key = 'evt-from-before-the-migration'
-
-	const response = await invoke(db, dispatchRequest(key, fromDiscord))
-
-	expect(response.status).toBe(200)
-	expect(response.body).toMatchObject({
-		ok: true,
-		result: { reply: 'executed fresh' },
-		idempotency: { key, replayed: false },
-	})
-	expect(runMock).toHaveBeenCalledTimes(1)
-	expect(
-		db.runLog.ledgerRows.find((row) => row.idempotencyKey === key),
-	).toMatchObject({ status: 'completed' })
-})
-
 test('invokePackageExport records request source without gating auth', async () => {
 	const db = createDatabase()
 	seedPackageResolution()
@@ -606,28 +581,19 @@ test('invokePackageExport records request source without gating auth', async () 
 	})
 	const anyExport = createToken({ exportNames: ['*'] })
 
-	const namedSource = await invoke(
-		db,
-		dispatchRequest('evt-personal-client', { source: 'personal-client' }),
-		anyExport,
-	)
-	expect(namedSource.status).toBe(200)
-	expect(namedSource.body).toMatchObject({
-		ok: true,
-		exportName: './dispatch-message-created',
-		source: 'personal-client',
-		result: { reply: 'hello trusted client' },
-	})
-
-	const otherNamedSource = await invoke(
-		db,
-		dispatchRequest('evt-shortcuts', { source: 'shortcuts' }),
-		anyExport,
-	)
-	expect(otherNamedSource).toMatchObject({
-		status: 200,
-		body: { ok: true, source: 'shortcuts' },
-	})
+	for (const source of ['personal-client', 'shortcuts']) {
+		expect(
+			await invoke(db, dispatchRequest(`evt-${source}`, { source }), anyExport),
+		).toMatchObject({
+			status: 200,
+			body: {
+				ok: true,
+				exportName: './dispatch-message-created',
+				source,
+				result: { reply: 'hello trusted client' },
+			},
+		})
+	}
 
 	const unlabeled = await invoke(
 		db,

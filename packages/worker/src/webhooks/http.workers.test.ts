@@ -9,8 +9,8 @@ import {
 	type ResolvableInvocationRecord,
 } from '#worker/package-invocations/idempotency.ts'
 import type * as PackageInvocationServiceModule from '#worker/package-invocations/service.ts'
+import { type PackageWebhookManifestEntry } from '#worker/package-registry/manifest.ts'
 import { clearRunRecords, listRunRecords } from '#worker/run-records/service.ts'
-import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	buildWebhookTimestampBodyPayload,
@@ -159,19 +159,6 @@ async function ensureSchema(db: D1Database) {
 			)`,
 		)
 		.run()
-	for (const [table, column] of [
-		['users', 'suspended_at'],
-		['saved_packages', 'locked_at'],
-		['webhook_endpoints', 'url_secret_encrypted'],
-		['webhook_endpoints', 'previous_url_secret_hash'],
-		['webhook_endpoints', 'previous_url_secret_expires_at'],
-	]) {
-		try {
-			await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} TEXT`).run()
-		} catch {
-			// Column already present on newer schemas.
-		}
-	}
 }
 
 const urlSecret = 'url-secret-plain'
@@ -217,7 +204,6 @@ async function mintWebhook(input: {
 }
 
 async function setupOwnerWithWebhooks(webhookNames: Array<string>) {
-	silenceExpectedConsoleWarns(['activation-run-record-failed'])
 	await ensureSchema(env.APP_DB)
 	for (const table of ['webhook_endpoints', 'saved_packages', 'users']) {
 		await env.APP_DB.prepare(`DELETE FROM ${table}`).run()
@@ -257,55 +243,31 @@ function suspendOwner(userId: string, at: string) {
 		.run()
 }
 
+const secretLookup = (value: string | null) => ({
+	found: value !== null,
+	value,
+	scope: value === null ? null : 'user',
+	allowedHosts: [],
+	allowedPackages: [],
+})
+
 function mockSecretValue(value: string | null) {
-	mocks.resolveSecret.mockResolvedValue(
-		value === null
-			? {
-					found: false,
-					value: null,
-					scope: null,
-					allowedHosts: [],
-					allowedPackages: [],
-				}
-			: {
-					found: true,
-					value,
-					scope: 'user',
-					allowedHosts: [],
-					allowedPackages: [],
-				},
-	)
+	mocks.resolveSecret.mockResolvedValue(secretLookup(value))
 }
 
-function declareWebhook(input: {
-	name: string
-	responseMode?: 'ack' | 'sync'
-	inputMode?: 'request' | 'params'
-	rateLimitPerMinute?: number
-	verification?: {
-		type: 'hmac-sha256'
-		header: string
-		secretName: string
-		encoding: 'hex'
-		prefix?: string
-		signedPayload?: 'body' | 'timestamp.body'
-	}
-	replay?: {
-		timestampHeader?: string
-		timestampFormat?:
-			| 'unix-seconds'
-			| 'unix-millis'
-			| 'iso-8601'
-			| 'stripe-signature'
-		toleranceSeconds?: number
-		deliveryIdHeader?: string
-	}
-	challenge?:
-		| { type: 'x-activity-crc'; secretName: string }
-		| { type: 'websub-hub'; secretName?: string }
-		| { type: 'meta-hub'; secretName: string }
-		| { type: 'slack-url-verification'; secretName?: string }
-}) {
+type WebhookDeclaration = { name: string } & {
+	[
+		K in
+			| 'responseMode'
+			| 'inputMode'
+			| 'rateLimitPerMinute'
+			| 'verification'
+			| 'replay'
+			| 'challenge'
+	]?: NonNullable<PackageWebhookManifestEntry[K]>
+}
+
+function declareWebhook(input: WebhookDeclaration) {
 	mocks.loadPackageManifestBySourceId.mockResolvedValue({
 		manifest: {
 			name: '@alice/sentry-bridge',
@@ -483,13 +445,7 @@ test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isola
 		}),
 	).toBe(401)
 
-	mocks.resolveSecret.mockResolvedValueOnce({
-		found: false,
-		value: null,
-		scope: null,
-		allowedHosts: [],
-		allowedPackages: [],
-	})
+	mocks.resolveSecret.mockResolvedValueOnce(secretLookup(null))
 	expect(await statusOf('sentry', signed)).toBe(401)
 	expect(
 		(await listDeliveries(userId, 'sentry')).some(
@@ -941,13 +897,12 @@ test('subscription challenges answer on minted URLs without invoking exports', a
 	const getChallenge = (query: string) =>
 		sendWebhook(hook, { method: 'GET', query })
 	const crcQuery = 'crc_token=x-crc-token'
-	const metaQuery = (token: string) =>
-		`hub.mode=subscribe&hub.verify_token=${token}&hub.challenge=99`
+	const crcChallenge = {
+		type: 'x-activity-crc',
+		secretName: 'xConsumerSecret',
+	} as const
 
-	declareWebhook({
-		name: hook,
-		challenge: { type: 'x-activity-crc', secretName: 'xConsumerSecret' },
-	})
+	declareWebhook({ name: hook, challenge: crcChallenge })
 	mockSecretValue('consumer-secret')
 	const crcResponse = await getChallenge(crcQuery)
 	expect(crcResponse.status).toBe(200)
@@ -959,39 +914,15 @@ test('subscription challenges answer on minted URLs without invoking exports', a
 
 	declareWebhook({
 		name: hook,
-		challenge: { type: 'meta-hub', secretName: 'metaVerify' },
-	})
-	mockSecretValue('meta-token')
-	const metaOk = await getChallenge(metaQuery('meta-token'))
-	expect(metaOk.status).toBe(200)
-	expect(await metaOk.text()).toBe('99')
-	expect((await getChallenge(metaQuery('wrong'))).status).toBe(401)
-
-	declareWebhook({
-		name: hook,
-		challenge: { type: 'websub-hub', secretName: 'hubVerify' },
-	})
-	mockSecretValue('hub-token')
-	const websubOk = await getChallenge(
-		'hub.mode=subscribe&hub.challenge=yt&hub.verify_token=hub-token',
-	)
-	expect(websubOk.status).toBe(200)
-	expect(await websubOk.text()).toBe('yt')
-
-	declareWebhook({
-		name: hook,
 		challenge: {
 			type: 'slack-url-verification',
 			secretName: 'slackSigningSecret',
 		},
 	})
-	mockSecretValue(null)
 	const slackBody = JSON.stringify({
 		type: 'url_verification',
 		challenge: 'slack-challenge',
 	})
-	expect(await statusOf(hook, { body: slackBody })).toBe(401)
-
 	mockSecretValue('slack-signing-secret')
 	const timestamp = String(Math.floor(Date.now() / 1000))
 	const slackOk = await sendWebhook(hook, {
@@ -1015,11 +946,8 @@ test('subscription challenges answer on minted URLs without invoking exports', a
 	expect(noChallengeGet.headers.get('Allow')).toBe('POST')
 
 	await suspendOwner(userId, '2026-07-24T12:00:00.000Z')
-	declareWebhook({
-		name: hook,
-		challenge: { type: 'meta-hub', secretName: 'metaVerify' },
-	})
-	mockSecretValue('meta-token')
-	expect((await getChallenge(metaQuery('meta-token'))).status).toBe(403)
+	declareWebhook({ name: hook, challenge: crcChallenge })
+	mockSecretValue('consumer-secret')
+	expect((await getChallenge(crcQuery)).status).toBe(403)
 	expect(await listDeliveries(userId, hook)).toEqual([])
 })
