@@ -17,50 +17,50 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('#worker/vectorize/embedding.ts', () => ({
-	embedTextsForVectorize: (...args: Array<unknown>) =>
-		mockModule.embedTextsForVectorize(...args),
-	getCapabilityVectorIndex: (...args: Array<unknown>) =>
-		mockModule.getCapabilityVectorIndex(...args),
-	isCapabilitySearchOffline: (...args: Array<unknown>) =>
-		mockModule.isCapabilitySearchOffline(...args),
+	embedTextsForVectorize: mockModule.embedTextsForVectorize,
+	getCapabilityVectorIndex: mockModule.getCapabilityVectorIndex,
+	isCapabilitySearchOffline: mockModule.isCapabilitySearchOffline,
 }))
 
 vi.mock('./embed.ts', () => ({
-	buildSavedPackageEmbedText: (...args: Array<unknown>) =>
-		mockModule.buildSavedPackageEmbedText(...args),
+	buildSavedPackageEmbedText: mockModule.buildSavedPackageEmbedText,
 }))
 
 vi.mock('./repo.ts', () => ({
-	listSavedPackagesPage: (...args: Array<unknown>) =>
-		mockModule.listSavedPackagesPage(...args),
+	listSavedPackagesPage: mockModule.listSavedPackagesPage,
 	savedPackageVectorId: (packageId: string) => `package_${packageId}`,
 }))
 
 vi.mock('./source.ts', () => ({
-	loadPackageManifestBySourceId: (...args: Array<unknown>) =>
-		mockModule.loadPackageManifestBySourceId(...args),
+	loadPackageManifestBySourceId: mockModule.loadPackageManifestBySourceId,
 }))
 
 vi.mock('./search-index-debt.ts', () => ({
-	clearSavedPackageSearchIndexDebt: (...args: Array<unknown>) =>
-		mockModule.clearSavedPackageSearchIndexDebt(...args),
-	getSavedPackageSearchIndexDebtGeneration: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageSearchIndexDebtGeneration(...args),
+	clearSavedPackageSearchIndexDebt: mockModule.clearSavedPackageSearchIndexDebt,
+	getSavedPackageSearchIndexDebtGeneration:
+		mockModule.getSavedPackageSearchIndexDebtGeneration,
 }))
 
 const { reindexSavedPackageVectors } = await import('./package-reindex.ts')
 
-function resetMocks() {
-	mockModule.buildSavedPackageEmbedText.mockReset()
-	mockModule.embedTextsForVectorize.mockReset()
-	mockModule.getCapabilityVectorIndex.mockReset()
-	mockModule.isCapabilitySearchOffline.mockReset()
-	mockModule.listSavedPackagesPage.mockReset()
-	mockModule.loadPackageManifestBySourceId.mockReset()
-	mockModule.clearSavedPackageSearchIndexDebt.mockReset()
+const baseUrl = 'https://kody.example.com'
+const longRunningExportError = () =>
+	new Error('D1_ERROR: Currently processing a long-running export.')
+
+function setupMocks() {
+	const upsert = vi.fn(async (_vectors: Array<{ id: string }>) => {})
+	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
+	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
+	mockModule.loadPackageManifestBySourceId.mockResolvedValue({
+		manifest: { name: '@user/pkg' },
+	})
+	mockModule.buildSavedPackageEmbedText.mockReturnValue('manifest embed')
+	mockModule.embedTextsForVectorize.mockImplementation(
+		async (_env: unknown, texts: Array<string>) => texts.map(() => [0.1]),
+	)
 	mockModule.clearSavedPackageSearchIndexDebt.mockResolvedValue(undefined)
-	mockModule.getSavedPackageSearchIndexDebtGeneration.mockReset()
 	mockModule.getSavedPackageSearchIndexDebtGeneration.mockResolvedValue(null)
+	return { upsert }
 }
 
 function buildSavedPackage(id: string) {
@@ -81,56 +81,60 @@ function buildSavedPackage(id: string) {
 	}
 }
 
-test('saved package reindex embeds full manifests with user-scoped metadata', async () => {
-	resetMocks()
-	const upsert = vi.fn()
-	const env = {
-		APP_DB: {},
-	} as Env
+function buildSavedPackages(count: number, padLength: number) {
+	return Array.from({ length: count }, (_, index) =>
+		buildSavedPackage(`pkg-${String(index).padStart(padLength, '0')}`),
+	)
+}
+
+function reindex(
+	options: { afterId?: string; deadlineMs?: number } = {},
+	env = { APP_DB: {} } as Env,
+) {
+	return reindexSavedPackageVectors(env, { baseUrl, ...options })
+}
+
+test('saved package reindex embeds full manifests with user-scoped metadata and skips failed loads', async () => {
+	consoleError.mockImplementation(() => {})
+	const { upsert } = setupMocks()
+	const env = { APP_DB: {} } as Env
 	const manifest = {
 		name: '@user/weather',
-		exports: {
-			'.': './index.ts',
-		},
-		kody: {
-			id: 'weather',
-			description: 'Weather package',
-		},
+		exports: { '.': './index.ts' },
+		kody: { id: 'weather', description: 'Weather package' },
 	}
-	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
-	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
 	mockModule.listSavedPackagesPage.mockResolvedValue([
-		{
-			id: 'pkg-1',
-			userId: 'user-1',
-			name: '@user/weather',
-			kodyId: 'weather',
-			description: 'Weather package',
-			tags: ['weather'],
-			searchText: null,
-			sourceId: 'source-1',
-			hasApp: false,
-			hidden: false,
-			isPrivate: false,
-			createdAt: '2026-01-01T00:00:00.000Z',
-			updatedAt: '2026-01-01T00:00:00.000Z',
-		},
+		buildSavedPackage('pkg-bad'),
+		buildSavedPackage('pkg-good'),
 	])
-	mockModule.loadPackageManifestBySourceId.mockResolvedValue({ manifest })
+	mockModule.loadPackageManifestBySourceId.mockImplementation(
+		async (input: { sourceId: string }) => {
+			if (input.sourceId === 'source-pkg-bad') {
+				throw new Error('manifest missing')
+			}
+			return { manifest }
+		},
+	)
 	mockModule.buildSavedPackageEmbedText.mockReturnValue('full manifest embed')
 	mockModule.embedTextsForVectorize.mockResolvedValue([[0.1, 0.2, 0.3]])
 
-	await expect(
-		reindexSavedPackageVectors(env, {
-			baseUrl: 'https://kody.example.com',
-		}),
-	).resolves.toEqual({ upserted: 1, complete: true, afterId: null })
+	await expect(reindex({}, env)).resolves.toEqual({
+		upserted: 1,
+		complete: true,
+		afterId: null,
+		failed: 1,
+		failures: [
+			{ id: 'package_pkg-bad', phase: 'load', error: 'manifest missing' },
+		],
+		failedIds: ['package_pkg-bad'],
+		warning: '1 saved package vector(s) failed to reindex',
+	})
 
-	expect(mockModule.loadPackageManifestBySourceId).toHaveBeenCalledWith({
+	expect(mockModule.loadPackageManifestBySourceId).toHaveBeenLastCalledWith({
 		env,
-		baseUrl: 'https://kody.example.com',
+		baseUrl,
 		userId: 'user-1',
-		sourceId: 'source-1',
+		sourceId: 'source-pkg-good',
 	})
 	expect(mockModule.buildSavedPackageEmbedText).toHaveBeenCalledWith(manifest)
 	expect(mockModule.embedTextsForVectorize).toHaveBeenCalledWith(env, [
@@ -138,165 +142,33 @@ test('saved package reindex embeds full manifests with user-scoped metadata', as
 	])
 	expect(upsert).toHaveBeenCalledWith([
 		{
-			id: 'package_pkg-1',
+			id: 'package_pkg-good',
 			values: [0.1, 0.2, 0.3],
 			namespace: 'user-1',
-			metadata: {
-				kind: 'package',
-				userId: 'user-1',
-			},
-		},
-	])
-})
-
-test('saved package reindex skips failed manifest loads and continues the batch', async () => {
-	resetMocks()
-	consoleError.mockImplementation(() => {})
-	const upsert = vi.fn()
-	const env = {
-		APP_DB: {},
-	} as Env
-	const manifest = {
-		name: '@user/tasks',
-		exports: {
-			'.': './index.ts',
-		},
-		kody: {
-			id: 'tasks',
-			description: 'Tasks package',
-		},
-	}
-	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
-	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
-	mockModule.listSavedPackagesPage.mockResolvedValue([
-		{
-			id: 'pkg-bad',
-			userId: 'user-1',
-			name: '@user/bad',
-			kodyId: 'bad',
-			description: 'Bad package',
-			tags: [],
-			searchText: null,
-			sourceId: 'source-bad',
-			hasApp: false,
-			hidden: false,
-			isPrivate: false,
-			createdAt: '2026-01-01T00:00:00.000Z',
-			updatedAt: '2026-01-01T00:00:00.000Z',
-		},
-		{
-			id: 'pkg-good',
-			userId: 'user-1',
-			name: '@user/tasks',
-			kodyId: 'tasks',
-			description: 'Tasks package',
-			tags: ['tasks'],
-			searchText: null,
-			sourceId: 'source-good',
-			hasApp: false,
-			hidden: false,
-			isPrivate: false,
-			createdAt: '2026-01-01T00:00:00.000Z',
-			updatedAt: '2026-01-01T00:00:00.000Z',
-		},
-	])
-	mockModule.loadPackageManifestBySourceId.mockImplementation(
-		async (input: { sourceId: string }) => {
-			if (input.sourceId === 'source-bad') {
-				throw new Error('manifest missing')
-			}
-			return { manifest }
-		},
-	)
-	mockModule.buildSavedPackageEmbedText.mockReturnValue('tasks manifest embed')
-	mockModule.embedTextsForVectorize.mockResolvedValue([[0.4, 0.5, 0.6]])
-
-	await expect(
-		reindexSavedPackageVectors(env, {
-			baseUrl: 'https://kody.example.com',
-		}),
-	).resolves.toEqual({
-		upserted: 1,
-		complete: true,
-		afterId: null,
-		failed: 1,
-		failures: [
-			{
-				id: 'package_pkg-bad',
-				phase: 'load',
-				error: 'manifest missing',
-			},
-		],
-		failedIds: ['package_pkg-bad'],
-		warning: '1 saved package vector(s) failed to reindex',
-	})
-
-	expect(mockModule.embedTextsForVectorize).toHaveBeenCalledWith(env, [
-		'tasks manifest embed',
-	])
-	expect(upsert).toHaveBeenCalledWith([
-		{
-			id: 'package_pkg-good',
-			values: [0.4, 0.5, 0.6],
-			namespace: 'user-1',
-			metadata: {
-				kind: 'package',
-				userId: 'user-1',
-			},
+			metadata: { kind: 'package', userId: 'user-1' },
 		},
 	])
 })
 
 test('saved package reindex keeps debt for failed vectors beyond the failure sample cap', async () => {
-	resetMocks()
 	consoleError.mockImplementation(() => {})
-	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert: vi.fn() })
-	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
-	mockModule.loadPackageManifestBySourceId.mockResolvedValue({
-		manifest: { name: '@user/pkg' },
-	})
-	mockModule.buildSavedPackageEmbedText.mockReturnValue('manifest embed')
+	setupMocks()
 	mockModule.embedTextsForVectorize.mockRejectedValue(new Error('ai down'))
-	const packages = Array.from({ length: 25 }, (_, index) =>
-		buildSavedPackage(`pkg-${String(index).padStart(2, '0')}`),
-	)
-	mockModule.listSavedPackagesPage.mockResolvedValue(packages)
+	mockModule.listSavedPackagesPage.mockResolvedValue(buildSavedPackages(25, 2))
 
-	await expect(
-		reindexSavedPackageVectors({ APP_DB: {} } as Env, {
-			baseUrl: 'https://kody.example.com',
-		}),
-	).resolves.toMatchObject({
-		upserted: 0,
-		failed: 25,
-	})
-
+	await expect(reindex()).resolves.toMatchObject({ upserted: 0, failed: 25 })
 	expect(mockModule.clearSavedPackageSearchIndexDebt).not.toHaveBeenCalled()
 })
 
 test('saved package reindex retries a transient D1 export error on page listing', async () => {
-	resetMocks()
-	const upsert = vi.fn()
-	const env = { APP_DB: {} } as Env
-	const pkg = buildSavedPackage('pkg-1')
-	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
-	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
-	mockModule.loadPackageManifestBySourceId.mockResolvedValue({
-		manifest: { name: pkg.name },
-	})
-	mockModule.buildSavedPackageEmbedText.mockReturnValue('manifest embed')
-	mockModule.embedTextsForVectorize.mockResolvedValue([[0.1]])
+	const { upsert } = setupMocks()
 	mockModule.listSavedPackagesPage
-		.mockRejectedValueOnce(
-			new Error('D1_ERROR: Currently processing a long-running export.'),
-		)
-		.mockResolvedValueOnce([pkg])
+		.mockRejectedValueOnce(longRunningExportError())
+		.mockResolvedValueOnce([buildSavedPackage('pkg-1')])
 
 	vi.useFakeTimers()
 	try {
-		const resultPromise = reindexSavedPackageVectors(env, {
-			baseUrl: 'https://kody.example.com',
-		})
+		const resultPromise = reindex()
 		await vi.advanceTimersByTimeAsync(d1LockRetryBaseDelayMs)
 		await expect(resultPromise).resolves.toEqual({
 			upserted: 1,
@@ -312,18 +184,12 @@ test('saved package reindex retries a transient D1 export error on page listing'
 })
 
 test('saved package reindex surfaces page listing failures after the retry budget', async () => {
-	resetMocks()
-	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert: vi.fn() })
-	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
-	mockModule.listSavedPackagesPage.mockRejectedValue(
-		new Error('D1_ERROR: Currently processing a long-running export.'),
-	)
+	setupMocks()
+	mockModule.listSavedPackagesPage.mockRejectedValue(longRunningExportError())
 
 	vi.useFakeTimers()
 	try {
-		const resultPromise = reindexSavedPackageVectors({ APP_DB: {} } as Env, {
-			baseUrl: 'https://kody.example.com',
-		})
+		const resultPromise = reindex()
 		// Attach before advancing timers so the rejection is not unhandled.
 		// oxlint-disable-next-line vitest/valid-expect
 		const expectation = expect(resultPromise).rejects.toThrow(
@@ -346,45 +212,26 @@ test('saved package reindex surfaces page listing failures after the retry budge
 })
 
 test('saved package reindex walks keyset pages and merges the page results', async () => {
-	resetMocks()
-	const upsert = vi.fn(async (_vectors: Array<{ id: string }>) => {})
-	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
-	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
-	mockModule.loadPackageManifestBySourceId.mockResolvedValue({
-		manifest: { name: '@user/pkg' },
-	})
-	mockModule.buildSavedPackageEmbedText.mockReturnValue('manifest embed')
-	mockModule.embedTextsForVectorize.mockImplementation(
-		async (_env: unknown, texts: Array<string>) => texts.map(() => [0.1]),
-	)
+	const { upsert } = setupMocks()
 	// The first page fills the requested limit, forcing a second page fetch.
-	mockModule.listSavedPackagesPage.mockImplementationOnce(
-		async (_db: unknown, input: { afterId: string | null; limit: number }) =>
-			Array.from({ length: input.limit }, (_, index) =>
-				buildSavedPackage(`pkg-${String(index).padStart(4, '0')}`),
-			),
-	)
-	mockModule.listSavedPackagesPage.mockImplementationOnce(async () => [
-		buildSavedPackage('pkg-last'),
-	])
+	mockModule.listSavedPackagesPage
+		.mockImplementationOnce(async (_db: unknown, input: { limit: number }) =>
+			buildSavedPackages(input.limit, 4),
+		)
+		.mockImplementationOnce(async () => [buildSavedPackage('pkg-last')])
 
-	await expect(
-		reindexSavedPackageVectors({ APP_DB: {} } as Env, {
-			baseUrl: 'https://kody.example.com',
-		}),
-	).resolves.toEqual({ upserted: 201, complete: true, afterId: null })
+	await expect(reindex()).resolves.toEqual({
+		upserted: 201,
+		complete: true,
+		afterId: null,
+	})
 
-	expect(mockModule.listSavedPackagesPage).toHaveBeenCalledTimes(2)
-	expect(mockModule.listSavedPackagesPage).toHaveBeenNthCalledWith(
-		1,
-		expect.anything(),
+	expect(
+		mockModule.listSavedPackagesPage.mock.calls.map(([, page]) => page),
+	).toEqual([
 		{ afterId: null, limit: 200 },
-	)
-	expect(mockModule.listSavedPackagesPage).toHaveBeenNthCalledWith(
-		2,
-		expect.anything(),
 		{ afterId: 'pkg-0199', limit: 200 },
-	)
+	])
 	const upsertedIds = upsert.mock.calls.flatMap(([vectors]) =>
 		vectors.map((vector) => vector.id),
 	)
@@ -393,30 +240,12 @@ test('saved package reindex walks keyset pages and merges the page results', asy
 })
 
 test('saved package reindex stops mid-page at the deadline and resumes', async () => {
-	resetMocks()
-	const upsert = vi.fn(async (_vectors: Array<{ id: string }>) => {})
-	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
-	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
-	mockModule.loadPackageManifestBySourceId.mockResolvedValue({
-		manifest: { name: '@user/pkg' },
-	})
-	mockModule.buildSavedPackageEmbedText.mockReturnValue('manifest embed')
-	mockModule.embedTextsForVectorize.mockImplementation(
-		async (_env: unknown, texts: Array<string>) => texts.map(() => [0.1]),
+	const { upsert } = setupMocks()
+	mockModule.listSavedPackagesPage.mockResolvedValueOnce(
+		['pkg-a', 'pkg-b', 'pkg-c'].map(buildSavedPackage),
 	)
-	const firstPage = [
-		buildSavedPackage('pkg-a'),
-		buildSavedPackage('pkg-b'),
-		buildSavedPackage('pkg-c'),
-	]
-	mockModule.listSavedPackagesPage.mockResolvedValueOnce(firstPage)
 
-	await expect(
-		reindexSavedPackageVectors({ APP_DB: {} } as Env, {
-			baseUrl: 'https://kody.example.com',
-			deadlineMs: 0,
-		}),
-	).resolves.toEqual({
+	await expect(reindex({ deadlineMs: 0 })).resolves.toEqual({
 		upserted: 1,
 		complete: false,
 		afterId: 'pkg-a',
@@ -424,16 +253,10 @@ test('saved package reindex stops mid-page at the deadline and resumes', async (
 	expect(mockModule.loadPackageManifestBySourceId).toHaveBeenCalledTimes(1)
 	expect(upsert).toHaveBeenCalledTimes(1)
 
-	mockModule.listSavedPackagesPage.mockResolvedValueOnce([
-		buildSavedPackage('pkg-b'),
-		buildSavedPackage('pkg-c'),
-	])
-	await expect(
-		reindexSavedPackageVectors({ APP_DB: {} } as Env, {
-			baseUrl: 'https://kody.example.com',
-			afterId: 'pkg-a',
-		}),
-	).resolves.toEqual({
+	mockModule.listSavedPackagesPage.mockResolvedValueOnce(
+		['pkg-b', 'pkg-c'].map(buildSavedPackage),
+	)
+	await expect(reindex({ afterId: 'pkg-a' })).resolves.toEqual({
 		upserted: 2,
 		complete: true,
 		afterId: null,
@@ -445,18 +268,10 @@ test('saved package reindex stops mid-page at the deadline and resumes', async (
 })
 
 test('saved package reindex flushes upsert chunks and honors the deadline after a flush', async () => {
-	resetMocks()
-	const upsert = vi.fn(async (_vectors: Array<{ id: string }>) => {})
-	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
-	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
-	mockModule.loadPackageManifestBySourceId.mockResolvedValue({
-		manifest: { name: '@user/pkg' },
-	})
-	mockModule.buildSavedPackageEmbedText.mockReturnValue('manifest embed')
-	const packages = Array.from({ length: 20 }, (_, index) =>
-		buildSavedPackage(`pkg-${String(index).padStart(2, '0')}`),
+	const { upsert } = setupMocks()
+	mockModule.listSavedPackagesPage.mockResolvedValueOnce(
+		buildSavedPackages(20, 2),
 	)
-	mockModule.listSavedPackagesPage.mockResolvedValueOnce(packages)
 	let now = 1_000
 	const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now)
 	mockModule.embedTextsForVectorize.mockImplementation(
@@ -467,12 +282,7 @@ test('saved package reindex flushes upsert chunks and honors the deadline after 
 	)
 
 	try {
-		await expect(
-			reindexSavedPackageVectors({ APP_DB: {} } as Env, {
-				baseUrl: 'https://kody.example.com',
-				deadlineMs: 2_000,
-			}),
-		).resolves.toEqual({
+		await expect(reindex({ deadlineMs: 2_000 })).resolves.toEqual({
 			upserted: 16,
 			complete: false,
 			afterId: 'pkg-15',

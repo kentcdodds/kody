@@ -16,31 +16,30 @@ import {
 	updateCommunityProfile,
 } from './profile-service.ts'
 
+const fixedNow = '2026-07-01T00:00:00.000Z'
+
+type TestUser = Awaited<ReturnType<typeof insertUser>>
+
 async function runSql(sql: string, ...values: Array<unknown>) {
 	await env.APP_DB.prepare(sql)
 		.bind(...values)
 		.run()
 }
 
-async function insertUser(input: {
-	email: string
-	username: string
-	visibility?: 'public' | 'private'
-	displayName?: string | null
-}): Promise<{
-	numericId: number
-	userId: string
-	email: string
-	username: string
-}> {
+async function insertUser(
+	prefix: string,
+	input: { visibility?: 'public' | 'private'; displayName?: string } = {},
+) {
 	await ensureCommunityFlowSchema(env.APP_DB)
-	const userId = await createStableUserIdFromEmail(input.email)
+	const email = `${prefix}-${crypto.randomUUID()}@example.com`
+	const username = `${prefix}${crypto.randomUUID().slice(0, 8)}`
+	const userId = await createStableUserIdFromEmail(email)
 	await runSql(
 		`INSERT INTO users (
 			username, email, stable_user_id, display_name, profile_visibility, password_hash, plan
 		) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		input.username,
-		input.email,
+		username,
+		email,
 		userId,
 		input.displayName ?? null,
 		input.visibility ?? 'public',
@@ -53,36 +52,67 @@ async function insertUser(input: {
 		.bind(userId)
 		.first<{ id: number }>()
 	if (!row) throw new Error('Failed to insert test user')
-	return {
-		numericId: row.id,
-		userId,
-		email: input.email,
-		username: input.username,
-	}
+	return { numericId: row.id, userId, username }
 }
 
-async function insertListing(input: {
-	id: string
-	ownerUserId: string
-	packageId: string
-	name: string
-	kodyId: string
-	publishedAt?: string
-	pinnedCommit?: string
-}) {
+async function insertSavedPackage(
+	owner: TestUser,
+	kodyId: string,
+	input: {
+		description?: string
+		tags?: Array<string>
+		searchText?: string
+		isPrivate?: boolean
+		hidden?: boolean
+		hasApp?: boolean
+		updatedAt?: string
+	} = {},
+) {
+	const id = `${kodyId}-${crypto.randomUUID()}`
+	const updatedAt = input.updatedAt ?? fixedNow
+	await runSql(
+		`INSERT INTO saved_packages (
+			id, user_id, name, kody_id, description, tags_json, search_text,
+			source_id, has_app, hidden, is_private, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id,
+		owner.userId,
+		`@${owner.username}/${kodyId}`,
+		kodyId,
+		input.description ?? `${kodyId} description`,
+		JSON.stringify(input.tags ?? ['catalog']),
+		input.searchText ?? `${kodyId} search`,
+		`source-${id}`,
+		input.hasApp ? 1 : 0,
+		input.hidden ? 1 : 0,
+		input.isPrivate ? 1 : 0,
+		updatedAt,
+		updatedAt,
+	)
+	return id
+}
+
+/** Inserts an active listing and, when `sourceCommit` is set, the package's entity source. */
+async function insertListing(
+	owner: TestUser,
+	packageId: string,
+	kodyId: string,
+	input: { publishedAt?: string; pinnedCommit?: string; sourceCommit?: string },
+) {
+	const listingId = `listing-${packageId}`
 	const publishedAt = input.publishedAt ?? new Date().toISOString()
 	await runSql(
 		`INSERT INTO community_listings (
 			id, owner_user_id, package_id, source_id, kody_id, name, description,
 			tags_json, license, pinned_commit, status, created_at, updated_at, published_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
-		input.id,
-		input.ownerUserId,
-		input.packageId,
-		`source-${input.packageId}`,
-		input.kodyId,
-		input.name,
-		`${input.kodyId} description`,
+		listingId,
+		owner.userId,
+		packageId,
+		`source-${packageId}`,
+		kodyId,
+		`@${owner.username}/${kodyId}`,
+		`${kodyId} description`,
 		JSON.stringify(['catalog']),
 		'MIT',
 		input.pinnedCommit ?? 'commit-1',
@@ -90,91 +120,46 @@ async function insertListing(input: {
 		publishedAt,
 		publishedAt,
 	)
+	if (input.sourceCommit) {
+		await runSql(
+			`INSERT INTO entity_sources (
+				id, user_id, entity_kind, entity_id, repo_id, published_commit,
+				indexed_commit, manifest_path, source_root, created_at, updated_at
+			) VALUES (?, ?, 'package', ?, ?, ?, NULL, 'package.json', '/', ?, ?)`,
+			`source-${packageId}`,
+			owner.userId,
+			packageId,
+			`repo-${packageId}`,
+			input.sourceCommit,
+			fixedNow,
+			fixedNow,
+		)
+	}
+	return listingId
 }
 
-async function insertEntitySource(input: {
-	packageId: string
-	userId: string
-	publishedCommit: string
-}) {
-	const now = '2026-07-01T00:00:00.000Z'
-	await runSql(
-		`INSERT INTO entity_sources (
-			id, user_id, entity_kind, entity_id, repo_id, published_commit,
-			indexed_commit, manifest_path, source_root, created_at, updated_at
-		) VALUES (?, ?, 'package', ?, ?, ?, NULL, 'package.json', '/', ?, ?)`,
-		`source-${input.packageId}`,
-		input.userId,
-		input.packageId,
-		`repo-${input.packageId}`,
-		input.publishedCommit,
-		now,
-		now,
-	)
-}
-
-async function insertSavedPackage(input: {
-	id: string
-	userId: string
-	name: string
-	kodyId: string
-	description?: string
-	tags?: Array<string>
-	searchText?: string
-	isPrivate: boolean
-	hidden?: boolean
-	hasApp?: boolean
-	updatedAt?: string
-}) {
-	await runSql(
-		`INSERT INTO saved_packages (
-			id, user_id, name, kody_id, description, tags_json, search_text,
-			source_id, has_app, hidden, is_private, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		input.id,
-		input.userId,
-		input.name,
-		input.kodyId,
-		input.description ?? `${input.kodyId} description`,
-		JSON.stringify(input.tags ?? ['catalog']),
-		input.searchText ?? `${input.kodyId} search`,
-		`source-${input.id}`,
-		input.hasApp ? 1 : 0,
-		input.hidden ? 1 : 0,
-		input.isPrivate ? 1 : 0,
-		input.updatedAt ?? '2026-07-01T00:00:00.000Z',
-		input.updatedAt ?? '2026-07-01T00:00:00.000Z',
-	)
-}
-
-async function insertTestJob(input: {
-	id: string
-	userId: string
-	sourceId: string
-	name: string
-	now?: string
-}) {
-	const now = input.now ?? '2026-07-01T00:00:00.000Z'
+async function insertTestJob(userId: string, packageId: string) {
+	const id = `job-${crypto.randomUUID()}`
 	await jobsData(env).insertJob({
-		userId: input.userId,
+		userId,
 		callerContextJson: '{}',
 		job: {
 			version: 1,
-			id: input.id,
-			userId: input.userId,
-			name: input.name,
-			sourceId: input.sourceId,
+			id,
+			userId,
+			name: `job for ${packageId}`,
+			sourceId: `source-${packageId}`,
 			publishedCommit: null,
-			storageId: createJobStorageId(input.id),
-			schedule: { type: 'once', runAt: now },
+			storageId: createJobStorageId(id),
+			schedule: { type: 'once', runAt: fixedNow },
 			timezone: 'UTC',
 			enabled: true,
 			killSwitchEnabled: false,
 			preserved: false,
 			expiresAt: null,
-			createdAt: now,
-			updatedAt: now,
-			nextRunAt: now,
+			createdAt: fixedNow,
+			updatedAt: fixedNow,
+			nextRunAt: fixedNow,
 			runCount: 0,
 			successCount: 0,
 			errorCount: 0,
@@ -182,61 +167,86 @@ async function insertTestJob(input: {
 	})
 }
 
-test('profile get hides private profiles unless includePrivate', async () => {
-	const user = await insertUser({
-		email: `profile-${crypto.randomUUID()}@example.com`,
-		username: `prof${crypto.randomUUID().slice(0, 8)}`,
+function listPackages(
+	owner: TestUser,
+	input: { query?: string; includePrivate?: boolean } = {},
+) {
+	return listPublicProfilePackages({
+		env,
+		ownerStableUserId: owner.userId,
+		limit: 10,
+		...input,
+	})
+}
+
+function needsRepublishByKodyId(
+	packages: Awaited<ReturnType<typeof listPackages>>,
+) {
+	return Object.fromEntries(
+		packages.map((pkg) => [pkg.kodyId, pkg.needsRepublish]),
+	)
+}
+
+test('private profiles and their activity are hidden from public reads', async () => {
+	const user = await insertUser('actor', {
 		visibility: 'private',
 		displayName: 'Hidden Person',
 	})
-
+	expect(
+		await getCommunityProfileByUsername({ env, username: user.username }),
+	).toBeNull()
 	expect(
 		await getCommunityProfileByUsername({
 			env,
 			username: user.username,
+			includePrivate: true,
 		}),
-	).toBeNull()
-
-	const privateProfile = await getCommunityProfileByUsername({
-		env,
-		username: user.username,
-		includePrivate: true,
-	})
-	expect(privateProfile).toMatchObject({
+	).toMatchObject({
 		userId: user.userId,
 		username: user.username,
 		displayName: 'Hidden Person',
 		visibility: 'private',
 	})
+
+	const listingId = await insertListing(
+		user,
+		`pkg-${crypto.randomUUID()}`,
+		'notes',
+		{},
+	)
+	await insertCommunityActivityEvent(env.APP_DB, {
+		id: crypto.randomUUID(),
+		actorUserId: user.userId,
+		eventType: 'listing_published',
+		listingId,
+		createdAt: fixedNow,
+	})
+	const activity = (isSelf: boolean) =>
+		getProfileActivity({ env, actorUserId: user.userId, limit: 10, isSelf })
+	expect(
+		(await activity(true)).some((item) => item.type === 'listing_published'),
+	).toBe(true)
+	expect(await activity(false)).toEqual([])
 })
 
 test('updateCommunityProfile validates display name and bio bounds', async () => {
-	const user = await insertUser({
-		email: `update-${crypto.randomUUID()}@example.com`,
-		username: `upd${crypto.randomUUID().slice(0, 8)}`,
-	})
+	const user = await insertUser('upd')
+	const update = (input: {
+		displayName?: string
+		bio?: string
+		visibility?: 'public' | 'private'
+	}) => updateCommunityProfile({ env, numericUserId: user.numericId, ...input })
 
-	await expect(
-		updateCommunityProfile({
-			env,
-			numericUserId: user.numericId,
-			displayName: 'x'.repeat(51),
-		}),
-	).rejects.toThrow(/Display name must be at most 50/)
-
-	await expect(
-		updateCommunityProfile({
-			env,
-			numericUserId: user.numericId,
-			bio: 'y'.repeat(501),
-		}),
-	).rejects.toThrow(/Bio must be at most 500/)
+	await expect(update({ displayName: 'x'.repeat(51) })).rejects.toThrow(
+		/Display name must be at most 50/,
+	)
+	await expect(update({ bio: 'y'.repeat(501) })).rejects.toThrow(
+		/Bio must be at most 500/,
+	)
 
 	resetDataCacheForTests()
 	const versionBeforeVisibilityChange = getCommunityPublicCacheVersion()
-	await updateCommunityProfile({
-		env,
-		numericUserId: user.numericId,
+	await update({
 		displayName: '  Nice Name  ',
 		bio: '  Hello world  ',
 		visibility: 'private',
@@ -244,388 +254,159 @@ test('updateCommunityProfile validates display name and bio bounds', async () =>
 	expect(getCommunityPublicCacheVersion()).toBe(
 		versionBeforeVisibilityChange + 1,
 	)
-	const profile = await getCommunityProfileByUsername({
-		env,
-		username: user.username,
-		includePrivate: true,
-	})
-	expect(profile).toMatchObject({
+	expect(
+		await getCommunityProfileByUsername({
+			env,
+			username: user.username,
+			includePrivate: true,
+		}),
+	).toMatchObject({
 		displayName: 'Nice Name',
 		bio: 'Hello world',
 		visibility: 'private',
 	})
 
 	const versionBeforePublicRestore = getCommunityPublicCacheVersion()
-	await updateCommunityProfile({
-		env,
-		numericUserId: user.numericId,
-		displayName: '   ',
-		bio: '',
-	})
+	await update({ displayName: '   ', bio: '' })
 	expect(getCommunityPublicCacheVersion()).toBe(versionBeforePublicRestore)
 
-	await updateCommunityProfile({
-		env,
-		numericUserId: user.numericId,
+	await update({ visibility: 'public' })
+	expect(getCommunityPublicCacheVersion()).toBe(versionBeforePublicRestore + 1)
+	expect(
+		await getCommunityProfileByUsername({ env, username: user.username }),
+	).toMatchObject({
+		displayName: user.username,
+		bio: null,
 		visibility: 'public',
 	})
-	expect(getCommunityPublicCacheVersion()).toBe(versionBeforePublicRestore + 1)
-	const cleared = await getCommunityProfileByUsername({
-		env,
-		username: user.username,
-	})
-	expect(cleared?.displayName).toBe(user.username)
-	expect(cleared?.bio).toBeNull()
-	expect(cleared?.visibility).toBe('public')
 })
 
 test('listPublicProfilePackages filters private/hidden packages and supports query', async () => {
-	const owner = await insertUser({
-		email: `pkgs-${crypto.randomUUID()}@example.com`,
-		username: `pkgs${crypto.randomUUID().slice(0, 8)}`,
-	})
-	await insertSavedPackage({
-		id: `public-${crypto.randomUUID()}`,
-		userId: owner.userId,
-		name: `@${owner.username}/public-notes`,
-		kodyId: 'public-notes',
+	const owner = await insertUser('pkgs')
+	const publicNotesId = await insertSavedPackage(owner, 'public-notes', {
 		description: 'public diary helpers',
 		tags: ['notes'],
-		isPrivate: false,
 		updatedAt: '2026-07-02T00:00:00.000Z',
 	})
-	await insertSavedPackage({
-		id: `private-${crypto.randomUUID()}`,
-		userId: owner.userId,
-		name: `@${owner.username}/secret-notes`,
-		kodyId: 'secret-notes',
+	await insertSavedPackage(owner, 'secret-notes', {
 		description: 'private diary helpers',
 		tags: ['notes'],
 		isPrivate: true,
 		updatedAt: '2026-07-03T00:00:00.000Z',
 	})
-	await insertSavedPackage({
-		id: `hidden-${crypto.randomUUID()}`,
-		userId: owner.userId,
-		name: `@${owner.username}/hidden-notes`,
-		kodyId: 'hidden-notes',
+	await insertSavedPackage(owner, 'hidden-notes', {
 		description: 'hidden diary helpers',
 		tags: ['notes'],
-		isPrivate: false,
 		hidden: true,
 		updatedAt: '2026-07-04T00:00:00.000Z',
 	})
-	await insertSavedPackage({
-		id: `other-${crypto.randomUUID()}`,
-		userId: owner.userId,
-		name: `@${owner.username}/calendar`,
-		kodyId: 'calendar',
+	await insertSavedPackage(owner, 'calendar', {
 		description: 'schedule helpers',
 		tags: ['calendar'],
 		searchText: 'unique-search-oracle-token',
-		isPrivate: false,
-		updatedAt: '2026-07-01T00:00:00.000Z',
 	})
 
-	const allPublic = await listPublicProfilePackages({
-		env,
-		ownerStableUserId: owner.userId,
-		limit: 10,
-	})
-	expect(allPublic.map((pkg) => pkg.kodyId).sort()).toEqual([
+	expect((await listPackages(owner)).map((pkg) => pkg.kodyId).sort()).toEqual([
 		'calendar',
 		'public-notes',
 	])
-
-	const profile = await getCommunityProfileByUsername({
-		env,
-		username: owner.username,
-	})
-	expect(profile?.publicPackageCount).toBe(2)
-
-	const queried = await listPublicProfilePackages({
-		env,
-		ownerStableUserId: owner.userId,
-		query: 'notes',
-		limit: 10,
-	})
-	expect(queried.map((pkg) => pkg.kodyId)).toEqual(['public-notes'])
-
-	const everyToken = await listPublicProfilePackages({
-		env,
-		ownerStableUserId: owner.userId,
-		query: 'public diary',
-		limit: 10,
-	})
-	expect(everyToken.map((pkg) => pkg.kodyId)).toEqual(['public-notes'])
-
-	const mixedTokens = await listPublicProfilePackages({
-		env,
-		ownerStableUserId: owner.userId,
-		query: 'notes calendar',
-		limit: 10,
-	})
-	expect(mixedTokens).toEqual([])
+	expect(
+		(await getCommunityProfileByUsername({ env, username: owner.username }))
+			?.publicPackageCount,
+	).toBe(2)
 
 	// search_text is not publicly searchable (substring-probing oracle).
-	const searchTextOnly = await listPublicProfilePackages({
-		env,
-		ownerStableUserId: owner.userId,
-		query: 'unique-search-oracle-token',
-		limit: 10,
-	})
-	expect(searchTextOnly).toEqual([])
+	const queryCases: Array<[query: string, expected: Array<string>]> = [
+		['notes', ['public-notes']],
+		['public diary', ['public-notes']],
+		['notes calendar', []],
+		['unique-search-oracle-token', []],
+	]
+	for (const [query, expected] of queryCases) {
+		const found = await listPackages(owner, { query })
+		expect({ query, found: found.map((pkg) => pkg.kodyId) }).toEqual({
+			query,
+			found: expected,
+		})
+	}
 
-	const ownInventory = await listPublicProfilePackages({
-		env,
-		ownerStableUserId: owner.userId,
-		limit: 10,
-		includePrivate: true,
-	})
-	expect(ownInventory.map((pkg) => pkg.kodyId).sort()).toEqual([
-		'calendar',
-		'hidden-notes',
-		'public-notes',
-		'secret-notes',
+	const ownInventory = await listPackages(owner, { includePrivate: true })
+	expect(
+		ownInventory
+			.map(({ kodyId, hidden, isPrivate }) => ({ kodyId, hidden, isPrivate }))
+			.sort((a, b) => a.kodyId.localeCompare(b.kodyId)),
+	).toEqual([
+		{ kodyId: 'calendar', hidden: false, isPrivate: false },
+		{ kodyId: 'hidden-notes', hidden: true, isPrivate: false },
+		{ kodyId: 'public-notes', hidden: false, isPrivate: false },
+		{ kodyId: 'secret-notes', hidden: false, isPrivate: true },
 	])
-	expect(
-		ownInventory.find((pkg) => pkg.kodyId === 'hidden-notes')?.hidden,
-	).toBe(true)
-	expect(
-		ownInventory.find((pkg) => pkg.kodyId === 'secret-notes')?.isPrivate,
-	).toBe(true)
 
-	const publicNotesId = allPublic.find(
-		(pkg) => pkg.kodyId === 'public-notes',
-	)?.packageId
-	if (!publicNotesId) throw new Error('expected public-notes package id')
-	await insertListing({
-		id: `listing-${crypto.randomUUID()}`,
-		ownerUserId: owner.userId,
-		packageId: publicNotesId,
-		name: `@${owner.username}/public-notes`,
-		kodyId: 'public-notes',
+	await insertListing(owner, publicNotesId, 'public-notes', {
 		publishedAt: '2026-06-01T00:00:00.000Z',
 		pinnedCommit: 'commit-listed',
-	})
-	await insertEntitySource({
-		packageId: publicNotesId,
-		userId: owner.userId,
-		publishedCommit: 'commit-ahead',
-	})
-
-	const listed = await listPublicProfilePackages({
-		env,
-		ownerStableUserId: owner.userId,
-		limit: 10,
-		includePrivate: true,
+		sourceCommit: 'commit-ahead',
 	})
 	expect(
-		listed.find((pkg) => pkg.kodyId === 'public-notes')?.needsRepublish,
-	).toBe(true)
-	expect(listed.find((pkg) => pkg.kodyId === 'calendar')?.needsRepublish).toBe(
-		false,
-	)
+		needsRepublishByKodyId(await listPackages(owner, { includePrivate: true })),
+	).toMatchObject({ 'public-notes': true, calendar: false })
 })
 
 test('listPublicProfilePackages ahead filter ignores post-publish updated_at skew when the pin matches published_commit', async () => {
-	const owner = await insertUser({
-		email: `skew-${crypto.randomUUID()}@example.com`,
-		username: `skew${crypto.randomUUID().slice(0, 8)}`,
-	})
-	const syncedId = `synced-${crypto.randomUUID()}`
-	const behindId = `behind-${crypto.randomUUID()}`
-	await insertSavedPackage({
-		id: syncedId,
-		userId: owner.userId,
-		name: `@${owner.username}/grok-bot`,
-		kodyId: 'grok-bot',
-		isPrivate: false,
-		// communityPublish writes listing.published_at first, then
-		// updateSavedPackage bumps updated_at ~0.8–3s later.
-		updatedAt: '2026-09-11T17:41:55.588Z',
-	})
-	await insertSavedPackage({
-		id: behindId,
-		userId: owner.userId,
-		name: `@${owner.username}/skills`,
-		kodyId: 'skills',
-		isPrivate: false,
-		updatedAt: '2026-09-11T17:41:55.588Z',
-	})
-	await insertListing({
-		id: `listing-${syncedId}`,
-		ownerUserId: owner.userId,
-		packageId: syncedId,
-		name: `@${owner.username}/grok-bot`,
-		kodyId: 'grok-bot',
-		publishedAt: '2026-09-11T17:41:54.544Z',
-		pinnedCommit: 'commit-head',
-	})
-	await insertListing({
-		id: `listing-${behindId}`,
-		ownerUserId: owner.userId,
-		packageId: behindId,
-		name: `@${owner.username}/skills`,
-		kodyId: 'skills',
-		publishedAt: '2026-09-11T17:41:54.544Z',
-		pinnedCommit: 'commit-listed',
-	})
-	await insertEntitySource({
-		packageId: syncedId,
-		userId: owner.userId,
-		publishedCommit: 'commit-head',
-	})
-	await insertEntitySource({
-		packageId: behindId,
-		userId: owner.userId,
-		publishedCommit: 'commit-head',
-	})
-
-	const listed = await listPublicProfilePackages({
-		env,
-		ownerStableUserId: owner.userId,
-		limit: 10,
-		includePrivate: true,
-	})
-	expect(listed.find((pkg) => pkg.kodyId === 'grok-bot')?.needsRepublish).toBe(
-		false,
-	)
-	expect(listed.find((pkg) => pkg.kodyId === 'skills')?.needsRepublish).toBe(
-		true,
-	)
+	const owner = await insertUser('skew')
+	// communityPublish writes listing.published_at first, then
+	// updateSavedPackage bumps updated_at ~0.8–3s later.
+	const updatedAt = '2026-09-11T17:41:55.588Z'
+	const publishedAt = '2026-09-11T17:41:54.544Z'
+	for (const [kodyId, pinnedCommit] of [
+		['grok-bot', 'commit-head'],
+		['skills', 'commit-listed'],
+	]) {
+		const id = await insertSavedPackage(owner, kodyId, { updatedAt })
+		await insertListing(owner, id, kodyId, {
+			publishedAt,
+			pinnedCommit,
+			sourceCommit: 'commit-head',
+		})
+	}
+	expect(
+		needsRepublishByKodyId(await listPackages(owner, { includePrivate: true })),
+	).toEqual({ 'grok-bot': false, skills: true })
 })
 
 test('listPublicProfilePackages attaches webhook, job, and app signifier counts', async () => {
-	const owner = await insertUser({
-		email: `sign-${crypto.randomUUID()}@example.com`,
-		username: `sign${crypto.randomUUID().slice(0, 8)}`,
-	})
-	const appId = `app-${crypto.randomUUID()}`
-	const plainId = `plain-${crypto.randomUUID()}`
-	await insertSavedPackage({
-		id: appId,
-		userId: owner.userId,
-		name: `@${owner.username}/notes-app`,
-		kodyId: 'notes-app',
-		isPrivate: false,
-		hasApp: true,
-	})
-	await insertSavedPackage({
-		id: plainId,
-		userId: owner.userId,
-		name: `@${owner.username}/notes`,
-		kodyId: 'notes',
-		isPrivate: false,
-	})
-	const now = '2026-07-01T00:00:00.000Z'
-	await runSql(
-		`INSERT INTO webhook_endpoints (
-			id, user_id, package_id, webhook_name, url_secret_hash, created_at, rotated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?)`,
-		`hook-1-${appId}`,
-		owner.userId,
-		appId,
-		'inbound',
-		'hash-1',
-		now,
-		now,
-		`hook-2-${appId}`,
-		owner.userId,
-		appId,
-		'alerts',
-		'hash-2',
-		now,
-		now,
-	)
-	await insertTestJob({
-		id: `job-${appId}`,
-		userId: owner.userId,
-		sourceId: `source-${appId}`,
-		name: 'daily notes',
-		now,
-	})
-	await insertTestJob({
-		id: `job-2-${appId}`,
-		userId: owner.userId,
-		sourceId: `source-${appId}`,
-		name: 'weekly notes',
-		now,
-	})
-	await insertTestJob({
-		id: `job-${plainId}`,
-		userId: owner.userId,
-		sourceId: `source-${plainId}`,
-		name: 'plain notes',
-		now,
-	})
-	const otherOwner = await insertUser({
-		email: `sign-other-${crypto.randomUUID()}@example.com`,
-		username: `signo${crypto.randomUUID().slice(0, 8)}`,
-	})
-	await insertTestJob({
-		id: `job-other-${appId}`,
-		userId: otherOwner.userId,
-		sourceId: `source-${appId}`,
-		name: 'other user notes',
-		now,
-	})
+	const owner = await insertUser('sign')
+	const otherOwner = await insertUser('signo')
+	const appId = await insertSavedPackage(owner, 'notes-app', { hasApp: true })
+	const plainId = await insertSavedPackage(owner, 'notes')
+	for (const webhookName of ['inbound', 'alerts']) {
+		await runSql(
+			`INSERT INTO webhook_endpoints (
+				id, user_id, package_id, webhook_name, url_secret_hash, created_at, rotated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			`hook-${webhookName}-${appId}`,
+			owner.userId,
+			appId,
+			webhookName,
+			`hash-${webhookName}`,
+			fixedNow,
+			fixedNow,
+		)
+	}
+	await insertTestJob(owner.userId, appId)
+	await insertTestJob(owner.userId, appId)
+	await insertTestJob(owner.userId, plainId)
+	await insertTestJob(otherOwner.userId, appId)
 
-	const listed = await listPublicProfilePackages({
-		env,
-		ownerStableUserId: owner.userId,
-		limit: 10,
-	})
-	const appPkg = listed.find((pkg) => pkg.kodyId === 'notes-app')
-	const plainPkg = listed.find((pkg) => pkg.kodyId === 'notes')
-	expect(appPkg).toMatchObject({
+	const listed = await listPackages(owner)
+	expect(listed.find((pkg) => pkg.kodyId === 'notes-app')).toMatchObject({
 		hasApp: true,
 		webhookCount: 2,
 		jobCount: 2,
 	})
-	expect(plainPkg).toMatchObject({
+	expect(listed.find((pkg) => pkg.kodyId === 'notes')).toMatchObject({
 		hasApp: false,
 		webhookCount: 0,
 		jobCount: 1,
 	})
-})
-
-test('profile activity includes own private publishes and hides them from public reads', async () => {
-	const actor = await insertUser({
-		email: `actor-${crypto.randomUUID()}@example.com`,
-		username: `actor${crypto.randomUUID().slice(0, 8)}`,
-		visibility: 'private',
-	})
-	const listingId = `listing-act-${crypto.randomUUID()}`
-	await insertListing({
-		id: listingId,
-		ownerUserId: actor.userId,
-		packageId: `pkg-${listingId}`,
-		name: `@${actor.username}/notes`,
-		kodyId: 'notes',
-	})
-	await insertCommunityActivityEvent(env.APP_DB, {
-		id: crypto.randomUUID(),
-		actorUserId: actor.userId,
-		eventType: 'listing_published',
-		listingId,
-		createdAt: '2026-07-01T00:00:00.000Z',
-	})
-
-	const selfActivity = await getProfileActivity({
-		env,
-		actorUserId: actor.userId,
-		limit: 10,
-		isSelf: true,
-	})
-	expect(selfActivity.some((item) => item.type === 'listing_published')).toBe(
-		true,
-	)
-	const publicActivity = await getProfileActivity({
-		env,
-		actorUserId: actor.userId,
-		limit: 10,
-		isSelf: false,
-	})
-	expect(publicActivity).toEqual([])
 })

@@ -14,12 +14,10 @@ vi.mock('./repo.ts', async (importOriginal) => {
 		// Pure helper used by the service to decide whether the SQL LIKE
 		// pre-filter was applied; keep the real implementation.
 		extractCommunityListingLikeTokens: actual.extractCommunityListingLikeTokens,
-		listCommunityListingCandidates: (...args: Array<unknown>) =>
-			mockModule.listCommunityListingCandidates(...args),
-		getCommunityRatingAggregatesByListingIds: (...args: Array<unknown>) =>
-			mockModule.getCommunityRatingAggregatesByListingIds(...args),
-		countCommunityForksByListingIds: (...args: Array<unknown>) =>
-			mockModule.countCommunityForksByListingIds(...args),
+		listCommunityListingCandidates: mockModule.listCommunityListingCandidates,
+		getCommunityRatingAggregatesByListingIds:
+			mockModule.getCommunityRatingAggregatesByListingIds,
+		countCommunityForksByListingIds: mockModule.countCommunityForksByListingIds,
 	}
 })
 
@@ -31,14 +29,9 @@ const {
 	searchCommunityListings,
 } = await import('./service.ts')
 
-function createEnv() {
-	return {
-		APP_DB: {} as D1Database,
-		BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
-	} as Env
-}
-
-function githubListing(): CommunityListingRecord {
+function githubListing(
+	overrides: Partial<CommunityListingRecord> = {},
+): CommunityListingRecord {
 	return {
 		id: 'listing-github',
 		ownerUserId: 'owner-kody',
@@ -63,50 +56,48 @@ function githubListing(): CommunityListingRecord {
 		createdAt: '2026-07-01T00:00:00.000Z',
 		updatedAt: '2026-07-01T00:00:00.000Z',
 		publishedAt: '2026-07-01T00:00:00.000Z',
+		...overrides,
 	}
 }
 
-function mealListing(): CommunityListingRecord {
-	return {
-		id: 'listing-meal',
-		ownerUserId: 'owner-jane',
-		packageId: 'package-meal',
-		sourceId: 'source-meal',
-		kodyId: 'meal-planner',
-		name: '@jane/meal-planner',
-		description: 'Plan weekly meals and grocery lists',
-		tags: ['meal', 'grocery', 'planning'],
-		category: 'productivity',
-		searchText: 'meal plan grocery shopping',
-		readmeContent: '# Meal Planner\n\n## Intent\n\nPlan meals.',
-		license: 'MIT',
-		pinnedCommit: 'commit-meal',
-		iconCommit: 'commit-meal',
-		status: 'active',
-		trustedCommit: null,
-		trustedAt: null,
-		trusted: false,
-		featuredAt: null,
-		featured: false,
-		createdAt: '2026-07-02T00:00:00.000Z',
-		updatedAt: '2026-07-02T00:00:00.000Z',
-		publishedAt: '2026-07-02T00:00:00.000Z',
-	}
-}
+const mealListing = githubListing({
+	id: 'listing-meal',
+	ownerUserId: 'owner-jane',
+	packageId: 'package-meal',
+	sourceId: 'source-meal',
+	kodyId: 'meal-planner',
+	name: '@jane/meal-planner',
+	description: 'Plan weekly meals and grocery lists',
+	tags: ['meal', 'grocery', 'planning'],
+	category: 'productivity',
+	searchText: 'meal plan grocery shopping',
+	readmeContent: '# Meal Planner\n\n## Intent\n\nPlan meals.',
+	pinnedCommit: 'commit-meal',
+	iconCommit: 'commit-meal',
+	createdAt: '2026-07-02T00:00:00.000Z',
+	updatedAt: '2026-07-02T00:00:00.000Z',
+	publishedAt: '2026-07-02T00:00:00.000Z',
+})
 
-function mockListings(listings: Array<CommunityListingRecord>) {
+function mockListings(
+	listings: Array<CommunityListingRecord>,
+	ratings: Record<string, [ratingCount: number, averageStars: number | null]>,
+) {
 	mockModule.listCommunityListingCandidates.mockResolvedValue(listings)
 	mockModule.getCommunityRatingAggregatesByListingIds.mockResolvedValue(
 		Object.fromEntries(
-			listings.map((listing) => [
-				listing.id,
-				{
-					listingId: listing.id,
-					ratingCount: listing.id === 'listing-github' ? 8 : 2,
-					averageStars: listing.id === 'listing-github' ? 4.5 : 3.5,
-					averageAdaptationEffort: 2,
-				},
-			]),
+			listings.map(({ id }) => {
+				const [ratingCount, averageStars] = ratings[id] ?? [0, null]
+				return [
+					id,
+					{
+						listingId: id,
+						ratingCount,
+						averageStars,
+						averageAdaptationEffort: averageStars === null ? null : 2,
+					},
+				]
+			}),
 		),
 	)
 	mockModule.countCommunityForksByListingIds.mockResolvedValue(
@@ -114,54 +105,53 @@ function mockListings(listings: Array<CommunityListingRecord>) {
 	)
 }
 
-test('community scoring and search rank listings and filter by query', async () => {
-	const unrated = computeCommunityBayesianScore({
-		averageStars: null,
-		ratingCount: 0,
+function search(
+	input: Omit<
+		Parameters<typeof searchCommunityListings>[0],
+		'env' | 'limit'
+	> & {
+		limit?: number
+	},
+) {
+	return searchCommunityListings({
+		env: {
+			APP_DB: {} as D1Database,
+			BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
+		} as Env,
+		limit: 10,
+		...input,
 	})
-	const highlyRated = computeCommunityBayesianScore({
-		averageStars: 5,
-		ratingCount: 20,
-	})
-	const lightlyRated = computeCommunityBayesianScore({
-		averageStars: 5,
-		ratingCount: 1,
-	})
+}
 
+test('community scoring and search rank listings and filter by query', async () => {
+	const score = (averageStars: number | null, ratingCount: number) =>
+		computeCommunityBayesianScore({ averageStars, ratingCount })
+	const unrated = score(null, 0)
+	const highlyRated = score(5, 20)
+	const lightlyRated = score(5, 1)
 	expect(unrated).toBe(3.25)
-	expect(highlyRated).toBeGreaterThan(unrated)
 	expect(highlyRated).toBeGreaterThan(lightlyRated)
 	expect(lightlyRated).toBeGreaterThan(unrated)
 	expect(lightlyRated).toBeCloseTo((3.25 * 5 + 5) / 6, 5)
 
 	const githubDocument = buildCommunityListingSearchDocument(githubListing())
-	const mealDocument = buildCommunityListingSearchDocument(mealListing())
-	expect(
-		isCommunityListingSearchMatch({
-			query: 'github',
-			document: githubDocument,
-		}),
-	).toBe(true)
-	expect(
-		isCommunityListingSearchMatch({
-			query: 'github',
-			document: mealDocument,
-		}),
-	).toBe(false)
-	expect(
-		isCommunityListingSearchMatch({
-			query: 'zzqqxxy',
-			document: githubDocument,
-		}),
-	).toBe(false)
+	const matchCases: Array<
+		[query: string, document: typeof githubDocument, expected: boolean]
+	> = [
+		['github', githubDocument, true],
+		['github', buildCommunityListingSearchDocument(mealListing), false],
+		['zzqqxxy', githubDocument, false],
+	]
+	for (const [query, document, expected] of matchCases) {
+		expect(isCommunityListingSearchMatch({ query, document })).toBe(expected)
+	}
 
-	mockListings([mealListing(), githubListing()])
-
-	const githubResults = await searchCommunityListings({
-		env: createEnv(),
-		query: 'github',
-		limit: 10,
+	mockListings([mealListing, githubListing()], {
+		'listing-github': [8, 4.5],
+		'listing-meal': [2, 3.5],
 	})
+
+	const githubResults = await search({ query: 'github' })
 	expect(githubResults.map((listing) => listing.kodyId)).toEqual([
 		'github-triage',
 	])
@@ -176,132 +166,71 @@ test('community scoring and search rank listings and filter by query', async () 
 		},
 	)
 
-	const mealResults = await searchCommunityListings({
-		env: createEnv(),
-		query: 'meal plan grocery',
-		limit: 10,
-	})
+	const mealResults = await search({ query: 'meal plan grocery' })
 	expect(mealResults.map((listing) => listing.kodyId)).toEqual(['meal-planner'])
 	expect(mealResults[0]?.relevance).toBeGreaterThanOrEqual(0.2)
 
-	const gibberishResults = await searchCommunityListings({
-		env: createEnv(),
-		query: 'zzqqxxy',
-		limit: 10,
-	})
-	expect(gibberishResults).toEqual([])
+	for (const query of ['zzqqxxy', 'text to speech audio narration']) {
+		expect({ query, results: await search({ query }) }).toEqual({
+			query,
+			results: [],
+		})
+	}
 
-	const unrelatedResults = await searchCommunityListings({
-		env: createEnv(),
-		query: 'text to speech audio narration',
-		limit: 10,
-	})
-	expect(unrelatedResults).toEqual([])
-
-	const allResults = await searchCommunityListings({
-		env: createEnv(),
-		query: '',
-		limit: 10,
-	})
+	const allResults = await search({ query: '' })
 	expect(allResults.map((listing) => listing.kodyId)).toEqual([
 		'github-triage',
 		'meal-planner',
 	])
 	expect(allResults.every((listing) => listing.relevance === null)).toBe(true)
+	expect(
+		(await search({ query: '', sort: 'newest' })).map((l) => l.kodyId),
+	).toEqual(['meal-planner', 'github-triage'])
 
-	const newestBrowse = await searchCommunityListings({
-		env: createEnv(),
-		query: '',
-		limit: 10,
-		sort: 'newest',
-	})
-	expect(newestBrowse.map((listing) => listing.kodyId)).toEqual([
-		'meal-planner',
-		'github-triage',
-	])
-
-	const olderGithub = githubListing()
-	const newerGithub = {
-		...githubListing(),
-		id: 'listing-github-newer',
-		kodyId: 'github-newer',
-		name: '@kody/github-newer',
-		publishedAt: '2026-07-20T00:00:00.000Z',
+	mockListings(
+		[
+			githubListing(),
+			githubListing({
+				id: 'listing-github-newer',
+				kodyId: 'github-newer',
+				name: '@kody/github-newer',
+				publishedAt: '2026-07-20T00:00:00.000Z',
+			}),
+		],
+		{ 'listing-github': [20, 5] },
+	)
+	const sortCases: Array<[sort: 'best' | 'newest', expected: Array<string>]> = [
+		['best', ['listing-github', 'listing-github-newer']],
+		['newest', ['listing-github-newer', 'listing-github']],
+	]
+	for (const [sort, expected] of sortCases) {
+		const ids = (await search({ query: 'github', sort })).map((l) => l.id)
+		expect({ sort, ids }).toEqual({ sort, ids: expected })
 	}
-	mockListings([olderGithub, newerGithub])
-	mockModule.getCommunityRatingAggregatesByListingIds.mockResolvedValue({
-		'listing-github': {
-			listingId: 'listing-github',
-			ratingCount: 20,
-			averageStars: 5,
-			averageAdaptationEffort: 2,
-		},
-		'listing-github-newer': {
-			listingId: 'listing-github-newer',
-			ratingCount: 0,
-			averageStars: null,
-			averageAdaptationEffort: null,
-		},
-	})
-
-	const bestGithub = await searchCommunityListings({
-		env: createEnv(),
-		query: 'github',
-		limit: 10,
-		sort: 'best',
-	})
-	expect(bestGithub.map((listing) => listing.id)).toEqual([
-		'listing-github',
-		'listing-github-newer',
-	])
-
-	const newestGithub = await searchCommunityListings({
-		env: createEnv(),
-		query: 'github',
-		limit: 10,
-		sort: 'newest',
-	})
-	expect(newestGithub.map((listing) => listing.id)).toEqual([
-		'listing-github-newer',
-		'listing-github',
-	])
-
-	const integrationsOnly = await searchCommunityListings({
-		env: createEnv(),
-		query: '',
-		limit: 10,
-		category: 'integrations',
-	})
-	expect(integrationsOnly.map((listing) => listing.kodyId)).toEqual([
-		'github-triage',
-		'github-newer',
-	])
-	const productivityOnly = await searchCommunityListings({
-		env: createEnv(),
-		query: '',
-		limit: 10,
-		category: 'productivity',
-	})
-	expect(productivityOnly).toEqual([])
+	expect(
+		(await search({ query: '', category: 'integrations' })).map(
+			(l) => l.kodyId,
+		),
+	).toEqual(['github-triage', 'github-newer'])
+	expect(await search({ query: '', category: 'productivity' })).toEqual([])
 })
 
 test('community search resultFilter applies before limiting', async () => {
-	const falsePositives = Array.from({ length: 12 }, (_, index) => ({
-		...githubListing(),
-		id: `listing-workflow-${String(index + 1).padStart(2, '0')}`,
-		kodyId: `workflow-${index + 1}`,
-		name: `@owner/workflow-${index + 1}`,
-	}))
-	const realProviderListing = {
-		...githubListing(),
+	const falsePositives = Array.from({ length: 12 }, (_, index) =>
+		githubListing({
+			id: `listing-workflow-${String(index + 1).padStart(2, '0')}`,
+			kodyId: `workflow-${index + 1}`,
+			name: `@owner/workflow-${index + 1}`,
+		}),
+	)
+	const realProviderListing = githubListing({
 		id: 'real-provider-listing',
 		kodyId: 'github-helpers',
 		name: '@owner/github-helpers',
-	}
-	mockListings([...falsePositives, realProviderListing])
+	})
+	mockListings([...falsePositives, realProviderListing], {})
 
-	const providerFiltered = await searchCommunityListings({
-		env: createEnv(),
+	const providerFiltered = await search({
 		query: 'github',
 		limit: 1,
 		resultFilter: (listing) => listing.id === 'real-provider-listing',

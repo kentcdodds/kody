@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { packagesInvokeToStaticImportCodemod } from './0008-packages-invoke-to-static-import.ts'
+import { packagesInvokeToStaticImportCodemod as codemod } from './0008-packages-invoke-to-static-import.ts'
 
 function manifest(
 	name = '@user/demo',
@@ -20,6 +20,14 @@ function manifest(
 	)}\n`
 }
 
+function missingSnippets(text: string | undefined, snippets: Array<string>) {
+	return snippets.filter((snippet) => !text?.includes(snippet))
+}
+
+function kodyDependencies(files: Record<string, string>) {
+	return JSON.parse(files['package.json']!).kody.dependencies
+}
+
 test('0008 rewrites literal invoke to a static import and records kody.dependencies', () => {
 	const files = {
 		'package.json': manifest('@kentcdodds/demo'),
@@ -35,36 +43,36 @@ test('0008 rewrites literal invoke to a static import and records kody.dependenc
 		].join('\n'),
 	}
 
-	expect(packagesInvokeToStaticImportCodemod.detect(files)).toEqual([
-		{
-			path: 'index.ts',
-			message: expect.stringContaining('static'),
-		},
+	expect(codemod.detect(files)).toEqual([
+		{ path: 'index.ts', message: expect.stringContaining('static') },
 	])
 
-	const result = packagesInvokeToStaticImportCodemod.transform(files)
-	expect(result.changed).toBe(true)
-	expect(result.changedPaths).toEqual(['index.ts', 'package.json'])
-	expect(result.needsManual).toEqual([])
-	expect(result.files['index.ts']).toContain(
-		'import request from "kody:@kentcdodds/github/request"',
-	)
-	expect(result.files['index.ts']).toContain(
-		'import list from "kody:@kentcdodds/inbox/list"',
-	)
-	expect(result.files['index.ts']).toContain('await request({ event })')
-	expect(result.files['index.ts']).toContain('await list()')
+	const result = codemod.transform(files)
+	expect(result).toMatchObject({
+		changed: true,
+		changedPaths: ['index.ts', 'package.json'],
+		needsManual: [],
+	})
+	expect(
+		missingSnippets(result.files['index.ts'], [
+			'import request from "kody:@kentcdodds/github/request"',
+			'import list from "kody:@kentcdodds/inbox/list"',
+			'await request({ event })',
+			'await list()',
+		]),
+	).toEqual([])
 	expect(result.files['index.ts']).not.toContain('packages.invoke')
 	expect(result.files['index.ts']).not.toContain("from 'kody:runtime'")
-	expect(JSON.parse(result.files['package.json']!).kody.dependencies).toEqual({
+	expect(kodyDependencies(result.files)).toEqual({
 		'@kentcdodds/github': '*',
 		'@kentcdodds/inbox': '*',
 	})
 
-	const rerun = packagesInvokeToStaticImportCodemod.transform(result.files)
-	expect(rerun.changed).toBe(false)
-	expect(rerun.changedPaths).toEqual([])
-	expect(rerun.needsManual).toEqual([])
+	expect(codemod.transform(result.files)).toMatchObject({
+		changed: false,
+		changedPaths: [],
+		needsManual: [],
+	})
 })
 
 test('0008 rewrites computed specifiers to import(specifier) and leaves keyed invokes manual', () => {
@@ -91,7 +99,7 @@ test('0008 rewrites computed specifiers to import(specifier) and leaves keyed in
 		].join('\n'),
 	}
 
-	const result = packagesInvokeToStaticImportCodemod.transform(files)
+	const result = codemod.transform(files)
 	expect(result.changed).toBe(true)
 	expect(result.changedPaths).toEqual(['dynamic.ts'])
 	expect(result.files['dynamic.ts']).toContain(
@@ -100,10 +108,7 @@ test('0008 rewrites computed specifiers to import(specifier) and leaves keyed in
 	expect(result.files['dynamic.ts']).not.toContain('packages.invoke')
 	expect(result.files['keyed.ts']).toBe(files['keyed.ts'])
 	expect(result.needsManual).toEqual([
-		{
-			path: 'keyed.ts',
-			message: expect.stringContaining('idempotencyKey'),
-		},
+		{ path: 'keyed.ts', message: expect.stringContaining('idempotencyKey') },
 	])
 })
 
@@ -124,22 +129,22 @@ test('0008 rewrites Markdown fences without recording kody.dependencies from doc
 		].join('\n'),
 	}
 
-	const docsResult = packagesInvokeToStaticImportCodemod.transform(docsOnly)
-	expect(docsResult.changed).toBe(true)
-	expect(docsResult.changedPaths).toEqual(['README.md'])
-	expect(docsResult.needsManual).toEqual([])
-	expect(docsResult.files['README.md']).toContain(
-		'import request from "kody:@docs-owner/github/request"',
-	)
-	expect(docsResult.files['README.md']).toContain('await request({})')
-	expect(docsResult.files['README.md']).toContain(
-		'import list from "kody:@docs-owner/inbox/list"',
-	)
+	const docsResult = codemod.transform(docsOnly)
+	expect(docsResult).toMatchObject({
+		changed: true,
+		changedPaths: ['README.md'],
+		needsManual: [],
+	})
+	expect(
+		missingSnippets(docsResult.files['README.md'], [
+			'import request from "kody:@docs-owner/github/request"',
+			'await request({})',
+			'import list from "kody:@docs-owner/inbox/list"',
+		]),
+	).toEqual([])
 	expect(docsResult.files['README.md']).not.toContain('packages.invoke')
 	expect(docsResult.files['package.json']).toBe(docsOnly['package.json'])
-	expect(JSON.parse(docsResult.files['package.json']!).kody.dependencies).toBe(
-		undefined,
-	)
+	expect(kodyDependencies(docsResult.files)).toBeUndefined()
 
 	const mixed = {
 		'package.json': manifest('@user/demo'),
@@ -161,18 +166,14 @@ test('0008 rewrites Markdown fences without recording kody.dependencies from doc
 		].join('\n'),
 	}
 
-	const mixedResult = packagesInvokeToStaticImportCodemod.transform(mixed)
+	const mixedResult = codemod.transform(mixed)
 	expect(mixedResult.changed).toBe(true)
 	expect(mixedResult.changedPaths).toEqual([
 		'index.ts',
 		'package.json',
 		'README.md',
 	])
-	expect(
-		JSON.parse(mixedResult.files['package.json']!).kody.dependencies,
-	).toEqual({
-		'@user/helper': '*',
-	})
+	expect(kodyDependencies(mixedResult.files)).toEqual({ '@user/helper': '*' })
 	expect(mixedResult.files['README.md']).toContain(
 		'import list from "kody:@docs-owner/inbox/list"',
 	)
@@ -192,14 +193,12 @@ test('0008 reuses an existing static import', () => {
 		].join('\n'),
 	}
 
-	const result = packagesInvokeToStaticImportCodemod.transform(files)
+	const result = codemod.transform(files)
 	expect(result.changed).toBe(true)
 	expect(result.changedPaths).toEqual(['index.ts'])
 	expect(result.files['index.ts']).toContain('await helper({ ok: true })')
 	expect(result.files['index.ts']?.match(/import helper from/g)).toHaveLength(1)
-	expect(JSON.parse(result.files['package.json']!).kody.dependencies).toEqual({
-		'@user/helper': '*',
-	})
+	expect(kodyDependencies(result.files)).toEqual({ '@user/helper': '*' })
 })
 
 test('0008 rewrites static template specifiers and keeps other packages uses', () => {
@@ -217,16 +216,16 @@ test('0008 rewrites static template specifiers and keeps other packages uses', (
 		].join('\n'),
 	}
 
-	const result = packagesInvokeToStaticImportCodemod.transform(files)
+	const result = codemod.transform(files)
 	expect(result.changed).toBe(true)
-	expect(result.files['index.ts']).toContain(
-		'import list from "kody:@user/inbox/list"',
-	)
-	expect(result.files['index.ts']).toContain('await list()')
-	expect(result.files['index.ts']).toContain(
-		"import { storage, packages, secrets } from 'kody:runtime'",
-	)
-	expect(result.files['index.ts']).toContain('void packages.check')
+	expect(
+		missingSnippets(result.files['index.ts'], [
+			'import list from "kody:@user/inbox/list"',
+			'await list()',
+			"import { storage, packages, secrets } from 'kody:runtime'",
+			'void packages.check',
+		]),
+	).toEqual([])
 	expect(result.files['index.ts']).not.toContain('packages.invoke')
 })
 
@@ -251,15 +250,12 @@ test('0008 leaves topic invokes manual and removes only unused packages specifie
 		].join('\n'),
 	}
 
-	const result = packagesInvokeToStaticImportCodemod.transform(files)
+	const result = codemod.transform(files)
 	expect(result.changed).toBe(true)
 	expect(result.changedPaths).toEqual(['multi.ts', 'package.json'])
 	expect(result.files['topic.ts']).toBe(files['topic.ts'])
 	expect(result.needsManual).toEqual([
-		{
-			path: 'topic.ts',
-			message: expect.stringContaining('import'),
-		},
+		{ path: 'topic.ts', message: expect.stringContaining('import') },
 	])
 	expect(result.files['multi.ts']).toContain(
 		"import { storage, secrets } from 'kody:runtime'",

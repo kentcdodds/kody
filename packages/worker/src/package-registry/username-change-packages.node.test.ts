@@ -10,33 +10,28 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	listSavedPackagesByUserId: (...args: Array<unknown>) =>
-		mocks.listSavedPackagesByUserId(...args),
+	listSavedPackagesByUserId: mocks.listSavedPackagesByUserId,
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
-	loadPackageSourceBySourceId: (...args: Array<unknown>) =>
-		mocks.loadPackageSourceBySourceId(...args),
+	loadPackageSourceBySourceId: mocks.loadPackageSourceBySourceId,
 }))
 
 vi.mock('#worker/community/repo.ts', () => ({
-	getCommunityListingByOwnerAndPackage: (...args: Array<unknown>) =>
-		mocks.getCommunityListingByOwnerAndPackage(...args),
+	getCommunityListingByOwnerAndPackage:
+		mocks.getCommunityListingByOwnerAndPackage,
 }))
 
 vi.mock('#worker/repo/source-sync.ts', () => ({
-	syncArtifactSourceSnapshot: (...args: Array<unknown>) =>
-		mocks.syncArtifactSourceSnapshot(...args),
+	syncArtifactSourceSnapshot: mocks.syncArtifactSourceSnapshot,
 }))
 
 vi.mock('#worker/package-registry/service.ts', () => ({
-	refreshSavedPackageProjection: (...args: Array<unknown>) =>
-		mocks.refreshSavedPackageProjection(...args),
+	refreshSavedPackageProjection: mocks.refreshSavedPackageProjection,
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
-	publishCommunityListing: (...args: Array<unknown>) =>
-		mocks.publishCommunityListing(...args),
+	publishCommunityListing: mocks.publishCommunityListing,
 }))
 
 import {
@@ -45,29 +40,32 @@ import {
 } from './username-change-packages.ts'
 
 const env = { APP_DB: {} } as Env
+const baseInput = { env, baseUrl: 'https://example.com', userId: 'user-1' }
 
-function resetMocks() {
-	mocks.listSavedPackagesByUserId.mockReset()
-	mocks.loadPackageSourceBySourceId.mockReset()
-	mocks.getCommunityListingByOwnerAndPackage.mockReset()
-	mocks.syncArtifactSourceSnapshot.mockReset()
-	mocks.refreshSavedPackageProjection.mockReset()
-	mocks.publishCommunityListing.mockReset()
+function setupMocks(kodyIds: Array<string>) {
 	mocks.syncArtifactSourceSnapshot.mockResolvedValue('commit-new')
 	mocks.refreshSavedPackageProjection.mockResolvedValue(undefined)
 	mocks.publishCommunityListing.mockResolvedValue({})
+	mocks.listSavedPackagesByUserId.mockResolvedValueOnce(
+		kodyIds.map((kodyId, index) => ({
+			id: `pkg-${index + 1}`,
+			kodyId,
+			sourceId: `source-${index + 1}`,
+			name: `@alice/${kodyId}`,
+		})),
+	)
+}
+
+function renameAliceToBob() {
+	return updatePackagesForUsernameChange({
+		...baseInput,
+		previousUsername: 'alice',
+		nextUsername: 'bob',
+	})
 }
 
 test('updatePackagesForUsernameChange rewrites packages and flags community republish', async () => {
-	resetMocks()
-	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([
-		{
-			id: 'pkg-1',
-			kodyId: 'demo',
-			sourceId: 'source-1',
-			name: '@alice/demo',
-		},
-	])
+	setupMocks(['demo'])
 	mocks.loadPackageSourceBySourceId.mockResolvedValueOnce({
 		source: { published_commit: 'commit-old' },
 		files: {
@@ -88,23 +86,18 @@ test('updatePackagesForUsernameChange rewrites packages and flags community repu
 		pinnedCommit: 'commit-old',
 	})
 
-	const result = await updatePackagesForUsernameChange({
-		env,
-		baseUrl: 'https://example.com',
-		userId: 'user-1',
-		previousUsername: 'alice',
-		nextUsername: 'bob',
-	})
+	const result = await renameAliceToBob()
 
-	expect(result.updatedPackages).toHaveLength(1)
-	expect(result.updatedPackages[0]).toMatchObject({
-		packageId: 'pkg-1',
-		kodyId: 'demo',
-		previousName: '@alice/demo',
-		nextName: '@bob/demo',
-		publishedCommit: 'commit-new',
-		shouldRepublishCommunityListing: true,
-	})
+	expect(result.updatedPackages).toEqual([
+		expect.objectContaining({
+			packageId: 'pkg-1',
+			kodyId: 'demo',
+			previousName: '@alice/demo',
+			nextName: '@bob/demo',
+			publishedCommit: 'commit-new',
+			shouldRepublishCommunityListing: true,
+		}),
+	])
 	expect(mocks.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
 		expect.objectContaining({
 			sourceId: 'source-1',
@@ -117,34 +110,15 @@ test('updatePackagesForUsernameChange rewrites packages and flags community repu
 		}),
 	)
 	expect(mocks.refreshSavedPackageProjection).toHaveBeenCalledWith(
-		expect.objectContaining({
-			packageId: 'pkg-1',
-			sourceId: 'source-1',
-		}),
+		expect.objectContaining({ packageId: 'pkg-1', sourceId: 'source-1' }),
 	)
 })
 
 test('updatePackagesForUsernameChange compensates when a later package fails', async () => {
-	resetMocks()
-	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([
-		{
-			id: 'pkg-1',
-			kodyId: 'one',
-			sourceId: 'source-1',
-			name: '@alice/one',
-		},
-		{
-			id: 'pkg-2',
-			kodyId: 'two',
-			sourceId: 'source-2',
-			name: '@alice/two',
-		},
-	])
+	setupMocks(['one', 'two'])
 	mocks.loadPackageSourceBySourceId.mockImplementation(
 		async (input: { sourceId: string }) => {
-			if (input.sourceId === 'source-2') {
-				throw new Error('missing source')
-			}
+			if (input.sourceId === 'source-2') throw new Error('missing source')
 			return {
 				source: { published_commit: 'commit-old' },
 				files: {
@@ -159,39 +133,24 @@ test('updatePackagesForUsernameChange compensates when a later package fails', a
 	)
 	mocks.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
 
-	await expect(
-		updatePackagesForUsernameChange({
-			env,
-			baseUrl: 'https://example.com',
-			userId: 'user-1',
-			previousUsername: 'alice',
-			nextUsername: 'bob',
-		}),
-	).rejects.toThrow('missing source')
-
-	expect(mocks.syncArtifactSourceSnapshot).toHaveBeenCalledTimes(2)
-	expect(mocks.syncArtifactSourceSnapshot.mock.calls[0]?.[0]).toMatchObject({
-		expectedPackageScope: 'bob',
-	})
-	expect(mocks.syncArtifactSourceSnapshot.mock.calls[1]?.[0]).toMatchObject({
-		expectedPackageScope: 'alice',
-	})
+	await expect(renameAliceToBob()).rejects.toThrow('missing source')
+	expect(
+		mocks.syncArtifactSourceSnapshot.mock.calls.map(
+			([input]) => input.expectedPackageScope,
+		),
+	).toEqual(['bob', 'alice'])
 })
 
 test('republishCommunityListingsAfterUsernameChange collects warnings', async () => {
-	resetMocks()
 	mocks.publishCommunityListing
 		.mockResolvedValueOnce({})
 		.mockRejectedValueOnce(new Error('delisted'))
 
 	const result = await republishCommunityListingsAfterUsernameChange({
-		env,
-		baseUrl: 'https://example.com',
-		userId: 'user-1',
+		...baseInput,
 		packageIds: ['pkg-1', 'pkg-2'],
 	})
 
 	expect(result.republishedPackageIds).toEqual(['pkg-1'])
-	expect(result.warnings).toHaveLength(1)
-	expect(result.warnings[0]).toContain('pkg-2')
+	expect(result.warnings).toEqual([expect.stringContaining('pkg-2')])
 })

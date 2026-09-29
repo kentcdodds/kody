@@ -1,14 +1,15 @@
 import { expect, test } from 'vitest'
-import { ambientStorageToPackageStorageCodemod } from './0001-ambient-storage-to-package-storage.ts'
+import { ambientStorageToPackageStorageCodemod as codemod } from './0001-ambient-storage-to-package-storage.ts'
 
-function exportOnlyManifest(name = '@user/demo', kodyId = 'demo') {
+function manifest(kodyId: string, app?: { entry: string }) {
 	return `${JSON.stringify(
 		{
-			name,
+			name: `@user/${kodyId}`,
 			exports: { '.': './index.ts' },
 			kody: {
 				id: kodyId,
 				description: 'Demo package for ambient storage codemod tests.',
+				...(app ? { app } : {}),
 			},
 		},
 		null,
@@ -16,174 +17,133 @@ function exportOnlyManifest(name = '@user/demo', kodyId = 'demo') {
 	)}\n`
 }
 
-function appManifest() {
-	return `${JSON.stringify(
-		{
-			name: '@user/app',
-			exports: { '.': './index.ts' },
-			kody: {
-				id: 'app',
-				description: 'App package that must not auto-migrate ambient storage.',
-				app: { entry: './app.ts' },
-			},
-		},
-		null,
-		'\t',
-	)}\n`
-}
+const importStorage = "import { storage } from 'kody:runtime'\n"
 
 test('0001 rewrites member call sites, gates apps, verifies AST, and handles parse failures', () => {
 	const plain = {
-		'package.json': exportOnlyManifest(),
-		'index.ts':
-			"import { storage } from 'kody:runtime'\n\nexport async function run() {\n\treturn storage.get('k')\n}\n",
+		'package.json': manifest('demo'),
+		'index.ts': `${importStorage}\nexport async function run() {\n\treturn storage.get('k')\n}\n`,
 	}
-	const plainDetect = ambientStorageToPackageStorageCodemod.detect(plain)
-	expect(plainDetect).toEqual([
+	expect(codemod.detect(plain)).toEqual([
 		{
 			path: 'index.ts',
 			message: expect.stringContaining('ambient `storage`'),
 		},
 	])
-	const plainTransform = ambientStorageToPackageStorageCodemod.transform(plain)
-	expect(plainTransform.changed).toBe(true)
-	expect(plainTransform.changedPaths).toEqual(['index.ts'])
-	expect(plainTransform.needsManual).toEqual([])
-	expect(plainTransform.files['index.ts']).toContain(
-		"import { packageStorage } from 'kody:runtime'",
-	)
-	expect(plainTransform.files['index.ts']).toContain(
-		"packageStorage().get('k')",
-	)
-	expect(plainTransform.files['index.ts']).not.toContain(
-		'const storage = packageStorage()',
-	)
-	expect(plainTransform.files['index.ts']).not.toMatch(
-		/(?<!package)storage\.get/,
-	)
-
-	const secondPass = ambientStorageToPackageStorageCodemod.transform(
-		plainTransform.files,
-	)
+	const plainTransform = codemod.transform(plain)
+	expect(plainTransform).toMatchObject({
+		changed: true,
+		changedPaths: ['index.ts'],
+		needsManual: [],
+	})
+	const plainOutput = plainTransform.files['index.ts']
+	expect(plainOutput).toContain("import { packageStorage } from 'kody:runtime'")
+	expect(plainOutput).toContain("packageStorage().get('k')")
+	expect(plainOutput).not.toContain('const storage = packageStorage()')
+	expect(plainOutput).not.toMatch(/(?<!package)storage\.get/)
+	const secondPass = codemod.transform(plainTransform.files)
 	expect(secondPass.changed).toBe(false)
-	expect(secondPass.files['index.ts']).toBe(plainTransform.files['index.ts'])
+	expect(secondPass.files['index.ts']).toBe(plainOutput)
 
-	const mixed = {
-		'package.json': exportOnlyManifest('@user/mixed', 'mixed'),
-		'lib.ts':
-			"import { kody, storage, packages } from 'kody:runtime'\nexport const value = storage.sql`select 1`\nexport const other = kody\nexport const pack = packages\n",
-	}
-	const mixedTransform = ambientStorageToPackageStorageCodemod.transform(mixed)
-	expect(mixedTransform.changed).toBe(true)
-	expect(mixedTransform.files['lib.ts']).toContain('packageStorage().sql')
-	expect(mixedTransform.files['lib.ts']).toContain('kody')
-	expect(mixedTransform.files['lib.ts']).toContain('packages')
-	expect(mixedTransform.files['lib.ts']).not.toMatch(
-		/import\s*\{[^}]*\bstorage\b/,
-	)
-
-	const aliased = {
-		'package.json': exportOnlyManifest('@user/alias', 'alias'),
-		'alias.ts':
-			"import { storage as packageBucket } from 'kody:runtime'\nexport const value = packageBucket.get('k')\n",
-	}
-	const aliasedTransform =
-		ambientStorageToPackageStorageCodemod.transform(aliased)
-	expect(aliasedTransform.changed).toBe(false)
-	expect(aliasedTransform.files['alias.ts']).toBe(aliased['alias.ts'])
-	expect(aliasedTransform.needsManual).toEqual([
+	const rewrites: Array<{
+		kodyId: string
+		source: string
+		contains: Array<string>
+		excludes?: RegExp
+	}> = [
 		{
-			path: 'alias.ts',
-			message: expect.stringContaining('alias'),
+			kodyId: 'mixed',
+			source:
+				"import { kody, storage, packages } from 'kody:runtime'\nexport const value = storage.sql`select 1`\nexport const other = kody\nexport const pack = packages\n",
+			contains: ['packageStorage().sql', 'kody', 'packages'],
+			excludes: /import\s*\{[^}]*\bstorage\b/,
 		},
-	])
-
-	const valuePass = {
-		'package.json': exportOnlyManifest('@user/value', 'value'),
-		'value.ts':
-			"import { storage } from 'kody:runtime'\nexport function wrap(helper) {\n\treturn helper(storage)\n}\n",
-	}
-	const valueTransform =
-		ambientStorageToPackageStorageCodemod.transform(valuePass)
-	expect(valueTransform.changed).toBe(false)
-	expect(valueTransform.needsManual[0]?.message).toMatch(/member-expression/i)
-
-	const appPackage = {
-		'package.json': appManifest(),
-		'index.ts':
-			"import { storage } from 'kody:runtime'\nexport const run = () => storage.get('k')\n",
-	}
-	const appTransform =
-		ambientStorageToPackageStorageCodemod.transform(appPackage)
-	expect(appTransform.changed).toBe(false)
-	expect(appTransform.needsManual).toEqual([
 		{
-			path: 'index.ts',
-			message: expect.stringContaining('bucket identities'),
+			kodyId: 'comment',
+			source: `${importStorage}// const storage = packageStorage()\nexport const run = () => storage.get('k')\n`,
+			contains: [
+				"packageStorage().get('k')",
+				'// const storage = packageStorage()',
+			],
 		},
-	])
-	expect(appTransform.files['index.ts']).toBe(appPackage['index.ts'])
-
-	const commentTrap = {
-		'package.json': exportOnlyManifest('@user/comment', 'comment'),
-		'comment.ts':
-			"import { storage } from 'kody:runtime'\n// const storage = packageStorage()\nexport const run = () => storage.get('k')\n",
-	}
-	const commentTransform =
-		ambientStorageToPackageStorageCodemod.transform(commentTrap)
-	expect(commentTransform.changed).toBe(true)
-	expect(commentTransform.files['comment.ts']).toContain(
-		"packageStorage().get('k')",
-	)
-	expect(commentTransform.files['comment.ts']).toContain(
-		'// const storage = packageStorage()',
-	)
-
-	const stringTrap = {
-		'package.json': exportOnlyManifest('@user/string', 'string'),
-		'string.ts':
-			"import { storage } from 'kody:runtime'\nconst note = 'const storage = packageStorage()'\nexport const run = () => storage.get('k')\n",
-	}
-	const stringTransform =
-		ambientStorageToPackageStorageCodemod.transform(stringTrap)
-	expect(stringTransform.changed).toBe(true)
-	expect(stringTransform.files['string.ts']).toContain(
-		"packageStorage().get('k')",
-	)
-	expect(stringTransform.files['string.ts']).toContain(
-		"'const storage = packageStorage()'",
-	)
-
-	const unparseable = {
-		'package.json': exportOnlyManifest('@user/bad', 'bad'),
-		'bad.ts':
-			"import { storage } from 'kody:runtime'\nexport function broken( {\n",
-	}
-	const unparseableDetect =
-		ambientStorageToPackageStorageCodemod.detect(unparseable)
-	expect(unparseableDetect).toEqual([
 		{
-			path: 'bad.ts',
-			message: expect.stringContaining('could not be parsed'),
+			kodyId: 'string',
+			source: `${importStorage}const note = 'const storage = packageStorage()'\nexport const run = () => storage.get('k')\n`,
+			contains: [
+				"packageStorage().get('k')",
+				"'const storage = packageStorage()'",
+			],
 		},
-	])
-	const unparseableTransform =
-		ambientStorageToPackageStorageCodemod.transform(unparseable)
-	expect(unparseableTransform.changed).toBe(false)
-	expect(unparseableTransform.needsManual).toEqual([
+	]
+	for (const { kodyId, source, contains, excludes } of rewrites) {
+		const result = codemod.transform({
+			'package.json': manifest(kodyId),
+			'lib.ts': source,
+		})
+		const output = result.files['lib.ts'] ?? ''
+		expect({
+			kodyId,
+			changed: result.changed,
+			missing: contains.filter((snippet) => !output.includes(snippet)),
+		}).toEqual({ kodyId, changed: true, missing: [] })
+		if (excludes) expect(output).not.toMatch(excludes)
+	}
+
+	const manual: Array<{
+		kodyId: string
+		source: string
+		message: RegExp
+		app?: { entry: string }
+	}> = [
 		{
-			path: 'bad.ts',
-			message: expect.stringContaining('could not be parsed'),
+			kodyId: 'alias',
+			source:
+				"import { storage as packageBucket } from 'kody:runtime'\nexport const value = packageBucket.get('k')\n",
+			message: /alias/,
 		},
+		{
+			kodyId: 'value',
+			source: `${importStorage}export function wrap(helper) {\n\treturn helper(storage)\n}\n`,
+			message: /member-expression/i,
+		},
+		{
+			kodyId: 'app',
+			source: `${importStorage}export const run = () => storage.get('k')\n`,
+			message: /bucket identities/,
+			app: { entry: './app.ts' },
+		},
+		{
+			kodyId: 'bad',
+			source: `${importStorage}export function broken( {\n`,
+			message: /could not be parsed/,
+		},
+	]
+	for (const { kodyId, source, message, app } of manual) {
+		const files = { 'package.json': manifest(kodyId, app), 'lib.ts': source }
+		const result = codemod.transform(files)
+		expect({ kodyId, ...result }).toMatchObject({
+			kodyId,
+			changed: false,
+			files,
+			needsManual: [
+				{ path: 'lib.ts', message: expect.stringMatching(message) },
+			],
+		})
+	}
+	expect(
+		codemod.detect({
+			'package.json': manifest('bad'),
+			'bad.ts': `${importStorage}export function broken( {\n`,
+		}),
+	).toEqual([
+		{ path: 'bad.ts', message: expect.stringContaining('could not be parsed') },
 	])
 
 	const clean = {
-		'package.json': exportOnlyManifest('@user/clean', 'clean'),
+		'package.json': manifest('clean'),
 		'clean.ts':
 			"import { packageStorage } from 'kody:runtime'\nexport const run = () => packageStorage().get('k')\n",
 	}
-	expect(ambientStorageToPackageStorageCodemod.detect(clean)).toEqual([])
-	expect(ambientStorageToPackageStorageCodemod.transform(clean).changed).toBe(
-		false,
-	)
+	expect(codemod.detect(clean)).toEqual([])
+	expect(codemod.transform(clean).changed).toBe(false)
 })

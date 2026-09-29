@@ -7,13 +7,11 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('./vectorize.ts', () => ({
-	upsertSavedPackageVector: (...args: Array<unknown>) =>
-		mockModule.upsertSavedPackageVector(...args),
+	upsertSavedPackageVector: mockModule.upsertSavedPackageVector,
 }))
 
 vi.mock('@sentry/cloudflare', () => ({
-	captureException: (...args: Array<unknown>) =>
-		mockModule.captureException(...args),
+	captureException: mockModule.captureException,
 }))
 
 import { scheduleSavedPackageSearchIndexUpsert } from './search-index-debt.ts'
@@ -110,59 +108,63 @@ function createDebtDb() {
 	}
 }
 
-test('scheduleSavedPackageSearchIndexUpsert defers via waitUntil and clears debt on success', async () => {
-	let resolveUpsert: (() => void) | undefined
-	mockModule.upsertSavedPackageVector.mockReset()
-	mockModule.upsertSavedPackageVector.mockImplementation(
-		() =>
-			new Promise<void>((resolve) => {
-				resolveUpsert = resolve
-			}),
-	)
+function createScheduler() {
 	const { db, rows } = createDebtDb()
 	const waitUntilPromises: Array<Promise<unknown>> = []
-	const schedulePromise = scheduleSavedPackageSearchIndexUpsert({
-		env: { APP_DB: db } as Env,
-		packageId: 'pkg-1',
-		userId: 'user-1',
-		embedText: 'hello',
-		waitUntil: (promise) => {
-			waitUntilPromises.push(promise)
+	return {
+		rows,
+		waitUntilPromises,
+		schedule(
+			packageId: string,
+			userId: string,
+			embedText: string,
+			options: { deferred?: boolean } = { deferred: true },
+		) {
+			return scheduleSavedPackageSearchIndexUpsert({
+				env: { APP_DB: db } as Env,
+				packageId,
+				userId,
+				embedText,
+				...(options.deferred
+					? {
+							waitUntil: (promise: Promise<unknown>) => {
+								waitUntilPromises.push(promise)
+							},
+						}
+					: {}),
+			})
 		},
-	})
-	await schedulePromise
-	expect(rows.has('pkg-1')).toBe(true)
-	expect(waitUntilPromises).toHaveLength(1)
+	}
+}
+
+test('scheduleSavedPackageSearchIndexUpsert defers via waitUntil and clears debt on success', async () => {
+	const upsertGate = Promise.withResolvers<void>()
+	mockModule.upsertSavedPackageVector.mockImplementation(
+		() => upsertGate.promise,
+	)
+	const scheduler = createScheduler()
+	await scheduler.schedule('pkg-1', 'user-1', 'hello')
+	expect(scheduler.rows.has('pkg-1')).toBe(true)
+	expect(scheduler.waitUntilPromises).toHaveLength(1)
 	await vi.waitFor(() => {
 		expect(mockModule.upsertSavedPackageVector).toHaveBeenCalledWith(
 			expect.anything(),
-			{
-				packageId: 'pkg-1',
-				userId: 'user-1',
-				embedText: 'hello',
-			},
+			{ packageId: 'pkg-1', userId: 'user-1', embedText: 'hello' },
 		)
 	})
-	resolveUpsert?.()
-	await waitUntilPromises[0]
-	expect(rows.has('pkg-1')).toBe(false)
+	upsertGate.resolve()
+	await scheduler.waitUntilPromises[0]
+	expect(scheduler.rows.has('pkg-1')).toBe(false)
 })
 
 test('scheduleSavedPackageSearchIndexUpsert keeps debt and reports to Sentry on failure', async () => {
 	consoleError.mockImplementation(() => {})
-	mockModule.upsertSavedPackageVector.mockReset()
-	mockModule.captureException.mockReset()
 	mockModule.upsertSavedPackageVector.mockRejectedValue(
 		new Error('vectorize down'),
 	)
-	const { db, rows } = createDebtDb()
-	await scheduleSavedPackageSearchIndexUpsert({
-		env: { APP_DB: db } as Env,
-		packageId: 'pkg-2',
-		userId: 'user-2',
-		embedText: 'hello',
-	})
-	expect(rows.get('pkg-2')).toMatchObject({
+	const scheduler = createScheduler()
+	await scheduler.schedule('pkg-2', 'user-2', 'hello', { deferred: false })
+	expect(scheduler.rows.get('pkg-2')).toMatchObject({
 		packageId: 'pkg-2',
 		userId: 'user-2',
 		generation: 1,
@@ -173,38 +175,15 @@ test('scheduleSavedPackageSearchIndexUpsert keeps debt and reports to Sentry on 
 })
 
 test('out-of-order publishes keep the newest owner and embed text under one coalesced reconcile', async () => {
-	let resolveFirstUpsert: (() => void) | undefined
-	let upsertCalls = 0
-	mockModule.upsertSavedPackageVector.mockReset()
-	mockModule.upsertSavedPackageVector.mockImplementation(async () => {
-		upsertCalls += 1
-		if (upsertCalls === 1) {
-			await new Promise<void>((resolve) => {
-				resolveFirstUpsert = resolve
-			})
-		}
-	})
-	const { db, rows } = createDebtDb()
-	const waitUntilPromises: Array<Promise<unknown>> = []
-	const waitUntil = (promise: Promise<unknown>) => {
-		waitUntilPromises.push(promise)
-	}
+	const firstUpsertGate = Promise.withResolvers<void>()
+	mockModule.upsertSavedPackageVector
+		.mockImplementationOnce(() => firstUpsertGate.promise)
+		.mockResolvedValue(undefined)
+	const scheduler = createScheduler()
 
-	await scheduleSavedPackageSearchIndexUpsert({
-		env: { APP_DB: db } as Env,
-		packageId: 'pkg-race',
-		userId: 'user-a',
-		embedText: 'older',
-		waitUntil,
-	})
-	await scheduleSavedPackageSearchIndexUpsert({
-		env: { APP_DB: db } as Env,
-		packageId: 'pkg-race',
-		userId: 'user-b',
-		embedText: 'newer',
-		waitUntil,
-	})
-	expect(rows.get('pkg-race')).toMatchObject({
+	await scheduler.schedule('pkg-race', 'user-a', 'older')
+	await scheduler.schedule('pkg-race', 'user-b', 'newer')
+	expect(scheduler.rows.get('pkg-race')).toMatchObject({
 		generation: 2,
 		userId: 'user-b',
 		embedText: 'newer',
@@ -219,9 +198,8 @@ test('out-of-order publishes keep the newest owner and embed text under one coal
 		expect.objectContaining({ userId: 'user-a', embedText: 'older' }),
 	)
 
-	resolveFirstUpsert?.()
-	await waitUntilPromises[0]
-	await waitUntilPromises[1]
+	firstUpsertGate.resolve()
+	await Promise.all(scheduler.waitUntilPromises)
 
 	expect(mockModule.upsertSavedPackageVector).toHaveBeenCalledTimes(2)
 	expect(mockModule.upsertSavedPackageVector).toHaveBeenNthCalledWith(
@@ -229,5 +207,5 @@ test('out-of-order publishes keep the newest owner and embed text under one coal
 		expect.anything(),
 		expect.objectContaining({ userId: 'user-b', embedText: 'newer' }),
 	)
-	expect(rows.has('pkg-race')).toBe(false)
+	expect(scheduler.rows.has('pkg-race')).toBe(false)
 })
