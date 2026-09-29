@@ -87,3 +87,28 @@ override cannot be removed yet even though a fresh resolve often lands on a
 newer 8.5.x. No newer PostCSS advisory has raised the patched floor beyond
 `8.5.10`. The upper bound `<9.0.0` keeps the override within the same major
 version to avoid breaking changes.
+
+### `ip-address` → `>=10.5.1 <11.0.0`
+
+Keeps the transitive `ip-address` copy (via `express-rate-limit`) at or above
+the current advisory floor. Upstream still declares `ip-address@^10.2.0`, which
+allows `10.5.0`, so this override cannot be removed yet.
+
+- [GHSA-rpw4-54j3-4h4q](https://github.com/advisories/GHSA-rpw4-54j3-4h4q) —
+  `Address6.isLinkLocal()` recognizes `fe80::/64` rather than `fe80::/10`
+  (`<=10.5.0`)
+- [GHSA-2vr4-cq9g-pvrc](https://github.com/advisories/GHSA-2vr4-cq9g-pvrc) —
+  `isPrivate()` misses NAT64 local-use `64:ff9b:1::/48` (`>=10.2.1, <=10.5.0`)
+
+The upper bound `<11.0.0` keeps the override within the same major version.
+
+### `undici` (under wrangler / miniflare / `@cloudflare/vite-plugin`) → `>=7.29.1 <8.0.0`
+
+Floors only the Cloudflare 7.x undici copies. The root `undici@6.28.1` is
+already on the 6.x patched line and must stay there.
+
+- [GHSA-3wwx-pv8p-q78v](https://github.com/advisories/GHSA-3wwx-pv8p-q78v) —
+  WebSocket permessage-deflate decompression can crash the process
+  (`7.28.0`–`7.29.0`)
+
+The upper bound `<8.0.0` keeps those tools on 7.x.
